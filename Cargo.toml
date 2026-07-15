@@ -1,0 +1,26 @@
+[package]
+name = "f2z"
+version = "0.1.0"
+edition = "2024"
+description = "F2Z: integer-MLE-evaluation PCS over an F2-RAA commitment via a GF(2^128) exponent-fold GKR forest"
+repository = "https://github.com/NethermindEth/f2z"
+
+[dependencies]
+crypto-primitives = { git = "https://github.com/NethermindEth/crypto-primitives.git", rev = "2cf39db886a76dc3e961cbb9c86fb5ab042381ef", features = ["std", "crypto_bigint", "rand"] }
+crypto-bigint = "=0.7.0-rc.9"
+crypto-primes = "=0.7.0-pre.3"
+derive_more = { version = "2.1.1", features = ["full"] }
+blake3 = { version = "1.8", features = ["rayon"] }
+itertools = "0.14"
+num-traits = "0.2"
+thiserror = "2.0"
+rayon = { version = "1.10", optional = true }
+rand = "0.9"
+rand_core = "0.9"
+
+[dev-dependencies]
+
+[features]
+default = ["parallel"]
+parallel = ["dep:rayon"]
+unchecked = []
