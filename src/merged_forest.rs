@@ -459,17 +459,23 @@ fn prove_merged_forest_lazy_sched(
     let to = build_cases(q1);
 
     // 4-leaf product table for building level d−2 straight from the bits:
-    // T4[y≪4 | (cE≪2|cO)] = te[4y+cE]·to[4y+cO].
-    let t4: Vec<Gf> = cfg_into_iter!(0..q1, 1 << 10)
-        .map(|y| {
-            let mut row = [Gf::one(); 16];
-            for (c, slot) in row.iter_mut().enumerate() {
-                *slot = te[(y << 2) | (c >> 2)] * to[(y << 2) | (c & 3)];
-            }
-            row
-        })
-        .flatten()
-        .collect();
+    // T4[y≪4 | (cE≪2|cO)] = te[4y+cE]·to[4y+cO]. Collect the INDEXED
+    // Vec<[Gf; 16]> and flatten in place: a parallel `.flatten()` here
+    // treats every 16-entry row as its own nested parallel iterator and
+    // the collect goes unindexed — measured ~836× slower than the same
+    // arithmetic serially (upstream zinc-plus fix `e19b0e1`, 2026-07-16).
+    let t4: Vec<Gf> = {
+        let rows: Vec<[Gf; 16]> = cfg_into_iter!(0..q1, 1 << 10)
+            .map(|y| {
+                let mut row = [Gf::one(); 16];
+                for (c, slot) in row.iter_mut().enumerate() {
+                    *slot = te[(y << 2) | (c >> 2)] * to[(y << 2) | (c & 3)];
+                }
+                row
+            })
+            .collect();
+        rows.into_flattened()
+    };
 
     if depth == 4 || !l8 {
         // The L/4 schedule — the DEFAULT (and forced at depth 4, where
@@ -743,16 +749,20 @@ fn prove_merged_forest_lazy_multi_sched(
             };
             let te = build_cases(0);
             let to = build_cases(q1);
-            let t4: Vec<Gf> = cfg_into_iter!(0..q1, 1 << 10)
-                .map(|y| {
-                    let mut row = [Gf::one(); 16];
-                    for (c, slot) in row.iter_mut().enumerate() {
-                        *slot = te[(y << 2) | (c >> 2)] * to[(y << 2) | (c & 3)];
-                    }
-                    row
-                })
-                .flatten()
-                .collect();
+            // Indexed collect + in-place flatten — the parallel-`flatten`
+            // nested-iterator pathology (see the single prover's t4 build).
+            let t4: Vec<Gf> = {
+                let rows: Vec<[Gf; 16]> = cfg_into_iter!(0..q1, 1 << 10)
+                    .map(|y| {
+                        let mut row = [Gf::one(); 16];
+                        for (c, slot) in row.iter_mut().enumerate() {
+                            *slot = te[(y << 2) | (c >> 2)] * to[(y << 2) | (c & 3)];
+                        }
+                        row
+                    })
+                    .collect();
+                rows.into_flattened()
+            };
             TauTables { leaf_tau, te, to, t4 }
         })
         .collect();
