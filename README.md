@@ -164,50 +164,46 @@ single mod-q claim, same box, interleaved runs) F2Z proves in **20.9 ms** vs
 the upstream 2-col Base arm's **18.2–18.8 ms** — within ~1.1×, the residual
 being harness and layout differences rather than the PCS.
 
-Sample (Apple M4; default sweep n=16/18/20/22/26/28 at W=1 + the 2-chunk
-W=32 shape):
+### Reference numbers
 
-```
-=== n=22 (t=14, s=8, W=1, m_p=15, chunks=1, data=512 KiB) ===
-  commit:      7.40 ms   peak    70.83 MB   live-after  70.83 MB
-  prove:      22.85 ms   peak    93.79 MB      (median of 5)
-  verify:      2.01 ms
-  proof:     146804 B (143.4 KiB)   serialize 36 µs / deserialize 131 µs
+Apple M4 (16 GB); `t ≈ 0.6n` splits, W=1, one mod-q claim; medians,
+idle-fronted, one shape per process at n ≥ 24. `data` is the committed
+instance size; `schedule` is the forest memory schedule
+(`F2_FOREST_SCHEDULE=l8` opt-in, required at n ≥ 31 on 16 GB).
 
-=== n=28 (t=17, s=11, W=1, m_p=21, chunks=1, data=32768 KiB) ===
-  commit:   7947.54 ms   peak  4278.79 MB   live-after 4278.78 MB
-  prove:    1086.43 ms   peak  5378.34 MB      (median of 2)
-  verify:      6.37 ms
-  proof:     409524 B (399.9 KiB)   serialize 90 µs / deserialize 237 µs
-```
+| n | shape (t, s) | data | commit | prove | verify | proof | prove peak | schedule |
+|---|---|---|---|---|---|---|---|---|
+| 16 | 10, 6 | 8 KiB | 0.48 ms | 4.00 ms | 1.22 ms | 43.2 KiB | 0.85 MB | L/4 |
+| 18 | 12, 6 | 32 KiB | 0.32 ms | 7.63 ms | 1.66 ms | 75.0 KiB | 3.1 MB | L/4 |
+| 20 | 13, 7 | 128 KiB | 0.74 ms | 17.4 ms | 2.86 ms | 98.1 KiB | 9.1 MB | L/4 |
+| 22 | 14, 8 | 512 KiB | 0.87 ms | 25.2 ms | 1.89 ms | 276.7 KiB | 26.1 MB | L/4 |
+| 24 | 15, 9 | 2 MiB | 2.03 ms | 69.9 ms | 2.97 ms | 303.9 KiB | 88.4 MB | L/4 |
+| 26 | 16, 10 | 8 MiB | 9.01 ms | 202 ms | 3.07 ms | 346.8 KiB | 330 MB | L/4 |
+| 28 | 17, 11 | 32 MiB | 60.9 ms | 1.10 s | 5.39 ms | 399.9 KiB | 1.27 GB | L/4 |
+| 30 | 18, 12 | 128 MiB | 91 ms | 5.13 s | 9.3 ms | 466 KiB | 4.99 GB | L/4 |
+| 31 | 19, 12 | 256 MiB | 186 ms | 11.2 s | 9.7 ms | 490 KiB | 5.81 GB | l8 |
+| 32 | 19, 13 | 512 MiB | 359 ms | 32.8 s | 14.8 ms | 574 KiB | 11.5 GB | l8 |
+
+Reading notes: prove scales ~3–3.5× per +2 in n while cache-resident,
+easing toward ~5× per step once the forest working set exceeds cache
+(n ≥ 26) — expect the wider end of the ±5–15 % run-to-run band there (a
+second n=28 run measured 0.82 s). Verify stays ms-class and proofs
+sub-MB throughout — prover RAM is the only wall. The n=20→22 step in
+proof size (98 → 277 KiB) and the verify blip at n=22 are the
+`sha_lig_configs` boundary: the audited embedded FAST profile takes over
+at `m ≥ 22` (hardcoding the tiny ad-hoc config at big shapes instead is
+catastrophic — n=28 commit measured 292 s ad-hoc vs tens of ms embedded).
 
 Measurement protocol (inherited from the zinc-plus lore): idle the box first;
 for quotable *time* numbers at big shapes run one shape per process (the peak
-numbers reset per shape and are fine in one sweep); quote medians and expect
-±5–15 % run-to-run spread.
+numbers reset per shape and are fine in one sweep); quote medians.
 
-**Big shapes (n = 30, 32) — packed-rows commit.** The harnesses generate the
-instance straight into per-column bit rows and commit via
-`commit_rs_ligerito_rows` — the `u128` cell tensor (16 B per cell) never
-exists, so peak memory sits at the packed/forest scale. Measured (M4, 16 GB,
-one shape per process):
-
-| n | commit | prove | verify | proof | prove peak | schedule |
-|---|---|---|---|---|---|---|
-| 26 | 6.9 ms | 228 ms | 3.1 ms | 347 KiB | 330 MB | L/4 |
-| 28 | 25 ms | 816 ms | 4.0 ms | 400 KiB | 1.27 GB | L/4 |
-| 30 | 91 ms | 5.13 s | 9.3 ms | 466 KiB | 4.99 GB | L/4 |
-| 31 | 186 ms | 11.2 s | 9.7 ms | 490 KiB | 5.81 GB | l8 |
-| 32 | 359 ms | 32.8 s | 14.8 ms | 574 KiB | 11.5 GB | l8 |
-
-(All rows: LTO profile + `--features unchecked`, one shape per process.
-The pre-restructure dense path held ~16 B/bit — 4.28 GB and a 7.9 s commit
-at n=28 — and could not reach n ≥ 30 on 16 GB at all; the pre-LTO build
-was a further ~1.7–3× slower at the big shapes. n ≥ 31 prove times are
-memory-pressure-shaded on a 16 GB box.) The bench derives its Ligerito
-config from the library's `sha_lig_configs` boundary (embedded FAST
-profile at `m ≥ 22`); hardcoding the tiny ad-hoc config at big shapes is
-catastrophic (n=28 commit measured 292 s ad-hoc vs tens of ms embedded).
+**Packed-rows commit.** The harnesses generate the instance straight into
+per-column bit rows and commit via `commit_rs_ligerito_rows` — the `u128`
+cell tensor (16 B per cell) never exists, so peak memory sits at the
+packed/forest scale. (The pre-restructure dense path held ~16 B/bit —
+4.28 GB and a 7.9 s commit at n=28 — and could not reach n ≥ 30 on 16 GB
+at all; the pre-LTO build was a further ~1.7–3× slower at the big shapes.)
 
 **The 16 GB ceiling is n = 32.** The peak is forest-dominated
 (`F2_FOREST_SCHEDULE=l8` ⇒ ~`2^n · 2 B` for the forest + ~`2^n · 0.7 B`
