@@ -155,8 +155,8 @@ F2Z_BENCH_SHAPES="10:6:1 14:8:1" F2Z_BENCH_REPS=5 \
   RUSTFLAGS="-C target-cpu=native" cargo bench --bench pcs
 ```
 
-Sample (Apple M4; default sweep n=16/18/20/22 at W=1 + the 2-chunk W=32
-shape):
+Sample (Apple M4; default sweep n=16/18/20/22/26/28 at W=1 + the 2-chunk
+W=32 shape):
 
 ```
 === n=22 (t=14, s=8, W=1, m_p=15, chunks=1, data=512 KiB) ===
@@ -164,12 +164,31 @@ shape):
   prove:      22.85 ms   peak    93.79 MB      (median of 5)
   verify:      2.01 ms
   proof:     146804 B (143.4 KiB)   serialize 36 µs / deserialize 131 µs
+
+=== n=28 (t=17, s=11, W=1, m_p=21, chunks=1, data=32768 KiB) ===
+  commit:   7947.54 ms   peak  4278.79 MB   live-after 4278.78 MB
+  prove:    1086.43 ms   peak  5378.34 MB      (median of 2)
+  verify:      6.37 ms
+  proof:     409524 B (399.9 KiB)   serialize 90 µs / deserialize 237 µs
 ```
 
 Measurement protocol (inherited from the zinc-plus lore): idle the box first;
 for quotable *time* numbers at big shapes run one shape per process (the peak
 numbers reset per shape and are fine in one sweep); quote medians and expect
 ±5–15 % run-to-run spread.
+
+**Big-shape status / open item.** The commit path currently materializes and
+retains ~16 B per committed **bit** (a dense `Gf` per bit — peak ≈ `2^n · 16 B`),
+which is 4–6× what upstream zinc-plus holds at the same `n` via its
+packed-transpose commit (its 2026-07-11 "direct packed transpose" restructure
+was not carried by the extraction). Until that is ported, **n = 30 (~17 GB
+peak) and n = 32 (~68 GB) do not fit a 16 GB machine**; the shapes are wired
+as opt-in knobs for larger boxes (`F2Z_BENCH_SHAPES="18:12:1"` / `"19:13:1"`).
+After the port they project to the ~5 GB / ~9 GB class (`F2_FOREST_SCHEDULE=l8`
+halves the forest share). The bench derives its Ligerito config from the
+library's `sha_lig_configs` boundary (embedded FAST profile at `m ≥ 22`);
+hardcoding the tiny ad-hoc config at big shapes is catastrophic (n=28 commit
+measured 292 s ad-hoc vs 7.9 s embedded).
 
 ## Layout
 

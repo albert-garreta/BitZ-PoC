@@ -30,7 +30,7 @@ use std::time::Instant;
 
 use f2z::ligerito::packed_vars;
 use f2z::ligerito_flock::{
-    LigConfig, commit_rs_flock_with, lig_configs, prove_mle_eval_mod_q_ligerito,
+    commit_rs_flock_with, prove_mle_eval_mod_q_ligerito, sha_lig_configs,
     verify_mle_eval_mod_q_ligerito,
 };
 use f2z::pcs::{IntEvalParams, mod_q_num_chunks, smallest_generator};
@@ -124,8 +124,11 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     let p = IntEvalParams { t, s, word_bits: w };
     let m_p = packed_vars(&p);
     let lch = mod_q_num_chunks(&p, q_bits);
-    let (pc, vc) =
-        lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 }).expect("lig cfg");
+    // The library's own boundary: the audited embedded FAST profile where
+    // it exists (m = m_p + 7 ≥ 22), ad-hoc only below. Hardcoding the tiny
+    // ad-hoc config at big shapes is catastrophic (n=28 commit measured
+    // 292 s adhoc vs the embedded profile's sub-second).
+    let (pc, vc) = sha_lig_configs(m_p).expect("lig cfg");
 
     // Deterministic non-degenerate instance (mirrors examples/reference_measure).
     let mask = if w >= 128 { u128::MAX } else { (1u128 << w) - 1 };
@@ -246,9 +249,26 @@ fn main() {
 
     let reps: usize = std::env::var("F2Z_BENCH_REPS").ok().and_then(|v| v.parse().ok()).unwrap_or(5);
     // Default sweep: the reference W=1 shapes (t ≈ 0.6n, s small — the
-    // proof-size-friendly split) + the 2-chunk W=32 regime.
-    let default_shapes: Vec<(usize, usize, usize)> =
-        vec![(10, 6, 1), (12, 6, 1), (13, 7, 1), (14, 8, 1), (4, 8, 32)];
+    // proof-size-friendly split) + the 2-chunk W=32 regime, extended
+    // through n = 28. Measured peaks (M4): n=26 ≈ 1.4 GB, n=28 ≈ 5.4 GB
+    // — the commit path currently RETAINS ~16 B per committed bit (a
+    // dense K-element per bit; upstream zinc-plus holds ~4–6× less at
+    // the same n via its packed-transpose commit — porting that is the
+    // open item, see README). Until then the n = 30 (~17 GB) and
+    // n = 32 (~68 GB) shapes DO NOT FIT a 16 GB box; they are wired as
+    // opt-in knob shapes for bigger machines:
+    //   F2Z_BENCH_SHAPES="18:12:1"   # n = 30
+    //   F2Z_BENCH_SHAPES="19:13:1"   # n = 32
+    // At n ≥ 26 run one shape per process for quotable numbers.
+    let default_shapes: Vec<(usize, usize, usize)> = vec![
+        (10, 6, 1),
+        (12, 6, 1),
+        (13, 7, 1),
+        (14, 8, 1),
+        (16, 10, 1), // n = 26
+        (17, 11, 1), // n = 28
+        (4, 8, 32),
+    ];
     let shapes: Vec<(usize, usize, usize)> = match std::env::var("F2Z_BENCH_SHAPES") {
         Ok(v) => v
             .split([',', ' '])
