@@ -1863,10 +1863,10 @@ pub fn column_bitslice_evals<const D: usize>(
 // `GF(2^128)` *scalars* and the cells are `{0,1}`-coefficient bit-polys.
 // ----------------------------------------------------------------------------
 
-/// `F_2`-addition (= coefficient-wise field add) for `GF(2^128)[X]<D>`, so the
-/// generic RaaF2 encoder kernel `encode_f2_lin::<GF128Poly<D>,_>` (which needs
-/// `F2AddAssign + FromRef + Clone`) reuses unchanged for the un-lifted open's
-/// combined-row proximity encoding. `GF128Poly<D>` already has `Clone`/`FromRef`.
+/// `F_2`-addition (= coefficient-wise field add) for `GF(2^128)[X]<D>`, so a
+/// generic `F_2` linear-code encoder kernel over `GF128Poly<D>` (which needs
+/// `F2AddAssign + FromRef + Clone`) reuses it unchanged. `GF128Poly<D>` already
+/// has `Clone`/`FromRef`.
 impl<const D: usize> crate::poly::univariate::F2AddAssign for GF128Poly<D> {
     #[allow(clippy::arithmetic_side_effects)]
     fn f2_add_assign(&mut self, rhs: &Self) {
@@ -1876,10 +1876,9 @@ impl<const D: usize> crate::poly::univariate::F2AddAssign for GF128Poly<D> {
     }
 }
 
-/// Identity lift `GF(2^128) → GF(2^128)`. Completes the `FromRef` chain the
-/// generic RaaF2 encoder kernel needs for `GF128Poly<D>` (via
-/// `FromRef<DensePolynomial<S,D>> for DensePolynomial<R,D>` with `R = S`), so
-/// `encode_f2_lin::<GF128Poly<D>, GF128Poly<D>>` typechecks for the un-lifted open.
+/// Identity lift `GF(2^128) → GF(2^128)`. Completes the `FromRef` chain a
+/// generic `F_2` linear-code encoder kernel needs for `GF128Poly<D>` (via
+/// `FromRef<DensePolynomial<S,D>> for DensePolynomial<R,D>` with `R = S`).
 impl crate::utils::from_ref::FromRef<BinaryFieldGF128> for BinaryFieldGF128 {
     #[inline(always)]
     fn from_ref(value: &BinaryFieldGF128) -> Self {

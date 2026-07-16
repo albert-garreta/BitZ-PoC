@@ -1,4 +1,5 @@
 pub mod eq_factored;
+pub mod multi_degree;
 pub mod prover;
 // pub mod utils;
 pub mod verifier;

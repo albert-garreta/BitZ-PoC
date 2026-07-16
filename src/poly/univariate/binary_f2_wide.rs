@@ -14,7 +14,7 @@
 //! - the degree exceeds 64 (so `BinaryU64Poly` doesn't fit).
 //!
 //! The intended use case is wide random-combination coefficients for an
-//! `F_2`-RAA commit lane: per the design, challenges live in
+//! `F_2` linear-code commit lane: per the design, challenges live in
 //! `F_2[X]<128>` (`W = 2`) and the linear combination of `F_2[X]<32>`
 //! codeword cells against those challenges produces entries in
 //! `F_2[X]<160>` (`W ≥ 3`).

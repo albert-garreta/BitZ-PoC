@@ -1,123 +1,148 @@
 # F2Z design notes
 
-F2Z realises §9 of Lev Soukhanov's char2-fieldswitch note: a one-round,
-characteristic-2 Brakedown instantiation of integer-MLE evaluation. This
-document is the distilled protocol + the optimization inventory of the
-implementation; the authoritative long-form write-ups live in the source
-repository (`zinc-plus`: `documentation/f2-int-eval-doc/`, and the
-measurement ledger `documentation/f2x-sha-todo.md`).
+F2Z realises §9 of Lev Soukhanov's char2-fieldswitch note: an integer-MLE
+evaluation over an `F₂` commitment, folded **in the exponent** of
+`K = GF(2^128)` and opened by a **ring-switch + recursive Ligerito** pipeline
+(the only opener). This document is the distilled protocol, the serialization
+format, and the optimization inventory of the implementation; the authoritative
+long-form write-ups live in the source repository (`zinc-plus`:
+`documentation/f2-int-eval-doc/`, and the measurement ledger
+`documentation/f2x-sha-todo.md`).
 
 ## The problem
 
 An integer MLE evaluation cannot be read off an `F₂` commitment by
-`F₂`-proximity: the parity collapse `Σ G[j,i]·d_i mod 2` destroys the
-integer information, while committing with a genuinely integer code
-forfeits the cheap binary commitment. F2Z's resolution: **do not fold
-through the code**. Commit the bits with an ordinary F₂-RAA Brakedown
-commitment, and carry the integer row-fold **in the exponent** of
-`K = GF(2^128)`, certified by a GKR grand product that touches the
-commitment only through `K`-linear queries.
+`F₂`-proximity: the parity collapse `Σ G[j,i]·d_i mod 2` destroys the integer
+information, while committing with a genuinely integer code forfeits the cheap
+binary commitment. F2Z's resolution: **do not fold through the code**. Commit
+the bits over `F_2`, and carry the integer row-fold **in the exponent** of
+`K = GF(2^128)`, certified by a GKR grand product that touches the commitment
+only through `K`-linear queries.
 
 ## Instance and protocol flow
 
-`IntEvalParams { t, s, word_bits: W }`: data `D` is a `2^t × 2^s` matrix
-of `W`-bit cells (`cell_index(b,c) = (b<<s) | c`); `t` row variables fold
-with integer weights `w_b`, `s` column variables are read off with field
-weights `e_c`.
+`IntEvalParams { t, s, word_bits: W }`: data `D` is a `2^t × 2^s` matrix of
+`W`-bit cells (`cell_index(b,c) = (b<<s) | c`); `t` row variables fold with
+integer weights `w_b`, `s` column variables are read off with field weights
+`e_c`.
 
-1. **Commit** (before any challenge): the flat `2^s × (2^t·W)` single-bit
-   matrix `M`, each row F₂-RAA encoded (rate 1/4, REP=4), codeword columns
-   Merkle-hashed (Blake3), leaves packing `2^s` bits 64-per-word.
-2. **Challenges**: `α ∈ K^×` (verifier-checked to be a generator) and the
-   point `r = (r', r'')` giving `w_b` and `e_c`. Batch weights are powers
-   `γ^c` of a single challenge (geometric, Schwartz–Zippel-sound).
-3. **Fold in the exponent**: per column,
-   `α^{v_c} = ∏_{b,j} [bit ? α^{w_b·2^j} : 1]`. A forest of `2^s` GKR
-   grand-product trees binds every `α^{v_c}` and reduces all leaf claims
-   to one shared point `ρ`. The prover sends the `2^s` integers `v_c`.
-4. **Open** (one committed Brakedown opening): per-tree leaf claims batch
-   under `γ^c` into `⟨m, q_rowbit⟩`, `m = Σ_c γ^c·M[c]`,
-   `q_rowbit[(b,j)] = eq((b,j),ρ)·(α^{w_b·2^j} − 1)`; sampled codeword
-   columns get one Merkle path + per-column proximity + the eval check
-   (sound because the code is F₂-linear, so the γ-combination commutes
-   through encoding).
+1. **Commit** (before any challenge): the bit-matrix is packed 128 bits per
+   `GF(2^128)` element along the low 7 row-bit coordinates, arranged as
+   `2^{log_batch}` interleaved lanes, RS-encoded per lane with flock's additive
+   NTT, and the per-position lane stacks are Merkle leaves (`flock-core`'s
+   `commit`). The root is published.
+2. **Fold in the exponent**: per column,
+   `α^{v_c} = ∏_{b,j} [bit ? α^{w_b·2^j} : 1]`. The **merged** GKR
+   grand-product forest binds every `α^{v_c}` and reduces all `2^s` trees to one
+   shared exit point. The roots are *not* carried: they are `α^{v_c}` by
+   construction, so the verifier recomputes them from the sent integers `v_c`
+   (the Fiat–Shamir absorb of the recomputed roots is the binding).
+3. **Pre-sumcheck**: a degree-2 sumcheck over the row-bit variables strips the
+   α-power weight factor `R = eq(·,ρ)⊙(α-powers−1)` (the `q_rowbit` table),
+   leaving a pure bit-MLE evaluation claim `M̂(r*, ξ) = μ`. The verifier's only
+   `O(2^t·W)` step is evaluating `R̂(r*)`.
+4. **Ring-switch → Ligerito** (the opening): the prover sends 128 partial
+   evaluations `s_v = M̂(r_hi, v)`; the verifier checks `Σ_v eq(r_lo,v)·s_v = μ`,
+   draws a fresh `r″`, and the recombined residual `Σ_y B(y)·P̂(y) = β₀`
+   (`B(y) = Φ_{r″}(eq(r_hi, y))`) becomes an inner-product claim on the packed
+   polynomial `P`, discharged by flock's recursive Ligerito verifier. Its
+   closing residual `B̂` is evaluated succinctly (`O(m·128²)`) via the
+   tensor-algebra trick (`tensor_eq_phi_eval` / `residual_b_evals`) — no `2^m`
+   table.
 5. **Read-off in the clear**: `P(r) = G_r · Σ_c e_c·v_c` over any
    characteristic-≠2 ring.
 
-Soundness chain: committed bits →(opening) leaf claims →(forest)
-`roots = α^{v_c}` →(generator binding, `v_c < ord α`) integers `v_c`
+Soundness chain: committed bits →(Ligerito opening) the packed-poly evaluation
+→(ring-switch) `μ` →(pre-sumcheck) the forest exit claim →(merged forest)
+`roots = α^{v_c}` →(generator binding, `v_c < ord α`) the integers `v_c`
 →(read-off) `P(r)`.
 
 ## The mod-q MLE opening (the headline API)
 
-Full-width `F_q` row weights (`w_b = eq(b, r₁) mod q`, ~100 bits) would
-overflow the exponent's injectivity budget. `prove_mle_eval_mod_q` chunks
-them: width `c_w = 127 − t − W`, `L = ⌈q_bits/c_w⌉` chunk-weight sets;
-the `(l, c)` chunk-forest is the batched forest with `L` virtual columns
-sharing one committed `D`; each chunk-fold satisfies
-`u_c^{(l)} < 2^{c_w+t+W} = 2^127` (verifier range check — `ChunkRange`),
-binds injectively via `α^{u} = root`, and the verifier recombines
-`y = Σ_c e_c · Σ_l 2^{c_w·l} u_c^{(l)}` in `F_q` in the clear. Both the
-range check and the generator check are load-bearing.
+Full-width `F_q` row weights (`w_b = eq(b, r₁) mod q`, ~100 bits) would overflow
+the exponent's injectivity budget. `prove_mle_eval_mod_q_ligerito` chunks them:
+width `c_w = 127 − t − W`, `L = ⌈q_bits/c_w⌉` chunk-weight sets. Each chunk `l`
+runs its **own** merged forest + pre-sumcheck on the SAME committed `P`, yielding
+a residual claim at its own point; every chunk-fold satisfies
+`u_c^{(l)} < 2^{c_w+t+W} = 2^127` (verifier range check — `ChunkRange`) and binds
+injectively via `α^{u} = root`. The `L` residual claims are `η`-RLC'd into **one**
+recursive Ligerito call (their `B(y)` bases combined with a shared `r″`), and the
+verifier recombines `y = Σ_c e_c · Σ_l 2^{c_w·l} u_c^{(l)}` in `F_q` in the clear.
+Both the range check and the generator check are load-bearing.
+
+## Proof-stream serialization
+
+`IntEvalRsLigModQProof::to_bytes` / `from_bytes` (`src/proof_codec.rs`). Per
+chunk, the zinc-side parts — the merged forest (its `Vec<MergedLayer>` of an
+optional `sc_x` and a `sc_c` sumcheck proof plus the closing child pair), the
+chunk folds `u`, the pre-sumcheck (`MultiDegreeSumcheckProof`), and the
+ring-switch `s_v` — are written field by field: `u64` lengths, 16-byte
+`GF(2^128)` words and `u128`s little-endian, and the sumcheck proofs via the
+crate's length-prefixed `Transcribable` encoding. flock's serde `LigeritoProof`
+is appended as a **length-prefixed `bincode` 1.3 blob** (bincode 1.3 being
+flock's own pinned encoder). The codec is canonical (re-serialization is
+byte-identical) and rejects any tampered byte — the stream fails to decode, or
+the reconstructed proof fails verification.
 
 ## Optimization inventory (as extracted)
 
-All semantics-preserving and pinned by tests; measured on Apple M4, with
-history in the zinc-plus ledger:
+All semantics-preserving and pinned by tests; measured on Apple M4, with history
+in the zinc-plus ledger:
 
-- **Bit-affine lazy forest** (`prove_product_forest_lazy` +
-  `GroupBufs::LeafBits`): the leaf layer `1 + bit·τ_b` is never
-  materialised — round 1 of the leaf layer's sumcheck runs as branchless
-  case-LUT subset-sums over eight tree-shared `w·τ` product tables read
-  directly from the packed committed bits, and round 1's fold materialises
-  the dense round-2 buffers from two shared tables. Layer-1 generation is
-  fused into the first product level (`gen_layer1`).
-- **Eq-factored driver** (`prove_eq_inner_sumcheck_mixed`): eq factors are
-  never materialised as multiplicands or folded — per-round suffix
-  tensors + prefix scalars; byte-identical to the generic sumcheck over
-  the materialised comb.
-- **`WideMulAcc` delayed reduction**: round-coefficient products
-  accumulate as unreduced 256-bit carryless sums (reduction is F₂-linear,
-  so one reduction per accumulator per round is exact).
-- **Fused ILP kernels**: hand-scheduled round/fold bodies with two
-  independent slot chains per iteration.
-- **NEON-resident GF(2^128)** (aarch64): schoolbook 4-PMULL 128×128
-  product + 3-PMULL fold reduction mod `X^128+X^7+X^2+X+1` (`g = 0x87`),
-  2-PMULL squaring (char-2 cross terms cancel), vector-register wide
-  accumulators (`WideGf128`), and NEON round/fold kernel bodies — no
-  NEON↔GPR domain crossings on any multiply path. ~1.5× latency, ~1.9×
-  streaming throughput, ~1.6× kernel-slot rate over the scalar-word
-  pipeline; every other target keeps that scalar pipeline bit-identically
-  (`neon_mul_matches_scalar_pipeline`, 2008 cases).
-- **Transcript batching**: `2^s`-scale absorbs collapse into single
-  Blake3 updates (`absorb_field_slice`); per-column batch challenges are
-  powers of one squeeze (`challenge_powers`).
-
-Not extracted (deliberately, for minimality): the flock/Ligerito recursive
-opener and its merged multi-claim forest (tree index as MLE variables),
-virtual-XOR / SHA-host claims, and the host proof-stream serialization.
-The exit-claim shapes here are the per-tree forest's; the RAA
-flat-Brakedown opener is self-contained.
+- **Merged bit-affine lazy forest** (`merged_forest`): all `2^s` (per chunk) or
+  `N·2^s` (batched) product trees share one lazy pass whose leaf layer
+  `1 + bit·τ_b` is never materialised — leaves are consumed straight from the
+  packed committed bits via branchless case-LUT sumcheck rounds over
+  tree-shared `w·τ` product tables. Two byte-identical schedules (L/4 default,
+  L/8 via `F2_FOREST_SCHEDULE=l8`), both pinned equal to the eager forest.
+- **Eq-factored driver**: eq factors are never materialised as multiplicands or
+  folded — per-round suffix tensors + prefix scalars; byte-identical to the
+  generic sumcheck over the materialised comb.
+- **`WideMulAcc` delayed reduction**: round-coefficient products accumulate as
+  unreduced 256-bit carryless sums (reduction is F₂-linear, so one reduction per
+  accumulator per round is exact).
+- **NEON-resident GF(2^128)** (aarch64): schoolbook 4-PMULL 128×128 product +
+  3-PMULL fold reduction mod `X^128+X^7+X^2+X+1` (`g = 0x87`), 2-PMULL squaring
+  (char-2 cross terms cancel), vector-register wide accumulators — no NEON↔GPR
+  domain crossings on any multiply path; every other target keeps a scalar-word
+  pipeline bit-identically (`neon_mul_matches_scalar_pipeline`).
+- **flock hot paths**: the additive-NTT commit encode, the BaseFold/Ligerito
+  folds, and the SHA-256 Merkle all run `flock-core`'s optimized (NEON) code; a
+  single Fiat–Shamir chain is driven across the zinc and flock layers through a
+  `Challenger` bridge (`ZincChallenger`).
 
 ## Parameter guidance
 
-- **Proof size** is shape-determined; for W=1 the optimum keeps
-  `s* ≈ 7–8` and folds `t* ≈ 0.6n` of the variables (see
-  `proof_size_optimal_t`); the mod-q chunking removes the magnitude cap
-  that would otherwise force small `t` at full-width weights.
-- `num_openings` follows the code's distance calibration (987 for the
-  deployed rate-1/4 RAA at 128-bit-class security in the source repo; the
-  tests use smaller counts for speed).
-- Soundness error of the exponent binding: `≤ V/(2^128 − 1)` per
-  Schwartz–Zippel with `V` the maximum fold magnitude; `α` must generate
-  `K^×` (`is_generator` checks against the factorization of `2^128−1`).
+- **Ligerito config** (`lig_configs`): the ad-hoc `LigConfig::Adhoc { log_batch,
+  log_inv_rate }` builds a `default_config` (unique-decoding query counts, no
+  grinding/OOD); the embedded audited profiles route through
+  `LigeritoSecurityConfig`. `log_inv_rate = 2` (rate 1/4) with `log_batch = 2`
+  is the tested default; FRI query counts follow flock's soundness-pinned
+  `default_fri_queries`.
+- **Proof size** is shape-determined; for W=1 the optimum keeps `s* ≈ 7–8` and
+  folds `t* ≈ 0.6n` of the variables; the mod-q chunking removes the magnitude
+  cap that would otherwise force small `t` at full-width weights. Measured sizes:
+  43 KiB (n=16) / 75 KiB (n=18) for a single `F_q` opening (see the README).
+- **Soundness** of the exponent binding: `≤ V/(2^128 − 1)` per Schwartz–Zippel
+  with `V` the maximum fold magnitude; `α` must generate `K^×` (`is_generator`
+  checks against the factorization of `2^128−1`).
 
 ## Trust and review status
 
-The construction and this implementation lineage were developed and
-measured in zinc-plus; the extraction preserved code verbatim where
-possible (module paths rewritten, host glue removed). The test suite
-(75 tests) carries: protocol-math pins (M0 reference relations), GKR
-binding and tamper rejection, opening tamper rejections, mod-q roundtrips
-across chunk regimes + range/generator rejections, batched roundtrips,
-proof-size formula pins, and the NEON/scalar field-pipeline equivalence.
+The construction and this implementation lineage were developed and measured in
+zinc-plus; the extraction preserved code verbatim where possible (module paths
+rewritten, host glue removed). The test suite carries: the merged-forest
+lazy-vs-eager byte-identity in **both** schedules, GKR binding, the mod-q
+Ligerito roundtrip across chunk regimes with tamper / range / generator
+rejections, the ring-switch / tensor-algebra pins, the NEON/scalar field
+equivalence, and the serialization roundtrip + tampered-byte rejection.
+
+**Pre-production caveats.**
+
+- **flock Merkle leaf/node domain separation** is not yet implemented upstream:
+  flock's `merkle` module does not domain-separate leaf vs internal-node
+  hashing (its module note flags it as a "micro-benchmark module, not production
+  code"). F2Z inherits flock's commitment/Merkle verbatim; the current Merkle
+  binding should be treated as pre-production until flock ships the fix.
+- The scheme is **not zero-knowledge** (the Ligerito opening reveals queried
+  committed rows).

@@ -1,0 +1,1270 @@
+//! Ring-switch primitives and the backend-independent prover/verifier prefix
+//! for the integer-MLE-eval opener.
+//!
+//! This module holds the pieces the flock-backed opener
+//! ([`crate::ligerito_flock`]) composes on top of the shared core in
+//! [`crate::pcs`]:
+//!
+//! 1. **Common prefix** ([`prove_int_eval_common`] /
+//!    [`prove_int_eval_merged_common`] and their verifier duals): the forest
+//!    GKR that binds `α^{v_c}`, the `v` message, and a de-black-boxing
+//!    degree-2 **pre-sumcheck** over the row-bit variables on `Σ_i R(i)·m_ξ(i)`
+//!    (`R = eq(·,ρ)⊙(α-powers−1)` is [`row_bit_weights`], `m_ξ` the
+//!    `eq(c,ξ)`-combined row). This strips the α-power weight factor, leaving a
+//!    pure bit-MLE evaluation claim `M̂(r*, ξ) = μ`; the verifier's only
+//!    non-succinct step is evaluating `R̂(r*)` (the `O(2^t·W)` `q_rowbit`
+//!    exponentiation table).
+//! 2. **Ring-switch** ([`ring_switch_prove`] / [`ring_switch_verify`], Flock
+//!    paper App. B, modular version): the prover sends the 128 partial
+//!    evaluations `s_v = M̂(r_hi, v)`; the verifier checks
+//!    `Σ_v eq(r_lo,v)·s_v = μ`, batches with a fresh `r″` through the injective
+//!    `F_2`-recombination (a 128×128 bit transpose, [`transpose_bits_128`]),
+//!    and the residual claim `Σ_y B(y)·P̂(y) = β₀` (with
+//!    `B(y) = Φ_{r″}(eq(r_hi,y))`) becomes an inner-product claim on the PACKED
+//!    polynomial `P` for the recursive Ligerito opener.
+//! 3. **Succinct residual basis** ([`tensor_eq_phi_eval`] /
+//!    [`residual_b_evals`]): the Ligerito verifier evaluates `B̂` at the fold
+//!    challenges via the tensor-algebra trick (`O(m·128²)` — no `2^m`-sized
+//!    table).
+//!
+//! Algorithm provenance: the ring-switch follows Flock (`pcs/ring_switch.rs`,
+//! Apache-2.0 OR MIT, Succinct Labs / Bünz / Wang; ring-switching due to
+//! Diamond–Posen, Ligerito to Novakovic–Angeris, with Flock's `ring_switch`
+//! itself derived from bcc-research/bolt-rs).
+//!
+//! The commitment root is published and absorbed by the caller before any
+//! challenge is drawn (the test harnesses share one transcript prefix between
+//! prover and verifier).
+
+use crate::piop::lookup::gkr_product::{ProductForestProof, verify_product_forest};
+use crate::piop::sumcheck::multi_degree::{
+    MultiDegreeSumcheck, MultiDegreeSumcheckGroup, MultiDegreeSumcheckProof,
+};
+use crate::poly::mle::DenseMultilinearExtension;
+use crate::poly::univariate::binary_gf128::{BinaryFieldGF128 as Gf, REDUCTION_LOW_GF128};
+use crate::poly::utils::build_eq_x_r_vec;
+use crypto_primitives::Field;
+use crate::transcript::traits::Transcript;
+
+use crate::pcs::{
+    GF128_MULT_ORDER, IntEvalParams, gf_pow, is_generator, max_fold_magnitude,
+    row_bit_weights,
+};
+use crate::utils::{cfg_chunks_mut, cfg_into_iter};
+
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
+/// Per-column bit rows, 64 bits per `u64` word (row-major over the row-bit
+/// index `i = (b<<log₂W)|j`). Local copy — the sibling branches' commit
+/// paths pack differently; the Ligerito stack owns its row layout.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn repack_leaf_bits(p: &IntEvalParams, data: &[u128]) -> Vec<Vec<u64>> {
+    let log_w = p.word_bits.trailing_zeros() as usize;
+    let row_len = p.rows() << log_w;
+    let words = (row_len + 63) >> 6;
+    cfg_into_iter!(0..p.cols())
+        .map(|c| {
+            let mut w = vec![0u64; words];
+            for b in 0..p.rows() {
+                let cell = data[p.cell_index(b, c)];
+                for j in 0..p.word_bits {
+                    if (cell >> j) & 1 == 1 {
+                        let i = (b << log_w) | j;
+                        w[i >> 6] |= 1u64 << (i & 63);
+                    }
+                }
+            }
+            w
+        })
+        .collect()
+}
+/// Number of packed (in-pack) coordinates: 128 bits per `GF(2^128)` element.
+pub const LOG_PACKING: usize = 7;
+
+// ---------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------
+
+/// Shape/soundness knobs of the RS opening.
+#[derive(Clone, Copy, Debug)]
+pub struct RsOpenConfig {
+    /// RS rate `2^{-log_inv_rate}`.
+    pub log_inv_rate: usize,
+    /// `log₂` of the interleaved lane count (Ligero row dimension); the first
+    /// `log_batch` sumcheck rounds are row-batch rounds.
+    pub log_batch: usize,
+    /// Number of FRI queries.
+    pub num_queries: usize,
+    /// `log₂` of the FRI epoch arity: folds per Merkle re-commit.
+    pub log_fri_arity: usize,
+}
+
+impl RsOpenConfig {
+    /// Rate-1/4, 4 lanes, arity-8 epochs. Query count for ~100-bit proximity
+    /// at rate 1/4 in the unique-decoding regime (γ = 3/8 ⇒
+    /// `⌈100/−log₂(5/8)⌉ = 148`).
+    pub fn default_100bit() -> Self {
+        Self { log_inv_rate: 2, log_batch: 2, num_queries: 148, log_fri_arity: 3 }
+    }
+}
+
+// ---------------------------------------------------------------------
+// Small field / table helpers
+// ---------------------------------------------------------------------
+
+/// `a·X` in `GF(2^128)`: shift by one with the `0x87` reduction.
+#[allow(clippy::arithmetic_side_effects)]
+#[inline]
+fn mul_by_x(a: Gf) -> Gf {
+    let w = a.words();
+    let carry = w[1] >> 63;
+    let hi = (w[1] << 1) | (w[0] >> 63);
+    let mut lo = w[0] << 1;
+    if carry == 1 {
+        lo ^= REDUCTION_LOW_GF128;
+    }
+    Gf::from_words([lo, hi])
+}
+
+/// Absorb a `Gf` slice into the transcript with a domain tag (framed by
+/// `absorb_slice`; little-endian words, matching the repo's byte layout).
+#[allow(clippy::arithmetic_side_effects)]
+fn absorb_gf_slice(transcript: &mut impl Transcript, tag: u8, vals: &[Gf]) {
+    let mut bytes = Vec::with_capacity(vals.len() * 16 + 1);
+    bytes.push(tag);
+    for v in vals {
+        let w = v.words();
+        bytes.extend_from_slice(&w[0].to_le_bytes());
+        bytes.extend_from_slice(&w[1].to_le_bytes());
+    }
+    transcript.absorb_slice(&bytes);
+}
+
+/// Absorb a virtual-XOR claim's external residuals (domain tag 0x37).
+pub(crate) fn absorb_externals(transcript: &mut impl Transcript, vals: &[Gf]) {
+    absorb_gf_slice(transcript, 0x37, vals);
+}
+
+/// In-place multilinear bind of the LOWEST index bit:
+/// `tbl'[i] = tbl[2i] + r·(tbl[2i] + tbl[2i+1])`.
+#[allow(clippy::arithmetic_side_effects)]
+fn bind_low(tbl: &mut Vec<Gf>, r: Gf) {
+    let half = tbl.len() >> 1;
+    for i in 0..half {
+        let u = tbl[2 * i];
+        let v = tbl[2 * i + 1];
+        tbl[i] = u + r * (u + v);
+    }
+    tbl.truncate(half);
+}
+
+/// Evaluate the multilinear with value table `tbl` (index bit `k` ↔
+/// `point[k]`) at `point`, by repeated low-bit binds.
+#[allow(clippy::arithmetic_side_effects)]
+pub fn mle_eval(tbl: &[Gf], point: &[Gf]) -> Gf {
+    assert_eq!(tbl.len(), 1usize << point.len(), "table/point size mismatch");
+    let mut buf = tbl.to_vec();
+    for &r in point {
+        bind_low(&mut buf, r);
+    }
+    buf[0]
+}
+
+/// 128×128 bit transpose of `GF(2^128)` elements viewed as `F_2^{128}`
+/// vectors: `bit_v(out[u]) = bit_u(inp[v])`. The injective recombination
+/// `s_u = Σ_v s_{u,v}·β_v` of the ring-switch (paper Eq. 8).
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn transpose_bits_128(inp: &[Gf]) -> Vec<Gf> {
+    assert_eq!(inp.len(), 128);
+    let mut out = vec![[0u64; 2]; 128];
+    for (v, s) in inp.iter().enumerate() {
+        let w = s.words();
+        for u in 0..128 {
+            if (w[u >> 6] >> (u & 63)) & 1 == 1 {
+                out[u][v >> 6] |= 1u64 << (v & 63);
+            }
+        }
+    }
+    out.into_iter().map(Gf::from_words).collect()
+}
+
+/// `Σ_u bit_w(X^u·y)·cols[u]` for every `w`: one tensor-algebra
+/// right-leg multiplication step.
+#[allow(clippy::arithmetic_side_effects)]
+fn apply_right_mul(cols: &[Gf], y: Gf) -> Vec<Gf> {
+    let mut out = vec![Gf::zero(); 128];
+    let mut row = y; // X^u · y, starting at u = 0
+    for cu in cols.iter().take(128) {
+        if !cu.is_zero() {
+            let w = row.words();
+            for wi in 0..2usize {
+                let mut bits = w[wi];
+                while bits != 0 {
+                    let t = bits.trailing_zeros() as usize;
+                    out[(wi << 6) | t] += *cu;
+                    bits &= bits.wrapping_sub(1);
+                }
+            }
+        }
+        row = mul_by_x(row);
+    }
+    out
+}
+
+/// Succinct evaluation of `B̂(chals)` where `B(y) = Φ_{r″}(eq(r_hi, y))` and
+/// `Φ_{r″}: β_u ↦ eq_r2[u]` is the `F_2`-linear batching map — the
+/// tensor-algebra trick (Diamond–Posen; Flock's `eval_rs_eq`):
+/// maintain `E = ∏_k [(1+a_k)⊗(1+h_k) + a_k⊗h_k] ∈ K ⊗_{F_2} K` in the
+/// column representation `E = Σ_u e_u ⊗ β_u`, then contract with `Φ`:
+/// `B̂(chals) = Σ_u e_u · eq_r2[u]`. Cost `O(len·128²)` bit-conditional adds.
+pub fn tensor_eq_phi_eval(chals: &[Gf], r_hi: &[Gf], eq_r2: &[Gf]) -> Gf {
+    let evals = residual_b_evals(chals, 0, r_hi, eq_r2);
+    evals[0]
+}
+
+/// The Ligerito residual-block variant: `B̂(prefix ++ bits(y))` for every
+/// boolean tail `y ∈ [0, 2^{yr_log_n})` (tail bit `j` ↔ coordinate
+/// `prefix.len() + j`). Shares the tensor prefix across all tails — the
+/// boolean tail legs are single-term algebra multiplications, so the whole
+/// block costs `O((prefix.len() + 2^{yr_log_n})·128²)` instead of
+/// `2^{yr_log_n}` full evaluations. This is the succinct-basis hook the
+/// Ligerito verifier calls once at its residual check.
+#[allow(clippy::arithmetic_side_effects)]
+pub fn residual_b_evals(prefix: &[Gf], yr_log_n: usize, r_hi: &[Gf], eq_r2: &[Gf]) -> Vec<Gf> {
+    assert_eq!(
+        prefix.len().wrapping_add(yr_log_n),
+        r_hi.len(),
+        "prefix + tail must cover the point"
+    );
+    assert_eq!(eq_r2.len(), 128);
+    let one = Gf::one();
+    let mut cols = vec![Gf::zero(); 128];
+    cols[0] = one;
+    for (a, h) in prefix.iter().zip(r_hi.iter()) {
+        let f0 = apply_right_mul(&cols, one + *h);
+        let f1 = apply_right_mul(&cols, *h);
+        let la = one + *a;
+        for w in 0..128 {
+            cols[w] = la * f0[w] + *a * f1[w];
+        }
+    }
+    // Boolean tail expansion: at each step j, the left leg is 0 or 1, so
+    // E·[(1+a)⊗(1+h) + a⊗h] collapses to the single term E·(1⊗(1+h)) (bit 0)
+    // or E·(1⊗h) (bit 1). Tail index bit j is appended at weight 2^j.
+    let mut cur: Vec<Vec<Gf>> = vec![cols];
+    for j in 0..yr_log_n {
+        let h = r_hi[prefix.len() + j];
+        let stride = cur.len();
+        let mut next: Vec<Vec<Gf>> = Vec::with_capacity(stride * 2);
+        next.resize(stride * 2, Vec::new());
+        for (i, e) in cur.iter().enumerate() {
+            next[i] = apply_right_mul(e, one + h);
+            next[i + stride] = apply_right_mul(e, h);
+        }
+        cur = next;
+    }
+    cur.iter()
+        .map(|cols| cols.iter().zip(eq_r2.iter()).fold(Gf::zero(), |acc, (c, e)| acc + *c * *e))
+        .collect()
+}
+
+// ---------------------------------------------------------------------
+// Packed commitment
+// ---------------------------------------------------------------------
+
+/// `t + log₂W` — the row-bit index width.
+pub(crate) fn row_bit_vars(p: &IntEvalParams) -> usize {
+    let log_w = p.word_bits.trailing_zeros() as usize;
+    p.t.wrapping_add(log_w)
+}
+
+/// Number of packed variables `m_p = (t + log₂W − 7) + s`.
+pub fn packed_vars(p: &IntEvalParams) -> usize {
+    row_bit_vars(p).wrapping_sub(LOG_PACKING).wrapping_add(p.s)
+}
+
+// ---------------------------------------------------------------------
+// BaseFold: sumcheck ⊗ FRI fold for ⟨weights, P⟩ = target
+// ---------------------------------------------------------------------
+
+/// Errors of the RS opening (ring-switch + BaseFold).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RsOpenError {
+    /// Malformed proof shape (lengths inconsistent with the config).
+    Shape,
+    /// `Σ_v eq(r_lo, v)·s_v ≠ μ`.
+    RingSwitchClaim,
+    /// A sent query position disagrees with the transcript-derived index.
+    QueryIndex { sent: usize, expected: usize },
+    /// A Merkle path failed.
+    Merkle { query: usize, epoch: usize },
+    /// An opened coset disagrees with the fold of the previous stage.
+    CosetMismatch { query: usize, epoch: usize },
+    /// The final codeword is not constant.
+    FinalNotConstant,
+    /// A query's fold chain landed off the final codeword.
+    FinalMismatch { query: usize },
+    /// The closing sumcheck identity `T = B̂(chals)·final_b` failed.
+    FinalClaim,
+    /// `R̂(r*) = 0` (cannot divide; negligible-probability event).
+    WeightZero,
+}
+
+// ---------------------------------------------------------------------
+// Ring-switch
+// ---------------------------------------------------------------------
+
+/// Ring-switch message: the 128 partial evaluations `s_v = M̂(r_hi, v)`.
+#[derive(Clone, Debug)]
+pub struct RingSwitchProof {
+    pub s_v: Vec<Gf>,
+}
+
+/// Absorb an `s_v` message with the ring-switch domain tag (shared by the
+/// single-poly and batched paths — the byte streams must match).
+pub(crate) fn absorb_sv(transcript: &mut impl Transcript, s: &[Gf]) {
+    absorb_gf_slice(transcript, 0x20, s);
+}
+
+/// Prover: compute and absorb `s_v`, draw `r″`, and produce the BaseFold
+/// weight table `B(y) = Φ_{r″}(eq(r_hi, y))` (plus `eq_r2` and `β₀` for
+/// debugging/tests).
+#[allow(clippy::arithmetic_side_effects)]
+pub fn ring_switch_prove(
+    transcript: &mut impl Transcript,
+    p_msg: &[Gf],
+    r_hi: &[Gf],
+) -> (RingSwitchProof, Vec<Gf>, Gf) {
+    let eq_hi = build_eq_x_r_vec(r_hi, &()).expect("non-empty r_hi");
+    assert_eq!(eq_hi.len(), p_msg.len());
+
+    // s_v = Σ_y eq_hi[y] · bit_v(P[y]): parallel partial accumulators over
+    // y-chunks, merged by field addition (exact, order-independent).
+    const SV_CHUNK: usize = 1 << 12;
+    let num_chunks = p_msg.len().div_ceil(SV_CHUNK);
+    let partials: Vec<Vec<Gf>> = cfg_into_iter!(0..num_chunks)
+        .map(|ci| {
+            let lo = ci * SV_CHUNK;
+            let hi = (lo + SV_CHUNK).min(p_msg.len());
+            let mut local = vec![Gf::zero(); 128];
+            for y in lo..hi {
+                let w = p_msg[y].words();
+                let e = eq_hi[y];
+                for wi in 0..2usize {
+                    let mut bits = w[wi];
+                    while bits != 0 {
+                        let t = bits.trailing_zeros() as usize;
+                        local[(wi << 6) | t] += e;
+                        bits &= bits.wrapping_sub(1);
+                    }
+                }
+            }
+            local
+        })
+        .collect();
+    let mut s = vec![Gf::zero(); 128];
+    for local in &partials {
+        for (acc, l) in s.iter_mut().zip(local.iter()) {
+            *acc += *l;
+        }
+    }
+    absorb_sv(transcript, &s);
+    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let eq_r2 = build_eq_x_r_vec(&r2, &()).expect("r2 non-empty");
+
+    // β₀ = Σ_u eq_r2[u]·s_u via the bit transpose.
+    let s_u = transpose_bits_128(&s);
+    let beta0 = s_u.iter().zip(eq_r2.iter()).fold(Gf::zero(), |acc, (su, e)| acc + *su * *e);
+
+    // B(y) = Φ_{r″}(eq_hi[y]) = Σ_{u: bit_u(eq_hi[y])} eq_r2[u]. Parallel per y.
+    let b_tbl: Vec<Gf> = cfg_into_iter!(0..eq_hi.len())
+        .map(|y| {
+            let w = eq_hi[y].words();
+            let mut acc = Gf::zero();
+            for wi in 0..2usize {
+                let mut bits = w[wi];
+                while bits != 0 {
+                    let t = bits.trailing_zeros() as usize;
+                    acc += eq_r2[(wi << 6) | t];
+                    bits &= bits.wrapping_sub(1);
+                }
+            }
+            acc
+        })
+        .collect();
+    debug_assert_eq!(
+        b_tbl.iter().zip(p_msg.iter()).fold(Gf::zero(), |a, (b, p)| a + *b * *p),
+        beta0,
+        "ring-switch recombination identity"
+    );
+
+    (RingSwitchProof { s_v: s }, b_tbl, beta0)
+}
+
+/// Verifier: check `Σ_v eq(r_lo,v)·s_v = μ`, absorb, draw `r″`, and return
+/// `(eq_r2, β₀)` for the BaseFold stage.
+#[allow(clippy::arithmetic_side_effects)]
+pub fn ring_switch_verify(
+    transcript: &mut impl Transcript,
+    proof: &RingSwitchProof,
+    mu: Gf,
+    r_lo: &[Gf],
+) -> Result<(Vec<Gf>, Gf), RsOpenError> {
+    if proof.s_v.len() != 128 || r_lo.len() != LOG_PACKING {
+        return Err(RsOpenError::Shape);
+    }
+    let eq_lo = build_eq_x_r_vec(r_lo, &()).expect("r_lo non-empty");
+    let claim = proof.s_v.iter().zip(eq_lo.iter()).fold(Gf::zero(), |acc, (s, e)| acc + *s * *e);
+    if claim != mu {
+        return Err(RsOpenError::RingSwitchClaim);
+    }
+    absorb_sv(transcript, &proof.s_v);
+    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let eq_r2 = build_eq_x_r_vec(&r2, &()).expect("r2 non-empty");
+    let s_u = transpose_bits_128(&proof.s_v);
+    let beta0 = s_u.iter().zip(eq_r2.iter()).fold(Gf::zero(), |acc, (su, e)| acc + *su * *e);
+    Ok((eq_r2, beta0))
+}
+
+// ---------------------------------------------------------------------
+// End-to-end integer-MLE evaluation with the RS opening
+// ---------------------------------------------------------------------
+
+/// Errors of the end-to-end RS-opened integer-MLE evaluation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IntEvalRsError {
+    Forest,
+    ChallengeNotGenerator,
+    RootBinding { c: usize },
+    Magnitude { max: u128 },
+    /// The pre-sumcheck rejected, or its claimed sum disagrees with the
+    /// forest-derived batched claim `Y_ξ`.
+    PreSumcheck,
+    /// `R̂(r*) = 0` (negligible; resample).
+    RHatZero,
+    Open(RsOpenError),
+    ReadOff,
+}
+
+/// `eq(c,ξ)`-combined rows: `m_ξ[i] = Σ_c eq_ξ[c]·M[c][i]`, from the packed
+/// bit rows. Parallel over 64-entry output blocks (each block scans all
+/// rows' matching word — exact field sums, order-independent in char 2).
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn xi_combined_rows(p: &IntEvalParams, rows: &[Vec<u64>], eq_xi: &[Gf]) -> Vec<Gf> {
+    let t_w = row_bit_vars(p);
+    let len = 1usize << t_w;
+    debug_assert!(len >= 64, "row_len below one word is out of scope (t_w >= 7 holds here)");
+    let mut m = vec![Gf::zero(); len];
+    cfg_chunks_mut!(m, 64).enumerate().for_each(|(wi, block)| {
+        for (c, row) in rows.iter().enumerate() {
+            let mut bits = row[wi];
+            while bits != 0 {
+                let t = bits.trailing_zeros() as usize;
+                block[t] += eq_xi[c];
+                bits &= bits.wrapping_sub(1);
+            }
+        }
+    });
+    m
+}
+
+/// Column-lane packing `packed_cols[g][i]`: lane k of word g at row-bit i
+/// holds `M[64g+k][i]` — the layout the branch-native bit-affine lazy
+/// forest consumes. Built directly from the data tensor.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn pack_columns_lanes(p: &IntEvalParams, data: &[u128]) -> Vec<Vec<u64>> {
+    let log_w = p.word_bits.trailing_zeros() as usize;
+    let row_len = p.rows() << log_w;
+    let num_groups = p.cols().div_ceil(64);
+    cfg_into_iter!(0..num_groups)
+        .map(|g| {
+            let mut w = vec![0u64; row_len];
+            for lane in 0..64usize {
+                let c = (g << 6) | lane;
+                if c >= p.cols() {
+                    break;
+                }
+                for b in 0..p.rows() {
+                    let cell = data[p.cell_index(b, c)];
+                    for j in 0..p.word_bits {
+                        if (cell >> j) & 1 == 1 {
+                            w[(b << log_w) | j] |= 1u64 << lane;
+                        }
+                    }
+                }
+            }
+            w
+        })
+        .collect()
+}
+
+/// Branch-native fast forest: the bit-affine lazy product forest over the
+/// lane-packed columns (single weight set). Mirrors the mod-q prover's
+/// internals with one chunk. Returns (forest proof, rho, leaf claims).
+#[allow(clippy::arithmetic_side_effects)]
+fn prove_fold_forest_fast(
+    transcript: &mut impl Transcript,
+    p: &IntEvalParams,
+    data: &[u128],
+    row_weights: &[u128],
+    alpha: Gf,
+    packed_cols: Option<&[Vec<u64>]>,
+) -> (ProductForestProof<Gf>, Vec<Gf>) {
+    use crate::pcs::{
+        build_column_layer1_halves, chunk_pow2_table, extract_column_bit_halves, leaf_tau_halves,
+    };
+    use crate::piop::lookup::gkr_product::{ForestLeafBits, prove_product_forest_lazy};
+    let log_w = p.word_bits.trailing_zeros() as usize;
+    let row_len = p.rows() << log_w;
+    let owned;
+    let packed_cols: &[Vec<u64>] = match packed_cols {
+        Some(pc) => pc,
+        None => {
+            owned = pack_columns_lanes(p, data);
+            &owned
+        }
+    };
+    let pow2 = chunk_pow2_table(p, row_weights, alpha);
+    let one = Gf::one();
+    let mask = p.cols().wrapping_sub(1);
+    let pair_tbl = crate::pcs::layer1_pair_table(p, &pow2, log_w, row_len);
+    let gen_layer1 = |k: usize| -> (Vec<Gf>, Vec<Gf>) {
+        build_column_layer1_halves(p, packed_cols, k & mask, &pow2, &pair_tbl, one, log_w, row_len)
+    };
+    let tau_sets = vec![leaf_tau_halves(p, &pow2, one, log_w, row_len)];
+    let col_bits = extract_column_bit_halves(packed_cols, p.cols(), row_len);
+    let bits_of = |k: usize| col_bits[k & mask].clone();
+    let tau_set_of = |_k: usize| 0usize;
+    let (forest, claims) = prove_product_forest_lazy(
+        transcript,
+        p.cols(),
+        gen_layer1,
+        ForestLeafBits { bits_of: &bits_of, tau_sets: &tau_sets, tau_set_of: &tau_set_of },
+        &(),
+    );
+    let rho: Vec<Gf> = claims.first().map(|(pt, _)| pt.clone()).unwrap_or_default();
+    (forest, rho)
+}
+
+/// `v_c = Σ_b w_b·D[(b,c)]` computed from the packed bit rows (W-bit cells
+/// reassembled per set bit) — avoids re-streaming the `u128` data tensor.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn fold_values_bits(p: &IntEvalParams, rows: &[Vec<u64>], row_weights: &[u128]) -> Vec<u128> {
+    let log_w = p.word_bits.trailing_zeros() as usize;
+    let mask = p.word_bits.wrapping_sub(1);
+    cfg_into_iter!(0..p.cols())
+        .map(|c| {
+            let mut acc = 0u128;
+            for (wi, &word) in rows[c].iter().enumerate() {
+                let mut bits = word;
+                while bits != 0 {
+                    let tz = bits.trailing_zeros() as usize;
+                    let i = (wi << 6) | tz;
+                    acc += row_weights[i >> log_w] << (i & mask);
+                    bits &= bits.wrapping_sub(1);
+                }
+            }
+            acc
+        })
+        .collect()
+}
+
+/// Classic 64×64 bit-matrix transpose (6 mask/shift rounds).
+#[allow(clippy::arithmetic_side_effects)]
+fn transpose_64x64(a: &mut [u64; 64]) {
+    let mut j = 32usize;
+    let mut m = 0x0000_0000_FFFF_FFFFu64;
+    while j != 0 {
+        let mut k = 0usize;
+        while k < 64 {
+            let idx = k + j;
+            let x = (a[k] ^ (a[idx] << j)) & !m;
+            a[k] ^= x;
+            a[idx] ^= x >> j;
+            let knext = (k + j + 1) & !j;
+            k = if (k + 1) & j != 0 { knext } else { k + 1 };
+        }
+        j >>= 1;
+        m ^= m << j;
+    }
+}
+
+/// Derive the column-lane packing from the row-major packed rows: block
+/// (g, wi) of `packed_cols` is the bit-transpose of rows `64g..64g+64` at
+/// word `wi`. One pass over the 8-byte-per-64-bits rows instead of a second
+/// sweep of the u128 data tensor.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn pack_columns_from_rows(p: &IntEvalParams, rows: &[Vec<u64>]) -> Vec<Vec<u64>> {
+    let log_w = p.word_bits.trailing_zeros() as usize;
+    let row_len = p.rows() << log_w;
+    let words = row_len.div_ceil(64);
+    let num_groups = p.cols().div_ceil(64);
+    cfg_into_iter!(0..num_groups)
+        .map(|g| {
+            let mut out = vec![0u64; row_len];
+            for wi in 0..words {
+                let mut blk = [0u64; 64];
+                for k in 0..64usize {
+                    let c = (g << 6) | k;
+                    if c < p.cols() {
+                        blk[k] = rows[c][wi];
+                    }
+                }
+                transpose_64x64(&mut blk);
+                // blk[t] now holds, per lane k, bit (64·wi + t) of row 64g+k
+                // — wait: transpose maps bit t of blk[k] to bit k of blk[t].
+                let base = wi << 6;
+                for (t, &v) in blk.iter().enumerate() {
+                    if base + t < row_len {
+                        out[base + t] = v;
+                    }
+                }
+            }
+            out
+        })
+        .collect()
+}
+
+/// Inverse of [`pack_columns_from_rows`]: rebuild the per-column bit rows
+/// from the 64-column-lane packed store (`packed_cols[g][i]` bit `k` =
+/// column `64g+k`'s bit `i` — the layout `sha_f2_packed_cols` produces).
+/// Parallel over groups.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn rows_from_packed_cols(p: &IntEvalParams, packed_cols: &[Vec<u64>]) -> Vec<Vec<u64>> {
+    let log_w = p.word_bits.trailing_zeros() as usize;
+    let row_len = p.rows() << log_w;
+    let words = row_len.div_ceil(64);
+    let num_groups = p.cols().div_ceil(64);
+    debug_assert_eq!(packed_cols.len(), num_groups);
+    let groups: Vec<Vec<Vec<u64>>> = cfg_into_iter!(0..num_groups)
+        .map(|g| {
+            let lanes = 64.min(p.cols() - (g << 6));
+            let mut rows_g: Vec<Vec<u64>> = vec![vec![0u64; words]; lanes];
+            for wi in 0..words {
+                let mut blk = [0u64; 64];
+                for (t, b) in blk.iter_mut().enumerate() {
+                    let i = (wi << 6) | t;
+                    *b = if i < row_len { packed_cols[g][i] } else { 0 };
+                }
+                transpose_64x64(&mut blk);
+                for (k, row) in rows_g.iter_mut().enumerate() {
+                    row[wi] = blk[k];
+                }
+            }
+            rows_g
+        })
+        .collect();
+    groups.into_iter().flatten().collect()
+}
+
+/// The backend-independent prover prefix: forest GKR, the `v` message, the
+/// eq(ξ) batching, and the de-black-boxing pre-sumcheck. Returns the pieces
+/// plus the residual claim point `(r*, ξ)` whose bit-MLE evaluation the
+/// opening backend must prove.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn prove_int_eval_common(
+    transcript: &mut impl Transcript,
+    p: &IntEvalParams,
+    data: &[u128],
+    row_weights: &[u128],
+    alpha: Gf,
+    rows: &[Vec<u64>],
+    packed_cols: Option<&[Vec<u64>]>,
+) -> (ProductForestProof<Gf>, Vec<u128>, MultiDegreeSumcheckProof<Gf>, Vec<Gf>) {
+    let (forest, rho) =
+        prove_fold_forest_fast(transcript, p, data, row_weights, alpha, packed_cols);
+    let v = fold_values_bits(p, rows, row_weights);
+
+    // eq(c, ξ) batching of the per-column leaf claims.
+    let xi: Vec<Gf> = transcript.get_field_challenges(p.s, &());
+    let eq_xi = build_eq_x_r_vec(&xi, &()).expect("s >= 1");
+
+    // Pre-sumcheck tables: R = q_rowbit(ρ), m_ξ = eq(ξ)-combined rows.
+    let t_w = row_bit_vars(p);
+    let r_tbl = row_bit_weights(p, row_weights, alpha, &rho);
+    let m_tbl = xi_combined_rows(p, rows, &eq_xi);
+
+    let zero_inner = Gf::zero().into_inner();
+    let to_mle = |tbl: &[Gf]| {
+        DenseMultilinearExtension::from_evaluations_vec(
+            t_w,
+            tbl.iter().map(|g| g.into_inner()).collect(),
+            zero_inner,
+        )
+    };
+    let group = MultiDegreeSumcheckGroup::new(
+        2,
+        vec![to_mle(&r_tbl), to_mle(&m_tbl)],
+        Box::new(|vals: &[Gf]| vals[0] * vals[1]),
+    );
+    let (presum, states) =
+        MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(transcript, vec![group], t_w, &());
+    let r_star = states[0].randomness.clone();
+
+    // Residual claim point: M̂(r*, ξ) = μ.
+    let point: Vec<Gf> = r_star.iter().chain(xi.iter()).copied().collect();
+    (forest, v, presum, point)
+}
+
+/// Verify an integer-MLE evaluation with the RS/BaseFold opening. Mirrors
+/// [`crate::pcs::verify`] stages (1), (2), (4); stage (3) is the
+/// pre-sumcheck + ring-switch + BaseFold chain.
+/// The backend-independent verifier prefix — stages (1) forest, (2) integer
+/// binding, (3a) eq(ξ) batching + pre-sumcheck, (3b) `R̂(r*)` and `μ`.
+/// Returns the residual claim `(point, μ)` for the opening backend; the
+/// caller finishes with its opener and the read-off.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn verify_int_eval_common(
+    transcript: &mut impl Transcript,
+    forest: &ProductForestProof<Gf>,
+    v: &[u128],
+    presum: &MultiDegreeSumcheckProof<Gf>,
+    p: &IntEvalParams,
+    row_weights: &[u128],
+    alpha: Gf,
+) -> Result<(Vec<Gf>, Gf), IntEvalRsError> {
+    // (1) Forest → shared ρ + leaf claims.
+    let t_w = row_bit_vars(p);
+    let depths = vec![t_w; p.cols()];
+    let vclaims = verify_product_forest(transcript, forest, &depths, &())
+        .map_err(|_| IntEvalRsError::Forest)?;
+    if v.len() != p.cols() || forest.roots.len() != p.cols() {
+        return Err(IntEvalRsError::Forest);
+    }
+    let rho: Vec<Gf> = vclaims.first().map(|(pt, _)| pt.clone()).unwrap_or_default();
+    let leaf_evals: Vec<Gf> = vclaims.iter().map(|(_, e)| *e).collect();
+
+    // (2) Bind the sent integers.
+    if !is_generator(alpha) {
+        return Err(IntEvalRsError::ChallengeNotGenerator);
+    }
+    let max = max_fold_magnitude(v);
+    // ord(α) = 2^128 − 1 = u128::MAX, so `≥` collapses to `==`; keep the
+    // protocol-shaped bound `max < ord(α)` as in `f2_int_eval::verify`.
+    #[allow(clippy::absurd_extreme_comparisons)]
+    if max >= GF128_MULT_ORDER {
+        return Err(IntEvalRsError::Magnitude { max });
+    }
+    for (c, &vc) in v.iter().enumerate() {
+        if gf_pow(alpha, vc) != forest.roots[c] {
+            return Err(IntEvalRsError::RootBinding { c });
+        }
+    }
+
+    // (3a) eq(ξ) batching + pre-sumcheck.
+    let xi: Vec<Gf> = transcript.get_field_challenges(p.s, &());
+    let eq_xi = build_eq_x_r_vec(&xi, &()).expect("s >= 1");
+    let one = Gf::one();
+    let y_xi = leaf_evals
+        .iter()
+        .zip(eq_xi.iter())
+        .fold(Gf::zero(), |acc, (l, e)| acc + *e * (*l - one));
+    let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(transcript, t_w, presum, &())
+        .map_err(|_| IntEvalRsError::PreSumcheck)?;
+    if presum.claimed_sums() != [y_xi] {
+        return Err(IntEvalRsError::PreSumcheck);
+    }
+    let r_star = subclaims.point().to_vec();
+    let expected = subclaims.expected_evaluations()[0];
+
+    // (3b) The verifier's O(2^t·W) step: R̂(r*), then μ = expected / R̂(r*).
+    let r_tbl = row_bit_weights(p, row_weights, alpha, &rho);
+    let eq_rstar = build_eq_x_r_vec(&r_star, &()).expect("t_w >= 1");
+    let r_hat = r_tbl.iter().zip(eq_rstar.iter()).fold(Gf::zero(), |acc, (q, e)| acc + *q * *e);
+    if r_hat.is_zero() {
+        return Err(IntEvalRsError::RHatZero);
+    }
+    let mu = expected * r_hat.inverse();
+
+    let point: Vec<Gf> = r_star.iter().chain(xi.iter()).copied().collect();
+    Ok((point, mu))
+}
+
+/// The merged-forest analogue of [`prove_int_eval_common`]: one lazy
+/// bit-affine merged forest over all `2^s` trees (payload O(Σ(s+k))
+/// instead of `2·2^s·d` K-elements), whose exit point `(z_bj, z_c)`
+/// REPLACES `(ρ, ξ)` — the eq(ξ) batching step dissolves into the forest.
+/// Returns `(merged proof, v, pre-sumcheck, residual claim point)`. The
+/// roots are NOT returned: they are `α^{v_c}` by construction, so the
+/// verifier recomputes them from the sent folds (they never ride the
+/// proof).
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::type_complexity)]
+pub(crate) fn prove_int_eval_merged_common(
+    transcript: &mut impl Transcript,
+    p: &IntEvalParams,
+    rows: &[Vec<u64>],
+    packed_cols: Option<&[Vec<u64>]>,
+    row_weights: &[u128],
+    alpha: Gf,
+) -> (
+    crate::merged_forest::MergedForestProof,
+    Vec<u128>,
+    MultiDegreeSumcheckProof<Gf>,
+    Vec<Gf>,
+) {
+    use crate::pcs::chunk_pow2_table;
+    use crate::merged_forest::prove_merged_forest_lazy;
+    let t_w = row_bit_vars(p);
+    let owned;
+    let packed_cols: &[Vec<u64>] = match packed_cols {
+        Some(pc) => pc,
+        None => {
+            let _g = crate::utils::prof::scope("mc:pack");
+            owned = pack_columns_from_rows(p, rows);
+            &owned
+        }
+    };
+    let pow2 = {
+        let _g = crate::utils::prof::scope("mc:pow2");
+        chunk_pow2_table(p, row_weights, alpha)
+    };
+    let (_roots, mf, z, _e_d) = {
+        let _g = crate::utils::prof::scope("mc:forest");
+        prove_merged_forest_lazy(transcript, p, packed_cols, &pow2)
+    };
+    drop(pow2);
+    let v = {
+        let _g = crate::utils::prof::scope("mc:fold_v");
+        fold_values_bits(p, rows, row_weights)
+    };
+
+    let _g_tbls = crate::utils::prof::scope("mc:presum_tbls");
+    let (z_bj, z_c) = z.split_at(t_w);
+    let eq_zc = build_eq_x_r_vec(z_c, &()).expect("s >= 1");
+    let r_tbl = row_bit_weights(p, row_weights, alpha, z_bj);
+    let m_tbl = xi_combined_rows(p, rows, &eq_zc);
+    drop(_g_tbls);
+
+    let zero_inner = Gf::zero().into_inner();
+    let to_mle = |tbl: &[Gf]| {
+        DenseMultilinearExtension::from_evaluations_vec(
+            t_w,
+            tbl.iter().map(|g| g.into_inner()).collect(),
+            zero_inner,
+        )
+    };
+    let group = MultiDegreeSumcheckGroup::new(
+        2,
+        vec![to_mle(&r_tbl), to_mle(&m_tbl)],
+        Box::new(|vals: &[Gf]| vals[0] * vals[1]),
+    );
+    let (presum, states) = {
+        let _g = crate::utils::prof::scope("mc:presum_run");
+        MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(transcript, vec![group], t_w, &())
+    };
+    let r_star = states[0].randomness.clone();
+
+    // Residual claim point: M̂(r*, z_c) = μ.
+    let point: Vec<Gf> = r_star.iter().chain(z_c.iter()).copied().collect();
+    (mf, v, presum, point)
+}
+
+/// Batched multi-claim analogue of [`prove_int_eval_merged_common`] for
+/// same-shape x-claims: ALL claims run as ONE merged forest
+/// ([`prove_merged_forest_lazy_multi`][crate::merged_forest::prove_merged_forest_lazy_multi],
+/// tree `(n ≪ s) | c`, padded to a power of two with zero-weight dummies
+/// whose leaves are identically 1) and ONE N-group pre-sumcheck under
+/// shared challenges — sharing every layer's round messages and the
+/// per-layer driver floor. All claims exit at ONE shared residual point.
+/// Returns `(merged proof, per-claim folds, presum, shared point)`.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::type_complexity)]
+pub(crate) fn prove_x_claims_batched_common(
+    transcript: &mut impl Transcript,
+    p: &IntEvalParams,
+    claim_rows: &[&[Vec<u64>]],
+    claim_weights: &[&[u128]],
+    alpha: Gf,
+) -> (
+    crate::merged_forest::MergedForestProof,
+    Vec<Vec<u128>>,
+    MultiDegreeSumcheckProof<Gf>,
+    Vec<Gf>,
+) {
+    use crate::pcs::chunk_pow2_table;
+    use crate::merged_forest::prove_merged_forest_lazy_multi;
+    let n_real = claim_rows.len();
+    assert!(n_real >= 1 && n_real == claim_weights.len(), "claim shape");
+    let pad_n = n_real.next_power_of_two();
+    let t_w = row_bit_vars(p);
+
+    // Weight-set dedup: same-point claims share their α-power tables (and,
+    // downstream, the merged forest's τ tables and the presum's q_rowbit).
+    let mut w_reps: Vec<usize> = Vec::new();
+    let w_of: Vec<usize> = claim_weights
+        .iter()
+        .enumerate()
+        .map(|(n, w)| match w_reps.iter().position(|&r| claim_weights[r] == *w) {
+            Some(u) => u,
+            None => {
+                w_reps.push(n);
+                w_reps.len() - 1
+            }
+        })
+        .collect();
+
+    let packed: Vec<Vec<Vec<u64>>> = {
+        let _g = crate::utils::prof::scope("mc:pack");
+        claim_rows.iter().map(|rows| pack_columns_from_rows(p, rows)).collect()
+    };
+    let pow2s: Vec<Vec<Vec<Gf>>> = {
+        let _g = crate::utils::prof::scope("mc:pow2");
+        w_reps.iter().map(|&r| chunk_pow2_table(p, claim_weights[r], alpha)).collect()
+    };
+    // Dummy padding: zero-weight tau chains (all 1 => leaves identically
+    // 1); the bits are irrelevant — reuse claim 0's store.
+    let ones_pow2: Vec<Vec<Gf>> = vec![vec![Gf::one(); p.word_bits]; p.rows()];
+    let mut pairs: Vec<(&[Vec<u64>], &[Vec<Gf>])> = Vec::with_capacity(pad_n);
+    for n in 0..pad_n {
+        if n < n_real {
+            pairs.push((&packed[n], &pow2s[w_of[n]]));
+        } else {
+            pairs.push((&packed[0], &ones_pow2));
+        }
+    }
+    let (_roots, mf, z, _e_d) = {
+        let _g = crate::utils::prof::scope("mc:forest");
+        prove_merged_forest_lazy_multi(transcript, p, &pairs)
+    };
+    let us: Vec<Vec<u128>> = {
+        let _g = crate::utils::prof::scope("mc:fold_v");
+        claim_rows
+            .iter()
+            .zip(claim_weights.iter())
+            .map(|(rows, w)| fold_values_bits(p, rows, w))
+            .collect()
+    };
+
+    let _g_tbls = crate::utils::prof::scope("mc:presum_tbls");
+    let (z_bj, z_cn) = z.split_at(t_w);
+    let (z_clear, z_claim) = z_cn.split_at(p.s);
+    let eq_clear = build_eq_x_r_vec(z_clear, &()).expect("s >= 1");
+    let eq_claim = if z_claim.is_empty() {
+        vec![Gf::one()]
+    } else {
+        build_eq_x_r_vec(z_claim, &()).expect("log N >= 1")
+    };
+    let zero_inner = Gf::zero().into_inner();
+    let to_mle = |tbl: Vec<Gf>| {
+        DenseMultilinearExtension::from_evaluations_vec(
+            t_w,
+            tbl.into_iter().map(|g| g.into_inner()).collect(),
+            zero_inner,
+        )
+    };
+    // One q_rowbit table per UNIQUE weight set; per-claim groups take a
+    // scaled copy.
+    let r_tbls: Vec<Vec<Gf>> =
+        w_reps.iter().map(|&r| row_bit_weights(p, claim_weights[r], alpha, z_bj)).collect();
+    let groups: Vec<MultiDegreeSumcheckGroup<Gf>> = (0..n_real)
+        .map(|n| {
+            let mut r_tbl = r_tbls[w_of[n]].clone();
+            let scale = eq_claim[n];
+            for e in r_tbl.iter_mut() {
+                *e = *e * scale;
+            }
+            let m_tbl = xi_combined_rows(p, claim_rows[n], &eq_clear);
+            MultiDegreeSumcheckGroup::new(
+                2,
+                vec![to_mle(r_tbl), to_mle(m_tbl)],
+                Box::new(|vals: &[Gf]| vals[0] * vals[1]),
+            )
+        })
+        .collect();
+    drop(_g_tbls);
+    let (presum, states) = {
+        let _g = crate::utils::prof::scope("mc:presum_run");
+        MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(transcript, groups, t_w, &())
+    };
+    let r_star = states[0].randomness.clone();
+
+    // Shared residual point: every claim's M-hat_n(r*, z_clear) = mu_n.
+    let point: Vec<Gf> = r_star.iter().chain(z_clear.iter()).copied().collect();
+    (mf, us, presum, point)
+}
+
+/// Verifier of [`prove_x_claims_batched_common`]: recompute the `N·2^s`
+/// roots from the per-claim folds (dummy trees are 1), verify the ONE
+/// merged forest and the ONE N-group pre-sumcheck (`Σ_n σ_n = e_d + 1`),
+/// and extract the per-claim residuals
+/// `μ_n = expected_n / (eq(n, z_claim)·R-hat_n(r*))` at the SHARED point.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn verify_x_claims_batched_common(
+    transcript: &mut impl Transcript,
+    mf: &crate::merged_forest::MergedForestProof,
+    claim_us: &[&[u128]],
+    presum: &MultiDegreeSumcheckProof<Gf>,
+    p: &IntEvalParams,
+    claim_weights: &[&[u128]],
+    alpha: Gf,
+) -> Result<(Vec<Gf>, Vec<Gf>), IntEvalRsError> {
+    use crate::pcs::FixedBasePow;
+    use crate::merged_forest::verify_merged_forest;
+    let n_real = claim_us.len();
+    if n_real == 0 || n_real != claim_weights.len() {
+        return Err(IntEvalRsError::Forest);
+    }
+    let pad_n = n_real.next_power_of_two();
+    let log_n = pad_n.trailing_zeros() as usize;
+    let t_w = row_bit_vars(p);
+    let one = Gf::one();
+
+    if !is_generator(alpha) {
+        return Err(IntEvalRsError::ChallengeNotGenerator);
+    }
+    for us in claim_us {
+        if us.len() != p.cols() {
+            return Err(IntEvalRsError::Forest);
+        }
+        let max = max_fold_magnitude(us);
+        #[allow(clippy::absurd_extreme_comparisons)]
+        if max >= GF128_MULT_ORDER {
+            return Err(IntEvalRsError::Magnitude { max });
+        }
+    }
+    let comb = FixedBasePow::new(alpha, 128, 8);
+    let mut roots = Vec::with_capacity(pad_n << p.s);
+    for n in 0..pad_n {
+        if n < n_real {
+            roots.extend(claim_us[n].iter().map(|&u| comb.pow(u)));
+        } else {
+            roots.extend(core::iter::repeat(one).take(p.cols()));
+        }
+    }
+    let (z, e_d) = verify_merged_forest(transcript, &roots, mf, t_w, p.s.wrapping_add(log_n))
+        .map_err(|_| IntEvalRsError::Forest)?;
+
+    let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(transcript, t_w, presum, &())
+        .map_err(|_| IntEvalRsError::PreSumcheck)?;
+    let sums = presum.claimed_sums();
+    if sums.len() != n_real {
+        return Err(IntEvalRsError::PreSumcheck);
+    }
+    let total = sums.iter().fold(Gf::zero(), |a, &b| a + b);
+    if total != e_d + one {
+        return Err(IntEvalRsError::PreSumcheck);
+    }
+
+    let (z_bj, z_cn) = z.split_at(t_w);
+    let (z_clear, z_claim) = z_cn.split_at(p.s);
+    let eq_claim = if z_claim.is_empty() {
+        vec![one]
+    } else {
+        build_eq_x_r_vec(z_claim, &()).expect("log N >= 1")
+    };
+    let r_star = subclaims.point().to_vec();
+    let eq_rstar = build_eq_x_r_vec(&r_star, &()).expect("t_w >= 1");
+    // The O(2^{t'}) q_rowbit tables: one per UNIQUE weight set (same-point
+    // claims share theirs), in parallel across the unique sets.
+    let mut w_reps: Vec<usize> = Vec::new();
+    let w_of: Vec<usize> = claim_weights
+        .iter()
+        .enumerate()
+        .map(|(n, w)| match w_reps.iter().position(|&r| claim_weights[r] == *w) {
+            Some(u) => u,
+            None => {
+                w_reps.push(n);
+                w_reps.len() - 1
+            }
+        })
+        .collect();
+    let r_hats: Vec<Gf> = cfg_into_iter!(w_reps)
+        .map(|r| {
+            let r_tbl = row_bit_weights(p, claim_weights[r], alpha, z_bj);
+            r_tbl.iter().zip(eq_rstar.iter()).fold(Gf::zero(), |acc, (q, e)| acc + *q * *e)
+        })
+        .collect();
+    let mut mus = Vec::with_capacity(n_real);
+    for (n, expected) in subclaims.expected_evaluations().iter().enumerate() {
+        let denom = eq_claim[n] * r_hats[w_of[n]];
+        if denom.is_zero() {
+            return Err(IntEvalRsError::RHatZero);
+        }
+        mus.push(*expected * denom.inverse());
+    }
+
+    let point: Vec<Gf> = r_star.iter().chain(z_clear.iter()).copied().collect();
+    Ok((point, mus))
+}
+
+/// The merged-forest analogue of [`verify_int_eval_common`]: RECOMPUTE the
+/// roots `α^{v_c}` from the sent integers (they never ride the proof — the
+/// Fiat–Shamir absorb of the recomputed roots IS the binding: a prover
+/// whose forest ran against different roots diverges the transcript and
+/// fails the layer checks), verify the merged forest, check the
+/// pre-sumcheck against the forest exit claim `e_d − 1`, and return the
+/// residual claim `(point, μ)` for the opening backend.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn verify_int_eval_merged_common(
+    transcript: &mut impl Transcript,
+    mf: &crate::merged_forest::MergedForestProof,
+    v: &[u128],
+    presum: &MultiDegreeSumcheckProof<Gf>,
+    p: &IntEvalParams,
+    row_weights: &[u128],
+    alpha: Gf,
+) -> Result<(Vec<Gf>, Gf), IntEvalRsError> {
+    use crate::pcs::FixedBasePow;
+    use crate::merged_forest::verify_merged_forest;
+    let t_w = row_bit_vars(p);
+    if v.len() != p.cols() {
+        return Err(IntEvalRsError::Forest);
+    }
+
+    // (1) Bind the sent integers: range first (injectivity of the exponent
+    // map), then roots := α^{v_c} by construction.
+    if !is_generator(alpha) {
+        return Err(IntEvalRsError::ChallengeNotGenerator);
+    }
+    let max = max_fold_magnitude(v);
+    // ord(α) = 2^128 − 1 = u128::MAX, so `≥` collapses to `==`; keep the
+    // protocol-shaped bound `max < ord(α)` as in `f2_int_eval::verify`.
+    #[allow(clippy::absurd_extreme_comparisons)]
+    if max >= GF128_MULT_ORDER {
+        return Err(IntEvalRsError::Magnitude { max });
+    }
+    let comb = FixedBasePow::new(alpha, 128, 8);
+    let roots: Vec<Gf> = v.iter().map(|&vc| comb.pow(vc)).collect();
+
+    // (2) Merged forest against the recomputed roots → exit point
+    // (z_bj, z_c) + exit eval e_d.
+    let (z, e_d) = verify_merged_forest(transcript, &roots, mf, t_w, p.s)
+        .map_err(|_| IntEvalRsError::Forest)?;
+
+    // (3a) Pre-sumcheck against the forest exit claim: for the bit-affine
+    // leaves `1 + M·(A−1)`, `Σ eq·M·A = e_d − 1` (`= e_d + 1` in char 2).
+    let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(transcript, t_w, presum, &())
+        .map_err(|_| IntEvalRsError::PreSumcheck)?;
+    let one = Gf::one();
+    if presum.claimed_sums() != [e_d + one] {
+        return Err(IntEvalRsError::PreSumcheck);
+    }
+    let (z_bj, z_c) = z.split_at(t_w);
+    let r_star = subclaims.point().to_vec();
+    let expected = subclaims.expected_evaluations()[0];
+
+    // (3b) The verifier's O(2^t·W) step: R̂(r*), then μ = expected / R̂(r*).
+    let r_tbl = row_bit_weights(p, row_weights, alpha, z_bj);
+    let eq_rstar = build_eq_x_r_vec(&r_star, &()).expect("t_w >= 1");
+    let r_hat = r_tbl.iter().zip(eq_rstar.iter()).fold(Gf::zero(), |acc, (q, e)| acc + *q * *e);
+    if r_hat.is_zero() {
+        return Err(IntEvalRsError::RHatZero);
+    }
+    let mu = expected * r_hat.inverse();
+
+    let point: Vec<Gf> = r_star.iter().chain(z_c.iter()).copied().collect();
+    Ok((point, mu))
+}
+
+// ---------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------
+
+#[cfg(test)]
+#[allow(clippy::arithmetic_side_effects)]
+mod tests {
+    use super::*;
+
+    fn sample(seed: u64) -> Gf {
+        let hi = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(29) ^ 0x1234_5678_9ABC_DEF0;
+        Gf::from_words([seed ^ 0xA5A5_5A5A_0F0F_F0F0, hi])
+    }
+
+    /// `rows_from_packed_cols` inverts `pack_columns_from_rows` exactly
+    /// (incl. non-multiple-of-64 column counts).
+    #[test]
+    fn packed_cols_row_roundtrip() {
+        for (t, s, w) in [(7usize, 3usize, 1usize), (8, 6, 1), (7, 4, 2)] {
+            let p = IntEvalParams { t, s, word_bits: w };
+            let log_w = w.trailing_zeros() as usize;
+            let row_len = p.rows() << log_w;
+            let words = row_len.div_ceil(64);
+            let rows: Vec<Vec<u64>> = (0..p.cols())
+                .map(|c| {
+                    (0..words)
+                        .map(|wd| {
+                            (c as u64 + 3)
+                                .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                                .wrapping_add(wd as u64)
+                                .rotate_left((c + wd) as u32 & 63)
+                        })
+                        .collect()
+                })
+                .collect();
+            let packed = pack_columns_from_rows(&p, &rows);
+            let back = rows_from_packed_cols(&p, &packed);
+            assert_eq!(rows, back, "(t={t},s={s},W={w})");
+        }
+    }
+
+    #[test]
+    fn tensor_eval_matches_bruteforce_and_table() {
+        let m_p = 5usize;
+        let chals: Vec<Gf> = (0..m_p).map(|i| sample(0x11 + i as u64)).collect();
+        let r_hi: Vec<Gf> = (0..m_p).map(|i| sample(0x22 + i as u64)).collect();
+        let r2: Vec<Gf> = (0..LOG_PACKING).map(|i| sample(0x33 + i as u64)).collect();
+        let eq_r2 = build_eq_x_r_vec(&r2, &()).expect("r2");
+        let eq_hi = build_eq_x_r_vec(&r_hi, &()).expect("hi");
+
+        // Brute force: Σ_y eq(y, chals)·Φ(eq_hi[y]).
+        let eq_ch = build_eq_x_r_vec(&chals, &()).expect("ch");
+        let mut brute = Gf::zero();
+        for y in 0..(1usize << m_p) {
+            let w = eq_hi[y].words();
+            let mut phi = Gf::zero();
+            for u in 0..128usize {
+                if (w[u >> 6] >> (u & 63)) & 1 == 1 {
+                    phi += eq_r2[u];
+                }
+            }
+            brute += eq_ch[y] * phi;
+        }
+        let fast = tensor_eq_phi_eval(&chals, &r_hi, &eq_r2);
+        assert_eq!(fast, brute, "tensor eval ≠ brute force");
+
+        // And equals the MLE of the prover-side B table at chals.
+        let b_tbl: Vec<Gf> = eq_hi
+            .iter()
+            .map(|ev| {
+                let w = ev.words();
+                let mut acc = Gf::zero();
+                for u in 0..128usize {
+                    if (w[u >> 6] >> (u & 63)) & 1 == 1 {
+                        acc += eq_r2[u];
+                    }
+                }
+                acc
+            })
+            .collect();
+        assert_eq!(mle_eval(&b_tbl, &chals), fast, "B-table MLE ≠ tensor eval");
+    }
+
+    /// The Ligerito residual-block hook agrees with per-point tensor evals
+    /// at every boolean tail (tail bit j ↔ coordinate prefix.len()+j).
+    #[test]
+    fn residual_b_evals_matches_pointwise() {
+        let (pre_len, yr) = (4usize, 3usize);
+        let m_p = pre_len + yr;
+        let prefix: Vec<Gf> = (0..pre_len).map(|i| sample(0x51 + i as u64)).collect();
+        let r_hi: Vec<Gf> = (0..m_p).map(|i| sample(0x61 + i as u64)).collect();
+        let r2: Vec<Gf> = (0..LOG_PACKING).map(|i| sample(0x71 + i as u64)).collect();
+        let eq_r2 = build_eq_x_r_vec(&r2, &()).expect("r2");
+
+        let block = residual_b_evals(&prefix, yr, &r_hi, &eq_r2);
+        assert_eq!(block.len(), 1usize << yr);
+        for y in 0..(1usize << yr) {
+            let mut point = prefix.clone();
+            for j in 0..yr {
+                point.push(if (y >> j) & 1 == 1 { Gf::one() } else { Gf::zero() });
+            }
+            assert_eq!(
+                block[y],
+                tensor_eq_phi_eval(&point, &r_hi, &eq_r2),
+                "residual block mismatch at y={y}"
+            );
+        }
+    }
+
+}

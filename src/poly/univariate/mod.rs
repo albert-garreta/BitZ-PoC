@@ -15,7 +15,7 @@ pub mod nat_evaluation;
 /// `F_2`-style XOR with no overflow notion (`1 + 1 = 0`).
 ///
 /// Use this trait wherever the intended arithmetic is `F_2` (e.g. an
-/// RAA encoder operating over `F_2[X]/<X^D>`).
+/// `F_2` linear-code encoder operating over `F_2[X]/<X^D>`).
 pub trait F2AddAssign {
     fn f2_add_assign(&mut self, rhs: &Self);
 }
@@ -31,7 +31,7 @@ pub trait F2AddAssign {
 /// committing to either variant of `BinaryPoly`.
 ///
 /// Requires `D ≤ 64`. Impls panic if the type is constructed with
-/// larger `D`. (We do not currently target the F_2-RAA fast path
+/// larger `D`. (We do not currently target the `F_2` fast path
 /// for wider cells.)
 pub trait F2PackU64: Sized {
     fn pack_u64(&self) -> u64;

@@ -1,29 +1,48 @@
 //! # F2Z — an integer-MLE-evaluation PCS over an `F_2` commitment
 //!
-//! F2Z proves `MLE[INT(D)](r) = y ∈ F_q` for data `D` committed with a
-//! cheap characteristic-2 (`F_2`-RAA Brakedown) commitment, by folding
-//! the row variables **in the exponent** of `K = GF(2^128)`
-//! (`α^{v_c} = ∏_b α^{w_b·D[(b,c)]}`, certified by a GKR grand-product
-//! forest that touches the commitment only through `K`-linear queries)
-//! and reading the column combination off in the clear over `F_q`.
-//! Construction due to Lev Soukhanov (char2-fieldswitch §9); this crate
-//! is the standalone extraction of the most-optimized implementation
-//! from the `zinc-plus` repository (branch `f2-int-unified-ligerito`).
+//! F2Z proves `MLE[INT(D)](r) = y ∈ F_q` for data `D` committed over a
+//! cheap characteristic-2 (`F_2`) code, by folding the row variables **in
+//! the exponent** of `K = GF(2^128)` (`α^{v_c} = ∏_b α^{w_b·D[(b,c)]}`,
+//! certified by a GKR grand-product forest that touches the commitment only
+//! through `K`-linear queries) and reading the column combination off in the
+//! clear over `F_q`. Construction due to Lev Soukhanov (char2-fieldswitch §9);
+//! this crate is the standalone extraction of the most-optimized
+//! implementation from the `zinc-plus` repository (branch
+//! `f2-int-unified-ligerito`).
 //!
-//! Entry points: [`pcs::commit_bits`], [`pcs::prove_mle_eval_mod_q`],
-//! [`pcs::verify_mle_eval_mod_q`] (and the plain integer-evaluation
-//! pair [`pcs::prove`] / [`pcs::verify`], plus the batched variants).
-//! See `docs/DESIGN.md` for the protocol and the optimization history.
+//! ## Opener
+//!
+//! The **only** PCS opener is the flock-backed **ring-switch + recursive
+//! Ligerito** pipeline ([`ligerito_flock`]): the committed bit-matrix is
+//! packed 128 bits per `GF(2^128)` element and RS-encoded/Merkleized by
+//! [`flock-core`](flock_core); each mod-`q` limb chunk contributes a
+//! [merged product forest][merged_forest] + a de-black-boxing pre-sumcheck,
+//! and the L chunk claims are `η`-batched into ONE recursive Ligerito call
+//! whose closing residual is evaluated succinctly by the ring-switch
+//! tensor-algebra ([`ligerito::tensor_eq_phi_eval`]).
+//!
+//! Entry points: [`ligerito_flock::commit_rs_flock`] /
+//! [`ligerito_flock::commit_rs_flock_with`],
+//! [`ligerito_flock::prove_mle_eval_mod_q_ligerito`],
+//! [`ligerito_flock::verify_mle_eval_mod_q_ligerito`], with the proof object
+//! [`ligerito_flock::IntEvalRsLigModQProof`] and its
+//! [`to_bytes`][ligerito_flock::IntEvalRsLigModQProof::to_bytes] /
+//! [`from_bytes`][ligerito_flock::IntEvalRsLigModQProof::from_bytes] host
+//! codec. See `docs/DESIGN.md` for the protocol and the serialization format.
 
-pub mod code;
-pub mod merkle;
+pub mod ligerito;
+pub mod ligerito_flock;
+pub mod merged_forest;
 pub mod pcs;
 pub mod piop;
 pub mod poly;
+pub mod proof_codec;
 pub mod transcript;
 pub mod utils;
 
-pub use pcs::{
-    IntEvalParams, commit_bits, prove, prove_mle_eval_mod_q, verify, verify_mle_eval_mod_q,
+pub use ligerito_flock::{
+    FlockRsError, IntEvalRsLigModQProof, LigConfig, commit_rs_flock, commit_rs_flock_with,
+    lig_configs, prove_mle_eval_mod_q_ligerito, verify_mle_eval_mod_q_ligerito,
 };
+pub use pcs::IntEvalParams;
 pub use poly::univariate::binary_gf128::BinaryFieldGF128;
