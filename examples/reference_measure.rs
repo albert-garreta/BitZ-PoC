@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use f2z::ligerito::packed_vars;
 use f2z::ligerito_flock::{
-    LigConfig, commit_rs_flock_with, lig_configs, prove_mle_eval_mod_q_ligerito,
+    commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, sha_lig_configs,
     verify_mle_eval_mod_q_ligerito,
 };
 use f2z::pcs::{IntEvalParams, mod_q_num_chunks, smallest_generator};
@@ -60,12 +60,33 @@ fn measure(t: usize, s: usize, w: usize, reps: usize) {
     let p = IntEvalParams { t, s, word_bits: w };
     let m_p = packed_vars(&p);
     let lch = mod_q_num_chunks(&p, q_bits);
-    let (pc, vc) =
-        lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 }).expect("lig cfg");
+    // The library's audited config boundary (embedded FAST at m ≥ 22).
+    let (pc, vc) = sha_lig_configs(m_p).expect("lig cfg");
 
+    // Instance generated straight into the per-column bit rows — the
+    // u128 cell tensor never exists (the memory-honest commit path).
     let mask = if w >= 128 { u128::MAX } else { (1u128 << w) - 1 };
-    let data: Vec<u128> =
-        (0..p.cells()).map(|i| (i as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & mask).collect();
+    let cell = |b: usize, c: usize| -> u128 {
+        (p.cell_index(b, c) as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & mask
+    };
+    let log_w = w.trailing_zeros() as usize;
+    let row_len = p.rows() << log_w;
+    let words = row_len.div_ceil(64);
+    let rows: Vec<Vec<u64>> = (0..p.cols())
+        .map(|c| {
+            let mut wv = vec![0u64; words];
+            for b in 0..p.rows() {
+                let v = cell(b, c);
+                for j in 0..w {
+                    if (v >> j) & 1 == 1 {
+                        let i = (b << log_w) | j;
+                        wv[i >> 6] |= 1u64 << (i & 63);
+                    }
+                }
+            }
+            wv
+        })
+        .collect();
     let rw_q: Vec<u128> = (0..p.rows())
         .map(|b| {
             (b as u128)
@@ -77,16 +98,25 @@ fn measure(t: usize, s: usize, w: usize, reps: usize) {
     let cw: Vec<Fq> = (0..p.cols())
         .map(|c| Fq::from(((c as u128).wrapping_mul(5) & 7).wrapping_add(1)))
         .collect();
+    let rw_fq: Vec<Fq> = rw_q.iter().map(|&x| Fq::from(x)).collect();
     let mut y = Fq::from(0u128);
-    for c in 0..p.cols() {
+    for (c, row) in rows.iter().enumerate() {
         let mut vc_acc = Fq::from(0u128);
-        for b in 0..p.rows() {
-            vc_acc = vc_acc + Fq::from(rw_q[b]) * Fq::from(data[p.cell_index(b, c)]);
+        for (wi, &word) in row.iter().enumerate() {
+            let mut bits = word;
+            while bits != 0 {
+                let bit = bits.trailing_zeros() as usize;
+                bits &= bits - 1;
+                let i = (wi << 6) | bit;
+                let (b, j) = (i >> log_w, i & (w - 1));
+                let term = if j == 0 { rw_fq[b] } else { rw_fq[b] * Fq::from(1u128 << j) };
+                vc_acc = vc_acc + term;
+            }
         }
         y = y + cw[c] * vc_acc;
     }
 
-    let hint = commit_rs_flock_with(&p, &data, pc.log_inv_rates[0], pc.initial_k);
+    let hint = commit_rs_ligerito_rows(&p, rows, &pc);
 
     let mut prove_ms = Vec::new();
     let mut verify_ms = Vec::new();

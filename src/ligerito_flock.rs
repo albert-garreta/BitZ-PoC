@@ -269,6 +269,21 @@ pub fn commit_rs_flock_with(
     commit_rs_flock_from_rows(p, rows, packed_cols, log_inv_rate, log_batch)
 }
 
+/// Commit starting from per-column bit rows (the [`repack_leaf_bits`]
+/// layout: bit `i = (b<<log₂W)|j` of row `c` = bit `j` of cell `(b,c)`,
+/// 64 bits per word) — the column-lane packing is built here and the
+/// `u128` cell tensor never exists. This is the memory-honest entry for
+/// harnesses/hosts that can produce bits directly: peak stays at the
+/// packed scale (`2^n/8` bytes per store) instead of 16 B per cell.
+pub fn commit_rs_ligerito_rows(
+    p: &IntEvalParams,
+    rows: Vec<Vec<u64>>,
+    pc: &LigProverConfig,
+) -> FlockCommitHint {
+    let packed_cols = crate::ligerito::pack_columns_from_rows(p, &rows);
+    commit_rs_flock_from_rows(p, rows, packed_cols, pc.log_inv_rates[0], pc.initial_k)
+}
+
 /// Commit starting from the 64-column-lane packed store (the layout
 /// `sha_f2_packed_cols` builds on the host SHA path) — the per-column rows
 /// are rebuilt by 64×64 bit-transposes; the `u128` cell tensor never

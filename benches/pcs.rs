@@ -30,7 +30,7 @@ use std::time::Instant;
 
 use f2z::ligerito::packed_vars;
 use f2z::ligerito_flock::{
-    commit_rs_flock_with, prove_mle_eval_mod_q_ligerito, sha_lig_configs,
+    commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, sha_lig_configs,
     verify_mle_eval_mod_q_ligerito,
 };
 use f2z::pcs::{IntEvalParams, mod_q_num_chunks, smallest_generator};
@@ -130,10 +130,33 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     // 292 s adhoc vs the embedded profile's sub-second).
     let (pc, vc) = sha_lig_configs(m_p).expect("lig cfg");
 
-    // Deterministic non-degenerate instance (mirrors examples/reference_measure).
+    // Deterministic non-degenerate instance, generated STRAIGHT INTO the
+    // per-column bit rows (`repack_leaf_bits` layout: bit `(b<<log₂W)|j`
+    // of row `c` = bit `j` of cell `(b,c)`) — the `u128` cell tensor
+    // (16 B per cell; 17 GB at n=30) never exists, mirroring the
+    // upstream packed-transpose commit restructure.
     let mask = if w >= 128 { u128::MAX } else { (1u128 << w) - 1 };
-    let data: Vec<u128> =
-        (0..p.cells()).map(|i| (i as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & mask).collect();
+    let cell = |b: usize, c: usize| -> u128 {
+        (p.cell_index(b, c) as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & mask
+    };
+    let log_w = w.trailing_zeros() as usize;
+    let row_len = p.rows() << log_w;
+    let words = row_len.div_ceil(64);
+    let rows: Vec<Vec<u64>> = (0..p.cols())
+        .map(|c| {
+            let mut wv = vec![0u64; words];
+            for b in 0..p.rows() {
+                let v = cell(b, c);
+                for j in 0..w {
+                    if (v >> j) & 1 == 1 {
+                        let i = (b << log_w) | j;
+                        wv[i >> 6] |= 1u64 << (i & 63);
+                    }
+                }
+            }
+            wv
+        })
+        .collect();
     let rw_q: Vec<u128> = (0..p.rows())
         .map(|b| {
             (b as u128)
@@ -145,11 +168,22 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     let cw: Vec<Fq> = (0..p.cols())
         .map(|c| Fq::from(((c as u128).wrapping_mul(5) & 7).wrapping_add(1)))
         .collect();
+    // Claimed y from the SET BITS of the rows (O(popcount) field adds,
+    // not O(2^n) muls): cell(b,c) contributes rw[b]·2^j per set bit j.
+    let rw_fq: Vec<Fq> = rw_q.iter().map(|&x| Fq::from(x)).collect();
     let mut y = Fq::from(0u128);
-    for c in 0..p.cols() {
+    for (c, row) in rows.iter().enumerate() {
         let mut acc = Fq::from(0u128);
-        for b in 0..p.rows() {
-            acc = acc + Fq::from(rw_q[b]) * Fq::from(data[p.cell_index(b, c)]);
+        for (wi, &word) in row.iter().enumerate() {
+            let mut bits = word;
+            while bits != 0 {
+                let bit = bits.trailing_zeros() as usize;
+                bits &= bits - 1;
+                let i = (wi << 6) | bit;
+                let (b, j) = (i >> log_w, i & (w - 1));
+                let term = if j == 0 { rw_fq[b] } else { rw_fq[b] * Fq::from(1u128 << j) };
+                acc = acc + term;
+            }
         }
         y = y + cw[c] * acc;
     }
@@ -163,7 +197,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     // Commit: timed + its own peak window (the commitment/hint stays live).
     reset_peak();
     let t0 = Instant::now();
-    let hint = commit_rs_flock_with(&p, &data, pc.log_inv_rates[0], pc.initial_k);
+    let hint = commit_rs_ligerito_rows(&p, rows, &pc);
     let commit_ms = t0.elapsed().as_secs_f64() * 1e3;
     println!(
         "  commit:  {commit_ms:8.2} ms   peak {:8.2} MB   live-after {:6.2} MB",
@@ -249,16 +283,15 @@ fn main() {
 
     let reps: usize = std::env::var("F2Z_BENCH_REPS").ok().and_then(|v| v.parse().ok()).unwrap_or(5);
     // Default sweep: the reference W=1 shapes (t ≈ 0.6n, s small — the
-    // proof-size-friendly split) + the 2-chunk W=32 regime, extended
-    // through n = 28. Measured peaks (M4): n=26 ≈ 1.4 GB, n=28 ≈ 5.4 GB
-    // — the commit path currently RETAINS ~16 B per committed bit (a
-    // dense K-element per bit; upstream zinc-plus holds ~4–6× less at
-    // the same n via its packed-transpose commit — porting that is the
-    // open item, see README). Until then the n = 30 (~17 GB) and
-    // n = 32 (~68 GB) shapes DO NOT FIT a 16 GB box; they are wired as
-    // opt-in knob shapes for bigger machines:
-    //   F2Z_BENCH_SHAPES="18:12:1"   # n = 30
-    //   F2Z_BENCH_SHAPES="19:13:1"   # n = 32
+    // proof-size-friendly split) + the 2-chunk W=32 regime, through
+    // n = 28. The instance is generated straight into bit rows and
+    // committed via `commit_rs_ligerito_rows` — no u128 cell tensor —
+    // so peaks are the packed/forest scale (measured, M4: n=26 prove
+    // peak 330 MB · n=28 1.28 GB · n=30 4.99 GB). n = 30/32 stay OUT
+    // of the default sweep for time, not memory (n=30 proves ~15 s on
+    // a 16 GB box, memory-pressure-shaded); run them per process:
+    //   F2Z_BENCH_SHAPES="18:12:1"                        # n = 30, ~5 GB
+    //   F2_FOREST_SCHEDULE=l8 F2Z_BENCH_SHAPES="19:13:1"  # n = 32, ~12 GB class
     // At n ≥ 26 run one shape per process for quotable numbers.
     let default_shapes: Vec<(usize, usize, usize)> = vec![
         (10, 6, 1),

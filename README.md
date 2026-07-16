@@ -177,18 +177,27 @@ for quotable *time* numbers at big shapes run one shape per process (the peak
 numbers reset per shape and are fine in one sweep); quote medians and expect
 ±5–15 % run-to-run spread.
 
-**Big-shape status / open item.** The commit path currently materializes and
-retains ~16 B per committed **bit** (a dense `Gf` per bit — peak ≈ `2^n · 16 B`),
-which is 4–6× what upstream zinc-plus holds at the same `n` via its
-packed-transpose commit (its 2026-07-11 "direct packed transpose" restructure
-was not carried by the extraction). Until that is ported, **n = 30 (~17 GB
-peak) and n = 32 (~68 GB) do not fit a 16 GB machine**; the shapes are wired
-as opt-in knobs for larger boxes (`F2Z_BENCH_SHAPES="18:12:1"` / `"19:13:1"`).
-After the port they project to the ~5 GB / ~9 GB class (`F2_FOREST_SCHEDULE=l8`
-halves the forest share). The bench derives its Ligerito config from the
-library's `sha_lig_configs` boundary (embedded FAST profile at `m ≥ 22`);
-hardcoding the tiny ad-hoc config at big shapes is catastrophic (n=28 commit
-measured 292 s ad-hoc vs 7.9 s embedded).
+**Big shapes (n = 30, 32) — packed-rows commit.** The harnesses generate the
+instance straight into per-column bit rows and commit via
+`commit_rs_ligerito_rows` — the `u128` cell tensor (16 B per cell) never
+exists, so peak memory sits at the packed/forest scale. Measured (M4, 16 GB,
+one shape per process):
+
+| n | commit | prove | verify | proof | prove peak |
+|---|---|---|---|---|---|
+| 26 | 6.9 ms | 228 ms | 3.1 ms | 347 KiB | 330 MB |
+| 28 | 36 ms | 1.03 s | 4.2 ms | 400 KiB | 1.28 GB |
+| 30 | 151 ms | 15.6 s | 16.6 ms | 466 KiB | 4.99 GB |
+| 32 (`F2_FOREST_SCHEDULE=l8`) | 630 ms | 54.3 s | 18.8 ms | 574 KiB | 11.5 GB |
+
+(The pre-restructure dense path held ~16 B/bit — e.g. 4.28 GB and a 7.9 s
+commit at n=28 — and could not reach n ≥ 30 on 16 GB at all. n ≥ 30 prove
+times are memory-pressure-shaded on a 16 GB box; the forest dominates the
+peak, so `F2_FOREST_SCHEDULE=l8` — required at n=32 — halves its share for
++5–13 % prove.) The bench derives its Ligerito config from the library's
+`sha_lig_configs` boundary (embedded FAST profile at `m ≥ 22`); hardcoding
+the tiny ad-hoc config at big shapes is catastrophic (n=28 commit measured
+292 s ad-hoc vs 36 ms embedded).
 
 ## Layout
 
