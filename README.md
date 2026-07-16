@@ -149,11 +149,20 @@ codec round-trip time, and **peak heap** per phase — the live-heap high-water
 `f2_int_ligerito_mem`, so the numbers compare directly across the three repos.
 
 ```sh
-RUSTFLAGS="-C target-cpu=native" cargo bench --bench pcs
+RUSTFLAGS="-C target-cpu=native" cargo bench --bench pcs --features unchecked
 # specific shapes (t:s:W triples) and rep count:
 F2Z_BENCH_SHAPES="10:6:1 14:8:1" F2Z_BENCH_REPS=5 \
-  RUSTFLAGS="-C target-cpu=native" cargo bench --bench pcs
+  RUSTFLAGS="-C target-cpu=native" cargo bench --bench pcs --features unchecked
 ```
+
+Performance parity with upstream: the release profile carries the upstream
+`lto = true` / `codegen-units = 1` (without them the vendored field kernels
+lose cross-unit inlining — measured ~1.2–1.5× slower), and `--features
+unchecked` mirrors the upstream bench convention (plain integer ops; the
+default build keeps overflow guards). At a matched shape (n=22, t=13, s=9,
+single mod-q claim, same box, interleaved runs) F2Z proves in **20.9 ms** vs
+the upstream 2-col Base arm's **18.2–18.8 ms** — within ~1.1×, the residual
+being harness and layout differences rather than the PCS.
 
 Sample (Apple M4; default sweep n=16/18/20/22/26/28 at W=1 + the 2-chunk
 W=32 shape):

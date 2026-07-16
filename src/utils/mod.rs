@@ -13,8 +13,10 @@ pub mod wide_mul;
 use crypto_primitives::Semiring;
 
 // Can't use enums in const generics in stable Rust yet, so we use constants
-// instead.
-pub const CHECKED: bool = true;
+// instead. `CHECKED` honours the `unchecked` feature (the zinc-plus
+// convention: overflow-guarded integer ops by default, plain ops when the
+// consumer opts in).
+pub const CHECKED: bool = cfg!(not(feature = "unchecked"));
 pub const UNCHECKED: bool = false;
 
 /// Returns ceil(log2(x)).

@@ -39,3 +39,10 @@ harness = false
 default = ["parallel"]
 parallel = ["dep:rayon"]
 unchecked = []
+
+# Match the upstream zinc-plus release profile — without fat LTO +
+# codegen-units=1 the vendored field kernels and the sumcheck driver lose
+# cross-unit inlining, measured ~1.2-1.5x slower at matched shapes.
+[profile.release]
+lto = true
+codegen-units = 1
