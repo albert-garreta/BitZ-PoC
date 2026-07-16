@@ -205,6 +205,27 @@ packed/forest scale. (The pre-restructure dense path held ~16 B/bit —
 4.28 GB and a 7.9 s commit at n=28 — and could not reach n ≥ 30 on 16 GB
 at all; the pre-LTO build was a further ~1.7–3× slower at the big shapes.)
 
+### The b127 field study (`GF(2^127)`)
+
+`benches/field.rs` benches the GHASH field head-to-head against
+`GF(2^127)` mod `X^127 + X + 1` ("b127", after Reilabs'
+`ghash-powers-bench`) on the prover's hot patterns:
+
+```sh
+RUSTFLAGS="-C target-cpu=native" cargo bench --bench field --features unchecked
+```
+
+The field module (`src/poly/univariate/binary_b127.rs`) mirrors the
+`GF(2^128)` pipeline (NEON-resident, wide accumulators, fused eqf kernels)
+with a PMULL-free SRI trinomial reduction, and its multiplicative group has
+prime (Mersenne `M_127`) order — every `α ∉ {0,1}` generates. Measured on
+M4: **1.30×** on batch multiply throughput, parity on dependent chains,
+0.88–0.95× on latency-bound patterns (squares, comb powers, eqf kernels) —
+net ~1.0–1.1× if a prover ran on it. A protocol-level swap is
+architecturally blocked at the ring-switch (`[K:F₂] = 2^7` packing) and
+flock's GHASH-native Ligerito; the full analysis and numbers are in
+[`docs/b127-field.md`](docs/b127-field.md).
+
 **The 16 GB ceiling is n = 32.** The peak is forest-dominated
 (`F2_FOREST_SCHEDULE=l8` ⇒ ~`2^n · 2 B` for the forest + ~`2^n · 0.7 B`
 retained by the commit hint): n=33 needs ≈ 22 GB, n=34 ≈ 40 GB, n=36 ≈
@@ -225,9 +246,10 @@ so the statement scales — prover RAM is the only wall.
 | `src/merged_forest.rs` | The lazy merged GKR grand-product forest (L/4 default; L/8 via `F2_FOREST_SCHEDULE=l8`) |
 | `src/proof_codec.rs` | The host proof-stream byte codec (§ *Proof-stream serialization*) |
 | `src/piop/` | The eq-factored & multi-degree sumcheck drivers + the GKR product forest |
-| `src/poly/` | `GF(2^128)` (NEON pipeline), bit-packed `F₂[X]` cells, MLE/eq utilities |
+| `src/poly/` | `GF(2^128)` and `GF(2^127)` (NEON pipelines), bit-packed `F₂[X]` cells, MLE/eq utilities |
 | `src/transcript/` | Blake3 Fiat–Shamir transcript + the `Transcribable` codec |
 | `docs/DESIGN.md` | Protocol description, soundness chain, serialization format |
+| `docs/b127-field.md` | The `GF(2^127)` field study: boundary analysis, head-to-head measurements |
 | `docs/verifier-note/` | LaTeX note: the mod-q verifier line by line (Ligerito as a black box); build with `latexmk -pdf` |
 
 ## Caveats

@@ -35,6 +35,13 @@ harness = false
 # proof size + codec round-trip, and peak heap per phase. Shapes via
 # F2Z_BENCH_SHAPES ("t:s:W" triples), reps via F2Z_BENCH_REPS.
 
+[[bench]]
+name = "field"
+harness = false
+# GF(2^128)-GHASH vs GF(2^127)-b127 head-to-head on the prover's hot
+# patterns (batch/chain mul, squares, comb powers, wide-dot, eqf kernels).
+# Reps via F2Z_BENCH_REPS.
+
 [features]
 default = ["parallel"]
 parallel = ["dep:rayon"]
