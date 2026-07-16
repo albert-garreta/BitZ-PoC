@@ -1242,7 +1242,13 @@ pub(crate) mod neon {
 
     /// Reduce a 256-bit product `(lo, hi)` modulo
     /// `X^128 + X^7 + X^2 + X + 1` — the 3-PMULL fold against
-    /// `g = 0x87`.
+    /// `g = 0x87`. (An EOR3 three-way combine was tried here for parity
+    /// with the b127 pipeline's SHA3 use and REVERTED: under the
+    /// interleaved-rep field bench it measured +13 % on batch multiply,
+    /// +9 % on dependent chains and +18 % on squaring chains — the
+    /// SHA3-unit op costs latency/ports where the plain EOR tree runs on
+    /// any SIMD pipe. The b127 field-study table quotes this
+    /// verbatim-upstream GHASH pipeline as the baseline.)
     #[inline(always)]
     pub(crate) unsafe fn reduce_256(lo: uint64x2_t, hi: uint64x2_t) -> uint64x2_t {
         // SAFETY: as `pmull_lo`.

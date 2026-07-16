@@ -1,35 +1,41 @@
 # The b127 field study — `GF(2^127)` vs the GHASH `GF(2^128)`
 
 **Status: field module landed (`src/poly/univariate/binary_b127.rs`), protocol
-unchanged.** F2Z's exponent fold, forest, pre-sumcheck, ring-switch and flock
-opener all still run over the GHASH field. This note records (1) why a
-protocol-level swap to `GF(2^127)` is architecturally blocked in the Ligerito
-pipeline, (2) what the b127 field measures head-to-head against F2Z's own
-`GF(2^128)` pipeline on this repo's hot patterns, and (3) what *would* carry
-over if a b127 protocol variant were ever built on a compatible opener.
+unchanged — and the study's verdict is that it should stay unchanged.** F2Z's
+exponent fold, forest, pre-sumcheck, ring-switch and flock opener all run over
+the GHASH field. This note records (1) why a protocol-level swap to
+`GF(2^127)` is architecturally blocked in the Ligerito pipeline, (2) the
+measured head-to-head against F2Z's own `GF(2^128)` pipeline on this repo's
+hot patterns — **b127 is equal-to-12 % slower on Apple M4**, the "~30 %
+faster" folklore being a statement about GHASH implementations with off-PMULL
+reductions — and (3) what would carry over if a b127 variant were ever built
+on a compatible opener and PMULL-starved hardware.
 
 Provenance: the b127 representation (`u128 < 2^127`, `f(X) = X^127 + X + 1`,
-Karatsuba product + two-XOR trinomial fold) follows Reilabs'
-[`ghash-powers-bench`](https://github.com/reilabs/ghash-powers-bench),
-re-implemented in this repo's NEON-resident idiom and further optimized
-(SRI-based reduction; see below).
+carryless product + trinomial fold) follows Reilabs'
+[`ghash-powers-bench`](https://github.com/reilabs/ghash-powers-bench)
+(`b127`), re-implemented in this repo's NEON-resident idiom and optimized
+well past the reference (§4.2) — the verdict below is best-vs-best.
 
 ## 1. Why b127 is attractive on paper
 
 * `f(X) = X^127 + X + 1` is an irreducible **trinomial**: reduction of a
-  carryless product `P = L + X^127·H` is `L ⊕ H ⊕ (H << 1)` — one fold, two
-  shifted XORs, **zero PMULLs** (canonical operands have `deg ≤ 126`, so
+  carryless product `P = L + X^127·H` is `L ⊕ H ⊕ (H << 1)` — one fold,
+  **zero PMULLs** (canonical operands have `deg ≤ 126`, so
   `deg((X+1)H) ≤ 126` and the fold is exact). GHASH reduction is a 3-PMULL
-  fold (or a ~14-op shift cascade). A reduced NEON multiply drops from
-  7 PMULL to 4; a squaring from 5 PMULL to 2.
+  fold. A reduced NEON multiply drops from 7 PMULL to 4; a squaring from 5
+  PMULL to 2.
 * `|B^×| = 2^127 − 1` is the **Mersenne prime `M_127`** — every `α ∉ {0, 1}`
   generates, so the exponent binding's generator check collapses from the
   9-factor primitive-element test (≈49 % acceptance, resampling loop) to
-  `α ∉ {0, 1}` (`is_generator_b127`), and `n ↦ α^n` is injective on
+  `α ∉ {0, 1}` ([`is_generator_b127`]), and `n ↦ α^n` is injective on
   `[0, 2^127 − 1)`.
 * 127 prime ⇒ the only proper subfield is `F_2` — a clean, tower-free field.
 
-That last bullet is also exactly what kills the drop-in swap.
+The trade behind the first bullet — **fewer PMULLs, more shift/logical µops**
+— is exactly what the measurement adjudicates (§4), and on Apple silicon it
+loses: PMULL throughput there is abundant enough that GHASH's all-PMULL
+pipeline is the better mix. The third bullet is also what blocks the swap.
 
 ## 2. The architectural boundary: the swap is blocked at the ring-switch
 
@@ -92,33 +98,57 @@ parent) and accepting its ~√N proof sizes back.
 
 ## 4. Measurements (Apple M4, `-C target-cpu=native`, LTO, `unchecked`)
 
-### 4.1 In-repo head-to-head — `cargo bench --bench field`
+### 4.1 The harness lesson first
 
-Both fields run this repo's own NEON-resident pipelines (schoolbook 4-PMULL
-product; GHASH reduces with the 3-PMULL fold, b127 with the SRI trinomial
-fold). Medians of 5; ±5 %.
+The first version of `benches/field.rs` timed all GF128 patterns, then all
+b127 patterns, in one process — and reported a phantom "b127 1.30× on batch
+multiply". That was **clock-ramp shading**: the GF128 half always occupied
+the first seconds of the process (measuring 1.16–1.27 ns/mul on a pattern
+whose steady-state is ~0.82), while b127's half ran post-ramp. The landed
+harness alternates the two fields rep-by-rep *within* each pattern, so both
+sample every thermal/clock window; runs became reproducible to ±1–3 % and
+the ratios flipped. (This is the zinc measurement lore — "interleave runs in
+one thermal window before claiming a regression" — now enforced by the
+harness structure itself. Cross-run comparisons of a single field remain
+ramp-shaded; only in-window ratios are quotable.)
+
+### 4.2 In-repo head-to-head — `cargo bench --bench field`
+
+Both fields run this repo's NEON-resident pipelines: schoolbook 4-PMULL
+products; GHASH reduces with its verbatim-upstream 3-PMULL fold; b127 with
+the SHA3 BCAX trinomial fold and a square-specialized fold (below).
+Consolidated over three 9-rep interleaved runs:
 
 | pattern | proxy for | GF128 ns/op | b127 ns/op | b127 speedup |
 |---|---|---|---|---|
-| `mul/batch` | forest layer products (throughput) | 1.262 | **0.970** | **1.30×** |
-| `mul/chain` | dependent product chains (latency) | 4.731 | 4.736 | 1.00× |
-| `square/chain` | α-power place-value chains | 2.512 | 2.781 | 0.90× |
-| `powers/comb-w8-100b` | `chunk_pow2_table` / root recompute | 25.48 | 29.01 | 0.88× |
-| `wide-dot` | delayed-reduction inner products | 0.525 | 0.528 | 0.99× |
-| `eqf-round` | the fused sumcheck round kernel | 0.930 | 0.982 | 0.95× |
-| `eqf-fold` | the multilinear bind cascade | 1.323 | 1.505 | 0.88× |
+| `mul/batch` | forest layer products (throughput) | 0.81–0.92 | 0.88–0.96 | **0.92–0.95×** |
+| `mul/chain` | dependent product chains (latency) | 4.33–4.38 | 4.76–4.81 | **0.91×** |
+| `square/chain` | α-power place-value chains | 2.49–2.50 | 2.45 | **1.02×** |
+| `powers/comb-w8-100b` | `chunk_pow2_table` / root recompute | 24.0–25.1 | 27.2–28.4 | **0.88×** |
+| `wide-dot` | delayed-reduction inner products | 0.51–0.52 | 0.51–0.52 | **1.00×** |
+| `eqf-round` | the fused sumcheck round kernel | 0.90–0.92 | 0.93–0.95 | **0.96×** |
+| `eqf-fold` | the multilinear bind cascade | 1.32–1.34 | 1.43–1.45 | **0.92×** |
 
-Product-variant check: the 3-PMULL Karatsuba product is **worse** than
-schoolbook for b127 on this core (batch 1.265 vs 0.970 ns — logical-op
-pressure, not PMULL count, is the binding constraint), mirroring the GF128
-pipeline's earlier schoolbook-over-Karatsuba finding. The first-cut b127
-reduction (12 logical ops, ~14-cycle chain) measured 1.19× / 0.78× / 0.80×
-on batch / squares / powers; rewriting it with `SRI` (shift-right-insert:
-`H` and `H<<1` come straight off the product limbs as `(hi<<1)|(pre>>63)`
-and `(hi<<2)|(pre>>62)`, 9 µops, ~10-cycle chain) moved those to the table
-above — that version is the landed default.
+The b127 pipeline behind those numbers is already the *optimized* endpoint
+of a ladder, each step validated in-window:
 
-### 4.2 Cross-validation — Reilabs' own bench on the same box
+* naive port of the reference (scalar-composed reduce): the starting point —
+  already 1.4–1.5× faster than Reilabs' own b127 binary once NEON-resident;
+* SRI reduction (`H` and `H<<1` lifted straight off the product limbs by
+  shift-right-insert): +8–15 % across patterns;
+* SHA3 **BCAX** fold (both corrective masks fused into `a ⊕ (b & ~c)`:
+  7 µops, ~8-cycle chain, zero PMULLs): batch −6 %, kept;
+* square-specialized fold (`a² ≡ S(a_0) ⊕ (S(a_1)≪1) ⊕ (S(a_1)≪2)` via
+  `X^128 ≡ X² + X`; the canonical invariant zeroes `a_1`'s bit 63 so no
+  second fold; one EOR3): squares 0.90× → 1.02× — the only pattern b127
+  ends up winning;
+* 3-PMULL Karatsuba product: **rejected**, 0.74× vs schoolbook (in-window);
+* GHASH-side EOR3 in the 0x87 fold: **tried and rejected** — it slowed
+  GHASH itself (+13 % batch, +9 % chain, +18 % squares; the SHA3-unit op
+  costs latency/ports where a plain EOR tree runs on any SIMD pipe), so the
+  baseline stays verbatim-upstream.
+
+### 4.3 Cross-validation — Reilabs' own bench on the same box
 
 `ghash-powers-bench` (their binary, `--mul` and powers/win-15):
 
@@ -127,41 +157,48 @@ above — that version is the landed default.
 | mul, ns/mul (2^20–2^22) | 1.805–1.844 | 1.477–1.514 | **1.22×** |
 | powers win-15, ns/elem (2^16–2^18) | 39.7–40.5 | 31.6–32.9 | **1.22×** |
 
-So the ~"30 % faster" claim **replicates against Reilabs' GHASH baseline**.
-The catch: that baseline reduces GHASH in scalar `u128` ops. F2Z's GHASH
-already reduces on the PMULL ports — it is **1.45× faster** than Reilabs'
-GHASH on the same pattern (1.26 vs 1.83 ns/mul) — and against *it*, b127's
-edge survives only where reduction µop count shows up as throughput
-(`mul/batch`, 1.30×) and inverts wherever the reduction's ~10-cycle
-shift-insert chain sits on a latency path against Apple's cheap PMULL fold
-(squares, powers, the eqf kernels). For the record, this port is also
-1.53× faster than Reilabs' own b127 on the same box (0.97 vs 1.48 ns/mul) —
-the NEON-resident restructuring, not the field, accounts for that.
+So the ~"30 % faster" claim **replicates against Reilabs' GHASH baseline**
+— which reduces GHASH in scalar `u128` ops. F2Z's pipelines are a different
+regime entirely: its GHASH multiplies ~2.1× faster than Reilabs' GHASH, and
+this b127 port ~1.6× faster than Reilabs' b127, on the same box. Once both
+reductions are engineered to their best, the ordering inverts: **fewer
+PMULLs + more shift/logical µops loses to all-PMULL on Apple silicon**,
+whose PMULL throughput (≥2/cycle) makes the GHASH fold nearly free — a
+GHASH multiply retires in ~3.7 cycles vs b127's ~4.0. The b127 trade is the
+right one precisely on cores where carryless multiply is port-constrained
+(one CLMUL/crypto pipe — older x86, small ARM cores, and any scalar
+target); it is the wrong one here.
 
-### 4.3 Net prover impact if the swap were free
+### 4.4 Net prover impact if the swap were free
 
-Weighting the prover's phases by their kernels: the forest's pairwise layer
-products are `mul/batch`-shaped (**+30 %**), but the GKR round kernels, the
-pre-sumcheck and the bind cascades are `eqf`-shaped (**−5 to −12 %**), the
-wide-dot accumulations are a wash (delayed reduction already amortizes the
-reduction — the existing optimization neutralizes b127's advantage exactly
-where it would matter most), and the α-power tables lose ~12 %. Net
-estimate: **~1.0–1.1× end-to-end prover** — even before recalling that the
-swap is architecturally blocked (§2) and that the b127-compatible opener
-trades away Ligerito's proof sizes.
+Weighting the prover's phases by their kernels — forest layer products
+(`mul/batch`, 0.92–0.95×), the GKR round kernels / pre-sumcheck / bind
+cascades (`eqf`, 0.92–0.96×), wide-dot accumulations (1.00× — delayed
+reduction already amortizes the reduction, neutralizing b127's one
+structural advantage exactly where it would matter most), α-power tables
+(0.88×) — a b127-fielded F2Z prover on this hardware would run
+**~5–10 % slower**, before recalling that the swap is architecturally
+blocked (§2) and that the b127-compatible opener trades away Ligerito's
+proof sizes.
 
 ## 5. Conclusions
 
 1. The b127 field module is landed, tested (NEON↔scalar byte-parity pins,
-   bit-reference multiply, algebra laws, order certificate, kernel
-   value-exactness) and optimized past the reference implementation.
-2. On Apple silicon, **the "b127 ≈ 30 % faster than GHASH" claim is a
-   statement about GHASH implementations with off-PMULL reduction**. Against
-   a PMULL-fold GHASH, b127 wins ~30 % only on throughput-bound independent
-   multiplies and loses latency-bound patterns; a wholesale field swap would
-   move the F2Z prover by ~0–10 %, not 30 %.
+   bit-reference multiply, algebra laws, the `a^{2^127} = a` order
+   certificate, kernel value-exactness, canonicality rejection) and
+   optimized well past the reference implementation (SRI/BCAX fold,
+   specialized square). It is the honest best-known b127 on this hardware.
+2. **The "b127 ≈ 30 % faster than GHASH" claim is a statement about GHASH
+   implementations whose reduction runs off the PMULL ports.** Against
+   F2Z's PMULL-fold GHASH on Apple M4, b127 is 0.88–1.02× — equal at best
+   (squares, wide-dot), ~10 % behind on the patterns that dominate the
+   prover. A swap would cost ~5–10 % prover time here; it would pay only on
+   CLMUL-port-constrained hardware.
 3. The swap is in any case blocked by the ring-switch packing
    (`[K:F_2] = 2^7`) and flock's GHASH-native Ligerito; the prime-order
    generator-check simplification and the unchanged chunk geometry are real
    but only reachable via a non-Ligerito opener or a re-derived 64-packing
    ring-switch over a forked flock.
+4. Methodological: field micro-benches must interleave the compared fields
+   rep-by-rep within each pattern — the sequential harness manufactured a
+   spurious 1.30× from clock-ramp shading (§4.1).

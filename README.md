@@ -217,11 +217,15 @@ RUSTFLAGS="-C target-cpu=native" cargo bench --bench field --features unchecked
 
 The field module (`src/poly/univariate/binary_b127.rs`) mirrors the
 `GF(2^128)` pipeline (NEON-resident, wide accumulators, fused eqf kernels)
-with a PMULL-free SRI trinomial reduction, and its multiplicative group has
-prime (Mersenne `M_127`) order — every `α ∉ {0,1}` generates. Measured on
-M4: **1.30×** on batch multiply throughput, parity on dependent chains,
-0.88–0.95× on latency-bound patterns (squares, comb powers, eqf kernels) —
-net ~1.0–1.1× if a prover ran on it. A protocol-level swap is
+with a PMULL-free SHA3-BCAX trinomial reduction and a square-specialized
+fold, and its multiplicative group has prime (Mersenne `M_127`) order —
+every `α ∉ {0,1}` generates. The measured verdict (M4, interleaved-rep
+harness): **b127 is 0.88–1.02× — equal at best, ~10 % behind on the
+prover-dominant patterns**. The "~30 % faster than GHASH" folklore
+replicates only against scalar-reduction GHASH baselines (Reilabs' own
+bench: 1.22× on this box); against F2Z's PMULL-fold GHASH the trade
+"fewer PMULLs, more shifts" loses — Apple's PMULL throughput makes the
+GHASH fold nearly free. A protocol-level swap is in any case
 architecturally blocked at the ring-switch (`[K:F₂] = 2^7` packing) and
 flock's GHASH-native Ligerito; the full analysis and numbers are in
 [`docs/b127-field.md`](docs/b127-field.md).

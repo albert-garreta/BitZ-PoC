@@ -25,7 +25,7 @@
 //!   two, which is exactly why this field cannot ride the flock Ligerito
 //!   opener; see `docs/DESIGN.md`).
 //!
-//! # Why it is fast
+//! # The speed trade (and how it measures)
 //!
 //! The reduction modulo the trinomial is two shifted XORs: writing a
 //! carryless product `P = L + X^127·H` (`deg P ≤ 252` for canonical
@@ -36,11 +36,15 @@
 //! ```
 //!
 //! and `deg((X+1)·H) ≤ 126 < 127` — ONE fold, exact, no carry chain. The
-//! GHASH reduction by contrast costs a 3-PMULL fold (or a ~14-op shift
-//! cascade). On the NEON pipeline that turns a 7-PMULL reduced multiply
-//! into a 4-PMULL one (schoolbook product + PMULL-free reduction), and the
-//! 5-PMULL GHASH squaring into 2 PMULLs — the source of the measured
-//! speedup on the forest/power-table paths.
+//! GHASH reduction by contrast costs a 3-PMULL fold. On the NEON pipeline
+//! that turns a 7-PMULL reduced multiply into a 4-PMULL one (schoolbook
+//! product + PMULL-free reduction), and the 5-PMULL GHASH squaring into
+//! 2 PMULLs — trading PMULLs for shift/logical µops. **Measured verdict
+//! (Apple M4, interleaved-rep harness): the trade LOSES there** — PMULL
+//! throughput is abundant enough that b127 lands at 0.88–1.02× of the
+//! GHASH pipeline across this repo's hot patterns (winning only the
+//! squaring chain, 1.02×). It is the right trade on cores where carryless
+//! multiply is port-constrained. Full study: `docs/b127-field.md`.
 //!
 //! Storage layout: each element is a [`Uint<2>`] (2 × `u64`) bit-packed
 //! polynomial of degree `< 127`; bit `64·w + b` (LSB-first per limb) holds
@@ -1159,17 +1163,29 @@ use crate::poly::univariate::binary_gf128::neon as gf128_neon;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 pub(crate) mod neon {
     use core::arch::aarch64::{
-        uint64x2_t, vandq_u64, vdupq_n_u64, veorq_u64, vextq_u64, vld1q_u64, vshlq_n_u64,
-        vsriq_n_u64, vst1q_u64,
+        uint64x2_t, vdupq_n_u64, veorq_u64, vextq_u64, vld1q_u64, vshlq_n_u64, vsriq_n_u64,
+        vst1q_u64,
     };
+    #[cfg(not(target_feature = "sha3"))]
+    use core::arch::aarch64::vandq_u64;
+    #[cfg(target_feature = "sha3")]
+    use core::arch::aarch64::{vbcaxq_u64, veor3q_u64};
 
     use super::MASK_HI_B127;
     use super::gf128_neon::{clmul_256, pmull_hi, pmull_lo};
 
-    /// `lo` mask: keep bits 0..126 (`L = P & (2^127 − 1)`).
+    /// `lo` mask complement: bit 127 — the one bit of `lo` that belongs
+    /// to `H` (as its bit 0), not to `L`.
+    const TOP_BIT: [u64; 2] = [0, !MASK_HI_B127];
+    /// `g` spurious bit: `(P >> 126)`'s bit 0 is `P`'s bit 126, which
+    /// belongs to `L`, not to `H << 1`.
+    const G0_BIT: [u64; 2] = [1, 0];
+    /// `lo` mask: keep bits 0..126 (`L = P & (2^127 − 1)`) — the
+    /// non-SHA3 fallback's AND constant.
+    #[cfg(not(target_feature = "sha3"))]
     const MASK127: [u64; 2] = [u64::MAX, MASK_HI_B127];
-    /// `g` mask: clear lane-0 bit 0 — `(P >> 126)`'s bit 0 is `P`'s bit
-    /// 126, which belongs to `L`, not to `H << 1`.
+    /// `g` mask (non-SHA3 fallback): clear lane-0 bit 0.
+    #[cfg(not(target_feature = "sha3"))]
     const CLEAR_G0: [u64; 2] = [u64::MAX << 1, u64::MAX];
 
     /// Reduce a 256-bit product `(lo, hi)` modulo `X^127 + X + 1` — the
@@ -1182,7 +1198,10 @@ pub(crate) mod neon {
     /// insert) — `H` limb-wise is `(hi << 1) ⊕ (pre >> 63)` and
     /// `H << 1 = P >> 126` (bit 0 cleared) is `(hi << 2) ⊕ (pre >> 62)`,
     /// where `pre = [p1, p2]` are the limbs the `X^127`/`X^191` cuts
-    /// straddle — 9 logical/shift µops, no PMULL, ~10-cycle chain.
+    /// straddle. With FEAT_SHA3 (Apple M-series; enabled by
+    /// `-C target-cpu=native`) both corrective masks fuse into BCAX
+    /// (`a ⊕ (b & ~c)`): 7 µops, ~8-cycle chain, no PMULL. The fallback
+    /// keeps the AND/EOR form (9 µops, balanced XOR tree).
     #[inline(always)]
     pub(crate) unsafe fn reduce_256_b127(lo: uint64x2_t, hi: uint64x2_t) -> uint64x2_t {
         // SAFETY: plain NEON shifts/XORs (see `binary_gf128::neon::pmull_lo`
@@ -1191,13 +1210,21 @@ pub(crate) mod neon {
             let pre = vextq_u64::<1>(lo, hi); // [p1, p2]
             // H = P >> 127, limb-wise: h0 = (p2<<1)|(p1>>63), h1 = (p3<<1)|(p2>>63).
             let h = vsriq_n_u64::<63>(vshlq_n_u64::<1>(hi), pre);
-            // H << 1 = (P >> 126) with bit 0 cleared:
-            // g0 = (p2<<2)|(p1>>62), g1 = (p3<<2)|(p2>>62).
+            // (P >> 126): g0 = (p2<<2)|(p1>>62), g1 = (p3<<2)|(p2>>62);
+            // its bit 0 (P's bit 126) is spurious — H<<1 has bit 0 zero.
             let g = vsriq_n_u64::<62>(vshlq_n_u64::<2>(hi), pre);
-            let g = vandq_u64(g, vld1q_u64(CLEAR_G0.as_ptr()));
-            // L = lo & (2^127 − 1).
-            let l = vandq_u64(lo, vld1q_u64(MASK127.as_ptr()));
-            veorq_u64(l, veorq_u64(h, g))
+            #[cfg(target_feature = "sha3")]
+            {
+                // t = h ⊕ (g & ~bit0); out = t ⊕ (lo & ~bit127).
+                let t = vbcaxq_u64(h, g, vld1q_u64(G0_BIT.as_ptr()));
+                vbcaxq_u64(t, lo, vld1q_u64(TOP_BIT.as_ptr()))
+            }
+            #[cfg(not(target_feature = "sha3"))]
+            {
+                let g = vandq_u64(g, vld1q_u64(CLEAR_G0.as_ptr()));
+                let l = vandq_u64(lo, vld1q_u64(MASK127.as_ptr()));
+                veorq_u64(veorq_u64(l, h), g)
+            }
         }
     }
 
@@ -1256,15 +1283,32 @@ pub(crate) mod neon {
     }
 
     /// NEON-resident reduced SQUARE: char-2 cross terms cancel, so two
-    /// PMULLs + the PMULL-free fold — 2 PMULL total vs GHASH's 5.
+    /// PMULLs + a square-specialized trinomial fold — 2 PMULL total vs
+    /// GHASH's 5.
+    ///
+    /// The fold exploits the spread structure directly: with
+    /// `a = a_0 + X^{64} a_1`, `a² = S(a_0) + X^{128}·S(a_1)`
+    /// (`S = ` the even-position bit spread, one PMULL each), and
+    /// `X^{128} ≡ X² + X`, so
+    /// `a² ≡ S(a_0) ⊕ (S(a_1) << 1) ⊕ (S(a_1) << 2)` — and because the
+    /// canonical invariant zeroes `a_1`'s bit 63, `deg S(a_1) ≤ 124` and
+    /// `(X²+X)·S(a_1)` never reaches `X^127`: one fold, no masks at all
+    /// (6 µops with EOR3, 7 without).
     #[inline(always)]
     pub(crate) fn square_words(a: &[u64; 2]) -> [u64; 2] {
         // SAFETY: as `mul_words`.
         unsafe {
             let va = vld1q_u64(a.as_ptr());
-            let lo = pmull_lo(va, va); // a0²
-            let hi = pmull_hi(va, va); // a1²
-            let r = reduce_256_b127(lo, hi);
+            let s_lo = pmull_lo(va, va); // S(a0), even bits, deg ≤ 126
+            let s_hi = pmull_hi(va, va); // S(a1), even bits, deg ≤ 124
+            let z = vdupq_n_u64(0);
+            let e = vextq_u64::<1>(z, s_hi); // [0, s_hi.0] — the lane carries
+            let t1 = vsriq_n_u64::<63>(vshlq_n_u64::<1>(s_hi), e); // S(a1) << 1
+            let t2 = vsriq_n_u64::<62>(vshlq_n_u64::<2>(s_hi), e); // S(a1) << 2
+            #[cfg(target_feature = "sha3")]
+            let r = veor3q_u64(s_lo, t1, t2);
+            #[cfg(not(target_feature = "sha3"))]
+            let r = veorq_u64(veorq_u64(s_lo, t1), t2);
             let mut out = [0u64; 2];
             vst1q_u64(out.as_mut_ptr(), r);
             out

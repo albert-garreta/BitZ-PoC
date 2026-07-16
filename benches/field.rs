@@ -112,17 +112,30 @@ fn median(mut v: Vec<f64>) -> f64 {
     v[v.len() / 2]
 }
 
-/// Time `body` (which processes `ops` field operations) `reps` times
-/// after one warm-up; return median ns/op.
-fn time_ns_per_op<R>(reps: usize, ops: usize, mut body: impl FnMut() -> R) -> f64 {
-    black_box(body()); // warm-up
-    let mut samples = Vec::with_capacity(reps);
+/// Time the two fields' bodies (each processing `ops` field operations)
+/// with ALTERNATING reps — g, b, g, b, … — so both fields sample the
+/// same thermal/clock window and the RATIO is insulated from drift
+/// (single-sided sweeps measured ±10–19 % swings on this box between
+/// otherwise-identical runs). Returns (median g, median b) ns/op.
+fn time_pair_ns_per_op<RG, RB>(
+    reps: usize,
+    ops: usize,
+    mut g_body: impl FnMut() -> RG,
+    mut b_body: impl FnMut() -> RB,
+) -> (f64, f64) {
+    black_box(g_body()); // warm-ups
+    black_box(b_body());
+    let mut gs = Vec::with_capacity(reps);
+    let mut bs = Vec::with_capacity(reps);
     for _ in 0..reps {
         let t0 = Instant::now();
-        black_box(body());
-        samples.push(t0.elapsed().as_secs_f64() * 1e9 / ops as f64);
+        black_box(g_body());
+        gs.push(t0.elapsed().as_secs_f64() * 1e9 / ops as f64);
+        let t1 = Instant::now();
+        black_box(b_body());
+        bs.push(t1.elapsed().as_secs_f64() * 1e9 / ops as f64);
     }
-    median(samples)
+    (median(gs), median(bs))
 }
 
 // ---------------------------------------------------------------------
@@ -236,97 +249,168 @@ fn fold_cascade<F: BF>(v: &mut [F], rhos: &[F]) -> F {
 // Harness
 // ---------------------------------------------------------------------
 
-struct Row {
-    pattern: &'static str,
-    ns: [f64; 2], // [GF128, B127]
+fn print_row(pattern: &str, g: f64, b: f64) {
+    println!("{:<22} {:>14.3} {:>14.3} {:>8.2}x", pattern, g, b, g / b);
 }
 
-fn run_field<F: BF>(reps: usize) -> Vec<(&'static str, f64)> {
-    let mut out = Vec::new();
-
+/// Every pattern, both fields, alternating reps within the pattern.
+fn run_paired<G: BF, B: BF>(reps: usize) {
     // mul/batch
-    let a = gen_vec::<F>(N_BATCH, 0xA11CE);
-    let b = gen_vec::<F>(N_BATCH, 0xB0B);
-    let mut o = vec![F::zero(); N_BATCH];
-    out.push((
-        "mul/batch",
-        time_ns_per_op(reps, N_BATCH, || {
-            batch_mul(black_box(&a), black_box(&b), black_box(&mut o));
-            o[N_BATCH - 1]
-        }),
-    ));
+    let (ga, gb) = (gen_vec::<G>(N_BATCH, 0xA11CE), gen_vec::<G>(N_BATCH, 0xB0B));
+    let (ba, bb) = (gen_vec::<B>(N_BATCH, 0xA11CE), gen_vec::<B>(N_BATCH, 0xB0B));
+    let mut go = vec![G::zero(); N_BATCH];
+    let mut bo = vec![B::zero(); N_BATCH];
+    let (g, b) = time_pair_ns_per_op(
+        reps,
+        N_BATCH,
+        || {
+            batch_mul(black_box(&ga), black_box(&gb), black_box(&mut go));
+            go[N_BATCH - 1]
+        },
+        || {
+            batch_mul(black_box(&ba), black_box(&bb), black_box(&mut bo));
+            bo[N_BATCH - 1]
+        },
+    );
+    print_row("mul/batch", g, b);
+    drop((go, bo));
 
     // mul/chain
-    let v = gen_vec::<F>(N_CHAIN, 0xC0FFEE);
-    out.push(("mul/chain", time_ns_per_op(reps, N_CHAIN, || chain_mul(black_box(&v)))));
+    let gv = gen_vec::<G>(N_CHAIN, 0xC0FFEE);
+    let bv = gen_vec::<B>(N_CHAIN, 0xC0FFEE);
+    let (g, b) = time_pair_ns_per_op(
+        reps,
+        N_CHAIN,
+        || chain_mul(black_box(&gv)),
+        || chain_mul(black_box(&bv)),
+    );
+    print_row("mul/chain", g, b);
+    drop((gv, bv));
 
     // square chain
-    let x0 = F::from_u128(0x1234_5678_9ABC_DEF0_0FED_CBA9_8765_4321);
-    out.push(("square/chain", time_ns_per_op(reps, N_SQ, || square_chain(black_box(x0), N_SQ))));
+    let seed = 0x1234_5678_9ABC_DEF0_0FED_CBA9_8765_4321u128;
+    let (gx, bx) = (G::from_u128(seed), B::from_u128(seed));
+    let (g, b) = time_pair_ns_per_op(
+        reps,
+        N_SQ,
+        || square_chain(black_box(gx), N_SQ),
+        || square_chain(black_box(bx), N_SQ),
+    );
+    print_row("square/chain", g, b);
 
     // powers (comb win 8, 100-bit exponents)
-    let alpha = F::from_u128(2);
-    let comb = Comb::new(alpha, 128, POW_WIN);
+    let gcomb = Comb::new(G::from_u128(2), 128, POW_WIN);
+    let bcomb = Comb::new(B::from_u128(2), 128, POW_WIN);
     let mut st = 0xE44_u64;
     let exps: Vec<u128> =
         (0..N_POW).map(|_| rand_u128(&mut st) & ((1u128 << POW_BITS) - 1)).collect();
-    out.push((
-        "powers/comb-w8-100b",
-        time_ns_per_op(reps, N_POW, || {
-            let mut acc = F::zero();
+    let (g, b) = time_pair_ns_per_op(
+        reps,
+        N_POW,
+        || {
+            let mut acc = G::zero();
             for &e in &exps {
-                acc = acc + comb.pow(black_box(e));
+                acc = acc + gcomb.pow(black_box(e));
             }
             acc
-        }),
-    ));
+        },
+        || {
+            let mut acc = B::zero();
+            for &e in &exps {
+                acc = acc + bcomb.pow(black_box(e));
+            }
+            acc
+        },
+    );
+    print_row("powers/comb-w8-100b", g, b);
 
     // wide-dot
-    let wa = gen_vec::<F>(N_WIDE, 0xD07);
-    let wb = gen_vec::<F>(N_WIDE, 0xD08);
-    out.push(("wide-dot", time_ns_per_op(reps, N_WIDE, || wide_dot(black_box(&wa), black_box(&wb)))));
+    let (gwa, gwb) = (gen_vec::<G>(N_WIDE, 0xD07), gen_vec::<G>(N_WIDE, 0xD08));
+    let (bwa, bwb) = (gen_vec::<B>(N_WIDE, 0xD07), gen_vec::<B>(N_WIDE, 0xD08));
+    let (g, b) = time_pair_ns_per_op(
+        reps,
+        N_WIDE,
+        || wide_dot(black_box(&gwa), black_box(&gwb)),
+        || wide_dot(black_box(&bwa), black_box(&bwb)),
+    );
+    print_row("wide-dot", g, b);
+    drop((gwa, gwb, bwa, bwb));
 
     // eqf round (the fused sumcheck kernel; 3 products + 2 weight-folds
     // per slot → count 5·half products)
-    let l = gen_vec::<F>(2 * EQF_HALF, 0xE9F1);
-    let r = gen_vec::<F>(2 * EQF_HALF, 0xE9F2);
-    let w = gen_vec::<F>(EQF_HALF, 0xE9F3);
-    out.push((
-        "eqf-round",
-        time_ns_per_op(reps, 5 * EQF_HALF, || {
-            F::eqf_single_pair_round(black_box(&l), black_box(&r), black_box(&w), EQF_HALF)
-                .expect("both fields ship the fused kernel")
-        }),
-    ));
+    let (gl, gr, gw) = (
+        gen_vec::<G>(2 * EQF_HALF, 0xE9F1),
+        gen_vec::<G>(2 * EQF_HALF, 0xE9F2),
+        gen_vec::<G>(EQF_HALF, 0xE9F3),
+    );
+    let (bl, br, bw) = (
+        gen_vec::<B>(2 * EQF_HALF, 0xE9F1),
+        gen_vec::<B>(2 * EQF_HALF, 0xE9F2),
+        gen_vec::<B>(EQF_HALF, 0xE9F3),
+    );
+    let (g, b) = time_pair_ns_per_op(
+        reps,
+        5 * EQF_HALF,
+        || {
+            G::eqf_single_pair_round(black_box(&gl), black_box(&gr), black_box(&gw), EQF_HALF)
+                .expect("fused kernel")
+        },
+        || {
+            B::eqf_single_pair_round(black_box(&bl), black_box(&br), black_box(&bw), EQF_HALF)
+                .expect("fused kernel")
+        },
+    );
+    print_row("eqf-round", g, b);
+    drop((gl, gr, gw, bl, br, bw));
 
     // eqf fold cascade (~N_FOLD muls total across all levels)
-    let rhos = gen_vec::<F>(24, 0xF01D);
-    let base = gen_vec::<F>(N_FOLD, 0xF01E);
-    let mut buf = base.clone();
-    out.push((
-        "eqf-fold",
-        time_ns_per_op(reps, N_FOLD, || {
-            buf.copy_from_slice(&base);
-            fold_cascade(black_box(&mut buf), black_box(&rhos))
-        }),
-    ));
-
-    out
+    let g_rhos = gen_vec::<G>(24, 0xF01D);
+    let b_rhos = gen_vec::<B>(24, 0xF01D);
+    let g_base = gen_vec::<G>(N_FOLD, 0xF01E);
+    let b_base = gen_vec::<B>(N_FOLD, 0xF01E);
+    let mut g_buf = g_base.clone();
+    let mut b_buf = b_base.clone();
+    let (g, b) = time_pair_ns_per_op(
+        reps,
+        N_FOLD,
+        || {
+            g_buf.copy_from_slice(&g_base);
+            fold_cascade(black_box(&mut g_buf), black_box(&g_rhos))
+        },
+        || {
+            b_buf.copy_from_slice(&b_base);
+            fold_cascade(black_box(&mut b_buf), black_box(&b_rhos))
+        },
+    );
+    print_row("eqf-fold", g, b);
 }
 
 /// B127-only extra: the 3-PMULL Karatsuba product alternative vs the
-/// schoolbook default, on the batch-mul shape.
+/// schoolbook default, alternating on the batch-mul shape.
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-fn run_b127_kara(reps: usize) -> f64 {
+fn run_b127_kara(reps: usize) {
     let a = gen_vec::<BinaryFieldB127>(N_BATCH, 0xA11CE);
     let b = gen_vec::<BinaryFieldB127>(N_BATCH, 0xB0B);
-    let mut o = vec![BinaryFieldB127::zero(); N_BATCH];
-    time_ns_per_op(reps, N_BATCH, || {
-        for ((x, y), out) in a.iter().zip(b.iter()).zip(o.iter_mut()) {
-            *out = x.mul_karatsuba(y);
-        }
-        o[N_BATCH - 1]
-    })
+    let mut o1 = vec![BinaryFieldB127::zero(); N_BATCH];
+    let mut o2 = vec![BinaryFieldB127::zero(); N_BATCH];
+    let (school, kara) = time_pair_ns_per_op(
+        reps,
+        N_BATCH,
+        || {
+            batch_mul(black_box(&a), black_box(&b), black_box(&mut o1));
+            o1[N_BATCH - 1]
+        },
+        || {
+            for ((x, y), out) in a.iter().zip(b.iter()).zip(o2.iter_mut()) {
+                *out = x.mul_karatsuba(y);
+            }
+            o2[N_BATCH - 1]
+        },
+    );
+    println!(
+        "{:<22} {:>14} {:>14.3}   (vs b127 schoolbook {:.3}: {:.2}x)",
+        "mul/batch b127-kara", "—", kara, school, school / kara
+    );
 }
 
 fn main() {
@@ -334,43 +418,18 @@ fn main() {
         std::env::var("F2Z_BENCH_REPS").ok().and_then(|v| v.parse().ok()).unwrap_or(5);
 
     println!("F2Z field bench — GF(2^128) GHASH vs GF(2^127) b127, median of {reps} reps.");
+    println!("(alternating reps per pattern: both fields share each thermal window)");
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     println!("(target: aarch64 + neon — the NEON pipelines are active)");
     #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
     println!("(WARNING: scalar pipelines — build with RUSTFLAGS=\"-C target-cpu=native\")");
 
-    let g = run_field::<BinaryFieldGF128>(reps);
-    let b = run_field::<BinaryFieldB127>(reps);
-    let rows: Vec<Row> = g
-        .iter()
-        .zip(b.iter())
-        .map(|(&(p, gn), &(p2, bn))| {
-            assert_eq!(p, p2);
-            Row { pattern: p, ns: [gn, bn] }
-        })
-        .collect();
-
     println!(
         "\n{:<22} {:>14} {:>14} {:>9}",
         "pattern", "GF128 ns/op", "b127 ns/op", "speedup"
     );
-    for row in &rows {
-        println!(
-            "{:<22} {:>14.3} {:>14.3} {:>8.2}x",
-            row.pattern,
-            row.ns[0],
-            row.ns[1],
-            row.ns[0] / row.ns[1]
-        );
-    }
+    run_paired::<BinaryFieldGF128, BinaryFieldB127>(reps);
 
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    {
-        let kara = run_b127_kara(reps);
-        println!(
-            "{:<22} {:>14} {:>14.3}   (vs b127 schoolbook: {:.2}x)",
-            "mul/batch b127-kara", "—", kara,
-            rows[0].ns[1] / kara
-        );
-    }
+    run_b127_kara(reps);
 }
