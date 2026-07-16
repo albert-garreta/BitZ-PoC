@@ -28,6 +28,13 @@ serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
 
+[[bench]]
+name = "pcs"
+harness = false
+# Plain-main bench (no criterion): commit/prove/verify timings, serialized
+# proof size + codec round-trip, and peak heap per phase. Shapes via
+# F2Z_BENCH_SHAPES ("t:s:W" triples), reps via F2Z_BENCH_REPS.
+
 [features]
 default = ["parallel"]
 parallel = ["dep:rayon"]

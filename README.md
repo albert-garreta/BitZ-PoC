@@ -128,16 +128,48 @@ serialization roundtrip + tampered-byte rejection.
 ### Reference measurement
 
 Single machine (Apple M4, `-C target-cpu=native`, median of 5), one genuine
-`F_q = 2^100 − 15` MLE opening:
+`F_q = 2^100 − 15` MLE opening (post the 2026-07-16 parallel-`flatten` t4
+fix; `examples/reference_measure.rs`):
 
 | shape | prove | verify | serialized proof |
 |---|---|---|---|
-| **n=16** (t=10, s=6, W=1, 1 chunk) | **10.6 ms** | **1.6 ms** | **43.2 KiB** |
-| n=18 (t=12, s=6, W=1, 1 chunk) | 22.6 ms | 1.4 ms | 75.0 KiB |
-| (t=4, s=8, W=32, 2 chunks) | 12.8 ms | 2.5 ms | 65.7 KiB |
+| **n=16** (t=10, s=6, W=1, 1 chunk) | **3.9 ms** | **1.6 ms** | **43.2 KiB** |
+| n=18 (t=12, s=6, W=1, 1 chunk) | 5.9 ms | 1.4 ms | 75.0 KiB |
+| (t=4, s=8, W=32, 2 chunks) | 8.6 ms | 2.5 ms | 65.7 KiB |
 
 The n=18 proof size (75.0 KiB) matches the source branch's ~71 KiB Ligerito
 proof at n=18.
+
+## Benchmarks
+
+`benches/pcs.rs` (plain `harness = false` binary, no criterion) reports, per
+shape: commit / prove / verify wall-clock (medians), serialized proof size,
+codec round-trip time, and **peak heap** per phase — the live-heap high-water
+("net outstanding bytes"), the same notion as flock's benches and zinc-plus's
+`f2_int_ligerito_mem`, so the numbers compare directly across the three repos.
+
+```sh
+RUSTFLAGS="-C target-cpu=native" cargo bench --bench pcs
+# specific shapes (t:s:W triples) and rep count:
+F2Z_BENCH_SHAPES="10:6:1 14:8:1" F2Z_BENCH_REPS=5 \
+  RUSTFLAGS="-C target-cpu=native" cargo bench --bench pcs
+```
+
+Sample (Apple M4; default sweep n=16/18/20/22 at W=1 + the 2-chunk W=32
+shape):
+
+```
+=== n=22 (t=14, s=8, W=1, m_p=15, chunks=1, data=512 KiB) ===
+  commit:      7.40 ms   peak    70.83 MB   live-after  70.83 MB
+  prove:      22.85 ms   peak    93.79 MB      (median of 5)
+  verify:      2.01 ms
+  proof:     146804 B (143.4 KiB)   serialize 36 µs / deserialize 131 µs
+```
+
+Measurement protocol (inherited from the zinc-plus lore): idle the box first;
+for quotable *time* numbers at big shapes run one shape per process (the peak
+numbers reset per shape and are fine in one sweep); quote medians and expect
+±5–15 % run-to-run spread.
 
 ## Layout
 
