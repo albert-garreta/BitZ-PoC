@@ -192,21 +192,32 @@ instance straight into per-column bit rows and commit via
 exists, so peak memory sits at the packed/forest scale. Measured (M4, 16 GB,
 one shape per process):
 
-| n | commit | prove | verify | proof | prove peak |
-|---|---|---|---|---|---|
-| 26 | 6.9 ms | 228 ms | 3.1 ms | 347 KiB | 330 MB |
-| 28 | 36 ms | 1.03 s | 4.2 ms | 400 KiB | 1.28 GB |
-| 30 | 151 ms | 15.6 s | 16.6 ms | 466 KiB | 4.99 GB |
-| 32 (`F2_FOREST_SCHEDULE=l8`) | 630 ms | 54.3 s | 18.8 ms | 574 KiB | 11.5 GB |
+| n | commit | prove | verify | proof | prove peak | schedule |
+|---|---|---|---|---|---|---|
+| 26 | 6.9 ms | 228 ms | 3.1 ms | 347 KiB | 330 MB | L/4 |
+| 28 | 25 ms | 816 ms | 4.0 ms | 400 KiB | 1.27 GB | L/4 |
+| 30 | 91 ms | 5.13 s | 9.3 ms | 466 KiB | 4.99 GB | L/4 |
+| 31 | 186 ms | 11.2 s | 9.7 ms | 490 KiB | 5.81 GB | l8 |
+| 32 | 359 ms | 32.8 s | 14.8 ms | 574 KiB | 11.5 GB | l8 |
 
-(The pre-restructure dense path held ~16 B/bit — e.g. 4.28 GB and a 7.9 s
-commit at n=28 — and could not reach n ≥ 30 on 16 GB at all. n ≥ 30 prove
-times are memory-pressure-shaded on a 16 GB box; the forest dominates the
-peak, so `F2_FOREST_SCHEDULE=l8` — required at n=32 — halves its share for
-+5–13 % prove.) The bench derives its Ligerito config from the library's
-`sha_lig_configs` boundary (embedded FAST profile at `m ≥ 22`); hardcoding
-the tiny ad-hoc config at big shapes is catastrophic (n=28 commit measured
-292 s ad-hoc vs 36 ms embedded).
+(All rows: LTO profile + `--features unchecked`, one shape per process.
+The pre-restructure dense path held ~16 B/bit — 4.28 GB and a 7.9 s commit
+at n=28 — and could not reach n ≥ 30 on 16 GB at all; the pre-LTO build
+was a further ~1.7–3× slower at the big shapes. n ≥ 31 prove times are
+memory-pressure-shaded on a 16 GB box.) The bench derives its Ligerito
+config from the library's `sha_lig_configs` boundary (embedded FAST
+profile at `m ≥ 22`); hardcoding the tiny ad-hoc config at big shapes is
+catastrophic (n=28 commit measured 292 s ad-hoc vs tens of ms embedded).
+
+**The 16 GB ceiling is n = 32.** The peak is forest-dominated
+(`F2_FOREST_SCHEDULE=l8` ⇒ ~`2^n · 2 B` for the forest + ~`2^n · 0.7 B`
+retained by the commit hint): n=33 needs ≈ 22 GB, n=34 ≈ 40 GB, n=36 ≈
+160 GB — beyond this machine regardless of schedule. Unlocks, in order of
+realism: more RAM (a 64 GB box runs n=34–35 with today's code); an L/16
+forest schedule (a fourth bit-driven leaf round — upstream engineering,
+not yet built there either); a streamed two-pass forest (redesign).
+Verifier time and proof size stay essentially flat (ms-class / sub-MB),
+so the statement scales — prover RAM is the only wall.
 
 ## Layout
 
