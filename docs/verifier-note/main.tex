@@ -1,0 +1,1261 @@
+\documentclass[11pt]{article}
+
+% ---------------------------------------------------------------------------
+% The F2Z verifier note. Build: latexmk -pdf main.tex
+% Describes verify_mle_eval_mod_q_ligerito as implemented in this repository,
+% treating the flock Ligerito verifier as a black-box oracle.
+% ---------------------------------------------------------------------------
+
+\usepackage[margin=1.05in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
+
+% --- notation (aligned with the upstream f2-int-eval note) ------------------
+\newcommand{\F}{\mathbb{F}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\K}{\mathbb{K}}            % the binding field GF(2^128)
+\newcommand{\Kx}{\K^{\times}}
+\newcommand{\Ftwo}{\F_2}
+\newcommand{\Fq}{\F_q}                 % the evaluation field (char != 2)
+\newcommand{\bits}{\{0,1\}}
+\newcommand{\INT}{\mathsf{INT}}
+\newcommand{\mle}[1]{\widetilde{#1}}
+\newcommand{\eq}{\mathsf{eq}}
+\newcommand{\cw}{c_w}
+% \code: typewriter names; underscores allow a line break after them, so
+% long function names wrap instead of overflowing the margin.
+\newcommand{\code}[1]{{\def\_{\textunderscore\allowbreak}\texttt{#1}}}
+\newcommand{\RecVerify}{\mathsf{LigVerify}}
+
+% Typewriter-heavy paragraphs: cmtt spaces have no stretch, so give the
+% line breaker slack instead of letting it emit overfull lines.
+\tolerance=1600
+\setlength{\emergencystretch}{1.8em}
+\hbadness=2500
+
+\newtheorem{definition}{Definition}
+\newtheorem{remark}{Remark}
+\newtheorem{obligation}{Obligation}
+
+\newcommand{\Vc}[1]{\textbf{[V#1]}}    % verifier check anchors
+
+\title{The F2Z verifier for the mod-$q$ opening,\\
+  with Ligerito as a black box}
+\author{The \code{f2z-pcs} repository}
+\date{2026-07-16}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+This note specifies, at code-review granularity, the verifier of the F2Z
+polynomial commitment scheme for its core statement — the mod-$q$
+integer-MLE evaluation
+$\smash{\mle{\INT(D)}}(r) = y \in \Fq$ over an $\Ftwo$-committed bit
+matrix — as implemented by \code{verify\_mle\_eval\_mod\_q\_ligerito} in
+\code{src/ligerito\_flock.rs}.  The flock Ligerito proximity verifier is
+treated throughout as a correct black box with a one-line interface
+contract (Definition~\ref{def:oracle}); its internals are explicitly out
+of scope.  The note walks the soundness chain in verification order —
+committed bits $\to$ (opening) residual bit-MLE claims $\to$ (forest GKR)
+roots $\alpha^{u}$ $\to$ (generator binding) integers $u$ $\to$ (chunk
+recombination) $y \in \Fq$ — and for every verifier-side quantity states
+whether it is \emph{recomputed from public data}, \emph{bound by a
+transcript absorb}, or \emph{oracle-certified}.  A reader holding this
+note and the source should be able to confirm, function by function, that
+every stated check exists and that no stated check is silently missing.
+\end{abstract}
+
+\tableofcontents
+
+% ===========================================================================
+\section{Scope, review contract, and the oracle}
+\label{sec:scope}
+
+F2Z\footnote{Repository \code{f2z-pcs}; a standalone extraction of the
+most-optimized \code{f2-int} pipeline from the \code{zinc-plus} repository
+(branch \code{f2-int-unified-ligerito}, snapshot 2026-07).  The
+construction is due to Lev Soukhanov (the char2-fieldswitch note, \S9);
+the as-deployed long-form exposition lives in
+\code{zinc-plus}'s \code{documentation/f2-int-eval-doc/}.  This note
+describes the extracted code, which has drifted from the deployment; where
+the two disagree, this repository's code is authoritative for this note.}
+proves an \emph{integer} multilinear-extension evaluation over data whose
+\emph{bits} are committed with a characteristic-2 commitment.  The
+integer row-fold is carried in the exponent of $\K = \mathrm{GF}(2^{128})$
+and certified by a GKR grand-product forest; the only opener is the
+flock-backed ring-switch + recursive Ligerito pipeline.
+
+\paragraph{What this note covers.}  Exactly one entry point and its
+callees:
+\begin{center}
+\footnotesize
+\begin{tabular}{p{0.56\textwidth}p{0.36\textwidth}}
+\toprule
+Function(s) & File \\
+\midrule
+\code{verify\_mle\_eval\_mod\_q\_ligerito} & \code{src/ligerito\_flock.rs} \\
+\code{verify\_int\_eval\_merged\_common} & \code{src/ligerito.rs} \\
+\code{verify\_merged\_forest}, \code{mle\_at}, \code{absorb\_gfs} & \code{src/merged\_forest.rs} \\
+\code{MLSumcheck::verify\_as\_subprotocol} & \code{src/piop/sumcheck.rs} \\
+\code{MultiDegreeSumcheck::verify\_as\_subprotocol} & \code{src/piop/sumcheck/multi\_degree.rs} \\
+\code{is\_generator}, \code{mod\_q\_chunk\_width}, \code{mod\_q\_num\_chunks},
+  \code{chunk\_row\_weights}, \code{row\_bit\_weights},
+  \code{recombine\_read\_off}, \code{FixedBasePow} & \code{src/pcs.rs} \\
+ring-switch pieces: \code{absorb\_sv}, \code{transpose\_bits\_128},
+  \code{residual\_b\_evals} & \code{src/ligerito.rs} \\
+\code{IntEvalRsLigModQProof::to\_bytes} / \code{from\_bytes} &
+  \code{src/ligerito\_flock.rs}, \code{src/proof\_codec.rs} \\
+\code{Blake3Transcript}, \code{absorb\_slice}, \code{get\_field\_challenge} & \code{src/transcript/} \\
+\code{ZincChallenger} (the flock challenger bridge) & \code{src/ligerito\_flock.rs} \\
+\bottomrule
+\end{tabular}
+\end{center}
+Line numbers drift; navigate by function name.
+
+\paragraph{What this note does not cover.}
+\begin{itemize}[itemsep=1pt]
+\item \emph{The Ligerito / ring-switch proximity verifier internals}
+  (\code{flock-core}).  It appears only as the oracle of
+  Definition~\ref{def:oracle}.  Whenever the text says ``the opening is
+  checked,'' that is the oracle call, full stop.
+\item The batched multi-polynomial variants
+  (\code{verify\_rs\_ligerito\_batch}) and the virtual-XOR variants
+  (\code{verify\_mle\_eval\_mod\_q\_ligerito\_with\_virtual\_xors},
+  \code{\ldots\_claims\_only}).  They exist as public API and are
+  discussed only in the one paragraph of
+  Section~\ref{sec:trust} that states their extra trust obligations.
+\item The prover, the commit path, and all performance machinery (lazy
+  forest schedules, NEON kernels).  These are semantics-preserving and
+  pinned byte-identical by tests (Section~\ref{sec:tests}); the verifier
+  never depends on which schedule produced a proof.
+\end{itemize}
+
+\paragraph{The oracle.}  The single point of contact with
+\code{flock-core} on this path is the following function, used once per
+verification:
+
+\begin{definition}[Ligerito opening oracle]\label{def:oracle}
+$\RecVerify(\mathit{vc},\, \pi_{\mathrm{lig}},\, m_p,\, \beta,\,
+\mathsf{root},\, \mathsf{EvalB},\, \mathcal{C}) \in \{\mathrm{accept},
+\mathrm{reject}\}$
+— in code,
+\code{flock\_core::pcs::ligerito::recursive\_verifier\_with\_basis\_succinct}.
+Inputs: a verifier config $\mathit{vc}$ (derived from the instance shape,
+Section~\ref{sec:config}); the flock proof object $\pi_{\mathrm{lig}}$; the
+packed variable count $m_p$; a target value $\beta \in \K$; the Merkle
+commitment root; a callback $\mathsf{EvalB}$ which, given a prefix
+$(\rho_1,\dots,\rho_k) \in \K^k$ and a tail width $k'$ with $k + k' = m_p$,
+returns the $2^{k'}$ values $\mle{B}(\rho_1,\dots,\rho_k,\mathsf{bits}(y))$
+of a weight function $B \colon \bits^{m_p} \to \K$ known to the verifier;
+and a Fiat–Shamir challenger $\mathcal{C}$ that continues the caller's
+transcript.  \emph{Assumed contract:} if the oracle accepts, then — except
+with negligible probability over the challenger's randomness — the vector
+$P \in \K^{2^{m_p}}$ committed under $\mathsf{root}$ (with the packing of
+Section~\ref{sec:statement}) satisfies
+\[
+  \textstyle\sum_{y \in \bits^{m_p}} P[y]\cdot B(y) \;=\; \beta .
+\]
+Completeness holds for honestly generated proofs.  Everything else — the
+proximity test, Merkle verification, query counts, grinding, out-of-domain
+sampling, and the oracle's own transcript sub-schedule — is inside the box.
+\end{definition}
+
+Note the contract is an \emph{inner-product} (weighted-sum) opening.
+The familiar point-evaluation form is the special case where $B$ is an
+$\eq$-derived tensor; the mod-$q$ verifier hands the oracle an
+$\eta$-batched combination of $L$ such functionals
+(Section~\ref{sec:linkage}), so the inner-product form is the honest
+interface.
+
+\paragraph{The soundness chain.}  \code{docs/DESIGN.md} states it; the
+verifier walks it in this order, one section per link:
+\begin{gather*}
+\underbrace{\text{committed bits}}_{\text{oracle, \S\ref{sec:linkage}}}
+\;\to\;
+\underbrace{\text{residual bit-MLE claims } \mle{M}(\mathit{pt}_l) = \mu_l}_{\text{ring switch, \S\ref{sec:linkage}}}
+\;\to\;
+\underbrace{\text{exit claims } e_d^{(l)}}_{\text{pre-sumcheck, \S\ref{sec:linkage}}}
+\;\to\; \\[2pt]
+\underbrace{\text{roots } \alpha^{u}}_{\text{forest, \S\ref{sec:forest}}}
+\;\to\;
+\underbrace{\text{integers } u}_{\text{binding, \S\ref{sec:binding}}}
+\;\to\;
+\underbrace{y \in \Fq}_{\text{read-off, \S\ref{sec:binding}}}
+\end{gather*}
+The verifier \emph{executes} the chain left-to-right per chunk in a
+different operational order (range/binding checks come first,
+Section~\ref{sec:schedule}); the chain above is the direction in which
+trust flows once all checks pass.
+
+\paragraph{The computing-vs-binding discipline.}  A verifier that merely
+\emph{recomputes} a value from prover-chosen inputs binds nothing.
+Throughout, every verifier-side quantity is classified as one of:
+\begin{itemize}[itemsep=1pt]
+\item[\textbf{(R)}] \emph{recomputed} from statement data (public inputs
+  the caller vouches for) and verifier randomness;
+\item[\textbf{(A)}] prover-supplied and \emph{bound by a transcript
+  absorb} before some later challenge, and/or \emph{checked equal} to an
+  already-bound quantity;
+\item[\textbf{(O)}] \emph{oracle-certified} — its correctness is exactly
+  Definition~\ref{def:oracle}'s guarantee.
+\end{itemize}
+Table~\ref{tab:provenance} classifies every quantity on the path.
+
+% ===========================================================================
+\section{Statement, instance shape, and the proof object}
+\label{sec:statement}
+
+\subsection{Instance shape and the committed matrix}
+
+\code{IntEvalParams \{ t, s, word\_bits: W \}} (\code{src/pcs.rs}) fixes
+the shape: the data $D$ is a $2^t \times 2^s$ matrix of $W$-bit cells,
+$W$ a power of two, flat index $\code{cell\_index}(b,c) = (b \ll s)\,|\,c$.
+Derived quantities used throughout:
+\[
+  d = t + \log_2 W, \qquad
+  m_p = d - 7 + s, \qquad
+  m = m_p + 7 = d + s
+\]
+(code: \code{row\_bit\_vars} and \code{packed\_vars}).
+The \emph{committed object} is the single-bit matrix
+$M \in \Ftwo^{2^s \times 2^d}$ with
+\[
+  M[c][i] = \text{bit } j \text{ of } D(b,c), \qquad
+  i = (b \ll \log_2 W)\,|\,j ,
+\]
+i.e.\ row $c$ concatenates the bits of column $c$'s cells, cell-major,
+bit-minor (\code{repack\_leaf\_bits}).  Its multilinear extension
+$\mle{M} \colon \K^{d+s} \to \K$ places the $d$ row-bit coordinates
+\emph{low} and the $s$ column coordinates \emph{high}, LSB-first within
+each block; all $\eq$ tables in the crate follow the same LSB-first
+convention (\code{build\_eq\_x\_r\_vec}).
+
+For the commitment, the bits are packed $128$ per $\K$-element along the
+low $7$ row-bit coordinates ($\code{LOG\_PACKING} = 7$): the packed vector
+$P \in \K^{2^{m_p}}$ has
+\[
+  P[\,c \cdot 2^{\,d-7} + i_{\mathrm{hi}}\,]
+  \;=\; \textstyle\sum_{v=0}^{127}\, M[c][\,(i_{\mathrm{hi}} \ll 7)\,|\,v\,]\cdot \beta_v ,
+\]
+where $\beta_v$ is the $v$-th bit of the $\K$-element representation
+(monomial basis, LSB-first; \code{commit\_rs\_flock\_from\_rows}).  $P$ is
+what flock commits: \code{flock\_core::pcs::commit::commit(\&p\_msg, \&PcsParams
+\{ m: $m_p + 7$, log\_inv\_rate, log\_batch\_size, profile \})} — the RS
+encoding, interleaving and Merkle tree are inside the oracle's box; the
+verifier only ever touches the \code{Commitment}'s root and shape
+parameters.  \emph{Precondition:} the commitment handed to the verifier
+was produced at this same shape; the verifier does not cross-check
+\code{commitment.params} against \code{p} (a mismatch is left to the
+oracle to reject).
+
+\subsection{The claim and the chunk decomposition}
+
+The verifier's signature is
+\begin{center}\small
+\code{verify\_mle\_eval\_mod\_q\_ligerito<R>(transcript, commitment, proof, p,
+row\_weights\_q, col\_weights, alpha, claimed, q\_bits, vc)}
+\end{center}
+with $R$ any ring of characteristic $\ne 2$ exposing
+\code{From<u128>}, $+$, $\times$.  The relation verified is, for the
+caller-supplied weight vectors
+$w \in [0, 2^{\,q_{\mathrm{bits}}})^{2^t}$ (\code{row\_weights\_q}, as
+\code{u128}s) and $w' \in R^{2^s}$ (\code{col\_weights}):
+\begin{equation}\label{eq:claim}
+  y \;=\; \sum_{c \in \bits^s} w'_c \sum_{b \in \bits^t} w_b \cdot \INT(D(b,c))
+  \quad\text{in } R,
+\end{equation}
+where $\INT(D(b,c)) = \sum_j 2^j M[c][(b \ll \log_2 W)|j]$ is the cell's
+integer value.  The \emph{intended instantiation} is the genuine MLE
+opening: $R = \Fq$, $w_b = \eq(b, r_1) \bmod q \in [0,q)$ the canonical
+integer representatives, $w'_c = \eq(c, r_2) \in \Fq$, whence
+$y = \mle{\INT(D)}(r_1, r_2)$.  The verifier itself is agnostic: any
+weights satisfying the width precondition are accepted, and soundness is
+with respect to~\eqref{eq:claim} for the weights given.
+
+Full-width row weights ($\approx q_{\mathrm{bits}} \approx 100$ bits)
+would overflow the exponent's injectivity budget, so they are chunked
+(\code{src/pcs.rs}):
+\begin{gather*}
+  \cw \;=\; 127 - t - W \quad (\code{mod\_q\_chunk\_width};\ \text{asserts } t + W \le 126),
+  \\[1pt]
+  L \;=\; \max\!\left(\lceil q_{\mathrm{bits}} / \cw \rceil,\, 1\right)
+  \quad (\code{mod\_q\_num\_chunks}),
+\end{gather*}
+\[
+  W^{(l)}_b \;=\; (w_b \gg \cw l) \wedge (2^{\cw} - 1)
+  \quad (\code{chunk\_row\_weights}), \qquad l = 0, \dots, L-1,
+\]
+so $w_b = \sum_l W^{(l)}_b\, 2^{\cw l}$ \emph{exactly} whenever
+$w_b < 2^{\cw L}$ — guaranteed by the precondition
+$w_b < 2^{q_{\mathrm{bits}}} \le 2^{\cw L}$.  (Weights at or above
+$2^{\cw L}$ would be silently truncated identically on both sides; the
+verified relation is always \eqref{eq:claim} with $w_b$ replaced by
+$\sum_l W^{(l)}_b 2^{\cw l}$.)  Each chunk's honest fold
+\begin{equation}\label{eq:chunkfold}
+  u^{(l)}_c \;=\; \sum_b W^{(l)}_b \cdot \INT(D(b,c))
+  \;\le\; (2^{\cw}-1)(2^W-1)\,2^{t} \;<\; 2^{\,\cw + t + W} \;=\; 2^{127}
+\end{equation}
+fits below the generator order and binds injectively in the exponent
+(Section~\ref{sec:binding}).  Prover and verifier derive
+$(\cw, L, W^{(l)})$ from the same public data; nothing about the chunking
+rides the proof.
+
+\subsection{The proof object}
+
+\code{IntEvalRsLigModQProof} (\code{src/ligerito\_flock.rs}):
+
+\begin{center}\small
+\begin{tabular}{p{0.27\textwidth}p{0.62\textwidth}}
+\toprule
+Field & Role \\
+\midrule
+\code{mfs: Vec<MergedForestProof>} &
+  One merged-forest proof per chunk ($L$ total).  Each is a
+  \code{Vec<MergedLayer>} of $d$ layers; a \code{MergedLayer} holds an
+  optional phase-A sumcheck proof \code{sc\_x} (absent at layer $0$), the
+  phase-B sumcheck proof \code{sc\_c}, and the closing child pair
+  \code{pair} $\in \K^2$.
+  \emph{The per-tree roots are not proof data}:
+  the verifier derives them from \code{us} (Section~\ref{sec:forest}). \\
+\code{us: Vec<Vec<u128>>} &
+  \code{us[l]} $= (u^{(l)}_c)_{c \in \bits^s}$, the $2^s$ sent chunk folds
+  of chunk $l$; claimed to equal \eqref{eq:chunkfold}. \\
+\code{presums: Vec<Multi\allowbreak DegreeSumcheckProof>} &
+  One de-black-boxing pre-sumcheck per chunk: $d$ rounds, one group,
+  degree $2$ when honest (the degree field rides the proof;
+  Remark~\ref{rem:degree}), plus the group's claimed sum. \\
+\code{rings: Vec<RingSwitchProof>} &
+  One ring-switch message per chunk: \code{s\_v}, the $128$ partial
+  evaluations $s^{(l)}_v = \mle{M}_v(\mathit{pt}_l^{\mathrm{hi}})$
+  (Section~\ref{sec:linkage}). \\
+\code{lig: LigeritoProof} &
+  flock's serde proof object for the single batched opening — opaque here
+  (Definition~\ref{def:oracle}). \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Serialization: the host proof stream}
+\label{sec:serialization}
+
+\code{to\_bytes} / \code{from\_bytes} (\code{src/ligerito\_flock.rs},
+codec primitives in \code{src/proof\_codec.rs}).  All scalars are
+little-endian.  The stream grammar is, in order:
+
+\begin{center}\small
+\begin{tabular}{ll}
+\toprule
+Bytes & Content \\
+\midrule
+\code{u64} & $L$ (chunk count) \\
+\emph{per chunk} $l$: & \\
+\quad \code{u64} & layer count ($= d$ when honest) \\
+\quad \emph{per layer}: \code{u64} & \code{sc\_x} presence flag ($0$ or $1$) \\
+\quad\quad [\code{Transcribable}] & \code{sc\_x} (iff flag $= 1$) \\
+\quad\quad \code{Transcribable} & \code{sc\_c} \\
+\quad\quad $2 \times 16$\,B & closing pair $(p, q)$, each a $\K$-element (two LE words) \\
+\quad \code{u64} + $n_u \times 16$\,B & fold count $n_u$, then \code{us[l]} as LE \code{u128}s \\
+\quad \code{Transcribable} & \code{presums[l]} \\
+\quad \code{u64} + $n_{sv} \times 16$\,B & ring length $n_{sv}$ ($=128$ when honest), then \code{s\_v} \\
+\code{u64} + $n$ B & length-prefixed \textbf{bincode 1.3} blob of \code{lig} (flock's own pinned encoder) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\code{Transcribable} values are self-describing: a \code{u32} LE byte
+length, then the payload.  A \code{SumcheckProof} payload is, in order:
+a 16-byte field-modulus tag (the $\mathtt{0x87}$ pattern); a \code{u32}
+message count; per message, a \code{u32} evaluation count followed by
+that many 16-byte evaluations; and the 16-byte claimed sum.  A
+\code{MultiDegreeSumcheckProof} payload is: the 16-byte modulus tag; a
+\code{u32} group count; a \code{u32} round count; one \code{u32} degree
+per group; then all groups' round messages (per group, per round, the
+degree-many 16-byte evaluations); then one 16-byte claimed sum per group.
+
+\paragraph{What \code{from\_bytes} rejects, exactly.}  The outer reader
+returns \code{CodecError::Truncated} whenever a \code{u64}/\code{u128}/%
+$\K$-element/blob read would run past the buffer (including overflow of
+the cursor), and \code{CodecError::Bincode} when the embedded
+\code{LigeritoProof} blob fails bincode decoding.  Everything else is
+deferred to verification: counts inconsistent with the statement
+($L \ne \lceil q_{\mathrm{bits}}/\cw\rceil$, wrong layer counts, wrong
+ring lengths, \dots) decode fine and are rejected by the shape checks of
+Section~\ref{sec:schedule}.
+
+\paragraph{Codec caveats (robustness, not soundness).}  Three properties
+a reviewer should know; none creates a false-acceptance path, since every
+decoded proof still faces the full verifier:
+\begin{itemize}[itemsep=1pt]
+\item \emph{Panic paths on malformed streams.}  The \code{Transcribable}
+  sub-decoders are \code{assert!}/\code{expect}-based: a truncated or
+  length-inconsistent inner payload, or an embedded field-modulus tag
+  $\ne \mathtt{0x87}$, aborts by panic rather than returning
+  \code{CodecError}.  A host feeding untrusted bytes should treat
+  \code{from\_bytes} as panicking-on-hostile-input (e.g.\ wrap it) until
+  hardened.
+\item \emph{Non-strict decoding.}  Trailing bytes after the
+  \code{lig} blob are ignored (no end-of-stream check), and any
+  \code{sc\_x} presence flag $\ne 1$ decodes as ``absent.''  Hence
+  distinct byte streams can decode to one proof; canonicity
+  (\emph{re}-serialization being byte-identical, pinned by test) is a
+  property of \code{to\_bytes} output, not of arbitrary accepted input.
+\item \emph{No semantic validation at decode.}  By design: the codec is a
+  framing layer; the verifier is the validator.
+\end{itemize}
+
+% ===========================================================================
+\section{Verification order and the Fiat--Shamir schedule}
+\label{sec:schedule}
+
+\subsection{Transcript primitives}
+\label{sec:transcript}
+
+The transcript is a Blake3 hasher (\code{Blake3Transcript},
+\code{src/transcript/mod.rs}).  Byte-level semantics:
+\begin{itemize}[itemsep=1pt]
+\item \code{absorb\_slice(buf)} updates the hasher with
+  $\mathtt{0x06} \,\|\, \mathrm{buf} \,\|\, \mathtt{0x07}$.
+\item \code{absorb\_gfs(tag, vals)} (\code{src/merged\_forest.rs}) and
+  \code{absorb\_gf\_slice(tag, vals)} (\code{src/ligerito.rs}) call
+  \code{absorb\_slice} on one domain-tag byte followed by each
+  $\K$-element as two LE \code{u64} words.  Tags used
+  on this path: $\mathtt{0x30}$ (forest roots), $\mathtt{0x32}$ (layer
+  closing pair), $\mathtt{0x20}$ (ring-switch \code{s\_v}).  (Tag
+  $\mathtt{0x37}$, virtual-XOR externals, does not occur here.)
+\item \code{absorb\_random\_field(v)} — used by the sumcheck layers —
+  updates with
+  \[
+    \mathtt{0x03} \,\|\, \mathrm{modulus} \,\|\, \mathtt{0x05} \,\|\,
+    \mathtt{0x01} \,\|\, \mathrm{inner} \,\|\, \mathtt{0x03},
+  \]
+  where for $\K$ the modulus bytes are the fixed 16-byte LE pattern of
+  $\mathtt{0x87}$ (the reduction pentanomial
+  $X^{128}+X^7+X^2+X+1$ with the $X^{128}$ bit implicit) and the inner
+  bytes are the element's 16-byte LE representation.
+\item \code{get\_field\_challenge::<Gf>()} squeezes 16 bytes from the
+  Blake3 XOF (\emph{without} advancing the state), then ratchets the state
+  with $\mathtt{0x12} \,\|\, \text{squeezed bytes} \,\|\, \mathtt{0x34}$,
+  and interprets the squeezed bytes as a $\K$-element (raw 128 bits,
+  LSB-first; every 16-byte string is a valid element, so challenges are
+  uniform over $\K$).  \code{get\_field\_challenges(n)} is $n$ sequential
+  such calls.
+\item \code{ZincChallenger} (\code{src/ligerito\_flock.rs}) drives
+  flock's \code{Challenger} trait from the same transcript:
+  \code{observe\_label}/\code{observe\_bytes}/\code{observe\_f128(\_slice)}
+  map to \code{absorb\_slice} (elements as 16-byte LE),
+  \code{sample\_f128} maps to \code{get\_field\_challenge}, and the
+  proof-of-work hooks squeeze one field element as grinding seed and
+  absorb the 8-byte LE nonce via \code{absorb\_slice}
+  (\code{verify\_pow} absorbs the nonce whether or not the grinding check
+  passes, keeping the transcript in lockstep; an honest verifier rejects
+  on failure inside the oracle).  Thus the oracle's sub-schedule
+  \emph{continues the same Fiat--Shamir chain}; its contents are out of
+  scope.
+\end{itemize}
+
+\subsection{The verifier, step by step}
+\label{sec:steps}
+
+Below is the complete operational order of
+\code{verify\_mle\_eval\_mod\_q\_ligerito}, with every check anchored
+\Vc{$\cdot$} and every transcript action marked
+$\mathbf{A}$ (absorb) / $\mathbf{S}$ (squeeze).  The prover performs the
+identical $\mathbf{A}/\mathbf{S}$ sequence at the corresponding stages, so
+transcripts stay in lockstep; any divergence misaligns every later
+challenge and the run rejects (with overwhelming probability) at the first
+challenge-dependent check.
+
+\begin{enumerate}[leftmargin=2.2em, itemsep=2pt]
+\item \emph{Setup (no transcript activity).}  Recompute
+  $\cw$, $L$; \Vc{0} reject \code{Shape} unless
+  $|\code{mfs}| = |\code{us}| = |\code{presums}| = |\code{rings}| = L$;
+  recompute the chunk weights $W^{(l)}$ from \code{row\_weights\_q}; set
+  $\mathrm{bound} = 2^{\cw + t + W} = 2^{127}$.
+
+\item \emph{Per chunk $l = 0, \dots, L-1$, sequentially:}
+  \begin{enumerate}[leftmargin=1.6em, itemsep=1pt]
+  \item \Vc{1} \emph{Range:} for every $c$:
+    $u^{(l)}_c < 2^{127}$, else \code{ChunkRange\{chunk: $l$, col: $c$\}}.
+    (Runs before any of chunk $l$'s transcript activity.)
+  \item Enter \code{verify\_int\_eval\_merged\_common} with weights
+    $W^{(l)}$:
+    \begin{enumerate}[leftmargin=1.6em, itemsep=1pt]
+    \item \Vc{2} $|\code{us[l]}| = 2^s$, else \code{Forest}.
+    \item \Vc{3} $\code{is\_generator}(\alpha)$, else
+      \code{ChallengeNotGenerator} (Section~\ref{sec:binding}; evaluated
+      identically every chunk).
+    \item \Vc{4} $\max_c u^{(l)}_c < 2^{128}-1$, else
+      \code{Magnitude}.  Vacuous given \Vc{1} (kept for shape parity with
+      the unchunked path).
+    \item \emph{Recompute roots} $R^{(l)}_c = \alpha^{u^{(l)}_c}$
+      (fixed-base comb, \code{FixedBasePow::new($\alpha$, 128, 8)}).
+      \textbf{(R)} from proof data — binding comes from the next step's
+      absorb.
+    \item Run \code{verify\_merged\_forest} (Section~\ref{sec:forest}):
+      \Vc{5}–\Vc{11}, absorbs
+      $\mathbf{A}(\mathtt{0x30}\!:\!\text{roots})$,
+      $\mathbf{S}(\zeta \in \K^s)$, then per layer the phase-A/B sumcheck
+      exchanges and
+      $\mathbf{A}(\mathtt{0x32}\!:\!\text{pair})$,
+      $\mathbf{S}(\lambda_\ell)$.  Output: exit point
+      $z^{(l)} = (z_x^{(l)}, z_c^{(l)}) \in \K^{d} \times \K^{s}$ and exit
+      value $e_d^{(l)}$.  Failure maps to \code{Forest}.
+    \item Run \code{MultiDegreeSumcheck::verify\_as\_subprotocol} on
+      \code{presums[l]} with round count $d$
+      (Section~\ref{sec:linkage}): absorbs
+      $\mathbf{A}(d)$, $\mathbf{A}(n_{\mathrm{groups}})$,
+      $\mathbf{A}(\text{degree})$ (each via
+      \code{absorb\_random\_field}), then per round
+      $\mathbf{A}(\text{round message})$, $\mathbf{S}(\text{challenge})$,
+      $\mathbf{A}(\text{challenge})$; checks \Vc{12} (round count $= d$)
+      and \Vc{13} (per-round message length $=$ declared degree, enforced
+      at the end).  Output: shared point $r^{*(l)} \in \K^{d}$ and
+      expected evaluation $E^{(l)}$.  Failure maps to \code{PreSumcheck}.
+    \item \Vc{14} $\code{presums[l].claimed\_sums()} = [\,e_d^{(l)} + 1\,]$
+      (one group, exactly this value), else \code{PreSumcheck}.
+    \item Recompute
+      $\widehat{R}^{(l)} = \sum_i q^{(l)}_{\mathrm{rowbit}}[i]\cdot
+       \eq(i, r^{*(l)})$ with
+      $q^{(l)}_{\mathrm{rowbit}}[i] = \eq(i, z_x^{(l)})\cdot
+       (\alpha^{W^{(l)}_b 2^j} - 1)$, $i = (b \ll \log_2 W)|j$
+      (\code{row\_bit\_weights}; the verifier's one $O(2^{d})$ step).
+      \Vc{15} $\widehat{R}^{(l)} \ne 0$, else \code{RHatZero}.  Set
+      $\mu_l = E^{(l)} \cdot (\widehat{R}^{(l)})^{-1}$ and
+      $\mathit{pt}_l = (r^{*(l)} \,\|\, z_c^{(l)}) \in \K^{d+s}$.
+    \end{enumerate}
+  \end{enumerate}
+
+\item \emph{Ring-switch checks, per chunk $l = 0, \dots, L-1$:}
+  \Vc{16} $|\code{s\_v}^{(l)}| = 128$, else \code{Shape};
+  \Vc{17} $\sum_{v=0}^{127} \eq(v, \mathit{pt}_l[0..7]) \cdot s^{(l)}_v
+   = \mu_l$, else \code{RingSwitchClaim}; then
+  $\mathbf{A}(\mathtt{0x20}\!:\!\code{s\_v}^{(l)})$.
+  (Check first, absorb second; the prover absorbs unconditionally at the
+  same position.)
+
+\item $\mathbf{S}(r'' \in \K^{7})$, then
+  $\mathbf{S}(\eta \in \K^{L})$ — seven then $L$ sequential field
+  challenges.  Build $\eq_{r''} \in \K^{128}$.
+
+\item \emph{Target.}  Recompute
+  $\beta_l = \sum_{u=0}^{127} \eq_{r''}[u] \cdot
+   \big(\mathsf{transpose}_{128}(\code{s\_v}^{(l)})\big)[u]$
+  and $\beta = \sum_l \eta_l \beta_l$
+  (\code{transpose\_bits\_128}: the $128\times128$ bit transpose,
+  $\mathrm{bit}_v(\mathrm{out}[u]) = \mathrm{bit}_u(\mathrm{in}[v])$).
+
+\item \Vc{18} \emph{The oracle call} (Definition~\ref{def:oracle}):
+  \[
+    \RecVerify(\mathit{vc},\, \code{lig},\, m_p,\, \beta,\, \mathsf{root},\,
+     \mathsf{EvalB},\, \mathcal{C}),
+  \]
+  with $\mathsf{EvalB}$ the closure over
+  $\{\mathit{pt}_l^{\mathrm{hi}}\}_l = \{\mathit{pt}_l[7..]\}_l$,
+  $\eq_{r''}$ and $\eta$ described in Section~\ref{sec:linkage}, and
+  $\mathcal{C} = \code{ZincChallenger(transcript)}$.  Reject
+  \code{LigeritoReject} if the oracle rejects.  All transcript activity
+  inside is the oracle's.
+
+\item \Vc{19} \emph{Read-off} (after the oracle; pure recomputation):
+  \[
+    y_{\mathrm{ver}} \;=\; \sum_{c} w'_c \sum_{l} 2^{\cw l}\, u^{(l)}_c
+    \quad\text{in } R
+    \qquad (\code{recombine\_read\_off}),
+  \]
+  reject \code{ReadOff} unless $y_{\mathrm{ver}} = \code{claimed}$.
+\end{enumerate}
+
+{\sloppy
+Error type: \code{FlockRsError}; the variants reachable here are
+\code{RingSwitch} (of \code{Shape} or \code{RingSwitchClaim}),
+\code{ChunkRange}, \code{LigeritoReject}, and \code{Common} (of
+\code{Forest}, \code{ChallengeNotGenerator}, \code{Magnitude},
+\code{PreSumcheck}, \code{RHatZero}, or \code{ReadOff}).\par}
+The verifier is
+fail-fast: the \emph{first} failed check aborts, so later transcript
+activity does not occur on rejection (relevant only to error-behavior
+review, not to soundness).
+
+\subsection{The Fiat--Shamir invariant}
+\label{sec:fsinvariant}
+
+\emph{Every squeeze follows the absorbs of everything that squeeze must
+bind.}  Concretely, in transcript order:
+\begin{itemize}[itemsep=1pt]
+\item $\zeta^{(l)}$ follows $\mathbf{A}(\mathtt{0x30})$ of chunk $l$'s
+  recomputed roots — this is the absorb that binds the sent folds
+  \code{us[l]} (the roots are a deterministic function
+  $\alpha^{u^{(l)}_c}$ of them), and transitively the entire earlier
+  transcript, including all previous chunks.
+\item Each sumcheck round challenge follows the absorb of that round's
+  message(s); each layer's line challenge $\lambda_\ell$ follows
+  $\mathbf{A}(\mathtt{0x32})$ of that layer's closing pair; the
+  pre-sumcheck's metadata ($d$, group count, degree) is absorbed before
+  its first round.
+\item $r''$ and $\eta$ follow the absorbs of \emph{all} $L$ ring
+  messages $\code{s\_v}^{(l)}$ (and everything before them); the oracle
+  target $\beta$ is a function only of absorbed data
+  ($\code{s\_v}$) and of $r'', \eta$ themselves.
+\item The oracle's internal challenges continue the same chain, hence
+  follow everything above.
+\end{itemize}
+
+\begin{obligation}[Statement binding is the caller's]
+\label{ob:root}
+Neither \code{verify\_mle\_eval\_mod\_q\_ligerito} nor the in-repo tests
+absorb the commitment root, the weights, $q_{\mathrm{bits}}$, the claimed
+$y$, or $\alpha$ into the transcript: the API takes them as inputs, and
+the module documentation (\code{src/ligerito.rs}) places the absorb of the
+root ``before any challenge is drawn'' with the \emph{caller}.  In a
+Fiat--Shamir deployment the host must (i) absorb the commitment root and
+all statement data into this transcript before the first squeeze-bearing
+call, and (ii) sample any statement randomness (the evaluation point
+behind the weights; $\alpha$, if random) from that transcript.  For
+$\alpha$ specifically, binding soundness does not require randomness —
+any \emph{generator} works (Section~\ref{sec:binding}) — but it must be
+fixed before the prover commits to \code{us}.
+\end{obligation}
+
+% ===========================================================================
+\section{The merged-forest GKR verifier}
+\label{sec:forest}
+
+\code{verify\_merged\_forest(transcript, roots, proof, depth = $d$, s)}
+(\code{src/merged\_forest.rs}) verifies that a family of $2^s$ product
+trees of depth $d$, whose leaf layer is the (never-materialized)
+multilinear family
+$\Lambda^{(l)}[c][i] \in \K$, has per-tree roots equal to the supplied
+\code{roots}, reducing the statement to a single evaluation claim on the
+leaf MLE.  On this path the leaves are the bit-affine values
+\begin{equation}\label{eq:leaves}
+  \Lambda^{(l)}[c][i] \;=\; 1 + M[c][i]\cdot \tau^{(l)}(i),
+  \qquad
+  \tau^{(l)}(i) \;=\; \alpha^{W^{(l)}_b 2^j} - 1
+  \quad (i = (b \ll \log_2 W)|j),
+\end{equation}
+so that $\prod_i \Lambda^{(l)}[c][i] = \alpha^{\sum_b W^{(l)}_b
+\INT(D(b,c))} = \alpha^{u^{(l)}_c}$ for the \emph{true} fold — the whole
+point of the forest.  (In $\K$, $-1 = +1$; we keep the $-1$ form for
+readability.)
+
+\paragraph{Roots are derived, not carried.}  The caller recomputes
+$R_c = \alpha^{u_c}$ from the sent folds and passes them in; the proof
+object has no root field.  The very first transcript action,
+$\mathbf{A}(\mathtt{0x30}\!:\!R_0,\dots,R_{2^s-1})$, is what binds the
+folds: a prover whose forest messages were generated against different
+roots faces challenges derived from \emph{these} roots and fails the layer
+checks with overwhelming probability.  \emph{The absorb is the binding.}
+
+\paragraph{Entry.}  \Vc{5} \code{Shape} unless $|\mathrm{roots}| = 2^s$
+and $|\code{layers}| = d$.  Then $\mathbf{S}(\zeta \in \K^s)$ and the
+verifier computes the entry claim \emph{itself}:
+\[
+  C_0 \;=\; \code{mle\_at}(\mathrm{roots}, \zeta) \;=\; \mle{R}(\zeta)
+  \qquad \textbf{(R)},
+\]
+by $s$ successive low-bit binds ($O(2^s)$ work).  No prover data is
+involved in $C_0$.
+
+\paragraph{Layer loop.}  The trees' levels form one multilinear family
+$L_\ell(x, c)$ over $(x, c) \in \bits^\ell \times \bits^s$ ($x$ = in-tree
+index, low; $c$ = tree index, high) with the top-bit product recursion
+$L_\ell(x,c) = L_{\ell+1}(x, 0, c) \cdot L_{\ell+1}(x, 1, c)$ (the new
+child bit is the \emph{top} in-tree bit).  The verifier maintains a
+running claim $C_\ell = \mle{L_\ell}(z_x, z_c)$, starting from
+$(z_x, z_c) = (\varepsilon, \zeta)$, $C_0$ as above.  For each layer
+$\ell = 0, \dots, d-1$, the claim
+\[
+  C_\ell \;=\; \sum_{x \in \bits^\ell} \sum_{c \in \bits^s}
+  \eq(x, z_x)\, \eq(c, z_c)\; L_{\ell+1}(x,0,c)\, L_{\ell+1}(x,1,c)
+\]
+is discharged in two sumcheck phases plus a line step:
+\begin{enumerate}[leftmargin=2.2em, itemsep=1pt]
+\item \emph{Phase A} (in-tree variables; only for $\ell \ge 1$):
+  \Vc{6} layer $0$ must have \code{sc\_x} absent and layers $\ge 1$
+  present (\code{Shape});
+  \Vc{7} the phase-A proof's \code{claimed\_sum} must equal the running
+  claim $C_\ell$ (\code{LayerClaim}) — this is where the chain from the
+  absorbed roots reaches the layer.  Then
+  \code{MLSumcheck::verify\_as\_subprotocol(transcript, $\ell$, 3, sc\_x)}
+  runs an $\ell$-round, \emph{degree-3} sumcheck (degree pinned by the
+  verifier, not the proof), yielding a point $r_x \in \K^\ell$ and an
+  expected evaluation $E_A$.
+  \Vc{10} $E_A = \eq(r_x, z_x)\cdot \code{sc\_c.claimed\_sum}$
+  (\code{LayerClaim}) — the factored-$\eq$ linkage that hands the residual
+  sum to phase B.  (At $\ell = 0$, \Vc{7} instead checks
+  $\code{sc\_c.claimed\_sum} = C_0$ directly.)
+\item \emph{Phase B} (tree-index variables):
+  \code{MLSumcheck::verify\_as\_subprotocol(transcript, $s$, 3, sc\_c)}
+  yields $r_c \in \K^s$ and $E_B$.
+  \Vc{11} $E_B = \eq(r_c, z_c)\cdot p \cdot q$ where
+  $(p, q) = \code{pair}$ is the layer's closing child pair
+  (\code{LayerClaim}).  The honest values are
+  $p = \mle{L_{\ell+1}}(r_x, 0, r_c)$, $q = \mle{L_{\ell+1}}(r_x, 1, r_c)$.
+\item \emph{Line step:}
+  $\mathbf{A}(\mathtt{0x32}\!:\!p, q)$, $\mathbf{S}(\lambda_\ell)$, and the
+  claim advances along the line through the pair:
+  \[
+    C_{\ell+1} \;=\; p + \lambda_\ell\,(p + q), \qquad
+    z_x \leftarrow r_x \,\|\, \lambda_\ell, \qquad
+    z_c \leftarrow r_c .
+  \]
+  ($\lambda_\ell$ is the code's per-layer \code{mu}; renamed here to avoid
+  clashing with the residual value $\mu_l$.)
+\end{enumerate}
+After $d$ layers the exit is $z = (z_x, z_c) \in \K^{d+s}$ with exit value
+$e_d = C_d$, honestly $\mle{\Lambda}(z_x, z_c)$ — pinned by the
+\code{merged\_forest\_roundtrips} test, which checks the exit value equals
+\code{mle\_at(leaves, $z$)}.
+
+\paragraph{Inside the generic sumcheck.}
+(\code{src/piop/sumcheck.rs} + \code{verifier.rs}.)  Both phases use the
+same subprotocol.  It first absorbs the variable count and the degree
+(via \code{absorb\_random\_field}), rejects unless the message count
+equals the variable count \Vc{8}, then per round: absorbs the round
+message, squeezes the round challenge, and absorbs the challenge back.
+Round messages carry only the \emph{tail} evaluations
+$P_i(1), \dots, P_i(\deg)$; the verifier reconstructs
+$P_i(0) := \mathrm{expected}_{i-1} - P_i(1)$, so the per-round sum
+identity $P_i(0) + P_i(1) = \mathrm{expected}_{i-1}$ holds \emph{by
+construction} and the protocol's content is the chaining
+$\mathrm{expected}_i = P_i(r_i)$ (Lagrange interpolation on
+$\{0,\dots,\deg\}$) together with the caller's use of the final expected
+evaluation (checks \Vc{10}, \Vc{11} above; check \Vc{14}+division in
+Section~\ref{sec:linkage}).  Per-round message length is enforced equal to
+the degree at the end \Vc{9} (\code{MaxDegreeExceeded}); the absorbs use
+the messages as sent.
+
+\paragraph{Provenance.}  In this section: the roots are \textbf{(R)}
+recomputed from proof data and bound by $\mathbf{A}(\mathtt{0x30})$;
+$C_0$ is \textbf{(R)} from bound data plus $\zeta$; the round messages,
+closing pairs, and \code{claimed\_sum} fields are \textbf{(A)} — absorbed,
+and additionally checked (\Vc{7}, \Vc{10}, \Vc{11}) against
+already-chained values; all challenges are squeezed; $e_d$ and $z$ are
+\textbf{(R)} functions of bound data and challenges.  Nothing here touches
+the commitment yet: the forest alone binds \code{us} to \emph{some}
+multilinear leaf family; identifying that family with the committed bits
+is the next section's job.
+
+% ===========================================================================
+\section{The exit-claim linkage: pre-sumcheck, ring switch,
+  $\eta$-batching, one oracle call}
+\label{sec:linkage}
+
+This is the load-bearing glue: it turns each chunk's forest exit claim —
+an evaluation of the \emph{leaf} MLE, which entangles the committed bits
+with the public $\alpha$-power table — into a $\K$-linear functional of
+the committed bits alone, and hands the batch of $L$ such functionals to
+the oracle as \emph{one} inner-product claim.
+
+\subsection{From the exit claim to a bit-MLE claim: the pre-sumcheck}
+
+By \eqref{eq:leaves} and multilinearity of the extension (the MLE of the
+all-ones table is $1$):
+\begin{equation}\label{eq:exit}
+  e_d^{(l)} \;-\; 1
+  \;=\; \sum_{i \in \bits^{d}} \sum_{c \in \bits^s}
+        \eq(i, z_x^{(l)})\,\eq(c, z_c^{(l)})\; M[c][i]\;\tau^{(l)}(i)
+  \;=\; \sum_{i \in \bits^{d}} q^{(l)}_{\mathrm{rowbit}}[i]\cdot m^{(l)}[i],
+\end{equation}
+where
+$q^{(l)}_{\mathrm{rowbit}}[i] = \eq(i, z_x^{(l)})\,\tau^{(l)}(i)$
+(\code{row\_bit\_weights} at $\rho = z_x^{(l)}$) and
+$m^{(l)}[i] = \sum_c \eq(c, z_c^{(l)})\, M[c][i]$ is the
+$z_c$-combined row.  In $\K$, $e_d - 1 = e_d + 1$; the code checks the
+$+1$ form.
+
+The pre-sumcheck (\code{presums[l]}) is a $d$-round degree-2 sumcheck on
+the right-hand side of \eqref{eq:exit}, verified by
+\code{MultiDegreeSumcheck::verify\_as\_subprotocol} with one group.  The
+verifier:
+\begin{itemize}[itemsep=1pt]
+\item checks \Vc{14}
+  $\code{claimed\_sums()} = [\,e_d^{(l)} + 1\,]$ — the sumcheck's asserted
+  sum is not free data; it must equal the forest-chained exit value, and
+  the slice comparison simultaneously pins the group count to one;
+\item runs the rounds (shared-challenge machinery, identical
+  absorb/squeeze pattern to Section~\ref{sec:forest}'s subprotocol, with
+  round count pinned to $d$ by the verifier), obtaining the point
+  $r^{*(l)}$ and expected evaluation $E^{(l)}$, honestly
+  $\widehat{R}^{(l)} \cdot \mle{m^{(l)}}(r^{*(l)})$;
+\item recomputes $\widehat{R}^{(l)} =
+  \mle{q^{(l)}_{\mathrm{rowbit}}}(r^{*(l)})$ from public data
+  \textbf{(R)} — the $O(2^{d})$ table build plus an inner product with
+  the $\eq(\cdot, r^{*(l)})$ table — rejects \Vc{15} if it is zero
+  (\code{RHatZero}; for honest runs this happens with probability
+  $\approx 2^{-128}$ over the challenges, \emph{except} in the degenerate
+  statement where every weight of the chunk is zero, which makes
+  $q^{(l)}_{\mathrm{rowbit}} \equiv 0$ and rejects deterministically — a
+  completeness corner, not a soundness issue; an adversary gains nothing
+  by hoping for a zero since rejection is the outcome), and
+  \emph{divides}:
+  \[
+    \mu_l \;=\; E^{(l)} \cdot \big(\widehat{R}^{(l)}\big)^{-1},
+  \]
+  which for an honest prover equals
+  $\mle{m^{(l)}}(r^{*(l)}) = \mle{M}(r^{*(l)}, z_c^{(l)})$ — a pure
+  bit-MLE evaluation at the point
+  $\mathit{pt}_l = (r^{*(l)} \| z_c^{(l)})$, with the $\alpha$-power
+  weight factor stripped.  The division is the ``de-black-boxing'':
+  everything $\alpha$-dependent is now on the verifier's side of the
+  equation.
+\end{itemize}
+
+\begin{remark}[The pre-sumcheck degree rides the proof]
+\label{rem:degree}
+Unlike the forest layers (degree pinned to $3$ by the verifier), the
+pre-sumcheck's per-group degree is read from the proof, absorbed, and then
+enforced per round.  A malicious prover may declare any degree
+$\delta < 2^{32}$ (the codec's \code{u32}); the sumcheck's per-round
+soundness error grows linearly, $\delta / |\K|$, i.e.\ at most
+$2^{32-128}$ per round — negligible.  The declared degree is absorbed
+before any round challenge, so it cannot be chosen adaptively per round.
+This is a documented asymmetry, not a gap.
+\end{remark}
+
+\subsection{From $L$ bit-MLE claims to one oracle call: the ring switch}
+
+Each $\mathit{pt}_l \in \K^{d+s}$ splits at the packing boundary:
+$r_{\mathrm{lo}}^{(l)} = \mathit{pt}_l[0..7]$ (the seven in-pack row-bit
+coordinates) and $\mathit{pt}_l^{\mathrm{hi}} = \mathit{pt}_l[7..] \in
+\K^{m_p}$.  Writing $\mle{M}_v$ for the MLE of the $v$-th bit-slice of the
+packed vector $P$ (i.e.\ $P[y] = \sum_v \mle{M}_v$-table$[y]\cdot\beta_v$),
+multilinearity gives
+$\mle{M}(\mathit{pt}_l) = \sum_{v=0}^{127}
+ \eq(v, r_{\mathrm{lo}}^{(l)})\cdot \mle{M}_v(\mathit{pt}_l^{\mathrm{hi}})$.
+The prover sends, per chunk, the 128 partial evaluations
+$s^{(l)}_v$ claimed to be $\mle{M}_v(\mathit{pt}_l^{\mathrm{hi}})$
+(\code{RingSwitchProof.s\_v}); the verifier:
+\begin{itemize}[itemsep=1pt]
+\item \Vc{17} checks the one $\K$-linear consistency equation
+  $\sum_v \eq(v, r_{\mathrm{lo}}^{(l)})\, s^{(l)}_v = \mu_l$ — this ties
+  the message to the forest-chained value $\mu_l$ (one constraint out of
+  128 degrees of freedom; the rest are bound below);
+\item absorbs each message
+  ($\mathbf{A}(\mathtt{0x20})$, all $L$ of them in chunk order), then
+  squeezes $r'' \in \K^7$ and $\eta \in \K^L$;
+\item recombines each message through the $\Ftwo$-linear batching map
+  $\Phi_{r''}\colon \beta_u \mapsto \eq_{r''}[u]$: with
+  $s_u^{(l)} = \mathsf{transpose}_{128}(s^{(l)})$ (an exact basis
+  reindexing, \code{transpose\_bits\_128}),
+  \[
+    \beta_l \;=\; \sum_{u=0}^{127} \eq_{r''}[u]\; s_u^{(l)},
+    \qquad
+    \beta \;=\; \sum_{l} \eta_l\, \beta_l \qquad \textbf{(R)} .
+  \]
+  For honest messages, $\beta_l = \sum_y P[y]\cdot B_l(y)$ with
+  \[
+    B_l(y) \;=\; \Phi_{r''}\!\big(\eq(\mathit{pt}_l^{\mathrm{hi}},
+    y)\text{-table}[y]\big),
+  \]
+  the ring-switch recombination identity (Flock, App.~B; ring-switching
+  due to Diamond--Posen).  If some $s^{(l)}$ differs from the true partial
+  evaluations, then over the choice of $r''$ (squeezed \emph{after} the
+  absorb of $s^{(l)}$) the recombined $\beta_l$ differs from
+  $\sum_y P[y] B_l(y)$ except with probability at most $7 \cdot 2^{-128}$
+  (Schwartz--Zippel; the difference is a nonzero multilinear polynomial in
+  the $7$ coordinates of $r''$), and over $\eta$ the batch value $\beta$
+  then differs from $\sum_y P[y] B(y)$ except with probability
+  $2^{-128}$ (the difference is a nonzero linear form in $\eta$) —
+  leaving a false $(\beta, B)$ pair to the oracle, which rejects by
+  Definition~\ref{def:oracle}.
+\end{itemize}
+
+\paragraph{The oracle call.}  The combined weight function is
+$B(y) = \sum_l \eta_l\, B_l(y)$.  The verifier never materializes $B$
+(that would cost $O(2^{m_p})$); instead it hands the oracle the
+$\mathsf{EvalB}$ callback, which evaluates the MLE $\mle{B}$ at
+oracle-chosen points succinctly:
+\[
+  \mathsf{EvalB}(\rho, k')[y] \;=\; \sum_l \eta_l \cdot
+  \code{residual\_b\_evals}(\rho,\, k',\, \mathit{pt}_l^{\mathrm{hi}},\,
+  \eq_{r''})[y],
+\]
+the tensor-algebra evaluation of
+$\mle{\Phi_{r''} \circ \eq(\mathit{pt}_l^{\mathrm{hi}},\cdot)}$ at
+$\rho \,\|\, \mathsf{bits}(y)$ in $O((|\rho| + 2^{k'})\cdot 128^2)$
+$\K$-operations, with no $2^{m_p}$-sized table
+(\code{residual\_b\_evals} / \code{tensor\_eq\_phi\_eval},
+\code{src/ligerito.rs}; pinned against brute force by tests).  The
+callback is verifier-side code computing a public function of
+$(\mathit{pt}_l^{\mathrm{hi}}, r'', \eta)$ and the oracle's own
+challenges; \emph{when} the oracle invokes it is inside the box.  The
+oracle call \Vc{18} then certifies $\sum_y P[y] B(y) = \beta$ against the
+committed root — the only step in the entire verification that touches
+the commitment.
+
+\subsection{Provenance of every verifier-side quantity}
+
+\begin{table}[ht]
+\centering\footnotesize
+\begin{tabular}{p{0.38\textwidth}cp{0.44\textwidth}}
+\toprule
+Quantity & Class & Bound / checked by \\
+\midrule
+$\cw$, $L$, chunk weights $W^{(l)}$, bound $2^{127}$ & (R) & statement ($p$, $q_{\mathrm{bits}}$, $w$) \\
+\code{us[l]} (sent folds) & (A) & \Vc{1} range; absorbed as roots $\alpha^{u}$ (tag $\mathtt{0x30}$); \Vc{19} \\
+roots $R^{(l)}_c$ & (R) & deterministic in \code{us[l]}, $\alpha$; the absorb binds \\
+$\zeta^{(l)}$, $\lambda_\ell$, round challenges, $r^{*(l)}$, $r''$, $\eta$ & — & squeezed (uniform over $\K$) \\
+entry claim $C_0^{(l)} = \mle{R}(\zeta)$ & (R) & \code{mle\_at} on bound roots \\
+sumcheck round messages (all layers, presum) & (A) & absorbed; length/degree checks \Vc{8}\Vc{9}\Vc{12}\Vc{13} \\
+\code{claimed\_sum} fields (\code{sc\_x}, \code{sc\_c}) & (A) & \Vc{7} = running claim; \Vc{10} phase linkage \\
+closing pairs $(p,q)$ & (A) & absorbed (tag $\mathtt{0x32}$); \Vc{11} against $E_B$ \\
+exit $(z^{(l)}, e_d^{(l)})$ & (R) & chained from bound data + challenges \\
+presum \code{claimed\_sums} & (A) & \Vc{14} $= [e_d^{(l)}+1]$ \\
+presum declared degree & (A) & absorbed; per-round length \Vc{13} (Remark~\ref{rem:degree}) \\
+$\widehat{R}^{(l)}$, $\mu_l$, $\mathit{pt}_l$ & (R) & public table + division; \Vc{15} \\
+$\code{s\_v}^{(l)}$ & (A) & \Vc{17} one linear check vs.\ $\mu_l$; absorbed (tag $\mathtt{0x20}$) \\
+$\beta_l$, $\beta$ & (R) & deterministic in bound $\code{s\_v}$, $r''$, $\eta$ \\
+$\mathsf{EvalB}$ values & (R) & public function of points, $r''$, $\eta$, oracle challenges \\
+$\sum_y P[y] B(y) = \beta$ & (O) & \Vc{18}, Definition~\ref{def:oracle} \\
+$y_{\mathrm{ver}}$ & (R) & from \code{us}, $w'$; \Vc{19} vs.\ \code{claimed} \\
+$\mathit{vc}$, $m_p$ & (R) & shape-derived (Section~\ref{sec:config}) \\
+\bottomrule
+\end{tabular}
+\caption{Provenance of verifier-side quantities.  (R) recomputed from
+public data and verifier randomness; (A) prover data bound by an absorb
+and/or an equality check against bound data; (O) oracle-certified.}
+\label{tab:provenance}
+\end{table}
+
+Reading the chain backwards from the oracle: \Vc{18} certifies the
+committed bits enter $\beta$; $\beta$ deterministically encodes the
+absorbed $\code{s\_v}$ under post-absorb randomness $(r'', \eta)$;
+\Vc{17} ties $\code{s\_v}$ to $\mu_l$; $\mu_l$ is a public-data quotient
+of the pre-sumcheck's expected evaluation, whose asserted sum \Vc{14} is
+the forest exit value; the forest chains that value to the absorbed
+roots under fresh challenges; the roots are $\alpha^{\code{us}}$; and
+\Vc{1} + the generator property make the exponent map injective there, so
+\code{us} must be the true folds of the committed bits.  \Vc{19} then
+evaluates the statement on \code{us}.  Each arrow is one of the checks
+above; none is ``the verifier recomputed a value the prover chose
+freely.''
+
+% ===========================================================================
+\section{Integer binding in the clear}
+\label{sec:binding}
+
+This section is the $\K$-side trust anchor: it is what lets the verifier
+treat the \emph{sent integers} \code{us} as the true folds once the forest
+and the oracle have done their work.
+
+\paragraph{The generator check.}  \Vc{3}
+$\code{is\_generator}(\alpha)$ (\code{src/pcs.rs}): reject unless
+$\alpha \notin \{0, 1\}$ and
+$\alpha^{(2^{128}-1)/p} \ne 1$ for every prime
+$p \mid 2^{128}-1$, using the hard-coded squarefree factorization
+\[
+  2^{128}-1 \;=\; 3 \cdot 5 \cdot 17 \cdot 257 \cdot 641 \cdot 65537
+  \cdot 274177 \cdot 6700417 \cdot 67280421310721
+\]
+(\code{GF128\_ORDER\_PRIME\_FACTORS}: the five Fermat primes dividing
+$2^{32}-1$, then $2^{32}+1 = 641 \cdot 6700417$ and
+$2^{64}+1 = 274177 \cdot 67280421310721$).  This is the standard
+primitive-element test; it passes iff
+$\mathrm{ord}(\alpha) = 2^{128}-1 = $ \code{GF128\_MULT\_ORDER}
+($= \code{u128::MAX}$).  \emph{Why it is needed:} the exponent map
+$n \mapsto \alpha^n$ is injective on $[0, \mathrm{ord}\,\alpha)$; since
+$2^{128}-1$ is composite, a non-generator $\alpha$ could have order as
+small as $3$, collapsing the binding entirely.  With a generator, the map
+is injective on all of $[0, 2^{128}-1)$, which strictly contains the
+range-checked domain $[0, 2^{127})$.  About $\prod_p (1 - 1/p) \approx
+49\%$ of $\Kx$ are generators, so a randomly sampled $\alpha$ passes after
+$\approx 2$ resamples; the verifier simply rejects a non-generator.  The
+check is repeated (identically) per chunk; it depends only on $\alpha$.
+
+\paragraph{The range check.}  \Vc{1}, in
+\code{verify\_mle\_eval\_mod\_q\_ligerito} itself: for every chunk $l$ and
+column $c$, reject \code{ChunkRange\{chunk, col\}} unless
+\[
+  u^{(l)}_c \;<\; 2^{\,\cw + t + W} \;=\; 2^{127}
+\]
+(the exponent $\cw + t + W = 127$ by construction of $\cw$; the code
+computes the bound generically as
+\code{1u128 << (c\_w + t + word\_bits)}).  The bound is exactly the
+honest-fold envelope \eqref{eq:chunkfold}: honest chunk folds always
+pass, and any sent fold that passes lies in the injective range.  The
+check runs \emph{before} the chunk's transcript activity and covers every
+entry of \code{us[l]}.  (The inner \Vc{4} magnitude guard,
+$\max u < 2^{128}-1$, is inherited from the unchunked path and is
+strictly weaker; it is vacuous given \Vc{1}.)
+
+\paragraph{The binding argument.}  Fix a chunk $l$ and column $c$.  Let
+$u^{\mathrm{true}} = \sum_b W^{(l)}_b\,\INT(D(b,c))$ be the fold of the
+\emph{committed} bits.  The forest + pre-sumcheck + ring switch + oracle
+chain (Sections~\ref{sec:forest}--\ref{sec:linkage}) forces — up to the
+stated soundness errors — the per-tree product of the leaf family
+\eqref{eq:leaves} built from the committed bits to equal the absorbed
+root, i.e.
+$\alpha^{u^{\mathrm{true}}} = \alpha^{u^{(l)}_c}$.
+Both exponents lie in $[0, 2^{127})$: the left by
+\eqref{eq:chunkfold}, the right by \Vc{1}.  Injectivity of
+$n \mapsto \alpha^n$ on $[0, 2^{128}-1) \supset [0, 2^{127})$ (the
+generator property, \Vc{3}) gives $u^{(l)}_c = u^{\mathrm{true}}$.  Both
+checks are load-bearing: without \Vc{3} the map need not be injective;
+without \Vc{1} the prover could send $u + \mathrm{ord}(\alpha) \cdot k$.
+Note the argument needs no randomness in $\alpha$ — any generator fixed
+before the prover commits to \code{us} works (cf.\
+Obligation~\ref{ob:root}).
+
+\paragraph{Root recomputation.}  $R^{(l)}_c = \alpha^{u^{(l)}_c}$ is
+computed with an 8-bit-window fixed-base comb —
+\code{FixedBasePow::new} at $(\alpha, 128, 8)$ — a pure optimization of
+\code{gf\_pow}: $16$ table lookups/multiplies per exponent instead of a
+$128$-step square-and-multiply chain.
+
+\paragraph{The mod-$q$ recombination.}  \Vc{19}
+(\code{recombine\_read\_off}, \code{src/pcs.rs}): in the evaluation ring
+$R$,
+\[
+  y_{\mathrm{ver}} \;=\; \sum_{c \in \bits^s} w'_c \cdot
+  \sum_{l=0}^{L-1} \big(2^{\cw}\big)^{l} \cdot u^{(l)}_c ,
+\]
+computed with $2^{\cw}$ lifted once ($\cw \le 126$, so it is an exact
+\code{u128}) and powered in $R$; the flattened index is
+$\code{v\_flat}[\,l \cdot 2^s + c\,] = \code{us[l][c]}$.  The wide value
+$\sum_l 2^{\cw l} u^{(l)}_c$ never materializes as an integer — the whole
+point of chunking — and the column weights enter at full width,
+unchunked.  Reject \code{ReadOff} unless $y_{\mathrm{ver}} =
+\code{claimed}$.  Correctness of the recombination against
+\eqref{eq:claim} is the telescoping
+$\sum_l 2^{\cw l} W^{(l)}_b = w_b$ (exact under the width precondition)
+and the ring homomorphism $\code{R::from} \colon [0, 2^{127}) \to R$
+being faithful on the values that occur — a statement-side precondition
+on $R$ (for $R = \Fq$ with $q$ a 100-bit prime, reduction mod $q$ is the
+canonical map; ``faithful'' means the canonical composite, not
+injectivity).
+
+% ===========================================================================
+\section{Config derivation and the audited regime}
+\label{sec:config}
+
+The Ligerito verifier config $\mathit{vc}$ is \emph{derived from the
+instance shape, never from the proof}:
+\code{sha\_lig\_configs($m_p$)} (\code{src/ligerito\_flock.rs}) selects,
+with $m = m_p + 7$:
+\begin{itemize}[itemsep=1pt]
+\item $m \ge 22$: the \emph{embedded \textsc{fast} profile} at $m$ — the
+  \emph{audited} regime;
+\item $m < 22$: \code{ligerito::default\_config} at
+  $(m_p,\ \code{log\_batch}=2,\ \code{log\_inv\_rate}=2)$ — ad-hoc,
+  \emph{unaudited}, test-only.
+\end{itemize}
+The embedded profiles are flock's own audited security configs
+(deserialized from embedded TOML via \code{LigeritoSecurityConfig},
+existing for $m = 22..35$); they also dictate the \emph{commit} shape
+(\code{log\_inv\_rate} $=$ \code{log\_inv\_rates[0]},
+\code{log\_batch} $=$ \code{initial\_k}), so prover, committer, and
+verifier all derive the same parameters from $m_p$ alone.  The ad-hoc
+branch builds unique-decoding-regime query counts with no grinding and no
+out-of-domain samples, and its per-level parameters are not audited.
+
+\textbf{Scope of this note's claims.}  Everything this note asserts about
+the oracle (Definition~\ref{def:oracle}) is asserted \emph{for the
+embedded-profile regime $m \ge 22$ only} — every deployed shape in the
+README's reference table from $n = 22$ up.  Runs below that boundary
+(including the repository's own unit tests, Section~\ref{sec:tests}) use
+the unaudited ad-hoc config: the verification \emph{logic} is identical,
+but the oracle's concrete soundness there carries no audit and is outside
+this note's claims.  A caller may also bypass \code{sha\_lig\_configs}
+and pass any \code{LigConfig} to \code{lig\_configs}; the same scoping
+applies.  (Performance is not this note's subject, but the boundary is
+visible in the README's tables as the $n = 20 \to 22$ step in proof size;
+hard-coding the ad-hoc config at large shapes is also catastrophically
+slow — measured 292\,s vs.\ tens of ms for an $n=28$ commit.)
+
+% ===========================================================================
+\section{What the tests pin}
+\label{sec:tests}
+
+The suite (\code{cargo test --release}: 68 lib tests, of which one is an
+ignored measurement baseline, plus 2 doctests) pins the verifier's
+behavior at these points; test names are exact.
+
+\begin{itemize}[itemsep=2pt]
+\item \code{mle\_eval\_mod\_q\_ligerito\_roundtrips}
+  (\code{src/ligerito\_flock.rs}) — the end-to-end reference, at
+  $(t,s,W) = (10,5,1)$ ($L=1$) and $(4,8,32)$ ($L=2$), with a concrete
+  $\Fq$, $q = 2^{100}-15$.  Arms: honest proof accepts; wrong claimed $y$
+  rejects with \code{ReadOff} \Vc{19}; a tampered chunk fold
+  ($\code{us[0][0]} \leftarrow 2^{128}-2$) rejects with \code{ChunkRange}
+  \Vc{1}; a non-generator $\alpha = 1$ rejects with
+  \code{ChallengeNotGenerator} \Vc{3}.
+\item \code{mod\_q\_ligerito\_proof\_serialization\_roundtrips} — decode
+  $\circ$ encode preserves acceptance; re-serialization is byte-identical
+  (canonicity of \code{to\_bytes}); flipping a single byte at each of four
+  positions ($0$, $\lfloor n/3 \rfloor$, $\lfloor n/2 \rfloor$, $n-1$) is
+  rejected — the stream fails to decode or the decoded proof fails
+  verification.
+\item \code{merged\_forest\_roundtrips} (\code{src/merged\_forest.rs}) —
+  prover/verifier exit-claim agreement over four $(d, s)$ shapes; roots
+  equal the per-tree leaf products; \emph{the exit value equals
+  \code{mle\_at(leaves, $z$)}} (the semantic anchor for
+  Section~\ref{sec:forest}); tamper arms: a phase-A \code{claimed\_sum}
+  \Vc{7}, a layer-0 closing pair \Vc{11}, and the last layer's phase-B
+  \code{claimed\_sum} each reject.
+\item \code{lazy\_matches\_eager} and \code{lazy\_multi\_matches\_eager}
+  — both lazy prover schedules (L/4 default and
+  \code{F2\_FOREST\_SCHEDULE=l8}) are byte-identical to the eager
+  reference prover: same roots, same per-layer messages and pairs, same
+  exit claim, \emph{same post-run transcript state} (a squeezed challenge
+  compares equal).  This is what lets the verifier be schedule-agnostic.
+\item \code{tensor\_eval\_matches\_bruteforce\_and\_table} and
+  \code{residual\_b\_evals\_matches\_pointwise}
+  (\code{src/ligerito.rs}) — the succinct $\mathsf{EvalB}$ algebra equals
+  the brute-force $\sum_y \eq(y,\cdot)\,\Phi_{r''}(\cdot)$ and the
+  per-boolean-tail pointwise evaluations.
+\item \code{field\_bridge\_is\_bit\_identical}
+  (\code{src/ligerito\_flock.rs}) — the zinc/flock $\K$ representations
+  agree as raw words under $+$ and $\times$, and \code{LOG\_PACKING}
+  equals flock's \code{pcs::pack::LOG\_PACKING}.
+  \code{neon\_mul\_matches\_scalar\_pipeline} pins the aarch64 NEON field
+  pipeline bit-identical to the portable scalar one.
+\item \code{packed\_cols\_row\_roundtrip} and the \code{poly/} field-axiom
+  and lift/projection tests — layout inversions and $\K$ arithmetic.
+\end{itemize}
+
+\paragraph{What the tests do \emph{not} cover.}  Honest gaps a reviewer
+should know:
+\begin{itemize}[itemsep=2pt]
+\item \emph{Fiat--Shamir order mutations.}  No test mutates an absorb
+  order, a domain tag, or a framing byte and asserts rejection; the
+  schedule of Section~\ref{sec:schedule} is pinned only indirectly
+  (honest-roundtrip acceptance requires prover/verifier lockstep, and the
+  byte-identity tests pin the two prover variants to each other).  A
+  transcript-schedule regression that changed prover and verifier
+  \emph{together} would pass the suite.
+\item \emph{Codec field coverage.}  The tamper test flips four fixed byte
+  positions of one proof; there is no exhaustive per-field tamper sweep,
+  and no test distinguishes clean \code{CodecError} returns from the
+  panic paths of Section~\ref{sec:serialization}.
+\item \emph{Rejection-arm coverage.}  \code{Shape},
+  \code{RingSwitchClaim} \Vc{17}, \code{PreSumcheck} \Vc{14},
+  \code{RHatZero} \Vc{15}, and \code{LigeritoReject} \Vc{18} have no
+  dedicated negative tests in this repository (some are hit
+  probabilistically by the byte-flip test).
+\item \emph{The audited regime is not unit-tested.}  All
+  \code{cargo test} shapes sit below the $m \ge 22$ boundary and run the
+  ad-hoc config; the embedded profiles are exercised only by the
+  \code{reference\_measure} example and the bench suite
+  (Section~\ref{sec:config}).
+\item \emph{Batched and virtual-XOR variants} have no tests in this
+  repository (they were dropped in the extraction; the code is a verbatim
+  port).
+\end{itemize}
+
+% ===========================================================================
+\section{Trust boundary and caveats}
+\label{sec:trust}
+
+\paragraph{The oracle assumption.}  Everything rests on
+Definition~\ref{def:oracle} holding for
+\code{flock-core}'s recursive Ligerito verifier under the shape-derived
+config (Section~\ref{sec:config}).  \code{flock-core} is consumed as a
+\emph{local path dependency}
+(\code{flock-core = \{ path = ".../flock/crates/flock-core" \}} in
+\code{Cargo.toml}, mirroring the upstream pin; it pins \code{bincode 1.3}
+and \code{serde 1}; MIT OR Apache-2.0).  There is no version or content
+pin beyond the checkout itself — reproducing a verification requires the
+same flock tree.  The oracle's internal Fiat--Shamir sub-schedule runs
+over the shared transcript through \code{ZincChallenger}
+(Section~\ref{sec:transcript}) and is trusted along with the rest of the
+box.
+
+\paragraph{Known upstream item: Merkle domain separation.}  flock's
+\code{merkle} module does not domain-separate leaf hashing from
+internal-node hashing, and its own module note flags it as a
+``micro-benchmark module, not production code.''  F2Z inherits flock's
+commitment and Merkle verbatim; until flock ships the fix, the
+commitment binding — and therefore Definition~\ref{def:oracle} — should
+be treated as pre-production.  (Recorded in \code{README.md} and
+\code{docs/DESIGN.md}; this note adds nothing beyond scoping its claims
+accordingly.)
+
+\paragraph{Caller obligations (summary).}  Obligation~\ref{ob:root}
+(statement/root absorbed before challenges; $\alpha$ fixed
+pre-commitment); weight vectors of the right lengths ($2^t$, $2^s$) with
+$w_b < 2^{q_{\mathrm{bits}}}$; $q_{\mathrm{bits}}$ consistent with the
+intended $\Fq$; $R$ of characteristic $\ne 2$ with \code{From<u128>} the
+canonical map (a characteristic-2 $R$ would collapse the read-off to
+parity — the very obstruction the exponent fold exists to avoid); the
+commitment produced at the same shape \code{p} handed to the verifier.
+The proof-stream decoder is not hardened against hostile bytes
+(Section~\ref{sec:serialization}).
+
+\paragraph{Not zero-knowledge.}  The Ligerito opening reveals queried
+committed data; no masking exists anywhere on this path.
+
+\paragraph{Out-of-scope public API.}  The batched multi-polynomial
+opener (\code{verify\_rs\_ligerito\_batch}) and the virtual-XOR variants
+(\code{verify\_mle\_eval\_mod\_q\_ligerito\_with\_virtual\_xors} /
+\code{\ldots\_claims\_only}) share this note's machinery but add
+statement-level structure this note does not review.  One contractual
+point deserves flagging even here: the virtual-XOR verifiers
+\emph{return} a \code{Vec<VirtualXorObligation>} — external-term
+residual claims $\hat{e}(\mathit{pt}) = \mathrm{value}$ that ride the
+proof \emph{unverified} and that the \emph{caller} must discharge by
+other means.  A host that ignores the returned obligations has not
+verified those claims.  These variants also carry no tests in this
+repository (Section~\ref{sec:tests}).
+
+\paragraph{What a correctness argument for F2Z still owes.}  Beyond this
+note's line-by-line checkable description: (i) the Ligerito oracle
+itself (proximity soundness, Merkle binding incl.\ the domain-separation
+item, its FS sub-schedule) in the embedded-profile regime — and
+separately anything run under the ad-hoc config; (ii) the host-level
+statement binding of Obligation~\ref{ob:root}; (iii) quantitative
+composition of the stated per-step soundness errors (forest layers,
+pre-sumcheck, ring-switch recombination, $\eta$-batching) into one bound
+— this note states each check's role and error shape but proves nothing;
+(iv) hardening of \code{from\_bytes} for hostile inputs.
+
+\paragraph{Verifier cost.}  For the record (README reference table,
+Apple M4): verification is milliseconds-class across the deployed range —
+$1.2$--$14.8$\,ms for $n = 16$--$32$ at $t \approx 0.6n$, $W=1$, one
+mod-$q$ claim — with proofs 43--574\,KiB.  The verifier's only
+super-logarithmic work is the per-chunk $O(2^{d})$
+$q_{\mathrm{rowbit}}$ table (dominated by $2^t$ fixed-base
+exponentiations) and the $O(2^s)$ root/entry/read-off loops.
+
+\begin{thebibliography}{9}\small
+
+\bibitem{soukhanov}
+L.~Soukhanov.
+\emph{Characteristic-2 field switching} (the char2-fieldswitch note),
+\S9: a one-round, characteristic-2 Brakedown instantiation.
+The construction F2Z implements.
+
+\bibitem{flock}
+B.~B\"unz, J.~Rothblum, R.~Wang (Succinct Labs).
+\emph{Flock: Fast Proving for Batch Boolean Computations.}
+Source of the ring-switch implementation shape (App.~B) and of
+\code{flock-core}, this crate's opener backend.
+
+\bibitem{dp24}
+B.~E.~Diamond, J.~Posen.
+\emph{Polylogarithmic Proofs for Multilinears over Binary Towers}
+(ring-switching).  The packing/recombination technique behind
+Section~\ref{sec:linkage}.
+
+\bibitem{ligerito}
+A.~Novakovic, G.~Angeris.
+\emph{Ligerito: A Small and Concretely Fast Polynomial Commitment
+Scheme.}  The recursive opener behind Definition~\ref{def:oracle}.
+
+\bibitem{upstream}
+The \code{zinc-plus} repository,
+\code{documentation/f2-int-eval-doc/} (branch \code{f2-int-sha}):
+the as-deployed long-form exposition this note's notation follows.
+Where the deployment and this repository disagree, this repository's
+code is authoritative here.
+
+\end{thebibliography}
+
+\end{document}

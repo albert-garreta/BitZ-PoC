@@ -1,1 +1,9 @@
 /target
+
+# LaTeX build intermediates (docs/verifier-note)
+docs/**/*.aux
+docs/**/*.fdb_latexmk
+docs/**/*.fls
+docs/**/*.log
+docs/**/*.out
+docs/**/*.toc

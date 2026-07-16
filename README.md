@@ -228,6 +228,7 @@ so the statement scales — prover RAM is the only wall.
 | `src/poly/` | `GF(2^128)` (NEON pipeline), bit-packed `F₂[X]` cells, MLE/eq utilities |
 | `src/transcript/` | Blake3 Fiat–Shamir transcript + the `Transcribable` codec |
 | `docs/DESIGN.md` | Protocol description, soundness chain, serialization format |
+| `docs/verifier-note/` | LaTeX note: the mod-q verifier line by line (Ligerito as a black box); build with `latexmk -pdf` |
 
 ## Caveats
 
