@@ -45,4 +45,5 @@ pub use ligerito_flock::{
     lig_configs, prove_mle_eval_mod_q_ligerito, verify_mle_eval_mod_q_ligerito,
 };
 pub use pcs::IntEvalParams;
+pub use poly::univariate::binary_b127::BinaryFieldB127;
 pub use poly::univariate::binary_gf128::BinaryFieldGF128;

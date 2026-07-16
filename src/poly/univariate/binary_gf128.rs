@@ -1059,8 +1059,12 @@ impl crate::utils::wide_mul::WideMulAcc for BinaryFieldGF128 {
 ///   `hi`  = a1 · b1
 ///   `mid` = (a0 ^ a1) · (b0 ^ b1) ^ lo ^ hi   = a0·b1 ^ a1·b0
 /// Then the 256-bit product is `lo | (mid << 64) | (hi << 128)`.
+/// (`pub(crate)`: the product is modulus-agnostic — [`binary_b127`]
+/// reuses it under its own trinomial reduction.)
+///
+/// [`binary_b127`]: crate::poly::univariate::binary_b127
 #[inline]
-fn clmul_128x128(a: &[u64; 2], b: &[u64; 2]) -> [u64; 4] {
+pub(crate) fn clmul_128x128(a: &[u64; 2], b: &[u64; 2]) -> [u64; 4] {
     let lo = clmul_64x64(a[0], b[0]);
     let hi = clmul_64x64(a[1], b[1]);
     let mid_raw = clmul_64x64(a[0] ^ a[1], b[0] ^ b[1]);

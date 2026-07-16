@@ -1,6 +1,7 @@
 use crypto_primitives::PrimeField;
 use crate::utils::from_ref::FromRef;
 
+pub mod binary_b127;
 pub mod binary_f2_wide;
 pub mod binary_gf128;
 pub mod binary_ref;
