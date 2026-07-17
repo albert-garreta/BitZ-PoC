@@ -27,6 +27,7 @@
 \newcommand{\mle}[1]{\widetilde{#1}}
 \newcommand{\eq}{\mathsf{eq}}
 \newcommand{\cw}{c_w}
+\newcommand{\albert}[1]{\textcolor{teal}{Albert: {#1}}}
 % \code: typewriter names; underscores allow a line break after them, so
 % long function names wrap instead of overflowing the margin.
 \newcommand{\code}[1]{{\def\_{\textunderscore\allowbreak}\texttt{#1}}}
@@ -155,16 +156,30 @@ $(\rho_1,\dots,\rho_k) \in \K^k$ and a tail width $k'$ with $k + k' = m_p$,
 returns the $2^{k'}$ values $\mle{B}(\rho_1,\dots,\rho_k,\mathsf{bits}(y))$
 of a weight function $B \colon \bits^{m_p} \to \K$ known to the verifier;
 and a Fiat–Shamir challenger $\mathcal{C}$ that continues the caller's
-transcript.  \emph{Assumed contract:} if the oracle accepts, then — except
-with negligible probability over the challenger's randomness — the vector
-$P \in \K^{2^{m_p}}$ committed under $\mathsf{root}$ (with the packing of
-Section~\ref{sec:statement}) satisfies
+transcript.
+
+To be precise about what $\mathsf{root}$ commits to: at commit time,
+flock's \code{commit} RS-encodes the \emph{message} vector
+$P \in \K^{2^{m_p}}$ (an interleaved additive-NTT encoding) and builds
+the Merkle tree over the resulting \emph{codeword} — so the root binds
+the codeword directly, and binds $P$ only through the code.  Both the
+encoding and the tree live inside the box; the packing of
+Section~\ref{sec:statement} specifies which $P$ the honest committer
+encodes.
+
+\emph{Assumed contract:} if the oracle accepts, then — except with
+negligible probability over the challenger's randomness — $\mathsf{root}$
+binds a unique message $P \in \K^{2^{m_p}}$ (uniqueness through the
+Merkle tree, the code's distance, and the proximity test is exactly the
+boxed guarantee), and that message satisfies
 \[
-  \textstyle\sum_{y \in \bits^{m_p}} P[y]\cdot B(y) \;=\; \beta .
+  \textstyle\sum_{y \in \bits^{m_p}} P[y]\cdot B(y) \;=\; \beta ;
 \]
-Completeness holds for honestly generated proofs.  Everything else — the
-proximity test, Merkle verification, query counts, grinding, out-of-domain
-sampling, and the oracle's own transcript sub-schedule — is inside the box.
+for an honestly generated commitment, that $P$ is the committed packed
+vector.  Completeness holds for honestly generated proofs.  Everything
+else — the proximity test, Merkle verification, query counts, grinding,
+out-of-domain sampling, and the oracle's own transcript sub-schedule —
+is inside the box.
 \end{definition}
 
 Note the contract is an \emph{inner-product} (weighted-sum) opening.
@@ -173,6 +188,20 @@ $\eq$-derived tensor; the mod-$q$ verifier hands the oracle an
 $\eta$-batched combination of $L$ such functionals
 (Section~\ref{sec:linkage}), so the inner-product form is the honest
 interface.
+
+The contract is also deliberately stated over the packed vector $P$
+rather than over the bit matrix $M$ (or the data $D$): flock's verifier
+is bit-agnostic — it certifies a $\K$-linear functional of the
+$\K$-elements that were committed, and knows nothing about their bit
+semantics.  The bits enter one level up, on the zinc side: the packing of
+Section~\ref{sec:statement} makes $P \leftrightarrow M$ a bijective
+reindexing (so a commitment to $P$ \emph{is} a commitment to $M$), and
+the ring switch (Section~\ref{sec:linkage}) is precisely the step that
+converts each bit-level claim $\mle{M}(\mathit{pt}_l) = \mu_l$ into an
+inner-product claim $\sum_y P[y]\, B_l(y) = \beta_l$ of the oracle's
+form.  Stating the contract over $M$ or $D$ would silently fold that
+zinc-side reduction — which this note must keep reviewable — into the
+black box.
 
 \paragraph{The soundness chain.}  \code{docs/DESIGN.md} states it; the
 verifier walks it in this order, one section per link:
@@ -247,10 +276,12 @@ $P \in \K^{2^{m_p}}$ has
 where $\beta_v$ is the $v$-th bit of the $\K$-element representation
 (monomial basis, LSB-first; \code{commit\_rs\_flock\_from\_rows}).  $P$ is
 what flock commits: \code{flock\_core::pcs::commit::commit(\&p\_msg, \&PcsParams
-\{ m: $m_p + 7$, log\_inv\_rate, log\_batch\_size, profile \})} — the RS
-encoding, interleaving and Merkle tree are inside the oracle's box; the
-verifier only ever touches the \code{Commitment}'s root and shape
-parameters.  \emph{Precondition:} the commitment handed to the verifier
+\{ m: $m_p + 7$, log\_inv\_rate, log\_batch\_size, profile \})}.  Note the
+Merkle root is built over the RS-\emph{encoded} (interleaved) codeword of
+$P$, not over $P$ itself — $P$ is bound only through the code, which is
+part of the oracle's boxed guarantee (Definition~\ref{def:oracle}); the
+encoding and the tree are inside the box, and the verifier only ever
+touches the \code{Commitment}'s root and shape parameters.  \emph{Precondition:} the commitment handed to the verifier
 was produced at this same shape; the verifier does not cross-check
 \code{commitment.params} against \code{p} (a mismatch is left to the
 oracle to reject).
