@@ -375,7 +375,7 @@ Field & Role \\
 
 \subsection{Serialization: the host proof stream}
 \label{sec:serialization}
-
+\albert{Not reviewed}
 \code{to\_bytes} / \code{from\_bytes} (\code{src/ligerito\_flock.rs},
 codec primitives in \code{src/proof\_codec.rs}).  All scalars are
 little-endian.  The stream grammar is, in order:
@@ -447,6 +447,7 @@ decoded proof still faces the full verifier:
 
 \subsection{Transcript primitives}
 \label{sec:transcript}
+\albert{Not reviewed}
 
 The transcript is a Blake3 hasher (\code{Blake3Transcript},
 \code{src/transcript/mod.rs}).  Byte-level semantics:
@@ -841,6 +842,7 @@ verifier:
 
 \begin{remark}[The pre-sumcheck degree rides the proof]
 \label{rem:degree}
+\albert{What??}
 Unlike the forest layers (degree pinned to $3$ by the verifier), the
 pre-sumcheck's per-group degree is read from the proof, absorbed, and then
 enforced per round.  A malicious prover may declare any degree

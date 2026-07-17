@@ -121,12 +121,20 @@ impl<'a> Reader<'a> {
 
     /// Read a [`Transcribable`] value written by [`Writer::transcribable`].
     pub fn transcribable<T: Transcribable>(&mut self) -> Result<T, CodecError> {
-        // The subset reader self-describes its length via the prefix; guard the
-        // prefix bytes so a truncated tail is a clean error rather than a panic.
+        // The subset reader self-describes its length via the prefix. Guard BOTH
+        // the length prefix AND the declared payload length before delegating, so
+        // a truncated tail or a tampered length prefix is a clean `Truncated`
+        // error rather than a panic inside `read_transcription_bytes_subset`
+        // (this codec is required to be tamper-rejecting).
         if self.cur + T::LENGTH_NUM_BYTES > self.buf.len() {
             return Err(CodecError::Truncated);
         }
         let rem = &self.buf[self.cur..];
+        let num_bytes = T::read_num_bytes(&rem[..T::LENGTH_NUM_BYTES]);
+        let need = T::LENGTH_NUM_BYTES.checked_add(num_bytes).ok_or(CodecError::Truncated)?;
+        if need > rem.len() {
+            return Err(CodecError::Truncated);
+        }
         let (val, rest) = T::read_transcription_bytes_subset(rem);
         self.cur = self.buf.len() - rest.len();
         Ok(val)
