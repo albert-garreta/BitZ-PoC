@@ -1030,6 +1030,7 @@ pub fn prove_mle_eval_mod_q_ligerito(
     // L claims on the SAME packed P: per-claim s_v under one shared r″.
     let mut rings = Vec::with_capacity(lch);
     let mut eq_his = Vec::with_capacity(lch);
+    let _g_r = crate::utils::prof::scope("mq:rings");
     for pt in &points {
         let eq_hi = crate::poly::utils::build_eq_x_r_vec(&pt[LOG_PACKING..], &()).expect("r_hi");
         let s = dense_ring_sv(&hint.p_msg, &eq_hi);
@@ -1037,6 +1038,8 @@ pub fn prove_mle_eval_mod_q_ligerito(
         rings.push(RingSwitchProof { s_v: s });
         eq_his.push(eq_hi);
     }
+    drop(_g_r);
+    let _g_b = crate::utils::prof::scope("mq:bcomb");
     let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
     let eq_r2 = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
     let etas: Vec<Gf> = transcript.get_field_challenges(lch, &());
@@ -1050,7 +1053,9 @@ pub fn prove_mle_eval_mod_q_ligerito(
         let beta = s_u.iter().zip(eq_r2.iter()).fold(Gf::zero(), |a, (su, e)| a + *su * *e);
         target += etas[l] * beta;
     }
+    drop(_g_b);
 
+    let _g_l = crate::utils::prof::scope("mq:lig");
     let lig = ligerito::recursive_prover_with_basis(
         pc,
         hint.p_msg.clone(),
@@ -1060,6 +1065,7 @@ pub fn prove_mle_eval_mod_q_ligerito(
         &hint.prover_data.merkle_tree,
         &mut ZincChallenger(transcript),
     );
+    drop(_g_l);
     IntEvalRsLigModQProof { mfs, us, presums, rings, lig }
 }
 

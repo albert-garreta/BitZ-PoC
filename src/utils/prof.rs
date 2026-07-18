@@ -192,6 +192,25 @@ pub fn scope(label: &'static str) -> Scope {
     Scope { active: true }
 }
 
+/// Drain this thread's accumulated records, returning `(label, inclusive
+/// seconds)` in execution order — the programmatic sibling of
+/// [`dump_and_reset`] for harnesses that aggregate phase times themselves
+/// (e.g. the PCS bench's phase columns). Nested regions appear as their own
+/// labels (sum only disjoint labels to avoid double-counting). Empty when
+/// profiling is off. Call once per measured unit.
+pub fn take_totals() -> Vec<(&'static str, f64)> {
+    if !enabled() {
+        return Vec::new();
+    }
+    RECORDS.with(|r| {
+        let mut records = r.borrow_mut();
+        records.sort_by_key(|rec| rec.order);
+        let out = records.iter().map(|rec| (rec.label, rec.inclusive.as_secs_f64())).collect();
+        records.clear();
+        out
+    })
+}
+
 /// Print the accumulated region tree to stderr under `header`, then clear it.
 /// Rows are in execution order, indented by nesting depth; each shows inclusive
 /// time and its share of the total top-level (depth-0) time, with a trailing

@@ -253,26 +253,63 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
         verify_ms.push(t3.elapsed().as_secs_f64() * 1e3);
     }
 
-    // Peak over one prove (heap high-water; the commit hint is live below it).
+    // Peak + phase split over one prove (heap high-water; the commit hint
+    // is live below it). Phase times ride the in-crate prof scaffold and
+    // appear only under `OBLONG_PROFILE=1` (the timed medians above then
+    // carry ~µs-scale scope overhead — enable it for breakdown runs, not
+    // for headline timing); the proof-size split is always available.
     reset_peak();
-    {
+    let _ = f2z::utils::prof::take_totals(); // drain the timed reps' records
+    let split_proof = {
         let mut pt = f2z::transcript::Blake3Transcript::new();
         let proof =
             prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc);
         black_box(&proof);
-    }
+        proof
+    };
     let prove_peak = peak_mb();
+    let phases = f2z::utils::prof::take_totals();
 
     println!(
         "  prove:   {:8.2} ms   peak {prove_peak:8.2} MB      (median of {reps})",
         median(prove_ms)
     );
+    if !phases.is_empty() {
+        let phase_ms = |labels: &[&str]| -> f64 {
+            phases.iter().filter(|(l, _)| labels.contains(l)).map(|(_, s)| s).sum::<f64>() * 1e3
+        };
+        let forest_ms = phase_ms(&[
+            "mc:pack",
+            "mc:pow2",
+            "mc:forest",
+            "mc:fold_v",
+            "mc:presum_tbls",
+            "mc:presum_run",
+        ]);
+        let open_ms = phase_ms(&["mq:rings", "mq:bcomb", "mq:lig"]);
+        println!(
+            "  phases:  forest+presum {forest_ms:8.2} ms | ligerito open {open_ms:7.2} ms   (one profiled prove)"
+        );
+    }
     println!("  verify:  {:8.2} ms", median(verify_ms));
     println!(
         "  proof:   {bytes:8} B ({:.1} KiB)   serialize {:.0} µs / deserialize {:.0} µs",
         bytes as f64 / 1024.0,
         median(ser_us),
         median(de_us)
+    );
+    // Transmitted-payload accounting split (`mle_eval_mod_q_lig_size_breakdown`):
+    // forest side = forest sumchecks/evals + chunk folds + pre-sumchecks;
+    // open side = ring-switch `s_v` + the Ligerito proof.
+    let (zb, lig_b) = f2z::ligerito_flock::mle_eval_mod_q_lig_size_breakdown(&split_proof);
+    let forest_b = zb.total() - zb.s_v;
+    let open_b = zb.s_v + lig_b;
+    println!(
+        "  split:   forest-side {:7.1} KiB | open-side {:7.1} KiB (s_v {:5.1} + lig {:7.1})",
+        forest_b as f64 / 1024.0,
+        open_b as f64 / 1024.0,
+        zb.s_v as f64 / 1024.0,
+        lig_b as f64 / 1024.0,
     );
 }
 
