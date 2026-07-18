@@ -438,6 +438,25 @@ fn t4bits_idx(lbits: &[u64], rbits: &[u64], j: usize, q1: usize) -> usize {
     (j << 4) | (ce << 2) | co
 }
 
+/// TEMP EXPERIMENT (pass-fusion study): defer each round's fold and run it
+/// fused into the NEXT round's message pass (one read of the unfolded
+/// buffers instead of fold-read + message-read). Byte-identical: the same
+/// field values in the same transcript order — only the physical pass
+/// structure changes. Gated on all-Dense-single-pair groups (the forest's
+/// shape); off by default.
+fn eqf_fuse_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("F2Z_EQF_FUSE").is_some())
+}
+
+/// TEMP EXPERIMENT: bypass the hand-fused NEON whole-buffer kernels
+/// (message + fold), forcing the generic fallback loops — isolates fusion
+/// gains at matched (generic) kernel quality.
+fn eqf_nokernel() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("F2Z_EQF_NOKERNEL").is_some())
+}
+
 /// Per-group suffix tensors `V_j` (`j = 1..=k`), built back-to-front:
 /// `V_k = [1]`, `V_j[2b' | b0] = eq1(b0; q[j])·V_{j+1}[b']`.
 #[allow(clippy::arithmetic_side_effects)]
@@ -642,6 +661,9 @@ where
     // next round's per-position value tables (read inline).
     let mut pair3_value_sets: Vec<Pair2FoldTables<F>> = Vec::new();
     let mut leaf3_value_sets: Vec<Pair2FoldTables<F>> = Vec::new();
+    // TEMP pass-fusion experiment: a deferred fold challenge — set when the
+    // round's fold is skipped and consumed by the next round's fused pass.
+    let mut pending_rho: Option<F> = None;
 
     for j in 1..=k {
         // Buffers at round j have 2^{k−j+1} entries (leaf-bit groups define
@@ -693,7 +715,7 @@ where
         // skipped multiply saves — and was removed.) Parallel **across
         // groups**, with a minimum batch so tiny late-round bodies amortise
         // the rayon dispatch.
-        let compute_h = |t: usize| -> (F, F, F, F) {
+        let compute_h = |t: usize, bufs: &[GroupBufs<F>]| -> (F, F, F, F) {
             let suffix_t = &suffix[if shared_q { 0 } else { t }][j - 1];
             let (a0, a1, a2) = match &bufs[t] {
                 GroupBufs::Dense(group_bufs) if group_bufs.len() == 1 => {
@@ -703,9 +725,12 @@ where
                     // independent slot chains — value-exact) takes over when
                     // available.
                     let (l, r) = &group_bufs[0];
-                    if let Some(res) =
+                    let kernel_res = if eqf_nokernel() {
+                        None
+                    } else {
                         F::eqf_single_pair_round(l, r, &suffix_t[..half], half)
-                    {
+                    };
+                    if let Some(res) = kernel_res {
                         let (a0, a1, a2) = res;
                         let h0 = a0.clone();
                         let h1 = a0.clone() + &a1 + &a2;
@@ -740,9 +765,11 @@ where
                     // into each L side, deferred reduction) takes over when
                     // available — value-exact vs the generic loop below.
                     if let [(l0, r0), (l1, r1)] = group_bufs.as_slice() {
-                        if let Some((a0, a1, a2)) =
+                        if let Some((a0, a1, a2)) = if eqf_nokernel() {
+                            None
+                        } else {
                             F::eqf_two_pair_round(l0, r0, l1, r1, &suffix_t[..half], half)
-                        {
+                        } {
                             let h0 = a0.clone();
                             let h1 = a0.clone() + &a1 + &a2;
                             let h2 = a0.clone() + &(c2.clone() * &a1) + &(c2sq.clone() * &a2);
@@ -1051,15 +1078,98 @@ where
             let h3 = a0 + &(c3.clone() * &a1) + &(c3sq.clone() * &a2);
             (h0, h1, h2, h3)
         };
-        #[cfg(feature = "parallel")]
-        let hs: Vec<(F, F, F, F)> = {
-            // ≥ ~512 element-pairs per task so late-round tiny bodies don't
-            // drown in rayon dispatch overhead.
-            let min_len = (512usize / half.max(1)).max(1);
-            (0..num_groups).into_par_iter().with_min_len(min_len).map(compute_h).collect()
+        // Message pass — fused with the deferred fold when one is pending
+        // (TEMP pass-fusion experiment): one pass reads the unfolded
+        // buffers, folds ρ_{j−1} in registers into the prefix, and
+        // accumulates this round's coefficients from the folded pairs —
+        // identical field values, identical transcript order.
+        let hs: Vec<(F, F, F, F)> = if let Some(rho_prev) = pending_rho.take() {
+            let _g_msg = crate::utils::prof::scope("eqf:fmsg");
+            let fused = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F, F) {
+                let suffix_t = &suffix[if shared_q { 0 } else { t }][j - 1];
+                let GroupBufs::Dense(group_bufs) = gb else {
+                    unreachable!("fused rounds require all-Dense single-pair groups")
+                };
+                let (l, r) = &mut group_bufs[0];
+                debug_assert_eq!(l.len(), half << 2, "fused round reads unfolded buffers");
+                let mut a0 = F::wide_zero(&zero);
+                let mut a1 = F::wide_zero(&zero);
+                let mut a2 = F::wide_zero(&zero);
+                for b in 0..half {
+                    let base = b << 2;
+                    // The deferred fold — the eager scalar fold's exact
+                    // formula `v0 + ρ·(v1 − v0)`, in registers.
+                    let fold1 = |v: &[F], i: usize| -> F {
+                        let v0 = v[i].clone();
+                        let d = v[i + 1].clone() - &v0;
+                        v0 + &(rho_prev.clone() * &d)
+                    };
+                    let fl0 = fold1(l, base);
+                    let fl1 = fold1(l, base + 2);
+                    let fr0 = fold1(r, base);
+                    let fr1 = fold1(r, base + 2);
+                    // The dense single-pair message body over the folded pair.
+                    let w = &suffix_t[b];
+                    let l0w = w.clone() * &fl0;
+                    let l1w = w.clone() * &fl1;
+                    let wc0 = F::mul_wide(&l0w, &fr0);
+                    let w11 = F::mul_wide(&l1w, &fr1);
+                    let dr = fr1.clone() - &fr0;
+                    let dl = l1w - &l0w;
+                    let wc2 = F::mul_wide(&dl, &dr);
+                    F::wide_add_assign(&mut a0, &wc0);
+                    F::wide_add_assign(&mut a2, &wc2);
+                    F::wide_add_assign(&mut a1, &w11);
+                    F::wide_sub_assign(&mut a1, &wc0);
+                    F::wide_sub_assign(&mut a1, &wc2);
+                    // Land the folded values in the prefix — writes trail
+                    // the reads, so in place is safe.
+                    let e = b << 1;
+                    l[e] = fl0;
+                    l[e + 1] = fl1;
+                    r[e] = fr0;
+                    r[e + 1] = fr1;
+                }
+                l.truncate(half << 1);
+                r.truncate(half << 1);
+                let (a0, a1, a2) = (F::from_wide(a0), F::from_wide(a1), F::from_wide(a2));
+                let h0 = a0.clone();
+                let h1 = a0.clone() + &a1 + &a2;
+                let h2 = a0.clone() + &(c2.clone() * &a1) + &(c2sq.clone() * &a2);
+                let h3 = a0 + &(c3.clone() * &a1) + &(c3sq.clone() * &a2);
+                (h0, h1, h2, h3)
+            };
+            #[cfg(feature = "parallel")]
+            let out: Vec<(F, F, F, F)> = {
+                let min_len = (512usize / half.max(1)).max(1);
+                bufs.par_iter_mut()
+                    .enumerate()
+                    .with_min_len(min_len)
+                    .map(|(t, gb)| fused(t, gb))
+                    .collect()
+            };
+            #[cfg(not(feature = "parallel"))]
+            let out: Vec<(F, F, F, F)> =
+                bufs.iter_mut().enumerate().map(|(t, gb)| fused(t, gb)).collect();
+            out
+        } else {
+            let _g_msg = crate::utils::prof::scope("eqf:msg");
+            #[cfg(feature = "parallel")]
+            let out: Vec<(F, F, F, F)> = {
+                // ≥ ~512 element-pairs per task so late-round tiny bodies don't
+                // drown in rayon dispatch overhead.
+                let min_len = (512usize / half.max(1)).max(1);
+                (0..num_groups)
+                    .into_par_iter()
+                    .with_min_len(min_len)
+                    .map(|t| compute_h(t, &bufs))
+                    .collect()
+            };
+            #[cfg(not(feature = "parallel"))]
+            let out: Vec<(F, F, F, F)> =
+                (0..num_groups).map(|t| compute_h(t, &bufs)).collect();
+            out
         };
-        #[cfg(not(feature = "parallel"))]
-        let hs: Vec<(F, F, F, F)> = (0..num_groups).map(compute_h).collect();
 
         // M(c) = Σ_t A_t · eq1(c; q_t[j−1]) · H_t(c) at the four nodes.
         let mut m = (zero.clone(), zero.clone(), zero.clone(), zero.clone());
@@ -1094,6 +1204,18 @@ where
             *a = a.clone() * &e;
         }
         if j < k {
+            // TEMP pass-fusion experiment: defer this round's fold into the
+            // next round's message pass when every group is Dense
+            // single-pair (the forest shape after any LUT prefix rounds).
+            // Stash bookkeeping below only matters for LUT groups, which
+            // never reach here fused.
+            if eqf_fuse_enabled()
+                && bufs.iter().all(|gb| matches!(gb, GroupBufs::Dense(p) if p.len() == 1))
+            {
+                pending_rho = Some(rho.clone());
+                randomness.push(rho);
+                continue;
+            }
             // Shared leaf fold tables (need ρ, so built here) — one per tau
             // set; every leaf group's fold is then two XOR-selects per entry.
             let leaf_fold_tables: Vec<LeafFoldTables<F>> =
@@ -1131,7 +1253,7 @@ where
                         // per-round `collect()` allocation (large on the deep layers).
                         // A field's fused fold kernel takes over when available.
                         let fold_in_place = |v: &mut Vec<F>| {
-                            if !F::eqf_fold_in_place(v.as_mut_slice(), &rho, half) {
+                            if eqf_nokernel() || !F::eqf_fold_in_place(v.as_mut_slice(), &rho, half) {
                                 for b in 0..half {
                                     let v0 = v[b << 1].clone();
                                     let diff = v[(b << 1) | 1].clone() - &v0;
@@ -1281,6 +1403,7 @@ where
                     *gb = GroupBufs::Dense(vec![(l, r)]);
                 }
             };
+            let _g_fold = crate::utils::prof::scope("eqf:fold");
             #[cfg(feature = "parallel")]
             {
                 let min_len = (512usize / half.max(1)).max(1);
@@ -1288,6 +1411,7 @@ where
             }
             #[cfg(not(feature = "parallel"))]
             bufs.iter_mut().for_each(fold_group);
+            drop(_g_fold);
             if has_leaf2 || has_leaf3 {
                 if j == 1 {
                     // Stash round 1's fold tables as the round-2 value
