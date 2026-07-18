@@ -1,0 +1,478 @@
+ \documentclass[11pt,letterpaper,usenames,dvipsnames]{article}           
+%   %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% PACKAGES
+\usepackage{amsmath,amssymb,amsthm}
+\allowdisplaybreaks
+\usepackage{aliascnt}
+\usepackage{fullpage}
+\usepackage{multirow}
+\usepackage{bbm,soul}
+\usepackage[usenames,dvipsnames]{xcolor}
+\usepackage{lipsum}
+\usepackage{makecell}
+\usepackage{bm}
+\usepackage{braket}
+\usepackage{adjustbox,mdframed}
+\usepackage[operators,sets,primitives,asymptotics,lambda,keys,ff]{cryptocode}
+\usepackage{enumitem}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{siunitx}
+\usepackage[font=footnotesize,labelfont=bf]{caption}
+\usepackage{subcaption}
+\usepackage{mleftright}
+\usepackage{wrapfig}
+\usepackage{setspace}
+\usepackage{xspace}
+\usepackage{algorithm,algorithmic}
+\floatname{algorithm}{Protocol}
+%\crefname{algorithm}{Protocol}{Protocols}
+%\Crefname{algorithm}{Protocol}{Protocols}
+\renewcommand{\algorithmiccomment}[1]{// #1}
+\renewcommand{\algorithmicrequire}{\textbf{Input:}}
+\renewcommand{\algorithmicensure}{\textbf{Output:}}
+\usepackage{authblk}
+
+\usepackage{framed}
+\usepackage{comment}
+\usepackage{placeins} % in the preamble
+
+\usepackage{float}
+\usepackage{graphicx}
+\graphicspath{ {./figures/} }
+\usepackage[T1]{fontenc}
+\usepackage{titlesec}
+\usepackage{stmaryrd}
+
+\usepackage[backend=biber,giveninits,style=alphabetic,maxalphanames=6,maxnames=6,backref]{biblatex}
+\addbibresource{references.bib} 
+%\addbibresource{cryptobib/abbrev3.bib} 
+%\addbibresource{cryptobib/crypto_crossref.bib}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\newcommand{\plaintitle}{F2Z}
+
+\PassOptionsToPackage{hyphens}{url}\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=PineGreen,%RedViolet,
+  breaklinks=true,
+  citecolor=PineGreen,      
+  urlcolor=PineGreen,%RedViolet,
+  pdftitle={\plaintitle},
+  pdfpagemode=FullScreen,
+}
+\DefineBibliographyStrings{english}{%
+backrefpage = {cited on p.},% originally "cited on page"
+backrefpages = {cited on pp.},% originally "cited on pages"
+}
+% Remove starred sections from toc
+\DeclareRobustCommand{\SkipTocEntry}[5]{} 
+\usepackage[capitalize, nameinlink]{cleveref}
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, calc}
+
+\DeclareMathOperator{\im}{im}
+
+\input{macros}
+\title{\plaintitle}
+
+\author[1]{}
+
+\affil[1]{}
+
+
+\date{\today}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{document}
+\maketitle
+
+\begin{abstract}
+
+\end{abstract}
+
+\setcounter{tocdepth}{3}
+
+\tableofcontents
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\section{Introduction}
+
+\subsection{Acknowledgements}
+%World Foundation, Lev Soukhanov, Remco, Ulrich, Giacomo, Marcin
+
+\section{Preliminaries}
+
+
+Given a prime $q$ we let $\pi_q: \ZZ\to \FF_q$ be the ring homomorphism mapping an integer to its reduction modulo $q$.  We further let $\pi_0$ denote the identity map on $\ZZ$, so that $\pi_0(x) = x$ for all $x\in \ZZ$. We let $\FF_0 = \ZZ$.
+
+Given a  finite field $\FF$ of characteristic $q$, let $a(X)\in \ZZ[X]$ be an irreducible polynomial over $\FF_q$ \albert{yes?}, so that $\FF = \ZZ[X]/(q,a(X))$ \albert{consider isomorphism, or assume all finite fields are represented like this}. Let $\psi_{\FF}: \ZZ[X] \to \FF$ be the  canonical homomorphism from $\ZZ[X]$ to $\FF$ obtained by reducing modulo the ideal $(q,a(X))$, i.e.\ by reducing coefficients modulo $q$ and then reducing the resulting polynomial modulo $a(X)$.
+
+\paragraph{Interactive Oracle Proofs of Proximity (IOPP)}
+
+
+\paragraph{Interactive Oracle Reductions (IOR)}
+
+
+\section{$\mathbb F2\mathbb Z$}
+
+%\newcommand{\comfield}{\FF_{\mathsf{c}}}
+%\newcommand{\evalfield}{\FF_{\mathsf{e}}}
+\newcommand{\comfield}{\FF_{2^*}}
+\newcommand{\evalfield}{\FF_{q}}
+\newcommand{\bff}{\mathbf{f}}
+\renewcommand{\oracle}{\mathbbm{y}}
+\renewcommand{\Enc}{\mathsf{Enc}}
+%\newcommand{\psicomfield}{\psi_{\mathsf{c}}}
+%\newcommand{\psievalfield}{\psi_{\mathsf{e}}}
+
+\newcommand{\psicomfield}{\pi_{2}}
+\newcommand{\psievalfield}{\pi_{q}}
+
+
+Let $\codedim\geq 0$ be a dimension parameter, and $\codelength\geq 0$ a blocklength parameter. Let $\FF$ be a field (not necessarily a prime field), and let $\cC\subseteq \FF^{\codelength}$ be a linear code of dimension $k$ and blocklength $\codelength$ over $\FF$.  Let $\inplen\geq0$ be a public input length parameter, and let $Q\in \FF[Y_1, \ldots, Y_{\inplen}, Z_1, \ldots, Z_{\codedim}]$  be a constraint polynomial
+\ulrich{%
+Of arbitrary degree, I suppose?
+}% 
+\albert{Yes!}
+with coefficients in $\FF$ and on $\inplen+\codedim$ variables. Consider the following relation:
+%
+$$
+\Relation_{\cC, \FF}^{Q} \defeq \left\{ \left(\begin{aligned} &\inp=\yy\in \FF^\inplen, \\&\oracle = f \in \FF^\codelength, \\ &\wit= \bff\in \FF^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\bff) = f\\ \wedge \  &Q(\yy, \bff) = 0  \end{aligned} \right\}
+$$
+When $Q$ and $\yy$ are such that $\yy=(\rr,\mu)\in \FF^{\log\codedim}\times \FF$ and $$Q(\yy,\ff)= \mle{\bff}(\rr)-\mu,$$ we denote $\Relation_{\cC, \FF}^{Q}$  by $\Relation_{\cC, \FF}^{\mathsf{mle}}$. 
+
+
+Next let $\comfield$ be a finite field of characteristic $2$,  and let $\evalfield$ be  a finite field of prime order $q$ or $\QQ$. For intuition, $\comfield$ is the field over which we will commit our witness, and $\evalfield$ is the field over which we prove linear relations on the witness. We let
+%
+$$
+\psicomfield : \ZZ \to \FF_2 \subseteq \comfield, \qquad \psievalfield: \ZZ \to \evalfield,
+$$
+be reduction mod $2$ and $q$ maps.
+
+Let $\cC\subseteq \comfield^{n}$ be a linear code of dimension $k$ and blocklength $n$ over $\comfield$. Define
+$$
+\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \{0,1\}^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\psicomfield(\bff)) = f\\ \wedge \  & \langle \psievalfield(\bff), \vv\rangle  = \mu  \end{aligned} \right\}
+$$
+%
+%
+We fix a tensor decomposition of vectors $\vv\in \comfield^\codedim$ as $$\vv = \vv^{(1)} \otimes \vv^{(2)} = \left(\vv_i^{(1)}\cdot \vv_j^{(2)}\right)_{i\in [\codedim_1], j\in [\codedim_2]}$$ for some $\vv^{(1)}\in \evalfield^{\ell_1}, \vv^{(2)}\in \evalfield^{\ell_2}$, with $\ell_1 \cdot \ell_2=\ell$. Note that the trivial tensor decomposition is admitted, i.e.\ we may not decompose $\vv$ by choosing $\codedim_1=\codedim$, $\codedim_2=1$, $\vv^{(1)}=\vv$, and $\vv^{(2)} = (1)$.
+
+We then index the entries of $\bff$ as $\bff=(\bff_{ij})_{i\in [\ell_1], j\in[\ell_2]}$. Note that
+%
+$$
+\langle \psievalfield(\bff), \vv \rangle = \sum_{j\in [\ell_2]}\left(\sum_{i\in [\ell_1]} \psievalfield(\bff_{ij}) \cdot \vv_i^{(1)}\right) \cdot \vv_j^{(2)} = \sum_{j\in [\ell_2]} \langle \psievalfield(\bff_{*j}) , \vv^{(1)} \rangle \cdot \vv_j^{(2)},
+$$
+where $\bff_{*j} = (\bff_{ij})_{i\in[\ell_1]}$.
+
+
+
+
+
+
+\newcommand{\basegenerator}{g}
+
+
+% We use $0$ and $1$ indistinctly to denote the zero and one integer, and zero and one field elements. 
+
+
+Define the following bivariate polynomial:
+$$
+P(Y,Z) = (Y-1)\cdot Z +1 
+$$
+ Note
+%
+$
+P(Y,0) = 1$ and $P(Y,1) = Y.
+$
+%
+We assume prover and verifier have access to an IOR $\prod_{\Relation_{\cC, \comfield}^{Q}  \to \Relation_{\cC, \comfield}^{\mathsf{eval}}}$  that reduces 
+%
+$
+\Relation_{\cC, \comfield}^{Q}$ to $\Relation_{\cC, \comfield}^{\mathsf{eval}}$, 
+where $$Q(Y_1, \ldots, Y_{\codedim_1+1}, Z_1, \ldots, Z_{\codedim_1}) = \prod_{i=1}^{\codedim_1} P(Y_i, Z_i) - Y_{\codedim_1+1}.$$ 
+%
+We  assume the prover and verifier have access to an IOPP for $\Relation_{\cC_{\codedim}, \comfield}^{\mathsf{eval}}$. Further, we let $\cC_{\ell_1}$ be a code over $\comfield$ of dimension $\ell_1$ and blocklength $\codelength_1$, and we  assume that prover and verifier have access to an IOR that reduces $(\Relation_{\cC_{\codedim_1}, \comfield}^{Q})^{\codedim_2}$ to $\Relation_{\cC, \comfield}^{\mathsf{eval}}$.  
+
+
+
+We provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$ next.
+\begin{construction}[IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$]\label{c:core_iop}
+The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^n$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$. 
+Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with sufficiently large multiplicative order, to be determined later.  
+
+
+\begin{enumerate}[leftmargin=*]
+\item The prover sends $\mu_1', \ldots, \mu_{\ell_2}'\in \ZZ$ such that $\langle \bff_{*j}, \psievalfield^{-1}(\vv^{(1)})\rangle = \mu_j'$. 
+\item The verifier checks that $\sum_{j\in [\ell_1]} \psievalfield(\mu_j')\cdot \vv_j^{(2)}  = \mu$. 
+\item Prover and verifier define $\bm{\gamma}_i = \psievalfield^{-1}(\vv_i^{(1)})$ for $i \in [\ell_1]$, and set to prove the following claim:
+%
+$$
+\prod_{i \in [\codedim_1]} g^{\bm{\gamma}_i\cdot \bff_{ij}}  = g^{\mu_j'} \qquad \text{for all } j\in [\ell_2].
+$$
+Note that this claim is equivalent to
+$$
+\prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \bff_{ij} +1\right)= g^{\mu_j'}  \quad  \in \comfield, \qquad \text{for all } j\in [\ell_2].
+$$
+% \ulrich{%
+% Suggestion: 
+% Maybe it is more clear, if we write in the above two equalities explicitly a $\bmod\: q$, or, add $\in \mathbb F_q$?
+% }%
+% \albert{See now. It's actually in $\comfield$}
+To prove the above claim, prover and verifier engage in the IOR that reduces $$\left(\Relation_{\cC_{\codedim_1}, \comfield}^{Q}\right)^{\codedim_2} \quad \text{to} \quad \Relation_{\cC, \comfield},$$  with inputs \albert{The reason I'm leavintg this IOR abstract here is that I think there may be better ways to prove the above claim than a grand product GKR, so I want to write it modular} $$\left(\inp'=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]}, g^{\mu_j'}), \oracle_j'=\Enc_{\code_{\codedim_1}}(\psicomfield(\bff_{*j})), \wit_j'=\psicomfield(\bff_{*j})\right)  \qquad \text{for } j\in [\ell_2].$$
+%
+\item At the end of this IOR, they are left with the following claim to prove: \albert{Better to have this construction stop at the IOR output?}
+%
+$$
+((\mu', \rr'), f', \bff') \in \Relation_{\cC, \comfield}^{\mathsf{eval}},$$ for some $(\mu,\rr'), f',\bff'$ output during the IOR. Accordingly, the prover and the verifier engage in a IOPP  to certify the validity of this last claim.
+\end{enumerate}
+\end{construction}
+
+
+
+We now describe a GKR-based IOR reducing $\Relation_{\cC, \comfield}^{Q}$ to  $\Relation_{\cC, \comfield}^{\mathsf{eval}}$
+
+\begin{construction}[Grand product GKR]
+The prover and verifier receive $\inp=((g^{\bm{\gamma}_i})_{i\in [\codedim_1]}, g^\mu) \in \evalfield^{\codedim_1} \times \evalfield$  and $\oracle= f \in \comfield^n$. The prover receives $\wit= \bff\in \comfield^{\codedim_1}$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield}^{Q}$. 
+\begin{enumerate}[leftmargin=*]
+    \item \albert{Todo: it's a standard grand product GKR so far -- though there's lots of implementation-level optimizations it can undergo}
+\end{enumerate}
+\end{construction}
+\ulrich{%
+Maybe to just write verbally, that we will use GKR for the grand product.
+And defer the explicit protocol description to the appendix or any later section?
+At this point it is maybe more important to clarify how useful the construction is because of packed commitment scheme over $\mathbb F_2$. 
+% At Albert: should I omit such comments here in the source, and rather post them on slack?
+}
+\albert{Sounds good}
+
+
+\section{Virtualization of $\FF_2$-linear combinations lifted to integers}
+
+\newcommand{\bfg}{\mathbf{g}}
+
+In this section we expand relation $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$ to impose, instead of constraints of the form $\Enc_\cC(\pi_2(\bff))=f$ and $\langle \pi_q(\bff), \vv  \rangle = \mu$, constraints as $\Enc_\cC(\pi_2(\bff)) = f$  and $\langle \pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff))) \rangle = \mu$ for a matrix $M\in \FF_{2}^{\codedim' \times \codedim}$. Precisely, given a new parameter $\codedim'$,
+$$
+\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv, M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim' \times \codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\psicomfield(\bff)) = f\\ \wedge \  & \langle \psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff)), \vv\rangle  = \mu  \end{aligned} \right\}
+$$
+%
+The relation has the tag ``lin(ear)-virtual'' referencing the intuition that  $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}} $ expresses a linear constraint on the vector $\bfg=\psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff))\in \evalfield^{\codedim'}$, which is not committed directly: only $\pi_2(\bff)$  is. Note that $\bfg$ is a linear expression over $\comfield$ of the elements in $\pi_2(\bff)$, lifted to the integers, and then projected to $\evalfield$.
+
+\albert{Would be good to add more detail in this paragraph} The relation $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$  allows to, for example, express linear constraints over $\evalfield$ of the XOR of witness elements, while only committing (over $\comfield$) to the original elements. The same applies with other bit operations such as AND and Majority, by noting first that, given integers $x,y,z\in \{0,1\}$: \albert{Should reference some identity in preliminaries, or explain more here} 
+%
+\begin{equation*}
+    \begin{aligned}
+        \pi_q(x \band y) & = 2^{-1}\cdot \pi_q \left( x+y - \pi_2^{-1}(\pi_2(x) + \pi_2(y)) \right),\\
+        \pi_q(\Maj(x,y,z)) &= 2^{-1}\cdot \pi_q \left( x+y+z - \pi_2^{-1}(\pi_2(x) + \pi_2(y) + \pi_2(z) \right),
+    \end{aligned}
+\end{equation*}
+where $2^{-1}$ denotes the inverse of $2$ modulo $q$.  
+%
+Hence AND and Majority can be expressed over $\FF_q$ as  linear expressions of a vectors of the form $\pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff)))$, with $\bff$ containing only the original elements for which we compute AND and Majority. 
+
+
+We next provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$. 
+
+\begin{construction}[IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$]\label{c:core_iop}
+The prover and verifier receive $\inp=(\mu, \vv,M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim'\times\codedim}$ and  $\oracle= f \in \comfield^n$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$. 
+
+
+
+\begin{enumerate}[leftmargin=*]
+\item Define the vector $\bfg \in \bits^{\codedim'}$ as $\bfg = \pi_2^{-1}\left(M\cdot \pi_2(f)\right)$. Prover and verifier execute \cref{c:core_iop} with the following inputs:
+$$
+\inp' = (\mu, \vv), \quad \oracle'=g, \quad \wit' = 
+$$
+\end{enumerate}
+\end{construction}
+
+
+
+\section{Case-study: SHA-256 hashing}
+
+\subsection{Arithmetization over $\ZZ[X]$}
+
+\subsubsection{SHA-256 compression overview}
+We begin with a brief overview of SHA-256 to establish notation, then formalize the relation we seek to arithmetize.
+
+
+
+For the purposes of SHA-256, a \emph{word} is a $\leq 32$ string of bits, which we represent as a binary integer polynomial, i.e.\ as an element of $\{0,1\}^{<32}[X]$.
+The SHA-256 compression function receives as input a $512$-bit string, represented as sixteen \emph{message words} $(M_t)_{t\in[16]}\in\{0,1\}^{<32}[X]^{16}$. 
+The algorithm also uses $64$ fixed \emph{round constants} $(K_t)_{t\in[64]}\in\{0,1\}^{<32}[X]^{64}$. 
+
+We let 
+%
+\begin{equation}
+\begin{aligned}
+\psi_2: \ZZ[X]& \to \ZZ\\
+a(X) &\mapsto a(2)
+\end{aligned}
+\end{equation}
+be the ring homomorphism sending integer polynomials to their evaluation at $X=2$. Notice that, given $a\in \{0,1\}^{<32}[X]$, the integer $\psi_2(x) \in \ZZ$ is the integer whose bit-representation coincides with the coefficients of $a$.
+
+\newcommand{\wordsize}{{32}}
+
+SHA-256 is built from the following six auxiliary functions.
+For $x,y,z\in\{0,1\}^{<32}[X]$, define:
+\begin{equation}\label{eq:sha256_auxiliary_functions}
+\begin{aligned}
+\Sigma_0(x) &\coloneqq \ROTR^2(x)\xor\ROTR^{13}(x)\xor\ROTR^{22}(x) &&\in\{0,1\}^{<32}[X]\\
+\Sigma_1(x)&\coloneqq \ROTR^6(x)\xor\ROTR^{11}(x)\xor\ROTR^{25}(x)&&\in\{0,1\}^{<32}[X]\\
+\Ch(x,y,z) &\coloneqq (x\band y)\xor(\Not x\band z)&&\in\{0,1\}^{<32}[X]\\
+\Maj(x,y,z)&\coloneqq (x\band y)\xor(x\band z)\xor(y\band z)&&\in\{0,1\}^{<32}[X]\\
+\sigma_0(x) &\coloneqq \ROTR^7(x)\xor\ROTR^{18}(x)\xor\SHR^3(x)&&\in\{0,1\}^{<32}[X]\\
+\sigma_1(x)&\coloneqq \ROTR^{17}(x)\xor\ROTR^{19}(x)\xor\SHR^{10}(x)&&\in\{0,1\}^{<32}[X]
+\end{aligned}
+\end{equation}
+\albert{todo: define the bit operations}
+%The functions $\Ch$ (``choose'') provide $\Maj$ (``majority'') are bitwise selection and voting operations, respectively.
+
+\paragraph{Message schedule.}
+At the beginning of the SHA-256 compression function, the sixteen input message words $(M_t)_{t\in[16]}$ are expanded into a so-called \emph{message schedule}, which consists of $64$ integers of $32$ bits $(W_t)_{t\in[64]}\in\ZZ^{64}$ defined as follows:
+\begin{equation}\label{eq:sha256_message_schedule_def}
+W_t \coloneqq 
+\begin{cases}
+\psi_2(M_t) & t\in[16],\\
+\psi_2(W_{t-16})+\psi_2(\sigma_0(W_{t-15}))+\psi_2(W_{t-7})+\psi_2(\sigma_1(W_{t-2})) \pmod{2^\wordsize} & t\in\{17,\dots,64\}.
+\end{cases}
+\end{equation}
+%The first $16$ schedule words coincide with the input message words; the remaining $48$ are derived by mixing earlier schedule words via the $\sigma$-functions.
+
+\paragraph{Compression loop.}
+After the message schedule is computed, SHA-256 performs the so-called \emph{compression loop}. Throughout it, the function maintains an $8$-word internal state, conventionally labeled as $$(a,b,c,d,e,f,g,h) \in \{0,1\}^{<32}[X]^8.$$
+The compression loop iterates $64$ rounds.
+At each round $t\in[64]$, the state entering that round is denoted
+$(a_t,b_t,c_t,d_t,e_t,f_t,g_t,h_t)\in\{0,1\}^{<32}[X]^8$. The per-round update is given by, for $t\in [64]$,
+\begin{equation*}
+\begin{aligned}
+T_{1,t} &\coloneqq \psi_2(h_t)+\psi_2(\Sigma_1(e_t))+\psi_2(\Ch(e_t,f_t,g_t))+\psi_2(K_t)+W_t  \pmod{2^\wordsize} &&\in \ZZ,\\
+T_{2,t} &\coloneqq \psi_2(\Sigma_0(a_t))+\psi_2(\Maj(a_t,b_t,c_t))  \pmod{2^\wordsize} &&\in \ZZ,\\
+a_{t+1} &\coloneqq \psi_2^{-1}(T_{1,t}+T_{2,t} \pmod{2^\wordsize}) &&\in\{0,1\}^{<32}[X],\\
+e_{t+1} &\coloneqq \psi_2^{-1}(\psi_2(d_t)+\psi_2(T_{1,t}) \pmod{2^\wordsize}) &&\in \{0,1\}^{<32}[X],\\
+(b_{t+1},&c_{t+1},d_{t+1},f_{t+1},g_{t+1},h_{t+1}) 
+\coloneqq (a_t,b_t,c_t,e_t,f_t,g_t)&&\in\{0,1\}^{<32}[X]^6.
+\end{aligned}
+\end{equation*}
+The full SHA-256 compression function adds the initial state to the terminal state word-wise modulo $2^\wordsize$ (the so-called \emph{feed-forward step}); we omit this step for brevity \albert{Let's not do that}. For our purposes, the output of the compression function is the final state $(a_{65},\ldots,h_{65})$.  
+
+\subsubsection{Our arithmetization}
+
+\subsection{End-to-end IOP}
+
+\subsection{Experiments}
+\albert{Comparison with Flock on SHA256: we commit to 8x less bits. This leads to more than 2x memory reduction. 80\% of prover costs are in the grand product GKR. Hence setting rate=1/4 or smaller has little impact on performance. This leads to smaller proofs. Prover time overall seems to be about 1.5-2.5x worse for us}
+
+\appendix
+
+\section{Galois FRI-Binius}
+
+\ulrich{Just notes, not sure if it worth to keep it in final doc}
+
+Packed commitment scheme for $\mathbb F_{2^m}$ . % in the values-to-uni-coeffs regime.
+
+For simplicity we assume packing across polynomials. 
+(The single poly case goes likewise.)
+Using an $\mathbb F_2$-basis $\beta_1,\ldots, \beta_{m}$ of $\mathbb F_{2^m}$ we
+pack $m$ polys of $2^n$ coefficients %of $2^{m}$ coeffs in $\mathbb F_2$,
+\[
+b_i(X) = \sum_{j=0}^{2^n - 1} b_{i,j} \cdot X^i \quad \in \mathbb F_2[X]^{< 2^n}, 
+\quad i = 1, \ldots, m,
+\]
+coefficient-wise into a single poly 
+\begin{align*}
+b(X) &= b_1(X)\cdot \beta_1 + \ldots + b_{m}(X) \cdot\beta_m
+\\
+&= \sum_{j=0}^{2^n} (b_{1,j}\cdot \beta_1 + \ldots + b_{m,j}\cdot \beta_{m}) \cdot X^j 
+\quad \in \mathbb F_{2^m}[X]^{<2^n}.
+\end{align*}
+
+The Frobenius automorphism $\phi(z) = z^2$ keeps $\mathbb F_2\subset F$ fixed, and has no other fixed points. 
+% (Recall that it is also additive.)
+For any point $z\in \mathbb F$, we extract the value of $b_i(z)$ from the values of the packed poly $b(X)$ along the Galois orbit 
+\[
+z, z^2, z^{2^2}, \ldots, z^{2^{m-1}}
+\]
+as follows.
+%
+The Moore matrix
+\begin{align*}
+M = \begin{pmatrix}
+\beta_1 & \beta_2 & \ldots & \beta_m
+\\
+\beta_1^2 & \beta_2^2 & \ldots & \beta_m^2
+\\
+\beta_1^{2^2} & \beta_2^{2^2} & \ldots & \beta_m^{2^2}
+\\
+\vdots
+\\
+\beta_1^{2^{m-1}} & \beta_2^{2^{m-1}} & \ldots & \beta_m^{2^{m-1}}
+\end{pmatrix}
+\end{align*}
+consists of the Galois orbits of the basis vectors, and is invertible. (See below.)
+Using that the component polynomials are over $\mathbb F_2$, we see that
+%We write $v_{k} = b(\phi^{-k} z)$, $k=0, \ldots, m-1$, and 
+% \[
+% v_k = \phi^{-k}\left(b_1(z) \cdot \phi^{k}\beta_1 + \ldots + b_m(z) \cdot \phi^{k}\beta_m \right),
+% \]
+% since $b_i(\phi^{-k} z) = \phi^{-k} b_i(z)$, in other words
+\[
+\phi^{k} \left(b(\phi^{-k} z)\right) = b_1(z) \cdot \phi^{k}\beta_1 + \ldots + b_m(z) \cdot \phi^{k}\beta_m,
+\]
+for any $k$. 
+To extract the $b_1(z)$ term, we look for weights $c_1,\ldots, c_m\in F$ which annihilate the orbits of the other $\beta_2,\ldots, \beta_m$, concretely
+\begin{align*}
+\sum_{k=0}^{m-1} c_k \cdot \phi^k \beta_1 = 1,
+\quad 
+\sum_{k=0}^{m-1} c_k \cdot \phi^k \beta_j = 0 \quad j=2,\ldots,n.
+\end{align*}
+This is exactly the first row vector of $M^{-1}$. 
+%
+In general, 
+\[
+\begin{pmatrix}
+b_1(z)
+\\
+b_2(z)
+\\
+b_3(z)
+\\
+\vdots
+\\
+b_m(z)
+\end{pmatrix}
+= M^{-1}\cdot 
+\begin{pmatrix}
+v_0
+\\
+\phi v_1
+\\
+\phi^2 v_2
+\\
+\vdots
+\\
+\phi^{m-1} v_{m-1}
+\end{pmatrix},
+\]
+where $v_k = b(\phi^{-k} z)$.
+% and $M\cdot c$ is the Galois orbit of $c = (c_1,\ldots, c_m)$ in coordinates of the basis.
+% The rows of $M^{-1}$ give us the linear functionals that recover the $i$-th coordinate of $z$ from its Galois-orbit.
+\ulrich{%
+\small
+Invertibility of $M$ follows from that of $M^t$: 
+any linear functional $(c_1,\ldots, c_m)$ in the kernel of $M^t$ gives rise to the linearizable polynomial
+\[
+p(X) = \sum_{i=0}^{m-1} c_i\cdot X^{2^i} 
+\]
+which has $\beta_1,\ldots, \beta_m$, and hence the whole space $F$ as roots. 
+By dimension, $p(X)$ must be trivial, meaning that all its coefficents are zero.
+}
+
+
+
+
+\end{document}
