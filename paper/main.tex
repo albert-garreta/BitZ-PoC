@@ -202,7 +202,7 @@ We  assume the prover and verifier have access to an IOPP for $\Relation_{\cC_{\
 
 We provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$ next.
 \begin{construction}[IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$]\label{c:core_iop}
-The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^n$. The prover receives $\wit= \bff\in \range{0}{q-1}^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$. 
+The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^n$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$. 
 Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with sufficiently large multiplicative order, to be determined later.  
 
 
@@ -257,7 +257,7 @@ At this point it is maybe more important to clarify how useful the construction 
 
 In this section we expand relation $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$ to impose, instead of constraints of the form $\Enc_\cC(\pi_2(\bff))=f$ and $\langle \pi_q(\bff), \vv  \rangle = \mu$, constraints as $\Enc_\cC(\pi_2(\bff)) = f$  and $\langle \pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff))) \rangle = \mu$ for a matrix $M\in \FF_{2}^{\codedim' \times \codedim}$. Precisely, given a new parameter $\codedim'$,
 $$
-\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv, M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim' \times \codedim} \times \evalfield^{\ }, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\psicomfield(\bff)) = f\\ \wedge \  & \langle \psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff)), \vv\rangle  = \mu  \end{aligned} \right\}
+\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv, M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim' \times \codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\psicomfield(\bff)) = f\\ \wedge \  & \langle \psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff)), \vv\rangle  = \mu  \end{aligned} \right\}
 $$
 %
 The relation has the tag ``lin(ear)-virtual'' referencing the intuition that  $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}} $ expresses a linear constraint on the vector $\bfg=\psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff))\in \evalfield^{\codedim'}$, which is not committed directly: only $\pi_2(\bff)$  is. Note that $\bfg$ is a linear expression over $\comfield$ of the elements in $\pi_2(\bff)$, lifted to the integers, and then projected to $\evalfield$.
@@ -276,6 +276,17 @@ Hence AND and Majority can be expressed over $\FF_q$ as  linear expressions of a
 
 
 We next provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$. 
+
+\begin{construction}[IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$]\label{c:core_iop}
+The prover and verifier receive $\inp=(\mu, \vv,M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim'\times\codedim}$ and  $\oracle= f \in \comfield^n$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$. 
+
+
+
+\begin{enumerate}[leftmargin=*]
+\item 
+\end{enumerate}
+\end{construction}
+
 
 
 \section{Case-study: SHA-256 hashing}
