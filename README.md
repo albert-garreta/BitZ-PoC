@@ -324,6 +324,34 @@ ad-hoc config):
 | 26 | 17.2 ms | 150 ms | 28.8 ms | 162 ms | 2.90 ms | 150.7 KiB | 373 MB |
 | 28 | 65.7 ms | 558 ms | 97.7 ms | 666 ms | 3.60 ms | 187.0 KiB | 1.46 GB |
 
+**Pushing proof size further: `F2Z_LIG_PROFILE=custom:<log_inv_rate>:<initial_k>`.**
+The bench can build Johnson configs at any (base rate, L0 interleaving)
+geometry — ladder per `scripts/soundness.py`'s rule, queries/grinding/OOD
+solved against flock's own `paper_predicted_*` formulas and gated by
+`LigeritoSecurityConfig::validate` (same 100-bit per-level target; these
+are validator-checked but not part of flock's shipped TOML set). Two
+levers beyond the slim default: lower rate (halves the codeword's rate,
+~2× commit per step) and **smaller `initial_k`** (halves each query's
+opened row; commit-neutral — the total codeword is `k`-independent).
+Measured at n=28 (reference split, prove ~unchanged throughout — the
+forest dominates it):
+
+| config | commit | prove | proof | lig blob | peaks (commit/prove) |
+|---|---|---|---|---|---|
+| slim (r1/8, k6) | 82 ms | 636 ms | 187.0 KiB | 132.3 | 372 MB / 1.46 GB |
+| custom:3:4 (r1/8, k4) | 76 ms | 618 ms | **154.6 KiB** | 99.9 | 420 MB / 1.54 GB |
+| custom:4:4 (r1/16, k4) | 141 ms | 643 ms | **140.5 KiB** | 86.1 | 740 MB / 1.90 GB |
+| custom:5:4 (r1/32, k4) | 276 ms | 648 ms | 134.7 KiB | 80.5 | 1.38 GB / 2.62 GB |
+
+`custom:3:4` is a near-free −17 % (the `initial_k` 6 → 4 step alone);
+`custom:4:4` reaches −25 % for ~2× commit; rate 1/32 is past the knee
+(−6 KiB for another 2× commit — at that point the lig blob is SMALLER
+than the forest side, whose `2^s·16 B` sent-folds term takes over).
+Shifting the split to shrink that term is a bad trade at n=28 under the
+current prover (t=17→19 costs +77 % prove for −21 KiB — the shared
+`2^t` tables and per-layer costs steepen with n), so the frontier is
+config-only at the reference split.
+
 ### The b127 field study (`GF(2^127)`)
 
 `benches/field.rs` benches the GHASH field head-to-head against
