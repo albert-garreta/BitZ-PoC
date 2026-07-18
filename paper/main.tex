@@ -225,7 +225,7 @@ $$
 % \albert{See now. It's actually in $\comfield$}
 To prove the above claim, prover and verifier engage in the IOR that reduces $$\left(\Relation_{\cC_{\codedim_1}, \comfield}^{Q}\right)^{\codedim_2} \quad \text{to} \quad \Relation_{\cC, \comfield},$$  with inputs \albert{The reason I'm leavintg this IOR abstract here is that I think there may be better ways to prove the above claim than a grand product GKR, so I want to write it modular} $$\left(\inp'=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]}, g^{\mu_j'}), \oracle_j'=\Enc_{\code_{\codedim_1}}(\psicomfield(\bff_{*j})), \wit_j'=\psicomfield(\bff_{*j})\right)  \qquad \text{for } j\in [\ell_2].$$
 %
-\item At the end of this IOR, they are left with the following claim to prove:
+\item At the end of this IOR, they are left with the following claim to prove: \albert{Better to have this construction stop at the IOR output?}
 %
 $$
 ((\mu', \rr'), f', \bff') \in \Relation_{\cC, \comfield}^{\mathsf{eval}},$$ for some $(\mu,\rr'), f',\bff'$ output during the IOR. Accordingly, the prover and the verifier engage in a IOPP  to certify the validity of this last claim.
@@ -283,7 +283,10 @@ The prover and verifier receive $\inp=(\mu, \vv,M)\in \evalfield \times \evalfie
 
 
 \begin{enumerate}[leftmargin=*]
-\item 
+\item Define the vector $\bfg \in \bits^{\codedim'}$ as $\bfg = \pi_2^{-1}\left(M\cdot \pi_2(f)\right)$. Prover and verifier execute \cref{c:core_iop} with the following inputs:
+$$
+\inp' = (\mu, \vv), \quad \oracle'=g, \quad \wit' = 
+$$
 \end{enumerate}
 \end{construction}
 
@@ -470,164 +473,6 @@ By dimension, $p(X)$ must be trivial, meaning that all its coefficents are zero.
 }
 
 
-
-\section{[Scratch] $\mathbb F2\mathbb Z$ -- general version}
-\ulrich{%
-How about the math letters in the name? I like it better.
-}
-
-% \left\{\begin{align} {#1} \end{align}\left| \begin{align} {#2} \end{align} \right.\right\}
-
-Let $\codedim\geq 0$ be a dimension parameter, and $\codelength\geq 0$ a blocklength parameter. Let $\FF$ be a field (not necessarily a prime field), and let $\cC\subseteq \FF^{\codelength}$ be a linear code of dimension $k$ and blocklength $\codelength$ over $\FF$.  Let $\inplen\geq0$ be a public input length parameter, and let $Q\in \FF[Y_1, \ldots, Y_{\inplen}, Z_1, \ldots, Z_{\codedim}]$  be a constraint polynomial with coefficients in $\FF$ and on $\inplen+\codedim$ variables. Consider the following relation \albert{what name?}:
-%
-$$
-\Relation_{\cC, \FF}^{Q} \defeq \left\{ \left(\begin{aligned} &\inp=\yy\in \FF^\inplen, \\&\oracle = f \in \FF^\codelength, \\ &\wit= \bff\in \FF^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\bff) = f\\ \wedge \  &Q(\yy, \bff) = 0  \end{aligned} \right\}
-$$
-When $Q$ and $\yy$ are such that $\yy=(\rr,\mu)\in \FF^{\log\codedim}\times \FF$ and $$Q(\yy,\ff)= \mle{\bff}(\rr)-\mu,$$ we denote $\Relation_{\cC, \FF}^{Q}$  by $\Relation_{\cC, \FF}^{\mathsf{mle}}$. 
-
-
-Next let $\comfield$ be a finite field of characteristic $q$,  and let $\evalfield$ be either a finite field or $\QQ$. For intuition, $\comfield$ is the field over which we will commit our witness, and $\evalfield$ is the field over which we prove linear relations on the witness. We introduce the following short-hand notation:
-%
-$$
-\psicomfield \defeq \psi_{\comfield}: \ZZ[X] \to \comfield, \qquad \psievalfield \defeq \psi_{\evalfield}: \ZZ[X] \to \evalfield.
-$$
-\ulrich{%
-Shouldn't be these the projections from $\mathbb Z$ onto the "integers" in the field?
-} \albert{Most of the time, yes. I wanted to allow for arbitrary fields, not just prime fields, in which case the lift from the evaluation field $\evalfield$ needs to be to $\ZZ[X]$. But this makes everything hard to read}
-\ulrich{%
-Ah, get it you want to lift from $\mathbb F_{q^k}$. 
-} \albert{Yes, but later below I just assume that $\evalfield$ is prime for simplicity
-}
-\ulrich{%
-Then how about starting simple? One can always do remarks on the fully general scope?
-In the end, a matter of taste.
-In any case, if we lift to $\mathbb Z[X]$, shouldn't we have the witness $\mathbb w$ below also in $\mathbb Z[X]^\ell$?
-}
-\albert{Yes, better to start simple. I'm worried the current description is getting too complicated}
-\ulrich{We can always generalize later on. 
-Maybe it turns out the way to go, but I think starting simple is always better}
-\ulrich{%
-Are we even sure that we want to do it in full generality, like arbitrary commit field... 
-If it is another prime field... let me think
-Anyways, need to go for check with Bowie to the vet, will return in about 2 hours.
-}
-\albert{Maybe it's better to fix the commit field to a binary field. Then have some remark or appendix (or nothing) with fully general commit and eval fields. Good luck at the vet!}
-%
-Let $\cC\subseteq \comfield^{n}$ be a linear code of dimension $k$ and blocklength $n$ over $\comfield$. Define \albert{can we handle more general witness subsets?}
-$$
-\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \range{0}{q-1}^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\psicomfield(\bff)) = f\\ \wedge \  & \langle \psievalfield(\bff), \vv\rangle  = \mu  \end{aligned} \right\}
-$$
-We provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$ next.
-
-
-\paragraph{Protocol assumptions} Assume for simplicity that $\evalfield$ is a prime field. The general case (when $\evalfield$ is a non-trivial field extension or the field of rationals) is handled in \cref{?}.
-
-
-Fix an element $\basegenerator\in \comfield$ with sufficiently large multiplicative order, to be determined later.  Let  $S_q=\psicomfield(\range{0}{q-1})$, and define the following bivariate polynomial with coefficients in $\comfield$:
-$$
-P(Y,Z) = \sum_{s\in \range{0}{q-1}} L_{ S_q, \psicomfield(s)}(Z) \cdot Y^{s} \in \comfield[Y,Z],
-$$
-where $L_{S_q, \psicomfield(s)}(Z)$ is the Lagrange polynomial associated to $\psicomfield(s)$ over the set $S_q$, with degree at most $q-1$. Note
-%
-$$
-P(Y,\psicomfield(s)) = Y^{s} \quad \forall \ s\in \range{0}{q-1}.
-$$
-%
-We assume prover and verifier have access to an IOR $\prod_{\Relation_{\cC, \comfield}^{Q}  \to \Relation_{\cC, \comfield}^{\mathsf{eval}}}$ \albert{define in prelims} that reduces 
-%
-$
-\Relation_{\cC, \comfield}^{Q}$ to $\Relation_{\cC, \comfield}^{\mathsf{eval}}$, 
-where $$Q(Y_1, \ldots, Y_{\codedim+1}, Z_1, \ldots, Z_{\codedim}) = \prod_{i=1}^{\codedim} P(Y_i, Z_i) - Y_{\codedim+1}.$$ We further assume that prover and verifier have access to a batched version of $\prod_{\Relation_{\cC, \comfield}^{Q}  \to \Relation_{\cC, \comfield}^{\mathsf{eval}}}$ (which allows to reduce several instances of ), and to an IOPP for $\Relation_{\cC, \comfield}^{\mathsf{eval}}$.
-
-
-\begin{construction}[Core IOP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$]\label{c:core_iop}
-The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^n$. The prover receives $\wit= \bff\in \range{0}{q-1}^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$. 
-
-Fix a tensor decomposition of $\vv$ as $$\vv = \vv^{(1)} \otimes \vv^{(2)} = \left(\vv_i^{(1)}\cdot \vv_j^{(2)}\right)_{i\in [\codedim_1], j\in [\codedim_2]}$$ for some $\vv^{(1)}\in \evalfield^{\ell_1}, \vv^{(2)}\in \evalfield^{\ell_2}$, with $\ell_1 \cdot \ell_2=\ell$. Note that the trivial tensor decomposition is admitted, i.e.\ we may not decompose $\vv$ and set $\vv^{(1)}=\vv$ and $\vv^{(2)} = (1)$.
-
-Index the entries of $\bff$ as $\bff=(\bff_{ij})_{i\in [\ell_1], j\in[\ell_2]}$. Note that
-%
-$$
-\langle \psievalfield(\bff), \vv \rangle = \sum_{j\in [\ell_2]}\left(\sum_{i\in [\ell_1]} \psievalfield(\bff_{ij}) \cdot \vv_i^{(1)}\right) \cdot \vv_j^{(2)} = \sum_{j\in [\ell_2]} \langle \psievalfield(\bff_{*j}) , \vv^{(1)} \rangle \cdot \vv_j^{(2)},
-$$
-where $\bff_{*j} = (\bff_{ij})_{i\in[\ell_1]}$.
-
-\begin{enumerate}[leftmargin=*]
-\item The prover sends $\mu_1', \ldots, \mu_{\ell_2}'\in \ZZ$ such that $\langle \bff_{*j}, \psievalfield^{-1}(\vv^{(1)})\rangle = \mu_j'$. 
-\item The verifier checks that $\sum_{j\in [\ell_1]} \psievalfield(\mu_j')\cdot \vv_j^{(2)}  = \mu$. 
-\item Prover and verifier define $\bm{\gamma}_i = \psievalfield^{-1}(\vv_i^{(1)})$ for $i \in [\ell_1]$, and set to prove the following claim:
-%
-$$
-\prod_{i \in [\codedim]} g^{\bm{\gamma}_i\cdot \bff_{ij}}  = g^{\mu_j'} \qquad \text{for all } j\in [\ell_2].
-$$
-Note that this claim is equivalent to
-$$
-\prod_{i \in [\codedim]} P\left(g^{\bm{\gamma}_i}, \psicomfield(\bff_{ij})\right) = \prod_{i \in [\codedim]} \sum_{s\in \range{0}{q-1}} L_{ S_q, \psicomfield(s)}(\psicomfield(\bff_{ij})) \cdot g^{\bm{\gamma}_i\cdot s}= g^{\mu_j'}  \qquad \text{for all } j\in [\ell_2].
-$$
-To prove the above claim, prover and verifier engage in the batched version of the IOR $\prod_{\Relation_{\cC, \comfield}^{Q}  \to \Relation_{\cC, \comfield}^{\mathsf{eval}}}$ with inputs $$\left(\inp'=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]}), g^{\mu_j'}), \oracle_j'=f_j, \wit_j'=\psicomfield(\bff_{*j})\right)  \qquad \text{for } j\in [\ell_2].$$
-%
-\item At the end of this IOR, they are left with the following claim to prove:
-%
-$$
-((\mu', \rr'), f', \bff') \in \Relation_{\cC, \comfield}^{\mathsf{eval}}.$$ Accordingly, the prover and the verifier engage in a IOPP  to certify the validity of this last claim.
-\end{enumerate}
-\end{construction}
-
-. 
-
-
-
-
-
-
-
-
-\section{Scratch}
-
-
-\begin{construction}
-The verifier receives $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and oracle access to $\oracle= f \in \comfield^n$. The prover receives $\wit= \bff\in \range{0}{q-1}^k \subseteq \ZZ^k$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$. 
-
-
-\begin{enumerate}[leftmargin=*]
-\item The prover sends $\mu'\in \ZZ[X]$ such that $\langle \bff, \psievalfield^{-1}(\vv)\rangle = \mu'$. 
-\item The verifier checks that $\psievalfield(\mu') = \mu$. Then, the verifier samples $\alpha\in [0, 2^N-1]\subseteq \ZZ$ and sends $\alpha$ to the prover. Let $\psi_\alpha: \ZZ[X]\to \ZZ$ be the evaluation map at $\alpha$, so that $\psi_\alpha(a(X))= a(\alpha)$. 
-\item The prover and verifier engage in a PIOP to prove the following equality:
-%
-$$
-\prod_{i \in [\codedim]} g^{\psi_\alpha(\psievalfield^{-1}(\vv_{i}))\cdot \bff_i}  = g^{\psi_\alpha(\mu')}.
-$$
-\end{enumerate}
-\end{construction}
-
-
-
-
-
-\begin{enumerate}[leftmargin=*]
-\item The prover sends $\mu'\in \ZZ$ such that $\langle \bff, \psievalfield^{-1}(\vv)\rangle = \mu'$. 
-\item The verifier checks that $\psievalfield(\mu') = \mu$. 
-\item Prover and verifier define $\bm{\gamma}_i = \psievalfield^{-1}(\vv_i)$ for $i \in [\codedim]$, and set to prove the following claim:
-%
-$$
-\prod_{i \in [\codedim]} g^{\bm{\gamma}_i\cdot \bff_i}  = g^{\mu'}.
-$$
-Note that this claim is equivalent to
-$$
-\prod_{i \in [\codedim]} P\left(g^{\bm{\gamma}_i}, \psicomfield(\bff_i)\right) = \prod_{i \in [\codedim]} \sum_{s\in \range{0}{q-1}} L_{ S_q, \psicomfield(s)}(\psicomfield(\bff_i)) \cdot g^{\bm{\gamma}_i\cdot s}= g^{\mu'}.
-$$
-To prove the above equality, prover and verifier engage in the IOR $\prod_{\Relation_{\cC, \comfield}^{Q}  \to \Relation_{\cC, \comfield}^{\mathsf{eval}}}$ with inputs $$\left(\inp'=((g^{\bm{\gamma}_i})_{i \in [\codedim]}), g^{\mu'}), \oracle'=f, \wit'=\psicomfield(\bff)\right).$$
-%
-\item At the end of this IOR, they are left with the following claim to prove:
-%
-$$
-((\mu', \rr'), f', \bff') \in \Relation_{\cC, \comfield}^{\mathsf{eval}}.$$ Accordingly, the prover and the verifier engage in a IOPP  to certify the validity of this last claim.
-\end{enumerate}
-
-
-
-\appendix
-\printbibliography[heading=bibintoc,title={References}]
 
 
 \end{document}
