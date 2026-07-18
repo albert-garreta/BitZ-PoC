@@ -166,9 +166,10 @@ Prover knobs (every configuration produces byte-identical proofs):
 `F2Z_LUT3=0` disables the deeper L/4 LUT prefixes; `F2Z_EQF_NOKERNEL=1`
 forces the generic (non-NEON) round/fold kernels (diagnostic);
 `F2_FOREST_SCHEDULE=l8` opts into the L/8 forest memory schedule.
-`F2Z_LIG_PROFILE` (bench-only, changes the proof: `fast` default /
-`slim` = base RS rate 1/4 / `secure`) selects the embedded Ligerito
-profile — see the SLIM section below.
+`F2Z_LIG_PROFILE` (bench-only, changes the proof: `fast` default / `slim`
+/ `secure` / `r8` = ad-hoc UDR rate-1/8 probe) selects the Ligerito
+profile; the shape header prints the resolved base rate
+(`lig=slim@r1/8`) — see the RS rate study below.
 
 Performance parity with upstream: the release profile carries the upstream
 `lto = true` / `codegen-units = 1` (without them the vendored field kernels
@@ -251,13 +252,18 @@ packed/forest scale. (The pre-restructure dense path held ~16 B/bit —
 4.28 GB and a 7.9 s commit at n=28 — and could not reach n ≥ 30 on 16 GB
 at all; the pre-LTO build was a further ~1.7–3× slower at the big shapes.)
 
-### RS rate 1/4: the SLIM profile (`F2Z_LIG_PROFILE=slim`)
+### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
-The bench's `F2Z_LIG_PROFILE=slim` selects flock's audited SLIM profile —
-base RS rate 1/4 (`log_inv_rate = 2`, recursion levels 1/8…1/64), fewer
-queries plus 16-bit per-level grinding, the same 100-bit `johnson_ood`
-target as the default FAST (base rate 1/2). Since the proof is
-Ligerito-dominated, halving the query cost nearly halves the proof:
+The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —
+fewer queries plus 16-bit per-level grinding at the same 100-bit
+`johnson_ood` target as the default FAST (base rate 1/2). The slim
+profile's base rate is whatever the flock checkout's current generation
+says — it was **rate 1/4** when the first sweep below ran and has since
+been regenerated to **rate 1/8** (Johnson at rate 1/8 sanctioned; ladder
+1/8…1/128, L0 60 queries) — so the bench header prints the live base rate
+(`lig=slim@r1/8`). The rate-1/4-generation sweep (n=22–32; since the
+proof is Ligerito-dominated, halving the query cost nearly halves the
+proof):
 
 | n | prove fast | prove slim | proof fast | proof slim | Δproof |
 |---|---|---|---|---|---|
@@ -281,29 +287,31 @@ vs the fast sweep's; the intrinsic overhead from the open+commit deltas is
 ~+10–15 %, falling to ~+3–5 % at n=32.) Below `m = 22` every profile
 falls back to the ad-hoc rate-1/4 config, so n < 22 is profile-invariant.
 
-**RS rate 1/8 (`F2Z_LIG_PROFILE=r8`, ad-hoc UDR — UNAUDITED probe).** No
-embedded profile exists below rate 1/4, so `r8` goes through the ad-hoc
-`default_config` generator at base `log_inv_rate = 3` with the embedded
-profiles' interleaving (`initial_k = 6` — the small-`initial_k` ad-hoc
-geometry is the catastrophic-commit trap; with 6 the commit is sane).
-UDR needs ~121 L0 queries at rate 1/8 vs the audited Johnson SLIM's 90 at
-rate 1/4, and the measurement (n ≤ 28) shows **analysis quality beating
-rate**:
+**RS rate 1/8, four ways (n ≤ 28).** Two rate-1/8 configurations were
+measured: `F2Z_LIG_PROFILE=r8` (the ad-hoc UDR generator at
+`log_inv_rate = 3`, embedded-matching `initial_k = 6` — the
+small-`initial_k` ad-hoc geometry is the catastrophic-commit trap; ~121
+L0 queries, UNAUDITED probe) and the regenerated **Johnson slim at rate
+1/8** (60 L0 queries + 16-bit grinding, ladder validated by flock's
+`LigeritoSecurityConfig::validate` and reproduced by
+`scripts/soundness.py --log-inv-rate 3 --query-grind 16 --target 100`):
 
-| n | prove fast/r8/slim | proof fast/r8/slim | commit fast/r8/slim |
-|---|---|---|---|
-| 22 | 18.9 / 19.3 / 29.6 ms | 276.7 / 197.0 / 140.7 KiB | 0.7 / 1.9 / 1.4 ms |
-| 24 | 46.3 / 47.4 / 50.7 ms | 303.9 / 224.1 / 159.1 KiB | 1.7 / 4.6 / 2.5 ms |
-| 26 | 146 / 149 / 168 ms | 346.8 / 276.2 / 188.2 KiB | 5.3 / 17.9 / 9.7 ms |
-| 28 | 569 / 592 / 654 ms | 399.9 / 344.0 / 229.1 KiB | 22.1 / 69.1 / 50.4 ms |
+| n | proof: fast(1/2) | udr(1/8) | johnson(1/4) | johnson(1/8) | prove fast → j-1/8 |
+|---|---|---|---|---|---|
+| 22 | 276.7 | 197.0 | 140.7 | **108.5 KiB** | 18.9 → 31.9 ms |
+| 24 | 303.9 | 224.1 | 159.1 | **123.1 KiB** | 46.3 → 56.2 ms |
+| 26 | 346.8 | 276.2 | 188.2 | **150.7 KiB** | 146 → 166 ms |
+| 28 | 399.9 | 344.0 | 229.1 | **187.0 KiB** | 569 → 743 ms |
 
-r8 proves as fast as FAST (no grinding; fewer query openings offset the
-8× encode) at ~3× commit, but its proofs (−14–29 % vs fast) stay ~30 %
-LARGER than the audited slim's — the Johnson+grinding analysis at rate
-1/4 dominates UDR at rate 1/8 on size at every shape. A Johnson-analyzed
-rate-1/8 profile would need fewer queries than slim and could reorder
-this, but producing one is a security-analysis task (none is embedded);
-the `r8` numbers are a geometry probe, not a deployable configuration.
+Findings: **the analysis is worth more than the rate** — at the same
+rate 1/8, Johnson (60 queries) vs UDR (121) is 187 vs 344 KiB at n=28, a
+46 % gap from the analysis alone; and under the Johnson analysis the
+1/4 → 1/8 step buys a further ~15–23 %. Net vs the FAST default:
+**proofs −53…−61 %** (n=28: 400 → 187 KiB) for +18–30 % prove (all in
+the open phase + ~3× commit; commit peak 372 MB vs 168 at n=28 from the
+8× codeword) and slightly faster verify. The UDR `r8` probe proves at
+FAST speed (no grinding) but its proofs stay far above both Johnson
+configurations — it remains a geometry probe, not a candidate.
 
 ### The b127 field study (`GF(2^127)`)
 
