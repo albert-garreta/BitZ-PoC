@@ -248,6 +248,36 @@ packed/forest scale. (The pre-restructure dense path held ~16 B/bit —
 4.28 GB and a 7.9 s commit at n=28 — and could not reach n ≥ 30 on 16 GB
 at all; the pre-LTO build was a further ~1.7–3× slower at the big shapes.)
 
+### RS rate 1/4: the SLIM profile (`F2Z_LIG_PROFILE=slim`)
+
+The bench's `F2Z_LIG_PROFILE=slim` selects flock's audited SLIM profile —
+base RS rate 1/4 (`log_inv_rate = 2`, recursion levels 1/8…1/64), fewer
+queries plus 16-bit per-level grinding, the same 100-bit `johnson_ood`
+target as the default FAST (base rate 1/2). Since the proof is
+Ligerito-dominated, halving the query cost nearly halves the proof:
+
+| n | prove fast | prove slim | proof fast | proof slim | Δproof |
+|---|---|---|---|---|---|
+| 22 | 18.9 ms | 29.6 ms | 276.7 KiB | 140.7 KiB | −49 % |
+| 24 | 46.3 ms | 50.7 ms | 303.9 KiB | 159.1 KiB | −48 % |
+| 26 | 146 ms | 168 ms | 346.8 KiB | 188.2 KiB | −46 % |
+| 28 | 569 ms | 654 ms | 399.9 KiB | 229.1 KiB | −43 % |
+| 30 | 3.15 s | 4.99 s* | 466.3 KiB | 280.0 KiB | −40 % |
+| 31 | 8.92 s | 12.4 s* | 490.5 KiB | 296.1 KiB | −40 % |
+| 32 | 29.8 s | 35.7 s* | 573.7 KiB | 371.6 KiB | −35 % |
+
+The Ligerito blob itself halves at every shape (e.g. 343 → 174 KiB at
+n=28, 415 → 215 at n=32); the forest side is untouched. Costs: commit ~2×
+time and ~2.2× peak (the rate-1/4 codeword — n=32: 624 ms / 3.73 GB vs
+390 ms / 2.64 GB), prove +9–15 % intrinsic (all in the open phase:
+grinding + the 2× encode; verify is mostly slightly *faster* from fewer
+queries), prove peak +~1 GB at n=32 (12.6 GB — still inside 16 GB).
+(*The slim sweep's n ≥ 30 rows ran under initial memory pressure and
+overstate the prove delta — their rate-independent forest phase inflated
+vs the fast sweep's; the intrinsic overhead from the open+commit deltas is
+~+10–15 %, falling to ~+3–5 % at n=32.) Below `m = 22` every profile
+falls back to the ad-hoc rate-1/4 config, so n < 22 is profile-invariant.
+
 ### The b127 field study (`GF(2^127)`)
 
 `benches/field.rs` benches the GHASH field head-to-head against
