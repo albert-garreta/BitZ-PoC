@@ -45,6 +45,14 @@ use flock_core::pcs::ligerito::LigeritoProfile;
 /// by `F2Z_LIG_PROFILE` at `m = m_p + 7 ≥ 22`, the ad-hoc rate-1/4 config
 /// below — the same boundary as `sha_lig_configs`, which this generalizes.
 fn bench_lig_config(m_p: usize) -> (LigConfig, &'static str) {
+    if let Ok("r8") = std::env::var("F2Z_LIG_PROFILE").as_deref() {
+        // Base RS rate 1/8 via the ad-hoc UDR generator, at the embedded
+        // profiles' interleaving (initial_k = 6). UNAUDITED perf probe (UDR
+        // query counts, no grinding/OOD): UDR needs ~121 L0 queries where
+        // the audited Johnson SLIM profile needs 90 at rate 1/4 — a proper
+        // Johnson rate-1/8 profile would need fewer; none exists embedded.
+        return (LigConfig::Adhoc { log_batch: 6, log_inv_rate: 3 }, "adhoc-udr(rate1/8)");
+    }
     if m_p + LOG_PACKING >= 22 {
         match std::env::var("F2Z_LIG_PROFILE").as_deref() {
             Ok("slim") => (LigConfig::Embedded(LigeritoProfile::Slim), "slim(rate1/4)"),

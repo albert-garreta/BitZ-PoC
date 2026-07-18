@@ -166,6 +166,9 @@ Prover knobs (every configuration produces byte-identical proofs):
 `F2Z_LUT3=0` disables the deeper L/4 LUT prefixes; `F2Z_EQF_NOKERNEL=1`
 forces the generic (non-NEON) round/fold kernels (diagnostic);
 `F2_FOREST_SCHEDULE=l8` opts into the L/8 forest memory schedule.
+`F2Z_LIG_PROFILE` (bench-only, changes the proof: `fast` default /
+`slim` = base RS rate 1/4 / `secure`) selects the embedded Ligerito
+profile — see the SLIM section below.
 
 Performance parity with upstream: the release profile carries the upstream
 `lto = true` / `codegen-units = 1` (without them the vendored field kernels
@@ -277,6 +280,30 @@ overstate the prove delta — their rate-independent forest phase inflated
 vs the fast sweep's; the intrinsic overhead from the open+commit deltas is
 ~+10–15 %, falling to ~+3–5 % at n=32.) Below `m = 22` every profile
 falls back to the ad-hoc rate-1/4 config, so n < 22 is profile-invariant.
+
+**RS rate 1/8 (`F2Z_LIG_PROFILE=r8`, ad-hoc UDR — UNAUDITED probe).** No
+embedded profile exists below rate 1/4, so `r8` goes through the ad-hoc
+`default_config` generator at base `log_inv_rate = 3` with the embedded
+profiles' interleaving (`initial_k = 6` — the small-`initial_k` ad-hoc
+geometry is the catastrophic-commit trap; with 6 the commit is sane).
+UDR needs ~121 L0 queries at rate 1/8 vs the audited Johnson SLIM's 90 at
+rate 1/4, and the measurement (n ≤ 28) shows **analysis quality beating
+rate**:
+
+| n | prove fast/r8/slim | proof fast/r8/slim | commit fast/r8/slim |
+|---|---|---|---|
+| 22 | 18.9 / 19.3 / 29.6 ms | 276.7 / 197.0 / 140.7 KiB | 0.7 / 1.9 / 1.4 ms |
+| 24 | 46.3 / 47.4 / 50.7 ms | 303.9 / 224.1 / 159.1 KiB | 1.7 / 4.6 / 2.5 ms |
+| 26 | 146 / 149 / 168 ms | 346.8 / 276.2 / 188.2 KiB | 5.3 / 17.9 / 9.7 ms |
+| 28 | 569 / 592 / 654 ms | 399.9 / 344.0 / 229.1 KiB | 22.1 / 69.1 / 50.4 ms |
+
+r8 proves as fast as FAST (no grinding; fewer query openings offset the
+8× encode) at ~3× commit, but its proofs (−14–29 % vs fast) stay ~30 %
+LARGER than the audited slim's — the Johnson+grinding analysis at rate
+1/4 dominates UDR at rate 1/8 on size at every shape. A Johnson-analyzed
+rate-1/8 profile would need fewer queries than slim and could reorder
+this, but producing one is a security-analysis task (none is embedded);
+the `r8` numbers are a geometry probe, not a deployable configuration.
 
 ### The b127 field study (`GF(2^127)`)
 
