@@ -1041,6 +1041,68 @@ impl crate::utils::wide_mul::WideMulAcc for BinaryFieldGF128 {
         true
         }
     }
+
+    /// Hand-fused deferred-fold + round body (the pass-fusion path): per
+    /// slot the four fold products are independent PMULL chains, the
+    /// folded entries store to the buffer prefix on the way, and the
+    /// message chain XORs its three products into 256-bit accumulators —
+    /// one pass over the unfolded buffers instead of a fold pass plus a
+    /// message pass. Value-exact: the folded entries are the exact
+    /// `v0 ⊕ ρ·(v1 ⊕ v0)` reduced values [`Self::eqf_fold_in_place`]
+    /// writes, and the message products are the single-pair body's,
+    /// XOR-combined and reduced once per accumulator at the end.
+    #[allow(clippy::arithmetic_side_effects)]
+    fn eqf_fused_fold_round(
+        l: &mut [Self],
+        r: &mut [Self],
+        rho: &Self,
+        w: &[Self],
+        half: usize,
+    ) -> Option<(Self, Self, Self)> {
+        // NEON-resident pipeline; value-exact vs the word pipeline below.
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            return Some(neon::eqf_fused_fold_round(l, r, rho, w, half));
+        }
+        #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+        {
+        let rw = *rho.uint.as_words();
+        let fold1 = |v0: [u64; 2], v1: [u64; 2]| -> [u64; 2] {
+            let d = [v1[0] ^ v0[0], v1[1] ^ v0[1]];
+            let p = reduce_256_to_128(clmul_128x128(&rw, &d));
+            [v0[0] ^ p[0], v0[1] ^ p[1]]
+        };
+        let (mut a0a, mut a1a, mut a2a) = ([0u64; 4], [0u64; 4], [0u64; 4]);
+        for b in 0..half {
+            let base = b << 2;
+            let fl0 = fold1(*l[base].uint.as_words(), *l[base + 1].uint.as_words());
+            let fl1 = fold1(*l[base + 2].uint.as_words(), *l[base + 3].uint.as_words());
+            let fr0 = fold1(*r[base].uint.as_words(), *r[base + 1].uint.as_words());
+            let fr1 = fold1(*r[base + 2].uint.as_words(), *r[base + 3].uint.as_words());
+            let e = b << 1;
+            l[e] = Self::from_words(fl0);
+            l[e | 1] = Self::from_words(fl1);
+            r[e] = Self::from_words(fr0);
+            r[e | 1] = Self::from_words(fr1);
+            let ww = w[b].uint.as_words();
+            let l0w = reduce_256_to_128(clmul_128x128(ww, &fl0));
+            let l1w = reduce_256_to_128(clmul_128x128(ww, &fl1));
+            let wc0 = clmul_128x128(&l0w, &fr0);
+            let w11 = clmul_128x128(&l1w, &fr1);
+            let dl = [l1w[0] ^ l0w[0], l1w[1] ^ l0w[1]];
+            let dr = [fr1[0] ^ fr0[0], fr1[1] ^ fr0[1]];
+            let wc2 = clmul_128x128(&dl, &dr);
+            let mut i = 0;
+            while i < 4 {
+                a0a[i] ^= wc0[i];
+                a2a[i] ^= wc2[i];
+                a1a[i] ^= w11[i] ^ wc0[i] ^ wc2[i];
+                i += 1;
+            }
+        }
+        Some((Self::reduce_wide(a0a), Self::reduce_wide(a1a), Self::reduce_wide(a2a)))
+        }
+    }
 }
 
 // -- carryless multiplication and reduction --------------------------
@@ -1514,6 +1576,105 @@ pub(crate) mod neon {
                 vst1q_u64(out.as_mut_ptr(), veorq_u64(v0, p));
                 v[b] = BinaryFieldGF128::from_words(out);
             }
+        }
+    }
+
+    /// Store a vector back into a field element.
+    #[inline(always)]
+    unsafe fn st(x: &mut BinaryFieldGF128, v: uint64x2_t) {
+        // SAFETY: `out` is a valid 16-byte word pair.
+        unsafe {
+            let mut out = [0u64; 2];
+            vst1q_u64(out.as_mut_ptr(), v);
+            *x = BinaryFieldGF128::from_words(out);
+        }
+    }
+
+    /// The deferred fold of one entry pair: `v0 ⊕ ρ·(v1 ⊕ v0)`, reduced —
+    /// the exact value [`eqf_fold_in_place`] writes.
+    #[inline(always)]
+    unsafe fn fold1(rv: uint64x2_t, v0: uint64x2_t, v1: uint64x2_t) -> uint64x2_t {
+        // SAFETY: as `pmull_lo`.
+        unsafe {
+            let (pl, ph) = clmul_256(rv, veorq_u64(v1, v0));
+            veorq_u64(v0, reduce_256(pl, ph))
+        }
+    }
+
+    /// NEON-resident fused deferred-fold + single-pair round body (the
+    /// pass-fusion path): per slot the four fold products are independent
+    /// PMULL chains, the folded entries store to the buffer prefix
+    /// (`2b, 2b+1` — writes trail the `4b..4b+4` reads), and the message
+    /// chain ([`eqf_slot`]) runs on the folded values still in registers.
+    /// Two interleaved slot chains, one reduction per accumulator at the
+    /// end.
+    pub(crate) fn eqf_fused_fold_round(
+        l: &mut [BinaryFieldGF128],
+        r: &mut [BinaryFieldGF128],
+        rho: &BinaryFieldGF128,
+        w: &[BinaryFieldGF128],
+        half: usize,
+    ) -> (BinaryFieldGF128, BinaryFieldGF128, BinaryFieldGF128) {
+        // SAFETY: as `pmull_lo`; indices in bounds by the driver's
+        // contract (`l`, `r` have 4·half entries, `w` half). Each slot
+        // loads `4b..4b+4` into registers before storing `2b, 2b+1`, and
+        // later slots read strictly above every earlier write.
+        unsafe {
+            let rv = ld(rho);
+            let z = vdupq_n_u64(0);
+            let mut a0a = (z, z);
+            let mut a1a = (z, z);
+            let mut a2a = (z, z);
+            let mut a0b = (z, z);
+            let mut a1b = (z, z);
+            let mut a2b = (z, z);
+            let mut b = 0usize;
+            while b + 2 <= half {
+                let base = b << 2;
+                let fl0 = fold1(rv, ld(&l[base]), ld(&l[base + 1]));
+                let fl1 = fold1(rv, ld(&l[base + 2]), ld(&l[base + 3]));
+                let fr0 = fold1(rv, ld(&r[base]), ld(&r[base + 1]));
+                let fr1 = fold1(rv, ld(&r[base + 2]), ld(&r[base + 3]));
+                let e = b << 1;
+                st(&mut l[e], fl0);
+                st(&mut l[e | 1], fl1);
+                st(&mut r[e], fr0);
+                st(&mut r[e | 1], fr1);
+                eqf_slot(ld(&w[b]), fl0, fl1, fr0, fr1, &mut a0a, &mut a1a, &mut a2a);
+                let c = b + 1;
+                let base = c << 2;
+                let gl0 = fold1(rv, ld(&l[base]), ld(&l[base + 1]));
+                let gl1 = fold1(rv, ld(&l[base + 2]), ld(&l[base + 3]));
+                let gr0 = fold1(rv, ld(&r[base]), ld(&r[base + 1]));
+                let gr1 = fold1(rv, ld(&r[base + 2]), ld(&r[base + 3]));
+                let e = c << 1;
+                st(&mut l[e], gl0);
+                st(&mut l[e | 1], gl1);
+                st(&mut r[e], gr0);
+                st(&mut r[e | 1], gr1);
+                eqf_slot(ld(&w[c]), gl0, gl1, gr0, gr1, &mut a0b, &mut a1b, &mut a2b);
+                b += 2;
+            }
+            if b < half {
+                let base = b << 2;
+                let fl0 = fold1(rv, ld(&l[base]), ld(&l[base + 1]));
+                let fl1 = fold1(rv, ld(&l[base + 2]), ld(&l[base + 3]));
+                let fr0 = fold1(rv, ld(&r[base]), ld(&r[base + 1]));
+                let fr1 = fold1(rv, ld(&r[base + 2]), ld(&r[base + 3]));
+                let e = b << 1;
+                st(&mut l[e], fl0);
+                st(&mut l[e | 1], fl1);
+                st(&mut r[e], fr0);
+                st(&mut r[e | 1], fr1);
+                eqf_slot(ld(&w[b]), fl0, fl1, fr0, fr1, &mut a0a, &mut a1a, &mut a2a);
+            }
+            a0a.0 = veorq_u64(a0a.0, a0b.0);
+            a0a.1 = veorq_u64(a0a.1, a0b.1);
+            a1a.0 = veorq_u64(a1a.0, a1b.0);
+            a1a.1 = veorq_u64(a1a.1, a1b.1);
+            a2a.0 = veorq_u64(a2a.0, a2b.0);
+            a2a.1 = veorq_u64(a2a.1, a2b.1);
+            (to_elt(a0a), to_elt(a1a), to_elt(a2a))
         }
     }
 }
@@ -2528,10 +2689,53 @@ fn eval_bits_at(mut bits: u64, max_bits: usize, alpha: &BinaryFieldGF128) -> Bin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::wide_mul::WideMulAcc;
     use rand::{Rng, SeedableRng, rngs::StdRng};
 
     fn rand_elt(rng: &mut StdRng) -> BinaryFieldGF128 {
         BinaryFieldGF128::from_words([rng.random(), rng.random()])
+    }
+
+    /// The fused deferred-fold + round kernel is VALUE-EXACT vs its
+    /// two-pass contract — `eqf_fold_in_place` then `eqf_single_pair_round`
+    /// — on both the returned coefficients and the folded buffer prefix
+    /// (odd `half` exercises the single-slot tail).
+    #[test]
+    fn eqf_fused_fold_round_matches_fold_then_round() {
+        let mut rng = StdRng::seed_from_u64(0xF05E);
+        for half in [1usize, 2, 37, 64] {
+            let n = half << 2;
+            let l0: Vec<_> = (0..n).map(|_| rand_elt(&mut rng)).collect();
+            let r0: Vec<_> = (0..n).map(|_| rand_elt(&mut rng)).collect();
+            let w: Vec<_> = (0..half).map(|_| rand_elt(&mut rng)).collect();
+            let rho = rand_elt(&mut rng);
+
+            // Two-pass reference: the pinned fold kernel, then the pinned
+            // single-pair round kernel over the folded prefixes.
+            let mut l_ref = l0.clone();
+            let mut r_ref = r0.clone();
+            assert!(BinaryFieldGF128::eqf_fold_in_place(&mut l_ref, &rho, n >> 1));
+            assert!(BinaryFieldGF128::eqf_fold_in_place(&mut r_ref, &rho, n >> 1));
+            l_ref.truncate(n >> 1);
+            r_ref.truncate(n >> 1);
+            let expect =
+                BinaryFieldGF128::eqf_single_pair_round(&l_ref, &r_ref, &w, half)
+                    .expect("single-pair kernel");
+
+            let mut l_fused = l0.clone();
+            let mut r_fused = r0.clone();
+            let got = BinaryFieldGF128::eqf_fused_fold_round(
+                &mut l_fused,
+                &mut r_fused,
+                &rho,
+                &w,
+                half,
+            )
+            .expect("fused kernel");
+            assert_eq!(got, expect, "coefficients (half = {half})");
+            assert_eq!(&l_fused[..n >> 1], &l_ref[..], "folded L prefix (half = {half})");
+            assert_eq!(&r_fused[..n >> 1], &r_ref[..], "folded R prefix (half = {half})");
+        }
     }
 
     /// The NEON-resident multiply/square pipeline is BIT-IDENTICAL to the

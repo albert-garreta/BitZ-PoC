@@ -104,6 +104,31 @@ pub trait WideMulAcc: Sized {
     fn eqf_fold_in_place(_v: &mut [Self], _rho: &Self, _half: usize) -> bool {
         false
     }
+
+    /// Optional fused kernel for the pass-fusion path (`F2Z_EQF_FUSE`): the
+    /// DEFERRED fold of the previous round fused with this round's
+    /// single-pair message body, in one pass. `l`/`r` hold `4·half`
+    /// unfolded entries; for `b < half` the kernel folds
+    /// `fl0 = l[4b] + ρ·(l[4b+1] − l[4b])`,
+    /// `fl1 = l[4b+2] + ρ·(l[4b+3] − l[4b+2])` (same for `r`), writes them
+    /// to the buffer prefix (`l[2b] = fl0`, `l[2b+1] = fl1` — writes trail
+    /// the reads, so in place is safe; the caller truncates to `2·half`),
+    /// and accumulates this round's coefficients over the folded pairs:
+    /// `(Σ w_b·fl0·fr0, Σ (w_b·fl1·fr1 − w_b·fl0·fr0 − w_b·Δl·Δr), Σ w_b·Δl·Δr)`
+    /// with `Δl = w·fl1 − w·fl0`, `Δr = fr1 − fr0`. Any override must be
+    /// VALUE-EXACT vs folding with [`Self::eqf_fold_in_place`]'s formula
+    /// and then running [`Self::eqf_single_pair_round`]'s body on the
+    /// folded buffers; return `None` to use the driver's generic fused
+    /// loop.
+    fn eqf_fused_fold_round(
+        _l: &mut [Self],
+        _r: &mut [Self],
+        _rho: &Self,
+        _w: &[Self],
+        _half: usize,
+    ) -> Option<(Self, Self, Self)> {
+        None
+    }
 }
 
 /// Compile-time-modulus prime fields: reduced representation IS the

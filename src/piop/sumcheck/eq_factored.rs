@@ -1092,47 +1092,58 @@ where
                 };
                 let (l, r) = &mut group_bufs[0];
                 debug_assert_eq!(l.len(), half << 2, "fused round reads unfolded buffers");
-                let mut a0 = F::wide_zero(&zero);
-                let mut a1 = F::wide_zero(&zero);
-                let mut a2 = F::wide_zero(&zero);
-                for b in 0..half {
-                    let base = b << 2;
-                    // The deferred fold — the eager scalar fold's exact
-                    // formula `v0 + ρ·(v1 − v0)`, in registers.
-                    let fold1 = |v: &[F], i: usize| -> F {
-                        let v0 = v[i].clone();
-                        let d = v[i + 1].clone() - &v0;
-                        v0 + &(rho_prev.clone() * &d)
-                    };
-                    let fl0 = fold1(l, base);
-                    let fl1 = fold1(l, base + 2);
-                    let fr0 = fold1(r, base);
-                    let fr1 = fold1(r, base + 2);
-                    // The dense single-pair message body over the folded pair.
-                    let w = &suffix_t[b];
-                    let l0w = w.clone() * &fl0;
-                    let l1w = w.clone() * &fl1;
-                    let wc0 = F::mul_wide(&l0w, &fr0);
-                    let w11 = F::mul_wide(&l1w, &fr1);
-                    let dr = fr1.clone() - &fr0;
-                    let dl = l1w - &l0w;
-                    let wc2 = F::mul_wide(&dl, &dr);
-                    F::wide_add_assign(&mut a0, &wc0);
-                    F::wide_add_assign(&mut a2, &wc2);
-                    F::wide_add_assign(&mut a1, &w11);
-                    F::wide_sub_assign(&mut a1, &wc0);
-                    F::wide_sub_assign(&mut a1, &wc2);
-                    // Land the folded values in the prefix — writes trail
-                    // the reads, so in place is safe.
-                    let e = b << 1;
-                    l[e] = fl0;
-                    l[e + 1] = fl1;
-                    r[e] = fr0;
-                    r[e + 1] = fr1;
-                }
+                // A field's hand-fused fold+round kernel takes over when
+                // available (value-exact; writes the same folded prefix).
+                let kernel = if eqf_nokernel() {
+                    None
+                } else {
+                    F::eqf_fused_fold_round(l, r, &rho_prev, &suffix_t[..half], half)
+                };
+                let (a0, a1, a2) = if let Some(res) = kernel {
+                    res
+                } else {
+                    let mut a0 = F::wide_zero(&zero);
+                    let mut a1 = F::wide_zero(&zero);
+                    let mut a2 = F::wide_zero(&zero);
+                    for b in 0..half {
+                        let base = b << 2;
+                        // The deferred fold — the eager scalar fold's exact
+                        // formula `v0 + ρ·(v1 − v0)`, in registers.
+                        let fold1 = |v: &[F], i: usize| -> F {
+                            let v0 = v[i].clone();
+                            let d = v[i + 1].clone() - &v0;
+                            v0 + &(rho_prev.clone() * &d)
+                        };
+                        let fl0 = fold1(l, base);
+                        let fl1 = fold1(l, base + 2);
+                        let fr0 = fold1(r, base);
+                        let fr1 = fold1(r, base + 2);
+                        // The dense single-pair message body over the folded pair.
+                        let w = &suffix_t[b];
+                        let l0w = w.clone() * &fl0;
+                        let l1w = w.clone() * &fl1;
+                        let wc0 = F::mul_wide(&l0w, &fr0);
+                        let w11 = F::mul_wide(&l1w, &fr1);
+                        let dr = fr1.clone() - &fr0;
+                        let dl = l1w - &l0w;
+                        let wc2 = F::mul_wide(&dl, &dr);
+                        F::wide_add_assign(&mut a0, &wc0);
+                        F::wide_add_assign(&mut a2, &wc2);
+                        F::wide_add_assign(&mut a1, &w11);
+                        F::wide_sub_assign(&mut a1, &wc0);
+                        F::wide_sub_assign(&mut a1, &wc2);
+                        // Land the folded values in the prefix — writes trail
+                        // the reads, so in place is safe.
+                        let e = b << 1;
+                        l[e] = fl0;
+                        l[e + 1] = fl1;
+                        r[e] = fr0;
+                        r[e + 1] = fr1;
+                    }
+                    (F::from_wide(a0), F::from_wide(a1), F::from_wide(a2))
+                };
                 l.truncate(half << 1);
                 r.truncate(half << 1);
-                let (a0, a1, a2) = (F::from_wide(a0), F::from_wide(a1), F::from_wide(a2));
                 let h0 = a0.clone();
                 let h1 = a0.clone() + &a1 + &a2;
                 let h2 = a0.clone() + &(c2.clone() * &a1) + &(c2sq.clone() * &a2);
