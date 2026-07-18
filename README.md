@@ -167,9 +167,10 @@ Prover knobs (every configuration produces byte-identical proofs):
 forces the generic (non-NEON) round/fold kernels (diagnostic);
 `F2_FOREST_SCHEDULE=l8` opts into the L/8 forest memory schedule.
 `F2Z_LIG_PROFILE` (bench-only, changes the proof: `fast` default / `slim`
-/ `secure` / `r8` = ad-hoc UDR rate-1/8 probe) selects the Ligerito
-profile; the shape header prints the resolved base rate
-(`lig=slim@r1/8`) — see the RS rate study below.
+/ `secure` / `r8` = ad-hoc UDR rate-1/8 probe /
+`custom:<log_inv_rate>:<initial_k>`) selects the Ligerito profile; the
+shape header prints the resolved geometry (`lig=fast@r1/2k4`) — see the
+RS rate study below.
 
 Performance parity with upstream: the release profile carries the upstream
 `lto = true` / `codegen-units = 1` (without them the vendored field kernels
@@ -185,27 +186,30 @@ being harness and layout differences rather than the PCS.
 Apple M4 (16 GB); `t ≈ 0.6n` splits, W=1, one mod-q claim; medians,
 idle-fronted, one shape per process at n ≥ 24, 45–90 s cooldowns between
 shapes; the **pass-fusion + deeper-LUT defaults** (`F2Z_EQF_FUSE` /
-`F2Z_LUT3`, opt-out `=0`). `schedule` is the forest memory schedule
-(`F2_FOREST_SCHEDULE=l8` opt-in, required at n ≥ 31 on 16 GB). The
-`forest` / `open` phase columns come from ONE profiled prove per shape
-(`OBLONG_PROFILE=1`; forest = pow2 + forest GKR + fold-v + pre-sumcheck,
-open = ring-switch + B-combination + recursive Ligerito; they sum to
-within ~2 % of the prove median except where noted).
+`F2Z_LUT3`, opt-out `=0`) and the **fast profile at its current (rate
+1/2, k=4) generation** (n ≥ 22; n < 22 is the ad-hoc config). `schedule`
+is the forest memory schedule (`F2_FOREST_SCHEDULE=l8` opt-in, required
+at n ≥ 31 on 16 GB). The `forest` / `open` phase columns come from ONE
+profiled prove per shape (`OBLONG_PROFILE=1`; forest = pow2 + forest GKR
++ fold-v + pre-sumcheck, open = ring-switch + B-combination + recursive
+Ligerito; they sum to within ~2 % of the prove median except where
+noted). Rows marked † are the earlier (rate 1/2, k=6) fast generation,
+pending a re-measure on a memory-fresh box.
 
 **Prover time** (`prove` = median; phases from the profiled prove):
 
 | n | shape (t, s) | commit | forest+presum | ligerito open | prove | verify | prove peak | schedule |
 |---|---|---|---|---|---|---|---|---|
-| 16 | 10, 6 | 0.19 ms | 3.31 ms | 0.63 ms | 3.93 ms | 1.17 ms | 0.69 MB | L/4 |
-| 18 | 12, 6 | 0.35 ms | 5.63 ms | 1.14 ms | 6.73 ms | 1.34 ms | 2.4 MB | L/4 |
-| 20 | 13, 7 | 0.67 ms | 9.05 ms | 1.71 ms | 10.9 ms | 1.90 ms | 7.7 MB | L/4 |
-| 22 | 14, 8 | 0.70 ms | 17.1 ms | 1.89 ms | 18.9 ms | 1.81 ms | 22.8 MB | L/4 |
-| 24 | 15, 9 | 1.67 ms | 42.6 ms | 4.01 ms | 46.3 ms | 2.67 ms | 83.8 MB | L/4 |
-| 26 | 16, 10 | 5.34 ms | 132 ms | 12.2 ms | 146 ms | 3.34 ms | 320 MB | L/4 |
-| 28 | 17, 11 | 22.1 ms | 525 ms | 43.5 ms | 569 ms | 3.95 ms | 1.25 GB | L/4 |
-| 30 | 18, 12 | 88.1 ms | 2.98 s | 139 ms | 3.15 s | 5.55 ms | 4.95 GB | L/4 |
-| 31 | 19, 12 | 180 ms | 8.51 s | 314 ms | 8.92 s | 7.83 ms | 5.81 GB | l8 |
-| 32 | 19, 13 | 390 ms | ~96 % | ~4 % | 29.8 s | 11.8 ms | 11.5 GB | l8 |
+| 16 | 10, 6 | 0.46 ms | 3.25 ms | 0.72 ms | 4.03 ms | 1.21 ms | 0.69 MB | L/4 |
+| 18 | 12, 6 | 0.37 ms | 5.68 ms | 0.93 ms | 6.85 ms | 1.43 ms | 2.4 MB | L/4 |
+| 20 | 13, 7 | 0.80 ms | 9.13 ms | 1.62 ms | 10.9 ms | 1.83 ms | 7.7 MB | L/4 |
+| 22 | 14, 8 | 0.85 ms | 17.2 ms | 8.07 ms | 24.9 ms | 2.09 ms | 23.1 MB | L/4 |
+| 24 | 15, 9 | 2.03 ms | 42.5 ms | 21.5 ms | 62.1 ms | 2.48 ms | 85.0 MB | L/4 |
+| 26 | 16, 10 | 6.35 ms | 131 ms | 25.3 ms | 159 ms | 3.14 ms | 325 MB | L/4 |
+| 28 | 17, 11 | 24.7 ms | 530 ms | 53.6 ms | 579 ms | 4.41 ms | 1.27 GB | L/4 |
+| 30† | 18, 12 | 88.1 ms | 2.98 s | 139 ms | 3.15 s | 5.55 ms | 4.95 GB | L/4 |
+| 31† | 19, 12 | 180 ms | 8.51 s | 314 ms | 8.92 s | 7.83 ms | 5.81 GB | l8 |
+| 32† | 19, 13 | 390 ms | ~96 % | ~4 % | 29.8 s | 11.8 ms | 11.5 GB | l8 |
 
 (n=32's profiled prove ran thermally shaded — 35.9 s vs the 29.8 s
 median — so its phases are quoted as shares.)
@@ -219,26 +223,29 @@ sumchecks/evals + chunk folds + pre-sumchecks, open-side = ring-switch
 | 16 | 7.7 KiB | 2.0 KiB | 31.1 KiB | 43.2 KiB |
 | 18 | 9.6 KiB | 2.0 KiB | 60.1 KiB | 75.0 KiB |
 | 20 | 12.3 KiB | 2.0 KiB | 80.5 KiB | 98.1 KiB |
-| 22 | 16.2 KiB | 2.0 KiB | 255.3 KiB | 276.7 KiB |
-| 24 | 22.2 KiB | 2.0 KiB | 276.3 KiB | 303.9 KiB |
-| 26 | 32.4 KiB | 2.0 KiB | 308.5 KiB | 346.8 KiB |
-| 28 | 50.7 KiB | 2.0 KiB | 343.0 KiB | 399.9 KiB |
-| 30 | 85.1 KiB | 2.0 KiB | 374.9 KiB | 466.3 KiB |
-| 31 | 86.8 KiB | 2.0 KiB | 397.1 KiB | 490.5 KiB |
-| 32 | 151.8 KiB | 2.0 KiB | 415.4 KiB | 573.7 KiB |
+| 22 | 16.2 KiB | 2.0 KiB | 98.7 KiB | 119.8 KiB |
+| 24 | 22.2 KiB | 2.0 KiB | 125.4 KiB | 152.9 KiB |
+| 26 | 32.4 KiB | 2.0 KiB | 156.8 KiB | 194.8 KiB |
+| 28 | 50.7 KiB | 2.0 KiB | 181.5 KiB | 237.8 KiB |
+| 30† | 85.1 KiB | 2.0 KiB | 374.9 KiB | 466.3 KiB |
+| 31† | 86.8 KiB | 2.0 KiB | 397.1 KiB | 490.5 KiB |
+| 32† | 151.8 KiB | 2.0 KiB | 415.4 KiB | 573.7 KiB |
 
-Reading notes: **time is forest-dominated** (84 % at n=16 rising to ~96 %
-at n ≥ 31) while **bytes are Ligerito-dominated** (72–93 % of the proof is
-the recursive opening; the forest side is 8–152 KiB and the ring-switch a
-constant 2 KiB) — the inversion to keep in mind when optimizing either
-axis. Proof sizes are unchanged from the pre-fusion table (the fused
-prover is byte-identical); prove times improved ~10–15 % over the
+Reading notes: **time is forest-dominated** (81 % at n=16 rising to ~92–96 %
+at n ≥ 26) while **bytes are Ligerito-dominated** (72–82 % of the proof is
+the recursive opening; the forest side is 8–51 KiB through n=28 and the
+ring-switch a constant 2 KiB) — the inversion to keep in mind when
+optimizing either axis. The n ≤ 28 rows are the (rate 1/2, k=4) fast
+generation — proofs 41–57 % smaller than the † (k=6) generation at
+n=22–28 for +2–10 % prove at n ≥ 24 (the fixed 16-bit-per-level grinding
+shows mainly at n=22: +6 ms on a 25 ms prove); prove times additionally
+reflect the pass-fusion work, ~10–15 % over the
 previous defaults in same-session A/B at n ≥ 26 — differences vs the
 previous table beyond that reflect measurement-session conditions.
 Verify stays ms-class and proofs sub-MB throughout — prover RAM is the
-only wall. The n=20→22 step in proof size (98 → 277 KiB) is the
-`sha_lig_configs` boundary: the audited embedded FAST profile takes over
-at `m ≥ 22` (hardcoding the tiny ad-hoc config at big shapes instead is
+only wall. The n=20→22 step in proof size (98 → 120 KiB) is the
+`sha_lig_configs` boundary: the embedded FAST profile takes over at
+`m ≥ 22` (hardcoding the tiny ad-hoc config at big shapes instead is
 catastrophic — n=28 commit measured 292 s ad-hoc vs tens of ms embedded).
 
 Measurement protocol (inherited from the zinc-plus lore): idle the box first;
@@ -363,16 +370,20 @@ family, measured at n=28:
 
 | config | commit | prove | proof | lig blob | peaks (commit/prove) |
 |---|---|---|---|---|---|
-| fast (r1/2, k6) — default | 22 ms | 569 ms | 399.9 KiB | 343.0 | 168 MB / 1.25 GB |
-| custom:1:4 (r1/2, k4) | 26 ms | 587 ms | **237.8 KiB** | 181.5 | 180 MB / 1.27 GB |
+| fast previous gen (r1/2, k6) | 22 ms | 569 ms | 399.9 KiB | 343.0 | 168 MB / 1.25 GB |
+| **fast = r1/2, k4 — DEFAULT** | 26 ms | 587 ms | **237.8 KiB** | 181.5 | 180 MB / 1.27 GB |
 | custom:2:4 (r1/4, k4) | 45 ms | 596 ms | **178.3 KiB** | 123.2 | 260 MB / 1.36 GB |
-| slim = r1/8, k4 | 76 ms | 618 ms | **154.6 KiB** | 99.9 | 420 MB / 1.54 GB |
+| **slim = r1/8, k4** | 76 ms | 618 ms | **154.6 KiB** | 99.9 | 420 MB / 1.54 GB |
 | custom:4:4 (r1/16, k4) | 141 ms | 643 ms | 140.5 KiB | 86.1 | 740 MB / 1.90 GB |
 
 The k lever alone at rate 1/2 is −40 % (400 → 238 KiB) at fast-like
-commit cost — `custom:1:4` dominates the previous-generation rate-1/4
-slim (229 KiB) on every axis. Regenerating the FAST profile at k=4 would
-be the same one-command generator run (left untouched here).
+commit cost, dominating the previous-generation rate-1/4 slim (229 KiB)
+on every axis — so **both shipped profiles were regenerated at k=4**
+(`gen_lig_configs -- 1 4 fast` / `-- 3 4 slim`): fast stays the rate-1/2
+default (the reference tables above), slim the rate-1/8 proof-size
+profile; fast's regeneration also moves it onto the slim generation's
+16-bit query-grinding convention (183 vs 218 L0 queries — ~ms-scale
+grinding for −29 KiB).
 
 ### The b127 field study (`GF(2^127)`)
 
