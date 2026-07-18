@@ -298,20 +298,31 @@ L0 queries, UNAUDITED probe) and the regenerated **Johnson slim at rate
 
 | n | proof: fast(1/2) | udr(1/8) | johnson(1/4) | johnson(1/8) | prove fast → j-1/8 |
 |---|---|---|---|---|---|
-| 22 | 276.7 | 197.0 | 140.7 | **108.5 KiB** | 18.9 → 31.9 ms |
-| 24 | 303.9 | 224.1 | 159.1 | **123.1 KiB** | 46.3 → 56.2 ms |
-| 26 | 346.8 | 276.2 | 188.2 | **150.7 KiB** | 146 → 166 ms |
-| 28 | 399.9 | 344.0 | 229.1 | **187.0 KiB** | 569 → 743 ms |
+| 22 | 276.7 | 197.0 | 140.7 | **108.5 KiB** | 18.9 → 29.4 ms |
+| 24 | 303.9 | 224.1 | 159.1 | **123.1 KiB** | 46.3 → 54.3 ms |
+| 26 | 346.8 | 276.2 | 188.2 | **150.7 KiB** | 146 → 162 ms |
+| 28 | 399.9 | 344.0 | 229.1 | **187.0 KiB** | 569 → 666 ms |
 
 Findings: **the analysis is worth more than the rate** — at the same
 rate 1/8, Johnson (60 queries) vs UDR (121) is 187 vs 344 KiB at n=28, a
 46 % gap from the analysis alone; and under the Johnson analysis the
 1/4 → 1/8 step buys a further ~15–23 %. Net vs the FAST default:
-**proofs −53…−61 %** (n=28: 400 → 187 KiB) for +18–30 % prove (all in
-the open phase + ~3× commit; commit peak 372 MB vs 168 at n=28 from the
-8× codeword) and slightly faster verify. The UDR `r8` probe proves at
-FAST speed (no grinding) but its proofs stay far above both Johnson
-configurations — it remains a geometry probe, not a candidate.
+**proofs −53…−61 %** (n=28: 400 → 187 KiB) for **+11–17 % prove at
+n ≥ 24** (+56 % at n=22, where the fixed per-level grinding dominates a
+30 ms prove; the cost is all open phase + ~3× commit — commit peak
+372 MB vs 168 at n=28 from the 8× codeword) and slightly *faster*
+verify. The UDR `r8` probe proves at FAST speed (no grinding) but its
+proofs stay far above both Johnson configurations — a geometry probe,
+not a candidate. Protocol-grade `slim@r1/8` rows (idle-fronted sweep,
+same protocol as the main tables; n < 22 is the profile-invariant
+ad-hoc config):
+
+| n | commit | forest+presum | ligerito open | prove | verify | proof | prove peak |
+|---|---|---|---|---|---|---|---|
+| 22 | 1.32 ms | 17.0 ms | 12.6 ms | 29.4 ms | 1.64 ms | 108.5 KiB | 26 MB |
+| 24 | 4.38 ms | 42.0 ms | 13.7 ms | 54.3 ms | 2.31 ms | 123.1 KiB | 97 MB |
+| 26 | 17.2 ms | 150 ms | 28.8 ms | 162 ms | 2.90 ms | 150.7 KiB | 373 MB |
+| 28 | 65.7 ms | 558 ms | 97.7 ms | 666 ms | 3.60 ms | 187.0 KiB | 1.46 GB |
 
 ### The b127 field study (`GF(2^127)`)
 
