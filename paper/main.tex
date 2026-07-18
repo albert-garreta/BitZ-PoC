@@ -201,7 +201,7 @@ We  assume the prover and verifier have access to an IOPP for $\Relation_{\cC_{\
 
 
 We provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$ next.
-\begin{construction}[Core IOP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$]\label{c:core_iop}
+\begin{construction}[IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$]\label{c:core_iop}
 The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^n$. The prover receives $\wit= \bff\in \range{0}{q-1}^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$. 
 Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with sufficiently large multiplicative order, to be determined later.  
 
@@ -255,11 +255,27 @@ At this point it is maybe more important to clarify how useful the construction 
 
 \newcommand{\bfg}{\mathbf{g}}
 
-Let $\bff^{(1)},\ldots, \bff^{(k)}\in \{0,1\}^\codedim \subseteq \ZZ^\codedim$ be $k$ vectors of $\codedim$ integer bits. Let $L\in \FF_2[Y_1,\ldots, Y_k]$ be a linear polynomial on $k$ variables and coefficients in $\FF_2$ \albert{Any interest in allowing coefficients in $\comfield$?}. Let $\bfg\in \{0,1\}^\codedim$ be defined as
+In this section we expand relation $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$ to impose, instead of constraints of the form $\Enc_\cC(\pi_2(\bff))=f$ and $\langle \pi_q(\bff), \vv  \rangle = \mu$, constraints as $\Enc_\cC(\pi_2(\bff)) = f$  and $\langle \pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff))) \rangle = \mu$ for a matrix $M\in \FF_{2}^{\codedim' \times \codedim}$. Precisely, given a new parameter $\codedim'$,
+$$
+\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv, M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim' \times \codedim} \times \evalfield^{\ }, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\psicomfield(\bff)) = f\\ \wedge \  & \langle \psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff)), \vv\rangle  = \mu  \end{aligned} \right\}
+$$
 %
-$$
-\bfg = \pi_2^{-1}\left( L(\pi_2(\bff^{(1)}), \ldots, \pi_2(\bff^{(k)})) \right).
-$$
+The relation has the tag ``lin(ear)-virtual'' referencing the intuition that  $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}} $ expresses a linear constraint on the vector $\bfg=\psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff))\in \evalfield^{\codedim'}$, which is not committed directly: only $\pi_2(\bff)$  is. Note that $\bfg$ is a linear expression over $\comfield$ of the elements in $\pi_2(\bff)$, lifted to the integers, and then projected to $\evalfield$.
+
+\albert{Would be good to add more detail in this paragraph} The relation $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$  allows to, for example, express linear constraints over $\evalfield$ of the XOR of witness elements, while only committing (over $\comfield$) to the original elements. The same applies with other bit operations such as AND and Majority, by noting first that, given integers $x,y,z\in \{0,1\}$: \albert{Should reference some identity in preliminaries, or explain more here} 
+%
+\begin{equation*}
+    \begin{aligned}
+        \pi_q(x \band y) & = 2^{-1}\cdot \pi_q \left( x+y - \pi_2^{-1}(\pi_2(x) + \pi_2(y)) \right),\\
+        \pi_q(\Maj(x,y,z)) &= 2^{-1}\cdot \pi_q \left( x+y+z - \pi_2^{-1}(\pi_2(x) + \pi_2(y) + \pi_2(z) \right),
+    \end{aligned}
+\end{equation*}
+where $2^{-1}$ denotes the inverse of $2$ modulo $q$.  
+%
+Hence AND and Majority can be expressed over $\FF_q$ as  linear expressions of a vectors of the form $\pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff)))$, with $\bff$ containing only the original elements for which we compute AND and Majority. 
+
+
+We next provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$. 
 
 
 \section{Case-study: SHA-256 hashing}
