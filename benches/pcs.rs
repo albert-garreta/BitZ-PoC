@@ -17,6 +17,11 @@
 //!   default shape list, e.g. `F2Z_BENCH_SHAPES="10:6:1 14:8:1"`.
 //! - `F2Z_BENCH_REPS`: timing repetitions per shape (median reported;
 //!   default 5).
+//! - `F2Z_LIG_PROFILE`: embedded Ligerito profile at `m = m_p + 7 ≥ 22` —
+//!   `fast` (default; base RS rate 1/2), `slim` (base RS rate 1/4, fewer
+//!   queries + 16-bit grinding, same 100-bit target), `secure` (120-bit
+//!   UDR). Below m = 22 every profile falls back to the ad-hoc rate-1/4
+//!   config (unaudited, test-only).
 //!
 //! Protocol notes (from the zinc-plus measurement lore): idle the box first;
 //! for quotable *time* numbers at big shapes run one shape per process (the
@@ -28,12 +33,28 @@ use std::hint::black_box;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
-use f2z::ligerito::packed_vars;
+use f2z::ligerito::{LOG_PACKING, packed_vars};
 use f2z::ligerito_flock::{
-    commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, sha_lig_configs,
+    LigConfig, commit_rs_ligerito_rows, lig_configs, prove_mle_eval_mod_q_ligerito,
     verify_mle_eval_mod_q_ligerito,
 };
 use f2z::pcs::{IntEvalParams, mod_q_num_chunks, smallest_generator};
+use flock_core::pcs::ligerito::LigeritoProfile;
+
+/// The bench's Ligerito config source: the audited embedded profile chosen
+/// by `F2Z_LIG_PROFILE` at `m = m_p + 7 ≥ 22`, the ad-hoc rate-1/4 config
+/// below — the same boundary as `sha_lig_configs`, which this generalizes.
+fn bench_lig_config(m_p: usize) -> (LigConfig, &'static str) {
+    if m_p + LOG_PACKING >= 22 {
+        match std::env::var("F2Z_LIG_PROFILE").as_deref() {
+            Ok("slim") => (LigConfig::Embedded(LigeritoProfile::Slim), "slim(rate1/4)"),
+            Ok("secure") => (LigConfig::Embedded(LigeritoProfile::Secure), "secure"),
+            _ => (LigConfig::Embedded(LigeritoProfile::Fast), "fast(rate1/2)"),
+        }
+    } else {
+        (LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 }, "adhoc(rate1/4)")
+    }
+}
 
 // Peak-heap tracker (wraps System): high-water mark of currently outstanding
 // bytes. Negligible overhead (one relaxed atomic op per alloc/dealloc).
@@ -124,11 +145,13 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     let p = IntEvalParams { t, s, word_bits: w };
     let m_p = packed_vars(&p);
     let lch = mod_q_num_chunks(&p, q_bits);
-    // The library's own boundary: the audited embedded FAST profile where
-    // it exists (m = m_p + 7 ≥ 22), ad-hoc only below. Hardcoding the tiny
-    // ad-hoc config at big shapes is catastrophic (n=28 commit measured
-    // 292 s adhoc vs the embedded profile's sub-second).
-    let (pc, vc) = sha_lig_configs(m_p).expect("lig cfg");
+    // The library's boundary, generalized by F2Z_LIG_PROFILE: the audited
+    // embedded profile at m = m_p + 7 ≥ 22 (fast = base RS rate 1/2, the
+    // default; slim = base rate 1/4), ad-hoc only below. Hardcoding the
+    // tiny ad-hoc config at big shapes is catastrophic (n=28 commit
+    // measured 292 s ad-hoc vs the embedded profile's sub-second).
+    let (lig_cfg, lig_tag) = bench_lig_config(m_p);
+    let (pc, vc) = lig_configs(m_p, lig_cfg).expect("lig cfg");
 
     // Deterministic non-degenerate instance, generated STRAIGHT INTO the
     // per-column bit rows (`repack_leaf_bits` layout: bit `(b<<log₂W)|j`
@@ -190,7 +213,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
 
     let n = t + s;
     println!(
-        "\n=== n={n} (t={t}, s={s}, W={w}, m_p={m_p}, chunks={lch}, data={} KiB) ===",
+        "\n=== n={n} (t={t}, s={s}, W={w}, m_p={m_p}, chunks={lch}, lig={lig_tag}, data={} KiB) ===",
         (p.cells() * w).div_ceil(8) >> 10
     );
 
