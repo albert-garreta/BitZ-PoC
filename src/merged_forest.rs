@@ -375,6 +375,16 @@ fn forest_schedule_l8() -> bool {
     std::env::var("F2_FOREST_SCHEDULE").is_ok_and(|v| v == "l8")
 }
 
+/// TEMP EXPERIMENT (pass-fusion follow-up): `F2Z_LUT3=1` deepens the L/4
+/// schedule's bit-driven prefixes by one round (Pair2Bits → Pair3Bits,
+/// Leaf2Bits → Leaf3Bits; depth ≥ 5) WITHOUT changing the L/4 build top —
+/// both LUT materialization residues halve and the following dense
+/// cascades start one round smaller. Byte-identical either way (every
+/// variant is an exact char-2 identity, pinned against the eager forest).
+fn forest_lut3() -> bool {
+    std::env::var_os("F2Z_LUT3").is_some()
+}
+
 /// [`prove_merged_forest_lazy`] with the schedule explicit (`l8 = false`
 /// → the L/4 default) — the testable entry point; BOTH schedules are
 /// pinned byte-identical to the eager prover.
@@ -518,15 +528,22 @@ fn prove_merged_forest_lazy_sched(
                     t4_sets: Vec::new(),
                 })
             } else if ell == depth - 2 {
+                // Under `F2Z_LUT3` (depth ≥ 5, so k = d−2 ≥ 3) the pair
+                // layer runs one more bit-driven round (Pair3Bits): its
+                // materialized residue halves.
+                let deep = depth >= 5 && forest_lut3();
                 Some(BitLayer {
                     bufs: col_bits
                         .as_ref()
                         .expect("leaf bits alive for the pair layer")
                         .iter()
-                        .map(|(lbits, rbits)| GroupBufs::Pair2Bits {
-                            lbits: lbits.clone(),
-                            rbits: rbits.clone(),
-                            tau_set: 0,
+                        .map(|(lbits, rbits)| {
+                            let (lbits, rbits) = (lbits.clone(), rbits.clone());
+                            if deep {
+                                GroupBufs::Pair3Bits { lbits, rbits, tau_set: 0 }
+                            } else {
+                                GroupBufs::Pair2Bits { lbits, rbits, tau_set: 0 }
+                            }
                         })
                         .collect(),
                     tau_sets: Vec::new(),
@@ -535,13 +552,21 @@ fn prove_merged_forest_lazy_sched(
                 })
             } else if ell == depth - 1 {
                 // Two bit-driven rounds (k = d−1 = 3): dense buffers only
-                // after round 2.
+                // after round 2. Under `F2Z_LUT3` (depth ≥ 5, so k ≥ 4)
+                // three rounds (Leaf3Bits): the leaf residue halves.
+                let deep = depth >= 5 && forest_lut3();
                 Some(BitLayer {
                     bufs: col_bits
                         .take()
                         .expect("leaf bits consumed once")
                         .into_iter()
-                        .map(|(lbits, rbits)| GroupBufs::Leaf2Bits { lbits, rbits, tau_set: 0 })
+                        .map(|(lbits, rbits)| {
+                            if deep {
+                                GroupBufs::Leaf3Bits { lbits, rbits, tau_set: 0 }
+                            } else {
+                                GroupBufs::Leaf2Bits { lbits, rbits, tau_set: 0 }
+                            }
+                        })
                         .collect(),
                     tau_sets: vec![leaf_tau.clone()],
                     pair_tau_sets: Vec::new(),
