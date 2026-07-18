@@ -167,29 +167,60 @@ being harness and layout differences rather than the PCS.
 ### Reference numbers
 
 Apple M4 (16 GB); `t ≈ 0.6n` splits, W=1, one mod-q claim; medians,
-idle-fronted, one shape per process at n ≥ 24. `data` is the committed
-instance size; `schedule` is the forest memory schedule
-(`F2_FOREST_SCHEDULE=l8` opt-in, required at n ≥ 31 on 16 GB).
+idle-fronted, one shape per process at n ≥ 24, 45–90 s cooldowns between
+shapes; the **pass-fusion + deeper-LUT defaults** (`F2Z_EQF_FUSE` /
+`F2Z_LUT3`, opt-out `=0`). `schedule` is the forest memory schedule
+(`F2_FOREST_SCHEDULE=l8` opt-in, required at n ≥ 31 on 16 GB). The
+`forest` / `open` phase columns come from ONE profiled prove per shape
+(`OBLONG_PROFILE=1`; forest = pow2 + forest GKR + fold-v + pre-sumcheck,
+open = ring-switch + B-combination + recursive Ligerito; they sum to
+within ~2 % of the prove median except where noted).
 
-| n | shape (t, s) | data | commit | prove | verify | proof | prove peak | schedule |
+**Prover time** (`prove` = median; phases from the profiled prove):
+
+| n | shape (t, s) | commit | forest+presum | ligerito open | prove | verify | prove peak | schedule |
 |---|---|---|---|---|---|---|---|---|
-| 16 | 10, 6 | 8 KiB | 0.48 ms | 4.00 ms | 1.22 ms | 43.2 KiB | 0.85 MB | L/4 |
-| 18 | 12, 6 | 32 KiB | 0.32 ms | 7.63 ms | 1.66 ms | 75.0 KiB | 3.1 MB | L/4 |
-| 20 | 13, 7 | 128 KiB | 0.74 ms | 17.4 ms | 2.86 ms | 98.1 KiB | 9.1 MB | L/4 |
-| 22 | 14, 8 | 512 KiB | 0.87 ms | 25.2 ms | 1.89 ms | 276.7 KiB | 26.1 MB | L/4 |
-| 24 | 15, 9 | 2 MiB | 2.03 ms | 69.9 ms | 2.97 ms | 303.9 KiB | 88.4 MB | L/4 |
-| 26 | 16, 10 | 8 MiB | 9.01 ms | 202 ms | 3.07 ms | 346.8 KiB | 330 MB | L/4 |
-| 28 | 17, 11 | 32 MiB | 60.9 ms | 1.10 s | 5.39 ms | 399.9 KiB | 1.27 GB | L/4 |
-| 30 | 18, 12 | 128 MiB | 91 ms | 5.13 s | 9.3 ms | 466 KiB | 4.99 GB | L/4 |
-| 31 | 19, 12 | 256 MiB | 186 ms | 11.2 s | 9.7 ms | 490 KiB | 5.81 GB | l8 |
-| 32 | 19, 13 | 512 MiB | 359 ms | 32.8 s | 14.8 ms | 574 KiB | 11.5 GB | l8 |
+| 16 | 10, 6 | 0.19 ms | 3.31 ms | 0.63 ms | 3.93 ms | 1.17 ms | 0.69 MB | L/4 |
+| 18 | 12, 6 | 0.35 ms | 5.63 ms | 1.14 ms | 6.73 ms | 1.34 ms | 2.4 MB | L/4 |
+| 20 | 13, 7 | 0.67 ms | 9.05 ms | 1.71 ms | 10.9 ms | 1.90 ms | 7.7 MB | L/4 |
+| 22 | 14, 8 | 0.70 ms | 17.1 ms | 1.89 ms | 18.9 ms | 1.81 ms | 22.8 MB | L/4 |
+| 24 | 15, 9 | 1.67 ms | 42.6 ms | 4.01 ms | 46.3 ms | 2.67 ms | 83.8 MB | L/4 |
+| 26 | 16, 10 | 5.34 ms | 132 ms | 12.2 ms | 146 ms | 3.34 ms | 320 MB | L/4 |
+| 28 | 17, 11 | 22.1 ms | 525 ms | 43.5 ms | 569 ms | 3.95 ms | 1.25 GB | L/4 |
+| 30 | 18, 12 | 88.1 ms | 2.98 s | 139 ms | 3.15 s | 5.55 ms | 4.95 GB | L/4 |
+| 31 | 19, 12 | 180 ms | 8.51 s | 314 ms | 8.92 s | 7.83 ms | 5.81 GB | l8 |
+| 32 | 19, 13 | 390 ms | ~96 % | ~4 % | 29.8 s | 11.8 ms | 11.5 GB | l8 |
 
-Reading notes: prove scales ~3–3.5× per +2 in n while cache-resident,
-easing toward ~5× per step once the forest working set exceeds cache
-(n ≥ 26) — expect the wider end of the ±5–15 % run-to-run band there (a
-second n=28 run measured 0.82 s). Verify stays ms-class and proofs
-sub-MB throughout — prover RAM is the only wall. The n=20→22 step in
-proof size (98 → 277 KiB) and the verify blip at n=22 are the
+(n=32's profiled prove ran thermally shaded — 35.9 s vs the 29.8 s
+median — so its phases are quoted as shares.)
+
+**Proof size** (transmitted-payload accounting; forest-side = forest
+sumchecks/evals + chunk folds + pre-sumchecks, open-side = ring-switch
+`s_v` + the recursive Ligerito proof; `total` = the serialized stream):
+
+| n | forest-side | s_v | ligerito | total |
+|---|---|---|---|---|
+| 16 | 7.7 KiB | 2.0 KiB | 31.1 KiB | 43.2 KiB |
+| 18 | 9.6 KiB | 2.0 KiB | 60.1 KiB | 75.0 KiB |
+| 20 | 12.3 KiB | 2.0 KiB | 80.5 KiB | 98.1 KiB |
+| 22 | 16.2 KiB | 2.0 KiB | 255.3 KiB | 276.7 KiB |
+| 24 | 22.2 KiB | 2.0 KiB | 276.3 KiB | 303.9 KiB |
+| 26 | 32.4 KiB | 2.0 KiB | 308.5 KiB | 346.8 KiB |
+| 28 | 50.7 KiB | 2.0 KiB | 343.0 KiB | 399.9 KiB |
+| 30 | 85.1 KiB | 2.0 KiB | 374.9 KiB | 466.3 KiB |
+| 31 | 86.8 KiB | 2.0 KiB | 397.1 KiB | 490.5 KiB |
+| 32 | 151.8 KiB | 2.0 KiB | 415.4 KiB | 573.7 KiB |
+
+Reading notes: **time is forest-dominated** (84 % at n=16 rising to ~96 %
+at n ≥ 31) while **bytes are Ligerito-dominated** (72–93 % of the proof is
+the recursive opening; the forest side is 8–152 KiB and the ring-switch a
+constant 2 KiB) — the inversion to keep in mind when optimizing either
+axis. Proof sizes are unchanged from the pre-fusion table (the fused
+prover is byte-identical); prove times improved ~10–15 % over the
+previous defaults in same-session A/B at n ≥ 26 — differences vs the
+previous table beyond that reflect measurement-session conditions.
+Verify stays ms-class and proofs sub-MB throughout — prover RAM is the
+only wall. The n=20→22 step in proof size (98 → 277 KiB) is the
 `sha_lig_configs` boundary: the audited embedded FAST profile takes over
 at `m ≥ 22` (hardcoding the tiny ad-hoc config at big shapes instead is
 catastrophic — n=28 commit measured 292 s ad-hoc vs tens of ms embedded).
