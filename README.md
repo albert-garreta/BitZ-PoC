@@ -258,10 +258,11 @@ The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —
 fewer queries plus 16-bit per-level grinding at the same 100-bit
 `johnson_ood` target as the default FAST (base rate 1/2). The slim
 profile's base rate is whatever the flock checkout's current generation
-says — it was **rate 1/4** when the first sweep below ran and has since
-been regenerated to **rate 1/8** (Johnson at rate 1/8 sanctioned; ladder
-1/8…1/128, L0 60 queries) — so the bench header prints the live base rate
-(`lig=slim@r1/8`). The rate-1/4-generation sweep (n=22–32; since the
+says — it was **rate 1/4** when the first sweep below ran, then
+regenerated to **rate 1/8** at k=6 (Johnson at rate 1/8 sanctioned;
+ladder 1/8…1/128, L0 60 queries), and is now **(rate 1/8, k=4)** — so
+the bench header prints the live geometry (`lig=slim@r1/8k4`). The
+rate-1/4-generation sweep (n=22–32; since the
 proof is Ligerito-dominated, halving the query cost nearly halves the
 proof):
 
@@ -351,6 +352,27 @@ Shifting the split to shrink that term is a bad trade at n=28 under the
 current prover (t=17→19 costs +77 % prove for −21 KiB — the shared
 `2^t` tables and per-layer costs steepen with n), so the frontier is
 config-only at the reference split.
+
+**`k = 4` is the knee at every rate** (k=3 backfires: the extra ladder
+level adds queries), so the slim profile was regenerated once more —
+**the slim default is now (rate 1/8, k=4)** = the `custom:3:4` point
+(`examples/gen_lig_configs.rs` rewrites the flock checkout's slim TOMLs
+for m = 22..=35 through the same validator-gated generator; the tables
+above labeled `slim (r1/8, k6)` are the previous generation). The k=4
+family, measured at n=28:
+
+| config | commit | prove | proof | lig blob | peaks (commit/prove) |
+|---|---|---|---|---|---|
+| fast (r1/2, k6) — default | 22 ms | 569 ms | 399.9 KiB | 343.0 | 168 MB / 1.25 GB |
+| custom:1:4 (r1/2, k4) | 26 ms | 587 ms | **237.8 KiB** | 181.5 | 180 MB / 1.27 GB |
+| custom:2:4 (r1/4, k4) | 45 ms | 596 ms | **178.3 KiB** | 123.2 | 260 MB / 1.36 GB |
+| slim = r1/8, k4 | 76 ms | 618 ms | **154.6 KiB** | 99.9 | 420 MB / 1.54 GB |
+| custom:4:4 (r1/16, k4) | 141 ms | 643 ms | 140.5 KiB | 86.1 | 740 MB / 1.90 GB |
+
+The k lever alone at rate 1/2 is −40 % (400 → 238 KiB) at fast-like
+commit cost — `custom:1:4` dominates the previous-generation rate-1/4
+slim (229 KiB) on every axis. Regenerating the FAST profile at k=4 would
+be the same one-command generator run (left untouched here).
 
 ### The b127 field study (`GF(2^127)`)
 

@@ -369,6 +369,85 @@ pub fn lig_configs(
     }
 }
 
+/// Build a Johnson-regime Ligerito security config for `(m, base rate
+/// `2^-r0`, L0 interleave `2^k0`)` at the embedded profiles' per-level
+/// target and query-grinding convention, using flock's own machinery end
+/// to end: the embedded slim config as the field template (header strings,
+/// `eta`, grinding, target), `scripts/soundness.py`'s ladder rule (rate +1
+/// per level, 3-bit folds until the residual is ≤ 5), queries /
+/// fold-grinding / OOD solved against
+/// [`LigeritoLevelConfig::paper_predicted_bits`] /
+/// [`paper_predicted_ood_bits`] — the exact formulas
+/// [`LigeritoSecurityConfig::validate`] re-checks — and the whole config
+/// gated by `validate()` before it is returned. Nothing hand-picked.
+///
+/// Used by the bench's `F2Z_LIG_PROFILE=custom:<r0>:<k0>` and by
+/// `examples/gen_lig_configs.rs` (which regenerates flock's embedded slim
+/// TOMLs at a chosen geometry).
+///
+/// [`LigeritoLevelConfig::paper_predicted_bits`]: flock_core::pcs::ligerito::LigeritoLevelConfig::paper_predicted_bits
+/// [`paper_predicted_ood_bits`]: flock_core::pcs::ligerito::LigeritoLevelConfig::paper_predicted_ood_bits
+#[allow(clippy::arithmetic_side_effects, clippy::missing_panics_doc)]
+pub fn custom_johnson_config(m: usize, r0: usize, k0: usize) -> LigeritoSecurityConfig {
+    let slim = ligerito::embedded_security_config(m, ligerito::LigeritoProfile::Slim)
+        .unwrap_or_else(|| panic!("no embedded slim template for m={m}"));
+    let mut cfg = LigeritoSecurityConfig::from_toml_str(slim).expect("slim template validates");
+    let log_n = cfg.log_n;
+    assert!(k0 >= 1 && k0 < log_n, "custom initial_k out of range");
+    let tmpl = cfg.levels[0].clone();
+
+    // derive_ladder: (log_msg_cols, log_num_interleaved, k_recursive, rate).
+    let mut shapes = vec![(log_n - k0, k0, k0, r0)];
+    let mut n_run = log_n - k0;
+    let mut rate = r0;
+    while n_run > 5 {
+        let kr = 3.min(n_run);
+        rate += 1;
+        shapes.push((n_run - kr, kr, kr, rate));
+        n_run -= kr;
+    }
+    cfg.initial_k = k0;
+    cfg.final_block.yr_log_n = n_run;
+    cfg.levels = shapes
+        .iter()
+        .enumerate()
+        .map(|(i, &(mc, il, kr, r))| {
+            let mut lv = tmpl.clone();
+            lv.log_inv_rate = r;
+            lv.log_msg_cols = mc;
+            lv.log_num_interleaved = il;
+            lv.k_recursive = kr;
+            lv.ood_samples = if i == 0 { 0 } else { 1 };
+            // Queries: smallest Q whose predicted query-phase bits cover
+            // target − query-grinding (validate()'s own gate).
+            let need_q = (lv.target_security_bits - lv.grinding_bits) as f64;
+            lv.queries = (1..=10_000)
+                .find(|&q| {
+                    lv.queries = q;
+                    lv.paper_predicted_bits().1 + 1e-3 >= need_q
+                })
+                .expect("query search converges");
+            let (pg, qb) = lv.paper_predicted_bits();
+            lv.fold_grinding_bits = (lv.target_security_bits as f64 - pg).ceil().max(0.0) as usize;
+            lv.expected_eps_pg_bits = pg;
+            lv.expected_eps_query_bits = qb;
+            // OOD must clear the target on its own (L0 uses the implicit
+            // post-commit binding, s = 0; deeper levels escalate samples).
+            loop {
+                let ood = lv.paper_predicted_ood_bits().expect("johnson_ood prediction");
+                if ood + 1e-3 >= lv.target_security_bits as f64 {
+                    lv.expected_eps_ood_bits = Some(ood);
+                    break;
+                }
+                lv.ood_samples += 1;
+            }
+            lv
+        })
+        .collect();
+    cfg.validate().expect("custom config passes flock's validator");
+    cfg
+}
+
 /// Commit at the shape the Ligerito config dictates
 /// (`log_inv_rate = log_inv_rates[0]`, `log_batch = initial_k`).
 pub fn commit_rs_ligerito(

@@ -39,79 +39,8 @@ use f2z::ligerito_flock::{
     verify_mle_eval_mod_q_ligerito,
 };
 use f2z::pcs::{IntEvalParams, mod_q_num_chunks, smallest_generator};
-use flock_core::pcs::ligerito::{
-    LigeritoProfile, LigeritoSecurityConfig, ProverConfig as LigPc, VerifierConfig as LigVc,
-    embedded_security_config,
-};
-
-/// Build a Johnson-regime config for `(m, base rate 2^-r0, L0 interleave
-/// 2^k0)` at the embedded profiles' 100-bit per-level target with 16-bit
-/// query grinding, using flock's OWN machinery end to end: the embedded slim
-/// config as the field template, `soundness.py`'s ladder rule (rate +1 per
-/// level, 3-bit folds until the residual is ≤ 5), queries / fold-grinding /
-/// OOD solved against `paper_predicted_bits` / `paper_predicted_ood_bits`
-/// (the exact formulas `validate()` re-checks), and the whole config gated
-/// by `LigeritoSecurityConfig::validate` before use. Nothing hand-picked.
-fn custom_johnson_config(m: usize, r0: usize, k0: usize) -> LigeritoSecurityConfig {
-    let slim = embedded_security_config(m, LigeritoProfile::Slim)
-        .unwrap_or_else(|| panic!("no embedded slim template for m={m}"));
-    let mut cfg = LigeritoSecurityConfig::from_toml_str(slim).expect("slim template validates");
-    let log_n = cfg.log_n;
-    assert!(k0 >= 1 && k0 < log_n, "custom initial_k out of range");
-    let tmpl = cfg.levels[0].clone();
-
-    // derive_ladder: (log_msg_cols, log_num_interleaved, k_recursive, rate).
-    let mut shapes = vec![(log_n - k0, k0, k0, r0)];
-    let mut n_run = log_n - k0;
-    let mut rate = r0;
-    while n_run > 5 {
-        let kr = 3.min(n_run);
-        rate += 1;
-        shapes.push((n_run - kr, kr, kr, rate));
-        n_run -= kr;
-    }
-    cfg.initial_k = k0;
-    cfg.final_block.yr_log_n = n_run;
-    cfg.levels = shapes
-        .iter()
-        .enumerate()
-        .map(|(i, &(mc, il, kr, r))| {
-            let mut lv = tmpl.clone();
-            lv.log_inv_rate = r;
-            lv.log_msg_cols = mc;
-            lv.log_num_interleaved = il;
-            lv.k_recursive = kr;
-            lv.ood_samples = if i == 0 { 0 } else { 1 };
-            // Queries: smallest Q whose predicted query-phase bits cover
-            // target − query-grinding (validate()'s own gate).
-            let need_q = (lv.target_security_bits - lv.grinding_bits) as f64;
-            lv.queries = (1..=10_000)
-                .find(|&q| {
-                    lv.queries = q;
-                    lv.paper_predicted_bits().1 + 1e-3 >= need_q
-                })
-                .expect("query search converges");
-            let (pg, qb) = lv.paper_predicted_bits();
-            lv.fold_grinding_bits =
-                (lv.target_security_bits as f64 - pg).ceil().max(0.0) as usize;
-            lv.expected_eps_pg_bits = pg;
-            lv.expected_eps_query_bits = qb;
-            // OOD must clear the target on its own (L0 uses the implicit
-            // post-commit binding, s = 0; deeper levels escalate samples).
-            loop {
-                let ood = lv.paper_predicted_ood_bits().expect("johnson_ood prediction");
-                if ood + 1e-3 >= lv.target_security_bits as f64 {
-                    lv.expected_eps_ood_bits = Some(ood);
-                    break;
-                }
-                lv.ood_samples += 1;
-            }
-            lv
-        })
-        .collect();
-    cfg.validate().expect("custom config passes flock's validator");
-    cfg
-}
+use f2z::ligerito_flock::custom_johnson_config;
+use flock_core::pcs::ligerito::{LigeritoProfile, ProverConfig as LigPc, VerifierConfig as LigVc};
 
 /// The bench's Ligerito config source: the audited embedded profile chosen
 /// by `F2Z_LIG_PROFILE` at `m = m_p + 7 ≥ 22`, the ad-hoc rate-1/4 config
@@ -308,8 +237,9 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
 
     let n = t + s;
     println!(
-        "\n=== n={n} (t={t}, s={s}, W={w}, m_p={m_p}, chunks={lch}, lig={lig_tag}@r1/{}, data={} KiB) ===",
+        "\n=== n={n} (t={t}, s={s}, W={w}, m_p={m_p}, chunks={lch}, lig={lig_tag}@r1/{}k{}, data={} KiB) ===",
         1usize << pc.log_inv_rates[0],
+        pc.initial_k,
         (p.cells() * w).div_ceil(8) >> 10
     );
 
