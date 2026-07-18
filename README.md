@@ -128,14 +128,15 @@ serialization roundtrip + tampered-byte rejection.
 ### Reference measurement
 
 Single machine (Apple M4, `-C target-cpu=native`, median of 5), one genuine
-`F_q = 2^100 − 15` MLE opening (post the 2026-07-16 parallel-`flatten` t4
-fix; `examples/reference_measure.rs`):
+`F_q = 2^100 − 15` MLE opening under the pass-fusion defaults
+(`examples/reference_measure.rs` — a quick, non-idle-fronted run; the
+protocol-grade tables live under "Reference numbers" below):
 
 | shape | prove | verify | serialized proof |
 |---|---|---|---|
-| **n=16** (t=10, s=6, W=1, 1 chunk) | **3.9 ms** | **1.6 ms** | **43.2 KiB** |
-| n=18 (t=12, s=6, W=1, 1 chunk) | 5.9 ms | 1.4 ms | 75.0 KiB |
-| (t=4, s=8, W=32, 2 chunks) | 8.6 ms | 2.5 ms | 65.7 KiB |
+| **n=16** (t=10, s=6, W=1, 1 chunk) | **4.4 ms** | **1.7 ms** | **43.2 KiB** |
+| n=18 (t=12, s=6, W=1, 1 chunk) | 5.7 ms | 1.5 ms | 75.0 KiB |
+| (t=4, s=8, W=32, 2 chunks) | 7.8 ms | 2.5 ms | 65.7 KiB |
 
 The n=18 proof size (75.0 KiB) matches the source branch's ~71 KiB Ligerito
 proof at n=18.
@@ -144,9 +145,14 @@ proof at n=18.
 
 `benches/pcs.rs` (plain `harness = false` binary, no criterion) reports, per
 shape: commit / prove / verify wall-clock (medians), serialized proof size,
-codec round-trip time, and **peak heap** per phase — the live-heap high-water
+codec round-trip time, **peak heap** per phase — the live-heap high-water
 ("net outstanding bytes"), the same notion as flock's benches and zinc-plus's
-`f2_int_ligerito_mem`, so the numbers compare directly across the three repos.
+`f2_int_ligerito_mem`, so the numbers compare directly across the three
+repos — and a proof-size `split:` line (forest-side vs ring-switch `s_v` +
+Ligerito). Under `OBLONG_PROFILE=1` it additionally prints a `phases:` line
+(forest+presum vs ligerito open, from one profiled prove per shape; the
+timed medians then carry ~µs-scale scope overhead — leave it off for
+headline timing).
 
 ```sh
 RUSTFLAGS="-C target-cpu=native" cargo bench --bench pcs --features unchecked
@@ -154,6 +160,12 @@ RUSTFLAGS="-C target-cpu=native" cargo bench --bench pcs --features unchecked
 F2Z_BENCH_SHAPES="10:6:1 14:8:1" F2Z_BENCH_REPS=5 \
   RUSTFLAGS="-C target-cpu=native" cargo bench --bench pcs --features unchecked
 ```
+
+Prover knobs (every configuration produces byte-identical proofs):
+`F2Z_EQF_FUSE=0` disables pass fusion (restores the eager two-pass fold);
+`F2Z_LUT3=0` disables the deeper L/4 LUT prefixes; `F2Z_EQF_NOKERNEL=1`
+forces the generic (non-NEON) round/fold kernels (diagnostic);
+`F2_FOREST_SCHEDULE=l8` opts into the L/8 forest memory schedule.
 
 Performance parity with upstream: the release profile carries the upstream
 `lto = true` / `codegen-units = 1` (without them the vendored field kernels
