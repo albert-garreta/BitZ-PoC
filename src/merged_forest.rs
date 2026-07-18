@@ -375,14 +375,16 @@ fn forest_schedule_l8() -> bool {
     std::env::var("F2_FOREST_SCHEDULE").is_ok_and(|v| v == "l8")
 }
 
-/// TEMP EXPERIMENT (pass-fusion follow-up): `F2Z_LUT3=1` deepens the L/4
-/// schedule's bit-driven prefixes by one round (Pair2Bits → Pair3Bits,
-/// Leaf2Bits → Leaf3Bits; depth ≥ 5) WITHOUT changing the L/4 build top —
-/// both LUT materialization residues halve and the following dense
-/// cascades start one round smaller. Byte-identical either way (every
-/// variant is an exact char-2 identity, pinned against the eager forest).
+/// Deeper L/4 bit-driven prefixes — the DEFAULT: one more LUT round per
+/// bottom layer (Pair2Bits → Pair3Bits, Leaf2Bits → Leaf3Bits; depth ≥ 5)
+/// WITHOUT changing the L/4 build top — both LUT materialization residues
+/// halve and the following dense cascades start one round smaller (small
+/// consistent win at DRAM-scale shapes on top of pass fusion; a wash at
+/// cache-adjacent shapes). Byte-identical either way (every variant is an
+/// exact char-2 identity, pinned against the eager forest). `F2Z_LUT3=0`
+/// opts out. Read once per prove call.
 fn forest_lut3() -> bool {
-    std::env::var_os("F2Z_LUT3").is_some()
+    std::env::var("F2Z_LUT3").map_or(true, |v| v != "0")
 }
 
 /// [`prove_merged_forest_lazy`] with the schedule explicit (`l8 = false`

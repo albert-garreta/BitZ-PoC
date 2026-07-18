@@ -438,20 +438,21 @@ fn t4bits_idx(lbits: &[u64], rbits: &[u64], j: usize, q1: usize) -> usize {
     (j << 4) | (ce << 2) | co
 }
 
-/// TEMP EXPERIMENT (pass-fusion study): defer each round's fold and run it
-/// fused into the NEXT round's message pass (one read of the unfolded
-/// buffers instead of fold-read + message-read). Byte-identical: the same
-/// field values in the same transcript order — only the physical pass
-/// structure changes. Gated on all-Dense-single-pair groups (the forest's
-/// shape); off by default.
+/// Pass fusion — the DEFAULT: defer each round's fold and run it fused
+/// into the NEXT round's message pass (one read of the unfolded buffers
+/// instead of fold-read + message-read; measured ~10 % prove at n=26–28).
+/// Byte-identical: the same field values in the same transcript order —
+/// only the physical pass structure changes. Gated on all-Dense-single-pair
+/// groups (the forest's shape). `F2Z_EQF_FUSE=0` opts out (restores the
+/// eager two-pass fold path).
 fn eqf_fuse_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("F2Z_EQF_FUSE").is_some())
+    *ON.get_or_init(|| std::env::var("F2Z_EQF_FUSE").map_or(true, |v| v != "0"))
 }
 
-/// TEMP EXPERIMENT: bypass the hand-fused NEON whole-buffer kernels
-/// (message + fold), forcing the generic fallback loops — isolates fusion
-/// gains at matched (generic) kernel quality.
+/// Diagnostic (opt-in): bypass the hand-fused NEON whole-buffer kernels
+/// (message + fold + fused fold+round), forcing the generic fallback
+/// loops — isolates pass-structure gains from kernel quality in A/B runs.
 fn eqf_nokernel() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var_os("F2Z_EQF_NOKERNEL").is_some())
@@ -661,8 +662,8 @@ where
     // next round's per-position value tables (read inline).
     let mut pair3_value_sets: Vec<Pair2FoldTables<F>> = Vec::new();
     let mut leaf3_value_sets: Vec<Pair2FoldTables<F>> = Vec::new();
-    // TEMP pass-fusion experiment: a deferred fold challenge — set when the
-    // round's fold is skipped and consumed by the next round's fused pass.
+    // Pass fusion: a deferred fold challenge — set when the round's fold is
+    // skipped and consumed by the next round's fused pass.
     let mut pending_rho: Option<F> = None;
 
     for j in 1..=k {
@@ -1078,11 +1079,11 @@ where
             let h3 = a0 + &(c3.clone() * &a1) + &(c3sq.clone() * &a2);
             (h0, h1, h2, h3)
         };
-        // Message pass — fused with the deferred fold when one is pending
-        // (TEMP pass-fusion experiment): one pass reads the unfolded
-        // buffers, folds ρ_{j−1} in registers into the prefix, and
-        // accumulates this round's coefficients from the folded pairs —
-        // identical field values, identical transcript order.
+        // Message pass — fused with the deferred fold when one is pending:
+        // one pass reads the unfolded buffers, folds ρ_{j−1} in registers
+        // into the prefix, and accumulates this round's coefficients from
+        // the folded pairs — identical field values, identical transcript
+        // order.
         let hs: Vec<(F, F, F, F)> = if let Some(rho_prev) = pending_rho.take() {
             let _g_msg = crate::utils::prof::scope("eqf:fmsg");
             let fused = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F, F) {
@@ -1215,7 +1216,7 @@ where
             *a = a.clone() * &e;
         }
         if j < k {
-            // TEMP pass-fusion experiment: defer this round's fold into the
+            // Pass fusion (the default): defer this round's fold into the
             // next round's message pass when every group is Dense
             // single-pair (the forest shape after any LUT prefix rounds).
             // Stash bookkeeping below only matters for LUT groups, which
