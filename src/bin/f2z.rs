@@ -10,11 +10,14 @@
 //!     28 17 11 --threads 1 --reps 5 --profile slim
 //! ```
 //!
-//! Usage: `f2z <n> [<t> <s>] [options]`
+//! Usage: `f2z <n> [<t> <s> [<W>]] [options]`
 //!
-//! - `n` — total MLE variables (the committed instance is `2^n` bits at
-//!   W=1). If `t s` are omitted the reference split `t ≈ 0.6n` is used
-//!   (clamped to the packing constraint `t + log₂W ≥ 7`).
+//! - `n` — cell-index MLE variables, `n = t + s` (the committed instance
+//!   is `2^n · W` bits). If `t s` are omitted the reference split
+//!   `t ≈ 0.6n` is used (clamped to the packing constraint
+//!   `t + log₂W ≥ 7`). `W` as a fourth positional sets the cell width
+//!   (power of two; equivalent to `--word-bits`, positional wins) — e.g.
+//!   the reference W=32 shape: `f2z 12 4 8 32`.
 //! - `--threads N` / `-j N` — rayon pool size; `1` = single-threaded.
 //!   Default: all cores (or `RAYON_NUM_THREADS`).
 //! - `--reps R` — timing repetitions (median reported; default 3).
@@ -125,9 +128,10 @@ fn median(mut v: Vec<f64>) -> f64 {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: f2z <n> [<t> <s>] [--threads N] [--reps R] \
+        "usage: f2z <n> [<t> <s> [<W>]] [--threads N] [--reps R] \
          [--profile fast|slim|secure|custom:<log_inv_rate>:<initial_k>] [--word-bits W]\n\
-         (run with --release and --features unchecked for quotable numbers;\n\
+         (n = t + s; W = cell width, power of two, default 1;\n\
+          run with --release and --features unchecked for quotable numbers;\n\
           -C target-cpu=native is load-bearing on aarch64)"
     );
     exit(2)
@@ -188,6 +192,12 @@ fn parse_args() -> Opts {
             o.n = *n;
             o.t = Some(*t);
             o.s = Some(*s);
+        }
+        [n, t, s, w] => {
+            o.n = *n;
+            o.t = Some(*t);
+            o.s = Some(*s);
+            o.word_bits = *w; // positional W wins over --word-bits
         }
         _ => usage(),
     }
