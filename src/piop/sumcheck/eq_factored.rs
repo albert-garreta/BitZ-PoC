@@ -461,7 +461,7 @@ fn eqf_nokernel() -> bool {
 /// Per-group suffix tensors `V_j` (`j = 1..=k`), built back-to-front:
 /// `V_k = [1]`, `V_j[2b' | b0] = eq1(b0; q[j])·V_{j+1}[b']`.
 #[allow(clippy::arithmetic_side_effects)]
-fn suffix_tensors<F>(q: &[F], field_cfg: &F::Config) -> Vec<Vec<F>>
+pub(crate) fn suffix_tensors<F>(q: &[F], field_cfg: &F::Config) -> Vec<Vec<F>>
 where
     F: InnerTransparentField + Send + Sync,
     F::Config: Sync,
@@ -542,6 +542,52 @@ where
     F::Modulus: ConstTranscribable,
     F::Config: Sync,
 {
+    prove_eq_inner_sumcheck_mixed_pre(
+        transcript,
+        groups,
+        tau_sets,
+        pair_tau_sets,
+        t4_sets,
+        None,
+        field_cfg,
+    )
+}
+
+/// [`prove_eq_inner_sumcheck_mixed`] with optionally PRECOMPUTED round-1
+/// coefficients: `pre_round1[t] = (A0, A1, A2)` — the suffix-weighted
+/// coefficients of group `t`'s round-1 message polynomial, exactly as the
+/// round-1 message pass would accumulate them (same weight-folds, same
+/// wide products; XOR accumulation is order-free and the reduction is
+/// `F_2`-linear, so ANY generation order yields the identical reduced
+/// values). When present, round 1 absorbs the same transcript bytes
+/// WITHOUT touching the group buffers — the caller computed the
+/// coefficients while GENERATING those buffers (the forest's JIT layer),
+/// so the buffers' first read is round 2's fused fold+message pass.
+/// Requires every group Dense (asserted): the LUT-round shapes build
+/// their round-1 tables here and cannot arrive precomputed.
+#[allow(clippy::arithmetic_side_effects, clippy::type_complexity)]
+pub fn prove_eq_inner_sumcheck_mixed_pre<F>(
+    transcript: &mut impl Transcript,
+    groups: Vec<EqInnerGroupMixed<F>>,
+    tau_sets: &[(Vec<F>, Vec<F>)],
+    pair_tau_sets: &[Pair2TauSet<F>],
+    t4_sets: &[Vec<F>],
+    mut pre_round1: Option<Vec<(F, F, F)>>,
+    field_cfg: &F::Config,
+) -> (SumcheckProof<F>, Vec<F>, Vec<Vec<(F, F)>>)
+where
+    F: InnerTransparentField + FromPrimitiveWithConfig + WideMulAcc + Send + Sync,
+    F::Inner: ConstTranscribable + Zero + Default + Send + Sync,
+    F::Modulus: ConstTranscribable,
+    F::Config: Sync,
+{
+    if let Some(pre) = &pre_round1 {
+        assert_eq!(pre.len(), groups.len(), "one (A0, A1, A2) triple per group");
+        assert!(
+            groups.iter().all(|g| matches!(g.bufs, GroupBufs::Dense(_))),
+            "precomputed round-1 coefficients require all-Dense groups"
+        );
+    }
     let k = groups.first().map_or(0, |g| g.q.len());
     debug_assert!(k >= 1, "eq-factored sumcheck needs ≥ 1 variable");
     debug_assert!(groups.iter().all(|g| {
@@ -1084,7 +1130,22 @@ where
         // into the prefix, and accumulates this round's coefficients from
         // the folded pairs — identical field values, identical transcript
         // order.
-        let hs: Vec<(F, F, F, F)> = if let Some(rho_prev) = pending_rho.take() {
+        let hs: Vec<(F, F, F, F)> = if j == 1 && pre_round1.is_some() {
+            // Round-1 coefficients arrived precomputed (fused into the
+            // caller's buffer generation): only the coefficient→node
+            // conversion runs — the SAME conversion the message passes
+            // apply — and the buffers stay untouched until round 2.
+            let pre = pre_round1.take().expect("checked is_some");
+            pre.into_iter()
+                .map(|(a0, a1, a2)| {
+                    let h0 = a0.clone();
+                    let h1 = a0.clone() + &a1 + &a2;
+                    let h2 = a0.clone() + &(c2.clone() * &a1) + &(c2sq.clone() * &a2);
+                    let h3 = a0 + &(c3.clone() * &a1) + &(c3sq.clone() * &a2);
+                    (h0, h1, h2, h3)
+                })
+                .collect()
+        } else if let Some(rho_prev) = pending_rho.take() {
             let _g_msg = crate::utils::prof::scope("eqf:fmsg");
             let fused = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F, F) {
                 let suffix_t = &suffix[if shared_q { 0 } else { t }][j - 1];
