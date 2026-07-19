@@ -79,7 +79,11 @@ use num_traits::{
     CheckedAdd, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, Inv, One, Pow, Zero,
 };
 
-use crate::poly::univariate::binary_gf128::{clmul_128x128, clmul_64x64};
+use crate::poly::univariate::binary_gf128::clmul_128x128;
+// Only the scalar (non-NEON) squaring pipeline calls the 64×64 base mul —
+// and the NEON↔scalar parity tests, which exercise it explicitly.
+#[cfg(any(test, not(all(target_arch = "aarch64", target_feature = "neon"))))]
+use crate::poly::univariate::binary_gf128::clmul_64x64;
 
 /// Low bits of the reduction polynomial — `g(X) = X + 1`, stored as `0x3`
 /// (bits 0 and 1 set). The `X^127` term is implicit in the reduction

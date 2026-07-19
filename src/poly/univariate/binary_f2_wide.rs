@@ -294,6 +294,9 @@ pub fn f2_poly_mul<const W_A: usize, const W_B: usize, const W_OUT: usize>(
 /// result, but we do not assert here — `f2_poly_mul` does).
 #[inline]
 #[allow(clippy::arithmetic_side_effects)]
+// Superseded by the word-level path (see `f2_poly_mul`'s comment above);
+// kept from the vendored upstream as the readable reference implementation.
+#[allow(dead_code)]
 fn xor_shifted(acc: &mut [u64], b: &[u64], shift: usize) {
     let word_shift = shift / 64;
     let bit_shift = shift % 64;

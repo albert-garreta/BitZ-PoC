@@ -1,6 +1,4 @@
-use std::convert::identity;
-
-use crypto_primitives::{FromPrimitiveWithConfig, Semiring};
+use crypto_primitives::FromPrimitiveWithConfig;
 
 use crate::poly::{EvaluatablePolynomial, EvaluationError, Polynomial};
 

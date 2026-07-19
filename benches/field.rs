@@ -62,6 +62,9 @@ trait BF:
     + core::ops::Mul<Output = Self>
     + WideMulAcc
 {
+    // Self-labeling for ad-hoc printouts; the table harness uses fixed
+    // column headers instead, so this is reference-only.
+    #[allow(dead_code)]
     const NAME: &'static str;
     fn zero() -> Self;
     fn one() -> Self;
