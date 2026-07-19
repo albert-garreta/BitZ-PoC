@@ -128,6 +128,22 @@ Consolidated over three 9-rep interleaved runs:
 | `wide-dot` | delayed-reduction inner products | 0.51–0.52 | 0.51–0.52 | **1.00×** |
 | `eqf-round` | the fused sumcheck round kernel | 0.90–0.92 | 0.93–0.95 | **0.96×** |
 | `eqf-fold` | the multilinear bind cascade | 1.32–1.34 | 1.43–1.45 | **0.92×** |
+| `inverse` | Itoh–Tsujii ladder (see below) | 302 | 300 | **1.01×** |
+
+(The `inverse` row is the 2026-07-19 generation: BOTH fields' inverses
+were upgraded from the naive Fermat all-ones ladder — 125/126 chained
+multiplications — to the Itoh–Tsujii addition chain
+`1→2→3→6→12→24→48→96→120→126(→127)` with register-resident squaring
+runs (`square_n`): 9 mults for b127, 10 for GHASH, ~3× faster inverses
+(~300 ns vs ~870–915 estimated from the measured chain latencies) —
+best-vs-best preserved. The tie is structural: the ladder is a serial
+squaring CHAIN, i.e. latency-bound, and both fields' square latencies
+are ~2.5 ns; b127's 2-vs-5-PMULL square advantage is a throughput
+property, which a dependency chain cannot spend. The known next rung —
+precomputed `x ↦ x^{2^k}` F₂-linear nibble-table maps for the long runs
+— would cut either inverse to ~100 ns at ~8 KB of tables per fixed `k`,
+recorded here in case inverses ever reach a hot path; they are not on
+one.)
 
 The b127 pipeline behind those numbers is already the *optimized* endpoint
 of a ladder, each step validated in-window:

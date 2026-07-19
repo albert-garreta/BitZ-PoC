@@ -68,6 +68,7 @@ trait BF:
     /// Deterministic element from a 128-bit pattern (b127 folds bit 127).
     fn from_u128(v: u128) -> Self;
     fn square(&self) -> Self;
+    fn inverse(&self) -> Self;
 }
 
 impl BF for BinaryFieldGF128 {
@@ -84,6 +85,9 @@ impl BF for BinaryFieldGF128 {
     fn square(&self) -> Self {
         BinaryFieldGF128::square(self)
     }
+    fn inverse(&self) -> Self {
+        BinaryFieldGF128::inverse(self)
+    }
 }
 
 impl BF for BinaryFieldB127 {
@@ -99,6 +103,9 @@ impl BF for BinaryFieldB127 {
     }
     fn square(&self) -> Self {
         BinaryFieldB127::square(self)
+    }
+    fn inverse(&self) -> Self {
+        BinaryFieldB127::inverse(self)
     }
 }
 
@@ -145,6 +152,7 @@ fn time_pair_ns_per_op<RG, RB>(
 const N_BATCH: usize = 1 << 21; // independent muls
 const N_CHAIN: usize = 1 << 21; // dependent muls
 const N_SQ: usize = 1 << 22; // dependent squarings
+const N_INV: usize = 1 << 12; // independent inversions (Itoh–Tsujii)
 const N_POW: usize = 1 << 16; // comb exponentiations
 const POW_BITS: usize = 100; // mod-q row-weight width (q = 2^100 − 15)
 const POW_WIN: usize = 8; // chunk_pow2_table's window
@@ -297,6 +305,30 @@ fn run_paired<G: BF, B: BF>(reps: usize) {
         || square_chain(black_box(bx), N_SQ),
     );
     print_row("square/chain", g, b);
+
+    // inverse (Itoh–Tsujii ladder, independent elements — throughput)
+    let ginv = gen_vec::<G>(N_INV, 0x1517);
+    let binv = gen_vec::<B>(N_INV, 0x1517);
+    let (g, b) = time_pair_ns_per_op(
+        reps,
+        N_INV,
+        || {
+            let mut acc = G::zero();
+            for x in &ginv {
+                acc = acc + x.inverse();
+            }
+            acc
+        },
+        || {
+            let mut acc = B::zero();
+            for x in &binv {
+                acc = acc + x.inverse();
+            }
+            acc
+        },
+    );
+    print_row("inverse", g, b);
+    drop((ginv, binv));
 
     // powers (comb win 8, 100-bit exponents)
     let gcomb = Comb::new(G::from_u128(2), 128, POW_WIN);

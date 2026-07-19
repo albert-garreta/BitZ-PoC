@@ -243,26 +243,53 @@ impl BinaryFieldB127 {
         Self::from_words(reduce_256_to_127(w))
     }
 
+    /// `a^{2^k}` — `k` successive squarings, register-resident on NEON:
+    /// one load, one store, the whole run in vector registers (each
+    /// [`Self::square`] call would bounce through the `Uint` storage).
+    /// The building block of the Itoh–Tsujii ladder, whose cost is
+    /// dominated by exactly such squaring runs — and b127 squarings are
+    /// the field's cheapest op (2 PMULL + the mask-free fold).
+    #[inline]
+    pub fn square_n(&self, k: usize) -> Self {
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            Self::from_words(neon::square_n_words(self.uint.as_words(), k))
+        }
+        #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+        {
+            let mut v = *self;
+            for _ in 0..k {
+                v = v.square();
+            }
+            v
+        }
+    }
+
     /// `a^{-1}` via Fermat: `a^{-1} = a^{2^127 - 2}` for `a ≠ 0`.
     ///
-    /// `2^127 - 2 = 2 · (2^126 - 1)`, so we compute `b = a^{2^126 - 1}`
-    /// via the standard all-ones-exponent ladder (`c_{k+1} = c_k^2 · a`
-    /// takes `a^{2^k - 1}` to `a^{2^{k+1} - 1}`; 125 steps from
-    /// `c_1 = a`) and return `b^2`. Total: 126 squarings + 125 mults —
-    /// and b127 squarings are 2-PMULL cheap. (The Itoh–Tsujii addition
-    /// chain would cut the mults to ~9; deferred exactly as for
-    /// `BinaryFieldGF128` — inverses are not on a hot path.)
+    /// `2^127 - 2 = 2 · (2^126 - 1)`: compute `T(126) = a^{2^126 - 1}`
+    /// by the **Itoh–Tsujii addition chain** on all-ones exponents —
+    /// `T(m+n) = T(m)^{2^n} · T(n)` — along
+    /// `1 → 2 → 3 → 6 → 12 → 24 → 48 → 96 → 120 → 126`, then square
+    /// once. Total: 126 squarings + **9** multiplications (the naive
+    /// all-ones ladder costs the same squarings + 125 mults). The
+    /// squaring runs ride the register-resident [`Self::square_n`].
     ///
     /// Panics if `self.is_zero()` — `0` has no multiplicative inverse.
     pub fn inverse(&self) -> Self {
         assert!(!self.is_zero(), "GF(2^127): zero has no inverse");
-        let mut c = *self; // c = a^{2^1 - 1} = a
-        for _ in 1..126 {
-            c = c.square();
-            c *= self;
-        }
-        // c = a^{2^126 - 1}. One more squaring → a^{2·(2^126 - 1)} = a^{2^127 - 2}.
-        c.square()
+        let a = *self;
+        let t2 = a.square_n(1) * a; // a^{2^2 - 1}
+        let t3 = t2.square_n(1) * a; // a^{2^3 - 1}
+        let t6 = t3.square_n(3) * t3; // a^{2^6 - 1}
+        let t12 = t6.square_n(6) * t6;
+        let t24 = t12.square_n(12) * t12;
+        let t48 = t24.square_n(24) * t24;
+        let t96 = t48.square_n(48) * t48;
+        let t120 = t96.square_n(24) * t24;
+        let t126 = t120.square_n(6) * t6;
+        // T(126) = a^{2^126 - 1}; one squaring → a^{2·(2^126-1)} = a^{2^127-2}.
+        t126.square()
     }
 
     /// Reduced multiply via the 3-PMULL Karatsuba product — the
@@ -1371,11 +1398,13 @@ pub(crate) mod neon {
     /// canonical invariant zeroes `a_1`'s bit 63, `deg S(a_1) ≤ 124` and
     /// `(X²+X)·S(a_1)` never reaches `X^127`: one fold, no masks at all
     /// (6 µops with EOR3, 7 without).
+    /// One squaring step on a vector-resident value — the spread + the
+    /// square-specialized trinomial fold (see [`square_words`] for the
+    /// derivation). Canonical in, canonical out.
     #[inline(always)]
-    pub(crate) fn square_words(a: &[u64; 2]) -> [u64; 2] {
-        // SAFETY: as `mul_words`.
+    unsafe fn square_step(va: uint64x2_t) -> uint64x2_t {
+        // SAFETY: as `reduce_256_b127`.
         unsafe {
-            let va = vld1q_u64(a.as_ptr());
             let s_lo = pmull_lo(va, va); // S(a0), even bits, deg ≤ 126
             let s_hi = pmull_hi(va, va); // S(a1), even bits, deg ≤ 124
             let z = vdupq_n_u64(0);
@@ -1383,11 +1412,40 @@ pub(crate) mod neon {
             let t1 = vsriq_n_u64::<63>(vshlq_n_u64::<1>(s_hi), e); // S(a1) << 1
             let t2 = vsriq_n_u64::<62>(vshlq_n_u64::<2>(s_hi), e); // S(a1) << 2
             #[cfg(target_feature = "sha3")]
-            let r = veor3q_u64(s_lo, t1, t2);
+            {
+                veor3q_u64(s_lo, t1, t2)
+            }
             #[cfg(not(target_feature = "sha3"))]
-            let r = veorq_u64(veorq_u64(s_lo, t1), t2);
+            {
+                veorq_u64(veorq_u64(s_lo, t1), t2)
+            }
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn square_words(a: &[u64; 2]) -> [u64; 2] {
+        // SAFETY: as `mul_words`.
+        unsafe {
+            let r = square_step(vld1q_u64(a.as_ptr()));
             let mut out = [0u64; 2];
             vst1q_u64(out.as_mut_ptr(), r);
+            out
+        }
+    }
+
+    /// `n` successive squarings with the value held in a vector register
+    /// throughout — one load, one store, no per-step `Uint` bounce. The
+    /// Itoh–Tsujii ladder's squaring runs.
+    #[inline]
+    pub(crate) fn square_n_words(a: &[u64; 2], n: usize) -> [u64; 2] {
+        // SAFETY: as `mul_words`.
+        unsafe {
+            let mut v = vld1q_u64(a.as_ptr());
+            for _ in 0..n {
+                v = square_step(v);
+            }
+            let mut out = [0u64; 2];
+            vst1q_u64(out.as_mut_ptr(), v);
             out
         }
     }
@@ -1823,6 +1881,34 @@ mod tests {
             BinaryFieldB127::one().inverse(),
             BinaryFieldB127::one()
         );
+    }
+
+    /// The Itoh–Tsujii inverse equals the naive Fermat all-ones ladder
+    /// (the pre-optimisation implementation, inlined here as the
+    /// reference), and `square_n` equals repeated squaring.
+    #[test]
+    fn itoh_tsujii_matches_fermat_ladder() {
+        let mut rng = StdRng::seed_from_u64(0xB127_000E);
+        for _ in 0..200 {
+            let mut a = rand_elt(&mut rng);
+            if a.is_zero() {
+                a = BinaryFieldB127::one();
+            }
+            let fermat = {
+                let mut c = a;
+                for _ in 1..126 {
+                    c = c.square();
+                    c *= &a;
+                }
+                c.square()
+            };
+            assert_eq!(a.inverse(), fermat, "IT vs Fermat");
+            let mut s = a;
+            for k in 0..9 {
+                assert_eq!(a.square_n(k), s, "square_n({k})");
+                s = s.square();
+            }
+        }
     }
 
     #[test]

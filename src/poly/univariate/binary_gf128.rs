@@ -171,6 +171,26 @@ impl BinaryFieldGF128 {
         }
     }
 
+    /// `a^{2^k}` — `k` successive squarings, register-resident on NEON
+    /// (one load, one store, the run in vector registers; each
+    /// [`Self::square`] call would bounce through the `Uint` storage).
+    /// The Itoh–Tsujii ladder's building block.
+    #[inline]
+    pub fn square_n(&self, k: usize) -> Self {
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            Self::from_words(neon::square_n_words(self.uint.as_words(), k))
+        }
+        #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+        {
+            let mut v = *self;
+            for _ in 0..k {
+                v = v.square();
+            }
+            v
+        }
+    }
+
     /// Unreduced 256-bit carryless product `a · b` (no reduction step).
     /// Feed [`Self::reduce_wide`]; XOR of wide values is exact addition.
     #[inline]
@@ -187,33 +207,30 @@ impl BinaryFieldGF128 {
 
     /// `a^{-1}` via Fermat: `a^{-1} = a^{2^128 - 2}` for `a ≠ 0`.
     ///
-    /// `2^128 - 2 = 2 · (2^127 - 1)`, so we compute `b = a^{2^127 - 1}`
-    /// and return `b^2`. `b` is built via the standard "all-ones
-    /// exponent" loop: if `c_k = a^{2^k - 1}` then
-    /// `c_{k+1} = c_k^2 · a`. After 126 such steps from `c_1 = a`,
-    /// `c_127 = a^{2^127 - 1}`. Total cost: 127 squarings + 126 mults.
-    ///
-    /// # TODO — Itoh–Tsujii addition chain (deferred optimisation)
-    ///
-    /// For `GF(2^n)`, Itoh–Tsujii computes `a^{-1} = (a^{2^n - 2}) =
-    /// (a^r)^{2}` where `r = (2^{n-1} - 1)`, building `a^r` via the
-    /// recurrence `c_{k+m} = (c_k)^{2^m} · c_m`. The total cost is
-    /// `O(log n) mults + (n - 1) squarings` — for `GF(2^128)` that's
-    /// ~7 multiplications + 127 squarings, versus the naive 126 mults
-    /// + 127 squarings (an ~18× drop in multiplications). Worth doing
-    /// once the PIOP starts hitting inverses on a hot path (currently
-    /// the F_2 prove path doesn't; it's mostly mul + add).
+    /// `2^128 - 2 = 2 · (2^127 - 1)`: compute `T(127) = a^{2^127 - 1}`
+    /// by the **Itoh–Tsujii addition chain** on all-ones exponents —
+    /// `T(m+n) = T(m)^{2^n} · T(n)` — along
+    /// `1 → 2 → 3 → 6 → 12 → 24 → 48 → 96 → 120 → 126 → 127`, then
+    /// square once. Total: 127 squarings + **10** multiplications (the
+    /// naive all-ones ladder costs the same squarings + 126 mults). The
+    /// squaring runs ride the register-resident [`Self::square_n`].
     ///
     /// Panics if `self.is_zero()` — `0` has no multiplicative inverse.
     pub fn inverse(&self) -> Self {
         assert!(!self.is_zero(), "GF(2^128): zero has no inverse");
-        let mut c = *self; // c = a^{2^1 - 1} = a
-        for _ in 1..127 {
-            c = c.square();
-            c *= self;
-        }
-        // c = a^{2^127 - 1}. One more squaring → a^{2 · (2^127 - 1)} = a^{2^128 - 2}.
-        c.square()
+        let a = *self;
+        let t2 = a.square_n(1) * a; // a^{2^2 - 1}
+        let t3 = t2.square_n(1) * a; // a^{2^3 - 1}
+        let t6 = t3.square_n(3) * t3; // a^{2^6 - 1}
+        let t12 = t6.square_n(6) * t6;
+        let t24 = t12.square_n(12) * t12;
+        let t48 = t24.square_n(24) * t24;
+        let t96 = t48.square_n(48) * t48;
+        let t120 = t96.square_n(24) * t24;
+        let t126 = t120.square_n(6) * t6;
+        let t127 = t126.square_n(1) * a;
+        // T(127) = a^{2^127 - 1}; one squaring → a^{2·(2^127-1)} = a^{2^128-2}.
+        t127.square()
     }
 
     /// `self^exp` via binary square-and-multiply. `exp` is the natural-
@@ -1358,6 +1375,25 @@ pub(crate) mod neon {
             let r = reduce_256(lo, hi);
             let mut out = [0u64; 2];
             vst1q_u64(out.as_mut_ptr(), r);
+            out
+        }
+    }
+
+    /// `n` successive squarings with the value held in a vector register
+    /// throughout — one load, one store, no per-step `Uint` bounce. The
+    /// Itoh–Tsujii ladder's squaring runs.
+    #[inline]
+    pub(crate) fn square_n_words(a: &[u64; 2], n: usize) -> [u64; 2] {
+        // SAFETY: as `pmull_lo`.
+        unsafe {
+            let mut v = vld1q_u64(a.as_ptr());
+            for _ in 0..n {
+                let lo = pmull_lo(v, v);
+                let hi = pmull_hi(v, v);
+                v = reduce_256(lo, hi);
+            }
+            let mut out = [0u64; 2];
+            vst1q_u64(out.as_mut_ptr(), v);
             out
         }
     }
@@ -2941,6 +2977,34 @@ mod tests {
             }
             let inv = a.inverse();
             assert_eq!(a * inv, one);
+        }
+    }
+
+    /// The Itoh–Tsujii inverse equals the naive Fermat all-ones ladder
+    /// (the pre-optimisation implementation, inlined here as the
+    /// reference), and `square_n` equals repeated squaring.
+    #[test]
+    fn itoh_tsujii_matches_fermat_ladder() {
+        let mut rng = StdRng::seed_from_u64(0xF00D_129);
+        for _ in 0..200 {
+            let mut a = rand_elt(&mut rng);
+            if a.is_zero() {
+                a = BinaryFieldGF128::one();
+            }
+            let fermat = {
+                let mut c = a;
+                for _ in 1..127 {
+                    c = c.square();
+                    c *= &a;
+                }
+                c.square()
+            };
+            assert_eq!(a.inverse(), fermat, "IT vs Fermat");
+            let mut s = a;
+            for k in 0..9 {
+                assert_eq!(a.square_n(k), s, "square_n({k})");
+                s = s.square();
+            }
         }
     }
 
