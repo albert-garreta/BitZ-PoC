@@ -125,6 +125,48 @@ the mod-`q` Ligerito roundtrip with tamper / range / generator rejections, the
 NEON-vs-scalar field equivalence (`neon_mul_matches_scalar_pipeline`), and the
 serialization roundtrip + tampered-byte rejection.
 
+### CLI runner (`f2z`)
+
+`src/bin/f2z.rs` is a one-shot commit / prove / verify runner for a single
+shape — the runnable sibling of `benches/pcs.rs` (it's the package's only
+binary, so plain `cargo run` targets it):
+
+```sh
+RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- 24
+RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
+    28 17 11 --threads 1 --reps 5 --profile slim
+```
+
+`f2z <n> [<t> <s>] [--threads N] [--reps R] [--profile P] [--word-bits W]`:
+
+- `n` — total MLE variables (`2^n` committed bits at W=1). Omitting `t s`
+  uses the reference split `t ≈ 0.6n` (clamped to the packing constraint
+  `t + log₂W ≥ 7`; a note is printed if the shape forces `L > 1` chunks).
+- `--threads N` / `-j N` — rayon pool size (`1` = single-threaded;
+  default all cores / `RAYON_NUM_THREADS`).
+- `--reps R` — timing repetitions (medians reported; **every rep is
+  verified**; default 3).
+- `--profile` — Ligerito config, resolved exactly like the bench: `fast`
+  (default) / `slim` / `secure` (embedded profiles at `m = n ≥ 22`) or
+  `custom:<log_inv_rate>:<initial_k>` (validator-gated Johnson geometry);
+  below `m = 22` everything falls back to the ad-hoc test config
+  (UNAUDITED).
+- Integer guards are a **compile-time** feature: build with
+  `--features unchecked` for quotable numbers — the header self-reports
+  the active mode and warns otherwise.
+
+Output is one self-describing header (resolved geometry, thread count,
+guard mode) plus commit / prove / verify medians, peak heap (the same
+live-heap high-water notion as the bench), and the proof-size split:
+
+```text
+f2z: n=24 (t=15, s=9, W=1, m_p=17, chunks=1) | lig=fast@r1/2k4 | threads=10 | int guards: unchecked
+commit:       2.27 ms   peak    12.10 MB
+prove:       62.78 ms   peak    85.01 MB   (median of 3, verified)
+verify:       2.43 ms
+proof:       152.9 KiB  (forest-side 22.2 | s_v 2.0 | ligerito 125.4)
+```
+
 ### Reference measurement
 
 Single machine (Apple M4, `-C target-cpu=native`, median of 5), one genuine
@@ -251,6 +293,30 @@ catastrophic — n=28 commit measured 292 s ad-hoc vs tens of ms embedded).
 Measurement protocol (inherited from the zinc-plus lore): idle the box first;
 for quotable *time* numbers at big shapes run one shape per process (the peak
 numbers reset per shape and are fine in one sweep); quote medians.
+
+**Single-threaded** (n ≤ 28; `--no-default-features`, so no rayon — the
+sequential build; schedule L/4 throughout). Same k=4 default and `t ≈ 0.6n`
+shapes as above, one sweep. Proofs are **byte-identical** to the
+multi-threaded table (deterministic prover; threading changes only
+wall-clock), so only time and peak differ:
+
+| n | shape (t, s) | commit | forest+presum | ligerito open | prove | verify | prove peak | config |
+|---|---|---|---|---|---|---|---|---|
+| 16 | 10, 6 | 0.47 ms | 1.64 ms | 0.64 ms | 2.64 ms | 1.53 ms | 0.69 MB | adhoc r1/4 |
+| 18 | 12, 6 | 0.45 ms | 3.16 ms | 0.77 ms | 4.58 ms | 1.02 ms | 2.44 MB | adhoc r1/4 |
+| 20 | 13, 7 | 0.67 ms | 7.90 ms | 1.48 ms | 9.87 ms | 1.34 ms | 7.83 MB | adhoc r1/4 |
+| 22 | 14, 8 | 0.77 ms | 31.0 ms | 9.15 ms | 39.7 ms | 1.59 ms | 23.9 MB | k=4 r1/2 |
+| 24 | 15, 9 | 2.92 ms | 118 ms | 26.3 ms | 146 ms | 2.16 ms | 86.2 MB | k=4 r1/2 |
+| 26 | 16, 10 | 9.38 ms | 461 ms | 53.6 ms | 517 ms | 3.17 ms | 328 MB | k=4 r1/2 |
+| 28 | 17, 11 | 39.7 ms | 1.90 s | 180 ms | 2.09 s | 5.98 ms | 1.28 GB | k=4 r1/2 |
+
+The MT→ST prove ratio grows with n (~1.6× at n=22 to ~3.6× at n=28) as the
+forest fold parallelizes better at scale; verify and proof size are
+unchanged. The n=20→22 `config` step (adhoc r1/4 → k=4 r1/2) is the
+`sha_lig_configs` `m ≥ 22` boundary. Reproduce: `F2Z_BENCH_SHAPES="10:6:1
+12:6:1 13:7:1 14:8:1 15:9:1 16:10:1 17:11:1" F2Z_BENCH_REPS=3
+F2Z_LIG_PROFILE=custom:1:4 OBLONG_PROFILE=1 RUSTFLAGS="-C target-cpu=native"
+cargo bench --bench pcs --no-default-features --features unchecked`.
 
 **Packed-rows commit.** The harnesses generate the instance straight into
 per-column bit rows and commit via `commit_rs_ligerito_rows` — the `u128`

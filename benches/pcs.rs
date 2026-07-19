@@ -59,9 +59,17 @@ fn bench_lig_configs(m_p: usize) -> ((LigPc, LigVc), String) {
             it.next().and_then(|x| x.parse().ok()).expect("custom:<log_inv_rate>:<initial_k>");
         let k0: usize =
             it.next().and_then(|x| x.parse().ok()).expect("custom:<log_inv_rate>:<initial_k>");
-        let cfg = custom_johnson_config(m_p + LOG_PACKING, r0, k0);
-        let pair = cfg.to_prover_verifier_configs().expect("custom config pair");
-        return (pair, format!("custom-k{k0}"));
+        // `custom_johnson_config` needs an embedded template (m = 22..=35);
+        // below that, fall back to the ad-hoc config — the same boundary as
+        // `sha_lig_configs`, so a `custom:*` sweep mirrors the library default.
+        if m_p + LOG_PACKING >= 22 {
+            let cfg = custom_johnson_config(m_p + LOG_PACKING, r0, k0);
+            let pair = cfg.to_prover_verifier_configs().expect("custom config pair");
+            return (pair, format!("custom-k{k0}"));
+        }
+        let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
+            .expect("adhoc cfg");
+        return (pair, "adhoc".to_string());
     }
     let (lig_cfg, tag): (LigConfig, &str) = if prof == "r8" {
         // Base RS rate 1/8 via the ad-hoc UDR generator, at the embedded

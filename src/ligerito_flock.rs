@@ -298,17 +298,28 @@ pub fn commit_rs_ligerito_packed(
 }
 
 /// The Ligerito config pair for a SHA-shaped opening at `m_p` packed
-/// variables: the audited embedded FAST profile where it exists
-/// (`m = m_p + 7 ≥ 22`, i.e. every deployed SHA size `nv ≥ 12`), the
-/// ad-hoc `default_config` below (UDR, unaudited — test shapes only).
+/// variables. For the deployed regime (`m = m_p + 7 = 22..=35`, i.e. every
+/// deployed SHA size `nv ≥ 12`) the default is the best rate-1/2 config we
+/// found: a validator-gated Johnson-regime config at base rate 1/2 (`r0 = 1`)
+/// with `initial_k = 4` — 183 L0 queries + 16-bit query grinding, a smaller
+/// proof than the k=6 Fast profile at the same rate. Below `m = 22` it falls
+/// back to the ad-hoc `default_config` (UDR, unaudited — test shapes only).
 /// Prover and verifier both derive their config here.
 pub fn sha_lig_configs(m_p: usize) -> Result<(LigProverConfig, LigVerifierConfig), String> {
-    let cfg = if m_p + LOG_PACKING >= 22 {
-        LigConfig::Embedded(ligerito::LigeritoProfile::Fast)
-    } else {
-        LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 }
-    };
-    lig_configs(m_p, cfg)
+    let m = m_p + LOG_PACKING;
+    if m < 22 {
+        // Ad-hoc UDR config for small/test shapes (unaudited).
+        return lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 });
+    }
+    // Default (m = 22..=35): the best rate-1/2 config we found — Johnson-regime,
+    // base rate 1/2 (r0 = 1), initial_k = 4 (183 L0 queries + 16-bit query
+    // grinding), built via flock's validator-gated `custom_johnson_config` from
+    // the embedded slim TOML template. f2z-pcs reads `initial_k` from the config,
+    // so the k = 4 batch needs no extra wiring.
+    if ligerito::embedded_security_config(m, ligerito::LigeritoProfile::Slim).is_none() {
+        return Err(format!("no embedded ligerito template for m={m}"));
+    }
+    custom_johnson_config(m, 1, 4).to_prover_verifier_configs()
 }
 
 /// [`commit_rs_flock_with`] at the shape in `cfg` (the BaseFold backend's
