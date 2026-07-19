@@ -146,7 +146,30 @@ of a ladder, each step validated in-window:
 * GHASH-side EOR3 in the 0x87 fold: **tried and rejected** — it slowed
   GHASH itself (+13 % batch, +9 % chain, +18 % squares; the SHA3-unit op
   costs latency/ports where a plain EOR tree runs on any SIMD pipe), so the
-  baseline stays verbatim-upstream.
+  baseline stays verbatim-upstream;
+* GHASH-shaped PMULL fold (`mul_pfold`, 2026-07-19 revisit): reduce via
+  `X^128 ≡ X² + X = 0x6` with instruction-for-instruction GHASH's 3-PMULL
+  `0x87` fold (lane-aligned, no cross-lane bit-127 extraction), then the
+  bit-127 canonicalization (`X^127 ≡ X + 1`) that a degree-128 modulus
+  never owes: **rejected**, 0.71× vs GF128 in-window (1.17 vs 0.83 ns
+  batch) — 7 PMULLs *plus* a serial canonicalization tail loses to both
+  GHASH and the BCAX shift fold. The reduction cannot be bought back with
+  PMULLs; the canonicalization is the irreducible tax of the
+  lane-misaligned degree.
+
+Both escape directions are thereby measured shut: spending *fewer* PMULLs
+on the product (Karatsuba, 0.74×) and spending the reduction *on* the
+PMULL ports like GHASH (pfold, 0.71×) each lose to the balanced BCAX
+endpoint, which itself sits at 0.88–0.96× on the prover-dominant patterns.
+And the ceiling is analytic, not just empirical: the one b127 multiply
+that ties GHASH exactly is the `0x6` fold on a **relaxed** (bit-127-
+allowed, non-canonical) representation — byte-identical to GHASH's
+instruction sequence with only the fold constant swapped, hence exactly
+1.00× by construction — at the price of forfeiting canonical equality,
+hashing and serialization (two representations per element; every Eq /
+transcript-absorb / codec boundary must canonicalize). Parity is the hard
+ceiling for b127 multiplication on this core; "+20–30 %" is unreachable
+against this baseline.
 
 ### 4.3 Cross-validation — Reilabs' own bench on the same box
 
@@ -193,7 +216,11 @@ proof sizes.
    F2Z's PMULL-fold GHASH on Apple M4, b127 is 0.88–1.02× — equal at best
    (squares, wide-dot), ~10 % behind on the patterns that dominate the
    prover. A swap would cost ~5–10 % prover time here; it would pay only on
-   CLMUL-port-constrained hardware.
+   CLMUL-port-constrained hardware. (Re-confirmed 2026-07-19 on a fresh
+   build: 0.88–1.04× across the table, and the remaining untried
+   direction — a PMULL-ported b127 reduction, `mul_pfold` — measured
+   0.71×, closing the "optimize it differently" escape; see the ceiling
+   argument at the end of §4.2.)
 3. The swap is in any case blocked by the ring-switch packing
    (`[K:F_2] = 2^7`) and flock's GHASH-native Ligerito; the prime-order
    generator-check simplification and the unchanged chunk geometry are real

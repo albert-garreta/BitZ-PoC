@@ -413,6 +413,37 @@ fn run_b127_kara(reps: usize) {
     );
 }
 
+/// B127-only extra: the GHASH-shaped PMULL-fold multiply (3-PMULL `0x6`
+/// reduction + bit-127 canonicalization) paired against the GF128
+/// baseline itself on the batch shape — the "buy the reduction with
+/// PMULLs, exactly like GHASH does" endpoint. The sequence is
+/// structurally GHASH's plus the canonicalization tax, so parity is its
+/// ceiling; the row measures the tax.
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+fn run_b127_pfold(reps: usize) {
+    let ga = gen_vec::<BinaryFieldGF128>(N_BATCH, 0xA11CE);
+    let gb = gen_vec::<BinaryFieldGF128>(N_BATCH, 0xB0B);
+    let ba = gen_vec::<BinaryFieldB127>(N_BATCH, 0xA11CE);
+    let bb = gen_vec::<BinaryFieldB127>(N_BATCH, 0xB0B);
+    let mut o1 = vec![BinaryFieldGF128::zero(); N_BATCH];
+    let mut o2 = vec![BinaryFieldB127::zero(); N_BATCH];
+    let (g, p) = time_pair_ns_per_op(
+        reps,
+        N_BATCH,
+        || {
+            batch_mul(black_box(&ga), black_box(&gb), black_box(&mut o1));
+            o1[N_BATCH - 1]
+        },
+        || {
+            for ((x, y), out) in ba.iter().zip(bb.iter()).zip(o2.iter_mut()) {
+                *out = x.mul_pfold(y);
+            }
+            o2[N_BATCH - 1]
+        },
+    );
+    print_row("mul/batch b127-pfold", g, p);
+}
+
 fn main() {
     let reps: usize =
         std::env::var("F2Z_BENCH_REPS").ok().and_then(|v| v.parse().ok()).unwrap_or(5);
@@ -432,4 +463,6 @@ fn main() {
 
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     run_b127_kara(reps);
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    run_b127_pfold(reps);
 }

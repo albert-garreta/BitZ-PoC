@@ -280,6 +280,25 @@ impl BinaryFieldB127 {
         ))
     }
 
+    /// Reduced multiply via the GHASH-SHAPED reduction — the measurement
+    /// complement to [`Self::mul_karatsuba`]: keep the schoolbook product
+    /// but buy the reduction ON the PMULL ports. `X^128 ≡ X² + X = 0x6`,
+    /// so the high half folds with 3 PMULLs against `0x6`, instruction-
+    /// for-instruction GHASH's `0x87` fold (lane-aligned, no cross-lane
+    /// bit-127 extraction) — plus the bit-127 canonicalization
+    /// (`X^127 ≡ X + 1`) that a degree-128 modulus never owes. The
+    /// sequence is therefore GHASH's + the canonicalization tax: parity
+    /// with GF128 is its structural ceiling, and the field bench row
+    /// measures the tax. Value-identical to `self * rhs`.
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[inline]
+    pub fn mul_pfold(&self, rhs: &Self) -> Self {
+        Self::from_words(neon::mul_words_pfold(
+            self.uint.as_words(),
+            rhs.uint.as_words(),
+        ))
+    }
+
     /// `self^exp` via binary square-and-multiply. `exp` is the natural-
     /// number exponent in `[0, 2^32)`.
     pub fn pow_u32(&self, mut exp: u32) -> Self {
@@ -1163,8 +1182,8 @@ use crate::poly::univariate::binary_gf128::neon as gf128_neon;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 pub(crate) mod neon {
     use core::arch::aarch64::{
-        uint64x2_t, vdupq_n_u64, veorq_u64, vextq_u64, vld1q_u64, vshlq_n_u64, vsriq_n_u64,
-        vst1q_u64,
+        uint64x2_t, vdupq_n_u64, veorq_u64, vextq_u64, vld1q_u64, vshlq_n_u64, vshrq_n_u64,
+        vsriq_n_u64, vst1q_u64,
     };
     #[cfg(not(target_feature = "sha3"))]
     use core::arch::aarch64::vandq_u64;
@@ -1276,6 +1295,64 @@ pub(crate) mod neon {
             let vb = vld1q_u64(b.as_ptr());
             let (lo, hi) = clmul_256_kara(va, vb);
             let r = reduce_256_b127(lo, hi);
+            let mut out = [0u64; 2];
+            vst1q_u64(out.as_mut_ptr(), r);
+            out
+        }
+    }
+
+    /// Reduce a 256-bit product `(lo, hi)` modulo `X^127 + X + 1` via the
+    /// GHASH-SHAPED PMULL fold — the alternative that spends the
+    /// reduction on the PMULL ports instead of the shift/logical pipes.
+    ///
+    /// `X^128 ≡ X² + X = 0x6 (mod f)`, so the high 128 bits fold exactly
+    /// as GHASH's do against `0x87`: `hi ⊗ 0x6` via two PMULLs (word
+    /// layout `w0 = y0, w1 = y1 ^ z0, w2 = z1 ≤ 2 bits`), then the word-2
+    /// spill refolds through a third PMULL. Lane-aligned throughout — the
+    /// cross-lane bit-127 extraction of [`reduce_256_b127`] never
+    /// happens. What GHASH does NOT owe afterwards is the
+    /// canonicalization: the folded 128-bit value may set bit 127, which
+    /// `X^127 ≡ X + 1` folds back (SHR + EXT + SHL/EOR + BCAX; the
+    /// non-SHA3 fallback spends one more EOR). Structurally this is
+    /// GHASH's `reduce_256` + that tax, which is the point of measuring
+    /// it: it upper-bounds b127-with-PMULL-reduction at GHASH parity.
+    #[inline(always)]
+    pub(crate) unsafe fn reduce_256_b127_pfold(lo: uint64x2_t, hi: uint64x2_t) -> uint64x2_t {
+        // SAFETY: as `reduce_256_b127`.
+        unsafe {
+            let g = vdupq_n_u64(0x6);
+            let p0 = pmull_lo(hi, g); // (X²+X)·p2 = [y0, y1], y1 ≤ 2 bits
+            let p1 = pmull_hi(hi, g); // (X²+X)·p3 = [z0, z1], z1 ≤ 2 bits
+            let z = vdupq_n_u64(0);
+            // r ← lo ⊕ (hi ⊗ 0x6) words 0–1.
+            let r = veorq_u64(lo, veorq_u64(p0, vextq_u64::<1>(z, p1)));
+            // word-2 spill (z1): X^128·z1 ≡ 0x6·z1, lands in word 0.
+            let r = veorq_u64(r, pmull_lo(vextq_u64::<1>(p1, z), g));
+            // Canonicalize bit 127: c = r >> 127; r' = (r \ bit127) ⊕ 3c.
+            let c = vextq_u64::<1>(vshrq_n_u64::<63>(r), z); // [c, 0]
+            let fold = veorq_u64(vshlq_n_u64::<1>(c), c); // [3c, 0]
+            #[cfg(target_feature = "sha3")]
+            {
+                // fold ⊕ (r & ~bit127) in one BCAX.
+                vbcaxq_u64(fold, r, vld1q_u64(TOP_BIT.as_ptr()))
+            }
+            #[cfg(not(target_feature = "sha3"))]
+            {
+                veorq_u64(vandq_u64(r, vld1q_u64(MASK127.as_ptr())), fold)
+            }
+        }
+    }
+
+    /// Reduced multiply via the GHASH-shaped PMULL fold (bench
+    /// alternative; value-identical to [`mul_words`]).
+    #[inline(always)]
+    pub(crate) fn mul_words_pfold(a: &[u64; 2], b: &[u64; 2]) -> [u64; 2] {
+        // SAFETY: as `mul_words`.
+        unsafe {
+            let va = vld1q_u64(a.as_ptr());
+            let vb = vld1q_u64(b.as_ptr());
+            let (lo, hi) = clmul_256(va, vb);
+            let r = reduce_256_b127_pfold(lo, hi);
             let mut out = [0u64; 2];
             vst1q_u64(out.as_mut_ptr(), r);
             out
@@ -1636,6 +1713,11 @@ mod tests {
                     neon::mul_words_kara(a.words(), b.words()),
                     *(a * b).words(),
                     "kara vs schoolbook"
+                );
+                assert_eq!(
+                    neon::mul_words_pfold(a.words(), b.words()),
+                    *(a * b).words(),
+                    "pfold vs schoolbook"
                 );
             }
         }
