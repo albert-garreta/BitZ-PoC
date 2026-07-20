@@ -18,10 +18,10 @@
 //! - `F2Z_BENCH_REPS`: timing repetitions per shape (median reported;
 //!   default 5).
 //! - `F2Z_LIG_PROFILE`: embedded Ligerito profile at `m = m_p + 7 ≥ 22` —
-//!   `fast` (default; base RS rate 1/2), `slim` (base RS rate 1/4, fewer
-//!   queries + 16-bit grinding, same 100-bit target), `secure` (120-bit
-//!   UDR). Below m = 22 every profile falls back to the ad-hoc rate-1/4
-//!   config (unaudited, test-only).
+//!   `slim` (default; base RS rate 1/8, k=4 — fewer queries + 16-bit
+//!   grinding at the same 100-bit target, the proof-size profile), `fast`
+//!   (base RS rate 1/2), `secure` (120-bit UDR). Below m = 22 every profile
+//!   falls back to the ad-hoc rate-1/4 config (unaudited, test-only).
 //!
 //! Protocol notes (from the zinc-plus measurement lore): idle the box first;
 //! for quotable *time* numbers at big shapes run one shape per process (the
@@ -79,9 +79,11 @@ fn bench_lig_configs(m_p: usize) -> ((LigPc, LigVc), String) {
         (LigConfig::Adhoc { log_batch: 6, log_inv_rate: 3 }, "adhoc-udr")
     } else if m_p + LOG_PACKING >= 22 {
         match prof.as_str() {
-            "slim" => (LigConfig::Embedded(LigeritoProfile::Slim), "slim"),
+            "fast" => (LigConfig::Embedded(LigeritoProfile::Fast), "fast"),
+            "slim3" => (LigConfig::Embedded(LigeritoProfile::Slim3), "slim3"),
             "secure" => (LigConfig::Embedded(LigeritoProfile::Secure), "secure"),
-            _ => (LigConfig::Embedded(LigeritoProfile::Fast), "fast"),
+            // unset (default) or unrecognized → slim, the default profile
+            _ => (LigConfig::Embedded(LigeritoProfile::Slim), "slim"),
         }
     } else {
         (LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 }, "adhoc")

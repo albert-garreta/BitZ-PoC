@@ -137,17 +137,21 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
     28 17 11 --threads 1 --reps 5 --profile slim
 ```
 
-`f2z <n> [<t> <s>] [--threads N] [--reps R] [--profile P] [--word-bits W]`:
+`f2z <n> [<t> <s> [<W>]] [--threads N] [--reps R] [--profile P] [--word-bits W]`:
 
-- `n` — total MLE variables (`2^n` committed bits at W=1). Omitting `t s`
-  uses the reference split `t ≈ 0.6n` (clamped to the packing constraint
-  `t + log₂W ≥ 7`; a note is printed if the shape forces `L > 1` chunks).
+- `n` — cell-index MLE variables, `n = t + s` (`2^n · W` committed bits).
+  Omitting `t s` uses the reference split `t ≈ 0.6n` (clamped to the
+  packing constraint `t + log₂W ≥ 7`; a note is printed if the shape
+  forces `L > 1` chunks). `W` as a fourth positional sets the cell width
+  (power of two, default 1; equivalent to `--word-bits`) — e.g. the
+  reference W=32 shape: `f2z 12 4 8 32`.
 - `--threads N` / `-j N` — rayon pool size (`1` = single-threaded;
   default all cores / `RAYON_NUM_THREADS`).
 - `--reps R` — timing repetitions (medians reported; **every rep is
   verified**; default 3).
-- `--profile` — Ligerito config, resolved exactly like the bench: `fast`
-  (default) / `slim` / `secure` (embedded profiles at `m = n ≥ 22`) or
+- `--profile` — Ligerito config, resolved exactly like the bench: `slim`
+  (default; rate 1/4, k=4) / `slim3` (rate 1/8, k=4) / `fast` (rate 1/2,
+  k=4) / `secure` (embedded profiles at `m = n ≥ 22`) or
   `custom:<log_inv_rate>:<initial_k>` (validator-gated Johnson geometry);
   below `m = 22` everything falls back to the ad-hoc test config
   (UNAUDITED).
@@ -157,7 +161,8 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
 
 Output is one self-describing header (resolved geometry, thread count,
 guard mode) plus commit / prove / verify medians, peak heap (the same
-live-heap high-water notion as the bench), and the proof-size split:
+live-heap high-water notion as the bench), and the proof-size split
+(shown here for `--profile fast`):
 
 ```text
 f2z: n=24 (t=15, s=9, W=1, m_p=17, chunks=1) | lig=fast@r1/2k4 | threads=10 | int guards: unchecked
@@ -203,15 +208,21 @@ F2Z_BENCH_SHAPES="10:6:1 14:8:1" F2Z_BENCH_REPS=5 \
   RUSTFLAGS="-C target-cpu=native" cargo bench --bench pcs --features unchecked
 ```
 
+`scripts/bench_csv.sh` sweeps shapes × profiles one process at a time (the
+measurement protocol) and writes one CSV row per run —
+`scripts/bench_csv.sh -p "fast,slim,slim3" --phases` covers the reference
+shapes; `--big` appends n=30–32 (memory-healthy box required), `-j 1`
+single-threads, `-h` for all knobs. Output lands in `bench_results/`.
+
 Prover knobs (every configuration produces byte-identical proofs):
 `F2Z_EQF_FUSE=0` disables pass fusion (restores the eager two-pass fold);
 `F2Z_LUT3=0` disables the deeper L/4 LUT prefixes; `F2Z_EQF_NOKERNEL=1`
 forces the generic (non-NEON) round/fold kernels (diagnostic);
 `F2_FOREST_SCHEDULE=l8` opts into the L/8 forest memory schedule.
-`F2Z_LIG_PROFILE` (bench-only, changes the proof: `fast` default / `slim`
+`F2Z_LIG_PROFILE` (bench-only, changes the proof: `slim` default / `fast`
 / `secure` / `r8` = ad-hoc UDR rate-1/8 probe /
 `custom:<log_inv_rate>:<initial_k>`) selects the Ligerito profile; the
-shape header prints the resolved geometry (`lig=fast@r1/2k4`) — see the
+shape header prints the resolved geometry (`lig=slim@r1/8k4`) — see the
 RS rate study below.
 
 Performance parity with upstream: the release profile carries the upstream

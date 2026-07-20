@@ -21,7 +21,8 @@
 //! - `--threads N` / `-j N` — rayon pool size; `1` = single-threaded.
 //!   Default: all cores (or `RAYON_NUM_THREADS`).
 //! - `--reps R` — timing repetitions (median reported; default 3).
-//! - `--profile P` — Ligerito config: `fast` (default) | `slim` | `secure`
+//! - `--profile P` — Ligerito config: `slim` (default, rate 1/4) | `slim3`
+//!   (rate 1/8) | `fast` (rate 1/2) | `secure`
 //!   (the embedded profiles) | `custom:<log_inv_rate>:<initial_k>`
 //!   (validator-gated Johnson geometry). Below `m = n < 22` every choice
 //!   falls back to the ad-hoc test config (UNAUDITED).
@@ -129,7 +130,7 @@ fn median(mut v: Vec<f64>) -> f64 {
 fn usage() -> ! {
     eprintln!(
         "usage: f2z <n> [<t> <s> [<W>]] [--threads N] [--reps R] \
-         [--profile fast|slim|secure|custom:<log_inv_rate>:<initial_k>] [--word-bits W]\n\
+         [--profile slim|slim3|fast|secure|custom:<log_inv_rate>:<initial_k>] [--word-bits W]\n\
          (n = t + s; W = cell width, power of two, default 1;\n\
           run with --release and --features unchecked for quotable numbers;\n\
           -C target-cpu=native is load-bearing on aarch64)"
@@ -155,7 +156,7 @@ fn parse_args() -> Opts {
         s: None,
         threads: None,
         reps: 3,
-        profile: "fast".to_string(),
+        profile: "slim".to_string(),
         word_bits: 1,
     };
     let mut args = std::env::args().skip(1);
@@ -243,6 +244,7 @@ fn resolve_configs(
         match profile {
             "fast" => (LigConfig::Embedded(LigeritoProfile::Fast), "fast"),
             "slim" => (LigConfig::Embedded(LigeritoProfile::Slim), "slim"),
+            "slim3" => (LigConfig::Embedded(LigeritoProfile::Slim3), "slim3"),
             "secure" => (LigConfig::Embedded(LigeritoProfile::Secure), "secure"),
             other => {
                 eprintln!("unknown profile: {other}");
