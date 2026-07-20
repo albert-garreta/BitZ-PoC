@@ -196,7 +196,10 @@ $
 \Relation_{\cC, \comfield}^{Q}$ to $\Relation_{\cC, \comfield}^{\mathsf{eval}}$, 
 where $$Q(Y_1, \ldots, Y_{\codedim_1+1}, Z_1, \ldots, Z_{\codedim_1}) = \prod_{i=1}^{\codedim_1} P(Y_i, Z_i) - Y_{\codedim_1+1}.$$ 
 %
-We  assume the prover and verifier have access to an IOPP for $\Relation_{\cC_{\codedim}, \comfield}^{\mathsf{eval}}$. Further, we let $\cC_{\ell_1}$ be a code over $\comfield$ of dimension $\ell_1$ and blocklength $\codelength_1$, and we  assume that prover and verifier have access to an IOR that reduces $(\Relation_{\cC_{\codedim_1}, \comfield}^{Q})^{\codedim_2}$ to $\Relation_{\cC, \comfield}^{\mathsf{eval}}$.  
+We  assume the prover and verifier have access to an IOPP for $\Relation_{\cC_{\codedim}, \comfield}^{\mathsf{eval}}$.  
+
+
+Further, we let $\cC_{\ell_1}$ be a code over $\comfield$ of dimension $\ell_1$ and blocklength $\codelength_1$, and we  assume that prover and verifier have access to an IOR that reduces $(\Relation_{\cC_{\codedim_1}, \comfield}^{Q})^{\codedim_2}$ to $\Relation_{\cC, \comfield}^{\mathsf{eval}}$.  We describe one such IOR in \cref{?}, for the case when $\cC$ is an $\ell_2$-interleaving of $\ell_1$.
 
 
 
@@ -208,7 +211,7 @@ Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with suf
 
 \begin{enumerate}[leftmargin=*]
 \item The prover sends $\mu_1', \ldots, \mu_{\ell_2}'\in \ZZ$ such that $\langle \bff_{*j}, \psievalfield^{-1}(\vv^{(1)})\rangle = \mu_j'$. 
-\item The verifier checks that $\sum_{j\in [\ell_1]} \psievalfield(\mu_j')\cdot \vv_j^{(2)}  = \mu$. 
+\item The verifier checks that $\sum_{j\in [\ell_1]} \psievalfield(\mu_j')\cdot \vv_j^{(2)}  = \mu$.  \albert{We could have the prover commit to the $\mu_j'$ and have this checked proved by the PCS (a PCS that can prove linear constraints like WHIR). This pays off for very large $\codedim$.}
 \item Prover and verifier define $\bm{\gamma}_i = \psievalfield^{-1}(\vv_i^{(1)})$ for $i \in [\ell_1]$, and set to prove the following claim:
 %
 $$
@@ -275,17 +278,24 @@ where $2^{-1}$ denotes the inverse of $2$ modulo $q$.
 Hence AND and Majority can be expressed over $\FF_q$ as  linear expressions of a vectors of the form $\pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff)))$, with $\bff$ containing only the original elements for which we compute AND and Majority. 
 
 
-We next provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$. 
+\bigskip
 
+We next provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$. Similarly as before, we assume our input vectors $\vv\in \evalfield^{\codedim'}$ admit a tensor structure of dimensions $\ell_1, \ell_2$ with $\ell'=\ell_1\cdot \ell_2$.
 \begin{construction}[IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$]\label{c:core_iop}
 The prover and verifier receive $\inp=(\mu, \vv,M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim'\times\codedim}$ and  $\oracle= f \in \comfield^n$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$. 
 
+ Define the vector $\bfg \in \bits^{\codedim'}$ as $\bfg = \pi_2^{-1}\left(M\cdot \pi_2(f)\right)$. Prover and verifier proceed exactly in the same way as in \cref{c:core_iop} given inputs 
+$$
+\inp' = (\mu, \vv),  \quad \wit' = \bfg,
+$$
+%
+except that 
 
 
 \begin{enumerate}[leftmargin=*]
-\item Define the vector $\bfg \in \bits^{\codedim'}$ as $\bfg = \pi_2^{-1}\left(M\cdot \pi_2(f)\right)$. Prover and verifier execute \cref{c:core_iop} with the following inputs:
+\item Prover and verifier execute \cref{c:core_iop} with the following inputs:
 $$
-\inp' = (\mu, \vv), \quad \oracle'=g, \quad \wit' = 
+\inp' = (\mu, \vv), \quad \oracle'= , \quad \wit' = \bfg
 $$
 \end{enumerate}
 \end{construction}
@@ -293,7 +303,7 @@ $$
 
 
 \section{Case-study: SHA-256 hashing}
-
+\albert{Maybe Blake3 better? (When comparing to Flock), because of the manu adds mod $2^{32}$}
 \subsection{Arithmetization over $\ZZ[X]$}
 
 \subsubsection{SHA-256 compression overview}
@@ -365,7 +375,10 @@ The full SHA-256 compression function adds the initial state to the terminal sta
 \subsection{End-to-end IOP}
 
 \subsection{Experiments}
-\albert{Comparison with Flock on SHA256: we commit to 8x less bits. This leads to more than 2x memory reduction. 80\% of prover costs are in the grand product GKR. Hence setting rate=1/4 or smaller has little impact on performance. This leads to smaller proofs. Prover time overall seems to be about 1.5-2.5x worse for us}
+
+\albert{GHASH or b127?}
+
+\albert{Comparison with Flock on SHA256: we commit to 8x less bits. This leads to more than 2x memory reduction. 80\% of prover costs are in the grand product GKR. Hence setting rate=1/4 or smaller has little impact on performance. This leads to smaller proofs. Prover time overall seems to be about 1.5-2.5x worse for us. I also switched to a better config of Ligerito (called k=4 in impl), which reduces proof size by almost 2x, but increases open time, which for us adds a negligible overhead, while in Flock it adds more overhead}
 
 \appendix
 
