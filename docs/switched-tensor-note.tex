@@ -1,0 +1,642 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1.15in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=blue!60!black,citecolor=blue!60!black,urlcolor=blue!60!black]{hyperref}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{claim}[theorem]{Claim}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{remark}[theorem]{Remark}
+
+\newcommand{\K}{\mathbb{K}}
+\newcommand{\F}{\mathbb{F}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\eq}{\mathrm{eq}}
+\newcommand{\INT}{\mathrm{INT}}
+\newcommand{\MLE}{\mathrm{MLE}}
+\newcommand{\fp}{\mathrm{fp}}
+\newcommand{\ord}{\mathrm{ord}}
+\newcommand{\salt}{\mathrm{salt}}
+\newcommand{\ip}[2]{\langle #1,\, #2\rangle}
+\newcommand{\mhat}[1]{\widehat{#1}}
+
+\title{Switched-Tensor Lookup Certification for Wide-Word\\
+Integer Evaluation over Binary Fields\\[0.6ex]
+\large A working note}
+\author{F2Z project notes}
+\date{2026-07-20 \quad (v0.1 --- design note; costs are modeled, not measured)}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We consider polynomial commitment schemes for $W$-bit integer data committed
+bit-wise over a characteristic-two field, where an evaluation claim
+$y=\MLE[\INT(D)](r)\bmod q$ is reduced to weighted integer folds carried in
+the exponent of $\K=\F_{2^{128}}$ and certified by grand-product GKR
+(``forest'') arguments. The deployed certification costs one bit-affine leaf
+per committed bit and is therefore blind to the word width $W$: at equal
+total bit count, wide-word instances cannot outperform $W=1$ instances. We
+describe a \emph{switched tensor order} for the per-leaf weights
+$w_b\cdot 2^j$: the narrow place-value factors $2^j$ are moved to the outer
+(aggregation) axis, where they are handled in the clear, and the wide
+$\sim\!100$-bit evaluation weights $w_b$ are moved into \emph{public}
+lookup tables shared by all $W$ bit-planes. The sharing shrinks the table
+side of the lookup argument by a factor of exactly $W$, which is the term
+that made previous lookup-based designs uncompetitive. Queries are bound by
+a characteristic-two-sound certificate; we give two instantiations, a
+multiplicative grand-product multiset argument built entirely from the
+deployed forest machinery, and a multiplicity-free logarithmic-derivative
+(pushforward) argument. We prove soundness of the multiset instantiation,
+give a cost model placing the prover at $\approx 0.8$--$1.05\times$ the
+per-bit baseline (i.e.\ a modeled speedup of $\approx 0.95$--$1.3\times$,
+against a required decision bar of $1.5\times$), and specify the
+measurement gate that must adjudicate the design. A by-product of the
+construction is that weight chunking disappears entirely: the wide weights
+never meet the exponent-capacity bound.
+\end{abstract}
+
+\section{Introduction}\label{sec:intro}
+
+\paragraph{Setting.}
+A prover commits to a bit tensor
+$D\in\{0,1\}^{2^t\times W\times 2^s}$, $W=2^w$, interpreted as a
+$2^t\times 2^s$ matrix of $W$-bit integers
+$\INT(D)(b,c)=\sum_{j<W}2^j\,D(b,j,c)$, for a total of
+$N=2^{t+w+s}$ committed bits. The commitment is a linear-map-friendly PCS
+over $\F_2$ (in the reference implementation: a ring-switched, recursively
+composed proximity-tested code) whose openings discharge multilinear
+evaluation claims about the committed bits over $\K=\F_{2^{128}}$. The
+statement is a wide-modulus evaluation
+\[
+y \;=\; \sum_{b,c} \eq(b,r_1)\,\eq(c,r_2)\cdot \INT(D)(b,c) \pmod q,
+\qquad q = 2^{100}-15 .
+\]
+Lifting the row weights to canonical representatives
+$w_b := \eq(b,r_1)\bmod q\in[0,q)$ and keeping the column weights
+$w'_c:=\eq(c,r_2)\in\F_q$ at full width, the claim factors through the
+per-column integer folds
+\begin{equation}\label{eq:fold}
+u_c \;=\; \sum_b w_b\cdot \INT(D)(b,c) \;\in\;\Z_{\ge 0},
+\qquad
+y \;=\; \sum_c w'_c\, u_c \pmod q .
+\end{equation}
+Characteristic two prohibits certifying \eqref{eq:fold} by a sumcheck over
+$\K$ (integers lifted into $\K$ collapse to parity), so the fold rides
+\emph{multiplicatively}: for a generator $\alpha$ of $\K^\times$
+(of order $\ord(\alpha)=2^{128}-1$), the map $n\mapsto\alpha^n$ is
+injective on $[0,2^{128}-1)$, and the prover certifies $\alpha^{u_c}$ as a
+grand product of \emph{bit-affine leaves}
+\[
+\ell(b,j) \;=\; 1 + D(b,j,c)\cdot\bigl(\alpha^{w_b 2^j}-1\bigr)
+\;=\; \bigl(\alpha^{w_b 2^j}\bigr)^{D(b,j,c)},
+\]
+one per committed bit, by a lazy merged GKR product forest. The bases
+$\alpha^{w_b 2^j}$ are \emph{public}; the leaf-layer claim is linear in the
+committed bits and discharges through the PCS opening at no extra
+certification cost. Because $u_c$ may exceed the exponent capacity, the
+weights are chunked into $c_w$-bit limbs with $c_w = 127-t-W$ and the
+protocol repeats per limb; this detail is orthogonal here and, as we will
+see, vanishes in the present construction.
+
+\paragraph{The question.}
+The prover cost of the baseline is $\Theta(N)$ multiplications in $\K$
+--- one bit-affine leaf, with its share of sumcheck rounds, per committed
+bit --- with a measured constant of $c_{\mathrm{bit}}\approx 10.5$\,ns per
+bit on the reference hardware. This cost is blind to $W$. Wide words carry
+visible structure (all $W$ bits of a cell share one row weight; within a
+cell, the bases form a Frobenius orbit $\alpha^{w_b2^j}=\varphi^j(\alpha^{w_b})$),
+and the question is whether any of it can push the prover \emph{below}
+one leaf per bit. Prior attempts in this project --- an octet-grouped
+lookup at $W=1$, a wide-outer tensor decomposition, base-$2^k$
+weight slicing --- were all measured or adjudicated at
+$\le 1.0\times$; a recurring accounting, which we record as
+Remark~\ref{rem:conservation}, explains why: certified work is paid per
+\emph{private} exponent bit, and only public-base precomputation absorbs
+weight width for free.
+
+\paragraph{Contribution.}
+We observe that the per-leaf weight $w_b\cdot 2^j$ is a tensor with a
+narrow factor ($2^j$, one nonzero bit) and a wide factor
+($w_b$, $\sim\!100$ bits), and that all prior designs placed the wide
+factor on the private (certified) axis. Switching the tensor order places:
+\begin{itemize}
+\item the \emph{wide} factors inside public lookup tables
+  $T_\beta[a]=\alpha^{\ip{a}{w_\beta}}$ indexed by octets of committed
+  bits --- the width-free position --- and, decisively, \emph{shared by
+  all $W$ bit-planes and all columns}, shrinking the lookup argument's
+  table side by a factor of $W$;
+\item the \emph{narrow} factors $2^j$ on the outer aggregation axis, where
+  they are handled in the clear (or by a companion commitment), never
+  inside a certified exponent.
+\end{itemize}
+Sections~\ref{sec:construction}--\ref{sec:soundness} give the construction
+and its soundness; Section~\ref{sec:costs} prices it honestly against the
+measured baseline and specifies the measurement gate. We emphasize
+up front that this note argues \emph{soundness}, not \emph{profit}: the
+cost model straddles the project's $1.5\times$ adoption bar, and four
+predecessor designs died at measurement.
+
+\section{Preliminaries}\label{sec:prelim}
+
+\paragraph{Notation.}
+$\K=\F_{2^{128}}$ with Frobenius $\varphi(x)=x^2$;
+$\varphi$ is a field automorphism fixing $\F_2$, of order $128$, so
+$\varphi^{-k}=\varphi^{128-k}$ is locally computable. $B=\{0,1\}$. For
+$x\in B^n$, $\eq(x,r)=\prod_i (x_ir_i+(1-x_i)(1-r_i))$. For
+$f:B^n\to\K$, $\mhat f$ denotes its multilinear extension and
+$\mhat f(r)=\sum_x \eq(x,r)f(x)$. $\alpha$ is a fixed
+verifier-checked generator of $\K^\times$. All committed vectors are
+$\F_2$-valued; the PCS discharges claims of the form
+$\sum_x \lambda(x)\,M(x)$ for public $\K$-valued $\lambda$ and committed
+bits $M$ (``linear read-offs''), and batched multilinear evaluations of
+$M$ at transcript-derived points.
+
+We use the merged product forest as a black box: given per-tree leaf
+vectors over $\K$, it certifies all tree roots with prover cost
+proportional to the number of leaves, at measured per-leaf constants
+$c_{\mathrm{bit}}$ (bit-affine leaves, public bases, free linear
+discharge) and $c_{\mathrm{dense}}\approx 2c_{\mathrm{bit}}$ (dense
+prover-supplied leaf values), plus a leaf-layer evaluation claim that the
+caller must discharge.
+
+\begin{lemma}[Twisted evaluation]\label{lem:twist}
+Let $f:B^n\to\K$ and let $f^{(2)}(x)=f(x)^2$ pointwise. Then for every
+$r\in\K^n$,
+\[
+\mhat{f^{(2)}}(r) \;=\; \Bigl(\, \mhat f\bigl(\varphi^{-1}(r)\bigr)
+\Bigr)^2 ,
+\]
+where $\varphi^{-1}$ is applied coordinate-wise. Iterating,
+$\mhat{f^{(2^k)}}(r)=\varphi^k\!\bigl(\mhat f(\varphi^{-k}(r))\bigr)$.
+\end{lemma}
+\begin{proof}
+Squaring is additive in characteristic two, so
+$\mhat f(s)^2=\sum_x \eq(x,s)^2 f(x)^2$. For $x_i\in\{0,1\}$ each factor
+of $\eq$ squares to
+$(x_is_i+(1-x_i)(1-s_i))^2 = x_is_i^2+(1-x_i)(1-s_i)^2
+= x_is_i^2+(1-x_i)(1-s_i^2)$,
+using $x_i^2=x_i$ and $(1-s)^2=1-s^2$ in characteristic two. Hence
+$\eq(x,s)^2=\eq(x,s^{(2)})$ with $s^{(2)}=(s_i^2)_i$, and substituting
+$s=\varphi^{-1}(r)$ gives the claim.
+\end{proof}
+
+\begin{remark}[Width conservation, informal]\label{rem:conservation}
+The statement \eqref{eq:fold} involves $q_{\mathrm{bits}}\cdot N$
+weight-bit$\times$data-bit products. A certified object whose private
+input is a $c$-bit committed index accounts for at most $c$ committed
+bits per query, while a \emph{public} table entry may absorb arbitrarily
+many weight bits at no certified cost. Consequently: private-base
+exponentiation pays one certified unit per exponent bit; public-base
+precomputation is width-free. The baseline leaf is the $c=1$ endpoint
+(one committed bit selecting one public constant, certificate free by
+linearity). The present construction is the $c=8$ point of the same
+family: eight committed bits select one of $256$ public constants, and
+the price of leaving the endpoint is a membership certificate. Everything
+in Section~\ref{sec:costs} is an accounting of that certificate.
+\end{remark}
+
+\section{The switched tensor order}\label{sec:construction}
+
+Fix the octet parameter $n_2=8$ (any $n_2\le 16$ works; $n_2=8$ is the
+knee in our model). Assume $t\ge 3$ and partition the row axis into
+octets: for $\beta\in[2^{t-3}]$ let
+$w_\beta=(w_{8\beta},\dots,w_{8\beta+7})$ and, for plane $j\in[W]$ and
+column $c$, let
+\[
+a_{j,\beta,c} \;=\;
+\bigl(D(8\beta+i,\, j,\, c)\bigr)_{i<8} \in B^8
+\]
+be the corresponding committed octet.
+
+\subsection{Public tables and the sharing factor}
+
+\begin{definition}[Row-octet tables]\label{def:tables}
+For each $\beta$, define the public table
+$T_\beta : B^8 \to \K^\times$,
+\[
+T_\beta[a] \;=\; \alpha^{\ip{a}{w_\beta}}
+\;=\; \prod_{i<8}\bigl(\alpha^{w_{8\beta+i}}\bigr)^{a_i}.
+\]
+\end{definition}
+There are $|E|=2^{t-3}\cdot 2^8 = 2^{t+5}$ table entries in total, built
+incrementally in one $\K$-multiplication per entry from the $2^t$ bases
+$\alpha^{w_b}$ (which both parties already compute in the baseline). Two
+properties are load-bearing:
+
+\emph{(i) Sharing.} $T_\beta$ depends only on the row octet --- not on
+the plane $j$ or the column $c$. All $W\cdot 2^s$ (plane, column) pairs
+query the same $2^{t+5}$ entries. A $W=1$ instance of the same total size
+has $2^{t+w}$ rows with pairwise distinct weights and hence $2^{t+w+5}$
+entries: the table side is a factor $W$ larger. This factor is the entire
+advantage of wide words, and it lands exactly on the terms (table
+construction, multiplicity bookkeeping, table-side certification) that
+dominated and killed the prior octet-grouped design at $W=1$.
+
+\emph{(ii) Product form.} $T_\beta$ is multilinear-with-multiplicative-
+structure in its index: for any $\rho\in\K^8$,
+\begin{equation}\label{eq:closedform}
+\sum_{a\in B^8}\eq(a,\rho)\,T_\beta[a]
+\;=\; \prod_{i<8}\Bigl((1-\rho_i) + \rho_i\,\alpha^{w_{8\beta+i}}\Bigr),
+\end{equation}
+so the verifier evaluates the table's multilinear extension at any point
+in $O(2^{t-3}\cdot 8)$ multiplications given the $\alpha^{w_b}$ --- the
+table is never committed and never materialized by the verifier.
+
+\subsection{Per-plane folds; chunking disappears}
+
+Write the statement with the place values outermost:
+\begin{equation}\label{eq:switched}
+u_c \;=\; \sum_{j<W} 2^j\, v_{j,c},
+\qquad
+v_{j,c} \;:=\; \sum_{\beta}\ip{a_{j,\beta,c}}{w_\beta}
+\;=\; \sum_b w_b\, D(b,j,c) .
+\end{equation}
+
+\begin{lemma}[Magnitude]\label{lem:magnitude}
+$0\le v_{j,c} < 2^t q < 2^{t+100}$. In particular, for $t\le 27$ every
+per-plane fold is individually below $2^{127}<\ord(\alpha)$, and the map
+$v\mapsto\alpha^v$ is injective on the occurring values.
+\end{lemma}
+
+The protocol therefore certifies the \emph{per-plane} folds $v_{j,c}$
+multiplicatively and performs the outer aggregation
+$u_c=\sum_j 2^j v_{j,c}$ and the read-off
+$y=\sum_c w'_c u_c \bmod q$ entirely in $\F_q$, on the clear (or
+committed, \S\ref{sec:committedfolds}) values $v_{j,c}$. Two consequences:
+
+\begin{itemize}
+\item \textbf{No weight chunking.} The wide weights live whole inside the
+public table entries; no certified exponent ever multiplies a weight by a
+cell value. The baseline's limb decomposition
+($c_w = 127-t-W$, $L=\lceil q_{\mathrm{bits}}/c_w\rceil$ instances) is
+gone for every $t\le 27$ and every $W$ --- in particular the forced
+$L=2$ of the baseline at $W=32$.
+\item \textbf{Payload.} There are $W\cdot 2^s$ per-plane folds instead of
+$2^s$ per-column folds. Sent in the clear they cost $16\,W2^s$ bytes
+(1\,MiB at $W=32$, $s=11$) and $W2^s$ verifier exponentiations; at scale
+the committed-fold companion of \S\ref{sec:committedfolds} is mandatory.
+\end{itemize}
+
+\begin{remark}[Why the plane axis is not folded in the exponent]
+\label{rem:wraparound}
+It is tempting to aggregate $\sum_j 2^j v_{j,c}$ inside the forest by
+Frobenius-twisted combines $x\cdot\varphi^{2^k}(y)\cdot C^{\kappa}$ with
+$C=\alpha^{-q}$ and committed correction digits $\kappa$, keeping
+intermediate exponents reduced modulo $q$. This is \emph{unsound as
+stated}: correction digits are constrained only by their committed
+widths, the representable corrections span far more than $128$ bits of
+freedom, and $\ord(\alpha)=2^{128}-1\not\equiv 0 \pmod q$ --- so a
+malicious prover can grind $\kappa$ to wrap the exponent around
+$\ord(\alpha)$ and shift the final value by a nonzero multiple of
+$\ord(\alpha)\bmod q$, changing the read-off. Repairing this requires
+range certificates on every intermediate reduced exponent, at which
+point the design is strictly worse than keeping the plane axis in the
+clear. The per-plane formulation \eqref{eq:switched} avoids the entire
+issue; no Frobenius twist appears anywhere in the prover's circuit.
+\end{remark}
+
+\subsection{The value forests}
+
+For each plane--column pair $(j,c)$ the prover runs a product tree of
+depth $t-3$ over the octet values
+\[
+V_{j,c} \;=\; \prod_\beta v^{\mathrm{leaf}}_{j,\beta,c},
+\qquad
+v^{\mathrm{leaf}}_{j,\beta,c} \;\stackrel{!}{=}\; T_\beta[a_{j,\beta,c}],
+\]
+so that, for an honest prover, $V_{j,c}=\alpha^{v_{j,c}}$
+(Lemma~\ref{lem:magnitude} bounds the exponent). All $W2^s$ trees run in
+one merged forest call. The leaves are \emph{prover-supplied} table reads
+--- $N/8$ dense leaves in place of $N$ bit-affine leaves --- and the
+entire soundness burden moves to certifying the marked equality
+$\stackrel{!}{=}$, i.e.\ that every supplied leaf equals the public table
+entry at the committed index. That certificate is the subject of the next
+section.
+
+\section{The certification layer}\label{sec:cert}
+
+\subsection{Fingerprints and multiplicities}
+
+After the commitments are fixed (see \S\ref{sec:fs} for the transcript
+order), the verifier draws $\gamma_{\mathrm{pos}}\in\K^{t-3}$,
+$\gamma_{\mathrm{idx}}\in\K^{8}$, $\mu,\delta\in\K$ and both parties
+define the fingerprint of a (position, index, value) triple:
+\[
+\fp(\beta,a,v) \;=\; \ip{\gamma_{\mathrm{pos}}}{\mathrm{bits}(\beta)}
++ \ip{\gamma_{\mathrm{idx}}}{a} + \mu\, v \;\in\;\K .
+\]
+Let $Q=\{(j,\beta,c)\}$ be the query set, $|Q|=N/8$, with query triple
+$\tau_q=(\beta_q,a_q,v_q)$, and let $E=\{(\beta,a)\}$ be the table
+domain, $|E|=2^{t+5}$, with table triple $\tau_e=(\beta,a,T_\beta[a])$.
+The prover counts multiplicities
+\[
+m_e \;=\; \#\{\,q\in Q : (\beta_q,a_q)=e\,\} \;\le\; W2^s ,
+\]
+and commits them in binary as $s{+}w{+}1$ extra bit-planes over $E$
+($\approx (s{+}w{+}1)2^{t+5}$ bits, i.e.\ $3$--$5\%$ of $N$ at
+$s\in[9,11]$). Crucially $m$ is a function of $D$ alone --- no challenge
+enters it --- so the multiplicity planes are part of the \emph{same}
+first-round commitment as the data.
+
+\subsection{The multiplicative grand-product multiset argument}
+
+The lookup relation is certified by the polynomial identity
+\begin{equation}\label{eq:multiset}
+\prod_{q\in Q}\bigl(\delta-\fp(\tau_q)\bigr)
+\;=\;
+\prod_{e\in E}\bigl(\delta-\fp(\tau_e)\bigr)^{m_e},
+\end{equation}
+with both sides certified as grand products:
+
+\paragraph{Witness side.}
+The factors $\delta-\fp(\tau_q)$ are grouped by $(j,c)$ into $W2^s$ trees
+of depth $t-3$ --- the same shape as the value forests --- and run as a
+second claim family in the \emph{same} merged forest call. The leaf at
+query $q$ is $G_{\beta}[a_q]$ where
+$G_\beta[a] = \delta - \ip{\gamma_{\mathrm{pos}}}{\mathrm{bits}(\beta)}
+- \ip{\gamma_{\mathrm{idx}}}{a} - \mu T_\beta[a]$
+is another public per-octet $256$-entry table (built from $T_\beta$ by
+$256$ additions).
+
+\paragraph{Table side.}
+Decomposing $m_e=\sum_k 2^k m_{e,k}$,
+\[
+\prod_e (\delta-\fp(\tau_e))^{m_e}
+= \prod_{e}\prod_{k\le s+w}
+\Bigl(\underbrace{\varphi^k\bigl(\delta-\fp(\tau_e)\bigr)}_{\textstyle
+B_{e,k}}\Bigr)^{m_{e,k}}
+= \prod_{e,k}\bigl(1 + m_{e,k}\,(B_{e,k}-1)\bigr),
+\]
+which is a forest of \emph{bit-affine leaves with public bases} over the
+committed multiplicity bits --- exactly the baseline leaf shape, with its
+free linear discharge, over $(s{+}w{+}1)\,2^{t+5}$ leaves. The verifier's
+exit evaluations of the base family use the product form
+\eqref{eq:closedform} together with Lemma~\ref{lem:twist}:
+$\sum_e \eq(e,\rho)\,\varphi^k(\delta-\fp(\tau_e))
+= \varphi^k\bigl(X(\varphi^{-k}(\rho))\bigr)$ where
+$X(\sigma)=\delta-(\text{linear terms})-\mu\,\mhat T(\sigma)$ is closed
+form. The table is never committed.
+
+\paragraph{The shared byte-driven discharge.}
+The two dense claim families (values $T_\beta[a_q]$ and fingerprints
+$G_\beta[a_q]$) exit the merged forest at one shared point with leaf-MLE
+claims that are both affine in the same two residuals: the linear
+read-offs of the position/index bits (free) and the evaluation
+$\mhat{v}(\rho)$ of the table-read vector. That residual is discharged by
+\emph{byte-driven case-LUT rounds}: the leaf value at each query position
+is one gather from a public $256$-case table keyed by the committed
+octet, and eight bit-driven sumcheck rounds bind the octet bits against
+progressively folded case tables ($256\to 128\to\cdots$), after which the
+remaining claim is a plain multilinear evaluation of the committed bits,
+batched into the PCS opening. This is the depth-$8$ extension of the
+deployed depth-$2$/$3$ bit-driven leaf rounds; the project's byte-table
+measurements support pricing these rounds at dense-round parity. This
+discharge is what closes the ``free wires'' loophole: leaf values are
+never free prover inputs; they are, verifiably, functions of the
+committed bits through public tables fixed before $\delta$.
+
+\subsection{Transcript order}\label{sec:fs}
+(1) Commit $D$ together with the multiplicity planes $m$ (both
+challenge-independent). (2) The claim $(r,y)$ is fixed; weights
+$w_b, w'_c$ are public functions of $r$. (3) [Committed-fold variant
+only: commit the fold bits, \S\ref{sec:committedfolds}.] (4) Draw
+$\gamma_{\mathrm{pos}},\gamma_{\mathrm{idx}},\mu,\delta$. (5) Run the
+merged forests (value + fingerprint families; multiplicity forest),
+the shared discharge, and the openings. (6) Verifier: rebuild
+$\alpha^{w_b}$ (as in the baseline), check the multiset root identity
+\eqref{eq:multiset}, check $V$-roots against the per-plane folds
+(exponentiation in the clear variant; the linkage of
+\S\ref{sec:committedfolds} otherwise), range-check the folds, and
+compute $y=\sum_c w'_c\sum_j 2^j v_{j,c}\bmod q$.
+
+\subsection{Committed folds (companion gadget)}\label{sec:committedfolds}
+At scale the $W2^s$ clear folds are replaced by a committed
+bit-decomposition bound by a static exponentiation forest: the fold bits
+(at most $t{+}100$ planes per fold; the bit width itself enforces the
+range bound) are committed after step (2); tiny bit-affine trees with the
+public Frobenius base chain $\alpha^{2^k}=\varphi^k(\alpha)$ certify
+$\alpha^{v_{j,c}}$; a shared-challenge equality of root-MLE claims links
+them to the value forests' roots without ever sending roots; and the
+$\F_q$ read-off becomes a single-column instance of the mod-$q$ protocol
+itself over the fold bits, terminating in one clear $128$-bit integer.
+At $s\ge 10$, $W=32$, the fold-bit instance is large enough to sit inside
+the audited parameter regime of the underlying opener. We omit details;
+the gadget is specified in the project's u-suppression note and is
+independent of the present construction.
+
+\subsection{Instantiation B: the pushforward (logup*) certificate}
+\label{sec:logup}
+The fingerprint and multiplicity forests can be replaced by a
+logarithmic-derivative argument in its indexed, multiplicity-free
+(pushforward) form: query terms $\eq$-weighted as
+$1/(\delta-\fp(\tau_q))$, table terms $Y_e/(\delta-\fp(\tau_e))$ with
+$Y$ the pushforward of the query weights along the index map, certified
+by a fraction-addition GKR. Characteristic-two soundness of this form is
+established in the project's route-(b) certificate
+(\texttt{quotient\_gkr.rs}), with the fraction layer's per-term cost
+measured at $\phi\approx 1.25$--$1.5$ product-forest terms. Its
+distinguishing adder is that $Y$ ($|E|$ field elements) is
+prover-supplied and must be bound --- a second commitment of
+$\approx 2^{7-s}N$ bits --- whereas the multiset instantiation commits
+only the $3$--$5\%$ multiplicity planes and reuses the deployed forest
+machinery wholesale. The model of Section~\ref{sec:costs} slightly
+favors the multiset arm at $s\le 10$ and the pushforward arm at
+$s\ge 11$; both should be gated in the same harness, since they share
+the value forests, tables, and discharge.
+
+\section{Soundness}\label{sec:soundness}
+
+\begin{lemma}[Fingerprint injectivity]\label{lem:collision}
+Fix any two distinct triples $\tau\ne\tau'$ occurring among
+$\{\tau_q\}\cup\{\tau_e\}$. Then
+$\Pr_{\gamma,\mu}[\fp(\tau)=\fp(\tau')]\le 1/|\K|$, and by a union bound
+all occurring triples receive distinct fingerprints except with
+probability at most $(|Q|+|E|)^2/|\K|$.
+\end{lemma}
+\begin{proof}
+$\fp(\tau)-\fp(\tau')$ is a nonzero $\K$-linear form in
+$(\gamma_{\mathrm{pos}},\gamma_{\mathrm{idx}},\mu)$: if the position or
+index bits differ it is nonconstant in the corresponding $\gamma$
+coordinate; otherwise $v\ne v'$ and it equals $\mu(v'-v)$.
+\end{proof}
+
+\begin{lemma}[Multiset binding]\label{lem:multiset}
+Condition on distinct fingerprints (Lemma~\ref{lem:collision}). If the
+multiset $\{\!\{\tau_q\}\!\}_{q\in Q}$ differs from
+$\biguplus_e \{\tau_e\ \text{with multiplicity}\ m_e\}$, then the two
+sides of \eqref{eq:multiset}, as polynomials in $\delta$, are distinct,
+and they agree at a random $\delta$ with probability at most
+$\max(|Q|,\textstyle\sum_e m_e)/|\K| \le 2^{t+s+w+6}/2^{128}$.
+\end{lemma}
+\begin{proof}
+Both sides are monic products of linear factors; by unique factorization
+in $\K[\delta]$ they are equal iff their root multisets coincide with
+identical \emph{integer} multiplicities. Distinct fingerprints make the
+root multisets faithful images of the triple multisets. Schwartz--Zippel
+gives the agreement bound. Note the multiplicities are counted in $\Z$
+as factor multiplicities --- this is the point at which the argument is
+sound in characteristic two, where the additive
+(logarithmic-derivative-with-field-multiplicities) form
+$\sum_e m_e/(\delta-\fp_e)$ would collapse even counts.
+\end{proof}
+
+\begin{theorem}[Soundness, sketch]\label{thm:sound}
+Under the transcript order of \S\ref{sec:fs}, if the verifier accepts
+then, except with probability
+$O\!\bigl((N^2 + \mathrm{rounds})/|\K|\bigr)$ over the challenges plus
+the binding errors of the commitment and opening, the committed data $D$
+satisfies $y=\MLE[\INT(D)](r)\bmod q$.
+\end{theorem}
+\begin{proof}[Proof sketch]
+(i) The forest GKRs pin the claimed roots to their actual leaf wires
+(standard grand-product GKR soundness over the merged layers).
+(ii) The byte-driven discharge pins each leaf wire of both dense
+families to the public table read at the committed octet: the case-LUT
+rounds are exact algebraic identities over the committed bits, and their
+terminal claims are discharged by the PCS opening; hence the supplied
+values satisfy $v_q=T_{\beta_q}[a_q]$ \emph{provided} the multiset
+identity holds --- and independently the fingerprint leaves equal
+$G_{\beta_q}[a_q]$ as functions of the same bits, so no adaptive choice
+of wires survives the discharge. (iii) By Lemmas
+\ref{lem:collision}--\ref{lem:multiset}, acceptance of
+\eqref{eq:multiset} forces the query multiset to equal the table
+multiset, i.e.\ every query's value is the table entry at its committed
+index. (iv) Therefore each value tree's root equals
+$\alpha^{v_{j,c}}$ with $v_{j,c}$ the true fold of
+\eqref{eq:switched}; by Lemma~\ref{lem:magnitude} and the range checks,
+the clear (or committed) folds equal the true folds by injectivity of
+$v\mapsto\alpha^v$ below $\ord(\alpha)$. (v) The read-off
+$y=\sum_c w'_c\sum_j 2^j v_{j,c}\bmod q$ is deterministic public
+arithmetic on bound integers, and equals $\MLE[\INT(D)](r)\bmod q$ by
+\eqref{eq:fold}--\eqref{eq:switched}.
+\end{proof}
+
+\section{Cost model and the measurement gate}\label{sec:costs}
+
+All entries are in units of $c_{\mathrm{bit}}\cdot N$ (the measured
+baseline: one bit-affine leaf per committed bit,
+$c_{\mathrm{bit}}\approx 10.5$\,ns on the reference hardware;
+$c_{\mathrm{dense}}\approx 2c_{\mathrm{bit}}$ measured). The baseline
+column is the deployed forest \emph{with} the per-leaf chunking fix,
+i.e.\ $L=1$: the fair comparison point, equal to a $W=1$ instance of the
+same size.
+
+\begin{center}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+component & count & model cost \\
+\midrule
+value forests & $N/8$ dense leaves & $0.25$ \\
+fingerprint forests & $N/8$ dense leaves & $0.25$ \\
+shared byte discharge & $8$ rounds over $N/8$ & $0.25$--$0.5$ \\
+multiplicity forest & $(s{+}w{+}1)2^{t+5}$ bit-affine & $0.03$--$0.05$ \\
+tables $T,G$ & $2^{t+5}$ mults $+\ 256$-adds & $<0.01$ \\
+read-off / linkage & \S\ref{sec:committedfolds} & $\le 0.03$ \\
+\midrule
+total & & $0.78$--$1.05$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+Model speedup vs.\ the baseline: $\approx 0.95$--$1.3\times$, with the
+discharge constant the widest uncertainty. For the pushforward arm,
+replace (fingerprint + multiplicity) by fraction terms at measured
+$\phi\approx 1.3$ and add the $Y$-binding instance
+($\approx 2^{7-s}N$ committed bits). Three observations:
+
+\emph{(a) Where the $W$ factor acts.} The prior $W{=}1$ octet design paid
+a table-side factor $c_f = 1+2^{8-s}$ inside its certificate (measured
+fatal at $s{=}7$, marginal at $s{=}10$); here the sharing reduces the
+analogous terms to the multiplicity forest and table rows above ---
+$O((s{+}w)/2^s)$ --- because the table population is $W\times$ smaller
+relative to the queries. This is the only place wide-word structure
+does real work, and it is worth exactly $\Theta(W)$ on those terms.
+
+\emph{(b) $W=1$ non-applicability.} At $W=1$ there are no planes to
+share across; the construction degenerates to the prior design and its
+measured verdict. The advantage claimed here \emph{exists only for wide
+cells} --- consistently with the project's earlier finding that no
+arrangement makes $W$-blind certification cheaper.
+
+\emph{(c) The bar.} The project's adoption bar for certificate-bearing
+redesigns is a measured $\ge 1.5\times$ prover advantage with all adders
+priced (extra commitments, proof bytes, verifier work, peak memory), a
+bar set by the history of four predecessor designs whose op-count models
+overstated measured performance --- ``the witness forest cancels the
+win'' was measured four times. The model above \emph{straddles} $1.0$;
+this note therefore specifies, and does not prejudge, the gate:
+
+\begin{itemize}
+\item Harness: the existing octet-gate harness extended with (i) shared
+tables across planes, (ii) both certificate arms measured same-run,
+(iii) the multiplicity planes and (for arm B) the $Y$ instance charged
+as real committed data, (iv) the byte discharge implemented, not
+modeled.
+\item Shapes: genuine $W{=}32$ at $(t,s)\in\{(12,9),(12,11)\}$, run
+against the current fused, bit-driven, $L{=}1$ baseline on an idle box,
+medians of $\ge 3$, one shape per process.
+\item Decision: adopt only if the gate clears $1.5\times$ with adders;
+record the outcome either way in the project ledger.
+\end{itemize}
+
+\section{Related constructions}\label{sec:related}
+
+Logarithmic-derivative lookups originate with LogUp \cite{logup} and its
+GKR formulation \cite{logupgkr}; the multiplicity-free indexed variant
+is logup* \cite{logupstar}. In characteristic two the additive form is
+unsound (even multiplicities vanish); the two sound routes used here are
+the multiplicative grand-product multiset (folklore; in-project
+reference implementation in the \texttt{f2-clean-lookup} machinery) and
+the pushforward form (in-project \texttt{quotient\_gkr.rs}). Binius
+\cite{binius} certifies exponentiation by committed bits with the same
+bit-affine product structure; its blueprint's exponentiation gadget
+\cite{biniusblueprint} matches our baseline in the static-base case
+(public base, per-exponent-bit cost, ``no windowing''), and its
+Frobenius phase --- untwisting $V^{2^i}$ claims through
+$\varphi^{-i}$-twisted evaluation points --- is Lemma~\ref{lem:twist},
+which we need only on the verifier side (table-side exit evaluations),
+having removed all in-circuit twists by Remark~\ref{rem:wraparound}.
+The width-conservation accounting (Remark~\ref{rem:conservation}) and
+the measured verdicts cited throughout are from the project ledger
+(f2-int workstream, 2026-06/07): the $W{=}1$ octet gate, the wide-outer
+tensor and weight-slicing adjudications, and the kernel-parity re-gate
+of the pushforward certificate.
+
+\section{Status}\label{sec:status}
+
+This is a design note. Soundness (Section~\ref{sec:soundness}) we
+consider settled up to the standard forest/opening arguments it inherits;
+performance is a model straddling the adoption bar, to be settled by the
+gate of Section~\ref{sec:costs} and by nothing else. Independent of the
+gate's outcome, two elements of the analysis stand on their own: the
+per-plane formulation removes weight chunking for every $t\le 27$
+(subsuming the baseline's $L{=}2$ penalty at $W{=}32$), and
+Remark~\ref{rem:wraparound} documents a soundness pitfall (correction-
+digit wraparound) that any in-exponent aggregation design must avoid.
+
+\begin{thebibliography}{9}\small
+\bibitem{logup} U.~Hab\"ock.
+\emph{Multivariate lookups based on logarithmic derivatives.}
+ePrint 2022/1530.
+\bibitem{logupgkr} S.~Papini, U.~Hab\"ock.
+\emph{Improving logarithmic derivative lookups using GKR.}
+ePrint 2023/1284.
+\bibitem{logupstar} L.~Soukhanov.
+\emph{Logup*: faster, cheaper logup argument for small-table indexed
+lookups.} ePrint 2025/946.
+\bibitem{binius} B.~E.~Diamond, J.~Posen.
+\emph{Succinct arguments over towers of binary fields.}
+ePrint 2023/1784.
+\bibitem{biniusblueprint} Irreducible.
+\emph{Binius blueprint: exponentiating multilinears.}
+\url{https://www.binius.xyz/blueprint/backend/muls/exponentiating}.
+\end{thebibliography}
+
+\end{document}
