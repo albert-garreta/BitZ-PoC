@@ -225,7 +225,7 @@ We describe one such $\prod_{\mathsf{red}}^{\ell_2}$ in \cref{?}.
 \subsection{The main F2Z IOR}
 We provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$ next.
 \begin{construction}[IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$]\label{c:core_iop}
-The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^n$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$. 
+The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$.  We assume the tensor split from the previous Section \ref{}, and adopt its notation. 
 Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with sufficiently large multiplicative order, to be determined later.  
 
 
@@ -235,7 +235,7 @@ Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with suf
 \item Prover and verifier define $\bm{\gamma}_i = \psievalfield^{-1}(\vv_i^{(1)})$ for $i \in [\ell_1]$, and set to prove the following claim:
 %
 $$
-\prod_{i \in [\codedim_1]} g^{\bm{\gamma}_i\cdot \bff_{ij}}  = g^{\mu_j'} \qquad \text{for all } j\in [\ell_2].
+\prod_{i \in [\codedim_1]} g^{\bm{\gamma}_i\cdot \bff_{ij}}  = g^{\mu_j'} \in \comfield, \qquad \text{for all } j\in [\ell_2].
 $$
 Note that this claim is equivalent to
 $$
@@ -246,12 +246,15 @@ $$
 % Maybe it is more clear, if we write in the above two equalities explicitly a $\bmod\: q$, or, add $\in \mathbb F_q$?
 % }%
 % \albert{See now. It's actually in $\comfield$}
-To prove the above claim, prover and verifier engage in the IOR that reduces $$\left(\Relation_{\cC_{\codedim_1}, \comfield}^{Q}\right)^{\codedim_2} \quad \text{to} \quad \left(\Relation_{\cC_{\codedim_1}, \comfield}^{\mathsf{mle}}\right)^{\ell_2},$$  with inputs \albert{The reason I'm leaving this IOR abstract here is that I think there may be better ways to prove the above claim than a grand product GKR, so I want to write it modular} $$\left(\inp'=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]}, g^{\mu_j'}), \oracle_j'=\Enc_{\code_{\codedim_1}}(\psicomfield(\bff_{*j})), \wit_j'=\psicomfield(\bff_{*j})\right)  \qquad \text{for } j\in [\ell_2].$$
+To prove the above claim, prover and verifier engage in the IOR $\prod_{\mathsf{red}}$   with input \albert{The reason I'm leaving this IOR abstract here is that I think there may be better ways to prove the above claim than a grand product GKR, so I want to write it modular} $$\left(\inp_j'=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]}, g^{\mu_j'}), \oracle_j'= f_{*j}, \wit_j'=\psicomfield(\bff_{*j})\right)_{j\in [\codedim_2]},$$
 %
-\item At the end of this IOR, they are left with the following claims to prove: 
+where in the honest case  $f_{*j} = \Enc_{\cC_{\codedim_1}}(\bff_{*j})\in \comfield^{\codelength/\codedim_2}$.
 %
-$$
-\left((\rr', \mu_j'), \Enc_{\code_{\codedim_1}}(\psicomfield(\bff_{*j})), \psicomfield(\bff_{*j})\right) \in \Relation_{\cC_1, \comfield}^{\mathsf{eval}}, \qquad \text{for } j\in [\ell_2]$$ for some evaluation points and evaluation values $(\rr', \mu_j)$ output during the IOR. Accordingly, the prover and the verifier engage in a IOPP  to certify the validity of this last claim. 
+ At the end of this IOR, they are left with the following claim to prove: 
+%
+\begin{equation}\label{e:iopp_mle_claims}
+\left((\rr', \mu_j'), f_{*j}, \psicomfield(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation_{\cC_1, \comfield}^{\mathsf{eval}}\right)^{\codedim_2}\end{equation} for some evaluation point $\rr'$ and evaluation values $\mu'$ output during the IOR. 
+\item Prover and the verifier engage in a IOPP  to certify the claims \eqref{e:iopp_mle_claims}. 
 \end{enumerate}
 \end{construction}
 
