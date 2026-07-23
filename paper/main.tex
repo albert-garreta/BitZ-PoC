@@ -151,7 +151,11 @@ Next let $\comfield$ be a finite field of characteristic $2$,  and let $\evalfie
 $$
 \psicomfield : \ZZ \to \FF_2 \subseteq \comfield, \qquad \psievalfield: \ZZ \to \evalfield,
 $$
-be reduction mod $2$ and $q$ maps.
+be reduction mod $2$ and $q$ maps. We futher let 
+$$
+\psicomfield^{-1} : \FF_2 \to \{0,1\} \subseteq \ZZ, \qquad \psievalfield^{-1}: \evalfield \to \range{0}{q-1} \subseteq \ZZ,
+$$
+be maps such that $\psicomfield(\psicomfield^{-1}(x))=x$ and $\psievalfield(\psievalfield^{-1}(x))=x$ for all $x$. We remark that one could choose any other such ``inverse'' maps, e.g.\ for $\psievalfield^{-1}$ one may prefer to use centered representatives. 
 
 Let $\cC\subseteq \comfield^{n}$ be a linear code of dimension $k$ and blocklength $n$ over $\comfield$. Define
 $$
@@ -285,9 +289,9 @@ $$
 \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv, M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim' \times \codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\psicomfield(\bff)) = f\\ \wedge \  & \langle \psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff)), \vv\rangle  = \mu  \end{aligned} \right\}
 $$
 %
-The relation has the tag ``lin(ear)-virtual'' referencing the intuition that  $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}} $ expresses a linear constraint on the vector $\bfg=\psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff))\in \evalfield^{\codedim'}$, which is not committed directly: only $\pi_2(\bff)$  is. Note that $\bfg$ is a linear expression over $\comfield$ of the elements in $\pi_2(\bff)$, lifted to the integers, and then projected to $\evalfield$.
+The relation has the tag ``lin(ear)-virtual'' to reference the intuition that  $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}} $ expresses a linear constraint on the vector $\bfg=\psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff))\in \evalfield^{\codedim'}$, which is not committed directly: only $\pi_2(\bff)$  is. Note that $\bfg$ is a linear expression over $\comfield$ of the elements in $\pi_2(\bff)$, lifted to the integers, and then projected to $\evalfield$.
 
-\albert{Would be good to add more detail in this paragraph} The relation $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$  allows to, for example, express linear constraints over $\evalfield$ of the XOR of witness elements, while only committing (over $\comfield$) to the original elements. The same applies with other bit operations such as AND and Majority, by noting first that, given integers $x,y,z\in \{0,1\}$: \albert{Should reference some identity in preliminaries, or explain more here} 
+\albert{Would be good to add more detail in this paragraph} The relation $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$  allows to, for example, express linear constraints over $\evalfield$ of the XOR of witness elements, while only committing (over $\comfield$) to the original elements. The same applies with other bit operations such as AND and Majority, by noting first that, given integer bits $x,y,z\in \{0,1\}$: \albert{Should reference some identity in preliminaries, or explain more here} 
 %
 \begin{equation*}
     \begin{aligned}
@@ -297,19 +301,32 @@ The relation has the tag ``lin(ear)-virtual'' referencing the intuition that  $\
 \end{equation*}
 where $2^{-1}$ denotes the inverse of $2$ modulo $q$.  
 %
-Hence AND and Majority can be expressed over $\FF_q$ as  linear expressions of a vectors of the form $\pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff)))$, with $\bff$ containing only the original elements for which we compute AND and Majority. 
+Hence AND and Majority can be expressed over $\FF_q$ as  linear expressions of a vectors of the form $\pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff)))$, with $\bff$ being a vector of integer bits containing only the original elements on which we apply the AND and Majority operations. 
 
 
 \bigskip
 
-We next provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$. Similarly as before, we assume our input vectors $\vv\in \evalfield^{\codedim'}$ admit a tensor structure of dimensions $\ell_1, \ell_2$ with $\ell'=\ell_1\cdot \ell_2$.
+We next provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$ for specific shapes of $M$. Similarly as in \cref{?}, we assume a tensor structure $\ell=\ell_1 \cdot \ell_2$ for $\vv$, and write $\bff = (\bff_{*j})_{j\in [\codedim_2]} \in \bits^{\ell_1 \times \ell_2}$. We then let $\ell_1'$ be such that $\ell' = \ell_1' \times \ell_2$ and assume $M = \mathsf{Id} \otimes M_0$ where $M_0 \in \FF_2^{\ell_1' \times \ell_1}$ and $\mathsf{Id}$ is the $\ell_2\times \ell_2$ matrix. In words, $M$ is the $\ell'\times \ell = \ell_1'\cdot \ell_2 \times \ell_1\times \ell_2$ diagonal block matrix with $M_0$ in tis diagonal blocks. Then
+%
+$$
+M \cdot \pi_2(\bff) = (M_0 \cdot \pi_2(\bff_{*j}))_{j\in [\codedim_2]} \in (\FF_2^{\ell_1'})^{\ell_2}.
+$$
+%
 \begin{construction}[IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$]
-The prover and verifier receive $\inp=(\mu, \vv,M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim'\times\codedim}$ and  $\oracle= f \in \comfield^n$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$. 
+The prover and verifier receive $\inp=(\mu, \vv,M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim'\times\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$.  We assume $M$ is of the form described above.
 
- Define the vector $\bfg=(\bfg_{*j})_{j\in [\codedim_2]} \in \bits^{\codedim_1 \times \codedim_2}$ as $\bfg = \pi_2^{-1}\left(M\cdot \pi_2(f)\right)$. Prover and verifier execute \cref{c:core_iop}  until Step 4, given inputs 
+ Define  $\bfg = \pi_2^{-1}\left(M\cdot \pi_2(f)\right) \in \{0,1\}^{\ell'} \subseteq \ZZ^{\ell'}$. By \eqref{?}, $$\bfg=(\bfg_{*j})_{j\in [\codedim_2]} = \left(\pi_2^{-1}\left( M_0\cdot \pi_2(\bff_{*j}) \right)\right)_{j\in [\codedim_2]},$$ with $ \bfg_{*j}\in \bits^{\codedim_1'}$. Let $f= \Enc_{\cC}(\pi_2(\bff)) \in \bits^{\ell} \subseteq \ZZ^{\ell}$.
+ Prover and verifier execute \cref{c:core_iop}  with inputs 
 $$
-\inp' = (\mu, \vv),  \quad \oracle'=\Enc_{\cC}(\pi_2(\bff)),\quad  \wit' = \bfg.
+\inp' = (\mu, \vv),  \quad \oracle'=f,\quad  \wit' = \bfg.
 $$
+ until Step 3 where they are meant to use the IOR $\Pi_{\mathsf{red}}$. Note that until that point, the verifier has not made any queries to $\oracle'$. Prover and verifier engage in $\Pi_{\mathsf{red}}$ with inputs
+ %
+ $$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\psicomfield(\bfg_{*j})\right)_{j\in [\codedim_2]},$$
+ where $f_{*j}=\Enc_{\cC_{\codedim_1}}(\pi_2(\bff_{*j}))$.
+
+------
+
 %
 Once in Step 4, prover and verifier are left with claims  \albert{we should ask that the IOR verifier doesn't query the oracle, otherwise this could be incomplete}
 %
