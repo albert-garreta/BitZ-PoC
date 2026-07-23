@@ -112,8 +112,11 @@ Given a prime $q$ we let $\pi_q: \ZZ\to \FF_q$ be the ring homomorphism mapping 
 
 Given a  finite field $\FF$ of characteristic $q$, let $a(X)\in \ZZ[X]$ be an irreducible polynomial over $\FF_q$ \albert{yes?}, so that $\FF = \ZZ[X]/(q,a(X))$ \albert{consider isomorphism, or assume all finite fields are represented like this}. Let $\psi_{\FF}: \ZZ[X] \to \FF$ be the  canonical homomorphism from $\ZZ[X]$ to $\FF$ obtained by reducing modulo the ideal $(q,a(X))$, i.e.\ by reducing coefficients modulo $q$ and then reducing the resulting polynomial modulo $a(X)$.
 
-\paragraph{Interactive Oracle Proofs of Proximity (IOPP)}
 
+
+
+\paragraph{Interactive Oracle Proofs of Proximity (IOPP)}
+Interleaved codes
 
 \paragraph{Interactive Oracle Reductions (IOR)}
 
@@ -133,12 +136,8 @@ Given a  finite field $\FF$ of characteristic $q$, let $a(X)\in \ZZ[X]$ be an ir
 \newcommand{\psicomfield}{\pi_{2}}
 \newcommand{\psievalfield}{\pi_{q}}
 
-
-Let $\codedim\geq 0$ be a dimension parameter, and $\codelength\geq 0$ a blocklength parameter. Let $\FF$ be a field (not necessarily a prime field), and let $\cC\subseteq \FF^{\codelength}$ be a linear code of dimension $k$ and blocklength $\codelength$ over $\FF$.  Let $\inplen\geq0$ be a public input length parameter, and let $Q\in \FF[Y_1, \ldots, Y_{\inplen}, Z_1, \ldots, Z_{\codedim}]$  be a constraint polynomial
-\ulrich{%
-Of arbitrary degree, I suppose?
-}% 
-\albert{Yes!}
+\subsection{Constrained codes over dual fields \albert{not sure dual is a good word: the two fields are just ``different'', while dual things tend to have a close relation between each other}}
+Let $\codedim\geq 0$ be a dimension parameter, and $\codelength\geq 0$ a blocklength parameter. Let $\FF$ be a field (not necessarily a prime field), and let $\cC\subseteq \FF^{\codelength}$ be a linear code of dimension $k$ and blocklength $\codelength$ over $\FF$.  Let $\inplen\geq0$ be a public input length parameter, and let $Q\in \FF[Y_1, \ldots, Y_{\inplen}, Z_1, \ldots, Z_{\codedim}]$  be a constraint polynomial, of arbitrary degree, 
 with coefficients in $\FF$ and on $\inplen+\codedim$ variables. Consider the following relation:
 %
 $$
@@ -159,10 +158,11 @@ $$
 \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \{0,1\}^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\psicomfield(\bff)) = f\\ \wedge \  & \langle \psievalfield(\bff), \vv\rangle  = \mu  \end{aligned} \right\}
 $$
 %
+\subsection{Tensor decomposition, interleaved codes, and products of constrained codes}
 %
-We fix a tensor decomposition of vectors $\vv\in \comfield^\codedim$ as $$\vv = \vv^{(1)} \otimes \vv^{(2)} = \left(\vv_i^{(1)}\cdot \vv_j^{(2)}\right)_{i\in [\codedim_1], j\in [\codedim_2]}$$ for some $\vv^{(1)}\in \evalfield^{\ell_1}, \vv^{(2)}\in \evalfield^{\ell_2}$, with $\ell_1 \cdot \ell_2=\ell$. Note that the trivial tensor decomposition is admitted, i.e.\ we may not decompose $\vv$ by choosing $\codedim_1=\codedim$, $\codedim_2=1$, $\vv^{(1)}=\vv$, and $\vv^{(2)} = (1)$.
+We fix a tensor decomposition of vectors $\vv\in \comfield^\codedim$ as $$\vv = \vv^{(1)} \otimes \vv^{(2)} = \left(\vv_i^{(1)}\cdot \vv_j^{(2)}\right)_{i\in [\codedim_1], j\in [\codedim_2]}$$ for some $\vv^{(1)}\in \evalfield^{\ell_1}, \vv^{(2)}\in \evalfield^{\ell_2}$, with $\ell_1 \cdot \ell_2=\ell$. Note that the trivial tensor decomposition is admitted, i.e.\ we may effectively not decompose $\vv$ by choosing $\codedim_1=\codedim$, $\codedim_2=1$, $\vv^{(1)}=\vv$, and $\vv^{(2)} = (1)$.
 
-We then index the entries of $\bff$ as $\bff=(\bff_{ij})_{i\in [\ell_1], j\in[\ell_2]}$. Note that
+We assume $\cC = \cC_{\ell_1}^{\equiv \ell_2}$ is the $\ell_2$-dimensional interleaving of a code $\cC_{\ell_1}\subseteq \comfield^{\codelength/\ell_2}$ of dimension $\ell_1$ and blocklength $\codelength/\ell_2$.  We then index the entries of $\bff$ as $\bff=(\bff_{ij})_{i\in [\ell_1], j\in[\ell_2]}$. Note that
 %
 $$
 \langle \psievalfield(\bff), \vv \rangle = \sum_{j\in [\ell_2]}\left(\sum_{i\in [\ell_1]} \psievalfield(\bff_{ij}) \cdot \vv_i^{(1)}\right) \cdot \vv_j^{(2)} = \sum_{j\in [\ell_2]} \langle \psievalfield(\bff_{*j}) , \vv^{(1)} \rangle \cdot \vv_j^{(2)},
@@ -190,32 +190,52 @@ $
 P(Y,0) = 1$ and $P(Y,1) = Y.
 $
 %
-We assume prover and verifier have access to an IOR $\prod_{\Relation_{\cC, \comfield}^{Q}  \to \Relation_{\cC, \comfield}^{\mathsf{eval}}}$  that reduces 
+Consider the relation $\Relation_{\cC_{\codedim_1}, \comfield}^{Q}$ for 
+%
+$$Q(Y_1, \ldots, Y_{\codedim_1+1}, Z_1, \ldots, Z_{\codedim_1}) = \prod_{i=1}^{\codedim_1} P(Y_i, Z_i) - Y_{\codedim_1+1}.$$ 
+%
+Precisely,
+%
+$$
+\Relation_{\cC_{\codedim_1}, \comfield}^{Q} = \left\{ \left(\begin{aligned} &\inp=(\yy,z)\in \comfield^{\codedim_1}\times \comfield, \\&\oracle = f \in \comfield^{\codelength/\codedim_2}, \\ &\wit= \bff\in \comfield^{\codedim_1}\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC_{\codedim_1}}(\bff) = f\\ \wedge \  &\prod_{i=1}^{\codedim_1} \left((\yy_i-1)\cdot \bff_i +1\right) = z  \end{aligned} \right\}
+$$
+%
+We assume prover and verifier have access to an IOR $\prod_{\mathsf{red}}$  that reduces 
 %
 $
-\Relation_{\cC, \comfield}^{Q}$ to $\Relation_{\cC, \comfield}^{\mathsf{eval}}$, 
-where $$Q(Y_1, \ldots, Y_{\codedim_1+1}, Z_1, \ldots, Z_{\codedim_1}) = \prod_{i=1}^{\codedim_1} P(Y_i, Z_i) - Y_{\codedim_1+1}.$$ 
+\Relation_{\cC_{\codedim_1}, \comfield}^{Q}$ to $\Relation_{\cC_{\codedim_1}, \comfield}^{\mathsf{eval}}$,  
 %
-We  assume the prover and verifier have access to an IOPP for $\Relation_{\cC_{\codedim}, \comfield}^{\mathsf{eval}}$.  
+%
+Further, we consider the $\ell_2$-fold parallel composition $\prod_{\mathsf{red}}^{\ell_2}$ of $\prod_{\mathsf{red}}$,  and we assume that given $\ell_2$ triples 
+%
+$$
+\left((\yy^{(j)},\mu^{(j)}) , g^{(j)}, \bfg^{(j)}  \right)_{j\in[\codedim_2]} \in \left(\Relation_{\cC_{\codedim_1}, \comfield}^{Q}\right)^{\codedim_2}
+$$
+the IOR $\prod_{\mathsf{red}}^{\ell_2}$ outputs 
+%
+$$
+\left((\rr,\mu_j) \in \comfield^{\log \codedim_1 } \times \comfield, g^{(j)} , \bfg^{(j)} \right)_{j\in[\codedim_2]} \in \left(\Relation_{\cC_{\codedim_1}, \comfield}^{\mathsf{mle}}\right)^{\codedim_2},
+$$
+for some $\rr\in \comfield^{\log \codedim_1}$ and some $\mu_j\in \comfield$ for $j\in [\codedim_2]$.
+In words, $\prod_{\mathsf{red}}^{\ell_2}$ outputs $\ell_2$ MLE evaluation claims for the input witnesses $\bfg^{(j)}$ behind the input oracles $g^{(j)}$, all \emph{on the same evaluation point $\rr$}.  \albert{We could be more abstract with this IOR, but I find it difficult to tie it with the protocol in the next section then. Maybe better to write a remark} 
+
+We describe one such $\prod_{\mathsf{red}}^{\ell_2}$ in \cref{?}.
 
 
-Further, we let $\cC_{\ell_1}$ be a code over $\comfield$ of dimension $\ell_1$ and blocklength $\codelength_1$, and we  assume that prover and verifier have access to an IOR that reduces $(\Relation_{\cC_{\codedim_1}, \comfield}^{Q})^{\codedim_2}$ to $\Relation_{\cC, \comfield}^{\mathsf{eval}}$.  We describe one such IOR in \cref{?}, for the case when $\cC$ is an $\ell_2$-interleaving of $\ell_1$.
-
-
-
+\subsection{The main F2Z IOR}
 We provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$ next.
 \begin{construction}[IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$]\label{c:core_iop}
-The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^n$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$. 
+The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$.  We assume the tensor split from the previous Section \ref{}, and adopt its notation. 
 Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with sufficiently large multiplicative order, to be determined later.  
 
 
 \begin{enumerate}[leftmargin=*]
 \item The prover sends $\mu_1', \ldots, \mu_{\ell_2}'\in \ZZ$ such that $\langle \bff_{*j}, \psievalfield^{-1}(\vv^{(1)})\rangle = \mu_j'$. 
-\item The verifier checks that $\sum_{j\in [\ell_1]} \psievalfield(\mu_j')\cdot \vv_j^{(2)}  = \mu$.  \albert{We could have the prover commit to the $\mu_j'$ and have this checked proved by the PCS (a PCS that can prove linear constraints like WHIR). This pays off for very large $\codedim$.}
+\item The verifier checks that $\sum_{j\in [\ell_1]} \psievalfield(\mu_j')\cdot \vv_j^{(2)}  = \mu$.  \albert{We could have the prover commit to the $\mu_j'$ and have this check proved by the PCS (a PCS that can prove linear constraints like WHIR). This pays off for very large $\codedim$.}
 \item Prover and verifier define $\bm{\gamma}_i = \psievalfield^{-1}(\vv_i^{(1)})$ for $i \in [\ell_1]$, and set to prove the following claim:
 %
 $$
-\prod_{i \in [\codedim_1]} g^{\bm{\gamma}_i\cdot \bff_{ij}}  = g^{\mu_j'} \qquad \text{for all } j\in [\ell_2].
+\prod_{i \in [\codedim_1]} g^{\bm{\gamma}_i\cdot \bff_{ij}}  = g^{\mu_j'} \in \comfield, \qquad \text{for all } j\in [\ell_2].
 $$
 Note that this claim is equivalent to
 $$
@@ -226,24 +246,24 @@ $$
 % Maybe it is more clear, if we write in the above two equalities explicitly a $\bmod\: q$, or, add $\in \mathbb F_q$?
 % }%
 % \albert{See now. It's actually in $\comfield$}
-To prove the above claim, prover and verifier engage in the IOR that reduces $$\left(\Relation_{\cC_{\codedim_1}, \comfield}^{Q}\right)^{\codedim_2} \quad \text{to} \quad \Relation_{\cC, \comfield},$$  with inputs \albert{The reason I'm leavintg this IOR abstract here is that I think there may be better ways to prove the above claim than a grand product GKR, so I want to write it modular} $$\left(\inp'=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]}, g^{\mu_j'}), \oracle_j'=\Enc_{\code_{\codedim_1}}(\psicomfield(\bff_{*j})), \wit_j'=\psicomfield(\bff_{*j})\right)  \qquad \text{for } j\in [\ell_2].$$
+To prove the above claim, prover and verifier engage in the IOR $\prod_{\mathsf{red}}$   with input \albert{The reason I'm leaving this IOR abstract here is that I think there may be better ways to prove the above claim than a grand product GKR, so I want to write it modular} $$\left(\inp_j'=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]}, g^{\mu_j'}), \oracle_j'= f_{*j}, \wit_j'=\psicomfield(\bff_{*j})\right)_{j\in [\codedim_2]},$$
 %
-\item At the end of this IOR, they are left with the following claim to prove: \albert{Better to have this construction stop at the IOR output?}
+where in the honest case  $f_{*j} = \Enc_{\cC_{\codedim_1}}(\bff_{*j})\in \comfield^{\codelength/\codedim_2}$.
 %
-$$
-((\mu', \rr'), f', \bff') \in \Relation_{\cC, \comfield}^{\mathsf{eval}},$$ for some $(\mu,\rr'), f',\bff'$ output during the IOR. Accordingly, the prover and the verifier engage in a IOPP  to certify the validity of this last claim.
+ At the end of this IOR, they are left with the following claim to prove: 
+%
+\begin{equation}\label{e:iopp_mle_claims}
+\left((\rr', \mu_j'), f_{*j}, \psicomfield(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation_{\cC_1, \comfield}^{\mathsf{eval}}\right)^{\codedim_2}\end{equation} for some evaluation point $\rr'$ and evaluation values $\mu'$ output during the IOR. 
+\item Prover and the verifier engage in a IOPP  to certify the claims \eqref{e:iopp_mle_claims}. 
 \end{enumerate}
 \end{construction}
 
 
 
-We now describe a GKR-based IOR reducing $\Relation_{\cC, \comfield}^{Q}$ to  $\Relation_{\cC, \comfield}^{\mathsf{eval}}$
+We now describe a GKR-based IOR reducing $(\Relation_{\cC_{\codedim_1}, \comfield}^{Q})^{\ell_2}$ to  $(\Relation_{\cC_{\codedim_1}, \comfield}^{\mathsf{eval}})^{\ell_2}$ of the required form.
 
 \begin{construction}[Grand product GKR]
-The prover and verifier receive $\inp=((g^{\bm{\gamma}_i})_{i\in [\codedim_1]}, g^\mu) \in \evalfield^{\codedim_1} \times \evalfield$  and $\oracle= f \in \comfield^n$. The prover receives $\wit= \bff\in \comfield^{\codedim_1}$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield}^{Q}$. 
-\begin{enumerate}[leftmargin=*]
-    \item \albert{Todo: it's a standard grand product GKR so far -- though there's lots of implementation-level optimizations it can undergo}
-\end{enumerate}
+\albert{Todo: it's a standard grand product GKR so far -- though there's lots of implementation-level optimizations it can undergo}
 \end{construction}
 \ulrich{%
 Maybe to just write verbally, that we will use GKR for the grand product.
@@ -256,7 +276,6 @@ At this point it is maybe more important to clarify how useful the construction 
 
 \section{Virtualization of $\FF_2$-linear combinations lifted to integers}
 
-\newcommand{\bfg}{\mathbf{g}}
 
 In this section we expand relation $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$ to impose, instead of constraints of the form $\Enc_\cC(\pi_2(\bff))=f$ and $\langle \pi_q(\bff), \vv  \rangle = \mu$, constraints as $\Enc_\cC(\pi_2(\bff)) = f$  and $\langle \pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff))) \rangle = \mu$ for a matrix $M\in \FF_{2}^{\codedim' \times \codedim}$. Precisely, given a new parameter $\codedim'$,
 $$
@@ -281,22 +300,23 @@ Hence AND and Majority can be expressed over $\FF_q$ as  linear expressions of a
 \bigskip
 
 We next provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$. Similarly as before, we assume our input vectors $\vv\in \evalfield^{\codedim'}$ admit a tensor structure of dimensions $\ell_1, \ell_2$ with $\ell'=\ell_1\cdot \ell_2$.
-\begin{construction}[IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$]\label{c:core_iop}
+\begin{construction}[IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$]
 The prover and verifier receive $\inp=(\mu, \vv,M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim'\times\codedim}$ and  $\oracle= f \in \comfield^n$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$. 
 
- Define the vector $\bfg \in \bits^{\codedim'}$ as $\bfg = \pi_2^{-1}\left(M\cdot \pi_2(f)\right)$. Prover and verifier proceed exactly in the same way as in \cref{c:core_iop} given inputs 
+ Define the vector $\bfg=(\bfg_{*j})_{j\in [\codedim_2]} \in \bits^{\codedim_1 \times \codedim_2}$ as $\bfg = \pi_2^{-1}\left(M\cdot \pi_2(f)\right)$. Prover and verifier execute \cref{c:core_iop}  until Step 4, given inputs 
 $$
-\inp' = (\mu, \vv),  \quad \wit' = \bfg,
+\inp' = (\mu, \vv),  \quad \oracle'=\Enc_{\cC}(\pi_2(\bff)),\quad  \wit' = \bfg.
 $$
 %
-except that 
-
-
+Once in Step 4, prover and verifier are left with claims  \albert{we should ask that the IOR verifier doesn't query the oracle, otherwise this could be incomplete}
+%
+$$
+\left((\rr', \mu_j'), \oracle_j', \wit_j'\right) \in \Relation_{\cC_1, \comfield}^{\mathsf{eval}}, \qquad \text{for } j\in [\ell_2],
+$$
+where $\oracle_j'=\Enc_{\cC_{\codedim_1}}(\pi_2(\bff_{*j}))$ and $\wit_j'=\bfg_{*j}$, for $j\in [\codedim_2]$.
+%
 \begin{enumerate}[leftmargin=*]
-\item Prover and verifier execute \cref{c:core_iop} with the following inputs:
-$$
-\inp' = (\mu, \vv), \quad \oracle'= , \quad \wit' = \bfg
-$$
+\item 
 \end{enumerate}
 \end{construction}
 
