@@ -143,6 +143,8 @@ with coefficients in $\FF$ and on $\inplen+\codedim$ variables. Consider the fol
 $$
 \Relation_{\cC, \FF}^{Q} \defeq \left\{ \left(\begin{aligned} &\inp=\yy\in \FF^\inplen, \\&\oracle = f \in \FF^\codelength, \\ &\wit= \bff\in \FF^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\bff) = f\\ \wedge \  &Q(\yy, \bff) = 0  \end{aligned} \right\}
 $$
+When $Q$ and $\yy$ are such that $\yy=(\vv,\mu)\in \FF^{\codedim}\times \FF$ and $$Q(\yy,\ff)= \langle \vv, \ff\rangle = \sum_{i\in [\codedim]} \vv_i \cdot \ff_i,$$ we denote $\Relation_{\cC, \FF}^{Q}$  by $\Relation_{\cC, \FF}^{\mathsf{lin}}$.
+
 When $Q$ and $\yy$ are such that $\yy=(\rr,\mu)\in \FF^{\log\codedim}\times \FF$ and $$Q(\yy,\ff)= \mle{\bff}(\rr)-\mu,$$ we denote $\Relation_{\cC, \FF}^{Q}$  by $\Relation_{\cC, \FF}^{\mathsf{mle}}$. 
 
 
@@ -218,15 +220,15 @@ $$
 the IOR $\prod_{\mathsf{red}}^{\ell_2}$ outputs 
 %
 $$
-\left((\rr,\mu_j) \in \comfield^{\log \codedim_1 } \times \comfield, g^{(j)} , \bfh^{(j)} \right)_{j\in[\codedim_2]} \in \left(\Relation_{\cC_{\codedim_1}, \comfield}^{\mathsf{mle}}\right)^{\codedim_2},
+\left((\vv,\mu_j) \in \comfield^{ \codedim_1 } \times \comfield, g^{(j)} , \bfh^{(j)} \right)_{j\in[\codedim_2]} \in \left(\Relation_{\cC_{\codedim_1}, \comfield}^{\mathsf{lin}}\right)^{\codedim_2},
 $$
 for some $\rr\in \comfield^{\log \codedim_1}$ and some $\mu_j\in \comfield$ for $j\in [\codedim_2]$.
-In words, $\prod_{\mathsf{red}}^{\ell_2}$ outputs $\ell_2$ MLE evaluation claims for the input witnesses $\bfh^{(j)}$ behind the input oracles $g^{(j)}$, all \emph{on the same evaluation point $\rr$}.  \albert{We could be more abstract with this IOR, but I find it difficult to tie it with the protocol in the next section then. Maybe better to write a remark} 
+In words, $\prod_{\mathsf{red}}^{\ell_2}$ outputs $\ell_2$ linear claims for the input witnesses $\bfh^{(j)}$ behind the input oracles $g^{(j)}$, all \emph{on the same vector of coefficients  $\vv$}.   \albert{We could be more abstract with this IOR, but I find it difficult to tie it with the protocol in the next section then. Maybe better to write a remark} 
 
-We describe one such $\prod_{\mathsf{red}}^{\ell_2}$ in \cref{?}.
+We describe one such $\prod_{\mathsf{red}}^{\ell_2}$ in \cref{?}, where $\vv$ is a vector of the form $\vv=(\mathsf{eq}(\bb,\rr))_{\bb\in \{0,1\}^{\log \codedim_1}}$, for some $\rr\in \comfield^{\log \codedim_1}$.
 
 
-\subsection{The main \ftwoz IOR}
+\subsection{The main {\ftwoz}  IOR}
 We provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$ next.
 \begin{construction}[IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$]\label{c:core_iop}
 The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$.  We assume the tensor split from the previous Section \ref{}, and adopt its notation. 
@@ -250,14 +252,14 @@ $$
 % Maybe it is more clear, if we write in the above two equalities explicitly a $\bmod\: q$, or, add $\in \mathbb F_q$?
 % }%
 % \albert{See now. It's actually in $\comfield$}
-To prove the above claim, prover and verifier engage in the IOR $\prod_{\mathsf{red}}$   with input \albert{The reason I'm leaving this IOR abstract here is that I think there may be better ways to prove the above claim than a grand product GKR, so I want to write it modular} $$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\psicomfield(\bff_{*j})\right)_{j\in [\codedim_2]},$$
+To prove the above claim, prover and verifier engage in the IOR $\Pi_{\mathsf{red}}^{\codedim_2}$   with input \albert{The reason I'm leaving this IOR abstract here is that I think there may be better ways to prove the above claim than a grand product GKR, so I want to write it modular} $$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\psicomfield(\bff_{*j})\right)_{j\in [\codedim_2]},$$
 %
 where in the honest case  $f_{*j} = \Enc_{\cC_{\codedim_1}}(\bff_{*j})\in \comfield^{\codelength/\codedim_2}$.
 %
  At the end of this IOR, they are left with the following claim to prove: 
 %
 \begin{equation}\label{e:iopp_mle_claims}
-\left((\rr', \mu_j'), \ f_{*j}, \ \psicomfield(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation_{\cC_1, \comfield}^{\mathsf{mle}}\right)^{\codedim_2}\end{equation} for some evaluation point $\rr'$ and evaluation values $\mu_j'$ output during the IOR $\Pi_{\mathsf{red}}$. 
+\left((\vv, \mu_j'), \ f_{*j}, \ \psicomfield(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation_{\cC_1, \comfield}^{\mathsf{lin}}\right)^{\codedim_2}\end{equation} for some vector $\vv$ and field elements $\mu_j'$ output during the IOR $\Pi_{\mathsf{red}}^{\codedim_2}$. 
 \item Prover and  verifier engage in a IOPP  to certify the claims \eqref{e:iopp_mle_claims}. 
 \end{enumerate}
 \end{construction}
@@ -322,29 +324,35 @@ $$
 \inp' = (\mu, \vv),  \quad \oracle'=f,\quad  \wit' = \bfh.
 $$
  until Step 3 where they are meant to use the IOR $\Pi_{\mathsf{red}}$. Note that until that point, the verifier has not made any queries to $\oracle'$. So, in terms of completeness, it does not matter, yet, that $f$ is not the encoding of $\bfh$.
- \item  Prover and verifier engage in $\Pi_{\mathsf{red}}$ with inputs
+ \item  Prover and verifier engage in $\Pi_{\mathsf{red}}^{\codedim_2}$ with inputs
  %
  $$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1']},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\psicomfield(\bfh_{*j})\right)_{j\in [\codedim_2]},$$
- where $f_{*j}=\Enc_{\cC_{\codedim_1}}(\pi_2(\bff_{*j}))$. At the end of $\Pi_{\mathsf{red}}$ they are left with claims
+ where $f_{*j}=\Enc_{\cC_{\codedim_1}}(\pi_2(\bff_{*j}))$. At the end of $\Pi_{\mathsf{red}}^{\codedim_2}$ they are left with claims
  %
   \albert{we should ask that the IOR verifier doesn't query the oracle, otherwise this could be incomplete}
 %
 $$
-\left((\rr, \eta_j), \ \oracle_j, \ \wit_j\right)_{j\in [\codedim_2]} \in \left(\Relation_{\cC_1, \comfield}^{\mathsf{eval}}\right)^{\ell_2},
+\left((\vv, \eta_j), \ \oracle_j, \ \wit_j\right)_{j\in [\codedim_2]} \in \left(\Relation_{\cC_1, \comfield}^{\mathsf{lin}}\right)^{\ell_2},
 $$
 %
-for some $\rr\in \comfield^{\log \codedim_1'}$ and $\eta_j \in \comfield$.
+for some $\vv\in \comfield^{ \codedim_1'}$ and $\eta_j \in \comfield$.
 %
-\item Let  $M_{0*j}\in \comfield^{\ell_1'}$ denote the $j$-th column of $M_0$, for $j\in [\codedim_2]$, and let $\vv \in \comfield^{\codedim_2}$ be the vector whose $j$-th entry is
-%$
+\item Let  $M_{0*j}\in \comfield^{\ell_1'}$ denote the $j$-th column of $M_0$, for $j\in [\codedim_2]$, and let $\uu \in \comfield^{\codedim_2}$ be the vector whose $j$-th entry is
+%
 $$
-\vv_j = \mle{M_{0*j}}(\rr) \in \comfield. 
+\uu_j = \langle \vv, \mle{M_{0*j}}\rangle \in \comfield. 
 $$
 %
-Then, if the prover is honest, we have that
+Note that, if $\Pi_{\mathsf{red}}^{\ell_2}$ is as in \cref{?}, then $\vv= (\mathsf{eq}(\bb,\rr))_{\bb\in \{0,1\}^{\log \codedim_1'}}$ for some $\rr\in \comfield^{\log \codedim_1'}$, and then 
+$
+\uu_j = \mle{M_{0*j}}(\rr) \in \comfield. 
+$
+%
+
+Now, if the prover is honest, we have that
 %
 \begin{equation}\label{e:final_virt_equation}
-\left((\vv, \eta_j),\ \oracle_j, \ \pi_2(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation_{\cC_1, \comfield}^{\mathsf{lin}}\right)^{\ell_2}.
+\left((\uu, \eta_j),\ \oracle_j, \ \pi_2(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation_{\cC_1, \comfield}^{\mathsf{lin}}\right)^{\ell_2}.
 \end{equation}
 %
 Prover and verifier use an IOPP to prove \eqref{e:final_virt_equation}.
