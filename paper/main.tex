@@ -198,34 +198,36 @@ $
 %
 Consider the relation $\Relation_{\cC_{\codedim_1}, \comfield}^{Q}$ for 
 %
-$$Q(Y_1, \ldots, Y_{\codedim_1+1}, Z_1, \ldots, Z_{\codedim_1}) = \prod_{i=1}^{\codedim_1} P(Y_i, Z_i) - Y_{\codedim_1+1}.$$ 
+$$Q(Y_1, \ldots, Y_{\codedim_1+1}, Z_1, \ldots, Z_{\codedim_1}) = \Pi_{i=1}^{\codedim_1} P(Y_i, Z_i) - Y_{\codedim_1+1}.$$ 
 %
 Precisely,
 %
 $$
-\Relation_{\cC_{\codedim_1}, \comfield}^{Q} = \left\{ \left(\begin{aligned} &\inp=(\yy,z)\in \comfield^{\codedim_1}\times \comfield, \\&\oracle = f \in \comfield^{\codelength/\codedim_2}, \\ &\wit= \bff\in \comfield^{\codedim_1}\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC_{\codedim_1}}(\bff) = f\\ \wedge \  &\prod_{i=1}^{\codedim_1} \left((\yy_i-1)\cdot \bff_i +1\right) = z  \end{aligned} \right\}
+\Relation_{\cC_{\codedim_1}, \comfield}^{Q} = \left\{ \left(\begin{aligned} &\inp=(\yy,z)\in \comfield^{\codedim_1}\times \comfield, \\&\oracle = f \in \comfield^{\codelength/\codedim_2}, \\ &\wit= \bff\in \comfield^{\codedim_1}\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC_{\codedim_1}}(\bff) = f\\ \wedge \  &\Pi_{i=1}^{\codedim_1} \left((\yy_i-1)\cdot \bff_i +1\right) = z  \end{aligned} \right\}
 $$
 %
-We assume prover and verifier have access to an IOR $\prod_{\mathsf{red}}$  that reduces 
+We assume prover and verifier have access to an IOR $\Pi_{\mathsf{red}}$  that reduces 
 %
 $
-\Relation_{\cC_{\codedim_1}, \comfield}^{Q}$ to $\Relation_{\cC_{\codedim_1}, \comfield}^{\mathsf{eval}}$,  
+\Relation_{\cC_{\codedim_1}, \comfield}^{Q}$ to $\Relation_{\cC_{\codedim_1}, \comfield}^{\mathsf{eval}}$. 
 %
 %
-Further, we consider the $\ell_2$-fold parallel composition $\prod_{\mathsf{red}}^{\ell_2}$ of $\prod_{\mathsf{red}}$,  and we assume that given $\ell_2$ triples 
+We assume $\Pi_{\mathsf{red}}$ works so that the verifier never queries $\oracle$ \albert{Would be better to say upfront what this protocol is in our mental model, and then make abstract assumptions like this, which look arbitrary otherwise. Same applies below}.
+
+Further, we consider the $\ell_2$-fold parallel composition $\Pi_{\mathsf{red}}^{\ell_2}$ of $\Pi_{\mathsf{red}}$,  and we assume that given $\ell_2$ triples 
 %
 $$
 \left((\yy^{(j)},\mu^{(j)}) , g^{(j)}, \bfh^{(j)}  \right)_{j\in[\codedim_2]} \in \left(\Relation_{\cC_{\codedim_1}, \comfield}^{Q}\right)^{\codedim_2}
 $$
-the IOR $\prod_{\mathsf{red}}^{\ell_2}$ outputs 
+the IOR $\Pi_{\mathsf{red}}^{\ell_2}$ outputs 
 %
 $$
 \left((\vv,\mu_j) \in \comfield^{ \codedim_1 } \times \comfield, g^{(j)} , \bfh^{(j)} \right)_{j\in[\codedim_2]} \in \left(\Relation_{\cC_{\codedim_1}, \comfield}^{\mathsf{lin}}\right)^{\codedim_2},
 $$
 for some $\rr\in \comfield^{\log \codedim_1}$ and some $\mu_j\in \comfield$ for $j\in [\codedim_2]$.
-In words, $\prod_{\mathsf{red}}^{\ell_2}$ outputs $\ell_2$ linear claims for the input witnesses $\bfh^{(j)}$ behind the input oracles $g^{(j)}$, all \emph{on the same vector of coefficients  $\vv$}.   \albert{We could be more abstract with this IOR, but I find it difficult to tie it with the protocol in the next section then. Maybe better to write a remark} 
+In words, $\Pi_{\mathsf{red}}^{\ell_2}$ outputs $\ell_2$ linear claims for the input witnesses $\bfh^{(j)}$ behind the input oracles $g^{(j)}$, all \emph{on the same vector of coefficients  $\vv$}.   \albert{We could be more abstract with this IOR, but I find it difficult to tie it with the protocol in the next section then. Maybe better to write a remark} 
 
-We describe one such $\prod_{\mathsf{red}}^{\ell_2}$ in \cref{?}, where $\vv$ is a vector of the form $\vv=(\mathsf{eq}(\bb,\rr))_{\bb\in \{0,1\}^{\log \codedim_1}}$, for some $\rr\in \comfield^{\log \codedim_1}$.
+We describe one such $\Pi_{\mathsf{red}}^{\ell_2}$ in \cref{?}, where $\vv$ is a vector of the form $\vv=(\mathsf{eq}(\bb,\rr))_{\bb\in \{0,1\}^{\log \codedim_1}}$, for some $\rr\in \comfield^{\log \codedim_1}$.
 
 
 \subsection{The main {\ftwoz}  IOR}
@@ -241,11 +243,11 @@ Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with suf
 \item Prover and verifier define $\bm{\gamma}_i = \psievalfield^{-1}(\vv_i^{(1)}) \in \range{0}{q-1}\subseteq \ZZ$ for $i \in [\ell_1]$, and set to prove the following claim:
 %
 $$
-\prod_{i \in [\codedim_1]} g^{\bm{\gamma}_i\cdot \bff_{ij}}  = g^{\mu_j} \in \comfield, \qquad \text{for all } j\in [\ell_2].
+\Pi_{i \in [\codedim_1]} g^{\bm{\gamma}_i\cdot \bff_{ij}}  = g^{\mu_j} \in \comfield, \qquad \text{for all } j\in [\ell_2].
 $$
 Note that this claim is equivalent to
 $$
-\prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \bff_{ij} +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\ell_2].
+\Pi_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \bff_{ij} +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\ell_2].
 $$
 % \ulrich{%
 % Suggestion: 
@@ -329,13 +331,12 @@ $$
  $$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1']},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\psicomfield(\bfh_{*j})\right)_{j\in [\codedim_2]},$$
  where $f_{*j}=\Enc_{\cC_{\codedim_1}}(\pi_2(\bff_{*j}))$. At the end of $\Pi_{\mathsf{red}}^{\codedim_2}$ they are left with claims
  %
-  \albert{we should ask that the IOR verifier doesn't query the oracle, otherwise this could be incomplete}
 %
 $$
 \left((\vv, \eta_j), \ \oracle_j, \ \wit_j\right)_{j\in [\codedim_2]} \in \left(\Relation_{\cC_1, \comfield}^{\mathsf{lin}}\right)^{\ell_2},
 $$
 %
-for some $\vv\in \comfield^{ \codedim_1'}$ and $\eta_j \in \comfield$.
+for some $\vv\in \comfield^{ \codedim_1'}$ and $\eta_j \in \comfield$. Again, since we assume the verifier never queries $\oracle_j$ during $\Pi_{\mathsf}$, completeness holds for honest provers, even if $\oracle_j$ is not the encoding of $\wit_j$.
 %
 \item Let  $M_{0*j}\in \comfield^{\ell_1'}$ denote the $j$-th column of $M_0$, for $j\in [\codedim_2]$, and let $\uu \in \comfield^{\codedim_2}$ be the vector whose $j$-th entry is
 %
