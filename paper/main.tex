@@ -345,12 +345,12 @@ Note that \eqref{e:virtual_IOPP_intermediate} holds if and only if, for all $j\i
 $$
 \eta_j=\sum_{i\in [\codedim_1']} \vv_i \cdot \pi_2(\bfh_{ij}) = \sum_{i\in [\codedim_1']} \vv_i \cdot \sum_{t\in [\codedim_1]} M_{0it}\cdot \pi_2(\bff_{tj}) = \sum_{t\in [\codedim_1]} \left(\sum_{i\in[\codedim_1']}M_{0it}\cdot \vv_i\right)\cdot \bff_{tj} = \langle \uu_j , \bff_{*j}\rangle,
 $$
-where $\uu \in \comfield^{\codedim_2}$ be the vector whose $j$-th entry is
+where $\uu \in \comfield^{\codedim_2}$ is the vector whose $j$-th entry is
 %
 $$
-\uu_j = \langle \vv, \mle{M_{0*j}}\rangle \in \comfield,
+\uu_j = \langle \vv, M_{0*j}\rangle \in \comfield,
 $$
-ans  $M_{0*j}\in \comfield^{\ell_1'}$ denotes the $j$-th column of $M_0$, for $j\in [\codedim_2]$,
+and  $M_{0*j}\in \comfield^{\ell_1'}$ denotes the $j$-th column of $M_0$, for $j\in [\codedim_2]$,
 %
 
 %
@@ -374,6 +374,23 @@ Prover and verifier use an IOPP to prove \eqref{e:final_virt_equation}.
 %
 \end{construction}
 
+
+\begin{example}
+    Say we have a vector $\bff\in \bits^{\codedim} \subseteq \ZZ^\codedim$ and we wish to prove MLE evaluation claims of an extended vector $\bff' \in \bits^{2\cdot \codedim}$ where 
+    %
+    $$
+    \bff_i' = \begin{cases}
+    \bff_i  & \text{if } i \in [\codedim],\\
+    \bff_{i -\codedim } \xor \bff_{i - \codedim +1} & \text{if } \codedim+1 \leq i \leq 2\cdot \codedim -1,\\
+    \bff_{\codedim} & \text{if } i =2\cdot \codedim.
+    \end{cases}
+    $$
+    % 
+    In words, $\bff'$ is the result of concatenating $\bff$ and the vector obtained by ``xor-ing'' together every two consecutive elements in $\bff$ (and keeping the last entry as $\bff_{\ell}$, since $\bff_{\ell} \xor \bff_{\ell+1}$ is not defined. This example will come up in our SHA-256 case-study.
+
+    
+    
+\end{example}
 
 \begin{theorem}\label{t:thm_virtual_IOPP}
     \albert{Completeness and RBR knowledge soundness of \cref{c:core_iop} }
