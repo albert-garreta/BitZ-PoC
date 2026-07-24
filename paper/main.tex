@@ -318,7 +318,7 @@ We next provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin
 M \cdot \pi_2(\bff) = (M_0 \cdot \pi_2(\bff_{*j}))_{j\in [\codedim_2]} \in (\FF_2^{\ell_1'})^{\ell_2}.
 \end{equation}
 %
-\begin{construction}[IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$]
+\begin{construction}[IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$]\label{c:virtual_iop}
 The prover and verifier receive $\inp=(\mu, \vv,M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim'\times\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$.  We assume $M$ is of the form described above.
 
  Define  $\bfh = \pi_2^{-1}\left(M\cdot \pi_2(f)\right) \in \{0,1\}^{\ell'} \subseteq \ZZ^{\ell'}$. By \eqref{e:M_pi_f}, $$\bfh=(\bfh_{*j})_{j\in [\codedim_2]} = \left(\pi_2^{-1}\left( M_0\cdot \pi_2(\bff_{*j}) \right)\right)_{j\in [\codedim_2]},$$ with $ \bfh_{*j}\in \bits^{\codedim_1'}$. Let $f= \Enc_{\cC}(\pi_2(\bff)) \in \bits^{\ell} \subseteq \ZZ^{\ell}$.
@@ -345,18 +345,18 @@ Note that \eqref{e:virtual_IOPP_intermediate} holds if and only if, for all $j\i
 $$
 \eta_j=\sum_{i\in [\codedim_1']} \vv_i \cdot \pi_2(\bfh_{ij}) = \sum_{i\in [\codedim_1']} \vv_i \cdot \sum_{t\in [\codedim_1]} M_{0it}\cdot \pi_2(\bff_{tj}) = \sum_{t\in [\codedim_1]} \left(\sum_{i\in[\codedim_1']}M_{0it}\cdot \vv_i\right)\cdot \bff_{tj} = \langle \uu_j , \bff_{*j}\rangle,
 $$
-where $\uu \in \comfield^{\codedim_2}$ is the vector whose $j$-th entry is
+where $\uu \in \comfield^{\codedim_1}$ is the vector whose $t$-th entry is
 %
 $$
-\uu_j = \langle \vv, M_{0*j}\rangle \in \comfield,
+\uu_t = \langle \vv, M_{0*t}\rangle \in \comfield,
 $$
-and  $M_{0*j}\in \comfield^{\ell_1'}$ denotes the $j$-th column of $M_0$, for $j\in [\codedim_2]$,
+and  $M_{0*t}\in \comfield^{\ell_1'}$ denotes the $t$-th column of $M_0$, for $t\in [\codedim_1]$,
 %
 
 %
 Note that, if $\Pi_{\mathsf{red}}^{\ell_2}$ is as in \cref{?}, then $\vv= (\mathsf{eq}(\bb,\rr))_{\bb\in \{0,1\}^{\log \codedim_1'}}$ for some $\rr\in \comfield^{\log \codedim_1'}$, and then 
 $
-\uu_j = \mle{M_{0*j}}(\rr) \in \comfield. 
+\uu_t = \mle{M_{0*t}}(\rr) \in \comfield. 
 $
 %
 
@@ -386,11 +386,42 @@ Prover and verifier use an IOPP to prove \eqref{e:final_virt_equation}.
     \end{cases}
     $$
     % 
-    In words, $\bff'$ is the result of concatenating $\bff$ and the vector obtained by ``xor-ing'' together every two consecutive elements in $\bff$ (and keeping the last entry as $\bff_{\ell}$, since $\bff_{\ell} \xor \bff_{\ell+1}$ is not defined. This example will come up in our SHA-256 case-study.
+    In words, $\bff'$ is the result of concatenating $\bff$ and the vector obtained by ``xor-ing'' together every two consecutive elements in $\bff$ (and keeping the last entry as $\bff_{\ell}$, since $\bff_{\ell} \xor \bff_{\ell+1}$ is not defined). This example will come up in our SHA-256 case-study.
 
     
-    
-\end{example}
+    We have
+    %
+    $$
+    \bff' = \pi_2^{-1}\left(M \cdot \pi_2(\bff)\right)   \in \bits^{2\codedim}
+    $$
+    where
+    %
+    $$
+M = \begin{pmatrix}
+        & & & &\\
+       & & \mathsf{Id}_{\codedim\times \codedim} & & \\
+               & & & &\\
+               \hline
+        1 & 1 &  0 & 0 & \ldots & 0\\
+        0 & 1 & 1 & 0 & \ldots & 0 \\
+        \vdots & & \ddots & & & \vdots\\
+        0 &  \ldots &  0 & 0 & 1 & 1 \\
+        0 & \ldots & 0& 0 & 0 & 1 \\
+    \end{pmatrix} 
+    $$
+     if we do not wish to leverage any tensor decomposition structure, i.e.\ if we take $\codedim_1=\codedim$ and $\codedim_2=1$, then we can apply  \cref{c:virtual_iop} using this matrix $M$ as part of the input. At the end of \cref{c:virtual_iop} prover and verifier are left with the claim 
+     $$
+     \left((\uu, \eta),\ \Enc_{\cC}(\pi_2(\bff)), \ \pi_2(\bff)\right) \in \Relation_{\cC_1, \comfield}^{\mathsf{lin}},
+     $$
+     for  $\uu = (\mle{M_{*t}}(\rr))_{t\in [\codedim]} \in \comfield^{\codedim}$, where $M_{*t}$ denotes the $t$-th column of $M$. I.e.\ prover and verifier must now certify that $\Enc_{\cC}(\pi_2(\bff))$ is (close to) the encoding of a vector $\pi_2(\bff)$ such that
+     %
+     $$
+    \langle (\mle{M_{*t}}(\rr))_{t\in [\codedim]}, \pi_2(\bff) \rangle = \eta.
+     $$
+    %
+    Next we address the case 
+     
+\end{example} 
 
 \begin{theorem}\label{t:thm_virtual_IOPP}
     \albert{Completeness and RBR knowledge soundness of \cref{c:core_iop} }
