@@ -145,7 +145,7 @@ $$
 $$
 When $Q$ and $\yy$ are such that $\yy=(\vv,\mu)\in \FF^{\codedim}\times \FF$ and $$Q(\yy,\ff)= \langle \vv, \ff\rangle = \sum_{i\in [\codedim]} \vv_i \cdot \ff_i,$$ we denote $\Relation_{\cC, \FF}^{Q}$  by $\Relation_{\cC, \FF}^{\mathsf{lin}}$.
 
-When $Q$ and $\yy$ are such that $\yy=(\rr,\mu)\in \FF^{\log\codedim}\times \FF$ and $$Q(\yy,\ff)= \mle{\bff}(\rr)-\mu,$$ we denote $\Relation_{\cC, \FF}^{Q}$  by $\Relation_{\cC, \FF}^{\mathsf{mle}}$. 
+%When $Q$ and $\yy$ are such that $\yy=(\rr,\mu)\in \FF^{\log\codedim}\times \FF$ and $$Q(\yy,\ff)= \mle{\bff}(\rr)-\mu,$$ we denote $\Relation_{\cC, \FF}^{Q}$  by $\Relation_{\cC, \FF}^{\mathsf{mle}}$. 
 
 
 Next let $\comfield$ be a finite field of characteristic $2$,  and let $\evalfield$ be  a finite field of prime order $q$ or $\QQ$. For intuition, $\comfield$ is the field over which we will commit our witness, and $\evalfield$ is the field over which we prove linear relations on the witness. We let
@@ -243,11 +243,11 @@ Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with suf
 \item Prover and verifier define $\bm{\gamma}_i = \psievalfield^{-1}(\vv_i^{(1)}) \in \range{0}{q-1}\subseteq \ZZ$ for $i \in [\ell_1]$, and set to prove the following claim:
 %
 $$
-\Pi_{i \in [\codedim_1]} g^{\bm{\gamma}_i\cdot \bff_{ij}}  = g^{\mu_j} \in \comfield, \qquad \text{for all } j\in [\ell_2].
+\prod_{i \in [\codedim_1]} g^{\bm{\gamma}_i\cdot \bff_{ij}}  = g^{\mu_j} \in \comfield, \qquad \text{for all } j\in [\ell_2].
 $$
 Note that this claim is equivalent to
 $$
-\Pi_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \bff_{ij} +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\ell_2].
+\prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \bff_{ij} +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\ell_2].
 $$
 % \ulrich{%
 % Suggestion: 
@@ -266,10 +266,12 @@ where in the honest case  $f_{*j} = \Enc_{\cC_{\codedim_1}}(\bff_{*j})\in \comfi
 \end{enumerate}
 \end{construction}
 
-\begin{theorem}
+\begin{theorem}\label{t:thm_core_IOPP}
     \albert{Completeness and RBR knowledge soundness of \cref{c:core_iop} }
 \end{theorem}
-
+\begin{proof}
+It follows from \cref{t:thm_virtual_IOPP} by taking $\codedim_1'=\codedim_1$ and taking $M$ to be the identity matrix.
+\end{proof}
 
 We now describe a GKR-based IOR reducing $(\Relation_{\cC_{\codedim_1}, \comfield}^{Q})^{\ell_2}$ to  $(\Relation_{\cC_{\codedim_1}, \comfield}^{\mathsf{eval}})^{\ell_2}$ of the required form.
 
@@ -310,39 +312,47 @@ Hence AND and Majority can be expressed over $\FF_q$ as  linear expressions of a
 
 \bigskip
 
-We next provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$ for specific shapes of $M$. Similarly as in \cref{?}, we assume a tensor structure $\ell=\ell_1 \cdot \ell_2$ for $\vv$, and write $\bff = (\bff_{*j})_{j\in [\codedim_2]} \in \bits^{\ell_1 \times \ell_2}$. We then let $\ell_1'$ be such that $\ell' = \ell_1' \times \ell_2$ and assume $M = \mathsf{Id} \otimes M_0$ where $M_0 \in \FF_2^{\ell_1' \times \ell_1}$ and $\mathsf{Id}$ is the $\ell_2\times \ell_2$ matrix. In words, $M$ is the $\ell'\times \ell = \ell_1'\cdot \ell_2 \times \ell_1\times \ell_2$ diagonal block matrix with $M_0$ in tis diagonal blocks. Then
+We next provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$ for specific shapes of $M$. Similarly as in \cref{?}, we assume a tensor structure $\ell=\ell_1 \cdot \ell_2$ for $\vv$, and write $\bff = (\bff_{*j})_{j\in [\codedim_2]} \in \bits^{\ell_1 \times \ell_2}$.  We then let $\ell_1'$ be such that $\ell' = \ell_1' \times \ell_2$ and assume $M = \mathsf{Id} \otimes M_0$ where $M_0 \in \FF_2^{\ell_1' \times \ell_1}$ and $\mathsf{Id}$ is the $\ell_2\times \ell_2$ matrix. In words, $M$ is the $\ell'\times \ell = \ell_1'\cdot \ell_2 \times \ell_1\cdot \ell_2$ diagonal block matrix with $M_0$ as diagonal blocks. Then
 %
-$$
+\begin{equation}\label{e:M_pi_f}
 M \cdot \pi_2(\bff) = (M_0 \cdot \pi_2(\bff_{*j}))_{j\in [\codedim_2]} \in (\FF_2^{\ell_1'})^{\ell_2}.
-$$
+\end{equation}
 %
 \begin{construction}[IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$]
 The prover and verifier receive $\inp=(\mu, \vv,M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim'\times\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$.  We assume $M$ is of the form described above.
 
- Define  $\bfh = \pi_2^{-1}\left(M\cdot \pi_2(f)\right) \in \{0,1\}^{\ell'} \subseteq \ZZ^{\ell'}$. By \eqref{?}, $$\bfh=(\bfh_{*j})_{j\in [\codedim_2]} = \left(\pi_2^{-1}\left( M_0\cdot \pi_2(\bff_{*j}) \right)\right)_{j\in [\codedim_2]},$$ with $ \bfh_{*j}\in \bits^{\codedim_1'}$. Let $f= \Enc_{\cC}(\pi_2(\bff)) \in \bits^{\ell} \subseteq \ZZ^{\ell}$.
+ Define  $\bfh = \pi_2^{-1}\left(M\cdot \pi_2(f)\right) \in \{0,1\}^{\ell'} \subseteq \ZZ^{\ell'}$. By \eqref{e:M_pi_f}, $$\bfh=(\bfh_{*j})_{j\in [\codedim_2]} = \left(\pi_2^{-1}\left( M_0\cdot \pi_2(\bff_{*j}) \right)\right)_{j\in [\codedim_2]},$$ with $ \bfh_{*j}\in \bits^{\codedim_1'}$. Let $f= \Enc_{\cC}(\pi_2(\bff)) \in \bits^{\ell} \subseteq \ZZ^{\ell}$.
  \begin{enumerate}[leftmargin=*]
      \item Prover and verifier execute \cref{c:core_iop}  with inputs 
 $$
-\inp' = (\mu, \vv),  \quad \oracle'=f,\quad  \wit' = \bfh.
+\inp' = (\mu, \vv),  \quad \oracle'=f,\quad  \wit' = \bfh=\pi_2^{-1}\left(M\cdot \pi_2(\bff)\right) \in \{0,1\}^{\ell'} \subseteq \ZZ^{\ell'}.
 $$
- until Step 3 where they are meant to use the IOR $\Pi_{\mathsf{red}}$. Note that until that point, the verifier has not made any queries to $\oracle'$. So, in terms of completeness, it does not matter, yet, that $f$ is not the encoding of $\bfh$.
+ until Step 3 where they are meant to use the IOR $\Pi_{\mathsf{red}}$. Note that until that point, the verifier has not made any queries to $\oracle'$. So, in terms of completeness, it does not matter, yet, that $f$ is not the encoding of $\pi_2(\bfh)=M\cdot \pi_2(\bff)$.
  \item  Prover and verifier engage in $\Pi_{\mathsf{red}}^{\codedim_2}$ with inputs
  %
- $$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1']},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\psicomfield(\bfh_{*j})\right)_{j\in [\codedim_2]},$$
+ $$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1']},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\psicomfield(\bfh_{*j})=M_0\cdot \pi_2(\bff_{*j})\right)_{j\in [\codedim_2]},$$
  where $f_{*j}=\Enc_{\cC_{\codedim_1}}(\pi_2(\bff_{*j}))$. At the end of $\Pi_{\mathsf{red}}^{\codedim_2}$ they are left with claims
  %
 %
-$$
+\begin{equation}\label{e:virtual_IOPP_intermediate}
 \left((\vv, \eta_j), \ \oracle_j, \ \wit_j\right)_{j\in [\codedim_2]} \in \left(\Relation_{\cC_1, \comfield}^{\mathsf{lin}}\right)^{\ell_2},
-$$
+\end{equation}
 %
 for some $\vv\in \comfield^{ \codedim_1'}$ and $\eta_j \in \comfield$. Again, since we assume the verifier never queries $\oracle_j$ during $\Pi_{\mathsf{red}}$, completeness holds for honest provers, even if $\oracle_j$ is not the encoding of $\wit_j$.
-%
-\item Let  $M_{0*j}\in \comfield^{\ell_1'}$ denote the $j$-th column of $M_0$, for $j\in [\codedim_2]$, and let $\uu \in \comfield^{\codedim_2}$ be the vector whose $j$-th entry is
+
+Note that \eqref{e:virtual_IOPP_intermediate} holds if and only if, for all $j\in [\codedim_2]$,
 %
 $$
-\uu_j = \langle \vv, \mle{M_{0*j}}\rangle \in \comfield. 
+\eta_j=\sum_{i\in [\codedim_1']} \vv_i \cdot \pi_2(\bfh_{ij}) = \sum_{i\in [\codedim_1']} \vv_i \cdot \sum_{t\in [\codedim_1]} M_{0it}\cdot \pi_2(\bff_{tj}) = \sum_{t\in [\codedim_1]} \left(\sum_{i\in[\codedim_1']}M_{0it}\cdot \vv_i\right)\cdot \bff_{tj} = \langle \uu_j , \bff_{*j}\rangle,
 $$
+where $\uu \in \comfield^{\codedim_2}$ be the vector whose $j$-th entry is
+%
+$$
+\uu_j = \langle \vv, \mle{M_{0*j}}\rangle \in \comfield,
+$$
+ans  $M_{0*j}\in \comfield^{\ell_1'}$ denotes the $j$-th column of $M_0$, for $j\in [\codedim_2]$,
+%
+
 %
 Note that, if $\Pi_{\mathsf{red}}^{\ell_2}$ is as in \cref{?}, then $\vv= (\mathsf{eq}(\bb,\rr))_{\bb\in \{0,1\}^{\log \codedim_1'}}$ for some $\rr\in \comfield^{\log \codedim_1'}$, and then 
 $
@@ -350,7 +360,7 @@ $
 $
 %
 
-Now, if the prover is honest, we have that
+\item If the prover is honest, we have that
 %
 \begin{equation}\label{e:final_virt_equation}
 \left((\uu, \eta_j),\ \oracle_j, \ \pi_2(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation_{\cC_1, \comfield}^{\mathsf{lin}}\right)^{\ell_2}.
@@ -365,6 +375,11 @@ Prover and verifier use an IOPP to prove \eqref{e:final_virt_equation}.
 \end{construction}
 
 
+\begin{theorem}\label{t:thm_virtual_IOPP}
+    \albert{Completeness and RBR knowledge soundness of \cref{c:core_iop} }
+\end{theorem}
+\begin{proof}
+\end{proof}
 
 \section{Case-study: SHA-256 hashing}
 \albert{Maybe Blake3 better? (When comparing to Flock), because of the manu adds mod $2^{32}$}
