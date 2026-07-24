@@ -160,6 +160,7 @@ $$
 be maps such that $\psicomfield(\psicomfield^{-1}(x))=x$ and $\psievalfield(\psievalfield^{-1}(x))=x$ for all $x$. We remark that one could choose any other such ``inverse'' maps, e.g.\ for $\psievalfield^{-1}$ one may prefer to use centered representatives. 
 
 Let $\cC\subseteq \comfield^{n}$ be a linear code of dimension $k$ and blocklength $n$ over $\comfield$. Define
+\albertimportant{The encoding should be on the packed version of $\pi_2(\bff)$}
 $$
 \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \{0,1\}^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\psicomfield(\bff)) = f\\ \wedge \  & \langle \psievalfield(\bff), \vv\rangle  = \mu  \end{aligned} \right\}
 $$
@@ -200,7 +201,7 @@ Consider the relation $\Relation_{\cC_{\codedim_1}, \comfield}^{Q}$ for
 %
 $$Q(Y_1, \ldots, Y_{\codedim_1+1}, Z_1, \ldots, Z_{\codedim_1}) = \Pi_{i=1}^{\codedim_1} P(Y_i, Z_i) - Y_{\codedim_1+1}.$$ 
 %
-Precisely,
+Precisely, \albertimportant{The encoding should be on the packed version of $\pi_2(\bff)$, and $\bff$ should be in $\FF_2^{\codedim_1}$?}
 %
 $$
 \Relation_{\cC_{\codedim_1}, \comfield}^{Q} = \left\{ \left(\begin{aligned} &\inp=(\yy,z)\in \comfield^{\codedim_1}\times \comfield, \\&\oracle = f \in \comfield^{\codelength/\codedim_2}, \\ &\wit= \bff\in \comfield^{\codedim_1}\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC_{\codedim_1}}(\bff) = f\\ \wedge \  &\Pi_{i=1}^{\codedim_1} \left((\yy_i-1)\cdot \bff_i +1\right) = z  \end{aligned} \right\}
@@ -290,7 +291,7 @@ At this point it is maybe more important to clarify how useful the construction 
 \section{Virtualization of $\FF_2$-linear combinations lifted to integers}
 
 
-In this section we expand relation $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$ to impose, instead of constraints of the form $\Enc_\cC(\pi_2(\bff))=f$ and $\langle \pi_q(\bff), \vv  \rangle = \mu$, constraints as $\Enc_\cC(\pi_2(\bff)) = f$  and $\langle \pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff))) \rangle = \mu$ for a matrix $M\in \FF_{2}^{\codedim' \times \codedim}$. Precisely, given a new parameter $\codedim'$, we define
+In this section we expand relation $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$ to impose, instead of constraints of the form $\Enc_\cC(\pi_2(\bff))=f$ and $\langle \pi_q(\bff), \vv  \rangle = \mu$, constraints as $\Enc_\cC(\pi_2(\bff)) = f$  and $\langle \pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff))) \rangle = \mu$ for a matrix $M\in \FF_{2}^{\codedim' \times \codedim}$. Precisely, given a new parameter $\codedim'$, we define \albertimportant{The encoding should be on the packed version of $\pi_2(\bff)$}
 $$
 \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv, M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim' \times \codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\psicomfield(\bff)) = f\\ \wedge \  & \langle \psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff)), \vv\rangle  = \mu  \end{aligned} \right\}
 $$
@@ -363,7 +364,7 @@ $
 \item If the prover is honest, we have that
 %
 \begin{equation}\label{e:final_virt_equation}
-\left((\uu, \eta_j),\ \oracle_j, \ \pi_2(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation_{\cC_1, \comfield}^{\mathsf{lin}}\right)^{\ell_2}.
+\left((\uu, \eta_j),\ \oracle_j = \Enc_{\cC_{\codedim_1}}(\bff_{*j}), \ \pi_2(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation_{\cC_1, \comfield}^{\mathsf{lin}}\right)^{\ell_2}.
 \end{equation}
 %
 Prover and verifier use an IOPP to prove \eqref{e:final_virt_equation}.
@@ -374,6 +375,15 @@ Prover and verifier use an IOPP to prove \eqref{e:final_virt_equation}.
 %
 \end{construction}
 
+\begin{remark}[Reducing \eqref{e:final_virt_equation} to  MLE evaluation claims for $M_0$ and $\bff$]
+\albert{Ulrich: is this step preferable }
+The constraints underlying \eqref{e:final_virt_equation} state that
+%
+$$
+\sum_{i}
+$$
+%
+\end{remark}
 
 \begin{example}
     Say we have a vector $\bff\in \bits^{\codedim} \subseteq \ZZ^\codedim$ and we wish to prove MLE evaluation claims of an extended vector $\bff' \in \bits^{2\cdot \codedim}$ where 
@@ -511,7 +521,7 @@ The full SHA-256 compression function adds the initial state to the terminal sta
 
 \section{Galois FRI-Binius}
 
-\ulrich{Just notes, not sure if it worth to keep it in final doc}
+\ulrich{Just notes, not sure if it worth to keep it in final doc} \albert{Nice, thanks!}
 
 Packed commitment scheme for $\mathbb F_{2^m}$ . % in the values-to-uni-coeffs regime.
 
@@ -599,6 +609,109 @@ v_0
 \end{pmatrix},
 \]
 where $v_k = b(\phi^{-k} z)$.
+% and $M\cdot c$ is the Galois orbit of $c = (c_1,\ldots, c_m)$ in coordinates of the basis.
+% The rows of $M^{-1}$ give us the linear functionals that recover the $i$-th coordinate of $z$ from its Galois-orbit.
+\ulrich{%
+\small
+Invertibility of $M$ follows from that of $M^t$: 
+any linear functional $(c_1,\ldots, c_m)$ in the kernel of $M^t$ gives rise to the linearizable polynomial
+\[
+p(X) = \sum_{i=0}^{m-1} c_i\cdot X^{2^i} 
+\]
+which has $\beta_1,\ldots, \beta_m$, and hence the whole space $F$ as roots. 
+By dimension, $p(X)$ must be trivial, meaning that all its coefficents are zero.
+}
+
+
+
+
+
+
+
+\section{[Generalized to multilinear] Galois FRI-Binius}
+
+\albert{Rewriting the previous appendix for multilinear polynomials and arbitrary inner products}
+
+Packed commitment scheme for $\mathbb F_{2^m}$. % in the values-to-uni-coeffs regime.
+
+%\newcommand{\XX}{\mathbf{X}}
+
+Let $b_1,\ldots, b_m \in \FF_2^{2^n}$.
+Using an $\mathbb F_2$-basis $\beta_1,\ldots, \beta_{m}$ of $\mathbb F_{2^m}$ we
+pack $m$ inner products %of $2^{m}$ coeffs in $\mathbb F_2$,
+\[
+\langle b_i, \vv\rangle = \sum_{j\in \bits^{n}} b_{i,j} \cdot \vv_j, 
+\quad i = 1, \ldots, m,
+\]
+coefficient-wise into a single inner product 
+\begin{align*}
+b&\defeq b_1\cdot \beta_1 + \ldots b_m \cdot \beta_m \in \FF_{2^m}^{2^n}\\
+\langle b, \vv\rangle &= \langle b_1, \vv\rangle \cdot \beta_1 + \ldots + \langle b_m, \vv\rangle \cdot\beta_m
+\\
+&= \sum_{j\in \bits^n} (b_{1,j}\cdot \beta_1 + \ldots + b_{m,j}\cdot \beta_{m}) \cdot \vv_j.
+\end{align*}
+%
+The Frobenius automorphism $\phi(z) = z^2$ keeps $\mathbb F_2\subset \FF_{2^m}$ fixed, and has no other fixed points. 
+% (Recall that it is also additive.)
+We extract the value of $\langle b_i, \vv\rangle$ from the values of $\langle b, \vv\rangle$ along the Galois orbit 
+\[
+\vv, \vv^2, \vv^{2^2}, \ldots, \vv^{2^{m-1}},
+\]
+as follows, where by $\vv^{t}$ we mean that each component of $\vv$ is raised to the power $t$.
+%
+The Moore matrix
+\begin{align*}
+M = \begin{pmatrix}
+\beta_1 & \beta_2 & \ldots & \beta_m
+\\
+\beta_1^2 & \beta_2^2 & \ldots & \beta_m^2
+\\
+\beta_1^{2^2} & \beta_2^{2^2} & \ldots & \beta_m^{2^2}
+\\
+\vdots
+\\
+\beta_1^{2^{m-1}} & \beta_2^{2^{m-1}} & \ldots & \beta_m^{2^{m-1}}
+\end{pmatrix}
+\end{align*}
+consists of the Galois orbits of the basis vectors, and is invertible. (See below.)
+Using that the component polynomials are over $\mathbb F_2$, we see that
+%We write $v_{k} = b(\phi^{-k} z)$, $k=0, \ldots, m-1$, and 
+% \[
+% v_k = \phi^{-k}\left(b_1(z) \cdot \phi^{k}\beta_1 + \ldots + b_m(z) \cdot \phi^{k}\beta_m \right),
+% \]
+% since $b_i(\phi^{-k} z) = \phi^{-k} b_i(z)$, in other words
+\[
+\phi^{k} \left(\langle b, \phi^{-k}(\vv)\rangle\right) =  \langle b_1, \vv\rangle  \cdot \phi^{k}\beta_1 + \ldots + \langle b_m, \vv\rangle   \cdot \phi^{k}\beta_m,
+\]
+for any $k$. 
+%
+To this end, observe that
+\[
+M \cdot\begin{pmatrix}
+\langle b_1, \vv\rangle  
+\\
+\langle b_2, \vv\rangle  
+\\
+\langle b_3, \vv\rangle  
+\\
+\vdots
+\\
+\langle b_m, \vv\rangle  
+\end{pmatrix}
+=
+\begin{pmatrix}
+\langle b, \vv\rangle
+\\
+\phi \left(\langle b, \phi^{-1}(\vv)\rangle\right)
+\\
+\phi^{2} \left(\langle b, \phi^{-2}(\vv)\rangle\right)
+\\
+\vdots
+\\
+\phi^{m-1} \left(\langle b, \phi^{-(m-1)}(\vv)\rangle\right)
+\end{pmatrix}.
+\]
+Multiplying both sides by $M^{-1}$ we obtain an expression of the values $\langle b_i, \vv\rangle$ as a linear expression of the values $\phi^{k} \left(\langle b, \phi^{-k}(\vv)\rangle\right)$.
 % and $M\cdot c$ is the Galois orbit of $c = (c_1,\ldots, c_m)$ in coordinates of the basis.
 % The rows of $M^{-1}$ give us the linear functionals that recover the $i$-th coordinate of $z$ from its Galois-orbit.
 \ulrich{%
