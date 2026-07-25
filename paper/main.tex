@@ -329,7 +329,7 @@ Hence AND and Majority can be expressed over $\FF_q$ as  linear expressions of a
 
 \bigskip
 
-We next provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$ for specific shapes of $M$. Similarly as in \cref{?}, we assume a tensor structure $\codedim=\codedim_1 \cdot \codedim_2$ for $\vv$, and write $\bff = (\bff_{*j})_{j\in [\codedim_2]} \in \bits^{\codedim_1 \times \codedim_2}$.  We then let $\codedim_1'$ be such that $\codedim' = \codedim_1' \times \codedim_2$ and assume $M = \mathsf{Id} \otimes M_0$ where $M_0 \in \FF_2^{\codedim_1' \times \codedim_1}$ and $\mathsf{Id}$ is the $\codedim_2\times \codedim_2$ matrix. In words, $M$ is the $\codedim'\times \codedim = \codedim_1'\cdot \codedim_2 \times \codedim_1\cdot \codedim_2$ diagonal block matrix with $M_0$ as diagonal blocks. Then
+We next provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$ for specific shapes of $M$. Similarly as in \cref{?}, we assume a tensor structure $\codedim=\codedim_1 \cdot \codedim_2$ for $\vv$, and write $\bff = (\bff_{*j})_{j\in [\codedim_2]} \in \bits^{\codedim_1 \times \codedim_2}$.  We then let $\codedim_1'$ be such that $\codedim' = \codedim_1' \times \codedim_2$ and assume $M = \mathsf{Id} \otimes M_0$ where $M_0$ is a $\codedim_1' \times \codedim_1$ matrix with entries in $\FF_2$, and $\mathsf{Id}$ is the $\codedim_2\times \codedim_2$ matrix. In words, $M$ is the $\codedim'\times \codedim = \codedim_1'\cdot \codedim_2 \times \codedim_1\cdot \codedim_2$ diagonal block matrix with $M_0$ as diagonal blocks. Then
 %
 \begin{equation}\label{e:M_pi_f}
 M \cdot \pi_2(\bff) = (M_0 \cdot \pi_2(\bff_{*j}))_{j\in [\codedim_2]} \in (\FF_2^{\codedim_1'})^{\codedim_2}.
@@ -359,9 +359,9 @@ for some $\vv\in \comfield^{ \codedim_1'}$ and $\eta_j \in \comfield$. Again, si
 
 Note that \eqref{e:virtual_IOPP_intermediate} holds if and only if, for all $j\in [\codedim_2]$,
 %
-$$
-\eta_j=\sum_{i\in [\codedim_1']} \vv_i \cdot \pi_2(\bfh_{ij}) = \sum_{i\in [\codedim_1']} \vv_i \cdot \sum_{t\in [\codedim_1]} M_{0it}\cdot \pi_2(\bff_{tj}) = \sum_{t\in [\codedim_1]} \left(\sum_{i\in[\codedim_1']}M_{0it}\cdot \vv_i\right)\cdot \bff_{tj} = \langle \uu_j , \bff_{*j}\rangle,
-$$
+\begin{align*}
+\eta_j &=\sum_{i\in [\codedim_1']} \vv_i \cdot \pi_2(\bfh_{ij}) = \sum_{i\in [\codedim_1']} \vv_i \cdot \sum_{t\in [\codedim_1]} M_{0it}\cdot \pi_2(\bff_{tj})\\ =& \sum_{t\in [\codedim_1]} \left(\sum_{i\in[\codedim_1']}M_{0it}\cdot \vv_i\right)\cdot \bff_{tj} = \langle \uu_j , \bff_{*j}\rangle,
+\end{align*}
 where $\uu \in \comfield^{\codedim_1}$ is the vector whose $t$-th entry is
 %
 $$
@@ -522,6 +522,13 @@ The full SHA-256 compression function adds the initial state to the terminal sta
 \albert{GHASH or b127?}
 
 \albert{Comparison with Flock on SHA256: we commit to 8x less bits. This leads to more than 2x memory reduction. 80\% of prover costs are in the grand product GKR. Hence setting rate=1/4 or smaller has little impact on performance. This leads to smaller proofs. Prover time overall seems to be about 1.5-2.5x worse for us. I also switched to a better config of Ligerito (called k=4 in impl), which reduces proof size by almost 2x, but increases open time, which for us adds a negligible overhead, while in Flock it adds more overhead}
+
+Optimization ideas
+\begin{itemize}
+    \item b127 instead of GHASH
+    \item Lookup table (algorithm-wise, not SNARK-wise) for first levels of GKR
+    \item If we have an MLE claim of a vector and its shift by one position, can we reuse something for the latter claim from the computations made when proving the former?
+\end{itemize}
 
 \appendix
 
