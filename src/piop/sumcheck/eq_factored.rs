@@ -288,7 +288,10 @@ where
     LeafFoldTables { t_l: build(tau_l), t_r: build(tau_r) }
 }
 
-/// Round-1 message tables for one [`Pair2TauSet`], case-LUT form (16
+/// Round-1 message tables for one [`Pair2TauSet`], two interchangeable
+/// forms (byte-identical sums either way):
+///
+/// **`Precombined`** (opt-out, `F2Z_PAIR2_FACTORED=0`) — case-LUT form (16
 /// entries per slot each; slot `b` pairs positions `2b, 2b+1`):
 /// - `t_a0[b≪4 | (cE0≪2|cO0)]` = `w_b·TE_{2b}[cE0]·TO_{2b}[cO0]` (the
 ///   `Σ w·L0·R0` term),
@@ -297,13 +300,41 @@ where
 ///   weighted ΔL,
 /// - `t_do[…(cO0≪2|cO1)]` = the unweighted ΔR;
 ///
-/// the ΔL·ΔR cross term is then ONE wide multiply per slot. Shared by
-/// every group of the set.
-struct Pair2Tables<F> {
-    t_a0: Vec<F>,
-    t_a1: Vec<F>,
-    t_wde: Vec<F>,
-    t_do: Vec<F>,
+/// the ΔL·ΔR cross term is then ONE wide multiply per slot — but the four
+/// tables carry `64·2^k` entries (16 MiB at the deployed forest shapes,
+/// past L2), and the four gather streams' misses dominate the round.
+///
+/// **`Factored`** (the default) — only the suffix-weighted TE array,
+/// `wte[i] = v1[i≫3]·te[i]` (layout identical to `te`, `4·2^k` entries);
+/// the round body recombines against the set's raw `to`:
+/// `a0 += wide(wte[8b|cE0], to[8b|cO0])`, `t11 += wide(wte[8b|4|cE1],
+/// to[8b|4|cO1])`, `ΔΔ += wide(wte0 + wte1, to0 + to1)` — three wide
+/// multiplies per slot instead of one, against a 4× smaller (L2-resident)
+/// table set. The sums are the exact same field elements: the products
+/// keep the build's association `(w·TE)·TO`, char-2 `w·TE0 + w·TE1` IS the
+/// precombined `w·(TE0+TE1)` (distributivity is exact), and the deferred
+/// reduction is F₂-linear, so wide-vs-narrow accumulation reduces to
+/// identical values.
+enum Pair2Tables<F> {
+    Precombined {
+        t_a0: Vec<F>,
+        t_a1: Vec<F>,
+        t_wde: Vec<F>,
+        t_do: Vec<F>,
+    },
+    Factored {
+        wte: Vec<F>,
+    },
+}
+
+/// Factored [`Pair2Tables`] — the default: 4× less table footprint on the
+/// 16-case rounds, measured faster at DRAM-scale forest shapes.
+/// `F2Z_PAIR2_FACTORED=0` opts out (restores the precombined 16-case
+/// tables — diagnostic / A-B measurement). Byte-identical proofs either
+/// way. Read once per process.
+fn pair2_factored() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("F2Z_PAIR2_FACTORED").map_or(true, |v| v != "0"))
 }
 
 #[allow(clippy::arithmetic_side_effects)]
@@ -314,6 +345,11 @@ where
     let half = v1.len();
     debug_assert_eq!(set.te.len(), half << 3, "te = 4·2^k entries");
     debug_assert_eq!(set.to.len(), half << 3, "to = 4·2^k entries");
+    if pair2_factored() {
+        let wte: Vec<F> =
+            set.te.iter().enumerate().map(|(i, t)| v1[i >> 3].clone() * t).collect();
+        return Pair2Tables::Factored { wte };
+    }
     let mut t_a0 = Vec::with_capacity(half << 4);
     let mut t_a1 = Vec::with_capacity(half << 4);
     let mut t_wde = Vec::with_capacity(half << 4);
@@ -336,7 +372,47 @@ where
             }
         }
     }
-    Pair2Tables { t_a0, t_a1, t_wde, t_do }
+    Pair2Tables::Precombined { t_a0, t_a1, t_wde, t_do }
+}
+
+/// The factored 16-case round body shared by the four consumers
+/// ([`GroupBufs::Pair2Bits`]/[`GroupBufs::Pair3Bits`] round 1 over the
+/// pair tau sets, [`GroupBufs::Leaf2Bits`]/[`GroupBufs::Leaf3Bits`] round
+/// 2 over the stashed value sets): per slot, two weighted-even/odd wide
+/// products plus the ΔΔ cross product of the in-register sums — the same
+/// field values as the precombined tables (see [`Pair2Tables`]).
+#[allow(clippy::arithmetic_side_effects)]
+#[inline(always)]
+fn pair2_factored_body<F>(
+    wte: &[F],
+    to: &[F],
+    half: usize,
+    zero: &F,
+    cases: impl Fn(usize) -> (usize, usize, usize, usize),
+) -> (F, F, F)
+where
+    F: InnerTransparentField + WideMulAcc,
+{
+    let mut a0w = F::wide_zero(zero);
+    let mut t11w = F::wide_zero(zero);
+    let mut a2w = F::wide_zero(zero);
+    for b in 0..half {
+        let (ce0, ce1, co0, co1) = cases(b);
+        let u0 = &wte[(b << 3) | ce0];
+        let u1 = &wte[(b << 3) | 4 | ce1];
+        let t0 = &to[(b << 3) | co0];
+        let t1 = &to[(b << 3) | 4 | co1];
+        F::wide_add_assign(&mut a0w, &F::mul_wide(u0, t0));
+        F::wide_add_assign(&mut t11w, &F::mul_wide(u1, t1));
+        let du = u0.clone() + u1;
+        let dt = t0.clone() + t1;
+        F::wide_add_assign(&mut a2w, &F::mul_wide(&du, &dt));
+    }
+    let a0 = F::from_wide(a0w);
+    let t11 = F::from_wide(t11w);
+    let a2 = F::from_wide(a2w);
+    let a1 = t11 + &a0 + &a2;
+    (a0, a1, a2)
 }
 
 /// Round-1 fold tables for one [`Pair2TauSet`]: the folded round-2 entry is
@@ -864,22 +940,33 @@ where
                     // case-LUT loads. Same field values as the dense body
                     // (exact char-2 identities; reduction is F₂-linear).
                     debug_assert_eq!(j, 1, "pair-bit groups are consumed in round 1");
-                    let pt = &pair2_tables[*tau_set];
                     let h_off = 1usize << k; // O-side bit-position offset
-                    let mut a0 = zero.clone();
-                    let mut t11 = zero.clone();
-                    let mut a2w = F::wide_zero(&zero);
-                    for b in 0..half {
-                        let (ce0, ce1, co0, co1) = pair2_cases(lbits, rbits, b, h_off);
-                        a0 += &pt.t_a0[(b << 4) | (ce0 << 2) | co0];
-                        t11 += &pt.t_a1[(b << 4) | (ce1 << 2) | co1];
-                        let wde = &pt.t_wde[(b << 4) | (ce0 << 2) | ce1];
-                        let dro = &pt.t_do[(b << 4) | (co0 << 2) | co1];
-                        F::wide_add_assign(&mut a2w, &F::mul_wide(wde, dro));
+                    match &pair2_tables[*tau_set] {
+                        Pair2Tables::Factored { wte } => pair2_factored_body(
+                            wte,
+                            &pair_tau_sets[*tau_set].to,
+                            half,
+                            &zero,
+                            |b| pair2_cases(lbits, rbits, b, h_off),
+                        ),
+                        Pair2Tables::Precombined { t_a0, t_a1, t_wde, t_do } => {
+                            let mut a0 = zero.clone();
+                            let mut t11 = zero.clone();
+                            let mut a2w = F::wide_zero(&zero);
+                            for b in 0..half {
+                                let (ce0, ce1, co0, co1) =
+                                    pair2_cases(lbits, rbits, b, h_off);
+                                a0 += &t_a0[(b << 4) | (ce0 << 2) | co0];
+                                t11 += &t_a1[(b << 4) | (ce1 << 2) | co1];
+                                let wde = &t_wde[(b << 4) | (ce0 << 2) | ce1];
+                                let dro = &t_do[(b << 4) | (co0 << 2) | co1];
+                                F::wide_add_assign(&mut a2w, &F::mul_wide(wde, dro));
+                            }
+                            let a2 = F::from_wide(a2w);
+                            let a1 = t11 + &a0 + &a2;
+                            (a0, a1, a2)
+                        }
                     }
-                    let a2 = F::from_wide(a2w);
-                    let a1 = t11 + &a0 + &a2;
-                    (a0, a1, a2)
                 }
                 GroupBufs::LeafBits { lbits, rbits, tau_set } => {
                     // Bit-affine leaf layer, round 1 only: each slot's
@@ -938,21 +1025,31 @@ where
                     // Same field values as folding dense round-2 buffers
                     // (exact char-2 identities; reduction is F₂-linear).
                     debug_assert_eq!(j, 2, "leaf2-bit groups are consumed in round 2");
-                    let pt = &leaf2_tables[*tau_set];
-                    let mut a0 = zero.clone();
-                    let mut t11 = zero.clone();
-                    let mut a2w = F::wide_zero(&zero);
-                    for b in 0..half {
-                        let (ce0, ce1, co0, co1) = leaf2_cases(lbits, rbits, b);
-                        a0 += &pt.t_a0[(b << 4) | (ce0 << 2) | co0];
-                        t11 += &pt.t_a1[(b << 4) | (ce1 << 2) | co1];
-                        let wde = &pt.t_wde[(b << 4) | (ce0 << 2) | ce1];
-                        let dro = &pt.t_do[(b << 4) | (co0 << 2) | co1];
-                        F::wide_add_assign(&mut a2w, &F::mul_wide(wde, dro));
+                    match &leaf2_tables[*tau_set] {
+                        Pair2Tables::Factored { wte } => pair2_factored_body(
+                            wte,
+                            &leaf2_value_sets[*tau_set].to,
+                            half,
+                            &zero,
+                            |b| leaf2_cases(lbits, rbits, b),
+                        ),
+                        Pair2Tables::Precombined { t_a0, t_a1, t_wde, t_do } => {
+                            let mut a0 = zero.clone();
+                            let mut t11 = zero.clone();
+                            let mut a2w = F::wide_zero(&zero);
+                            for b in 0..half {
+                                let (ce0, ce1, co0, co1) = leaf2_cases(lbits, rbits, b);
+                                a0 += &t_a0[(b << 4) | (ce0 << 2) | co0];
+                                t11 += &t_a1[(b << 4) | (ce1 << 2) | co1];
+                                let wde = &t_wde[(b << 4) | (ce0 << 2) | ce1];
+                                let dro = &t_do[(b << 4) | (co0 << 2) | co1];
+                                F::wide_add_assign(&mut a2w, &F::mul_wide(wde, dro));
+                            }
+                            let a2 = F::from_wide(a2w);
+                            let a1 = t11 + &a0 + &a2;
+                            (a0, a1, a2)
+                        }
                     }
-                    let a2 = F::from_wide(a2w);
-                    let a1 = t11 + &a0 + &a2;
-                    (a0, a1, a2)
                 }
                 GroupBufs::Leaf3Bits { lbits, rbits, tau_set } if j == 1 => {
                     // Round 1: the LeafBits body (same shared tables).
@@ -975,21 +1072,31 @@ where
                 GroupBufs::Leaf3Bits { lbits, rbits, tau_set } if j == 2 => {
                     // Round 2: the Leaf2Bits body (same shared round-2
                     // tables over the same stashed value sets).
-                    let pt = &leaf2_tables[*tau_set];
-                    let mut a0 = zero.clone();
-                    let mut t11 = zero.clone();
-                    let mut a2w = F::wide_zero(&zero);
-                    for b in 0..half {
-                        let (ce0, ce1, co0, co1) = leaf2_cases(lbits, rbits, b);
-                        a0 += &pt.t_a0[(b << 4) | (ce0 << 2) | co0];
-                        t11 += &pt.t_a1[(b << 4) | (ce1 << 2) | co1];
-                        let wde = &pt.t_wde[(b << 4) | (ce0 << 2) | ce1];
-                        let dro = &pt.t_do[(b << 4) | (co0 << 2) | co1];
-                        F::wide_add_assign(&mut a2w, &F::mul_wide(wde, dro));
+                    match &leaf2_tables[*tau_set] {
+                        Pair2Tables::Factored { wte } => pair2_factored_body(
+                            wte,
+                            &leaf2_value_sets[*tau_set].to,
+                            half,
+                            &zero,
+                            |b| leaf2_cases(lbits, rbits, b),
+                        ),
+                        Pair2Tables::Precombined { t_a0, t_a1, t_wde, t_do } => {
+                            let mut a0 = zero.clone();
+                            let mut t11 = zero.clone();
+                            let mut a2w = F::wide_zero(&zero);
+                            for b in 0..half {
+                                let (ce0, ce1, co0, co1) = leaf2_cases(lbits, rbits, b);
+                                a0 += &t_a0[(b << 4) | (ce0 << 2) | co0];
+                                t11 += &t_a1[(b << 4) | (ce1 << 2) | co1];
+                                let wde = &t_wde[(b << 4) | (ce0 << 2) | ce1];
+                                let dro = &t_do[(b << 4) | (co0 << 2) | co1];
+                                F::wide_add_assign(&mut a2w, &F::mul_wide(wde, dro));
+                            }
+                            let a2 = F::from_wide(a2w);
+                            let a1 = t11 + &a0 + &a2;
+                            (a0, a1, a2)
+                        }
                     }
-                    let a2 = F::from_wide(a2w);
-                    let a1 = t11 + &a0 + &a2;
-                    (a0, a1, a2)
                 }
                 GroupBufs::Leaf3Bits { lbits, rbits, tau_set } => {
                     // Round 3: values INLINE from the stashed 16-case
@@ -1029,22 +1136,33 @@ where
                 }
                 GroupBufs::Pair3Bits { lbits, rbits, tau_set } if j == 1 => {
                     // Round 1: the Pair2Bits body (same shared tables).
-                    let pt = &pair2_tables[*tau_set];
                     let h_off = 1usize << k;
-                    let mut a0 = zero.clone();
-                    let mut t11 = zero.clone();
-                    let mut a2w = F::wide_zero(&zero);
-                    for b in 0..half {
-                        let (ce0, ce1, co0, co1) = pair2_cases(lbits, rbits, b, h_off);
-                        a0 += &pt.t_a0[(b << 4) | (ce0 << 2) | co0];
-                        t11 += &pt.t_a1[(b << 4) | (ce1 << 2) | co1];
-                        let wde = &pt.t_wde[(b << 4) | (ce0 << 2) | ce1];
-                        let dro = &pt.t_do[(b << 4) | (co0 << 2) | co1];
-                        F::wide_add_assign(&mut a2w, &F::mul_wide(wde, dro));
+                    match &pair2_tables[*tau_set] {
+                        Pair2Tables::Factored { wte } => pair2_factored_body(
+                            wte,
+                            &pair_tau_sets[*tau_set].to,
+                            half,
+                            &zero,
+                            |b| pair2_cases(lbits, rbits, b, h_off),
+                        ),
+                        Pair2Tables::Precombined { t_a0, t_a1, t_wde, t_do } => {
+                            let mut a0 = zero.clone();
+                            let mut t11 = zero.clone();
+                            let mut a2w = F::wide_zero(&zero);
+                            for b in 0..half {
+                                let (ce0, ce1, co0, co1) =
+                                    pair2_cases(lbits, rbits, b, h_off);
+                                a0 += &t_a0[(b << 4) | (ce0 << 2) | co0];
+                                t11 += &t_a1[(b << 4) | (ce1 << 2) | co1];
+                                let wde = &t_wde[(b << 4) | (ce0 << 2) | ce1];
+                                let dro = &t_do[(b << 4) | (co0 << 2) | co1];
+                                F::wide_add_assign(&mut a2w, &F::mul_wide(wde, dro));
+                            }
+                            let a2 = F::from_wide(a2w);
+                            let a1 = t11 + &a0 + &a2;
+                            (a0, a1, a2)
+                        }
                     }
-                    let a2 = F::from_wide(a2w);
-                    let a1 = t11 + &a0 + &a2;
-                    (a0, a1, a2)
                 }
                 GroupBufs::Pair3Bits { lbits, rbits, tau_set } => {
                     // Round 2: values inline from the stashed fold tables
@@ -1226,7 +1344,26 @@ where
                 bufs.iter_mut().enumerate().map(|(t, gb)| fused(t, gb)).collect();
             out
         } else {
-            let _g_msg = crate::utils::prof::scope("eqf:msg");
+            // Diagnostic-only: split the aggregate `eqf:msg` bucket by round
+            // shape (the LUT prefixes vs the dense kernels) — the labels are
+            // resolved from the representative group, all forest groups
+            // being same-variant.
+            let msg_label = match (&bufs[0], j) {
+                (GroupBufs::Dense(_), 1) => "eqf:msg:dense_r1",
+                (GroupBufs::Dense(_), _) => "eqf:msg:dense_postlut",
+                (GroupBufs::LeafBits { .. }, _) => "eqf:msg:leafbits",
+                (GroupBufs::Pair2Bits { .. }, _) => "eqf:msg:pair2",
+                (GroupBufs::Leaf2Bits { .. }, 1) | (GroupBufs::Leaf3Bits { .. }, 1) => {
+                    "eqf:msg:leaf_r1"
+                }
+                (GroupBufs::Leaf2Bits { .. }, _) => "eqf:msg:leaf2_r2",
+                (GroupBufs::Leaf3Bits { .. }, 2) => "eqf:msg:leaf3_r2",
+                (GroupBufs::Leaf3Bits { .. }, _) => "eqf:msg:leaf3_r3",
+                (GroupBufs::Pair3Bits { .. }, 1) => "eqf:msg:pair3_r1",
+                (GroupBufs::Pair3Bits { .. }, _) => "eqf:msg:pair3_r2",
+                (GroupBufs::T4Bits { .. }, _) => "eqf:msg:t4bits",
+            };
+            let _g_msg = crate::utils::prof::scope(msg_label);
             #[cfg(feature = "parallel")]
             let out: Vec<(F, F, F, F)> = {
                 // ≥ ~512 element-pairs per task so late-round tiny bodies don't
@@ -1403,10 +1540,11 @@ where
                         // tables get stashed as `leaf3_value_sets` below.
                     } else {
                         // Round 3's fold: inline-materialise the dense
-                        // round-4 buffers — `v' = (1+ρ₃)v_0 + ρ₃v_1` over
-                        // byte-keyed selects (exact char-2 identity).
+                        // round-4 buffers — `v' = v_0 + ρ₃(v_0 + v_1)`
+                        // (the canonical one-multiply char-2 fold; equals
+                        // `(1+ρ₃)v_0 + ρ₃v_1` exactly by distributivity)
+                        // over byte-keyed selects.
                         let vs = &leaf3_value_sets[*tau_set];
-                        let opr = one.clone() + &rho;
                         let mut l = Vec::with_capacity(half);
                         let mut r = Vec::with_capacity(half);
                         for b in 0..half {
@@ -1416,10 +1554,10 @@ where
                             let e = b << 1;
                             let v0 = &vs.f_e[(e << 4) | leaf3_idx(bl & 15)];
                             let v1 = &vs.f_e[((e | 1) << 4) | leaf3_idx(bl >> 4)];
-                            l.push(opr.clone() * v0 + &(rho.clone() * v1));
+                            l.push(v0.clone() + &(rho.clone() * &(v0.clone() + v1)));
                             let u0 = &vs.f_o[(e << 4) | leaf3_idx(br & 15)];
                             let u1 = &vs.f_o[((e | 1) << 4) | leaf3_idx(br >> 4)];
-                            r.push(opr.clone() * u0 + &(rho.clone() * u1));
+                            r.push(u0.clone() + &(rho.clone() * &(u0.clone() + u1)));
                         }
                         *gb = GroupBufs::Dense(vec![(l, r)]);
                     }
@@ -1431,9 +1569,9 @@ where
                     } else {
                         // Round 2's fold: inline-materialise the dense
                         // round-3 buffers from the stashed tables (same
-                        // extraction as the round-2 message body).
+                        // extraction as the round-2 message body), via the
+                        // one-multiply fold `v_0 + ρ₂(v_0 + v_1)`.
                         let vs = &pair3_value_sets[*tau_set];
-                        let opr = one.clone() + &rho;
                         let h_off = half << 2; // 2^k at j = 2
                         let mut l = Vec::with_capacity(half);
                         let mut r = Vec::with_capacity(half);
@@ -1447,36 +1585,51 @@ where
                             let e = b << 1;
                             let v0 = &vs.f_e[(e << 4) | pair3_idx(nl & 3, nr & 3)];
                             let v1 = &vs.f_e[((e | 1) << 4) | pair3_idx(nl >> 2, nr >> 2)];
-                            l.push(opr.clone() * v0 + &(rho.clone() * v1));
+                            l.push(v0.clone() + &(rho.clone() * &(v0.clone() + v1)));
                             let u0 = &vs.f_o[(e << 4) | pair3_idx(ml & 3, mr & 3)];
                             let u1 = &vs.f_o[((e | 1) << 4) | pair3_idx(ml >> 2, mr >> 2)];
-                            r.push(opr.clone() * u0 + &(rho.clone() * u1));
+                            r.push(u0.clone() + &(rho.clone() * &(u0.clone() + u1)));
                         }
                         *gb = GroupBufs::Dense(vec![(l, r)]);
                     }
                 }
                 GroupBufs::T4Bits { lbits, rbits, tau_set } => {
                     // Round 1's fold: inline-materialise the dense round-2
-                    // buffers from T4 selects.
+                    // buffers from T4 selects, via the one-multiply fold
+                    // `v_0 + ρ(v_0 + v_1)`.
                     let t4 = &t4_sets[*tau_set];
                     let q1 = 4 * half; // 2^{k+1}
                     let h_off = 2 * half; // 2^k
-                    let opr = one.clone() + &rho;
                     let mut l = Vec::with_capacity(half);
                     let mut r = Vec::with_capacity(half);
                     for b in 0..half {
                         let e = b << 1;
                         let v0 = &t4[t4bits_idx(lbits, rbits, e, q1)];
                         let v1 = &t4[t4bits_idx(lbits, rbits, e | 1, q1)];
-                        l.push(opr.clone() * v0 + &(rho.clone() * v1));
+                        l.push(v0.clone() + &(rho.clone() * &(v0.clone() + v1)));
                         let u0 = &t4[t4bits_idx(lbits, rbits, e + h_off, q1)];
                         let u1 = &t4[t4bits_idx(lbits, rbits, (e | 1) + h_off, q1)];
-                        r.push(opr.clone() * u0 + &(rho.clone() * u1));
+                        r.push(u0.clone() + &(rho.clone() * &(u0.clone() + u1)));
                     }
                     *gb = GroupBufs::Dense(vec![(l, r)]);
                 }
             };
-            let _g_fold = crate::utils::prof::scope("eqf:fold");
+            // Diagnostic-only: split folds by shape — bit-keeping stashes vs
+            // the LUT→Dense materialising folds vs plain dense folds.
+            let fold_label = match (&bufs[0], j) {
+                (GroupBufs::Dense(_), _) => "eqf:fold:dense",
+                (GroupBufs::LeafBits { .. }, _) => "eqf:fold:leafmat",
+                (GroupBufs::Pair2Bits { .. }, _) => "eqf:fold:pair2mat",
+                (GroupBufs::Leaf2Bits { .. }, 1) | (GroupBufs::Leaf3Bits { .. }, 1 | 2) => {
+                    "eqf:fold:stash"
+                }
+                (GroupBufs::Leaf2Bits { .. }, _) => "eqf:fold:leaf2mat",
+                (GroupBufs::Leaf3Bits { .. }, _) => "eqf:fold:leaf3mat",
+                (GroupBufs::Pair3Bits { .. }, 1) => "eqf:fold:stash",
+                (GroupBufs::Pair3Bits { .. }, _) => "eqf:fold:pair3mat",
+                (GroupBufs::T4Bits { .. }, _) => "eqf:fold:t4mat",
+            };
+            let _g_fold = crate::utils::prof::scope(fold_label);
             #[cfg(feature = "parallel")]
             {
                 let min_len = (512usize / half.max(1)).max(1);

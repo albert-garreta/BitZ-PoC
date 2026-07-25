@@ -125,6 +125,10 @@ the mod-`q` Ligerito roundtrip with tamper / range / generator rejections, the
 NEON-vs-scalar field equivalence (`neon_mul_matches_scalar_pipeline`), and the
 serialization roundtrip + tampered-byte rejection.
 
+For profilers (`sample`/`samply`/Instruments), `--profile profiling` builds
+release codegen plus DWARF in its own target subdirectory, so alternating
+profile/measure runs never invalidates the release cache.
+
 ### CLI runner (`f2z`)
 
 `src/bin/f2z.rs` is a one-shot commit / prove / verify runner for a single
@@ -218,7 +222,11 @@ Prover knobs (every configuration produces byte-identical proofs):
 `F2Z_EQF_FUSE=0` disables pass fusion (restores the eager two-pass fold);
 `F2Z_LUT3=0` disables the deeper L/4 LUT prefixes; `F2Z_EQF_NOKERNEL=1`
 forces the generic (non-NEON) round/fold kernels (diagnostic);
-`F2_FOREST_SCHEDULE=l8` opts into the L/8 forest memory schedule.
+`F2Z_PAIR2_FACTORED=0` restores the precombined 16-case LUT round tables
+(the factored default trades two extra wide multiplies per slot for 4×
+less table footprint — measured −9–15 % prove at n = 28, see the dated
+note under the reference numbers); `F2_FOREST_SCHEDULE=l8` opts into the
+L/8 forest memory schedule.
 `F2Z_LIG_PROFILE` (bench-only, changes the proof: `slim` default / `fast`
 / `secure` / `r8` = ad-hoc UDR rate-1/8 probe /
 `custom:<log_inv_rate>:<initial_k>`) selects the Ligerito profile; the
@@ -335,6 +343,27 @@ cell tensor (16 B per cell) never exists, so peak memory sits at the
 packed/forest scale. (The pre-restructure dense path held ~16 B/bit —
 4.28 GB and a 7.9 s commit at n=28 — and could not reach n ≥ 30 on 16 GB
 at all; the pre-LTO build was a further ~1.7–3× slower at the big shapes.)
+
+**Factored LUT tables + one-multiply materialising folds (2026-07-25).**
+The 16-case LUT rounds of the two bottom forest layers (`Pair3Bits` round
+1, `Leaf3Bits` round 2) used four precombined tables (`64·2^k` entries —
+16 MiB at n = 28) whose gather streams fall out of L2 and dominated the
+rounds (53 + 46 ms of a 626 ms profiled prove, line-level flamegraph
+attribution). The default now keeps only the suffix-weighted `w·te` array
+and recombines against the set's raw `to` per slot — three wide multiplies
+instead of one, 4× less table footprint (`F2Z_PAIR2_FACTORED=0` opts out)
+— and the three LUT→Dense materialising folds use the canonical
+one-multiply fold `v0 + ρ(v0 + v1)` in place of `(1+ρ)v0 + ρv1` (exact
+distributivity, same canonical bits). Byte-identical proofs (in-process
+pins vs the eager forest; cross-process `fuse_check` vs the pre-change
+build). Measured (alternated in-window A/B, medians of 5, both changes):
+n=28 prove 616 → 558 ms on a cool box (**−9.4 %**) and 658 → 559 ms on a
+churned box (−15 % — the factored form is markedly less sensitive to
+cache/thermal pressure), n=26 ≈ −4 %, n=22 a wash, peaks unchanged. The
+reference table above predates this change (its n ≥ 26 prove rows are now
+~5–10 % pessimistic, pending a fresh-box re-measure). The profile scopes
+`eqf:msg:*` / `eqf:fold:*` now split the aggregate round buckets by shape
+(`OBLONG_PROFILE=1`).
 
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 

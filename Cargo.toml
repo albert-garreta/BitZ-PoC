@@ -53,3 +53,9 @@ unchecked = []
 [profile.release]
 lto = true
 codegen-units = 1
+
+# Release codegen + DWARF, for profilers (sample/samply). Separate target
+# dir, so alternating profile/measure runs never invalidates release caches.
+[profile.profiling]
+inherits = "release"
+debug = 2

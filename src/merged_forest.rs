@@ -220,27 +220,34 @@ fn jit_round1_fuse() -> bool {
     std::env::var("F2Z_JIT_R1").map_or(true, |v| v != "0")
 }
 
-/// Per-position level-(d−2) value off the bits + shared `T4` table — the
-/// [`t4_level_values`] formula as a position closure (for the fused JIT
+/// Per-position level-(d−2) reader off the bits + shared `T4` table — the
+/// [`t4_level_values`] formula as a struct accessor (for the fused JIT
 /// builders, whose access pattern is slot-paired rather than streaming):
 /// position `j` selects `t4[(j≪4) | (cE≪2) | cO]` with
 /// `cE = lbits.bit(j) | rbits.bit(j)≪1`, `cO` the same at `j + q1`.
-#[inline]
-#[allow(clippy::arithmetic_side_effects)]
-fn t4_value_at<'a>(
+///
+/// A concrete struct with an `#[inline(always)]` accessor, NOT a returned
+/// `impl Fn`: the opaque-closure form compiled to a real call per gather
+/// at the build/JIT sites — millions per prove, measured ~5% of n=28
+/// prove-side samples in `<&F as FnMut>::call_mut`.
+struct T4At<'a> {
     lbits: &'a [u64],
     rbits: &'a [u64],
     t4: &'a [Gf],
     q1: usize,
-) -> impl Fn(usize) -> Gf + 'a {
+}
+
+impl T4At<'_> {
     #[inline(always)]
-    fn bit(bits: &[u64], p: usize) -> usize {
-        ((bits[p >> 6] >> (p & 63)) & 1) as usize
-    }
-    move |j: usize| {
-        let ce = bit(lbits, j) | (bit(rbits, j) << 1);
-        let co = bit(lbits, j + q1) | (bit(rbits, j + q1) << 1);
-        t4[(j << 4) | (ce << 2) | co]
+    #[allow(clippy::arithmetic_side_effects)]
+    fn at(&self, j: usize) -> Gf {
+        #[inline(always)]
+        fn bit(bits: &[u64], p: usize) -> usize {
+            ((bits[p >> 6] >> (p & 63)) & 1) as usize
+        }
+        let ce = bit(self.lbits, j) | (bit(self.rbits, j) << 1);
+        let co = bit(self.lbits, j + self.q1) | (bit(self.rbits, j + self.q1) << 1);
+        self.t4[(j << 4) | (ce << 2) | co]
     }
 }
 
@@ -603,8 +610,8 @@ fn prove_merged_forest_lazy_sched(
             // exists: each of its positions is gathered exactly once
             // here, so this is the same gather count with the
             // materialise-then-read round trip removed.
-            let at = t4_value_at(lb, rb, &t4, q1);
-            let v3 = |y: usize| -> Gf { at(y) * at(y + h3) };
+            let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
+            let v3 = |y: usize| -> Gf { at.at(y) * at.at(y + h3) };
             let hh = h3 >> 1;
             ((0..hh).map(v3).collect(), (hh..h3).map(v3).collect())
         });
@@ -627,11 +634,9 @@ fn prove_merged_forest_lazy_sched(
                         cfg_into_iter!(0..num_trees)
                             .map(|c| {
                                 let (lb, rb) = &cb[c];
-                                let (pair, coeffs) = dense_jit_fused_round1(
-                                    hh,
-                                    &v1,
-                                    t4_value_at(lb, rb, &t4, q1),
-                                );
+                                let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
+                                let (pair, coeffs) =
+                                    dense_jit_fused_round1(hh, &v1, |j| at.at(j));
                                 (GroupBufs::Dense(vec![pair]), coeffs)
                             })
                             .collect();
@@ -734,9 +739,9 @@ fn prove_merged_forest_lazy_sched(
         let (lb, rb) = &cb[c];
         // Level d−4 straight from T4 gathers (each position once) — the
         // full level-(d−2) buffer never exists (see the L/4 build).
-        let at = t4_value_at(lb, rb, &t4, q1);
+        let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
         let v4 =
-            |y: usize| -> Gf { (at(y) * at(y + h3)) * (at(y + h4) * at(y + h4 + h3)) };
+            |y: usize| -> Gf { (at.at(y) * at.at(y + h3)) * (at.at(y + h4) * at.at(y + h4 + h3)) };
         let hh = h4 >> 1;
         ((0..hh).map(v4).collect(), (hh..h4).map(v4).collect())
     });
@@ -757,9 +762,9 @@ fn prove_merged_forest_lazy_sched(
                 let generated: Vec<(GroupBufs<Gf>, (Gf, Gf, Gf))> = cfg_into_iter!(0..num_trees)
                     .map(|c| {
                         let (lb, rb) = &cb[c];
-                        let at = t4_value_at(lb, rb, &t4, q1);
+                        let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
                         let (pair, coeffs) = dense_jit_fused_round1(hh, &v1, |y| {
-                            at(y) * at(y + h3)
+                            at.at(y) * at.at(y + h3)
                         });
                         (GroupBufs::Dense(vec![pair]), coeffs)
                     })
@@ -982,8 +987,8 @@ fn prove_merged_forest_lazy_multi_sched(
             let (lb, rb) = &cb[c];
             // Paired T4 gathers — level d−2 never materialises (see the
             // single prover's L/4 build).
-            let at = t4_value_at(lb, rb, t4, q1);
-            let v3 = |y: usize| -> Gf { at(y) * at(y + h3) };
+            let at = T4At { lbits: lb, rbits: rb, t4, q1 };
+            let v3 = |y: usize| -> Gf { at.at(y) * at.at(y + h3) };
             let hh = h3 >> 1;
             ((0..hh).map(v3).collect(), (hh..h3).map(v3).collect())
         });
@@ -1006,11 +1011,9 @@ fn prove_merged_forest_lazy_multi_sched(
                                     .as_ref()
                                     .expect("leaf bits alive for the JIT regen");
                                 let (lb, rb) = &cb[c];
-                                let (pair, coeffs) = dense_jit_fused_round1(
-                                    hh,
-                                    &v1,
-                                    t4_value_at(lb, rb, t4, q1),
-                                );
+                                let at = T4At { lbits: lb, rbits: rb, t4, q1 };
+                                let (pair, coeffs) =
+                                    dense_jit_fused_round1(hh, &v1, |j| at.at(j));
                                 (GroupBufs::Dense(vec![pair]), coeffs)
                             })
                             .collect();
@@ -1118,9 +1121,9 @@ fn prove_merged_forest_lazy_multi_sched(
         let (lb, rb) = &cb[c];
         // Paired T4 gathers — level d−2 never materialises (see the
         // single prover's L/8 build).
-        let at = t4_value_at(lb, rb, t4, q1);
+        let at = T4At { lbits: lb, rbits: rb, t4, q1 };
         let v4 =
-            |y: usize| -> Gf { (at(y) * at(y + h3)) * (at(y + h4) * at(y + h4 + h3)) };
+            |y: usize| -> Gf { (at.at(y) * at.at(y + h3)) * (at.at(y + h4) * at.at(y + h4 + h3)) };
         let hh = h4 >> 1;
         ((0..hh).map(v4).collect(), (hh..h4).map(v4).collect())
     });
@@ -1143,9 +1146,9 @@ fn prove_merged_forest_lazy_multi_sched(
                             .as_ref()
                             .expect("leaf bits alive for the JIT regen");
                         let (lb, rb) = &cb[c];
-                        let at = t4_value_at(lb, rb, t4, q1);
+                        let at = T4At { lbits: lb, rbits: rb, t4, q1 };
                         let (pair, coeffs) =
-                            dense_jit_fused_round1(hh, &v1, |y| at(y) * at(y + h3));
+                            dense_jit_fused_round1(hh, &v1, |y| at.at(y) * at.at(y + h3));
                         (GroupBufs::Dense(vec![pair]), coeffs)
                     })
                     .collect();
