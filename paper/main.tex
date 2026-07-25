@@ -131,13 +131,13 @@ Interleaved codes
 
 
 \subsection{Constrained codes over dual fields \albert{not sure dual is a good word: the two fields are just ``different'', while dual things tend to have a close relation between each other}}
-Let $\codedim\geq 0$ be a dimension parameter, and $\codelength\geq 0$ a blocklength parameter. Let $\FF$ be a field (not necessarily a prime field), and let $\cC\subseteq \FF^{\codelength}$ be a linear code of dimension $k$ and blocklength $\codelength$ over $\FF$.  Let $\inplen\geq0$ be a public input length parameter, and let $Q\in \FF[Y_1, \ldots, Y_{\inplen}, Z_1, \ldots, Z_{\codedim}]$  be a constraint polynomial, of arbitrary degree, 
-with coefficients in $\FF$ and on $\inplen+\codedim$ variables. Consider the following relation:
+Let $\codedim_0\geq 0$ be a dimension parameter, and $\codelength\geq 0$ a blocklength parameter. Let $\FF$ be a field (not necessarily a prime field), and let $\cC\subseteq \FF^{\codelength}$ be a linear code of dimension $\codedim_0$ and blocklength $\codelength$ over $\FF$.  Let $\inplen\geq0$ be a public input length parameter, and let $Q\in \FF[Y_1, \ldots, Y_{\inplen}, Z_1, \ldots, Z_{\codedim}]$  be a constraint polynomial, of arbitrary degree, 
+with coefficients in $\FF$ and on $\inplen+\codedim$ variables. Further, let $\codedim\geq \codedim_0$ be a witness length paramter, and let $P:\FF^{\codedim} \to \FF^{\codedim_0}$ be an arbitrary map (looking ahead, for us $P$ will be a packing map that packs elements from $\FF_2$ into elements of a larger binary field.     Consider the following relation:
 %
 $$
-\Relation_{\cC, \FF}^{Q} \defeq \left\{ \left(\begin{aligned} &\inp=\yy\in \FF^\inplen, \\&\oracle = f \in \FF^\codelength, \\ &\wit= \bff\in \FF^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\bff) = f\\ \wedge \  &Q(\yy, \bff) = 0  \end{aligned} \right\}
+\Relation^Q[\cC,\FF, P] \defeq \left\{ \left(\begin{aligned} &\inp=\yy\in \FF^\inplen, \\&\oracle = f \in \FF^\codelength, \\ &\wit= \bff\in \FF^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(P(\bff)) = f\\ \wedge \  &Q(\yy, \bff) = 0  \end{aligned} \right\}
 $$
-When $Q$ and $\yy$ are such that $\yy=(\vv,\mu)\in \FF^{\codedim}\times \FF$ and $$Q(\yy,\ff)= \langle \vv, \ff\rangle = \sum_{i\in [\codedim]} \vv_i \cdot \ff_i,$$ we denote $\Relation_{\cC, \FF}^{Q}$  by $\Relation_{\cC, \FF}^{\mathsf{lin}}$.
+When $Q$ and $\yy$ are such that $\yy=(\vv,\mu)\in \FF^{\codedim}\times \FF$ and $$Q(\yy,\ff)= \langle \vv, \ff\rangle = \sum_{i\in [\codedim]} \vv_i \cdot \ff_i,$$ we denote $\Relation^Q[\cC,\FF, P]$  by $\Relation^{\mathsf{lin}}[ \cC,\FF,P]$.
 
 %When $Q$ and $\yy$ are such that $\yy=(\rr,\mu)\in \FF^{\log\codedim}\times \FF$ and $$Q(\yy,\ff)= \mle{\bff}(\rr)-\mu,$$ we denote $\Relation_{\cC, \FF}^{Q}$  by $\Relation_{\cC, \FF}^{\mathsf{mle}}$. 
 
@@ -176,9 +176,8 @@ $$
 %
 %
 Let $\cC\subseteq \comfield^{\codelength}$ be a linear code of dimension $\codedim/2^{\comfieldexp}$ and blocklength $\codelength$ over $\comfield$. Define
-\albertimportant{The encoding should be on the packed version of $\pi_2(\bff)$}
 $$
-\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \{0,1\}^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\pack(\psicomfield(\bff))) = f\\ \wedge \  & \langle \psievalfield(\bff), \vv\rangle  = \mu  \end{aligned} \right\}
+\Relation^{\mathsf{lin-dual}}[\cC,\comfield, \evalfield,\pack] \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \{0,1\}^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\pack(\psicomfield(\bff))) = f\\ \wedge \  & \langle \psievalfield(\bff), \vv\rangle  = \mu  \end{aligned} \right\}
 $$
 %
 \subsection{Tensor decomposition, interleaved codes, and products of constrained codes}
@@ -212,20 +211,20 @@ $
 P(Y,0) = 1$ and $P(Y,1) = Y.
 $
 %
-Consider the relation $\Relation_{\cC_1, \comfield}^{Q}$ for 
+Consider the relation $\Relation_{\comfield, \pack}^{Q}$ with underlying code $\cC_1$ and 
 %
 $$Q(Y_1, \ldots, Y_{\codedim_1+1}, Z_1, \ldots, Z_{\codedim_1}) = \Pi_{i=1}^{\codedim_1} P(Y_i, Z_i) - Y_{\codedim_1+1}.$$ 
 %
-Precisely, \albertimportant{The encoding should be on the packed version of $\pi_2(\bff)$, and $\bff$ should be in $\FF_2^{\codedim_1}$?}
+Precisely, 
 %
 $$
-\Relation_{\cC_1, \comfield}^{Q} = \left\{ \left(\begin{aligned} &\inp=(\yy,z)\in \comfield^{\codedim_1}\times \comfield, \\&\oracle = f \in \comfield^{\codelength/\codedim_2}, \\ &\wit= \bff\in \comfield^{\codedim_1}\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC_1}(\pack(\bff)) = f\\ \wedge \  &\Pi_{i=1}^{\codedim_1} \left((\yy_i-1)\cdot \bff_i +1\right) = z  \end{aligned} \right\}
+\Relation^{Q}[ \cC_1,\comfield, \pack] = \left\{ \left(\begin{aligned} &\inp=(\yy,z)\in \comfield^{\codedim_1}\times \comfield, \\&\oracle = f \in \comfield^{\codelength/\codedim_2}, \\ &\wit= \bff\in \comfield^{\codedim_1}\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC_1}(\pack(\bff)) = f\\ \wedge \  &\Pi_{i=1}^{\codedim_1} \left((\yy_i-1)\cdot \bff_i +1\right) = z  \end{aligned} \right\}
 $$
 %
 We assume prover and verifier have access to an IOR $\Pi_{\mathsf{red}}$  that reduces 
 %
 $
-\Relation_{\cC_1, \comfield}^{Q}$ to $\Relation_{\cC_1, \comfield}^{\mathsf{eval}}$. 
+\Relation^{Q}[\cC_1,\comfield,\pack]$ to $\Relation^{\mathsf{lin}}[ \cC_1,\comfield, \pack]$. 
 %
 %
 We assume $\Pi_{\mathsf{red}}$ works so that the verifier never queries $\oracle$ \albert{Would be better to say upfront what this protocol is in our mental model, and then make abstract assumptions like this, which look arbitrary otherwise. Same applies below}.
@@ -233,12 +232,12 @@ We assume $\Pi_{\mathsf{red}}$ works so that the verifier never queries $\oracle
 Further, we consider the $\codedim_2$-fold parallel composition $\Pi_{\mathsf{red}}^{\codedim_2}$ of $\Pi_{\mathsf{red}}$,  and we assume that given $\codedim_2$ triples 
 %
 $$
-\left((\yy^{(j)},\mu^{(j)}) , g^{(j)}, \bfh^{(j)}  \right)_{j\in[\codedim_2]} \in \left(\Relation_{\cC_1, \comfield}^{Q}\right)^{\codedim_2}
+\left((\yy^{(j)},\mu^{(j)}) , g^{(j)}, \bfh^{(j)}  \right)_{j\in[\codedim_2]} \in \left(\Relation^{Q}[ \cC_1,\comfield, \pack]\right)^{\codedim_2}
 $$
 the IOR $\Pi_{\mathsf{red}}^{\codedim_2}$ outputs 
 %
 $$
-\left((\vv,\mu_j) \in \comfield^{ \codedim_1 } \times \comfield, g^{(j)} , \bfh^{(j)} \right)_{j\in[\codedim_2]} \in \left(\Relation_{\cC_1, \comfield}^{\mathsf{lin}}\right)^{\codedim_2},
+\left((\vv,\mu_j) \in \comfield^{ \codedim_1 } \times \comfield, g^{(j)} , \bfh^{(j)} \right)_{j\in[\codedim_2]} \in \left(\Relation^{\mathsf{lin}}[ \cC_1,\comfield, \pack]\right)^{\codedim_2},
 $$
 for some $\rr\in \comfield^{\log \codedim_1}$ and some $\mu_j\in \comfield$ for $j\in [\codedim_2]$.
 In words, $\Pi_{\mathsf{red}}^{\codedim_2}$ outputs $\codedim_2$ linear claims for the input witnesses $\bfh^{(j)}$ behind the input oracles $g^{(j)}$, all \emph{on the same vector of coefficients  $\vv$}.   \albert{We could be more abstract with this IOR, but I find it difficult to tie it with the protocol in the next section then. Maybe better to write a remark} 
@@ -247,9 +246,9 @@ We describe one such $\Pi_{\mathsf{red}}^{\codedim_2}$ in \cref{?}, where $\vv$ 
 
 
 \subsection{The main {\ftwoz}  IOR}
-We provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$ next.
-\begin{construction}[IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$]\label{c:core_iop}
-The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$.  We assume the tensor split from the previous Section \ref{}, and adopt its notation. 
+We provide an IOPP for $\Relation^{\mathsf{lin-dual}}[\cC, \comfield, \evalfield, \pack]$ next.
+\begin{construction}[IOPP for {$\Relation^{\mathsf{lin-dual}}[\cC, \comfield, \evalfield, \pack]$}]\label{c:core_iop}
+The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation^{\mathsf{lin-dual}}[\cC, \comfield, \evalfield, \pack]$.  We assume the tensor split from the previous Section \ref{}, and adopt its notation. 
 Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with sufficiently large multiplicative order, to be determined later.  
 
 
@@ -277,7 +276,7 @@ where in the honest case  $f_{*j} = \Enc_{\cC_1}(\pack(\psicomfield(\bff_{*j})))
  At the end of this IOR, they are left with the following claim to prove: 
 %
 \begin{equation}\label{e:iopp_mle_claims}
-\left((\vv, \mu_j'), \ f_{*j}, \ \psicomfield(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation_{\cC_1, \comfield}^{\mathsf{lin}}\right)^{\codedim_2}\end{equation} for some vector $\vv$ and field elements $\mu_j'$ output during the IOR $\Pi_{\mathsf{red}}^{\codedim_2}$. 
+\left((\vv, \mu_j'), \ f_{*j}, \ \psicomfield(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation^{\mathsf{lin}}[\cC_1, \comfield,\pack]\right)^{\codedim_2}\end{equation} for some vector $\vv$ and field elements $\mu_j'$ output during the IOR $\Pi_{\mathsf{red}}^{\codedim_2}$. 
 \item Prover and  verifier engage in a IOPP  to certify the claims \eqref{e:iopp_mle_claims}. 
 \end{enumerate}
 \end{construction}
@@ -306,13 +305,13 @@ At this point it is maybe more important to clarify how useful the construction 
 \section{Virtualization of $\FF_2$-linear combinations lifted to integers}
 
 
-In this section we expand relation $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$ to impose, instead of constraints of the form $\Enc_\cC(\pack(\pi_2(\bff)))=f$ and $\langle \pi_q(\bff), \vv  \rangle = \mu$, constraints as $\Enc_\cC(\pack(\pi_2(\bff))) = f$  and $$\langle \pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff))) \rangle = \mu$$ for a matrix $M\in \FF_{2}^{\codedim' \times \codedim}$. Precisely, given a new parameter $\codedim'$, we define 
+In this section we expand relation $\Relation^{\mathsf{lin-dual}}[\cC, \comfield, \evalfield, \pack]$ to impose, instead of constraints of the form $\Enc_\cC(\pack(\pi_2(\bff)))=f$ and $\langle \pi_q(\bff), \vv  \rangle = \mu$, constraints as $\Enc_\cC(\pack(\pi_2(\bff))) = f$  and $$\langle \pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff))) \rangle = \mu$$ for a matrix $M\in \FF_{2}^{\codedim' \times \codedim}$. Precisely, given a new parameter $\codedim'$, we define 
 %
 $$
-\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv, M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim' \times \codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\pack(\psicomfield(\bff))) = f\\ \wedge \  & \langle \psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff)), \vv\rangle  = \mu  \end{aligned} \right\}
+\Relation^{\mathsf{lin-virtual}}[\cC, \comfield, \evalfield, \pack] \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv, M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim' \times \codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\pack(\psicomfield(\bff))) = f\\ \wedge \  & \langle \psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff)), \vv\rangle  = \mu  \end{aligned} \right\}
 $$
 %
-The relation has the tag ``lin(ear)-virtual'' to reference the intuition that  $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}} $ expresses a linear constraint on the vector $\bfh=\psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff))\in \evalfield^{\codedim'}$, which is not committed directly: only $\pi_2(\bff)$  is. Note that $\bfh$ is a linear expression over $\comfield$ of the elements in $\pi_2(\bff)$, lifted to the integers, and then projected to $\evalfield$.
+The relation has the tag ``lin(ear)-virtual'' to reference the intuition that  $\Relation^{\mathsf{lin-virtual}}[\cC, \comfield, \evalfield, \pack] $ expresses a linear constraint on the vector $\bfh=\psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff))\in \evalfield^{\codedim'}$, which is not committed directly: only $\pi_2(\bff)$  is. Note that $\bfh$ is a linear expression over $\comfield$ of the elements in $\pi_2(\bff)$, lifted to the integers, and then projected to $\evalfield$.
 
 \albert{Would be good to add more detail in this paragraph} The relation $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$  allows to, for example, express linear constraints over $\evalfield$ of the XOR of witness elements, while only committing (over $\comfield$) to the original elements. The same applies with other bit operations such as AND and Majority, by noting first that, given integer bits $x,y,z\in \{0,1\}$: \albert{Should reference some identity in preliminaries, or explain more here} 
 %
@@ -329,7 +328,7 @@ Hence AND and Majority can be expressed over $\FF_q$ as  linear expressions of a
 
 \bigskip
 
-We next provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$ for specific shapes of $M$. Similarly as in \cref{?}, we assume a tensor structure $\codedim=\codedim_1 \cdot \codedim_2$ for $\vv$, and write $\bff = (\bff_{*j})_{j\in [\codedim_2]} \in \bits^{\codedim_1 \times \codedim_2}$.  We then let $\codedim_1'$ be such that $\codedim' = \codedim_1' \times \codedim_2$ and assume $M = \mathsf{Id} \otimes M_0$ where $M_0$ is a $\codedim_1' \times \codedim_1$ matrix with entries in $\FF_2$, and $\mathsf{Id}$ is the $\codedim_2\times \codedim_2$ matrix. In words, $M$ is the $\codedim'\times \codedim = \codedim_1'\cdot \codedim_2 \times \codedim_1\cdot \codedim_2$ diagonal block matrix with $M_0$ as diagonal blocks. Then
+We next provide an IOPP for $\Relation^{\mathsf{lin-virtual}}[\cC, \comfield, \evalfield, \pack]$ for specific shapes of $M$. Similarly as in \cref{?}, we assume a tensor structure $\codedim=\codedim_1 \cdot \codedim_2$ for $\vv$, and write $\bff = (\bff_{*j})_{j\in [\codedim_2]} \in \bits^{\codedim_1 \times \codedim_2}$.  We then let $\codedim_1'$ be such that $\codedim' = \codedim_1' \times \codedim_2$ and assume $M = \mathsf{Id} \otimes M_0$ where $M_0$ is a $\codedim_1' \times \codedim_1$ matrix with entries in $\FF_2$, and $\mathsf{Id}$ is the $\codedim_2\times \codedim_2$ matrix. In words, $M$ is the $\codedim'\times \codedim = \codedim_1'\cdot \codedim_2 \times \codedim_1\cdot \codedim_2$ diagonal block matrix with $M_0$ as diagonal blocks. Then
 %
 \begin{equation}\label{e:M_pi_f}
 M \cdot \pi_2(\bff) = (M_0 \cdot \pi_2(\bff_{*j}))_{j\in [\codedim_2]} \in (\FF_2^{\codedim_1'})^{\codedim_2}.
@@ -352,7 +351,7 @@ $$
  %
 %
 \begin{equation}\label{e:virtual_IOPP_intermediate}
-\left((\vv, \eta_j), \ \oracle_j, \ \wit_j\right)_{j\in [\codedim_2]} \in \left(\Relation_{\cC_1, \comfield}^{\mathsf{lin}}\right)^{\codedim_2},
+\left((\vv, \eta_j), \ \oracle_j, \ \wit_j\right)_{j\in [\codedim_2]} \in \left(\Relation^{\mathsf{lin}}[\cC_1, \comfield,\pack]\right)^{\codedim_2},
 \end{equation}
 %
 for some $\vv\in \comfield^{ \codedim_1'}$ and $\eta_j \in \comfield$. Again, since we assume the verifier never queries $\oracle_j$ during $\Pi_{\mathsf{red}}$, completeness holds for honest provers, even if $\oracle_j$ is not the encoding of $\wit_j$.
@@ -360,7 +359,7 @@ for some $\vv\in \comfield^{ \codedim_1'}$ and $\eta_j \in \comfield$. Again, si
 Note that \eqref{e:virtual_IOPP_intermediate} holds if and only if, for all $j\in [\codedim_2]$,
 %
 \begin{align*}
-\eta_j &=\sum_{i\in [\codedim_1']} \vv_i \cdot \pi_2(\bfh_{ij}) = \sum_{i\in [\codedim_1']} \vv_i \cdot \sum_{t\in [\codedim_1]} M_{0it}\cdot \pi_2(\bff_{tj})\\ =& \sum_{t\in [\codedim_1]} \left(\sum_{i\in[\codedim_1']}M_{0it}\cdot \vv_i\right)\cdot \bff_{tj} = \langle \uu_j , \bff_{*j}\rangle,
+\eta_j &=\sum_{i\in [\codedim_1']} \vv_i \cdot \pi_2(\bfh_{ij}) = \sum_{i\in [\codedim_1']} \vv_i \cdot \sum_{t\in [\codedim_1]} M_{0it}\cdot \pi_2(\bff_{tj})\\ =& \sum_{t\in [\codedim_1]} \left(\sum_{i\in[\codedim_1']}M_{0it}\cdot \vv_i\right)\cdot \pi_2(\bff_{tj}) = \langle \uu_j , \pi_2(\bff_{*j})\rangle,
 \end{align*}
 where $\uu \in \comfield^{\codedim_1}$ is the vector whose $t$-th entry is
 %
@@ -380,7 +379,7 @@ $
 \item If the prover is honest, we have that
 %
 \begin{equation}\label{e:final_virt_equation}
-\left((\uu, \eta_j),\ \oracle_j = \Enc_{\cC_1}(\pack(\pi_2(\bff_{*j}))), \ \pi_2(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation_{\cC_1, \comfield}^{\mathsf{lin}}\right)^{\codedim_2}.
+\left((\uu, \eta_j),\ \oracle_j = \Enc_{\cC_1}(\pack(\pi_2(\bff_{*j}))), \ \pi_2(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation^{\mathsf{lin}}[\cC_1, \comfield,\pack]\right)^{\codedim_2}.
 \end{equation}
 %
 Prover and verifier use an IOPP to prove \eqref{e:final_virt_equation}.
@@ -428,7 +427,7 @@ M = \begin{pmatrix}
     $$
      if we do not wish to leverage any tensor decomposition structure, i.e.\ if we take $\codedim_1=\codedim$ and $\codedim_2=1$, then we can apply  \cref{c:virtual_iop} using this matrix $M$ as part of the input. At the end of \cref{c:virtual_iop} prover and verifier are left with the claim 
      $$
-     \left((\uu, \eta),\ \Enc_{\cC}(\pack(\pi_2(\bff))), \ \pi_2(\bff)\right) \in \Relation_{\cC_1, \comfield}^{\mathsf{lin}},
+     \left((\uu, \eta),\ \Enc_{\cC}(\pack(\pi_2(\bff))), \ \pi_2(\bff)\right) \in \Relation^{\mathsf{lin}}[\cC_1, \comfield,\pack],
      $$
      for  $\uu = (\mle{M_{*t}}(\rr))_{t\in [\codedim]} \in \comfield^{\codedim}$, where $M_{*t}$ denotes the $t$-th column of $M$. I.e.\ prover and verifier must now certify that $\Enc_{\cC}(\pi_2(\bff))$ is (close to) the encoding of a vector $\pi_2(\bff)$ such that
      %
@@ -436,6 +435,10 @@ M = \begin{pmatrix}
     \langle (\mle{M_{*t}}(\rr))_{t\in [\codedim]}, \pi_2(\bff) \rangle = \eta.
      $$
     %
+    Using \cref{s:ring_switch}, \eqref{?} 
+
+
+    
     Next we address the case 
      
 \end{example} 
@@ -447,7 +450,8 @@ M = \begin{pmatrix}
 \end{proof}
 
 \section{Case-study: SHA-256 hashing}
-\albert{Maybe Blake3 better? (When comparing to Flock), because of the manu adds mod $2^{32}$}
+\albert{Maybe Keccak better?}
+
 \subsection{Arithmetization over $\ZZ[X]$}
 
 \subsubsection{SHA-256 compression overview}
@@ -532,7 +536,7 @@ Optimization ideas
 
 \appendix
 
-\section{Ring switching via Galois orbits}
+\section{Ring switching via Galois orbits}\label{s:ring_switch}
 
 \albert{Rewriting the previous appendix for  arbitrary inner products}
 
@@ -739,8 +743,233 @@ By dimension, $p(X)$ must be trivial, meaning that all its coefficents are zero.
 
 
 
+\section{Bilinear Embeddings}
+
+Given a field $\mathbb F$ and a degree-$d$ extension $\mathbb E$. Our goal is to commit to a vector $\mathbf{w} \in \mathbb{F}^{n d}$ so that we can later use it to prove an inner product claim of the form $\langle \mathbf{w}, \mathbf{a}\rangle_\mathbb{F} = h$ for some $\mathbf{a} \in \mathbb{F}^{n d}$ and $h \in \mathbb{F}$. However, we only have an efficient inner product commitment scheme to commit to vectors $\widetilde{\mathbf{w}} \in \mathbb{E}^{n}$ and open as $\langle \widetilde{\mathbf{w}}, \widetilde{\mathbf{a}}\rangle_\mathbb{E} = \widetilde{h}$ for some $\widetilde{\mathbf{a}} \in \mathbb{E}^{n}$ and $\widetilde{h} \in \mathbb{E}$.
+
+To do this, we seek a triple of maps $(W, A, H)$ that satisfy:
+\[
+\langle \mathbf{w},\mathbf{a}\rangle_{\mathbb{F}}
+=
+H\left(\langle W(\mathbf{w}), A(\mathbf{a}) \rangle_{\mathbb{E}} \right).
+\]
+
+\subsection{Background}
+In the following let $\mathbb{E}/\mathbb{F}$ be a finite field extension of degree $d$. If we disregard multiplication in $\mathbb{E}$, then $\mathbb{E}$ is a $d$-dimensional vector space over $\mathbb{F}$, hence isomorphic to $\mathbb{F}^d$. Let $\mathbf{e}_1,\ldots,\mathbf{e}_d$ denote the standard basis of $\mathbb{F}^d$.
+Recall that a function $\mu:\mathbb{E}\times \mathbb{E} \rightarrow \mathbb{F}$ is a \emph{bilinear form}  if it is linear in each argument separately. It is \emph{symmetric} if $\mu(x, y) = \mu(y, x)$ for all $x,y \in \mathbb{E}$.
+For each $x \in \mathbb{E}$, the partial application in the first argument defines a linear form
+\[
+\mu_{x} : \mathbb{E} \rightarrow \mathbb{F} \quad y \mapsto \mu(x, y).
+\]
+Thus $\mu_{x} \in \mathbb{E}^*$ where $\mathbb{E}^* = \operatorname{Hom}_\mathbb{F}(\mathbb{E}, \mathbb{F})$ denotes the dual vector space. The bilinear form therefore induces an $\mathbb{F}$-linear map
+\[
+\Phi_\mu:\mathbb{E}\to\mathbb{E}^* \qquad x\mapsto\mu_x.
+\]
+We call $\mu$ \emph{nondegenerate}, or equivalently a \emph{perfect pairing}, if $\Phi_\mu$ is an isomorphism. Or equivalently, \albert{add a comment that injectivity implies surjectivity when the vector spaces have finite dimension?}
+\[
+\mu(x,y)=0\text{ for all }y\in\mathbb E \quad\Longrightarrow\quad x=0.
+\]
+Since $\mu$ is a perfect pairing, every basis $(\beta_1,\ldots,\beta_d)$ of $\mathbb{E}$ has a unique dual basis $(\beta_1^\vee,\ldots,\beta_d^\vee)$ satisfying $\mu(\beta_i, \beta_j^\vee) = \delta_{ij}$.
+
+\subsection{Structure}
+We are now equipped to prove a theorem on the structure of embeddings. Under the assumption that the output map is $\mathbb{F}$-linear, we show that for $n=1$ the space of possible embeddings is very structured. This then extends naturally to $n>1$ by doing blockwise packing.
+
+\begin{theorem}[Structure of bilinear embeddings]
+Let $W,A:\mathbb{F}^d\rightarrow\mathbb{E}, H:\mathbb{E}\rightarrow\mathbb{F}$ be maps such that for all
+$\mathbf{w},\mathbf{a}\in\mathbb{F}^d$,
+\[
+\langle \mathbf{w},\mathbf{a}\rangle_{\mathbb{F}}
+=
+H\bigl(W(\mathbf{w})A(\mathbf{a})\bigr).
+\]
+Suppose that $H$ is $\mathbb{F}$-linear. Then: \albert{It would be nice to also add that $A$ and $W$ are bijective, in particular they are the namesake ``embedings''}
+\begin{enumerate}
+    \item $W$ and $A$ are $\mathbb{F}$-linear,
+    \item $\mu_H(x,y) = H(xy)$ is a perfect pairing,
+    \item $\left(W(\mathbf{e}_1),\ldots,W(\mathbf{e}_d)\right)$ and $\left(A(\mathbf{e}_1),\ldots,A(\mathbf{e}_d)\right)$ are dual bases with respect to $\mu_H$.
+\end{enumerate}
+
+Conversely, if $W$ and $A$, and $H$ are $\mathbb{F}$-linear, $\mu_H$ is a perfect pairing and the images of the standard basis under $W$ and $A$ are dual bases with respect to $\mu_H$, then the identity
+\[
+\langle \mathbf{w},\mathbf{a}\rangle_{\mathbb{F}}
+=
+H\bigl(W(\mathbf{w})A(\mathbf{a})\bigr).
+\]
+holds for all $\mathbf{w},\mathbf{a}\in\mathbb{F}^d$.
+\end{theorem}
+
+\begin{proof}[Proof of the forward direction]
+First, observe that $
+\mu_H(W(\mathbf e_i),A(\mathbf e_j))
+= \langle \mathbf e_i,\mathbf e_j\rangle_{\mathbb F}
+= \delta_{ij}
+$. Taking $i=j$ shows $H$ is nonzero. Since $H$ is $\mathbb{F}$-linear, $\mu_H$ is a symmetric bilinear form, we show that it is nondegenerate. Let $x\in\mathbb E$ be nonzero. Since multiplication by $x$ is a bijection of $\mathbb E$ and $H$ is nonzero, there exists $y\in\mathbb E$ such that $\mu_H(x,y)=H(xy)\neq 0$. Thus $\mu_H$ is nondegenerate, and hence a perfect pairing.
+
+Next, we show that $W$ and $A$ are bijective. Suppose
+$W(\mathbf w_1)=W(\mathbf w_2)$. Then for every
+$\mathbf a\in\mathbb F^d$,
+\[
+\langle \mathbf w_1-\mathbf w_2,\mathbf a\rangle_{\mathbb F}
+= \mu_H(W(\mathbf w_1) - W(\mathbf w_2), A(\mathbf a))
+=0.
+\]
+By nondegeneracy of the standard inner product on $\mathbb F^d$, this
+implies $\mathbf w_1=\mathbf w_2$. Hence $W$ is injective. Since
+$\mathbb F^d$ and $\mathbb E$ have the same finite cardinality, $W$ is
+bijective. The same argument shows that $A$ is bijective.
+
+We now prove that $W$ is $\mathbb F$-linear. For
+$\mathbf w_1,\mathbf w_2,\mathbf a\in\mathbb F^d$, linearity of $H$
+gives
+\[
+\begin{aligned}
+&\mu_H\bigl(
+W(\mathbf w_1+\mathbf w_2)-W(\mathbf w_1)-W(\mathbf w_2),
+A(\mathbf a)
+\bigr)\\
+&=
+\langle \mathbf w_1+\mathbf w_2,\mathbf a\rangle_{\mathbb F}
+-
+\langle \mathbf w_1,\mathbf a\rangle_{\mathbb F}
+-
+\langle \mathbf w_2,\mathbf a\rangle_{\mathbb F}\\
+&=0.
+\end{aligned}
+\]
+Since $A$ is surjective, the second argument ranges over all of
+$\mathbb E$. Nondegeneracy of $\mu_H$ therefore implies
+$W(\mathbf w_1+\mathbf w_2) = W(\mathbf w_1)+W(\mathbf w_2)$. Similarly, for $\lambda\in\mathbb F$,
+\[
+\begin{aligned}
+&\mu_H\bigl(
+W(\lambda\mathbf w)-\lambda W(\mathbf w),
+A(\mathbf a)
+\bigr)\\
+&=
+\langle \lambda\mathbf w,\mathbf a\rangle_{\mathbb F}
+-
+\lambda\langle \mathbf w,\mathbf a\rangle_{\mathbb F}\\
+&=0.
+\end{aligned}
+\]
+Again using surjectivity of $A$ and nondegeneracy of $\mu_H$, we obtain $W(\lambda\mathbf w)=\lambda W(\mathbf w)$. Hence $W$ is $\mathbb F$-linear. By symmetry, $A$ is also
+$\mathbb F$-linear. Since they are also bijective, $W$ and $A$ are linear isomorphisms. From this it follows that $\left(W(\mathbf e_1),\ldots,W(\mathbf e_d)\right)$ and $
+\left(A(\mathbf e_1),\ldots,A(\mathbf e_d)\right)$ are bases of $\mathbb E$. Finally, from $\mu_H(W(\mathbf e_i),A(\mathbf e_j)) = \delta_{ij}$ it follows they are dual with respect to $\mu_H$.
+\end{proof}
+
+\begin{proof}[Proof of the converse direction.] Can be directly shown using a basis expansion. 
+Write $\mathbf w=\sum_{i=1}^d w_i\mathbf e_i$ and $\mathbf a=\sum_{j=1}^d a_j\mathbf e_j$
+Since $W$ and $A$ are $\mathbb F$-linear, $W(\mathbf w) = \sum_{i=1}^d w_iW(\mathbf e_i)$ and $A(\mathbf a) = \sum_{j=1}^d a_jA(\mathbf e_j)$. Therefore,
+\[
+\begin{aligned}
+H\bigl(W(\mathbf w)A(\mathbf a)\bigr)
+&=
+\mu_H\bigl(W(\mathbf w),A(\mathbf a)\bigr)\\
+&=
+\sum_{i,j}
+w_i a_j
+\mu_H\bigl(W(\mathbf e_i),A(\mathbf e_j)\bigr)\\
+&=
+\sum_{i,j}
+w_i a_j\delta_{ij}\\
+&=
+\sum_iw_ia_i\\
+&=
+\langle\mathbf w,\mathbf a\rangle_{\mathbb F}.
+\end{aligned}
+\]
+\end{proof}
+
+We have now shown that every embedding with a linear output map is determined by a choice of a nonzero linear map $H$ and linear isomorphism $W$. The map $W$ then determines the first basis $\beta_i=W(\mathbf e_i)$ and the map $A$ is then forced to map to the $\mu_H$-dual basis.
+
+The linearity assumption on the output map is necessary. Indeed, composing a linear embedding with a multiplicative bijection $g:\mathbb E\to\mathbb E$ generally produces an embedding that is nonlinear. Whether every nonlinear embedding arises from such a multiplicative reparameterization is a separate question, which we do not need here.
+
+The set of nonzero linear output maps $H$ is $\mathbb{E}^* \setminus \{0\}$ which is isomorphic to $\mathbb{E}^\times$. The set of linear isomorphism $W$ is isomorphic to $\mathrm{GL}_d(\mathbb{F})$, hence the total number of bilinear embeddings is $|\mathbb{E}^\times| \cdot |\mathrm{GL}_d(\mathbb{F})|$. Let's now look at specific choices.
+
+\subsection{Implementation}
+
+\ulrich{Let us copy paste this into the new f2z doc. You are working on the legacy overleaf doc.}
+\begin{theorem}[Preservation of MLE openings] Given $d = 2^k$, $n = 2^l$ and a $\mathbb{F}$-linear map $A : \mathbb{F}^d \to \mathbb{E}$ applied blockwise, then if $\mathbf{a}\in \mathbb{F}^{2^{k + l}}$ given by $a_i = \mathrm{eq}_\mathbb{F}(\mathbf{r}, \mathbf{b}(i))$ where $\mathbf{b}$ is the binary encoding, the embedding $A(\mathbf{a}) \in \mathbb{E}^{2^l}$ is given by
+\[
+(A(\mathbf{a}))_i = \alpha \cdot \mathrm{eq}_\mathbb{E}(\mathbf{r}', \mathbf{b}(i))
+\]
+for some $\alpha \in \mathbb{E}$ and $\mathbf{r}' \in \mathbb{E}^l$.
+\end{theorem}
+
+In particular this means that any bilinear map can also be used to lift an multilinear commitment scheme.
+
+\begin{theorem}[Preservation of succinct verification] If $\mathbf{a}$ has a Matrix-branching program for succinct evaluation of its multilinear extension, then $A(\mathbf{a})$ also has one, at most $d$ times wider. 
+\end{theorem}
 
 
+\subsection{Trace embedding}
+
+Let $q = |\mathbb F|$, the $q$-power Frobenius map is $\varphi:\mathbb E\to\mathbb E$ given by $x\mapsto x^q$. It is an $\mathbb F$-linear field automorphism of order $d$, and its
+fixed field is precisely $\mathbb F$:
+\[
+\mathbb E^\varphi
+= \{x\in\mathbb E:\varphi(x)=x\}
+= \mathbb F.
+\]
+The field trace is the $\mathbb F$-linear map $\operatorname{Tr}_{\mathbb E/\mathbb F}:\mathbb E\to\mathbb F$ defined by
+\[
+\operatorname{Tr}_{\mathbb E/\mathbb F}(x)
+= \sum_{i=0}^{d-1}\varphi^i(x)
+= \sum_{i=0}^{d-1}x^{q^i}.
+\]
+To see that this sum is indeed in $\mathbb{F} \subseteq \mathbb{E}$ observe the sum is fixed by $\varphi$, since
+\[
+\varphi\left( \sum_{i=0}^{d-1}\varphi^i(x) \right)
+= \sum_{i=1}^{d}\varphi^i(x)
+= \sum_{i=0}^{d-1}\varphi^i(x),
+\]
+where $\varphi^d(x)=\varphi^0(x)$. Hence the trace lies in the fixed field $\mathbb F$.
+
+This makes $\operatorname{Tr}_{\mathbb E/\mathbb F}$ a natural choice of output map $H$. More generally, every $\mathbb F$-linear map $H:\mathbb E\to\mathbb F$ is uniquely of the form $H(x)=\operatorname{Tr}_{\mathbb E/\mathbb F}(\alpha x)$ for some $\alpha\in\mathbb E$. Consequently, the nonzero output maps are parameterized by $\mathbb E^\times$.
+
+The Galois orbit embedding chooses the basis $\beta_i=\varphi^i(\gamma)$ which has dual $\beta_i^\vee=\varphi^i(\gamma^\vee)$.
+
+\ulrich{%
+This sounds to me very much related to Galois Fribinius on an inner product with a general covector. 
+You would end up with the multi-claim of the inner products of the packed poly with the Galois orbit of the covector.
+This is how I view it:
+Given $\vec p_1, \ldots, \vec p_d \in \mathbb F^n$, and $\vec q_1, \ldots, \vec q_d \in \mathbb F^n$, we are interested in 
+\[
+\sum_{k=1}^d \langle \vec p_k, \vec q_k\rangle,
+\]
+right?
+
+The packing map sends the coeff vectors $\vec p_1,\ldots, \vec p_d$ to $\vec p = \beta_1\cdot \vec p_1 + \ldots + \beta_d\cdot \vec p_d$, where $\beta_1,\ldots,\beta_d$ is an $\mathbb F$-basis of $\mathbb E$. 
+Choose the element $a_k$ in $\mathbb E$ which extracts the $k$-th coordinate
+\[
+\vec p_k = \Phi_k(\vec p) = \operatorname{Tr}_{\mathbb E/\mathbb F}(a_k\cdot \vec p).
+\]
+Then 
+\begin{align*}
+\langle \vec p_k, \vec q_k\rangle 
+&= \langle \sum_{i=0}^d \varphi^i(a_k\cdot \vec p), \vec q_k\rangle 
+\\
+&= \sum_{i=0}^d  \varphi^{i}(a_k) \cdot \varphi^i(\langle \vec p,  \vec q_k\rangle),
+\end{align*}
+since $\vec q_k$ is over $\mathbb F$.
+This reduces our inner product claim to that of the packed poly $\vec p$ with the unpacked polys $\vec q_1,\ldots, \vec q_k$.
+
+But does that match our use case?
+We are rather interested in $\langle \vec p_k, \vec v\rangle$ for some $\vec v\in \mathbb E^n$.
+In this case, 
+\begin{align*}
+\langle \vec p_k, \vec v \rangle 
+&= \langle \sum_{i=0}^d \varphi^i(a_k\cdot \vec p), \vec q_k\rangle 
+\\
+&= \sum_{i=0}^d  \varphi^{i}(a_k) \cdot \varphi^i(\langle \vec p,  \varphi^{-i}(\vec v)\rangle),
+\end{align*}
+and we end up with inner products of the packed poly with the Galois orbit of $\vec v$. 
+}
+
+
+\subsection{Coefficient projection}
+
+In the coefficient projection we assume the standard polynomial representation for $\mathbb{E}$ (as is common in practical implementations) and take $H: \mathbb{E} \to \mathbb{F}$ to select a particular coordinate, e.g. the constant coordinate. We will show that this lead to a particularly efficient implementation where $W$ is the identity map and $A$ is generally sparse and for many fields monomial.
 
 
 \end{document}
