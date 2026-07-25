@@ -135,9 +135,9 @@ Let $\codedim_0\geq 0$ be a dimension parameter, and $\codelength\geq 0$ a block
 with coefficients in $\FF$ and on $\inplen+\codedim$ variables. Further, let $\codedim\geq \codedim_0$ be a witness length paramter, and let $P:\FF^{\codedim} \to \FF^{\codedim_0}$ be an arbitrary map (looking ahead, for us $P$ will be a packing map that packs elements from $\FF_2$ into elements of a larger binary field.     Consider the following relation:
 %
 $$
-\Relation^Q[\cC,\FF, P] \defeq \left\{ \left(\begin{aligned} &\inp=\yy\in \FF^\inplen, \\&\oracle = f \in \FF^\codelength, \\ &\wit= \bff\in \FF^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(P(\bff)) = f\\ \wedge \  &Q(\yy, \bff) = 0  \end{aligned} \right\}
+\Relation^Q_{\cC,\FF, P} \defeq \left\{ \left(\begin{aligned} &\inp=\yy\in \FF^\inplen, \\&\oracle = f \in \FF^\codelength, \\ &\wit= \bff\in \FF^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(P(\bff)) = f\\ \wedge \  &Q(\yy, \bff) = 0  \end{aligned} \right\}
 $$
-When $Q$ and $\yy$ are such that $\yy=(\vv,\mu)\in \FF^{\codedim}\times \FF$ and $$Q(\yy,\ff)= \langle \vv, \ff\rangle = \sum_{i\in [\codedim]} \vv_i \cdot \ff_i,$$ we denote $\Relation^Q[\cC,\FF, P]$  by $\Relation^{\mathsf{lin}}[ \cC,\FF,P]$.
+When $Q$ and $\yy$ are such that $\yy=(\vv,\mu)\in \FF^{\codedim}\times \FF$ and $$Q(\yy,\ff)= \langle \vv, \ff\rangle = \sum_{i\in [\codedim]} \vv_i \cdot \ff_i,$$ we denote $\Relation^Q_{\cC,\FF, P}$  by $\Relation^{\mathsf{lin}}_{\cC,\FF,P}$.
 
 %When $Q$ and $\yy$ are such that $\yy=(\rr,\mu)\in \FF^{\log\codedim}\times \FF$ and $$Q(\yy,\ff)= \mle{\bff}(\rr)-\mu,$$ we denote $\Relation_{\cC, \FF}^{Q}$  by $\Relation_{\cC, \FF}^{\mathsf{mle}}$. 
 
@@ -177,7 +177,7 @@ $$
 %
 Let $\cC\subseteq \comfield^{\codelength}$ be a linear code of dimension $\codedim/2^{\comfieldexp}$ and blocklength $\codelength$ over $\comfield$. Define
 $$
-\Relation^{\mathsf{lin-dual}}[\cC,\comfield, \evalfield,\pack] \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \{0,1\}^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\pack(\psicomfield(\bff))) = f\\ \wedge \  & \langle \psievalfield(\bff), \vv\rangle  = \mu  \end{aligned} \right\}
+\Relation^{\mathsf{lin-dual}}_{\cC,\comfield, \evalfield,\pack} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \{0,1\}^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\pack(\psicomfield(\bff))) = f\\ \wedge \  & \langle \psievalfield(\bff), \vv\rangle  = \mu  \end{aligned} \right\}
 $$
 %
 \subsection{Tensor decomposition, interleaved codes, and products of constrained codes}
@@ -218,13 +218,13 @@ $$Q(Y_1, \ldots, Y_{\codedim_1+1}, Z_1, \ldots, Z_{\codedim_1}) = \Pi_{i=1}^{\co
 Precisely, 
 %
 $$
-\Relation^{Q}[ \cC_1,\comfield, \pack] = \left\{ \left(\begin{aligned} &\inp=(\yy,z)\in \comfield^{\codedim_1}\times \comfield, \\&\oracle = f \in \comfield^{\codelength/\codedim_2}, \\ &\wit= \bff\in \comfield^{\codedim_1}\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC_1}(\pack(\bff)) = f\\ \wedge \  &\Pi_{i=1}^{\codedim_1} \left((\yy_i-1)\cdot \bff_i +1\right) = z  \end{aligned} \right\}
+\Relation^{Q}_{\cC_1,\comfield,\pack} = \left\{ \left(\begin{aligned} &\inp=(\yy,z)\in \comfield^{\codedim_1}\times \comfield, \\&\oracle = f \in \comfield^{\codelength/\codedim_2}, \\ &\wit= \bff\in \comfield^{\codedim_1}\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC_1}(\pack(\bff)) = f\\ \wedge \  &\Pi_{i=1}^{\codedim_1} \left((\yy_i-1)\cdot \bff_i +1\right) = z  \end{aligned} \right\}
 $$
 %
 We assume prover and verifier have access to an IOR $\Pi_{\mathsf{red}}$  that reduces 
 %
 $
-\Relation^{Q}[\cC_1,\comfield,\pack]$ to $\Relation^{\mathsf{lin}}[ \cC_1,\comfield, \pack]$. 
+\Relation^{Q}_{\cC_1,\comfield,\pack}$ to $\Relation^{\mathsf{lin}}_{\cC_1,\comfield, \pack}$. 
 %
 %
 We assume $\Pi_{\mathsf{red}}$ works so that the verifier never queries $\oracle$ \albert{Would be better to say upfront what this protocol is in our mental model, and then make abstract assumptions like this, which look arbitrary otherwise. Same applies below}.
@@ -232,12 +232,12 @@ We assume $\Pi_{\mathsf{red}}$ works so that the verifier never queries $\oracle
 Further, we consider the $\codedim_2$-fold parallel composition $\Pi_{\mathsf{red}}^{\codedim_2}$ of $\Pi_{\mathsf{red}}$,  and we assume that given $\codedim_2$ triples 
 %
 $$
-\left((\yy^{(j)},\mu^{(j)}) , g^{(j)}, \bfh^{(j)}  \right)_{j\in[\codedim_2]} \in \left(\Relation^{Q}[ \cC_1,\comfield, \pack]\right)^{\codedim_2}
+\left((\yy^{(j)},\mu^{(j)}) , g^{(j)}, \bfh^{(j)}  \right)_{j\in[\codedim_2]} \in \left(\Relation^{Q}_{\cC_1,\comfield,\pack}\right)^{\codedim_2}
 $$
 the IOR $\Pi_{\mathsf{red}}^{\codedim_2}$ outputs 
 %
 $$
-\left((\vv,\mu_j) \in \comfield^{ \codedim_1 } \times \comfield, g^{(j)} , \bfh^{(j)} \right)_{j\in[\codedim_2]} \in \left(\Relation^{\mathsf{lin}}[ \cC_1,\comfield, \pack]\right)^{\codedim_2},
+\left((\vv,\mu_j) \in \comfield^{ \codedim_1 } \times \comfield, g^{(j)} , \bfh^{(j)} \right)_{j\in[\codedim_2]} \in \left(\Relation^{\mathsf{lin}}_{\cC_1,\comfield, \pack}\right)^{\codedim_2},
 $$
 for some $\rr\in \comfield^{\log \codedim_1}$ and some $\mu_j\in \comfield$ for $j\in [\codedim_2]$.
 In words, $\Pi_{\mathsf{red}}^{\codedim_2}$ outputs $\codedim_2$ linear claims for the input witnesses $\bfh^{(j)}$ behind the input oracles $g^{(j)}$, all \emph{on the same vector of coefficients  $\vv$}.   \albert{We could be more abstract with this IOR, but I find it difficult to tie it with the protocol in the next section then. Maybe better to write a remark} 
@@ -246,9 +246,9 @@ We describe one such $\Pi_{\mathsf{red}}^{\codedim_2}$ in \cref{?}, where $\vv$ 
 
 
 \subsection{The main {\ftwoz}  IOR}
-We provide an IOPP for $\Relation^{\mathsf{lin-dual}}[\cC, \comfield, \evalfield, \pack]$ next.
-\begin{construction}[IOPP for {$\Relation^{\mathsf{lin-dual}}[\cC, \comfield, \evalfield, \pack]$}]\label{c:core_iop}
-The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation^{\mathsf{lin-dual}}[\cC, \comfield, \evalfield, \pack]$.  We assume the tensor split from the previous Section \ref{}, and adopt its notation. 
+We provide an IOPP for $\Relation^{\mathsf{lin-dual}}_{\cC, \comfield, \evalfield, \pack}$ next.
+\begin{construction}[IOPP for {$\Relation^{\mathsf{lin-dual}}_{\cC, \comfield, \evalfield, \pack}$}]\label{c:core_iop}
+The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation^{\mathsf{lin-dual}}_{\cC, \comfield, \evalfield, \pack}$.  We assume the tensor split from the previous Section \ref{}, and adopt its notation. 
 Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with sufficiently large multiplicative order, to be determined later.  
 
 
@@ -276,7 +276,7 @@ where in the honest case  $f_{*j} = \Enc_{\cC_1}(\pack(\psicomfield(\bff_{*j})))
  At the end of this IOR, they are left with the following claim to prove: 
 %
 \begin{equation}\label{e:iopp_mle_claims}
-\left((\vv, \mu_j'), \ f_{*j}, \ \psicomfield(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation^{\mathsf{lin}}[\cC_1, \comfield,\pack]\right)^{\codedim_2}\end{equation} for some vector $\vv$ and field elements $\mu_j'$ output during the IOR $\Pi_{\mathsf{red}}^{\codedim_2}$. 
+\left((\vv, \mu_j'), \ f_{*j}, \ \psicomfield(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation^{\mathsf{lin}}_{\cC_1, \comfield,\pack}\right)^{\codedim_2}\end{equation} for some vector $\vv$ and field elements $\mu_j'$ output during the IOR $\Pi_{\mathsf{red}}^{\codedim_2}$. 
 \item Prover and  verifier engage in a IOPP  to certify the claims \eqref{e:iopp_mle_claims}. 
 \end{enumerate}
 \end{construction}
@@ -305,13 +305,13 @@ At this point it is maybe more important to clarify how useful the construction 
 \section{Virtualization of $\FF_2$-linear combinations lifted to integers}
 
 
-In this section we expand relation $\Relation^{\mathsf{lin-dual}}[\cC, \comfield, \evalfield, \pack]$ to impose, instead of constraints of the form $\Enc_\cC(\pack(\pi_2(\bff)))=f$ and $\langle \pi_q(\bff), \vv  \rangle = \mu$, constraints as $\Enc_\cC(\pack(\pi_2(\bff))) = f$  and $$\langle \pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff))) \rangle = \mu$$ for a matrix $M\in \FF_{2}^{\codedim' \times \codedim}$. Precisely, given a new parameter $\codedim'$, we define 
+In this section we expand relation $\Relation^{\mathsf{lin-dual}}_{\cC, \comfield, \evalfield, \pack}$ to impose, instead of constraints of the form $\Enc_\cC(\pack(\pi_2(\bff)))=f$ and $\langle \pi_q(\bff), \vv  \rangle = \mu$, constraints as $\Enc_\cC(\pack(\pi_2(\bff))) = f$  and $$\langle \pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff))) \rangle = \mu$$ for a matrix $M\in \FF_{2}^{\codedim' \times \codedim}$. Precisely, given a new parameter $\codedim'$, we define 
 %
 $$
-\Relation^{\mathsf{lin-virtual}}[\cC, \comfield, \evalfield, \pack] \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv, M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim' \times \codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\pack(\psicomfield(\bff))) = f\\ \wedge \  & \langle \psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff)), \vv\rangle  = \mu  \end{aligned} \right\}
+\Relation^{\mathsf{lin-virtual}}_{\cC, \comfield, \evalfield, \pack} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv, M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim' \times \codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\pack(\psicomfield(\bff))) = f\\ \wedge \  & \langle \psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff)), \vv\rangle  = \mu  \end{aligned} \right\}
 $$
 %
-The relation has the tag ``lin(ear)-virtual'' to reference the intuition that  $\Relation^{\mathsf{lin-virtual}}[\cC, \comfield, \evalfield, \pack] $ expresses a linear constraint on the vector $\bfh=\psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff))\in \evalfield^{\codedim'}$, which is not committed directly: only $\pi_2(\bff)$  is. Note that $\bfh$ is a linear expression over $\comfield$ of the elements in $\pi_2(\bff)$, lifted to the integers, and then projected to $\evalfield$.
+The relation has the tag ``lin(ear)-virtual'' to reference the intuition that  $\Relation^{\mathsf{lin-virtual}}_{\cC, \comfield, \evalfield, \pack} $ expresses a linear constraint on the vector $\bfh=\psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff))\in \evalfield^{\codedim'}$, which is not committed directly: only $\pi_2(\bff)$  is. Note that $\bfh$ is a linear expression over $\comfield$ of the elements in $\pi_2(\bff)$, lifted to the integers, and then projected to $\evalfield$.
 
 \albert{Would be good to add more detail in this paragraph} The relation $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$  allows to, for example, express linear constraints over $\evalfield$ of the XOR of witness elements, while only committing (over $\comfield$) to the original elements. The same applies with other bit operations such as AND and Majority, by noting first that, given integer bits $x,y,z\in \{0,1\}$: \albert{Should reference some identity in preliminaries, or explain more here} 
 %
@@ -328,7 +328,7 @@ Hence AND and Majority can be expressed over $\FF_q$ as  linear expressions of a
 
 \bigskip
 
-We next provide an IOPP for $\Relation^{\mathsf{lin-virtual}}[\cC, \comfield, \evalfield, \pack]$ for specific shapes of $M$. Similarly as in \cref{?}, we assume a tensor structure $\codedim=\codedim_1 \cdot \codedim_2$ for $\vv$, and write $\bff = (\bff_{*j})_{j\in [\codedim_2]} \in \bits^{\codedim_1 \times \codedim_2}$.  We then let $\codedim_1'$ be such that $\codedim' = \codedim_1' \times \codedim_2$ and assume $M = \mathsf{Id} \otimes M_0$ where $M_0$ is a $\codedim_1' \times \codedim_1$ matrix with entries in $\FF_2$, and $\mathsf{Id}$ is the $\codedim_2\times \codedim_2$ matrix. In words, $M$ is the $\codedim'\times \codedim = \codedim_1'\cdot \codedim_2 \times \codedim_1\cdot \codedim_2$ diagonal block matrix with $M_0$ as diagonal blocks. Then
+We next provide an IOPP for $\Relation^{\mathsf{lin-virtual}}_{\cC, \comfield, \evalfield, \pack}$ for specific shapes of $M$. Similarly as in \cref{?}, we assume a tensor structure $\codedim=\codedim_1 \cdot \codedim_2$ for $\vv$, and write $\bff = (\bff_{*j})_{j\in [\codedim_2]} \in \bits^{\codedim_1 \times \codedim_2}$.  We then let $\codedim_1'$ be such that $\codedim' = \codedim_1' \times \codedim_2$ and assume $M = \mathsf{Id} \otimes M_0$ where $M_0$ is a $\codedim_1' \times \codedim_1$ matrix with entries in $\FF_2$, and $\mathsf{Id}$ is the $\codedim_2\times \codedim_2$ matrix. In words, $M$ is the $\codedim'\times \codedim = \codedim_1'\cdot \codedim_2 \times \codedim_1\cdot \codedim_2$ diagonal block matrix with $M_0$ as diagonal blocks. Then
 %
 \begin{equation}\label{e:M_pi_f}
 M \cdot \pi_2(\bff) = (M_0 \cdot \pi_2(\bff_{*j}))_{j\in [\codedim_2]} \in (\FF_2^{\codedim_1'})^{\codedim_2}.
@@ -351,7 +351,7 @@ $$
  %
 %
 \begin{equation}\label{e:virtual_IOPP_intermediate}
-\left((\vv, \eta_j), \ \oracle_j, \ \wit_j\right)_{j\in [\codedim_2]} \in \left(\Relation^{\mathsf{lin}}[\cC_1, \comfield,\pack]\right)^{\codedim_2},
+\left((\vv, \eta_j), \ \oracle_j, \ \wit_j\right)_{j\in [\codedim_2]} \in \left(\Relation^{\mathsf{lin}}_{\cC_1, \comfield,\pack}\right)^{\codedim_2},
 \end{equation}
 %
 for some $\vv\in \comfield^{ \codedim_1'}$ and $\eta_j \in \comfield$. Again, since we assume the verifier never queries $\oracle_j$ during $\Pi_{\mathsf{red}}$, completeness holds for honest provers, even if $\oracle_j$ is not the encoding of $\wit_j$.
@@ -379,11 +379,15 @@ $
 \item If the prover is honest, we have that
 %
 \begin{equation}\label{e:final_virt_equation}
-\left((\uu, \eta_j),\ \oracle_j = \Enc_{\cC_1}(\pack(\pi_2(\bff_{*j}))), \ \pi_2(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation^{\mathsf{lin}}[\cC_1, \comfield,\pack]\right)^{\codedim_2}.
+\left((\uu, \eta_j),\ \oracle_j = \Enc_{\cC_1}(\pack(\pi_2(\bff_{*j}))), \ \pi_2(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation^{\mathsf{lin}}_{\cC_1, \comfield,\pack}\right)^{\codedim_2}.
 \end{equation}
 %
-Prover and verifier use an IOPP to prove \eqref{e:final_virt_equation}.
-
+Prover and verifier use the Galois ring-switch \cref{c: Galois ring-switch IOP} to reduce  \eqref{e:final_virt_equation} to a claim of the form.
+\begin{equation}\label{e:final_ring_switched_equation}
+\left((\uu', \kappa_j),\ \oracle_j = \Enc_{\cC_1}(\pack(\pi_2(\bff_{*j}))), \ \pack(\pi_2(\bff_{*j}))\right)_{j\in [\codedim_2]} \in \left(\Relation^{\mathsf{lin}}_{\cC_1, \comfield,\mathsf{id}}\right)^{\codedim_2},
+\end{equation}
+where $\uu'=(\eq(\bb,\rr))_{\bb\in \{0,1\}^{\log \codedim_1}}$ for some $\rr\in \comfield^{\log \codedim_1}$, and for some $\kappa_j\in \comfield$.
+\item Note that \eqref{e:final_ring_switched_equation} is a collection of standard claims about the MLE evaluation of a vector with entries in $\comfield$, ``committed'' through an encoding over $\comfield$. Accordingly, prover and verifier use an IOPP to prove such claims.
 \albert{To keep in mind: ring-switch for arbitrary innter products could be expensive}
 %
  \end{enumerate}
@@ -425,21 +429,16 @@ M = \begin{pmatrix}
         0 & \ldots & 0& 0 & 0 & 1 \\
     \end{pmatrix} 
     $$
-     if we do not wish to leverage any tensor decomposition structure, i.e.\ if we take $\codedim_1=\codedim$ and $\codedim_2=1$, then we can apply  \cref{c:virtual_iop} using this matrix $M$ as part of the input. At the end of \cref{c:virtual_iop} prover and verifier are left with the claim 
+     if we do not wish to leverage any tensor decomposition structure, i.e.\ if we take $\codedim_1=\codedim$ and $\codedim_2=1$, then we can apply  \cref{c:virtual_iop} using this matrix $M$ as part of the input. 
+     
+     
+     At the beginning of Step 3 of \cref{c:virtual_iop}, prover and verifier obtain the claim 
      $$
-     \left((\uu, \eta),\ \Enc_{\cC}(\pack(\pi_2(\bff))), \ \pi_2(\bff)\right) \in \Relation^{\mathsf{lin}}[\cC_1, \comfield,\pack],
+     \left((\uu, \eta),\ \Enc_{\cC}(\pack(\pi_2(\bff))), \ \pi_2(\bff)\right) \in \Relation^{\mathsf{lin}}_{\cC_1, \comfield,\pack},
      $$
-     for  $\uu = (\mle{M_{*t}}(\rr))_{t\in [\codedim]} \in \comfield^{\codedim}$, where $M_{*t}$ denotes the $t$-th column of $M$. I.e.\ prover and verifier must now certify that $\Enc_{\cC}(\pi_2(\bff))$ is (close to) the encoding of a vector $\pi_2(\bff)$ such that
-     %
-     $$
-    \langle (\mle{M_{*t}}(\rr))_{t\in [\codedim]}, \pi_2(\bff) \rangle = \eta.
-     $$
-    %
-    Using \cref{s:ring_switch}, \eqref{?} 
-
-
+     for  $\uu = (\mle{M_{*t}}(\rr))_{t\in [\codedim]} \in \comfield^{\codedim}$, where $M_{*t}$ denotes the $t$-th column of $M$. Then, prover and verifier use the Galois ring-switch \cref{c: Galois ring-switch IOP} to reduce the above claim to standard MLE evaluation claims of $\pack(\pi_2(\bff_{*j}))$. The cost of doing so for the vector $\uu$ of linear coefficients is .... \albert{discuss}.
     
-    Next we address the case 
+    Next we address the case when we use a non-trivial tensor decomposition structure $\ell= \ell_1 \cdot \ell_2$ with $\ell_1\neq 1 \neq \ell_2$. \albert{TODO}
      
 \end{example} 
 
@@ -542,6 +541,13 @@ Optimization ideas
 
 
 %\newcommand{\XX}{\mathbf{X}}
+
+
+\begin{construction}\label{c: Galois ring-switch IOP}
+  \albert{TODO: formulate as a reduction from $\Relation^{\mathsf{lin}}_{\cC, \comfield,\pack}$ to  $\Relation^{\mathsf{mle}}_{\cC_1, \comfield,\mathsf{id}}$}.
+  
+\end{construction}
+
 
 Let $b_1,\ldots, b_m \in \FF_2^{2^n}$.
 Using an $\mathbb F_2$-basis $\beta_1,\ldots, \beta_{m}$ of $\mathbb F_{2^m}$ we
