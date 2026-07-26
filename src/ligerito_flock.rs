@@ -2693,39 +2693,64 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family(
     drop(and_rows);
 
     // (4) Discharge: the |S| ≥ 2 residuals of every chunk, η-batched into
-    // one degree-(j+1) eq-sumcheck over the n' x-tensor variables.
+    // one degree-(j+1) eq-sumcheck over the n' x-tensor variables. j = 2
+    // (one channel, `A·M₁·M₂`) rides the eq-factored driver — the eq side
+    // is suffix-tensor-factored, never materialised, and the finals ARE
+    // the ω openings; j ≥ 3 keeps the generic multi-degree form.
     let num_ge2 = ge2.len();
     let (discharge, omegas, rho) = if num_ge2 == 0 {
         (None, Vec::new(), Vec::new())
     } else {
         let _g = crate::utils::prof::scope("rlc:discharge");
         let etas_dis: Vec<Gf> = transcript.get_field_challenges(lch_x * num_ge2, &());
-        // A_S(x) = Σ_l η_{l,S}·eq(pt_l, x).
-        let mut a_tbls: Vec<Vec<Gf>> = vec![vec![Gf::zero(); 1usize << n_x]; num_ge2];
+        // A_S(x) = Σ_l η_{l,S}·eq(pt_l, x). The last group of each chunk
+        // takes the eq table by move + in-place scale, so at the common
+        // L = 1, single-channel (j = 2) shape the build peaks at ONE
+        // 2^{n'} buffer. Parallel over chunks of x.
+        let _g_t = crate::utils::prof::scope("rlc:dis_tbls");
+        const DIS_CHUNK: usize = 1 << 12;
+        let mut a_tbls: Vec<Vec<Gf>> = vec![Vec::new(); num_ge2];
         for (l, pt) in points.iter().enumerate() {
-            let eq_pt = build_eq_x_r_vec(pt, &()).expect("n' >= 1");
-            for (g, a) in a_tbls.iter_mut().enumerate() {
+            let mut eq_pt = build_eq_x_r_vec(pt, &()).expect("n' >= 1");
+            for g in 0..num_ge2 {
                 let eta = etas_dis[l * num_ge2 + g];
-                for (slot, &e) in a.iter_mut().zip(eq_pt.iter()) {
-                    *slot += eta * e;
+                let last = g == num_ge2 - 1;
+                if last && a_tbls[g].is_empty() {
+                    cfg_chunks_mut!(eq_pt, DIS_CHUNK).for_each(|chunk| {
+                        for e in chunk.iter_mut() {
+                            *e *= eta;
+                        }
+                    });
+                    a_tbls[g] = core::mem::take(&mut eq_pt);
+                } else if a_tbls[g].is_empty() {
+                    a_tbls[g] = cfg_iter!(eq_pt).map(|&e| eta * e).collect();
+                } else {
+                    let dst = &mut a_tbls[g];
+                    cfg_chunks_mut!(dst, DIS_CHUNK).enumerate().for_each(|(ci, chunk)| {
+                        let base = ci * DIS_CHUNK;
+                        for (off, d) in chunk.iter_mut().enumerate() {
+                            *d += eta * eq_pt[base + off];
+                        }
+                    });
                 }
             }
         }
-        // Dense 0/1 bit-MLE tables of the family columns (x index (c ≪ t') | b).
-        let m_dense: Vec<Vec<Gf>> = x_rows
+        // Dense 0/1 bit-MLE tables of the family columns (x index
+        // (c ≪ t') | b), parallel per column strip.
+        let mut m_dense: Vec<Vec<Gf>> = x_rows
             .iter()
             .map(|rows| {
                 let mut tbl = vec![Gf::zero(); 1usize << n_x];
-                for (c, row) in rows.iter().enumerate() {
-                    for (wi, &word) in row.iter().enumerate() {
+                cfg_chunks_mut!(tbl, 1usize << t_x).enumerate().for_each(|(c, strip)| {
+                    for (wi, &word) in rows[c].iter().enumerate() {
                         let mut bits = word;
                         while bits != 0 {
                             let t = bits.trailing_zeros() as usize;
-                            tbl[(c << t_x) | (wi << 6) | t] = one;
+                            strip[(wi << 6) | t] = one;
                             bits &= bits.wrapping_sub(1);
                         }
                     }
-                }
+                });
                 tbl
             })
             .collect();
@@ -2736,23 +2761,46 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family(
                 zero_inner,
             )
         };
+        // Each family column's dense table moves into its LAST consuming
+        // group; earlier consumers clone (j = 2: everything moves).
+        let mut m_uses: Vec<usize> = (0..j)
+            .map(|fi| ge2.iter().filter(|&&s| (s >> fi) & 1 == 1).count())
+            .collect();
         let mut groups: Vec<MultiDegreeSumcheckGroup<Gf>> = Vec::with_capacity(num_ge2);
         for (g, &s) in ge2.iter().enumerate() {
             let mut mles = vec![to_mle(core::mem::take(&mut a_tbls[g]))];
-            for (fi, m) in m_dense.iter().enumerate() {
+            for fi in 0..j {
                 if (s >> fi) & 1 == 1 {
-                    mles.push(to_mle(m.clone()));
+                    m_uses[fi] -= 1;
+                    let tbl = if m_uses[fi] == 0 {
+                        core::mem::take(&mut m_dense[fi])
+                    } else {
+                        m_dense[fi].clone()
+                    };
+                    mles.push(to_mle(tbl));
                 }
             }
-            groups.push(MultiDegreeSumcheckGroup::new(
-                1usize.wrapping_add(s.count_ones() as usize),
+            let deg = 1usize.wrapping_add(s.count_ones() as usize);
+            let group = MultiDegreeSumcheckGroup::new(
+                deg,
                 mles,
                 Box::new(|vals: &[Gf]| vals.iter().fold(Gf::one(), |a, v| a * *v)),
-            ));
+            );
+            // |S| = 2 groups (degree 3, the whole discharge at j = 2) run
+            // the fused triple-product evaluator — byte-identical.
+            let group = if deg == 3 && rs_fast() {
+                group.with_round_evaluator(Box::new(crate::ligerito::RlcTripleWideEvaluator))
+            } else {
+                group
+            };
+            groups.push(group);
         }
         drop(m_dense);
+        drop(_g_t);
+        let _g_r = crate::utils::prof::scope("rlc:dis_run");
         let (dis, states) =
             MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(transcript, groups, n_x, &());
+        drop(_g_r);
         let rho = states[0].randomness.clone();
         // Committed closings ω_i = M̂_i(ρ).
         let omegas: Vec<Gf> =

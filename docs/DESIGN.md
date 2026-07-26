@@ -70,6 +70,29 @@ recursive Ligerito call (their `B(y)` bases combined with a shared `r″`), and 
 verifier recombines `y = Σ_c e_c · Σ_l 2^{c_w·l} u_c^{(l)}` in `F_q` in the clear.
 Both the range check and the generator check are load-bearing.
 
+## Mod-q RLC claim families (EXPERIMENTAL)
+
+`prove/verify_mle_eval_mod_q_ligerito_rlc_family`: k claims
+`MLE[INT(a_i)](r_i) = c_i ∈ F_q` where each `a_i` is a public F₂-linear form of
+j committed UAIR columns (per position) and all claims share the COLUMN point.
+After the statement (root, forms, all `(c_i, w_i)`) is absorbed, γ's drawn from
+the transcript collapse the k weight functions into one 2^j-CASE weight
+`W_b(m) = Σ_i γ_i·w_{i,b}·L_i(m) mod q`; ONE forest per chunk binds
+`α^{W_b^{(l)}(m(pos))}` by a 2^j-case leaf select on the committed bits (the
+derived vectors never materialize), the presum splits into `2^j − 1` channels
+`R_S = eq ⊙ τ_S` against the bit monomials `Π_{i∈S} m_i` (`τ_S` the char-2
+subset zeta-transform of the case α-powers), and the `|S| ≥ 2` residuals
+discharge through one η-batched degree-(j+1) eq-sumcheck exiting at committed
+openings. The chunking, range checks (`u < 2^{c_w+t'+W}`), generator check and
+the η-RLC'd single Ligerito call carry over verbatim from the base scheme. The
+construction, its soundness obligations and boundaries live in
+`docs/rlc-family-note-prompt.md` (companion prototyping plan:
+`docs/rlc-family-proto-prompt.md`); measured A/B vs the virtual-XOR and
+independent-claims baselines in the README's 2026-07-26 note (forest collapse
+confirmed at ~1.3× a single-claim forest; the Phase-1/2 discharge realization
+is the open cost gap). Fixed `q = 2^100 − 15`; NOT wired into `proof_codec`;
+the virtual-XOR path is untouched and remains the comparison baseline.
+
 ## Proof-stream serialization
 
 `IntEvalRsLigModQProof::to_bytes` / `from_bytes` (`src/proof_codec.rs`). Per

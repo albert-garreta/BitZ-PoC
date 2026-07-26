@@ -464,6 +464,71 @@ size-gated: on iff the `t4` table is ≥ 16 MiB (n ≥ 30; at n=28 the
 via `fuse_check` with all three prefetch/table knobs forced). Session
 cumulative at n=30: **2871 → ~2340 ms (−18.5 %)**.
 
+**Mod-q RLC claim families — the XOR-triple prototype (2026-07-26).**
+EXPERIMENTAL API (`prove/verify_mle_eval_mod_q_ligerito_rlc_family`, no
+`proof_codec` wiring; construction and soundness obligations in
+`docs/rlc-family-note-prompt.md`, prototyping plan in
+`docs/rlc-family-proto-prompt.md`): k claims on F₂-linear forms of j
+committed UAIR columns (shared column point) collapse into ONE forest per
+weight chunk via the γ-RLC case weight `W_b(m) = Σ_i γ_i·w_{i,b}·L_i(m)
+mod q` — 2^j-case leaves `α^{W_b^{(l)}(m(pos))}`, a (2^j−1)-channel
+presum against the bit monomials (τ_S = char-2 subset zeta-transform of
+the case α-powers), and one η-batched degree-(j+1) eq-sumcheck
+discharging the |S|≥2 monomial residuals into j committed openings. The
+j=2 lazy forest is a pure REWIRING of the existing driver kernels
+(4-case leaf = `Pair2TauSet` keyed by the two columns' bit streams →
+`Pair3Bits` leaf round, `T4Bits` product layer, L/4 build; byte-identical
+to the eager reference, pinned) — no kernel changes. Measured (this box,
+16 GB M-series, alternated in-window, medians of 5; the XOR triple k=3
+j=2 with per-claim row points vs (a) `ind3` = three independent
+claims-only vx proofs and (b) `vx3` = the batched claims-only vx path,
+`single` = one claim as the unit; `examples/rlc_ab.rs`):
+
+| n | single | rlc3 | vx3 | ind3 | rlc3 proof | vx3 | ind3 |
+|----|--------|------|-----|------|-----------|-----|------|
+| 22 | 27.2 ms | **29.5 (1.08×)** | 36.6 (1.35×) | 71.3 (2.62×) | **135 KB** | 169 KB | 384 KB |
+| 24 | 33.5 ms | 82.5 (2.47×) | 84.0 (2.51×) | 111.5 (3.33×) | **183 KB** | 248 KB | 524 KB |
+| 26 | 77.4 ms | 241.3 (3.12×) | 235.2 (3.04×) | 242.1 (3.13×) | **249 KB** | 378 KB | 719 KB |
+| 28† | 234.5 ms | 1073 (4.58×) | 948 (4.04×) | 710 (3.03×) | **343 KB** | 602 KB | 1000 KB |
+
+† churned-box caveat: the n=28 discharge tables (~3.2 GB of the ~5.5 GB
+peak) ran against ~4 GB free on the 16 GB box; the rlc3 scaling step
+n=26→28 (4.45× for 4× data vs 4.03× for vx3) shows the pressure.
+
+**The forest collapse works exactly as designed** — phase trees
+(`OBLONG_PROFILE=1`, per-prove): at n=26 the ONE 4-case forest costs
+59.5 ms vs the vx batch's 182.7 ms (3.1×; k=3 pads to 4 tree-sets) and
+~138 ms for three independent forests; the 4-case leaf overhead lands at
+~1.3× a single-claim forest, inside the predicted 1.1–1.3 band. Proof
+size wins unconditionally (ONE forest transcript + ONE u′ vector):
+−26…−43 % vs vx3, −65 % vs ind3. **The headline prediction (triple ≈
+1.6–1.8× single vs 3×) FAILS at n ≥ 24**: the Phase-1/2 discharge
+realization costs 40.3 ms at n=24 and 162.8 ms at n=26 (tables 62.6 +
+sumcheck 86.6) — ~2.1 single-claim-equivalents, 4–5× the modeled
+0.4–0.6 forest-equivalents — because it streams THREE dense 16 B/position
+K-element tables (`A`, `M₁`, `M₂`) through a generic multi-degree
+sumcheck while the forest streams ~2 bits/position through case-LUT
+kernels. Net: **n=22 a clear win (1.08× vs 1.35×), n=24 a tie, n≥26 a
+loss on time** (and vx3 itself is ≈/worse than ind3 at n≥26 — the
+pad-to-power-of-two forest costs the 1.33× that the shared tail saves).
+Closed sub-experiment: re-realizing the j=2 discharge on the eq-factored
+driver (no materialized eq table, NEON kernels) measured SLOWER
+(dis_run 20.9 → 37.9 ms at n=24) — that driver parallelizes across
+GROUPS and the discharge is ONE group; reverted. What stands between the
+prototype and the prediction, in ranked order: (1) bit-LUT discharge
+rounds — the M_i are 0/1, so nodes 0/1 of the round polynomial need no
+multiplies and the post-fold values are 4-case (`{0,1,ρ,1+ρ}`-structured
+— exactly the forest's `LeafFoldTables` cascade), projected to cut the
+discharge to ~0.3–0.5 forest-equivalents and land the triple at
+~1.5–1.9× single; (2) chunk-internal parallelism for one-group dense
+eq-factored instances; (3) the generic prover's fold passes are
+3-way-parallel only. Levers: `F2Z_RLC_EAGER=1` (materialized-leaf
+forest: +29 % forest phase at n=24), `F2Z_RS_FAST=0` (generic discharge
+evaluator), `F2Z_LUT3=0` (Pair2 leaf round). The j=1 corollary (k
+same-column claims at different row points, 2-case forest, NO discharge)
+and the j=3/k=4 family are implemented and tested; j ≥ 3 falls back to
+the eager forest (the 8/16-case leaf-round kernels are the open lever).
+
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
 The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —
