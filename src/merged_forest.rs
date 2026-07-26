@@ -1153,6 +1153,159 @@ pub fn prove_merged_forest_lazy_rlc2(
     drive_grouped(transcript, roots, levels, bit_layer, depth, s)
 }
 
+/// The j-bit case of position `p` gathered from up to 4 family-column bit
+/// streams: `m = Σ_i bit_i(p) ≪ i`.
+#[inline(always)]
+#[allow(clippy::arithmetic_side_effects)]
+fn rlc_case(streams: &[&[u64]], p: usize) -> usize {
+    let mut m = 0usize;
+    for (fi, s) in streams.iter().enumerate() {
+        m |= (((s[p >> 6] >> (p & 63)) & 1) as usize) << fi;
+    }
+    m
+}
+
+/// Lazy merged-forest prover for the RLC-family **j = 3, 4** leaves
+/// (EXPERIMENTAL): the leaf at position `i` of tree `c` is the
+/// 2^j-case select `case_pow[i][m(i,c)]` on the j family columns' bits.
+/// Without 8/16-case leaf-round kernels (the open lever), the bottom
+/// layers run **Dense with JIT-generated buffers** — the leaf layer's
+/// values are gathered per tree straight from the shared case table, the
+/// level above from the shared `2^{2j}`-case TOP-pair product table
+/// `T2[(i ≪ 2j) | (c_E ≪ j) | c_O] = case_pow[i][c_E]·case_pow[i+2^{d−1}][c_O]`
+/// (1 gather per value), and the stored chain tops at level d−3 — so the
+/// eager path's separate leaf materialisation and full `build_levels`
+/// chain never exist. Values are identical to the eager reference, hence
+/// the transcript is byte-identical (pinned by a test). Requires
+/// depth ≥ 4.
+#[allow(clippy::arithmetic_side_effects)]
+pub fn prove_merged_forest_lazy_rlc_general(
+    transcript: &mut impl Transcript,
+    p: &IntEvalParams,
+    m_rows: &[&[Vec<u64>]],
+    case_pow: &[Vec<Gf>],
+) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
+    assert_eq!(p.word_bits, 1, "RLC leaves live on the W=1 x tensor");
+    let j = m_rows.len();
+    assert!((2..=4).contains(&j), "general RLC lazy forest supports j in [2, 4]");
+    let row_len = p.rows();
+    let depth = row_len.trailing_zeros() as usize;
+    let s = p.s;
+    let num_trees = p.cols();
+    assert!(depth >= 4, "RLC lazy forest needs depth >= 4; got {depth}");
+    let cases = 1usize << j;
+    debug_assert!(
+        case_pow.len() == row_len && case_pow.iter().all(|r| r.len() == cases),
+        "case_pow must be [2^d][2^j]"
+    );
+
+    let q2 = row_len >> 1; // 2^{d−1}: leaf TOP-pair offset
+    let h2 = row_len >> 2; // level d−2 positions
+    let h3 = row_len >> 3; // level d−3 positions
+
+    // Shared level-(d−1) product table (indexed collect + in-place
+    // flatten — the parallel-flatten lesson): 2^{2j}·2^{d−1} entries
+    // (j = 3: 64 cases, j = 4: 256).
+    let two_j = j << 1;
+    let t2: Vec<Gf> = {
+        let rows: Vec<Vec<Gf>> = cfg_into_iter!(0..q2, 1 << 9)
+            .map(|i| {
+                let mut row = Vec::with_capacity(1usize << two_j);
+                for ce in 0..cases {
+                    for co in 0..cases {
+                        row.push(case_pow[i][ce] * case_pow[i + q2][co]);
+                    }
+                }
+                row
+            })
+            .collect();
+        rows.into_iter().flatten().collect()
+    };
+    // ld1(i) = level-(d−1) value at slot i, one T2 gather.
+    let ld1 = |streams: &[&[u64]], i: usize| -> Gf {
+        let ce = rlc_case(streams, i);
+        let co = rlc_case(streams, i + q2);
+        t2[(i << two_j) | (ce << j) | co]
+    };
+
+    // Stored chain tops at level d−3 via TOP-paired products of T2 pairs.
+    let (levels, roots) = build_levels(num_trees, depth - 3, |c| {
+        let streams: Vec<&[u64]> = m_rows.iter().map(|r| &r[c][..]).collect();
+        let v3 = |y: usize| -> Gf {
+            (ld1(&streams, y) * ld1(&streams, y + h2))
+                * (ld1(&streams, y + h3) * ld1(&streams, y + h3 + h2))
+        };
+        let hh = h3 >> 1;
+        ((0..hh).map(v3).collect(), (hh..h3).map(v3).collect())
+    });
+
+    let bit_layer = |ell: usize, _zx: &[Gf]| -> Option<BitLayer> {
+        if ell == depth - 3 {
+            // JIT: level d−2 (Dense) per tree — paired T2 gathers.
+            let hh = h2 >> 1;
+            let bufs: Vec<GroupBufs<Gf>> = cfg_into_iter!(0..num_trees)
+                .map(|c| {
+                    let streams: Vec<&[u64]> = m_rows.iter().map(|r| &r[c][..]).collect();
+                    let v2 = |i: usize| ld1(&streams, i) * ld1(&streams, i + h2);
+                    GroupBufs::Dense(vec![(
+                        (0..hh).map(v2).collect(),
+                        (hh..h2).map(v2).collect(),
+                    )])
+                })
+                .collect();
+            Some(BitLayer {
+                bufs,
+                tau_sets: Vec::new(),
+                pair_tau_sets: Vec::new(),
+                t4_sets: Vec::new(),
+                round1: None,
+            })
+        } else if ell == depth - 2 {
+            // JIT: level d−1 (Dense) per tree — one T2 gather per value.
+            let hh = q2 >> 1;
+            let bufs: Vec<GroupBufs<Gf>> = cfg_into_iter!(0..num_trees)
+                .map(|c| {
+                    let streams: Vec<&[u64]> = m_rows.iter().map(|r| &r[c][..]).collect();
+                    GroupBufs::Dense(vec![(
+                        (0..hh).map(|i| ld1(&streams, i)).collect(),
+                        (hh..q2).map(|i| ld1(&streams, i)).collect(),
+                    )])
+                })
+                .collect();
+            Some(BitLayer {
+                bufs,
+                tau_sets: Vec::new(),
+                pair_tau_sets: Vec::new(),
+                t4_sets: Vec::new(),
+                round1: None,
+            })
+        } else if ell == depth - 1 {
+            // The LEAF layer (Dense, JIT): direct case-table gathers.
+            // (t2 stays alive to the end — a few MB at deployed depths.)
+            let bufs: Vec<GroupBufs<Gf>> = cfg_into_iter!(0..num_trees)
+                .map(|c| {
+                    let streams: Vec<&[u64]> = m_rows.iter().map(|r| &r[c][..]).collect();
+                    let leaf = |i: usize| case_pow[i][rlc_case(&streams, i)];
+                    GroupBufs::Dense(vec![(
+                        (0..q2).map(leaf).collect(),
+                        (q2..row_len).map(leaf).collect(),
+                    )])
+                })
+                .collect();
+            Some(BitLayer {
+                bufs,
+                tau_sets: Vec::new(),
+                pair_tau_sets: Vec::new(),
+                t4_sets: Vec::new(),
+                round1: None,
+            })
+        } else {
+            None
+        }
+    };
+    drive_grouped(transcript, roots, levels, bit_layer, depth, s)
+}
+
 /// Multi-claim batched lazy prover: `claims.len()` same-shape claims —
 /// each `2^s` trees of the same depth over its OWN lane-packed bits and
 /// τ chains `(packed_cols, pow2)` — run as ONE merged forest of

@@ -237,6 +237,125 @@ fn main() {
             );
         }
 
+        // Optional j = 3 family A/B (F2Z_AB_J3=1): k = 4 claims on cols
+        // {0},{1},{2},{0,1,2} — the cascade discharge (level-2 AND) path —
+        // vs the batched-vx and independent baselines on the same statement.
+        if std::env::var("F2Z_AB_J3").is_ok_and(|v| v == "1") {
+            let family3 = [0usize, 1, 2];
+            let forms3 = [0b001usize, 0b010, 0b100, 0b111];
+            let col_lists3: Vec<Vec<usize>> =
+                vec![vec![0], vec![1], vec![2], vec![0, 1, 2]];
+            let rws3: Vec<Vec<u128>> = (0..4)
+                .map(|i| {
+                    (0..p_x.rows())
+                        .map(|b| {
+                            (b as u128)
+                                .wrapping_mul(0xDEAD_BEEF_CAFE_F00D_1234_5678_9ABC_DEF1)
+                                .wrapping_add(41 + i as u128)
+                                % FQ_MOD
+                        })
+                        .collect()
+                })
+                .collect();
+            let cs3: Vec<u128> = (0..4)
+                .map(|i| {
+                    let a_rows =
+                        extract_virtual_xor_rows(&layout, hint.rows(), &col_lists3[i], 0, None);
+                    let mut y = Fq::from(0u128);
+                    for (c, row) in a_rows.iter().enumerate() {
+                        let mut acc = Fq::from(0u128);
+                        for (wi, &word) in row.iter().enumerate() {
+                            let mut bits = word;
+                            while bits != 0 {
+                                let t = bits.trailing_zeros() as usize;
+                                acc = acc + Fq::from(rws3[i][(wi << 6) | t]);
+                                bits &= bits.wrapping_sub(1);
+                            }
+                        }
+                        y = y + colw[c] * acc;
+                    }
+                    y.0
+                })
+                .collect();
+            let claims3: Vec<RlcFamilyClaim<'_>> = (0..4)
+                .map(|i| RlcFamilyClaim {
+                    form: forms3[i],
+                    row_weights_q: &rws3[i],
+                    claimed: cs3[i],
+                })
+                .collect();
+            let vx3_of = |idx: &[usize]| -> Vec<VirtualXorClaim<'_>> {
+                idx.iter()
+                    .map(|&i| VirtualXorClaim {
+                        cols: &col_lists3[i],
+                        constant: 0,
+                        external_rows: None,
+                        row_weights_q: &rws3[i],
+                    })
+                    .collect()
+            };
+            let mut t_rlc4 = Vec::with_capacity(reps);
+            let mut t_vx4 = Vec::with_capacity(reps);
+            let mut t_ind4 = Vec::with_capacity(reps);
+            let mut sz = (0usize, 0usize, 0usize);
+            for rep in 0..reps {
+                let t0 = Instant::now();
+                let pr_rlc = {
+                    let mut pt = Blake3Transcript::new();
+                    prove_mle_eval_mod_q_ligerito_rlc_family(
+                        &mut pt, &hint, &layout, &family3, &claims3, alpha, &pc,
+                    )
+                };
+                t_rlc4.push(t0.elapsed().as_secs_f64() * 1e3);
+                std::hint::black_box(&pr_rlc);
+
+                let t0 = Instant::now();
+                let pr_vx = {
+                    let mut pt = Blake3Transcript::new();
+                    prove_mle_eval_mod_q_ligerito_claims_only(
+                        &mut pt, &hint, &layout, FQ_BITS, &vx3_of(&[0, 1, 2, 3]), alpha, &pc,
+                    )
+                };
+                t_vx4.push(t0.elapsed().as_secs_f64() * 1e3);
+                std::hint::black_box(&pr_vx);
+
+                let t0 = Instant::now();
+                let pr_inds: Vec<_> = (0..4)
+                    .map(|i| {
+                        let mut pt = Blake3Transcript::new();
+                        prove_mle_eval_mod_q_ligerito_claims_only(
+                            &mut pt, &hint, &layout, FQ_BITS, &vx3_of(&[i]), alpha, &pc,
+                        )
+                    })
+                    .collect();
+                t_ind4.push(t0.elapsed().as_secs_f64() * 1e3);
+                std::hint::black_box(&pr_inds);
+
+                if rep == 0 {
+                    sz = (
+                        mle_eval_mod_q_lig_rlc_family_proof_size_bytes(&pr_rlc),
+                        mle_eval_mod_q_lig_xor_proof_size_bytes(&pr_vx),
+                        pr_inds.iter().map(mle_eval_mod_q_lig_xor_proof_size_bytes).sum(),
+                    );
+                    let mut vt = Blake3Transcript::new();
+                    verify_mle_eval_mod_q_ligerito_rlc_family(
+                        &mut vt, &hint.commitment, &pr_rlc, &layout, &family3, &claims3, &colw,
+                        alpha, &vc,
+                    )
+                    .expect("rlc j3 verifies");
+                }
+            }
+            println!(
+                "n={n} j3(k=4): rlc4 {:.1} ms ({} B) | vx4 {:.1} ms ({} B) | ind4 {:.1} ms ({} B)",
+                median(t_rlc4),
+                sz.0,
+                median(t_vx4),
+                sz.1,
+                median(t_ind4),
+                sz.2,
+            );
+        }
+
         // Timed variants, alternated in-window.
         let mut t_single = Vec::with_capacity(reps);
         let mut t_rlc3 = Vec::with_capacity(reps);

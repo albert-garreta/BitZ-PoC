@@ -604,6 +604,47 @@ and a lone XOR claim is CHEAPER via the vx extraction path (74.5 vs
 forest). Guidance: k = 1 → the vx path; k ≥ 2 with a shared column
 point → the family.
 
+**RLC families: the j ≥ 3 cascade discharge + general forests
+(2026-07-27).** The j ≥ 3 path (eager forest + a dense-table multi-degree
+discharge) was replaced end to end. (1) **The discharge is now a 2-level
+CASCADE of the leaf-bit form for every j ≤ 4**: each active |S| ≥ 2
+channel factors into a PAIR of sides — committed columns and, for
+|S| ≥ 3, 2-bit AND intermediates taken from the already-extracted AND
+rows (`M₁M₂M₃ = (M₁∧M₂)·M₃`; `rlc_channel_sides`) — and the whole batch
+runs the same two-phase complement-bit sumcheck as j = 2 (level 1); the
+AND openings at ρ are then η'-batched and discharged the same way at a
+second level, exiting at committed openings at ρ' (level 2; j = 2 has no
+AND sides and keeps its exact byte shape — `discharge_eqf/omegas` +
+`discharge_eqf2/omegas2`, sides in canonical order, elision-aware
+throughout). The dense A_S/M_i tables and the generic multi-degree
+discharge are gone entirely. (2) **General forests**: j = 3, 4 default
+to the EAGER forest — a Dense-JIT lazy form over shared case/product
+tables (`prove_merged_forest_lazy_rlc_general`, byte-identical, pinned)
+was built and measured SLOWER at n = 24–28 (−6 % at n=26, −9 % at a
+churned n=28: the per-value regeneration closures cost more than the
+saved materialisation), so it is the `F2Z_RLC_J34_LAZY=1` low-peak-memory
+arm (~⅓ the peak) and the 8/16-case leaf-ROUND kernels remain the open
+lever. Measured (same protocol/box; j=3 k=4 family — claims on
+{0},{1},{2},{0,1,2} — vs the batched-vx and independent baselines,
+`F2Z_AB_J3=1`; single = one vx claim at the same shape):
+
+| n | single | rlc4 | vx4 | ind4 | proofs (rlc4/vx4/ind4) |
+|----|--------|------|-----|------|------------------------|
+| 24 | 33.3 ms | **81.9 (2.46×)** | 99.1 (2.98×) | 146.2 (4.39×) | **193**/284/698 KB |
+| 26 | 78.3 ms | **224.6 (2.87×)** | 245.1 (3.13×) | 329.7 (4.21×) | **259**/445/959 KB |
+| 28† | 232.5 ms | **893.6 (3.84×)** | 918.0 (3.95×) | 921.8 (3.96×) | **353**/736/1334 KB |
+
+† churned box (~2 GB free). The j = 3 family now beats BOTH baselines at
+every measured shape — −17/−8/−3 % vs the batched path and −44/−32/−3 %
+vs independent proofs — with 32–52 % (vs vx4) and 72–74 % (vs ind4)
+smaller proofs; per claim it runs at 0.61–0.96× a single proof. The
+margin is thinner than j = 2's (1.74–1.87× for k = 3) for three
+structural reasons: the 8-case leaves run Dense rounds (no LUT kernels),
+the presum carries 7 channels, and k = 4 gives the batched baseline a
+pad-free forest. Tests: j = 4 full-depth cascade (two AND intermediates)
++ level-2 tamper coverage; 83/83 green in both forest arms; clippy at
+parity.
+
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
 The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —

@@ -1534,9 +1534,22 @@ deployed \code{Pair2TauSet} shape keyed by the two columns' bit streams,
 the $16$-case product level above it \emph{is} \code{T4Bits}, and the lazy
 family forest is a table re-wiring with zero kernel changes, byte-identical
 to the eager reference (\texttt{4dd5df9}); measured constant
-${\approx}1.3\times$ at $n=26$ (\S\ref{sec:measured}). The $8$/$16$-case
-\emph{leaf} rounds for $j\in\{3,4\}$ remain unbuilt (that path currently
-falls back to eager leaves).
+${\approx}1.3\times$ at $n=26$ (\S\ref{sec:measured}). For
+$j\in\{3,4\}$ the $8$/$16$-case \emph{leaf} rounds remain unbuilt: the
+deployed path runs eager leaves (a Dense-JIT lazy form over shared case
+tables was built, pinned byte-identical, and measured \emph{slower} at
+$n=24$--$28$ --- it survives as the low-peak-memory arm), and the $j=3$
+discharge now runs as a two-level \emph{cascade} of the leaf-bit form of
+Remark~\ref{rem:dischargeleaf}: each $|S|\ge3$ channel factors through a
+2-bit AND intermediate ($M_1M_2M_3=(M_1\wedge M_2)\cdot M_3$, the AND
+rows already extracted for the presum), whose opening is discharged by a
+second level at the single point $\rho$, exiting at committed openings
+--- cascade depth 2 for every $j\le4$, no dense tables anywhere. Measured
+($k=4$ on $\{m_1,m_2,m_3,m_1{\oplus}m_2{\oplus}m_3\}$): the family beats
+both baselines at $n=24$--$28$ ($81.9$ vs $99.1$/$146.2$\,ms at $n=24$)
+with $32$--$74\%$ smaller proofs; the margin is thinner than $j=2$'s
+because the Dense leaf rounds and the 7-channel presum pay the missing
+kernels' price.
 \end{openproblem}
 
 \begin{openproblem}[API interplay]
