@@ -199,8 +199,62 @@ pub struct EqInnerGroupMixed<F> {
 struct LeafTables<F> {
     t_a0: Vec<F>,
     t_a1: Vec<F>,
-    t_a2: Vec<F>,
+    a2: LeafA2<F>,
     w_sum: F,
+}
+
+/// The `Σ w·ΔL·ΔR` term's table form.
+enum LeafA2<F> {
+    /// 16-case precombined ΔΔ table `t_a2[(b≪4) | lp | rp≪2]` — the
+    /// default: one load + one add per slot, `16·2^k` entries — 2/3 of
+    /// the leaf-round table bytes.
+    Precombined(Vec<F>),
+    /// `F2Z_LEAF_A2_FACTORED=1`: the four raw cross products per slot
+    /// `[p00, p10, p01, p11]` at `b≪2` — 4× less ΔΔ-table footprint (the
+    /// leaf-round tables drop from `24·2^k` to `12·2^k` entries), one
+    /// 64 B line per slot, four branchless masked adds in place of the
+    /// load. Measured SLOWER at L2-resident shapes (n=26: leaf_r1
+    /// 6.2 → 7.4 ms — the masked selects cost more than an L2-hit
+    /// gather); kept as the A/B lever for the n ≥ 30 regime, where the
+    /// precombined table (25 MB at n=30) spills the P-cluster L2 and the
+    /// footprint argument applies. Fresh-box measurement pending.
+    Factored(Vec<F>),
+}
+
+/// Factored ΔΔ leaf tables — opt-IN via `F2Z_LEAF_A2_FACTORED=1` (see
+/// [`LeafA2::Factored`]; default = precombined). Byte-identical proofs
+/// either way. Read once per process.
+fn leaf_a2_factored() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("F2Z_LEAF_A2_FACTORED").is_ok_and(|v| v == "1"))
+}
+
+/// Per-slot ΔΔ accumulation against either [`LeafA2`] form. Value-exact:
+/// the precombined entry is the subset-sum of the products the masked
+/// adds select (field addition is exact and commutative).
+#[allow(clippy::arithmetic_side_effects)]
+#[inline(always)]
+fn leaf_a2_slot_add<F>(a2: &mut F, tbl: &LeafA2<F>, b: usize, lp: usize, rp: usize, zero: &F)
+where
+    F: InnerTransparentField + WideMulAcc,
+{
+    match tbl {
+        LeafA2::Precombined(t) => *a2 += &t[(b << 4) | lp | (rp << 2)],
+        LeafA2::Factored(p) => {
+            // Two-temp tree: the four masked selects reduce pairwise so the
+            // `a2` accumulator still takes ONE add per slot (same serial
+            // chain profile as the precombined load), with the masked work
+            // ILP-parallel beside the a0/a1 gathers.
+            let base = b << 2;
+            let mut ta = zero.clone();
+            let mut tb = zero.clone();
+            F::add_assign_masked(&mut ta, &p[base], lp & rp & 1 != 0); // m_{L0}∧m_{R0}
+            F::add_assign_masked(&mut ta, &p[base + 1], (lp >> 1) & rp & 1 != 0); // m_{L1}∧m_{R0}
+            F::add_assign_masked(&mut tb, &p[base + 2], lp & (rp >> 1) & 1 != 0); // m_{L0}∧m_{R1}
+            F::add_assign_masked(&mut tb, &p[base + 3], (lp >> 1) & (rp >> 1) & 1 != 0); // m_{L1}∧m_{R1}
+            *a2 += ta + tb;
+        }
+    }
 }
 
 #[allow(clippy::arithmetic_side_effects)]
@@ -211,9 +265,10 @@ where
     let half = v1.len();
     debug_assert_eq!(tau_l.len(), half << 1);
     debug_assert_eq!(tau_r.len(), half << 1);
+    let factored = leaf_a2_factored();
     let mut t_a0 = Vec::with_capacity(half << 2);
     let mut t_a1 = Vec::with_capacity(half << 2);
-    let mut t_a2 = Vec::with_capacity(half << 4);
+    let mut t_a2 = Vec::with_capacity(if factored { half << 2 } else { half << 4 });
     let mut w_sum = zero.clone();
     for b in 0..half {
         let w = &v1[b];
@@ -234,26 +289,36 @@ where
         t_a1.push(sl1.clone());
         t_a1.push(sr1.clone());
         t_a1.push(sl1.clone() + &sr1 + &p11);
-        // 16-case ΔΔ combos: case c = m_{L0} | m_{L1}≪1 | m_{R0}≪2 | m_{R1}≪3.
-        for c in 0..16usize {
-            let mut v = zero.clone();
-            if c & 0b0101 == 0b0101 {
-                v += &p00; // m_{L0}∧m_{R0}
+        if factored {
+            // Raw cross products, mask-selected at consumption
+            // ([`leaf_a2_slot_add`]).
+            t_a2.push(p00);
+            t_a2.push(p10);
+            t_a2.push(p01);
+            t_a2.push(p11);
+        } else {
+            // 16-case ΔΔ combos: case c = m_{L0} | m_{L1}≪1 | m_{R0}≪2 | m_{R1}≪3.
+            for c in 0..16usize {
+                let mut v = zero.clone();
+                if c & 0b0101 == 0b0101 {
+                    v += &p00; // m_{L0}∧m_{R0}
+                }
+                if c & 0b0110 == 0b0110 {
+                    v += &p10; // m_{L1}∧m_{R0}
+                }
+                if c & 0b1001 == 0b1001 {
+                    v += &p01; // m_{L0}∧m_{R1}
+                }
+                if c & 0b1010 == 0b1010 {
+                    v += &p11; // m_{L1}∧m_{R1}
+                }
+                t_a2.push(v);
             }
-            if c & 0b0110 == 0b0110 {
-                v += &p10; // m_{L1}∧m_{R0}
-            }
-            if c & 0b1001 == 0b1001 {
-                v += &p01; // m_{L0}∧m_{R1}
-            }
-            if c & 0b1010 == 0b1010 {
-                v += &p11; // m_{L1}∧m_{R1}
-            }
-            t_a2.push(v);
         }
         w_sum += w;
     }
-    LeafTables { t_a0, t_a1, t_a2, w_sum }
+    let a2 = if factored { LeafA2::Factored(t_a2) } else { LeafA2::Precombined(t_a2) };
+    LeafTables { t_a0, t_a1, a2, w_sum }
 }
 
 /// Round-1 fold tables for one leaf `tau` set, in **case-LUT** form: the
@@ -989,7 +1054,7 @@ where
                         let rp = ((rbits[b >> 5] >> ((b & 31) << 1)) & 3) as u32 as usize;
                         a0 += &lt.t_a0[(b << 2) | (lp & 1) | ((rp & 1) << 1)];
                         t11 += &lt.t_a1[(b << 2) | (lp >> 1) | (rp & 2)];
-                        a2 += &lt.t_a2[(b << 4) | lp | (rp << 2)];
+                        leaf_a2_slot_add(&mut a2, &lt.a2, b, lp, rp, &zero);
                     }
                     a0 += &lt.w_sum;
                     t11 += &lt.w_sum;
@@ -1009,7 +1074,7 @@ where
                         let rp = ((rbits[b >> 5] >> ((b & 31) << 1)) & 3) as u32 as usize;
                         a0 += &lt.t_a0[(b << 2) | (lp & 1) | ((rp & 1) << 1)];
                         t11 += &lt.t_a1[(b << 2) | (lp >> 1) | (rp & 2)];
-                        a2 += &lt.t_a2[(b << 4) | lp | (rp << 2)];
+                        leaf_a2_slot_add(&mut a2, &lt.a2, b, lp, rp, &zero);
                     }
                     a0 += &lt.w_sum;
                     t11 += &lt.w_sum;
@@ -1062,7 +1127,7 @@ where
                         let rp = ((rbits[b >> 5] >> ((b & 31) << 1)) & 3) as u32 as usize;
                         a0 += &lt.t_a0[(b << 2) | (lp & 1) | ((rp & 1) << 1)];
                         t11 += &lt.t_a1[(b << 2) | (lp >> 1) | (rp & 2)];
-                        a2 += &lt.t_a2[(b << 4) | lp | (rp << 2)];
+                        leaf_a2_slot_add(&mut a2, &lt.a2, b, lp, rp, &zero);
                     }
                     a0 += &lt.w_sum;
                     t11 += &lt.w_sum;
@@ -1698,4 +1763,60 @@ where
         }
     }
     unreachable!("the final round returns")
+}
+
+#[cfg(test)]
+#[allow(clippy::arithmetic_side_effects)]
+mod tests {
+    use super::*;
+    use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
+    use crypto_primitives::Field;
+
+    fn sample(seed: u64) -> Gf {
+        let hi = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(29) ^ 0x1234_5678_9ABC_DEF0;
+        Gf::from_words([seed ^ 0xA5A5_5A5A_0F0F_F0F0, hi])
+    }
+
+    /// The two [`LeafA2`] forms accumulate the identical ΔΔ value for every
+    /// `(lp, rp)` case (env-independent — both arms constructed directly).
+    #[test]
+    fn leaf_a2_forms_agree() {
+        let zero = Gf::zero();
+        let slots = 5usize;
+        let prods: Vec<Gf> = (0..slots << 2).map(|i| sample(0x7A00 + i as u64)).collect();
+        let mut pre = Vec::with_capacity(slots << 4);
+        for b in 0..slots {
+            let (p00, p10, p01, p11) =
+                (prods[b << 2], prods[(b << 2) | 1], prods[(b << 2) | 2], prods[(b << 2) | 3]);
+            for c in 0..16usize {
+                let mut v = zero;
+                if c & 0b0101 == 0b0101 {
+                    v += p00;
+                }
+                if c & 0b0110 == 0b0110 {
+                    v += p10;
+                }
+                if c & 0b1001 == 0b1001 {
+                    v += p01;
+                }
+                if c & 0b1010 == 0b1010 {
+                    v += p11;
+                }
+                pre.push(v);
+            }
+        }
+        let precombined = LeafA2::Precombined(pre);
+        let factored = LeafA2::Factored(prods);
+        for b in 0..slots {
+            for lp in 0..4usize {
+                for rp in 0..4usize {
+                    let mut x = sample(0x8B00 + ((b << 4) | (lp << 2) | rp) as u64);
+                    let mut y = x;
+                    leaf_a2_slot_add(&mut x, &precombined, b, lp, rp, &zero);
+                    leaf_a2_slot_add(&mut y, &factored, b, lp, rp, &zero);
+                    assert_eq!(x, y, "slot {b} case ({lp},{rp})");
+                }
+            }
+        }
+    }
 }

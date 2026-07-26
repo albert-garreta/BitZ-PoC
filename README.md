@@ -391,6 +391,32 @@ n=28 t=17 s=11): `mq:bcomb` 17.3 → 4.5 ms (**−74 %**), `mq:rings`
 slice of a forest-dominated prove). The batched and virtual-XOR paths
 inherit the kernels through the shared helpers.
 
+**Forest bucket ranking + the leaf ΔΔ-table experiment (2026-07-26).**
+A full n=28 phase tree (`prof_probe`, post-`F2Z_RS_FAST`, 558 ms prove)
+ranks the 466 ms forest: fused dense rounds `eqf:fmsg` 118.6 ms (at the
+measured kernel floor), `mf:bitgen` 53.5 ms and `mf:build_levels` 49.0 ms
+(streaming transposes/gathers over the bit store), `eqf:msg:leaf_r1`
+37.0 ms, materialising folds 49.3 ms, 16-case rounds 41.5 ms,
+`leaf3_r2/r3` 35.4 ms, dense round-1s 30.3 ms. Against the ledger's
+"leaf_r1 pair-slot 4-Russians would cut ~⅓" estimate: pair-slot merging
+GROWS table bytes (4+4-case → 16-case per pair is 2× the `t_a0`/`t_a1`
+bytes), i.e. the wrong direction under the bytes-rule lesson — so the
+byte-SHRINKING variant was built instead (`LeafA2::Factored`,
+`F2Z_LEAF_A2_FACTORED=1`): store the four raw ΔΔ cross products per slot
+(halves total leaf-table bytes `24·2^k → 12·2^k`, one sequential 64 B
+line per slot) and select via four branchless masked adds in a two-temp
+tree. **Measured SLOWER at L2-resident shapes** — n=26, 3 alternated
+in-window pairs: `leaf_r1` 6.2 → 7.4 ms (+18 %, net ≈ +0.5 ms after the
+4× cheaper table build) — an L2-hit gather beats four masked selects, so
+the default stays precombined and the factored form ships **opt-in** as
+the A/B lever for the n ≥ 30 regime (precombined leaf tables are 25 MB
+at n=30, past the P-cluster L2; the 12.6 MB factored form fits).
+Byte-identical all ways (arm-equivalence unit test + cross-process
+`fuse_check` over default/opt-in/pre-change). n ≥ 28 A/B was NOT
+adjudicable this session (churned box: 180 MB free, 3.2 GB swap —
+the recorded measurement pitfall now bites n=28 too); the n=30
+fresh-box measurement decides whether the factored default flips.
+
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
 The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —
