@@ -265,6 +265,53 @@ where
     }
 }
 
+/// Software prefetch on the stash-gather rounds (`pair3_r2`/`leaf3_r3`
+/// messages + the two materialising folds): issue `prfm pldl1keep` for
+/// slot `b + PRFM_DIST`'s fold-table lines while slot `b` computes — the
+/// line-within-window picks are data-dependent (committed bits), which
+/// defeats the hardware prefetcher, but the indices are cheaply
+/// recomputable ahead from the sequential bit words.
+/// `F2Z_LUT_PRFM=0/1` forces off/on; unset (the default) picks by round
+/// size — on iff `half ≥ 2^14` (these sites run at rounds 2–3, so this
+/// is the n=30-class boundary: stashes `2·32·half·16 B ≥ 16.8 MB`, past
+/// the P-cluster L2). Measured (fresh box, alternated in-window pairs):
+/// n=30 the four scopes drop 20–25 % and prove −4.8 % (2518 → 2394 ms
+/// median); n=28 (8.4 MB stashes, shallow misses) and n=26 it LOSES
+/// 1–8 ms — the index recompute + LSU pressure beat L2-hit latency.
+/// Semantically inert (a hint), so proofs are byte-identical by
+/// construction. Env read once per process.
+fn lut_prfm(half: usize) -> bool {
+    static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+    let env = *ENV.get_or_init(|| match std::env::var("F2Z_LUT_PRFM") {
+        Ok(v) if v == "0" => Some(false),
+        Ok(v) if v == "1" => Some(true),
+        _ => None,
+    });
+    env.unwrap_or(half >= 1 << 14)
+}
+
+/// Prefetch look-ahead in slots for [`lut_prfm`].
+const PRFM_DIST: usize = 16;
+
+/// `prfm pldl1keep` on `&v[idx]` (callers pass in-bounds indices; the
+/// hint has no architectural effect either way). No-op off aarch64.
+#[inline(always)]
+fn prefetch_l1<F>(v: &[F], idx: usize) {
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let p = (v.as_ptr() as *const u8).wrapping_add(idx * core::mem::size_of::<F>());
+        core::arch::asm!(
+            "prfm pldl1keep, [{0}]",
+            in(reg) p,
+            options(nostack, preserves_flags, readonly)
+        );
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let _ = (v, idx);
+    }
+}
+
 #[allow(clippy::arithmetic_side_effects)]
 fn build_leaf_tables<F>(v1: &[F], tau_l: &[F], tau_r: &[F], zero: &F) -> LeafTables<F>
 where
@@ -1179,10 +1226,22 @@ where
                     // dense round over materialised round-3 buffers.
                     debug_assert_eq!(j, 3, "leaf3-bit groups are consumed in round 3");
                     let vs = &leaf3_value_sets[*tau_set];
+                    let prfm = lut_prfm(half);
                     let mut a0 = F::wide_zero(&zero);
                     let mut a1 = F::wide_zero(&zero);
                     let mut a2 = F::wide_zero(&zero);
                     for b in 0..half {
+                        if prfm && b + PRFM_DIST < half {
+                            let bp = b + PRFM_DIST;
+                            let pp = bp << 3;
+                            let plb = ((lbits[pp >> 6] >> (pp & 63)) & 255) as u32 as usize;
+                            let prb = ((rbits[pp >> 6] >> (pp & 63)) & 255) as u32 as usize;
+                            let ep = bp << 1;
+                            prefetch_l1(&vs.f_e, (ep << 4) | leaf3_idx(plb & 15));
+                            prefetch_l1(&vs.f_e, ((ep | 1) << 4) | leaf3_idx(plb >> 4));
+                            prefetch_l1(&vs.f_o, (ep << 4) | leaf3_idx(prb & 15));
+                            prefetch_l1(&vs.f_o, ((ep | 1) << 4) | leaf3_idx(prb >> 4));
+                        }
                         let p = b << 3;
                         let bl = ((lbits[p >> 6] >> (p & 63)) & 255) as u32 as usize;
                         let br = ((rbits[p >> 6] >> (p & 63)) & 255) as u32 as usize;
@@ -1244,10 +1303,25 @@ where
                     debug_assert_eq!(j, 2, "pair3-bit groups are consumed in round 2");
                     let vs = &pair3_value_sets[*tau_set];
                     let h_off = half << 2; // 2^k — absolute O-side bit offset
+                    let prfm = lut_prfm(half);
                     let mut a0 = F::wide_zero(&zero);
                     let mut a1 = F::wide_zero(&zero);
                     let mut a2 = F::wide_zero(&zero);
                     for b in 0..half {
+                        if prfm && b + PRFM_DIST < half {
+                            let bp = b + PRFM_DIST;
+                            let pe2 = bp << 2;
+                            let nl2 = ((lbits[pe2 >> 6] >> (pe2 & 63)) & 15) as u32 as usize;
+                            let nr2 = ((rbits[pe2 >> 6] >> (pe2 & 63)) & 15) as u32 as usize;
+                            let po2 = pe2 + h_off;
+                            let ml2 = ((lbits[po2 >> 6] >> (po2 & 63)) & 15) as u32 as usize;
+                            let mr2 = ((rbits[po2 >> 6] >> (po2 & 63)) & 15) as u32 as usize;
+                            let ep = bp << 1;
+                            prefetch_l1(&vs.f_e, (ep << 4) | pair3_idx(nl2 & 3, nr2 & 3));
+                            prefetch_l1(&vs.f_e, ((ep | 1) << 4) | pair3_idx(nl2 >> 2, nr2 >> 2));
+                            prefetch_l1(&vs.f_o, (ep << 4) | pair3_idx(ml2 & 3, mr2 & 3));
+                            prefetch_l1(&vs.f_o, ((ep | 1) << 4) | pair3_idx(ml2 >> 2, mr2 >> 2));
+                        }
                         let pe = b << 2;
                         let nl = ((lbits[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
                         let nr = ((rbits[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
@@ -1618,9 +1692,23 @@ where
                         // `(1+ρ₃)v_0 + ρ₃v_1` exactly by distributivity)
                         // over byte-keyed selects.
                         let vs = &leaf3_value_sets[*tau_set];
+                        let prfm = lut_prfm(half);
                         let mut l = Vec::with_capacity(half);
                         let mut r = Vec::with_capacity(half);
                         for b in 0..half {
+                            if prfm && b + PRFM_DIST < half {
+                                let bp = b + PRFM_DIST;
+                                let pp = bp << 3;
+                                let plb =
+                                    ((lbits[pp >> 6] >> (pp & 63)) & 255) as u32 as usize;
+                                let prb =
+                                    ((rbits[pp >> 6] >> (pp & 63)) & 255) as u32 as usize;
+                                let ep = bp << 1;
+                                prefetch_l1(&vs.f_e, (ep << 4) | leaf3_idx(plb & 15));
+                                prefetch_l1(&vs.f_e, ((ep | 1) << 4) | leaf3_idx(plb >> 4));
+                                prefetch_l1(&vs.f_o, (ep << 4) | leaf3_idx(prb & 15));
+                                prefetch_l1(&vs.f_o, ((ep | 1) << 4) | leaf3_idx(prb >> 4));
+                            }
                             let p = b << 3;
                             let bl = ((lbits[p >> 6] >> (p & 63)) & 255) as u32 as usize;
                             let br = ((rbits[p >> 6] >> (p & 63)) & 255) as u32 as usize;
@@ -1646,9 +1734,34 @@ where
                         // one-multiply fold `v_0 + ρ₂(v_0 + v_1)`.
                         let vs = &pair3_value_sets[*tau_set];
                         let h_off = half << 2; // 2^k at j = 2
+                        let prfm = lut_prfm(half);
                         let mut l = Vec::with_capacity(half);
                         let mut r = Vec::with_capacity(half);
                         for b in 0..half {
+                            if prfm && b + PRFM_DIST < half {
+                                let bp = b + PRFM_DIST;
+                                let pe2 = bp << 2;
+                                let nl2 =
+                                    ((lbits[pe2 >> 6] >> (pe2 & 63)) & 15) as u32 as usize;
+                                let nr2 =
+                                    ((rbits[pe2 >> 6] >> (pe2 & 63)) & 15) as u32 as usize;
+                                let po2 = pe2 + h_off;
+                                let ml2 =
+                                    ((lbits[po2 >> 6] >> (po2 & 63)) & 15) as u32 as usize;
+                                let mr2 =
+                                    ((rbits[po2 >> 6] >> (po2 & 63)) & 15) as u32 as usize;
+                                let ep = bp << 1;
+                                prefetch_l1(&vs.f_e, (ep << 4) | pair3_idx(nl2 & 3, nr2 & 3));
+                                prefetch_l1(
+                                    &vs.f_e,
+                                    ((ep | 1) << 4) | pair3_idx(nl2 >> 2, nr2 >> 2),
+                                );
+                                prefetch_l1(&vs.f_o, (ep << 4) | pair3_idx(ml2 & 3, mr2 & 3));
+                                prefetch_l1(
+                                    &vs.f_o,
+                                    ((ep | 1) << 4) | pair3_idx(ml2 >> 2, mr2 >> 2),
+                                );
+                            }
                             let pe = b << 2;
                             let nl = ((lbits[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
                             let nr = ((rbits[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;

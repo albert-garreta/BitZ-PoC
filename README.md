@@ -425,6 +425,27 @@ factored iff `half ≥ 2^15` (precombined tables ≥ ~12.6 MB — the
 P-cluster-L2 co-residency edge; n=26 and below stay precombined, where
 factored loses ~1.2 ms). `F2Z_LEAF_A2_FACTORED=0/1` forces either arm.
 
+**Software prefetch on the stash-gather rounds (2026-07-26).** The
+`pair3_r2`/`leaf3_r3` message bodies and the two materialising folds
+read the ρ-dependent fold-table stashes at data-dependent lines inside
+sequentially-advancing windows — a pattern the hardware prefetcher
+cannot follow, but whose indices are cheaply recomputable ahead from the
+sequential bit words. The four loops now issue `prfm pldl1keep` for slot
+`b+16`'s lines while slot `b` computes (`lut_prfm`, `prefetch_l1` —
+inline asm, semantically inert ⇒ byte-identical by construction; pinned
+via `fuse_check` with the knob forced). Measured (fresh box, 3 alternated
+in-window pairs): n=30 — `fold:leaf3mat` 197 → 147 ms, `fold:pair3mat`
+199 → 155 ms, `leaf3_r3` 132 → 106 ms (all **−20–25 %**), `pair3_r2`
+−5 %; **prove 2518 → 2394 ms median (−4.8 %)**. At n=28/n=26 it LOSES
+1–8 ms per scope (stashes 8.4 MB and below are L2-shallow; the index
+recompute + LSU pressure beat the latency hidden). Default is therefore
+**size-gated**: on iff the round's `half ≥ 2^14` (the n=30-class
+boundary, stashes ≥ 16.8 MB); `F2Z_LUT_PRFM=0/1` forces either arm.
+Combined with the factored leaf tables, the n=30 prove on this box went
+2871 → 2394 ms (**−17 %**) this session; the README reference table's
+n=30 row († k=6 generation) predates both changes AND the k=4 configs —
+pending its fresh re-measure.
+
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
 The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —
