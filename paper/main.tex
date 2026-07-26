@@ -436,7 +436,7 @@ M = \begin{pmatrix}
      $$
      \left((\uu, \eta),\ \Enc_{\cC}(\pack(\pi_2(\bff))), \ \pi_2(\bff)\right) \in \Relation^{\mathsf{lin}}_{\cC_1, \comfield,\pack},
      $$
-     for  $\uu = (\mle{M_{*t}}(\rr))_{t\in [\codedim]} \in \comfield^{\codedim}$, where $M_{*t}$ denotes the $t$-th column of $M$. Then, prover and verifier use the Galois ring-switch \cref{c: Galois ring-switch IOP} to reduce the above claim to standard MLE evaluation claims of $\pack(\pi_2(\bff_{*j}))$. The cost of doing so for the vector $\uu$ of linear coefficients is .... \albert{discuss}.
+     for  $$\uu = (\mle{M_{*t}}(\rr))_{t\in [\codedim]} \in \comfield^{\codedim},$$ where $M_{*t}$ denotes the $t$-th column of $M$. Then, prover and verifier use the Galois ring-switch \cref{c: Galois ring-switch IOP} to reduce the above claim to standard MLE evaluation claims of $\pack(\pi_2(\bff_{*j}))$. The cost of doing so for the vector $\uu$ of linear coefficients is .... \albert{discuss}.
     
     Next we address the case when we use a non-trivial tensor decomposition structure $\ell= \ell_1 \cdot \ell_2$ with $\ell_1\neq 1 \neq \ell_2$. \albert{TODO}
      
@@ -447,6 +447,9 @@ M = \begin{pmatrix}
 \end{theorem}
 \begin{proof}
 \end{proof}
+
+
+\section{R1CS constraints over polynomial rings with ideal membership}
 
 \section{Case-study: SHA-256 hashing}
 \albert{Maybe Keccak better?}
@@ -543,7 +546,7 @@ Optimization ideas
 %\newcommand{\XX}{\mathbf{X}}
 
 
-\begin{construction}\label{c: Galois ring-switch IOP}
+\begin{construction}\label{c: Galois ring-switch IOP}[Galois ring-switch: an IOR from $\Relation^{\mathsf{lin}}_{\cC, \comfield,\pack}$ to  $\Relation^{\mathsf{mle}}_{\cC_1, \comfield,\mathsf{id}}$]
   \albert{TODO: formulate as a reduction from $\Relation^{\mathsf{lin}}_{\cC, \comfield,\pack}$ to  $\Relation^{\mathsf{mle}}_{\cC_1, \comfield,\mathsf{id}}$}.
   
 \end{construction}
@@ -771,14 +774,14 @@ Thus $\mu_{x} \in \mathbb{E}^*$ where $\mathbb{E}^* = \operatorname{Hom}_\mathbb
 \[
 \Phi_\mu:\mathbb{E}\to\mathbb{E}^* \qquad x\mapsto\mu_x.
 \]
-We call $\mu$ \emph{nondegenerate}, or equivalently a \emph{perfect pairing}, if $\Phi_\mu$ is an isomorphism. Or equivalently, \albert{add a comment that injectivity implies surjectivity when the vector spaces have finite dimension?}
+We call $\mu$ \emph{nondegenerate}, or equivalently a \emph{perfect pairing}, if $\Phi_\mu$ is an isomorphism. Or equivalently for finite spaces, \albert{add a comment that injectivity implies surjectivity when the vector spaces have finite dimension?} % Remco: Like this?
 \[
 \mu(x,y)=0\text{ for all }y\in\mathbb E \quad\Longrightarrow\quad x=0.
 \]
 Since $\mu$ is a perfect pairing, every basis $(\beta_1,\ldots,\beta_d)$ of $\mathbb{E}$ has a unique dual basis $(\beta_1^\vee,\ldots,\beta_d^\vee)$ satisfying $\mu(\beta_i, \beta_j^\vee) = \delta_{ij}$.
 
 \subsection{Structure}
-We are now equipped to prove a theorem on the structure of embeddings. Under the assumption that the output map is $\mathbb{F}$-linear, we show that for $n=1$ the space of possible embeddings is very structured. This then extends naturally to $n>1$ by doing blockwise packing.
+We are now equipped to prove a theorem on the structure of embeddings. Under the assumption that the output map is $\mathbb{F}$-linear, we show that for $n=1$ the space of possible embeddings is very structured.
 
 \begin{theorem}[Structure of bilinear embeddings]
 Let $W,A:\mathbb{F}^d\rightarrow\mathbb{E}, H:\mathbb{E}\rightarrow\mathbb{F}$ be maps such that for all
@@ -788,9 +791,9 @@ $\mathbf{w},\mathbf{a}\in\mathbb{F}^d$,
 =
 H\bigl(W(\mathbf{w})A(\mathbf{a})\bigr).
 \]
-Suppose that $H$ is $\mathbb{F}$-linear. Then: \albert{It would be nice to also add that $A$ and $W$ are bijective, in particular they are the namesake ``embedings''}
+Suppose that $H$ is $\mathbb{F}$-linear. Then:
 \begin{enumerate}
-    \item $W$ and $A$ are $\mathbb{F}$-linear,
+    \item $W$ and $A$ are bijective $\mathbb{F}$-linear embeddings,
     \item $\mu_H(x,y) = H(xy)$ is a perfect pairing,
     \item $\left(W(\mathbf{e}_1),\ldots,W(\mathbf{e}_d)\right)$ and $\left(A(\mathbf{e}_1),\ldots,A(\mathbf{e}_d)\right)$ are dual bases with respect to $\mu_H$.
 \end{enumerate}
@@ -886,15 +889,26 @@ w_i a_j\delta_{ij}\\
 \]
 \end{proof}
 
-We have now shown that every embedding with a linear output map is determined by a choice of a nonzero linear map $H$ and linear isomorphism $W$. The map $W$ then determines the first basis $\beta_i=W(\mathbf e_i)$ and the map $A$ is then forced to map to the $\mu_H$-dual basis.
+The $n=1$ case extends naturally to $n>1$ by doing blockwise packing, i.e. we embed using $W' = \mathrm{I}_n \otimes W$ and $A' = \mathrm{I}_n \otimes A$ and keep the same $H$. Let $\mathbf{w} = (\mathbf{w}_1, \dots, \mathbf{w}_n)$ and $\mathbf{a} = (\mathbf{a}_1, \dots, \mathbf{a}_n)$ then
+\[
+\begin{aligned}
+H\bigl( \langle W'(\mathbf{w}), A'(\mathbf{a}) \rangle_{\mathbb{E}} \bigr)
+&= H\left( \sum_{i=1}^n W(\mathbf{w}_i) A(\mathbf{a}_i) \right) \\
+&= \sum_{i=1}^n H\bigl( W(\mathbf{w}_i) A(\mathbf{a}_i) \bigr) \\
+&= \sum_{i=1}^n \langle \mathbf{w}_i,\mathbf{a}_i \rangle_{\mathbb{F}} \\
+&= \langle \mathbf{w},\mathbf{a} \rangle_{\mathbb{F}}.
+\end{aligned}
+\]
+Going forward, we use $W$ and $A$ also for their blockwise extensions when the meaning is clear. We do not consider embeddings that mix coordinates across different blocks of size $d$, as such embeddings are unlikely to be useful in practice.
+
+We have shown that every $n=1$ embedding with a linear output map is determined by a choice of a nonzero linear map $H$ and linear isomorphism $W$. The map $W$ then determines the first basis $\beta_i=W(\mathbf e_i)$ and the map $A$ is then forced to map to the $\mu_H$-dual basis.
 
 The linearity assumption on the output map is necessary. Indeed, composing a linear embedding with a multiplicative bijection $g:\mathbb E\to\mathbb E$ generally produces an embedding that is nonlinear. Whether every nonlinear embedding arises from such a multiplicative reparameterization is a separate question, which we do not need here.
 
-The set of nonzero linear output maps $H$ is $\mathbb{E}^* \setminus \{0\}$ which is isomorphic to $\mathbb{E}^\times$. The set of linear isomorphism $W$ is isomorphic to $\mathrm{GL}_d(\mathbb{F})$, hence the total number of bilinear embeddings is $|\mathbb{E}^\times| \cdot |\mathrm{GL}_d(\mathbb{F})|$. Let's now look at specific choices.
+\subsection{Properties}
 
-\subsection{Implementation}
+Let's consider some general properties of bilinear embeddings.
 
-\ulrich{Let us copy paste this into the new f2z doc. You are working on the legacy overleaf doc.}
 \begin{theorem}[Preservation of MLE openings] Given $d = 2^k$, $n = 2^l$ and a $\mathbb{F}$-linear map $A : \mathbb{F}^d \to \mathbb{E}$ applied blockwise, then if $\mathbf{a}\in \mathbb{F}^{2^{k + l}}$ given by $a_i = \mathrm{eq}_\mathbb{F}(\mathbf{r}, \mathbf{b}(i))$ where $\mathbf{b}$ is the binary encoding, the embedding $A(\mathbf{a}) \in \mathbb{E}^{2^l}$ is given by
 \[
 (A(\mathbf{a}))_i = \alpha \cdot \mathrm{eq}_\mathbb{E}(\mathbf{r}', \mathbf{b}(i))
@@ -904,11 +918,18 @@ for some $\alpha \in \mathbb{E}$ and $\mathbf{r}' \in \mathbb{E}^l$.
 
 In particular this means that any bilinear map can also be used to lift an multilinear commitment scheme.
 
-\begin{theorem}[Preservation of succinct verification] If $\mathbf{a}$ has a Matrix-branching program for succinct evaluation of its multilinear extension, then $A(\mathbf{a})$ also has one, at most $d$ times wider. 
+\begin{theorem}[Preservation of succinct verification] If $\mathbf{a}$ has a Matrix-branching program over $\mathbb{F}$ for succinct evaluation of its multilinear extension, then $A(\mathbf{a})$ also has one over $\mathbb{E}$, which is at most $d$ times wider. 
 \end{theorem}
 
+Now assume we have $\mathbf{w} \in \mathbb{F}^{nd}$ but this time we want to open it in extension field weights, e.g. $\mathbf{w} \in \mathbb{E}^{nd}$. Such a situation naturally occurs when doing a base-field sumcheck with extension field challenges.
 
-\subsection{Trace embedding}
+Pick a basis, expand in d inner products, prover gives values, RLC together, single opening.
+
+\subsection{Constructions}
+
+The set of nonzero linear output maps $H$ is $\mathbb{E}^* \setminus \{0\}$ which is isomorphic to $\mathbb{E}^\times$. The set of linear isomorphism $W$ is isomorphic to $\mathrm{GL}_d(\mathbb{F})$, hence the total number of bilinear embeddings is $|\mathbb{E}^\times| \cdot |\mathrm{GL}_d(\mathbb{F})|$. We'll now look at specific choices and their properties.
+
+\subsubsection{Trace embedding}
 
 Let $q = |\mathbb F|$, the $q$-power Frobenius map is $\varphi:\mathbb E\to\mathbb E$ given by $x\mapsto x^q$. It is an $\mathbb F$-linear field automorphism of order $d$, and its
 fixed field is precisely $\mathbb F$:
@@ -973,9 +994,37 @@ and we end up with inner products of the packed poly with the Galois orbit of $\
 }
 
 
-\subsection{Coefficient projection}
+\subsubsection{Coefficient projection}
 
-In the coefficient projection we assume the standard polynomial representation for $\mathbb{E}$ (as is common in practical implementations) and take $H: \mathbb{E} \to \mathbb{F}$ to select a particular coordinate, e.g. the constant coordinate. We will show that this lead to a particularly efficient implementation where $W$ is the identity map and $A$ is generally sparse and for many fields monomial.
+In the coefficient projection we assume a concrete representation of $\mathbb{E}$ as $\mathbb{F}[X]/(f(X))$ for some monic degree $d$ polynomial $f$ irreducible over $\mathbb{F}$. We assume $f$ is chosen for implementation efficiency: it is sparse with mostly low order terms. Further we represent members of $\mathbb{E}$ in the monomial basis $(1, X, X^2, \dots, X^{d-1})$. We can then represent $W$ and $A$ by invertible matrices in $\mathbb{F}^{d \times d}$ and $H$ by a vector in $\mathbb{F}^d$. For implementation efficiency we seek an embedding with sparse $W$ and $A$. It turns out taking the most efficient choices for $H$ and $W$ also gives efficient $A$:
 
+\begin{theorem}
+Write  $f(X)= f_d X^d + f_{d-1} X^{d-1} + \hdots + f_1 X + f_0$ so that $f_d =1$ and $f_0 \neq 0$. Take $W=\mathrm{I}_d$ and $H=(1, 0, \dots, 0)$. Then the dual-basis embedding $A$ is given by
+\[
+A_{ij}=
+\begin{cases}
+1,&i=j=0,\\
+-f_{i+j}/f_0,&i,j\ge1\text{ and }i+j\le d,\\
+0,&\text{otherwise}.
+\end{cases}
+\]
+\end{theorem}
+
+In particular, $A$ is a bordered upper anti-triangular Hankel matrix. For $d=5$ it looks like
+\[
+A= \frac{1}{f_0}
+\begin{pmatrix}
+f_0 & 0 & 0 & 0 & 0\\
+0 & -f_2 & -f_3 & -f_4 & -1\\
+0 & -f_3 & -f_4 & -1 & 0\\
+0 & -f_4 & -1 & 0 & 0\\
+0 & -1 & 0 & 0 & 0
+\end{pmatrix}.
+\]
+Notably $f_1$ does not appear and for $k>1$ the $f_k$ coefficient appears $k-1$ times. This perfectly matches the usual implementation preference for sparse reduction polynomials with mostly low-order terms.
+
+For the 127-bit field $\mathbb{F}_2[X]/(X^{127} + X + 1)$ the $A$ map is simply a reversal of the $i>0$ coordinates. For the GHASH field $\mathbb{F}_2[X]/(X^128 + X^7 + X^2 + X + 1)$ the map additionally needs seven XOR corrections.
+
+% Cite: https://shiftleft.com/mirrors/www.hpl.hp.com/techreports/98/HPL-98-135.pdf
 
 \end{document}
