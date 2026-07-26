@@ -446,6 +446,24 @@ Combined with the factored leaf tables, the n=30 prove on this box went
 n=30 row († k=6 generation) predates both changes AND the k=4 configs —
 pending its fresh re-measure.
 
+**T4-gather prefetch in the forest build/JIT (2026-07-26).** The n=30
+phase tree ranked `mf:build_levels` (380 ms) and `mf:bitgen` (320 ms —
+it contains the JIT level regeneration, not just the bit transposes) as
+the top attackable buckets; both are dominated by `T4At` gathers into
+the shared 16-case table (`t4[(j≪4)|(cE≪2)|cO]` — sequential 256 B
+blocks, data-dependent line pick, 16.8 MB at n=30, past the P-cluster
+L2, ~536 M gathers per prove). All eight sites (`gen_top` + fused-JIT ×
+single/multi × L4/L8) now issue the same ahead-of-use `prfm` via
+`T4At::prefetch_at` (a `look` hook on `dense_jit_fused_round1`).
+Measured (3 alternated in-window pairs, n=30, stash-PRFM on in both
+arms): `build_levels` 310 → 261 ms median (−16 %), `bitgen` 325 → 252 ms
+(−22 %), **prove 2471 → 2341 ms median (−5.3 %)**. Default is
+size-gated: on iff the `t4` table is ≥ 16 MiB (n ≥ 30; at n=28 the
+8.4 MB table is L2-resident and forcing it on measures slightly worse);
+`F2Z_T4_PRFM=0/1` forces either arm. Byte-identical (hint-only; pinned
+via `fuse_check` with all three prefetch/table knobs forced). Session
+cumulative at n=30: **2871 → ~2340 ms (−18.5 %)**.
+
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
 The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —

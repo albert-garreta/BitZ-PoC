@@ -290,13 +290,14 @@ fn lut_prfm(half: usize) -> bool {
     env.unwrap_or(half >= 1 << 14)
 }
 
-/// Prefetch look-ahead in slots for [`lut_prfm`].
-const PRFM_DIST: usize = 16;
+/// Prefetch look-ahead in slots for [`lut_prfm`] (shared by the forest's
+/// T4-gather sites in `merged_forest`).
+pub(crate) const PRFM_DIST: usize = 16;
 
 /// `prfm pldl1keep` on `&v[idx]` (callers pass in-bounds indices; the
 /// hint has no architectural effect either way). No-op off aarch64.
 #[inline(always)]
-fn prefetch_l1<F>(v: &[F], idx: usize) {
+pub(crate) fn prefetch_l1<F>(v: &[F], idx: usize) {
     #[cfg(target_arch = "aarch64")]
     unsafe {
         let p = (v.as_ptr() as *const u8).wrapping_add(idx * core::mem::size_of::<F>());

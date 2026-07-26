@@ -39,7 +39,7 @@
 
 use crate::pcs::IntEvalParams;
 use crate::piop::sumcheck::eq_factored::{
-    EqInnerGroupMixed, GroupBufs, Pair2TauSet, prove_eq_inner_sumcheck_mixed,
+    EqInnerGroupMixed, GroupBufs, PRFM_DIST, Pair2TauSet, prove_eq_inner_sumcheck_mixed,
     prove_eq_inner_sumcheck_mixed_pre, suffix_tensors,
 };
 use crate::piop::sumcheck::{MLSumcheck, SumcheckProof};
@@ -249,6 +249,42 @@ impl T4At<'_> {
         let co = bit(self.lbits, j + self.q1) | (bit(self.rbits, j + self.q1) << 1);
         self.t4[(j << 4) | (ce << 2) | co]
     }
+
+    /// `prfm pldl1keep` for position `j`'s table line — the same index
+    /// computation as [`Self::at`], issued ahead of use ([`t4_prfm`]).
+    #[inline(always)]
+    #[allow(clippy::arithmetic_side_effects)]
+    fn prefetch_at(&self, j: usize) {
+        #[inline(always)]
+        fn bit(bits: &[u64], p: usize) -> usize {
+            ((bits[p >> 6] >> (p & 63)) & 1) as usize
+        }
+        let ce = bit(self.lbits, j) | (bit(self.rbits, j) << 1);
+        let co = bit(self.lbits, j + self.q1) | (bit(self.rbits, j + self.q1) << 1);
+        crate::piop::sumcheck::eq_factored::prefetch_l1(
+            self.t4,
+            (j << 4) | (ce << 2) | co,
+        );
+    }
+}
+
+/// Software prefetch on the T4-gather build/JIT sites (`gen_top` and the
+/// JIT regeneration): the per-position 16-case line pick is
+/// data-dependent (committed bits), which defeats the hardware
+/// prefetcher, but the indices are cheaply recomputable ahead.
+/// `F2Z_T4_PRFM=0/1` forces off/on; unset (the default) turns on iff the
+/// shared `t4` table is ≥ 16 MiB (past the P-cluster L2 — the n ≥ 30
+/// regime; at n ≤ 28 the table is L2-resident and the recompute overhead
+/// loses, as measured for the stash-gather sites). Semantically inert.
+/// Env read once per process.
+fn t4_prfm(t4_bytes: usize) -> bool {
+    static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+    let env = *ENV.get_or_init(|| match std::env::var("F2Z_T4_PRFM") {
+        Ok(v) if v == "0" => Some(false),
+        Ok(v) if v == "1" => Some(true),
+        _ => None,
+    });
+    env.unwrap_or(t4_bytes >= 16 << 20)
 }
 
 /// Build one tree's Dense `(E, O)` halves from a per-position value
@@ -272,6 +308,7 @@ fn dense_jit_fused_round1(
     hh: usize,
     v1: &[Gf],
     value: impl Fn(usize) -> Gf,
+    look: impl Fn(usize),
 ) -> ((Vec<Gf>, Vec<Gf>), (Gf, Gf, Gf)) {
     let half = hh >> 1;
     debug_assert_eq!(v1.len(), half, "V_1 tensor length = round-1 slot count");
@@ -282,6 +319,15 @@ fn dense_jit_fused_round1(
     let mut a1 = Gf::wide_zero(&zero);
     let mut a2 = Gf::wide_zero(&zero);
     for b in 0..half {
+        // Prefetch hint for slot b + PRFM_DIST's four positions (`look`
+        // is a no-op when the caller's gate is off).
+        if b + PRFM_DIST < half {
+            let ep = (b + PRFM_DIST) << 1;
+            look(ep);
+            look(ep | 1);
+            look(hh + ep);
+            look(hh + ep + 1);
+        }
         let e = b << 1;
         let l0 = value(e);
         let l1 = value(e | 1);
@@ -602,6 +648,7 @@ fn prove_merged_forest_lazy_sched(
         // TOP-paired T4 products, level d−2 JIT, then Pair2Bits /
         // Leaf2Bits.
         let h3 = q1 >> 1; // level d−3 positions = 2^{d−3}
+        let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
         let (levels, roots) = build_levels(num_trees, depth - 3, |c| {
             let cb = col_bits.as_ref().expect("leaf bits alive for the build");
             let (lb, rb) = &cb[c];
@@ -611,7 +658,16 @@ fn prove_merged_forest_lazy_sched(
             // here, so this is the same gather count with the
             // materialise-then-read round trip removed.
             let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
-            let v3 = |y: usize| -> Gf { at.at(y) * at.at(y + h3) };
+            let v3 = |y: usize| -> Gf {
+                if t4_pf {
+                    let yp = y + PRFM_DIST;
+                    if yp < h3 {
+                        at.prefetch_at(yp);
+                        at.prefetch_at(yp + h3);
+                    }
+                }
+                at.at(y) * at.at(y + h3)
+            };
             let hh = h3 >> 1;
             ((0..hh).map(v3).collect(), (hh..h3).map(v3).collect())
         });
@@ -635,8 +691,18 @@ fn prove_merged_forest_lazy_sched(
                             .map(|c| {
                                 let (lb, rb) = &cb[c];
                                 let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
-                                let (pair, coeffs) =
-                                    dense_jit_fused_round1(hh, &v1, |j| at.at(j));
+                                let t4_pf =
+                                    t4_prfm(t4.len() * core::mem::size_of::<Gf>());
+                                let (pair, coeffs) = dense_jit_fused_round1(
+                                    hh,
+                                    &v1,
+                                    |j| at.at(j),
+                                    |j| {
+                                        if t4_pf {
+                                            at.prefetch_at(j);
+                                        }
+                                    },
+                                );
                                 (GroupBufs::Dense(vec![pair]), coeffs)
                             })
                             .collect();
@@ -734,14 +800,25 @@ fn prove_merged_forest_lazy_sched(
     // its BitLayer, zero-copy).
     let h3 = q1 >> 1; // level d−3 positions = 2^{d−3}
     let h4 = q1 >> 2; // level d−4 positions = 2^{d−4}
+    let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
     let (levels, roots) = build_levels(num_trees, depth - 4, |c| {
         let cb = col_bits.as_ref().expect("leaf bits alive for the build");
         let (lb, rb) = &cb[c];
         // Level d−4 straight from T4 gathers (each position once) — the
         // full level-(d−2) buffer never exists (see the L/4 build).
         let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
-        let v4 =
-            |y: usize| -> Gf { (at.at(y) * at.at(y + h3)) * (at.at(y + h4) * at.at(y + h4 + h3)) };
+        let v4 = |y: usize| -> Gf {
+            if t4_pf {
+                let yp = y + PRFM_DIST;
+                if yp < h4 {
+                    at.prefetch_at(yp);
+                    at.prefetch_at(yp + h3);
+                    at.prefetch_at(yp + h4);
+                    at.prefetch_at(yp + h4 + h3);
+                }
+            }
+            (at.at(y) * at.at(y + h3)) * (at.at(y + h4) * at.at(y + h4 + h3))
+        };
         let hh = h4 >> 1;
         ((0..hh).map(v4).collect(), (hh..h4).map(v4).collect())
     });
@@ -763,9 +840,18 @@ fn prove_merged_forest_lazy_sched(
                     .map(|c| {
                         let (lb, rb) = &cb[c];
                         let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
-                        let (pair, coeffs) = dense_jit_fused_round1(hh, &v1, |y| {
-                            at.at(y) * at.at(y + h3)
-                        });
+                        let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
+                        let (pair, coeffs) = dense_jit_fused_round1(
+                            hh,
+                            &v1,
+                            |y| at.at(y) * at.at(y + h3),
+                            |y| {
+                                if t4_pf {
+                                    at.prefetch_at(y);
+                                    at.prefetch_at(y + h3);
+                                }
+                            },
+                        );
                         (GroupBufs::Dense(vec![pair]), coeffs)
                     })
                     .collect();
@@ -988,7 +1074,17 @@ fn prove_merged_forest_lazy_multi_sched(
             // Paired T4 gathers — level d−2 never materialises (see the
             // single prover's L/4 build).
             let at = T4At { lbits: lb, rbits: rb, t4, q1 };
-            let v3 = |y: usize| -> Gf { at.at(y) * at.at(y + h3) };
+            let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
+            let v3 = |y: usize| -> Gf {
+                if t4_pf {
+                    let yp = y + PRFM_DIST;
+                    if yp < h3 {
+                        at.prefetch_at(yp);
+                        at.prefetch_at(yp + h3);
+                    }
+                }
+                at.at(y) * at.at(y + h3)
+            };
             let hh = h3 >> 1;
             ((0..hh).map(v3).collect(), (hh..h3).map(v3).collect())
         });
@@ -1012,8 +1108,18 @@ fn prove_merged_forest_lazy_multi_sched(
                                     .expect("leaf bits alive for the JIT regen");
                                 let (lb, rb) = &cb[c];
                                 let at = T4At { lbits: lb, rbits: rb, t4, q1 };
-                                let (pair, coeffs) =
-                                    dense_jit_fused_round1(hh, &v1, |j| at.at(j));
+                                let t4_pf =
+                                    t4_prfm(t4.len() * core::mem::size_of::<Gf>());
+                                let (pair, coeffs) = dense_jit_fused_round1(
+                                    hh,
+                                    &v1,
+                                    |j| at.at(j),
+                                    |j| {
+                                        if t4_pf {
+                                            at.prefetch_at(j);
+                                        }
+                                    },
+                                );
                                 (GroupBufs::Dense(vec![pair]), coeffs)
                             })
                             .collect();
@@ -1122,8 +1228,19 @@ fn prove_merged_forest_lazy_multi_sched(
         // Paired T4 gathers — level d−2 never materialises (see the
         // single prover's L/8 build).
         let at = T4At { lbits: lb, rbits: rb, t4, q1 };
-        let v4 =
-            |y: usize| -> Gf { (at.at(y) * at.at(y + h3)) * (at.at(y + h4) * at.at(y + h4 + h3)) };
+        let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
+        let v4 = |y: usize| -> Gf {
+            if t4_pf {
+                let yp = y + PRFM_DIST;
+                if yp < h4 {
+                    at.prefetch_at(yp);
+                    at.prefetch_at(yp + h3);
+                    at.prefetch_at(yp + h4);
+                    at.prefetch_at(yp + h4 + h3);
+                }
+            }
+            (at.at(y) * at.at(y + h3)) * (at.at(y + h4) * at.at(y + h4 + h3))
+        };
         let hh = h4 >> 1;
         ((0..hh).map(v4).collect(), (hh..h4).map(v4).collect())
     });
@@ -1147,8 +1264,18 @@ fn prove_merged_forest_lazy_multi_sched(
                             .expect("leaf bits alive for the JIT regen");
                         let (lb, rb) = &cb[c];
                         let at = T4At { lbits: lb, rbits: rb, t4, q1 };
-                        let (pair, coeffs) =
-                            dense_jit_fused_round1(hh, &v1, |y| at.at(y) * at.at(y + h3));
+                        let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
+                        let (pair, coeffs) = dense_jit_fused_round1(
+                            hh,
+                            &v1,
+                            |y| at.at(y) * at.at(y + h3),
+                            |y| {
+                                if t4_pf {
+                                    at.prefetch_at(y);
+                                    at.prefetch_at(y + h3);
+                                }
+                            },
+                        );
                         (GroupBufs::Dense(vec![pair]), coeffs)
                     })
                     .collect();
