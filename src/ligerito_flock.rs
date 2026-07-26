@@ -2425,8 +2425,8 @@ fn rlc_ge2_channels(j: usize) -> Vec<usize> {
 /// x-position `(b, c)` is `case_pow[b][m(b,c)]` and
 /// `u_c = Σ_b W_b^{(l)}(m(b,c))`, with `m(b,c)` gathered from the j family
 /// columns' x-tensor bit rows. Flat leaf order `(c ≪ t') | b` — the
-/// [`prove_merged_forest`] layout. Phase-1 eager: the leaf table is
-/// materialised (16 B per position).
+/// [`prove_merged_forest`] layout. Eager: the leaf table is materialised
+/// (16 B per position) — the reference / j ≥ 3 fallback path.
 #[allow(clippy::arithmetic_side_effects)]
 fn rlc_leaves_and_folds(
     p_x: &IntEvalParams,
@@ -2458,6 +2458,37 @@ fn rlc_leaves_and_folds(
         us.push(u);
     }
     (leaves, us)
+}
+
+/// The per-column case-weight folds alone (`u_c = Σ_b W_b^{(l)}(m(b,c))`)
+/// — the lazy forest paths compute the folds without materialising leaves.
+#[allow(clippy::arithmetic_side_effects)]
+fn rlc_folds(
+    p_x: &IntEvalParams,
+    x_rows: &[Vec<Vec<u64>>],
+    case_w: &[Vec<u128>],
+) -> Vec<u128> {
+    let rows = p_x.rows();
+    cfg_into_iter!(0..p_x.cols())
+        .map(|c| {
+            let mut u = 0u128;
+            for i in 0..rows {
+                let mut m = 0usize;
+                for (fi, xr) in x_rows.iter().enumerate() {
+                    m |= (((xr[c][i >> 6] >> (i & 63)) & 1) as usize) << fi;
+                }
+                u += case_w[i][m];
+            }
+            u
+        })
+        .collect()
+}
+
+/// `F2Z_RLC_EAGER=1` forces the materialised-leaf forest on the RLC-family
+/// prover (A/B / diagnostic); unset, j ≤ 2 run the lazy bit-driven paths.
+/// Byte-identical proofs either way. Read once per prove call.
+fn rlc_eager_forced() -> bool {
+    std::env::var("F2Z_RLC_EAGER").is_ok_and(|v| v == "1")
 }
 
 /// Prove k RLC-family claims against the commitment (EXPERIMENTAL — see
@@ -2565,18 +2596,55 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family(
     let mut points: Vec<Vec<Gf>> = Vec::with_capacity(lch_x);
     let mut mus_ge2: Vec<Vec<Gf>> = Vec::with_capacity(lch_x);
     let ge2 = rlc_ge2_channels(j);
+    // Lazy bit-driven forests for j ≤ 2 (byte-identical to the eager
+    // reference): j = 2 runs the 4-case Pair/T4 schedule
+    // ([`prove_merged_forest_lazy_rlc2`]); j = 1 leaves are bit-affine
+    // (`1 + m·(A−1)` with `A = case_pow[b][1]`), exactly the base scheme's
+    // lazy forest. j ≥ 3 (8/16-case leaf rounds) falls back to eager —
+    // the open kernel lever recorded in the README note.
+    let lazy = !rlc_eager_forced() && j <= 2;
+    let packed_x1 = if lazy && j == 1 {
+        Some(crate::ligerito::pack_columns_from_rows(&p_x, &x_rows[0]))
+    } else {
+        None
+    };
     for chunk in &case_chunks {
         let _g = crate::utils::prof::scope("rlc:chunk");
         let case_pow = rlc_case_pow_table(chunk, alpha);
-        let (leaves, u) = {
-            let _g = crate::utils::prof::scope("rlc:leaves");
-            rlc_leaves_and_folds(&p_x, &x_rows, chunk, &case_pow)
+        let (u, mf, z, e_d) = if lazy && j == 2 {
+            let u = {
+                let _g = crate::utils::prof::scope("rlc:folds");
+                rlc_folds(&p_x, &x_rows, chunk)
+            };
+            let (_roots, mf, z, e_d) = {
+                let _g = crate::utils::prof::scope("rlc:forest");
+                crate::merged_forest::prove_merged_forest_lazy_rlc2(
+                    transcript, &p_x, &x_rows[0], &x_rows[1], &case_pow,
+                )
+            };
+            (u, mf, z, e_d)
+        } else if let Some(packed) = &packed_x1 {
+            let u = {
+                let _g = crate::utils::prof::scope("rlc:folds");
+                rlc_folds(&p_x, &x_rows, chunk)
+            };
+            let pow2: Vec<Vec<Gf>> = case_pow.iter().map(|r| vec![r[1]]).collect();
+            let (_roots, mf, z, e_d) = {
+                let _g = crate::utils::prof::scope("rlc:forest");
+                crate::merged_forest::prove_merged_forest_lazy(transcript, &p_x, packed, &pow2)
+            };
+            (u, mf, z, e_d)
+        } else {
+            let (leaves, u) = {
+                let _g = crate::utils::prof::scope("rlc:leaves");
+                rlc_leaves_and_folds(&p_x, &x_rows, chunk, &case_pow)
+            };
+            let (_roots, mf, z, e_d) = {
+                let _g = crate::utils::prof::scope("rlc:forest");
+                prove_merged_forest(transcript, &leaves, t_x, p_x.s)
+            };
+            (u, mf, z, e_d)
         };
-        let (_roots, mf, z, e_d) = {
-            let _g = crate::utils::prof::scope("rlc:forest");
-            prove_merged_forest(transcript, &leaves, t_x, p_x.s)
-        };
-        drop(leaves);
 
         let _g_ps = crate::utils::prof::scope("rlc:presum");
         let (z_bj, z_c) = z.split_at(t_x);
@@ -3729,6 +3797,55 @@ mod tests {
         let idx = buf.len() - 1 - back_off;
         buf[idx] ^= 1;
         MultiDegreeSumcheckProof::<Gf>::read_transcription_bytes_exact(&buf)
+    }
+
+    /// The lazy 4-case forest ([`crate::merged_forest::prove_merged_forest_lazy_rlc2`])
+    /// is byte-identical to the eager reference over the same leaves: same
+    /// roots, exit point, exit claim, and post-forest transcript state; and
+    /// the roots bind the case-weight folds (`α^{u_c}`).
+    #[test]
+    fn rlc2_lazy_forest_matches_eager() {
+        use crate::pcs::{
+            gf_pow, mod_q_chunk_width, rlc_case_pow_table, rlc_case_weights,
+            rlc_chunk_case_weights,
+        };
+        let layout = rlc_test_layout();
+        let p_x = virtual_xor_params(&layout);
+        let (hint, _pc, _vc) = rlc_test_commit(&layout);
+        let alpha = smallest_generator();
+        let family_cols = [0usize, 1];
+        let x_rows: Vec<Vec<Vec<u64>>> = family_cols
+            .iter()
+            .map(|&i| {
+                extract_virtual_xor_rows(&layout, hint.rows(), core::slice::from_ref(&i), 0, None)
+            })
+            .collect();
+        let rws: Vec<Vec<u128>> =
+            (0..3).map(|i| rlc_test_row_weights(&p_x, 91 + i as u128)).collect();
+        let w_refs: Vec<&[u128]> = rws.iter().map(|w| &w[..]).collect();
+        let case_w = rlc_case_weights(&w_refs, &[5, 9, 13], &[0b01, 0b10, 0b11], 2);
+        let c_w_x = mod_q_chunk_width(&p_x);
+        let chunks = rlc_chunk_case_weights(&case_w, c_w_x, 1);
+        let case_pow = rlc_case_pow_table(&chunks[0], alpha);
+        let (leaves, us) = rlc_leaves_and_folds(&p_x, &x_rows, &chunks[0], &case_pow);
+        let t_x = row_bit_vars(&p_x);
+
+        let mut t1 = Blake3Transcript::new();
+        let (roots_e, _mf_e, z_e, ed_e) =
+            crate::merged_forest::prove_merged_forest(&mut t1, &leaves, t_x, p_x.s);
+        let mut t2 = Blake3Transcript::new();
+        let (roots_l, _mf_l, z_l, ed_l) = crate::merged_forest::prove_merged_forest_lazy_rlc2(
+            &mut t2, &p_x, &x_rows[0], &x_rows[1], &case_pow,
+        );
+        assert_eq!(roots_e, roots_l, "roots");
+        assert_eq!(z_e, z_l, "exit point");
+        assert_eq!(ed_e, ed_l, "exit claim");
+        let c1: Gf = t1.get_field_challenge(&());
+        let c2: Gf = t2.get_field_challenge(&());
+        assert_eq!(c1, c2, "lazy rlc2 forest must be byte-identical to the eager reference");
+        for (c, &u) in us.iter().enumerate() {
+            assert_eq!(gf_pow(alpha, u), roots_l[c], "root {c} binds α^u");
+        }
     }
 
     /// The XOR triple (k = 3, j = 2, a₃ = a₁ ⊕ a₂, W = 1) — the primary

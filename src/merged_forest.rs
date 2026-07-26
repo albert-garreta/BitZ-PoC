@@ -940,6 +940,219 @@ fn prove_merged_forest_lazy_sched(
     drive_grouped(transcript, roots, levels, bit_layer, depth, s)
 }
 
+/// Per-position level-(d−1) reader of the RLC j=2 forest: position `j`'s
+/// value is the 16-case select `t4[(j≪4) | (cE≪2) | cO]` with
+/// `cE = m1.bit(j) | m2.bit(j)≪1` (the leaf case at `j`) and `cO` the case
+/// at `j + 2^{d−1}` — the TOP-paired leaf. Same concrete-struct shape as
+/// [`T4At`] (the opaque-closure lesson), over the two family-column bit
+/// streams instead of the transposed leaf-bit halves.
+struct RlcT4At<'a> {
+    m1: &'a [u64],
+    m2: &'a [u64],
+    t4: &'a [Gf],
+    q2: usize,
+}
+
+impl RlcT4At<'_> {
+    #[inline(always)]
+    #[allow(clippy::arithmetic_side_effects)]
+    fn idx(&self, j: usize) -> usize {
+        #[inline(always)]
+        fn bit(bits: &[u64], p: usize) -> usize {
+            ((bits[p >> 6] >> (p & 63)) & 1) as usize
+        }
+        let ce = bit(self.m1, j) | (bit(self.m2, j) << 1);
+        let co = bit(self.m1, j + self.q2) | (bit(self.m2, j + self.q2) << 1);
+        (j << 4) | (ce << 2) | co
+    }
+
+    #[inline(always)]
+    fn at(&self, j: usize) -> Gf {
+        self.t4[self.idx(j)]
+    }
+
+    #[inline(always)]
+    fn prefetch_at(&self, j: usize) {
+        crate::piop::sumcheck::eq_factored::prefetch_l1(self.t4, self.idx(j));
+    }
+}
+
+/// Lazy merged-forest prover for the RLC-family **j = 2** leaves
+/// (EXPERIMENTAL, `docs/rlc-family-note-prompt.md`): the leaf at position
+/// `i` of tree `c` is the 4-case select `case_pow[i][m(i,c)]` on the two
+/// family columns' bits (`m = m1 | m2≪1`, case 0 = `α^0 = 1`). The 2^j-case
+/// select IS structurally the driver's existing table family, one level
+/// shifted vs the bit-affine forest:
+///
+/// * leaf layer (k = d−1) → [`GroupBufs::Pair3Bits`] (two bit-driven
+///   rounds; [`GroupBufs::Pair2Bits`] under `F2Z_LUT3=0`) over the
+///   [`Pair2TauSet`] `te[4y+c] = case_pow[y][c]`, `to` at `y + 2^{d−1}`;
+/// * level d−1 (16 cases over TOP-paired leaf positions) →
+///   [`GroupBufs::T4Bits`] with `t4[(j≪4)|(cE≪2)|cO] = te[4j+cE]·to[4j+cO]`;
+/// * level d−2 → Dense JIT from paired T4 gathers; stored chain tops at
+///   level d−3 (the L/4 memory shape).
+///
+/// The round kernels are untouched — only the tables and the bit streams
+/// differ — so the transcript is byte-identical to [`prove_merged_forest`]
+/// over the same leaf values (pinned by a test). `m1_rows[c]` /
+/// `m2_rows[c]` are the family columns' per-tree x-tensor bit rows
+/// (`2^{t'}` bits, 64 per word). Requires depth ≥ 4 (the deployed x shapes
+/// have `t' ≥ 6`).
+#[allow(clippy::arithmetic_side_effects)]
+pub fn prove_merged_forest_lazy_rlc2(
+    transcript: &mut impl Transcript,
+    p: &IntEvalParams,
+    m1_rows: &[Vec<u64>],
+    m2_rows: &[Vec<u64>],
+    case_pow: &[Vec<Gf>],
+) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
+    assert_eq!(p.word_bits, 1, "RLC j=2 leaves live on the W=1 x tensor");
+    let row_len = p.rows();
+    let depth = row_len.trailing_zeros() as usize;
+    let s = p.s;
+    let num_trees = p.cols();
+    assert!(depth >= 4, "RLC j=2 lazy forest needs depth >= 4; got {depth}");
+    assert!(m1_rows.len() == num_trees && m2_rows.len() == num_trees, "one bit row per tree");
+    debug_assert!(
+        case_pow.len() == row_len && case_pow.iter().all(|r| r.len() == 4),
+        "case_pow must be [2^d][4]"
+    );
+    debug_assert!(
+        case_pow.iter().all(|r| r[0] == Gf::one()),
+        "case 0 must be α^0 = 1 (linear forms vanish at 0)"
+    );
+
+    let q2 = row_len >> 1; // 2^{d−1}: leaf-pair offset = leaf-layer slot count
+    let h2 = row_len >> 2; // level d−2 positions
+    let h3 = row_len >> 3; // level d−3 positions
+
+    // Leaf-layer 4-case tables: te = positions 0..2^{d−1}, to = the rest.
+    let build_cases = |base: usize| -> Vec<Gf> {
+        let mut t = Vec::with_capacity(q2 << 2);
+        for y in 0..q2 {
+            t.extend_from_slice(&case_pow[base + y]);
+        }
+        t
+    };
+    let te = build_cases(0);
+    let to = build_cases(q2);
+
+    // Level-(d−1) 16-case table (indexed collect + in-place flatten — see
+    // the bit-affine build's parallel-flatten note).
+    let t4: Vec<Gf> = {
+        let rows: Vec<[Gf; 16]> = cfg_into_iter!(0..q2, 1 << 10)
+            .map(|y| {
+                let mut row = [Gf::one(); 16];
+                for (c, slot) in row.iter_mut().enumerate() {
+                    *slot = te[(y << 2) | (c >> 2)] * to[(y << 2) | (c & 3)];
+                }
+                row
+            })
+            .collect();
+        rows.into_flattened()
+    };
+
+    // Stored chain tops at level d−3 via TOP-paired products of T4-pair
+    // products — the level d−1/d−2 buffers never exist at build.
+    let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
+    let (levels, roots) = build_levels(num_trees, depth - 3, |c| {
+        let at = RlcT4At { m1: &m1_rows[c], m2: &m2_rows[c], t4: &t4, q2 };
+        let v3 = |y: usize| -> Gf {
+            if t4_pf {
+                let yp = y + PRFM_DIST;
+                if yp < h3 {
+                    at.prefetch_at(yp);
+                    at.prefetch_at(yp + h2);
+                    at.prefetch_at(yp + h3);
+                    at.prefetch_at(yp + h3 + h2);
+                }
+            }
+            (at.at(y) * at.at(y + h2)) * (at.at(y + h3) * at.at(y + h3 + h2))
+        };
+        let hh = h3 >> 1;
+        ((0..hh).map(v3).collect(), (hh..h3).map(v3).collect())
+    });
+
+    let mut t4 = t4;
+    let mut te = te;
+    let mut to = to;
+    let deep_leaf = forest_lut3();
+    let bit_layer = |ell: usize, _zx: &[Gf]| -> Option<BitLayer> {
+        if ell == depth - 3 {
+            // JIT: regenerate level d−2 (Dense, exact-capacity halves) per
+            // tree from the bits + T4 — alive only while this layer runs.
+            let hh = h2 >> 1;
+            let bufs: Vec<GroupBufs<Gf>> = cfg_into_iter!(0..num_trees)
+                .map(|c| {
+                    let at = RlcT4At { m1: &m1_rows[c], m2: &m2_rows[c], t4: &t4, q2 };
+                    let v2 = |j: usize| -> Gf {
+                        if t4_pf {
+                            let jp = j + PRFM_DIST;
+                            if jp < h2 {
+                                at.prefetch_at(jp);
+                                at.prefetch_at(jp + h2);
+                            }
+                        }
+                        at.at(j) * at.at(j + h2)
+                    };
+                    GroupBufs::Dense(vec![(
+                        (0..hh).map(v2).collect(),
+                        (hh..h2).map(v2).collect(),
+                    )])
+                })
+                .collect();
+            Some(BitLayer {
+                bufs,
+                tau_sets: Vec::new(),
+                pair_tau_sets: Vec::new(),
+                t4_sets: Vec::new(),
+                round1: None,
+            })
+        } else if ell == depth - 2 {
+            // One bit-driven round straight off T4 (k = d−2 ≥ 2): the
+            // layer's input level is never stored nor regenerated.
+            Some(BitLayer {
+                bufs: (0..num_trees)
+                    .map(|c| GroupBufs::T4Bits {
+                        lbits: m1_rows[c].clone(),
+                        rbits: m2_rows[c].clone(),
+                        tau_set: 0,
+                    })
+                    .collect(),
+                tau_sets: Vec::new(),
+                pair_tau_sets: Vec::new(),
+                t4_sets: vec![core::mem::take(&mut t4)],
+                round1: None,
+            })
+        } else if ell == depth - 1 {
+            // The 4-case LEAF round (k = d−1 ≥ 3): Pair3Bits — two
+            // bit-driven rounds — by default; Pair2Bits under `F2Z_LUT3=0`.
+            Some(BitLayer {
+                bufs: (0..num_trees)
+                    .map(|c| {
+                        let (lbits, rbits) = (m1_rows[c].clone(), m2_rows[c].clone());
+                        if deep_leaf {
+                            GroupBufs::Pair3Bits { lbits, rbits, tau_set: 0 }
+                        } else {
+                            GroupBufs::Pair2Bits { lbits, rbits, tau_set: 0 }
+                        }
+                    })
+                    .collect(),
+                tau_sets: Vec::new(),
+                pair_tau_sets: vec![Pair2TauSet {
+                    te: core::mem::take(&mut te),
+                    to: core::mem::take(&mut to),
+                }],
+                t4_sets: Vec::new(),
+                round1: None,
+            })
+        } else {
+            None
+        }
+    };
+    drive_grouped(transcript, roots, levels, bit_layer, depth, s)
+}
+
 /// Multi-claim batched lazy prover: `claims.len()` same-shape claims —
 /// each `2^s` trees of the same depth over its OWN lane-packed bits and
 /// τ chains `(packed_cols, pow2)` — run as ONE merged forest of
