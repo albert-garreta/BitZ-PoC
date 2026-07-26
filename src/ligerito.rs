@@ -152,6 +152,12 @@ pub(crate) fn absorb_rlc_omegas(transcript: &mut impl Transcript, vals: &[Gf]) {
     absorb_gf_slice(transcript, 0x38, vals);
 }
 
+/// Absorb the two-phase RLC discharge's per-chunk phase-B entry sums β_l
+/// (domain tag 0x39) — bound between phase A and phase B.
+pub(crate) fn absorb_rlc_betas(transcript: &mut impl Transcript, vals: &[Gf]) {
+    absorb_gf_slice(transcript, 0x39, vals);
+}
+
 /// In-place multilinear bind of the LOWEST index bit:
 /// `tbl'[i] = tbl[2i] + r·(tbl[2i] + tbl[2i+1])`.
 #[allow(clippy::arithmetic_side_effects)]

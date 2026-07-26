@@ -88,10 +88,14 @@ the η-RLC'd single Ligerito call carry over verbatim from the base scheme. The
 construction, its soundness obligations and boundaries live in
 `docs/rlc-family-note-prompt.md` (companion prototyping plan:
 `docs/rlc-family-proto-prompt.md`); measured A/B vs the virtual-XOR and
-independent-claims baselines in the README's 2026-07-26 note (forest collapse
-confirmed at ~1.3× a single-claim forest; the Phase-1/2 discharge realization
-is the open cost gap). Fixed `q = 2^100 − 15`; NOT wired into `proof_codec`;
-the virtual-XOR path is untouched and remains the comparison baseline.
+independent-claims baselines in the README's 2026-07-26 notes. The j = 2
+discharge runs as a forest leaf layer (`M_i = 1 + ¬m_i·1`: complement bits +
+all-ones τ are the driver's leaf-bit-affine shape) in two phases with a β
+handoff; with it the XOR triple measures **1.74–1.87× a single claim at
+n = 24–28 vs 2.5–3.7× for the batched-vx path and ~3× for independent
+proofs** — the predicted ~1.6–1.8×-vs-3× regime, with 26–43 % smaller
+proofs. Fixed `q = 2^100 − 15`; NOT wired into `proof_codec`; the
+virtual-XOR path is untouched and remains the comparison baseline.
 
 ## Proof-stream serialization
 

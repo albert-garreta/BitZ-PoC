@@ -529,6 +529,48 @@ same-column claims at different row points, 2-case forest, NO discharge)
 and the j=3/k=4 family are implemented and tested; j ≥ 3 falls back to
 the eager forest (the 8/16-case leaf-round kernels are the open lever).
 
+**RLC families: the leaf-bit discharge lands the prediction
+(2026-07-26, follow-up).** The j=2 discharge was re-realized on the
+observation that `M_i = 1 + ¬m_i·1` — the complement-bit streams with
+all-ones τ put `Σ_x eq(pt,x)·M₁(x)·M₂(x)` in EXACTLY the driver's
+leaf-bit-affine shape, so the discharge now runs as a forest leaf layer:
+**phase A** over the t' row variables with per-column
+`Leaf3Bits` groups (scale `η_l·eq(pt_l⁺, c)`; the M tables are NEVER
+materialised — the driver reads the packed bits, the eq side is
+suffix-factored, parallelism is across the 2^s groups — the proven
+forest-leaf configuration verbatim); **phase B** over the s column
+variables as one tiny Dense pair group per chunk whose finals ARE the ω
+openings; per-chunk entry sums β_l ride between the phases (absorbed,
+tag 0x39 — phase A closes against `Σ_l eq(r_A, pt_l⁻)·β_l`, phase B
+opens at `Σ β_l` and closes at `Σ_l η_l·eq(r_B, pt_l⁺)·ω₁·ω₂`). This
+deletes all three dense tables (the ~3 GB n=28 pressure) and both
+measured bottlenecks: at n=26 the discharge fell 162.8 → **17.1 ms**
+per prove (tables 62.6 → 0.8, sumcheck 86.6 → 16.1) ≈ 0.29
+forest-equivalents — inside the note's modeled 0.4–0.6. Re-measured
+(same protocol, medians of 5; n=28 of 3, now clean — no dense tables):
+
+| n | single | rlc3 | vx3 | ind3 |
+|----|--------|------|-----|------|
+| 22 | 26.8 ms | **21.5 (0.80×)** | 37.4 (1.39×) | 69.8 (2.60×) |
+| 24 | 33.3 ms | **58.7 (1.76×)** | 84.5 (2.54×) | 110.8 (3.33×) |
+| 26 | 78.3 ms | **146.7 (1.87×)** | 234.6 (3.00×) | 239.6 (3.06×) |
+| 28 | 232.5 ms | **405.2 (1.74×)** | 851.5 (3.66×) | 707.9 (3.04×) |
+
+**The construction's prediction (~1.6–1.8× single vs ~3×) is CONFIRMED
+at every forest-dominated shape** — 1.74–1.87× at n=24–28 against
+2.54–3.66× for the batched-vx baseline and 3.03–3.33× for three
+independent proofs: the triple proves **21–52 % faster than the best
+existing path** at every measured n, and at the tail-dominated n=22 it
+is cheaper than a SINGLE claim (0.80× — one shared tail vs one full
+tail per claim). Proof sizes unchanged (the two-phase discharge is
+slightly smaller: 135/182/249/341 KB). The j ≥ 3 discharge keeps the
+generic multi-degree form (its |S| ≥ 3 channels are triple-plus
+products — the pair-driver trick needs the AND rows as committed-side
+factors, which would demand a second discharge level; open). The
+supersession question (this API vs the batched-vx path) now has a
+measured answer for shared-column-point XOR families: the RLC family
+dominates on both axes.
+
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
 The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —

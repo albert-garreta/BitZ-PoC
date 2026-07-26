@@ -2352,9 +2352,18 @@ pub struct IntEvalRsLigRlcFamilyProof {
     /// Per chunk: the (2^j − 1)-channel presum (groups in ascending-S
     /// order; `Σ_S σ_S = e_d + 1`).
     pub presums: Vec<MultiDegreeSumcheckProof<Gf>>,
-    /// The η-batched degree-(j+1) monomial discharge over n' vars
-    /// (absent when j = 1 — no |S| ≥ 2 channels).
+    /// The η-batched degree-(j+1) monomial discharge over n' vars for
+    /// j ≥ 3 (absent when j = 1 — no |S| ≥ 2 channels — and when j = 2,
+    /// which runs the two-phase leaf-bit form: [`Self::discharge_eqf`]).
     pub discharge: Option<MultiDegreeSumcheckProof<Gf>>,
+    /// The j = 2 discharge, two-phase eq-factored: `M_i = 1 + ¬m_i·1` is
+    /// the driver's leaf-bit-affine form with all-ones τ, so phase A runs
+    /// the t'-variable claim `Σ_l η_l·Σ_{b,c} eq(pt_l, (b,c))·M₁·M₂` as a
+    /// forest-leaf-layer sumcheck (per-column `Leaf3Bits` groups, scale
+    /// `η_l·eq(pt_l⁺, c)`; no table is ever materialised) and phase B
+    /// binds the s column variables over the per-column finals, exiting at
+    /// the ω openings. The per-chunk entry sums β_l ride between phases.
+    pub discharge_eqf: Option<RlcDischargeEqf>,
     /// The j committed openings `ω_i = M̂_i(ρ)` closing the discharge
     /// (empty when j = 1).
     pub omegas: Vec<Gf>,
@@ -2362,6 +2371,22 @@ pub struct IntEvalRsLigRlcFamilyProof {
     /// chunk's exit point, then per family column at ρ.
     pub rings: Vec<RingSwitchProof>,
     pub lig: LigeritoProof,
+}
+
+/// The two-phase j = 2 discharge (see
+/// [`IntEvalRsLigRlcFamilyProof::discharge_eqf`]).
+#[derive(Clone, Debug)]
+pub struct RlcDischargeEqf {
+    /// Phase A: the t'-variable leaf-bit sumcheck over the per-column
+    /// groups (degree 3; claimed sum = `Σ_l η_l·μ_l`).
+    pub sc_a: crate::piop::sumcheck::SumcheckProof<Gf>,
+    /// Per-chunk phase-B entry sums `β_l = η_l·Σ_c eq(pt_l⁺, c)·F₁(c)·F₂(c)`
+    /// (absorbed between the phases; phase A closes against
+    /// `Σ_l eq(r_A, pt_l⁻)·β_l`, phase B opens at `Σ_l β_l`).
+    pub betas: Vec<Gf>,
+    /// Phase B: the s-variable Dense pair sumcheck over the per-column
+    /// finals (degree 3; closes against `Σ_l η_l·eq(r_B, pt_l⁺)·ω₁·ω₂`).
+    pub sc_b: crate::piop::sumcheck::SumcheckProof<Gf>,
 }
 
 /// Absorb the RLC-family statement (domain tag 0x40): commitment root,
@@ -2694,12 +2719,86 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family(
 
     // (4) Discharge: the |S| ≥ 2 residuals of every chunk, η-batched into
     // one degree-(j+1) eq-sumcheck over the n' x-tensor variables. j = 2
-    // (one channel, `A·M₁·M₂`) rides the eq-factored driver — the eq side
-    // is suffix-tensor-factored, never materialised, and the finals ARE
-    // the ω openings; j ≥ 3 keeps the generic multi-degree form.
+    // runs the two-phase leaf-bit form (the M tables never materialise);
+    // j ≥ 3 keeps the generic multi-degree form over dense tables.
     let num_ge2 = ge2.len();
-    let (discharge, omegas, rho) = if num_ge2 == 0 {
-        (None, Vec::new(), Vec::new())
+    let (discharge, discharge_eqf, omegas, rho) = if num_ge2 == 0 {
+        (None, None, Vec::new(), Vec::new())
+    } else if j == 2 {
+        use crate::piop::sumcheck::eq_factored::{
+            EqInnerGroupMixed, GroupBufs, prove_eq_inner_sumcheck_mixed,
+        };
+        let _g = crate::utils::prof::scope("rlc:discharge");
+        let etas_dis: Vec<Gf> = transcript.get_field_challenges(lch_x, &());
+        let _g_t = crate::utils::prof::scope("rlc:dis_tbls");
+        // M_i = 1 + ¬m_i·1: complemented bit streams + all-ones τ make
+        // phase A a forest leaf layer over the per-column groups.
+        let not_rows = |rows: &[Vec<u64>]| -> Vec<Vec<u64>> {
+            rows.iter().map(|r| r.iter().map(|&w| !w).collect()).collect()
+        };
+        let n1 = not_rows(&x_rows[0]);
+        let n2 = not_rows(&x_rows[1]);
+        let ones_tau = vec![Gf::one(); p_x.rows()];
+        let tau_sets = vec![(ones_tau.clone(), ones_tau)];
+        let eq_tops: Vec<Vec<Gf>> = points
+            .iter()
+            .map(|pt| build_eq_x_r_vec(&pt[t_x..], &()).expect("s >= 1"))
+            .collect();
+        let deep = t_x >= 4 && crate::merged_forest::forest_lut3();
+        let mut groups_a: Vec<EqInnerGroupMixed<Gf>> =
+            Vec::with_capacity(lch_x << p_x.s);
+        for (l, pt) in points.iter().enumerate() {
+            for c in 0..p_x.cols() {
+                let (lbits, rbits) = (n1[c].clone(), n2[c].clone());
+                groups_a.push(EqInnerGroupMixed {
+                    q: pt[..t_x].to_vec(),
+                    scale: etas_dis[l] * eq_tops[l][c],
+                    bufs: if deep {
+                        GroupBufs::Leaf3Bits { lbits, rbits, tau_set: 0 }
+                    } else {
+                        GroupBufs::Leaf2Bits { lbits, rbits, tau_set: 0 }
+                    },
+                });
+            }
+        }
+        drop(_g_t);
+        let _g_r = crate::utils::prof::scope("rlc:dis_run");
+        let (sc_a, r_a, finals_a) =
+            prove_eq_inner_sumcheck_mixed(transcript, groups_a, &tau_sets, &[], &[], &());
+        // Per-column finals (identical across chunks — same buffers, same
+        // challenges): F_i[c] = M̂_i(r_A, c).
+        let f1: Vec<Gf> = (0..p_x.cols()).map(|c| finals_a[c][0].0).collect();
+        let f2: Vec<Gf> = (0..p_x.cols()).map(|c| finals_a[c][0].1).collect();
+        let betas: Vec<Gf> = (0..lch_x)
+            .map(|l| {
+                (0..p_x.cols()).fold(Gf::zero(), |a, c| {
+                    a + etas_dis[l] * eq_tops[l][c] * f1[c] * f2[c]
+                })
+            })
+            .collect();
+        crate::ligerito::absorb_rlc_betas(transcript, &betas);
+        let mut f1 = f1;
+        let mut f2 = f2;
+        let mut groups_b: Vec<EqInnerGroupMixed<Gf>> = Vec::with_capacity(lch_x);
+        for (l, pt) in points.iter().enumerate() {
+            let (b1, b2) = if l + 1 == lch_x {
+                (core::mem::take(&mut f1), core::mem::take(&mut f2))
+            } else {
+                (f1.clone(), f2.clone())
+            };
+            groups_b.push(EqInnerGroupMixed {
+                q: pt[t_x..].to_vec(),
+                scale: etas_dis[l],
+                bufs: GroupBufs::Dense(vec![(b1, b2)]),
+            });
+        }
+        let (sc_b, r_b, finals_b) =
+            prove_eq_inner_sumcheck_mixed(transcript, groups_b, &[], &[], &[], &());
+        drop(_g_r);
+        let omegas = vec![finals_b[0][0].0, finals_b[0][0].1];
+        crate::ligerito::absorb_rlc_omegas(transcript, &omegas);
+        let rho: Vec<Gf> = r_a.iter().chain(r_b.iter()).copied().collect();
+        (None, Some(RlcDischargeEqf { sc_a, betas, sc_b }), omegas, rho)
     } else {
         let _g = crate::utils::prof::scope("rlc:discharge");
         let etas_dis: Vec<Gf> = transcript.get_field_challenges(lch_x * num_ge2, &());
@@ -2806,7 +2905,7 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family(
         let omegas: Vec<Gf> =
             x_rows.iter().map(|rows| external_residual(&p_x, rows, &rho)).collect();
         crate::ligerito::absorb_rlc_omegas(transcript, &omegas);
-        (Some(dis), omegas, rho)
+        (Some(dis), None, omegas, rho)
     };
 
     // (5) Rings: per chunk exit × family column, then ρ × family column.
@@ -2889,7 +2988,7 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family(
         &hint.prover_data.merkle_tree,
         &mut ZincChallenger(transcript),
     );
-    IntEvalRsLigRlcFamilyProof { mfs, us, presums, discharge, omegas, rings, lig }
+    IntEvalRsLigRlcFamilyProof { mfs, us, presums, discharge, discharge_eqf, omegas, rings, lig }
 }
 
 /// Verify an RLC claim family (EXPERIMENTAL). `col_weights[c] = eq(c,
@@ -2958,7 +3057,8 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
         || proof.presums.len() != lch_x
         || proof.us.iter().any(|u| u.len() != p_x.cols())
         || proof.rings.len() != num_rings
-        || proof.discharge.is_some() != (num_ge2 > 0)
+        || proof.discharge.is_some() != (j >= 3)
+        || proof.discharge_eqf.is_some() != (j == 2)
         || proof.omegas.len() != if num_ge2 > 0 { j } else { 0 }
     {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
@@ -3046,9 +3146,62 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
         points.push(r_star.iter().chain(z_c.iter()).copied().collect());
     }
 
-    // (4) Discharge: η-batched |S| ≥ 2 residuals; sent ω closings.
+    // (4) Discharge: η-batched |S| ≥ 2 residuals; sent ω closings. j = 2
+    // verifies the two-phase leaf-bit form: phase A's claimed sum must be
+    // the η-batched residuals and its closing `Σ_l eq(r_A, pt_l⁻)·β_l`;
+    // phase B opens at `Σ_l β_l` and closes at `Σ_l η_l·eq(r_B, pt_l⁺)·ω₁·ω₂`.
     let mut rho: Vec<Gf> = Vec::new();
-    if num_ge2 > 0 {
+    if j == 2 {
+        use crate::piop::sumcheck::MLSumcheck;
+        let etas_dis: Vec<Gf> = transcript.get_field_challenges(lch_x, &());
+        let d = proof.discharge_eqf.as_ref().expect("shape-checked above");
+        if d.betas.len() != lch_x {
+            return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+        }
+        let want_sum =
+            (0..lch_x).fold(Gf::zero(), |a, l| a + etas_dis[l] * mus_ge2[l][0]);
+        if d.sc_a.claimed_sum != want_sum {
+            return Err(FlockRsError::Common(IntEvalRsError::Discharge));
+        }
+        let sub_a = MLSumcheck::<Gf>::verify_as_subprotocol(transcript, t_x, 3, &d.sc_a, &())
+            .map_err(|_| FlockRsError::Common(IntEvalRsError::Discharge))?;
+        let expected_a = sub_a.expected_evaluation;
+        let r_a = sub_a.point;
+        let want_a = points.iter().zip(d.betas.iter()).try_fold(
+            Gf::zero(),
+            |a, (pt, &beta)| {
+                eq_eval(&r_a, &pt[..t_x], one)
+                    .map(|e| a + e * beta)
+                    .map_err(|_| FlockRsError::RingSwitch(RsOpenError::Shape))
+            },
+        )?;
+        if expected_a != want_a {
+            return Err(FlockRsError::Common(IntEvalRsError::Discharge));
+        }
+        crate::ligerito::absorb_rlc_betas(transcript, &d.betas);
+        let beta_sum = d.betas.iter().fold(Gf::zero(), |a, &b| a + b);
+        if d.sc_b.claimed_sum != beta_sum {
+            return Err(FlockRsError::Common(IntEvalRsError::Discharge));
+        }
+        let sub_b =
+            MLSumcheck::<Gf>::verify_as_subprotocol(transcript, p_x.s, 3, &d.sc_b, &())
+                .map_err(|_| FlockRsError::Common(IntEvalRsError::Discharge))?;
+        let expected_b = sub_b.expected_evaluation;
+        let r_b = sub_b.point;
+        let eq_batch = points.iter().zip(etas_dis.iter()).try_fold(
+            Gf::zero(),
+            |a, (pt, &eta)| {
+                eq_eval(&r_b, &pt[t_x..], one)
+                    .map(|e| a + eta * e)
+                    .map_err(|_| FlockRsError::RingSwitch(RsOpenError::Shape))
+            },
+        )?;
+        if expected_b != eq_batch * proof.omegas[0] * proof.omegas[1] {
+            return Err(FlockRsError::Common(IntEvalRsError::Discharge));
+        }
+        crate::ligerito::absorb_rlc_omegas(transcript, &proof.omegas);
+        rho = r_a.into_iter().chain(r_b).collect();
+    } else if num_ge2 > 0 {
         let etas_dis: Vec<Gf> = transcript.get_field_challenges(lch_x * num_ge2, &());
         let dis = proof.discharge.as_ref().expect("shape-checked above");
         let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(transcript, n_x, dis, &())
@@ -3179,7 +3332,10 @@ pub fn mle_eval_mod_q_lig_rlc_family_proof_size_bytes(
     }
     // One ring per (point, family column) — override the per-forest count.
     b.s_v = proof.rings.len() * 128 * 16;
-    let discharge = proof.discharge.as_ref().map_or(0, |d| d.get_num_bytes());
+    let discharge = proof.discharge.as_ref().map_or(0, |d| d.get_num_bytes())
+        + proof.discharge_eqf.as_ref().map_or(0, |d| {
+            d.sc_a.get_num_bytes() + d.betas.len() * 16 + d.sc_b.get_num_bytes()
+        });
     b.total() + discharge + proof.omegas.len() * 16 + proof.lig.size_bytes()
 }
 
@@ -3847,6 +4003,20 @@ mod tests {
         MultiDegreeSumcheckProof::<Gf>::read_transcription_bytes_exact(&buf)
     }
 
+    /// Flip one byte of a plain sumcheck proof through its transcription
+    /// codec (offset from the END).
+    fn rlc_tamper_sc(
+        p: &crate::piop::sumcheck::SumcheckProof<Gf>,
+        back_off: usize,
+    ) -> crate::piop::sumcheck::SumcheckProof<Gf> {
+        use crate::transcript::traits::{GenTranscribable, Transcribable};
+        let mut buf = vec![0u8; p.get_num_bytes()];
+        p.write_transcription_bytes_exact(&mut buf);
+        let idx = buf.len() - 1 - back_off;
+        buf[idx] ^= 1;
+        crate::piop::sumcheck::SumcheckProof::<Gf>::read_transcription_bytes_exact(&buf)
+    }
+
     /// The lazy 4-case forest ([`crate::merged_forest::prove_merged_forest_lazy_rlc2`])
     /// is byte-identical to the eager reference over the same leaves: same
     /// roots, exit point, exit claim, and post-forest transcript state; and
@@ -3933,7 +4103,8 @@ mod tests {
                 &mut pt, &hint, &layout, &family_cols, &claims, alpha, &pc,
             );
             assert_eq!(proof.mfs.len(), 1, "L = 1 at this shape");
-            assert!(proof.discharge.is_some() && proof.omegas.len() == 2);
+            assert!(proof.discharge_eqf.is_some() && proof.discharge.is_none());
+            assert_eq!(proof.omegas.len(), 2);
             assert_eq!(proof.rings.len(), 4, "(L + 1) chunks-and-discharge × j rings");
 
             let mut vt = Blake3Transcript::new();
@@ -3975,6 +4146,7 @@ mod tests {
                     us: proof.us.clone(),
                     presums: proof.presums.clone(),
                     discharge: proof.discharge.clone(),
+                    discharge_eqf: proof.discharge_eqf.clone(),
                     omegas: proof.omegas.clone(),
                     rings: proof.rings.clone(),
                     lig: proof.lig.clone(),
@@ -4026,13 +4198,28 @@ mod tests {
                 "tampered presum round message",
             );
 
-            // Tampered discharge (claimed-sum byte) and ω closing.
+            // Tampered discharge: a phase-A round byte, a β, a phase-B
+            // round byte — and below, the ω closing.
             check_rejected(
                 &rebuild(&proof, &|p2| {
-                    let d = p2.discharge.as_ref().expect("j = 2 has a discharge");
-                    p2.discharge = Some(rlc_tamper_mds(d, 0));
+                    let d = p2.discharge_eqf.as_mut().expect("j = 2 discharge");
+                    d.sc_a = rlc_tamper_sc(&d.sc_a, 0);
                 }),
-                "tampered discharge claimed sum",
+                "tampered discharge phase A",
+            );
+            check_rejected(
+                &rebuild(&proof, &|p2| {
+                    let d = p2.discharge_eqf.as_mut().expect("j = 2 discharge");
+                    d.betas[0] += Gf::one();
+                }),
+                "tampered discharge β",
+            );
+            check_rejected(
+                &rebuild(&proof, &|p2| {
+                    let d = p2.discharge_eqf.as_mut().expect("j = 2 discharge");
+                    d.sc_b = rlc_tamper_sc(&d.sc_b, 0);
+                }),
+                "tampered discharge phase B",
             );
             let p2 = rebuild(&proof, &|p2| p2.omegas[0] += Gf::one());
             let mut vt = Blake3Transcript::new();

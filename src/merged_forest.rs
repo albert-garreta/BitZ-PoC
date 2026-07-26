@@ -534,7 +534,7 @@ fn forest_schedule_l8() -> bool {
 /// cache-adjacent shapes). Byte-identical either way (every variant is an
 /// exact char-2 identity, pinned against the eager forest). `F2Z_LUT3=0`
 /// opts out. Read once per prove call.
-fn forest_lut3() -> bool {
+pub(crate) fn forest_lut3() -> bool {
     std::env::var("F2Z_LUT3").map_or(true, |v| v != "0")
 }
 
