@@ -146,6 +146,12 @@ pub(crate) fn absorb_externals(transcript: &mut impl Transcript, vals: &[Gf]) {
     absorb_gf_slice(transcript, 0x37, vals);
 }
 
+/// Absorb the RLC-family discharge's committed closing openings
+/// `ω_i = M̂_i(ρ)` (domain tag 0x38).
+pub(crate) fn absorb_rlc_omegas(transcript: &mut impl Transcript, vals: &[Gf]) {
+    absorb_gf_slice(transcript, 0x38, vals);
+}
+
 /// In-place multilinear bind of the LOWEST index bit:
 /// `tbl'[i] = tbl[2i] + r·(tbl[2i] + tbl[2i+1])`.
 #[allow(clippy::arithmetic_side_effects)]
@@ -624,6 +630,10 @@ pub enum IntEvalRsError {
     /// The pre-sumcheck rejected, or its claimed sum disagrees with the
     /// forest-derived batched claim `Y_ξ`.
     PreSumcheck,
+    /// The RLC-family monomial discharge rejected: the sumcheck failed, a
+    /// group's claimed sum disagrees with the η-batched |S| ≥ 2 residuals,
+    /// or the closing `Â_S(ρ)·Π ω_i` check failed.
+    Discharge,
     /// `R̂(r*) = 0` (negligible; resample).
     RHatZero,
     Open(RsOpenError),

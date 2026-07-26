@@ -823,6 +823,138 @@ pub fn complement_elision(
     out
 }
 
+// =====================================================================
+// Mod-q RLC claim families (EXPERIMENTAL — docs/rlc-family-note-prompt.md).
+//
+// k claims `MLE[INT(a_i)](r_i) = c_i ∈ 𝔽_q`, each `a_i` a public F₂-linear
+// form `L_i` of j committed bit-columns (`a_i[pos] = L_i(m_1[pos], …,
+// m_j[pos])`, `L_i(m) = ⊕_{i'∈form_i} m_{i'}`), all claims sharing the
+// COLUMN point. After the γ-RLC (γ's drawn post-statement), the combined
+// row weight at position b depends only on the CASE `m ∈ {0,1}^j` of the j
+// bits: `W_b(m) = (Σ_i γ_i·w_{i,b}·L_i(m)) mod q` — 2^j reduced values per
+// row instead of k weight functions. ONE forest per chunk binds
+// `α^{W_b^{(l)}(m(pos))}` with a 2^j-case leaf select; the presum splits
+// into 2^j − 1 channels `R_S = eq ⊙ τ_S` against the bit monomials
+// `Π_{i∈S} m_i` (τ_S the char-2 subset zeta-transform of the case
+// α-powers); |S| ≥ 2 channels discharge through one η-batched
+// degree-(j+1) eq-sumcheck. The 𝔽_q here is the crate's fixed
+// `q = 2^100 − 15` ([`FQ_MOD`]) — the γ arithmetic is protocol-internal,
+// so this family is NOT generic over the evaluation ring.
+
+/// `2^128 mod q` for `q = ` [`FQ_MOD`]: `2^128 = 2^28·(q + 15) ≡ 15·2^28`.
+const FQ_R128: u128 = 15u128 << 28;
+
+/// One uniform-enough `𝔽_q` challenge: two 128-bit transcript draws
+/// combined as a 256-bit integer reduced mod `q` (statistical distance
+/// ≤ `q/2^256` ≈ 2^-156 from uniform — the plain 128-bit draw would be
+/// ~2^-28-biased at the 100-bit `q`).
+pub fn fq_challenge(transcript: &mut impl Transcript) -> u128 {
+    let to_u128 = |g: Gf| -> u128 {
+        let w = g.words();
+        u128::from(w[0]) | (u128::from(w[1]) << 64)
+    };
+    let lo: Gf = transcript.get_field_challenge(&());
+    let hi: Gf = transcript.get_field_challenge(&());
+    fq_add(to_u128(lo) % FQ_MOD, fq_mul(to_u128(hi), FQ_R128))
+}
+
+/// The RLC case-weight table: per row position `b` and case `m ∈ {0,1}^j`,
+/// `W_b(m) = (Σ_i γ_i·w_{i,b}·L_i(m)) mod q ∈ [0, q)` with
+/// `L_i(m) = parity(form_i & m)`. Returns `[2^{t'}][2^j]`. `W_b(0) = 0`
+/// always (the forms are linear), so case 0's α-power is 1 — the padded /
+/// no-bits-set leaf.
+#[allow(clippy::arithmetic_side_effects)] // bounded case/claim loops; fq_* reduce
+pub fn rlc_case_weights(
+    claim_weights: &[&[u128]],
+    gammas: &[u128],
+    forms: &[usize],
+    j: usize,
+) -> Vec<Vec<u128>> {
+    let k = claim_weights.len();
+    assert!((1..=4).contains(&j), "RLC family supports j ∈ [1, 4] (2^j-case tables)");
+    assert_eq!(gammas.len(), k, "one γ per claim");
+    assert_eq!(forms.len(), k, "one form per claim");
+    let cases = 1usize << j;
+    let rows = claim_weights.first().map_or(0, |w| w.len());
+    for w in claim_weights {
+        assert_eq!(w.len(), rows, "claim row-weight lengths must agree");
+    }
+    for &f in forms {
+        assert!(f != 0 && f < cases, "forms must be nonzero bitmasks over [j]");
+    }
+    cfg_into_iter!(0..rows)
+        .map(|b| {
+            let d: Vec<u128> =
+                (0..k).map(|i| fq_mul(gammas[i], claim_weights[i][b])).collect();
+            (0..cases)
+                .map(|m| {
+                    let mut acc = 0u128;
+                    for (i, &di) in d.iter().enumerate() {
+                        if (forms[i] & m).count_ones() & 1 == 1 {
+                            acc = fq_add(acc, di);
+                        }
+                    }
+                    acc
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Chunk the case-weight table into base-`2^{c_w}` limbs (the
+/// [`chunk_row_weights`] analogue): `out[l][b][m] = (W_b(m) ≫ c_w·l) &
+/// (2^{c_w}−1)`.
+#[allow(clippy::arithmetic_side_effects)] // shift bounded by l_chunks·c_w < 128
+pub fn rlc_chunk_case_weights(
+    case_w: &[Vec<u128>],
+    c_w: usize,
+    l_chunks: usize,
+) -> Vec<Vec<Vec<u128>>> {
+    let limb_mask = (1u128 << c_w).wrapping_sub(1);
+    (0..l_chunks)
+        .map(|l| {
+            let shift = c_w * l;
+            case_w
+                .iter()
+                .map(|row| row.iter().map(|&w| (w >> shift) & limb_mask).collect())
+                .collect()
+        })
+        .collect()
+}
+
+/// One chunk's case α-power table (the [`chunk_pow2_table`] analogue for
+/// 2^j-case leaves, W = 1): `out[b][m] = α^{W_b^{(l)}(m)}` via the shared
+/// fixed-base comb. Case 0 is `α^0 = 1` by construction.
+pub(crate) fn rlc_case_pow_table(w_cases: &[Vec<u128>], alpha: Gf) -> Vec<Vec<Gf>> {
+    let comb = FixedBasePow::new(alpha, 128, 8);
+    cfg_iter!(w_cases).map(|row| row.iter().map(|&w| comb.pow(w)).collect()).collect()
+}
+
+/// The presum channel tables `τ_S` from one chunk's case α-powers: the
+/// char-2 subset zeta-transform `τ_S = Σ_{T⊆S} α^{W(1_T)}`, returned as
+/// `[2^j][2^{t'}]` (slot `S = 0` is the ∅-transform, identically 1 — not a
+/// channel). The 2^j-case leaf is multilinear in the j committed bits:
+/// `leaf(m) = 1 + Σ_{∅≠S} τ_S·Π_{i∈S} m_i` (pinned by a test below).
+#[allow(clippy::arithmetic_side_effects)] // bounded 2^j-case loops
+pub(crate) fn rlc_tau_tables(case_pow: &[Vec<Gf>]) -> Vec<Vec<Gf>> {
+    let cases = case_pow.first().map_or(1, |r| r.len());
+    let j = cases.trailing_zeros() as usize;
+    let rows = case_pow.len();
+    let mut out: Vec<Vec<Gf>> =
+        (0..cases).map(|s| (0..rows).map(|b| case_pow[b][s]).collect()).collect();
+    for d in 0..j {
+        for s in 0..cases {
+            if (s >> d) & 1 == 1 {
+                let src = out[s ^ (1usize << d)].clone();
+                for (o, x) in out[s].iter_mut().zip(src) {
+                    *o += x;
+                }
+            }
+        }
+    }
+    out
+}
+
 /// The mod-`q` row-weight **chunk width** `c_w = 127 − t − W` (X-note §6.1,
 /// `eq:chunkbound` at `k=128`): the largest limb size for which every per-chunk fold
 /// `u_c^{(l)} = Σ_b W_b^{(l)}·INT(D(b,c))` stays `< 2^{c_w+t+W} = 2^127`, so it binds
@@ -1070,6 +1202,98 @@ pub(crate) fn build_column_layer1_halves(
 // computes the same total from the shape alone (the proof size is fully
 // shape-determined), so a sweep over `t` needs no prover run. A test pins
 // `size_bytes == predicted_size_bytes`.
+
+#[cfg(test)]
+#[allow(clippy::arithmetic_side_effects)]
+mod rlc_tests {
+    use super::*;
+
+    /// The 2^j-case leaf select is multilinear in the j bits:
+    /// `α^{W(m)} = 1 + Σ_{∅≠S⊆[j]} τ_S · Π_{i∈S} m_i` for every case `m`,
+    /// with `τ_S` the subset zeta-transform of the case α-powers — the
+    /// identity the RLC-family forest leaves and presum channels rely on.
+    #[test]
+    fn rlc_tau_leaf_multilinearity() {
+        let alpha = smallest_generator();
+        for j in 1usize..=4 {
+            let cases = 1usize << j;
+            let rows = 8usize;
+            // Synthetic case weights with W(0) = 0 (linear forms).
+            let case_w: Vec<Vec<u128>> = (0..rows)
+                .map(|b| {
+                    (0..cases)
+                        .map(|m| {
+                            if m == 0 {
+                                0
+                            } else {
+                                ((b as u128 + 3) * (m as u128 + 11) * 0x9E37_79B9) % FQ_MOD
+                            }
+                        })
+                        .collect()
+                })
+                .collect();
+            let pow = rlc_case_pow_table(&case_w, alpha);
+            let tau = rlc_tau_tables(&pow);
+            for b in 0..rows {
+                for m in 0..cases {
+                    let mut acc = Gf::one();
+                    for (s, tau_s) in tau.iter().enumerate().skip(1) {
+                        // Π_{i∈S} m_i = 1 iff S ⊆ m (as bitmasks).
+                        if s & m == s {
+                            acc += tau_s[b];
+                        }
+                    }
+                    assert_eq!(acc, pow[b][m], "leaf identity at b={b}, m={m:#b}, j={j}");
+                }
+            }
+        }
+    }
+
+    /// `rlc_case_weights` matches the direct definition
+    /// `W_b(m) = Σ_i γ_i·w_{i,b}·parity(form_i & m) mod q`, and case 0 is 0.
+    #[test]
+    fn rlc_case_weights_match_direct() {
+        let j = 2usize;
+        let k = 3usize;
+        let rows = 16usize;
+        let forms = [0b01usize, 0b10, 0b11];
+        let weights: Vec<Vec<u128>> = (0..k)
+            .map(|i| {
+                (0..rows)
+                    .map(|b| ((i as u128 + 2) * (b as u128 + 7) * 0xDEAD_BEEF_CAFE) % FQ_MOD)
+                    .collect()
+            })
+            .collect();
+        let gammas: Vec<u128> = (0..k).map(|i| (i as u128 + 1) * 0x1234_5678_9ABC % FQ_MOD).collect();
+        let w_refs: Vec<&[u128]> = weights.iter().map(|w| &w[..]).collect();
+        let cw = rlc_case_weights(&w_refs, &gammas, &forms, j);
+        for b in 0..rows {
+            for m in 0..(1usize << j) {
+                let mut want = 0u128;
+                for i in 0..k {
+                    if (forms[i] & m).count_ones() & 1 == 1 {
+                        want = fq_add(want, fq_mul(gammas[i], weights[i][b]));
+                    }
+                }
+                assert_eq!(cw[b][m], want, "case weight at b={b}, m={m:#b}");
+            }
+            assert_eq!(cw[b][0], 0, "linear forms vanish at the zero case");
+        }
+        // Chunking recomposes.
+        let c_w = 40usize;
+        let lch = 3usize;
+        let chunks = rlc_chunk_case_weights(&cw, c_w, lch);
+        for b in 0..rows {
+            for m in 0..(1usize << j) {
+                let mut acc = 0u128;
+                for (l, ch) in chunks.iter().enumerate() {
+                    acc += ch[b][m] << (c_w * l);
+                }
+                assert_eq!(acc, cw[b][m], "chunk recomposition at b={b}, m={m:#b}");
+            }
+        }
+    }
+}
 
 /// Sample one codeword-column index from the transcript (power-of-two
 /// codeword length). Vendored from the zinc-plus F2 prover.

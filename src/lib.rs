@@ -44,6 +44,13 @@ pub use ligerito_flock::{
     FlockRsError, IntEvalRsLigModQProof, LigConfig, commit_rs_flock, commit_rs_flock_with,
     lig_configs, prove_mle_eval_mod_q_ligerito, verify_mle_eval_mod_q_ligerito,
 };
+// EXPERIMENTAL — mod-q RLC claim families (docs/rlc-family-note-prompt.md):
+// k claims on F₂-linear forms of j committed columns via ONE γ-RLC forest
+// per chunk + a degree-(j+1) monomial discharge. No proof_codec wiring.
+pub use ligerito_flock::{
+    IntEvalRsLigRlcFamilyProof, RlcFamilyClaim, mle_eval_mod_q_lig_rlc_family_proof_size_bytes,
+    prove_mle_eval_mod_q_ligerito_rlc_family, verify_mle_eval_mod_q_ligerito_rlc_family,
+};
 pub use pcs::IntEvalParams;
 pub use poly::univariate::binary_b127::BinaryFieldB127;
 pub use poly::univariate::binary_gf128::BinaryFieldGF128;
