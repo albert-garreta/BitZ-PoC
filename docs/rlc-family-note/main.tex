@@ -1,0 +1,1634 @@
+\documentclass[11pt]{article}
+
+% ---------------------------------------------------------------------------
+% F2Z note: batching F2-linear families of integer-MLE claims by mod-q
+% randomized weight functions.  Build: latexmk -pdf main.tex
+%
+% Companion documents:
+%   - parent X-note: ~/char2-fieldswitch-note/main.tex (esp. S9, sec:brakedown)
+%   - docs/DESIGN.md            (the deployed base scheme)
+%   - docs/verifier-note/       (the mod-q verifier, line by line)
+%   - docs/rlc-family-note-prompt.md / rlc-family-proto-prompt.md
+%     (the 2026-07-26 working-session prompts; this note is the vetted
+%      exposition the first prompt asked for)
+% ---------------------------------------------------------------------------
+
+\usepackage[margin=1.05in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{mdframed}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
+
+% --- notation (aligned with docs/verifier-note and the parent X-note) -------
+\newcommand{\F}{\mathbb{F}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\K}{\mathbb{K}}            % the binding field GF(2^128)
+\newcommand{\Kx}{\K^{\times}}
+\newcommand{\Ftwo}{\F_2}
+\newcommand{\Fq}{\F_q}                 % the evaluation field (char != 2)
+\newcommand{\bits}{\{0,1\}}
+\newcommand{\INT}{\mathsf{INT}}
+\newcommand{\mle}[1]{\widetilde{#1}}
+\newcommand{\eq}{\mathsf{eq}}
+\newcommand{\cw}{c_w}
+\newcommand{\orda}{\mathrm{ord}}
+\newcommand{\Wc}{\mathcal{W}}          % the case weight function
+\DeclareRobustCommand{\code}[1]{{\def\_{\textunderscore\allowbreak}\texttt{#1}}}
+\DeclareMathOperator{\MLE}{MLE}
+
+\tolerance=1600
+\setlength{\emergencystretch}{1.8em}
+\hbadness=2500
+\allowdisplaybreaks
+
+%====================== theorem environments ======================
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{construction}[theorem]{Construction}
+\newtheorem{openproblem}[theorem]{Open problem}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\newmdtheoremenv[backgroundcolor=black!3,linewidth=0.6pt]{protocol}[theorem]{Protocol}
+
+\title{\bf One Forest for a Family:\\
+Randomized Weight Functions for Batching $\Ftwo$-Linear\\
+Integer-MLE Claims over a Characteristic-2 Commitment\\[4pt]
+\large (the mod-$q$ RLC claim-family construction for F2Z)}
+\author{Albert Garreta\thanks{The base scheme extended here is the
+one-round characteristic-2 Brakedown instantiation of the char-2
+field-switch note (\S9 of \cite{Xnote}), a construction due to Lev
+Soukhanov (\texttt{levs57}) \cite{Sou}, as deployed in the
+\texttt{f2z-pcs} repository \cite{F2Zdesign,F2Zreadme}. The family-batching
+construction below was derived in a working session on 2026-07-26 and was
+\emph{unvetted} at the time of writing; this note is the verification pass.
+Every identity and bound has been re-derived from scratch, and one working
+estimate is corrected (Remark~\ref{rem:kq}). No soundness gap was found;
+everything that remains unproven or unmeasured is listed explicitly in
+\S\ref{sec:open}. A companion prototyping plan lives at
+\texttt{docs/rlc-family-proto-prompt.md}. \emph{Revision (same day):} the
+prototype now exists
+(\code{prove/verify\_mle\_eval\_mod\_q\_ligerito\_rlc\_family}, commits
+\texttt{8fbd155}--\texttt{b0d13f7}) and \textbf{confirms the predicted cost
+band}: the measured XOR triple proves at $1.74$--$1.87\times$ one claim at
+$n=24$--$28$ against $2.5$--$3.7\times$ for the deployed baselines
+(\S\ref{sec:measured}). Numbers marked (est.)\ are the ex-ante model, kept
+as the record the measurement is judged against. The prototype also
+surfaced one \emph{completeness} refinement the original spec needs:
+identically-vanishing presum channels must be elided
+(Proposition~\ref{prop:vanish}).}}
+\date{2026-07-26}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+F2Z proves a mod-$q$ integer multilinear evaluation
+$\MLE[\INT(D)](r)=c\in\Fq$ for bit-data committed over a characteristic-2
+code, by folding the row variables in the exponent of $\K=\mathrm{GF}(2^{128})$
+under a lazy GKR product forest. The forest is $84$--$96\%$ of the prover, and
+today each claim pays its own forest --- even when the claimed vectors are
+$\Ftwo$-linearly \emph{dependent}, e.g.\ the triple $(a_1,\,a_2,\,a_1\oplus a_2)$,
+because $\INT(a\oplus b)=\INT(a)+\INT(b)-2\,\INT(a\wedge b)$: the carry term is
+genuinely new information, and integer-coefficient random linear combinations
+spend their soundness bits out of the exponent's $127$-bit budget.
+
+This note develops and verifies a batching construction that proves $k$ claims
+on $\Ftwo$-linear combinations of $j$ committed bit-columns, at a shared column
+point, with \textbf{one} forest: the verifier's random $\Fq$-coefficients are
+pushed \emph{into the weight function} and reduced mod $q$ \emph{before}
+lifting, so the combined weights cost zero extra exponent bits; the forest's
+leaves become a public $2^{j}$-case select on the $j$ committed bits (a subset
+zeta-transform makes them multilinear); and the carry information surfaces as
+the $2^{j}{-}1{-}j$ monomial channels of the pre-sumcheck, discharged by a
+single degree-$(j{+}1)$ sumcheck in the cheap field. Soundness costs $1/q$
+(tighter than the $k/q$ working estimate) plus standard sumcheck terms. For
+the XOR triple the ex-ante estimate was ${\sim}1.3$--$1.8\times$ a single
+claim against $3\times$ today, with one sent fold vector instead of three;
+the same-day prototype \emph{confirms} it, measuring
+$1.74$--$1.87\times$ at $n=24$--$28$ against $2.5$--$3.7\times$ for the
+deployed batched path and ${\sim}3\times$ for independent proofs, with
+$26$--$65\%$ smaller proofs (\S\ref{sec:measured}). We also
+delimit the construction: chunks do not collapse (a bandwidth conservation
+law), fully distinct evaluation points do not batch, and the carry channels are
+conserved --- the construction relocates them from the exponent to the cheap
+field; it does not eliminate them. One completeness refinement emerged in
+practice: presum channels whose zeta coefficients vanish identically ---
+which happens for legitimate degenerate families, e.g.\ every claim on one
+XOR combination --- must be \emph{elided} by both parties
+(Proposition~\ref{prop:vanish}).
+\end{abstract}
+
+\tableofcontents
+
+%============================================================================
+\section{Introduction}\label{sec:intro}
+
+\subsection{The problem}
+
+The F2Z polynomial commitment scheme \cite{F2Zdesign,F2Zreadme} realises \S9 of
+the characteristic-2 field-switch note \cite{Xnote,Sou}: it proves
+\[
+  \MLE[\INT(D)](r) \;=\; c \;\in\; \Fq
+\]
+for a $2^{t}\times 2^{s}$ matrix $D$ of $W$-bit cells whose \emph{bits} are
+committed over $\Ftwo$, by carrying the integer row-fold in the exponent of
+$\K=\mathrm{GF}(2^{128})$, certified by a lazy GKR grand-product forest, and
+reading the column combination off in the clear over $\Fq$
+(\S\ref{sec:base} recalls the pipeline). At every measured shape the prover is
+\emph{forest-dominated}: $84$--$96\%$ of prove time is the forest and its
+pre-sumcheck \cite{F2Zreadme}.
+
+Applications rarely hold one claim. The motivating pattern --- ubiquitous in
+characteristic-2 arithmetizations, where XOR is free --- is a \emph{family} of
+claims on $\Ftwo$-linearly dependent vectors: $k$ claims
+\[
+  \MLE[\INT(a_i)](r_i) \;=\; c_i, \qquad i\in[k],
+\]
+where each claimed vector is a public $\Ftwo$-linear combination
+$a_i = L_i(m_1,\dots,m_j)$, taken bit-position by bit-position, of $j$
+committed bit-columns $m_1,\dots,m_j$. The running instance is the XOR triple:
+$k=3$, $j=2$,
+\[
+  a_1 = m_1, \qquad a_2 = m_2, \qquad a_3 = m_1\oplus m_2 .
+\]
+Today the repository's virtual-XOR machinery
+(\code{prove\_mle\_eval\_mod\_q\_ligerito\_with\_virtual\_xors}) derives the rows of
+each $a_i$ for free --- the committed code is $\Ftwo$-linear, so no new
+commitment is needed --- and shares the commitment and the final recursive
+opening across claims; but each claim still runs its \emph{own} forest body.
+Three claims cost three forests: ${\sim}3\times$ the dominant phase.
+
+One's first hope is that the dependence $a_3=a_1\oplus a_2$ should make the
+third claim nearly free. \S\ref{sec:naive} shows why no naive route delivers
+this: over the integers, $\INT(a\oplus b)$ is \emph{not} determined by
+$\INT(a)$ and $\INT(b)$ --- the missing term is the carry vector $a\wedge b$
+--- and the other natural tool, a random linear combination (RLC) of the $k$
+claims with integer coefficients, spends its soundness bits out of the
+exponent's $127$-bit injectivity budget.
+
+\subsection{The construction, in one paragraph}
+
+The construction rests on two observations. First, a \emph{weight-agnosticism}
+property of the base scheme (Lemma~\ref{lem:agnostic}): nothing in the
+prover-side soundness chain uses the $\eq$-structure of the row weights ---
+any public weight function with values in $[0,q)$, chunked as usual, works
+verbatim. Second, reduction mod $q$ of a weight function is \emph{semantically
+free}: the scheme's final check is native mod-$q$ arithmetic on the sent
+folds, so replacing any weight by its reduced representative changes nothing
+the statement can see (\S\ref{sec:door}). Together these open a door that
+integer-coefficient RLCs cannot use: draw the batching coefficients
+$\gamma_1,\dots,\gamma_k$ from $\Fq$ itself, fold them into the weights, and
+\emph{reduce mod $q$ before lifting into the exponent}. The combined weight
+function
+\[
+  \Wc_b(m) \;=\; \Bigl(\ \sum_{i\in[k]} \gamma_i\, w_{i,b}\, L_i(m)\ \Bigr) \bmod q
+  \;\in\; [0,q),
+  \qquad m\in\bits^{j},
+\]
+is exactly as wide as a single claim's weights --- the field-sized randomness
+costs \emph{zero} exponent bits --- and depends on the committed data only
+through the $j$ bits at each position, so \textbf{one} forest whose leaf at
+each position performs a public $2^{j}$-case select on those bits binds the
+whole family. The derived vectors $a_i$ never materialise. The leaves are
+multilinear in the $j$ bits via a subset zeta-transform
+(Lemma~\ref{lem:zeta}); the pre-sumcheck grows from one channel to $2^{j}-1$
+channels; the channels of degree $\ge 2$ --- which are precisely the carry
+information --- exit as monomial-MLE claims and are discharged by one
+degree-$(j{+}1)$ sumcheck over the $n$-variable cube in the cheap field
+(\S\ref{sec:discharge}). All residual openings batch into the single
+ring-switch + recursive-Ligerito opening the base scheme already runs.
+
+\subsection{Results}
+
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item \textbf{The construction} (\S\ref{sec:constr},
+  Protocol~\ref{prot:family}): general $j$ and $k$, requiring only that all
+  claims share the column point (row points arbitrary). Everything inherited
+  from the base scheme is inherited \emph{verbatim}; the inheritance is
+  audited item by item (Table~\ref{tab:inherit}).
+\item \textbf{Security} (\S\ref{sec:security}): completeness is an exact
+  identity chain (Theorem~\ref{thm:complete}); soundness adds $1/q$ for the
+  $\gamma$-combination --- proved exactly, and \emph{tighter} than the $k/q$
+  working estimate (Lemma~\ref{lem:gamma}, Remark~\ref{rem:kq}) --- plus the
+  discharge sumcheck's $(j{+}1)n/|\K|$ and the batching draws
+  (Theorem~\ref{thm:sound}).
+\item \textbf{Special cases} (\S\ref{sec:special}): $k$ claims on the
+  \emph{same} column at different row points collapse to the base protocol
+  with a combined weight vector --- one forest, no discharge, implementable
+  against today's API (Corollary~\ref{cor:multipoint}); affine forms
+  (complements, XOR-by-constants) contribute only public constants, recovering
+  the repository's \code{complement\_elision} as the degenerate case
+  (Proposition~\ref{prop:affine}).
+\item \textbf{Boundaries} (\S\ref{sec:boundaries}): chunks do not collapse
+  (a conservation law for exponent bandwidth,
+  Remark~\ref{rem:conservation}); families with distinct column points do
+  not batch (two independent obstructions,
+  Proposition~\ref{prop:mixed}); the carry channels are conserved, not
+  eliminated (\S\ref{sec:carries}); case tables scale $2^{j}$.
+\item \textbf{Costs} (\S\ref{sec:cost}): a worked estimate against the
+  repository's measured $n=28$/$n=30$ numbers. Headline (est.): the XOR
+  triple at ${\sim}1.3$--$1.8\times$ one claim versus $3.0\times$ today, one
+  sent fold vector instead of three, verifier within ${\sim}1\times$ of the
+  batched baseline.
+\item \textbf{Measured} (\S\ref{sec:measured}): the same-day prototype
+  lands inside the band --- $1.74$--$1.87\times$ one claim at $n=24$--$28$
+  versus $2.54$--$3.66\times$ for the batched virtual-XOR path and
+  $3.03$--$3.33\times$ for independent proofs; proofs $26$--$43\%$ smaller
+  than the batched path. Two model assumptions are validated with sharp
+  teeth: the $2^{j}$-case forest costs $1.3\times$ one claim's at $j=2$
+  (A1's band), and the discharge costs $0.29$ forest-equivalents
+  \emph{once realised bit-resident} (A2) --- the na\"ive
+  $\K$-materialised discharge the model ruled out was in fact built first
+  and measured exactly as predicted: it consumed the entire forest saving.
+\end{itemize}
+
+\subsection{Status, provenance, attribution}\label{sec:status}
+
+The base scheme (\S\ref{sec:base}) is due to Lev Soukhanov \cite{Sou}; the
+exposition and the deployed realisation are \cite{Xnote} and
+\cite{F2Zdesign}. The family construction of \S\ref{sec:constr} was derived in
+a working session on 2026-07-26 and recorded, unvetted, in
+\code{docs/rlc-family-note-prompt.md}. This note is the vetting pass: every
+identity, bound, and probability below has been re-derived independently of
+the session record. The outcome: the construction stands as specified; one
+soundness budget item improves ($k/q\to 1/q$, Remark~\ref{rem:kq}); one
+architectural element that the session record presented as a design choice is
+in fact \emph{forced} (the separate $n$-variable discharge,
+Lemma~\ref{lem:noncommute}). The prototype was then built and measured the
+same day (commits \texttt{8fbd155}, \texttt{4dd5df9}, \texttt{dc697e0},
+\texttt{3fa3011}, \texttt{8b3ef3e}, \texttt{b0d13f7}; measurement harness
+\code{examples/rlc\_ab.rs}; results in \S\ref{sec:measured} and the
+repository README's dated notes): it confirms the cost band, validates the
+two load-bearing modelling assumptions, and surfaced one completeness
+refinement --- vanishing channels must be elided
+(Proposition~\ref{prop:vanish}) --- now part of the protocol as deployed.
+As in the parent note, Fiat--Shamir compilation of the composed interactive
+reduction is inherited, not re-proved (Remark~\ref{rem:fs}).
+
+%============================================================================
+\section{The base scheme and the interfaces we use}\label{sec:base}
+
+We recall the deployed protocol only to the depth the construction needs, and
+we state as lemmas exactly the two properties it relies on. Authoritative
+descriptions: \cite[\S9]{Xnote} for the construction,
+\cite{F2Zdesign} for the deployed pipeline, \cite{F2Zverifier} for the
+verifier check by check.
+
+\subsection{Data, statement, notation}\label{sec:notation}
+
+Fix the \emph{binding field} $\K=\mathrm{GF}(2^{128})$ and a public
+$\alpha\in\Kx$ that generates $\Kx$; the generator property is \emph{checked}
+(\code{is\_generator}, against the factorisation of $2^{128}-1$), and
+$\orda(\alpha)=2^{128}-1$. Fix an \emph{evaluation modulus} $q$ with
+$q_{\mathrm{bits}}=\lceil\log_2 q\rceil$ (the reference instantiation is the
+$100$-bit prime $q=2^{100}-15$); for the batched construction we additionally
+require $q$ \emph{prime} (Remark~\ref{rem:qprime}).
+
+Data is a $2^{t}\times 2^{s}$ matrix of $W$-bit cells, $W$ a power of two;
+write $w_\nu:=\log_2 W$. A \emph{bit position} is a pair $(p,c)$ with
+$p=(b,\omega)$ a \emph{row-bit index} ($b\in\bits^{t}$ a row,
+$\omega\in\{0,\dots,W-1\}$ a word-bit) and $c\in\bits^{s}$ a column. There are
+$n := t + w_\nu + s$ bit variables. A committed \emph{bit-column} is a vector
+$m\in\bits^{2^{t+w_\nu}\times 2^{s}}$, entries $m[p,c]$. The integer value of a
+cell of a bit-column $a$ is
+$\INT(a)(b,c) := \sum_{\omega<W} 2^{\omega}\, a[(b,\omega),c]$, and the claim
+form is
+\begin{equation}\label{eq:claim}
+  \MLE[\INT(a)](r)
+  \;=\; \sum_{b\in\bits^{t}}\sum_{c\in\bits^{s}}
+        \eq\bigl(b,r^{\mathrm{row}}\bigr)\,\eq\bigl(c,r^{\mathrm{col}}\bigr)\,
+        \INT(a)(b,c)
+  \;\equiv\; c \pmod q ,
+\end{equation}
+for a point $r=(r^{\mathrm{row}},r^{\mathrm{col}})\in\Fq^{t}\times\Fq^{s}$.
+Throughout, $\eq(x,y)=\prod_i (x_iy_i+(1-x_i)(1-y_i))$, and we use freely that
+$\sum_{b\in\bits^{t}}\eq(b,r)=1$ for every $r$.
+
+In this note $j$ always denotes the number of base columns of a family and
+$\omega$ the word-bit index (the repository documents write $j$ for the
+word-bit index; we rename to avoid the collision). $S$ ranges over subsets of
+$[j]=\{1,\dots,j\}$, $\mathbf{1}_T\in\bits^{j}$ is the indicator vector of
+$T\subseteq[j]$, and for bit-columns $M_S := \bigwedge_{i\in S} m_i$ denotes
+the position-wise AND (with $M_\varnothing :=$ the all-ones column). For a
+vector $v$ over a Boolean cube, $\mle{v}$ is its multilinear extension.
+
+\subsection{The pipeline}\label{sec:pipeline}
+
+The base protocol for one claim \eqref{eq:claim} on committed data $D$
+(\cite{F2Zdesign}; verifier detail in \cite{F2Zverifier}):
+
+\begin{enumerate}[leftmargin=1.8em,itemsep=2pt]
+\item \textbf{Commit.} The bit-matrix is packed $128$ bits per $\K$-element,
+  RS-encoded and Merkleized (flock \cite{Flock}); the root is published
+  before any challenge.
+\item \textbf{Weights and chunking.} The row weights are the reduced
+  representatives $w_b := \eq(b,r^{\mathrm{row}}) \bmod q \in [0,q)$. Because a
+  full-width weight would overflow the exponent budget, each $w_b$ is split
+  into base-$2^{\cw}$ limbs (``chunks''),
+  \begin{equation}\label{eq:chunk}
+    \cw := 127 - t - W, \qquad
+    L := \lceil q_{\mathrm{bits}}/\cw\rceil, \qquad
+    w_b = \sum_{l<L} 2^{\cw l}\, w_b^{(l)}, \quad w_b^{(l)}\in[0,2^{\cw}) .
+  \end{equation}
+\item \textbf{Forest, per chunk $l$.} The leaf at bit position
+  $((b,\omega),c)$ is the $\K$-element
+  \begin{equation}\label{eq:baseleaf}
+    \mathrm{leaf}^{(l)}[(b,\omega),c]
+    \;=\; \alpha^{\,2^{\omega} w_b^{(l)}\, D[(b,\omega),c]}
+    \;=\; 1 + D[(b,\omega),c]\cdot\bigl(\alpha^{\,2^{\omega} w_b^{(l)}}+1\bigr),
+  \end{equation}
+  affine in the single committed bit (characteristic 2). Per column,
+  $\prod_{(b,\omega)}\mathrm{leaf}^{(l)} = \alpha^{u_c^{(l)}}$ with
+  $u_c^{(l)} = \sum_{b,\omega} 2^{\omega} w_b^{(l)} D[(b,\omega),c]$. The
+  prover \emph{sends} the folds $u^{(l)}\in\Z^{2^{s}}$; the verifier
+  recomputes the roots $\alpha^{u_c^{(l)}}$ and absorbs them (the
+  Fiat--Shamir binding), and the lazy \emph{merged} GKR forest reduces all
+  $2^{s}$ product trees to a single evaluation claim on the leaf-layer MLE at
+  a shared exit point $(\rho^{(l)},\xi^{(l)})\in\K^{t+w_\nu}\times\K^{s}$.
+\item \textbf{Pre-sumcheck (``presum''), per chunk.} The exit claim
+  $e^{(l)}=\mle{\mathrm{leaf}^{(l)}}(\rho^{(l)},\xi^{(l)})$ is de-black-boxed:
+  since $\sum_{p,c}\eq(\rho,p)\eq(\xi,c)\cdot 1 = 1$,
+  \[
+    e^{(l)} + 1 \;=\; \sum_{p} R^{(l)}[p]\cdot m_\xi[p],
+    \quad\text{with}\quad
+    \begin{aligned}
+      R^{(l)}[p] &= \eq(\rho^{(l)},p)\,\bigl(\alpha^{2^{\omega}w^{(l)}_b}+1\bigr),\\
+      m_\xi[p] &= \textstyle\sum_{c}\eq(\xi^{(l)},c)\,D[p,c],
+    \end{aligned}
+  \]
+  a degree-2 sumcheck over the $t+w_\nu$ row-bit variables ($R$ is the
+  \code{q\_rowbit} table, $m_\xi$ the $\xi$-combined rows). Its fresh
+  challenges $r^{*(l)}$ leave the \emph{committed bit-MLE claim}
+  $\mle{D}(r^{*(l)},\xi^{(l)})=\mu^{(l)}$; the verifier's only
+  $O(2^{t}W)$ step is evaluating $\mle{R^{(l)}}(r^{*(l)})$.
+\item \textbf{Opening.} The $L$ residual bit-MLE claims are batched into
+  \textbf{one} ring-switch + recursive-Ligerito opening \cite{Flock,DP24}.
+\item \textbf{Read-off and checks.} The verifier checks the per-chunk range
+  bound $u_c^{(l)} < 2^{\cw+t+W}$ for every $c,l$ (\code{ChunkRange}), and
+  accepts iff
+  \begin{equation}\label{eq:readoff}
+    \sum_{c\in\bits^{s}} \eq\bigl(c,r^{\mathrm{col}}\bigr)
+      \sum_{l<L} 2^{\cw l}\, u_c^{(l)}
+    \;\equiv\; c \pmod q .
+  \end{equation}
+\end{enumerate}
+
+\subsection{The two lemmas the construction stands on}
+
+\begin{lemma}[magnitude and injectivity]\label{lem:inject}
+Let the row weights of chunk $l$ take values in $[0,2^{\cw})$ with
+$\cw = 127-t-W$. Then for any committed bits, every per-column fold satisfies
+$0\le u_c^{(l)} < 2^{\cw+t+W} = 2^{127}$; and $x\mapsto\alpha^{x}$ is injective
+on $[0,2^{127})$, so a sent fold $\tilde u$ in range with
+$\alpha^{\tilde u}=\alpha^{u_c^{(l)}}$ equals the true fold.
+\end{lemma}
+
+\begin{proof}
+$u_c^{(l)} = \sum_{b}\sum_{\omega<W} 2^{\omega}\,(\text{chunk value})\cdot(\text{bit})
+\le 2^{t}\,(2^{W}-1)(2^{\cw}-1) < 2^{t+W+\cw}$. Injectivity: if
+$\alpha^{x}=\alpha^{y}$ with $x,y\in[0,2^{127})$ then
+$\orda(\alpha)=2^{128}-1$ divides $x-y$, and $|x-y|<2^{127}<2^{128}-1$ forces
+$x=y$. (This is why the generator check on $\alpha$ is load-bearing.)
+\end{proof}
+
+\begin{lemma}[weight-agnosticism]\label{lem:agnostic}
+The pipeline of \S\ref{sec:pipeline} is sound and complete for \emph{any}
+public row-weight vector $w\in[0,q)^{2^{t}}$ in place of
+$\eq(\cdot,r^{\mathrm{row}})\bmod q$, with \eqref{eq:readoff} checked against
+$\sum_c \eq(c,r^{\mathrm{col}})\sum_b w_b\,\INT(D)(b,c) \bmod q$. No component
+uses the $\eq$-structure of the weights.
+\end{lemma}
+
+\begin{proof}[Proof (by inspection of the pipeline)]
+The weights enter exactly four places, each consuming only the \emph{values}
+$w_b\in[0,q)$: (i) the chunk decomposition \eqref{eq:chunk}
+(\code{chunk\_row\_weights}), which is defined for any $[0,q)$ vector;
+(ii) the leaf bases $\alpha^{2^{\omega}w_b^{(l)}}$
+(\code{chunk\_pow2\_table}), public powers of public integers; (iii) the
+presum table $R^{(l)}$ (\code{row\_bit\_weights}), again public powers; and
+(iv) the read-off \eqref{eq:readoff}, which is mod-$q$ arithmetic on the sent
+folds against a verifier-computed target. Lemma~\ref{lem:inject} uses only the
+chunk width, not the weight provenance. The deployed API already takes the
+weight vector as an explicit argument
+(\code{prove/verify\_mle\_eval\_mod\_q\_ligerito(\ldots, row\_weights\_q,
+\ldots)}); the $\eq$ structure exists only in the caller.
+\end{proof}
+
+Two further facts we cite as black boxes, with their errors carried
+symbolically: the merged-forest GKR reduction is sound with error
+$\varepsilon_{\mathrm{forest}}$ per chunk (its layer sumchecks over $\K$;
+\cite{F2Zdesign}, tests pin lazy $=$ eager), and the ring-switch + recursive
+Ligerito opener is a knowledge-sound batched bit-MLE opening with error
+$\varepsilon_{\mathrm{open}}$ \cite{Flock,DP24,F2Zverifier}. The presum is a
+standard degree-2 sumcheck; we account its error explicitly below.
+
+%============================================================================
+\section{Why there is no naive discount}\label{sec:naive}
+
+\subsection{Carries: XOR claims are genuinely new information}\label{sec:carrylore}
+
+\begin{proposition}\label{prop:carry}
+Position-wise, over $\Z$:
+\begin{equation}\label{eq:xorid}
+  \INT(a\oplus b) \;=\; \INT(a) + \INT(b) - 2\,\INT(a\wedge b),
+\end{equation}
+and consequently, at any point $r$,
+$\MLE[\INT(a\oplus b)](r) = \MLE[\INT(a)](r) + \MLE[\INT(b)](r) -
+2\,\MLE[\INT(a\wedge b)](r)$ over $\Fq$. Moreover the pair
+$\bigl(\MLE[\INT(a)](r),\,\MLE[\INT(b)](r)\bigr)$ does \emph{not} determine
+$\MLE[\INT(a\oplus b)](r)$.
+\end{proposition}
+
+\begin{proof}
+Per bit, $x\oplus y = x+y-2xy$ on $\bits$; sum with the weights of
+\eqref{eq:claim}, which are the same on both sides. For non-determination,
+one instance suffices. Take $W=1$, $t=1$, $s=0$, $q=5$, $r=r^{\mathrm{row}}=3$:
+then $\MLE[\INT(v)](r) = (1-3)v_0+3v_1 = 3v_0+3v_1 \bmod 5$. The pairs
+$(a,b)=\bigl((0,1),(0,1)\bigr)$ and $(a',b)=\bigl((1,0),(0,1)\bigr)$ give the
+same evaluations $(3,3)$, but $a\oplus b = (0,0)$ evaluates to $0$ while
+$a'\oplus b=(1,1)$ evaluates to $1$. (Equivalently for the AND: $a\wedge b$
+evaluates to $3$, $a'\wedge b$ to $0$ --- the two extremes, aligned versus
+disjoint supports.)
+\end{proof}
+
+The two extremes are worth naming, because they are the intuition for
+everything in \S\ref{sec:carries}: if $a=b$ then $\INT(a\oplus b)=0$ while
+$\INT(a)+\INT(b)=2\,\INT(a)$ --- the carry term cancels everything; if $a$ and
+$b$ have disjoint supports then $\INT(a\oplus b)=\INT(a)+\INT(b)$ --- the
+carry term vanishes. Between the extremes lies fresh information: the carry
+vector $a\wedge b$ is a Hadamard (degree-2) object, exactly what committed-carry
+architectures pay for explicitly (one committed carry column per modular
+addition in the char-2 SHA-256 provers, after Binius \cite{Binius}). A third
+claim about $a_1\oplus a_2$ therefore cannot be checked in the clear from
+$c_1,c_2$; \emph{some} proof work must certify the carries. The question is
+where that work runs --- in the exponent (a forest) or in the cheap field (a
+sumcheck) --- and the whole contribution of this note is moving it from the
+former to the latter.
+
+\subsection{Integer-coefficient RLCs spend the exponent budget}\label{sec:intrlc}
+
+The other naive tool is a random linear combination: draw coefficients
+$\gamma_i$, check the single combined claim
+$\sum_i\gamma_i\,\MLE[\INT(a_i)](r_i) \equiv \sum_i\gamma_i c_i$. Over the
+integers this fails on the budget, in every variant. Recall
+(Lemma~\ref{lem:inject}) that a chunk carries $\cw = 127-t-W$ weight bits per
+forest pass, and soundness of the combination needs the $\gamma_i$ to range
+over ${\ge}\,2^{\lambda}$ values with $\lambda\approx q_{\mathrm{bits}}$
+(a smaller box gives combination error $2^{-\lambda}$).
+
+\begin{proposition}[integer-RLC accounting]\label{prop:intrlc}
+Let $\lambda$ be the bit-size of the integer coefficients, and count forest
+passes (chunks) for the combined claim.
+\begin{enumerate}[label=\textup{(\alph*)},leftmargin=2.2em,itemsep=2pt]
+\item \textbf{Combine-then-chunk.} Chunking the unreduced combined weights
+  $w'_b=\sum_i\gamma_i w_{i,b} < k\,2^{\lambda+q_{\mathrm{bits}}}$ needs
+  $L' = \bigl\lceil (q_{\mathrm{bits}}+\lambda+\lceil\log_2 k\rceil)/\cw \bigr\rceil$
+  passes. Since $\cw\le 126 < 2q_{\mathrm{bits}}$ at the reference
+  $q_{\mathrm{bits}}=100$, this is $\ge 2$ passes for every shape --- at best
+  a $k\to 2$ collapse, never $k\to L=\lceil q_{\mathrm{bits}}/\cw\rceil$.
+\item \textbf{Per-chunk coefficients.} Applying $\gamma_i$ inside a chunk's
+  leaf exponents shrinks the usable chunk width to
+  $\cw' = 127-t-W-\lambda$: at $\lambda=100$ this is single digits at the
+  reference splits ($\cw'=9$ at $n=28$, $t=17$, $W=1$: \emph{twelve} passes
+  for one combined claim, versus $k=3$ passes for the unbatched family), and
+  \emph{negative} --- the variant is outright impossible --- whenever
+  $t+W>127-\lambda$ (all $W=32$ shapes; large-$t$ splits).
+\item \textbf{Repetition.} Replacing one $\lambda$-bit draw by $\nu$
+  independent $(\lambda/\nu)$-bit draws multiplies passes:
+  $\nu\cdot\lceil (q_{\mathrm{bits}}+\lambda/\nu)/\cw\rceil \ \ge\
+  \nu\,\lceil q_{\mathrm{bits}}/\cw\rceil$, growing in $\nu$ --- repetitions
+  multiply chunk counts faster than they remove forests.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+(a) is \eqref{eq:chunk} applied to the wider weights; the bound
+$w'_b<k2^{\lambda+q_{\mathrm{bits}}}$ is immediate. (b): the leaf exponent
+becomes $2^{\omega}\gamma_i w^{(l)}_{i,b}\le
+2^{W-1}2^{\lambda}2^{\cw'}$ and Lemma~\ref{lem:inject}'s proof needs
+$t+W+\lambda+\cw'\le 127$. (c): each repetition pays its own
+$\ge\lceil q_{\mathrm{bits}}/\cw\rceil$ passes.
+\end{proof}
+
+\subsection{The door: reduction mod \texorpdfstring{$q$}{q} is semantically free}\label{sec:door}
+
+The obstruction in Proposition~\ref{prop:intrlc} is that integer randomness
+\emph{adds entropy} to the weight function, and every weight bit must ride
+through the $127$-bit exponent pipe. But the base scheme's semantics is
+mod-$q$ from end to end: the weights are \emph{already} reduced
+representatives $\eq(b,r)\bmod q$, and the acceptance check
+\eqref{eq:readoff} is mod-$q$ arithmetic on the sent folds. Consequently:
+
+\begin{center}
+\begin{minipage}{0.92\textwidth}\itshape
+Replacing any public weight function $b\mapsto v_b$ by its reduction
+$b\mapsto v_b \bmod q$ changes the sent folds, but changes no mod-$q$ read-off
+value: the two weight functions are indistinguishable to the statement. In
+particular, randomness drawn from $\Fq$ and folded into the weights, then
+reduced, costs \emph{zero} exponent bits.
+\end{minipage}
+\end{center}
+
+\noindent This is the door the construction walks through, and the reason an
+earlier dismissal of RLC batching was wrong: the dismissal priced the
+combination at integer width (Proposition~\ref{prop:intrlc}), when the scheme
+only ever needed mod-$q$ faithfulness. What remains is to make the
+\emph{combined} weight a function the forest can evaluate --- it multiplies
+different bits per claim --- which is the case-collapse of the next section.
+
+%============================================================================
+\section{The construction}\label{sec:constr}
+
+\subsection{Statement, ordering, and the case-collapsed weight function}\label{sec:weights}
+
+The family statement: $j$ committed bit-columns $m_1,\dots,m_j$ (sub-columns
+of the one committed matrix, as in the virtual-XOR path), $k$ claims
+$(L_i, r_i, c_i)_{i\in[k]}$ with $L_i:\bits^{j}\to\bits$ public
+$\Ftwo$-\emph{linear} forms (affine forms in \S\ref{sec:affine}), points
+$r_i=(r_i^{\mathrm{row}}, r^{\mathrm{col}})$ --- \textbf{the column point
+$r^{\mathrm{col}}$ is required to be shared}; the row points
+$r_i^{\mathrm{row}}$ are arbitrary --- and claimed values $c_i\in\Fq$, meaning
+\eqref{eq:claim} for $a_i:=L_i(m_1,\dots,m_j)$ applied position-wise.
+
+\emph{Fiat--Shamir ordering.} The commitment root and the complete claim list
+$(L_i,r_i,c_i)_i$ are absorbed \emph{first}; then the verifier draws
+$\gamma_1,\dots,\gamma_k\gets\Fq$ and both sides set the combined target
+\[
+  T \;:=\; \sum_{i\in[k]}\gamma_i\,c_i \ \bmod q .
+\]
+(Optionally $\gamma_1:=1$; see Remark~\ref{rem:kq}.)
+
+\begin{definition}[case-collapsed weight function]\label{def:casew}
+For a row $b\in\bits^{t}$ and a \emph{case vector} $m\in\bits^{j}$, with
+$w_{i,b} := \eq(b, r_i^{\mathrm{row}})\bmod q$,
+\[
+  \Wc_b(m) \;:=\; \Bigl(\sum_{i\in[k]}\gamma_i\, w_{i,b}\, L_i(m)\Bigr)\bmod q
+  \;\in\;[0,q),
+\]
+where $L_i(m)\in\bits$ is lifted to $\Fq$. Chunk each case value as in
+\eqref{eq:chunk}: $\Wc_b(m)=\sum_{l<L}2^{\cw l}\,\Wc^{(l)}_b(m)$ with
+$\Wc^{(l)}_b(m)\in[0,2^{\cw})$, the \emph{same} $\cw=127-t-W$ and
+$L=\lceil q_{\mathrm{bits}}/\cw\rceil$ as for one claim. The function is
+public and verifier-computable ($O(2^{t}\,k\,2^{j})$ $\Fq$-work; in practice
+$2^{j}$ evaluations of a $k$-term sum per row).
+\end{definition}
+
+For $W>1$ the word-bit weight rides \emph{outside} the reduction, exactly as
+in the base scheme: bit position $(b,\omega)$ in case $m$ carries the exponent
+$2^{\omega}\,\Wc^{(l)}_b(m)$ in chunk $l$.
+
+\begin{lemma}[magnitude, family form]\label{lem:familymag}
+For arbitrary committed $m_1,\dots,m_j$, the per-column per-chunk fold of the
+family instance,
+\[
+  u_c^{(l)} \;:=\; \sum_{b\in\bits^{t}}\sum_{\omega<W}
+      2^{\omega}\;\Wc^{(l)}_b\bigl(m((b,\omega),c)\bigr),
+  \qquad
+  m(p,c) := \bigl(m_1[p,c],\dots,m_j[p,c]\bigr),
+\]
+satisfies $0\le u_c^{(l)} < 2^{\cw+t+W}=2^{127}$, and
+Lemma~\ref{lem:inject}'s injectivity applies unchanged.
+\end{lemma}
+
+\begin{proof}
+At every bit position exactly \emph{one} case weight contributes --- the one
+selected by the $j$ committed bits at that position --- and every case chunk
+is $<2^{\cw}$ by construction. Hence
+$u^{(l)}_c \le \sum_b\sum_{\omega}2^{\omega}(2^{\cw}-1)
+= 2^{t}(2^{W}-1)(2^{\cw}-1) < 2^{t+W+\cw}$: the bound of
+Lemma~\ref{lem:inject}, with the same constants, for any committed data. The
+range check the verifier runs (\code{ChunkRange}, $u^{(l)}_c<2^{\cw+t+W}$)
+carries over verbatim.
+\end{proof}
+
+\subsection{One forest: leaves as a \texorpdfstring{$2^{j}$}{2\^{}j}-case select}\label{sec:leaves}
+
+Per chunk $l$, the family forest has the same shape as the base forest ---
+$2^{s}$ product trees over $2^{t}W$ leaves, merged and lazy --- with leaf
+\begin{equation}\label{eq:familyleaf}
+  \mathrm{leaf}^{(l)}[(b,\omega),c]
+  \;:=\; \alpha^{\,2^{\omega}\,\Wc^{(l)}_b(m((b,\omega),c))} ,
+\end{equation}
+a select among the $2^{j}$ public values
+$\alpha^{2^{\omega}\Wc^{(l)}_b(m)}$, $m\in\bits^{j}$, driven by the $j$
+committed bits at the position. The derived vectors $a_i$ never materialise.
+Everything above the leaf layer --- the tree products, the merged GKR layers,
+the lazy schedules, the root recomputation from the sent folds --- is
+untouched: those layers consume leaf \emph{values} in $\K$ and are indifferent
+to their provenance.
+
+The leaf is multilinear in the $j$ bits, with coefficients given by a subset
+zeta-transform:
+
+\begin{lemma}[case-collapse / zeta-transform]\label{lem:zeta}
+Let $f:\bits^{j}\to\K$ and let $F$ be its unique multilinear extension. In
+characteristic 2,
+\[
+  F(m_1,\dots,m_j) \;=\; \sum_{S\subseteq[j]} \tau_S \prod_{i\in S} m_i,
+  \qquad
+  \tau_S \;=\; \sum_{T\subseteq S} f(\mathbf{1}_T).
+\]
+Applied to $f(m)=\alpha^{2^{\omega}\Wc^{(l)}_b(m)}$: since the $L_i$ are
+linear, $\Wc_b(\mathbf 0)=0$, so $\tau_\varnothing=\alpha^{0}=1$ and
+\begin{equation}\label{eq:leafzeta}
+  \mathrm{leaf}^{(l)}[p,c] \;=\;
+  1 \;+\; \sum_{\varnothing\ne S\subseteq[j]} \tau^{(l)}_S(p)
+          \prod_{i\in S} m_i[p,c],
+  \qquad
+  \tau^{(l)}_S(p) := \sum_{T\subseteq S}
+     \alpha^{\,2^{\omega}\Wc^{(l)}_b(\mathbf{1}_T)}
+\end{equation}
+for $p=(b,\omega)$.
+\end{lemma}
+
+\begin{proof}
+Multilinear interpolation over $\bits^{j}$ gives
+$F(m)=\sum_{v\in\bits^{j}} f(v)\prod_i\bigl(m_iv_i+(1+m_i)(1+v_i)\bigr)$ in
+characteristic 2; expanding the product into the monomial basis yields
+coefficients $c_S=\sum_{T\subseteq S}(-1)^{|S\setminus T|}f(\mathbf 1_T)$
+(inclusion--exclusion / M\"obius inversion on the subset lattice), and
+$(-1)=1$ in characteristic 2. Sanity check at $j=1$:
+$F(m)=f(0)+m\,(f(0)+f(1))$, which is \eqref{eq:baseleaf} when
+$f(0)=1$.
+\end{proof}
+
+\noindent\emph{Worked case $j=2$.} Writing
+$A=\alpha^{2^{\omega}\Wc^{(l)}_b(1,0)}$, $B=\alpha^{2^{\omega}\Wc^{(l)}_b(0,1)}$,
+$C=\alpha^{2^{\omega}\Wc^{(l)}_b(1,1)}$:
+\[
+  \mathrm{leaf} \;=\; 1 + m_1\,(A+1) + m_2\,(B+1) + m_1m_2\,(A+B+C+1) ,
+\]
+which indeed selects $1,A,B,C$ on the four cases. For the XOR triple
+($L_1=m_1$, $L_2=m_2$, $L_3=m_1\oplus m_2$) the case values are, per row $b$
+(all mod $q$):
+\[
+  \Wc_b(1,0)=\gamma_1w_{1,b}+\gamma_3w_{3,b},\qquad
+  \Wc_b(0,1)=\gamma_2w_{2,b}+\gamma_3w_{3,b},\qquad
+  \Wc_b(1,1)=\gamma_1w_{1,b}+\gamma_2w_{2,b},
+\]
+the last because $L_3(1,1)=0$: at positions where both bits are set, the XOR
+claim contributes nothing --- the carry cancellation of
+Proposition~\ref{prop:carry}, now visible inside the weight table.
+
+\subsection{The multi-channel presum}\label{sec:presum}
+
+Per chunk, the forest exits with the claim
+$e^{(l)} = \mle{\mathrm{leaf}^{(l)}}(\rho^{(l)},\xi^{(l)})$. Substituting
+\eqref{eq:leafzeta} and separating the constant channel (which sums to $1$
+exactly as in \S\ref{sec:pipeline}):
+\begin{equation}\label{eq:presumid}
+  e^{(l)} + 1 \;=\;
+  \sum_{\varnothing\ne S\subseteq[j]}\ \sum_{p}
+     R^{(l)}_S[p]\cdot m^{(l)}_{S,\xi}[p],
+  \qquad
+  \begin{aligned}
+    R^{(l)}_S[p] &:= \eq(\rho^{(l)},p)\,\tau^{(l)}_S(p),\\
+    m^{(l)}_{S,\xi}[p] &:= \textstyle\sum_{c}\eq(\xi^{(l)},c)\,M_S[p,c],
+  \end{aligned}
+\end{equation}
+with $M_S=\bigwedge_{i\in S}m_i$ the monomial (AND) columns. The presum is the
+same degree-2 sumcheck driver as today, now with $2^{j}-1$
+\emph{channels} --- one $(R_S, m_{S,\xi})$ pair per non-empty $S$, each of
+per-variable degree $2$ --- over the $t+w_\nu$ row-bit variables
+(the repository's multi-degree sumcheck with one group per channel; the
+monomial row tables $m_{S,\xi}$ are built like the existing
+$\xi$-combined rows, from AND-derived rows). With fresh challenges
+$r^{*(l)}$, the channel exits are the claims
+\[
+  \mu^{(l)}_S \;:=\; \mle{m^{(l)}_{S,\xi}}\bigl(r^{*(l)}\bigr)
+  \;=\; \mle{M_S}\bigl(\zeta_l\bigr),
+  \qquad
+  \zeta_l := \bigl(r^{*(l)},\,\xi^{(l)}\bigr)\in\K^{\,t+w_\nu+s},
+\]
+the verifier computing each $\mle{R^{(l)}_S}(r^{*(l)})$ itself
+(\S\ref{sec:verifier}) and checking the final round against
+$\sum_S \mle{R^{(l)}_S}(r^{*(l)})\cdot\mu^{(l)}_S$.
+
+For $|S|=1$ the exit $\mle{m_i}(\zeta_l)$ is a committed bit-MLE claim ---
+exactly the object the ring-switch + Ligerito opener consumes, as in the base
+scheme (the $\K$-side is $\Ftwo$-linear, so sub-column embedding is the same
+free machinery the virtual-XOR path uses). For $|S|\ge 2$ the exit is a claim
+about the MLE of a \emph{derived} column $M_S$ that is nowhere committed.
+These are the carry channels, and they need one more reduction.
+
+A channel whose table $\tau^{(l)}_S$ vanishes \emph{identically} carries
+nothing ($R^{(l)}_S\equiv 0$) and is \textbf{elided}: both parties derive
+the active channel set per chunk from the public case weights and run only
+the active channels --- presum groups, discharge participation, and the
+residual-opening set all follow. This is not an optimisation but a
+completeness requirement of the deployed realisation, and identically-zero
+channels occur for legitimate degenerate families; see
+Proposition~\ref{prop:vanish}.
+
+\subsection{Why a separate \texorpdfstring{$n$}{n}-variable discharge is forced}\label{sec:whydischarge}
+
+One might hope to run the monomial channels at their native degree inside the
+presum --- integrand $\mle{R_S}(x)\prod_{i\in S}\mle{m_{i,\xi}}(x)$ over the
+row variables, exiting directly at committed openings, no new reduction. This
+is \emph{unsound}, not merely inconvenient:
+
+\begin{lemma}[partial evaluation does not commute with products]\label{lem:noncommute}
+In general
+\[
+  m^{(l)}_{S,\xi}[p] \;=\; \sum_c \eq(\xi,c)\prod_{i\in S}m_i[p,c]
+  \;\ne\;
+  \prod_{i\in S}\Bigl(\sum_c \eq(\xi,c)\, m_i[p,c]\Bigr)
+  \;=\; \prod_{i\in S} m^{(l)}_{i,\xi}[p] .
+\]
+Consequently, once the forest has bound the column variables to $\xi$, the
+monomial row table $m_{S,\xi}$ is not any bounded-degree combination of the
+singleton row tables over the row variables alone, and its consistency with
+the committed $m_i$ must be established by a reduction that \emph{re-opens
+the column variables}: a sumcheck over all $n$ variables.
+\end{lemma}
+
+\begin{proof}
+A one-column-variable counterexample: $s=1$, $S=\{1,2\}$,
+$m_1=m_2=(0,1)$ at some fixed $p$. The left side is
+$\eq(\xi,1)=\xi$; the right side is $\xi^2$; these differ for all
+$\xi\notin\{0,1\}$, and the presum's $\xi$ is a random $\K$-point. For the
+second statement: $m_{S,\xi}$ depends on the joint column data --- $|S|$
+vectors of $2^{s}$ bits per row-bit index --- while the singleton tables
+retain only the $|S|$ column-folded values; the counterexample shows the
+loss is real already at $s=1$.
+\end{proof}
+
+The session record presented the two-stage structure (degree-2 presum, then a
+separate discharge) as an architecture; Lemma~\ref{lem:noncommute} shows it is
+the \emph{only} completion compatible with the deployed row-variable presum.
+The alternative --- running the presum over all $n$ variables with channels
+at native degree $|S|+1$, where cube-products \emph{are} position-wise
+products --- is sound and cost-equivalent (both designs pay one
+$2^{n}$-scale degree-$(j{+}1)$ pass; see \S\ref{sec:cost}), but it replaces
+the deployed presum rather than extending it, and it gives up the option of
+keeping the $2^{n}$-scale pass out of the per-chunk loop.
+
+\subsection{The monomial discharge}\label{sec:discharge}
+
+After all presum exits $\{\mu^{(l)}_S\}$ are absorbed, the verifier draws
+batching challenges $\eta_{l,S}\gets\K$ for the monomial claims
+($|S|\ge 2$), and one \emph{eq-sumcheck over all $n$ variables} proves the
+batch:
+\begin{equation}\label{eq:discharge}
+  \sum_{x\in\bits^{n}}\
+  \sum_{l<L}\ \sum_{|S|\ge 2} \eta_{l,S}\;
+     \eq(\zeta_l, x)\,\prod_{i\in S}\mle{m_i}(x)
+  \;=\;
+  \sum_{l,\,|S|\ge2} \eta_{l,S}\,\mu^{(l)}_S ,
+\end{equation}
+sound because on the cube, products of the multilinear $\mle{m_i}$ \emph{are}
+the position-wise monomials: $\prod_{i\in S}\mle{m_i}(x) = M_S[x]$ for
+$x\in\bits^{n}$, so the left side is
+$\sum_{l,S}\eta_{l,S}\,\mle{M_S}(\zeta_l)$ when the committed data is used.
+The integrand has per-variable degree $\le j+1$ (each term: $1$ from the
+$\eq$ factor, $\le j$ from the product). The sumcheck's fresh point
+$\chi\in\K^{n}$ leaves the final check
+\[
+  \sum_{l,\,|S|\ge2}\eta_{l,S}\,\eq(\zeta_l,\chi)
+     \prod_{i\in S}\mle{m_i}(\chi)
+  \;\stackrel{?}{=}\; (\text{last round value}),
+\]
+in which the verifier evaluates each $\eq(\zeta_l,\chi)$ itself ($O(nL)$) and
+the values $\mle{m_i}(\chi)$, $i\in\bigcup_{|S|\ge2}S$, exit as $\le j$
+committed bit-MLE openings at the single point $\chi$.
+
+All residual openings --- the singleton exits $\mle{m_i}(\zeta_l)$ and the
+discharge exits $\mle{m_i}(\chi)$, at most $jL + j$ claims at $L+1$ points ---
+are batched into the \emph{one} ring-switch + recursive Ligerito opening,
+through the same multi-claim machinery the base scheme already uses for its
+$L$ chunk claims.
+
+\begin{remark}[the discharge as a forest leaf layer --- the realisation]
+\label{rem:dischargeleaf}
+The deployed $j=2$ realisation of \eqref{eq:discharge} rests on a
+complement identity: over $\bits$-valued columns, as \emph{polynomials},
+\[
+  \prod_{i\in S}\mle{m_i} \;=\; \prod_{i\in S}\bigl(1+\mle{\lnot m_i}\bigr),
+  \qquad \lnot m_i := m_i\oplus\mathbf 1,
+\]
+and $1+\mle{\lnot m_i}$ is exactly the base scheme's leaf-bit-affine shape
+$1 + (\text{bit stream})\cdot\tau$ with the \emph{complemented} bit stream
+and $\tau\equiv 1$. The discharge therefore runs on the repository's tuned
+forest-leaf sumcheck driver verbatim --- the $\mle{m_i}$ tables are never
+materialised (the driver reads the packed complement bits), the $\eq$
+factor is suffix-tensor-factored (never materialised either), and the
+per-variable structure splits into two phases, rows then columns, joined by
+absorbed per-chunk entry sums; the phase-two finals \emph{are} the closing
+openings $\mle{m_i}(\chi)$. Measured at $n=26$: $17.1$\,ms per prove
+$\approx 0.29$ forest-equivalents --- inside (A2)'s $0.2$--$0.6$ band
+(\S\ref{sec:measured}). Two rejected realisations, recorded because both
+failed exactly as the model warned: a $\K$-materialised discharge (dense
+$\eq$-combination and monomial tables through a generic multi-degree
+sumcheck) measured $162.8$\,ms at $n=26$ --- ${\approx}2.1$
+single-claim-equivalents, consuming the entire forest saving, (A2)'s
+``multiple forest bodies'' verbatim --- and a one-group dense eq-factored
+form was \emph{slower} than the generic one because that driver
+parallelises across groups and the discharge is one group.
+\end{remark}
+
+\subsection{The verifier}\label{sec:verifier}
+
+Beyond running the sumcheck/forest transcripts, the verifier:
+\begin{enumerate}[leftmargin=1.8em,itemsep=1pt]
+\item recomputes the case weights $\Wc^{(l)}_b(m)$ (Definition~\ref{def:casew})
+  and, per chunk and non-empty $S$, evaluates
+  \[
+    \mle{R^{(l)}_S}\bigl(r^{*(l)}\bigr)
+    \;=\; \sum_{p}\;\eq\bigl(r^{*(l)},p\bigr)\,\eq\bigl(\rho^{(l)},p\bigr)\;
+          \tau^{(l)}_S(p),
+  \]
+  an $O(2^{t}W)$ dot product per table against the position-wise product
+  tensor $\eq(r^{*},\cdot)\odot\eq(\rho,\cdot)$ (which factors per variable,
+  as in the base scheme's \code{q\_rowbit} step). Building all case powers
+  costs $O(2^{t}W\,2^{j}L)$ fixed-base exponentiations, and the
+  $2^{j}-1$ tables $\tau_S$ follow by the fast zeta transform
+  ($O(j2^{j})$ additions per position). This is the base scheme's only
+  non-succinct step, scaled by $2^{j}-1$ (it was one table per chunk);
+\item recomputes the roots $\alpha^{u^{(l)}_c}$ from the sent folds and
+  absorbs them; checks every $u^{(l)}_c < 2^{\cw+t+W}$ (\code{ChunkRange},
+  unchanged --- Lemma~\ref{lem:familymag});
+\item evaluates $\eq(\zeta_l,\chi)$ and closes the discharge as above;
+\item accepts iff the read-off matches the combined target:
+  \begin{equation}\label{eq:familyreadoff}
+    \sum_{c\in\bits^{s}}\eq\bigl(c,r^{\mathrm{col}}\bigr)
+       \sum_{l<L}2^{\cw l}\,u^{(l)}_c
+    \;\equiv\; T \;=\;\sum_i\gamma_i c_i \pmod q .
+  \end{equation}
+\end{enumerate}
+
+\begin{protocol}[the family batch, summary]\label{prot:family}
+\leavevmode
+\begin{enumerate}[leftmargin=1.7em,itemsep=1.5pt]
+\item Absorb the commitment root and the claim list $(L_i,r_i,c_i)_{i\in[k]}$
+  (shared $r^{\mathrm{col}}$ enforced); draw $\gamma\gets\Fq^{k}$; set
+  $T=\sum_i\gamma_ic_i$.
+\item Both sides build the case weights $\Wc_b(m)$ and their chunks
+  (Definition~\ref{def:casew}).
+\item Per chunk $l$: run \textbf{one} merged forest with the
+  $2^{j}$-case leaves \eqref{eq:familyleaf}; prover sends the folds
+  $u^{(l)}$; roots recomputed and absorbed; GKR exit
+  $(\rho^{(l)},\xi^{(l)})$.
+\item Per chunk: the multi-channel presum \eqref{eq:presumid} over the
+  \emph{active} channels (identically-zero $\tau_S$ elided,
+  Proposition~\ref{prop:vanish}), exits
+  $\mu^{(l)}_S$ at $\zeta_l=(r^{*(l)},\xi^{(l)})$.
+\item Draw $\eta\gets\K$ per active monomial claim; run the discharge
+  \eqref{eq:discharge}, exiting at $\le j$ openings at $\chi$.
+\item Batch all residual openings into one ring-switch + recursive Ligerito
+  opening.
+\item Verifier checks: transcripts; $\mle{R_S}$ evaluations; range checks;
+  read-off \eqref{eq:familyreadoff} against $T$.
+\end{enumerate}
+\end{protocol}
+
+%============================================================================
+\section{Security}\label{sec:security}
+
+\subsection{Completeness}
+
+\begin{theorem}[completeness]\label{thm:complete}
+If all $k$ claims hold, the honest prover makes the verifier of
+Protocol~\ref{prot:family} accept with probability 1.
+\end{theorem}
+
+\begin{proof}
+All transcript checks are exact identities for the honest prover (forest,
+presum \eqref{eq:presumid} --- which is Lemma~\ref{lem:zeta} evaluated at the
+exit point --- and discharge \eqref{eq:discharge}, whose left side equals
+$\sum\eta_{l,S}\,\mle{M_S}(\zeta_l)=\sum\eta_{l,S}\,\mu^{(l)}_S$ on committed
+data); the range checks hold by Lemma~\ref{lem:familymag}. For the read-off:
+the chunks reassemble exactly over $\Z$,
+$\sum_{l}2^{\cw l}\,u^{(l)}_c
+ = \sum_{b,\omega}2^{\omega}\,\Wc_b\bigl(m((b,\omega),c)\bigr)$,
+so, mod $q$,
+\begin{align*}
+  \sum_{c}\eq(c,r^{\mathrm{col}})\sum_{l}2^{\cw l}u^{(l)}_c
+  &\equiv \sum_{c}\eq(c,r^{\mathrm{col}})\sum_{b,\omega}2^{\omega}
+     \sum_i \gamma_i\,w_{i,b}\,L_i\bigl(m((b,\omega),c)\bigr) \\
+  &= \sum_i \gamma_i \sum_{b,c} w_{i,b}\,\eq(c,r^{\mathrm{col}})
+     \sum_{\omega}2^{\omega}\, a_i[(b,\omega),c] \\
+  &\equiv \sum_i \gamma_i\,\MLE[\INT(a_i)](r_i)
+   \;=\; \sum_i\gamma_i c_i \;=\; T,
+\end{align*}
+using $L_i(m(p,c))=a_i[p,c]$ (the definition of $a_i$),
+$w_{i,b}\equiv\eq(b,r^{\mathrm{row}}_i)$, and the shared column point.
+\end{proof}
+
+\subsection{The \texorpdfstring{$\gamma$}{gamma}-combination}
+
+\begin{lemma}[$\gamma$-combination]\label{lem:gamma}
+Let $q$ be prime and $\delta=(\delta_1,\dots,\delta_k)\in\Fq^{k}$ be fixed and
+nonzero, and let $\gamma_1,\dots,\gamma_k$ be drawn independently and
+uniformly from $\Fq$. Then
+$\Pr\bigl[\sum_i\gamma_i\delta_i = 0\bigr] = 1/q$. If instead $\gamma_1:=1$
+and $\gamma_2,\dots,\gamma_k$ are uniform, the probability is $0$ when
+$\delta_2=\dots=\delta_k=0$ and $1/q$ otherwise; if
+$\gamma_i:=\gamma^{\,i-1}$ for one uniform $\gamma$, it is at most
+$(k-1)/q$.
+\end{lemma}
+
+\begin{proof}
+Pick $i_0$ with $\delta_{i_0}\ne 0$ and condition on the other coordinates:
+$\gamma_{i_0}=-\delta_{i_0}^{-1}\sum_{i\ne i_0}\gamma_i\delta_i$ has exactly
+one solution in the field $\Fq$, so the conditional probability is exactly
+$1/q$; averaging preserves it. The pinned-$\gamma_1$ case is the same
+computation when some $\delta_i\ne0$ for $i\ge2$, and the equation
+$\delta_1=0$ is unsatisfiable otherwise. The powers case is
+Schwartz--Zippel on the nonzero univariate
+$\sum_i\delta_i\gamma^{\,i-1}$ of degree $\le k-1$.
+\end{proof}
+
+\begin{remark}[the working estimate $k/q$ was loose]\label{rem:kq}
+The session record budgeted $k/q$ for this step. The exact cost is $1/q$ for
+independent draws: a \emph{single} linear form carries all $k$ discrepancies
+at once, so no union bound over claims is needed. The $k/q$ figure is safe but
+pays a factor $k$ for nothing; the only variant that genuinely costs more is
+the powers-of-one-$\gamma$ compression ($(k-1)/q$), which buys $k-1$ fewer
+transcript draws --- at $\lvert q\rvert\approx2^{100}$ either choice is
+irrelevant in the total budget, and we state the theorem with independent
+draws.
+\end{remark}
+
+\begin{remark}[$q$ prime]\label{rem:qprime}
+The base scheme's read-off tolerates any characteristic-$\ne2$ ring. The
+batched construction uses $\Fq$ as a \emph{field} in Lemma~\ref{lem:gamma};
+for composite $q$ the bound degrades to $1/p_{\min}$ ($p_{\min}$ the smallest
+prime factor: an adversary can hide all discrepancies in the ideal
+$(q/p_{\min})$). We therefore require $q$ prime --- true of the reference
+$2^{100}-15$.
+\end{remark}
+
+\subsection{What changed, and what is inherited}
+
+Table~\ref{tab:inherit} is the audit the construction's soundness reduces to:
+every row marked \emph{unchanged} is consumed by the proof of
+Theorem~\ref{thm:sound} as a black box with the base scheme's guarantee,
+justified by the cited lemma.
+
+\begin{table}[ht]\centering\small
+\begin{tabular}{@{}p{0.21\textwidth}p{0.30\textwidth}p{0.40\textwidth}@{}}
+\toprule
+\textbf{Component} & \textbf{Base scheme} & \textbf{Family scheme --- why it survives}\\
+\midrule
+Commitment, packing, Merkle & flock RS + Merkle & Unchanged; $m_i$ are sub-columns of the one committed matrix.\\[2pt]
+Weight values & $\eq(b,r)\bmod q\in[0,q)$ & $\Wc_b(m)\in[0,q)$ per case; admissible by weight-agnosticism (Lemma~\ref{lem:agnostic}).\\[2pt]
+Chunking & $\cw=127{-}t{-}W$, $L=\lceil q_{\mathrm{bits}}/\cw\rceil$ & Identical, applied per case value (Definition~\ref{def:casew}).\\[2pt]
+Leaf layer & affine in 1 bit \eqref{eq:baseleaf} & multilinear in $j$ bits \eqref{eq:leafzeta}; Lemma~\ref{lem:zeta}. $\K$-valued either way.\\[2pt]
+Forest above leaves, lazy/merged GKR & product trees + layer sumchecks & Unchanged --- consumes leaf values only; same error $\varepsilon_{\mathrm{forest}}$ per chunk.\\[2pt]
+Sent folds, roots, range check & $u^{(l)}_c<2^{127}$, $\alpha$-injectivity & Identical bound and argument (Lemma~\ref{lem:familymag}); one fold vector for the whole family.\\[2pt]
+Presum & 1 channel, degree 2 & $2^{j}{-}1$ channels, each degree 2, same driver \eqref{eq:presumid}; same per-round error.\\[2pt]
+\emph{Discharge} & --- & \textbf{New}: degree-$(j{+}1)$ eq-sumcheck over $n$ variables \eqref{eq:discharge}; forced by Lemma~\ref{lem:noncommute}.\\[2pt]
+Openings & $L$ claims, one recursive open & $\le jL+j$ claims at $L{+}1$ points, same batched opener; error $\varepsilon_{\mathrm{open}}$.\\[2pt]
+Read-off & against $c$ & against $T=\sum\gamma_ic_i$ \eqref{eq:familyreadoff}; Lemma~\ref{lem:gamma}.\\[2pt]
+Verifier tables & 1 per chunk, $O(2^tW)$ & $2^{j}{-}1$ per chunk, same shape (\S\ref{sec:verifier}).\\
+\bottomrule
+\end{tabular}
+\caption{The inheritance audit. Only the boldfaced row is a new proof
+component.}\label{tab:inherit}
+\end{table}
+
+\subsection{Soundness}
+
+\begin{theorem}[soundness of the family batch]\label{thm:sound}
+Model the commitment as binding with a knowledge-sound batched opening
+(error $\varepsilon_{\mathrm{open}}$), and let $m_1,\dots,m_j$ be the
+committed columns it determines. Suppose that for some $i^{\ast}$,
+$\MLE[\INT(L_{i^{\ast}}(m_1,\dots,m_j))](r_{i^{\ast}})\not\equiv
+c_{i^{\ast}} \pmod q$. Then the verifier of Protocol~\ref{prot:family}
+accepts with probability at most
+\[
+  \frac1q
+  \;+\; L\,\bigl(\varepsilon_{\mathrm{forest}}
+                +\varepsilon_{\mathrm{presum}}\bigr)
+  \;+\; \varepsilon_{\eta}
+  \;+\; \varepsilon_{\mathrm{disch}}
+  \;+\; \varepsilon_{\mathrm{open}},
+\]
+\[
+    \varepsilon_{\mathrm{presum}} \le 2(t+w_\nu)/|\K|,
+    \qquad
+    \varepsilon_{\eta} \le 1/|\K|,
+    \qquad
+    \varepsilon_{\mathrm{disch}} \le (j{+}1)\,n/|\K|,
+\]
+over the verifier's randomness, where $\varepsilon_{\mathrm{forest}}$ is the
+base scheme's per-chunk merged-forest error. (With $|\K|=2^{128}$ and
+$q\approx2^{100}$, the bound is dominated by $1/q$.)
+\end{theorem}
+
+\begin{proof}
+The $\gamma$'s are drawn after the root and all $(L_i,r_i,c_i)$ are absorbed,
+so the true values $y_i:=\MLE[\INT(L_i(m))](r_i)$ and the discrepancies
+$\delta_i:=y_i-c_i$ are fixed before the draw, and $\delta\ne 0$ by
+hypothesis. By Lemma~\ref{lem:gamma}, except with probability $1/q$ the
+combined statement is false:
+$Y:=\sum_i\gamma_iy_i\not\equiv T\pmod q$. Condition on this.
+
+It remains to bound the probability that the verifier accepts a false
+combined statement; we walk the chain back to front, charging each reduction
+its error once.
+\emph{(i)} If every $u^{(l)}_c$ sent equals the true fold of
+Lemma~\ref{lem:familymag} for the committed $m$, then by the completeness
+computation (Theorem~\ref{thm:complete}, which used only the definition of
+the true folds) the read-off \eqref{eq:familyreadoff} evaluates to
+$Y\ne T$ and the verifier rejects. So acceptance requires some sent fold to
+differ from the true one.
+\emph{(ii)} A sent fold in range that differs from the true fold has
+$\alpha^{\tilde u}\ne\alpha^{u}$ (Lemma~\ref{lem:inject} +
+Lemma~\ref{lem:familymag}, both folds in $[0,2^{127})$); hence the
+recomputed root differs from the product of the \emph{true} leaves
+\eqref{eq:familyleaf}. The merged GKR forest then either rejects, or reduces
+to a \emph{false} leaf-MLE exit claim
+$e^{(l)}\ne\mle{\mathrm{leaf}^{(l)}}(\rho^{(l)},\xi^{(l)})$, except with
+probability $\varepsilon_{\mathrm{forest}}$ per chunk.
+\emph{(iii)} A false exit claim survives the presum only if some exit
+$\mu^{(l)}_S\ne\mle{M_S}(\zeta_l)$ (the true values satisfy
+\eqref{eq:presumid} with equality --- Lemma~\ref{lem:zeta} --- so if all
+exits are true the last-round check fails), except with probability
+$\varepsilon_{\mathrm{presum}}\le\sum_{\text{rounds}}\deg/|\K|
+= 2(t+w_\nu)/|\K|$ per chunk.
+\emph{(iv)} A false singleton exit is a false committed opening, caught by
+the opener except with probability $\varepsilon_{\mathrm{open}}$. A false
+monomial exit makes the discharge's right side of \eqref{eq:discharge}
+differ from $\sum\eta_{l,S}\,\mle{M_S}(\zeta_l)$, except with probability
+$\varepsilon_{\eta}\le 1/|\K|$ over the $\eta$-draw (a nonzero
+$\K$-linear form in the $\eta$'s, drawn after the $\mu$'s are absorbed);
+then the discharge sumcheck of the true polynomial
+$\sum\eta\,\eq(\zeta_l,x)\prod\mle{m_i}(x)$ has a false claimed sum, so it
+either rejects or ends in a false evaluation at $\chi$, except with
+probability $\varepsilon_{\mathrm{disch}}\le (j{+}1)n/|\K|$; a false final
+evaluation is a false combination of committed openings
+($\eq(\zeta_l,\chi)$ verifier-computed), again caught up to
+$\varepsilon_{\mathrm{open}}$.
+Summing the exceptional events over the $L$ chunks and the single discharge
+and opening gives the stated bound; the opening error is charged once because
+all residual claims batch into one opening call.
+\end{proof}
+
+\begin{remark}[Fiat--Shamir]\label{rem:fs}
+As in the parent note, the theorem is about the interactive reduction with
+ideal subprotocols; non-interactive deployment additionally needs
+round-by-round soundness of the composed protocol under Fiat--Shamir. The
+family construction adds two draw sites ($\gamma$ after the statement;
+$\eta$ after the presum exits) and one sumcheck; each is of the standard
+round-by-round shape, but we have not re-derived the composed statement ---
+the same caveat the base scheme already carries \cite{Xnote,F2Zdesign}.
+\end{remark}
+
+%============================================================================
+\section{Special cases}\label{sec:special}
+
+\subsection{Multi-point batching: one column, many row points}
+
+\begin{corollary}[multi-point batching]\label{cor:multipoint}
+Let all $k$ claims be on the \emph{same} committed column ($j=1$,
+$L_i=\mathrm{id}$): $\MLE[\INT(m_1)](r_i)=c_i$ with shared
+$r^{\mathrm{col}}$ and arbitrary $r^{\mathrm{row}}_i$. Then
+Protocol~\ref{prot:family} degenerates to the \emph{base} protocol run with
+the combined weight vector
+\[
+  w'_b := \Bigl(\sum_i \gamma_i\,\eq\bigl(b,r_i^{\mathrm{row}}\bigr)\Bigr)\bmod q
+\]
+and target $T=\sum_i\gamma_ic_i$: two cases, one channel, \emph{no}
+discharge, one forest. Soundness error: the base scheme's plus $1/q$.
+\end{corollary}
+
+\begin{proof}
+With $j=1$ the case function has two values, $\Wc_b(0)=0$ and
+$\Wc_b(1)=w'_b$, so the leaf \eqref{eq:familyleaf} is exactly the base leaf
+\eqref{eq:baseleaf} with weights $w'$; the only non-empty channel is
+$S=\{1\}$ with $\tau_{\{1\}}=1+\alpha^{2^{\omega}w'^{(l)}_b}$, i.e.\ the base
+presum table. Theorems~\ref{thm:complete} and~\ref{thm:sound} apply with the
+discharge terms vacuous.
+\end{proof}
+
+\begin{remark}[implementable against today's API]\label{rem:api}
+Because the deployed prover and verifier already take the row-weight vector
+as an explicit argument (Lemma~\ref{lem:agnostic}), Corollary~\ref{cor:multipoint}
+needs \emph{no} new proving machinery: a wrapper that (i) enforces the
+Fiat--Shamir ordering of \S\ref{sec:weights}, (ii) builds $w'$ and $T$, and
+(iii) calls \code{prove/verify\_mle\_eval\_mod\_q\_ligerito} verbatim,
+turns today's $k$ forests for $k$ row-points into one. This is the free first
+step of the prototype plan.
+\end{remark}
+
+\subsection{Affine forms, complements, and
+\texorpdfstring{\code{complement\_elision}}{complement\_elision}}\label{sec:affine}
+
+Let the $L_i$ be affine: $L_i(m)=\ell_i(m)\oplus\epsilon_i$ with $\ell_i$
+linear and $\epsilon_i\in\bits$. Definition~\ref{def:casew} goes through
+unchanged; what breaks is only $\Wc_b(\mathbf 0)=0$, hence
+$\tau_\varnothing=1$, in Lemma~\ref{lem:zeta}.
+
+\begin{proposition}[affine forms are constants, not channels]\label{prop:affine}
+With affine $L_i$, \eqref{eq:leafzeta} holds with the constant term $1$
+replaced by $\tau^{(l)}_\varnothing(p)=\alpha^{2^{\omega}\Wc^{(l)}_b(\mathbf 0)}$,
+and the presum identity \eqref{eq:presumid} becomes
+\[
+  e^{(l)} \;=\; \widehat{R^{(l)}_\varnothing}
+  \;+\; \sum_{\varnothing\ne S}\sum_p R^{(l)}_S[p]\,m^{(l)}_{S,\xi}[p],
+  \qquad
+  \widehat{R^{(l)}_\varnothing}
+   := \sum_p \eq(\rho^{(l)},p)\,\tau^{(l)}_\varnothing(p),
+\]
+with $\widehat{R_\varnothing}$ verifier-computable by one more $O(2^tW)$
+table. The channel structure is otherwise governed by the \emph{linear parts}
+only: $\tau_S$ depends on the $\ell_i$ alone for $S\neq\varnothing$, and in
+particular a form with $\ell_i=0$ (a constant claim) contributes to no
+channel: for every $S\ni$ such an inert variable,
+$\tau_S=\sum_{T\subseteq S}\alpha^{(\mathrm{const})}=2^{|S|}\alpha^{(\mathrm{const})}=0$
+in characteristic 2.
+\end{proposition}
+
+\begin{proof}
+$\tau_\varnothing$ is the $T=\varnothing$ term of Lemma~\ref{lem:zeta}, and
+the constant-channel sum telescopes to $\widehat{R_\varnothing}$ times
+$\sum_c\eq(\xi,c)=1$ as in \eqref{eq:presumid}. For $S\ne\varnothing$:
+$\tau_S=\sum_{T\subseteq S}f(\mathbf1_T)$ is the $S$-th zeta coefficient,
+which vanishes whenever $f$ does not depend on some variable in $S$
+(pair each $T\not\ni i$ with $T\cup\{i\}$; the terms cancel in
+characteristic 2). An affine shift changes $f$'s values but not which
+variables it depends on --- that is determined by the $\ell_i$.
+\end{proof}
+
+The repository's \code{complement\_elision} is the extreme point: a claim on
+$\lnot x = x\oplus\mathbf 1$ against an existing claim on $x$ \emph{at the
+same row weights} needs no forest at all, because the all-ones column has the
+public evaluation
+$\MLE[\INT(\mathbf 1)](r) \equiv
+(2^{W}-1)\bigl(\sum_b w_b\bigr)\bigl(\sum_c e_c\bigr) \pmod q$,
+so the verifier derives $y_{\lnot x} = \MLE[\INT(\mathbf 1)](r) - y_x$ in the
+clear (the deployed check, at $W=1$). In the family framework this is the statement
+that the two claims' \emph{linear parts coincide}, so batching them adds no
+channel and the affine difference lands entirely in
+$\widehat{R_\varnothing}$-type public terms --- the construction strictly
+generalises the elision rather than replacing it: elide what is derivable in
+the clear, batch the rest.
+
+\subsection{Vanishing channels and channel elision}\label{sec:vanish}
+
+Proposition~\ref{prop:affine} exhibited one way a channel dies --- an inert
+variable. The prototype surfaced a second, \emph{generic} way, and with it a
+completeness requirement the original specification missed.
+
+\begin{proposition}[vanishing channels]\label{prop:vanish}
+Fix a chunk $l$ and a position $p$, and write
+$f(m)=\alpha^{2^{\omega}\Wc^{(l)}_b(m)}$ for the case function of
+\eqref{eq:familyleaf}. Then $\tau^{(l)}_S(p)$ is the $S$-monomial
+coefficient of the multilinear extension of $f$ (Lemma~\ref{lem:zeta}), so
+$\tau^{(l)}_S \equiv 0$ iff that monomial is absent from $f$ at every
+position. Beyond inert variables (Proposition~\ref{prop:affine}), this
+happens whenever $\Wc$ \emph{factors through a proper $\Ftwo$-linear
+quotient} of the case space: if $\Wc_b(m) = g_b(\sigma(m))$ for a linear
+surjection $\sigma:\bits^{j}\to\bits^{j'}$, $j'<j$, then $f = h\circ\sigma$
+and every $\tau_S$ with $S$ not in the image of $\sigma$'s monomial
+support vanishes identically. The motivating instance is a
+\emph{pure-XOR family} --- every claim on the same combination, e.g.\
+$k=1$, $j=2$, $L_1=m_1\oplus m_2$ (or several such claims at different row
+points): then $\Wc_b(1,0)=\Wc_b(0,1)$ and $\Wc_b(1,1)=0$, so
+$f$ is a function of $m_1\oplus m_2$ alone and
+\[
+  \tau_{\{1,2\}} \;=\; 1 + \alpha^{2^{\omega}\Wc^{(l)}_b(1,0)}
+                        + \alpha^{2^{\omega}\Wc^{(l)}_b(0,1)}
+                        + \alpha^{2^{\omega}\Wc^{(l)}_b(1,1)}
+  \;=\; 1 + A + A + 1 \;=\; 0
+\]
+identically, for every chunk and row. Note $\Wc$ here depends on
+\emph{both} variables --- this is not the inert case.
+\end{proposition}
+
+\begin{proof}
+The first claim is Lemma~\ref{lem:zeta} read as a statement about
+multilinear coefficients. For the quotient claim: a function of
+$\sigma(m)$ with $\sigma$ linear has a multilinear expansion supported on
+the monomials of the functions $m\mapsto$ coordinates of $\sigma(m)$ and
+their products; concretely, for $\sigma(m)=m_1\oplus m_2$, any
+$g(m_1\oplus m_2)$ has AND-coefficient
+$g(0)+g(1)+g(1)+g(0)=0$ in characteristic~2, which is the displayed
+computation.
+\end{proof}
+
+\begin{remark}[elision is a completeness requirement]\label{rem:elision}
+The realisation derives each channel's exit $\mu^{(l)}_S$ from the presum's
+per-channel closing value by dividing by
+$\mle{R^{(l)}_S}(r^{*(l)})$; for a vanishing channel that denominator is
+$0$ and the verifier would reject an \emph{honest} proof (the prototype
+found this as a live failure: a lone XOR claim, and equally a multi-point
+family on one XOR combination, was rejected with the \code{RHatZero}
+error). The fix, now deployed (commit \texttt{8b3ef3e}): both parties
+compute the active channel set per chunk from the public case-weight
+tables --- $\tau^{(l)}_S$ is public data --- and elide the zero channels
+from the presum, the discharge, and the residual-opening set; every base
+column must appear in at least one claim (which pins the singleton
+channels up to negligible-probability $\gamma$-collisions, handled as
+\code{RHatZero} like any other zero-denominator event). Soundness is
+untouched --- an elided channel contributes $R_S\!\cdot m_S\equiv 0$ to
+\eqref{eq:presumid} --- and completeness for degenerate families is
+restored. The pure-XOR family is also a pleasing sanity check of
+\S\ref{sec:carries}: a family whose combined weight function has no AND
+content needs no carry channel, and the construction discovers this by
+itself.
+\end{remark}
+
+%============================================================================
+\section{Boundaries and negative results}\label{sec:boundaries}
+
+\subsection{Chunks do not collapse: a conservation law}\label{sec:conservation}
+
+Could a second RLC, across the $L$ chunk weight-sets of one claim, collapse
+the chunks the way the first collapsed the claims? No:
+
+\begin{remark}[bandwidth conservation]\label{rem:conservation}
+An exponent pass carries at most $\cw = 127-t-W$ weight bits
+(Lemma~\ref{lem:inject} is tight up to one bit: the fold must stay below
+$2^{127}$ and the sum over $2^{t}$ rows and $W$ word-bits uses the rest).
+A weight function that is mod-$q$ faithful --- distinguishes the $q$ possible
+targets of the claim it carries --- has $q_{\mathrm{bits}}$ bits of entropy
+per row. Hence any scheme in this family runs at least
+$\lceil q_{\mathrm{bits}}/\cw\rceil = L$ passes per \emph{weight function},
+and the only lever is the number of weight functions. The claim-RLC of
+\S\ref{sec:constr} legitimately compresses $k$ weight functions into one
+because $\Fq$-randomness reduced mod $q$ adds no entropy
+(\S\ref{sec:door}); a chunk-RLC gains nothing because
+$\bigl(\sum_l \gamma'_l\, W^{(l)}_b\bigr)\bmod q$ is again a $[0,q)$-valued
+weight function --- it needs the same $L$ chunks it was trying to remove.
+The circularity is exact: chunking is the statement that one pass holds
+$\cw$ bits; no reshuffling of $q_{\mathrm{bits}}$ bits of necessary
+entropy changes $\lceil q_{\mathrm{bits}}/\cw\rceil$. (There is a second,
+independent failure: the read-off \eqref{eq:readoff} needs the chunks in
+place-value relation $2^{\cw l}$, and per-chunk targets are not part of the
+statement --- a randomized chunk combination is not even well-posed against
+$T$.) This is a heuristic law about \emph{this} pipeline, not a lower bound
+for all protocols; we state it to mark where the construction's wins come
+from --- fewer weight functions, never more bits per pass.
+\end{remark}
+
+\subsection{Fully different points do not batch}\label{sec:mixed}
+
+\begin{proposition}[distinct column points entangle the tables]\label{prop:mixed}
+Suppose two claims have $r^{\mathrm{col}}_1\ne r^{\mathrm{col}}_2$. Pushing
+both into one weight function forces position dependence on the column:
+$\Wc_{b,c}(m) = \bigl(\sum_i\gamma_i\,w_{i,b}\,e_{i,c}\,L_i(m)\bigr)\bmod q$
+with $e_{i,c}=\eq(c,r_i^{\mathrm{col}})\bmod q$. Two independent obstructions
+follow.
+\emph{(i) Verifier succinctness.} The presum tables $R_S$ and the verifier's
+final evaluations $\mle{R_S}(\cdot)$ become $(b,\omega,c)$-indexed with no
+row/column tensor split: the $O(2^{t}W)$ step of \S\ref{sec:verifier}
+becomes $O(2^{n})$ --- the verifier reads the whole cube.
+\emph{(ii) The reduction destroys the rank structure.} Unreduced,
+$\Wc_{b,c}$ is a sum of $k$ rank-one terms $\gamma_iw_{i,b}\cdot e_{i,c}$ and
+the leaf would factor as $k$ gathers,
+$\prod_i\alpha^{\gamma_iw_{i,b}e_{i,c}L_i(m)}$ --- but then the exponents are
+unreduced and Proposition~\ref{prop:intrlc}'s budget failures return
+(magnitude $k\cdot q\cdot$ headroom, or reduce each term separately and pay
+$\approx k$ chunks). Reduced, $\alpha^{(\sum_i\cdots)\bmod q}$ does not split
+over $i$; the $2^{t}W$-sized shared tables that make both prover leaf-gathers
+and verifier evaluation cheap no longer exist.
+\end{proposition}
+
+\begin{proof}
+(i) is immediate from $\tau_S$ acquiring a $c$-index: the factorisation of
+$\sum_{p,c}\eq(\cdot,p)\eq(\cdot,c)\,\tau_S(p)$ used in \S\ref{sec:verifier}
+required $\tau_S$ constant in $c$. (ii): mod-$q$ reduction is not a
+homomorphism from $(\Z,+)$ landing in exponents of a fixed $\alpha$ ---
+$\alpha^{(x+y)\bmod q}\ne\alpha^{x\bmod q}\alpha^{y\bmod q}$ in general ---
+so the sum must be materialised per $(b,c)$ before exponentiation.
+\end{proof}
+
+Note the symmetry: \emph{same row point, different column points} is already
+free in the base scheme --- the folds $u$ depend only on the row weights, so
+one forest's fold vector serves any number of column read-offs
+\eqref{eq:readoff}, one per claim, in the clear. The construction of
+\S\ref{sec:constr} is the mirror image (different row points, shared column
+point). What does not exist today is a batching for families mixed in
+\emph{both} coordinates beyond partitioning into shared-column-point groups;
+see \S\ref{sec:open}.
+
+\subsection{Carries are conserved}\label{sec:carries}
+
+It is worth being precise about what the construction did \emph{not} do: it
+did not make $\INT(a_1\oplus a_2)$ derivable from the other two claims ---
+Proposition~\ref{prop:carry} forbids that. The information content of the
+carry vector $M_{\{1,2\}}=a_1\wedge a_2$ (generally: of every monomial
+$M_S$, $|S|\ge2$) is exactly what the $|S|\ge 2$ presum channels carry, and
+the discharge \eqref{eq:discharge} is where it is paid for: a degree-$(j+1)$
+Hadamard-type argument over the cube. The ledger balances as follows.
+\begin{itemize}[leftmargin=1.6em,itemsep=1pt]
+\item \emph{Committed-carry architectures} (the char-2 SHA provers; Binius
+  \cite{Binius}) commit the AND/carry columns and prove a bit relation ---
+  paying commitment bytes plus a zerocheck, in the cheap field.
+\item \emph{Today's F2Z} pays $k$ forests: the carry information is
+  recomputed inside every derived claim's exponent fold --- the most
+  expensive venue available.
+\item \emph{The family batch} pays one degree-$(j{+}1)$ sumcheck in $\K$:
+  no new commitment (the monomials are virtual), no forest, and the cost is
+  a small multiple of a linear pass over the cube (\S\ref{sec:cost}).
+\end{itemize}
+The construction's gain is a \emph{relocation} of conserved information to
+the cheapest venue that can certify it, mirrored by the weight-side
+observation of \S\ref{sec:leaves} that $L_3(1,1)=0$ deletes the XOR claim's
+contribution exactly where the carry cancels.
+
+\subsection{Case tables scale \texorpdfstring{$2^{j}$}{2\^{}j}}\label{sec:scaling}
+
+The prover's leaf gathers select among $2^{j}$ cases per position, and the
+verifier builds $2^{j}-1$ zeta tables; both are exponential in $j$. For the
+motivating instances ($j\le 4$: $16$-case tables, the size the repository's
+LUT machinery already runs) this is the cheap regime. For a wide
+$\Ftwo$-linear layer --- hundreds of derived vectors over dozens of base
+columns --- one would instead \emph{cluster} the relation matrix into groups
+of low support ($j_{\mathrm{grp}}\le 4$, say), batch within groups by this
+construction, and pay one forest per group. The optimal clustering (minimise
+$\sum_{\mathrm{grp}}L\cdot\mathrm{forest}(j_{\mathrm{grp}})$ subject to
+covering the relation set) is a hypergraph partitioning problem we leave
+open (\S\ref{sec:open}).
+
+%============================================================================
+\section{Cost model}\label{sec:cost}
+
+All numbers in this section are \textbf{estimates pending the prototype} ---
+the companion plan is \code{docs/rlc-family-proto-prompt.md} --- and the
+baseline columns are the
+repository's measured numbers (Apple M4 16\,GB, \code{-C target-cpu=native},
+LTO + \code{unchecked}, fast profile, medians; README reference tables and
+the dated 2026-07-26 notes \cite{F2Zreadme}). Reference shape $n=28$
+($t=17$, $s=11$, $W=1$, $L=1$, so $n$ here $=t+s$): one-claim prove
+$\approx0.55$\,s, of which forest+presum $\approx0.50$\,s and the open phase
+$\approx0.05$\,s; verify $4.4$\,ms; proof $237.8$\,KiB (forest-side
+$50.7$ --- of which the fold vector $u$ is $2^{s}\cdot16\,\mathrm B=32$\,KiB
+--- ring-switch $2.0$, Ligerito $181.5$). At $n=30$: prove
+$\approx2.35$\,s after the 2026-07-26 levers, $\gtrsim 94\%$ forest.
+
+\emph{Modelling assumptions} (each checkable in isolation by the prototype):
+\begin{enumerate}[label=\textup{(A\arabic*)},leftmargin=2.4em,itemsep=1pt]
+\item The family forest costs the base forest times a leaf-round factor. The
+  $2^{j}$-case leaves double the case-table bytes and the interleaved bit
+  streams at $j=2$ (gather counts unchanged), touching the leaf-adjacent
+  buckets --- at $n=28$ these (\code{leaf\_r1}, \code{leaf3\_r2/r3}, the
+  16-case rounds, \code{bitgen}, parts of \code{build\_levels}) are
+  ${\approx}45$--$55\%$ of the forest --- by an assumed $1.1$--$1.3\times$:
+  forest factor ${\approx}1.05$--$1.3\times$. The size-gating lessons
+  (\code{F2Z\_LEAF\_A2\_FACTORED}, \code{F2Z\_LUT\_PRFM},
+  \code{F2Z\_T4\_PRFM}) say the constant is regime-dependent; this is the
+  least certain assumption.
+\item The discharge is implemented with bit-resident early rounds (the
+  monomials are ANDs of bit rows; the first rounds are LUT/popcount-style
+  passes, as \code{F2Z\_RS\_FAST} does for the ring-switch), so it costs a
+  small number of streaming passes over $2^{n}$ bits plus a
+  $\K$-materialised tail: ${\approx}0.2$--$0.6$ of one forest body. A naive
+  $\K$-materialised discharge ($16\,\mathrm B\cdot2^{n}$ tables ---
+  $4.3$\,GB at $n=28$) would cost \emph{multiple} forest bodies and is out
+  of scope by construction.
+\item The presum scales by the channel count ($\times(2^{j}-1)$) on tables of
+  size $2^{t+w_\nu}$ --- ${\sim}1$\,ms-scale at the reference shapes ---
+  and the open phase grows by the extra residual claims
+  (${\le}\,jL{+}j$ vs.\ $L$): a few ms.
+\end{enumerate}
+
+\begin{table}[ht]\centering\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+$n=28$, $W=1$, $L=1$ & 1 claim (measured) & XOR triple, today & XOR triple, family (est.)\\
+\midrule
+forests               & $0.50$\,s          & $3\times0.50=1.50$\,s & $(1.05$--$1.3)\times0.50 = 0.53$--$0.65$\,s\\
+presum(s)             & ${\sim}1$\,ms      & ${\sim}3$\,ms          & ${\sim}3$\,ms\\
+discharge             & ---                & ---                    & $0.10$--$0.30$\,s \ (A2)\\
+open (shared)         & $0.05$\,s          & ${\sim}0.06$\,s        & ${\sim}0.06$\,s\\
+\midrule
+prove total           & $0.55$\,s          & ${\approx}1.56$\,s \ (${\approx}2.8\times$) & $0.69$--$1.01$\,s \ (${\approx}1.3$--$1.8\times$)\\
+\midrule
+sent folds $u$        & $32$\,KiB          & $96$\,KiB              & $32$\,KiB\\
+proof total           & $238$\,KiB         & ${\approx}345$\,KiB    & ${\approx}255$\,KiB\\
+verify                & $4.4$\,ms          & ${\approx}9$--$11$\,ms & ${\approx}7$--$10$\,ms\\
+\bottomrule
+\end{tabular}
+\caption{Worked estimate, XOR triple at $n=28$. ``Today'' = the batched
+virtual-XOR path (shared commit and open, one forest body per claim,
+per-claim $u$); ``family'' = Protocol~\ref{prot:family}. Proof-size deltas:
+the family sends \emph{one} $u$ vector and one forest transcript
+($-{\approx}100$\,KiB vs.\ today's triple), and adds two extra presum
+channels (${\approx}3.5$\,KiB), the discharge transcript
+($n$ rounds $\times\,(j{+}2)$ $\K$-elements ${\approx}1.9$\,KiB), and
+${\approx}3$ extra ring-switch blocks (${\approx}6$\,KiB). Verify: the
+$O(2^{t}W)$ table step runs $2^{j}{-}1=3$ tables instead of $3$ separate
+claims' one each --- a wash --- and the discharge verification is
+$O(n)$-round, ms-free. At $n=30$ the same model gives
+${\approx}6.8$\,s $\to$ $2.9$--$4.4$\,s (est.).}\label{tab:cost}
+\end{table}
+
+Three honest caveats. First, (A1)'s constant is the same kind of number the
+2026-07-26 size-gating sessions showed to flip sign across cache regimes;
+only the A/B protocol of the repository (alternated in-window pairs,
+memory-fresh box at $n\ge28$) will settle it. Second, (A2) assumes
+engineering that does not exist yet; the discharge's memory behaviour
+(bit-resident early rounds, factored $\eq$ tensors --- $L{+}1$ of them in the
+multi-chunk case) is a prerequisite at $n\ge 28$, not an optimisation.
+Third, the gain degrades gracefully in $k$ and $j$: for $k$ claims in a
+$j$-dimensional family the model predicts
+$\bigl[(1.05\text{--}1.3) + (0.2\text{--}0.6)\bigr]$ forest bodies against
+$k$, i.e.\ the break-even is already at $k=2$ (marginal at the pessimistic
+end of both bands), and the saving approaches $k\times$ for wide families
+sharing a small basis.
+
+\subsection{Measured: the prototype confirms the band}\label{sec:measured}
+
+The prototype was built the same day (Phase 1 eager correctness
+\texttt{8fbd155}; the lazy $2^{j}$-case forest, a pure re-wiring of the
+deployed \code{Pair2}/\code{T4} kernels with case-power tables, pinned
+byte-identical to the eager reference, \texttt{4dd5df9}; the discharge
+realisation of Remark~\ref{rem:dischargeleaf}, \texttt{3fa3011}; channel
+elision, \texttt{8b3ef3e}). Measurement harness: \code{examples/rlc\_ab.rs}
+--- the XOR triple against, on \emph{one} commitment and statement,
+(\code{single}) one claim through the deployed claims-only virtual-XOR path,
+(\code{vx3}) all three through that path's batched forest, and
+(\code{ind3}) three independent proofs. Apple M-series $16$\,GB,
+repository protocol (alternated in-window, medians of 5; $n=28$ of 3);
+layout $\log_2(\text{cols})=2$, $W=1$, x-tensor split $t'\approx s$, $L=1$.
+Prove times in ms (ratios to \code{single}):
+
+\begin{center}\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+$n$ & \code{single} & family (\code{rlc3}) & \code{vx3} & \code{ind3}\\
+\midrule
+22 & $26.8$ & $\mathbf{21.5}$ \;($0.80\times$)$^{\dagger}$ & $37.4$ \;($1.39\times$) & $69.8$ \;($2.60\times$)\\
+24 & $33.3$ & $\mathbf{58.7}$ \;($1.76\times$) & $84.5$ \;($2.54\times$) & $110.8$ \;($3.33\times$)\\
+26 & $78.3$ & $\mathbf{146.7}$ \;($1.87\times$) & $234.6$ \;($3.00\times$) & $239.6$ \;($3.06\times$)\\
+28 & $232.5$ & $\mathbf{405.2}$ \;($1.74\times$) & $851.5$ \;($3.66\times$) & $707.9$ \;($3.04\times$)\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent The predicted $1.3$--$1.8\times$-vs-$3\times$ regime is
+\textbf{confirmed at every forest-dominated shape}; proofs are
+$135/182/249/341$\,KB against $169/248/378/602$ (\code{vx3}) and
+$384/524/719/1000$ (\code{ind3}). Phase decomposition at $n=26$ (per
+prove): the one $2^{j}$-case forest costs $59.5$\,ms against the batched
+baseline's $182.7$ ($3.1\times$; $k=3$ pads to $2^{\lceil\log_2
+k\rceil}=4$ tree-sets) and ${\approx}138$ for three independent forests
+--- the $2^{j}$-case leaf overhead is ${\approx}1.3\times$ one claim's
+forest, inside (A1)'s band --- and the discharge costs $17.1$\,ms
+${\approx}0.29$ forest-equivalents, inside (A2)'s band \emph{after} the
+bit-resident realisation (Remark~\ref{rem:dischargeleaf} records the two
+rejected realisations, including the $\K$-materialised one at
+$162.8$\,ms). Three measurement footnotes. $^{\dagger}$The $n=22$
+sub-$1\times$ entry is the tail-dominated regime --- the family's own
+one-claim proof costs $19.9$\,ms, so two \emph{extra} claims cost
+${\sim}1$\,ms --- plus a few ms of \emph{Fiat--Shamir grinding luck} in
+the baseline: the deployed Ligerito configs grind query/fold
+proof-of-work whose nonce search length is a deterministic function of
+the transcript ($296{,}927$ blake3 tries for that statement against
+$165{,}526$ for the family's, identical on every repetition), so
+in-window medians cannot average it and small-$n$ comparisons must
+average over \emph{statements}. Second, the batched baseline's
+pad-to-power-of-two makes \code{vx3} $\approx$ or \emph{worse than}
+\code{ind3} at $n\ge26$ for $k=3$ --- the padded fourth tree-set costs
+the $1.33\times$ its shared tail saves. Third, a lone claim gains
+nothing from the family API (its single: $33.8$ vs $33.3$\,ms at
+$n=24$), and a lone XOR claim is cheaper through the virtual-XOR
+extraction path ($74.5$ vs $97.5$\,ms at $n=26$: extract-once plus a
+$1$-bit-affine forest beats the $4$-case forest): the family's win is
+strictly the $k\ge2$ amortisation this note is about.
+
+%============================================================================
+\section{Open questions}\label{sec:open}
+
+\begin{openproblem}[clustering wide linear layers]
+For a large $\Ftwo$-linear relation set over many base columns, choose the
+partition into $j\le j_{\max}$-support groups minimising total cost
+(\S\ref{sec:scaling}). Structure to exploit: shared basis columns across
+groups (their singleton openings merge), and affine parts (free,
+Proposition~\ref{prop:affine}).
+\end{openproblem}
+
+\begin{openproblem}[riding the forest]
+The discharge is one more $2^{n}$-scale streaming pass; the forest's own
+bottom layers stream the same bit data. Can the discharge's early
+(bit-resident) rounds fuse into the forest's leaf rounds --- one pass, two
+accumulators --- the way pass fusion already merged the fold and message
+passes (\code{F2Z\_EQF\_FUSE})? Sound\-ness is unaffected (the transcripts
+interleave but the challenge order of Protocol~\ref{prot:family} must be
+preserved: the discharge's $\eta$'s depend on all presum exits, so only the
+\emph{data} passes can fuse, not the rounds themselves --- this may cap the
+fusion at the table-build stage).
+\end{openproblem}
+
+\begin{openproblem}[constants of the $2^{j}$-case lazy leaf kernels]
+(A1) in \S\ref{sec:cost}: the $2^{j}$-case select is structurally the
+existing \code{LeafTables}/\code{Pair2}/\code{T4At} family with wider tables
+and $j$ interleaved bit streams. The size-gated table lessons (factored
+$\Delta\Delta$ tables, stash/T4 prefetch) predict the constant is a
+cache-regime function; measure per the repository protocol.
+\emph{Status: settled for $j=2$} --- the $4$-case leaf \emph{is} the
+deployed \code{Pair2TauSet} shape keyed by the two columns' bit streams,
+the $16$-case product level above it \emph{is} \code{T4Bits}, and the lazy
+family forest is a table re-wiring with zero kernel changes, byte-identical
+to the eager reference (\texttt{4dd5df9}); measured constant
+${\approx}1.3\times$ at $n=26$ (\S\ref{sec:measured}). The $8$/$16$-case
+\emph{leaf} rounds for $j\in\{3,4\}$ remain unbuilt (that path currently
+falls back to eager leaves).
+\end{openproblem}
+
+\begin{openproblem}[API interplay]
+Supersede or coexist with the batched and virtual-XOR paths? The family
+construction requires a shared column point and $\Ftwo$-relatedness;
+the virtual-XOR path requires neither. A claim planner would: elide what is
+clear-derivable (\code{complement\_elision},
+Proposition~\ref{prop:affine}), partition the rest by column point,
+family-batch within parts (Corollary~\ref{cor:multipoint} when $j=1$), and
+fall back to per-claim forests across parts. \emph{Measured inputs to the
+planner} (\S\ref{sec:measured}): within a shared-column-point
+$\Ftwo$-related part the family dominates the batched path on both time
+($21$--$52\%$) and size ($26$--$43\%$) from $k\ge2$; for $k=1$ the
+virtual-XOR path is the right tool (and the batched path's
+pad-to-power-of-two makes it worse than independent proofs at $k=3$,
+$n\ge26$ --- the planner should never batch-pad small $k$).
+\end{openproblem}
+
+\begin{openproblem}[mixed column points]
+Does any second randomisation level batch claim families with distinct
+column points, given Proposition~\ref{prop:mixed}? The obstruction is
+joint: verifier succinctness wants a row/column tensor split, mod-$q$
+reduction destroys the rank-$k$ split that would restore it. A scheme that
+re-introduces structure (e.g.\ column points on a shared small subcube, or a
+per-column-block RLC with $O(2^{s'})$ verifier tables) is not ruled out.
+\end{openproblem}
+
+\begin{openproblem}[zero knowledge]
+The base scheme is not ZK (the Ligerito opening reveals queried rows), so
+this is inherited, not introduced. The family construction adds two
+ZK-relevant surfaces: the sent fold vector $u$ (a deterministic function of
+the committed data and public weights --- already true today) and the
+discharge transcript. Any future masking of the base scheme must also mask
+the monomial channels.
+\end{openproblem}
+
+\begin{openproblem}[formal composition]
+Remark~\ref{rem:fs}: a round-by-round soundness statement for the composed
+protocol (forest + multi-channel presum + discharge + batched opening) under
+Fiat--Shamir, matching the deployed transcript order, has not been written
+for the base scheme either; the family adds the $\gamma$ and $\eta$ sites.
+\end{openproblem}
+
+%============================================================================
+\subsection*{Acknowledgements}
+
+The base construction is due to Lev Soukhanov (\texttt{levs57})
+\cite{Sou}; the F2Z realisation, the measurement corpus, and the working
+session that produced the family construction are recorded in the
+\texttt{f2z-pcs} repository \cite{F2Zreadme,F2Zdesign}.
+
+\begin{thebibliography}{9}\small
+
+\bibitem{Sou} L.~Soukhanov (\texttt{levs57}).
+\emph{Char 2 fieldswitch}. HackMD note,
+\url{https://hackmd.io/@levs57/rkQNcJWzMe}.
+
+\bibitem{Xnote} A.~Garreta.
+\emph{A Characteristic-2 Field Switch for $\F_p$ Multilinear Evaluations
+(the modulo-$p$ approach)}. Companion note, esp.\ \S9
+(``A one-round, characteristic-2 Brakedown instantiation'');
+\texttt{char2-fieldswitch-note/main.tex}.
+
+\bibitem{F2Zdesign} \emph{F2Z design notes}.
+\texttt{f2z-pcs} repository, \texttt{docs/DESIGN.md}.
+
+\bibitem{F2Zreadme} \emph{F2Z --- an integer-MLE-evaluation PCS over an
+$\F_2$ commitment}. \texttt{f2z-pcs} repository, \texttt{README.md}
+(reference tables; dated optimization notes of 2026-07-25/26).
+
+\bibitem{F2Zverifier} \emph{The F2Z verifier for the mod-$q$ opening, with
+Ligerito as a black box}. \texttt{f2z-pcs} repository,
+\texttt{docs/verifier-note/}.
+
+\bibitem{Flock} B.~B\"unz, R.~Rothblum, N.~Wang.
+\emph{Flock: Fast Proving for Batch Boolean Computations}. (The
+\texttt{flock-core} library backs F2Z's commitment and recursive Ligerito
+opening.)
+
+\bibitem{DP24} B.~E.~Diamond, J.~Posen.
+\emph{Polylogarithmic Proofs for Multilinears over Binary Towers}
+(ring-switching). ePrint 2024/504.
+
+\bibitem{Binius} B.~E.~Diamond, J.~Posen.
+\emph{Succinct Arguments over Towers of Binary Fields} (Binius; the
+committed-carry treatment of integer addition in characteristic 2).
+ePrint 2023/1784.
+
+\bibitem{Thaler} J.~Thaler.
+\emph{Proofs, Arguments, and Zero-Knowledge}. Foundations and Trends in
+Privacy and Security, 2022. (Sumcheck and GKR background.)
+
+\end{thebibliography}
+
+\end{document}
