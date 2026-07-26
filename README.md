@@ -413,9 +413,17 @@ the A/B lever for the n ≥ 30 regime (precombined leaf tables are 25 MB
 at n=30, past the P-cluster L2; the 12.6 MB factored form fits).
 Byte-identical all ways (arm-equivalence unit test + cross-process
 `fuse_check` over default/opt-in/pre-change). n ≥ 28 A/B was NOT
-adjudicable this session (churned box: 180 MB free, 3.2 GB swap —
-the recorded measurement pitfall now bites n=28 too); the n=30
-fresh-box measurement decides whether the factored default flips.
+adjudicable that session (churned box: 180 MB free, 3.2 GB swap —
+the recorded measurement pitfall now bites n=28 too).
+**RESOLVED same day on a memory-fresh box (6.9 GB free), 3 alternated
+in-window pairs per shape**: n=30 — `leaf_r1` 307/312/317 →
+148/147/146 ms (**2.1×**), prove 2871 → 2672 ms median (**−6.5 %**
+end-to-end), and the factored arm is far less volatile (±3 ms vs
+±40 ms); n=28 — `leaf_r1` 34.6/36.3/38.5 → 29.5/32.6/31.5 ms
+(−13–18 %), prove ≈ −0.5–1 %. The default is now **size-gated**:
+factored iff `half ≥ 2^15` (precombined tables ≥ ~12.6 MB — the
+P-cluster-L2 co-residency edge; n=26 and below stay precombined, where
+factored loses ~1.2 ms). `F2Z_LEAF_A2_FACTORED=0/1` forces either arm.
 
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 

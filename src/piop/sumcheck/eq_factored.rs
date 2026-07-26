@@ -205,28 +205,36 @@ struct LeafTables<F> {
 
 /// The `Σ w·ΔL·ΔR` term's table form.
 enum LeafA2<F> {
-    /// 16-case precombined ΔΔ table `t_a2[(b≪4) | lp | rp≪2]` — the
-    /// default: one load + one add per slot, `16·2^k` entries — 2/3 of
-    /// the leaf-round table bytes.
+    /// 16-case precombined ΔΔ table `t_a2[(b≪4) | lp | rp≪2]`: one load +
+    /// one add per slot, `16·2^k` entries — 2/3 of the leaf-round table
+    /// bytes. Default below the size threshold (see [`leaf_a2_factored`]).
     Precombined(Vec<F>),
-    /// `F2Z_LEAF_A2_FACTORED=1`: the four raw cross products per slot
-    /// `[p00, p10, p01, p11]` at `b≪2` — 4× less ΔΔ-table footprint (the
-    /// leaf-round tables drop from `24·2^k` to `12·2^k` entries), one
-    /// 64 B line per slot, four branchless masked adds in place of the
-    /// load. Measured SLOWER at L2-resident shapes (n=26: leaf_r1
-    /// 6.2 → 7.4 ms — the masked selects cost more than an L2-hit
-    /// gather); kept as the A/B lever for the n ≥ 30 regime, where the
-    /// precombined table (25 MB at n=30) spills the P-cluster L2 and the
-    /// footprint argument applies. Fresh-box measurement pending.
+    /// The four raw cross products per slot `[p00, p10, p01, p11]` at
+    /// `b≪2` — 4× less ΔΔ-table footprint (the leaf-round tables drop
+    /// from `24·2^k` to `12·2^k` entries), one sequential 64 B line per
+    /// slot, four branchless masked adds in place of the load. Default at
+    /// and above the size threshold.
     Factored(Vec<F>),
 }
 
-/// Factored ΔΔ leaf tables — opt-IN via `F2Z_LEAF_A2_FACTORED=1` (see
-/// [`LeafA2::Factored`]; default = precombined). Byte-identical proofs
-/// either way. Read once per process.
-fn leaf_a2_factored() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F2Z_LEAF_A2_FACTORED").is_ok_and(|v| v == "1"))
+/// ΔΔ-table form choice: `F2Z_LEAF_A2_FACTORED=0/1` forces
+/// precombined/factored; unset (the default) picks by footprint —
+/// factored iff `half ≥ 2^15`, i.e. once the precombined leaf tables
+/// (`384·half` bytes) reach ~12.6 MB and stop co-residing in the
+/// P-cluster L2. Measured (fresh box, 3 alternated in-window pairs per
+/// shape): n=26 (6.3 MB) factored LOSES ~1.2 ms (an L2-hit gather beats
+/// 4 masked selects); n=28 (12.6 MB) factored wins leaf_r1 −13–18 %;
+/// n=30 (25 MB) factored wins leaf_r1 2.1× (307→147 ms), prove −6.5 %,
+/// and is far less run-to-run volatile. Byte-identical proofs either
+/// way. Env read once per process.
+fn leaf_a2_factored(half: usize) -> bool {
+    static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+    let env = *ENV.get_or_init(|| match std::env::var("F2Z_LEAF_A2_FACTORED") {
+        Ok(v) if v == "0" => Some(false),
+        Ok(v) if v == "1" => Some(true),
+        _ => None,
+    });
+    env.unwrap_or(half >= 1 << 15)
 }
 
 /// Per-slot ΔΔ accumulation against either [`LeafA2`] form. Value-exact:
@@ -265,7 +273,7 @@ where
     let half = v1.len();
     debug_assert_eq!(tau_l.len(), half << 1);
     debug_assert_eq!(tau_r.len(), half << 1);
-    let factored = leaf_a2_factored();
+    let factored = leaf_a2_factored(half);
     let mut t_a0 = Vec::with_capacity(half << 2);
     let mut t_a1 = Vec::with_capacity(half << 2);
     let mut t_a2 = Vec::with_capacity(if factored { half << 2 } else { half << 4 });
