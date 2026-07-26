@@ -302,7 +302,7 @@ At this point it is maybe more important to clarify how useful the construction 
 \albert{Sounds good}
 
 
-\section{Virtualization of $\FF_2$-linear combinations lifted to integers}
+\section{Virtualization of $\FF_2$-linear combinations lifted to integers}\label{s:virtualization}
 
 
 In this section we expand relation $\Relation^{\mathsf{lin-dual}}_{\cC, \comfield, \evalfield, \pack}$ to impose, instead of constraints of the form $\Enc_\cC(\pack(\pi_2(\bff)))=f$ and $\langle \pi_q(\bff), \vv  \rangle = \mu$, constraints as $\Enc_\cC(\pack(\pi_2(\bff))) = f$  and $$\langle \pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff))) \rangle = \mu$$ for a matrix $M\in \FF_{2}^{\codedim' \times \codedim}$. Precisely, given a new parameter $\codedim'$, we define 
@@ -535,6 +535,123 @@ Optimization ideas
     \item Lookup table (algorithm-wise, not SNARK-wise) for first levels of GKR
     \item If we have an MLE claim of a vector and its shift by one position, can we reuse something for the latter claim from the computations made when proving the former?
 \end{itemize}
+
+\section{Case-study: Keccak-f[1600] hashing}
+
+\subsection{Arithmetization over $\ZZ[X]$}
+
+\subsubsection{Keccak-f[1600] overview}
+We begin with a brief overview of the permutation Keccak-$f[1600]$ (called \mbox{Keccak-$p[1600,24]$} in the SHA-3 standard \cite{FIPS202}) to establish notation, then formalize the relation we seek to arithmetize.
+
+For the purposes of Keccak-$f[1600]$, a \emph{lane} is a $\leq 64$ string of bits, which we represent as a binary integer polynomial, i.e.\ as an element of $\{0,1\}^{<64}[X]$. The \emph{state} of the permutation is a $5\times 5$ array of lanes
+%
+$$
+A = \left(A_{x,y}\right)_{x,y\in\{0,\ldots,4\}} \in \left(\{0,1\}^{<64}[X]\right)^{5\times 5},
+$$
+%
+comprising $1600$ bits in total; the coefficient of $X^z$ in $A_{x,y}$ is the state bit with coordinates $(x,y,z)$ in the standard specification. Throughout this section, all lane indices are understood modulo $5$. The algorithm also uses $24$ fixed \emph{round constants} $(RC_t)_{t\in[24]}\in \{0,1\}^{<64}[X]^{24}$, whose values are specified in \cite{FIPS202}; each $RC_t$ has nonzero coefficients only in degrees $2^j-1$ for $j\in\{0,\ldots,6\}$, so it is supported on at most $7$ of the $64$ bit positions.
+
+The bitwise operations XOR, AND, and NOT ($\Not$) act coefficient-wise on binary integer polynomials. Besides these, Keccak uses the cyclic left-rotation of lanes, which in our representation is multiplication by a monomial: for $a=\sum_{i=0}^{63} a_i X^i \in \{0,1\}^{<64}[X]$ and $r\geq 0$, we define
+%
+$$
+\ROTL^{r}(a) \coloneqq X^r \cdot a \bmod (X^{64}-1) = \sum_{i=0}^{63} a_{(i-r)\bmod 64}\cdot X^{i} \quad \in \{0,1\}^{<64}[X].
+$$
+%
+The reduction modulo $X^{64}-1$ sends each monomial $a_i X^{i+r}$ to $a_i X^{(i+r)\bmod 64}$, and no two monomials collide; thus $\ROTL^r$ merely permutes coefficients---no coefficient arithmetic takes place---and in particular it maps binary integer polynomials to binary integer polynomials.
+
+\paragraph{Step mappings.}
+Given a state $A$, define its \emph{column parities} $C_0,\ldots,C_4$ by
+$$
+C_{x} \coloneqq A_{x,0}\xor A_{x,1} \xor A_{x,2} \xor A_{x,3} \xor A_{x,4} \quad \in \{0,1\}^{<64}[X].
+$$
+Keccak-$f[1600]$ is built from five \emph{step mappings} $\theta,\rho,\pi,\chi,\iota_t$, each sending states to states, defined lane-wise as follows: for $x,y\in\{0,\ldots,4\}$,
+\begin{equation}\label{eq:keccak_step_mappings}
+\begin{aligned}
+\theta(A)_{x,y} &\coloneqq A_{x,y} \xor C_{x-1} \xor \ROTL^{1}(C_{x+1}),\\
+\rho(A)_{x,y} &\coloneqq \ROTL^{r_{x,y}}(A_{x,y}),\\
+\pi(A)_{x,y} &\coloneqq A_{x+3y,\; x},\\
+\chi(A)_{x,y} &\coloneqq A_{x,y} \xor \left(\Not A_{x+1,y} \band A_{x+2,y}\right),\\
+\iota_t(A)_{x,y} &\coloneqq \begin{cases}
+A_{0,0} \xor RC_t & \text{if } (x,y)=(0,0),\\
+A_{x,y} & \text{otherwise},
+\end{cases}
+\end{aligned}
+\end{equation}
+where the rotation offsets $r_{x,y}\in\{0,\ldots,63\}$ used by $\rho$ are the fixed constants
+\begin{equation}\label{eq:keccak_rho_offsets}
+\begin{array}{c|ccccc}
+r_{x,y} & x=0 & x=1 & x=2 & x=3 & x=4\\
+\hline
+y=0 & 0 & 1 & 62 & 28 & 27\\
+y=1 & 36 & 44 & 6 & 55 & 20\\
+y=2 & 3 & 10 & 43 & 25 & 39\\
+y=3 & 41 & 45 & 15 & 21 & 8\\
+y=4 & 18 & 2 & 61 & 56 & 14
+\end{array}
+\end{equation}
+In words: $\theta$ XORs into each lane the parity of the column to its left and the (once-rotated) parity of the column to its right; $\rho$ rotates each lane by a fixed offset; $\pi$ permutes the $25$ lane positions; $\chi$ XORs into each lane a bitwise function of the next two lanes in its row, and is the only nonlinear step; and $\iota_t$ XORs the round constant $RC_t$ into the lane $A_{0,0}$.
+
+\paragraph{The permutation.}
+The \emph{round function} at round $t\in[24]$ is the composition
+$$
+\mathsf{R}_t \coloneqq \iota_t \circ \chi \circ \pi \circ \rho \circ \theta,
+$$
+and Keccak-$f[1600]$ iterates it $24$ times: on input a state $A^{(1)}$, the states
+\begin{equation}\label{eq:keccak_round_iteration}
+A^{(t+1)} \coloneqq \mathsf{R}_t\left(A^{(t)}\right), \qquad t\in[24],
+\end{equation}
+are computed in order, and the output of the permutation is the final state $A^{(25)}$.
+
+\paragraph{Sponge hashing.}
+The hash functions of the SHA-3 family, as well as the Keccak-256 function used in Ethereum (the two differ only in the message padding), are obtained from Keccak-$f[1600]$ via the sponge construction: the state is initialized to zero, the padded message is \emph{absorbed} $r$ bits at a time---each absorption XORs an $r$-bit message block into a fixed $r$-bit portion of the state and then applies Keccak-$f[1600]$---and the digest is finally read off the state. For a $256$-bit digest one takes rate $r=1088$ (and capacity $c=1600-r=512$), so hashing costs one invocation of the permutation per $1088$ message bits, and the permutation is the only cryptographic component of the hash. For our purposes, the unit of work is a single invocation of the permutation: the relation we arithmetize is the conjunction of the $24$ round relations \eqref{eq:keccak_round_iteration}.
+
+\paragraph{Structural properties.}
+The steps $\theta$, $\rho$, $\pi$ are $\FF_2$-linear on the $1600$ state bits, and $\iota_t$ is the XOR of a public constant; hence all the nonlinearity of a round resides in $\chi$, which has algebraic degree $2$. Writing $\lambda \coloneqq \pi\circ\rho\circ\theta$ for the linear layer, each bit of $\lambda(A)$ is the XOR of exactly $11$ bits of $A$ ($\theta$ XORs each state bit with the ten bits of its two neighbouring column parities, while $\rho$ and $\pi$ only permute bit positions), and each of the $1600$ bits of $\chi(A)$ is computed from $A$ with exactly one bitwise AND, of the form $\Not b \band c$. A round thus decomposes as one ($11$-sparse) $\FF_2$-linear layer, followed by one layer of $1600$ AND gates, followed by the XOR of a public constant---for a total of $24\cdot 1600=38400$ AND gates per permutation. Moreover, in contrast with SHA-256, Keccak performs no integer additions: the evaluation-at-$2$ homomorphism $\psi_2$ used for SHA-256 plays no role, and no carry bits ever arise. Looking ahead, this makes Keccak-$f[1600]$ a particularly good fit for our framework: every $\FF_2$-linear layer can be virtualized in the sense of \cref{s:virtualization}, i.e.\ absorbed into the matrix $M$ and never committed, while each AND gate is discharged by a linear identity analogous to those of \cref{s:virtualization}, as we describe next.
+
+\subsubsection{Our arithmetization}
+
+\paragraph{Committed witness.}
+For each invocation of the permutation we commit to the states at the $25$ round boundaries: the witness is the bit-vector
+$$
+\bff = \left(A^{(t)}\right)_{t\in[25]} \in \bits^{40000},
+$$
+where each state contributes the $25\cdot 64 = 1600$ coefficients of its $25$ lanes, so that $40000=25\cdot 1600$. In addition, we adjoin to $\bff$ a single auxiliary bit $\bff_{\mathsf{one}}$, forced to equal $1$ by the public linear claim $\pi_q(\bff_{\mathsf{one}})=1$; rows of $M$ whose supports include this bit realize XORs with public constants (such as the round constants) while remaining $\FF_2$-\emph{linear} in the committed bits. No further witness material is needed: in particular no carry bits, and all intermediate values of the rounds remain virtual in the sense of \cref{s:virtualization}.
+
+\paragraph{The round relations as linear constraints.}
+Fix a round $t\in[24]$ and let $B^{(t)} \coloneqq \lambda(A^{(t)}) = \pi(\rho(\theta(A^{(t)})))$ be the state entering the nonlinear step; each bit of $B^{(t)}$ is the XOR of exactly $11$ committed bits. Lane-wise, the round relation $A^{(t+1)} = \iota_t(\chi(B^{(t)}))$ reads
+$$
+A^{(t+1)}_{x,y} = B^{(t)}_{x,y} \xor \left(\Not B^{(t)}_{x+1,y} \band B^{(t)}_{x+2,y}\right) \xor \varepsilon_{x,y}, \qquad x,y\in\{0,\ldots,4\},
+$$
+where $\varepsilon_{0,0}=RC_t$ and $\varepsilon_{x,y}=0$ for $(x,y)\neq(0,0)$. Fix additionally a bit position $z$, and write $a,b,c,a',rc\in\bits$ for the coefficients of $X^z$ in $B^{(t)}_{x,y}$, $B^{(t)}_{x+1,y}$, $B^{(t)}_{x+2,y}$, $A^{(t+1)}_{x,y}$ and $\varepsilon_{x,y}$, respectively (so $rc$ is public). The round relations are then the conjunction, over the $24\cdot 1600=38400$ choices of $(t,x,y,z)$, of the bit relations
+\begin{equation}\label{eq:keccak_bit_relation}
+a' = a \xor \left(\Not b \band c\right) \xor rc.
+\end{equation}
+Analogously to the identities for AND and Majority from \cref{s:virtualization}, for integer bits $b,c\in\bits\subseteq\ZZ$ we have
+\begin{equation}\label{eq:keccak_notand_identity}
+\pi_q\left(\Not b \band c\right) = 2^{-1}\cdot \pi_q\left(c - b + \pi_2^{-1}\left(\pi_2(b)+\pi_2(c)\right)\right),
+\end{equation}
+where, as in \cref{s:virtualization}, $2^{-1}$ denotes the inverse of $2$ modulo $q$. Since \eqref{eq:keccak_bit_relation} is equivalent to $\Not b \band c = a'\xor a \xor rc$ (XOR both sides with $a\xor rc$), identity \eqref{eq:keccak_notand_identity} turns it into the $\evalfield$-linear constraint
+\begin{equation}\label{eq:keccak_bit_constraint}
+2\cdot \pi_q\left(a'\xor a \xor rc\right) + \pi_q(b) - \pi_q(c) - \pi_q\left(b\xor c\right) = 0.
+\end{equation}
+Conversely, since all quantities involved are bits, the left-hand side of \eqref{eq:keccak_bit_constraint}, read over $\ZZ$ before reduction, lies in $\{-2,\ldots,2\}$; hence for any odd $q$ (or $q=0$) constraint \eqref{eq:keccak_bit_constraint} holds if and only if the bit relation \eqref{eq:keccak_bit_relation} does.
+
+Every quantity to which $\pi_q$ is applied in \eqref{eq:keccak_bit_constraint} is (the lift to $\ZZ$ of) an $\FF_2$-linear combination of committed bits, i.e.\ an entry of $\pi_2^{-1}(M\cdot \pi_2(\bff))$ for a suitable public matrix $M$. Concretely, the constraints reference three families of virtual entries, indexed by the $38400$ tuples $(t,x,y,z)$:
+\begin{itemize}
+    \item the bits of $B^{(t)}$ (each the XOR of $11$ committed bits),
+    \item the bits of $B^{(t)}_{x+1,y}\xor B^{(t)}_{x+2,y}$ (each the XOR of at most $22$ committed bits), and
+    \item the bits of $A^{(t+1)}_{x,y}\xor B^{(t)}_{x,y}\xor \varepsilon_{x,y}$ (each the XOR of $12$ committed bits, plus $\bff_{\mathsf{one}}$ when the corresponding round-constant bit is $1$),
+\end{itemize}
+so that $M$ has (at most) $3\cdot 38400=115200$ such rows per invocation, each with at most $22$ nonzero entries, plus identity rows exposing the committed bits that appear in public input/output claims. The constraint family \eqref{eq:keccak_bit_constraint} is a public $\evalfield$-linear map, with coefficients in $\{2,\pm 1\}$, applied to the virtual vector $\pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff)))$ and required to vanish identically; a random $\evalfield$-linear combination of these constraints, together with the public claims ($\pi_q(\bff_{\mathsf{one}})=1$ and the exposure of the input and output states), yields claims of the form $\langle \pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff))), \vv\rangle = \mu$, i.e.\ instances of $\Relation^{\mathsf{lin-virtual}}_{\cC, \comfield, \evalfield, \pack}$, which we prove with \cref{c:virtual_iop}.
+
+\paragraph{Batching.}
+When batching $\codedim_2$ invocations of the permutation (e.g.\ the permutation calls of a long absorbing phase, or independent hashes), the $j$-th invocation occupies the sub-vector $\bff_{*j}$; since Keccak is unkeyed and every invocation uses the same round structure, the same block $M_0$ works for every $j$, and the matrix is exactly of the block-diagonal form $M=\mathsf{Id}\otimes M_0$ assumed in \cref{c:virtual_iop}.
+
+\albert{TODO: (i) spell out how the $38400$ constraints \eqref{eq:keccak_bit_constraint}, together with the public claims, are batched into claims of the form fed to \cref{c:virtual_iop}; (ii) chaining consecutive sponge blocks ($A^{(1)}$ of block $j+1$ $=$ $A^{(25)}$ of block $j$ XOR the $j$-th message block) is $\FF_2$-linear but crosses columns, so it does not fit the block-diagonal shape $M=\mathsf{Id}\otimes M_0$ as-is---discuss; (iii) cost of evaluating $\mle{M_{0*t}}(\rr)$ for this $M_0$, exploiting its uniformity across $(t,x,y,z)$.}
+
+\subsection{End-to-end IOP}
+
+\subsection{Experiments}
 
 \appendix
 

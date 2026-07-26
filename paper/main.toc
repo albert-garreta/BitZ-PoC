@@ -3,17 +3,39 @@
 \contentsline {section}{\numberline {2}Preliminaries}{2}{section.2}%
 \contentsline {paragraph}{Interactive Oracle Proofs of Proximity (IOPP)}{2}{paragraph*.1}%
 \contentsline {paragraph}{Interactive Oracle Reductions (IOR)}{2}{paragraph*.2}%
-\contentsline {section}{\numberline {3}{$\mathbb {F}2\mathbb {Z}$}}{2}{section.3}%
-\contentsline {subsection}{\numberline {3.1}Constrained codes over dual fields \textcolor {MidnightBlue}{Albert: {not sure dual is a good word: the two fields are just ``different'', while dual things tend to have a close relation between each other}}}{2}{subsection.3.1}%
-\contentsline {subsection}{\numberline {3.2}Tensor decomposition, interleaved codes, and products of constrained codes}{3}{subsection.3.2}%
-\contentsline {subsection}{\numberline {3.3}The main {{$\mathbb {F}2\mathbb {Z}$}} IOR}{4}{subsection.3.3}%
+\contentsline {section}{\numberline {3}{$\mathbb {F}2\mathbb {Z}$}}{3}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Constrained codes over dual fields \textcolor {MidnightBlue}{Albert: {not sure dual is a good word: the two fields are just ``different'', while dual things tend to have a close relation between each other}}}{3}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Tensor decomposition, interleaved codes, and products of constrained codes}{4}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}The main {{$\mathbb {F}2\mathbb {Z}$}} IOR}{5}{subsection.3.3}%
 \contentsline {section}{\numberline {4}Virtualization of $\ensuremath {\mathbb {F}}_2$-linear combinations lifted to integers}{6}{section.4}%
-\contentsline {section}{\numberline {5}Case-study: SHA-256 hashing}{7}{section.5}%
-\contentsline {subsection}{\numberline {5.1}Arithmetization over $\mathbb {Z}[X]$}{8}{subsection.5.1}%
-\contentsline {subsubsection}{\numberline {5.1.1}SHA-256 compression overview}{8}{subsubsection.5.1.1}%
-\contentsline {paragraph}{Message schedule.}{8}{paragraph*.3}%
-\contentsline {paragraph}{Compression loop.}{8}{paragraph*.4}%
-\contentsline {subsubsection}{\numberline {5.1.2}Our arithmetization}{9}{subsubsection.5.1.2}%
-\contentsline {subsection}{\numberline {5.2}End-to-end IOP}{9}{subsection.5.2}%
-\contentsline {subsection}{\numberline {5.3}Experiments}{9}{subsection.5.3}%
-\contentsline {section}{\numberline {A}Galois FRI-Binius}{9}{appendix.A}%
+\contentsline {section}{\numberline {5}R1CS constraints over polynomial rings with ideal membership}{10}{section.5}%
+\contentsline {section}{\numberline {6}Case-study: SHA-256 hashing}{10}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Arithmetization over $\mathbb {Z}[X]$}{10}{subsection.6.1}%
+\contentsline {subsubsection}{\numberline {6.1.1}SHA-256 compression overview}{10}{subsubsection.6.1.1}%
+\contentsline {paragraph}{Message schedule.}{10}{paragraph*.3}%
+\contentsline {paragraph}{Compression loop.}{11}{paragraph*.4}%
+\contentsline {subsubsection}{\numberline {6.1.2}Our arithmetization}{11}{subsubsection.6.1.2}%
+\contentsline {subsection}{\numberline {6.2}End-to-end IOP}{11}{subsection.6.2}%
+\contentsline {subsection}{\numberline {6.3}Experiments}{11}{subsection.6.3}%
+\contentsline {section}{\numberline {7}Case-study: Keccak-f[1600] hashing}{12}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Arithmetization over $\mathbb {Z}[X]$}{12}{subsection.7.1}%
+\contentsline {subsubsection}{\numberline {7.1.1}Keccak-f[1600] overview}{12}{subsubsection.7.1.1}%
+\contentsline {paragraph}{Step mappings.}{13}{paragraph*.5}%
+\contentsline {paragraph}{The permutation.}{13}{paragraph*.6}%
+\contentsline {paragraph}{Sponge hashing.}{13}{paragraph*.7}%
+\contentsline {paragraph}{Structural properties.}{14}{paragraph*.8}%
+\contentsline {subsubsection}{\numberline {7.1.2}Our arithmetization}{14}{subsubsection.7.1.2}%
+\contentsline {paragraph}{Committed witness.}{14}{paragraph*.9}%
+\contentsline {paragraph}{The round relations as linear constraints.}{14}{paragraph*.10}%
+\contentsline {paragraph}{Batching.}{16}{paragraph*.11}%
+\contentsline {subsection}{\numberline {7.2}End-to-end IOP}{16}{subsection.7.2}%
+\contentsline {subsection}{\numberline {7.3}Experiments}{16}{subsection.7.3}%
+\contentsline {section}{\numberline {A}Ring switching via Galois orbits}{16}{appendix.A}%
+\contentsline {section}{\numberline {B}[Old appendix by Ulrich] Galois FRI-Binius}{17}{appendix.B}%
+\contentsline {section}{\numberline {C}Bilinear Embeddings}{19}{appendix.C}%
+\contentsline {subsection}{\numberline {C.1}Background}{19}{subsection.C.1}%
+\contentsline {subsection}{\numberline {C.2}Structure}{19}{subsection.C.2}%
+\contentsline {subsection}{\numberline {C.3}Properties}{22}{subsection.C.3}%
+\contentsline {subsection}{\numberline {C.4}Constructions}{22}{subsection.C.4}%
+\contentsline {subsubsection}{\numberline {C.4.1}Trace embedding}{22}{subsubsection.C.4.1}%
+\contentsline {subsubsection}{\numberline {C.4.2}Coefficient projection}{24}{subsubsection.C.4.2}%
