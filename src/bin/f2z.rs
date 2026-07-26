@@ -27,6 +27,14 @@
 //!   (validator-gated Johnson geometry). Below `m = n < 22` every choice
 //!   falls back to the ad-hoc test config (UNAUDITED).
 //! - `--word-bits W` — cell width (power of two; default 1).
+//! - `--family j2|j3|j4` — run the EXPERIMENTAL mod-q RLC claim FAMILY at
+//!   this `n` instead of the single-claim opening: `j2` = the XOR triple
+//!   (k = 3 claims on m₁, m₂, m₁⊕m₂), `j3` = k = 4 (m₁, m₂, m₃, ⊕-all),
+//!   `j4` = k = 5. W is fixed at 1 and the shape is the measured A/B
+//!   layout (4 UAIR columns, x-tensor split t' ≈ s — the README's
+//!   2026-07-26/27 RLC notes); `t s W` positionals do not apply. Every
+//!   rep is verified. Example:
+//!   `f2z 26 --family j2 --reps 5`
 //!
 //! Integer-guard mode is a COMPILE-TIME feature: build with
 //! `--features unchecked` for release-style plain integer ops (the header
@@ -130,8 +138,11 @@ fn median(mut v: Vec<f64>) -> f64 {
 fn usage() -> ! {
     eprintln!(
         "usage: f2z <n> [<t> <s> [<W>]] [--threads N] [--reps R] \
-         [--profile slim|slim3|fast|secure|custom:<log_inv_rate>:<initial_k>] [--word-bits W]\n\
+         [--profile slim|slim3|fast|secure|custom:<log_inv_rate>:<initial_k>] [--word-bits W] \
+         [--family j2|j3|j4]\n\
          (n = t + s; W = cell width, power of two, default 1;\n\
+          --family runs the mod-q RLC claim family at the A/B layout — j2 = the\n\
+          XOR triple, j3/j4 the wider families; t/s/W do not apply there;\n\
           run with --release and --features unchecked for quotable numbers;\n\
           -C target-cpu=native is load-bearing on aarch64)"
     );
@@ -146,6 +157,7 @@ struct Opts {
     reps: usize,
     profile: String,
     word_bits: usize,
+    family: Option<String>,
 }
 
 fn parse_args() -> Opts {
@@ -158,6 +170,7 @@ fn parse_args() -> Opts {
         reps: 3,
         profile: "slim".to_string(),
         word_bits: 1,
+        family: None,
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -177,6 +190,9 @@ fn parse_args() -> Opts {
             "--word-bits" | "-w" => {
                 o.word_bits =
                     args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage());
+            }
+            "--family" => {
+                o.family = Some(args.next().unwrap_or_else(|| usage()));
             }
             other => match other.parse::<usize>() {
                 Ok(v) => pos.push(v),
@@ -270,6 +286,15 @@ fn main() {
     #[cfg(not(feature = "parallel"))]
     if o.threads.is_some_and(|th| th > 1) {
         eprintln!("note: built without the `parallel` feature — running serially");
+    }
+
+    if let Some(fam) = o.family.clone() {
+        if o.t.is_some() || o.s.is_some() || o.word_bits != 1 {
+            eprintln!("--family fixes W = 1 and derives the shape from n; drop t/s/W");
+            exit(2);
+        }
+        run_family(&o, &fam);
+        return;
     }
 
     let (t, s) = match (o.t, o.s) {
@@ -439,6 +464,193 @@ fn main() {
         forest_b as f64 / 1024.0,
         zb.s_v as f64 / 1024.0,
         lig_b as f64 / 1024.0,
+    );
+}
+
+/// The measured A/B family layout for `n`: 4 UAIR columns
+/// (`log_cols = 2`) of 32-bit words (`bit_vars = 5`), the remaining
+/// variables split `t' ≈ s` (matches `examples/rlc_ab.rs`, so numbers
+/// compare with the README's RLC notes).
+fn family_layout(n: usize) -> f2z::pcs::ShaF2Layout {
+    let log_cols = 2usize;
+    let bit_vars = 5usize;
+    let t_x = (n - log_cols) / 2;
+    let s = n - log_cols - t_x;
+    let tw = t_x - bit_vars;
+    f2z::pcs::ShaF2Layout {
+        p: IntEvalParams { t: bit_vars + log_cols + tw, s, word_bits: 1 },
+        num_cols: 1 << log_cols,
+        log_cols,
+        bit_vars,
+        num_vars: tw + s,
+        tw,
+        x_fold_extra: 0,
+    }
+}
+
+/// The `--family` runner: commit once, then prove/verify the preset's RLC
+/// claim family (every rep verified), reporting medians, proof size and
+/// peak heap.
+fn run_family(o: &Opts, fam: &str) {
+    use f2z::ligerito_flock::{
+        RlcFamilyClaim, mle_eval_mod_q_lig_rlc_family_proof_size_bytes,
+        prove_mle_eval_mod_q_ligerito_rlc_family, verify_mle_eval_mod_q_ligerito_rlc_family,
+    };
+    use f2z::pcs::{FQ_MOD, Fq as PcsFq, extract_virtual_xor_rows, virtual_xor_params};
+
+    let (j, k, forms): (usize, usize, Vec<usize>) = match fam {
+        "j2" => (2, 3, vec![0b01, 0b10, 0b11]),
+        "j3" => (3, 4, vec![0b001, 0b010, 0b100, 0b111]),
+        "j4" => (4, 5, vec![0b0001, 0b0010, 0b0100, 0b1000, 0b1111]),
+        other => {
+            eprintln!("unknown family preset: {other} (expected j2|j3|j4)");
+            exit(2);
+        }
+    };
+    if o.n < 15 {
+        eprintln!("--family needs n ≥ 15 (t' = (n−2)/2 ≥ 6 for the x-tensor presum)");
+        exit(2);
+    }
+    let layout = family_layout(o.n);
+    let p = layout.p;
+    let p_x = virtual_xor_params(&layout);
+    let m_p = packed_vars(&p);
+    let ((pc, vc), lig_tag) = resolve_configs(m_p, &o.profile);
+    let family_cols: Vec<usize> = (0..j).collect();
+
+    let threads_eff: usize = {
+        #[cfg(feature = "parallel")]
+        {
+            rayon::current_num_threads()
+        }
+        #[cfg(not(feature = "parallel"))]
+        {
+            1
+        }
+    };
+    println!(
+        "f2z --family {fam}: n={} (t'={}, s={}, j={j}, k={k}) | lig={lig_tag}@r1/{}k{} | \
+         threads={threads_eff} | int guards: {}",
+        o.n,
+        p_x.t,
+        p_x.s,
+        1usize << pc.log_inv_rates[0],
+        pc.initial_k,
+        if f2z::utils::CHECKED { "CHECKED (build with --features unchecked)" } else { "unchecked" },
+    );
+
+    // Deterministic committed bit rows (memory-honest packed-rows path).
+    let words = p.rows().div_ceil(64);
+    let rows: Vec<Vec<u64>> = (0..p.cols())
+        .map(|c| {
+            (0..words)
+                .map(|w| {
+                    ((c as u64) << 32 | w as u64)
+                        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                        .rotate_left(((c + w) & 63) as u32)
+                })
+                .collect()
+        })
+        .collect();
+    reset_peak();
+    let t0 = Instant::now();
+    let hint = commit_rs_ligerito_rows(&p, rows, &pc);
+    let commit_ms = t0.elapsed().as_secs_f64() * 1e3;
+    println!("commit:  {commit_ms:9.2} ms   peak {:8.2} MB", peak_mb());
+
+    // Statement: per-claim row weights (distinct row points), shared
+    // column weights, claimed values from the committed data.
+    let rws: Vec<Vec<u128>> = (0..k)
+        .map(|i| {
+            (0..p_x.rows())
+                .map(|b| {
+                    (b as u128)
+                        .wrapping_mul(0xDEAD_BEEF_CAFE_F00D_1234_5678_9ABC_DEF1)
+                        .wrapping_add(11 + i as u128)
+                        % FQ_MOD
+                })
+                .collect()
+        })
+        .collect();
+    let colw: Vec<PcsFq> = (0..p_x.cols())
+        .map(|c| PcsFq::from((c as u128).wrapping_mul(0xABCD_EF01_2345).wrapping_add(3)))
+        .collect();
+    let cs: Vec<u128> = forms
+        .iter()
+        .zip(rws.iter())
+        .map(|(&f, rw)| {
+            let cols: Vec<usize> =
+                (0..j).filter(|&fi| (f >> fi) & 1 == 1).map(|fi| family_cols[fi]).collect();
+            let a_rows = extract_virtual_xor_rows(&layout, hint.rows(), &cols, 0, None);
+            let mut y = PcsFq::from(0u128);
+            for (c, row) in a_rows.iter().enumerate() {
+                let mut acc = PcsFq::from(0u128);
+                for (wi, &word) in row.iter().enumerate() {
+                    let mut bits = word;
+                    while bits != 0 {
+                        let t = bits.trailing_zeros() as usize;
+                        acc = acc + PcsFq::from(rw[(wi << 6) | t]);
+                        bits &= bits.wrapping_sub(1);
+                    }
+                }
+                y = y + colw[c] * acc;
+            }
+            y.0
+        })
+        .collect();
+    let claims: Vec<RlcFamilyClaim<'_>> = (0..k)
+        .map(|i| RlcFamilyClaim { form: forms[i], row_weights_q: &rws[i], claimed: cs[i] })
+        .collect();
+
+    // Warm-up (excluded), then timed reps — every rep verified.
+    {
+        let mut pt = Blake3Transcript::new();
+        let pr = prove_mle_eval_mod_q_ligerito_rlc_family(
+            &mut pt, &hint, &layout, &family_cols, &claims, alpha_of(), &pc,
+        );
+        black_box(&pr);
+    }
+    let mut prove_ms = Vec::new();
+    let mut verify_ms = Vec::new();
+    let mut last = None;
+    for _ in 0..o.reps {
+        let mut pt = Blake3Transcript::new();
+        let t1 = Instant::now();
+        let proof = prove_mle_eval_mod_q_ligerito_rlc_family(
+            &mut pt, &hint, &layout, &family_cols, &claims, alpha_of(), &pc,
+        );
+        prove_ms.push(t1.elapsed().as_secs_f64() * 1e3);
+        let mut vt = Blake3Transcript::new();
+        let t2 = Instant::now();
+        verify_mle_eval_mod_q_ligerito_rlc_family(
+            &mut vt, &hint.commitment, &proof, &layout, &family_cols, &claims, &colw,
+            alpha_of(), &vc,
+        )
+        .expect("family proof verifies");
+        verify_ms.push(t2.elapsed().as_secs_f64() * 1e3);
+        last = Some(proof);
+    }
+    reset_peak();
+    {
+        let mut pt = Blake3Transcript::new();
+        let pr = prove_mle_eval_mod_q_ligerito_rlc_family(
+            &mut pt, &hint, &layout, &family_cols, &claims, alpha_of(), &pc,
+        );
+        black_box(&pr);
+    }
+    let prove_peak = peak_mb();
+    let proof = last.expect("reps ≥ 1");
+    let bytes = mle_eval_mod_q_lig_rlc_family_proof_size_bytes(&proof);
+    println!(
+        "prove:   {:9.2} ms   peak {prove_peak:8.2} MB   ({k} claims, median of {}, verified)",
+        median(prove_ms),
+        o.reps
+    );
+    println!("verify:  {:9.2} ms", median(verify_ms));
+    println!(
+        "proof:   {:9.1} KiB  ({:.2} KiB/claim)",
+        bytes as f64 / 1024.0,
+        bytes as f64 / 1024.0 / k as f64,
     );
 }
 

@@ -149,6 +149,16 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
   forces `L > 1` chunks). `W` as a fourth positional sets the cell width
   (power of two, default 1; equivalent to `--word-bits`) — e.g. the
   reference W=32 shape: `f2z 12 4 8 32`.
+- `--family j2|j3|j4` — run the EXPERIMENTAL mod-q **RLC claim family**
+  at this `n` instead of the single-claim opening (`j2` = the XOR triple,
+  k=3 claims on `m₁, m₂, m₁⊕m₂`; `j3` = k=4 with the 3-way XOR; `j4` =
+  k=5). W is fixed at 1 and the shape is the measured A/B layout (4 UAIR
+  columns, x-tensor split `t' ≈ s` — comparable with the 2026-07-26/27
+  RLC notes); `t s W` positionals do not apply; every rep is verified.
+  E.g. `f2z 26 --family j2 --reps 5`. The full A/B against the
+  virtual-XOR and independent baselines stays in `examples/rlc_ab.rs`
+  (`F2Z_AB_N`/`F2Z_AB_REPS`, plus `F2Z_AB_SINGLES=1` and `F2Z_AB_J3=1`
+  modes).
 - `--threads N` / `-j N` — rayon pool size (`1` = single-threaded;
   default all cores / `RAYON_NUM_THREADS`).
 - `--reps R` — timing repetitions (medians reported; **every rep is
