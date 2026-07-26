@@ -571,6 +571,28 @@ supersession question (this API vs the batched-vx path) now has a
 measured answer for shared-column-point XOR families: the RLC family
 dominates on both axes.
 
+**RLC families: zero-channel elision (2026-07-26, completeness fix).**
+Legitimate degenerate families make presum channels vanish
+IDENTICALLY: a pure-XOR family — every claim on the same ⊕-combination,
+including a lone k=1 XOR claim — has `α^{W(m)}` factoring through the
+XOR, so the AND channel's τ is the zero table and the verifier's
+`μ_S = expected/R̂_S` would divide by zero (`RHatZero` on an HONEST
+proof; caught by a new test). This is a distinct vanishing mode from
+the affine/inert-variable case (there `W` doesn't depend on a variable;
+here it does, but `α^W` factors through a linear quotient of the case
+space). Fix: both sides derive the ACTIVE channel set per chunk from
+the public case-weight τ tables and elide zero channels everywhere —
+presum groups, discharge participation (per-chunk for j=2's two-phase
+form, per-(chunk, S) pairs for j ≥ 3), the ω set and the rings all
+follow the active sets; every family column must appear in ≥ 1 form.
+Pure-XOR families (k=1 and multi-point) now roundtrip. Also measured
+(`F2Z_AB_SINGLES=1`): a LONE claim gains nothing from the family API —
+`rlc1` ≈ `vx-single` (33.8 vs 33.3 ms at n=24; 72.7 vs 76.3 at n=26)
+and a lone XOR claim is CHEAPER via the vx extraction path (74.5 vs
+97.5 ms at n=26 — extract-once + 1-bit-affine forest beats the 4-case
+forest). Guidance: k = 1 → the vx path; k ≥ 2 with a shared column
+point → the family.
+
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
 The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —

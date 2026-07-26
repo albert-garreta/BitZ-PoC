@@ -142,6 +142,101 @@ fn main() {
                 .collect()
         };
 
+        // Optional single-claim comparisons (F2Z_AB_SINGLES=1): the same
+        // lone claim through the family API (j=1, k=1), and a lone XOR
+        // claim through both APIs (family j=2 k=1 form=11 — the elided
+        // pure-XOR family — vs the vx extraction path).
+        let singles = std::env::var("F2Z_AB_SINGLES").is_ok_and(|v| v == "1");
+        let c_xor = cs[2];
+        let single_family_col = [family_cols[0]];
+        let rlc1_claims = vec![RlcFamilyClaim {
+            form: 0b1,
+            row_weights_q: &rws[0],
+            claimed: cs[0],
+        }];
+        let rlcx1_claims = vec![RlcFamilyClaim {
+            form: 0b11,
+            row_weights_q: &rws[2],
+            claimed: c_xor,
+        }];
+        if singles {
+            let mut t_rlc1 = Vec::with_capacity(reps);
+            let mut t_rlcx1 = Vec::with_capacity(reps);
+            let mut t_vxx1 = Vec::with_capacity(reps);
+            let mut t_single1 = Vec::with_capacity(reps);
+            for _ in 0..reps {
+                let t0 = Instant::now();
+                let pr = {
+                    let mut pt = Blake3Transcript::new();
+                    prove_mle_eval_mod_q_ligerito_claims_only(
+                        &mut pt, &hint, &layout, FQ_BITS, &vx_of(&[0]), alpha, &pc,
+                    )
+                };
+                t_single1.push(t0.elapsed().as_secs_f64() * 1e3);
+                std::hint::black_box(&pr);
+
+                let t0 = Instant::now();
+                let pr = {
+                    let mut pt = Blake3Transcript::new();
+                    prove_mle_eval_mod_q_ligerito_rlc_family(
+                        &mut pt, &hint, &layout, &single_family_col, &rlc1_claims, alpha, &pc,
+                    )
+                };
+                t_rlc1.push(t0.elapsed().as_secs_f64() * 1e3);
+                std::hint::black_box(&pr);
+
+                let t0 = Instant::now();
+                let pr = {
+                    let mut pt = Blake3Transcript::new();
+                    prove_mle_eval_mod_q_ligerito_claims_only(
+                        &mut pt, &hint, &layout, FQ_BITS, &vx_of(&[2]), alpha, &pc,
+                    )
+                };
+                t_vxx1.push(t0.elapsed().as_secs_f64() * 1e3);
+                std::hint::black_box(&pr);
+
+                let t0 = Instant::now();
+                let pr = {
+                    let mut pt = Blake3Transcript::new();
+                    prove_mle_eval_mod_q_ligerito_rlc_family(
+                        &mut pt, &hint, &layout, &family_cols, &rlcx1_claims, alpha, &pc,
+                    )
+                };
+                t_rlcx1.push(t0.elapsed().as_secs_f64() * 1e3);
+                std::hint::black_box(&pr);
+            }
+            // Sanity: the two family singles verify.
+            {
+                let mut pt = Blake3Transcript::new();
+                let pr = prove_mle_eval_mod_q_ligerito_rlc_family(
+                    &mut pt, &hint, &layout, &single_family_col, &rlc1_claims, alpha, &pc,
+                );
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_rlc_family(
+                    &mut vt, &hint.commitment, &pr, &layout, &single_family_col, &rlc1_claims,
+                    &colw, alpha, &vc,
+                )
+                .expect("rlc1 verifies");
+                let mut pt = Blake3Transcript::new();
+                let pr = prove_mle_eval_mod_q_ligerito_rlc_family(
+                    &mut pt, &hint, &layout, &family_cols, &rlcx1_claims, alpha, &pc,
+                );
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_rlc_family(
+                    &mut vt, &hint.commitment, &pr, &layout, &family_cols, &rlcx1_claims, &colw,
+                    alpha, &vc,
+                )
+                .expect("rlcx1 (pure-XOR single) verifies");
+            }
+            println!(
+                "n={n} singles: vx-single {:.1} ms | rlc1 {:.1} ms | vx-xor1 {:.1} ms | rlc-xor1 {:.1} ms",
+                median(t_single1),
+                median(t_rlc1),
+                median(t_vxx1),
+                median(t_rlcx1),
+            );
+        }
+
         // Timed variants, alternated in-window.
         let mut t_single = Vec::with_capacity(reps);
         let mut t_rlc3 = Vec::with_capacity(reps);

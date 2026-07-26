@@ -94,8 +94,13 @@ all-ones τ are the driver's leaf-bit-affine shape) in two phases with a β
 handoff; with it the XOR triple measures **1.74–1.87× a single claim at
 n = 24–28 vs 2.5–3.7× for the batched-vx path and ~3× for independent
 proofs** — the predicted ~1.6–1.8×-vs-3× regime, with 26–43 % smaller
-proofs. Fixed `q = 2^100 − 15`; NOT wired into `proof_codec`; the
-virtual-XOR path is untouched and remains the comparison baseline.
+proofs. Identically-zero presum channels (legitimate degenerate families —
+e.g. pure-XOR families, whose `α^W` factors through the XOR and kills the
+AND channel) are ELIDED: both sides derive the active channel set per chunk
+from the public case weights, and the discharge/ω/ring shapes follow it.
+Fixed `q = 2^100 − 15`; NOT wired into `proof_codec`; the virtual-XOR path
+is untouched and remains the comparison baseline (and stays the right tool
+for LONE claims — the family wins from k ≥ 2).
 
 ## Proof-stream serialization
 

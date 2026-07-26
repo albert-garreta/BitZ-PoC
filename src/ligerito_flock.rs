@@ -2446,6 +2446,17 @@ fn rlc_ge2_channels(j: usize) -> Vec<usize> {
     (1..1usize << j).filter(|s| s.count_ones() >= 2).collect()
 }
 
+/// The ACTIVE presum channels of one chunk: the S whose τ_S table is not
+/// identically zero. Structurally-zero channels exist for legitimate
+/// degenerate families — e.g. a pure-XOR family (every claim on the same
+/// ⊕-combination) has α^{W(m)} factoring through the XOR, killing the
+/// AND channel — and MUST be elided for completeness (an included zero
+/// channel would divide by R̂_S = 0). Public data: both sides derive the
+/// same set from the case weights, per chunk.
+fn rlc_active_channels(taus: &[Vec<Gf>]) -> Vec<usize> {
+    (1..taus.len()).filter(|&s| taus[s].iter().any(|t| !t.is_zero())).collect()
+}
+
 /// One chunk's eager 2^j-case forest leaves and per-column folds: leaf at
 /// x-position `(b, c)` is `case_pow[b][m(b,c)]` and
 /// `u_c = Σ_b W_b^{(l)}(m(b,c))`, with `m(b,c)` gathered from the j family
@@ -2567,6 +2578,12 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family(
 
     // (1)–(2) Statement → γ's.
     let forms: Vec<usize> = claims.iter().map(|cl| cl.form).collect();
+    for fi in 0..j {
+        assert!(
+            forms.iter().any(|f| (f >> fi) & 1 == 1),
+            "family column index {fi} appears in no claim form"
+        );
+    }
     let claim_cs: Vec<u128> = claims.iter().map(|cl| cl.claimed).collect();
     let w_refs: Vec<&[u128]> = claims.iter().map(|cl| cl.row_weights_q).collect();
     absorb_rlc_family_statement(
@@ -2620,6 +2637,7 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family(
     let mut presums = Vec::with_capacity(lch_x);
     let mut points: Vec<Vec<Gf>> = Vec::with_capacity(lch_x);
     let mut mus_ge2: Vec<Vec<Gf>> = Vec::with_capacity(lch_x);
+    let mut actives: Vec<Vec<usize>> = Vec::with_capacity(lch_x);
     let ge2 = rlc_ge2_channels(j);
     // Lazy bit-driven forests for j ≤ 2 (byte-identical to the eager
     // reference): j = 2 runs the 4-case Pair/T4 schedule
@@ -2676,8 +2694,13 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family(
         let eq_zbj = build_eq_x_r_vec(z_bj, &()).expect("t' >= 1");
         let eq_zc = build_eq_x_r_vec(z_c, &()).expect("s >= 1");
         let taus = rlc_tau_tables(&case_pow);
-        let m_tbls: Vec<Vec<Gf>> = (1..1usize << j)
-            .map(|s| crate::ligerito::xi_combined_rows(&p_x, &and_rows[s - 1], &eq_zc))
+        // Zero channels (legitimate degenerate families) are ELIDED; both
+        // sides derive the active set from the public case weights.
+        let active = rlc_active_channels(&taus);
+        assert!(!active.is_empty(), "degenerate statement: every presum channel vanished");
+        let m_tbls: Vec<Vec<Gf>> = active
+            .iter()
+            .map(|&s| crate::ligerito::xi_combined_rows(&p_x, &and_rows[s - 1], &eq_zc))
             .collect();
         let to_mle = |tbl: Vec<Gf>| {
             DenseMultilinearExtension::from_evaluations_vec(
@@ -2686,13 +2709,15 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family(
                 zero_inner,
             )
         };
-        let groups: Vec<MultiDegreeSumcheckGroup<Gf>> = (1..1usize << j)
-            .map(|s| {
+        let groups: Vec<MultiDegreeSumcheckGroup<Gf>> = active
+            .iter()
+            .enumerate()
+            .map(|(gi, &s)| {
                 let r_tbl: Vec<Gf> =
                     eq_zbj.iter().zip(taus[s].iter()).map(|(&e, &t)| e * t).collect();
                 MultiDegreeSumcheckGroup::new(
                     2,
-                    vec![to_mle(r_tbl), to_mle(m_tbls[s - 1].clone())],
+                    vec![to_mle(r_tbl), to_mle(m_tbls[gi].clone())],
                     Box::new(|vals: &[Gf]| vals[0] * vals[1]),
                 )
             })
@@ -2705,10 +2730,16 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family(
             "presum channels must sum to the forest exit claim"
         );
         let r_star = states[0].randomness.clone();
-        // |S| ≥ 2 residuals μ_S = M̂_S(r*, z_c) — the discharge targets.
+        // Active |S| ≥ 2 residuals μ_S = M̂_S(r*, z_c) — discharge targets.
         mus_ge2.push(
-            ge2.iter().map(|&s| crate::ligerito::mle_eval(&m_tbls[s - 1], &r_star)).collect(),
+            active
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| s.count_ones() >= 2)
+                .map(|(gi, _)| crate::ligerito::mle_eval(&m_tbls[gi], &r_star))
+                .collect(),
         );
+        actives.push(active);
         let point: Vec<Gf> = r_star.iter().chain(z_c.iter()).copied().collect();
         mfs.push(mf);
         us.push(u);
@@ -2722,106 +2753,122 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family(
     // runs the two-phase leaf-bit form (the M tables never materialise);
     // j ≥ 3 keeps the generic multi-degree form over dense tables.
     let num_ge2 = ge2.len();
-    let (discharge, discharge_eqf, omegas, rho) = if num_ge2 == 0 {
-        (None, None, Vec::new(), Vec::new())
+    let (discharge, discharge_eqf, omegas, omega_fis, rho) = if num_ge2 == 0 {
+        (None, None, Vec::new(), Vec::new(), Vec::new())
     } else if j == 2 {
-        use crate::piop::sumcheck::eq_factored::{
-            EqInnerGroupMixed, GroupBufs, prove_eq_inner_sumcheck_mixed,
-        };
-        let _g = crate::utils::prof::scope("rlc:discharge");
-        let etas_dis: Vec<Gf> = transcript.get_field_challenges(lch_x, &());
-        let _g_t = crate::utils::prof::scope("rlc:dis_tbls");
-        // M_i = 1 + ¬m_i·1: complemented bit streams + all-ones τ make
-        // phase A a forest leaf layer over the per-column groups.
-        let not_rows = |rows: &[Vec<u64>]| -> Vec<Vec<u64>> {
-            rows.iter().map(|r| r.iter().map(|&w| !w).collect()).collect()
-        };
-        let n1 = not_rows(&x_rows[0]);
-        let n2 = not_rows(&x_rows[1]);
-        let ones_tau = vec![Gf::one(); p_x.rows()];
-        let tau_sets = vec![(ones_tau.clone(), ones_tau)];
-        let eq_tops: Vec<Vec<Gf>> = points
-            .iter()
-            .map(|pt| build_eq_x_r_vec(&pt[t_x..], &()).expect("s >= 1"))
-            .collect();
-        let deep = t_x >= 4 && crate::merged_forest::forest_lut3();
-        let mut groups_a: Vec<EqInnerGroupMixed<Gf>> =
-            Vec::with_capacity(lch_x << p_x.s);
-        for (l, pt) in points.iter().enumerate() {
-            for c in 0..p_x.cols() {
-                let (lbits, rbits) = (n1[c].clone(), n2[c].clone());
-                groups_a.push(EqInnerGroupMixed {
-                    q: pt[..t_x].to_vec(),
-                    scale: etas_dis[l] * eq_tops[l][c],
-                    bufs: if deep {
-                        GroupBufs::Leaf3Bits { lbits, rbits, tau_set: 0 }
-                    } else {
-                        GroupBufs::Leaf2Bits { lbits, rbits, tau_set: 0 }
-                    },
+        // Participating chunks: those whose AND channel survived elision.
+        let parts: Vec<usize> = (0..lch_x).filter(|&l| actives[l].contains(&3)).collect();
+        if parts.is_empty() {
+            (None, None, Vec::new(), Vec::new(), Vec::new())
+        } else {
+            use crate::piop::sumcheck::eq_factored::{
+                EqInnerGroupMixed, GroupBufs, prove_eq_inner_sumcheck_mixed,
+            };
+            let _g = crate::utils::prof::scope("rlc:discharge");
+            let etas_dis: Vec<Gf> = transcript.get_field_challenges(parts.len(), &());
+            let _g_t = crate::utils::prof::scope("rlc:dis_tbls");
+            // M_i = 1 + ¬m_i·1: complemented bit streams + all-ones τ make
+            // phase A a forest leaf layer over the per-column groups.
+            let not_rows = |rows: &[Vec<u64>]| -> Vec<Vec<u64>> {
+                rows.iter().map(|r| r.iter().map(|&w| !w).collect()).collect()
+            };
+            let n1 = not_rows(&x_rows[0]);
+            let n2 = not_rows(&x_rows[1]);
+            let ones_tau = vec![Gf::one(); p_x.rows()];
+            let tau_sets = vec![(ones_tau.clone(), ones_tau)];
+            let eq_tops: Vec<Vec<Gf>> = parts
+                .iter()
+                .map(|&l| build_eq_x_r_vec(&points[l][t_x..], &()).expect("s >= 1"))
+                .collect();
+            let deep = t_x >= 4 && crate::merged_forest::forest_lut3();
+            let mut groups_a: Vec<EqInnerGroupMixed<Gf>> =
+                Vec::with_capacity(parts.len() << p_x.s);
+            for (pi, &l) in parts.iter().enumerate() {
+                for c in 0..p_x.cols() {
+                    let (lbits, rbits) = (n1[c].clone(), n2[c].clone());
+                    groups_a.push(EqInnerGroupMixed {
+                        q: points[l][..t_x].to_vec(),
+                        scale: etas_dis[pi] * eq_tops[pi][c],
+                        bufs: if deep {
+                            GroupBufs::Leaf3Bits { lbits, rbits, tau_set: 0 }
+                        } else {
+                            GroupBufs::Leaf2Bits { lbits, rbits, tau_set: 0 }
+                        },
+                    });
+                }
+            }
+            drop(_g_t);
+            let _g_r = crate::utils::prof::scope("rlc:dis_run");
+            let (sc_a, r_a, finals_a) =
+                prove_eq_inner_sumcheck_mixed(transcript, groups_a, &tau_sets, &[], &[], &());
+            // Per-column finals (identical across chunks — same buffers,
+            // same challenges): F_i[c] = M̂_i(r_A, c).
+            let f1: Vec<Gf> = (0..p_x.cols()).map(|c| finals_a[c][0].0).collect();
+            let f2: Vec<Gf> = (0..p_x.cols()).map(|c| finals_a[c][0].1).collect();
+            let betas: Vec<Gf> = (0..parts.len())
+                .map(|pi| {
+                    (0..p_x.cols()).fold(Gf::zero(), |a, c| {
+                        a + etas_dis[pi] * eq_tops[pi][c] * f1[c] * f2[c]
+                    })
+                })
+                .collect();
+            crate::ligerito::absorb_rlc_betas(transcript, &betas);
+            let mut f1 = f1;
+            let mut f2 = f2;
+            let mut groups_b: Vec<EqInnerGroupMixed<Gf>> = Vec::with_capacity(parts.len());
+            for (pi, &l) in parts.iter().enumerate() {
+                let (b1, b2) = if pi + 1 == parts.len() {
+                    (core::mem::take(&mut f1), core::mem::take(&mut f2))
+                } else {
+                    (f1.clone(), f2.clone())
+                };
+                groups_b.push(EqInnerGroupMixed {
+                    q: points[l][t_x..].to_vec(),
+                    scale: etas_dis[pi],
+                    bufs: GroupBufs::Dense(vec![(b1, b2)]),
                 });
             }
+            let (sc_b, r_b, finals_b) =
+                prove_eq_inner_sumcheck_mixed(transcript, groups_b, &[], &[], &[], &());
+            drop(_g_r);
+            let omegas = vec![finals_b[0][0].0, finals_b[0][0].1];
+            crate::ligerito::absorb_rlc_omegas(transcript, &omegas);
+            let rho: Vec<Gf> = r_a.iter().chain(r_b.iter()).copied().collect();
+            (None, Some(RlcDischargeEqf { sc_a, betas, sc_b }), omegas, vec![0, 1], rho)
         }
-        drop(_g_t);
-        let _g_r = crate::utils::prof::scope("rlc:dis_run");
-        let (sc_a, r_a, finals_a) =
-            prove_eq_inner_sumcheck_mixed(transcript, groups_a, &tau_sets, &[], &[], &());
-        // Per-column finals (identical across chunks — same buffers, same
-        // challenges): F_i[c] = M̂_i(r_A, c).
-        let f1: Vec<Gf> = (0..p_x.cols()).map(|c| finals_a[c][0].0).collect();
-        let f2: Vec<Gf> = (0..p_x.cols()).map(|c| finals_a[c][0].1).collect();
-        let betas: Vec<Gf> = (0..lch_x)
-            .map(|l| {
-                (0..p_x.cols()).fold(Gf::zero(), |a, c| {
-                    a + etas_dis[l] * eq_tops[l][c] * f1[c] * f2[c]
-                })
-            })
-            .collect();
-        crate::ligerito::absorb_rlc_betas(transcript, &betas);
-        let mut f1 = f1;
-        let mut f2 = f2;
-        let mut groups_b: Vec<EqInnerGroupMixed<Gf>> = Vec::with_capacity(lch_x);
-        for (l, pt) in points.iter().enumerate() {
-            let (b1, b2) = if l + 1 == lch_x {
-                (core::mem::take(&mut f1), core::mem::take(&mut f2))
-            } else {
-                (f1.clone(), f2.clone())
-            };
-            groups_b.push(EqInnerGroupMixed {
-                q: pt[t_x..].to_vec(),
-                scale: etas_dis[l],
-                bufs: GroupBufs::Dense(vec![(b1, b2)]),
-            });
-        }
-        let (sc_b, r_b, finals_b) =
-            prove_eq_inner_sumcheck_mixed(transcript, groups_b, &[], &[], &[], &());
-        drop(_g_r);
-        let omegas = vec![finals_b[0][0].0, finals_b[0][0].1];
-        crate::ligerito::absorb_rlc_omegas(transcript, &omegas);
-        let rho: Vec<Gf> = r_a.iter().chain(r_b.iter()).copied().collect();
-        (None, Some(RlcDischargeEqf { sc_a, betas, sc_b }), omegas, rho)
     } else {
-        let _g = crate::utils::prof::scope("rlc:discharge");
-        let etas_dis: Vec<Gf> = transcript.get_field_challenges(lch_x * num_ge2, &());
-        // A_S(x) = Σ_l η_{l,S}·eq(pt_l, x). The last group of each chunk
-        // takes the eq table by move + in-place scale, so at the common
-        // L = 1, single-channel (j = 2) shape the build peaks at ONE
-        // 2^{n'} buffer. Parallel over chunks of x.
-        let _g_t = crate::utils::prof::scope("rlc:dis_tbls");
-        const DIS_CHUNK: usize = 1 << 12;
-        let mut a_tbls: Vec<Vec<Gf>> = vec![Vec::new(); num_ge2];
-        for (l, pt) in points.iter().enumerate() {
-            let mut eq_pt = build_eq_x_r_vec(pt, &()).expect("n' >= 1");
-            for g in 0..num_ge2 {
-                let eta = etas_dis[l * num_ge2 + g];
-                let last = g == num_ge2 - 1;
-                if last && a_tbls[g].is_empty() {
-                    cfg_chunks_mut!(eq_pt, DIS_CHUNK).for_each(|chunk| {
-                        for e in chunk.iter_mut() {
-                            *e *= eta;
-                        }
-                    });
-                    a_tbls[g] = core::mem::take(&mut eq_pt);
-                } else if a_tbls[g].is_empty() {
+        // Active (l, S) pairs, (l asc, S asc); one η per pair.
+        let mut dpairs: Vec<(usize, usize)> = Vec::new();
+        for (l, act) in actives.iter().enumerate() {
+            for &s in act {
+                if s.count_ones() >= 2 {
+                    dpairs.push((l, s));
+                }
+            }
+        }
+        if dpairs.is_empty() {
+            (None, None, Vec::new(), Vec::new(), Vec::new())
+        } else {
+            let _g = crate::utils::prof::scope("rlc:discharge");
+            let etas_dis: Vec<Gf> = transcript.get_field_challenges(dpairs.len(), &());
+            let s_union: Vec<usize> = {
+                let mut v: Vec<usize> = dpairs.iter().map(|&(_, s)| s).collect();
+                v.sort_unstable();
+                v.dedup();
+                v
+            };
+            let omega_fis: Vec<usize> = (0..j)
+                .filter(|&fi| s_union.iter().any(|&s| (s >> fi) & 1 == 1))
+                .collect();
+            let _g_t = crate::utils::prof::scope("rlc:dis_tbls");
+            const DIS_CHUNK: usize = 1 << 12;
+            // A_S(x) = Σ_{active (l,S)} η·eq(pt_l, x), grouped per S.
+            let mut a_tbls: Vec<Vec<Gf>> = vec![Vec::new(); s_union.len()];
+            for (pi, &(l, s)) in dpairs.iter().enumerate() {
+                let g = s_union.iter().position(|&x| x == s).expect("s in union");
+                let eta = etas_dis[pi];
+                let eq_pt = build_eq_x_r_vec(&points[l], &()).expect("n' >= 1");
+                if a_tbls[g].is_empty() {
                     a_tbls[g] = cfg_iter!(eq_pt).map(|&e| eta * e).collect();
                 } else {
                     let dst = &mut a_tbls[g];
@@ -2833,95 +2880,110 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family(
                     });
                 }
             }
-        }
-        // Dense 0/1 bit-MLE tables of the family columns (x index
-        // (c ≪ t') | b), parallel per column strip.
-        let mut m_dense: Vec<Vec<Gf>> = x_rows
-            .iter()
-            .map(|rows| {
-                let mut tbl = vec![Gf::zero(); 1usize << n_x];
-                cfg_chunks_mut!(tbl, 1usize << t_x).enumerate().for_each(|(c, strip)| {
-                    for (wi, &word) in rows[c].iter().enumerate() {
-                        let mut bits = word;
-                        while bits != 0 {
-                            let t = bits.trailing_zeros() as usize;
-                            strip[(wi << 6) | t] = one;
-                            bits &= bits.wrapping_sub(1);
-                        }
+            // Dense 0/1 bit-MLE tables of the participating family columns
+            // (x index (c ≪ t') | b), parallel per column strip.
+            let mut m_dense: Vec<Vec<Gf>> = (0..j)
+                .map(|fi| {
+                    if !omega_fis.contains(&fi) {
+                        return Vec::new();
                     }
-                });
-                tbl
-            })
-            .collect();
-        let to_mle = |tbl: Vec<Gf>| {
-            DenseMultilinearExtension::from_evaluations_vec(
-                n_x,
-                tbl.into_iter().map(|g| g.into_inner()).collect(),
-                zero_inner,
-            )
-        };
-        // Each family column's dense table moves into its LAST consuming
-        // group; earlier consumers clone (j = 2: everything moves).
-        let mut m_uses: Vec<usize> = (0..j)
-            .map(|fi| ge2.iter().filter(|&&s| (s >> fi) & 1 == 1).count())
-            .collect();
-        let mut groups: Vec<MultiDegreeSumcheckGroup<Gf>> = Vec::with_capacity(num_ge2);
-        for (g, &s) in ge2.iter().enumerate() {
-            let mut mles = vec![to_mle(core::mem::take(&mut a_tbls[g]))];
-            for fi in 0..j {
-                if (s >> fi) & 1 == 1 {
-                    m_uses[fi] -= 1;
-                    let tbl = if m_uses[fi] == 0 {
-                        core::mem::take(&mut m_dense[fi])
-                    } else {
-                        m_dense[fi].clone()
-                    };
-                    mles.push(to_mle(tbl));
-                }
-            }
-            let deg = 1usize.wrapping_add(s.count_ones() as usize);
-            let group = MultiDegreeSumcheckGroup::new(
-                deg,
-                mles,
-                Box::new(|vals: &[Gf]| vals.iter().fold(Gf::one(), |a, v| a * *v)),
-            );
-            // |S| = 2 groups (degree 3, the whole discharge at j = 2) run
-            // the fused triple-product evaluator — byte-identical.
-            let group = if deg == 3 && rs_fast() {
-                group.with_round_evaluator(Box::new(crate::ligerito::RlcTripleWideEvaluator))
-            } else {
-                group
+                    let rows = &x_rows[fi];
+                    let mut tbl = vec![Gf::zero(); 1usize << n_x];
+                    cfg_chunks_mut!(tbl, 1usize << t_x).enumerate().for_each(|(c, strip)| {
+                        for (wi, &word) in rows[c].iter().enumerate() {
+                            let mut bits = word;
+                            while bits != 0 {
+                                let t = bits.trailing_zeros() as usize;
+                                strip[(wi << 6) | t] = one;
+                                bits &= bits.wrapping_sub(1);
+                            }
+                        }
+                    });
+                    tbl
+                })
+                .collect();
+            let to_mle = |tbl: Vec<Gf>| {
+                DenseMultilinearExtension::from_evaluations_vec(
+                    n_x,
+                    tbl.into_iter().map(|g| g.into_inner()).collect(),
+                    zero_inner,
+                )
             };
-            groups.push(group);
+            // Each column's dense table moves into its LAST consuming group.
+            let mut m_uses: Vec<usize> = (0..j)
+                .map(|fi| s_union.iter().filter(|&&s| (s >> fi) & 1 == 1).count())
+                .collect();
+            let mut groups: Vec<MultiDegreeSumcheckGroup<Gf>> =
+                Vec::with_capacity(s_union.len());
+            for (g, &s) in s_union.iter().enumerate() {
+                let mut mles = vec![to_mle(core::mem::take(&mut a_tbls[g]))];
+                for fi in 0..j {
+                    if (s >> fi) & 1 == 1 {
+                        m_uses[fi] -= 1;
+                        let tbl = if m_uses[fi] == 0 {
+                            core::mem::take(&mut m_dense[fi])
+                        } else {
+                            m_dense[fi].clone()
+                        };
+                        mles.push(to_mle(tbl));
+                    }
+                }
+                let deg = 1usize.wrapping_add(s.count_ones() as usize);
+                let group = MultiDegreeSumcheckGroup::new(
+                    deg,
+                    mles,
+                    Box::new(|vals: &[Gf]| vals.iter().fold(Gf::one(), |a, v| a * *v)),
+                );
+                // |S| = 2 groups (degree 3) run the fused triple-product
+                // evaluator — byte-identical.
+                let group = if deg == 3 && rs_fast() {
+                    group.with_round_evaluator(Box::new(
+                        crate::ligerito::RlcTripleWideEvaluator,
+                    ))
+                } else {
+                    group
+                };
+                groups.push(group);
+            }
+            drop(m_dense);
+            drop(_g_t);
+            let _g_r = crate::utils::prof::scope("rlc:dis_run");
+            let (dis, states) =
+                MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(transcript, groups, n_x, &());
+            drop(_g_r);
+            let rho = states[0].randomness.clone();
+            // Committed closings ω_i = M̂_i(ρ) over the participating columns.
+            let omegas: Vec<Gf> = omega_fis
+                .iter()
+                .map(|&fi| external_residual(&p_x, &x_rows[fi], &rho))
+                .collect();
+            crate::ligerito::absorb_rlc_omegas(transcript, &omegas);
+            (Some(dis), None, omegas, omega_fis, rho)
         }
-        drop(m_dense);
-        drop(_g_t);
-        let _g_r = crate::utils::prof::scope("rlc:dis_run");
-        let (dis, states) =
-            MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(transcript, groups, n_x, &());
-        drop(_g_r);
-        let rho = states[0].randomness.clone();
-        // Committed closings ω_i = M̂_i(ρ).
-        let omegas: Vec<Gf> =
-            x_rows.iter().map(|rows| external_residual(&p_x, rows, &rho)).collect();
-        crate::ligerito::absorb_rlc_omegas(transcript, &omegas);
-        (Some(dis), None, omegas, rho)
     };
 
-    // (5) Rings: per chunk exit × family column, then ρ × family column.
+    // (5) Rings: per chunk, the ACTIVE singleton channels' columns at the
+    // chunk's exit; then (when a discharge ran) the ω columns at ρ.
     let _g_r = crate::utils::prof::scope("rlc:rings");
-    let mut ring_pts: Vec<&[Gf]> = points.iter().map(|pt| &pt[..]).collect();
-    if num_ge2 > 0 {
-        ring_pts.push(&rho);
+    let mut ring_specs: Vec<(&[Gf], Vec<usize>)> = Vec::with_capacity(lch_x + 1);
+    for (l, pt) in points.iter().enumerate() {
+        let cols: Vec<usize> = (0..j)
+            .filter(|&fi| actives[l].contains(&(1usize << fi)))
+            .map(|fi| family_cols[fi])
+            .collect();
+        ring_specs.push((&pt[..], cols));
+    }
+    if !omegas.is_empty() {
+        ring_specs.push((&rho, omega_fis.iter().map(|&fi| family_cols[fi]).collect()));
     }
     let p0 = xor_support_prefix(layout);
-    let eq_ns_all: Vec<Vec<Gf>> = ring_pts
+    let eq_ns_all: Vec<Vec<Gf>> = ring_specs
         .iter()
-        .map(|pt| build_eq_x_r_vec(&pt[p0..], &()).expect("x support"))
+        .map(|(pt, _)| build_eq_x_r_vec(&pt[p0..], &()).expect("x support"))
         .collect();
-    let mut rings = Vec::with_capacity(ring_pts.len() * j);
-    for eq_ns in &eq_ns_all {
-        let cols_owned: Vec<usize> = family_cols.to_vec();
+    let mut rings = Vec::new();
+    for ((_, spec_cols), eq_ns) in ring_specs.iter().zip(eq_ns_all.iter()) {
+        let cols_owned: Vec<usize> = spec_cols.clone();
         let svs: Vec<Vec<Gf>> = cfg_into_iter!(cols_owned)
             .map(|i_col| {
                 let mut s = vec![Gf::zero(); 128];
@@ -2960,8 +3022,8 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family(
         .map(|eq_ns| cfg_iter!(eq_ns).map(|&e| phi_r2(e, &eq_r2)).collect())
         .collect();
     let mut ring_idx = 0usize;
-    for phi_ns in &phi_ns_all {
-        for &i_col in family_cols {
+    for ((_, spec_cols), phi_ns) in ring_specs.iter().zip(phi_ns_all.iter()) {
+        for &i_col in spec_cols {
             let eta = etas[ring_idx];
             for (yx, &ph) in phi_ns.iter().enumerate() {
                 let y = embed_xor_index(layout, yx << p0, i_col) >> LOG_PACKING;
@@ -3041,25 +3103,19 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
                 || cl.row_weights_q.len() != p_x.rows()
                 || cl.claimed >= FQ_MOD
         })
+        || (0..j).any(|fi| claims.iter().all(|cl| (cl.form >> fi) & 1 == 0))
     {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
     let c_w_x = mod_q_chunk_width(&p_x);
     let lch_x = mod_q_num_chunks(&p_x, FQ_BITS);
-    let ge2 = rlc_ge2_channels(j);
-    let num_ge2 = ge2.len();
-    let num_rings = lch_x
-        .wrapping_add(usize::from(num_ge2 > 0))
-        .wrapping_mul(j);
-    // Proof shape.
+    // Proof shape (the elision-dependent counts — rings, discharge
+    // presence, ω's — are checked after the per-chunk active sets are
+    // derived from the case weights).
     if proof.mfs.len() != lch_x
         || proof.us.len() != lch_x
         || proof.presums.len() != lch_x
         || proof.us.iter().any(|u| u.len() != p_x.cols())
-        || proof.rings.len() != num_rings
-        || proof.discharge.is_some() != (j >= 3)
-        || proof.discharge_eqf.is_some() != (j == 2)
-        || proof.omegas.len() != if num_ge2 > 0 { j } else { 0 }
     {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
@@ -3094,8 +3150,9 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
     let one = Gf::one();
     let comb = FixedBasePow::new(alpha, 128, 8);
     let mut points: Vec<Vec<Gf>> = Vec::with_capacity(lch_x);
-    let mut mus_s1: Vec<Vec<Gf>> = Vec::with_capacity(lch_x); // [l][family col]
-    let mut mus_ge2: Vec<Vec<Gf>> = Vec::with_capacity(lch_x); // [l][ge2 idx]
+    let mut mus_s1: Vec<Vec<Option<Gf>>> = Vec::with_capacity(lch_x); // [l][family col]
+    let mut mus_ge2: Vec<Vec<Gf>> = Vec::with_capacity(lch_x); // [l][active-ge2 idx]
+    let mut actives: Vec<Vec<usize>> = Vec::with_capacity(lch_x);
     for (l, chunk_w) in case_chunks.iter().enumerate() {
         for (c, &u) in proof.us[l].iter().enumerate() {
             if u >= bound {
@@ -3108,8 +3165,13 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
         let subclaims =
             MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(transcript, t_x, &proof.presums[l], &())
                 .map_err(|_| FlockRsError::Common(IntEvalRsError::PreSumcheck))?;
+        // The O(2^j·2^{t'}) step: case powers → τ_S → the ACTIVE channels
+        // (zero channels are elided on both sides) → R̂_S(r*).
+        let case_pow = rlc_case_pow_table(chunk_w, alpha);
+        let taus = rlc_tau_tables(&case_pow);
+        let active = rlc_active_channels(&taus);
         let sums = proof.presums[l].claimed_sums();
-        if sums.len() != (1usize << j).wrapping_sub(1) {
+        if active.is_empty() || sums.len() != active.len() {
             return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
         }
         if sums.iter().fold(Gf::zero(), |a, &b| a + b) != e_d + one {
@@ -3117,16 +3179,13 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
         }
         let (z_bj, z_c) = z.split_at(t_x);
         let r_star = subclaims.point().to_vec();
-        // The O(2^j·2^{t'}) step: case powers → τ_S → R̂_S(r*).
-        let case_pow = rlc_case_pow_table(chunk_w, alpha);
-        let taus = rlc_tau_tables(&case_pow);
         let eq_zbj = build_eq_x_r_vec(z_bj, &()).expect("t' >= 1");
         let eq_rstar = build_eq_x_r_vec(&r_star, &()).expect("t' >= 1");
         let eq_prod: Vec<Gf> =
             eq_zbj.iter().zip(eq_rstar.iter()).map(|(&a, &b)| a * b).collect();
-        let mut mu_s1 = vec![Gf::zero(); j];
-        let mut mu_ge2 = Vec::with_capacity(num_ge2);
-        for (g, s) in (1..1usize << j).enumerate() {
+        let mut mu_s1 = vec![None; j];
+        let mut mu_ge2 = Vec::with_capacity(active.len());
+        for (g, &s) in active.iter().enumerate() {
             let r_hat = eq_prod
                 .iter()
                 .zip(taus[s].iter())
@@ -3136,14 +3195,59 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
             }
             let mu = subclaims.expected_evaluations()[g] * r_hat.inverse();
             if s.count_ones() == 1 {
-                mu_s1[s.trailing_zeros() as usize] = mu;
+                mu_s1[s.trailing_zeros() as usize] = Some(mu);
             } else {
                 mu_ge2.push(mu);
             }
         }
         mus_s1.push(mu_s1);
         mus_ge2.push(mu_ge2);
+        actives.push(active);
         points.push(r_star.iter().chain(z_c.iter()).copied().collect());
+    }
+
+    // Elision-derived proof shape: participation, ω set, ring count.
+    let parts: Vec<usize> = if j == 2 {
+        (0..lch_x).filter(|&l| actives[l].contains(&3)).collect()
+    } else {
+        Vec::new()
+    };
+    let dpairs: Vec<(usize, usize)> = if j >= 3 {
+        let mut v = Vec::new();
+        for (l, act) in actives.iter().enumerate() {
+            for &s in act {
+                if s.count_ones() >= 2 {
+                    v.push((l, s));
+                }
+            }
+        }
+        v
+    } else {
+        Vec::new()
+    };
+    let omega_fis: Vec<usize> = if j == 2 && !parts.is_empty() {
+        vec![0, 1]
+    } else if !dpairs.is_empty() {
+        let s_union: Vec<usize> = {
+            let mut v: Vec<usize> = dpairs.iter().map(|&(_, s)| s).collect();
+            v.sort_unstable();
+            v.dedup();
+            v
+        };
+        (0..j).filter(|&fi| s_union.iter().any(|&s| (s >> fi) & 1 == 1)).collect()
+    } else {
+        Vec::new()
+    };
+    let singleton_rings: usize = actives
+        .iter()
+        .map(|a| a.iter().filter(|s| s.count_ones() == 1).count())
+        .sum();
+    if proof.rings.len() != singleton_rings + omega_fis.len()
+        || proof.discharge_eqf.is_some() != (j == 2 && !parts.is_empty())
+        || proof.discharge.is_some() == dpairs.is_empty()
+        || proof.omegas.len() != omega_fis.len()
+    {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
 
     // (4) Discharge: η-batched |S| ≥ 2 residuals; sent ω closings. j = 2
@@ -3151,15 +3255,17 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
     // the η-batched residuals and its closing `Σ_l eq(r_A, pt_l⁻)·β_l`;
     // phase B opens at `Σ_l β_l` and closes at `Σ_l η_l·eq(r_B, pt_l⁺)·ω₁·ω₂`.
     let mut rho: Vec<Gf> = Vec::new();
-    if j == 2 {
+    if j == 2 && !parts.is_empty() {
         use crate::piop::sumcheck::MLSumcheck;
-        let etas_dis: Vec<Gf> = transcript.get_field_challenges(lch_x, &());
+        let etas_dis: Vec<Gf> = transcript.get_field_challenges(parts.len(), &());
         let d = proof.discharge_eqf.as_ref().expect("shape-checked above");
-        if d.betas.len() != lch_x {
+        if d.betas.len() != parts.len() {
             return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
         }
-        let want_sum =
-            (0..lch_x).fold(Gf::zero(), |a, l| a + etas_dis[l] * mus_ge2[l][0]);
+        let want_sum = parts
+            .iter()
+            .enumerate()
+            .fold(Gf::zero(), |a, (pi, &l)| a + etas_dis[pi] * mus_ge2[l][0]);
         if d.sc_a.claimed_sum != want_sum {
             return Err(FlockRsError::Common(IntEvalRsError::Discharge));
         }
@@ -3167,10 +3273,10 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
             .map_err(|_| FlockRsError::Common(IntEvalRsError::Discharge))?;
         let expected_a = sub_a.expected_evaluation;
         let r_a = sub_a.point;
-        let want_a = points.iter().zip(d.betas.iter()).try_fold(
+        let want_a = parts.iter().zip(d.betas.iter()).try_fold(
             Gf::zero(),
-            |a, (pt, &beta)| {
-                eq_eval(&r_a, &pt[..t_x], one)
+            |a, (&l, &beta)| {
+                eq_eval(&r_a, &points[l][..t_x], one)
                     .map(|e| a + e * beta)
                     .map_err(|_| FlockRsError::RingSwitch(RsOpenError::Shape))
             },
@@ -3188,10 +3294,10 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
                 .map_err(|_| FlockRsError::Common(IntEvalRsError::Discharge))?;
         let expected_b = sub_b.expected_evaluation;
         let r_b = sub_b.point;
-        let eq_batch = points.iter().zip(etas_dis.iter()).try_fold(
+        let eq_batch = parts.iter().zip(etas_dis.iter()).try_fold(
             Gf::zero(),
-            |a, (pt, &eta)| {
-                eq_eval(&r_b, &pt[t_x..], one)
+            |a, (&l, &eta)| {
+                eq_eval(&r_b, &points[l][t_x..], one)
                     .map(|e| a + eta * e)
                     .map_err(|_| FlockRsError::RingSwitch(RsOpenError::Shape))
             },
@@ -3201,20 +3307,36 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
         }
         crate::ligerito::absorb_rlc_omegas(transcript, &proof.omegas);
         rho = r_a.into_iter().chain(r_b).collect();
-    } else if num_ge2 > 0 {
-        let etas_dis: Vec<Gf> = transcript.get_field_challenges(lch_x * num_ge2, &());
+    } else if !dpairs.is_empty() {
+        let etas_dis: Vec<Gf> = transcript.get_field_challenges(dpairs.len(), &());
+        let s_union: Vec<usize> = {
+            let mut v: Vec<usize> = dpairs.iter().map(|&(_, s)| s).collect();
+            v.sort_unstable();
+            v.dedup();
+            v
+        };
         let dis = proof.discharge.as_ref().expect("shape-checked above");
         let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(transcript, n_x, dis, &())
             .map_err(|_| FlockRsError::Common(IntEvalRsError::Discharge))?;
         let sums = dis.claimed_sums();
-        if sums.len() != num_ge2 {
+        if sums.len() != s_union.len() {
             return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
         }
-        for (g, &sum) in sums.iter().enumerate() {
-            let want = (0..lch_x).fold(Gf::zero(), |a, l| {
-                a + etas_dis[l * num_ge2 + g] * mus_ge2[l][g]
-            });
-            if sum != want {
+        // μ of pair (l, s): position of s among chunk l's active ge2 set.
+        let mu_of = |l: usize, s: usize| -> Gf {
+            let gi = actives[l]
+                .iter()
+                .filter(|x| x.count_ones() >= 2)
+                .position(|&x| x == s)
+                .expect("pair derived from actives");
+            mus_ge2[l][gi]
+        };
+        for (g, &s) in s_union.iter().enumerate() {
+            let want = dpairs.iter().zip(etas_dis.iter()).fold(
+                Gf::zero(),
+                |a, (&(l, ps), &eta)| if ps == s { a + eta * mu_of(l, s) } else { a },
+            );
+            if sums[g] != want {
                 return Err(FlockRsError::Common(IntEvalRsError::Discharge));
             }
         }
@@ -3224,14 +3346,15 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
             .iter()
             .map(|pt| eq_eval(pt, &rho, one).map_err(|_| FlockRsError::RingSwitch(RsOpenError::Shape)))
             .collect::<Result<_, _>>()?;
-        for (g, &s) in ge2.iter().enumerate() {
-            let a_hat = (0..lch_x).fold(Gf::zero(), |a, l| {
-                a + etas_dis[l * num_ge2 + g] * eq_pts_rho[l]
-            });
+        for (g, &s) in s_union.iter().enumerate() {
+            let a_hat = dpairs.iter().zip(etas_dis.iter()).fold(
+                Gf::zero(),
+                |a, (&(l, ps), &eta)| if ps == s { a + eta * eq_pts_rho[l] } else { a },
+            );
             let mut want = a_hat;
-            for (fi, &om) in proof.omegas.iter().enumerate() {
+            for (oi, &fi) in omega_fis.iter().enumerate() {
                 if (s >> fi) & 1 == 1 {
-                    want *= om;
+                    want *= proof.omegas[oi];
                 }
             }
             if subclaims.expected_evaluations()[g] != want {
@@ -3241,15 +3364,34 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
         crate::ligerito::absorb_rlc_omegas(transcript, &proof.omegas);
     }
 
-    // (5) Rings: each in-pack read-off must reproduce its residual.
-    let mut ring_pts: Vec<&[Gf]> = points.iter().map(|pt| &pt[..]).collect();
-    if num_ge2 > 0 {
-        ring_pts.push(&rho);
+    // (5) Rings: each in-pack read-off must reproduce its residual — per
+    // chunk the ACTIVE singleton channels' columns, then the ω columns at ρ.
+    // (embedded column, expected residual) pairs per ring point
+    type RingCols = Vec<(usize, Gf)>;
+    let mut ring_specs: Vec<(&[Gf], RingCols)> = Vec::with_capacity(lch_x + 1);
+    for (l, pt) in points.iter().enumerate() {
+        let cols: RingCols = (0..j)
+            .filter(|&fi| actives[l].contains(&(1usize << fi)))
+            .map(|fi| {
+                (family_cols[fi], mus_s1[l][fi].expect("active singleton has a residual"))
+            })
+            .collect();
+        ring_specs.push((&pt[..], cols));
     }
-    let mut r_his: Vec<Vec<Gf>> = Vec::with_capacity(num_rings);
+    if !proof.omegas.is_empty() {
+        ring_specs.push((
+            &rho,
+            omega_fis
+                .iter()
+                .zip(proof.omegas.iter())
+                .map(|(&fi, &om)| (family_cols[fi], om))
+                .collect(),
+        ));
+    }
+    let mut r_his: Vec<Vec<Gf>> = Vec::with_capacity(proof.rings.len());
     let mut ring_idx = 0usize;
-    for (pi, pt) in ring_pts.iter().enumerate() {
-        for (fi, &i_col) in family_cols.iter().enumerate() {
+    for (pt, cols) in &ring_specs {
+        for &(i_col, expect) in cols {
             let ring = &proof.rings[ring_idx];
             if ring.s_v.len() != 128 {
                 return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
@@ -3258,7 +3400,6 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
             let eq_lo = build_eq_x_r_vec(&pt_e[..LOG_PACKING], &()).expect("r_lo");
             let claim =
                 ring.s_v.iter().zip(eq_lo.iter()).fold(Gf::zero(), |a, (s, e)| a + *s * *e);
-            let expect = if pi < lch_x { mus_s1[pi][fi] } else { proof.omegas[fi] };
             if claim != expect {
                 return Err(FlockRsError::RingSwitch(RsOpenError::RingSwitchClaim));
             }
@@ -4256,6 +4397,50 @@ mod tests {
                 Err(FlockRsError::Common(IntEvalRsError::ReadOff)),
                 "wrong column weights must fail the read-off"
             );
+        }
+    }
+
+    /// A PURE-XOR family (k = 1, j = 2, form = 11 — or several claims on
+    /// the same XOR): the γ-combined weight factors through m₁ ⊕ m₂, so
+    /// the AND channel's τ is IDENTICALLY zero and must be elided — the
+    /// completeness edge of the construction's degenerate case.
+    #[test]
+    fn rlc_family_pure_xor_family_roundtrips() {
+        let layout = rlc_test_layout();
+        let p_x = virtual_xor_params(&layout);
+        let alpha = smallest_generator();
+        let (hint, pc, vc) = rlc_test_commit(&layout);
+        let family_cols = [0usize, 1];
+        let colw = rlc_test_col_weights(&p_x);
+        // k = 1 single XOR claim, and k = 2 multi-point on the same XOR.
+        for k in [1usize, 2] {
+            let forms: Vec<usize> = vec![0b11; k];
+            let rws: Vec<Vec<u128>> =
+                (0..k).map(|i| rlc_test_row_weights(&p_x, 130 + i as u128)).collect();
+            let cs: Vec<u128> = forms
+                .iter()
+                .zip(rws.iter())
+                .map(|(&f, rw)| {
+                    rlc_expected_claim(&layout, hint.rows(), &family_cols, f, rw, &colw)
+                })
+                .collect();
+            let claims: Vec<RlcFamilyClaim<'_>> = (0..k)
+                .map(|i| RlcFamilyClaim {
+                    form: forms[i],
+                    row_weights_q: &rws[i],
+                    claimed: cs[i],
+                })
+                .collect();
+            let mut pt = Blake3Transcript::new();
+            let proof = prove_mle_eval_mod_q_ligerito_rlc_family(
+                &mut pt, &hint, &layout, &family_cols, &claims, alpha, &pc,
+            );
+            let mut vt = Blake3Transcript::new();
+            verify_mle_eval_mod_q_ligerito_rlc_family(
+                &mut vt, &hint.commitment, &proof, &layout, &family_cols, &claims, &colw,
+                alpha, &vc,
+            )
+            .unwrap_or_else(|e| panic!("pure-XOR family (k={k}) failed: {e:?}"));
         }
     }
 
