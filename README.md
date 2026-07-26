@@ -365,6 +365,32 @@ reference table above predates this change (its n ≥ 26 prove rows are now
 `eqf:msg:*` / `eqf:fold:*` now split the aggregate round buckets by shape
 (`OBLONG_PROFILE=1`).
 
+**Flock-derived open-path kernels + fused Ligerito round 0 (2026-07-26).**
+The ring-switch and basis passes replaced their data-dependent bit scans
+with flock's kernel shapes, operating on the packed message in place (a
+`PackedBits` word view — no conversion pass): the `s_v` in-pack marginals
+run the method-of-four-Russians fold (per 8 elements: two 16-entry
+subset-sum tables, one 8×8 bit transpose per byte position, then two
+lookups + one RMW per output bit — flock's
+`fold_1b_rows_1way_mfr_8wide_k4` shape), and the `Φ_{r″}` basis maps run
+16 η-premultiplied byte-table subset-sum gathers per element (flock's
+`fold_b128_elems` shape; premultiplying the batching `η` into the tables
+also deletes the per-element `η·Φ` field multiply). The mod-q prover
+additionally fuses the Ligerito **round-0** message `(u_0, u_2)` into the
+basis-fill pass (deferred-reduction accumulators) and enters flock through
+`recursive_prover_with_basis_precomputed_round0`, skipping flock's own
+full `(f, b)` read pass; and the pre-sumcheck's `R·m` rounds got a
+wide-accumulating `RoundPolyEvaluator` (the crate's first use of that
+hook). `F2Z_RS_FAST=0` opts out of all of it. Byte-identical proofs
+(kernel unit tests vs the scalar scans; cross-process `fuse_check`
+old-vs-new). Measured (alternated in-window A/B pairs, `prof_probe`,
+n=28 t=17 s=11): `mq:bcomb` 17.3 → 4.5 ms (**−74 %**), `mq:rings`
+13.6 → 8.0 ms (−41 %), `mq:lig` ≈ −2 ms (the skipped round-0 pass),
+`mc:presum_run` 2.07 → 0.87 ms (−58 %); prove total ≈ 566/556 →
+552/550 ms (≈ **−2 %** end-to-end — the open-side machinery is a small
+slice of a forest-dominated prove). The batched and virtual-XOR paths
+inherit the kernels through the shared helpers.
+
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
 The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —

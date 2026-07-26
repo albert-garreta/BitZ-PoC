@@ -327,6 +327,186 @@ pub(crate) fn absorb_sv(transcript: &mut impl Transcript, s: &[Gf]) {
     absorb_gf_slice(transcript, 0x20, s);
 }
 
+// ---------------------------------------------------------------------
+// Ring-switch fold kernels (flock-derived; `F2Z_RS_FAST`)
+// ---------------------------------------------------------------------
+
+/// Fast ring-switch/basis kernels — the default: the `s_v` in-pack marginals
+/// run the method-of-four-Russians fold (flock's
+/// `fold_1b_rows_1way_mfr_8wide_k4` shape) and the `Φ_{r″}` basis maps run 16
+/// byte-table subset-sum lookups (flock's `fold_b128_elems` shape) instead of
+/// data-dependent bit scans; the mod-q opener additionally fuses the Ligerito
+/// round-0 message into the basis pass and calls flock's
+/// `recursive_prover_with_basis_precomputed_round0`. `F2Z_RS_FAST=0` opts out
+/// (restores the scalar bit-scan paths and the plain prover entry point —
+/// diagnostic / A-B measurement). Byte-identical proofs either way (exact
+/// field-op reassociation only; pinned cross-process by
+/// `examples/fuse_check.rs`). Read once per process.
+pub(crate) fn rs_fast() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("F2Z_RS_FAST").map_or(true, |v| v != "0"))
+}
+
+/// 128-bit-word view of a packed-message element, so the fold kernels run
+/// over both this module's `Gf` and the flock backend's `F128` without a
+/// conversion pass over the 2^{m_p}-element message.
+pub(crate) trait PackedBits: Sync {
+    fn bit_words(&self) -> [u64; 2];
+}
+
+impl PackedBits for Gf {
+    #[inline(always)]
+    fn bit_words(&self) -> [u64; 2] {
+        *self.words()
+    }
+}
+
+/// Hacker's Delight §7-3 8×8 bit-matrix transpose stored in a `u64`
+/// (bit `r·8 + c` of the input ↦ bit `c·8 + r` of the output).
+#[inline(always)]
+fn transpose_8x8_bits(mut x: u64) -> u64 {
+    let t = (x ^ (x >> 7)) & 0x00AA_00AA_00AA_00AAu64;
+    x = x ^ t ^ (t << 7);
+    let t = (x ^ (x >> 14)) & 0x0000_CCCC_0000_CCCCu64;
+    x = x ^ t ^ (t << 14);
+    let t = (x ^ (x >> 28)) & 0x0000_0000_F0F0_F0F0u64;
+    x ^ t ^ (t << 28)
+}
+
+/// 16-entry subset-sum table over 4 elements:
+/// `sums[mask] = Σ_{k : bit_k(mask)} e[k]` (15 additions by doubling).
+#[allow(clippy::arithmetic_side_effects)]
+#[inline(always)]
+fn subset_sums_4(e: [Gf; 4]) -> [Gf; 16] {
+    let mut sums = [Gf::zero(); 16];
+    for (i, &v) in e.iter().enumerate() {
+        let half = 1usize << i;
+        for k in 0..half {
+            sums[half + k] = sums[k] + v;
+        }
+    }
+    sums
+}
+
+/// Scalar bit-scan tail: `s[j] += e` for every set bit `j` of `w`.
+#[allow(clippy::arithmetic_side_effects)]
+#[inline(always)]
+fn sv_scalar_accum(s: &mut [Gf], w: [u64; 2], e: Gf) {
+    for wi in 0..2usize {
+        let mut bits = w[wi];
+        while bits != 0 {
+            let t = bits.trailing_zeros() as usize;
+            s[(wi << 6) | t] += e;
+            bits &= bits.wrapping_sub(1);
+        }
+    }
+}
+
+/// `s_v[j] = Σ_y eq[y]·bit_j(wit[y])` — the in-pack marginal, computed with
+/// the method-of-four-Russians fold: per 8 witness elements, two 16-entry
+/// subset-sum tables over their `eq` values, then per byte position one 8×8
+/// bit transpose and per output bit **two table lookups + one accumulator
+/// RMW**, independent of bit density (the scalar path pays one
+/// data-dependent branchy add per set bit — ~64/element at random data).
+/// Chunk-parallel with per-chunk partial accumulators; exact field sums, so
+/// the result is bit-identical to the scalar scan for any summation order.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::needless_range_loop)] // r_byte loop mirrors flock's kernel 1:1
+pub(crate) fn sv_fold_mfr<T: PackedBits>(wit: &[T], eq: &[Gf]) -> Vec<Gf> {
+    assert_eq!(wit.len(), eq.len());
+    const CHUNK: usize = 1 << 12; // multiple of 8 ⇒ only the global tail is scalar
+    let n_chunks = wit.len().div_ceil(CHUNK).max(1);
+    let partials: Vec<Vec<Gf>> = cfg_into_iter!(0..n_chunks)
+        .map(|c| {
+            let lo = c * CHUNK;
+            let hi = (lo + CHUNK).min(wit.len());
+            let mut s = vec![Gf::zero(); 128];
+            let mut y = lo;
+            while y + 8 <= hi {
+                let lo_tbl = subset_sums_4([eq[y], eq[y + 1], eq[y + 2], eq[y + 3]]);
+                let hi_tbl = subset_sums_4([eq[y + 4], eq[y + 5], eq[y + 6], eq[y + 7]]);
+                let mut m_bytes = [[0u8; 16]; 8];
+                for (e, slot) in m_bytes.iter_mut().enumerate() {
+                    let w = wit[y + e].bit_words();
+                    slot[..8].copy_from_slice(&w[0].to_le_bytes());
+                    slot[8..].copy_from_slice(&w[1].to_le_bytes());
+                }
+                for r_byte in 0..16 {
+                    let combined: u64 = (m_bytes[0][r_byte] as u64)
+                        | ((m_bytes[1][r_byte] as u64) << 8)
+                        | ((m_bytes[2][r_byte] as u64) << 16)
+                        | ((m_bytes[3][r_byte] as u64) << 24)
+                        | ((m_bytes[4][r_byte] as u64) << 32)
+                        | ((m_bytes[5][r_byte] as u64) << 40)
+                        | ((m_bytes[6][r_byte] as u64) << 48)
+                        | ((m_bytes[7][r_byte] as u64) << 56);
+                    let tb = transpose_8x8_bits(combined).to_le_bytes();
+                    let base = r_byte * 8;
+                    for (p, &mask) in tb.iter().enumerate() {
+                        s[base + p] +=
+                            lo_tbl[(mask & 0x0F) as usize] + hi_tbl[(mask >> 4) as usize];
+                    }
+                }
+                y += 8;
+            }
+            while y < hi {
+                sv_scalar_accum(&mut s, wit[y].bit_words(), eq[y]);
+                y += 1;
+            }
+            s
+        })
+        .collect();
+    let mut s = vec![Gf::zero(); 128];
+    for part in &partials {
+        for (a, b) in s.iter_mut().zip(part.iter()) {
+            *a += *b;
+        }
+    }
+    s
+}
+
+/// 16 byte-position subset-sum tables of `scale·eq_r2`:
+/// `T[pos·256 + v] = Σ_{bit j of v} scale·eq_r2[pos·8 + j]` (64 KB). A
+/// `Φ_{r″}` image then costs 16 gathers + a XOR tree ([`phi_from_words`])
+/// instead of a data-dependent bit scan, and premultiplying `scale` (the
+/// batching `η`) into the tables removes the per-element `η·Φ(…)` field
+/// multiply entirely.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn phi_byte_tables(eq_r2: &[Gf], scale: Gf) -> Vec<Gf> {
+    debug_assert_eq!(eq_r2.len(), 128);
+    let mut t = vec![Gf::zero(); 16 * 256];
+    for pos in 0..16usize {
+        let tbl = &mut t[pos << 8..(pos + 1) << 8];
+        for j in 0..8usize {
+            let base = scale * eq_r2[(pos << 3) | j];
+            let half = 1usize << j;
+            for k in 0..half {
+                tbl[half + k] = tbl[k] + base;
+            }
+        }
+    }
+    t
+}
+
+/// `Σ_l T_l[…]` gather for one element: 16 byte-indexed lookups into a
+/// [`phi_byte_tables`] table, tree-reduced. Equals
+/// `scale·Φ_{r″}(element)` bit-for-bit.
+#[allow(clippy::arithmetic_side_effects)]
+#[inline(always)]
+pub(crate) fn phi_from_words(w: [u64; 2], tables: &[Gf]) -> Gf {
+    let lb = w[0].to_le_bytes();
+    let hb = w[1].to_le_bytes();
+    let p0 = tables[lb[0] as usize] + tables[(1 << 8) | lb[1] as usize];
+    let p1 = tables[(2 << 8) | lb[2] as usize] + tables[(3 << 8) | lb[3] as usize];
+    let p2 = tables[(4 << 8) | lb[4] as usize] + tables[(5 << 8) | lb[5] as usize];
+    let p3 = tables[(6 << 8) | lb[6] as usize] + tables[(7 << 8) | lb[7] as usize];
+    let p4 = tables[(8 << 8) | hb[0] as usize] + tables[(9 << 8) | hb[1] as usize];
+    let p5 = tables[(10 << 8) | hb[2] as usize] + tables[(11 << 8) | hb[3] as usize];
+    let p6 = tables[(12 << 8) | hb[4] as usize] + tables[(13 << 8) | hb[5] as usize];
+    let p7 = tables[(14 << 8) | hb[6] as usize] + tables[(15 << 8) | hb[7] as usize];
+    ((p0 + p1) + (p2 + p3)) + ((p4 + p5) + (p6 + p7))
+}
+
 /// Prover: compute and absorb `s_v`, draw `r″`, and produce the BaseFold
 /// weight table `B(y) = Φ_{r″}(eq(r_hi, y))` (plus `eq_r2` and `β₀` for
 /// debugging/tests).
@@ -341,34 +521,30 @@ pub fn ring_switch_prove(
 
     // s_v = Σ_y eq_hi[y] · bit_v(P[y]): parallel partial accumulators over
     // y-chunks, merged by field addition (exact, order-independent).
-    const SV_CHUNK: usize = 1 << 12;
-    let num_chunks = p_msg.len().div_ceil(SV_CHUNK);
-    let partials: Vec<Vec<Gf>> = cfg_into_iter!(0..num_chunks)
-        .map(|ci| {
-            let lo = ci * SV_CHUNK;
-            let hi = (lo + SV_CHUNK).min(p_msg.len());
-            let mut local = vec![Gf::zero(); 128];
-            for y in lo..hi {
-                let w = p_msg[y].words();
-                let e = eq_hi[y];
-                for wi in 0..2usize {
-                    let mut bits = w[wi];
-                    while bits != 0 {
-                        let t = bits.trailing_zeros() as usize;
-                        local[(wi << 6) | t] += e;
-                        bits &= bits.wrapping_sub(1);
-                    }
+    let s = if rs_fast() {
+        sv_fold_mfr(p_msg, &eq_hi)
+    } else {
+        const SV_CHUNK: usize = 1 << 12;
+        let num_chunks = p_msg.len().div_ceil(SV_CHUNK);
+        let partials: Vec<Vec<Gf>> = cfg_into_iter!(0..num_chunks)
+            .map(|ci| {
+                let lo = ci * SV_CHUNK;
+                let hi = (lo + SV_CHUNK).min(p_msg.len());
+                let mut local = vec![Gf::zero(); 128];
+                for y in lo..hi {
+                    sv_scalar_accum(&mut local, *p_msg[y].words(), eq_hi[y]);
                 }
+                local
+            })
+            .collect();
+        let mut s = vec![Gf::zero(); 128];
+        for local in &partials {
+            for (acc, l) in s.iter_mut().zip(local.iter()) {
+                *acc += *l;
             }
-            local
-        })
-        .collect();
-    let mut s = vec![Gf::zero(); 128];
-    for local in &partials {
-        for (acc, l) in s.iter_mut().zip(local.iter()) {
-            *acc += *l;
         }
-    }
+        s
+    };
     absorb_sv(transcript, &s);
     let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
     let eq_r2 = build_eq_x_r_vec(&r2, &()).expect("r2 non-empty");
@@ -378,21 +554,28 @@ pub fn ring_switch_prove(
     let beta0 = s_u.iter().zip(eq_r2.iter()).fold(Gf::zero(), |acc, (su, e)| acc + *su * *e);
 
     // B(y) = Φ_{r″}(eq_hi[y]) = Σ_{u: bit_u(eq_hi[y])} eq_r2[u]. Parallel per y.
-    let b_tbl: Vec<Gf> = cfg_into_iter!(0..eq_hi.len())
-        .map(|y| {
-            let w = eq_hi[y].words();
-            let mut acc = Gf::zero();
-            for wi in 0..2usize {
-                let mut bits = w[wi];
-                while bits != 0 {
-                    let t = bits.trailing_zeros() as usize;
-                    acc += eq_r2[(wi << 6) | t];
-                    bits &= bits.wrapping_sub(1);
+    let b_tbl: Vec<Gf> = if rs_fast() {
+        let tables = phi_byte_tables(&eq_r2, Gf::one());
+        cfg_into_iter!(0..eq_hi.len())
+            .map(|y| phi_from_words(*eq_hi[y].words(), &tables))
+            .collect()
+    } else {
+        cfg_into_iter!(0..eq_hi.len())
+            .map(|y| {
+                let w = eq_hi[y].words();
+                let mut acc = Gf::zero();
+                for wi in 0..2usize {
+                    let mut bits = w[wi];
+                    while bits != 0 {
+                        let t = bits.trailing_zeros() as usize;
+                        acc += eq_r2[(wi << 6) | t];
+                        bits &= bits.wrapping_sub(1);
+                    }
                 }
-            }
-            acc
-        })
-        .collect();
+                acc
+            })
+            .collect()
+    };
     debug_assert_eq!(
         b_tbl.iter().zip(p_msg.iter()).fold(Gf::zero(), |a, (b, p)| a + *b * *p),
         beta0,
@@ -791,6 +974,85 @@ pub(crate) fn verify_int_eval_common(
 /// proof).
 #[allow(clippy::arithmetic_side_effects)]
 #[allow(clippy::type_complexity)]
+/// Degree-2 two-MLE product round evaluator for the pre-sumcheck's `R·m`
+/// group, accumulating the three round-polynomial evaluations with
+/// deferred-reduction ([`crate::utils::wide_mul::WideMulAcc`]) accumulators —
+/// one reduction per accumulator per chunk instead of per product. Value-exact
+/// vs the generic per-point gather (identical per-slot products at the nodes
+/// `{0, 1, F::from(2)}`; reduction is `F₂`-linear and the outer sums are
+/// exact), so the emitted proof is byte-identical. Attached under
+/// [`rs_fast`] purely so `F2Z_RS_FAST=0` restores the generic path for A/B.
+struct ProdPairWideEvaluator;
+
+impl crate::piop::sumcheck::prover::RoundPolyEvaluator<Gf> for ProdPairWideEvaluator {
+    #[allow(clippy::arithmetic_side_effects)]
+    fn round_evals(
+        &self,
+        mles: &[DenseMultilinearExtension<<Gf as crypto_primitives::Field>::Inner>],
+        round: usize,
+        num_vars: usize,
+        degree: usize,
+        _config: &(),
+    ) -> Vec<Gf> {
+        use crate::utils::inner_transparent_field::InnerTransparentField;
+        use crate::utils::wide_mul::WideMulAcc;
+        use crypto_primitives::{FromWithConfig, PrimeField};
+        assert_eq!(degree, 2, "product-pair evaluator is degree-2 only");
+        assert_eq!(mles.len(), 2, "product-pair evaluator expects exactly 2 MLEs");
+        let half = 1usize << (num_vars - round);
+        let x2 = Gf::from_with_cfg(2u64, &());
+        const CHUNK: usize = 1 << 12;
+        let n_chunks = half.div_ceil(CHUNK).max(1);
+        let partials: Vec<(Gf, Gf, Gf)> = cfg_into_iter!(0..n_chunks)
+            .map(|c| {
+                let a = &mles[0];
+                let bm = &mles[1];
+                let lo = c * CHUNK;
+                let hi = (lo + CHUNK).min(half);
+                let zero = Gf::zero();
+                let mut e0 = <Gf as WideMulAcc>::wide_zero(&zero);
+                let mut e1 = <Gf as WideMulAcc>::wide_zero(&zero);
+                let mut e2 = <Gf as WideMulAcc>::wide_zero(&zero);
+                for j in lo..hi {
+                    let a0 = Gf::new_unchecked_with_cfg(a[2 * j], &());
+                    let a1 = Gf::new_unchecked_with_cfg(a[2 * j + 1], &());
+                    let b0 = Gf::new_unchecked_with_cfg(bm[2 * j], &());
+                    let b1 = Gf::new_unchecked_with_cfg(bm[2 * j + 1], &());
+                    <Gf as WideMulAcc>::wide_add_assign(
+                        &mut e0,
+                        &<Gf as WideMulAcc>::mul_wide(&a0, &b0),
+                    );
+                    <Gf as WideMulAcc>::wide_add_assign(
+                        &mut e1,
+                        &<Gf as WideMulAcc>::mul_wide(&a1, &b1),
+                    );
+                    // Node F::from(2): M_i(2) = M_i(0) + from(2)·(M_i(1) − M_i(0)),
+                    // exactly the generic extrapolation (mul_by_node2 yields the
+                    // identical field element).
+                    let va = a0 + (a1 - a0).mul_by_node2(&x2);
+                    let vb = b0 + (b1 - b0).mul_by_node2(&x2);
+                    <Gf as WideMulAcc>::wide_add_assign(
+                        &mut e2,
+                        &<Gf as WideMulAcc>::mul_wide(&va, &vb),
+                    );
+                }
+                (
+                    <Gf as WideMulAcc>::from_wide(e0),
+                    <Gf as WideMulAcc>::from_wide(e1),
+                    <Gf as WideMulAcc>::from_wide(e2),
+                )
+            })
+            .collect();
+        let mut evals = vec![Gf::zero(); 3];
+        for (p0, p1, p2) in &partials {
+            evals[0] += *p0;
+            evals[1] += *p1;
+            evals[2] += *p2;
+        }
+        evals
+    }
+}
+
 pub(crate) fn prove_int_eval_merged_common(
     transcript: &mut impl Transcript,
     p: &IntEvalParams,
@@ -850,6 +1112,11 @@ pub(crate) fn prove_int_eval_merged_common(
         vec![to_mle(&r_tbl), to_mle(&m_tbl)],
         Box::new(|vals: &[Gf]| vals[0] * vals[1]),
     );
+    let group = if rs_fast() {
+        group.with_round_evaluator(Box::new(ProdPairWideEvaluator))
+    } else {
+        group
+    };
     let (presum, states) = {
         let _g = crate::utils::prof::scope("mc:presum_run");
         MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(transcript, vec![group], t_w, &())
@@ -1267,4 +1534,76 @@ mod tests {
         }
     }
 
+    /// The method-of-four-Russians `s_v` fold equals the scalar bit scan
+    /// exactly, at 8-aligned and ragged lengths (incl. the sub-block tail).
+    #[test]
+    fn sv_fold_mfr_matches_scalar() {
+        for &len in &[1usize, 7, 8, 9, 37, 64, 300, 4096, 4104] {
+            let wit: Vec<Gf> = (0..len).map(|i| sample(0x3000 + i as u64)).collect();
+            let eq: Vec<Gf> = (0..len).map(|i| sample(0x5000 + i as u64)).collect();
+            let mut expect = vec![Gf::zero(); 128];
+            for y in 0..len {
+                sv_scalar_accum(&mut expect, *wit[y].words(), eq[y]);
+            }
+            assert_eq!(sv_fold_mfr(&wit, &eq), expect, "len {len}");
+        }
+    }
+
+    /// The η-premultiplied byte tables reproduce `scale·Φ_{r″}` bit-for-bit.
+    #[test]
+    fn phi_byte_tables_match_bitscan() {
+        let eq_r2: Vec<Gf> = (0..128).map(|i| sample(0x9100 + i as u64)).collect();
+        for &scale_seed in &[0u64, 0x42, 0xFFFF] {
+            let scale = if scale_seed == 0 { Gf::one() } else { sample(scale_seed) };
+            let tables = phi_byte_tables(&eq_r2, scale);
+            for i in 0..64u64 {
+                let v = sample(0xA000 + i);
+                let w = *v.words();
+                let mut acc = Gf::zero();
+                for wi in 0..2usize {
+                    let mut bits = w[wi];
+                    while bits != 0 {
+                        let t = bits.trailing_zeros() as usize;
+                        acc += eq_r2[(wi << 6) | t];
+                        bits &= bits.wrapping_sub(1);
+                    }
+                }
+                assert_eq!(phi_from_words(w, &tables), scale * acc, "elem {i}");
+            }
+        }
+    }
+
+    /// The wide-accumulating product-pair round evaluator emits the exact
+    /// messages (and asserted sum) of the generic per-point gather, across
+    /// every round of a degree-2 two-MLE product sumcheck.
+    #[test]
+    fn prod_pair_evaluator_matches_generic() {
+        use crate::piop::sumcheck::prover::ProverState;
+        let nv = 5usize;
+        let n = 1usize << nv;
+        let zero_inner = Gf::zero().into_inner();
+        let mk = |seed: u64| {
+            DenseMultilinearExtension::from_evaluations_vec(
+                nv,
+                (0..n).map(|i| sample(seed + i as u64).into_inner()).collect(),
+                zero_inner,
+            )
+        };
+        let mles = vec![mk(0xB000), mk(0xC000)];
+        let comb = |vals: &[Gf]| vals[0] * vals[1];
+        let mut generic = ProverState::<Gf>::new(mles.clone(), nv, 2);
+        let mut fused = ProverState::<Gf>::new(mles, nv, 2);
+        fused.round_evaluator = Some(Box::new(super::ProdPairWideEvaluator));
+        let mut v_msg: Option<Gf> = None;
+        for round in 0..nv {
+            let mg = generic.prove_round(&v_msg, comb, &());
+            let mf = fused.prove_round(&v_msg, comb, &());
+            assert_eq!(
+                mg.0.tail_evaluations, mf.0.tail_evaluations,
+                "round {round} message mismatch"
+            );
+            v_msg = Some(sample(0xD000 + round as u64));
+        }
+        assert_eq!(generic.asserted_sum, fused.asserted_sum);
+    }
 }

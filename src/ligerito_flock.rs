@@ -53,10 +53,11 @@ use crate::transcript::traits::Transcript;
 
 use crate::pcs::{IntEvalParams, ShaF2Layout, final_eval_ring};
 use crate::ligerito::{
-    IntEvalRsError, LOG_PACKING, RingSwitchProof, RsOpenConfig, RsOpenError, packed_vars,
-    prove_int_eval_common, prove_int_eval_merged_common, prove_x_claims_batched_common,
-    repack_leaf_bits, residual_b_evals, ring_switch_prove, ring_switch_verify, row_bit_vars,
-    tensor_eq_phi_eval, verify_int_eval_common, verify_int_eval_merged_common,
+    IntEvalRsError, LOG_PACKING, PackedBits, RingSwitchProof, RsOpenConfig, RsOpenError,
+    packed_vars, phi_byte_tables, phi_from_words, prove_int_eval_common,
+    prove_int_eval_merged_common, prove_x_claims_batched_common, repack_leaf_bits,
+    residual_b_evals, ring_switch_prove, ring_switch_verify, row_bit_vars, rs_fast,
+    sv_fold_mfr, tensor_eq_phi_eval, verify_int_eval_common, verify_int_eval_merged_common,
     verify_x_claims_batched_common,
 };
 use crate::merged_forest::MergedForestProof;
@@ -78,6 +79,16 @@ pub fn gf_to_f128(g: Gf) -> F128 {
 #[inline]
 pub fn f128_to_gf(f: F128) -> Gf {
     Gf::from_words([f.lo, f.hi])
+}
+
+/// Word view for the shared fold kernels — flock's packed message is
+/// bit-compatible with `Gf` (same GHASH bit convention), so the kernels read
+/// it in place, no conversion pass.
+impl PackedBits for F128 {
+    #[inline(always)]
+    fn bit_words(&self) -> [u64; 2] {
+        [self.lo, self.hi]
+    }
 }
 
 fn gf_slice_to_f128(v: &[Gf]) -> Vec<F128> {
@@ -847,21 +858,28 @@ pub fn prove_rs_ligerito_batch(
 
     // Combined basis (slice-supported) + combined target.
     let mut b_comb = vec![F128::ZERO; l << m_p];
+    if rs_fast() {
+        for ell in 0..l {
+            let tables = phi_byte_tables(&eq_r2, etas[ell]);
+            let eq_hi = &eq_his[ell];
+            let dst = &mut b_comb[ell * slice..(ell + 1) * slice];
+            const CHUNK: usize = 1 << 12;
+            cfg_chunks_mut!(dst, CHUNK).enumerate().for_each(|(ci, chunk)| {
+                let base = ci * CHUNK;
+                for (off, slot) in chunk.iter_mut().enumerate() {
+                    *slot = gf_to_f128(phi_from_words(*eq_hi[base + off].words(), &tables));
+                }
+            });
+        }
+    } else {
+        for ell in 0..l {
+            for (y, &ev) in eq_his[ell].iter().enumerate() {
+                b_comb[ell * slice + y] = gf_to_f128(etas[ell] * phi_r2(ev, &eq_r2));
+            }
+        }
+    }
     let mut target = Gf::zero();
     for ell in 0..l {
-        for (y, &ev) in eq_his[ell].iter().enumerate() {
-            let w = ev.words();
-            let mut acc = Gf::zero();
-            for wi in 0..2usize {
-                let mut bits = w[wi];
-                while bits != 0 {
-                    let t = bits.trailing_zeros() as usize;
-                    acc += eq_r2[(wi << 6) | t];
-                    bits &= bits.wrapping_sub(1);
-                }
-            }
-            b_comb[ell * slice + y] = gf_to_f128(etas[ell] * acc);
-        }
         let s_u = crate::ligerito::transpose_bits_128(&rings[ell].s_v);
         let beta_ell =
             s_u.iter().zip(eq_r2.iter()).fold(Gf::zero(), |a, (su, e)| a + *su * *e);
@@ -1008,9 +1026,14 @@ fn phi_r2(ev: Gf, eq_r2: &[Gf]) -> Gf {
 }
 
 /// Dense in-pack marginal `s_v[j] = Σ_y eq_hi[y]·bit_j(P[y])`,
-/// chunk-parallel with per-chunk accumulators.
+/// chunk-parallel with per-chunk accumulators. Default: the
+/// method-of-four-Russians kernel ([`sv_fold_mfr`]); `F2Z_RS_FAST=0`
+/// restores the scalar bit scan (byte-identical either way).
 #[allow(clippy::arithmetic_side_effects)]
 fn dense_ring_sv(p_msg: &[F128], eq_hi: &[Gf]) -> Vec<Gf> {
+    if rs_fast() {
+        return sv_fold_mfr(p_msg, eq_hi);
+    }
     const CHUNK: usize = 1 << 12;
     let n_chunks = p_msg.len().div_ceil(CHUNK).max(1);
     let partials: Vec<Vec<Gf>> = cfg_into_iter!(0..n_chunks)
@@ -1044,9 +1067,31 @@ fn dense_ring_sv(p_msg: &[F128], eq_hi: &[Gf]) -> Vec<Gf> {
 
 /// Overwrite `b[y] = Σ_l η_l·Φ_{r″}(eq_his[l][y])` — the η-combined
 /// Ligerito basis of the dense (main-chunk) claims — parallel over `y`.
+/// Default: η-premultiplied byte-table subset sums ([`phi_byte_tables`],
+/// 16 gathers/element, no per-element η multiply); `F2Z_RS_FAST=0` restores
+/// the scalar bit scan (byte-identical either way).
 #[allow(clippy::arithmetic_side_effects)]
 fn fill_phi_basis(b: &mut [F128], eq_his: &[Vec<Gf>], etas: &[Gf], eq_r2: &[Gf]) {
     const CHUNK: usize = 1 << 12;
+    if rs_fast() {
+        let tables: Vec<Vec<Gf>> = eq_his
+            .iter()
+            .enumerate()
+            .map(|(l, _)| phi_byte_tables(eq_r2, etas[l]))
+            .collect();
+        cfg_chunks_mut!(b, CHUNK).enumerate().for_each(|(ci, chunk)| {
+            let base = ci * CHUNK;
+            for (off, slot) in chunk.iter_mut().enumerate() {
+                let y = base + off;
+                let mut acc = Gf::zero();
+                for (l, eq_hi) in eq_his.iter().enumerate() {
+                    acc += phi_from_words(*eq_hi[y].words(), &tables[l]);
+                }
+                *slot = gf_to_f128(acc);
+            }
+        });
+        return;
+    }
     cfg_chunks_mut!(b, CHUNK).enumerate().for_each(|(ci, chunk)| {
         let base = ci * CHUNK;
         for (off, slot) in chunk.iter_mut().enumerate() {
@@ -1058,6 +1103,78 @@ fn fill_phi_basis(b: &mut [F128], eq_his: &[Vec<Gf>], etas: &[Gf], eq_r2: &[Gf])
             *slot = gf_to_f128(acc);
         }
     });
+}
+
+/// [`fill_phi_basis`] fused with the Ligerito **round-0** sumcheck message:
+/// while writing `b`, accumulates `(u_0, u_2) = (Σ_j f[2j]·b[2j],
+/// Σ_j (f[2j]+f[2j+1])·(b[2j]+b[2j+1]))` over adjacent pairs — exactly the
+/// `(f, b)` message flock's `SumcheckProver::new` (`round_msg_lsb`) would
+/// recompute with its own full read pass, which
+/// `recursive_prover_with_basis_precomputed_round0` then skips. Products are
+/// accumulated with deferred reduction (one reduction per accumulator per
+/// chunk; `F₂`-linear, so the values — and every transcript byte — are
+/// identical to the unfused entry point).
+#[allow(clippy::arithmetic_side_effects)]
+fn fill_phi_basis_round0(
+    b: &mut [F128],
+    f: &[F128],
+    eq_his: &[Vec<Gf>],
+    etas: &[Gf],
+    eq_r2: &[Gf],
+) -> (Gf, Gf) {
+    use crate::utils::wide_mul::WideMulAcc;
+    assert_eq!(b.len(), f.len());
+    assert!(b.len() >= 2 && b.len().is_multiple_of(2));
+    const CHUNK: usize = 1 << 12; // even ⇒ (2j, 2j+1) pairs never straddle chunks
+    let tables: Vec<Vec<Gf>> = eq_his
+        .iter()
+        .enumerate()
+        .map(|(l, _)| phi_byte_tables(eq_r2, etas[l]))
+        .collect();
+    let partials: Vec<(Gf, Gf)> = cfg_chunks_mut!(b, CHUNK)
+        .enumerate()
+        .map(|(ci, chunk)| {
+            let base = ci * CHUNK;
+            for (off, slot) in chunk.iter_mut().enumerate() {
+                let y = base + off;
+                let mut acc = Gf::zero();
+                for (l, eq_hi) in eq_his.iter().enumerate() {
+                    acc += phi_from_words(*eq_hi[y].words(), &tables[l]);
+                }
+                *slot = gf_to_f128(acc);
+            }
+            let zero = Gf::zero();
+            let mut u0 = <Gf as WideMulAcc>::wide_zero(&zero);
+            let mut u2 = <Gf as WideMulAcc>::wide_zero(&zero);
+            let mut j = 0usize;
+            while j + 1 < chunk.len() {
+                let b0 = f128_to_gf(chunk[j]);
+                let b1 = f128_to_gf(chunk[j + 1]);
+                let f0 = f128_to_gf(f[base + j]);
+                let f1 = f128_to_gf(f[base + j + 1]);
+                <Gf as WideMulAcc>::wide_add_assign(
+                    &mut u0,
+                    &<Gf as WideMulAcc>::mul_wide(&f0, &b0),
+                );
+                <Gf as WideMulAcc>::wide_add_assign(
+                    &mut u2,
+                    &<Gf as WideMulAcc>::mul_wide(&(f0 + f1), &(b0 + b1)),
+                );
+                j += 2;
+            }
+            (
+                <Gf as WideMulAcc>::from_wide(u0),
+                <Gf as WideMulAcc>::from_wide(u2),
+            )
+        })
+        .collect();
+    let mut u0 = Gf::zero();
+    let mut u2 = Gf::zero();
+    for (p0, p2) in &partials {
+        u0 += *p0;
+        u2 += *p2;
+    }
+    (u0, u2)
 }
 
 // ---------------------------------------------------------------------
@@ -1136,7 +1253,14 @@ pub fn prove_mle_eval_mod_q_ligerito(
 
     let m_p = packed_vars(p);
     let mut b_comb = vec![F128::ZERO; 1usize << m_p];
-    fill_phi_basis(&mut b_comb, &eq_his, &etas, &eq_r2);
+    // Fast path: basis fill fused with the Ligerito round-0 message, so the
+    // prover entry point skips its own full `(f, b)` read pass.
+    let round0 = if rs_fast() {
+        Some(fill_phi_basis_round0(&mut b_comb, &hint.p_msg, &eq_his, &etas, &eq_r2))
+    } else {
+        fill_phi_basis(&mut b_comb, &eq_his, &etas, &eq_r2);
+        None
+    };
     let mut target = Gf::zero();
     for l in 0..lch {
         let s_u = crate::ligerito::transpose_bits_128(&rings[l].s_v);
@@ -1146,15 +1270,27 @@ pub fn prove_mle_eval_mod_q_ligerito(
     drop(_g_b);
 
     let _g_l = crate::utils::prof::scope("mq:lig");
-    let lig = ligerito::recursive_prover_with_basis(
-        pc,
-        hint.p_msg.clone(),
-        b_comb,
-        gf_to_f128(target),
-        &hint.prover_data.codeword,
-        &hint.prover_data.merkle_tree,
-        &mut ZincChallenger(transcript),
-    );
+    let lig = match round0 {
+        Some((u0, u2)) => ligerito::recursive_prover_with_basis_precomputed_round0(
+            pc,
+            hint.p_msg.clone(),
+            b_comb,
+            gf_to_f128(target),
+            &hint.prover_data.codeword,
+            &hint.prover_data.merkle_tree,
+            (gf_to_f128(u0), gf_to_f128(u2)),
+            &mut ZincChallenger(transcript),
+        ),
+        None => ligerito::recursive_prover_with_basis(
+            pc,
+            hint.p_msg.clone(),
+            b_comb,
+            gf_to_f128(target),
+            &hint.prover_data.codeword,
+            &hint.prover_data.merkle_tree,
+            &mut ZincChallenger(transcript),
+        ),
+    };
     drop(_g_l);
     IntEvalRsLigModQProof { mfs, us, presums, rings, lig }
 }
@@ -2722,5 +2858,49 @@ mod tests {
             };
             assert!(rejected, "tampered byte at {pos} not rejected");
         }
+    }
+
+    /// The fused basis-fill + round-0 message equals the scalar `η·Φ` fill
+    /// and the naive `(u_0, u_2)` pair sums (flock's `round_msg_lsb`
+    /// convention) exactly.
+    #[test]
+    fn fill_phi_basis_round0_matches_unfused() {
+        let n = 64usize;
+        let lch = 2usize;
+        let p_msg: Vec<F128> = (0..n).map(|i| gf_to_f128(sample(0xE000 + i as u64))).collect();
+        let eq_his: Vec<Vec<Gf>> = (0..lch)
+            .map(|l| (0..n).map(|y| sample(0xF000 + (l * n + y) as u64)).collect())
+            .collect();
+        let etas: Vec<Gf> = (0..lch).map(|l| sample(0x1_0000 + l as u64)).collect();
+        let eq_r2: Vec<Gf> = (0..128).map(|i| sample(0x2_0000 + i as u64)).collect();
+
+        // Scalar reference: η·Φ per slot, then plain-mul pair sums.
+        let expect_b: Vec<F128> = (0..n)
+            .map(|y| {
+                let mut acc = Gf::zero();
+                for l in 0..lch {
+                    acc += etas[l] * phi_r2(eq_his[l][y], &eq_r2);
+                }
+                gf_to_f128(acc)
+            })
+            .collect();
+        let mut exp_u0 = Gf::zero();
+        let mut exp_u2 = Gf::zero();
+        for j in 0..n / 2 {
+            let f0 = f128_to_gf(p_msg[2 * j]);
+            let f1 = f128_to_gf(p_msg[2 * j + 1]);
+            let b0 = f128_to_gf(expect_b[2 * j]);
+            let b1 = f128_to_gf(expect_b[2 * j + 1]);
+            exp_u0 += f0 * b0;
+            exp_u2 += (f0 + f1) * (b0 + b1);
+        }
+
+        let mut b = vec![F128::ZERO; n];
+        let (u0, u2) = fill_phi_basis_round0(&mut b, &p_msg, &eq_his, &etas, &eq_r2);
+        for (y, (got, want)) in b.iter().zip(expect_b.iter()).enumerate() {
+            assert_eq!((got.lo, got.hi), (want.lo, want.hi), "basis slot {y}");
+        }
+        assert_eq!(u0, exp_u0, "u_0");
+        assert_eq!(u2, exp_u2, "u_2");
     }
 }
