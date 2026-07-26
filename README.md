@@ -560,10 +560,21 @@ forest-equivalents — inside the note's modeled 0.4–0.6. Re-measured
 at every forest-dominated shape** — 1.74–1.87× at n=24–28 against
 2.54–3.66× for the batched-vx baseline and 3.03–3.33× for three
 independent proofs: the triple proves **21–52 % faster than the best
-existing path** at every measured n, and at the tail-dominated n=22 it
-is cheaper than a SINGLE claim (0.80× — one shared tail vs one full
-tail per claim). Proof sizes unchanged (the two-phase discharge is
-slightly smaller: 135/182/249/341 KB). The j ≥ 3 discharge keeps the
+existing path** at every measured n, and at the tail-dominated n=22 the
+marginal claims are nearly FREE: the family's own single (`rlc1`,
+19.9 ms) vs its triple (20.9 ms) — two extra claims for ~1 ms, because
+the per-proof tail (Ligerito recursion + ring-switch + basis, ~13–15 ms
+here) is paid once per PROOF. (The headline 0.80×-of-single overstates
+that by a few ms of measurement subtlety: FS **grinding luck**. The
+m ≥ 22 configs grind 16-bit query + per-level fold PoW whose nonce
+search length is a DETERMINISTIC function of the transcript — measured
+296,927 blake3 tries for the vx-single statement vs 165,526 for `rlc1`,
+identical on every rep, so alternated-median protocol cannot average it;
+switching the single to a different claim moved it 26.3 → 21.6 ms.
+Statement luck is worth ±3–5 ms — material at n=22's ~20 ms totals,
+≤ ±2 % at n ≥ 26. Small-n comparisons should average over multiple
+STATEMENTS, not just reps.) Proof sizes unchanged (the two-phase
+discharge is slightly smaller: 135/182/249/341 KB). The j ≥ 3 discharge keeps the
 generic multi-degree form (its |S| ≥ 3 channels are triple-plus
 products — the pair-driver trick needs the AND rows as committed-side
 factors, which would demand a second discharge level; open). The
