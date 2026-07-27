@@ -78,9 +78,9 @@ backrefpages = {cited on pp.},% originally "cited on pages"
 \input{macros}
 \title{\plaintitle}
 
-\author[1]{}
+%\author[1]{}
 
-\affil[1]{}
+%\affil[1]{}
 
 
 \date{\today}
@@ -133,7 +133,8 @@ Interleaved codes
 %\newcommand{\psievalfield}{\psi_{\mathsf{e}}}
 
 
-\subsection{Constrained codes over dual fields \albert{not sure dual is a good word: the two fields are just ``different'', while dual things tend to have a close relation between each other}}
+\subsection{Constrained codes over dual fields }
+\albert{not sure dual is a good word: the two fields are just ``different'', while dual things tend to have a close relation between each other}
 Let $\codedim_0\geq 0$ be a dimension parameter, and $\codelength\geq 0$ a blocklength parameter. Let $\FF$ be a field (not necessarily a prime field), and let $\cC\subseteq \FF^{\codelength}$ be a linear code of dimension $\codedim_0$ and blocklength $\codelength$ over $\FF$.  Let $\inplen\geq0$ be a public input length parameter, and let $Q\in \FF[Y_1, \ldots, Y_{\inplen}, Z_1, \ldots, Z_{\codedim}]$  be a constraint polynomial, of arbitrary degree, 
 with coefficients in $\FF$ and on $\inplen+\codedim$ variables. Further, let $\codedim\geq \codedim_0$ be a witness length paramter, and let $P:\FF^{\codedim} \to \FF^{\codedim_0}$ be an arbitrary map (looking ahead, for us $P$ will be a packing map that packs elements from $\FF_2$ into elements of a larger binary field.     Consider the following relation:
 %
@@ -259,7 +260,7 @@ Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with suf
 
 \begin{enumerate}[leftmargin=*]
 \item The prover sends $\mu_1, \ldots, \mu_{\codedim_2}\in \ZZ$ such that $\langle \bff_{*j}, \psievalfield^{-1}(\vv^{(1)})\rangle = \mu_j$. 
-\item The verifier checks that $\sum_{j\in [\codedim_1]} \psievalfield(\mu_j)\cdot \vv_j^{(2)}  = \mu$ over $\evalfield$.  \albert{We could have the prover commit to the $\mu_j$ and have this check proved by the PCS (a PCS that can prove linear constraints like WHIR). This pays off for very large $\codedim$.}
+\item The verifier checks that \begin{equation}\label{e:tensor_decomposition_reconstruction}\sum_{j\in [\codedim_1]} \psievalfield(\mu_j)\cdot \vv_j^{(2)}  = \mu\qquad \text{over } \evalfield.\end{equation}   \albert{We could have the prover commit to the $\mu_j$ and have this check proved by the PCS (a PCS that can prove linear constraints like WHIR). This pays off for very large $\codedim$.}
 \item Prover and verifier define $\bm{\gamma}_i = \psievalfield^{-1}(\vv_i^{(1)}) \in \range{0}{q-1}\subseteq \ZZ$ for $i \in [\codedim_1]$, and set to prove the following claim:
 %
 $$
@@ -315,6 +316,18 @@ The bulk of the work in \ftwoz (\cref{c:core_iop}) is to reduce the claim
 \end{equation}
 to $\ell_2$ inner product claims for the vectors $\pi_2(\bff_{*j})$. We do this reduction via the GKR protocol for multiple grand products, and make several implementation-level optimizations for it.  
 
+\albert{Todo}
+
+
+\subsection{Proof size optimization for large inputs}
+
+When $\codedim=\codedim_1\cdot \codedim_2$ is such that $\codedim_2$ is large, say $\codedim\geq 2^11$, the elements $\mu_1,\ldots, \mu_{\codedim_2}\in \ZZ$ sent at Step 1 of \cref{c:core_iop} may start to dominate the proof size. For example, for $\codedim=2^{13}$ and $\mu_i$ of $128$ bits, the elements $\mu_1,\ldots, \mu_{\codedim_2}$ amount to $131$ KB.  To mitigate this cost, the idea is to  have the prover commit to the vector $(\mu_1,\ldots, \mu_{\codedim_2})$ and then prove \eqref{e:tensor_decomposition_reconstruction}, i.e.\ 
+%
+$$
+\sum_{j\in [\codedim_1]} \psievalfield(\mu_j)\cdot \vv_j^{(2)}  = \mu \qquad \text{over } \evalfield.
+$$
+%
+using an IOPP for constrained codes. Concretely, the prover commits to the vector $\mathsf{bits}(\mu)$ of bits forming the elements $(\mu_1, \ldots, \mu_{\codedim_2})$ using \ftwoz, and then proves \eqref{e:tensor_decomposition_reconstruction} using \cref{c:core_iop}. At the end of \cref{c:core_iop}, the prover is left with an inner product claim for the vector $\pi_2(\mathsf{bits}(\mu))$.  \albert{TODO: explain how to batch this claim with the WHIR IOPP for the final step of \cref{c:core_iop}}
 
 \section{Virtualization of $\FF_2$-linear combinations lifted to integers}
 
@@ -473,7 +486,7 @@ In \cref{c:virtual_iop}, at Step 2, prover and verifier use $\Pi_{\mathsf{red}}^
 %
 to $\codedim_2$ inner product claims over $\comfield$ for the vectors $M_0\cdot \pi_2(\bff_{*j})$. In many applications of interest (see \cref{?}), the vectors $M_0\cdot \pi_2(\bff_{*j})$ are larger than $\bff_{*j}$, but contain entries that are structured expressions of the entries in $\bff_{*j}$. For example, in \cref{e:virtual_example}, $M\cdot \pi_2(\bff)$ is the concatenation of $\pi_2(\bff)$ and the vector with entries $\pi_2(\bff)_i \xor \pi_2(\bff)_{i+1}$. 
 
-A natural question is whether, in such scenarios, the proof of \eqref{e:grand_product_with_virtuals} can be optimized so that it costs less than a full proof for an arbitrary input vector of the same length as $M\cdot \pi_2(\bff)$. In this section we show that this is indeed possible.
+A natural question is whether, in such scenarios, the proof of \eqref{e:grand_product_with_virtuals} can be optimized so that it costs less than a full proof for $\ell_2$ arbitrary input vectors of the same length as $M_0\cdot \pi_2(\bff_{*j})$. In this section we show that this is indeed possible.
 
 
 
@@ -567,7 +580,7 @@ Optimization ideas
     \item If we have an MLE claim of a vector and its shift by one position, can we reuse something for the latter claim from the computations made when proving the former?
 \end{itemize}
 
-\subsection{Comparison with Hyrax}
+\subsubsection{Comparison with Hyrax}
 
 \albert{Comparing with Hyrax may be more interesting than it sounds initially. Hyrax is pay-per-bit and opens on large prime fields: a profile that F2Z can adopt. Hence (maybe) projects using Hyrax could use  F2Z as a drop-in replacement which is PQ secure and more efficient }
 
@@ -1087,154 +1100,83 @@ W(\mathbf{w}) \in \mathbb{E}^{n}
 \mathbf{a}' \in \mathbb{E}^{n}
 \end{array}
 \]
-where $W: \mathbb{F}^{nd} \to \mathbb{E}^{n}$ is a fixed $\mathbb{F}$-linear embedding and $\mathbf{a}' \in \mathbb{E}^{n}$, $h' \in \mathbb{E}$ are determined by $\mathbb{a}$, $h$ and the transcript. And ideally $\mathbf{a} \mapsto \mathbf{a}'$ should preserve useful properties like efficient computation of its multilinear extension.
+where $W: \mathbb{F}^{nd} \to \mathbb{E}^{n}$ is a fixed $\mathbb{F}$-linear embedding and $\mathbf{a}' \in \mathbb{E}^{n}$, $h' \in \mathbb{E}$ are determined by $\mathbf{a}$, $h$ and the transcript. Ideally $\mathbf{a} \mapsto \mathbf{a}'$ should also preserve useful properties like efficient computation of its multilinear extension.
 
 
-
-\paragraph{Frobenius-folding reduction.}
-For simplicity, first assume that $d=2^k$, and choose an
-$\mathbb{F}$-linear isomorphism
+Above we decomposed $\mathbf{a}$ with respect to a basis of $\mathbb{E}/\mathbb{F}$. Here we instead decompose the induced $\mathbb F$-linear functional on packed witnesses. Define
 \[
-W_0:\mathbb{F}^d\longrightarrow\mathbb{E}.
+T_{\mathbf{a}} : \mathbb{E}^n \to \mathbb{E} \qquad \mathbf{x} \mapsto \langle W^{-1}(
+\mathbf{x}), \mathbf{a} \rangle_{\mathbb{E}}\text{.}
 \]
-We apply $W_0$ blockwise, writing
-\[
-W=\mathrm{I}_n\otimes W_0
-\qquad\text{and}\qquad
-x_u=W_0(\mathbf{w}_u)
-\]
-for $u\in[n]$.
-
-For every block of opening weights
-$\mathbf{a}_u\in\mathbb{E}^d$, define the
-$\mathbb{F}$-linear map
-\[
-T_{\mathbf{a}_u}:\mathbb{E}\longrightarrow\mathbb{E},
-\qquad
-T_{\mathbf{a}_u}(x)
-=
-\left\langle
-W_0^{-1}(x),\mathbf{a}_u
-\right\rangle_{\mathbb{E}}.
-\]
-The original opening claim may then be written as
-\[
-h
-=
-\sum_{u=1}^n T_{\mathbf{a}_u}(x_u).
-\]
-
-Let $\mathbb{F}=\mathbb{F}_q$. Every $\mathbb{F}$-linear map
-$T:\mathbb{E}\to\mathbb{E}$ has a unique linearized-polynomial
-representation
-\[
-T(X)=\sum_{j=0}^{d-1}c_jX^{q^j}.
-\]
-Thus, for each $u$,
-\[
-T_{\mathbf{a}_u}(X)
-=
-\sum_{j=0}^{d-1}c_{u,j}X^{q^j}.
-\]
-The coefficients $c_{u,j}$ are determined by the original opening
-weights $\mathbf{a}_u$ and the choice of $W_0$.
+This is an $\mathbb{F}$-linear functional on $\mathbb E^n$, but is not generally $\mathbb{E}$-linear. Consider the following decomposition
 
 
-At round $i$, let
+\begin{theorem}
+Let $\mathbb{F} \subseteq \mathbb{E}$ be finite fields with $q = |\mathbb{F}|$ and $[\mathbb{E}:\mathbb{F}] = d$,then every $\mathbb{F}$-linear map $T: \mathbb{E} \to \mathbb{E}$ is a uniquely represented by a polynomial
 \[
-Q_i=q^{2^i}.
+P(X)=\sum_{j=0}^{d - 1} c_j X^{q^j} \qquad c_j\in\mathbb E \text{.}
 \]
-The current claim has the form
+\end{theorem}
+\begin{proof}
+Write $q=p^r$ with $p$ the characteristic o and $d=[\mathbb E:\mathbb F]$ so that $|\mathbb{E}| = q^d$. By interpolation every map $T: \mathbb{E} \to \mathbb{E}$ can be represented uniquely by a polynomial $P \in \mathbb{E}[X]$ of degree less than $q^d$
 \[
-h_i
-=
-\sum_{u=1}^n T_{u,i}(x_u),
+P(X)=\sum_{j=0}^{q^d - 1} c_j X^j \qquad c_j\in\mathbb E \text{.}
 \]
-where
+From $\mathbb{F}$-linearity follows $P(0) = 0$ and hence $c_0 = 0$, further we have $P(X + Y) = P(X) + P(Y)$ and hence
 \[
-T_{u,i}(X)
-=
-\sum_{j=0}^{d/2^i-1}
-c^{(i)}_{u,j}X^{Q_i^j}.
+\begin{aligned}
+0 &= P(X + Y) - P(X) - P(Y) \\
+&= \sum_{j=1}^{q^d - 1} c_j (X + Y)^j - \sum_{j=1}^{q^d - 1} c_j (X^j + Y^j) \\
+&= \sum_{j=1}^{q^d - 1} c_j \sum_{k=0}^{j} \binom{j}{k}X^k Y^{j-k} - \sum_{j=1}^{q^d - 1} c_j (X^j + Y^j)\\
+&= \sum_{j=1}^{q^d - 1} c_j \sum_{k=1}^{j-1} \binom{j}{k}X^k Y^{j-k}
+\end{aligned}
 \]
-Initially,
+So for every $j$ with $c_j \neq 0$ we must have $\binom{j}{k} =0 \mod p$ for all $0<k<j$, which holds iff $j = p^s$ for some $s$. Hence we can reindex $P$ keeping only the non-zero coefficients
 \[
-T_{u,0}=T_{\mathbf{a}_u}
-\qquad\text{and}\qquad
-h_0=h.
+P(X)=\sum_{j=0}^{rd - 1} c_j X^{p^j} \qquad c_j\in\mathbb E \text{.}
 \]
-
-Separate the even and odd Frobenius powers:
+From $\mathbb{F}$-linearity also follows $P(\lambda x) = \lambda P(x)$ for all $x \in \mathbb{E}$ and $\lambda \in \mathbb{F}$. For every $c_j \neq 0$ this requires $\lambda^{p^j} = \lambda$ for every $\lambda \in \mathbb{F}$. This holds exactly when $j = r s$ for some $s$. Reindexing $P$ again we get
 \[
-T_{u,i}(X)
-=
-U_{u,i}(X)+V_{u,i}(X)^{Q_i},
-\]
-where
-\[
-U_{u,i}(X)
-=
-\sum_j
-c^{(i)}_{u,2j}X^{Q_{i+1}^j}
-\]
-and
-\[
-V_{u,i}(X)
-=
-\sum_j
-\left(c^{(i)}_{u,2j+1}\right)^{Q_i^{-1}}
-X^{Q_{i+1}^j}.
-\]
-Here $Q_i^{-1}$ denotes the inverse of the Frobenius automorphism
-$x\mapsto x^{Q_i}$ on $\mathbb{E}$.
-
-Define
-\[
-U_i=\sum_u U_{u,i}(x_u),
-\qquad
-V_i=\sum_u V_{u,i}(x_u).
-\]
-Since Frobenius is additive,
-\[
-h_i=U_i+V_i^{Q_i}.
+P(X)=\sum_{j=0}^{d - 1} c_j X^{q^j} \qquad c_j\in\mathbb E \text{.}
 \]
 
 
-\begin{enumerate}
-\item The prover sends
-\[
-v_i\in\mathbb{E},
-\]
-claiming that $v_i=V_i$.
+\end{proof}
 
-\item The verifier defines
+
+
+\begin{theorem}[Frobenius decomposition]
+Let $\mathbb{F} \subseteq \mathbb{K} \subseteq \mathbb{E}$ be finite fields with $[\mathbb{K}:\mathbb{F}] = m$, and let $\sigma(x) = x^{|\mathbb{F}|}$ denote the $\mathbb{F}$-Frobenius automorphism. Then every $\mathbb{F}$-linear map $T: \mathbb{E} \to \mathbb{E}$ admits a unique decomposition
 \[
-u_i=h_i-v_i^{Q_i}.
+T = \sum_{i = 0}^{m - 1} \sigma^i \circ T_i
+\]
+where each $T_i$ is $\mathbb{K}$-linear.
+\end{theorem}
+\begin{proof}
+Write $q=p^r =|\mathbb F|$ and $d=[\mathbb E:\mathbb F]$ so that $|\mathbb{E}| = q^d$. By interpolation every map $T: \mathbb{E} \to \mathbb{E}$ can be represented uniquely by a polynomial $P \in \mathbb{E}[X]$ of degree less than $q^d$
+\[
+P(X)=\sum_{j=0}^{q^d - 1} c_j X^j \qquad c_j\in\mathbb E \text{.}
+\]
+From $\mathbb{F}$-linearity follows $P(0) = 0$ and hence $c_0 = 0$, further we have $P(X + Y) = P(X) + P(Y)$ and hence
+\[
+\begin{aligned}
+0 &= P(X + Y) - P(X) - P(Y) \\
+&= \sum_{j=1}^{q^d - 1} c_j (X + Y)^j - \sum_{j=1}^{q^d - 1} c_j (X^j + Y^j) \\
+&= \sum_{j=1}^{q^d - 1} c_j \sum_{k=0}^{j} \binom{j}{k}X^k Y^{j-k} - \sum_{j=1}^{q^d - 1} c_j (X^j + Y^j)\\
+&= \sum_{j=1}^{q^d - 1} c_j \sum_{k=1}^{j-1} \binom{j}{k}X^k Y^{j-k}
+\end{aligned}
+\]
+So for every $j$ with $c_j \neq 0$ we must have $\binom{j}{k} =0 \mod p$ for all $0<k<j$, which holds iff $j = p^s$ for some $s$. Hence we can reindex $P$ keeping only the non-zero coefficients
+\[
+P(X)=\sum_{j=0}^{rd - 1} c_j X^{p^j} \qquad c_j\in\mathbb E \text{.}
+\]
+From $\mathbb{F}$-linearity also follows $P(\lambda x) = \lambda P(x)$ for all $x \in \mathbb{E}$ and $\lambda \in \mathbb{F}$. For every $c_j \neq 0$ this requires $\lambda^{p^j} = \lambda$ for every $\lambda \in \mathbb{F}$. This holds exactly when $j = r s$ for some $s$. Reindexing $P$ again we get
+\[
+P(X)=\sum_{j=0}^{d - 1} c_j X^{q^j} \qquad c_j\in\mathbb E \text{.}
 \]
 
-\item The verifier samples
-\[
-\rho_i\sample\mathbb{E}.
-\]
 
-\item The parties reduce to the claim
-\[
-h_{i+1}
-=
-\sum_u T_{u,i+1}(x_u),
-\]
-where
-\[
-h_{i+1}=u_i+\rho_iv_i
-\]
-and
-\[
-T_{u,i+1}
-=
-U_{u,i}+\rho_iV_{u,i}.
-\]
-\end{enumerate}
-
+\end{proof}
 
 
 \end{document}
