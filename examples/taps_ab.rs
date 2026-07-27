@@ -474,8 +474,13 @@ fn main() {
                 verify_mle_eval_mod_q_ligerito_rlc_family_shared_point,
             };
             let layout_f0 = taps_layout(n, 3); // δ = env applies to R-checks only
+            // Family δ: F2Z_AB_FAM_DELTA (default 0). The RLC-family
+            // core is p_x-parameterized end to end (extraction, folds,
+            // forests, presum, discharge, rings all derive their shapes
+            // from virtual_xor_params), so the re-split flows through.
             let mut layout_fam = taps_layout(n, 3);
-            layout_fam.x_fold_extra = 0;
+            layout_fam.x_fold_extra =
+                std::env::var("F2Z_AB_FAM_DELTA").map_or(0, |v| v.parse().unwrap());
             let p_xf = virtual_xor_params(&layout_fam);
             let rwf = mk_rw(p_xf.rows(), 101);
             let colwf = mk_colw(p_xf.cols());

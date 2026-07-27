@@ -7665,6 +7665,84 @@ mod tests {
     /// verifier. Plus the degenerate shared-point families: the pure-XOR
     /// singleton (AND channel elided) and j = 1 (all claims dedupe to one).
     #[test]
+    /// The shared-point family under `x_fold_extra`: the
+    /// p_x-parameterized core (extraction, folds, forests, presum,
+    /// cascade, rings) re-splits end to end. Cross-split consistency:
+    /// with product-form weights (`colw0 = f ⊗ g` over the low-δ/high
+    /// split, `rw_δ = rw0 ⊗ f`), the δ path must prove the SAME claimed
+    /// values as the δ = 0 reading of the same flat weight function —
+    /// a silent mis-split fails the read-off.
+    #[test]
+    fn rlc_family_shared_point_delta_roundtrips() {
+        let layout0 = rlc_test_layout();
+        let p_x0 = virtual_xor_params(&layout0);
+        let t_x0 = p_x0.rows().trailing_zeros() as usize;
+        let alpha = smallest_generator();
+        let (hint, pc, vc) = rlc_test_commit(&layout0);
+        let rw0 = rlc_test_row_weights(&p_x0, 461);
+        for delta in [1usize, 2] {
+            let mut layout = rlc_test_layout();
+            layout.x_fold_extra = delta;
+            let p_x = virtual_xor_params(&layout);
+            let f: Vec<u128> = (0..1usize << delta)
+                .map(|i| (i as u128).wrapping_mul(0x1234_5679).wrapping_add(11) % FQ_MOD)
+                .collect();
+            let g: Vec<Fq> = (0..p_x.cols())
+                .map(|c| Fq::from((c as u128).wrapping_mul(0xABC_DEF).wrapping_add(5)))
+                .collect();
+            let colw0: Vec<Fq> = (0..p_x0.cols())
+                .map(|c| Fq::from(f[c & ((1 << delta) - 1)]) * g[c >> delta])
+                .collect();
+            let rw: Vec<u128> = (0..p_x.rows())
+                .map(|i| {
+                    let b = i & (p_x0.rows() - 1);
+                    let lo = i >> t_x0;
+                    (Fq::from(rw0[b]) * Fq::from(f[lo])).0
+                })
+                .collect();
+            for j in [2usize, 3] {
+                let family_cols: Vec<usize> = (0..j).collect();
+                let forms: Vec<usize> = (1..1usize << j).collect();
+                // Claimed values at the FLAT (δ = 0) reading.
+                let cs: Vec<u128> = forms
+                    .iter()
+                    .map(|&fm| {
+                        rlc_expected_claim(&layout0, hint.rows(), &family_cols, fm, &rw0, &colw0)
+                    })
+                    .collect();
+                let claims: Vec<RlcSharedClaim> = forms
+                    .iter()
+                    .zip(cs.iter())
+                    .map(|(&form, &claimed)| RlcSharedClaim { form, claimed })
+                    .collect();
+                let mut pt = Blake3Transcript::new();
+                let proof = prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                    &mut pt, &hint, &layout, &family_cols, &rw, &claims, alpha, &pc,
+                );
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                    &mut vt, &hint.commitment, &proof, &layout, &family_cols, &rw, &claims, &g,
+                    alpha, &vc,
+                )
+                .unwrap_or_else(|e| panic!("δ={delta} j={j} family failed: {e:?}"));
+                assert_eq!(proof.discharge_eqf2.is_some(), j >= 3, "cascade depth at δ");
+                // A wrong value must still be caught at δ.
+                let mut bad = claims.clone();
+                bad[0].claimed = (bad[0].claimed + 1) % FQ_MOD;
+                let mut vt = Blake3Transcript::new();
+                assert!(
+                    verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                        &mut vt, &hint.commitment, &proof, &layout, &family_cols, &rw, &bad,
+                        &g, alpha, &vc,
+                    )
+                    .is_err(),
+                    "tampered value accepted at δ={delta} j={j}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn rlc_family_shared_point_dedupe_and_degenerate() {
         let layout = rlc_test_layout();
         let p_x = virtual_xor_params(&layout);
