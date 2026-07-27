@@ -53,6 +53,10 @@
 //!   σ-style mixed combination through the COMPOSED collapse (2 inner
 //!   tap bodies total; `--taps-rounds` sets the count — default 48,
 //!   clipped to the shape's offset envelope; 48 needs n ≥ 22).
+//!   `mix6` = the uniform-op k=6 variant of the original instance —
+//!   2 identity claims on the source columns + 4 claims
+//!   `off^t(ROT^7(a₀⊕a₁))`, t = 0..3, through the 0x44 collapse
+//!   (4 plain inner bodies, no rings).
 //!   `--taps-delta D` (or `F2Z_TAPS_DELTA`) sets `x_fold_extra` for
 //!   the vx|sched modes (δ ≤ 5; the measured knee is δ = 3–4 — sent
 //!   folds shrink 2^δ×, proofs −30..−57 %, verify up to 5× faster).
@@ -172,7 +176,8 @@ fn usage() -> ! {
           one shared point) — vx = batched tap claims, family = the clustered\n\
           stream family, collapse = 13 single-tap claims via the collapse,\n\
           rotxor = 8 uniform-op-of-XOR-set claims via the collapse,\n\
-          sched = off^t(σ-combo) claims via the COMPOSED collapse;\n\
+          sched = off^t(σ-combo) claims via the COMPOSED collapse,\n\
+          mix6 = 2 identities + 4 off^t(ROT^7(a₀⊕a₁)) via the collapse;\n\
           --taps-delta sets x_fold_extra (vx|sched; δ ≤ 5, knee δ = 3–4,\n\
           shrinks the sent folds 2^δ×), --taps-rounds the sched claim\n\
           count (default 48, clipped to the shape's offset envelope);\n\
@@ -783,8 +788,8 @@ fn run_taps(o: &Opts, mode: &str) {
     use f2z::taps::{TapOp, extract_virtual_tap_rows};
 
     const GRP: usize = 5;
-    if !matches!(mode, "vx" | "family" | "collapse" | "rotxor" | "sched") {
-        eprintln!("unknown taps mode: {mode} (expected vx|family|collapse|rotxor|sched)");
+    if !matches!(mode, "vx" | "family" | "collapse" | "rotxor" | "sched" | "mix6") {
+        eprintln!("unknown taps mode: {mode} (expected vx|family|collapse|rotxor|sched|mix6)");
         exit(2);
     }
     if o.n < 14 {
@@ -876,6 +881,7 @@ fn run_taps(o: &Opts, mode: &str) {
         "collapse" => "13 single-tap claims".to_string(),
         "rotxor" => "8 op(xor-set) claims".to_string(),
         "sched" => format!("{sched_rounds} off^t(σ-combo) claims"),
+        "mix6" => "2 identities + 4 off^t(ROT^7(a0^a1))".to_string(),
         _ => "k=6 instance".to_string(),
     };
     println!(
@@ -984,6 +990,21 @@ fn run_taps(o: &Opts, mode: &str) {
         "collapse" => (
             all_streams.iter().map(|t| vec![t.col]).collect(),
             all_streams.iter().map(|t| t.uni()).collect(),
+        ),
+        // The uniform-op k=6 variant of the original instance: 2
+        // identity claims on the source columns + 4 word-offsets of
+        // ROT^7(a₀⊕a₁) — op OUTSIDE the XOR, 0x44 territory
+        // (4 plain inner bodies, no rings).
+        "mix6" => (
+            vec![vec![0], vec![1], vec![0, 1], vec![0, 1], vec![0, 1], vec![0, 1]],
+            vec![
+                uni(0, false, 0),
+                uni(0, false, 0),
+                uni(7, false, 0),
+                uni(7, false, 1),
+                uni(7, false, 2),
+                uni(7, false, 3),
+            ],
         ),
         "rotxor" => (
             vec![
@@ -1100,7 +1121,7 @@ fn run_taps(o: &Opts, mode: &str) {
         }
     };
     let k = match mode {
-        "collapse" | "rotxor" => pclaims.len(),
+        "collapse" | "rotxor" | "mix6" => pclaims.len(),
         "sched" => cclaims.len(),
         _ => tclaims.len(),
     };

@@ -26,6 +26,13 @@
 //! point — `clp` (the weight-transform collapse, ≤ 4 inner claims) vs
 //! `vx13` (13 batched tap claims, pads to 16 tree-sets) vs `ind13`.
 //!
+//! `F2Z_AB_MIX6=1` runs the uniform-op k = 6 variant of the original
+//! instance at ONE point: 2 identity claims on the source columns plus
+//! 4 claims `off^t(ROT^7(a₀ ⊕ a₁))`, t = 0..3 — the op stays OUTSIDE
+//! the XOR, so the whole set is 0x44 territory (4 plain inner bodies,
+//! no rings) — `clp` (the collapse) vs `vx6m` (the blocked batched tap
+//! path on the composed lists) vs `ind6m`.
+//!
 //! `F2Z_AB_SCHED=1` runs the COMPOSED-collapse schedule demo instead:
 //! 48 claims `off^t(x)` of ONE σ-style mixed combination
 //! `x = ROT^7 a_0 ⊕ ROT^18 a_0 ⊕ SHIFT^3 a_0 ⊕ off^1 a_1` at ONE point
@@ -348,6 +355,177 @@ fn main() {
                 proof_cmp.tap_us.len(),
                 sz_cmp as f64 / 1e3,
                 m_ind / m_cmp,
+            );
+            continue;
+        }
+
+        if std::env::var("F2Z_AB_MIX6").is_ok_and(|v| v == "1") {
+            // The uniform-op k=6 variant: 2 identities + 4 offsets of
+            // ROT^7(a₀⊕a₁) at ONE point. ROT^7 is off the δ-envelope
+            // for the collapse route (7 ∤ 2^δ), so this mode runs δ=0.
+            assert_eq!(
+                layout.x_fold_extra, 0,
+                "mix6's ROT^7 outer is off the δ-envelope; unset F2Z_TAPS_DELTA"
+            );
+            let rot = |col, amt, off| TapOp {
+                col,
+                grp_log2: GRP,
+                bit_amt: amt,
+                bit_dropout: false,
+                off,
+            };
+            let uni = |amt: usize, off: usize| f2z::taps::TapUniOp {
+                grp_log2: GRP,
+                bit_amt: amt,
+                bit_dropout: false,
+                off,
+            };
+            let rw: Vec<u128> = (0..p_x.rows())
+                .map(|b| {
+                    (b as u128)
+                        .wrapping_mul(0xDEAD_BEEF_CAFE_F00D_1234_5678_9ABC_DEF1)
+                        .wrapping_add(53 + (u128::from(seed) << 1))
+                        % FQ_MOD
+                })
+                .collect();
+            let colw: Vec<Fq> = (0..p_x.cols())
+                .map(|c| Fq::from((c as u128).wrapping_mul(0xABCD_EF01_2345).wrapping_add(3)))
+                .collect();
+            let eval_list = |taps: &[TapOp]| -> u128 {
+                let a_rows = extract_virtual_tap_rows(&layout, hint.rows(), taps);
+                let mut y = Fq::from(0u128);
+                for (c, row) in a_rows.iter().enumerate() {
+                    let mut acc = Fq::from(0u128);
+                    for (wi, &word) in row.iter().enumerate() {
+                        let mut bits = word;
+                        while bits != 0 {
+                            let t = bits.trailing_zeros() as usize;
+                            acc = acc + Fq::from(rw[(wi << 6) | t]);
+                            bits &= bits.wrapping_sub(1);
+                        }
+                    }
+                    y = y + colw[c] * acc;
+                }
+                y.0
+            };
+            // Claim shapes: (XOR set, uniform op); the batched/ind
+            // baselines run the composed per-column tap lists, which
+            // also supply the claim values (the distributed
+            // cross-check route).
+            let sets: Vec<Vec<usize>> =
+                vec![vec![0], vec![1], vec![0, 1], vec![0, 1], vec![0, 1], vec![0, 1]];
+            let ops: Vec<f2z::taps::TapUniOp> = vec![
+                uni(0, 0),
+                uni(0, 0),
+                uni(7, 0),
+                uni(7, 1),
+                uni(7, 2),
+                uni(7, 3),
+            ];
+            let lists: Vec<Vec<TapOp>> = sets
+                .iter()
+                .zip(ops.iter())
+                .map(|(set, op)| {
+                    set.iter().map(|&c| rot(c, op.bit_amt, op.off)).collect()
+                })
+                .collect();
+            let vals: Vec<u128> = lists.iter().map(|taps| eval_list(taps)).collect();
+            let pclaims: Vec<TapPointClaim<'_>> = sets
+                .iter()
+                .zip(ops.iter())
+                .zip(vals.iter())
+                .map(|((set, &op), &claimed)| TapPointClaim { cols: set, op, claimed })
+                .collect();
+            let tclaims: Vec<TapClaim<'_>> = lists
+                .iter()
+                .map(|taps| TapClaim { taps, row_weights_q: &rw })
+                .collect();
+            let tvclaims: Vec<TapVerifyClaim<'_, Fq>> = lists
+                .iter()
+                .zip(vals.iter())
+                .map(|(taps, &v)| TapVerifyClaim {
+                    taps,
+                    row_weights_q: &rw,
+                    col_weights: &colw,
+                    claimed: Fq::from(v),
+                })
+                .collect();
+            let prove_clp = || {
+                let mut t = Blake3Transcript::new();
+                prove_mle_eval_mod_q_ligerito_tap_collapse(
+                    &mut t, &hint, &layout, &rw, &colw, &pclaims, alpha, &pc,
+                )
+            };
+            let prove_vx = || {
+                let mut t = Blake3Transcript::new();
+                prove_mle_eval_mod_q_ligerito_tap_claims(
+                    &mut t, &hint, &layout, FQ_BITS, &tclaims, alpha, &pc,
+                )
+            };
+            let prove_ind = || {
+                (0..tclaims.len())
+                    .map(|i| {
+                        let mut t = Blake3Transcript::new();
+                        prove_mle_eval_mod_q_ligerito_tap_claims(
+                            &mut t,
+                            &hint,
+                            &layout,
+                            FQ_BITS,
+                            &tclaims[i..i + 1],
+                            alpha,
+                            &pc,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let (mut t_clp, mut t_vx, mut t_ind) = (Vec::new(), Vec::new(), Vec::new());
+            for _ in 0..reps {
+                let t0 = Instant::now();
+                drop(prove_clp());
+                t_clp.push(t0.elapsed().as_secs_f64() * 1e3);
+                let t0 = Instant::now();
+                drop(prove_vx());
+                t_vx.push(t0.elapsed().as_secs_f64() * 1e3);
+                let t0 = Instant::now();
+                drop(prove_ind());
+                t_ind.push(t0.elapsed().as_secs_f64() * 1e3);
+            }
+            let proof_clp = prove_clp();
+            let t0 = Instant::now();
+            {
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_tap_collapse(
+                    &mut vt, &hint.commitment, &proof_clp, &layout, &rw, &colw, &pclaims,
+                    alpha, &vc,
+                )
+                .expect("mix6 collapse verifies");
+            }
+            let v_clp = t0.elapsed().as_secs_f64() * 1e3;
+            let proof_vx = prove_vx();
+            let t0 = Instant::now();
+            {
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_tap_claims(
+                    &mut vt, &hint.commitment, &proof_vx, &layout, alpha, FQ_BITS,
+                    &tvclaims, &vc,
+                )
+                .expect("mix6 vx verifies");
+            }
+            let v_vx = t0.elapsed().as_secs_f64() * 1e3;
+            let size_tap = |p: &f2z::ligerito_flock::IntEvalRsLigModQTapProof| {
+                let (b, lig) = mle_eval_mod_q_lig_tap_size_breakdown(p);
+                b.total() + lig
+            };
+            let (m_clp, m_vx, m_ind) = (median(t_clp), median(t_vx), median(t_ind));
+            println!(
+                "n={n} MIX6 (2 identities + 4 off^t(ROT^7(a0^a1)), one point): clp {m_clp:.1} \
+                 ms ({} inner, {:.0} KB, verify {v_clp:.1} ms) | vx6m {m_vx:.1} ms ({:.2}x of \
+                 clp, {:.0} KB, verify {v_vx:.1} ms) | ind6m {m_ind:.1} ms ({:.2}x of clp)",
+                proof_clp.xors.len(),
+                mle_eval_mod_q_lig_xor_proof_size_bytes(&proof_clp) as f64 / 1e3,
+                m_vx / m_clp,
+                size_tap(&proof_vx) as f64 / 1e3,
+                m_ind / m_clp,
             );
             continue;
         }
