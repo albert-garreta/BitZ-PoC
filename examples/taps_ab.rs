@@ -76,22 +76,34 @@ use f2z::taps::{TapOp, extract_virtual_tap_rows};
 use f2z::transcript::Blake3Transcript;
 use std::time::Instant;
 
-/// The instance's word-group width: 32-bit words along the entry axis.
-const GRP: usize = 5;
+/// The instance word-group width (log2 bits per entry-axis word):
+/// 32-bit words by default; `F2Z_TAPS_GRP=6` runs the SAME instances on
+/// 64-bit words. Per-body cost is width-independent (the translated-eq
+/// chains are O(g), the class count is fixed), so only the layout
+/// envelope moves: `s >= g + 2` and the delta ceiling = g.
+#[allow(non_snake_case)]
+fn GRP() -> usize {
+    static G: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *G.get_or_init(|| {
+        let g = std::env::var("F2Z_TAPS_GRP").map_or(5, |v| v.parse().unwrap());
+        assert!((1..=8).contains(&g), "F2Z_TAPS_GRP must be in 1..=8");
+        g
+    })
+}
 
 /// n → the taps layout: 2 UAIR bit-columns (log_cols = 1, W = 1,
 /// bit_vars = 0) over 2^{n−1} entries; x split t' vs s as even as
 /// `tw ≥ 6` allows (the 32-bit group field lives in the clear axis:
-/// s ≥ GRP + 2 so word offsets ≤ 2 stay in range). `F2Z_TAPS_DELTA`
+/// s ≥ g + 2 so word offsets ≤ 2 stay in range). `F2Z_TAPS_DELTA`
 /// sets `x_fold_extra` (the sched/vx paths only; δ ≤ g so collapse
 /// outers with `2^δ | amt` stay in envelope — the schedule's pure-off
 /// outers always are; the stream family requires δ = 0).
 fn taps_layout(n: usize, log_cols: usize) -> ShaF2Layout {
     let tw = ((n - log_cols) / 2).max(6);
     let s = n - log_cols - tw;
-    assert!(s >= GRP + 2, "clear axis must hold the group field plus offsets");
+    assert!(s >= GRP() + 2, "clear axis must hold the group field plus offsets");
     let delta: usize = std::env::var("F2Z_TAPS_DELTA").map_or(0, |v| v.parse().unwrap());
-    assert!(delta <= GRP, "F2Z_TAPS_DELTA must be ≤ g = {GRP}");
+    assert!(delta <= GRP(), "F2Z_TAPS_DELTA must be ≤ g = {}", GRP());
     ShaF2Layout {
         p: IntEvalParams { t: log_cols + tw, s, word_bits: 1 },
         num_cols: 1 << log_cols,
@@ -109,9 +121,9 @@ fn taps_layout(n: usize, log_cols: usize) -> ShaF2Layout {
 /// prompt under the corrected semantics.
 fn instance_claims() -> Vec<Vec<TapOp>> {
     let rot =
-        |col, amt, off| TapOp { col, grp_log2: GRP, bit_amt: amt, bit_dropout: false, off };
+        |col, amt, off| TapOp { col, grp_log2: GRP(), bit_amt: amt, bit_dropout: false, off };
     let shl =
-        |col, amt, off| TapOp { col, grp_log2: GRP, bit_amt: amt, bit_dropout: true, off };
+        |col, amt, off| TapOp { col, grp_log2: GRP(), bit_amt: amt, bit_dropout: true, off };
     vec![
         vec![TapOp::ident(0)],
         vec![TapOp::ident(1)],
@@ -127,9 +139,9 @@ fn instance_claims() -> Vec<Vec<TapOp>> {
 #[allow(clippy::type_complexity)]
 fn instance_clusters() -> (Vec<Vec<TapOp>>, Vec<Vec<usize>>, Vec<Vec<usize>>) {
     let rot =
-        |col, amt, off| TapOp { col, grp_log2: GRP, bit_amt: amt, bit_dropout: false, off };
+        |col, amt, off| TapOp { col, grp_log2: GRP(), bit_amt: amt, bit_dropout: false, off };
     let shl =
-        |col, amt, off| TapOp { col, grp_log2: GRP, bit_amt: amt, bit_dropout: true, off };
+        |col, amt, off| TapOp { col, grp_log2: GRP(), bit_amt: amt, bit_dropout: true, off };
     let streams1 =
         vec![TapOp::ident(0), rot(0, 1, 0), rot(0, 2, 1), rot(0, 3, 2), rot(1, 4, 0), rot(0, 6, 1)];
     let streams2 = vec![
@@ -203,7 +215,7 @@ fn main() {
             // variation is word-granular = column-side at δ = 5, and
             // the row weights stay shared. The fold vectors shrink 32×.
             let mut layout_plain = taps_layout(n, 3);
-            layout_plain.x_fold_extra = GRP;
+            layout_plain.x_fold_extra = GRP();
             let p = &layout.p;
             let p_x = virtual_xor_params(&layout);
             let p_x0 = virtual_xor_params(&layout_plain);
@@ -225,13 +237,13 @@ fn main() {
             let hint = commit_rs_ligerito_rows(p, rows, &pc);
             let rot = |col, amt, off| TapOp {
                 col,
-                grp_log2: GRP,
+                grp_log2: GRP(),
                 bit_amt: amt,
                 bit_dropout: false,
                 off,
             };
             let uni = |amt: usize, off: usize| f2z::taps::TapUniOp {
-                grp_log2: GRP,
+                grp_log2: GRP(),
                 bit_amt: amt,
                 bit_dropout: false,
                 off,
@@ -462,20 +474,20 @@ fn main() {
                 std::env::var("F2Z_AB_ROUNDS").map_or(48, |v| v.parse().unwrap());
             let rot = |col, amt, off| TapOp {
                 col,
-                grp_log2: GRP,
+                grp_log2: GRP(),
                 bit_amt: amt,
                 bit_dropout: false,
                 off,
             };
             let shl =
-                |col, amt, off| TapOp { col, grp_log2: GRP, bit_amt: amt, bit_dropout: true, off };
+                |col, amt, off| TapOp { col, grp_log2: GRP(), bit_amt: amt, bit_dropout: true, off };
             let src = vec![rot(0, 7, 0), rot(0, 18, 0), shl(0, 3, 0), rot(1, 0, 1)];
             // The composed path needs `rounds − 1 < 2^{s−g}` alone; the
             // FOLDED baseline additionally eats the source's own word
             // offset (its envelope is strictly narrower).
             let max_src_off = src.iter().map(|t| t.off).max().unwrap_or(0);
             assert!(
-                rounds + max_src_off <= 1usize << (layout.p.s - GRP),
+                rounds + max_src_off <= 1usize << (layout.p.s - GRP()),
                 "folded-baseline offsets out of range for this shape"
             );
             let rw: Vec<u128> = (0..p_x.rows())
@@ -525,7 +537,7 @@ fn main() {
                 .map(|t| TapComposedClaim {
                     source: &src,
                     outer: f2z::taps::TapUniOp {
-                        grp_log2: GRP,
+                        grp_log2: GRP(),
                         bit_amt: 0,
                         bit_dropout: false,
                         off: t,
@@ -667,7 +679,7 @@ fn main() {
             let hint = commit_rs_ligerito_rows(p, rows, &pc);
             let rot = |col, amt, off| TapOp {
                 col,
-                grp_log2: GRP,
+                grp_log2: GRP(),
                 bit_amt: amt,
                 bit_dropout: false,
                 off,
@@ -885,13 +897,13 @@ fn main() {
             );
             let rot = |col, amt, off| TapOp {
                 col,
-                grp_log2: GRP,
+                grp_log2: GRP(),
                 bit_amt: amt,
                 bit_dropout: false,
                 off,
             };
             let uni = |amt: usize, off: usize| f2z::taps::TapUniOp {
-                grp_log2: GRP,
+                grp_log2: GRP(),
                 bit_amt: amt,
                 bit_dropout: false,
                 off,

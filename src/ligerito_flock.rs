@@ -8251,6 +8251,55 @@ mod tests {
         .expect("pure-ROT taps verify");
     }
 
+    /// 64-bit words (g = 6) with wide rotation amounts (≥ 32)
+    /// roundtrip end-to-end — the tap machinery is width-generic
+    /// (chains are O(g); the class structure is width-independent).
+    #[test]
+    fn tap_claims_g6_wide_amounts_roundtrip() {
+        let layout = tap_test_layout_tw6(); // s = 8 ≥ g + 2
+        let g = 6usize;
+        let p_x = virtual_xor_params(&layout);
+        let alpha = smallest_generator();
+        let (hint, pc, vc) = rlc_test_commit(&layout);
+        let colw = rlc_test_col_weights(&p_x);
+        let rot =
+            |col, amt, off| TapOp { col, grp_log2: g, bit_amt: amt, bit_dropout: false, off };
+        let shl =
+            |col, amt, off| TapOp { col, grp_log2: g, bit_amt: amt, bit_dropout: true, off };
+        let taps_all: Vec<Vec<TapOp>> = vec![
+            vec![rot(0, 33, 0)],
+            vec![rot(0, 47, 1), rot(1, 9, 0)],
+            vec![shl(1, 40, 0), rot(0, 63, 2)],
+        ];
+        let rws: Vec<Vec<u128>> = (0..taps_all.len())
+            .map(|i| rlc_test_row_weights(&p_x, 421 + i as u128))
+            .collect();
+        let claims: Vec<TapClaim<'_>> = taps_all
+            .iter()
+            .zip(rws.iter())
+            .map(|(taps, rw)| TapClaim { taps, row_weights_q: rw })
+            .collect();
+        let mut pt = Blake3Transcript::new();
+        let proof = prove_mle_eval_mod_q_ligerito_tap_claims(
+            &mut pt, &hint, &layout, FQ_BITS, &claims, alpha, &pc,
+        );
+        let vclaims: Vec<TapVerifyClaim<'_, Fq>> = taps_all
+            .iter()
+            .zip(rws.iter())
+            .map(|(taps, rw)| TapVerifyClaim {
+                taps,
+                row_weights_q: rw,
+                col_weights: &colw,
+                claimed: Fq::from(tap_expected_claim(&layout, hint.rows(), taps, rw, &colw)),
+            })
+            .collect();
+        let mut vt = Blake3Transcript::new();
+        verify_mle_eval_mod_q_ligerito_tap_claims(
+            &mut vt, &hint.commitment, &proof, &layout, alpha, FQ_BITS, &vclaims, &vc,
+        )
+        .expect("g=6 wide-amount taps verify");
+    }
+
     /// Every tampered component of a tap proof is rejected.
     #[test]
     fn tap_claims_tampered_rejected() {

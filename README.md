@@ -1057,6 +1057,27 @@ line-wide forest-kernel levers (`riding the forest`, 8/16-case leaf
 rounds) — body count itself is information-forced for XOR-mixed
 claims of distinct shapes.
 
+**Structured taps: 64-bit words (2026-07-27, follow-up) — the width
+is free.** The group width is now a parameter: `F2Z_TAPS_GRP=6` on
+the harness and `--taps-grp 6` on the CLI run the SAME cols4 and
+2-column vx instances on 64-bit entry-axis words (g = 6). As the
+machinery predicts (translated-eq chains are O(g), the carry-class
+count is width-independent, extraction is whole-run gathers),
+**every measured number lands in the 32-bit band**: cols4-64 at the
+δ = 3 knee 46.1/103.0/337.2 ms at n=22/24/26 with proofs
+169/216/277 KB (32-bit: 43.6/99.3/312.7, 168/215/277); vx-64 at the
+δ = 4 knee 65.0/179.6/619.7 with proofs 179/—/289 KB (32-bit:
+66.4/182.5/619.4, 180/227/289); byte knee `custom:3:4` unchanged
+(cols4-64 n=24: 153.4 vs 153.3 KiB); verify unchanged. δ scans
+re-run at g = 6 confirm the same knees (cols4 δ3, vx δ4; δ = 6 —
+now inside the collapse envelope δ ≤ g — regresses on presum rounds
+like δ5 did at g=5). What 64-bit words buy semantically at zero
+cost: rotation amounts up to 63 (SHA-512/Blake2b-class constants)
+and half the word count per trace. Envelope shifts only: s ≥ g + 2
+(cols4-64 needs n ≥ 18) and the δ ceiling moves to 6. Tests: +2
+(g=6 wide-amount extraction vs naive; end-to-end roundtrip with
+amounts 33/40/47/63); 107/107 green both guard modes.
+
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
 The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —
