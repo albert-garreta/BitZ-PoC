@@ -27,14 +27,17 @@
 //!   (validator-gated Johnson geometry). Below `m = n < 22` every choice
 //!   falls back to the ad-hoc test config (UNAUDITED).
 //! - `--word-bits W` — cell width (power of two; default 1).
-//! - `--family j2|j3|j4` — run the EXPERIMENTAL mod-q RLC claim FAMILY at
-//!   this `n` instead of the single-claim opening: `j2` = the XOR triple
-//!   (k = 3 claims on m₁, m₂, m₁⊕m₂), `j3` = k = 4 (m₁, m₂, m₃, ⊕-all),
-//!   `j4` = k = 5. W is fixed at 1 and the shape is the measured A/B
-//!   layout (4 UAIR columns, x-tensor split t' ≈ s — the README's
-//!   2026-07-26/27 RLC notes); `t s W` positionals do not apply. Every
-//!   rep is verified. Example:
-//!   `f2z 26 --family j2 --reps 5`
+//! - `--family j2|j3|j4|j2s|j3s|j4s` — run the EXPERIMENTAL mod-q RLC
+//!   claim FAMILY at this `n` instead of the single-claim opening: `j2` =
+//!   the XOR triple (k = 3 claims on m₁, m₂, m₁⊕m₂ at per-claim row
+//!   points), `j3` = k = 4 (m₁, m₂, m₃, ⊕-all), `j4` = k = 5. The `s`
+//!   presets are the SHARED-POINT maximal families — the full XOR-closure
+//!   of the j columns at ONE point (`j2s` = k = 3, `j3s` = k = 7, `j4s` =
+//!   k = 15) through the collapsed-absorb shared-point API. W is fixed at
+//!   1 and the shape is the measured A/B layout (4 UAIR columns, x-tensor
+//!   split t' ≈ s — the README's 2026-07-26/27 RLC notes); `t s W`
+//!   positionals do not apply. Every rep is verified. Example:
+//!   `f2z 26 --family j4s --reps 5`
 //!
 //! Integer-guard mode is a COMPILE-TIME feature: build with
 //! `--features unchecked` for release-style plain integer ops (the header
@@ -139,10 +142,12 @@ fn usage() -> ! {
     eprintln!(
         "usage: f2z <n> [<t> <s> [<W>]] [--threads N] [--reps R] \
          [--profile slim|slim3|fast|secure|custom:<log_inv_rate>:<initial_k>] [--word-bits W] \
-         [--family j2|j3|j4]\n\
+         [--family j2|j3|j4|j2s|j3s|j4s]\n\
          (n = t + s; W = cell width, power of two, default 1;\n\
           --family runs the mod-q RLC claim family at the A/B layout — j2 = the\n\
-          XOR triple, j3/j4 the wider families; t/s/W do not apply there;\n\
+          XOR triple, j3/j4 the wider families, j2s/j3s/j4s the SHARED-POINT\n\
+          maximal families (full XOR-closure at one point, k = 3/7/15);\n\
+          t/s/W do not apply there;\n\
           run with --release and --features unchecked for quotable numbers;\n\
           -C target-cpu=native is load-bearing on aarch64)"
     );
@@ -493,17 +498,25 @@ fn family_layout(n: usize) -> f2z::pcs::ShaF2Layout {
 /// peak heap.
 fn run_family(o: &Opts, fam: &str) {
     use f2z::ligerito_flock::{
-        RlcFamilyClaim, mle_eval_mod_q_lig_rlc_family_proof_size_bytes,
-        prove_mle_eval_mod_q_ligerito_rlc_family, verify_mle_eval_mod_q_ligerito_rlc_family,
+        RlcFamilyClaim, RlcSharedClaim, mle_eval_mod_q_lig_rlc_family_proof_size_bytes,
+        prove_mle_eval_mod_q_ligerito_rlc_family,
+        prove_mle_eval_mod_q_ligerito_rlc_family_shared_point,
+        verify_mle_eval_mod_q_ligerito_rlc_family,
+        verify_mle_eval_mod_q_ligerito_rlc_family_shared_point,
     };
     use f2z::pcs::{FQ_MOD, Fq as PcsFq, extract_virtual_xor_rows, virtual_xor_params};
 
-    let (j, k, forms): (usize, usize, Vec<usize>) = match fam {
-        "j2" => (2, 3, vec![0b01, 0b10, 0b11]),
-        "j3" => (3, 4, vec![0b001, 0b010, 0b100, 0b111]),
-        "j4" => (4, 5, vec![0b0001, 0b0010, 0b0100, 0b1000, 0b1111]),
+    // `s`-suffixed presets are the SHARED-POINT maximal families (the full
+    // XOR-closure of the j columns at ONE point, k = 2^j − 1).
+    let (j, k, forms, shared): (usize, usize, Vec<usize>, bool) = match fam {
+        "j2" => (2, 3, vec![0b01, 0b10, 0b11], false),
+        "j3" => (3, 4, vec![0b001, 0b010, 0b100, 0b111], false),
+        "j4" => (4, 5, vec![0b0001, 0b0010, 0b0100, 0b1000, 0b1111], false),
+        "j2s" => (2, 3, (1..1 << 2).collect(), true),
+        "j3s" => (3, 7, (1..1 << 3).collect(), true),
+        "j4s" => (4, 15, (1..1 << 4).collect(), true),
         other => {
-            eprintln!("unknown family preset: {other} (expected j2|j3|j4)");
+            eprintln!("unknown family preset: {other} (expected j2|j3|j4|j2s|j3s|j4s)");
             exit(2);
         }
     };
@@ -558,9 +571,10 @@ fn run_family(o: &Opts, fam: &str) {
     let commit_ms = t0.elapsed().as_secs_f64() * 1e3;
     println!("commit:  {commit_ms:9.2} ms   peak {:8.2} MB", peak_mb());
 
-    // Statement: per-claim row weights (distinct row points), shared
-    // column weights, claimed values from the committed data.
-    let rws: Vec<Vec<u128>> = (0..k)
+    // Statement: per-claim row weights (distinct row points) for the
+    // general presets, ONE row point for the `s` presets; shared column
+    // weights; claimed values from the committed data.
+    let rws: Vec<Vec<u128>> = (0..if shared { 1 } else { k })
         .map(|i| {
             (0..p_x.rows())
                 .map(|b| {
@@ -577,8 +591,9 @@ fn run_family(o: &Opts, fam: &str) {
         .collect();
     let cs: Vec<u128> = forms
         .iter()
-        .zip(rws.iter())
-        .map(|(&f, rw)| {
+        .enumerate()
+        .map(|(i, &f)| {
+            let rw = &rws[if shared { 0 } else { i }];
             let cols: Vec<usize> =
                 (0..j).filter(|&fi| (f >> fi) & 1 == 1).map(|fi| family_cols[fi]).collect();
             let a_rows = extract_virtual_xor_rows(&layout, hint.rows(), &cols, 0, None);
@@ -599,15 +614,31 @@ fn run_family(o: &Opts, fam: &str) {
         })
         .collect();
     let claims: Vec<RlcFamilyClaim<'_>> = (0..k)
-        .map(|i| RlcFamilyClaim { form: forms[i], row_weights_q: &rws[i], claimed: cs[i] })
+        .map(|i| RlcFamilyClaim {
+            form: forms[i],
+            row_weights_q: &rws[if shared { 0 } else { i }],
+            claimed: cs[i],
+        })
+        .collect();
+    let sh_claims: Vec<RlcSharedClaim> = (0..k)
+        .map(|i| RlcSharedClaim { form: forms[i], claimed: cs[i] })
         .collect();
 
     // Warm-up (excluded), then timed reps — every rep verified.
+    let prove_once = |pt: &mut Blake3Transcript| {
+        if shared {
+            prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                pt, &hint, &layout, &family_cols, &rws[0], &sh_claims, alpha_of(), &pc,
+            )
+        } else {
+            prove_mle_eval_mod_q_ligerito_rlc_family(
+                pt, &hint, &layout, &family_cols, &claims, alpha_of(), &pc,
+            )
+        }
+    };
     {
         let mut pt = Blake3Transcript::new();
-        let pr = prove_mle_eval_mod_q_ligerito_rlc_family(
-            &mut pt, &hint, &layout, &family_cols, &claims, alpha_of(), &pc,
-        );
+        let pr = prove_once(&mut pt);
         black_box(&pr);
     }
     let mut prove_ms = Vec::new();
@@ -616,26 +647,30 @@ fn run_family(o: &Opts, fam: &str) {
     for _ in 0..o.reps {
         let mut pt = Blake3Transcript::new();
         let t1 = Instant::now();
-        let proof = prove_mle_eval_mod_q_ligerito_rlc_family(
-            &mut pt, &hint, &layout, &family_cols, &claims, alpha_of(), &pc,
-        );
+        let proof = prove_once(&mut pt);
         prove_ms.push(t1.elapsed().as_secs_f64() * 1e3);
         let mut vt = Blake3Transcript::new();
         let t2 = Instant::now();
-        verify_mle_eval_mod_q_ligerito_rlc_family(
-            &mut vt, &hint.commitment, &proof, &layout, &family_cols, &claims, &colw,
-            alpha_of(), &vc,
-        )
-        .expect("family proof verifies");
+        if shared {
+            verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                &mut vt, &hint.commitment, &proof, &layout, &family_cols, &rws[0], &sh_claims,
+                &colw, alpha_of(), &vc,
+            )
+            .expect("shared-point family proof verifies");
+        } else {
+            verify_mle_eval_mod_q_ligerito_rlc_family(
+                &mut vt, &hint.commitment, &proof, &layout, &family_cols, &claims, &colw,
+                alpha_of(), &vc,
+            )
+            .expect("family proof verifies");
+        }
         verify_ms.push(t2.elapsed().as_secs_f64() * 1e3);
         last = Some(proof);
     }
     reset_peak();
     {
         let mut pt = Blake3Transcript::new();
-        let pr = prove_mle_eval_mod_q_ligerito_rlc_family(
-            &mut pt, &hint, &layout, &family_cols, &claims, alpha_of(), &pc,
-        );
+        let pr = prove_once(&mut pt);
         black_box(&pr);
     }
     let prove_peak = peak_mb();
