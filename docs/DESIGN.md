@@ -102,6 +102,27 @@ Fixed `q = 2^100 − 15`; NOT wired into `proof_codec`; the virtual-XOR path
 is untouched and remains the comparison baseline (and stays the right tool
 for LONE claims — the family wins from k ≥ 2).
 
+The SHARED-POINT entries
+(`prove/verify_mle_eval_mod_q_ligerito_rlc_family_shared_point`) specialize
+the family to the motivating deployment — ALL claims at ONE point `r`:
+claims are `(form, value)` pairs against ONE `row_weights_q`. Duplicate
+forms are canonicalized away (first occurrence wins; a repeated form with a
+different claimed value is an unsatisfiable statement and rejects as
+Shape), so `k ≤ 2^j − 1` and the maximal family is the full XOR-closure of
+the j columns. The case-weight table is rank-1 —
+`W_b(m) = w_b·Γ(m) mod q` with `Γ(m) = Σ_i γ_i·L_i(m)`, 2^j values total
+(`rlc_gamma_cases` / `rlc_case_weights_shared_point`, pinned equal to the
+general build) — and the Fiat–Shamir statement absorbs the ONE weight
+vector (domain tag 0x41, `2^{t'}` weight words instead of `k·2^{t'}`):
+deliberately a DIFFERENT transcript from the general 0x40 path on the same
+claims (cross-verification rejects both ways; pinned by tests). Downstream
+of the γ draw both entries run the same core, so the general path's bytes
+are untouched. Measured (README 2026-07-27 shared-point note): the maximal
+families amortize hard — k = 15 proves at 0.14–0.36× a single claim PER
+CLAIM at n = 22–26 — and at that width the discharge, not the forest,
+dominates the prove (~20 ms per active |S| ≥ 2 channel at n = 26; the
+forest stays ~flat in k). CLI presets: `--family j2s|j3s|j4s`.
+
 ## Proof-stream serialization
 
 `IntEvalRsLigModQProof::to_bytes` / `from_bytes` (`src/proof_codec.rs`). Per

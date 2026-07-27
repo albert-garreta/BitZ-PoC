@@ -655,6 +655,93 @@ pad-free forest. Tests: j = 4 full-depth cascade (two AND intermediates)
 + level-2 tamper coverage; 83/83 green in both forest arms; clippy at
 parity.
 
+**RLC families: SHARED-POINT maximal families — one point, the full
+XOR-closure (2026-07-27).** The deployed family API requires only a
+shared COLUMN point; the motivating deployment has ALL points equal — k
+claims `MLE[INT(a_i)](r) = c_i` at ONE `r`. The structural collapse:
+with `w_{i,b} = w_b` the `[2^{t'}][2^j]` case-weight table is **rank-1**
+— `W_b(m) = (w_b·Γ(m)) mod q`, `Γ(m) = Σ_i γ_i·L_i(m)`, 2^j values
+total — the family is **capped and canonical** (two claims with the same
+form at one point are the SAME claim: dedupe, `k ≤ 2^j − 1`; the maximal
+family is the whole XOR-closure — j=2: k=3, j=3: 7, j=4: 15), and the
+FS statement **shrinks** (ONE `2^{t'}` weight vector absorbed instead of
+k). New API, nothing existing changes bytes:
+`prove/verify_mle_eval_mod_q_ligerito_rlc_family_shared_point` — one
+`row_weights_q` + `(form, claimed)` pairs; duplicates deduped (first
+occurrence wins, equal-c enforced; a conflicting duplicate rejects as
+Shape); collapsed absorb tag 0x41, deliberately a DIFFERENT transcript
+from the general 0x40 path (cross-verification rejects both ways —
+pinned); rank-1 case build `rlc_gamma_cases` +
+`rlc_case_weights_shared_point` (pinned equal to the general build);
+downstream of the γ draw both entries share one core (front/core split —
+the general path is byte-stable, 86/86 green both guard modes, clippy at
+parity). CLI presets `--family j2s|j3s|j4s` (k = 3/7/15); harness
+`F2Z_AB_SHARED=1` (+ `F2Z_AB_STMTS=S` statement averaging). Measured
+(same box/layout/protocol as the tables above; n = 22/24 = MEAN over 3
+statements of medians-of-5 — FS grinding luck is deterministic PER
+STATEMENT and the n=22 j2 row swung 21–52 ms across statements; n = 26
+medians of 5, n = 28 of 3; `single` = one vx claim in-window; vx pads k
+to 2^⌈log₂k⌉ tree-sets and is SKIPPED when its padded eager forest
+estimate exceeds 8 GB):
+
+| n | single | j2 k=3: rlcS / vx / ind | j3 k=7: rlcS / vx / ind | j4 k=15: rlcS / vx / ind |
+|----|--------|------------------------|-------------------------|--------------------------|
+| 22 | 27.9 ms | 34.2† / 38.3 / 60.4 | **37.7** / 69.7 / 153.3 | **60.1** / 131.7 / 339.8 |
+| 24 | 34.3 ms | **54.3** / 87.6 / 113.2 | **88.0** / 177.2 / 280.7 | **141.8** / 346.2 / 606.8 |
+| 26 | 80.0 ms | **126.5** / 257.3 / 250.7 | **227.4** / 484.3 / 598.4 | **431.1** / 967.2 / 1340.9 |
+| 28‡ | 239.1 ms | **503.0** / 992.0 / 771.1 | **1118** / — / 1908 | **2638** / — / 4195 |
+
+† grinding-luck-dominated (single-claim-scale totals). ‡ churned box
+(vx3's 4.3 GB padded forest in-window; fresh-process CLI j4s at n=28:
+2051 ms eager / **1810 ms lazy**). Proof sizes (rlcS/vx/ind, KB):
+k=7: 258/650/1676 at n=26; k=15: **272/1193/3595** at n=26, 367/—/5010
+at n=28 — the maximal family's proof is −77 % vs vx and −92 % vs ind at
+n=26, 18–24 KB/claim. Verify (same order, ms): k=15: **11.0**/33.1/56.3
+at n=26, 17.8/—/98.5 at n=28. Findings:
+
+1. **Maximal families amortize hard.** Per claim, k=15 proves at
+   4.0/9.4/28.7 ms at n=22/24/26 = **0.14×/0.28×/0.36× a single claim**
+   (k=7: 0.19×/0.37×/0.41×) — well below the measured k=4/k=5 points
+   (0.61–0.96×), as predicted: more claims over the same forest +
+   discharge. rlcS beats vx by 1.9–2.4× and ind by 2.6–5.7× at n≤26.
+   The batched-vx baseline also hits a **pad wall**: k=15 pads to 16
+   eager tree-sets = 17.2 GB at n=28 — unrunnable on this box (k=7 pads
+   to 8 = 8.6 GB, also skipped), while rlcS runs one 2^j-case forest.
+2. **Rank-1 buys API/statement, not runtime** (predicted, confirmed):
+   `rlc:casew` + `rlc:pows` are ≤ 0.6 % of prove at every j (0.6–1.7 ms
+   + 0.2–0.6 ms at n=26), so the collapsed build's saving is invisible —
+   rlcS ≈ rlcG within ±6 % both directions across shapes (statement
+   luck). Verifier-side the O(2^j·2^{t'}) case-pow step (`rlcv:pows` +
+   `rlcv:roots`) is only ~0.35–0.58 ms ≈ 5 % of the 5.7–11 ms verify at
+   n=26 — NOT the dominant cost at these shapes; the verify win vs
+   baselines (3.0×/5.1× cheaper at k=15 n=26) is structural (one forest
+   transcript, one u vector). The exponent wall stands:
+   `α^{(w_b·Γ_m) mod q} ≠ (α^{Γ_m})^{w_b}` — per-(row, case) pows
+   remain; they are just already cheap.
+3. **The discharge, not the forest, dominates the maximal-family
+   prove.** Phase trees at n=26 (per prove): j=2 discharge 18.6 ms vs
+   forest 64; j=3 90 vs 67; j=4 **257 vs 63** — ~20 ms per active
+   |S| ≥ 2 channel (1/4/11 channels), linear in channel count, while
+   the forest stays flat in k. At the maximal j=4 family the discharge
+   is ~60 % of prove. Levers, in order: the 8/16-case leaf-ROUND
+   kernels (the forest's open lever does NOT help the discharge), and
+   the note's "riding the forest" fusion (one pass, two accumulators)
+   which targets exactly these duplicated bit-streaming passes.
+4. **The j ≥ 3 lazy forest arm flips at scale**: j4s eager/lazy = 154/158
+   ms at n=24 (eager −2 %), 471/475 at n=26 (tie), 2051/**1810** at n=28
+   (lazy −12 %) — the familiar size-gating; peak is tail-dominated
+   either way (3.4 GB at n=28: `b_comb` + `p_msg` clone ≈ 2.1 GB of it),
+   so the lazy arm's leaf saving shows up as time, not peak.
+5. **Cluster-planner inputs** (the note's open problem, one-global-point
+   case): within a ≤4-column group at one point, open the FULL closure —
+   marginal claims are nearly free (k=15 adds 47 % over k=7 at n=26 for
+   2.1× the claims) and every channel is exercised; prefer wider j over
+   more groups until the discharge's ~20 ms/channel × (2^j−1−j) exceeds
+   a fresh group's flat forest+tail (~150 ms at n=26) — i.e. j=4 groups
+   are right at n≤26 today, and the discharge kernels/fusion move the
+   crossover further toward wide j. Never route a shared-point family
+   through the padding batched-vx path.
+
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
 The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —

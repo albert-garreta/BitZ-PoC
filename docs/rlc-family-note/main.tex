@@ -1500,6 +1500,45 @@ extraction path ($74.5$ vs $97.5$\,ms at $n=26$: extract-once plus a
 $1$-bit-affine forest beats the $4$-case forest): the family's win is
 strictly the $k\ge2$ amortisation this note is about.
 
+\emph{Shared-point families (added 2026-07-27).} The deployment in which
+all $k$ points coincide was subsequently specialised and measured. At one
+point the case-weight table of Definition~\ref{def:casew} is
+\emph{rank-1} --- $\Wc_b(m) = (w_b\,\Gamma(m))\bmod q$ with
+$\Gamma(m)=\sum_i\gamma_i L_i(m)$, $2^{j}$ values total --- the family is
+capped and canonical (two claims with the same form at one point are the
+\emph{same} claim; after deduplication $k\le 2^{j}-1$, and the maximal
+family is the full XOR-closure of the $j$ columns), and the Fiat--Shamir
+statement absorbs \emph{one} weight vector instead of $k$
+(\code{prove/verify\_mle\_eval\_mod\_q\_ligerito\_rlc\_family\_shared\_point},
+a deliberately distinct transcript from the general entry; the general
+path is byte-stable). The maximal families amortise well past the
+$k=4$/$k=5$ points above: per claim, $k=15$ proves at
+$0.14\times/0.28\times/0.36\times$ one claim at $n=22/24/26$ ($k=7$:
+$0.19$--$0.41\times$), running $1.9$--$2.4\times$ faster than the batched
+baseline and $2.6$--$5.7\times$ faster than independent proofs at
+$n\le26$, with proofs $-77\%$/$-92\%$ against the two baselines at
+$n{=}26$, $k{=}15$ ($272$ vs $1193$/$3595$\,KB); the batched baseline's
+pad-to-power-of-two is a hard wall at this width ($k{=}15$ pads to $16$
+eager tree-sets $= 17.2$\,GB at $n{=}28$ --- unrunnable on the
+measurement box). Three attribution findings. (i) The rank-1 collapse
+buys the statement and the API, not prover time: the case-weight build
+plus case exponentiations are $\le 0.6\%$ of prove at every $j$, and the
+verifier's $O(2^{j}2^{t'})$ case-power step is ${\approx}5\%$ of a
+$5.7$--$11$\,ms verify at $n{=}26$ --- the reduction wall
+$\alpha^{(w_b\Gamma_m)\bmod q}\ne(\alpha^{\Gamma_m})^{w_b}$ stands, but
+the per-(row, case) powers it forces were already cheap; the family's
+verify win over the baselines ($3.0\times$/$5.1\times$ at $k{=}15$,
+$n{=}26$) is structural (one forest transcript, one fold vector). (ii)
+At the maximal $j{=}4$ family the \emph{discharge} dominates the prove:
+${\approx}20$\,ms per active $|S|\ge2$ channel at $n{=}26$, linear in
+channel count ($1/4/11$ channels $\to$ $18.6/90/257$\,ms), against a
+forest flat at ${\approx}64$\,ms --- sharpening the ``riding the
+forest'' problem below into the dominant open lever at full width. (iii)
+The $j\ge3$ Dense-JIT lazy forest arm flips profitable at scale
+($-12\%$ at $n{=}28$, $k{=}15$; still $-2\%$ \emph{slower} at $n{=}24$)
+--- the familiar size-gating. Repository record: the README's
+2026-07-27 shared-point note.
+
 %============================================================================
 \section{Open questions}\label{sec:open}
 
@@ -1508,7 +1547,18 @@ For a large $\Ftwo$-linear relation set over many base columns, choose the
 partition into $j\le j_{\max}$-support groups minimising total cost
 (\S\ref{sec:scaling}). Structure to exploit: shared basis columns across
 groups (their singleton openings merge), and affine parts (free,
-Proposition~\ref{prop:affine}).
+Proposition~\ref{prop:affine}). The one-global-point case
+(\S\ref{sec:measured}, shared-point addendum) now has measured planner
+inputs: within a group, open the \emph{full} closure --- marginal claims
+are nearly free ($k{=}15$ costs $47\%$ more than $k{=}7$ at $n{=}26$ for
+$2.1\times$ the claims) --- and prefer wider $j$ over more groups until
+the discharge's ${\approx}20$\,ms per active channel times
+$(2^{j}{-}1{-}j)$ exceeds a fresh group's flat forest-plus-tail
+(${\approx}150$\,ms at $n{=}26$): $j=4$ groups win at the measured
+shapes, and discharge kernels/fusion move the crossover further toward
+wide $j$. A shared-point family must never route through the padding
+batched baseline ($2^{\lceil\log_2 k\rceil}$ tree-sets is a memory wall
+at full closure widths).
 \end{openproblem}
 
 \begin{openproblem}[riding the forest]
