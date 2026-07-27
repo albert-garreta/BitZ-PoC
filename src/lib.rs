@@ -37,6 +37,7 @@ pub mod pcs;
 pub mod piop;
 pub mod poly;
 pub mod proof_codec;
+pub mod taps;
 pub mod transcript;
 pub mod utils;
 
@@ -51,6 +52,14 @@ pub use ligerito_flock::{
     IntEvalRsLigRlcFamilyProof, RlcFamilyClaim, mle_eval_mod_q_lig_rlc_family_proof_size_bytes,
     prove_mle_eval_mod_q_ligerito_rlc_family, verify_mle_eval_mod_q_ligerito_rlc_family,
 };
+// EXPERIMENTAL — structured-tap virtual claims (ROT/SHIFT/entry-offset
+// taps; docs/rlc-structured-taps-phase0.md): tapped rows through the
+// batched x-forest with translated-eq committed openings.
+pub use ligerito_flock::{
+    IntEvalRsLigModQTapProof, TapClaim, TapVerifyClaim, mle_eval_mod_q_lig_tap_size_breakdown,
+    prove_mle_eval_mod_q_ligerito_tap_claims, verify_mle_eval_mod_q_ligerito_tap_claims,
+};
 pub use pcs::IntEvalParams;
 pub use poly::univariate::binary_b127::BinaryFieldB127;
 pub use poly::univariate::binary_gf128::BinaryFieldGF128;
+pub use taps::{TapOp, extract_virtual_tap_rows};

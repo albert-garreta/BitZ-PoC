@@ -61,6 +61,7 @@ use crate::ligerito::{
     verify_x_claims_batched_common,
 };
 use crate::merged_forest::MergedForestProof;
+use crate::taps::TapOp;
 use crate::utils::{cfg_chunks_mut, cfg_into_iter, cfg_iter};
 
 #[cfg(feature = "parallel")]
@@ -1542,7 +1543,7 @@ fn xor_ring_buckets(layout: &ShaF2Layout, cols: &[usize]) -> Vec<(usize, Vec<usi
 /// `idx_x = (c ≪ t') | (j ≪ tw) | row_hi` and re-insert `i_col` between
 /// `row_hi` and `j`.
 #[allow(clippy::arithmetic_side_effects)] // bounded index math over the layout
-fn embed_xor_index(layout: &ShaF2Layout, idx_x: usize, i_col: usize) -> usize {
+pub(crate) fn embed_xor_index(layout: &ShaF2Layout, idx_x: usize, i_col: usize) -> usize {
     let tw = layout.tw;
     let t_x = layout.bit_vars + tw;
     let row_hi = idx_x & ((1usize << tw) - 1);
@@ -2290,6 +2291,584 @@ pub fn mle_eval_mod_q_lig_xor_size_breakdown(
     }
     // The merged breakdown assumes one ring per forest; the flat ring list
     // (one per bucket per x chunk) is counted directly instead.
+    b.s_v = proof.rings.len() * 128 * 16;
+    (b, proof.lig.size_bytes())
+}
+
+// ---------------------------------------------------------------------
+// EXPERIMENTAL — structured-tap virtual claims
+// (docs/rlc-structured-taps-prompt.md, docs/rlc-structured-taps-phase0.md).
+//
+// Claims `MLE[INT(x)](r) = y ∈ R` for `x = ⊕_taps op(col)` with
+// `op = ROT^r / SHIFT^r · off^o` ([`crate::taps::TapOp`]): the tapped rows
+// are extracted ([`crate::taps::extract_virtual_tap_rows`]) and run the
+// SAME batched x-forest + N-group presum as the claims-only virtual-XOR
+// path; each claim's residual `x̂(ζ) = Σ_taps ŝ_tap(ζ)` then expands by
+// char-2 linearity into TRANSLATED-EQ committed openings — per (tap,
+// class) one sparse in-pack marginal against the class's translated
+// slice-of-eq weight tables, bucketed by A-table equality — and the
+// closing Ligerito residual is evaluated succinctly by the
+// matrix-product-state closure ([`crate::taps::residual_b_evals_tap`]).
+// The identity tap reproduces the plain embedded-claim reduction.
+//
+// Fiat–Shamir chain: absorb statement (tag 0x42: root, layout, q_bits,
+// every claim's taps + constant + row weights) → per chunk the batched
+// forest + presum → per (claim, chunk, bucket) the ring `s_v` messages →
+// r″ + ring η's → ONE `recursive_prover_with_basis` call. Claimed values
+// and clear-axis weights are R-valued read-off inputs (as in the
+// virtual-XOR path); the caller binds them if its context requires.
+// NOT wired into `proof_codec`; the API is experimental.
+// ---------------------------------------------------------------------
+
+/// One structured-tap claim (prover side).
+pub struct TapClaim<'a> {
+    /// The tap terms; `x = ⊕ op(col) ⊕ constant`.
+    pub taps: &'a [TapOp],
+    /// Constant word pattern XORed into every trace row (0 = absent).
+    pub constant: u128,
+    /// Row weights over the x tensor's `2^{t'}` folded positions.
+    pub row_weights_q: &'a [u128],
+}
+
+/// One structured-tap claim (verifier side).
+pub struct TapVerifyClaim<'a, R> {
+    /// The tap terms.
+    pub taps: &'a [TapOp],
+    /// Constant word pattern.
+    pub constant: u128,
+    /// Row weights over `2^{t'}` folded positions.
+    pub row_weights_q: &'a [u128],
+    /// Clear-axis weights `w'_c ∈ R`, length `2^s`.
+    pub col_weights: &'a [R],
+    /// The claimed evaluation.
+    pub claimed: R,
+}
+
+/// End-to-end proof of a structured-tap claim set (EXPERIMENTAL).
+pub struct IntEvalRsLigModQTapProof {
+    /// Per x weight chunk: ONE batched merged forest over all claims'
+    /// trees + ONE N-group pre-sumcheck.
+    pub x_mfs: Vec<MergedForestProof>,
+    pub x_presums: Vec<MultiDegreeSumcheckProof<Gf>>,
+    /// `tap_us[claim][chunk]` = the `2^s` chunk folds, range-checked.
+    pub tap_us: Vec<Vec<Vec<u128>>>,
+    /// Ring-switch messages, flat in (claim, chunk, bucket) order.
+    pub rings: Vec<RingSwitchProof>,
+    pub lig: LigeritoProof,
+}
+
+/// Absorb the tap-claim statement (domain tag 0x42): root, layout shape,
+/// `q_bits`, and every claim's taps + constant + row-weight vector —
+/// everything the challenges depend on precedes them.
+#[allow(clippy::arithmetic_side_effects)]
+fn absorb_tap_statement(
+    transcript: &mut impl Transcript,
+    root: &flock_core::merkle::Hash,
+    layout: &ShaF2Layout,
+    q_bits: usize,
+    claims: &[(&[TapOp], u128, &[u128])],
+) {
+    let mut bytes = Vec::new();
+    bytes.push(0x42u8);
+    bytes.extend_from_slice(root);
+    for v in [
+        layout.p.t,
+        layout.p.s,
+        layout.p.word_bits,
+        layout.num_cols,
+        layout.log_cols,
+        layout.bit_vars,
+        layout.num_vars,
+        layout.tw,
+        layout.x_fold_extra,
+        q_bits,
+        claims.len(),
+    ] {
+        bytes.extend_from_slice(&(v as u64).to_le_bytes());
+    }
+    for (taps, constant, rw) in claims {
+        bytes.extend_from_slice(&(taps.len() as u64).to_le_bytes());
+        for tap in *taps {
+            for v in [tap.col as u64, tap.bit_amt as u64, u64::from(tap.bit_dropout), tap.off as u64]
+            {
+                bytes.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        bytes.extend_from_slice(&constant.to_le_bytes());
+        for &x in *rw {
+            bytes.extend_from_slice(&x.to_le_bytes());
+        }
+    }
+    transcript.absorb_slice(&bytes);
+}
+
+/// The deterministic ring plan of one claim at one exit point: members =
+/// (tap index, class) in canonical order, grouped into buckets by
+/// in-pack-table equality (first-occurrence order). Both sides derive it.
+struct TapRingPlan {
+    /// Per member: (tap index, class, A table).
+    members: Vec<(usize, crate::taps::TapClass, Vec<Gf>)>,
+    /// Buckets: member positions sharing one ring message.
+    buckets: Vec<Vec<usize>>,
+}
+
+fn tap_ring_plan(layout: &ShaF2Layout, taps: &[TapOp], pt_x: &[Gf]) -> TapRingPlan {
+    use crate::taps::{tap_classes, tap_inpack_table};
+    let mut members = Vec::new();
+    for (ti, tap) in taps.iter().enumerate() {
+        for cl in tap_classes(layout, tap) {
+            let a = tap_inpack_table(layout, tap, pt_x, cl);
+            members.push((ti, cl, a));
+        }
+    }
+    let mut buckets: Vec<Vec<usize>> = Vec::new();
+    for (mi, (_, _, a)) in members.iter().enumerate() {
+        match buckets.iter_mut().find(|b| members[b[0]].2 == *a) {
+            Some(b) => b.push(mi),
+            None => buckets.push(vec![mi]),
+        }
+    }
+    TapRingPlan { members, buckets }
+}
+
+/// One member's sparse in-pack marginal: `s[v] = Σ_y B_β(y)·bit_v(P[y])`
+/// over the tap's translated support (band-restricted; zero weights
+/// skipped).
+#[allow(clippy::arithmetic_side_effects)]
+fn tap_ring_walk(
+    layout: &ShaF2Layout,
+    p_msg: &[F128],
+    tap: &TapOp,
+    sup: &crate::taps::TapSupportTables,
+) -> Vec<Gf> {
+    let p0 = xor_support_prefix(layout);
+    let bv = layout.bit_vars;
+    let w = 1usize << bv;
+    let hs = sup.hs;
+    let mut s = vec![Gf::zero(); 128];
+    for lo in sup.lo_band.0..sup.lo_band.1 {
+        let vlo = sup.t_lo[lo];
+        if vlo.is_zero() {
+            continue;
+        }
+        for j in 0..w {
+            let vj = vlo * sup.t_bit[j];
+            if vj.is_zero() {
+                continue;
+            }
+            let base = (lo << (bv + hs)) | (j << hs);
+            for h in 0..1usize << hs {
+                let e = vj * sup.t_hi[h];
+                if e.is_zero() {
+                    continue;
+                }
+                let y = embed_xor_index(layout, (base | h) << p0, tap.col) >> LOG_PACKING;
+                let pe = p_msg[y];
+                for wi in 0..2usize {
+                    let mut bits = if wi == 0 { pe.lo } else { pe.hi };
+                    while bits != 0 {
+                        let t = bits.trailing_zeros() as usize;
+                        s[(wi << 6) | t] += e;
+                        bits &= bits.wrapping_sub(1);
+                    }
+                }
+            }
+        }
+    }
+    s
+}
+
+/// One member's basis-fill: `b[y] += η·Φ_{r″}(B_β(y))` over the support
+/// (the `phi_tables` carry the η premultiplied).
+#[allow(clippy::arithmetic_side_effects)]
+fn tap_fill_basis(
+    layout: &ShaF2Layout,
+    b: &mut [F128],
+    tap: &TapOp,
+    sup: &crate::taps::TapSupportTables,
+    phi_tables: &[Gf],
+) {
+    let p0 = xor_support_prefix(layout);
+    let bv = layout.bit_vars;
+    let w = 1usize << bv;
+    let hs = sup.hs;
+    for lo in sup.lo_band.0..sup.lo_band.1 {
+        let vlo = sup.t_lo[lo];
+        if vlo.is_zero() {
+            continue;
+        }
+        for j in 0..w {
+            let vj = vlo * sup.t_bit[j];
+            if vj.is_zero() {
+                continue;
+            }
+            let base = (lo << (bv + hs)) | (j << hs);
+            for h in 0..1usize << hs {
+                let e = vj * sup.t_hi[h];
+                if e.is_zero() {
+                    continue;
+                }
+                let y = embed_xor_index(layout, (base | h) << p0, tap.col) >> LOG_PACKING;
+                let add = crate::ligerito::phi_from_words(*e.words(), phi_tables);
+                b[y] = b[y] + gf_to_f128(add);
+            }
+        }
+    }
+}
+
+/// Prove a structured-tap claim set against the commitment (EXPERIMENTAL;
+/// see the section comment for the protocol). Claims-only style: every
+/// claim runs at depth `t' = t − log_cols` in the ONE batched x forest.
+#[allow(clippy::arithmetic_side_effects)]
+pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
+    transcript: &mut (impl Transcript + Send),
+    hint: &FlockCommitHint,
+    layout: &ShaF2Layout,
+    q_bits: usize,
+    claims: &[TapClaim<'_>],
+    alpha: Gf,
+    pc: &LigProverConfig,
+) -> IntEvalRsLigModQTapProof {
+    use crate::pcs::{chunk_row_weights, mod_q_chunk_width, mod_q_num_chunks, virtual_xor_params};
+    use crate::taps::{assert_tap, assert_tap_layout, extract_virtual_tap_rows, tap_support_tables};
+    assert_tap_layout(layout);
+    assert!(!claims.is_empty(), "need at least one tap claim");
+    let p_x = virtual_xor_params(layout);
+    assert!(row_bit_vars(&p_x) >= 6, "x-claim pre-sumcheck needs t' ≥ 6");
+    for cl in claims {
+        for tap in cl.taps {
+            assert_tap(layout, tap);
+        }
+        assert!(!cl.taps.is_empty() || cl.constant != 0, "tap claim needs at least one term");
+        assert_eq!(cl.row_weights_q.len(), p_x.rows(), "tap claim row-weight length");
+    }
+    let stmt: Vec<(&[TapOp], u128, &[u128])> =
+        claims.iter().map(|cl| (cl.taps, cl.constant, cl.row_weights_q)).collect();
+    absorb_tap_statement(transcript, hint.root(), layout, q_bits, &stmt);
+
+    let c_w_x = mod_q_chunk_width(&p_x);
+    let lch_x = mod_q_num_chunks(&p_x, q_bits);
+
+    // Extraction + the batched forests/presums (one per weight chunk).
+    let x_rows_all: Vec<Vec<Vec<u64>>> = {
+        let _g = crate::utils::prof::scope("tap:extract");
+        claims
+            .iter()
+            .map(|cl| extract_virtual_tap_rows(layout, &hint.rows, cl.taps, cl.constant))
+            .collect()
+    };
+    let x_chunks_all: Vec<Vec<Vec<u128>>> =
+        claims.iter().map(|cl| chunk_row_weights(cl.row_weights_q, c_w_x, lch_x)).collect();
+    let rows_refs: Vec<&[Vec<u64>]> = x_rows_all.iter().map(|r| &r[..]).collect();
+    let mut x_mfs = Vec::with_capacity(lch_x);
+    let mut x_presums = Vec::with_capacity(lch_x);
+    let mut x_points: Vec<Vec<Gf>> = Vec::with_capacity(lch_x);
+    let mut tap_us: Vec<Vec<Vec<u128>>> = claims.iter().map(|_| Vec::with_capacity(lch_x)).collect();
+    {
+        let _g = crate::utils::prof::scope("tap:common");
+        for l in 0..lch_x {
+            let w_refs: Vec<&[u128]> = x_chunks_all.iter().map(|ch| &ch[l][..]).collect();
+            let (mf, us_per_claim, presum, pt) =
+                crate::ligerito::prove_x_claims_batched_common(
+                    transcript, &p_x, &rows_refs, &w_refs, alpha,
+                );
+            x_mfs.push(mf);
+            x_presums.push(presum);
+            x_points.push(pt);
+            for (k, u) in us_per_claim.into_iter().enumerate() {
+                tap_us[k].push(u);
+            }
+        }
+    }
+
+    // Rings: per (claim, chunk, bucket) the summed member walks.
+    let _g_r = crate::utils::prof::scope("tap:rings");
+    let mut rings = Vec::new();
+    // Per (claim, chunk): the plan; kept for the fill phase.
+    let mut plans: Vec<Vec<TapRingPlan>> = Vec::with_capacity(claims.len());
+    for cl in claims {
+        let mut per_chunk = Vec::with_capacity(lch_x);
+        for pt in &x_points {
+            per_chunk.push(tap_ring_plan(layout, cl.taps, pt));
+        }
+        plans.push(per_chunk);
+    }
+    for (n, cl) in claims.iter().enumerate() {
+        for (l, pt) in x_points.iter().enumerate() {
+            let plan = &plans[n][l];
+            let member_svs: Vec<Vec<Gf>> = cfg_into_iter!(0..plan.members.len())
+                .map(|mi| {
+                    let (ti, clss, _) = &plan.members[mi];
+                    let sup = tap_support_tables(layout, &cl.taps[*ti], pt, *clss);
+                    tap_ring_walk(layout, &hint.p_msg, &cl.taps[*ti], &sup)
+                })
+                .collect();
+            for bucket in &plan.buckets {
+                let mut s = vec![Gf::zero(); 128];
+                for &mi in bucket {
+                    for (a, b) in s.iter_mut().zip(member_svs[mi].iter()) {
+                        *a += *b;
+                    }
+                }
+                crate::ligerito::absorb_sv(transcript, &s);
+                rings.push(RingSwitchProof { s_v: s });
+            }
+        }
+    }
+    drop(_g_r);
+
+    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let eq_r2 = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
+    let etas: Vec<Gf> = transcript.get_field_challenges(rings.len(), &());
+
+    // Combined basis + target.
+    let m_p = packed_vars(&layout.p);
+    let mut b_comb = vec![F128::ZERO; 1usize << m_p];
+    {
+        let _g = crate::utils::prof::scope("tap:bcomb");
+        let mut ring_idx = 0usize;
+        for (n, cl) in claims.iter().enumerate() {
+            for (l, pt) in x_points.iter().enumerate() {
+                let plan = &plans[n][l];
+                for bucket in &plan.buckets {
+                    let phi_tables = crate::ligerito::phi_byte_tables(&eq_r2, etas[ring_idx]);
+                    for &mi in bucket {
+                        let (ti, clss, _) = &plan.members[mi];
+                        let sup = tap_support_tables(layout, &cl.taps[*ti], pt, *clss);
+                        tap_fill_basis(layout, &mut b_comb, &cl.taps[*ti], &sup, &phi_tables);
+                    }
+                    ring_idx += 1;
+                }
+            }
+        }
+    }
+    let mut target = Gf::zero();
+    for (i, ring) in rings.iter().enumerate() {
+        let s_u = crate::ligerito::transpose_bits_128(&ring.s_v);
+        let beta = s_u.iter().zip(eq_r2.iter()).fold(Gf::zero(), |a, (su, e)| a + *su * *e);
+        target += etas[i] * beta;
+    }
+
+    let _g_lig = crate::utils::prof::scope("tap:lig");
+    let lig = ligerito::recursive_prover_with_basis(
+        pc,
+        hint.p_msg.clone(),
+        b_comb,
+        gf_to_f128(target),
+        &hint.prover_data.codeword,
+        &hint.prover_data.merkle_tree,
+        &mut ZincChallenger(transcript),
+    );
+    IntEvalRsLigModQTapProof { x_mfs, x_presums, tap_us, rings, lig }
+}
+
+/// Verify a structured-tap claim set (EXPERIMENTAL).
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub fn verify_mle_eval_mod_q_ligerito_tap_claims<R>(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: &IntEvalRsLigModQTapProof,
+    layout: &ShaF2Layout,
+    alpha: Gf,
+    q_bits: usize,
+    claims: &[TapVerifyClaim<'_, R>],
+    vc: &LigVerifierConfig,
+) -> Result<(), FlockRsError>
+where
+    R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
+{
+    use crate::pcs::{
+        chunk_row_weights, mod_q_chunk_width, mod_q_num_chunks, recombine_read_off,
+        virtual_xor_params,
+    };
+    use crate::taps::{residual_b_evals_tap, tap_closure_desc};
+    let p = &layout.p;
+    if p.word_bits != 1 || layout.x_fold_extra != 0 || layout.tw + layout.log_cols < 7 {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+    if claims.is_empty() {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+    let p_x = virtual_xor_params(layout);
+    let c_w_x = mod_q_chunk_width(&p_x);
+    let lch_x = mod_q_num_chunks(&p_x, q_bits);
+    let w = 1usize << layout.bit_vars;
+    for cl in claims {
+        if cl.taps.iter().any(|t| {
+            t.col >= layout.num_cols || t.bit_amt >= w || t.off >= (1usize << p.s)
+        }) || (cl.taps.is_empty() && cl.constant == 0)
+            || cl.row_weights_q.len() != p_x.rows()
+            || cl.col_weights.len() != p_x.cols()
+        {
+            return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+        }
+    }
+    let stmt: Vec<(&[TapOp], u128, &[u128])> =
+        claims.iter().map(|cl| (cl.taps, cl.constant, cl.row_weights_q)).collect();
+    absorb_tap_statement(transcript, &commitment.root, layout, q_bits, &stmt);
+
+    if proof.x_mfs.len() != lch_x
+        || proof.x_presums.len() != lch_x
+        || proof.tap_us.len() != claims.len()
+        || proof.tap_us.iter().any(|us| us.len() != lch_x)
+    {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+
+    // Batched forests/presums; the claims share each chunk's exit point.
+    let x_chunks_all: Vec<Vec<Vec<u128>>> =
+        claims.iter().map(|cl| chunk_row_weights(cl.row_weights_q, c_w_x, lch_x)).collect();
+    let range_shift_x = c_w_x.wrapping_add(p_x.t).wrapping_add(p_x.word_bits);
+    let bound_x = 1u128 << range_shift_x;
+    let mut x_points: Vec<Vec<Gf>> = Vec::with_capacity(lch_x);
+    let mut x_mus: Vec<Vec<Gf>> = Vec::with_capacity(lch_x);
+    for l in 0..lch_x {
+        for us in proof.tap_us.iter() {
+            for (k, &u) in us[l].iter().enumerate() {
+                if u >= bound_x {
+                    let _ = k;
+                    return Err(FlockRsError::ChunkRange { chunk: l, col: k });
+                }
+            }
+        }
+        let us_refs: Vec<&[u128]> = proof.tap_us.iter().map(|us| &us[l][..]).collect();
+        let w_refs: Vec<&[u128]> = x_chunks_all.iter().map(|ch| &ch[l][..]).collect();
+        let (pt, mus_l) = crate::ligerito::verify_x_claims_batched_common(
+            transcript,
+            &proof.x_mfs[l],
+            &us_refs,
+            &proof.x_presums[l],
+            &p_x,
+            &w_refs,
+            alpha,
+        )
+        .map_err(FlockRsError::Common)?;
+        x_points.push(pt);
+        x_mus.push(mus_l);
+    }
+
+    // Rings: per (claim, chunk) the bucketed A-table read-offs plus the
+    // closed-form constant term must reproduce the claim's residual.
+    let mut plans: Vec<Vec<TapRingPlan>> = Vec::with_capacity(claims.len());
+    for cl in claims {
+        let mut per_chunk = Vec::with_capacity(lch_x);
+        for pt in &x_points {
+            per_chunk.push(tap_ring_plan(layout, cl.taps, pt));
+        }
+        plans.push(per_chunk);
+    }
+    let num_rings: usize =
+        plans.iter().map(|pc| pc.iter().map(|pl| pl.buckets.len()).sum::<usize>()).sum();
+    if proof.rings.len() != num_rings {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+    let mut ring_idx = 0usize;
+    for (n, cl) in claims.iter().enumerate() {
+        for (l, pt) in x_points.iter().enumerate() {
+            let plan = &plans[n][l];
+            let mut sum = constant_residual(layout, cl.constant, pt);
+            for bucket in &plan.buckets {
+                let ring = &proof.rings[ring_idx];
+                if ring.s_v.len() != 128 {
+                    return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+                }
+                let a_tbl = &plan.members[bucket[0]].2;
+                sum += ring
+                    .s_v
+                    .iter()
+                    .zip(a_tbl.iter())
+                    .fold(Gf::zero(), |a, (s, e)| a + *s * *e);
+                crate::ligerito::absorb_sv(transcript, &ring.s_v);
+                ring_idx += 1;
+            }
+            if sum != x_mus[l][n] {
+                return Err(FlockRsError::RingSwitch(RsOpenError::RingSwitchClaim));
+            }
+        }
+    }
+
+    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let eq_r2 = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
+    let etas: Vec<Gf> = transcript.get_field_challenges(proof.rings.len(), &());
+
+    let mut target = Gf::zero();
+    for (i, ring) in proof.rings.iter().enumerate() {
+        let s_u = crate::ligerito::transpose_bits_128(&ring.s_v);
+        let beta = s_u.iter().zip(eq_r2.iter()).fold(Gf::zero(), |a, (su, e)| a + *su * *e);
+        target += etas[i] * beta;
+    }
+
+    // Succinct residual closure: per ring, the η-scaled MPS evaluations of
+    // its members' translated bases.
+    let m_p = packed_vars(p);
+    let mut ring_descs: Vec<Vec<Vec<crate::taps::TapCoord>>> = Vec::with_capacity(num_rings);
+    for (n, cl) in claims.iter().enumerate() {
+        for (l, pt) in x_points.iter().enumerate() {
+            let plan = &plans[n][l];
+            for bucket in &plan.buckets {
+                let descs: Vec<Vec<crate::taps::TapCoord>> = bucket
+                    .iter()
+                    .map(|&mi| {
+                        let (ti, clss, _) = &plan.members[mi];
+                        tap_closure_desc(layout, &cl.taps[*ti], pt, *clss)
+                    })
+                    .collect();
+                ring_descs.push(descs);
+            }
+        }
+    }
+    let eval_b = |ris: &[F128], yr_log_n: usize| -> Vec<F128> {
+        let ris_gf: Vec<Gf> = ris.iter().map(|&f| f128_to_gf(f)).collect();
+        let mut out = vec![Gf::zero(); 1usize << yr_log_n];
+        for (i, descs) in ring_descs.iter().enumerate() {
+            for desc in descs {
+                let blk = residual_b_evals_tap(&ris_gf, yr_log_n, desc, &eq_r2);
+                for (o, x) in out.iter_mut().zip(blk.iter()) {
+                    *o += etas[i] * *x;
+                }
+            }
+        }
+        out.into_iter().map(gf_to_f128).collect()
+    };
+    let ok = ligerito::recursive_verifier_with_basis_succinct(
+        vc,
+        &proof.lig,
+        m_p,
+        gf_to_f128(target),
+        &commitment.root,
+        eval_b,
+        &mut ZincChallenger(transcript),
+    );
+    if !ok {
+        return Err(FlockRsError::LigeritoReject);
+    }
+
+    // Read-offs in R, per claim.
+    for (cl, us) in claims.iter().zip(proof.tap_us.iter()) {
+        let flat: Vec<u128> = us.iter().flat_map(|u| u.iter().copied()).collect();
+        let y = recombine_read_off(&p_x, &flat, 0, cl.col_weights, c_w_x, lch_x);
+        if y != cl.claimed {
+            return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
+        }
+    }
+    Ok(())
+}
+
+/// Itemized `(zinc-side, flock LigeritoProof)` bytes of a tap-claim proof.
+#[allow(clippy::arithmetic_side_effects)]
+pub fn mle_eval_mod_q_lig_tap_size_breakdown(
+    proof: &IntEvalRsLigModQTapProof,
+) -> (ZincSideSizeBreakdown, usize) {
+    let mut b = ZincSideSizeBreakdown::default();
+    for (mf, presum) in proof.x_mfs.iter().zip(proof.x_presums.iter()) {
+        b.accumulate(&zinc_side_size_breakdown_merged(mf, &[], presum));
+    }
+    for us in &proof.tap_us {
+        for u in us {
+            b.v += u.len() * 16;
+        }
+    }
     b.s_v = proof.rings.len() * 128 * 16;
     (b, proof.lig.size_bytes())
 }
@@ -5502,5 +6081,267 @@ mod tests {
         }
         assert_eq!(u0, exp_u0, "u_0");
         assert_eq!(u2, exp_u2, "u_2");
+    }
+    // ── Structured-tap claim tests (EXPERIMENTAL API) ────────────────────
+
+    use crate::taps::{TapOp, extract_virtual_tap_rows};
+
+    /// Tap test layout, `tw = 6` (pack cut inside the column bits): 2 UAIR
+    /// columns of 8 bit positions over 2^12 trace rows; x tensor t' = 9,
+    /// s = 6 (n' = 15).
+    fn tap_test_layout_tw6() -> ShaF2Layout {
+        ShaF2Layout {
+            p: IntEvalParams { t: 10, s: 6, word_bits: 1 },
+            num_cols: 2,
+            log_cols: 1,
+            bit_vars: 3,
+            num_vars: 12,
+            tw: 6,
+            x_fold_extra: 0,
+        }
+    }
+
+    /// Tap test layout, `tw = 9 > 7` (three-class offset splits): x tensor
+    /// t' = 12, s = 4 (n' = 16).
+    fn tap_test_layout_tw9() -> ShaF2Layout {
+        ShaF2Layout {
+            p: IntEvalParams { t: 13, s: 4, word_bits: 1 },
+            num_cols: 2,
+            log_cols: 1,
+            bit_vars: 3,
+            num_vars: 13,
+            tw: 9,
+            x_fold_extra: 0,
+        }
+    }
+
+    /// The j = 2, k = 6 target instance of the structured-taps prompt, at
+    /// W = 8 (bit_vars = 3): identity claims on both columns, two
+    /// three-tap single-column rotation convolutions, a cross-column mix,
+    /// and a lossy-SHIFT claim.
+    fn tap_instance_claims() -> Vec<Vec<TapOp>> {
+        let rot = |col, amt, off| TapOp { col, bit_amt: amt, bit_dropout: false, off };
+        let shl = |col, amt, off| TapOp { col, bit_amt: amt, bit_dropout: true, off };
+        vec![
+            vec![TapOp::ident(0)],
+            vec![TapOp::ident(1)],
+            vec![rot(0, 1, 0), rot(0, 2, 1), rot(0, 3, 2)],
+            vec![rot(1, 2, 0), rot(1, 5, 1), rot(1, 7, 2)],
+            vec![rot(0, 1, 0), rot(1, 4, 0), rot(0, 6, 1)],
+            vec![shl(0, 3, 0), shl(1, 5, 1), rot(1, 2, 2)],
+        ]
+    }
+
+    /// Direct 𝔽_q evaluation of a tapped claim from the committed rows.
+    fn tap_expected_claim(
+        layout: &ShaF2Layout,
+        rows: &[Vec<u64>],
+        taps: &[TapOp],
+        constant: u128,
+        rw: &[u128],
+        colw: &[Fq],
+    ) -> u128 {
+        let a_rows = extract_virtual_tap_rows(layout, rows, taps, constant);
+        let mut y = Fq::from(0u128);
+        for (c, row) in a_rows.iter().enumerate() {
+            let mut acc = Fq::from(0u128);
+            for (wi, &word) in row.iter().enumerate() {
+                let mut bits = word;
+                while bits != 0 {
+                    let t = bits.trailing_zeros() as usize;
+                    acc = acc + Fq::from(rw[(wi << 6) | t]);
+                    bits &= bits.wrapping_sub(1);
+                }
+            }
+            y = y + colw[c] * acc;
+        }
+        y.0
+    }
+
+    /// The j = 2, k = 6 structured-tap instance roundtrips on both
+    /// supported pack-cut geometries, with per-claim row points.
+    #[test]
+    fn tap_claims_instance_roundtrips() {
+        for layout in [tap_test_layout_tw6(), tap_test_layout_tw9()] {
+            let p_x = virtual_xor_params(&layout);
+            let alpha = smallest_generator();
+            let (hint, pc, vc) = rlc_test_commit(&layout);
+            let colw = rlc_test_col_weights(&p_x);
+            let taps_all = tap_instance_claims();
+            let rws: Vec<Vec<u128>> = (0..taps_all.len())
+                .map(|i| rlc_test_row_weights(&p_x, 31 + i as u128))
+                .collect();
+            let claims: Vec<TapClaim<'_>> = taps_all
+                .iter()
+                .zip(rws.iter())
+                .map(|(taps, rw)| TapClaim { taps, constant: 0, row_weights_q: rw })
+                .collect();
+            let mut pt = Blake3Transcript::new();
+            let proof = prove_mle_eval_mod_q_ligerito_tap_claims(
+                &mut pt, &hint, &layout, FQ_BITS, &claims, alpha, &pc,
+            );
+            let vclaims: Vec<TapVerifyClaim<'_, Fq>> = taps_all
+                .iter()
+                .zip(rws.iter())
+                .map(|(taps, rw)| TapVerifyClaim {
+                    taps,
+                    constant: 0,
+                    row_weights_q: rw,
+                    col_weights: &colw,
+                    claimed: Fq::from(tap_expected_claim(&layout, hint.rows(), taps, 0, rw, &colw)),
+                })
+                .collect();
+            let mut vt = Blake3Transcript::new();
+            verify_mle_eval_mod_q_ligerito_tap_claims(
+                &mut vt, &hint.commitment, &proof, &layout, alpha, FQ_BITS, &vclaims, &vc,
+            )
+            .expect("tap instance verifies");
+        }
+    }
+
+    /// Pure-ROT sub-instance (the rank-1 opening regime) plus a constant
+    /// pattern, on the tw = 9 layout.
+    #[test]
+    fn tap_claims_pure_rot_roundtrips() {
+        let layout = tap_test_layout_tw9();
+        let p_x = virtual_xor_params(&layout);
+        let alpha = smallest_generator();
+        let (hint, pc, vc) = rlc_test_commit(&layout);
+        let colw = rlc_test_col_weights(&p_x);
+        let rot = |col, amt| TapOp { col, bit_amt: amt, bit_dropout: false, off: 0 };
+        let taps_all: Vec<Vec<TapOp>> =
+            vec![vec![rot(0, 1), rot(0, 4)], vec![rot(1, 3), rot(0, 7)]];
+        let consts = [0u128, 0b0110_0001];
+        let rws: Vec<Vec<u128>> =
+            (0..taps_all.len()).map(|i| rlc_test_row_weights(&p_x, 77 + i as u128)).collect();
+        let claims: Vec<TapClaim<'_>> = taps_all
+            .iter()
+            .zip(rws.iter())
+            .zip(consts.iter())
+            .map(|((taps, rw), &constant)| TapClaim { taps, constant, row_weights_q: rw })
+            .collect();
+        let mut pt = Blake3Transcript::new();
+        let proof = prove_mle_eval_mod_q_ligerito_tap_claims(
+            &mut pt, &hint, &layout, FQ_BITS, &claims, alpha, &pc,
+        );
+        let vclaims: Vec<TapVerifyClaim<'_, Fq>> = taps_all
+            .iter()
+            .zip(rws.iter())
+            .zip(consts.iter())
+            .map(|((taps, rw), &constant)| TapVerifyClaim {
+                taps,
+                constant,
+                row_weights_q: rw,
+                col_weights: &colw,
+                claimed: Fq::from(tap_expected_claim(
+                    &layout,
+                    hint.rows(),
+                    taps,
+                    constant,
+                    rw,
+                    &colw,
+                )),
+            })
+            .collect();
+        let mut vt = Blake3Transcript::new();
+        verify_mle_eval_mod_q_ligerito_tap_claims(
+            &mut vt, &hint.commitment, &proof, &layout, alpha, FQ_BITS, &vclaims, &vc,
+        )
+        .expect("pure-ROT taps verify");
+    }
+
+    /// Every tampered component of a tap proof is rejected.
+    #[test]
+    fn tap_claims_tampered_rejected() {
+        let layout = tap_test_layout_tw9();
+        let p_x = virtual_xor_params(&layout);
+        let alpha = smallest_generator();
+        let (hint, pc, vc) = rlc_test_commit(&layout);
+        let colw = rlc_test_col_weights(&p_x);
+        let taps_all = tap_instance_claims();
+        let rws: Vec<Vec<u128>> =
+            (0..taps_all.len()).map(|i| rlc_test_row_weights(&p_x, 131 + i as u128)).collect();
+        let claims: Vec<TapClaim<'_>> = taps_all
+            .iter()
+            .zip(rws.iter())
+            .map(|(taps, rw)| TapClaim { taps, constant: 0, row_weights_q: rw })
+            .collect();
+        let mut pt = Blake3Transcript::new();
+        let proof = prove_mle_eval_mod_q_ligerito_tap_claims(
+            &mut pt, &hint, &layout, FQ_BITS, &claims, alpha, &pc,
+        );
+        let good: Vec<u128> = taps_all
+            .iter()
+            .zip(rws.iter())
+            .map(|(taps, rw)| tap_expected_claim(&layout, hint.rows(), taps, 0, rw, &colw))
+            .collect();
+        let verify = |proof: &IntEvalRsLigModQTapProof, cs: &[u128], taps_all: &[Vec<TapOp>]| {
+            let vclaims: Vec<TapVerifyClaim<'_, Fq>> = taps_all
+                .iter()
+                .zip(rws.iter())
+                .zip(cs.iter())
+                .map(|((taps, rw), &c)| TapVerifyClaim {
+                    taps,
+                    constant: 0,
+                    row_weights_q: rw,
+                    col_weights: &colw,
+                    claimed: Fq::from(c),
+                })
+                .collect();
+            let mut vt = Blake3Transcript::new();
+            verify_mle_eval_mod_q_ligerito_tap_claims(
+                &mut vt, &hint.commitment, &proof, &layout, alpha, FQ_BITS, &vclaims, &vc,
+            )
+        };
+        assert!(verify(&proof, &good, &taps_all).is_ok(), "honest proof verifies");
+
+        // Claimed value off by one.
+        let mut bad = good.clone();
+        bad[3] = (bad[3] + 1) % FQ_MOD;
+        assert!(verify(&proof, &bad, &taps_all).is_err(), "wrong claimed value");
+
+        // Statement mismatch: one tap's offset changed on the verifier side.
+        let mut taps_bad = taps_all.clone();
+        taps_bad[2][1].off = 2;
+        assert!(verify(&proof, &good, &taps_bad).is_err(), "tap statement mismatch");
+
+        // Tampered fold value.
+        {
+            let mut p2 = IntEvalRsLigModQTapProof {
+                x_mfs: proof.x_mfs.clone(),
+                x_presums: proof.x_presums.clone(),
+                tap_us: proof.tap_us.clone(),
+                rings: proof.rings.iter().map(|r| RingSwitchProof { s_v: r.s_v.clone() }).collect(),
+                lig: proof.lig.clone(),
+            };
+            p2.tap_us[2][0][1] ^= 1;
+            assert!(verify(&p2, &good, &taps_all).is_err(), "tampered fold");
+        }
+        // Tampered ring element (an offset-class ring: the last bucket of
+        // claim 2's chunk-0 plan).
+        {
+            let mut p2 = IntEvalRsLigModQTapProof {
+                x_mfs: proof.x_mfs.clone(),
+                x_presums: proof.x_presums.clone(),
+                tap_us: proof.tap_us.clone(),
+                rings: proof.rings.iter().map(|r| RingSwitchProof { s_v: r.s_v.clone() }).collect(),
+                lig: proof.lig.clone(),
+            };
+            let last = p2.rings.len() - 1;
+            p2.rings[last].s_v[7] += Gf::one();
+            assert!(verify(&p2, &good, &taps_all).is_err(), "tampered ring");
+        }
+        // Tampered presum.
+        {
+            let mut p2 = IntEvalRsLigModQTapProof {
+                x_mfs: proof.x_mfs.clone(),
+                x_presums: proof.x_presums.clone(),
+                tap_us: proof.tap_us.clone(),
+                rings: proof.rings.iter().map(|r| RingSwitchProof { s_v: r.s_v.clone() }).collect(),
+                lig: proof.lig.clone(),
+            };
+            p2.x_presums[0] = rlc_tamper_mds(&p2.x_presums[0], 3);
+            assert!(verify(&p2, &good, &taps_all).is_err(), "tampered presum");
+        }
     }
 }

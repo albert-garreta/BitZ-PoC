@@ -202,9 +202,10 @@ pub(crate) fn transpose_bits_128(inp: &[Gf]) -> Vec<Gf> {
 }
 
 /// `Σ_u bit_w(X^u·y)·cols[u]` for every `w`: one tensor-algebra
-/// right-leg multiplication step.
+/// right-leg multiplication step. (Shared with the structured-tap MPS
+/// closure, [`crate::taps`].)
 #[allow(clippy::arithmetic_side_effects)]
-fn apply_right_mul(cols: &[Gf], y: Gf) -> Vec<Gf> {
+pub(crate) fn apply_right_mul(cols: &[Gf], y: Gf) -> Vec<Gf> {
     let mut out = vec![Gf::zero(); 128];
     let mut row = y; // X^u · y, starting at u = 0
     for cu in cols.iter().take(128) {
