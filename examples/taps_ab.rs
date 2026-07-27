@@ -457,6 +457,92 @@ fn main() {
             let prove_ind = || {
                 (0..tclaims.len()).map(|i| prove_k(i..i + 1)).collect::<Vec<_>>()
             };
+            if std::env::var("F2Z_AB_COLS4_FAM").is_ok_and(|v| v == "1") {
+                // Research scan: the 4 IDENTITY claims alone, three ways —
+                // blocked 0x42 (tap4, 2+2 bodies) vs two j=2 shared-point
+                // families (fam2x2: each ≈ 1.3 forests + ONE AND channel)
+                // vs one j=4 family (fam1x4: 11 AND channels, predicted
+                // loser). Run at δ = 0 (the family paths predate δ).
+                use f2z::ligerito_flock::{
+                    RlcSharedClaim, prove_mle_eval_mod_q_ligerito_rlc_family_shared_point,
+                    verify_mle_eval_mod_q_ligerito_rlc_family_shared_point,
+                };
+                assert_eq!(layout.x_fold_extra, 0, "family scan runs at δ = 0");
+                let pair_claims = |a: usize, b: usize| {
+                    vec![
+                        RlcSharedClaim { form: 0b01, claimed: vals[a] },
+                        RlcSharedClaim { form: 0b10, claimed: vals[b] },
+                    ]
+                };
+                let cl01 = pair_claims(0, 1);
+                let cl23 = pair_claims(2, 3);
+                let cl4: Vec<RlcSharedClaim> =
+                    (0..4).map(|i| RlcSharedClaim { form: 1 << i, claimed: vals[i] }).collect();
+                let prove_fam2 = || {
+                    let mut t = Blake3Transcript::new();
+                    let p1 = prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                        &mut t, &hint, &layout, &[0, 1], &rw, &cl01, alpha, &pc,
+                    );
+                    let mut t = Blake3Transcript::new();
+                    let p2 = prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                        &mut t, &hint, &layout, &[2, 3], &rw, &cl23, alpha, &pc,
+                    );
+                    (p1, p2)
+                };
+                let prove_fam4 = || {
+                    let mut t = Blake3Transcript::new();
+                    prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                        &mut t, &hint, &layout, &[0, 1, 2, 3], &rw, &cl4, alpha, &pc,
+                    )
+                };
+                let (mut t_tap4, mut t_fam2, mut t_fam4) =
+                    (Vec::new(), Vec::new(), Vec::new());
+                for _ in 0..reps {
+                    let t0 = Instant::now();
+                    drop(prove_k(0..4));
+                    t_tap4.push(t0.elapsed().as_secs_f64() * 1e3);
+                    let t0 = Instant::now();
+                    drop(prove_fam2());
+                    t_fam2.push(t0.elapsed().as_secs_f64() * 1e3);
+                    let t0 = Instant::now();
+                    drop(prove_fam4());
+                    t_fam4.push(t0.elapsed().as_secs_f64() * 1e3);
+                }
+                let (p1, p2) = prove_fam2();
+                {
+                    let mut vt = Blake3Transcript::new();
+                    verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                        &mut vt, &hint.commitment, &p1, &layout, &[0, 1], &rw, &cl01, &colw,
+                        alpha, &vc,
+                    )
+                    .expect("fam {0,1} verifies");
+                    let mut vt = Blake3Transcript::new();
+                    verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                        &mut vt, &hint.commitment, &p2, &layout, &[2, 3], &rw, &cl23, &colw,
+                        alpha, &vc,
+                    )
+                    .expect("fam {2,3} verifies");
+                }
+                {
+                    let p4 = prove_fam4();
+                    let mut vt = Blake3Transcript::new();
+                    verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                        &mut vt, &hint.commitment, &p4, &layout, &[0, 1, 2, 3], &rw, &cl4,
+                        &colw, alpha, &vc,
+                    )
+                    .expect("fam j4 verifies");
+                }
+                println!(
+                    "n={n} COLS4-FAM (the 4 identity claims alone): tap4 {:.1} ms | fam2x2 \
+                     {:.1} ms ({:.2}x of tap4) | fam1x4 {:.1} ms ({:.2}x)",
+                    median(t_tap4.clone()),
+                    median(t_fam2.clone()),
+                    median(t_fam2) / median(t_tap4.clone()),
+                    median(t_fam4.clone()),
+                    median(t_fam4) / median(t_tap4),
+                );
+                continue;
+            }
             let (mut t_single, mut t_vx, mut t_ind) = (Vec::new(), Vec::new(), Vec::new());
             for _ in 0..reps {
                 let t0 = Instant::now();

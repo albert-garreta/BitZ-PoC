@@ -390,3 +390,56 @@ tables). The re-split moves the x tensor toward the fold-heavy
 proof-size-optimal geometry — the harness's even split was
 byte-suboptimal all along (`single` itself halves at δ=3). Env:
 `F2Z_TAPS_DELTA`; δ=0 bytes untouched; 104/104 green.
+
+## 9. The post-floor search (2026-07-27, evening): what could beat
+one-body-per-claim, and why nothing at the PCS layer does
+
+Question posed (Blake3 fork): the cols4 config (4 committed states,
+6 claims: 4 identities + 2 XOR-mixed pairs) sits at the 6-body floor
+— is there another RLC-sized idea? What made the mod-q RLC family
+work: it moved k claims onto ONE forest by case-tabling a small
+**position-local** basis, paying one discharge channel per active AND
+monomial. Every candidate generalization hits one of three walls:
+
+1. **The bits wall.** Every distinct claimed vector's bits must be
+   forest-bound once. γ-merging the identity claims onto the full
+   committed matrix (0x44-style read-off), stacking claims on a wider
+   clear axis, or per-claim-bit tricks all CONSERVE total forest bits
+   (priced: ±0 beyond ~5 % fixed costs; the full-matrix body also
+   REGRESSES bytes at δ > 0 since the base path lacks the re-split).
+2. **The AND wall.** Over Z, `INT(x⊕y) = x + y − 2xy`: decomposing a
+   b-claim frees its linear terms — they γ-merge into the identity
+   bodies as translated weights (0x44 builders) at ZERO new bodies —
+   but every AND cross-term needs its own binding (a body + a
+   discharge ≈ 1.38 bodies, or a cascade channel ≈ 0.38): a t-tap
+   XOR mints O(t²) monomials against the direct route's ONE body.
+   Decomposition never wins without dense cross-claim AND reuse —
+   P6(a) reconfirmed with the collapse-merge refinement.
+3. **The exponent-magnitude wall.** Exponent-level RLC — merge the 6
+   fold vectors into one by folding `α_i = α^{γ_i}` per claim so one
+   tree binds `∏ α_i^{u_i}` — dies on `ord(α) = 2^128 − 1`: with
+   ~100-bit γ and c_w-bit folds, `γ·u` overflows for ANY usable
+   chunk width; re-chunking to fit forces ~30-bit γ (2⁻³⁰ soundness),
+   and amplifying by repetition re-walks all bits R times. The
+   recorded `α^{(wΓ) mod q} ≠ (α^Γ)^w` wall, met from a new angle.
+
+**Measured coda — case-tabling the friendliest subcase.** The 4
+identity claims alone at the cols4 layout (`F2Z_AB_COLS4_FAM=1`,
+n=24/26, δ=0): blocked 0x42 (2+2 bodies) 95.0/282.1 ms; TWO j=2
+shared-point families (each ≈ 1.3 forests + ONE AND channel)
+103.7/275.5 ms = **1.09×/0.98× — a wash**; one j=4 family (11 AND
+channels) 131.1/509.3 = 1.38×/1.81×. Even on the family's home turf
+the case-table paradigm prices identity claims the same as blocked
+plain bodies; there is no crossover worth the protocol mixing.
+
+**Where the next RLC-sized win actually lives — the arithmetization
+boundary** (all three need statement-shape choices, not PCS work):
+(a) **shift-invariance**: if the workload's mixed vectors repeat as
+word-offsets of few SHAPES across rounds (schedules), the composed
+collapse prices each shape at 2 bodies TOTAL — the measured 19–34×
+regime; (b) **word-bit-axis packing**: pack the 4 states on
+`bit_vars` and align the rot/off constants across state pairs so
+same-shaped b's become ONE claim (the machinery supports bv > 0
+today); (c) **committed AND columns** iff the same cross-terms recur
+across many claims AND the outer system's Hadamard machinery absorbs
+the consistency checks — dense reuse flips wall 2.
