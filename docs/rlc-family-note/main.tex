@@ -1555,7 +1555,14 @@ path, at one forest body per claim, closed by a new translated-eq
 opening primitive), and they are expensive only when a claim
 \emph{XOR-mixes differently-translated operands} --- where the carry
 channels of \S\ref{sec:carries} multiply and defeat the family's
-amortisation.
+amortisation. A follow-up session sharpened the third leg: the
+XOR-mixing price is paid once per distinct source \emph{shape}, not
+per claim --- uniform outer ops over a fixed mixed combination
+collapse to two inner bodies regardless of the claim count
+(Proposition~\ref{prop:composed}, the schedule regime) --- and
+removed the batched path's power-of-two padding
+(\S\ref{sec:tapmeasured}) and its $\delta{=}0$ fold-split restriction
+(\S\ref{sec:tapdelta}).
 
 \subsection{Setting and the stream reduction}\label{sec:tapsetting}
 
@@ -1770,17 +1777,20 @@ and translation direction) are listed in the Phase-0 record.
 \subsection{The composed collapse: uniform ops over mixed sources}
 \label{sec:tapcomposed}
 
-\emph{(Added later the same day; commit tag \texttt{0x45},
-\code{TapComposedClaim}.)} Identity \eqref{eq:wtransform} never used
-that its source is a plain column XOR --- only that the inner claim
-$\langle w\circ\sigma,\,x\rangle$ is provable. Let the source instead
-be a fixed \emph{XOR-of-taps combination}
-$x_S=\bigoplus_{t\in S}\mathrm{op}_t(a_{i_t})$ --- extractable, and
-provable by the tap-claims path of \S\ref{sec:tapopen} --- and take
-$k$ claims $\mathrm{OUTER}_i(x_{S_i})$ at one shared point
-$w_{\mathrm{row}}\otimes e$. The branch split of the transformed
-weight depends only on $(\mathrm{OUTER},\text{layout})$, never on the
-source, so the $\gamma$-combination gives
+\emph{(Added later the same day; statement tag \texttt{0x45},
+\code{TapComposedClaim}, commit \texttt{9823282}.)} Identity
+\eqref{eq:wtransform} never used that its source is a plain column
+XOR --- only that the inner claim $\langle w\circ\sigma,\,x\rangle$
+is provable. That observation generalises to the session's headline
+result:
+
+\begin{proposition}[the composed collapse]\label{prop:composed}
+Fix a shared evaluation point with weights $w_{\mathrm{row}}\otimes e$
+and let claim $i\in[k]$ assert the value $c_i$ of
+$\mathrm{OUTER}_i(x_{S_i})$, where each source
+$x_S=\bigoplus_{t\in S}\mathrm{op}_t(a_{i_t})$ is a fixed XOR-of-taps
+combination and each $\mathrm{OUTER}_i$ a tap op. Then for any
+$\gamma\in\F_q^{k}$,
 \[
   \sum_i \gamma_i\cdot\mathrm{claim}_i
   \;=\;\sum_{(S,\beta)}
@@ -1788,18 +1798,47 @@ source, so the $\gamma$-combination gives
   x_S \,\bigr\rangle,
   \qquad
   E_{S,\beta}=\sum_{i:\,\mathrm{canon}(S_i)=S}\gamma_i\,e_i^{(\beta)}
-  \bmod q :
+  \bmod q,
 \]
-at most $2\cdot\#\{\text{distinct sources}\}$ \emph{inner tap claims},
-independent of $k$; the verifier derives each branch value from the
-proof's own forest-bound fold vectors and checks their sum against
-$\sum_i\gamma_i c_i$ (error $1/q$ plus the inherited terms --- the
+a sum of at most $2\cdot\#\{\text{distinct canonical sources}\}$
+terms, independent of $k$ --- each a structured-tap claim on $x_S$
+with its own row weights, provable by the path of
+\S\ref{sec:tapopen}. The protocol that absorbs the statement, draws
+$\gamma$, derives each branch value $y_{S,\beta}$ from the proof's
+forest-bound fold vectors with $E_{S,\beta}$, and checks
+$\sum y_{S,\beta}=\sum_i\gamma_i c_i$ before running the inner tap
+verifier is complete, and sound with error $1/q$ plus the inner
+path's errors.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+Apply \eqref{eq:wtransform} per claim with $x=x_{S_i}$: the
+transformed weight $w\circ\sigma_{\mathrm{OUTER}_i}$ splits into the
+two word-carry branches exactly as in \S\ref{sec:tapcollapse} ---
+branch $0$ keeps $w_{\mathrm{row}}$, branch $1$ advances the
+$\mathrm{row\_hi}$ field one step (zero at the top), and the column
+side is the branch-masked, group-translated table $e_i^{(\beta)}$ ---
+and nothing in that split reads $x$: it depends only on
+$(\mathrm{OUTER}_i,\text{layout})$. Summing with $\gamma$ and
+grouping by (canonical source, branch) gives the display.
+For soundness, the fold vectors are bound by the inner chain to the
+extracted sources, and the derived $y$'s are linear in $\gamma$, so
+$\sum_{(S,\beta)} y_{S,\beta}=\sum_i\gamma_i t_i$ for the true values
+$t_i$; acceptance with $c\ne t$ forces
+$\sum_i\gamma_i(t_i-c_i)=0\bmod q$, probability $1/q$ over $\gamma$
+drawn after the statement binds $c$. This is the
 \S\ref{sec:tapcollapse} chain with ``committed column'' replaced by
-``extracted source''). Sources are canonicalised per tap and reduced
-by char-2 pair cancellation; the outer offset's envelope
-($o<2^{s-g}$) stands \emph{alone} --- it does not compound with the
-source taps' offsets, since the transform treats $x_S$ as a black
-box.
+``extracted source''; the \S\ref{sec:tapopen} audit already covers
+tapped $x$.
+\end{proof}
+
+Deployment details: sources are canonicalised per tap
+(\code{tap\_canonical\_ops}: normal form, sort, char-2 pair
+cancellation; descriptor-distinct but vector-equal sources stay
+distinct --- sound, merely less merged), and the outer offset's
+envelope ($o<2^{s-g}$) stands \emph{alone} --- it does not compound
+with the source taps' offsets, since the transform treats $x_S$ as a
+black box.
 
 This is the XOR-mixed amortisation the stream family of
 \S\ref{sec:tapmeasured} could not deliver: \emph{shift-invariant
@@ -1834,23 +1873,63 @@ proofs at $n{=}24$ (its $64$-set pad). Under the blocked batching of
 \S\ref{sec:tapmeasured}'s addendum the baseline improves to
 $736.3/1898.1/5980.8$\,ms ($n{=}26$ now runs) and the composed
 collapse holds $18.8\times/21.7\times/21.7\times$ against it,
-byte-identical (its two inner bodies are one unblocked pair). A
-further fold-split lever (\code{x\_fold\_extra} $=\delta$: the low
-$\delta$ clear variables join the folded side; the flat x-order is
-unchanged, so the translated-eq machinery is $\delta$-independent,
-and collapse outer ops need $\delta\le g$, $2^{\delta}\mid r$ ---
-always true for pure-offset schedules) shrinks the sent fold vectors
-$2^{\delta}\times$: at $\delta{=}3$--$4$ the composed schedule proof
-falls to $133/163/205$\,KB at $n=22/24/26$ (from $189/284/448$) with
-verify up to $5\times$ faster and prove faster still --- the
-re-split moves the x tensor toward the fold-heavy proof-size-optimal
-geometry. The routing law of
+byte-identical (its two inner bodies are one unblocked pair); the
+fold-split lever of \S\ref{sec:tapdelta} then roughly halves the
+proofs again. The routing law of
 \S\ref{sec:tapmeasured} refines to: single-tap or uniform-op-of-XOR-set
 at one point $\to$ the collapse (\S\ref{sec:tapcollapse}); \emph{many
 outer ops of few mixed sources} at one point (schedules) $\to$ the
 composed collapse; irreducibly distinct XOR-mixed claims $\to$ the
 batched extraction path; the stream family only for dense stream
 reuse. CLI preset: \code{f2z <n> --taps sched}.
+
+\subsection{The fold-split lever (\code{x\_fold\_extra})}
+\label{sec:tapdelta}
+
+\emph{(Same day, commit \texttt{dce59fe}.)} The deployed layouts
+admit a re-split parameter $\delta$: the low $\delta$ clear variables
+join the folded side ($t'\mapsto t'+\delta$, $s\mapsto s-\delta$),
+shrinking the sent fold vectors --- the dominant proof term of every
+tap path --- by $2^{\delta}\times$ while the flat x-index order is
+unchanged. The structural fact that makes this nearly free for the
+tap machinery: the batched common's residual exit point is the
+\emph{flat} coordinate list $[\mathrm{row\_hi},\,\text{word-bit},\,
+\mathrm{row\_lo}]$ regardless of $\delta$ --- the re-split moves
+which coordinates the pre-sumcheck binds, not the list --- so the
+translated-eq rings, support tables, and matrix-product-state
+closures of \S\ref{sec:tapopen} are \emph{$\delta$-independent}.
+What does change: the extraction's row regrouping, and the collapse
+branch builders of \S\ref{sec:tapcollapse}--\ref{sec:tapcomposed},
+which act on the clear axis with effective fields $g'=g-\delta$,
+$r'=r\gg\delta$ under the v1 envelope $\delta\le g$ and
+$2^{\delta}\mid r$ for the \emph{outer} ops (pure-offset schedule
+outers and identities always qualify; a general amount would need a
+carry class at the $\delta$ cut; sources are unconstrained).
+Measured at $n{=}24$ (prove ms / proof KB / verify ms):
+
+\begin{center}\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+instance & $\delta=0$ & $\delta=3$ & $\delta=4$\\
+\midrule
+composed schedule (48) & $86.4$ / $284$ / $29.3$ & $74.1$ / $172$ / $10.2$ & $\mathbf{71.2}$ / $\mathbf{163}$ / $\mathbf{9.5}$\\
+batched folded (48) & $1916.7$ / $3861$ / $305.9$ & $1421.5$ / $1163$ / $254.8$ & $1401.7$ / $982$ / $257.2$\\
+$k{=}6$ instance & $250.5$ / $576$ / $21.9$ & $183.3$ / $250$ / $17.1$ & ---\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent Across shapes at $\delta{=}3$--$4$ the composed schedule
+proof falls to $133/163/205$\,KB at $n=22/24/26$ (from
+$189/284/448$; at $n{=}26$ it \emph{halves}) with verify up to
+$5\times$ faster and prove faster still. The knee is
+$\delta=3$--$4$: beyond it the $2^{t'+\delta}$ pre-sumcheck tables
+take over ($\delta{=}5$: $-3$\,KB for $+15$\,ms). The deeper reading
+is geometric: $\delta$ moves the x tensor toward the fold-heavy
+proof-size-optimal split (a lone identity claim itself halves at
+$\delta{=}3$, $n{=}24$: $92.9\to47.7$\,ms, $208\to151$\,KB) --- the
+even $t'\approx s$ split these instances inherited was
+byte-suboptimal all along.
 
 %============================================================================
 \section{Open questions}\label{sec:open}
@@ -1871,7 +1950,11 @@ $(2^{j}{-}1{-}j)$ exceeds a fresh group's flat forest-plus-tail
 shapes, and discharge kernels/fusion move the crossover further toward
 wide $j$. A shared-point family must never route through the padding
 batched baseline ($2^{\lceil\log_2 k\rceil}$ tree-sets is a memory wall
-at full closure widths).
+at full closure widths). \emph{(Update, 2026-07-27: the
+structured-tap batched path no longer pads --- claims run in 2-set
+blocks, \S\ref{sec:tapmeasured} --- but the claims-only shared-point
+path used here still does; the same blocking applies and is
+unbuilt there.)}
 \end{openproblem}
 
 \begin{openproblem}[riding the forest]
@@ -1929,6 +2012,12 @@ $\Ftwo$-related part the family dominates the batched path on both time
 virtual-XOR path is the right tool (and the batched path's
 pad-to-power-of-two makes it worse than independent proofs at $k=3$,
 $n\ge26$ --- the planner should never batch-pad small $k$).
+\emph{(Update, 2026-07-27: the pad objection is resolved for the
+structured-tap batched path --- 2-set blocks,
+\S\ref{sec:tapmeasured} --- which now beats independent proofs at
+every measured shape; a planner additionally routes uniform-outer
+claim sets through Proposition~\ref{prop:composed} before falling
+back to blocked batching.)}
 \end{openproblem}
 
 \begin{openproblem}[mixed column points]

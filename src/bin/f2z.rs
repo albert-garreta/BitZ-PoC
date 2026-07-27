@@ -49,11 +49,15 @@
 //!   weight-transform collapse (≤ 4 inner claims); `rotxor` = 8
 //!   uniform-op-of-XOR-set claims (rotations + a word-offset of a₁⊕a₂,
 //!   single-column rotations) through the same collapse (4 inner
-//!   claims); `sched` = 48 schedule-shaped claims `off^t(x)` of ONE
+//!   claims); `sched` = schedule-shaped claims `off^t(x)` of ONE
 //!   σ-style mixed combination through the COMPOSED collapse (2 inner
-//!   tap bodies total; rounds clip to the shape's offset envelope, 48
-//!   needs n ≥ 22). Every rep is verified.
-//!   Example: `f2z 24 --taps sched --reps 5`
+//!   tap bodies total; `--taps-rounds` sets the count — default 48,
+//!   clipped to the shape's offset envelope; 48 needs n ≥ 22).
+//!   `--taps-delta D` (or `F2Z_TAPS_DELTA`) sets `x_fold_extra` for
+//!   the vx|sched modes (δ ≤ 5; the measured knee is δ = 3–4 — sent
+//!   folds shrink 2^δ×, proofs −30..−57 %, verify up to 5× faster).
+//!   Every rep is verified.
+//!   Example: `f2z 24 --taps sched --taps-delta 4 --reps 5`
 //!
 //! Integer-guard mode is a COMPILE-TIME feature: build with
 //! `--features unchecked` for release-style plain integer ops (the header
@@ -159,6 +163,7 @@ fn usage() -> ! {
         "usage: f2z <n> [<t> <s> [<W>]] [--threads N] [--reps R] \
          [--profile slim|slim3|fast|secure|custom:<log_inv_rate>:<initial_k>] [--word-bits W] \
          [--family j2|j3|j4|j2s|j3s|j4s] [--taps vx|family|collapse|rotxor|sched]\n\
+         [--taps-delta D] [--taps-rounds R]\n\
          (n = t + s; W = cell width, power of two, default 1;\n\
           --family runs the mod-q RLC claim family at the A/B layout — j2 = the\n\
           XOR triple, j3/j4 the wider families, j2s/j3s/j4s the SHARED-POINT\n\
@@ -167,7 +172,10 @@ fn usage() -> ! {
           one shared point) — vx = batched tap claims, family = the clustered\n\
           stream family, collapse = 13 single-tap claims via the collapse,\n\
           rotxor = 8 uniform-op-of-XOR-set claims via the collapse,\n\
-          sched = 48 off^t(σ-combo) claims via the COMPOSED collapse;\n\
+          sched = off^t(σ-combo) claims via the COMPOSED collapse;\n\
+          --taps-delta sets x_fold_extra (vx|sched; δ ≤ 5, knee δ = 3–4,\n\
+          shrinks the sent folds 2^δ×), --taps-rounds the sched claim\n\
+          count (default 48, clipped to the shape's offset envelope);\n\
           t/s/W do not apply there;\n\
           run with --release and --features unchecked for quotable numbers;\n\
           -C target-cpu=native is load-bearing on aarch64)"
@@ -185,6 +193,8 @@ struct Opts {
     word_bits: usize,
     family: Option<String>,
     taps: Option<String>,
+    taps_delta: Option<usize>,
+    taps_rounds: Option<usize>,
 }
 
 fn parse_args() -> Opts {
@@ -199,6 +209,8 @@ fn parse_args() -> Opts {
         word_bits: 1,
         family: None,
         taps: None,
+        taps_delta: None,
+        taps_rounds: None,
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -224,6 +236,16 @@ fn parse_args() -> Opts {
             }
             "--taps" => {
                 o.taps = Some(args.next().unwrap_or_else(|| usage()));
+            }
+            "--taps-delta" => {
+                o.taps_delta = Some(
+                    args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage()),
+                );
+            }
+            "--taps-rounds" => {
+                o.taps_rounds = Some(
+                    args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage()),
+                );
             }
             other => match other.parse::<usize>() {
                 Ok(v) => pos.push(v),
@@ -728,11 +750,10 @@ fn run_family(o: &Opts, fam: &str) {
 /// bit-columns (`log_cols = 1`, W = 1, `bit_vars = 0`), 32-bit words
 /// along the ENTRY axis (g = 5), x split `t' vs s` as even as `tw ≥ 6`
 /// allows.
-fn taps_layout(n: usize) -> f2z::pcs::ShaF2Layout {
+fn taps_layout(n: usize, delta: usize) -> f2z::pcs::ShaF2Layout {
     let log_cols = 1usize;
     let tw = ((n - log_cols) / 2).max(6);
     let s = n - log_cols - tw;
-    let delta: usize = std::env::var("F2Z_TAPS_DELTA").map_or(0, |v| v.parse().unwrap());
     f2z::pcs::ShaF2Layout {
         p: IntEvalParams { t: log_cols + tw, s, word_bits: 1 },
         num_cols: 1 << log_cols,
@@ -770,9 +791,17 @@ fn run_taps(o: &Opts, mode: &str) {
         eprintln!("--taps needs n ≥ 14 (tw ≥ 6 and s ≥ 7 for the 32-bit group field)");
         exit(2);
     }
-    let layout = taps_layout(o.n);
+    // δ: the --taps-delta flag, else the F2Z_TAPS_DELTA env, else 0.
+    let delta = o.taps_delta.or_else(|| {
+        std::env::var("F2Z_TAPS_DELTA").ok().and_then(|v| v.parse().ok())
+    });
+    let layout = taps_layout(o.n, delta.unwrap_or(0));
     if layout.x_fold_extra > 0 && !matches!(mode, "vx" | "sched") {
-        eprintln!("F2Z_TAPS_DELTA applies to the vx|sched modes only (δ-envelope)");
+        eprintln!("--taps-delta / F2Z_TAPS_DELTA apply to the vx|sched modes only (δ-envelope)");
+        exit(2);
+    }
+    if layout.x_fold_extra > GRP {
+        eprintln!("--taps-delta must be ≤ g = {GRP}");
         exit(2);
     }
     let p = layout.p;
@@ -839,8 +868,10 @@ fn run_taps(o: &Opts, mode: &str) {
         rot(1, 0, 1),
     ];
     let sched_max_src_off = sched_src.iter().map(|t| t.off).max().unwrap_or(0);
-    let sched_rounds =
-        48usize.min((1usize << (layout.p.s - GRP)) - sched_max_src_off);
+    let sched_rounds = o
+        .taps_rounds
+        .unwrap_or(48)
+        .min((1usize << (layout.p.s - GRP)) - sched_max_src_off);
     let k_desc = match mode {
         "collapse" => "13 single-tap claims".to_string(),
         "rotxor" => "8 op(xor-set) claims".to_string(),
