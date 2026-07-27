@@ -459,6 +459,113 @@ fn main() {
                     claimed: Fq::from(0u128),
                 })
                 .collect();
+            // ── FAMILY arms: the opening layer through shared-point
+            // RLC families (δ = 0 — the family paths' regime), with
+            // v(d') and v(b') delivered as the pair-XOR form claims at
+            // the PUBLICLY ROT-TRANSFORMED point (an opening of d⊕a'
+            // IS an opening of d' = ROT16(d⊕a') at the relabeled point
+            // — zero cost). fam6: two j=2 families {d,a'}, {b,c'}
+            // (3 forms each) + the {a},{c} idents via 0x44 (δ4) + the
+            // 2 zero-checks = 6 bodies. fam4: two j=3 families
+            // {d,a',a}, {b,c',c} (4 forms each; a,c absorbed) + the 2
+            // zero-checks = 4 bodies, at 4 AND channels per family.
+            use f2z::ligerito_flock::{
+                RlcSharedClaim, prove_mle_eval_mod_q_ligerito_rlc_family_shared_point,
+                verify_mle_eval_mod_q_ligerito_rlc_family_shared_point,
+            };
+            let layout_f0 = taps_layout(n, 3); // δ = env applies to R-checks only
+            let mut layout_fam = taps_layout(n, 3);
+            layout_fam.x_fold_extra = 0;
+            let p_xf = virtual_xor_params(&layout_fam);
+            let rwf = mk_rw(p_xf.rows(), 101);
+            let colwf = mk_colw(p_xf.cols());
+            let _ = &layout_f0;
+            let fam_val = |cols: &[usize]| -> u128 {
+                let taps: Vec<TapOp> = cols.iter().map(|&c| TapOp::ident(c)).collect();
+                eval_with(&layout_fam, &hint, &taps, &rwf, &colwf)
+            };
+            // Families: cols [d, a', a] / [b, c', c]; forms are bitmasks
+            // over the FAMILY column list.
+            let fam1_cols = [3usize, 4, 0];
+            let fam2_cols = [1usize, 5, 2];
+            let fam_claims = |cols: &[usize], j3: bool| -> Vec<RlcSharedClaim> {
+                let mut v = vec![
+                    RlcSharedClaim { form: 0b001, claimed: fam_val(&cols[..1]) },
+                    RlcSharedClaim { form: 0b010, claimed: fam_val(&cols[1..2]) },
+                    RlcSharedClaim { form: 0b011, claimed: fam_val(&cols[..2]) },
+                ];
+                if j3 {
+                    v.push(RlcSharedClaim { form: 0b100, claimed: fam_val(&cols[2..3]) });
+                }
+                v
+            };
+            let f1_j2 = fam_claims(&fam1_cols, false);
+            let f2_j2 = fam_claims(&fam2_cols, false);
+            let f1_j3 = fam_claims(&fam1_cols, true);
+            let f2_j3 = fam_claims(&fam2_cols, true);
+            // The {a},{c} idents for fam6 (0x44 at δ4).
+            let ac_sets: Vec<(Vec<usize>, f2z::taps::TapUniOp)> =
+                vec![(vec![0], uni(0, 0)), (vec![2], uni(0, 0))];
+            let ac_pclaims: Vec<TapPointClaim<'_>> = ac_sets
+                .iter()
+                .map(|(set, op)| {
+                    let taps = [TapOp::ident(set[0])];
+                    TapPointClaim {
+                        cols: set,
+                        op: *op,
+                        claimed: eval_with(&layout_plain, &hint, &taps, &rw2, &colw2),
+                    }
+                })
+                .collect();
+            let rcheck_mixed: Vec<TapClaim<'_>> = vec![
+                TapClaim { taps: &r1, row_weights_q: &rwm },
+                TapClaim { taps: &r2, row_weights_q: &rwm },
+            ];
+            let rcheck_mixed_v: Vec<TapVerifyClaim<'_, Fq>> = [&r1, &r2]
+                .iter()
+                .map(|taps| TapVerifyClaim {
+                    taps,
+                    row_weights_q: &rwm,
+                    col_weights: &colw_mask,
+                    claimed: Fq::from(0u128),
+                })
+                .collect();
+            let prove_fam = |j3: bool| {
+                let (c1, c2) = if j3 { (&f1_j3, &f2_j3) } else { (&f1_j2, &f2_j2) };
+                let mut t1 = Blake3Transcript::new();
+                let fam1 = prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                    &mut t1,
+                    &hint,
+                    &layout_fam,
+                    if j3 { &fam1_cols[..] } else { &fam1_cols[..2] },
+                    &rwf,
+                    c1,
+                    alpha,
+                    &pc,
+                );
+                let mut t2 = Blake3Transcript::new();
+                let fam2 = prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                    &mut t2,
+                    &hint,
+                    &layout_fam,
+                    if j3 { &fam2_cols[..] } else { &fam2_cols[..2] },
+                    &rwf,
+                    c2,
+                    alpha,
+                    &pc,
+                );
+                let plain = (!j3).then(|| {
+                    let mut t = Blake3Transcript::new();
+                    prove_mle_eval_mod_q_ligerito_tap_collapse(
+                        &mut t, &hint, &layout_plain, &rw2, &colw2, &ac_pclaims, alpha, &pc,
+                    )
+                });
+                let mut t3 = Blake3Transcript::new();
+                let mixed = prove_mle_eval_mod_q_ligerito_tap_claims(
+                    &mut t3, &hint, &layout, FQ_BITS, &rcheck_mixed, alpha, &pc,
+                );
+                (fam1, fam2, plain, mixed)
+            };
             let prove_opt = || {
                 let mut t1 = Blake3Transcript::new();
                 let plain = prove_mle_eval_mod_q_ligerito_tap_collapse(
@@ -482,7 +589,8 @@ fn main() {
                 );
                 (plain, mixed)
             };
-            let (mut t_opt, mut t_nv) = (Vec::new(), Vec::new());
+            let (mut t_opt, mut t_nv, mut t_f6, mut t_f4) =
+                (Vec::new(), Vec::new(), Vec::new(), Vec::new());
             for _ in 0..reps {
                 let t0 = Instant::now();
                 drop(prove_opt());
@@ -490,6 +598,12 @@ fn main() {
                 let t0 = Instant::now();
                 drop(prove_nv());
                 t_nv.push(t0.elapsed().as_secs_f64() * 1e3);
+                let t0 = Instant::now();
+                drop(prove_fam(false));
+                t_f6.push(t0.elapsed().as_secs_f64() * 1e3);
+                let t0 = Instant::now();
+                drop(prove_fam(true));
+                t_f4.push(t0.elapsed().as_secs_f64() * 1e3);
             }
             let (opt_plain, opt_mx) = prove_opt();
             let t0 = Instant::now();
@@ -525,15 +639,91 @@ fn main() {
                 .expect("b3fam naive mixed verifies");
             }
             let v_nv = t0.elapsed().as_secs_f64() * 1e3;
+            // Verify + size the family arms once.
+            let verify_fam = |j3: bool,
+                              pr: &(
+                f2z::ligerito_flock::IntEvalRsLigRlcFamilyProof,
+                f2z::ligerito_flock::IntEvalRsLigRlcFamilyProof,
+                Option<f2z::ligerito_flock::IntEvalRsLigModQXorProof>,
+                f2z::ligerito_flock::IntEvalRsLigModQTapProof,
+            )| {
+                let (c1, c2) = if j3 { (&f1_j3, &f2_j3) } else { (&f1_j2, &f2_j2) };
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                    &mut vt,
+                    &hint.commitment,
+                    &pr.0,
+                    &layout_fam,
+                    if j3 { &fam1_cols[..] } else { &fam1_cols[..2] },
+                    &rwf,
+                    c1,
+                    &colwf,
+                    alpha,
+                    &vc,
+                )
+                .expect("b3fam family1 verifies");
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                    &mut vt,
+                    &hint.commitment,
+                    &pr.1,
+                    &layout_fam,
+                    if j3 { &fam2_cols[..] } else { &fam2_cols[..2] },
+                    &rwf,
+                    c2,
+                    &colwf,
+                    alpha,
+                    &vc,
+                )
+                .expect("b3fam family2 verifies");
+                if let Some(plain) = &pr.2 {
+                    let mut vt = Blake3Transcript::new();
+                    verify_mle_eval_mod_q_ligerito_tap_collapse(
+                        &mut vt, &hint.commitment, plain, &layout_plain, &rw2, &colw2,
+                        &ac_pclaims, alpha, &vc,
+                    )
+                    .expect("b3fam ac idents verify");
+                }
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_tap_claims(
+                    &mut vt, &hint.commitment, &pr.3, &layout, alpha, FQ_BITS,
+                    &rcheck_mixed_v, &vc,
+                )
+                .expect("b3fam fam mixed verifies");
+            };
+            let pf6 = prove_fam(false);
+            let t0 = Instant::now();
+            verify_fam(false, &pf6);
+            let v_f6 = t0.elapsed().as_secs_f64() * 1e3;
+            let pf4 = prove_fam(true);
+            let t0 = Instant::now();
+            verify_fam(true, &pf4);
+            let v_f4 = t0.elapsed().as_secs_f64() * 1e3;
             let size_tap = |pr: &f2z::ligerito_flock::IntEvalRsLigModQTapProof| {
                 let (b, lig) = mle_eval_mod_q_lig_tap_size_breakdown(pr);
                 b.total() + lig
+            };
+            let size_fam = |pr: &(
+                f2z::ligerito_flock::IntEvalRsLigRlcFamilyProof,
+                f2z::ligerito_flock::IntEvalRsLigRlcFamilyProof,
+                Option<f2z::ligerito_flock::IntEvalRsLigModQXorProof>,
+                f2z::ligerito_flock::IntEvalRsLigModQTapProof,
+            )| {
+                f2z::ligerito_flock::mle_eval_mod_q_lig_rlc_family_proof_size_bytes(&pr.0)
+                    + f2z::ligerito_flock::mle_eval_mod_q_lig_rlc_family_proof_size_bytes(
+                        &pr.1,
+                    )
+                    + pr.2
+                        .as_ref()
+                        .map_or(0, mle_eval_mod_q_lig_xor_proof_size_bytes)
+                    + size_tap(&pr.3)
             };
             let sz_opt =
                 mle_eval_mod_q_lig_xor_proof_size_bytes(&opt_plain) + size_tap(&opt_mx);
             let sz_nv =
                 mle_eval_mod_q_lig_xor_proof_size_bytes(&nv_plain) + size_tap(&nv_mx);
-            let (m_opt, m_nv) = (median(t_opt), median(t_nv));
+            let (m_opt, m_nv, m_f6, m_f4) =
+                (median(t_opt), median(t_nv), median(t_f6), median(t_f4));
             println!(
                 "n={n} B3FAM g={g} (8 openings + 4 relations): opt {m_opt:.1} ms ({}+{} \
                  bodies, 6 cols committed, {:.0} KB, verify {v_opt:.1} ms) | naive \
@@ -546,6 +736,16 @@ fn main() {
                 nv_plain.xors.len(),
                 nv_mx.tap_us.len(),
                 sz_nv as f64 / 1e3,
+            );
+            println!(
+                "  fam6 (2×j2 fams + 2 idents + 2 checks = 6 bodies): {m_f6:.1} ms \
+                 ({:.2}x of opt, {:.0} KB, verify {v_f6:.1} ms) | fam4 (2×j3 fams + 2 \
+                 checks = 4 bodies): {m_f4:.1} ms ({:.2}x, {:.0} KB, verify {v_f4:.1} ms) \
+                 | v(d'),v(b') = pair-XOR forms at the ROT-relabeled point",
+                m_f6 / m_opt,
+                size_fam(&pf6) as f64 / 1e3,
+                m_f4 / m_opt,
+                size_fam(&pf4) as f64 / 1e3,
             );
             continue;
         }

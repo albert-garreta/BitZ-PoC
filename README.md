@@ -1107,7 +1107,24 @@ check count at the number of INDEPENDENT relations; (3) the collapse
 op through 0x42 instead of capping δ (the δ2 variant measured
 SLOWER and fatter: 463.7 ms / 520 KB at n=26); (4) d, b cannot be
 virtualized (their joint recurrence's resolvent is an O(#words) tap
-list — the phase-0 succinctness wall).
+list — the phase-0 succinctness wall). FOLLOW-UP — the fewer-body
+routes, measured: the opening layer CAN compress to 6 bodies (two
+j=2 shared-point families {d,a′}, {b,c′} + the {a},{c} idents + the
+2 checks) or 4 bodies (two j=3 families absorbing a,c), with v(d′),
+v(b′) delivered as the pair-XOR form claims at the PUBLICLY
+ROT-relabeled point (an opening of d⊕a′ IS an opening of
+d′ = ROT¹⁶(d⊕a′) — zero cost). Both arms landed in the harness and
+verify — and both LOSE to the 10-body δ4 routing at real shapes:
+fam6 74.0/151.0 ms, 510/669 KB and fam4 84.8/147.7 ms, 413/543 KB
+vs opt 57.5/122.7 ms, 275/349 KB at n=22/24. Body count is not the
+cost unit: the family paths run δ=0 (full-width folds and forests —
+a δ4 collapse body costs ~0.55× a δ0 single), family bodies carry
+1–4 AND discharge channels each (~13–20 ms), and the fam route pays
+4 sub-proof tails vs 2. In δ0-single-claim EQUIVALENTS the 10-body
+routing already costs ≈ 2.9 singles at n=24. The open lever that
+could flip it: δ-enabling the RLC-family path + merging the two
+families into one proof (projected ~10–20 %, bounded by the
+channels).
 
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
