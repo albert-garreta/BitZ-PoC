@@ -1132,7 +1132,17 @@ economy GROWS with n while the collapse bodies stay
 one-body-per-claim, so even δ0 families reach parity at n=26 and
 project to WIN at n ≥ 28; δ-enabling them (which also fixes the 2×
 byte gap — the full-width δ0 folds are the entire size loss) would
-flip the verdict at every shape.
+flip the verdict at every shape. n=28 CONFIRMS the crossover (two
+runs, 67 MB free at start): **fam6 950.3 ms = 0.92× of opt** on the
+steadier run (1031.4/1034.2 opt/naive) and 0.72× under peak churn —
+fam6's j2-lazy working set is churn-IMMUNE (951.6/950.3 across
+runs while every other arm swung ~25 %); fam4 needs
+`F2Z_RLC_J34_LAZY=1` at this scale (1982.8 eager → 1414.4 lazy) and
+still loses (the j3 channel + case-width cost). Bytes at n=28: opt
+539 KB, fam6 1134, fam4 937 — the δ0 fold gap unchanged. Verdict:
+the 6-body family structure WINS prover time from n=28 up at δ0
+already, with the δ-family extension the remaining piece for the
+byte axis and the smaller shapes.
 
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
