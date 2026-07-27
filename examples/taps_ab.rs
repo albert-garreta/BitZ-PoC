@@ -39,6 +39,12 @@
 //! batched tap path — `single` vs `vx6` vs `ind6` (δ applies: the
 //! sources are unconstrained on the 0x42 route).
 //!
+//! `F2Z_AB_BLAKE3=1` runs the Blake3 design model
+//! (docs/blake3-taps-design.md): 8 committed columns, ONE commitment,
+//! the 8-claim P-LIN layer (0x46 multiweight collapse, per-claim
+//! column weights, δ = 0) + the 5-shape P-XOR layer (blocked 0x42 at
+//! the δ knee) vs `vx13` (all 13 claims batched, collapse-unaware).
+//!
 //! `F2Z_AB_SCHED=1` runs the COMPOSED-collapse schedule demo instead:
 //! 48 claims `off^t(x)` of ONE σ-style mixed combination
 //! `x = ROT^7 a_0 ⊕ ROT^18 a_0 ⊕ SHIFT^3 a_0 ⊕ off^1 a_1` at ONE point
@@ -174,6 +180,277 @@ fn main() {
             })
             .collect();
         let hint = commit_rs_ligerito_rows(p, rows, &pc);
+
+        if std::env::var("F2Z_AB_BLAKE3").is_ok_and(|v| v == "1") {
+            // The Blake3 design model (docs/blake3-taps-design.md): 8
+            // committed columns (A,B,C,D roles + K carries + X aux + 2
+            // spare), ONE commitment, two sub-proofs at one shared row
+            // point — the P-LIN layer (8 weighted single-tap claims →
+            // 8 plain bodies via the 0x46 multiweight collapse, δ = 0:
+            // intra-block weight patterns stay column-side) and the
+            // P-XOR layer (the 4 xor-rot step shapes + the
+            // finalization/chaining shape → 5 mixed bodies via blocked
+            // 0x42 at the δ knee). Baseline `vx13`: all 13 claims
+            // through the batched tap path (collapse-unaware routing).
+            use f2z::ligerito_flock::{
+                TapWeightedClaim, prove_mle_eval_mod_q_ligerito_tap_multiweight,
+                verify_mle_eval_mod_q_ligerito_tap_multiweight,
+            };
+            let layout = taps_layout(n, 3);
+            // The plain layer folds the WHOLE bit-position field
+            // (δ = g = 5): every P-LIN read shares one j-profile (the
+            // place values 2^j the add-checks want), so per-claim
+            // variation is word-granular = column-side at δ = 5, and
+            // the row weights stay shared. The fold vectors shrink 32×.
+            let mut layout_plain = taps_layout(n, 3);
+            layout_plain.x_fold_extra = GRP;
+            let p = &layout.p;
+            let p_x = virtual_xor_params(&layout);
+            let p_x0 = virtual_xor_params(&layout_plain);
+            let (pc, vc) = sha_lig_configs(packed_vars(p)).expect("lig cfg");
+            let words = p.rows().div_ceil(64);
+            let rows: Vec<Vec<u64>> = (0..p.cols())
+                .map(|c| {
+                    (0..words)
+                        .map(|w| {
+                            ((c as u64) << 32 | (w as u64) ^ seed)
+                                .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                                .rotate_left(((c + w) & 63) as u32)
+                        })
+                        .collect()
+                })
+                .collect();
+            // ONE commitment serves both layers: the commitment depends
+            // on p only; x_fold_extra is a claim-path parameter.
+            let hint = commit_rs_ligerito_rows(p, rows, &pc);
+            let rot = |col, amt, off| TapOp {
+                col,
+                grp_log2: GRP,
+                bit_amt: amt,
+                bit_dropout: false,
+                off,
+            };
+            let uni = |amt: usize, off: usize| f2z::taps::TapUniOp {
+                grp_log2: GRP,
+                bit_amt: amt,
+                bit_dropout: false,
+                off,
+            };
+            let mk_rw = |rows_len: usize, salt: u128| -> Vec<u128> {
+                (0..rows_len)
+                    .map(|b| {
+                        (b as u128)
+                            .wrapping_mul(0xDEAD_BEEF_CAFE_F00D_1234_5678_9ABC_DEF1)
+                            .wrapping_add(salt + (u128::from(seed) << 1))
+                            % FQ_MOD
+                    })
+                    .collect()
+            };
+            let mk_colw = |cols_len: usize| -> [Vec<Fq>; 4] {
+                let w_eq: Vec<Fq> = (0..cols_len)
+                    .map(|c| {
+                        Fq::from((c as u128).wrapping_mul(0xABCD_EF01_2345).wrapping_add(3))
+                    })
+                    .collect();
+                let w_pv: Vec<Fq> =
+                    (0..cols_len).map(|c| Fq::from(1u128 << (c % 24))).collect();
+                let w_mask: Vec<Fq> = (0..cols_len)
+                    .map(|c| if c % 2 == 0 { w_eq[c] } else { Fq::from(0u128) })
+                    .collect();
+                let w_perm: Vec<Fq> =
+                    (0..cols_len).map(|c| w_eq[(c + 5) % cols_len]).collect();
+                [w_eq, w_pv, w_mask, w_perm]
+            };
+            // ── The P-LIN layer (δ = 0): roles A=0 B=1 C=2 D=3, K=4,
+            // X=5; identity/off¹ reads at per-claim weight patterns
+            // (eq, place-value, parity-mask, permuted — the add-check,
+            // carry, and schedule read shapes).
+            let rw0 = mk_rw(p_x0.rows(), 67);
+            let [w_eq0, w_pv0, w_mask0, w_perm0] = mk_colw(p_x0.cols());
+            // Two reads per (column, branch) — the a-add, c-add,
+            // boundary, and schedule relations each read the same
+            // columns at different weight patterns; the collapse merges
+            // all 16 reads into 8 bodies.
+            let plain_spec: Vec<(Vec<usize>, f2z::taps::TapUniOp, &[Fq])> = vec![
+                (vec![0], uni(0, 0), &w_eq0),
+                (vec![0], uni(0, 0), &w_pv0),
+                (vec![0], uni(0, 1), &w_eq0),
+                (vec![0], uni(0, 1), &w_mask0),
+                (vec![1], uni(0, 0), &w_pv0),
+                (vec![1], uni(0, 0), &w_eq0),
+                (vec![2], uni(0, 0), &w_eq0),
+                (vec![2], uni(0, 0), &w_perm0),
+                (vec![2], uni(0, 1), &w_mask0),
+                (vec![2], uni(0, 1), &w_pv0),
+                (vec![3], uni(0, 0), &w_pv0),
+                (vec![3], uni(0, 0), &w_mask0),
+                (vec![4], uni(0, 0), &w_mask0),
+                (vec![4], uni(0, 0), &w_eq0),
+                (vec![5], uni(0, 0), &w_perm0),
+                (vec![5], uni(0, 0), &w_eq0),
+            ];
+            let eval_with = |layout_e: &ShaF2Layout,
+                             taps: &[TapOp],
+                             rw: &[u128],
+                             colw: &[Fq]|
+             -> u128 {
+                let a_rows = extract_virtual_tap_rows(layout_e, hint.rows(), taps);
+                let mut y = Fq::from(0u128);
+                for (c, row) in a_rows.iter().enumerate() {
+                    let mut acc = Fq::from(0u128);
+                    for (wi, &word) in row.iter().enumerate() {
+                        let mut bits = word;
+                        while bits != 0 {
+                            let t = bits.trailing_zeros() as usize;
+                            acc = acc + Fq::from(rw[(wi << 6) | t]);
+                            bits &= bits.wrapping_sub(1);
+                        }
+                    }
+                    y = y + colw[c] * acc;
+                }
+                y.0
+            };
+            let plain_claims: Vec<TapWeightedClaim<'_>> = plain_spec
+                .iter()
+                .map(|(set, op, cw)| {
+                    let taps: Vec<TapOp> = set.iter().map(|&c| op.with_col(c)).collect();
+                    TapWeightedClaim {
+                        cols: set,
+                        op: *op,
+                        col_weights: cw,
+                        claimed: eval_with(&layout_plain, &taps, &rw0, cw),
+                    }
+                })
+                .collect();
+            // ── The P-XOR layer (δ from F2Z_TAPS_DELTA): the four
+            // xor-rot step shapes + the finalization/chaining shape.
+            let rw_x = mk_rw(p_x.rows(), 71);
+            let [w_eqx, _, _, _] = mk_colw(p_x.cols());
+            let mixed_lists: Vec<Vec<TapOp>> = vec![
+                vec![TapOp::ident(3), rot(3, 16, 1), rot(0, 16, 0)],
+                vec![TapOp::ident(1), rot(1, 12, 1), rot(2, 12, 0)],
+                vec![TapOp::ident(3), rot(3, 8, 1), rot(0, 8, 0)],
+                vec![TapOp::ident(1), rot(1, 7, 1), rot(2, 7, 0)],
+                vec![TapOp::ident(5), rot(5, 0, 2)],
+            ];
+            let mixed_vals: Vec<u128> = mixed_lists
+                .iter()
+                .map(|taps| eval_with(&layout, taps, &rw_x, &w_eqx))
+                .collect();
+            let mixed_claims: Vec<TapClaim<'_>> = mixed_lists
+                .iter()
+                .map(|taps| TapClaim { taps, row_weights_q: &rw_x })
+                .collect();
+            let mixed_vclaims: Vec<TapVerifyClaim<'_, Fq>> = mixed_lists
+                .iter()
+                .zip(mixed_vals.iter())
+                .map(|(taps, &v)| TapVerifyClaim {
+                    taps,
+                    row_weights_q: &rw_x,
+                    col_weights: &w_eqx,
+                    claimed: Fq::from(v),
+                })
+                .collect();
+            // ── Baseline: all 13 claims through the batched tap path
+            // (per-claim weights are legal there; one body per claim).
+            let plain_lists: Vec<Vec<TapOp>> = plain_spec
+                .iter()
+                .map(|(set, op, _)| set.iter().map(|&c| op.with_col(c)).collect())
+                .collect();
+            let base_claims: Vec<TapClaim<'_>> = plain_lists
+                .iter()
+                .map(|taps| TapClaim { taps, row_weights_q: &rw_x })
+                .chain(mixed_lists.iter().map(|taps| TapClaim { taps, row_weights_q: &rw_x }))
+                .collect();
+            let base_vclaims: Vec<TapVerifyClaim<'_, Fq>> = plain_lists
+                .iter()
+                .zip(plain_spec.iter())
+                .map(|(taps, (_, _, _))| (taps, &w_eqx))
+                .chain(mixed_lists.iter().map(|taps| (taps, &w_eqx)))
+                .map(|(taps, cw)| TapVerifyClaim {
+                    taps,
+                    row_weights_q: &rw_x,
+                    col_weights: cw,
+                    claimed: Fq::from(eval_with(&layout, taps, &rw_x, cw)),
+                })
+                .collect();
+            let prove_b3 = || {
+                let mut t1 = Blake3Transcript::new();
+                let plain = prove_mle_eval_mod_q_ligerito_tap_multiweight(
+                    &mut t1, &hint, &layout_plain, &rw0, &plain_claims, alpha, &pc,
+                );
+                let mut t2 = Blake3Transcript::new();
+                let mixed = prove_mle_eval_mod_q_ligerito_tap_claims(
+                    &mut t2, &hint, &layout, FQ_BITS, &mixed_claims, alpha, &pc,
+                );
+                (plain, mixed)
+            };
+            let prove_vx = || {
+                let mut t = Blake3Transcript::new();
+                prove_mle_eval_mod_q_ligerito_tap_claims(
+                    &mut t, &hint, &layout, FQ_BITS, &base_claims, alpha, &pc,
+                )
+            };
+            let (mut t_b3, mut t_vx) = (Vec::new(), Vec::new());
+            for _ in 0..reps {
+                let t0 = Instant::now();
+                drop(prove_b3());
+                t_b3.push(t0.elapsed().as_secs_f64() * 1e3);
+                let t0 = Instant::now();
+                drop(prove_vx());
+                t_vx.push(t0.elapsed().as_secs_f64() * 1e3);
+            }
+            let (proof_plain, proof_mixed) = prove_b3();
+            let t0 = Instant::now();
+            {
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_tap_multiweight(
+                    &mut vt, &hint.commitment, &proof_plain, &layout_plain, &rw0,
+                    &plain_claims, alpha, &vc,
+                )
+                .expect("blake3 plain layer verifies");
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_tap_claims(
+                    &mut vt, &hint.commitment, &proof_mixed, &layout, alpha, FQ_BITS,
+                    &mixed_vclaims, &vc,
+                )
+                .expect("blake3 mixed layer verifies");
+            }
+            let v_b3 = t0.elapsed().as_secs_f64() * 1e3;
+            let proof_vx = prove_vx();
+            let t0 = Instant::now();
+            {
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_tap_claims(
+                    &mut vt, &hint.commitment, &proof_vx, &layout, alpha, FQ_BITS,
+                    &base_vclaims, &vc,
+                )
+                .expect("blake3 vx13 verifies");
+            }
+            let v_vx = t0.elapsed().as_secs_f64() * 1e3;
+            let size_tap = |p: &f2z::ligerito_flock::IntEvalRsLigModQTapProof| {
+                let (b, lig) = mle_eval_mod_q_lig_tap_size_breakdown(p);
+                b.total() + lig
+            };
+            let sz_b3 = mle_eval_mod_q_lig_xor_proof_size_bytes(&proof_plain)
+                + size_tap(&proof_mixed);
+            let (m_b3, m_vx) = (median(t_b3), median(t_vx));
+            println!(
+                "n={n} BLAKE3 (8 cols; {}-read P-LIN → {} plain bodies δ{} + 5-shape P-XOR → \
+                 {} mixed bodies δ{}): b3 {m_b3:.1} ms ({:.0} KB, verify {v_b3:.1} ms) | \
+                 vx{} {m_vx:.1} ms ({:.2}x of b3, {:.0} KB, verify {v_vx:.1} ms)",
+                plain_spec.len(),
+                proof_plain.xors.len(),
+                layout_plain.x_fold_extra,
+                proof_mixed.tap_us.len(),
+                layout.x_fold_extra,
+                sz_b3 as f64 / 1e3,
+                base_claims.len(),
+                m_vx / m_b3,
+                size_tap(&proof_vx) as f64 / 1e3,
+            );
+            continue;
+        }
 
         if std::env::var("F2Z_AB_SCHED").is_ok_and(|v| v == "1") {
             // The composed collapse on a schedule-shaped instance: every

@@ -3117,6 +3117,289 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_composed(
     )
 }
 
+// ---------------------------------------------------------------------
+// EXPERIMENTAL — the MULTIWEIGHT collapse: per-claim COLUMN weights
+// (docs/blake3-taps-design.md, the P-LIN layer).
+//
+// The 0x44 collapse fixes ONE shared (row, column) weight pair and lets
+// claims differ only by their op. Its verifier, however, already
+// γ-combines PER-CLAIM branch tables (`E_{set,β} = Σ γᵢ·eᵢ^{(β)}`) —
+// nothing in the argument needs the eᵢ to be transforms of one shared
+// vector. Generalization: each claim carries its OWN column-weight
+// vector (masks, place values, public permutations — arbitrary), while
+// the ROW weights stay shared per branch; k claims still γ-collapse to
+// at most `#distinct-XOR-sets × 2` plain inner bodies. This is the
+// missing piece that lets EVERY integer-linear relation of a system
+// (additions with carries, boundary reads, permuted schedule reads)
+// ride the same per-(column, branch) bodies: word-level linear
+// identities are Schwartz–Zippel zero-checks whose per-column reads
+// differ only in column weights. Soundness: the 0x44 chain verbatim
+// (γ drawn after the statement absorbs every weight vector; 1/q + the
+// inner claims-only path's errors). Fiat–Shamir: statement tag 0x46
+// (root, layout, per-claim set + op + col_weights + claimed, shared
+// row weights) → γ's → the inner claims-only protocol. Evaluation
+// field fixed q = 2^100 − 15.
+// ---------------------------------------------------------------------
+
+/// One weighted uniform-op claim at the shared ROW point:
+/// `Σ_p (w_row ⊗ e_i)[p]·op(⊕_{c∈cols} a_c)[p] = claimed` — as
+/// [`TapPointClaim`] but with per-claim column weights `e_i`.
+#[derive(Clone, Copy, Debug)]
+pub struct TapWeightedClaim<'a> {
+    /// The XOR set of committed columns (nonempty after
+    /// [`crate::pcs::xor_canonical_cols`]).
+    pub cols: &'a [usize],
+    /// The uniform op applied outside the XOR.
+    pub op: crate::taps::TapUniOp,
+    /// This claim's OWN column weights, length `2^{s−δ}`.
+    pub col_weights: &'a [crate::pcs::Fq],
+    /// The claimed evaluation, canonical in `[0, q)`.
+    pub claimed: u128,
+}
+
+/// Absorb the multiweight-collapse statement (domain tag 0x46).
+#[allow(clippy::arithmetic_side_effects)]
+fn absorb_tap_multiweight_statement(
+    transcript: &mut impl Transcript,
+    root: &flock_core::merkle::Hash,
+    layout: &ShaF2Layout,
+    row_weights_q: &[u128],
+    claims: &[TapWeightedClaim<'_>],
+) {
+    let mut bytes = Vec::new();
+    bytes.push(0x46u8);
+    bytes.extend_from_slice(root);
+    for v in [
+        layout.p.t,
+        layout.p.s,
+        layout.p.word_bits,
+        layout.num_cols,
+        layout.log_cols,
+        layout.bit_vars,
+        layout.num_vars,
+        layout.tw,
+        layout.x_fold_extra,
+        claims.len(),
+    ] {
+        bytes.extend_from_slice(&(v as u64).to_le_bytes());
+    }
+    bytes.extend_from_slice(&crate::pcs::FQ_MOD.to_le_bytes());
+    for cl in claims {
+        bytes.extend_from_slice(&(cl.cols.len() as u64).to_le_bytes());
+        for &c in cl.cols {
+            bytes.extend_from_slice(&(c as u64).to_le_bytes());
+        }
+        for v in [
+            cl.op.grp_log2 as u64,
+            cl.op.bit_amt as u64,
+            u64::from(cl.op.bit_dropout),
+            cl.op.off as u64,
+        ] {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        for w in cl.col_weights {
+            bytes.extend_from_slice(&w.0.to_le_bytes());
+        }
+        bytes.extend_from_slice(&cl.claimed.to_le_bytes());
+    }
+    for &x in row_weights_q {
+        bytes.extend_from_slice(&x.to_le_bytes());
+    }
+    transcript.absorb_slice(&bytes);
+}
+
+/// The multiweight plan — identical shape law to [`tap_collapse_plan`]
+/// (per canonical XOR set, branch 0 then 1; branch 1 iff some claim on
+/// the set has a word offset).
+fn tap_multiweight_plan(claims: &[TapWeightedClaim<'_>]) -> Vec<(Vec<usize>, usize)> {
+    use crate::pcs::xor_canonical_cols;
+    let mut sets: Vec<Vec<usize>> =
+        claims.iter().map(|c| xor_canonical_cols(c.cols)).collect();
+    sets.sort_unstable();
+    sets.dedup();
+    let mut plan = Vec::new();
+    for set in sets {
+        let has_off = claims
+            .iter()
+            .any(|c| xor_canonical_cols(c.cols) == set && c.op.off > 0);
+        plan.push((set.clone(), 0));
+        if has_off {
+            plan.push((set, 1));
+        }
+    }
+    plan
+}
+
+/// Prove k weighted uniform-op claims at ONE shared ROW point
+/// (EXPERIMENTAL; see the section comment): at most
+/// `#distinct-XOR-sets × 2` plain inner claims through
+/// [`prove_mle_eval_mod_q_ligerito_claims_only`]. The prover never
+/// touches the column weights (the combination lives in the verifier's
+/// read-off), so the body is the 0x44 prover under the 0x46 statement.
+#[allow(clippy::arithmetic_side_effects)]
+pub fn prove_mle_eval_mod_q_ligerito_tap_multiweight(
+    transcript: &mut (impl Transcript + Send),
+    hint: &FlockCommitHint,
+    layout: &ShaF2Layout,
+    row_weights_q: &[u128],
+    claims: &[TapWeightedClaim<'_>],
+    alpha: Gf,
+    pc: &LigProverConfig,
+) -> IntEvalRsLigModQXorProof {
+    use crate::pcs::{FQ_BITS, FQ_MOD, fq_challenge, virtual_xor_params, xor_canonical_cols};
+    use crate::taps::{assert_tap_layout, assert_tap_op};
+    assert_tap_layout(layout);
+    assert!(!claims.is_empty(), "need at least one claim");
+    let p_x = virtual_xor_params(layout);
+    assert_eq!(row_weights_q.len(), p_x.rows(), "shared row-weight length");
+    for cl in claims {
+        assert_tap_op(layout, &cl.op);
+        assert_collapse_op_delta(layout, &cl.op);
+        assert_eq!(cl.col_weights.len(), p_x.cols(), "claim col-weight length");
+        assert!(
+            !xor_canonical_cols(cl.cols).is_empty(),
+            "claim's XOR set cancels to the zero vector"
+        );
+        for &c in cl.cols {
+            assert!(c < layout.num_cols, "claim column {c} out of range");
+        }
+        assert!(cl.claimed < FQ_MOD, "claimed value must be canonical");
+    }
+    absorb_tap_multiweight_statement(transcript, hint.root(), layout, row_weights_q, claims);
+    // γ's for transcript parity; the inner claims are γ-independent.
+    let _gammas: Vec<u128> = (0..claims.len()).map(|_| fq_challenge(transcript)).collect();
+    let plan = tap_multiweight_plan(claims);
+    let branch_rows: Vec<Vec<u128>> = plan
+        .iter()
+        .map(|(_, beta)| tap_collapse_row_weights(layout, row_weights_q, *beta))
+        .collect();
+    let vx: Vec<VirtualXorClaim<'_>> = plan
+        .iter()
+        .enumerate()
+        .map(|(pi, (set, _))| VirtualXorClaim {
+            cols: set,
+            constant: 0,
+            external_rows: None,
+            row_weights_q: &branch_rows[pi],
+        })
+        .collect();
+    prove_mle_eval_mod_q_ligerito_claims_only(transcript, hint, layout, FQ_BITS, &vx, alpha, pc)
+}
+
+/// Verify a multiweight collapse (EXPERIMENTAL): γ-combines each
+/// claim's OWN branch column-weight tables per (set, branch), derives
+/// the branch values from the proof's fold vectors, checks their sum
+/// against `T = Σ γᵢ·cᵢ`, and runs the inner claims-only verifier.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub fn verify_mle_eval_mod_q_ligerito_tap_multiweight(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: &IntEvalRsLigModQXorProof,
+    layout: &ShaF2Layout,
+    row_weights_q: &[u128],
+    claims: &[TapWeightedClaim<'_>],
+    alpha: Gf,
+    vc: &LigVerifierConfig,
+) -> Result<(), FlockRsError> {
+    use crate::pcs::{
+        FQ_BITS, FQ_MOD, Fq, fq_add, fq_challenge, fq_mul, mod_q_chunk_width, mod_q_num_chunks,
+        recombine_read_off, virtual_xor_params, xor_canonical_cols,
+    };
+    if layout.p.word_bits != 1
+        || layout.x_fold_extra >= layout.p.s
+        || (layout.x_fold_extra > 0 && layout.bit_vars.wrapping_add(layout.tw) < 6)
+        || layout.tw + layout.log_cols < 7
+    {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+    let p_x = virtual_xor_params(layout);
+    if claims.is_empty()
+        || row_weights_q.len() != p_x.rows()
+        || claims.iter().any(|cl| {
+            !tap_shape_ok(layout, &cl.op.with_col(0))
+                || !collapse_op_delta_ok(layout, &cl.op)
+                || cl.col_weights.len() != p_x.cols()
+                || cl.claimed >= FQ_MOD
+                || xor_canonical_cols(cl.cols).is_empty()
+                || cl.cols.iter().any(|&c| c >= layout.num_cols)
+        })
+    {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+    absorb_tap_multiweight_statement(transcript, &commitment.root, layout, row_weights_q, claims);
+    let gammas: Vec<u128> = (0..claims.len()).map(|_| fq_challenge(transcript)).collect();
+    let target = claims
+        .iter()
+        .zip(gammas.iter())
+        .fold(0u128, |acc, (cl, &g)| fq_add(acc, fq_mul(g, cl.claimed)));
+    let plan = tap_multiweight_plan(claims);
+    // Per-(set, branch) combined column weights from each claim's OWN
+    // weight vector.
+    let mut acc: Vec<Vec<u128>> =
+        plan.iter().map(|_| vec![0u128; p_x.cols()]).collect();
+    for (cl, &gam) in claims.iter().zip(gammas.iter()) {
+        let branches = tap_collapse_col_weights(layout, &cl.op, cl.col_weights);
+        let set = xor_canonical_cols(cl.cols);
+        for (pi, (pset, beta)) in plan.iter().enumerate() {
+            if *pset != set {
+                continue;
+            }
+            for (a, &e) in acc[pi].iter_mut().zip(branches[*beta].iter()) {
+                *a = fq_add(*a, fq_mul(gam, e));
+            }
+        }
+    }
+    let combined: Vec<Vec<Fq>> =
+        acc.into_iter().map(|v| v.into_iter().map(Fq::from).collect()).collect();
+
+    let c_w_x = mod_q_chunk_width(&p_x);
+    let lch_x = mod_q_num_chunks(&p_x, FQ_BITS);
+    if proof.xors.len() != plan.len() || proof.xors.iter().any(|xs| xs.us.len() != lch_x) {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+    let ys: Vec<Fq> = (0..plan.len())
+        .map(|pi| {
+            let flat: Vec<u128> =
+                proof.xors[pi].us.iter().flat_map(|u| u.iter().copied()).collect();
+            recombine_read_off(&p_x, &flat, 0, &combined[pi], c_w_x, lch_x)
+        })
+        .collect();
+    let total = ys.iter().fold(0u128, |acc, y| fq_add(acc, y.0));
+    if total != target {
+        return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
+    }
+
+    let branch_rows: Vec<Vec<u128>> = plan
+        .iter()
+        .map(|(_, beta)| tap_collapse_row_weights(layout, row_weights_q, *beta))
+        .collect();
+    let vx: Vec<VirtualXorVerifyClaim<'_, Fq>> = plan
+        .iter()
+        .enumerate()
+        .map(|(pi, (set, _))| VirtualXorVerifyClaim {
+            cols: set,
+            constant: 0,
+            has_external: false,
+            row_weights_q: &branch_rows[pi],
+            col_weights: &combined[pi],
+            claimed: ys[pi],
+        })
+        .collect();
+    let obligations = verify_mle_eval_mod_q_ligerito_claims_only(
+        transcript,
+        commitment,
+        proof,
+        layout,
+        alpha,
+        FQ_BITS,
+        &vx,
+        vc,
+    )?;
+    debug_assert!(obligations.is_empty(), "no external terms in the collapse");
+    Ok(())
+}
+
 /// The deterministic ring plan of one claim at one exit point: members =
 /// (tap index, class) in canonical order, grouped into buckets by
 /// in-pack-table equality (first-occurrence order). Both sides derive it.
@@ -8688,6 +8971,91 @@ mod tests {
                 &mut vt, &hint.commitment, &proof2, &layout, &rw, &colw, &claims2, alpha, &vc,
             )
             .expect("no-offset collapse verifies");
+        }
+    }
+
+    /// The multiweight collapse (0x46): per-claim column weights —
+    /// masks, place values, permuted patterns — γ-merge into the same
+    /// per-(set, branch) bodies; two claims on the SAME set with
+    /// different weights share one body.
+    #[test]
+    fn tap_multiweight_roundtrips() {
+        use crate::taps::TapUniOp;
+        for layout in [tap_test_layout_tw6(), tap_test_layout_tw9()] {
+            let g = tap_grp(&layout);
+            let p_x = virtual_xor_params(&layout);
+            let alpha = smallest_generator();
+            let (hint, pc, vc) = rlc_test_commit(&layout);
+            let rw = rlc_test_row_weights(&p_x, 401);
+            let w_eq = rlc_test_col_weights(&p_x);
+            // Place-value-flavored, parity-masked, and permuted weight
+            // vectors — the P-LIN layer's read patterns.
+            let w_pv: Vec<Fq> =
+                (0..p_x.cols()).map(|c| Fq::from(1u128 << (c % 20))).collect();
+            let w_mask: Vec<Fq> = (0..p_x.cols())
+                .map(|c| if c % 2 == 0 { w_eq[c] } else { Fq::from(0u128) })
+                .collect();
+            let w_perm: Vec<Fq> =
+                (0..p_x.cols()).map(|c| w_eq[(c + 3) % p_x.cols()]).collect();
+            let rot =
+                |amt, off| TapUniOp { grp_log2: g, bit_amt: amt, bit_dropout: false, off };
+            let spec: Vec<(Vec<usize>, TapUniOp, &[Fq])> = vec![
+                (vec![0], TapUniOp::ident(), &w_eq),
+                (vec![0], TapUniOp::ident(), &w_pv),
+                (vec![0], rot(0, 1), &w_mask),
+                (vec![1], TapUniOp::ident(), &w_perm),
+                (vec![0, 1], rot(4, 0), &w_eq),
+            ];
+            let claims: Vec<TapWeightedClaim<'_>> = spec
+                .iter()
+                .map(|(set, op, cw)| {
+                    let taps: Vec<TapOp> = set.iter().map(|&c| op.with_col(c)).collect();
+                    TapWeightedClaim {
+                        cols: set,
+                        op: *op,
+                        col_weights: cw,
+                        claimed: tap_expected_claim(&layout, hint.rows(), &taps, &rw, cw),
+                    }
+                })
+                .collect();
+            let mut pt = Blake3Transcript::new();
+            let proof = prove_mle_eval_mod_q_ligerito_tap_multiweight(
+                &mut pt, &hint, &layout, &rw, &claims, alpha, &pc,
+            );
+            assert_eq!(
+                proof.xors.len(),
+                4,
+                "{{0}}×2 branches + {{1}} + {{0,1}} — same-set claims share bodies"
+            );
+            let mut vt = Blake3Transcript::new();
+            verify_mle_eval_mod_q_ligerito_tap_multiweight(
+                &mut vt, &hint.commitment, &proof, &layout, &rw, &claims, alpha, &vc,
+            )
+            .expect("multiweight collapse verifies");
+
+            // Tampers: swapped weight vectors between two same-shape
+            // claims, and a wrong claimed value.
+            let mut bad = claims.clone();
+            bad[0].col_weights = &w_pv;
+            bad[1].col_weights = &w_eq;
+            let mut vt = Blake3Transcript::new();
+            assert!(
+                verify_mle_eval_mod_q_ligerito_tap_multiweight(
+                    &mut vt, &hint.commitment, &proof, &layout, &rw, &bad, alpha, &vc,
+                )
+                .is_err(),
+                "swapped per-claim weights rejected"
+            );
+            let mut bad = claims.clone();
+            bad[3].claimed = (bad[3].claimed + 1) % FQ_MOD;
+            let mut vt = Blake3Transcript::new();
+            assert!(
+                verify_mle_eval_mod_q_ligerito_tap_multiweight(
+                    &mut vt, &hint.commitment, &proof, &layout, &rw, &bad, alpha, &vc,
+                )
+                .is_err(),
+                "wrong claimed value rejected"
+            );
         }
     }
 
