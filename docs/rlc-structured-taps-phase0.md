@@ -344,3 +344,27 @@ at n=24: 3242 vs 2896) and 35.9×/30.6×/26.2× vs independent; proofs
 58.0 ms; peak at the single-proof footprint. 48 XOR-mixed claims =
 1.0–1.9× ONE claim. Full table: the README's dated note; formal
 statement: the note's §"The composed collapse" (`sec:tapcomposed`).
+
+## 7. Blocked batching (P2, same day): the pad is gone; 2-set blocks
+are the sweet spot
+
+The batched tap path (0x42) padded its merged forest to `2^⌈log₂k⌉`
+tree-sets. Now claims run in BLOCKS through the same batched common —
+each block its own forest + presum absorbs and residual exit point
+(sequential FS composition; per-claim exit points thread through the
+ring plans; extraction per block, freed between), all blocks sharing
+the statement, the η-batched ring basis, and the ONE closing Ligerito
+call. A block-size scan (k=6 instance + k=48 schedule baseline,
+n=22–28) found **2-set blocks best-or-tie everywhere**: the forest's
+marginal round-sharing saturates at two tree-sets while wider merges
+pay the cache regime (4+2 cost +27 % at n=28). Shipped policy:
+`TAP_CLAIM_BLOCK_CAP = 2` (structural; k ≤ 2 byte-identical to
+pre-blocking, so `single` and the 2-body composed proofs are
+unchanged). Acceptance met: vx6/single = 3.64×/2.69×/5.01×/5.75× at
+n=22/24/26/28 (all ≤ 6.2×), the n=26 inversion cured, the batch now
+beats independent proofs at every shape, and the n=28 row exists for
+the first time (peak ≈ 2 tree-sets for ANY k). Composed-collapse
+multiples vs the improved baseline: 18.8×/21.7×/21.7× (vx48 =
+736.3/1898.1/5980.8 ms; n=26 now runs). Batched proofs for k ≥ 3
+change bytes (+5–10 % from per-block transcripts) — the price of the
+flat memory profile.

@@ -3187,9 +3187,44 @@ fn tap_fill_basis(
     }
 }
 
+/// Tap-path forest block cap (tree-sets per batched-common call), part
+/// of the proof shape. Measured 2026-07-27 (the k=6 instance and the
+/// k=48 schedule baseline, n=22–28): 2-set blocks are best-or-tie at
+/// every shape — the merged forest's marginal round-sharing saturates
+/// at two tree-sets (the classic two-column shape the lazy kernels are
+/// tuned on) while wider merges pay the cache regime (a 4-set block
+/// costs +27 % at n=28) — and they flatten the batched path's
+/// working-set wall: peak ≈ 2 tree-sets for ANY claim count, where the
+/// padded path scaled with 2^⌈log₂k⌉.
+const TAP_CLAIM_BLOCK_CAP: usize = 2;
+
+/// Claim blocks for the batched tap path (STRUCTURAL — both sides
+/// derive them): pairs plus an optional trailing singleton
+/// ([`TAP_CLAIM_BLOCK_CAP`]-capped binary decomposition). The batched
+/// common pads each CALL's tree-sets to a power of two, so blocking
+/// removes the pad entirely (k=6: 8 padded sets → 2+2+2; k=48: 64 →
+/// 24×2). Blocks share the statement, the ring basis, and the ONE
+/// closing Ligerito call; each block gets its own forest + presum
+/// absorbs and residual exit point (sequential Fiat–Shamir composition
+/// — every block's challenges are drawn after the preceding blocks'
+/// messages). k ≤ 2 keeps the pre-blocking transcript byte-identical.
+fn tap_claim_blocks(k: usize) -> Vec<core::ops::Range<usize>> {
+    let mut out = Vec::new();
+    let mut start = 0usize;
+    while start < k {
+        let b = (1usize << (k.wrapping_sub(start)).ilog2()).min(TAP_CLAIM_BLOCK_CAP);
+        out.push(start..start.wrapping_add(b));
+        start = start.wrapping_add(b);
+    }
+    out
+}
+
 /// Prove a structured-tap claim set against the commitment (EXPERIMENTAL;
 /// see the section comment for the protocol). Claims-only style: every
-/// claim runs at depth `t' = t − log_cols` in the ONE batched x forest.
+/// claim runs at depth `t' = t − log_cols` in a batched x forest —
+/// claims are partitioned into binary blocks ([`tap_claim_blocks`]), one
+/// padless forest + presum per (block, chunk); claims in a block share
+/// their residual exit point.
 #[allow(clippy::arithmetic_side_effects)]
 pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
     transcript: &mut (impl Transcript + Send),
@@ -3220,34 +3255,39 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
     let c_w_x = mod_q_chunk_width(&p_x);
     let lch_x = mod_q_num_chunks(&p_x, q_bits);
 
-    // Extraction + the batched forests/presums (one per weight chunk).
-    let x_rows_all: Vec<Vec<Vec<u64>>> = {
-        let _g = crate::utils::prof::scope("tap:extract");
-        claims
-            .iter()
-            .map(|cl| extract_virtual_tap_rows(layout, &hint.rows, cl.taps))
-            .collect()
-    };
+    // Extraction + the batched forests/presums, per binary claim block
+    // (one padless forest + presum per (block, chunk); extraction is
+    // per block and freed before the next block runs).
+    let blocks = tap_claim_blocks(claims.len());
     let x_chunks_all: Vec<Vec<Vec<u128>>> =
         claims.iter().map(|cl| chunk_row_weights(cl.row_weights_q, c_w_x, lch_x)).collect();
-    let rows_refs: Vec<&[Vec<u64>]> = x_rows_all.iter().map(|r| &r[..]).collect();
-    let mut x_mfs = Vec::with_capacity(lch_x);
-    let mut x_presums = Vec::with_capacity(lch_x);
-    let mut x_points: Vec<Vec<Gf>> = Vec::with_capacity(lch_x);
+    let mut x_mfs = Vec::with_capacity(blocks.len().wrapping_mul(lch_x));
+    let mut x_presums = Vec::with_capacity(blocks.len().wrapping_mul(lch_x));
+    // Per-claim per-chunk exit points (claims in a block share theirs).
+    let mut x_points: Vec<Vec<Vec<Gf>>> = vec![Vec::with_capacity(lch_x); claims.len()];
     let mut tap_us: Vec<Vec<Vec<u128>>> = claims.iter().map(|_| Vec::with_capacity(lch_x)).collect();
-    {
+    for blk in &blocks {
+        let x_rows_blk: Vec<Vec<Vec<u64>>> = {
+            let _g = crate::utils::prof::scope("tap:extract");
+            claims[blk.clone()]
+                .iter()
+                .map(|cl| extract_virtual_tap_rows(layout, &hint.rows, cl.taps))
+                .collect()
+        };
+        let rows_refs: Vec<&[Vec<u64>]> = x_rows_blk.iter().map(|r| &r[..]).collect();
         let _g = crate::utils::prof::scope("tap:common");
         for l in 0..lch_x {
-            let w_refs: Vec<&[u128]> = x_chunks_all.iter().map(|ch| &ch[l][..]).collect();
+            let w_refs: Vec<&[u128]> =
+                x_chunks_all[blk.clone()].iter().map(|ch| &ch[l][..]).collect();
             let (mf, us_per_claim, presum, pt) =
                 crate::ligerito::prove_x_claims_batched_common(
                     transcript, &p_x, &rows_refs, &w_refs, alpha,
                 );
             x_mfs.push(mf);
             x_presums.push(presum);
-            x_points.push(pt);
             for (k, u) in us_per_claim.into_iter().enumerate() {
-                tap_us[k].push(u);
+                x_points[blk.start + k].push(pt.clone());
+                tap_us[blk.start + k].push(u);
             }
         }
     }
@@ -3257,15 +3297,15 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
     let mut rings = Vec::new();
     // Per (claim, chunk): the plan; kept for the fill phase.
     let mut plans: Vec<Vec<TapRingPlan>> = Vec::with_capacity(claims.len());
-    for cl in claims {
+    for (n, cl) in claims.iter().enumerate() {
         let mut per_chunk = Vec::with_capacity(lch_x);
-        for pt in &x_points {
+        for pt in &x_points[n] {
             per_chunk.push(tap_ring_plan(layout, cl.taps, pt));
         }
         plans.push(per_chunk);
     }
     for (n, cl) in claims.iter().enumerate() {
-        for (l, pt) in x_points.iter().enumerate() {
+        for (l, pt) in x_points[n].iter().enumerate() {
             let plan = &plans[n][l];
             let member_svs: Vec<Vec<Gf>> = cfg_into_iter!(0..plan.members.len())
                 .map(|mi| {
@@ -3299,7 +3339,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
         let _g = crate::utils::prof::scope("tap:bcomb");
         let mut ring_idx = 0usize;
         for (n, cl) in claims.iter().enumerate() {
-            for (l, pt) in x_points.iter().enumerate() {
+            for (l, pt) in x_points[n].iter().enumerate() {
                 let plan = &plans[n][l];
                 for bucket in &plan.buckets {
                     let phi_tables = crate::ligerito::phi_byte_tables(&eq_r2, etas[ring_idx]);
@@ -3377,21 +3417,21 @@ where
         claims.iter().map(|cl| (cl.taps, cl.row_weights_q)).collect();
     absorb_tap_statement(transcript, &commitment.root, layout, q_bits, &stmt);
 
-    if proof.x_mfs.len() != lch_x
-        || proof.x_presums.len() != lch_x
+    let blocks = tap_claim_blocks(claims.len());
+    if proof.x_mfs.len() != blocks.len().wrapping_mul(lch_x)
+        || proof.x_presums.len() != blocks.len().wrapping_mul(lch_x)
         || proof.tap_us.len() != claims.len()
         || proof.tap_us.iter().any(|us| us.len() != lch_x)
     {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
 
-    // Batched forests/presums; the claims share each chunk's exit point.
+    // Batched forests/presums per binary claim block; claims in a block
+    // share each chunk's exit point.
     let x_chunks_all: Vec<Vec<Vec<u128>>> =
         claims.iter().map(|cl| chunk_row_weights(cl.row_weights_q, c_w_x, lch_x)).collect();
     let range_shift_x = c_w_x.wrapping_add(p_x.t).wrapping_add(p_x.word_bits);
     let bound_x = 1u128 << range_shift_x;
-    let mut x_points: Vec<Vec<Gf>> = Vec::with_capacity(lch_x);
-    let mut x_mus: Vec<Vec<Gf>> = Vec::with_capacity(lch_x);
     for l in 0..lch_x {
         for us in proof.tap_us.iter() {
             for (k, &u) in us[l].iter().enumerate() {
@@ -3401,28 +3441,39 @@ where
                 }
             }
         }
-        let us_refs: Vec<&[u128]> = proof.tap_us.iter().map(|us| &us[l][..]).collect();
-        let w_refs: Vec<&[u128]> = x_chunks_all.iter().map(|ch| &ch[l][..]).collect();
-        let (pt, mus_l) = crate::ligerito::verify_x_claims_batched_common(
-            transcript,
-            &proof.x_mfs[l],
-            &us_refs,
-            &proof.x_presums[l],
-            &p_x,
-            &w_refs,
-            alpha,
-        )
-        .map_err(FlockRsError::Common)?;
-        x_points.push(pt);
-        x_mus.push(mus_l);
+    }
+    // Per-claim per-chunk exit points and residuals.
+    let mut x_points: Vec<Vec<Vec<Gf>>> = vec![Vec::with_capacity(lch_x); claims.len()];
+    let mut x_mus: Vec<Vec<Gf>> = vec![vec![Gf::zero(); claims.len()]; lch_x];
+    for (bi, blk) in blocks.iter().enumerate() {
+        for l in 0..lch_x {
+            let us_refs: Vec<&[u128]> =
+                proof.tap_us[blk.clone()].iter().map(|us| &us[l][..]).collect();
+            let w_refs: Vec<&[u128]> =
+                x_chunks_all[blk.clone()].iter().map(|ch| &ch[l][..]).collect();
+            let (pt, mus_l) = crate::ligerito::verify_x_claims_batched_common(
+                transcript,
+                &proof.x_mfs[bi.wrapping_mul(lch_x).wrapping_add(l)],
+                &us_refs,
+                &proof.x_presums[bi.wrapping_mul(lch_x).wrapping_add(l)],
+                &p_x,
+                &w_refs,
+                alpha,
+            )
+            .map_err(FlockRsError::Common)?;
+            for (k, m) in mus_l.into_iter().enumerate() {
+                x_points[blk.start.wrapping_add(k)].push(pt.clone());
+                x_mus[l][blk.start.wrapping_add(k)] = m;
+            }
+        }
     }
 
     // Rings: per (claim, chunk) the bucketed A-table read-offs plus the
     // closed-form constant term must reproduce the claim's residual.
     let mut plans: Vec<Vec<TapRingPlan>> = Vec::with_capacity(claims.len());
-    for cl in claims {
+    for (n, cl) in claims.iter().enumerate() {
         let mut per_chunk = Vec::with_capacity(lch_x);
-        for pt in &x_points {
+        for pt in &x_points[n] {
             per_chunk.push(tap_ring_plan(layout, cl.taps, pt));
         }
         plans.push(per_chunk);
@@ -3433,8 +3484,8 @@ where
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
     let mut ring_idx = 0usize;
-    for (n, cl) in claims.iter().enumerate() {
-        for (l, pt) in x_points.iter().enumerate() {
+    for n in 0..claims.len() {
+        for l in 0..lch_x {
             let plan = &plans[n][l];
             let mut sum = Gf::zero();
             for bucket in &plan.buckets {
@@ -3473,7 +3524,7 @@ where
     let m_p = packed_vars(p);
     let mut ring_descs: Vec<Vec<Vec<crate::taps::TapCoord>>> = Vec::with_capacity(num_rings);
     for (n, cl) in claims.iter().enumerate() {
-        for (l, pt) in x_points.iter().enumerate() {
+        for (l, pt) in x_points[n].iter().enumerate() {
             let plan = &plans[n][l];
             for bucket in &plan.buckets {
                 let descs: Vec<Vec<crate::taps::TapCoord>> = bucket

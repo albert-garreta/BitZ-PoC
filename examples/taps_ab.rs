@@ -17,7 +17,9 @@
 //! statement — vary `F2Z_TAPS_SEED` and average over statements before
 //! reading small deltas). Verifies every variant once. With
 //! `OBLONG_PROFILE=1` one extra profiled prove of `tapf` and `vx6` dumps
-//! the phase tree per shape.
+//! the phase tree per shape. `F2Z_AB_NO_FAMILY=1` skips the stream
+//! family (its eager case forests are the memory hog — this unlocks the
+//! n = 28 row for the single/vx6/ind6 comparison).
 //!
 //! `F2Z_AB_COLLAPSE=1` runs the SINGLE-TAP shared-point demo instead:
 //! the instance's 13 deduped streams as 13 individual claims at ONE
@@ -28,12 +30,11 @@
 //! 48 claims `off^t(x)` of ONE σ-style mixed combination
 //! `x = ROT^7 a_0 ⊕ ROT^18 a_0 ⊕ SHIFT^3 a_0 ⊕ off^1 a_1` at ONE point
 //! — `cmp` (the composed collapse, 2 inner tap bodies TOTAL) vs `vx48`
-//! (the batched tap-claims path on the offset-folded lists; 48 claims
-//! pad to 64 tree-sets — skipped at n ≥ 26 for memory honesty) vs
-//! `ind48`. Claim values are computed through the FOLDED-list
-//! extraction route, so every verified rep doubles as a
-//! distributed-extraction cross-check of the weight-transform algebra.
-//! `F2Z_AB_ROUNDS` overrides the round count.
+//! (the batched tap-claims path on the offset-folded lists; 24 blocked
+//! 2-set forests since the block cap landed) vs `ind48`. Claim values
+//! are computed through the FOLDED-list extraction route, so every
+//! verified rep doubles as a distributed-extraction cross-check of the
+//! weight-transform algebra. `F2Z_AB_ROUNDS` overrides the round count.
 //!
 //! ```text
 //! F2Z_AB_N="22 24 26" F2Z_AB_REPS=5 RUSTFLAGS="-C target-cpu=native" \
@@ -252,7 +253,9 @@ fn main() {
                     claimed: Fq::from(v),
                 })
                 .collect();
-            let run_vx = n < 26;
+            // The block cap flattened the batched path's working set
+            // (peak ≈ 2 tree-sets for any k), so vx48 runs at every n.
+            let run_vx = true;
             let prove_cmp = || {
                 let mut t = Blake3Transcript::new();
                 prove_mle_eval_mod_q_ligerito_tap_composed(
@@ -590,6 +593,7 @@ fn main() {
         };
 
         // Alternated in-window reps.
+        let no_family = std::env::var("F2Z_AB_NO_FAMILY").is_ok_and(|v| v == "1");
         let (mut t_single, mut t_tapf, mut t_vx6, mut t_ind6) =
             (Vec::new(), Vec::new(), Vec::new(), Vec::new());
         for _ in 0..reps {
@@ -597,10 +601,12 @@ fn main() {
             let pr = prove_single();
             t_single.push(t0.elapsed().as_secs_f64() * 1e3);
             drop(pr);
-            let t0 = Instant::now();
-            let pr = prove_tapf();
-            t_tapf.push(t0.elapsed().as_secs_f64() * 1e3);
-            drop(pr);
+            if !no_family {
+                let t0 = Instant::now();
+                let pr = prove_tapf();
+                t_tapf.push(t0.elapsed().as_secs_f64() * 1e3);
+                drop(pr);
+            }
             let t0 = Instant::now();
             let pr = prove_vx6();
             t_vx6.push(t0.elapsed().as_secs_f64() * 1e3);
@@ -613,7 +619,7 @@ fn main() {
 
         // Verify once each + sizes.
         let proof_single = prove_single();
-        let proof_tapf = prove_tapf();
+        let proof_tapf = (!no_family).then(&prove_tapf);
         let proof_vx6 = prove_vx6();
         let proofs_ind = prove_ind6();
         {
@@ -624,15 +630,15 @@ fn main() {
             )
             .expect("single verifies");
         }
-        let t0 = Instant::now();
-        {
+        let v_tapf = proof_tapf.as_ref().map(|pr| {
+            let t0 = Instant::now();
             let mut vt = Blake3Transcript::new();
             verify_mle_eval_mod_q_ligerito_tap_family(
-                &mut vt, &hint.commitment, &proof_tapf, &layout, &clusters, &colw, alpha, &vc,
+                &mut vt, &hint.commitment, pr, &layout, &clusters, &colw, alpha, &vc,
             )
             .expect("tapf verifies");
-        }
-        let v_tapf = t0.elapsed().as_secs_f64() * 1e3;
+            t0.elapsed().as_secs_f64() * 1e3
+        });
         let t0 = Instant::now();
         {
             let mut vt = Blake3Transcript::new();
@@ -656,39 +662,54 @@ fn main() {
             let (b, lig) = mle_eval_mod_q_lig_tap_size_breakdown(p);
             b.total() + lig
         };
-        let (bf, ligf) = mle_eval_mod_q_lig_tap_family_size_breakdown(&proof_tapf);
         let sz_single = size_tap(&proof_single);
-        let sz_tapf = bf.total() + ligf;
         let sz_vx6 = size_tap(&proof_vx6);
         let sz_ind6: usize = proofs_ind.iter().map(&size_tap).sum();
 
-        let (m_single, m_tapf, m_vx6, m_ind6) =
-            (median(t_single), median(t_tapf), median(t_vx6), median(t_ind6));
+        let (m_single, m_vx6, m_ind6) = (median(t_single), median(t_vx6), median(t_ind6));
+        let tapf_txt = match &proof_tapf {
+            Some(_) => {
+                let m_tapf = median(t_tapf.clone());
+                format!("tapf {m_tapf:.1} ({:.2}x)", m_tapf / m_single)
+            }
+            None => "tapf skipped".to_string(),
+        };
         println!(
-            "n={n} (t'={}, s={}, tw={}): single {m_single:.1} ms | tapf {m_tapf:.1} ({:.2}x) | \
+            "n={n} (t'={}, s={}, tw={}): single {m_single:.1} ms | {tapf_txt} | \
              vx6 {m_vx6:.1} ({:.2}x) | ind6 {m_ind6:.1} ({:.2}x)",
             p_x.t,
             p_x.s,
             layout.tw,
-            m_tapf / m_single,
             m_vx6 / m_single,
             m_ind6 / m_single,
         );
+        let tapf_sz_txt = match &proof_tapf {
+            Some(pr) => {
+                let (bf, ligf) = mle_eval_mod_q_lig_tap_family_size_breakdown(pr);
+                format!(
+                    "tapf {:.0} KB (verify {:.1} ms, {} rings)",
+                    (bf.total() + ligf) as f64 / 1e3,
+                    v_tapf.unwrap_or(f64::NAN),
+                    pr.rings.len(),
+                )
+            }
+            None => "tapf -".to_string(),
+        };
         println!(
-            "  proofs: single {:.0} KB | tapf {:.0} KB | vx6 {:.0} KB | ind6 {:.0} KB \
-             | verify: tapf {v_tapf:.1} ms, vx6 {v_vx6:.1} ms | rings: tapf {}, vx6 {}",
+            "  proofs: single {:.0} KB | {tapf_sz_txt} | vx6 {:.0} KB | ind6 {:.0} KB \
+             | verify vx6 {v_vx6:.1} ms | rings vx6 {}",
             sz_single as f64 / 1e3,
-            sz_tapf as f64 / 1e3,
             sz_vx6 as f64 / 1e3,
             sz_ind6 as f64 / 1e3,
-            proof_tapf.rings.len(),
             proof_vx6.rings.len(),
         );
 
         if profile {
-            let pr = prove_tapf();
-            drop(pr);
-            f2z::utils::prof::dump_and_reset(&format!("tapf n={n}"));
+            if !no_family {
+                let pr = prove_tapf();
+                drop(pr);
+                f2z::utils::prof::dump_and_reset(&format!("tapf n={n}"));
+            }
             let pr = prove_vx6();
             drop(pr);
             f2z::utils::prof::dump_and_reset(&format!("vx6 n={n}"));

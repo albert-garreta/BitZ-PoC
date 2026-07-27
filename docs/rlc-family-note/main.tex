@@ -1694,6 +1694,22 @@ each bring their own. What survives for the family: proof size
 Routing rule: tapped-convolution claims go through the extraction path
 unless the claim set has dense stream reuse.
 
+\emph{(Blocked-batching addendum, same day.)} The batched path's pad
+was subsequently removed: claims now run in \emph{2-set blocks}
+through the same batched common (each block its own forest + presum
+absorbs and exit point, sequential Fiat--Shamir composition; the
+statement, the ring basis, and the one closing Ligerito call shared).
+A block-size scan found two tree-sets best-or-tie at every shape ---
+the forest's marginal round-sharing saturates there, wider merges pay
+the cache regime --- flattening the batched path's working set to
+${\approx}2$ tree-sets for \emph{any} $k$. The $k{=}6$ instance
+improves to $90.5/250.5/713.1/2441$\,ms at $n=22/24/26/28$
+($3.6$--$5.8\times$ a single claim): the padded path's $n{=}26$
+inversion is cured, the batch beats independent proofs at every
+shape, and $n{=}28$ runs for the first time. The family comparison
+above predates the blocking; its verdict is unchanged (the family's
+cost is channels, not the baseline's pad).
+
 \subsection{The collapse: uniform-op claims are weight transforms}
 \label{sec:tapcollapse}
 
@@ -1814,7 +1830,11 @@ proofs (cmp/batched)\\
 \noindent Forty-eight XOR-mixed claims land at $1.0$--$1.9\times$ the
 cost of \emph{one} ($25.5/94.4/146$\,ms), at the single-proof memory
 footprint; the batched baseline already inverts against independent
-proofs at $n{=}24$ (its $64$-set pad). The routing law of
+proofs at $n{=}24$ (its $64$-set pad). Under the blocked batching of
+\S\ref{sec:tapmeasured}'s addendum the baseline improves to
+$736.3/1898.1/5980.8$\,ms ($n{=}26$ now runs) and the composed
+collapse holds $18.8\times/21.7\times/21.7\times$ against it,
+byte-identical (its two inner bodies are one unblocked pair). The routing law of
 \S\ref{sec:tapmeasured} refines to: single-tap or uniform-op-of-XOR-set
 at one point $\to$ the collapse (\S\ref{sec:tapcollapse}); \emph{many
 outer ops of few mixed sources} at one point (schedules) $\to$ the

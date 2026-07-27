@@ -921,6 +921,47 @@ inner-count asserts on both pack-cut geometries, folded-tap
 distributed-extraction cross-check, statement/proof tampers,
 canonicalization); 101/101 green; existing proof bytes untouched.
 
+**Structured taps: BLOCKED batching kills the pad — and the 2-set
+block is the sweet spot (2026-07-27, follow-up).** The batched
+tap-claims path (0x42) padded its merged forest to `2^⌈log₂k⌉`
+tree-sets (k=6 → 8: +33 % waste; k=48 → 64; the memory wall behind
+the n=26 inversion and the shared-point line's 17.2 GB). Now claims
+run in BLOCKS through the same batched common — each block its own
+forest + presum absorbs and exit point (sequential FS composition;
+per-claim exit points thread through the ring plans), all blocks
+sharing the statement, the η-batched ring basis, and the ONE closing
+Ligerito call; extraction is per block and freed between. Measured
+block-size scan (the k=6 instance + the k=48 schedule baseline,
+n=22–28): **2-set blocks are best-or-tie at every shape** — the
+merged forest's marginal round-sharing saturates at two tree-sets
+(the classic two-column shape the lazy kernels are tuned on) while
+wider merges pay the cache regime (the 4+2 split cost +27 % at n=28)
+— so the shipped policy is pairs + optional trailing singleton
+(`TAP_CLAIM_BLOCK_CAP = 2`, structural, part of the proof shape;
+k ≤ 2 keeps pre-blocking bytes, so `single` and the 2-body composed
+schedule proofs are unchanged). The k=6 instance, before → after
+(same-box medians of 5, `F2Z_AB_NO_FAMILY=1` unlocks n=28):
+
+| n | vx6 padded (8 sets) | vx6 blocked (2+2+2) | ind6 | single |
+|----|--------------------|---------------------|------|--------|
+| 22 | 118.7 ms (4.7×) | **90.5 (3.64×)** | 149.8 (6.03×) | 24.8 ms |
+| 24 | 319.3 (3.4×) | **250.5 (2.69×)** | 391.7 (4.21×) | 92.9 |
+| 26† | 2006 (13.7×) | **713.1 (5.01×)** | 891.3 (6.26×) | 142.3 |
+| 28 | — (wall, skipped) | **2441.0 (5.75×)** | 2616.4 (6.16×) | 424.8 |
+
+† pre-P2 n=26 was churned-box; the blocked runs had 4–6 GB free. The
+P2 accept criterion (vx6 ≤ 6.2× single at every n ≤ 28) is met, the
+n=26 inversion is cured, and **the batch now beats independent proofs
+at every measured shape** — the n=28 row exists for the first time
+(peak ≈ 2 tree-sets for ANY k, where the pad scaled it with
+`2^⌈log₂k⌉`). The schedule baselines improve too (vx48 = 24×2-set:
+736.3/1898.1/5980.8 ms at n=22/24/26 — n=26 now RUNS), and the
+composed collapse holds **18.8×/21.7×/21.7×** against the improved
+baseline (cmp re-measured 39.1/87.6/275.6 ms, byte-identical).
+Batched 0x42 proofs for k ≥ 3 change shape/bytes (EXPERIMENTAL API);
+sizes shift ~+5–10 % from the extra per-block transcripts (vx6 n=24:
+566 → 576 KB) — the price of the flat memory profile.
+
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
 The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —
