@@ -193,6 +193,110 @@ fn main() {
             .collect();
         let hint = commit_rs_ligerito_rows(p, rows, &pc);
 
+        if std::env::var("F2Z_AB_OPEN8").is_ok_and(|v| v == "1") {
+            // Pure MLE-opening measurement (no relation checks): 8
+            // committed columns, 8 identity openings at ONE shared
+            // point through a single 0x44 collapse sub-proof (8 plain
+            // bodies, one Ligerito tail), at the δ knee (identity ops
+            // are envelope-free). `single` = one opening, the marginal
+            // anchor; compare externally against the base prover's
+            // one-claim floor (`f2z <n> --profile fast`).
+            let mut layout = taps_layout(n, 3);
+            layout.x_fold_extra = std::env::var("F2Z_AB_OPEN_DELTA")
+                .map_or(4, |v| v.parse().unwrap())
+                .min(layout.p.s - 1);
+            let p = &layout.p;
+            let p_x = virtual_xor_params(&layout);
+            let (pc, vc) = sha_lig_configs(packed_vars(p)).expect("lig cfg");
+            let words = p.rows().div_ceil(64);
+            let rows: Vec<Vec<u64>> = (0..p.cols())
+                .map(|c| {
+                    (0..words)
+                        .map(|w| {
+                            ((c as u64) << 32 | (w as u64) ^ seed)
+                                .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                                .rotate_left(((c + w) & 63) as u32)
+                        })
+                        .collect()
+                })
+                .collect();
+            let hint = commit_rs_ligerito_rows(p, rows, &pc);
+            let rw: Vec<u128> = (0..p_x.rows())
+                .map(|b| {
+                    (b as u128)
+                        .wrapping_mul(0xDEAD_BEEF_CAFE_F00D_1234_5678_9ABC_DEF1)
+                        .wrapping_add(113 + (u128::from(seed) << 1))
+                        % FQ_MOD
+                })
+                .collect();
+            let colw: Vec<Fq> = (0..p_x.cols())
+                .map(|c| Fq::from((c as u128).wrapping_mul(0xABCD_EF01_2345).wrapping_add(3)))
+                .collect();
+            let sets: Vec<Vec<usize>> = (0..8).map(|c| vec![c]).collect();
+            let pclaims: Vec<TapPointClaim<'_>> = sets
+                .iter()
+                .map(|set| {
+                    let taps = [TapOp::ident(set[0])];
+                    let a_rows = extract_virtual_tap_rows(&layout, hint.rows(), &taps);
+                    let mut y = Fq::from(0u128);
+                    for (c, row) in a_rows.iter().enumerate() {
+                        let mut acc = Fq::from(0u128);
+                        for (wi, &word) in row.iter().enumerate() {
+                            let mut bits = word;
+                            while bits != 0 {
+                                let t = bits.trailing_zeros() as usize;
+                                acc = acc + Fq::from(rw[(wi << 6) | t]);
+                                bits &= bits.wrapping_sub(1);
+                            }
+                        }
+                        y = y + colw[c] * acc;
+                    }
+                    TapPointClaim {
+                        cols: set,
+                        op: f2z::taps::TapUniOp::ident(),
+                        claimed: y.0,
+                    }
+                })
+                .collect();
+            let prove_k = |k: usize| {
+                let mut t = Blake3Transcript::new();
+                prove_mle_eval_mod_q_ligerito_tap_collapse(
+                    &mut t, &hint, &layout, &rw, &colw, &pclaims[..k], alpha, &pc,
+                )
+            };
+            let (mut t_all, mut t_one) = (Vec::new(), Vec::new());
+            for _ in 0..reps {
+                let t0 = Instant::now();
+                drop(prove_k(8));
+                t_all.push(t0.elapsed().as_secs_f64() * 1e3);
+                let t0 = Instant::now();
+                drop(prove_k(1));
+                t_one.push(t0.elapsed().as_secs_f64() * 1e3);
+            }
+            let proof8 = prove_k(8);
+            let t0 = Instant::now();
+            {
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_tap_collapse(
+                    &mut vt, &hint.commitment, &proof8, &layout, &rw, &colw, &pclaims, alpha,
+                    &vc,
+                )
+                .expect("open8 verifies");
+            }
+            let v8 = t0.elapsed().as_secs_f64() * 1e3;
+            let (m8, m1) = (median(t_all), median(t_one));
+            println!(
+                "n={n} OPEN8 δ{} (8 identity openings, one 0x44 sub-proof, {} bodies): \
+                 {m8:.1} ms ({:.0} KB, verify {v8:.1} ms, {:.1} ms/opening marginal) | \
+                 single {m1:.1} ms",
+                layout.x_fold_extra,
+                proof8.xors.len(),
+                mle_eval_mod_q_lig_xor_proof_size_bytes(&proof8) as f64 / 1e3,
+                (m8 - m1) / 7.0,
+            );
+            continue;
+        }
+
         if std::env::var("F2Z_AB_B3FAM").is_ok_and(|v| v == "1") {
             // The user's b3 family: 8 role vectors a,b,c,d,a',b',c',d'
             // with d' = ROT16(d⊕a'), b' = ROT12(b⊕c'),

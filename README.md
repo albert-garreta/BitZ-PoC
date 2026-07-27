@@ -1164,7 +1164,28 @@ channels regresses it; keep fam4 at δ0 + lazy). Bytes: fam6
 than the fold-vector share because **the fam route's byte floor is
 its FOUR Ligerito blobs vs opt's two**: sub-proof merging (one
 recursive call across fam1+fam2+idents+checks) is now the bigger
-byte lever than δ, worth ~2 blobs ≈ 300–400 KB at n=29. Compression
+byte lever than δ, worth ~2 blobs ≈ 300–400 KB at n=29. **Openings-only measurement (2026-07-28; the outer protocol owns
+constraint checking).** `F2Z_AB_OPEN8=1`: 8 committed columns, 8
+identity MLE openings at ONE shared point through a single 0x44
+sub-proof (8 plain bodies, one Ligerito tail, δ = 4 via
+`F2Z_AB_OPEN_DELTA`), against the base prover's one-claim floor on
+the same 2^n bits (`f2z <n> --profile fast`, same window):
+
+| n | base (1 opening) | OPEN8 (8 openings) | ratio | marginal/opening |
+|----|------------------|--------------------|-------|------------------|
+| 26 | 153.6 ms / 195 KiB / 3.2 ms | 201.7 ms / 229 KB / 7.9 ms | **1.31×** | 22.3 ms |
+| 29 | 1228.7 ms / 260 KiB / 4.8 ms | 1456.9 ms / 313 KB / 11.1 ms | **1.19×** | 172 ms (0.14× base) |
+
+Eight openings for 1.19–1.31× the price of ONE; each opening beyond
+the first costs ~0.14–0.15× a base proof (the collapse amortization:
+shared statement, shared forest tails, shared Ligerito call, δ-thin
+fold vectors). Routing rule under the openings-only scope: identity
+openings of committed columns → ONE 0x44 (or 0x46 for per-claim
+weights) sub-proof at the δ knee — no taps, no rings, no channels;
+the tap/family machinery enters only when openings of DERIVED
+vectors (rotated/shifted/XOR images) are wanted.
+
+Compression
 math for this family: one word = one G, 56 G-words per compression
 ⇒ 2^{n−8}/56 compressions per proof (~292/1.2k/4.7k/18.7k/37.4k at
 n=22/24/26/28/29); fam6 at n=29 ≈ **46 µs per compression** for the
