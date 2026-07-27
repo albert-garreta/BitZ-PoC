@@ -1,12 +1,13 @@
-//! Structured-taps A/B (EXPERIMENTAL, docs/rlc-structured-taps-phase0.md):
-//! the j = 2, k = 6 ROT/SHIFT/entry-offset instance proved four ways
-//! against ONE commitment and statement —
+//! Structured-taps A/B (EXPERIMENTAL, docs/rlc-structured-taps-phase0.md;
+//! corrected semantics: 32-bit words along the ENTRY axis of W=1
+//! bit-vectors, g = 5): the j = 2, k = 6 ROT/SHIFT/word-offset instance
+//! proved four ways against ONE commitment and statement —
 //!
 //! * `single` — one identity claim alone via the batched tap-claims path
 //!   (the cost unit);
 //! * `tapf`   — the clustered stream family (`{b1,b3,b5}` over 6 streams
-//!   + `{b2,b4,b6}` over 7; two eager case forests + per-cluster
-//!   cascades + translated-eq openings, ONE proof);
+//!   and `{b2,b4,b6}` over 7; two eager case forests, per-cluster
+//!   cascades, translated-eq openings, ONE proof);
 //! * `vx6`    — all six claims through the batched tap-claims path (ONE
 //!   8·2^s-tree padded forest + per-claim translated-eq openings);
 //! * `ind6`   — six independent single-claim tap proofs.
@@ -36,31 +37,38 @@ use f2z::taps::{TapOp, extract_virtual_tap_rows};
 use f2z::transcript::Blake3Transcript;
 use std::time::Instant;
 
-/// n → the taps layout: 2 UAIR columns (log_cols = 1) of 32-bit words
-/// (bit_vars = 5); x split t' vs s as even as `tw ≥ 6` allows.
+/// The instance's word-group width: 32-bit words along the entry axis.
+const GRP: usize = 5;
+
+/// n → the taps layout: 2 UAIR bit-columns (log_cols = 1, W = 1,
+/// bit_vars = 0) over 2^{n−1} entries; x split t' vs s as even as
+/// `tw ≥ 6` allows (the 32-bit group field lives in the clear axis:
+/// s ≥ GRP + 2 so word offsets ≤ 2 stay in range).
 fn taps_layout(n: usize) -> ShaF2Layout {
     let log_cols = 1usize;
-    let bit_vars = 5usize;
-    let t_x = ((n - log_cols) / 2).max(bit_vars + 6);
-    let s = n - log_cols - t_x;
-    let tw = t_x - bit_vars;
+    let tw = ((n - log_cols) / 2).max(6);
+    let s = n - log_cols - tw;
+    assert!(s >= GRP + 2, "clear axis must hold the group field plus offsets");
     ShaF2Layout {
-        p: IntEvalParams { t: bit_vars + log_cols + tw, s, word_bits: 1 },
+        p: IntEvalParams { t: log_cols + tw, s, word_bits: 1 },
         num_cols: 1 << log_cols,
         log_cols,
-        bit_vars,
+        bit_vars: 0,
         num_vars: tw + s,
         tw,
         x_fold_extra: 0,
     }
 }
 
-/// The k = 6 instance's tap lists (W = 32): identities, two three-tap
-/// single-column rotation convolutions, a cross-column mix, and the
-/// lossy-SHIFT claim — the pinned spec of the session prompt.
+/// The k = 6 instance's tap lists (32-bit entry-axis words): identities,
+/// two three-tap single-column rotation convolutions, a cross-column
+/// mix, and the lossy-SHIFT claim — the pinned spec of the session
+/// prompt under the corrected semantics.
 fn instance_claims() -> Vec<Vec<TapOp>> {
-    let rot = |col, amt, off| TapOp { col, bit_amt: amt, bit_dropout: false, off };
-    let shl = |col, amt, off| TapOp { col, bit_amt: amt, bit_dropout: true, off };
+    let rot =
+        |col, amt, off| TapOp { col, grp_log2: GRP, bit_amt: amt, bit_dropout: false, off };
+    let shl =
+        |col, amt, off| TapOp { col, grp_log2: GRP, bit_amt: amt, bit_dropout: true, off };
     vec![
         vec![TapOp::ident(0)],
         vec![TapOp::ident(1)],
@@ -75,8 +83,10 @@ fn instance_claims() -> Vec<Vec<TapOp>> {
 /// `{b2, b4, b6}` (7 streams).
 #[allow(clippy::type_complexity)]
 fn instance_clusters() -> (Vec<Vec<TapOp>>, Vec<Vec<usize>>, Vec<Vec<usize>>) {
-    let rot = |col, amt, off| TapOp { col, bit_amt: amt, bit_dropout: false, off };
-    let shl = |col, amt, off| TapOp { col, bit_amt: amt, bit_dropout: true, off };
+    let rot =
+        |col, amt, off| TapOp { col, grp_log2: GRP, bit_amt: amt, bit_dropout: false, off };
+    let shl =
+        |col, amt, off| TapOp { col, grp_log2: GRP, bit_amt: amt, bit_dropout: true, off };
     let streams1 =
         vec![TapOp::ident(0), rot(0, 1, 0), rot(0, 2, 1), rot(0, 3, 2), rot(1, 4, 0), rot(0, 6, 1)];
     let streams2 = vec![
@@ -148,7 +158,7 @@ fn main() {
             .iter()
             .zip(rws.iter())
             .map(|(taps, rw)| {
-                let a_rows = extract_virtual_tap_rows(&layout, hint.rows(), taps, 0);
+                let a_rows = extract_virtual_tap_rows(&layout, hint.rows(), taps);
                 let mut y = Fq::from(0u128);
                 for (c, row) in a_rows.iter().enumerate() {
                     let mut acc = Fq::from(0u128);
@@ -187,14 +197,13 @@ fn main() {
 
         let tap_claims_of = |idx: &[usize]| -> Vec<TapClaim<'_>> {
             idx.iter()
-                .map(|&i| TapClaim { taps: &claim_taps[i], constant: 0, row_weights_q: &rws[i] })
+                .map(|&i| TapClaim { taps: &claim_taps[i], row_weights_q: &rws[i] })
                 .collect()
         };
         let tap_vclaims_of = |idx: &[usize]| -> Vec<TapVerifyClaim<'_, Fq>> {
             idx.iter()
                 .map(|&i| TapVerifyClaim {
                     taps: &claim_taps[i],
-                    constant: 0,
                     row_weights_q: &rws[i],
                     col_weights: &colw,
                     claimed: Fq::from(cs[i]),

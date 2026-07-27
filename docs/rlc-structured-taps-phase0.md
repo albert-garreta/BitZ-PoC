@@ -14,34 +14,47 @@ Ligerito machinery evaluates such bases succinctly at ≤ 2× the plain-eq
 cost. Everything below is verifier-exact algebra — no new soundness
 terms.
 
-## 0. Conventions (flagged for user confirmation)
+## 0. Conventions (corrected 2026-07-27; direction still to confirm)
 
-Entries are 0-indexed here (`row ∈ [0, N)`, the prompt's `k = row + 1`).
-Uniform "gather" convention: **output index gathers input index − amount**
-— on every axis, `op` with amount `c` maps input position `x` to output
-position `x + c` (forward), so output `x` reads input `x − c`.
+**Corrected semantics (user clarification, same day).** The committed
+columns are plain `W = 1` bit-vectors of dimension `N = 2^{num_vars}`
+(a multiple of 32). The flat entry index is grouped into
+`2^g`-bit words *along the entry axis* — `p = (k ≪ g) | j`, word `k`,
+within-word position `j` (`g = 5`, 32-bit words, for the instance) —
+and the ops act on those groups. Equivalently `b = M·a` for a banded
+block-rotation `F₂` matrix `M`; the tap descriptor is the
+succinctness-preserving normal form of that `M` (an arbitrary `M`
+costs the verifier `O(N)` at the residual closure; index translations
+on contiguous bit-fields are exactly what stays succinct). An earlier
+draft of this analysis read the ops as acting on a separate word-bit
+MLE axis (`bit_vars = 5`); the theory below is field-agnostic and
+survived the retarget verbatim — only the extraction and the
+coordinate mapping of §3.3 changed (and got simpler).
 
-- **Entry-offset `off^o`**: `s[row] = a[row − o]`, zero for `row < o`
-  (the prompt's boundary spec: taps `k−1, k−2` vanish at `k = 1, 2`). ✓
-  matches the given spec exactly.
-- **`ROT^c`**: bit `j` of output = bit `(j − c) mod W` of input (rotate
-  toward higher bit indices; cyclic, no dropout).
-- **`SHIFT^c`**: bit `j` of output = bit `j − c` of input, zero for
-  `j < c` (shift toward higher bit indices; input bits `≥ W − c` drop
-  out).
+Words are 0-indexed here (`k ∈ [0, N/2^g)`, the prompt's word index
+shifted by one). Uniform "gather" convention: **output index gathers
+input index − amount**.
 
-**TO CONFIRM with the user** (carried from the prompt, plus one new):
+- **Word offset `off^o`**: output word `k` reads input word `k − o`,
+  zero for `k < o` (the prompt's boundary spec: taps `k−1, k−2` vanish
+  at the first words). ✓ matches the given spec exactly.
+- **`ROT^c`**: output position `j` (within its word) reads input
+  position `(j − c) mod 2^g` (rotate toward higher positions; cyclic).
+- **`SHIFT^c`**: output position `j` reads input `j − c`, zero for
+  `j < c` (input positions `≥ 2^g − c` drop out).
+
+**TO CONFIRM with the user** (carried from the prompt, plus one):
 (1) `a_{3,k−2}` read as `a_1[k−2]`; (2) the bare `ROT` in `b_3`'s second
-tap read as `ROT^2`; (3) **new**: the ROT/SHIFT *direction* above
-(toward higher bit indices). SHA-2's σ-functions use the opposite
-direction (`ROTR`/`SHR`); the machinery is direction-generic (`c ↔ W−c`,
+tap read as `ROT^2`; (3) the ROT/SHIFT *direction* above (toward higher
+within-word positions). SHA-2's σ-functions use the opposite direction
+(`ROTR`/`SHR`); the machinery is direction-generic (`c ↔ 2^g − c`,
 dropout end flips), so a flipped convention changes constants only.
 
 ## 1. Streams and dedupe (the instance)
 
-`j = 2` committed columns, `W = 2^{bit_vars}`-bit words (instance run at
-`bit_vars = 5`, `W = 32`), `k = 6` claims. Distinct
-(column, rot-or-shift, offset) taps, after dedupe:
+`j = 2` committed bit-columns, 32-bit words along the entry axis
+(`g = 5`), `k = 6` claims. Distinct (column, rot-or-shift, word-offset)
+taps, after dedupe:
 
 | stream | op | appears in |
 |---|---|---|
@@ -119,14 +132,17 @@ measures it; a thin win or a wash is a possible honest outcome.
 
 All presum/discharge exits are claims `ŝ(ζ) = μ` about stream MLEs at
 K-points over the x layout (`n' = num_vars + bit_vars` coords, order
-`[row_hi (tw), bit j (bit_vars), row_lo (s)]`). They must reduce to
-openings of the *committed* matrix.
+`[row_hi (tw), untapped word-bit coords (bit_vars), row_lo (s)]`; the
+corrected instance runs `bit_vars = 0`). They must reduce to openings of
+the *committed* matrix.
 
 ### 3.1 ROT is NOT a coordinate permutation (boundary recorded)
 
 The prompt's first hope — "`ROT^c` permutes the bit-position variables:
-the embedded point permutes coordinates" — is **false** for general `c`.
-Counterexample (`W = 4`, `c = 1`): the rotated-eq vector
+the embedded point permutes coordinates" — is **false** for general `c`
+(the group field's 5 index bits under the corrected semantics, equally
+a 5-coordinate MLE axis under the original reading — the algebra is the
+same). Counterexample (`2^g = 4`, `c = 1`): the rotated-eq vector
 `v[j'] = eq(r, (j'+1) mod 4)` has `v_0·v_3 = eq(r,1)eq(r,0)` vs
 `v_1·v_2 = eq(r,2)eq(r,3)`, i.e. `r_0(1+r_0)(1+r_1)²` vs
 `r_0(1+r_0)r_1²` — an eq tensor over 2 variables satisfies
@@ -163,14 +179,20 @@ The full committed-side weight of a stream opening
 `ŝ(ζ) = Σ_z K̃(z)·D[z]` (exact change of variables; `K̃` = the eq table
 of `ζ` reindexed by the forward tap map, supported on column `i`'s
 slice) factors over the committed coordinate order
-`[row_hi, i-bits, j-bits, row_lo]` as: a translated-eq **chain on the
-trace axis** (row_lo LSBs at the top coords, carrying into row_hi at the
-bottom coords — split by the carry `γ` at the `s`-bit boundary into
-shifted *slices* of plain eq tables), a boolean-pinned eq on the column
-bits (the embedding, unchanged), and a translated-eq **chain on the bit
-axis** (`ROT` cyclic / `SHIFT` dropout). Key implementation fact: every
-piece's *table* is a **shifted slice of a plain eq table** — the prover
-builds nothing new.
+`[row_hi, i-bits, word-bit coords, row_lo]` as, under the corrected
+semantics: a translated-eq **group chain** on the low-`g` clear
+coordinates (`ROT` cyclic / `SHIFT` dropout — confined to `row_lo`'s
+bottom, never near the pack cut), a translated-eq **word chain** on the
+remaining trace bits (`row_lo`'s top part at the top coords, carrying
+into `row_hi` at the bottom coords — split by the carry `γ` at the
+`s`-bit boundary into shifted *slices* of plain eq tables), a
+boolean-pinned eq on the column bits (the embedding, unchanged), and
+plain eq on any untapped word-bit-axis coordinates. Key implementation
+fact: every piece's *table* is a **shifted slice of a plain eq table**
+— the prover builds nothing new. (Extraction is likewise whole-run: the
+group field lives in the clear axis, so ROT/SHIFT permute clear rows
+and the word offset shifts the `row_hi` runs by the borrow — no
+sub-word bit twiddling at all.)
 
 ### 3.3 The three deployment surfaces (all check out)
 
@@ -180,12 +202,13 @@ builds nothing new.
    (one gather), computes the class `β(x') = (γ, c₇)` by index
    arithmetic, and accumulates into that class's 128-lane marginal.
    Cost = the existing sparse embedded walk + a shifted gather.
-2. **Ring messages — ≤ 4 per twisted claim (public rank).** The pack
-   cut (committed coord 7) is crossed by at most the trace chain and/or
-   the bit chain; the weight splits as
-   `K̃(v,y) = Σ_β A_β(v)·B_β(y)` over ≤ 4 bond classes
-   `β = (γ = trace carry at the s-boundary, c₇ = carry at the pack
-   cut)`; pure-ROT streams with `tw + log_cols ≥ 7` stay rank 1. Both
+2. **Ring messages — ≤ 3 per twisted claim (public rank).** The pack
+   cut (committed coord 7) is crossed only by the word chain (the group
+   chain sits in the clear coordinates); the weight splits as
+   `K̃(v,y) = Σ_β A_β(v)·B_β(y)` over the reachable classes
+   `β = (γ = word carry at the s-boundary, c₇ = carry at the pack cut)
+   ∈ {(0,0)} ∪ {(1,0), (1,1) if off > 0}`; pure-ROT streams stay
+   rank 1. Both
    sides derive the class list from the public tap descriptor + layout;
    the claim check is `μ = Σ_β Σ_v A_β(v)·s_β[v]` with `A_β` a
    128-entry verifier table (O(128) chain walk). Each class is one ring
@@ -220,23 +243,27 @@ correctness oracle) → the stream family over the same primitive
 (Phase 2) → measurement (Phase 3). The primitive gets exercised and
 tamper-tested in the simpler vx setting first.
 
-## 5. Measured postscript (2026-07-27, Phases 1–3 done)
+## 5. Measured postscript (2026-07-27, Phases 1–3 done; re-measured
+after the semantics correction)
 
 Both paths landed (`prove/verify_mle_eval_mod_q_ligerito_tap_claims`,
-`..._tap_family`; commits `29825ba`, `5a33eeb`; harness
-`examples/taps_ab.rs`) and §2's honest cost flag **realized as a loss**:
-at n = 22/24/26 the clustered family proves at 232.9/791.5/4297 ms
-against the tap-claims baseline's 113.4/349.7/1885 (and 6 independent
-proofs' 178.9/394.3/891.5; n=26 churned-box, n=28 skipped for memory
+`..._tap_family`; harness `examples/taps_ab.rs`), were retargeted to
+the corrected entry-axis-group semantics the same day (the theory
+above survived verbatim; extraction and the §3.3 coordinate mapping
+simplified), and §2's honest cost flag **realized as a loss** under
+both readings: at n = 22/24/26 (corrected semantics, bv = 0, g = 5)
+the clustered family proves at 257.9/743.4/3823 ms against the
+tap-claims baseline's 118.7/319.3/2006 and 6 independent proofs'
+151.9/401.2/940 (n=26 churned-box both runs; n=28 skipped for memory
 honesty). The n=24 phase tree pins the cause exactly where §2 pointed:
-the 45 monomial channels cost 540 of 791 ms (~12 ms/channel — the
+the 45 monomial channels cost ~600 of 743 ms (~13 ms/channel — the
 per-channel cascade constant the shared-point session measured
 independently), which no forest-body dedup at this sharing density
 (13 streams / 6 claims) can repay. The translated-eq opening machinery
 of §3 itself is cheap and correct (rings + closures are ~13 % of the
 family prove and carry the entire baseline path). The family keeps a
-proof-size win at n ≥ 24 (−26 %/−41 % vs the batched baseline) with
-verify within 1.6–2.4×. Verdict: route tapped-convolution claims
+proof-size win at n ≥ 24 (−20 %/−37 % vs the batched baseline) with
+verify within 1.6–2.1×. Verdict: route tapped-convolution claims
 through the extraction path; the stream family needs dense stream
 reuse or an order-of-magnitude cheaper discharge (kernels / forest
 fusion) to compete on time. Full table and guidance: the dated README

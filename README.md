@@ -742,16 +742,25 @@ at n=26, 17.8/—/98.5 at n=28. Findings:
    crossover further toward wide j. Never route a shared-point family
    through the padding batched-vx path.
 
-**Structured taps: ROT/SHIFT/entry-offset claims — translated-eq
-openings land; the stream family loses to extraction (2026-07-27).**
-Claims on tapped convolutions `b_i[k] = ⊕ ROT^r/SHIFT^r(a_col[k−o])`
-(the j=2 k=6 instance of `docs/rlc-structured-taps-prompt.md`; Phase-0
-analysis in `docs/rlc-structured-taps-phase0.md`) are now provable two
-ways, both EXPERIMENTAL. (1) **The tap-claims path**
+**Structured taps: ROT/SHIFT/word-offset claims — translated-eq
+openings land; the stream family loses to extraction (2026-07-27;
+re-measured same day under the corrected semantics).** Claims on
+tapped convolutions `b_i[k] = ⊕ ROT^r/SHIFT^r(a_col[k−o])` — corrected
+setting: W = 1 bit-vectors whose ENTRY axis is grouped into 32-bit
+words (`p = 32k + j`, `grp_log2 = 5`); ROT/SHIFT translate the low-5
+index field within each group, offsets translate the word field
+(equivalently `b = M·a` for a banded block-rotation `F₂` matrix `M` —
+the tap descriptor is the succinctness-preserving normal form of that
+`M`; an arbitrary `M` costs the verifier O(N) at the closure) — are
+provable two ways, both EXPERIMENTAL (the j=2 k=6 instance of
+`docs/rlc-structured-taps-prompt.md`; Phase-0 analysis + corrected
+conventions in `docs/rlc-structured-taps-phase0.md`).
+(1) **The tap-claims path**
 (`prove/verify_mle_eval_mod_q_ligerito_tap_claims`, tag 0x42):
-`extract_virtual_tap_rows` derives the tapped rows (shifted-run XOR;
-ROT = run reindex, SHIFT = dropout, offset = borrow-shifted trace runs)
-and the claims run the batched x-forest; each residual expands into
+`extract_virtual_tap_rows` derives the tapped rows (whole-run gathers:
+the group field lives in the clear axis, so ROT/SHIFT permute clear
+rows and word offsets shift the row_hi runs by the borrow) and the
+claims run the batched x-forest; each residual expands into
 **translated-eq committed openings** — the Phase-0 result that index
 translation is NOT a coordinate permutation (counterexample recorded)
 but IS a carry matrix product of bond dimension 2, so the opening
@@ -765,52 +774,53 @@ over the streams — clustered `{b1,b3,b5}`/`{b2,b4,b6}` (j_eff = 6/7;
 the monolithic union has ~900 active channels) with fused AND-scan
 presums (27 + 31 channels), per-cluster 2-level cascades (45 monomial
 channels), and all stream openings through the translated-eq rings.
-Measured (`examples/taps_ab.rs`, alternated in-window medians of 5,
-this 16 GB box; `single` = one identity tap claim; caveats: one
-statement per n — FS-grinding luck ±3–5 ms — and the box was churned at
-n=26, ~1.9 GB free):
+Measured (`examples/taps_ab.rs`, corrected semantics, bv = 0, g = 5;
+alternated in-window medians of 5, this 16 GB box; `single` = one
+identity tap claim; caveats: one statement per n — FS-grinding luck
+±3–5 ms — and the box was churned at n=26, ~2 GB free):
 
 | n | single | tapf (family) | vx6 (batched taps) | ind6 | proofs (tapf/vx6/ind6) |
 |----|--------|---------------|--------------------|------|------------------------|
-| 22 | 20.3 ms | 232.9 (11.5×) | **113.4 (5.6×)** | 178.9 (8.8×) | 286/**237**/784 KB |
-| 24 | 59.7 ms | 791.5 (13.3×) | **349.7 (5.9×)** | 394.3 (6.6×) | **416**/562/1254 KB |
-| 26† | 128.2 ms | 4297 (33.5×) | 1885 (14.7×) | **891.5 (7.0×)** | **585**/984/1847 KB |
+| 22 | 25.5 ms | 257.9 (10.1×) | **118.7 (4.7×)** | 151.9 (6.0×) | 353/**338**/883 KB |
+| 24 | 94.4 ms | 743.4 (7.9×) | **319.3 (3.4×)** | 401.2 (4.3×) | **452**/566/1262 KB |
+| 26† | 146.0 ms | 3823 (26.2×) | 2006 (13.7×) | **940.1 (6.4×)** | **622**/994/1848 KB |
 
 † churned box; n=28 skipped (the eager leaves + the 8-set batched
-forest need multi-GB working sets against 1.9 GB free — the numbers
-would be swap noise; the 22–26 trend is monotone and unambiguous).
-**The family loses on prover time at every measured shape — the
-channel count eats it**, exactly the risk the session prompt flagged:
-the n=24 phase tree attributes 540 of 791 ms to the cascade (45
-monomial channels × ~12 ms — the same ~per-channel discharge constant
-the shared-point session measured independently), 127 ms to the two
-eager 64/128-case forests (~1.7× a single body each; the wide-leaf
-lazy kernels are unbuilt), 33 ms to the 58-channel presums and 103 ms
-to the 52 twisted rings + basis fills, against the batched baseline's
-~300 ms padded 8-set forest + ~50 ms tail. The instance's sharing is
-thin — 13 streams for 6 claims, one shared tap — so the family trades
-~5 saved forest bodies for ~45 carry channels at a third of a body
-each: a structural loss whenever claims bring mostly-fresh streams.
-What the family DOES win: proof size at n ≥ 24 (−26 % vs vx6 at n=24,
-−41 % at n=26 — one forest transcript + one fold vector per cluster)
-with verify within 1.6–2.4× (the 52 MPS ring closures). Also measured:
-the batched path's pad-to-8 forest beats 6 independent proofs at
-n ≤ 24 but INVERTS at n=26 (2.1× worse — the 8-claim working set at
-~1 GB against a churned box; the shared-point session's "vx pad wall"
-in miniature). **Guidance**: tapped-convolution claims route through
-the tap-claims (extraction) path — the family construction's
-amortization needs dense stream reuse (many claims over few streams),
-which ROT/SHIFT tap schedules of this shape do not have; revisit only
-if the per-channel discharge cost falls an order of magnitude
-(kernels/fusion — the same top lever the shared-point line
-identified) or for byte-bound deployments. Conventions pinned by the
-harness and TO CONFIRM against the source spec: `a_{3,k−2}` read as
-`a_1[k−2]`, the bare `ROT` in b₃ as `ROT^2`, and ROT/SHIFT gather
-toward higher bit indices (`ROTR`/`SHR` flips are constant-level).
-Tests: 9 new (extraction vs naive, weight-split recombination, MPS
-closure vs naive, both-geometry roundtrips for both paths, pure-ROT,
-pure-XOR elision, two tamper suites); 95/95 green; existing proof
-bytes untouched.
+forest need multi-GB working sets against ~2 GB free — the numbers
+would be swap noise; the 22–26 trend is monotone and unambiguous; the
+pre-correction run measured the same verdict at 233/791/4297 vs
+113/350/1885). **The family loses on prover time at every measured
+shape — the channel count eats it**, exactly the risk the session
+prompt flagged: the n=24 phase tree attributes ~600 of 743 ms to the
+cascade (45 monomial channels × ~13 ms — the same ~per-channel
+discharge constant the shared-point session measured independently),
+160 ms to the two eager 64/128-case forests (the wide-leaf lazy
+kernels are unbuilt), and ~50 ms to the 70 twisted rings + basis
+fills, against the batched baseline's ~280 ms padded 8-set forest +
+tail. The instance's sharing is thin — 13 streams for 6 claims, one
+shared tap — so the family trades ~5 saved forest bodies for ~45
+carry channels at a third of a body each: a structural loss whenever
+claims bring mostly-fresh streams. What the family DOES win: proof
+size at n ≥ 24 (−20 % vs vx6 at n=24, −37 % at n=26 — one forest
+transcript + one fold vector per cluster) with verify within 1.6–2.1×
+(the 70 MPS ring closures). Also measured: the batched path's
+pad-to-8 forest beats 6 independent proofs at n ≤ 24 but INVERTS at
+n=26 (2.1× worse — the 8-claim working set against a churned box; the
+shared-point session's "vx pad wall" in miniature). **Guidance**:
+tapped-convolution claims route through the tap-claims (extraction)
+path — the family construction's amortization needs dense stream
+reuse (many claims over few streams), which ROT/SHIFT tap schedules
+of this shape do not have; revisit only if the per-channel discharge
+cost falls an order of magnitude (kernels/fusion — the same top lever
+the shared-point line identified) or for byte-bound deployments.
+Conventions pinned by the harness and TO CONFIRM against the source
+spec: `a_{3,k−2}` read as `a_1[k−2]`, the bare `ROT` in b₃ as
+`ROT^2`, and ROT/SHIFT gather toward higher within-word positions
+(`ROTR`/`SHR` flips are constant-level). Tests: 9 (extraction vs
+naive, weight-split recombination, MPS closure vs naive,
+both-geometry roundtrips for both paths incl. an untapped-word-axis
+coexistence layout, pure-ROT, pure-XOR elision, two tamper suites);
+95/95 green; existing proof bytes untouched.
 
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
