@@ -193,6 +193,363 @@ fn main() {
             .collect();
         let hint = commit_rs_ligerito_rows(p, rows, &pc);
 
+        if std::env::var("F2Z_AB_B3FAM").is_ok_and(|v| v == "1") {
+            // The user's b3 family: 8 role vectors a,b,c,d,a',b',c',d'
+            // with d' = ROT16(d⊕a'), b' = ROT12(b⊕c'),
+            // off1(d) = ROT8(d'⊕off1(a)), off1(b) = ROT7(b'⊕off1(c));
+            // MLE openings wanted for all eight. OPT arm: commit SIX
+            // (d', b' virtual — relations 1,2 become definitions), all
+            // 8 openings through ONE 0x44 collapse (identity sets + the
+            // ROT-of-XOR sets {d,a'}, {b,c'} — 8 plain bodies, no
+            // rings, δ = 2 by the 2^δ | 12 envelope) + the two COMPOSED
+            // zero-checks R1 = off1(d)⊕ROT24(d)⊕ROT24(a')⊕ROT8 off1(a),
+            // R2 = off1(b)⊕ROT19(b)⊕ROT19(c')⊕ROT7 off1(c) through
+            // blocked 0x42 (2 mixed bodies, word-0 boundary row masked
+            // by the zero-check weights). NAIVE arm: commit all 8, open
+            // all 8 (0x44, δ = 4 — identities are envelope-free), check
+            // the four relations as 3-tap mixed vectors (4 bodies).
+            let g = GRP();
+            assert!(g >= 5, "b3 family rotation amounts need g ≥ 5");
+            let layout = taps_layout(n, 3);
+            let mut layout_plain = taps_layout(n, 3);
+            // ROT16 passes the δ-envelope at δ = 4 (2^4 | 16); ROT12
+            // does not (8 ∤ 12), so the b'-opening moves to the 0x42
+            // layer (envelope-free) and the plain layer keeps δ = 4 —
+            // the δ2 alternative measured slower AND fatter (the plain
+            // fold vectors quadruple).
+            layout_plain.x_fold_extra = 4.min(taps_layout(n, 3).p.s - 1);
+            let mut layout_pl_naive = taps_layout(n, 3);
+            layout_pl_naive.x_fold_extra = 4.min(layout.p.s - 1);
+            let p = &layout.p;
+            let (pc, vc) = sha_lig_configs(packed_vars(p)).expect("lig cfg");
+            // Semantic generation: random a, a', c, c' and top words;
+            // d, b run the BACKWARD recurrence d[j] = ROT24(d[j+1]) ⊕
+            // ROT24(a'[j+1]) ⊕ ROT8(a[j]) (resp. ROT19/ROT7), so
+            // relations (3),(4) hold at every word k ≥ 1; d', b' by
+            // their definitions. Words are 2^g bits (g = 5: u32 lanes
+            // of a u64; keep u64 and mask).
+            let wbits = 1usize << g;
+            let wmask: u64 = if wbits == 64 { !0 } else { (1u64 << wbits) - 1 };
+            let rotl = |x: u64, r: usize| -> u64 {
+                if r == 0 { x } else { ((x << r) | (x >> (wbits - r))) & wmask }
+            };
+            let nwords = 1usize << (layout.num_vars - g);
+            let mut rng_state = 0x9E37_79B9_7F4A_7C15u64 ^ (seed << 7) ^ (n as u64);
+            let mut rng = move || -> u64 {
+                rng_state ^= rng_state << 13;
+                rng_state ^= rng_state >> 7;
+                rng_state ^= rng_state << 17;
+                rng_state & wmask
+            };
+            let aw: Vec<u64> = (0..nwords).map(|_| rng()).collect();
+            let apw: Vec<u64> = (0..nwords).map(|_| rng()).collect();
+            let cw: Vec<u64> = (0..nwords).map(|_| rng()).collect();
+            let cpw: Vec<u64> = (0..nwords).map(|_| rng()).collect();
+            let mut dw = vec![0u64; nwords];
+            let mut bw = vec![0u64; nwords];
+            dw[nwords - 1] = rng();
+            bw[nwords - 1] = rng();
+            for j in (0..nwords - 1).rev() {
+                dw[j] = rotl(dw[j + 1] ^ apw[j + 1], 24 % wbits) ^ rotl(aw[j], 8);
+                bw[j] = rotl(bw[j + 1] ^ cpw[j + 1], 19 % wbits) ^ rotl(cw[j], 7);
+            }
+            let dpw: Vec<u64> =
+                (0..nwords).map(|k| rotl(dw[k] ^ apw[k], 16 % wbits)).collect();
+            let bpw: Vec<u64> = (0..nwords).map(|k| rotl(bw[k] ^ cpw[k], 12)).collect();
+            // Self-check of the family algebra: (3),(4) hold for k ≥ 1.
+            for k in 1..nwords {
+                assert_eq!(dw[k - 1], rotl(dpw[k] ^ aw[k - 1], 8), "relation (3) at {k}");
+                assert_eq!(bw[k - 1], rotl(bpw[k] ^ cw[k - 1], 7), "relation (4) at {k}");
+            }
+            // Pack per-column words into committed clear rows: trace
+            // p = (k ≪ g)|j of column col lands in row p & (2^s − 1),
+            // bit (col ≪ tw) | (p ≫ s).
+            let s_bits = p.s;
+            let tw = layout.tw;
+            let row_words = (1usize << p.t).div_ceil(64);
+            let pack = |cols: &[&[u64]]| -> Vec<Vec<u64>> {
+                let mut rows = vec![vec![0u64; row_words]; 1usize << s_bits];
+                for (col, wds) in cols.iter().enumerate() {
+                    for (k, &w) in wds.iter().enumerate() {
+                        for j in 0..wbits {
+                            if (w >> j) & 1 == 1 {
+                                let tr = (k << g) | j;
+                                let bit = (col << tw) | (tr >> s_bits);
+                                rows[tr & ((1 << s_bits) - 1)][bit >> 6] |= 1u64 << (bit & 63);
+                            }
+                        }
+                    }
+                }
+                rows
+            };
+            // OPT commitment: a,b,c,d,a',c' (cols 0..5; d',b' virtual).
+            let hint = commit_rs_ligerito_rows(
+                p,
+                pack(&[&aw, &bw, &cw, &dw, &apw, &cpw]),
+                &pc,
+            );
+            // NAIVE commitment: all eight (d' = 6, b' = 7).
+            let hint_nv = commit_rs_ligerito_rows(
+                p,
+                pack(&[&aw, &bw, &cw, &dw, &apw, &cpw, &dpw, &bpw]),
+                &pc,
+            );
+            let rot = |col, amt: usize, off| TapOp {
+                col,
+                grp_log2: g,
+                bit_amt: amt % wbits,
+                bit_dropout: false,
+                off,
+            };
+            let uni = |amt: usize, off: usize| f2z::taps::TapUniOp {
+                grp_log2: g,
+                bit_amt: amt % wbits,
+                bit_dropout: false,
+                off,
+            };
+            let mk_rw = |len: usize, salt: u128| -> Vec<u128> {
+                (0..len)
+                    .map(|x| {
+                        (x as u128)
+                            .wrapping_mul(0xDEAD_BEEF_CAFE_F00D_1234_5678_9ABC_DEF1)
+                            .wrapping_add(salt + (u128::from(seed) << 1))
+                            % FQ_MOD
+                    })
+                    .collect()
+            };
+            let mk_colw = |len: usize| -> Vec<Fq> {
+                (0..len)
+                    .map(|c| {
+                        Fq::from((c as u128).wrapping_mul(0xABCD_EF01_2345).wrapping_add(3))
+                    })
+                    .collect()
+            };
+            let eval_with = |layout_e: &ShaF2Layout,
+                             hint_e: &f2z::ligerito_flock::FlockCommitHint,
+                             taps: &[TapOp],
+                             rw: &[u128],
+                             colw: &[Fq]|
+             -> u128 {
+                let a_rows = extract_virtual_tap_rows(layout_e, hint_e.rows(), taps);
+                let mut y = Fq::from(0u128);
+                for (c, row) in a_rows.iter().enumerate() {
+                    let mut acc = Fq::from(0u128);
+                    for (wi, &word) in row.iter().enumerate() {
+                        let mut bits = word;
+                        while bits != 0 {
+                            let t = bits.trailing_zeros() as usize;
+                            acc = acc + Fq::from(rw[(wi << 6) | t]);
+                            bits &= bits.wrapping_sub(1);
+                        }
+                    }
+                    y = y + colw[c] * acc;
+                }
+                y.0
+            };
+            // ── OPT plain layer (0x44, δ = 2): 6 identities + the two
+            // ROT-of-XOR openings v(d') on {d,a'}, v(b') on {b,c'}.
+            let p_x2 = virtual_xor_params(&layout_plain);
+            let rw2 = mk_rw(p_x2.rows(), 83);
+            let colw2 = mk_colw(p_x2.cols());
+            let opt_sets: Vec<(Vec<usize>, f2z::taps::TapUniOp)> = vec![
+                (vec![0], uni(0, 0)),
+                (vec![1], uni(0, 0)),
+                (vec![2], uni(0, 0)),
+                (vec![3], uni(0, 0)),
+                (vec![4], uni(0, 0)),
+                (vec![5], uni(0, 0)),
+                (vec![3, 4], uni(16, 0)),
+            ];
+            let opt_pclaims: Vec<TapPointClaim<'_>> = opt_sets
+                .iter()
+                .map(|(set, op)| {
+                    let taps: Vec<TapOp> = set.iter().map(|&c| op.with_col(c)).collect();
+                    TapPointClaim {
+                        cols: set,
+                        op: *op,
+                        claimed: eval_with(&layout_plain, &hint, &taps, &rw2, &colw2),
+                    }
+                })
+                .collect();
+            // ── OPT mixed layer (0x42, env δ): the composed zero-checks,
+            // word-0 masked out by the column weights.
+            let p_xm = virtual_xor_params(&layout);
+            let rwm = mk_rw(p_xm.rows(), 97);
+            let colwm = mk_colw(p_xm.cols());
+            let delta = layout.x_fold_extra;
+            let mut colw_mask = colwm.clone();
+            for c in colw_mask.iter_mut().take(wbits >> delta) {
+                *c = Fq::from(0u128);
+            }
+            let r1 = vec![rot(3, 0, 1), rot(3, 24, 0), rot(4, 24, 0), rot(0, 8, 1)];
+            let r2 = vec![rot(1, 0, 1), rot(1, 19, 0), rot(5, 19, 0), rot(2, 7, 1)];
+            // v(b') = the ROT12-of-XOR opening, routed through 0x42.
+            let bp_open = vec![rot(1, 12, 0), rot(5, 12, 0)];
+            let bp_val = eval_with(&layout, &hint, &bp_open, &rwm, &colwm);
+            for taps in [&r1, &r2] {
+                assert_eq!(
+                    eval_with(&layout, &hint, taps, &rwm, &colw_mask),
+                    0,
+                    "composed relation vector must vanish off word 0"
+                );
+            }
+            let opt_mixed: Vec<TapClaim<'_>> = vec![
+                TapClaim { taps: &r1, row_weights_q: &rwm },
+                TapClaim { taps: &r2, row_weights_q: &rwm },
+                TapClaim { taps: &bp_open, row_weights_q: &rwm },
+            ];
+            let opt_mixed_v: Vec<TapVerifyClaim<'_, Fq>> = [&r1, &r2]
+                .iter()
+                .map(|taps| TapVerifyClaim {
+                    taps,
+                    row_weights_q: &rwm,
+                    col_weights: &colw_mask,
+                    claimed: Fq::from(0u128),
+                })
+                .chain(std::iter::once(TapVerifyClaim {
+                    taps: &bp_open,
+                    row_weights_q: &rwm,
+                    col_weights: &colwm,
+                    claimed: Fq::from(bp_val),
+                }))
+                .collect();
+            // ── NAIVE arms: 8 identity openings (δ = 4) + 4 relation
+            // vectors (relations 1,2 unmasked; 3,4 word-0 masked).
+            let p_x4 = virtual_xor_params(&layout_pl_naive);
+            let rw4 = mk_rw(p_x4.rows(), 89);
+            let colw4 = mk_colw(p_x4.cols());
+            let nv_sets: Vec<Vec<usize>> = (0..8).map(|c| vec![c]).collect();
+            let nv_pclaims: Vec<TapPointClaim<'_>> = nv_sets
+                .iter()
+                .map(|set| {
+                    let taps = [TapOp::ident(set[0])];
+                    TapPointClaim {
+                        cols: set,
+                        op: f2z::taps::TapUniOp::ident(),
+                        claimed: eval_with(&layout_pl_naive, &hint_nv, &taps, &rw4, &colw4),
+                    }
+                })
+                .collect();
+            let r1n = vec![TapOp::ident(6), rot(3, 16, 0), rot(4, 16, 0)];
+            let r2n = vec![TapOp::ident(7), rot(1, 12, 0), rot(5, 12, 0)];
+            let r3n = vec![rot(3, 0, 1), rot(6, 8, 0), rot(0, 8, 1)];
+            let r4n = vec![rot(1, 0, 1), rot(7, 7, 0), rot(2, 7, 1)];
+            for (taps, mask) in
+                [(&r1n, false), (&r2n, false), (&r3n, true), (&r4n, true)]
+            {
+                let cwm = if mask { &colw_mask } else { &colwm };
+                assert_eq!(
+                    eval_with(&layout, &hint_nv, taps, &rwm, cwm),
+                    0,
+                    "naive relation vector must vanish"
+                );
+            }
+            let nv_lists = [&r1n, &r2n, &r3n, &r4n];
+            let nv_mixed: Vec<TapClaim<'_>> = nv_lists
+                .iter()
+                .map(|taps| TapClaim { taps, row_weights_q: &rwm })
+                .collect();
+            let nv_mixed_v: Vec<TapVerifyClaim<'_, Fq>> = nv_lists
+                .iter()
+                .zip([false, false, true, true])
+                .map(|(taps, mask)| TapVerifyClaim {
+                    taps,
+                    row_weights_q: &rwm,
+                    col_weights: if mask { &colw_mask } else { &colwm },
+                    claimed: Fq::from(0u128),
+                })
+                .collect();
+            let prove_opt = || {
+                let mut t1 = Blake3Transcript::new();
+                let plain = prove_mle_eval_mod_q_ligerito_tap_collapse(
+                    &mut t1, &hint, &layout_plain, &rw2, &colw2, &opt_pclaims, alpha, &pc,
+                );
+                let mut t2 = Blake3Transcript::new();
+                let mixed = prove_mle_eval_mod_q_ligerito_tap_claims(
+                    &mut t2, &hint, &layout, FQ_BITS, &opt_mixed, alpha, &pc,
+                );
+                (plain, mixed)
+            };
+            let prove_nv = || {
+                let mut t1 = Blake3Transcript::new();
+                let plain = prove_mle_eval_mod_q_ligerito_tap_collapse(
+                    &mut t1, &hint_nv, &layout_pl_naive, &rw4, &colw4, &nv_pclaims, alpha,
+                    &pc,
+                );
+                let mut t2 = Blake3Transcript::new();
+                let mixed = prove_mle_eval_mod_q_ligerito_tap_claims(
+                    &mut t2, &hint_nv, &layout, FQ_BITS, &nv_mixed, alpha, &pc,
+                );
+                (plain, mixed)
+            };
+            let (mut t_opt, mut t_nv) = (Vec::new(), Vec::new());
+            for _ in 0..reps {
+                let t0 = Instant::now();
+                drop(prove_opt());
+                t_opt.push(t0.elapsed().as_secs_f64() * 1e3);
+                let t0 = Instant::now();
+                drop(prove_nv());
+                t_nv.push(t0.elapsed().as_secs_f64() * 1e3);
+            }
+            let (opt_plain, opt_mx) = prove_opt();
+            let t0 = Instant::now();
+            {
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_tap_collapse(
+                    &mut vt, &hint.commitment, &opt_plain, &layout_plain, &rw2, &colw2,
+                    &opt_pclaims, alpha, &vc,
+                )
+                .expect("b3fam opt plain verifies");
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_tap_claims(
+                    &mut vt, &hint.commitment, &opt_mx, &layout, alpha, FQ_BITS,
+                    &opt_mixed_v, &vc,
+                )
+                .expect("b3fam opt mixed verifies");
+            }
+            let v_opt = t0.elapsed().as_secs_f64() * 1e3;
+            let (nv_plain, nv_mx) = prove_nv();
+            let t0 = Instant::now();
+            {
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_tap_collapse(
+                    &mut vt, &hint_nv.commitment, &nv_plain, &layout_pl_naive, &rw4,
+                    &colw4, &nv_pclaims, alpha, &vc,
+                )
+                .expect("b3fam naive plain verifies");
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_tap_claims(
+                    &mut vt, &hint_nv.commitment, &nv_mx, &layout, alpha, FQ_BITS,
+                    &nv_mixed_v, &vc,
+                )
+                .expect("b3fam naive mixed verifies");
+            }
+            let v_nv = t0.elapsed().as_secs_f64() * 1e3;
+            let size_tap = |pr: &f2z::ligerito_flock::IntEvalRsLigModQTapProof| {
+                let (b, lig) = mle_eval_mod_q_lig_tap_size_breakdown(pr);
+                b.total() + lig
+            };
+            let sz_opt =
+                mle_eval_mod_q_lig_xor_proof_size_bytes(&opt_plain) + size_tap(&opt_mx);
+            let sz_nv =
+                mle_eval_mod_q_lig_xor_proof_size_bytes(&nv_plain) + size_tap(&nv_mx);
+            let (m_opt, m_nv) = (median(t_opt), median(t_nv));
+            println!(
+                "n={n} B3FAM g={g} (8 openings + 4 relations): opt {m_opt:.1} ms ({}+{} \
+                 bodies, 6 cols committed, {:.0} KB, verify {v_opt:.1} ms) | naive \
+                 {m_nv:.1} ms ({:.2}x of opt, {}+{} bodies, 8 cols, {:.0} KB, verify \
+                 {v_nv:.1} ms)",
+                opt_plain.xors.len(),
+                opt_mx.tap_us.len(),
+                sz_opt as f64 / 1e3,
+                m_nv / m_opt,
+                nv_plain.xors.len(),
+                nv_mx.tap_us.len(),
+                sz_nv as f64 / 1e3,
+            );
+            continue;
+        }
+
         if std::env::var("F2Z_AB_BLAKE3").is_ok_and(|v| v == "1") {
             // The Blake3 design model (docs/blake3-taps-design.md): 8
             // committed columns (A,B,C,D roles + K carries + X aux + 2

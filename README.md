@@ -1078,6 +1078,37 @@ and half the word count per trace. Envelope shifts only: s ≥ g + 2
 (g=6 wide-amount extraction vs naive; end-to-end roundtrip with
 amounts 33/40/47/63); 107/107 green both guard modes.
 
+**Structured taps: the b3 G-step family (2026-07-27, follow-up) —
+virtualize the defined columns, compose the checks.** The
+8-role-vector family (a,b,c,d,a',b',c',d' with d' = ROT¹⁶(d⊕a'),
+b' = ROT¹²(b⊕c'), off¹(d) = ROT⁸(d'⊕off¹a), off¹(b) = ROT⁷(b'⊕off¹c);
+all eight opened at shared points), measured two ways
+(`F2Z_AB_B3FAM=1`). OPT: commit SIX (d', b' virtual — relations 1–2
+become definitions and vanish), open the eight through ONE 0x44
+collapse (6 identity sets + {d,a'} at ROT¹⁶ — plain bodies, no
+rings; δ = 4 since 2⁴ | 16) with the ROT¹² opening routed through
+0x42 (8 ∤ 12 puts it off the collapse δ-envelope; 0x42 is
+envelope-free), plus the two COMPOSED zero-checks
+R₁ = off¹(d)⊕ROT²⁴(d)⊕ROT²⁴(a')⊕ROT⁸off¹(a),
+R₂ = off¹(b)⊕ROT¹⁹(b)⊕ROT¹⁹(c')⊕ROT⁷off¹(c) (word-0 boundary rows
+excluded by the zero-check weight masks) = 7 + 3 bodies. NAIVE:
+commit all eight, open all eight (0x44 δ4), check the four relations
+as 3-tap mixed vectors = 8 + 4 bodies. Measured (mixed layer δ = 4,
+FAST, medians of 5; harness backward-generates the recurrence and
+asserts the composed vectors vanish — the algebra self-check):
+opt **63.8/123.9/326.1 ms, 275/349/438 KB** at n=22/24/26 vs naive
+65.2/134.0/333.1, 283/357/450 (n=26 same-window churned box); at
+g = 6 (64-bit words) opt 107.4 vs naive 124.8 (1.16×). Lessons
+pinned: (1) virtualizing relation-defined columns deletes their
+consistency bodies AND their witness columns; (2) composing
+definitions into the residual checks (ROT⁸∘ROT¹⁶ = ROT²⁴) keeps the
+check count at the number of INDEPENDENT relations; (3) the collapse
+δ-envelope (2^δ | amt) can force a bad layer δ — route the offending
+op through 0x42 instead of capping δ (the δ2 variant measured
+SLOWER and fatter: 463.7 ms / 520 KB at n=26); (4) d, b cannot be
+virtualized (their joint recurrence's resolvent is an O(#words) tap
+list — the phase-0 succinctness wall).
+
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
 The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —
