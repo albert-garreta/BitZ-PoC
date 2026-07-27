@@ -1540,6 +1540,213 @@ The $j\ge3$ Dense-JIT lazy forest arm flips profitable at scale
 2026-07-27 shared-point note.
 
 %============================================================================
+\section{Structured taps: index-translated operands}\label{sec:taps}
+
+\emph{(Added 2026-07-27; the working session of
+\code{docs/rlc-structured-taps-prompt.md}, Phase-0 record
+\code{docs/rlc-structured-taps-phase0.md}, code commits
+\texttt{29825ba}--\texttt{da1af12}.)} This section extends the family
+question to claims on \emph{index-structured} $\Ftwo$-linear images of
+the committed columns and records what was proved, built, and measured.
+The outcome is a sharp trichotomy: index translations are free as
+\emph{weight transforms} (batching to essentially one forest at a shared
+point), they are cheap \emph{individually} inside XORs (the extraction
+path, at one forest body per claim, closed by a new translated-eq
+opening primitive), and they are expensive only when a claim
+\emph{XOR-mixes differently-translated operands} --- where the carry
+channels of \S\ref{sec:carries} multiply and defeat the family's
+amortisation.
+
+\subsection{Setting and the stream reduction}\label{sec:tapsetting}
+
+Committed data: $W{=}1$ bit-columns whose flat entry index is grouped
+into $2^{g}$-bit words \emph{along the entry axis}, $p = (k\ll g)\,|\,j$
+(the motivating instance: $g=5$, 32-bit words). A \emph{tap} applies to
+a column one op of the form $\mathrm{ROT}^{r}$ (translate the low-$g$
+index field, cyclically), $\mathrm{SHIFT}^{r}$ (the same with dropout),
+and/or $\mathrm{off}^{o}$ (translate the word field by $o$, dropout
+below word $0$); a claim vector is an XOR of taps,
+$b = \bigoplus_t \mathrm{op}_t(a_{i_t})$. Equivalently $b = M\cdot a$
+for a banded block-rotation $\Ftwo$-matrix $M$; the tap list is the
+succinctness-preserving normal form of such an $M$ (an arbitrary $M$
+costs the verifier $O(N)$ at the residual closure; translations on
+contiguous index fields are exactly what stays succinct, by
+\S\ref{sec:tapopen}).
+
+Writing each distinct tap as a \emph{stream}
+$s = \mathrm{op}(a_{i})$, every claim is a per-position XOR of streams,
+so Protocol~\ref{prot:family} applies \emph{verbatim} with the streams
+as the family's base columns ($j_{\mathrm{eff}}$ = the number of
+distinct streams); completeness (Theorem~\ref{thm:complete}) needs only
+the per-position identity and the shared column point, and the
+$1/q+\cdots$ soundness chain inherits once the residual \emph{stream}
+openings reduce to committed openings. The active channels are governed
+by Proposition~\ref{prop:vanish}'s machinery: each claim's factor
+$\alpha^{\gamma_i w_{i,b} L_i(m)}$ is a function of the single bit
+$L_i(m)=\bigoplus_{u\in\mathrm{supp}_i} m_u$, whose zeta support is
+$\{\varnothing\}$ and the singletons of $\mathrm{supp}_i$; multiplying
+over claims, the active channels are the \emph{unions picking at most
+one stream per claim} --- multiplicative across claims. The pinned
+$j{=}2$, $k{=}6$ instance (two identities, two three-tap single-column
+rotation convolutions, a cross-column mix, a lossy-SHIFT claim; $13$
+deduped streams) has ${\sim}900$ such channels monolithically and
+$27+31$ under the two-cluster split $\{b_1,b_3,b_5\}/\{b_2,b_4,b_6\}$
+--- $45$ monomial channels, all of $|S|\le3$, so the cascade of
+Remark~\ref{rem:dischargeleaf} covers the discharge unchanged.
+
+\subsection{Openings: translated eq is a carry matrix product}
+\label{sec:tapopen}
+
+The presum and cascade exit at stream-MLE claims $\mle{s}(\zeta)$ over
+$\K$, which must reduce to committed openings. The change of variables
+is exact --- $\mle{s}(\zeta)=\sum_{p'}\eq(\zeta,\sigma(p'))\,
+[\sigma(p')\ \mathrm{valid}]\cdot a_i[p']$ for the forward index map
+$\sigma$ --- but the translated weight is \emph{not} an eq tensor:
+
+\begin{lemma}[translation is not a coordinate permutation]
+\label{lem:notperm}
+For $2^{g}\ge4$ and $0<c<2^{g}$ with $c\ne2^{g-1}$, there is no point
+transform $\zeta\mapsto\zeta'$ with
+$\eq(\zeta,(y+c)\bmod 2^{g})=\eq(\zeta',y)$ for all $y$: at $g=2$,
+$c=1$ the translated vector violates the rank-one relation
+$v_{00}v_{11}=v_{01}v_{10}$ that every eq tensor satisfies (it forces
+$\zeta_1^2=(1+\zeta_1)^2$). Index translation involves carries; it is a
+signed coordinate permutation only for $c\in\{0,2^{g-1}\}$.
+\end{lemma}
+
+What replaces the missing transform is a transfer-matrix form:
+
+\begin{proposition}[translated eq as a carry MPS]\label{prop:transeq}
+For $\nu$ bits, a translation constant $\delta$, and mode
+$\in\{\text{cyclic},\text{dropout}\}$, the translated eq
+$V(y)=\eq_\nu(\rho,\,y+\delta)\cdot[\mathrm{valid}]$ factors as a
+matrix product of bond dimension $2$ over the bits of $y$: with
+per-bit factors $\varphi_i(b)=b\rho_i+(1+b)(1+\rho_i)$ and the binary
+addition carry $c_{i+1}=\mathrm{maj}(y_i,\delta_i,c_i)$,
+\[
+  V(y)\;=\;f^{\!\top}\,T_{\nu-1}[y_{\nu-1}]\cdots T_0[y_0]\,e_0,
+  \qquad
+  (T_i[y])_{c\to c'}=\varphi_i(y\oplus\delta_i\oplus c)\,
+  [c'=\mathrm{maj}(y,\delta_i,c)],
+\]
+$e_0=(1,0)^{\!\top}$ and $f=(1,1)^{\!\top}$ (cyclic) or $(1,0)^{\!\top}$
+(dropout). Each $T_i[y_i]$ is affine in $y_i$, so the same formula with
+$y_i\mapsto\zeta_i\in\K$ \emph{is} the multilinear extension --- an
+$O(\nu)$-time closed form. Consequently, over the committed coordinate
+order the opening weight of a stream splits as
+$\widetilde K(v,y)=\sum_\beta A_\beta(v)\,B_\beta(y)$ over at most
+\emph{three} public carry classes
+$\beta=(\gamma,c_7)\in\{(0,0)\}\cup\{(1,0),(1,1)\ \text{if }o>0\}$
+($\gamma$ = the word-chain carry at the clear/fold boundary, $c_7$ =
+the carry at the 128-bit pack cut; the group chain sits inside the
+low-$g$ clear coordinates and never reaches the cut, so pure rotations
+stay rank one), and every class's tables are translated \emph{slices}
+of plain eq tables.
+\end{proposition}
+
+Deployment (commit \texttt{29825ba}): per class one ring-switch message,
+checked as $\mu=\sum_\beta\sum_v A_\beta(v)\,s_\beta[v]$; the prover's
+in-pack marginals and basis fills are sparse walks against the sliced
+tables (the carries are determined per position, so the classes
+partition the support); and the verifier's succinct residual closure is
+a matrix-product-state generalisation of the ring-switch tensor-algebra
+evaluator at $\le2\times$ the plain cost, still $O(m\cdot128^{2})$. No
+new soundness terms --- the split is exact algebra and the opener is
+basis-agnostic. This primitive alone makes tapped claims first-class in
+the \emph{extraction} path: extract the claim vector (whole-run
+gathers; rotations permute clear rows, word offsets shift the folded
+runs by the borrow), run the usual bit-affine forest, and close the
+residual's per-tap terms by translated-eq openings.
+
+\subsection{Measured: the stream family loses to extraction}
+\label{sec:tapmeasured}
+
+Both paths were built and A/B'd on the pinned instance
+(\code{examples/taps\_ab.rs}; medians of 5, one statement per $n$;
+$n{=}26$ on a churned box, $n{=}28$ skipped for memory honesty):
+
+\begin{center}\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+$n$ & \code{single} & stream family & batched tap claims & 6 independent\\
+\midrule
+22 & $25.5$ & $257.9$ \;($10.1\times$) & $\mathbf{118.7}$ \;($4.7\times$) & $151.9$ \;($6.0\times$)\\
+24 & $94.4$ & $743.4$ \;($7.9\times$) & $\mathbf{319.3}$ \;($3.4\times$) & $401.2$ \;($4.3\times$)\\
+26 & $146.0$ & $3823$ \;($26.2\times$) & $2006$ \;($13.7\times$) & $\mathbf{940}$ \;($6.4\times$)\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent The family loses at every shape, and the attribution is
+structural, not incidental: at $n{=}24$ the $45$-channel cascade costs
+${\approx}600$ of $743$\,ms --- ${\approx}13$\,ms per active channel,
+the \emph{same} per-channel discharge constant the shared-point
+addendum measured independently --- against ${\approx}5$ saved forest
+bodies. The instance's sharing is thin ($13$ streams for $6$ claims,
+one shared tap): the family's economy is \emph{claims per base vector},
+exponential for XOR-closures over a fixed small basis
+($k\le 2^{j}-1$ over $j$ columns) and inverted here ($k<j_{\mathrm{eff}}$,
+each claim minting fresh streams, channels multiplying as unions).
+Carries are conserved (\S\ref{sec:carries}): claims over a shared basis
+draw on one carry pool of $\le 2^{j}{-}1{-}j$ monomials; tapped claims
+each bring their own. What survives for the family: proof size
+($-20\%/-37\%$ vs the batched path at $n{=}24/26$) and ms-class verify.
+Routing rule: tapped-convolution claims go through the extraction path
+unless the claim set has dense stream reuse.
+
+\subsection{The collapse: uniform-op claims are weight transforms}
+\label{sec:tapcollapse}
+
+The positive counterpart, and the reason translations are not
+intrinsically expensive. For \emph{any} tap $\mathrm{op}$ and any
+extractable $x$,
+\begin{equation}\label{eq:wtransform}
+  \sum_p w[p]\cdot \mathrm{op}(x)[p]
+  \;=\;\sum_{p'} w[\sigma(p')]\,[\mathrm{valid}]\cdot x[p'] :
+\end{equation}
+the op moves into the weights, and weight-agnosticism
+(Lemma~\ref{lem:agnostic}) accepts the transformed vector. Two
+structural facts make this collapse at a \emph{shared} evaluation
+point. The group translation acts inside the clear axis ($g\le s$), so
+$w\circ\sigma$ keeps the row$\otimes$column tensor split with the row
+side unchanged; and the word offset splits into exactly two carry
+branches, branch $1$ using the row weights advanced one folded step
+(zero at the top --- the overflow dropout). Hence $k$ claims, each a
+\emph{single} tap of a column, $\gamma$-combine into at most
+$(\#\text{columns})\times 2$ \emph{plain single-column claims} through
+the deployed claims-only path --- no streams, channels, discharge, or
+translated-eq rings; the verifier derives each (column, branch) value
+from the proof's own forest-bound folds and checks their sum against
+$T=\sum_i\gamma_ic_i$ (error $1/q$ plus the inherited terms; commit
+\texttt{da1af12}). Measured on the instance's $13$ streams as $13$
+individual claims at one point: $53.5/177.3/603$\,ms at $n=22/24/26$
+with \emph{four} inner claims, versus $215/609/3674$ for the batched
+tap path ($13$ claims pad to $16$ tree-sets --- the pad wall returns at
+$n{=}26$) and $347/737/2125$ for independent proofs; proofs
+$-58$--$-63\%$; verify ${\approx}2\times$ faster.
+
+The same argument applies with $x$ an \emph{XOR set}: a claim
+$\mathrm{op}(a_{i_1}\oplus\cdots)$ --- e.g.\
+$\mathrm{ROT}^{c}(a_1\oplus a_2)$ --- is by \eqref{eq:wtransform} a
+standard virtual-XOR claim at transformed weights, and all rotations of
+one XOR combination at a shared point merge into a single claim (pure
+column-weight arithmetic; offsets add the one branch). The general law:
+\begin{center}
+\begin{minipage}{0.92\textwidth}\itshape
+$\bigoplus_t \mathrm{op}_t(a_{i_t})$ is cheap whenever the op is common
+to all terms --- it factors out as
+$\mathrm{op}(\bigoplus_t a_{i_t})$, a weight transform of a plain
+column-XOR --- and expensive precisely when the XOR mixes
+differently-translated operands, which is where the carry channels
+live. Rotation, shift, and offset are never the cost; cross-operand
+XOR-mixing is.
+\end{minipage}
+\end{center}
+CLI presets for all three paths: \code{f2z <n> --taps
+vx|family|collapse}; conventions pending confirmation (transcription
+fixes and translation direction) are listed in the Phase-0 record.
+
+%============================================================================
 \section{Open questions}\label{sec:open}
 
 \begin{openproblem}[clustering wide linear layers]

@@ -159,6 +159,19 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
   virtual-XOR and independent baselines stays in `examples/rlc_ab.rs`
   (`F2Z_AB_N`/`F2Z_AB_REPS`, plus `F2Z_AB_SINGLES=1` and `F2Z_AB_J3=1`
   modes).
+- `--taps vx|family|collapse` — run the EXPERIMENTAL **structured-taps**
+  paths at this `n` (32-bit words along the ENTRY axis of W=1
+  bit-vectors, `g = 5`; 2 UAIR columns; ALL claims at ONE shared point;
+  needs n ≥ 14): `vx` = the j=2 k=6 ROT/SHIFT/word-offset instance
+  through the batched tap-claims (extraction + translated-eq openings)
+  path; `family` = the same instance through the clustered stream
+  family; `collapse` = the instance's 13 deduped streams as 13
+  SINGLE-TAP claims through the weight-transform collapse (≤ 4 inner
+  claims). Every rep is verified. E.g. `f2z 24 --taps collapse --reps
+  5`. The full A/B (with independent baselines, phase trees, seeds)
+  stays in `examples/taps_ab.rs` (`F2Z_AB_N`/`F2Z_AB_REPS`/
+  `F2Z_TAPS_SEED`, `F2Z_AB_COLLAPSE=1` for the collapse demo,
+  `OBLONG_PROFILE=1` for phase trees).
 - `--threads N` / `-j N` — rayon pool size (`1` = single-threaded;
   default all cores / `RAYON_NUM_THREADS`).
 - `--reps R` — timing repetitions (medians reported; **every rep is

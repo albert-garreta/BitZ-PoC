@@ -38,6 +38,16 @@
 //!   split t' ≈ s — the README's 2026-07-26/27 RLC notes); `t s W`
 //!   positionals do not apply. Every rep is verified. Example:
 //!   `f2z 26 --family j4s --reps 5`
+//! - `--taps vx|family|collapse` — run the EXPERIMENTAL structured-taps
+//!   paths at this `n` (32-bit words along the ENTRY axis of W=1
+//!   bit-vectors, g = 5; 2 UAIR columns; ALL claims at ONE shared
+//!   point): `vx` = the j=2 k=6 ROT/SHIFT/word-offset instance through
+//!   the batched tap-claims (extraction + translated-eq openings) path;
+//!   `family` = the same instance through the clustered stream family
+//!   ({b1,b3,b5}/{b2,b4,b6}); `collapse` = the instance's 13 deduped
+//!   streams as 13 SINGLE-TAP claims through the weight-transform
+//!   collapse (≤ 4 inner claims). Every rep is verified. Example:
+//!   `f2z 24 --taps collapse --reps 5`
 //!
 //! Integer-guard mode is a COMPILE-TIME feature: build with
 //! `--features unchecked` for release-style plain integer ops (the header
@@ -142,11 +152,14 @@ fn usage() -> ! {
     eprintln!(
         "usage: f2z <n> [<t> <s> [<W>]] [--threads N] [--reps R] \
          [--profile slim|slim3|fast|secure|custom:<log_inv_rate>:<initial_k>] [--word-bits W] \
-         [--family j2|j3|j4|j2s|j3s|j4s]\n\
+         [--family j2|j3|j4|j2s|j3s|j4s] [--taps vx|family|collapse]\n\
          (n = t + s; W = cell width, power of two, default 1;\n\
           --family runs the mod-q RLC claim family at the A/B layout — j2 = the\n\
           XOR triple, j3/j4 the wider families, j2s/j3s/j4s the SHARED-POINT\n\
           maximal families (full XOR-closure at one point, k = 3/7/15);\n\
+          --taps runs the structured-taps instance (32-bit entry-axis words,\n\
+          one shared point) — vx = batched tap claims, family = the clustered\n\
+          stream family, collapse = 13 single-tap claims via the collapse;\n\
           t/s/W do not apply there;\n\
           run with --release and --features unchecked for quotable numbers;\n\
           -C target-cpu=native is load-bearing on aarch64)"
@@ -163,6 +176,7 @@ struct Opts {
     profile: String,
     word_bits: usize,
     family: Option<String>,
+    taps: Option<String>,
 }
 
 fn parse_args() -> Opts {
@@ -176,6 +190,7 @@ fn parse_args() -> Opts {
         profile: "slim".to_string(),
         word_bits: 1,
         family: None,
+        taps: None,
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -198,6 +213,9 @@ fn parse_args() -> Opts {
             }
             "--family" => {
                 o.family = Some(args.next().unwrap_or_else(|| usage()));
+            }
+            "--taps" => {
+                o.taps = Some(args.next().unwrap_or_else(|| usage()));
             }
             other => match other.parse::<usize>() {
                 Ok(v) => pos.push(v),
@@ -299,6 +317,14 @@ fn main() {
             exit(2);
         }
         run_family(&o, &fam);
+        return;
+    }
+    if let Some(mode) = o.taps.clone() {
+        if o.t.is_some() || o.s.is_some() || o.word_bits != 1 {
+            eprintln!("--taps fixes W = 1 and derives the shape from n; drop t/s/W");
+            exit(2);
+        }
+        run_taps(&o, &mode);
         return;
     }
 
@@ -676,6 +702,292 @@ fn run_family(o: &Opts, fam: &str) {
     let prove_peak = peak_mb();
     let proof = last.expect("reps ≥ 1");
     let bytes = mle_eval_mod_q_lig_rlc_family_proof_size_bytes(&proof);
+    println!(
+        "prove:   {:9.2} ms   peak {prove_peak:8.2} MB   ({k} claims, median of {}, verified)",
+        median(prove_ms),
+        o.reps
+    );
+    println!("verify:  {:9.2} ms", median(verify_ms));
+    println!(
+        "proof:   {:9.1} KiB  ({:.2} KiB/claim)",
+        bytes as f64 / 1024.0,
+        bytes as f64 / 1024.0 / k as f64,
+    );
+}
+
+/// The structured-taps layout for `n` (matches `examples/taps_ab.rs`, so
+/// numbers compare with the README's structured-taps note): 2 UAIR
+/// bit-columns (`log_cols = 1`, W = 1, `bit_vars = 0`), 32-bit words
+/// along the ENTRY axis (g = 5), x split `t' vs s` as even as `tw ≥ 6`
+/// allows.
+fn taps_layout(n: usize) -> f2z::pcs::ShaF2Layout {
+    let log_cols = 1usize;
+    let tw = ((n - log_cols) / 2).max(6);
+    let s = n - log_cols - tw;
+    f2z::pcs::ShaF2Layout {
+        p: IntEvalParams { t: log_cols + tw, s, word_bits: 1 },
+        num_cols: 1 << log_cols,
+        log_cols,
+        bit_vars: 0,
+        num_vars: tw + s,
+        tw,
+        x_fold_extra: 0,
+    }
+}
+
+/// The `--taps` runner: the j=2 k=6 ROT/SHIFT/word-offset instance (or
+/// its 13 streams as single-tap claims), all claims at ONE shared point,
+/// through the chosen path — every rep verified.
+#[allow(clippy::arithmetic_side_effects)]
+fn run_taps(o: &Opts, mode: &str) {
+    use f2z::ligerito_flock::{
+        RlcFamilyClaim, TapClaim, TapFamilyCluster, TapPointClaim, TapVerifyClaim,
+        mle_eval_mod_q_lig_tap_family_size_breakdown, mle_eval_mod_q_lig_tap_size_breakdown,
+        mle_eval_mod_q_lig_xor_proof_size_bytes, prove_mle_eval_mod_q_ligerito_tap_claims,
+        prove_mle_eval_mod_q_ligerito_tap_collapse, prove_mle_eval_mod_q_ligerito_tap_family,
+        verify_mle_eval_mod_q_ligerito_tap_claims, verify_mle_eval_mod_q_ligerito_tap_collapse,
+        verify_mle_eval_mod_q_ligerito_tap_family,
+    };
+    use f2z::pcs::{FQ_BITS, FQ_MOD, Fq as PcsFq, virtual_xor_params};
+    use f2z::taps::{TapOp, extract_virtual_tap_rows};
+
+    const GRP: usize = 5;
+    if !matches!(mode, "vx" | "family" | "collapse") {
+        eprintln!("unknown taps mode: {mode} (expected vx|family|collapse)");
+        exit(2);
+    }
+    if o.n < 14 {
+        eprintln!("--taps needs n ≥ 14 (tw ≥ 6 and s ≥ 7 for the 32-bit group field)");
+        exit(2);
+    }
+    let layout = taps_layout(o.n);
+    let p = layout.p;
+    let p_x = virtual_xor_params(&layout);
+    let m_p = packed_vars(&p);
+    let ((pc, vc), lig_tag) = resolve_configs(m_p, &o.profile);
+
+    // The instance's tap lists (identities, two 3-tap rotation
+    // convolutions, a cross-column mix, the lossy-SHIFT claim) and the
+    // pinned 2-cluster stream split.
+    let rot =
+        |col, amt, off| TapOp { col, grp_log2: GRP, bit_amt: amt, bit_dropout: false, off };
+    let shl = |col, amt, off| TapOp { col, grp_log2: GRP, bit_amt: amt, bit_dropout: true, off };
+    let claim_taps: Vec<Vec<TapOp>> = vec![
+        vec![TapOp::ident(0)],
+        vec![TapOp::ident(1)],
+        vec![rot(0, 1, 0), rot(0, 2, 1), rot(0, 3, 2)],
+        vec![rot(1, 2, 0), rot(1, 5, 1), rot(1, 7, 2)],
+        vec![rot(0, 1, 0), rot(1, 4, 0), rot(0, 6, 1)],
+        vec![shl(0, 3, 0), shl(1, 5, 1), rot(1, 2, 2)],
+    ];
+    let streams: Vec<Vec<TapOp>> = vec![
+        vec![
+            TapOp::ident(0),
+            rot(0, 1, 0),
+            rot(0, 2, 1),
+            rot(0, 3, 2),
+            rot(1, 4, 0),
+            rot(0, 6, 1),
+        ],
+        vec![
+            TapOp::ident(1),
+            rot(1, 2, 0),
+            rot(1, 5, 1),
+            rot(1, 7, 2),
+            shl(0, 3, 0),
+            shl(1, 5, 1),
+            rot(1, 2, 2),
+        ],
+    ];
+    let forms: Vec<Vec<usize>> = vec![vec![0b000001, 0b001110, 0b110010], vec![
+        0b0000001, 0b0001110, 0b1110000,
+    ]];
+    let members: Vec<Vec<usize>> = vec![vec![0, 2, 4], vec![1, 3, 5]];
+
+    let threads_eff: usize = {
+        #[cfg(feature = "parallel")]
+        {
+            rayon::current_num_threads()
+        }
+        #[cfg(not(feature = "parallel"))]
+        {
+            1
+        }
+    };
+    let k_desc = if mode == "collapse" { "13 single-tap claims" } else { "k=6 instance" };
+    println!(
+        "f2z --taps {mode}: n={} (t'={}, s={}, g={GRP}, {k_desc}, one shared point) | \
+         lig={lig_tag}@r1/{}k{} | threads={threads_eff} | int guards: {}",
+        o.n,
+        p_x.t,
+        p_x.s,
+        1usize << pc.log_inv_rates[0],
+        pc.initial_k,
+        if f2z::utils::CHECKED { "CHECKED (build with --features unchecked)" } else { "unchecked" },
+    );
+
+    let words = p.rows().div_ceil(64);
+    let rows: Vec<Vec<u64>> = (0..p.cols())
+        .map(|c| {
+            (0..words)
+                .map(|w| {
+                    ((c as u64) << 32 | w as u64)
+                        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                        .rotate_left(((c + w) & 63) as u32)
+                })
+                .collect()
+        })
+        .collect();
+    reset_peak();
+    let t0 = Instant::now();
+    let hint = commit_rs_ligerito_rows(&p, rows, &pc);
+    let commit_ms = t0.elapsed().as_secs_f64() * 1e3;
+    println!("commit:  {commit_ms:9.2} ms   peak {:8.2} MB", peak_mb());
+
+    // ONE shared evaluation point for every claim.
+    let rw: Vec<u128> = (0..p_x.rows())
+        .map(|b| {
+            (b as u128)
+                .wrapping_mul(0xDEAD_BEEF_CAFE_F00D_1234_5678_9ABC_DEF1)
+                .wrapping_add(11)
+                % FQ_MOD
+        })
+        .collect();
+    let colw: Vec<PcsFq> = (0..p_x.cols())
+        .map(|c| PcsFq::from((c as u128).wrapping_mul(0xABCD_EF01_2345).wrapping_add(3)))
+        .collect();
+    let eval_taps = |taps: &[TapOp]| -> u128 {
+        let a_rows = extract_virtual_tap_rows(&layout, hint.rows(), taps);
+        let mut y = PcsFq::from(0u128);
+        for (c, row) in a_rows.iter().enumerate() {
+            let mut acc = PcsFq::from(0u128);
+            for (wi, &word) in row.iter().enumerate() {
+                let mut bits = word;
+                while bits != 0 {
+                    let t = bits.trailing_zeros() as usize;
+                    acc = acc + PcsFq::from(rw[(wi << 6) | t]);
+                    bits &= bits.wrapping_sub(1);
+                }
+            }
+            y = y + colw[c] * acc;
+        }
+        y.0
+    };
+
+    // Statement + per-mode prove/verify/size closures.
+    let cs: Vec<u128> = claim_taps.iter().map(|t| eval_taps(t)).collect();
+    let tclaims: Vec<TapClaim<'_>> = claim_taps
+        .iter()
+        .map(|taps| TapClaim { taps, row_weights_q: &rw })
+        .collect();
+    let tvclaims: Vec<TapVerifyClaim<'_, PcsFq>> = claim_taps
+        .iter()
+        .zip(cs.iter())
+        .map(|(taps, &c)| TapVerifyClaim {
+            taps,
+            row_weights_q: &rw,
+            col_weights: &colw,
+            claimed: PcsFq::from(c),
+        })
+        .collect();
+    let cluster_claims: Vec<Vec<RlcFamilyClaim<'_>>> = (0..2)
+        .map(|ci| {
+            forms[ci]
+                .iter()
+                .zip(members[ci].iter())
+                .map(|(&form, &bi)| RlcFamilyClaim {
+                    form,
+                    row_weights_q: &rw,
+                    claimed: cs[bi],
+                })
+                .collect()
+        })
+        .collect();
+    let clusters: Vec<TapFamilyCluster<'_>> = (0..2)
+        .map(|ci| TapFamilyCluster { streams: &streams[ci], claims: &cluster_claims[ci] })
+        .collect();
+    let all_streams: Vec<TapOp> = streams.iter().flatten().copied().collect();
+    let pclaims: Vec<TapPointClaim> = all_streams
+        .iter()
+        .map(|&tap| TapPointClaim { tap, claimed: eval_taps(&[tap]) })
+        .collect();
+
+    enum TapProof {
+        Vx(f2z::ligerito_flock::IntEvalRsLigModQTapProof),
+        Fam(f2z::ligerito_flock::IntEvalRsLigTapFamilyProof),
+        Clp(f2z::ligerito_flock::IntEvalRsLigModQXorProof),
+    }
+    let prove_once = |pt: &mut Blake3Transcript| -> TapProof {
+        match mode {
+            "vx" => TapProof::Vx(prove_mle_eval_mod_q_ligerito_tap_claims(
+                pt, &hint, &layout, FQ_BITS, &tclaims, alpha_of(), &pc,
+            )),
+            "family" => TapProof::Fam(prove_mle_eval_mod_q_ligerito_tap_family(
+                pt, &hint, &layout, &clusters, alpha_of(), &pc,
+            )),
+            _ => TapProof::Clp(prove_mle_eval_mod_q_ligerito_tap_collapse(
+                pt, &hint, &layout, &rw, &colw, &pclaims, alpha_of(), &pc,
+            )),
+        }
+    };
+    let verify_once = |vt: &mut Blake3Transcript, proof: &TapProof| match proof {
+        TapProof::Vx(pr) => verify_mle_eval_mod_q_ligerito_tap_claims(
+            vt, &hint.commitment, pr, &layout, alpha_of(), FQ_BITS, &tvclaims, &vc,
+        )
+        .expect("tap claims verify"),
+        TapProof::Fam(pr) => verify_mle_eval_mod_q_ligerito_tap_family(
+            vt, &hint.commitment, pr, &layout, &clusters, &colw, alpha_of(), &vc,
+        )
+        .expect("stream family verifies"),
+        TapProof::Clp(pr) => verify_mle_eval_mod_q_ligerito_tap_collapse(
+            vt, &hint.commitment, pr, &layout, &rw, &colw, &pclaims, alpha_of(), &vc,
+        )
+        .expect("collapse verifies"),
+    };
+    let size_of = |proof: &TapProof| -> usize {
+        match proof {
+            TapProof::Vx(pr) => {
+                let (b, lig) = mle_eval_mod_q_lig_tap_size_breakdown(pr);
+                b.total() + lig
+            }
+            TapProof::Fam(pr) => {
+                let (b, lig) = mle_eval_mod_q_lig_tap_family_size_breakdown(pr);
+                b.total() + lig
+            }
+            TapProof::Clp(pr) => mle_eval_mod_q_lig_xor_proof_size_bytes(pr),
+        }
+    };
+    let k = if mode == "collapse" { pclaims.len() } else { tclaims.len() };
+
+    // Warm-up (excluded), then timed reps — every rep verified.
+    {
+        let mut pt = Blake3Transcript::new();
+        let pr = prove_once(&mut pt);
+        black_box(&pr);
+    }
+    let mut prove_ms = Vec::new();
+    let mut verify_ms = Vec::new();
+    let mut last = None;
+    for _ in 0..o.reps {
+        let mut pt = Blake3Transcript::new();
+        let t1 = Instant::now();
+        let proof = prove_once(&mut pt);
+        prove_ms.push(t1.elapsed().as_secs_f64() * 1e3);
+        let mut vt = Blake3Transcript::new();
+        let t2 = Instant::now();
+        verify_once(&mut vt, &proof);
+        verify_ms.push(t2.elapsed().as_secs_f64() * 1e3);
+        last = Some(proof);
+    }
+    reset_peak();
+    {
+        let mut pt = Blake3Transcript::new();
+        let pr = prove_once(&mut pt);
+        black_box(&pr);
+    }
+    let prove_peak = peak_mb();
+    let proof = last.expect("reps ≥ 1");
+    let bytes = size_of(&proof);
     println!(
         "prove:   {:9.2} ms   peak {prove_peak:8.2} MB   ({k} claims, median of {}, verified)",
         median(prove_ms),
