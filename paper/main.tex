@@ -102,6 +102,9 @@ backrefpages = {cited on pp.},% originally "cited on pages"
 
 \section{Introduction}
 
+
+\albert{Noting so I don't forget: the idea of F2Z being a drop-in replacament alternative to Hyrax (PQ secure and more efficient) may be a good extra motivating point}
+
 \subsection{Acknowledgements}
 %World Foundation, Lev Soukhanov, Remco, Ulrich, Giacomo, Marcin
 
@@ -211,28 +214,30 @@ $
 P(Y,0) = 1$ and $P(Y,1) = Y.
 $
 %
-Consider the relation $\Relation_{\comfield, \pack}^{Q}$ with underlying code $\cC_1$ and 
+Consider the relation $\Relation_{\comfield, \pack}^{Q_{\FF2\ZZ}}$ with underlying code $\cC_1$ and 
 %
-$$Q(Y_1, \ldots, Y_{\codedim_1+1}, Z_1, \ldots, Z_{\codedim_1}) = \Pi_{i=1}^{\codedim_1} P(Y_i, Z_i) - Y_{\codedim_1+1}.$$ 
+$$Q_{\FF2\ZZ}(Y_1, \ldots, Y_{\codedim_1+1}, Z_1, \ldots, Z_{\codedim_1}) \defeq \Pi_{i=1}^{\codedim_1} P(Y_i, Z_i) - Y_{\codedim_1+1}.$$ 
 %
 Precisely, 
 %
 $$
-\Relation^{Q}_{\cC_1,\comfield,\pack} = \left\{ \left(\begin{aligned} &\inp=(\yy,z)\in \comfield^{\codedim_1}\times \comfield, \\&\oracle = f \in \comfield^{\codelength/\codedim_2}, \\ &\wit= \bff\in \comfield^{\codedim_1}\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC_1}(\pack(\bff)) = f\\ \wedge \  &\Pi_{i=1}^{\codedim_1} \left((\yy_i-1)\cdot \bff_i +1\right) = z  \end{aligned} \right\}
+\Relation^{Q_{\FF2\ZZ}}_{\cC_1,\comfield,\pack} = \left\{ \left(\begin{aligned} &\inp=(\yy,z)\in \comfield^{\codedim_1}\times \comfield, \\&\oracle = f \in \comfield^{\codelength/\codedim_2}, \\ &\wit= \bff\in \comfield^{\codedim_1}\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC_1}(\pack(\bff)) = f\\ \wedge \  &\Pi_{i=1}^{\codedim_1} \left((\yy_i-1)\cdot \bff_i +1\right) = z  \end{aligned} \right\}
 $$
 %
 We assume prover and verifier have access to an IOR $\Pi_{\mathsf{red}}$  that reduces 
 %
 $
-\Relation^{Q}_{\cC_1,\comfield,\pack}$ to $\Relation^{\mathsf{lin}}_{\cC_1,\comfield, \pack}$. 
+\Relation^{Q_{\FF2\ZZ}}_{\cC_1,\comfield,\pack}$ to $\Relation^{\mathsf{lin}}_{\cC_1,\comfield, \pack}$.  In our instantiation $\Pi_{\mathsf{red}}$ is an optimized GKR protocol for  grand products, which reduces the initial grand product claim to MLE evaluation claims of $\yy$ and $\bff$ over $\comfield$. As we explain in \cref{?}, we design several optimizations for the specific shape of our grand products.
+
 %
 %
-We assume $\Pi_{\mathsf{red}}$ works so that the verifier never queries $\oracle$ \albert{Would be better to say upfront what this protocol is in our mental model, and then make abstract assumptions like this, which look arbitrary otherwise. Same applies below}.
+We assume $\Pi_{\mathsf{red}}$ works so that the verifier never queries $\oracle$. Note that this is indeed the case with GKR (indeed, GKR reduces the initial circuit evaluation claim on the input and outputs, into MLE evaluation claims of the input and outputs, without querying any oracle in-between). 
+
 
 Further, we consider the $\codedim_2$-fold parallel composition $\Pi_{\mathsf{red}}^{\codedim_2}$ of $\Pi_{\mathsf{red}}$,  and we assume that given $\codedim_2$ triples 
 %
 $$
-\left((\yy^{(j)},\mu^{(j)}) , g^{(j)}, \bfh^{(j)}  \right)_{j\in[\codedim_2]} \in \left(\Relation^{Q}_{\cC_1,\comfield,\pack}\right)^{\codedim_2}
+\left((\yy^{(j)},\mu^{(j)}) , g^{(j)}, \bfh^{(j)}  \right)_{j\in[\codedim_2]} \in \left(\Relation^{Q_{\FF2\ZZ}}_{\cC_1,\comfield,\pack}\right)^{\codedim_2}
 $$
 the IOR $\Pi_{\mathsf{red}}^{\codedim_2}$ outputs 
 %
@@ -240,9 +245,9 @@ $$
 \left((\vv,\mu_j) \in \comfield^{ \codedim_1 } \times \comfield, g^{(j)} , \bfh^{(j)} \right)_{j\in[\codedim_2]} \in \left(\Relation^{\mathsf{lin}}_{\cC_1,\comfield, \pack}\right)^{\codedim_2},
 $$
 for some $\rr\in \comfield^{\log \codedim_1}$ and some $\mu_j\in \comfield$ for $j\in [\codedim_2]$.
-In words, $\Pi_{\mathsf{red}}^{\codedim_2}$ outputs $\codedim_2$ linear claims for the input witnesses $\bfh^{(j)}$ behind the input oracles $g^{(j)}$, all \emph{on the same vector of coefficients  $\vv$}.   \albert{We could be more abstract with this IOR, but I find it difficult to tie it with the protocol in the next section then. Maybe better to write a remark} 
+In words, $\Pi_{\mathsf{red}}^{\codedim_2}$ outputs $\codedim_2$ linear claims for the input witnesses $\bfh^{(j)}$ behind the input oracles $g^{(j)}$, all \emph{on the same vector of coefficients  $\vv$}.  In our instantiation $\Pi_{\mathsf{red}}^{\codedim_2}$ is simply the GKR protocol applied to several grand product claims at once, with optimizations discussed in \cref{?}. 
 
-We describe one such $\Pi_{\mathsf{red}}^{\codedim_2}$ in \cref{?}, where $\vv$ is a vector of the form $\vv=(\mathsf{eq}(\bb,\rr))_{\bb\in \{0,1\}^{\log \codedim_1}}$, for some $\rr\in \comfield^{\log \codedim_1}$.
+%We describe one such $\Pi_{\mathsf{red}}^{\codedim_2}$ in \cref{?}, where $\vv$ is a vector of the form $\vv=(\mathsf{eq}(\bb,\rr))_{\bb\in \{0,1\}^{\log \codedim_1}}$, for some $\rr\in \comfield^{\log \codedim_1}$.
 
 
 \subsection{The main {\ftwoz}  IOR}
@@ -262,7 +267,7 @@ $$
 $$
 Note that this claim is equivalent to
 $$
-\prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \bff_{ij} +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\codedim_2].
+\prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \pi_2(\bff_{ij}) +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\codedim_2].
 $$
 % \ulrich{%
 % Suggestion: 
@@ -300,6 +305,15 @@ At this point it is maybe more important to clarify how useful the construction 
 % At Albert: should I omit such comments here in the source, and rather post them on slack?
 }
 \albert{Sounds good}
+
+
+\subsection{An optimized GKR protocol for the \ftwoz grand products}
+
+The bulk of the work in \ftwoz (\cref{c:core_iop}) is to reduce the claim
+\begin{equation}\label{e:main_grand_product}
+\prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \pi_2(\bff_{ij}) +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\codedim_2].
+\end{equation}
+to $\ell_2$ inner product claims for the vectors $\pi_2(\bff_{*j})$. We do this reduction via the GKR protocol for multiple grand products, and make several implementation-level optimizations for it.  
 
 
 \section{Virtualization of $\FF_2$-linear combinations lifted to integers}
@@ -395,7 +409,7 @@ where $\uu'=(\eq(\bb,\rr))_{\bb\in \{0,1\}^{\log \codedim_1}}$ for some $\rr\in 
 \end{construction}
 
 
-\begin{example}
+\begin{example}\label{e:virtual_example}
     Say we have a vector $\bff\in \bits^{\codedim} \subseteq \ZZ^\codedim$ and we wish to prove MLE evaluation claims of an extended vector $\bff' \in \bits^{2\cdot \codedim}$ where 
     %
     $$
@@ -448,8 +462,25 @@ M = \begin{pmatrix}
 \begin{proof}
 \end{proof}
 
+\subsection{Optimizing \ftwoz for virtualized inputs $\pi_2^{-1}(M\cdot \pi_2(\bff))$}
+
+
+In \cref{c:virtual_iop}, at Step 2, prover and verifier use $\Pi_{\mathsf{red}}^{\ell_2}$  to reduce the claim
+%
+\begin{equation}\label{e:grand_product_with_virtuals}
+\prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \left(M_0\cdot \pi_2(\bff_{*j})\right)_i +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\codedim_2]
+\end{equation}
+%
+to $\codedim_2$ inner product claims over $\comfield$ for the vectors $M_0\cdot \pi_2(\bff_{*j})$. In many applications of interest (see \cref{?}), the vectors $M_0\cdot \pi_2(\bff_{*j})$ are larger than $\bff_{*j}$, but contain entries that are structured expressions of the entries in $\bff_{*j}$. For example, in \cref{e:virtual_example}, $M\cdot \pi_2(\bff)$ is the concatenation of $\pi_2(\bff)$ and the vector with entries $\pi_2(\bff)_i \xor \pi_2(\bff)_{i+1}$. 
+
+A natural question is whether, in such scenarios, the proof of \eqref{e:grand_product_with_virtuals} can be optimized so that it costs less than a full proof for an arbitrary input vector of the same length as $M\cdot \pi_2(\bff)$. In this section we show that this is indeed possible.
+
+
+
 
 \section{R1CS constraints over polynomial rings with ideal membership}
+
+\albert{I'm aiming to make the paper self-contained, so I will refer to Zinc/Zinc+ but will provide all required definitions and proofs in this paper}
 
 \section{Case-study: SHA-256 hashing}
 \albert{Maybe Keccak better?}
@@ -535,6 +566,10 @@ Optimization ideas
     \item Lookup table (algorithm-wise, not SNARK-wise) for first levels of GKR
     \item If we have an MLE claim of a vector and its shift by one position, can we reuse something for the latter claim from the computations made when proving the former?
 \end{itemize}
+
+\subsection{Comparison with Hyrax}
+
+\albert{Comparing with Hyrax may be more interesting than it sounds initially. Hyrax is pay-per-bit and opens on large prime fields: a profile that F2Z can adopt. Hence (maybe) projects using Hyrax could use  F2Z as a drop-in replacement which is PQ secure and more efficient }
 
 \appendix
 
@@ -793,7 +828,7 @@ H\bigl(W(\mathbf{w})A(\mathbf{a})\bigr).
 \]
 Suppose that $H$ is $\mathbb{F}$-linear. Then:
 \begin{enumerate}
-    \item $W$ and $A$ are bijective $\mathbb{F}$-linear embeddings,
+    \item $W$ and $A$ are $\mathbb{F}$-linear isomorphisms,
     \item $\mu_H(x,y) = H(xy)$ is a perfect pairing,
     \item $\left(W(\mathbf{e}_1),\ldots,W(\mathbf{e}_d)\right)$ and $\left(A(\mathbf{e}_1),\ldots,A(\mathbf{e}_d)\right)$ are dual bases with respect to $\mu_H$.
 \end{enumerate}
@@ -1023,8 +1058,183 @@ f_0 & 0 & 0 & 0 & 0\\
 \]
 Notably $f_1$ does not appear and for $k>1$ the $f_k$ coefficient appears $k-1$ times. This perfectly matches the usual implementation preference for sparse reduction polynomials with mostly low-order terms.
 
-For the 127-bit field $\mathbb{F}_2[X]/(X^{127} + X + 1)$ the $A$ map is simply a reversal of the $i>0$ coordinates. For the GHASH field $\mathbb{F}_2[X]/(X^128 + X^7 + X^2 + X + 1)$ the map additionally needs seven XOR corrections.
+For the 127-bit field $\mathbb{F}_2[X]/(X^{127} + X + 1)$ the $A$ map is simply a reversal of the $i>0$ coordinates. For the GHASH field $\mathbb{F}_2[X]/(X^128 + X^7 + X^2 + X + 1)$ the map additionally needs seven XOR corrections. But for binary fields, where we typically want to open with $\mathbf{a} \in \mathbb{E}^{nd}$, this construction is not particularly efficient.
 
 % Cite: https://shiftleft.com/mirrors/www.hpl.hp.com/techreports/98/HPL-98-135.pdf
+
+\subsection{Extension openings}
+
+Assume now that we want to open a basefield witness $\mathbf{w} \in \mathbb{F}^{nd}$ against extension field weights $\mathbf{a} \in \mathbb{E}^{n d}$ proving a claim $\langle \mathbf{w},  \mathbf{a}\rangle_\mathbb{E} = h$ for some  and $h \in \mathbb{E}$.
+
+Fixing a basis for $\mathbb{E}/\mathbb{F}$ we can decompose $\mathbf{a}$ into $d$ vectors in $\mathbb{F}^{nd}$ and reduce the claim to $d$ inner product claims $\mathbb{F}$. These claims can then be packed to inner product claims over $\mathbb{E}$ and batched with a random linear combination. This approach requires the prover to compute and send $O(d)$ elements in $\mathbb{E}$. Acceptable when $d$ is small, for example when $\mathbb{F}$ is a 32-bit prime field, but is unattractive for binary fields where $d \approx 128$. Avoiding this linear dependence on $d$ appears to require interaction.
+
+We therefore seek an interactive reduction from a mixed claim to a packed claim
+\[
+\begin{array}{ccc}
+\langle \mathbf{w}, \mathbf{a}\rangle_\mathbb{E} = h
+&
+\mathbf{w} \in \mathbb{F}^{nd}
+&
+\mathbf{a} \in \mathbb{E}^{nd}
+\\[.8ex]
+%\multicolumn{3}{c}{\Downarrow}
+\Downarrow
+\\[1.3ex]
+\langle W(\mathbf{w}), \mathbf{a}'\rangle_\mathbb{E} = h'
+&
+W(\mathbf{w}) \in \mathbb{E}^{n}
+&
+\mathbf{a}' \in \mathbb{E}^{n}
+\end{array}
+\]
+where $W: \mathbb{F}^{nd} \to \mathbb{E}^{n}$ is a fixed $\mathbb{F}$-linear embedding and $\mathbf{a}' \in \mathbb{E}^{n}$, $h' \in \mathbb{E}$ are determined by $\mathbb{a}$, $h$ and the transcript. And ideally $\mathbf{a} \mapsto \mathbf{a}'$ should preserve useful properties like efficient computation of its multilinear extension.
+
+
+
+\paragraph{Frobenius-folding reduction.}
+For simplicity, first assume that $d=2^k$, and choose an
+$\mathbb{F}$-linear isomorphism
+\[
+W_0:\mathbb{F}^d\longrightarrow\mathbb{E}.
+\]
+We apply $W_0$ blockwise, writing
+\[
+W=\mathrm{I}_n\otimes W_0
+\qquad\text{and}\qquad
+x_u=W_0(\mathbf{w}_u)
+\]
+for $u\in[n]$.
+
+For every block of opening weights
+$\mathbf{a}_u\in\mathbb{E}^d$, define the
+$\mathbb{F}$-linear map
+\[
+T_{\mathbf{a}_u}:\mathbb{E}\longrightarrow\mathbb{E},
+\qquad
+T_{\mathbf{a}_u}(x)
+=
+\left\langle
+W_0^{-1}(x),\mathbf{a}_u
+\right\rangle_{\mathbb{E}}.
+\]
+The original opening claim may then be written as
+\[
+h
+=
+\sum_{u=1}^n T_{\mathbf{a}_u}(x_u).
+\]
+
+Let $\mathbb{F}=\mathbb{F}_q$. Every $\mathbb{F}$-linear map
+$T:\mathbb{E}\to\mathbb{E}$ has a unique linearized-polynomial
+representation
+\[
+T(X)=\sum_{j=0}^{d-1}c_jX^{q^j}.
+\]
+Thus, for each $u$,
+\[
+T_{\mathbf{a}_u}(X)
+=
+\sum_{j=0}^{d-1}c_{u,j}X^{q^j}.
+\]
+The coefficients $c_{u,j}$ are determined by the original opening
+weights $\mathbf{a}_u$ and the choice of $W_0$.
+
+
+At round $i$, let
+\[
+Q_i=q^{2^i}.
+\]
+The current claim has the form
+\[
+h_i
+=
+\sum_{u=1}^n T_{u,i}(x_u),
+\]
+where
+\[
+T_{u,i}(X)
+=
+\sum_{j=0}^{d/2^i-1}
+c^{(i)}_{u,j}X^{Q_i^j}.
+\]
+Initially,
+\[
+T_{u,0}=T_{\mathbf{a}_u}
+\qquad\text{and}\qquad
+h_0=h.
+\]
+
+Separate the even and odd Frobenius powers:
+\[
+T_{u,i}(X)
+=
+U_{u,i}(X)+V_{u,i}(X)^{Q_i},
+\]
+where
+\[
+U_{u,i}(X)
+=
+\sum_j
+c^{(i)}_{u,2j}X^{Q_{i+1}^j}
+\]
+and
+\[
+V_{u,i}(X)
+=
+\sum_j
+\left(c^{(i)}_{u,2j+1}\right)^{Q_i^{-1}}
+X^{Q_{i+1}^j}.
+\]
+Here $Q_i^{-1}$ denotes the inverse of the Frobenius automorphism
+$x\mapsto x^{Q_i}$ on $\mathbb{E}$.
+
+Define
+\[
+U_i=\sum_u U_{u,i}(x_u),
+\qquad
+V_i=\sum_u V_{u,i}(x_u).
+\]
+Since Frobenius is additive,
+\[
+h_i=U_i+V_i^{Q_i}.
+\]
+
+
+\begin{enumerate}
+\item The prover sends
+\[
+v_i\in\mathbb{E},
+\]
+claiming that $v_i=V_i$.
+
+\item The verifier defines
+\[
+u_i=h_i-v_i^{Q_i}.
+\]
+
+\item The verifier samples
+\[
+\rho_i\sample\mathbb{E}.
+\]
+
+\item The parties reduce to the claim
+\[
+h_{i+1}
+=
+\sum_u T_{u,i+1}(x_u),
+\]
+where
+\[
+h_{i+1}=u_i+\rho_iv_i
+\]
+and
+\[
+T_{u,i+1}
+=
+U_{u,i}+\rho_iV_{u,i}.
+\]
+\end{enumerate}
+
+
 
 \end{document}
