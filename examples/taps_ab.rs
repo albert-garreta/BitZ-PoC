@@ -33,6 +33,12 @@
 //! no rings) — `clp` (the collapse) vs `vx6m` (the blocked batched tap
 //! path on the composed lists) vs `ind6m`.
 //!
+//! `F2Z_AB_COLS4=1` runs a FOUR-column config (log_cols = 2): identity
+//! claims on a₁..a₄ plus the XOR-mixed pairs `ROT¹(a₁) ⊕ off¹(a₂)` and
+//! `ROT²(a₃) ⊕ off¹(a₄)`, one shared point, through the blocked
+//! batched tap path — `single` vs `vx6` vs `ind6` (δ applies: the
+//! sources are unconstrained on the 0x42 route).
+//!
 //! `F2Z_AB_SCHED=1` runs the COMPOSED-collapse schedule demo instead:
 //! 48 claims `off^t(x)` of ONE σ-style mixed combination
 //! `x = ROT^7 a_0 ⊕ ROT^18 a_0 ⊕ SHIFT^3 a_0 ⊕ off^1 a_1` at ONE point
@@ -74,8 +80,7 @@ const GRP: usize = 5;
 /// sets `x_fold_extra` (the sched/vx paths only; δ ≤ g so collapse
 /// outers with `2^δ | amt` stay in envelope — the schedule's pure-off
 /// outers always are; the stream family requires δ = 0).
-fn taps_layout(n: usize) -> ShaF2Layout {
-    let log_cols = 1usize;
+fn taps_layout(n: usize, log_cols: usize) -> ShaF2Layout {
     let tw = ((n - log_cols) / 2).max(6);
     let s = n - log_cols - tw;
     assert!(s >= GRP + 2, "clear axis must hold the group field plus offsets");
@@ -150,7 +155,7 @@ fn main() {
     let profile = std::env::var("OBLONG_PROFILE").is_ok_and(|v| v == "1");
 
     for &n in &ns {
-        let layout = taps_layout(n);
+        let layout = taps_layout(n, 1);
         let p = &layout.p;
         let p_x = virtual_xor_params(&layout);
         let m_p = packed_vars(p);
@@ -355,6 +360,149 @@ fn main() {
                 proof_cmp.tap_us.len(),
                 sz_cmp as f64 / 1e3,
                 m_ind / m_cmp,
+            );
+            continue;
+        }
+
+        if std::env::var("F2Z_AB_COLS4").is_ok_and(|v| v == "1") {
+            // FOUR committed columns (log_cols = 2): identity claims on
+            // each plus the XOR-mixed pairs b₁ = ROT¹(a₁) ⊕ off¹(a₂)
+            // and b₂ = ROT²(a₃) ⊕ off¹(a₄) (statement columns
+            // 1-indexed; code 0-indexed), one shared point, through the
+            // blocked batched tap path — `single` (one identity claim)
+            // as the unit vs `vx6` (all six, blocks 2+2+2) vs `ind6`.
+            let layout = taps_layout(n, 2);
+            let p = &layout.p;
+            let p_x = virtual_xor_params(&layout);
+            let (pc, vc) = sha_lig_configs(packed_vars(p)).expect("lig cfg");
+            let words = p.rows().div_ceil(64);
+            let rows: Vec<Vec<u64>> = (0..p.cols())
+                .map(|c| {
+                    (0..words)
+                        .map(|w| {
+                            ((c as u64) << 32 | (w as u64) ^ seed)
+                                .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                                .rotate_left(((c + w) & 63) as u32)
+                        })
+                        .collect()
+                })
+                .collect();
+            let hint = commit_rs_ligerito_rows(p, rows, &pc);
+            let rot = |col, amt, off| TapOp {
+                col,
+                grp_log2: GRP,
+                bit_amt: amt,
+                bit_dropout: false,
+                off,
+            };
+            let claim_taps: Vec<Vec<TapOp>> = vec![
+                vec![TapOp::ident(0)],
+                vec![TapOp::ident(1)],
+                vec![TapOp::ident(2)],
+                vec![TapOp::ident(3)],
+                vec![rot(0, 1, 0), rot(1, 0, 1)],
+                vec![rot(2, 2, 0), rot(3, 0, 1)],
+            ];
+            let rw: Vec<u128> = (0..p_x.rows())
+                .map(|b| {
+                    (b as u128)
+                        .wrapping_mul(0xDEAD_BEEF_CAFE_F00D_1234_5678_9ABC_DEF1)
+                        .wrapping_add(61 + (u128::from(seed) << 1))
+                        % FQ_MOD
+                })
+                .collect();
+            let colw: Vec<Fq> = (0..p_x.cols())
+                .map(|c| Fq::from((c as u128).wrapping_mul(0xABCD_EF01_2345).wrapping_add(3)))
+                .collect();
+            let vals: Vec<u128> = claim_taps
+                .iter()
+                .map(|taps| {
+                    let a_rows = extract_virtual_tap_rows(&layout, hint.rows(), taps);
+                    let mut y = Fq::from(0u128);
+                    for (c, row) in a_rows.iter().enumerate() {
+                        let mut acc = Fq::from(0u128);
+                        for (wi, &word) in row.iter().enumerate() {
+                            let mut bits = word;
+                            while bits != 0 {
+                                let t = bits.trailing_zeros() as usize;
+                                acc = acc + Fq::from(rw[(wi << 6) | t]);
+                                bits &= bits.wrapping_sub(1);
+                            }
+                        }
+                        y = y + colw[c] * acc;
+                    }
+                    y.0
+                })
+                .collect();
+            let tclaims: Vec<TapClaim<'_>> = claim_taps
+                .iter()
+                .map(|taps| TapClaim { taps, row_weights_q: &rw })
+                .collect();
+            let tvclaims: Vec<TapVerifyClaim<'_, Fq>> = claim_taps
+                .iter()
+                .zip(vals.iter())
+                .map(|(taps, &v)| TapVerifyClaim {
+                    taps,
+                    row_weights_q: &rw,
+                    col_weights: &colw,
+                    claimed: Fq::from(v),
+                })
+                .collect();
+            let prove_k = |r: core::ops::Range<usize>| {
+                let mut t = Blake3Transcript::new();
+                prove_mle_eval_mod_q_ligerito_tap_claims(
+                    &mut t, &hint, &layout, FQ_BITS, &tclaims[r], alpha, &pc,
+                )
+            };
+            let prove_ind = || {
+                (0..tclaims.len()).map(|i| prove_k(i..i + 1)).collect::<Vec<_>>()
+            };
+            let (mut t_single, mut t_vx, mut t_ind) = (Vec::new(), Vec::new(), Vec::new());
+            for _ in 0..reps {
+                let t0 = Instant::now();
+                drop(prove_k(0..1));
+                t_single.push(t0.elapsed().as_secs_f64() * 1e3);
+                let t0 = Instant::now();
+                drop(prove_k(0..tclaims.len()));
+                t_vx.push(t0.elapsed().as_secs_f64() * 1e3);
+                let t0 = Instant::now();
+                drop(prove_ind());
+                t_ind.push(t0.elapsed().as_secs_f64() * 1e3);
+            }
+            let proof_vx = prove_k(0..tclaims.len());
+            let t0 = Instant::now();
+            {
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_tap_claims(
+                    &mut vt, &hint.commitment, &proof_vx, &layout, alpha, FQ_BITS,
+                    &tvclaims, &vc,
+                )
+                .expect("cols4 vx verifies");
+            }
+            let v_vx = t0.elapsed().as_secs_f64() * 1e3;
+            {
+                let mut vt = Blake3Transcript::new();
+                let proof_s = prove_k(0..1);
+                verify_mle_eval_mod_q_ligerito_tap_claims(
+                    &mut vt, &hint.commitment, &proof_s, &layout, alpha, FQ_BITS,
+                    &tvclaims[0..1], &vc,
+                )
+                .expect("cols4 single verifies");
+            }
+            let size_tap = |p: &f2z::ligerito_flock::IntEvalRsLigModQTapProof| {
+                let (b, lig) = mle_eval_mod_q_lig_tap_size_breakdown(p);
+                b.total() + lig
+            };
+            let (m_s, m_vx, m_ind) = (median(t_single), median(t_vx), median(t_ind));
+            println!(
+                "n={n} COLS4 (t'={}, s={}, 4 cols: 4 identities + 2 mixed pairs): single \
+                 {m_s:.1} ms | vx6 {m_vx:.1} ms ({:.2}x of single, {:.0} KB, verify \
+                 {v_vx:.1} ms) | ind6 {m_ind:.1} ms ({:.2}x of vx6)",
+                p_x.t,
+                p_x.s,
+                m_vx / m_s,
+                size_tap(&proof_vx) as f64 / 1e3,
+                m_ind / m_vx,
             );
             continue;
         }

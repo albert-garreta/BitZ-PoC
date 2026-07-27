@@ -56,7 +56,10 @@
 //!   `mix6` = the uniform-op k=6 variant of the original instance —
 //!   2 identity claims on the source columns + 4 claims
 //!   `off^t(ROT^7(a₀⊕a₁))`, t = 0..3, through the 0x44 collapse
-//!   (4 plain inner bodies, no rings).
+//!   (4 plain inner bodies, no rings); `cols4` = FOUR committed
+//!   columns (log_cols = 2), 4 identity claims plus the XOR-mixed
+//!   pairs `ROT(a₁) ⊕ off¹(a₂)` and `ROT²(a₃) ⊕ off¹(a₄)` through
+//!   the batched tap path (blocked 2+2+2; δ applies).
 //!   `--taps-delta D` (or `F2Z_TAPS_DELTA`) sets `x_fold_extra` for
 //!   the vx|sched modes (δ ≤ 5; the measured knee is δ = 3–4 — sent
 //!   folds shrink 2^δ×, proofs −30..−57 %, verify up to 5× faster).
@@ -177,7 +180,9 @@ fn usage() -> ! {
           stream family, collapse = 13 single-tap claims via the collapse,\n\
           rotxor = 8 uniform-op-of-XOR-set claims via the collapse,\n\
           sched = off^t(σ-combo) claims via the COMPOSED collapse,\n\
-          mix6 = 2 identities + 4 off^t(ROT^7(a₀⊕a₁)) via the collapse;\n\
+          mix6 = 2 identities + 4 off^t(ROT^7(a₀⊕a₁)) via the collapse,\n\
+          cols4 = FOUR committed columns, 4 identity claims + the pairs\n\
+          ROT(a₁)⊕off¹(a₂) and ROT²(a₃)⊕off¹(a₄) via batched taps;\n\
           --taps-delta sets x_fold_extra (vx|sched; δ ≤ 5, knee δ = 3–4,\n\
           shrinks the sent folds 2^δ×), --taps-rounds the sched claim\n\
           count (default 48, clipped to the shape's offset envelope);\n\
@@ -755,8 +760,7 @@ fn run_family(o: &Opts, fam: &str) {
 /// bit-columns (`log_cols = 1`, W = 1, `bit_vars = 0`), 32-bit words
 /// along the ENTRY axis (g = 5), x split `t' vs s` as even as `tw ≥ 6`
 /// allows.
-fn taps_layout(n: usize, delta: usize) -> f2z::pcs::ShaF2Layout {
-    let log_cols = 1usize;
+fn taps_layout(n: usize, delta: usize, log_cols: usize) -> f2z::pcs::ShaF2Layout {
     let tw = ((n - log_cols) / 2).max(6);
     let s = n - log_cols - tw;
     f2z::pcs::ShaF2Layout {
@@ -788,8 +792,10 @@ fn run_taps(o: &Opts, mode: &str) {
     use f2z::taps::{TapOp, extract_virtual_tap_rows};
 
     const GRP: usize = 5;
-    if !matches!(mode, "vx" | "family" | "collapse" | "rotxor" | "sched" | "mix6") {
-        eprintln!("unknown taps mode: {mode} (expected vx|family|collapse|rotxor|sched|mix6)");
+    if !matches!(mode, "vx" | "family" | "collapse" | "rotxor" | "sched" | "mix6" | "cols4") {
+        eprintln!(
+            "unknown taps mode: {mode} (expected vx|family|collapse|rotxor|sched|mix6|cols4)"
+        );
         exit(2);
     }
     if o.n < 14 {
@@ -800,9 +806,13 @@ fn run_taps(o: &Opts, mode: &str) {
     let delta = o.taps_delta.or_else(|| {
         std::env::var("F2Z_TAPS_DELTA").ok().and_then(|v| v.parse().ok())
     });
-    let layout = taps_layout(o.n, delta.unwrap_or(0));
-    if layout.x_fold_extra > 0 && !matches!(mode, "vx" | "sched") {
-        eprintln!("--taps-delta / F2Z_TAPS_DELTA apply to the vx|sched modes only (δ-envelope)");
+    // `cols4` runs 4 committed columns; every other mode the 2-column
+    // instance layout.
+    let layout = taps_layout(o.n, delta.unwrap_or(0), if mode == "cols4" { 2 } else { 1 });
+    if layout.x_fold_extra > 0 && !matches!(mode, "vx" | "sched" | "cols4") {
+        eprintln!(
+            "--taps-delta / F2Z_TAPS_DELTA apply to the vx|sched|cols4 modes only (δ-envelope)"
+        );
         exit(2);
     }
     if layout.x_fold_extra > GRP {
@@ -820,14 +830,29 @@ fn run_taps(o: &Opts, mode: &str) {
     let rot =
         |col, amt, off| TapOp { col, grp_log2: GRP, bit_amt: amt, bit_dropout: false, off };
     let shl = |col, amt, off| TapOp { col, grp_log2: GRP, bit_amt: amt, bit_dropout: true, off };
-    let claim_taps: Vec<Vec<TapOp>> = vec![
-        vec![TapOp::ident(0)],
-        vec![TapOp::ident(1)],
-        vec![rot(0, 1, 0), rot(0, 2, 1), rot(0, 3, 2)],
-        vec![rot(1, 2, 0), rot(1, 5, 1), rot(1, 7, 2)],
-        vec![rot(0, 1, 0), rot(1, 4, 0), rot(0, 6, 1)],
-        vec![shl(0, 3, 0), shl(1, 5, 1), rot(1, 2, 2)],
-    ];
+    let claim_taps: Vec<Vec<TapOp>> = if mode == "cols4" {
+        // 4 committed columns: identity claims on each, plus the two
+        // XOR-mixed pairs b₁ = ROT¹(a₁) ⊕ off¹(a₂) and
+        // b₂ = ROT²(a₃) ⊕ off¹(a₄) (bare ROT read as ROT¹; columns
+        // 1-indexed in the statement, 0-indexed here).
+        vec![
+            vec![TapOp::ident(0)],
+            vec![TapOp::ident(1)],
+            vec![TapOp::ident(2)],
+            vec![TapOp::ident(3)],
+            vec![rot(0, 1, 0), rot(1, 0, 1)],
+            vec![rot(2, 2, 0), rot(3, 0, 1)],
+        ]
+    } else {
+        vec![
+            vec![TapOp::ident(0)],
+            vec![TapOp::ident(1)],
+            vec![rot(0, 1, 0), rot(0, 2, 1), rot(0, 3, 2)],
+            vec![rot(1, 2, 0), rot(1, 5, 1), rot(1, 7, 2)],
+            vec![rot(0, 1, 0), rot(1, 4, 0), rot(0, 6, 1)],
+            vec![shl(0, 3, 0), shl(1, 5, 1), rot(1, 2, 2)],
+        ]
+    };
     let streams: Vec<Vec<TapOp>> = vec![
         vec![
             TapOp::ident(0),
@@ -882,6 +907,7 @@ fn run_taps(o: &Opts, mode: &str) {
         "rotxor" => "8 op(xor-set) claims".to_string(),
         "sched" => format!("{sched_rounds} off^t(σ-combo) claims"),
         "mix6" => "2 identities + 4 off^t(ROT^7(a0^a1))".to_string(),
+        "cols4" => "4 identities + 2 mixed pairs, 4 cols".to_string(),
         _ => "k=6 instance".to_string(),
     };
     println!(
@@ -1075,7 +1101,7 @@ fn run_taps(o: &Opts, mode: &str) {
     }
     let prove_once = |pt: &mut Blake3Transcript| -> TapProof {
         match mode {
-            "vx" => TapProof::Vx(prove_mle_eval_mod_q_ligerito_tap_claims(
+            "vx" | "cols4" => TapProof::Vx(prove_mle_eval_mod_q_ligerito_tap_claims(
                 pt, &hint, &layout, FQ_BITS, &tclaims, alpha_of(), &pc,
             )),
             "family" => TapProof::Fam(prove_mle_eval_mod_q_ligerito_tap_family(
