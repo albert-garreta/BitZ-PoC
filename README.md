@@ -1144,6 +1144,32 @@ the 6-body family structure WINS prover time from n=28 up at δ0
 already, with the δ-family extension the remaining piece for the
 byte axis and the smaller shapes.
 
+**δ for the family paths — verified and measured (2026-07-27,
+late).** The RLC-family core was p_x-parameterized all along
+(extraction, folds, forests, presum, cascade, rings all derive
+their shapes from `virtual_xor_params`), so δ needed no code — what
+was missing was PROOF of a correct re-split: the new cross-split
+consistency test pins it (product-form weights `colw0 = f ⊗ g`,
+`rw_δ = rw0 ⊗ f`: the δ path must prove the SAME claimed values as
+the flat reading; j = 2 and j = 3 with the level-2 cascade, δ = 1, 2,
+tampers rejected; 109/109 green). Harness: `F2Z_AB_FAM_DELTA`.
+Measured (fam6, δ4 vs δ0): time ~flat at n = 24–26 (147.5 vs 151.0;
+306.0 vs 310.6 — the tree-count gain cancels against the presum/
+discharge round growth), **−10 % at n = 29** (1728.3 vs 1915.2,
+cross-window) where fam6 = **0.85× of opt same-window** (0.68× on
+the churned δ0 window; n=29 row: opt 2041.2/581 KB, naive 1997.5,
+fam6 1728.3/985 KB, fam4 3307.1 — fam4's δ4 presum growth × j3
+channels regresses it; keep fam4 at δ0 + lazy). Bytes: fam6
+−8/−13/−20 % at n=24/26/29 (669→613, 874→760, 1225→985 KB) — less
+than the fold-vector share because **the fam route's byte floor is
+its FOUR Ligerito blobs vs opt's two**: sub-proof merging (one
+recursive call across fam1+fam2+idents+checks) is now the bigger
+byte lever than δ, worth ~2 blobs ≈ 300–400 KB at n=29. Compression
+math for this family: one word = one G, 56 G-words per compression
+⇒ 2^{n−8}/56 compressions per proof (~292/1.2k/4.7k/18.7k/37.4k at
+n=22/24/26/28/29); fam6 at n=29 ≈ **46 µs per compression** for the
+xor-rot layer + openings.
+
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
 The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —
