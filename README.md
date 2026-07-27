@@ -1164,7 +1164,35 @@ channels regresses it; keep fam4 at δ0 + lazy). Bytes: fam6
 than the fold-vector share because **the fam route's byte floor is
 its FOUR Ligerito blobs vs opt's two**: sub-proof merging (one
 recursive call across fam1+fam2+idents+checks) is now the bigger
-byte lever than δ, worth ~2 blobs ≈ 300–400 KB at n=29. **Openings-only measurement (2026-07-28; the outer protocol owns
+byte lever than δ, worth ~2 blobs ≈ 300–400 KB at n=29. **Openings-only b3 arms (2026-07-28): the family crossover survives
+without the checks.** `F2Z_AB_B3OPEN=1` — commit SIX (d', b'
+virtual), open all eight with NO relation bodies (v(d'), v(b') as
+the pair-XOR forms at the relabeled point): `vx8` = ONE 0x44
+sub-proof, 8 plain bodies incl. the two ident-op XOR sets (no rings,
+one tail, δ4); `fam6` = two j2 families (δ4) + one 0x44 for {a},{c};
+`fam4` = two j3 families (δ0 + lazy). Measured (FAST, medians):
+
+| n | vx8 | fam6 | fam4 |
+|----|-----|------|------|
+| 24 | **66.1 ms / 178 KB** | 113.6 (1.72×) / 458 | 106.4 / 385 |
+| 26 | **198.1 / 229** | 216.3 (1.09×) / 560 | 283.0 / 517 |
+| 28 | 795.5 / **290** | **653.7 (0.82×)** / 664 | 970.7 / 705 |
+| 29 | 1701.8 / **313** | **1361.2 (0.80×)** / 731 | 2178.2 / 748 |
+
+Same shape as the with-checks contest: vx8 (the collapse) owns
+n ≤ 26; fam6 crosses at n ≈ 27 and wins ~20 % at 28–29 — the pair
+case-forests amortize 2 columns' bits at ~1.3× one body and stay
+churn-lean while per-claim bodies pay full price at scale. Against
+the base ONE-opening floor at n=29 (1228.7 ms): **fam6 delivers all
+8 openings at 1.11×** (vx8: 1.39×). fam4 loses everywhere
+openings-only (absorbing the idents into j3 families buys bodies but
+pays channels + case width). Bytes: vx8 tracks base (313 vs 260 KB);
+fam6's 731 KB is 3 sub-proof tails — the merge lever. Routing rule,
+final: openings-only at one point → 0x44/0x46 below n ≈ 27, two-column
+pair-families above (when XOR-image openings are in the set at all;
+pure identity sets stay 0x44 at every n unless bodies ≫ 8).
+
+**Openings-only measurement (2026-07-28; the outer protocol owns
 constraint checking).** `F2Z_AB_OPEN8=1`: 8 committed columns, 8
 identity MLE openings at ONE shared point through a single 0x44
 sub-proof (8 plain bodies, one Ligerito tail, δ = 4 via

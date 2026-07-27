@@ -297,6 +297,274 @@ fn main() {
             continue;
         }
 
+        if std::env::var("F2Z_AB_B3OPEN").is_ok_and(|v| v == "1") {
+            // Openings-ONLY b3 comparison (no relation checks — the
+            // outer protocol owns constraints): commit SIX columns
+            // (a,b,c,d,a',c'; d',b' virtual), open all eight — v(d'),
+            // v(b') as the pair-XOR forms at the ROT-relabeled point.
+            // Arms: `vx8` = ONE 0x44 sub-proof, 8 plain bodies (6
+            // idents + the ident-op XOR sets {d,a'},{b,c'} — no rings,
+            // δ knee); `fam6` = two j2 families + one 0x44 for {a},{c}
+            // (3 sub-proofs); `fam4` = two j3 families absorbing a, c
+            // (2 sub-proofs, δ0 — δ4 regresses j3).
+            use f2z::ligerito_flock::{
+                RlcSharedClaim, prove_mle_eval_mod_q_ligerito_rlc_family_shared_point,
+                verify_mle_eval_mod_q_ligerito_rlc_family_shared_point,
+            };
+            let od: usize =
+                std::env::var("F2Z_AB_OPEN_DELTA").map_or(4, |v| v.parse().unwrap());
+            let fd: usize =
+                std::env::var("F2Z_AB_FAM_DELTA").map_or(4, |v| v.parse().unwrap());
+            let mut layout = taps_layout(n, 3);
+            layout.x_fold_extra = od.min(layout.p.s - 1);
+            let mut layout_fam = taps_layout(n, 3);
+            layout_fam.x_fold_extra = fd.min(layout_fam.p.s - 1);
+            let mut layout_f4 = taps_layout(n, 3);
+            layout_f4.x_fold_extra = 0;
+            let p = &layout.p;
+            let (pc, vc) = sha_lig_configs(packed_vars(p)).expect("lig cfg");
+            let words = p.rows().div_ceil(64);
+            let rows: Vec<Vec<u64>> = (0..p.cols())
+                .map(|c| {
+                    (0..words)
+                        .map(|w| {
+                            ((c as u64) << 32 | (w as u64) ^ seed)
+                                .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                                .rotate_left(((c + w) & 63) as u32)
+                        })
+                        .collect()
+                })
+                .collect();
+            let hint = commit_rs_ligerito_rows(p, rows, &pc);
+            let eval_at = |layout_e: &ShaF2Layout,
+                           cols: &[usize],
+                           rw: &[u128],
+                           colw: &[Fq]|
+             -> u128 {
+                let taps: Vec<TapOp> = cols.iter().map(|&c| TapOp::ident(c)).collect();
+                let a_rows = extract_virtual_tap_rows(layout_e, hint.rows(), &taps);
+                let mut y = Fq::from(0u128);
+                for (c, row) in a_rows.iter().enumerate() {
+                    let mut acc = Fq::from(0u128);
+                    for (wi, &word) in row.iter().enumerate() {
+                        let mut bits = word;
+                        while bits != 0 {
+                            let t = bits.trailing_zeros() as usize;
+                            acc = acc + Fq::from(rw[(wi << 6) | t]);
+                            bits &= bits.wrapping_sub(1);
+                        }
+                    }
+                    y = y + colw[c] * acc;
+                }
+                y.0
+            };
+            let mk_rw = |len: usize, salt: u128| -> Vec<u128> {
+                (0..len)
+                    .map(|x| {
+                        (x as u128)
+                            .wrapping_mul(0xDEAD_BEEF_CAFE_F00D_1234_5678_9ABC_DEF1)
+                            .wrapping_add(salt + (u128::from(seed) << 1))
+                            % FQ_MOD
+                    })
+                    .collect()
+            };
+            let mk_colw = |len: usize| -> Vec<Fq> {
+                (0..len)
+                    .map(|c| {
+                        Fq::from((c as u128).wrapping_mul(0xABCD_EF01_2345).wrapping_add(3))
+                    })
+                    .collect()
+            };
+            // vx8: one 0x44 with 8 plain claims (identity ops only).
+            let p_x = virtual_xor_params(&layout);
+            let rw = mk_rw(p_x.rows(), 127);
+            let colw = mk_colw(p_x.cols());
+            let sets: Vec<Vec<usize>> = vec![
+                vec![0],
+                vec![1],
+                vec![2],
+                vec![3],
+                vec![4],
+                vec![5],
+                vec![3, 4],
+                vec![1, 5],
+            ];
+            let pclaims: Vec<TapPointClaim<'_>> = sets
+                .iter()
+                .map(|set| TapPointClaim {
+                    cols: set,
+                    op: f2z::taps::TapUniOp::ident(),
+                    claimed: eval_at(&layout, set, &rw, &colw),
+                })
+                .collect();
+            // Families (fam6 at δ = fd; fam4 at δ0), same forms as the
+            // full-family arms minus nothing — openings are the forms.
+            let p_xf = virtual_xor_params(&layout_fam);
+            let rwf = mk_rw(p_xf.rows(), 131);
+            let colwf = mk_colw(p_xf.cols());
+            let p_x4 = virtual_xor_params(&layout_f4);
+            let rw4 = mk_rw(p_x4.rows(), 137);
+            let colw4 = mk_colw(p_x4.cols());
+            let fam1_cols = [3usize, 4, 0];
+            let fam2_cols = [1usize, 5, 2];
+            let mk_fam = |layout_e: &ShaF2Layout,
+                          rw_e: &[u128],
+                          colw_e: &[Fq],
+                          cols: &[usize],
+                          j3: bool|
+             -> Vec<RlcSharedClaim> {
+                let mut v = vec![
+                    RlcSharedClaim {
+                        form: 0b001,
+                        claimed: eval_at(layout_e, &cols[..1], rw_e, colw_e),
+                    },
+                    RlcSharedClaim {
+                        form: 0b010,
+                        claimed: eval_at(layout_e, &cols[1..2], rw_e, colw_e),
+                    },
+                    RlcSharedClaim {
+                        form: 0b011,
+                        claimed: eval_at(layout_e, &cols[..2], rw_e, colw_e),
+                    },
+                ];
+                if j3 {
+                    v.push(RlcSharedClaim {
+                        form: 0b100,
+                        claimed: eval_at(layout_e, &cols[2..3], rw_e, colw_e),
+                    });
+                }
+                v
+            };
+            let f1_j2 = mk_fam(&layout_fam, &rwf, &colwf, &fam1_cols, false);
+            let f2_j2 = mk_fam(&layout_fam, &rwf, &colwf, &fam2_cols, false);
+            let f1_j3 = mk_fam(&layout_f4, &rw4, &colw4, &fam1_cols, true);
+            let f2_j3 = mk_fam(&layout_f4, &rw4, &colw4, &fam2_cols, true);
+            let ac_sets: Vec<Vec<usize>> = vec![vec![0], vec![2]];
+            let ac_pclaims: Vec<TapPointClaim<'_>> = ac_sets
+                .iter()
+                .map(|set| TapPointClaim {
+                    cols: set,
+                    op: f2z::taps::TapUniOp::ident(),
+                    claimed: eval_at(&layout, set, &rw, &colw),
+                })
+                .collect();
+            let prove_vx8 = || {
+                let mut t = Blake3Transcript::new();
+                prove_mle_eval_mod_q_ligerito_tap_collapse(
+                    &mut t, &hint, &layout, &rw, &colw, &pclaims, alpha, &pc,
+                )
+            };
+            let prove_f6 = || {
+                let mut t1 = Blake3Transcript::new();
+                let a = prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                    &mut t1, &hint, &layout_fam, &fam1_cols[..2], &rwf, &f1_j2, alpha, &pc,
+                );
+                let mut t2 = Blake3Transcript::new();
+                let b = prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                    &mut t2, &hint, &layout_fam, &fam2_cols[..2], &rwf, &f2_j2, alpha, &pc,
+                );
+                let mut t3 = Blake3Transcript::new();
+                let c = prove_mle_eval_mod_q_ligerito_tap_collapse(
+                    &mut t3, &hint, &layout, &rw, &colw, &ac_pclaims, alpha, &pc,
+                );
+                (a, b, c)
+            };
+            let prove_f4 = || {
+                let mut t1 = Blake3Transcript::new();
+                let a = prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                    &mut t1, &hint, &layout_f4, &fam1_cols[..], &rw4, &f1_j3, alpha, &pc,
+                );
+                let mut t2 = Blake3Transcript::new();
+                let b = prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                    &mut t2, &hint, &layout_f4, &fam2_cols[..], &rw4, &f2_j3, alpha, &pc,
+                );
+                (a, b)
+            };
+            let (mut t_vx, mut t_f6, mut t_f4) = (Vec::new(), Vec::new(), Vec::new());
+            for _ in 0..reps {
+                let t0 = Instant::now();
+                drop(prove_vx8());
+                t_vx.push(t0.elapsed().as_secs_f64() * 1e3);
+                let t0 = Instant::now();
+                drop(prove_f6());
+                t_f6.push(t0.elapsed().as_secs_f64() * 1e3);
+                let t0 = Instant::now();
+                drop(prove_f4());
+                t_f4.push(t0.elapsed().as_secs_f64() * 1e3);
+            }
+            let pv = prove_vx8();
+            let t0 = Instant::now();
+            {
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_tap_collapse(
+                    &mut vt, &hint.commitment, &pv, &layout, &rw, &colw, &pclaims, alpha, &vc,
+                )
+                .expect("b3open vx8 verifies");
+            }
+            let v_vx = t0.elapsed().as_secs_f64() * 1e3;
+            let pf6 = prove_f6();
+            let t0 = Instant::now();
+            {
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                    &mut vt, &hint.commitment, &pf6.0, &layout_fam, &fam1_cols[..2], &rwf,
+                    &f1_j2, &colwf, alpha, &vc,
+                )
+                .expect("b3open fam6/1 verifies");
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                    &mut vt, &hint.commitment, &pf6.1, &layout_fam, &fam2_cols[..2], &rwf,
+                    &f2_j2, &colwf, alpha, &vc,
+                )
+                .expect("b3open fam6/2 verifies");
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_tap_collapse(
+                    &mut vt, &hint.commitment, &pf6.2, &layout, &rw, &colw, &ac_pclaims,
+                    alpha, &vc,
+                )
+                .expect("b3open fam6/ac verifies");
+            }
+            let v_f6 = t0.elapsed().as_secs_f64() * 1e3;
+            let pf4 = prove_f4();
+            let t0 = Instant::now();
+            {
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                    &mut vt, &hint.commitment, &pf4.0, &layout_f4, &fam1_cols[..], &rw4,
+                    &f1_j3, &colw4, alpha, &vc,
+                )
+                .expect("b3open fam4/1 verifies");
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                    &mut vt, &hint.commitment, &pf4.1, &layout_f4, &fam2_cols[..], &rw4,
+                    &f2_j3, &colw4, alpha, &vc,
+                )
+                .expect("b3open fam4/2 verifies");
+            }
+            let v_f4 = t0.elapsed().as_secs_f64() * 1e3;
+            let fam_sz = f2z::ligerito_flock::mle_eval_mod_q_lig_rlc_family_proof_size_bytes;
+            let sz_vx = mle_eval_mod_q_lig_xor_proof_size_bytes(&pv);
+            let sz_f6 = fam_sz(&pf6.0)
+                + fam_sz(&pf6.1)
+                + mle_eval_mod_q_lig_xor_proof_size_bytes(&pf6.2);
+            let sz_f4 = fam_sz(&pf4.0) + fam_sz(&pf4.1);
+            let (m_vx, m_f6, m_f4) = (median(t_vx), median(t_f6), median(t_f4));
+            println!(
+                "n={n} B3OPEN (8 openings, NO checks; 6 cols committed, v(d')/v(b') = \
+                 relabeled pair forms): vx8 δ{} {m_vx:.1} ms (8 bodies 1 tail, {:.0} KB, \
+                 verify {v_vx:.1} ms) | fam6 δ{} {m_f6:.1} ms ({:.2}x, {:.0} KB, verify \
+                 {v_f6:.1} ms) | fam4 δ0 {m_f4:.1} ms ({:.2}x, {:.0} KB, verify {v_f4:.1} ms)",
+                layout.x_fold_extra,
+                sz_vx as f64 / 1e3,
+                layout_fam.x_fold_extra,
+                m_f6 / m_vx,
+                sz_f6 as f64 / 1e3,
+                m_f4 / m_vx,
+                sz_f4 as f64 / 1e3,
+            );
+            continue;
+        }
+
         if std::env::var("F2Z_AB_B3FAM").is_ok_and(|v| v == "1") {
             // The user's b3 family: 8 role vectors a,b,c,d,a',b',c',d'
             // with d' = ROT16(d⊕a'), b' = ROT12(b⊕c'),
