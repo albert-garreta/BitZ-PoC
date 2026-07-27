@@ -1002,6 +1002,44 @@ regroup, 0x42 δ=1/2 roundtrips with fold-shrink asserts, composed
 δ=2 roundtrip + envelope rejection); 104/104 green both guard modes;
 δ=0 proof bytes untouched.
 
+**Structured taps: the cols4 config + the batched-path optimization
+pass (2026-07-27, follow-up).** New 4-column instance (`--taps
+cols4`, `F2Z_AB_COLS4=1`; the first `log_cols = 2` taps layout —
+the machinery was already generic): identity claims on a₁..a₄ plus
+the XOR-mixed pairs `ROT¹(a₁)⊕off¹(a₂)` and `ROT²(a₃)⊕off¹(a₄)`,
+one shared point, through the blocked batched tap path (2+2+2;
+XOR-mixed ⇒ the 0x42 route; bare ROT pinned as ROT¹). The
+max-optimization pass on it and the batched path generally,
+profile-driven (`OBLONG_PROFILE=1` now dumps in the cols4 A/B
+block): attribution is **forest 61 % / Ligerito tail 22 % / rings
+6 % / basis fills 3 % / extraction 0.4 %** — the path is at its
+structural floor (each claim's derived bits must be forest-bound
+once; 6 claims ≈ 6 bodies + one shared tail; the stream-family
+alternative explodes to 143 channels here — claims on disjoint
+stream supports multiply). What the pass landed: (1) the rings and
+basis-fill phases built every member's translated-eq support tables
+TWICE — now built once and reused (~4 % on cols4, neutral where
+rings are thinner); (2) the δ knee for cols4 is **δ = 3** (the
+re-split's fewer-but-taller forest trees also cut the per-tree
+overhead); (3) the byte knee is `--profile custom:3:4` (r1/8).
+Measured (A/B protocol, FAST, medians of 5):
+
+| n | single | vx6 cols4 δ=0 | vx6 cols4 δ=3 | ind6 δ=3 |
+|----|--------|----------------|----------------|-----------|
+| 22 | 21.3 ms | 52.5 / 248 KB | **43.6 / 168 KB** | 124.9 (2.9×) |
+| 24 | 26.6 ms | 125.2 / 380 KB | **99.3 / 215 KB** | 209.6 (2.1×) |
+| 26 | 65.3 ms | — | **312.7 / 277 KB** | 420.0 (1.3×) |
+
+Byte ladder at n=24, δ=3 (CLI, 6 claims): fast 209.4 → r1/4 168.8 →
+**r1/8 153.3 (25.6 KiB/claim, prove ~116 ms, commit 2×)** → r1/16
+144.1 (past the knee). Verify ~10–12 ms throughout. The 2-column
+k=6 instance re-measured at parity (δ3/δ4: 189.6/183.5 ms at n=24 —
+rings are a thinner share there). Remaining headroom is ~10 % of
+prove (fixed per-block costs) plus the line-wide forest-kernel
+levers (`riding the forest`, 8/16-case leaf rounds) — body count
+itself is information-forced for XOR-mixed claims of distinct
+shapes.
+
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
 The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —

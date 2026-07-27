@@ -3339,23 +3339,34 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
     // Rings: per (claim, chunk, bucket) the summed member walks.
     let _g_r = crate::utils::prof::scope("tap:rings");
     let mut rings = Vec::new();
-    // Per (claim, chunk): the plan; kept for the fill phase.
+    // Per (claim, chunk): the plan + each member's support tables
+    // (built once here, reused by the basis-fill phase).
     let mut plans: Vec<Vec<TapRingPlan>> = Vec::with_capacity(claims.len());
+    let mut sups: Vec<Vec<Vec<crate::taps::TapSupportTables>>> =
+        Vec::with_capacity(claims.len());
     for (n, cl) in claims.iter().enumerate() {
         let mut per_chunk = Vec::with_capacity(lch_x);
+        let mut sup_chunk = Vec::with_capacity(lch_x);
         for pt in &x_points[n] {
-            per_chunk.push(tap_ring_plan(layout, cl.taps, pt));
+            let plan = tap_ring_plan(layout, cl.taps, pt);
+            let member_sups: Vec<crate::taps::TapSupportTables> = plan
+                .members
+                .iter()
+                .map(|(ti, clss, _)| tap_support_tables(layout, &cl.taps[*ti], pt, *clss))
+                .collect();
+            per_chunk.push(plan);
+            sup_chunk.push(member_sups);
         }
         plans.push(per_chunk);
+        sups.push(sup_chunk);
     }
     for (n, cl) in claims.iter().enumerate() {
-        for (l, pt) in x_points[n].iter().enumerate() {
+        for l in 0..lch_x {
             let plan = &plans[n][l];
             let member_svs: Vec<Vec<Gf>> = cfg_into_iter!(0..plan.members.len())
                 .map(|mi| {
-                    let (ti, clss, _) = &plan.members[mi];
-                    let sup = tap_support_tables(layout, &cl.taps[*ti], pt, *clss);
-                    tap_ring_walk(layout, &hint.p_msg, &cl.taps[*ti], &sup)
+                    let (ti, _, _) = &plan.members[mi];
+                    tap_ring_walk(layout, &hint.p_msg, &cl.taps[*ti], &sups[n][l][mi])
                 })
                 .collect();
             for bucket in &plan.buckets {
@@ -3383,14 +3394,19 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
         let _g = crate::utils::prof::scope("tap:bcomb");
         let mut ring_idx = 0usize;
         for (n, cl) in claims.iter().enumerate() {
-            for (l, pt) in x_points[n].iter().enumerate() {
+            for l in 0..lch_x {
                 let plan = &plans[n][l];
                 for bucket in &plan.buckets {
                     let phi_tables = crate::ligerito::phi_byte_tables(&eq_r2, etas[ring_idx]);
                     for &mi in bucket {
-                        let (ti, clss, _) = &plan.members[mi];
-                        let sup = tap_support_tables(layout, &cl.taps[*ti], pt, *clss);
-                        tap_fill_basis(layout, &mut b_comb, &cl.taps[*ti], &sup, &phi_tables);
+                        let (ti, _, _) = &plan.members[mi];
+                        tap_fill_basis(
+                            layout,
+                            &mut b_comb,
+                            &cl.taps[*ti],
+                            &sups[n][l][mi],
+                            &phi_tables,
+                        );
                     }
                     ring_idx += 1;
                 }

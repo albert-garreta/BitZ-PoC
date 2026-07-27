@@ -504,6 +504,11 @@ fn main() {
                 size_tap(&proof_vx) as f64 / 1e3,
                 m_ind / m_vx,
             );
+            if profile {
+                let pr = prove_k(0..tclaims.len());
+                drop(pr);
+                f2z::utils::prof::dump_and_reset(&format!("cols4 vx6 n={n}"));
+            }
             continue;
         }
 
