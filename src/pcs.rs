@@ -901,6 +901,44 @@ pub fn rlc_case_weights(
         .collect()
 }
 
+/// The SHARED-POINT case coefficients `Γ(m) = (Σ_i γ_i·L_i(m)) mod q`,
+/// `m ∈ {0,1}^j` — when every claim sits at ONE row point the case-weight
+/// table is rank-1, `W_b(m) = (w_b·Γ(m)) mod q`, and these `2^j` values
+/// are its whole case content. `Γ(0) = 0` (the forms are linear).
+#[allow(clippy::arithmetic_side_effects)] // bounded case/claim loops; fq_* reduce
+pub fn rlc_gamma_cases(gammas: &[u128], forms: &[usize], j: usize) -> Vec<u128> {
+    assert!((1..=4).contains(&j), "RLC family supports j ∈ [1, 4] (2^j-case tables)");
+    assert_eq!(gammas.len(), forms.len(), "one γ per claim");
+    let cases = 1usize << j;
+    for &f in forms {
+        assert!(f != 0 && f < cases, "forms must be nonzero bitmasks over [j]");
+    }
+    (0..cases)
+        .map(|m| {
+            forms
+                .iter()
+                .zip(gammas.iter())
+                .filter(|&(&f, _)| (f & m).count_ones() & 1 == 1)
+                .fold(0u128, |acc, (_, &g)| fq_add(acc, g))
+        })
+        .collect()
+}
+
+/// The rank-1 shared-point case-weight table `W[b][m] = (w_b·Γ(m)) mod q`
+/// from ONE row-weight vector and the [`rlc_gamma_cases`] coefficients:
+/// one `fq_mul` per (row, case) — the collapse of [`rlc_case_weights`]
+/// when all `k` claims share the row point. Pinned equal to the general
+/// build by a test below.
+#[allow(clippy::arithmetic_side_effects)] // bounded case loop; fq_mul reduces
+pub fn rlc_case_weights_shared_point(
+    row_weights_q: &[u128],
+    gamma_cases: &[u128],
+) -> Vec<Vec<u128>> {
+    cfg_iter!(row_weights_q)
+        .map(|&w| gamma_cases.iter().map(|&g| fq_mul(w, g)).collect())
+        .collect()
+}
+
 /// Chunk the case-weight table into base-`2^{c_w}` limbs (the
 /// [`chunk_row_weights`] analogue): `out[l][b][m] = (W_b(m) ≫ c_w·l) &
 /// (2^{c_w}−1)`.
@@ -1292,6 +1330,39 @@ mod rlc_tests {
                 assert_eq!(acc, cw[b][m], "chunk recomposition at b={b}, m={m:#b}");
             }
         }
+    }
+
+    /// The rank-1 shared-point build (`rlc_case_weights_shared_point` over
+    /// `Γ = rlc_gamma_cases`) equals the general `rlc_case_weights` when
+    /// every claim carries the SAME row-weight vector — for the maximal
+    /// families at j = 2, 3, 4 (every nonzero form once) and a duplicated-
+    /// form variant.
+    #[test]
+    fn rlc_shared_point_case_weights_match_general() {
+        let rows = 32usize;
+        let w: Vec<u128> = (0..rows)
+            .map(|b| ((b as u128 + 3) * 0xFEED_FACE_CAFE_BEEF) % FQ_MOD)
+            .collect();
+        for j in 1..=4usize {
+            let forms: Vec<usize> = (1..1usize << j).collect(); // maximal family
+            let k = forms.len();
+            let gammas: Vec<u128> =
+                (0..k).map(|i| ((i as u128 + 5) * 0x0123_4567_89AB_CDEF) % FQ_MOD).collect();
+            let w_refs: Vec<&[u128]> = (0..k).map(|_| &w[..]).collect();
+            let general = rlc_case_weights(&w_refs, &gammas, &forms, j);
+            let gcases = rlc_gamma_cases(&gammas, &forms, j);
+            assert_eq!(gcases[0], 0, "Γ(0) = 0 for linear forms");
+            let shared = rlc_case_weights_shared_point(&w, &gcases);
+            assert_eq!(shared, general, "rank-1 build diverges at j={j} (maximal family)");
+        }
+        // A non-maximal family with a repeated γ-weighted form pattern.
+        let forms = [0b01usize, 0b11, 0b11];
+        let gammas: Vec<u128> = vec![7, 11, 13];
+        let w_refs: Vec<&[u128]> = (0..3).map(|_| &w[..]).collect();
+        let general = rlc_case_weights(&w_refs, &gammas, &forms, 2);
+        let shared =
+            rlc_case_weights_shared_point(&w, &rlc_gamma_cases(&gammas, &forms, 2));
+        assert_eq!(shared, general, "rank-1 build diverges on repeated forms");
     }
 }
 

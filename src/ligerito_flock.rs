@@ -2445,6 +2445,96 @@ fn absorb_rlc_family_statement(
     transcript.absorb_slice(&bytes);
 }
 
+/// One claim of a SHARED-POINT family: only the form and the claimed
+/// value — the row-weight vector (and the column point) is shared across
+/// the family, passed once to the `..._shared_point` entries.
+#[derive(Clone, Copy, Debug)]
+pub struct RlcSharedClaim {
+    /// Nonzero bitmask over the family columns (as [`RlcFamilyClaim::form`]).
+    pub form: usize,
+    /// The claimed evaluation at the shared point, canonical in `[0, q)`.
+    pub claimed: u128,
+}
+
+/// Canonicalize a shared-point claim list: keep the FIRST occurrence of
+/// each form in caller order; a repeated form must carry the same claimed
+/// value — at one point it is literally the SAME claim — else the
+/// offending claim index is returned. The canonical (deduped) list is
+/// what the transcript binds, so `k ≤ 2^j − 1` after this.
+fn rlc_shared_point_canonical(
+    claims: &[RlcSharedClaim],
+) -> Result<(Vec<usize>, Vec<u128>), usize> {
+    let mut forms: Vec<usize> = Vec::with_capacity(claims.len());
+    let mut cs: Vec<u128> = Vec::with_capacity(claims.len());
+    for (i, cl) in claims.iter().enumerate() {
+        match forms.iter().position(|&f| f == cl.form) {
+            None => {
+                forms.push(cl.form);
+                cs.push(cl.claimed);
+            }
+            Some(pos) if cs[pos] == cl.claimed => {}
+            Some(_) => return Err(i),
+        }
+    }
+    Ok((forms, cs))
+}
+
+/// Absorb the COLLAPSED shared-point statement (domain tag 0x41 — a
+/// deliberately different transcript from the general family's 0x40):
+/// commitment root, layout shape, q, the family columns, the canonical
+/// (form, claimed) list, and the ONE shared row-weight vector — `2^{t'}`
+/// weight words instead of the general absorb's `k·2^{t'}`. Everything
+/// the case weights are derived from precedes the γ draw.
+#[allow(clippy::arithmetic_side_effects)]
+fn absorb_rlc_shared_point_statement(
+    transcript: &mut impl Transcript,
+    root: &flock_core::merkle::Hash,
+    layout: &ShaF2Layout,
+    family_cols: &[usize],
+    forms: &[usize],
+    claim_cs: &[u128],
+    row_weights_q: &[u128],
+) {
+    let mut bytes = Vec::with_capacity(
+        1 + 32
+            + 12 * 8
+            + 16
+            + (family_cols.len() + forms.len()) * 8
+            + (claim_cs.len() + row_weights_q.len()) * 16,
+    );
+    bytes.push(0x41u8);
+    bytes.extend_from_slice(root);
+    for v in [
+        layout.p.t,
+        layout.p.s,
+        layout.p.word_bits,
+        layout.num_cols,
+        layout.log_cols,
+        layout.bit_vars,
+        layout.num_vars,
+        layout.tw,
+        layout.x_fold_extra,
+        family_cols.len(),
+        claim_cs.len(),
+    ] {
+        bytes.extend_from_slice(&(v as u64).to_le_bytes());
+    }
+    bytes.extend_from_slice(&crate::pcs::FQ_MOD.to_le_bytes());
+    for &c in family_cols {
+        bytes.extend_from_slice(&(c as u64).to_le_bytes());
+    }
+    for &f in forms {
+        bytes.extend_from_slice(&(f as u64).to_le_bytes());
+    }
+    for &c in claim_cs {
+        bytes.extend_from_slice(&c.to_le_bytes());
+    }
+    for &x in row_weights_q {
+        bytes.extend_from_slice(&x.to_le_bytes());
+    }
+    transcript.absorb_slice(&bytes);
+}
+
 /// The ACTIVE presum channels of one chunk: the S whose τ_S table is not
 /// identically zero. Structurally-zero channels exist for legitimate
 /// degenerate families — e.g. a pure-XOR family (every claim on the same
@@ -2731,16 +2821,10 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family(
     alpha: Gf,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigRlcFamilyProof {
-    use crate::merged_forest::prove_merged_forest;
     use crate::pcs::{
-        FQ_BITS, FQ_MOD, extract_virtual_xor_rows, fq_challenge, mod_q_chunk_width,
-        mod_q_num_chunks, rlc_case_pow_table, rlc_case_weights, rlc_chunk_case_weights,
-        rlc_tau_tables, virtual_xor_params,
+        FQ_BITS, FQ_MOD, fq_challenge, mod_q_chunk_width, mod_q_num_chunks, rlc_case_weights,
+        rlc_chunk_case_weights, virtual_xor_params,
     };
-    use crate::piop::sumcheck::multi_degree::{MultiDegreeSumcheck, MultiDegreeSumcheckGroup};
-    use crate::poly::mle::DenseMultilinearExtension;
-    use crate::poly::utils::build_eq_x_r_vec;
-    use crypto_primitives::Field;
 
     let p = &layout.p;
     assert_eq!(p.word_bits, 1, "RLC-family claims assume the W=1 SHA layout");
@@ -2785,11 +2869,119 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family(
     let gammas: Vec<u128> = (0..k).map(|_| fq_challenge(transcript)).collect();
 
     // Case weights + chunking (c_w over the x geometry).
-    let case_w = rlc_case_weights(&w_refs, &gammas, &forms, j);
-    let c_w_x = mod_q_chunk_width(&p_x);
-    let lch_x = mod_q_num_chunks(&p_x, FQ_BITS);
-    let case_chunks = rlc_chunk_case_weights(&case_w, c_w_x, lch_x);
-    drop(case_w);
+    let case_chunks = {
+        let _g = crate::utils::prof::scope("rlc:casew");
+        let case_w = rlc_case_weights(&w_refs, &gammas, &forms, j);
+        rlc_chunk_case_weights(&case_w, mod_q_chunk_width(&p_x), mod_q_num_chunks(&p_x, FQ_BITS))
+    };
+    prove_rlc_family_core(transcript, hint, layout, family_cols, &case_chunks, alpha, pc)
+}
+
+/// Prove a SHARED-POINT RLC claim family (EXPERIMENTAL): all `k` claims at
+/// ONE evaluation point — one shared `row_weights_q` (and, as for every
+/// family, one column point) — so two claims with the same form are the
+/// SAME claim (deduped here; a repeated form with a different claimed
+/// value is rejected) and the maximal family is the full XOR-closure of
+/// the `j` columns, `k ≤ 2^j − 1`. The Fiat–Shamir statement absorbs the
+/// ONE weight vector plus the (form, value) list — a deliberately
+/// DIFFERENT (smaller) transcript than the same claims through
+/// [`prove_mle_eval_mod_q_ligerito_rlc_family`] — and the case-weight
+/// table is built rank-1, `W_b(m) = w_b·Γ(m) mod q`
+/// ([`rlc_case_weights_shared_point`]). Everything downstream of the γ
+/// draw is the general family core, byte for byte.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub fn prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+    transcript: &mut (impl Transcript + Send),
+    hint: &FlockCommitHint,
+    layout: &ShaF2Layout,
+    family_cols: &[usize],
+    row_weights_q: &[u128],
+    claims: &[RlcSharedClaim],
+    alpha: Gf,
+    pc: &LigProverConfig,
+) -> IntEvalRsLigRlcFamilyProof {
+    use crate::pcs::{
+        FQ_BITS, FQ_MOD, fq_challenge, mod_q_chunk_width, mod_q_num_chunks, rlc_case_weights_shared_point,
+        rlc_chunk_case_weights, rlc_gamma_cases, virtual_xor_params,
+    };
+
+    let p = &layout.p;
+    assert_eq!(p.word_bits, 1, "RLC-family claims assume the W=1 SHA layout");
+    let j = family_cols.len();
+    assert!((1..=4).contains(&j), "family size j must be in [1, 4]");
+    for &i in family_cols {
+        assert!(i < layout.num_cols, "family column {i} out of range (< {})", layout.num_cols);
+    }
+    assert!(!claims.is_empty(), "need at least one claim");
+    let p_x = virtual_xor_params(layout);
+    let t_x = row_bit_vars(&p_x);
+    assert!(t_x >= 6, "RLC-family presum needs t' ≥ 6 (whole-word x rows); got t'={t_x}");
+    assert_eq!(row_weights_q.len(), p_x.rows(), "shared row-weight length");
+    for cl in claims {
+        assert!(
+            cl.form != 0 && cl.form < (1usize << j),
+            "claim form must be a nonzero bitmask over [j]"
+        );
+        assert!(cl.claimed < FQ_MOD, "claimed value must be a canonical 𝔽_q representative");
+    }
+
+    // (1)–(2) Canonical statement (deduped) → γ's.
+    let (forms, claim_cs) = rlc_shared_point_canonical(claims).unwrap_or_else(|i| {
+        panic!("claim {i} repeats an earlier form with a DIFFERENT claimed value")
+    });
+    for fi in 0..j {
+        assert!(
+            forms.iter().any(|f| (f >> fi) & 1 == 1),
+            "family column index {fi} appears in no claim form"
+        );
+    }
+    absorb_rlc_shared_point_statement(
+        transcript,
+        hint.root(),
+        layout,
+        family_cols,
+        &forms,
+        &claim_cs,
+        row_weights_q,
+    );
+    let gammas: Vec<u128> = (0..forms.len()).map(|_| fq_challenge(transcript)).collect();
+
+    // Rank-1 case weights + chunking.
+    let case_chunks = {
+        let _g = crate::utils::prof::scope("rlc:casew");
+        let case_w =
+            rlc_case_weights_shared_point(row_weights_q, &rlc_gamma_cases(&gammas, &forms, j));
+        rlc_chunk_case_weights(&case_w, mod_q_chunk_width(&p_x), mod_q_num_chunks(&p_x, FQ_BITS))
+    };
+    prove_rlc_family_core(transcript, hint, layout, family_cols, &case_chunks, alpha, pc)
+}
+
+/// The family prover body shared by the general and shared-point entries:
+/// everything downstream of the γ draw — chunked case weights in, proof
+/// out. Byte-identical to the pre-split general prover from this point on.
+#[allow(clippy::arithmetic_side_effects)]
+fn prove_rlc_family_core(
+    transcript: &mut (impl Transcript + Send),
+    hint: &FlockCommitHint,
+    layout: &ShaF2Layout,
+    family_cols: &[usize],
+    case_chunks: &[Vec<Vec<u128>>],
+    alpha: Gf,
+    pc: &LigProverConfig,
+) -> IntEvalRsLigRlcFamilyProof {
+    use crate::merged_forest::prove_merged_forest;
+    use crate::pcs::{extract_virtual_xor_rows, rlc_case_pow_table, rlc_tau_tables, virtual_xor_params};
+    use crate::piop::sumcheck::multi_degree::{MultiDegreeSumcheck, MultiDegreeSumcheckGroup};
+    use crate::poly::mle::DenseMultilinearExtension;
+    use crate::poly::utils::build_eq_x_r_vec;
+    use crypto_primitives::Field;
+
+    let p = &layout.p;
+    let j = family_cols.len();
+    let p_x = virtual_xor_params(layout);
+    let t_x = row_bit_vars(&p_x);
+    let lch_x = case_chunks.len();
 
     // Family-column x rows + the 2^j − 1 monomial (AND) row sets, built once.
     let x_rows: Vec<Vec<Vec<u64>>> = {
@@ -2839,9 +3031,12 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family(
     } else {
         None
     };
-    for chunk in &case_chunks {
+    for chunk in case_chunks {
         let _g = crate::utils::prof::scope("rlc:chunk");
-        let case_pow = rlc_case_pow_table(chunk, alpha);
+        let case_pow = {
+            let _g = crate::utils::prof::scope("rlc:pows");
+            rlc_case_pow_table(chunk, alpha)
+        };
         let (u, mf, z, e_d) = if lazy && j == 2 {
             let u = {
                 let _g = crate::utils::prof::scope("rlc:folds");
@@ -3245,14 +3440,10 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
     alpha: Gf,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
-    use crate::merged_forest::verify_merged_forest;
     use crate::pcs::{
-        FQ_BITS, FQ_MOD, FixedBasePow, Fq, fq_challenge, is_generator, mod_q_chunk_width,
-        mod_q_num_chunks, recombine_read_off, rlc_case_pow_table, rlc_case_weights,
-        rlc_chunk_case_weights, rlc_tau_tables, virtual_xor_params,
+        FQ_BITS, FQ_MOD, Fq, fq_challenge, mod_q_chunk_width, mod_q_num_chunks,
+        rlc_case_weights, rlc_chunk_case_weights, virtual_xor_params,
     };
-    use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheck;
-    use crate::poly::utils::build_eq_x_r_vec;
 
     let p = &layout.p;
     let j = family_cols.len();
@@ -3306,6 +3497,137 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
     let case_w = rlc_case_weights(&w_refs, &gammas, &forms, j);
     let case_chunks = rlc_chunk_case_weights(&case_w, c_w_x, lch_x);
     drop(case_w);
+    let t_target = claims
+        .iter()
+        .zip(gammas.iter())
+        .fold(Fq::from(0u128), |a, (cl, &g)| a + Fq::from(g) * Fq::from(cl.claimed));
+    verify_rlc_family_core(
+        transcript, commitment, proof, layout, family_cols, &case_chunks, col_weights, t_target,
+        alpha, vc,
+    )
+}
+
+/// Verify a SHARED-POINT RLC claim family (EXPERIMENTAL) — the verify side
+/// of [`prove_mle_eval_mod_q_ligerito_rlc_family_shared_point`]: ONE
+/// shared `row_weights_q`, claims as canonical (form, value) pairs.
+/// Duplicate forms are deduped exactly as on the prover (first occurrence
+/// wins) and a repeated form with a DIFFERENT claimed value rejects — the
+/// statement would otherwise silently drop a claim the caller believes is
+/// being verified. The absorb is the collapsed 0x41 statement; the case
+/// weights are the rank-1 build; everything downstream is the general
+/// family core.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub fn verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: &IntEvalRsLigRlcFamilyProof,
+    layout: &ShaF2Layout,
+    family_cols: &[usize],
+    row_weights_q: &[u128],
+    claims: &[RlcSharedClaim],
+    col_weights: &[crate::pcs::Fq],
+    alpha: Gf,
+    vc: &LigVerifierConfig,
+) -> Result<(), FlockRsError> {
+    use crate::pcs::{
+        FQ_BITS, FQ_MOD, Fq, fq_challenge, mod_q_chunk_width, mod_q_num_chunks,
+        rlc_case_weights_shared_point, rlc_chunk_case_weights, rlc_gamma_cases,
+        virtual_xor_params,
+    };
+
+    let p = &layout.p;
+    let j = family_cols.len();
+    let p_x = virtual_xor_params(layout);
+    let t_x = row_bit_vars(&p_x);
+    // Statement shape (incl. the canonical dedupe).
+    if p.word_bits != 1
+        || !(1..=4).contains(&j)
+        || family_cols.iter().any(|&i| i >= layout.num_cols)
+        || claims.is_empty()
+        || t_x < 6
+        || col_weights.len() != p_x.cols()
+        || row_weights_q.len() != p_x.rows()
+        || claims
+            .iter()
+            .any(|cl| cl.form == 0 || cl.form >= (1usize << j) || cl.claimed >= FQ_MOD)
+    {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+    let (forms, claim_cs) = rlc_shared_point_canonical(claims)
+        .map_err(|_| FlockRsError::RingSwitch(RsOpenError::Shape))?;
+    if (0..j).any(|fi| forms.iter().all(|f| (f >> fi) & 1 == 0)) {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+    let c_w_x = mod_q_chunk_width(&p_x);
+    let lch_x = mod_q_num_chunks(&p_x, FQ_BITS);
+    // Proof shape (elision-dependent counts checked in the core).
+    if proof.mfs.len() != lch_x
+        || proof.us.len() != lch_x
+        || proof.presums.len() != lch_x
+        || proof.us.iter().any(|u| u.len() != p_x.cols())
+    {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+
+    // (1)–(2) Collapsed statement → γ's → rank-1 case weights (mirrors the
+    // prover byte for byte).
+    absorb_rlc_shared_point_statement(
+        transcript,
+        &commitment.root,
+        layout,
+        family_cols,
+        &forms,
+        &claim_cs,
+        row_weights_q,
+    );
+    let gammas: Vec<u128> = (0..forms.len()).map(|_| fq_challenge(transcript)).collect();
+    let case_w =
+        rlc_case_weights_shared_point(row_weights_q, &rlc_gamma_cases(&gammas, &forms, j));
+    let case_chunks = rlc_chunk_case_weights(&case_w, c_w_x, lch_x);
+    drop(case_w);
+    let t_target = claim_cs
+        .iter()
+        .zip(gammas.iter())
+        .fold(Fq::from(0u128), |a, (&c, &g)| a + Fq::from(g) * Fq::from(c));
+    verify_rlc_family_core(
+        transcript, commitment, proof, layout, family_cols, &case_chunks, col_weights, t_target,
+        alpha, vc,
+    )
+}
+
+/// The family verifier body shared by the general and shared-point
+/// entries: everything downstream of the γ draw — chunked case weights
+/// and the combined target `T = Σ_i γ_i·c_i` in, accept/reject out.
+/// Byte-identical to the pre-split general verifier from this point on.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+fn verify_rlc_family_core(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: &IntEvalRsLigRlcFamilyProof,
+    layout: &ShaF2Layout,
+    family_cols: &[usize],
+    case_chunks: &[Vec<Vec<u128>>],
+    col_weights: &[crate::pcs::Fq],
+    t_target: crate::pcs::Fq,
+    alpha: Gf,
+    vc: &LigVerifierConfig,
+) -> Result<(), FlockRsError> {
+    use crate::merged_forest::verify_merged_forest;
+    use crate::pcs::{
+        FixedBasePow, Fq, is_generator, mod_q_chunk_width, recombine_read_off,
+        rlc_case_pow_table, rlc_tau_tables, virtual_xor_params,
+    };
+    use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheck;
+    use crate::poly::utils::build_eq_x_r_vec;
+
+    let p = &layout.p;
+    let j = family_cols.len();
+    let p_x = virtual_xor_params(layout);
+    let t_x = row_bit_vars(&p_x);
+    let c_w_x = mod_q_chunk_width(&p_x);
+    let lch_x = case_chunks.len();
 
     if !is_generator(alpha) {
         return Err(FlockRsError::Common(IntEvalRsError::ChallengeNotGenerator));
@@ -3328,7 +3650,10 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
                 return Err(FlockRsError::ChunkRange { chunk: l, col: c });
             }
         }
-        let roots: Vec<Gf> = proof.us[l].iter().map(|&u| comb.pow(u)).collect();
+        let roots: Vec<Gf> = {
+            let _g = crate::utils::prof::scope("rlcv:roots");
+            proof.us[l].iter().map(|&u| comb.pow(u)).collect()
+        };
         let (z, e_d) = verify_merged_forest(transcript, &roots, &proof.mfs[l], t_x, p_x.s)
             .map_err(|_| FlockRsError::Common(IntEvalRsError::Forest))?;
         let subclaims =
@@ -3336,7 +3661,10 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
                 .map_err(|_| FlockRsError::Common(IntEvalRsError::PreSumcheck))?;
         // The O(2^j·2^{t'}) step: case powers → τ_S → the ACTIVE channels
         // (zero channels are elided on both sides) → R̂_S(r*).
-        let case_pow = rlc_case_pow_table(chunk_w, alpha);
+        let case_pow = {
+            let _g = crate::utils::prof::scope("rlcv:pows");
+            rlc_case_pow_table(chunk_w, alpha)
+        };
         let taus = rlc_tau_tables(&case_pow);
         let active = rlc_active_channels(&taus);
         let sums = proof.presums[l].claimed_sums();
@@ -3597,13 +3925,9 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
         return Err(FlockRsError::LigeritoReject);
     }
 
-    // (7) Read-off: Σ_c e_c·Σ_l 2^{c_w·l}·u^{(l)}_c mod q = Σ_i γ_i·c_i.
+    // (7) Read-off: Σ_c e_c·Σ_l 2^{c_w·l}·u^{(l)}_c mod q = T = Σ_i γ_i·c_i.
     let us_flat: Vec<u128> = proof.us.iter().flat_map(|u| u.iter().copied()).collect();
     let y: Fq = recombine_read_off(&p_x, &us_flat, 0, col_weights, c_w_x, lch_x);
-    let t_target = claims
-        .iter()
-        .zip(gammas.iter())
-        .fold(Fq::from(0u128), |a, (cl, &g)| a + Fq::from(g) * Fq::from(cl.claimed));
     if y != t_target {
         return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
     }
@@ -4642,6 +4966,222 @@ mod tests {
             )
             .unwrap_or_else(|e| panic!("pure-XOR family (k={k}) failed: {e:?}"));
         }
+    }
+
+    /// SHARED-POINT maximal families — the full XOR-closure of j columns
+    /// at ONE point (j = 2: k = 3, j = 3: k = 7, j = 4: k = 15) —
+    /// roundtrip through the collapsed-absorb API; the collapsed statement
+    /// binds (tampered claimed value, tampered shared weight vector); and
+    /// the shared-point transcript deliberately DIVERGES from the general
+    /// API on the same claims (cross-verification rejects both ways).
+    #[test]
+    fn rlc_family_shared_point_maximal_roundtrips() {
+        let layout = rlc_test_layout();
+        let p_x = virtual_xor_params(&layout);
+        let alpha = smallest_generator();
+        let (hint, pc, vc) = rlc_test_commit(&layout);
+        let colw = rlc_test_col_weights(&p_x);
+        let rw = rlc_test_row_weights(&p_x, 57);
+
+        for j in [2usize, 3, 4] {
+            let family_cols: Vec<usize> = (0..j).collect();
+            let forms: Vec<usize> = (1..1usize << j).collect(); // maximal: every nonzero form
+            let cs: Vec<u128> = forms
+                .iter()
+                .map(|&f| rlc_expected_claim(&layout, hint.rows(), &family_cols, f, &rw, &colw))
+                .collect();
+            let claims: Vec<RlcSharedClaim> = forms
+                .iter()
+                .zip(cs.iter())
+                .map(|(&form, &claimed)| RlcSharedClaim { form, claimed })
+                .collect();
+
+            let mut pt = Blake3Transcript::new();
+            let proof = prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                &mut pt, &hint, &layout, &family_cols, &rw, &claims, alpha, &pc,
+            );
+            let mut vt = Blake3Transcript::new();
+            verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                &mut vt, &hint.commitment, &proof, &layout, &family_cols, &rw, &claims, &colw,
+                alpha, &vc,
+            )
+            .unwrap_or_else(|e| panic!("maximal shared-point family j={j} failed: {e:?}"));
+
+            // Generic γ's keep every channel alive: full presum width,
+            // full cascade (level 2 iff j ≥ 3).
+            assert_eq!(proof.presums[0].claimed_sums().len(), (1 << j) - 1, "j={j} channels");
+            assert_eq!(proof.discharge_eqf2.is_some(), j >= 3, "j={j} cascade depth");
+
+            // The collapsed absorb binds the claimed values...
+            let mut claims_bad = claims.clone();
+            claims_bad[1].claimed = (claims_bad[1].claimed + 1) % FQ_MOD;
+            let mut vt = Blake3Transcript::new();
+            assert!(
+                verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                    &mut vt, &hint.commitment, &proof, &layout, &family_cols, &rw, &claims_bad,
+                    &colw, alpha, &vc,
+                )
+                .is_err(),
+                "tampered claimed value accepted (j={j})"
+            );
+            // ...and the ONE shared weight vector.
+            let mut rw_bad = rw.clone();
+            rw_bad[3] = (rw_bad[3] + 1) % FQ_MOD;
+            let mut vt = Blake3Transcript::new();
+            assert!(
+                verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                    &mut vt, &hint.commitment, &proof, &layout, &family_cols, &rw_bad, &claims,
+                    &colw, alpha, &vc,
+                )
+                .is_err(),
+                "tampered shared weight vector accepted (j={j})"
+            );
+
+            // Same claims through the GENERAL API (k copies of the weight
+            // vector): same downstream proof shape, but a different
+            // transcript — cross-verification must reject both ways.
+            let gen_claims: Vec<RlcFamilyClaim<'_>> = forms
+                .iter()
+                .zip(cs.iter())
+                .map(|(&form, &claimed)| RlcFamilyClaim {
+                    form,
+                    row_weights_q: &rw,
+                    claimed,
+                })
+                .collect();
+            let mut pt = Blake3Transcript::new();
+            let gen_proof = prove_mle_eval_mod_q_ligerito_rlc_family(
+                &mut pt, &hint, &layout, &family_cols, &gen_claims, alpha, &pc,
+            );
+            assert_eq!(gen_proof.rings.len(), proof.rings.len(), "same core shape (j={j})");
+            assert_eq!(gen_proof.omegas.len(), proof.omegas.len(), "same core shape (j={j})");
+            let mut vt = Blake3Transcript::new();
+            assert!(
+                verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                    &mut vt, &hint.commitment, &gen_proof, &layout, &family_cols, &rw, &claims,
+                    &colw, alpha, &vc,
+                )
+                .is_err(),
+                "general-API proof accepted by the shared-point verifier (j={j})"
+            );
+            let mut vt = Blake3Transcript::new();
+            assert!(
+                verify_mle_eval_mod_q_ligerito_rlc_family(
+                    &mut vt, &hint.commitment, &proof, &layout, &family_cols, &gen_claims, &colw,
+                    alpha, &vc,
+                )
+                .is_err(),
+                "shared-point proof accepted by the general verifier (j={j})"
+            );
+        }
+    }
+
+    /// Shared-point dedupe: duplicate forms with EQUAL claimed values are
+    /// canonicalized away (a duplicated list proves and verifies
+    /// interchangeably with the canonical list — same transcript), and a
+    /// duplicate with a DIFFERENT claimed value is rejected by the
+    /// verifier. Plus the degenerate shared-point families: the pure-XOR
+    /// singleton (AND channel elided) and j = 1 (all claims dedupe to one).
+    #[test]
+    fn rlc_family_shared_point_dedupe_and_degenerate() {
+        let layout = rlc_test_layout();
+        let p_x = virtual_xor_params(&layout);
+        let alpha = smallest_generator();
+        let (hint, pc, vc) = rlc_test_commit(&layout);
+        let colw = rlc_test_col_weights(&p_x);
+        let rw = rlc_test_row_weights(&p_x, 91);
+        let family_cols = [0usize, 1];
+        let forms = [0b01usize, 0b10, 0b11];
+        let cs: Vec<u128> = forms
+            .iter()
+            .map(|&f| rlc_expected_claim(&layout, hint.rows(), &family_cols, f, &rw, &colw))
+            .collect();
+        let canonical: Vec<RlcSharedClaim> = forms
+            .iter()
+            .zip(cs.iter())
+            .map(|(&form, &claimed)| RlcSharedClaim { form, claimed })
+            .collect();
+        // The same statement with duplicates interleaved.
+        let duplicated: Vec<RlcSharedClaim> = vec![
+            canonical[0],
+            canonical[1],
+            canonical[0], // repeat of form 01, equal c
+            canonical[2],
+            canonical[2], // repeat of form 11, equal c
+        ];
+
+        let mut pt = Blake3Transcript::new();
+        let proof_canon = prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+            &mut pt, &hint, &layout, &family_cols, &rw, &canonical, alpha, &pc,
+        );
+        let mut pt = Blake3Transcript::new();
+        let proof_dup = prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+            &mut pt, &hint, &layout, &family_cols, &rw, &duplicated, alpha, &pc,
+        );
+        // Same canonical statement ⇒ same transcript ⇒ same folds.
+        assert_eq!(proof_canon.us, proof_dup.us, "dedupe must canonicalize the transcript");
+        // Either claim list verifies either proof.
+        for (pr, cl) in
+            [(&proof_canon, &duplicated), (&proof_dup, &canonical), (&proof_dup, &duplicated)]
+        {
+            let mut vt = Blake3Transcript::new();
+            verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                &mut vt, &hint.commitment, pr, &layout, &family_cols, &rw, cl, &colw, alpha,
+                &vc,
+            )
+            .expect("deduped claim lists are interchangeable");
+        }
+        // A duplicate form with a DIFFERENT claimed value: unsatisfiable
+        // statement, rejected outright (Shape) — not silently deduped.
+        let mut conflicted = duplicated.clone();
+        conflicted[2].claimed = (conflicted[2].claimed + 1) % FQ_MOD;
+        let mut vt = Blake3Transcript::new();
+        assert!(
+            matches!(
+                verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+                    &mut vt, &hint.commitment, &proof_canon, &layout, &family_cols, &rw,
+                    &conflicted, &colw, alpha, &vc,
+                ),
+                Err(FlockRsError::RingSwitch(RsOpenError::Shape))
+            ),
+            "conflicting duplicate form must reject as Shape"
+        );
+
+        // Pure-XOR shared-point singleton: Γ(01) = Γ(10), Γ(11) = 0 — the
+        // AND channel's τ vanishes identically and is elided.
+        let c_xor = rlc_expected_claim(&layout, hint.rows(), &family_cols, 0b11, &rw, &colw);
+        let xor_claims = vec![RlcSharedClaim { form: 0b11, claimed: c_xor }];
+        let mut pt = Blake3Transcript::new();
+        let proof_xor = prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+            &mut pt, &hint, &layout, &family_cols, &rw, &xor_claims, alpha, &pc,
+        );
+        assert!(proof_xor.discharge_eqf.is_none(), "elided AND channel ⇒ no discharge");
+        let mut vt = Blake3Transcript::new();
+        verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+            &mut vt, &hint.commitment, &proof_xor, &layout, &family_cols, &rw, &xor_claims,
+            &colw, alpha, &vc,
+        )
+        .expect("shared-point pure-XOR singleton verifies");
+
+        // j = 1: any number of claims on the one column dedupe to a single
+        // claim — the base-protocol degeneration.
+        let single_col = [0usize];
+        let c0 = rlc_expected_claim(&layout, hint.rows(), &single_col, 0b1, &rw, &colw);
+        let j1_claims = vec![
+            RlcSharedClaim { form: 0b1, claimed: c0 },
+            RlcSharedClaim { form: 0b1, claimed: c0 },
+        ];
+        let mut pt = Blake3Transcript::new();
+        let proof_j1 = prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+            &mut pt, &hint, &layout, &single_col, &rw, &j1_claims, alpha, &pc,
+        );
+        assert!(proof_j1.discharge_eqf.is_none(), "j = 1 has no monomial channels");
+        let mut vt = Blake3Transcript::new();
+        verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
+            &mut vt, &hint.commitment, &proof_j1, &layout, &single_col, &rw, &j1_claims, &colw,
+            alpha, &vc,
+        )
+        .expect("j = 1 shared-point dedupe verifies");
     }
 
     /// The j = 3 family (k = 4, a₄ = a₁ ⊕ a₂ ⊕ a₃): 7 presum channels,
