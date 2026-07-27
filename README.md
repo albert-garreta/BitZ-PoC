@@ -1124,7 +1124,15 @@ a δ4 collapse body costs ~0.55× a δ0 single), family bodies carry
 routing already costs ≈ 2.9 singles at n=24. The open lever that
 could flip it: δ-enabling the RLC-family path + merging the two
 families into one proof (projected ~10–20 %, bounded by the
-channels).
+channels). n=26 row (heavily churned box — 80 MB free — ratios are
+same-window): opt 312.0 / 438 KB, naive 321.3, **fam6 310.6 = 1.00×
+(a tie)**, fam4 350.5 / 713 KB — the fam6/opt trend across n =
+1.29× → 1.23× → 1.00× at n=22/24/26: the family route's case-forest
+economy GROWS with n while the collapse bodies stay
+one-body-per-claim, so even δ0 families reach parity at n=26 and
+project to WIN at n ≥ 28; δ-enabling them (which also fixes the 2×
+byte gap — the full-width δ0 folds are the entire size loss) would
+flip the verdict at every shape.
 
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
