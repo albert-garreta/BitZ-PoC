@@ -871,7 +871,9 @@ pub fn rlc_case_weights(
     j: usize,
 ) -> Vec<Vec<u128>> {
     let k = claim_weights.len();
-    assert!((1..=4).contains(&j), "RLC family supports j ∈ [1, 4] (2^j-case tables)");
+    // j ≤ 4 for the committed-column family (kernel budget); up to 7 for
+    // the structured-tap STREAM families (eager forest, clustered).
+    assert!((1..=7).contains(&j), "RLC case tables support j ∈ [1, 7]");
     assert_eq!(gammas.len(), k, "one γ per claim");
     assert_eq!(forms.len(), k, "one form per claim");
     let cases = 1usize << j;

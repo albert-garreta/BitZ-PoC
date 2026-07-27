@@ -59,6 +59,11 @@ pub use ligerito_flock::{
     IntEvalRsLigModQTapProof, TapClaim, TapVerifyClaim, mle_eval_mod_q_lig_tap_size_breakdown,
     prove_mle_eval_mod_q_ligerito_tap_claims, verify_mle_eval_mod_q_ligerito_tap_claims,
 };
+pub use ligerito_flock::{
+    IntEvalRsLigTapFamilyProof, TapFamilyCluster, TapFamilyClusterSide,
+    mle_eval_mod_q_lig_tap_family_size_breakdown, prove_mle_eval_mod_q_ligerito_tap_family,
+    verify_mle_eval_mod_q_ligerito_tap_family,
+};
 pub use pcs::IntEvalParams;
 pub use poly::univariate::binary_b127::BinaryFieldB127;
 pub use poly::univariate::binary_gf128::BinaryFieldGF128;

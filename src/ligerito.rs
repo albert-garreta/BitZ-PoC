@@ -647,6 +647,36 @@ pub enum IntEvalRsError {
     ReadOff,
 }
 
+/// [`xi_combined_rows`] with the monomial (AND) rows fused into the scan:
+/// `m_ξ[i] = Σ_c eq_ξ[c]·∧_k M_k[c][i]` — the AND-of-streams row set is
+/// never materialised.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn xi_combined_rows_and(
+    p: &IntEvalParams,
+    row_sets: &[&[Vec<u64>]],
+    eq_xi: &[Gf],
+) -> Vec<Gf> {
+    let t_w = row_bit_vars(p);
+    let len = 1usize << t_w;
+    debug_assert!(!row_sets.is_empty());
+    debug_assert!(len >= 64, "row_len below one word is out of scope (t_w >= 7 holds here)");
+    let mut m = vec![Gf::zero(); len];
+    cfg_chunks_mut!(m, 64).enumerate().for_each(|(wi, block)| {
+        for c in 0..p.cols() {
+            let mut bits = row_sets[0][c][wi];
+            for rs in &row_sets[1..] {
+                bits &= rs[c][wi];
+            }
+            while bits != 0 {
+                let t = bits.trailing_zeros() as usize;
+                block[t] += eq_xi[c];
+                bits &= bits.wrapping_sub(1);
+            }
+        }
+    });
+    m
+}
+
 /// `eq(c,ξ)`-combined rows: `m_ξ[i] = Σ_c eq_ξ[c]·M[c][i]`, from the packed
 /// bit rows. Parallel over 64-entry output blocks (each block scans all
 /// rows' matching word — exact field sums, order-independent in char 2).

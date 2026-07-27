@@ -2510,7 +2510,7 @@ fn tap_fill_basis(
                 }
                 let y = embed_xor_index(layout, (base | h) << p0, tap.col) >> LOG_PACKING;
                 let add = crate::ligerito::phi_from_words(*e.words(), phi_tables);
-                b[y] = b[y] + gf_to_f128(add);
+                b[y] += gf_to_f128(add);
             }
         }
     }
@@ -2868,6 +2868,938 @@ pub fn mle_eval_mod_q_lig_tap_size_breakdown(
         for u in us {
             b.v += u.len() * 16;
         }
+    }
+    b.s_v = proof.rings.len() * 128 * 16;
+    (b, proof.lig.size_bytes())
+}
+
+// ---------------------------------------------------------------------
+// EXPERIMENTAL — RLC families over tap STREAMS
+// (docs/rlc-structured-taps-phase0.md §2–3).
+//
+// The stream reduction: claims on tapped convolutions `b_i = ⊕ op(col)`
+// are per-position XORs of the deduped tap STREAMS, so the RLC family
+// construction applies verbatim with the streams as the family's base
+// columns (`j_eff` = #streams). Clusters keep the active-channel count in
+// budget (the monolithic instance has ~900 channels; the pinned clusters
+// 27 + 31); each cluster runs ONE eager `2^{j_eff}`-case forest per weight
+// chunk + its active-channel presum (monomial rows FUSED into the scan —
+// never materialised) and its own 2-level leaf-bit discharge cascade (the
+// eq-factored driver shares suffix tensors across bit-selected groups, so
+// each cascade level needs ONE exit point — per-cluster levels; the
+// single-chunk regime `lch = 1` is asserted, as in every deployed shape).
+// Every residual stream opening — singleton channel exits, level-1 Col
+// sides at ρ, level-2 exits at ρ′ — closes through the translated-eq
+// machinery of [`crate::taps`] (per (stream, class) rings, claim checked
+// as `μ = Σ_β ⟨A_β, s_β⟩`). ONE recursive Ligerito call closes everything.
+//
+// Fiat–Shamir chain: absorb statement (tag 0x43) → per cluster γ's →
+// per cluster per chunk forest + presum → per cluster cascade
+// (η's → level 1 → ω's → η″'s → level 2 → ω″'s) → rings → r″ + ring η's
+// → Ligerito. Evaluation field fixed q = 2^100 − 15.
+// ---------------------------------------------------------------------
+
+/// One cluster of a stream family: the deduped tap streams plus the
+/// claims whose forms are bitmasks over them. All claims (across ALL
+/// clusters of one call) share the column point.
+pub struct TapFamilyCluster<'a> {
+    /// The family base streams, `1 ≤ j_eff ≤ 7`.
+    pub streams: &'a [TapOp],
+    /// Claims: `form` over the streams, per-claim row weights, claimed
+    /// values (canonical `[0, q)`).
+    pub claims: &'a [RlcFamilyClaim<'a>],
+}
+
+/// Per-cluster proof parts of a stream family.
+pub struct TapFamilyClusterSide {
+    /// Per weight chunk: the eager `2^{j_eff}`-case forest.
+    pub mfs: Vec<MergedForestProof>,
+    /// `us[l][c]` = the combined case-weight folds, range-checked.
+    pub us: Vec<Vec<u128>>,
+    /// Per chunk: the active-channel presum.
+    pub presums: Vec<MultiDegreeSumcheckProof<Gf>>,
+    /// The cluster's cascade level 1 (its |S| ≥ 2 channels; None when all
+    /// monomial channels elided).
+    pub discharge_eqf: Option<RlcDischargeEqf>,
+    /// Level-1 side openings at the cluster's ρ, canonical side order.
+    pub omegas: Vec<Gf>,
+    /// The cluster's cascade level 2 (its AND sides).
+    pub discharge_eqf2: Option<RlcDischargeEqf>,
+    /// Level-2 stream openings at the cluster's ρ′, ascending stream order.
+    pub omegas2: Vec<Gf>,
+}
+
+/// End-to-end proof of a clustered stream family (EXPERIMENTAL).
+pub struct IntEvalRsLigTapFamilyProof {
+    pub clusters: Vec<TapFamilyClusterSide>,
+    /// Twisted ring messages, flat in (cluster, group, stream, class) order.
+    pub rings: Vec<RingSwitchProof>,
+    pub lig: LigeritoProof,
+}
+
+/// Absorb the stream-family statement (domain tag 0x43): root, layout,
+/// q, and per cluster the stream descriptors, forms, claimed values and
+/// row-weight vectors — everything the γ's depend on precedes them.
+#[allow(clippy::arithmetic_side_effects)]
+fn absorb_tap_family_statement(
+    transcript: &mut impl Transcript,
+    root: &flock_core::merkle::Hash,
+    layout: &ShaF2Layout,
+    clusters: &[TapFamilyCluster<'_>],
+) {
+    let mut bytes = Vec::new();
+    bytes.push(0x43u8);
+    bytes.extend_from_slice(root);
+    for v in [
+        layout.p.t,
+        layout.p.s,
+        layout.p.word_bits,
+        layout.num_cols,
+        layout.log_cols,
+        layout.bit_vars,
+        layout.num_vars,
+        layout.tw,
+        layout.x_fold_extra,
+        clusters.len(),
+    ] {
+        bytes.extend_from_slice(&(v as u64).to_le_bytes());
+    }
+    bytes.extend_from_slice(&crate::pcs::FQ_MOD.to_le_bytes());
+    for cl in clusters {
+        bytes.extend_from_slice(&(cl.streams.len() as u64).to_le_bytes());
+        for st in cl.streams {
+            for v in [st.col as u64, st.bit_amt as u64, u64::from(st.bit_dropout), st.off as u64]
+            {
+                bytes.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        bytes.extend_from_slice(&(cl.claims.len() as u64).to_le_bytes());
+        for c in cl.claims {
+            bytes.extend_from_slice(&(c.form as u64).to_le_bytes());
+            bytes.extend_from_slice(&c.claimed.to_le_bytes());
+            for &x in c.row_weights_q {
+                bytes.extend_from_slice(&x.to_le_bytes());
+            }
+        }
+    }
+    transcript.absorb_slice(&bytes);
+}
+
+/// Validate a stream-family statement (shared prover asserts / verifier
+/// shape checks).
+fn tap_family_check(layout: &ShaF2Layout, clusters: &[TapFamilyCluster<'_>]) -> bool {
+    use crate::pcs::{FQ_MOD, virtual_xor_params};
+    let p_x = virtual_xor_params(layout);
+    if clusters.is_empty()
+        || layout.p.word_bits != 1
+        || layout.x_fold_extra != 0
+        || layout.tw + layout.log_cols < 7
+        || row_bit_vars(&p_x) < 6
+    {
+        return false;
+    }
+    let w = 1usize << layout.bit_vars;
+    for cl in clusters {
+        let j = cl.streams.len();
+        if !(1..=7).contains(&j) || cl.claims.is_empty() {
+            return false;
+        }
+        for st in cl.streams {
+            if st.col >= layout.num_cols || st.bit_amt >= w || st.off >= (1usize << layout.p.s) {
+                return false;
+            }
+        }
+        for c in cl.claims {
+            if c.form == 0
+                || c.form >= (1usize << j)
+                || c.row_weights_q.len() != p_x.rows()
+                || c.claimed >= FQ_MOD
+            {
+                return false;
+            }
+        }
+        for fi in 0..j {
+            if !cl.claims.iter().any(|c| (c.form >> fi) & 1 == 1) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// One cluster's cascade shape, derived from its active channels on both
+/// sides: the level-1 (chunk, channel) pairs, the canonical side list,
+/// the level-2 AND masks and their member streams.
+struct TapCascadeShape {
+    l1_pairs: Vec<(usize, usize)>,
+    side_list: Vec<RlcSide>,
+    and_masks: Vec<usize>,
+    omega2_fis: Vec<usize>,
+}
+
+fn tap_cascade_shape(j: usize, actives: &[Vec<usize>]) -> TapCascadeShape {
+    let l1_pairs: Vec<(usize, usize)> = {
+        let mut v = Vec::new();
+        for (l, act) in actives.iter().enumerate() {
+            for &ch in act {
+                if ch.count_ones() >= 2 {
+                    v.push((l, ch));
+                }
+            }
+        }
+        v
+    };
+    let side_list: Vec<RlcSide> = {
+        let mut v: Vec<RlcSide> = Vec::new();
+        for &(_, ch) in &l1_pairs {
+            let (a, b) = rlc_channel_sides(ch);
+            for sd in [a, b] {
+                if !v.contains(&sd) {
+                    v.push(sd);
+                }
+            }
+        }
+        v.sort_unstable();
+        v
+    };
+    let and_masks: Vec<usize> = side_list
+        .iter()
+        .filter_map(|&sd| match sd {
+            RlcSide::And(mask) => Some(mask),
+            RlcSide::Col(_) => None,
+        })
+        .collect();
+    let omega2_fis: Vec<usize> = {
+        let mut fis: Vec<usize> = and_masks
+            .iter()
+            .flat_map(|&mask| (0..j).filter(move |fi| (mask >> fi) & 1 == 1))
+            .collect();
+        fis.sort_unstable();
+        fis.dedup();
+        fis
+    };
+    TapCascadeShape { l1_pairs, side_list, and_masks, omega2_fis }
+}
+
+/// Prove a clustered stream family (EXPERIMENTAL; see the section
+/// comment). All clusters' claims share the column point.
+#[allow(clippy::arithmetic_side_effects)]
+pub fn prove_mle_eval_mod_q_ligerito_tap_family(
+    transcript: &mut (impl Transcript + Send),
+    hint: &FlockCommitHint,
+    layout: &ShaF2Layout,
+    clusters: &[TapFamilyCluster<'_>],
+    alpha: Gf,
+    pc: &LigProverConfig,
+) -> IntEvalRsLigTapFamilyProof {
+    use crate::merged_forest::prove_merged_forest;
+    use crate::pcs::{
+        FQ_BITS, fq_challenge, mod_q_chunk_width, mod_q_num_chunks, rlc_case_pow_table,
+        rlc_case_weights, rlc_chunk_case_weights, rlc_tau_tables, virtual_xor_params,
+    };
+    use crate::piop::sumcheck::multi_degree::{MultiDegreeSumcheck, MultiDegreeSumcheckGroup};
+    use crate::poly::mle::DenseMultilinearExtension;
+    use crate::poly::utils::build_eq_x_r_vec;
+    use crate::taps::{extract_virtual_tap_rows, tap_classes, tap_support_tables};
+    use crypto_primitives::Field;
+
+    assert!(tap_family_check(layout, clusters), "invalid stream-family statement");
+    let p_x = virtual_xor_params(layout);
+    let t_x = row_bit_vars(&p_x);
+    let c_w_x = mod_q_chunk_width(&p_x);
+    let lch_x = mod_q_num_chunks(&p_x, FQ_BITS);
+    assert_eq!(
+        lch_x, 1,
+        "the leaf-bit cascade shares one exit point per level; multi-chunk shapes are unbuilt"
+    );
+
+    // (1)–(2) Statement → per-cluster γ's → case chunks.
+    absorb_tap_family_statement(transcript, hint.root(), layout, clusters);
+    let case_chunks_all: Vec<Vec<Vec<Vec<u128>>>> = clusters
+        .iter()
+        .map(|cl| {
+            let gammas: Vec<u128> =
+                (0..cl.claims.len()).map(|_| fq_challenge(transcript)).collect();
+            let forms: Vec<usize> = cl.claims.iter().map(|c| c.form).collect();
+            let w_refs: Vec<&[u128]> = cl.claims.iter().map(|c| c.row_weights_q).collect();
+            let _g = crate::utils::prof::scope("tapf:casew");
+            let case_w = rlc_case_weights(&w_refs, &gammas, &forms, cl.streams.len());
+            rlc_chunk_case_weights(&case_w, c_w_x, lch_x)
+        })
+        .collect();
+
+    // Stream rows per cluster.
+    let x_rows_all: Vec<Vec<Vec<Vec<u64>>>> = {
+        let _g = crate::utils::prof::scope("tapf:extract");
+        clusters
+            .iter()
+            .map(|cl| {
+                cl.streams
+                    .iter()
+                    .map(|st| extract_virtual_tap_rows(layout, &hint.rows, &[*st], 0))
+                    .collect()
+            })
+            .collect()
+    };
+
+    // (3)–(4) Per cluster: forests + presums, then the cluster's cascade.
+    let one = Gf::one();
+    let zero_inner = Gf::zero().into_inner();
+    let mut sides_out: Vec<TapFamilyClusterSide> = Vec::with_capacity(clusters.len());
+    // Ring surfaces collected per cluster: (point, streams) with cluster id.
+    struct RingSurface {
+        ci: usize,
+        point: Vec<Gf>,
+        streams: Vec<usize>,
+    }
+    let mut surfaces: Vec<RingSurface> = Vec::new();
+    for (ci, cl) in clusters.iter().enumerate() {
+        let x_rows = &x_rows_all[ci];
+        let j = cl.streams.len();
+        let mut mfs = Vec::with_capacity(lch_x);
+        let mut us = Vec::with_capacity(lch_x);
+        let mut presums = Vec::with_capacity(lch_x);
+        let mut points = Vec::with_capacity(lch_x);
+        let mut actives = Vec::with_capacity(lch_x);
+        for chunk in &case_chunks_all[ci] {
+            let _g = crate::utils::prof::scope("tapf:chunk");
+            let case_pow = {
+                let _g = crate::utils::prof::scope("tapf:pows");
+                rlc_case_pow_table(chunk, alpha)
+            };
+            let (leaves, u) = {
+                let _g = crate::utils::prof::scope("tapf:leaves");
+                rlc_leaves_and_folds(&p_x, x_rows, chunk, &case_pow)
+            };
+            let (_roots, mf, z, e_d) = {
+                let _g = crate::utils::prof::scope("tapf:forest");
+                prove_merged_forest(transcript, &leaves, t_x, p_x.s)
+            };
+            let _g_ps = crate::utils::prof::scope("tapf:presum");
+            let (z_bj, z_c) = z.split_at(t_x);
+            let eq_zbj = build_eq_x_r_vec(z_bj, &()).expect("t' >= 1");
+            let eq_zc = build_eq_x_r_vec(z_c, &()).expect("s >= 1");
+            let taus = rlc_tau_tables(&case_pow);
+            let active = rlc_active_channels(&taus);
+            assert!(!active.is_empty(), "degenerate cluster: every presum channel vanished");
+            for &s in &active {
+                assert!(
+                    s.count_ones() <= 4,
+                    "active channel {s:#b} exceeds the |S| ≤ 4 cascade — re-cluster"
+                );
+            }
+            let m_tbls: Vec<Vec<Gf>> = active
+                .iter()
+                .map(|&s| {
+                    let members: Vec<&[Vec<u64>]> = (0..j)
+                        .filter(|fi| (s >> fi) & 1 == 1)
+                        .map(|fi| &x_rows[fi][..])
+                        .collect();
+                    crate::ligerito::xi_combined_rows_and(&p_x, &members, &eq_zc)
+                })
+                .collect();
+            let to_mle = |tbl: Vec<Gf>| {
+                DenseMultilinearExtension::from_evaluations_vec(
+                    t_x,
+                    tbl.into_iter().map(|g| g.into_inner()).collect(),
+                    zero_inner,
+                )
+            };
+            let groups: Vec<MultiDegreeSumcheckGroup<Gf>> = active
+                .iter()
+                .enumerate()
+                .map(|(gi, &s)| {
+                    let r_tbl: Vec<Gf> =
+                        eq_zbj.iter().zip(taus[s].iter()).map(|(&e, &t)| e * t).collect();
+                    MultiDegreeSumcheckGroup::new(
+                        2,
+                        vec![to_mle(r_tbl), to_mle(m_tbls[gi].clone())],
+                        Box::new(|vals: &[Gf]| vals[0] * vals[1]),
+                    )
+                })
+                .collect();
+            let (presum, states) =
+                MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(transcript, groups, t_x, &());
+            debug_assert_eq!(
+                presum.claimed_sums().iter().fold(Gf::zero(), |a, &b| a + b),
+                e_d + one,
+                "presum channels must sum to the forest exit claim"
+            );
+            let r_star = states[0].randomness.clone();
+            let point: Vec<Gf> = r_star.iter().chain(z_c.iter()).copied().collect();
+            mfs.push(mf);
+            us.push(u);
+            presums.push(presum);
+            points.push(point);
+            actives.push(active);
+        }
+        // Chunk-exit ring surfaces (active singleton streams).
+        for (l, pt) in points.iter().enumerate() {
+            surfaces.push(RingSurface {
+                ci,
+                point: pt.clone(),
+                streams: (0..j)
+                    .filter(|&fi| actives[l].contains(&(1usize << fi)))
+                    .collect(),
+            });
+        }
+        // The cluster's cascade.
+        let shape = tap_cascade_shape(j, &actives);
+        let (d1, omegas, d2, omegas2) = if shape.l1_pairs.is_empty() {
+            (None, Vec::new(), None, Vec::new())
+        } else {
+            let _g = crate::utils::prof::scope("tapf:discharge");
+            let etas_dis: Vec<Gf> =
+                transcript.get_field_challenges(shape.l1_pairs.len(), &());
+            let _g_t = crate::utils::prof::scope("tapf:dis_tbls");
+            let side_not_rows = |sd: RlcSide| -> Vec<Vec<u64>> {
+                match sd {
+                    RlcSide::Col(fi) => rlc_not_rows(&x_rows[fi]),
+                    RlcSide::And(mask) => {
+                        let mut bits = (0..j).filter(|fi| (mask >> fi) & 1 == 1);
+                        let (a, b) =
+                            (bits.next().expect("2 bits"), bits.next().expect("2 bits"));
+                        x_rows[a]
+                            .iter()
+                            .zip(x_rows[b].iter())
+                            .map(|(ra, rb)| {
+                                ra.iter().zip(rb.iter()).map(|(&x, &y)| !(x & y)).collect()
+                            })
+                            .collect()
+                    }
+                }
+            };
+            let not_cache: Vec<Vec<Vec<u64>>> =
+                shape.side_list.iter().map(|&sd| side_not_rows(sd)).collect();
+            let not_of = |sd: RlcSide| -> &Vec<Vec<u64>> {
+                &not_cache[shape.side_list.iter().position(|&x| x == sd).expect("side")]
+            };
+            let specs: Vec<RlcEqfSpec<'_>> = shape
+                .l1_pairs
+                .iter()
+                .enumerate()
+                .map(|(i, &(l, ch))| {
+                    let (a, b) = rlc_channel_sides(ch);
+                    (&points[l][..], etas_dis[i], &not_of(a)[..], &not_of(b)[..])
+                })
+                .collect();
+            drop(_g_t);
+            let _g_r = crate::utils::prof::scope("tapf:dis_run");
+            let (d1, rho, vals) = rlc_prove_eqf_level(transcript, &p_x, t_x, &specs);
+            let omegas: Vec<Gf> = shape
+                .side_list
+                .iter()
+                .map(|&sd| {
+                    for (i, &(_, ch)) in shape.l1_pairs.iter().enumerate() {
+                        let (a, b) = rlc_channel_sides(ch);
+                        if a == sd {
+                            return vals[i].0;
+                        }
+                        if b == sd {
+                            return vals[i].1;
+                        }
+                    }
+                    unreachable!("side_list derives from l1_pairs")
+                })
+                .collect();
+            crate::ligerito::absorb_rlc_omegas(transcript, &omegas);
+            surfaces.push(RingSurface {
+                ci,
+                point: rho.clone(),
+                streams: shape
+                    .side_list
+                    .iter()
+                    .filter_map(|&sd| match sd {
+                        RlcSide::Col(fi) => Some(fi),
+                        RlcSide::And(_) => None,
+                    })
+                    .collect(),
+            });
+            if shape.and_masks.is_empty() {
+                (Some(d1), omegas, None, Vec::new())
+            } else {
+                let etas2: Vec<Gf> =
+                    transcript.get_field_challenges(shape.and_masks.len(), &());
+                let not_singles: Vec<(usize, Vec<Vec<u64>>)> = shape
+                    .omega2_fis
+                    .iter()
+                    .map(|&fi| (fi, rlc_not_rows(&x_rows[fi])))
+                    .collect();
+                let not_single = |fi: usize| -> &[Vec<u64>] {
+                    &not_singles.iter().find(|(f, _)| *f == fi).expect("member cached").1
+                };
+                let specs2: Vec<RlcEqfSpec<'_>> = shape
+                    .and_masks
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &mask)| {
+                        let mut bits = (0..j).filter(|fi| (mask >> fi) & 1 == 1);
+                        let (a, b) =
+                            (bits.next().expect("2 bits"), bits.next().expect("2 bits"));
+                        (&rho[..], etas2[i], not_single(a), not_single(b))
+                    })
+                    .collect();
+                let (d2, rho2, vals2) = rlc_prove_eqf_level(transcript, &p_x, t_x, &specs2);
+                let omegas2: Vec<Gf> = shape
+                    .omega2_fis
+                    .iter()
+                    .map(|&fi| {
+                        for (i, &mask) in shape.and_masks.iter().enumerate() {
+                            let mut bits = (0..j).filter(|f| (mask >> f) & 1 == 1);
+                            let (a, b) =
+                                (bits.next().expect("2 bits"), bits.next().expect("2 bits"));
+                            if a == fi {
+                                return vals2[i].0;
+                            }
+                            if b == fi {
+                                return vals2[i].1;
+                            }
+                        }
+                        unreachable!("omega2 fis derive from and_masks")
+                    })
+                    .collect();
+                crate::ligerito::absorb_rlc_omegas(transcript, &omegas2);
+                surfaces.push(RingSurface {
+                    ci,
+                    point: rho2.clone(),
+                    streams: shape.omega2_fis.clone(),
+                });
+                (Some(d1), omegas, Some(d2), omegas2)
+            }
+        };
+        sides_out.push(TapFamilyClusterSide {
+            mfs,
+            us,
+            presums,
+            discharge_eqf: d1,
+            omegas,
+            discharge_eqf2: d2,
+            omegas2,
+        });
+    }
+
+    // (5) Twisted rings over all surfaces, per (stream, class).
+    let _g_r = crate::utils::prof::scope("tapf:rings");
+    let mut ring_walks: Vec<(TapOp, usize, crate::taps::TapClass)> = Vec::new();
+    for (si, surf) in surfaces.iter().enumerate() {
+        for &fi in &surf.streams {
+            let tap = clusters[surf.ci].streams[fi];
+            for cls in tap_classes(layout, &tap) {
+                ring_walks.push((tap, si, cls));
+            }
+        }
+    }
+    let svs: Vec<Vec<Gf>> = cfg_into_iter!(0..ring_walks.len())
+        .map(|i| {
+            let (tap, si, cls) = &ring_walks[i];
+            let sup = tap_support_tables(layout, tap, &surfaces[*si].point, *cls);
+            tap_ring_walk(layout, &hint.p_msg, tap, &sup)
+        })
+        .collect();
+    let mut rings = Vec::with_capacity(svs.len());
+    for sv in svs {
+        crate::ligerito::absorb_sv(transcript, &sv);
+        rings.push(RingSwitchProof { s_v: sv });
+    }
+    drop(_g_r);
+
+    // (6) r″ + ring η's → combined basis + target → ONE Ligerito call.
+    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let eq_r2 = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
+    let etas: Vec<Gf> = transcript.get_field_challenges(rings.len(), &());
+    let m_p = packed_vars(&layout.p);
+    let mut b_comb = vec![F128::ZERO; 1usize << m_p];
+    {
+        let _g = crate::utils::prof::scope("tapf:bcomb");
+        for (i, (tap, si, cls)) in ring_walks.iter().enumerate() {
+            let phi_tables = crate::ligerito::phi_byte_tables(&eq_r2, etas[i]);
+            let sup = tap_support_tables(layout, tap, &surfaces[*si].point, *cls);
+            tap_fill_basis(layout, &mut b_comb, tap, &sup, &phi_tables);
+        }
+    }
+    let mut target = Gf::zero();
+    for (i, ring) in rings.iter().enumerate() {
+        let s_u = crate::ligerito::transpose_bits_128(&ring.s_v);
+        let beta = s_u.iter().zip(eq_r2.iter()).fold(Gf::zero(), |a, (su, e)| a + *su * *e);
+        target += etas[i] * beta;
+    }
+    let _g_l = crate::utils::prof::scope("tapf:lig");
+    let lig = ligerito::recursive_prover_with_basis(
+        pc,
+        hint.p_msg.clone(),
+        b_comb,
+        gf_to_f128(target),
+        &hint.prover_data.codeword,
+        &hint.prover_data.merkle_tree,
+        &mut ZincChallenger(transcript),
+    );
+    IntEvalRsLigTapFamilyProof { clusters: sides_out, rings, lig }
+}
+
+/// Verify a clustered stream family (EXPERIMENTAL). `col_weights` is the
+/// SHARED clear-axis weight vector (one column point across all clusters);
+/// per cluster the recombination is checked against `T = Σ_i γ_i·c_i`.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub fn verify_mle_eval_mod_q_ligerito_tap_family(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: &IntEvalRsLigTapFamilyProof,
+    layout: &ShaF2Layout,
+    clusters: &[TapFamilyCluster<'_>],
+    col_weights: &[crate::pcs::Fq],
+    alpha: Gf,
+    vc: &LigVerifierConfig,
+) -> Result<(), FlockRsError> {
+    use crate::merged_forest::verify_merged_forest;
+    use crate::pcs::{
+        FQ_BITS, FixedBasePow, Fq, fq_add, fq_challenge, fq_mul, is_generator,
+        mod_q_chunk_width, mod_q_num_chunks, recombine_read_off, rlc_case_pow_table,
+        rlc_case_weights, rlc_chunk_case_weights, rlc_tau_tables, virtual_xor_params,
+    };
+    use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheck;
+    use crate::poly::utils::build_eq_x_r_vec;
+    use crate::taps::{residual_b_evals_tap, tap_classes, tap_closure_desc, tap_inpack_table};
+
+    if !tap_family_check(layout, clusters) {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+    if !is_generator(alpha) {
+        return Err(FlockRsError::Common(IntEvalRsError::ChallengeNotGenerator));
+    }
+    let p_x = virtual_xor_params(layout);
+    let t_x = row_bit_vars(&p_x);
+    let c_w_x = mod_q_chunk_width(&p_x);
+    let lch_x = mod_q_num_chunks(&p_x, FQ_BITS);
+    if lch_x != 1
+        || proof.clusters.len() != clusters.len()
+        || col_weights.len() != p_x.cols()
+        || proof.clusters.iter().any(|s| {
+            s.mfs.len() != lch_x || s.us.len() != lch_x || s.presums.len() != lch_x
+        })
+    {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+
+    // (1)–(2) Statement → γ's → case chunks + targets.
+    absorb_tap_family_statement(transcript, &commitment.root, layout, clusters);
+    let mut case_chunks_all = Vec::with_capacity(clusters.len());
+    let mut targets: Vec<Fq> = Vec::with_capacity(clusters.len());
+    for cl in clusters {
+        let gammas: Vec<u128> =
+            (0..cl.claims.len()).map(|_| fq_challenge(transcript)).collect();
+        let t = cl
+            .claims
+            .iter()
+            .zip(gammas.iter())
+            .fold(0u128, |acc, (c, &g)| fq_add(acc, fq_mul(g, c.claimed)));
+        targets.push(Fq::from(t));
+        let forms: Vec<usize> = cl.claims.iter().map(|c| c.form).collect();
+        let w_refs: Vec<&[u128]> = cl.claims.iter().map(|c| c.row_weights_q).collect();
+        let case_w = rlc_case_weights(&w_refs, &gammas, &forms, cl.streams.len());
+        case_chunks_all.push(rlc_chunk_case_weights(&case_w, c_w_x, lch_x));
+    }
+
+    // (3)–(5) Per cluster: forest + presum residuals, cascade, and the
+    // ring surfaces (checked after all clusters, in surface order).
+    let one = Gf::one();
+    let comb = FixedBasePow::new(alpha, 128, 8);
+    let range_shift = c_w_x.wrapping_add(p_x.t).wrapping_add(p_x.word_bits);
+    let bound = 1u128 << range_shift;
+    struct VSurface {
+        ci: usize,
+        point: Vec<Gf>,
+        // (stream, expected residual) pairs.
+        streams: Vec<(usize, Gf)>,
+    }
+    let mut surfaces: Vec<VSurface> = Vec::new();
+    for (ci, cl) in clusters.iter().enumerate() {
+        let side = &proof.clusters[ci];
+        let j = cl.streams.len();
+        let mut points = Vec::with_capacity(lch_x);
+        let mut actives = Vec::with_capacity(lch_x);
+        let mut mus_s1 = Vec::with_capacity(lch_x);
+        let mut mus_ge2 = Vec::with_capacity(lch_x);
+        for (l, chunk_w) in case_chunks_all[ci].iter().enumerate() {
+            for (c, &u) in side.us[l].iter().enumerate() {
+                if u >= bound {
+                    return Err(FlockRsError::ChunkRange { chunk: l, col: c });
+                }
+            }
+            let roots: Vec<Gf> = side.us[l].iter().map(|&u| comb.pow(u)).collect();
+            let (z, e_d) = verify_merged_forest(transcript, &roots, &side.mfs[l], t_x, p_x.s)
+                .map_err(|_| FlockRsError::Common(IntEvalRsError::Forest))?;
+            let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(
+                transcript,
+                t_x,
+                &side.presums[l],
+                &(),
+            )
+            .map_err(|_| FlockRsError::Common(IntEvalRsError::PreSumcheck))?;
+            let case_pow = rlc_case_pow_table(chunk_w, alpha);
+            let taus = rlc_tau_tables(&case_pow);
+            let active = rlc_active_channels(&taus);
+            let sums = side.presums[l].claimed_sums();
+            if active.is_empty()
+                || sums.len() != active.len()
+                || active.iter().any(|s| s.count_ones() > 4)
+            {
+                return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+            }
+            if sums.iter().fold(Gf::zero(), |a, &b| a + b) != e_d + one {
+                return Err(FlockRsError::Common(IntEvalRsError::PreSumcheck));
+            }
+            let (z_bj, z_c) = z.split_at(t_x);
+            let r_star = subclaims.point().to_vec();
+            let eq_zbj = build_eq_x_r_vec(z_bj, &()).expect("t' >= 1");
+            let eq_rstar = build_eq_x_r_vec(&r_star, &()).expect("t' >= 1");
+            let eq_prod: Vec<Gf> =
+                eq_zbj.iter().zip(eq_rstar.iter()).map(|(&a, &b)| a * b).collect();
+            let mut mu_s1 = vec![None; j];
+            let mut mu_ge2 = Vec::with_capacity(active.len());
+            for (g, &s) in active.iter().enumerate() {
+                let r_hat = eq_prod
+                    .iter()
+                    .zip(taus[s].iter())
+                    .fold(Gf::zero(), |acc, (&e, &t)| acc + e * t);
+                if r_hat.is_zero() {
+                    return Err(FlockRsError::Common(IntEvalRsError::RHatZero));
+                }
+                let mu = subclaims.expected_evaluations()[g] * r_hat.inverse();
+                if s.count_ones() == 1 {
+                    mu_s1[s.trailing_zeros() as usize] = Some(mu);
+                } else {
+                    mu_ge2.push(mu);
+                }
+            }
+            points.push(
+                r_star.iter().chain(z_c.iter()).copied().collect::<Vec<Gf>>(),
+            );
+            actives.push(active);
+            mus_s1.push(mu_s1);
+            mus_ge2.push(mu_ge2);
+        }
+        for (l, pt) in points.iter().enumerate() {
+            surfaces.push(VSurface {
+                ci,
+                point: pt.clone(),
+                streams: (0..j)
+                    .filter(|&fi| actives[l].contains(&(1usize << fi)))
+                    .map(|fi| {
+                        (fi, mus_s1[l][fi].expect("active singleton has a residual"))
+                    })
+                    .collect(),
+            });
+        }
+        let shape = tap_cascade_shape(j, &actives);
+        if side.discharge_eqf.is_some() == shape.l1_pairs.is_empty()
+            || side.omegas.len() != shape.side_list.len()
+            || side.discharge_eqf2.is_some() == shape.and_masks.is_empty()
+            || side.omegas2.len() != shape.omega2_fis.len()
+        {
+            return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+        }
+        if !shape.l1_pairs.is_empty() {
+            let etas_dis: Vec<Gf> =
+                transcript.get_field_challenges(shape.l1_pairs.len(), &());
+            let d = side.discharge_eqf.as_ref().expect("shape-checked above");
+            let specs: Vec<(&[Gf], Gf)> = shape
+                .l1_pairs
+                .iter()
+                .enumerate()
+                .map(|(i, &(l, _))| (&points[l][..], etas_dis[i]))
+                .collect();
+            let claimed: Vec<Gf> = shape
+                .l1_pairs
+                .iter()
+                .enumerate()
+                .map(|(i, &(l, ch))| {
+                    let gi = actives[l]
+                        .iter()
+                        .filter(|x| x.count_ones() >= 2)
+                        .position(|&x| x == ch)
+                        .expect("pair derived from actives");
+                    etas_dis[i] * mus_ge2[l][gi]
+                })
+                .collect();
+            let side_pos = |sd: RlcSide| -> usize {
+                shape.side_list.iter().position(|&x| x == sd).expect("side in list")
+            };
+            let side_vals: Vec<(Gf, Gf)> = shape
+                .l1_pairs
+                .iter()
+                .map(|&(_, ch)| {
+                    let (a, b) = rlc_channel_sides(ch);
+                    (side.omegas[side_pos(a)], side.omegas[side_pos(b)])
+                })
+                .collect();
+            let rho =
+                rlc_verify_eqf_level(transcript, t_x, p_x.s, d, &specs, &claimed, &side_vals)?;
+            crate::ligerito::absorb_rlc_omegas(transcript, &side.omegas);
+            surfaces.push(VSurface {
+                ci,
+                point: rho.clone(),
+                streams: shape
+                    .side_list
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(pos, &sd)| match sd {
+                        RlcSide::Col(fi) => Some((fi, side.omegas[pos])),
+                        RlcSide::And(_) => None,
+                    })
+                    .collect(),
+            });
+            if !shape.and_masks.is_empty() {
+                let etas2: Vec<Gf> =
+                    transcript.get_field_challenges(shape.and_masks.len(), &());
+                let d2 = side.discharge_eqf2.as_ref().expect("shape-checked above");
+                let specs2: Vec<(&[Gf], Gf)> = shape
+                    .and_masks
+                    .iter()
+                    .enumerate()
+                    .map(|(i, _)| (&rho[..], etas2[i]))
+                    .collect();
+                let claimed2: Vec<Gf> = shape
+                    .and_masks
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &mask)| etas2[i] * side.omegas[side_pos(RlcSide::And(mask))])
+                    .collect();
+                let fi_pos = |fi: usize| -> usize {
+                    shape.omega2_fis.iter().position(|&x| x == fi).expect("member")
+                };
+                let side_vals2: Vec<(Gf, Gf)> = shape
+                    .and_masks
+                    .iter()
+                    .map(|&mask| {
+                        let mut bits = (0..j).filter(|fi| (mask >> fi) & 1 == 1);
+                        let (a, b) =
+                            (bits.next().expect("2 bits"), bits.next().expect("2 bits"));
+                        (side.omegas2[fi_pos(a)], side.omegas2[fi_pos(b)])
+                    })
+                    .collect();
+                let rho2 = rlc_verify_eqf_level(
+                    transcript, t_x, p_x.s, d2, &specs2, &claimed2, &side_vals2,
+                )?;
+                crate::ligerito::absorb_rlc_omegas(transcript, &side.omegas2);
+                surfaces.push(VSurface {
+                    ci,
+                    point: rho2,
+                    streams: shape
+                        .omega2_fis
+                        .iter()
+                        .zip(side.omegas2.iter())
+                        .map(|(&fi, &om)| (fi, om))
+                        .collect(),
+                });
+            }
+        }
+    }
+
+    // (5b) Twisted rings: each (stream, class) set reproduces its residual.
+    let mut ring_descs: Vec<Vec<crate::taps::TapCoord>> = Vec::new();
+    let mut ring_idx = 0usize;
+    for surf in &surfaces {
+        for &(fi, expect) in &surf.streams {
+            let tap = clusters[surf.ci].streams[fi];
+            let mut acc = Gf::zero();
+            for cls in tap_classes(layout, &tap) {
+                let Some(ring) = proof.rings.get(ring_idx) else {
+                    return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+                };
+                if ring.s_v.len() != 128 {
+                    return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+                }
+                let a_tbl = tap_inpack_table(layout, &tap, &surf.point, cls);
+                acc += ring
+                    .s_v
+                    .iter()
+                    .zip(a_tbl.iter())
+                    .fold(Gf::zero(), |a, (s, e)| a + *s * *e);
+                crate::ligerito::absorb_sv(transcript, &ring.s_v);
+                ring_descs.push(tap_closure_desc(layout, &tap, &surf.point, cls));
+                ring_idx += 1;
+            }
+            if acc != expect {
+                return Err(FlockRsError::RingSwitch(RsOpenError::RingSwitchClaim));
+            }
+        }
+    }
+    if ring_idx != proof.rings.len() {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+
+    // (6) r″ + ring η's → target → succinct closure → Ligerito.
+    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let eq_r2 = build_eq_x_r_vec(&r2, &()).expect("r2");
+    let etas: Vec<Gf> = transcript.get_field_challenges(proof.rings.len(), &());
+    let mut target = Gf::zero();
+    for (i, ring) in proof.rings.iter().enumerate() {
+        let s_u = crate::ligerito::transpose_bits_128(&ring.s_v);
+        let beta = s_u.iter().zip(eq_r2.iter()).fold(Gf::zero(), |a, (su, e)| a + *su * *e);
+        target += etas[i] * beta;
+    }
+    let m_p = packed_vars(&layout.p);
+    let eval_b = |ris: &[F128], yr_log_n: usize| -> Vec<F128> {
+        let ris_gf: Vec<Gf> = ris.iter().map(|&f| f128_to_gf(f)).collect();
+        let mut out = vec![Gf::zero(); 1usize << yr_log_n];
+        for (i, desc) in ring_descs.iter().enumerate() {
+            let blk = residual_b_evals_tap(&ris_gf, yr_log_n, desc, &eq_r2);
+            for (o, x) in out.iter_mut().zip(blk.iter()) {
+                *o += etas[i] * *x;
+            }
+        }
+        out.into_iter().map(gf_to_f128).collect()
+    };
+    let ok = ligerito::recursive_verifier_with_basis_succinct(
+        vc,
+        &proof.lig,
+        m_p,
+        gf_to_f128(target),
+        &commitment.root,
+        eval_b,
+        &mut ZincChallenger(transcript),
+    );
+    if !ok {
+        return Err(FlockRsError::LigeritoReject);
+    }
+
+    // (7) Read-off per cluster: Σ_c e_c·Σ_l 2^{c_w·l}·u^{(l)}_c mod q = T.
+    for (ci, side) in proof.clusters.iter().enumerate() {
+        let us_flat: Vec<u128> = side.us.iter().flat_map(|u| u.iter().copied()).collect();
+        let y: crate::pcs::Fq = recombine_read_off(&p_x, &us_flat, 0, col_weights, c_w_x, lch_x);
+        if y != targets[ci] {
+            return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
+        }
+    }
+    Ok(())
+}
+
+/// Total proof bytes of a stream-family proof.
+#[allow(clippy::arithmetic_side_effects)]
+pub fn mle_eval_mod_q_lig_tap_family_size_breakdown(
+    proof: &IntEvalRsLigTapFamilyProof,
+) -> (ZincSideSizeBreakdown, usize) {
+    use crate::transcript::traits::Transcribable;
+    let mut b = ZincSideSizeBreakdown::default();
+    let eqf_bytes = |d: &RlcDischargeEqf| {
+        d.sc_a.get_num_bytes() + d.betas.len() * 16 + d.sc_b.get_num_bytes()
+    };
+    for side in &proof.clusters {
+        for l in 0..side.mfs.len() {
+            b.accumulate(&zinc_side_size_breakdown_merged(
+                &side.mfs[l],
+                &side.us[l],
+                &side.presums[l],
+            ));
+        }
+        if let Some(d) = &side.discharge_eqf {
+            b.presum += eqf_bytes(d);
+        }
+        if let Some(d) = &side.discharge_eqf2 {
+            b.presum += eqf_bytes(d);
+        }
+        b.presum += (side.omegas.len() + side.omegas2.len()) * 16;
     }
     b.s_v = proof.rings.len() * 128 * 16;
     (b, proof.lig.size_bytes())
@@ -6290,7 +7222,7 @@ mod tests {
                 .collect();
             let mut vt = Blake3Transcript::new();
             verify_mle_eval_mod_q_ligerito_tap_claims(
-                &mut vt, &hint.commitment, &proof, &layout, alpha, FQ_BITS, &vclaims, &vc,
+                &mut vt, &hint.commitment, proof, &layout, alpha, FQ_BITS, &vclaims, &vc,
             )
         };
         assert!(verify(&proof, &good, &taps_all).is_ok(), "honest proof verifies");
@@ -6342,6 +7274,230 @@ mod tests {
             };
             p2.x_presums[0] = rlc_tamper_mds(&p2.x_presums[0], 3);
             assert!(verify(&p2, &good, &taps_all).is_err(), "tampered presum");
+        }
+    }
+
+    // ── Stream-family tests (EXPERIMENTAL API) ───────────────────────────
+
+    /// The pinned two-cluster split of the k = 6 instance:
+    /// `{b1, b3, b5}` over 6 streams and `{b2, b4, b6}` over 7.
+    #[allow(clippy::type_complexity)]
+    fn tap_family_instance() -> (Vec<Vec<TapOp>>, Vec<Vec<usize>>, Vec<Vec<usize>>) {
+        let rot = |col, amt, off| TapOp { col, bit_amt: amt, bit_dropout: false, off };
+        let shl = |col, amt, off| TapOp { col, bit_amt: amt, bit_dropout: true, off };
+        // Cluster streams (deduped: S1 = rot(0,1,0) shared by b3/b5).
+        let streams1 =
+            vec![TapOp::ident(0), rot(0, 1, 0), rot(0, 2, 1), rot(0, 3, 2), rot(1, 4, 0), rot(0, 6, 1)];
+        let streams2 = vec![
+            TapOp::ident(1),
+            rot(1, 2, 0),
+            rot(1, 5, 1),
+            rot(1, 7, 2),
+            shl(0, 3, 0),
+            shl(1, 5, 1),
+            rot(1, 2, 2),
+        ];
+        // Forms over the cluster streams; claim order [b1, b3, b5] / [b2, b4, b6].
+        let forms1 = vec![0b000001usize, 0b001110, 0b110010];
+        let forms2 = vec![0b0000001usize, 0b0001110, 0b1110000];
+        (vec![streams1, streams2], vec![forms1, forms2], vec![vec![0, 2, 4], vec![1, 3, 5]])
+    }
+
+    /// The clustered stream family proves EXACTLY the instance's claim
+    /// values (cross-checked against the extraction-based evaluation the
+    /// tap-claims baseline proves), on both pack-cut geometries.
+    #[test]
+    fn tap_family_instance_roundtrips() {
+        for layout in [tap_test_layout_tw6(), tap_test_layout_tw9()] {
+            let p_x = virtual_xor_params(&layout);
+            let alpha = smallest_generator();
+            let (hint, pc, vc) = rlc_test_commit(&layout);
+            let colw = rlc_test_col_weights(&p_x);
+            let claim_taps = tap_instance_claims();
+            let rws: Vec<Vec<u128>> = (0..claim_taps.len())
+                .map(|i| rlc_test_row_weights(&p_x, 57 + i as u128))
+                .collect();
+            let expected: Vec<u128> = claim_taps
+                .iter()
+                .zip(rws.iter())
+                .map(|(taps, rw)| tap_expected_claim(&layout, hint.rows(), taps, 0, rw, &colw))
+                .collect();
+            let (streams, forms, members) = tap_family_instance();
+            let cluster_claims: Vec<Vec<RlcFamilyClaim<'_>>> = (0..2)
+                .map(|ci| {
+                    forms[ci]
+                        .iter()
+                        .zip(members[ci].iter())
+                        .map(|(&form, &bi)| RlcFamilyClaim {
+                            form,
+                            row_weights_q: &rws[bi],
+                            claimed: expected[bi],
+                        })
+                        .collect()
+                })
+                .collect();
+            let clusters: Vec<TapFamilyCluster<'_>> = (0..2)
+                .map(|ci| TapFamilyCluster { streams: &streams[ci], claims: &cluster_claims[ci] })
+                .collect();
+            let mut pt = Blake3Transcript::new();
+            let proof = prove_mle_eval_mod_q_ligerito_tap_family(
+                &mut pt, &hint, &layout, &clusters, alpha, &pc,
+            );
+            let mut vt = Blake3Transcript::new();
+            verify_mle_eval_mod_q_ligerito_tap_family(
+                &mut vt, &hint.commitment, &proof, &layout, &clusters, &colw, alpha, &vc,
+            )
+            .expect("stream family verifies");
+        }
+    }
+
+    /// A pure-XOR stream cluster (every claim one XOR form): the AND
+    /// channel vanishes identically and must be elided — no discharge, two
+    /// singleton rings, honest proof accepted.
+    #[test]
+    fn tap_family_pure_xor_elides() {
+        let layout = tap_test_layout_tw9();
+        let p_x = virtual_xor_params(&layout);
+        let alpha = smallest_generator();
+        let (hint, pc, vc) = rlc_test_commit(&layout);
+        let colw = rlc_test_col_weights(&p_x);
+        let streams =
+            [TapOp { col: 0, bit_amt: 1, bit_dropout: false, off: 0 }, TapOp {
+                col: 1,
+                bit_amt: 3,
+                bit_dropout: false,
+                off: 1,
+            }];
+        let taps: Vec<TapOp> = streams.to_vec();
+        let rw = rlc_test_row_weights(&p_x, 213);
+        let claimed = tap_expected_claim(&layout, hint.rows(), &taps, 0, &rw, &colw);
+        let claims = [RlcFamilyClaim { form: 0b11, row_weights_q: &rw, claimed }];
+        let clusters = [TapFamilyCluster { streams: &streams, claims: &claims }];
+        let mut pt = Blake3Transcript::new();
+        let proof =
+            prove_mle_eval_mod_q_ligerito_tap_family(&mut pt, &hint, &layout, &clusters, alpha, &pc);
+        assert!(
+            proof.clusters[0].discharge_eqf.is_none(),
+            "pure-XOR cluster has no monomial channels"
+        );
+        assert_eq!(proof.rings.len(), 1 + 3, "two streams: 1 class (off 0) + 3 (off 1)");
+        let mut vt = Blake3Transcript::new();
+        verify_mle_eval_mod_q_ligerito_tap_family(
+            &mut vt, &hint.commitment, &proof, &layout, &clusters, &colw, alpha, &vc,
+        )
+        .expect("pure-XOR stream family verifies");
+    }
+
+    /// Every tampered component of a stream-family proof is rejected.
+    #[test]
+    fn tap_family_tampered_rejected() {
+        let layout = tap_test_layout_tw9();
+        let p_x = virtual_xor_params(&layout);
+        let alpha = smallest_generator();
+        let (hint, pc, vc) = rlc_test_commit(&layout);
+        let colw = rlc_test_col_weights(&p_x);
+        let claim_taps = tap_instance_claims();
+        let rws: Vec<Vec<u128>> = (0..claim_taps.len())
+            .map(|i| rlc_test_row_weights(&p_x, 87 + i as u128))
+            .collect();
+        let expected: Vec<u128> = claim_taps
+            .iter()
+            .zip(rws.iter())
+            .map(|(taps, rw)| tap_expected_claim(&layout, hint.rows(), taps, 0, rw, &colw))
+            .collect();
+        let (streams, forms, members) = tap_family_instance();
+        let mk_claims = |vals: &[u128]| -> Vec<Vec<RlcFamilyClaim<'_>>> {
+            (0..2)
+                .map(|ci| {
+                    forms[ci]
+                        .iter()
+                        .zip(members[ci].iter())
+                        .map(|(&form, &bi)| RlcFamilyClaim {
+                            form,
+                            row_weights_q: &rws[bi],
+                            claimed: vals[bi],
+                        })
+                        .collect()
+                })
+                .collect()
+        };
+        let good_claims = mk_claims(&expected);
+        let clusters: Vec<TapFamilyCluster<'_>> = (0..2)
+            .map(|ci| TapFamilyCluster { streams: &streams[ci], claims: &good_claims[ci] })
+            .collect();
+        let mut pt = Blake3Transcript::new();
+        let proof =
+            prove_mle_eval_mod_q_ligerito_tap_family(&mut pt, &hint, &layout, &clusters, alpha, &pc);
+        let clone_proof = |p: &IntEvalRsLigTapFamilyProof| IntEvalRsLigTapFamilyProof {
+            clusters: p
+                .clusters
+                .iter()
+                .map(|s| TapFamilyClusterSide {
+                    mfs: s.mfs.clone(),
+                    us: s.us.clone(),
+                    presums: s.presums.clone(),
+                    discharge_eqf: s.discharge_eqf.clone(),
+                    omegas: s.omegas.clone(),
+                    discharge_eqf2: s.discharge_eqf2.clone(),
+                    omegas2: s.omegas2.clone(),
+                })
+                .collect(),
+            rings: p.rings.iter().map(|r| RingSwitchProof { s_v: r.s_v.clone() }).collect(),
+            lig: p.lig.clone(),
+        };
+        let verify_with = |p: &IntEvalRsLigTapFamilyProof, vals: &[u128]| {
+            let cl = mk_claims(vals);
+            let cls: Vec<TapFamilyCluster<'_>> = (0..2)
+                .map(|ci| TapFamilyCluster { streams: &streams[ci], claims: &cl[ci] })
+                .collect();
+            let mut vt = Blake3Transcript::new();
+            verify_mle_eval_mod_q_ligerito_tap_family(
+                &mut vt, &hint.commitment, p, &layout, &cls, &colw, alpha, &vc,
+            )
+        };
+        assert!(verify_with(&proof, &expected).is_ok(), "honest proof verifies");
+
+        let mut bad_vals = expected.clone();
+        bad_vals[4] = (bad_vals[4] + 1) % FQ_MOD;
+        assert!(verify_with(&proof, &bad_vals).is_err(), "wrong claimed value");
+
+        {
+            let mut p2 = clone_proof(&proof);
+            p2.clusters[1].us[0][2] ^= 1;
+            assert!(verify_with(&p2, &expected).is_err(), "tampered fold");
+        }
+        {
+            let mut p2 = clone_proof(&proof);
+            let last = p2.rings.len() - 1;
+            p2.rings[last].s_v[19] += Gf::one();
+            assert!(verify_with(&p2, &expected).is_err(), "tampered ring");
+        }
+        {
+            let mut p2 = clone_proof(&proof);
+            p2.clusters[0].omegas[1] += Gf::one();
+            assert!(verify_with(&p2, &expected).is_err(), "tampered omega");
+        }
+        {
+            let mut p2 = clone_proof(&proof);
+            p2.clusters[1].omegas2[0] += Gf::one();
+            assert!(verify_with(&p2, &expected).is_err(), "tampered omega2");
+        }
+        {
+            let mut p2 = clone_proof(&proof);
+            p2.clusters[0].presums[0] = rlc_tamper_mds(&p2.clusters[0].presums[0], 5);
+            assert!(verify_with(&p2, &expected).is_err(), "tampered presum");
+        }
+        {
+            let mut p2 = clone_proof(&proof);
+            let d = p2.clusters[0].discharge_eqf.as_mut().expect("cascade present");
+            d.sc_a = rlc_tamper_sc(&d.sc_a, 2);
+            assert!(verify_with(&p2, &expected).is_err(), "tampered discharge A");
+        }
+        {
+            let mut p2 = clone_proof(&proof);
+            let d = p2.clusters[1].discharge_eqf2.as_mut().expect("level 2 present");
+            d.betas[0] += Gf::one();
+            assert!(verify_with(&p2, &expected).is_err(), "tampered level-2 betas");
         }
     }
 }
