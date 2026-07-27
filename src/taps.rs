@@ -170,10 +170,21 @@ pub fn tap_canonical_ops(taps: &[TapOp]) -> Vec<TapOp> {
     out
 }
 
-/// Assert the v1 support envelope for tap claims on this layout.
+/// Assert the v1 support envelope for tap claims on this layout. With
+/// `x_fold_extra = δ > 0` the LOW δ clear variables join the folded
+/// side (the flat x-index order is unchanged, so the translated-eq
+/// machinery — which is built on the flat geometry — is δ-independent;
+/// only the extraction's row split and the weight-vector shapes move).
 pub(crate) fn assert_tap_layout(layout: &ShaF2Layout) {
     assert_eq!(layout.p.word_bits, 1, "tap claims assume the W=1 SHA layout");
-    assert_eq!(layout.x_fold_extra, 0, "tap claims do not support x_fold_extra yet");
+    assert!(
+        layout.x_fold_extra < layout.p.s,
+        "x_fold_extra must leave a clear variable"
+    );
+    assert!(
+        layout.x_fold_extra == 0 || layout.bit_vars.wrapping_add(layout.tw) >= 6,
+        "x_fold_extra needs word-aligned base rows (t' ≥ 6)"
+    );
     assert!(
         layout.tw + layout.log_cols >= 7,
         "tap claims need tw + log_cols ≥ 7 (in-pack = row_hi/col bits only); got {} + {}",
@@ -255,12 +266,16 @@ fn xor_run_shifted(dst: &mut [u64], dst_off: usize, src: &[u64], src_off: usize,
 }
 
 /// Extract the per-clear-row bit rows of the tapped virtual vector
-/// `x = ⊕_taps op(col)` in the x layout (`2^s` rows of `2^{t'}` bits,
-/// `t' = bit_vars + tw`). The group field lives in the clear axis, so a
-/// tap is a whole-run gather: output clear row `rl` reads source clear
-/// row `σ⁻¹(rl)` (group translation on the low `g` bits, word
-/// translation on the rest) with the `row_hi` runs shifted by the word
-/// borrow. The committed code is `F₂`-linear, so no new commitment.
+/// `x = ⊕_taps op(col)` in the x layout (`2^{s−δ}` rows of `2^{t'+δ}`
+/// bits, `t' = bit_vars + tw`, `δ = x_fold_extra`). The group field
+/// lives in the clear axis, so a tap is a whole-run gather: output
+/// clear row `rl` reads source clear row `σ⁻¹(rl)` (group translation
+/// on the low `g` bits, word translation on the rest) with the
+/// `row_hi` runs shifted by the word borrow; under `δ > 0` the natural
+/// rows are then regrouped exactly as in
+/// [`crate::pcs::extract_virtual_xor_rows`] (the low-δ clear variables
+/// land at the top of the new row index). The committed code is
+/// `F₂`-linear, so no new commitment.
 #[allow(clippy::arithmetic_side_effects)]
 pub fn extract_virtual_tap_rows(
     layout: &ShaF2Layout,
@@ -276,10 +291,11 @@ pub fn extract_virtual_tap_rows(
     let lc = layout.log_cols;
     let bv = layout.bit_vars;
     let s = layout.p.s;
+    let delta = layout.x_fold_extra;
     let n_lo = 1usize << s;
     let run = 1usize << tw;
     let base_words = (1usize << (bv + tw)).div_ceil(64);
-    cfg_into_iter!(0..n_lo)
+    let base: Vec<Vec<u64>> = cfg_into_iter!(0..n_lo)
         .map(|rl| {
             let mut out = vec![0u64; base_words];
             for tap in taps {
@@ -318,7 +334,24 @@ pub fn extract_virtual_tap_rows(
             }
             out
         })
-        .collect()
+        .collect();
+    if delta == 0 {
+        return base;
+    }
+    // Re-split for x_fold_extra: new row = the 2^δ consecutive natural
+    // rows concatenated (the moved low-δ clear variables land at the
+    // top of the new row index).
+    let mut regrouped = Vec::with_capacity(n_lo >> delta);
+    let mut it = base.into_iter();
+    for _ in 0..n_lo >> delta {
+        let mut row = it.next().expect("base rows cover the regroup");
+        row.reserve_exact(((1usize << delta) - 1) * base_words);
+        for _ in 1..1usize << delta {
+            row.extend_from_slice(&it.next().expect("base rows cover the regroup"));
+        }
+        regrouped.push(row);
+    }
+    regrouped
 }
 
 // ---------------------------------------------------------------------
@@ -874,6 +907,32 @@ mod tests {
                 let fast = extract_virtual_tap_rows(&layout, &rows, taps);
                 let naive = extract_naive(&layout, &rows, taps);
                 assert_eq!(fast, naive, "taps {taps:?} on layout tw={}", layout.tw);
+            }
+        }
+    }
+
+    /// The δ re-split of the extraction equals the manual regroup of
+    /// the natural-split rows (2^δ consecutive rows concatenated).
+    #[test]
+    fn tap_extraction_delta_resplits() {
+        let base = tap_layout_tw6();
+        let rows = test_rows(&base, 11);
+        let g = grp_of(&base);
+        let taps = vec![
+            TapOp { col: 0, grp_log2: g, bit_amt: 2, bit_dropout: false, off: 1 },
+            TapOp { col: 1, grp_log2: g, bit_amt: 3, bit_dropout: true, off: 0 },
+        ];
+        let flat = extract_virtual_tap_rows(&base, &rows, &taps);
+        for delta in [1usize, 2] {
+            let mut layout = tap_layout_tw6();
+            layout.x_fold_extra = delta;
+            let got = extract_virtual_tap_rows(&layout, &rows, &taps);
+            let m = 1usize << delta;
+            assert_eq!(got.len(), flat.len() / m);
+            for (c, row) in got.iter().enumerate() {
+                let want: Vec<u64> =
+                    (0..m).flat_map(|lc| flat[(c << delta) | lc].iter().copied()).collect();
+                assert_eq!(*row, want, "delta {delta} row {c}");
             }
         }
     }

@@ -2532,8 +2532,33 @@ fn tap_collapse_plan(claims: &[TapPointClaim<'_>]) -> Vec<(Vec<usize>, usize)> {
     plan
 }
 
+/// The v1 δ-envelope for collapse OUTER ops under `x_fold_extra = δ`:
+/// the fold cut must sit inside the op's translation-invariant bottom
+/// — `δ ≤ g` and `2^δ | bit_amt` (identity ops pass trivially) — so
+/// the group/word action never touches the folded low-δ clear bits and
+/// the branch structure stays the plain (γ) split with the effective
+/// clear-axis fields `g' = g − δ`, `amt' = amt ≫ δ`, `off` unchanged.
+fn collapse_op_delta_ok(layout: &ShaF2Layout, op: &crate::taps::TapUniOp) -> bool {
+    let delta = layout.x_fold_extra;
+    let ident = op.bit_amt == 0 && op.off == 0;
+    delta == 0
+        || ident
+        || (delta <= op.grp_log2 && op.bit_amt.is_multiple_of(1usize << delta))
+}
+
+/// Panicking prover-side mirror of [`collapse_op_delta_ok`].
+fn assert_collapse_op_delta(layout: &ShaF2Layout, op: &crate::taps::TapUniOp) {
+    assert!(
+        collapse_op_delta_ok(layout, op),
+        "collapse op {op:?} outside the δ-envelope (δ ≤ g and 2^δ | amt) at x_fold_extra = {}",
+        layout.x_fold_extra
+    );
+}
+
 /// Branch-β row weights: β = 0 is `w_row` itself; β = 1 advances the
-/// `row_hi` field by one (per word-bit block), zero at the top — the
+/// `row_hi` field by one (per block of the variables above it — the
+/// word-bit axis and, under `x_fold_extra`, the folded low-δ clear
+/// bits, both untouched by the carry), zero at the top — the
 /// word-overflow dropout.
 #[allow(clippy::arithmetic_side_effects)]
 fn tap_collapse_row_weights(layout: &ShaF2Layout, w_row: &[u128], beta: usize) -> Vec<u128> {
@@ -2541,26 +2566,33 @@ fn tap_collapse_row_weights(layout: &ShaF2Layout, w_row: &[u128], beta: usize) -
         return w_row.to_vec();
     }
     let tw = layout.tw;
-    let bv = layout.bit_vars;
     let mut out = vec![0u128; w_row.len()];
-    for jm in 0..1usize << bv {
+    for hi in 0..w_row.len() >> tw {
         for rh in 0..(1usize << tw) - 1 {
-            out[(jm << tw) | rh] = w_row[(jm << tw) | (rh + 1)];
+            out[(hi << tw) | rh] = w_row[(hi << tw) | (rh + 1)];
         }
     }
     out
 }
 
 /// One claim's carry-branch column-weight tables `e^{(0)}, e^{(1)}`:
-/// `e^{(β)}[c] = [carry(c) = β]·[group valid]·e_col[c_out(c)]`.
+/// `e^{(β)}[c] = [carry(c) = β]·[group valid]·e_col[c_out(c)]`, over
+/// the clear axis (`row_lo ≫ δ` under `x_fold_extra = δ`, where the
+/// δ-envelope reduces the op to `g' = g − δ`, `amt' = amt ≫ δ`).
 #[allow(clippy::arithmetic_side_effects)]
 fn tap_collapse_col_weights(
     layout: &ShaF2Layout,
     op: &crate::taps::TapUniOp,
     e_col: &[crate::pcs::Fq],
 ) -> [Vec<u128>; 2] {
-    let s = layout.p.s;
-    let g = op.grp_log2;
+    let delta = layout.x_fold_extra;
+    debug_assert!(collapse_op_delta_ok(layout, op));
+    let s = layout.p.s - delta;
+    let (g, amt) = if delta <= op.grp_log2 {
+        (op.grp_log2 - delta, op.bit_amt >> delta)
+    } else {
+        (0, 0) // identity op (the envelope guarantees amt = off = 0)
+    };
     let n_g = 1usize << g;
     let n_w = 1usize << (s - g);
     let mut out = [vec![0u128; 1 << s], vec![0u128; 1 << s]];
@@ -2568,12 +2600,12 @@ fn tap_collapse_col_weights(
         let j = c & (n_g - 1);
         let wlo = c >> g;
         let jout = if op.bit_dropout {
-            if j + op.bit_amt >= n_g {
+            if j + amt >= n_g {
                 continue;
             }
-            j + op.bit_amt
+            j + amt
         } else {
-            (j + op.bit_amt) & (n_g - 1)
+            (j + amt) & (n_g - 1)
         };
         let (wout, beta) = if wlo + op.off >= n_w {
             (wlo + op.off - n_w, 1usize)
@@ -2636,6 +2668,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_collapse(
     assert_eq!(col_weights.len(), p_x.cols(), "shared col-weight length");
     for cl in claims {
         assert_tap_op(layout, &cl.op);
+        assert_collapse_op_delta(layout, &cl.op);
         assert!(
             !xor_canonical_cols(cl.cols).is_empty(),
             "claim's XOR set cancels to the zero vector"
@@ -2694,15 +2727,20 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_collapse(
         FQ_BITS, FQ_MOD, Fq, fq_add, fq_challenge, fq_mul, mod_q_chunk_width, mod_q_num_chunks,
         recombine_read_off, virtual_xor_params, xor_canonical_cols,
     };
-    let p_x = virtual_xor_params(layout);
     if layout.p.word_bits != 1
-        || layout.x_fold_extra != 0
+        || layout.x_fold_extra >= layout.p.s
+        || (layout.x_fold_extra > 0 && layout.bit_vars.wrapping_add(layout.tw) < 6)
         || layout.tw + layout.log_cols < 7
-        || claims.is_empty()
+    {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+    let p_x = virtual_xor_params(layout);
+    if claims.is_empty()
         || row_weights_q.len() != p_x.rows()
         || col_weights.len() != p_x.cols()
         || claims.iter().any(|cl| {
             !tap_shape_ok(layout, &cl.op.with_col(0))
+                || !collapse_op_delta_ok(layout, &cl.op)
                 || cl.claimed >= FQ_MOD
                 || xor_canonical_cols(cl.cols).is_empty()
                 || cl.cols.iter().any(|&c| c >= layout.num_cols)
@@ -2933,6 +2971,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_composed(
     assert_eq!(col_weights.len(), p_x.cols(), "shared col-weight length");
     for cl in claims {
         assert_tap_op(layout, &cl.outer);
+        assert_collapse_op_delta(layout, &cl.outer);
         for tap in cl.source {
             assert_tap(layout, tap);
         }
@@ -2987,15 +3026,20 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_composed(
         recombine_read_off, virtual_xor_params,
     };
     use crate::taps::tap_canonical_ops;
-    let p_x = virtual_xor_params(layout);
     if layout.p.word_bits != 1
-        || layout.x_fold_extra != 0
+        || layout.x_fold_extra >= layout.p.s
+        || (layout.x_fold_extra > 0 && layout.bit_vars.wrapping_add(layout.tw) < 6)
         || layout.tw + layout.log_cols < 7
-        || claims.is_empty()
+    {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+    let p_x = virtual_xor_params(layout);
+    if claims.is_empty()
         || row_weights_q.len() != p_x.rows()
         || col_weights.len() != p_x.cols()
         || claims.iter().any(|cl| {
             !tap_shape_ok(layout, &cl.outer.with_col(0))
+                || !collapse_op_delta_ok(layout, &cl.outer)
                 || cl.source.iter().any(|t| !tap_shape_ok(layout, t))
                 || cl.claimed >= FQ_MOD
                 || tap_canonical_ops(cl.source).is_empty()
@@ -3395,7 +3439,11 @@ where
     };
     use crate::taps::{residual_b_evals_tap, tap_closure_desc};
     let p = &layout.p;
-    if p.word_bits != 1 || layout.x_fold_extra != 0 || layout.tw + layout.log_cols < 7 {
+    if p.word_bits != 1
+        || layout.x_fold_extra >= p.s
+        || (layout.x_fold_extra > 0 && layout.bit_vars.wrapping_add(layout.tw) < 6)
+        || layout.tw + layout.log_cols < 7
+    {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
     if claims.is_empty() {
@@ -8002,7 +8050,9 @@ mod tests {
 
     /// Direct 𝔽_q evaluation of `outer(⊕ source-taps)`: extract the
     /// source, then walk the OUTER index map per output trace position —
-    /// independent of the collapse's branch algebra.
+    /// independent of the collapse's branch algebra. δ-aware: under
+    /// `x_fold_extra` the extraction rows are re-split and the low-δ
+    /// clear bits index the ROW weights.
     fn composed_expected_claim(
         layout: &ShaF2Layout,
         rows: &[Vec<u64>],
@@ -8015,6 +8065,8 @@ mod tests {
         let s = layout.p.s;
         let tw = layout.tw;
         let bv = layout.bit_vars;
+        let delta = layout.x_fold_extra;
+        let dmask = (1usize << delta) - 1;
         let g = outer.grp_log2;
         let n_g = 1usize << g;
         let mut y = Fq::from(0u128);
@@ -8037,9 +8089,10 @@ mod tests {
             let (q_hi, q_lo) = (q_trace >> s, q_trace & ((1 << s) - 1));
             let (p_hi, p_lo) = (p >> s, p & ((1 << s) - 1));
             for jm in 0..1usize << bv {
-                let bitpos = (jm << tw) | q_hi;
-                if (x_rows[q_lo][bitpos >> 6] >> (bitpos & 63)) & 1 == 1 {
-                    y = y + Fq::from(rw[(jm << tw) | p_hi]) * colw[p_lo];
+                let bitpos = ((q_lo & dmask) << (bv + tw)) | (jm << tw) | q_hi;
+                if (x_rows[q_lo >> delta][bitpos >> 6] >> (bitpos & 63)) & 1 == 1 {
+                    let widx = ((p_lo & dmask) << (bv + tw)) | (jm << tw) | p_hi;
+                    y = y + Fq::from(rw[widx]) * colw[p_lo >> delta];
                 }
             }
         }
@@ -8218,6 +8271,120 @@ mod tests {
             &mut vt, &hint.commitment, &proof, &layout, &rw, &colw, &claims, alpha, &vc,
         )
         .expect("folded-value composed claims verify");
+    }
+
+    /// The batched tap path under `x_fold_extra`: the k = 6 instance at
+    /// δ = 1 and 2 — the fold vectors shrink 2^δ×; the translated-eq
+    /// machinery is untouched (flat geometry).
+    #[test]
+    fn tap_claims_delta_roundtrips() {
+        for delta in [1usize, 2] {
+            let mut layout = tap_test_layout_tw6();
+            layout.x_fold_extra = delta;
+            let p_x = virtual_xor_params(&layout);
+            let alpha = smallest_generator();
+            let (hint, pc, vc) = rlc_test_commit(&layout);
+            let colw = rlc_test_col_weights(&p_x);
+            let taps_all = tap_instance_claims(tap_grp(&layout));
+            let rws: Vec<Vec<u128>> = (0..taps_all.len())
+                .map(|i| rlc_test_row_weights(&p_x, 313 + i as u128))
+                .collect();
+            let claims: Vec<TapClaim<'_>> = taps_all
+                .iter()
+                .zip(rws.iter())
+                .map(|(taps, rw)| TapClaim { taps, row_weights_q: rw })
+                .collect();
+            let mut pt = Blake3Transcript::new();
+            let proof = prove_mle_eval_mod_q_ligerito_tap_claims(
+                &mut pt, &hint, &layout, FQ_BITS, &claims, alpha, &pc,
+            );
+            assert_eq!(
+                proof.tap_us[0][0].len(),
+                1usize << (layout.p.s - delta),
+                "fold vectors shrink 2^δ×"
+            );
+            let vclaims: Vec<TapVerifyClaim<'_, Fq>> = taps_all
+                .iter()
+                .zip(rws.iter())
+                .map(|(taps, rw)| TapVerifyClaim {
+                    taps,
+                    row_weights_q: rw,
+                    col_weights: &colw,
+                    claimed: Fq::from(tap_expected_claim(&layout, hint.rows(), taps, rw, &colw)),
+                })
+                .collect();
+            let mut vt = Blake3Transcript::new();
+            verify_mle_eval_mod_q_ligerito_tap_claims(
+                &mut vt, &hint.commitment, &proof, &layout, alpha, FQ_BITS, &vclaims, &vc,
+            )
+            .unwrap_or_else(|e| panic!("δ={delta} tap instance verifies: {e:?}"));
+        }
+    }
+
+    /// The composed collapse under `x_fold_extra = 2`: pure-off
+    /// schedule outers plus a `2^δ | amt` rot outer roundtrip (fold
+    /// vectors 4× smaller); an outer amount off the δ-envelope is
+    /// rejected at the shape gate.
+    #[test]
+    fn tap_composed_delta_roundtrips() {
+        let mut layout = tap_test_layout_tw6();
+        layout.x_fold_extra = 2;
+        let g = tap_grp(&layout);
+        let p_x = virtual_xor_params(&layout);
+        let alpha = smallest_generator();
+        let (hint, pc, vc) = rlc_test_commit(&layout);
+        let colw = rlc_test_col_weights(&p_x);
+        let rw = rlc_test_row_weights(&p_x, 349);
+        let rot =
+            |col, amt, off| TapOp { col, grp_log2: g, bit_amt: amt, bit_dropout: false, off };
+        let shl =
+            |col, amt, off| TapOp { col, grp_log2: g, bit_amt: amt, bit_dropout: true, off };
+        let uni = |amt: usize, off: usize| crate::taps::TapUniOp {
+            grp_log2: g,
+            bit_amt: amt,
+            bit_dropout: false,
+            off,
+        };
+        let src = vec![rot(0, 1, 0), shl(1, 5, 1)];
+        // δ = 2, g = 3: outer amounts must be multiples of 4.
+        let outers = [uni(0, 0), uni(0, 1), uni(0, 3), uni(4, 0)];
+        let claims: Vec<TapComposedClaim<'_>> = outers
+            .iter()
+            .map(|outer| TapComposedClaim {
+                source: &src,
+                outer: *outer,
+                claimed: composed_expected_claim(
+                    &layout,
+                    hint.rows(),
+                    &src,
+                    outer,
+                    &rw,
+                    &colw,
+                ),
+            })
+            .collect();
+        let mut pt = Blake3Transcript::new();
+        let proof = prove_mle_eval_mod_q_ligerito_tap_composed(
+            &mut pt, &hint, &layout, &rw, &colw, &claims, alpha, &pc,
+        );
+        assert_eq!(proof.tap_us.len(), 2, "one source, both branches");
+        assert_eq!(proof.tap_us[0][0].len(), 1usize << (layout.p.s - 2));
+        let mut vt = Blake3Transcript::new();
+        verify_mle_eval_mod_q_ligerito_tap_composed(
+            &mut vt, &hint.commitment, &proof, &layout, &rw, &colw, &claims, alpha, &vc,
+        )
+        .expect("δ=2 composed schedule verifies");
+        // amt = 2 is not a multiple of 2^δ = 4 → shape-gate rejection.
+        let mut bad = claims.clone();
+        bad[3].outer.bit_amt = 2;
+        let mut vt = Blake3Transcript::new();
+        assert!(
+            verify_mle_eval_mod_q_ligerito_tap_composed(
+                &mut vt, &hint.commitment, &proof, &layout, &rw, &colw, &bad, alpha, &vc,
+            )
+            .is_err(),
+            "off-envelope outer amount rejected"
+        );
     }
 
     /// Every tampered component of a composed-collapse statement or

@@ -63,12 +63,17 @@ const GRP: usize = 5;
 /// n → the taps layout: 2 UAIR bit-columns (log_cols = 1, W = 1,
 /// bit_vars = 0) over 2^{n−1} entries; x split t' vs s as even as
 /// `tw ≥ 6` allows (the 32-bit group field lives in the clear axis:
-/// s ≥ GRP + 2 so word offsets ≤ 2 stay in range).
+/// s ≥ GRP + 2 so word offsets ≤ 2 stay in range). `F2Z_TAPS_DELTA`
+/// sets `x_fold_extra` (the sched/vx paths only; δ ≤ g so collapse
+/// outers with `2^δ | amt` stay in envelope — the schedule's pure-off
+/// outers always are; the stream family requires δ = 0).
 fn taps_layout(n: usize) -> ShaF2Layout {
     let log_cols = 1usize;
     let tw = ((n - log_cols) / 2).max(6);
     let s = n - log_cols - tw;
     assert!(s >= GRP + 2, "clear axis must hold the group field plus offsets");
+    let delta: usize = std::env::var("F2Z_TAPS_DELTA").map_or(0, |v| v.parse().unwrap());
+    assert!(delta <= GRP, "F2Z_TAPS_DELTA must be ≤ g = {GRP}");
     ShaF2Layout {
         p: IntEvalParams { t: log_cols + tw, s, word_bits: 1 },
         num_cols: 1 << log_cols,
@@ -76,7 +81,7 @@ fn taps_layout(n: usize) -> ShaF2Layout {
         bit_vars: 0,
         num_vars: tw + s,
         tw,
-        x_fold_extra: 0,
+        x_fold_extra: delta,
     }
 }
 
@@ -348,6 +353,10 @@ fn main() {
         }
 
         if std::env::var("F2Z_AB_COLLAPSE").is_ok_and(|v| v == "1") {
+            assert_eq!(
+                layout.x_fold_extra, 0,
+                "the collapse demo's stream ops are off the δ-envelope; unset F2Z_TAPS_DELTA"
+            );
             // 13 single-tap claims (the instance's deduped streams) at ONE
             // shared point: collapse vs batched tap claims vs independent.
             let (streams2, _, _) = instance_clusters();
@@ -593,7 +602,8 @@ fn main() {
         };
 
         // Alternated in-window reps.
-        let no_family = std::env::var("F2Z_AB_NO_FAMILY").is_ok_and(|v| v == "1");
+        let no_family = std::env::var("F2Z_AB_NO_FAMILY").is_ok_and(|v| v == "1")
+            || layout.x_fold_extra > 0;
         let (mut t_single, mut t_tapf, mut t_vx6, mut t_ind6) =
             (Vec::new(), Vec::new(), Vec::new(), Vec::new());
         for _ in 0..reps {

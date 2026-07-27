@@ -962,6 +962,46 @@ Batched 0x42 proofs for k ≥ 3 change shape/bytes (EXPERIMENTAL API);
 sizes shift ~+5–10 % from the extra per-block transcripts (vx6 n=24:
 566 → 576 KB) — the price of the flat memory profile.
 
+**Structured taps: `x_fold_extra` (δ) lands for the tap paths
+(2026-07-27, follow-up) — proofs −30…−57 %, verify up to 5× faster,
+prove faster too.** The tap machinery asserted δ = 0; now the low-δ
+clear variables join the folded side across 0x42/0x44/0x45 (the
+stream family 0x43 stays δ = 0). The structural fact that made this
+cheap: the batched common's exit point is the FLAT x-coordinate list
+— δ moves which coordinates the presum binds, not the list — so the
+translated-eq rings, support tables, and MPS closures are
+**δ-independent**; the work was the extraction re-split (regroup 2^δ
+consecutive natural rows, as the vx path), the collapse branch
+builders under the re-split (effective clear-axis fields `g' = g−δ`,
+`amt' = amt≫δ`, `off` unchanged), and a δ-envelope for collapse
+OUTER ops: `δ ≤ g` and `2^δ | amt` (pure-off schedule outers always
+qualify, identities trivially; general amounts would need a carry
+class at the δ cut — unbuilt). 0x42/0x45 SOURCE taps are
+unconstrained. The trade: sent fold vectors shrink 2^δ× (the `us`
+term — 68 % of vx6 bytes, ~58 % of the composed sched proof at
+n=26); `q_rowbit` tables and the presum grow to `t'+δ` — measured,
+δ WINS on every axis (the re-split moves the x tensor toward the
+fold-heavy proof-size-optimal geometry; the taps harness's even
+split was byte-suboptimal all along — at δ=3, n=24 even `single`
+halves: 92.9 → 47.7 ms, 208 → 151 KB). The n=24 scan
+(prove ms / proof KB / verify ms, medians):
+
+| instance | δ=0 | δ=3 | δ=4 |
+|----------|-----|-----|-----|
+| cmp (48-claim sched) | 86.4 / 284 / 29.3 | 74.1 / 172 / 10.2 | **71.2 / 163 / 9.5** |
+| vx48 (batched folded) | 1916.7 / 3861 / 305.9 | 1421.5 / 1163 / 254.8 | 1401.7 / **982** / 257.2 |
+| vx6 (k=6 instance) | 250.5 / 576 / 21.9 | **183.3 / 250 / 17.1** | — |
+
+Across n at δ=3 (cmp): 26.7 / 133 / 8.4 at n=22 (δ=0: 39.1/189/18.9)
+and 225.5 / 222 / 13.6 at n=26 (δ=0: 275.6/448/58.5; δ=4:
+222.7/205/11.6 — the proof **halves**). The knee is δ = 3–4; δ = 5
+gives −3 KB more for the 2^{t'+5} table growth (86.7 ms). Env:
+`F2Z_TAPS_DELTA` on `taps_ab` (family auto-skipped) and
+`f2z --taps vx|sched`. Tests: +3 (extraction re-split vs manual
+regroup, 0x42 δ=1/2 roundtrips with fold-shrink asserts, composed
+δ=2 roundtrip + envelope rejection); 104/104 green both guard modes;
+δ=0 proof bytes untouched.
+
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
 The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —

@@ -368,3 +368,25 @@ multiples vs the improved baseline: 18.8×/21.7×/21.7× (vx48 =
 736.3/1898.1/5980.8 ms; n=26 now runs). Batched proofs for k ≥ 3
 change bytes (+5–10 % from per-block transcripts) — the price of the
 flat memory profile.
+
+## 8. `x_fold_extra` (δ) for the tap paths (P3, same day)
+
+The δ = 0 assert is lifted across 0x42/0x44/0x45 (the stream family
+stays δ = 0). Structural fact: the batched common's exit point is the
+FLAT x-coordinate list — δ moves which coordinates the presum binds,
+not the list — so the translated-eq rings, supports, and MPS closures
+are **δ-independent**. Work: the extraction re-split (regroup 2^δ
+consecutive natural rows), the collapse branch builders under the
+re-split (`g' = g−δ`, `amt' = amt≫δ`, `off` unchanged; the β=1 row
+advance iterates all fields above `row_hi`), and the δ-envelope for
+collapse OUTER ops — `δ ≤ g` and `2^δ | amt` (pure-off and identity
+outers always qualify; general amounts would need a carry class at
+the δ cut, unbuilt; sources unconstrained). Measured (n=24): the
+composed sched proof 284 → 163 KB (δ=4) with verify 29.3 → 9.5 ms
+and prove 86.4 → 71.2; vx48 3861 → 982 KB; vx6 576 → 250 KB
+(δ=3, prove −27 %); at n=26 the composed proof HALVES (448 → 205)
+with verify 5× faster. Knee δ = 3–4 (δ=5 pays the 2^{t'+5} presum
+tables). The re-split moves the x tensor toward the fold-heavy
+proof-size-optimal geometry — the harness's even split was
+byte-suboptimal all along (`single` itself halves at δ=3). Env:
+`F2Z_TAPS_DELTA`; δ=0 bytes untouched; 104/104 green.

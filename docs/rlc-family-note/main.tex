@@ -1834,7 +1834,17 @@ proofs at $n{=}24$ (its $64$-set pad). Under the blocked batching of
 \S\ref{sec:tapmeasured}'s addendum the baseline improves to
 $736.3/1898.1/5980.8$\,ms ($n{=}26$ now runs) and the composed
 collapse holds $18.8\times/21.7\times/21.7\times$ against it,
-byte-identical (its two inner bodies are one unblocked pair). The routing law of
+byte-identical (its two inner bodies are one unblocked pair). A
+further fold-split lever (\code{x\_fold\_extra} $=\delta$: the low
+$\delta$ clear variables join the folded side; the flat x-order is
+unchanged, so the translated-eq machinery is $\delta$-independent,
+and collapse outer ops need $\delta\le g$, $2^{\delta}\mid r$ ---
+always true for pure-offset schedules) shrinks the sent fold vectors
+$2^{\delta}\times$: at $\delta{=}3$--$4$ the composed schedule proof
+falls to $133/163/205$\,KB at $n=22/24/26$ (from $189/284/448$) with
+verify up to $5\times$ faster and prove faster still --- the
+re-split moves the x tensor toward the fold-heavy proof-size-optimal
+geometry. The routing law of
 \S\ref{sec:tapmeasured} refines to: single-tap or uniform-op-of-XOR-set
 at one point $\to$ the collapse (\S\ref{sec:tapcollapse}); \emph{many
 outer ops of few mixed sources} at one point (schedules) $\to$ the

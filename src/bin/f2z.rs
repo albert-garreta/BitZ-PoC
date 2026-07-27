@@ -732,6 +732,7 @@ fn taps_layout(n: usize) -> f2z::pcs::ShaF2Layout {
     let log_cols = 1usize;
     let tw = ((n - log_cols) / 2).max(6);
     let s = n - log_cols - tw;
+    let delta: usize = std::env::var("F2Z_TAPS_DELTA").map_or(0, |v| v.parse().unwrap());
     f2z::pcs::ShaF2Layout {
         p: IntEvalParams { t: log_cols + tw, s, word_bits: 1 },
         num_cols: 1 << log_cols,
@@ -739,7 +740,7 @@ fn taps_layout(n: usize) -> f2z::pcs::ShaF2Layout {
         bit_vars: 0,
         num_vars: tw + s,
         tw,
-        x_fold_extra: 0,
+        x_fold_extra: delta,
     }
 }
 
@@ -770,6 +771,10 @@ fn run_taps(o: &Opts, mode: &str) {
         exit(2);
     }
     let layout = taps_layout(o.n);
+    if layout.x_fold_extra > 0 && !matches!(mode, "vx" | "sched") {
+        eprintln!("F2Z_TAPS_DELTA applies to the vx|sched modes only (δ-envelope)");
+        exit(2);
+    }
     let p = layout.p;
     let p_x = virtual_xor_params(&layout);
     let m_p = packed_vars(&p);
