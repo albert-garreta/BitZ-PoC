@@ -38,7 +38,7 @@
 //!   split t' ≈ s — the README's 2026-07-26/27 RLC notes); `t s W`
 //!   positionals do not apply. Every rep is verified. Example:
 //!   `f2z 26 --family j4s --reps 5`
-//! - `--taps vx|family|collapse` — run the EXPERIMENTAL structured-taps
+//! - `--taps vx|family|collapse|rotxor` — run the EXPERIMENTAL structured-taps
 //!   paths at this `n` (32-bit words along the ENTRY axis of W=1
 //!   bit-vectors, g = 5; 2 UAIR columns; ALL claims at ONE shared
 //!   point): `vx` = the j=2 k=6 ROT/SHIFT/word-offset instance through
@@ -46,8 +46,11 @@
 //!   `family` = the same instance through the clustered stream family
 //!   ({b1,b3,b5}/{b2,b4,b6}); `collapse` = the instance's 13 deduped
 //!   streams as 13 SINGLE-TAP claims through the weight-transform
-//!   collapse (≤ 4 inner claims). Every rep is verified. Example:
-//!   `f2z 24 --taps collapse --reps 5`
+//!   collapse (≤ 4 inner claims); `rotxor` = 8 uniform-op-of-XOR-set
+//!   claims (rotations + a word-offset of a₁⊕a₂, single-column
+//!   rotations) through the same collapse (4 inner claims). Every rep
+//!   is verified.
+//!   Example: `f2z 24 --taps rotxor --reps 5`
 //!
 //! Integer-guard mode is a COMPILE-TIME feature: build with
 //! `--features unchecked` for release-style plain integer ops (the header
@@ -152,14 +155,15 @@ fn usage() -> ! {
     eprintln!(
         "usage: f2z <n> [<t> <s> [<W>]] [--threads N] [--reps R] \
          [--profile slim|slim3|fast|secure|custom:<log_inv_rate>:<initial_k>] [--word-bits W] \
-         [--family j2|j3|j4|j2s|j3s|j4s] [--taps vx|family|collapse]\n\
+         [--family j2|j3|j4|j2s|j3s|j4s] [--taps vx|family|collapse|rotxor]\n\
          (n = t + s; W = cell width, power of two, default 1;\n\
           --family runs the mod-q RLC claim family at the A/B layout — j2 = the\n\
           XOR triple, j3/j4 the wider families, j2s/j3s/j4s the SHARED-POINT\n\
           maximal families (full XOR-closure at one point, k = 3/7/15);\n\
           --taps runs the structured-taps instance (32-bit entry-axis words,\n\
           one shared point) — vx = batched tap claims, family = the clustered\n\
-          stream family, collapse = 13 single-tap claims via the collapse;\n\
+          stream family, collapse = 13 single-tap claims via the collapse,\n\
+          rotxor = 8 uniform-op-of-XOR-set claims via the collapse;\n\
           t/s/W do not apply there;\n\
           run with --release and --features unchecked for quotable numbers;\n\
           -C target-cpu=native is load-bearing on aarch64)"
@@ -752,8 +756,8 @@ fn run_taps(o: &Opts, mode: &str) {
     use f2z::taps::{TapOp, extract_virtual_tap_rows};
 
     const GRP: usize = 5;
-    if !matches!(mode, "vx" | "family" | "collapse") {
-        eprintln!("unknown taps mode: {mode} (expected vx|family|collapse)");
+    if !matches!(mode, "vx" | "family" | "collapse" | "rotxor") {
+        eprintln!("unknown taps mode: {mode} (expected vx|family|collapse|rotxor)");
         exit(2);
     }
     if o.n < 14 {
@@ -814,7 +818,11 @@ fn run_taps(o: &Opts, mode: &str) {
             1
         }
     };
-    let k_desc = if mode == "collapse" { "13 single-tap claims" } else { "k=6 instance" };
+    let k_desc = match mode {
+        "collapse" => "13 single-tap claims",
+        "rotxor" => "8 op(xor-set) claims",
+        _ => "k=6 instance",
+    };
     println!(
         "f2z --taps {mode}: n={} (t'={}, s={}, g={GRP}, {k_desc}, one shared point) | \
          lig={lig_tag}@r1/{}k{} | threads={threads_eff} | int guards: {}",
@@ -906,10 +914,53 @@ fn run_taps(o: &Opts, mode: &str) {
     let clusters: Vec<TapFamilyCluster<'_>> = (0..2)
         .map(|ci| TapFamilyCluster { streams: &streams[ci], claims: &cluster_claims[ci] })
         .collect();
+    // Point-claim sets for the collapse-style modes: `collapse` = the 13
+    // deduped streams as singleton XOR sets; `rotxor` = uniform ops
+    // applied OUTSIDE XOR sets (rotations/offsets of a₁⊕a₂ plus a few
+    // single-column ops) — `op(⊕ cols)` claims.
     let all_streams: Vec<TapOp> = streams.iter().flatten().copied().collect();
-    let pclaims: Vec<TapPointClaim> = all_streams
+    let uni = |amt: usize, dropout: bool, off: usize| f2z::taps::TapUniOp {
+        grp_log2: GRP,
+        bit_amt: amt,
+        bit_dropout: dropout,
+        off,
+    };
+    let (pc_sets, pc_ops): (Vec<Vec<usize>>, Vec<f2z::taps::TapUniOp>) = match mode {
+        "collapse" => (
+            all_streams.iter().map(|t| vec![t.col]).collect(),
+            all_streams.iter().map(|t| t.uni()).collect(),
+        ),
+        "rotxor" => (
+            vec![
+                vec![0, 1],
+                vec![0, 1],
+                vec![0, 1],
+                vec![0, 1],
+                vec![0, 1],
+                vec![0],
+                vec![1],
+                vec![1],
+            ],
+            vec![
+                uni(1, false, 0),
+                uni(5, false, 0),
+                uni(11, false, 0),
+                uni(19, false, 0),
+                uni(2, false, 1),
+                uni(3, false, 0),
+                uni(7, false, 0),
+                uni(9, false, 0),
+            ],
+        ),
+        _ => (Vec::new(), Vec::new()),
+    };
+    let pclaims: Vec<TapPointClaim<'_>> = pc_sets
         .iter()
-        .map(|&tap| TapPointClaim { tap, claimed: eval_taps(&[tap]) })
+        .zip(pc_ops.iter())
+        .map(|(set, &op)| {
+            let taps: Vec<TapOp> = set.iter().map(|&c| op.with_col(c)).collect();
+            TapPointClaim { cols: set, op, claimed: eval_taps(&taps) }
+        })
         .collect();
 
     enum TapProof {
@@ -957,7 +1008,7 @@ fn run_taps(o: &Opts, mode: &str) {
             TapProof::Clp(pr) => mle_eval_mod_q_lig_xor_proof_size_bytes(pr),
         }
     };
-    let k = if mode == "collapse" { pclaims.len() } else { tclaims.len() };
+    let k = if matches!(mode, "collapse" | "rotxor") { pclaims.len() } else { tclaims.len() };
 
     // Warm-up (excluded), then timed reps — every rep verified.
     {

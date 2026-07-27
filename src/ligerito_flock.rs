@@ -2441,12 +2441,17 @@ fn tap_shape_ok(layout: &ShaF2Layout, t: &TapOp) -> bool {
 // claims-only protocol. Evaluation field fixed q = 2^100 − 15.
 // ---------------------------------------------------------------------
 
-/// One single-tap claim at the shared point:
-/// `MLE[INT(op(a_col))](r) = claimed`.
+/// One uniform-op claim at the shared point:
+/// `MLE[INT(op(⊕_{i∈cols} a_i))](r) = claimed` — a single op applied
+/// OUTSIDE an XOR set of committed columns (`|cols| = 1` recovers the
+/// single-tap case; identity ops allowed).
 #[derive(Clone, Copy, Debug)]
-pub struct TapPointClaim {
-    /// The tap (identity taps allowed).
-    pub tap: TapOp,
+pub struct TapPointClaim<'a> {
+    /// The XOR set of committed columns (nonempty after canonical
+    /// pair-cancellation, [`crate::pcs::xor_canonical_cols`]).
+    pub cols: &'a [usize],
+    /// The uniform op applied outside the XOR.
+    pub op: crate::taps::TapUniOp,
     /// The claimed evaluation, canonical in `[0, q)`.
     pub claimed: u128,
 }
@@ -2459,7 +2464,7 @@ fn absorb_tap_collapse_statement(
     layout: &ShaF2Layout,
     row_weights_q: &[u128],
     col_weights: &[crate::pcs::Fq],
-    claims: &[TapPointClaim],
+    claims: &[TapPointClaim<'_>],
 ) {
     let mut bytes = Vec::new();
     bytes.push(0x44u8);
@@ -2480,12 +2485,15 @@ fn absorb_tap_collapse_statement(
     }
     bytes.extend_from_slice(&crate::pcs::FQ_MOD.to_le_bytes());
     for cl in claims {
+        bytes.extend_from_slice(&(cl.cols.len() as u64).to_le_bytes());
+        for &c in cl.cols {
+            bytes.extend_from_slice(&(c as u64).to_le_bytes());
+        }
         for v in [
-            cl.tap.col as u64,
-            cl.tap.grp_log2 as u64,
-            cl.tap.bit_amt as u64,
-            u64::from(cl.tap.bit_dropout),
-            cl.tap.off as u64,
+            cl.op.grp_log2 as u64,
+            cl.op.bit_amt as u64,
+            u64::from(cl.op.bit_dropout),
+            cl.op.off as u64,
         ] {
             bytes.extend_from_slice(&v.to_le_bytes());
         }
@@ -2500,19 +2508,25 @@ fn absorb_tap_collapse_statement(
     transcript.absorb_slice(&bytes);
 }
 
-/// The canonical inner-claim plan: (column, carry branch) pairs, columns
-/// ascending, branch 0 before branch 1; branch 1 present iff some claim
-/// on the column has a word offset. STRUCTURAL (independent of table
-/// values), so prover and verifier derive identical shapes.
-fn tap_collapse_plan(claims: &[TapPointClaim]) -> Vec<(usize, usize)> {
-    let mut cols: Vec<usize> = claims.iter().map(|c| c.tap.col).collect();
-    cols.sort_unstable();
-    cols.dedup();
+/// The canonical inner-claim plan: (canonical XOR set, carry branch)
+/// pairs, sets in lexicographic order, branch 0 before branch 1; branch
+/// 1 present iff some claim on the set has a word offset. STRUCTURAL
+/// (independent of table values), so prover and verifier derive
+/// identical shapes.
+fn tap_collapse_plan(claims: &[TapPointClaim<'_>]) -> Vec<(Vec<usize>, usize)> {
+    use crate::pcs::xor_canonical_cols;
+    let mut sets: Vec<Vec<usize>> =
+        claims.iter().map(|c| xor_canonical_cols(c.cols)).collect();
+    sets.sort_unstable();
+    sets.dedup();
     let mut plan = Vec::new();
-    for col in cols {
-        plan.push((col, 0));
-        if claims.iter().any(|c| c.tap.col == col && c.tap.off > 0) {
-            plan.push((col, 1));
+    for set in sets {
+        let has_off = claims
+            .iter()
+            .any(|c| xor_canonical_cols(c.cols) == set && c.op.off > 0);
+        plan.push((set.clone(), 0));
+        if has_off {
+            plan.push((set, 1));
         }
     }
     plan
@@ -2542,53 +2556,54 @@ fn tap_collapse_row_weights(layout: &ShaF2Layout, w_row: &[u128], beta: usize) -
 #[allow(clippy::arithmetic_side_effects)]
 fn tap_collapse_col_weights(
     layout: &ShaF2Layout,
-    tap: &TapOp,
+    op: &crate::taps::TapUniOp,
     e_col: &[crate::pcs::Fq],
 ) -> [Vec<u128>; 2] {
     let s = layout.p.s;
-    let g = tap.grp_log2;
+    let g = op.grp_log2;
     let n_g = 1usize << g;
     let n_w = 1usize << (s - g);
     let mut out = [vec![0u128; 1 << s], vec![0u128; 1 << s]];
     for c in 0..1usize << s {
         let j = c & (n_g - 1);
         let wlo = c >> g;
-        let jout = if tap.bit_dropout {
-            if j + tap.bit_amt >= n_g {
+        let jout = if op.bit_dropout {
+            if j + op.bit_amt >= n_g {
                 continue;
             }
-            j + tap.bit_amt
+            j + op.bit_amt
         } else {
-            (j + tap.bit_amt) & (n_g - 1)
+            (j + op.bit_amt) & (n_g - 1)
         };
-        let (wout, beta) = if wlo + tap.off >= n_w {
-            (wlo + tap.off - n_w, 1usize)
+        let (wout, beta) = if wlo + op.off >= n_w {
+            (wlo + op.off - n_w, 1usize)
         } else {
-            (wlo + tap.off, 0usize)
+            (wlo + op.off, 0usize)
         };
         out[beta][c] = e_col[(wout << g) | jout].0;
     }
     out
 }
 
-/// The γ-combined per-(column, branch) column weights, in plan order.
+/// The γ-combined per-(set, branch) column weights, in plan order.
 #[allow(clippy::arithmetic_side_effects)]
 fn tap_collapse_combined_cols(
     layout: &ShaF2Layout,
-    claims: &[TapPointClaim],
+    claims: &[TapPointClaim<'_>],
     gammas: &[u128],
     e_col: &[crate::pcs::Fq],
-    plan: &[(usize, usize)],
+    plan: &[(Vec<usize>, usize)],
 ) -> Vec<Vec<crate::pcs::Fq>> {
-    use crate::pcs::{Fq, fq_add, fq_mul};
+    use crate::pcs::{Fq, fq_add, fq_mul, xor_canonical_cols};
     let mut acc: Vec<Vec<u128>> = plan.iter().map(|_| vec![0u128; e_col.len()]).collect();
     for (cl, &gam) in claims.iter().zip(gammas.iter()) {
-        let branches = tap_collapse_col_weights(layout, &cl.tap, e_col);
-        for (pi, &(col, beta)) in plan.iter().enumerate() {
-            if col != cl.tap.col {
+        let branches = tap_collapse_col_weights(layout, &cl.op, e_col);
+        let set = xor_canonical_cols(cl.cols);
+        for (pi, (pset, beta)) in plan.iter().enumerate() {
+            if *pset != set {
                 continue;
             }
-            for (a, &e) in acc[pi].iter_mut().zip(branches[beta].iter()) {
+            for (a, &e) in acc[pi].iter_mut().zip(branches[*beta].iter()) {
                 *a = fq_add(*a, fq_mul(gam, e));
             }
         }
@@ -2596,8 +2611,9 @@ fn tap_collapse_combined_cols(
     acc.into_iter().map(|v| v.into_iter().map(Fq::from).collect()).collect()
 }
 
-/// Prove k single-tap claims at ONE shared point by the weight-transform
-/// collapse: at most `#columns × 2` plain single-column claims through
+/// Prove k uniform-op claims (`op(⊕ cols)`) at ONE shared point by the
+/// weight-transform collapse: at most `#distinct-XOR-sets × 2` plain
+/// virtual-XOR claims through
 /// [`prove_mle_eval_mod_q_ligerito_claims_only`] (EXPERIMENTAL; see the
 /// section comment). Returns the inner claims-only proof.
 #[allow(clippy::arithmetic_side_effects)]
@@ -2607,19 +2623,26 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_collapse(
     layout: &ShaF2Layout,
     row_weights_q: &[u128],
     col_weights: &[crate::pcs::Fq],
-    claims: &[TapPointClaim],
+    claims: &[TapPointClaim<'_>],
     alpha: Gf,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigModQXorProof {
-    use crate::pcs::{FQ_BITS, FQ_MOD, fq_challenge, virtual_xor_params};
-    use crate::taps::{assert_tap, assert_tap_layout};
+    use crate::pcs::{FQ_BITS, FQ_MOD, fq_challenge, virtual_xor_params, xor_canonical_cols};
+    use crate::taps::{assert_tap_layout, assert_tap_op};
     assert_tap_layout(layout);
     assert!(!claims.is_empty(), "need at least one claim");
     let p_x = virtual_xor_params(layout);
     assert_eq!(row_weights_q.len(), p_x.rows(), "shared row-weight length");
     assert_eq!(col_weights.len(), p_x.cols(), "shared col-weight length");
     for cl in claims {
-        assert_tap(layout, &cl.tap);
+        assert_tap_op(layout, &cl.op);
+        assert!(
+            !xor_canonical_cols(cl.cols).is_empty(),
+            "claim's XOR set cancels to the zero vector"
+        );
+        for &c in cl.cols {
+            assert!(c < layout.num_cols, "claim column {c} out of range");
+        }
         assert!(cl.claimed < FQ_MOD, "claimed value must be canonical");
     }
     absorb_tap_collapse_statement(
@@ -2634,16 +2657,15 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_collapse(
     // γ-independent (the combination lives in the verifier's read-off).
     let _gammas: Vec<u128> = (0..claims.len()).map(|_| fq_challenge(transcript)).collect();
     let plan = tap_collapse_plan(claims);
-    let col_lists: Vec<[usize; 1]> = plan.iter().map(|&(col, _)| [col]).collect();
     let branch_rows: Vec<Vec<u128>> = plan
         .iter()
-        .map(|&(_, beta)| tap_collapse_row_weights(layout, row_weights_q, beta))
+        .map(|(_, beta)| tap_collapse_row_weights(layout, row_weights_q, *beta))
         .collect();
     let vx: Vec<VirtualXorClaim<'_>> = plan
         .iter()
         .enumerate()
-        .map(|(pi, _)| VirtualXorClaim {
-            cols: &col_lists[pi],
+        .map(|(pi, (set, _))| VirtualXorClaim {
+            cols: set,
             constant: 0,
             external_rows: None,
             row_weights_q: &branch_rows[pi],
@@ -2652,7 +2674,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_collapse(
     prove_mle_eval_mod_q_ligerito_claims_only(transcript, hint, layout, FQ_BITS, &vx, alpha, pc)
 }
 
-/// Verify a single-tap shared-point collapse (EXPERIMENTAL): derives the
+/// Verify a uniform-op shared-point collapse (EXPERIMENTAL): derives the
 /// branch values from the proof's own fold vectors, checks their sum
 /// against `T = Σ γ_i·c_i`, and runs the inner claims-only verifier.
 #[allow(clippy::arithmetic_side_effects)]
@@ -2664,13 +2686,13 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_collapse(
     layout: &ShaF2Layout,
     row_weights_q: &[u128],
     col_weights: &[crate::pcs::Fq],
-    claims: &[TapPointClaim],
+    claims: &[TapPointClaim<'_>],
     alpha: Gf,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
     use crate::pcs::{
         FQ_BITS, FQ_MOD, Fq, fq_add, fq_challenge, fq_mul, mod_q_chunk_width, mod_q_num_chunks,
-        recombine_read_off, virtual_xor_params,
+        recombine_read_off, virtual_xor_params, xor_canonical_cols,
     };
     let p_x = virtual_xor_params(layout);
     if layout.p.word_bits != 1
@@ -2679,9 +2701,12 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_collapse(
         || claims.is_empty()
         || row_weights_q.len() != p_x.rows()
         || col_weights.len() != p_x.cols()
-        || claims
-            .iter()
-            .any(|cl| !tap_shape_ok(layout, &cl.tap) || cl.claimed >= FQ_MOD)
+        || claims.iter().any(|cl| {
+            !tap_shape_ok(layout, &cl.op.with_col(0))
+                || cl.claimed >= FQ_MOD
+                || xor_canonical_cols(cl.cols).is_empty()
+                || cl.cols.iter().any(|&c| c >= layout.num_cols)
+        })
     {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
@@ -2722,16 +2747,15 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_collapse(
         return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
     }
 
-    let col_lists: Vec<[usize; 1]> = plan.iter().map(|&(col, _)| [col]).collect();
     let branch_rows: Vec<Vec<u128>> = plan
         .iter()
-        .map(|&(_, beta)| tap_collapse_row_weights(layout, row_weights_q, beta))
+        .map(|(_, beta)| tap_collapse_row_weights(layout, row_weights_q, *beta))
         .collect();
     let vx: Vec<VirtualXorVerifyClaim<'_, Fq>> = plan
         .iter()
         .enumerate()
-        .map(|(pi, _)| VirtualXorVerifyClaim {
-            cols: &col_lists[pi],
+        .map(|(pi, (set, _))| VirtualXorVerifyClaim {
+            cols: set,
             constant: 0,
             has_external: false,
             row_weights_q: &branch_rows[pi],
@@ -7738,12 +7762,15 @@ mod tests {
         .expect("pure-XOR stream family verifies");
     }
 
-    /// k single-tap claims at ONE shared point collapse to ≤ #cols × 2
-    /// plain single-column claims; values cross-checked against the
-    /// extraction-based evaluation (which independently pins the
-    /// weight-transform identity), on both pack-cut geometries.
+    /// k uniform-op claims (`op(⊕ cols)`) at ONE shared point collapse to
+    /// ≤ #distinct-XOR-sets × 2 plain virtual-XOR claims; values are
+    /// cross-checked against the extraction-based evaluation of the
+    /// DISTRIBUTED tap lists (`op(⊕ a_i) = ⊕ op(a_i)` — which
+    /// independently pins the weight-transform identity), on both
+    /// pack-cut geometries.
     #[test]
     fn tap_collapse_roundtrips() {
+        use crate::taps::TapUniOp;
         for layout in [tap_test_layout_tw6(), tap_test_layout_tw9()] {
             let g = tap_grp(&layout);
             let p_x = virtual_xor_params(&layout);
@@ -7751,50 +7778,61 @@ mod tests {
             let (hint, pc, vc) = rlc_test_commit(&layout);
             let colw = rlc_test_col_weights(&p_x);
             let rw = rlc_test_row_weights(&p_x, 91);
-            let rot = |col, amt, off| TapOp {
-                col,
-                grp_log2: g,
-                bit_amt: amt,
-                bit_dropout: false,
-                off,
-            };
-            let shl =
-                |col, amt, off| TapOp { col, grp_log2: g, bit_amt: amt, bit_dropout: true, off };
-            let taps = [
-                TapOp::ident(0),
-                TapOp::ident(1),
-                rot(0, 1, 0),
-                rot(1, 3, 0),
-                shl(0, 2, 0),
-                rot(0, 5, 1),
-                rot(1, 2, 2),
-                rot(1, 0, 3),
+            let rot =
+                |amt, off| TapUniOp { grp_log2: g, bit_amt: amt, bit_dropout: false, off };
+            let shl = |amt, off| TapUniOp { grp_log2: g, bit_amt: amt, bit_dropout: true, off };
+            // (XOR set, op): singleton sets + ROT^c(a₀⊕a₁)-style claims.
+            let spec: Vec<(Vec<usize>, TapUniOp)> = vec![
+                (vec![0], TapUniOp::ident()),
+                (vec![1], TapUniOp::ident()),
+                (vec![0], rot(1, 0)),
+                (vec![1], rot(3, 0)),
+                (vec![0], shl(2, 0)),
+                (vec![0, 1], rot(4, 0)),
+                (vec![0], rot(5, 1)),
+                (vec![1], rot(2, 2)),
+                (vec![1], rot(0, 3)),
+                (vec![0, 1], rot(6, 1)),
             ];
-            let claims: Vec<TapPointClaim> = taps
-                .iter()
-                .map(|&tap| TapPointClaim {
-                    tap,
-                    claimed: tap_expected_claim(&layout, hint.rows(), &[tap], &rw, &colw),
-                })
-                .collect();
+            let mk_claims = |count: usize| -> Vec<TapPointClaim<'_>> {
+                spec[..count]
+                    .iter()
+                    .map(|(set, op)| {
+                        let taps: Vec<TapOp> =
+                            set.iter().map(|&c| op.with_col(c)).collect();
+                        TapPointClaim {
+                            cols: set,
+                            op: *op,
+                            claimed: tap_expected_claim(
+                                &layout,
+                                hint.rows(),
+                                &taps,
+                                &rw,
+                                &colw,
+                            ),
+                        }
+                    })
+                    .collect()
+            };
+            let claims = mk_claims(spec.len());
             let mut pt = Blake3Transcript::new();
             let proof = prove_mle_eval_mod_q_ligerito_tap_collapse(
                 &mut pt, &hint, &layout, &rw, &colw, &claims, alpha, &pc,
             );
-            assert_eq!(proof.xors.len(), 4, "2 columns × 2 branches (offsets on both)");
+            assert_eq!(proof.xors.len(), 6, "3 XOR sets × 2 branches (offsets on all)");
             let mut vt = Blake3Transcript::new();
             verify_mle_eval_mod_q_ligerito_tap_collapse(
                 &mut vt, &hint.commitment, &proof, &layout, &rw, &colw, &claims, alpha, &vc,
             )
             .expect("collapse verifies");
 
-            // No-offset subset: one inner claim per column.
-            let claims2: Vec<TapPointClaim> = claims[..5].to_vec();
+            // No-offset subset: one inner claim per XOR set.
+            let claims2 = mk_claims(6);
             let mut pt = Blake3Transcript::new();
             let proof2 = prove_mle_eval_mod_q_ligerito_tap_collapse(
                 &mut pt, &hint, &layout, &rw, &colw, &claims2, alpha, &pc,
             );
-            assert_eq!(proof2.xors.len(), 2, "no offsets: branch 0 only per column");
+            assert_eq!(proof2.xors.len(), 3, "no offsets: branch 0 only per XOR set");
             let mut vt = Blake3Transcript::new();
             verify_mle_eval_mod_q_ligerito_tap_collapse(
                 &mut vt, &hint.commitment, &proof2, &layout, &rw, &colw, &claims2, alpha, &vc,
@@ -7814,21 +7852,30 @@ mod tests {
         let (hint, pc, vc) = rlc_test_commit(&layout);
         let colw = rlc_test_col_weights(&p_x);
         let rw = rlc_test_row_weights(&p_x, 143);
-        let rot =
-            |col, amt, off| TapOp { col, grp_log2: g, bit_amt: amt, bit_dropout: false, off };
-        let taps = [TapOp::ident(0), rot(0, 3, 1), rot(1, 6, 0), rot(1, 1, 2)];
-        let claims: Vec<TapPointClaim> = taps
+        use crate::taps::TapUniOp;
+        let rot = |amt, off| TapUniOp { grp_log2: g, bit_amt: amt, bit_dropout: false, off };
+        let spec: Vec<(Vec<usize>, TapUniOp)> = vec![
+            (vec![0], TapUniOp::ident()),
+            (vec![0], rot(3, 1)),
+            (vec![0, 1], rot(6, 0)),
+            (vec![1], rot(1, 2)),
+        ];
+        let claims: Vec<TapPointClaim<'_>> = spec
             .iter()
-            .map(|&tap| TapPointClaim {
-                tap,
-                claimed: tap_expected_claim(&layout, hint.rows(), &[tap], &rw, &colw),
+            .map(|(set, op)| {
+                let taps: Vec<TapOp> = set.iter().map(|&c| op.with_col(c)).collect();
+                TapPointClaim {
+                    cols: set,
+                    op: *op,
+                    claimed: tap_expected_claim(&layout, hint.rows(), &taps, &rw, &colw),
+                }
             })
             .collect();
         let mut pt = Blake3Transcript::new();
         let proof = prove_mle_eval_mod_q_ligerito_tap_collapse(
             &mut pt, &hint, &layout, &rw, &colw, &claims, alpha, &pc,
         );
-        let verify = |proof: &IntEvalRsLigModQXorProof, claims: &[TapPointClaim]| {
+        let verify = |proof: &IntEvalRsLigModQXorProof, claims: &[TapPointClaim<'_>]| {
             let mut vt = Blake3Transcript::new();
             verify_mle_eval_mod_q_ligerito_tap_collapse(
                 &mut vt, &hint.commitment, proof, &layout, &rw, &colw, claims, alpha, &vc,
@@ -7841,8 +7888,12 @@ mod tests {
         assert!(verify(&proof, &bad).is_err(), "wrong claimed value");
 
         let mut bad = claims.clone();
-        bad[3].tap.off = 1;
-        assert!(verify(&proof, &bad).is_err(), "tap statement mismatch");
+        bad[3].op.off = 1;
+        assert!(verify(&proof, &bad).is_err(), "op statement mismatch");
+
+        let mut bad = claims.clone();
+        bad[2].cols = &spec[3].0;
+        assert!(verify(&proof, &bad).is_err(), "XOR-set statement mismatch");
 
         {
             let mut p2 = IntEvalRsLigModQXorProof {

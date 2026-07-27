@@ -1742,9 +1742,14 @@ live. Rotation, shift, and offset are never the cost; cross-operand
 XOR-mixing is.
 \end{minipage}
 \end{center}
-CLI presets for all three paths: \code{f2z <n> --taps
-vx|family|collapse}; conventions pending confirmation (transcription
-fixes and translation direction) are listed in the Phase-0 record.
+The collapse is deployed for XOR-set sources too
+(\code{TapPointClaim} carries the set; claims
+$\mathrm{op}(\bigoplus_{i\in\mathrm{cols}}a_i)$ group by (canonical
+set, branch)). CLI presets for all paths: \code{f2z <n> --taps
+vx|family|collapse|rotxor}, the last an 8-claim
+$\mathrm{ROT}^{c}(a_1\oplus a_2)$-style family collapsing to four
+inner claims; conventions pending confirmation (transcription fixes
+and translation direction) are listed in the Phase-0 record.
 
 %============================================================================
 \section{Open questions}\label{sec:open}

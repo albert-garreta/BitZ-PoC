@@ -85,6 +85,49 @@ impl TapOp {
     pub fn is_ident(&self) -> bool {
         self.bit_amt == 0 && !self.bit_dropout && self.off == 0
     }
+
+    /// The op part alone (drop the column).
+    pub fn uni(&self) -> TapUniOp {
+        TapUniOp {
+            grp_log2: self.grp_log2,
+            bit_amt: self.bit_amt,
+            bit_dropout: self.bit_dropout,
+            off: self.off,
+        }
+    }
+}
+
+/// A column-free tap op — the uniform operand a shared-point collapse
+/// claim applies OUTSIDE its XOR set (`op(⊕_i a_i)`); field semantics as
+/// [`TapOp`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct TapUniOp {
+    /// The word-group width `g` (log₂ bits per entry-axis word).
+    pub grp_log2: usize,
+    /// Within-group amount `r` (rotation, or shift when `bit_dropout`).
+    pub bit_amt: usize,
+    /// `false` = `ROT` (cyclic); `true` = `SHIFT` (dropout).
+    pub bit_dropout: bool,
+    /// Word offset along the entry axis (`< 2^{s − g}`).
+    pub off: usize,
+}
+
+impl TapUniOp {
+    /// The identity op.
+    pub fn ident() -> Self {
+        Self { grp_log2: 0, bit_amt: 0, bit_dropout: false, off: 0 }
+    }
+
+    /// Attach a column, giving a full [`TapOp`].
+    pub fn with_col(self, col: usize) -> TapOp {
+        TapOp {
+            col,
+            grp_log2: self.grp_log2,
+            bit_amt: self.bit_amt,
+            bit_dropout: self.bit_dropout,
+            off: self.off,
+        }
+    }
 }
 
 /// Assert the v1 support envelope for tap claims on this layout.
@@ -99,29 +142,34 @@ pub(crate) fn assert_tap_layout(layout: &ShaF2Layout) {
     );
 }
 
-/// Validate one tap against the layout.
-pub(crate) fn assert_tap(layout: &ShaF2Layout, tap: &TapOp) {
+/// Validate a column-free op against the layout.
+pub(crate) fn assert_tap_op(layout: &ShaF2Layout, op: &TapUniOp) {
     let s = layout.p.s;
-    assert!(tap.col < layout.num_cols, "tap column {} out of range", tap.col);
     assert!(
-        tap.grp_log2 <= s,
+        op.grp_log2 <= s,
         "tap group width g = {} must fit inside the clear axis (s = {s})",
-        tap.grp_log2
+        op.grp_log2
     );
-    if tap.bit_amt > 0 || tap.bit_dropout {
+    if op.bit_amt > 0 || op.bit_dropout {
         assert!(
-            tap.bit_amt < (1usize << tap.grp_log2),
+            op.bit_amt < (1usize << op.grp_log2),
             "tap amount {} out of range (< 2^g = {})",
-            tap.bit_amt,
-            1usize << tap.grp_log2
+            op.bit_amt,
+            1usize << op.grp_log2
         );
     }
     assert!(
-        tap.off < (1usize << (s - tap.grp_log2)),
+        op.off < (1usize << (s - op.grp_log2)),
         "tap word offset {} out of range (< 2^(s−g) = {}) — larger offsets not built",
-        tap.off,
-        1usize << (s - tap.grp_log2)
+        op.off,
+        1usize << (s - op.grp_log2)
     );
+}
+
+/// Validate one tap against the layout.
+pub(crate) fn assert_tap(layout: &ShaF2Layout, tap: &TapOp) {
+    assert!(tap.col < layout.num_cols, "tap column {} out of range", tap.col);
+    assert_tap_op(layout, &tap.uni());
 }
 
 // ---------------------------------------------------------------------

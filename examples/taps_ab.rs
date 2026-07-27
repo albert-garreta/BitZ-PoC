@@ -182,10 +182,16 @@ fn main() {
                     y.0
                 })
                 .collect();
-            let pclaims: Vec<TapPointClaim> = all_taps
+            let single_sets: Vec<[usize; 1]> = all_taps.iter().map(|t| [t.col]).collect();
+            let pclaims: Vec<TapPointClaim<'_>> = all_taps
                 .iter()
+                .zip(single_sets.iter())
                 .zip(vals.iter())
-                .map(|(&tap, &claimed)| TapPointClaim { tap, claimed })
+                .map(|((tap, set), &claimed)| TapPointClaim {
+                    cols: set,
+                    op: tap.uni(),
+                    claimed,
+                })
                 .collect();
             let single_lists: Vec<[TapOp; 1]> = all_taps.iter().map(|&t| [t]).collect();
             let tclaims: Vec<TapClaim<'_>> = single_lists
