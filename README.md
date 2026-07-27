@@ -1032,13 +1032,30 @@ Measured (A/B protocol, FAST, medians of 5):
 
 Byte ladder at n=24, δ=3 (CLI, 6 claims): fast 209.4 → r1/4 168.8 →
 **r1/8 153.3 (25.6 KiB/claim, prove ~116 ms, commit 2×)** → r1/16
-144.1 (past the knee). Verify ~10–12 ms throughout. The 2-column
-k=6 instance re-measured at parity (δ3/δ4: 189.6/183.5 ms at n=24 —
-rings are a thinner share there). Remaining headroom is ~10 % of
-prove (fixed per-block costs) plus the line-wide forest-kernel
-levers (`riding the forest`, 8/16-case leaf rounds) — body count
-itself is information-forced for XOR-mixed claims of distinct
-shapes.
+144.1 (past the knee). Verify ~10–12 ms throughout.
+
+The same pass applied to the **2-column k=6 instance** (per-claim
+bodies are 2× cols4's — nv = 23 — and the 3-tap b-claims carry ~9
+translated-eq members each, so rings run ~2× thicker: attribution
+forest 49 % / lig 24 % / rings 11 % / fills 3 %): its time knee is
+**δ = 4** (s = 12 starts one higher), byte config r1/8 again.
+Measured (A/B protocol, FAST, medians of 5; δ=0 = the blocked
+baseline of the P2 note):
+
+| n | single δ4 | vx6 δ=0 | vx6 δ=4 | ind6 δ4 | proof vx6 δ4 |
+|----|-----------|---------|----------|----------|---------------|
+| 22 | 18.6 ms | 90.5 | **66.4** | 146.6 (2.2×) | 180 KB |
+| 24 | 58.0 | 248.7 | **182.5** | 275.0 (1.5×) | 227 KB |
+| 26 | 111.6 | 713.1 | **619.4** | 755.8 (1.2×) | 289 KB |
+
+CLI byte ladder at n=24 δ4: fast 221.3 → r1/4 181.4 → **r1/8 163.6
+KiB (27.3 KiB/claim)**; verify 19–22 ms. Against the session's
+starting point (padded, δ=0): time −44/−43/−69 % at n=22/24/26 and
+bytes −71 % at n=24 (566 → 164 KB). Remaining headroom on both
+instances is ~10 % of prove (fixed per-block costs) plus the
+line-wide forest-kernel levers (`riding the forest`, 8/16-case leaf
+rounds) — body count itself is information-forced for XOR-mixed
+claims of distinct shapes.
 
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
