@@ -134,9 +134,39 @@ positions are unconstrained scratch by weight support):
 
 plus one 2-tap vector for the finalization/chaining XORs
 (`h'ᵢ = vᵢ ⊕ vᵢ₊₈`; output → next-block input copies at the block
-stride — uniform offsets, one shape). **5 mixed bodies**, blocked
-2+2+1, run at the δ knee (the XOR layer has no weight-tensor
-constraint; its claimed values are 0).
+stride — uniform offsets, one shape). The mixed bodies run at the δ
+knee (the XOR layer has no weight-tensor constraint; its claimed
+values are 0).
+
+**The diagonal boundary, accounted (correction, same day).** The
+table above is the INTERIOR picture; the diagonal shuffle is real
+dataflow and it touches P-XOR exactly once per phase boundary: the
+ROT16/ROT12 steps read `d`/`b` from the previous phase at a
+lane-rotated position (diag-G_l takes b from lane l+1 mod 4, …), and
+a cyclic shift on the 2-bit lane subfield is not a single tap. Two
+sound treatments:
+
+1. **Continuity route (preferred — zero extra bodies).** Store each
+   half's values in ITS OWN quadruple-grouping order, adding a
+   committed copy of the incoming `d`/`b` word per shuffled boundary
+   (≈ +2 words per G ≈ +20 % trace). Every XOR relation then reads
+   same-lane interior offsets (pure taps, the 4-shape table stands),
+   and the regrouping becomes "incoming copy = last half's outgoing
+   word at the rotated lane" — word EQUALITY is integer-linear, so
+   these continuity constraints ride the P-LIN layer at
+   lane-permuted, place-valued column weights, exactly like the
+   message permutation. Cost: none in bodies; ~20 % fewer
+   compressions per trace.
+2. **No-copy route: wrap-split vectors.** Keep one storage order and
+   split each shuffled boundary relation into two vectors (non-wrap
+   offset tap / wrap offset tap), each zero-checked on its lane
+   subset via the weight mask; pre-permuting one phase halves the
+   shapes. Net ≈ +4–8 mixed bodies (~9–13 total).
+
+Route 1 dominates (bodies are 2^{n−3} each; trace density only
+scales compressions-per-proof): the mixed-body table stays 5–6 and
+the per-compression estimate moves only by the trace factor, to
+≈ 110 µs at the n = 26 scale.
 
 ## 3. The count
 
