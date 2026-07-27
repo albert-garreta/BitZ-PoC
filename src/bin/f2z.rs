@@ -38,19 +38,22 @@
 //!   split t' ≈ s — the README's 2026-07-26/27 RLC notes); `t s W`
 //!   positionals do not apply. Every rep is verified. Example:
 //!   `f2z 26 --family j4s --reps 5`
-//! - `--taps vx|family|collapse|rotxor` — run the EXPERIMENTAL structured-taps
-//!   paths at this `n` (32-bit words along the ENTRY axis of W=1
-//!   bit-vectors, g = 5; 2 UAIR columns; ALL claims at ONE shared
-//!   point): `vx` = the j=2 k=6 ROT/SHIFT/word-offset instance through
-//!   the batched tap-claims (extraction + translated-eq openings) path;
-//!   `family` = the same instance through the clustered stream family
-//!   ({b1,b3,b5}/{b2,b4,b6}); `collapse` = the instance's 13 deduped
-//!   streams as 13 SINGLE-TAP claims through the weight-transform
-//!   collapse (≤ 4 inner claims); `rotxor` = 8 uniform-op-of-XOR-set
-//!   claims (rotations + a word-offset of a₁⊕a₂, single-column
-//!   rotations) through the same collapse (4 inner claims). Every rep
-//!   is verified.
-//!   Example: `f2z 24 --taps rotxor --reps 5`
+//! - `--taps vx|family|collapse|rotxor|sched` — run the EXPERIMENTAL
+//!   structured-taps paths at this `n` (32-bit words along the ENTRY
+//!   axis of W=1 bit-vectors, g = 5; 2 UAIR columns; ALL claims at ONE
+//!   shared point): `vx` = the j=2 k=6 ROT/SHIFT/word-offset instance
+//!   through the batched tap-claims (extraction + translated-eq
+//!   openings) path; `family` = the same instance through the clustered
+//!   stream family ({b1,b3,b5}/{b2,b4,b6}); `collapse` = the instance's
+//!   13 deduped streams as 13 SINGLE-TAP claims through the
+//!   weight-transform collapse (≤ 4 inner claims); `rotxor` = 8
+//!   uniform-op-of-XOR-set claims (rotations + a word-offset of a₁⊕a₂,
+//!   single-column rotations) through the same collapse (4 inner
+//!   claims); `sched` = 48 schedule-shaped claims `off^t(x)` of ONE
+//!   σ-style mixed combination through the COMPOSED collapse (2 inner
+//!   tap bodies total; rounds clip to the shape's offset envelope, 48
+//!   needs n ≥ 22). Every rep is verified.
+//!   Example: `f2z 24 --taps sched --reps 5`
 //!
 //! Integer-guard mode is a COMPILE-TIME feature: build with
 //! `--features unchecked` for release-style plain integer ops (the header
@@ -155,7 +158,7 @@ fn usage() -> ! {
     eprintln!(
         "usage: f2z <n> [<t> <s> [<W>]] [--threads N] [--reps R] \
          [--profile slim|slim3|fast|secure|custom:<log_inv_rate>:<initial_k>] [--word-bits W] \
-         [--family j2|j3|j4|j2s|j3s|j4s] [--taps vx|family|collapse|rotxor]\n\
+         [--family j2|j3|j4|j2s|j3s|j4s] [--taps vx|family|collapse|rotxor|sched]\n\
          (n = t + s; W = cell width, power of two, default 1;\n\
           --family runs the mod-q RLC claim family at the A/B layout — j2 = the\n\
           XOR triple, j3/j4 the wider families, j2s/j3s/j4s the SHARED-POINT\n\
@@ -163,7 +166,8 @@ fn usage() -> ! {
           --taps runs the structured-taps instance (32-bit entry-axis words,\n\
           one shared point) — vx = batched tap claims, family = the clustered\n\
           stream family, collapse = 13 single-tap claims via the collapse,\n\
-          rotxor = 8 uniform-op-of-XOR-set claims via the collapse;\n\
+          rotxor = 8 uniform-op-of-XOR-set claims via the collapse,\n\
+          sched = 48 off^t(σ-combo) claims via the COMPOSED collapse;\n\
           t/s/W do not apply there;\n\
           run with --release and --features unchecked for quotable numbers;\n\
           -C target-cpu=native is load-bearing on aarch64)"
@@ -745,19 +749,20 @@ fn taps_layout(n: usize) -> f2z::pcs::ShaF2Layout {
 #[allow(clippy::arithmetic_side_effects)]
 fn run_taps(o: &Opts, mode: &str) {
     use f2z::ligerito_flock::{
-        RlcFamilyClaim, TapClaim, TapFamilyCluster, TapPointClaim, TapVerifyClaim,
-        mle_eval_mod_q_lig_tap_family_size_breakdown, mle_eval_mod_q_lig_tap_size_breakdown,
-        mle_eval_mod_q_lig_xor_proof_size_bytes, prove_mle_eval_mod_q_ligerito_tap_claims,
-        prove_mle_eval_mod_q_ligerito_tap_collapse, prove_mle_eval_mod_q_ligerito_tap_family,
+        RlcFamilyClaim, TapClaim, TapComposedClaim, TapFamilyCluster, TapPointClaim,
+        TapVerifyClaim, mle_eval_mod_q_lig_tap_family_size_breakdown,
+        mle_eval_mod_q_lig_tap_size_breakdown, mle_eval_mod_q_lig_xor_proof_size_bytes,
+        prove_mle_eval_mod_q_ligerito_tap_claims, prove_mle_eval_mod_q_ligerito_tap_collapse,
+        prove_mle_eval_mod_q_ligerito_tap_composed, prove_mle_eval_mod_q_ligerito_tap_family,
         verify_mle_eval_mod_q_ligerito_tap_claims, verify_mle_eval_mod_q_ligerito_tap_collapse,
-        verify_mle_eval_mod_q_ligerito_tap_family,
+        verify_mle_eval_mod_q_ligerito_tap_composed, verify_mle_eval_mod_q_ligerito_tap_family,
     };
     use f2z::pcs::{FQ_BITS, FQ_MOD, Fq as PcsFq, virtual_xor_params};
     use f2z::taps::{TapOp, extract_virtual_tap_rows};
 
     const GRP: usize = 5;
-    if !matches!(mode, "vx" | "family" | "collapse" | "rotxor") {
-        eprintln!("unknown taps mode: {mode} (expected vx|family|collapse|rotxor)");
+    if !matches!(mode, "vx" | "family" | "collapse" | "rotxor" | "sched") {
+        eprintln!("unknown taps mode: {mode} (expected vx|family|collapse|rotxor|sched)");
         exit(2);
     }
     if o.n < 14 {
@@ -818,10 +823,24 @@ fn run_taps(o: &Opts, mode: &str) {
             1
         }
     };
+    // The composed-collapse schedule preset's source (σ-style mixed
+    // combination) and round count (48, clipped to the shape's offset
+    // envelope; the FOLDED baseline lists also eat the source's own
+    // word offset).
+    let sched_src: Vec<TapOp> = vec![
+        rot(0, 7, 0),
+        rot(0, 18, 0),
+        shl(0, 3, 0),
+        rot(1, 0, 1),
+    ];
+    let sched_max_src_off = sched_src.iter().map(|t| t.off).max().unwrap_or(0);
+    let sched_rounds =
+        48usize.min((1usize << (layout.p.s - GRP)) - sched_max_src_off);
     let k_desc = match mode {
-        "collapse" => "13 single-tap claims",
-        "rotxor" => "8 op(xor-set) claims",
-        _ => "k=6 instance",
+        "collapse" => "13 single-tap claims".to_string(),
+        "rotxor" => "8 op(xor-set) claims".to_string(),
+        "sched" => format!("{sched_rounds} off^t(σ-combo) claims"),
+        _ => "k=6 instance".to_string(),
     };
     println!(
         "f2z --taps {mode}: n={} (t'={}, s={}, g={GRP}, {k_desc}, one shared point) | \
@@ -962,11 +981,40 @@ fn run_taps(o: &Opts, mode: &str) {
             TapPointClaim { cols: set, op, claimed: eval_taps(&taps) }
         })
         .collect();
+    // Schedule claims: `off^t` of the fixed source; the claim values run
+    // through the offset-FOLDED lists (the independent extraction route
+    // the composed weight-transform algebra must reproduce).
+    let sched_folded: Vec<Vec<TapOp>> = if mode == "sched" {
+        (0..sched_rounds)
+            .map(|t| {
+                sched_src
+                    .iter()
+                    .map(|tap| {
+                        let mut tap = *tap;
+                        tap.off += t;
+                        tap
+                    })
+                    .collect()
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let cclaims: Vec<TapComposedClaim<'_>> = sched_folded
+        .iter()
+        .enumerate()
+        .map(|(t, folded)| TapComposedClaim {
+            source: &sched_src,
+            outer: uni(0, false, t),
+            claimed: eval_taps(folded),
+        })
+        .collect();
 
     enum TapProof {
         Vx(f2z::ligerito_flock::IntEvalRsLigModQTapProof),
         Fam(f2z::ligerito_flock::IntEvalRsLigTapFamilyProof),
         Clp(f2z::ligerito_flock::IntEvalRsLigModQXorProof),
+        Cmp(f2z::ligerito_flock::IntEvalRsLigModQTapProof),
     }
     let prove_once = |pt: &mut Blake3Transcript| -> TapProof {
         match mode {
@@ -975,6 +1023,9 @@ fn run_taps(o: &Opts, mode: &str) {
             )),
             "family" => TapProof::Fam(prove_mle_eval_mod_q_ligerito_tap_family(
                 pt, &hint, &layout, &clusters, alpha_of(), &pc,
+            )),
+            "sched" => TapProof::Cmp(prove_mle_eval_mod_q_ligerito_tap_composed(
+                pt, &hint, &layout, &rw, &colw, &cclaims, alpha_of(), &pc,
             )),
             _ => TapProof::Clp(prove_mle_eval_mod_q_ligerito_tap_collapse(
                 pt, &hint, &layout, &rw, &colw, &pclaims, alpha_of(), &pc,
@@ -990,6 +1041,10 @@ fn run_taps(o: &Opts, mode: &str) {
             vt, &hint.commitment, pr, &layout, &clusters, &colw, alpha_of(), &vc,
         )
         .expect("stream family verifies"),
+        TapProof::Cmp(pr) => verify_mle_eval_mod_q_ligerito_tap_composed(
+            vt, &hint.commitment, pr, &layout, &rw, &colw, &cclaims, alpha_of(), &vc,
+        )
+        .expect("composed schedule verifies"),
         TapProof::Clp(pr) => verify_mle_eval_mod_q_ligerito_tap_collapse(
             vt, &hint.commitment, pr, &layout, &rw, &colw, &pclaims, alpha_of(), &vc,
         )
@@ -997,7 +1052,7 @@ fn run_taps(o: &Opts, mode: &str) {
     };
     let size_of = |proof: &TapProof| -> usize {
         match proof {
-            TapProof::Vx(pr) => {
+            TapProof::Vx(pr) | TapProof::Cmp(pr) => {
                 let (b, lig) = mle_eval_mod_q_lig_tap_size_breakdown(pr);
                 b.total() + lig
             }
@@ -1008,7 +1063,11 @@ fn run_taps(o: &Opts, mode: &str) {
             TapProof::Clp(pr) => mle_eval_mod_q_lig_xor_proof_size_bytes(pr),
         }
     };
-    let k = if matches!(mode, "collapse" | "rotxor") { pclaims.len() } else { tclaims.len() };
+    let k = match mode {
+        "collapse" | "rotxor" => pclaims.len(),
+        "sched" => cclaims.len(),
+        _ => tclaims.len(),
+    };
 
     // Warm-up (excluded), then timed reps — every rep verified.
     {

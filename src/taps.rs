@@ -130,6 +130,46 @@ impl TapUniOp {
     }
 }
 
+/// The canonical sort key of a tap descriptor (lexicographic field
+/// order).
+pub(crate) fn tap_sort_key(t: &TapOp) -> (usize, usize, usize, bool, usize) {
+    (t.col, t.grp_log2, t.bit_amt, t.bit_dropout, t.off)
+}
+
+/// Canonical form of a tap SOURCE combination (an XOR list of taps):
+/// per-tap normal form (`bit_amt = 0` clears the dropout flag —
+/// `SHIFT^0 = ROT^0`; full identities clear the group width), sorted by
+/// [`tap_sort_key`], identical PAIRS cancelled (char 2). Sources equal
+/// as vectors but distinct as canonical descriptor lists stay distinct
+/// (sound, merely less merged).
+pub fn tap_canonical_ops(taps: &[TapOp]) -> Vec<TapOp> {
+    let mut v: Vec<TapOp> = taps
+        .iter()
+        .map(|t| {
+            let mut t = *t;
+            if t.bit_amt == 0 {
+                t.bit_dropout = false;
+            }
+            if t.is_ident() {
+                t.grp_log2 = 0;
+            }
+            t
+        })
+        .collect();
+    v.sort_unstable_by_key(tap_sort_key);
+    let mut out = Vec::with_capacity(v.len());
+    let mut i = 0usize;
+    while i < v.len() {
+        if i.wrapping_add(1) < v.len() && v[i] == v[i.wrapping_add(1)] {
+            i = i.wrapping_add(2);
+        } else {
+            out.push(v[i]);
+            i = i.wrapping_add(1);
+        }
+    }
+    out
+}
+
 /// Assert the v1 support envelope for tap claims on this layout.
 pub(crate) fn assert_tap_layout(layout: &ShaF2Layout) {
     assert_eq!(layout.p.word_bits, 1, "tap claims assume the W=1 SHA layout");
@@ -836,6 +876,26 @@ mod tests {
                 assert_eq!(fast, naive, "taps {taps:?} on layout tw={}", layout.tw);
             }
         }
+    }
+
+    #[test]
+    fn tap_canonical_ops_normalizes() {
+        let rot =
+            |col, amt, off| TapOp { col, grp_log2: 3, bit_amt: amt, bit_dropout: false, off };
+        // SHIFT^0 normalizes to ROT^0; a full identity clears the group
+        // width; an off-only tap keeps it (the word stride).
+        let shl0 = TapOp { col: 1, grp_log2: 3, bit_amt: 0, bit_dropout: true, off: 0 };
+        assert_eq!(tap_canonical_ops(&[shl0]), vec![TapOp::ident(1)]);
+        let id5 = TapOp { col: 0, grp_log2: 5, bit_amt: 0, bit_dropout: false, off: 0 };
+        assert_eq!(tap_canonical_ops(&[id5]), vec![TapOp::ident(0)]);
+        let off_tap = rot(0, 0, 2);
+        assert_eq!(tap_canonical_ops(&[off_tap]), vec![off_tap]);
+        // Sorting + identical-pair cancellation (char 2): a ⊕ b ⊕ a = b.
+        let a = rot(1, 2, 0);
+        let b = rot(0, 1, 1);
+        assert_eq!(tap_canonical_ops(&[b, a]), vec![b, a]);
+        assert_eq!(tap_canonical_ops(&[a, b, a]), vec![b]);
+        assert_eq!(tap_canonical_ops(&[a, a]), Vec::<TapOp>::new());
     }
 
     fn test_point(len: usize, seed: u64) -> Vec<Gf> {

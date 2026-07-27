@@ -1751,6 +1751,77 @@ $\mathrm{ROT}^{c}(a_1\oplus a_2)$-style family collapsing to four
 inner claims; conventions pending confirmation (transcription fixes
 and translation direction) are listed in the Phase-0 record.
 
+\subsection{The composed collapse: uniform ops over mixed sources}
+\label{sec:tapcomposed}
+
+\emph{(Added later the same day; commit tag \texttt{0x45},
+\code{TapComposedClaim}.)} Identity \eqref{eq:wtransform} never used
+that its source is a plain column XOR --- only that the inner claim
+$\langle w\circ\sigma,\,x\rangle$ is provable. Let the source instead
+be a fixed \emph{XOR-of-taps combination}
+$x_S=\bigoplus_{t\in S}\mathrm{op}_t(a_{i_t})$ --- extractable, and
+provable by the tap-claims path of \S\ref{sec:tapopen} --- and take
+$k$ claims $\mathrm{OUTER}_i(x_{S_i})$ at one shared point
+$w_{\mathrm{row}}\otimes e$. The branch split of the transformed
+weight depends only on $(\mathrm{OUTER},\text{layout})$, never on the
+source, so the $\gamma$-combination gives
+\[
+  \sum_i \gamma_i\cdot\mathrm{claim}_i
+  \;=\;\sum_{(S,\beta)}
+  \bigl\langle\, w_{\mathrm{row}}^{(\beta)}\otimes E_{S,\beta},\;
+  x_S \,\bigr\rangle,
+  \qquad
+  E_{S,\beta}=\sum_{i:\,\mathrm{canon}(S_i)=S}\gamma_i\,e_i^{(\beta)}
+  \bmod q :
+\]
+at most $2\cdot\#\{\text{distinct sources}\}$ \emph{inner tap claims},
+independent of $k$; the verifier derives each branch value from the
+proof's own forest-bound fold vectors and checks their sum against
+$\sum_i\gamma_i c_i$ (error $1/q$ plus the inherited terms --- the
+\S\ref{sec:tapcollapse} chain with ``committed column'' replaced by
+``extracted source''). Sources are canonicalised per tap and reduced
+by char-2 pair cancellation; the outer offset's envelope
+($o<2^{s-g}$) stands \emph{alone} --- it does not compound with the
+source taps' offsets, since the transform treats $x_S$ as a black
+box.
+
+This is the XOR-mixed amortisation the stream family of
+\S\ref{sec:tapmeasured} could not deliver: \emph{shift-invariant
+(schedule-shaped) workloads make every round's mixed combination a
+word-offset of one fixed combination}, so $k$ rounds cost \emph{two}
+inner bodies total --- the XOR-mixing price (the translated-eq rings
+and their carry classes) is paid once per distinct source
+\emph{shape}, not per claim. Measured ($48$ claims
+$\mathrm{off}^{t}(x)$ of one $\sigma$-style source
+$\mathrm{ROT}^{7}a_0\oplus\mathrm{ROT}^{18}a_0\oplus
+\mathrm{SHIFT}^{3}a_0\oplus\mathrm{off}^{1}a_1$; claim values
+computed through the offset-folded extraction route, so every
+verified rep cross-checks the transform algebra; medians of 5):
+
+\begin{center}\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+$n$ & composed & batched (folds to 64 sets) & 48 independent &
+proofs (cmp/batched)\\
+\midrule
+22 & $\mathbf{39.2}$ & $864.9$ \;($22.1\times$) & $1405.8$ \;($35.9\times$) & $189/1996$\,KB\\
+24 & $\mathbf{94.8}$ & $3242.3$ \;($34.2\times$) & $2895.7$ \;($30.6\times$) & $284/3602$\,KB\\
+26 & $\mathbf{279.7}$ & skipped (pad wall) & $7334.8$ \;($26.2\times$) & $448/\text{---}$\,KB\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent Forty-eight XOR-mixed claims land at $1.0$--$1.9\times$ the
+cost of \emph{one} ($25.5/94.4/146$\,ms), at the single-proof memory
+footprint; the batched baseline already inverts against independent
+proofs at $n{=}24$ (its $64$-set pad). The routing law of
+\S\ref{sec:tapmeasured} refines to: single-tap or uniform-op-of-XOR-set
+at one point $\to$ the collapse (\S\ref{sec:tapcollapse}); \emph{many
+outer ops of few mixed sources} at one point (schedules) $\to$ the
+composed collapse; irreducibly distinct XOR-mixed claims $\to$ the
+batched extraction path; the stream family only for dense stream
+reuse. CLI preset: \code{f2z <n> --taps sched}.
+
 %============================================================================
 \section{Open questions}\label{sec:open}
 

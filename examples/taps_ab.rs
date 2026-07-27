@@ -24,6 +24,17 @@
 //! point — `clp` (the weight-transform collapse, ≤ 4 inner claims) vs
 //! `vx13` (13 batched tap claims, pads to 16 tree-sets) vs `ind13`.
 //!
+//! `F2Z_AB_SCHED=1` runs the COMPOSED-collapse schedule demo instead:
+//! 48 claims `off^t(x)` of ONE σ-style mixed combination
+//! `x = ROT^7 a_0 ⊕ ROT^18 a_0 ⊕ SHIFT^3 a_0 ⊕ off^1 a_1` at ONE point
+//! — `cmp` (the composed collapse, 2 inner tap bodies TOTAL) vs `vx48`
+//! (the batched tap-claims path on the offset-folded lists; 48 claims
+//! pad to 64 tree-sets — skipped at n ≥ 26 for memory honesty) vs
+//! `ind48`. Claim values are computed through the FOLDED-list
+//! extraction route, so every verified rep doubles as a
+//! distributed-extraction cross-check of the weight-transform algebra.
+//! `F2Z_AB_ROUNDS` overrides the round count.
+//!
 //! ```text
 //! F2Z_AB_N="22 24 26" F2Z_AB_REPS=5 RUSTFLAGS="-C target-cpu=native" \
 //!   cargo run --release --example taps_ab --features unchecked
@@ -31,12 +42,13 @@
 
 use f2z::ligerito::packed_vars;
 use f2z::ligerito_flock::{
-    RlcFamilyClaim, TapClaim, TapFamilyCluster, TapPointClaim, TapVerifyClaim,
+    RlcFamilyClaim, TapClaim, TapComposedClaim, TapFamilyCluster, TapPointClaim, TapVerifyClaim,
     commit_rs_ligerito_rows, mle_eval_mod_q_lig_tap_family_size_breakdown,
     mle_eval_mod_q_lig_tap_size_breakdown, mle_eval_mod_q_lig_xor_proof_size_bytes,
     prove_mle_eval_mod_q_ligerito_tap_claims, prove_mle_eval_mod_q_ligerito_tap_collapse,
-    prove_mle_eval_mod_q_ligerito_tap_family, sha_lig_configs,
-    verify_mle_eval_mod_q_ligerito_tap_claims, verify_mle_eval_mod_q_ligerito_tap_collapse,
+    prove_mle_eval_mod_q_ligerito_tap_composed, prove_mle_eval_mod_q_ligerito_tap_family,
+    sha_lig_configs, verify_mle_eval_mod_q_ligerito_tap_claims,
+    verify_mle_eval_mod_q_ligerito_tap_collapse, verify_mle_eval_mod_q_ligerito_tap_composed,
     verify_mle_eval_mod_q_ligerito_tap_family,
 };
 use f2z::pcs::{FQ_BITS, FQ_MOD, Fq, IntEvalParams, ShaF2Layout, smallest_generator, virtual_xor_params};
@@ -144,6 +156,193 @@ fn main() {
             })
             .collect();
         let hint = commit_rs_ligerito_rows(p, rows, &pc);
+
+        if std::env::var("F2Z_AB_SCHED").is_ok_and(|v| v == "1") {
+            // The composed collapse on a schedule-shaped instance: every
+            // claim `off^t(x)` of ONE σ-style mixed combination — 2
+            // inner tap bodies TOTAL — against the batched path on the
+            // offset-folded lists (pads to the next power of two) and
+            // independent proofs.
+            let rounds: usize =
+                std::env::var("F2Z_AB_ROUNDS").map_or(48, |v| v.parse().unwrap());
+            let rot = |col, amt, off| TapOp {
+                col,
+                grp_log2: GRP,
+                bit_amt: amt,
+                bit_dropout: false,
+                off,
+            };
+            let shl =
+                |col, amt, off| TapOp { col, grp_log2: GRP, bit_amt: amt, bit_dropout: true, off };
+            let src = vec![rot(0, 7, 0), rot(0, 18, 0), shl(0, 3, 0), rot(1, 0, 1)];
+            // The composed path needs `rounds − 1 < 2^{s−g}` alone; the
+            // FOLDED baseline additionally eats the source's own word
+            // offset (its envelope is strictly narrower).
+            let max_src_off = src.iter().map(|t| t.off).max().unwrap_or(0);
+            assert!(
+                rounds + max_src_off <= 1usize << (layout.p.s - GRP),
+                "folded-baseline offsets out of range for this shape"
+            );
+            let rw: Vec<u128> = (0..p_x.rows())
+                .map(|b| {
+                    (b as u128)
+                        .wrapping_mul(0xDEAD_BEEF_CAFE_F00D_1234_5678_9ABC_DEF1)
+                        .wrapping_add(43 + (u128::from(seed) << 1))
+                        % FQ_MOD
+                })
+                .collect();
+            let colw: Vec<Fq> = (0..p_x.cols())
+                .map(|c| Fq::from((c as u128).wrapping_mul(0xABCD_EF01_2345).wrapping_add(3)))
+                .collect();
+            let eval_list = |taps: &[TapOp]| -> u128 {
+                let a_rows = extract_virtual_tap_rows(&layout, hint.rows(), taps);
+                let mut y = Fq::from(0u128);
+                for (c, row) in a_rows.iter().enumerate() {
+                    let mut acc = Fq::from(0u128);
+                    for (wi, &word) in row.iter().enumerate() {
+                        let mut bits = word;
+                        while bits != 0 {
+                            let t = bits.trailing_zeros() as usize;
+                            acc = acc + Fq::from(rw[(wi << 6) | t]);
+                            bits &= bits.wrapping_sub(1);
+                        }
+                    }
+                    y = y + colw[c] * acc;
+                }
+                y.0
+            };
+            // The folded lists (`off += t` per tap) drive both the
+            // baseline paths AND the claim values — the independent
+            // extraction route the composed algebra must reproduce.
+            let folded: Vec<Vec<TapOp>> = (0..rounds)
+                .map(|t| {
+                    src.iter()
+                        .map(|tap| {
+                            let mut tap = *tap;
+                            tap.off += t;
+                            tap
+                        })
+                        .collect()
+                })
+                .collect();
+            let vals: Vec<u128> = folded.iter().map(|taps| eval_list(taps)).collect();
+            let cclaims: Vec<TapComposedClaim<'_>> = (0..rounds)
+                .map(|t| TapComposedClaim {
+                    source: &src,
+                    outer: f2z::taps::TapUniOp {
+                        grp_log2: GRP,
+                        bit_amt: 0,
+                        bit_dropout: false,
+                        off: t,
+                    },
+                    claimed: vals[t],
+                })
+                .collect();
+            let tclaims: Vec<TapClaim<'_>> = folded
+                .iter()
+                .map(|taps| TapClaim { taps, row_weights_q: &rw })
+                .collect();
+            let tvclaims: Vec<TapVerifyClaim<'_, Fq>> = folded
+                .iter()
+                .zip(vals.iter())
+                .map(|(taps, &v)| TapVerifyClaim {
+                    taps,
+                    row_weights_q: &rw,
+                    col_weights: &colw,
+                    claimed: Fq::from(v),
+                })
+                .collect();
+            let run_vx = n < 26;
+            let prove_cmp = || {
+                let mut t = Blake3Transcript::new();
+                prove_mle_eval_mod_q_ligerito_tap_composed(
+                    &mut t, &hint, &layout, &rw, &colw, &cclaims, alpha, &pc,
+                )
+            };
+            let prove_vx = || {
+                let mut t = Blake3Transcript::new();
+                prove_mle_eval_mod_q_ligerito_tap_claims(
+                    &mut t, &hint, &layout, FQ_BITS, &tclaims, alpha, &pc,
+                )
+            };
+            let prove_ind = || {
+                (0..tclaims.len())
+                    .map(|i| {
+                        let mut t = Blake3Transcript::new();
+                        prove_mle_eval_mod_q_ligerito_tap_claims(
+                            &mut t,
+                            &hint,
+                            &layout,
+                            FQ_BITS,
+                            &tclaims[i..i + 1],
+                            alpha,
+                            &pc,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let (mut t_cmp, mut t_vx, mut t_ind) = (Vec::new(), Vec::new(), Vec::new());
+            for _ in 0..reps {
+                let t0 = Instant::now();
+                drop(prove_cmp());
+                t_cmp.push(t0.elapsed().as_secs_f64() * 1e3);
+                if run_vx {
+                    let t0 = Instant::now();
+                    drop(prove_vx());
+                    t_vx.push(t0.elapsed().as_secs_f64() * 1e3);
+                }
+                let t0 = Instant::now();
+                drop(prove_ind());
+                t_ind.push(t0.elapsed().as_secs_f64() * 1e3);
+            }
+            let proof_cmp = prove_cmp();
+            let t0 = Instant::now();
+            {
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_tap_composed(
+                    &mut vt, &hint.commitment, &proof_cmp, &layout, &rw, &colw, &cclaims,
+                    alpha, &vc,
+                )
+                .expect("composed schedule verifies");
+            }
+            let v_cmp = t0.elapsed().as_secs_f64() * 1e3;
+            let size_tap = |p: &f2z::ligerito_flock::IntEvalRsLigModQTapProof| {
+                let (b, lig) = mle_eval_mod_q_lig_tap_size_breakdown(p);
+                b.total() + lig
+            };
+            let sz_cmp = size_tap(&proof_cmp);
+            let (m_cmp, m_ind) = (median(t_cmp), median(t_ind));
+            let vx_txt = if run_vx {
+                let proof_vx = prove_vx();
+                let t0 = Instant::now();
+                {
+                    let mut vt = Blake3Transcript::new();
+                    verify_mle_eval_mod_q_ligerito_tap_claims(
+                        &mut vt, &hint.commitment, &proof_vx, &layout, alpha, FQ_BITS,
+                        &tvclaims, &vc,
+                    )
+                    .expect("vx schedule verifies");
+                }
+                let v_vx = t0.elapsed().as_secs_f64() * 1e3;
+                let m_vx = median(t_vx);
+                format!(
+                    "vx{rounds} {m_vx:.1} ms ({:.1}x of cmp, {:.0} KB, verify {v_vx:.1} ms)",
+                    m_vx / m_cmp,
+                    size_tap(&proof_vx) as f64 / 1e3,
+                )
+            } else {
+                format!("vx{rounds} skipped (64-set pad vs memory)")
+            };
+            println!(
+                "n={n} SCHED ({rounds} off^t claims of one mixed source): cmp {m_cmp:.1} ms \
+                 ({} inner bodies, {:.0} KB, verify {v_cmp:.1} ms) | {vx_txt} | ind{rounds} \
+                 {m_ind:.1} ms ({:.1}x of cmp)",
+                proof_cmp.tap_us.len(),
+                sz_cmp as f64 / 1e3,
+                m_ind / m_cmp,
+            );
+            continue;
+        }
 
         if std::env::var("F2Z_AB_COLLAPSE").is_ok_and(|v| v == "1") {
             // 13 single-tap claims (the instance's deduped streams) at ONE

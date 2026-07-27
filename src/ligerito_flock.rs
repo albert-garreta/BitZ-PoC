@@ -2777,6 +2777,302 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_collapse(
     Ok(())
 }
 
+// ---------------------------------------------------------------------
+// EXPERIMENTAL — the COMPOSED collapse: uniform outer ops over MIXED
+// (XOR-of-taps) sources at ONE shared point
+// (docs/rlc-structured-taps-phase0.md §6).
+//
+// The 0x44 collapse identity never used that its source is a plain
+// column XOR — only that the inner claim `⟨w∘σ, x⟩` is provable. Here
+// the source is a fixed XOR-of-taps combination
+// `x_S = ⊕_{t∈S} op_t(a_{i_t})` (extractable; provable by the 0x42
+// tap-claims path), and k claims `OUTER_i(x_{S_i})` at ONE shared point
+// γ-collapse to at most `#distinct-sources × 2` INNER TAP CLAIMS —
+// independent of k. The branch split of the transformed weight depends
+// only on `(OUTER, layout)`, never on the source: branch 0 keeps the
+// row weights, branch 1 advances `row_hi` one step (zero at the top),
+// and the column side is the branch-masked, group-translated table
+// (`tap_collapse_row_weights` / `tap_collapse_col_weights`, verbatim).
+// The verifier derives each branch value from the proof's own
+// forest-bound fold vectors with the γ-combined column weights
+// `E_{S,β} = Σ_{i on S} γ_i·e_i^{(β)} mod q` and checks
+// `Σ y_{S,β} = T = Σ_i γ_i·c_i`; soundness = 1/q (the γ-combination)
+// + the inner tap path's errors. Shift-invariant (schedule-shaped)
+// workloads — every claim a word-offset `off^t` of ONE mixed
+// combination — cost TWO inner bodies total versus one padded forest
+// body per claim on the batched path. The outer op's envelope
+// (`off < 2^{s−g}`) stands ALONE — it does not compound with the source
+// taps' offsets (the transform treats `x_S` as a black box).
+// Fiat–Shamir: statement tag 0x45 (root, layout, sources + outer ops +
+// claimed values, both weight vectors) → γ's → the inner 0x42 protocol.
+// Evaluation field fixed q = 2^100 − 15.
+// ---------------------------------------------------------------------
+
+/// One composed claim at the shared point:
+/// `MLE[INT(outer(⊕_{t∈source} op_t(a_{col_t})))](r) = claimed` — a
+/// uniform op applied OUTSIDE a fixed XOR-of-taps source combination.
+/// An all-identity source recovers [`TapPointClaim`]; prefer the 0x44
+/// path there (its inner bodies are plain claims with no rings).
+#[derive(Clone, Copy, Debug)]
+pub struct TapComposedClaim<'a> {
+    /// The source combination's tap terms (nonempty after
+    /// [`crate::taps::tap_canonical_ops`]).
+    pub source: &'a [TapOp],
+    /// The uniform op applied outside the source.
+    pub outer: crate::taps::TapUniOp,
+    /// The claimed evaluation, canonical in `[0, q)`.
+    pub claimed: u128,
+}
+
+/// Absorb the composed-collapse statement (domain tag 0x45).
+#[allow(clippy::arithmetic_side_effects)]
+fn absorb_tap_composed_statement(
+    transcript: &mut impl Transcript,
+    root: &flock_core::merkle::Hash,
+    layout: &ShaF2Layout,
+    row_weights_q: &[u128],
+    col_weights: &[crate::pcs::Fq],
+    claims: &[TapComposedClaim<'_>],
+) {
+    let mut bytes = Vec::new();
+    bytes.push(0x45u8);
+    bytes.extend_from_slice(root);
+    for v in [
+        layout.p.t,
+        layout.p.s,
+        layout.p.word_bits,
+        layout.num_cols,
+        layout.log_cols,
+        layout.bit_vars,
+        layout.num_vars,
+        layout.tw,
+        layout.x_fold_extra,
+        claims.len(),
+    ] {
+        bytes.extend_from_slice(&(v as u64).to_le_bytes());
+    }
+    bytes.extend_from_slice(&crate::pcs::FQ_MOD.to_le_bytes());
+    for cl in claims {
+        bytes.extend_from_slice(&(cl.source.len() as u64).to_le_bytes());
+        for tap in cl.source {
+            for v in [
+                tap.col as u64,
+                tap.grp_log2 as u64,
+                tap.bit_amt as u64,
+                u64::from(tap.bit_dropout),
+                tap.off as u64,
+            ] {
+                bytes.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        for v in [
+            cl.outer.grp_log2 as u64,
+            cl.outer.bit_amt as u64,
+            u64::from(cl.outer.bit_dropout),
+            cl.outer.off as u64,
+        ] {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        bytes.extend_from_slice(&cl.claimed.to_le_bytes());
+    }
+    for &x in row_weights_q {
+        bytes.extend_from_slice(&x.to_le_bytes());
+    }
+    for w in col_weights {
+        bytes.extend_from_slice(&w.0.to_le_bytes());
+    }
+    transcript.absorb_slice(&bytes);
+}
+
+/// The composed inner-claim plan: (canonical source, carry branch)
+/// pairs, sources in lexicographic tap order, branch 0 before branch 1;
+/// branch 1 present iff some claim on the source has an outer word
+/// offset. STRUCTURAL (independent of table values), so prover and
+/// verifier derive identical shapes.
+fn tap_composed_plan(claims: &[TapComposedClaim<'_>]) -> Vec<(Vec<TapOp>, usize)> {
+    use crate::taps::{tap_canonical_ops, tap_sort_key};
+    let mut sources: Vec<Vec<TapOp>> =
+        claims.iter().map(|c| tap_canonical_ops(c.source)).collect();
+    sources.sort_unstable_by(|a, b| a.iter().map(tap_sort_key).cmp(b.iter().map(tap_sort_key)));
+    sources.dedup();
+    let mut plan = Vec::new();
+    for src in sources {
+        let has_off = claims
+            .iter()
+            .any(|c| tap_canonical_ops(c.source) == src && c.outer.off > 0);
+        plan.push((src.clone(), 0));
+        if has_off {
+            plan.push((src, 1));
+        }
+    }
+    plan
+}
+
+/// Prove k composed claims (`outer(⊕ source-taps)`) at ONE shared point
+/// by the weight-transform collapse: at most `#distinct-sources × 2`
+/// inner tap claims through
+/// [`prove_mle_eval_mod_q_ligerito_tap_claims`] (EXPERIMENTAL; see the
+/// section comment). Returns the inner tap-claims proof.
+#[allow(clippy::arithmetic_side_effects)]
+pub fn prove_mle_eval_mod_q_ligerito_tap_composed(
+    transcript: &mut (impl Transcript + Send),
+    hint: &FlockCommitHint,
+    layout: &ShaF2Layout,
+    row_weights_q: &[u128],
+    col_weights: &[crate::pcs::Fq],
+    claims: &[TapComposedClaim<'_>],
+    alpha: Gf,
+    pc: &LigProverConfig,
+) -> IntEvalRsLigModQTapProof {
+    use crate::pcs::{FQ_BITS, FQ_MOD, fq_challenge, virtual_xor_params};
+    use crate::taps::{assert_tap, assert_tap_layout, assert_tap_op, tap_canonical_ops};
+    assert_tap_layout(layout);
+    assert!(!claims.is_empty(), "need at least one claim");
+    let p_x = virtual_xor_params(layout);
+    assert_eq!(row_weights_q.len(), p_x.rows(), "shared row-weight length");
+    assert_eq!(col_weights.len(), p_x.cols(), "shared col-weight length");
+    for cl in claims {
+        assert_tap_op(layout, &cl.outer);
+        for tap in cl.source {
+            assert_tap(layout, tap);
+        }
+        assert!(
+            !tap_canonical_ops(cl.source).is_empty(),
+            "claim's source combination cancels to the zero vector"
+        );
+        assert!(cl.claimed < FQ_MOD, "claimed value must be canonical");
+    }
+    absorb_tap_composed_statement(
+        transcript,
+        hint.root(),
+        layout,
+        row_weights_q,
+        col_weights,
+        claims,
+    );
+    // γ's are drawn for transcript parity; the prover's inner claims are
+    // γ-independent (the combination lives in the verifier's read-off).
+    let _gammas: Vec<u128> = (0..claims.len()).map(|_| fq_challenge(transcript)).collect();
+    let plan = tap_composed_plan(claims);
+    let branch_rows: Vec<Vec<u128>> = plan
+        .iter()
+        .map(|(_, beta)| tap_collapse_row_weights(layout, row_weights_q, *beta))
+        .collect();
+    let inner: Vec<TapClaim<'_>> = plan
+        .iter()
+        .enumerate()
+        .map(|(pi, (src, _))| TapClaim { taps: src, row_weights_q: &branch_rows[pi] })
+        .collect();
+    prove_mle_eval_mod_q_ligerito_tap_claims(transcript, hint, layout, FQ_BITS, &inner, alpha, pc)
+}
+
+/// Verify a composed collapse (EXPERIMENTAL): derives the per-(source,
+/// branch) values from the proof's own fold vectors, checks their sum
+/// against `T = Σ γ_i·c_i`, and runs the inner tap-claims verifier.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub fn verify_mle_eval_mod_q_ligerito_tap_composed(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: &IntEvalRsLigModQTapProof,
+    layout: &ShaF2Layout,
+    row_weights_q: &[u128],
+    col_weights: &[crate::pcs::Fq],
+    claims: &[TapComposedClaim<'_>],
+    alpha: Gf,
+    vc: &LigVerifierConfig,
+) -> Result<(), FlockRsError> {
+    use crate::pcs::{
+        FQ_BITS, FQ_MOD, Fq, fq_add, fq_challenge, fq_mul, mod_q_chunk_width, mod_q_num_chunks,
+        recombine_read_off, virtual_xor_params,
+    };
+    use crate::taps::tap_canonical_ops;
+    let p_x = virtual_xor_params(layout);
+    if layout.p.word_bits != 1
+        || layout.x_fold_extra != 0
+        || layout.tw + layout.log_cols < 7
+        || claims.is_empty()
+        || row_weights_q.len() != p_x.rows()
+        || col_weights.len() != p_x.cols()
+        || claims.iter().any(|cl| {
+            !tap_shape_ok(layout, &cl.outer.with_col(0))
+                || cl.source.iter().any(|t| !tap_shape_ok(layout, t))
+                || cl.claimed >= FQ_MOD
+                || tap_canonical_ops(cl.source).is_empty()
+        })
+    {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+    absorb_tap_composed_statement(
+        transcript,
+        &commitment.root,
+        layout,
+        row_weights_q,
+        col_weights,
+        claims,
+    );
+    let gammas: Vec<u128> = (0..claims.len()).map(|_| fq_challenge(transcript)).collect();
+    let target = claims
+        .iter()
+        .zip(gammas.iter())
+        .fold(0u128, |acc, (cl, &g)| fq_add(acc, fq_mul(g, cl.claimed)));
+    let plan = tap_composed_plan(claims);
+    // The γ-combined per-(source, branch) column weights, in plan order.
+    let mut acc: Vec<Vec<u128>> =
+        plan.iter().map(|_| vec![0u128; col_weights.len()]).collect();
+    for (cl, &gam) in claims.iter().zip(gammas.iter()) {
+        let branches = tap_collapse_col_weights(layout, &cl.outer, col_weights);
+        let src = tap_canonical_ops(cl.source);
+        for (pi, (psrc, beta)) in plan.iter().enumerate() {
+            if *psrc != src {
+                continue;
+            }
+            for (a, &e) in acc[pi].iter_mut().zip(branches[*beta].iter()) {
+                *a = fq_add(*a, fq_mul(gam, e));
+            }
+        }
+    }
+    let combined: Vec<Vec<Fq>> =
+        acc.into_iter().map(|v| v.into_iter().map(Fq::from).collect()).collect();
+
+    // Branch values from the proof's (forest-bound) fold vectors; their
+    // sum must reproduce the combined target.
+    let c_w_x = mod_q_chunk_width(&p_x);
+    let lch_x = mod_q_num_chunks(&p_x, FQ_BITS);
+    if proof.tap_us.len() != plan.len() || proof.tap_us.iter().any(|us| us.len() != lch_x) {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+    let ys: Vec<Fq> = (0..plan.len())
+        .map(|pi| {
+            let flat: Vec<u128> =
+                proof.tap_us[pi].iter().flat_map(|u| u.iter().copied()).collect();
+            recombine_read_off(&p_x, &flat, 0, &combined[pi], c_w_x, lch_x)
+        })
+        .collect();
+    let total = ys.iter().fold(0u128, |acc, y| fq_add(acc, y.0));
+    if total != target {
+        return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
+    }
+
+    let branch_rows: Vec<Vec<u128>> = plan
+        .iter()
+        .map(|(_, beta)| tap_collapse_row_weights(layout, row_weights_q, *beta))
+        .collect();
+    let inner: Vec<TapVerifyClaim<'_, Fq>> = plan
+        .iter()
+        .enumerate()
+        .map(|(pi, (src, _))| TapVerifyClaim {
+            taps: src,
+            row_weights_q: &branch_rows[pi],
+            col_weights: &combined[pi],
+            claimed: ys[pi],
+        })
+        .collect();
+    verify_mle_eval_mod_q_ligerito_tap_claims(
+        transcript, commitment, proof, layout, alpha, FQ_BITS, &inner, vc,
+    )
+}
+
 /// The deterministic ring plan of one claim at one exit point: members =
 /// (tap index, class) in canonical order, grouped into buckets by
 /// in-pack-table equality (first-occurrence order). Both sides derive it.
@@ -7648,6 +7944,326 @@ mod tests {
             };
             p2.x_presums[0] = rlc_tamper_mds(&p2.x_presums[0], 3);
             assert!(verify(&p2, &good, &taps_all).is_err(), "tampered presum");
+        }
+    }
+
+    // ── Composed-collapse tests (EXPERIMENTAL API, tag 0x45) ─────────────
+
+    /// Direct 𝔽_q evaluation of `outer(⊕ source-taps)`: extract the
+    /// source, then walk the OUTER index map per output trace position —
+    /// independent of the collapse's branch algebra.
+    fn composed_expected_claim(
+        layout: &ShaF2Layout,
+        rows: &[Vec<u64>],
+        source: &[TapOp],
+        outer: &crate::taps::TapUniOp,
+        rw: &[u128],
+        colw: &[Fq],
+    ) -> u128 {
+        let x_rows = extract_virtual_tap_rows(layout, rows, source);
+        let s = layout.p.s;
+        let tw = layout.tw;
+        let bv = layout.bit_vars;
+        let g = outer.grp_log2;
+        let n_g = 1usize << g;
+        let mut y = Fq::from(0u128);
+        for p in 0..1usize << layout.num_vars {
+            let (k, j) = (p >> g, p & (n_g - 1));
+            if k < outer.off {
+                continue;
+            }
+            let src_j = if outer.bit_dropout {
+                if j < outer.bit_amt {
+                    continue;
+                }
+                j - outer.bit_amt
+            } else if g == 0 {
+                0
+            } else {
+                (j + n_g - outer.bit_amt) & (n_g - 1)
+            };
+            let q_trace = ((k - outer.off) << g) | src_j;
+            let (q_hi, q_lo) = (q_trace >> s, q_trace & ((1 << s) - 1));
+            let (p_hi, p_lo) = (p >> s, p & ((1 << s) - 1));
+            for jm in 0..1usize << bv {
+                let bitpos = (jm << tw) | q_hi;
+                if (x_rows[q_lo][bitpos >> 6] >> (bitpos & 63)) & 1 == 1 {
+                    y = y + Fq::from(rw[(jm << tw) | p_hi]) * colw[p_lo];
+                }
+            }
+        }
+        y.0
+    }
+
+    /// Schedule-shaped composed claims — `off^t` powers of ONE mixed
+    /// source plus two claims on a second source — collapse to 2 + 2
+    /// inner tap bodies and roundtrip on both pack-cut geometries.
+    #[test]
+    fn tap_composed_schedule_roundtrips() {
+        for layout in [tap_test_layout_tw6(), tap_test_layout_tw9()] {
+            let g = tap_grp(&layout);
+            let p_x = virtual_xor_params(&layout);
+            let alpha = smallest_generator();
+            let (hint, pc, vc) = rlc_test_commit(&layout);
+            let colw = rlc_test_col_weights(&p_x);
+            let rw = rlc_test_row_weights(&p_x, 191);
+            let rot =
+                |col, amt, off| TapOp { col, grp_log2: g, bit_amt: amt, bit_dropout: false, off };
+            let shl =
+                |col, amt, off| TapOp { col, grp_log2: g, bit_amt: amt, bit_dropout: true, off };
+            let uni = |amt: usize, dropout: bool, off: usize| crate::taps::TapUniOp {
+                grp_log2: g,
+                bit_amt: amt,
+                bit_dropout: dropout,
+                off,
+            };
+            // σ-style mixed source (rot + shifted + cross-column) and a
+            // second two-tap rotation source.
+            let src_a = vec![rot(0, 1, 0), rot(0, 3, 1), shl(0, 2, 0), rot(1, 0, 0)];
+            let src_b = vec![rot(1, 2, 0), rot(0, 5, 0)];
+            // The schedule: off^0..off^3 of src_a (off < 2^{s−g} = 4 on
+            // the tw9 layout), a SHIFT-outer claim on src_a, and a
+            // rot-outer + an off-outer claim on src_b.
+            let shapes: Vec<(&[TapOp], crate::taps::TapUniOp)> = vec![
+                (&src_a, uni(0, false, 0)),
+                (&src_a, uni(0, false, 1)),
+                (&src_a, uni(0, false, 2)),
+                (&src_a, uni(0, false, 3)),
+                (&src_a, uni(2, true, 0)),
+                (&src_b, uni(4, false, 0)),
+                (&src_b, uni(0, false, 1)),
+            ];
+            let claims: Vec<TapComposedClaim<'_>> = shapes
+                .iter()
+                .map(|(src, outer)| TapComposedClaim {
+                    source: src,
+                    outer: *outer,
+                    claimed: composed_expected_claim(
+                        &layout,
+                        hint.rows(),
+                        src,
+                        outer,
+                        &rw,
+                        &colw,
+                    ),
+                })
+                .collect();
+            let mut pt = Blake3Transcript::new();
+            let proof = prove_mle_eval_mod_q_ligerito_tap_composed(
+                &mut pt, &hint, &layout, &rw, &colw, &claims, alpha, &pc,
+            );
+            // 7 claims, 2 sources, both with an offset claim → 4 inner
+            // tap bodies (the schedule's whole point).
+            assert_eq!(proof.tap_us.len(), 4, "2 sources × 2 branches");
+            let mut vt = Blake3Transcript::new();
+            verify_mle_eval_mod_q_ligerito_tap_composed(
+                &mut vt, &hint.commitment, &proof, &layout, &rw, &colw, &claims, alpha, &vc,
+            )
+            .expect("composed schedule verifies");
+        }
+    }
+
+    /// Distributed-extraction cross-check: the composed-outer evaluation
+    /// equals the evaluation of the outer op FOLDED into each source tap
+    /// (offsets add on the word field; rotation amounts add mod 2^g on
+    /// rot-only sources), and the composed path proves values derived
+    /// through that independent extraction route.
+    #[test]
+    fn tap_composed_matches_folded_taps() {
+        let layout = tap_test_layout_tw9();
+        let g = tap_grp(&layout);
+        let p_x = virtual_xor_params(&layout);
+        let alpha = smallest_generator();
+        let (hint, pc, vc) = rlc_test_commit(&layout);
+        let colw = rlc_test_col_weights(&p_x);
+        let rw = rlc_test_row_weights(&p_x, 223);
+        let rot =
+            |col, amt, off| TapOp { col, grp_log2: g, bit_amt: amt, bit_dropout: false, off };
+        let shl =
+            |col, amt, off| TapOp { col, grp_log2: g, bit_amt: amt, bit_dropout: true, off };
+        let uni = |amt: usize, dropout: bool, off: usize| crate::taps::TapUniOp {
+            grp_log2: g,
+            bit_amt: amt,
+            bit_dropout: dropout,
+            off,
+        };
+        // Pure-off outer over a mixed source: fold as off += o.
+        let src_mixed = vec![rot(0, 7, 0), shl(0, 3, 0), rot(1, 0, 1)];
+        for o in [1usize, 2] {
+            let folded: Vec<TapOp> = src_mixed
+                .iter()
+                .map(|t| {
+                    let mut t = *t;
+                    t.off += o;
+                    t
+                })
+                .collect();
+            let via_fold = tap_expected_claim(&layout, hint.rows(), &folded, &rw, &colw);
+            let via_outer = composed_expected_claim(
+                &layout,
+                hint.rows(),
+                &src_mixed,
+                &uni(0, false, o),
+                &rw,
+                &colw,
+            );
+            assert_eq!(via_fold, via_outer, "off^{o} composition");
+        }
+        // Rot-outer over a rot-only source: fold as amt += c (mod 2^g).
+        let src_rot = vec![rot(0, 4, 0), rot(1, 9, 1)];
+        let c = 3usize;
+        let folded_rot: Vec<TapOp> = src_rot
+            .iter()
+            .map(|t| {
+                let mut t = *t;
+                t.bit_amt = (t.bit_amt + c) & ((1 << g) - 1);
+                t
+            })
+            .collect();
+        let via_fold = tap_expected_claim(&layout, hint.rows(), &folded_rot, &rw, &colw);
+        let via_outer = composed_expected_claim(
+            &layout,
+            hint.rows(),
+            &src_rot,
+            &uni(c, false, 0),
+            &rw,
+            &colw,
+        );
+        assert_eq!(via_fold, via_outer, "rot^{c} composition");
+        // End-to-end: prove the composed claims with the FOLDED-route
+        // values.
+        let shapes: Vec<(&[TapOp], crate::taps::TapUniOp, u128)> = vec![
+            (
+                &src_mixed,
+                uni(0, false, 1),
+                tap_expected_claim(
+                    &layout,
+                    hint.rows(),
+                    &src_mixed
+                        .iter()
+                        .map(|t| {
+                            let mut t = *t;
+                            t.off += 1;
+                            t
+                        })
+                        .collect::<Vec<_>>(),
+                    &rw,
+                    &colw,
+                ),
+            ),
+            (&src_rot, uni(c, false, 0), via_fold),
+        ];
+        let claims: Vec<TapComposedClaim<'_>> = shapes
+            .iter()
+            .map(|&(source, outer, claimed)| TapComposedClaim { source, outer, claimed })
+            .collect();
+        let mut pt = Blake3Transcript::new();
+        let proof = prove_mle_eval_mod_q_ligerito_tap_composed(
+            &mut pt, &hint, &layout, &rw, &colw, &claims, alpha, &pc,
+        );
+        assert_eq!(proof.tap_us.len(), 3, "src_mixed both branches + src_rot branch 0");
+        let mut vt = Blake3Transcript::new();
+        verify_mle_eval_mod_q_ligerito_tap_composed(
+            &mut vt, &hint.commitment, &proof, &layout, &rw, &colw, &claims, alpha, &vc,
+        )
+        .expect("folded-value composed claims verify");
+    }
+
+    /// Every tampered component of a composed-collapse statement or
+    /// proof is rejected.
+    #[test]
+    fn tap_composed_tampered_rejected() {
+        let layout = tap_test_layout_tw6();
+        let g = tap_grp(&layout);
+        let p_x = virtual_xor_params(&layout);
+        let alpha = smallest_generator();
+        let (hint, pc, vc) = rlc_test_commit(&layout);
+        let colw = rlc_test_col_weights(&p_x);
+        let rw = rlc_test_row_weights(&p_x, 251);
+        let rot =
+            |col, amt, off| TapOp { col, grp_log2: g, bit_amt: amt, bit_dropout: false, off };
+        let uni = |amt: usize, off: usize| crate::taps::TapUniOp {
+            grp_log2: g,
+            bit_amt: amt,
+            bit_dropout: false,
+            off,
+        };
+        let src = vec![rot(0, 2, 0), rot(1, 5, 1)];
+        let outers = [uni(0, 0), uni(0, 1), uni(3, 0)];
+        let claims: Vec<TapComposedClaim<'_>> = outers
+            .iter()
+            .map(|outer| TapComposedClaim {
+                source: &src,
+                outer: *outer,
+                claimed: composed_expected_claim(
+                    &layout,
+                    hint.rows(),
+                    &src,
+                    outer,
+                    &rw,
+                    &colw,
+                ),
+            })
+            .collect();
+        let mut pt = Blake3Transcript::new();
+        let proof = prove_mle_eval_mod_q_ligerito_tap_composed(
+            &mut pt, &hint, &layout, &rw, &colw, &claims, alpha, &pc,
+        );
+        let verify = |proof: &IntEvalRsLigModQTapProof, claims: &[TapComposedClaim<'_>]| {
+            let mut vt = Blake3Transcript::new();
+            verify_mle_eval_mod_q_ligerito_tap_composed(
+                &mut vt, &hint.commitment, proof, &layout, &rw, &colw, claims, alpha, &vc,
+            )
+        };
+        assert!(verify(&proof, &claims).is_ok(), "honest proof verifies");
+
+        // Claimed value off by one.
+        let mut bad = claims.clone();
+        bad[1].claimed = (bad[1].claimed + 1) % FQ_MOD;
+        assert!(verify(&proof, &bad).is_err(), "wrong claimed value");
+
+        // Outer op changed on the verifier side.
+        let mut bad = claims.clone();
+        bad[2].outer.bit_amt = 4;
+        assert!(verify(&proof, &bad).is_err(), "outer-op statement mismatch");
+
+        // Source tap changed on the verifier side.
+        let src_bad = vec![rot(0, 3, 0), rot(1, 5, 1)];
+        let mut bad = claims.clone();
+        bad[0].source = &src_bad;
+        assert!(verify(&proof, &bad).is_err(), "source statement mismatch");
+
+        // Tampered fold value.
+        {
+            let mut p2 = IntEvalRsLigModQTapProof {
+                x_mfs: proof.x_mfs.clone(),
+                x_presums: proof.x_presums.clone(),
+                tap_us: proof.tap_us.clone(),
+                rings: proof
+                    .rings
+                    .iter()
+                    .map(|r| RingSwitchProof { s_v: r.s_v.clone() })
+                    .collect(),
+                lig: proof.lig.clone(),
+            };
+            p2.tap_us[1][0][2] ^= 1;
+            assert!(verify(&p2, &claims).is_err(), "tampered fold");
+        }
+        // Tampered ring element.
+        {
+            let mut p2 = IntEvalRsLigModQTapProof {
+                x_mfs: proof.x_mfs.clone(),
+                x_presums: proof.x_presums.clone(),
+                tap_us: proof.tap_us.clone(),
+                rings: proof
+                    .rings
+                    .iter()
+                    .map(|r| RingSwitchProof { s_v: r.s_v.clone() })
+                    .collect(),
+                lig: proof.lig.clone(),
+            };
+            p2.rings[0].s_v[19] += Gf::one();
+            assert!(verify(&p2, &claims).is_err(), "tampered ring");
         }
     }
 

@@ -867,6 +867,60 @@ Guidance stack for tap workloads, best first: single-tap at one point
 → the collapse; XOR-mixed claims → the extraction (tap-claims) path;
 the stream family only for dense stream reuse.
 
+**Structured taps: the COMPOSED collapse — uniform outer ops over
+MIXED sources (2026-07-27, follow-up session).** The collapse identity
+`Σ_p w[p]·op(x)[p] = Σ_{p'} w[σ(p')]·x[p']` never used that its
+source is a plain column XOR — only that the inner claim is provable.
+Generalized (statement tag 0x45, `TapComposedClaim { source, outer,
+claimed }`, `prove/verify_mle_eval_mod_q_ligerito_tap_composed`): the
+source is a fixed **XOR-of-taps combination** `x = ⊕_t op_t(a_{i_t})`
+(provable by the 0x42 path), and k claims `OUTER_i(x_{S_i})` at ONE
+shared point γ-collapse to at most **#distinct-sources × 2 inner TAP
+claims** — independent of k. The branch split depends only on
+`(OUTER, layout)` (branch 1 = row weights advanced one `row_hi` step;
+column side branch-masked + group-translated — the 0x44 builders
+verbatim); the verifier derives each branch value from the proof's own
+forest-bound fold vectors with `E_{S,β} = Σ_{i on S} γ_i·e_i^{(β)}`
+and checks `Σ y = Σ γ_i·c_i` (soundness 1/q + the inner errors;
+sources canonicalized by `tap_canonical_ops` — sort + char-2 pair
+cancellation). **This is the XOR-mixed order-of-magnitude lever the
+family construction wasn't**: schedule-shaped (shift-invariant)
+workloads make every round a word-offset of ONE mixed combination, so
+k rounds = 2 inner bodies total vs k padded forest bodies batched.
+The outer offset's envelope stands alone (`off < 2^{s−g}`; it does
+NOT compound with the source taps' offsets), so 48 rounds fit from
+n = 22 (s = 11) at the harness split. Measured (`F2Z_AB_SCHED=1`,
+48 claims `off^t(x)` of one σ-style source `ROT^7 a_0 ⊕ ROT^18 a_0 ⊕
+SHIFT^3 a_0 ⊕ off^1 a_1`; claim values through the offset-FOLDED
+extraction route, so every verified rep cross-checks the transform
+algebra; alternated in-window medians of 5, FAST profile; vx48 = the
+batched tap-claims path on the folded lists, 48 → 64 tree-sets):
+
+| n | cmp (composed) | vx48 (batched) | ind48 | proofs (cmp/vx48) | verify (cmp/vx48) |
+|----|----------------|----------------|-------|--------------------|--------------------|
+| 22 | **39.2 ms** (2 inner) | 864.9 (22.1×) | 1405.8 (35.9×) | **189**/1996 KB | 18.8/320.8 ms |
+| 24 | **94.8 ms** | 3242.3 (34.2×) | 2895.7 (30.6×) | **284**/3602 KB | 29.7/294.5 ms |
+| 26 | **279.7 ms** | skipped† | 7334.8 (26.2×) | **448**/— KB | 58.0/— ms |
+
+† the 64-set pad against ~7 GB free — and already INVERTED at n=24
+(vx48 3242 vs ind48 2896: the pad wall pre-empts n=26). 48 XOR-mixed
+claims land at **1.0–1.9× the cost of ONE claim** (single: 25.5/94.4/
+146.0 ms) with per-claim proof bytes 3.9–9.3 KB; prover peak stays at
+the single-proof footprint (26/95/366 MB vs the batched path's
+64-set wall). CLI preset: `f2z <n> --taps sched` (rounds clip to the
+shape's envelope). Known v1 slack: the two branch bodies of one
+source duplicate their rings and extraction (identical tap lists —
+the ring `s_v` depends on the exit point, not the row weights); rings
+were ~4 % of prove, so this is bytes more than time. **Guidance stack
+for tap workloads, updated**: single-tap or uniform-op-of-XOR-set at
+one point → the 0x44 collapse; MANY outer ops of few mixed sources at
+one point (schedules) → the 0x45 composed collapse; irreducibly
+distinct XOR-mixed claims → the batched 0x42 path; the stream family
+only for dense stream reuse. Tests: 4 new (schedule roundtrip with
+inner-count asserts on both pack-cut geometries, folded-tap
+distributed-extraction cross-check, statement/proof tampers,
+canonicalization); 101/101 green; existing proof bytes untouched.
+
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
 The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —

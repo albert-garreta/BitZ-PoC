@@ -268,3 +268,79 @@ through the extraction path; the stream family needs dense stream
 reuse or an order-of-magnitude cheaper discharge (kernels / forest
 fusion) to compete on time. Full table and guidance: the dated README
 note.
+
+## 6. The COMPOSED collapse (2026-07-27, follow-up session): uniform
+outer ops over MIXED sources
+
+The single-tap collapse (`0x44`, §5's follow-up) reads `op(⊕ cols)`:
+the source is a plain XOR of committed columns and the inner claims run
+the claims-only path. Nothing in the collapse identity
+
+  `Σ_p w[p]·op(x)[p] = Σ_{p'} w[σ(p')]·[valid]·x[p']`
+
+used that structure — only that the inner claim `⟨w∘σ, x⟩` is provable.
+Generalization: let the source be a fixed **XOR-of-taps combination**
+`x_S = ⊕_{t∈S} op_t(a_{i_t})` (extractable; provable by the 0x42
+tap-claims path), and take k claims `OUTER_i(x_{S_i})` at ONE shared
+point `w_row ⊗ e_col`. Then:
+
+- **The branch split is source-agnostic.** `w∘σ_OUTER` splits into the
+  two word-carry branches exactly as in 0x44 — the split depends only
+  on `(OUTER, layout)`, never on what `x` is: branch 0 keeps `w_row`;
+  branch 1 advances `row_hi` one step (zero at the top — the overflow
+  dropout); the column side is the branch-masked, group-translated
+  `e^{(β)}` (the deployed `tap_collapse_row_weights` /
+  `tap_collapse_col_weights`, verbatim).
+- **γ-combination.** `Σ_i γ_i·claim_i = Σ_{(S,β)}
+  ⟨w_row^{(β)} ⊗ E_{S,β}, x_S⟩` with
+  `E_{S,β} = Σ_{i: canon(S_i)=S} γ_i·e_i^{(β)} mod q` — at most
+  `2·#distinct-sources` **inner tap claims**, independent of k. The
+  inner bodies are 0x42 claims (per-claim row weights already
+  supported); the verifier derives each `y_{S,β}` from the proof's own
+  forest-bound fold vectors with `E_{S,β}` and checks
+  `Σ y = T = Σ γ_i·c_i`.
+- **Soundness.** 1/q (the γ-RLC, drawn after the statement binds the
+  claimed values) + the inner path's errors — the 0x44 chain with
+  "committed column" replaced by "extracted source"; the §3–§3.4 audit
+  already covers tapped `x`. No new terms.
+
+Why this is the XOR-mixed order-of-magnitude lever: **shift-invariant
+(schedule-shaped) workloads make every round's mixed combination a
+word-offset of ONE fixed combination** (`b_{t+1} = off¹(b_t)`), so k
+rounds = k claims `off^t(x)` of one mixed `x` → ONE source, TWO inner
+bodies total, versus one padded forest body per claim on the batched
+path (k=48 pads to 64). The XOR-mixing price — the translated-eq rings
+and their carry classes — is paid once per distinct source SHAPE, not
+per claim.
+
+Details pinned by the implementation (tag `0x45`,
+`TapComposedClaim { source, outer, claimed }`,
+`prove/verify_mle_eval_mod_q_ligerito_tap_composed`):
+
+- **Canonical sources.** Per tap: `bit_amt = 0` clears the dropout flag
+  (`SHIFT^0 = ROT^0`), full identities clear the group width; then sort
+  by `(col, g, amt, dropout, off)` and cancel identical PAIRS (char 2)
+  — `tap_canonical_ops`. Sources equal as vectors but distinct as
+  canonical descriptor lists get separate inner bodies (sound, merely
+  less merged). A source that cancels to empty is rejected.
+- **Envelope.** The outer op needs `off < 2^{s−g}` ALONE — it does not
+  compound with the source taps' offsets (the transform treats `x` as a
+  black box), so a 48-round schedule needs `s − g ≥ 6` (n ≥ 22 at the
+  harness split: s = 11/12/13 at n = 22/24/26).
+- **Known inner-path slack (v1).** The two branch claims of one source
+  carry identical tap lists, so their per-(tap, class) rings are
+  IDENTICAL vectors (the ring `s_v` depends on the exit point, not the
+  row weights) and the source is extracted twice — a factor-2 dedup in
+  rings and extraction left on the table; rings were ~4 % of the vx6
+  prove, so this is bytes more than time.
+
+**Measured** (same day; `F2Z_AB_SCHED=1`, 48 claims `off^t(x)` of one
+σ-style source, values through the offset-folded extraction route,
+medians of 5): composed **39.2/94.8/279.7 ms** at n=22/24/26 with 2
+inner bodies — **22.1×/34.2×/— vs the batched path** (864.9/3242.3/
+skipped; its 64-set pad already inverts against 48 independent proofs
+at n=24: 3242 vs 2896) and 35.9×/30.6×/26.2× vs independent; proofs
+189/284/448 KB vs 3602 KB batched at n=24 (−92 %); verify 18.8/29.7/
+58.0 ms; peak at the single-proof footprint. 48 XOR-mixed claims =
+1.0–1.9× ONE claim. Full table: the README's dated note; formal
+statement: the note's §"The composed collapse" (`sec:tapcomposed`).
