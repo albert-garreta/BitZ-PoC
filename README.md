@@ -918,6 +918,7 @@ so the statement scales — prover RAM is the only wall.
 | `docs/DESIGN.md` | Protocol description, soundness chain, serialization format |
 | `docs/b127-field.md` | The `GF(2^127)` field study: boundary analysis, head-to-head measurements |
 | `docs/verifier-note/` | LaTeX note: the mod-q verifier line by line (Ligerito as a black box); build with `latexmk -pdf` |
+| `docs/forest-gkr-note/` | LaTeX note: how the prover performs the forest GKR (merged statement, eq-factored driver, lazy L/4 / L/8 schedules, case-LUT rounds, discharge); build with `latexmk -pdf` |
 
 ## Caveats
 

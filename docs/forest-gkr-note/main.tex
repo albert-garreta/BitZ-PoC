@@ -1,0 +1,849 @@
+\documentclass[11pt]{article}
+
+% ---------------------------------------------------------------------------
+% The F2Z forest-GKR note. Build: latexmk -pdf main.tex
+% How the merged, lazy, bit-affine grand-product forest is PERFORMED by the
+% prover in this repository (src/merged_forest.rs + the eq-factored driver).
+% Companion notes: docs/verifier-note/ (the checks), docs/rlc-family-note/
+% (the experimental claim families).
+% ---------------------------------------------------------------------------
+
+\usepackage[margin=1.05in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
+
+% --- notation (aligned with docs/verifier-note/main.tex) --------------------
+\newcommand{\F}{\mathbb{F}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\K}{\mathbb{K}}            % the binding field GF(2^128)
+\newcommand{\Kx}{\K^{\times}}
+\newcommand{\Ftwo}{\F_2}
+\newcommand{\Fq}{\F_q}                 % the evaluation field (char != 2)
+\newcommand{\bits}{\{0,1\}}
+\newcommand{\INT}{\mathsf{INT}}
+\newcommand{\mle}[1]{\widetilde{#1}}
+\newcommand{\eq}{\mathsf{eq}}
+\newcommand{\cw}{c_w}
+\newcommand{\albert}[1]{\textcolor{teal}{Albert: {#1}}}
+% \code: typewriter names; underscores allow a line break after them.
+\newcommand{\code}[1]{{\def\_{\textunderscore\allowbreak}\texttt{#1}}}
+
+% Typewriter-heavy paragraphs: give the line breaker slack.
+\tolerance=1600
+\setlength{\emergencystretch}{1.8em}
+\hbadness=2500
+
+\newtheorem{definition}{Definition}
+\newtheorem{remark}{Remark}
+\newtheorem{identity}{Identity}
+
+\title{How F2Z performs the forest GKR:\\
+  the merged, lazy, bit-affine grand-product forest}
+\author{The \code{f2z-pcs} repository}
+\date{2026-07-27}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+F2Z's integer-MLE opening rides on a grand-product argument: per column
+$c$ of the committed bit matrix, the prover must certify
+$\alpha^{u_c} = \prod_i \Lambda[c][i]$ for the \emph{bit-affine} leaves
+$\Lambda[c][i] = 1 + M[c][i]\cdot\tau(i)$.  This is the prover's dominant
+phase (81--96\,\% of prove time across $n = 16$--$32$), and this note
+explains how it is actually performed, as implemented in
+\code{src/merged\_forest.rs} and the eq-factored sumcheck driver it runs
+on.  Three ideas carry the design.  (i)~\emph{Merging}: the $2^s$
+product trees are one multilinear family with the tree index as extra
+MLE variables, so one GKR run binds every root and each layer's payload
+is $O(\ell + s)$ field elements instead of $O(2^s)$.  (ii)~\emph{The
+two-phase eq-factored layer sumcheck}: phase~A binds the in-tree
+variables with the trees as eq-weighted groups sharing one reduction
+point; phase~B binds the tree-index variables over the per-tree finals,
+which never enter the transcript.  The driver materialises no $\eq$
+tables, accumulates round coefficients in unreduced $256$-bit form, and
+gets the fourth Lagrange node for free from a characteristic-2
+affine-flat identity.  (iii)~\emph{Laziness}: the leaf layer and the
+bottom product levels are never built --- the bottom layers run
+branchless case-LUT sumcheck rounds straight off the packed committed
+bits against shared $\tau$-product tables, one intermediate level is
+regenerated just in time (with its first round message fused into the
+generation pass), and the stored chain tops out a quarter (default
+schedule) or an eighth (\code{l8}) of the way up the tree, which is what
+caps prover memory at ${\approx}\,2^n{\cdot}4$\,B resp.\
+${\approx}\,2^n{\cdot}2$\,B.  Every lazy path is an exact
+characteristic-2 rewriting of the eager forest: the transcripts are
+byte-identical, and tests pin this in both schedules.  The note closes
+with the exit-claim discharge into the ring-switch/Ligerito opening, the
+batched and RLC-family variants of the forest, and the measured cost
+tables.
+\end{abstract}
+
+\tableofcontents
+
+% ===========================================================================
+\section{The job of the forest}
+\label{sec:job}
+
+F2Z\footnote{Repository \code{f2z-pcs}, a standalone extraction of the
+\code{f2-int} pipeline from \code{zinc-plus} (branch
+\code{f2-int-unified-ligerito}); the construction is due to Lev Soukhanov
+(the char2-fieldswitch note, \S9).  \code{docs/DESIGN.md} holds the
+distilled protocol; \code{docs/verifier-note/} specifies every verifier
+check; \code{docs/rlc-family-note/} develops the experimental claim
+families.  This note is the \emph{prover-side} companion: how the forest
+is computed, scheduled, and kept small.} proves an \emph{integer}
+multilinear-extension evaluation
+$\smash{\mle{\INT(D)}}(r) = y \in \Fq$ over data $D$ whose \emph{bits}
+are committed with a characteristic-2 commitment.  The instance shape is
+$(t, s, W)$ (\code{IntEvalParams}): $D$ is a $2^t \times 2^s$ matrix of
+$W$-bit cells, its bits arranged as the single-bit matrix
+\[
+  M[c][i] \in \bits, \qquad
+  i = (b \ll \log_2 W)\,|\,j \;\in\; \bits^{d}, \qquad
+  d = t + \log_2 W ,
+\]
+with $b$ the row, $c$ the column, $j$ the bit position inside the cell.
+The $t$ row variables are folded with integer weights, the $s$ column
+variables are read off in the clear.  We write $n = t + s$ for the
+benchmark-scale parameter (the deployed shapes have $W = 1$, so $2^n$ is
+the committed bit count) and $\K = \mathrm{GF}(2^{128})$ for the binding
+field, with $\alpha \in \Kx$ a generator.
+
+\paragraph{The claim the forest certifies.}
+An integer fold cannot be read through the $\Ftwo$ commitment (parities
+destroy magnitudes), so F2Z carries it in the exponent of $\K$: for one
+chunk $l$ of the mod-$q$ opening, with public $\cw$-bit chunk weights
+$W^{(l)}_b$ (limbs of the $\Fq$ row-$\eq$ weights,
+$\cw = 127 - t - W$), the prover sends the per-column integer folds
+\[
+  u^{(l)}_c \;=\; \sum_b W^{(l)}_b \cdot \INT\!\big(D(b,c)\big)
+  \;<\; 2^{\cw + t + W} = 2^{127},
+\]
+and must certify them against the commitment.  The certificate is a
+grand product: each factor is \emph{bit-affine} in one committed bit,
+\begin{equation}\label{eq:leaves}
+  \Lambda^{(l)}[c][i] \;=\; 1 + M[c][i]\cdot\tau^{(l)}(i),
+  \qquad
+  \tau^{(l)}(i) \;=\; \alpha^{W^{(l)}_b 2^j} - 1
+  \quad (i = (b \ll \log_2 W)|j),
+\end{equation}
+so that
+$\prod_{i} \Lambda^{(l)}[c][i] = \alpha^{u^{(l)}_c}$.  (In $\K$,
+$-1 = +1$; we keep the $-1$ form for readability.)  The forest's output
+is a reduction of all $2^s$ product claims to \emph{one} evaluation
+claim on the leaf MLE $\smash{\mle{\Lambda}}$, which
+\S\ref{sec:discharge} converts into a $\K$-linear functional of the
+committed bits and hands to the ring-switch + Ligerito opener.  Range
+checks on the sent $u$'s and the generator property of $\alpha$ make the
+exponent map injective on the values that occur, so the products bind
+the integers; that chain of checks is the verifier note's
+\S\S5--7, and we do not repeat it here.
+
+\paragraph{Why performance of this phase is the whole game.}
+Time is forest-dominated: the \code{forest+presum} phase is 81\,\% of
+prove at $n = 16$, rising to 92--96\,\% at $n \ge 26$
+(\S\ref{sec:costs}).  Proof \emph{bytes}, by contrast, are dominated by
+the Ligerito opening --- the forest side stays at 8--51\,KiB through
+$n = 28$.  So the forest is engineered for prover time and memory, and
+its transcript is engineered to stay small; both axes are visible in the
+design below.
+
+\paragraph{Scope.}
+Everything in this note is the code of this repository: the merged
+forest (\code{src/merged\_forest.rs}), the eq-factored driver
+(\code{src/piop/sumcheck/eq\_factored.rs}), and the table builders
+(\code{src/pcs.rs}).  Function names are given so claims can be checked
+against source; line numbers are avoided (the files drift).  The
+Ligerito opener is out of scope (black box, as in the verifier note).
+
+% ===========================================================================
+\section{One forest, one transcript: the merged statement}
+\label{sec:merged}
+
+A naive realisation runs one GKR product tree per column and carries,
+per tree per layer, a pair of child evaluations --- $2\cdot 2^s\cdot d$
+$\K$-elements of proof, ${\approx}512$\,KiB at $n = 26$.  The merged
+forest removes the $2^s$ factor from the payload by treating the tree
+index as \emph{more MLE variables}.
+
+\paragraph{The layer family.}
+Index the values of tree $c$ at depth $\ell$ (the root is depth $0$,
+leaves depth $d$) by $x \in \bits^\ell$, and define one multilinear
+family per depth,
+\[
+  L_\ell(x, c), \qquad (x, c) \in \bits^\ell \times \bits^s,
+\]
+with $x$ occupying the \emph{low} index bits and $c$ the high ones.
+The product recursion pairs children on the \emph{top} in-tree bit:
+\begin{equation}\label{eq:recursion}
+  L_\ell(x, c) \;=\; L_{\ell+1}(x, 0, c)\cdot L_{\ell+1}(x, 1, c),
+\end{equation}
+i.e.\ the two children of node $x$ sit at positions $x$ and
+$x + 2^{\ell}$ of level $\ell + 1$.  This convention is load-bearing for
+the lazy schedules: every level is stored and consumed as a top-bit
+split pair of halves $(E, O)$ ---
+$E_c(x) = L_{\ell+1}(x, 0, c)$, $O_c(x) = L_{\ell+1}(x, 1, c)$ --- and
+the leaf halves are exactly ``first $2^{d-1}$ bits, last $2^{d-1}$
+bits'' of a column, which is what lets pair products be table lookups
+(\S\ref{sec:lazy}).  $L_0(\cdot, c) = R_c$ are the roots and
+$L_d = \Lambda$ the leaves.
+
+\paragraph{Entry: the roots are derived, absorbed, and evaluated ---
+never sent per-tree.}
+The prover's product-tree build produces the roots $R_c$ as a byproduct;
+the proof object carries no root field.  On the verifier's side the
+roots are \emph{recomputed} as $R_c = \alpha^{u_c}$ from the sent folds
+(fixed-base comb, \code{FixedBasePow}) --- for an honest prover these
+are the same values, and that equality is precisely the claim being
+proven.  Both sides then perform the same two transcript actions
+(\code{drive\_grouped} / \code{verify\_merged\_forest}):
+\[
+  \textbf{absorb}(\mathtt{0x30}: R_0, \dots, R_{2^s-1}),
+  \qquad
+  \zeta \leftarrow \textbf{squeeze}(\K^s),
+\]
+and each computes the entry claim itself,
+$C_0 = \mle{R}(\zeta)$ (\code{mle\_at}, $O(2^s)$ work).  The absorb is
+the binding: a prover whose subsequent messages were generated against
+different roots faces challenges derived from \emph{these} roots.  Note
+the prover-side integer folds $u_c$ (\code{fold\_values\_bits}, a
+popcount-style pass over the packed rows) are computed independently of
+the forest and enter the proof stream as the $\code{us}$ vector; the
+forest itself never touches them.
+
+\paragraph{Per-layer payload.}
+Each of the $d$ layers contributes one \code{MergedLayer} to the proof:
+an optional phase-A sumcheck ($\ell$ rounds, absent at $\ell = 0$), a
+phase-B sumcheck ($s$ rounds), and a closing child pair --- $O(\ell+s)$
+$\K$-elements.  Summed over layers this is
+${\approx}\,48\big(\tfrac{d(d-1)}{2} + ds\big)$ bytes of round messages
+plus $32d$ bytes of pairs (degree-3 rounds carry three 16-byte tail
+values each, \S\ref{sec:driver}); at the deployed shapes the
+\emph{sent folds} $16\cdot 2^s$\,B are the larger forest-side item
+(e.g.\ $n = 28$, $s = 11$: 32\,KiB of folds vs.\ ${\approx}16$\,KiB of
+forest messages, 50.7\,KiB forest-side total).
+
+% ===========================================================================
+\section{The layer protocol}
+\label{sec:layers}
+
+The verifier maintains a running claim $C_\ell = \mle{L_\ell}(z_x, z_c)$
+starting from $(z_x, z_c) = (\varepsilon, \zeta)$.  By
+\eqref{eq:recursion} and multilinearity, the layer-$\ell$ claim factors
+coordinate-wise:
+\begin{align}
+  C_\ell
+  \;&=\; \sum_{x \in \bits^\ell}\sum_{c \in \bits^s}
+        \eq(x, z_x)\,\eq(c, z_c)\;
+        \underbrace{L_{\ell+1}(x,0,c)}_{E_c(x)}\,
+        \underbrace{L_{\ell+1}(x,1,c)}_{O_c(x)} \notag\\
+  \;&=\; \sum_{c} \eq(c, z_c)
+        \Big[\sum_{x} \eq(x, z_x)\, E_c(x)\, O_c(x)\Big].
+        \label{eq:layer}
+\end{align}
+The bracketed inner sums share the point $z_x$ and differ only in the
+tree; that shape is exactly one \emph{shared-$q$ multi-group} instance
+of the eq-factored driver (\S\ref{sec:driver}), and the layer is
+discharged in two phases plus a line step
+(\code{drive\_grouped}):
+
+\begin{enumerate}[leftmargin=2.2em, itemsep=2pt]
+\item \textbf{Phase A} (in-tree variables; $\ell \ge 1$ only).  The
+  $2^s$ trees enter as groups: group $c$ has the shared eq point
+  $q = z_x$, the per-group scale $\eq(c, z_c)$ (a precomputed
+  $O(2^s)$ table re-built per layer), and the single buffer pair
+  $(E_c, O_c)$.  One driver call
+  (\code{prove\_eq\_inner\_sumcheck\_mixed\_pre}) runs $\ell$ rounds of
+  a degree-3 sumcheck binding $x \to r_x \in \K^\ell$, and returns the
+  per-tree finals
+  $\big(\mle{E_c}(r_x), \mle{O_c}(r_x)\big)$.  These finals are
+  \emph{prover-internal}: nothing per-tree is absorbed at any point.
+\item \textbf{Phase B} (tree-index variables).  The residual
+  $\sum_c \eq(c, z_c)\,\mle{E_c}(r_x)\,\mle{O_c}(r_x)$ is itself an
+  eq-weighted inner product over $c$ --- the per-tree finals, read as
+  two length-$2^s$ multilinear tables $E(\cdot), O(\cdot)$, feed one
+  more (tiny, dense) driver call with $q = z_c$, binding
+  $c \to r_c \in \K^s$ and closing on the child pair
+  \[
+    (p, q) \;=\;
+    \big(\mle{L_{\ell+1}}(r_x, 0, r_c),\;
+         \mle{L_{\ell+1}}(r_x, 1, r_c)\big).
+  \]
+\item \textbf{Line step.}  $\textbf{absorb}(\mathtt{0x32}: p, q)$,
+  $\lambda_\ell \leftarrow \textbf{squeeze}(\K)$, and the claim advances
+  along the line through the two children:
+  \[
+    C_{\ell+1} \;=\; p + \lambda_\ell\,(p + q), \qquad
+    z_x \leftarrow r_x\,\|\,\lambda_\ell, \qquad
+    z_c \leftarrow r_c .
+  \]
+  (The code calls $\lambda_\ell$ \code{mu}; renamed to keep $\mu$ for
+  the discharge residual, as in the verifier note.)
+\end{enumerate}
+
+Layer $0$ degenerates: there are no in-tree variables yet, phase A is
+skipped (\code{sc\_x = None}), and the pair vectors fed to phase B are
+simply each root's two children --- level $1$, two values per tree.
+After $d$ layers the \emph{exit claim} is
+\[
+  e_d \;=\; C_d \;\overset{\text{honest}}{=}\;
+  \mle{\Lambda}(z_x, z_c),
+  \qquad z = (z_x, z_c) \in \K^{d+s},
+\]
+pinned by the \code{merged\_forest\_roundtrips} test against
+\code{mle\_at(leaves, $z$)}.  The verifier-side chaining checks (phase-A
+claimed sum $= C_\ell$, the factored-$\eq$ linkage
+$E_A = \eq(r_x, z_x)\cdot\code{sc\_c.claimed\_sum}$, the closing check
+$E_B = \eq(r_c, z_c)\cdot p\cdot q$) are [V5]--[V11] of the verifier
+note and mirror this structure exactly.
+
+\begin{remark}[Why two phases]
+A single $(\ell + s)$-variable sumcheck over the merged index would be
+sound too, but would need the $\eq(c, z_c)$ weights woven into every
+round over a buffer of size $2^{\ell + s}$.  The split lets phase A
+treat $\eq(c, z_c)$ as a per-group \emph{scalar} (it seeds the group's
+prefix scalar, \S\ref{sec:driver}, at zero marginal cost), keeps the
+per-tree buffers independent --- which is what the lazy bit-driven
+rounds and the across-tree parallelism need --- and makes phase B
+negligible ($2^s$-sized buffers).  The transcript cost is one extra
+sumcheck header per layer.
+\end{remark}
+
+% ===========================================================================
+\section{The eq-factored driver}
+\label{sec:driver}
+
+Every phase of every layer runs on one prover,
+\code{prove\_eq\_inner\_sumcheck\_mixed\_pre}
+(\code{src/piop/sumcheck/eq\_factored.rs}), which proves sums of the
+shape
+\[
+  \sum_{x} \sum_{g} \eq(x; q_g)\cdot \mathrm{scale}_g \cdot
+  L_g(x)\,R_g(x)
+\]
+--- an eq-weighted sum of inner products of multilinear pairs --- and is
+\textbf{byte-identical} to the generic \code{MLSumcheck} prover run over
+the materialised comb $[\eq_1, \dots, L\text{'s}, R\text{'s}]$ with the
+degree-3 combiner $\sum_g \eq_g\, L_g R_g$: same round polynomials, same
+transcript operations (header, tail absorbs, post-draw challenge
+re-absorb), same proof layout.  The generic verifier verifies it
+unchanged --- there is no bespoke verification path to audit.
+
+\paragraph{Never materialise $\eq$.}
+Round $j$ (binding the \emph{low} variable, as the generic prover does)
+writes each group's round message as
+\[
+  P_j(c) \;=\; \sum_g A_{g,j}\;\eq_1\!\big(c;\, q_g[j-1]\big)\;
+  H_{g,j}(c),
+  \qquad
+  H_{g,j}(c) \;=\; \sum_b V_{g,j}[b]\; L_g(c, b)\, R_g(c, b),
+\]
+where $L_g(c, b) = L_g[2b] + c\,(L_g[2b{+}1] - L_g[2b])$ is the
+fold-in-progress buffer at suffix slot $b$, and the $\eq$ weight has
+been split into three parts, none of them a materialised multiplicand:
+\begin{itemize}[itemsep=1pt]
+\item the \emph{prefix scalar}
+  $A_{g,j} = \mathrm{scale}_g\cdot\prod_{i<j-1}\eq_1(\rho_{i+1};
+  q_g[i])$, one running $\K$-element per group, updated per round ---
+  this is where phase A's $\eq(c, z_c)$ group scale rides for free;
+\item the current-variable factor $\eq_1(c; q_g[j-1])$, degree 1 in the
+  round variable;
+\item the \emph{suffix tensor}
+  $V_{g,j}[b] = \prod_{i\ge j}\eq_1(b_{i-j}; q_g[i])$, precomputed
+  back-to-front for all rounds in $O(2^k)$ total (\code{suffix\_tensors})
+  --- the cost of one $\eq$ build, and built \emph{once} for the whole
+  phase-A call, since all trees share $q = z_x$ (asserted:
+  bit-selected groups require the shared point).
+\end{itemize}
+$H$ is quadratic and the $\eq_1$ factor linear, so $P_j$ has degree 3,
+matching the pinned verifier degree.
+
+\paragraph{Coefficient-space accumulation, wide sums, free fourth node.}
+The per-slot inner loop accumulates the \emph{coefficients}
+$(A_0, A_1, A_2)$ of $H$ in the round variable rather than its node
+values, so the Lagrange-node multiplies stay out of the hot loop; the
+single-pair case costs 5 field multiplies per slot (the suffix weight is
+folded into $L$: $w{\cdot}l_0$, $w{\cdot}l_1$, then three products
+$\smash{(w l_0)r_0}$, $\smash{(w l_1)r_1}$,
+$\Delta L\cdot\Delta R$).  The three products feed
+\code{WideMulAcc} accumulators: unreduced 256-bit carry-less sums with
+\emph{one} polynomial reduction per accumulator per round --- exact,
+because the reduction is $\Ftwo$-linear.  Round messages are sent as
+tail evaluations $P_j(1), P_j(2), P_j(3)$ only; the verifier
+reconstructs $P_j(0)$ from the chained sum (the claimed-sum trick
+\cite{Gruen24}).  The fourth node is free in characteristic 2: the
+evaluation points $\{0, 1, X, X{+}1\}$ (bit-pattern convention) form an
+$\Ftwo$-affine 2-flat, and over such a flat every polynomial of degree
+$\le 2$ sums to zero, so $H(X{+}1) = H(0) + H(1) + H(X)$.  The
+detection is exact at runtime ($1 + 1 = 0$), keeping the driver
+field-generic.  On aarch64 the whole-buffer message and fold passes
+dispatch to fused NEON kernels (\code{eqf\_single\_pair\_round} and
+friends; \code{F2Z\_EQF\_NOKERNEL=1} forces the generic loops for
+A/B diagnosis).
+
+\paragraph{Pass fusion.}
+By default the driver defers each round's fold and runs it \emph{fused
+into the next round's message pass}: one read of the unfolded buffers
+replaces a fold-write pass plus a message-read pass.  Measured
+${\approx}10\,\%$ of prove at $n = 26$--$28$; byte-identical (same field
+values in the same transcript order --- only the physical pass structure
+changes); \code{F2Z\_EQF\_FUSE=0} restores the eager two-pass path.
+The same idea appears one level up in the forest's JIT layers: the
+buffer-\emph{generation} pass accumulates the round-1 coefficients as it
+writes (\code{dense\_jit\_fused\_round1}, forwarded through the driver's
+\code{pre\_round1} hook), so a JIT-generated level is written once and
+first \emph{read} by round 2's fused fold+message pass
+(\code{F2Z\_JIT\_R1=0} opts out).  XOR accumulation is order-free and
+reduction $\Ftwo$-linear, hence generation-order independence of the
+reduced coefficients --- the fusion is again an exact identity.
+
+% ===========================================================================
+\section{Leaves from bits: the lazy schedules}
+\label{sec:lazy}
+
+The eager reference prover (\code{prove\_merged\_forest}) materialises
+the $2^{d+s}$ leaves and every product level above them.  The lazy
+prover (\code{prove\_merged\_forest\_lazy}) produces a byte-identical
+transcript while never materialising the leaf layer or the bottom
+product levels at all.  Everything rests on the observation that at and
+near the leaves, the forest's values have so little entropy that they
+can be \emph{gathered from small shared tables indexed by committed
+bits} instead of computed and stored.
+
+\subsection{What the prover holds}
+\label{sec:tables}
+
+\paragraph{Bits.}
+The commitment hint stores the bit matrix column-lane--packed (64
+columns per \code{u64} word).  One transposition pass
+(\code{extract\_column\_bit\_halves}, blocks of $64{\times}64$
+bit-transposes) yields, per tree $c$, the top-bit-split halves of its
+leaf bits:
+\[
+  \code{lbits}_c = M[c][0..2^{d-1}], \qquad
+  \code{rbits}_c = M[c][2^{d-1}..2^d],
+\]
+packed 64 per word --- a few KiB per tree.  These two bit arrays drive
+\emph{every} lazy layer of tree $c$'s bottom.
+
+\paragraph{$\alpha$-power chains.}
+Per chunk, \code{chunk\_pow2\_table} builds
+$v(i) = \alpha^{W^{(l)}_b 2^j}$ for all $i = (b \ll \log_2 W)|j$: one
+fixed-base comb for the shared $\alpha$-squaring chain
+(\code{FixedBasePow}, ${\approx}8\times$ fewer multiplies than
+square-and-multiply per exponent), then a per-row squaring chain for the
+$2^j$ place values.
+
+\paragraph{Shared value tables.}
+From the chains, four table families are built once per weight set
+(``$\tau$ set'') and shared by all $2^s$ trees:
+\begin{itemize}[itemsep=1pt]
+\item \emph{leaf $\tau$ halves} (\code{leaf\_tau\_halves}):
+  $\tau(i) = v(i) + 1$, split like the bits --- the affine coefficients
+  of \eqref{eq:leaves};
+\item the \emph{pair table} (\code{layer1\_pair\_table}):
+  $\code{pair}[i] = v(i)\cdot v(i + 2^{d-1})$, the only case of a
+  level-$(d{-}1)$ value that is not already a table entry;
+\item the \emph{4-case tables} $\code{te}, \code{to}$: position $y$ of
+  level $d{-}1$ pairs leaves $(y,\; y + 2^{d-1})$, so its value is one
+  of $\{1,\, v(y),\, v(y{+}2^{d-1}),\, \code{pair}[y]\}$, selected by
+  two bits.  \code{te} tabulates the four cases for the E-half positions
+  $y < 2^{d-2}$, \code{to} for the O-half positions (offset baked in);
+\item the \emph{16-case table} $T4$:
+  $T4[(y \ll 4)|(c_E \ll 2)|c_O] = \code{te}[4y{+}c_E]\cdot
+  \code{to}[4y{+}c_O]$ --- all 16 possible values of the
+  \emph{4-leaf product} at level $d{-}2$, position $y$, selected by four
+  committed bits.
+\end{itemize}
+Costs are $O(2^d)$ per set --- $2^s$-fold amortised --- and the
+$T4$ build uses an indexed collect with an in-place flatten (a parallel
+nested \code{flatten} here measured ${\approx}836\times$ slower than the
+serial arithmetic; upstream fix \code{e19b0e1}).
+
+\subsection{The level ladder}
+\label{sec:ladder}
+
+Recall layer $\ell$'s phase A consumes level $\ell{+}1$.  The lazy
+prover sources each level in one of three ways: from the \emph{stored
+chain} (built bottom-up once, level-major, by \code{build\_levels}),
+\emph{JIT} (regenerated from bits and tables while its layer runs, then
+dropped), or \emph{implicitly} (never as $\K$-values: the layer's first
+round(s) run case-LUT kernels straight off the bits,
+\S\ref{sec:lutrounds}).  Two schedules exist, named for the size of the
+stored chain relative to the $2^d$-leaf layer; both are pinned
+byte-identical to the eager forest.
+
+\paragraph{The L/4 schedule (default; depth $\ge 4$).}
+\begin{center}
+\small
+\begin{tabular}{llll}
+\toprule
+layer $\ell$ & consumes level & sourced & phase-A entry \\
+\midrule
+$0 \dots d{-}4$ & $1 \dots d{-}3$ & stored chain & \code{Dense} \\
+$d{-}3$ & $d{-}2$ & JIT: one $T4$ gather/value & \code{Dense} (round 1 fused) \\
+$d{-}2$ & $d{-}1$ & implicit & \code{Pair3Bits} over $(\code{te},\code{to})$ \\
+$d{-}1$ & $d$ (leaves) & implicit & \code{Leaf3Bits} over $\tau$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+The stored chain is built per tree directly at level $d{-}3$ --- each
+value the product of two paired $T4$ gathers --- so levels $d{-}2$,
+$d{-}1$, $d$ never exist at build time, and the chain then folds upward
+($\sum_{\ell \le d-3} 2^\ell \approx 2^{d-2}$ values per tree, a quarter
+of the leaf count; hence the name).  Reading the bits word-wise during
+these builds costs 4 \code{u64} loads per 64 values,
+${\approx}64\times$ less read traffic than per-bit gathers over the
+column-lane store.  At depth 4 exactly (and for every depth under the
+\code{F2Z\_LUT3=0} opt-out) the bottom two layers run the shallower
+\code{Pair2Bits} / \code{Leaf2Bits} variants; depth 3 keeps only the
+leaf layer bit-driven (\code{LeafBits}) with the chain built from
+level-1 halves by a zero-multiply case copy
+(\code{build\_column\_layer1\_halves}); depth $< 3$ falls back to the
+eager prover (the LUT rounds need $k \ge 2$).
+
+\paragraph{The L/8 schedule (\code{F2\_FOREST\_SCHEDULE=l8}; depth $\ge 5$).}
+\begin{center}
+\small
+\begin{tabular}{llll}
+\toprule
+layer $\ell$ & consumes level & sourced & phase-A entry \\
+\midrule
+$0 \dots d{-}5$ & $1 \dots d{-}4$ & stored chain & \code{Dense} \\
+$d{-}4$ & $d{-}3$ & JIT: two $T4$ gathers + 1 mul /value & \code{Dense} (round 1 fused) \\
+$d{-}3$ & $d{-}2$ & implicit & \code{T4Bits} over $T4$ \\
+$d{-}2$ & $d{-}1$ & implicit & \code{Pair3Bits} over $(\code{te},\code{to})$ \\
+$d{-}1$ & $d$ & implicit & \code{Leaf3Bits} over $\tau$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+Every stage's resident set is ${\approx}2^{d-3}$ values per tree ---
+an eighth of the leaf count --- at a measured $+5$--$13\,\%$ prove cost
+at the 2-column model shapes; the schedule exists for memory-bound runs
+and is \emph{required} at $n \ge 31$ on a 16\,GB box
+(\S\ref{sec:costs}).
+
+\subsection{Inside the case-LUT rounds}
+\label{sec:lutrounds}
+
+The bit-driven layers are where ``lazy'' earns its keep: their input
+levels are never materialised because the first one, two, or three
+sumcheck rounds of the layer can be computed \emph{directly} from
+$(\code{lbits}, \code{rbits})$ and per-position case tables.  All of the
+following are exact char-2 identities --- the transcripts they produce
+are bit-for-bit those of dense buffers.
+
+\paragraph{The leaf round (\code{LeafBits} family).}
+For the leaf layer, entry $i$ of the phase-A pair is \emph{defined} as
+$L[i] = 1 + \code{lbits}[i]\cdot\tau_L[i]$ (and $R$ from
+$\code{rbits}, \tau_R$).  Expanding round 1's per-slot contribution
+$w_b\,L(c)R(c)$ over the four selecting bits, the $1$'s cancel
+(char 2) into subset sums of eight tree-shared $w\tau$-product tables
+(\code{build\_leaf\_tables}: the 4-case singles/pair tables
+$t_{a_0}, t_{a_1}$ and a $\Delta L\,\Delta R$ table), so a
+\emph{group's} round-1 message costs \textbf{zero multiplications}: per
+slot, one unconditional indexed load and add per accumulator (3 loads
+$+$ 3 adds), branchless on the bit nibble.  The tables themselves cost
+8 multiplies $+$ ${\approx}20$ adds per slot to build --- once,
+amortised over all $2^s$ trees.  The $\Delta\Delta$ table has two
+interchangeable forms, chosen by footprint
+(\code{F2Z\_LEAF\_A2\_FACTORED}, auto at $2^{k-1} \ge 2^{15}$): a
+16-case precombined table (one load per slot; wins while L2-resident)
+or the four raw cross products with branchless masked adds
+($4\times$ smaller; at $n = 30$ the leaf round drops $2.1\times$,
+$307 \to 147$\,ms, prove $-6.5\,\%$).
+
+\paragraph{Folding without materialising.}
+Round 1's fold must produce round 2's buffers.  For a bit-affine leaf
+side this is again a 4-case table: the folded entry is
+$1 + m_0(1{+}\rho_1)\tau_0 + m_1\rho_1\tau_1$, precombined per position
+over the adjacent bit pair $(m_0, m_1)$
+(\code{build\_leaf\_fold\_tables}), so the fold is one indexed load per
+entry.  The deeper variants iterate the idea instead of executing it:
+\begin{itemize}[itemsep=1pt]
+\item \code{Leaf2Bits} ($k \ge 3$): round 1's fold \emph{keeps the
+  bits} and stashes its fold tables as round 2's \emph{value} tables ---
+  which are structurally a $(\code{te}, \code{to})$ pair, so round 2
+  runs the 16-case product-layer round below, and only round 2's fold
+  materialises dense buffers ($2^{k-2}$ per side);
+\item \code{Leaf3Bits} ($k \ge 4$, the default): one round deeper
+  still; round 3 reads the stashed 16-case fold tables \emph{inline}
+  (one aligned byte load per side per slot --- the measured lesson being
+  that multiplies are free and only skipped bytes pay), and dense
+  buffers appear only at round 3's fold ($2^{k-3}$ per side).
+\end{itemize}
+
+\paragraph{The product-layer round (\code{Pair2Bits}/\code{Pair3Bits}).}
+One level up, entry $y$ of the pair is the 2-bit select
+$\code{te}[4y + (m_{\mathrm{lo}} | m_{\mathrm{hi}}{\ll}1)]$ (and
+\code{to} at the offset position), over the \emph{same} leaf-bit halves.
+The default round body is the \emph{factored} form
+(\code{F2Z\_PAIR2\_FACTORED}): only the suffix-weighted table
+$\code{wte}[i] = V_1[i \gg 3]\cdot\code{te}[i]$ is built, and each slot
+does three wide multiplies against \code{wte}/\code{to} entries ---
+trading one multiply for a $4\times$ smaller, L2-resident table set
+(the precombined 16-case alternative carries $64\cdot2^k$ entries,
+16\,MiB at deployed shapes, and its four gather streams' misses
+dominate the round).  \code{Pair3Bits} again stashes round 1's 16-case
+fold tables as round 2's inline value tables and materialises at round
+2's fold.
+
+\paragraph{The 4-leaf round (\code{T4Bits}, L/8 only).}
+One further level up, entry $y$ is a single 16-case select from the
+shared $T4$ --- one gather per value, values read inline in round 1,
+dense buffers at its fold.  The layer's input level is never stored
+\emph{nor} regenerated.
+
+\paragraph{Prefetch.}
+The LUT gathers are data-dependent (committed bits pick the line), which
+defeats the hardware prefetcher, but the indices are cheaply
+recomputable ahead: both the stash-gather rounds
+(\code{F2Z\_LUT\_PRFM}) and the $T4$ build/JIT sites
+(\code{F2Z\_T4\_PRFM}) issue \code{prfm pldl1keep} 16 slots ahead,
+size-gated to the DRAM-scale shapes (they \emph{lose} at L2-resident
+sizes; measured $-4.8\,\%$ and $-5.3\,\%$ prove at $n = 30$
+respectively).  Semantically inert.
+
+\subsection{Why byte-identity holds, and how it is pinned}
+\label{sec:identity}
+
+Every lazy device above is a re-\emph{association} of the same field
+arithmetic: case tables precombine subexpressions that the dense path
+would compute per entry (field addition is exact and commutative);
+char-2 cancellations ($1 + 1 = 0$, $v_1 - v_0$'s ones cancelling in
+folds) are identities; wide-vs-narrow accumulation reduces to identical
+values because the reduction is $\Ftwo$-linear; fusion only reorders
+physical passes.  Consequently the lazy prover does not merely
+``verify the same'' --- it emits the \emph{same transcript}.
+\code{lazy\_matches\_eager} pins roots, every layer's sumcheck messages,
+pairs, exit claim, and the post-run transcript state against the eager
+prover across depths 3--9 (covering every fallback edge and both the
+scalar and word-wise $T4$ paths), $W \in \{1, 4\}$, and \emph{both}
+schedules; \code{lazy\_multi\_matches\_eager} does the same for the
+batched forest (\S\ref{sec:variants}).  This is why the knob inventory
+of Table~\ref{tab:knobs} is safe: every knob changes scheduling, not
+semantics.
+
+\begin{table}[ht]
+\centering\small
+\begin{tabular}{lll}
+\toprule
+Knob & Default & Effect (always byte-identical) \\
+\midrule
+\code{F2\_FOREST\_SCHEDULE=l8} & off (L/4) & L/8 memory schedule (\S\ref{sec:ladder}) \\
+\code{F2Z\_LUT3=0} & on & shallower \code{Pair2}/\code{Leaf2} LUT prefixes \\
+\code{F2Z\_EQF\_FUSE=0} & on & eager two-pass fold (no pass fusion) \\
+\code{F2Z\_JIT\_R1=0} & on & unfused JIT round-1 message pass \\
+\code{F2Z\_LEAF\_A2\_FACTORED=0/1} & auto ($\ge 2^{15}$) & $\Delta\Delta$ table form, leaf round \\
+\code{F2Z\_PAIR2\_FACTORED=0} & on & precombined 16-case pair tables \\
+\code{F2Z\_LUT\_PRFM=0/1} & auto ($\ge 2^{14}$) & stash-gather software prefetch \\
+\code{F2Z\_T4\_PRFM=0/1} & auto ($\ge 16$\,MiB) & $T4$ build/JIT software prefetch \\
+\code{F2Z\_EQF\_NOKERNEL=1} & off & bypass fused NEON kernels (diagnostic) \\
+\bottomrule
+\end{tabular}
+\caption{The forest's scheduling knobs.  Each is read once per
+prove/process; none changes the proof bytes.}
+\label{tab:knobs}
+\end{table}
+
+% ===========================================================================
+\section{Memory and cost}
+\label{sec:costs}
+
+\paragraph{Memory model.}
+With 16-byte $\K$-elements and $W = 1$ (so $2^{d+s} = 2^n$ leaves), the
+resident forest set is capped by the largest stage of the ladder:
+\[
+  \text{L/4:}\quad
+  {\approx}\,2^{n-2}\cdot 16\,\mathrm{B} = 2^n\cdot 4\,\mathrm{B},
+  \qquad
+  \text{L/8:}\quad
+  {\approx}\,2^{n-3}\cdot 16\,\mathrm{B} = 2^n\cdot 2\,\mathrm{B},
+\]
+(the stored chain and the JIT level are the same size and not
+simultaneously live: the chain is consumed front-first,
+\code{mem::take} per layer, before the JIT layer runs).  On top sit the
+commit hint (${\approx}\,2^n\cdot 0.7$\,B: packed rows/columns,
+codeword, Merkle tree), the transposed bit halves ($2^n/8$\,B), and the
+shared tables ($O(2^d)$ per set; the largest, $T4$, is
+$16\cdot 2^{d-2}$ entries --- 8\,MiB at $d = 17$).  The model matches
+the measured peaks below to within ${\approx}5\,\%$; it is why the
+16\,GB ceiling sits at $n = 32$ (under \code{l8}) and why $n \ge 31$
+requires \code{l8} at all.
+
+\paragraph{Measured (Apple M4 16\,GB, LTO + \code{unchecked}, fusion
+defaults, rate-1/2 $k{=}4$ configs, medians; 2026-07-18).}
+The \code{forest+presum} column is the phase this note describes (the
+$\alpha$-power tables, the forest proper, and the pre-sumcheck of
+\S\ref{sec:discharge}); its share of prove rises from 81\,\% to
+${\approx}96\,\%$.
+\begin{center}
+\small
+\begin{tabular}{rlrrrrrl}
+\toprule
+$n$ & $(t, s)$ & forest+presum & lig.\ open & prove & verify & peak & sched \\
+\midrule
+16 & (10, 6)  & 3.25\,ms & 0.72\,ms & 4.03\,ms & 1.21\,ms & 0.69\,MB & L/4 \\
+20 & (13, 7)  & 9.13\,ms & 1.62\,ms & 10.9\,ms & 1.83\,ms & 7.7\,MB  & L/4 \\
+24 & (15, 9)  & 42.5\,ms & 21.5\,ms & 62.1\,ms & 2.48\,ms & 85.0\,MB & L/4 \\
+26 & (16, 10) & 131\,ms  & 25.3\,ms & 159\,ms  & 3.14\,ms & 325\,MB  & L/4 \\
+28 & (17, 11) & 530\,ms  & 53.6\,ms & 579\,ms  & 4.41\,ms & 1.27\,GB & L/4 \\
+30$^\dagger$ & (18, 12) & 2.98\,s & 139\,ms & 3.15\,s & 5.55\,ms & 4.95\,GB & L/4 \\
+32$^\dagger$ & (19, 13) & ${\sim}96\,\%$ & ${\sim}4\,\%$ & 29.8\,s & 11.8\,ms & 11.5\,GB & \code{l8} \\
+\bottomrule
+\end{tabular}
+\end{center}
+($^\dagger$: the older $k{=}6$ generation, pending a memory-fresh
+re-measure; full tables and the measurement protocol in
+\code{README.md}.)  Proof bytes stay forest-light: forest-side
+7.7\,KiB ($n{=}16$) $\to$ 50.7\,KiB ($n{=}28$) $\to$ 151.8\,KiB
+($n{=}32$), of which the sent folds are $16\cdot2^s$\,B
+(\S\ref{sec:merged}); the Ligerito blob dominates the stream
+throughout.  Threading: the build is parallel across trees, round
+bodies across groups (with a minimum batch so tiny late rounds amortise
+dispatch), phase B and the upper layers effectively serial; the
+MT/ST prove ratio grows from ${\approx}1.6\times$ at $n = 22$ to
+${\approx}3.6\times$ at $n = 28$.  All deployed shapes run a
+\emph{single} chunk (with $q = 2^{100}{-}15$, $\cw = 126 - t \ge 100$
+for $t \le 26$); chunking multiplies the forest count only at
+$t + W > 27$.
+
+% ===========================================================================
+\section{The exit claim and its discharge}
+\label{sec:discharge}
+
+The forest ends holding $e_d \approx \mle{\Lambda}(z_x, z_c)$ --- still
+entangled with the $\alpha$-power weights.  Two further steps
+(\code{prove\_int\_eval\_merged\_common}) turn it into something the
+opener understands; they are the ``presum'' half of the
+\code{forest+presum} phase.
+
+\paragraph{From the exit claim to a bit-MLE claim.}
+By \eqref{eq:leaves} and multilinearity (the all-ones table extends to
+$1$):
+\[
+  e_d - 1
+  \;=\; \sum_{i, c} \eq(i, z_x)\,\eq(c, z_c)\, M[c][i]\,\tau(i)
+  \;=\; \sum_{i \in \bits^d} q_{\mathrm{rowbit}}[i]\cdot m[i],
+\]
+with $q_{\mathrm{rowbit}}[i] = \eq(i, z_x)\,\tau(i)$
+(\code{row\_bit\_weights} at $\rho = z_x$; its $2^t$
+${\approx}q_{\mathrm{bits}}$-bit exponentiations go through the same
+fixed-base comb) and $m[i] = \sum_c \eq(c, z_c)\,M[c][i]$ the
+$z_c$-combined row (\code{xi\_combined\_rows}).  A $d$-round
+\emph{degree-2} sumcheck over this product
+(\code{MultiDegreeSumcheck}, one group) binds $i \to r^*$; dividing the
+final expected evaluation by the public
+$\smash{\mle{q_{\mathrm{rowbit}}}}(r^*)$ leaves
+$\mu = \mle{M}(r^*, z_c)$ --- a pure bit-MLE evaluation at
+$(r^* \| z_c)$, every $\alpha$-dependent factor stripped to the
+verifier's side.  From here the ring switch sends the 128 partial
+evaluations $s_v$, the $L$ chunks' residuals are $\eta$-combined, and
+one recursive Ligerito call certifies the batch against the commitment
+--- verifier note \S6, out of scope here.
+
+\paragraph{The chunked flow.}
+\code{prove\_mle\_eval\_mod\_q\_ligerito} runs the full
+forest~$+$~presum \emph{per chunk}, sequentially on one transcript
+(chunk $l$'s $\alpha$-power tables are built and dropped inside its
+run), then does all ring-switch messages, then the single Ligerito
+call.  Per chunk the proof stream carries: the \code{MergedForestProof},
+the folds $u^{(l)}$, the pre-sumcheck, and $s_v$
+(\code{proof\_codec.rs}).
+
+% ===========================================================================
+\section{Variants: the batched forest and the RLC families}
+\label{sec:variants}
+
+\paragraph{Multi-claim batching (\code{prove\_merged\_forest\_lazy\_multi}).}
+$N$ same-shape claims --- each $2^s$ trees over its own bits and
+$\tau$ chains --- run as \emph{one} forest of $N\cdot 2^s$ trees, tree
+index $(\nu \ll s)\,|\,c$ with the claim index high, sharing every
+layer's rounds and messages.  Per-claim table selection rides the
+driver's \code{tau\_set} index (the kernels are untouched); table sets
+are deduplicated by $\tau$-chain identity, so same-point claims share
+one set.  $N$ must be a power of two; callers pad with zero-weight
+dummies, whose $\tau$ chains are all $1$ and whose leaves are therefore
+identically $1$ regardless of the bits they carry.  Both schedules
+honoured; pinned byte-identical to the eager prover over the
+concatenated leaf tables, dummy arm included.
+
+\paragraph{RLC claim families (\textsc{experimental}).}
+The mod-$q$ RLC families (\code{docs/rlc-family-note/}) replace the
+bit-affine leaf with a $2^j$-case select on $j$ committed column bits:
+$\Lambda[c][i] = \code{case\_pow}[i][m(i,c)]$, case $0 = \alpha^0 = 1$.
+For $j = 2$ (\code{prove\_merged\_forest\_lazy\_rlc2}) this is a pure
+\emph{rewiring} of the machinery above, one level shifted: the leaf
+layer is structurally a product layer (\code{Pair3Bits} over
+$\code{te}[4y{+}m] = \code{case\_pow}[y][m]$), level $d{-}1$ is a
+\code{T4Bits} round over $\code{te}\cdot\code{to}$ products, level
+$d{-}2$ is Dense JIT from paired gathers, and the chain tops at $d{-}3$
+--- the L/4 shape with untouched kernels, hence byte-identical to the
+eager forest over the same leaves (pinned).  For $j = 3, 4$
+(\code{prove\_merged\_forest\_lazy\_rlc\_general}) no $2^j$-case leaf
+kernels exist yet, so the bottom layers run Dense with JIT-generated
+buffers gathered from a shared $2^{2j}$-case top-pair product table
+$T2$; dedicated 8/16-case leaf-round kernels are the stated open lever.
+(A Dense-JIT arm for the \emph{bit-affine} $j \ge 3$ forests was
+measured slower than the eager path and closed.)
+
+% ===========================================================================
+\section{What to trust, and what this note is not}
+\label{sec:trust}
+
+The prover described here is exercised by: the both-schedule
+byte-identity pins (\code{lazy\_matches\_eager},
+\code{lazy\_multi\_matches\_eager} --- roots, every message, exit
+claim, transcript state, across the depth-regime and $W$ matrix), the
+GKR roundtrip and tamper rejections (\code{merged\_forest\_roundtrips}),
+the mod-$q$ end-to-end roundtrips with range/generator/tamper arms, and
+the NEON/scalar field-pipeline equivalence
+(\code{neon\_mul\_matches\_scalar\_pipeline}).  Soundness of what the
+forest \emph{binds} --- the chain from the absorbed roots through the
+layer sumchecks to the exit claim, the exponent injectivity, and the
+oracle handoff --- is argued in the verifier note and
+\code{docs/DESIGN.md}; this note's claim is narrower and mechanical:
+the lazy, merged, fused prover computes \emph{the same protocol} as the
+eager reference, at $O(\ell + s)$ payload per layer,
+${\approx}\,2^n\cdot4$\,B (or $2^n\cdot2$\,B) of working set, and
+81--96\,\% of an F2Z prove.  The standard caveats carry over unchanged:
+flock's Merkle domain separation is a flagged upstream item, the
+ad-hoc Ligerito config regime ($m < 22$) is unaudited, and the scheme
+is not zero-knowledge.
+
+% ===========================================================================
+\begin{thebibliography}{9}\small
+
+\bibitem{GKR15} S.~Goldwasser, Y.~T.~Kalai, G.~N.~Rothblum.
+\emph{Delegating computation: interactive proofs for muggles.}
+J.~ACM 62(4), 2015 (STOC 2008).
+
+\bibitem{Thaler13} J.~Thaler.
+\emph{Time-optimal interactive proofs for circuit evaluation.}
+CRYPTO 2013.  (The product-tree GKR specialisation the forest layers
+instantiate.)
+
+\bibitem{Libra} T.~Xie, J.~Zhang, Y.~Zhang, C.~Papamanthou, D.~Song.
+\emph{Libra: succinct zero-knowledge proofs with optimal prover
+computation.}  CRYPTO 2019.  (The eq-factored linear-time GKR prover
+lineage.)
+
+\bibitem{Gruen24} A.~Gruen.
+\emph{Some improvements for the PIOP for ZeroCheck.}
+IACR ePrint 2024/108.  (Tail-only round messages via the claimed-sum
+reconstruction.)
+
+\bibitem{Soukhanov} L.~Soukhanov.
+\emph{The characteristic-2 field-switching note}, \S9.  (The
+integer-MLE-over-$\Ftwo$ construction F2Z realises; internal.)
+
+\end{thebibliography}
+
+\end{document}
