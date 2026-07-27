@@ -1,12 +1,12 @@
 # Fdb version 4
-["biber main"] 1785055465.06236 "main.bcf" "main.bbl" "main" 1785057809.70713 0
-  "main.bcf" 1785057809.56658 108371 e980b1776f86227762fae3571b3caf40 "pdflatex"
+["biber main"] 1785055465.06236 "main.bcf" "main.bbl" "main" 1785137438.02779 0
+  "main.bcf" 1785137437.88595 108371 e980b1776f86227762fae3571b3caf40 "pdflatex"
   "references.bib" 1785054492.13488 63903 1f5944239f98a171dd3ca837fa86aa7d ""
   (generated)
   "main.bbl"
   "main.blg"
   (rewritten before read)
-["pdflatex"] 1785057808.42063 "main.tex" "main.pdf" "main" 1785057809.70734 0
+["pdflatex"] 1785137436.68091 "main.tex" "main.pdf" "main" 1785137438.02801 0
   "/Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm10.657pk" 1776501489.11392 7808 6a049d449f6ee1b878a120976685d109 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-t1.enc" 1136849721 2971 def0b6c1f0b107b3b936def894055589 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc" 1136849721 2900 1537cc8184ad1792082cd229ecc269f4 ""
@@ -26,6 +26,7 @@
   "/usr/local/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecti0800.tfm" 1136768653 3072 828ba0ea87cf5b727c4bfd6367195ec2 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecti1095.tfm" 1136768653 3072 b73d2778cc3af44970de4de5e032d7f6 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ectt1000.tfm" 1136768653 1536 06717a2b50de47d4087ac0e6cd759455 ""
+  "/usr/local/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ectt1095.tfm" 1136768653 1536 a988bfe554c1f79514bd46d13c3c64ce ""
   "/usr/local/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/tcrm1095.tfm" 1136768653 1536 02c06700a42be0f5a28664c7273f82e7 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmbsy5.tfm" 1246382020 1120 1e8878807317373affa7f7bba4cf2f6a ""
   "/usr/local/texlive/2026/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmbsy6.tfm" 1246382020 1124 14ccf5552bc7f77ca02a8a402bea8bfb ""
@@ -112,6 +113,7 @@
   "/usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1095.pfb" 1215737283 145929 f25e56369a345c4ff583b067cd87ce8e ""
   "/usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1200.pfb" 1215737283 136101 f533469f523533d38317ab5729d00c8a ""
   "/usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfti1095.pfb" 1215737283 196446 8fbbe4b97b83e5182def6d29a44e57fb ""
+  "/usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sftt1095.pfb" 1215737283 169670 48d12e69c9a3b23c81f6d703ccbd4554 ""
   "/usr/local/texlive/2026/texmf-dist/tex/context/base/mkii/supp-pdf.mkii" 1461363279 71627 94eb9990bed73c364d7f53f960cc8c5b ""
   "/usr/local/texlive/2026/texmf-dist/tex/generic/bigintcalc/bigintcalc.sty" 1576625341 40635 c40361e206be584d448876bba8a64a3b ""
   "/usr/local/texlive/2026/texmf-dist/tex/generic/bitset/bitset.sty" 1576016050 33961 6b5c75130e435b2bfdb9f480a09a39f9 ""
@@ -345,12 +347,12 @@
   "/usr/local/texlive/2026/texmf-var/web2c/pdftex/pdflatex.fmt" 1776500545 3636771 b0d19629fdc98bdfa4d378986b1cd147 ""
   "/usr/local/texlive/2026/texmf.cnf" 1774209515 577 648cd9f92f9c0eac486f4c71c85cfbbe ""
   "macros.tex" 1785054492.03046 46709 25f8ffcef3f028828895f8951a9367fa ""
-  "main.aux" 1785057809.56378 9518 9661b142980f9088d54e4ae878073e79 "pdflatex"
+  "main.aux" 1785137437.88304 9715 ad51d445ebafae522b5701f2ce92240b "pdflatex"
   "main.bbl" 1785055481.86271 1924 220ae75d07a6153155e04d6671e0c29c "biber main"
-  "main.out" 1785057809.56469 6166 5172deb1593292bc7ee38012ff0131d3 "pdflatex"
-  "main.run.xml" 1785057809.56706 2311 be769915957fbf504b291cf0394a7670 "pdflatex"
-  "main.tex" 1785057802.17829 65633 0a3e8998aedb695e5e18da19d201d314 ""
-  "main.toc" 1785057809.56711 3715 14377bf326dfe8382dc6c0db4e9d08bc "pdflatex"
+  "main.out" 1785137437.88394 6166 5172deb1593292bc7ee38012ff0131d3 "pdflatex"
+  "main.run.xml" 1785137437.88657 2311 be769915957fbf504b291cf0394a7670 "pdflatex"
+  "main.tex" 1785137428.29213 69009 00a03a6d121c485500f6323ee07fdc44 ""
+  "main.toc" 1785137437.88662 3715 d1f53629ea8c39eca76fcabae500aeea "pdflatex"
   (generated)
   "main.aux"
   "main.bcf"
