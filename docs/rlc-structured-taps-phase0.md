@@ -219,3 +219,25 @@ rings + basis fill + MPS closure) → vx-taps baseline (Phase 1, the
 correctness oracle) → the stream family over the same primitive
 (Phase 2) → measurement (Phase 3). The primitive gets exercised and
 tamper-tested in the simpler vx setting first.
+
+## 5. Measured postscript (2026-07-27, Phases 1–3 done)
+
+Both paths landed (`prove/verify_mle_eval_mod_q_ligerito_tap_claims`,
+`..._tap_family`; commits `29825ba`, `5a33eeb`; harness
+`examples/taps_ab.rs`) and §2's honest cost flag **realized as a loss**:
+at n = 22/24/26 the clustered family proves at 232.9/791.5/4297 ms
+against the tap-claims baseline's 113.4/349.7/1885 (and 6 independent
+proofs' 178.9/394.3/891.5; n=26 churned-box, n=28 skipped for memory
+honesty). The n=24 phase tree pins the cause exactly where §2 pointed:
+the 45 monomial channels cost 540 of 791 ms (~12 ms/channel — the
+per-channel cascade constant the shared-point session measured
+independently), which no forest-body dedup at this sharing density
+(13 streams / 6 claims) can repay. The translated-eq opening machinery
+of §3 itself is cheap and correct (rings + closures are ~13 % of the
+family prove and carry the entire baseline path). The family keeps a
+proof-size win at n ≥ 24 (−26 %/−41 % vs the batched baseline) with
+verify within 1.6–2.4×. Verdict: route tapped-convolution claims
+through the extraction path; the stream family needs dense stream
+reuse or an order-of-magnitude cheaper discharge (kernels / forest
+fusion) to compete on time. Full table and guidance: the dated README
+note.
