@@ -308,7 +308,11 @@ fn main() {
             // (3 sub-proofs); `fam4` = two j3 families absorbing a, c
             // (2 sub-proofs, δ0 — δ4 regresses j3).
             use f2z::ligerito_flock::{
-                RlcSharedClaim, prove_mle_eval_mod_q_ligerito_rlc_family_shared_point,
+                RlcFamilySpec, RlcSharedClaim,
+                mle_eval_mod_q_lig_rlc_families_proof_size_bytes,
+                prove_mle_eval_mod_q_ligerito_rlc_families_shared_point,
+                prove_mle_eval_mod_q_ligerito_rlc_family_shared_point,
+                verify_mle_eval_mod_q_ligerito_rlc_families_shared_point,
                 verify_mle_eval_mod_q_ligerito_rlc_family_shared_point,
             };
             let od: usize =
@@ -448,6 +452,30 @@ fn main() {
                     claimed: eval_at(&layout, set, &rw, &colw),
                 })
                 .collect();
+            // fam6m: the MERGED proof — {d,a'} j2 + {b,c'} j2 + {a} j1
+            // + {c} j1 in ONE transcript with ONE closing Ligerito call.
+            let f3_cols = [0usize];
+            let f4_cols = [2usize];
+            let f3 = vec![RlcSharedClaim {
+                form: 0b1,
+                claimed: eval_at(&layout_fam, &f3_cols, &rwf, &colwf),
+            }];
+            let f4 = vec![RlcSharedClaim {
+                form: 0b1,
+                claimed: eval_at(&layout_fam, &f4_cols, &rwf, &colwf),
+            }];
+            let m_specs = [
+                RlcFamilySpec { family_cols: &fam1_cols[..2], claims: &f1_j2 },
+                RlcFamilySpec { family_cols: &fam2_cols[..2], claims: &f2_j2 },
+                RlcFamilySpec { family_cols: &f3_cols, claims: &f3 },
+                RlcFamilySpec { family_cols: &f4_cols, claims: &f4 },
+            ];
+            let prove_f6m = || {
+                let mut t = Blake3Transcript::new();
+                prove_mle_eval_mod_q_ligerito_rlc_families_shared_point(
+                    &mut t, &hint, &layout_fam, &m_specs, &rwf, alpha, &pc,
+                )
+            };
             let prove_vx8 = || {
                 let mut t = Blake3Transcript::new();
                 prove_mle_eval_mod_q_ligerito_tap_collapse(
@@ -480,7 +508,8 @@ fn main() {
                 );
                 (a, b)
             };
-            let (mut t_vx, mut t_f6, mut t_f4) = (Vec::new(), Vec::new(), Vec::new());
+            let (mut t_vx, mut t_f6, mut t_f4, mut t_f6m) =
+                (Vec::new(), Vec::new(), Vec::new(), Vec::new());
             for _ in 0..reps {
                 let t0 = Instant::now();
                 drop(prove_vx8());
@@ -491,6 +520,9 @@ fn main() {
                 let t0 = Instant::now();
                 drop(prove_f4());
                 t_f4.push(t0.elapsed().as_secs_f64() * 1e3);
+                let t0 = Instant::now();
+                drop(prove_f6m());
+                t_f6m.push(t0.elapsed().as_secs_f64() * 1e3);
             }
             let pv = prove_vx8();
             let t0 = Instant::now();
@@ -542,13 +574,25 @@ fn main() {
                 .expect("b3open fam4/2 verifies");
             }
             let v_f4 = t0.elapsed().as_secs_f64() * 1e3;
+            let pf6m = prove_f6m();
+            let t0 = Instant::now();
+            {
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_rlc_families_shared_point(
+                    &mut vt, &hint.commitment, &pf6m, &layout_fam, &m_specs, &rwf, &colwf,
+                    alpha, &vc,
+                )
+                .expect("b3open fam6m verifies");
+            }
+            let v_f6m = t0.elapsed().as_secs_f64() * 1e3;
             let fam_sz = f2z::ligerito_flock::mle_eval_mod_q_lig_rlc_family_proof_size_bytes;
             let sz_vx = mle_eval_mod_q_lig_xor_proof_size_bytes(&pv);
             let sz_f6 = fam_sz(&pf6.0)
                 + fam_sz(&pf6.1)
                 + mle_eval_mod_q_lig_xor_proof_size_bytes(&pf6.2);
             let sz_f4 = fam_sz(&pf4.0) + fam_sz(&pf4.1);
-            let (m_vx, m_f6, m_f4) = (median(t_vx), median(t_f6), median(t_f4));
+            let (m_vx, m_f6, m_f4, m_f6m) =
+                (median(t_vx), median(t_f6), median(t_f4), median(t_f6m));
             println!(
                 "n={n} B3OPEN (8 openings, NO checks; 6 cols committed, v(d')/v(b') = \
                  relabeled pair forms): vx8 δ{} {m_vx:.1} ms (8 bodies 1 tail, {:.0} KB, \
@@ -561,6 +605,13 @@ fn main() {
                 sz_f6 as f64 / 1e3,
                 m_f4 / m_vx,
                 sz_f4 as f64 / 1e3,
+            );
+            println!(
+                "  fam6m δ{} (MERGED: 2×j2 + 2×j1, ONE tail): {m_f6m:.1} ms ({:.2}x of \
+                 vx8, {:.0} KB, verify {v_f6m:.1} ms)",
+                layout_fam.x_fold_extra,
+                m_f6m / m_vx,
+                mle_eval_mod_q_lig_rlc_families_proof_size_bytes(&pf6m) as f64 / 1e3,
             );
             continue;
         }

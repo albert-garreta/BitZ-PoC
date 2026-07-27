@@ -4924,6 +4924,44 @@ pub struct RlcFamilyClaim<'a> {
 }
 
 /// End-to-end proof of an RLC claim family (EXPERIMENTAL).
+/// One family's transcript slice of a merged MULTI-family proof
+/// (EXPERIMENTAL) — the single-family proof minus the shared Ligerito
+/// closure.
+pub struct RlcFamilyPartProof {
+    /// Per weight chunk: the family's merged 2^j-case forest.
+    pub mfs: Vec<MergedForestProof>,
+    /// `us[l][c]` — the combined case-weight chunk folds, range-checked.
+    pub us: Vec<Vec<u128>>,
+    /// Per chunk: the active-channel presum.
+    pub presums: Vec<MultiDegreeSumcheckProof<Gf>>,
+    /// The discharge cascade (as in the single-family proof).
+    pub discharge_eqf: Option<RlcDischargeEqf>,
+    pub omegas: Vec<Gf>,
+    pub discharge_eqf2: Option<RlcDischargeEqf>,
+    pub omegas2: Vec<Gf>,
+    /// This family's ring messages, in its canonical ring order.
+    pub rings: Vec<RingSwitchProof>,
+}
+
+/// One family of a merged multi-family statement: its columns and its
+/// shared-point claims.
+#[derive(Clone, Copy)]
+pub struct RlcFamilySpec<'a> {
+    /// The family's committed columns (j = len ∈ [1, 4]).
+    pub family_cols: &'a [usize],
+    /// Shared-point claims (form, claimed) over those columns.
+    pub claims: &'a [RlcSharedClaim],
+}
+
+/// A merged multi-family proof: k families' fronts share ONE transcript,
+/// one r″/η draw, and ONE closing Ligerito call (EXPERIMENTAL, tag 0x47).
+pub struct IntEvalRsLigRlcFamiliesProof {
+    /// Per family, in statement order.
+    pub parts: Vec<RlcFamilyPartProof>,
+    /// The ONE shared recursive opening.
+    pub lig: LigeritoProof,
+}
+
 pub struct IntEvalRsLigRlcFamilyProof {
     /// Per weight chunk: ONE merged forest over the `2^s` x-tensor trees
     /// with 2^j-case leaves.
@@ -5552,6 +5590,37 @@ fn prove_rlc_family_core(
     alpha: Gf,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigRlcFamilyProof {
+    let (part, ring_data) =
+        prove_rlc_family_front(transcript, hint, layout, family_cols, case_chunks, alpha);
+    let lig =
+        prove_rlc_families_closure(transcript, hint, layout, &[(&part, &ring_data)], pc);
+    IntEvalRsLigRlcFamilyProof {
+        mfs: part.mfs,
+        us: part.us,
+        presums: part.presums,
+        discharge_eqf: part.discharge_eqf,
+        omegas: part.omegas,
+        discharge_eqf2: part.discharge_eqf2,
+        omegas2: part.omegas2,
+        rings: part.rings,
+        lig,
+    }
+}
+
+/// One family's FRONT: extraction, per-chunk case forests + presums, the
+/// discharge cascade, and the ring messages — everything absorbed, no
+/// closure. Returns the part proof and the (eq table, columns) data each
+/// ring spec contributes to the shared basis.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::type_complexity)]
+fn prove_rlc_family_front(
+    transcript: &mut (impl Transcript + Send),
+    hint: &FlockCommitHint,
+    layout: &ShaF2Layout,
+    family_cols: &[usize],
+    case_chunks: &[Vec<Vec<u128>>],
+    alpha: Gf,
+) -> (RlcFamilyPartProof, Vec<(Vec<Gf>, Vec<usize>)>) {
     use crate::merged_forest::prove_merged_forest;
     use crate::pcs::{extract_virtual_xor_rows, rlc_case_pow_table, rlc_tau_tables, virtual_xor_params};
     use crate::piop::sumcheck::multi_degree::{MultiDegreeSumcheck, MultiDegreeSumcheckGroup};
@@ -5559,7 +5628,6 @@ fn prove_rlc_family_core(
     use crate::poly::utils::build_eq_x_r_vec;
     use crypto_primitives::Field;
 
-    let p = &layout.p;
     let j = family_cols.len();
     let p_x = virtual_xor_params(layout);
     let t_x = row_bit_vars(&p_x);
@@ -5944,41 +6012,81 @@ fn prove_rlc_family_core(
             rings.push(RingSwitchProof { s_v: sv });
         }
     }
+    let ring_data: Vec<(Vec<Gf>, Vec<usize>)> = eq_ns_all
+        .into_iter()
+        .zip(ring_specs.into_iter().map(|(_, cols)| cols))
+        .collect();
     drop(_g_r);
+    (
+        RlcFamilyPartProof {
+            mfs,
+            us,
+            presums,
+            discharge_eqf: dis.d1,
+            omegas: dis.omegas,
+            discharge_eqf2: dis.d2,
+            omegas2: dis.omegas2,
+            rings,
+        },
+        ring_data,
+    )
+}
 
+/// The shared closure of one-or-many family fronts: r″ + ring η's over
+/// EVERY ring in front order → one combined basis + target → ONE
+/// Ligerito call. Byte-identical to the pre-split single-family tail
+/// when called with one front.
+#[allow(clippy::arithmetic_side_effects)]
+fn prove_rlc_families_closure(
+    transcript: &mut (impl Transcript + Send),
+    hint: &FlockCommitHint,
+    layout: &ShaF2Layout,
+    parts: &[(&RlcFamilyPartProof, &[(Vec<Gf>, Vec<usize>)])],
+    pc: &LigProverConfig,
+) -> LigeritoProof {
+    let p = &layout.p;
+    let p0 = xor_support_prefix(layout);
+    let n_rings: usize = parts.iter().map(|(pt, _)| pt.rings.len()).sum();
     // (6) r″ + ring η's → combined basis + target → ONE Ligerito call.
     let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
     let eq_r2 = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
-    let etas: Vec<Gf> = transcript.get_field_challenges(rings.len(), &());
+    let etas: Vec<Gf> = transcript.get_field_challenges(n_rings, &());
 
     let _g_b = crate::utils::prof::scope("rlc:bcomb");
     let m_p = packed_vars(p);
     let mut b_comb = vec![F128::ZERO; 1usize << m_p];
-    let phi_ns_all: Vec<Vec<Gf>> = eq_ns_all
-        .iter()
-        .map(|eq_ns| cfg_iter!(eq_ns).map(|&e| phi_r2(e, &eq_r2)).collect())
-        .collect();
     let mut ring_idx = 0usize;
-    for ((_, spec_cols), phi_ns) in ring_specs.iter().zip(phi_ns_all.iter()) {
-        for &i_col in spec_cols {
-            let eta = etas[ring_idx];
-            for (yx, &ph) in phi_ns.iter().enumerate() {
-                let y = embed_xor_index(layout, yx << p0, i_col) >> LOG_PACKING;
-                b_comb[y] += gf_to_f128(eta * ph);
+    for (_, ring_data) in parts {
+        let phi_ns_all: Vec<Vec<Gf>> = ring_data
+            .iter()
+            .map(|(eq_ns, _)| cfg_iter!(eq_ns).map(|&e| phi_r2(e, &eq_r2)).collect())
+            .collect();
+        for ((_, spec_cols), phi_ns) in ring_data.iter().zip(phi_ns_all.iter()) {
+            for &i_col in spec_cols {
+                let eta = etas[ring_idx];
+                for (yx, &ph) in phi_ns.iter().enumerate() {
+                    let y = embed_xor_index(layout, yx << p0, i_col) >> LOG_PACKING;
+                    b_comb[y] += gf_to_f128(eta * ph);
+                }
+                ring_idx = ring_idx.wrapping_add(1);
             }
-            ring_idx = ring_idx.wrapping_add(1);
         }
     }
     let mut target = Gf::zero();
-    for (i, ring) in rings.iter().enumerate() {
-        let s_u = crate::ligerito::transpose_bits_128(&ring.s_v);
-        let beta = s_u.iter().zip(eq_r2.iter()).fold(Gf::zero(), |a, (su, e)| a + *su * *e);
-        target += etas[i] * beta;
+    let mut ri = 0usize;
+    for (part, _) in parts {
+        for ring in &part.rings {
+            let s_u = crate::ligerito::transpose_bits_128(&ring.s_v);
+            let beta =
+                s_u.iter().zip(eq_r2.iter()).fold(Gf::zero(), |a, (su, e)| a + *su * *e);
+            target += etas[ri] * beta;
+            ri = ri.wrapping_add(1);
+        }
     }
     drop(_g_b);
 
     let _g_l = crate::utils::prof::scope("rlc:lig");
-    let lig = ligerito::recursive_prover_with_basis(
+    ligerito::recursive_prover_with_basis(
         pc,
         hint.p_msg.clone(),
         b_comb,
@@ -5986,18 +6094,7 @@ fn prove_rlc_family_core(
         &hint.prover_data.codeword,
         &hint.prover_data.merkle_tree,
         &mut ZincChallenger(transcript),
-    );
-    IntEvalRsLigRlcFamilyProof {
-        mfs,
-        us,
-        presums,
-        discharge_eqf: dis.d1,
-        omegas: dis.omegas,
-        discharge_eqf2: dis.d2,
-        omegas2: dis.omegas2,
-        rings,
-        lig,
-    }
+    )
 }
 
 /// Verify an RLC claim family (EXPERIMENTAL). `col_weights[c] = eq(c,
@@ -6196,15 +6293,74 @@ fn verify_rlc_family_core(
     alpha: Gf,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
+    let part = RlcPartView {
+        mfs: &proof.mfs,
+        us: &proof.us,
+        presums: &proof.presums,
+        discharge_eqf: &proof.discharge_eqf,
+        omegas: &proof.omegas,
+        discharge_eqf2: &proof.discharge_eqf2,
+        omegas2: &proof.omegas2,
+        rings: &proof.rings,
+    };
+    let r_his =
+        verify_rlc_family_front(transcript, &part, layout, family_cols, case_chunks, alpha)?;
+    verify_rlc_families_closure(
+        transcript,
+        commitment,
+        &proof.lig,
+        layout,
+        &[(&proof.rings, &r_his)],
+        vc,
+    )?;
+    use crate::pcs::{Fq, mod_q_chunk_width, recombine_read_off, virtual_xor_params};
+    let p_x = virtual_xor_params(layout);
+    let c_w_x = mod_q_chunk_width(&p_x);
+    let lch_x = case_chunks.len();
+    // (7) Read-off: Σ_c e_c·Σ_l 2^{c_w·l}·u^{(l)}_c mod q = T = Σ_i γ_i·c_i.
+    let us_flat: Vec<u128> = proof.us.iter().flat_map(|u| u.iter().copied()).collect();
+    let y: Fq = recombine_read_off(&p_x, &us_flat, 0, col_weights, c_w_x, lch_x);
+    if y != t_target {
+        return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
+    }
+    Ok(())
+}
+
+/// Borrowed view of one family's part (the single proof and the merged
+/// parts share the front verifier).
+struct RlcPartView<'a> {
+    mfs: &'a [MergedForestProof],
+    us: &'a [Vec<u128>],
+    presums: &'a [MultiDegreeSumcheckProof<Gf>],
+    discharge_eqf: &'a Option<RlcDischargeEqf>,
+    omegas: &'a [Gf],
+    discharge_eqf2: &'a Option<RlcDischargeEqf>,
+    omegas2: &'a [Gf],
+    rings: &'a [RingSwitchProof],
+}
+
+/// One family's FRONT verifier: forests against recomputed roots,
+/// presums, the discharge cascade, and every ring residual — all absorbs
+/// mirrored, no closure. Returns the rings' embedded high-points for the
+/// shared basis.
+#[allow(clippy::arithmetic_side_effects)]
+fn verify_rlc_family_front(
+    transcript: &mut (impl Transcript + Send),
+    part: &RlcPartView<'_>,
+    layout: &ShaF2Layout,
+    family_cols: &[usize],
+    case_chunks: &[Vec<Vec<u128>>],
+    alpha: Gf,
+) -> Result<Vec<Vec<Gf>>, FlockRsError> {
+
     use crate::merged_forest::verify_merged_forest;
     use crate::pcs::{
-        FixedBasePow, Fq, is_generator, mod_q_chunk_width, recombine_read_off,
-        rlc_case_pow_table, rlc_tau_tables, virtual_xor_params,
+        FixedBasePow, is_generator, mod_q_chunk_width, rlc_case_pow_table,
+        rlc_tau_tables, virtual_xor_params,
     };
     use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheck;
     use crate::poly::utils::build_eq_x_r_vec;
 
-    let p = &layout.p;
     let j = family_cols.len();
     let p_x = virtual_xor_params(layout);
     let t_x = row_bit_vars(&p_x);
@@ -6227,19 +6383,19 @@ fn verify_rlc_family_core(
     let mut mus_ge2: Vec<Vec<Gf>> = Vec::with_capacity(lch_x); // [l][active-ge2 idx]
     let mut actives: Vec<Vec<usize>> = Vec::with_capacity(lch_x);
     for (l, chunk_w) in case_chunks.iter().enumerate() {
-        for (c, &u) in proof.us[l].iter().enumerate() {
+        for (c, &u) in part.us[l].iter().enumerate() {
             if u >= bound {
                 return Err(FlockRsError::ChunkRange { chunk: l, col: c });
             }
         }
         let roots: Vec<Gf> = {
             let _g = crate::utils::prof::scope("rlcv:roots");
-            proof.us[l].iter().map(|&u| comb.pow(u)).collect()
+            part.us[l].iter().map(|&u| comb.pow(u)).collect()
         };
-        let (z, e_d) = verify_merged_forest(transcript, &roots, &proof.mfs[l], t_x, p_x.s)
+        let (z, e_d) = verify_merged_forest(transcript, &roots, &part.mfs[l], t_x, p_x.s)
             .map_err(|_| FlockRsError::Common(IntEvalRsError::Forest))?;
         let subclaims =
-            MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(transcript, t_x, &proof.presums[l], &())
+            MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(transcript, t_x, &part.presums[l], &())
                 .map_err(|_| FlockRsError::Common(IntEvalRsError::PreSumcheck))?;
         // The O(2^j·2^{t'}) step: case powers → τ_S → the ACTIVE channels
         // (zero channels are elided on both sides) → R̂_S(r*).
@@ -6249,7 +6405,7 @@ fn verify_rlc_family_core(
         };
         let taus = rlc_tau_tables(&case_pow);
         let active = rlc_active_channels(&taus);
-        let sums = proof.presums[l].claimed_sums();
+        let sums = part.presums[l].claimed_sums();
         if active.is_empty() || sums.len() != active.len() {
             return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
         }
@@ -6335,11 +6491,11 @@ fn verify_rlc_family_core(
         .iter()
         .map(|a| a.iter().filter(|s| s.count_ones() == 1).count())
         .sum();
-    if proof.rings.len() != singleton_rings + l1_ring_cols + omega2_fis.len()
-        || proof.discharge_eqf.is_some() == l1_pairs.is_empty()
-        || proof.omegas.len() != side_list.len()
-        || proof.discharge_eqf2.is_some() == and_masks.is_empty()
-        || proof.omegas2.len() != omega2_fis.len()
+    if part.rings.len() != singleton_rings + l1_ring_cols + omega2_fis.len()
+        || part.discharge_eqf.is_some() == l1_pairs.is_empty()
+        || part.omegas.len() != side_list.len()
+        || part.discharge_eqf2.is_some() == and_masks.is_empty()
+        || part.omegas2.len() != omega2_fis.len()
     {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
@@ -6352,7 +6508,7 @@ fn verify_rlc_family_core(
     let mut rho2: Vec<Gf> = Vec::new();
     if !l1_pairs.is_empty() {
         let etas_dis: Vec<Gf> = transcript.get_field_challenges(l1_pairs.len(), &());
-        let d = proof.discharge_eqf.as_ref().expect("shape-checked above");
+        let d = part.discharge_eqf.as_ref().expect("shape-checked above");
         let specs: Vec<(&[Gf], Gf)> = l1_pairs
             .iter()
             .enumerate()
@@ -6377,14 +6533,14 @@ fn verify_rlc_family_core(
             .iter()
             .map(|&(_, ch)| {
                 let (a, b) = rlc_channel_sides(ch);
-                (proof.omegas[side_pos(a)], proof.omegas[side_pos(b)])
+                (part.omegas[side_pos(a)], part.omegas[side_pos(b)])
             })
             .collect();
         rho = rlc_verify_eqf_level(transcript, t_x, p_x.s, d, &specs, &claimed, &side_vals)?;
-        crate::ligerito::absorb_rlc_omegas(transcript, &proof.omegas);
+        crate::ligerito::absorb_rlc_omegas(transcript, &part.omegas);
         if !and_masks.is_empty() {
             let etas2: Vec<Gf> = transcript.get_field_challenges(and_masks.len(), &());
-            let d2 = proof.discharge_eqf2.as_ref().expect("shape-checked above");
+            let d2 = part.discharge_eqf2.as_ref().expect("shape-checked above");
             let specs2: Vec<(&[Gf], Gf)> = and_masks
                 .iter()
                 .enumerate()
@@ -6393,7 +6549,7 @@ fn verify_rlc_family_core(
             let claimed2: Vec<Gf> = and_masks
                 .iter()
                 .enumerate()
-                .map(|(i, &mask)| etas2[i] * proof.omegas[side_pos(RlcSide::And(mask))])
+                .map(|(i, &mask)| etas2[i] * part.omegas[side_pos(RlcSide::And(mask))])
                 .collect();
             let fi_pos = |fi: usize| -> usize {
                 omega2_fis.iter().position(|&x| x == fi).expect("member in omega2 set")
@@ -6403,13 +6559,13 @@ fn verify_rlc_family_core(
                 .map(|&mask| {
                     let mut bits = (0..j).filter(|fi| (mask >> fi) & 1 == 1);
                     let (a, b) = (bits.next().expect("2 bits"), bits.next().expect("2 bits"));
-                    (proof.omegas2[fi_pos(a)], proof.omegas2[fi_pos(b)])
+                    (part.omegas2[fi_pos(a)], part.omegas2[fi_pos(b)])
                 })
                 .collect();
             rho2 = rlc_verify_eqf_level(
                 transcript, t_x, p_x.s, d2, &specs2, &claimed2, &side_vals2,
             )?;
-            crate::ligerito::absorb_rlc_omegas(transcript, &proof.omegas2);
+            crate::ligerito::absorb_rlc_omegas(transcript, &part.omegas2);
         }
     }
 
@@ -6435,7 +6591,7 @@ fn verify_rlc_family_core(
                 .iter()
                 .enumerate()
                 .filter_map(|(pos, &sd)| match sd {
-                    RlcSide::Col(fi) => Some((family_cols[fi], proof.omegas[pos])),
+                    RlcSide::Col(fi) => Some((family_cols[fi], part.omegas[pos])),
                     RlcSide::And(_) => None,
                 })
                 .collect(),
@@ -6446,16 +6602,16 @@ fn verify_rlc_family_core(
             &rho2,
             omega2_fis
                 .iter()
-                .zip(proof.omegas2.iter())
+                .zip(part.omegas2.iter())
                 .map(|(&fi, &om)| (family_cols[fi], om))
                 .collect(),
         ));
     }
-    let mut r_his: Vec<Vec<Gf>> = Vec::with_capacity(proof.rings.len());
+    let mut r_his: Vec<Vec<Gf>> = Vec::with_capacity(part.rings.len());
     let mut ring_idx = 0usize;
     for (pt, cols) in &ring_specs {
         for &(i_col, expect) in cols {
-            let ring = &proof.rings[ring_idx];
+            let ring = &part.rings[ring_idx];
             if ring.s_v.len() != 128 {
                 return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
             }
@@ -6471,22 +6627,43 @@ fn verify_rlc_family_core(
             ring_idx = ring_idx.wrapping_add(1);
         }
     }
+    Ok(r_his)
+}
 
-    // (6) r″ + ring η's → target → succinct Ligerito residual closure.
+/// The shared closure verifier: r″ + η's over every ring in front order,
+/// the combined succinct basis, ONE recursive Ligerito check.
+#[allow(clippy::arithmetic_side_effects)]
+fn verify_rlc_families_closure(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    lig: &LigeritoProof,
+    layout: &ShaF2Layout,
+    parts: &[(&[RingSwitchProof], &[Vec<Gf>])],
+    vc: &LigVerifierConfig,
+) -> Result<(), FlockRsError> {
+    use crate::poly::utils::build_eq_x_r_vec;
+    let n_rings: usize = parts.iter().map(|(r, _)| r.len()).sum();
     let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
     let eq_r2 = build_eq_x_r_vec(&r2, &()).expect("r2");
-    let etas: Vec<Gf> = transcript.get_field_challenges(proof.rings.len(), &());
+    let etas: Vec<Gf> = transcript.get_field_challenges(n_rings, &());
     let mut target = Gf::zero();
-    for (i, ring) in proof.rings.iter().enumerate() {
-        let s_u = crate::ligerito::transpose_bits_128(&ring.s_v);
-        let beta = s_u.iter().zip(eq_r2.iter()).fold(Gf::zero(), |a, (su, e)| a + *su * *e);
-        target += etas[i] * beta;
+    let mut ri = 0usize;
+    for (rings, _) in parts {
+        for ring in rings.iter() {
+            let s_u = crate::ligerito::transpose_bits_128(&ring.s_v);
+            let beta =
+                s_u.iter().zip(eq_r2.iter()).fold(Gf::zero(), |a, (su, e)| a + *su * *e);
+            target += etas[ri] * beta;
+            ri = ri.wrapping_add(1);
+        }
     }
-    let m_p = packed_vars(p);
+    let m_p = packed_vars(&layout.p);
+    let all_r_his: Vec<&Vec<Gf>> =
+        parts.iter().flat_map(|(_, rh)| rh.iter()).collect();
     let eval_b = |ris: &[F128], yr_log_n: usize| -> Vec<F128> {
         let ris_gf: Vec<Gf> = ris.iter().map(|&f| f128_to_gf(f)).collect();
         let mut out = vec![Gf::zero(); 1usize << yr_log_n];
-        for (i, r_hi) in r_his.iter().enumerate() {
+        for (i, r_hi) in all_r_his.iter().enumerate() {
             let blk = residual_b_evals(&ris_gf, yr_log_n, r_hi, &eq_r2);
             for (o, x) in out.iter_mut().zip(blk.iter()) {
                 *o += etas[i] * *x;
@@ -6496,7 +6673,7 @@ fn verify_rlc_family_core(
     };
     let ok = ligerito::recursive_verifier_with_basis_succinct(
         vc,
-        &proof.lig,
+        lig,
         m_p,
         gf_to_f128(target),
         &commitment.root,
@@ -6506,14 +6683,274 @@ fn verify_rlc_family_core(
     if !ok {
         return Err(FlockRsError::LigeritoReject);
     }
-
-    // (7) Read-off: Σ_c e_c·Σ_l 2^{c_w·l}·u^{(l)}_c mod q = T = Σ_i γ_i·c_i.
-    let us_flat: Vec<u128> = proof.us.iter().flat_map(|u| u.iter().copied()).collect();
-    let y: Fq = recombine_read_off(&p_x, &us_flat, 0, col_weights, c_w_x, lch_x);
-    if y != t_target {
-        return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
-    }
     Ok(())
+}
+
+// ---------------------------------------------------------------------
+// EXPERIMENTAL — MERGED multi-family shared-point proofs (tag 0x47).
+//
+// k disjoint-or-overlapping families (j ≤ 4 each), ALL claims at one
+// shared (row, column) point, in ONE proof: one statement absorb, then
+// per family (γ's → rank-1 case weights → the family FRONT: forests,
+// presums, cascade, rings — sequential Fiat–Shamir composition), then
+// ONE r″/η draw over every ring and ONE closing Ligerito call. This
+// removes the per-family recursive-opening tails that dominated the
+// fam-route byte cost (k families cost ONE blob instead of k) and their
+// fixed prove cost. Soundness: the single-family chain per front,
+// sequentially composed; the shared closure is the same η-batched basis
+// argument over the concatenated ring list.
+// ---------------------------------------------------------------------
+
+/// Absorb the merged multi-family statement (domain tag 0x47):
+/// root, layout, every family's columns + canonical (form, value)
+/// pairs, and the ONE shared row-weight vector.
+#[allow(clippy::arithmetic_side_effects)]
+fn absorb_rlc_families_statement(
+    transcript: &mut impl Transcript,
+    root: &flock_core::merkle::Hash,
+    layout: &ShaF2Layout,
+    fams: &[(&[usize], Vec<usize>, Vec<u128>)],
+    row_weights_q: &[u128],
+) {
+    let mut bytes = Vec::new();
+    bytes.push(0x47u8);
+    bytes.extend_from_slice(root);
+    for v in [
+        layout.p.t,
+        layout.p.s,
+        layout.p.word_bits,
+        layout.num_cols,
+        layout.log_cols,
+        layout.bit_vars,
+        layout.num_vars,
+        layout.tw,
+        layout.x_fold_extra,
+        fams.len(),
+    ] {
+        bytes.extend_from_slice(&(v as u64).to_le_bytes());
+    }
+    bytes.extend_from_slice(&crate::pcs::FQ_MOD.to_le_bytes());
+    for (cols, forms, cs) in fams {
+        bytes.extend_from_slice(&(cols.len() as u64).to_le_bytes());
+        for &c in cols.iter() {
+            bytes.extend_from_slice(&(c as u64).to_le_bytes());
+        }
+        bytes.extend_from_slice(&(forms.len() as u64).to_le_bytes());
+        for (&f, &c) in forms.iter().zip(cs.iter()) {
+            bytes.extend_from_slice(&(f as u64).to_le_bytes());
+            bytes.extend_from_slice(&c.to_le_bytes());
+        }
+    }
+    for &x in row_weights_q {
+        bytes.extend_from_slice(&x.to_le_bytes());
+    }
+    transcript.absorb_slice(&bytes);
+}
+
+/// Prove k merged shared-point families in ONE proof (EXPERIMENTAL; see
+/// the section comment). Per family: γ's are drawn immediately before
+/// its front (sequential composition); ONE closing Ligerito call.
+#[allow(clippy::arithmetic_side_effects)]
+pub fn prove_mle_eval_mod_q_ligerito_rlc_families_shared_point(
+    transcript: &mut (impl Transcript + Send),
+    hint: &FlockCommitHint,
+    layout: &ShaF2Layout,
+    families: &[RlcFamilySpec<'_>],
+    row_weights_q: &[u128],
+    alpha: Gf,
+    pc: &LigProverConfig,
+) -> IntEvalRsLigRlcFamiliesProof {
+    use crate::pcs::{
+        FQ_BITS, FQ_MOD, fq_challenge, mod_q_chunk_width, mod_q_num_chunks,
+        rlc_case_weights_shared_point, rlc_chunk_case_weights, rlc_gamma_cases,
+        virtual_xor_params,
+    };
+    let p = &layout.p;
+    assert_eq!(p.word_bits, 1, "RLC-family claims assume the W=1 SHA layout");
+    assert!(!families.is_empty(), "need at least one family");
+    let p_x = virtual_xor_params(layout);
+    let t_x = row_bit_vars(&p_x);
+    assert!(t_x >= 6, "RLC-family presum needs t' ≥ 6");
+    assert_eq!(row_weights_q.len(), p_x.rows(), "shared row-weight length");
+    let mut canon: Vec<(&[usize], Vec<usize>, Vec<u128>)> = Vec::with_capacity(families.len());
+    for fam in families {
+        let j = fam.family_cols.len();
+        assert!((1..=4).contains(&j), "family size j must be in [1, 4]");
+        for &i in fam.family_cols {
+            assert!(i < layout.num_cols, "family column {i} out of range");
+        }
+        assert!(!fam.claims.is_empty(), "family needs at least one claim");
+        for cl in fam.claims {
+            assert!(cl.form != 0 && cl.form < (1usize << j), "claim form out of range");
+            assert!(cl.claimed < FQ_MOD, "claimed value must be canonical");
+        }
+        let (forms, cs) = rlc_shared_point_canonical(fam.claims)
+            .unwrap_or_else(|i| panic!("claim {i} repeats a form with a different value"));
+        for fi in 0..j {
+            assert!(
+                forms.iter().any(|f| (f >> fi) & 1 == 1),
+                "family column index {fi} appears in no claim form"
+            );
+        }
+        canon.push((fam.family_cols, forms, cs));
+    }
+    absorb_rlc_families_statement(transcript, hint.root(), layout, &canon, row_weights_q);
+
+    let c_w_x = mod_q_chunk_width(&p_x);
+    let lch_x = mod_q_num_chunks(&p_x, FQ_BITS);
+    let mut parts: Vec<RlcFamilyPartProof> = Vec::with_capacity(families.len());
+    let mut ring_datas: Vec<Vec<(Vec<Gf>, Vec<usize>)>> = Vec::with_capacity(families.len());
+    for (cols, forms, _cs) in &canon {
+        let gammas: Vec<u128> = (0..forms.len()).map(|_| fq_challenge(transcript)).collect();
+        let case_chunks = {
+            let _g = crate::utils::prof::scope("rlc:casew");
+            let case_w = rlc_case_weights_shared_point(
+                row_weights_q,
+                &rlc_gamma_cases(&gammas, forms, cols.len()),
+            );
+            rlc_chunk_case_weights(&case_w, c_w_x, lch_x)
+        };
+        let (part, rd) =
+            prove_rlc_family_front(transcript, hint, layout, cols, &case_chunks, alpha);
+        parts.push(part);
+        ring_datas.push(rd);
+    }
+    let part_refs: Vec<(&RlcFamilyPartProof, &[(Vec<Gf>, Vec<usize>)])> =
+        parts.iter().zip(ring_datas.iter()).map(|(pt, rd)| (pt, &rd[..])).collect();
+    let lig = prove_rlc_families_closure(transcript, hint, layout, &part_refs, pc);
+    IntEvalRsLigRlcFamiliesProof { parts, lig }
+}
+
+/// Verify a merged multi-family proof (EXPERIMENTAL): per family the
+/// front chain + the mod-q read-off against `T = Σ γᵢcᵢ`, then the ONE
+/// shared closure.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub fn verify_mle_eval_mod_q_ligerito_rlc_families_shared_point(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: &IntEvalRsLigRlcFamiliesProof,
+    layout: &ShaF2Layout,
+    families: &[RlcFamilySpec<'_>],
+    row_weights_q: &[u128],
+    col_weights: &[crate::pcs::Fq],
+    alpha: Gf,
+    vc: &LigVerifierConfig,
+) -> Result<(), FlockRsError> {
+    use crate::pcs::{
+        FQ_BITS, FQ_MOD, Fq, fq_challenge, mod_q_chunk_width, mod_q_num_chunks,
+        recombine_read_off, rlc_case_weights_shared_point, rlc_chunk_case_weights,
+        rlc_gamma_cases, virtual_xor_params,
+    };
+    let p = &layout.p;
+    let p_x = virtual_xor_params(layout);
+    let t_x = row_bit_vars(&p_x);
+    if p.word_bits != 1
+        || families.is_empty()
+        || proof.parts.len() != families.len()
+        || t_x < 6
+        || col_weights.len() != p_x.cols()
+        || row_weights_q.len() != p_x.rows()
+    {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+    let c_w_x = mod_q_chunk_width(&p_x);
+    let lch_x = mod_q_num_chunks(&p_x, FQ_BITS);
+    let mut canon: Vec<(&[usize], Vec<usize>, Vec<u128>)> = Vec::with_capacity(families.len());
+    for (fam, part) in families.iter().zip(proof.parts.iter()) {
+        let j = fam.family_cols.len();
+        if !(1..=4).contains(&j)
+            || fam.family_cols.iter().any(|&i| i >= layout.num_cols)
+            || fam.claims.is_empty()
+            || fam
+                .claims
+                .iter()
+                .any(|cl| cl.form == 0 || cl.form >= (1usize << j) || cl.claimed >= FQ_MOD)
+            || part.mfs.len() != lch_x
+            || part.us.len() != lch_x
+            || part.presums.len() != lch_x
+            || part.us.iter().any(|u| u.len() != p_x.cols())
+        {
+            return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+        }
+        let (forms, cs) = rlc_shared_point_canonical(fam.claims)
+            .map_err(|_| FlockRsError::RingSwitch(RsOpenError::Shape))?;
+        if (0..j).any(|fi| forms.iter().all(|f| (f >> fi) & 1 == 0)) {
+            return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+        }
+        canon.push((fam.family_cols, forms, cs));
+    }
+    absorb_rlc_families_statement(transcript, &commitment.root, layout, &canon, row_weights_q);
+
+    let mut r_his_all: Vec<Vec<Vec<Gf>>> = Vec::with_capacity(families.len());
+    for ((cols, forms, cs), part) in canon.iter().zip(proof.parts.iter()) {
+        let gammas: Vec<u128> = (0..forms.len()).map(|_| fq_challenge(transcript)).collect();
+        let case_chunks = {
+            let case_w = rlc_case_weights_shared_point(
+                row_weights_q,
+                &rlc_gamma_cases(&gammas, forms, cols.len()),
+            );
+            rlc_chunk_case_weights(&case_w, c_w_x, lch_x)
+        };
+        let view = RlcPartView {
+            mfs: &part.mfs,
+            us: &part.us,
+            presums: &part.presums,
+            discharge_eqf: &part.discharge_eqf,
+            omegas: &part.omegas,
+            discharge_eqf2: &part.discharge_eqf2,
+            omegas2: &part.omegas2,
+            rings: &part.rings,
+        };
+        let r_his =
+            verify_rlc_family_front(transcript, &view, layout, cols, &case_chunks, alpha)?;
+        // Per-family mod-q read-off.
+        let t_target = cs
+            .iter()
+            .zip(gammas.iter())
+            .fold(Fq::from(0u128), |a, (&c, &g)| a + Fq::from(g) * Fq::from(c));
+        let us_flat: Vec<u128> = part.us.iter().flat_map(|u| u.iter().copied()).collect();
+        let y: Fq = recombine_read_off(&p_x, &us_flat, 0, col_weights, c_w_x, lch_x);
+        if y != t_target {
+            return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
+        }
+        r_his_all.push(r_his);
+    }
+    let closure_parts: Vec<(&[RingSwitchProof], &[Vec<Gf>])> = proof
+        .parts
+        .iter()
+        .zip(r_his_all.iter())
+        .map(|(pt, rh)| (&pt.rings[..], &rh[..]))
+        .collect();
+    verify_rlc_families_closure(transcript, commitment, &proof.lig, layout, &closure_parts, vc)
+}
+
+/// Total proof bytes of a merged multi-family proof.
+#[allow(clippy::arithmetic_side_effects)]
+pub fn mle_eval_mod_q_lig_rlc_families_proof_size_bytes(
+    proof: &IntEvalRsLigRlcFamiliesProof,
+) -> usize {
+    use crate::transcript::traits::Transcribable;
+    let mut total = proof.lig.size_bytes();
+    for part in &proof.parts {
+        let mut b = ZincSideSizeBreakdown::default();
+        for l in 0..part.mfs.len() {
+            b.accumulate(&zinc_side_size_breakdown_merged(
+                &part.mfs[l],
+                &part.us[l],
+                &part.presums[l],
+            ));
+        }
+        b.s_v = part.rings.len() * 128 * 16;
+        let eqf_bytes = |d: &RlcDischargeEqf| {
+            d.sc_a.get_num_bytes() + d.betas.len() * 16 + d.sc_b.get_num_bytes()
+        };
+        total += b.total()
+            + part.discharge_eqf.as_ref().map_or(0, eqf_bytes)
+            + part.discharge_eqf2.as_ref().map_or(0, eqf_bytes)
+            + (part.omegas.len() + part.omegas2.len()) * 16;
+    }
+    total
 }
 
 /// Total proof bytes of an RLC-family proof (zinc side + flock Ligerito).
@@ -7739,6 +8176,92 @@ mod tests {
                     "tampered value accepted at δ={delta} j={j}"
                 );
             }
+        }
+    }
+
+    /// The MERGED multi-family proof (0x47): three families — two j=2
+    /// pairs and a j=1 singleton — share one transcript and ONE closing
+    /// Ligerito call; roundtrips at δ = 0 and 2; tampered values and
+    /// tampered part rings reject.
+    #[test]
+    fn rlc_families_merged_roundtrips() {
+        for delta in [0usize, 2] {
+            let mut layout = rlc_test_layout();
+            layout.x_fold_extra = delta;
+            let p_x = virtual_xor_params(&layout);
+            let alpha = smallest_generator();
+            let (hint, pc, vc) = rlc_test_commit(&layout);
+            let colw = rlc_test_col_weights(&p_x);
+            let rw = rlc_test_row_weights(&p_x, 509);
+            let f1_cols = [0usize, 1];
+            let f2_cols = [2usize, 3];
+            let f3_cols = [0usize];
+            let mk = |cols: &[usize], forms: &[usize]| -> Vec<RlcSharedClaim> {
+                forms
+                    .iter()
+                    .map(|&form| RlcSharedClaim {
+                        form,
+                        claimed: rlc_expected_claim(
+                            &layout,
+                            hint.rows(),
+                            cols,
+                            form,
+                            &rw,
+                            &colw,
+                        ),
+                    })
+                    .collect()
+            };
+            let c1 = mk(&f1_cols, &[1, 2, 3]);
+            let c2 = mk(&f2_cols, &[1, 2, 3]);
+            let c3 = mk(&f3_cols, &[1]);
+            let fams = [
+                RlcFamilySpec { family_cols: &f1_cols, claims: &c1 },
+                RlcFamilySpec { family_cols: &f2_cols, claims: &c2 },
+                RlcFamilySpec { family_cols: &f3_cols, claims: &c3 },
+            ];
+            let mut pt = Blake3Transcript::new();
+            let proof = prove_mle_eval_mod_q_ligerito_rlc_families_shared_point(
+                &mut pt, &hint, &layout, &fams, &rw, alpha, &pc,
+            );
+            assert_eq!(proof.parts.len(), 3, "one part per family");
+            let mut vt = Blake3Transcript::new();
+            verify_mle_eval_mod_q_ligerito_rlc_families_shared_point(
+                &mut vt, &hint.commitment, &proof, &layout, &fams, &rw, &colw, alpha, &vc,
+            )
+            .unwrap_or_else(|e| panic!("merged families δ={delta} failed: {e:?}"));
+            // Tampered claimed value in family 1.
+            let mut c1_bad = c1.clone();
+            c1_bad[2].claimed = (c1_bad[2].claimed + 1) % FQ_MOD;
+            let fams_bad = [
+                RlcFamilySpec { family_cols: &f1_cols, claims: &c1_bad },
+                RlcFamilySpec { family_cols: &f2_cols, claims: &c2 },
+                RlcFamilySpec { family_cols: &f3_cols, claims: &c3 },
+            ];
+            let mut vt = Blake3Transcript::new();
+            assert!(
+                verify_mle_eval_mod_q_ligerito_rlc_families_shared_point(
+                    &mut vt, &hint.commitment, &proof, &layout, &fams_bad, &rw, &colw,
+                    alpha, &vc,
+                )
+                .is_err(),
+                "tampered value accepted at δ={delta}"
+            );
+            // Tampered ring inside part 1.
+            let mut pt = Blake3Transcript::new();
+            let mut proof2 = prove_mle_eval_mod_q_ligerito_rlc_families_shared_point(
+                &mut pt, &hint, &layout, &fams, &rw, alpha, &pc,
+            );
+            proof2.parts[1].rings[0].s_v[5] += Gf::one();
+            let mut vt = Blake3Transcript::new();
+            assert!(
+                verify_mle_eval_mod_q_ligerito_rlc_families_shared_point(
+                    &mut vt, &hint.commitment, &proof2, &layout, &fams, &rw, &colw, alpha,
+                    &vc,
+                )
+                .is_err(),
+                "tampered part ring accepted at δ={delta}"
+            );
         }
     }
 

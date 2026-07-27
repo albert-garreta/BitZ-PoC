@@ -1164,7 +1164,34 @@ channels regresses it; keep fam4 at δ0 + lazy). Bytes: fam6
 than the fold-vector share because **the fam route's byte floor is
 its FOUR Ligerito blobs vs opt's two**: sub-proof merging (one
 recursive call across fam1+fam2+idents+checks) is now the bigger
-byte lever than δ, worth ~2 blobs ≈ 300–400 KB at n=29. **Openings-only b3 arms (2026-07-28): the family crossover survives
+byte lever than δ, worth ~2 blobs ≈ 300–400 KB at n=29. **The MERGED multi-family proof (2026-07-28) — tag 0x47, the
+fam-route tails eliminated.** The family core was refactored at its
+natural seam (front = extraction/forests/presums/cascade/rings, all
+absorbs; closure = r″/η/basis/ONE Ligerito) — byte-stable for the
+landed single-family paths — and a merged API added:
+`RlcFamilySpec` + `prove/verify_mle_eval_mod_q_ligerito_rlc_families_
+shared_point` run k families' fronts in ONE transcript (per family:
+γ's → rank-1 case weights → front, sequential FS) with ONE shared
+closing call. Tests: merged roundtrip (two j2 + one j1 family, δ = 0
+and 2, tampered values and cross-part rings rejected); 110/110.
+Harness: `fam6m` in B3OPEN = {d,a′} j2 + {b,c′} j2 + {a} j1 + {c} j1
+merged, δ4. Measured (8 openings, no checks; FAST):
+
+| n | vx8 (1 tail) | fam6 (3 tails) | **fam6m (1 tail)** |
+|----|--------------|----------------|--------------------|
+| 24 | **68.3 / 178 KB** | 117.2 / 458 | 78.7 (1.15×) / 209 |
+| 26 | 203.7 / 229 | 218.0 / 560 | **210.2 (1.03×) / 256** |
+| 28 | 760.2 / 290 | 666.5 / 664 | **647.6 (0.85×) / 307** |
+| 29 | 1962.0 / 313 | 1390.2 / 731 | **1314.4 (0.67×) / 334** |
+
+The merge removes ~2 blobs (731 → 334 KB at n=29 — byte-parity with
+vx8) and −5 % time; fam6m is the best arm from n ≈ 26 up on time at
+near-vx8 bytes. Against the base ONE-opening floor at n=29
+(1228.7 ms / 260 KiB): **fam6m delivers all 8 openings at 1.07×
+prove / 1.28× bytes**. Updated openings routing: 0x44 below n ≈ 26;
+the MERGED pair-family proof above.
+
+**Openings-only b3 arms (2026-07-28): the family crossover survives
 without the checks.** `F2Z_AB_B3OPEN=1` — commit SIX (d', b'
 virtual), open all eight with NO relation bodies (v(d'), v(b') as
 the pair-XOR forms at the relabeled point): `vx8` = ONE 0x44
