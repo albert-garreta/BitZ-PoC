@@ -822,6 +822,34 @@ both-geometry roundtrips for both paths incl. an untapped-word-axis
 coexistence layout, pure-ROT, pure-XOR elision, two tamper suites);
 95/95 green; existing proof bytes untouched.
 
+**Structured taps: the single-tap shared-point COLLAPSE
+(2026-07-27, follow-up).** k claims, each on a SINGLE tap (no XOR
+mixing), all at ONE evaluation point, need none of the family or
+translated-eq machinery: a single tap is a *weight transform* —
+`Σ_p w[p]·tap(a)[p] = Σ_{p'} w[σ(p')]·a[p']` — and with the group
+field inside the clear axis the transform keeps the row⊗column tensor
+split, up to the word-offset carry, which contributes exactly one
+extra branch with row weights advanced one `row_hi` step. So k claims
+γ-collapse to at most **#columns × 2 plain single-column claims**
+through the deployed claims-only path
+(`prove/verify_mle_eval_mod_q_ligerito_tap_collapse`, statement tag
+0x44; the verifier derives each branch value from the proof's own
+forest-bound folds and checks their sum against `T = Σ γᵢcᵢ` —
+soundness 1/q + the inner errors, no new proof fields). Measured
+(`F2Z_AB_COLLAPSE=1`, the instance's 13 deduped streams as 13
+individual claims at one point; medians of 5): clp = **53.5/177.3/603
+ms** at n=22/24/26 (4 inner claims) vs the batched tap path's
+215/609/3674 (13 claims pad to 16 tree-sets — the pad wall bites again
+at n=26) and 13 independent proofs' 347/737/2125; proofs
+**252/413/708 KB** vs 597/1054/1939 (−58/−61/−63 %); verify
+11.5/19.5/37.8 ms vs 25.6/33.6/55.5. This is the right tool whenever
+the claim set avoids XOR-mixing at one point: rotations-only claims
+are pure column-weight transforms (branch 1 empty — one claim per
+column), and offsets cost one extra weight branch, not a forest.
+Guidance stack for tap workloads, best first: single-tap at one point
+→ the collapse; XOR-mixed claims → the extraction (tap-claims) path;
+the stream family only for dense stream reuse.
+
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
 The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —

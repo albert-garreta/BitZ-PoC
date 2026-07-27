@@ -64,6 +64,13 @@ pub use ligerito_flock::{
     mle_eval_mod_q_lig_tap_family_size_breakdown, prove_mle_eval_mod_q_ligerito_tap_family,
     verify_mle_eval_mod_q_ligerito_tap_family,
 };
+// EXPERIMENTAL — the single-tap shared-point collapse: k single-tap
+// claims at one point become ≤ #columns × 2 plain single-column claims
+// (weight transform; no streams, channels, or translated-eq rings).
+pub use ligerito_flock::{
+    TapPointClaim, prove_mle_eval_mod_q_ligerito_tap_collapse,
+    verify_mle_eval_mod_q_ligerito_tap_collapse,
+};
 pub use pcs::IntEvalParams;
 pub use poly::univariate::binary_b127::BinaryFieldB127;
 pub use poly::univariate::binary_gf128::BinaryFieldGF128;

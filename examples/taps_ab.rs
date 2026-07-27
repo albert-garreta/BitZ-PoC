@@ -19,6 +19,11 @@
 //! `OBLONG_PROFILE=1` one extra profiled prove of `tapf` and `vx6` dumps
 //! the phase tree per shape.
 //!
+//! `F2Z_AB_COLLAPSE=1` runs the SINGLE-TAP shared-point demo instead:
+//! the instance's 13 deduped streams as 13 individual claims at ONE
+//! point — `clp` (the weight-transform collapse, ≤ 4 inner claims) vs
+//! `vx13` (13 batched tap claims, pads to 16 tree-sets) vs `ind13`.
+//!
 //! ```text
 //! F2Z_AB_N="22 24 26" F2Z_AB_REPS=5 RUSTFLAGS="-C target-cpu=native" \
 //!   cargo run --release --example taps_ab --features unchecked
@@ -26,10 +31,12 @@
 
 use f2z::ligerito::packed_vars;
 use f2z::ligerito_flock::{
-    RlcFamilyClaim, TapClaim, TapFamilyCluster, TapVerifyClaim, commit_rs_ligerito_rows,
-    mle_eval_mod_q_lig_tap_family_size_breakdown, mle_eval_mod_q_lig_tap_size_breakdown,
-    prove_mle_eval_mod_q_ligerito_tap_claims, prove_mle_eval_mod_q_ligerito_tap_family,
-    sha_lig_configs, verify_mle_eval_mod_q_ligerito_tap_claims,
+    RlcFamilyClaim, TapClaim, TapFamilyCluster, TapPointClaim, TapVerifyClaim,
+    commit_rs_ligerito_rows, mle_eval_mod_q_lig_tap_family_size_breakdown,
+    mle_eval_mod_q_lig_tap_size_breakdown, mle_eval_mod_q_lig_xor_proof_size_bytes,
+    prove_mle_eval_mod_q_ligerito_tap_claims, prove_mle_eval_mod_q_ligerito_tap_collapse,
+    prove_mle_eval_mod_q_ligerito_tap_family, sha_lig_configs,
+    verify_mle_eval_mod_q_ligerito_tap_claims, verify_mle_eval_mod_q_ligerito_tap_collapse,
     verify_mle_eval_mod_q_ligerito_tap_family,
 };
 use f2z::pcs::{FQ_BITS, FQ_MOD, Fq, IntEvalParams, ShaF2Layout, smallest_generator, virtual_xor_params};
@@ -137,6 +144,144 @@ fn main() {
             })
             .collect();
         let hint = commit_rs_ligerito_rows(p, rows, &pc);
+
+        if std::env::var("F2Z_AB_COLLAPSE").is_ok_and(|v| v == "1") {
+            // 13 single-tap claims (the instance's deduped streams) at ONE
+            // shared point: collapse vs batched tap claims vs independent.
+            let (streams2, _, _) = instance_clusters();
+            let all_taps: Vec<TapOp> =
+                streams2.into_iter().flatten().collect::<Vec<_>>();
+            let rw: Vec<u128> = (0..p_x.rows())
+                .map(|b| {
+                    (b as u128)
+                        .wrapping_mul(0xDEAD_BEEF_CAFE_F00D_1234_5678_9ABC_DEF1)
+                        .wrapping_add(29 + (u128::from(seed) << 1))
+                        % FQ_MOD
+                })
+                .collect();
+            let colw: Vec<Fq> = (0..p_x.cols())
+                .map(|c| Fq::from((c as u128).wrapping_mul(0xABCD_EF01_2345).wrapping_add(3)))
+                .collect();
+            let vals: Vec<u128> = all_taps
+                .iter()
+                .map(|&tap| {
+                    let a_rows = extract_virtual_tap_rows(&layout, hint.rows(), &[tap]);
+                    let mut y = Fq::from(0u128);
+                    for (c, row) in a_rows.iter().enumerate() {
+                        let mut acc = Fq::from(0u128);
+                        for (wi, &word) in row.iter().enumerate() {
+                            let mut bits = word;
+                            while bits != 0 {
+                                let t = bits.trailing_zeros() as usize;
+                                acc = acc + Fq::from(rw[(wi << 6) | t]);
+                                bits &= bits.wrapping_sub(1);
+                            }
+                        }
+                        y = y + colw[c] * acc;
+                    }
+                    y.0
+                })
+                .collect();
+            let pclaims: Vec<TapPointClaim> = all_taps
+                .iter()
+                .zip(vals.iter())
+                .map(|(&tap, &claimed)| TapPointClaim { tap, claimed })
+                .collect();
+            let single_lists: Vec<[TapOp; 1]> = all_taps.iter().map(|&t| [t]).collect();
+            let tclaims: Vec<TapClaim<'_>> = single_lists
+                .iter()
+                .map(|taps| TapClaim { taps, row_weights_q: &rw })
+                .collect();
+            let tvclaims: Vec<TapVerifyClaim<'_, Fq>> = single_lists
+                .iter()
+                .zip(vals.iter())
+                .map(|(taps, &v)| TapVerifyClaim {
+                    taps,
+                    row_weights_q: &rw,
+                    col_weights: &colw,
+                    claimed: Fq::from(v),
+                })
+                .collect();
+            let prove_clp = || {
+                let mut t = Blake3Transcript::new();
+                prove_mle_eval_mod_q_ligerito_tap_collapse(
+                    &mut t, &hint, &layout, &rw, &colw, &pclaims, alpha, &pc,
+                )
+            };
+            let prove_vx13 = || {
+                let mut t = Blake3Transcript::new();
+                prove_mle_eval_mod_q_ligerito_tap_claims(
+                    &mut t, &hint, &layout, FQ_BITS, &tclaims, alpha, &pc,
+                )
+            };
+            let prove_ind13 = || {
+                (0..tclaims.len())
+                    .map(|i| {
+                        let mut t = Blake3Transcript::new();
+                        prove_mle_eval_mod_q_ligerito_tap_claims(
+                            &mut t,
+                            &hint,
+                            &layout,
+                            FQ_BITS,
+                            &tclaims[i..i + 1],
+                            alpha,
+                            &pc,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let (mut t_clp, mut t_vx, mut t_ind) = (Vec::new(), Vec::new(), Vec::new());
+            for _ in 0..reps {
+                let t0 = Instant::now();
+                drop(prove_clp());
+                t_clp.push(t0.elapsed().as_secs_f64() * 1e3);
+                let t0 = Instant::now();
+                drop(prove_vx13());
+                t_vx.push(t0.elapsed().as_secs_f64() * 1e3);
+                let t0 = Instant::now();
+                drop(prove_ind13());
+                t_ind.push(t0.elapsed().as_secs_f64() * 1e3);
+            }
+            let proof_clp = prove_clp();
+            let t0 = Instant::now();
+            {
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_tap_collapse(
+                    &mut vt, &hint.commitment, &proof_clp, &layout, &rw, &colw, &pclaims,
+                    alpha, &vc,
+                )
+                .expect("collapse verifies");
+            }
+            let v_clp = t0.elapsed().as_secs_f64() * 1e3;
+            let proof_vx = prove_vx13();
+            let t0 = Instant::now();
+            {
+                let mut vt = Blake3Transcript::new();
+                verify_mle_eval_mod_q_ligerito_tap_claims(
+                    &mut vt, &hint.commitment, &proof_vx, &layout, alpha, FQ_BITS, &tvclaims,
+                    &vc,
+                )
+                .expect("vx13 verifies");
+            }
+            let v_vx = t0.elapsed().as_secs_f64() * 1e3;
+            let sz_clp = mle_eval_mod_q_lig_xor_proof_size_bytes(&proof_clp);
+            let sz_vx = {
+                let (b, lig) = mle_eval_mod_q_lig_tap_size_breakdown(&proof_vx);
+                b.total() + lig
+            };
+            let (m_clp, m_vx, m_ind) = (median(t_clp), median(t_vx), median(t_ind));
+            println!(
+                "n={n} COLLAPSE (13 single-tap claims, one point): clp {m_clp:.1} ms ({} inner) \
+                 | vx13 {m_vx:.1} ms ({:.2}x of clp) | ind13 {m_ind:.1} ms ({:.2}x) | proofs \
+                 clp {:.0} KB, vx13 {:.0} KB | verify clp {v_clp:.1} ms, vx13 {v_vx:.1} ms",
+                proof_clp.xors.len(),
+                m_vx / m_clp,
+                m_ind / m_clp,
+                sz_clp as f64 / 1e3,
+                sz_vx as f64 / 1e3,
+            );
+            continue;
+        }
 
         let claim_taps = instance_claims();
         let rws: Vec<Vec<u128>> = (0..claim_taps.len())
