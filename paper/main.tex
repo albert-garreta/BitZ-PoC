@@ -337,6 +337,7 @@ In this section we expand relation $\Relation^{\mathsf{lin-dual}}_{\cC, \comfiel
 $$
 \Relation^{\mathsf{lin-virtual}}_{\cC, \comfield, \evalfield, \pack} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv, M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim' \times \codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\pack(\psicomfield(\bff))) = f\\ \wedge \  & \langle \psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff)), \vv\rangle  = \mu  \end{aligned} \right\}
 $$
+\albert{We could replace $M\cdot \pi_2(\bff)$ by the output of a GKR circuit on $\pi_2(\bff)$}
 %
 The relation has the tag ``lin(ear)-virtual'' to reference the intuition that  $\Relation^{\mathsf{lin-virtual}}_{\cC, \comfield, \evalfield, \pack} $ expresses a linear constraint on the vector $\bfh=\psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff))\in \evalfield^{\codedim'}$, which is not committed directly: only $\pi_2(\bff)$  is. Note that $\bfh$ is a linear expression over $\comfield$ of the elements in $\pi_2(\bff)$, lifted to the integers, and then projected to $\evalfield$.
 
@@ -495,12 +496,18 @@ A natural question is whether, in such scenarios, the proof of \eqref{e:grand_pr
 
 \albert{I'm aiming to make the paper self-contained, so I will refer to Zinc/Zinc+ but will provide all required definitions and proofs in this paper}
 
-\section{Case-study: SHA-256 hashing}
-\albert{Maybe Keccak better?}
+\section{Case-study}
 
-\subsection{Arithmetization over $\ZZ[X]$}
+\albert{World passport? Lean circuits? ML models? Hashes?}
 
-\subsubsection{SHA-256 compression overview}
+\subsection{Integer and modular multiplication}
+
+\albert{We could do something synthetic, like a chain of mults and additions, or a ML or Lean motivated computation}
+
+\subsection{SHA-256 hashing}
+
+
+\paragraph{SHA-256 compression overview}
 We begin with a brief overview of SHA-256 to establish notation, then formalize the relation we seek to arithmetize.
 
 
@@ -563,15 +570,11 @@ e_{t+1} &\coloneqq \psi_2^{-1}(\psi_2(d_t)+\psi_2(T_{1,t}) \pmod{2^\wordsize}) &
 \end{equation*}
 The full SHA-256 compression function adds the initial state to the terminal state word-wise modulo $2^\wordsize$ (the so-called \emph{feed-forward step}); we omit this step for brevity \albert{Let's not do that}. For our purposes, the output of the compression function is the final state $(a_{65},\ldots,h_{65})$.  
 
-\subsubsection{Our arithmetization}
-
-\subsection{End-to-end IOP}
+\paragraph{Our arithmetization}
 
 \subsection{Experiments}
 
 \albert{GHASH or b127?}
-
-\albert{Comparison with Flock on SHA256: we commit to 8x less bits. This leads to more than 2x memory reduction. 80\% of prover costs are in the grand product GKR. Hence setting rate=1/4 or smaller has little impact on performance. This leads to smaller proofs. Prover time overall seems to be about 1.5-2.5x worse for us. I also switched to a better config of Ligerito (called k=4 in impl), which reduces proof size by almost 2x, but increases open time, which for us adds a negligible overhead, while in Flock it adds more overhead}
 
 Optimization ideas
 \begin{itemize}
@@ -583,6 +586,10 @@ Optimization ideas
 \subsubsection{Comparison with Hyrax}
 
 \albert{Comparing with Hyrax may be more interesting than it sounds initially. Hyrax is pay-per-bit and opens on large prime fields: a profile that F2Z can adopt. Hence (maybe) projects using Hyrax could use  F2Z as a drop-in replacement which is PQ secure and more efficient }
+
+\subsubsection{Comparison with Flock}
+
+\john{It would be interesting to compare with flock as well}
 
 \appendix
 
@@ -694,112 +701,6 @@ By dimension, $p(X)$ must be trivial, meaning that all its coefficents are zero.
 
 
 
-\section{[Old appendix by Ulrich] Galois FRI-Binius}
-
-\ulrich{Just notes, not sure if it worth to keep it in final doc} \albert{Nice, thanks!}
-
-Packed commitment scheme for $\mathbb F_{2^m}$ . % in the values-to-uni-coeffs regime.
-
-For simplicity we assume packing across polynomials. 
-(The single poly case goes likewise.)
-Using an $\mathbb F_2$-basis $\beta_1,\ldots, \beta_{m}$ of $\mathbb F_{2^m}$ we
-pack $m$ polys of $2^n$ coefficients %of $2^{m}$ coeffs in $\mathbb F_2$,
-\[
-b_i(X) = \sum_{j=0}^{2^n - 1} b_{i,j} \cdot X^i \quad \in \mathbb F_2[X]^{< 2^n}, 
-\quad i = 1, \ldots, m,
-\]
-coefficient-wise into a single poly 
-\begin{align*}
-b(X) &= b_1(X)\cdot \beta_1 + \ldots + b_{m}(X) \cdot\beta_m
-\\
-&= \sum_{j=0}^{2^n} (b_{1,j}\cdot \beta_1 + \ldots + b_{m,j}\cdot \beta_{m}) \cdot X^j 
-\quad \in \mathbb F_{2^m}[X]^{<2^n}.
-\end{align*}
-
-The Frobenius automorphism $\phi(z) = z^2$ keeps $\mathbb F_2\subset F$ fixed, and has no other fixed points. 
-% (Recall that it is also additive.)
-For any point $z\in \mathbb F$, we extract the value of $b_i(z)$ from the values of the packed poly $b(X)$ along the Galois orbit 
-\[
-z, z^2, z^{2^2}, \ldots, z^{2^{m-1}}
-\]
-as follows.
-%
-The Moore matrix
-\begin{align*}
-M = \begin{pmatrix}
-\beta_1 & \beta_2 & \ldots & \beta_m
-\\
-\beta_1^2 & \beta_2^2 & \ldots & \beta_m^2
-\\
-\beta_1^{2^2} & \beta_2^{2^2} & \ldots & \beta_m^{2^2}
-\\
-\vdots
-\\
-\beta_1^{2^{m-1}} & \beta_2^{2^{m-1}} & \ldots & \beta_m^{2^{m-1}}
-\end{pmatrix}
-\end{align*}
-consists of the Galois orbits of the basis vectors, and is invertible. (See below.)
-Using that the component polynomials are over $\mathbb F_2$, we see that
-%We write $v_{k} = b(\phi^{-k} z)$, $k=0, \ldots, m-1$, and 
-% \[
-% v_k = \phi^{-k}\left(b_1(z) \cdot \phi^{k}\beta_1 + \ldots + b_m(z) \cdot \phi^{k}\beta_m \right),
-% \]
-% since $b_i(\phi^{-k} z) = \phi^{-k} b_i(z)$, in other words
-\[
-\phi^{k} \left(b(\phi^{-k} z)\right) = b_1(z) \cdot \phi^{k}\beta_1 + \ldots + b_m(z) \cdot \phi^{k}\beta_m,
-\]
-for any $k$. 
-To extract the $b_1(z)$ term, we look for weights $c_1,\ldots, c_m\in F$ which annihilate the orbits of the other $\beta_2,\ldots, \beta_m$, concretely
-\begin{align*}
-\sum_{k=0}^{m-1} c_k \cdot \phi^k \beta_1 = 1,
-\quad 
-\sum_{k=0}^{m-1} c_k \cdot \phi^k \beta_j = 0 \quad j=2,\ldots,n.
-\end{align*}
-This is exactly the first row vector of $M^{-1}$. 
-%
-In general, 
-\[
-\begin{pmatrix}
-b_1(z)
-\\
-b_2(z)
-\\
-b_3(z)
-\\
-\vdots
-\\
-b_m(z)
-\end{pmatrix}
-= M^{-1}\cdot 
-\begin{pmatrix}
-v_0
-\\
-\phi v_1
-\\
-\phi^2 v_2
-\\
-\vdots
-\\
-\phi^{m-1} v_{m-1}
-\end{pmatrix},
-\]
-where $v_k = b(\phi^{-k} z)$.
-% and $M\cdot c$ is the Galois orbit of $c = (c_1,\ldots, c_m)$ in coordinates of the basis.
-% The rows of $M^{-1}$ give us the linear functionals that recover the $i$-th coordinate of $z$ from its Galois-orbit.
-\ulrich{%
-\small
-Invertibility of $M$ follows from that of $M^t$: 
-any linear functional $(c_1,\ldots, c_m)$ in the kernel of $M^t$ gives rise to the linearizable polynomial
-\[
-p(X) = \sum_{i=0}^{m-1} c_i\cdot X^{2^i} 
-\]
-which has $\beta_1,\ldots, \beta_m$, and hence the whole space $F$ as roots. 
-By dimension, $p(X)$ must be trivial, meaning that all its coefficents are zero.
-}
-
-
-
-
 \section{Bilinear Embeddings}
 
 Given a field $\mathbb F$ and a degree-$d$ extension $\mathbb E$. Our goal is to commit to a vector $\mathbf{w} \in \mathbb{F}^{n d}$ so that we can later use it to prove an inner product claim of the form $\langle \mathbf{w}, \mathbf{a}\rangle_\mathbb{F} = h$ for some $\mathbf{a} \in \mathbb{F}^{n d}$ and $h \in \mathbb{F}$. However, we only have an efficient inner product commitment scheme to commit to vectors $\widetilde{\mathbf{w}} \in \mathbb{E}^{n}$ and open as $\langle \widetilde{\mathbf{w}}, \widetilde{\mathbf{a}}\rangle_\mathbb{E} = \widetilde{h}$ for some $\widetilde{\mathbf{a}} \in \mathbb{E}^{n}$ and $\widetilde{h} \in \mathbb{E}$.
@@ -812,6 +713,8 @@ H\left(\langle W(\mathbf{w}), A(\mathbf{a}) \rangle_{\mathbb{E}} \right).
 \]
 
 \subsection{Background}
+
+\subsubsection{Perfect pairings}
 In the following let $\mathbb{E}/\mathbb{F}$ be a finite field extension of degree $d$. If we disregard multiplication in $\mathbb{E}$, then $\mathbb{E}$ is a $d$-dimensional vector space over $\mathbb{F}$, hence isomorphic to $\mathbb{F}^d$. Let $\mathbf{e}_1,\ldots,\mathbf{e}_d$ denote the standard basis of $\mathbb{F}^d$.
 Recall that a function $\mu:\mathbb{E}\times \mathbb{E} \rightarrow \mathbb{F}$ is a \emph{bilinear form}  if it is linear in each argument separately. It is \emph{symmetric} if $\mu(x, y) = \mu(y, x)$ for all $x,y \in \mathbb{E}$.
 For each $x \in \mathbb{E}$, the partial application in the first argument defines a linear form
@@ -827,6 +730,54 @@ We call $\mu$ \emph{nondegenerate}, or equivalently a \emph{perfect pairing}, if
 \mu(x,y)=0\text{ for all }y\in\mathbb E \quad\Longrightarrow\quad x=0.
 \]
 Since $\mu$ is a perfect pairing, every basis $(\beta_1,\ldots,\beta_d)$ of $\mathbb{E}$ has a unique dual basis $(\beta_1^\vee,\ldots,\beta_d^\vee)$ satisfying $\mu(\beta_i, \beta_j^\vee) = \delta_{ij}$.
+
+\john{It would be good to explain how you would typically derive $\beta_j^\vee$}
+
+\subsubsection{Succinct vectors}
+
+Given a field $\mathbb{F}$, a vector $\mathbf{a} \in \mathbb{F}^n$ for $n = 2^k$ is called \emph{succinct} if it admits a tensor decomposition
+\begin{equation}
+\begin{bmatrix}
+m_{00} \\ m_{01}
+\end{bmatrix}
+\otimes
+\begin{bmatrix}
+m_{10} \\ m_{11}
+\end{bmatrix}
+\otimes \dots \otimes
+\begin{bmatrix}
+m_{(k-1)0} \\ m_{(k-1)1}
+\end{bmatrix}
+\end{equation}
+where typically $m_{ij} \in \mathbb{F}$. The multilinear extension of $\mathbf{a}$, viewed as a function on $\{0,1\}^k$, then becomes
+\begin{equation}
+\widetilde{a}(\mathbf{r}) = \prod_{i=0}^{k-1} \bigl( (1 - r_i) m_{i0} + r_i m_{i1} \bigr) \text{.}
+\end{equation}
+which can be evaluated in $O(k)$ field operations.
+
+More generally, the coefficients $m_{ij}$ need not themselves be field elements. It suffices that they belong to an associative $\mathbb{F}$-algebra in which every complete product $m_{0b_0}m_{1b_1}\cdots m_{(k-1)b_{k-1}}$ evaluates to an element of $\mathbb{F}$. Consequently, every vector entry and every value of the multilinear extension remains an element of $\mathbb{F}$. As the $m_{ij}$ no longer need to be commutative we must therefore also fix a permutation of the variables $\mathbf{r}$.
+
+Since every finite-dimensional associative algebra admits a matrix representation, we may, without loss of generality, assume that the objects $m_{ij}$ are matrices. In fact, it suffices to take $m_{ij}\in\mathbb{F}^{w_i\times w_{i+1}}$ with boundary dimensions $w_0=w_k=1$. We call $\max w_i$ the \emph{width} of the representation, which is known as a \emph{matrix branching program} and is closely related to matrix product states and weighted finite automatons.
+
+The canonical example of a succinct vector is the multilinear evaluation vector $a_i = \mathrm{eq}(\mathbf{r}, \operatorname{bits}(i))$ obtained by taking $m_{i0} = 1 - r_i$ and $m_{i1} = r_i$. Another classical example is the geometric progression $(1, x, x^2, \dots)$ obtained by taking $m_{i0} = 1$ and $m_{i1} = x^{2^i}$. An illustrative non-scalar example is the counting vector $(0, 1, 2, \dots)$ represented by
+\[
+\begin{aligned}
+m_{0b} &= \begin{bmatrix}
+2 & b    
+\end{bmatrix} &
+m_{ib} &= \begin{bmatrix}
+2 & b \\
+0 &  1
+\end{bmatrix} &
+m_{(k-1)b} &= \begin{bmatrix}
+b \\
+1
+\end{bmatrix}\text{.}
+\end{aligned}
+\]
+
+
+
 
 \subsection{Structure}
 We are now equipped to prove a theorem on the structure of embeddings. Under the assumption that the output map is $\mathbb{F}$-linear, we show that for $n=1$ the space of possible embeddings is very structured.
@@ -953,25 +904,34 @@ We have shown that every $n=1$ embedding with a linear output map is determined 
 
 The linearity assumption on the output map is necessary. Indeed, composing a linear embedding with a multiplicative bijection $g:\mathbb E\to\mathbb E$ generally produces an embedding that is nonlinear. Whether every nonlinear embedding arises from such a multiplicative reparameterization is a separate question, which we do not need here.
 
-\subsection{Properties}
+An important property of bilinear embeddings is that they preserve succinctness if the block size aligns with the tensor decomposition:
 
-Let's consider some general properties of bilinear embeddings.
-
-\begin{theorem}[Preservation of MLE openings] Given $d = 2^k$, $n = 2^l$ and a $\mathbb{F}$-linear map $A : \mathbb{F}^d \to \mathbb{E}$ applied blockwise, then if $\mathbf{a}\in \mathbb{F}^{2^{k + l}}$ given by $a_i = \mathrm{eq}_\mathbb{F}(\mathbf{r}, \mathbf{b}(i))$ where $\mathbf{b}$ is the binary encoding, the embedding $A(\mathbf{a}) \in \mathbb{E}^{2^l}$ is given by
+\begin{theorem}[Preservation of succinctness]
+Given $d = 2^k$, $n = 2^l$ and a $\mathbb{F}$-linear blockwise map $A = \mathrm{I}_n \otimes A_0$ for some isomorphism $A_0 : \mathbb{F}^d \to \mathbb{E}$, then if $\mathbf{a}$ is succinct then so is $A(\mathbf{a})$. In particular if
 \[
-(A(\mathbf{a}))_i = \alpha \cdot \mathrm{eq}_\mathbb{E}(\mathbf{r}', \mathbf{b}(i))
+\mathbf{a} = \bigotimes_{i=0}^{k+l-1} 
+\begin{bmatrix}
+m_{i0} \\ m_{i1}
+\end{bmatrix}
 \]
-for some $\alpha \in \mathbb{E}$ and $\mathbf{r}' \in \mathbb{E}^l$.
+where the $m_{ij}$ can be scalars or $w_i \times w_{i+1}$ matrices, then
+\[
+A(\mathbf{a}) = 
+\left(
+\bigotimes_{i=0}^{l-1} 
+\begin{bmatrix}
+m_{i0} \\ m_{i1}
+\end{bmatrix}
+\right) \cdot
+(\mathrm{I}_{w_l} \otimes A_0)\left(
+\bigotimes_{i=l}^{l+k-1} 
+\begin{bmatrix}
+m_{i0} \\ m_{i1}
+\end{bmatrix}
+\right)\text{.}
+\]
+where the second factor is column vector in $\mathbb{E}^{w_l}$ which can be absorbed into the matrices $m_{(l-1)b}$, bringing the representation back into canonical form.
 \end{theorem}
-
-In particular this means that any bilinear map can also be used to lift an multilinear commitment scheme.
-
-\begin{theorem}[Preservation of succinct verification] If $\mathbf{a}$ has a Matrix-branching program over $\mathbb{F}$ for succinct evaluation of its multilinear extension, then $A(\mathbf{a})$ also has one over $\mathbb{E}$, which is at most $d$ times wider. 
-\end{theorem}
-
-Now assume we have $\mathbf{w} \in \mathbb{F}^{nd}$ but this time we want to open it in extension field weights, e.g. $\mathbf{w} \in \mathbb{E}^{nd}$. Such a situation naturally occurs when doing a base-field sumcheck with extension field challenges.
-
-Pick a basis, expand in d inner products, prover gives values, RLC together, single opening.
 
 \subsection{Constructions}
 
@@ -1071,16 +1031,37 @@ f_0 & 0 & 0 & 0 & 0\\
 \]
 Notably $f_1$ does not appear and for $k>1$ the $f_k$ coefficient appears $k-1$ times. This perfectly matches the usual implementation preference for sparse reduction polynomials with mostly low-order terms.
 
-For the 127-bit field $\mathbb{F}_2[X]/(X^{127} + X + 1)$ the $A$ map is simply a reversal of the $i>0$ coordinates. For the GHASH field $\mathbb{F}_2[X]/(X^128 + X^7 + X^2 + X + 1)$ the map additionally needs seven XOR corrections. But for binary fields, where we typically want to open with $\mathbf{a} \in \mathbb{E}^{nd}$, this construction is not particularly efficient.
+For the 127-bit field $\mathbb{F}_2[X]/(X^{127} + X + 1)$ the $A$ map is simply a reversal of the $i>0$ coordinates. For the GHASH field $\mathbb{F}_2[X]/(X^{128} + X^7 + X^2 + X + 1)$ the map additionally needs seven XOR corrections.
 
 % Cite: https://shiftleft.com/mirrors/www.hpl.hp.com/techreports/98/HPL-98-135.pdf
 
 \subsection{Extension openings}
 
-Assume now that we want to open a basefield witness $\mathbf{w} \in \mathbb{F}^{nd}$ against extension field weights $\mathbf{a} \in \mathbb{E}^{n d}$ proving a claim $\langle \mathbf{w},  \mathbf{a}\rangle_\mathbb{E} = h$ for some  and $h \in \mathbb{E}$.
+Assume now that we want to open a basefield witness $\mathbf{w} \in \mathbb{F}^{nd}$ against extension field weights $\mathbf{a} \in \mathbb{E}^{n d}$ proving a claim $\langle \mathbf{w},  \mathbf{a}\rangle_\mathbb{E} = h$ for some  and $h \in \mathbb{E}$. We will present a one-round batching protocol and a a $log d$ round folding protocol.
 
-Fixing a basis for $\mathbb{E}/\mathbb{F}$ we can decompose $\mathbf{a}$ into $d$ vectors in $\mathbb{F}^{nd}$ and reduce the claim to $d$ inner product claims $\mathbb{F}$. These claims can then be packed to inner product claims over $\mathbb{E}$ and batched with a random linear combination. This approach requires the prover to compute and send $O(d)$ elements in $\mathbb{E}$. Acceptable when $d$ is small, for example when $\mathbb{F}$ is a 32-bit prime field, but is unattractive for binary fields where $d \approx 128$. Avoiding this linear dependence on $d$ appears to require interaction.
+\subsubsection{Batching protocol}
+Fix a basis $(\beta_1, \dots, \beta_d)$ for $\mathbb{E}/\mathbb{F}$ we can decompose $\mathbf{a}$ into $d$ vectors $\mathbf{a_i}$ in $\mathbb{F}^{nd}$ and reduce the claim to $d$ inner product claims $h_i = \langle \mathbf{w}, \mathbf{a}_i \rangle_\mathbb{F}$ such that $h = \sum_i h_i \beta_i$. Given a bilinear embedding $(W, A, H)$ these claims can then be packed to inner product claims $h_i' = \langle W(\mathbf{w}), W(\mathbf{a}_i)\rangle_\mathbb{E}$. After sending the $d$ values $h_i$ we 
 
+\paragraph{Frobenius fold.}
+Given the claim $\langle \mathbf{w}, \mathbf a\rangle_\mathbb{E}=h$, the parties proceed as follows.
+\begin{enumerate}
+    \item The prover sends $v_i=T_i(W(\mathbf w))$  for $i=1,\ldots,m-1$.
+    \item The verifier derives $v_0 = h-\sum_{i=1}^{m-1}\sigma^i(v_i)$.
+    \item The verifier samples independent challenges $\rho_1,\ldots,\rho_{m-1}\sample\mathbb E$.
+    \item The parties reduce to the claim $T'(W(\mathbf w))=h'$, where
+    \[
+    T' = T_0+\sum_{i=1}^{m-1}\rho_iT_i
+    \qquad\text{and}\qquad
+    h' = v_0+\sum_{i=1}^{m-1}\rho_iv_i.
+    \]
+\end{enumerate}
+
+
+and batched with a random linear combination. This approach requires the prover to compute and send $O(d)$ elements in $\mathbb{E}$, or equivalently $O(d^2)$ elements in $\mathbb{F}$. Acceptable when $d$ is small, for example when $\mathbb{F}$ is a 32-bit prime field, but is less attractive for binary fields where $d = 128$ and the communication would be $2,048$ bytes. Avoiding this quadratic dependence on $d$ appears to require interaction.
+
+\remco{For succinctness we need to show that coordinate decomposition preserves succinctness. Can probably do this by lifting the entire thing to basefield and turning every $\mathbb{E}$ multiplication into a matrix. This grows the output dimension, but this will neatly be collapsed again by the RLC.}
+
+\subsubsection{Folding protocol}
 We therefore seek an interactive reduction from a mixed claim to a packed claim
 \[
 \begin{array}{ccc}
@@ -1090,7 +1071,6 @@ We therefore seek an interactive reduction from a mixed claim to a packed claim
 &
 \mathbf{a} \in \mathbb{E}^{nd}
 \\[.8ex]
-%\multicolumn{3}{c}{\Downarrow}
 \Downarrow
 \\[1.3ex]
 \langle W(\mathbf{w}), \mathbf{a}'\rangle_\mathbb{E} = h'
@@ -1108,39 +1088,36 @@ Above we decomposed $\mathbf{a}$ with respect to a basis of $\mathbb{E}/\mathbb{
 T_{\mathbf{a}} : \mathbb{E}^n \to \mathbb{E} \qquad \mathbf{x} \mapsto \langle W^{-1}(
 \mathbf{x}), \mathbf{a} \rangle_{\mathbb{E}}\text{.}
 \]
-This is an $\mathbb{F}$-linear functional on $\mathbb E^n$, but is not generally $\mathbb{E}$-linear. Consider the following decomposition
-
+This is an $\mathbb{F}$-linear functional on $\mathbb E^n$, but is not generally $\mathbb{E}$-linear. We'll first prove a representation lemma for $\mathbb{F}$-linear $\mathbb{E}\to\mathbb{E}$ maps and then a decomposition theorem.
 
 \begin{theorem}
-Let $\mathbb{F} \subseteq \mathbb{E}$ be finite fields with $q = |\mathbb{F}|$ and $[\mathbb{E}:\mathbb{F}] = d$,then every $\mathbb{F}$-linear map $T: \mathbb{E} \to \mathbb{E}$ is a uniquely represented by a polynomial
+Let $\mathbb{F} \subseteq \mathbb{E}$ be finite fields with $q = |\mathbb{F}|$ and $[\mathbb{E}:\mathbb{F}] = d$,then every $\mathbb{F}$-linear map $T: \mathbb{E} \to \mathbb{E}$ is uniquely represented by a $q$-linearized polynomial
 \[
 P(X)=\sum_{j=0}^{d - 1} c_j X^{q^j} \qquad c_j\in\mathbb E \text{.}
 \]
 \end{theorem}
 \begin{proof}
-Write $q=p^r$ with $p$ the characteristic o and $d=[\mathbb E:\mathbb F]$ so that $|\mathbb{E}| = q^d$. By interpolation every map $T: \mathbb{E} \to \mathbb{E}$ can be represented uniquely by a polynomial $P \in \mathbb{E}[X]$ of degree less than $q^d$
+By interpolation every map $T: \mathbb{E} \to \mathbb{E}$ can be represented uniquely by a polynomial $P \in \mathbb{E}[X]$ of degree less than $|\mathbb{E}| = q^d$
 \[
-P(X)=\sum_{j=0}^{q^d - 1} c_j X^j \qquad c_j\in\mathbb E \text{.}
+P(X)=\sum_{j=0}^{q^d - 1} a_j X^j \qquad a_j\in\mathbb E \text{.}
 \]
-From $\mathbb{F}$-linearity follows $P(0) = 0$ and hence $c_0 = 0$, further we have $P(X + Y) = P(X) + P(Y)$ and hence
+From $\mathbb{F}$-linearity follows $P(0) = 0$ and hence $a_0 = 0$, further we have $P(X + Y) = P(X) + P(Y)$ and hence
 \[
 \begin{aligned}
 0 &= P(X + Y) - P(X) - P(Y) \\
-&= \sum_{j=1}^{q^d - 1} c_j (X + Y)^j - \sum_{j=1}^{q^d - 1} c_j (X^j + Y^j) \\
-&= \sum_{j=1}^{q^d - 1} c_j \sum_{k=0}^{j} \binom{j}{k}X^k Y^{j-k} - \sum_{j=1}^{q^d - 1} c_j (X^j + Y^j)\\
-&= \sum_{j=1}^{q^d - 1} c_j \sum_{k=1}^{j-1} \binom{j}{k}X^k Y^{j-k}
+&= \sum_{j=1}^{q^d - 1} a_j (X + Y)^j - \sum_{j=1}^{q^d - 1} a_j (X^j + Y^j) \\
+&= \sum_{j=1}^{q^d - 1} a_j \sum_{k=0}^{j} \binom{j}{k}X^k Y^{j-k} - \sum_{j=1}^{q^d - 1} a_j (X^j + Y^j)\\
+&= \sum_{j=1}^{q^d - 1} a_j \sum_{k=1}^{j-1} \binom{j}{k}X^k Y^{j-k}
 \end{aligned}
 \]
-So for every $j$ with $c_j \neq 0$ we must have $\binom{j}{k} =0 \mod p$ for all $0<k<j$, which holds iff $j = p^s$ for some $s$. Hence we can reindex $P$ keeping only the non-zero coefficients
+Write $q=p^r$ with $p$ the characteristic of $\mathbb{F}$. For every $j$ with $a_j \neq 0$ we must have $\binom{j}{k} =0 \mod p$ for all $0<k<j$, by Lucas’s theorem this holds iff $j = p^s$ for some $s$. Hence we can reindex $P$ keeping only the non-zero coefficients
 \[
-P(X)=\sum_{j=0}^{rd - 1} c_j X^{p^j} \qquad c_j\in\mathbb E \text{.}
+P(X)=\sum_{j=0}^{rd - 1} b_j X^{p^j} \qquad b_j\in\mathbb E \text{.}
 \]
-From $\mathbb{F}$-linearity also follows $P(\lambda x) = \lambda P(x)$ for all $x \in \mathbb{E}$ and $\lambda \in \mathbb{F}$. For every $c_j \neq 0$ this requires $\lambda^{p^j} = \lambda$ for every $\lambda \in \mathbb{F}$. This holds exactly when $j = r s$ for some $s$. Reindexing $P$ again we get
+From $\mathbb{F}$-linearity also follows $P(\lambda x) = \lambda P(x)$ for all $x \in \mathbb{E}$ and $\lambda \in \mathbb{F}$. For every $b_j \neq 0$ this requires $\lambda^{p^j} = \lambda$ for every $\lambda \in \mathbb{F}$. This holds exactly when $j = r s$ for some $s$. Reindexing $P$ again we get our claimed result
 \[
 P(X)=\sum_{j=0}^{d - 1} c_j X^{q^j} \qquad c_j\in\mathbb E \text{.}
 \]
-
-
 \end{proof}
 
 
@@ -1153,30 +1130,113 @@ T = \sum_{i = 0}^{m - 1} \sigma^i \circ T_i
 where each $T_i$ is $\mathbb{K}$-linear.
 \end{theorem}
 \begin{proof}
-Write $q=p^r =|\mathbb F|$ and $d=[\mathbb E:\mathbb F]$ so that $|\mathbb{E}| = q^d$. By interpolation every map $T: \mathbb{E} \to \mathbb{E}$ can be represented uniquely by a polynomial $P \in \mathbb{E}[X]$ of degree less than $q^d$
+Write $q=|\mathbb F|$ and $d=[\mathbb E:\mathbb F]$, by the preceding theorem $T$ has a unique representation
 \[
-P(X)=\sum_{j=0}^{q^d - 1} c_j X^j \qquad c_j\in\mathbb E \text{.}
+T(X)=\sum_{j=0}^{d - 1} c_j X^{q^j} \qquad c_j\in\mathbb E \text{.}
 \]
-From $\mathbb{F}$-linearity follows $P(0) = 0$ and hence $c_0 = 0$, further we have $P(X + Y) = P(X) + P(Y)$ and hence
+Since $\mathbb K\subseteq\mathbb E$, we have $m\mid d$. Write each
+index uniquely as $j=ms+i$, with $0\leq i<m$ and $0\leq s<d/m$. Grouping the terms by their residue modulo $m$ gives
 \[
-\begin{aligned}
-0 &= P(X + Y) - P(X) - P(Y) \\
-&= \sum_{j=1}^{q^d - 1} c_j (X + Y)^j - \sum_{j=1}^{q^d - 1} c_j (X^j + Y^j) \\
-&= \sum_{j=1}^{q^d - 1} c_j \sum_{k=0}^{j} \binom{j}{k}X^k Y^{j-k} - \sum_{j=1}^{q^d - 1} c_j (X^j + Y^j)\\
-&= \sum_{j=1}^{q^d - 1} c_j \sum_{k=1}^{j-1} \binom{j}{k}X^k Y^{j-k}
-\end{aligned}
+T(X)
+=
+\sum_{i=0}^{m-1}
+\sum_{s=0}^{d/m-1}
+c_{ms+i}X^{q^{ms+i}}.
 \]
-So for every $j$ with $c_j \neq 0$ we must have $\binom{j}{k} =0 \mod p$ for all $0<k<j$, which holds iff $j = p^s$ for some $s$. Hence we can reindex $P$ keeping only the non-zero coefficients
+For each residue class $i$, define
 \[
-P(X)=\sum_{j=0}^{rd - 1} c_j X^{p^j} \qquad c_j\in\mathbb E \text{.}
+T_i(X)
+=
+\sum_{s=0}^{d/m-1}
+c_{ms+i}^{q^{-i}}X^{q^{ms}},
 \]
-From $\mathbb{F}$-linearity also follows $P(\lambda x) = \lambda P(x)$ for all $x \in \mathbb{E}$ and $\lambda \in \mathbb{F}$. For every $c_j \neq 0$ this requires $\lambda^{p^j} = \lambda$ for every $\lambda \in \mathbb{F}$. This holds exactly when $j = r s$ for some $s$. Reindexing $P$ again we get
+where $z\mapsto z^{q^{-i}}$ denotes the inverse of the automorphism $z\mapsto z^{q^i}$ of $\mathbb E$. Each $T_i$ is now a $q^m$-linearized polynomial hence applying the preceding theorem to the extension $\mathbb{K} \subseteq \mathbb{E}$, each $T_i$ is $\mathbb{K}$-linear.  Then
 \[
-P(X)=\sum_{j=0}^{d - 1} c_j X^{q^j} \qquad c_j\in\mathbb E \text{.}
+(\sigma^i\circ T_i)(X)
+= T_i(X)^{q^i}
+= \sum_{s=0}^{d/m-1} c_{ms+i}X^{q^{ms+i}} \text{.}
 \]
-
-
+Therefore $T$ represented as
+\[
+T=\sum_{i=0}^{m-1}\sigma^i\circ T_i \text{.}
+\]
+Uniqueness follows immediately from the uniqueness of the $q$-linear polynomial representation.
 \end{proof}
+
+The decomposition theorem extends coordinatewise to maps $\mathbb E^n\to\mathbb E$. In particular, the functional $T_{\mathbf a}(\mathbf{x}) = \langle W^{-1}(\mathbf{x}), \mathbf{a} \rangle_{\mathbb{E}}$ admits a unique decomposition
+\begin{equation}
+T_{\mathbf a}
+=
+\sum_{i=0}^{m-1}\sigma^i\circ T_i,
+\end{equation}
+where each $T_i:\mathbb E^n\to\mathbb E$ is $\mathbb K$-linear. Thus the initial claim may be written as
+\[
+h = T_{\mathbf a}(W(\mathbf w))
+= \sum_{i=0}^{m-1} \sigma^i\bigl(T_i(W(\mathbf w))\bigr).
+\]
+
+\paragraph{Frobenius fold.}
+Given the claim $T_{\mathbf a}(W(\mathbf w))=h$, the parties proceed as follows.
+\begin{enumerate}
+    \item The prover sends $v_i=T_i(W(\mathbf w))$  for $i=1,\ldots,m-1$.
+    \item The verifier derives $v_0 = h-\sum_{i=1}^{m-1}\sigma^i(v_i)$.
+    \item The verifier samples independent challenges $\rho_1,\ldots,\rho_{m-1}\sample\mathbb E$.
+    \item The parties reduce to the claim $T'(W(\mathbf w))=h'$, where
+    \[
+    T' = T_0+\sum_{i=1}^{m-1}\rho_iT_i
+    \qquad\text{and}\qquad
+    h' = v_0+\sum_{i=1}^{m-1}\rho_iv_i.
+    \]
+\end{enumerate}
+
+\paragraph{Recursive folding.}
+Choose a tower of intermediate fields $\mathbb F=\mathbb K_0 \subseteq\mathbb K_1 \subseteq\cdots \subseteq\mathbb K_t=\mathbb E$, and write $m_i=[\mathbb K_{i+1}:\mathbb K_i]$. Initially, $T_{\mathbf a}$ is $\mathbb K_0$-linear. At round $i$, apply the Frobenius fold with $\mathbb F=\mathbb K_i$, and $\mathbb K=\mathbb K_{i+1}$.  This reduces the current $\mathbb K_i$-linear functional to a $\mathbb K_{i+1}$-linear functional.
+
+After $t$ rounds, the residual functional $T':\mathbb E^n\to\mathbb E$ is $\mathbb E$-linear. Consequently, there exists $\mathbf a'\in\mathbb E^n$ such that $T'(\mathbf x)=\langle\mathbf x,\mathbf a'\rangle_{\mathbb E}$. The final claim is therefore $\langle W(\mathbf w),\mathbf a'\rangle_{\mathbb E}=h'$, as required.
+
+Each round requires sending $m_i - 1$ elements of $\mathbb{E}$. For a binary tower where $m_i=2$, $\mathbb{F} = \mathbb{F}_2$, and $\mathbb{E} = \mathbb{F}_{2^{128}}$ we have $7$ rounds of one $\mathbb{E}$ element message each, for a total of $112$ bytes. Compare to the non-interactive protocol this reduces the communication complexity from $O(d^2)$ to $O(d \log d)$ elements of $\mathbb{F}_2$.
+
+\paragraph{Towerless folding.}
+Say $\mathbb{F} \subseteq \mathbb{E}$ admits no tower of subfields, for example $\mathbb{E} = \mathbb{F}_{2^{127}}$. Take again $d = [\mathbb{E}: \mathbb{F}]$ and decompose $T_\mathbf{a}$ as
+\[
+T_{\mathbf a} = \sum_{i=0}^{d-1}\sigma^i\circ T_i,
+\]
+We can still recursively fold using the protocol above with $m=2$ by grouping even and odd exponents of $\sigma^i$ (zero-padding as necessary), as there is no actual dependence on the subfield.
+
+This folding progressively halves $d$ (rounding up) in the $\mathbb{E}^{nd}$ inner product. This induces a sequence of perfect pairings 
+\[
+(\mathbb F^{nd},\mathbb E^{nd}) \rightsquigarrow (\mathbb E^{nd/m},\mathbb E^{nd/m}) \rightsquigarrow (\mathbb K_i^{nd/m},\mathbb E^{nd/m})
+\] 
+
+\[
+\langle
+W_i(\mathbf w),
+A_i(\mathbf a)
+\rangle
+=
+\langle
+\mathbf w,
+\mathbf a
+\rangle.
+\]
+
+\paragraph{}
+The final result is a transcript dependent map $A: \mathbb{E}^{dn} \to \mathbb{E}^n$. If $W$ is blockwise with $\mathrm{I}_n \otimes W_0$ for some $W_0: \mathbb{F}^d \to \mathbb{E}$ then so is $A$ with $A_0: \mathbb{E}^d \to \mathbb{E}$.
+
+
+\remco{A cleaner presentation is probably by a reduction of explcicit inner product claims instead of the linear functionals 
+\[
+\begin{array}{ccc}
+\langle W_i(\mathbf{w}), A_i(\mathbf{a})\rangle_\mathbb{E} = h_i
+& W_i: \mathbb{F}^{nd} \to \mathbb{E}^{nd_i}
+& A_i: \mathbb{E}^{nd} \to \mathbb{E}^{nd_i}
+\end{array}
+\]
+Where $d = d_0 > \dots > d_k = 1$ is a series of folding dimensions. We start with $W_0$ and $A_0$ the identity so that the initial claim is indeed $\langle \mathbf{w}, \mathbf{a} \rangle_\mathbb{E} = h_0$. For $i>0$ the $W_i$ are fixed $\mathbb{F}$-linear embeddings, and the $A_i$ are transcript dependent $\mathbb{F}$-linear maps. For $i=k$ the final claim is a fully packed inner product on $\mathbb{E}^n$.
+
+Furthermore, if a tower $\mathbb{F} = \mathbb{K}_0 \subseteq \dots \subseteq \mathbb{K}_k = \mathbb{E}$ exists we can choose $d_i =  [\mathbb{E}:\mathbb{K}_i]$ and $\im W_i = \mathbb{K}_i^{nd_i}$. Without a tower the $\im W_i$ is simply $\mathbb{F}$-linear subspace of $\mathbb{E}^{nd_i}$ of dimension $nd$.
+
+}
 
 
 \end{document}
