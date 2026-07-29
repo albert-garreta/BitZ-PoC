@@ -1018,6 +1018,50 @@ fn quad_quarters(mut e: Vec<Gf>, mut o: Vec<Gf>) -> [Vec<Gf>; 4] {
     [e, e_hi, o, o_hi]
 }
 
+/// Build every tree's EVEN levels `2, 4, … ≤ top` from its level-`top`
+/// halves (`gen_top`), keeping the ODD levels transient: each is computed
+/// as the stepping stone to the even level below and freed on the next
+/// step — it never reaches the stored chain (per-tree it is L2-scale,
+/// so its writes stay cache-local instead of streaming to DRAM). The
+/// kept levels land in the same `TreeLevels` slots as [`build_levels`]
+/// (odd slots empty); also returns the roots. Values are identical to
+/// [`build_levels`]'s — this is a scheduling variant, not a semantic
+/// one (the chain shrinks ≈ 3×: Σ_{even ℓ ≤ top} 2^ℓ vs Σ_{ℓ ≤ top} 2^ℓ).
+#[allow(clippy::arithmetic_side_effects)]
+fn build_levels_quad(
+    num_trees: usize,
+    top: usize,
+    gen_top: impl Fn(usize) -> (Vec<Gf>, Vec<Gf>) + Sync,
+) -> (TreeLevels, Vec<Gf>) {
+    let _g = crate::utils::prof::scope("mf:build_levels");
+    let chains: Vec<(Vec<(usize, (Vec<Gf>, Vec<Gf>))>, Gf)> = cfg_into_iter!(0..num_trees)
+        .map(|c| {
+            let mut kept: Vec<(usize, (Vec<Gf>, Vec<Gf>))> = Vec::new();
+            let mut cur = gen_top(c);
+            let mut level = top;
+            while level > 1 {
+                let parent = parent_halves_top(&cur.0, &cur.1);
+                if level % 2 == 0 {
+                    kept.push((level, cur)); // moved, never copied
+                } // odd levels: `cur` freed on reassign — transient
+                cur = parent;
+                level -= 1;
+            }
+            let root = cur.0[0] * cur.1[0];
+            (kept, root)
+        })
+        .collect();
+    let mut levels: TreeLevels = (0..top).map(|_| Vec::with_capacity(num_trees)).collect();
+    let mut roots = Vec::with_capacity(num_trees);
+    for (kept, root) in chains {
+        roots.push(root);
+        for (level, halves) in kept {
+            levels[level - 1].push(halves);
+        }
+    }
+    (levels, roots)
+}
+
 /// One arity-2 layer of the quad drive (parity / pair / leaf) — the body
 /// of [`drive_grouped`]'s loop as a standalone step over a [`BitLayer`].
 /// Returns the proof layer and advances `(z_x, z_c, claim)`.
@@ -1136,12 +1180,13 @@ pub fn prove_merged_forest_lazy_quad(
         rows.into_flattened()
     };
 
-    // Stored chain: the L/4 build (tops at level d−3 via paired T4
-    // gathers), then drop the ODD levels — the quad layers consume even
-    // levels only (level 1 is spent in the roots).
+    // Stored chain: the L/4 top (level d−3 via paired T4 gathers), but
+    // EVEN levels only — the quad layers consume nothing else, and the
+    // odd levels stay per-tree transients inside the walk
+    // ([`build_levels_quad`]): the chain is ≈ 3× smaller than L/4's.
     let h3 = q1 >> 1;
     let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
-    let (mut levels, roots) = build_levels(num_trees, depth - 3, |c| {
+    let (mut levels, roots) = build_levels_quad(num_trees, depth - 3, |c| {
         let cb = col_bits.as_ref().expect("leaf bits alive for the build");
         let (lb, rb) = &cb[c];
         let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
@@ -1158,11 +1203,6 @@ pub fn prove_merged_forest_lazy_quad(
         let hh = h3 >> 1;
         ((0..hh).map(v3).collect(), (hh..h3).map(v3).collect())
     });
-    for (slot, lvl) in levels.iter_mut().enumerate() {
-        if (slot + 1) % 2 == 1 {
-            *lvl = Vec::new();
-        }
-    }
 
     // ---- drive ----
     absorb_gfs(transcript, 0x30, &roots);
