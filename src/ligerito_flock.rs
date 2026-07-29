@@ -7489,6 +7489,20 @@ mod tests {
                 &mut vt, &hint.commitment, &rt, &p, &rw_q, &col_w, alpha, y, q_bits, &vc,
             )
             .expect("decoded quad proof verifies");
+            // The restructured degree-5 bodies (w-prefold + Karatsuba-3
+            // cross stage + folded node conversion) are value-exact
+            // re-associations: the proof stream must be byte-identical
+            // to the naive bodies'.
+            unsafe { std::env::set_var("F2Z_QUAD_KERNEL", "0") };
+            let mut pt = Blake3Transcript::new();
+            let proof_q_naive =
+                prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc);
+            unsafe { std::env::remove_var("F2Z_QUAD_KERNEL") };
+            assert_eq!(
+                proof_q.to_bytes(),
+                proof_q_naive.to_bytes(),
+                "quad kernel bodies must be transcript-identical (t={t},W={w})"
+            );
             unsafe { std::env::remove_var("F2Z_QUAD") };
             // A quad proof must NOT pass the arity-2 dispatch (different
             // transcript shape — the quad layers' pair2 rejects).

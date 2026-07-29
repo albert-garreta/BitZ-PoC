@@ -70,6 +70,65 @@ fn quad_slot(
     Gf::wide_add_assign(&mut acc[4], &Gf::mul_wide(w, &h4));
 }
 
+/// Restructured slot body — the DEFAULT (`F2Z_QUAD_KERNEL=0` restores
+/// [`quad_slot`], diagnostic / A-B): the suffix weight is pre-folded into
+/// the FIRST pair's operands (`w·a₀`, `w·d₀` — associativity moves it
+/// inside the product), the two pair-Karatsubas emit reduced quadratic
+/// coefficients, and the quadratic×quadratic cross stage runs 3-segment
+/// Karatsuba — SIX wide products instead of nine reduced ones —
+/// accumulated UNREDUCED straight into the five coefficient
+/// accumulators: the cross stage performs zero reductions. Value-exact
+/// vs [`quad_slot`] (associativity + distributivity + the F₂-linear
+/// reduction), hence transcript-identical; ~80 PMULL-class ops/slot vs
+/// ~125.
+#[allow(clippy::arithmetic_side_effects)]
+#[inline(always)]
+fn quad_slot_k(
+    w: &Gf,
+    a: [Gf; 4],
+    d: [Gf; 4],
+    acc: &mut [<Gf as WideMulAcc>::Wide; 5],
+) {
+    // First pair, w-prefolded: p = (w·A₀)·A₁ coefficients in the round var.
+    let wa0 = *w * a[0];
+    let wd0 = *w * d[0];
+    let p0 = wa0 * a[1];
+    let p2 = wd0 * d[1];
+    let p1 = (wa0 + wd0) * (a[1] + d[1]) + p0 + p2;
+    // Second pair, plain.
+    let q0 = a[2] * a[3];
+    let q2 = d[2] * d[3];
+    let q1 = (a[2] + d[2]) * (a[3] + d[3]) + q0 + q2;
+    // Cross stage: h = p·q by 3-segment Karatsuba, all products wide.
+    //   h0 = m0; h1 = m01+m0+m1; h2 = m02+m0+m1+m2; h3 = m12+m1+m2;
+    //   h4 = m2.
+    let m0 = Gf::mul_wide(&p0, &q0);
+    let m1 = Gf::mul_wide(&p1, &q1);
+    let m2 = Gf::mul_wide(&p2, &q2);
+    let m01 = Gf::mul_wide(&(p0 + p1), &(q0 + q1));
+    let m02 = Gf::mul_wide(&(p0 + p2), &(q0 + q2));
+    let m12 = Gf::mul_wide(&(p1 + p2), &(q1 + q2));
+    Gf::wide_add_assign(&mut acc[0], &m0);
+    Gf::wide_add_assign(&mut acc[1], &m01);
+    Gf::wide_add_assign(&mut acc[1], &m0);
+    Gf::wide_add_assign(&mut acc[1], &m1);
+    Gf::wide_add_assign(&mut acc[2], &m02);
+    Gf::wide_add_assign(&mut acc[2], &m0);
+    Gf::wide_add_assign(&mut acc[2], &m1);
+    Gf::wide_add_assign(&mut acc[2], &m2);
+    Gf::wide_add_assign(&mut acc[3], &m12);
+    Gf::wide_add_assign(&mut acc[3], &m1);
+    Gf::wide_add_assign(&mut acc[3], &m2);
+    Gf::wide_add_assign(&mut acc[4], &m2);
+}
+
+/// The restructured-body knob: default ON; `F2Z_QUAD_KERNEL=0` restores
+/// the naive slot/node bodies. Read per prove call (NOT once per
+/// process) so the byte-identity pin can toggle it in one test process.
+fn quad_kernel_on() -> bool {
+    std::env::var("F2Z_QUAD_KERNEL").map_or(true, |v| v != "0")
+}
+
 /// Prove the quad relation (see the module doc). Returns
 /// `(proof, point, finals)` with `finals[t] = [A,B,C,D](point)`.
 ///
@@ -87,6 +146,7 @@ pub fn prove_quad_eq_sumcheck(
         .all(|g| g.q == groups[0].q && g.bufs.iter().all(|v| v.len() == 1 << k)));
     let zero = Gf::zero();
     let one = Gf::one();
+    let kernel = quad_kernel_on();
     // Six Lagrange nodes 0..=5 (bit-pattern convention) + their power rows
     // for the coefficient → node conversion.
     let nodes: Vec<Gf> = (0u64..6).map(Gf::from).collect();
@@ -145,7 +205,11 @@ pub fn prove_quad_eq_sumcheck(
                         v[e] = f0;
                         v[e | 1] = f1;
                     }
-                    quad_slot(&suffix_j[s], a, d, &mut acc);
+                    if kernel {
+                        quad_slot_k(&suffix_j[s], a, d, &mut acc);
+                    } else {
+                        quad_slot(&suffix_j[s], a, d, &mut acc);
+                    }
                 }
                 for v in b.iter_mut() {
                     v.truncate(half << 1);
@@ -181,7 +245,11 @@ pub fn prove_quad_eq_sumcheck(
                         a[m] = v0;
                         d[m] = b[m][e | 1] + v0;
                     }
-                    quad_slot(&suffix_j[s], a, d, &mut acc);
+                    if kernel {
+                        quad_slot_k(&suffix_j[s], a, d, &mut acc);
+                    } else {
+                        quad_slot(&suffix_j[s], a, d, &mut acc);
+                    }
                 }
                 acc.map(Gf::from_wide)
             };
@@ -200,17 +268,47 @@ pub fn prove_quad_eq_sumcheck(
         let qj = &q_pt[j - 1];
         let e0 = one + *qj;
         let mut m_nodes = [zero; 6];
-        for (t, h) in hs.iter().enumerate() {
-            let a_t = a_scalars[t];
+        if kernel {
+            // Σ_t a_t·eq1(c)·H_t(c) = eq1(c)·Σ_t (a_t·H_t)(c): fold a_t
+            // into the coefficients once per group (5 muls), evaluate
+            // nodes 0/1 mul-free (c = 0 → h₀; c = 1 → Σ h_i, char-2
+            // bit-pattern nodes), dot the power rows for the rest, and
+            // apply the node factor eq1(c) once per node AFTER the group
+            // sum. Value-exact (distributivity); ~21 muls per group
+            // instead of ~42.
+            for (t, h) in hs.iter().enumerate() {
+                let a_t = a_scalars[t];
+                let ah: [Gf; 5] =
+                    [a_t * h[0], a_t * h[1], a_t * h[2], a_t * h[3], a_t * h[4]];
+                m_nodes[0] += ah[0];
+                m_nodes[1] += ah[0] + ah[1] + ah[2] + ah[3] + ah[4];
+                for (c, slot) in m_nodes.iter_mut().enumerate().skip(2) {
+                    let pw = &node_pows[c];
+                    let mut hv = ah[0];
+                    for (i, ahi) in ah.iter().enumerate().skip(1) {
+                        hv += *ahi * pw[i];
+                    }
+                    *slot += hv;
+                }
+            }
             for (c, slot) in m_nodes.iter_mut().enumerate() {
                 let cn = nodes[c];
                 let eq1 = e0 * (one + cn) + *qj * cn;
-                let pw = &node_pows[c];
-                let mut hv = zero;
-                for (i, hi) in h.iter().enumerate() {
-                    hv += *hi * pw[i];
+                *slot = eq1 * *slot;
+            }
+        } else {
+            for (t, h) in hs.iter().enumerate() {
+                let a_t = a_scalars[t];
+                for (c, slot) in m_nodes.iter_mut().enumerate() {
+                    let cn = nodes[c];
+                    let eq1 = e0 * (one + cn) + *qj * cn;
+                    let pw = &node_pows[c];
+                    let mut hv = zero;
+                    for (i, hi) in h.iter().enumerate() {
+                        hv += *hi * pw[i];
+                    }
+                    *slot += a_t * eq1 * hv;
                 }
-                *slot += a_t * eq1 * hv;
             }
         }
 
