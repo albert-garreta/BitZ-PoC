@@ -7105,6 +7105,9 @@ pub fn zinc_side_size_breakdown_merged(
         }
         b.forest_sumchecks += layer.sc_c.get_num_bytes();
         b.forest_evals += 2 * gf; // the closing (left, right) pair
+        if layer.pair2.is_some() {
+            b.forest_evals += 2 * gf; // quad layers close on four values
+        }
     }
     b
 }
@@ -7157,16 +7160,22 @@ impl IntEvalRsLigModQProof {
         for l in 0..lch {
             w.len(self.mfs[l].layers.len());
             for layer in &self.mfs[l].layers {
-                match &layer.sc_x {
-                    None => w.len(0),
-                    Some(sc) => {
-                        w.len(1);
-                        w.transcribable(sc);
-                    }
+                // Flag bits: 1 = sc_x present, 2 = quad (pair2 present).
+                // Arity-2 layers keep the legacy 0/1 values — their byte
+                // streams are unchanged.
+                let flag = layer.sc_x.is_some() as usize
+                    | ((layer.pair2.is_some() as usize) << 1);
+                w.len(flag);
+                if let Some(sc) = &layer.sc_x {
+                    w.transcribable(sc);
                 }
                 w.transcribable(&layer.sc_c);
                 w.gf(&layer.pair.0);
                 w.gf(&layer.pair.1);
+                if let Some(p2) = &layer.pair2 {
+                    w.gf(&p2.0);
+                    w.gf(&p2.1);
+                }
             }
             w.len(self.us[l].len());
             for &u in &self.us[l] {
@@ -7201,8 +7210,8 @@ impl IntEvalRsLigModQProof {
             let n_layers = r.len()?;
             let mut layers = Vec::with_capacity(n_layers);
             for _ in 0..n_layers {
-                let has_x = r.len()?;
-                let sc_x = if has_x == 1 {
+                let flag = r.len()?;
+                let sc_x = if flag & 1 == 1 {
                     Some(r.transcribable::<crate::piop::sumcheck::SumcheckProof<Gf>>()?)
                 } else {
                     None
@@ -7210,7 +7219,14 @@ impl IntEvalRsLigModQProof {
                 let sc_c = r.transcribable::<crate::piop::sumcheck::SumcheckProof<Gf>>()?;
                 let p0 = r.gf()?;
                 let p1 = r.gf()?;
-                layers.push(MergedLayer { sc_x, sc_c, pair: (p0, p1) });
+                let pair2 = if flag & 2 == 2 {
+                    let p2 = r.gf()?;
+                    let p3 = r.gf()?;
+                    Some((p2, p3))
+                } else {
+                    None
+                };
+                layers.push(MergedLayer { sc_x, sc_c, pair: (p0, p1), pair2 });
             }
             mfs.push(MergedForestProof { layers });
             let n_u = r.len()?;
@@ -7441,6 +7457,49 @@ mod tests {
                     &mut vt, &hint.commitment, &proof, &p, &rw_q, &col_w, Gf::one(), y, q_bits, &vc,
                 ),
                 Err(FlockRsError::Common(IntEvalRsError::ChallengeNotGenerator)),
+            );
+
+            // QUAD forest (`F2Z_QUAD=1` — arity-4 region layers, K
+            // challenges, its own transcript shape; both test shapes have
+            // row_len ≥ 256, and (4, 8, 32) exercises the odd-depth
+            // parity bridge): roundtrip, wrong-claim rejection, and the
+            // codec round-trips the quad layers (pair2 flag).
+            unsafe { std::env::set_var("F2Z_QUAD", "1") };
+            let mut pt = Blake3Transcript::new();
+            let proof_q =
+                prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc);
+            let mut vt = Blake3Transcript::new();
+            verify_mle_eval_mod_q_ligerito(
+                &mut vt, &hint.commitment, &proof_q, &p, &rw_q, &col_w, alpha, y, q_bits, &vc,
+            )
+            .unwrap_or_else(|e| panic!("quad mod-q (t={t},W={w}) failed: {e:?}"));
+            let mut vt = Blake3Transcript::new();
+            assert_eq!(
+                verify_mle_eval_mod_q_ligerito(
+                    &mut vt, &hint.commitment, &proof_q, &p, &rw_q, &col_w, alpha,
+                    y + Fq::from(1u128), q_bits, &vc,
+                ),
+                Err(FlockRsError::Common(IntEvalRsError::ReadOff)),
+                "quad wrong claim must be rejected (t={t},W={w})"
+            );
+            let rt = IntEvalRsLigModQProof::from_bytes(&proof_q.to_bytes())
+                .expect("quad proof codec roundtrip");
+            let mut vt = Blake3Transcript::new();
+            verify_mle_eval_mod_q_ligerito(
+                &mut vt, &hint.commitment, &rt, &p, &rw_q, &col_w, alpha, y, q_bits, &vc,
+            )
+            .expect("decoded quad proof verifies");
+            unsafe { std::env::remove_var("F2Z_QUAD") };
+            // A quad proof must NOT pass the arity-2 dispatch (different
+            // transcript shape — the quad layers' pair2 rejects).
+            let mut vt = Blake3Transcript::new();
+            assert!(
+                verify_mle_eval_mod_q_ligerito(
+                    &mut vt, &hint.commitment, &proof_q, &p, &rw_q, &col_w, alpha, y, q_bits,
+                    &vc,
+                )
+                .is_err(),
+                "quad proof must be rejected by the arity-2 verifier (t={t},W={w})"
             );
         }
     }

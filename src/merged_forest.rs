@@ -60,6 +60,11 @@ pub struct MergedLayer {
     pub sc_x: Option<SumcheckProof<Gf>>,
     pub sc_c: SumcheckProof<Gf>,
     pub pair: (Gf, Gf),
+    /// QUAD layers (arity 4, `F2Z_QUAD=1`): the second half of the
+    /// closing quad — `pair = (Q00, Q10)`, `pair2 = (Q01, Q11)`, the four
+    /// quarter evaluations of level ℓ+2 at the exit point. `None` on
+    /// arity-2 layers.
+    pub pair2: Option<(Gf, Gf)>,
 }
 
 /// Merged-forest proof (roots live in the caller's proof object).
@@ -457,7 +462,7 @@ fn drive_grouped(
         nx.push(mu);
         z_x = nx;
         z_c = r_c;
-        out_layers.push(MergedLayer { sc_x, sc_c, pair });
+        out_layers.push(MergedLayer { sc_x, sc_c, pair, pair2: None });
     }
     let mut z = z_x;
     z.extend_from_slice(&z_c);
@@ -938,6 +943,557 @@ fn prove_merged_forest_lazy_sched(
         }
     };
     drive_grouped(transcript, roots, levels, bit_layer, depth, s)
+}
+
+// =====================================================================
+// QUAD forest (`F2Z_QUAD=1`, EXPERIMENTAL): arity-4 GKR layers over the
+// stored/JIT region — each layer proves `L_ℓ = Σ eq·Q00·Q10·Q01·Q11` over
+// the QUARTERS of level ℓ+2, certifying TWO product-tree levels per
+// degree-5 sumcheck. K challenges and K values throughout — sound for
+// any generator α (ported from the worktree-gf8 experiment with the
+// order-255 byte-dlog surfaces stripped). The win at full-order α is
+// structural, not representational: the stored chain keeps only EVEN
+// levels (−33% region traffic), and the phase-B sumchecks + line steps
+// halve over the region. The round bodies are scalar degree-5 Karatsuba
+// (~28 PMULL-class ops/slot vs the arity-2 NEON stack's ~9
+// vector-resident) — mult-bound at cache-resident sizes until the fused
+// NEON degree-5 kernel lands; opt in for DRAM-bound shapes. The
+// leaf/pair LUT-cascade layers stay arity-2 verbatim (their bit-driven
+// prefix is already the stronger structure). The layer plan is
+// depth-parity-deterministic; quad layers close on FOUR values (`pair` +
+// `pair2`, tag 0x33) and draw TWO line challenges — a DIFFERENT
+// transcript shape from the arity-2 forest, so prover and verifier
+// dispatch on [`quad_active`] together.
+
+use crate::piop::sumcheck::quad::{QuadGroup, prove_quad_eq_sumcheck};
+
+/// Does the QUAD forest apply? `F2Z_QUAD=1`, the L/4 schedule (the quad
+/// plan builds its chain at level d−3), depth ≥ 8. Transcript-shape
+/// changing: prover and verifier BOTH dispatch through this — the env
+/// var is the experiment's out-of-band configuration. Read per call.
+pub fn quad_active(p: &IntEvalParams) -> bool {
+    if !std::env::var("F2Z_QUAD").is_ok_and(|v| v == "1") || forest_schedule_l8() {
+        return false;
+    }
+    let log_w = p.word_bits.trailing_zeros() as usize;
+    (p.rows() << log_w) >= 256
+}
+
+/// The quad layer plan for tree depth `d`: quads deliver claims at even
+/// levels `2, 4, …, P` (`P = d−2` if even, else `d−3`); a single arity-2
+/// "parity" layer bridges `P → d−2` when `d−2` is odd; the pair (`d−2`)
+/// and leaf (`d−1`) layers are always arity-2.
+pub(crate) struct QuadPlan {
+    /// Output levels of the quad layers (ascending: 0, 2, …, P−2).
+    pub quad_outputs: Vec<usize>,
+    /// Whether the arity-2 parity layer (output `d−3`) exists.
+    pub parity: bool,
+}
+
+pub(crate) fn quad_plan(depth: usize) -> QuadPlan {
+    assert!(depth >= 8, "quad forest needs depth >= 8");
+    let p = if (depth - 2) % 2 == 0 { depth - 2 } else { depth - 3 };
+    QuadPlan {
+        quad_outputs: (0..p).step_by(2).collect(),
+        parity: p == depth - 3,
+    }
+}
+
+/// 2-variable multilinear interpolation of a closing quad
+/// `[Q00, Q10, Q01, Q11]` (m = a | b≪1) at `(μ_a, μ_b)`.
+#[allow(clippy::arithmetic_side_effects)]
+fn quad_interp(q: [Gf; 4], mu_a: Gf, mu_b: Gf) -> Gf {
+    let one = Gf::one();
+    let (na, nb) = (one + mu_a, one + mu_b);
+    na * nb * q[0] + mu_a * nb * q[1] + na * mu_b * q[2] + mu_a * mu_b * q[3]
+}
+
+/// Split one tree's level halves `(e, o)` (TOP-split) into the four
+/// quarter multiplicands `m = a | b≪1` (`b` = top bit ⇒ e/o; `a` = next
+/// bit ⇒ halves of halves).
+fn quad_quarters(mut e: Vec<Gf>, mut o: Vec<Gf>) -> [Vec<Gf>; 4] {
+    let h = e.len() >> 1;
+    let e_hi = e.split_off(h);
+    let o_hi = o.split_off(h);
+    [e, e_hi, o, o_hi]
+}
+
+/// One arity-2 layer of the quad drive (parity / pair / leaf) — the body
+/// of [`drive_grouped`]'s loop as a standalone step over a [`BitLayer`].
+/// Returns the proof layer and advances `(z_x, z_c, claim)`.
+#[allow(clippy::arithmetic_side_effects)]
+fn run_arity2_layer(
+    transcript: &mut impl Transcript,
+    bl: BitLayer,
+    z_x: &mut Vec<Gf>,
+    z_c: &mut Vec<Gf>,
+    claim: &mut Gf,
+    num_trees: usize,
+) -> MergedLayer {
+    let one = Gf::one();
+    let _g = crate::utils::prof::scope("mf:phaseA");
+    let eq_zc = build_eq_x_r_vec(z_c, &()).expect("s >= 1");
+    let groups: Vec<EqInnerGroupMixed<Gf>> = bl
+        .bufs
+        .into_iter()
+        .zip(eq_zc.iter())
+        .map(|(bufs, &scale)| EqInnerGroupMixed { q: z_x.clone(), scale, bufs })
+        .collect();
+    let (sc, r_x, finals) = prove_eq_inner_sumcheck_mixed_pre(
+        transcript,
+        groups,
+        &bl.tau_sets,
+        &bl.pair_tau_sets,
+        &bl.t4_sets,
+        bl.round1,
+        &(),
+    );
+    let mut e_vec = Vec::with_capacity(num_trees);
+    let mut o_vec = Vec::with_capacity(num_trees);
+    for f in finals {
+        let (fe, fo) = f[0];
+        e_vec.push(fe);
+        o_vec.push(fo);
+    }
+    drop(_g);
+
+    let _g = crate::utils::prof::scope("mf:phaseB");
+    let group_b = EqInnerGroupMixed {
+        q: z_c.clone(),
+        scale: one,
+        bufs: GroupBufs::Dense(vec![(e_vec, o_vec)]),
+    };
+    let (sc_c, r_c, finals_b) =
+        prove_eq_inner_sumcheck_mixed(transcript, vec![group_b], &[], &[], &[], &());
+    let pair = finals_b[0][0];
+    drop(_g);
+
+    absorb_gfs(transcript, 0x32, &[pair.0, pair.1]);
+    let mu: Gf = transcript.get_field_challenge(&());
+    *claim = pair.0 + mu * (pair.0 + pair.1);
+    let mut nx = r_x;
+    nx.push(mu);
+    *z_x = nx;
+    *z_c = r_c;
+    MergedLayer { sc_x: Some(sc), sc_c, pair, pair2: None }
+}
+
+/// The QUAD forest prover — the L/4 lazy prover's arity-4 sibling: the
+/// same table builds and stored-chain construction (tops at level d−3
+/// via paired T4 gathers), but only EVEN levels retained; quad layers
+/// over the stored/JIT region; then the arity-2 parity (odd depths) /
+/// pair / leaf layers via the existing driver machinery. Same signature
+/// as [`prove_merged_forest_lazy`]; callers gate on [`quad_active`].
+#[allow(clippy::arithmetic_side_effects)]
+pub fn prove_merged_forest_lazy_quad(
+    transcript: &mut impl Transcript,
+    p: &IntEvalParams,
+    packed_cols: &[Vec<u64>],
+    pow2: &[Vec<Gf>],
+) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
+    use crate::pcs::{extract_column_bit_halves, layer1_pair_table, leaf_tau_halves};
+    let log_w = p.word_bits.trailing_zeros() as usize;
+    let mask_w = p.word_bits.wrapping_sub(1);
+    let row_len = p.rows() << log_w;
+    let depth = row_len.trailing_zeros() as usize;
+    let s = p.s;
+    let num_trees = p.cols();
+    let one = Gf::one();
+    assert!(depth >= 8, "quad forest needs depth >= 8 (callers gate on quad_active)");
+    let plan = quad_plan(depth);
+
+    let pair_tbl = layer1_pair_table(p, pow2, log_w, row_len);
+    let leaf_tau = leaf_tau_halves(p, pow2, one, log_w, row_len);
+    let mut col_bits = Some(extract_column_bit_halves(packed_cols, num_trees, row_len));
+
+    // The shared 4-case / 16-case tables — exactly the L/4 build.
+    let q1 = row_len >> 2;
+    let q2 = row_len >> 1;
+    let v = |i: usize| -> Gf { pow2[i >> log_w][i & mask_w] };
+    let build_cases = |base: usize| -> Vec<Gf> {
+        let mut t = Vec::with_capacity(q1 << 2);
+        for y in 0..q1 {
+            let lo = base + y;
+            t.push(one);
+            t.push(v(lo));
+            t.push(v(lo + q2));
+            t.push(pair_tbl[lo]);
+        }
+        t
+    };
+    let te = build_cases(0);
+    let to = build_cases(q1);
+    let t4: Vec<Gf> = {
+        let rows: Vec<[Gf; 16]> = cfg_into_iter!(0..q1, 1 << 10)
+            .map(|y| {
+                let mut row = [Gf::one(); 16];
+                for (c, slot) in row.iter_mut().enumerate() {
+                    *slot = te[(y << 2) | (c >> 2)] * to[(y << 2) | (c & 3)];
+                }
+                row
+            })
+            .collect();
+        rows.into_flattened()
+    };
+
+    // Stored chain: the L/4 build (tops at level d−3 via paired T4
+    // gathers), then drop the ODD levels — the quad layers consume even
+    // levels only (level 1 is spent in the roots).
+    let h3 = q1 >> 1;
+    let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
+    let (mut levels, roots) = build_levels(num_trees, depth - 3, |c| {
+        let cb = col_bits.as_ref().expect("leaf bits alive for the build");
+        let (lb, rb) = &cb[c];
+        let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
+        let v3 = |y: usize| -> Gf {
+            if t4_pf {
+                let yp = y + PRFM_DIST;
+                if yp < h3 {
+                    at.prefetch_at(yp);
+                    at.prefetch_at(yp + h3);
+                }
+            }
+            at.at(y) * at.at(y + h3)
+        };
+        let hh = h3 >> 1;
+        ((0..hh).map(v3).collect(), (hh..h3).map(v3).collect())
+    });
+    for (slot, lvl) in levels.iter_mut().enumerate() {
+        if (slot + 1) % 2 == 1 {
+            *lvl = Vec::new();
+        }
+    }
+
+    // ---- drive ----
+    absorb_gfs(transcript, 0x30, &roots);
+    let zeta: Vec<Gf> = transcript.get_field_challenges(s, &());
+    let mut claim = mle_at(&roots, &zeta);
+    let mut z_x: Vec<Gf> = Vec::new();
+    let mut z_c: Vec<Gf> = zeta;
+    let mut out_layers: Vec<MergedLayer> =
+        Vec::with_capacity(plan.quad_outputs.len() + usize::from(plan.parity) + 2);
+
+    for &ell in &plan.quad_outputs {
+        let input_level = ell + 2;
+        // Per-tree quarters of level ℓ+2 (`m = a | b≪1`; `b` = the
+        // level's top bit, `a` the next — matching the two line
+        // challenges' order).
+        let quarters: Vec<[Vec<Gf>; 4]> = if input_level == depth - 2 {
+            // The JIT level: gathered per tree straight off the bits +
+            // T4 (never stored), quarter-contiguous.
+            let _g = crate::utils::prof::scope("mf:bitgen");
+            let cb = col_bits.as_ref().expect("leaf bits alive for the JIT quad");
+            let hq = q1 >> 2;
+            cfg_into_iter!(0..num_trees)
+                .map(|c| {
+                    let (lb, rb) = &cb[c];
+                    let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
+                    let quarter = |lo: usize| -> Vec<Gf> {
+                        (lo..lo + hq)
+                            .map(|j| {
+                                if t4_pf {
+                                    let jp = j + PRFM_DIST;
+                                    if jp < lo + hq {
+                                        at.prefetch_at(jp);
+                                    }
+                                }
+                                at.at(j)
+                            })
+                            .collect()
+                    };
+                    [quarter(0), quarter(hq), quarter(2 * hq), quarter(3 * hq)]
+                })
+                .collect()
+        } else {
+            let lvl = core::mem::take(&mut levels[input_level - 1]);
+            assert!(!lvl.is_empty(), "stored quad input level {input_level} retained");
+            lvl.into_iter().map(|(e, o)| quad_quarters(e, o)).collect()
+        };
+
+        let (sc_x, r_x, finals): (Option<SumcheckProof<Gf>>, Vec<Gf>, Vec<[Gf; 4]>) =
+            if ell == 0 {
+                // Root layer: no phase A — the four level-2 values per
+                // tree are scalars.
+                let finals: Vec<[Gf; 4]> = quarters
+                    .iter()
+                    .map(|q| [q[0][0], q[1][0], q[2][0], q[3][0]])
+                    .collect();
+                (None, Vec::new(), finals)
+            } else {
+                let _g = crate::utils::prof::scope("mf:phaseA");
+                let eq_zc = build_eq_x_r_vec(&z_c, &()).expect("s >= 1");
+                let groups: Vec<QuadGroup> = quarters
+                    .into_iter()
+                    .zip(eq_zc.iter())
+                    .map(|(bufs, &scale)| QuadGroup { q: z_x.clone(), scale, bufs })
+                    .collect();
+                let (sc, r_x, finals) = prove_quad_eq_sumcheck(transcript, groups);
+                (Some(sc), r_x, finals)
+            };
+
+        // Phase B: Σ_c eq(c, z_c)·Π_m Q_m(r_x, c), degree 5 over s vars.
+        let _g = crate::utils::prof::scope("mf:phaseB");
+        let mut bufs_b: [Vec<Gf>; 4] = [
+            Vec::with_capacity(num_trees),
+            Vec::with_capacity(num_trees),
+            Vec::with_capacity(num_trees),
+            Vec::with_capacity(num_trees),
+        ];
+        for f in &finals {
+            for m in 0..4 {
+                bufs_b[m].push(f[m]);
+            }
+        }
+        let group_b = QuadGroup { q: z_c.clone(), scale: one, bufs: bufs_b };
+        let (sc_c, r_c, finals_b) = prove_quad_eq_sumcheck(transcript, vec![group_b]);
+        let quad = finals_b[0];
+        drop(_g);
+
+        absorb_gfs(transcript, 0x33, &quad);
+        let mu_a: Gf = transcript.get_field_challenge(&());
+        let mu_b: Gf = transcript.get_field_challenge(&());
+        claim = quad_interp(quad, mu_a, mu_b);
+        let mut nx = r_x;
+        nx.push(mu_a);
+        nx.push(mu_b);
+        z_x = nx;
+        z_c = r_c;
+        out_layers.push(MergedLayer {
+            sc_x,
+            sc_c,
+            pair: (quad[0], quad[1]),
+            pair2: Some((quad[2], quad[3])),
+        });
+    }
+
+    // Parity layer (odd d−2): arity-2 over the JIT level d−2, generated
+    // with the fused round-1 exactly like the L/4 JIT layer.
+    if plan.parity {
+        let hh = q1 >> 1;
+        let (bufs, round1) = {
+            let _g = crate::utils::prof::scope("mf:bitgen");
+            let cb = col_bits.as_ref().expect("leaf bits alive for the parity layer");
+            if jit_round1_fuse() {
+                let v1: Vec<Gf> =
+                    suffix_tensors(&z_x, &()).into_iter().next().expect("z_x non-empty");
+                let generated: Vec<(GroupBufs<Gf>, (Gf, Gf, Gf))> =
+                    cfg_into_iter!(0..num_trees)
+                        .map(|c| {
+                            let (lb, rb) = &cb[c];
+                            let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
+                            let (pair, coeffs) = dense_jit_fused_round1(
+                                hh,
+                                &v1,
+                                |j| at.at(j),
+                                |j| {
+                                    if t4_pf {
+                                        at.prefetch_at(j);
+                                    }
+                                },
+                            );
+                            (GroupBufs::Dense(vec![pair]), coeffs)
+                        })
+                        .collect();
+                let mut bufs = Vec::with_capacity(num_trees);
+                let mut round1 = Vec::with_capacity(num_trees);
+                for (b, h) in generated {
+                    bufs.push(b);
+                    round1.push(h);
+                }
+                (bufs, Some(round1))
+            } else {
+                let bufs: Vec<GroupBufs<Gf>> = cfg_into_iter!(0..num_trees)
+                    .map(|c| {
+                        let (lb, rb) = &cb[c];
+                        let full = t4_level_values(lb, rb, &t4, q1);
+                        GroupBufs::Dense(vec![(full[..hh].to_vec(), full[hh..].to_vec())])
+                    })
+                    .collect();
+                (bufs, None)
+            }
+        };
+        let bl = BitLayer {
+            bufs,
+            tau_sets: Vec::new(),
+            pair_tau_sets: Vec::new(),
+            t4_sets: Vec::new(),
+            round1,
+        };
+        out_layers.push(run_arity2_layer(
+            transcript, bl, &mut z_x, &mut z_c, &mut claim, num_trees,
+        ));
+    }
+    drop(t4);
+
+    // Pair layer (output d−2): the L/4 Pair3Bits/Pair2Bits round over
+    // the shared 4-case tables.
+    {
+        let deep = depth >= 5 && forest_lut3();
+        let bl = BitLayer {
+            bufs: col_bits
+                .as_ref()
+                .expect("leaf bits alive for the pair layer")
+                .iter()
+                .map(|(lbits, rbits)| {
+                    let (lbits, rbits) = (lbits.clone(), rbits.clone());
+                    if deep {
+                        GroupBufs::Pair3Bits { lbits, rbits, tau_set: 0 }
+                    } else {
+                        GroupBufs::Pair2Bits { lbits, rbits, tau_set: 0 }
+                    }
+                })
+                .collect(),
+            tau_sets: Vec::new(),
+            pair_tau_sets: vec![Pair2TauSet { te, to }],
+            t4_sets: Vec::new(),
+            round1: None,
+        };
+        out_layers.push(run_arity2_layer(
+            transcript, bl, &mut z_x, &mut z_c, &mut claim, num_trees,
+        ));
+    }
+
+    // Leaf layer (output d−1): the L/4 Leaf3Bits/Leaf2Bits round over
+    // the τ tables.
+    {
+        let deep = depth >= 5 && forest_lut3();
+        let bl = BitLayer {
+            bufs: col_bits
+                .take()
+                .expect("leaf bits consumed once")
+                .into_iter()
+                .map(|(lbits, rbits)| {
+                    if deep {
+                        GroupBufs::Leaf3Bits { lbits, rbits, tau_set: 0 }
+                    } else {
+                        GroupBufs::Leaf2Bits { lbits, rbits, tau_set: 0 }
+                    }
+                })
+                .collect(),
+            tau_sets: vec![leaf_tau],
+            pair_tau_sets: Vec::new(),
+            t4_sets: Vec::new(),
+            round1: None,
+        };
+        out_layers.push(run_arity2_layer(
+            transcript, bl, &mut z_x, &mut z_c, &mut claim, num_trees,
+        ));
+    }
+
+    let mut z = z_x;
+    z.extend_from_slice(&z_c);
+    (roots, MergedForestProof { layers: out_layers }, z, claim)
+}
+
+/// Verify a QUAD forest proof — [`verify_merged_forest`]'s mirror under
+/// the depth-deterministic [`quad_plan`]: quad layers verify at degree 5,
+/// close on four values (tag 0x33) and draw TWO line challenges; arity-2
+/// layers are verbatim. Returns `(exit_point, exit_eval)`.
+#[allow(clippy::arithmetic_side_effects)]
+pub fn verify_merged_forest_quad(
+    transcript: &mut impl Transcript,
+    roots: &[Gf],
+    proof: &MergedForestProof,
+    depth: usize,
+    s: usize,
+) -> Result<(Vec<Gf>, Gf), MergedForestError> {
+    if depth < 8 {
+        return Err(MergedForestError::Shape);
+    }
+    let plan = quad_plan(depth);
+    let n_layers = plan.quad_outputs.len() + usize::from(plan.parity) + 2;
+    if roots.len() != 1usize << s || proof.layers.len() != n_layers {
+        return Err(MergedForestError::Shape);
+    }
+    let one = Gf::one();
+    absorb_gfs(transcript, 0x30, roots);
+    let zeta: Vec<Gf> = transcript.get_field_challenges(s, &());
+    let mut claim = mle_at(roots, &zeta);
+    let mut z_x: Vec<Gf> = Vec::new();
+    let mut z_c: Vec<Gf> = zeta;
+
+    let mut layer_iter = proof.layers.iter().enumerate();
+    for &ell in &plan.quad_outputs {
+        let (li, layer) = layer_iter.next().expect("layer count checked");
+        let quad = match (layer.pair, layer.pair2) {
+            ((q0, q1), Some((q2, q3))) => [q0, q1, q2, q3],
+            _ => return Err(MergedForestError::Shape),
+        };
+        let r_x = if ell == 0 {
+            if layer.sc_x.is_some() {
+                return Err(MergedForestError::Shape);
+            }
+            if layer.sc_c.claimed_sum != claim {
+                return Err(MergedForestError::LayerClaim { layer: li });
+            }
+            Vec::new()
+        } else {
+            let sc_x = layer.sc_x.as_ref().ok_or(MergedForestError::Shape)?;
+            if sc_x.claimed_sum != claim {
+                return Err(MergedForestError::LayerClaim { layer: li });
+            }
+            let sub = MLSumcheck::<Gf>::verify_as_subprotocol(transcript, ell, 5, sc_x, &())
+                .map_err(|_| MergedForestError::LayerClaim { layer: li })?;
+            let eqx =
+                eq_eval(&sub.point, &z_x, one).map_err(|_| MergedForestError::Shape)?;
+            if sub.expected_evaluation != eqx * layer.sc_c.claimed_sum {
+                return Err(MergedForestError::LayerClaim { layer: li });
+            }
+            sub.point
+        };
+
+        let sub_c = MLSumcheck::<Gf>::verify_as_subprotocol(transcript, s, 5, &layer.sc_c, &())
+            .map_err(|_| MergedForestError::LayerClaim { layer: li })?;
+        let eqc = eq_eval(&sub_c.point, &z_c, one).map_err(|_| MergedForestError::Shape)?;
+        if sub_c.expected_evaluation != eqc * quad[0] * quad[1] * quad[2] * quad[3] {
+            return Err(MergedForestError::LayerClaim { layer: li });
+        }
+
+        absorb_gfs(transcript, 0x33, &quad);
+        let mu_a: Gf = transcript.get_field_challenge(&());
+        let mu_b: Gf = transcript.get_field_challenge(&());
+        claim = quad_interp(quad, mu_a, mu_b);
+        let mut nx = r_x;
+        nx.push(mu_a);
+        nx.push(mu_b);
+        z_x = nx;
+        z_c = sub_c.point;
+    }
+
+    // The arity-2 tail: parity? + pair + leaf.
+    for (li, layer) in layer_iter {
+        if layer.pair2.is_some() {
+            return Err(MergedForestError::Shape);
+        }
+        let sc_x = layer.sc_x.as_ref().ok_or(MergedForestError::Shape)?;
+        if sc_x.claimed_sum != claim {
+            return Err(MergedForestError::LayerClaim { layer: li });
+        }
+        let vars = z_x.len();
+        let sub = MLSumcheck::<Gf>::verify_as_subprotocol(transcript, vars, 3, sc_x, &())
+            .map_err(|_| MergedForestError::LayerClaim { layer: li })?;
+        let eqx = eq_eval(&sub.point, &z_x, one).map_err(|_| MergedForestError::Shape)?;
+        if sub.expected_evaluation != eqx * layer.sc_c.claimed_sum {
+            return Err(MergedForestError::LayerClaim { layer: li });
+        }
+        let sub_c = MLSumcheck::<Gf>::verify_as_subprotocol(transcript, s, 3, &layer.sc_c, &())
+            .map_err(|_| MergedForestError::LayerClaim { layer: li })?;
+        let (p_, q_) = layer.pair;
+        let eqc = eq_eval(&sub_c.point, &z_c, one).map_err(|_| MergedForestError::Shape)?;
+        if sub_c.expected_evaluation != eqc * p_ * q_ {
+            return Err(MergedForestError::LayerClaim { layer: li });
+        }
+        absorb_gfs(transcript, 0x32, &[p_, q_]);
+        let mu: Gf = transcript.get_field_challenge(&());
+        claim = p_ + mu * (p_ + q_);
+        let mut nx = sub.point;
+        nx.push(mu);
+        z_x = nx;
+        z_c = sub_c.point;
+    }
+    let mut z = z_x;
+    z.extend_from_slice(&z_c);
+    Ok((z, claim))
 }
 
 /// Per-position level-(d−1) reader of the RLC j=2 forest: position `j`'s
@@ -1770,6 +2326,12 @@ pub fn verify_merged_forest(
     let mut z_x: Vec<Gf> = Vec::new();
     let mut z_c: Vec<Gf> = zeta;
     for (ell, layer) in proof.layers.iter().enumerate() {
+        // Arity-2 layers never carry a closing quad — reject it here so a
+        // stream with a smuggled `pair2` (codec flag bit 2) cannot decode
+        // to an accepted proof it would otherwise silently ignore.
+        if layer.pair2.is_some() {
+            return Err(MergedForestError::Shape);
+        }
         // Phase A: the ℓ in-tree variables. Its claimed sum must be the
         // running layer claim; its expected evaluation factors as
         // eq(r_x, z_x) · (phase B's claimed sum).
@@ -1829,6 +2391,9 @@ pub fn merged_forest_proof_size_bytes(proof: &MergedForestProof) -> usize {
         }
         n += l.sc_c.get_num_bytes();
         n += 2 * 16;
+        if l.pair2.is_some() {
+            n += 2 * 16;
+        }
     }
     n
 }

@@ -1131,7 +1131,11 @@ pub(crate) fn prove_int_eval_merged_common(
     };
     let (_roots, mf, z, _e_d) = {
         let _g = crate::utils::prof::scope("mc:forest");
-        prove_merged_forest_lazy(transcript, p, packed_cols, &pow2)
+        if crate::merged_forest::quad_active(p) {
+            crate::merged_forest::prove_merged_forest_lazy_quad(transcript, p, packed_cols, &pow2)
+        } else {
+            prove_merged_forest_lazy(transcript, p, packed_cols, &pow2)
+        }
     };
     drop(pow2);
     let v = {
@@ -1444,8 +1448,13 @@ pub(crate) fn verify_int_eval_merged_common(
 
     // (2) Merged forest against the recomputed roots → exit point
     // (z_bj, z_c) + exit eval e_d.
-    let (z, e_d) = verify_merged_forest(transcript, &roots, mf, t_w, p.s)
-        .map_err(|_| IntEvalRsError::Forest)?;
+    let (z, e_d) = if crate::merged_forest::quad_active(p) {
+        crate::merged_forest::verify_merged_forest_quad(transcript, &roots, mf, t_w, p.s)
+            .map_err(|_| IntEvalRsError::Forest)?
+    } else {
+        verify_merged_forest(transcript, &roots, mf, t_w, p.s)
+            .map_err(|_| IntEvalRsError::Forest)?
+    };
 
     // (3a) Pre-sumcheck against the forest exit claim: for the bit-affine
     // leaves `1 + M·(A−1)`, `Σ eq·M·A = e_d − 1` (`= e_d + 1` in char 2).
