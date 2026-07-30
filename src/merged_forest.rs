@@ -40,7 +40,7 @@
 use crate::pcs::IntEvalParams;
 use crate::piop::sumcheck::eq_factored::{
     EqInnerGroupMixed, GroupBufs, PRFM_DIST, Pair2TauSet, prove_eq_inner_sumcheck_mixed,
-    prove_eq_inner_sumcheck_mixed_pre, suffix_tensors,
+    PreRound, prove_eq_inner_sumcheck_mixed_pre, suffix_tensors,
 };
 use crate::piop::sumcheck::{MLSumcheck, SumcheckProof};
 use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
@@ -197,6 +197,40 @@ fn t4_level_values(lbits: &[u64], rbits: &[u64], t4: &[Gf], q1: usize) -> Vec<Gf
     out
 }
 
+/// [`t4_level_values`] writing the TOP-bit halves directly — the L/2
+/// build's `gen_top`. Same word-wise sweep (4 `u64` loads per 64 values),
+/// but exact-capacity halves instead of one `2^{d−2}` buffer that would
+/// then be sliced (a transient 2× on the biggest level the forest ever
+/// stores).
+#[allow(clippy::arithmetic_side_effects)]
+fn t4_level_halves(lbits: &[u64], rbits: &[u64], t4: &[Gf], q1: usize) -> (Vec<Gf>, Vec<Gf>) {
+    let hh = q1 >> 1;
+    let mut e = Vec::with_capacity(hh);
+    let mut o = Vec::with_capacity(hh);
+    if q1 >= 128 {
+        // hh is a multiple of 64 here, so the word loop switches target
+        // cleanly at the midpoint.
+        let wq = q1 >> 6;
+        for w in 0..wq {
+            let le = lbits[w];
+            let ro = rbits[w];
+            let lo = lbits[w + wq];
+            let roo = rbits[w + wq];
+            let out = if (w << 6) < hh { &mut e } else { &mut o };
+            for b in 0..64 {
+                let ce = (((le >> b) & 1) | (((ro >> b) & 1) << 1)) as usize;
+                let co = (((lo >> b) & 1) | (((roo >> b) & 1) << 1)) as usize;
+                out.push(t4[(((w << 6) | b) << 4) | (ce << 2) | co]);
+            }
+        }
+    } else {
+        let at = T4At { lbits, rbits, t4, q1 };
+        e.extend((0..hh).map(|j| at.at(j)));
+        o.extend((hh..q1).map(|j| at.at(j)));
+    }
+    (e, o)
+}
+
 /// A layer whose phase-A group buffers come straight from the committed
 /// bits (with the shared tau tables the driver's case-LUT rounds consume)
 /// instead of a materialised level.
@@ -210,7 +244,7 @@ struct BitLayer {
     /// layers): forwarded to the driver so its round 1 absorbs the same
     /// bytes without a message pass — the buffers' first read is then
     /// round 2's fused fold+message pass.
-    round1: Option<Vec<(Gf, Gf, Gf)>>,
+    round1: Option<PreRound<Gf>>,
 }
 
 /// Fuse the JIT layers' round-1 message into their generation pass
@@ -218,6 +252,16 @@ struct BitLayer {
 /// Byte-identical proofs either way. Read once per prove call.
 fn jit_round1_fuse() -> bool {
     std::env::var("F2Z_JIT_R1").map_or(true, |v| v != "0")
+}
+
+/// Whether the JIT generation pass fuses the double-fold GRID (rounds 1
+/// AND 2) rather than just round 1's coefficient triple — `F2Z_JIT_GRID=0`
+/// keeps the triple. Byte-identical either way; this is the trade of nine
+/// accumulators inside a gather-bound generation pass against one
+/// streaming round-2 pass in the driver.
+fn jit_grid() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("F2Z_JIT_GRID").map_or(true, |v| v != "0"))
 }
 
 /// Per-position level-(d−2) reader off the bits + shared `T4` table — the
@@ -230,6 +274,7 @@ fn jit_round1_fuse() -> bool {
 /// `impl Fn`: the opaque-closure form compiled to a real call per gather
 /// at the build/JIT sites — millions per prove, measured ~5% of n=28
 /// prove-side samples in `<&F as FnMut>::call_mut`.
+#[derive(Clone, Copy)]
 struct T4At<'a> {
     lbits: &'a [u64],
     rbits: &'a [u64],
@@ -353,6 +398,125 @@ fn dense_jit_fused_round1(
         Gf::wide_sub_assign(&mut a1, &wc2);
     }
     ((l, r), (Gf::from_wide(a0), Gf::from_wide(a1), Gf::from_wide(a2)))
+}
+
+/// [`dense_jit_fused_round1`] one variable deeper: the generation pass
+/// accumulates the whole **bivariate grid** for rounds 1 AND 2, so the
+/// driver spends both without reading the buffers at all and its first
+/// pass over them (round 3) already folds two challenges. On the JIT
+/// layer — the largest dense buffer the forest ever holds (`2^{n−2}`
+/// values) — that removes one full streaming pass in each direction.
+/// `v2` is the layer's round-2 suffix tensor `V_2` ([`suffix_tensors`]`[1]`,
+/// length `hh/4`). Value-exact against the driver's own grid pass over
+/// the same buffers (same weighted node grids, same wide products,
+/// `F₂`-linear reduction).
+#[allow(clippy::arithmetic_side_effects)]
+fn dense_jit_fused_grid(
+    hh: usize,
+    v2: &[Gf],
+    value: impl Fn(usize) -> Gf,
+    look: impl Fn(usize),
+) -> ((Vec<Gf>, Vec<Gf>), [Gf; 9]) {
+    let quads = hh >> 2;
+    debug_assert_eq!(v2.len(), quads, "V_2 tensor length = round-2 quad count");
+    let zero = Gf::zero();
+    let mut l = Vec::with_capacity(hh);
+    let mut r = Vec::with_capacity(hh);
+    let mut acc = core::array::from_fn::<_, 9, _>(|_| Gf::wide_zero(&zero));
+    for b in 0..quads {
+        if b + PRFM_DIST < quads {
+            let qp = (b + PRFM_DIST) << 2;
+            for i in 0..4 {
+                look(qp + i);
+                look(hh + qp + i);
+            }
+        }
+        let base = b << 2;
+        let lv: [Gf; 4] = core::array::from_fn(|i| value(base + i));
+        let rv: [Gf; 4] = core::array::from_fn(|i| value(hh + base + i));
+        for i in 0..4 {
+            l.push(lv[i]);
+            r.push(rv[i]);
+        }
+        // Weight rides the L side; the node grids are pure differences.
+        let w = v2[b];
+        let lw: [Gf; 4] = core::array::from_fn(|i| w * lv[i]);
+        let grid = |v: &[Gf; 4]| -> [Gf; 9] {
+            let d00 = v[1] - v[0];
+            let d01 = v[3] - v[2];
+            [v[0], v[1], d00, v[2], v[3], d01, v[2] - v[0], v[3] - v[1], d01 - d00]
+        };
+        let lg = grid(&lw);
+        let rg = grid(&rv);
+        for (a, (x, y)) in acc.iter_mut().zip(lg.iter().zip(rg.iter())) {
+            Gf::wide_add_assign(a, &Gf::mul_wide(x, y));
+        }
+    }
+    let e: [Gf; 9] = acc.map(Gf::from_wide);
+    // Node → X₁-monomial per x₂ node (a₁ = H(1) − H(0) − H(∞)).
+    let g = core::array::from_fn(|i| {
+        let (u, v) = (i / 3, i % 3);
+        let base = v * 3;
+        match u {
+            0 => e[base],
+            2 => e[base + 2],
+            _ => e[base + 1] - e[base] - e[base + 2],
+        }
+    });
+    ((l, r), g)
+}
+
+/// A JIT layer's generation: build every tree's Dense halves and fuse as
+/// much of the layer's opening sumcheck into that ONE pass as its width
+/// allows — the rounds-1-and-2 bivariate grid under the double-fold
+/// (`k ≥ 3`), else round 1's coefficient triple. `mk(c)` hands out tree
+/// `c`'s per-position value reader and its prefetch hook.
+#[allow(clippy::arithmetic_side_effects)]
+fn jit_layer_generate<V, L, MK>(
+    hh: usize,
+    zx: &[Gf],
+    num_trees: usize,
+    mk: MK,
+) -> (Vec<GroupBufs<Gf>>, Option<PreRound<Gf>>)
+where
+    MK: Fn(usize) -> (V, L) + Sync,
+    V: Fn(usize) -> Gf,
+    L: Fn(usize),
+{
+    let tensors = suffix_tensors(zx, &());
+    if crate::piop::sumcheck::eq_factored::eqf_double() && zx.len() >= 3 && jit_grid() {
+        let v2 = &tensors[1];
+        let generated: Vec<(GroupBufs<Gf>, [Gf; 9])> = cfg_into_iter!(0..num_trees)
+            .map(|c| {
+                let (value, look) = mk(c);
+                let (pair, g) = dense_jit_fused_grid(hh, v2, value, look);
+                (GroupBufs::Dense(vec![pair]), g)
+            })
+            .collect();
+        let mut bufs = Vec::with_capacity(num_trees);
+        let mut grid = Vec::with_capacity(num_trees);
+        for (b, g) in generated {
+            bufs.push(b);
+            grid.push(g);
+        }
+        (bufs, Some(PreRound::Grid(grid)))
+    } else {
+        let v1 = &tensors[0];
+        let generated: Vec<(GroupBufs<Gf>, (Gf, Gf, Gf))> = cfg_into_iter!(0..num_trees)
+            .map(|c| {
+                let (value, look) = mk(c);
+                let (pair, coeffs) = dense_jit_fused_round1(hh, v1, value, look);
+                (GroupBufs::Dense(vec![pair]), coeffs)
+            })
+            .collect();
+        let mut bufs = Vec::with_capacity(num_trees);
+        let mut round1 = Vec::with_capacity(num_trees);
+        for (b, c) in generated {
+            bufs.push(b);
+            round1.push(c);
+        }
+        (bufs, Some(PreRound::Coeffs(round1)))
+    }
 }
 
 /// The shared layer loop: layer ℓ = phase A (trees as groups over the ℓ
@@ -512,18 +676,49 @@ pub fn prove_merged_forest_lazy(
     packed_cols: &[Vec<u64>],
     pow2: &[Vec<Gf>],
 ) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
-    prove_merged_forest_lazy_sched(transcript, p, packed_cols, pow2, forest_schedule_l8())
+    prove_merged_forest_lazy_sched(transcript, p, packed_cols, pow2, forest_schedule())
+}
+
+/// Where the stored level chain tops out — the forest's time/memory knob,
+/// one notch per level. Every schedule is byte-identical: they differ only
+/// in which levels are stored, regenerated, or read straight off the bits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ForestSchedule {
+    /// Build top d−2: level d−2 is STORED, so the layer-(d−3) JIT
+    /// regeneration disappears. Peak ≈ `2^n·8 B` — double L/4, in
+    /// exchange for one fewer full `T4` sweep. The RAM-for-time end of
+    /// the knob (`F2_FOREST_SCHEDULE=l2`).
+    L2,
+    /// Build top d−3, level d−2 regenerated JIT at its own layer — the
+    /// DEFAULT. Peak ≈ `2^n·4 B`.
+    L4,
+    /// Build top d−4 + one more bit-driven round per bottom layer. Peak
+    /// ≈ `2^n·2 B`, at a measured +5–13 % prove cost
+    /// (`F2_FOREST_SCHEDULE=l8`).
+    L8,
+}
+
+impl ForestSchedule {
+    fn is_l8(self) -> bool {
+        matches!(self, ForestSchedule::L8)
+    }
 }
 
 /// The forest schedule knob: `F2_FOREST_SCHEDULE=l8` opts into the L/8
 /// schedule (one more bit-driven round per bottom layer + build top d−4 —
 /// peaks halve again, at a measured +5–13 % prove cost at the 2-col model
-/// shapes); unset or anything else keeps the **L/4 default** (exactly the
-/// shipped `077b4b1` path). Flip it for memory-bound runs — at nv=23
-/// (2^17 compressions) the model projects ~2.6 GB under L/8 vs ~4.5 GB
-/// under L/4. Read once per prove call.
-fn forest_schedule_l8() -> bool {
-    std::env::var("F2_FOREST_SCHEDULE").is_ok_and(|v| v == "l8")
+/// shapes); `=l2` opts into the L/2 schedule (level d−2 stored instead of
+/// JIT-regenerated — peak doubles, one full `T4` sweep saved); unset or
+/// anything else keeps the **L/4 default** (exactly the shipped `077b4b1`
+/// path). Flip to l8 for memory-bound runs — at nv=23 (2^17 compressions)
+/// the model projects ~2.6 GB under L/8 vs ~4.5 GB under L/4. Read once
+/// per prove call.
+fn forest_schedule() -> ForestSchedule {
+    match std::env::var("F2_FOREST_SCHEDULE").as_deref() {
+        Ok("l2") => ForestSchedule::L2,
+        Ok("l8") => ForestSchedule::L8,
+        _ => ForestSchedule::L4,
+    }
 }
 
 /// Deeper L/4 bit-driven prefixes — the DEFAULT: one more LUT round per
@@ -538,17 +733,18 @@ pub(crate) fn forest_lut3() -> bool {
     std::env::var("F2Z_LUT3").map_or(true, |v| v != "0")
 }
 
-/// [`prove_merged_forest_lazy`] with the schedule explicit (`l8 = false`
-/// → the L/4 default) — the testable entry point; BOTH schedules are
-/// pinned byte-identical to the eager prover.
+/// [`prove_merged_forest_lazy`] with the schedule explicit — the testable
+/// entry point; ALL schedules are pinned byte-identical to the eager
+/// prover.
 #[allow(clippy::arithmetic_side_effects)]
 fn prove_merged_forest_lazy_sched(
     transcript: &mut impl Transcript,
     p: &IntEvalParams,
     packed_cols: &[Vec<u64>],
     pow2: &[Vec<Gf>],
-    l8: bool,
+    sched: ForestSchedule,
 ) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
+    let l8 = sched.is_l8();
     use crate::pcs::{
         build_column_layer1_halves, extract_column_bit_halves, layer1_pair_table,
         leaf_tau_halves,
@@ -641,6 +837,70 @@ fn prove_merged_forest_lazy_sched(
         rows.into_flattened()
     };
 
+    if sched == ForestSchedule::L2 {
+        // The L/2 schedule — RAM for time: the stored chain tops out at
+        // level d−2 itself, so layer d−3 consumes a STORED Dense level
+        // and the JIT regeneration (a second full `T4` sweep over every
+        // tree, ~2^{n−2} gathers) disappears. `T4` dies with the build;
+        // the pair and leaf layers are the L/4 ones verbatim (they read
+        // `te`/`to`/`leaf_tau` and the bits, never a level). Peak ≈
+        // `2^n·8 B`: level d−2 alone is `2^n·4 B` and the chain under it
+        // sums to as much again.
+        let (levels, roots) = build_levels(num_trees, depth - 2, |c| {
+            let cb = col_bits.as_ref().expect("leaf bits alive for the build");
+            let (lb, rb) = &cb[c];
+            t4_level_halves(lb, rb, &t4, q1)
+        });
+        drop(t4);
+        let bit_layer = |ell: usize, _zx: &[Gf]| -> Option<BitLayer> {
+            if ell == depth - 2 {
+                let deep = depth >= 5 && forest_lut3();
+                Some(BitLayer {
+                    bufs: col_bits
+                        .as_ref()
+                        .expect("leaf bits alive for the pair layer")
+                        .iter()
+                        .map(|(lbits, rbits)| {
+                            let (lbits, rbits) = (lbits.clone(), rbits.clone());
+                            if deep {
+                                GroupBufs::Pair3Bits { lbits, rbits, tau_set: 0 }
+                            } else {
+                                GroupBufs::Pair2Bits { lbits, rbits, tau_set: 0 }
+                            }
+                        })
+                        .collect(),
+                    tau_sets: Vec::new(),
+                    pair_tau_sets: vec![Pair2TauSet { te: te.clone(), to: to.clone() }],
+                    t4_sets: Vec::new(),
+                    round1: None,
+                })
+            } else if ell == depth - 1 {
+                let deep = depth >= 5 && forest_lut3();
+                Some(BitLayer {
+                    bufs: col_bits
+                        .take()
+                        .expect("leaf bits consumed once")
+                        .into_iter()
+                        .map(|(lbits, rbits)| {
+                            if deep {
+                                GroupBufs::Leaf3Bits { lbits, rbits, tau_set: 0 }
+                            } else {
+                                GroupBufs::Leaf2Bits { lbits, rbits, tau_set: 0 }
+                            }
+                        })
+                        .collect(),
+                    tau_sets: vec![leaf_tau.clone()],
+                    pair_tau_sets: Vec::new(),
+                    t4_sets: Vec::new(),
+                    round1: None,
+                })
+            } else {
+                None
+            }
+        };
+        return drive_grouped(transcript, roots, levels, bit_layer, depth, s);
+    }
+
     if depth == 4 || !l8 {
         // The L/4 schedule — the DEFAULT (and forced at depth 4, where
         // the deeper chain degenerates: T4Bits needs k = d−3 ≥ 2,
@@ -684,35 +944,19 @@ fn prove_merged_forest_lazy_sched(
                 let hh = q1 >> 1;
                 let cb = col_bits.as_ref().expect("leaf bits alive for the JIT regen");
                 let (bufs, round1) = if jit_r1 {
-                    let v1: Vec<Gf> =
-                        suffix_tensors(zx, &()).into_iter().next().expect("ell >= 1");
-                    let generated: Vec<(GroupBufs<Gf>, (Gf, Gf, Gf))> =
-                        cfg_into_iter!(0..num_trees)
-                            .map(|c| {
-                                let (lb, rb) = &cb[c];
-                                let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
-                                let t4_pf =
-                                    t4_prfm(t4.len() * core::mem::size_of::<Gf>());
-                                let (pair, coeffs) = dense_jit_fused_round1(
-                                    hh,
-                                    &v1,
-                                    |j| at.at(j),
-                                    |j| {
-                                        if t4_pf {
-                                            at.prefetch_at(j);
-                                        }
-                                    },
-                                );
-                                (GroupBufs::Dense(vec![pair]), coeffs)
-                            })
-                            .collect();
-                    let mut bufs = Vec::with_capacity(num_trees);
-                    let mut round1 = Vec::with_capacity(num_trees);
-                    for (b, h) in generated {
-                        bufs.push(b);
-                        round1.push(h);
-                    }
-                    (bufs, Some(round1))
+                    let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
+                    jit_layer_generate(hh, zx, num_trees, |c| {
+                        let (lb, rb) = &cb[c];
+                        let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
+                        (
+                            move |j| at.at(j),
+                            move |j| {
+                                if t4_pf {
+                                    at.prefetch_at(j);
+                                }
+                            },
+                        )
+                    })
                 } else {
                     let bufs: Vec<GroupBufs<Gf>> = cfg_into_iter!(0..num_trees)
                         .map(|c| {
@@ -834,34 +1078,20 @@ fn prove_merged_forest_lazy_sched(
             let hh = h3 >> 1;
             let cb = col_bits.as_ref().expect("leaf bits alive for the JIT regen");
             let (bufs, round1) = if jit_r1 {
-                let v1: Vec<Gf> =
-                    suffix_tensors(zx, &()).into_iter().next().expect("ell >= 1");
-                let generated: Vec<(GroupBufs<Gf>, (Gf, Gf, Gf))> = cfg_into_iter!(0..num_trees)
-                    .map(|c| {
-                        let (lb, rb) = &cb[c];
-                        let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
-                        let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
-                        let (pair, coeffs) = dense_jit_fused_round1(
-                            hh,
-                            &v1,
-                            |y| at.at(y) * at.at(y + h3),
-                            |y| {
-                                if t4_pf {
-                                    at.prefetch_at(y);
-                                    at.prefetch_at(y + h3);
-                                }
-                            },
-                        );
-                        (GroupBufs::Dense(vec![pair]), coeffs)
-                    })
-                    .collect();
-                let mut bufs = Vec::with_capacity(num_trees);
-                let mut round1 = Vec::with_capacity(num_trees);
-                for (b, h) in generated {
-                    bufs.push(b);
-                    round1.push(h);
-                }
-                (bufs, Some(round1))
+                let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
+                jit_layer_generate(hh, zx, num_trees, |c| {
+                    let (lb, rb) = &cb[c];
+                    let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
+                    (
+                        move |y| at.at(y) * at.at(y + h3),
+                        move |y| {
+                            if t4_pf {
+                                at.prefetch_at(y);
+                                at.prefetch_at(y + h3);
+                            }
+                        },
+                    )
+                })
             } else {
                 let bufs: Vec<GroupBufs<Gf>> = cfg_into_iter!(0..num_trees)
                     .map(|c| {
@@ -1322,7 +1552,9 @@ pub fn prove_merged_forest_lazy_multi(
     p: &IntEvalParams,
     claims: &[(&[Vec<u64>], &[Vec<Gf>])],
 ) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
-    prove_merged_forest_lazy_multi_sched(transcript, p, claims, forest_schedule_l8())
+    // L/2 is a single-prover schedule; the multi path reads the knob as
+    // L/4-or-L/8 (`l2` there means "the default").
+    prove_merged_forest_lazy_multi_sched(transcript, p, claims, forest_schedule().is_l8())
 }
 
 /// [`prove_merged_forest_lazy_multi`] with the schedule explicit — the
@@ -1462,40 +1694,24 @@ fn prove_merged_forest_lazy_multi_sched(
                 // round-1 message into the generation pass.
                 let hh = q1 >> 1;
                 let (bufs, round1) = if jit_r1 {
-                    let v1: Vec<Gf> =
-                        suffix_tensors(zx, &()).into_iter().next().expect("ell >= 1");
-                    let generated: Vec<(GroupBufs<Gf>, (Gf, Gf, Gf))> =
-                        cfg_into_iter!(0..num_trees)
-                            .map(|k| {
-                                let (n, c) = (k >> s, k & (per - 1));
-                                let t4 = &tabs[tab_of[n]].t4;
-                                let cb = col_bits_all[n]
-                                    .as_ref()
-                                    .expect("leaf bits alive for the JIT regen");
-                                let (lb, rb) = &cb[c];
-                                let at = T4At { lbits: lb, rbits: rb, t4, q1 };
-                                let t4_pf =
-                                    t4_prfm(t4.len() * core::mem::size_of::<Gf>());
-                                let (pair, coeffs) = dense_jit_fused_round1(
-                                    hh,
-                                    &v1,
-                                    |j| at.at(j),
-                                    |j| {
-                                        if t4_pf {
-                                            at.prefetch_at(j);
-                                        }
-                                    },
-                                );
-                                (GroupBufs::Dense(vec![pair]), coeffs)
-                            })
-                            .collect();
-                    let mut bufs = Vec::with_capacity(num_trees);
-                    let mut round1 = Vec::with_capacity(num_trees);
-                    for (b, h) in generated {
-                        bufs.push(b);
-                        round1.push(h);
-                    }
-                    (bufs, Some(round1))
+                    jit_layer_generate(hh, zx, num_trees, |k| {
+                        let (n, c) = (k >> s, k & (per - 1));
+                        let t4 = &tabs[tab_of[n]].t4;
+                        let cb = col_bits_all[n]
+                            .as_ref()
+                            .expect("leaf bits alive for the JIT regen");
+                        let (lb, rb) = &cb[c];
+                        let at = T4At { lbits: lb, rbits: rb, t4, q1 };
+                        let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
+                        (
+                            move |j| at.at(j),
+                            move |j| {
+                                if t4_pf {
+                                    at.prefetch_at(j);
+                                }
+                            },
+                        )
+                    })
                 } else {
                     let bufs: Vec<GroupBufs<Gf>> = cfg_into_iter!(0..num_trees)
                         .map(|k| {
@@ -1619,39 +1835,25 @@ fn prove_merged_forest_lazy_multi_sched(
             // message into the generation pass.
             let hh = h3 >> 1;
             let (bufs, round1) = if jit_r1 {
-                let v1: Vec<Gf> =
-                    suffix_tensors(zx, &()).into_iter().next().expect("ell >= 1");
-                let generated: Vec<(GroupBufs<Gf>, (Gf, Gf, Gf))> = cfg_into_iter!(0..num_trees)
-                    .map(|k| {
-                        let (n, c) = (k >> s, k & (per - 1));
-                        let t4 = &tabs[tab_of[n]].t4;
-                        let cb = col_bits_all[n]
-                            .as_ref()
-                            .expect("leaf bits alive for the JIT regen");
-                        let (lb, rb) = &cb[c];
-                        let at = T4At { lbits: lb, rbits: rb, t4, q1 };
-                        let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
-                        let (pair, coeffs) = dense_jit_fused_round1(
-                            hh,
-                            &v1,
-                            |y| at.at(y) * at.at(y + h3),
-                            |y| {
-                                if t4_pf {
-                                    at.prefetch_at(y);
-                                    at.prefetch_at(y + h3);
-                                }
-                            },
-                        );
-                        (GroupBufs::Dense(vec![pair]), coeffs)
-                    })
-                    .collect();
-                let mut bufs = Vec::with_capacity(num_trees);
-                let mut round1 = Vec::with_capacity(num_trees);
-                for (b, h) in generated {
-                    bufs.push(b);
-                    round1.push(h);
-                }
-                (bufs, Some(round1))
+                jit_layer_generate(hh, zx, num_trees, |k| {
+                    let (n, c) = (k >> s, k & (per - 1));
+                    let t4 = &tabs[tab_of[n]].t4;
+                    let cb = col_bits_all[n]
+                        .as_ref()
+                        .expect("leaf bits alive for the JIT regen");
+                    let (lb, rb) = &cb[c];
+                    let at = T4At { lbits: lb, rbits: rb, t4, q1 };
+                    let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
+                    (
+                        move |y| at.at(y) * at.at(y + h3),
+                        move |y| {
+                            if t4_pf {
+                                at.prefetch_at(y);
+                                at.prefetch_at(y + h3);
+                            }
+                        },
+                    )
+                })
             } else {
                 let bufs: Vec<GroupBufs<Gf>> = cfg_into_iter!(0..num_trees)
                     .map(|k| {
@@ -2062,28 +2264,29 @@ mod tests {
             let mut t_eager = Blake3Transcript::new();
             let eager = prove_merged_forest(&mut t_eager, &dense, depth, s);
             let ce: Gf = t_eager.get_field_challenge(&());
-            // BOTH schedules must be byte-identical (l8 = false → the L/4
-            // default; true → opt-in L/8, falling back to L/4 at d ≤ 4).
+            // EVERY schedule must be byte-identical (L/2 = level d−2
+            // stored, no JIT; L/4 = the default; L/8 = opt-in, falling
+            // back to L/4 at d ≤ 4).
             let mut last = None;
-            for l8 in [false, true] {
+            for sched in [ForestSchedule::L2, ForestSchedule::L4, ForestSchedule::L8] {
                 let mut t_lazy = Blake3Transcript::new();
                 let lazy =
-                    prove_merged_forest_lazy_sched(&mut t_lazy, &p, &packed_cols, &pow2, l8);
+                    prove_merged_forest_lazy_sched(&mut t_lazy, &p, &packed_cols, &pow2, sched);
 
-                assert_eq!(eager.0, lazy.0, "roots (t={t},s={s},W={w},l8={l8})");
-                assert_eq!(eager.2, lazy.2, "exit point (l8={l8})");
-                assert_eq!(eager.3, lazy.3, "exit eval (l8={l8})");
+                assert_eq!(eager.0, lazy.0, "roots (t={t},s={s},W={w},{sched:?})");
+                assert_eq!(eager.2, lazy.2, "exit point ({sched:?})");
+                assert_eq!(eager.3, lazy.3, "exit eval ({sched:?})");
                 for (k, (le, ll)) in eager.1.layers.iter().zip(lazy.1.layers.iter()).enumerate()
                 {
-                    assert_eq!(le.sc_x, ll.sc_x, "layer {k} sc_x (l8={l8})");
-                    assert_eq!(le.sc_c, ll.sc_c, "layer {k} sc_c (l8={l8})");
-                    assert_eq!(le.pair, ll.pair, "layer {k} pair (l8={l8})");
+                    assert_eq!(le.sc_x, ll.sc_x, "layer {k} sc_x ({sched:?})");
+                    assert_eq!(le.sc_c, ll.sc_c, "layer {k} sc_c ({sched:?})");
+                    assert_eq!(le.pair, ll.pair, "layer {k} pair ({sched:?})");
                 }
                 let cl: Gf = t_lazy.get_field_challenge(&());
-                assert_eq!(ce, cl, "transcript states diverged (l8={l8})");
+                assert_eq!(ce, cl, "transcript states diverged ({sched:?})");
                 last = Some(lazy);
             }
-            let lazy = last.expect("both schedules ran");
+            let lazy = last.expect("every schedule ran");
 
             // And the verifier accepts the lazy proof.
             let mut vt = Blake3Transcript::new();

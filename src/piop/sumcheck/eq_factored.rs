@@ -175,6 +175,26 @@ pub struct Pair2TauSet<F> {
     pub to: Vec<F>,
 }
 
+/// Round-1 work the CALLER already did, fused into its buffer generation
+/// pass (the forest's JIT layers): either round 1's coefficient triple, or
+/// — under the double-fold — the whole bivariate grid for rounds 1 AND 2,
+/// which spends both without the driver ever reading the buffers. The grid
+/// form needs `k ≥ 3` (round 2 must not be the last round, so the final
+/// round still runs a pass that consumes the deferred folds).
+pub enum PreRound<F> {
+    Coeffs(Vec<(F, F, F)>),
+    Grid(Vec<[F; 9]>),
+}
+
+impl<F> PreRound<F> {
+    fn len(&self) -> usize {
+        match self {
+            PreRound::Coeffs(v) => v.len(),
+            PreRound::Grid(v) => v.len(),
+        }
+    }
+}
+
 /// One group of the mixed-entry driver ([`prove_eq_inner_sumcheck_mixed`]).
 pub struct EqInnerGroupMixed<F> {
     pub q: Vec<F>,
@@ -647,6 +667,23 @@ fn eqf_fuse_enabled() -> bool {
     *ON.get_or_init(|| std::env::var("F2Z_EQF_FUSE").map_or(true, |v| v != "0"))
 }
 
+/// **Double-fold**: bind TWO variables per pass over the dense buffers.
+/// One pass accumulates the 3×3 bivariate grid `G(X₁,X₂) = Σ_b
+/// V_{j+1}(b)·L(X₁,X₂,b)·R(X₁,X₂,b)`; round `j`'s message is
+/// `Σ_{x₂} eq1(x₂; q_{j+1})·G(X₁,x₂)` and round `j+1`'s is `G(ρ_j, X₂)` —
+/// derived from nine stored field elements per group, so round `j+1`
+/// touches no buffer at all. Halves the number of dense passes: the
+/// cascade's traffic drops from `3N` to `1.67N` (`1.5N` when round 1
+/// arrives precomputed and the grid can only start at round 2), at
+/// 13 multiplies per 4 slots instead of 15. Byte-identical — the same
+/// messages in the same transcript order, and every accumulation is
+/// `F₂`-linear in the reduction. `F2Z_EQF_DOUBLE=0` opts out. Read once
+/// per process.
+pub(crate) fn eqf_double() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("F2Z_EQF_DOUBLE").map_or(true, |v| v != "0"))
+}
+
 /// Diagnostic (opt-in): bypass the hand-fused NEON whole-buffer kernels
 /// (message + fold + fused fold+round), forcing the generic fallback
 /// loops — isolates pass-structure gains from kernel quality in A/B runs.
@@ -685,6 +722,187 @@ where
     }
     suffix.reverse(); // suffix[j−1] = V_j, length 2^{k−j}
     suffix
+}
+
+/// One deferred-fold step — the eager fold's exact formula
+/// `v₀ + ρ·(v₁ − v₀)` over the pair at `i`, in registers.
+#[inline(always)]
+#[allow(clippy::arithmetic_side_effects)]
+fn fold1_at<F: InnerTransparentField>(v: &[F], i: usize, rho: &F) -> F {
+    let v0 = v[i].clone();
+    let d = v[i + 1].clone() - &v0;
+    v0 + &(rho.clone() * &d)
+}
+
+/// The logical (fully folded) value at logical index `i` of a buffer that
+/// still carries `pending.len() ∈ {0,1,2}` deferred challenges — the
+/// physical block for `i` is `[i·2^d, (i+1)·2^d)`, `pending[0]` binding
+/// the low bit.
+#[inline(always)]
+#[allow(clippy::arithmetic_side_effects)]
+fn fold_logical<F: InnerTransparentField>(v: &[F], i: usize, pending: &[F]) -> F {
+    match pending.len() {
+        0 => v[i].clone(),
+        1 => fold1_at(v, i << 1, &pending[0]),
+        _ => {
+            let base = i << 2;
+            let a = fold1_at(v, base, &pending[0]);
+            let b = fold1_at(v, base + 2, &pending[0]);
+            a.clone() + &(pending[1].clone() * &(b.clone() - &a))
+        }
+    }
+}
+
+/// The double-fold pass: fold the deferred challenges into the buffer
+/// prefix and accumulate this group's bivariate grid over the two
+/// variables `j` (buffer bit 0) and `j+1` (bit 1).
+///
+/// Returns `[A_u[v]]` at `u·3 + v`: the `X₁`-monomial coefficients
+/// (`u = 0,1,2`) of `G(·, x₂)` at the three `X₂` nodes `v = 0, 1, ∞`.
+/// Both consumers are then nine-element arithmetic ([`grid_this_round`],
+/// [`grid_next_round`]) — round `j+1` never reads a buffer.
+///
+/// Per quad: the four weighted `L` values (`w` folded in before the grid,
+/// which is linear in them), the two 3×3 node grids by differences alone
+/// (char 2: XORs), nine wide products. Value-exact against two
+/// consecutive single-variable passes: the `X₁`-node conversion is the
+/// same `a₁ = H(1) − H(0) − H(∞)` the scalar bodies apply, and reduction
+/// is `F₂`-linear, so accumulating each node separately and converting
+/// after reduction lands on the identical field elements.
+#[allow(clippy::arithmetic_side_effects)]
+fn dense_grid_pass<F>(l: &mut Vec<F>, r: &mut Vec<F>, pending: &[F], suffix: &[F], quads: usize, zero: &F) -> [F; 9]
+where
+    F: InnerTransparentField + WideMulAcc,
+{
+    let d = pending.len();
+    debug_assert_eq!(l.len(), (quads << 2) << d, "grid pass reads the unfolded buffers");
+    debug_assert_eq!(suffix.len(), quads, "grid weight is the round j+1 suffix tensor");
+    let mut acc = core::array::from_fn::<_, 9, _>(|_| F::wide_zero(zero));
+    for b in 0..quads {
+        let base = b << 2;
+        // Logical quad: index (b≪2) | (x₂≪1) | x₁.
+        let lv: [F; 4] = core::array::from_fn(|i| fold_logical(l, base | i, pending));
+        let rv: [F; 4] = core::array::from_fn(|i| fold_logical(r, base | i, pending));
+        // The weight rides the L side only, folded in BEFORE the grid
+        // (which is linear in the four values); the buffer keeps the
+        // unweighted folds.
+        let lw: [F; 4] = core::array::from_fn(|i| suffix[b].clone() * &lv[i]);
+        // Node grids {0, 1, ∞}² from the four multilinear values: rows
+        // v = x₂ node, columns u = x₁ node.
+        let grid = |v: &[F; 4]| -> [F; 9] {
+            let d00 = v[1].clone() - &v[0]; // ∂x₁ at x₂ = 0
+            let d01 = v[3].clone() - &v[2]; // ∂x₁ at x₂ = 1
+            [
+                v[0].clone(),
+                v[1].clone(),
+                d00.clone(),
+                v[2].clone(),
+                v[3].clone(),
+                d01.clone(),
+                v[2].clone() - &v[0],
+                v[3].clone() - &v[1],
+                d01 - &d00,
+            ]
+        };
+        let lg = grid(&lw);
+        let rg = grid(&rv);
+        for (a, (x, y)) in acc.iter_mut().zip(lg.iter().zip(rg.iter())) {
+            F::wide_add_assign(a, &F::mul_wide(x, y));
+        }
+        // Land the folded quad in the prefix — writes trail the reads
+        // (the next quad's first physical index is `(b+1)·2^{d+2}`).
+        if d > 0 {
+            for (i, (lf, rf)) in lv.into_iter().zip(rv).enumerate() {
+                l[base | i] = lf;
+                r[base | i] = rf;
+            }
+        }
+    }
+    if d > 0 {
+        l.truncate(quads << 2);
+        r.truncate(quads << 2);
+    }
+    // Node → X₁-monomial per x₂ node: a₀ = H(0), a₂ = H(∞),
+    // a₁ = H(1) − H(0) − H(∞).
+    let e: [F; 9] = acc.map(F::from_wide);
+    core::array::from_fn(|i| {
+        let (u, v) = (i / 3, i % 3);
+        let base = v * 3;
+        match u {
+            0 => e[base].clone(),
+            2 => e[base + 2].clone(),
+            _ => e[base + 1].clone() - &e[base] - &e[base + 2],
+        }
+    })
+}
+
+/// Round `j`'s coefficient triple from the grid:
+/// `H^{(j)}(X₁) = Σ_{x₂} eq1(x₂; q_{j+1})·G(X₁, x₂)`. Nodes `v = 0, 1`
+/// ARE those two evaluations, so each `X₁` coefficient is one `eq1` blend.
+#[allow(clippy::arithmetic_side_effects)]
+fn grid_this_round<F: InnerTransparentField>(g: &[F; 9], q_next: &F, one: &F) -> (F, F, F) {
+    let e1 = q_next.clone();
+    let e0 = one.clone() - q_next;
+    let a = |u: usize| -> F { e0.clone() * &g[u * 3] + &(e1.clone() * &g[u * 3 + 1]) };
+    (a(0), a(1), a(2))
+}
+
+/// Round `j+1`'s coefficient triple from the same grid:
+/// `H^{(j+1)}(X₂) = G(ρ_j, X₂)` — evaluate each `X₂` node's `X₁`
+/// polynomial at ρ, then convert the three nodes to monomial
+/// coefficients. Nine field elements in, no buffer touched.
+#[allow(clippy::arithmetic_side_effects)]
+fn grid_next_round<F: InnerTransparentField>(g: &[F; 9], rho: &F) -> (F, F, F) {
+    let rho2 = rho.clone() * rho;
+    let at = |v: usize| -> F {
+        g[v].clone() + &(rho.clone() * &g[3 + v]) + &(rho2.clone() * &g[6 + v])
+    };
+    let (n0, n1, ninf) = (at(0), at(1), at(2));
+    let a1 = n1 - &n0 - &ninf;
+    (n0, a1, ninf)
+}
+
+/// Fold `pending.len()` deferred challenges into the prefix and
+/// accumulate ONE round's coefficient triple — the generic
+/// `d`-deferred-challenge form of the fused message pass. Used for the
+/// `d = 2` case a double-fold cascade leaves behind at its last rounds
+/// (`d = 1` keeps the hand-fused kernel path).
+#[allow(clippy::arithmetic_side_effects)]
+fn dense_msg_pass_d<F>(l: &mut Vec<F>, r: &mut Vec<F>, pending: &[F], suffix: &[F], half: usize, zero: &F) -> (F, F, F)
+where
+    F: InnerTransparentField + WideMulAcc,
+{
+    debug_assert_eq!(l.len(), (half << 1) << pending.len(), "d-fold pass buffer shape");
+    let mut a0 = F::wide_zero(zero);
+    let mut a1 = F::wide_zero(zero);
+    let mut a2 = F::wide_zero(zero);
+    for b in 0..half {
+        let e = b << 1;
+        let fl0 = fold_logical(l, e, pending);
+        let fl1 = fold_logical(l, e | 1, pending);
+        let fr0 = fold_logical(r, e, pending);
+        let fr1 = fold_logical(r, e | 1, pending);
+        let w = &suffix[b];
+        let l0w = w.clone() * &fl0;
+        let l1w = w.clone() * &fl1;
+        let wc0 = F::mul_wide(&l0w, &fr0);
+        let w11 = F::mul_wide(&l1w, &fr1);
+        let dr = fr1.clone() - &fr0;
+        let dl = l1w - &l0w;
+        let wc2 = F::mul_wide(&dl, &dr);
+        F::wide_add_assign(&mut a0, &wc0);
+        F::wide_add_assign(&mut a2, &wc2);
+        F::wide_add_assign(&mut a1, &w11);
+        F::wide_sub_assign(&mut a1, &wc0);
+        F::wide_sub_assign(&mut a1, &wc2);
+        l[e] = fl0;
+        l[e | 1] = fl1;
+        r[e] = fr0;
+        r[e | 1] = fr1;
+    }
+    l.truncate(half << 1);
+    r.truncate(half << 1);
+    (F::from_wide(a0), F::from_wide(a1), F::from_wide(a2))
 }
 
 /// Prove `Σ_x Σ_t eq(x; q_t)·Σ_i L_{t,i}(x)·R_{t,i}(x)` (see the module
@@ -769,7 +987,7 @@ pub fn prove_eq_inner_sumcheck_mixed_pre<F>(
     tau_sets: &[(Vec<F>, Vec<F>)],
     pair_tau_sets: &[Pair2TauSet<F>],
     t4_sets: &[Vec<F>],
-    mut pre_round1: Option<Vec<(F, F, F)>>,
+    mut pre_round1: Option<PreRound<F>>,
     field_cfg: &F::Config,
 ) -> (SumcheckProof<F>, Vec<F>, Vec<Vec<(F, F)>>)
 where
@@ -905,9 +1123,16 @@ where
     // next round's per-position value tables (read inline).
     let mut pair3_value_sets: Vec<Pair2FoldTables<F>> = Vec::new();
     let mut leaf3_value_sets: Vec<Pair2FoldTables<F>> = Vec::new();
-    // Pass fusion: a deferred fold challenge — set when the round's fold is
-    // skipped and consumed by the next round's fused pass.
-    let mut pending_rho: Option<F> = None;
+    // Pass fusion: deferred fold challenges — pushed when a round's fold is
+    // skipped, consumed by the next pass. One under plain fusion; TWO once
+    // the double-fold binds a pair of variables per pass.
+    let mut pending: Vec<F> = Vec::new();
+    // Double-fold state: the bivariate grid a pass left behind, spending
+    // the NEXT round with no buffer pass at all, plus the challenge that
+    // round evaluates it at (tracked separately from `pending` so the
+    // path is correct with fusion off, where folds are never deferred).
+    let mut grid: Option<Vec<[F; 9]>> = None;
+    let mut grid_rho: Option<F> = None;
 
     for j in 1..=k {
         // Buffers at round j have 2^{k−j+1} entries (leaf-bit groups define
@@ -1396,22 +1621,111 @@ where
         // into the prefix, and accumulates this round's coefficients from
         // the folded pairs — identical field values, identical transcript
         // order.
-        let hs: Vec<(F, F, F, F)> = if j == 1 && pre_round1.is_some() {
-            // Round-1 coefficients arrived precomputed (fused into the
-            // caller's buffer generation): only the coefficient→node
-            // conversion runs — the SAME conversion the message passes
-            // apply — and the buffers stay untouched until round 2.
-            let pre = pre_round1.take().expect("checked is_some");
-            pre.into_iter()
-                .map(|(a0, a1, a2)| {
-                    let h0 = a0.clone();
-                    let h1 = a0.clone() + &a1 + &a2;
-                    let h2 = a0.clone() + &(c2.clone() * &a1) + &(c2sq.clone() * &a2);
-                    let h3 = a0 + &(c3.clone() * &a1) + &(c3sq.clone() * &a2);
-                    (h0, h1, h2, h3)
-                })
-                .collect()
-        } else if let Some(rho_prev) = pending_rho.take() {
+        // Coefficients → node evaluations, the one conversion every path
+        // ends in.
+        let to_h = |(a0, a1, a2): (F, F, F)| -> (F, F, F, F) {
+            let h0 = a0.clone();
+            let h1 = a0.clone() + &a1 + &a2;
+            let h2 = a0.clone() + &(c2.clone() * &a1) + &(c2sq.clone() * &a2);
+            let h3 = a0 + &(c3.clone() * &a1) + &(c3sq.clone() * &a2);
+            (h0, h1, h2, h3)
+        };
+        // A double-fold pass covers rounds (j, j+1); the grid is only
+        // produced when round j+1 is NOT the last, so round k always runs
+        // a real pass and the final interpolation never sees a deferred
+        // fold.
+        let double_now = eqf_double()
+            && grid.is_none()
+            && j + 1 < k
+            && !(j == 1 && pre_round1.is_some())
+            && bufs.iter().all(|gb| matches!(gb, GroupBufs::Dense(p) if p.len() == 1));
+        let hs: Vec<(F, F, F, F)> = if let Some(g) = grid.take() {
+            // Round j+1 of a double-fold pass: nine field elements per
+            // group, evaluated at the challenge just drawn. No pass.
+            let rho_prev = grid_rho.take().expect("grid follows its round's challenge");
+            g.iter().map(|gg| to_h(grid_next_round(gg, &rho_prev))).collect()
+        } else if double_now {
+            let _g_msg = crate::utils::prof::scope("eqf:grid");
+            let quads = half >> 1;
+            let pend = core::mem::take(&mut pending);
+            let pass = |t: usize, gb: &mut GroupBufs<F>| -> [F; 9] {
+                let suffix_t = &suffix[if shared_q { 0 } else { t }][j];
+                let GroupBufs::Dense(group_bufs) = gb else {
+                    unreachable!("double-fold requires all-Dense single-pair groups")
+                };
+                let (l, r) = &mut group_bufs[0];
+                dense_grid_pass(l, r, &pend, &suffix_t[..quads], quads, &zero)
+            };
+            #[cfg(feature = "parallel")]
+            let out: Vec<[F; 9]> = {
+                let min_len = (512usize / quads.max(1)).max(1);
+                bufs.par_iter_mut()
+                    .enumerate()
+                    .with_min_len(min_len)
+                    .map(|(t, gb)| pass(t, gb))
+                    .collect()
+            };
+            #[cfg(not(feature = "parallel"))]
+            let out: Vec<[F; 9]> =
+                bufs.iter_mut().enumerate().map(|(t, gb)| pass(t, gb)).collect();
+            let hs = out
+                .iter()
+                .enumerate()
+                .map(|(t, g)| to_h(grid_this_round(g, &qs[if shared_q { 0 } else { t }][j], &one)))
+                .collect();
+            grid = Some(out);
+            hs
+        } else if pending.len() == 2 {
+            // Tail of a double-fold cascade: two deferred challenges, one
+            // round's message.
+            let _g_msg = crate::utils::prof::scope("eqf:fmsg2");
+            let pend = core::mem::take(&mut pending);
+            let pass = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F, F) {
+                let suffix_t = &suffix[if shared_q { 0 } else { t }][j - 1];
+                let GroupBufs::Dense(group_bufs) = gb else {
+                    unreachable!("deferred folds require all-Dense single-pair groups")
+                };
+                let (l, r) = &mut group_bufs[0];
+                to_h(dense_msg_pass_d(l, r, &pend, &suffix_t[..half], half, &zero))
+            };
+            #[cfg(feature = "parallel")]
+            let out: Vec<(F, F, F, F)> = {
+                let min_len = (512usize / half.max(1)).max(1);
+                bufs.par_iter_mut()
+                    .enumerate()
+                    .with_min_len(min_len)
+                    .map(|(t, gb)| pass(t, gb))
+                    .collect()
+            };
+            #[cfg(not(feature = "parallel"))]
+            let out: Vec<(F, F, F, F)> =
+                bufs.iter_mut().enumerate().map(|(t, gb)| pass(t, gb)).collect();
+            out
+        } else if j == 1 && pre_round1.is_some() {
+            // Round-1 work arrived precomputed (fused into the caller's
+            // buffer generation): only the coefficient→node conversion
+            // runs — the SAME conversion the message passes apply — and
+            // the buffers stay untouched. Under the grid form, round 2
+            // rides along for free too: the caller's single generation
+            // pass has covered BOTH rounds, so the first time the driver
+            // reads these buffers is round 3, already folding two
+            // challenges.
+            match pre_round1.take().expect("checked is_some") {
+                PreRound::Coeffs(pre) => pre.into_iter().map(to_h).collect(),
+                PreRound::Grid(g) => {
+                    assert!(k >= 3, "a pre-round grid needs a non-final round 2");
+                    let hs: Vec<(F, F, F, F)> = g
+                        .iter()
+                        .enumerate()
+                        .map(|(t, gg)| {
+                            to_h(grid_this_round(gg, &qs[if shared_q { 0 } else { t }][1], &one))
+                        })
+                        .collect();
+                    grid = Some(g);
+                    hs
+                }
+            }
+        } else if let Some(rho_prev) = pending.pop() {
             let _g_msg = crate::utils::prof::scope("eqf:fmsg");
             let fused = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F, F) {
                 let suffix_t = &suffix[if shared_q { 0 } else { t }][j - 1];
@@ -1554,6 +1868,10 @@ where
 
         let rho: F = transcript.get_field_challenge(field_cfg);
         transcript.absorb_random_field(&rho, &mut buf);
+        // A grid produced this round is spent by the next one, at ρ_j.
+        if grid.is_some() {
+            grid_rho = Some(rho.clone());
+        }
 
         // A_{t,j+1} = A_{t,j} · eq1(ρ_j; q_t[j−1]); fold all L, R at ρ_j.
         for (t, a) in a_scalars.iter_mut().enumerate() {
@@ -1570,7 +1888,7 @@ where
             if eqf_fuse_enabled()
                 && bufs.iter().all(|gb| matches!(gb, GroupBufs::Dense(p) if p.len() == 1))
             {
-                pending_rho = Some(rho.clone());
+                pending.push(rho.clone());
                 randomness.push(rho);
                 continue;
             }
