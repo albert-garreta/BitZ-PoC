@@ -1202,14 +1202,40 @@ use crate::piop::sumcheck::quad::{QuadGroup, prove_quad_eq_sumcheck};
 /// changing: prover and verifier BOTH dispatch through this — the env
 /// var is the experiment's out-of-band configuration. Read per call.
 pub fn quad_active(p: &IntEvalParams) -> bool {
-    if !std::env::var("F2Z_QUAD").is_ok_and(|v| v == "1")
-        || forest_schedule() != ForestSchedule::L4
-    {
+    let knob = std::env::var("F2Z_QUAD").unwrap_or_default();
+    let forced = knob == "force";
+    if !(forced || knob == "1") || forest_schedule() != ForestSchedule::L4 {
         return false;
     }
     let log_w = p.word_bits.trailing_zeros() as usize;
-    (p.rows() << log_w) >= 256
+    let row_len = p.rows() << log_w;
+    if row_len < 256 {
+        return false;
+    }
+    // The measured knee (below): quad and the double-fold are
+    // SUBSTITUTES, so `=1` engages only where arity 4 still wins.
+    forced || row_len.trailing_zeros() as usize + p.s <= QUAD_N_MAX
 }
+
+/// The QUAD knee in `n = depth + s`, measured 2026-07-31 in paired
+/// in-window runs against the double-fold on one box (prove, medians of
+/// 3): n=22 −12 %, n=24 −20 %, **n=26 +6 %, n=28 +5 %**.
+///
+/// Arity-4 layers run on their OWN degree-5 driver
+/// ([`prove_quad_eq_sumcheck`]) covering the stored/JIT region — exactly
+/// the region where binding two variables per pass wins most — so
+/// enabling quad DISPLACES the double-fold from it. Below the knee the
+/// halved layer count still dominates (and the double-fold keeps the
+/// arity-2 remnants: the leaf/pair post-LUT cascades and the parity
+/// layer, worth a further 1–3 %); above it the arity-2 cascade with two
+/// variables per pass is simply the better body and quad gives back more
+/// than it buys. The two are alternatives, not a stack.
+///
+/// `F2Z_QUAD=force` overrides the gate — for re-measuring the crossover
+/// on a memory-fresh box, or after porting the double-fold into
+/// `quad.rs` (a 5×5 node grid, 25 wide accumulators against the arity-2
+/// case's 9), which is what would push this knee back up.
+const QUAD_N_MAX: usize = 25;
 
 /// The quad layer plan for tree depth `d`: quads deliver claims at even
 /// levels `2, 4, …, P` (`P = d−2` if even, else `d−3`); a single arity-2
