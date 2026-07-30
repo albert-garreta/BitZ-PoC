@@ -1057,6 +1057,195 @@ line-wide forest-kernel levers (`riding the forest`, 8/16-case leaf
 rounds) — body count itself is information-forced for XOR-mixed
 claims of distinct shapes.
 
+**Structured taps: 64-bit words (2026-07-27, follow-up) — the width
+is free.** The group width is now a parameter: `F2Z_TAPS_GRP=6` on
+the harness and `--taps-grp 6` on the CLI run the SAME cols4 and
+2-column vx instances on 64-bit entry-axis words (g = 6). As the
+machinery predicts (translated-eq chains are O(g), the carry-class
+count is width-independent, extraction is whole-run gathers),
+**every measured number lands in the 32-bit band**: cols4-64 at the
+δ = 3 knee 46.1/103.0/337.2 ms at n=22/24/26 with proofs
+169/216/277 KB (32-bit: 43.6/99.3/312.7, 168/215/277); vx-64 at the
+δ = 4 knee 65.0/179.6/619.7 with proofs 179/—/289 KB (32-bit:
+66.4/182.5/619.4, 180/227/289); byte knee `custom:3:4` unchanged
+(cols4-64 n=24: 153.4 vs 153.3 KiB); verify unchanged. δ scans
+re-run at g = 6 confirm the same knees (cols4 δ3, vx δ4; δ = 6 —
+now inside the collapse envelope δ ≤ g — regresses on presum rounds
+like δ5 did at g=5). What 64-bit words buy semantically at zero
+cost: rotation amounts up to 63 (SHA-512/Blake2b-class constants)
+and half the word count per trace. Envelope shifts only: s ≥ g + 2
+(cols4-64 needs n ≥ 18) and the δ ceiling moves to 6. Tests: +2
+(g=6 wide-amount extraction vs naive; end-to-end roundtrip with
+amounts 33/40/47/63); 107/107 green both guard modes.
+
+**Structured taps: the b3 G-step family (2026-07-27, follow-up) —
+virtualize the defined columns, compose the checks.** The
+8-role-vector family (a,b,c,d,a',b',c',d' with d' = ROT¹⁶(d⊕a'),
+b' = ROT¹²(b⊕c'), off¹(d) = ROT⁸(d'⊕off¹a), off¹(b) = ROT⁷(b'⊕off¹c);
+all eight opened at shared points), measured two ways
+(`F2Z_AB_B3FAM=1`). OPT: commit SIX (d', b' virtual — relations 1–2
+become definitions and vanish), open the eight through ONE 0x44
+collapse (6 identity sets + {d,a'} at ROT¹⁶ — plain bodies, no
+rings; δ = 4 since 2⁴ | 16) with the ROT¹² opening routed through
+0x42 (8 ∤ 12 puts it off the collapse δ-envelope; 0x42 is
+envelope-free), plus the two COMPOSED zero-checks
+R₁ = off¹(d)⊕ROT²⁴(d)⊕ROT²⁴(a')⊕ROT⁸off¹(a),
+R₂ = off¹(b)⊕ROT¹⁹(b)⊕ROT¹⁹(c')⊕ROT⁷off¹(c) (word-0 boundary rows
+excluded by the zero-check weight masks) = 7 + 3 bodies. NAIVE:
+commit all eight, open all eight (0x44 δ4), check the four relations
+as 3-tap mixed vectors = 8 + 4 bodies. Measured (mixed layer δ = 4,
+FAST, medians of 5; harness backward-generates the recurrence and
+asserts the composed vectors vanish — the algebra self-check):
+opt **63.8/123.9/326.1 ms, 275/349/438 KB** at n=22/24/26 vs naive
+65.2/134.0/333.1, 283/357/450 (n=26 same-window churned box); at
+g = 6 (64-bit words) opt 107.4 vs naive 124.8 (1.16×). Lessons
+pinned: (1) virtualizing relation-defined columns deletes their
+consistency bodies AND their witness columns; (2) composing
+definitions into the residual checks (ROT⁸∘ROT¹⁶ = ROT²⁴) keeps the
+check count at the number of INDEPENDENT relations; (3) the collapse
+δ-envelope (2^δ | amt) can force a bad layer δ — route the offending
+op through 0x42 instead of capping δ (the δ2 variant measured
+SLOWER and fatter: 463.7 ms / 520 KB at n=26); (4) d, b cannot be
+virtualized (their joint recurrence's resolvent is an O(#words) tap
+list — the phase-0 succinctness wall). FOLLOW-UP — the fewer-body
+routes, measured: the opening layer CAN compress to 6 bodies (two
+j=2 shared-point families {d,a′}, {b,c′} + the {a},{c} idents + the
+2 checks) or 4 bodies (two j=3 families absorbing a,c), with v(d′),
+v(b′) delivered as the pair-XOR form claims at the PUBLICLY
+ROT-relabeled point (an opening of d⊕a′ IS an opening of
+d′ = ROT¹⁶(d⊕a′) — zero cost). Both arms landed in the harness and
+verify — and both LOSE to the 10-body δ4 routing at real shapes:
+fam6 74.0/151.0 ms, 510/669 KB and fam4 84.8/147.7 ms, 413/543 KB
+vs opt 57.5/122.7 ms, 275/349 KB at n=22/24. Body count is not the
+cost unit: the family paths run δ=0 (full-width folds and forests —
+a δ4 collapse body costs ~0.55× a δ0 single), family bodies carry
+1–4 AND discharge channels each (~13–20 ms), and the fam route pays
+4 sub-proof tails vs 2. In δ0-single-claim EQUIVALENTS the 10-body
+routing already costs ≈ 2.9 singles at n=24. The open lever that
+could flip it: δ-enabling the RLC-family path + merging the two
+families into one proof (projected ~10–20 %, bounded by the
+channels). n=26 row (heavily churned box — 80 MB free — ratios are
+same-window): opt 312.0 / 438 KB, naive 321.3, **fam6 310.6 = 1.00×
+(a tie)**, fam4 350.5 / 713 KB — the fam6/opt trend across n =
+1.29× → 1.23× → 1.00× at n=22/24/26: the family route's case-forest
+economy GROWS with n while the collapse bodies stay
+one-body-per-claim, so even δ0 families reach parity at n=26 and
+project to WIN at n ≥ 28; δ-enabling them (which also fixes the 2×
+byte gap — the full-width δ0 folds are the entire size loss) would
+flip the verdict at every shape. n=28 CONFIRMS the crossover (two
+runs, 67 MB free at start): **fam6 950.3 ms = 0.92× of opt** on the
+steadier run (1031.4/1034.2 opt/naive) and 0.72× under peak churn —
+fam6's j2-lazy working set is churn-IMMUNE (951.6/950.3 across
+runs while every other arm swung ~25 %); fam4 needs
+`F2Z_RLC_J34_LAZY=1` at this scale (1982.8 eager → 1414.4 lazy) and
+still loses (the j3 channel + case-width cost). Bytes at n=28: opt
+539 KB, fam6 1134, fam4 937 — the δ0 fold gap unchanged. Verdict:
+the 6-body family structure WINS prover time from n=28 up at δ0
+already, with the δ-family extension the remaining piece for the
+byte axis and the smaller shapes.
+
+**δ for the family paths — verified and measured (2026-07-27,
+late).** The RLC-family core was p_x-parameterized all along
+(extraction, folds, forests, presum, cascade, rings all derive
+their shapes from `virtual_xor_params`), so δ needed no code — what
+was missing was PROOF of a correct re-split: the new cross-split
+consistency test pins it (product-form weights `colw0 = f ⊗ g`,
+`rw_δ = rw0 ⊗ f`: the δ path must prove the SAME claimed values as
+the flat reading; j = 2 and j = 3 with the level-2 cascade, δ = 1, 2,
+tampers rejected; 109/109 green). Harness: `F2Z_AB_FAM_DELTA`.
+Measured (fam6, δ4 vs δ0): time ~flat at n = 24–26 (147.5 vs 151.0;
+306.0 vs 310.6 — the tree-count gain cancels against the presum/
+discharge round growth), **−10 % at n = 29** (1728.3 vs 1915.2,
+cross-window) where fam6 = **0.85× of opt same-window** (0.68× on
+the churned δ0 window; n=29 row: opt 2041.2/581 KB, naive 1997.5,
+fam6 1728.3/985 KB, fam4 3307.1 — fam4's δ4 presum growth × j3
+channels regresses it; keep fam4 at δ0 + lazy). Bytes: fam6
+−8/−13/−20 % at n=24/26/29 (669→613, 874→760, 1225→985 KB) — less
+than the fold-vector share because **the fam route's byte floor is
+its FOUR Ligerito blobs vs opt's two**: sub-proof merging (one
+recursive call across fam1+fam2+idents+checks) is now the bigger
+byte lever than δ, worth ~2 blobs ≈ 300–400 KB at n=29. **The MERGED multi-family proof (2026-07-28) — tag 0x47, the
+fam-route tails eliminated.** The family core was refactored at its
+natural seam (front = extraction/forests/presums/cascade/rings, all
+absorbs; closure = r″/η/basis/ONE Ligerito) — byte-stable for the
+landed single-family paths — and a merged API added:
+`RlcFamilySpec` + `prove/verify_mle_eval_mod_q_ligerito_rlc_families_
+shared_point` run k families' fronts in ONE transcript (per family:
+γ's → rank-1 case weights → front, sequential FS) with ONE shared
+closing call. Tests: merged roundtrip (two j2 + one j1 family, δ = 0
+and 2, tampered values and cross-part rings rejected); 110/110.
+Harness: `fam6m` in B3OPEN = {d,a′} j2 + {b,c′} j2 + {a} j1 + {c} j1
+merged, δ4. Measured (8 openings, no checks; FAST):
+
+| n | vx8 (1 tail) | fam6 (3 tails) | **fam6m (1 tail)** |
+|----|--------------|----------------|--------------------|
+| 24 | **68.3 / 178 KB** | 117.2 / 458 | 78.7 (1.15×) / 209 |
+| 26 | 203.7 / 229 | 218.0 / 560 | **210.2 (1.03×) / 256** |
+| 28 | 760.2 / 290 | 666.5 / 664 | **647.6 (0.85×) / 307** |
+| 29 | 1962.0 / 313 | 1390.2 / 731 | **1314.4 (0.67×) / 334** |
+
+The merge removes ~2 blobs (731 → 334 KB at n=29 — byte-parity with
+vx8) and −5 % time; fam6m is the best arm from n ≈ 26 up on time at
+near-vx8 bytes. Against the base ONE-opening floor at n=29
+(1228.7 ms / 260 KiB): **fam6m delivers all 8 openings at 1.07×
+prove / 1.28× bytes**. Updated openings routing: 0x44 below n ≈ 26;
+the MERGED pair-family proof above.
+
+**Openings-only b3 arms (2026-07-28): the family crossover survives
+without the checks.** `F2Z_AB_B3OPEN=1` — commit SIX (d', b'
+virtual), open all eight with NO relation bodies (v(d'), v(b') as
+the pair-XOR forms at the relabeled point): `vx8` = ONE 0x44
+sub-proof, 8 plain bodies incl. the two ident-op XOR sets (no rings,
+one tail, δ4); `fam6` = two j2 families (δ4) + one 0x44 for {a},{c};
+`fam4` = two j3 families (δ0 + lazy). Measured (FAST, medians):
+
+| n | vx8 | fam6 | fam4 |
+|----|-----|------|------|
+| 24 | **66.1 ms / 178 KB** | 113.6 (1.72×) / 458 | 106.4 / 385 |
+| 26 | **198.1 / 229** | 216.3 (1.09×) / 560 | 283.0 / 517 |
+| 28 | 795.5 / **290** | **653.7 (0.82×)** / 664 | 970.7 / 705 |
+| 29 | 1701.8 / **313** | **1361.2 (0.80×)** / 731 | 2178.2 / 748 |
+
+Same shape as the with-checks contest: vx8 (the collapse) owns
+n ≤ 26; fam6 crosses at n ≈ 27 and wins ~20 % at 28–29 — the pair
+case-forests amortize 2 columns' bits at ~1.3× one body and stay
+churn-lean while per-claim bodies pay full price at scale. Against
+the base ONE-opening floor at n=29 (1228.7 ms): **fam6 delivers all
+8 openings at 1.11×** (vx8: 1.39×). fam4 loses everywhere
+openings-only (absorbing the idents into j3 families buys bodies but
+pays channels + case width). Bytes: vx8 tracks base (313 vs 260 KB);
+fam6's 731 KB is 3 sub-proof tails — the merge lever. Routing rule,
+final: openings-only at one point → 0x44/0x46 below n ≈ 27, two-column
+pair-families above (when XOR-image openings are in the set at all;
+pure identity sets stay 0x44 at every n unless bodies ≫ 8).
+
+**Openings-only measurement (2026-07-28; the outer protocol owns
+constraint checking).** `F2Z_AB_OPEN8=1`: 8 committed columns, 8
+identity MLE openings at ONE shared point through a single 0x44
+sub-proof (8 plain bodies, one Ligerito tail, δ = 4 via
+`F2Z_AB_OPEN_DELTA`), against the base prover's one-claim floor on
+the same 2^n bits (`f2z <n> --profile fast`, same window):
+
+| n | base (1 opening) | OPEN8 (8 openings) | ratio | marginal/opening |
+|----|------------------|--------------------|-------|------------------|
+| 26 | 153.6 ms / 195 KiB / 3.2 ms | 201.7 ms / 229 KB / 7.9 ms | **1.31×** | 22.3 ms |
+| 29 | 1228.7 ms / 260 KiB / 4.8 ms | 1456.9 ms / 313 KB / 11.1 ms | **1.19×** | 172 ms (0.14× base) |
+
+Eight openings for 1.19–1.31× the price of ONE; each opening beyond
+the first costs ~0.14–0.15× a base proof (the collapse amortization:
+shared statement, shared forest tails, shared Ligerito call, δ-thin
+fold vectors). Routing rule under the openings-only scope: identity
+openings of committed columns → ONE 0x44 (or 0x46 for per-claim
+weights) sub-proof at the δ knee — no taps, no rings, no channels;
+the tap/family machinery enters only when openings of DERIVED
+vectors (rotated/shifted/XOR images) are wanted.
+
+Compression
+math for this family: one word = one G, 56 G-words per compression
+⇒ 2^{n−8}/56 compressions per proof (~292/1.2k/4.7k/18.7k/37.4k at
+n=22/24/26/28/29); fam6 at n=29 ≈ **46 µs per compression** for the
+xor-rot layer + openings.
+
 ### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
 
 The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —

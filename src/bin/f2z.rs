@@ -170,7 +170,7 @@ fn usage() -> ! {
         "usage: f2z <n> [<t> <s> [<W>]] [--threads N] [--reps R] \
          [--profile slim|slim3|fast|secure|custom:<log_inv_rate>:<initial_k>] [--word-bits W] \
          [--family j2|j3|j4|j2s|j3s|j4s] [--taps vx|family|collapse|rotxor|sched]\n\
-         [--taps-delta D] [--taps-rounds R]\n\
+         [--taps-delta D] [--taps-rounds R] [--taps-grp G]\n\
          (n = t + s; W = cell width, power of two, default 1;\n\
           --family runs the mod-q RLC claim family at the A/B layout — j2 = the\n\
           XOR triple, j3/j4 the wider families, j2s/j3s/j4s the SHARED-POINT\n\
@@ -205,6 +205,7 @@ struct Opts {
     taps: Option<String>,
     taps_delta: Option<usize>,
     taps_rounds: Option<usize>,
+    taps_grp: Option<usize>,
 }
 
 fn parse_args() -> Opts {
@@ -221,6 +222,7 @@ fn parse_args() -> Opts {
         taps: None,
         taps_delta: None,
         taps_rounds: None,
+        taps_grp: None,
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -254,6 +256,11 @@ fn parse_args() -> Opts {
             }
             "--taps-rounds" => {
                 o.taps_rounds = Some(
+                    args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage()),
+                );
+            }
+            "--taps-grp" => {
+                o.taps_grp = Some(
                     args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage()),
                 );
             }
@@ -791,7 +798,15 @@ fn run_taps(o: &Opts, mode: &str) {
     use f2z::pcs::{FQ_BITS, FQ_MOD, Fq as PcsFq, virtual_xor_params};
     use f2z::taps::{TapOp, extract_virtual_tap_rows};
 
-    const GRP: usize = 5;
+    // Word-group width: --taps-grp, else F2Z_TAPS_GRP, else 32-bit words.
+    let grp: usize = o
+        .taps_grp
+        .or_else(|| std::env::var("F2Z_TAPS_GRP").ok().and_then(|v| v.parse().ok()))
+        .unwrap_or(5);
+    if !(1..=8).contains(&grp) {
+        eprintln!("--taps-grp must be in 1..=8");
+        exit(2);
+    }
     if !matches!(mode, "vx" | "family" | "collapse" | "rotxor" | "sched" | "mix6" | "cols4") {
         eprintln!(
             "unknown taps mode: {mode} (expected vx|family|collapse|rotxor|sched|mix6|cols4)"
@@ -815,8 +830,12 @@ fn run_taps(o: &Opts, mode: &str) {
         );
         exit(2);
     }
-    if layout.x_fold_extra > GRP {
-        eprintln!("--taps-delta must be ≤ g = {GRP}");
+    if layout.x_fold_extra > grp {
+        eprintln!("--taps-delta must be ≤ g = {grp}");
+        exit(2);
+    }
+    if layout.p.s < grp + 2 {
+        eprintln!("--taps needs s ≥ g + 2 (n too small for 2^{grp}-bit words)");
         exit(2);
     }
     let p = layout.p;
@@ -828,8 +847,8 @@ fn run_taps(o: &Opts, mode: &str) {
     // convolutions, a cross-column mix, the lossy-SHIFT claim) and the
     // pinned 2-cluster stream split.
     let rot =
-        |col, amt, off| TapOp { col, grp_log2: GRP, bit_amt: amt, bit_dropout: false, off };
-    let shl = |col, amt, off| TapOp { col, grp_log2: GRP, bit_amt: amt, bit_dropout: true, off };
+        |col, amt, off| TapOp { col, grp_log2: grp, bit_amt: amt, bit_dropout: false, off };
+    let shl = |col, amt, off| TapOp { col, grp_log2: grp, bit_amt: amt, bit_dropout: true, off };
     let claim_taps: Vec<Vec<TapOp>> = if mode == "cols4" {
         // 4 committed columns: identity claims on each, plus the two
         // XOR-mixed pairs b₁ = ROT¹(a₁) ⊕ off¹(a₂) and
@@ -901,7 +920,7 @@ fn run_taps(o: &Opts, mode: &str) {
     let sched_rounds = o
         .taps_rounds
         .unwrap_or(48)
-        .min((1usize << (layout.p.s - GRP)) - sched_max_src_off);
+        .min((1usize << (layout.p.s - grp)) - sched_max_src_off);
     let k_desc = match mode {
         "collapse" => "13 single-tap claims".to_string(),
         "rotxor" => "8 op(xor-set) claims".to_string(),
@@ -911,7 +930,7 @@ fn run_taps(o: &Opts, mode: &str) {
         _ => "k=6 instance".to_string(),
     };
     println!(
-        "f2z --taps {mode}: n={} (t'={}, s={}, g={GRP}, {k_desc}, one shared point) | \
+        "f2z --taps {mode}: n={} (t'={}, s={}, g={grp}, {k_desc}, one shared point) | \
          lig={lig_tag}@r1/{}k{} | threads={threads_eff} | int guards: {}",
         o.n,
         p_x.t,
@@ -1007,7 +1026,7 @@ fn run_taps(o: &Opts, mode: &str) {
     // single-column ops) — `op(⊕ cols)` claims.
     let all_streams: Vec<TapOp> = streams.iter().flatten().copied().collect();
     let uni = |amt: usize, dropout: bool, off: usize| f2z::taps::TapUniOp {
-        grp_log2: GRP,
+        grp_log2: grp,
         bit_amt: amt,
         bit_dropout: dropout,
         off,

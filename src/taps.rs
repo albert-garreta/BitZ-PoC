@@ -937,6 +937,32 @@ mod tests {
         }
     }
 
+    /// 64-bit words (g = 6) with wide amounts (≥ 32): the fast
+    /// extraction matches the per-bit naive on the tw6 layout
+    /// (s = 8 ≥ g + 2 — 64-bit words, offsets < 4).
+    #[test]
+    fn tap_extraction_matches_naive_g6() {
+        let layout = tap_layout_tw6();
+        let rows = test_rows(&layout, 21);
+        let rot =
+            |col, amt, off| TapOp { col, grp_log2: 6, bit_amt: amt, bit_dropout: false, off };
+        let shl =
+            |col, amt, off| TapOp { col, grp_log2: 6, bit_amt: amt, bit_dropout: true, off };
+        let cases: Vec<Vec<TapOp>> = vec![
+            vec![rot(0, 33, 0)],
+            vec![shl(1, 40, 1)],
+            vec![rot(1, 1, 3)],
+            vec![rot(0, 47, 1), rot(1, 9, 2), shl(0, 63, 0)],
+        ];
+        for taps in &cases {
+            assert_eq!(
+                extract_virtual_tap_rows(&layout, &rows, taps),
+                extract_naive(&layout, &rows, taps),
+                "taps {taps:?}"
+            );
+        }
+    }
+
     #[test]
     fn tap_canonical_ops_normalizes() {
         let rot =
