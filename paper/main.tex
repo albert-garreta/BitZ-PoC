@@ -103,6 +103,97 @@ backrefpages = {cited on pp.},% originally "cited on pages"
 \section{Introduction}
 
 
+Why does this paper exist? F2Z has many similarities to Binius64, so why F2Z at all? First of all, Binius64 is an end-to-end proving system, while F2Z is a PCS. Let's consider F2Z-SNARK a SNARK for proving R1CS constraints over $\ZZ$  or $\ZZ[X]$ with ideals. Flock is also related to F2Z-SNARK, though less so, since Flock is a more use-case specific SNARK for proving bit-intensive computations. We should also keep in mind that Flock is, at the end of the day, Binius64 on steroid optimizations. In general, I think of Flock as subsumed by a Binius64 repo that adopts Flock's optimizations. Hence I will not discuss Flock too much here.
+
+In what follows I understand F2Z-SNARK to be a proof system for constraints over $\ZZ, \ZZ[X]$ with ideals, binary fields, etc., like Zinc+ at the arithmetization and PIOP level (applied to R1CS-like constraints), but using F2Z as PCS.
+
+\paragraph{Efficiency and costs}
+I will now compare F2Z-SNARK with Binius64 on a operation-by-operation case:
+\begin{itemize}
+    \item \emph{Integer and modular addition.} F2Z-SNARK can handle addition or modular addition) of arbitrarily sized integers. Even if the integers are gigantic, the projection to random field trick compresses their size to 100-ish bits. 
+
+    On the other hand, integer addition or modular addition (how does Binius handle modular addition when the modulus is not $2^n$ actually?) in Binius64 requires committing to the carry bits (so each single addition adds a new 32-64 bit word to the witness), and cannot handle large integer/modular addition without chunking.  
+
+    Further, addition in Binius64 produces a non-linear constraint, because proving that the committed carry bits are indeed carry bits requires a Hadamard product. In F2Z-SNARK, additions are linear constraints.
+    \item \emph{Integer or modular multiplication}. This is a quadratic constraint in F2Z-SNARK. It does not introduce extra witness\footnote{Or it negligible does, because of the possible $+n\cdot w$ term in a modular equation, where $n$ is the modulus and $w$ is a committed integer --very small in bit size in practice}. Again, it supports arbitrary sizes and benefits from the random projection for large sizes. 
+
+    Binius64 supports multiplication of elements of less than 32 bits. Larger sizes require chunking. Under 32 bits, it does not pay much for multiplication at the constraint level. The way it proves the multiplications is via a grand product similar to F2Z-SNARK grand product in MLE evaluations. 
+
+    A computation where we are just making $m$ multiplications of under 32 bit integers may actually end up costing almost the same between Binius64 and F2Z-SNARK. \albert{Let's run the experiment}
+
+    It is interesting that in Binius64, multiplications don't go through the Spartan-like PIOP, and instead are proved directly with the grand product \albert{At least that's my understanding}.  In F2Z-SNARK, multiplications would indeed go through the normal PIOP pipeline. Let's keep in mind as something F2Z-SNARK could mimic. \albert{Interesting}
+    \item \emph{XOR}
+    \item \emph{AND}
+    \item \emph{Proof system costs}
+\end{itemize}
+
+
+\paragraph{Specific performance}
+This is WIP, but when it comes to hash proving, F2Z-SNARK seems to outperform in all axes Binius/Flock when there are less than $2^8$ hashes to prove. Beyond that, the F2Z-SNARK route points to 1.5-3x prover times, comparable proof sizes, significantly smaller RAM usage, and unknown verifier comparison for now \albert{WIP}. The practical max number of hashes that F2Z-SNARK can handle is higher  than in Flock due to the lesser memory usage.
+
+The fact that F2Z-SNARK performs better for smaller number of hashes may be due to F2Z-SNARK working with a smaller witness. At those sizes, there's likely floor costs (e.g. Merkle openings) that somewhat dominate costs, and having a 2x (roughly) smaller witness may start to be relevant. 
+
+Interesting to note that in many use cases (e.g.\ digital Id) one has less than $2^8$ hashes to prove. Flock-like numbers come up in Ethereum signature aggregation and maybe proof of provenance where one has to prove a hash of a large file (and others?).
+
+
+\albert{Current WIP: hash + ECDSA sign comparison. Quantized ML linear layer}
+
+For initial reference, Binius64 takes about 110ms to prove an ECDSA with a 200KB proof size.
+
+
+\begin{table}[]
+    \centering
+    \begin{tabular}{c|c|c|c|c|c}
+     & Binius64 & Flock & Plonky3 & F2Z-PCS (no PIOP) & Zinc+\\
+     \hline
+     \hline
+    ECDSA & 119/6.3/195/303 & NA & & & \\
+    \hline
+     RSA &  & NA & & & \\
+    \hline
+    Integer mult & & NA & 3100/10/503/? & 417/4/119/963 & \\
+   \hline
+    $2^7$ SHA & 37/3.4/249/? & 33/25/112/? & & 10.7/2/100/8.7 & \\
+    \hline
+    $2^{15}$ SHA & & 425/25/233/? & & 736/4.5/140/1900 &\\
+    \hline
+    $2^7$ Blake3 & & & &\\
+    $2^{15}$ Blake3 & & & &
+    \end{tabular}
+    \caption{Prover\_time(ms)/Verifier\_time(ms)/Proof\_size(KB)/Peak\_memory(MB). Integer mult measure one million u16 x u16 -> u32 mults. F2Z-PCS does not include PIOP costs -- these are negligible in the hash benches (linear constraints), but should be accounted for in the other benches (degree 2 constraints). Flock's verifier seems a bit broken. Ran in MacBook Air M4 16GB.\\
+    \indent \hspace{1cm} F2Z-PCS hash performance was ``proxied'' as follows: for SHA-256, $2^{12+k}$ witness corresponds to $2^k$ hashes. We run Ligerito for $2^{12+k}$ witness size. The GKR grand product uses $2^{14+k}$ factors, and we run the GKR on that size. The reason for this discrepancy is that, in the real world, 6/8-th of the bits that go into the GKR are a $\FF_2$-linear combination of the original witness. \albert{VERY IMPORTANT: It is possible that the GKR grand product can be optimized in this setting. Right now we are just proving a  $2^{14+k}$ on unstructured bits.} }
+    \label{tab:placeholder}
+\end{table}
+
+\paragraph{Scientific contributions}
+So far, we have compared Binius64 and F2Z-SNARK in terms of performance. But how about the scientific contributions of F2Z-SNARK?
+
+F2Z-SNARK is a proof system designed to handle constraints over $\ZZ$, $\ZZ[X]$ with ideal membership, binary fields, and other fields, simultaneously (in v3 we are probably sticking to integers and $\ZZ[X]$ for simplcity). Arithmetization and PIOP-wise, it borrows from Zinc+, and the novelty compared to Zinc+ is that we are committing to the integer bits over a binary field. For bit-intensive computations, this is much better than committing over $\ZZ$. It remains to be seen what happens in integer-heavy computations \albert{TODO! Edit: John Wu alrady compared it to Hyrax}. 
+
+Potentially, we could commit to large integers with a different PCS over $\ZZ$, say with IPRS, and create a recursive proof of opening for the two PCS's, using F2Z since PCS opening proofs are hash heavy. 
+
+
+
+Thus some scientific contributions of F2Z-SNARK are
+\begin{itemize}
+    \item Unlocks good scaling of bit intensive computations in Zinc+-like proof systems.
+    \item If we include Zinc+ in this line of work, F2Z-SNARK is a follow up for a proof system that uses a highly expressive constraint system. Due to the expressivity, the use-cases of F2Z-SNARK are potentially huge, and difficult to predict. For example, the F2Z-PCS could be used as a drop-in replacement for elliptic curve PCS's (as shown by John Wu)
+
+    We (tentaitvely) choose F2Z-SNARK (likely with both WHIZ and F2Z) working exclusively on $\ZZ$ or $\ZZ[X]$ as our route for a general zkDSL, and the motivation was the expressivity of the constraints. 
+
+    
+    
+    \item F2Z-SNARK does not quite provide much novelty regarding SNARKs over binary fields, beyond possibly some optimizations in the grand product proof  (e.g.\ lower levels of the grand product GKR are computed via a lookup table, exploiting the limited options we have in leafs due to the bit-ness of the witness). 
+
+    That being said, some of these optimizations could be published as contributions, following Flock's lead. \albert{Sometimes I undersell my work, this is a memo to myself to be mindful with that}
+
+    There's also the virtualization of XOR elements of F2Z-PCS. In a sense, a similar thing occurs in Binius64: their R1CS constraint system admits hadamard products, replacing the hadamard by integer multiplication. So such constraint is multiplying together linear combinations of the witness (over the binar field, so ``XOR combinations''). 
+
+    Our virtualization trick can be understood as if we had an R1CS over $\ZZ$, with witness $\zz$, and an extra constraint $\zz= \pi_2^{-1}(M\pi_2(\zz))$ for some matrix $M$. What Binius is doing can be understood similarly, but with much more limited expressivity. Hence in this sense Binius64 arithmetization is a specific case of our arithmetization.
+\end{itemize}
+
+
+
 \albert{Noting so I don't forget: the idea of F2Z being a drop-in replacament alternative to Hyrax (PQ secure and more efficient) may be a good extra motivating point}
 
 \subsection{Acknowledgements}
@@ -124,7 +215,12 @@ Interleaved codes
 \paragraph{Interactive Oracle Reductions (IOR)}
 
 
+
+\section{}
+
 \section{\ftwoz}
+
+\albert{Should we allow for $W>1$?}
 
 %\newcommand{\comfield}{\FF_{\mathsf{c}}}
 %\newcommand{\evalfield}{\FF_{\mathsf{e}}}
@@ -136,7 +232,7 @@ Interleaved codes
 \subsection{Constrained codes over dual fields }
 \albert{not sure dual is a good word: the two fields are just ``different'', while dual things tend to have a close relation between each other}
 Let $\codedim_0\geq 0$ be a dimension parameter, and $\codelength\geq 0$ a blocklength parameter. Let $\FF$ be a field (not necessarily a prime field), and let $\cC\subseteq \FF^{\codelength}$ be a linear code of dimension $\codedim_0$ and blocklength $\codelength$ over $\FF$.  Let $\inplen\geq0$ be a public input length parameter, and let $Q\in \FF[Y_1, \ldots, Y_{\inplen}, Z_1, \ldots, Z_{\codedim}]$  be a constraint polynomial, of arbitrary degree, 
-with coefficients in $\FF$ and on $\inplen+\codedim$ variables. Further, let $\codedim\geq \codedim_0$ be a witness length paramter, and let $P:\FF^{\codedim} \to \FF^{\codedim_0}$ be an arbitrary map (looking ahead, for us $P$ will be a packing map that packs elements from $\FF_2$ into elements of a larger binary field.     Consider the following relation:
+with coefficients in $\FF$ and on $\inplen+\codedim$ variables. Further, let $\codedim\geq \codedim_0$ be a witness length parameter, and let $P:\FF^{\codedim} \to \FF^{\codedim_0}$ be an arbitrary map (looking ahead, for us $P$ will be a packing map that packs elements from $\FF_2$ into elements of a larger binary field.     Consider the following relation:
 %
 $$
 \Relation^Q_{\cC,\FF, P} \defeq \left\{ \left(\begin{aligned} &\inp=\yy\in \FF^\inplen, \\&\oracle = f \in \FF^\codelength, \\ &\wit= \bff\in \FF^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(P(\bff)) = f\\ \wedge \  &Q(\yy, \bff) = 0  \end{aligned} \right\}
@@ -260,7 +356,7 @@ Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with suf
 
 \begin{enumerate}[leftmargin=*]
 \item The prover sends $\mu_1, \ldots, \mu_{\codedim_2}\in \ZZ$ such that $\langle \bff_{*j}, \psievalfield^{-1}(\vv^{(1)})\rangle = \mu_j$. 
-\item The verifier checks that \begin{equation}\label{e:tensor_decomposition_reconstruction}\sum_{j\in [\codedim_1]} \psievalfield(\mu_j)\cdot \vv_j^{(2)}  = \mu\qquad \text{over } \evalfield.\end{equation}   \albert{We could have the prover commit to the $\mu_j$ and have this check proved by the PCS (a PCS that can prove linear constraints like WHIR). This pays off for very large $\codedim$.}
+\item The verifier checks that \begin{equation}\label{e:tensor_decomposition_reconstruction}\sum_{j\in [\codedim_2]} \psievalfield(\mu_j)\cdot \vv_j^{(2)}  = \mu\qquad \text{over } \evalfield.\end{equation}   \albert{We could have the prover commit to the $\mu_j$ and have this check proved by the PCS (a PCS that can prove linear constraints like WHIR). This pays off for very large $\codedim$.}
 \item Prover and verifier define $\bm{\gamma}_i = \psievalfield^{-1}(\vv_i^{(1)}) \in \range{0}{q-1}\subseteq \ZZ$ for $i \in [\codedim_1]$, and set to prove the following claim:
 %
 $$
@@ -270,6 +366,7 @@ Note that this claim is equivalent to
 $$
 \prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \pi_2(\bff_{ij}) +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\codedim_2].
 $$
+\albert{This is a $\Rel^{Q_{\ftwoz}}$}
 % \ulrich{%
 % Suggestion: 
 % Maybe it is more clear, if we write in the above two equalities explicitly a $\bmod\: q$, or, add $\in \mathbb F_q$?
@@ -844,7 +941,7 @@ A(\mathbf a)
 &=0.
 \end{aligned}
 \]
-Since $A$ is surjective, the second argument ranges over all of
+Sincle $A$ is surjective, the second argument ranges over all of
 $\mathbb E$. Nondegeneracy of $\mu_H$ therefore implies
 $W(\mathbf w_1+\mathbf w_2) = W(\mathbf w_1)+W(\mathbf w_2)$. Similarly, for $\lambda\in\mathbb F$,
 \[
@@ -906,8 +1003,8 @@ The linearity assumption on the output map is necessary. Indeed, composing a lin
 
 An important property of bilinear embeddings is that they preserve succinctness if the block size aligns with the tensor decomposition:
 
-\begin{theorem}[Preservation of succinctness]
-Given $d = 2^k$, $n = 2^l$ and a $\mathbb{F}$-linear blockwise map $A = \mathrm{I}_n \otimes A_0$ for some isomorphism $A_0 : \mathbb{F}^d \to \mathbb{E}$, then if $\mathbf{a}$ is succinct then so is $A(\mathbf{a})$. In particular if
+\begin{theorem}[Preservation of succinctness]\label{suc-embed}
+Given $d = 2^k$, $n = 2^l$ and a $\mathbb{F}$-linear blockwise map $A = \mathrm{I}_n \otimes A_0$ for some isomorphism $A_0 : \mathbb{F}^d \to \mathbb{E}$, then if $\mathbf{a}$ \albert{$\mathbf{a} \in \FF^{d n}$} is succinct then so is $A(\mathbf{a})$. In particular if
 \[
 \mathbf{a} = \bigotimes_{i=0}^{k+l-1} 
 \begin{bmatrix}
@@ -1037,31 +1134,266 @@ For the 127-bit field $\mathbb{F}_2[X]/(X^{127} + X + 1)$ the $A$ map is simply 
 
 \subsection{Extension openings}
 
-Assume now that we want to open a basefield witness $\mathbf{w} \in \mathbb{F}^{nd}$ against extension field weights $\mathbf{a} \in \mathbb{E}^{n d}$ proving a claim $\langle \mathbf{w},  \mathbf{a}\rangle_\mathbb{E} = h$ for some  and $h \in \mathbb{E}$. We will present a one-round batching protocol and a a $log d$ round folding protocol.
+Assume now that we wish to open a base-field witness $\mathbf{w} \in \mathbb{F}^{nd}$ against extension-field weights $\mathbf{a} \in \mathbb{E}^{n d}$, proving the claim $\langle \mathbf{w}, \mathbf{a}\rangle_\mathbb{E} = h$ for some $h \in \mathbb{E}$. We present a one-round batching protocol and a $log d$-round folding protocol.
 
 \subsubsection{Batching protocol}
-Fix a basis $(\beta_1, \dots, \beta_d)$ for $\mathbb{E}/\mathbb{F}$ we can decompose $\mathbf{a}$ into $d$ vectors $\mathbf{a_i}$ in $\mathbb{F}^{nd}$ and reduce the claim to $d$ inner product claims $h_i = \langle \mathbf{w}, \mathbf{a}_i \rangle_\mathbb{F}$ such that $h = \sum_i h_i \beta_i$. Given a bilinear embedding $(W, A, H)$ these claims can then be packed to inner product claims $h_i' = \langle W(\mathbf{w}), W(\mathbf{a}_i)\rangle_\mathbb{E}$. After sending the $d$ values $h_i$ we 
+Given a bilinear embedding $(W, A, H)$ and a basis $(\beta_1, \dots, \beta_d)$ for $\mathbb{E}/\mathbb{F}$, we reduce the extension-field claim by decomposing into basis coordinates and batching     the resulting claims with a random linear combination.
 
-\paragraph{Frobenius fold.}
-Given the claim $\langle \mathbf{w}, \mathbf a\rangle_\mathbb{E}=h$, the parties proceed as follows.
+\begin{construction}[Batching protocol for extension opening]
+Given the claim $\langle \mathbf{w}, \mathbf a\rangle_\mathbb{E}=h$, define $\mathbf{a}_i \in \mathbb{F}^{nd}$ such that 
+\[
+\mathbf{a} = \sum_{i=1}^d \mathbf{a}_i \beta_i \text{.}
+\]
+The parties proceed as follows.
 \begin{enumerate}
-    \item The prover sends $v_i=T_i(W(\mathbf w))$  for $i=1,\ldots,m-1$.
-    \item The verifier derives $v_0 = h-\sum_{i=1}^{m-1}\sigma^i(v_i)$.
-    \item The verifier samples independent challenges $\rho_1,\ldots,\rho_{m-1}\sample\mathbb E$.
-    \item The parties reduce to the claim $T'(W(\mathbf w))=h'$, where
+    \item The prover sends $h_i = \langle W(\mathbf{w}), A(\mathbf{a}_i) \rangle_{\mathbb{E}}$  for $i=1,\ldots,d$.
+    \item The verifier checks $h = \sum_{i=1}^{d} H(h_i) \beta_i$.
+    \item The verifier samples an $\epsilon$-zero-evader $\boldsymbol{\rho} \sample\mathbb E^d$.
+    \item The parties reduce the claim to $\langle W(\mathbf{w}), \mathbf a'\rangle_\mathbb{E}=h'$ where 
     \[
-    T' = T_0+\sum_{i=1}^{m-1}\rho_iT_i
-    \qquad\text{and}\qquad
-    h' = v_0+\sum_{i=1}^{m-1}\rho_iv_i.
+    h' = \sum_{i=1}^{d} \rho_i h_i,
+    \qquad
+    \mathbf{a}' = \sum_{i=1}^{d} \rho_i  A(\mathbf{a}_i) \text{.}
     \]
 \end{enumerate}
+This interactive oracle reduction is always complete, has round-by-round soundness error $\epsilon$, and proof size $d \log |\mathbb{E}| = d^2 \log |\mathbb{F}|$.
+\end{construction}
 
+\begin{theorem}[Succinctness of coordinate decomposition]
+Given a succinct vector $\mathbf{a} \in \mathbb{E}^{nd}$ for $d= 2^k$ and a basis $(\beta_i)$ of $\mathbb{E}/\mathbb{F}$ then the $\beta$-coordinate decomposed vectors are also succinct. In particular if
+\[
+\mathbf{a} = \bigotimes_{i=0}^{k+l-1} 
+\begin{bmatrix}
+m_{i0} \\ m_{i1}
+\end{bmatrix}
+\]
+where the $m_{ij}$ can be scalars or $w_i \times w_{i+1}$ matrices, then
+\[
+\mathbf{a}_i = \mathbf{u}_i \cdot
+\left(
+\bigotimes_{j=0}^{k+l-1} 
+\begin{bmatrix}
+\Phi (m_{j0}) \\ \Phi(m_{j1})
+\end{bmatrix}
+\right)
+\cdot \mathbf{v}
+\]
+where $\Phi : \mathbb{E} \to \mathbb{F}^{d \times d}$ is the map that represents an $\mathbb{E}$-element $m$ by the matrix representing multiplication by $m$ in basis $(\beta_i)$, $\mathbf{u}_i$ is the one-hot vector with $u_{ij} = \delta_{ij}$, and $\mathbf{v}$ is the base $(\beta_i)$ representation of $1 \in \mathbb{E}$. $\Phi$ is applied elementwise to $w_i \times w_{i+1}$ matrices over $\mathbb{E}$ to produce $dw_i \times dw_{i+1}$ block matrices over $\mathbb{F}$. Absorbing the outer vectors in the matrices brings the representation back into canonical form, with the width increased by at most a factor $d$.
+\end{theorem}
 
-and batched with a random linear combination. This approach requires the prover to compute and send $O(d)$ elements in $\mathbb{E}$, or equivalently $O(d^2)$ elements in $\mathbb{F}$. Acceptable when $d$ is small, for example when $\mathbb{F}$ is a 32-bit prime field, but is less attractive for binary fields where $d = 128$ and the communication would be $2,048$ bytes. Avoiding this quadratic dependence on $d$ appears to require interaction.
+For practical implementations it makes sense to evaluate the branching program over $\mathbb{E}$ directly and then extract the coordinates in the basis $(\beta_i)$. This is equivalent to omitting the output selector $\mathbf{t}_i$ to keep the output dimension $w_0 = d$.
 
-\remco{For succinctness we need to show that coordinate decomposition preserves succinctness. Can probably do this by lifting the entire thing to basefield and turning every $\mathbb{E}$ multiplication into a matrix. This grows the output dimension, but this will neatly be collapsed again by the RLC.}
+If $A = \mathrm{I}_n \otimes A_0$ is blockwise we can also apply theorem \ref{suc-embed} and compose it with the combination weights $\boldsymbol{\rho} \in \mathbb{E}^d$ to get a succinct representation for $\mathbf{a}'$:
+\begin{equation}
+\mathbf{a}' = 
+\boldsymbol{\rho} \cdot
+\left(
+\bigotimes_{i=0}^{l-1} 
+\begin{bmatrix}
+\Phi (m_{i0}) \\ \Phi (m_{i1})
+\end{bmatrix}
+\right) \cdot
+(\mathrm{I}_{d w_l} \otimes A_0)\left(
+\bigotimes_{i=l}^{l+k-1} 
+\begin{bmatrix}
+\Phi (m_{i0}) \\ \Phi(m_{i1})
+\end{bmatrix}
+\right) \cdot \mathbf{v}
+\text{.}
+\end{equation}
+The map $\Phi$ is an algebra embedding, so replacing each scalar $m_{ij}\in\mathbb E$ by $\Phi(m_{ij})$ leaves the branching-program computation unchanged, except that the values are now represented in the basis $(\beta_i)$ representation of $\mathbb E$. The only operations outside the embedded $\mathbb{E}$ computation are the blockwise embedding $A_0$ and the random linear combination $\boldsymbol{\rho}$. Thus, apart from the applications of $A_0$ and $\boldsymbol{\rho}$, evaluating $\widetilde{\mathbf a}'$ is the same computation as evaluating $\widetilde{\mathbf a}$, performed in the regular representation of $\mathbb E$. \remco{Something is off with the complexity. Should really check with a Sage implementation. Probably needs a factor $d$.}
+
+The batch protocol is quadratic in $d$ in terms of $\mathbb{F}$-element operations and proof size. This is acceptable when $d$ is small, but binary fields where $d = 128$ the communication would be $2,048$ bytes. Avoiding this quadratic dependence on $d$ appears to require further rounds of interaction and more sophisticated decomposition.
 
 \subsubsection{Folding protocol}
+In the folding protocol we interactively reduce the claim $\langle \mathbf{w}, \mathbf{a}\rangle_\mathbb{E} = h$ through a sequence of embeddings $W_i$ where at round $i$ the claim is
+\[
+\begin{array}{ccc}
+\langle W_i(\mathbf{w}), A_i(\mathbf{a})\rangle_\mathbb{E} = h_i
+& W_i: \mathbb{F}^{nd} \to \mathbb{E}^{nd_i}
+& A_i: \mathbb{E}^{nd} \to \mathbb{E}^{nd_i}
+\end{array}
+\]
+Here $d = d_0 \ge \dots \ge d_k = 1$ is a series of folding dimensions. We start with $W_0$ and $A_0$ the identity and $h_0 = h$ so that the initial claim is indeed $\langle \mathbf{w}, \mathbf{a} \rangle_\mathbb{E} = h$. We also stipulate that the embeddings are blockwise such that $W_i = \mathrm{I}_n \otimes W_i'$ and $A_i = \mathrm{I}_n \otimes A_i'$. For simplicity we we will only consider the $n=1$ case from here on as $n>1$ follows by blockwise repetition.
+
+The final map is $W_k : \mathbb{F}^d \to \mathbb{E}$ which is an $F$-linear isomorphism. Let $(\beta_i)$ be the implied basis such that 
+\[
+W_k(\mathbf x) = \sum_{i=1}^d x_i \beta_i \text{.}
+\]
+
+Working backwards from the final embedding we create a sequence
+\[
+R_i \circ W_{i+1} = W_i
+\]
+where each map $R_i$ has only $\left\lceil \frac{d_i}{d_{i+1}}\right\rceil$ Frobenius components.
+
+\begin{theorem}[Semilinear decomposition]
+Let $\mathbb E/\mathbb F$ be a finite extension of degree $d$, and let $(\beta_i)_{i=0}^{d-1}$ be an $\mathbb{E}$-basis of $\operatorname{End}_{\mathbb{F}}(\mathbb{E})$. Then every $\mathbb F$-linear map $T: \mathbb{E}^m \to \mathbb{E}^n$ admits a unique decomposition
+\[
+T(\mathbf{x}) = \sum_{i=0}^{d-1} M_i \cdot (\mathrm{I}_m \otimes \beta_i)(\mathbf{x})
+\text{,} \qquad M_i \in \mathbb{E}^{n \times m} \text{.}
+\]
+Moreover, the \emph{semilinear rank}, defined as $\operatorname{rank_{sl}}(T) := \operatorname{dim}_{\mathbb{E}} \operatorname{span}_{\mathbb{E}} \{ M_i \}$, is independent of the chosen $\mathbb E$-basis $(\beta_i)$ of $\operatorname{End}_{\mathbb F}(\mathbb E)$. \end{theorem}
+
+\begin{construction}[Semilinear folding]
+Given a claim $T(\mathbf{x}) = h$ for some public $\mathbb{F}$-linear map $T: \mathbb{E}^m \to \mathbb{E}^n$.
+\begin{enumerate}
+    \item The parties compute $\beta_i \in \operatorname{End}_{\mathbb{F}}(\mathbb{E})$ that realize the semilinear rank $r$ of $T$:
+    \[
+    T(\mathbf{x}) = \sum_{i=0}^{r-1} M_i \cdot (\mathrm{I}_m \otimes \beta_i)(\mathbf{x})
+\text{,} \qquad M \in \mathbb{E}^{r \times n \times m} \text{.}
+    \]
+    \item The prover sends $h_i = (\mathrm{I}_m \otimes \beta_i)(\mathbf{x})$ for $i$ in $1,\dots,r-1$.
+    \item The verifier derives $h_0 = ...$.
+    \item The verifier samples an $\epsilon$-zero-evader $\boldsymbol{\rho} \in \mathbb{E}^r$.
+    \item ...
+\end{enumerate}    
+\end{construction}
+
+
+% https://arxiv.org/pdf/1211.5475
+\begin{theorem}[Frobenius decomposition]
+Let $\mathbb E/\mathbb F$ be a finite extension of degree $d$, let
+$q=|\mathbb F|$, and let $\sigma:\mathbb E\to\mathbb E$ denote the
+$\mathbb F$-Frobenius automorphism $x\mapsto x^q$.
+Then every $\mathbb F$-linear map
+$T:\mathbb E\to\mathbb E$ admits a unique decomposition
+\[
+T(x) =\sum_{i=0}^{d-1} c_i \cdot \sigma^i(x)
+\text{,} \qquad c_i \in \mathbb{E} \text{.}
+\]
+More generally, for every $\mathbb{F}$-linear map $T: \mathbb{E}^m \to \mathbb{E}^n$ admits a unique decomposition
+\[
+T(\mathbf{x}) = \sum_{i=0}^{d-1} M_i \cdot (\mathrm{I}_m \otimes \sigma^i)(\mathbf{x})
+\text{,} \qquad M_i \in \mathbb{E}^{n \times m} \text{.}
+\]
+\end{theorem}
+
+Two bases for $\operatorname{End}_{\mathbb{F}}(\mathbb{E})$: $\{\sigma^i\}$ and $\{x \mapsto \operatorname{Tr}()\}$
+
+\paragraph{Single folding round.}
+Assume the current claim is
+\[
+\langle W_i(\mathbf w),A_i(\mathbf a)\rangle_{\mathbb E}=h_i.
+\]
+Let
+\[
+R_i:\mathbb E^{nd_{i+1}}\to\mathbb E^{nd_i}
+\]
+be a fixed $\mathbb F$-linear map satisfying
+\[
+R_i\circ W_{i+1}=W_i.
+\]
+
+By the Frobenius decomposition there exist unique matrices
+\[
+M_{i,0},\ldots,M_{i,d-1}
+\in
+\mathbb E^{nd_i\times nd_{i+1}}
+\]
+such that
+\[
+R_i
+=
+\sum_{j=0}^{d-1}
+M_{i,j}\circ
+(\mathrm I_{nd_{i+1}}\otimes\sigma^j).
+\]
+
+For every $j$, define the $\mathbb F$-linear map
+\[
+C_{i,j}
+=
+(\mathrm I_{nd_{i+1}}\otimes\sigma^{-j})
+\circ
+M_{i,j}^{\mathsf T}.
+\]
+Then, for every
+$\mathbf x\in\mathbb E^{nd_{i+1}}$
+and
+$\mathbf b\in\mathbb E^{nd_i}$,
+\[
+\langle R_i(\mathbf x),\mathbf b\rangle_{\mathbb E}
+=
+\sum_{j=0}^{d-1}
+\sigma^j\!\left(
+\langle
+\mathbf x,
+C_{i,j}(\mathbf b)
+\rangle_{\mathbb E}
+\right).
+\]
+
+Applying this identity to
+\[
+\mathbf x=W_{i+1}(\mathbf w),
+\qquad
+\mathbf b=A_i(\mathbf a),
+\]
+gives
+\[
+\langle
+W_i(\mathbf w),
+A_i(\mathbf a)
+\rangle_{\mathbb E}
+=
+\sum_{j=0}^{d-1}
+\sigma^j\!\left(
+\langle
+W_{i+1}(\mathbf w),
+C_{i,j}(A_i(\mathbf a))
+\rangle_{\mathbb E}
+\right).
+\]
+
+The prover sends the values
+\[
+g_{i,j}
+=
+\langle
+W_{i+1}(\mathbf w),
+C_{i,j}(A_i(\mathbf a))
+\rangle_{\mathbb E},
+\qquad
+j=0,\ldots,d-1.
+\]
+The verifier checks
+\[
+h_i
+=
+\sum_{j=0}^{d-1}
+\sigma^j(g_{i,j}),
+\]
+samples a random challenge
+$\rho_i\in\mathbb E$,
+and defines
+\[
+A_{i+1}
+=
+\left(
+\sum_{j=0}^{d-1}
+\rho_i^j C_{i,j}
+\right)
+\circ A_i.
+\]
+Finally, letting
+\[
+h_{i+1}
+=
+\sum_{j=0}^{d-1}
+\rho_i^j g_{i,j},
+\]
+the next claim is
+\[
+\langle
+W_{i+1}(\mathbf w),
+A_{i+1}(\mathbf a)
+\rangle_{\mathbb E}
+=
+h_{i+1}.
+\]
+
+
 We therefore seek an interactive reduction from a mixed claim to a packed claim
 \[
 \begin{array}{ccc}
@@ -1081,7 +1413,6 @@ W(\mathbf{w}) \in \mathbb{E}^{n}
 \end{array}
 \]
 where $W: \mathbb{F}^{nd} \to \mathbb{E}^{n}$ is a fixed $\mathbb{F}$-linear embedding and $\mathbf{a}' \in \mathbb{E}^{n}$, $h' \in \mathbb{E}$ are determined by $\mathbf{a}$, $h$ and the transcript. Ideally $\mathbf{a} \mapsto \mathbf{a}'$ should also preserve useful properties like efficient computation of its multilinear extension.
-
 
 Above we decomposed $\mathbf{a}$ with respect to a basis of $\mathbb{E}/\mathbb{F}$. Here we instead decompose the induced $\mathbb F$-linear functional on packed witnesses. Define
 \[
@@ -1125,7 +1456,7 @@ P(X)=\sum_{j=0}^{d - 1} c_j X^{q^j} \qquad c_j\in\mathbb E \text{.}
 \begin{theorem}[Frobenius decomposition]
 Let $\mathbb{F} \subseteq \mathbb{K} \subseteq \mathbb{E}$ be finite fields with $[\mathbb{K}:\mathbb{F}] = m$, and let $\sigma(x) = x^{|\mathbb{F}|}$ denote the $\mathbb{F}$-Frobenius automorphism. Then every $\mathbb{F}$-linear map $T: \mathbb{E} \to \mathbb{E}$ admits a unique decomposition
 \[
-T = \sum_{i = 0}^{m - 1} \sigma^i \circ T_i
+T(x) = \sum_{i = 0}^{m - 1} \sigma^i \circ T_i
 \]
 where each $T_i$ is $\mathbb{K}$-linear.
 \end{theorem}
@@ -1175,7 +1506,7 @@ h = T_{\mathbf a}(W(\mathbf w))
 = \sum_{i=0}^{m-1} \sigma^i\bigl(T_i(W(\mathbf w))\bigr).
 \]
 
-\paragraph{Frobenius fold.}
+\begin{construction}[Frobenius fold]
 Given the claim $T_{\mathbf a}(W(\mathbf w))=h$, the parties proceed as follows.
 \begin{enumerate}
     \item The prover sends $v_i=T_i(W(\mathbf w))$  for $i=1,\ldots,m-1$.
@@ -1188,11 +1519,13 @@ Given the claim $T_{\mathbf a}(W(\mathbf w))=h$, the parties proceed as follows.
     h' = v_0+\sum_{i=1}^{m-1}\rho_iv_i.
     \]
 \end{enumerate}
+\end{construction}
 
-\paragraph{Recursive folding.}
+\begin{construction}[Folding protocol for extension opening]
 Choose a tower of intermediate fields $\mathbb F=\mathbb K_0 \subseteq\mathbb K_1 \subseteq\cdots \subseteq\mathbb K_t=\mathbb E$, and write $m_i=[\mathbb K_{i+1}:\mathbb K_i]$. Initially, $T_{\mathbf a}$ is $\mathbb K_0$-linear. At round $i$, apply the Frobenius fold with $\mathbb F=\mathbb K_i$, and $\mathbb K=\mathbb K_{i+1}$.  This reduces the current $\mathbb K_i$-linear functional to a $\mathbb K_{i+1}$-linear functional.
 
 After $t$ rounds, the residual functional $T':\mathbb E^n\to\mathbb E$ is $\mathbb E$-linear. Consequently, there exists $\mathbf a'\in\mathbb E^n$ such that $T'(\mathbf x)=\langle\mathbf x,\mathbf a'\rangle_{\mathbb E}$. The final claim is therefore $\langle W(\mathbf w),\mathbf a'\rangle_{\mathbb E}=h'$, as required.
+\end{construction}
 
 Each round requires sending $m_i - 1$ elements of $\mathbb{E}$. For a binary tower where $m_i=2$, $\mathbb{F} = \mathbb{F}_2$, and $\mathbb{E} = \mathbb{F}_{2^{128}}$ we have $7$ rounds of one $\mathbb{E}$ element message each, for a total of $112$ bytes. Compare to the non-interactive protocol this reduces the communication complexity from $O(d^2)$ to $O(d \log d)$ elements of $\mathbb{F}_2$.
 
@@ -1222,21 +1555,6 @@ A_i(\mathbf a)
 
 \paragraph{}
 The final result is a transcript dependent map $A: \mathbb{E}^{dn} \to \mathbb{E}^n$. If $W$ is blockwise with $\mathrm{I}_n \otimes W_0$ for some $W_0: \mathbb{F}^d \to \mathbb{E}$ then so is $A$ with $A_0: \mathbb{E}^d \to \mathbb{E}$.
-
-
-\remco{A cleaner presentation is probably by a reduction of explcicit inner product claims instead of the linear functionals 
-\[
-\begin{array}{ccc}
-\langle W_i(\mathbf{w}), A_i(\mathbf{a})\rangle_\mathbb{E} = h_i
-& W_i: \mathbb{F}^{nd} \to \mathbb{E}^{nd_i}
-& A_i: \mathbb{E}^{nd} \to \mathbb{E}^{nd_i}
-\end{array}
-\]
-Where $d = d_0 > \dots > d_k = 1$ is a series of folding dimensions. We start with $W_0$ and $A_0$ the identity so that the initial claim is indeed $\langle \mathbf{w}, \mathbf{a} \rangle_\mathbb{E} = h_0$. For $i>0$ the $W_i$ are fixed $\mathbb{F}$-linear embeddings, and the $A_i$ are transcript dependent $\mathbb{F}$-linear maps. For $i=k$ the final claim is a fully packed inner product on $\mathbb{E}^n$.
-
-Furthermore, if a tower $\mathbb{F} = \mathbb{K}_0 \subseteq \dots \subseteq \mathbb{K}_k = \mathbb{E}$ exists we can choose $d_i =  [\mathbb{E}:\mathbb{K}_i]$ and $\im W_i = \mathbb{K}_i^{nd_i}$. Without a tower the $\im W_i$ is simply $\mathbb{F}$-linear subspace of $\mathbb{E}^{nd_i}$ of dimension $nd$.
-
-}
 
 
 \end{document}
