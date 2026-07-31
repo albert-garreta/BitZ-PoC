@@ -143,30 +143,33 @@ For initial reference, Binius64 takes about 110ms to prove an ECDSA with a 200KB
 
 \begin{table}[]
     \centering
-    \begin{tabular}{c|c|c|c|c|c}
-     & Binius64 & Flock & Plonky3 & F2Z-PCS (\textbf{no PIOP!}) & Zinc+\\
+\noindent\makebox[\textwidth][c]{%
+\begin{tabular}{c|c|c|c|c|c|c}
+ & F2Z-PCS & Zinc+-PIOP & Binius64 & Flock & Plonky3 & Zinc+\\
+ \hline
+ \hline
+ECDSA & & & 119/6.3/195/? & NA & & \\
+\hline
+ RSA & & & & NA & & \\
      \hline
-     \hline
-    ECDSA & 119/6.3/195/? & NA & & & \\
+$2^{17}$ int mul 16bits & 48/2/80/62 & & 217/9/313/? & NA & 367/7/340/? & \\
     \hline
-     RSA &  & NA & & & \\
-         \hline
-    $2^{17}$ int mul 16bits & 217/9/313/? & NA & 367/7/340/? & 48/2/80/62 & \\
-        \hline
-    $2^{17}$ int mul 32bits & 218/9/313/? & NA & 571/7.6/373/? & 74/2.4/86/124 & \\
-    \hline
-    1M int mul 16bits & 3600/61/440/? & NA & 2920/9.8/492/? & 192/2.9/112/483 & \\
-       \hline
-        1M int mul 32bits & 3800/62/440/? & NA & 5050/10.2/520/? & 266/3.7/119/863 & \\
+$2^{17}$ int mul 32bits & 74/2.4/86/124 & & 218/9/313/? & NA & 571/7.6/373/? & \\
+\hline
+1M int mul 16bits & 192/2.9/112/483 & & 3600/61/440/? & NA & 2920/9.8/492/? & \\
    \hline
-    $2^7$ SHA & 37/3.4/249/? & 33/25/112/? & & 13.5/1.75/129/14* & \\
-    \hline
-    $2^{15}$ SHA & \text{Stuck} & 425/25/233/? & & 1250/5/260/2500*& \\
-    \hline
-    $2^8$ Blake3 & 31/2.6/249/? & 256/254/111/? & & & \\
-    \hline
-    $2^{15}$ Blake3 & \text{Stuck} &  386/267/160/? & & &
-    \end{tabular}
+    1M int mul 32bits & 266/3.7/119/863 & & 3800/62/440/? & NA & 5050/10.2/520/? & \\
+\hline
+$2^7$ SHA & 12.7/1.75/129/14* & \text{expected negl.} & 37/3.4/249/? & 33/25/112/? & & \\
+\hline
+ $2^{11}$ SHA & 93.5/2.8/109/197* & \text{expected negl.} & 126/27/381/? & 47.2/27/172/? & & \\
+\hline
+ $2^{15}$ SHA & 1320/4.8/170/3080* & \text{expected negl.} & \text{Stuck} & 425/25/233/? & & \\
+\hline
+$2^8$ Blake3 & & \text{expected negl.} & 31/2.6/249/? & 256/254/111/? & & \\
+\hline
+$2^{15}$ Blake3 & & \text{expected negl.} & \text{Stuck} & 386/267/160/? & &
+\end{tabular}}
 \caption{
 *= we are not using virtualization of XOR. The committed and opened witness size is 4x larger than it could be.
 \albert{Missing costs for F2Z PIOP. Note these are negligible for the hash benches though, and likely quite less than the grand product cost in other benches. All these were obtained asking AI to run benches. For the final paper we should make sure we are doing fair and correct benching (e.g.\ I'm not sure memory consumption is measured the same way across benches, especially for Binius, which is max RSS), but this helps get a rough idea how F2Z performs relatively to other systems.} Prover\_ time(ms)/Verifier\_time(ms)/Proof\_size(KB)/Peak\_memory(MB). Integer mult measure one million u16 x u16 -> u32 mults. F2Z-PCS does not include PIOP costs -- these are negligible in the hash benches (linear constraints), but should be accounted for in the other benches (degree 2 constraints).Ran in MacBook Air M4 16GB.\\ 
@@ -227,11 +230,9 @@ Interleaved codes
 
 
 
-\section{}
 
 \section{\ftwoz}
 
-\albert{Should we allow for $W>1$?}
 
 %\newcommand{\comfield}{\FF_{\mathsf{c}}}
 %\newcommand{\evalfield}{\FF_{\mathsf{e}}}
@@ -367,7 +368,8 @@ Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with suf
 
 \begin{enumerate}[leftmargin=*]
 \item The prover sends $\mu_1, \ldots, \mu_{\codedim_2}\in \ZZ$ such that $\langle \bff_{*j}, \psievalfield^{-1}(\vv^{(1)})\rangle = \mu_j$. 
-\item The verifier checks that \begin{equation}\label{e:tensor_decomposition_reconstruction}\sum_{j\in [\codedim_2]} \psievalfield(\mu_j)\cdot \vv_j^{(2)}  = \mu\qquad \text{over } \evalfield.\end{equation}   \albert{We could have the prover commit to the $\mu_j$ and have this check proved by the PCS (a PCS that can prove linear constraints like WHIR). This pays off for very large $\codedim$.}
+\item The verifier checks that \begin{equation}\label{e:tensor_decomposition_reconstruction}\sum_{j\in [\codedim_2]} \psievalfield(\mu_j)\cdot \vv_j^{(2)}  = \mu\qquad \text{over } \evalfield.\end{equation}   
+In \cref{?} we describe a variation in which, instead of sending the elements $\mu_1, \ldots, \mu_{\codedim_2}$, the prover commits to their bit-decomposition over $\comfield$, and proves \eqref{e:tensor_decomposition_reconstruction} the present IOR. This saves on proof size and verifier time when $\codedim$ is large.
 \item Prover and verifier define $\bm{\gamma}_i = \psievalfield^{-1}(\vv_i^{(1)}) \in \range{0}{q-1}\subseteq \ZZ$ for $i \in [\codedim_1]$, and set to prove the following claim:
 %
 $$
@@ -377,13 +379,13 @@ Note that this claim is equivalent to
 $$
 \prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \pi_2(\bff_{ij}) +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\codedim_2].
 $$
-\albert{Mention that this is a $R^{Q_{F2Z}}$}
+Notice that $\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\psicomfield(\bff_{*j})\right)\in \Relation^{Q_{\FF2\ZZ}}_{\cC_1,\comfield,\pack}$ for all $j\in [\ell_2]$.
 % \ulrich{%
 % Suggestion: 
 % Maybe it is more clear, if we write in the above two equalities explicitly a $\bmod\: q$, or, add $\in \mathbb F_q$?
 % }%
 % \albert{See now. It's actually in $\comfield$}
-To prove the above claim, prover and verifier engage in the IOR $\Pi_{\mathsf{red}}^{\codedim_2}$   with input \albert{The reason I'm leaving this IOR abstract here is that I think there may be better ways to prove the above claim than a grand product GKR, so I want to write it modular} $$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\psicomfield(\bff_{*j})\right)_{j\in [\codedim_2]},$$
+To prove the above claim, prover and verifier engage in the IOR $\Pi_{\mathsf{red}}^{\codedim_2}$\footnote{Recall that, in our instantiation, $\Pi_{\mathsf{red}}^{\codedim_2}$ is the GKR protocol applied to multiple grand products, cf.\ \cref{?}}   with input $$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\psicomfield(\bff_{*j})\right)_{j\in [\codedim_2]},$$
 %
 where in the honest case  $f_{*j} = \Enc_{\cC_1}(\pack(\psicomfield(\bff_{*j})))\in \comfield^{\codelength/\codedim_2}$.
 %
@@ -584,7 +586,7 @@ M = \begin{pmatrix}
 \begin{proof}
 \end{proof}
 
-\subsection{Optimizing \ftwoz for virtualized inputs $\pi_2^{-1}(M\cdot \pi_2(\bff))$}
+\subsection{Optimizing \ftwoz for virtualized inputs $\pi_2^{-1}(M\cdot \pi_2(\bff))$}\label{s:opt_virtual}
 
 
 In \cref{c:virtual_iop}, at Step 2, prover and verifier use $\Pi_{\mathsf{red}}^{\ell_2}$  to reduce the claim
@@ -598,11 +600,17 @@ to $\codedim_2$ inner product claims over $\comfield$ for the vectors $M_0\cdot 
 A natural question is whether, in such scenarios, the proof of \eqref{e:grand_product_with_virtuals} can be optimized so that it costs less than a full proof for $\ell_2$ arbitrary input vectors of the same length as $M_0\cdot \pi_2(\bff_{*j})$. In this section we show that this is indeed possible.
 
 
-
-
 \section{R1CS constraints over polynomial rings with ideal membership}
 
 \albert{I'm aiming to make the paper self-contained, so I will refer to Zinc/Zinc+ but will provide all required definitions and proofs in this paper}
+
+\section{Open questions for us}
+
+
+\albertimportant{Regarding \cref{s:opt_virtual}, I've only found a way to cheapen the following settings: say first and two vectors in the grand product are $\bfg_1,\bfg_2$, and third is $\bfg_1 \xor \bfg_2$. This is a tricky problem. We should look more into it}
+
+
+\albertimportant{Should we allow for $W>1$? Currently just setting $W=1$ and thinking of all bits as unrelated leads to better performance, but that sounds suboptimal. }
 
 \section{Case-study}
 
@@ -1239,11 +1247,13 @@ R_i \circ W_{i+1} = W_i
 where each map $R_i$ has only $\left\lceil \frac{d_i}{d_{i+1}}\right\rceil$ Frobenius components.
 
 \pagebreak
-The space of $\mathbb{F}$-linear maps $\mathbb{E}^m \to \mathbb{E}$ factors into $\mathbb{F}$-linear maps on $\mathbb{E}$ and $\mathbb{E}$-linear maps.
+Every $\mathbb F$-linear map $T:\mathbb E^m\to\mathbb E^n$ can be viewed as being built from $\mathbb E$-linear maps and $\mathbb F$-linear scalar operations on $\mathbb E$. To recursively fold such maps, the scalar operations must be compatible with arbitrary $\mathbb E$-linear coordinate transformations. Concretely, we require an intertwining
 \[
-\operatorname{Hom}_\mathbb{F}(\mathbb{E}^m, \mathbb{E}) \cong \operatorname{End}_{\mathbb{F}}(\mathbb{E}) \otimes_\mathbb{E} \operatorname{Mat}_{m \times n}(\mathbb{E})
+\beta(R\mathbf x)=\alpha(R)\beta(\mathbf x),
 \]
-For a folding protocol we require semilinearity, i.e. $\beta(R x) = \alpha(R) \beta(x)$. This is achieved precisely when we pick a semilinear basis for $\operatorname{End}_{\mathbb{F}}(\mathbb{E})$ and apply it uniformly coordinatewise.
+where $\alpha$ acts entrywise on R. This property singles out semilinear scalar operators. Over finite fields, these are precisely the Frobenius maps $\sigma^i$ up to scalar multiples, and the Frobenius powers therefore provide the canonical scalar decomposition.
+
+% https://arxiv.org/pdf/1211.5475
 
 \begin{theorem}[Frobenius decomposition]
 Let $\mathbb E/\mathbb F$ be a finite extension of degree $d$, and let $\sigma: \mathbb{E} \to \mathbb{E}$ be the Frobenius map $x \mapsto x^{|\mathbb{F}|}$. Then every $\mathbb F$-linear map $T: \mathbb{E}^m \to \mathbb{E}^n$ admits a unique decomposition
@@ -1252,50 +1262,7 @@ T(\mathbf{x}) = \sum_{i=0}^{d-1} M_i \cdot (\mathrm{I}_m \otimes \sigma^i)(\math
 \text{,} \qquad M_i \in \mathbb{E}^{n \times m} \text{.}
 \]
 \end{theorem}
-We define $\operatorname{supp}_\sigma(T) := \{i : M_i \neq 0\}$ and $\operatorname{rank}_\sigma(T) = |\operatorname{supp}_\sigma(T)|$.
-
-\begin{construction}[Scalar rank compression]
-Given a claim $T(\mathbf{x}) = \mathbf{h}$ for some public $\mathbb{F}$-linear map $T: \mathbb{E}^m \to \mathbb{E}^n$.
-\begin{enumerate}
-    \item The parties choose a minimal uniform scalar decomposition:
-    \[
-    T(\mathbf{x}) = \sum_{i=0}^{r-1} M_i \cdot (\mathrm{I}_m \otimes \beta_i)(\mathbf{x})
-    \text{,} \qquad M_i \in \mathbb{E}^{n \times m}
-    \text{,} \qquad \beta_i \in \operatorname{End}_{\mathbb{F}}(\mathbb{E})
-    \]
-    where $r = \operatorname{rank_{us}}(T)$.
-    \item The prover sends $\mathbf{y}_i = (\mathrm{I}_m \otimes \beta_i)(\mathbf{x})$ for $i$ in $0,\dots,r-1$.
-    \item The verifier checks $\mathbf{h} = \sum_i M_i \mathbf{y}_i$.
-    \item The verifier samples an $\epsilon$-zero-evader $\boldsymbol{\rho} \in \mathbb{E}^r$.
-    \item The parties continue with the claim $T'(\mathbf{x}) = \mathbf{h}'$ where
-    \[
-    T' = \mathrm{I}_m \otimes \left(\sum_{i=0}^{r-1} \rho_i \beta_i \right)
-    \text{,}\qquad \mathbf{h}' = \sum_{i=0}^{r-1} \rho_i \mathbf{y}_i
-    \text{.}
-    \]
-\end{enumerate}
-\end{construction}
-
-
-% https://arxiv.org/pdf/1211.5475
-\begin{theorem}[Frobenius decomposition]
-Let $\mathbb E/\mathbb F$ be a finite extension of degree $d$, let
-$q=|\mathbb F|$, and let $\sigma:\mathbb E\to\mathbb E$ denote the
-$\mathbb F$-Frobenius automorphism $x\mapsto x^q$.
-Then every $\mathbb F$-linear map
-$T:\mathbb E\to\mathbb E$ admits a unique decomposition
-\[
-T(x) =\sum_{i=0}^{d-1} c_i \cdot \sigma^i(x)
-\text{,} \qquad c_i \in \mathbb{E} \text{.}
-\]
-More generally, for every $\mathbb{F}$-linear map $T: \mathbb{E}^m \to \mathbb{E}^n$ admits a unique decomposition
-\[
-T(\mathbf{x}) = \sum_{i=0}^{d-1} M_i \cdot (\mathrm{I}_m \otimes \sigma^i)(\mathbf{x})
-\text{,} \qquad M_i \in \mathbb{E}^{n \times m} \text{.}
-\]
-\end{theorem}
-
-Two bases for $\operatorname{End}_{\mathbb{F}}(\mathbb{E})$: $\{\sigma^i\}$ and $\{x \mapsto \operatorname{Tr}()\}$
+We define $\operatorname{supp}_\sigma(T) := \{i : M_i \neq 0\}$.
 
 \paragraph{Single folding round.}
 Assume the current claim is
@@ -1582,5 +1549,7 @@ A_i(\mathbf a)
 \paragraph{}
 The final result is a transcript dependent map $A: \mathbb{E}^{dn} \to \mathbb{E}^n$. If $W$ is blockwise with $\mathrm{I}_n \otimes W_0$ for some $W_0: \mathbb{F}^d \to \mathbb{E}$ then so is $A$ with $A_0: \mathbb{E}^d \to \mathbb{E}$.
 
+
+\section{GKR protocol for multiple grand products}
 
 \end{document}
