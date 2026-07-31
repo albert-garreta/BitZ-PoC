@@ -102,6 +102,19 @@ backrefpages = {cited on pp.},% originally "cited on pages"
 
 \section{Introduction}
 
+\subsection{Contributions}
+
+F2Z: Proving linear claims over any field (possibly an extension field) or integers, for a vector of bits committed on a binary field. 
+
+Follow up  on Zinc+: we adopt its constraint system and greatly boost its performance with the aforementioned F2Z
+
+Results in proof system that works with highly expressive and ``small'' constraints, and is competitive or outperforms other systems on many tasks of interests.  Removes all the complexity of arithmetization, and in exchange requires you to work on a gnarly grand product.
+
+New optimizations for grand products in binary fields, arising from our ``in the exponent claims'' (Binius64 already works with such grand products -- we provide new optimizations).
+
+Virtualization of XOR (or, more generally, $\FF_2$-linear transformations) of our committed witness elements, without the need to arithmetize on binary fields whatsoever.
+
+Generalization/improvements to ring-switch in binary fields?
 
 \subsection{Ramblings (warm-up for the true intro)}
 Why does this paper exist? F2Z has many similarities to Binius64, so why F2Z at all? First of all, Binius64 is an end-to-end proving system, while F2Z is a PCS. Let's consider F2Z-SNARK a SNARK for proving R1CS constraints over $\ZZ$  or $\ZZ[X]$ with ideals. Flock is also related to F2Z-SNARK, though less so, since Flock is a more use-case specific SNARK for proving bit-intensive computations. We should also keep in mind that Flock is, at the end of the day, Binius64 on steroid optimizations. In general, I think of Flock as subsumed by a Binius64 repo that adopts Flock's optimizations. Hence I will not discuss Flock too much here.
@@ -640,7 +653,9 @@ to $\codedim_2$ inner product claims over $\comfield$ for the vectors $M_0\cdot 
 A natural question is whether, in such scenarios, the proof of \eqref{e:grand_product_with_virtuals} can be optimized so that it costs less than a full proof for $\ell_2$ arbitrary input vectors of the same length as $M_0\cdot \pi_2(\bff_{*j})$. In this section we show that this is indeed possible.
 
 
+\section{Full IOP for R1CS constraints over polynomial rings}
 
+\section{Adding Zero Knowledge}
 
 
 \section{Open questions for us}
