@@ -161,15 +161,17 @@ $2^{17}$ int mul 32bits & 74/2.4/86/124 & & 218/9/313/? & NA & 571/7.6/373/? & \
    \hline
     1M int mul 32bits & 266/3.7/119/863 & & 3800/62/440/? & NA & 5050/10.2/520/? & \\
 \hline
-$2^7$ SHA & 12.7/1.75/129/14* & \text{expected negl.} & 37/3.4/249/? & 33/25/112/? & & \\
+$2^7$ SHA & 12.7/1.75/71/14* & \text{expected negl.} & 37/3.4/249/? & 33/25/112/? & & \\
 \hline
  $2^{11}$ SHA & 93.5/2.8/109/197* & \text{expected negl.} & 126/27/381/? & 47.2/27/172/? & & \\
 \hline
  $2^{15}$ SHA & 1320/4.8/170/3080* & \text{expected negl.} & \text{Stuck} & 425/25/233/? & & \\
 \hline
-$2^8$ Blake3 & & \text{expected negl.} & 31/2.6/249/? & 256/254/111/? & & \\
+$2^8$ Blake3 & 22/2/71/23 & \text{expected negl.} & 31/2.6/249/? & 256/254/111/? & & \\
 \hline
-$2^{15}$ Blake3 & & \text{expected negl.} & \text{Stuck} & 386/267/160/? & &
+$2^{11}$ Blake3 & 91/2.8/105/164 & \text{expected negl.} &  & 253/249/153/? & & \\
+\hline
+$2^{15}$ Blake3 & 1100/4.7/161/2550 & \text{expected negl.} & \text{Stuck} & 386/267/160/? & &
 \end{tabular}}
 \caption{
 *= we are not using virtualization of XOR. The committed and opened witness size is 4x larger than it could be.
@@ -217,7 +219,7 @@ Thus some scientific contributions of F2Z-SNARK are
 \section{Preliminaries}
 
 
-Given a prime $q$ we let $\pi_q: \ZZ\to \FF_q$ be the ring homomorphism mapping an integer to its reduction modulo $q$.  We further let $\pi_0$ denote the identity map on $\ZZ$, so that $\pi_0(x) = x$ for all $x\in \ZZ$. We let $\FF_0 = \ZZ$.
+Given a prime $q$ we let $\psievalfield: \ZZ\to \FF_q$ be the ring homomorphism mapping an integer to its reduction modulo $q$.  We further let $\pi_0$ denote the identity map on $\ZZ$, so that $\pi_0(x) = x$ for all $x\in \ZZ$. We let $\FF_0 = \ZZ$.
 
 Given a  finite field $\FF$ of characteristic $q$, let $a(X)\in \ZZ[X]$ be an irreducible polynomial over $\FF_q$ \albert{yes?}, so that $\FF = \ZZ[X]/(q,a(X))$ \albert{consider isomorphism, or assume all finite fields are represented like this}. Let $\psi_{\FF}: \ZZ[X] \to \FF$ be the  canonical homomorphism from $\ZZ[X]$ to $\FF$ obtained by reducing modulo the ideal $(q,a(X))$, i.e.\ by reducing coefficients modulo $q$ and then reducing the resulting polynomial modulo $a(X)$.
 
@@ -255,16 +257,26 @@ When $Q$ and $\yy$ are such that $\yy=(\vv,\mu)\in \FF^{\codedim}\times \FF$ and
 %When $Q$ and $\yy$ are such that $\yy=(\rr,\mu)\in \FF^{\log\codedim}\times \FF$ and $$Q(\yy,\ff)= \mle{\bff}(\rr)-\mu,$$ we denote $\Relation_{\cC, \FF}^{Q}$  by $\Relation_{\cC, \FF}^{\mathsf{mle}}$. 
 
 
-Next let $\comfield$ be a finite field of characteristic $2$,  and let $\evalfield$ be  a finite field of prime order $q$ or $\QQ$. For intuition, $\comfield$ is the field over which we will commit our witness, and $\evalfield$ is the field over which we prove linear relations on the witness. We let
+Next let $\comfield$ be a finite field of characteristic $2$,  and let $\evalfield$ be either the field of rationals $\QQ$ or a finite field of characteristic $q$, possibly an extension field.For intuition, $\comfield$ is the field over which we will commit our witness, and $\evalfield$ is the field over which we prove linear relations on the witness. If $\evalfield=\QQ$ then we define $\degevalfield=0$, and if $\evalfield$ is a finite field of characteristic $q$, then $\degevalfield$ denotes the degree extension of $\evalfield$ over $\FF_q$.
+
+We let
 %
 $$
-\psicomfield : \ZZ \to \FF_2 \subseteq \comfield, \qquad \psievalfield: \ZZ \to \evalfield,
+\psicomfield : \ZZ \to \FF_2 \subseteq \comfield
 $$
-be reduction mod $2$ and $q$ maps. We futher let 
+be reduction mod $2$, and let 
+%
 $$
-\psicomfield^{-1} : \FF_2 \to \{0,1\} \subseteq \ZZ, \qquad \psievalfield^{-1}: \evalfield \to \range{0}{q-1} \subseteq \ZZ,
+\psievalfield: \ZZ[X] \to \KK
 $$
-be maps such that $\psicomfield(\psicomfield^{-1}(x))=x$ and $\psievalfield(\psievalfield^{-1}(x))=x$ for all $x$. We remark that one could choose any other such ``inverse'' maps, e.g.\ for $\psievalfield^{-1}$ one may prefer to use centered representatives. 
+%
+be the natural projection of $\ZZ[X]$ onto $\KK$. Concretely, if $\KK=\QQ$,  then  $\psievalfield$ is reduction modulo the ideal $(X)$ (i.e.\ $\psievalfield(\sum_{i=0}^{k} a_i\cdot X^i)  = a_0$);  if $\KK$ is a prime field $\FF_q$, then $\psievalfield$ is reduction modulo $q$ and modulo the ideal $(X)$; and if $\KK$ is an extension field, so that $\KK=\FF_q[X]/(h(X))$ for some irreducible polynomial $h(X)\in \FF_q[X]$, then $\psievalfield$ is reduction modulo $q$ and modulo the ideal $(h(X))$.
+
+We further let 
+$$
+\psicomfield^{-1} : \FF_2 \to \{0,1\} \subseteq \ZZ, \qquad \psievalfield^{-1}: \KK \to \range{0}{q-1}^{\leq\degevalfield}[X] \subseteq \ZZ,
+$$
+be maps such that $\psicomfield^{-1}(\psicomfield(x))=x$ and $\psievalfield^{-1}(\psievalfield(y))=y$ for all $x\in\bits$ and $y\in \range{0}{q-1}^{\leq\degevalfield}[X]$. We remark that one could choose any other such ``inverse'' maps, e.g.\ for $\psievalfield^{-1}$ one may prefer to use centered representatives. 
 
 
 
@@ -274,9 +286,7 @@ $$
 \beta_1, \ldots, \beta_\comfieldexp \in \comfield
 $$
 %
-be an $\FF_2$-base of $\comfield$ seen as an $\FF_2$-vector space of dimension $n$.
-
-Given a vector $\uu\in \FF_2^\codelength$, with $2^\comfieldexp$ dividing $\codelength$, we define
+be an $\FF_2$-base of $\comfield$ seen as an $\FF_2$-vector space of dimension $n$. Given a vector $\uu\in \FF_2^\codelength$, with $2^\comfieldexp$ dividing $\codelength$, we define
 %
 $$
 \pack(\uu)\in \comfield^{\codelength/\comfieldexp}
@@ -288,7 +298,7 @@ $$
 $$
 %
 %
-Let $\cC\subseteq \comfield^{\codelength}$ be a linear code of dimension $\codedim/2^{\comfieldexp}$ and blocklength $\codelength$ over $\comfield$. Define
+Let $\cC\subseteq \comfield^{\codelength}$ be a linear code of dimension $\codedim/2^{\comfieldexp}$ and blocklength $\codelength$ over $\comfield$. Define \albertimportant{Think: should we allow for $\bff$ to be a vector of polynomials? Or of integers of more than one bit? Probably not here, but if interesting, write an appendix explaining how to treat those?}
 $$
 \Relation^{\mathsf{lin-dual}}_{\cC,\comfield, \evalfield,\pack} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \{0,1\}^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\pack(\psicomfield(\bff))) = f\\ \wedge \  & \langle \psievalfield(\bff), \vv\rangle  = \mu  \end{aligned} \right\}
 $$
@@ -331,7 +341,7 @@ $$Q_{\FF2\ZZ}(Y_1, \ldots, Y_{\codedim_1+1}, Z_1, \ldots, Z_{\codedim_1}) \defeq
 Precisely, 
 %
 $$
-\Relation^{Q_{\FF2\ZZ}}_{\cC_1,\comfield,\pack} = \left\{ \left(\begin{aligned} &\inp=(\yy,z)\in \comfield^{\codedim_1}\times \comfield, \\&\oracle = f \in \comfield^{\codelength/\codedim_2}, \\ &\wit= \bff\in \comfield^{\codedim_1}\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC_1}(\pack(\bff)) = f\\ \wedge \  &\Pi_{i=1}^{\codedim_1} \left((\yy_i-1)\cdot \bff_i +1\right) = z  \end{aligned} \right\}
+\Relation^{Q_{\FF2\ZZ}}_{\cC_1,\comfield,\pack} = \left\{ \left(\begin{aligned} &\inp=(\yy,z)\in \comfield^{\codedim_1}\times \comfield, \\&\oracle = f \in \comfield^{\codelength/\codedim_2}, \\ &\wit= \bff\in \FF_2^{\codedim_1}\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC_1}(\pack(\bff)) = f\\ \wedge \  &\Pi_{i=1}^{\codedim_1} \left((\yy_i-1)\cdot \bff_i +1\right) = z  \end{aligned} \right\}
 $$
 %
 We assume prover and verifier have access to an IOR $\Pi_{\mathsf{red}}$  that reduces 
@@ -367,7 +377,7 @@ The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield
 Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with sufficiently large multiplicative order, to be determined later.  
 
 
-\begin{enumerate}[leftmargin=*]
+\begin{enumerate}[leftmargin=*] 
 \item The prover sends $\mu_1, \ldots, \mu_{\codedim_2}\in \ZZ$ such that $\langle \bff_{*j}, \psievalfield^{-1}(\vv^{(1)})\rangle = \mu_j$. 
 \item The verifier checks that \begin{equation}\label{e:tensor_decomposition_reconstruction}\sum_{j\in [\codedim_2]} \psievalfield(\mu_j)\cdot \vv_j^{(2)}  = \mu\qquad \text{over } \evalfield.\end{equation}   
 In \cref{?} we describe a variation in which, instead of sending the elements $\mu_1, \ldots, \mu_{\codedim_2}$, the prover commits to their bit-decomposition over $\comfield$, and proves \eqref{e:tensor_decomposition_reconstruction} the present IOR. This saves on proof size and verifier time when $\codedim$ is large.
@@ -419,7 +429,7 @@ to $\ell_2$ inner product claims for the vectors $\pi_2(\bff_{*j})$. We do this 
 
 \albert{Todo}
 
-\albert{Present the optimization as a contribution of the paper}
+\albert{Present the optimization as a contribution of the paper} \albert{There seems to be a comment in the Binius repo about this though:  "TODO: Use a special 1-bit-optimized MLE-check with switchover to save memory" (prove.rs:380), "TODO: Optimize with bit-masking for selection" (witness.rs:188). They also use some similar optimizations but for  non-grand product sumchecks. Worth seeing carefully what we are doing vs them}
 
 \subsection{Proof size optimization for large inputs}
 
@@ -456,7 +466,7 @@ using an IOPP for constrained codes. Concretely, the prover commits to the vecto
 
 \albertimportant{In current implementation, this performs worse than not using any virtualization, which should not be the case. But before working on this section further I'd want to make sure it is worth it}
 
-In this section we expand relation $\Relation^{\mathsf{lin-dual}}_{\cC, \comfield, \evalfield, \pack}$ to impose, instead of constraints of the form $\Enc_\cC(\pack(\pi_2(\bff)))=f$ and $\langle \pi_q(\bff), \vv  \rangle = \mu$, constraints as $\Enc_\cC(\pack(\pi_2(\bff))) = f$  and $$\langle \pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff))) \rangle = \mu$$ for a matrix $M\in \FF_{2}^{\codedim' \times \codedim}$. Precisely, given a new parameter $\codedim'$, we define 
+In this section we expand relation $\Relation^{\mathsf{lin-dual}}_{\cC, \comfield, \evalfield, \pack}$ to impose, instead of constraints of the form $\Enc_\cC(\pack(\pi_2(\bff)))=f$ and $\langle \psievalfield(\bff), \vv  \rangle = \mu$, constraints as $\Enc_\cC(\pack(\pi_2(\bff))) = f$  and $$\langle \psievalfield(\pi_2^{-1}(M\cdot \pi_2(\bff))) \rangle = \mu$$ for a matrix $M\in \FF_{2}^{\codedim' \times \codedim}$. Precisely, given a new parameter $\codedim'$, we define 
 %
 $$
 \Relation^{\mathsf{lin-virtual}}_{\cC, \comfield, \evalfield, \pack} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv, M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim' \times \codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\pack(\psicomfield(\bff))) = f\\ \wedge \  & \langle \psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff)), \vv\rangle  = \mu  \end{aligned} \right\}
@@ -469,13 +479,13 @@ The relation has the tag ``lin(ear)-virtual'' to reference the intuition that  $
 %
 \begin{equation*}
     \begin{aligned}
-        \pi_q(x \band y) & = 2^{-1}\cdot \pi_q \left( x+y - \pi_2^{-1}(\pi_2(x) + \pi_2(y)) \right),\\
-        \pi_q(\Maj(x,y,z)) &= 2^{-1}\cdot \pi_q \left( x+y+z - \pi_2^{-1}(\pi_2(x) + \pi_2(y) + \pi_2(z) \right),
+        \psievalfield(x \band y) & = 2^{-1}\cdot \psievalfield \left( x+y - \pi_2^{-1}(\pi_2(x) + \pi_2(y)) \right),\\
+        \psievalfield(\Maj(x,y,z)) &= 2^{-1}\cdot \psievalfield \left( x+y+z - \pi_2^{-1}(\pi_2(x) + \pi_2(y) + \pi_2(z) \right),
     \end{aligned}
 \end{equation*}
 where $2^{-1}$ denotes the inverse of $2$ modulo $q$.  
 %
-Hence AND and Majority can be expressed over $\FF_q$ as  linear expressions of a vectors of the form $\pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff)))$, with $\bff$ being a vector of integer bits containing only the original elements on which we apply the AND and Majority operations. 
+Hence AND and Majority can be expressed over $\FF_q$ as  linear expressions of a vectors of the form $\psievalfield(\pi_2^{-1}(M\cdot \pi_2(\bff)))$, with $\bff$ being a vector of integer bits containing only the original elements on which we apply the AND and Majority operations. 
 
 
 \bigskip
