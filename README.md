@@ -97,6 +97,19 @@ serde `LigeritoProof` rides as a single **length-prefixed `bincode` 1.3 blob**
 stream fails to decode, or the reconstructed proof fails verification (pinned by
 `mod_q_ligerito_proof_serialization_roundtrips`).
 
+The chunk folds `u` are length-prefixed at their **live** width, not `2^s`:
+everything past the last non-zero fold is omitted and re-padded by the
+verifier. Those entries are the all-zero columns of a padded witness, whose
+roots are `α^0 = 1`, so the decoded `us` is bit-for-bit the prover's — this
+is a shorter encoding of the same proof object, with the same soundness
+surface (a prover could always have sent the zeros explicitly). Canonicity
+is enforced in both directions: `from_bytes` rejects a transmitted trailing
+zero with `CodecError::NonCanonical`, and bounds the declared fold count by
+the bytes actually remaining before reserving. At φ = 0.55 this is −8.1 % of
+the proof at n = 28 (182 116 → 167 364 B) and −12.2 % at n = 30
+(241 132 → 211 628 B); full-width witnesses serialize exactly as before.
+Pinned by `mod_q_ligerito_padded_witness_trims_us`.
+
 ## Dependencies
 
 - **`flock-core`** — the ring-switch / additive-NTT / BaseFold / Ligerito hot
@@ -237,7 +250,16 @@ RUSTFLAGS="-C target-cpu=native" cargo bench --bench pcs --features unchecked
 # specific shapes (t:s:W triples) and rep count:
 F2Z_BENCH_SHAPES="10:6:1 14:8:1" F2Z_BENCH_REPS=5 \
   RUSTFLAGS="-C target-cpu=native" cargo bench --bench pcs --features unchecked
+# a witness that is NOT a power of two: fill fraction φ ∈ (0, 1] — the
+# trailing (1−φ) of the columns are left all zero, i.e. the padding a
+# witness of N = φ·2^n cells carries (see `F2Z_COL_ELIDE` below):
+F2Z_BENCH_FILL=0.55 F2Z_BENCH_SHAPES="17:11:1" F2Z_BENCH_REPS=3 \
+  RUSTFLAGS="-C target-cpu=native" cargo bench --bench pcs --features unchecked
 ```
+
+The shape header reports the fill as `live=<C>/<2^s>`, and the `proof:`
+line carries an `fnv` fingerprint of the serialized bytes — the handle for
+byte-identity A/Bs across prover knobs.
 
 `scripts/bench_csv.sh` sweeps shapes × profiles one process at a time (the
 measurement protocol) and writes one CSV row per run —
@@ -253,7 +275,21 @@ forces the generic (non-NEON) round/fold kernels (diagnostic);
 (the factored default trades two extra wide multiplies per slot for 4×
 less table footprint — measured −9–15 % prove at n = 28, see the dated
 note under the reference numbers); `F2_FOREST_SCHEDULE=l8` opts into the
-L/8 forest memory schedule.
+L/8 forest memory schedule; `F2Z_COL_ELIDE=0` disables **live-column
+elision** — the default builds only the leading columns that carry data
+and collapses the trailing all-zero ones (a zero-padded witness's padding,
+since the column index is the high-order MLE index) into ONE synthetic
+constant-1 group carrying their summed `eq` weight, which is exact in
+char 2. A witness of `N = φ·2^n` cells therefore pays the forest for
+`⌈N/2^{t+log₂W}⌉` columns instead of `2^s`: at φ = 0.55 measured
+**−34.6 % prove / −35.0 % peak at n = 28** (497.6 → 325.6 ms,
+1360.9 → 884.3 MB) and −50.8 % / −35.4 % at n = 30 (the n = 30 arm
+overshoots the compute-proportional ~−40 % because the un-elided run at
+5.4 GB is memory-pressured — quote −35–40 % as the compute win). The
+elision granularity is one column, so the residual padding waste is under
+`2^{t+log₂W}` cells (0.05 % of `2^28` at t = 17). Pinned byte-identical by
+`col_elision_matches_full`.
+
 `F2Z_LIG_PROFILE` (bench-only, changes the proof: `slim` default / `fast`
 / `secure` / `r8` = ad-hoc UDR rate-1/8 probe /
 `custom:<log_inv_rate>:<initial_k>`) selects the Ligerito profile; the
