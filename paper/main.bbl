@@ -16,43 +16,5 @@
   {}
 \endgroup
 
-
-\refsection{0}
-  \datalist[entry]{anyt/global//global/global/global}
-    \entry{FIPS202}{report}{}{}
-      \name{author}{1}{}{%
-        {{hash=ef9cb61878e61d434507444346b29d1a}{%
-           family={{National Institute of Standards and Technology}},
-           familyi={N\bibinitperiod}}}%
-      }
-      \list{institution}{1}{%
-        {U.S. Department of Commerce}%
-      }
-      \strng{namehash}{ef9cb61878e61d434507444346b29d1a}
-      \strng{fullhash}{ef9cb61878e61d434507444346b29d1a}
-      \strng{fullhashraw}{ef9cb61878e61d434507444346b29d1a}
-      \strng{bibnamehash}{ef9cb61878e61d434507444346b29d1a}
-      \strng{authorbibnamehash}{ef9cb61878e61d434507444346b29d1a}
-      \strng{authornamehash}{ef9cb61878e61d434507444346b29d1a}
-      \strng{authorfullhash}{ef9cb61878e61d434507444346b29d1a}
-      \strng{authorfullhashraw}{ef9cb61878e61d434507444346b29d1a}
-      \field{labelalpha}{Nat15}
-      \field{sortinit}{N}
-      \field{sortinithash}{22369a73d5f88983a108b63f07f37084}
-      \field{labelnamesource}{author}
-      \field{labeltitlesource}{title}
-      \field{number}{FIPS PUB 202}
-      \field{title}{{SHA-3} Standard: Permutation-Based Hash and Extendable-Output Functions}
-      \field{type}{techreport}
-      \field{year}{2015}
-      \verb{urlraw}
-      \verb https://doi.org/10.6028/NIST.FIPS.202
-      \endverb
-      \verb{url}
-      \verb https://doi.org/10.6028/NIST.FIPS.202
-      \endverb
-    \endentry
-  \enddatalist
-\endrefsection
 \endinput
 
