@@ -16,6 +16,10 @@ use crate::transcript::traits::Transcribable;
 pub enum CodecError {
     /// The buffer ended before a field could be fully read.
     Truncated,
+    /// A field was encoded non-minimally, so two byte strings would decode
+    /// to the same proof. The codec is canonical: every value has exactly
+    /// one encoding, and the decoder rejects the others.
+    NonCanonical,
     /// The embedded `bincode` `LigeritoProof` blob failed to decode.
     Bincode(String),
 }
@@ -24,6 +28,7 @@ impl core::fmt::Display for CodecError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             CodecError::Truncated => write!(f, "proof stream truncated"),
+            CodecError::NonCanonical => write!(f, "proof stream encoded non-minimally"),
             CodecError::Bincode(e) => write!(f, "LigeritoProof decode: {e}"),
         }
     }
@@ -143,5 +148,12 @@ impl<'a> Reader<'a> {
     /// Read `n` raw bytes (the framed `bincode` blob).
     pub fn take(&mut self, n: usize) -> Result<&'a [u8], CodecError> {
         self.take_raw(n)
+    }
+
+    /// Bytes left unread. Callers bound attacker-controlled element counts
+    /// by this before reserving, so a tampered length prefix costs a
+    /// `Truncated` error rather than a huge speculative allocation.
+    pub fn remaining(&self) -> usize {
+        self.buf.len().saturating_sub(self.cur)
     }
 }

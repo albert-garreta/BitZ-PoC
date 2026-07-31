@@ -1329,6 +1329,23 @@ where
     }
     let chunks = chunk_row_weights(row_weights_q, c_w, lch);
 
+    // Re-pad the transmitted chunk folds to the full `2^s`: a padded
+    // witness's trailing all-zero columns fold to 0 and are not sent (see
+    // `to_bytes`). Forcing those entries to zero is exactly what the
+    // prover committed to — the forest binds `root_c = α^{u_c} = 1` for
+    // them, and the Ligerito opening then binds the committed bits, so a
+    // prover who under-declares the live prefix simply fails.
+    let cols = p.cols();
+    let mut us: Vec<Vec<u128>> = Vec::with_capacity(lch);
+    for u in &proof.us {
+        if u.len() > cols {
+            return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+        }
+        let mut u = u.clone();
+        u.resize(cols, 0);
+        us.push(u);
+    }
+
     // Per-chunk range bound 2^{c_w+t+W} (c_w+t+W = 127 by construction).
     let range_shift = c_w.wrapping_add(p.t).wrapping_add(p.word_bits);
     let bound = 1u128 << range_shift;
@@ -1336,7 +1353,7 @@ where
     let mut points = Vec::with_capacity(lch);
     let mut mus = Vec::with_capacity(lch);
     for l in 0..lch {
-        for (k, &u) in proof.us[l].iter().enumerate() {
+        for (k, &u) in us[l].iter().enumerate() {
             if u >= bound {
                 let _ = k;
                 return Err(FlockRsError::ChunkRange { chunk: l, col: k });
@@ -1345,7 +1362,7 @@ where
         let (pt, mu) = verify_int_eval_merged_common(
             transcript,
             &proof.mfs[l],
-            &proof.us[l],
+            &us[l],
             &proof.presums[l],
             p,
             &chunks[l],
@@ -1407,7 +1424,7 @@ where
     }
 
     // Recombine in R: y = Σ_c w′_c · Σ_l 2^{c_w·l}·u_c^{(l)}.
-    let v_flat: Vec<u128> = proof.us.iter().flat_map(|u| u.iter().copied()).collect();
+    let v_flat: Vec<u128> = us.iter().flat_map(|u| u.iter().copied()).collect();
     let y = recombine_read_off(p, &v_flat, 0, col_weights, c_w, lch);
     if y != claimed {
         return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
@@ -5720,7 +5737,10 @@ fn prove_rlc_family_front(
             let pow2: Vec<Vec<Gf>> = case_pow.iter().map(|r| vec![r[1]]).collect();
             let (_roots, mf, z, e_d) = {
                 let _g = crate::utils::prof::scope("rlc:forest");
-                crate::merged_forest::prove_merged_forest_lazy(transcript, &p_x, packed, &pow2)
+                // Derived x-channels, not the witness layout — no column
+                // elision here (the tail is not generally zero).
+                let live = p_x.cols();
+                crate::merged_forest::prove_merged_forest_lazy(transcript, &p_x, packed, &pow2, live)
             };
             (u, mf, z, e_d)
         } else {
@@ -7132,13 +7152,23 @@ pub fn mle_eval_mod_q_lig_size_breakdown(
 ) -> (ZincSideSizeBreakdown, usize) {
     let mut b = ZincSideSizeBreakdown::default();
     for l in 0..proof.mfs.len() {
+        // Only the transmitted prefix of `us` is on the wire.
+        let u = &proof.us[l];
         b.accumulate(&zinc_side_size_breakdown_merged(
             &proof.mfs[l],
-            &proof.us[l],
+            &u[..transmitted_us_len(u)],
             &proof.presums[l],
         ));
     }
     (b, proof.lig.size_bytes())
+}
+
+/// How many leading chunk folds go on the wire: everything up to and
+/// including the last non-zero one. The trailing zeros belong to the
+/// elided all-zero columns of a padded witness and are re-derived by the
+/// verifier (see [`IntEvalRsLigModQProof::to_bytes`]).
+pub fn transmitted_us_len(u: &[u128]) -> usize {
+    u.iter().rposition(|&x| x != 0).map_or(0, |i| i.wrapping_add(1))
 }
 
 // ---------------------------------------------------------------------
@@ -7177,8 +7207,20 @@ impl IntEvalRsLigModQProof {
                     w.gf(&p2.1);
                 }
             }
-            w.len(self.us[l].len());
-            for &u in &self.us[l] {
+            // Publicly-zero chunk folds are NOT transmitted. A witness of
+            // N ≠ 2^n cells is zero-padded into whole trailing columns
+            // (the column index is the high-order MLE index), whose folds
+            // are `u_c = 0` and whose roots are `α^0 = 1`. The verifier
+            // re-pads to `2^s`, so the decoded `us` is bit-for-bit the
+            // prover's — this is a shorter ENCODING of the same proof
+            // object, with the same soundness surface (the adversary could
+            // always have sent those zeros explicitly). Canonical: the
+            // written prefix never ends in a zero, and `from_bytes`
+            // rejects any non-minimal encoding.
+            let u_l = &self.us[l];
+            let n_u = transmitted_us_len(u_l);
+            w.len(n_u);
+            for &u in &u_l[..n_u] {
                 w.u128(u);
             }
             w.transcribable(&self.presums[l]);
@@ -7230,9 +7272,16 @@ impl IntEvalRsLigModQProof {
             }
             mfs.push(MergedForestProof { layers });
             let n_u = r.len()?;
-            let mut u = Vec::with_capacity(n_u);
+            // Bound the attacker-controlled count by what is actually left
+            // before reserving (a tampered prefix must cost a `Truncated`,
+            // not a huge speculative allocation).
+            let mut u = Vec::with_capacity(n_u.min(r.remaining() / 16));
             for _ in 0..n_u {
                 u.push(r.u128()?);
+            }
+            // The zero tail is implied by the shape, never transmitted.
+            if u.last() == Some(&0) {
+                return Err(CodecError::NonCanonical);
             }
             us.push(u);
             presums.push(r.transcribable::<MultiDegreeSumcheckProof<Gf>>()?);
@@ -7615,6 +7664,111 @@ mod tests {
             };
             assert!(rejected, "tampered byte at {pos} not rejected");
         }
+    }
+
+    /// A zero-padded witness must not pay for its padding on the wire: the
+    /// trailing all-zero columns' chunk folds are re-derived by the
+    /// verifier, not transmitted. The encoding stays canonical (a
+    /// non-minimal `us` block is rejected) and the decoded proof still
+    /// verifies against the un-changed verifier surface.
+    #[test]
+    fn mod_q_ligerito_padded_witness_trims_us() {
+        use crate::pcs::{FQ_BITS, Fq};
+        let alpha = smallest_generator();
+        let p = IntEvalParams { t: 10, s: 5, word_bits: 1 };
+        let m_p = packed_vars(&p);
+        let (pc, vc) =
+            lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 }).expect("cfg");
+        // φ ≈ 0.55: columns `live..32` are the zero padding of a witness
+        // of N = live·2^t cells.
+        let live = 18usize;
+        assert!(live < p.cols());
+        let data: Vec<u128> = (0..p.cells())
+            .map(|i| {
+                let c = i & (p.cols() - 1);
+                if c >= live { 0 } else { (i as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & 1 }
+            })
+            .collect();
+        let rw_q: Vec<u128> = (0..p.rows())
+            .map(|b| {
+                (b as u128)
+                    .wrapping_mul(0xDEAD_BEEF_CAFE_F00D_1234_5678_9ABC_DEF1)
+                    .wrapping_add(7)
+                    % crate::pcs::FQ_MOD
+            })
+            .collect();
+        let col_w: Vec<Fq> =
+            (0..p.cols()).map(|c| Fq::from(((c as u128).wrapping_mul(5) & 7) + 1)).collect();
+        let mut y = Fq::from(0u128);
+        for c in 0..p.cols() {
+            let mut acc = Fq::from(0u128);
+            for b in 0..p.rows() {
+                acc = acc + Fq::from(rw_q[b]) * Fq::from(data[p.cell_index(b, c)]);
+            }
+            y = y + col_w[c] * acc;
+        }
+        let hint = commit_rs_flock_with(&p, &data, pc.log_inv_rates[0], pc.initial_k);
+        let mut pt = Blake3Transcript::new();
+        let proof = prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, FQ_BITS, alpha, &pc);
+
+        // Prover-side `us` is full width; the wire carries only the live
+        // prefix (the last live column is non-zero by construction).
+        assert_eq!(proof.us[0].len(), p.cols(), "prover holds all 2^s folds");
+        assert!(proof.us[0][live..].iter().all(|&u| u == 0), "padding folds are zero");
+        let bytes = proof.to_bytes();
+        let proof2 = IntEvalRsLigModQProof::from_bytes(&bytes).expect("deserialize");
+        assert_eq!(proof2.us[0].len(), live, "only the live folds are transmitted");
+
+        // …and it still verifies, with no verifier-side change.
+        let mut vt = Blake3Transcript::new();
+        verify_mle_eval_mod_q_ligerito(
+            &mut vt, &hint.commitment, &proof2, &p, &rw_q, &col_w, alpha, y, FQ_BITS, &vc,
+        )
+        .expect("trimmed proof verifies");
+        assert_eq!(bytes, proof2.to_bytes(), "codec is canonical");
+
+        // A non-minimal `us` block (one transmitted trailing zero) decodes
+        // to the same proof object, so the codec must reject it.
+        let mut needle = Vec::new();
+        for &u in &proof2.us[0] {
+            needle.extend_from_slice(&u.to_le_bytes());
+        }
+        let pos = bytes.windows(needle.len()).position(|w| w == needle).expect("us block");
+        let mut bad = Vec::new();
+        bad.extend_from_slice(&bytes[..pos - 8]);
+        bad.extend_from_slice(&(live as u64 + 1).to_le_bytes());
+        bad.extend_from_slice(&needle);
+        bad.extend_from_slice(&[0u8; 16]);
+        bad.extend_from_slice(&bytes[pos + needle.len()..]);
+        assert!(
+            matches!(
+                IntEvalRsLigModQProof::from_bytes(&bad),
+                Err(crate::proof_codec::CodecError::NonCanonical)
+            ),
+            "non-minimal us encoding accepted"
+        );
+
+        // An over-wide `us` (more folds than columns) is a shape error.
+        let mut wide = IntEvalRsLigModQProof::from_bytes(&bytes).expect("deserialize");
+        wide.us[0].resize(p.cols() + 1, 0);
+        wide.us[0][p.cols()] = 7;
+        let mut vt = Blake3Transcript::new();
+        assert!(
+            verify_mle_eval_mod_q_ligerito(
+                &mut vt,
+                &hint.commitment,
+                &wide,
+                &p,
+                &rw_q,
+                &col_w,
+                alpha,
+                y,
+                FQ_BITS,
+                &vc
+            )
+            .is_err(),
+            "over-wide us accepted"
+        );
     }
 
     // ── RLC claim-family tests (EXPERIMENTAL API) ────────────────────────

@@ -17,6 +17,12 @@
 //!   default shape list, e.g. `F2Z_BENCH_SHAPES="10:6:1 14:8:1"`.
 //! - `F2Z_BENCH_REPS`: timing repetitions per shape (median reported;
 //!   default 5).
+//! - `F2Z_BENCH_FILL`: witness fill fraction in (0, 1] (default 1.0) — the
+//!   trailing `(1 − fill)` of the columns are left ALL ZERO, i.e. the
+//!   zero padding a witness of `N = fill·2^n` cells carries. With
+//!   `F2Z_COL_ELIDE=1` (the default) the forest skips those trees; set
+//!   `F2Z_COL_ELIDE=0` to measure the same instance un-elided. The
+//!   printed `proof-fnv` is identical either way (byte-identity pin).
 //! - `F2Z_LIG_PROFILE`: embedded Ligerito profile at `m = m_p + 7 ≥ 22` —
 //!   `slim` (default; base RS rate 1/8, k=4 — fewer queries + 16-bit
 //!   grinding at the same 100-bit target, the proof-size profile), `fast`
@@ -199,9 +205,22 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     let log_w = w.trailing_zeros() as usize;
     let row_len = p.rows() << log_w;
     let words = row_len.div_ceil(64);
+    // Fill fraction: columns `live..2^s` stay ALL ZERO — exactly the
+    // padding of a witness with N = fill·2^n cells (the column axis is
+    // the high-order index, so a zero-padded witness ends in whole zero
+    // columns). `y` below is derived from SET BITS, so it stays correct.
+    let fill: f64 = std::env::var("F2Z_BENCH_FILL")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1.0);
+    assert!(fill > 0.0 && fill <= 1.0, "F2Z_BENCH_FILL must be in (0, 1]");
+    let live = (((p.cols() as f64) * fill).ceil() as usize).clamp(1, p.cols());
     let rows: Vec<Vec<u64>> = (0..p.cols())
         .map(|c| {
             let mut wv = vec![0u64; words];
+            if c >= live {
+                return wv;
+            }
             for b in 0..p.rows() {
                 let v = cell(b, c);
                 for j in 0..w {
@@ -247,10 +266,12 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
 
     let n = t + s;
     println!(
-        "\n=== n={n} (t={t}, s={s}, W={w}, m_p={m_p}, chunks={lch}, lig={lig_tag}@r1/{}k{}, data={} KiB) ===",
+        "\n=== n={n} (t={t}, s={s}, W={w}, m_p={m_p}, chunks={lch}, lig={lig_tag}@r1/{}k{}, data={} KiB, live={live}/{} elide={}) ===",
         1usize << pc.log_inv_rates[0],
         pc.initial_k,
-        (p.cells() * w).div_ceil(8) >> 10
+        (p.cells() * w).div_ceil(8) >> 10,
+        p.cols(),
+        std::env::var("F2Z_COL_ELIDE").unwrap_or_else(|_| "1".into())
     );
 
     // Commit: timed + its own peak window (the commitment/hint stays live).
@@ -278,6 +299,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     let mut ser_us = Vec::new();
     let mut de_us = Vec::new();
     let mut bytes = 0usize;
+    let mut proof_fnv = 0u64;
     for _ in 0..reps {
         let mut pt = f2z::transcript::Blake3Transcript::new();
         let t0 = Instant::now();
@@ -288,6 +310,11 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
         let ser = proof.to_bytes();
         ser_us.push(t1.elapsed().as_secs_f64() * 1e6);
         bytes = ser.len();
+        // FNV-1a over the serialized proof: the byte-identity pin for
+        // `F2Z_COL_ELIDE=0` vs `=1` at the same shape and fill.
+        proof_fnv = ser.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, &b| {
+            (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+        });
 
         let t2 = Instant::now();
         let de = f2z::ligerito_flock::IntEvalRsLigModQProof::from_bytes(&ser).expect("codec");
@@ -352,7 +379,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     }
     println!("  verify:  {:8.2} ms", median(verify_ms));
     println!(
-        "  proof:   {bytes:8} B ({:.1} KiB)   serialize {:.0} µs / deserialize {:.0} µs",
+        "  proof:   {bytes:8} B ({:.1} KiB)   serialize {:.0} µs / deserialize {:.0} µs   fnv {proof_fnv:016x}",
         bytes as f64 / 1024.0,
         median(ser_us),
         median(de_us)

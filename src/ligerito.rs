@@ -1134,7 +1134,13 @@ pub(crate) fn prove_int_eval_merged_common(
         if crate::merged_forest::quad_active(p) {
             crate::merged_forest::prove_merged_forest_lazy_quad(transcript, p, packed_cols, &pow2)
         } else {
-            prove_merged_forest_lazy(transcript, p, packed_cols, &pow2)
+            // A zero-padded witness ends in all-zero columns; those trees
+            // are constant 1 and never get built (byte-identical proof).
+            let live = {
+                let _g = crate::utils::prof::scope("mc:live_cols");
+                crate::merged_forest::live_cols(p, rows)
+            };
+            prove_merged_forest_lazy(transcript, p, packed_cols, &pow2, live)
         }
     };
     drop(pow2);

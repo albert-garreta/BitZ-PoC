@@ -477,10 +477,15 @@ fn dense_jit_fused_grid(
 /// (`k ≥ 3`), else round 1's coefficient triple. `mk(c)` hands out tree
 /// `c`'s per-position value reader and its prefetch hook.
 #[allow(clippy::arithmetic_side_effects)]
+/// `extra_const` appends the elided tail's synthetic constant-1 group
+/// (see [`col_elide`]) through the SAME fused generator — the driver
+/// cannot recompute a fused round-1 entry itself, so the group has to be
+/// born here, all-ones value reader and all.
 fn jit_layer_generate<V, L, MK>(
     hh: usize,
     zx: &[Gf],
     num_trees: usize,
+    extra_const: bool,
     mk: MK,
 ) -> (Vec<GroupBufs<Gf>>, Option<PreRound<Gf>>)
 where
@@ -488,6 +493,7 @@ where
     V: Fn(usize) -> Gf,
     L: Fn(usize),
 {
+    let one = Gf::one();
     let tensors = suffix_tensors(zx, &());
     if crate::piop::sumcheck::eq_factored::eqf_double() && zx.len() >= 3 && jit_grid() {
         let v2 = &tensors[1];
@@ -498,10 +504,15 @@ where
                 (GroupBufs::Dense(vec![pair]), g)
             })
             .collect();
-        let mut bufs = Vec::with_capacity(num_trees);
-        let mut grid = Vec::with_capacity(num_trees);
+        let mut bufs = Vec::with_capacity(num_trees + 1);
+        let mut grid = Vec::with_capacity(num_trees + 1);
         for (b, g) in generated {
             bufs.push(b);
+            grid.push(g);
+        }
+        if extra_const {
+            let (pair, g) = dense_jit_fused_grid(hh, v2, |_| one, |_| ());
+            bufs.push(GroupBufs::Dense(vec![pair]));
             grid.push(g);
         }
         (bufs, Some(PreRound::Grid(grid)))
@@ -514,11 +525,16 @@ where
                 (GroupBufs::Dense(vec![pair]), coeffs)
             })
             .collect();
-        let mut bufs = Vec::with_capacity(num_trees);
-        let mut round1 = Vec::with_capacity(num_trees);
+        let mut bufs = Vec::with_capacity(num_trees + 1);
+        let mut round1 = Vec::with_capacity(num_trees + 1);
         for (b, c) in generated {
             bufs.push(b);
             round1.push(c);
+        }
+        if extra_const {
+            let (pair, coeffs) = dense_jit_fused_round1(hh, v1, |_| one, |_| ());
+            bufs.push(GroupBufs::Dense(vec![pair]));
+            round1.push(coeffs);
         }
         (bufs, Some(PreRound::Coeffs(round1)))
     }
@@ -537,9 +553,14 @@ fn drive_grouped(
     mut bit_layer: impl FnMut(usize, &[Gf]) -> Option<BitLayer>,
     depth: usize,
     s: usize,
+    live: usize,
 ) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
     assert!(depth >= 1 && s >= 1, "merged forest needs depth >= 1, s >= 1");
     let num_trees = roots.len();
+    assert!(live >= 1 && live <= num_trees, "live columns must be in 1..=2^s");
+    // Elided trees are constant 1 (see `col_elide`): their whole tail is
+    // ONE synthetic group carrying the summed eq weight.
+    let has_const = live < num_trees;
     let one = Gf::one();
     absorb_gfs(transcript, 0x30, &roots);
     let zeta: Vec<Gf> = transcript.get_field_challenges(s, &());
@@ -560,32 +581,46 @@ fn drive_grouped(
                 e.push(l[0]);
                 o.push(r[0]);
             }
+            e.resize(num_trees, one);
+            o.resize(num_trees, one);
             (None, Vec::new(), e, o)
         } else {
             let _g = crate::utils::prof::scope("mf:phaseA");
             let eq_zc = build_eq_x_r_vec(&z_c, &()).expect("s >= 1");
+            // The elided tail's weight, folded into one group's `scale`.
+            let const_scale = eq_zc[live..].iter().fold(Gf::zero(), |a, &b| a + b);
+            // `bufs` carries `live` real groups, plus the synthetic
+            // constant group when a JIT layer already appended its
+            // fused round-1 entry (which the driver cannot recompute).
+            let mk_groups = |bufs: Vec<GroupBufs<Gf>>, z_x: &[Gf]| -> Vec<EqInnerGroupMixed<Gf>> {
+                let mut gs: Vec<EqInnerGroupMixed<Gf>> = bufs
+                    .into_iter()
+                    .enumerate()
+                    .map(|(c, bufs)| EqInnerGroupMixed {
+                        q: z_x.to_vec(),
+                        scale: if c < live { eq_zc[c] } else { const_scale },
+                        bufs,
+                    })
+                    .collect();
+                if has_const && gs.len() == live {
+                    gs.push(EqInnerGroupMixed {
+                        q: z_x.to_vec(),
+                        scale: const_scale,
+                        bufs: GroupBufs::Dense(vec![(vec![one; 1 << ell], vec![one; 1 << ell])]),
+                    });
+                }
+                gs
+            };
             let (groups, tau_sets, pair_tau_sets, t4_sets, pre_round1) = if let Some(bl) = {
                 let _g = crate::utils::prof::scope("mf:bitgen");
                 bit_layer(ell, &z_x)
             } {
-                let groups = bl
-                    .bufs
-                    .into_iter()
-                    .zip(eq_zc.iter())
-                    .map(|(bufs, &scale)| EqInnerGroupMixed { q: z_x.clone(), scale, bufs })
-                    .collect::<Vec<_>>();
+                let groups = mk_groups(bl.bufs, &z_x);
                 (groups, bl.tau_sets, bl.pair_tau_sets, bl.t4_sets, bl.round1)
             } else {
                 let lvl = core::mem::take(&mut levels[ell]);
-                let groups = lvl
-                    .into_iter()
-                    .zip(eq_zc.iter())
-                    .map(|(pair, &scale)| EqInnerGroupMixed {
-                        q: z_x.clone(),
-                        scale,
-                        bufs: GroupBufs::Dense(vec![pair]),
-                    })
-                    .collect::<Vec<_>>();
+                let bufs = lvl.into_iter().map(|pair| GroupBufs::Dense(vec![pair])).collect();
+                let groups = mk_groups(bufs, &z_x);
                 (groups, Vec::new(), Vec::new(), Vec::new(), None)
             };
             let (sc, r_x, finals) = prove_eq_inner_sumcheck_mixed_pre(
@@ -597,13 +632,22 @@ fn drive_grouped(
                 pre_round1,
                 &(),
             );
+            // The elided trees' L and R are the all-ones multilinear, so
+            // their exit values are (1, 1) at any point — the synthetic
+            // group's own final is exactly that, and is dropped.
+            debug_assert!(
+                !has_const || finals[live][0] == (one, one),
+                "constant group must exit at (1, 1)"
+            );
             let mut e = Vec::with_capacity(num_trees);
             let mut o = Vec::with_capacity(num_trees);
-            for f in finals {
+            for f in finals.iter().take(live) {
                 let (fe, fo) = f[0];
                 e.push(fe);
                 o.push(fo);
             }
+            e.resize(num_trees, one);
+            o.resize(num_trees, one);
             (Some(sc), r_x, e, o)
         };
 
@@ -658,7 +702,7 @@ pub fn prove_merged_forest(
     };
     // Everything materialised: the leaf level is `levels[depth−1]`.
     let (levels, roots) = build_levels(num_trees, depth, leaf_halves);
-    drive_grouped(transcript, roots, levels, |_, _| None, depth, s)
+    drive_grouped(transcript, roots, levels, |_, _| None, depth, s, num_trees)
 }
 
 /// Lazy bit-affine merged-forest prover over the committed bits: the leaf
@@ -675,13 +719,18 @@ pub fn prove_merged_forest(
 /// build top d−4) — every stage ≈ L/8. `pow2` is
 /// [`crate::pcs::chunk_pow2_table`]'s per-row α-power chains.
 #[allow(clippy::arithmetic_side_effects)]
+/// `live` is the number of leading columns that carry data — the trailing
+/// `2^s − live` trees are known-constant and are elided (see
+/// [`col_elide`]); pass `p.cols()` for the un-elided forest. Byte-identical
+/// either way.
 pub fn prove_merged_forest_lazy(
     transcript: &mut impl Transcript,
     p: &IntEvalParams,
     packed_cols: &[Vec<u64>],
     pow2: &[Vec<Gf>],
+    live: usize,
 ) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
-    prove_merged_forest_lazy_sched(transcript, p, packed_cols, pow2, forest_schedule())
+    prove_merged_forest_lazy_sched(transcript, p, packed_cols, pow2, forest_schedule(), live)
 }
 
 /// Where the stored level chain tops out — the forest's time/memory knob,
@@ -738,6 +787,51 @@ pub(crate) fn forest_lut3() -> bool {
     std::env::var("F2Z_LUT3").map_or(true, |v| v != "0")
 }
 
+/// **Live-column elision** — the padding lever. A committed column whose
+/// bits are all zero folds to `u_c = 0`, so every leaf of its tree is
+/// `α^0 = 1`, every level is 1, and its root is 1. Such a tree costs the
+/// forest a full `2^d`-value pipeline (bit extraction, the `T4` build, the
+/// JIT regen, and one dense group per layer) to prove a constant.
+///
+/// The driver's per-layer message is `Σ_c eq(z_c, c)·H_c(·)` with `H_c`
+/// linear in the group's `scale`, and every constant-1 tree has the SAME
+/// `H` — so the whole zero tail collapses into ONE synthetic group with
+/// `scale = Σ_{c ≥ live} eq(z_c, c)` and all-ones buffers. Char-2 addition
+/// is XOR, so re-associating the sum is exact: the round polynomials, the
+/// absorbed roots and the whole transcript are **byte-identical** to the
+/// un-elided forest. Nothing moves on the verifier side.
+///
+/// A witness of `N` cells padded to `2^n` therefore pays the forest only
+/// for `⌈N / 2^{t+log₂W}⌉` columns — the residual waste is under one
+/// column (0.05 % of `2^28` at `t = 17`). `F2Z_COL_ELIDE=0` opts out.
+pub(crate) fn col_elide() -> bool {
+    std::env::var("F2Z_COL_ELIDE").map_or(true, |v| v != "0")
+}
+
+/// The number of leading columns the forest must actually build: the
+/// trailing run of all-zero bit rows is elided (see [`col_elide`]). Scans
+/// only the tail it elides — `2^n/64` word reads worst case, sub-ms at
+/// `n = 28`. Always returns at least 1 (the driver needs one real group).
+pub(crate) fn live_cols(p: &IntEvalParams, rows: &[Vec<u64>]) -> usize {
+    let cols = p.cols();
+    if !col_elide() || rows.len() < cols {
+        return cols;
+    }
+    let mut live = cols;
+    while live > 1 && rows[live - 1].iter().all(|&w| w == 0) {
+        live -= 1;
+    }
+    live
+}
+
+/// Extend a `live`-length root list to the full `2^s` with the elided
+/// trees' known root `α^0 = 1`, so the transcript absorb and the phase-B
+/// sumcheck see the un-elided forest.
+fn pad_roots(mut roots: Vec<Gf>, num_trees: usize) -> Vec<Gf> {
+    roots.resize(num_trees, Gf::one());
+    roots
+}
+
 /// [`prove_merged_forest_lazy`] with the schedule explicit — the testable
 /// entry point; ALL schedules are pinned byte-identical to the eager
 /// prover.
@@ -748,6 +842,7 @@ fn prove_merged_forest_lazy_sched(
     packed_cols: &[Vec<u64>],
     pow2: &[Vec<Gf>],
     sched: ForestSchedule,
+    live: usize,
 ) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
     let l8 = sched.is_l8();
     use crate::pcs::{
@@ -760,6 +855,10 @@ fn prove_merged_forest_lazy_sched(
     let depth = row_len.trailing_zeros() as usize;
     let s = p.s;
     let num_trees = p.cols();
+    // Only the `live` leading trees are generated; the tail rides the
+    // driver's synthetic constant-1 group (see `col_elide`).
+    let live = live.clamp(1, num_trees);
+    let has_const = live < num_trees;
     let one = Gf::one();
     if depth < 3 {
         // Tiny trees: the LeafBits round needs k ≥ 2 — materialise.
@@ -778,11 +877,11 @@ fn prove_merged_forest_lazy_sched(
 
     let pair_tbl = layer1_pair_table(p, pow2, log_w, row_len);
     let leaf_tau = leaf_tau_halves(p, pow2, one, log_w, row_len);
-    let mut col_bits = Some(extract_column_bit_halves(packed_cols, num_trees, row_len));
+    let mut col_bits = Some(extract_column_bit_halves(packed_cols, live, row_len));
 
     if depth < 4 {
         // Only the leaf layer is bit-driven (Pair2Bits needs k = d−2 ≥ 2).
-        let (levels, roots) = build_levels(num_trees, depth - 1, |c| {
+        let (levels, roots) = build_levels(live, depth - 1, |c| {
             build_column_layer1_halves(p, packed_cols, c, pow2, &pair_tbl, one, log_w, row_len)
         });
         let bit_layer = |ell: usize, _zx: &[Gf]| -> Option<BitLayer> {
@@ -799,7 +898,7 @@ fn prove_merged_forest_lazy_sched(
                 round1: None,
             })
         };
-        return drive_grouped(transcript, roots, levels, bit_layer, depth, s);
+        return drive_grouped(transcript, pad_roots(roots, num_trees), levels, bit_layer, depth, s, live);
     }
 
     // The per-position 4-case VALUE tables of the level-(d−1) products:
@@ -851,7 +950,7 @@ fn prove_merged_forest_lazy_sched(
         // `te`/`to`/`leaf_tau` and the bits, never a level). Peak ≈
         // `2^n·8 B`: level d−2 alone is `2^n·4 B` and the chain under it
         // sums to as much again.
-        let (levels, roots) = build_levels(num_trees, depth - 2, |c| {
+        let (levels, roots) = build_levels(live, depth - 2, |c| {
             let cb = col_bits.as_ref().expect("leaf bits alive for the build");
             let (lb, rb) = &cb[c];
             t4_level_halves(lb, rb, &t4, q1)
@@ -903,7 +1002,7 @@ fn prove_merged_forest_lazy_sched(
                 None
             }
         };
-        return drive_grouped(transcript, roots, levels, bit_layer, depth, s);
+        return drive_grouped(transcript, pad_roots(roots, num_trees), levels, bit_layer, depth, s, live);
     }
 
     if depth == 4 || !l8 {
@@ -914,7 +1013,7 @@ fn prove_merged_forest_lazy_sched(
         // Leaf2Bits.
         let h3 = q1 >> 1; // level d−3 positions = 2^{d−3}
         let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
-        let (levels, roots) = build_levels(num_trees, depth - 3, |c| {
+        let (levels, roots) = build_levels(live, depth - 3, |c| {
             let cb = col_bits.as_ref().expect("leaf bits alive for the build");
             let (lb, rb) = &cb[c];
             // Level d−3 straight from paired T4 gathers — the full
@@ -950,7 +1049,7 @@ fn prove_merged_forest_lazy_sched(
                 let cb = col_bits.as_ref().expect("leaf bits alive for the JIT regen");
                 let (bufs, round1) = if jit_r1 {
                     let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
-                    jit_layer_generate(hh, zx, num_trees, |c| {
+                    jit_layer_generate(hh, zx, live, has_const, |c| {
                         let (lb, rb) = &cb[c];
                         let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
                         (
@@ -963,7 +1062,7 @@ fn prove_merged_forest_lazy_sched(
                         )
                     })
                 } else {
-                    let bufs: Vec<GroupBufs<Gf>> = cfg_into_iter!(0..num_trees)
+                    let bufs: Vec<GroupBufs<Gf>> = cfg_into_iter!(0..live)
                         .map(|c| {
                             let (lb, rb) = &cb[c];
                             // Exact-capacity halves: these buffers live (and
@@ -1038,7 +1137,7 @@ fn prove_merged_forest_lazy_sched(
                 None
             }
         };
-        return drive_grouped(transcript, roots, levels, bit_layer, depth, s);
+        return drive_grouped(transcript, pad_roots(roots, num_trees), levels, bit_layer, depth, s, live);
     }
 
     // depth ≥ 5 — the L/8 schedule: the stored chain tops out at level
@@ -1050,7 +1149,7 @@ fn prove_merged_forest_lazy_sched(
     let h3 = q1 >> 1; // level d−3 positions = 2^{d−3}
     let h4 = q1 >> 2; // level d−4 positions = 2^{d−4}
     let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
-    let (levels, roots) = build_levels(num_trees, depth - 4, |c| {
+    let (levels, roots) = build_levels(live, depth - 4, |c| {
         let cb = col_bits.as_ref().expect("leaf bits alive for the build");
         let (lb, rb) = &cb[c];
         // Level d−4 straight from T4 gathers (each position once) — the
@@ -1084,7 +1183,7 @@ fn prove_merged_forest_lazy_sched(
             let cb = col_bits.as_ref().expect("leaf bits alive for the JIT regen");
             let (bufs, round1) = if jit_r1 {
                 let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
-                jit_layer_generate(hh, zx, num_trees, |c| {
+                jit_layer_generate(hh, zx, live, has_const, |c| {
                     let (lb, rb) = &cb[c];
                     let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
                     (
@@ -1098,7 +1197,7 @@ fn prove_merged_forest_lazy_sched(
                     )
                 })
             } else {
-                let bufs: Vec<GroupBufs<Gf>> = cfg_into_iter!(0..num_trees)
+                let bufs: Vec<GroupBufs<Gf>> = cfg_into_iter!(0..live)
                     .map(|c| {
                         let (lb, rb) = &cb[c];
                         let full = t4_level_values(lb, rb, &t4, q1);
@@ -1172,7 +1271,7 @@ fn prove_merged_forest_lazy_sched(
             None
         }
     };
-    drive_grouped(transcript, roots, levels, bit_layer, depth, s)
+    drive_grouped(transcript, pad_roots(roots, num_trees), levels, bit_layer, depth, s, live)
 }
 
 // =====================================================================
@@ -2004,7 +2103,7 @@ pub fn prove_merged_forest_lazy_rlc2(
             None
         }
     };
-    drive_grouped(transcript, roots, levels, bit_layer, depth, s)
+    drive_grouped(transcript, roots, levels, bit_layer, depth, s, num_trees)
 }
 
 /// The j-bit case of position `p` gathered from up to 4 family-column bit
@@ -2157,7 +2256,7 @@ pub fn prove_merged_forest_lazy_rlc_general(
             None
         }
     };
-    drive_grouped(transcript, roots, levels, bit_layer, depth, s)
+    drive_grouped(transcript, roots, levels, bit_layer, depth, s, num_trees)
 }
 
 /// Multi-claim batched lazy prover: `claims.len()` same-shape claims —
@@ -2318,7 +2417,7 @@ fn prove_merged_forest_lazy_multi_sched(
                 // round-1 message into the generation pass.
                 let hh = q1 >> 1;
                 let (bufs, round1) = if jit_r1 {
-                    jit_layer_generate(hh, zx, num_trees, |k| {
+                    jit_layer_generate(hh, zx, num_trees, false, |k| {
                         let (n, c) = (k >> s, k & (per - 1));
                         let t4 = &tabs[tab_of[n]].t4;
                         let cb = col_bits_all[n]
@@ -2417,7 +2516,7 @@ fn prove_merged_forest_lazy_multi_sched(
                 None
             }
         };
-        return drive_grouped(transcript, roots, levels, bit_layer, depth, s_batch);
+        return drive_grouped(transcript, roots, levels, bit_layer, depth, s_batch, num_trees);
     }
 
     // depth ≥ 5 — the L/8 schedule (see the single prover): stored chain
@@ -2459,7 +2558,7 @@ fn prove_merged_forest_lazy_multi_sched(
             // message into the generation pass.
             let hh = h3 >> 1;
             let (bufs, round1) = if jit_r1 {
-                jit_layer_generate(hh, zx, num_trees, |k| {
+                jit_layer_generate(hh, zx, num_trees, false, |k| {
                     let (n, c) = (k >> s, k & (per - 1));
                     let t4 = &tabs[tab_of[n]].t4;
                     let cb = col_bits_all[n]
@@ -2572,7 +2671,7 @@ fn prove_merged_forest_lazy_multi_sched(
             None
         }
     };
-    drive_grouped(transcript, roots, levels, bit_layer, depth, s_batch)
+    drive_grouped(transcript, roots, levels, bit_layer, depth, s_batch, num_trees)
 }
 
 /// Verify; returns `(exit_point, exit_eval)`. The caller supplies the roots
@@ -2903,8 +3002,14 @@ mod tests {
             let mut last = None;
             for sched in [ForestSchedule::L2, ForestSchedule::L4, ForestSchedule::L8] {
                 let mut t_lazy = Blake3Transcript::new();
-                let lazy =
-                    prove_merged_forest_lazy_sched(&mut t_lazy, &p, &packed_cols, &pow2, sched);
+                let lazy = prove_merged_forest_lazy_sched(
+                    &mut t_lazy,
+                    &p,
+                    &packed_cols,
+                    &pow2,
+                    sched,
+                    p.cols(),
+                );
 
                 assert_eq!(eager.0, lazy.0, "roots (t={t},s={s},W={w},{sched:?})");
                 assert_eq!(eager.2, lazy.2, "exit point ({sched:?})");
@@ -2927,6 +3032,107 @@ mod tests {
                 verify_merged_forest(&mut vt, &lazy.0, &lazy.1, depth, s).expect("verify lazy");
             assert_eq!(z_v, lazy.2);
             assert_eq!(e_v, lazy.3);
+        }
+    }
+
+    /// **Live-column elision is byte-identical.** A zero-padded witness
+    /// ends in all-zero columns, whose trees are constant `α^0 = 1`;
+    /// eliding them (building only `live` trees + ONE synthetic
+    /// constant-1 group carrying the summed eq weight) must reproduce the
+    /// un-elided forest exactly — same roots, same round polynomials,
+    /// same exit claim, same transcript state — under every schedule, and
+    /// the un-elided verifier must accept.
+    #[test]
+    fn col_elision_matches_full() {
+        use crate::ligerito::pack_columns_from_rows;
+        // Depths 3..=9 again, with ≥ 2 columns so a zero tail exists;
+        // `live` sweeps the interesting fills (a single live column, an
+        // odd split, and the no-tail case).
+        for (t, s, w) in [
+            (3usize, 1usize, 1usize),
+            (4, 2, 1),
+            (6, 2, 1),
+            (7, 3, 1),
+            (5, 2, 4),
+            (9, 2, 1),
+        ] {
+            let p = IntEvalParams { t, s, word_bits: w };
+            let log_w = w.trailing_zeros() as usize;
+            let row_len = p.rows() << log_w;
+            let pow2: Vec<Vec<Gf>> = (0..p.rows())
+                .map(|b| (0..w).map(|j| sample(0xB0B + (b * w + j) as u64)).collect())
+                .collect();
+            let words = row_len.div_ceil(64);
+            for live in 1..=p.cols() {
+                // Columns `live..2^s` are ALL ZERO — the padding tail.
+                let rows: Vec<Vec<u64>> = (0..p.cols())
+                    .map(|c| {
+                        (0..words)
+                            .map(|wd| {
+                                if c >= live {
+                                    0
+                                } else {
+                                    (c as u64 + 1)
+                                        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                                        .wrapping_add(wd as u64)
+                                        .rotate_left((c + 3 * wd) as u32 & 63)
+                                }
+                            })
+                            .collect()
+                    })
+                    .collect();
+                let packed_cols = pack_columns_from_rows(&p, &rows);
+                // The detector must find exactly the zero tail (the
+                // last live column is non-zero by construction).
+                assert_eq!(live_cols(&p, &rows), live, "detector (t={t},s={s},W={w})");
+
+                for sched in [ForestSchedule::L2, ForestSchedule::L4, ForestSchedule::L8] {
+                    let mut t_full = Blake3Transcript::new();
+                    let full = prove_merged_forest_lazy_sched(
+                        &mut t_full,
+                        &p,
+                        &packed_cols,
+                        &pow2,
+                        sched,
+                        p.cols(),
+                    );
+                    let cf: Gf = t_full.get_field_challenge(&());
+
+                    let mut t_el = Blake3Transcript::new();
+                    let el = prove_merged_forest_lazy_sched(
+                        &mut t_el,
+                        &p,
+                        &packed_cols,
+                        &pow2,
+                        sched,
+                        live,
+                    );
+                    let ce: Gf = t_el.get_field_challenge(&());
+
+                    let tag = format!("t={t},s={s},W={w},live={live},{sched:?}");
+                    assert_eq!(full.0, el.0, "roots ({tag})");
+                    assert_eq!(full.2, el.2, "exit point ({tag})");
+                    assert_eq!(full.3, el.3, "exit eval ({tag})");
+                    assert_eq!(full.1.layers.len(), el.1.layers.len(), "layer count ({tag})");
+                    for (k, (lf, le)) in
+                        full.1.layers.iter().zip(el.1.layers.iter()).enumerate()
+                    {
+                        assert_eq!(lf.sc_x, le.sc_x, "layer {k} sc_x ({tag})");
+                        assert_eq!(lf.sc_c, le.sc_c, "layer {k} sc_c ({tag})");
+                        assert_eq!(lf.pair, le.pair, "layer {k} pair ({tag})");
+                    }
+                    assert_eq!(cf, ce, "transcript states diverged ({tag})");
+
+                    // The elided proof verifies against the un-elided
+                    // verifier, which knows nothing about elision.
+                    let mut vt = Blake3Transcript::new();
+                    let depth = row_len.trailing_zeros() as usize;
+                    let (z_v, e_v) = verify_merged_forest(&mut vt, &el.0, &el.1, depth, s)
+                        .expect("verify elided");
+                    assert_eq!(z_v, el.2, "verifier exit point ({tag})");
+                    assert_eq!(e_v, el.3, "verifier exit eval ({tag})");
+                }
+            }
         }
     }
 }
