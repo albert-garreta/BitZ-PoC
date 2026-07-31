@@ -7,3 +7,31 @@ docs/**/*.fls
 docs/**/*.log
 docs/**/*.out
 docs/**/*.toc
+
+# LaTeX build artifacts (paper)
+paper/*.aux
+paper/*.bbl
+paper/*.bcf
+paper/*.blg
+paper/*.dvi
+paper/*.fdb_latexmk
+paper/*.fls
+paper/*.lof
+paper/*.log
+paper/*.lot
+paper/*.out
+paper/*.run.xml
+paper/*.synctex.gz
+paper/*.toc
+paper/*.xdv
+paper/missfont.log
+
+# The paper's generated deliverable
+paper/main.pdf
+
+# local scripts
+paper/build.sh
+
+# Editor temporary files
+paper/*.swp
+paper/*~
