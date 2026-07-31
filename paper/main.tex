@@ -378,10 +378,23 @@ Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with suf
 
 
 \begin{enumerate}[leftmargin=*] 
-\item The prover sends $\mu_1, \ldots, \mu_{\codedim_2}\in \ZZ$ such that $\langle \bff_{*j}, \psievalfield^{-1}(\vv^{(1)})\rangle = \mu_j$. 
-\item The verifier checks that \begin{equation}\label{e:tensor_decomposition_reconstruction}\sum_{j\in [\codedim_2]} \psievalfield(\mu_j)\cdot \vv_j^{(2)}  = \mu\qquad \text{over } \evalfield.\end{equation}   
+\item The prover sends $\mu_1, \ldots, \mu_{\codedim_2}\in \range{0}{q-1}^{\leq \degevalfield}[X]$ such that \begin{equation}\label{e:tensored_equality}\langle \bff_{*j}, \psievalfield^{-1}(\vv^{(1)})\rangle = \mu_j \qquad \text{for all } j\in [\codedim_2].\end{equation} 
+\item The verifier checks that \begin{equation}\label{e:tensor_decomposition_reconstruction}\sum_{j\in [\codedim_2]} \psievalfield(\mu_j)\cdot \vv_j^{(2)}  = \mu\qquad \text{over } \evalfield.\end{equation} 
+Next, prover and verifier will focus on certifying that \eqref{e:tensored_equality} holds for all $j\in [\codedim_2]$.
+
 In \cref{?} we describe a variation in which, instead of sending the elements $\mu_1, \ldots, \mu_{\codedim_2}$, the prover commits to their bit-decomposition over $\comfield$, and proves \eqref{e:tensor_decomposition_reconstruction} the present IOR. This saves on proof size and verifier time when $\codedim$ is large.
-\item Prover and verifier define $\bm{\gamma}_i = \psievalfield^{-1}(\vv_i^{(1)}) \in \range{0}{q-1}\subseteq \ZZ$ for $i \in [\codedim_1]$, and set to prove the following claim:
+\item If $\degevalfield=0$, skip to the next step. Otherwise, if $\degevalfield>1$, the verifier uniformly samples and sends a  prime $q'$ from a fixed set of primes $\cP$ ($\cP$ is a protocol parameter), and an element $\alpha\in \FF_{q'}$. Now update
+%
+\begin{align*}
+\vv^{(1)}{} &\gets \psi_{q',\alpha}\left(\psievalfield^{-1}\left(\vv^{(1)}\right)\right) \in \FF_{q'},\\
+\mu_j &\gets \pi_{q'}^{-1}(\psi_{q',\alpha}(\mu_j)) \in \range{0}{q'-1}\subseteq \ZZ, \qquad j\in [\codedim_2],\\
+q&\gets q'.
+\end{align*}
+%
+%For ease of readability onwards, we use the same symbols $\vv^{(1)}$ and $q$ for the pre- and post-update vectors and primes in this step.
+
+\item Note that, at this point of the protocol, $\vv^{(1)}\in \FF_q^{\codedim_1}$. 
+Prover and verifier define $$\bm{\gamma} = \pi_{q}^{-1}(\vv^{(1)}) \in \range{0}{q-1}^{\codedim_1}\subseteq \ZZ^{\codedim_1},$$ and set to prove the following claim:
 %
 $$
 \prod_{i \in [\codedim_1]} g^{\bm{\gamma}_i\cdot \bff_{ij}}  = g^{\mu_j} \in \comfield, \qquad \text{for all } j\in [\codedim_2].
