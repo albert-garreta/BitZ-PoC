@@ -40,12 +40,14 @@
 
 \newtheorem{definition}{Definition}
 \newtheorem{remark}{Remark}
+% Identities carry displayed derivations — upright body, not italic.
+\theoremstyle{definition}
 \newtheorem{identity}{Identity}
 
 \title{How F2Z performs the forest GKR:\\
   the merged, lazy, bit-affine grand-product forest}
 \author{The \code{f2z-pcs} repository}
-\date{2026-07-27}
+\date{2026-07-31}
 
 \begin{document}
 \maketitle
@@ -79,7 +81,7 @@ schedule) or an eighth (\code{l8}) of the way up the tree, which is what
 caps prover memory at ${\approx}\,2^n{\cdot}4$\,B resp.\
 ${\approx}\,2^n{\cdot}2$\,B.  Every lazy path is an exact
 characteristic-2 rewriting of the eager forest: the transcripts are
-byte-identical, and tests pin this in both schedules.  The note closes
+byte-identical, and tests pin this in every schedule.  The note closes
 with the exit-claim discharge into the ring-switch/Ligerito opening, the
 batched and RLC-family variants of the forest, and the measured cost
 tables.
@@ -409,226 +411,609 @@ reduced coefficients --- the fusion is again an exact identity.
 \label{sec:lazy}
 
 The eager reference prover (\code{prove\_merged\_forest}) materialises
-the $2^{d+s}$ leaves and every product level above them.  The lazy
-prover (\code{prove\_merged\_forest\_lazy}) produces a byte-identical
+the $2^{d+s}$ leaves and every product level above them.  At the
+deployed shapes that is not a constant factor away from affordable: at
+$n = 28$ ($d = 17$, $s = 11$) the leaf layer alone is $2^{28}$
+$\K$-elements $=4$\,GiB, the level above it 2\,GiB, the whole forest
+${\approx}8$\,GiB --- whereas the measured peak resident set of an
+\emph{entire} $n = 28$ prove is 1.27\,GB on the 16\,GB M4 of
+\S\ref{sec:costs}.  The lazy prover
+(\code{prove\_merged\_forest\_lazy}) produces a byte-identical
 transcript while never materialising the leaf layer or the bottom
-product levels at all.  Everything rests on the observation that at and
-near the leaves, the forest's values have so little entropy that they
-can be \emph{gathered from small shared tables indexed by committed
-bits} instead of computed and stored.
+product levels at all.
+
+Everything rests on one observation: near the leaves the forest's values
+carry almost no entropy.  A node $r$ levels above the leaves is the
+product of the $2^r$ leaves beneath it, and every leaf is either $1$ or
+a public table entry \eqref{eq:leaves} --- so the node's value is one of
+$2^{2^r}$ possibilities, \emph{selected by $2^r$ committed bits}, out of
+a table that depends on the node's position but not on its tree.  For
+small $r$ that replaces ``compute and store $2^s$ copies of the level''
+by ``gather from one shared table indexed by committed bits''.
+\S\ref{sec:square} turns the observation into the two inequalities that
+generate every variant in the code, \S\ref{sec:tables} lists what the
+prover actually holds, \S\ref{sec:ladder} assigns every level of the
+tree to a sourcing mode, \S\ref{sec:lutrounds} works through the round
+bodies, and \S\ref{sec:identity} says why the result is the same
+protocol.
+
+One index convention first, because it ties the two halves of this
+section together: layer $\ell$'s phase A binds the $\ell$ in-tree
+variables over level $\ell + 1$, which has $2^\ell$ values per half ---
+so \emph{layer $\ell$ is a $k = \ell$ variable instance of the driver},
+and the bottom three layers of a depth-$d$ tree run at
+$k = d-3,\, d-2,\, d-1$.  Every ``$k \ge \cdot$'' guard below is a
+statement about depth.
+
+\subsection{Two square laws and one cap}
+\label{sec:square}
+
+Two independent operations widen the case tables the lazy prover reads,
+and both \emph{square} the number of cases.  The shape of the whole
+prover follows from where their common cap bites.
+
+\begin{identity}[Level width]\label{id:level}
+Unfolding the recursion \eqref{eq:recursion} $r$ times, position $y$ of
+level $d - r$ in tree $c$ is
+\[
+  L_{d-r}(y, c) \;=\;
+  \prod_{\varepsilon \in \bits^{r}}
+    \Lambda[c]\Big[\, y + \sum_{i=1}^{r}\varepsilon_i\, 2^{d-i}\Big] ,
+\]
+the product over the $2^r$ leaves whose low $d-r$ index bits are $y$
+(the top $r$ bits run free).  With $\Lambda[c][i] \in \{1, v(i)\}$,
+$v(i) = \alpha^{W_b 2^j}$, that value is one of $2^{2^r}$
+position-indexed constants, selected by the $2^r$ committed bits of the
+subcube --- and the constants do not depend on $c$.
+\end{identity}
+
+A level-$(d{-}r)$ case table therefore holds
+$2^{2^r}\!\cdot 2^{d-r}$ entries: $2^{d+1}$, $2^{d+1}$, $2^{d+2}$,
+$2^{d+5}$ for $r = 0, 1, 2, 3$, i.e.\ 4\,MiB, 4\,MiB, 8\,MiB,
+\textbf{128\,MiB} at $d = 17$.  The first three are built once, shared
+across all $2^s = 2048$ trees, and stay cache-resident; the fourth does
+not exist in the code, and that 16-fold jump is why.
+
+\begin{identity}[Fold width]\label{id:fold}
+A sumcheck round replaces the entry pair $(v_{2p}, v_{2p+1})$ by
+$v'_p = v_{2p} + \rho\,(v_{2p+1} - v_{2p})$.  If each $v$ was a
+$2^w$-case function of $w$ bits at its own position, then $v'_p$ is a
+$2^{2w}$-case function of the $2w$ bits of the two positions --- again a
+per-position table (now $\rho$-dependent), again shared by all trees.
+\end{identity}
+
+So an entry of level $d - r$ with $f$ variables already bound is a
+$2^{2^{r+f}}$-case select on $2^{r+f}$ bits, and the same
+``at most 4 selecting bits'' cap reads $r + f \le 2$.  A layer whose
+input level is $d - r$ can therefore run $3 - r$ rounds straight off the
+bits; and a prefix of $f$ such rounds needs $k \ge f + 1$ variables,
+because the last of them must still have a fold --- that fold is where
+the dense buffers are born.  Those two inequalities generate the
+driver's entire \code{GroupBufs} inventory, its assertions, and the
+depth fallbacks of \S\ref{sec:ladder}:
+
+\begin{center}
+\small
+\begin{tabular}{llccll}
+\toprule
+input level & $r$ & rounds & widest select & driver entry & needs \\
+\midrule
+$d$ (leaves) & 0 & 1 & 1 bit / 2 cases & \code{LeafBits}  & $k \ge 2$ \\
+             &   & 2 & 2 bits / 4      & \code{Leaf2Bits} & $k \ge 3$ \\
+             &   & 3 & 4 bits / 16     & \code{Leaf3Bits} & $k \ge 4$ \\
+$d-1$        & 1 & 1 & 2 bits / 4      & \code{Pair2Bits} & $k \ge 2$ \\
+             &   & 2 & 4 bits / 16     & \code{Pair3Bits} & $k \ge 3$ \\
+$d-2$        & 2 & 1 & 4 bits / 16     & \code{T4Bits}    & $k \ge 2$ \\
+$d-3$        & 3 & 0 & 8 bits / 256    & --- (128\,MiB)   & --- \\
+\bottomrule
+\end{tabular}
+\end{center}
 
 \subsection{What the prover holds}
 \label{sec:tables}
 
-\paragraph{Bits.}
-The commitment hint stores the bit matrix column-lane--packed (64
-columns per \code{u64} word).  One transposition pass
-(\code{extract\_column\_bit\_halves}, blocks of $64{\times}64$
-bit-transposes) yields, per tree $c$, the top-bit-split halves of its
-leaf bits:
+\paragraph{Bits, transposed once.}
+The commitment hint stores the bit matrix column-lane--packed: word $i$
+of group $g$ carries bit $i$ of the 64 columns $64g \dots 64g{+}63$.
+The forest wants the opposite --- one contiguous bit array per tree ---
+so a single pass (\code{extract\_column\_bit\_halves}) changes the
+layout with $64{\times}64$ in-register bit transposes
+(\code{transpose64} of 64 consecutive position-words yields, in lane
+$j$, the position-packed word of column $64g{+}j$) and writes each tree's
+bits already split at the midpoint:
 \[
-  \code{lbits}_c = M[c][0..2^{d-1}], \qquad
-  \code{rbits}_c = M[c][2^{d-1}..2^d],
+  \code{lbits}_c[i] = M[c][i], \qquad
+  \code{rbits}_c[i] = M[c][i + 2^{d-1}], \qquad i < 2^{d-1},
 \]
-packed 64 per word --- a few KiB per tree.  These two bit arrays drive
-\emph{every} lazy layer of tree $c$'s bottom.
+packed 64 per \code{u64} --- $2^d/8$ bytes per tree, $2^n/8$ = 32\,MiB
+for the whole matrix at $n = 28$.  These two arrays drive \emph{every}
+lazy layer of tree $c$'s bottom.  The split is not a convenience: by the
+top-bit convention of \S\ref{sec:merged}, the free index bits of
+Identity~\ref{id:level} are the \emph{high} ones, so the top leaf-index
+bit of a subcube selects the array and the remaining $r-1$ free bits are
+position offsets \emph{inside} it.  Concretely, a level-$(d{-}1)$ node at
+position $i$ multiplies leaves $i$ and $i + 2^{d-1}$, and its two
+selecting bits are bit $i$ of \code{lbits} and bit $i$ of \code{rbits}
+--- the same index into both arrays; a level-$(d{-}2)$ node at position
+$y$ takes bits $y$ and $y + 2^{d-2}$ of both.  Sweeping bits word-wise
+therefore costs 4 \code{u64} loads per 64 values, ${\approx}64\times$
+less read traffic than per-bit \code{packed\_col\_bit} gathers over the
+lane-packed store, which touch a whole word per bit.
 
 \paragraph{$\alpha$-power chains.}
 Per chunk, \code{chunk\_pow2\_table} builds
-$v(i) = \alpha^{W^{(l)}_b 2^j}$ for all $i = (b \ll \log_2 W)|j$: one
-fixed-base comb for the shared $\alpha$-squaring chain
-(\code{FixedBasePow}, ${\approx}8\times$ fewer multiplies than
-square-and-multiply per exponent), then a per-row squaring chain for the
-$2^j$ place values.
+$v(i) = \alpha^{W^{(l)}_b 2^j}$ for all $i = (b \ll \log_2 W)|j$.  All
+$2^t$ rows share one $\alpha$-squaring chain, so the row bases
+$\alpha^{W_b}$ come from a single fixed-base comb (\code{FixedBasePow},
+window 8 --- ${\approx}8\times$ fewer multiplies than per-row
+square-and-multiply), and a row's $W$ place values are then its own
+squaring chain $\alpha^{w2^j} = (\alpha^{w2^{j-1}})^2$.  Every table
+below is built from this one array.
 
-\paragraph{Shared value tables.}
-From the chains, four table families are built once per weight set
-(``$\tau$ set'') and shared by all $2^s$ trees:
-\begin{itemize}[itemsep=1pt]
+\paragraph{The four shared table families.}
+Built once per weight set (``$\tau$ set'') and read by all $2^s$ trees.
+Write $q_1 = 2^{d-2}$, $q_2 = 2^{d-1}$.
+\begin{itemize}[itemsep=2pt]
 \item \emph{leaf $\tau$ halves} (\code{leaf\_tau\_halves}):
-  $\tau(i) = v(i) + 1$, split like the bits --- the affine coefficients
-  of \eqref{eq:leaves};
+  $\tau(i) = v(i) + 1$, split like the bits.  This is the $r = 0$ table
+  in minimal form --- case $0$ is the constant $1$ and needs no storage,
+  so one entry per position suffices and the leaf is recovered as the
+  bit-affine $1 + m\,\tau$ of \eqref{eq:leaves}.  (Padded rows have
+  $v = \alpha^0 = 1$, hence $\tau = 0$: their leaves are $1$ whatever
+  bits they carry.)
 \item the \emph{pair table} (\code{layer1\_pair\_table}):
-  $\code{pair}[i] = v(i)\cdot v(i + 2^{d-1})$, the only case of a
-  level-$(d{-}1)$ value that is not already a table entry;
-\item the \emph{4-case tables} $\code{te}, \code{to}$: position $y$ of
-  level $d{-}1$ pairs leaves $(y,\; y + 2^{d-1})$, so its value is one
-  of $\{1,\, v(y),\, v(y{+}2^{d-1}),\, \code{pair}[y]\}$, selected by
-  two bits.  \code{te} tabulates the four cases for the E-half positions
-  $y < 2^{d-2}$, \code{to} for the O-half positions (offset baked in);
-\item the \emph{16-case table} $T4$:
-  $T4[(y \ll 4)|(c_E \ll 2)|c_O] = \code{te}[4y{+}c_E]\cdot
-  \code{to}[4y{+}c_O]$ --- all 16 possible values of the
-  \emph{4-leaf product} at level $d{-}2$, position $y$, selected by four
-  committed bits.
+  $\code{pair}[i] = v(i)\,v(i + q_2)$ for $i < q_2$ --- the
+  both-bits-set case of a level-$(d{-}1)$ node, and the only one of its
+  four cases that is not already an entry of $v$.  Building it once
+  instead of once per column saves, at random bit density, a quarter of
+  all pairs times $2^s$ columns of redundant $\K$-multiplies.
+\item the \emph{$r = 1$ case tables} \code{te}, \code{to}: for $y < q_1$,
+  \[
+    \code{te}[4y + c] = \big(1,\; v(y),\; v(y{+}q_2),\;
+      \code{pair}[y]\big)_c , \qquad
+    \code{to}[4y + c] = \text{the same at } y + q_1 ,
+  \]
+  with case index $c = m_{\mathrm{lo}} \,|\, m_{\mathrm{hi}}{\ll}1$
+  ($\mathrm{lo}$ = the first-half leaf, $\mathrm{hi}$ = the second-half
+  one).  \code{te} covers the E half of level $d{-}1$ (position $y$,
+  leaves $y,\,y{+}q_2$), \code{to} the O half (position $y{+}q_1$,
+  leaves $y{+}q_1,\,y{+}q_1{+}q_2$) --- the offset is baked into the
+  table, so both are read at the same index $y$.
+\item the \emph{$r = 2$ table} $T4$:
+  $T4[(y \ll 4)|(c_E \ll 2)|c_O] =
+   \code{te}[4y{+}c_E]\cdot\code{to}[4y{+}c_O]$ --- all 16 values of the
+  level-$(d{-}2)$ node at $y$, which pairs level-$(d{-}1)$ positions $y$
+  and $y + q_1$, i.e.\ the four leaves
+  $y,\; y{+}q_1,\; y{+}q_2,\; y{+}q_1{+}q_2$, selected by four committed
+  bits.
 \end{itemize}
-Costs are $O(2^d)$ per set --- $2^s$-fold amortised --- and the
-$T4$ build uses an indexed collect with an in-place flatten (a parallel
-nested \code{flatten} here measured ${\approx}836\times$ slower than the
-serial arithmetic; upstream fix \code{e19b0e1}).
+Each family costs $O(2^d)$ per set and is amortised $2^s$-fold.  The
+$T4$ build collects an indexed \code{Vec<[Gf; 16]>} and flattens it in
+place: a parallel nested \code{flatten} treats every 16-entry row as its
+own parallel iterator and makes the collect unindexed --- measured
+${\approx}836\times$ slower than the same arithmetic run serially
+(upstream fix \code{e19b0e1}).
+
+\paragraph{Sizes.}
+Everything the lazy prover holds, with the $n = 28$ instantiation
+($d = 17$, $s = 11$, $W = 1$):
+\begin{center}
+\small
+\begin{tabular}{llrl}
+\toprule
+object & size & $n = 28$ & live during \\
+\midrule
+transposed bits          & $2^n/8$\,B          & 32\,MiB  & the whole forest \\
+$\tau$ halves            & $2^d\!\cdot\!16$\,B & 2\,MiB   & the leaf layer \\
+\code{pair}              & $2^{d-1}\!\cdot\!16$\,B & 1\,MiB & the build \\
+\code{te}, \code{to}     & $2^{d+1}\!\cdot\!16$\,B & 4\,MiB & the pair layer \\
+$T4$                     & $2^{d+2}\!\cdot\!16$\,B & 8\,MiB & build + JIT (L/4) \\
+\midrule
+stored chain             & $2^{n-2}\!\cdot\!16$\,B & 1\,GiB & layers $0..d{-}4$ \\
+JIT level $d{-}2$        & $2^{n-2}\!\cdot\!16$\,B & 1\,GiB & layer $d{-}3$ only \\
+LUT stashes              & $2^{d+2}\!\cdot\!16$\,B & 8\,MiB & one bottom layer \\
+first dense buffers      & $2^{n-3}\!\cdot\!16$\,B & 512\,MiB & the bottom layers \\
+\bottomrule
+\end{tabular}
+\end{center}
+The shared tables are all in the megabytes and the per-tree bits in the
+kilobytes; the only gigabyte-scale objects left are the stored chain and
+the JIT level, and \S\ref{sec:ladder} keeps those two from ever being
+live at once.
 
 \subsection{The level ladder}
 \label{sec:ladder}
 
-Recall layer $\ell$'s phase A consumes level $\ell{+}1$.  The lazy
-prover sources each level in one of three ways: from the \emph{stored
-chain} (built bottom-up once, level-major, by \code{build\_levels}),
-\emph{JIT} (regenerated from bits and tables while its layer runs, then
-dropped), or \emph{implicitly} (never as $\K$-values: the layer's first
-round(s) run case-LUT kernels straight off the bits,
-\S\ref{sec:lutrounds}).  Two schedules exist, named for the size of the
-stored chain relative to the $2^d$-leaf layer; both are pinned
-byte-identical to the eager forest.
+Layer $\ell$'s phase A consumes level $\ell + 1$, so the prover must
+decide, for each of the $d$ levels, how it comes into existence.  There
+are three answers.
+\begin{itemize}[itemsep=2pt]
+\item \textbf{Stored} --- built once bottom-up by \code{build\_levels}
+  and held level-major until its layer runs.  Each tree's chain is built
+  independently (parallel across trees) by repeated
+  \code{parent\_halves\_top} --- $v[i] = E[i]\cdot O[i]$, re-split at the
+  new midpoint --- then the chains are regrouped level-major and the
+  roots fall out of level 1.  \code{drive\_grouped} takes each level with
+  \code{mem::take} as its layer starts, so the chain shrinks as the
+  forest climbs.
+\item \textbf{JIT} --- regenerated from bits and tables at the start of
+  its own layer, consumed by that layer's rounds, dropped.
+\item \textbf{Implicit} --- never $\K$-values at all: the layer's first
+  one, two or three rounds run case-LUT bodies straight off the bits
+  (\S\ref{sec:lutrounds}), and the first dense buffers to appear are
+  already folded ones.
+\end{itemize}
+The interesting level is $d - 2$.  It is the highest level a
+$\le 16$-case table still reaches (Identity~\ref{id:level}) and the
+largest level whose layer could be driven from bits, and at
+$2^{n-2}$ values it is also the biggest thing the prover would ever
+store.  The three schedules are precisely the three answers to ``what
+happens to level $d-2$'', and they differ in nothing else:
 
-\paragraph{The L/4 schedule (default; depth $\ge 4$).}
 \begin{center}
 \small
 \begin{tabular}{llll}
 \toprule
-layer $\ell$ & consumes level & sourced & phase-A entry \\
+ & L/2 (\code{l2}) & L/4 (default) & L/8 (\code{l8}) \\
 \midrule
-$0 \dots d{-}4$ & $1 \dots d{-}3$ & stored chain & \code{Dense} \\
-$d{-}3$ & $d{-}2$ & JIT: one $T4$ gather/value & \code{Dense} (round 1 fused) \\
-$d{-}2$ & $d{-}1$ & implicit & \code{Pair3Bits} over $(\code{te},\code{to})$ \\
-$d{-}1$ & $d$ (leaves) & implicit & \code{Leaf3Bits} over $\tau$ \\
+chain tops at        & level $d{-}2$ & level $d{-}3$ & level $d{-}4$ \\
+per position of the top & 1 $T4$ gather & 2 gathers, 1 mul & 4 gathers, 3 muls \\
+level $d{-}2$        & stored & JIT at layer $d{-}3$ & implicit (\code{T4Bits}) \\
+level $d{-}3$        & stored & stored & JIT at layer $d{-}4$ \\
+layer $d{-}2$ (pair) & \multicolumn{3}{c}{\code{Pair3Bits} over $(\code{te}, \code{to})$} \\
+layer $d{-}1$ (leaf) & \multicolumn{3}{c}{\code{Leaf3Bits} over $\tau$} \\
+peak resident        & ${\approx}2^n{\cdot}8$\,B & ${\approx}2^n{\cdot}4$\,B
+                     & ${\approx}2^n{\cdot}2$\,B \\
+needs depth          & $\ge 4$ & $\ge 4$ & $\ge 5$ \\
 \bottomrule
 \end{tabular}
 \end{center}
-The stored chain is built per tree directly at level $d{-}3$ --- each
-value the product of two paired $T4$ gathers --- so levels $d{-}2$,
-$d{-}1$, $d$ never exist at build time, and the chain then folds upward
-($\sum_{\ell \le d-3} 2^\ell \approx 2^{d-2}$ values per tree, a quarter
-of the leaf count; hence the name).  Reading the bits word-wise during
-these builds costs 4 \code{u64} loads per 64 values,
-${\approx}64\times$ less read traffic than per-bit gathers over the
-column-lane store.  At depth 4 exactly (and for every depth under the
-\code{F2Z\_LUT3=0} opt-out) the bottom two layers run the shallower
-\code{Pair2Bits} / \code{Leaf2Bits} variants; depth 3 keeps only the
-leaf layer bit-driven (\code{LeafBits}) with the chain built from
-level-1 halves by a zero-multiply case copy
-(\code{build\_column\_layer1\_halves}); depth $< 3$ falls back to the
-eager prover (the LUT rounds need $k \ge 2$).
 
-\paragraph{The L/8 schedule (\code{F2\_FOREST\_SCHEDULE=l8}; depth $\ge 5$).}
+\paragraph{The build.}
+\code{gen\_top} produces the chain's top level directly from the bits and
+$T4$, one subcube of Identity~\ref{id:level} per position: L/2 reads one
+$T4$ entry ($=$ level $d{-}2$), L/4 multiplies the pair
+$\{y,\, y + 2^{d-3}\}$ ($=$ level $d{-}3$), L/8 the quadruple
+$\{y,\, y{+}2^{d-4},\, y{+}2^{d-3},\, y{+}3\cdot2^{d-4}\}$ ($=$ level
+$d{-}4$).  Levels $d,\,d{-}1$ and (below L/2) $d{-}2$ therefore never
+exist at build time: each of their positions is gathered exactly once,
+with the materialise-then-read round trip removed.  The chain that
+remains sums to $\sum_{\ell \le \mathrm{top}} 2^\ell \approx
+2^{\mathrm{top}+1}$ values per tree --- a quarter of the leaf count
+under L/4, an eighth under L/8, whence the names.
+
+\paragraph{The JIT layer.}
+Under L/4, layer $d-3$ regenerates level $d-2$ per tree ($2^{d-3}$
+values per half, one $T4$ gather each) into \code{Dense} buffers that
+die when the layer ends; under L/8, layer $d-4$ does the same for level
+$d-3$ at two gathers and a multiply per value.  By default that
+generation pass is not just a write: \code{jit\_layer\_generate}
+accumulates the layer's opening round(s) \emph{as it writes}, so the
+level is never re-read for a message pass it could have paid for during
+generation.  With the driver's double-fold on
+(\code{F2Z\_EQF\_DOUBLE}, default) and $k \ge 3$, the pass accumulates
+the whole $3{\times}3$ bivariate grid (\code{dense\_jit\_fused\_grid}):
+nine field elements per tree, from which the driver derives \emph{both}
+round 1 and round 2's messages, so its first read of the level is round
+3's pass --- which then folds two deferred challenges at once.
+Otherwise the pass accumulates round 1's coefficient triple only
+(\code{dense\_jit\_fused\_round1}).  Either way the result reaches the
+driver through its \code{pre\_round1} hook and is value-exact against
+the message pass it replaces: the same weight-folds and wide products,
+XOR-accumulated (order-free) and reduced once, the reduction being
+$\Ftwo$-linear.  \code{F2Z\_JIT\_GRID=0} keeps the triple,
+\code{F2Z\_JIT\_R1=0} the plain write.
+
+\paragraph{Shallow trees.}
+The guards of \S\ref{sec:square} at $k = \ell$ give the fallback ladder
+directly, and the code takes exactly these branches:
 \begin{center}
 \small
-\begin{tabular}{llll}
+\begin{tabular}{lll}
 \toprule
-layer $\ell$ & consumes level & sourced & phase-A entry \\
+depth $d$ & what runs & the binding constraint \\
 \midrule
-$0 \dots d{-}5$ & $1 \dots d{-}4$ & stored chain & \code{Dense} \\
-$d{-}4$ & $d{-}3$ & JIT: two $T4$ gathers + 1 mul /value & \code{Dense} (round 1 fused) \\
-$d{-}3$ & $d{-}2$ & implicit & \code{T4Bits} over $T4$ \\
-$d{-}2$ & $d{-}1$ & implicit & \code{Pair3Bits} over $(\code{te},\code{to})$ \\
-$d{-}1$ & $d$ & implicit & \code{Leaf3Bits} over $\tau$ \\
+$< 3$ & the eager prover over dense leaves
+      & any LUT round needs $k \ge 2$ \\
+$3$   & chain from level $d{-}1$, then \code{LeafBits}
+      & \code{Pair2Bits} needs $k = d{-}2 \ge 2$ \\
+$4$   & L/4 (forced), \code{Pair2Bits} + \code{Leaf2Bits}
+      & \code{Leaf3Bits} needs $k = d{-}1 \ge 4$ \\
+$\ge 5$ & the full ladder above & --- \\
 \bottomrule
 \end{tabular}
 \end{center}
-Every stage's resident set is ${\approx}2^{d-3}$ values per tree ---
-an eighth of the leaf count --- at a measured $+5$--$13\,\%$ prove cost
-at the 2-column model shapes; the schedule exists for memory-bound runs
-and is \emph{required} at $n \ge 31$ on a 16\,GB box
-(\S\ref{sec:costs}).
+At depth 3 the chain's top level is built by
+\code{build\_column\_layer1\_halves}, a zero-multiply case copy that
+reads the $r = 1$ cases straight out of $v$ and \code{pair} rather than
+through the driver.  At depth 4 the L/8 request degenerates (its
+\code{T4Bits} layer would need $k = d-3 \ge 2$) and falls back to L/4.
+\code{F2Z\_LUT3=0} forces the shallower \code{Pair2Bits}/\code{Leaf2Bits}
+prefixes at every depth --- the same code path the depth-4 edge takes.
+
+\paragraph{Only the live columns are built.}
+A committed column whose bits are all zero has every leaf $\alpha^0 = 1$,
+hence every level and its root $= 1$: a full $2^d$-value pipeline
+(bit extraction, $T4$ gathers, JIT regeneration, one dense group per
+layer) to prove a constant.  Since a phase-A round message is
+$\sum_c \eq(c, z_c)\,H_c(\cdot)$ with $H_c$ linear in the group's scale,
+and every constant-$1$ tree has the \emph{same} $H_c$, the trailing run
+of zero columns collapses into \emph{one} synthetic group with all-ones
+buffers and scale $\sum_{c \ge \mathit{live}} \eq(c, z_c)$
+(\code{col\_elide}, \code{live\_cols}; the absorbed root vector is still
+padded with the known $1$s, so the statement is unchanged, and on a JIT
+layer the synthetic group is born inside the generation pass, since the
+driver cannot recompute a fused round-1 entry itself).  Char-2 addition
+is XOR and re-association is exact, so the transcript is byte-identical
+to the un-elided forest (\code{col\_elision\_matches\_full}): a witness
+of $N$ cells padded to $2^n$ pays the forest for
+$\lceil N/2^{t + \log_2 W}\rceil$ columns instead of $2^s$.  Everything
+in this section runs over the \code{live} leading trees only.
+
+\begin{remark}[Why the ladder stops at L/4]
+Going \emph{down} the ladder buys memory cheaply: L/8 costs a measured
+$+5$--$13\,\%$ of prove at the 2-column model shapes, and is what makes
+$n \ge 31$ possible on a 16\,GB box (\S\ref{sec:costs}).  Going
+\emph{up} does not pay symmetrically.  L/2 removes a whole $T4$ sweep
+over every tree --- the JIT regeneration --- but doubles the resident
+set, and measured across three shapes including a deep proxy at
+$4\times$ L2 it comes out flat to worse than L/4.  The reason is a
+useful rule of thumb for this prover: one $T4$ gather sweep costs about
+one streaming pass over the level it would have saved, so the choice of
+schedule is a near-pure \emph{memory} decision with a near-zero time
+gradient.  The time levers live inside the round bodies, not in the
+ladder.
+\end{remark}
 
 \subsection{Inside the case-LUT rounds}
 \label{sec:lutrounds}
 
-The bit-driven layers are where ``lazy'' earns its keep: their input
-levels are never materialised because the first one, two, or three
-sumcheck rounds of the layer can be computed \emph{directly} from
-$(\code{lbits}, \code{rbits})$ and per-position case tables.  All of the
-following are exact char-2 identities --- the transcripts they produce
-are bit-for-bit those of dense buffers.
+Fix a layer with $k = \ell$ variables.  Round $j$ binds the low variable
+over $2^{k-j}$ slots; slot $b$ owns entries $2b$ and $2b{+}1$ of each
+side and contributes to the three coefficients of \S\ref{sec:driver},
+\[
+  A_0 = \sum_b w_b L[2b]R[2b], \qquad
+  A_2 = \sum_b w_b\,\Delta L_b\,\Delta R_b, \qquad
+  A_1 = \Big(\sum_b w_b L[2b{+}1]R[2b{+}1]\Big) + A_0 + A_2 ,
+\]
+with $w_b = V_j[b]$ the suffix-tensor weight and
+$\Delta L_b = L[2b{+}1] + L[2b]$ (char 2, so $+ = -$; the $A_1$ form is
+the char-2 reading of $A_1 = H(1) - A_0 - A_2$).  A bit-driven round
+computes these sums \emph{without the $L$, $R$ arrays existing}: the
+entries are per-position case selects, so each slot's three
+contributions are themselves case selects out of tables precombined over
+the same bits.
 
-\paragraph{The leaf round (\code{LeafBits} family).}
-For the leaf layer, entry $i$ of the phase-A pair is \emph{defined} as
-$L[i] = 1 + \code{lbits}[i]\cdot\tau_L[i]$ (and $R$ from
-$\code{rbits}, \tau_R$).  Expanding round 1's per-slot contribution
-$w_b\,L(c)R(c)$ over the four selecting bits, the $1$'s cancel
-(char 2) into subset sums of eight tree-shared $w\tau$-product tables
-(\code{build\_leaf\_tables}: the 4-case singles/pair tables
-$t_{a_0}, t_{a_1}$ and a $\Delta L\,\Delta R$ table), so a
-\emph{group's} round-1 message costs \textbf{zero multiplications}: per
-slot, one unconditional indexed load and add per accumulator (3 loads
-$+$ 3 adds), branchless on the bit nibble.  The tables themselves cost
-8 multiplies $+$ ${\approx}20$ adds per slot to build --- once,
-amortised over all $2^s$ trees.  The $\Delta\Delta$ table has two
-interchangeable forms, chosen by footprint
-(\code{F2Z\_LEAF\_A2\_FACTORED}, auto at $2^{k-1} \ge 2^{15}$): a
-16-case precombined table (one load per slot; wins while L2-resident)
-or the four raw cross products with branchless masked adds
-($4\times$ smaller; at $n = 30$ the leaf round drops $2.1\times$,
-$307 \to 147$\,ms, prove $-6.5\,\%$).
+\paragraph{The leaf round: zero multiplications.}
+At the leaf layer the entries are \emph{defined} as
+$L[i] = 1 + m_{L,i}\,\tau_L[i]$ and $R[i] = 1 + m_{R,i}\,\tau_R[i]$,
+with $m$ the committed bits (\code{lbits}, \code{rbits}) and $\tau$ the
+shared halves.  Expanding one slot and writing
+$m_{L\varepsilon} = m_{L,2b+\varepsilon}$:
+\begin{align*}
+  w_b\,L[2b]R[2b]
+  &\;=\; w_b \;+\;
+     \underbrace{m_{L0}\,w_b\tau_{L0} + m_{R0}\,w_b\tau_{R0}
+       + m_{L0}m_{R0}\,w_b\tau_{L0}\tau_{R0}}_{
+       \code{t\_a0}[\,(b{\ll}2)\,|\,m_{L0}\,|\,m_{R0}{\ll}1\,]} , \\[2pt]
+  w_b\,\Delta L_b\,\Delta R_b
+  &\;=\; w_b\big(m_{L0}\tau_{L0} + m_{L1}\tau_{L1}\big)
+         \big(m_{R0}\tau_{R0} + m_{R1}\tau_{R1}\big)
+   \;=\; \sum_{\varepsilon,\delta \in \bits}
+         m_{L\varepsilon}m_{R\delta}\; w_b\tau_{L\varepsilon}\tau_{R\delta} ,
+\end{align*}
+the second line using the char-2 cancellation of the $1$s inside
+$\Delta L$ and $\Delta R$ --- this is where ``bit-affine'' pays.  Both
+lines are subset sums of the \emph{eight} products
+$w_b\tau_{L\varepsilon}$, $w_b\tau_{R\delta}$,
+$w_b\tau_{L\varepsilon}\tau_{R\delta}$ of that slot, and the leftover
+constants $w_b$ sum to one per-set scalar (\code{w\_sum}) added once at
+the end of the round.  \code{build\_leaf\_tables} precombines the
+subsets into three per-position tables --- \code{t\_a0} and
+\code{t\_a1} (4 cases each: the even and the odd entries) and the
+$\Delta\Delta$ table (16 cases) --- for 8 multiplies and ${\approx}20$
+additions per slot, once per $\tau$ set.  A \emph{tree's} round-1
+message then costs, per slot: one aligned 2-bit field per side (32 slots
+to a \code{u64}), three unconditional indexed loads, three additions.
+No multiplications, and no branch on a committed bit --- a branchy
+skip-the-multiply-by-one variant was measured slower, 50/50 random bits
+making it mispredict-bound.
 
-\paragraph{Folding without materialising.}
-Round 1's fold must produce round 2's buffers.  For a bit-affine leaf
-side this is again a 4-case table: the folded entry is
-$1 + m_0(1{+}\rho_1)\tau_0 + m_1\rho_1\tau_1$, precombined per position
-over the adjacent bit pair $(m_0, m_1)$
-(\code{build\_leaf\_fold\_tables}), so the fold is one indexed load per
-entry.  The deeper variants iterate the idea instead of executing it:
+\paragraph{Two forms of the $\Delta\Delta$ table.}
+The 16 $\Delta\Delta$ cases are subset sums of only four products, so
+the table has an interchangeable factored form (\code{LeafA2}, selected
+by \code{F2Z\_LEAF\_A2\_FACTORED}, auto at $2^{k-1} \ge 2^{15}$):
+\emph{precombined} spends $16\cdot2^{k-1}$ entries for one load per
+slot; \emph{factored} keeps the four raw cross products
+($4\cdot2^{k-1}$ entries, one sequential 64-byte line per slot) and
+selects them with four branchless masked adds that reduce pairwise, so
+the accumulator still takes one add.  The trade is footprint against
+work: the precombined leaf tables are $384\cdot2^{k-1}$ bytes
+(12.6\,MB at $k = 16$), and once they stop co-residing in the
+P-cluster L2 the factored form wins outright --- at $n = 30$ the leaf
+round drops $2.1\times$ ($307 \to 147$\,ms, prove $-6.5\,\%$) and
+becomes far less run-to-run volatile, while at $n = 26$ (6.3\,MB, still
+resident) it loses ${\approx}1.2$\,ms.  Both accumulate the identical
+field element (\code{leaf\_a2\_forms\_agree} pins it case by case).
+
+\paragraph{Folding without materialising, and the stash.}
+Round 1's fold must produce round 2's entries.  On a bit-affine side,
+\[
+  v' \;=\; v_0 + \rho\,(v_1 + v_0) \;=\; (1+\rho)\,v_0 + \rho\,v_1
+      \;=\; 1 + m_0\,(1+\rho)\tau_0 + m_1\,\rho\,\tau_1 ,
+\]
+since $(1+\rho) + \rho = 1$: the folded entry is a 4-case function of
+the bit pair $(m_0, m_1)$ --- Identity~\ref{id:fold} made concrete.
+\code{build\_leaf\_fold\_tables} tabulates those four cases per
+position, so a tree's fold is one indexed load per entry.
+
+The deeper variants do not \emph{execute} that fold; they \emph{keep}
+it.  Its table has exactly the layout of a level-$(d{-}1)$ case set
+(\code{Pair2TauSet}: 4 cases per position, two sides), so
+\code{Leaf2Bits} stashes it as round 2's \emph{value} tables and runs
+the 16-case product-layer body over them, materialising only at round
+2's fold.  \code{Leaf3Bits} iterates once more: round 2's fold tables
+(16 cases per position) become round 3's value tables, read inline, and
+dense buffers appear only at round 3's fold.  \code{Pair3Bits} does the
+same one level up.  The economics are the point: materialising at round
+$j$'s fold costs $2^{k-j}$ values per side \emph{per tree}, whereas the
+stash costs $4\cdot2^{k-j}$ entries (a 4-case set) or $16\cdot2^{k-j}$
+(a 16-case one) per side \emph{per $\tau$ set} --- a factor
+$\mathit{live}/4$ resp.\ $\mathit{live}/16$, i.e.\ $512\times$ and
+$128\times$ at the deployed $s = 11$.  It is the LUT prefix depth, not
+the ladder, that fixes the bottom layers' resident set.
+
+\paragraph{The 16-case body.}
+Four rounds share one body (\code{pair2\_factored\_body}): round 1 of
+\code{Pair2Bits} and of \code{Pair3Bits} over $(\code{te}, \code{to})$,
+and round 2 of \code{Leaf2Bits} and of \code{Leaf3Bits} over the
+stashed value sets.  Slot $b$'s two entries per side are 4-case selects, so the slot
+is keyed by $(c_{E0}, c_{E1}, c_{O0}, c_{O1})$: the accumulators want
+the weighted product $w\,\code{TE}[c_{E0}]\,\code{TO}[c_{O0}]$ at the
+even position, its odd twin, and the product of the two differences.
+Two forms compute the same field elements:
 \begin{itemize}[itemsep=1pt]
-\item \code{Leaf2Bits} ($k \ge 3$): round 1's fold \emph{keeps the
-  bits} and stashes its fold tables as round 2's \emph{value} tables ---
-  which are structurally a $(\code{te}, \code{to})$ pair, so round 2
-  runs the 16-case product-layer round below, and only round 2's fold
-  materialises dense buffers ($2^{k-2}$ per side);
-\item \code{Leaf3Bits} ($k \ge 4$, the default): one round deeper
-  still; round 3 reads the stashed 16-case fold tables \emph{inline}
-  (one aligned byte load per side per slot --- the measured lesson being
-  that multiplies are free and only skipped bytes pay), and dense
-  buffers appear only at round 3's fold ($2^{k-3}$ per side).
+\item \emph{precombined} (\code{F2Z\_PAIR2\_FACTORED=0}): four 16-case
+  tables per slot ($\code{t\_a0}$, $\code{t\_a1}$, the weighted
+  $\Delta\code{TE}$, the raw $\Delta\code{TO}$), so a slot is three
+  loads and \emph{one} wide multiply --- but the four tables hold
+  $4\cdot16\cdot2^{k-1} = 2^{k+5}$ entries, $2^{k+9}$ bytes, 16\,MiB at
+  the $n = 28$ pair layer ($k = 15$), and the four gather streams' misses
+  dominate the round;
+\item \emph{factored} (the default): only the suffix-weighted
+  $\code{wte}[i] = V_1[i \gg 3]\cdot\code{te}[i]$ is built, and the body
+  recombines against the set's raw \code{to} --- three wide multiplies
+  per slot against a streamed set of $2\cdot4\cdot2^k$ entries,
+  $2^{k+7}$ bytes: $4\times$ smaller, and L2-resident where the other
+  is not.
 \end{itemize}
+The two agree exactly because distributivity is exact:
+$w\code{TE}_0 + w\code{TE}_1$ \emph{is} the precombined
+$w(\code{TE}_0 + \code{TE}_1)$, the products keep the build's
+association $(w\cdot\code{TE})\cdot\code{TO}$, and the deferred
+reduction is $\Ftwo$-linear.  The lesson generalises to the inline
+rounds below: multiplies are cheap next to bytes that miss.
 
-\paragraph{The product-layer round (\code{Pair2Bits}/\code{Pair3Bits}).}
-One level up, entry $y$ of the pair is the 2-bit select
-$\code{te}[4y + (m_{\mathrm{lo}} | m_{\mathrm{hi}}{\ll}1)]$ (and
-\code{to} at the offset position), over the \emph{same} leaf-bit halves.
-The default round body is the \emph{factored} form
-(\code{F2Z\_PAIR2\_FACTORED}): only the suffix-weighted table
-$\code{wte}[i] = V_1[i \gg 3]\cdot\code{te}[i]$ is built, and each slot
-does three wide multiplies against \code{wte}/\code{to} entries ---
-trading one multiply for a $4\times$ smaller, L2-resident table set
-(the precombined 16-case alternative carries $64\cdot2^k$ entries,
-16\,MiB at deployed shapes, and its four gather streams' misses
-dominate the round).  \code{Pair3Bits} again stashes round 1's 16-case
-fold tables as round 2's inline value tables and materialises at round
-2's fold.
+\paragraph{Reading the cases.}
+Each round down the cascade reads a wider aligned bit window per slot,
+and never a straddling one (the E/O offset $2^k$ is even at every round,
+so the O-side window stays inside its word too):
+\begin{center}
+\small
+\begin{tabular}{lll}
+\toprule
+round body & windows per slot & helper \\
+\midrule
+leaf round 1                      & two 2-bit fields at $2b$ & inline \\
+\code{Leaf2}/\code{Leaf3} round 2 & two nibbles at $4b$      & \code{leaf2\_cases} \\
+\code{Leaf3} round 3              & two bytes at $8b$        & \code{leaf3\_idx} \\
+\code{Pair2}/\code{Pair3} round 1 & four 2-bit fields at $2b,\ 2b{+}2^k$
+                                  & \code{pair2\_cases} \\
+\code{Pair3} round 2              & four nibbles at $4b,\ 4b{+}2^k$
+                                  & \code{pair3\_idx} \\
+\code{T4Bits} round 1             & 16 single bits (4 entries $\times$ 4 leaves)
+                                  & \code{t4bits\_idx} \\
+\bottomrule
+\end{tabular}
+\end{center}
+The stashed tables stay keyed by the \emph{original} committed bits
+throughout --- a \code{Leaf3Bits} round-3 entry is
+$f[(p{\ll}4)|(c_0{\ll}2)|c_1]$ over the two adjacent original bit pairs
+of positions $4p \dots 4p{+}3$, and \code{Pair3Bits}' round-2 key
+interleaves the \code{lbits}/\code{rbits} pairs the same way --- which
+is why nothing per-tree is written between rounds.  The inline rounds
+(\code{Leaf3} round 3, \code{Pair3} round 2, \code{T4Bits} round 1) then
+just run the ordinary dense single-pair body over four gathered values:
+no precombined slot tables, because at that width the table would cost
+more bytes than the multiplies it saves.
 
 \paragraph{The 4-leaf round (\code{T4Bits}, L/8 only).}
-One further level up, entry $y$ is a single 16-case select from the
-shared $T4$ --- one gather per value, values read inline in round 1,
-dense buffers at its fold.  The layer's input level is never stored
-\emph{nor} regenerated.
+One level further up, an entry is a single 16-case select from the
+shared $T4$ --- one gather per value, read inline in round 1, dense
+buffers at its fold.  The layer's input level is neither stored nor
+regenerated; combined with the JIT layer below it, this is what makes
+L/8 an eighth.
 
 \paragraph{Prefetch.}
-The LUT gathers are data-dependent (committed bits pick the line), which
-defeats the hardware prefetcher, but the indices are cheaply
-recomputable ahead: both the stash-gather rounds
-(\code{F2Z\_LUT\_PRFM}) and the $T4$ build/JIT sites
+Every LUT gather is data-dependent (committed bits pick the line), which
+defeats the hardware prefetcher, but the indices are cheaply recomputable
+ahead from the sequential bit words.  Both the stash-gather rounds
+(\code{F2Z\_LUT\_PRFM}: \code{Pair3} round 2, \code{Leaf3} round 3, and
+their two materialising folds) and the $T4$ build/JIT sites
 (\code{F2Z\_T4\_PRFM}) issue \code{prfm pldl1keep} 16 slots ahead,
-size-gated to the DRAM-scale shapes (they \emph{lose} at L2-resident
-sizes; measured $-4.8\,\%$ and $-5.3\,\%$ prove at $n = 30$
-respectively).  Semantically inert.
+size-gated to the DRAM-scale shapes --- they \emph{lose} at L2-resident
+sizes, where the index recompute and the extra load-store pressure beat
+an L2 hit.  Measured at $n = 30$: the four stash scopes drop 20--25\,\%
+for $-4.8\,\%$ prove, and the $T4$ sites $-5.3\,\%$; at $n \le 28$ both
+are off by default.  Semantically inert.
+
+\paragraph{Where the time shows up.}
+The prover's profiling scopes name every stage of this section
+individually, so a run attributes to the ladder directly
+(\code{OBLONG\_PROFILE=1} prints the phase split;
+\code{examples/prof\_probe.rs} dumps the whole tree):
+\begin{center}
+\small
+\begin{tabular}{l>{\raggedright\arraybackslash}p{8.1cm}}
+\toprule
+stage & scopes \\
+\midrule
+build, bit/JIT generation & \code{mf:build\_levels}, \code{mf:bitgen} \\
+layer phases & \code{mf:phaseA}, \code{mf:phaseB} \\
+shared tables & \code{eqf:suffix}, \code{eqf:leaf\_tables},
+  \code{eqf:pair2\_tables}, \code{eqf:leaf2\_tables} \\
+LUT round messages & \code{eqf:msg:} \code{leaf\_r1}, \code{leaf2\_r2},
+  \code{leaf3\_r2}, \code{leaf3\_r3}, \code{pair2}, \code{pair3\_r1},
+  \code{pair3\_r2}, \code{t4bits} \\
+dense round messages & \code{eqf:msg:dense\_r1},
+  \code{eqf:msg:dense\_postlut}, \code{eqf:grid}, \code{eqf:fmsg},
+  \code{eqf:fmsg2} \\
+folds & \code{eqf:fold:} \code{stash}, \code{leafmat},
+  \code{leaf2mat}, \code{leaf3mat}, \code{pair2mat}, \code{pair3mat},
+  \code{t4mat}, \code{dense} \\
+\bottomrule
+\end{tabular}
+\end{center}
 
 \subsection{Why byte-identity holds, and how it is pinned}
 \label{sec:identity}
 
-Every lazy device above is a re-\emph{association} of the same field
-arithmetic: case tables precombine subexpressions that the dense path
-would compute per entry (field addition is exact and commutative);
-char-2 cancellations ($1 + 1 = 0$, $v_1 - v_0$'s ones cancelling in
-folds) are identities; wide-vs-narrow accumulation reduces to identical
-values because the reduction is $\Ftwo$-linear; fusion only reorders
-physical passes.  Consequently the lazy prover does not merely
-``verify the same'' --- it emits the \emph{same transcript}.
-\code{lazy\_matches\_eager} pins roots, every layer's sumcheck messages,
-pairs, exit claim, and the post-run transcript state against the eager
-prover across depths 3--9 (covering every fallback edge and both the
-scalar and word-wise $T4$ paths), $W \in \{1, 4\}$, and \emph{both}
-schedules; \code{lazy\_multi\_matches\_eager} does the same for the
-batched forest (\S\ref{sec:variants}).  This is why the knob inventory
-of Table~\ref{tab:knobs} is safe: every knob changes scheduling, not
+Every device above is a re-\emph{association} of the same field
+arithmetic, never a different computation.  Four principles cover all of
+them:
+\begin{enumerate}[leftmargin=2.2em, itemsep=2pt]
+\item \emph{Precombination is distributivity.}  A case-table entry is a
+  subset sum (or a product of subset sums) of terms the dense path would
+  compute per entry; field addition and multiplication are exact and
+  associative, so the accumulated sums are the same elements.
+\item \emph{Char-2 cancellation is an identity.}  $1 + 1 = 0$ removes the
+  leaves' $1$s from every difference, and $(1+\rho) + \rho = 1$ keeps a
+  folded bit-affine entry affine; these are the rewritings that make the
+  leaf round multiply-free and the fold tables 4-case.
+\item \emph{Wide accumulation reduces to the same value.}  Deferring the
+  polynomial reduction to one per accumulator per round is exact because
+  the reduction is $\Ftwo$-linear --- and, for the same reason,
+  accumulation order does not matter, which is what licenses the fused
+  JIT generation passes.
+\item \emph{Fusion reorders passes, not values.}  Deferred folds, the
+  fused fold+message pass, the double-fold grid and the JIT
+  pre-round hooks all emit the same field elements in the same
+  transcript order; only the physical traffic changes.
+\end{enumerate}
+Consequently the lazy prover does not merely ``verify the same'' --- it
+emits the \emph{same transcript}, byte for byte, so the verifier and the
+proof codec never learn which schedule ran.
+\code{lazy\_matches\_eager} pins this against the eager prover across
+depths 3--9 (covering the eager fallback, the depth-4 degenerate JIT
+edge, the scalar and word-wise $T4$ generation paths at
+$q_1 < 64$, $= 64$, $= 128$), $W \in \{1, 4\}$, and \emph{every}
+schedule (L/2, L/4, L/8): roots, every layer's phase-A and phase-B
+messages, every closing pair, the exit claim, and a challenge drawn
+\emph{after} the run to compare the final transcript states.
+\code{lazy\_multi\_matches\_eager} does the same for the batched forest
+(\S\ref{sec:variants}) and \code{col\_elision\_matches\_full} for the
+elided one.  This is what makes the knob inventory of
+Table~\ref{tab:knobs} safe: every knob changes scheduling, never
 semantics.
 
 \begin{table}[ht]
@@ -638,9 +1023,13 @@ semantics.
 Knob & Default & Effect (always byte-identical) \\
 \midrule
 \code{F2\_FOREST\_SCHEDULE=l8} & off (L/4) & L/8 memory schedule (\S\ref{sec:ladder}) \\
+\code{F2\_FOREST\_SCHEDULE=l2} & off (L/4) & L/2: level $d{-}2$ stored, no JIT \\
 \code{F2Z\_LUT3=0} & on & shallower \code{Pair2}/\code{Leaf2} LUT prefixes \\
+\code{F2Z\_COL\_ELIDE=0} & on & build the all-zero column tail too \\
 \code{F2Z\_EQF\_FUSE=0} & on & eager two-pass fold (no pass fusion) \\
+\code{F2Z\_EQF\_DOUBLE=0} & on & one variable per dense pass (no double-fold) \\
 \code{F2Z\_JIT\_R1=0} & on & unfused JIT round-1 message pass \\
+\code{F2Z\_JIT\_GRID=0} & on & JIT fuses round 1 only, not the grid \\
 \code{F2Z\_LEAF\_A2\_FACTORED=0/1} & auto ($\ge 2^{15}$) & $\Delta\Delta$ table form, leaf round \\
 \code{F2Z\_PAIR2\_FACTORED=0} & on & precombined 16-case pair tables \\
 \code{F2Z\_LUT\_PRFM=0/1} & auto ($\ge 2^{14}$) & stash-gather software prefetch \\
@@ -771,8 +1160,9 @@ driver's \code{tau\_set} index (the kernels are untouched); table sets
 are deduplicated by $\tau$-chain identity, so same-point claims share
 one set.  $N$ must be a power of two; callers pad with zero-weight
 dummies, whose $\tau$ chains are all $1$ and whose leaves are therefore
-identically $1$ regardless of the bits they carry.  Both schedules
-honoured; pinned byte-identical to the eager prover over the
+identically $1$ regardless of the bits they carry.  L/4 and L/8 are both
+honoured (L/2 is a single-prover schedule; the batched path reads the
+knob as L/4-or-L/8); pinned byte-identical to the eager prover over the
 concatenated leaf tables, dummy arm included.
 
 \paragraph{RLC claim families (\textsc{experimental}).}
