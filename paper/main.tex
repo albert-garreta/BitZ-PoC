@@ -219,12 +219,15 @@ Thus some scientific contributions of F2Z-SNARK are
 \section{Preliminaries}
 
 
-Given a prime $q$ we let $\psievalfield: \ZZ\to \FF_q$ be the ring homomorphism mapping an integer to its reduction modulo $q$.  We further let $\pi_0$ denote the identity map on $\ZZ$, so that $\pi_0(x) = x$ for all $x\in \ZZ$. We let $\FF_0 = \ZZ$.
+Given a prime $q$ we let $$\pi_q: \ZZ\to \FF_q$$ be the ring homomorphism mapping an integer to its reduction modulo $q$. Given a  finite field $\FF$ of characteristic $q$, let $a(X)\in \ZZ[X]$ be an irreducible polynomial over $\FF_q$ so that $\FF = \ZZ[X]/(q,a(X))$ \albert{consider isomorphism, or assume all finite fields are represented like this}. Let $$\psi_{\FF}: \ZZ[X] \to \FF$$ be the  canonical homomorphism from $\ZZ[X]$ to $\FF$ obtained by reducing modulo the ideal $(q,a(X))$, i.e.\ by reducing coefficients modulo $q$ and then reducing the resulting polynomial modulo $a(X)$.
 
-Given a  finite field $\FF$ of characteristic $q$, let $a(X)\in \ZZ[X]$ be an irreducible polynomial over $\FF_q$ \albert{yes?}, so that $\FF = \ZZ[X]/(q,a(X))$ \albert{consider isomorphism, or assume all finite fields are represented like this}. Let $\psi_{\FF}: \ZZ[X] \to \FF$ be the  canonical homomorphism from $\ZZ[X]$ to $\FF$ obtained by reducing modulo the ideal $(q,a(X))$, i.e.\ by reducing coefficients modulo $q$ and then reducing the resulting polynomial modulo $a(X)$.
-
-
-
+Given a prime $q$ and an element $\alpha\in \FF_q$, we let
+%
+\begin{align*}
+    \psi_{q,\alpha} : \ZZ[X] &\to \FF_q\\ 
+    h(X) &\mapsto h(\alpha) \mod q,
+\end{align*}
+be the homomorphism consisting of reducing coefficients modulo $q$, and replacing $X$ by $\alpha$.
 
 \paragraph{Interactive Oracle Proofs of Proximity (IOPP)}
 Interleaved codes
@@ -233,6 +236,27 @@ Interleaved codes
 
 
 
+\section{Constraints in polynomial rings}
+
+\albert{I'm aiming to make the paper self-contained, so I will refer to Zinc/Zinc+ but will provide all required definitions and proofs in this paper}
+
+
+\albertimportant{In the F2Z world, when elements in the computation never exceed 100 bits, we can work on a fixed prime, instead of a random one, because F2Z enforces range checks automatically}
+
+The following result is implicit in \cite{zincplus} \albert{or is it explicit as a particular case of reductions on $\QQ[X]$?}. 
+\begin{lemma}\label{l:reduction_lemma}
+Let $h(X)\in \ZZ[X]$ be a nonzero polynomial of degree $\leq d$ and with coefficients in the range $\range{-2^{B}+1}{2^B-1}$. Let $\cP$ be a set of primes, and let $q_{\min}$ be the smallest prime in $\cP$. Then 
+%
+$$
+\Pr_{\substack{q\gets \cP,\\\alpha \gets \FF_q}}[\psi_{q,\alpha}(f(X))=0] \leq \frac{B}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{d}{q_{\min}}.
+$$
+\end{lemma}
+\begin{proof}
+Let $\cE_{\mathsf{prime}}$ be the event that $f(X)$ is  a multiple of $q$. Then, by Schwartz-Zippel lemma, $$\Pr_{\substack{q\gets \cP,\\\alpha \gets \FF_q}}[\psi_{q,\alpha}(f(X))=0\mid \neg \cE_{\mathsf{prime}}] \leq  \frac{d}{q_{\min}}.$$
+%
+Now, every nonzero coefficient of $f(X)$ is divisible by at most $B/\lfloor\log(q_{\min})\rfloor$ primes from $\cP$. Hence, the probability that $\cE_{\mathsf{prime}}$ occurs is at most $(B/\lfloor\log(q_{\min})\rfloor)/|\cP|$, and the lemma follows.
+%
+\end{proof}
 
 \section{\ftwoz}
 
@@ -446,28 +470,7 @@ to $\ell_2$ inner product claims for the vectors $\pi_2(\bff_{*j})$. We do this 
 
 \subsection{Proof size optimization for large inputs}
 
-When $\codedim=\codedim_1\cdot \codedim_2$ is such that $\codedim_2$ is large, say $\codedim\geq 2^11$, the elements $\mu_1,\ldots, \mu_{\codedim_2}\in \ZZ$ sent at Step 1 of \cref{c:core_iop} may start to dominate the proof size. For example, for $\codedim=2^{13}$ and $\mu_i$ of $128$ bits, the elements $\mu_1,\ldots, \mu_{\codedim_2}$ amount to $131$ KB.  To mitigate this cost, the idea is to  have the prover commit to the vector $(\mu_1,\ldots, \mu_{\codedim_2})$ and then prove \eqref{e:tensor_decomposition_reconstruction}, i.e.\ 
-%
-$$
-\sum_{j\in [\codedim_1]} \psievalfield(\mu_j)\cdot \vv_j^{(2)}  = \mu \qquad \text{over } \evalfield.
-$$
-%
-using an IOPP for constrained codes. Concretely, the prover commits to the vector $\mathsf{bits}(\mu)$ of bits forming the elements $(\mu_1, \ldots, \mu_{\codedim_2})$ using \ftwoz, and then proves \eqref{e:tensor_decomposition_reconstruction} using \cref{c:core_iop}. At the end of \cref{c:core_iop}, the prover is left with an inner product claim for the vector $\pi_2(\mathsf{bits}(\mu))$.  \albert{TODO: explain how to batch this claim with the WHIR IOPP for the final step of \cref{c:core_iop}}
-
-\subsection{An optimized GKR protocol for the \ftwoz grand products}
-
-The bulk of the work in \ftwoz (\cref{c:core_iop}) is to reduce the claim
-\begin{equation}\label{e:main_grand_product}
-\prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \pi_2(\bff_{ij}) +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\codedim_2].
-\end{equation}
-to $\ell_2$ inner product claims for the vectors $\pi_2(\bff_{*j})$. We do this reduction via the GKR protocol for multiple grand products, and make several implementation-level optimizations for it.  
-
-\albert{Todo}
-
-
-\subsection{Proof size optimization for large inputs}
-
-When $\codedim=\codedim_1\cdot \codedim_2$ is such that $\codedim_2$ is large, say $\codedim\geq 2^11$, the elements $\mu_1,\ldots, \mu_{\codedim_2}\in \ZZ$ sent at Step 1 of \cref{c:core_iop} may start to dominate the proof size. For example, for $\codedim=2^{13}$ and $\mu_i$ of $128$ bits, the elements $\mu_1,\ldots, \mu_{\codedim_2}$ amount to $131$ KB.  To mitigate this cost, the idea is to  have the prover commit to the vector $(\mu_1,\ldots, \mu_{\codedim_2})$ and then prove \eqref{e:tensor_decomposition_reconstruction}, i.e.\ 
+When $\codedim=\codedim_1\cdot \codedim_2$ is such that $\codedim_2$ is large, say $\codedim\geq 2^{11}$, the elements $\mu_1,\ldots, \mu_{\codedim_2}\in \ZZ$ sent at Step 1 of \cref{c:core_iop} may start to dominate the proof size. For example, for $\codedim=2^{13}$ and $\mu_i$ of $128$ bits, the elements $\mu_1,\ldots, \mu_{\codedim_2}$ amount to $131$ KB.  To mitigate this cost, the idea is to  have the prover commit to the vector $(\mu_1,\ldots, \mu_{\codedim_2})$ and then prove \eqref{e:tensor_decomposition_reconstruction}, i.e.\ 
 %
 $$
 \sum_{j\in [\codedim_1]} \psievalfield(\mu_j)\cdot \vv_j^{(2)}  = \mu \qquad \text{over } \evalfield.
@@ -637,12 +640,7 @@ to $\codedim_2$ inner product claims over $\comfield$ for the vectors $M_0\cdot 
 A natural question is whether, in such scenarios, the proof of \eqref{e:grand_product_with_virtuals} can be optimized so that it costs less than a full proof for $\ell_2$ arbitrary input vectors of the same length as $M_0\cdot \pi_2(\bff_{*j})$. In this section we show that this is indeed possible.
 
 
-\section{R1CS constraints over polynomial rings with ideal membership}
 
-\albert{I'm aiming to make the paper self-contained, so I will refer to Zinc/Zinc+ but will provide all required definitions and proofs in this paper}
-
-
-In the F2Z world, when elements in the computation never exceed 100 bits, we can work on a fixed prime, instead of a random one, because F2Z enforces range checks automatically
 
 
 \section{Open questions for us}
