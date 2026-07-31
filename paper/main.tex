@@ -103,6 +103,7 @@ backrefpages = {cited on pp.},% originally "cited on pages"
 \section{Introduction}
 
 
+\subsection{Ramblings (warm-up for the true intro)}
 Why does this paper exist? F2Z has many similarities to Binius64, so why F2Z at all? First of all, Binius64 is an end-to-end proving system, while F2Z is a PCS. Let's consider F2Z-SNARK a SNARK for proving R1CS constraints over $\ZZ$  or $\ZZ[X]$ with ideals. Flock is also related to F2Z-SNARK, though less so, since Flock is a more use-case specific SNARK for proving bit-intensive computations. We should also keep in mind that Flock is, at the end of the day, Binius64 on steroid optimizations. In general, I think of Flock as subsumed by a Binius64 repo that adopts Flock's optimizations. Hence I will not discuss Flock too much here.
 
 In what follows I understand F2Z-SNARK to be a proof system for constraints over $\ZZ, \ZZ[X]$ with ideals, binary fields, etc., like Zinc+ at the arithmetization and PIOP level (applied to R1CS-like constraints), but using F2Z as PCS.
@@ -354,7 +355,7 @@ $$
 \left((\vv,\mu_j) \in \comfield^{ \codedim_1 } \times \comfield, g^{(j)} , \bfh^{(j)} \right)_{j\in[\codedim_2]} \in \left(\Relation^{\mathsf{lin}}_{\cC_1,\comfield, \pack}\right)^{\codedim_2},
 $$
 for some $\rr\in \comfield^{\log \codedim_1}$ and some $\mu_j\in \comfield$ for $j\in [\codedim_2]$.
-In words, $\Pi_{\mathsf{red}}^{\codedim_2}$ outputs $\codedim_2$ linear claims for the input witnesses $\bfh^{(j)}$ behind the input oracles $g^{(j)}$, all \emph{on the same vector of coefficients  $\vv$}.  In our instantiation $\Pi_{\mathsf{red}}^{\codedim_2}$ is simply the GKR protocol applied to several grand product claims at once, with optimizations discussed in \cref{?}. 
+In words, $\Pi_{\mathsf{red}}^{\codedim_2}$ outputs $\codedim_2$ linear claims for the input witnesses $\bfh^{(j)}$ behind the input oracles $g^{(j)}$, all \emph{on the same vector of coefficients  $\vv$}.  Again, in our instantiation $\Pi_{\mathsf{red}}^{\codedim_2}$ is simply the GKR protocol applied to several grand product claims at once, with optimizations discussed in \cref{?}. 
 
 %We describe one such $\Pi_{\mathsf{red}}^{\codedim_2}$ in \cref{?}, where $\vv$ is a vector of the form $\vv=(\mathsf{eq}(\bb,\rr))_{\bb\in \{0,1\}^{\log \codedim_1}}$, for some $\rr\in \comfield^{\log \codedim_1}$.
 
@@ -404,18 +405,8 @@ where in the honest case  $f_{*j} = \Enc_{\cC_1}(\pack(\psicomfield(\bff_{*j})))
 It follows from \cref{t:thm_virtual_IOPP} by taking $\codedim_1'=\codedim_1$ and taking $M$ to be the identity matrix.
 \end{proof}
 
-We now describe a GKR-based IOR reducing $(\Relation_{\cC_1, \comfield}^{Q})^{\codedim_2}$ to  $(\Relation_{\cC_1, \comfield}^{\mathsf{eval}})^{\codedim_2}$ of the required form.
 
-\begin{construction}[Grand product GKR]
-\albert{Todo: it's a standard grand product GKR so far -- though there's lots of implementation-level optimizations it can undergo}
-\end{construction}
-\ulrich{%
-Maybe to just write verbally, that we will use GKR for the grand product.
-And defer the explicit protocol description to the appendix or any later section?
-At this point it is maybe more important to clarify how useful the construction is because of packed commitment scheme over $\mathbb F_2$. 
-% At Albert: should I omit such comments here in the source, and rather post them on slack?
-}
-\albert{Sounds good}
+
 
 
 \subsection{An optimized GKR protocol for the \ftwoz grand products}
@@ -428,6 +419,7 @@ to $\ell_2$ inner product claims for the vectors $\pi_2(\bff_{*j})$. We do this 
 
 \albert{Todo}
 
+\albert{Present the optimization as a contribution of the paper}
 
 \subsection{Proof size optimization for large inputs}
 
@@ -462,6 +454,7 @@ using an IOPP for constrained codes. Concretely, the prover commits to the vecto
 
 \section{Virtualization of $\FF_2$-linear combinations lifted to integers}\label{s:virtualization}
 
+\albertimportant{In current implementation, this performs worse than not using any virtualization, which should not be the case. But before working on this section further I'd want to make sure it is worth it}
 
 In this section we expand relation $\Relation^{\mathsf{lin-dual}}_{\cC, \comfield, \evalfield, \pack}$ to impose, instead of constraints of the form $\Enc_\cC(\pack(\pi_2(\bff)))=f$ and $\langle \pi_q(\bff), \vv  \rangle = \mu$, constraints as $\Enc_\cC(\pack(\pi_2(\bff))) = f$  and $$\langle \pi_q(\pi_2^{-1}(M\cdot \pi_2(\bff))) \rangle = \mu$$ for a matrix $M\in \FF_{2}^{\codedim' \times \codedim}$. Precisely, given a new parameter $\codedim'$, we define 
 %
@@ -624,6 +617,10 @@ A natural question is whether, in such scenarios, the proof of \eqref{e:grand_pr
 \section{R1CS constraints over polynomial rings with ideal membership}
 
 \albert{I'm aiming to make the paper self-contained, so I will refer to Zinc/Zinc+ but will provide all required definitions and proofs in this paper}
+
+
+In the F2Z world, when elements in the computation never exceed 100 bits, we can work on a fixed prime, instead of a random one, because F2Z enforces range checks automatically
+
 
 \section{Open questions for us}
 
