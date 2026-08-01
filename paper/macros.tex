@@ -1433,3 +1433,123 @@
 \newcommand{\basegenerator}{g}
 \newcommand{\wordsize}{{32}}
 \newcommand{\degevalfield}{\mathsf{deg}(\KK)}
+
+
+% MACROS
+
+\renewcommand{\enspace}{\ensuremath{\thinspace}}
+% operators
+\newcommand{\deq}{\ensuremath{\mathrel{\coloneq}}}
+
+
+% objects
+\newcommand{\FExt}{\ensuremath{\mathbb{H}}}
+\newcommand{\CX}{\ensuremath{\mathbb{C}}}
+\newcommand{\E}{\ensuremath{\mathbb{E}}}
+\newcommand{\pmset}{\ensuremath{\{-1,1\}}}
+
+\newcommand{\Bits}{\{0,1\}}
+
+% malicious
+\newcommand{\Malicious}[1]{\tilde{#1}}
+
+% language and relation
+
+\newcommand{\ShortIndex}{\iota}
+\newcommand{\InstanceExplicit}{\mathbbm{x}}
+\newcommand{\InstanceImplicit}{\mathbbm{y}}
+\newcommand{\Witness}{\mathbbm{w}}
+\newcommand{\Proof}{\pi}
+\newcommand{\GetLanguage}[1]{\Language(#1)}
+
+\newcommand{\Indexer}{\mathbf{I}}
+\newcommand{\Decider}{\mathbf{D}}
+\newcommand{\Extractor}{\mathbf{E}}
+
+
+
+\newcommand{\Tiny}[1]{{\scriptscriptstyle #1}}
+\newcommand{\Length}{\mathsf{l}}
+\newcommand{\IndexerLength}{\mathsf{l}_{\Tiny{\IndexerProof}}}
+\newcommand{\ProofLength}{\Length}
+\newcommand{\Queries}{\mathsf{q}}
+\newcommand{\Randomness}{\mathsf{r}}
+\newcommand{\Round}{\mathsf{k}}
+\newcommand{\Knowledge}{\kappa}
+\newcommand{\Alphabet}{\Sigma}
+
+\newcommand{\SecParam}{\lambda}
+\newcommand{\RepetitionParameter}{t}
+\newcommand{\Interaction}[2]{\langle #1, #2 \rangle}
+
+\newcommand{\HammingDistanceOp}{\Delta}
+\newcommand{\Distance}{\delta}
+\newcommand{\HammingBall}[1]{B_{#1}}
+\newcommand{\HammingBallVolume}[1]{\mathsf{Vol}_{#1}}
+\newcommand{\ReedSolomon}{\mathsf{RS}}
+\newcommand{\InterleavedReedSolomon}{\mathsf{IRS}}
+\newcommand{\Rate}{\rho}
+\newcommand{\MessageSize}{\ell}
+\newcommand{\CodeSize}{n}
+\newcommand{\EvaluationDomain}{\mathcal{L}}
+\newcommand{\AmbientSpace}{\Z^\CodeSize}
+\newcommand{\ErasureCorrector}{\Extractor_{\Code}}
+\newcommand{\Code}{\mathcal{C}}
+\newcommand{\CodeInverse}{\Code^{\Tiny{-1}}}
+\newcommand{\LinearCodeDefinition}{\Code\colon \F^{\MessageSize} \to \F^{\CodeSize}}
+\newcommand{\CodeEncoding}{\mathsf{enc}_{\Code}}
+\newcommand{\CodeGenerator}{G_{\Code}}
+\newcommand{\CodeSuccinctEvaluation}{\mathsf{ev}_{\Code}}
+\newcommand{\CodePerfectDecoding}{\mathsf{dec}_{\Code}}
+\newcommand{\CodeErasureDecoding}{\mathsf{ecor}_{\Code}}
+\newcommand{\CodeDefinition}{\Code\colon \Alphabet^{\MessageSize} \to \Alphabet^{\CodeSize}}
+\newcommand{\CodeInterleaved}[2]{{#1^{\equiv_{#2}}}}
+\newcommand{\MinimumDistance}[1]{\Distance_{\Tiny{\mathsf{min}}}(#1)}
+\newcommand{\Codeword}{u}
+\newcommand{\CodewordAlternative}{v}
+\newcommand{\ListSize}[2]{\left|\List\left(#1, #2\right)\right|}
+\newcommand{\ListSizeCode}{L_{\Code}(\Distance)}
+
+
+\newcommand{\StateWitness}{\mathsf{w}}
+\newcommand{\KnowledgeState}{\State}
+\newcommand{\KnowledgeStateWitness}{\StateWitness}
+\newcommand{\Func}{f}
+
+\newcommand{\RandomnessCombine}{\gamma}
+\newcommand{\EQPoly}{\mathsf{eq}}
+\newcommand{\SumcheckPoly}{\hat{h}}
+\newcommand{\Target}{\mu}
+\newcommand{\SumcheckTarget}{\Target}
+
+\newcommand{\FSize}{|\F|}
+
+\newcommand{\ErrorMutualCA}{\varepsilon_{\Tiny{\mathsf{mca}}}}
+\newcommand{\ErrorCA}{\varepsilon_{\Tiny{\mathsf{ca}}}}
+
+%Succinct Evaluation Stuff
+\newcommand{\SuccinctEvaluation}{\mathsf{V}}
+\newcommand{\SuccinctEvaluationState}{\mathsf{st}}
+\newcommand{\SuccinctEvaluationDomain}{\mathcal{S}_{\SuccinctEvaluation}}
+\newcommand{\SuccinctEvaluationVec}{\mathsf{ev}}
+\newcommand{\FixSE}[2]{\mathsf{fix}_{#2}(#1)}
+\newcommand{\OutputPairing}{\beta_{\Tiny{\mathsf{out}}}}
+\newcommand{\OutputSuccinctEvaluation}{\SuccinctEvaluation_{\Tiny{\mathsf{out}}}}
+\newcommand{\OutputSuccinctEvaluationState}{\SuccinctEvaluationState_{\Tiny{\mathsf{out}}}}
+\newcommand{\BatchedTarget}{\Target_{\Tiny{\mathsf{batch}}}}
+
+% Protocol params
+\newcommand{\FoldingParameter}{k}
+\newcommand{\ZeroEvader}{\mathsf{Z}}
+\newcommand{\ZeroEvaderDomain}{\mathcal{S}_{\Tiny{\mathsf{ze}}}}
+\newcommand{\ZeroEvaderLength}{\ell_{\Tiny{\mathsf{ze}}}}
+\newcommand{\ZeroEvaderSeed}{s_{\Tiny{\mathsf{ze}}}}
+\newcommand{\ErrorZeroEvader}{\varepsilon_{\Tiny{\mathsf{ze}}}}
+\newcommand{\ErrorProjection}{\varepsilon_{\Tiny{\mathsf{proj}}}}
+\newcommand{\ProjectedRing}{R_{\Phi}}
+\newcommand{\ErrorSumcheck}[1]{\varepsilon_{\Tiny{\mathsf{sc}}}(#1)}
+\newcommand{\BatchingZeroEvader}{\mathsf{B}}
+\newcommand{\BatchingZeroEvaderDomain}{\mathcal{S}_{\Tiny{\mathsf{batch}}}}
+\newcommand{\BatchingZeroEvaderSeed}{s_{\Tiny{\mathsf{batch}}}}
+\newcommand{\ErrorBatching}{\varepsilon_{\Tiny{\mathsf{batch}}}}
+
