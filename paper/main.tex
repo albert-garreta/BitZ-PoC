@@ -657,6 +657,46 @@ A natural question is whether, in such scenarios, the proof of \eqref{e:grand_pr
 
 \section{Adding Zero Knowledge}
 
+\subsection{PIOP}
+
+\subsection{F2Z-PCS}
+\albert{Sketch.} Zk for F2Z is all known territory except Step 1 of \cref{c:core_iop} where P sends integer (polynomials) $\mu_1,\ldots, \mu_{\codedim_2}$. Even though  $\psievalfield^{-1}(\vv^{(1)})$ is uniformly random in $[0,q-1]$, the elements $\mu_i$ do not follow a uniform distribution over any interval in $\ZZ$.
+
+One way to address this is to have P commit to $\mu_1, \ldots, \mu_{\codedim_2}$ ovwer $\comfield$ in zk (it commits to the bits), and to an element $u\in \ZZ$ such that $\langle \bff_{*j}, \comfield^{-1}(\vv^{(1)})\rangle = \mu_j$ and $\sum_{j\in[\codedim_2]} \mu_j \cdot \vv_j^{(2)} =  q\cdot u$ in $\ZZ$ (**) \albert{note that in general we could be working on $\ZZ[X]$ here, so here we would add $+q\cdot u + h(X)\cdot w$ where $h(X)$ is the irreducible polynomial defining $\evalfield$.} Now P proves (**) arithmetized over $\comfield$, using say Binius64 with zk. 
+
+Assume $\degevalfield=0$ for now. Then P and V continue with \cref{c:core_iop}, using zk-GKR and zk-Ligerito. At some point P needs to prove that some binary field elements equal $g^{\mu_1},\ldots, g^{\mu_{\codedim_2}}$. It does this with one zk-GKR more grand product (this time much smaller).
+
+If $\degevalfield>0$, we proceed in the same way, except that the elements $g^{\mu_1},\ldots, g^{\mu_{\codedim_2}}$ are instead $g^{\pi_q^{-1}(\psi_{q',\alpha}(\mu_j))}$, and so P must prove that some elements equal $g^{\mu_j'}$, and that $\mu_j = \pi_q^{-1}(\psi_{q',\alpha}(\mu_j))$ in $\ZZ$. The latter equality  consists in evaluating the polynomial $\mu_j$ (whose bits we committed to over a binary field) on $X=\alpha'$, reducing mod $q'$, and lifting to integers. Thus we commit to $\mu_j'\in [0, q'-1]$ and $w_j'$ and prove that $\mu_j' = \mu_j(\alpha) + q' \cdot w_j'$ (***). 
+
+When $\degevalfield>0$, it is important to prove (**) and (***) together, since, at least for Binius64, integer multiplication proofs have a floor of about 40-50ms, but scale well.  Typical $\ell_2$ are $2^{8}$ to $2^{11}$. Claims (**) and (***) amount to $2\cdot \ell_2*\degevalfield +2$ 128-bit multiplications. For $\degevalfield=2$ (occurs if we arithmetize our constraints over Goldilocks) and $\ell_2=2^{10}$ this is $\sim 2^{12}$ 128-bit integer mults. 
+
+\begin{table}[t]
+  \centering
+  \small
+  \caption{End-to-end Binius64 proving cost for $N$ independent wide multiplications
+    $x_i \cdot y_i = z_i$ with $128$-bit operands and exact $256$-bit products.
+    Binius64's native \texttt{imul} is $64{\times}64{\to}128$, so each multiplication is
+    composed schoolbook-style from $2{\times}2$ limbs, costing $4$ MUL and $11$ AND
+    constraints. No range checks are required: every limb is a full committed $64$-bit
+    word, so a two-limb operand spans exactly $128$ bits by construction. Throughput and
+    proof-per-multiplication are derived. Measured on arm64 macOS (NEON+AES, all cores),
+    \texttt{LOG\_INV\_RATE}${}=1$, Criterion mid-estimates over 10 samples.}
+  \label{tab:binius64-bignum128}
+  \begin{tabular}{@{}l rrr rr rr@{}}
+    \toprule
+    $N$ & Witness & Prove & Verify & Proof & Peak mem & Thpt & Proof/mul \\
+        & ($\mu$s) & (ms) & (ms) & (KiB) & (MB) & (K mul/s) & (B) \\
+    \midrule
+    $2^{8}$  &  25.5 &  41.74 & 1.55 & 152.22 &  38.89 &  6.13 & 609 \\
+    $2^{9}$  &  50.2 &  46.62 & 1.80 & 161.58 &  47.25 & 10.98 & 323 \\
+    $2^{10}$ & 103.2 &  53.43 & 2.12 & 172.44 &  55.97 & 19.17 & 172 \\
+    $2^{11}$ & 217.5 &  65.69 & 2.56 & 186.30 &  74.20 & 31.17 &  93 \\
+    $2^{12}$ & 400.6 &  78.79 & 3.22 & 256.94 & 148.39 & 51.99 &  64 \\
+    $2^{13}$ & 812.8 & 103.26 & 4.29 & 273.55 & 296.76 & 79.33 &  34 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
 
 \section{Open questions for us}
 
