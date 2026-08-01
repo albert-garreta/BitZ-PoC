@@ -330,28 +330,6 @@ A $k$-round IOR $\Pi$ has \emph{round-by-round knowledge soundness} with errors 
 \albert{Describe $\kstate$ for the composed IOR?}
 \end{remark}
 
-\section{Constraints in polynomial rings}
-
-\albert{I'm aiming to make the paper self-contained, so I will refer to Zinc/Zinc+ but will provide all required definitions and proofs in this paper}
-
-
-\albertimportant{In the F2Z world, when elements in the computation never exceed 100 bits, we can work on a fixed prime, instead of a random one, because F2Z enforces range checks automatically}
-
-The following result is implicit in \cite{zincplus} \albert{or is it explicit as a particular case of reductions on $\QQ[X]$?}. 
-\begin{lemma}\label{l:reduction_lemma}
-Let $h(X)\in \ZZ[X]$ be a nonzero polynomial of degree $\leq d$ and with coefficients in the range $\range{-2^{B}+1}{2^B-1}$. Let $\cP$ be a set of primes, and let $q_{\min}$ be the smallest prime in $\cP$. Then 
-%
-$$
-\Pr_{\substack{q\gets \cP,\\\alpha \gets \FF_q}}[\psi_{q,\alpha}(f(X))=0] \leq \frac{B}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{d}{q_{\min}}.
-$$
-\end{lemma}
-\begin{proof}
-Let $\cE_{\mathsf{prime}}$ be the event that $f(X)$ is  a multiple of $q$. Then, by Schwartz-Zippel lemma, $$\Pr_{\substack{q\gets \cP,\\\alpha \gets \FF_q}}[\psi_{q,\alpha}(f(X))=0\mid \neg \cE_{\mathsf{prime}}] \leq  \frac{d}{q_{\min}}.$$
-%
-Now, every nonzero coefficient of $f(X)$ is divisible by at most $B/\lfloor\log(q_{\min})\rfloor$ primes from $\cP$. Hence, the probability that $\cE_{\mathsf{prime}}$ occurs is at most $(B/\lfloor\log(q_{\min})\rfloor)/|\cP|$, and the lemma follows.
-%
-\end{proof}
-
 \section{\ftwoz}
 
 
@@ -501,7 +479,7 @@ Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with suf
 Next, prover and verifier will focus on certifying that \eqref{e:tensored_equality} holds for all $j\in [\codedim_2]$.
 
 In \cref{?} we describe a variation in which, instead of sending the elements $\mu_1, \ldots, \mu_{\codedim_2}$, the prover commits to their bit-decomposition over $\comfield$, and proves \eqref{e:tensor_decomposition_reconstruction} the present IOR. This saves on proof size and verifier time when $\codedim$ is large.
-\item If $\degevalfield=0$, skip to the next step. Otherwise, if $\degevalfield>1$, the verifier uniformly samples and sends a  prime $q'$ from a fixed set of primes $\cP$ ($\cP$ is a protocol parameter), and an element $\alpha\in \FF_{q'}$. Now update
+\item If $\degevalfield=0$, continue to the next step. Otherwise, if $\degevalfield>1$, the verifier uniformly samples and sends a  prime $q'$ from a fixed set of primes $\cP$ ($\cP$ is a protocol parameter), and an element $\alpha\in \FF_{q'}$. Now update
 %
 \begin{align*}
 \vv^{(1)}{} &\gets \psi_{q',\alpha}\left(\psievalfield^{-1}\left(\vv^{(1)}\right)\right) \in \FF_{q'},\\
@@ -548,7 +526,7 @@ Observe that \cref{c:core_iop} is the result of composing an IOR $\Pi_{1234}$ wi
 $$
 \left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\psicomfield(\bff_{*j})\right)\in \Relation^{Q_{\FF2\ZZ}}_{\cC_1,\comfield,\pack} \qquad \text{for } j\in [\ell_2].
 $$
-The IOP $\Pi_{56}$ is an IOP for  the relation $\Relation'$ and it consists in applying Steps 5 and 6 of \cref{c:core_iop}, which in turn is the result of composing the IOR $\Pi_{\mathsf{red}}$, and the IOP for $\left(\Relation_{\cC_1, \comfield,\pack}\right)^{\codedim_2}$. By \cref{?} \albert{composition of IORs}, it suffices to analyze the completeness and RBR knowledge soundness of the IOR and the IOP separately. 
+The IOP $\Pi_{56}$ is an IOP for  the relation $\Relation'$ and it consists in applying Steps 5 and 6 of \cref{c:core_iop}, which in turn is the result of composing the IOR $\Pi_{\mathsf{red}}$, and the IOP for $\left(\Relation_{\cC_1, \comfield,\pack}\right)^{\codedim_2}$. By the composition of IORs result (cf.\ \cref{r:ior_compositoin}), it suffices to analyze the completeness and RBR knowledge soundness of the IOR and the IOP separately. 
 
 
 \albert{WIP}
@@ -742,7 +720,96 @@ to $\codedim_2$ inner product claims over $\comfield$ for the vectors $M_0\cdot 
 A natural question is whether, in such scenarios, the proof of \eqref{e:grand_product_with_virtuals} can be optimized so that it costs less than a full proof for $\ell_2$ arbitrary input vectors of the same length as $M_0\cdot \pi_2(\bff_{*j})$. In this section we show that this is indeed possible.
 
 
-\section{Full IOP for R1CS constraints over polynomial rings}
+
+
+\section{Constraints in polynomial rings}
+
+\albert{I'm aiming to make the paper self-contained, so I will refer to Zinc/Zinc+ but will provide all required definitions and proofs in this paper}
+
+
+\albertimportant{In the F2Z world, when elements in the computation never exceed 100 bits, we can work on a fixed prime, instead of a random one, because F2Z enforces range checks automatically}
+
+
+
+
+\subsection{Auxiliary lemmas}
+The following result is implicit in \cite{zincplus} \albert{or is it explicit as a particular case of reductions on $\QQ[X]$?}. 
+\begin{lemma}\label{l:reduction_lemma}
+Let $h(X)\in \ZZ[X]$ be a nonzero polynomial of degree $\leq d$ and with coefficients in the range $\range{-2^{B}+1}{2^B-1}$. Let $\cP$ be a set of primes, and let $q_{\min}$ be the smallest prime in $\cP$. Then 
+%
+$$
+\Pr_{\substack{q\gets \cP,\\\alpha \gets \FF_q}}[\psi_{q,\alpha}(f(X))=0] \leq \frac{B}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{d}{q_{\min}}.
+$$
+\end{lemma}
+\begin{proof}
+Let $\cE_{\mathsf{prime}}$ be the event that $f(X)$ is  a multiple of $q$. Then, by Schwartz-Zippel lemma, $$\Pr_{\substack{q\gets \cP,\\\alpha \gets \FF_q}}[\psi_{q,\alpha}(f(X))=0\mid \neg \cE_{\mathsf{prime}}] \leq  \frac{d}{q_{\min}}.$$
+%
+Now, every nonzero coefficient of $f(X)$ is divisible by at most $B/\lfloor\log(q_{\min})\rfloor$ primes from $\cP$. Hence, the probability that $\cE_{\mathsf{prime}}$ occurs is at most $(B/\lfloor\log(q_{\min})\rfloor)/|\cP|$, and the lemma follows.
+%
+\end{proof}
+
+
+
+
+
+
+
+\subsection{Polynomial Ideal Membership Satisfiability (PIMSAT)}
+In this section we describe a variation of the PESAT  (Polynomial Equation Satisfiability) relation from \cite{?}. The original PESAT relation is a generalization of popular relations such as R1CS, CCS, AIR constraints over finite fields. 
+
+Our variation, called \emph{Polynomial Ideal Membership Satisfiability (PIMSAT)}, generalizes PESAT by allowing polynomial constraints over polynomial rings (or modules), and by replacing equality to zero by ideal membership. On the other hand, PIMSAT operates exclusively on the polynomial ring $\ZZ[X]$.
+
+
+\newcommand{\PIMSAT}{\Relation_{\mathsf{PIMSAT}}}
+\newcommand{\moduledegree}{d}
+\renewcommand{\ideal}{\mathcal{I}}
+\newcommand{\numrows}{n}
+We fix a witness length $\codedim$, input length $\inplen$, a bit size bound $B$, a degree bound $\moduledegree$, a collection of $\iota$ distinct ideals $\ideal_1, \ldots, \ideal_{\iota}$, a number of rows $\numrows$, and for each $i\in [\iota]$, a vector of $\numrows$ polynomials $$\mathbf{p}^{(i)} = \left(\mathbf{p}_1^{(i)}, \ldots, \mathbf{p}_{\numrows}^{(i)}\right) \in \ZZ^{\leq B}[Y_1,\ldots, Y_{\inplen+\codedim}]$$ with coefficients in $\ZZ^{\leq B}$ and on $\inplen + \codedim$ variables. The PIMSAT relation with respect to these parameters is defined as
+$$
+\PIMSAT = \left\{\left. 
+\begin{aligned}
+    \inp &= \xx \in \left(\ZZ^{\leq B,\moduledegree}[X]\right)^{\inplen},\\
+    \oracle &= \bot ,\\
+    \wit &=\bff \in \left(\ZZ^{\leq B,\moduledegree}[X]\right)^\codedim
+\end{aligned} 
+\ \right| \ 
+\begin{aligned}
+    \mathbf{p}_{j}^{(i)}(\xx, \bff) \in \ideal_i \ \text{ for all } j\in [\numrows], \ i \in [\iota]
+\end{aligned}
+\right\}
+$$
+
+
+\begin{remark}[PIMSAT vs the UCS relation from Zinc+ \cite{zincplus}]
+PIMSAT is a particular subset of the widely general UCS relation from \cite{zincplus}. In this work, we will build a IOP for PIMSAT with witnesses being committed over binary fields. The same ideas can be used to construct an analogous IOP for UCS with witnesses with entries in a bounded subset of $\ZZ[X]$ (as opposed to $\QQ[X]$ \albert{committing to rational through their bit-decomposition is a bit strange, but it may still be possible?}).  We choose to focus on PIMSAT to favor simplicity of exposition and of our IOP. 
+
+The main difference between PIMSAT and UCS  is that the later allows for witnesses and constraints over arbitrary and multiple domains in the same instance, including rational polynomial rings $\QQ[X]$, and it allows to reuse witness elements in $\QQ[X]$ or $\ZZ[X]$ in other domains such as finite fields and polynomial rings over finite fields, by using   homomorphic projections.
+\end{remark}
+
+\albert{Motivate ideals somewhere (intro?)}
+\newcommand{\ronecsideal}{\Relation_{\mathsf{R1CS-PIMSAT}}}
+\begin{example}[R1CS constraints over {$\ZZ[X]$} with ideal membership]
+Let $\inplen,\codedim,\numrows,\iota, \ideal_1, \ldots, \ideal_{\iota}, B, \moduledegree$ be as before, and let $A^{(i)},B^{(i)},C^{(i)}$ be $\numrows \times (\inplen+\codedim)$ matrices with entries in $\ZZ^{\leq B,\moduledegree}[X]$ (typically, these are sparse matrices with entries in a small subset of $\ZZ$), for all $i\in [\iota]$. Then the R1CS-PIMSAT relation is defined as:
+    $$
+\ronecsideal \defeq \left\{\left. 
+\begin{aligned}
+    \inp &= \left(\ZZ^{\leq B,\moduledegree}[X]\right)^{\inplen},\\
+    \oracle &= \bot ,\\
+    \wit &=\bff \in \left(\ZZ^{\leq B,\moduledegree}[X]\right)^\codedim
+\end{aligned} 
+\ \right| \ 
+\begin{aligned}
+    &\left(\left(A^{(i)}\cdot \zz\right)\circ \left(B^{(i)}\cdot \zz\right) - \left(C^{(i)}\cdot \zz\right)\right)_j \in \ideal_i \\ &\qquad\qquad \qquad \qquad \qquad \text{ for all } j\in [\numrows], \ i \in [\iota]\\
+    &\ \zz=(\xx, \bff)
+\end{aligned}
+\right\}.
+$$
+The relation $\ronecsideal$ is the subset of $\PIMSAT$ where $$\pp_j^{(i)}(\xx,\bff)= \left(\left(A^{(i)}\cdot \zz\right)\circ \left(B^{(i)}\cdot \zz\right) - \left(C^{(i)}\cdot \zz\right)\right)_j.$$
+\end{example}
+
+
+
+\subsection{Full IOP for R1CS constraints over polynomial rings}
 
 \section{Adding Zero Knowledge}
 
