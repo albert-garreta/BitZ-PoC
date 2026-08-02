@@ -175,6 +175,10 @@ $2^{17}$ int mul 32bits & 74/2.4/86/124 & & 218/9/313/? & NA & 571/7.6/373/? & \
 1M int mul 16bits & 192/2.9/112/483 & & 3600/61/440/? & NA & 2920/9.8/492/? & \\
    \hline
     1M int mul 32bits & 266/3.7/119/863 & & 3800/62/440/? & NA & 5050/10.2/520/? & \\
+       \hline
+    $2^{17}$ BabyBear mults &  & &  & NA & 56/7/306/?  & \\
+       \hline
+    1M BabyBear mults &  & &  & NA & 400/11/478/? & \\
 \hline
 $2^7$ SHA & 12.7/1.75/71/14* & \text{expected negl.} & 37/3.4/249/? & 33/25/112/? & & \\
 \hline
@@ -857,9 +861,11 @@ We now describe an IOP for $\PIMSAT$, for the specific case where $$\pp_\bb^{(i)
 i.e.\ there is a $\nu+\inplen+\codedim$-variate polynomial $\pp'{}^{(i)}$ such that the polynomials $\pp_\bb^{(i)}(Y_1, \ldots, Y_{\inplen+\codedim})$ are obtained by evaluating the first $\nu$ variables of $\pp'{}^{(i)}$ on $\bb\in \bits^\nu$.  This is the case in constraints such as R1CS, CCS, and AIR.
 
 
-We let $\cC$ be a linear code over $\comfield$ of dimension $(\codedim\cdot(\moduledegree+1)\cdot B)/n$ and blocklength $\codelength$.
+We let $\cC$ be a linear code over $\comfield$ of dimension $(\codedim\cdot(\moduledegree+1)\cdot B)/n$ and blocklength $\codelength$. \albertimportant{Define the IORs $\Pi_\FF$} Further, we let $\Pi_\FF$ be a family of IORs, indexed over all finite fields $\FF$, such that $\Pi_\FF$ is an IOR from ... 
+\albert{IOR for constraints $
+\psi(\pp'{}^{(i)})(\rr, \xx,\ff) = u_i \in \FF \qquad \text{for all } i \in [\iota]
+$, reducing to mle claims for $\ff$}
 
-\albertimportant{Define the IORs $\Pi_\FF$}
 
 \begin{construction}\label{c:iop_pimsat}
 [IOP for {$\PIMSAT$}]
