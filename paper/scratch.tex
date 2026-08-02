@@ -1,158 +1,1892 @@
-\section{[Scratch] $\mathbb F2\mathbb Z$ -- general version}
-\ulrich{%
-How about the math letters in the name? I like it better.
+ \documentclass[11pt,letterpaper,usenames,dvipsnames]{article}           
+%   %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% PACKAGES
+\usepackage{amsmath,amssymb,amsthm}
+\allowdisplaybreaks
+\usepackage{aliascnt}
+\usepackage{fullpage}
+\usepackage{multirow}
+\usepackage{bbm,soul}
+\usepackage[usenames,dvipsnames]{xcolor}
+\usepackage{lipsum}
+\usepackage{makecell}
+\usepackage{bm}
+\usepackage{braket}
+\usepackage{adjustbox,mdframed}
+\usepackage[operators,sets,primitives,asymptotics,lambda,keys,ff]{cryptocode}
+\usepackage{enumitem}
+%\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{siunitx}
+\usepackage[font=footnotesize,labelfont=bf]{caption}
+\usepackage{subcaption}
+\usepackage{mleftright}
+\usepackage{wrapfig}
+\usepackage{setspace}
+\usepackage{xspace}
+\usepackage{algorithm,algorithmic}
+\floatname{algorithm}{Protocol}
+%\crefname{algorithm}{Protocol}{Protocols}
+%\Crefname{algorithm}{Protocol}{Protocols}
+\renewcommand{\algorithmiccomment}[1]{// #1}
+\renewcommand{\algorithmicrequire}{\textbf{Input:}}
+\renewcommand{\algorithmicensure}{\textbf{Output:}}
+\usepackage{authblk}
+
+\usepackage{framed}
+\usepackage{comment}
+\usepackage{placeins} % in the preamble
+
+\usepackage{float}
+\usepackage{graphicx}
+\graphicspath{ {./figures/} }
+\usepackage[T1]{fontenc}
+\usepackage{titlesec}
+\usepackage{stmaryrd}
+
+\usepackage[backend=biber,giveninits,style=alphabetic,maxalphanames=6,maxnames=6,backref]{biblatex}
+\addbibresource{references.bib} 
+%\addbibresource{cryptobib/abbrev3.bib} 
+%\addbibresource{cryptobib/crypto_crossref.bib}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\newcommand{\plaintitle}{$\FF 2\ZZ$}
+
+\PassOptionsToPackage{hyphens}{url}\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=PineGreen,%RedViolet,
+  breaklinks=true,
+  citecolor=PineGreen,      
+  urlcolor=PineGreen,%RedViolet,
+  pdftitle={\plaintitle},
+  pdfpagemode=FullScreen,
 }
-
-% \left\{\begin{align} {#1} \end{align}\left| \begin{align} {#2} \end{align} \right.\right\}
-
-Let $\codedim\geq 0$ be a dimension parameter, and $\codelength\geq 0$ a blocklength parameter. Let $\FF$ be a field (not necessarily a prime field), and let $\cC\subseteq \FF^{\codelength}$ be a linear code of dimension $k$ and blocklength $\codelength$ over $\FF$.  Let $\inplen\geq0$ be a public input length parameter, and let $Q\in \FF[Y_1, \ldots, Y_{\inplen}, Z_1, \ldots, Z_{\codedim}]$  be a constraint polynomial with coefficients in $\FF$ and on $\inplen+\codedim$ variables. Consider the following relation \albert{what name?}:
-%
-$$
-\Relation_{\cC, \FF}^{Q} \defeq \left\{ \left(\begin{aligned} &\inp=\yy\in \FF^\inplen, \\&\oracle = f \in \FF^\codelength, \\ &\wit= \bff\in \FF^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\bff) = f\\ \wedge \  &Q(\yy, \bff) = 0  \end{aligned} \right\}
-$$
-When $Q$ and $\yy$ are such that $\yy=(\rr,\mu)\in \FF^{\log\codedim}\times \FF$ and $$Q(\yy,\ff)= \mle{\bff}(\rr)-\mu,$$ we denote $\Relation_{\cC, \FF}^{Q}$  by $\Relation_{\cC, \FF}^{\mathsf{mle}}$. 
-
-
-Next let $\comfield$ be a finite field of characteristic $q$,  and let $\evalfield$ be either a finite field or $\QQ$. For intuition, $\comfield$ is the field over which we will commit our witness, and $\evalfield$ is the field over which we prove linear relations on the witness. We introduce the following short-hand notation:
-%
-$$
-\psicomfield \defeq \psi_{\comfield}: \ZZ[X] \to \comfield, \qquad \psievalfield \defeq \psi_{\evalfield}: \ZZ[X] \to \evalfield.
-$$
-\ulrich{%
-Shouldn't be these the projections from $\mathbb Z$ onto the "integers" in the field?
-} \albert{Most of the time, yes. I wanted to allow for arbitrary fields, not just prime fields, in which case the lift from the evaluation field $\evalfield$ needs to be to $\ZZ[X]$. But this makes everything hard to read}
-\ulrich{%
-Ah, get it you want to lift from $\mathbb F_{q^k}$. 
-} \albert{Yes, but later below I just assume that $\evalfield$ is prime for simplicity
+\DefineBibliographyStrings{english}{%
+backrefpage = {cited on p.},% originally "cited on page"
+backrefpages = {cited on pp.},% originally "cited on pages"
 }
-\ulrich{%
-Then how about starting simple? One can always do remarks on the fully general scope?
-In the end, a matter of taste.
-In any case, if we lift to $\mathbb Z[X]$, shouldn't we have the witness $\mathbb w$ below also in $\mathbb Z[X]^\ell$?
-}
-\albert{Yes, better to start simple. I'm worried the current description is getting too complicated}
-\ulrich{We can always generalize later on. 
-Maybe it turns out the way to go, but I think starting simple is always better}
-\ulrich{%
-Are we even sure that we want to do it in full generality, like arbitrary commit field... 
-If it is another prime field... let me think
-Anyways, need to go for check with Bowie to the vet, will return in about 2 hours.
-}
-\albert{Maybe it's better to fix the commit field to a binary field. Then have some remark or appendix (or nothing) with fully general commit and eval fields. Good luck at the vet!}
+% Remove starred sections from toc
+\DeclareRobustCommand{\SkipTocEntry}[5]{} 
+\usepackage[capitalize, nameinlink]{cleveref}
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, calc}
+
+\DeclareMathOperator{\im}{im}
+
+\input{macros}
+\title{\plaintitle}
+
+%\author[1]{}
+
+%\affil[1]{}
+
+
+\date{\today}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\albert{Should the name be $\FF 2 \FF$?}
+\end{abstract}
+
+\setcounter{tocdepth}{3}
+
+\tableofcontents
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\section{Introduction}
+
+\subsection{Contributions}
+
+F2Z: Proving linear claims over any field (possibly an extension field) or integers, for a vector of bits committed on a binary field. 
+
+Follow up  on Zinc+: we adopt its constraint system and greatly boost its performance with the aforementioned F2Z
+
+Results in proof system that works with highly expressive and ``small'' constraints, and is competitive or outperforms other systems on many tasks of interests.  Removes all the complexity of arithmetization, and in exchange requires you to work on a gnarly grand product.
+
+New optimizations for grand products in binary fields, arising from our ``in the exponent claims'' (Binius64 already works with such grand products -- we provide new optimizations).
+
+Virtualization of XOR (or, more generally, $\FF_2$-linear transformations) of our committed witness elements, without the need to arithmetize on binary fields whatsoever.
+
+Generalization/improvements to ring-switch in binary fields?
+
+Benches: F2Z works with a highly expressible constraint system and outperforms in all axis on all measured tasks except in proving big quantities of hashes. For that task, prover time is 2-3x slower, while proof sizes are about 20-33\% smaller, and memory usage is smaller too \albert{how about the verifier?}. For small number of hashes, say <$2^{10}$, F2Z outperforms on all axis \albert{or so it seems}. This may be because, with F2Z arithmetization, witnesses are smaller, and so floor costs in F2Z may be smaller than in other schemes. 
+
+\subsection{Ramblings (warm-up for the true intro)}
+Why does this paper exist? F2Z has many similarities to Binius64, so why F2Z at all? First of all, Binius64 is an end-to-end proving system, while F2Z is a PCS. Let's consider F2Z-SNARK a SNARK for proving R1CS constraints over $\ZZ$  or $\ZZ[X]$ with ideals. Flock is also related to F2Z-SNARK, though less so, since Flock is a more use-case specific SNARK for proving bit-intensive computations. We should also keep in mind that Flock is, at the end of the day, Binius64 on steroid optimizations. In general, I think of Flock as subsumed by a Binius64 repo that adopts Flock's optimizations. Hence I will not discuss Flock too much here.
+
+In what follows I understand F2Z-SNARK to be a proof system for constraints over $\ZZ, \ZZ[X]$ with ideals, binary fields, etc., like Zinc+ at the arithmetization and PIOP level (applied to R1CS-like constraints), but using F2Z as PCS.
+
+\paragraph{Efficiency and costs}
+I will now compare F2Z-SNARK with Binius64 on a operation-by-operation case:
+\begin{itemize}
+    \item \emph{Integer and modular addition.} F2Z-SNARK can handle addition or modular addition) of arbitrarily sized integers. Even if the integers are gigantic, the projection to random field trick compresses their size to 100-ish bits. 
+
+    On the other hand, integer addition or modular addition (how does Binius handle modular addition when the modulus is not $2^n$ actually?) in Binius64 requires committing to the carry bits (so each single addition adds a new 32-64 bit word to the witness), and cannot handle large integer/modular addition without chunking.  
+
+    Further, addition in Binius64 produces a non-linear constraint, because proving that the committed carry bits are indeed carry bits requires a Hadamard product. In F2Z-SNARK, additions are linear constraints.
+    \item \emph{Integer or modular multiplication}. This is a quadratic constraint in F2Z-SNARK. It does not introduce extra witness\footnote{Or it negligible does, because of the possible $+n\cdot w$ term in a modular equation, where $n$ is the modulus and $w$ is a committed integer --very small in bit size in practice}. Again, it supports arbitrary sizes and benefits from the random projection for large sizes. 
+
+    Binius64 supports multiplication of elements of less than 32 bits. Larger sizes require chunking. Under 32 bits, it does not pay much for multiplication at the constraint level. The way it proves the multiplications is via a grand product similar to F2Z-SNARK grand product in MLE evaluations. 
+
+    A computation where we are just making $m$ multiplications of under 32 bit integers may actually end up costing almost the same between Binius64 and F2Z-SNARK. \albert{Let's run the experiment}
+
+    It is interesting that in Binius64, multiplications don't go through the Spartan-like PIOP, and instead are proved directly with the grand product \albert{At least that's my understanding}.  In F2Z-SNARK, multiplications would indeed go through the normal PIOP pipeline. Let's keep in mind as something F2Z-SNARK could mimic. \albert{Interesting}
+    \item \emph{XOR}
+    \item \emph{AND}
+    \item \emph{Proof system costs}
+\end{itemize}
+
+
+\paragraph{Specific performance}
+This is WIP, but when it comes to hash proving, F2Z-SNARK seems to outperform in all axes Binius/Flock when there are less than $2^8$ hashes to prove. Beyond that, the F2Z-SNARK route points to 1.5-3x prover times, comparable proof sizes, significantly smaller RAM usage, and unknown verifier comparison for now \albert{WIP}. The practical max number of hashes that F2Z-SNARK can handle is higher  than in Flock due to the lesser memory usage.
+
+The fact that F2Z-SNARK performs better for smaller number of hashes may be due to F2Z-SNARK working with a smaller witness. At those sizes, there's likely floor costs (e.g. Merkle openings) that somewhat dominate costs, and having a 2x (roughly) smaller witness may start to be relevant. 
+
+Interesting to note that in many use cases (e.g.\ digital Id) one has less than $2^8$ hashes to prove. Flock-like numbers come up in Ethereum signature aggregation and maybe proof of provenance where one has to prove a hash of a large file (and others?).
+
+
+\albert{Current WIP: hash + ECDSA sign comparison. Quantized ML linear layer}
+
+For initial reference, Binius64 takes about 110ms to prove an ECDSA with a 200KB proof size.
+
+
+\begin{table}[]
+    \centering
+\noindent\makebox[\textwidth][c]{%
+\begin{tabular}{c|c|c|c|c|c|c}
+ & F2Z-PCS & Zinc+-PIOP & Binius64 & Flock & Plonky3 & Zinc+\\
+ \hline
+ \hline
+ECDSA & & & 119/6.3/195/? & NA & & \\
+\hline
+ RSA & & & & NA & & \\
+     \hline
+$2^{17}$ int mul 16bits & 48/2/80/62 & & 217/9/313/? & NA & 367/7/340/? & \\
+    \hline
+$2^{17}$ int mul 32bits & 74/2.4/86/124 & & 218/9/313/? & NA & 571/7.6/373/? & \\
+\hline
+1M int mul 16bits & 192/2.9/112/483 & & 3600/61/440/? & NA & 2920/9.8/492/? & \\
+   \hline
+    1M int mul 32bits & 266/3.7/119/863 & & 3800/62/440/? & NA & 5050/10.2/520/? & \\
+\hline
+$2^7$ SHA & 12.7/1.75/71/14* & \text{expected negl.} & 37/3.4/249/? & 33/25/112/? & & \\
+\hline
+ $2^{11}$ SHA & 93.5/2.8/109/197* & \text{expected negl.} & 126/27/381/? & 47.2/27/172/? & & \\
+\hline
+ $2^{15}$ SHA & 1320/4.8/170/3080* & \text{expected negl.} & \text{Stuck} & 425/25/233/? & & \\
+\hline
+$2^8$ Blake3 & 22/2/71/23 & \text{expected negl.} & 31/2.6/249/? & 256/254/111/? & & \\
+\hline
+$2^{11}$ Blake3 & 91/2.8/105/164 & \text{expected negl.} &  & 253/249/153/? & & \\
+\hline
+$2^{15}$ Blake3 & 1100/4.7/161/2550 & \text{expected negl.} & \text{Stuck} & 386/267/160/? & &
+\end{tabular}}
+\caption{
+*= we are not using virtualization of XOR. The committed and opened witness size is 4x larger than it could be.
+\albert{Missing costs for F2Z PIOP. Note these are negligible for the hash benches though, and likely quite less than the grand product cost in other benches. All these were obtained asking AI to run benches. For the final paper we should make sure we are doing fair and correct benching (e.g.\ I'm not sure memory consumption is measured the same way across benches, especially for Binius, which is max RSS), but this helps get a rough idea how F2Z performs relatively to other systems.} Prover\_ time(ms)/Verifier\_time(ms)/Proof\_size(KB)/Peak\_memory(MB). Integer mult measure one million u16 x u16 -> u32 mults. F2Z-PCS does not include PIOP costs -- these are negligible in the hash benches (linear constraints), but should be accounted for in the other benches (degree 2 constraints).Ran in MacBook Air M4 16GB.\\ 
+\indent \hspace{1cm} Flock's verifier seems a bit broken in general. Flock's Blake3 prover for small number of hashes seems broken too. I modified Flock's Ligerito config so that it produces smaller proofs at very little extra cost.  For Blake3 we couldn't do $2^7$ hashes becase Flock errors out on $2^7$ hashes \albert{todo: make SHA also do $2^8$ instead of $2^7$}  \\ 
+\indent \hspace{1cm} F2Z-PCS hash performance was ``proxied'' as follows: for SHA-256, $2^{14+k}$ witness corresponds to $2^k$ hashes. Better arithmetization may be possible. We *DID NOT* leverage virtualization of XOR, which allows to run Ligerito for $2^{12+k}$ witness size, rather than $2^{14+k}$ (The GKR grand product still would use use $2^{14+k}$ factors). \albert{VERY IMPORTANT: It is possible that the GKR grand product can be optimized in this setting. Right now we are just proving a  $2^{14+k}$ on unstructured bits, but in reality many of these bits are linear combinations in $\FF_2$ of witness bits.}\\
+\indent \hspace{1cm} Binius64 achieves the highest number of mults per second at $2^{17}$ mults. Binius64 at multiplication of 16bit integers pays a  penalty because the system uses 64-bit words by default, so it either uses a  64 bits per 16bit witness element and range check the word, or pack different 16 and 32 bit integers into the same 64 bit word, but then it has to relate the product of the 64 bit words to the products of the original words (or unpack them as 64 bit words before multiplying). OTOH doing more Binius-native mults (32x32 ->64 bits) does not perform amazingly either \albert{This most likely heavily disproves my belief that Binius64 and F2Z-SNARK are similar in integer multiplication. This is a good showcase of the flexibility of arithmetizing the way we do: we don't need to use predefined word sizes: here our R1CS is just reconstruction of integers via linear combinations with powers of twos, and Hadamard product (note that we are not measuring the cost of the PIOP in F2Z! But it should be cheaper than the grand product, and amenable to some better optimization (univariate skip e.g.). But in any case, I'm not even sure the issue is the rigidity of the arithmetization in Binius64, since 32x32->64 is Binius friendly as far as I understand, and performance is mid} }
+    \label{tab:placeholder}
+\end{table}
+
+\paragraph{Scientific contributions}
+So far, we have compared Binius64 and F2Z-SNARK in terms of performance. But how about the scientific contributions of F2Z-SNARK?
+
+F2Z-SNARK is a proof system designed to handle constraints over $\ZZ$, $\ZZ[X]$ with ideal membership, binary fields, and other fields, simultaneously (in v3 we are probably sticking to integers and $\ZZ[X]$ for simplcity). Arithmetization and PIOP-wise, it borrows from Zinc+, and the novelty compared to Zinc+ is that we are committing to the integer bits over a binary field. For bit-intensive computations, this is much better than committing over $\ZZ$. It remains to be seen what happens in integer-heavy computations \albert{TODO! Edit: John Wu alrady compared it to Hyrax}. 
+
+Potentially, we could commit to large integers with a different PCS over $\ZZ$, say with IPRS, and create a recursive proof of opening for the two PCS's, using F2Z since PCS opening proofs are hash heavy. 
+
+
+
+Thus some scientific contributions of F2Z-SNARK are
+\begin{itemize}
+    \item Unlocks good scaling of bit intensive computations in Zinc+-like proof systems.
+    \item If we include Zinc+ in this line of work, F2Z-SNARK is a follow up for a proof system that uses a highly expressive constraint system. Due to the expressivity, the use-cases of F2Z-SNARK are potentially huge, and difficult to predict. For example, the F2Z-PCS could be used as a drop-in replacement for elliptic curve PCS's (as shown by John Wu)
+
+    We (tentaitvely) choose F2Z-SNARK (likely with both WHIZ and F2Z) working exclusively on $\ZZ$ or $\ZZ[X]$ as our route for a general zkDSL, and the motivation was the expressivity of the constraints. 
+
+    
+    
+    \item F2Z-SNARK does not quite provide much novelty regarding SNARKs over binary fields, beyond possibly some optimizations in the grand product proof  (e.g.\ lower levels of the grand product GKR are computed via a lookup table, exploiting the limited options we have in leafs due to the bit-ness of the witness). 
+
+    That being said, some of these optimizations could be published as contributions, following Flock's lead. \albert{Sometimes I undersell my work, this is a memo to myself to be mindful with that}
+
+    There's also the virtualization of XOR elements of F2Z-PCS. In a sense, a similar thing occurs in Binius64: their R1CS constraint system admits hadamard products, replacing the hadamard by integer multiplication. So such constraint is multiplying together linear combinations of the witness (over the binar field, so ``XOR combinations''). 
+
+    Our virtualization trick can be understood as if we had an R1CS over $\ZZ$, with witness $\zz$, and an extra constraint $\zz= \pi_2^{-1}(M\pi_2(\zz))$ for some matrix $M$. What Binius is doing can be understood similarly, but with much more limited expressivity. Hence in this sense Binius64 arithmetization is a specific case of our arithmetization.
+\end{itemize}
+
+
+
+\albert{Noting so I don't forget: the idea of F2Z being a drop-in replacament alternative to Hyrax (PQ secure and more efficient) may be a good extra motivating point}
+
+\subsection{Acknowledgements}
+%World Foundation, Lev Soukhanov, Remco, Ulrich, Giacomo, Marcin
+
+\section{Preliminaries}
+
+\paragraph{General notation} Given an integer $n\geq 1$, we write $[n]$ to denote the set $\{1,\ldots, n\}$. Any map $f: S\to T$ is extended entrywise to vectors and matrices with entries in $S$, and coefficient-wise to polynomials with coefficients in $S$.
+
+\paragraph{Algebra}
+We write $\FF_q$ for the finite field with $q$ elements (where $q$ is a prime or a prime power), $\QQ$ for the field of rational numbers, and $\ZZ$ for the ring of integers. An ideal $I$ of a ring $R$ generated by a set $S\subseteq R$ is denoted $(S)$.
+
+Given a ring $R$, we let $R[X]$ be the ring of univariate polynomials with coefficients in $R$, on the variable $X$. For a tuple of variables $\YY=(Y_1,\ldots, Y_\mu)$, $R[\YY]$ denotes multivariate polynomials with coefficients in $R$. We refer to $R[X]$ and $R[\YY]$ as \emph{polynomial rings}. Given a degree bound $\moduledegree\geq 1$ and a bit-size bound $B\geq 1$ such that $R$ has characteristic zero or at least $2^{B}$, we define 
 %
-Let $\cC\subseteq \comfield^{n}$ be a linear code of dimension $k$ and blocklength $n$ over $\comfield$. Define \albert{can we handle more general witness subsets?}
 $$
-\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \range{0}{q-1}^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\psicomfield(\bff)) = f\\ \wedge \  & \langle \psievalfield(\bff), \vv\rangle  = \mu  \end{aligned} \right\}
+\ringtwobounds{B}{\moduledegree}[X]\defeq \left\{a(X) \in R[X]\ \left| \ a(X) = \sum_{i=0}^{d} a_i(X), \ \text{for some } a_i\in \range{0}{2^{B}-1}\subseteq R, \ \text{for all }i \ \right.\right\}.
 $$
-We provide an IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$ next.
+When we place no degree or bit-size bound, we use the notation $\ringbitbound{B}[X]$ and $\ringdegbound{\moduledegree}[X]$, respectively. 
+
+\albert{Remove?}  The \emph{characteristic} of a ring $\ring$ is the largest $c\geq 1$, if it exists, such that $1 + \overset{c}{\ldots} + 1 = 0$ in $\ring$. If $c$ does not exist (i.e.\ if by successively adding $1$ together in $\ring$, one never obtains the zero element), then the characteristic is zero.  
 
 
-\paragraph{Protocol assumptions} Assume for simplicity that $\evalfield$ is a prime field. The general case (when $\evalfield$ is a non-trivial field extension or the field of rationals) is handled in \cref{?}.
+\albert{signed or unsigned?}
 
 
-Fix an element $\basegenerator\in \comfield$ with sufficiently large multiplicative order, to be determined later.  Let  $S_q=\psicomfield(\range{0}{q-1})$, and define the following bivariate polynomial with coefficients in $\comfield$:
-$$
-P(Y,Z) = \sum_{s\in \range{0}{q-1}} L_{ S_q, \psicomfield(s)}(Z) \cdot Y^{s} \in \comfield[Y,Z],
-$$
-where $L_{S_q, \psicomfield(s)}(Z)$ is the Lagrange polynomial associated to $\psicomfield(s)$ over the set $S_q$, with degree at most $q-1$. Note
+
+
+
+
+
+Given a prime $q$ we let $$\pi_q: \ZZ\to \FF_q$$ be the ring homomorphism mapping an integer to its reduction modulo $q$. Given a  finite field $\FF$ of characteristic $q$, let $a(X)\in \ZZ[X]$ be an irreducible polynomial over $\FF_q$ so that $\FF = \ZZ[X]/(q,a(X))$ \albert{consider isomorphism, or assume all finite fields are represented like this}. We let $$\psi_{\FF}: \ZZ[X] \to \FF$$ be the  canonical homomorphism from $\ZZ[X]$ to $\FF$ obtained by reducing modulo the ideal $(q,a(X))$, i.e.\ by reducing coefficients modulo $q$ and then reducing the resulting polynomial modulo $a(X)$.
+
+Given a prime $q$ and an element $\alpha\in \FF_q$, we let
+%
+\begin{align*}
+    \psi_{q,\alpha} : \ZZ[X] &\to \FF_q\\ 
+    h(X) &\mapsto h(\alpha) \mod q,
+\end{align*}
+be the homomorphism consisting of reducing coefficients modulo $q$, and replacing $X$ by $\alpha$.
+
+
+A subset $S\subseteq R$ of a commutative ring $R$ is called \emph{exceptional} if for all two distinct $a,b\in R$, the element $a-b$ has a multiplicative inverse in $R$.
+\begin{lemma}[Generalized Alon--F{\"u}redi Theorem~\cite{BCPS18}]
+\label{lem:sz_exceptional_sets}
+Let $R$ be a ring and let $S\subseteq R$ be a finite exceptional subset of $R$. Let $f(\YY)\in R[\YY]$ be a nonzero multilinear polynomial in $\mu$ variables. Then
+$\Pr_{\rr\getsr S^\mu}[f(\rr)=0] \le \mu/|S|$.
+\end{lemma}
+
+
+\paragraph{Linear codes}
+
+Let $\cC \subseteq \FF^{\codelength}$ be a linear code over $\FF$ of dimension $\codedim$ and blocklength $\codelength$. For $h\geq 1$, the \emph{$h$-interleaving} of $\cC$ is the code $\cC^{\equiv h} \subseteq \left(\FF^{h}\right)^{\codelength}$ of dimension $\codedim\cdot h$ and blocklength $\codelength\cdot h$, whose codewords have the form $$\left((c_{i1},\ldots, c_{ih})\right)_{i\in [\codelength]} \qquad \text{for } (c_{1j},\ldots, c_{\codelength j})\in \cC \qquad \text{for all } j\in [h].$$
+
+\paragraph{Relations}
+A \emph{relation} $\Relation$ consists of triples  $(\inp,\oracle;\wit)$, where $\inp$ is the explicit instance, $\oracle$ the implicit instance or oracle, and $\wit$ the witness.  The corresponding language  is 
+\(
+  \LANG(\Relation)\ \defeq\ \bigl\{(\inp,\oracle)\ \bigm|\ \exists\,\wit \text{ such that } (\inp. \oracle,\wit)\in\Relation\bigr\}.
+\)
+
+
+\paragraph{Interactive Oracle Reductions (IOR) of proximity}
+\albert{We don't use IOPPs in the paper? Make sure we don't mention them later}
+
+A public-coin \emph{Interactive Oracle Reduction (IOR) of proximity} $\Pi=(\prover,\verifier)$ from a relation $\Relation$ to a relation $\Relation'$ is specified as follows. The prover $\prover$ receives $(\inp, \oracle,\wit)\in \Relation$. The verifier $\verifier$ receives $\inp$ and query access to $\oracle$. They interact for $k$ rounds. In round $j\in[k]$, the prover sends an oracle $\provermsg_j$ and the verifier sends a uniformly random message $\verifiermsg_j\in\{0,1\}^{r_j}$. After the $k$ rounds, the verifier makes  queries to $\oracle$ and to $\provermsg_1,\ldots,\provermsg_k$. Then:
+\begin{itemize}[nosep]
+  \item $\verifier$ either rejects or outputs a new  pair $(\inp', \oracle')$, where $\oracle'$ is specified implicitly in terms of the oracles $\oracle$ and $\provermsg_1,\ldots,\provermsg_k$.
+  \item $\prover$ outputs a witness $\wit'$ such that $(\inp', \oracle', \wit')\in \Relation'$.
+\end{itemize}
+We write $ \langle \prover, \verifier\rangle(\inp,\oracle,\wit)$ for the interaction of prover and verifier during the IOR.
+
+\begin{definition}[Completeness]
+\label{def:ior-completeness}
+$\Pi$ has \emph{(perfect) completeness}  if for every $(\inp, \oracle,\wit)\in\Relation$,
+\[
+  \Pr_{\verifiermsg_1,\dots,\verifiermsg_k}\bigl[\,(\inp',\oracle';\wit')\in \Relation'\, \mid \, (\inp',\oracle';\wit') \gets \langle \prover, \verifier\rangle(\inp,\oracle,\wit)\bigr]=1.
+\]
+\end{definition}
+
+\begin{remark}
+    An IOP for a relation $\Relation$ is an IOR from $\Relation$ to the trivial relation $\Relation_{\mathsf{triv}}=\{(\inp=\bot,\oracle=\bot, \wit=\bot)\}$.
+\end{remark}
+
+We proceed to define round-by-round knowledge soundness of an IOR, as presented in \cite{TCC:BCFW25}.
+
+
+\begin{definition}[Knowledge state function]
+\label{def:knowledge-state-function}
+Let $\Pi = (\prover, \verifier)$ be an IOR from a relation $\Relation$ to $\Relation'$. A \emph{knowledge state function} for $\Pi$ is a (possibly inefficient) function $\kstate$ that, on input  $(\inp, \oracle)$, interaction transcript $\tr$, and knowledge state witness $\kswit$, outputs a bit and has the following properties.
+\begin{itemize}[nosep]
+  \item \textbf{Empty transcript.} If $\tr = \emptyset$ is the empty transcript, then $\kstate(\inp, \oracle, \tr, \kswit) = 1$ if and only if $(\inp, \oracle; \kswit) \in \Relation$.
+  \item \textbf{Prover moves.} If $\tr$ is a transcript where the prover is about to move and $\kstate(\inp, \oracle, \tr, \kswit) = 0$, then $\kstate(\inp, \oracle, \tr \Vert \provermsg, \kswit) = 0$ for every prover message $\provermsg$.
+  \item \textbf{Full transcript.} If $\tr = (\provermsg_1, \verifiermsg_1, \ldots, \provermsg_k, \verifiermsg_k)$ is a full transcript, then $\kstate(\inp, \oracle, \tr, \kswit) = 1$ if and only if $\verifier$ on $\tr$ outputs $(\inp', \oracle')$ such that $(\inp', \oracle'; \kswit) \in \Relation'$.
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Round-by-round knowledge soundness]
+\label{def:rbr-knowledge-new}
+A $k$-round IOR $\Pi$ has \emph{round-by-round knowledge soundness} with errors $(\knowledgeerror_1,\ldots,\knowledgeerror_k)$ if there exists a knowledge state function $\kstate$ as in \cref{def:knowledge-state-function} and a deterministic extractor $\rbrextractor$ such that for every $(\inp,\oracle)$, every $j\in[k]$, and every transcript $\tr$ where the verifier is about to send $\verifiermsg_j$,
+\[
+  \Pr_{\verifiermsg_j}\!\left[
+  \exists\,\kswit \ \left| \ \begin{array}{l}
+  \wedge\ \kstate\bigl(\inp,\oracle,\tr,\rbrextractor(\inp,\oracle,\tr\Vert\verifiermsg_j,\kswit)\bigr)=0\\
+  \wedge\ \kstate(\inp,\oracle,\tr\Vert\verifiermsg_j,\kswit)=1
+  \end{array}
+  \right.\right]
+  \ \le\ \knowledgeerror_j(\idx,\inp).
+\]
+\end{definition}
+
+\begin{remark}[Composition of IORs]\label{r:ior_compositoin}
+\albert{What can I cite for this?} IORs can be composed together and inherit completeness and round-by-round knowledge soundness errors. More precisely, let $\Pi_1,\Pi_1$ be perfectly complete IORs from $\Relation_1$ to $\Relation_2$  and $\Relation_3$, respectively, with round-by-round knowledge errors $\kappa_{11},\ldots, \kappa_{1k_1}$ and $\kappa_{21}, \ldots, \kappa_{2k_2}$. Consider  the IOR $\Pi'$ from $\Relation_1$ to $\Relation_3$ consisting of applying IOR $\Pi_1$ first, and then $\Pi_2$ taking as input for $\Pi_2$ the output of $\Pi_1$.   Then $\Pi'$ is a perfectly complete $(k_1+k_2)$-round IOR from $\Relation_1$ to $\Relation_3$ with round-by-round knowledge soundness errors $\kappa_{11},\ldots, \kappa_{1k_1}, \kappa_{21}, \ldots, \kappa_{2k_2}$.
+
+\albert{Describe $\kstate$ for the composed IOR?}
+\end{remark}
+
+\section{\ftwoz PCS}
+
+
+%\newcommand{\comfield}{\FF_{\mathsf{c}}}
+%\newcommand{\evalfield}{\FF_{\mathsf{e}}}
+
+%\newcommand{\psicomfield}{\psi_{\mathsf{c}}}
+%\newcommand{\psievalfield}{\psi_{\mathsf{e}}}
+
+
+\subsection{Constrained codes over dual fields }
+\albert{not sure dual is a good word: the two fields are just ``different'', while dual things tend to have a close relation between each other}
+Let $\codedim_0\geq 0$ be a dimension parameter, and $\codelength\geq 0$ a blocklength parameter. Let $\FF$ be a field (not necessarily a prime field), and let $\cC\subseteq \FF^{\codelength}$ be a linear code of dimension $\codedim_0$ and blocklength $\codelength$ over $\FF$.  Let $\inplen\geq0$ be a public input length parameter, and let $Q\in \FF[Y_1, \ldots, Y_{\inplen}, Z_1, \ldots, Z_{\codedim}]$  be a constraint polynomial, of arbitrary degree, 
+with coefficients in $\FF$ and on $\inplen+\codedim$ variables. Further, let $\codedim\geq \codedim_0$ be a witness length parameter, and let $P:\FF^{\codedim} \to \FF^{\codedim_0}$ be an arbitrary map (looking ahead, for us $P$ will be a packing map that packs elements from $\FF_2$ into elements of a larger binary field.     Consider the following relation:
 %
 $$
-P(Y,\psicomfield(s)) = Y^{s} \quad \forall \ s\in \range{0}{q-1}.
+\Relation^Q_{\cC,\FF, P} \defeq \left\{ \left(\begin{aligned} &\inp=\yy\in \FF^\inplen, \\&\oracle = f \in \FF^\codelength, \\ &\wit= \bff\in \FF^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(P(\bff)) = f\\ \wedge \  &Q(\yy, \bff) = 0  \end{aligned} \right\}
+$$
+When $Q$ and $\yy$ are such that $\yy=(\vv,\mu)\in \FF^{\codedim}\times \FF$ and $$Q(\yy,\ff)= \langle \vv, \ff\rangle = \sum_{i\in [\codedim]} \vv_i \cdot \ff_i,$$ we denote $\Relation^Q_{\cC,\FF, P}$  by $\Relation^{\mathsf{lin}}_{\cC,\FF,P}$.
+
+%When $Q$ and $\yy$ are such that $\yy=(\rr,\mu)\in \FF^{\log\codedim}\times \FF$ and $$Q(\yy,\ff)= \mle{\bff}(\rr)-\mu,$$ we denote $\Relation_{\cC, \FF}^{Q}$  by $\Relation_{\cC, \FF}^{\mathsf{mle}}$. 
+
+
+Next let $\comfield$ be a finite field of characteristic $2$,  and let $\evalfield$ be either the field of rationals $\QQ$ or a finite field of characteristic $q$, possibly an extension field.For intuition, $\comfield$ is the field over which we will commit our witness, and $\evalfield$ is the field over which we prove linear relations on the witness. If $\evalfield=\QQ$ then we define $\degevalfield=0$, and if $\evalfield$ is a finite field of characteristic $q$, then $\degevalfield$ denotes the degree extension of $\evalfield$ over $\FF_q$.
+
+We let
+%
+$$
+\psicomfield : \ZZ \to \FF_2 \subseteq \comfield
+$$
+be reduction mod $2$, and let 
+%
+$$
+\psievalfield: \ZZ[X] \to \KK
 $$
 %
-We assume prover and verifier have access to an IOR $\prod_{\Relation_{\cC, \comfield}^{Q}  \to \Relation_{\cC, \comfield}^{\mathsf{eval}}}$ \albert{define in prelims} that reduces 
+be the natural projection of $\ZZ[X]$ onto $\KK$. Concretely, if $\KK=\QQ$,  then  $\psievalfield$ is reduction modulo the ideal $(X)$ (i.e.\ $\psievalfield(\sum_{i=0}^{k} a_i\cdot X^i)  = a_0$);  if $\KK$ is a prime field $\FF_q$, then $\psievalfield$ is reduction modulo $q$ and modulo the ideal $(X)$; and if $\KK$ is an extension field, so that $\KK=\FF_q[X]/(h(X))$ for some irreducible polynomial $h(X)\in \FF_q[X]$, then $\psievalfield$ is reduction modulo $q$ and modulo the ideal $(h(X))$.
+
+We further let 
+$$
+\psicomfield^{-1} : \FF_2 \to \{0,1\} \subseteq \ZZ, \qquad \psievalfield^{-1}: \KK \to \range{0}{q-1}^{\leq\degevalfield}[X] \subseteq \ZZ,
+$$
+be maps such that $\psicomfield^{-1}(\psicomfield(x))=x$ and $\psievalfield^{-1}(\psievalfield(y))=y$ for all $x\in\bits$ and $y\in \range{0}{q-1}^{\leq\degevalfield}[X]$. We remark that one could choose any other such ``inverse'' maps, e.g.\ for $\psievalfield^{-1}$ one may prefer to use centered representatives. 
+
+
+
+Assume $|\comfield|=2^\comfieldexp$. Let
+%
+$$
+\beta_1, \ldots, \beta_\comfieldexp \in \comfield
+$$
+%
+be an $\FF_2$-base of $\comfield$ seen as an $\FF_2$-vector space of dimension $n$. Given a vector $\uu\in \FF_2^\codelength$, with $2^\comfieldexp$ dividing $\codelength$, we define
+%
+$$
+\pack(\uu)\in \comfield^{\codelength/\comfieldexp}
+$$
+as the vector whose $j$-th entry is
+%
+$$
+\pack(\uu)_{j} = \uu_{(j-1)\cdot \comfieldexp +1 }\cdot \beta_1 + \ldots + \uu_{(j-1)\cdot \comfieldexp +\comfieldexp-1 }\cdot \beta_{\comfieldexp-1}+\uu_{j \cdot \comfieldexp} \cdot \beta_\comfieldexp \in \comfield.
+$$
+%
+%
+Let $\cC\subseteq \comfield^{\codelength}$ be a linear code of dimension $\codedim/2^{\comfieldexp}$ and blocklength $\codelength$ over $\comfield$. Define \albertimportant{Think: should we allow for $\bff$ to be a vector of polynomials? Or of integers of more than one bit? Probably not here, but if interesting, write an appendix explaining how to treat those?}
+$$
+\Relation^{\mathsf{lin-dual}}_{\cC,\comfield, \evalfield,\pack} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \{0,1\}^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\pack(\psicomfield(\bff))) = f\\ \wedge \  & \langle \psievalfield(\bff), \vv\rangle  = \mu  \end{aligned} \right\}
+$$
+%
+\subsection{Tensor decomposition, interleaved codes, and products of constrained codes}
+%
+We fix a tensor decomposition of vectors $\vv\in \comfield^\codedim$ as $$\vv = \vv^{(1)} \otimes \vv^{(2)} = \left(\vv_i^{(1)}\cdot \vv_j^{(2)}\right)_{i\in [\codedim_1], j\in [\codedim_2]}$$ for some $\vv^{(1)}\in \evalfield^{\codedim_1}, \vv^{(2)}\in \evalfield^{\codedim_2}$, with $\codedim_1 \cdot \codedim_2=\codedim$. Note that the trivial tensor decomposition is admitted, i.e.\ we may effectively not decompose $\vv$ by choosing $\codedim_1=\codedim$, $\codedim_2=1$, $\vv^{(1)}=\vv$, and $\vv^{(2)} = (1)$.
+
+We assume $\cC = \cC_1^{\equiv \codedim_2}$ is the $\codedim_2$-dimensional interleaving of a code $\cC_1\subseteq \comfield^{\codelength/\codedim_2}$ of dimension $\codedim_1/2^\comfieldexp$ and blocklength $\codelength/\codedim_2$.  We then index the entries of $\bff$ as $\bff=(\bff_{ij})_{i\in [\codedim_1], j\in[\codedim_2]}$. Note that
+%
+$$
+\langle \psievalfield(\bff), \vv \rangle = \sum_{j\in [\codedim_2]}\left(\sum_{i\in [\codedim_1]} \psievalfield(\bff_{ij}) \cdot \vv_i^{(1)}\right) \cdot \vv_j^{(2)} = \sum_{j\in [\codedim_2]} \langle \psievalfield(\bff_{*j}) , \vv^{(1)} \rangle \cdot \vv_j^{(2)},
+$$
+where $\bff_{*j} = (\bff_{ij})_{i\in[\codedim_1]}$.
+
+
+
+
+
+
+
+
+% We use $0$ and $1$ indistinctly to denote the zero and one integer, and zero and one field elements. 
+
+
+Define the following bivariate polynomial:
+$$
+P(Y,Z) = (Y-1)\cdot Z +1 
+$$
+ Note
 %
 $
-\Relation_{\cC, \comfield}^{Q}$ to $\Relation_{\cC, \comfield}^{\mathsf{eval}}$, 
-where $$Q(Y_1, \ldots, Y_{\codedim+1}, Z_1, \ldots, Z_{\codedim}) = \prod_{i=1}^{\codedim} P(Y_i, Z_i) - Y_{\codedim+1}.$$ We further assume that prover and verifier have access to a batched version of $\prod_{\Relation_{\cC, \comfield}^{Q}  \to \Relation_{\cC, \comfield}^{\mathsf{eval}}}$ (which allows to reduce several instances of ), and to an IOPP for $\Relation_{\cC, \comfield}^{\mathsf{eval}}$.
-
-
-\begin{construction}[Core IOP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$]\label{c:core_iop}
-The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^n$. The prover receives $\wit= \bff\in \range{0}{q-1}^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$. 
-
-Fix a tensor decomposition of $\vv$ as $$\vv = \vv^{(1)} \otimes \vv^{(2)} = \left(\vv_i^{(1)}\cdot \vv_j^{(2)}\right)_{i\in [\codedim_1], j\in [\codedim_2]}$$ for some $\vv^{(1)}\in \evalfield^{\ell_1}, \vv^{(2)}\in \evalfield^{\ell_2}$, with $\ell_1 \cdot \ell_2=\ell$. Note that the trivial tensor decomposition is admitted, i.e.\ we may not decompose $\vv$ and set $\vv^{(1)}=\vv$ and $\vv^{(2)} = (1)$.
-
-Index the entries of $\bff$ as $\bff=(\bff_{ij})_{i\in [\ell_1], j\in[\ell_2]}$. Note that
+P(Y,0) = 1$ and $P(Y,1) = Y.
+$
+%
+Consider the relation $\Relation_{\comfield, \pack}^{Q_{\FF2\ZZ}}$ with underlying code $\cC_1$ and 
+%
+$$Q_{\FF2\ZZ}(Y_1, \ldots, Y_{\codedim_1+1}, Z_1, \ldots, Z_{\codedim_1}) \defeq \Pi_{i=1}^{\codedim_1} P(Y_i, Z_i) - Y_{\codedim_1+1}.$$ 
+%
+Precisely, 
 %
 $$
-\langle \psievalfield(\bff), \vv \rangle = \sum_{j\in [\ell_2]}\left(\sum_{i\in [\ell_1]} \psievalfield(\bff_{ij}) \cdot \vv_i^{(1)}\right) \cdot \vv_j^{(2)} = \sum_{j\in [\ell_2]} \langle \psievalfield(\bff_{*j}) , \vv^{(1)} \rangle \cdot \vv_j^{(2)},
+\Relation^{Q_{\FF2\ZZ}}_{\cC_1,\comfield,\pack} = \left\{ \left(\begin{aligned} &\inp=(\yy,z)\in \comfield^{\codedim_1}\times \comfield, \\&\oracle = f \in \comfield^{\codelength/\codedim_2}, \\ &\wit= \bff\in \FF_2^{\codedim_1}\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC_1}(\pack(\bff)) = f\\ \wedge \  &\Pi_{i=1}^{\codedim_1} \left((\yy_i-1)\cdot \bff_i +1\right) = z  \end{aligned} \right\}
 $$
-where $\bff_{*j} = (\bff_{ij})_{i\in[\ell_1]}$.
+%
+We assume prover and verifier have access to an IOR $\Pi_{\mathsf{red}}$  that reduces 
+%
+$
+\Relation^{Q_{\FF2\ZZ}}_{\cC_1,\comfield,\pack}$ to $\Relation^{\mathsf{lin}}_{\cC_1,\comfield, \pack}$.  In our instantiation $\Pi_{\mathsf{red}}$ is an optimized GKR protocol for  grand products, which reduces the initial grand product claim to MLE evaluation claims of $\yy$ and $\bff$ over $\comfield$. As we explain in \cref{?}, we design several optimizations for the specific shape of our grand products.
 
-\begin{enumerate}[leftmargin=*]
-\item The prover sends $\mu_1', \ldots, \mu_{\ell_2}'\in \ZZ$ such that $\langle \bff_{*j}, \psievalfield^{-1}(\vv^{(1)})\rangle = \mu_j'$. 
-\item The verifier checks that $\sum_{j\in [\ell_1]} \psievalfield(\mu_j')\cdot \vv_j^{(2)}  = \mu$. 
-\item Prover and verifier define $\bm{\gamma}_i = \psievalfield^{-1}(\vv_i^{(1)})$ for $i \in [\ell_1]$, and set to prove the following claim:
+%
+%
+We assume $\Pi_{\mathsf{red}}$ works so that the verifier never queries $\oracle$. Note that this is indeed the case with GKR (indeed, GKR reduces the initial circuit evaluation claim on the input and outputs, into MLE evaluation claims of the input and outputs, without querying any oracle in-between). 
+
+
+Further, we consider the $\codedim_2$-fold parallel composition $\Pi_{\mathsf{red}}^{\codedim_2}$ of $\Pi_{\mathsf{red}}$,  and we assume that given $\codedim_2$ triples 
 %
 $$
-\prod_{i \in [\codedim]} g^{\bm{\gamma}_i\cdot \bff_{ij}}  = g^{\mu_j'} \qquad \text{for all } j\in [\ell_2].
+\left((\yy^{(j)},\mu^{(j)}) , g^{(j)}, \bfh^{(j)}  \right)_{j\in[\codedim_2]} \in \left(\Relation^{Q_{\FF2\ZZ}}_{\cC_1,\comfield,\pack}\right)^{\codedim_2}
 $$
-Note that this claim is equivalent to
-$$
-\prod_{i \in [\codedim]} P\left(g^{\bm{\gamma}_i}, \psicomfield(\bff_{ij})\right) = \prod_{i \in [\codedim]} \sum_{s\in \range{0}{q-1}} L_{ S_q, \psicomfield(s)}(\psicomfield(\bff_{ij})) \cdot g^{\bm{\gamma}_i\cdot s}= g^{\mu_j'}  \qquad \text{for all } j\in [\ell_2].
-$$
-To prove the above claim, prover and verifier engage in the batched version of the IOR $\prod_{\Relation_{\cC, \comfield}^{Q}  \to \Relation_{\cC, \comfield}^{\mathsf{eval}}}$ with inputs $$\left(\inp'=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]}), g^{\mu_j'}), \oracle_j'=f_j, \wit_j'=\psicomfield(\bff_{*j})\right)  \qquad \text{for } j\in [\ell_2].$$
-%
-\item At the end of this IOR, they are left with the following claim to prove:
+the IOR $\Pi_{\mathsf{red}}^{\codedim_2}$ outputs 
 %
 $$
-((\mu', \rr'), f', \bff') \in \Relation_{\cC, \comfield}^{\mathsf{eval}}.$$ Accordingly, the prover and the verifier engage in a IOPP  to certify the validity of this last claim.
+\left((\vv,\mu_j) \in \comfield^{ \codedim_1 } \times \comfield, g^{(j)} , \bfh^{(j)} \right)_{j\in[\codedim_2]} \in \left(\Relation^{\mathsf{lin}}_{\cC_1,\comfield, \pack}\right)^{\codedim_2},
+$$
+for some $\rr\in \comfield^{\log \codedim_1}$ and some $\mu_j\in \comfield$ for $j\in [\codedim_2]$.
+In words, $\Pi_{\mathsf{red}}^{\codedim_2}$ outputs $\codedim_2$ linear claims for the input witnesses $\bfh^{(j)}$ behind the input oracles $g^{(j)}$, all \emph{on the same vector of coefficients  $\vv$}.  Again, in our instantiation $\Pi_{\mathsf{red}}^{\codedim_2}$ is simply the GKR protocol applied to several grand product claims at once, with optimizations discussed in \cref{?}. 
+
+%We describe one such $\Pi_{\mathsf{red}}^{\codedim_2}$ in \cref{?}, where $\vv$ is a vector of the form $\vv=(\mathsf{eq}(\bb,\rr))_{\bb\in \{0,1\}^{\log \codedim_1}}$, for some $\rr\in \comfield^{\log \codedim_1}$.
+
+
+\subsection{The main {\ftwoz}  PCS}
+We provide an IOP for $\Relation^{\mathsf{lin-dual}}_{\cC, \comfield, \evalfield, \pack}$ next.
+\begin{construction}[IOP for {$\Relation^{\mathsf{lin-dual}}_{\cC, \comfield, \evalfield, \pack}$}]\label{c:core_iop}
+The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation^{\mathsf{lin-dual}}_{\cC, \comfield, \evalfield, \pack}$.  We assume the tensor split from the previous Section \ref{}, and adopt its notation. 
+Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with sufficiently large multiplicative order, to be determined later.  
+
+
+\begin{enumerate}[leftmargin=*] 
+\item The prover sends $\mu_1, \ldots, \mu_{\codedim_2}\in \range{0}{q-1}^{\leq \degevalfield}[X]$ such that \begin{equation}\label{e:tensored_equality}\langle \bff_{*j}, \psievalfield^{-1}(\vv^{(1)})\rangle = \mu_j \qquad \text{for all } j\in [\codedim_2].\end{equation} 
+\item The verifier checks that \begin{equation}\label{e:tensor_decomposition_reconstruction}\sum_{j\in [\codedim_2]} \psievalfield(\mu_j)\cdot \vv_j^{(2)}  = \mu\qquad \text{over } \evalfield.\end{equation} 
+Next, prover and verifier will focus on certifying that \eqref{e:tensored_equality} holds for all $j\in [\codedim_2]$.
+
+In \cref{?} we describe a variation in which, instead of sending the elements $\mu_1, \ldots, \mu_{\codedim_2}$, the prover commits to their bit-decomposition over $\comfield$, and proves \eqref{e:tensor_decomposition_reconstruction} the present IOR. This saves on proof size and verifier time when $\codedim$ is large.
+\item If $\degevalfield=0$, continue to the next step. Otherwise, if $\degevalfield>1$, the verifier uniformly samples and sends a  prime $q'$ from a fixed set of primes $\cP$ ($\cP$ is a protocol parameter), and an element $\alpha\in \FF_{q'}$. Now update
+%
+\begin{align*}
+\vv^{(1)}{} &\gets \psi_{q',\alpha}\left(\psievalfield^{-1}\left(\vv^{(1)}\right)\right) \in \FF_{q'},\\
+\mu_j &\gets \pi_{q'}^{-1}(\psi_{q',\alpha}(\mu_j)) \in \range{0}{q'-1}\subseteq \ZZ, \qquad j\in [\codedim_2],\\
+q&\gets q'.
+\end{align*}
+%
+%For ease of readability onwards, we use the same symbols $\vv^{(1)}$ and $q$ for the pre- and post-update vectors and primes in this step.
+
+\item Note that, at this point of the protocol, $\vv^{(1)}\in \FF_q^{\codedim_1}$. 
+Prover and verifier define $$\bm{\gamma} = \pi_{q}^{-1}(\vv^{(1)}) \in \range{0}{q-1}^{\codedim_1}\subseteq \ZZ^{\codedim_1},$$ and set to prove the following claim:
+%
+$$
+\prod_{i \in [\codedim_1]} g^{\bm{\gamma}_i\cdot \bff_{ij}}  = g^{\mu_j} \in \comfield, \qquad \text{for all } j\in [\codedim_2].
+$$
+This claim is equivalent to
+$$
+\prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \pi_2(\bff_{ij}) +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\codedim_2].
+$$
+Notice that \begin{equation}\label{e:Q_F2Z_intermediate}\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\psicomfield(\bff_{*j})\right)\in \Relation^{Q_{\FF2\ZZ}}_{\cC_1,\comfield,\pack} \qquad \text{for all } j\in [\ell_2].
+\end{equation}
+% \ulrich{%
+% Suggestion: 
+% Maybe it is more clear, if we write in the above two equalities explicitly a $\bmod\: q$, or, add $\in \mathbb F_q$?
+% }%
+% \albert{See now. It's actually in $\comfield$}
+\item To prove the above claim, prover and verifier engage in the IOR $\Pi_{\mathsf{red}}^{\codedim_2}$\footnote{Recall that, in our instantiation, $\Pi_{\mathsf{red}}^{\codedim_2}$ is the GKR protocol applied to multiple grand products, cf.\ \cref{?}}   with input $$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\psicomfield(\bff_{*j})\right)_{j\in [\codedim_2]},$$
+%
+where in the honest case  $f_{*j} = \Enc_{\cC_1}(\pack(\psicomfield(\bff_{*j})))\in \comfield^{\codelength/\codedim_2}$.
+%
+ At the end of this IOR, they are left with the following claim to prove: 
+%
+\begin{equation}\label{e:iopp_mle_claims}
+\left((\vv, \mu_j'), \ f_{*j}, \ \psicomfield(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation^{\mathsf{lin}}_{\cC_1, \comfield,\pack}\right)^{\codedim_2}\end{equation} for some vector $\vv$ and field elements $\mu_j'$ output during the IOR $\Pi_{\mathsf{red}}^{\codedim_2}$. 
+\item Prover and  verifier engage in an IOP  to certify the claims \eqref{e:iopp_mle_claims}. 
 \end{enumerate}
 \end{construction}
 
-. 
+\begin{theorem}\label{t:thm_core_IOPP}
+    \albert{Completeness and RBR knowledge soundness of \cref{c:core_iop} }
+\end{theorem}
+\begin{proof}
+Observe that \cref{c:core_iop} is the result of composing an IOR $\Pi_{1234}$ with an IOP $\Pi_{56}$. The IOR  $\Pi_{1234}$ reduces the relation $\Relation^{\mathsf{lin-dual}}_{\cC, \comfield, \evalfield, \pack}$ to $\Relation':=\left(\Relation^{Q_{\FF2\ZZ}}_{\cC_1,\comfield,\pack}\right)^{\codedim_2}$, as consists in applying Steps 1,2, and 3 of \cref{c:core_iop}, and at Step 4 outputting 
+$$
+\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\psicomfield(\bff_{*j})\right)\in \Relation^{Q_{\FF2\ZZ}}_{\cC_1,\comfield,\pack} \qquad \text{for } j\in [\ell_2].
+$$
+The IOP $\Pi_{56}$ is an IOP for  the relation $\Relation'$ and it consists in applying Steps 5 and 6 of \cref{c:core_iop}, which in turn is the result of composing the IOR $\Pi_{\mathsf{red}}$, and the IOP for $\left(\Relation_{\cC_1, \comfield,\pack}\right)^{\codedim_2}$. By the composition of IORs result (cf.\ \cref{r:ior_compositoin}), it suffices to analyze the completeness and RBR knowledge soundness of the IOR and the IOP separately. 
+
+
+\albert{WIP}
+\end{proof}
 
 
 
 
 
+\subsection{An optimized GKR protocol for the \ftwoz grand products}
 
+The bulk of the work in \ftwoz (\cref{c:core_iop}) is to reduce the claim
+\begin{equation}\label{e:main_grand_product}
+\prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \pi_2(\bff_{ij}) +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\codedim_2].
+\end{equation}
+to $\ell_2$ inner product claims for the vectors $\pi_2(\bff_{*j})$. We do this reduction via the GKR protocol for multiple grand products, and make several implementation-level optimizations for it.  
 
+\albert{Todo}
 
-\section{Scratch}
+\albert{Present the optimization as a contribution of the paper} \albert{There seems to be a comment in the Binius repo about this though:  "TODO: Use a special 1-bit-optimized MLE-check with switchover to save memory" (prove.rs:380), "TODO: Optimize with bit-masking for selection" (witness.rs:188). They also use some similar optimizations but for  non-grand product sumchecks. Worth seeing carefully what we are doing vs them}
 
+\subsection{Proof size optimization for large inputs}
 
-\begin{construction}
-The verifier receives $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and oracle access to $\oracle= f \in \comfield^n$. The prover receives $\wit= \bff\in \range{0}{q-1}^k \subseteq \ZZ^k$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin}}$. 
-
-
-\begin{enumerate}[leftmargin=*]
-\item The prover sends $\mu'\in \ZZ[X]$ such that $\langle \bff, \psievalfield^{-1}(\vv)\rangle = \mu'$. 
-\item The verifier checks that $\psievalfield(\mu') = \mu$. Then, the verifier samples $\alpha\in [0, 2^N-1]\subseteq \ZZ$ and sends $\alpha$ to the prover. Let $\psi_\alpha: \ZZ[X]\to \ZZ$ be the evaluation map at $\alpha$, so that $\psi_\alpha(a(X))= a(\alpha)$. 
-\item The prover and verifier engage in a PIOP to prove the following equality:
+When $\codedim=\codedim_1\cdot \codedim_2$ is such that $\codedim_2$ is large, say $\codedim\geq 2^{11}$, the elements $\mu_1,\ldots, \mu_{\codedim_2}\in \ZZ$ sent at Step 1 of \cref{c:core_iop} may start to dominate the proof size. For example, for $\codedim=2^{13}$ and $\mu_i$ of $128$ bits, the elements $\mu_1,\ldots, \mu_{\codedim_2}$ amount to $131$ KB.  To mitigate this cost, the idea is to  have the prover commit to the vector $(\mu_1,\ldots, \mu_{\codedim_2})$ and then prove \eqref{e:tensor_decomposition_reconstruction}, i.e.\ 
 %
 $$
-\prod_{i \in [\codedim]} g^{\psi_\alpha(\psievalfield^{-1}(\vv_{i}))\cdot \bff_i}  = g^{\psi_\alpha(\mu')}.
+\sum_{j\in [\codedim_1]} \psievalfield(\mu_j)\cdot \vv_j^{(2)}  = \mu \qquad \text{over } \evalfield.
 $$
-\end{enumerate}
+%
+using an IOPP for constrained codes. Concretely, the prover commits to the vector $\mathsf{bits}(\mu)$ of bits forming the elements $(\mu_1, \ldots, \mu_{\codedim_2})$ using \ftwoz, and then proves \eqref{e:tensor_decomposition_reconstruction} using \cref{c:core_iop}. At the end of \cref{c:core_iop}, the prover is left with an inner product claim for the vector $\pi_2(\mathsf{bits}(\mu))$.  \albert{TODO: explain how to batch this claim with the WHIR IOPP for the final step of \cref{c:core_iop}}
+
+\section{Virtualization of $\FF_2$-linear combinations lifted to integers}\label{s:virtualization}
+
+\albertimportant{In current implementation, this performs worse than not using any virtualization, which should not be the case. But before working on this section further I'd want to make sure it is worth it}
+
+In this section we expand relation $\Relation^{\mathsf{lin-dual}}_{\cC, \comfield, \evalfield, \pack}$ to impose, instead of constraints of the form $\Enc_\cC(\pack(\pi_2(\bff)))=f$ and $\langle \psievalfield(\bff), \vv  \rangle = \mu$, constraints as $\Enc_\cC(\pack(\pi_2(\bff))) = f$  and $$\langle \psievalfield(\pi_2^{-1}(M\cdot \pi_2(\bff))) \rangle = \mu$$ for a matrix $M\in \FF_{2}^{\codedim' \times \codedim}$. Precisely, given a new parameter $\codedim'$, we define 
+%
+$$
+\Relation^{\mathsf{lin-virtual}}_{\cC, \comfield, \evalfield, \pack} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv, M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim' \times \codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\pack(\psicomfield(\bff))) = f\\ \wedge \  & \langle \psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff)), \vv\rangle  = \mu  \end{aligned} \right\}
+$$
+\albert{We could replace $M\cdot \pi_2(\bff)$ by the output of a GKR circuit on $\pi_2(\bff)$}
+%
+The relation has the tag ``lin(ear)-virtual'' to reference the intuition that  $\Relation^{\mathsf{lin-virtual}}_{\cC, \comfield, \evalfield, \pack} $ expresses a linear constraint on the vector $\bfh=\psievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff))\in \evalfield^{\codedim'}$, which is not committed directly: only $\pi_2(\bff)$  is. Note that $\bfh$ is a linear expression over $\comfield$ of the elements in $\pi_2(\bff)$, lifted to the integers, and then projected to $\evalfield$.
+
+\albert{Would be good to add more detail in this paragraph} The relation $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$  allows to, for example, express linear constraints over $\evalfield$ of the XOR of witness elements, while only committing (over $\comfield$) to the original elements. The same applies with other bit operations such as AND and Majority, by noting first that, given integer bits $x,y,z\in \{0,1\}$: \albert{Should reference some identity in preliminaries, or explain more here} 
+%
+\begin{equation*}
+    \begin{aligned}
+        \psievalfield(x \band y) & = 2^{-1}\cdot \psievalfield \left( x+y - \pi_2^{-1}(\pi_2(x) + \pi_2(y)) \right),\\
+        \psievalfield(\Maj(x,y,z)) &= 2^{-1}\cdot \psievalfield \left( x+y+z - \pi_2^{-1}(\pi_2(x) + \pi_2(y) + \pi_2(z) \right),
+    \end{aligned}
+\end{equation*}
+where $2^{-1}$ denotes the inverse of $2$ modulo $q$.  
+%
+Hence AND and Majority can be expressed over $\FF_q$ as  linear expressions of a vectors of the form $\psievalfield(\pi_2^{-1}(M\cdot \pi_2(\bff)))$, with $\bff$ being a vector of integer bits containing only the original elements on which we apply the AND and Majority operations. 
+
+
+\bigskip
+
+We next provide an IOPP for $\Relation^{\mathsf{lin-virtual}}_{\cC, \comfield, \evalfield, \pack}$ for specific shapes of $M$. Similarly as in \cref{?}, we assume a tensor structure $\codedim=\codedim_1 \cdot \codedim_2$ for $\vv$, and write $\bff = (\bff_{*j})_{j\in [\codedim_2]} \in \bits^{\codedim_1 \times \codedim_2}$.  We then let $\codedim_1'$ be such that $\codedim' = \codedim_1' \times \codedim_2$ and assume $M = \mathsf{Id} \otimes M_0$ where $M_0$ is a $\codedim_1' \times \codedim_1$ matrix with entries in $\FF_2$, and $\mathsf{Id}$ is the $\codedim_2\times \codedim_2$ matrix. In words, $M$ is the $\codedim'\times \codedim = \codedim_1'\cdot \codedim_2 \times \codedim_1\cdot \codedim_2$ diagonal block matrix with $M_0$ as diagonal blocks. Then
+%
+\begin{equation}\label{e:M_pi_f}
+M \cdot \pi_2(\bff) = (M_0 \cdot \pi_2(\bff_{*j}))_{j\in [\codedim_2]} \in (\FF_2^{\codedim_1'})^{\codedim_2}.
+\end{equation}
+%
+\begin{construction}[IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$]\label{c:virtual_iop}
+The prover and verifier receive $\inp=(\mu, \vv,M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim'\times\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$.  We assume $M$ is of the form described above.
+
+ Define  $\bfh = \pi_2^{-1}\left(M\cdot \pi_2(f)\right) \in \{0,1\}^{\codedim'} \subseteq \ZZ^{\codedim'}$. By \eqref{e:M_pi_f}, $$\bfh=(\bfh_{*j})_{j\in [\codedim_2]} = \left(\pi_2^{-1}\left( M_0\cdot \pi_2(\bff_{*j}) \right)\right)_{j\in [\codedim_2]},$$ with $ \bfh_{*j}\in \bits^{\codedim_1'}$. Let $f= \Enc_{\cC}(\pack(\pi_2(\bff))) \in \bits^{\codelength} \subseteq \ZZ^{\codelength}$.
+ \begin{enumerate}[leftmargin=*]
+     \item Prover and verifier execute \cref{c:core_iop}  with inputs 
+$$
+\inp' = (\mu, \vv),  \quad \oracle'=f,\quad  \wit' = \bfh=\pi_2^{-1}\left(M\cdot \pi_2(\bff)\right) \in \{0,1\}^{\codedim'} \subseteq \ZZ^{\codedim'}.
+$$
+ until Step 3 where they are meant to use the IOR $\Pi_{\mathsf{red}}$. Note that until that point, the verifier has not made any queries to $\oracle'$. So, in terms of completeness, it does not matter, yet, that $f$ is not the encoding of $\pi_2(\bfh)=M\cdot \pi_2(\bff)$.
+ \item  Prover and verifier engage in $\Pi_{\mathsf{red}}^{\codedim_2}$ with inputs
+ %
+ $$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1']},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\psicomfield(\bfh_{*j})=M_0\cdot \pi_2(\bff_{*j})\right)_{j\in [\codedim_2]},$$
+ where $f_{*j}=\Enc_{\cC_1}(\pack(\pi_2(\bff_{*j})))$. At the end of $\Pi_{\mathsf{red}}^{\codedim_2}$ they are left with claims
+ %
+%
+\begin{equation}\label{e:virtual_IOPP_intermediate}
+\left((\vv, \eta_j), \ \oracle_j, \ \wit_j\right)_{j\in [\codedim_2]} \in \left(\Relation^{\mathsf{lin}}_{\cC_1, \comfield,\pack}\right)^{\codedim_2},
+\end{equation}
+%
+for some $\vv\in \comfield^{ \codedim_1'}$ and $\eta_j \in \comfield$. Again, since we assume the verifier never queries $\oracle_j$ during $\Pi_{\mathsf{red}}$, completeness holds for honest provers, even if $\oracle_j$ is not the encoding of $\wit_j$.
+
+Note that \eqref{e:virtual_IOPP_intermediate} holds if and only if, for all $j\in [\codedim_2]$,
+%
+\begin{align*}
+\eta_j &=\sum_{i\in [\codedim_1']} \vv_i \cdot \pi_2(\bfh_{ij}) = \sum_{i\in [\codedim_1']} \vv_i \cdot \sum_{t\in [\codedim_1]} M_{0it}\cdot \pi_2(\bff_{tj})\\ =& \sum_{t\in [\codedim_1]} \left(\sum_{i\in[\codedim_1']}M_{0it}\cdot \vv_i\right)\cdot \pi_2(\bff_{tj}) = \langle \uu_j , \pi_2(\bff_{*j})\rangle,
+\end{align*}
+where $\uu \in \comfield^{\codedim_1}$ is the vector whose $t$-th entry is
+%
+$$
+\uu_t = \langle \vv, M_{0*t}\rangle \in \comfield,
+$$
+and  $M_{0*t}\in \comfield^{\codedim_1'}$ denotes the $t$-th column of $M_0$, for $t\in [\codedim_1]$,
+%
+
+%
+Note that, if $\Pi_{\mathsf{red}}^{\codedim_2}$ is as in \cref{?}, then $\vv= (\mathsf{eq}(\bb,\rr))_{\bb\in \{0,1\}^{\log \codedim_1'}}$ for some $\rr\in \comfield^{\log \codedim_1'}$, and then 
+$
+\uu_t = \mle{M_{0*t}}(\rr) \in \comfield. 
+$
+%
+
+\item If the prover is honest, we have that
+%
+\begin{equation}\label{e:final_virt_equation}
+\left((\uu, \eta_j),\ \oracle_j = \Enc_{\cC_1}(\pack(\pi_2(\bff_{*j}))), \ \pi_2(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation^{\mathsf{lin}}_{\cC_1, \comfield,\pack}\right)^{\codedim_2}.
+\end{equation}
+%
+Prover and verifier use the Galois ring-switch \cref{c: Galois ring-switch IOP} to reduce  \eqref{e:final_virt_equation} to a claim of the form.
+\begin{equation}\label{e:final_ring_switched_equation}
+\left((\uu', \kappa_j),\ \oracle_j = \Enc_{\cC_1}(\pack(\pi_2(\bff_{*j}))), \ \pack(\pi_2(\bff_{*j}))\right)_{j\in [\codedim_2]} \in \left(\Relation^{\mathsf{lin}}_{\cC_1, \comfield,\mathsf{id}}\right)^{\codedim_2},
+\end{equation}
+where $\uu'=(\eq(\bb,\rr))_{\bb\in \{0,1\}^{\log \codedim_1}}$ for some $\rr\in \comfield^{\log \codedim_1}$, and for some $\kappa_j\in \comfield$.
+\item Note that \eqref{e:final_ring_switched_equation} is a collection of standard claims about the MLE evaluation of a vector with entries in $\comfield$, ``committed'' through an encoding over $\comfield$. Accordingly, prover and verifier use an IOPP to prove such claims.
+\albert{To keep in mind: ring-switch for arbitrary innter products could be expensive}
+%
+ \end{enumerate}
+%
 \end{construction}
 
 
+\begin{example}\label{e:virtual_example}
+    Say we have a vector $\bff\in \bits^{\codedim} \subseteq \ZZ^\codedim$ and we wish to prove MLE evaluation claims of an extended vector $\bff' \in \bits^{2\cdot \codedim}$ where 
+    %
+    $$
+    \bff_i' = \begin{cases}
+    \bff_i  & \text{if } i \in [\codedim],\\
+    \bff_{i -\codedim } \xor \bff_{i - \codedim +1} & \text{if } \codedim+1 \leq i \leq 2\cdot \codedim -1,\\
+    \bff_{\codedim} & \text{if } i =2\cdot \codedim.
+    \end{cases}
+    $$
+    % 
+    In words, $\bff'$ is the result of concatenating $\bff$ and the vector obtained by ``xor-ing'' together every two consecutive elements in $\bff$ (and keeping the last entry as $\bff_{\codedim}$, since $\bff_{\codedim} \xor \bff_{\codedim+1}$ is not defined). This example will come up in our SHA-256 case-study.
+
+    
+    We have
+    %
+    $$
+    \bff' = \pi_2^{-1}\left(M \cdot \pi_2(\bff)\right)   \in \bits^{2\codedim}
+    $$
+    where
+    %
+    $$
+M = \begin{pmatrix}
+        & & & &\\
+       & & \mathsf{Id}_{\codedim\times \codedim} & & \\
+               & & & &\\
+               \hline
+        1 & 1 &  0 & 0 & \ldots & 0\\
+        0 & 1 & 1 & 0 & \ldots & 0 \\
+        \vdots & & \ddots & & & \vdots\\
+        0 &  \ldots &  0 & 0 & 1 & 1 \\
+        0 & \ldots & 0& 0 & 0 & 1 \\
+    \end{pmatrix} 
+    $$
+     if we do not wish to leverage any tensor decomposition structure, i.e.\ if we take $\codedim_1=\codedim$ and $\codedim_2=1$, then we can apply  \cref{c:virtual_iop} using this matrix $M$ as part of the input. 
+     
+     
+     At the beginning of Step 3 of \cref{c:virtual_iop}, prover and verifier obtain the claim 
+     $$
+     \left((\uu, \eta),\ \Enc_{\cC}(\pack(\pi_2(\bff))), \ \pi_2(\bff)\right) \in \Relation^{\mathsf{lin}}_{\cC_1, \comfield,\pack},
+     $$
+     for  $$\uu = (\mle{M_{*t}}(\rr))_{t\in [\codedim]} \in \comfield^{\codedim},$$ where $M_{*t}$ denotes the $t$-th column of $M$. Then, prover and verifier use the Galois ring-switch \cref{c: Galois ring-switch IOP} to reduce the above claim to standard MLE evaluation claims of $\pack(\pi_2(\bff_{*j}))$. The cost of doing so for the vector $\uu$ of linear coefficients is .... \albert{discuss}.
+    
+    Next we address the case when we use a non-trivial tensor decomposition structure $\ell= \ell_1 \cdot \ell_2$ with $\ell_1\neq 1 \neq \ell_2$. \albert{TODO}
+     
+\end{example} 
+
+\begin{theorem}\label{t:thm_virtual_IOPP}
+    \albert{Completeness and RBR knowledge soundness of \cref{c:core_iop} }
+\end{theorem}
+\begin{proof}
+\end{proof}
+
+\subsection{Optimizing \ftwoz for virtualized inputs $\pi_2^{-1}(M\cdot \pi_2(\bff))$}\label{s:opt_virtual}
+
+
+In \cref{c:virtual_iop}, at Step 2, prover and verifier use $\Pi_{\mathsf{red}}^{\ell_2}$  to reduce the claim
+%
+\begin{equation}\label{e:grand_product_with_virtuals}
+\prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \left(M_0\cdot \pi_2(\bff_{*j})\right)_i +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\codedim_2]
+\end{equation}
+%
+to $\codedim_2$ inner product claims over $\comfield$ for the vectors $M_0\cdot \pi_2(\bff_{*j})$. In many applications of interest (see \cref{?}), the vectors $M_0\cdot \pi_2(\bff_{*j})$ are larger than $\bff_{*j}$, but contain entries that are structured expressions of the entries in $\bff_{*j}$. For example, in \cref{e:virtual_example}, $M\cdot \pi_2(\bff)$ is the concatenation of $\pi_2(\bff)$ and the vector with entries $\pi_2(\bff)_i \xor \pi_2(\bff)_{i+1}$. 
+
+A natural question is whether, in such scenarios, the proof of \eqref{e:grand_product_with_virtuals} can be optimized so that it costs less than a full proof for $\ell_2$ arbitrary input vectors of the same length as $M_0\cdot \pi_2(\bff_{*j})$. In this section we show that this is indeed possible.
 
 
 
-\begin{enumerate}[leftmargin=*]
-\item The prover sends $\mu'\in \ZZ$ such that $\langle \bff, \psievalfield^{-1}(\vv)\rangle = \mu'$. 
-\item The verifier checks that $\psievalfield(\mu') = \mu$. 
-\item Prover and verifier define $\bm{\gamma}_i = \psievalfield^{-1}(\vv_i)$ for $i \in [\codedim]$, and set to prove the following claim:
+
+\section{\ftwoz IOP for polynomial constraints}
+
+
+
+
+\albert{I'm aiming to make the paper self-contained, so I will refer to Zinc/Zinc+ but will provide all required definitions and proofs in this paper}
+
+
+\albertimportant{In the F2Z world, when elements in the computation never exceed 100 bits, we can work on a fixed prime, instead of a random one, because F2Z enforces range checks automatically}
+
+
+
+We recall that $R$ denotes a commutative ring, typically either $\ZZ$ or a finite field (possibly a field extension). And that, when $R$ has characteristic zero or larger than $2^{B}$, $\ringtwobounds{B}{\moduledegree}[X]$ denotes the set of polynomials of degree at most $d$ with coefficients in the subset $\range{0}{2^{B}-1}$ of $R$. If either $\leq B$ or $\leq \moduledegree$ is omitted from the notation $\ringtwobounds{B}{\moduledegree}[X]$, it means that either the coefficient domain  or the  degree is arbitrary, respectively.
+
+\subsection{Auxiliary lemmas}
+The following result is implicit in \cite{zincplus} \albert{or is it explicit as a particular case of reductions on $\QQ[X]$?}. 
+\begin{lemma}\label{l:reduction_lemma}
+Let $h(X)\in \ZZ[X]$ be a nonzero polynomial of degree $\leq d$ and with coefficients in the range $\range{-2^{B}+1}{2^B-1}$. Let $\cP$ be a set of primes, and let $q_{\min}$ be the smallest prime in $\cP$. Then 
 %
 $$
-\prod_{i \in [\codedim]} g^{\bm{\gamma}_i\cdot \bff_i}  = g^{\mu'}.
+\Pr_{\substack{q\gets \cP,\\\alpha \gets \FF_q}}[\psi_{q,\alpha}(f(X))=0] \leq \frac{B}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{d}{q_{\min}}.
 $$
-Note that this claim is equivalent to
-$$
-\prod_{i \in [\codedim]} P\left(g^{\bm{\gamma}_i}, \psicomfield(\bff_i)\right) = \prod_{i \in [\codedim]} \sum_{s\in \range{0}{q-1}} L_{ S_q, \psicomfield(s)}(\psicomfield(\bff_i)) \cdot g^{\bm{\gamma}_i\cdot s}= g^{\mu'}.
-$$
-To prove the above equality, prover and verifier engage in the IOR $\prod_{\Relation_{\cC, \comfield}^{Q}  \to \Relation_{\cC, \comfield}^{\mathsf{eval}}}$ with inputs $$\left(\inp'=((g^{\bm{\gamma}_i})_{i \in [\codedim]}), g^{\mu'}), \oracle'=f, \wit'=\psicomfield(\bff)\right).$$
+\end{lemma}
+\begin{proof}
+Let $\cE_{\mathsf{prime}}$ be the event that $f(X)$ is  a multiple of $q$. Then, by Schwartz-Zippel lemma, $$\Pr_{\substack{q\gets \cP,\\\alpha \gets \FF_q}}[\psi_{q,\alpha}(f(X))=0\mid \neg \cE_{\mathsf{prime}}] \leq  \frac{d}{q_{\min}}.$$
 %
-\item At the end of this IOR, they are left with the following claim to prove:
+Now, every nonzero coefficient of $f(X)$ is divisible by at most $B/\lfloor\log(q_{\min})\rfloor$ primes from $\cP$. Hence, the probability that $\cE_{\mathsf{prime}}$ occurs is at most $(B/\lfloor\log(q_{\min})\rfloor)/|\cP|$, and the lemma follows.
+%
+\end{proof}
+
+
+
+
+
+
+
+\subsection{Polynomial Ideal Membership Satisfiability (PIMSAT)}
+
+In this section we describe a variation of the PESAT  (Polynomial Equation Satisfiability) relation from \cite{?}. The original PESAT relation is a generalization of popular relations such as R1CS, CCS, AIR constraints over finite fields. 
+
+Our variation, called \emph{Polynomial Ideal Membership Satisfiability (PIMSAT)}, generalizes PESAT by allowing polynomial constraints over polynomial rings (or modules), and by replacing equality to zero by ideal membership. %On the other hand, PIMSAT operates exclusively on the polynomial ring $\ZZ[X]$.
+
+
+
+We fix a commutative ring $\ring$. Typically, $\ring=\ZZ$ or $\ring$ is a finite field of prime characteristic $q$, possibly an extension field.  We define a ring homomorphism $\pi:\ZZ \to \ring$ as follows 
+\begin{align*}
+\pi: \ZZ &\to \ring\\
+x &\mapsto \begin{cases}
+x & \text{if } \ring=\ZZ,\\
+\pi_q(x) & \text{if } \ring=\FF,
+\end{cases}
+\end{align*}
+where, recall $\pi_q$ denotes reduction modulo $q$.  We use the same notation for the $0$ and $1$ element of $\ring$ as the integers $0$ and $1$, but we will still use the homomorphism $\pi$ and its inverse to map between the two \albert{comment earlier in prelims?}.
+
+
+
+We further fix a witness length $\codedim$, an input length $\inplen$, a bit size bound $B$, a degree bound $\moduledegree$, a collection of $\iota$ distinct ideals $\ideal_1, \ldots, \ideal_{\iota}$ of $\ring[X]$, a number of rows $\numrows$, and for each $i\in [\iota]$, a vector of $\numrows$ polynomials $$\mathbf{p}^{(i)} = \left(\left.\mathbf{p}_{\bb}^{(i)} \ \right| \ \bb\in \bits^\nu\right) \in \ringbitbound{B}[Y_1,\ldots, Y_{\inplen+\codedim}]$$ with coefficients in $\ring^{\leq B}$ and on $\inplen + \codedim$ variables. The PIMSAT relation with respect to these parameters is defined as
+$$
+\PIMSAT = \left\{\left. 
+\begin{aligned}
+    \inp &= \xx \in \left(\ringtwobounds{B}{\moduledegree}[X]\right)^{\inplen},\\
+    \oracle &= \bot ,\\
+    \wit &=\bff \in \left(\ringtwobounds{B}{\moduledegree}[X]\right)^\codedim
+\end{aligned} 
+\ \right| \ 
+\begin{aligned}
+    \mathbf{p}_{\bb}^{(i)}(\xx, \bff) \in \ideal_i \ \text{ for all } \bb\in \bits^\nu, \ i \in [\iota]
+\end{aligned}
+\right\}
+$$
+
+
+\begin{remark}[PIMSAT vs the UCS relation from Zinc+ \cite{zincplus}]
+PIMSAT is a particular subset of the widely general UCS relation from \cite{zincplus}. In this work, we will build a IOP for PIMSAT with witnesses being committed over binary fields. The same ideas can be used to construct an analogous IOP for UCS with witnesses with entries in a bounded subset of $\ZZ[X]$ (as opposed to $\QQ[X]$ \albert{committing to rational through their bit-decomposition is a bit strange, but it may still be possible?}).  We choose to focus on PIMSAT to favor simplicity of exposition and of our IOP. 
+
+The main difference between PIMSAT and UCS  is that the later allows for witnesses and constraints over arbitrary and multiple domains in the same instance, including rational polynomial rings $\QQ[X]$, and it allows to reuse witness elements in $\QQ[X]$ or $\ZZ[X]$ in other domains such as finite fields and polynomial rings over finite fields, by using   homomorphic projections.
+\end{remark}
+
+\albert{Motivate ideals somewhere (intro?)}
+\newcommand{\ronecsideal}{\Relation_{\mathsf{R1CS-PIMSAT}}}
+\begin{example}[R1CS constraints over {$\ring[X]$} with ideal membership]
+Let $\ring,\inplen,\codedim,\numrows,\iota, \ideal_1, \ldots, \ideal_{\iota}, B, \moduledegree$ be as before, and let $A^{(i)},B^{(i)},C^{(i)}$ be $\numrows \times (\inplen+\codedim)$ matrices with entries in $\ringtwobounds{B}{\moduledegree}[X]$ (typically, these are sparse matrices with entries in a small subset of $\ring$), for all $i\in [\iota]$. Then the R1CS-PIMSAT relation is defined as:
+    $$
+\ronecsideal \defeq \left\{\left. 
+\begin{aligned}
+    \inp &= \xx\in \left(\ringtwobounds{B}{\moduledegree}[X]\right)^{\inplen},\\
+    \oracle &= \bot ,\\
+    \wit &=\bff \in \left(\ringtwobounds{B}{\moduledegree}[X]\right)^\codedim
+\end{aligned} 
+\ \right| \ 
+\begin{aligned}
+    &\left(\left(A^{(i)}\cdot \zz\right)\circ \left(B^{(i)}\cdot \zz\right) - \left(C^{(i)}\cdot \zz\right)\right)_{\mathsf{\bb}} \in \ideal_i \\ &\qquad\qquad \qquad \qquad \qquad \text{ for all } \bb\in \bits^{\nu}, \ i \in [\iota]\\
+    &\ \zz=(\xx, \bff)
+\end{aligned}
+\right\},
+$$
+where $\mathsf{int}(\bb)$ denotes the nonnegative integer whose bit-representation is $\bb$.
+The relation $\ronecsideal$ is the subset of $\PIMSAT$ where $$\mathbf{p}_{\bb}^{(i)}(\xx,\bff)= \left(\left(A^{(i)}\cdot \zz\right)\circ \left(B^{(i)}\cdot \zz\right) - \left(C^{(i)}\cdot \zz\right)\right)_{\mathsf{int}(\bb)}.$$
+\end{example}
+
+One can further show that PIMSAT allows to express other popular constraint systems such as CCS \cite{?}, AIR \cite{?}; and lookup and permuation cosntraints (cf.\ \cite{zinc,zincplus}).
+
+
+
+\subsection{\ftwoz-IOP: an IOP for PIMSAT with oracles in binary fields}
+
+We now describe an IOP for $\PIMSAT$, for the specific case where $$\pp_\bb^{(i)}(Y_1, \ldots, Y_{\inplen+\codedim}) = \pp'{}^{(i)}(\bb,Y_1, \ldots, Y_{\inplen+\codedim}) \qquad \text{for all } i\in [\iota],$$
+i.e.\ there is a $\nu+\inplen+\codedim$-variate polynomial $\pp'{}^{(i)}$ such that the polynomials $\pp_\bb^{(i)}(Y_1, \ldots, Y_{\inplen+\codedim})$ are obtained by evaluating the first $\nu$ variables of $\pp'{}^{(i)}$ on $\bb\in \bits^\nu$.  This is the case in constraints such as R1CS, CCS, and AIR.
+
+
+We let $\cC$ be a linear code over $\comfield$ of dimension $(\codedim\cdot(\moduledegree+1)\cdot B)/n$ and blocklength $\codelength$.
+
+\begin{construction}\label{c:iop_pimsat}
+[IOP for {$\PIMSAT$}]
+The prover and verifier receive $\inp=\xx\in \ringtwobounds{B}{\moduledegree}[X]^{\inplen}$. The prover additionally receives $\wit= \bff\in \ringtwobounds{B}{\moduledegree}[X]^\codedim$ such that $(\inp,\bot, \wit) \in \PIMSAT$. 
+
+\albert{Define $\bits_R$, define before $\range{0}{2^B-1}_R$}
+
+\newcommand{\iopmlechallenge}{S}
+\begin{enumerate}[leftmargin=*] 
+\item The prover writes $$\bff= \sum_{j=1}^{d+1} \sum_{k=1}^{B}\  \bff^{(jk)}\cdot 2^{k-1}\cdot  X^{j-1} \in \left(\ringtwobounds{B}{\moduledegree}\right)^{\codedim}$$ for some vectors $$\bff^{(jk)}\in \{0,1\}^{\codedim}\subseteq R_{<2}^\codedim,$$ for all $j,k$. Then  lets $\mathsf{bits}(\bff)\in \bits^{\codedim\cdot (\moduledegree+1)\cdot B} \subseteq \ZZ^{\codedim\cdot (\moduledegree+1)\cdot B}$ be the vector with integer entries obtained by concatenating the vectors $\bff^{(jk)}$ and lifting their entries to $\bits \subseteq \ZZ$ via $\pi^{-1}$, i.e.\ $$\mathsf{bits}(\bff) \defeq \left(\pi^{-1}(\bff^{(jk)})\mid j\in [\moduledegree+1], k\in [B]\right)\in \bits^{\codedim\cdot (\moduledegree+1)\cdot B} \subseteq \ZZ^{\codedim\cdot (\moduledegree+1)\cdot B}$$ and computes $$f= \Enc_{\cC}(\pack(\pi_2(\mathsf{bits}(\bff)))) \in \comfield^{\codelength}$$
+\item The prover forms the multilinear polynomial, for all $i\in [\iota]$,
 %
 $$
-((\mu', \rr'), f', \bff') \in \Relation_{\cC, \comfield}^{\mathsf{eval}}.$$ Accordingly, the prover and the verifier engage in a IOPP  to certify the validity of this last claim.
+Q^{(i)}(Z_1, \ldots, Z_\nu) \defeq \sum_{\bb\in \bits^\nu}\pp_{\bb}^{(i)}(\zz,\bff) \cdot \eq(\bb, Z_1, \ldots, Z_\nu) \in \left(\ring[X]\right)[Z_1, \ldots, Z_\nu].
+$$
+%
+The  claim that  $\mathbf{p}_{\bb}^{(i)}(\xx, \bff) \in \ideal_i$  for all  $\bb\in \bits^\nu$ and $i \in [\iota]$ is equivalent to the claim 
+%
+$$
+   Q^{(i)}(\zz) \in \ideal_i \qquad  \text{ for all } \zz\in \bits^\nu, \ i \in [\iota].
+$$
+%
+\item If $\ring=\ZZ$, verifier samples and sends a random prime $q$ from a fixed set of primes $\cP$ \albert{It could  sample a random field extension if more useful}.  Then denote $\FF=\FF_q$. If $\ring$ is already a field $\FF$, this step is fixed. We use the notation $\FF$ to denote $\FF_q$ or $\FF$ in either case. We write $q$ for the characteristic of $\FF$ in either case. 
+\item The verifier samples and sends a random point $\rr\in \FF^{\nu}$ \albert{it can be a subset and not the whole space}.
+\item The prover responds with values $v_i\in \FF[X]$ for each $i\in [\iota]$. Supposedly, 
+%
+$
+v_i = \pi_q(Q^{(i)})(\rr).
+$
+\albert{Explain somewhere that if $\pp'$ is linear, then $v_i$ is easy to compute}
+\item The verifier checks that $v_i \in \pi_q(\ideal_i)$ for all $i\in [\iota]$.
+\item The prover and verifier engage in the batched sumcheck protocol over $\ring$ for the claim 
+$$
+\sum_{\bb\in \bits^\nu}\pp'{}^{(i)}(\bb,\xx,\bff) \cdot \eq(\bb, \rr) = v_i \qquad \text{for all } i\in [\iota].
+$$
+%
+At the end of  batched sumcheck, they are left with claims of the form
+%
+$$
+\pp'{}^{(i)}(\rr', \xx,\ff) = v_i' \qquad {for all } i \in [\iota]
+$$
+for some $\rr' \in $
+%
+\item 
 \end{enumerate}
+    
+\end{construction}
 
 
+\section{Adding Zero Knowledge}
+
+\subsection{PIOP}
+
+\subsection{F2Z-PCS}
+\albert{Sketch.} Zk for F2Z is all known territory except Step 1 of \cref{c:core_iop} where P sends integer (polynomials) $\mu_1,\ldots, \mu_{\codedim_2}$. Even though  $\psievalfield^{-1}(\vv^{(1)})$ is uniformly random in $[0,q-1]$, the elements $\mu_i$ do not follow a uniform distribution over any interval in $\ZZ$.
+
+One way to address this is to have P commit to $\mu_1, \ldots, \mu_{\codedim_2}$ ovwer $\comfield$ in zk (it commits to the bits), and to an element $u\in \ZZ$ such that $\langle \bff_{*j}, \comfield^{-1}(\vv^{(1)})\rangle = \mu_j$ and $\sum_{j\in[\codedim_2]} \mu_j \cdot \vv_j^{(2)} =  q\cdot u$ in $\ZZ$ (**) \albert{note that in general we could be working on $\ZZ[X]$ here, so here we would add $+q\cdot u + h(X)\cdot w$ where $h(X)$ is the irreducible polynomial defining $\evalfield$.} Now P proves (**) arithmetized over $\comfield$, using say Binius64 with zk. 
+
+Assume $\degevalfield=0$ for now. Then P and V continue with \cref{c:core_iop}, using zk-GKR and zk-Ligerito. At some point P needs to prove that some binary field elements equal $g^{\mu_1},\ldots, g^{\mu_{\codedim_2}}$. It does this with one zk-GKR more grand product (this time much smaller).
+
+If $\degevalfield>0$, we proceed in the same way, except that the elements $g^{\mu_1},\ldots, g^{\mu_{\codedim_2}}$ are instead $g^{\pi_q^{-1}(\psi_{q',\alpha}(\mu_j))}$, and so P must prove that some elements equal $g^{\mu_j'}$, and that $\mu_j = \pi_q^{-1}(\psi_{q',\alpha}(\mu_j))$ in $\ZZ$. The latter equality  consists in evaluating the polynomial $\mu_j$ (whose bits we committed to over a binary field) on $X=\alpha'$, reducing mod $q'$, and lifting to integers. Thus we commit to $\mu_j'\in [0, q'-1]$ and $w_j'$ and prove that $\mu_j' = \mu_j(\alpha) + q' \cdot w_j'$ (***). 
+
+When $\degevalfield>0$, it is important to prove (**) and (***) together, since, at least for Binius64, integer multiplication proofs have a floor of about 40-50ms, but scale well.  Typical $\ell_2$ are $2^{8}$ to $2^{11}$. Claims (**) and (***) amount to $2\cdot \ell_2*\degevalfield +2$ 128-bit multiplications. For $\degevalfield=2$ (occurs if we arithmetize our constraints over Goldilocks) and $\ell_2=2^{10}$ this is $\sim 2^{12}$ 128-bit integer mults. 
+
+\begin{table}[H]
+  \centering
+  \small
+  \setlength{\tabcolsep}{4.5pt}
+  \caption{End-to-end Binius64 proving cost for $N$ independent $128{\times}128{\to}256$
+    multiplications, without and with zero knowledge. Each multiplication is composed
+    schoolbook-style from four native $64{\times}64{\to}128$ \texttt{imul} gates ($4$ MUL and
+    $11$ AND constraints). The ZK path is \emph{recursive}: it symbolically executes the inner
+    verifier to derive an outer Spartan constraint system, pads it with blinding, and commits
+    through the BaseFold ZK compiler. Its overhead is therefore close to \emph{additive} rather
+    than multiplicative --- roughly $+430$\,KiB of proof, $+2.4$\,ms of verification and
+    $+20$--$30$\,ms of proving, independent of $N$ --- so the relative cost falls as $N$ grows.
+    Measured on arm64 macOS (NEON+AES, all cores), \texttt{LOG\_INV\_RATE}${}=1$, Criterion
+    mid-estimates over 10 samples.}
+  \label{tab:binius64-bignum128-zk}
+  \begin{tabular}{@{}l rr rr rr rr@{}}
+    \toprule
+      & \multicolumn{2}{c}{Prove (ms)}
+      & \multicolumn{2}{c}{Verify (ms)}
+      & \multicolumn{2}{c}{Proof (KiB)}
+      & \multicolumn{2}{c}{Peak mem (MB)} \\
+    \cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9}
+    $N$ & plain & ZK & plain & ZK & plain & ZK & plain & ZK \\
+    \midrule
+    $2^{8}$  &  41.74 &  60.09 & 1.55 & 3.75 & 152.22 & 546.27 &  38.89 &  46.04 \\
+    $2^{9}$  &  46.62 &  66.03 & 1.80 & 4.13 & 161.58 & 577.38 &  47.25 &  43.55 \\
+    $2^{10}$ &  53.43 &  74.71 & 2.12 & 4.41 & 172.44 & 614.23 &  55.97 &  51.58 \\
+    $2^{11}$ &  65.69 &  85.07 & 2.56 & 4.91 & 186.30 & 643.12 &  74.20 &  79.91 \\
+    $2^{12}$ &  78.79 & 102.35 & 3.22 & 5.61 & 256.94 & 681.48 & 148.39 & 159.35 \\
+    $2^{13}$ & 103.26 & 134.27 & 4.29 & 6.99 & 273.55 & 718.34 & 296.76 & 318.22 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+\section{Open questions for us}
+
+
+\albertimportant{Regarding \cref{s:opt_virtual}, I've only found a way to cheapen the following settings: say first and two vectors in the grand product are $\bfg_1,\bfg_2$, and third is $\bfg_1 \xor \bfg_2$. This is a tricky problem. We should look more into it}
+
+
+\albertimportant{Should we allow for $W>1$? Currently just setting $W=1$ and thinking of all bits as unrelated leads to better performance, but that sounds suboptimal. }
+
+\section{Case-study}
+
+\albert{World passport? Lean circuits? ML models? Hashes?}
+
+\subsection{Integer and modular multiplication}
+
+\albert{We could do something synthetic, like a chain of mults and additions, or a ML or Lean motivated computation}
+
+\subsection{SHA-256 hashing}
+
+
+\paragraph{SHA-256 compression overview}
+We begin with a brief overview of SHA-256 to establish notation, then formalize the relation we seek to arithmetize.
+
+
+
+For the purposes of SHA-256, a \emph{word} is a $\leq 32$ string of bits, which we represent as a binary integer polynomial, i.e.\ as an element of $\{0,1\}^{<32}[X]$.
+The SHA-256 compression function receives as input a $512$-bit string, represented as sixteen \emph{message words} $(M_t)_{t\in[16]}\in\{0,1\}^{<32}[X]^{16}$. 
+The algorithm also uses $64$ fixed \emph{round constants} $(K_t)_{t\in[64]}\in\{0,1\}^{<32}[X]^{64}$. 
+
+We let 
+%
+\begin{equation}
+\begin{aligned}
+\psi_2: \ZZ[X]& \to \ZZ\\
+a(X) &\mapsto a(2)
+\end{aligned}
+\end{equation}
+be the ring homomorphism sending integer polynomials to their evaluation at $X=2$. Notice that, given $a\in \{0,1\}^{<32}[X]$, the integer $\psi_2(x) \in \ZZ$ is the integer whose bit-representation coincides with the coefficients of $a$.
+
+
+SHA-256 is built from the following six auxiliary functions.
+For $x,y,z\in\{0,1\}^{<32}[X]$, define:
+\begin{equation}\label{eq:sha256_auxiliary_functions}
+\begin{aligned}
+\Sigma_0(x) &\coloneqq \ROTR^2(x)\xor\ROTR^{13}(x)\xor\ROTR^{22}(x) &&\in\{0,1\}^{<32}[X]\\
+\Sigma_1(x)&\coloneqq \ROTR^6(x)\xor\ROTR^{11}(x)\xor\ROTR^{25}(x)&&\in\{0,1\}^{<32}[X]\\
+\Ch(x,y,z) &\coloneqq (x\band y)\xor(\Not x\band z)&&\in\{0,1\}^{<32}[X]\\
+\Maj(x,y,z)&\coloneqq (x\band y)\xor(x\band z)\xor(y\band z)&&\in\{0,1\}^{<32}[X]\\
+\sigma_0(x) &\coloneqq \ROTR^7(x)\xor\ROTR^{18}(x)\xor\SHR^3(x)&&\in\{0,1\}^{<32}[X]\\
+\sigma_1(x)&\coloneqq \ROTR^{17}(x)\xor\ROTR^{19}(x)\xor\SHR^{10}(x)&&\in\{0,1\}^{<32}[X]
+\end{aligned}
+\end{equation}
+\albert{todo: define the bit operations}
+%The functions $\Ch$ (``choose'') provide $\Maj$ (``majority'') are bitwise selection and voting operations, respectively.
+
+\paragraph{Message schedule.}
+At the beginning of the SHA-256 compression function, the sixteen input message words $(M_t)_{t\in[16]}$ are expanded into a so-called \emph{message schedule}, which consists of $64$ integers of $32$ bits $(W_t)_{t\in[64]}\in\ZZ^{64}$ defined as follows:
+\begin{equation}\label{eq:sha256_message_schedule_def}
+W_t \coloneqq 
+\begin{cases}
+\psi_2(M_t) & t\in[16],\\
+\psi_2(W_{t-16})+\psi_2(\sigma_0(W_{t-15}))+\psi_2(W_{t-7})+\psi_2(\sigma_1(W_{t-2})) \pmod{2^\wordsize} & t\in\{17,\dots,64\}.
+\end{cases}
+\end{equation}
+%The first $16$ schedule words coincide with the input message words; the remaining $48$ are derived by mixing earlier schedule words via the $\sigma$-functions.
+
+\paragraph{Compression loop.}
+After the message schedule is computed, SHA-256 performs the so-called \emph{compression loop}. Throughout it, the function maintains an $8$-word internal state, conventionally labeled as $$(a,b,c,d,e,f,g,h) \in \{0,1\}^{<32}[X]^8.$$
+The compression loop iterates $64$ rounds.
+At each round $t\in[64]$, the state entering that round is denoted
+$(a_t,b_t,c_t,d_t,e_t,f_t,g_t,h_t)\in\{0,1\}^{<32}[X]^8$. The per-round update is given by, for $t\in [64]$,
+\begin{equation*}
+\begin{aligned}
+T_{1,t} &\coloneqq \psi_2(h_t)+\psi_2(\Sigma_1(e_t))+\psi_2(\Ch(e_t,f_t,g_t))+\psi_2(K_t)+W_t  \pmod{2^\wordsize} &&\in \ZZ,\\
+T_{2,t} &\coloneqq \psi_2(\Sigma_0(a_t))+\psi_2(\Maj(a_t,b_t,c_t))  \pmod{2^\wordsize} &&\in \ZZ,\\
+a_{t+1} &\coloneqq \psi_2^{-1}(T_{1,t}+T_{2,t} \pmod{2^\wordsize}) &&\in\{0,1\}^{<32}[X],\\
+e_{t+1} &\coloneqq \psi_2^{-1}(\psi_2(d_t)+\psi_2(T_{1,t}) \pmod{2^\wordsize}) &&\in \{0,1\}^{<32}[X],\\
+(b_{t+1},&c_{t+1},d_{t+1},f_{t+1},g_{t+1},h_{t+1}) 
+\coloneqq (a_t,b_t,c_t,e_t,f_t,g_t)&&\in\{0,1\}^{<32}[X]^6.
+\end{aligned}
+\end{equation*}
+The full SHA-256 compression function adds the initial state to the terminal state word-wise modulo $2^\wordsize$ (the so-called \emph{feed-forward step}); we omit this step for brevity \albert{Let's not do that}. For our purposes, the output of the compression function is the final state $(a_{65},\ldots,h_{65})$.  
+
+\paragraph{Our arithmetization}
+
+\subsection{Experiments}
+
+\albert{GHASH or b127?}
+
+Optimization ideas
+\begin{itemize}
+    \item b127 instead of GHASH
+    \item Lookup table (algorithm-wise, not SNARK-wise) for first levels of GKR
+    \item If we have an MLE claim of a vector and its shift by one position, can we reuse something for the latter claim from the computations made when proving the former?
+\end{itemize}
+
+\subsubsection{Comparison with Hyrax}
+
+\albert{Comparing with Hyrax may be more interesting than it sounds initially. Hyrax is pay-per-bit and opens on large prime fields: a profile that F2Z can adopt. Hence (maybe) projects using Hyrax could use  F2Z as a drop-in replacement which is PQ secure and more efficient }
+
+\subsubsection{Comparison with Flock}
+
+\john{It would be interesting to compare with flock as well}
 
 \appendix
-\printbibliography[heading=bibintoc,title={References}]
 
+\section{Ring switching via Galois orbits}\label{s:ring_switch}
+
+\albert{Rewriting the previous appendix for  arbitrary inner products}
+
+
+%\newcommand{\XX}{\mathbf{X}}
+
+
+\begin{construction}\label{c: Galois ring-switch IOP}[Galois ring-switch: an IOR from $\Relation^{\mathsf{lin}}_{\cC, \comfield,\pack}$ to  $\Relation^{\mathsf{mle}}_{\cC_1, \comfield,\mathsf{id}}$]
+  \albert{TODO: formulate as a reduction from $\Relation^{\mathsf{lin}}_{\cC, \comfield,\pack}$ to  $\Relation^{\mathsf{mle}}_{\cC_1, \comfield,\mathsf{id}}$}.
+  
+\end{construction}
+
+
+Let $b_1,\ldots, b_m \in \FF_2^{2^n}$.
+Using an $\mathbb F_2$-basis $\beta_1,\ldots, \beta_{m}$ of $\mathbb F_{2^m}$ we
+pack $m$ inner products %of $2^{m}$ coeffs in $\mathbb F_2$,
+\[
+\langle b_i, \vv\rangle = \sum_{j\in \bits^{n}} b_{i,j} \cdot \vv_j, 
+\quad i = 1, \ldots, m,
+\]
+coefficient-wise into a single inner product 
+\begin{align*}
+b&\defeq b_1\cdot \beta_1 + \ldots b_m \cdot \beta_m \in \FF_{2^m}^{2^n}\\
+\langle b, \vv\rangle &= \langle b_1, \vv\rangle \cdot \beta_1 + \ldots + \langle b_m, \vv\rangle \cdot\beta_m
+\\
+&= \sum_{j\in \bits^n} (b_{1,j}\cdot \beta_1 + \ldots + b_{m,j}\cdot \beta_{m}) \cdot \vv_j.
+\end{align*}
+%
+The Frobenius automorphism $\phi(z) = z^2$ keeps $\mathbb F_2\subset \FF_{2^m}$ fixed, and has no other fixed points. 
+% (Recall that it is also additive.)
+We extract the value of $\langle b_i, \vv\rangle$ from the values of $\langle b, \vv\rangle$ along the Galois orbit 
+\[
+\vv, \vv^2, \vv^{2^2}, \ldots, \vv^{2^{m-1}},
+\]
+as follows, where by $\vv^{t}$ we mean that each component of $\vv$ is raised to the power $t$.
+%
+The Moore matrix
+\begin{align*}
+M = \begin{pmatrix}
+\beta_1 & \beta_2 & \ldots & \beta_m
+\\
+\beta_1^2 & \beta_2^2 & \ldots & \beta_m^2
+\\
+\beta_1^{2^2} & \beta_2^{2^2} & \ldots & \beta_m^{2^2}
+\\
+\vdots
+\\
+\beta_1^{2^{m-1}} & \beta_2^{2^{m-1}} & \ldots & \beta_m^{2^{m-1}}
+\end{pmatrix}
+\end{align*}
+consists of the Galois orbits of the basis vectors, and is invertible. (See below.)
+Using that the component polynomials are over $\mathbb F_2$, we see that
+%We write $v_{k} = b(\phi^{-k} z)$, $k=0, \ldots, m-1$, and 
+% \[
+% v_k = \phi^{-k}\left(b_1(z) \cdot \phi^{k}\beta_1 + \ldots + b_m(z) \cdot \phi^{k}\beta_m \right),
+% \]
+% since $b_i(\phi^{-k} z) = \phi^{-k} b_i(z)$, in other words
+\[
+\phi^{k} \left(\langle b, \phi^{-k}(\vv)\rangle\right) =  \langle b_1, \vv\rangle  \cdot \phi^{k}\beta_1 + \ldots + \langle b_m, \vv\rangle   \cdot \phi^{k}\beta_m,
+\]
+for any $k$. 
+%
+To this end, observe that
+\[
+M \cdot\begin{pmatrix}
+\langle b_1, \vv\rangle  
+\\
+\langle b_2, \vv\rangle  
+\\
+\langle b_3, \vv\rangle  
+\\
+\vdots
+\\
+\langle b_m, \vv\rangle  
+\end{pmatrix}
+=
+\begin{pmatrix}
+\langle b, \vv\rangle
+\\
+\phi \left(\langle b, \phi^{-1}(\vv)\rangle\right)
+\\
+\phi^{2} \left(\langle b, \phi^{-2}(\vv)\rangle\right)
+\\
+\vdots
+\\
+\phi^{m-1} \left(\langle b, \phi^{-(m-1)}(\vv)\rangle\right)
+\end{pmatrix}.
+\]
+Multiplying both sides by $M^{-1}$ we obtain an expression of the values $\langle b_i, \vv\rangle$ as a linear expression of the values $\phi^{k} \left(\langle b, \phi^{-k}(\vv)\rangle\right)$.
+% and $M\cdot c$ is the Galois orbit of $c = (c_1,\ldots, c_m)$ in coordinates of the basis.
+% The rows of $M^{-1}$ give us the linear functionals that recover the $i$-th coordinate of $z$ from its Galois-orbit.
+\ulrich{%
+\small
+Invertibility of $M$ follows from that of $M^t$: 
+any linear functional $(c_1,\ldots, c_m)$ in the kernel of $M^t$ gives rise to the linearizable polynomial
+\[
+p(X) = \sum_{i=0}^{m-1} c_i\cdot X^{2^i} 
+\]
+which has $\beta_1,\ldots, \beta_m$, and hence the whole space $F$ as roots. 
+By dimension, $p(X)$ must be trivial, meaning that all its coefficents are zero.
+}
+
+
+
+
+
+
+\section{Bilinear Embeddings}
+
+Given a field $\mathbb F$ and a degree-$d$ extension $\mathbb E$. Our goal is to commit to a vector $\mathbf{w} \in \mathbb{F}^{n d}$ so that we can later use it to prove an inner product claim of the form $\langle \mathbf{w}, \mathbf{a}\rangle_\mathbb{F} = h$ for some $\mathbf{a} \in \mathbb{F}^{n d}$ and $h \in \mathbb{F}$. However, we only have an efficient inner product commitment scheme to commit to vectors $\widetilde{\mathbf{w}} \in \mathbb{E}^{n}$ and open as $\langle \widetilde{\mathbf{w}}, \widetilde{\mathbf{a}}\rangle_\mathbb{E} = \widetilde{h}$ for some $\widetilde{\mathbf{a}} \in \mathbb{E}^{n}$ and $\widetilde{h} \in \mathbb{E}$.
+
+To do this, we seek a triple of maps $(W, A, H)$ that satisfy:
+\[
+\langle \mathbf{w},\mathbf{a}\rangle_{\mathbb{F}}
+=
+H\left(\langle W(\mathbf{w}), A(\mathbf{a}) \rangle_{\mathbb{E}} \right).
+\]
+
+\subsection{Background}
+
+\subsubsection{Perfect pairings}
+In the following let $\mathbb{E}/\mathbb{F}$ be a finite field extension of degree $d$. If we disregard multiplication in $\mathbb{E}$, then $\mathbb{E}$ is a $d$-dimensional vector space over $\mathbb{F}$, hence isomorphic to $\mathbb{F}^d$. Let $\mathbf{e}_1,\ldots,\mathbf{e}_d$ denote the standard basis of $\mathbb{F}^d$.
+Recall that a function $\mu:\mathbb{E}\times \mathbb{E} \rightarrow \mathbb{F}$ is a \emph{bilinear form}  if it is linear in each argument separately. It is \emph{symmetric} if $\mu(x, y) = \mu(y, x)$ for all $x,y \in \mathbb{E}$.
+For each $x \in \mathbb{E}$, the partial application in the first argument defines a linear form
+\[
+\mu_{x} : \mathbb{E} \rightarrow \mathbb{F} \quad y \mapsto \mu(x, y).
+\]
+Thus $\mu_{x} \in \mathbb{E}^*$ where $\mathbb{E}^* = \operatorname{Hom}_\mathbb{F}(\mathbb{E}, \mathbb{F})$ denotes the dual vector space. The bilinear form therefore induces an $\mathbb{F}$-linear map
+\[
+\Phi_\mu:\mathbb{E}\to\mathbb{E}^* \qquad x\mapsto\mu_x.
+\]
+We call $\mu$ \emph{nondegenerate}, or equivalently a \emph{perfect pairing}, if $\Phi_\mu$ is an isomorphism. Or equivalently for finite spaces, \albert{add a comment that injectivity implies surjectivity when the vector spaces have finite dimension?} % Remco: Like this?
+\[
+\mu(x,y)=0\text{ for all }y\in\mathbb E \quad\Longrightarrow\quad x=0.
+\]
+Since $\mu$ is a perfect pairing, every basis $(\beta_1,\ldots,\beta_d)$ of $\mathbb{E}$ has a unique dual basis $(\beta_1^\vee,\ldots,\beta_d^\vee)$ satisfying $\mu(\beta_i, \beta_j^\vee) = \delta_{ij}$.
+
+\john{It would be good to explain how you would typically derive $\beta_j^\vee$}
+
+\subsubsection{Succinct vectors}
+
+Given a field $\mathbb{F}$, a vector $\mathbf{a} \in \mathbb{F}^n$ for $n = 2^k$ is called \emph{succinct} if it admits a tensor decomposition
+\begin{equation}
+\begin{bmatrix}
+m_{00} \\ m_{01}
+\end{bmatrix}
+\otimes
+\begin{bmatrix}
+m_{10} \\ m_{11}
+\end{bmatrix}
+\otimes \dots \otimes
+\begin{bmatrix}
+m_{(k-1)0} \\ m_{(k-1)1}
+\end{bmatrix}
+\end{equation}
+where typically $m_{ij} \in \mathbb{F}$. The multilinear extension of $\mathbf{a}$, viewed as a function on $\{0,1\}^k$, then becomes
+\begin{equation}
+\widetilde{a}(\mathbf{r}) = \prod_{i=0}^{k-1} \bigl( (1 - r_i) m_{i0} + r_i m_{i1} \bigr) \text{.}
+\end{equation}
+which can be evaluated in $O(k)$ field operations.
+
+More generally, the coefficients $m_{ij}$ need not themselves be field elements. It suffices that they belong to an associative $\mathbb{F}$-algebra in which every complete product $m_{0b_0}m_{1b_1}\cdots m_{(k-1)b_{k-1}}$ evaluates to an element of $\mathbb{F}$. Consequently, every vector entry and every value of the multilinear extension remains an element of $\mathbb{F}$. As the $m_{ij}$ no longer need to be commutative we must therefore also fix a permutation of the variables $\mathbf{r}$.
+
+Since every finite-dimensional associative algebra admits a matrix representation, we may, without loss of generality, assume that the objects $m_{ij}$ are matrices. In fact, it suffices to take $m_{ij}\in\mathbb{F}^{w_i\times w_{i+1}}$ with boundary dimensions $w_0=w_k=1$. We call $\max w_i$ the \emph{width} of the representation, which is known as a \emph{matrix branching program} and is closely related to matrix product states and weighted finite automatons.
+
+The canonical example of a succinct vector is the multilinear evaluation vector $a_i = \mathrm{eq}(\mathbf{r}, \operatorname{bits}(i))$ obtained by taking $m_{i0} = 1 - r_i$ and $m_{i1} = r_i$. Another classical example is the geometric progression $(1, x, x^2, \dots)$ obtained by taking $m_{i0} = 1$ and $m_{i1} = x^{2^i}$. An illustrative non-scalar example is the counting vector $(0, 1, 2, \dots)$ represented by
+\[
+\begin{aligned}
+m_{0b} &= \begin{bmatrix}
+2 & b    
+\end{bmatrix} &
+m_{ib} &= \begin{bmatrix}
+2 & b \\
+0 &  1
+\end{bmatrix} &
+m_{(k-1)b} &= \begin{bmatrix}
+b \\
+1
+\end{bmatrix}\text{.}
+\end{aligned}
+\]
+
+
+
+
+\subsection{Structure}
+We are now equipped to prove a theorem on the structure of embeddings. Under the assumption that the output map is $\mathbb{F}$-linear, we show that for $n=1$ the space of possible embeddings is very structured.
+
+\begin{theorem}[Structure of bilinear embeddings]
+Let $W,A:\mathbb{F}^d\rightarrow\mathbb{E}, H:\mathbb{E}\rightarrow\mathbb{F}$ be maps such that for all
+$\mathbf{w},\mathbf{a}\in\mathbb{F}^d$,
+\[
+\langle \mathbf{w},\mathbf{a}\rangle_{\mathbb{F}}
+=
+H\bigl(W(\mathbf{w})A(\mathbf{a})\bigr).
+\]
+Suppose that $H$ is $\mathbb{F}$-linear. Then:
+\begin{enumerate}
+    \item $W$ and $A$ are $\mathbb{F}$-linear isomorphisms,
+    \item $\mu_H(x,y) = H(xy)$ is a perfect pairing,
+    \item $\left(W(\mathbf{e}_1),\ldots,W(\mathbf{e}_d)\right)$ and $\left(A(\mathbf{e}_1),\ldots,A(\mathbf{e}_d)\right)$ are dual bases with respect to $\mu_H$.
+\end{enumerate}
+
+Conversely, if $W$ and $A$, and $H$ are $\mathbb{F}$-linear, $\mu_H$ is a perfect pairing and the images of the standard basis under $W$ and $A$ are dual bases with respect to $\mu_H$, then the identity
+\[
+\langle \mathbf{w},\mathbf{a}\rangle_{\mathbb{F}}
+=
+H\bigl(W(\mathbf{w})A(\mathbf{a})\bigr).
+\]
+holds for all $\mathbf{w},\mathbf{a}\in\mathbb{F}^d$.
+\end{theorem}
+
+\begin{proof}[Proof of the forward direction]
+First, observe that $
+\mu_H(W(\mathbf e_i),A(\mathbf e_j))
+= \langle \mathbf e_i,\mathbf e_j\rangle_{\mathbb F}
+= \delta_{ij}
+$. Taking $i=j$ shows $H$ is nonzero. Since $H$ is $\mathbb{F}$-linear, $\mu_H$ is a symmetric bilinear form, we show that it is nondegenerate. Let $x\in\mathbb E$ be nonzero. Since multiplication by $x$ is a bijection of $\mathbb E$ and $H$ is nonzero, there exists $y\in\mathbb E$ such that $\mu_H(x,y)=H(xy)\neq 0$. Thus $\mu_H$ is nondegenerate, and hence a perfect pairing.
+
+Next, we show that $W$ and $A$ are bijective. Suppose
+$W(\mathbf w_1)=W(\mathbf w_2)$. Then for every
+$\mathbf a\in\mathbb F^d$,
+\[
+\langle \mathbf w_1-\mathbf w_2,\mathbf a\rangle_{\mathbb F}
+= \mu_H(W(\mathbf w_1) - W(\mathbf w_2), A(\mathbf a))
+=0.
+\]
+By nondegeneracy of the standard inner product on $\mathbb F^d$, this
+implies $\mathbf w_1=\mathbf w_2$. Hence $W$ is injective. Since
+$\mathbb F^d$ and $\mathbb E$ have the same finite cardinality, $W$ is
+bijective. The same argument shows that $A$ is bijective.
+
+We now prove that $W$ is $\mathbb F$-linear. For
+$\mathbf w_1,\mathbf w_2,\mathbf a\in\mathbb F^d$, linearity of $H$
+gives
+\[
+\begin{aligned}
+&\mu_H\bigl(
+W(\mathbf w_1+\mathbf w_2)-W(\mathbf w_1)-W(\mathbf w_2),
+A(\mathbf a)
+\bigr)\\
+&=
+\langle \mathbf w_1+\mathbf w_2,\mathbf a\rangle_{\mathbb F}
+-
+\langle \mathbf w_1,\mathbf a\rangle_{\mathbb F}
+-
+\langle \mathbf w_2,\mathbf a\rangle_{\mathbb F}\\
+&=0.
+\end{aligned}
+\]
+Sincle $A$ is surjective, the second argument ranges over all of
+$\mathbb E$. Nondegeneracy of $\mu_H$ therefore implies
+$W(\mathbf w_1+\mathbf w_2) = W(\mathbf w_1)+W(\mathbf w_2)$. Similarly, for $\lambda\in\mathbb F$,
+\[
+\begin{aligned}
+&\mu_H\bigl(
+W(\lambda\mathbf w)-\lambda W(\mathbf w),
+A(\mathbf a)
+\bigr)\\
+&=
+\langle \lambda\mathbf w,\mathbf a\rangle_{\mathbb F}
+-
+\lambda\langle \mathbf w,\mathbf a\rangle_{\mathbb F}\\
+&=0.
+\end{aligned}
+\]
+Again using surjectivity of $A$ and nondegeneracy of $\mu_H$, we obtain $W(\lambda\mathbf w)=\lambda W(\mathbf w)$. Hence $W$ is $\mathbb F$-linear. By symmetry, $A$ is also
+$\mathbb F$-linear. Since they are also bijective, $W$ and $A$ are linear isomorphisms. From this it follows that $\left(W(\mathbf e_1),\ldots,W(\mathbf e_d)\right)$ and $
+\left(A(\mathbf e_1),\ldots,A(\mathbf e_d)\right)$ are bases of $\mathbb E$. Finally, from $\mu_H(W(\mathbf e_i),A(\mathbf e_j)) = \delta_{ij}$ it follows they are dual with respect to $\mu_H$.
+\end{proof}
+
+\begin{proof}[Proof of the converse direction.] Can be directly shown using a basis expansion. 
+Write $\mathbf w=\sum_{i=1}^d w_i\mathbf e_i$ and $\mathbf a=\sum_{j=1}^d a_j\mathbf e_j$
+Since $W$ and $A$ are $\mathbb F$-linear, $W(\mathbf w) = \sum_{i=1}^d w_iW(\mathbf e_i)$ and $A(\mathbf a) = \sum_{j=1}^d a_jA(\mathbf e_j)$. Therefore,
+\[
+\begin{aligned}
+H\bigl(W(\mathbf w)A(\mathbf a)\bigr)
+&=
+\mu_H\bigl(W(\mathbf w),A(\mathbf a)\bigr)\\
+&=
+\sum_{i,j}
+w_i a_j
+\mu_H\bigl(W(\mathbf e_i),A(\mathbf e_j)\bigr)\\
+&=
+\sum_{i,j}
+w_i a_j\delta_{ij}\\
+&=
+\sum_iw_ia_i\\
+&=
+\langle\mathbf w,\mathbf a\rangle_{\mathbb F}.
+\end{aligned}
+\]
+\end{proof}
+
+The $n=1$ case extends naturally to $n>1$ by doing blockwise packing, i.e. we embed using $W' = \mathrm{I}_n \otimes W$ and $A' = \mathrm{I}_n \otimes A$ and keep the same $H$. Let $\mathbf{w} = (\mathbf{w}_1, \dots, \mathbf{w}_n)$ and $\mathbf{a} = (\mathbf{a}_1, \dots, \mathbf{a}_n)$ then
+\[
+\begin{aligned}
+H\bigl( \langle W'(\mathbf{w}), A'(\mathbf{a}) \rangle_{\mathbb{E}} \bigr)
+&= H\left( \sum_{i=1}^n W(\mathbf{w}_i) A(\mathbf{a}_i) \right) \\
+&= \sum_{i=1}^n H\bigl( W(\mathbf{w}_i) A(\mathbf{a}_i) \bigr) \\
+&= \sum_{i=1}^n \langle \mathbf{w}_i,\mathbf{a}_i \rangle_{\mathbb{F}} \\
+&= \langle \mathbf{w},\mathbf{a} \rangle_{\mathbb{F}}.
+\end{aligned}
+\]
+Going forward, we use $W$ and $A$ also for their blockwise extensions when the meaning is clear. We do not consider embeddings that mix coordinates across different blocks of size $d$, as such embeddings are unlikely to be useful in practice.
+
+We have shown that every $n=1$ embedding with a linear output map is determined by a choice of a nonzero linear map $H$ and linear isomorphism $W$. The map $W$ then determines the first basis $\beta_i=W(\mathbf e_i)$ and the map $A$ is then forced to map to the $\mu_H$-dual basis.
+
+The linearity assumption on the output map is necessary. Indeed, composing a linear embedding with a multiplicative bijection $g:\mathbb E\to\mathbb E$ generally produces an embedding that is nonlinear. Whether every nonlinear embedding arises from such a multiplicative reparameterization is a separate question, which we do not need here.
+
+An important property of bilinear embeddings is that they preserve succinctness if the block size aligns with the tensor decomposition:
+
+\begin{theorem}[Preservation of succinctness]\label{suc-embed}
+Given $d = 2^k$, $n = 2^l$ and a $\mathbb{F}$-linear blockwise map $A = \mathrm{I}_n \otimes A_0$ for some isomorphism $A_0 : \mathbb{F}^d \to \mathbb{E}$, then if $\mathbf{a}$ \albert{$\mathbf{a} \in \FF^{d n}$} is succinct then so is $A(\mathbf{a})$. In particular if
+\[
+\mathbf{a} = \bigotimes_{i=0}^{k+l-1} 
+\begin{bmatrix}
+m_{i0} \\ m_{i1}
+\end{bmatrix}
+\]
+where the $m_{ij}$ can be scalars or $w_i \times w_{i+1}$ matrices, then
+\[
+A(\mathbf{a}) = 
+\left(
+\bigotimes_{i=0}^{l-1} 
+\begin{bmatrix}
+m_{i0} \\ m_{i1}
+\end{bmatrix}
+\right) \cdot
+(\mathrm{I}_{w_l} \otimes A_0)\left(
+\bigotimes_{i=l}^{l+k-1} 
+\begin{bmatrix}
+m_{i0} \\ m_{i1}
+\end{bmatrix}
+\right)\text{.}
+\]
+where the second factor is column vector in $\mathbb{E}^{w_l}$ which can be absorbed into the matrices $m_{(l-1)b}$, bringing the representation back into canonical form.
+\end{theorem}
+
+\subsection{Constructions}
+
+The set of nonzero linear output maps $H$ is $\mathbb{E}^* \setminus \{0\}$ which is isomorphic to $\mathbb{E}^\times$. The set of linear isomorphism $W$ is isomorphic to $\mathrm{GL}_d(\mathbb{F})$, hence the total number of bilinear embeddings is $|\mathbb{E}^\times| \cdot |\mathrm{GL}_d(\mathbb{F})|$. We'll now look at specific choices and their properties.
+
+\subsubsection{Trace embedding}
+
+Let $q = |\mathbb F|$, the $q$-power Frobenius map is $\varphi:\mathbb E\to\mathbb E$ given by $x\mapsto x^q$. It is an $\mathbb F$-linear field automorphism of order $d$, and its
+fixed field is precisely $\mathbb F$:
+\[
+\mathbb E^\varphi
+= \{x\in\mathbb E:\varphi(x)=x\}
+= \mathbb F.
+\]
+The field trace is the $\mathbb F$-linear map $\operatorname{Tr}_{\mathbb E/\mathbb F}:\mathbb E\to\mathbb F$ defined by
+\[
+\operatorname{Tr}_{\mathbb E/\mathbb F}(x)
+= \sum_{i=0}^{d-1}\varphi^i(x)
+= \sum_{i=0}^{d-1}x^{q^i}.
+\]
+To see that this sum is indeed in $\mathbb{F} \subseteq \mathbb{E}$ observe the sum is fixed by $\varphi$, since
+\[
+\varphi\left( \sum_{i=0}^{d-1}\varphi^i(x) \right)
+= \sum_{i=1}^{d}\varphi^i(x)
+= \sum_{i=0}^{d-1}\varphi^i(x),
+\]
+where $\varphi^d(x)=\varphi^0(x)$. Hence the trace lies in the fixed field $\mathbb F$.
+
+This makes $\operatorname{Tr}_{\mathbb E/\mathbb F}$ a natural choice of output map $H$. More generally, every $\mathbb F$-linear map $H:\mathbb E\to\mathbb F$ is uniquely of the form $H(x)=\operatorname{Tr}_{\mathbb E/\mathbb F}(\alpha x)$ for some $\alpha\in\mathbb E$. Consequently, the nonzero output maps are parameterized by $\mathbb E^\times$.
+
+The Galois orbit embedding chooses the basis $\beta_i=\varphi^i(\gamma)$ which has dual $\beta_i^\vee=\varphi^i(\gamma^\vee)$.
+
+\ulrich{%
+This sounds to me very much related to Galois Fribinius on an inner product with a general covector. 
+You would end up with the multi-claim of the inner products of the packed poly with the Galois orbit of the covector.
+This is how I view it:
+Given $\vec p_1, \ldots, \vec p_d \in \mathbb F^n$, and $\vec q_1, \ldots, \vec q_d \in \mathbb F^n$, we are interested in 
+\[
+\sum_{k=1}^d \langle \vec p_k, \vec q_k\rangle,
+\]
+right?
+
+The packing map sends the coeff vectors $\vec p_1,\ldots, \vec p_d$ to $\vec p = \beta_1\cdot \vec p_1 + \ldots + \beta_d\cdot \vec p_d$, where $\beta_1,\ldots,\beta_d$ is an $\mathbb F$-basis of $\mathbb E$. 
+Choose the element $a_k$ in $\mathbb E$ which extracts the $k$-th coordinate
+\[
+\vec p_k = \Phi_k(\vec p) = \operatorname{Tr}_{\mathbb E/\mathbb F}(a_k\cdot \vec p).
+\]
+Then 
+\begin{align*}
+\langle \vec p_k, \vec q_k\rangle 
+&= \langle \sum_{i=0}^d \varphi^i(a_k\cdot \vec p), \vec q_k\rangle 
+\\
+&= \sum_{i=0}^d  \varphi^{i}(a_k) \cdot \varphi^i(\langle \vec p,  \vec q_k\rangle),
+\end{align*}
+since $\vec q_k$ is over $\mathbb F$.
+This reduces our inner product claim to that of the packed poly $\vec p$ with the unpacked polys $\vec q_1,\ldots, \vec q_k$.
+
+But does that match our use case?
+We are rather interested in $\langle \vec p_k, \vec v\rangle$ for some $\vec v\in \mathbb E^n$.
+In this case, 
+\begin{align*}
+\langle \vec p_k, \vec v \rangle 
+&= \langle \sum_{i=0}^d \varphi^i(a_k\cdot \vec p), \vec q_k\rangle 
+\\
+&= \sum_{i=0}^d  \varphi^{i}(a_k) \cdot \varphi^i(\langle \vec p,  \varphi^{-i}(\vec v)\rangle),
+\end{align*}
+and we end up with inner products of the packed poly with the Galois orbit of $\vec v$. 
+}
+
+
+\subsubsection{Coefficient projection}
+
+In the coefficient projection we assume a concrete representation of $\mathbb{E}$ as $\mathbb{F}[X]/(f(X))$ for some monic degree $d$ polynomial $f$ irreducible over $\mathbb{F}$. We assume $f$ is chosen for implementation efficiency: it is sparse with mostly low order terms. Further we represent members of $\mathbb{E}$ in the monomial basis $(1, X, X^2, \dots, X^{d-1})$. We can then represent $W$ and $A$ by invertible matrices in $\mathbb{F}^{d \times d}$ and $H$ by a vector in $\mathbb{F}^d$. For implementation efficiency we seek an embedding with sparse $W$ and $A$. It turns out taking the most efficient choices for $H$ and $W$ also gives efficient $A$:
+
+\begin{theorem}
+Write  $f(X)= f_d X^d + f_{d-1} X^{d-1} + \hdots + f_1 X + f_0$ so that $f_d =1$ and $f_0 \neq 0$. Take $W=\mathrm{I}_d$ and $H=(1, 0, \dots, 0)$. Then the dual-basis embedding $A$ is given by
+\[
+A_{ij}=
+\begin{cases}
+1,&i=j=0,\\
+-f_{i+j}/f_0,&i,j\ge1\text{ and }i+j\le d,\\
+0,&\text{otherwise}.
+\end{cases}
+\]
+\end{theorem}
+
+In particular, $A$ is a bordered upper anti-triangular Hankel matrix. For $d=5$ it looks like
+\[
+A= \frac{1}{f_0}
+\begin{pmatrix}
+f_0 & 0 & 0 & 0 & 0\\
+0 & -f_2 & -f_3 & -f_4 & -1\\
+0 & -f_3 & -f_4 & -1 & 0\\
+0 & -f_4 & -1 & 0 & 0\\
+0 & -1 & 0 & 0 & 0
+\end{pmatrix}.
+\]
+Notably $f_1$ does not appear and for $k>1$ the $f_k$ coefficient appears $k-1$ times. This perfectly matches the usual implementation preference for sparse reduction polynomials with mostly low-order terms.
+
+For the 127-bit field $\mathbb{F}_2[X]/(X^{127} + X + 1)$ the $A$ map is simply a reversal of the $i>0$ coordinates. For the GHASH field $\mathbb{F}_2[X]/(X^{128} + X^7 + X^2 + X + 1)$ the map additionally needs seven XOR corrections.
+
+% Cite: https://shiftleft.com/mirrors/www.hpl.hp.com/techreports/98/HPL-98-135.pdf
+
+\subsection{Extension openings}
+
+Assume now that we wish to open a base-field witness $\mathbf{w} \in \mathbb{F}^{nd}$ against extension-field weights $\mathbf{a} \in \mathbb{E}^{n d}$, proving the claim $\langle \mathbf{w}, \mathbf{a}\rangle_\mathbb{E} = h$ for some $h \in \mathbb{E}$. We present a one-round batching protocol and a $log d$-round folding protocol.
+
+\subsubsection{Batching protocol}
+Given a bilinear embedding $(W, A, H)$ and a basis $(\beta_1, \dots, \beta_d)$ for $\mathbb{E}/\mathbb{F}$, we reduce the extension-field claim by decomposing into basis coordinates and batching     the resulting claims with a random linear combination.
+
+\begin{construction}[Batching protocol for extension opening]
+Given the claim $\langle \mathbf{w}, \mathbf a\rangle_\mathbb{E}=h$, define $\mathbf{a}_i \in \mathbb{F}^{nd}$ such that 
+\[
+\mathbf{a} = \sum_{i=1}^d \mathbf{a}_i \beta_i \text{.}
+\]
+The parties proceed as follows.
+\begin{enumerate}
+    \item The prover sends $h_i = \langle W(\mathbf{w}), A(\mathbf{a}_i) \rangle_{\mathbb{E}}$  for $i=1,\ldots,d$.
+    \item The verifier checks $h = \sum_{i=1}^{d} H(h_i) \beta_i$.
+    \item The verifier samples an $\epsilon$-zero-evader $\boldsymbol{\rho} \sample\mathbb E^d$.
+    \item The parties reduce the claim to $\langle W(\mathbf{w}), \mathbf a'\rangle_\mathbb{E}=h'$ where 
+    \[
+    h' = \sum_{i=1}^{d} \rho_i h_i,
+    \qquad
+    \mathbf{a}' = \sum_{i=1}^{d} \rho_i  A(\mathbf{a}_i) \text{.}
+    \]
+\end{enumerate}
+This interactive oracle reduction is always complete, has round-by-round soundness error $\epsilon$, and proof size $d \log |\mathbb{E}| = d^2 \log |\mathbb{F}|$.
+\end{construction}
+
+\begin{theorem}[Succinctness of coordinate decomposition]
+Given a succinct vector $\mathbf{a} \in \mathbb{E}^{nd}$ for $d= 2^k$ and a basis $(\beta_i)$ of $\mathbb{E}/\mathbb{F}$ then the $\beta$-coordinate decomposed vectors are also succinct. In particular if
+\[
+\mathbf{a} = \bigotimes_{i=0}^{k+l-1} 
+\begin{bmatrix}
+m_{i0} \\ m_{i1}
+\end{bmatrix}
+\]
+where the $m_{ij}$ can be scalars or $w_i \times w_{i+1}$ matrices, then
+\[
+\mathbf{a}_i = \mathbf{u}_i \cdot
+\left(
+\bigotimes_{j=0}^{k+l-1} 
+\begin{bmatrix}
+\Phi (m_{j0}) \\ \Phi(m_{j1})
+\end{bmatrix}
+\right)
+\cdot \mathbf{v}
+\]
+where $\Phi : \mathbb{E} \to \mathbb{F}^{d \times d}$ is the map that represents an $\mathbb{E}$-element $m$ by the matrix representing multiplication by $m$ in basis $(\beta_i)$, $\mathbf{u}_i$ is the one-hot vector with $u_{ij} = \delta_{ij}$, and $\mathbf{v}$ is the base $(\beta_i)$ representation of $1 \in \mathbb{E}$. $\Phi$ is applied elementwise to $w_i \times w_{i+1}$ matrices over $\mathbb{E}$ to produce $dw_i \times dw_{i+1}$ block matrices over $\mathbb{F}$. Absorbing the outer vectors in the matrices brings the representation back into canonical form, with the width increased by at most a factor $d$.
+\end{theorem}
+
+For practical implementations it makes sense to evaluate the branching program over $\mathbb{E}$ directly and then extract the coordinates in the basis $(\beta_i)$. This is equivalent to omitting the output selector $\mathbf{t}_i$ to keep the output dimension $w_0 = d$.
+
+If $A = \mathrm{I}_n \otimes A_0$ is blockwise we can also apply theorem \ref{suc-embed} and compose it with the combination weights $\boldsymbol{\rho} \in \mathbb{E}^d$ to get a succinct representation for $\mathbf{a}'$:
+\begin{equation}
+\mathbf{a}' = 
+\boldsymbol{\rho} \cdot
+\left(
+\bigotimes_{i=0}^{l-1} 
+\begin{bmatrix}
+\Phi (m_{i0}) \\ \Phi (m_{i1})
+\end{bmatrix}
+\right) \cdot
+(\mathrm{I}_{d w_l} \otimes A_0)\left(
+\bigotimes_{i=l}^{l+k-1} 
+\begin{bmatrix}
+\Phi (m_{i0}) \\ \Phi(m_{i1})
+\end{bmatrix}
+\right) \cdot \mathbf{v}
+\text{.}
+\end{equation}
+The map $\Phi$ is an algebra embedding, so replacing each scalar $m_{ij}\in\mathbb E$ by $\Phi(m_{ij})$ leaves the branching-program computation unchanged, except that the values are now represented in the basis $(\beta_i)$ representation of $\mathbb E$. The only operations outside the embedded $\mathbb{E}$ computation are the blockwise embedding $A_0$ and the random linear combination $\boldsymbol{\rho}$. Thus, apart from the applications of $A_0$ and $\boldsymbol{\rho}$, evaluating $\widetilde{\mathbf a}'$ is the same computation as evaluating $\widetilde{\mathbf a}$, performed in the regular representation of $\mathbb E$. \remco{Something is off with the complexity. Should really check with a Sage implementation. Probably needs a factor $d$.}
+
+The batch protocol is quadratic in $d$ in terms of $\mathbb{F}$-element operations and proof size. This is acceptable when $d$ is small, but binary fields where $d = 128$ the communication would be $2,048$ bytes. Avoiding this quadratic dependence on $d$ appears to require further rounds of interaction and more sophisticated decomposition.
+
+\subsubsection{Folding protocol}
+In the folding protocol we interactively reduce the claim $\langle \mathbf{w}, \mathbf{a}\rangle_\mathbb{E} = h$ through a sequence of embeddings $W_i$ where at round $i$ the claim is
+\[
+\begin{array}{ccc}
+\langle W_i(\mathbf{w}), A_i(\mathbf{a})\rangle_\mathbb{E} = h_i
+& W_i: \mathbb{F}^{nd} \to \mathbb{E}^{nd_i}
+& A_i: \mathbb{E}^{nd} \to \mathbb{E}^{nd_i}
+\end{array}
+\]
+Here $d = d_0 \ge \dots \ge d_k = 1$ is a series of folding dimensions. We start with $W_0$ and $A_0$ the identity and $h_0 = h$ so that the initial claim is indeed $\langle \mathbf{w}, \mathbf{a} \rangle_\mathbb{E} = h$. We also stipulate that the embeddings are blockwise such that $W_i = \mathrm{I}_n \otimes W_i'$ and $A_i = \mathrm{I}_n \otimes A_i'$. For simplicity we we will only consider the $n=1$ case from here on as $n>1$ follows by blockwise repetition.
+
+The final map is $W_k : \mathbb{F}^d \to \mathbb{E}$ which is an $F$-linear isomorphism. Let $(\beta_i)$ be the implied basis such that 
+\[
+W_k(\mathbf x) = \sum_{i=1}^d x_i \beta_i \text{.}
+\]
+
+Working backwards from the final embedding we create a sequence
+\[
+R_i \circ W_{i+1} = W_i
+\]
+where each map $R_i$ has only $\left\lceil \frac{d_i}{d_{i+1}}\right\rceil$ Frobenius components.
+
+\pagebreak
+Every $\mathbb F$-linear map $T:\mathbb E^m\to\mathbb E^n$ can be viewed as being built from $\mathbb E$-linear maps and $\mathbb F$-linear scalar operations on $\mathbb E$. To recursively fold such maps, the scalar operations must be compatible with arbitrary $\mathbb E$-linear coordinate transformations. Concretely, we require an intertwining
+\[
+\beta(R\mathbf x)=\alpha(R)\beta(\mathbf x),
+\]
+where $\alpha$ acts entrywise on R. This property singles out semilinear scalar operators. Over finite fields, these are precisely the Frobenius maps $\sigma^i$ up to scalar multiples, and the Frobenius powers therefore provide the canonical scalar decomposition.
+
+% https://arxiv.org/pdf/1211.5475
+
+\begin{theorem}[Frobenius decomposition]
+Let $\mathbb E/\mathbb F$ be a finite extension of degree $d$, and let $\sigma: \mathbb{E} \to \mathbb{E}$ be the Frobenius map $x \mapsto x^{|\mathbb{F}|}$. Then every $\mathbb F$-linear map $T: \mathbb{E}^m \to \mathbb{E}^n$ admits a unique decomposition
+\[
+T(\mathbf{x}) = \sum_{i=0}^{d-1} M_i \cdot (\mathrm{I}_m \otimes \sigma^i)(\mathbf{x})
+\text{,} \qquad M_i \in \mathbb{E}^{n \times m} \text{.}
+\]
+\end{theorem}
+We define $\operatorname{supp}_\sigma(T) := \{i : M_i \neq 0\}$.
+
+\paragraph{Single folding round.}
+Assume the current claim is
+\[
+\langle W_i(\mathbf w),A_i(\mathbf a)\rangle_{\mathbb E}=h_i.
+\]
+Let
+\[
+R_i:\mathbb E^{nd_{i+1}}\to\mathbb E^{nd_i}
+\]
+be a fixed $\mathbb F$-linear map satisfying
+\[
+R_i\circ W_{i+1}=W_i.
+\]
+
+By the Frobenius decomposition there exist unique matrices
+\[
+M_{i,0},\ldots,M_{i,d-1}
+\in
+\mathbb E^{nd_i\times nd_{i+1}}
+\]
+such that
+\[
+R_i
+=
+\sum_{j=0}^{d-1}
+M_{i,j}\circ
+(\mathrm I_{nd_{i+1}}\otimes\sigma^j).
+\]
+
+For every $j$, define the $\mathbb F$-linear map
+\[
+C_{i,j}
+=
+(\mathrm I_{nd_{i+1}}\otimes\sigma^{-j})
+\circ
+M_{i,j}^{\mathsf T}.
+\]
+Then, for every
+$\mathbf x\in\mathbb E^{nd_{i+1}}$
+and
+$\mathbf b\in\mathbb E^{nd_i}$,
+\[
+\langle R_i(\mathbf x),\mathbf b\rangle_{\mathbb E}
+=
+\sum_{j=0}^{d-1}
+\sigma^j\!\left(
+\langle
+\mathbf x,
+C_{i,j}(\mathbf b)
+\rangle_{\mathbb E}
+\right).
+\]
+
+Applying this identity to
+\[
+\mathbf x=W_{i+1}(\mathbf w),
+\qquad
+\mathbf b=A_i(\mathbf a),
+\]
+gives
+\[
+\langle
+W_i(\mathbf w),
+A_i(\mathbf a)
+\rangle_{\mathbb E}
+=
+\sum_{j=0}^{d-1}
+\sigma^j\!\left(
+\langle
+W_{i+1}(\mathbf w),
+C_{i,j}(A_i(\mathbf a))
+\rangle_{\mathbb E}
+\right).
+\]
+
+The prover sends the values
+\[
+g_{i,j}
+=
+\langle
+W_{i+1}(\mathbf w),
+C_{i,j}(A_i(\mathbf a))
+\rangle_{\mathbb E},
+\qquad
+j=0,\ldots,d-1.
+\]
+The verifier checks
+\[
+h_i
+=
+\sum_{j=0}^{d-1}
+\sigma^j(g_{i,j}),
+\]
+samples a random challenge
+$\rho_i\in\mathbb E$,
+and defines
+\[
+A_{i+1}
+=
+\left(
+\sum_{j=0}^{d-1}
+\rho_i^j C_{i,j}
+\right)
+\circ A_i.
+\]
+Finally, letting
+\[
+h_{i+1}
+=
+\sum_{j=0}^{d-1}
+\rho_i^j g_{i,j},
+\]
+the next claim is
+\[
+\langle
+W_{i+1}(\mathbf w),
+A_{i+1}(\mathbf a)
+\rangle_{\mathbb E}
+=
+h_{i+1}.
+\]
+
+
+We therefore seek an interactive reduction from a mixed claim to a packed claim
+\[
+\begin{array}{ccc}
+\langle \mathbf{w}, \mathbf{a}\rangle_\mathbb{E} = h
+&
+\mathbf{w} \in \mathbb{F}^{nd}
+&
+\mathbf{a} \in \mathbb{E}^{nd}
+\\[.8ex]
+\Downarrow
+\\[1.3ex]
+\langle W(\mathbf{w}), \mathbf{a}'\rangle_\mathbb{E} = h'
+&
+W(\mathbf{w}) \in \mathbb{E}^{n}
+&
+\mathbf{a}' \in \mathbb{E}^{n}
+\end{array}
+\]
+where $W: \mathbb{F}^{nd} \to \mathbb{E}^{n}$ is a fixed $\mathbb{F}$-linear embedding and $\mathbf{a}' \in \mathbb{E}^{n}$, $h' \in \mathbb{E}$ are determined by $\mathbf{a}$, $h$ and the transcript. Ideally $\mathbf{a} \mapsto \mathbf{a}'$ should also preserve useful properties like efficient computation of its multilinear extension.
+
+Above we decomposed $\mathbf{a}$ with respect to a basis of $\mathbb{E}/\mathbb{F}$. Here we instead decompose the induced $\mathbb F$-linear functional on packed witnesses. Define
+\[
+T_{\mathbf{a}} : \mathbb{E}^n \to \mathbb{E} \qquad \mathbf{x} \mapsto \langle W^{-1}(
+\mathbf{x}), \mathbf{a} \rangle_{\mathbb{E}}\text{.}
+\]
+This is an $\mathbb{F}$-linear functional on $\mathbb E^n$, but is not generally $\mathbb{E}$-linear. We'll first prove a representation lemma for $\mathbb{F}$-linear $\mathbb{E}\to\mathbb{E}$ maps and then a decomposition theorem.
+
+\begin{theorem}
+Let $\mathbb{F} \subseteq \mathbb{E}$ be finite fields with $q = |\mathbb{F}|$ and $[\mathbb{E}:\mathbb{F}] = d$,then every $\mathbb{F}$-linear map $T: \mathbb{E} \to \mathbb{E}$ is uniquely represented by a $q$-linearized polynomial
+\[
+P(X)=\sum_{j=0}^{d - 1} c_j X^{q^j} \qquad c_j\in\mathbb E \text{.}
+\]
+\end{theorem}
+\begin{proof}
+By interpolation every map $T: \mathbb{E} \to \mathbb{E}$ can be represented uniquely by a polynomial $P \in \mathbb{E}[X]$ of degree less than $|\mathbb{E}| = q^d$
+\[
+P(X)=\sum_{j=0}^{q^d - 1} a_j X^j \qquad a_j\in\mathbb E \text{.}
+\]
+From $\mathbb{F}$-linearity follows $P(0) = 0$ and hence $a_0 = 0$, further we have $P(X + Y) = P(X) + P(Y)$ and hence
+\[
+\begin{aligned}
+0 &= P(X + Y) - P(X) - P(Y) \\
+&= \sum_{j=1}^{q^d - 1} a_j (X + Y)^j - \sum_{j=1}^{q^d - 1} a_j (X^j + Y^j) \\
+&= \sum_{j=1}^{q^d - 1} a_j \sum_{k=0}^{j} \binom{j}{k}X^k Y^{j-k} - \sum_{j=1}^{q^d - 1} a_j (X^j + Y^j)\\
+&= \sum_{j=1}^{q^d - 1} a_j \sum_{k=1}^{j-1} \binom{j}{k}X^k Y^{j-k}
+\end{aligned}
+\]
+Write $q=p^r$ with $p$ the characteristic of $\mathbb{F}$. For every $j$ with $a_j \neq 0$ we must have $\binom{j}{k} =0 \mod p$ for all $0<k<j$, by Lucas’s theorem this holds iff $j = p^s$ for some $s$. Hence we can reindex $P$ keeping only the non-zero coefficients
+\[
+P(X)=\sum_{j=0}^{rd - 1} b_j X^{p^j} \qquad b_j\in\mathbb E \text{.}
+\]
+From $\mathbb{F}$-linearity also follows $P(\lambda x) = \lambda P(x)$ for all $x \in \mathbb{E}$ and $\lambda \in \mathbb{F}$. For every $b_j \neq 0$ this requires $\lambda^{p^j} = \lambda$ for every $\lambda \in \mathbb{F}$. This holds exactly when $j = r s$ for some $s$. Reindexing $P$ again we get our claimed result
+\[
+P(X)=\sum_{j=0}^{d - 1} c_j X^{q^j} \qquad c_j\in\mathbb E \text{.}
+\]
+\end{proof}
+
+
+
+\begin{theorem}[Frobenius decomposition]
+Let $\mathbb{F} \subseteq \mathbb{K} \subseteq \mathbb{E}$ be finite fields with $[\mathbb{K}:\mathbb{F}] = m$, and let $\sigma(x) = x^{|\mathbb{F}|}$ denote the $\mathbb{F}$-Frobenius automorphism. Then every $\mathbb{F}$-linear map $T: \mathbb{E} \to \mathbb{E}$ admits a unique decomposition
+\[
+T(x) = \sum_{i = 0}^{m - 1} \sigma^i \circ T_i
+\]
+where each $T_i$ is $\mathbb{K}$-linear.
+\end{theorem}
+\begin{proof}
+Write $q=|\mathbb F|$ and $d=[\mathbb E:\mathbb F]$, by the preceding theorem $T$ has a unique representation
+\[
+T(X)=\sum_{j=0}^{d - 1} c_j X^{q^j} \qquad c_j\in\mathbb E \text{.}
+\]
+Since $\mathbb K\subseteq\mathbb E$, we have $m\mid d$. Write each
+index uniquely as $j=ms+i$, with $0\leq i<m$ and $0\leq s<d/m$. Grouping the terms by their residue modulo $m$ gives
+\[
+T(X)
+=
+\sum_{i=0}^{m-1}
+\sum_{s=0}^{d/m-1}
+c_{ms+i}X^{q^{ms+i}}.
+\]
+For each residue class $i$, define
+\[
+T_i(X)
+=
+\sum_{s=0}^{d/m-1}
+c_{ms+i}^{q^{-i}}X^{q^{ms}},
+\]
+where $z\mapsto z^{q^{-i}}$ denotes the inverse of the automorphism $z\mapsto z^{q^i}$ of $\mathbb E$. Each $T_i$ is now a $q^m$-linearized polynomial hence applying the preceding theorem to the extension $\mathbb{K} \subseteq \mathbb{E}$, each $T_i$ is $\mathbb{K}$-linear.  Then
+\[
+(\sigma^i\circ T_i)(X)
+= T_i(X)^{q^i}
+= \sum_{s=0}^{d/m-1} c_{ms+i}X^{q^{ms+i}} \text{.}
+\]
+Therefore $T$ represented as
+\[
+T=\sum_{i=0}^{m-1}\sigma^i\circ T_i \text{.}
+\]
+Uniqueness follows immediately from the uniqueness of the $q$-linear polynomial representation.
+\end{proof}
+
+The decomposition theorem extends coordinatewise to maps $\mathbb E^n\to\mathbb E$. In particular, the functional $T_{\mathbf a}(\mathbf{x}) = \langle W^{-1}(\mathbf{x}), \mathbf{a} \rangle_{\mathbb{E}}$ admits a unique decomposition
+\begin{equation}
+T_{\mathbf a}
+=
+\sum_{i=0}^{m-1}\sigma^i\circ T_i,
+\end{equation}
+where each $T_i:\mathbb E^n\to\mathbb E$ is $\mathbb K$-linear. Thus the initial claim may be written as
+\[
+h = T_{\mathbf a}(W(\mathbf w))
+= \sum_{i=0}^{m-1} \sigma^i\bigl(T_i(W(\mathbf w))\bigr).
+\]
+
+\begin{construction}[Frobenius fold]
+Given the claim $T_{\mathbf a}(W(\mathbf w))=h$, the parties proceed as follows.
+\begin{enumerate}
+    \item The prover sends $v_i=T_i(W(\mathbf w))$  for $i=1,\ldots,m-1$.
+    \item The verifier derives $v_0 = h-\sum_{i=1}^{m-1}\sigma^i(v_i)$.
+    \item The verifier samples independent challenges $\rho_1,\ldots,\rho_{m-1}\sample\mathbb E$.
+    \item The parties reduce to the claim $T'(W(\mathbf w))=h'$, where
+    \[
+    T' = T_0+\sum_{i=1}^{m-1}\rho_iT_i
+    \qquad\text{and}\qquad
+    h' = v_0+\sum_{i=1}^{m-1}\rho_iv_i.
+    \]
+\end{enumerate}
+\end{construction}
+
+\begin{construction}[Folding protocol for extension opening]
+Choose a tower of intermediate fields $\mathbb F=\mathbb K_0 \subseteq\mathbb K_1 \subseteq\cdots \subseteq\mathbb K_t=\mathbb E$, and write $m_i=[\mathbb K_{i+1}:\mathbb K_i]$. Initially, $T_{\mathbf a}$ is $\mathbb K_0$-linear. At round $i$, apply the Frobenius fold with $\mathbb F=\mathbb K_i$, and $\mathbb K=\mathbb K_{i+1}$.  This reduces the current $\mathbb K_i$-linear functional to a $\mathbb K_{i+1}$-linear functional.
+
+After $t$ rounds, the residual functional $T':\mathbb E^n\to\mathbb E$ is $\mathbb E$-linear. Consequently, there exists $\mathbf a'\in\mathbb E^n$ such that $T'(\mathbf x)=\langle\mathbf x,\mathbf a'\rangle_{\mathbb E}$. The final claim is therefore $\langle W(\mathbf w),\mathbf a'\rangle_{\mathbb E}=h'$, as required.
+\end{construction}
+
+Each round requires sending $m_i - 1$ elements of $\mathbb{E}$. For a binary tower where $m_i=2$, $\mathbb{F} = \mathbb{F}_2$, and $\mathbb{E} = \mathbb{F}_{2^{128}}$ we have $7$ rounds of one $\mathbb{E}$ element message each, for a total of $112$ bytes. Compare to the non-interactive protocol this reduces the communication complexity from $O(d^2)$ to $O(d \log d)$ elements of $\mathbb{F}_2$.
+
+\paragraph{Towerless folding.}
+Say $\mathbb{F} \subseteq \mathbb{E}$ admits no tower of subfields, for example $\mathbb{E} = \mathbb{F}_{2^{127}}$. Take again $d = [\mathbb{E}: \mathbb{F}]$ and decompose $T_\mathbf{a}$ as
+\[
+T_{\mathbf a} = \sum_{i=0}^{d-1}\sigma^i\circ T_i,
+\]
+We can still recursively fold using the protocol above with $m=2$ by grouping even and odd exponents of $\sigma^i$ (zero-padding as necessary), as there is no actual dependence on the subfield.
+
+This folding progressively halves $d$ (rounding up) in the $\mathbb{E}^{nd}$ inner product. This induces a sequence of perfect pairings 
+\[
+(\mathbb F^{nd},\mathbb E^{nd}) \rightsquigarrow (\mathbb E^{nd/m},\mathbb E^{nd/m}) \rightsquigarrow (\mathbb K_i^{nd/m},\mathbb E^{nd/m})
+\] 
+
+\[
+\langle
+W_i(\mathbf w),
+A_i(\mathbf a)
+\rangle
+=
+\langle
+\mathbf w,
+\mathbf a
+\rangle.
+\]
+
+\paragraph{}
+The final result is a transcript dependent map $A: \mathbb{E}^{dn} \to \mathbb{E}^n$. If $W$ is blockwise with $\mathrm{I}_n \otimes W_0$ for some $W_0: \mathbb{F}^d \to \mathbb{E}$ then so is $A$ with $A_0: \mathbb{E}^d \to \mathbb{E}$.
+
+
+\section{GKR protocol for multiple grand products}
+
+\end{document}
