@@ -263,17 +263,29 @@ When we place no degree or bit-size bound, we use the notation $\ringbitbound{B}
 
 
 
+\begin{definition}[Projections to finite fields]\label{d:projections}\albert{Maybe place somewhere else since it's a non-standard definition} Let $p$ be a prime, and let $\FF_{p^e}$ be an extension of $\FF_p$. Let $\alpha\in \FF_{p^e}$. Let $\ring$ be either $\ZZ$ or a finite field $\FF_{q^{e'}}$ of characteristic $q$, with $q$ possibly different than $p$. Let $e''=\max\{e,e'\}$.
 
-Given a prime $q$ we let $$\pi_q: \ZZ\to \FF_q$$ be the ring homomorphism mapping an integer to its reduction modulo $q$. Given a  finite field $\FF$ of characteristic $q$, let $a(X)\in \ZZ[X]$ be an irreducible polynomial over $\FF_q$ so that $\FF = \ZZ[X]/(q,a(X))$ \albert{consider isomorphism, or assume all finite fields are represented like this}. We let $$\psi_{\FF}: \ZZ[X] \to \FF$$ be the  canonical homomorphism from $\ZZ[X]$ to $\FF$ obtained by reducing modulo the ideal $(q,a(X))$, i.e.\ by reducing coefficients modulo $q$ and then reducing the resulting polynomial modulo $a(X)$.
+We next define maps $\pi_p:\ring \to \FF_{p^{e''}}$ and $\psi_{p,\alpha}: \ring[X] \to \FF_{p^{e''}}$ as follows. Our definition unifies the cases when $R$ is $\ZZ$ or an arbitrary finite field. 
+ \begin{equation*}
+\begin{aligned}
+\pi_p: \ring &\to  \FF_{p^{e''}}\\
+a &\mapsto \begin{cases}
+a \mod p & \text{if } \ring=\ZZ,\\
+a & \text{if } \ring=\FF_{q^{e'}} \text{ and } p=q.
+\end{cases}
+\end{aligned}
+\begin{aligned}
+\psi_{p,\alpha}: \ring[X] &\to  \FF_{p^{\max\{e,e'\}}}[X]\\
+a(X) &\mapsto \begin{cases}
+\pi_q(a)(\alpha) & \text{if } \ring=\ZZ,\\
+a(\alpha) & \text{if } \ring=\FF_{q^{e'}} \text{ and } p=q.
+\end{cases}
+\end{aligned}
+\end{equation*}
+\end{definition}
+If $R= \FF_{q^{e'}}$ and $p\neq q$, the maps $\pi_q$ and $\psi_{p,\alpha}$ are not well-defined. Whenever we use these maps, they will be well-defined. 
 
-Given a prime $q$ and an element $\alpha\in \FF_q$, we let
-%
-\begin{align*}
-    \psi_{q,\alpha} : \ZZ[X] &\to \FF_q\\ 
-    h(X) &\mapsto h(\alpha) \mod q,
-\end{align*}
-be the homomorphism consisting of reducing coefficients modulo $q$, and replacing $X$ by $\alpha$.
-
+\albertimportant{Let's remove this. The notation above should be enough} Given a  finite field $\FF$ of characteristic $q$, let $a(X)\in \ZZ[X]$ be an irreducible polynomial over $\FF_q$ so that $\FF = \ZZ[X]/(q,a(X))$ \albert{consider isomorphism, or assume all finite fields are represented like this}. We let $$\psi_{\FF}: \ZZ[X] \to \FF$$ be the  canonical homomorphism from $\ZZ[X]$ to $\FF$ obtained by reducing modulo the ideal $(q,a(X))$, i.e.\ by reducing coefficients modulo $q$ and then reducing the resulting polynomial modulo $a(X)$.
 
 A subset $S\subseteq R$ of a commutative ring $R$ is called \emph{exceptional} if for all two distinct $a,b\in R$, the element $a-b$ has a multiplicative inverse in $R$.
 \begin{lemma}[Generalized Alon--F{\"u}redi Theorem~\cite{BCPS18}]
@@ -753,30 +765,7 @@ A natural question is whether, in such scenarios, the proof of \eqref{e:grand_pr
 
 
 
-\albert{Remove?} We recall that $R$ denotes a commutative ring, typically either $\ZZ$ or a finite field of characteristic $q$ (possibly a field extension). And that $\ringtwobounds{B}{\moduledegree}[X]$ denotes the set of polynomials of degree at most $d$ with coefficients in the subset $\range{0}{2^{B}-1}_R$ (the set of all elements $i\cdot 1$ where $i\in \{0,1,\ldots, 2^B-1\}\subseteq \ZZ$ and $1$ the identity element of $\ring$). If either $\leq B$ or $\leq \moduledegree$ is omitted from the notation $\ringtwobounds{B}{\moduledegree}[X]$, it means that either the coefficient domain  or the  degree is arbitrary, respectively.
-
-\subsection{Auxiliary lemmas}
-The following result is implicit in \cite{zincplus} \albert{or is it explicit as a particular case of reductions on $\QQ[X]$?}. 
-\begin{lemma}\label{l:reduction_lemma}
-Let $h(X)\in \ZZ[X]$ be a nonzero polynomial of degree $\leq d$ and with coefficients in the range $\range{-2^{B}+1}{2^B-1}$. Let $\cP$ be a set of primes, and let $q_{\min}$ be the smallest prime in $\cP$. Then 
-%
-$$
-\Pr_{\substack{q\gets \cP,\\\alpha \gets \FF_q}}[\psi_{q,\alpha}(f(X))=0] \leq \frac{B}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{d}{q_{\min}}.
-$$
-\end{lemma}
-\begin{proof}
-Let $\cE_{\mathsf{prime}}$ be the event that $f(X)$ is  a multiple of $q$. Then, by Schwartz-Zippel lemma, $$\Pr_{\substack{q\gets \cP,\\\alpha \gets \FF_q}}[\psi_{q,\alpha}(f(X))=0\mid \neg \cE_{\mathsf{prime}}] \leq  \frac{d}{q_{\min}}.$$
-%
-Now, every nonzero coefficient of $f(X)$ is divisible by at most $B/\lfloor\log(q_{\min})\rfloor$ primes from $\cP$. Hence, the probability that $\cE_{\mathsf{prime}}$ occurs is at most $(B/\lfloor\log(q_{\min})\rfloor)/|\cP|$, and the lemma follows.
-%
-\end{proof}
-
-
-
-
-
-
-
+\albert{Remove?} Throughout this section $R$ denotes either $\ZZ$ or a finite field $\FF$ with $q^e$ elements. We recall that $\ringtwobounds{B}{\moduledegree}[X]$ denotes the set of polynomials of degree at most $d$ with coefficients in the subset $\range{0}{2^{B}-1}_R$ (the set of all elements $i\cdot 1$ where $i\in \{0,1,\ldots, 2^B-1\}\subseteq \ZZ$ and $1$ the identity element of $\ring$). If either $\leq B$ or $\leq \moduledegree$ is omitted from the notation $\ringtwobounds{B}{\moduledegree}[X]$, it means that either the coefficient domain  or the  degree is arbitrary, respectively.
 \subsection{Polynomial Ideal Membership Satisfiability (PIMSAT)}
 
 In this section we describe a variation of the PESAT  (Polynomial Equation Satisfiability) relation from \cite{?}. The original PESAT relation is a generalization of popular relations such as R1CS, CCS, AIR constraints over finite fields. 
@@ -785,7 +774,7 @@ Our variation, called \emph{Polynomial Ideal Membership Satisfiability (PIMSAT)}
 
 
 
-We fix a commutative ring $\ring$. Typically, $\ring=\ZZ$ or $\ring$ is a finite field of prime characteristic $q$, possibly an extension field.  
+ 
 
 %We define a ring homomorphism $\pi:\ZZ \to \ring$ as follows 
 %\begin{align*}
@@ -799,7 +788,7 @@ We fix a commutative ring $\ring$. Typically, $\ring=\ZZ$ or $\ring$ is a finite
 
 
 
-We further fix a witness length $\codedim$, an input length $\inplen$, a bit size bound $B$, a degree bound $\moduledegree$, a collection of $\iota$ distinct ideals $\ideal_1, \ldots, \ideal_{\iota}$ of $\ring[X]$, a number of rows $\numrows$, and for each $i\in [\iota]$, a vector of $\numrows$ polynomials $$\mathbf{p}^{(i)} = \left(\left.\mathbf{p}_{\bb}^{(i)} \ \right| \ \bb\in \bits^\nu\right) \in \ringbitbound{B}[Y_1,\ldots, Y_{\inplen+\codedim}]$$ with coefficients in $\ring^{\leq B}$ and on $\inplen + \codedim$ variables. The PIMSAT relation with respect to these parameters is defined as
+We  fix a witness length $\codedim$, an input length $\inplen$, a bit size bound $B$, a degree bound $\moduledegree$, a collection of $\iota$ distinct ideals $\ideal_1, \ldots, \ideal_{\iota}$ of $\ring[X]$, a number of rows $\numrows$, and for each $i\in [\iota]$, a vector of $\numrows$ polynomials $$\mathbf{p}^{(i)} = \left(\left.\mathbf{p}_{\bb}^{(i)} \ \right| \ \bb\in \bits^\nu\right) \in \ringbitbound{B}[Y_1,\ldots, Y_{\inplen+\codedim}]$$ with coefficients in $\ring_{\leq B}$ and on $\inplen + \codedim$ variables. The PIMSAT relation with respect to these parameters is defined as
 $$
 \PIMSAT = \left\{\left. 
 \begin{aligned}
@@ -814,7 +803,7 @@ $$
 \right\}
 $$
 
-The next remark explains that all our constructions for $\PIMSAT$ apply, in particular, to the usual R1CS, CCS \cite{ccs}, AIR \cite{air}, lookups,  permutation constraints, etc.
+The next remark explains that all our constructions for $\PIMSAT$ apply, in particular, to the usual R1CS, CCS \cite{ccs}, AIR \cite{air}, lookups,  permutation constraints, etc.\ over finite fields.
 
 
 \begin{remark}[PIMSAT generalizes usual relations]\label{r:pimsat_generalizes}
@@ -858,10 +847,30 @@ The main difference between PIMSAT and UCS  is that the later allows for witness
 \subsection{\ftwoz-IOP: an IOP for PIMSAT with oracles in binary fields}
 
 We now describe an IOP for $\PIMSAT$, for the specific case where $$\pp_\bb^{(i)}(Y_1, \ldots, Y_{\inplen+\codedim}) = \pp'{}^{(i)}(\bb,Y_1, \ldots, Y_{\inplen+\codedim}) \qquad \text{for all } i\in [\iota],$$
-i.e.\ there is a $\nu+\inplen+\codedim$-variate polynomial $\pp'{}^{(i)}$ such that the polynomials $\pp_\bb^{(i)}(Y_1, \ldots, Y_{\inplen+\codedim})$ are obtained by evaluating the first $\nu$ variables of $\pp'{}^{(i)}$ on $\bb\in \bits^\nu$.  This is the case in constraints such as R1CS, CCS, and AIR.
+i.e.\ there is a $\nu+\inplen+\codedim$-variate polynomial $\pp'{}^{(i)}$ such that the polynomials $\pp_\bb^{(i)}(Y_1, \ldots, Y_{\inplen+\codedim})$ are obtained by evaluating the first $\nu$ variables of $\pp'{}^{(i)}$ on $\bb\in \bits^\nu$.  This is the case in constraints such as R1CS, CCS, and AIR. %For example, in the R1CS example from \ref{e:pimsat_ronecs}, we have \albert{ask that $\inplen + \codedim$ is a power of two?}
+%
+%$$\mathbf{p}_{\bb}^{(i)}(\xx,\bff)= \left(\left(\sum_{\bb'\in  \bits^{\log(\inplen+\codedim)}} \mle{A^{(i)}}(\bb,\bb')\cdot \zz_{\mathsf{int}(\bb')}\right)\circ \left(B^{(i)}\cdot \zz\right) - \left(C^{(i)}\cdot \zz\right)\right)_{\mathsf{int}(\bb)}.$$
 
 
-We let $\cC$ be a linear code over $\comfield$ of dimension $(\codedim\cdot(\moduledegree+1)\cdot B)/n$ and blocklength $\codelength$. \albertimportant{Define the IORs $\Pi_\FF$} Further, we let $\Pi_\FF$ be a family of IORs, indexed over all finite fields $\FF$, such that $\Pi_\FF$ is an IOR from ... 
+We let $\cC$ be a linear code over $\comfield$ of dimension $(\codedim\cdot(\moduledegree+1)\cdot B)/n$ and blocklength $\codelength$.  
+
+We refer to \cref{d:projections} for relevant definitions of maps $\pi_q: \ring \to \FF_{q^e}$ and $\psi_{q,\alpha}: \ring[X] \to \FF_{q^e}$. For each finite field $\FF'=\FF_{p^{e'}}$ we let $\Pi_{\FF'}$ be an IOR over $\FF$ from the relation
+%
+$$
+\left\{\left.
+\begin{aligned}
+    \inp &= \xx\in \FF^\inplen,\\
+    \oracle &= \bot\\
+    \wit &= \bff\in \FF^{\codedim}
+\end{aligned} 
+\ \right| \  
+\begin{aligned}
+    \psi_{q,\alpha}(\pp'{}^{(i)})(\rr,\xx,\bff) = u_i \text{ for all }  i\in [\iota].
+\end{aligned}
+\right\}
+$$
+to the relation
+
 \albert{IOR for constraints $
 \psi(\pp'{}^{(i)})(\rr, \xx,\ff) = u_i \in \FF \qquad \text{for all } i \in [\iota]
 $, reducing to mle claims for $\ff$}
@@ -871,10 +880,11 @@ $, reducing to mle claims for $\ff$}
 [IOP for {$\PIMSAT$}]
 The prover and verifier receive $\inp=\xx\in \ringtwobounds{B}{\moduledegree}[X]^{\inplen}$. The prover additionally receives $\wit= \bff\in \ringtwobounds{B}{\moduledegree}[X]^\codedim$ such that $(\inp,\bot, \wit) \in \PIMSAT$. 
 
-\albertimportant{Need to review the usage of $\pi, \pi_q$ and $\psi$ and that treating the cases $\ring=\ZZ$ and $\ring=\FF$ at the same time is smooth} 
+
 \newcommand{\iopmlechallenge}{S}
 \begin{enumerate}[leftmargin=*] 
-\item The prover writes $$\bff= \sum_{j=1}^{d+1} \sum_{k=1}^{B}\  \bff^{(jk)}\cdot 2^{k-1}\cdot  X^{j-1} \in \left(\ringtwobounds{B}{\moduledegree}\right)^{\codedim}$$ for some vectors $$\bff^{(jk)}\in \{0,1\}^{\codedim}\subseteq R_{<2}^\codedim,$$ for all $j,k$. Then  lets $\mathsf{bits}(\bff)\in \bits^{\codedim\cdot (\moduledegree+1)\cdot B} \subseteq \ZZ^{\codedim\cdot (\moduledegree+1)\cdot B}$ be the vector with integer entries obtained by concatenating the vectors $\bff^{(jk)}$ and lifting their entries to $\bits \subseteq \ZZ$ via $\pi^{-1}$, i.e.\ $$\mathsf{bits}(\bff) \defeq \left(\pi^{-1}(\bff^{(jk)})\mid j\in [\moduledegree+1], k\in [B]\right)\in \bits^{\codedim\cdot (\moduledegree+1)\cdot B} \subseteq \ZZ^{\codedim\cdot (\moduledegree+1)\cdot B}$$ and computes $$f= \Enc_{\cC}(\pack(\pi_2(\mathsf{bits}(\bff)))) \in \comfield^{\codelength}$$
+\item The prover writes $$\bff= \sum_{j=1}^{d+1} \sum_{k=1}^{B}\  \bff^{(jk)}\cdot 2^{k-1}\cdot  X^{j-1} \in \left(\ringtwobounds{B}{\moduledegree}[X]\right)^{\codedim}$$ for some vectors $$\bff^{(jk)}\in \{0,1\}^{\codedim}\subseteq R_{<2}^\codedim,$$ for all $j,k$. Then  lets $\mathsf{bits}(\bff)\in \bits^{\codedim\cdot (\moduledegree+1)\cdot B} \subseteq \ZZ^{\codedim\cdot (\moduledegree+1)\cdot B}$ be the vector with integer entries obtained by concatenating the vectors $\bff^{(jk)}$ and, if $\ring = \FF_{q^e}$, lifting their entries to $\bits \subseteq \ZZ$ via $\pi_q^{-1}$, i.e.\ $$\mathsf{bits}(\bff) \defeq \left(\mathsf{lift}(\bff^{(jk)})\mid j\in [\moduledegree+1], k\in [B]\right)\in \bits^{\codedim\cdot (\moduledegree+1)\cdot B} \subseteq \ZZ^{\codedim\cdot (\moduledegree+1)\cdot B},$$
+where $\mathsf{lift}$ is the identity function if $\ring=\ZZ$,  and  $\mathsf{lift} = \pi_q^{-1}$ if $\ring=\FF_{q^e}$. Next, the prover computes $$f= \Enc_{\cC}(\pack(\pi_2(\mathsf{bits}(\bff)))) \in \comfield^{\codelength}$$
 \item The prover forms the multilinear polynomial, for all $i\in [\iota]$,
 %
 $$
@@ -887,62 +897,82 @@ The  claim that  $\mathbf{p}_{\bb}^{(i)}(\xx, \bff) \in \ideal_i$  for all  $\bb
    Q^{(i)}(\zz) \in \ideal_i \qquad  \text{ for all } \zz\in \bits^\nu, \ i \in [\iota].
 \end{equation}
 %
-\item If $\ring=\ZZ$, verifier samples and sends a random field $\FF$ \albert{a prime field, but could also be a proper extension}. Write $q$ for the characteristic of $\FF$.  If $\ring$ is already a field $\FF$, this step is skipped. Define the homomorphism
-\begin{align*}
-\pi: \ring[X] &\to \FF[X]\\
-a &\mapsto \begin{cases}
-\pi_q(a) & \text{if } \ring=\ZZ,\\
-a & \text{if } \ring=\FF,
-\end{cases}
-\end{align*}
-where, recall, $\pi_q$ denotes reduction modulo $q$. The claim \eqref{e:iop_ideal_eq} is replaced by
+\item If $\ring=\FF$, we let $\KK$ be a large enough (to be determined later) extension of $\FF$. If $\ring=\ZZ$, verifier samples and sends a large random field which we denote, abusing the notation, $\KK$. Let $q^{e'}$ be the size of $\KK$ in either case, for $q$ prime.
+\item The claim \eqref{e:iop_ideal_eq} is replaced by
 %
 $$
-   \pi(Q^{(i)}(\zz)) \in \pi(\ideal_i) \qquad  \text{ for all } \zz\in \bits^\nu, \ i \in [\iota].
+   \pi_q(Q^{(i)}(\zz)) \in \pi_q(\ideal_i) \qquad  \text{ for all } \zz\in \bits^\nu, \ i \in [\iota].
 $$
-\item The verifier samples and sends a random point $\rr\in \FF^{\nu}$ \albert{it can be a subset and not the whole space}.
-\item The prover responds with values $u_i\in \FF[X]$ for each $i\in [\iota]$. Supposedly, 
+Recall \cref{d:projections} for definitions of $\pi_q$ and $\psi_{q,\alpha}$.
+\item The verifier samples and sends a random point $\rr\in \KK^{\nu}$.
+\item The prover responds with values $u_i\in \KK[X]$ for each $i\in [\iota]$. Supposedly, 
 %
 $
-u_i = \pi(Q^{(i)})(\rr).
+u_i = \pi_q(Q^{(i)})(\rr).
 $
 \albert{Explain somewhere that if $\pp'$ is linear, then $u_i$ is easy to compute}
-\item The verifier checks that $u_i \in \pi(\ideal_i)$ \albert{discuss its definition?} for all $i\in [\iota]$. Then, if $\moduledegree>0$, it samples an sends an element $\alpha\in \FF$.  Define $\psi: \FF[X] \to \FF$ as $\psi(h(X)) = h(\alpha)$ \albert{prelims?}.
+\item The verifier checks that $u_i \in \pi_q(\ideal_i)$ \albert{discuss its definition?} for all $i\in [\iota]$. Then, if $\moduledegree>0$, it samples an sends an element $\alpha\in \KK$.
 \albert{Optimization: when there's only one ideal and this is $(X-c)$, we can fix $\alpha=c$ (though in that case the initial constraint can easily be written without ideals at all) }
-\item The prover and verifier engage in the batched sumcheck protocol over $\FF$ for the claim 
+\item Let $\psi\defeq \psi_{q,\alpha}$. The prover and verifier engage in the batched sumcheck protocol over $\KK$ for the claim 
 $$
-\sum_{\bb\in \bits^\nu}\psi(\pp'{}^{(i)})(\bb,\psi(\xx),\psi(\bff))) \cdot \eq(\bb, \rr) = \psi(u_i) \in \FF \qquad \text{for all } i\in [\iota].
+\sum_{\bb\in \bits^\nu}\psi(\pp'{}^{(i)})(\bb,\psi(\xx),\psi(\bff))) \cdot \eq(\bb, \rr) = \psi(u_i) \in \KK \qquad \text{for all } i\in [\iota].
 $$
 %
 At the end of  batched sumcheck, they are left with a claim of the form
 %
 \begin{equation}\label{e:iop_projected_claims}
-\psi(\pp'{}^{(i)})(\rr^{(1)}, \psi(\xx),\psi(\ff)) = u_i' \in \FF \qquad \text{for all } i \in [\iota]
+\psi(\pp'{}^{(i)})(\rr^{(1)}, \psi(\xx),\psi(\ff)) = u_i' \in \KK \qquad \text{for all } i \in [\iota]
 \end{equation}
-for some $\rr^{(1)} \in \FF^\nu, u_i' \in \FF$. 
+for some $\rr^{(1)} \in \KK^\nu, u_i' \in \KK$. 
 %
-\item The claim \eqref{e:iop_projected_claims} is a polynomial constraint over the finite field $\FF$ on the vectors $\psi(\xx) \in \FF^\inplen$ and $\psi(\bff)\in \FF^{\codedim}$, both vectors over  $\FF$. Accordingly, prover and verifier use the IOR $\Pi_\FF$  to reduce \eqref{e:iop_projected_claims} to a claim of the form
+\item The claim \eqref{e:iop_projected_claims} is a polynomial constraint over the finite field $\KK$ on the vectors $\psi(\xx) \in \KK^\inplen$ and $\psi(\bff)\in \KK^{\codedim}$. Accordingly, prover and verifier use the IOR $\Pi_{\KK}$  to reduce \eqref{e:iop_projected_claims} to a claim of the form
 \begin{equation}\label{e:iop_linear_claim_raw}
 \mle{\psi(\bff)}(\rr^{(2)}) = \mu
 \end{equation}
 %
-for some $\rr^{(2)} \in \FF^{\log \codedim}$ \albert{Ask $\codedim$ to be a power of two before} and some $\mu\in \FF$. 
+for some $\rr^{(2)} \in \KK^{\log \codedim}$ \albert{Ask $\codedim$ to be a power of two before} and some $\mu\in \KK$. 
 \item Rewriting \eqref{e:iop_linear_claim_raw}, we obtain \albert{maybe write in a separate lemma, or give more detail?}
 %
 \begin{equation}\label{e:iop_linear_claim}
     \begin{aligned}
-\mle{\psi(\bff)}(\rr^{(2)}) &\ = \langle  \pi(\mathsf{bits}(\bff)) , \vv \rangle,\\
-\vv &\defeq  \left(\eq\left(\bb,\rr^{(2)}\right)_{\bb\in \bits^{\log \codedim}} \otimes \left(1, \pi(2), \ldots, \pi(2^{B-1})\right) \otimes \left(1,\alpha, \ldots, \alpha^{\moduledegree}\right)\right) \in \FF^{\codedim\cdot (\moduledegree+1) \cdot B}.
+\mle{\psi(\bff)}(\rr^{(2)}) &\ = \langle  \pi_q(\mathsf{bits}(\bff)) , \vv \rangle,\\
+\vv &\defeq  \left(\eq\left(\bb,\rr^{(2)}\right)_{\bb\in \bits^{\log \codedim}} \otimes \left(1, \pi_q(2), \ldots, \pi_q(2^{B-1})\right) \otimes \left(1,\alpha, \ldots, \alpha^{\moduledegree}\right)\right) \in \KK^{\codedim\cdot (\moduledegree+1) \cdot B}.
     \end{aligned}
 \end{equation}
 Note that 
 \begin{equation}\label{e:iop_final_linear_claim}
-    \left(\inp'=(\vv,\mu), \oracle' = f=\Enc_{\cC}(\pack(\mathsf{bits}(\ff))), \wit' = \mathsf{bits}(\ff)\right) \in \Relation_{\cC,\comfield,\FF,\pack}^{\mathsf{lin-dual}}.
+    \left(\inp'=(\vv,\mu), \oracle' = f=\Enc_{\cC}(\pack(\mathsf{bits}(\ff))), \wit' = \mathsf{bits}(\ff)\right) \in \Relation_{\cC,\comfield,\KK,\pack}^{\mathsf{lin-dual}}.
 \end{equation}
 Now prover and verifier use the \ftwoz PCS \cref{c:core_iop} to prove \eqref{e:iop_final_linear_claim}.
 \end{enumerate}
     
 \end{construction}
+
+
+\subsection{Soundness and completeness}
+
+\paragraph{Auxiliary lemmas}
+The following result is implicit in \cite{zincplus} \albert{or is it explicit as a particular case of reductions on $\QQ[X]$?}. 
+\begin{lemma}\label{l:reduction_lemma}
+Let $h(X)\in \ZZ[X]$ be a nonzero polynomial of degree $\leq d$ and with coefficients in the range $\range{-2^{B}+1}{2^B-1}$. Let $\cP$ be a set of primes, and let $q_{\min}$ be the smallest prime in $\cP$. Then 
+%
+$$
+\Pr_{\substack{q\gets \cP,\\\alpha \gets \FF_q}}[\psi_{q,\alpha}(f(X))=0] \leq \frac{B}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{d}{q_{\min}}.
+$$
+\end{lemma}
+\begin{proof}
+Let $\cE_{\mathsf{prime}}$ be the event that $f(X)$ is  a multiple of $q$. Then, by Schwartz-Zippel lemma, $$\Pr_{\substack{q\gets \cP,\\\alpha \gets \FF_q}}[\psi_{q,\alpha}(f(X))=0\mid \neg \cE_{\mathsf{prime}}] \leq  \frac{d}{q_{\min}}.$$
+%
+Now, every nonzero coefficient of $f(X)$ is divisible by at most $B/\lfloor\log(q_{\min})\rfloor$ primes from $\cP$. Hence, the probability that $\cE_{\mathsf{prime}}$ occurs is at most $(B/\lfloor\log(q_{\min})\rfloor)/|\cP|$, and the lemma follows.
+%
+\end{proof}
+
+
+
+
+
+
+
 
 
 \section{Adding Zero Knowledge}
