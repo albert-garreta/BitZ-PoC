@@ -518,7 +518,7 @@ In words, $\Pi_{\mathsf{red}}^{\codedim_2}$ outputs $\codedim_2$ linear claims f
 %We describe one such $\Pi_{\mathsf{red}}^{\codedim_2}$ in \cref{?}, where $\vv$ is a vector of the form $\vv=(\mathsf{eq}(\bb,\rr))_{\bb\in \{0,1\}^{\log \codedim_1}}$, for some $\rr\in \comfield^{\log \codedim_1}$.
 
 
-\subsection{The main {\ftwoz}  PCS}
+\subsection{The main {\ftwoz}  IOP}
 We provide an IOP for $\Relation^{\mathsf{lin-dual}}_{\cC, \comfield, \evalfield, \pack}$ next.
 \begin{construction}[IOP for {$\Relation^{\mathsf{lin-dual}}_{\cC, \comfield, \evalfield, \pack}$}]\label{c:core_iop}
 The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation^{\mathsf{lin-dual}}_{\cC, \comfield, \evalfield, \pack}$.  We assume the tensor split from the previous Section \ref{}, and adopt its notation. 
@@ -587,6 +587,39 @@ The IOP $\Pi_{56}$ is an IOP for  the relation $\Relation'$ and it consists in a
 
 
 
+
+
+\subsection{\ftwoz IOP for multilinear polynomials over fields, integers, and modules}
+
+Throughout this section $R$ denotes either $\ZZ$ or a finite field $\FF$ with $q^e$ elements. Given a bit-size bound $B\geq 1$, we let $\ring_{\leq B}$ be the subset $\range{0}{2^B-1}$ of $\FF$ or of $\ZZ$. Note that if $\ring = \FF$, we may have $\ring_{\leq B} = \FF$ if $\FF$ is a prime field of order $\leq 2^B$. 
+
+We fix a binary field $\comfield$, a witness length $\codedim'$, a degree parameter $\moduledegree$, and let $\cC$ be a linear code over $\comfield$ of dimension $\codedim\defeq (\codedim'\cdot B \cdot \moduledegree)/n$ and blocklength $\codelength$. %We let $\pi_q:\ring \to \KK$ be a homomorphism from $\ring$ to a finite field $\KK$. 
+
+
+
+Let $\bff \in \ringtwobounds{B}{\moduledegree}[X]^{\codedim'}$ \albertimportant{Any merit in using an $\ring$-module instead?} \albert{The ring should have superscript $<\moduledegree$?} and write %$\bff=(\bff_{*1}, \ldots, \bff_{*\moduledegree})$ 
+$\bff=\sum_{j\in [\moduledegree]} \bff_{*j}\cdot X^{j-1}$
+with $\bff_{*j}\in \ringbitbound{B}^{\codedim'}$ for all $j\in [\moduledegree]$. Then write $$\bff_{*j}= \sum_{k=1}^{B}\  \bff_{*jk}\cdot 2^{k-1} $$ for some vectors $$\bff_{*jk}\in \{0,1\}^{\codedim'}\subseteq R^{\codedim'},$$ for all $j,k$.  We define   $\mathsf{bits}(\bff)\in \bits^{\codedim'\cdot\moduledegree\cdot  B} \subseteq \ZZ^{\codedim'\cdot\moduledegree\cdot B}$ as the vector with integer entries obtained by concatenating the vectors $\bff_{*jk}$ and, if $\ring = \FF$, lifting their entries to $\bits \subseteq \ZZ$ via $\pi_q^{-1}$, i.e.\ $$\mathsf{bits}(\bff) \defeq \left(\mathsf{lift}(\bff_{*jk})\mid  j\in [\moduledegree], k\in [B]\right)\in \bits^{\codedim'\cdot\moduledegree\cdot B} \subseteq \ZZ^{\codedim'\cdot\moduledegree\cdot B},$$
+where $\mathsf{lift}$ is the identity function if $\ring=\ZZ$,  and  $\mathsf{lift} = \pi_q^{-1}$ if $\ring=\FF$.
+
+Let $\KK$ be a finite field, and let  $\psi:\ring \to \KK$ be ring homomorphism. In this section we provide an IOP for the following relation: \albert{make it about inner products}
+%
+$$
+ = \left\{ \left(\begin{aligned} &\inp=(\vv,\bm{\mu})\in \KK^{ \codedim'}  \times \KK^{\moduledegree}, \\
+ &\oracle = f \in \comfield^{\codelength}, \\ &\wit= \bff\in \ringtwobounds{B}{\moduledegree}[X]^{\codedim'}\end{aligned}\right) \;\middle|\;  \begin{aligned}  
+ &f = \Enc_{\cC}(\pack(\mathsf{bits}(\bff))),\\
+ &\langle \psi(\bff), \vv \rangle = \mu  
+ \end{aligned} \right\}.
+$$
+
+
+
+
+
+
+\begin{construction}
+    
+\end{construction}
 
 \subsection{An optimized GKR protocol for the \ftwoz grand products}
 
@@ -786,7 +819,17 @@ A natural question is whether, in such scenarios, the proof of \eqref{e:grand_pr
 
 
 
-\albert{Remove?} Throughout this section $R$ denotes either $\ZZ$ or a finite field $\FF$ with $q^e$ elements. We recall that $\ringtwobounds{B}{\moduledegree}[X]$ denotes the set of polynomials of degree at most $d$ with coefficients in the subset $\range{0}{2^{B}-1}_R$ (the set of all elements $i\cdot 1$ where $i\in \{0,1,\ldots, 2^B-1\}\subseteq \ZZ$ and $1$ the identity element of $\ring$). If either $\leq B$ or $\leq \moduledegree$ is omitted from the notation $\ringtwobounds{B}{\moduledegree}[X]$, it means that either the coefficient domain  or the  degree is arbitrary, respectively.
+Throughout this section $R$ denotes either $\ZZ$ or a finite field $\FF$ with $q^e$ elements. We recall that $\ringtwobounds{B}{\moduledegree}[X]$ denotes the set of polynomials of degree at most $d$ with coefficients in the subset $\range{0}{2^{B}-1}_R$ (the set of all elements $i\cdot 1$ where $i\in \{0,1,\ldots, 2^B-1\}\subseteq \ZZ$ and $1$ the identity element of $\ring$). If either $\leq B$ or $\leq \moduledegree$ is omitted from the notation $\ringtwobounds{B}{\moduledegree}[X]$, it means that either the coefficient domain  or the  degree is arbitrary, respectively.
+
+\begin{remark}
+When $\moduledegree=0$, $\ringtwobounds{B}{\moduledegree}[X]$ is simply $\ringbitbound{B}$, i.e.\ either a bounded subset of $\ZZ$ or of a prime field $\FF_q$ (in this case, $\ringbitbound{B}$ may be the entire $\FF_q$). 
+\end{remark}
+
+
+
+
+
+
 \subsection{Polynomial Ideal Membership Satisfiability (PIMSAT)}
 
 In this section we describe a variation of the PESAT  (Polynomial Equation Satisfiability) relation from \cite{?}. The original PESAT relation is a generalization of popular relations such as R1CS, CCS, AIR constraints over finite fields. 
@@ -865,6 +908,9 @@ PIMSAT is a particular subset of the widely general UCS relation from \cite{zinc
 
 The main difference between PIMSAT and UCS  is that the later allows for witnesses and constraints over arbitrary and multiple domains in the same instance, including rational polynomial rings $\QQ[X]$, and it allows to reuse witness elements in $\QQ[X]$ or $\ZZ[X]$ in other domains such as finite fields and polynomial rings over finite fields, by using   homomorphic projections.
 \end{remark}
+
+\subsection{An IOP for }
+
 \subsection{\ftwoz-IOP: an IOP for PIMSAT with oracles in binary fields}
 
 We now describe an IOP for $\PIMSAT$. 
@@ -947,6 +993,19 @@ Now prover and verifier use the \ftwoz PCS \cref{c:core_iop} to prove \eqref{e:i
 \end{construction}
 
 
+
+
+\begin{theorem}
+\albert{RBR knowledge soundness and completeness}
+\end{theorem}
+\begin{proof}
+    \albert{Sketch} The plan: the above IOP is the result of compiling a PIOP $\Pi_{\mathsf{PIOP}}$ (given by Steps 2 to 8) with an IOP  $\Pi_{\FF 2 \ZZ}$ for committing to $\bff \in \ringtwobounds{B}{\moduledegree}[X]$ and proving 
+    $\mle{\psi(\bff)}(\rr^{(2)}) = \mu$. The PIOP $\Pi_{\mathsf{PIOP}}$ is a particular case of the Zinc+ PIOP, so RBR soundness and completeness can be obtained from there \albertimportant{Would be preferable to have a self-contained paper (maybe?) so write the proof in the appendix, briefly}. The IOP $\Pi_{\FF 2 \ZZ}$ has already been studied, except that we started with $\bff$ containing only bits, so we need to add a wrapper around it \albertimportant{todo}.
+    
+    The compilation is done and its soundness proved in Zinc+, so we can also cite that. There's  the small issue that the compiler in Zinc+ assumes the IOPP is using an interleaved code over $\ring$ to ``commit'' to the witness, so we cannot 100\% black-box the result from Zinc+, though a small remark may do it \albertimportant{Again, it may be good to have the proof here in an appendix}.
+\end{proof}
+
+
 \begin{remark}
 \albertimportant{Scratch?} We discuss  the specific case where $$\pp_\bb^{(i)}(Y_1, \ldots, Y_{\inplen+\codedim}) = \pp'{}^{(i)}(\bb,Y_1, \ldots, Y_{\inplen+\codedim}) \qquad \text{for all } i\in [\iota],$$
 i.e.\ there is a $\nu+\inplen+\codedim$-variate polynomial $\pp'{}^{(i)}$ such that the polynomials $\pp_\bb^{(i)}(Y_1, \ldots, Y_{\inplen+\codedim})$ are obtained by evaluating the first $\nu$ variables of $\pp'{}^{(i)}$ on $\bb\in \bits^\nu$.  This is the case in constraints such as R1CS, CCS, and AIR.
@@ -989,6 +1048,8 @@ for some $\rr^{(2)} \in \KK^{\log \codedim}$ \albert{Ask $\codedim$ to be a powe
 \end{remark}
 
 \subsection{Soundness and completeness}
+
+
 
 \paragraph{Auxiliary lemmas}
 The following result is implicit in \cite{zincplus} \albert{or is it explicit as a particular case of reductions on $\QQ[X]$?}. 
