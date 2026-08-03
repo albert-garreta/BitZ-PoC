@@ -867,12 +867,8 @@ The main difference between PIMSAT and UCS  is that the later allows for witness
 \end{remark}
 \subsection{\ftwoz-IOP: an IOP for PIMSAT with oracles in binary fields}
 
-We now describe an IOP for $\PIMSAT$, for the specific case where $$\pp_\bb^{(i)}(Y_1, \ldots, Y_{\inplen+\codedim}) = \pp'{}^{(i)}(\bb,Y_1, \ldots, Y_{\inplen+\codedim}) \qquad \text{for all } i\in [\iota],$$
-i.e.\ there is a $\nu+\inplen+\codedim$-variate polynomial $\pp'{}^{(i)}$ such that the polynomials $\pp_\bb^{(i)}(Y_1, \ldots, Y_{\inplen+\codedim})$ are obtained by evaluating the first $\nu$ variables of $\pp'{}^{(i)}$ on $\bb\in \bits^\nu$.  This is the case in constraints such as R1CS, CCS, and AIR. %For example, in the R1CS example from \ref{e:pimsat_ronecs}, we have \albert{ask that $\inplen + \codedim$ is a power of two?}
+We now describe an IOP for $\PIMSAT$. 
 %
-%$$\mathbf{p}_{\bb}^{(i)}(\xx,\bff)= \left(\left(\sum_{\bb'\in  \bits^{\log(\inplen+\codedim)}} \mle{A^{(i)}}(\bb,\bb')\cdot \zz_{\mathsf{int}(\bb')}\right)\circ \left(B^{(i)}\cdot \zz\right) - \left(C^{(i)}\cdot \zz\right)\right)_{\mathsf{int}(\bb)}.$$
-
-
 We let $\cC$ be a linear code over $\comfield$ of dimension $(\codedim\cdot(\moduledegree+1)\cdot B)/n$ and blocklength $\codelength$.  We also let, for each finite field $\KK$, $\Pi_\KK$ be an IOR that given $(\inp,\bot, \wit)$ for the PESAT relation (cf.\ \cref{d:pesat}) over $\KK$, outputs a MLE evaluation claim for $\wit$. In other words, it outputs  $((\rr, \mu),\bot, \wit)$ in
 %
 $$
@@ -904,9 +900,9 @@ The  claim that  $\mathbf{p}_{\bb}^{(i)}(\xx, \bff) \in \ideal_i$  for all  $\bb
 \item If $\ring=\FF$, we let $\KK$ be a large enough (to be determined later) extension of $\FF$. If $\ring=\ZZ$, verifier samples and sends a large random field which we denote, abusing the notation, $\KK$. Let $q^{e'}$ be the size of $\KK$ in either case, for $q$ prime.
 \item The claim \eqref{e:iop_ideal_eq} is replaced by
 %
-$$
+\begin{equation}\label{e:projected_Q_claim}
    \pi_q(Q^{(i)}(\zz)) \in \pi_q(\ideal_i) \qquad  \text{ for all } \zz\in \bits^\nu, \ i \in [\iota].
-$$
+\end{equation}
 Recall \cref{d:projections} for definitions of $\pi_q$ and $\psi_{q,\alpha}$.
 \item The verifier samples and sends a random point $\rr\in \KK^{\nu}$.
 \item The prover responds with values $u_i\in \KK[X]$ for each $i\in [\iota]$. Supposedly, 
@@ -915,33 +911,24 @@ $
 u_i = \pi_q(Q^{(i)})(\rr).
 $
 \albert{Explain somewhere that if $\pp'$ is linear, then $u_i$ is easy to compute}
-\item The verifier checks that $u_i \in \pi_q(\ideal_i)$ \albert{discuss its definition?} for all $i\in [\iota]$. Then, if $\moduledegree>0$, it samples an sends an element $\alpha\in \KK$.
+\item The verifier checks that $u_i \in \pi_q(\ideal_i)$ \albert{discuss its definition?} for all $i\in [\iota]$. Then, if $\moduledegree>0$, it samples ans sends  elements $\alpha,\gamma_1, \ldots, \gamma_\iota\in \KK$.
 \albert{Optimization: when there's only one ideal and this is $(X-c)$, we can fix $\alpha=c$ (though in that case the initial constraint can easily be written without ideals at all) }
-\item Let $\psi\defeq \psi_{q,\alpha}$. The prover and verifier engage in the batched sumcheck protocol over $\KK$ for the claim 
-$$
-\sum_{\bb\in \bits^\nu}\psi(\pp'{}^{(i)})(\bb,\psi(\xx),\psi(\bff))) \cdot \eq(\bb, \rr) = \psi(u_i) \in \KK \qquad \text{for all } i\in [\iota].
-$$
+\item Let $\psi\defeq \psi_{q,\alpha}$. The prover and verifier replace the claim \eqref{e:projected_Q_claim} with the claim 
 %
-At the end of  batched sumcheck, they are left with a claim of the form
-%
-\begin{equation}\label{e:iop_projected_claims}
-\psi(\pp'{}^{(i)})(\rr^{(1)}, \psi(\xx),\psi(\ff)) = u_i' \in \KK \qquad \text{for all } i \in [\iota]
+\begin{equation}\label{e:batched_projected_claim}
+\sum_{i\in [\iota]}\sum_{\bb\in \bits^\nu}\gamma_i\cdot \psi(\pp_\bb^{(i)})(\psi(\xx),\psi(\bff)) \cdot \eq(\bb, \rr) = \sum_{i\in [\iota]} \gamma_i \cdot \psi(u_i) \in \KK.
 \end{equation}
-for some $\rr^{(1)} \in \KK^\nu, u_i' \in \KK$. 
 %
-\item The claim \eqref{e:iop_projected_claims} forms a valid instance-witness for the PESAT relation (cf.\ \cref{d:pesat}) over $\KK$ with polynomial constraints given by $\psi(\pp'{}^{(i)})(\rr^{(1)}, Y_1, \ldots, Y_{\inplen+\codedim})-u_i'$, i.e.\ for such constraints and corresponding parameters
+The claim \eqref{e:batched_projected_claim}  forms a valid instance-witness for the PESAT relation (cf.\ \cref{d:pesat}) over $\KK$ with one polynomial constraint given by $\sum_{i\in[\iota]}\gamma_i\sum_{\bb\in \bits^\nu}\psi(\pp_{\bb}^{(i)})(Y_1, \ldots, Y_{\inplen+\codedim})-\sum_{i\in [\iota]} \gamma_i\cdot u_i'$, with public input $\psi(\xx)$, and witness $\psi(\bff)$. 
 %
-$$
-(\psi(\xx), \bot, \psi(\bff))\in \PESAT.
-$$
-%
- Accordingly, prover and verifier use the IOR $\Pi_{\KK}$  to reduce \eqref{e:iop_projected_claims} to 
+Accordingly, prover and verifier use the IOR $\Pi_{\KK}$  to reduce \eqref{e:iop_projected_claims} to 
  a claim of the form
 \begin{equation}\label{e:iop_linear_claim_raw}
 \mle{\psi(\bff)}(\rr^{(2)}) = \mu
 \end{equation}
 %
 for some $\rr^{(2)} \in \KK^{\log \codedim}$ \albert{Ask $\codedim$ to be a power of two before} and some $\mu\in \KK$. In other words, $((\rr^{(2)},\mu),\bot,\psi(\bff)) \in \Relation_{\mathsf{mle}}$ over $\KK$.
+%
 \item Rewriting \eqref{e:iop_linear_claim_raw}, we obtain \albert{maybe write in a separate lemma, or give more detail?}
 %
 \begin{equation}\label{e:iop_linear_claim}
@@ -959,6 +946,47 @@ Now prover and verifier use the \ftwoz PCS \cref{c:core_iop} to prove \eqref{e:i
     
 \end{construction}
 
+
+\begin{remark}
+\albertimportant{Scratch?} We discuss  the specific case where $$\pp_\bb^{(i)}(Y_1, \ldots, Y_{\inplen+\codedim}) = \pp'{}^{(i)}(\bb,Y_1, \ldots, Y_{\inplen+\codedim}) \qquad \text{for all } i\in [\iota],$$
+i.e.\ there is a $\nu+\inplen+\codedim$-variate polynomial $\pp'{}^{(i)}$ such that the polynomials $\pp_\bb^{(i)}(Y_1, \ldots, Y_{\inplen+\codedim})$ are obtained by evaluating the first $\nu$ variables of $\pp'{}^{(i)}$ on $\bb\in \bits^\nu$.  This is the case in constraints such as R1CS, CCS, and AIR.
+
+
+....
+
+...
+The prover and verifier engage in the batched sumcheck protocol over $\KK$ for the claim 
+$$
+\sum_{\bb\in \bits^\nu}\psi(\pp'{}^{(i)})(\bb,\psi(\xx),\psi(\bff))) \cdot \eq(\bb, \rr) = \psi(u_i) \in \KK \qquad \text{for all } i\in [\iota].
+$$
+%
+At the end of  batched sumcheck, they are left with a claim of the form
+%
+\begin{equation}\label{e:iop_projected_claims}
+\psi(\pp'{}^{(i)})(\rr^{(1)}, \psi(\xx),\psi(\ff)) = u_i' \in \KK \qquad \text{for all } i \in [\iota]
+\end{equation}
+for some $\rr^{(1)} \in \KK^\nu, u_i' \in \KK$. 
+%
+
+....
+
+...
+
+
+The claim \eqref{e:iop_projected_claims} forms a valid instance-witness for the PESAT relation (cf.\ \cref{d:pesat}) over $\KK$ with polynomial constraints given by $\psi(\pp'{}^{(i)})(\rr^{(1)}, Y_1, \ldots, Y_{\inplen+\codedim})-u_i'$, i.e.\ for such constraints and corresponding parameters
+%
+$$
+(\psi(\xx), \bot, \psi(\bff))\in \PESAT.
+$$
+%
+ Accordingly, prover and verifier use the IOR $\Pi_{\KK}$  to reduce \eqref{e:iop_projected_claims} to 
+ a claim of the form
+\begin{equation}
+\mle{\psi(\bff)}(\rr^{(2)}) = \mu
+\end{equation}
+%
+for some $\rr^{(2)} \in \KK^{\log \codedim}$ \albert{Ask $\codedim$ to be a power of two before} and some $\mu\in \KK$. In other words, $((\rr^{(2)},\mu),\bot,\psi(\bff)) \in \Relation_{\mathsf{mle}}$ over $\KK$.
+\end{remark}
 
 \subsection{Soundness and completeness}
 
