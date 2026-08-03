@@ -305,6 +305,27 @@ A \emph{relation} $\Relation$ consists of triples  $(\inp,\oracle;\wit)$, where 
   \LANG(\Relation)\ \defeq\ \bigl\{(\inp,\oracle)\ \bigm|\ \exists\,\wit \text{ such that } (\inp. \oracle,\wit)\in\Relation\bigr\}.
 \)
 
+\paragraph{Polynomial Equation Satisfiability (PESAT) over finite fields} We recall a relation from \cite{linear-accumulation} \albert{Linear time accumulation paper, or earlier?} over finite fields, which captures popular constraints such as R1CS, CCS, AIR (cf.\ \cite{linear accumulation}), and lookup and permutation constraints (cf.\ \cite{zinc}).
+
+\newcommand{\PESAT}{\Relation_{\mathsf{PESAT}}}
+
+Fix a finite field $\FF$, a witness length $\codedim$, an input length $\inplen$, a number of rows $n$, a collection of $n$ polynomials $\mathbf{p}_{\bb}$ on $\inplen+\codedim$ variables, for each $j\in [n]$. 
+
+\begin{definition}\label{d:pesat} The PESAT relation with respect to these parameters is defined as
+$$
+\PESAT = \left\{\left. 
+\begin{aligned}
+    \inp &= \xx \in \FF^{\inplen},\\
+    \oracle &= \bot ,\\
+    \wit &=\bff \in \FF^\codedim
+\end{aligned} 
+\ \right| \ 
+\begin{aligned}
+    \mathbf{p}_{j}(\xx, \bff) = 0  \text{ for all } j\in [n].
+\end{aligned}
+\right\}
+$$
+\end{definition}
 
 \paragraph{Interactive Oracle Reductions (IOR) of proximity}
 \albert{We don't use IOPPs in the paper? Make sure we don't mention them later}
@@ -852,28 +873,11 @@ i.e.\ there is a $\nu+\inplen+\codedim$-variate polynomial $\pp'{}^{(i)}$ such t
 %$$\mathbf{p}_{\bb}^{(i)}(\xx,\bff)= \left(\left(\sum_{\bb'\in  \bits^{\log(\inplen+\codedim)}} \mle{A^{(i)}}(\bb,\bb')\cdot \zz_{\mathsf{int}(\bb')}\right)\circ \left(B^{(i)}\cdot \zz\right) - \left(C^{(i)}\cdot \zz\right)\right)_{\mathsf{int}(\bb)}.$$
 
 
-We let $\cC$ be a linear code over $\comfield$ of dimension $(\codedim\cdot(\moduledegree+1)\cdot B)/n$ and blocklength $\codelength$.  
-
-We refer to \cref{d:projections} for relevant definitions of maps $\pi_q: \ring \to \FF_{q^e}$ and $\psi_{q,\alpha}: \ring[X] \to \FF_{q^e}$. For each finite field $\FF'=\FF_{p^{e'}}$ we let $\Pi_{\FF'}$ be an IOR over $\FF$ from the relation
+We let $\cC$ be a linear code over $\comfield$ of dimension $(\codedim\cdot(\moduledegree+1)\cdot B)/n$ and blocklength $\codelength$.  We also let, for each finite field $\KK$, $\Pi_\KK$ be an IOR that given $(\inp,\bot, \wit)$ for the PESAT relation (cf.\ \cref{d:pesat}) over $\KK$, outputs a MLE evaluation claim for $\wit$. In other words, it outputs  $((\rr, \mu),\bot, \wit)$ in
 %
 $$
-\left\{\left.
-\begin{aligned}
-    \inp &= \xx\in \FF^\inplen,\\
-    \oracle &= \bot\\
-    \wit &= \bff\in \FF^{\codedim}
-\end{aligned} 
-\ \right| \  
-\begin{aligned}
-    \psi_{q,\alpha}(\pp'{}^{(i)})(\rr,\xx,\bff) = u_i \text{ for all }  i\in [\iota].
-\end{aligned}
-\right\}
+\Relation_{\mathsf{mle}} = \left\{ ((\rr,\mu),\bot, \bff) \in \KK^{\log\codedim +1 +\codedim} \ \mid \ \mle{\bff}(\rr)=\mu \right\}
 $$
-to the relation
-
-\albert{IOR for constraints $
-\psi(\pp'{}^{(i)})(\rr, \xx,\ff) = u_i \in \FF \qquad \text{for all } i \in [\iota]
-$, reducing to mle claims for $\ff$}
 
 
 \begin{construction}\label{c:iop_pimsat}
@@ -925,12 +929,19 @@ At the end of  batched sumcheck, they are left with a claim of the form
 \end{equation}
 for some $\rr^{(1)} \in \KK^\nu, u_i' \in \KK$. 
 %
-\item The claim \eqref{e:iop_projected_claims} is a polynomial constraint over the finite field $\KK$ on the vectors $\psi(\xx) \in \KK^\inplen$ and $\psi(\bff)\in \KK^{\codedim}$. Accordingly, prover and verifier use the IOR $\Pi_{\KK}$  to reduce \eqref{e:iop_projected_claims} to a claim of the form
+\item The claim \eqref{e:iop_projected_claims} forms a valid instance-witness for the PESAT relation (cf.\ \cref{d:pesat}) over $\KK$ with polynomial constraints given by $\psi(\pp'{}^{(i)})(\rr^{(1)}, Y_1, \ldots, Y_{\inplen+\codedim})-u_i'$, i.e.\ for such constraints and corresponding parameters
+%
+$$
+(\psi(\xx), \bot, \psi(\bff))\in \PESAT.
+$$
+%
+ Accordingly, prover and verifier use the IOR $\Pi_{\KK}$  to reduce \eqref{e:iop_projected_claims} to 
+ a claim of the form
 \begin{equation}\label{e:iop_linear_claim_raw}
 \mle{\psi(\bff)}(\rr^{(2)}) = \mu
 \end{equation}
 %
-for some $\rr^{(2)} \in \KK^{\log \codedim}$ \albert{Ask $\codedim$ to be a power of two before} and some $\mu\in \KK$. 
+for some $\rr^{(2)} \in \KK^{\log \codedim}$ \albert{Ask $\codedim$ to be a power of two before} and some $\mu\in \KK$. In other words, $((\rr^{(2)},\mu),\bot,\psi(\bff)) \in \Relation_{\mathsf{mle}}$ over $\KK$.
 \item Rewriting \eqref{e:iop_linear_claim_raw}, we obtain \albert{maybe write in a separate lemma, or give more detail?}
 %
 \begin{equation}\label{e:iop_linear_claim}
