@@ -256,7 +256,7 @@ When we place no degree or bit-size bound, we use the notation $\ringbitbound{B}
 Given a ring homomorphism $\psi: \ring_1\to \ring_2$, a $\ring_1$-module $M_{\ring_1}$, and a $\ring_2$-module, a $\psi$-module homomorphism between $M_{\ring_1}$ and $M_{\ring_2}$ is a map $\phi$ such that $\phi(\alpha\cdot a + \beta \cdot b) = \psi(\alpha)\cdot \phi(a) + \psi(\beta) \cdot \phi(b)$ for all $\alpha,\beta\in \ring_1$ and $a,b\in M_{\ring_1}$.
 
    
-
+Given a base $\alpha_1,\ldots, \alpha_\moduledegree$ for $M_\ring$, we let $M_{\ringbitbound{B}}$ be the subset of $M_\ring$ with elements whose coordinates belong to $\ringbitbound{B}$ in this base.
 
 
 
@@ -383,12 +383,69 @@ A $k$-round IOR $\Pi$ has \emph{round-by-round knowledge soundness} with errors 
 \section{\ftwoz IOPP for Lin-ModFieldBin}
 
 
+%
+%
+\subsection{The Lin-ModFieldBin relation}
 
-%\newcommand{\comfield}{\FF_{\mathsf{c}}}
-%\newcommand{\evalfield}{\FF_{\mathsf{e}}}
 
-%\newcommand{\picomfield}{\pi_{\mathsf{c}}}
-%\newcommand{\pievalfield}{\pi_{\mathsf{e}}}
+
+
+Let $R$ denote either $\ZZ$ or a finite field $\FF$ of characteristic $q$; let $M_R$ be an $R$-module of finite dimension $\moduledegree\geq 1$;  let $\evalfield$ be a  finite field of characteristic $q$ (equal or not to $\FF$); and let $\comfield$ be a binary field. Intuitively,  our witness entries belong to $M_R$; $\evalfield$ is the field where our constraints on (a projection of)  the witness live; and 
+$\comfield$ is the field over which our witness is  committed to (through its bits).
+
+
+For example, $M_R$ may be simply $R$, i.e.\ $\ZZ$ or $\FF$;  or it may be  $\ring^{<\moduledegree}[X]$, i.e.\ the subset of univariate polynomials of degree $<\moduledegree$ with coefficients in $\ring$. 
+
+
+ Let $\psi:\ring \to \KK$ be a ring homomorphism, and let  $$\psi_M:M_R \to \KK$$ be a module homomorphism with respect to $\psi$ \albert{correct terminology?}. For example, if $M_R=\ring^{<\moduledegree}[X]$, $\psi$ could be one of the maps $\pi_{q,\alpha}$ from \cref{?} (reduction modulo $q$ if $\ZZ=\ring$ and evaluation at $X=\alpha\in \KK$, with $\KK$ having characteristic $q$).
+
+\paragraph{Packing in $\comfield$.}
+ Let
+%
+$$
+\beta_1, \ldots, \beta_\comfieldexp \in \comfield
+$$
+%
+be an $\FF_2$-base of $\comfield$ seen as an $\FF_2$-vector space of dimension $n$. Given a vector $\uu\in \FF_2^\codelength$, with $2^\comfieldexp$ dividing $\codelength$, we define
+%
+$$
+\pack(\uu)\in \comfield^{\codelength/\comfieldexp}
+$$
+as the vector whose $j$-th entry is
+%
+$$
+\pack(\uu)_{j} = \uu_{(j-1)\cdot \comfieldexp +1 }\cdot \beta_1 + \ldots + \uu_{(j-1)\cdot \comfieldexp +\comfieldexp-1 }\cdot \beta_{\comfieldexp-1}+\uu_{j \cdot \comfieldexp} \cdot \beta_\comfieldexp \in \comfield.
+$$
+
+ 
+
+
+\paragraph{The bits of a vector over $M_{\ringbitbound{B}}$.}
+Fix a vector length $\codedim_0$. Let $\bff \in M_{\ringbitbound{B}}^{\codedim_0}$ and write %$\bff=(\bff_{*1}, \ldots, \bff_{*\moduledegree})$ 
+$\bff=\sum_{j\in [\moduledegree]} \bff_{*j}\cdot \beta_j$
+with $\bff_{*j}\in \ringbitbound{B}^{\codedim_0}$ for all $j\in [\moduledegree]$. Then write $$\bff_{*j}= \sum_{k=1}^{B}\  \bff_{*jk}\cdot 2^{k-1} $$ for some vectors $$\bff_{*jk}\in \{0,1\}^{\codedim_0}\subseteq R^{\codedim_0},$$ for all $j,k$.  We define   $\mathsf{bits}(\bff)\in \bits^{\codedim_0\cdot\moduledegree\cdot  B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B}$ as the vector with integer entries obtained by concatenating the vectors $\bff_{*jk}$ and, if $\ring = \FF$, lifting their entries to $\bits \subseteq \ZZ$ via $\pi_q^{-1}$, i.e.\ $$\mathsf{bits}(\bff) \defeq \left(\mathsf{lift}(\bff_{*jk})\mid  j\in [\moduledegree], k\in [B]\right)\in \bits^{\codedim_0\cdot\moduledegree\cdot B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B},$$
+where $\mathsf{lift}$ is the identity function if $\ring=\ZZ$,  and  $\mathsf{lift} = \pi_q^{-1}$ if $\ring=\FF$.
+
+
+\paragraph{The Lin-ModFieldBin relation} Let $\cC$ be a linear code over $\comfield$ of dimension $\codedim\defeq (\codedim_0\cdot B \cdot \moduledegree)/n$ and blocklength $\codelength$.
+
+
+The goal of this section is to provide an IOP of Proximity for the following relation: 
+%
+$$
+ \Relation^{\mathsf{Lin-ModFieldBin}}= \left\{ \left(\begin{aligned} &\inp=(\vv,\mu)\in \KK^{ \codedim_0}  \times \KK^{\moduledegree}, \\
+ &\oracle = f \in \comfield^{\codelength}, \\ &\wit= \bff\in M_{\ringbitbound{B}}^{\codedim_0}\end{aligned}\right) \;\middle|\;  \begin{aligned}  
+ &f = \Enc_{\cC}(\pack(\pi_2(\mathsf{bits}(\bff)))),\\
+ &\langle \psi_M(\bff), \vv \rangle = \mu  
+ \end{aligned} \right\}.
+$$
+
+
+
+
+
+
+
 
 
 \subsection{Linear constraints over finite fields with binary commitments}
@@ -422,28 +479,21 @@ be maps such that $\picomfield^{-1}(\picomfield(x))=x$ and $\pievalfield^{-1}(\p
 
 
 
-Assume $|\comfield|=2^\comfieldexp$. Let
-%
-$$
-\beta_1, \ldots, \beta_\comfieldexp \in \comfield
-$$
-%
-be an $\FF_2$-base of $\comfield$ seen as an $\FF_2$-vector space of dimension $n$. Given a vector $\uu\in \FF_2^\codelength$, with $2^\comfieldexp$ dividing $\codelength$, we define
-%
-$$
-\pack(\uu)\in \comfield^{\codelength/\comfieldexp}
-$$
-as the vector whose $j$-th entry is
-%
-$$
-\pack(\uu)_{j} = \uu_{(j-1)\cdot \comfieldexp +1 }\cdot \beta_1 + \ldots + \uu_{(j-1)\cdot \comfieldexp +\comfieldexp-1 }\cdot \beta_{\comfieldexp-1}+\uu_{j \cdot \comfieldexp} \cdot \beta_\comfieldexp \in \comfield.
-$$
-%
-%
+
+
+
+
+
+
+
 Let $\cC\subseteq \comfield^{\codelength}$ be a linear code of dimension $\codedim/2^{\comfieldexp}$ and blocklength $\codelength$ over $\comfield$. Define 
 $$
 \Relation^{\mathsf{lin-dual}}_{\cC,\comfield, \evalfield,\pack} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \{0,1\}^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\pack(\picomfield(\bff))) = f\\ \wedge \  & \langle \pievalfield(\bff), \vv\rangle  = \mu  \end{aligned} \right\}
 $$
+
+
+
+
 %
 \subsection{Tensor decomposition, interleaved codes, and products of constrained codes}
 %
@@ -587,35 +637,8 @@ The IOP $\Pi_{56}$ is an IOP for  the relation $\Relation'$ and it consists in a
 
 
 
-Throughout this section $R$ denotes either $\ZZ$ or a finite field $\FF$ with $q^e$ elements. Given a bit-size bound $B\geq 1$, we let $\ring_{\leq B}$ be the subset $\range{0}{2^B-1}$ of $\FF$ or of $\ZZ$. Note that if $\ring = \FF$, we may have $\ring_{\leq B} = \FF$ if $\FF$ is a prime field of order $\leq 2^B$. 
-
-We fix a binary field $\comfield$, a witness length $\codedim'$, a module dimension parameter $\moduledegree$, and let $\cC$ be a linear code over $\comfield$ of dimension $\codedim\defeq (\codedim'\cdot B \cdot \moduledegree)/n$ and blocklength $\codelength$.
-
-Let $M_\ring$ be an $\ring$-module of finite dimension $\moduledegree\geq 1$. Given a base $\beta_1,\ldots, \beta_\moduledegree$ for $M_\ring$, we let $M_{\ringbitbound{B}}$ be the subset of $M_\ring$ with coordinates in $\ringbitbound{B}$. For example, $M_R$ may be $\ring^{<\moduledegree}[X]$, i.e.\ the subset of univariate polynomials of degree $<\moduledegree$ with coefficients in $\ring$.
-
-
-
-Let $\bff \in M_{\ringbitbound{B}}^{\codedim'}$ and write %$\bff=(\bff_{*1}, \ldots, \bff_{*\moduledegree})$ 
-$\bff=\sum_{j\in [\moduledegree]} \bff_{*j}\cdot \beta_j$
-with $\bff_{*j}\in \ringbitbound{B}^{\codedim'}$ for all $j\in [\moduledegree]$. Then write $$\bff_{*j}= \sum_{k=1}^{B}\  \bff_{*jk}\cdot 2^{k-1} $$ for some vectors $$\bff_{*jk}\in \{0,1\}^{\codedim'}\subseteq R^{\codedim'},$$ for all $j,k$.  We define   $\mathsf{bits}(\bff)\in \bits^{\codedim'\cdot\moduledegree\cdot  B} \subseteq \ZZ^{\codedim'\cdot\moduledegree\cdot B}$ as the vector with integer entries obtained by concatenating the vectors $\bff_{*jk}$ and, if $\ring = \FF$, lifting their entries to $\bits \subseteq \ZZ$ via $\pi_q^{-1}$, i.e.\ $$\mathsf{bits}(\bff) \defeq \left(\mathsf{lift}(\bff_{*jk})\mid  j\in [\moduledegree], k\in [B]\right)\in \bits^{\codedim'\cdot\moduledegree\cdot B} \subseteq \ZZ^{\codedim'\cdot\moduledegree\cdot B},$$
-where $\mathsf{lift}$ is the identity function if $\ring=\ZZ$,  and  $\mathsf{lift} = \pi_q^{-1}$ if $\ring=\FF$.
-
-Let $\KK$ be a finite field, let $\psi:\ring \to \KK$ be a ring homomorphism, and let  $$\psi_M:M_R \to \KK$$ be a module homomorphism with respect to $\psi$ \albert{correct terminology?}. For example, if $M_R=\ring^{<\moduledegree}[X]$, $\psi$ could be one of the maps $\pi_{q,\alpha}$ from \cref{?} (reduction modulo $q$ if $\ZZ=\ring$ and evaluation at $X=\alpha\in \KK$, with $\KK$ having characteristic $q$).
-
-
-In this section we provide an IOP for the following relation:
-%
-$$
- \Relation^{\mathsf{lin-dual-module}}= \left\{ \left(\begin{aligned} &\inp=(\vv,\mu)\in \KK^{ \codedim'}  \times \KK^{\moduledegree}, \\
- &\oracle = f \in \comfield^{\codelength}, \\ &\wit= \bff\in M_{\ringbitbound{B}}^{\codedim'}\end{aligned}\right) \;\middle|\;  \begin{aligned}  
- &f = \Enc_{\cC}(\pack(\pi_2(\mathsf{bits}(\bff)))),\\
- &\langle \psi_M(\bff), \vv \rangle = \mu  
- \end{aligned} \right\}.
-$$
-
-
 \begin{construction}
-The prover and verifier receive $\inp=(\vv, \mu)\in \KK^{\codedim}\times \KK$ and  $\oracle= f \in \comfield^\codelength$. The prover receives \albert{$\codedim_0$ would be more consistent with the beginning of the section} $\wit= \bff\in M_{\ringbitbound{B}}^{\codedim'} \subseteq \ZZ^{\codedim'}$ such that $(\inp,\oracle, \wit) \in \Relation^{\mathsf{lin-dual-module}}$. 
+The prover and verifier receive $\inp=(\vv, \mu)\in \KK^{\codedim}\times \KK$ and  $\oracle= f \in \comfield^\codelength$. The prover receives \albert{$\codedim_0$ would be more consistent with the beginning of the section} $\wit= \bff\in M_{\ringbitbound{B}}^{\codedim_0} \subseteq \ZZ^{\codedim_0}$ such that $(\inp,\oracle, \wit) \in \Relation^{\mathsf{lin-dual-module}}$. 
 \begin{enumerate}[leftmargin=*]
      \item Rewriting \eqref{e:iop_linear_claim_raw}, we obtain \albert{maybe write in a separate lemma, or give more detail?}
 %
