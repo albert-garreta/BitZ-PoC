@@ -591,30 +591,33 @@ The IOP $\Pi_{56}$ is an IOP for  the relation $\Relation'$ and it consists in a
 
 \subsection{\ftwoz IOP for multilinear polynomials over fields, integers, and modules}
 
+
+
 Throughout this section $R$ denotes either $\ZZ$ or a finite field $\FF$ with $q^e$ elements. Given a bit-size bound $B\geq 1$, we let $\ring_{\leq B}$ be the subset $\range{0}{2^B-1}$ of $\FF$ or of $\ZZ$. Note that if $\ring = \FF$, we may have $\ring_{\leq B} = \FF$ if $\FF$ is a prime field of order $\leq 2^B$. 
 
-We fix a binary field $\comfield$, a witness length $\codedim'$, a degree parameter $\moduledegree$, and let $\cC$ be a linear code over $\comfield$ of dimension $\codedim\defeq (\codedim'\cdot B \cdot \moduledegree)/n$ and blocklength $\codelength$. %We let $\pi_q:\ring \to \KK$ be a homomorphism from $\ring$ to a finite field $\KK$. 
+We fix a binary field $\comfield$, a witness length $\codedim'$, a module dimension parameter $\moduledegree$, and let $\cC$ be a linear code over $\comfield$ of dimension $\codedim\defeq (\codedim'\cdot B \cdot \moduledegree)/n$ and blocklength $\codelength$.
+
+Let $M_\ring$ be an $\ring$-module of finite dimension $\moduledegree\geq 1$. Given a base $\beta_1,\ldots, \beta_\moduledegree$ for $M_\ring$, we let $M_{\ringbitbound{B}}$ be the subset of $M_\ring$ with coordinates in $\ringbitbound{B}$. For example, $M_R$ may be $\ring^{<\moduledegree}[X]$, i.e.\ the subset of univariate polynomials of degree $<\moduledegree$ with coefficients in $\ring$.
 
 
 
-Let $\bff \in \ringtwobounds{B}{\moduledegree}[X]^{\codedim'}$ \albertimportant{Any merit in using an $\ring$-module instead?} \albert{The ring should have superscript $<\moduledegree$?} and write %$\bff=(\bff_{*1}, \ldots, \bff_{*\moduledegree})$ 
-$\bff=\sum_{j\in [\moduledegree]} \bff_{*j}\cdot X^{j-1}$
+Let $\bff \in M_{\ringbitbound{B}}^{\codedim'}$ and write %$\bff=(\bff_{*1}, \ldots, \bff_{*\moduledegree})$ 
+$\bff=\sum_{j\in [\moduledegree]} \bff_{*j}\cdot \beta_j$
 with $\bff_{*j}\in \ringbitbound{B}^{\codedim'}$ for all $j\in [\moduledegree]$. Then write $$\bff_{*j}= \sum_{k=1}^{B}\  \bff_{*jk}\cdot 2^{k-1} $$ for some vectors $$\bff_{*jk}\in \{0,1\}^{\codedim'}\subseteq R^{\codedim'},$$ for all $j,k$.  We define   $\mathsf{bits}(\bff)\in \bits^{\codedim'\cdot\moduledegree\cdot  B} \subseteq \ZZ^{\codedim'\cdot\moduledegree\cdot B}$ as the vector with integer entries obtained by concatenating the vectors $\bff_{*jk}$ and, if $\ring = \FF$, lifting their entries to $\bits \subseteq \ZZ$ via $\pi_q^{-1}$, i.e.\ $$\mathsf{bits}(\bff) \defeq \left(\mathsf{lift}(\bff_{*jk})\mid  j\in [\moduledegree], k\in [B]\right)\in \bits^{\codedim'\cdot\moduledegree\cdot B} \subseteq \ZZ^{\codedim'\cdot\moduledegree\cdot B},$$
 where $\mathsf{lift}$ is the identity function if $\ring=\ZZ$,  and  $\mathsf{lift} = \pi_q^{-1}$ if $\ring=\FF$.
 
-Let $\KK$ be a finite field, and let  $\psi:\ring \to \KK$ be ring homomorphism. In this section we provide an IOP for the following relation: \albert{make it about inner products}
+Let $\KK$ be a finite field, and let  $$\psi:M_R \to \KK$$ be an $R$-module. For example, if $M_R=\ring^{<\moduledegree}[X]$, $\psi$ could be one of the maps $\psi_{q,\alpha}$ from \cref{?}.
+
+
+In this section we provide an IOP for the following relation:
 %
 $$
- = \left\{ \left(\begin{aligned} &\inp=(\vv,\bm{\mu})\in \KK^{ \codedim'}  \times \KK^{\moduledegree}, \\
- &\oracle = f \in \comfield^{\codelength}, \\ &\wit= \bff\in \ringtwobounds{B}{\moduledegree}[X]^{\codedim'}\end{aligned}\right) \;\middle|\;  \begin{aligned}  
- &f = \Enc_{\cC}(\pack(\mathsf{bits}(\bff))),\\
+ \Relation^{\mathsf{lin-dual-module}}= \left\{ \left(\begin{aligned} &\inp=(\vv,\mu)\in \KK^{ \codedim'}  \times \KK^{\moduledegree}, \\
+ &\oracle = f \in \comfield^{\codelength}, \\ &\wit= \bff\in M_{\ringbitbound{B}}^{\codedim'}\end{aligned}\right) \;\middle|\;  \begin{aligned}  
+ &f = \Enc_{\cC}(\pack(\pi_2(\mathsf{bits}(\bff)))),\\
  &\langle \psi(\bff), \vv \rangle = \mu  
  \end{aligned} \right\}.
 $$
-
-
-
-
 
 
 \begin{construction}
