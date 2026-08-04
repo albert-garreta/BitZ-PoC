@@ -260,6 +260,10 @@ Given a base $\alpha_1,\ldots, \alpha_\moduledegree$ for $M_\ring$, we let $M_{\
 
 
 
+
+
+
+\begin{definition}[Projections to finite fields]\label{d:projections}\albert{Maybe place somewhere else since it's a non-standard definition}  
 For a prime $q$, we let $\pi_q: \ZZ \to \FF_q$ be the natural reduction modulo $q$ homomorphism. For convenience, we also let 
 %
 $$
@@ -267,8 +271,7 @@ $$
 $$
 denote the identity homomorphism on any field of characteristic $q$ $\FF_{q^e}$.
 
-
-\begin{definition}[Projections to finite fields]\label{d:projections}\albert{Maybe place somewhere else since it's a non-standard definition}  Let $\KK$ be a finite field of characteristic $q$, let $\KK'$ be an extension of $\KK$ (possibly $\KK'=\KK$) and let $\alpha \in \KK'$. By $\pi_{q,\alpha}$ we denote the following maps:
+Let $\KK$ be a finite field of characteristic $q$, let $\KK'$ be an extension of $\KK$ (possibly $\KK'=\KK$) and let $\alpha \in \KK'$. By $\pi_{q,\alpha}$ we denote the following maps:
 \begin{equation*}
 \begin{aligned}
 \pi_{q,\alpha}: \ZZ[X] &\to  \KK'\\
@@ -444,7 +447,7 @@ where $\mathsf{lift}$ is the identity function if $\ring=\ZZ$,  and  $\mathsf{li
 \paragraph{The Lin-ModFieldBin relation} Let $\cC$ be a linear code over $\comfield$ of dimension $(\codedim_0\cdot B \cdot \moduledegree)/n$ and blocklength $\codelength$.
 
 
-The goal of this section is to provide an IOP of Proximity for the following relation: 
+The goal of this section is to provide an IOP of Proximity for the following relation:  \albert{should we add some parameters inside parenthesis as done with other relations?}
 %
 $$
  \Relation_{\mathsf{Lin-ModFieldBin}}= \left\{ \left(\begin{aligned} &\inp=(\vv,\mu)\in \KK^{ \codedim_0}  \times \KK^{\moduledegree}, \\
@@ -562,7 +565,7 @@ In words, $\Pi_{\mathsf{red}}^{\codedim_2}$ outputs $\codedim_2$ linear claims f
 
 \newcommand{\picanon}{\pi_{\mathsf{canon}}}
 
-\subsection{The main {\ftwoz}  IOP}
+\subsection{The main {\ftwoz} IOP for Lin-BitsDual}
 We provide an IOP for $\Relation_{\mathsf{Lin-BitsDual}}$ next. We assume the notation from the previous two \cref{?,?}.  Given a projection $\pi_{q'}:\ZZ \to \FF_{q'}$, we fix an inverse map of the form $\pi_{q'}^{-1} : \FF_{q'} \to \range{0}{q'-1} \subseteq \ZZ$. Let $\picanon: \ZZ[X] \to \KK$ be the canonical homomorphism from $\ZZ[X]$ to $\KK$. Namely, if $\KK=\ZZ[X]/(q,h(X))$  for a polynomial $h(X)$ irreducible over $\FF_q[X]$, then $\picanon$ consists in modding $q$ out, and taking the quotient by $(h(X))$ (if $\KK$ is the prime field $\FF_q$, then $\picanon=\pi_q$). We fix an inverse for $\picanon$ of the form $$\picanon^{-1}: \KK \to \range{0}{q-1}^{\leq\degevalfield}[X] \subseteq \ZZ.
 $$ In words, $\picanon^{-1}$ simply takes an elmeent from $\KK$ represented as a degree $< \deg(h(X))$ polynomial over $\FF_q$, and applies $\pi_{q}^{-1}$ to it. We remark that one could choose any other such ``inverse'' maps, e.g.\ for $\pi_{q'}^{-1}$ one may prefer to use centered representatives. 
 
@@ -640,8 +643,8 @@ The IOP $\Pi_{56}$ is an IOP for  the relation $\Relation'$ and it consists in a
 We now describe our IOP for $\Relation_{\mathsf{Lin-ModFieldBin}}$.
 
 
-\begin{construction}
-The prover and verifier receive $\inp=(\vv, \mu)\in \KK^{\codedim}\times \KK$ and  $\oracle= f \in \comfield^\codelength$. The prover receives \albert{$\codedim_0$ would be more consistent with the beginning of the section} $\wit= \bff\in M_{\ringbitbound{B}}^{\codedim_0} \subseteq \ZZ^{\codedim_0}$ such that $(\inp,\oracle, \wit) \in \Relation_{\mathsf{Lin-ModFieldBin}}$, i.e., 
+\begin{construction}[IOP for $\Relation_{\mathsf{Lin-ModFieldBin}}$]\label{c:LinModFieldBin}
+The prover and verifier receive $\inp=(\vv, \mu)\in \KK^{\codedim_0}\times \KK$ and  $\oracle= f \in \comfield^\codelength$. The prover receives \albert{$\codedim_0$ would be more consistent with the beginning of the section} $\wit= \bff\in M_{\ringbitbound{B}}^{\codedim_0} \subseteq \ZZ^{\codedim_0}$ such that $(\inp,\oracle, \wit) \in \Relation_{\mathsf{Lin-ModFieldBin}}$, i.e., 
 %
 $$
 f = \Enc_{\cC}(\pack(\pi_2(\mathsf{bits}(\bff)))),\qquad \langle \psi_M(\bff), \vv \rangle = \mu.
@@ -653,7 +656,7 @@ $$
     \begin{aligned}
     \langle \psi_M(\bff),\vv\rangle &= \langle \psi_M\left(\sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \bff_{*jk} \cdot 2^{k-1} \cdot \gamma_j\right), \vv \rangle = \langle \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \pi_q(\bff_{*jk}) \cdot \pi_q(2^{k-1}) \cdot \psi_M(\gamma_j),\vv \rangle,\\
     &= \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \pi_q(2^{k-1}) \cdot \psi_M(\gamma_j)\cdot \langle \pi_q(\bff_{*jk}), \vv \rangle\\ &=   \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \sum_{i\in [\codedim_0]} \pi_q(2^{k-1}) \cdot \psi_M(\gamma_j)\cdot  \pi_q(\bff_{ijk}), \vv_i\\ &= \langle \pi_q(\mathsf{bits}(\bff)), \uu \rangle \\
-\uu &\defeq  \left(\vv \otimes \left(1, \pi_q(2), \ldots, \pi_q(2^{B-1})\right) \otimes \left(\psi_M(\gamma_1), \ldots, \psi_M(\gamma_{\moduledegree})\right)\right) \in \KK^{\codedim\cdot \moduledegree \cdot B}.
+\uu &\defeq  \left(\vv \otimes \left(1, \pi_q(2), \ldots, \pi_q(2^{B-1})\right) \otimes \left(\psi_M(\gamma_1), \ldots, \psi_M(\gamma_{\moduledegree})\right)\right) \in \KK^{\codedim_0\cdot \moduledegree \cdot B}.
     \end{aligned}
 \end{equation}
 And so the  claim $(\inp,\oracle, \wit) \in \Relation_{\mathsf{Lin-ModFieldBin}}$ is equivalent to the claim \begin{equation}\label{e:iop_final_linear_claim}
@@ -667,7 +670,9 @@ Accordingly, prover and verifier use the \ftwoz PCS \cref{c:core_iop} to prove \
     \albert{completeness and soundness}
 \end{theorem}
 
-\section{Extensions, variations, and optimizations}
+\section{[Old] Extensions, variations, and optimizations}
+
+\albertimportant{Section is relatively outdated}
 
 \subsection{Virtualization of $\FF_2$-linear combinations lifted to integers}\label{s:virtualization}
 
@@ -872,11 +877,7 @@ using an IOPP for constrained codes. Concretely, the prover commits to the vecto
 
 
 
-Throughout this section $R$ denotes either $\ZZ$ or a finite field $\FF$ with $q^e$ elements. We recall that $\ringtwobounds{B}{\moduledegree}[X]$ denotes the set of polynomials of degree at most $d$ with coefficients in the subset $\range{0}{2^{B}-1}_R$ (the set of all elements $i\cdot 1$ where $i\in \{0,1,\ldots, 2^B-1\}\subseteq \ZZ$ and $1$ the identity element of $\ring$). If either $\leq B$ or $\leq \moduledegree$ is omitted from the notation $\ringtwobounds{B}{\moduledegree}[X]$, it means that either the coefficient domain  or the  degree is arbitrary, respectively.
-
-\begin{remark}
-When $\moduledegree=0$, $\ringtwobounds{B}{\moduledegree}[X]$ is simply $\ringbitbound{B}$, i.e.\ either a bounded subset of $\ZZ$ or of a prime field $\FF_q$ (in this case, $\ringbitbound{B}$ may be the entire $\FF_q$). 
-\end{remark}
+Throughout this section $R$ denotes either $\ZZ$ or a finite field $\FF$ with $q^e$ elements.
 
 
 
@@ -885,9 +886,7 @@ When $\moduledegree=0$, $\ringtwobounds{B}{\moduledegree}[X]$ is simply $\ringbi
 
 \subsection{Polynomial Ideal Membership Satisfiability (PIMSAT)}
 
-In this section we describe a variation of the PESAT  (Polynomial Equation Satisfiability) relation from \cite{?}. The original PESAT relation is a generalization of popular relations such as R1CS, CCS, AIR constraints over finite fields. 
-
-Our variation, called \emph{Polynomial Ideal Membership Satisfiability (PIMSAT)}, generalizes PESAT by allowing polynomial constraints over polynomial rings (or modules), and by replacing equality to zero by ideal membership. %On the other hand, PIMSAT operates exclusively on the polynomial ring $\ZZ[X]$.
+In this section we describe a variation of the PESAT  relation (cf.\ \cref{?}), called \emph{Polynomial Ideal Membership Satisfiability (PIMSAT)}. It generalizes PESAT by allowing polynomial constraints over polynomial rings (or modules), and by replacing equality to zero by ideal membership. %On the other hand, PIMSAT operates exclusively on the polynomial ring $\ZZ[X]$.
 
 
 
@@ -905,7 +904,8 @@ Our variation, called \emph{Polynomial Ideal Membership Satisfiability (PIMSAT)}
 
 
 
-We  fix a witness length $\codedim$, an input length $\inplen$, a bit size bound $B$, a degree bound $\moduledegree$, a collection of $\iota$ distinct ideals $\ideal_1, \ldots, \ideal_{\iota}$ of $\ring[X]$, a number of rows $\numrows$, and for each $i\in [\iota]$, a vector of $\numrows$ polynomials $$\mathbf{p}^{(i)} = \left(\left.\mathbf{p}_{\bb}^{(i)} \ \right| \ \bb\in \bits^\nu\right) \in \ringbitbound{B}[Y_1,\ldots, Y_{\inplen+\codedim}]$$ with coefficients in $\ring_{\leq B}$ and on $\inplen + \codedim$ variables. The PIMSAT relation with respect to these parameters is defined as
+We fix a witness length $\codedim$ \albert{for consistency, this would be $\ell_0$ in previous sections?}, an input length $\inplen$, a bit size bound $B$, a degree bound $\moduledegree$, a collection of $\iota$ distinct ideals $\ideal_1, \ldots, \ideal_{\iota}$ of $\ring[X]$, a number of rows $\numrows$, and for each $i\in [\iota]$, a vector of $\numrows$ polynomials  \albert{No need to have number of rows be a power of two}
+$$\mathbf{p}^{(i)} = \left(\left.\mathbf{p}_{\bb}^{(i)} \ \right| \ \bb\in \bits^\nu\right) \in \left(\ringbitbound{B}[Y_1,\ldots, Y_{\inplen+\codedim}]\right)^{\numrows}$$ with coefficients in $\ring_{\leq B}$ and on $\inplen + \codedim$ variables. The PIMSAT relation with respect to these parameters is defined as
 $$
 \PIMSAT = \left\{\left. 
 \begin{aligned}
@@ -923,11 +923,11 @@ $$
 The next remark explains that all our constructions for $\PIMSAT$ apply, in particular, to the usual R1CS, CCS \cite{ccs}, AIR \cite{air}, lookups,  permutation constraints, etc.\ over finite fields.
 
 
-\begin{remark}[PIMSAT generalizes usual relations]\label{r:pimsat_generalizes}
+%\begin{remark}[PIMSAT generalizes usual relations]\label{r:pimsat_generalizes}
     %
-    Choosing $\ring$ to be a prime field  $\FF_q$, $\moduledegree=0$, and $B$ such that $2^B\geq q$, the constraint $\PIMSAT$ becomes a standard polynomial constraint over finite prime fields. Concretely it becomes the relation PESAT from \cite{?} \albert{double-check}. In turn, PESAT can be further specialized to R1CS, CCS \cite{ccs}, and AIR \cite{air} over $\FF_q$, as discussed in \cref{?}; and to lookup, and permutation constraints over $\FF_q$, as explained in \cite{zinc,zincplus}.
+ %   Choosing $\ring$ to be a prime field  $\FF_q$, $\moduledegree=0$, and $B$ such that $2^B\geq q$, the constraint $\PIMSAT$ becomes a standard polynomial constraint over finite prime fields. Concretely it becomes the relation PESAT from \cite{?} \albert{double-check}. In turn, PESAT can be further specialized to R1CS, CCS \cite{ccs}, and AIR \cite{air} over $\FF_q$, as discussed in \cref{?}; and to lookup, and permutation constraints over $\FF_q$, as explained in \cite{zinc,zincplus}.
     % 
-\end{remark}
+%\end{remark}
 
 
 \albert{Motivate ideals somewhere (intro?)}
@@ -952,7 +952,7 @@ where $\mathsf{int}(\bb)$ denotes the nonnegative integer whose bit-representati
 The relation $\ronecsideal$ is the subset of $\PIMSAT$ where $$\mathbf{p}_{\bb}^{(i)}(\xx,\bff)= \left(\left(A^{(i)}\cdot \zz\right)\circ \left(B^{(i)}\cdot \zz\right) - \left(C^{(i)}\cdot \zz\right)\right)_{\mathsf{int}(\bb)}.$$
 \end{example}
 
-Following \cref{r:pimsat_generalizes}  and \cref{e:pimsat_ronecs} one can  show that PIMSAT allows to express  popular constraint systems such as CCS, AIR, and lookup and permuation constraints, over polynomial rings and with ideal membership.
+Following  \cref{e:pimsat_ronecs} and \cite{linear-accumulation,zinc,zincplus} one can  show that PIMSAT allows to express  popular constraint systems such as CCS, AIR, and lookup and permuation constraints, over polynomial rings and with ideal membership.
 
 
 
@@ -962,7 +962,6 @@ PIMSAT is a particular subset of the widely general UCS relation from \cite{zinc
 The main difference between PIMSAT and UCS  is that the later allows for witnesses and constraints over arbitrary and multiple domains in the same instance, including rational polynomial rings $\QQ[X]$, and it allows to reuse witness elements in $\QQ[X]$ or $\ZZ[X]$ in other domains such as finite fields and polynomial rings over finite fields, by using   homomorphic projections.
 \end{remark}
 
-\subsection{An IOP for }
 
 \subsection{\ftwoz-IOP: an IOP for PIMSAT with oracles in binary fields}
 
@@ -982,8 +981,7 @@ The prover and verifier receive $\inp=\xx\in \ringtwobounds{B}{\moduledegree}[X]
 
 \newcommand{\iopmlechallenge}{S}
 \begin{enumerate}[leftmargin=*] 
-\item The prover writes $$\bff= \sum_{j=1}^{d+1} \sum_{k=1}^{B}\  \bff^{(jk)}\cdot 2^{k-1}\cdot  X^{j-1} \in \left(\ringtwobounds{B}{\moduledegree}[X]\right)^{\codedim}$$ for some vectors $$\bff^{(jk)}\in \{0,1\}^{\codedim}\subseteq R_{<2}^\codedim,$$ for all $j,k$. Then  lets $\mathsf{bits}(\bff)\in \bits^{\codedim\cdot (\moduledegree+1)\cdot B} \subseteq \ZZ^{\codedim\cdot (\moduledegree+1)\cdot B}$ be the vector with integer entries obtained by concatenating the vectors $\bff^{(jk)}$ and, if $\ring = \FF_{q^e}$, lifting their entries to $\bits \subseteq \ZZ$ via $\pi_q^{-1}$, i.e.\ $$\mathsf{bits}(\bff) \defeq \left(\mathsf{lift}(\bff^{(jk)})\mid j\in [\moduledegree+1], k\in [B]\right)\in \bits^{\codedim\cdot (\moduledegree+1)\cdot B} \subseteq \ZZ^{\codedim\cdot (\moduledegree+1)\cdot B},$$
-where $\mathsf{lift}$ is the identity function if $\ring=\ZZ$,  and  $\mathsf{lift} = \pi_q^{-1}$ if $\ring=\FF_{q^e}$. Next, the prover computes $$f= \Enc_{\cC}(\pack(\pi_2(\mathsf{bits}(\bff)))) \in \comfield^{\codelength}$$
+\item The prover  computes $$f= \Enc_{\cC}(\pack(\pi_2(\mathsf{bits}(\bff)))) \in \comfield^{\codelength}$$ (cf.\ \cref{?}) and sends to the verifier oracle access to $f$.
 \item The prover forms the multilinear polynomial, for all $i\in [\iota]$,
 %
 $$
@@ -997,12 +995,13 @@ The  claim that  $\mathbf{p}_{\bb}^{(i)}(\xx, \bff) \in \ideal_i$  for all  $\bb
 \end{equation}
 %
 \item If $\ring=\FF$, we let $\KK$ be a large enough (to be determined later) extension of $\FF$. If $\ring=\ZZ$, verifier samples and sends a large random field which we denote, abusing the notation, $\KK$. Let $q^{e'}$ be the size of $\KK$ in either case, for $q$ prime.
-\item The claim \eqref{e:iop_ideal_eq} is replaced by
+
+The claim \eqref{e:iop_ideal_eq} is replaced by
 %
 \begin{equation}\label{e:projected_Q_claim}
    \pi_q(Q^{(i)}(\zz)) \in \pi_q(\ideal_i) \qquad  \text{ for all } \zz\in \bits^\nu, \ i \in [\iota].
 \end{equation}
-Recall \cref{d:projections} for definitions of $\pi_q$ and $\pi_{q,\alpha}$.
+Recall (cf.\ \cref{d:projections}) that $\pi_q$ is coefficient-wise reduction modulo $q$ when $\ring=\ZZ$, and it is the identity map when $\ring$ is a field $\FF$ of characteristic $q$.
 \item The verifier samples and sends a random point $\rr\in \KK^{\nu}$.
 \item The prover responds with values $u_i\in \KK[X]$ for each $i\in [\iota]$. Supposedly, 
 %
@@ -1010,23 +1009,29 @@ $
 u_i = \pi_q(Q^{(i)})(\rr).
 $
 \albert{Explain somewhere that if $\pp'$ is linear, then $u_i$ is easy to compute}
-\item The verifier checks that $u_i \in \pi_q(\ideal_i)$ \albert{discuss its definition?} for all $i\in [\iota]$. Then, if $\moduledegree>0$, it samples ans sends  elements $\alpha,\gamma_1, \ldots, \gamma_\iota\in \KK$.
+\item The verifier checks that $u_i \in \pi_q(\ideal_i)$ \albert{discuss its definition?} for all $i\in [\iota]$. Then, if $\moduledegree>0$, it samples ans sends  elements $\alpha,\theta_1, \ldots, \theta_\iota\in \KK$.
 \albert{Optimization: when there's only one ideal and this is $(X-c)$, we can fix $\alpha=c$ (though in that case the initial constraint can easily be written without ideals at all) }
-\item Let $\pi\defeq \pi_{q,\alpha}$. The prover and verifier replace the claim \eqref{e:projected_Q_claim} with the claim 
+\item Let $\pi\defeq \pi_{q,\alpha}$ (cf.\ \cref{d:projections}). The prover and verifier replace the claim \eqref{e:projected_Q_claim} with the claim 
 %
 \begin{equation}\label{e:batched_projected_claim}
-\sum_{i\in [\iota]}\sum_{\bb\in \bits^\nu}\gamma_i\cdot \pi(\pp_\bb^{(i)})(\pi(\xx),\pi(\bff)) \cdot \eq(\bb, \rr) = \sum_{i\in [\iota]} \gamma_i \cdot \pi(u_i) \in \KK.
+\sum_{i\in [\iota]}\sum_{\bb\in \bits^\nu}\theta_i\cdot \pi(\pp_\bb^{(i)})(\pi(\xx),\pi(\bff)) \cdot \eq(\bb, \rr) = \sum_{i\in [\iota]} \theta_i \cdot \pi(u_i) \in \KK.
 \end{equation}
 %
-The claim \eqref{e:batched_projected_claim}  forms a valid instance-witness for the PESAT relation (cf.\ \cref{d:pesat}) over $\KK$ with one polynomial constraint given by $\sum_{i\in[\iota]}\gamma_i\sum_{\bb\in \bits^\nu}\pi(\pp_{\bb}^{(i)})(Y_1, \ldots, Y_{\inplen+\codedim})-\sum_{i\in [\iota]} \gamma_i\cdot u_i'$, with public input $\pi(\xx)$, and witness $\pi(\bff)$. 
+The claim \eqref{e:batched_projected_claim}  forms a valid instance-witness for the PESAT relation (cf.\ \cref{d:pesat}) $\PESAT(\KK, \pp)$  with one polynomial constraint $\pp=(\pp_1)$ given by $$\pp_1=\sum_{i\in[\iota]}\theta_i\cdot\sum_{\bb\in \bits^\nu}\pi(\pp_{\bb}^{(i)})(Y_1, \ldots, Y_{\inplen+\codedim})-\sum_{i\in [\iota]} \gamma_i\cdot u_i',$$ with public input $\pi(\xx)$, and witness $\pi(\bff)$. 
 %
-Accordingly, prover and verifier use the IOR $\Pi_{\KK}$  to reduce \eqref{e:iop_projected_claims} to 
+Accordingly, prover and verifier use the IOR $\Pi_{\KK}$  to reduce \eqref{e:batched_projected_claim} to 
  a claim of the form
 \begin{equation}\label{e:iop_linear_claim_raw}
 \mle{\pi(\bff)}(\rr^{(2)}) = \mu
 \end{equation}
 %
 for some $\rr^{(2)} \in \KK^{\log \codedim}$ \albert{Ask $\codedim$ to be a power of two before} and some $\mu\in \KK$. In other words, $((\rr^{(2)},\mu),\bot,\pi(\bff)) \in \Relation_{\mathsf{mle}}$ over $\KK$.
+\item The initial claim $(\inp,\bot,\wit)\in \PIMSAT$ has been replaced by $\mle{\pi(\bff)}(\rr^{(2)}) = \mu$. Additionally, verifier now has oracle access to $f=\Enc_{\cC}(\pack(\pi_2(\mathsf{bits}(\bff)))$. Notice that $\pi:\ring[X] \to \KK$ induces a $\pi_q$-module homomorphism $\psi:\ringdegbound{\moduledegree}[X] \to \KK$ given by $\psi(h(X)) = \pi(h(X))$. Hence prover and verifier can now use \cref{c:LinModFieldBin} to prove that
+%
+$$
+((\vv,\mu), f, \bff) \in \Relation_{\mathsf{Lin-ModFieldBin}}
+$$
+where $\vv=(\eq(\bb,\rr^{(2)}))_{\bb\in \bits^{\log \ell}}$.
 %
 \end{enumerate}
     
