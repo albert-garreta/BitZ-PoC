@@ -652,19 +652,20 @@ $$
 \begin{equation}\label{e:iop_linear_claim}
     \begin{aligned}
     \langle \psi_M(\bff),\vv\rangle &= \langle \psi_M\left(\sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \bff_{*jk} \cdot 2^{k-1} \cdot \gamma_j\right), \vv \rangle = \langle \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \pi_q(\bff_{*jk}) \cdot \pi_q(2^{k-1}) \cdot \psi_M(\gamma_j),\vv \rangle,\\
-    &= \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \pi_q(2^{k-1}) \cdot \psi_M(\gamma_j)\cdot \langle \pi_q(\bff_{*jk}), \vv \rangle\\ &=   \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \sum_{i\in [\codedim_0]} \pi_q(2^{k-1}) \cdot \psi_M(\gamma_j)\cdot  \pi_q(\bff_{ijk}), \vv_i = \langle \pi_q(\mathsf{bits}(\bff)), \uu \rangle \\
+    &= \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \pi_q(2^{k-1}) \cdot \psi_M(\gamma_j)\cdot \langle \pi_q(\bff_{*jk}), \vv \rangle\\ &=   \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \sum_{i\in [\codedim_0]} \pi_q(2^{k-1}) \cdot \psi_M(\gamma_j)\cdot  \pi_q(\bff_{ijk}), \vv_i\\ &= \langle \pi_q(\mathsf{bits}(\bff)), \uu \rangle \\
 \uu &\defeq  \left(\vv \otimes \left(1, \pi_q(2), \ldots, \pi_q(2^{B-1})\right) \otimes \left(\psi_M(\gamma_1), \ldots, \psi_M(\gamma_{\moduledegree})\right)\right) \in \KK^{\codedim\cdot \moduledegree \cdot B}.
     \end{aligned}
 \end{equation}
-Note that 
-\begin{equation}\label{e:iop_final_linear_claim}
-    \left(\inp'=(\vv,\mu), \oracle' = f=\Enc_{\cC}(\pack(\mathsf{bits}(\ff))), \wit' = \mathsf{bits}(\ff)\right) \in \Relation_{\mathsf{Lin-BitsDual}}.
+And so the  claim $(\inp,\oracle, \wit) \in \Relation_{\mathsf{Lin-ModFieldBin}}$ is equivalent to the claim \begin{equation}\label{e:iop_final_linear_claim}
+    \left(\inp'=(\uu,\mu), \oracle' = f=\Enc_{\cC}(\pack(\pi_2(\mathsf{bits}(\ff)))), \wit' = \mathsf{bits}(\ff)\right) \in \Relation_{\mathsf{Lin-BitsDual}}.
 \end{equation}
-Now prover and verifier use the \ftwoz PCS \cref{c:core_iop} to prove \eqref{e:iop_final_linear_claim}.
+Accordingly, prover and verifier use the \ftwoz PCS \cref{c:core_iop} to prove \eqref{e:iop_final_linear_claim}.
 \end{enumerate}
 \end{construction}
 
-\subsection{Completeness and soundness}
+\begin{theorem}
+    \albert{completeness and soundness}
+\end{theorem}
 
 \section{Extensions, variations, and optimizations}
 
