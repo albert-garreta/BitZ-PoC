@@ -104,7 +104,7 @@ backrefpages = {cited on pp.},% originally "cited on pages"
 
 \subsection{Contributions}
 
-F2Z: Proving linear claims over any field (possibly an extension field) or integers, for a vector of bits committed on a binary field. 
+F2Z: Proving linear claims over any field (possibly an extension field) or integers, for a vector of bits committed on a binary field. \albert{What happens if we replace FRI by F2Z in Plonky3?}
 
 Follow up  on Zinc+: we adopt its constraint system and greatly boost its performance with the aforementioned F2Z
 
@@ -575,7 +575,9 @@ Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with suf
 
 
 \begin{enumerate}[leftmargin=*] 
-\item The prover sends $\mu_1, \ldots, \mu_{\codedim_2}\in \range{0}{q-1}^{\leq \degevalfield}[X]$ such that \begin{equation}\label{e:tensored_equality}\langle \bff_{*j}, \picanon^{-1}(\vv^{(1)})\rangle = \mu_j \qquad \text{for all } j\in [\codedim_2].\end{equation} 
+\item \textbf{Round 1: lifting the constraint over $\evalfield$ to {$\ZZ$}} 
+\begin{itemize}[leftmargin=*]
+    \item The prover sends $\mu_1, \ldots, \mu_{\codedim_2}\in \range{0}{q-1}^{\leq \degevalfield}[X]$ such that \begin{equation}\label{e:tensored_equality}\langle \bff_{*j}, \picanon^{-1}(\vv^{(1)})\rangle = \mu_j \qquad \text{for all } j\in [\codedim_2].\end{equation} 
 \item The verifier checks that \begin{equation}\label{e:tensor_decomposition_reconstruction}\sum_{j\in [\codedim_2]} \picanon(\mu_j)\cdot \vv_j^{(2)}  = \mu\qquad \text{over } \evalfield.\end{equation} 
 Next, prover and verifier will focus on certifying that \eqref{e:tensored_equality} holds for all $j\in [\codedim_2]$.
 
@@ -587,9 +589,11 @@ In \cref{?} we describe a variation in which, instead of sending the elements $\
 \mu_j &\gets \pi_{q'}^{-1}(\pi_{q',\alpha}(\mu_j)) \in \range{0}{q'-1}\subseteq \ZZ, \qquad j\in [\codedim_2],\\
 q&\gets q'.
 \end{align*}
+\end{itemize}
 %
 %For ease of readability onwards, we use the same symbols $\vv^{(1)}$ and $q$ for the pre- and post-update vectors and primes in this step.
-
+\item \textbf{Phase 2: Transforming the claim into a PESAT claim over {$\comfield$}, and invoking the IOR {$\Pi_{\mathsf{red}}$}.}
+\begin{itemize}[leftmargin=*]
 \item Note that, at this point of the protocol, $\vv^{(1)}\in \FF_q^{\codedim_1}$. 
 Prover and verifier define $$\bm{\gamma} = \pi_{q}^{-1}(\vv^{(1)}) \in \range{0}{q-1}^{\codedim_1}\subseteq \ZZ^{\codedim_1},$$ and set to prove the following claim:
 %
@@ -615,22 +619,125 @@ where in the honest case  $f_{*j} = \Enc_{\cC_1}(\pack(\picomfield(\bff_{*j})))\
 %
 \begin{equation}\label{e:iopp_mle_claims}
 \left((\vv, \mu_j'), \ f_{*j}, \ \picomfield(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation_{\mathsf{Lin}}( \comfield,\cC_1,\pack)\right)^{\codedim_2}\end{equation} for some vector $\vv$ and field elements $\mu_j'$ output during the IOR $\Pi_{\mathsf{red}}^{\codedim_2}$. 
-\item Prover and  verifier engage in an IOP  to certify the claims \eqref{e:iopp_mle_claims}. 
+\end{itemize}
+\item \textbf{Phase 2: Using an IOPP over {$\comfield$}.} Prover and  verifier engage in an IOP  to certify the claims \eqref{e:iopp_mle_claims}. 
 \end{enumerate}
 \end{construction}
 
-\begin{theorem}\label{t:thm_core_IOPP}
-    \albert{Completeness and RBR knowledge soundness of \cref{c:core_iop} }
+\renewcommand{\red}{\mathsf{red}} 
+\newcommand{\iopp}{\mathsf{iopp}} 
+
+\newcommand{\ksred}{{\kappa_{\red}}}
+\newcommand{\ksiopp}{{\kappa_{\iopp}}}
+
+
+\subsection{Soundness and completeness}
+
+
+
+\begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:core_iop}]\label{t:thm_core_IOPP}
+    Assume $\Pi_{\mathsf{red}}^{\codedim_2}$ is a perfectly complete $t_\red$-round IOR from $\PESAT(\comfield, Q_{\FF 2 \ZZ},\cC_1, \pack)^{\codedim_2}$ to $\Relation_{\mathsf{Lin}}(\comfield, \cC_1, \pack)^{\codedim_2}$ with round-by-round knowledge soundness errors $(\ksred_1, \ldots, \ksred_{t_\red})$. Assume $\Pi_{\iopp}$ is a perfectly complete $t_{\iopp}$-round IOPP \albert{IOPP or IOP?} from $\Relation_{\mathsf{Lin}}(\comfield, \cC_1, \pack)^{\codedim_2}$ with round-by-round knowledge soundness errors $\ksiopp_1,\ldots, \ksiopp_{t_\iopp}$. 
+
+    Then, if $\degevalfield>0$, \cref{c:core_iop} is a perfectly complete $1+t_\red+t_\iopp$ IOPP for $\Relation_{\mathsf{Lin-BitsDual}}$ with round-by-round knowledge soundness errors $\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}$, where
+    %
+    $$
+    \kappa_0 = \frac{\degevalfield}{q_{\min}} + \frac{\log(\codedim_1 +1) + \log(q-1)}{|\cP|\cdot \log(q_{\min})}
+    $$
+    and $q_{\min}$ is the smallest prime in the set of sampleable primes $\cP$ from Step 3 of \cref{c:core_iop}. 
+
+    If $\degevalfield=0$, i.e.\ $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$ IOPP with round-by-round knowledge soundness errors $\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}$.
 \end{theorem}
+
+
+
+
+To prove \cref{t:thm_core_IOPP} we begin with the following lemma, which is implicit in \cite{zincplus} \albert{or is it explicit as a particular case of reductions on $\QQ[X]$?}. 
+\begin{lemma}\label{l:reduction_lemma}
+Let $h(X)\in \ZZ[X]$ be a nonzero polynomial of degree $\leq d$ and with coefficients in the range $\range{-2^{B}+1}{2^B-1}$. Let $\cP$ be a set of primes, and let $q_{\min}$ be the smallest prime in $\cP$. Then 
+%
+$$
+\Pr_{\substack{q\gets \cP,\\\alpha \gets \FF_q}}[\pi_{q,\alpha}(f(X))=0] \leq \frac{B}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{d}{q_{\min}}.
+$$
+\end{lemma}
 \begin{proof}
-Observe that \cref{c:core_iop} is the result of composing an IOR $\Pi_{1234}$ with an IOP $\Pi_{56}$. The IOR  $\Pi_{1234}$ reduces the relation $\Relation_{\mathsf{Lin-BitsDual}}$ to $\Relation':=\left(\PESAT(\comfield, Q_{\FF 2 \ZZ},\cC_1, \pack)\right)^{\codedim_2}$, as consists in applying Steps 1,2, and 3 of \cref{c:core_iop}, and at Step 4 outputting 
-$$
-\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\picomfield(\bff_{*j})\right)\in \PESAT(\comfield, Q_{\FF 2 \ZZ},\cC_1, \pack) \qquad \text{for } j\in [\ell_2].
-$$
-The IOP $\Pi_{56}$ is an IOP for  the relation $\Relation'$ and it consists in applying Steps 5 and 6 of \cref{c:core_iop}, which in turn is the result of composing the IOR $\Pi_{\mathsf{red}}$, and the IOP for $\left(\Relation_{\cC_1, \comfield,\pack}\right)^{\codedim_2}$. By the composition of IORs result (cf.\ \cref{r:ior_compositoin}), it suffices to analyze the completeness and RBR knowledge soundness of the IOR and the IOP separately. 
+Let $\cE_{\mathsf{prime}}$ be the event that $f(X)$ is  a multiple of $q$. Then, by Schwartz-Zippel lemma, $$\Pr_{\substack{q\gets \cP,\\\alpha \gets \FF_q}}[\pi_{q,\alpha}(f(X))=0\mid \neg \cE_{\mathsf{prime}}] \leq  \frac{d}{q_{\min}}.$$
+%
+Now, every nonzero coefficient of $f(X)$ is divisible by at most $B/\lfloor\log(q_{\min})\rfloor$ primes from $\cP$. Hence, the probability that $\cE_{\mathsf{prime}}$ occurs is at most $(B/\lfloor\log(q_{\min})\rfloor)/|\cP|$, and the lemma follows.
+%
+\end{proof}
 
 
-\albert{WIP}
+\begin{proof}[Proof of \cref{t:thm_core_IOPP}]
+%
+We decompose \cref{c:core_iop} into three IORs $\Pi_1, \Pi_2, \Pi_3$.  The first one, $\Pi_1$, is a $1$-round IOR from $\Relation_{\mathsf{Lin-BitsDual}}$ to $\PESAT(\comfield, Q_{\FF 2 \ZZ}, \cC_1, \pack)^{\codedim_2}$, and it consists of applying Round 1 of \cref{c:core_iop}, and outputting $$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\picomfield(\bff_{*j})\right)_{j\in [\codedim_2]},$$ as described at the beginning of Phase 1 of \cref{c:core_iop}. The second IOR, $\Pi_2$, is simply $\Pi_{\mathsf{red}}^{\codedim_2}$, reducing $\PESAT(\comfield, Q_{\FF 2 \ZZ}, \cC_1, \pack)^{\codedim_2}$ to $\left(\Relation_{\cC_1, \comfield,\pack}\right)^{\codedim_2}$. Finally, the third IOR, $\Pi_3$, is simply the IOP of proximity $\Pi_{\iopp}$ for $\left(\Relation_{\cC_1, \comfield,\pack}\right)^{\codedim_2}$.
+
+
+By the composition of IORs result (cf.\ \cref{r:ior_compositoin}), it suffices to show that $\Pi_1$ has round-by-round knowledge error $\kappa_0$, and is perfectly complete. 
+
+
+
+
+
+\paragraph{Completeness and soundness of $\Pi_1$}
+
+We describe a knowledge state function $\kstate$. Let $\inp=(\vv,\mu)\in \evalfield^{\codedim} \times \evalfield$ and  $\yy=f\in \comfield^{\codelength}$. Let $\tr$ be a partial interaction transcript for \cref{c:core_iop}. We start by setting $\kstate$ so that the first two conditions in \cref{?} are met. Precisely, if   $\tr=\empty$, we set $kstate(\inp,\oracle,\tr,\ww) = 1$ if and only if $(\inp, \oracle, \ww)\in \Relation_{\mathsf{Lin-BitsDual}}$; and we have $\kstate$ output zero on inputs  $(\inp,\oracle,\tr||\pi,\ww)$ where $\pi$ is a prover  message \albert{notation collision} and $\kstate(\inp,\oracle,\tr,\ww)=0$.
+
+After the verifier's first message, $\tr$ is as follows:
+%
+$$
+\tr=(\mu_1, \ldots,\mu_{\codedim_2}, q',\alpha) \in \range{0}{q-1}^{\leq \degevalfield}[X]^{\codedim_2} \times \cP \times \FF_{q'}.
+$$
+%
+We define $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if $\ww=\ff\in \bits^{\codedim}\subseteq \ZZ^\codedim$,  $\ff=(\ff_{*j})_{j\in [\codedim_2]}\in \left(\bits^{\codedim_1}\right)^{\codedim_2}$, and 
+%
+\begin{equation}\label{e:core_iop_proof_eq1}
+\langle \bff_{*j}, \pi_{q'}^{-1}(\pi_{q',\alpha}(\pi_{\mathsf{canon}}^{-1}(\vv^{(1)})))\rangle = \pi_{q'}^{-1}(\pi_{q',\alpha}(\mu_j)) \qquad \text{ for all } j\in [\codedim_2]
+\end{equation}
+\albert{something about the oracle?}
+We define $\rbrextractor(\inp,\oracle,\bm{\mu}\Vert q',\alpha,\ww)=\ww$. Let $\bm{\mu}=(\mu_1,\ldots, \mu_{\codedim_2})$. We next show that 
+%
+\[
+  \Pr_{q',\alpha'}\!\left[
+  \exists\,\ww \ \left| \ \begin{array}{l}
+  \wedge\ \kstate\bigl(\inp,\oracle,\bm{\mu},\rbrextractor(\inp,\oracle,\bm{\mu}, q',\alpha,\ww)\bigr)=0\\
+  \wedge\ \kstate(\inp,\oracle,\bm{\mu}, q', \alpha, \ww)=1
+  \end{array}
+  \right.\right]
+  \ \le\ \kappa_0(??).
+\]
+Indeed, let $\ww'= \rbrextractor(\inp,\oracle,\bm{\mu}, q',\alpha,\ww)$. Assume $\kstate(\inp,\oracle,\bm{\mu}, q', \alpha, \ww)=1$ and  $\kstate(\inp,\oracle,\bm{\mu},  \rbrextractor(\inp,\oracle,\bm{\mu}, q',\alpha,\ww))=\kstate(\inp,\oracle,\bm{\mu},  \ww)=0$.
+The latter occurs if and only if  $\kstate\bigl(\inp,\oracle,\ww\bigr)=0$, which in turn occurs if and only if  $(\inp,\oracle,\ww)\notin \Relation_{\mathsf{Lin-BitsDual}}$. Thus we have to bound the probability over $q',\alpha$ that $(\inp,\oracle,\ww)\notin \Relation_{\mathsf{Lin-BitsDual}}$ and $\ww=(\bff_{*j})$ satisfies \cref{e:core_iop_proof_eq1}. To that end, assume $(\inp,\oracle,\ww)\notin \Relation_{\mathsf{Lin-BitsDual}}$. Then $\langle \pi_q(\bff_{*j}), \vv^{(1)} \rangle\neq \mu_j$ over $\KK$ for some $j\in [\codedim_2]$. In particular, $\langle \bff_{*j}), \pi_{\mathsf{canon}}^{-1}(\vv^{(1)}) \rangle\neq \pi_{\mathsf{canon}}^{-1}(\mu_j)$ over $\ZZ[X]$. Let $$p_j(X)\defeq  \langle \bff_{*j}, \pi_{\mathsf{canon}}^{-1}(\vv^{(1)}) \rangle- \pi_{\mathsf{canon}}^{-1}(\mu_j) \in \ZZ[X].
+$$
+Then $p_j$ is a nonzero integer polynomial of degree $\leq \degevalfield$ and with coefficients of absolute value at most $\codedim_1\cdot (q-1) + (q-1)$ (here we use that all entries in $\bff_{*j}$ are bits). Now, if $\bff_{*j}$ satisfies \cref{e:core_iop_proof_eq1}, then, applying $\pi_{q'}$ on both sides, reorganizing terms,  using that $\pi_{q'}(\bff_{*j})=\pi_{q',\alpha}(\bff_{*j})$ and the linearity of $\pi_{q', \alpha}$,
+%
+$$
+0=\langle \pi_{q'}(\bff_{*j}), \pi_{q',\alpha}(\pi_{\mathsf{canon}}^{-1}(\vv^{(1)}))\rangle -\pi_{q',\alpha}(\mu_j) = \pi_{q', \alpha}\left(\langle \bff_{*j}, \pi_{\mathsf{canon}}^{-1}(\vv^{(1)})\rangle -\mu_j\right) = \pi_{q', \alpha}(p_j(X)). 
+$$
+%
+Hence 
+%
+$$
+\Pr_{q',\alpha}[(\inp,\oracle,\ww)\notin \Relation_{\mathsf{Lin-BitsDual}}, \text{ and }\ww=(\bff_{*j}) \text{ satisfies  \cref{e:core_iop_proof_eq1}}] \leq \Pr_{q',\alpha}[\pi_{q',\alpha}(p_j(X))=0] 
+$$
+%
+By \cref{l:reduction_lemma},
+%
+$$
+\Pr_{q',\alpha}[\pi_{q',\alpha}(p_j(X))=0] \leq \frac{\log(\codedim_1+1) + \log(q-1)}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{\degevalfield}{q_{\min}} = \kappa_0,
+$$
+as needed.
+
+It remains to see that if  $\tr$ is a full transcript of $\Pi_1$, then $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if verifier with input $(\inp,\oracle, \tr)$ outputs $(\inp',\oracle')$ such that $(\inp',\oracle', \ww)\in \PESAT(\comfield,Q_{\FF 2 \ZZ},\cC_1, \pack)^{\codedim_2}$ \albert{yes?}. Indeed, write as before $\tr=(\bm{\mu}, q', \alpha)$. By definition, $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if $\ww=(\bff_{*j})_{j\in [\codedim_2]}$ satisfies \eqref{e:core_iop_proof_eq1}. The output of the verifier is 
+$$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \right)_{j\in [\codedim_2]},$$
+%
+where $$\bm{\gamma} = \pi_{q'}^{-1}(\pi_{q',\alpha}(\pi_{\mathsf{canon}}^{-1}(\vv^{(1)}))) \in \range{0}{q'-1}^{\codedim_1}\subseteq \ZZ^{\codedim_1}.$$
+The equalities in \eqref{e:core_iop_proof_eq1}  take place in $\ZZ$. Concretely, the right-hand-side is an integer in the range $\range{0}{q'-1}$, and hence so is the left-hand-side.  Hence if the multiplicative order of $g$ (the generator of $\comfield^*$) is larger than $q'-1$, we have that \eqref{e:core_iop_proof_eq1} holds if and only if \albert{shouldn't we account for the growth $\codedim_1\cdot (q'-1)$? Also how does the need of having many samplable primes affect the maximum possible size of $q'$?}
+%
+$$
+g^{\langle \bff_{*j}, \bm{\gamma}\rangle} = g^{\pi_{q'}^{-1}(\pi_{q',\alpha}(\mu_j))}\qquad \text{ for all } j\in [\codedim_2].
+$$
+
+%
 \end{proof}
 
 
@@ -1092,25 +1199,6 @@ $$
 for some $\rr^{(2)} \in \KK^{\log \codedim}$ \albert{Ask $\codedim$ to be a power of two before} and some $\mu\in \KK$. In other words, $((\rr^{(2)},\mu),\bot,\pi(\bff)) \in \Relation_{\mathsf{mle}}$ over $\KK$.
 \end{remark}
 
-\subsection{Soundness and completeness}
-
-
-
-\paragraph{Auxiliary lemmas}
-The following result is implicit in \cite{zincplus} \albert{or is it explicit as a particular case of reductions on $\QQ[X]$?}. 
-\begin{lemma}\label{l:reduction_lemma}
-Let $h(X)\in \ZZ[X]$ be a nonzero polynomial of degree $\leq d$ and with coefficients in the range $\range{-2^{B}+1}{2^B-1}$. Let $\cP$ be a set of primes, and let $q_{\min}$ be the smallest prime in $\cP$. Then 
-%
-$$
-\Pr_{\substack{q\gets \cP,\\\alpha \gets \FF_q}}[\pi_{q,\alpha}(f(X))=0] \leq \frac{B}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{d}{q_{\min}}.
-$$
-\end{lemma}
-\begin{proof}
-Let $\cE_{\mathsf{prime}}$ be the event that $f(X)$ is  a multiple of $q$. Then, by Schwartz-Zippel lemma, $$\Pr_{\substack{q\gets \cP,\\\alpha \gets \FF_q}}[\pi_{q,\alpha}(f(X))=0\mid \neg \cE_{\mathsf{prime}}] \leq  \frac{d}{q_{\min}}.$$
-%
-Now, every nonzero coefficient of $f(X)$ is divisible by at most $B/\lfloor\log(q_{\min})\rfloor$ primes from $\cP$. Hence, the probability that $\cE_{\mathsf{prime}}$ occurs is at most $(B/\lfloor\log(q_{\min})\rfloor)/|\cP|$, and the lemma follows.
-%
-\end{proof}
 
 
 
