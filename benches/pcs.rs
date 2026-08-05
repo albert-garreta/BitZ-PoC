@@ -28,6 +28,10 @@
 //!   grinding at the same 100-bit target, the proof-size profile), `fast`
 //!   (base RS rate 1/2), `secure` (120-bit UDR). Below m = 22 every profile
 //!   falls back to the ad-hoc rate-1/4 config (unaudited, test-only).
+//! - `F2Z_BENCH_EXT`: also run the extension-field arm against the same
+//!   commitment — `1`/`gl2` = Goldilocks² (e=2), `bb4` = BabyBear⁴
+//!   (X⁴ − 11, the Plonky3 challenge field; e=4). Companion Plonky3
+//!   baseline: `~/Plonky3 uni-stark/benches/prove_mul_babybear.rs`.
 //!
 //! Protocol notes (from the zinc-plus measurement lore): idle the box first;
 //! for quotable *time* numbers at big shapes run one shape per process (the
