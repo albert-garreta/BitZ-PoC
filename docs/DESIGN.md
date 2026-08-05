@@ -70,6 +70,54 @@ recursive Ligerito call (their `B(y)` bases combined with a shared `r″`), and 
 verifier recombines `y = Σ_c e_c · Σ_l 2^{c_w·l} u_c^{(l)}` in `F_q` in the clear.
 Both the range check and the generator check are load-bearing.
 
+## Extension-field evaluation (paper `c:core_iop`, Steps 1–3)
+
+`prove/verify_mle_eval_ext_ligerito` open `⟨π_q(bits), v⟩ = μ ∈ K` for an
+**extension** evaluation field `K = F_q[X]/(h(X))` of degree `e ≥ 2` (e.g. the
+Goldilocks or BabyBear extensions an outer PIOP samples its point from). The
+canonical lift of the row weights `π_canon^{-1}(v^{(1)})` is then a vector of
+integer *polynomials* (coefficient-wise lift to `[0, q)`, degree `< e`), which
+cannot ride one exponent, so the paper's Step 3 collapses the claim onto a
+random prime field first:
+
+1. **Step 1** — the prover sends, per module-basis coordinate `d`, the exact
+   integer chunk folds `μ_{c,d}^{(l)} = ⟨bits_c, chunk_l(coords_d)⟩ < 2^127`
+   (base-`2^{c_w}` digits of the coefficients of `μ_c ∈ ℤ[X]`; `e·L₁·2^s`
+   values, `L₁ = ⌈q_bits/c_w⌉`). These are **not** GKR-certified — only
+   absorbed into the transcript (with the same `< 2^{c_w+t+W}` range check on
+   the verifier side, `ExtChunkRange`).
+2. **Step 3** — both sides sample from the transcript a **random prime**
+   `q' ∈ [2^{bits−1}, 2^{bits})` (`ExtProjParams::prime_bits`, default 100;
+   rejection sampling + Miller–Rabin with a base-2 pre-filter and
+   `mr_rounds` transcript-derived bases, default 64 → composite acceptance
+   `≤ 4^{-64}` per grinding query) and a point `α' ∈ F_{q'}` (256-bit
+   reduction, bias `≈ 2^{-156}`), then project the weights:
+   `γ_b = (Σ_d coords_d[b]·α'^d) mod q'` (`ext_proj::projected_row_weights`,
+   Montgomery-backed). This **replaces the plain `π_q^{-1}(v^{(1)})` lift**
+   of the prime-field path.
+3. **Steps 4–6** — the ordinary mod-`q'` opening runs on `γ` unchanged
+   (`L₂ = ⌈prime_bits/c_w⌉` chunk forests, pre-sumchecks, ring-switch, one
+   η-batched Ligerito call — `IntEvalRsLigExtProof.base` is a plain
+   `IntEvalRsLigModQProof`).
+
+The verifier accepts iff the mod-`q'` core accepts **and** (A) per column
+`Σ_l 2^{c_w·l}·u_c^{(l)} ≡ μ_c(α') (mod q')` (`ExtCongruence`) — the
+certified integer folds pin the Step-1 polynomials: a lie is a nonzero
+difference polynomial of degree `< e` with `~127`-bit coefficients, surviving
+the random `(q', α')` with probability `≈ B/(log q'·|𝒫|) + (e−1)/q'`
+(paper `l:reduction_lemma`; ~2^-90 at the defaults) — **and** (B)
+`Σ_c v_c^{(2)}·π_canon(μ_c) = μ` over `K` (`ExtReadOff`), computed through
+the generic evaluation ring `R` with a caller-supplied image of the module
+basis (`basis[d] = ψ_M(X^d)`), coordinate by coordinate via the same
+`recombine_read_off` as the prime path.
+
+Cost relative to a prime-field opening at the same shape: the forest side is
+the mod-`q'` opening (same `L₂` as a ~100-bit prime claim); the extension
+adds only `e·L₁` cheap integer fold passes, `e·L₁·2^s` transmitted `u128`s,
+and the `O(2^t·e)` Montgomery projection. For `e = 1` use the base
+`prove/verify_mle_eval_mod_q_ligerito` (Step 3 is the identity there; the
+ext entry points reject it).
+
 ## Mod-q RLC claim families (EXPERIMENTAL)
 
 `prove/verify_mle_eval_mod_q_ligerito_rlc_family`: k claims
@@ -136,6 +184,11 @@ is appended as a **length-prefixed `bincode` 1.3 blob** (bincode 1.3 being
 flock's own pinned encoder). The codec is canonical (re-serialization is
 byte-identical) and rejects any tampered byte — the stream fails to decode, or
 the reconstructed proof fails verification.
+
+`IntEvalRsLigExtProof::to_bytes` / `from_bytes` wrap the same machinery for
+the extension-field opening: the Step-1 fold vectors first (each with its
+all-zero tail trimmed under the same non-minimal-encoding rejection as the
+base `us`), then the embedded base proof as one length-prefixed blob.
 
 ## Optimization inventory (as extracted)
 

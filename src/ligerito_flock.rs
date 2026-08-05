@@ -510,6 +510,18 @@ pub enum FlockRsError {
     LigeritoReject,
     /// A sent chunk fold failed the free range check `u < 2^{c_w+t+W}`.
     ChunkRange { chunk: usize, col: usize },
+    /// The extension-field Step-1 fold table has the wrong shape
+    /// (`ext_deg · L₁` chunk-fold vectors of at most `2^s` entries).
+    ExtShape,
+    /// An extension-field Step-1 coefficient fold failed the free range
+    /// check `μ < 2^{c_w+t+W}` (coordinate `coeff`, chunk `chunk`).
+    ExtChunkRange { coeff: usize, chunk: usize, col: usize },
+    /// The GKR-certified folds disagree with the sent Step-1 polynomials at
+    /// the sampled projection point: `⟨bits_c, γ⟩ ≢ μ_c(α') (mod q')`.
+    ExtCongruence { col: usize },
+    /// The extension-field read-off failed:
+    /// `Σ_c v_c^{(2)}·π_canon(μ_c) ≠ μ` over the evaluation field `K`.
+    ExtReadOff,
 }
 
 /// Prove `M̂(point) = μ` (μ implied by the transcript) through ring-switch +
@@ -1189,6 +1201,7 @@ fn fill_phi_basis_round0(
 
 /// End-to-end mod-q proof (chunks share one commitment; merged forests;
 /// per-chunk roots derived from `us`).
+#[derive(Clone)]
 pub struct IntEvalRsLigModQProof {
     pub mfs: Vec<MergedForestProof>,
     /// `us[l]` = the 2^s chunk folds `u_c^{(l)}`.
@@ -1315,9 +1328,50 @@ pub fn verify_mle_eval_mod_q_ligerito<R>(
 where
     R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
 {
-    use crate::pcs::{
-        chunk_row_weights, mod_q_chunk_width, mod_q_num_chunks, recombine_read_off,
-    };
+    use crate::pcs::{mod_q_chunk_width, mod_q_num_chunks, recombine_read_off};
+    let us = verify_mod_q_lig_core(
+        transcript,
+        commitment,
+        proof,
+        p,
+        row_weights_q,
+        alpha,
+        q_bits,
+        vc,
+    )?;
+    let c_w = mod_q_chunk_width(p);
+    let lch = mod_q_num_chunks(p, q_bits);
+
+    // Recombine in R: y = Σ_c w′_c · Σ_l 2^{c_w·l}·u_c^{(l)}.
+    let v_flat: Vec<u128> = us.iter().flat_map(|u| u.iter().copied()).collect();
+    let y = recombine_read_off(p, &v_flat, 0, col_weights, c_w, lch);
+    if y != claimed {
+        return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
+    }
+    Ok(())
+}
+
+/// The claim-agnostic core of [`verify_mle_eval_mod_q_ligerito`]: everything
+/// that binds the transmitted chunk folds `us` to the committed bits under
+/// the row weights (per-chunk range checks, merged forests, pre-sumchecks,
+/// ring-switch, the ONE η-batched Ligerito call) — but NOT the final
+/// read-off, which differs between the prime-field claim (recombine in `R`
+/// against `claimed`) and the extension-field claim (congruence against the
+/// Step-1 polynomials mod `q'` plus the `K`-side recombination). Returns
+/// the chunk folds re-padded to the full `2^s`.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+fn verify_mod_q_lig_core(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: &IntEvalRsLigModQProof,
+    p: &IntEvalParams,
+    row_weights_q: &[u128],
+    alpha: Gf,
+    q_bits: usize,
+    vc: &LigVerifierConfig,
+) -> Result<Vec<Vec<u128>>, FlockRsError> {
+    use crate::pcs::{chunk_row_weights, mod_q_chunk_width, mod_q_num_chunks};
     let c_w = mod_q_chunk_width(p);
     let lch = mod_q_num_chunks(p, q_bits);
     if proof.mfs.len() != lch
@@ -1423,11 +1477,258 @@ where
         return Err(FlockRsError::LigeritoReject);
     }
 
-    // Recombine in R: y = Σ_c w′_c · Σ_l 2^{c_w·l}·u_c^{(l)}.
-    let v_flat: Vec<u128> = us.iter().flat_map(|u| u.iter().copied()).collect();
-    let y = recombine_read_off(p, &v_flat, 0, col_weights, c_w, lch);
+    Ok(us)
+}
+
+// ---------------------------------------------------------------------
+// EXTENSION-FIELD evaluation claims (paper `c:core_iop`, Steps 1–3): open
+// `⟨π_q(bits), v⟩ = μ ∈ K` for an extension field `K = F_q[X]/(h(X))` of
+// degree `e ≥ 2`. The row weights' canonical lift `π_canon^{-1}(v^{(1)})`
+// is now a vector of integer POLYNOMIALS (degree < e, coefficients in
+// `[0, q)`), so the claim cannot ride one exponent fold directly. Instead:
+//
+//   Step 1  the prover sends, per basis coordinate `d`, the exact
+//           integer chunk folds
+//           `μ_{c,d}^{(l)} = ⟨bits_c, chunk_l(coords_d)⟩ < 2^{c_w+t+W}`
+//           (the coefficients of `μ_c ∈ ℤ[X]` in base-2^{c_w} digits) —
+//           NOT GKR-certified, just absorbed into the transcript;
+//   Step 3  both sides sample a random prime `q'` and a point
+//           `α' ∈ F_{q'}` from the transcript and project the weights,
+//           `γ = (Σ_d coords_d·α'^d) mod q'` — the extension-field
+//           replacement for the plain `π_q^{-1}(v^{(1)})` lift;
+//   Steps 4–6  the ORDINARY mod-q' opening runs on `γ` (same forests,
+//           pre-sumchecks, ring-switch, one Ligerito call).
+//
+// The verifier accepts iff the mod-q' core accepts AND
+//   (A) per column: `Σ_l 2^{c_w·l}·u_c^{(l)} ≡ μ_c(α') (mod q')` — the
+//       certified folds pin the sent polynomials via Schwartz–Zippel over
+//       the random `(q', α')` (paper `l:reduction_lemma`); and
+//   (B) `Σ_c v_c^{(2)}·π_canon(μ_c) = μ` over `K` — the Step-2 read-off,
+//       computed through the generic evaluation ring `R` with a
+//       caller-supplied image of the module basis.
+// ---------------------------------------------------------------------
+
+/// The extension-field opening: the Step-1 per-coefficient chunk folds plus
+/// the ordinary mod-`q'` proof for the projected claim.
+#[derive(Clone)]
+pub struct IntEvalRsLigExtProof {
+    /// `mus[d·L₁ + l][c] = ⟨bits_c, chunk_l(coords_d)⟩` — coordinate-major,
+    /// `ext_deg · L₁` vectors of `2^s` folds (`L₁ = ⌈q_bits/c_w⌉`). The
+    /// codec trims each vector's all-zero tail exactly like the base
+    /// proof's `us`.
+    pub mus: Vec<Vec<u128>>,
+    /// The mod-`q'` opening of the projected claim at the row weights `γ`.
+    pub base: IntEvalRsLigModQProof,
+}
+
+/// Absorb the Step-1 folds into the transcript (16-byte little-endian
+/// values, coordinate-major, full `2^s` per vector) — they must be bound
+/// BEFORE the projection prime and point are squeezed.
+fn absorb_ext_step1_folds(transcript: &mut impl Transcript, mus: &[Vec<u128>]) {
+    let total: usize = mus.iter().map(|m| m.len().wrapping_mul(16)).sum();
+    let mut buf = Vec::with_capacity(total);
+    for m in mus {
+        for &u in m {
+            buf.extend_from_slice(&u.to_le_bytes());
+        }
+    }
+    transcript.absorb_slice(&buf);
+}
+
+/// Prove `⟨π_q(bits), v^{(1)} ⊗ v^{(2)}⟩ = μ` over an extension field
+/// `K = F_q[X]/(h(X))` of degree `ext_deg ≥ 2` with the Ligerito opening.
+///
+/// `weight_coords[d][b] ∈ [0, 2^{q_bits})` is coordinate `d` of the
+/// canonical integer lift `π_canon^{-1}(v^{(1)}_b)` (coordinate-major, one
+/// vector of length `2^t` per basis element `1, X, …, X^{e−1}`). For a
+/// prime field (`ext_deg = 1`) use [`prove_mle_eval_mod_q_ligerito`] — the
+/// projection step is the identity there and this entry point rejects it.
+#[allow(clippy::arithmetic_side_effects)]
+pub fn prove_mle_eval_ext_ligerito(
+    transcript: &mut (impl Transcript + Send),
+    hint: &FlockCommitHint,
+    p: &IntEvalParams,
+    weight_coords: &[Vec<u128>],
+    q_bits: usize,
+    proj: &crate::ext_proj::ExtProjParams,
+    alpha: Gf,
+    pc: &LigProverConfig,
+) -> IntEvalRsLigExtProof {
+    use crate::ext_proj::{projected_row_weights, sample_proj_point, sample_proj_prime};
+    use crate::pcs::{chunk_row_weights, mod_q_chunk_width, mod_q_num_chunks};
+    let ext_deg = weight_coords.len();
+    assert!(
+        ext_deg >= 2,
+        "extension degree must be ≥ 2 (use prove_mle_eval_mod_q_ligerito for prime fields)"
+    );
+    assert!((1..=126).contains(&q_bits), "q_bits must be in [1, 126]");
+    proj.validate();
+    let coord_bound = 1u128 << q_bits;
+    for wc in weight_coords {
+        assert_eq!(wc.len(), p.rows(), "one weight coordinate per row");
+        assert!(wc.iter().all(|&x| x < coord_bound), "weight coordinates must be < 2^q_bits");
+    }
+    let c_w = mod_q_chunk_width(p);
+    let l1 = mod_q_num_chunks(p, q_bits);
+
+    // Step 1: the exact integer folds of every coordinate's chunked lift.
+    let mus: Vec<Vec<u128>> = {
+        let _g = crate::utils::prof::scope("ext:step1_folds");
+        weight_coords
+            .iter()
+            .flat_map(|wc| {
+                chunk_row_weights(wc, c_w, l1)
+                    .into_iter()
+                    .map(|w_l| crate::ligerito::fold_values_bits(p, &hint.rows, &w_l))
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    };
+    absorb_ext_step1_folds(transcript, &mus);
+
+    // Step 3: random prime + point, then the projected row weights γ.
+    let q_proj = sample_proj_prime(transcript, proj);
+    let alpha_proj = sample_proj_point(transcript, q_proj);
+    let gamma = {
+        let _g = crate::utils::prof::scope("ext:project_weights");
+        projected_row_weights(weight_coords, q_proj, alpha_proj)
+    };
+
+    // Steps 4–6: the ordinary mod-q' opening at γ.
+    let base =
+        prove_mle_eval_mod_q_ligerito(transcript, hint, p, &gamma, proj.prime_bits, alpha, pc);
+    IntEvalRsLigExtProof { mus, base }
+}
+
+/// Verify an extension-field evaluation claim `claimed ∈ R ≅ K`.
+///
+/// `weight_coords` as in [`prove_mle_eval_ext_ligerito`]; `col_weights[c] =
+/// v_c^{(2)} ∈ K`; `basis[d]` is the image in `K` of the `d`-th module
+/// basis element (for `K = F_q[X]/(h)` in the power basis:
+/// `basis = [1, X, …, X^{e−1}]` as `R`-elements). `R::from(u128)` must be
+/// the ring embedding `ℤ → K` (reduction mod `q` into the prime subfield).
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub fn verify_mle_eval_ext_ligerito<R>(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: &IntEvalRsLigExtProof,
+    p: &IntEvalParams,
+    weight_coords: &[Vec<u128>],
+    col_weights: &[R],
+    basis: &[R],
+    alpha: Gf,
+    claimed: R,
+    q_bits: usize,
+    proj: &crate::ext_proj::ExtProjParams,
+    vc: &LigVerifierConfig,
+) -> Result<(), FlockRsError>
+where
+    R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
+{
+    use crate::ext_proj::{
+        ProjArith, projected_row_weights, sample_proj_point, sample_proj_prime,
+    };
+    use crate::pcs::{mod_q_chunk_width, mod_q_num_chunks, recombine_read_off};
+    let ext_deg = weight_coords.len();
+    assert!(
+        ext_deg >= 2,
+        "extension degree must be ≥ 2 (use verify_mle_eval_mod_q_ligerito for prime fields)"
+    );
+    assert!((1..=126).contains(&q_bits), "q_bits must be in [1, 126]");
+    assert_eq!(basis.len(), ext_deg, "one basis image per weight coordinate");
+    proj.validate();
+    let coord_bound = 1u128 << q_bits;
+    for wc in weight_coords {
+        assert_eq!(wc.len(), p.rows(), "one weight coordinate per row");
+        assert!(wc.iter().all(|&x| x < coord_bound), "weight coordinates must be < 2^q_bits");
+    }
+    let c_w = mod_q_chunk_width(p);
+    let l1 = mod_q_num_chunks(p, q_bits);
+    let cols = p.cols();
+
+    // Step-1 folds: shape, re-pad (the codec trims all-zero tails), and the
+    // free range check — the honest fold of a chunked weight is
+    // `< 2^{c_w+t+W} = 2^127`, and bounding the sent values bounds the
+    // difference polynomial's coefficients in the Schwartz–Zippel argument.
+    if proof.mus.len() != ext_deg.wrapping_mul(l1) {
+        return Err(FlockRsError::ExtShape);
+    }
+    let range_shift = c_w.wrapping_add(p.t).wrapping_add(p.word_bits);
+    let bound = 1u128 << range_shift;
+    let mut mus: Vec<Vec<u128>> = Vec::with_capacity(proof.mus.len());
+    for (k, m) in proof.mus.iter().enumerate() {
+        if m.len() > cols {
+            return Err(FlockRsError::ExtShape);
+        }
+        for (c, &x) in m.iter().enumerate() {
+            if x >= bound {
+                return Err(FlockRsError::ExtChunkRange { coeff: k / l1, chunk: k % l1, col: c });
+            }
+        }
+        let mut m = m.clone();
+        m.resize(cols, 0);
+        mus.push(m);
+    }
+    absorb_ext_step1_folds(transcript, &mus);
+
+    // Step 3: the same transcript sampling and projection as the prover.
+    let q_proj = sample_proj_prime(transcript, proj);
+    let alpha_proj = sample_proj_point(transcript, q_proj);
+    let gamma = projected_row_weights(weight_coords, q_proj, alpha_proj);
+
+    // Steps 4–6: the mod-q' core binds `us[l][c] = ⟨bits_c, chunk_l(γ)⟩`.
+    let us = verify_mod_q_lig_core(
+        transcript,
+        commitment,
+        &proof.base,
+        p,
+        &gamma,
+        alpha,
+        proj.prime_bits,
+        vc,
+    )?;
+
+    // (A) Per-column congruence mod q': the certified folds must equal the
+    // sent polynomials evaluated at α'. Both sides are recombined from
+    // their base-2^{c_w} digits modulo q'.
+    let zq = ProjArith::new(q_proj);
+    let l2 = mod_q_num_chunks(p, proj.prime_bits);
+    let chunk_base = zq.reduce(1u128 << c_w);
+    let base_pows = zq.powers(chunk_base, l1.max(l2));
+    let alpha_pows = zq.powers(alpha_proj, ext_deg);
+    for c in 0..cols {
+        let mut lhs = 0u128;
+        for (l, u_l) in us.iter().enumerate() {
+            lhs = zq.add(lhs, zq.mul(base_pows[l], u_l[c]));
+        }
+        let mut rhs = 0u128;
+        for d in 0..ext_deg {
+            let mut coeff = 0u128;
+            for l in 0..l1 {
+                coeff = zq.add(coeff, zq.mul(base_pows[l], mus[d.wrapping_mul(l1).wrapping_add(l)][c]));
+            }
+            rhs = zq.add(rhs, zq.mul(alpha_pows[d], coeff));
+        }
+        if lhs != rhs {
+            return Err(FlockRsError::ExtCongruence { col: c });
+        }
+    }
+
+    // (B) The K-side read-off: Σ_c v_c^{(2)}·π_canon(μ_c) = μ, coordinate
+    // by coordinate through the generic ring — coordinate d contributes
+    // basis[d]·Σ_c w′_c·(Σ_l 2^{c_w·l}·μ_{c,d}^{(l)} mod q).
+    let mut y = R::from(0u128);
+    for (d, &b_d) in basis.iter().enumerate() {
+        let flat: Vec<u128> = mus[d.wrapping_mul(l1)..d.wrapping_add(1).wrapping_mul(l1)]
+            .iter()
+            .flat_map(|m| m.iter().copied())
+            .collect();
+        let y_d = recombine_read_off(p, &flat, 0, col_weights, c_w, l1);
+        y = y + b_d * y_d;
+    }
     if y != claimed {
-        return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
+        return Err(FlockRsError::ExtReadOff);
     }
     Ok(())
 }
@@ -7300,6 +7601,55 @@ impl IntEvalRsLigModQProof {
     }
 }
 
+impl IntEvalRsLigExtProof {
+    /// Serialize the extension-field proof: the Step-1 fold vectors (each
+    /// with its all-zero tail trimmed, exactly like the base proof's `us`),
+    /// then the base mod-`q'` proof as one length-prefixed blob. Canonical
+    /// and tamper-rejecting like the base codec.
+    #[allow(clippy::arithmetic_side_effects)]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        use crate::proof_codec::Writer;
+        let mut w = Writer::new();
+        w.len(self.mus.len());
+        for m in &self.mus {
+            let n = transmitted_us_len(m);
+            w.len(n);
+            for &u in &m[..n] {
+                w.u128(u);
+            }
+        }
+        let base = self.base.to_bytes();
+        w.len(base.len());
+        w.bytes(&base);
+        w.into_vec()
+    }
+
+    /// Deserialize the extension-field proof. Mirrors [`Self::to_bytes`].
+    #[allow(clippy::arithmetic_side_effects)]
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, crate::proof_codec::CodecError> {
+        use crate::proof_codec::{CodecError, Reader};
+        let mut r = Reader::new(bytes);
+        let n_mus = r.len()?;
+        let mut mus = Vec::with_capacity(n_mus.min(r.remaining() / 8));
+        for _ in 0..n_mus {
+            let n_u = r.len()?;
+            let mut m = Vec::with_capacity(n_u.min(r.remaining() / 16));
+            for _ in 0..n_u {
+                m.push(r.u128()?);
+            }
+            // The zero tail is implied by the shape, never transmitted.
+            if m.last() == Some(&0) {
+                return Err(CodecError::NonCanonical);
+            }
+            mus.push(m);
+        }
+        let n_bytes = r.len()?;
+        let base_bytes = r.take(n_bytes)?;
+        let base = IntEvalRsLigModQProof::from_bytes(base_bytes)?;
+        Ok(IntEvalRsLigExtProof { mus, base })
+    }
+}
+
 /// Prove an integer-MLE evaluation with the flock-backed opening. The
 /// forest GKR, `v` message, and pre-sumcheck are shared with the zinc
 /// backend ([`prove_int_eval_common`]).
@@ -7369,6 +7719,11 @@ mod tests {
         Gf::from_words([seed ^ 0xA5A5_5A5A_0F0F_F0F0, hi])
     }
 
+    /// Serializes the test that MUTATES the process-global `F2Z_QUAD` env
+    /// var against quad-eligible (row_len ≥ 256) prove/verify pairs that
+    /// must see a stable value across their whole run.
+    static QUAD_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     /// Field bridging is the identity on words, and multiplication agrees —
     /// the two `GF(2^128)` implementations are the same field in the same
     /// representation.
@@ -7391,6 +7746,7 @@ mod tests {
     #[test]
     fn mle_eval_mod_q_ligerito_roundtrips() {
         use crate::pcs::{mod_q_chunk_width, mod_q_num_chunks};
+        let _env = QUAD_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         const Q: u128 = (1u128 << 100) - 15;
         #[derive(Clone, Copy, PartialEq, Debug)]
         struct Fq(u128);
@@ -7567,6 +7923,179 @@ mod tests {
         }
     }
 
+
+    /// Extension-field evaluation (paper `c:core_iop` Steps 1–3) over
+    /// `K = Goldilocks[X]/(X² − 7)`: honest roundtrip at three shapes
+    /// (covering L₁ = 1/2 Step-1 chunking and L₂ = 1/2 projected chunking),
+    /// wrong-claim rejection, Step-1 tamper rejection, shape/range
+    /// rejection, and the codec roundtrip.
+    #[test]
+    fn mle_eval_ext_ligerito_roundtrips() {
+        use crate::ext_proj::ExtProjParams;
+        use crate::pcs::{mod_q_chunk_width, mod_q_num_chunks};
+        let _env = QUAD_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // Goldilocks p = 2^64 − 2^32 + 1; K = F_p[X]/(X² − 7) (the Plonky2
+        // quadratic extension — 7 is a non-residue mod p).
+        const P: u128 = 0xFFFF_FFFF_0000_0001;
+        #[derive(Clone, Copy, PartialEq, Debug)]
+        struct Fp2 {
+            c0: u128,
+            c1: u128,
+        }
+        impl From<u128> for Fp2 {
+            fn from(v: u128) -> Self {
+                Fp2 { c0: v % P, c1: 0 }
+            }
+        }
+        impl core::ops::Add for Fp2 {
+            type Output = Fp2;
+            fn add(self, o: Fp2) -> Fp2 {
+                // Coordinates < P < 2^64: sums stay far below 2^128.
+                Fp2 { c0: (self.c0 + o.c0) % P, c1: (self.c1 + o.c1) % P }
+            }
+        }
+        impl core::ops::Mul for Fp2 {
+            type Output = Fp2;
+            fn mul(self, o: Fp2) -> Fp2 {
+                // Products of < 2^64 values fit u128 exactly.
+                let m = |a: u128, b: u128| (a * b) % P;
+                Fp2 {
+                    c0: (m(self.c0, o.c0) + m(7, m(self.c1, o.c1))) % P,
+                    c1: (m(self.c0, o.c1) + m(self.c1, o.c0)) % P,
+                }
+            }
+        }
+        let basis = [Fp2 { c0: 1, c1: 0 }, Fp2 { c0: 0, c1: 1 }];
+
+        let alpha = smallest_generator();
+        let q_bits = 64usize; // ⌈log₂ p⌉ for Goldilocks
+        let ext_deg = 2usize;
+        let proj = ExtProjParams::default();
+        for (t, s_vars, w) in [(10usize, 5usize, 1usize), (4, 8, 32), (6, 6, 64)] {
+            let p = IntEvalParams { t, s: s_vars, word_bits: w };
+            let m_p = packed_vars(&p);
+            let c_w = mod_q_chunk_width(&p);
+            let l1 = mod_q_num_chunks(&p, q_bits);
+            let l2 = mod_q_num_chunks(&p, proj.prime_bits);
+            let (pc, vc) = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
+                .expect("cfg");
+
+            let mask = if w == 128 { u128::MAX } else { (1u128 << w) - 1 };
+            let data: Vec<u128> = (0..p.cells())
+                .map(|i| (i as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & mask)
+                .collect();
+            // Coordinate-major canonical lift of v⁽¹⁾ ∈ K^{2^t}: two
+            // arbitrary coordinate vectors in [0, p).
+            let coords: Vec<Vec<u128>> = (0..ext_deg)
+                .map(|d| {
+                    (0..p.rows())
+                        .map(|b| {
+                            (b as u128)
+                                .wrapping_mul(0xDEAD_BEEF_CAFE_F00D_1234_5678_9ABC_DEF1)
+                                .wrapping_add(d as u128 + 7)
+                                % P
+                        })
+                        .collect()
+                })
+                .collect();
+            let cw_small: Vec<u128> = (0..p.cols())
+                .map(|c| ((c as u128).wrapping_mul(11) & 15).wrapping_add(1))
+                .collect();
+            let col_w: Vec<Fp2> = cw_small
+                .iter()
+                .enumerate()
+                .map(|(c, &x)| Fp2 { c0: x, c1: (c as u128).wrapping_mul(3) % P })
+                .collect();
+            // Expected μ ∈ K, computed directly: Σ_c w′_c·Σ_b v⁽¹⁾_b·INT(D).
+            let mut y = Fp2::from(0u128);
+            for c in 0..p.cols() {
+                let mut vc_acc = Fp2::from(0u128);
+                for b in 0..p.rows() {
+                    let v1 = Fp2 { c0: coords[0][b], c1: coords[1][b] };
+                    vc_acc = vc_acc + v1 * Fp2::from(data[p.cell_index(b, c)]);
+                }
+                y = y + col_w[c] * vc_acc;
+            }
+
+            let hint = commit_rs_flock_with(&p, &data, pc.log_inv_rates[0], pc.initial_k);
+            let mut pt = Blake3Transcript::new();
+            let proof =
+                prove_mle_eval_ext_ligerito(&mut pt, &hint, &p, &coords, q_bits, &proj, alpha, &pc);
+            assert_eq!(proof.mus.len(), ext_deg * l1, "step-1 fold count (c_w={c_w})");
+            assert_eq!(proof.base.us.len(), l2, "projected chunk count (c_w={c_w})");
+
+            let mut vt = Blake3Transcript::new();
+            verify_mle_eval_ext_ligerito(
+                &mut vt, &hint.commitment, &proof, &p, &coords, &col_w, &basis, alpha, y, q_bits,
+                &proj, &vc,
+            )
+            .unwrap_or_else(|e| panic!("ext (t={t},W={w},L1={l1},L2={l2}) failed: {e:?}"));
+
+            // Wrong claim → the K-side read-off rejects.
+            let mut vt = Blake3Transcript::new();
+            assert_eq!(
+                verify_mle_eval_ext_ligerito(
+                    &mut vt, &hint.commitment, &proof, &p, &coords, &col_w, &basis, alpha,
+                    y + Fp2::from(1u128), q_bits, &proj, &vc,
+                ),
+                Err(FlockRsError::ExtReadOff),
+                "wrong claim must be rejected (t={t},W={w})"
+            );
+
+            // Tampered Step-1 fold (within range): the transcript diverges
+            // before the projection sampling, so verification must fail.
+            let mut bad = proof.clone();
+            bad.mus[0][0] ^= 1;
+            let mut vt = Blake3Transcript::new();
+            assert!(
+                verify_mle_eval_ext_ligerito(
+                    &mut vt, &hint.commitment, &bad, &p, &coords, &col_w, &basis, alpha, y,
+                    q_bits, &proj, &vc,
+                )
+                .is_err(),
+                "tampered step-1 fold must be rejected (t={t},W={w})"
+            );
+
+            // Out-of-range Step-1 fold.
+            let mut bad = proof.clone();
+            bad.mus[0][0] = u128::MAX - 1;
+            let mut vt = Blake3Transcript::new();
+            assert!(
+                matches!(
+                    verify_mle_eval_ext_ligerito(
+                        &mut vt, &hint.commitment, &bad, &p, &coords, &col_w, &basis, alpha, y,
+                        q_bits, &proj, &vc,
+                    ),
+                    Err(FlockRsError::ExtChunkRange { coeff: 0, chunk: 0, col: 0 })
+                ),
+                "out-of-range step-1 fold must be rejected (t={t},W={w})"
+            );
+
+            // Wrong fold-table shape.
+            let mut bad = proof.clone();
+            bad.mus.pop();
+            let mut vt = Blake3Transcript::new();
+            assert_eq!(
+                verify_mle_eval_ext_ligerito(
+                    &mut vt, &hint.commitment, &bad, &p, &coords, &col_w, &basis, alpha, y,
+                    q_bits, &proj, &vc,
+                ),
+                Err(FlockRsError::ExtShape),
+                "missing fold vector must be rejected (t={t},W={w})"
+            );
+
+            // Codec: canonical roundtrip, and the decoded proof verifies.
+            let bytes = proof.to_bytes();
+            let rt = IntEvalRsLigExtProof::from_bytes(&bytes).expect("ext codec roundtrip");
+            assert_eq!(bytes, rt.to_bytes(), "ext codec is canonical");
+            let mut vt = Blake3Transcript::new();
+            verify_mle_eval_ext_ligerito(
+                &mut vt, &hint.commitment, &rt, &p, &coords, &col_w, &basis, alpha, y, q_bits,
+                &proj, &vc,
+            )
+            .expect("decoded ext proof verifies");
+        }
+    }
 
     /// The complete F2Z proof object round-trips through the host byte stream
     /// (zinc parts field-by-field + a length-prefixed `bincode` `LigeritoProof`

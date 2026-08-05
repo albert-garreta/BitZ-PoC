@@ -30,6 +30,7 @@
 //! [`from_bytes`][ligerito_flock::IntEvalRsLigModQProof::from_bytes] host
 //! codec. See `docs/DESIGN.md` for the protocol and the serialization format.
 
+pub mod ext_proj;
 pub mod ligerito;
 pub mod ligerito_flock;
 pub mod merged_forest;
@@ -44,6 +45,13 @@ pub mod utils;
 pub use ligerito_flock::{
     FlockRsError, IntEvalRsLigModQProof, LigConfig, commit_rs_flock, commit_rs_flock_with,
     lig_configs, prove_mle_eval_mod_q_ligerito, verify_mle_eval_mod_q_ligerito,
+};
+// Extension-field evaluation claims (paper `c:core_iop` Steps 1–3): the
+// random-prime projection of a degree-≥2 extension-field claim onto the
+// ordinary mod-q' pipeline.
+pub use ext_proj::ExtProjParams;
+pub use ligerito_flock::{
+    IntEvalRsLigExtProof, prove_mle_eval_ext_ligerito, verify_mle_eval_ext_ligerito,
 };
 // EXPERIMENTAL — mod-q RLC claim families (docs/rlc-family-note-prompt.md):
 // k claims on F₂-linear forms of j committed columns via ONE γ-RLC forest
