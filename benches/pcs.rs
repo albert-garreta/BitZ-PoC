@@ -398,13 +398,41 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
         lig_b as f64 / 1024.0,
     );
 
-    // ── Extension-field arm (`F2Z_BENCH_EXT=1`): the SAME committed
-    // instance opened at a Goldilocks² statement (e = 2, q_bits = 64,
-    // default 100-bit projection primes) — the delta vs the base run above
-    // is the extension surcharge in the same process/thermal window. ──
-    if std::env::var("F2Z_BENCH_EXT").as_deref() == Ok("1") {
-        bench_ext_arm(&p, &hint, alpha, reps, &pc, &vc);
+    // ── Extension-field arm (`F2Z_BENCH_EXT`): the SAME committed
+    // instance opened at an extension-field statement (default 100-bit
+    // projection primes) — the delta vs the base run above is the
+    // extension surcharge in the same process/thermal window.
+    // `1`/`gl2` = Goldilocks² (e=2, q_bits=64); `bb4` = BabyBear⁴
+    // (X⁴ = 11, the Plonky3 challenge field; e=4, q_bits=31). ──
+    match std::env::var("F2Z_BENCH_EXT").as_deref() {
+        Ok("1") | Ok("gl2") => bench_ext_arm::<Fp2>(&p, &hint, alpha, reps, &pc, &vc),
+        Ok("bb4") => bench_ext_arm::<BbFp4>(&p, &hint, alpha, reps, &pc, &vc),
+        Ok(other) => panic!("F2Z_BENCH_EXT: unknown arm {other:?} (use 1|gl2|bb4)"),
+        Err(_) => {}
     }
+}
+
+/// An evaluation extension field `K = F_q[X]/(h)` for the ext bench arm:
+/// the verifier-side ring `R` plus the statement-shaping constants.
+trait BenchExtField:
+    Copy
+    + PartialEq
+    + std::fmt::Debug
+    + From<u128>
+    + std::ops::Add<Output = Self>
+    + std::ops::Mul<Output = Self>
+{
+    /// Extension degree `e = deg(h)`.
+    const EXT_DEG: usize;
+    /// `⌈log₂ q⌉` of the base characteristic (the ext API's `q_bits`).
+    const Q_BITS: usize;
+    /// The base characteristic `q`.
+    const CHAR: u128;
+    const NAME: &'static str;
+    /// Element from its canonical coordinate vector (length `EXT_DEG`).
+    fn from_coords(c: &[u128]) -> Self;
+    /// The module-basis images `[1, X, …, X^{e−1}]`.
+    fn basis() -> Vec<Self>;
 }
 
 /// Goldilocks p = 2^64 − 2^32 + 1; K = F_p[X]/(X² − 7).
@@ -436,11 +464,70 @@ impl std::ops::Mul for Fp2 {
         }
     }
 }
+impl BenchExtField for Fp2 {
+    const EXT_DEG: usize = 2;
+    const Q_BITS: usize = 64;
+    const CHAR: u128 = GL_P;
+    const NAME: &'static str = "Goldilocks²";
+    fn from_coords(c: &[u128]) -> Self {
+        Fp2 { c0: c[0] % GL_P, c1: c[1] % GL_P }
+    }
+    fn basis() -> Vec<Self> {
+        vec![Fp2 { c0: 1, c1: 0 }, Fp2 { c0: 0, c1: 1 }]
+    }
+}
+
+/// BabyBear p = 2^31 − 2^27 + 1; K = F_p[X]/(X⁴ − 11) — the quartic
+/// extension Plonky3 samples its BabyBear challenges from.
+const BB_P: u128 = 0x7800_0001;
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct BbFp4([u128; 4]);
+impl From<u128> for BbFp4 {
+    fn from(v: u128) -> Self {
+        BbFp4([v % BB_P, 0, 0, 0])
+    }
+}
+impl std::ops::Add for BbFp4 {
+    type Output = BbFp4;
+    fn add(self, o: BbFp4) -> BbFp4 {
+        BbFp4(std::array::from_fn(|i| (self.0[i] + o.0[i]) % BB_P))
+    }
+}
+impl std::ops::Mul for BbFp4 {
+    type Output = BbFp4;
+    fn mul(self, o: BbFp4) -> BbFp4 {
+        // Schoolbook: coordinates < 2^31, so every partial product is
+        // < 2^62 and the 7 convolution sums stay far below 2^128;
+        // X⁴ ≡ 11 folds the top back with an ×11 (< 2^68).
+        let mut prod = [0u128; 7];
+        for i in 0..4 {
+            for j in 0..4 {
+                prod[i + j] += self.0[i] * o.0[j];
+            }
+        }
+        BbFp4(std::array::from_fn(|k| (prod[k] + 11 * prod.get(k + 4).copied().unwrap_or(0)) % BB_P))
+    }
+}
+impl BenchExtField for BbFp4 {
+    const EXT_DEG: usize = 4;
+    const Q_BITS: usize = 31;
+    const CHAR: u128 = BB_P;
+    const NAME: &'static str = "BabyBear⁴";
+    fn from_coords(c: &[u128]) -> Self {
+        BbFp4(std::array::from_fn(|i| c[i] % BB_P))
+    }
+    fn basis() -> Vec<Self> {
+        (0..4)
+            .map(|d| BbFp4(std::array::from_fn(|i| u128::from(i == d))))
+            .collect()
+    }
+}
 
 /// The extension-field opening benchmarked against the SAME commitment as
 /// the base arm: prove/verify medians, ext phase scopes on one profiled
 /// prove AND one profiled verify, proof size + codec times.
-fn bench_ext_arm(
+fn bench_ext_arm<K: BenchExtField>(
     p: &IntEvalParams,
     hint: &f2z::ligerito_flock::FlockCommitHint,
     alpha: f2z::BinaryFieldGF128,
@@ -449,14 +536,14 @@ fn bench_ext_arm(
     vc: &LigVc,
 ) {
     use f2z::ligerito_flock::{prove_mle_eval_ext_ligerito, verify_mle_eval_ext_ligerito};
-    let q_bits = 64usize;
-    let ext_deg = 2usize;
+    let q_bits = K::Q_BITS;
+    let ext_deg = K::EXT_DEG;
     let proj = f2z::ext_proj::ExtProjParams::default();
-    let basis = [Fp2 { c0: 1, c1: 0 }, Fp2 { c0: 0, c1: 1 }];
+    let basis = K::basis();
     let log_w = p.word_bits.trailing_zeros() as usize;
     let w_mask = p.word_bits - 1;
 
-    // Coordinate-major lift of v⁽¹⁾ ∈ K^{2^t} (arbitrary < p), col weights
+    // Coordinate-major lift of v⁽¹⁾ ∈ K^{2^t} (arbitrary < q), col weights
     // over K, and the claimed μ from the SET BITS of the committed rows.
     let coords: Vec<Vec<u128>> = (0..ext_deg)
         .map(|d| {
@@ -465,21 +552,33 @@ fn bench_ext_arm(
                     (b as u128)
                         .wrapping_mul(0xDEAD_BEEF_CAFE_F00D_1234_5678_9ABC_DEF1)
                         .wrapping_add(d as u128 + 7)
-                        % GL_P
+                        % K::CHAR
                 })
                 .collect()
         })
         .collect();
-    let col_w: Vec<Fp2> = (0..p.cols())
-        .map(|c| Fp2 {
-            c0: ((c as u128).wrapping_mul(5) & 7).wrapping_add(1),
-            c1: (c as u128).wrapping_mul(3) % GL_P,
+    let col_w: Vec<K> = (0..p.cols())
+        .map(|c| {
+            let cs: Vec<u128> = (0..ext_deg)
+                .map(|d| {
+                    (c as u128)
+                        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                        .wrapping_add((d as u128) << 40)
+                        % K::CHAR
+                })
+                .collect();
+            K::from_coords(&cs)
         })
         .collect();
-    let v1: Vec<Fp2> = (0..p.rows()).map(|b| Fp2 { c0: coords[0][b], c1: coords[1][b] }).collect();
-    let mut y = Fp2::from(0u128);
+    let v1: Vec<K> = (0..p.rows())
+        .map(|b| {
+            let cs: Vec<u128> = (0..ext_deg).map(|d| coords[d][b]).collect();
+            K::from_coords(&cs)
+        })
+        .collect();
+    let mut y = K::from(0u128);
     for (c, row) in hint.rows().iter().enumerate() {
-        let mut acc = Fp2::from(0u128);
+        let mut acc = K::from(0u128);
         for (wi, &word) in row.iter().enumerate() {
             let mut bits = word;
             while bits != 0 {
@@ -488,7 +587,7 @@ fn bench_ext_arm(
                 let i = (wi << 6) | bit;
                 let (b, j) = (i >> log_w, i & w_mask);
                 let term =
-                    if j == 0 { v1[b] } else { v1[b] * Fp2::from(1u128 << j) };
+                    if j == 0 { v1[b] } else { v1[b] * K::from(1u128 << j) };
                 acc = acc + term;
             }
         }
@@ -578,7 +677,7 @@ fn bench_ext_arm(
         phases.iter().filter(|(l, _)| *l == label).map(|(_, s)| s).sum::<f64>() * 1e3
     };
 
-    println!("  ext(K=Goldilocks², e=2, q'={}b):", proj.prime_bits);
+    println!("  ext(K={}, e={ext_deg}, q_bits={q_bits}, q'={}b):", K::NAME, proj.prime_bits);
     println!("    prove:  {:8.2} ms   (median of {reps})", median(prove_ms));
     if !prove_phases.is_empty() {
         println!(
