@@ -1571,28 +1571,23 @@ pub fn prove_mle_eval_ext_ligerito(
     let c_w = mod_q_chunk_width(p);
     let l1 = mod_q_num_chunks(p, q_bits);
 
-    // Step 1: the exact integer folds of every coordinate's chunked lift.
+    // Step 1: the exact integer folds of every coordinate's chunked lift —
+    // all `e·L₁` weight sets in ONE pass over the committed bit rows.
     let mus: Vec<Vec<u128>> = {
         let _g = crate::utils::prof::scope("ext:step1_folds");
-        weight_coords
+        let chunked: Vec<Vec<u128>> = weight_coords
             .iter()
-            .flat_map(|wc| {
-                chunk_row_weights(wc, c_w, l1)
-                    .into_iter()
-                    .map(|w_l| crate::ligerito::fold_values_bits(p, &hint.rows, &w_l))
-                    .collect::<Vec<_>>()
-            })
-            .collect()
+            .flat_map(|wc| chunk_row_weights(wc, c_w, l1))
+            .collect();
+        let sets: Vec<&[u128]> = chunked.iter().map(|w| &w[..]).collect();
+        crate::ligerito::fold_values_bits_multi(p, &hint.rows, &sets)
     };
     absorb_ext_step1_folds(transcript, &mus);
 
     // Step 3: random prime + point, then the projected row weights γ.
     let q_proj = sample_proj_prime(transcript, proj);
     let alpha_proj = sample_proj_point(transcript, q_proj);
-    let gamma = {
-        let _g = crate::utils::prof::scope("ext:project_weights");
-        projected_row_weights(weight_coords, q_proj, alpha_proj)
-    };
+    let gamma = projected_row_weights(weight_coords, q_proj, alpha_proj);
 
     // Steps 4–6: the ordinary mod-q' opening at γ.
     let base =
@@ -1648,19 +1643,21 @@ where
     let cols = p.cols();
 
     // Step-1 folds: shape, re-pad (the codec trims all-zero tails), and the
-    // free range check — the honest fold of a chunked weight is
-    // `< 2^{c_w+t+W} = 2^127`, and bounding the sent values bounds the
-    // difference polynomial's coefficients in the Schwartz–Zippel argument.
+    // free range check at the honest per-chunk bound — chunk `l` of a
+    // coordinate's lift has width `w_l = min(c_w, q_bits − c_w·l)` bits, so
+    // an honest fold is `< 2^{t+W+w_l}` (≤ the old `2^{c_w+t+W} = 2^127`).
+    // Bounding the sent values bounds the difference polynomial's
+    // coefficients in the Schwartz–Zippel argument.
     if proof.mus.len() != ext_deg.wrapping_mul(l1) {
         return Err(FlockRsError::ExtShape);
     }
-    let range_shift = c_w.wrapping_add(p.t).wrapping_add(p.word_bits);
-    let bound = 1u128 << range_shift;
     let mut mus: Vec<Vec<u128>> = Vec::with_capacity(proof.mus.len());
     for (k, m) in proof.mus.iter().enumerate() {
         if m.len() > cols {
             return Err(FlockRsError::ExtShape);
         }
+        let w_l = c_w.min(q_bits.wrapping_sub(c_w.wrapping_mul(k % l1)));
+        let bound = 1u128 << w_l.wrapping_add(p.t).wrapping_add(p.word_bits);
         for (c, &x) in m.iter().enumerate() {
             if x >= bound {
                 return Err(FlockRsError::ExtChunkRange { coeff: k / l1, chunk: k % l1, col: c });
@@ -1691,24 +1688,33 @@ where
 
     // (A) Per-column congruence mod q': the certified folds must equal the
     // sent polynomials evaluated at α'. Both sides are recombined from
-    // their base-2^{c_w} digits modulo q'.
+    // their base-2^{c_w} digits modulo q' — the digit place values
+    // (`2^{c_w·l}` for the lhs, the fused `α'^d·2^{c_w·l}` for the rhs)
+    // are prepared ONCE as Montgomery factors, so each fold costs one
+    // Montgomery multiplication (plain×monty) and a modular add.
+    let _g_checks = crate::utils::prof::scope("ext:checks");
     let zq = ProjArith::new(q_proj);
     let l2 = mod_q_num_chunks(p, proj.prime_bits);
     let chunk_base = zq.reduce(1u128 << c_w);
     let base_pows = zq.powers(chunk_base, l1.max(l2));
     let alpha_pows = zq.powers(alpha_proj, ext_deg);
+    let lhs_m: Vec<_> = base_pows[..l2].iter().map(|&b| zq.monty_factor(b)).collect();
+    let rhs_m: Vec<_> = (0..ext_deg)
+        .flat_map(|d| {
+            base_pows[..l1]
+                .iter()
+                .map(|&b| zq.monty_factor(zq.mul(alpha_pows[d], b)))
+                .collect::<Vec<_>>()
+        })
+        .collect();
     for c in 0..cols {
         let mut lhs = 0u128;
-        for (l, u_l) in us.iter().enumerate() {
-            lhs = zq.add(lhs, zq.mul(base_pows[l], u_l[c]));
+        for (u_l, m) in us.iter().zip(lhs_m.iter()) {
+            lhs = zq.add(lhs, zq.mul_plain_by(u_l[c], m));
         }
         let mut rhs = 0u128;
-        for d in 0..ext_deg {
-            let mut coeff = 0u128;
-            for l in 0..l1 {
-                coeff = zq.add(coeff, zq.mul(base_pows[l], mus[d.wrapping_mul(l1).wrapping_add(l)][c]));
-            }
-            rhs = zq.add(rhs, zq.mul(alpha_pows[d], coeff));
+        for (mu_k, m) in mus.iter().zip(rhs_m.iter()) {
+            rhs = zq.add(rhs, zq.mul_plain_by(mu_k[c], m));
         }
         if lhs != rhs {
             return Err(FlockRsError::ExtCongruence { col: c });
@@ -7601,11 +7607,20 @@ impl IntEvalRsLigModQProof {
     }
 }
 
+/// Minimal little-endian byte width of `x` (`0 → 1`; `< 2^{8w} → ≤ w`).
+fn min_byte_width(x: u128) -> usize {
+    ((128usize.wrapping_sub(x.leading_zeros() as usize)).div_ceil(8)).max(1)
+}
+
 impl IntEvalRsLigExtProof {
     /// Serialize the extension-field proof: the Step-1 fold vectors (each
-    /// with its all-zero tail trimmed, exactly like the base proof's `us`),
-    /// then the base mod-`q'` proof as one length-prefixed blob. Canonical
-    /// and tamper-rejecting like the base codec.
+    /// with its all-zero tail trimmed, exactly like the base proof's `us`,
+    /// then packed at the vector's **minimal byte width** — honest folds
+    /// are `~(t+W+q_bits)`-bit, so a width byte plus tight little-endian
+    /// values beats fixed 16-byte cells by ~1/3, and sparse witnesses
+    /// shrink further), then the base mod-`q'` proof as one
+    /// length-prefixed blob. Canonical and tamper-rejecting like the base
+    /// codec.
     #[allow(clippy::arithmetic_side_effects)]
     pub fn to_bytes(&self) -> Vec<u8> {
         use crate::proof_codec::Writer;
@@ -7614,8 +7629,12 @@ impl IntEvalRsLigExtProof {
         for m in &self.mus {
             let n = transmitted_us_len(m);
             w.len(n);
-            for &u in &m[..n] {
-                w.u128(u);
+            if n > 0 {
+                let width = m[..n].iter().map(|&u| min_byte_width(u)).max().expect("n > 0");
+                w.bytes(&[width as u8]);
+                for &u in &m[..n] {
+                    w.bytes(&u.to_le_bytes()[..width]);
+                }
             }
         }
         let base = self.base.to_bytes();
@@ -7624,7 +7643,9 @@ impl IntEvalRsLigExtProof {
         w.into_vec()
     }
 
-    /// Deserialize the extension-field proof. Mirrors [`Self::to_bytes`].
+    /// Deserialize the extension-field proof. Mirrors [`Self::to_bytes`]:
+    /// rejects a non-minimal width byte, a trailing zero fold, and any
+    /// framing damage.
     #[allow(clippy::arithmetic_side_effects)]
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, crate::proof_codec::CodecError> {
         use crate::proof_codec::{CodecError, Reader};
@@ -7633,13 +7654,26 @@ impl IntEvalRsLigExtProof {
         let mut mus = Vec::with_capacity(n_mus.min(r.remaining() / 8));
         for _ in 0..n_mus {
             let n_u = r.len()?;
-            let mut m = Vec::with_capacity(n_u.min(r.remaining() / 16));
-            for _ in 0..n_u {
-                m.push(r.u128()?);
-            }
-            // The zero tail is implied by the shape, never transmitted.
-            if m.last() == Some(&0) {
-                return Err(CodecError::NonCanonical);
+            let mut m: Vec<u128> = Vec::with_capacity(n_u.min(r.remaining()));
+            if n_u > 0 {
+                let width = usize::from(r.take(1)?[0]);
+                if !(1..=16).contains(&width) {
+                    return Err(CodecError::NonCanonical);
+                }
+                let mut max_seen = 0u128;
+                for _ in 0..n_u {
+                    let b = r.take(width)?;
+                    let mut buf = [0u8; 16];
+                    buf[..width].copy_from_slice(b);
+                    let v = u128::from_le_bytes(buf);
+                    max_seen = max_seen.max(v);
+                    m.push(v);
+                }
+                // Canonical: the width must be necessary for the largest
+                // value, and the zero tail is implied, never transmitted.
+                if min_byte_width(max_seen) != width || m.last() == Some(&0) {
+                    return Err(CodecError::NonCanonical);
+                }
             }
             mus.push(m);
         }

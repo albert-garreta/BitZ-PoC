@@ -800,6 +800,78 @@ pub(crate) fn fold_values_bits(p: &IntEvalParams, rows: &[Vec<u64>], row_weights
         .collect()
 }
 
+/// One fused pass folding `K` weight sets at once: per column,
+/// `acc[k] = Σ_b w_k[b]·D[(b,c)]`. The fixed-size array accumulator lets
+/// the `K`-term inner body unroll fully, so the per-set-bit scan
+/// (trailing-zeros walk, index math) is paid ONCE for all `K` sets — a
+/// `Vec` accumulator measured as slow as `K` separate passes.
+#[allow(clippy::arithmetic_side_effects)]
+fn fold_cols_multi_k<const K: usize>(
+    p: &IntEvalParams,
+    rows: &[Vec<u64>],
+    sets: &[&[u128]],
+) -> Vec<[u128; K]> {
+    debug_assert_eq!(sets.len(), K);
+    let w: [&[u128]; K] = core::array::from_fn(|k| sets[k]);
+    let log_w = p.word_bits.trailing_zeros() as usize;
+    let mask = p.word_bits.wrapping_sub(1);
+    cfg_into_iter!(0..p.cols())
+        .map(|c| {
+            let mut acc = [0u128; K];
+            for (wi, &word) in rows[c].iter().enumerate() {
+                let mut bits = word;
+                while bits != 0 {
+                    let tz = bits.trailing_zeros() as usize;
+                    let i = (wi << 6) | tz;
+                    let (b, sh) = (i >> log_w, i & mask);
+                    for k in 0..K {
+                        acc[k] += w[k][b] << sh;
+                    }
+                    bits &= bits.wrapping_sub(1);
+                }
+            }
+            acc
+        })
+        .collect()
+}
+
+/// Multi-weight-set variant of [`fold_values_bits`]: `out[k][c] =
+/// Σ_b w_k[b]·D[(b,c)]` for EVERY weight set `k`, the sets processed in
+/// unrolled groups of up to 4 ([`fold_cols_multi_k`]) so the bit stream
+/// and its scan are shared within a group (the extension path's Step-1
+/// folds run `e·L₁` sets over the same bits). Value-exact per set: each
+/// accumulator receives exactly [`fold_values_bits`]'s terms in the same
+/// per-column order.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn fold_values_bits_multi(
+    p: &IntEvalParams,
+    rows: &[Vec<u64>],
+    weight_sets: &[&[u128]],
+) -> Vec<Vec<u128>> {
+    let mut out = Vec::with_capacity(weight_sets.len());
+    let mut i = 0usize;
+    while i < weight_sets.len() {
+        let take = (weight_sets.len() - i).min(4);
+        let group = &weight_sets[i..i + take];
+        match take {
+            4 => transpose_fold_group::<4>(fold_cols_multi_k::<4>(p, rows, group), &mut out),
+            3 => transpose_fold_group::<3>(fold_cols_multi_k::<3>(p, rows, group), &mut out),
+            2 => transpose_fold_group::<2>(fold_cols_multi_k::<2>(p, rows, group), &mut out),
+            _ => out.push(fold_values_bits(p, rows, group[0])),
+        }
+        i += take;
+    }
+    out
+}
+
+/// Split a fused group's per-column `[u128; K]` accumulators into `K`
+/// per-set fold vectors, appended to `out` in set order.
+fn transpose_fold_group<const K: usize>(cols: Vec<[u128; K]>, out: &mut Vec<Vec<u128>>) {
+    for k in 0..K {
+        out.push(cols.iter().map(|a| a[k]).collect());
+    }
+}
+
 /// Classic 64×64 bit-matrix transpose (6 mask/shift rounds).
 #[allow(clippy::arithmetic_side_effects)]
 fn transpose_64x64(a: &mut [u64; 64]) {

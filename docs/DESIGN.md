@@ -113,10 +113,16 @@ basis (`basis[d] = ψ_M(X^d)`), coordinate by coordinate via the same
 
 Cost relative to a prime-field opening at the same shape: the forest side is
 the mod-`q'` opening (same `L₂` as a ~100-bit prime claim); the extension
-adds only `e·L₁` cheap integer fold passes, `e·L₁·2^s` transmitted `u128`s,
-and the `O(2^t·e)` Montgomery projection. For `e = 1` use the base
-`prove/verify_mle_eval_mod_q_ligerito` (Step 3 is the identity there; the
-ext entry points reject it).
+adds only ONE fused `e·L₁`-set integer fold pass (`fold_values_bits_multi`,
+unrolled in groups of ≤ 4 so the bit scan is shared), `e·L₁·2^s`
+width-packed `~(t+W+q_bits)`-bit transmitted folds, and the `O(2^t·e)`
+projection (one plain×Montgomery multiply per term — a plain operand times
+a Montgomery-form power lands the product back in plain form, so there are
+no per-element domain conversions; the same trick runs the verifier's
+congruence loop). Measured at n = 26 (t=16, s=10, W=1, Goldilocks², M4):
+prover +~10 ms on 146 ms, verifier +~0.2 ms on 3.1 ms, proof +20.6 KiB on
+142.7 KiB. For `e = 1` use the base `prove/verify_mle_eval_mod_q_ligerito`
+(Step 3 is the identity there; the ext entry points reject it).
 
 ## Mod-q RLC claim families (EXPERIMENTAL)
 
@@ -186,9 +192,13 @@ byte-identical) and rejects any tampered byte — the stream fails to decode, or
 the reconstructed proof fails verification.
 
 `IntEvalRsLigExtProof::to_bytes` / `from_bytes` wrap the same machinery for
-the extension-field opening: the Step-1 fold vectors first (each with its
-all-zero tail trimmed under the same non-minimal-encoding rejection as the
-base `us`), then the embedded base proof as one length-prefixed blob.
+the extension-field opening: the Step-1 fold vectors first — each with its
+all-zero tail trimmed AND packed at the vector's minimal little-endian byte
+width (one width byte + `n·width` bytes; the decoder rejects an unnecessary
+width, so the encoding stays canonical) — then the embedded base proof as
+one length-prefixed blob. Honest folds are `~(t+W+q_bits)`-bit, so the
+width packing beats fixed 16-byte cells by ~1/3 and sparse witnesses
+shrink further.
 
 ## Optimization inventory (as extracted)
 

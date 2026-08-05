@@ -130,18 +130,35 @@ fn transcript_uniform_mod(transcript: &mut impl Transcript, m: u128) -> u128 {
     if s >= m { s - m } else { s }
 }
 
+/// The odd primes below 256, for the trial-division prefilter of
+/// [`sample_proj_prime`]: ~76 % of odd candidates carry one of these
+/// factors and are rejected by 53 `u128` remainders instead of a
+/// Montgomery setup + modexp. (Candidates are `≥ 2^31`, so divisibility
+/// by a table prime always means compositeness.)
+const SMALL_PRIMES: [u128; 53] = [
+    3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97,
+    101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191,
+    193, 197, 199, 211, 223, 227, 229, 233, 239, 241, 251,
+];
+
 /// Sample the Step-3 projection prime `q'` from the transcript: rejection-
 /// sample candidates with the top bit and the low bit forced (so
 /// `q' ∈ [2^{bits−1}, 2^{bits})`, odd), keep the first one that passes
-/// Miller–Rabin with base 2 plus `mr_rounds` transcript-derived bases in
-/// `[2, q'−2]`. Deterministic in the transcript state, so prover and
-/// verifier derive the same prime by running the same code.
+/// trial division by [`SMALL_PRIMES`], Miller–Rabin with base 2, and
+/// `mr_rounds` transcript-derived bases in `[2, q'−2]`. Deterministic in
+/// the transcript state, so prover and verifier derive the same prime by
+/// running the same code. (Trial division only removes composites, so the
+/// sampled set is still exactly the primes of the range, uniformly.)
 ///
 /// A composite acceptance needs every transcript base to be a Miller–Rabin
-/// liar — probability `≤ 4^{-mr_rounds}` per candidate — so an adversary
-/// grinding the Fiat–Shamir transcript gains `≤ queries·4^{-mr_rounds}`.
+/// liar. Bases are single 128-bit draws reduced into the range — each
+/// residue's probability exceeds uniform by a factor `≤ 1 + 2^{bits−128}`,
+/// so acceptance is `≤ ((1 + 2^{bits−128})/4)^{mr_rounds} ≈ 4^{-mr_rounds}`
+/// per candidate (`≈ 2^{-128}` at the defaults), and an adversary grinding
+/// the Fiat–Shamir transcript gains only `queries · 4^{-mr_rounds}`.
 #[allow(clippy::arithmetic_side_effects)] // candidate/base arithmetic bounded by 2^prime_bits < 2^121
 pub fn sample_proj_prime(transcript: &mut impl Transcript, proj: &ExtProjParams) -> u128 {
+    let _g = crate::utils::prof::scope("ext:sample_prime");
     proj.validate();
     let bits = proj.prime_bits;
     let top = 1u128 << (bits - 1);
@@ -150,16 +167,20 @@ pub fn sample_proj_prime(transcript: &mut impl Transcript, proj: &ExtProjParams)
     // astronomically unreachable (P ≈ e^{-2000}) and only bounds the loop.
     for _ in 0..64 * bits {
         let cand = (transcript_u128(transcript) & mask) | top | 1;
+        if SMALL_PRIMES.iter().any(|&sp| cand.is_multiple_of(sp)) {
+            continue;
+        }
         let odd = Odd::new(U128::from_u128(cand)).expect("candidate is odd");
         let mr = MillerRabin::new(odd);
         if !mr.test_base_two().is_probably_prime() {
             continue;
         }
-        // Base range [2, q'−2]: draw r ∈ [0, q'−4] uniformly, base = 2 + r.
+        // Base range [2, q'−2]: one draw reduced into [0, q'−4] (the
+        // multiplicative-bias bound above), base = 2 + r.
         let range = cand - 3;
         let mut composite = false;
         for _ in 0..proj.mr_rounds {
-            let base = 2 + transcript_uniform_mod(transcript, range);
+            let base = 2 + transcript_u128(transcript) % range;
             if !mr.test(&U128::from_u128(base)).is_probably_prime() {
                 composite = true;
                 break;
@@ -176,6 +197,12 @@ pub fn sample_proj_prime(transcript: &mut impl Transcript, proj: &ExtProjParams)
 /// (256-bit reduction — see [`transcript_uniform_mod`]).
 pub fn sample_proj_point(transcript: &mut impl Transcript, q_proj: u128) -> u128 {
     transcript_uniform_mod(transcript, q_proj)
+}
+
+/// The low 128 bits of a `U128` as a `u128`.
+fn u128_from_uint(x: &U128) -> u128 {
+    let w = x.to_words();
+    u128::from(w[0]) | (u128::from(w[1]) << 64)
 }
 
 /// Scalar arithmetic modulo the sampled (odd) prime `q'`, Montgomery-backed
@@ -201,9 +228,11 @@ impl ProjArith {
         self.q
     }
 
-    /// `x mod q'`.
+    /// `x mod q'`. Already-canonical values (the hot-loop common case:
+    /// Montgomery outputs, 64-bit coordinates under a 100-bit modulus)
+    /// skip the u128 division entirely.
     pub fn reduce(&self, x: u128) -> u128 {
-        x % self.q
+        if x < self.q { x } else { x % self.q }
     }
 
     fn to_monty(&self, x: u128) -> MontyForm<{ U128::LIMBS }> {
@@ -213,6 +242,22 @@ impl ProjArith {
     fn from_monty(m: &MontyForm<{ U128::LIMBS }>) -> u128 {
         let w = m.retrieve().to_words();
         u128::from(w[0]) | (u128::from(w[1]) << 64)
+    }
+
+    /// A canonical value converted ONCE into Montgomery form, for use as the
+    /// fixed factor of many [`Self::mul_plain_by`] calls (power tables).
+    pub fn monty_factor(&self, x: u128) -> MontyForm<{ U128::LIMBS }> {
+        self.to_monty(x)
+    }
+
+    /// `(a · x) mod q'` for plain `a < 2^127` against a prepared
+    /// [`Self::monty_factor`] — **one** Montgomery multiplication, no
+    /// domain conversions: interpreting plain `a` as a Montgomery residue
+    /// makes the reduction built into the multiply land the product back
+    /// in plain form (`mont_mul(a, x·R) = a·x·R·R⁻¹ = a·x mod q'`).
+    pub fn mul_plain_by(&self, a: u128, x_monty: &MontyForm<{ U128::LIMBS }>) -> u128 {
+        let a_form = MontyForm::from_montgomery(U128::from_u128(self.reduce(a)), self.params);
+        u128_from_uint(&(a_form * x_monty).to_montgomery())
     }
 
     /// `(a · b) mod q'` (inputs reduced on entry).
@@ -246,6 +291,7 @@ impl ProjArith {
 /// This is the extension-field replacement for the plain canonical lift the
 /// prime-field path feeds to the chunker.
 pub fn projected_row_weights(coords: &[Vec<u128>], q_proj: u128, alpha_proj: u128) -> Vec<u128> {
+    let _g = crate::utils::prof::scope("ext:project");
     let ext_deg = coords.len();
     assert!(ext_deg >= 1, "at least one coordinate vector");
     let rows = coords[0].len();
@@ -253,15 +299,22 @@ pub fn projected_row_weights(coords: &[Vec<u128>], q_proj: u128, alpha_proj: u12
         assert_eq!(c.len(), rows, "coordinate vectors must share the row count");
     }
     let zq = ProjArith::new(q_proj);
-    let pow_monty: Vec<MontyForm<{ U128::LIMBS }>> =
-        zq.powers(alpha_proj, ext_deg).into_iter().map(|p| zq.to_monty(p)).collect();
+    // α'^d as prepared Montgomery factors (d ≥ 1; the d = 0 term is the
+    // plain coordinate itself) — each row term is then ONE Montgomery
+    // multiplication via the plain×monty trick, no domain conversions.
+    let pow_monty: Vec<MontyForm<{ U128::LIMBS }>> = zq
+        .powers(alpha_proj, ext_deg)
+        .into_iter()
+        .skip(1)
+        .map(|p| zq.monty_factor(p))
+        .collect();
     cfg_into_iter!(0..rows)
         .map(|b| {
-            let mut acc = MontyForm::zero(zq.params);
+            let mut acc = zq.reduce(coords[0][b]);
             for (d, pw) in pow_monty.iter().enumerate() {
-                acc += zq.to_monty(coords[d][b]) * *pw;
+                acc = zq.add(acc, zq.mul_plain_by(coords[d.wrapping_add(1)][b], pw));
             }
-            ProjArith::from_monty(&acc)
+            acc
         })
         .collect()
 }

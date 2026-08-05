@@ -397,6 +397,212 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
         zb.s_v as f64 / 1024.0,
         lig_b as f64 / 1024.0,
     );
+
+    // ── Extension-field arm (`F2Z_BENCH_EXT=1`): the SAME committed
+    // instance opened at a Goldilocks² statement (e = 2, q_bits = 64,
+    // default 100-bit projection primes) — the delta vs the base run above
+    // is the extension surcharge in the same process/thermal window. ──
+    if std::env::var("F2Z_BENCH_EXT").as_deref() == Ok("1") {
+        bench_ext_arm(&p, &hint, alpha, reps, &pc, &vc);
+    }
+}
+
+/// Goldilocks p = 2^64 − 2^32 + 1; K = F_p[X]/(X² − 7).
+const GL_P: u128 = 0xFFFF_FFFF_0000_0001;
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct Fp2 {
+    c0: u128,
+    c1: u128,
+}
+impl From<u128> for Fp2 {
+    fn from(v: u128) -> Self {
+        Fp2 { c0: v % GL_P, c1: 0 }
+    }
+}
+impl std::ops::Add for Fp2 {
+    type Output = Fp2;
+    fn add(self, o: Fp2) -> Fp2 {
+        Fp2 { c0: (self.c0 + o.c0) % GL_P, c1: (self.c1 + o.c1) % GL_P }
+    }
+}
+impl std::ops::Mul for Fp2 {
+    type Output = Fp2;
+    fn mul(self, o: Fp2) -> Fp2 {
+        let m = |a: u128, b: u128| (a * b) % GL_P; // operands < 2^64: exact in u128
+        Fp2 {
+            c0: (m(self.c0, o.c0) + m(7, m(self.c1, o.c1))) % GL_P,
+            c1: (m(self.c0, o.c1) + m(self.c1, o.c0)) % GL_P,
+        }
+    }
+}
+
+/// The extension-field opening benchmarked against the SAME commitment as
+/// the base arm: prove/verify medians, ext phase scopes on one profiled
+/// prove AND one profiled verify, proof size + codec times.
+fn bench_ext_arm(
+    p: &IntEvalParams,
+    hint: &f2z::ligerito_flock::FlockCommitHint,
+    alpha: f2z::BinaryFieldGF128,
+    reps: usize,
+    pc: &LigPc,
+    vc: &LigVc,
+) {
+    use f2z::ligerito_flock::{prove_mle_eval_ext_ligerito, verify_mle_eval_ext_ligerito};
+    let q_bits = 64usize;
+    let ext_deg = 2usize;
+    let proj = f2z::ext_proj::ExtProjParams::default();
+    let basis = [Fp2 { c0: 1, c1: 0 }, Fp2 { c0: 0, c1: 1 }];
+    let log_w = p.word_bits.trailing_zeros() as usize;
+    let w_mask = p.word_bits - 1;
+
+    // Coordinate-major lift of v⁽¹⁾ ∈ K^{2^t} (arbitrary < p), col weights
+    // over K, and the claimed μ from the SET BITS of the committed rows.
+    let coords: Vec<Vec<u128>> = (0..ext_deg)
+        .map(|d| {
+            (0..p.rows())
+                .map(|b| {
+                    (b as u128)
+                        .wrapping_mul(0xDEAD_BEEF_CAFE_F00D_1234_5678_9ABC_DEF1)
+                        .wrapping_add(d as u128 + 7)
+                        % GL_P
+                })
+                .collect()
+        })
+        .collect();
+    let col_w: Vec<Fp2> = (0..p.cols())
+        .map(|c| Fp2 {
+            c0: ((c as u128).wrapping_mul(5) & 7).wrapping_add(1),
+            c1: (c as u128).wrapping_mul(3) % GL_P,
+        })
+        .collect();
+    let v1: Vec<Fp2> = (0..p.rows()).map(|b| Fp2 { c0: coords[0][b], c1: coords[1][b] }).collect();
+    let mut y = Fp2::from(0u128);
+    for (c, row) in hint.rows().iter().enumerate() {
+        let mut acc = Fp2::from(0u128);
+        for (wi, &word) in row.iter().enumerate() {
+            let mut bits = word;
+            while bits != 0 {
+                let bit = bits.trailing_zeros() as usize;
+                bits &= bits - 1;
+                let i = (wi << 6) | bit;
+                let (b, j) = (i >> log_w, i & w_mask);
+                let term =
+                    if j == 0 { v1[b] } else { v1[b] * Fp2::from(1u128 << j) };
+                acc = acc + term;
+            }
+        }
+        y = y + col_w[c] * acc;
+    }
+
+    // Warm-up (excluded).
+    {
+        let mut pt = f2z::transcript::Blake3Transcript::new();
+        let proof =
+            prove_mle_eval_ext_ligerito(&mut pt, hint, p, &coords, q_bits, &proj, alpha, pc);
+        black_box(&proof);
+    }
+
+    let mut prove_ms = Vec::new();
+    let mut verify_ms = Vec::new();
+    let mut ser_us = Vec::new();
+    let mut de_us = Vec::new();
+    let mut bytes = 0usize;
+    for _ in 0..reps {
+        let mut pt = f2z::transcript::Blake3Transcript::new();
+        let t0 = Instant::now();
+        let proof =
+            prove_mle_eval_ext_ligerito(&mut pt, hint, p, &coords, q_bits, &proj, alpha, pc);
+        prove_ms.push(t0.elapsed().as_secs_f64() * 1e3);
+
+        let t1 = Instant::now();
+        let ser = proof.to_bytes();
+        ser_us.push(t1.elapsed().as_secs_f64() * 1e6);
+        bytes = ser.len();
+        let t2 = Instant::now();
+        let de = f2z::ligerito_flock::IntEvalRsLigExtProof::from_bytes(&ser).expect("codec");
+        de_us.push(t2.elapsed().as_secs_f64() * 1e6);
+        black_box(&de);
+
+        let mut vt = f2z::transcript::Blake3Transcript::new();
+        let t3 = Instant::now();
+        verify_mle_eval_ext_ligerito(
+            &mut vt,
+            &hint.commitment,
+            &proof,
+            p,
+            &coords,
+            &col_w,
+            &basis,
+            alpha,
+            y,
+            q_bits,
+            &proj,
+            vc,
+        )
+        .expect("ext verify");
+        verify_ms.push(t3.elapsed().as_secs_f64() * 1e3);
+    }
+
+    // Ext phase scopes over one profiled prove + one profiled verify
+    // (OBLONG_PROFILE=1 to populate).
+    let _ = f2z::utils::prof::take_totals();
+    let proof = {
+        let mut pt = f2z::transcript::Blake3Transcript::new();
+        let proof =
+            prove_mle_eval_ext_ligerito(&mut pt, hint, p, &coords, q_bits, &proj, alpha, pc);
+        black_box(&proof);
+        proof
+    };
+    let prove_phases = f2z::utils::prof::take_totals();
+    {
+        let mut vt = f2z::transcript::Blake3Transcript::new();
+        verify_mle_eval_ext_ligerito(
+            &mut vt,
+            &hint.commitment,
+            &proof,
+            p,
+            &coords,
+            &col_w,
+            &basis,
+            alpha,
+            y,
+            q_bits,
+            &proj,
+            vc,
+        )
+        .expect("ext verify (profiled)");
+    }
+    let verify_phases = f2z::utils::prof::take_totals();
+    let pick = |phases: &[(&'static str, f64)], label: &str| -> f64 {
+        phases.iter().filter(|(l, _)| *l == label).map(|(_, s)| s).sum::<f64>() * 1e3
+    };
+
+    println!("  ext(K=Goldilocks², e=2, q'={}b):", proj.prime_bits);
+    println!("    prove:  {:8.2} ms   (median of {reps})", median(prove_ms));
+    if !prove_phases.is_empty() {
+        println!(
+            "    p-phases: step1_folds {:7.2} ms | sample_prime {:6.2} ms | project {:6.2} ms",
+            pick(&prove_phases, "ext:step1_folds"),
+            pick(&prove_phases, "ext:sample_prime"),
+            pick(&prove_phases, "ext:project"),
+        );
+    }
+    println!("    verify: {:8.2} ms", median(verify_ms));
+    if !verify_phases.is_empty() {
+        println!(
+            "    v-phases: sample_prime {:6.2} ms | project {:6.2} ms | checks {:6.2} ms",
+            pick(&verify_phases, "ext:sample_prime"),
+            pick(&verify_phases, "ext:project"),
+            pick(&verify_phases, "ext:checks"),
+        );
+    }
+    println!(
+        "    proof:  {bytes:8} B ({:.1} KiB)   serialize {:.0} µs / deserialize {:.0} µs",
+        bytes as f64 / 1024.0,
+        median(ser_us),
+        median(de_us)
+    );
 }
 
 fn main() {
