@@ -565,7 +565,7 @@ In words, $\Pi_{\mathsf{red}}^{\codedim_2}$ outputs $\codedim_2$ linear claims f
 
 \newcommand{\picanon}{\pi_{\mathsf{canon}}}
 
-\subsection{The main {\ftwoz} IOP for Lin-BitsDual}
+\subsection{The core {\ftwoz} IOP for Lin-BitsDual}
 We provide an IOP for $\Relation_{\mathsf{Lin-BitsDual}}$ next. We assume the notation from the previous two \cref{?,?}.  Given a projection $\pi_{q'}:\ZZ \to \FF_{q'}$, we fix an inverse map of the form $\pi_{q'}^{-1} : \FF_{q'} \to \range{0}{q'-1} \subseteq \ZZ$. Let $\picanon: \ZZ[X] \to \KK$ be the canonical homomorphism from $\ZZ[X]$ to $\KK$. Namely, if $\KK=\ZZ[X]/(q,h(X))$  for a polynomial $h(X)$ irreducible over $\FF_q[X]$, then $\picanon$ consists in modding $q$ out, and taking the quotient by $(h(X))$ (if $\KK$ is the prime field $\FF_q$, then $\picanon=\pi_q$). We fix an inverse for $\picanon$ of the form $$\picanon^{-1}: \KK \to \range{0}{q-1}^{\leq\degevalfield}[X] \subseteq \ZZ.
 $$ In words, $\picanon^{-1}$ simply takes an elmeent from $\KK$ represented as a degree $< \deg(h(X))$ polynomial over $\FF_q$, and applies $\pi_{q}^{-1}$ to it. We remark that one could choose any other such ``inverse'' maps, e.g.\ for $\pi_{q'}^{-1}$ one may prefer to use centered representatives. 
 
@@ -1193,7 +1193,8 @@ When $\degevalfield>0$, it is important to prove (**) and (***) together, since,
 
 
 \paragraph{SHA-256 compression overview}
-We begin with a brief overview of SHA-256 to establish notation, then formalize the relation we seek to arithmetize.
+We begin with a brief overview of SHA-256~\cite{FIPS180-4} to establish
+notation, then formalize the relation we seek to arithmetize.
 
 
 
@@ -1209,7 +1210,15 @@ We let
 a(X) &\mapsto a(2)
 \end{aligned}
 \end{equation}
-be the ring homomorphism sending integer polynomials to their evaluation at $X=2$. Notice that, given $a\in \{0,1\}^{<32}[X]$, the integer $\psi_2(x) \in \ZZ$ is the integer whose bit-representation coincides with the coefficients of $a$.
+be the ring homomorphism sending integer polynomials to their evaluation at
+$X=2$. Notice that, given $a\in \{0,1\}^{<32}[X]$, the integer
+$\psi_2(a) \in \ZZ$ is the integer whose bit-representation coincides with
+the coefficients of $a$.  The restriction
+\[
+  \psi_2:\{0,1\}^{<32}[X]\longrightarrow\{0,\ldots,2^{32}-1\}
+\]
+is a bijection; throughout this subsection, $\psi_2^{-1}$ denotes the inverse
+of this restricted map, not an inverse on all of $\ZZ[X]$.
 
 
 SHA-256 is built from the following six auxiliary functions.
@@ -1224,16 +1233,25 @@ For $x,y,z\in\{0,1\}^{<32}[X]$, define:
 \sigma_1(x)&\coloneqq \ROTR^{17}(x)\xor\ROTR^{19}(x)\xor\SHR^{10}(x)&&\in\{0,1\}^{<32}[X]
 \end{aligned}
 \end{equation}
-\albert{todo: define the bit operations}
+Here $\ROTR^r$ rotates a word right by $r$ positions, $\SHR^r$ shifts it
+right by $r$ positions and fills the high positions with zero, and
+$\xor,\band,\Not$ act coefficient-wise on bits.
 %The functions $\Ch$ (``choose'') provide $\Maj$ (``majority'') are bitwise selection and voting operations, respectively.
 
 \paragraph{Message schedule.}
-At the beginning of the SHA-256 compression function, the sixteen input message words $(M_t)_{t\in[16]}$ are expanded into a so-called \emph{message schedule}, which consists of $64$ integers of $32$ bits $(W_t)_{t\in[64]}\in\ZZ^{64}$ defined as follows:
+At the beginning of the SHA-256 compression function, the sixteen input
+message words $(M_t)_{t\in[16]}$ are expanded into a so-called
+\emph{message schedule}, which consists of $64$ words
+$(W_t)_{t\in[64]}\in(\{0,1\}^{<32}[X])^{64}$ defined as follows:
 \begin{equation}\label{eq:sha256_message_schedule_def}
 W_t \coloneqq 
 \begin{cases}
-\psi_2(M_t) & t\in[16],\\
-\psi_2(W_{t-16})+\psi_2(\sigma_0(W_{t-15}))+\psi_2(W_{t-7})+\psi_2(\sigma_1(W_{t-2})) \pmod{2^\wordsize} & t\in\{17,\dots,64\}.
+M_t & t\in[16],\\
+\psi_2^{-1}\!\left(
+  \psi_2(W_{t-16})+\psi_2(\sigma_0(W_{t-15}))
+  +\psi_2(W_{t-7})+\psi_2(\sigma_1(W_{t-2}))
+  \bmod 2^\wordsize
+\right) & t\in\{17,\dots,64\}.
 \end{cases}
 \end{equation}
 %The first $16$ schedule words coincide with the input message words; the remaining $48$ are derived by mixing earlier schedule words via the $\sigma$-functions.
@@ -1245,17 +1263,39 @@ At each round $t\in[64]$, the state entering that round is denoted
 $(a_t,b_t,c_t,d_t,e_t,f_t,g_t,h_t)\in\{0,1\}^{<32}[X]^8$. The per-round update is given by, for $t\in [64]$,
 \begin{equation*}
 \begin{aligned}
-T_{1,t} &\coloneqq \psi_2(h_t)+\psi_2(\Sigma_1(e_t))+\psi_2(\Ch(e_t,f_t,g_t))+\psi_2(K_t)+W_t  \pmod{2^\wordsize} &&\in \ZZ,\\
-T_{2,t} &\coloneqq \psi_2(\Sigma_0(a_t))+\psi_2(\Maj(a_t,b_t,c_t))  \pmod{2^\wordsize} &&\in \ZZ,\\
-a_{t+1} &\coloneqq \psi_2^{-1}(T_{1,t}+T_{2,t} \pmod{2^\wordsize}) &&\in\{0,1\}^{<32}[X],\\
-e_{t+1} &\coloneqq \psi_2^{-1}(\psi_2(d_t)+\psi_2(T_{1,t}) \pmod{2^\wordsize}) &&\in \{0,1\}^{<32}[X],\\
+T_{1,t} &\coloneqq \psi_2^{-1}\!\left(
+  \psi_2(h_t)+\psi_2(\Sigma_1(e_t))+\psi_2(\Ch(e_t,f_t,g_t))
+  +\psi_2(K_t)+\psi_2(W_t)\bmod 2^\wordsize\right),\\
+T_{2,t} &\coloneqq \psi_2^{-1}\!\left(
+  \psi_2(\Sigma_0(a_t))+\psi_2(\Maj(a_t,b_t,c_t))
+  \bmod 2^\wordsize\right),\\
+a_{t+1} &\coloneqq \psi_2^{-1}\!\left(
+  \psi_2(T_{1,t})+\psi_2(T_{2,t})\bmod 2^\wordsize\right),\\
+e_{t+1} &\coloneqq \psi_2^{-1}\!\left(
+  \psi_2(d_t)+\psi_2(T_{1,t})\bmod 2^\wordsize\right),\\
 (b_{t+1},&c_{t+1},d_{t+1},f_{t+1},g_{t+1},h_{t+1}) 
-\coloneqq (a_t,b_t,c_t,e_t,f_t,g_t)&&\in\{0,1\}^{<32}[X]^6.
+\coloneqq (a_t,b_t,c_t,e_t,f_t,g_t).
 \end{aligned}
 \end{equation*}
-The full SHA-256 compression function adds the initial state to the terminal state word-wise modulo $2^\wordsize$ (the so-called \emph{feed-forward step}); we omit this step for brevity \albert{Let's not do that}. For our purposes, the output of the compression function is the final state $(a_{65},\ldots,h_{65})$.  
+For the feed-forward step, let
+\[
+\begin{aligned}
+S^{\mathrm{in}}&=(a_1,b_1,c_1,d_1,e_1,f_1,g_1,h_1),\\
+S^{\mathrm{fin}}&=(a_{65},b_{65},c_{65},d_{65},
+                    e_{65},f_{65},g_{65},h_{65}).
+\end{aligned}
+\]
+The compression output is the word vector $H^{\mathrm{out}}$ defined by
+\[
+  H^{\mathrm{out}}_j
+  =\psi_2^{-1}\!\left(
+      \psi_2(S^{\mathrm{in}}_j)+\psi_2(S^{\mathrm{fin}}_j)
+      \bmod 2^\wordsize
+    \right)
+  \qquad(j\in\{0,\ldots,7\}).
+\]
 
-\paragraph{Our arithmetization}
+%\input{sha256-f2}
 
 \subsection{Experiments}
 
@@ -2120,5 +2160,7 @@ The final result is a transcript dependent map $A: \mathbb{E}^{dn} \to \mathbb{E
 
 
 \section{GKR protocol for multiple grand products}
+
+\printbibliography
 
 \end{document}
