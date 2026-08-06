@@ -118,6 +118,8 @@ Generalization/improvements to ring-switch in binary fields?
 
 Benches: F2Z works with a highly expressible constraint system and outperforms in all axis on all measured tasks except in proving big quantities of hashes. For that task, prover time is 2-3x slower, while proof sizes are about 20-33\% smaller, and memory usage is smaller too \albert{how about the verifier?}. For small number of hashes, say <$2^{10}$, F2Z outperforms on all axis \albert{or so it seems}. This may be because, with F2Z arithmetization, witnesses are smaller, and so floor costs in F2Z may be smaller than in other schemes. 
 
+Our stuff is 128 bits of security (once we add grinding). Achieving it is less costly because lowering rate of code has lesser impact (though we get a big performance loss over $>2^34$-ish witness bits because we can't use grinding to keep working with a binary field generator of only 128 bits). 
+
 \subsection{Ramblings (warm-up for the true intro)}
 Why does this paper exist? F2Z has many similarities to Binius64, so why F2Z at all? First of all, Binius64 is an end-to-end proving system, while F2Z is a PCS. Let's consider F2Z-SNARK a SNARK for proving R1CS constraints over $\ZZ$  or $\ZZ[X]$ with ideals. Flock is also related to F2Z-SNARK, though less so, since Flock is a more use-case specific SNARK for proving bit-intensive computations. We should also keep in mind that Flock is, at the end of the day, Binius64 on steroid optimizations. In general, I think of Flock as subsumed by a Binius64 repo that adopts Flock's optimizations. Hence I will not discuss Flock too much here.
 
@@ -193,6 +195,7 @@ $2^{11}$ Blake3 & 91/2.8/105/164 & \text{expected negl.} &  & 253/249/153/? & & 
 $2^{15}$ Blake3 & 1100/4.7/161/2550 & \text{expected negl.} & \text{Stuck} & 386/267/160/? & &
 \end{tabular}}
 \caption{
+\albert{Our stuff is 128 bits of security? (Once we add grinding?) How many queries?} 
 *= we are not using virtualization of XOR. The committed and opened witness size is 4x larger than it could be.
 \albert{Missing costs for F2Z PIOP. Note these are negligible for the hash benches though, and likely quite less than the grand product cost in other benches. All these were obtained asking AI to run benches. For the final paper we should make sure we are doing fair and correct benching (e.g.\ I'm not sure memory consumption is measured the same way across benches, especially for Binius, which is max RSS), but this helps get a rough idea how F2Z performs relatively to other systems.} Prover\_ time(ms)/Verifier\_time(ms)/Proof\_size(KB)/Peak\_memory(MB). Integer mult measure one million u16 x u16 -> u32 mults. F2Z-PCS does not include PIOP costs -- these are negligible in the hash benches (linear constraints), but should be accounted for in the other benches (degree 2 constraints).Ran in MacBook Air M4 16GB.\\ 
 \indent \hspace{1cm} Flock's verifier seems a bit broken in general. Flock's Blake3 prover for small number of hashes seems broken too. I modified Flock's Ligerito config so that it produces smaller proofs at very little extra cost.  For Blake3 we couldn't do $2^7$ hashes becase Flock errors out on $2^7$ hashes \albert{todo: make SHA also do $2^8$ instead of $2^7$}  \\ 
@@ -301,6 +304,10 @@ $\Pr_{\rr\getsr S^\mu}[f(\rr)=0] \le \mu/|S|$.
 
 Let $\cC \subseteq \FF^{\codelength}$ be a linear code over $\FF$ of dimension $\codedim$ and blocklength $\codelength$. For $h\geq 1$, the \emph{$h$-interleaving} of $\cC$ is the code $\cC^{\equiv h} \subseteq \left(\FF^{h}\right)^{\codelength}$ of dimension $\codedim\cdot h$ and blocklength $\codelength\cdot h$, whose codewords have the form $$\left((c_{i1},\ldots, c_{ih})\right)_{i\in [\codelength]} \qquad \text{for } (c_{1j},\ldots, c_{\codelength j})\in \cC \qquad \text{for all } j\in [h].$$
 
+Given two words $w_1, w_2$ of length $n$, the relative Hamming distance between $w_1$ and $w_2$ is denoted 
+%
+$$\hamming(w_1,w_2).$$
+
 \paragraph{Relations}
 A \emph{relation} $\Relation$ consists of triples  $(\inp,\oracle;\wit)$, where $\inp$ is the explicit instance, $\oracle$ the implicit instance or oracle, and $\wit$ the witness.  The corresponding language  is 
 \(
@@ -341,6 +348,18 @@ $$
 \PESAT(\FF, \pp, \cC, T) \defeq \left\{ \left(\begin{aligned} &\inp=\xx\in \FF^\inplen, \\&\oracle = f \in \FF^\codelength, \\ &\wit= \bff\in \FF^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(T(\bff)) = f\\ \wedge \  &\pp_j(\xx, \bff) = 0  \text{ for all } j\in [\numrows]\end{aligned} \right\}
 $$
 When $\numrows=1$ and $\xx$ are such that $\xx=(\vv,\mu)\in \FF^{\codedim}\times \FF$; $\pp_1(\xx,\ff)= \langle \ff, \vv\rangle -\mu$; and $T=\mathsf{Id}$ (and $\codedim'=\codedim=\inplen$), the relation $\PESAT(\FF,\pp, \cC, \mathsf{Id})$ is called a \emph{constrained code} \cite{WHIR?} \albert{WHIR?}.  We denote it $$\Relation_{\mathsf{Lin}}(\FF,\cC,T).$$
+%
+Given $\delta \in (0,1)$, the \emph{relaxation} of $\PESAT$ and $\Relation_{\mathsf{Lin}}(\FF,\cC,T)$, denoted
+%
+$$
+\PESAT^\delta, \qquad \qquad \Relation_{\mathsf{Lin}}(\FF,\cC,T)^{\delta}
+$$
+%
+are the relations defined exactly as $\PESAT$ and $\Relation_{\mathsf{Lin}}(\FF,\cC,T)$, respectively, except that the constraint $\Enc_{\cC}(T(\bff))=f$ is replaced by
+%
+$$
+\hamming(\Enc_{\cC}(T(\bff)), f) < \delta.
+$$
 
 
 \subsection{Interactive Oracle Reductions (IOR) of proximity}
@@ -368,19 +387,20 @@ $\Pi$ has \emph{(perfect) completeness}  if for every $(\inp, \oracle,\wit)\in\R
 We proceed to define round-by-round knowledge soundness of an IOR, as presented in \cite{TCC:BCFW25}.
 
 
-\begin{definition}[Knowledge state function]
+
+\begin{definition}[Knowledge state function with relaxation]
 \label{def:knowledge-state-function}
-Let $\Pi = (\prover, \verifier)$ be an IOR from a relation $\Relation$ to $\Relation'$. A \emph{knowledge state function} for $\Pi$ is a (possibly inefficient) function $\kstate$ that, on input  $(\inp, \oracle)$, interaction transcript $\tr$, and knowledge state witness $\kswit$, outputs a bit and has the following properties.
+Let $\Pi = (\prover, \verifier)$ be an IOR from a relation $\Relation$ to $\Relation'$. A \emph{knowledge state function with relaxation $(\widetilde{\Relation}, \widetilde{\Relation'})$} for $\Pi$ is a (possibly inefficient) function $\kstate$ that, on input  $(\inp, \oracle)$, interaction transcript $\tr$, and knowledge state witness $\kswit$, outputs a bit and has the following properties.
 \begin{itemize}[nosep]
-  \item \textbf{Empty transcript.} If $\tr = \emptyset$ is the empty transcript, then $\kstate(\inp, \oracle, \tr, \kswit) = 1$ if and only if $(\inp, \oracle; \kswit) \in \Relation$.
+  \item \textbf{Empty transcript.} If $\tr = \emptyset$ is the empty transcript, then $\kstate(\inp, \oracle, \tr, \kswit) = 1$ if and only if $(\inp, \oracle; \kswit) \in \widetilde{\Relation}$.
   \item \textbf{Prover moves.} If $\tr$ is a transcript where the prover is about to move and $\kstate(\inp, \oracle, \tr, \kswit) = 0$, then $\kstate(\inp, \oracle, \tr \Vert \provermsg, \kswit) = 0$ for every prover message $\provermsg$.
-  \item \textbf{Full transcript.} If $\tr = (\provermsg_1, \verifiermsg_1, \ldots, \provermsg_k, \verifiermsg_k)$ is a full transcript, then $\kstate(\inp, \oracle, \tr, \kswit) = 1$ if and only if $\verifier$ on $\tr$ outputs $(\inp', \oracle')$ such that $(\inp', \oracle'; \kswit) \in \Relation'$.
+  \item \textbf{Full transcript.} If $\tr = (\provermsg_1, \verifiermsg_1, \ldots, \provermsg_k, \verifiermsg_k)$ is a full transcript, then $\kstate(\inp, \oracle, \tr, \kswit) = 1$ if and only if $\verifier$ on $\tr$ outputs $(\inp', \oracle')$ such that $(\inp', \oracle'; \kswit) \in \widetilde{\Relation'}$.
 \end{itemize}
 \end{definition}
 
 \begin{definition}[Round-by-round knowledge soundness]
 \label{def:rbr-knowledge-new}
-A $k$-round IOR $\Pi$ has \emph{round-by-round knowledge soundness} with errors $(\knowledgeerror_1,\ldots,\knowledgeerror_k)$ if there exists a knowledge state function $\kstate$ as in \cref{def:knowledge-state-function} and a deterministic extractor $\rbrextractor$ such that for every $(\inp,\oracle)$, every $j\in[k]$, and every transcript $\tr$ where the verifier is about to send $\verifiermsg_j$,
+A $k$-round IOR $\Pi$ has \emph{round-by-round knowledge soundness with relaxation} with errors $(\knowledgeerror_1,\ldots,\knowledgeerror_k)$ if there exists a knowledge state function $\kstate$ as in \cref{def:knowledge-state-function} and a deterministic extractor $\rbrextractor$ such that for every $(\inp,\oracle)$, every $j\in[k]$, and every transcript $\tr$ where the verifier is about to send $\verifiermsg_j$,
 \[
   \Pr_{\verifiermsg_j}\!\left[
   \exists\,\kswit \ \left| \ \begin{array}{l}
@@ -398,11 +418,12 @@ A $k$-round IOR $\Pi$ has \emph{round-by-round knowledge soundness} with errors 
 \albert{Describe $\kstate$ for the composed IOR?}
 \end{remark}
 
-\section{\ftwoz IOPP for Lin-ModFieldBin}
+\section{\ftwoz IOP for Lin-ModFieldBin}
 
 
 %
 %
+\john{I actually don't like this name. There's too many things in the protocol that is linear and it's too vague}
 \subsection{The Lin-ModFieldBin and the Lin-BitsDual relations}
 
 Let $R$ denote either $\ZZ$ or a finite field $\FF$ of characteristic $q$; let $M_R$ be an $R$-module of finite dimension $\moduledegree\geq 1$;  let $\evalfield$ be a  finite field of characteristic $q$ (equal or not to $\FF$); and let $\comfield$ be a binary field. Intuitively,  our witness entries belong to $M_R$; $\evalfield$ is the field where our constraints on (a projection of)  the witness live; and 
@@ -450,7 +471,7 @@ where $\mathsf{lift}$ is the identity function if $\ring=\ZZ$,  and  $\mathsf{li
 The goal of this section is to provide an IOP of Proximity for the following relation:  \albert{should we add some parameters inside parenthesis as done with other relations?}
 %
 $$
- \Relation_{\mathsf{Lin-ModFieldBin}}= \left\{ \left(\begin{aligned} &\inp=(\vv,\mu)\in \KK^{ \codedim_0}  \times \KK^{\moduledegree}, \\
+ \LinModFieldBin= \left\{ \left(\begin{aligned} &\inp=(\vv,\mu)\in \KK^{ \codedim_0}  \times \KK^{\moduledegree}, \\
  &\oracle = f \in \comfield^{\codelength}, \\ &\wit= \bff\in M_{\ringbitbound{B}}^{\codedim_0}\end{aligned}\right) \;\middle|\;  \begin{aligned}  
  &f = \Enc_{\cC}(\pack(\pi_2(\mathsf{bits}(\bff)))),\\
  &\langle \psi_M(\bff), \vv \rangle = \mu  
@@ -461,14 +482,20 @@ $$
 
 \paragraph{The Lin-BitsDual relation}
 
-Our IOP for $\Relation_{\mathsf{Lin-ModFieldBin}}$ is built from an IOP to what we call the \emph{Linear constraint for bits over dual fields (Lin-BitsDual) relation}. This is essentially the same as  $\Relation_{\mathsf{Lin-ModFieldBin}}$,  except that the witness $\bff$ consists entirely of integer bits. Precisely, given a witness size parameter $\codedim\geq 1$ and a linear code $\cC\subseteq \comfield^{\codelength}$ of dimension $\codedim/2^{\comfieldexp}$ and blocklength $\codelength$ over $\comfield$, we define  
+Our IOP for $\LinModFieldBin$ is built from an IOP to what we call the \emph{Linear constraint for bits over dual fields (Lin-BitsDual) relation}. This is essentially the same as  $\LinModFieldBin$,  except that the witness $\bff$ consists entirely of integer bits. Precisely, given a witness size parameter $\codedim\geq 1$ and a linear code $\cC\subseteq \comfield^{\codelength}$ of dimension $\codedim/2^{\comfieldexp}$ and blocklength $\codelength$ over $\comfield$, we define  
 %
 $$
-\Relation_{\mathsf{Lin-BitsDual}} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \{0,1\}^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\pack(\picomfield(\bff))) = f\\ \wedge \  & \langle \pi_q(\bff), \vv\rangle  = \mu  \end{aligned} \right\}
+\LinBitsDual \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \{0,1\}^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\pack(\picomfield(\bff))) = f\\ \wedge \  & \langle \pi_q(\bff), \vv\rangle  = \mu  \end{aligned} \right\}
 $$
 
 
 
+\paragraph{Relaxation of the relations}
+For $\delta\in (0,1)$, we let $\LinBitsDual^\delta$ and $\LinModFieldBin^\delta$ be the relations $\LinBitsDual$ and $\LinModFieldBin$, respectively, after replacing the constraint $\Enc_{\cC}(\pack(\pi_2(\bff)))=f$ by
+%
+$$
+\hamming(\Enc_{\cC}(\pack(\pi_2(\bff))),f)<\delta.
+$$
 
 
 %When $Q$ and $\yy$ are such that $\yy=(\rr,\mu)\in \FF^{\log\codedim}\times \FF$ and $$Q(\yy,\ff)= \mle{\bff}(\rr)-\mu,$$ we denote $\Relation_{\cC, \FF}^{Q}$  by $\Relation_{\cC, \FF}^{\mathsf{mle}}$. 
@@ -499,7 +526,7 @@ $$
 %
 \subsection{Tensor decomposition, interleaved codes, and products of constrained codes}
 %
-Let $(\inp,\oracle,\wit)=((\mu,\vv), f, \bff) \in \Relation_{\mathsf{Lin-BitsDual}}$. We fix a tensor decomposition of vectors $\vv\in \evalfield^\codedim$ as $$\vv = \vv^{(1)} \otimes \vv^{(2)} = \left(\vv_i^{(1)}\cdot \vv_j^{(2)}\right)_{i\in [\codedim_1], j\in [\codedim_2]}$$ for some $\vv^{(1)}\in \evalfield^{\codedim_1}, \vv^{(2)}\in \evalfield^{\codedim_2}$, with $\codedim_1 \cdot \codedim_2=\codedim$. Note that the trivial tensor decomposition is admitted, i.e.\ we may effectively not decompose $\vv$ by choosing $\codedim_1=\codedim$, $\codedim_2=1$, $\vv^{(1)}=\vv$, and $\vv^{(2)} = (1)$.
+Let $(\inp,\oracle,\wit)=((\mu,\vv), f, \bff) \in \LinBitsDual$. We fix a tensor decomposition of vectors $\vv\in \evalfield^\codedim$ as $$\vv = \vv^{(1)} \otimes \vv^{(2)} = \left(\vv_i^{(1)}\cdot \vv_j^{(2)}\right)_{i\in [\codedim_1], j\in [\codedim_2]}$$ for some $\vv^{(1)}\in \evalfield^{\codedim_1}, \vv^{(2)}\in \evalfield^{\codedim_2}$, with $\codedim_1 \cdot \codedim_2=\codedim$. Note that the trivial tensor decomposition is admitted, i.e.\ we may effectively not decompose $\vv$ by choosing $\codedim_1=\codedim$, $\codedim_2=1$, $\vv^{(1)}=\vv$, and $\vv^{(2)} = (1)$.
 
 We assume $\cC = \cC_1^{\equiv \codedim_2}$ is the $\codedim_2$-dimensional interleaving of a code $\cC_1\subseteq \comfield^{\codelength/\codedim_2}$ of dimension $\codedim_1/2^\comfieldexp$ and blocklength $\codelength/\codedim_2$.  We then index the entries of $\bff$ as $\bff=(\bff_{ij})_{i\in [\codedim_1], j\in[\codedim_2]}$. Note that
 %
@@ -566,11 +593,11 @@ In words, $\Pi_{\mathsf{red}}^{\codedim_2}$ outputs $\codedim_2$ linear claims f
 \newcommand{\picanon}{\pi_{\mathsf{canon}}}
 
 \subsection{The core {\ftwoz} IOP for Lin-BitsDual}
-We provide an IOP for $\Relation_{\mathsf{Lin-BitsDual}}$ next. We assume the notation from the previous two \cref{?,?}.  Given a projection $\pi_{q'}:\ZZ \to \FF_{q'}$, we fix an inverse map of the form $\pi_{q'}^{-1} : \FF_{q'} \to \range{0}{q'-1} \subseteq \ZZ$. Let $\picanon: \ZZ[X] \to \KK$ be the canonical homomorphism from $\ZZ[X]$ to $\KK$. Namely, if $\KK=\ZZ[X]/(q,h(X))$  for a polynomial $h(X)$ irreducible over $\FF_q[X]$, then $\picanon$ consists in modding $q$ out, and taking the quotient by $(h(X))$ (if $\KK$ is the prime field $\FF_q$, then $\picanon=\pi_q$). We fix an inverse for $\picanon$ of the form $$\picanon^{-1}: \KK \to \range{0}{q-1}^{\leq\degevalfield}[X] \subseteq \ZZ.
+We provide an IOP for $\LinBitsDual$ next. We assume the notation from the previous two \cref{?,?}.  Given a projection $\pi_{q'}:\ZZ \to \FF_{q'}$, we fix an inverse map of the form $\pi_{q'}^{-1} : \FF_{q'} \to \range{0}{q'-1} \subseteq \ZZ$. Let $\picanon: \ZZ[X] \to \KK$ be the canonical homomorphism from $\ZZ[X]$ to $\KK$. Namely, if $\KK=\ZZ[X]/(q,h(X))$  for a polynomial $h(X)$ irreducible over $\FF_q[X]$, then $\picanon$ consists in modding $q$ out, and taking the quotient by $(h(X))$ (if $\KK$ is the prime field $\FF_q$, then $\picanon=\pi_q$). We fix an inverse for $\picanon$ of the form $$\picanon^{-1}: \KK \to \range{0}{q-1}^{\leq\degevalfield}[X] \subseteq \ZZ.
 $$ In words, $\picanon^{-1}$ simply takes an elmeent from $\KK$ represented as a degree $< \deg(h(X))$ polynomial over $\FF_q$, and applies $\pi_{q}^{-1}$ to it. We remark that one could choose any other such ``inverse'' maps, e.g.\ for $\pi_{q'}^{-1}$ one may prefer to use centered representatives. 
 
-\begin{construction}[IOP for {$\Relation_{\mathsf{Lin-BitsDual}}$}]\label{c:core_iop}
-The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\mathsf{Lin-BitsDual}}$.  We assume the tensor split from the previous Section \ref{}, and adopt its notation. 
+\begin{construction}[IOP for {$\LinBitsDual$}]\label{c:core_iop}
+The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \LinBitsDual$.  We assume the tensor split from the previous Section \ref{}, and adopt its notation. 
 Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with sufficiently large multiplicative order, to be determined later.  
 
 
@@ -620,7 +647,7 @@ where in the honest case  $f_{*j} = \Enc_{\cC_1}(\pack(\picomfield(\bff_{*j})))\
 \begin{equation}\label{e:iopp_mle_claims}
 \left((\vv, \mu_j'), \ f_{*j}, \ \picomfield(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation_{\mathsf{Lin}}( \comfield,\cC_1,\pack)\right)^{\codedim_2}\end{equation} for some vector $\vv$ and field elements $\mu_j'$ output during the IOR $\Pi_{\mathsf{red}}^{\codedim_2}$. 
 \end{itemize}
-\item \textbf{Phase 2: Using an IOPP over {$\comfield$}.} Prover and  verifier engage in an IOP  to certify the claims \eqref{e:iopp_mle_claims}. 
+\item \textbf{Phase 2: Using an IOP over {$\comfield$}.} Prover and  verifier engage in an IOP  to certify the claims \eqref{e:iopp_mle_claims}. 
 \end{enumerate}
 \end{construction}
 
@@ -634,18 +661,26 @@ where in the honest case  $f_{*j} = \Enc_{\cC_1}(\pack(\picomfield(\bff_{*j})))\
 \subsection{Soundness and completeness}
 
 
-
-\begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:core_iop}]\label{t:thm_core_IOPP}
-    Assume $\Pi_{\mathsf{red}}^{\codedim_2}$ is a perfectly complete $t_\red$-round IOR from $\PESAT(\comfield, Q_{\FF 2 \ZZ},\cC_1, \pack)^{\codedim_2}$ to $\Relation_{\mathsf{Lin}}(\comfield, \cC_1, \pack)^{\codedim_2}$ with round-by-round knowledge soundness errors $(\ksred_1, \ldots, \ksred_{t_\red})$. Assume $\Pi_{\iopp}$ is a perfectly complete $t_{\iopp}$-round IOPP \albert{IOPP or IOP?} from $\Relation_{\mathsf{Lin}}(\comfield, \cC_1, \pack)^{\codedim_2}$ with round-by-round knowledge soundness errors $\ksiopp_1,\ldots, \ksiopp_{t_\iopp}$. 
-
-    Then, if $\degevalfield>0$, \cref{c:core_iop} is a perfectly complete $1+t_\red+t_\iopp$ IOPP for $\Relation_{\mathsf{Lin-BitsDual}}$ with round-by-round knowledge soundness errors $\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}$, where
+For readability, we temporarily denote $$\PESAT^{\codedim_2}=\PESAT(\comfield, Q_{\FF 2 \ZZ},\cC_1, \pack)^{\codedim_2},\qquad \Relation_{\mathsf{Lin}}^{\codedim_2} = \Relation_{\mathsf{Lin}}(\comfield, \cC_1, \pack)^{\codedim_2}.$$
+\begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:core_iop}]\label{t:thm_core_IOPP} \albert{Completeness missing}
+   Let $\delta \in (0,1)$ be a proximity parameter.  Assume $g$ has multiplicative order $\mathsf{ord}(g)$ with 
+   %
+   $$\mathsf{ord}(g) > (\codedim_1+1) \cdot (q_{\max}-1),$$ 
+   where $q_{\max}$ is the largest prime in $\cP$.
+   
+   %
+   Assume $\Pi_{\mathsf{red}}^{\codedim_2}$ is a perfectly complete $t_\red$-round IOR from $\PESAT^{\codedim_2}$ to $\Relation_{\mathsf{Lin}}^{\codedim_2}$ with round-by-round knowledge soundness  with relaxation $(\PESAT^\delta)^{\codedim_2},(\Relation_{\mathsf{Lin}}^{\delta})^{\codedim_2}$, with errors  $(\ksred_1, \ldots, \ksred_{t_\red})$. Assume $\Pi_{\iopp}$ is a perfectly complete $t_{\iopp}$-round IOP  from $\Relation_{\mathsf{Lin}}(\comfield, \cC_1, \pack)^{\codedim_2}$ (i.e.\ an IOR from $\Relation_{\mathsf{Lin}}$ to the trivial relation $\bot$) with round-by-round knowledge soundness with relaxation $((\Relation_{\mathsf{Lin}}^{\delta})^{\codedim_2}, \bot)$, and errors $$\ksiopp_1,\ldots, \ksiopp_{t_\iopp}.$$ 
+%
+    Then, if $\degevalfield>0$, \cref{c:core_iop} is a perfectly complete $1+t_\red+t_\iopp$ IOP for $\LinBitsDual$ with round-by-round knowledge soundness with relaxation $(\LinBitsDual^{\delta\cdot \codedim_2}, \bot)$, with errors $$\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]},$$ where
     %
     $$
     \kappa_0 = \frac{\degevalfield}{q_{\min}} + \frac{\log(\codedim_1 +1) + \log(q-1)}{|\cP|\cdot \log(q_{\min})}
     $$
     and $q_{\min}$ is the smallest prime in the set of sampleable primes $\cP$ from Step 3 of \cref{c:core_iop}. 
 
-    If $\degevalfield=0$, i.e.\ $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$ IOPP with round-by-round knowledge soundness errors $\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}$.
+    If $\degevalfield=0$, i.e.\ $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$ IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}$.
+    
+    \albert{We used the proximity parameter $\delta\cdot \codedim_2$ for $\LinBitsDual$. Todo: check if that's ok or I should be using something stronger that allows to use the same paramter for the interleaved and non-interleaved codes}
 \end{theorem}
 
 
@@ -669,7 +704,8 @@ Now, every nonzero coefficient of $f(X)$ is divisible by at most $B/\lfloor\log(
 
 \begin{proof}[Proof of \cref{t:thm_core_IOPP}]
 %
-We decompose \cref{c:core_iop} into three IORs $\Pi_1, \Pi_2, \Pi_3$.  The first one, $\Pi_1$, is a $1$-round IOR from $\Relation_{\mathsf{Lin-BitsDual}}$ to $\PESAT(\comfield, Q_{\FF 2 \ZZ}, \cC_1, \pack)^{\codedim_2}$, and it consists of applying Round 1 of \cref{c:core_iop}, and outputting $$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\picomfield(\bff_{*j})\right)_{j\in [\codedim_2]},$$ as described at the beginning of Phase 1 of \cref{c:core_iop}. The second IOR, $\Pi_2$, is simply $\Pi_{\mathsf{red}}^{\codedim_2}$, reducing $\PESAT(\comfield, Q_{\FF 2 \ZZ}, \cC_1, \pack)^{\codedim_2}$ to $\left(\Relation_{\cC_1, \comfield,\pack}\right)^{\codedim_2}$. Finally, the third IOR, $\Pi_3$, is simply the IOP of proximity $\Pi_{\iopp}$ for $\left(\Relation_{\cC_1, \comfield,\pack}\right)^{\codedim_2}$.
+We decompose \cref{c:core_iop} into three IORs $\Pi_1, \Pi_2, \Pi_3$.  The first one, $\Pi_1$, is a $1$-round IOR from $\LinBitsDual$ to $\PESAT
+^{\codedim_2}$, and it consists of applying Round 1 of \cref{c:core_iop}, and outputting $$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\picomfield(\bff_{*j})\right)_{j\in [\codedim_2]},$$ as described at the beginning of Phase 1 of \cref{c:core_iop}. The second IOR, $\Pi_2$, is simply $\Pi_{\mathsf{red}}^{\codedim_2}$, reducing $\PESAT^{\codedim_2}$ to $\left(\Relation_{\mathsf{Lin}}\right)^{\codedim_2}$. Finally, the third IOR, $\Pi_3$, is simply the IOP $\Pi_{\iopp}$ for $\left(\Relation_{\mathsf{Lin}}\right)^{\codedim_2}$.
 
 
 By the composition of IORs result (cf.\ \cref{r:ior_compositoin}), it suffices to show that $\Pi_1$ has round-by-round knowledge error $\kappa_0$, and is perfectly complete. 
@@ -680,7 +716,7 @@ By the composition of IORs result (cf.\ \cref{r:ior_compositoin}), it suffices t
 
 \paragraph{Completeness and soundness of $\Pi_1$}
 
-We describe a knowledge state function $\kstate$. Let $\inp=(\vv,\mu)\in \evalfield^{\codedim} \times \evalfield$ and  $\yy=f\in \comfield^{\codelength}$. Let $\tr$ be a partial interaction transcript for \cref{c:core_iop}. We start by setting $\kstate$ so that the first two conditions in \cref{?} are met. Precisely, if   $\tr=\empty$, we set $kstate(\inp,\oracle,\tr,\ww) = 1$ if and only if $(\inp, \oracle, \ww)\in \Relation_{\mathsf{Lin-BitsDual}}$; and we have $\kstate$ output zero on inputs  $(\inp,\oracle,\tr||\pi,\ww)$ where $\pi$ is a prover  message \albert{notation collision} and $\kstate(\inp,\oracle,\tr,\ww)=0$.
+We describe a knowledge state function $\kstate$. Let $\inp=(\vv,\mu)\in \evalfield^{\codedim} \times \evalfield$ and  $\yy=f\in \comfield^{\codelength}$. Let $\tr$ be a partial interaction transcript for \cref{c:core_iop}. We start by setting $\kstate$ so that the first two conditions in \cref{def:knowledge-state-function} are met. Precisely, if   $\tr=\empty$, we set $kstate(\inp,\oracle,\tr,\ww) = 1$ if and only if $(\inp, \oracle, \ww)\in \LinBitsDual^{\delta\cdot\codedim_2}$; and we have $\kstate$ output zero on inputs  $(\inp,\oracle,\tr,m,\ww)$ where $m$ is a prover  message  and $\kstate(\inp,\oracle,\tr,\ww)=0$.
 
 After the verifier's first message, $\tr$ is as follows:
 %
@@ -691,10 +727,12 @@ $$
 We define $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if $\ww=\ff\in \bits^{\codedim}\subseteq \ZZ^\codedim$,  $\ff=(\ff_{*j})_{j\in [\codedim_2]}\in \left(\bits^{\codedim_1}\right)^{\codedim_2}$, and 
 %
 \begin{equation}\label{e:core_iop_proof_eq1}
-\langle \bff_{*j}, \pi_{q'}^{-1}(\pi_{q',\alpha}(\pi_{\mathsf{canon}}^{-1}(\vv^{(1)})))\rangle = \pi_{q'}^{-1}(\pi_{q',\alpha}(\mu_j)) \qquad \text{ for all } j\in [\codedim_2]
+    \begin{aligned}
+&\langle \bff_{*j}, \pi_{q'}^{-1}(\pi_{q',\alpha}(\pi_{\mathsf{canon}}^{-1}(\vv^{(1)})))\rangle = \pi_{q'}^{-1}(\pi_{q',\alpha}(\mu_j)) \\
+&\hamming(f_{*j},\Enc_{\cC_1}(\pack(\pi_2((\bff_{*j}))))< \delta.
+    \end{aligned}\qquad \text{ for all } j\in [\codedim_2]
 \end{equation}
-\albert{something about the oracle?}
-We define $\rbrextractor(\inp,\oracle,\bm{\mu}\Vert q',\alpha,\ww)=\ww$. Let $\bm{\mu}=(\mu_1,\ldots, \mu_{\codedim_2})$. We next show that 
+We define $\rbrextractor(\inp,\oracle,\bm{\mu}, q',\alpha,\ww)=\ww$. Let $\bm{\mu}=(\mu_1,\ldots, \mu_{\codedim_2})$. We next show that 
 %
 \[
   \Pr_{q',\alpha'}\!\left[
@@ -703,12 +741,25 @@ We define $\rbrextractor(\inp,\oracle,\bm{\mu}\Vert q',\alpha,\ww)=\ww$. Let $\b
   \wedge\ \kstate(\inp,\oracle,\bm{\mu}, q', \alpha, \ww)=1
   \end{array}
   \right.\right]
-  \ \le\ \kappa_0(??).
+  \ \le\ \kappa_0.
 \]
-Indeed, let $\ww'= \rbrextractor(\inp,\oracle,\bm{\mu}, q',\alpha,\ww)$. Assume $\kstate(\inp,\oracle,\bm{\mu}, q', \alpha, \ww)=1$ and  $\kstate(\inp,\oracle,\bm{\mu},  \rbrextractor(\inp,\oracle,\bm{\mu}, q',\alpha,\ww))=\kstate(\inp,\oracle,\bm{\mu},  \ww)=0$.
-The latter occurs if and only if  $\kstate\bigl(\inp,\oracle,\ww\bigr)=0$, which in turn occurs if and only if  $(\inp,\oracle,\ww)\notin \Relation_{\mathsf{Lin-BitsDual}}$. Thus we have to bound the probability over $q',\alpha$ that $(\inp,\oracle,\ww)\notin \Relation_{\mathsf{Lin-BitsDual}}$ and $\ww=(\bff_{*j})$ satisfies \cref{e:core_iop_proof_eq1}. To that end, assume $(\inp,\oracle,\ww)\notin \Relation_{\mathsf{Lin-BitsDual}}$. Then $\langle \pi_q(\bff_{*j}), \vv^{(1)} \rangle\neq \mu_j$ over $\KK$ for some $j\in [\codedim_2]$. In particular, $\langle \bff_{*j}), \pi_{\mathsf{canon}}^{-1}(\vv^{(1)}) \rangle\neq \pi_{\mathsf{canon}}^{-1}(\mu_j)$ over $\ZZ[X]$. Let $$p_j(X)\defeq  \langle \bff_{*j}, \pi_{\mathsf{canon}}^{-1}(\vv^{(1)}) \rangle- \pi_{\mathsf{canon}}^{-1}(\mu_j) \in \ZZ[X].
+Assume $$\kstate(\inp,\oracle,\bm{\mu}, q', \alpha, \ww)=1 \quad \text{and} \quad \kstate(\inp,\oracle,\bm{\mu},  \rbrextractor(\inp,\oracle,\bm{\mu}, q',\alpha,\ww))=\kstate(\inp,\oracle,\bm{\mu},  \ww)=0.$$
+The latter occurs if and only if  $\kstate\bigl(\inp,\oracle,\ww\bigr)=0$ (by Condition 2 in \cref{def:knowledge-state-function}), which in turn occurs if and only if  $(\inp,\oracle,\ww)\notin \LinBitsDual^{\delta\cdot\codedim_2}$. Since $\kstate(\inp,\oracle,\bm{\mu}, q', \alpha, \ww)=1$, we have $\ww=\bff=(\bff_{*j})_{j\in[\codedim_2]}$ satisfies \eqref{e:core_iop_proof_eq1}. Thus we have to bound the probability over $q',\alpha$ that $(\inp,\oracle,\ww)\notin \LinBitsDual^{\delta\cdot\codedim_2}$ and $\ww=(\bff_{*j})$ satisfies \eqref{e:core_iop_proof_eq1}. To that end, assume $(\inp,\oracle,\ww)\notin \LinBitsDual^\delta$. Then one of the following holds:
+%
+\begin{align}
+   &\hamming(f,\Enc_{\cC}(\pack(\pi_2(\bff))))\geq {\delta\cdot\codedim_2}.\label{e:break_soundness_1}\\
+   &\langle \pi_q(\bff_{*j}), \vv^{(1)} \rangle\neq \mu_j \text{ over } \KK \text{ for some } j\in [\codedim_2] \label{e:break_soundness_2}
+\end{align}
+%
+First we argue that \eqref{e:break_soundness_1} cannot hold. Indeed, we know that $\hamming(f_{*j},\Enc_{\cC_1}(\pack(\pi_2((\bff_{*j}))))< \delta$ for all $j\in [\codedim_2]$. On the other hand, since $\cC=\cC_1^{\equiv \codedim_2}$ is the $\codedim_2$-interleaving of $\cC_1$, $$\Enc_{\cC}(\pack(\pi_2(\bff)))= (\Enc_{\cC_1}(\pack(\pi_2(\bff_{*j}))))_{j\in [\codedim_2]},$$
+and so 
 $$
-Then $p_j$ is a nonzero integer polynomial of degree $\leq \degevalfield$ and with coefficients of absolute value at most $\codedim_1\cdot (q-1) + (q-1)$ (here we use that all entries in $\bff_{*j}$ are bits). Now, if $\bff_{*j}$ satisfies \cref{e:core_iop_proof_eq1}, then, applying $\pi_{q'}$ on both sides, reorganizing terms,  using that $\pi_{q'}(\bff_{*j})=\pi_{q',\alpha}(\bff_{*j})$ and the linearity of $\pi_{q', \alpha}$,
+\hamming(f,\Enc_{\cC}(\pack(\pi_2(\bff)))) < \codedim_2\cdot \delta.
+$$
+%
+Now assume \ref{e:break_soundness_2} holds. Then $\langle \bff_{*j}, \pi_{\mathsf{canon}}^{-1}(\vv^{(1)}) \rangle\neq \pi_{\mathsf{canon}}^{-1}(\mu_j)$ over $\ZZ[X]$. Let $$p_j(X)\defeq  \langle \bff_{*j}, \pi_{\mathsf{canon}}^{-1}(\vv^{(1)}) \rangle- \pi_{\mathsf{canon}}^{-1}(\mu_j) \in \ZZ[X].
+$$
+Then $p_j$ is a nonzero integer polynomial of degree $\leq \degevalfield$ and with coefficients of absolute value at most $\codedim_1\cdot (q-1) + (q-1)$ (here we use that all entries in $\bff_{*j}$ are bits). Now, since $\bff_{*j}$ satisfies \cref{e:core_iop_proof_eq1}, then, applying $\pi_{q'}$ on both sides, reorganizing terms,  using that $\pi_{q'}(\bff_{*j})=\pi_{q',\alpha}(\bff_{*j})$ and the linearity of $\pi_{q', \alpha}$,
 %
 $$
 0=\langle \pi_{q'}(\bff_{*j}), \pi_{q',\alpha}(\pi_{\mathsf{canon}}^{-1}(\vv^{(1)}))\rangle -\pi_{q',\alpha}(\mu_j) = \pi_{q', \alpha}\left(\langle \bff_{*j}, \pi_{\mathsf{canon}}^{-1}(\vv^{(1)})\rangle -\mu_j\right) = \pi_{q', \alpha}(p_j(X)). 
@@ -717,7 +768,7 @@ $$
 Hence 
 %
 $$
-\Pr_{q',\alpha}[(\inp,\oracle,\ww)\notin \Relation_{\mathsf{Lin-BitsDual}}, \text{ and }\ww=(\bff_{*j}) \text{ satisfies  \cref{e:core_iop_proof_eq1}}] \leq \Pr_{q',\alpha}[\pi_{q',\alpha}(p_j(X))=0] 
+\Pr_{q',\alpha}[(\inp,\oracle,\ww)\notin \LinBitsDual^\delta, \text{ and }\ww=(\bff_{*j}) \text{ satisfies  \cref{e:core_iop_proof_eq1}}] \leq \Pr_{q',\alpha}[\pi_{q',\alpha}(p_j(X))=0] 
 $$
 %
 By \cref{l:reduction_lemma},
@@ -727,16 +778,20 @@ $$
 $$
 as needed.
 
-It remains to see that if  $\tr$ is a full transcript of $\Pi_1$, then $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if verifier with input $(\inp,\oracle, \tr)$ outputs $(\inp',\oracle')$ such that $(\inp',\oracle', \ww)\in \PESAT(\comfield,Q_{\FF 2 \ZZ},\cC_1, \pack)^{\codedim_2}$ \albert{yes?}. Indeed, write as before $\tr=(\bm{\mu}, q', \alpha)$. By definition, $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if $\ww=(\bff_{*j})_{j\in [\codedim_2]}$ satisfies \eqref{e:core_iop_proof_eq1}. The output of the verifier is 
-$$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \right)_{j\in [\codedim_2]},$$
+It remains to see that if  $\tr$ is a full transcript of $\Pi_1$, then $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if the verifier with input $(\inp,\oracle, \tr)$ outputs $(\inp',\oracle')$ such that $(\inp',\oracle', \ww)\in (\PESAT^{\delta})^{\codedim_2}$. The output of the verifier is 
+$$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ g^{\mu_j}),\  \oracle_j= f_{*j} \right)_{j\in [\codedim_2]},$$
 %
-where $$\bm{\gamma} = \pi_{q'}^{-1}(\pi_{q',\alpha}(\pi_{\mathsf{canon}}^{-1}(\vv^{(1)}))) \in \range{0}{q'-1}^{\codedim_1}\subseteq \ZZ^{\codedim_1}.$$
-The equalities in \eqref{e:core_iop_proof_eq1}  take place in $\ZZ$. Concretely, the right-hand-side is an integer in the range $\range{0}{q'-1}$, and hence so is the left-hand-side.  Hence if the multiplicative order of $g$ (the generator of $\comfield^*$) is larger than $q'-1$, we have that \eqref{e:core_iop_proof_eq1} holds if and only if \albert{shouldn't we account for the growth $\codedim_1\cdot (q'-1)$? Also how does the need of having many samplable primes affect the maximum possible size of $q'$?}
+where $$\bm{\gamma} = \pi_{q'}^{-1}(\pi_{q',\alpha}(\pi_{\mathsf{canon}}^{-1}(\vv^{(1)}))) \in \range{0}{q'-1}^{\codedim_1}\subseteq \ZZ^{\codedim_1}.$$ Now, write as before $\tr=(\bm{\mu}, q', \alpha)$. By definition, $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if $\ww=(\bff_{*j})_{j\in [\codedim_2]}$ satisfies \eqref{e:core_iop_proof_eq1}. 
+The equalities in \eqref{e:core_iop_proof_eq1}  take place in $\ZZ$. We have that $$g^{\langle \bff_{*j}, \bm{\gamma}\rangle} = g^{\pi_{q'}^{-1}(\pi_{q',\alpha}(\mu_j))}$$ if and only if $\langle \bff_{*j}, \bm{\gamma}\rangle = \pi_{q'}^{-1}(\pi_{q',\alpha}(\mu_j)) \mod \mathsf{ord}(g)$, where $\mathsf{ord}(g)$ denotes the multiplicative order of $g$. Now, since $\gamma_j\in \range{0}{q'-1}$ and $\bff_{*j}$ contains bits, we have $|\langle \bff_{*j}, \bm{\gamma}\rangle - \pi_{q'}^{-1}(\pi_{q',\alpha}(\mu_j))| \leq (\codedim_1+1) \cdot (q'-1)$. Hence if $$\mathsf{ord}(g) > (\codedim_1+1) \cdot (q'-1),$$ then    \eqref{e:core_iop_proof_eq1}  holds if and only if 
 %
-$$
-g^{\langle \bff_{*j}, \bm{\gamma}\rangle} = g^{\pi_{q'}^{-1}(\pi_{q',\alpha}(\mu_j))}\qquad \text{ for all } j\in [\codedim_2].
-$$
-
+\begin{equation*}
+    \begin{aligned}
+&g^{\langle \bff_{*j}, \bm{\gamma}\rangle} = g^{\pi_{q'}^{-1}(\pi_{q',\alpha}(\mu_j))}\\
+& \hamming( f_{*j},\Enc_{\cC_1}(\pack(\pi_2(\bff_{*j})))) < \delta
+\end{aligned}\qquad \text{ for all } j\in [\codedim_2].
+\end{equation*}
+%
+The above holds if and only if $(\inp_j,\oracle_j, \bff_{*j})_{j\in [\codedim_2]}\in (\PESAT^\delta)^{\codedim_2}$.
 %
 \end{proof}
 
@@ -744,14 +799,13 @@ $$
 
 
 
-
 \subsection{\ftwoz: an IOP for Lin-ModFieldBin}
 
-We now describe our IOP for $\Relation_{\mathsf{Lin-ModFieldBin}}$.
+We now describe our IOP for $\LinModFieldBin$.
 
 
-\begin{construction}[IOP for $\Relation_{\mathsf{Lin-ModFieldBin}}$]\label{c:LinModFieldBin}
-The prover and verifier receive $\inp=(\vv, \mu)\in \KK^{\codedim_0}\times \KK$ and  $\oracle= f \in \comfield^\codelength$. The prover receives \albert{$\codedim_0$ would be more consistent with the beginning of the section} $\wit= \bff\in M_{\ringbitbound{B}}^{\codedim_0} \subseteq \ZZ^{\codedim_0}$ such that $(\inp,\oracle, \wit) \in \Relation_{\mathsf{Lin-ModFieldBin}}$, i.e., 
+\begin{construction}[IOP for $\LinModFieldBin$]\label{c:LinModFieldBin}
+The prover and verifier receive $\inp=(\vv, \mu)\in \KK^{\codedim_0}\times \KK$ and  $\oracle= f \in \comfield^\codelength$. The prover receives \albert{$\codedim_0$ would be more consistent with the beginning of the section} $\wit= \bff\in M_{\ringbitbound{B}}^{\codedim_0} \subseteq \ZZ^{\codedim_0}$ such that $(\inp,\oracle, \wit) \in \LinModFieldBin$, i.e., 
 %
 $$
 f = \Enc_{\cC}(\pack(\pi_2(\mathsf{bits}(\bff)))),\qquad \langle \psi_M(\bff), \vv \rangle = \mu.
@@ -766,8 +820,8 @@ $$
 \uu &\defeq  \left(\vv \otimes \left(1, \pi_q(2), \ldots, \pi_q(2^{B-1})\right) \otimes \left(\psi_M(\gamma_1), \ldots, \psi_M(\gamma_{\moduledegree})\right)\right) \in \KK^{\codedim_0\cdot \moduledegree \cdot B}.
     \end{aligned}
 \end{equation}
-And so the  claim $(\inp,\oracle, \wit) \in \Relation_{\mathsf{Lin-ModFieldBin}}$ is equivalent to the claim \begin{equation}\label{e:iop_final_linear_claim}
-    \left(\inp'=(\uu,\mu), \oracle' = f=\Enc_{\cC}(\pack(\pi_2(\mathsf{bits}(\ff)))), \wit' = \mathsf{bits}(\ff)\right) \in \Relation_{\mathsf{Lin-BitsDual}}.
+And so the  claim $(\inp,\oracle, \wit) \in \LinModFieldBin$ is equivalent to the claim \begin{equation}\label{e:iop_final_linear_claim}
+    \left(\inp'=(\uu,\mu), \oracle' = f=\Enc_{\cC}(\pack(\pi_2(\mathsf{bits}(\ff)))), \wit' = \mathsf{bits}(\ff)\right) \in \LinBitsDual.
 \end{equation}
 Accordingly, prover and verifier use the \ftwoz PCS \cref{c:core_iop} to prove \eqref{e:iop_final_linear_claim}.
 \end{enumerate}
@@ -777,7 +831,13 @@ Accordingly, prover and verifier use the \ftwoz PCS \cref{c:core_iop} to prove \
     \albert{completeness and soundness}
 \end{theorem}
 
-\section{[Old] Extensions, variations, and optimizations}
+
+\subsection{Parameter instantiation}
+
+\albert{Discuss grinding}
+
+
+\section{[Written with old notation and terminology] Extensions, variations, and optimizations}
 
 \albertimportant{Section is relatively outdated}
 
@@ -785,7 +845,7 @@ Accordingly, prover and verifier use the \ftwoz PCS \cref{c:core_iop} to prove \
 
 \albertimportant{In current implementation, this performs worse than not using any virtualization, which should not be the case. But before working on this section further I'd want to make sure it is worth it}
 
-In this section we expand relation $\Relation_{\mathsf{Lin-BitsDual}}$ to impose, instead of constraints of the form $\Enc_\cC(\pack(\pi_2(\bff)))=f$ and $\langle \pievalfield(\bff), \vv  \rangle = \mu$, constraints as $\Enc_\cC(\pack(\pi_2(\bff))) = f$  and $$\langle \pievalfield(\pi_2^{-1}(M\cdot \pi_2(\bff))) \rangle = \mu$$ for a matrix $M\in \FF_{2}^{\codedim' \times \codedim}$. Precisely, given a new parameter $\codedim'$, we define 
+In this section we expand relation $\LinBitsDual$ to impose, instead of constraints of the form $\Enc_\cC(\pack(\pi_2(\bff)))=f$ and $\langle \pievalfield(\bff), \vv  \rangle = \mu$, constraints as $\Enc_\cC(\pack(\pi_2(\bff))) = f$  and $$\langle \pievalfield(\pi_2^{-1}(M\cdot \pi_2(\bff))) \rangle = \mu$$ for a matrix $M\in \FF_{2}^{\codedim' \times \codedim}$. Precisely, given a new parameter $\codedim'$, we define 
 %
 $$
 \Relation^{\mathsf{lin-virtual}}_{\cC, \comfield, \evalfield, \pack} \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv, M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim' \times \codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}(\pack(\picomfield(\bff))) = f\\ \wedge \  & \langle \pievalfield(\pi_2^{-1}(M \cdot \pi_2(\bff)), \vv\rangle  = \mu  \end{aligned} \right\}
@@ -809,13 +869,13 @@ Hence AND and Majority can be expressed over $\FF_q$ as  linear expressions of a
 
 \bigskip
 
-We next provide an IOPP for $\Relation^{\mathsf{lin-virtual}}_{\cC, \comfield, \evalfield, \pack}$ for specific shapes of $M$. Similarly as in \cref{?}, we assume a tensor structure $\codedim=\codedim_1 \cdot \codedim_2$ for $\vv$, and write $\bff = (\bff_{*j})_{j\in [\codedim_2]} \in \bits^{\codedim_1 \times \codedim_2}$.  We then let $\codedim_1'$ be such that $\codedim' = \codedim_1' \times \codedim_2$ and assume $M = \mathsf{Id} \otimes M_0$ where $M_0$ is a $\codedim_1' \times \codedim_1$ matrix with entries in $\FF_2$, and $\mathsf{Id}$ is the $\codedim_2\times \codedim_2$ matrix. In words, $M$ is the $\codedim'\times \codedim = \codedim_1'\cdot \codedim_2 \times \codedim_1\cdot \codedim_2$ diagonal block matrix with $M_0$ as diagonal blocks. Then
+We next provide an IOP for $\Relation^{\mathsf{lin-virtual}}_{\cC, \comfield, \evalfield, \pack}$ for specific shapes of $M$. Similarly as in \cref{?}, we assume a tensor structure $\codedim=\codedim_1 \cdot \codedim_2$ for $\vv$, and write $\bff = (\bff_{*j})_{j\in [\codedim_2]} \in \bits^{\codedim_1 \times \codedim_2}$.  We then let $\codedim_1'$ be such that $\codedim' = \codedim_1' \times \codedim_2$ and assume $M = \mathsf{Id} \otimes M_0$ where $M_0$ is a $\codedim_1' \times \codedim_1$ matrix with entries in $\FF_2$, and $\mathsf{Id}$ is the $\codedim_2\times \codedim_2$ matrix. In words, $M$ is the $\codedim'\times \codedim = \codedim_1'\cdot \codedim_2 \times \codedim_1\cdot \codedim_2$ diagonal block matrix with $M_0$ as diagonal blocks. Then
 %
 \begin{equation}\label{e:M_pi_f}
 M \cdot \pi_2(\bff) = (M_0 \cdot \pi_2(\bff_{*j}))_{j\in [\codedim_2]} \in (\FF_2^{\codedim_1'})^{\codedim_2}.
 \end{equation}
 %
-\begin{construction}[IOPP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$]\label{c:virtual_iop}
+\begin{construction}[IOP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$]\label{c:virtual_iop}
 The prover and verifier receive $\inp=(\mu, \vv,M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim'\times\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$.  We assume $M$ is of the form described above.
 
  Define  $\bfh = \pi_2^{-1}\left(M\cdot \pi_2(f)\right) \in \{0,1\}^{\codedim'} \subseteq \ZZ^{\codedim'}$. By \eqref{e:M_pi_f}, $$\bfh=(\bfh_{*j})_{j\in [\codedim_2]} = \left(\pi_2^{-1}\left( M_0\cdot \pi_2(\bff_{*j}) \right)\right)_{j\in [\codedim_2]},$$ with $ \bfh_{*j}\in \bits^{\codedim_1'}$. Let $f= \Enc_{\cC}(\pack(\pi_2(\bff))) \in \bits^{\codelength} \subseteq \ZZ^{\codelength}$.
@@ -868,7 +928,7 @@ Prover and verifier use the Galois ring-switch \cref{c: Galois ring-switch IOP} 
 \left((\uu', \kappa_j),\ \oracle_j = \Enc_{\cC_1}(\pack(\pi_2(\bff_{*j}))), \ \pack(\pi_2(\bff_{*j}))\right)_{j\in [\codedim_2]} \in \left(\Relation_{\mathsf{Lin}}(\cC_1, \comfield,\mathsf{id})\right)^{\codedim_2},
 \end{equation}
 where $\uu'=(\eq(\bb,\rr))_{\bb\in \{0,1\}^{\log \codedim_1}}$ for some $\rr\in \comfield^{\log \codedim_1}$, and for some $\kappa_j\in \comfield$.
-\item Note that \eqref{e:final_ring_switched_equation} is a collection of standard claims about the MLE evaluation of a vector with entries in $\comfield$, ``committed'' through an encoding over $\comfield$. Accordingly, prover and verifier use an IOPP to prove such claims.
+\item Note that \eqref{e:final_ring_switched_equation} is a collection of standard claims about the MLE evaluation of a vector with entries in $\comfield$, ``committed'' through an encoding over $\comfield$. Accordingly, prover and verifier use an IOP to prove such claims.
 \albert{To keep in mind: ring-switch for arbitrary innter products could be expensive}
 %
  \end{enumerate}
@@ -968,7 +1028,7 @@ $$
 \sum_{j\in [\codedim_1]} \pievalfield(\mu_j)\cdot \vv_j^{(2)}  = \mu \qquad \text{over } \evalfield.
 $$
 %
-using an IOPP for constrained codes. Concretely, the prover commits to the vector $\mathsf{bits}(\mu)$ of bits forming the elements $(\mu_1, \ldots, \mu_{\codedim_2})$ using \ftwoz, and then proves \eqref{e:tensor_decomposition_reconstruction} using \cref{c:core_iop}. At the end of \cref{c:core_iop}, the prover is left with an inner product claim for the vector $\pi_2(\mathsf{bits}(\mu))$.  \albert{TODO: explain how to batch this claim with the WHIR IOPP for the final step of \cref{c:core_iop}}
+using an IOP for constrained codes. Concretely, the prover commits to the vector $\mathsf{bits}(\mu)$ of bits forming the elements $(\mu_1, \ldots, \mu_{\codedim_2})$ using \ftwoz, and then proves \eqref{e:tensor_decomposition_reconstruction} using \cref{c:core_iop}. At the end of \cref{c:core_iop}, the prover is left with an inner product claim for the vector $\pi_2(\mathsf{bits}(\mu))$.  \albert{TODO: explain how to batch this claim with the WHIR IOP for the final step of \cref{c:core_iop}}
 
 
 
@@ -992,6 +1052,8 @@ Throughout this section $R$ denotes either $\ZZ$ or a finite field $\FF$ with $q
 
 
 \subsection{Polynomial Ideal Membership Satisfiability (PIMSAT)}
+
+\albert{todo: add the virtualization formalism}
 
 In this section we describe a variation of the PESAT  relation (cf.\ \cref{?}), called \emph{Polynomial Ideal Membership Satisfiability (PIMSAT)}. It generalizes PESAT by allowing polynomial constraints over polynomial rings (or modules), and by replacing equality to zero by ideal membership. %On the other hand, PIMSAT operates exclusively on the polynomial ring $\ZZ[X]$.
 
@@ -1136,7 +1198,7 @@ for some $\rr^{(2)} \in \KK^{\log \codedim}$ \albert{Ask $\codedim$ to be a powe
 \item The initial claim $(\inp,\bot,\wit)\in \PIMSAT$ has been replaced by $\mle{\pi(\bff)}(\rr^{(2)}) = \mu$. Additionally, verifier now has oracle access to $f=\Enc_{\cC}(\pack(\pi_2(\mathsf{bits}(\bff)))$. Notice that $\pi:\ring[X] \to \KK$ induces a $\pi_q$-module homomorphism $\psi:\ringdegbound{\moduledegree}[X] \to \KK$ given by $\psi(h(X)) = \pi(h(X))$. Hence prover and verifier can now use \cref{c:LinModFieldBin} to prove that
 %
 $$
-((\vv,\mu), f, \bff) \in \Relation_{\mathsf{Lin-ModFieldBin}}
+((\vv,\mu), f, \bff) \in \LinModFieldBin
 $$
 where $\vv=(\eq(\bb,\rr^{(2)}))_{\bb\in \bits^{\log \ell}}$.
 %
@@ -1154,7 +1216,7 @@ where $\vv=(\eq(\bb,\rr^{(2)}))_{\bb\in \bits^{\log \ell}}$.
     \albert{Sketch} The plan: the above IOP is the result of compiling a PIOP $\Pi_{\mathsf{PIOP}}$ (given by Steps 2 to 8) with an IOP  $\Pi_{\FF 2 \ZZ}$ for committing to $\bff \in \ringtwobounds{B}{\moduledegree}[X]$ and proving 
     $\mle{\pi(\bff)}(\rr^{(2)}) = \mu$. The PIOP $\Pi_{\mathsf{PIOP}}$ is a particular case of the Zinc+ PIOP, so RBR soundness and completeness can be obtained from there \albertimportant{Would be preferable to have a self-contained paper (maybe?) so write the proof in the appendix, briefly}. The IOP $\Pi_{\FF 2 \ZZ}$ has already been studied, except that we started with $\bff$ containing only bits, so we need to add a wrapper around it \albertimportant{todo}.
     
-    The compilation is done and its soundness proved in Zinc+, so we can also cite that. There's  the small issue that the compiler in Zinc+ assumes the IOPP is using an interleaved code over $\ring$ to ``commit'' to the witness, so we cannot 100\% black-box the result from Zinc+, though a small remark may do it \albertimportant{Again, it may be good to have the proof here in an appendix}.
+    The compilation is done and its soundness proved in Zinc+, so we can also cite that. There's  the small issue that the compiler in Zinc+ assumes the IOP is using an interleaved code over $\ring$ to ``commit'' to the witness, so we cannot 100\% black-box the result from Zinc+, though a small remark may do it \albertimportant{Again, it may be good to have the proof here in an appendix}.
 \end{proof}
 
 
@@ -1844,9 +1906,12 @@ f_0 & 0 & 0 & 0 & 0\\
 \]
 Notably $f_1$ does not appear and for $k>1$ the $f_k$ coefficient appears $k-1$ times. This perfectly matches the usual implementation preference for sparse reduction polynomials with mostly low-order terms.
 
+When doing inner product openings, the $1/f_0$ factor can be moved out of the inner product. 
+
 For the 127-bit field $\mathbb{F}_2[X]/(X^{127} + X + 1)$ the $A$ map is simply a reversal of the $i>0$ coordinates. For the GHASH field $\mathbb{F}_2[X]/(X^{128} + X^7 + X^2 + X + 1)$ the map additionally needs seven XOR corrections.
 
 % Cite: https://shiftleft.com/mirrors/www.hpl.hp.com/techreports/98/HPL-98-135.pdf
+
 
 \subsection{Extension openings}
 
