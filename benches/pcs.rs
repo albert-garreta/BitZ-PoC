@@ -30,8 +30,10 @@
 //!   falls back to the ad-hoc rate-1/4 config (unaudited, test-only).
 //! - `F2Z_BENCH_EXT`: also run the extension-field arm against the same
 //!   commitment — `1`/`gl2` = Goldilocks² (e=2), `bb4` = BabyBear⁴
-//!   (X⁴ − 11, the Plonky3 challenge field; e=4). Companion Plonky3
-//!   baseline: `~/Plonky3 uni-stark/benches/prove_mul_babybear.rs`.
+//!   (X⁴ − 11, the Plonky3 challenge field; e=4), `kb5` = a KoalaBear
+//!   quintic (e=5, leanVM's field shape; stand-in X⁵−3 reduction).
+//!   Companion Plonky3 baseline:
+//!   `~/Plonky3 uni-stark/benches/prove_mul_babybear.rs`.
 //!
 //! Protocol notes (from the zinc-plus measurement lore): idle the box first;
 //! for quotable *time* numbers at big shapes run one shape per process (the
@@ -411,7 +413,8 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     match std::env::var("F2Z_BENCH_EXT").as_deref() {
         Ok("1") | Ok("gl2") => bench_ext_arm::<Fp2>(&p, &hint, alpha, reps, &pc, &vc),
         Ok("bb4") => bench_ext_arm::<BbFp4>(&p, &hint, alpha, reps, &pc, &vc),
-        Ok(other) => panic!("F2Z_BENCH_EXT: unknown arm {other:?} (use 1|gl2|bb4)"),
+        Ok("kb5") => bench_ext_arm::<KbFp5>(&p, &hint, alpha, reps, &pc, &vc),
+        Ok(other) => panic!("F2Z_BENCH_EXT: unknown arm {other:?} (use 1|gl2|bb4|kb5)"),
         Err(_) => {}
     }
 }
@@ -524,6 +527,56 @@ impl BenchExtField for BbFp4 {
     fn basis() -> Vec<Self> {
         (0..4)
             .map(|d| BbFp4(std::array::from_fn(|i| u128::from(i == d))))
+            .collect()
+    }
+}
+
+/// KoalaBear p = 2^31 − 2^24 + 1; a quintic extension (e = 5) — the shape
+/// of leanVM's evaluation field. Stand-in reduction X⁵ = 3 (leanVM's
+/// actual quintic is non-binomial; the F2Z-side costs depend only on
+/// (e, q_bits), which match).
+const KB_P: u128 = 0x7F00_0001;
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct KbFp5([u128; 5]);
+impl From<u128> for KbFp5 {
+    fn from(v: u128) -> Self {
+        let mut c = [0u128; 5];
+        c[0] = v % KB_P;
+        KbFp5(c)
+    }
+}
+impl std::ops::Add for KbFp5 {
+    type Output = KbFp5;
+    fn add(self, o: KbFp5) -> KbFp5 {
+        KbFp5(std::array::from_fn(|i| (self.0[i] + o.0[i]) % KB_P))
+    }
+}
+impl std::ops::Mul for KbFp5 {
+    type Output = KbFp5;
+    fn mul(self, o: KbFp5) -> KbFp5 {
+        let mut prod = [0u128; 9];
+        for i in 0..5 {
+            for j in 0..5 {
+                prod[i + j] += self.0[i] * o.0[j];
+            }
+        }
+        KbFp5(std::array::from_fn(|k| {
+            (prod[k] + 3 * prod.get(k + 5).copied().unwrap_or(0)) % KB_P
+        }))
+    }
+}
+impl BenchExtField for KbFp5 {
+    const EXT_DEG: usize = 5;
+    const Q_BITS: usize = 31;
+    const CHAR: u128 = KB_P;
+    const NAME: &'static str = "KoalaBear⁵ (stand-in X⁵−3)";
+    fn from_coords(c: &[u128]) -> Self {
+        KbFp5(std::array::from_fn(|i| c[i] % KB_P))
+    }
+    fn basis() -> Vec<Self> {
+        (0..5)
+            .map(|d| KbFp5(std::array::from_fn(|i| u128::from(i == d))))
             .collect()
     }
 }
