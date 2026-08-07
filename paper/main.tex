@@ -268,28 +268,6 @@ Given a base $\alpha_1,\ldots, \alpha_\moduledegree$ for $M_\ring$, we let $M_{\
 
 
 
-\begin{definition}[Projections to finite fields]\label{d:projections}\albert{Maybe place somewhere else since it's a non-standard definition}  
-For a prime $q$, we let $\pi_q: \ZZ \to \FF_q$ be the natural reduction modulo $q$ homomorphism. For convenience, we also let 
-%
-$$
-\pi_q: \FF_{q^e} \to \FF_{q^e}
-$$
-denote the identity homomorphism on any field of characteristic $q$ $\FF_{q^e}$.
-
-Let $\KK$ be a finite field of characteristic $q$, let $\KK'$ be an extension of $\KK$ (possibly $\KK'=\KK$) and let $\alpha \in \KK'$. By $\pi_{q,\alpha}$ we denote the following maps:
-\begin{equation*}
-\begin{aligned}
-\pi_{q,\alpha}: \ZZ[X] &\to  \KK'\\
-h(X) &\mapsto
-\pi_q(h)(\alpha) 
-\end{aligned}\qquad
-\begin{aligned}
-\pi_{q,\alpha}: \KK[X] &\to  \KK'\\
-h(X) &\mapsto  h(\alpha)
-\end{aligned}
-\end{equation*}
-\end{definition}
-
 
 %\albertimportant{Let's remove this. The notation above should be enough} Given a  finite field $\FF$ of characteristic $q$, let $a(X)\in \ZZ[X]$ be an irreducible polynomial over $\FF_q$ so that $\FF = \ZZ[X]/(q,a(X))$ \albert{consider isomorphism, or assume all finite fields are represented like this}. We let $$\pi_{\FF}: \ZZ[X] \to \FF$$ be the  canonical homomorphism from $\ZZ[X]$ to $\FF$ obtained by reducing modulo the ideal $(q,a(X))$, i.e.\ by reducing coefficients modulo $q$ and then reducing the resulting polynomial modulo $a(X)$.
 
@@ -361,7 +339,6 @@ $$
 
 
 \subsection{Interactive Oracle Reductions (IOR) of proximity}
-\albert{We don't use IOPPs in the paper? Make sure we don't mention them later}
 
 A public-coin \emph{Interactive Oracle Reduction (IOR) of proximity} $\Pi=(\prover,\verifier)$ from a relation $\Relation$ to a relation $\Relation'$ is specified as follows. The prover $\prover$ receives $(\inp, \oracle,\wit)\in \Relation$. The verifier $\verifier$ receives $\inp$ and query access to $\oracle$. They interact for $k$ rounds. In round $j\in[k]$, the prover sends an oracle $\provermsg_j$ and the verifier sends a uniformly random message $\verifiermsg_j\in\{0,1\}^{r_j}$. After the $k$ rounds, the verifier makes  queries to $\oracle$ and to $\provermsg_1,\ldots,\provermsg_k$. Then:
 \begin{itemize}[nosep]
@@ -421,7 +398,32 @@ A $k$-round IOR $\Pi$ has \emph{round-by-round knowledge soundness with relaxati
 %
 %
 \john{I actually don't like this name. There's too many things in the protocol that is linear and it's too vague}
-\subsection{The Lin-ModFieldBin and the Lin-BitsDual relations}
+
+
+
+\begin{definition}[Projections to finite fields]\label{d:projections}
+For a prime $q$, we let $\pi_q: \ZZ \to \FF_q$ be the natural reduction modulo $q$ homomorphism. For convenience, we also let 
+%
+$$
+\pi_q: \FF_{q^e} \to \FF_{q^e}
+$$
+denote the identity homomorphism on any field of characteristic $q$ $\FF_{q^e}$.
+
+Let $\KK$ be a finite field of characteristic $q$, let $\KK'$ be an extension of $\KK$ (possibly $\KK'=\KK$) and let $\alpha \in \KK'$. By $\pi_{q,\alpha}$ we denote the following maps:
+\begin{equation*}
+\begin{aligned}
+\pi_{q,\alpha}: \ZZ[X] &\to  \KK'\\
+h(X) &\mapsto
+\pi_q(h)(\alpha) 
+\end{aligned}\qquad
+\begin{aligned}
+\pi_{q,\alpha}: \KK[X] &\to  \KK'\\
+h(X) &\mapsto  h(\alpha)
+\end{aligned}
+\end{equation*}
+\end{definition}
+
+\subsection{The Lin-ModFieldBin and the Lin-BitsDual relations}\label{s:linmodfieldbin}
 
 Let $R$ denote either $\ZZ$ or a finite field $\FF$ of characteristic $q$; let $M_R$ be an $R$-module of finite dimension $\moduledegree\geq 1$;  let $\evalfield$ be a  finite field of characteristic $q$ (equal or not to $\FF$); and let $\comfield$ be a binary field. Intuitively,  our witness entries belong to $M_R$; $\evalfield$ is the field where our constraints on (a projection of)  the witness live; and 
 $\comfield$ is the field over which our witness is  committed to (through its bits).
@@ -430,7 +432,10 @@ $\comfield$ is the field over which our witness is  committed to (through its bi
 For example, $M_R$ may be simply $R$, i.e.\ $\ZZ$ or $\FF$;  or it may be  $\ring^{<\moduledegree}[X]$, i.e.\ the subset of univariate polynomials of degree $<\moduledegree$ with coefficients in $\ring$. 
 
 
- Let  $$\psi_M:M_R \to \KK$$ be a $\pi_q$-module homomorphism \albert{correct terminology?}, where, recall, $\pi_q:\ring \to \KK$ is reduction modulo $q$ if $\ring=\ZZ$, or the identity map if $\ring$ is a field of characteristic $q$. For example, if $M_R=\ring^{<\moduledegree}[X]$, $\psi$ could be one of the maps $\pi_{q,\alpha}$ from \cref{?} (reduction modulo $q$ if $\ZZ=\ring$ and evaluation at $X=\alpha\in \KK$, with $\KK$ having characteristic $q$).
+
+
+
+ Let  $$\psi_M:M_R \to \KK$$ be a $\pi_q$-module homomorphism \albert{correct terminology?}, where, recall, $\pi_q:\ring \to \KK$ is reduction modulo $q$ if $\ring=\ZZ$, or the identity map if $\ring$ is a field of characteristic $q$. For example, if $M_R=\ring^{<\moduledegree}[X]$, $\psi$ could be one of the maps $\pi_{q,\alpha}$ from \cref{d:projections} (reduction modulo $q$ if $\ZZ=\ring$ and evaluation at $X=\alpha\in \KK$, with $\KK$ having characteristic $q$).
 
 Let $\gamma_1,\ldots, \gamma_\moduledegree$ be a base for $M_\ring$.
 
@@ -465,7 +470,7 @@ where $\mathsf{lift}$ is the identity function if $\ring=\ZZ$,  and  $\mathsf{li
 \paragraph{The Lin-ModFieldBin relation} Let $\cC$ be a linear code over $\comfield$ of dimension $(\codedim_0\cdot B \cdot \moduledegree)/n$ and blocklength $\codelength$.
 
 
-The goal of this section is to provide an IOP of Proximity for the following relation:  \albert{should we add some parameters inside parenthesis as done with other relations?}
+The goal of this section is to provide an IOP of Proximity for the following relation:  
 %
 $$
  \LinModFieldBin= \left\{ \left(\begin{aligned} &\inp=(\vv,\mu)\in \KK^{ \codedim_0}  \times \KK^{\moduledegree}, \\
@@ -521,7 +526,7 @@ $$
 
 
 %
-\subsection{Tensor decomposition, interleaved codes, and products of constrained codes}
+\subsection{Tensor decomposition, interleaved codes, and products of constrained codes}\label{s:interleaved_setting}
 %
 Let $(\inp,\oracle,\wit)=((\mu,\vv), f, \bff) \in \LinBitsDual$. We fix a tensor decomposition of vectors $\vv\in \evalfield^\codedim$ as $$\vv = \vv^{(1)} \otimes \vv^{(2)} = \left(\vv_i^{(1)}\cdot \vv_j^{(2)}\right)_{i\in [\codedim_1], j\in [\codedim_2]}$$ for some $\vv^{(1)}\in \evalfield^{\codedim_1}, \vv^{(2)}\in \evalfield^{\codedim_2}$, with $\codedim_1 \cdot \codedim_2=\codedim$. Note that the trivial tensor decomposition is admitted, i.e.\ we may effectively not decompose $\vv$ by choosing $\codedim_1=\codedim$, $\codedim_2=1$, $\vv^{(1)}=\vv$, and $\vv^{(2)} = (1)$.
 
@@ -534,17 +539,10 @@ where $\bff_{*j} = (\bff_{ij})_{i\in[\codedim_1]}$. Note also that, if $\comfiel
 %
 and then
  $$f = \Enc_{\cC_1^{\equiv \codedim_2}}\circ\pack\circ \picomfield(\bff) =  (\Enc_{\cC_1}\circ \pack\circ \picomfield(\bff_{*j}))_{j\in [\codedim_2]}\in \comfield^{\codelength}.$$
-
-
-
-
-
-
+%
 % We use $0$ and $1$ indistinctly to denote the zero and one integer, and zero and one field elements. 
-
-
-
-Consider the relation  (cf.\ \cref{?}) $\PESAT(\comfield, Q_{\FF 2 \ZZ},\cC_1^{\equiv \codedim_2}, \pack)$ for a constraint polynomial $Q_{\FF 2 \ZZ}$ so that
+%
+Consider the relation  (cf.\ \cref{d:pesat}) $\PESAT(\comfield, Q_{\FF 2 \ZZ},\cC_1^{\equiv \codedim_2}, \pack)$ for a constraint polynomial $Q_{\FF 2 \ZZ}$ so that
 %
 \begin{align*}
 &\PESAT(\comfield, Q_{\FF 2 \ZZ},\cC_1^{\equiv \codedim_2}, \pack)\\ &\qquad = \left\{ \left(\begin{aligned} &\inp=(\yy,\bm{\mu})\in \comfield^{\codedim_1}\times \comfield^{\codedim_2}, \\&\oracle = f\in \comfield^{\codelength}, \\ &\wit=\bff= (\bff_{*j})_{j\in [\codedim_2]}\in \FF_2^{\codedim_1 \times \codedim_2}\end{aligned}\right) \;\middle|\;  \begin{aligned} &f= \Enc_{\cC_1^{\equiv \codedim_2}}\circ\pack(\bff) \\ \wedge \  &\Pi_{i=1}^{\codedim_1} \left((\yy_i-1)\cdot \bff_{ij} +1\right) = \bm{\mu}_j  \text{ for all } j\in [\codedim_2]\end{aligned}  \right\}.
@@ -560,7 +558,7 @@ We omit an explicit description of the polynomial $Q_{\FF 2 \ZZ}$, since the fac
 We assume prover and verifier have access to an IOR $\Pi_{\mathsf{red}}$  that reduces 
 %
 $
-\PESAT(\comfield, Q_{\FF 2 \ZZ},\cC_1^{\equiv \codedim_2}, \pack)$ to $\LIN(\comfield, \cC_1^{\equiv \codedim_2}, \pack)$.  In our instantiation $\Pi_{\mathsf{red}}$ is an optimized GKR protocol for  grand products, which reduces the initial grand product claims to MLE evaluation claims of $\yy$ and $\bff$ over $\comfield$. As we explain in \cref{?}, we design several optimizations for the specific shape of our grand products.
+\PESAT(\comfield, Q_{\FF 2 \ZZ},\cC_1^{\equiv \codedim_2}, \pack)$ to $\LIN(\comfield, \cC_1^{\equiv \codedim_2}, \pack)$.  In our instantiation $\Pi_{\mathsf{red}}$ is an optimized GKR protocol for  grand products, which reduces the initial grand product claims to MLE evaluation claims of $\yy$ and $\bff$ over $\comfield$. As we explain in \cref{s:opt_virtual}, we design several optimizations for the specific shape of our grand products.
 
 %
 %
@@ -583,13 +581,13 @@ Note that this is indeed the case with GKR (indeed, GKR reduces the initial circ
 \newcommand{\picanon}{\pi_{\mathsf{canon}}}
 
 \subsection{The core {\ftwoz} IOP for Lin-BitsDual}
-We provide an IOP for $\LinBitsDual$ next. We assume the notation from the previous two \cref{?,?}.  Given a projection $\pi_{q'}:\ZZ \to \FF_{q'}$, we fix an inverse map of the form $\pi_{q'}^{-1} : \FF_{q'} \to \range{0}{q'-1} \subseteq \ZZ$. Let $\picanon: \ZZ[X] \to \KK$ be the canonical homomorphism from $\ZZ[X]$ to $\KK$. Namely, if $\KK=\ZZ[X]/(q,h(X))$  for a polynomial $h(X)$ irreducible over $\FF_q[X]$, then $\picanon$ consists in modding $q$ out, and taking the quotient by $(h(X))$ (if $\KK$ is the prime field $\FF_q$, then $\picanon=\pi_q$). We fix an inverse for $\picanon$ of the form $$\picanon^{-1}: \KK \to \range{0}{q-1}^{\leq\degevalfield}[X] \subseteq \ZZ.
+We provide an IOP for $\LinBitsDual$ next. We assume the notation from the previous two \cref{s:linmodfieldbin,s:interleaved_setting}.  Given a projection $\pi_{q'}:\ZZ \to \FF_{q'}$, we fix an inverse map of the form $\pi_{q'}^{-1} : \FF_{q'} \to \range{0}{q'-1} \subseteq \ZZ$. Let $\picanon: \ZZ[X] \to \KK$ be the canonical homomorphism from $\ZZ[X]$ to $\KK$. Namely, if $\KK=\ZZ[X]/(q,h(X))$  for a polynomial $h(X)$ irreducible over $\FF_q[X]$, then $\picanon$ consists in modding $q$ out, and taking the quotient by $(h(X))$ (if $\KK$ is the prime field $\FF_q$, then $\picanon=\pi_q$). We fix an inverse for $\picanon$ of the form $$\picanon^{-1}: \KK \to \range{0}{q-1}^{\leq\degevalfield}[X] \subseteq \ZZ.
 $$ In words, $\picanon^{-1}$ simply takes an elmeent from $\KK$ represented as a degree $< \deg(h(X))$ polynomial over $\FF_q$, and applies $\pi_{q}^{-1}$ to it. We remark that one could choose any other such ``inverse'' maps, e.g.\ for $\pi_{q'}^{-1}$ one may prefer to use centered representatives. 
 
-We let $\Pi_{\iopp}$ be an IOP for $\LIN(\comfield,\cC_1^{\equiv \codedim_2}, \pack)$. In our instantiation, $\Pi_{\iopp}$ is the WHIR protocol \cite{whir} over binary fields, with ring-switching, as deployed in \cite{flock} \albert{Flock calls the scheme Ligerito, but when the code is an RS code, is Ligerito just WHIR?}.   
+We let $\Pi_{\iopp}$ be an IOP for $\LIN(\comfield,\cC_1^{\equiv \codedim_2}, \pack)$. In our instantiation, $\Pi_{\iopp}$ is the WHIR protocol \cite{whir} over binary fields, with ring-switching \cite{?} as described in \cref{s:ring_switch} \albert{proper reference?}, and with proximity parameter set to the Johnson bound.   
 
 \begin{construction}[IOP for {$\LinBitsDual$}]\label{c:core_iop}
-The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \LinBitsDual$.  We assume the tensor split from the previous Section \ref{}, and adopt its notation. 
+The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \LinBitsDual$.  We assume the tensor split from the previous Section \ref{s:interleaved_setting}, and adopt its notation. 
 Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with sufficiently large multiplicative order, to be determined later.  
 
 
@@ -600,7 +598,7 @@ Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with suf
 \item The verifier checks that \begin{equation}\label{e:tensor_decomposition_reconstruction}\sum_{j\in [\codedim_2]} \picanon(\mu_j)\cdot \vv_j^{(2)}  = \mu\qquad \text{over } \evalfield.\end{equation} 
 Next, prover and verifier will focus on certifying that \eqref{e:tensored_equality} holds for all $j\in [\codedim_2]$.
 
-In \cref{?} we describe a variation in which, instead of sending the elements $\mu_1, \ldots, \mu_{\codedim_2}$, the prover commits to their bit-decomposition over $\comfield$, and proves \eqref{e:tensor_decomposition_reconstruction} the present IOR. This saves on proof size and verifier time when $\codedim$ is large.
+In \cref{s:proof_size_opt} we describe a variation in which, instead of sending the elements $\mu_1, \ldots, \mu_{\codedim_2}$, the prover commits to their bit-decomposition over $\comfield$, and proves \eqref{e:tensor_decomposition_reconstruction} the present IOR. This saves on proof size and verifier time when $\codedim$ is large.
 \item If $\degevalfield=0$, continue to the next step. Otherwise, if $\degevalfield>1$, the verifier uniformly samples and sends a  prime $q'$ from a fixed set of primes $\cP$ ($\cP$ is a protocol parameter), and an element $\alpha\in \FF_{q'}$. Now update
 %
 \begin{align*}
@@ -669,7 +667,7 @@ For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\FF 2 \ZZ},
 
 
 
-To prove \cref{t:thm_core_IOPP} we begin with the following lemma, which is implicit in \cite{zincplus} \albert{or is it explicit as a particular case of reductions on $\QQ[X]$?}. 
+To prove \cref{t:thm_core_IOPP} we begin with the following lemma, which is implicit in \cite{zincplus}. 
 \begin{lemma}\label{l:reduction_lemma}
 Let $h(X)\in \ZZ[X]$ be a nonzero polynomial of degree $\leq d$ and with coefficients in the range $\range{-2^{B}+1}{2^B-1}$. Let $\cP$ be a set of primes, and let $q_{\min}$ be the smallest prime in $\cP$. Then 
 %
@@ -760,7 +758,7 @@ It remains to see that if  $\tr$ is a full transcript of $\Pi_1$, then $\kstate(
 $$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ (g^{\mu_j})_{j\in [\codedim_2]},\  \oracle= f \right),$$
 %
 where $$\bm{\gamma} = \pi_{q'}^{-1}\circ \pi_{q',\alpha}\circ \pi_{\mathsf{canon}}^{-1}(\vv^{(1)}) \in \range{0}{q'-1}^{\codedim_1}\subseteq \ZZ^{\codedim_1}.$$ Now, write as before $\tr=(\bm{\mu}, q', \alpha)$. By definition, $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if $\ww=(\bff_{*j})_{j\in [\codedim_2]}$ satisfies \eqref{e:core_iop_proof_eq1}. 
-The equalities in \eqref{e:core_iop_proof_eq1}  take place in $\ZZ$. We have that $$g^{\langle \bff_{*j}, \bm{\gamma}\rangle} = g^{\pi_{q'}^{-1}\circ \pi_{q',\alpha}(\mu_j)}$$ if and only if $$\langle \bff_{*j}, \bm{\gamma}\rangle = \pi_{q'}^{-1}\circ \pi_{q',\alpha}(\mu_j) \mod \mathsf{ord}(g),$$ where $\mathsf{ord}(g)$ denotes the multiplicative order of $g$. Now, since $\gamma_j\in \range{0}{q'-1}$ and $\bff_{*j}$ contains bits, we have $|\langle \bff_{*j}, \bm{\gamma}\rangle - \pi_{q'}^{-1}\circ \pi_{q',\alpha}(\mu_j)| \leq (\codedim_1+1) \cdot (q'-1)$. Hence if $$\mathsf{ord}(g) > (\codedim_1+1) \cdot (q'-1),$$ then    \eqref{e:core_iop_proof_eq2}  holds if and only if the following hold:
+The equalities in \eqref{e:core_iop_proof_eq1}  take place in $\ZZ$. We have that $$g^{\langle \bff_{*j}, \bm{\gamma}\rangle} = g^{\pi_{q'}^{-1}\circ \pi_{q',\alpha}(\mu_j)}$$ if and only if $$\langle \bff_{*j}, \bm{\gamma}\rangle = \pi_{q'}^{-1}\circ \pi_{q',\alpha}(\mu_j) \mod \mathsf{ord}(g),$$ where $\mathsf{ord}(g)$ denotes the multiplicative order of $g$. Now, since $\gamma_j\in \range{0}{q'-1}$ and $\bff_{*j}$ contains bits, we have $|\langle \bff_{*j}, \bm{\gamma}\rangle - \pi_{q'}^{-1}\circ \pi_{q',\alpha}(\mu_j)| \leq (\codedim_1+1) \cdot (q'-1)$. Hence if $$\mathsf{ord}(g) > (\codedim_1+1) \cdot (q'-1),$$ then    \eqref{e:core_iop_proof_eq1}  holds if and only if the following hold:
 %
 \begin{equation*}
     \begin{aligned}
@@ -779,26 +777,37 @@ The above holds if and only if $(\inp,\oracle, (\bff_{*j})_{j\in [\codedim_2]})\
 
 \subsection{\ftwoz: an IOP for Lin-ModFieldBin}
 
-We now describe our IOP for $\LinModFieldBin$.
+Next we describe our IOP for $\LinModFieldBin$. Again, we assume the notation from \cref{s:linmodfieldbin,s:interleaved_setting}. Recall in particular that $\gamma_1, \ldots, \gamma_\moduledegree$ is a base of the $\ring$-module $M_\ring$. We will need the following result.
 
+\begin{lemma}\label{l:bitify}
+    Let $\bff\in M_{\ringbitbound{B}}^{\codedim_0}$, and let $\vv\in \KK^{\codedim_0}$. Then
+    %
+    $$
+    \langle \psi_M(\bff), \vv \rangle = \langle \pi_q(\mathsf{bits}(\bff)), \uu \rangle
+    $$
+    where
+    $$
+    \uu \defeq   \left(\vv \otimes \left(1, \pi_q(2), \ldots, \pi_q(2^{B-1})\right) \otimes \left(\psi_M(\gamma_1), \ldots, \psi_M(\gamma_{\moduledegree})\right)\right) \in \KK^{\codedim_0\cdot \moduledegree \cdot B}
+    $$
+\end{lemma}
+\begin{proof}
+Rewriting $\langle \psi_M(\bff), \vv \rangle$, we obtain \albert{add more detail?}
+%
+\begin{align}
+    \langle \psi_M(\bff),\vv\rangle &= \langle \psi_M\left(\sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \bff_{*jk} \cdot 2^{k-1} \cdot \gamma_j\right), \vv \rangle\label{e:iop_linear_claim_1}\\ &= \langle \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \pi_q(\bff_{*jk}) \cdot \pi_q(2^{k-1}) \cdot \psi_M(\gamma_j),\vv \rangle,\label{e:iop_linear_claim_2}\\
+    &= \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \pi_q(2^{k-1}) \cdot \psi_M(\gamma_j)\cdot \langle \pi_q(\bff_{*jk}), \vv \rangle \notag\\ &=   \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \sum_{i\in [\codedim_0]} \pi_q(2^{k-1}) \cdot \psi_M(\gamma_j)\cdot  \pi_q(\bff_{ijk}), \vv_i = \langle \pi_q(\mathsf{bits}(\bff)), \uu \rangle \notag,
+\end{align}
+as needed.
+\end{proof}
 
 \begin{construction}[IOP for $\LinModFieldBin$]\label{c:LinModFieldBin}
-The prover and verifier receive $\inp=(\vv, \mu)\in \KK^{\codedim_0}\times \KK$ and  $\oracle= f \in \comfield^\codelength$. The prover receives \albert{$\codedim_0$ would be more consistent with the beginning of the section} $\wit= \bff\in M_{\ringbitbound{B}}^{\codedim_0} \subseteq \ZZ^{\codedim_0}$ such that $(\inp,\oracle, \wit) \in \LinModFieldBin$, i.e., 
+The prover and verifier receive $\inp=(\vv, \mu)\in \KK^{\codedim_0}\times \KK$ and  $\oracle= f \in \comfield^\codelength$. The prover receives  $\wit= \bff\in M_{\ringbitbound{B}}^{\codedim_0}$ such that $(\inp,\oracle, \wit) \in \LinModFieldBin$, i.e., 
 %
 $$
 f = \Enc_{\cC}\circ \pack\circ\pi_2(\mathsf{bits}(\bff)),\qquad \langle \psi_M(\bff), \vv \rangle = \mu.
 $$
 \begin{enumerate}[leftmargin=*]
-     \item Rewriting $\langle \psi_M(\bff), \vv \rangle$, we obtain \albert{maybe write in a separate lemma, or give more detail?}
-%
-\begin{equation}\label{e:iop_linear_claim}
-    \begin{aligned}
-    \langle \psi_M(\bff),\vv\rangle &= \langle \psi_M\left(\sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \bff_{*jk} \cdot 2^{k-1} \cdot \gamma_j\right), \vv \rangle = \langle \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \pi_q(\bff_{*jk}) \cdot \pi_q(2^{k-1}) \cdot \psi_M(\gamma_j),\vv \rangle,\\
-    &= \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \pi_q(2^{k-1}) \cdot \psi_M(\gamma_j)\cdot \langle \pi_q(\bff_{*jk}), \vv \rangle\\ &=   \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \sum_{i\in [\codedim_0]} \pi_q(2^{k-1}) \cdot \psi_M(\gamma_j)\cdot  \pi_q(\bff_{ijk}), \vv_i\\ &= \langle \pi_q(\mathsf{bits}(\bff)), \uu \rangle \\
-\uu &\defeq  \left(\vv \otimes \left(1, \pi_q(2), \ldots, \pi_q(2^{B-1})\right) \otimes \left(\psi_M(\gamma_1), \ldots, \psi_M(\gamma_{\moduledegree})\right)\right) \in \KK^{\codedim_0\cdot \moduledegree \cdot B}.
-    \end{aligned}
-\end{equation}
-And so the  claim $(\inp,\oracle, \wit) \in \LinModFieldBin$ is equivalent to the claim \begin{equation}\label{e:iop_final_linear_claim}
+     \item By \cref{l:bitify}, the   claim $(\inp,\oracle, \wit) \in \LinModFieldBin$ is equivalent to the claim \begin{equation}\label{e:iop_final_linear_claim}
     \left(\inp'=(\uu,\mu), \oracle' = f=\Enc_{\cC}\circ \pack\circ\pi_2(\mathsf{bits}(\ff)), \wit' = \mathsf{bits}(\ff)\right) \in \LinBitsDual.
 \end{equation}
 Accordingly, prover and verifier use the \ftwoz PCS \cref{c:core_iop} to prove \eqref{e:iop_final_linear_claim}.
@@ -806,9 +815,14 @@ Accordingly, prover and verifier use the \ftwoz PCS \cref{c:core_iop} to prove \
 \end{construction}
 
 \begin{theorem}
-    \albert{completeness and soundness}
+    Under the same hypotheses and notation as in \cref{t:thm_core_IOPP}, if $\degevalfield>0$, \cref{c:LinModFieldBin} is a perfectly complete $1+t_\red + t_\iopp$ IOP for $\LinModFieldBin$ with round-by-round knowledge soundness with relaxation $(\LinModFieldBin^{\delta},\bot)$ and errors $$\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]},$$ where $$
+    \kappa_0 = \frac{\degevalfield}{q_{\min}} + \frac{\log(\codedim_1 +1) + \log(q-1)}{|\cP|\cdot \log(q_{\min})}.
+    $$
+    If $\degevalfield=0$, i.e.\ $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$ IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}$.
 \end{theorem}
-
+\begin{proof}
+The result follows immediately from \cref{t:thm_core_IOPP} and the fact that $(\inp,\oracle, \wit) \in \LinModFieldBin$ if and only if \eqref{e:iop_final_linear_claim} holds (due to \cref{l:bitify}).
+\end{proof}
 
 \subsection{Parameter instantiation}
 
@@ -998,7 +1012,7 @@ to $\ell_2$ inner product claims for the vectors $\pi_2(\bff_{*j})$. We do this 
 
 \albert{Present the optimization as a contribution of the paper} \albert{There seems to be a comment in the Binius repo about this though:  "TODO: Use a special 1-bit-optimized MLE-check with switchover to save memory" (prove.rs:380), "TODO: Optimize with bit-masking for selection" (witness.rs:188). They also use some similar optimizations but for  non-grand product sumchecks. Worth seeing carefully what we are doing vs them}
 
-\subsection{Proof size optimization for large inputs}
+\subsection{Proof size optimization for large inputs}\label{s:proof_size_opt}
 
 When $\codedim=\codedim_1\cdot \codedim_2$ is such that $\codedim_2$ is large, say $\codedim\geq 2^{11}$, the elements $\mu_1,\ldots, \mu_{\codedim_2}\in \ZZ$ sent at Step 1 of \cref{c:core_iop} may start to dominate the proof size. For example, for $\codedim=2^{13}$ and $\mu_i$ of $128$ bits, the elements $\mu_1,\ldots, \mu_{\codedim_2}$ amount to $131$ KB.  To mitigate this cost, the idea is to  have the prover commit to the vector $(\mu_1,\ldots, \mu_{\codedim_2})$ and then prove \eqref{e:tensor_decomposition_reconstruction}, i.e.\ 
 %
