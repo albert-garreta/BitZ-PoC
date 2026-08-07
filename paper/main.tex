@@ -478,16 +478,17 @@ where $\mathsf{lift}$ is the identity function if $\ring=\ZZ$,  and  $\mathsf{li
 \paragraph{The Lin-ModFieldBin relation} Let $\cC$ be a linear code over $\comfield$ of dimension $(\codedim_0\cdot B \cdot \moduledegree)/\comfieldexp$ and blocklength $\codelength$.
 
 
-The goal of this section is to provide an IOP of Proximity for the following relation:  
+The goal of this section is to provide an IOP of Proximity for the following relation:
 %
-$$
- \LinModFieldBin= \left\{ \left(\begin{aligned} &\inp=(\vv,\mu)\in \KK^{ \codedim_0}  \times \KK, \\
+\begin{align*}
+ &\LinModFieldBin(M_{\ringbitbound{B}},\KK, \psi_M, \cC)\\ &\qquad\qquad\qquad= \left\{ \left(\begin{aligned} &\inp=(\vv,\mu)\in \KK^{ \codedim_0}  \times \KK, \\
  &\oracle = f \in \comfield^{\codelength}, \\ &\wit= \bff\in M_{\ringbitbound{B}}^{\codedim_0}\end{aligned}\right) \;\middle|\;  \begin{aligned}  
  &f = \Enc_{\cC}\circ \pack\circ\pi_2(\mathsf{bits}(\bff)),\\
  &\langle \psi_M(\bff), \vv \rangle = \mu  
  \end{aligned} \right\}.
-$$
-
+\end{align*}
+%
+When there is no risk of confusion, we denote $\LinModFieldBin(M_{\ringbitbound{B}},\KK, \psi_M, \cC)$ simply by $\LinModFieldBin$.
 
 
 \paragraph{The Lin-BitsDual relation}
@@ -495,9 +496,10 @@ $$
 Our IOP for $\LinModFieldBin$ is built from an IOP to what we call the \emph{Linear constraint for bits over dual fields (Lin-BitsDual) relation}. This is essentially the same as  $\LinModFieldBin$,  except that the witness $\bff$ consists entirely of integer bits. Precisely, given a witness size parameter $\codedim\geq 1$ and a linear code $\cC\subseteq \comfield^{\codelength}$ of dimension $\codedim/2^{\comfieldexp}$ and blocklength $\codelength$ over $\comfield$, we define  
 %
 $$
-\LinBitsDual \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \{0,1\}^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}\circ \pack \circ \picomfield(\bff) = f\\ \wedge \  & \langle \pi_q(\bff), \vv\rangle  = \mu  \end{aligned} \right\}
+\LinBitsDual(\KK, \cC) \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \{0,1\}^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &\Enc_{\cC}\circ \pack \circ \picomfield(\bff) = f\\ \wedge \  & \langle \pi_q(\bff), \vv\rangle  = \mu  \end{aligned} \right\}
 $$
-
+%
+Again, when there is no risk of confusion, we write $\LinBitsDual(\KK,\cC)$ simply as $\LinBitsDual$.
 
 
 \paragraph{Relaxation of the relations}
@@ -595,7 +597,10 @@ $$ In words, $\picanon^{-1}$ simply takes an elmeent from $\KK$ represented as a
 We let $\Pi_{\iopp}$ be an IOP for $\LIN(\comfield,\cC_1^{\equiv \codedim_2}, \pack)$. In our instantiation, $\Pi_{\iopp}$ is the WHIR protocol \cite{whir} over binary fields, with ring-switching \cite{?} as described in \cref{s:ring_switch} \albert{proper reference?}, and with proximity parameter set to the Johnson bound.   
 
 \begin{construction}[IOP for {$\LinBitsDual$}]\label{c:core_iop}
-The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \LinBitsDual$.  We assume the tensor split from the previous Section \ref{s:interleaved_setting}, and adopt its notation. 
+\noindent \textbf{Parameters.} $(\KK,q,\comfield,\codedim,\codedim_1,\codedim_2,\cC_1^{\equiv \codedim_2})$ comprised of: a finite field $\KK$ of characteristic $q$; a binary field $\comfield$ a witness length $\codedim$; tensor decomposition dimensions $\codedim_1, \codedim_2$ for \cref{c:core_iop} satisfying $\codedim_1\cdot \codedim_2 = \codedim$; a $\codedim_2$-interleaving $\cC=\cC_1^{\equiv \codedim_2}$ of a linear code $\cC_1$ over $\comfield$ of dimension $\codedim_1/2^{\comfieldexp}$ and block length $\codelength$. \\
+
+
+\noindent \textbf{Inputs.} The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \LinBitsDual$.  We assume the tensor split from the previous Section \ref{s:interleaved_setting}, and adopt its notation. 
 Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with sufficiently large multiplicative order, to be determined later.  
 
 
@@ -655,7 +660,7 @@ Notice that \begin{equation}\label{e:Q_F2Z_intermediate}\left(\inp=((g^{\bm{\gam
 
 
 For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\FF 2 \ZZ},\cC_1^{\equiv \codedim_2}, \pack),\qquad \LIN = \LIN(\comfield, \cC_1^{\equiv \codedim_2}, \pack).$$
-\begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:core_iop}]\label{t:thm_core_IOPP} \albert{Completeness missing}
+\begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:core_iop}]\label{t:thm_LinModFieldBits} \albert{Completeness missing}
    Let $\delta \in (0,1)$ be a proximity parameter.  Assume $g$ has multiplicative order $\mathsf{ord}(g)$ with 
    %
    $$\mathsf{ord}(g) > (\codedim_1+1) \cdot (q_{\max}-1),$$ 
@@ -787,7 +792,14 @@ The above holds if and only if $(\inp,\oracle, (\bff_{*j})_{j\in [\codedim_2]})\
 
 \subsection{\ftwoz: an IOP for Lin-ModFieldBin}
 
-Next we describe our IOP for $\LinModFieldBin$. Again, we assume the notation from \cref{s:linmodfieldbin,s:interleaved_setting}. Recall in particular that $\gamma_1, \ldots, \gamma_\moduledegree$ is a base of the $\ring$-module $M_\ring$. We will need the following result.
+Next we describe our IOP for $\LinModFieldBin$. Again, we assume the notation from \cref{s:linmodfieldbin,s:interleaved_setting}. Recall in particular that $\gamma_1, \ldots, \gamma_\moduledegree$ is a base of the $\ring$-module $M_\ring$. 
+
+
+
+We let $\codedim_1,\codedim_2$ be tensor decomposition parameters (to be used in \cref{c:core_iop}) be such that $\codedim_1\cdot \codedim_2= \codedim_0\cdot \moduledegree\cdot B$. We assume that $\cC$ is a linear code over $\comfield$ of dimension $\codedim_0\cdot \moduledegree\cdot B/2^{\comfieldexp}$, which is a $\codedim_2$-interleaving of a code $\cC_1$ over $\comfield$ of dimension $\codedim_1/2^{\comfieldexp}$.
+
+We will need the following result.
+
 
 \begin{lemma}\label{l:bitify}
     Let $\bff\in M_{\ringbitbound{B}}^{\codedim_0}$, and let $\vv\in \KK^{\codedim_0}$. Then
@@ -811,7 +823,12 @@ as needed.
 \end{proof}
 
 \begin{construction}[IOP for $\LinModFieldBin$]\label{c:LinModFieldBin}
-The prover and verifier receive $\inp=(\vv, \mu)\in \KK^{\codedim_0}\times \KK$ and  $\oracle= f \in \comfield^\codelength$. The prover receives  $\wit= \bff\in M_{\ringbitbound{B}}^{\codedim_0}$ such that $(\inp,\oracle, \wit) \in \LinModFieldBin$, i.e., 
+
+ \textbf{Parameters.} $$(R,q,M_R,\moduledegree,\KK, \psi_K, (\gamma_1, \ldots, \gamma_\moduledegree), \codedim_0, B, \codedim_1,\codedim_2, \comfield,\cC_1^{\equiv \codedim_2})$$ comprised of: a ring $\ring\in \{\ZZ,\FF_{q^e}\}$; an $R$-module $M_R$ of dimension $\moduledegree$; a finite field $\KK$ of characteristic $q$; a $\pi_q$-module homomorphism $\psi_M:M_\ring\to \KK$; a base $\gamma_1, \ldots, \gamma_{\moduledegree}$ of $M_R$; a witness length $\codedim_0$; a bit-size bound $B$; tensor decomposition dimensions $\codedim_1, \codedim_2$ for \cref{c:core_iop} satisfying $\codedim_1\cdot \codedim_2 = \codedim_0 \cdot \moduledegree\cdot B/2^\comfieldexp$; a binary field $\comfield$; a $\codedim_2$-interleaving $\cC=\cC_1^{\equiv \codedim_2}$ of a linear code $\cC_1$ over $\comfield$ of dimension $\codedim_1/2^\comfieldexp$ and block length $\codelength$.\\
+
+
+
+\noindent \textbf{Inputs.} The prover and verifier receive $\inp=(\vv, \mu)\in \KK^{\codedim_0}\times \KK$ and  $\oracle= f \in \comfield^\codelength$. The prover receives  $\wit= \bff\in M_{\ringbitbound{B}}^{\codedim_0}$ such that $(\inp,\oracle, \wit) \in \LinModFieldBin$, i.e., 
 %
 $$
 f = \Enc_{\cC}\circ \pack\circ\pi_2(\mathsf{bits}(\bff)),\qquad \langle \psi_M(\bff), \vv \rangle = \mu.
@@ -820,7 +837,7 @@ $$
      \item By \cref{l:bitify}, the   claim $(\inp,\oracle, \wit) \in \LinModFieldBin$ is equivalent to the claim \begin{equation}\label{e:iop_final_linear_claim}
     \left(\inp'=(\uu,\mu), \oracle' = f=\Enc_{\cC}\circ \pack\circ\pi_2(\mathsf{bits}(\ff)), \wit' = \mathsf{bits}(\ff)\right) \in \LinBitsDual.
 \end{equation}
-Accordingly, prover and verifier use the \ftwoz PCS \cref{c:core_iop} to prove \eqref{e:iop_final_linear_claim}. See \cref{r:tensor_dec_u} for comments on how to use tensor decompositions of $\uu$ in \cref{c:core_iop}.
+Accordingly, prover and verifier use \cref{c:core_iop} to prove \eqref{e:iop_final_linear_claim}. They use parameters $(\KK,q,\comfield,\codedim_0\cdot \moduledegree\cdot B,\codedim_1,\codedim_2,\cC_1^{\equiv \codedim_2})$.  See \cref{r:tensor_dec_u} for comments on how to use tensor decompositions of $\uu$ in \cref{c:core_iop}.
 \end{enumerate}
 \end{construction}
 
@@ -1072,21 +1089,31 @@ In this section we describe a variation of the PESAT  relation (cf.\ \cref{d:pes
 
 
 
-We fix a witness length $\codedim_0$, an input length $\inplen$, a bit size bound $B$, a degree bound $\moduledegree$, a collection of $\iota$ distinct ideals $\ideal_1, \ldots, \ideal_{\iota}$ of $\ring[X]$, a number of rows $\numrows$, and for each $i\in [\iota]$, a vector of $\numrows$ polynomials
-$$\mathbf{p}^{(i)} = \left(\left.\mathbf{p}_{j}^{(i)} \ \right| \ j\in[\numrows]\right) \in \left(\ringbitbound{B}[Y_1,\ldots, Y_{\inplen+\codedim}]\right)^{\numrows}$$ with coefficients in $\ring_{\leq B}$ and on $\inplen + \codedim$ variables. The PIMSAT relation with respect to these parameters is defined as
+We fix a witness length $\codedim_0$ which we assume is a power of two; an input length $\inplen$; a bit size bound $B$; a degree bound $\moduledegree$; a collection of $\iota$ distinct ideals $\ideal_1, \ldots, \ideal_{\iota}$ of $\ring[X]$; a number of rows $\numrows$; and for each $i\in [\iota]$, a vector of $\numrows$ polynomials
+$$\mathbf{p}^{(i)} = \left(\left.\mathbf{p}_{j}^{(i)} \ \right| \ j\in[\numrows]\right) \in \left(\ringbitbound{B}[Y_1,\ldots, Y_{\inplen+\codedim}]\right)^{\numrows}$$ with coefficients in $\ring_{\leq B}$ and on $\inplen + \codedim$ variables. We denote $$\pp = (\pp^{(i)})_{i\in [\iota]}, \qquad \bm{\ideal}=(\ideal_i)_{i\in[\iota]}.$$ 
+%
+
+
+The PIMSAT relation with respect to these parameters is defined as
 $$
-\PIMSAT = \left\{\left. 
+%\PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}, \cC, \pack) 
+\PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}) 
+= \left\{\left. 
 \begin{aligned}
     \inp &= \xx \in \left(\ringtwobounds{B}{\moduledegree}[X]\right)^{\inplen},\\
-    \oracle &= \bot ,\\
+    \oracle &=\bot,\\
+    %\oracle &= f \in \comfield^{\codelength},\\
     \wit &=\bff \in \left(\ringtwobounds{B}{\moduledegree}[X]\right)^\codedim
 \end{aligned} 
 \ \right| \ 
 \begin{aligned}
-    \mathbf{p}_{j}^{(i)}(\xx, \bff) \in \ideal_i \ \text{ for all } j\in [\numrows], \ i \in [\iota]
+    %& f = \Enc_{\cC}\circ \pack \circ \picomfield(\mathsf{bits}(\bff)),\\
+    &\mathbf{p}_{j}^{(i)}(\xx, \bff) \in \ideal_i \ \text{ for all } j\in [\numrows], \ i \in [\iota]
 \end{aligned}
 \right\}
 $$
+
+
 The next remark explains that all our constructions for $\PIMSAT$ apply, in particular, to the usual R1CS, CCS \cite{ccs}, AIR \cite{air}, lookups,  permutation constraints, etc.\ over finite fields.
 
 
@@ -1105,17 +1132,19 @@ Let $\ring,\inplen,\codedim,\numrows,\iota, \ideal_1, \ldots, \ideal_{\iota}, B,
 \ronecsideal \defeq \left\{\left. 
 \begin{aligned}
     \inp &= \xx\in \left(\ringtwobounds{B}{\moduledegree}[X]\right)^{\inplen},\\
-    \oracle &= \bot ,\\
+    \oracle &= \bot,\\
+    %\oracle &= f \in \comfield^{\codelength},\\
     \wit &=\bff \in \left(\ringtwobounds{B}{\moduledegree}[X]\right)^\codedim
 \end{aligned} 
 \ \right| \ 
 \begin{aligned}
-    &\left(\left(A^{(i)}\cdot \zz\right)\circ \left(B^{(i)}\cdot \zz\right) - \left(C^{(i)}\cdot \zz\right)\right)_{j} \in \ideal_i \\ &\qquad\qquad \qquad \qquad \qquad \text{ for all } j\in [\numrows], \ i \in [\iota]\\
+ %& f = \Enc_{\cC}\circ \pack \circ \picomfield(\mathsf{bits}(\bff)),\\  
+ &\left(\left(A^{(i)}\cdot \zz\right)\circ \left(B^{(i)}\cdot \zz\right) - \left(C^{(i)}\cdot \zz\right)\right)_{j} \in \ideal_i \\ &\qquad\qquad \qquad \qquad \qquad \text{ for all } j\in [\numrows], \ i \in [\iota]\\
     &\ \zz=(\xx, \bff)
 \end{aligned}
 \right\},
 $$
-The relation $\ronecsideal$ is the subset of $\PIMSAT$ where $$\mathbf{p}_{j}^{(i)}(\xx,\bff)= \left(\left(A^{(i)}\cdot \zz\right)\circ \left(B^{(i)}\cdot \zz\right) - \left(C^{(i)}\cdot \zz\right)\right)_{j}.$$
+The relation $\ronecsideal$ is the precisely $\PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal})$ with $$\mathbf{p}_{j}^{(i)}(\xx,\bff)= \left(\left(A^{(i)}\cdot \zz\right)\circ \left(B^{(i)}\cdot \zz\right) - \left(C^{(i)}\cdot \zz\right)\right)_{j}.$$
 \end{example}
 
 Following  \cref{e:pimsat_ronecs} and \cite{linear-accumulation,zinc,zincplus} one can  show that PIMSAT allows to express  popular constraint systems such as CCS, AIR, and lookup and permuation constraints, over polynomial rings and with ideal membership.
@@ -1129,17 +1158,37 @@ The main difference between PIMSAT and UCS  is that the later allows for witness
 \end{remark}
 
 
+\subsection{Ideal membership as a generalization of univariate skip}\label{s:univ_skip_ideal_membership}
+
+
+
+
 \subsection{\ftwoz-IOP: an IOP for PIMSAT with oracles in binary fields}
+
+\john{Since we would have a lot of repeated hash computations, would there be a way to fold them like using sumfold before Step 2? Albert, I remember running an experiment on this using Hyrax and sumfold and seems to perform 2x faster than the baseline zinc+. Even though we used elliptic curve commitments, we maybe able to a similar folding technique } \albert{I thought about that. The issue is that the commitments are in binary fields and the claims to fold in $R[X]$, so folding here requires really novel research, if possible at all (efficiently).}
 
 We now describe an IOP for $\PIMSAT$. 
 % 
-We assume $\numrows=2^{n'}$ is a power of two, and identify $[n]$ with $\bits^{n'}$. Let $\cC$ be a linear code over $\comfield$ of dimension $(\codedim_0\cdot\moduledegree\cdot B)/\comfieldexp$ and blocklength $\codelength$.  We also let, for each finite field $\KK$, $\Pi_\KK$ be an IOR that given $(\inp,\oracle, \wit)$ for the PESAT relation (cf.\ \cref{d:pesat}) $\PESAT(\KK,\pp)$ (for any collection of polynomials $\pp$), outputs a MLE evaluation claim for $\wit$. In other words, it outputs  $((\vv, \mu),\oracle, \wit) \in \LIN(\KK, \cC, T)$ with $\vv=(\eq(\bb,\rr))_{\bb\in }$ for some $(\rr,v)\in \KK^{\log } \times \KK$.
+We assume $\numrows=2^{n'}$ is a power of two, and identify $[n]$ with $\bits^{n'}$. Let, for each finite field $\KK$, $\Pi_\KK$ be an IOR that given $(\inp,\oracle, \wit)$ for the PESAT relation (cf.\ \cref{d:pesat}) $\PESAT(\KK,\pp)$ (for any collection of polynomials $\pp$), outputs a MLE evaluation claim for $\wit$. In other words, it outputs  $$((\vv, \mu),\bot, \wit) \in \LIN(\KK)=\left\{\left. 
+\begin{aligned}
+    &\inp = (\vv,\mu) \in \KK^{\codedim_0} \times \KK,\\
+    &\oracle=\bot,\\
+    &\wit = \bfg \in \KK^{\codedim_0}
+\end{aligned} 
+\ \right| \  \langle \bfg, \vv\rangle = \mu \right\}$$ with $\vv=(\eq(\bb,\rr))_{\bb\in \bits^{\log \codedim_0}}$ for some $(\rr, \mu)\in \KK^{\log } \times \KK$. In our instantiations, we have $\vv=(\eq(\bb,\rr))_{\bb\in \bits^{\log \codedim_0}}$ for some $(\rr, \mu)\in \KK^{\log } \times \KK$, and $\Pi_{\KK}$ is either the usual Spartan \cite{spartan} PIOP over $\KK$, or a STARK-like PIOP \cite{ethstark} over $\KK$.
+
+
+Let $\cC$ be a linear code over $\comfield$ of dimension $(\codedim_0\cdot\moduledegree\cdot B)/2^\comfieldexp$ and blocklength $\codelength$. Let $\codedim_1,\codedim_2$ be tensor decomposition parameters, to be used in \cref{c:LinModFieldBin}, so that $\codedim_0\cdot\moduledegree\cdot B=\codedim_1\cdot \codedim_2$. Assume $\cC=\cC_1^{\equiv \codedim_2}$ is the $\codedim_2$-interleaving a of a linear code $\cC_1$ over $\comfield$ of dimension $\codedim_1/2^\comfieldexp$.
+
 \begin{construction}\label{c:iop_pimsat}
 [IOP for {$\PIMSAT$}]
-The prover and verifier receive $\inp=\xx\in \ringtwobounds{B}{\moduledegree}[X]^{\inplen}$. The prover additionally receives $\wit= \bff\in \ringtwobounds{B}{\moduledegree}[X]^\codedim$ such that $(\inp,\bot, \wit) \in \PIMSAT$. 
+\noindent \textbf{Parameters.} 
+$(R,M_R,\moduledegree,  \codedim_0, B, \codedim_1,\codedim_2, \comfield,\cC_1^{\equiv \codedim_2})$ comprised of: a ring $\ring\in \{\ZZ,\FF_{q^e}\}$; an $\ring$-module $M_R$ of dimension $\moduledegree$; a witness length $\codedim_0$; a bit-size bound $B$; a binary field $\comfield$; tensor decomposition dimensions $\codedim_1, \codedim_2$ with $\codedim_1\cdot \codedim_2= \codedim_0\cdot \moduledegree\cdot B$; a $\codedim_2$-interleaving of a code $\cC_1$ over $\comfield$ of dimension $\codedim_1/2^\comfieldexp$.\\
+
+\noindent \textbf{Inputs.} The prover and verifier receive $\inp=\xx\in \ringtwobounds{B}{\moduledegree}[X]^{\inplen}$. The prover additionally receives $\wit= \bff\in \ringtwobounds{B}{\moduledegree}[X]^\codedim$ such that $(\inp,\bot, \wit) \in \PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp, \bm{\ideal})$. 
 
 
-\john{Since we would have a lot of repeated hash computations, would there be a way to fold them like using sumfold before Step 2? Albert, I remember running an experiment on this using Hyrax and sumfold and seems to perform 2x faster than the baseline zinc+. Even though we used elliptic curve commitments, we maybe able to a similar folding technique }
+
 \newcommand{\iopmlechallenge}{S}
 \begin{enumerate}[leftmargin=*] 
 \item \textbf{Round 1: oracles.}
@@ -1157,7 +1206,7 @@ The  claim that  $\mathbf{p}_{\bb}^{(i)}(\xx, \bff) \in \ideal_i$  for all  $\bb
    Q^{(i)}(\zz) \in \ideal_i \qquad  \text{ for all } \zz\in \bits^{n'}, \ i \in [\iota].
 \end{equation}
 %
-\item If $\ring=\FF$, we let $\KK$ be a large enough (to be determined later) extension of $\FF$. If $\ring=\ZZ$, verifier samples and sends a large random field which we denote, abusing the notation, $\KK$. Let $q^{e'}$ be the size of $\KK$ in either case, for $q$ prime.
+\item If $\ring=\FF$, we let $\KK$ be a large enough (to be determined later) extension of $\FF$. If $\ring=\ZZ$, verifier samples and sends a large random field which we denote, abusing the notation, $\KK$ (cf.\ \cref{r:sampling_field} for comments on how to do this in practice). Let $q^{e'}$ be the size of $\KK$ in either case, for $q$ prime.
 
 The claim \eqref{e:iop_ideal_eq} is replaced by
 %
@@ -1174,7 +1223,8 @@ Recall (cf.\ \cref{d:projections}) that $\pi_q$ is coefficient-wise reduction mo
 $
 u_i = \pi_q(Q^{(i)})(\rr).
 $
-\albert{Explain this can be computed via univariate skip techniques. And that if Q is linear on the witness, then it's just an MLE eval}
+
+These values can be computed as one would compute the corresponding values in a univariate skip, see \cref{s:univ_skip_ideal_membership}. Alternatively, if $Q^{(i)}$ is linear on the multilinear extension of $\bff$, then  $u_i$ can easily be computed from $\mle{\pi_q(\bff)}(\rr)$, which in turn can be computed as $\moduledegree$ MLE evaluations over $\pi_q(\ring)$\footnote{This was already observed at least in \cite{flock}, when $Q^{(i)}$ is the multilinear extension of the vector $C\cdot \zz$ in an R1CS constraint \albert{check: is that linear on witness?}.}.
 \item The verifier checks that $u_i \in \pi_q(\ideal_i)$ \albert{discuss its definition?} for all $i\in [\iota]$. Then it samples and sends batching elements $\theta_1, \ldots, \theta_\iota\in \KK$. Further, if $\moduledegree>0$, it samples ans sends an element $\alpha$. 
 \end{itemize}
 \item \textbf{Using the IOR $\Pi_\KK$ for the projected claim}
@@ -1185,24 +1235,26 @@ $
 \sum_{i\in [\iota]}\sum_{\bb\in \bits^{n'}}\theta_i\cdot \pi(\pp_\bb^{(i)})(\pi(\xx),\pi(\bff)) \cdot \eq(\bb, \rr) = \sum_{i\in [\iota]} \theta_i \cdot \pi(u_i) \in \KK.
 \end{equation}
 %
-The claim \eqref{e:batched_projected_claim}  forms a valid instance-witness for the PESAT relation (cf.\ \cref{d:pesat}) $\PESAT(\KK, \pp)$  with one polynomial constraint $\pp=(\pp_1)$ given by $$\pp_1=\sum_{i\in[\iota]}\theta_i\cdot\sum_{\bb\in \bits^{n'}}\pi(\pp_{\bb}^{(i)})(Y_1, \ldots, Y_{\inplen+\codedim})-\sum_{i\in [\iota]} \theta_i\cdot \pi(u_i),$$ with public input $\pi(\xx)$, and witness $\pi(\bff)$. 
+Observe that $(\pi(\xx),\bot, \pi(\bff))\in \PESAT(\KK,\hat{\pp})$ (cf.\ \cref{d:pesat})
+with $\hat{\pp}=(\hat{\pp}_1)$ given by $$\hat{\pp}_1=\sum_{i\in[\iota]}\theta_i\cdot\sum_{\bb\in \bits^{n'}}\pi(\pp_{\bb}^{(i)})(Y_1, \ldots, Y_{\inplen+\codedim})-\sum_{i\in [\iota]} \theta_i\cdot \pi(u_i).$$ 
 %
 Accordingly, prover and verifier use the IOR $\Pi_{\KK}$  to reduce \eqref{e:batched_projected_claim} to 
- a claim of the form
+ a claim of the form:
 \begin{equation}\label{e:iop_linear_claim_raw}
-\mle{\pi(\bff)}(\rr^{(2)}) = \mu
+((\vv,\mu), \bot, \pi(\bff))\in \LIN(\KK)
 \end{equation}
 %
-for some $\rr^{(2)} \in \KK^{\log \codedim_0}$ \albert{Ask $\codedim$ to be a power of two before} and some $\mu\in \KK$. In other words, $((\rr^{(2)},\mu),\bot,\pi(\bff)) \in \Relation_{\mathsf{mle}}$ over $\KK$.
+for some $\vv \in \KK^{ \codedim_0}$  and some $\mu\in \KK$.
 \end{itemize}
 \item \textbf{Using the \ftwoz IOR for $\LinModFieldBin$.}
 \begin{itemize}[leftmargin=*]
-\item The initial claim $(\inp,\bot,\wit)\in \PIMSAT$ has been replaced by $\mle{\pi(\bff)}(\rr^{(2)}) = \mu$. Additionally, verifier now has oracle access to $f=\Enc_{\cC}\circ \pack\circ\pi_2(\mathsf{bits}(\bff)$. Notice that $\pi:\ring[X] \to \KK$ induces a $\pi_q$-module homomorphism $\psi:\ringdegbound{\moduledegree}[X] \to \KK$ given by $\psi(h(X)) = \pi(h(X))$. Hence prover and verifier can now use \cref{c:LinModFieldBin} to prove that
+\item The initial claim $(\inp,\bot,\wit)\in \PIMSAT$ has been replaced by $((\vv,\mu),\bot,\pi(\bff))\in \LIN(\KK)$. Additionally, verifier  has oracle access to $f=\Enc_{\cC}\circ \pack\circ\pi_2(\mathsf{bits}(\bff))\in\comfield^\codelength$. Notice that $\pi:\ring[X] \to \KK$ induces a $\pi_q$-module homomorphism $\psi:\ringdegbound{\moduledegree}[X] \to \KK$ given by $\psi(h(X)) = \pi(h(X))$. Hence
 %
-$$
-((\vv,\mu), f, \bff) \in \LinModFieldBin
-$$
-where $\vv=(\eq(\bb,\rr^{(2)}))_{\bb\in \bits^{\log \ell}}$.
+\begin{equation}\label{e:iop_final_claim}
+((\vv,\mu),f,\bff) \in \LinModFieldBin(\ringtwobounds{B}{\moduledegree},\KK, \psi, \cC).
+\end{equation}
+%
+Prover and verifier now use \cref{c:LinModFieldBin} to prove  \eqref{e:iop_final_claim}, with parameters $$(R,q,\ringdegbound{\moduledegree}[X],\moduledegree,\KK, \psi, (1, X \ldots, X^{\moduledegree-1}), \codedim_0, B, \codedim_1,\codedim_2, \comfield,\cC_1^{\equiv \codedim_2}).$$
 %
 \end{itemize}
 \end{enumerate}
@@ -1210,22 +1262,19 @@ where $\vv=(\eq(\bb,\rr^{(2)}))_{\bb\in \bits^{\log \ell}}$.
 \end{construction}
 
 
-\paragraph{Optimizations} Next we discuss some optimizations we can apply to \cref{c:iop_pimsat} in certain specific scenarios. 
 
-\begin{remark}
-    
-\end{remark}
 
-\begin{remark}
-    \albert{when there's only one ideal and this is $(X-c)$, we can fix $\alpha=c$ (though in that case the initial constraint can easily be written without ideals at all) }
+\begin{remark}[Randomly sampling a field]\label{r:sampling_field}
+\albert{Add some comment about the recursive cost and the mitigations we have}
 \end{remark}
 
 
 
 
+\begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:iop_pimsat}] Assume that, for every field $\KK$ sampleable in Round 1 of \cref{c:iop_pimsat} (or for the fixed field $\KK$ if $\ring = \FF_{q^e}$), $\Pi_{\KK}$ is a $t_{\Pi_{\KK}}$-round perfectly complete IOR from $\PIMSAT(\KK, \pp)$ to $\LIN(\KK)$ with round-by-round knowledge soundness with relaxation $(\PIMSAT(\KK, \pp), \LIN(\KK))$ (so, the relaxed relations are the same as the original relations) and errors $\kappa_{\Pi_\KK, 1}, \ldots, \kappa_{\Pi_\KK, t_{\Pi_\KK}}$. 
 
-\begin{theorem}
-\albert{RBR knowledge soundness and completeness}
+
+Let $\delta\in (0,1)$ be a proximity parameter. Assume the hypotheses of \cref{t:thm_core_IOPP,t:thm_LinModFieldBits} $|\comfield|-1 \geq (\codedim_1+1)\cdot (q_{\max} -1)$, where $q_{\max}$ is the largest prime in $\cP$ (cf.\ \cref{c:core_iop}). Assume \cref{c:LinModFieldBin} satisfies the hypothesis of \c used in Phase 4 of \cref{c:iop_pimsat} uses a 
 \end{theorem}
 \begin{proof}
     \albert{Sketch} The plan: the above IOP is the result of compiling a PIOP $\Pi_{\mathsf{PIOP}}$ (given by Steps 2 to 8) with an IOP  $\Pi_{\FF 2 \ZZ}$ for committing to $\bff \in \ringtwobounds{B}{\moduledegree}[X]$ and proving 
@@ -1234,59 +1283,6 @@ where $\vv=(\eq(\bb,\rr^{(2)}))_{\bb\in \bits^{\log \ell}}$.
     The compilation is done and its soundness proved in Zinc+, so we can also cite that. There's  the small issue that the compiler in Zinc+ assumes the IOP is using an interleaved code over $\ring$ to ``commit'' to the witness, so we cannot 100\% black-box the result from Zinc+, though a small remark may do it \albertimportant{Again, it may be good to have the proof here in an appendix}.
 \end{proof}
 
-
-\begin{remark}
-\albertimportant{Scratch?} We discuss  the specific case where $$\pp_\bb^{(i)}(Y_1, \ldots, Y_{\inplen+\codedim}) = \pp'{}^{(i)}(\bb,Y_1, \ldots, Y_{\inplen+\codedim}) \qquad \text{for all } i\in [\iota],$$
-i.e.\ there is a $\nu+\inplen+\codedim$-variate polynomial $\pp'{}^{(i)}$ such that the polynomials $\pp_\bb^{(i)}(Y_1, \ldots, Y_{\inplen+\codedim})$ are obtained by evaluating the first $\nu$ variables of $\pp'{}^{(i)}$ on $\bb\in \bits^\nu$.  This is the case in constraints such as R1CS, CCS, and AIR.
-
-
-....
-
-...
-The prover and verifier engage in the batched sumcheck protocol over $\KK$ for the claim 
-$$
-\sum_{\bb\in \bits^\nu}\pi(\pp'{}^{(i)})(\bb,\pi(\xx),\pi(\bff))) \cdot \eq(\bb, \rr) = \pi(u_i) \in \KK \qquad \text{for all } i\in [\iota].
-$$
-%
-At the end of  batched sumcheck, they are left with a claim of the form
-%
-\begin{equation}\label{e:iop_projected_claims}
-\pi(\pp'{}^{(i)})(\rr^{(1)}, \pi(\xx),\pi(\ff)) = u_i' \in \KK \qquad \text{for all } i \in [\iota]
-\end{equation}
-for some $\rr^{(1)} \in \KK^\nu, u_i' \in \KK$. 
-%
-
-....
-
-...
-
-
-The claim \eqref{e:iop_projected_claims} forms a valid instance-witness for the PESAT relation (cf.\ \cref{d:pesat}) over $\KK$ with polynomial constraints given by $\pi(\pp'{}^{(i)})(\rr^{(1)}, Y_1, \ldots, Y_{\inplen+\codedim})-u_i'$, i.e.\ for such constraints and corresponding parameters
-%
-$$
-(\pi(\xx), \bot, \pi(\bff))\in \PESAT.
-$$
-%
- Accordingly, prover and verifier use the IOR $\Pi_{\KK}$  to reduce \eqref{e:iop_projected_claims} to 
- a claim of the form
-\begin{equation}
-\mle{\pi(\bff)}(\rr^{(2)}) = \mu
-\end{equation}
-%
-for some $\rr^{(2)} \in \KK^{\log \codedim}$ \albert{Ask $\codedim$ to be a power of two before} and some $\mu\in \KK$. In other words, $((\rr^{(2)},\mu),\bot,\pi(\bff)) \in \Relation_{\mathsf{mle}}$ over $\KK$.
-\end{remark}
-
-
-
-
-
-
-
-
-
-
-
-\subsection{Univariate skip as ideal membership}
 
 \subsection{Repeated computations through ideal membership}
 
@@ -1346,15 +1342,64 @@ When $\degevalfield>0$, it is important to prove (**) and (***) together, since,
 
 \albertimportant{Should we allow for $W>1$? Currently just setting $W=1$ and thinking of all bits as unrelated leads to better performance, but that sounds suboptimal. }
 
-\section{Case-study}
+\albertimportant{Folding instances of $\LinBitsDual$}
 
-\albert{World passport? Lean circuits? ML models? Hashes?}
+\section{Instantiation and experiments}
 
-\subsection{Integer and modular multiplication}
+\subsection{Instantation}
 
-\albert{We could do something synthetic, like a chain of mults and additions, or a ML or Lean motivated computation}
 
-\subsection{SHA-256 hashing}
+
+\begin{remark}[The intermediate IOR $\Pi_{\KK}$ as a batched sumcheck]
+\albertimportant{Scratch. Maybe remove} In many reasonable instances of $\PIMSAT$ (e.g.\ R1CS, CCS, or AIR-like instantiations), we  have that $$\pp_\bb^{(i)}(Y_1, \ldots, Y_{\inplen+\codedim}) = \pp'{}^{(i)}(\bb,Y_1, \ldots, Y_{\inplen+\codedim}) \qquad \text{for all } i\in [\iota],$$
+for some polynomials $\pp'{}^{(i)}$ on $n'+\inplen+\codedim$ \albert{$\codedim_0$?} variables. 
+
+
+In this case, one can take the IOR $\Pi_{\KK}$  from $\PESAT(\KK,\hat{\pp})$ to $\LIN(\KK)$ from at Step 3 of \cref{c:iop_pimsat} to consist simply in applying the batched sumcheck protocol over $\KK$ for the claims 
+$$
+\sum_{\bb\in \bits^{n'}}\pi(\pp'{}^{(i)})(\bb,\pi(\xx),\pi(\bff)) \cdot \eq(\bb, \rr) = \pi(u_i) \in \KK \qquad \text{for all } i\in [\iota].
+$$
+%
+At the end of  batched sumcheck, they are left with a claim of the form
+%
+\begin{equation}\label{e:iop_projected_claims}
+\pi(\pp'{}^{(i)})(\rr^{(1)}, \pi(\xx),\pi(\ff)) = u_i' \in \KK \qquad \text{for all } i \in [\iota]
+\end{equation}
+for some $\rr^{(1)} \in \KK^\nu, u_i' \in \KK$. 
+%
+
+....
+
+...
+
+
+The claim \eqref{e:iop_projected_claims} forms a valid instance-witness for the PESAT relation (cf.\ \cref{d:pesat}) over $\KK$ with polynomial constraints given by $\pi(\pp'{}^{(i)})(\rr^{(1)}, Y_1, \ldots, Y_{\inplen+\codedim})-u_i'$, i.e.\ for such constraints and corresponding parameters
+%
+$$
+(\pi(\xx), \bot, \pi(\bff))\in \PESAT.
+$$
+%
+ Accordingly, prover and verifier use the IOR $\Pi_{\KK}$  to reduce \eqref{e:iop_projected_claims} to 
+ a claim of the form
+\begin{equation}
+\mle{\pi(\bff)}(\rr^{(2)}) = \mu
+\end{equation}
+%
+for some $\rr^{(2)} \in \KK^{\log \codedim}$  and some $\mu\in \KK$. In other words, $((\rr^{(2)},\mu),\bot,\pi(\bff)) \in \Relation_{\mathsf{mle}}$ over $\KK$.
+\end{remark}
+
+
+
+\subsection{Experimental results}
+
+
+\subsubsection{Raw performance of \ftwoz}
+
+\subsubsection{Integer and modular multiplication}
+
+
+
+\subsubsection{SHA-256 hashing}
 
 
 \paragraph{SHA-256 compression overview}
@@ -1462,24 +1507,17 @@ The compression output is the word vector $H^{\mathrm{out}}$ defined by
 
 %\input{sha256-f2}
 
-\subsection{Experiments}
 
-\albert{GHASH or b127?}
+\subsubsection{ECDSA and RSA signature verification}
 
-Optimization ideas
-\begin{itemize}
-    \item b127 instead of GHASH
-    \item Lookup table (algorithm-wise, not SNARK-wise) for first levels of GKR
-    \item If we have an MLE claim of a vector and its shift by one position, can we reuse something for the latter claim from the computations made when proving the former?
-\end{itemize}
+\subsubsection{Hashing followed by RSA verification}
+
+
 
 \subsubsection{Comparison with Hyrax}
 
 \albert{Comparing with Hyrax may be more interesting than it sounds initially. Hyrax is pay-per-bit and opens on large prime fields: a profile that F2Z can adopt. Hence (maybe) projects using Hyrax could use  F2Z as a drop-in replacement which is PQ secure and more efficient }
 
-\subsubsection{Comparison with Flock}
-
-\john{It would be interesting to compare with flock as well}
 
 \appendix
 
