@@ -1170,13 +1170,18 @@ The main difference between PIMSAT and UCS  is that the later allows for witness
 
 We now describe an IOP for $\PIMSAT$. 
 % 
-We assume $\numrows=2^{n'}$ is a power of two, and identify $[n]$ with $\bits^{n'}$. Let, for each finite field $\KK$, $\Pi_\KK$ be an IOR that given $(\inp,\oracle, \wit)$ for the PESAT relation (cf.\ \cref{d:pesat}) $\PESAT(\KK,\pp)$ (for any collection of polynomials $\pp$), outputs a MLE evaluation claim for $\wit$. In other words, it outputs  $$((\vv, \mu),\bot, \wit) \in \LIN(\KK)=\left\{\left. 
+We assume $\numrows=2^{n'}$ is a power of two, and identify $[n]$ with $\bits^{n'}$. Let, for each finite field $\KK$ of characteristic $q$, $\psi_\KK:\ringbitbound{\moduledegree}\to \KK$ be a $\pi_q$-module homomorphism, and $\Pi_\KK$ be an IOR that given $(\inp,\bot, \wit)$ for  $\PESAT(\KK,\pp)$ (for any collection of polynomials $\pp$), outputs $$(\inp',\bot, \wit) \in \LIN(\KK)=\left\{\left. 
 \begin{aligned}
     &\inp = (\vv,\mu) \in \KK^{\codedim_0} \times \KK,\\
-    &\oracle=\bot,\\
-    &\wit = \bfg \in \KK^{\codedim_0}
+    &\oracle=\bot\in\comfield^{\codelength},\\
+    &\wit = \bfg \in (\ringtwobounds{B}{\moduledegree})^{\codedim}
 \end{aligned} 
-\ \right| \  \langle \bfg, \vv\rangle = \mu \right\}$$ with $\vv=(\eq(\bb,\rr))_{\bb\in \bits^{\log \codedim_0}}$ for some $(\rr, \mu)\in \KK^{\log } \times \KK$. In our instantiations, we have $\vv=(\eq(\bb,\rr))_{\bb\in \bits^{\log \codedim_0}}$ for some $(\rr, \mu)\in \KK^{\log } \times \KK$, and $\Pi_{\KK}$ is either the usual Spartan \cite{spartan} PIOP over $\KK$, or a STARK-like PIOP \cite{ethstark} over $\KK$.
+\ \right| \  \begin{aligned}
+&\langle \psi_M(\bfg), \vv \rangle = \mu 
+\end{aligned}\right\}.$$
+We emphasize that the output of $\Pi_\KK$ has the same witness $\wit$ as the input.
+ 
+In our instantiations, we have $\vv=(\eq(\bb,\rr))_{\bb\in \bits^{\log \codedim_0}}$ for some $(\rr, \mu)\in \KK^{\log } \times \KK$, and $\Pi_{\KK}$ is either the usual Spartan \cite{spartan} PIOP over $\KK$, or a STARK-like PIOP \cite{ethstark} over $\KK$.
 
 
 Let $\cC$ be a linear code over $\comfield$ of dimension $(\codedim_0\cdot\moduledegree\cdot B)/2^\comfieldexp$ and blocklength $\codelength$. Let $\codedim_1,\codedim_2$ be tensor decomposition parameters, to be used in \cref{c:LinModFieldBin}, so that $\codedim_0\cdot\moduledegree\cdot B=\codedim_1\cdot \codedim_2$. Assume $\cC=\cC_1^{\equiv \codedim_2}$ is the $\codedim_2$-interleaving a of a linear code $\cC_1$ over $\comfield$ of dimension $\codedim_1/2^\comfieldexp$.
@@ -1243,14 +1248,14 @@ with $\hat{\pp}=(\hat{\pp}_1)$ given by $$\hat{\pp}_1=\sum_{i\in[\iota]}\theta_i
 Accordingly, prover and verifier use the IOR $\Pi_{\KK}$  to reduce \eqref{e:batched_projected_claim} to 
  a claim of the form:
 \begin{equation}\label{e:iop_linear_claim_raw}
-((\vv,\mu), \bot, \pi(\bff))\in \LIN(\KK)
+((\vv,\mu), \bot, \pi(\bff))\in \LIN(,\KK,)
 \end{equation}
 %
 for some $\vv \in \KK^{ \codedim_0}$  and some $\mu\in \KK$.
 \end{itemize}
 \item \textbf{Using the \ftwoz IOR for $\LinModFieldBin$.}
 \begin{itemize}[leftmargin=*]
-\item The initial claim $(\inp,\bot,\wit)\in \PIMSAT$ has been replaced by $((\vv,\mu),\bot,\pi(\bff))\in \LIN(\KK)$. Additionally, verifier  has oracle access to $f=\Enc_{\cC}\circ \pack\circ\pi_2(\mathsf{bits}(\bff))\in\comfield^\codelength$. Notice that $\pi:\ring[X] \to \KK$ induces a $\pi_q$-module homomorphism $\psi:\ringdegbound{\moduledegree}[X] \to \KK$ given by $\psi(h(X)) = \pi(h(X))$. Hence
+\item The initial claim $(\inp,\bot,\wit)\in \PIMSAT$ has been replaced by $((\vv,\mu),\bot,\pi(\bff))\in \LIN(\KK)$.  Notice that $\pi:\ring[X] \to \KK$ induces a $\pi_q$-module homomorphism $\psi:\ringdegbound{\moduledegree}[X] \to \KK$ given by $\psi(h(X)) = \pi(h(X))$. Hence
 %
 \begin{equation}\label{e:iop_final_claim}
 ((\vv,\mu),f,\bff) \in \LinModFieldBin(\ringtwobounds{B}{\moduledegree},\KK, \psi, \cC).
@@ -1273,7 +1278,7 @@ Prover and verifier now use \cref{c:LinModFieldBin} to prove  \eqref{e:iop_final
 
 
 
-\begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:iop_pimsat}] Assume that, for every field $\KK$ sampleable in Round 1 of \cref{c:iop_pimsat} (or for the fixed field $\KK$ if $\ring = \FF_{q^e}$), $\Pi_{\KK}$ is a $t_{\Pi_{\KK}}$-round perfectly complete IOR from $\PIMSAT(\KK, \pp)$ to $\LIN(\KK)$ with round-by-round knowledge soundness with relaxation $(\PIMSAT(\KK, \pp), \LIN(\KK))$ (so, the relaxed relations are the same as the original relations) and errors $\kappa_{\Pi_\KK, 1}, \ldots, \kappa_{\Pi_\KK, t_{\Pi_\KK}}$. 
+\begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:iop_pimsat}] \label{t:thm_iop_pimsat} Assume that, for every field $\KK$ sampleable in Round 1 of \cref{c:iop_pimsat} (or for the fixed field $\KK$ if $\ring = \FF_{q^e}$), $\Pi_{\KK}$ is a $t_{\Pi_{\KK}}$-round perfectly complete IOR from $\PESAT(\ringtwobounds{B}{\moduledegree},\KK, \pp,\psi_\KK,\cC,\pack)$ to $\LIN(\ringtwobounds{B}{\moduledegree},\KK,\psi_\KK, \cC,\pack)$ with round-by-round knowledge soundness with relaxation $(\PESAT(\ringtwobounds{B}{\moduledegree},\KK, \pp,\psi_\KK,\cC,\pack)^\delta,\LIN(\ringtwobounds{B}{\moduledegree},\KK,\psi_\KK, \cC,\pack)^\delta)$ (so, the relaxed relations are the same as the original relations) and errors $\kappa_{\Pi_\KK, 1}, \ldots, \kappa_{\Pi_\KK, t_{\Pi_\KK}}$. 
 
 
 Let $\delta\in (0,1)$ be a proximity parameter. Assume the notation and hypotheses of \cref{t:thm_core_IOPP,t:thm_LinModFieldBits}, so that $|\comfield|-1 \geq (\codedim_1+1)\cdot (q_{\max} -1)$, where $q_{\max}$ is the largest prime in $\cP$ (cf.\ \cref{c:core_iop}), and $\cref{c:LinModFieldBin}$ is a perfectly complete $(1+t_\red +t_\iopp)$-round IOP\footnote{Or $t_\red +t_\iopp$-round IOP of $\KK$ is a prime field} for $\LinModFieldBin$ with  round-by-round knowledge soundness with relaxation $(\LinBitsDual^{\delta}, \bot)$, with errors $$\kappa_{\mathsf{lift-proj}}, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]},$$ where
@@ -1331,11 +1336,60 @@ as needed.
 \end{proof}
 
 
+To prove \cref{t:thm_iop_pimsat}, we will need to introduce an extension of the definition of $\PESAT(\KK, \pp)$ and $\LIN(\KK)$ so that these relations can hold witnesses in $\ringtwobounds{B}{\moduledegree}$ and their encodings over a binary field. Namely, given a field of characteristic $q$ and a $\pi_q$-module homomorphism (cf.\ \cref{?}) $\psi_\KK:\ringdegbound{\moduledegree}\to \KK$, we define:
+$$
+\PESAT(\ringtwobounds{B}{\moduledegree}, \KK, \pp,\psi_\KK, \cC, \pack) \defeq \left\{ \left(\begin{aligned} &\inp=\xx\in \KK^\inplen, \\&\oracle = f \in (\comfield)^{\codelength}, \\ &\wit= \bff\in (\ringtwobounds{B}{\moduledegree})^{\codedim_0}\end{aligned}\right) \;\middle|\;  \begin{aligned} 
+&\Enc_{\cC}\circ \pack \circ \pi_2(\mathsf{bits}(\bff)) = f\\ \wedge \  &\pp_i(\xx, \psi_\KK(\bff)) = 0  \text{ for all } i\in [\numrows]\end{aligned}\right\}
+$$
+We define $\LIN$ similarly: $\LIN(\ringtwobounds{B}{\moduledegree}, \KK, ,\psi_\KK, \cC, \pack) $ is simply the above $\PESAT$ with $\pp$ containing a single linear polynomial on $\xx, \psi_\KK(\bff)$.
+
+\begin{lemma}\label{l:lift_pesat_to_encodings}
+Let $\KK$ be a finite field of characteristic $q$ and let $\psi_\KK:\ringbitbound{\moduledegree}\to \KK$ be a $\pi_q$-module homomorphism \albert{correct terminology? And above?}. Let $\Pi_\KK$ be a $t_\KK$-round perfectly complete IOR from $\PESAT(\KK,\pp)$ to $\LIN(\KK)$ with round-by-round knowledge soundness (with no relaxation) with errors $(\kappa_{\Pi_\KK, i})_{i\in [t_\KK]}$. 
+
+Let $\delta\in (0,1)$. Then there is an IOR $\Pi_\KK'$ from $\PESAT(\ringtwobounds{B}{\moduledegree}, \KK,\pp,\psi_\KK, \cC,\pack)$ to $\LIN(\ringtwobounds{B}{\moduledegree}, \KK,\psi_\KK, \cC,\pack)$ with $t_\KK$ rounds, perfectly complete, and with round-by-round knowledge soundness with relaxation $\PESAT(\ringtwobounds{B}{\moduledegree}, \KK,\pp,\psi_\KK, \cC,\pack)^\delta,\LIN(\ringtwobounds{B}{\moduledegree}, \KK,\psi_\KK, \cC,\pack)^\delta)$ and with errors $(\kappa_{\Pi_\KK, i})_{i\in [t_\KK]}$.  
+
+\albertimportant{Could there be an issue with extracting the correct bit size $B$? No because prover outputs $\bff$, not $\bff'$} This IOR $\Pi_\KK'$ is exactly $\Pi_\KK$, except that prover and verifier receive an oracle $f$, which they do not use throughout the IOR; and additionally the prover receives a witness $\bff$ in $\ringtwobounds{B}{\moduledegree}$ instead of in $\KK$. Then the prover of $\Pi_\KK'$ proceeds exactly as the prover of $\Pi_\KK$ after replacing $\bff$ by $\psi(\bff)$. At the end of the IOR, both prover and verifier of $\Pi_\KK'$ output the same input $\inp$ output by $\Pi_\KK$. Additionally, they output $\oracle=f$, and the prover of $\Pi_\KK'$ outputs $\bff$ (as opposed to $\psi_\KK(\bff)$.
+\end{lemma}
 \begin{proof}
-    \albert{Sketch} The plan: the above IOP is the result of compiling a PIOP $\Pi_{\mathsf{PIOP}}$ (given by Steps 2 to 8) with an IOP  $\Pi_{\FF 2 \ZZ}$ for committing to $\bff \in \ringtwobounds{B}{\moduledegree}[X]$ and proving 
-    $\mle{\pi(\bff)}(\rr^{(2)}) = \mu$. The PIOP $\Pi_{\mathsf{PIOP}}$ is a particular case of the Zinc+ PIOP, so RBR soundness and completeness can be obtained from there \albertimportant{Would be preferable to have a self-contained paper (maybe?) so write the proof in the appendix, briefly}. The IOP $\Pi_{\FF 2 \ZZ}$ has already been studied, except that we started with $\bff$ containing only bits, so we need to add a wrapper around it \albertimportant{todo}.
-    
-    The compilation is done and its soundness proved in Zinc+, so we can also cite that. There's  the small issue that the compiler in Zinc+ assumes the IOP is using an interleaved code over $\ring$ to ``commit'' to the witness, so we cannot 100\% black-box the result from Zinc+, though a small remark may do it \albertimportant{Again, it may be good to have the proof here in an appendix}.
+\albert{TODO. Anywhere in the literature?}
+\end{proof}
+
+\begin{proof}[Proof of \cref{t:thm_iop_pimsat}]
+We decompose \cref{c:iop_pimsat} into four IORs $\Pi_1,\Pi_2,\Pi_3,\Pi_4$. The first one, $\Pi_1$, is a $1$-round IOR from $\PIMSAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{\ideal})$ to  $\PIMSAT(\ringtwobounds{B}{\moduledegree}, \cC, \pack)$, where  $\PIMSAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{\ideal}, \cC, \pack)$ is the encoded version of $\PIMSAT(\ringtwobounds{B}{\moduledegree})$, defined as 
+$$
+\PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}, \cC, \pack) 
+%\PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}) 
+= \left\{\left. 
+\begin{aligned}
+    \inp &= \xx \in \left(\ringtwobounds{B}{\moduledegree}[X]\right)^{\inplen},\\
+    \oracle &= f \in \comfield^{\codelength},\\
+    \wit &=\bff \in \left(\ringtwobounds{B}{\moduledegree}[X]\right)^\codedim
+\end{aligned} 
+\ \right| \ 
+\begin{aligned}
+    & f = \Enc_{\cC}\circ \pack \circ \picomfield(\mathsf{bits}(\bff)),\\
+    &\mathbf{p}_{j}^{(i)}(\xx, \bff) \in \ideal_i \ \text{ for all } j\in [\numrows], \ i \in [\iota]
+\end{aligned}
+\right\}
+$$
+For ease of notation we write 
+%
+$$
+\PIMSAT(\cC, \pack)  = \PIMSAT, \qquad \PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}, \cC, \pack)  = \PIMSAT(\cC,\pack).
+$$
+In $\Pi_0$, given $(\inp,\bot, \wit)\in \PIMSAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{\ideal})$ as input, the prover sends $f=\Enc_{\cC}\circ \pack \pi_2(\mathsf{bits}(\bff))$ to the verifier, and the verifier replies with an empty message. Then the IOR outputs $(\inp,f,\wit)\in \PIMSAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{\ideal}, \cC, \pack)$.  We argue that for any $\delta\in (0,1)$, $\Pi_0$ is a perfectly complete $1$-round IOR from $\PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal})$ to $\PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}, \cC, \pack)$ with round-by-round knowledge soundness  with relaxation $\PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}), \PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}, \cC, \pack)^{\delta}$ and with error $0$. Indeed, given an empty transcript, define $\kstate(\inp,\bot, \ww)=1$ if and only if $(\inp,\bot,\ww)\in \PIMSAT$ \albert{shortcut notation}, and for a full transcript $\tr=(f)$, define $\kstate(\inp,\bot, f, \ww) = 1$ if and only if $(\inp, f, \ww)\in \PIMSAT(\cC,\pack)^\delta$ \albert{shortcut notation}. Define the extractor as $\cE_{\mathsf{rbr}}(\inp, \bot, f,\ww)=\ww$. Then it is impossible to have $\kstate(\inp,\bot, f, \ww) = 1$ and $\kstate(\inp,\bot, \cE_{\mathsf{rbr}}(\inp, \bot, f,\ww)) = 0$, simultaneously, and the claim follows.
+
+
+The IOR $\Pi_2$ is defined as Rounds 1 and 2 of \cref{c:iop_pimsat} after the first item (where prover sends $f$), and formally we have the prover send an empty message in $\Pi_2$ as its first message.  $\Pi_2$ takes as input $(\inp, f, \ww)\in \PIMSAT(\cC,\pack)$, and outputs $(\pi(\xx),f, \pi(\bff))\in \PESAT(\KK, \hat{\pp}, \cC,\pack)$. We will argue later that $\Pi_2$ is a perfectly complete $2$-round IOR from $\PIMSAT(\cC,\pack)$ to $\PESAT(\KK, \hat{\pp}, \cC,\pack)$ \albert{maybe this is not apparent in the protocol description. Should I write it explicitly?}, with round-by-round knowledge soundness with relaxation $(\PIMSAT(\cC,\pack)^\delta,\PESAT(\KK, \hat{\pp}, \cC,\pack)^\delta)$ and errors $\kappa_1, \kappa_2$ as in the statement of the present theorem. 
+
+The IOR $\Pi_3$ consists in applying Item 3 of \cref{c:iop_pimsat}, i.e.\ we simply apply $\Pi_\KK$. By definition $\Pi_\KK$ is an IOR from $\PESAT(\KK, \hat{\pp}, \cC,\pack)$ to $\LIN(\KK,\cC,\pack)$, perfectly complete, with $t_\KK$ rounds, and with round-by-round knowledge with relaxation  $\PESAT(\KK, \hat{\pp}, \cC,\pack)^\delta,\LIN(\KK,\cC,\pack)^\delta)$ and with errors $(\kappa_{\Pi_\KK,i})_{i\in t_{\KK}}$.
+
+Finally, the IOR $\Pi_4$ consists in applying Item 4 of \cref{c:iop_pimsat}, i.e.\ applying \cref{c:LinModFieldBin} with inputs $((\vv,\mu), f,\bff)$.
+
+Once we have established our claims regarding $\Pi_2$, the result then follows from  the composition of IORs result (cf.\ \cref{prop:composed}).
+
+\paragraph{Completeness and round-by-round knowledge soundness of $\Pi_2$.}
+%
 \end{proof}
 
 
