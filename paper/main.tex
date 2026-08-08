@@ -51,7 +51,7 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\newcommand{\plaintitle}{$\FF 2\ZZ$}
+\newcommand{\plaintitle}{$\FF 2\ZZ$: Proofs in arbitrary domains with commitments in binary fields}
 
 \PassOptionsToPackage{hyphens}{url}\usepackage{hyperref}
 \hypersetup{
@@ -660,7 +660,7 @@ Notice that \begin{equation}\label{e:Q_F2Z_intermediate}\left(\inp=((g^{\bm{\gam
 
 
 For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\FF 2 \ZZ},\cC_1^{\equiv \codedim_2}, \pack),\qquad \LIN = \LIN(\comfield, \cC_1^{\equiv \codedim_2}, \pack).$$
-\begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:core_iop}]\label{t:thm_LinModFieldBits} \albert{Completeness missing}
+\begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:core_iop}]\label{t:thm_core_IOPP} \albert{Completeness missing}
    Let $\delta \in (0,1)$ be a proximity parameter.  Assume $g$ has multiplicative order $\mathsf{ord}(g)$ with 
    %
    $$\mathsf{ord}(g) > (\codedim_1+1) \cdot (q_{\max}-1),$$ 
@@ -669,14 +669,14 @@ For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\FF 2 \ZZ},
    %
    Assume $\Pi_{\mathsf{red}}$ is a perfectly complete $t_\red$-round IOR from $\PESAT$ to $\LIN$ with round-by-round knowledge soundness  with relaxation $\PESAT^\delta,\LIN^{\delta}$, with errors  $(\ksred_1, \ldots, \ksred_{t_\red})$. Assume $\Pi_{\iopp}$ is a perfectly complete $t_{\iopp}$-round IOP  from $\LIN$ (i.e.\ an IOR from $\LIN$ to the trivial relation $\bot$) with round-by-round knowledge soundness with relaxation $(\LIN^{\delta}, \bot)$, and errors $$\ksiopp_1,\ldots, \ksiopp_{t_\iopp}.$$ 
 %
-    Then, if $\degevalfield>0$, \cref{c:core_iop} is a perfectly complete $1+t_\red+t_\iopp$ IOP for $\LinBitsDual$ with round-by-round knowledge soundness with relaxation $(\LinBitsDual^{\delta}, \bot)$, with errors $$\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]},$$ where
+    Then, if $\degevalfield>0$, \cref{c:core_iop} is a perfectly complete $(1+t_\red+t_\iopp)$-round IOP for $\LinBitsDual$ with round-by-round knowledge soundness with relaxation $(\LinBitsDual^{\delta}, \bot)$, with errors $$\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]},$$ where
     %
     $$
-    \kappa_0 = \frac{\degevalfield}{q_{\min}} + \frac{\log(\codedim_1 +1) + \log(q-1)}{|\cP|\cdot \log(q_{\min})}
+    \kappa_0 = \frac{\degevalfield}{q_{\min}} + \frac{\log(\codedim_1 +1) + \log(q-1)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}
     $$
     and $q_{\min}$ is the smallest prime in the set of sampleable primes $\cP$ from Step 3 of \cref{c:core_iop}. 
 
-    If $\degevalfield=0$, i.e.\ $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$ IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}$.
+    If $\degevalfield=0$, i.e.\ $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$ IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $(\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}$.
 \end{theorem}
 
 
@@ -851,9 +851,9 @@ $$
 See \cref{s:parameter_instantiation} for comments on how to choose close-to-optimal tensor split dimensions for $\uu^{(1)}$ and $\uu^{(2)}$.
 \end{remark}
 
-\begin{theorem}
+\begin{theorem}\label{t:thm_LinModFieldBits}
     Under the same hypotheses and notation as in \cref{t:thm_core_IOPP}, if $\degevalfield>0$, \cref{c:LinModFieldBin} is a perfectly complete $1+t_\red + t_\iopp$ IOP for $\LinModFieldBin$ with round-by-round knowledge soundness with relaxation $(\LinModFieldBin^{\delta},\bot)$ and errors $$\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]},$$ where $$
-    \kappa_0 = \frac{\degevalfield}{q_{\min}} + \frac{\log(\codedim_1 +1) + \log(q-1)}{|\cP|\cdot \log(q_{\min})}.
+    \kappa_0 = \frac{\degevalfield}{q_{\min}} + \frac{\log(\codedim_1 +1) + \log(q-1)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}.
     $$
     If $\degevalfield=0$, i.e.\ $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$ IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}$.
 \end{theorem}
@@ -1064,12 +1064,13 @@ using an IOP for constrained codes. Concretely, the prover commits to the vector
 
 
 \section{\ftwoz  for PIMSAT}
+\john{Can't we operate on multiple polynomial rings, namely $Z[X]$ and $F_2[X]$} \albert{Yes but we don't want the complexity of doing so}
 
 Throughout this section $R$ denotes either $\ZZ$ or a finite field $\FF$ with $q^e$ elements.
 
 \subsection{Polynomial Ideal Membership Satisfiability (PIMSAT)}
 
-\albertimportant{todo: add the virtualization formalism}
+\albertimportant{todo: add the virtualization formalism. }
 
 In this section we describe a variation of the PESAT  relation (cf.\ \cref{d:pesat}), called \emph{Polynomial Ideal Membership Satisfiability (PIMSAT)}. It generalizes PESAT by allowing polynomial constraints over polynomial rings (or modules), and by replacing equality to zero by ideal membership. PIMSAT is a subset of the UCS relation from \cite{zincplus} (cf.\ \cref{r:pimsat_vs_ucs}). %On the other hand, PIMSAT operates exclusively on the polynomial ring $\ZZ[X]$.
 
@@ -1214,6 +1215,7 @@ The claim \eqref{e:iop_ideal_eq} is replaced by
    \pi_q(Q^{(i)}(\zz)) \in \pi_q(\ideal_i) \qquad  \text{ for all } \zz\in \bits^{n'}, \ i \in [\iota].
 \end{equation}
 Recall (cf.\ \cref{d:projections}) that $\pi_q$ is coefficient-wise reduction modulo $q$ when $\ring=\ZZ$, and it is the identity map when $\ring$ is a field $\FF$ of characteristic $q$.
+\albert{Completeness and soundness result is written as if this round always kicks in}
 \item The verifier samples and sends a random point $\rr\in \KK^{n'}$.
 \end{itemize}
 \item \textbf{Round 2: Ideal check}
@@ -1274,8 +1276,61 @@ Prover and verifier now use \cref{c:LinModFieldBin} to prove  \eqref{e:iop_final
 \begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:iop_pimsat}] Assume that, for every field $\KK$ sampleable in Round 1 of \cref{c:iop_pimsat} (or for the fixed field $\KK$ if $\ring = \FF_{q^e}$), $\Pi_{\KK}$ is a $t_{\Pi_{\KK}}$-round perfectly complete IOR from $\PIMSAT(\KK, \pp)$ to $\LIN(\KK)$ with round-by-round knowledge soundness with relaxation $(\PIMSAT(\KK, \pp), \LIN(\KK))$ (so, the relaxed relations are the same as the original relations) and errors $\kappa_{\Pi_\KK, 1}, \ldots, \kappa_{\Pi_\KK, t_{\Pi_\KK}}$. 
 
 
-Let $\delta\in (0,1)$ be a proximity parameter. Assume the hypotheses of \cref{t:thm_core_IOPP,t:thm_LinModFieldBits} $|\comfield|-1 \geq (\codedim_1+1)\cdot (q_{\max} -1)$, where $q_{\max}$ is the largest prime in $\cP$ (cf.\ \cref{c:core_iop}). Assume \cref{c:LinModFieldBin} satisfies the hypothesis of \c used in Phase 4 of \cref{c:iop_pimsat} uses a 
+Let $\delta\in (0,1)$ be a proximity parameter. Assume the notation and hypotheses of \cref{t:thm_core_IOPP,t:thm_LinModFieldBits}, so that $|\comfield|-1 \geq (\codedim_1+1)\cdot (q_{\max} -1)$, where $q_{\max}$ is the largest prime in $\cP$ (cf.\ \cref{c:core_iop}), and $\cref{c:LinModFieldBin}$ is a perfectly complete $(1+t_\red +t_\iopp)$-round IOP\footnote{Or $t_\red +t_\iopp$-round IOP of $\KK$ is a prime field} for $\LinModFieldBin$ with  round-by-round knowledge soundness with relaxation $(\LinBitsDual^{\delta}, \bot)$, with errors $$\kappa_{\mathsf{lift-proj}}, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]},$$ where
+    %
+    $$
+    \kappa_{\mathsf{lift-proj}} = \frac{\degevalfield}{q_{\min}} + \frac{\log(\codedim_1 +1) + \log(q-1)}{|\cP|\cdot \lfloor\rfloor}
+    $$
+    and $q_{\min}$ is the smallest prime in the set of sampleable primes $\cP$ from Step 3 of \cref{c:core_iop}. 
+
+    Then \cref{c:iop_pimsat} is a perfectly complete $(2+t_\KK + 1 + t_{\red} +t_\iopp)$-IOP for $\PIMSAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{\ideal})$ with round-by-round knowledge soundness with relaxation $(\PIMSAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{\ideal}), \bot)$ (so, without relaxation) and errors 
+    %
+    $$
+    \kappa_1, \kappa_2, (\kappa_{\Pi_\KK,i})_{i\in [t_{\Pi_\KK}]}, \kappa_{\mathsf{lift-proj}}, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}, 
+    $$
+    where \albert{Unify $q_{\min}$ above with $|\KK_{\min}|$}
+    %
+    \begin{align*}
+    \kappa_1 &=  \frac{B_{\max}\cdot \left(1+\max\left(\nabla(\pp) - \max_{i\in [\iota]} \deg(\ideal_i),0\right)\right)}{|\cS|\cdot \lfloor\log(|\KK_{\min}|)\rfloor} + \frac{1}{|\KK_{\min}|} \\
+    \kappa_2 &= \frac{\nabla(\pp)}{|\KK_{\min}|} + \frac{1}{|\KK_{\min}|},
+    \end{align*}
+    %
+    where $\cS$ is the set of finite fields   sampleable at Round 1 of \cref{c:iop_pimsat};   $\KK_{\min}$ is the field in $\cS$ with the smallest size; $\deg(\ideal_i)$ is the degree of a generator of $\ideal_i$; and \begin{align*}\nabla(\pp)&\defeq \max_{j\in [\numrows], i\in\iota}\{\deg_X(\pp_{j}^i) + (\moduledegree-1)\cdot \max_{t\in [\inplen+\codedim\textit{}]}\deg_{Y_t}(\pp_j^i)\} + \moduledegree,\\
+        B_{\max} &\defeq \max_{\bb\in \bits^{n'}, i\in [\iota]} \log(|\pp_{\bb}^{(i)}(\xx,\ff)| \rVert_{\infty}). 
+    \end{align*}
+    %
 \end{theorem}
+
+
+We will need the following result:
+\begin{lemma}[Ideal membership is preserved under modular reduction]\label{lem:ideals_modular projection}
+Let $d,B\ge 1$and $f,h\in\mathbb{Z}_{\leq B}^{<d}[X]$, with $h$ either $0$ or a nonzero monic polynomial. Let $\cP$ be a set of primes. Let $I_h$ be the ideal generated by $h$ in $\ZZ[X]$. Then
+%
+\[
+\Pr_{p\leftarrow\mathcal{P}}
+\Big[\;\pi_p(f)\in \pi_p(\ideal_h)\ \wedge\ f\notin \ideal_h\;\Big]
+\;<\;\frac{B\cdot (1 +\max(\deg(f)-\deg(h)+1,0)}{|\mathcal{P}|\cdot \lfloor\log(q_{\min})\rfloor}.
+\]
+where $q_{\min}\defeq \min \cP$.
+\end{lemma}
+\begin{proof}
+Assume  $f\not\in\ideal_h$. In particular
+$f\neq 0$. 
+ If $h=0$, then  $\pi_p(\ideal_h)=\{0\}$, and so
+ $\pi_p(f)=0$. Since $\|f\|_\infty\leq 2^{B}-1$, there are at most $B/\lfloor \log(q_{\min})\rfloor$ primes $p$ such that $\pi_p(f)=0$, as needed.
+
+If $h\neq0$ and $\deg(h)=1$, then $h=1$ (since $h$ is monic) and so $f\in\ideal_h=\ZZ[X]$, a contradiction. Assume thus that $\deg(h)\geq 1$. Let $Q,R\in\mathbb{Z}[X]$ be such that
+$f=h\cdot Q+R$ with $\deg(R)<\deg(h)$ (such \emph{integer} polynomials exist because $h$ is monic). Since
+$f\notin\ideal_h$, we have $R\neq0$.
+By \cref{?}, $$\|R\|_\infty \le\|f\|_\infty\cdot (1 +\|h\|_\infty)^{\max(\deg(f) - \deg(h) +1,0)}.$$ 
+Now since $\deg(\pi_p(h))=\deg(h)$ (because $h$ is monic) we have $ \deg(\pi_q(h))> \deg(R)\geq \deg(\pi_p(R))$.  The condition $\pi_p(f)\in \pi_p(\ideal_h)$ thus implies that $\pi_p(R)=0$.  There are at most $\log_2(\|R\|_\infty))/\lfloor \log q_{\min} \rfloor$ primes dividing the coefficients of $R$. Hence
+%
+$$\Pr_{p\gets \cP}[f\not\in \ideal_h \ \wedge \pi_p(f)\in \pi_p(\ideal_h)] \leq \frac{\log_2(\|R\|_\infty)}{|\cP|\cdot \lfloor \log q_{\min} \rfloor} \leq \frac{B + \max(\deg(f)-\deg(h)+1,0)\cdot B}{|\cP|\cdot \lfloor \log q_{\min}\rfloor},$$
+as needed.
+%
+\end{proof}
+
+
 \begin{proof}
     \albert{Sketch} The plan: the above IOP is the result of compiling a PIOP $\Pi_{\mathsf{PIOP}}$ (given by Steps 2 to 8) with an IOP  $\Pi_{\FF 2 \ZZ}$ for committing to $\bff \in \ringtwobounds{B}{\moduledegree}[X]$ and proving 
     $\mle{\pi(\bff)}(\rr^{(2)}) = \mu$. The PIOP $\Pi_{\mathsf{PIOP}}$ is a particular case of the Zinc+ PIOP, so RBR soundness and completeness can be obtained from there \albertimportant{Would be preferable to have a self-contained paper (maybe?) so write the proof in the appendix, briefly}. The IOP $\Pi_{\FF 2 \ZZ}$ has already been studied, except that we started with $\bff$ containing only bits, so we need to add a wrapper around it \albertimportant{todo}.
