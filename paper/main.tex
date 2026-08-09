@@ -1298,12 +1298,12 @@ Let $\delta\in (0,1)$ be a proximity parameter. Assume the notation and hypothes
     where \albert{Unify $q_{\min}$ above with $|\KK_{\min}|$}
     %
     \begin{align*}
-    \kappa_1 &=  \frac{B_{\max}\cdot \left(1+\max\left(\nabla(\pp) - \max_{i\in [\iota]} \deg(\ideal_i),0\right)\right)}{|\cS|\cdot \lfloor\log(|\KK_{\min}|)\rfloor} + \frac{1}{|\KK_{\min}|} \\
+    \kappa_1 &=  \frac{B_{\max}\cdot \left(1+\max\left(\nabla(\pp) - \min_{i\in [\iota]} \deg(\ideal_i),0\right)\right)}{|\cS|\cdot \lfloor\log(|\KK_{\min}|)\rfloor} + \frac{1}{|\KK_{\min}|} \\
     \kappa_2 &= \frac{\nabla(\pp)}{|\KK_{\min}|} + \frac{1}{|\KK_{\min}|},
     \end{align*}
     %
     where $\cS$ is the set of finite fields   sampleable at Round 1 of \cref{c:iop_pimsat};   $\KK_{\min}$ is the field in $\cS$ with the smallest size; $\deg(\ideal_i)$ is the degree of a generator of $\ideal_i$; and \begin{align*}\nabla(\pp)&\defeq \max_{j\in [\numrows], i\in\iota}\{\deg_X(\pp_{j}^i) + (\moduledegree-1)\cdot \max_{t\in [\inplen+\codedim\textit{}]}\deg_{Y_t}(\pp_j^i)\} + \moduledegree,\\
-        B_{\max} &\defeq \max_{\bb\in \bits^{n'}, i\in [\iota]} \log(|\pp_{\bb}^{(i)}(\xx,\ff)| \rVert_{\infty}). 
+        B_{\max} &\defeq \max_{\bb\in \bits^{n'}, i\in [\iota]} \lceil\log(|\pp_{\bb}^{(i)}(\xx,\ff)| \rVert_{\infty})\rceil. 
     \end{align*}
     %
 \end{theorem}
@@ -1615,7 +1615,8 @@ $$
 \PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal})  = \PIMSAT, \qquad \PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}, \cC, \pack)  = \PIMSAT(\cC,\pack).
 $$
 %
-\begin{proof}[Proof of \cref{t:thm_iop_pimsat}]
+
+
 We build  three IORs $\Pi_1,\Pi_2,\Pi_3$ whose composition closely mimics \cref{c:iop_pimsat}. 
 
 As usual, for the relations $\Relation$ that contain the constraint $f=\Enc_{\cC}\circ \pack \circ \pi_2(\mathsf{bits}(\bff))$, we also consider their \emph{relaxed} version $\Relation^\delta$, where such constraint is replaced by $\hamming(fm\Enc_{\cC}\circ \pack \circ \pi_2(\mathsf{bits}(\bff)))<\delta$.
@@ -1660,14 +1661,14 @@ Due to \cref{l:Pi_123_is_good}, it  suffices to show that $\Pi_{123}$ is perfect
 \begin{lemma}[Completeness and soundness of $\Pi_1$]\label{l:completeness_soundness_Pi_1}
     Let $\delta\in (0,1)$. The IOR $\Pi_1$ is a perfectly complete $2$-round IOR from $\PIMSAT(\cC,\pack)$ to $\PESAT(\ringtwobounds{B}{\moduledegree}, \KK,\hat{\pp}, \pi,  \cC, \pack)$ with round-by-round knowledge soundness  with relaxation $(\PIMSAT(\cC,\pack)^\delta,\PESAT(\ringtwobounds{B}{\moduledegree}, \KK,\hat{\pp}, \pi,  \cC, \pack)^\delta)$ and with errors 
     \begin{align*}
-    \kappa_1 &=  \frac{B_{\max}\cdot \left(1+\max\left(\nabla(\pp) - \max_{i\in [\iota]} \deg(\ideal_i),0\right)\right)}{|\cS|\cdot \lfloor\log(|\KK_{\min}|)\rfloor} + \frac{1}{|\KK_{\min}|} \\
+    \kappa_1 &=  \frac{B_{\max}\cdot \left(1+\max\left(\nabla(\pp) - \min_{i\in [\iota]} \deg(\ideal_i),0\right)\right)}{|\cS|\cdot \lfloor\log(|\KK_{\min}|)\rfloor} + \frac{1}{|\KK_{\min}|} \\
     \kappa_2 &= \frac{\nabla(\pp)}{|\KK_{\min}|} + \frac{1}{|\KK_{\min}|},
     \end{align*}
 \end{lemma}
 \begin{proof}
     Indeed, let $\inp=\xx, \oracle=f$ be an input and oracle for $\PIMSAT(\cC,\pack)$. For any $\ww$ define $\kstate(\inp,f, \ww)=1$ if and only if $(\inp,f,\ww)\in \PIMSAT(\cC, \pack)^\delta$. Given a full transcript $\tr=(\bot, (\KK,\rr),  (u_1,\ldots, u_\iota),(\theta_1,\ldots, \theta_\iota, \alpha))$, define $\kstate(\inp, f, \tr, \ww) = 1$ if and only if $(\pi(\xx), f, \pi(\bff))\in \PESAT(\ringtwobounds{B}{\moduledegree}, \KK, \hat{\pp},  \pi, \cC,\pack)^\delta$. For partial transcripts where the prover $\tr$ is about to send a message $m$, let $\kstate(\inp,f,\tr, m, \ww) = \kstate(\inp, f,\tr,\ww)$. 
 
-    We now define  $\kstate(\inp, f, \tr, \ww)$ where $\tr$ is nonempty and such that prover is about to move.  The only undefined setting is when $\tr=(\bot, (\KK,\rr))$. In this case we define $\kstate(\inp, f, \tr, \ww) = 1$ if and only if $$\Delta(f,\Enc_\cC\circ \pack \circ \pi_2(\mathsf{bits}(ww)) \geq \delta$$ and $\pi_q(Q_{\ww}^{(i)})(\rr)\in \pi_q(\ideal_i)$ for all $i\in [\iota]$,  where 
+    We now define  $\kstate(\inp, f, \tr, \ww)$ where $\tr$ is nonempty and such that prover is about to move.  The only undefined setting is when $\tr=(\bot, (\KK,\rr))$. In this case we define $\kstate(\inp, f, \tr, \ww) = 1$ if and only if $$\Delta(f,\Enc_\cC\circ \pack \circ \pi_2(\mathsf{bits}(ww)) < \delta$$ and $\pi_q(Q_{\ww}^{(i)})(\rr)\in \pi_q(\ideal_i)$ for all $i\in [\iota]$,  where 
     %
     $$
     Q_{\ww}^{(i)}(\mathbf{Z})=\sum_{\bb\in\bits^{n'}}\pp_{\bb}^{(i)}(\xx,\ww) \cdot \eq(\bb, \mathbf{Z}) \in \ring[X]. 
@@ -1692,10 +1693,56 @@ Observe that $\kstate$ satisfies the three conditions of \cref{def:knowledge-sta
 % 
 is the probability that 
 %
-$\pi_q(Q_{\ww}^{(i)})(\rr) \in \pi_q(\ideal_i)$ for all $i\in [\iota]$ and $\Delta(f, \Enc_{\cC}\circ \pack \circ \pi_2(\mathsf{bits}(\ww))<\delta$ while at the same time $\pp_\bb^{(i)}\not\in \ideal_i$ for some $\bb\in \bits^{n'}$ and $i\in [\iota]$, or $\Delta(f, \Enc_{\cC}\circ \pack \circ \pi_2(\mathsf{bits}(\ww))\geq\delta$. Clearly, the latter condition cannot hold, hence assume $\pp_\bb^{(i)}\not\in \ideal_i$ for some $\bb\in \bits^{n'}$ and $i\in [\iota]$.
+\begin{equation}\label{e:boring_proof_eq1}\pi_q(Q_{\ww}^{(i)})(\rr) \in \pi_q(\ideal_i) \text{ for all } i\in [\iota] \text{ and } \Delta(f, \Enc_{\cC}\circ \pack \circ \pi_2(\mathsf{bits}(\ww))<\delta
+\end{equation} while at the same time \begin{equation}\label{e:boring_proof_eq2}\pp_\bb^{(i)}(\xx,\ww)\not\in \ideal_i \text{ for some } \bb\in \bits^{n'} \text{ and } i\in [\iota]\end{equation} or $\Delta(f, \Enc_{\cC}\circ \pack \circ \pi_2(\mathsf{bits}(\ww))\geq\delta$. Clearly, the latter condition cannot hold if \eqref{e:boring_proof_eq1}holds; hence we will study the probability  that \eqref{e:boring_proof_eq1}and \eqref{e:boring_proof_eq2} hold simultaneously.  We ultimately want to prove that $P_1 \leq \kappa_1$.
 
+Let $E_1$ be the event that \eqref{e:boring_proof_eq2} holds for some $\bb$ and $i$, and $\pi_q(\pp_\bb^{(i)})\in \pi_q(\ideal_i)$ for all $\bb,i$. By \cref{lem:ideals_modular projection}, \albertimportant{I'm not forgetting a union bound here right?}
+%
+$$
+\Pr_{\KK,\rr}[E_1] \leq \max_{\bb\in \bits^{n'},\iota\in[\iota]}\left\{\frac{B'\cdot (1 +\max(\deg(\pp_{\bb}^{i}(\xx,\bff))-\deg(\ideal_{i_0})+1,0)}{|\mathcal{P}|\cdot \lfloor\log(q_{\min})\rfloor}\right\},
+$$
+where $\deg(\ideal_{i})$ is the degree of a generator of $\ideal_{i}$; and $B'$ is $\lceil\log(\|\pp_{\bb}^{(i)} (\xx,\bff)\|_\infty)\rceil$. We have, letting $d_{\min}=\min_{i\in [\iota]} \deg(\ideal_i)$, \albert{more detail?}
+%
+\begin{align*}
+&\max_{\bb\in \bits^{n'},\iota\in[\iota]}\left\{\deg(\pp_{\bb}^{i}(\xx,\bff))-d_{\min}\right\} \\  &\qquad\qquad \qquad \leq\nabla(\pp) -d_{\min}= \max_{\bb\in \bits^{n'}, i\in[\iota]}\{\deg_X(\pp_{\bb}^i) + (\moduledegree-1)\cdot \max_{t\in [\inplen+\codedim\textit{}]}\deg_{Y_t}(\pp_{\bb}^i)\} + \moduledegree -d_{\min},\\
+& \max_{\bb\in \bits^{n'}, i\in [\iota]} B' = \max_{\bb\in \bits^{n'}, i\in [\iota]} \lceil\log(|\pp_{\bb}^{(i)}(\xx,\ff)| \rVert_{\infty})\rceil = B_{\max}.
+\end{align*}
+%
+Now, let $E$ be the event that both \eqref{e:boring_proof_eq1} and \eqref{e:boring_proof_eq2} hold. Then
+%
+$$
+\Pr_{\KK,\rr}[E] \leq \Pr_{\KK, \rr}[E \ | \ \neg E_1] + \Pr_{\KK,\rr}[E_1].
+$$
+%
+We next analyze $\Pr_{\KK, \rr}[E \ | \ \neg E_1]$. If $E_1$ does not occur, then the  multilinear polynomial $\pi_q(Q_\ww^{(i)})(\ZZZ)$ is not the zero polynomial in $\pi_q(R)[X]$. On the other hand, for $E$ to occur, we need  $\pi_q(Q_\ww^{(i)})(\rr)=0$ in $\pi_q(R)$ \albert{how to denote}. Hence, by Schwartz-Zippel lemma,  $\Pr_{\KK, \rr}[E \ | \ \neg E_1] \leq 1/|\KK_{\min}|$. It follows that 
+%
+$
+P_1 \leq \kappa_1,
+$ as needed.
 
+Finally, we bound the following probability, corresponding to the round-by-round knowledge soundness of the second round of $\Pi_1$.
+\begin{align*}
+  P_2\defeq &\Pr_{(\theta_i)_{i\in[\iota], \alpha}}\!\left[
+  \exists\,\kswit \ \left| \ \begin{array}{l}
+  \wedge\ \kstate\bigl(\inp,f,\bot,(\KK,\rr), (u_i)_{i\in[\iota]},\ww\bigr)=0\\
+  \wedge\ \kstate(\inp,f, \bot,(\KK,\rr),(u_i)_{i\in [\iota]},((\theta_i)_{i\in[\iota]},\alpha), \ww)=1
+  \end{array}
+  \right.\right] 
+\end{align*}
+%
+By definition, $\kstate(\inp,f, \bot,(\KK,\rr),(u_i)_{i\in [\iota]},((\theta_i)_{i\in[\iota]},\alpha), \ww)=1$ if and only if $(\pi(\inp), f, \pi(f))\in \PESAT(\ringtwobounds{B}{\moduledegree}, \KK, \hat{\pp}, \cC,\pack)^\delta$ and verifier does not abort; while $\kstate\bigl(\inp,f,\bot,(\KK,\rr), (u_i)_{i\in[\iota]},\ww\bigr)=\kstate\bigl(\inp,f,\bot,(\KK,\rr),\ww\bigr)=0$  if and only if 
+$\Delta(f,\Enc_\cC\circ \pack \circ \pi_2(\mathsf{bits}(\ww)) \geq \delta$ or $\pi_q(Q_{\ww}^{(i)})(\rr)\not\in \pi_q(\ideal_i)$ for some $i\in [\iota]$.   Let $E$ be the event that $\kstate(\inp,f, \bot,(\KK,\rr),(u_i)_{i\in [\iota]},((\theta_i)_{i\in[\iota]},\alpha), \ww)=1$ and $\pi_q(Q_{\ww}^{(i)})(\rr)\not\in \pi_q(\ideal_i)$ for some $i\in [\iota]$. Again, we only need to bound $\Pr_{(\theta_i),\alpha}[E]$, since $\kstate(\inp,f, \bot,(\KK,\rr),(u_i)_{i\in [\iota]},((\theta_i)_{i\in[\iota]},\alpha), \ww)=1$ forces $\Delta(f,\Enc_\cC\circ \pack \circ \pi_2(\mathsf{bits}(\ww)) < \delta$.
 
+Now, if $E$ occurs then
+$$
+\sum_{i\in [\iota]}\sum_{\bb\in \bits^{n'}}\theta_i\cdot \pi(\pp_\bb^{(i)})(\pi(\xx),\pi(\ww)) \cdot \eq(\bb, \rr) = \sum_{i\in [\iota]} \theta_i \cdot \pi(u_i) \in \KK,
+$$
+and at the same time 
+$$
+\pi_q(Q_{\ww}^{(i)})(\rr) = \sum_{\bb\in\bits^{n'}}\pp_{\bb}^{(i)}(\xx,\bff) \cdot \eq(\bb,\rr) \not\in \pi_q(\ideal_i)\subseteq \pi_q(R)[X]
+$$
+\albert{notation for $\pi_q(R)$?} for some $i\in [\iota]$.
+%
 \end{proof}
 
 %Rounds 1 and 2 of \cref{c:iop_pimsat} follow this IOR: the only difference between the rounds of \cref{c:iop_pimsat} and $\Pi_1$ is the specification of the input and output of the IOR. Besides those, the prover and verifier operate exactly the same. Further, in \cref{c:iop_pimsat}, the prover and verifier have both the data that comprises the input and output to $\Pi_1$. \albert{Is this enough or should I make the $\Pi_i$ prover and verifier simulate provers and verifiers of \cref{c:iop_pimsat}?}
@@ -1707,7 +1754,6 @@ $\pi_q(Q_{\ww}^{(i)})(\rr) \in \pi_q(\ideal_i)$ for all $i\in [\iota]$ and $\Del
 
 %Once we have established our claims regarding $\Pi_2$, the result then follows from  the composition of IORs result (cf.\ \cref{prop:composed}).
 %
-\end{proof}
 
 \subsubsection{Proof of \cref{l:Pi_123_is_good}}\label{a:Pi_123_is_good}
 
