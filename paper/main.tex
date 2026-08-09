@@ -391,7 +391,7 @@ A $k$-round IOR $\Pi$ has \emph{round-by-round knowledge soundness with relaxati
   \wedge\ \kstate(\inp,\oracle,\tr\Vert\verifiermsg_j,\kswit)=1
   \end{array}
   \right.\right]
-  \ \le\ \knowledgeerror_j(\idx,\inp).
+  \ \le\ \knowledgeerror_j(\inp,\oracle).
 \]
 \end{definition}
 
@@ -1355,7 +1355,7 @@ Let $\delta\in (0,1)$. Then there is an IOR $\Pi_\KK'$ from $\PESAT(\ringtwoboun
 \end{proof}
 
 \begin{proof}[Proof of \cref{t:thm_iop_pimsat}]
-We build  four IORs $\Pi_1,\Pi_2,\Pi_3,\Pi_4$ whose composition closely mimics \cref{c:iop_pimsat}. The first one, $\Pi_1$, is a $1$-round IOR from $\PIMSAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{\ideal})$ to  $\PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp, \bm{\ideal}, \cC, \pack)$, where  $\PIMSAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{\ideal}, \cC, \pack)$ is the encoded version of $\PIMSAT(\ringtwobounds{B}{\moduledegree})$, defined as 
+We build  four IORs $\Pi_0,\Pi_1,\Pi_2,\Pi_3$ whose composition closely mimics \cref{c:iop_pimsat}. The first one, $\Pi_1$, is a $1$-round IOR from $\PIMSAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{\ideal})$ to  $\PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp, \bm{\ideal}, \cC, \pack)$, where  $\PIMSAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{\ideal}, \cC, \pack)$ is the \emph{encoded version} of $\PIMSAT(\ringtwobounds{B}{\moduledegree})$, defined as 
 $$
 \PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}, \cC, \pack) 
 %\PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}) 
@@ -1377,21 +1377,73 @@ For ease of notation we write
 $$
 \PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal})  = \PIMSAT, \qquad \PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}, \cC, \pack)  = \PIMSAT(\cC,\pack).
 $$
-\paragraph{Description of $\Pi_0$.} In $\Pi_0$, given $(\inp,\bot, \wit)\in \PIMSAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{\ideal})$ as input, the prover sends $f=\Enc_{\cC}\circ \pack \pi_2(\mathsf{bits}(\bff))$ to the verifier, and the verifier replies with an empty message. Then the IOR outputs $(\inp,f,\wit)\in \PIMSAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{\ideal}, \cC, \pack)$. The first item in Round 1 of \cref{c:iop_pimsat} follows precisely this IOR: prover computes and sends $f$, and prover and verifier are left with $(\inp,f)$ and $(\inp,f,\bff)\in \PIMSAT(\cC, \pack)$.
+\paragraph{Description of $\Pi_1$.} In $\Pi_0$, given $(\inp,\bot, \wit)\in \PIMSAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{\ideal})$ as input, the prover sends $f=\Enc_{\cC}\circ \pack \pi_2(\mathsf{bits}(\bff))$ to the verifier, and the verifier replies with an empty message. Then the IOR outputs $(\inp,f,\wit)\in \PIMSAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{\ideal}, \cC, \pack)$. The first item in Round 1 of \cref{c:iop_pimsat} follows precisely this IOR: prover computes and sends $f$, and prover and verifier are left with $(\inp,f)$ and $(\inp,f,\bff)\in \PIMSAT(\cC, \pack)$.
 
 
 \paragraph{Description of $\Pi_1$.} The IOR $\Pi_1$ is a two-round IOR from $\PIMSAT(\cC,\pack)$ to $\PESAT(\ringtwobounds{B}{\moduledegree},\KK, \hat{\pp},\pi,\cC,\pack)$ where verifier and prover receive $(\inp, f)$ and $(\inp, f,\bff)\in \PIMSAT(\cC,\pack)$ as inputs, respectively. In the first round, prover and verifier simulate Round 1 of \cref{c:iop_pimsat}, skipping the first item (computing and sending the encoding $f$ of $\bff$), since $f$ is already in the input of the prover and verifier. Note that the prover does not send any first round message (or it sends an empty message). For the second round of $\Pi_1$, prover and verifier simulate Round 2 of \cref{c:iop_pimsat}. At the end of $\Pi_1$, prover and verifier output $$(\pi(\xx),f,\bff)\in \PESAT(\ringtwobounds{B}{\moduledegree},\KK, \hat{\pp},\pi,\cC,\pack).$$
 %
 
 \paragraph{Description of $\Pi_2$.} 
-The IOR $\Pi_2$ is an IOR from $\PESAT(\ringtwobounds{B}{\moduledegree},\KK, \hat{\pp},\pi,\cC,\pack)$ to $\LIN(\ringtwobounds{B}{\moduledegree},\KK, \hat{\pp},\cC,\pack)$. Prover and verifier receive $(\pi(\xx),f)$ and $(\pi(\xx),f,\bff)$ as inputs. Then they simulate Phase 3 of \cref{c:iop_pimsat}, namely they simulate  
+The IOR $\Pi_2$ is an IOR from $\PESAT(\ringtwobounds{B}{\moduledegree},\KK, \hat{\pp},\pi,\cC,\pack)$ to $\LIN(\ringtwobounds{B}{\moduledegree},\KK, \hat{\pp},\cC,\pack)$. Prover and verifier receive $(\pi(\xx),f)$ and $(\pi(\xx),f,\bff)$ as inputs. Then they simulate Phase 3 of \cref{c:iop_pimsat}, namely they apply the IOR
+$\Pi_\KK'$ given by \cref{l:lift_pesat_to_encodings}, where $\Pi_\KK$ is the IOR applied in Item 3 of \cref{c:iop_pimsat}. By definition $\Pi_\KK'$ is an IOR from $\PESAT(\ringtwobounds{B}{\moduledegree},\KK, \hat{\pp},\pi, \cC,\pack)$ to $\LIN(\ringtwobounds{B}{\moduledegree},\KK,\pi,\cC,\pack)$, perfectly complete, with $t_\KK$ rounds, and with round-by-round knowledge with relaxation  $\PESAT(\ringtwobounds{B}{\moduledegree},\KK, \hat{\pp}, \pi,\cC,\pack)^\delta,\LIN(\ringtwobounds{B}{\moduledegree},\KK,\pi,\cC,\pack)^\delta)$ and with errors $(\kappa_{\Pi_\KK,i})_{i\in t_{\KK}}$ 
 
------
-
-$\Pi_\KK'$ given by \cref{l:lift_pesat_to_encodings}, where $\Pi_\KK$ is the IOR applied in Item 3 of \cref{c:iop_pimsat}. By definition $\Pi_\KK'$ is an IOR from $\PESAT(\ringtwobounds{B}{\moduledegree},\KK, \hat{\pp},\pi, \cC,\pack)$ to $\LIN(\ringtwobounds{B}{\moduledegree},\KK,\pi,\cC,\pack)$, perfectly complete, with $t_\KK$ rounds, and with round-by-round knowledge with relaxation  $\PESAT(\ringtwobounds{B}{\moduledegree},\KK, \hat{\pp}, \pi,\cC,\pack)^\delta,\LIN(\ringtwobounds{B}{\moduledegree},\KK,\pi,\cC,\pack)^\delta)$ and with errors $(\kappa_{\Pi_\KK,i})_{i\in t_{\KK}}$ \albert{Again, need to argue better why \cref{c:iop_pimsat} is running this IOR really? Or simulate it}.
-
+\paragraph{Description of $\Pi_3$}
 
 
+The IOR $\Pi_3$ is an IOP for $\LIN(\ringtwobounds{B}{\moduledegree},\KK,\pi,\cC,\pack)$. It consists  in applying Phase 4 of \cref{c:iop_pimsat}, i.e.\ simulating \cref{c:LinModFieldBin} with inputs $((\vv,\mu), f,\bff)$.
+
+\paragraph{Completeness and round-by-round knowledge soundness of the composition of $\Pi_1,\ldots, \Pi_4$ implies that of \cref{c:iop_pimsat}.}
+
+Let $\Pi_{123}$ be the composition of $\Pi_1, \Pi_2, \Pi_3$. Then $\Pi_{123}$ is an IOP for $\PIMSAT(\cC,\pack)$. The prover and verifier of $\Pi_{123}$ proceed in exactly the same way as the prover and verifier of \cref{c:iop_pimsat} after the prover sends $f$ in Item 1 of Round 1 (except that in $\Pi_{123}$ the prover sends an initial empty message).  Let $\Pi_{0123}$ be the composition of $\Pi_0,\ldots, \Pi_3$. 
+
+If $\Pi_{0123}$ is perfectly complete, then clearly \cref{c:iop_pimsat} is as well \albert{more details?}. Further,  transcripts between $\Pi_{0123}$ and \cref{c:iop_pimsat} are the same (except that the prover in $\Pi_{0123}$ sends an empty first message when the prover in \cref{c:iop_pimsat} sends the encoding $f$). From any knowledge state function with relaxation $\kstate_{\Pi_{0123}}$ for $\Pi_{0123}$, we  define a state function $\kstate$ for \cref{c:iop_pimsat} as follows: let $\tr$ be a partial  or full transcript of \cref{c:iop_pimsat}. If $\tr$ is not empty, then $\tr=(f,\tr')$ for some $\tr'$ and some first prover message $f$. Then we define
+%
+$$
+\kstate(\inp,\bot, (f,\tr'), \ww) = \kstate_{\Pi_{0123}}(\inp, f, \tr', \ww).$$ 
+%
+If $\tr$ is empty, we define
+%
+$$
+\kstate(\inp,\bot, \ww) = 1 \ \Leftrightarrow \ (\inp,\bot,\ww) \in \PIMSAT.
+$$
+%
+Assume $\Pi_{0123}$ has round-by-round knowledge soundness with relaxation $(\PIMSAT(\cC,\pack)^\delta,\bot)$ with errors $(\kappa_{j}')_{j\in [2+t_\KK, 1+ t_\red +t_\iopp]}$, with respect to the state function $\kstate_{\Pi_{0123}}$. We claim that then \cref{c:iop_pimsat} has round-by-round knowledge soundness without relaxation, with errors $(\kappa_{j}')_{j\in [2+t_\KK, 1+ t_\red +t_\iopp]}$, with respect to the state function $\kstate$ and an extractor $\cE_{\Pi_{0123}}$.
+
+Indeed, note first that $\kstate$ satisfies the first two conditions of \cref{def:knowledge-state-function}, i.e.\ ``Empty transcript'' and ``Prover moves''. Regarding the third ycondition, ``Full transcript'', let $(f,\tr')$ be a full transcript for \cref{c:iop_pimsat}.  Then for all $\inp,\ww$,
+%
+$$
+\kstate(\inp,\bot,(f,\tr'),\ww) = \kstate_{\Pi_{0123}}(\inp,f,\tr', \ww) = 1 \ \Leftrightarrow \ \verifier_{\Pi_{0123}}(\inp,f, \tr')=1, 
+$$
+%
+where $\verifier_{\Pi_{0123}}$ is the verifier of $\Pi_{0123}$.
+
+Notice that the verifier of \cref{c:iop_pimsat} given $(\inp, \bot, (f,\tr'))$ makes exactly the same checks as $\verifier_{\Pi_{0123}}(\inp,f, \tr')$. Hence the verifier of \cref{c:iop_pimsat} accepts $(\inp, \bot, (f,\tr'))$ if and only if $\kstate(\inp,\bot,(f,\tr'),\ww) = 1$, as needed. This shows that $\kstate$ satisfies the three conditions of \cref{def:knowledge-state-function}.
+
+
+
+Next we define an extractor $\cE$ for \cref{c:iop_pimsat} simply as $$\cE(\inp,\bot, (f,\tr'),\ww)= \cE_{\Pi_{0123}}(\inp,f, \tr', \ww)$$ for every (partial) transcript $(f,\tr')$ where the verifier is about to move. Note that we need not define an extractor for, say $(\inp, \bot, \ww)$, since the verifier is not about to move after an empty transcript $\bot$ (the prover is about to send $f$).
+%
+
+%
+Now, let $\tr=(f,\tr')$ be a (partial)  transcript of \cref{c:iop_pimsat} where the verifier  about to send its $j$-th message $\rho$. Then we have, using the definitions of $\kstate, \cE$ and our assumption on the round-by-round knowledge soundness of $\Pi_{0123}$,
+%
+\begin{align*}
+  &\Pr_{\verifiermsg}\!\left[
+  \exists\,\kswit \ \left| \ \begin{array}{l}
+  \wedge\ \kstate\bigl(\inp,\bot,(f,\tr'),\cE(\inp,\bot, (f,\tr'),\verifiermsg,\ww)\bigr)=0\\
+  \wedge\ \kstate(\inp,\bot, (f,\tr'),\verifiermsg,\ww)=1
+  \end{array}
+  \right.\right]\\ = 
+  &\Pr_{\verifiermsg}\!\left[
+  \exists\,\kswit \ \left| \ \begin{array}{l}
+  \wedge\ \kstate_{\Pi_{0123}}\bigl(\inp,f,\tr',\cE_{\Pi_{0123}}(\inp,f, \tr',\verifiermsg,\ww)\bigr)=0\\
+  \wedge\ \kstate_{\Pi_{0123}}(\inp,f,\tr',\verifiermsg,\ww)=1
+  \end{array}
+  \right.\right] \le\ \knowledgeerror_j(\inp, f)'.
+\end{align*}
+%
+\albertimportant{How do we get rid of the $f$ in the error?}
+%(\inp, f, \ww)\in \PIMSAT(\cC,\pack)^\delta \ \Rightarrow \ (\inp, \bot, \ww) \in \PIMSAT. 
 ----
 
 Rounds 1 and 2 of \cref{c:iop_pimsat} follow this IOR: the only difference between the rounds of \cref{c:iop_pimsat} and $\Pi_1$ is the specification of the input and output of the IOR. Besides those, the prover and verifier operate exactly the same. Further, in \cref{c:iop_pimsat}, the prover and verifier have both the data that comprises the input and output to $\Pi_1$. \albert{Is this enough or should I make the $\Pi_i$ prover and verifier simulate provers and verifiers of \cref{c:iop_pimsat}?}
@@ -1401,7 +1453,6 @@ Rounds 1 and 2 of \cref{c:iop_pimsat} follow this IOR: the only difference betwe
 ---
 and verifier  defined as Rounds 1 and 2 of \cref{c:iop_pimsat} after the first item (where prover sends $f$), and formally we have the prover send an empty message in $\Pi_2$ as its first message.  $\Pi_2$ takes as input $(\inp, f, \ww)\in \PIMSAT(\cC,\pack)$, and outputs $(\pi(\xx),f, \pi(\bff))\in \PESAT(\KK, \hat{\pp}, \cC,\pack)$. We will argue later that $\Pi_2$ is a perfectly complete $2$-round IOR from $\PIMSAT(\cC,\pack)$ to $\PESAT(\ringtwobounds{B}{\moduledegree},\KK, \hat{\pp}, \pi, \cC,\pack)$ \albert{Remark that $\pi$ is a module homomorphism}, with round-by-round knowledge soundness with relaxation $(\PIMSAT(\cC,\pack)^\delta,\PESAT(\ringtwobounds{B}{\moduledegree},\KK, \hat{\pp}, \pi, \cC,\pack)^\delta)$ and errors $\kappa_1, \kappa_2$ as in the statement of the present theorem.  \albert{Need to argue better that Rounds 1 and 2 can be seen as executing this IOR.}
 
-Finally, the IOR $\Pi_4$ consists in applying Item 4 of \cref{c:iop_pimsat}, i.e.\ applying \cref{c:LinModFieldBin} with inputs $((\vv,\mu), f,\bff)$.
 
 Once we have established our claims regarding $\Pi_2$, the result then follows from  the composition of IORs result (cf.\ \cref{prop:composed}).
 
