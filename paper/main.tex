@@ -1731,7 +1731,10 @@ Finally, we bound the following probability, corresponding to the round-by-round
 \end{align*}
 %
 By definition, $\kstate(\inp,f, \bot,(\KK,\rr),(u_i)_{i\in [\iota]},((\theta_i)_{i\in[\iota]},\alpha), \ww)=1$ if and only if $(\pi(\inp), f, \pi(f))\in \PESAT(\ringtwobounds{B}{\moduledegree}, \KK, \hat{\pp}, \cC,\pack)^\delta$ and verifier does not abort; while $\kstate\bigl(\inp,f,\bot,(\KK,\rr), (u_i)_{i\in[\iota]},\ww\bigr)=\kstate\bigl(\inp,f,\bot,(\KK,\rr),\ww\bigr)=0$  if and only if 
-$\Delta(f,\Enc_\cC\circ \pack \circ \pi_2(\mathsf{bits}(\ww)) \geq \delta$ or $\pi_q(Q_{\ww}^{(i)})(\rr)\not\in \pi_q(\ideal_i)$ for some $i\in [\iota]$.   Let $E$ be the event that $\kstate(\inp,f, \bot,(\KK,\rr),(u_i)_{i\in [\iota]},((\theta_i)_{i\in[\iota]},\alpha), \ww)=1$ and $\pi_q(Q_{\ww}^{(i)})(\rr)\not\in \pi_q(\ideal_i)$ for some $i\in [\iota]$. Again, we only need to bound $\Pr_{(\theta_i),\alpha}[E]$, since $\kstate(\inp,f, \bot,(\KK,\rr),(u_i)_{i\in [\iota]},((\theta_i)_{i\in[\iota]},\alpha), \ww)=1$ forces $\Delta(f,\Enc_\cC\circ \pack \circ \pi_2(\mathsf{bits}(\ww)) < \delta$.
+$\Delta(f,\Enc_\cC\circ \pack \circ \pi_2(\mathsf{bits}(\ww)) \geq \delta$ or $\pi_q(Q_{\ww}^{(i)})(\rr)\not\in \pi_q(\ideal_i)$ for some $i\in [\iota]$.   
+
+
+Let $E$ be the event that $\kstate(\inp,f, \bot,(\KK,\rr),(u_i)_{i\in [\iota]},((\theta_i)_{i\in[\iota]},\alpha), \ww)=1$ and $\pi_q(Q_{\ww}^{(i)})(\rr)\not\in \pi_q(\ideal_i)$ for some $i\in [\iota]$. Again, we only need to bound $\Pr_{(\theta_i),\alpha}[E]$, since $\kstate(\inp,f, \bot,(\KK,\rr),(u_i)_{i\in [\iota]},((\theta_i)_{i\in[\iota]},\alpha), \ww)=1$ forces $\Delta(f,\Enc_\cC\circ \pack \circ \pi_2(\mathsf{bits}(\ww)) < \delta$.
 
 Now, if $E$ occurs then
 $$
@@ -1739,9 +1742,32 @@ $$
 $$
 and at the same time 
 $$
-\pi_q(Q_{\ww}^{(i)})(\rr) = \sum_{\bb\in\bits^{n'}}\pp_{\bb}^{(i)}(\xx,\bff) \cdot \eq(\bb,\rr) \not\in \pi_q(\ideal_i)\subseteq \pi_q(R)[X]
+\pi_q(Q_{\ww}^{(i)})(\rr) = \sum_{\bb\in\bits^{n'}}\pi_q(\pp_{\bb}^{(i)}(\xx,\bff)) \cdot \eq(\bb,\rr) \not\in \pi_q(\ideal_i)\subseteq \pi_q(R)[X]
 $$
-\albert{notation for $\pi_q(R)$?} for some $i\in [\iota]$.
+\albert{notation for $\pi_q(R)$?} for some $i\in [\iota]$. Note that, since the verifier does not reject, $u_i \in \pi_q(\ideal_i)$ for all $i\in [\iota]$. Hence, if $E$ holds, then for some $i$, we have $\pi_q(Q_{\ww}^{(i)}(\rr)) \neq u_i$.
+
+Let $E_1$ be the event that  $E$ holds and
+%
+$\pi(Q_{\ww}^{(i)}(\rr)) =\pi(u_i)$ for all $i\in [\iota]$ (recall that $\pi=\pi_{q,\alpha}$).  Then there is an index $i$ such that $h_i(X)=\pi_q(Q_{\ww}^{(i)}(\rr)) - u_i \in \KK[X]$ is a nonzero polynomial. Now, $\pi(h_i(X)) = h_i(\alpha) =0$ with probability at most $\deg(h_i)/|\KK_{\min}|$, by Schwartz-Zippel lemma. It follows that \albertimportant{Again, I'm not missing a union bound right?}
+%
+%
+$$
+\Pr_{(\theta_i)_i, \alpha}[E_1] \leq \max_{i\in [\iota]} \frac{\deg(\pi_q(Q_{\ww}^{(i)}(\rr)) - u_i)}{|\KK_{\min}|}\leq  \max_{i\in [\iota]} \frac{\deg(\pi_q(Q_{\ww}^{(i)}(\rr))}{|\KK_{\min}|} \leq  \max_{\bb\in \bits^{n'},i\in [\iota]} \frac{\deg(\pp_\bb^{(i)}(\xx,\ff))}{|\KK_{\min}|} =  \frac{\nabla(\pp)}{|\KK_{\min}|}.
+$$
+%
+Now,
+$$
+\Pr[E]\leq \Pr[E\mid \neg E_1] + \Pr[E_1].
+$$
+%
+If $E_1$ does not hold, but $E$ holds, then $\pi(Q_{\ww}^{(i)}(\rr)) \neq \pi(u_i)$ for some $i\in [\iota]$. Then the polynomial  on variables $U_1,\ldots, U_\iota$,
+
+%
+$$
+Q'(U_1,\ldots, U_\iota)\defeq \sum_{i\in[\iota]} U_i \cdot \pi(Q_{\ww}^{(i)}) - \sum_{i\in [\iota]}U_i \cdot \pi(u_i)
+$$
+%
+is a nonzero multilinear polynomial over $\KK$. By Schwartz-Zippel lemma, the probability of sampling random $\theta_i \in \KK$ such that $Q'(\theta_1, \ldots, \theta_\iota) =0$ is at most $1/|\KK_{\min}|$. But the former is precisely the probability that $E|\neg E_1$ holds. It follows that $P_2\leq \kappa_2$, as required. 
 %
 \end{proof}
 
