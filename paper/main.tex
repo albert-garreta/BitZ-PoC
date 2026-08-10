@@ -864,20 +864,27 @@ See \cref{s:parameter_instantiation} for comments on how to choose close-to-opti
     $$
     If $\degevalfield=0$, i.e.\ $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$ IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}$.
 \end{theorem}
-\begin{proof}
-The result follows  from \cref{t:thm_core_IOPP} and the fact that $(\inp,\oracle, \wit) \in \LinModFieldBin$ if and only if \eqref{e:iop_final_linear_claim} holds (due to \cref{l:bitify}). More concretely: perfect completeness is immediate. For round-by-round knowledge soundness, let $\kstate'$ be a state function for \cref{c:core_iop}. Then   we define a state function $\kstate$ for \cref{c:LinModFieldBin} as, when $\tr$ is a nonempty transcript,
+\begin{proof}\albertimportant{I wrote this quite quickly. It may need polishing}
+
+The result follows  from \cref{t:thm_core_IOPP} and the fact that $(\inp,\oracle, \wit) \in \LinModFieldBin$ if and only if \eqref{e:iop_final_linear_claim} holds (due to \cref{l:bitify}). More concretely: perfect completeness is immediate. For round-by-round knowledge soundness, let $\kstate'$ be a state function for \cref{c:core_iop}. Then   we define a state function $\kstate$ for \cref{c:LinModFieldBin} as, when $\tr$ is neither an empty transcript or a transcript containing only a prover message (and no verifier messages),
 %
 $$
 \kstate(\inp, \oracle, \tr, \ww) = \kstate'(\inp', \oracle, \tr,\ww),
 $$
-where if $\inp=(\vv,\mu)$ then $\inp'=(\uu,\mu)$ us defined as in \cref{?}. For  empty transcripts we let $\kstate(\inp,\oracle,\ww)=1$ if and only if $(\inp,\oracle,\ww)\in \LinModFieldBin(M_{R_{\leq B}}, \KK, \psi_M, \cC_1^{\equiv \codedim_2})^\delta$.
+where if $\inp=(\vv,\mu)$ then $\inp'=(\uu,\mu)$ is defined as in \cref{?}. For  empty transcripts we let $\kstate(\inp,\oracle,\ww)=1$ if and only if $(\inp,\oracle,\ww)\in \LinModFieldBin(M_{R_{\leq B}}, \KK, \psi_M, \cC_1^{\equiv \codedim_2})^\delta$. If $\tr$ is a transcript containing uniquely the first prover message, then we let $\kstate(\inp, \oracle, \tr, \ww) = \kstate(\inp, \oracle, \ww)$. 
 
-Further, let $\cE'$ be an extractor for \cref{c:core_iop}. We define an extractor $\cE$ for \cref{c:LinModFieldBin} as follows: $\cE(\inp, \oracle, \tr, \ww)$ proceeds as follows: first it computes $$\bfg=\cE'(\inp',\oracle, \tr,\ww).$$  If $\bfg\in \{0,1\}^{\codedim_0\cdot B \cdot \moduledegree} \subseteq \ZZ^{\codedim_0\cdot B \cdot \moduledegree}$, then compute $\bff\in M_{R_{\leq B}}^{\codedim_0}$ such that $\mathsf{bits}(\bff)=\bfg$, concretely, index $\bff$ as $\bfg=(\bfg_{ijk})_{i\in [\codedim_0], j\in [\moduledegree], k\in [B]}$. Let $\phi= \mathsf{id}$ be the identity map if $\ring=\ZZ$, and $\phi=\pi_q$ if $\ring$ is a field of characteristic $q$. Then let 
+Further, let $\cE'$ be an extractor for \cref{c:core_iop}. We define an extractor $\cE$ for \cref{c:LinModFieldBin} as follows: if $\tr$ is neither empty nor consisting in just one prover message, $\cE(\inp,\oracle,\tr, \ww) \defeq \cE'(\inp', \oracle, \tr, \ww)$. For $\tr$ empty, we let $\cE(\inp, \oracle, \ww)$ proceeds as follows: first it computes $$\bfg=\cE'(\inp',\oracle, \ww).$$  If $\bfg\in \{0,1\}^{\codedim_0\cdot B \cdot \moduledegree} \subseteq \ZZ^{\codedim_0\cdot B \cdot \moduledegree}$, then let $\bff\in M_{R_{\leq B}}^{\codedim_0}$ such that $\mathsf{bits}(\bff)=\bfg$, concretely, index $\bff$ as $\bfg=(\bfg_{ijk})_{i\in [\codedim_0], j\in [\moduledegree], k\in [B]}$. Let $\phi= \mathsf{id}$ be the identity map if $\ring=\ZZ$, and $\phi=\pi_q$ if $\ring$ is a field of characteristic $q$. Then output 
 %
 $$
 \bff \defeq  \sum_{j\in [\moduledegree],k\in [B]} \gamma_j \cdot 2^{k-1} \cdot \phi(\bfg_{*jk}),
 $$
-where $\bfg_{*jk}=(\bfg_{ijk})_{i\in [\codedim_0]}\in \bits^{\codedim_0} \subseteq \ZZ^{\codedim_0}$. Then $\mathsf{bits}(\bff)=\bfg$ \albert{more detail?}. We claim that 
+where $\bfg_{*jk}=(\bfg_{ijk})_{i\in [\codedim_0]}\in \bits^{\codedim_0} \subseteq \ZZ^{\codedim_0}$. Then $\mathsf{bits}(\bff)=\bfg$ \albert{more detail?}. 
+
+If $\tr$ is a transcript consisting of only one prover message, we let $\cE(\inp,\oracle, \tr,\ww) = \cE(\inp,\oracle,\ww)$.
+
+
+
+For the last two cases, we claim that 
 %
 $$
 ((\uu,\mu),\oracle, \bfg) \in \LinBitsDual(\KK,\cC_1^{\codedim_2}) \ \Leftrightarrow \ ((\vv,\mu),\oracle, \bff) \in \LinModFieldBin(M_{R_{\leq B}}, \KK, \psi_M, \cC_1^{\equiv \codedim_2}).
@@ -887,18 +894,29 @@ Indeed, this follows from \cref{?}, which yields $$\langle \psi_M(\bff), \vv\ran
 
 
 
-It now suffices to prove that \albertimportant{finish} 
-
-
+We now prove that, for any transcript $\tr$ where verifier is about to send its $j$-th message
 \[
-  \Pr_{q',\alpha'}\!\left[
+  P_j\defeq \Pr_{\rho}\!\left[
   \exists\,\ww \ \left| \ \begin{array}{l}
-  \wedge\ \kstate\bigl(\inp,\oracle,\bm{\mu},\rbrextractor(\inp,\oracle,\bm{\mu}, q',\alpha,\ww)\bigr)=0\\
-  \wedge\ \kstate(\inp,\oracle,\bm{\mu}, q', \alpha, \ww)=1
+  \wedge\ \kstate\bigl(\inp,\oracle,\tr,\rbrextractor(\inp,\oracle,\tr, \rho,\ww)\bigr)=0\\
+  \wedge\ \kstate(\inp,\oracle,\tr, \rho,  \ww)=1
   \end{array}
   \right.\right]
-  \ \le\ \kappa_0.
+  \ \le\ \kappa_j'.
 \]
+where $\kappa_j'$ is the $j$-th error in \cref{?}.
+
+Indeed, the inequality is immediate if $\tr$ does not consist of a single prover message, since then $\kstate$ and $\cE$ coincide with the state $\kstate'$ and extractor $\cE'$ of \cref{c:core_iop}. For $P_1$, namely if $\tr$ consists of a single prover message, then 
+%
+$$
+P_1 = \Pr_{\rho}\!\left[
+  \exists\,\ww \ \left| \ \begin{array}{l}
+  \wedge\ \kstate\bigl(\inp,\oracle,\rbrextractor(\inp,\oracle,\tr, \rho,\ww)\bigr)=0\\
+  \wedge\ \kstate'(\inp',\oracle,\tr, \rho, \ww)=1
+  \end{array}
+  \right.\right]
+$$
+If $\kstate'(\inp',\oracle,\tr, \rho, \ww)=1$ then with probability $1-\kappa_0$, $\cE'(\inp',\oracle, \tr, \ww)$ outputs $\bfg$ such that $\kstate'(\inp',\oracle, \tr, \bfg)=1$, hence, in this case, $\kstate'(\inp',\oracle, \bfg)=1$, which holds if and only if $(\inp',\oracle,\bfg)\in \LinBitsDual(\KK,\cC_1^{\equiv \codedim_2})$. Hence, with probability at least $1-\kappa_0$, $\cE(\inp,\oracle,\tr,\ww)$ outputs $\bff$ such that $(\inp,\oracle,\bff)\in \LinModFieldBin(M_{R_{\leq B}}, \KK, \psi_M, \cC_1^{\equiv \codedim_2})$. It follows that $P_1\leq \kappa_0$.
 \end{proof}
 
 \subsection{Parameter instantiation}\label{s:parameter_instantiation}
