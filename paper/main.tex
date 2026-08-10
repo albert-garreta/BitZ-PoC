@@ -865,7 +865,27 @@ See \cref{s:parameter_instantiation} for comments on how to choose close-to-opti
     If $\degevalfield=0$, i.e.\ $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$ IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}$.
 \end{theorem}
 \begin{proof}
-The result follows immediately from \cref{t:thm_core_IOPP} and the fact that $(\inp,\oracle, \wit) \in \LinModFieldBin$ if and only if \eqref{e:iop_final_linear_claim} holds (due to \cref{l:bitify}).
+The result follows  from \cref{t:thm_core_IOPP} and the fact that $(\inp,\oracle, \wit) \in \LinModFieldBin$ if and only if \eqref{e:iop_final_linear_claim} holds (due to \cref{l:bitify}). More concretely: perfect completeness is immediate. For round-by-round knowledge soundness, let $\kstate'$ be a state function for \cref{c:core_iop}. Then   we define a state function $\kstate$ for \cref{c:LinModFieldBin} as, when $\tr$ is a nonempty transcript,
+%
+$$
+\kstate(\inp, \oracle, \tr, \ww) = \kstate'(\inp', \oracle, \tr,\ww),
+$$
+where if $\inp=(\vv,\mu)$ then $\inp'=(\uu,\mu)$ us defined as in \cref{?}. For  empty transcripts we let $\kstate(\inp,\oracle,\ww)=1$ if and only if $(\inp,\oracle,\ww)\in \LinModFieldBin(M_{R_{\leq B}}, \KK, \psi_M, \cC_1^{\equiv \codedim_2})^\delta$.
+
+Further, let $\cE'$ be an extractor for \cref{c:core_iop}. We define an extractor $\cE$ for \cref{c:LinModFieldBin} as follows: $\cE(\inp, \oracle, \tr, \ww)$ proceeds as follows: first it computes $$\bfg=\cE'(\inp',\oracle, \tr,\ww).$$  If $\bfg\in \{0,1\}^{\codedim_0\cdot B \cdot \moduledegree}$, then compute $\bff\in M_{R_{\leq B}}^{\codedim_0}$ such that $\mathsf{bits}(\bff)=\bfg$ \albertimportant{Explain why we can always do this}. 
+
+It now suffices to prove that \albertimportant{finish} 
+
+
+\[
+  \Pr_{q',\alpha'}\!\left[
+  \exists\,\ww \ \left| \ \begin{array}{l}
+  \wedge\ \kstate\bigl(\inp,\oracle,\bm{\mu},\rbrextractor(\inp,\oracle,\bm{\mu}, q',\alpha,\ww)\bigr)=0\\
+  \wedge\ \kstate(\inp,\oracle,\bm{\mu}, q', \alpha, \ww)=1
+  \end{array}
+  \right.\right]
+  \ \le\ \kappa_0.
+\]
 \end{proof}
 
 \subsection{Parameter instantiation}\label{s:parameter_instantiation}
@@ -1313,7 +1333,7 @@ Prover and verifier now use \cref{c:LinModFieldBin} to prove  \eqref{e:iop_final
         \item $\tau_{\ZZ}=1$ if $\ring=\ZZ$ and $\tau_\ZZ=0$ otherwise,
         \item $\KK_{\min}$ is either $\KK$ if $\ring=\FF$, or  the field $\FF_q$ with $q\in \cP$ with the smallest size if $\ring=\ZZ$,
         \item $d_{\min}$ is the smallest degree among the generators of $\ideal_1, \ldots, \ideal_\iota$,
-        \item $\nabla(\pp)\defeq \max_{j\in [\numrows], i\in\iota}\{\deg_X(\pp_{j}^i) + (\moduledegree-1)\cdot \max_{t\in [\inplen+\codedim\textit{}]}\deg_{Y_t}(\pp_j^i)\} + \moduledegree$
+        \item $\nabla(\pp)\defeq \max\left\{\max_{\bb\in \bits^{n'}, i\in[\iota]}\{\deg_X(\pp_{j}^{(i)}) + (\moduledegree-1)\cdot \max_{t\in [\inplen+\codedim\textit{}]}\deg_{Y_t}(\pp_j^i)\cdot (\inplen+\codedim)\}, \moduledegree\right\}$
         \item $B_{\max} \defeq \max_{\bb\in \bits^{n'}, i\in [\iota]} \lceil\log(|\pp_{\bb}^{(i)}(\xx,\ff)| \rVert_{\infty})\rceil. $
     \end{itemize}
     %
@@ -1691,6 +1711,8 @@ $\Pi_\KK'$ given by \cref{l:lift_pesat_to_encodings}, where $\Pi_\KK$ is the IOR
 The IOR $\Pi_3$ is an IOP for $\LIN(\ringtwobounds{B}{\moduledegree},\KK,\pi,\cC)$. It consists  in applying Phase 4 of \cref{c:iop_pimsat}, i.e.\ simulating \cref{c:LinModFieldBin} with inputs $((\vv,\mu), f,\bff)$. By \cref{t:thm_LinModFieldBits} and the hypothesis of \cref{t:thm_iop_pimsat}, \cref{c:LinModFieldBin} is a $(\tau_{\mathsf{\mathsf{ext}}}+t_\red+t_\iopp)$-round perfectly complete IOP for $\LIN(\ringtwobounds{B}{\moduledegree},\KK,\pi,\cC)$ with round-by-round knowledge with relaxation $(\LIN(\ringtwobounds{B}{\moduledegree},\KK,\pi,\cC)^\delta,\bot)$, with errors $\kappa_{\mathsf{lift-proj}}^*, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}$.
 
 
+The next lemma states that the composition of $\Pi_1, \Pi_2$ and $\Pi_3$ is an IOR whose completeness and soundness implies completeness and soundness of \cref{c:iop_pimsat}.
+
 \begin{lemma}\label{l:Pi_123_is_good}
 Let $\Pi_{123}$ be the composition of $\Pi_1,\Pi_2$ and $\Pi_3$.  Then $\Pi_{123}$ is a $(2+t_\KK + \tau_{\mathsf{ext}} +t_\red + t_\iopp)$-round IOP for $\PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}, \cC)$. Assume $\Pi_{123}$ is perfectly complete and, for any $\delta\in (0,1)$,  has round-by-round knowledge with relaxation $(\PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}, \cC)^\delta, \bot)$ with errors $(\kappa_j')_{j\in [2+t_\KK + \tau_{\mathsf{ext}} +t_\red + t_\iopp]}$. 
 
@@ -1699,15 +1721,13 @@ Then \cref{c:iop_pimsat} is a $(2+t_\KK + \tau_{\mathsf{ext}} +t_\red + t_\iopp)
 $$
 \kappa_j(\inp) \defeq \max_{f \text{ s.t. } (\inp,f)\not\in \PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}, \cC)^\delta} \kappa_j(\inp, f)'.
 $$
-\albertimportant{Need to argue somewhere that these errors are negligible if $\kappa_j'$ are}
+\albertimportant{Need to argue somewhere that these errors are negligible if $\kappa_j'$ are -- I'd prefer to just use the errors from $\kappa_j'$ directly. This may be related with the issue about composition of IORs and having ill-defined errors} 
 \end{lemma}
 \begin{proof}
     Deferred to \cref{a:Pi_123_is_good}.
 \end{proof}
 
-
-
-Due to \cref{l:Pi_123_is_good}, it  suffices to show that $\Pi_{123}$ is perfectly complete and has the desired soundness properties.  We prove this by using the composition of IOR result \cref{r:ior_compositoin}.  Both $\Pi_2$ and $\Pi_3$ already have the desired properties by definition and hypotheses of \cref{t:thm_core_IOPP}. Thus it suffices to show the following
+Due to \cref{l:Pi_123_is_good}, it  suffices to show that $\Pi_{123}$ is perfectly complete and has the desired soundness properties.  We prove this by using the composition of IOR result \cref{r:ior_compositoin}.  Both $\Pi_2$ and $\Pi_3$ already have the desired properties by definition and hypotheses of \cref{t:thm_core_IOPP}. Thus it suffices to show the following:
 %
 \begin{lemma}[Completeness and soundness of $\Pi_1$]\label{l:completeness_soundness_Pi_1}
     Let $\delta\in (0,1)$. The IOR $\Pi_1$ is a perfectly complete $2$-round IOR from $\PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}, \cC)$ to $\PESAT(\ringtwobounds{B}{\moduledegree}, \KK,\hat{\pp}, \pi,  \cC)$ with round-by-round knowledge soundness  with relaxation $(\PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}, \cC)^\delta,\PESAT(\ringtwobounds{B}{\moduledegree}, \KK,\hat{\pp}, \pi,  \cC)^\delta)$ and with errors 
@@ -1718,12 +1738,12 @@ Due to \cref{l:Pi_123_is_good}, it  suffices to show that $\Pi_{123}$ is perfect
 \end{lemma}
 \begin{proof}
 \albertimportant{Probably needs some polishing and review}
-    Indeed, let $\inp=\xx, \oracle=f$ be an input and oracle for $\PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}, \cC)$. For any $\ww$ define $\kstate(\inp,f, \ww)=1$ if and only if $(\inp,f,\ww)\in \PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}, \cC)^\delta$. Given a full transcript $\tr=(\bot, (\KK,\rr),  (u_1,\ldots, u_\iota),(\theta_1,\ldots, \theta_\iota, \alpha))$, define $\kstate(\inp, f, \tr, \ww) = 1$ if and only if $(\pi(\xx), f, \pi(\bff))\in \PESAT(\ringtwobounds{B}{\moduledegree}, \KK, \hat{\pp},  \pi, \cC)^\delta$. For partial transcripts where the prover $\tr$ is about to send a message $m$, let $\kstate(\inp,f,\tr, m, \ww) = \kstate(\inp, f,\tr,\ww)$. 
+    Indeed, let $\inp=\xx, \oracle=f$ be an input and oracle for $\PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}, \cC)$. For any $\ww$ define $\kstate(\inp,f, \ww)=1$ if and only if $(\inp,f,\ww)\in \PIMSAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{\ideal}, \cC)^\delta$. Given a full transcript $\tr=(\bot, (\KK,\rr),  (u_1,\ldots, u_\iota),(\theta_1,\ldots, \theta_\iota, \alpha))$ for $\Pi_{1}$, define $\kstate(\inp, f, \tr, \ww) = 1$ if and only if $(\pi(\xx), f, \pi(\bff))\in \PESAT(\ringtwobounds{B}{\moduledegree}, \KK, \hat{\pp},  \pi, \cC)^\delta$, where $\pi=\pi_{q,\alpha}$, $q$ being the chracteristic of $\KK$ and $\alpha$ one of the verifier's messages in $\tr$. For partial transcripts where the prover $\tr$ is about to send a message $m$, let $\kstate(\inp,f,\tr, m, \ww) = \kstate(\inp, f,\tr,\ww)$. 
 
-    We now define  $\kstate(\inp, f, \tr, \ww)$ where $\tr$ is nonempty and such that prover is about to move.  The only undefined setting is when $\tr=(\bot, (\KK,\rr))$. In this case we define $\kstate(\inp, f, \tr, \ww) = 1$ if and only if $$\Delta(f,\Enc_\cC\circ \pack \circ \pi_2(\mathsf{bits}(ww)) < \delta$$ and $\pi_q(Q_{\ww}^{(i)})(\rr)\in \pi_q(\ideal_i)$ for all $i\in [\iota]$,  where 
+    We now define  $\kstate(\inp, f, \tr, \ww)$ where $\tr$ is nonempty and such that prover is about to move.  The only undefined setting is when $\tr=(\bot, (\KK,\rr))$. In this case we define $\kstate(\inp, f, \tr, \ww) = 1$ if and only if $$\Delta(f,\Enc_\cC\circ \pack \circ \pi_2(\mathsf{bits}(\ww)) < \delta$$ and $\pi_q(Q_{\ww}^{(i)})(\rr)\in \pi_q(\ideal_i)$ for all $i\in [\iota]$,  where 
     %
     $$
-    Q_{\ww}^{(i)}(\mathbf{Z})=\sum_{\bb\in\bits^{n'}}\pp_{\bb}^{(i)}(\xx,\ww) \cdot \eq(\bb, \mathbf{Z}) \in \ring[X]. 
+    Q_{\ww}^{(i)}(\mathbf{Z})\defeq\sum_{\bb\in\bits^{n'}}\pp_{\bb}^{(i)}(\xx,\ww) \cdot \eq(\bb, \mathbf{Z}) \in \ring[X]. 
 $$
 %
 Observe that $\kstate$ satisfies the three conditions of \cref{def:knowledge-state-function}.
@@ -1732,7 +1752,7 @@ Observe that $\kstate$ satisfies the three conditions of \cref{def:knowledge-sta
       
     %If $\tr=(\bot)$ and verifier is about to send $(\KK,\rr)$, we define $\kstate(\inp, f, \bot, \ww)=\kstate(\inp, f,\ww)$. We define the extractor on this input as  $\cE_{\mathsf{rbr}}(\inp, f,\bot,\ww)=\ww$.   
 
- We define the extractor  $\cE_{\mathsf{rbr}}$ as $\cE_{\mathsf{rbr}}(\inp,f,\tr,\ww)=\ww$ for all $\inp,f,\tr,\ww$. Let $\tr$ be a transcript for $\Pi_1$ where the verifier is about to move, so that either $\tr=(\bot)$ or $\tr=(\bot, (\KK,\rr), (u_i)_{i\in[\iota]})$. In the first case we  have that
+ We define the extractor  $\cE_{\mathsf{rbr}}$ as $\cE_{\mathsf{rbr}}(\inp,f,\tr,\ww)=\ww$ for all $\inp,f,\tr,\ww$. Let $\tr$ be a transcript for $\Pi_1$ where the verifier is about to move, so that either $\tr=(\bot)$ or $\tr=(\bot, (\KK,\rr), (u_i)_{i\in[\iota]})$. For a transcript $\tr=(\bot)$, we need to bound the following probability, corresponding to the round-by-round knowledge soundness of Round 1 of $\Pi_1$:
 %
 \begin{align*}
   P_1\defeq &\Pr_{\KK,\rr}\!\left[
@@ -1743,30 +1763,30 @@ Observe that $\kstate$ satisfies the three conditions of \cref{def:knowledge-sta
   \right.\right] 
 \end{align*}
 % 
-is the probability that 
+By our definition of $\kstate$, $P_1$ is the probability that 
 %
 \begin{equation}\label{e:boring_proof_eq1}\pi_q(Q_{\ww}^{(i)})(\rr) \in \pi_q(\ideal_i) \text{ for all } i\in [\iota] \text{ and } \Delta(f, \Enc_{\cC}\circ \pack \circ \pi_2(\mathsf{bits}(\ww))<\delta
-\end{equation} while at the same time \begin{equation}\label{e:boring_proof_eq2}\pp_\bb^{(i)}(\xx,\ww)\not\in \ideal_i \text{ for some } \bb\in \bits^{n'} \text{ and } i\in [\iota]\end{equation} or $\Delta(f, \Enc_{\cC}\circ \pack \circ \pi_2(\mathsf{bits}(\ww))\geq\delta$. Clearly, the latter condition cannot hold if \eqref{e:boring_proof_eq1}holds; hence we will study the probability  that \eqref{e:boring_proof_eq1}and \eqref{e:boring_proof_eq2} hold simultaneously.  We ultimately want to prove that $P_1 \leq \kappa_1$.
+\end{equation} while at the same time \begin{equation}\label{e:boring_proof_eq2}\pp_\bb^{(i)}(\xx,\ww)\not\in \ideal_i \text{ for some } \bb\in \bits^{n'} \text{ and } i\in [\iota]\end{equation} or $\Delta(f, \Enc_{\cC}\circ \pack \circ \pi_2(\mathsf{bits}(\ww))\geq\delta$. Clearly, the latter condition cannot hold if \eqref{e:boring_proof_eq1} holds; hence we will study the probability  that \eqref{e:boring_proof_eq1} and \eqref{e:boring_proof_eq2} hold simultaneously.  We ultimately want to prove that $P_1 \leq \kappa_1$.
 
-Let $E_1$ be the event that \eqref{e:boring_proof_eq2} holds for some $\bb$ and $i$, and $\pi_q(\pp_\bb^{(i)})\in \pi_q(\ideal_i)$ for all $\bb,i$. By \cref{lem:ideals_modular projection}, \albertimportant{I'm not forgetting a union bound here right?}
+Let $E_1$ be the event that \eqref{e:boring_proof_eq2} holds and $\pi_q(\pp_\bb^{(i)}(\xx,\ww))\in \pi_q(\ideal_i)$ for all $\bb,i$. By \cref{lem:ideals_modular projection}, 
 %
 $$
-\Pr_{\KK,\rr}[E_1] \leq \max_{\bb\in \bits^{n'},\iota\in[\iota]}\left\{\frac{B'\cdot (1 +\max(\deg(\pp_{\bb}^{i}(\xx,\bff))-\deg(\ideal_{i_0})+1,0)}{|\mathcal{P}|\cdot \lfloor\log(q_{\min})\rfloor}\right\},
+\Pr_{\KK,\rr}[E_1] \leq \max_{\bb\in \bits^{n'},\iota\in[\iota]}\left\{\frac{B'\cdot (1 +\max(\deg(\pp_{\bb}^{i}(\xx,\bff))-\deg(\ideal_{i})+1,0)}{|\mathcal{P}|\cdot \lfloor\log(q_{\min})\rfloor}\right\},
 $$
 where $\deg(\ideal_{i})$ is the degree of a generator of $\ideal_{i}$; and $B'$ is $\lceil\log(\|\pp_{\bb}^{(i)} (\xx,\bff)\|_\infty)\rceil$. We have, letting $d_{\min}=\min_{i\in [\iota]} \deg(\ideal_i)$, \albert{more detail?}
 %
 \begin{align*}
-&\max_{\bb\in \bits^{n'},\iota\in[\iota]}\left\{\deg(\pp_{\bb}^{i}(\xx,\bff))-d_{\min}\right\} \\  &\qquad\qquad \qquad \leq\nabla(\pp) -d_{\min}= \max_{\bb\in \bits^{n'}, i\in[\iota]}\{\deg_X(\pp_{\bb}^i) + (\moduledegree-1)\cdot \max_{t\in [\inplen+\codedim\textit{}]}\deg_{Y_t}(\pp_{\bb}^i)\} + \moduledegree -d_{\min},\\
+&\max_{\bb\in \bits^{n'},i\in[\iota]}\left\{\deg(\pp_{\bb}^{i}(\xx,\bff))-\deg(\ideal_i)\right\} \\  &\qquad\qquad \qquad \leq\nabla(\pp) -d_{\min}= \max_{\bb\in \bits^{n'}, i\in[\iota]}\{\deg_X(\pp_{\bb}^i) + (\moduledegree-1)\cdot \max_{t\in [\inplen+\codedim\textit{}]}\deg_{Y_t}(\pp_{\bb}^i)\} + \moduledegree -d_{\min},\\
 & \max_{\bb\in \bits^{n'}, i\in [\iota]} B' = \max_{\bb\in \bits^{n'}, i\in [\iota]} \lceil\log(|\pp_{\bb}^{(i)}(\xx,\ff)| \rVert_{\infty})\rceil = B_{\max}.
 \end{align*}
 %
 Now, let $E$ be the event that both \eqref{e:boring_proof_eq1} and \eqref{e:boring_proof_eq2} hold. Then
 %
 $$
-\Pr_{\KK,\rr}[E] \leq \Pr_{\KK, \rr}[E \ | \ \neg E_1] + \Pr_{\KK,\rr}[E_1].
+P_1=\Pr_{\KK,\rr}[E] \leq \Pr_{\KK, \rr}[E \ | \ \neg E_1] + \Pr_{\KK,\rr}[E_1].
 $$
 %
-We next analyze $\Pr_{\KK, \rr}[E \ | \ \neg E_1]$. If $E_1$ does not occur, then the  multilinear polynomial $\pi_q(Q_\ww^{(i)})(\ZZZ)$ is not the zero polynomial in $\pi_q(R)[X]$. On the other hand, for $E$ to occur, we need  $\pi_q(Q_\ww^{(i)})(\rr)=0$ in $\KK$. Hence, by Schwartz-Zippel lemma,  $\Pr_{\KK, \rr}[E \ | \ \neg E_1] \leq 1/|\KK_{\min}|$. It follows that 
+We next analyze $\Pr_{\KK, \rr}[E \ | \ \neg E_1]$. If $E_1$ does not occur, then the  multilinear polynomial $\pi_q(Q_\ww^{(i)})(\ZZZ)$ is not the zero polynomial in $\KK[X]$. On the other hand, for $E$ to occur, we need  $\pi_q(Q_\ww^{(i)})(\rr)=0$ in $\KK$. Hence, by Schwartz-Zippel lemma,  $\Pr_{\KK, \rr}[E \ | \ \neg E_1] \leq 1/|\KK_{\min}|$. It follows that 
 %
 $
 P_1 \leq \kappa_1,
@@ -1782,11 +1802,10 @@ Finally, we bound the following probability, corresponding to the round-by-round
   \right.\right] 
 \end{align*}
 %
-By definition, $\kstate(\inp,f, \bot,(\KK,\rr),(u_i)_{i\in [\iota]},((\theta_i)_{i\in[\iota]},\alpha), \ww)=1$ if and only if $(\pi(\inp), f, \pi(f))\in \PESAT(\ringtwobounds{B}{\moduledegree}, \KK, \hat{\pp}, \cC)^\delta$ and verifier does not abort; while $\kstate\bigl(\inp,f,\bot,(\KK,\rr), (u_i)_{i\in[\iota]},\ww\bigr)=\kstate\bigl(\inp,f,\bot,(\KK,\rr),\ww\bigr)=0$  if and only if 
-$\Delta(f,\Enc_\cC\circ \pack \circ \pi_2(\mathsf{bits}(\ww)) \geq \delta$ or $\pi_q(Q_{\ww}^{(i)})(\rr)\not\in \pi_q(\ideal_i)$ for some $i\in [\iota]$.   
-
-
-Let $E$ be the event that $\kstate(\inp,f, \bot,(\KK,\rr),(u_i)_{i\in [\iota]},((\theta_i)_{i\in[\iota]},\alpha), \ww)=1$ and $\pi_q(Q_{\ww}^{(i)})(\rr)\not\in \pi_q(\ideal_i)$ for some $i\in [\iota]$. Again, we only need to bound $\Pr_{(\theta_i),\alpha}[E]$, since $\kstate(\inp,f, \bot,(\KK,\rr),(u_i)_{i\in [\iota]},((\theta_i)_{i\in[\iota]},\alpha), \ww)=1$ forces $\Delta(f,\Enc_\cC\circ \pack \circ \pi_2(\mathsf{bits}(\ww)) < \delta$.
+By definition, \begin{equation}\label{e:boring_proof_eq3}\kstate(\inp,f, \bot,(\KK,\rr),(u_i)_{i\in [\iota]},((\theta_i)_{i\in[\iota]},\alpha), \ww)=1 \ \Leftrightarrow \ (\pi(\inp), f, \pi(f))\in \PESAT(\ringtwobounds{B}{\moduledegree}, \KK, \hat{\pp}, \cC)^\delta\end{equation} and verifier does not abort \albert{It's not completely transparent how verifier accepts or aborts in the definition of RBR KS}; while $$\kstate\bigl(\inp,f,\bot,(\KK,\rr), (u_i)_{i\in[\iota]},\ww\bigr)=\kstate\bigl(\inp,f,\bot,(\KK,\rr),\ww\bigr)=0$$  if and only if 
+$\Delta(f,\Enc_\cC\circ \pack \circ \pi_2(\mathsf{bits}(\ww)) \geq \delta$ or \begin{equation}\label{e:boring_proof_eq4}\pi_q(Q_{\ww}^{(i)})(\rr)\not\in \pi_q(\ideal_i) \text{ for some } i\in [\iota].\end{equation}  
+%
+Let $E$ be the event that  \eqref{e:boring_proof_eq3} and \eqref{e:boring_proof_eq4} hold. Again, $P_2= \Pr_{(\theta_i),\alpha}[E]$, since \eqref{e:boring_proof_eq3} forces $\Delta(f,\Enc_\cC\circ \pack \circ \pi_2(\mathsf{bits}(\ww)) < \delta$.
 
 Now, if $E$ occurs then
 $$
@@ -1796,16 +1815,18 @@ and at the same time
 $$
 \pi_q(Q_{\ww}^{(i)})(\rr) = \sum_{\bb\in\bits^{n'}}\pi_q(\pp_{\bb}^{(i)}(\xx,\bff)) \cdot \eq(\bb,\rr) \not\in \pi_q(\ideal_i)\subseteq \KK[X]
 $$
- for some $i\in [\iota]$. Note that, since the verifier does not reject, $u_i \in \pi_q(\ideal_i)$ for all $i\in [\iota]$. Hence, if $E$ holds, then for some $i$, we have $\pi_q(Q_{\ww}^{(i)}(\rr)) \neq u_i$.
+ for some $i\in [\iota]$. Since the verifier does not reject, $u_i \in \pi_q(\ideal_i)$ for all $i\in [\iota]$. Hence, if $E$ holds, then for some $i$, we have $\pi_q(Q_{\ww}^{(i)}(\rr)) \neq u_i$. In particular $h_i \defeq \pi_q(Q_{\ww}^{(i)}(\rr)) - u_i \in \KK[X]$ is a nonzero polynomial with coefficients in $\KK$.
 
 Let $E_1$ be the event that  $E$ holds and
 %
-$\pi(Q_{\ww}^{(i)}(\rr)) =\pi(u_i)$ for all $i\in [\iota]$ (recall that $\pi=\pi_{q,\alpha}$).  Then there is an index $i$ such that $h_i(X)=\pi_q(Q_{\ww}^{(i)}(\rr)) - u_i \in \KK[X]$ is a nonzero polynomial. Now, $\pi(h_i(X)) = h_i(\alpha) =0$ with probability at most $\deg(h_i)/|\KK_{\min}|$, by Schwartz-Zippel lemma. It follows that \albertimportant{Again, I'm not missing a union bound right?}
+$\pi(Q_{\ww}^{(i)}(\rr)) =\pi(u_i)$ for all $i\in [\iota]$ (recall that $\pi=\pi_{q,\alpha}$ acts on $\KK[X]$ by replacing $X$ by $\alpha$).  Now, since $h_i(X)$ is a nonzero polynomial from $\KK[X]$, we have that $\pi(h_i(X)) = h_i(\alpha) =0$ with probability at most $\deg(h_i)/|\KK_{\min}|$ by Schwartz-Zippel lemma. It follows that \albertimportant{Again, I'm not missing a union bound right?}
 %
 %
-$$
-\Pr_{(\theta_i)_i, \alpha}[E_1] \leq \max_{i\in [\iota]} \frac{\deg(\pi_q(Q_{\ww}^{(i)}(\rr)) - u_i)}{|\KK_{\min}|}\leq  \max_{i\in [\iota]} \frac{\deg(\pi_q(Q_{\ww}^{(i)}(\rr))}{|\KK_{\min}|} \leq  \max_{\bb\in \bits^{n'},i\in [\iota]} \frac{\deg(\pp_\bb^{(i)}(\xx,\ff))}{|\KK_{\min}|} =  \frac{\nabla(\pp)}{|\KK_{\min}|}.
-$$
+\begin{align*}
+\Pr_{(\theta_i)_i, \alpha}[E_1] &\leq \max_{i\in [\iota]} \frac{\deg(\pi_q(Q_{\ww}^{(i)}(\rr)) - u_i)}{|\KK_{\min}|}\leq  \max_{i\in [\iota]} \frac{\max\left\{\deg(\pi_q(Q_{\ww}^{(i)}(\rr))),\moduledegree\right\}}{|\KK_{\min}|}\\ &\leq  \max_{\bb\in \bits^{n'},i\in [\iota]} \frac{\max\left\{\deg(\pp_\bb^{(i)}(\xx,\ff)),\moduledegree\right\}}{|\KK_{\min}|} \leq  \frac{\nabla(\pp)}{|\KK_{\min}|},
+\end{align*}
+%
+where we used that $\deg_X(u_i)< \moduledegree$; that $\pi_q(Q_{\ww}^{(i)}(\rr))\in \KK[X]$ is a $\KK$-linear combination of the polynomials $\pi_q(\pp_{\bb}^{(i)}(\xx,\bff)) \in \KK[X]$ \albert{More details about the last inequality?}. 
 %
 Now,
 $$
@@ -1819,7 +1840,7 @@ $$
 Q'(U_1,\ldots, U_\iota)\defeq \sum_{i\in[\iota]} U_i \cdot \pi(Q_{\ww}^{(i)}) - \sum_{i\in [\iota]}U_i \cdot \pi(u_i)
 $$
 %
-is a nonzero multilinear polynomial over $\KK$. By Schwartz-Zippel lemma, the probability of sampling random $\theta_i \in \KK$ such that $Q'(\theta_1, \ldots, \theta_\iota) =0$ is at most $1/|\KK_{\min}|$. But the former is precisely the probability that $E|\neg E_1$ holds. It follows that $P_2\leq \kappa_2$, as required. 
+is a nonzero multilinear polynomial with coefficients in $\KK$. Now, $[E\mid \neg E_1]$ holds if and only if $Q'(\theta_1, \ldots, \theta_\iota)=0\in \KK$. By Schwartz-Zippel lemma, this probability is at most $1/|\KK_{\min}|$.  It follows that $P_2\leq \kappa_2$, as required. 
 %
 \end{proof}
 This completes the proof of \cref{t:thm_iop_pimsat}.
