@@ -329,7 +329,7 @@ $$
 Let $\cC\subseteq \FF^{\codelength}$ be a linear code of dimension $\codedim'$ and blocklength $\codelength$ over $\FF$.    Let $T:\FF^{\codedim} \to \FF^{\codedim'}$ be an arbitrary map (looking ahead, for us $T$ will be a packing map that packs elements from $\FF_2$ into elements of a larger binary field).  We define the \emph{Encoded PESAT  relation} as: %\albert{No reason to expose the interleaving this early}
 %
 $$
-\PESAT(\FF, \pp, \cC, T) \defeq \left\{ \left(\begin{aligned} &\inp=\xx\in \FF^\inplen, \\&\oracle = f \in \FF^{\codelength\cdot h}, \\ &\wit= \bff\in (\FF^\codedim)\end{aligned}\right) \;\middle|\;  \begin{aligned} 
+\PESAT(\FF, \pp, \cC, T) \defeq \left\{ \left(\begin{aligned} &\inp=\xx\in \FF^\inplen, \\&\oracle = f \in \FF^{\codelength}, \\ &\wit= \bff\in (\FF^\codedim)\end{aligned}\right) \;\middle|\;  \begin{aligned} 
 &\Enc_{\cC}(T(\bff)) = f\\ \wedge \  &\pp_i(\xx, \bff) = 0  \text{ for all } i\in [\numrows]\end{aligned}\right\}
 $$
 We will drop the reference to $T$ whenever it is understood from the context. When $\numrows=1$ and $\xx$ are such that $\xx=(\vv,\mu)\in \FF^{\codedim}\times \FF$; $\pp_1(\xx,\ff)= \langle \ff, \vv\rangle -\mu$ (and $\codedim=\inplen$), the relation $\PESAT(\FF,\pp, \cC, T)$ is called a \emph{constrained code} \cite{WHIR?} \albert{WHIR?}.  We denote it $$\LIN(\FF,\cC,T).$$
@@ -655,8 +655,10 @@ Notice that \begin{equation}\label{e:Q_F2Z_intermediate}\left(\inp=((g^{\bm{\gam
 %
  At the end of this IOR, they are left with the following claim to prove: 
 %
-\begin{equation}\label{e:iopp_mle_claims}
-\left((\vv, \mu'), \ f, \ \picomfield(\bff)\right) \in \LIN( \comfield,\cC,\pack)\end{equation} for some vector $\vv$ and field element $\mu'$ output during the IOR $\Pi_{\mathsf{red}}$. 
+\begin{align*}\label{e:iopp_mle_claims}
+&\left((\vv, \mu'), \ f, \ \picomfield(\bff)\right) \in \LIN( \comfield,\cC,\pack)\\& \qquad\qquad\qquad = \left\{ \left(\begin{aligned} &\inp=(\uu,\mu)\in \comfield^\inplen, \\&\oracle = g \in \comfield^{\codelength}, \\ &\wit= \bfg\in (\comfield^\codedim)\end{aligned}\right) \;\middle|\;  \begin{aligned} 
+&g=\Enc_{\cC}\circ \pack (\bfg) \\    &\langle \uu, \bfg\rangle = \mu  \end{aligned}\right\}
+\end{align*} for some vector $\vv$ and field element $\mu'$ output during the IOR $\Pi_{\mathsf{red}}$. 
 \end{itemize}
 \item \textbf{Phase 3: Using an IOP over {$\comfield$}.} Prover and  verifier engage in an IOP  to certify the claims \eqref{e:iopp_mle_claims}. 
 \end{enumerate}
@@ -925,64 +927,42 @@ The prover and verifier receive $\inp=(\mu, \vv,\Mmatrix)\in \evalfield \times \
     $$
      Note that until that point, the verifier has not made any queries to $\oracle'$. So, in terms of completeness, it does not matter, yet, that $f$ is not the encoding of $\pi_2(\bfh)=M\cdot \pi_2(\bff)$.
  \item  At the end of Phase 2 of \cref{c:core_iop}, prover and verifier are left with the claims 
-\begin{equation}\label{e:iopp_mle_claims_2}
-\left((\vv, \mu'), \ f, \ \picomfield(\bfh)\right) \in \LIN( \comfield,\cC,\pack)\end{equation} for some vector $\vv\in\comfield^{\codedim'}$ and field element $\mu'\in \comfield$ output during the IOR $\Pi_{\mathsf{red}}$. 
+\begin{align*}\label{e:iopp_mle_claims_2}
+&\left((\vv, \mu'), \ f, \ \picomfield(\bfh)\right) \in \LIN( \comfield,\cC,\pack) \\& \qquad\qquad\qquad = \left\{ \left(\begin{aligned} &\inp=(\uu,\mu)\in \comfield^\inplen, \\&\oracle = g \in \comfield^{\codelength}, \\ &\wit= \bfg\in (\comfield^\codedim)\end{aligned}\right) \;\middle|\;  \begin{aligned} 
+&g=\Enc_{\cC}\circ \pack (\bfg) \\    &\langle \uu, \bfg\rangle = \mu  \end{aligned}\right\}
+\end{align*} for some vector $\vv\in\comfield^{\codedim'}$ and field element $\mu'\in \comfield$ output during the IOR $\Pi_{\mathsf{red}}$. 
 
+As we mentioned, this claim as is is false, because $f\neq \Enc_{\cC}\circ \pack\circ \pi_2(\bfh)$ --indeed, the dimension of $\cC$ does not match that of $\pack\circ \pi_2(\bfh)$. Instead of, as done in \cref{c:core_iop}, using an IOP for $\LIN( \comfield,\cC,\pack)$ to attempt to prove the above claim, prover and verifier proceed as follows.
 
-
-
- ----
-
- 
- engage in $\Pi_{\mathsf{red}}$ with inputs
- %
- $$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1']},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\picomfield(\bfh_{*j})=M_0\cdot \pi_2(\bff_{*j})\right)_{j\in [\codedim_2]},$$
- where $f_{*j}=\Enc_{\cC_1}(\pack(\pi_2(\bff_{*j})))$. At the end of $\Pi_{\mathsf{red}}$ they are left with claims
- %
-%
-\begin{equation}\label{e:virtual_IOPP_intermediate}
-\left((\vv, \eta_j), \ \oracle_j, \ \wit_j\right)_{j\in [\codedim_2]} \in \left(\LIN( \comfield,\cC_1,\pack)\right)^{\codedim_2},
-\end{equation}
-%
-for some $\vv\in \comfield^{ \codedim_1'}$ and $\eta_j \in \comfield$. Again, since we assume the verifier never queries $\oracle_j$ during $\Pi_{\mathsf{red}}$, completeness holds for honest provers, even if $\oracle_j$ is not the encoding of $\wit_j$.
-
-Note that \eqref{e:virtual_IOPP_intermediate} holds if and only if, for all $j\in [\codedim_2]$,
-%
-\begin{align*}
-\eta_j &=\sum_{i\in [\codedim_1']} \vv_i \cdot \pi_2(\bfh_{ij}) = \sum_{i\in [\codedim_1']} \vv_i \cdot \sum_{t\in [\codedim_1]} M_{0it}\cdot \pi_2(\bff_{tj})\\ =& \sum_{t\in [\codedim_1]} \left(\sum_{i\in[\codedim_1']}M_{0it}\cdot \vv_i\right)\cdot \pi_2(\bff_{tj}) = \langle \uu_j , \pi_2(\bff_{*j})\rangle,
-\end{align*}
-where $\uu \in \comfield^{\codedim_1}$ is the vector whose $t$-th entry is
+Observe that, if the prover is honest,
 %
 $$
-\uu_t = \langle \vv, M_{0*t}\rangle \in \comfield,
+\mu'=\langle \vv, \pi_2(\bfh)\rangle = \langle \vv, \Mmatrix\cdot \pi_2(\bff) \rangle = \langle \Mmatrix^{\mathsf{T}}\cdot \vv, \pi_2(\bff)\rangle,
 $$
-and  $M_{0*t}\in \comfield^{\codedim_1'}$ denotes the $t$-th column of $M_0$, for $t\in [\codedim_1]$,
 %
-
+where $\mathsf{T}$ denotes transposition. Hence the following claim is true:
 %
-Note that, if $\Pi_{\mathsf{red}}$ is as in \cref{?}, then $\vv= (\mathsf{eq}(\bb,\rr))_{\bb\in \{0,1\}^{\log \codedim_1'}}$ for some $\rr\in \comfield^{\log \codedim_1'}$, and then 
-$
-\uu_t = \mle{M_{0*t}}(\rr) \in \comfield. 
-$
-%
-
-\item If the prover is honest, we have that
-%
-\begin{equation}\label{e:final_virt_equation}
-\left((\uu, \eta_j),\ \oracle_j = \Enc_{\cC_1}(\pack(\pi_2(\bff_{*j}))), \ \pi_2(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\LIN( \comfield,\cC_1,\pack)\right)^{\codedim_2}.
+\begin{equation}\label{e:virtualization_final_claim}
+((\Mmatrix^{\mathsf{T}}\cdot \vv, \mu'), f, \pi_2(\bff)) \in \LIN(\comfield, \cC, \pack).
 \end{equation}
 %
-Prover and verifier use the Galois ring-switch \cref{c: Galois ring-switch IOP} to reduce  \eqref{e:final_virt_equation} to a claim of the form.
-\begin{equation}\label{e:final_ring_switched_equation}
-\left((\uu', \kappa_j),\ \oracle_j = \Enc_{\cC_1}(\pack(\pi_2(\bff_{*j}))), \ \pack(\pi_2(\bff_{*j}))\right)_{j\in [\codedim_2]} \in \left(\LIN(\cC_1, \comfield,\mathsf{id})\right)^{\codedim_2},
-\end{equation}
-where $\uu'=(\eq(\bb,\rr))_{\bb\in \{0,1\}^{\log \codedim_1}}$ for some $\rr\in \comfield^{\log \codedim_1}$, and for some $\kappa_j\in \comfield$.
-\item Note that \eqref{e:final_ring_switched_equation} is a collection of standard claims about the MLE evaluation of a vector with entries in $\comfield$, ``committed'' through an encoding over $\comfield$. Accordingly, prover and verifier use an IOP to prove such claims.
-\albert{To keep in mind: ring-switch for arbitrary innter products could be expensive}
-%
- \end{enumerate}
+Now prover and verifier use an IOP for $\LIN(\comfield, \cC, \pack)$ to prove \eqref{e:virtualization_final_claim} \albert{comments on verifier?}. 
+\end{enumerate}
 %
 \end{construction}
+
+
+
+\begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:virtual_iop}]\label{t:virtual_iop} \albert{Completeness missing}
+   Under the same hypothesis as \cref{t:thm_core_IOPP},  \cref{c:virtual_iop} is a perfectly complete IOP for $\LinBitsDual^{\virtual}$  and has round-by-round knowledge soundness with relaxation $((\LinBitsDual^{\virtual})^{\delta}, \bot)$, with errors $$\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}$$ as defined in \cref{t:thm_core_IOPP}.  
+   The errors $\kappa_{\red,i}$ correspond to the errors of  the IOR $\Pi_\red$ when used on triples of the form $$(\inp_\red=((g^{\bm{\gamma}_i})_{i\in [\codedim_1]}, (g^{\mu_j})_{j\in [\codedim_2]}), \oracle_\red=f, \wit =\pi_2(\bfh))\in \PESAT(\comfield,Q_{\FF 2 \ZZ}, \pack)$$ (so, the witness has dimension $\codedim'$ and we use the decomposition $\codedim' = \codedim_1 \cdot \codedim_2$). The errors $\kappa_{\iopp,i}$ correspond to the errors of  the IOP $\Pi_\iopp$ when used on triples of the form $$()$$
+
+
+
+    If $\degevalfield=0$, i.e.\ $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$ IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $(\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}$.
+\end{theorem}
+
+
 
 
 \subsubsection{Optimizing \ftwoz for virtualized inputs $\pi_2^{-1}(M\cdot \pi_2(\bff))$}\label{s:opt_virtual}
@@ -2757,148 +2737,6 @@ The final result is a transcript dependent map $A: \mathbb{E}^{dn} \to \mathbb{E
 \section{GKR protocol for multiple grand products}
 
 In this section we describe an IOR from $\PESAT(\comfield, Q_{\FF 2 \ZZ}, \cC_1, \pack)^{\codedim_2}$ to $\LIN(\comfield,\cC_1, \pack)$. We show it is perfectly complete and has round-by-round knoweledge soundness with relaxation $(\PESAT(\comfield, Q_{\FF 2 \ZZ}, \cC_1, \pack)^{\delta})^{\codedim_2}, \LIN(\comfield,\cC_1, \pack)$.
-
-
-\section{Scratch}
-
-
-\albert{Would be good to add more detail in this paragraph} The relation $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$  allows to, for example, express linear constraints over $\evalfield$ of the XOR of witness elements, while only committing (over $\comfield$) to the original elements. The same applies with other bit operations such as AND and Majority, by noting first that, given integer bits $x,y,z\in \{0,1\}$: \albert{Should reference some identity in preliminaries, or explain more here} 
-%
-\begin{equation*}
-    \begin{aligned}
-        \pievalfield(x \band y) & = 2^{-1}\cdot \pievalfield \left( x+y - \pi_2^{-1}(\pi_2(x) + \pi_2(y)) \right),\\
-        \pievalfield(\Maj(x,y,z)) &= 2^{-1}\cdot \pievalfield \left( x+y+z - \pi_2^{-1}(\pi_2(x) + \pi_2(y) + \pi_2(z) \right),
-    \end{aligned}
-\end{equation*}
-where $2^{-1}$ denotes the inverse of $2$ modulo $q$.  
-%
-Hence AND and Majority can be expressed over $\FF_q$ as  linear expressions of a vectors of the form $\pievalfield(\pi_2^{-1}(M\cdot \pi_2(\bff)))$, with $\bff$ being a vector of integer bits containing only the original elements on which we apply the AND and Majority operations. 
-
-
-\bigskip
-
-We next provide an IOP for $\Relation^{\mathsf{lin-virtual}}_{\cC, \comfield, \evalfield, \pack}$ for specific shapes of $M$. Similarly as in \cref{?}, we assume a tensor structure $\codedim=\codedim_1 \cdot \codedim_2$ for $\vv$, and write $\bff = (\bff_{*j})_{j\in [\codedim_2]} \in \bits^{\codedim_1 \times \codedim_2}$.  We then let $\codedim_1'$ be such that $\codedim' = \codedim_1' \times \codedim_2$ and assume $M = \mathsf{Id} \otimes M_0$ where $M_0$ is a $\codedim_1' \times \codedim_1$ matrix with entries in $\FF_2$, and $\mathsf{Id}$ is the $\codedim_2\times \codedim_2$ matrix. In words, $M$ is the $\codedim'\times \codedim = \codedim_1'\cdot \codedim_2 \times \codedim_1\cdot \codedim_2$ diagonal block matrix with $M_0$ as diagonal blocks. Then
-%
-\begin{equation}\label{e:M_pi_f}
-M \cdot \pi_2(\bff) = (M_0 \cdot \pi_2(\bff_{*j}))_{j\in [\codedim_2]} \in (\FF_2^{\codedim_1'})^{\codedim_2}.
-\end{equation}
-%
-\begin{construction}[IOP for $\Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$]\label{c:virtual_iop}
-The prover and verifier receive $\inp=(\mu, \vv,M)\in \evalfield \times \evalfield^{\codedim'} \times \FF_2^{\codedim'\times\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \Relation_{\cC, \comfield, \evalfield}^{\mathsf{lin-virtual}}$.  We assume $M$ is of the form described above.
-
- Define  $\bfh = \pi_2^{-1}\left(M\cdot \pi_2(f)\right) \in \{0,1\}^{\codedim'} \subseteq \ZZ^{\codedim'}$. By \eqref{e:M_pi_f}, $$\bfh=(\bfh_{*j})_{j\in [\codedim_2]} = \left(\pi_2^{-1}\left( M_0\cdot \pi_2(\bff_{*j}) \right)\right)_{j\in [\codedim_2]},$$ with $ \bfh_{*j}\in \bits^{\codedim_1'}$. Let $f= \Enc_{\cC}\circ \pack\circ\pi_2(\bff)\in \bits^{\codelength} \subseteq \ZZ^{\codelength}$.
- \begin{enumerate}[leftmargin=*]
-     \item Prover and verifier execute \cref{c:core_iop}  with inputs 
-$$
-\inp' = (\mu, \vv),  \quad \oracle'=f,\quad  \wit' = \bfh=\pi_2^{-1}\left(M\cdot \pi_2(\bff)\right) \in \{0,1\}^{\codedim'} \subseteq \ZZ^{\codedim'}.
-$$
- until Step 3 where they are meant to use the IOR $\Pi_{\mathsf{red}}$. Note that until that point, the verifier has not made any queries to $\oracle'$. So, in terms of completeness, it does not matter, yet, that $f$ is not the encoding of $\pi_2(\bfh)=M\cdot \pi_2(\bff)$.
- \item  Prover and verifier engage in $\Pi_{\mathsf{red}}$ with inputs
- %
- $$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1']},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\picomfield(\bfh_{*j})=M_0\cdot \pi_2(\bff_{*j})\right)_{j\in [\codedim_2]},$$
- where $f_{*j}=\Enc_{\cC_1}(\pack(\pi_2(\bff_{*j})))$. At the end of $\Pi_{\mathsf{red}}$ they are left with claims
- %
-%
-\begin{equation}\label{e:virtual_IOPP_intermediate}
-\left((\vv, \eta_j), \ \oracle_j, \ \wit_j\right)_{j\in [\codedim_2]} \in \left(\LIN( \comfield,\cC_1,\pack)\right)^{\codedim_2},
-\end{equation}
-%
-for some $\vv\in \comfield^{ \codedim_1'}$ and $\eta_j \in \comfield$. Again, since we assume the verifier never queries $\oracle_j$ during $\Pi_{\mathsf{red}}$, completeness holds for honest provers, even if $\oracle_j$ is not the encoding of $\wit_j$.
-
-Note that \eqref{e:virtual_IOPP_intermediate} holds if and only if, for all $j\in [\codedim_2]$,
-%
-\begin{align*}
-\eta_j &=\sum_{i\in [\codedim_1']} \vv_i \cdot \pi_2(\bfh_{ij}) = \sum_{i\in [\codedim_1']} \vv_i \cdot \sum_{t\in [\codedim_1]} M_{0it}\cdot \pi_2(\bff_{tj})\\ =& \sum_{t\in [\codedim_1]} \left(\sum_{i\in[\codedim_1']}M_{0it}\cdot \vv_i\right)\cdot \pi_2(\bff_{tj}) = \langle \uu_j , \pi_2(\bff_{*j})\rangle,
-\end{align*}
-where $\uu \in \comfield^{\codedim_1}$ is the vector whose $t$-th entry is
-%
-$$
-\uu_t = \langle \vv, M_{0*t}\rangle \in \comfield,
-$$
-and  $M_{0*t}\in \comfield^{\codedim_1'}$ denotes the $t$-th column of $M_0$, for $t\in [\codedim_1]$,
-%
-
-%
-Note that, if $\Pi_{\mathsf{red}}$ is as in \cref{?}, then $\vv= (\mathsf{eq}(\bb,\rr))_{\bb\in \{0,1\}^{\log \codedim_1'}}$ for some $\rr\in \comfield^{\log \codedim_1'}$, and then 
-$
-\uu_t = \mle{M_{0*t}}(\rr) \in \comfield. 
-$
-%
-
-\item If the prover is honest, we have that
-%
-\begin{equation}\label{e:final_virt_equation}
-\left((\uu, \eta_j),\ \oracle_j = \Enc_{\cC_1}(\pack(\pi_2(\bff_{*j}))), \ \pi_2(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\LIN( \comfield,\cC_1,\pack)\right)^{\codedim_2}.
-\end{equation}
-%
-Prover and verifier use the Galois ring-switch \cref{c: Galois ring-switch IOP} to reduce  \eqref{e:final_virt_equation} to a claim of the form.
-\begin{equation}\label{e:final_ring_switched_equation}
-\left((\uu', \kappa_j),\ \oracle_j = \Enc_{\cC_1}(\pack(\pi_2(\bff_{*j}))), \ \pack(\pi_2(\bff_{*j}))\right)_{j\in [\codedim_2]} \in \left(\LIN(\cC_1, \comfield,\mathsf{id})\right)^{\codedim_2},
-\end{equation}
-where $\uu'=(\eq(\bb,\rr))_{\bb\in \{0,1\}^{\log \codedim_1}}$ for some $\rr\in \comfield^{\log \codedim_1}$, and for some $\kappa_j\in \comfield$.
-\item Note that \eqref{e:final_ring_switched_equation} is a collection of standard claims about the MLE evaluation of a vector with entries in $\comfield$, ``committed'' through an encoding over $\comfield$. Accordingly, prover and verifier use an IOP to prove such claims.
-\albert{To keep in mind: ring-switch for arbitrary innter products could be expensive}
-%
- \end{enumerate}
-%
-\end{construction}
-
-
-
-\begin{example}\label{e:virtual_example}
-    Say we have a vector $\bff\in \bits^{\codedim} \subseteq \ZZ^\codedim$ and we wish to prove MLE evaluation claims of an extended vector $\bff' \in \bits^{2\cdot \codedim}$ where 
-    %
-    $$
-    \bff_i' = \begin{cases}
-    \bff_i  & \text{if } i \in [\codedim],\\
-    \bff_{i -\codedim } \xor \bff_{i - \codedim +1} & \text{if } \codedim+1 \leq i \leq 2\cdot \codedim -1,\\
-    \bff_{\codedim} & \text{if } i =2\cdot \codedim.
-    \end{cases}
-    $$
-    % 
-    In words, $\bff'$ is the result of concatenating $\bff$ and the vector obtained by ``xor-ing'' together every two consecutive elements in $\bff$ (and keeping the last entry as $\bff_{\codedim}$, since $\bff_{\codedim} \xor \bff_{\codedim+1}$ is not defined). This example will come up in our SHA-256 case-study.
-
-    
-    We have
-    %
-    $$
-    \bff' = \pi_2^{-1}\left(M \cdot \pi_2(\bff)\right)   \in \bits^{2\codedim}
-    $$
-    where
-    %
-    $$
-M = \begin{pmatrix}
-        & & & &\\
-       & & \mathsf{Id}_{\codedim\times \codedim} & & \\
-               & & & &\\
-               \hline
-        1 & 1 &  0 & 0 & \ldots & 0\\
-        0 & 1 & 1 & 0 & \ldots & 0 \\
-        \vdots & & \ddots & & & \vdots\\
-        0 &  \ldots &  0 & 0 & 1 & 1 \\
-        0 & \ldots & 0& 0 & 0 & 1 \\
-    \end{pmatrix} 
-    $$
-     if we do not wish to leverage any tensor decomposition structure, i.e.\ if we take $\codedim_1=\codedim$ and $\codedim_2=1$, then we can apply  \cref{c:virtual_iop} using this matrix $M$ as part of the input. 
-     
-     
-     At the beginning of Step 3 of \cref{c:virtual_iop}, prover and verifier obtain the claim 
-     $$
-     \left((\uu, \eta),\ \Enc_{\cC}\circ \pack\circ\pi_2(\bff), \ \pi_2(\bff)\right) \in \LIN( \comfield,\cC_1,\pack),
-     $$
-     for  $$\uu = (\mle{M_{*t}}(\rr))_{t\in [\codedim]} \in \comfield^{\codedim},$$ where $M_{*t}$ denotes the $t$-th column of $M$. Then, prover and verifier use the Galois ring-switch \cref{c: Galois ring-switch IOP} to reduce the above claim to standard MLE evaluation claims of $\pack(\pi_2(\bff_{*j}))$. The cost of doing so for the vector $\uu$ of linear coefficients is .... \albert{discuss}.
-    
-    Next we address the case when we use a non-trivial tensor decomposition structure $\ell= \ell_1 \cdot \ell_2$ with $\ell_1\neq 1 \neq \ell_2$. \albert{TODO}
-     
-\end{example} 
-
-\begin{theorem}\label{t:thm_virtual_IOPP}
-    \albert{Completeness and RBR knowledge soundness of \cref{c:core_iop} }
-\end{theorem}
-\begin{proof}
-\end{proof}
-
-
 
 
 \end{document}
