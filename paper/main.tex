@@ -464,7 +464,7 @@ $$
 \renewcommand{\moduleonebound}{M_{\leq B}}
 
 \paragraph{The general Lin-BitsDual relation.}
-We now define the general Lin-BitsDual relation. Let $R_M$ be a ring and let $M$ be a $R_M$-module. Let $N$ be a $R$-module. Let $\psi: \moduleone \to N$ be a module homomorphism (with underlying ring homomorphism $\ringmorphism:R_M \to R$).
+We now define the general Lin-BitsDual relation. Let $R_M$ be a ring and let $M$ be a $R_M$-module. Let $R$ be a ring. Let $\psi: \moduleone \to N$ be a module homomorphism (with underlying ring homomorphism $\ringmorphism:R_M \to R$).
 
 
 Fix a vector length $\codedim_0$. Let $\bff \in \moduleonebound^{\codedim_0}$ and write %$\bff=(\bff_{*1}, \ldots, \bff_{*\moduledegree})$ 
@@ -478,10 +478,10 @@ Let $\cC$ be a linear code over $\comfield$ of dimension $(\codedim_0\cdot B \cd
 \begin{definition} The \emph{general Lin-BitsDual}  relation is defined as
 %
 \begin{align*}
- &\LinModFieldBin(\moduleonebound,\modulemorphism,N,  \cC)\\ &\qquad\qquad\qquad= \left\{ \left(\begin{aligned} &\inp=(\vv,\mu)\in R^{ \codedim_0}  \times N, \\
+ &\LinModFieldBin(\moduleonebound,\modulemorphism,R,  \cC)\\ &\qquad\qquad\qquad= \left\{ \left(\begin{aligned} &\inp=(\vv,\mu)\in R^{ \codedim_0}  \times R, \\
  &\oracle = f \in \comfield^{\codelength}, \\ &\wit= \bff\in \moduleonebound^{\codedim_0}\end{aligned}\right) \;\middle|\;  \begin{aligned}  
  &f = \Enc_{\cC}\circ \pack\circ\pi_2(\mathsf{bits}(\bff)),\\
- &\langle \modulemorphism(\bff), \vv \rangle = \mu  \ \text{ in } N
+ &\langle \modulemorphism(\bff), \vv \rangle = \mu 
  \end{aligned} \right\}.
 \end{align*}
 \end{definition}
@@ -583,20 +583,21 @@ We provide an IOP for $\LinBitsDual$ next. We assume the notation from the previ
 $$ In words, $\picanon^{\KK}{}^{-1}$ simply takes an elemeent from $\KK$ represented as a degree $< \deg(h(X))$ polynomial over $\FF_p$, and applies $\pi_{p}^{-1}$ to it. We remark that one could choose any other such ``inverse'' maps, e.g.\ for $\pi_{p}^{-1}$ one may prefer to use centered representatives. 
 
 \renewcommand{\evalfield}{R}
-\renewcommand{\picanon}{{\pi_{\mathsf{canon}}^R}}
+
 \renewcommand{\degevalfield}{\deg(\evalfield)}
 
 
 We define $\picanon^\ZZ: \ZZ\to\ZZ$ as the identity map.  If $R=\ZZ$, we let $\degevalfield=0$.
 
+\renewcommand{\picanon}{{\pi_{\mathsf{canon}}^R}}
 
-We let $\Pi_{\iopp}$ be an IOP for $\LIN(\comfield,\cC_1^{\equiv \codedim_2}, \pack)$. In our instantiation, $\Pi_{\iopp}$ is the WHIR protocol \cite{whir} over binary fields, with ring-switching \cite{?} as described in \cref{s:ring_switch} \albert{proper reference?}, and with proximity parameter set to the Johnson bound.   
+We let $\Pi_{\iopp}$ be an IOP for $\LIN(\comfield,\cC, \pack)$. In our instantiation, $\Pi_{\iopp}$ is the WHIR protocol \cite{whir} over binary fields, with ring-switching \cite{?} as described in \cref{s:ring_switch} \albert{proper reference?}, and with proximity parameter set to the Johnson bound.   
 
 \begin{construction}[IOP for the core {$\LinBitsDual$ relation}]\label{c:core_iop}
-\noindent \textbf{Parameters.} $(\KK,q,\comfield,\codedim,\codedim_1,\codedim_2,\cC)$ comprised of: a finite field $\KK$ of characteristic $q$ \albertimportant{or integers}; a binary field $\comfield$ a witness length $\codedim$; tensor decomposition dimensions $\codedim_1, \codedim_2$ for \cref{c:core_iop} satisfying $\codedim_1\cdot \codedim_2 = \codedim$; a linear code $\cC$ over $\comfield$ of dimension $\codedim/\comfieldexp$ and block length $\codelength$. \\
+\noindent \textbf{Parameters.} $(R,\ringmorphism, \comfield,\codedim,\codedim_1,\codedim_2,\cC)$ comprised of: a ring $R$ and a ring homomorphism $\ringmorphism: \ZZ\to R$; a binary field $\comfield$ a witness length $\codedim$; tensor decomposition dimensions $\codedim_1, \codedim_2$ for \cref{c:core_iop} satisfying $\codedim_1\cdot \codedim_2 = \codedim$; a linear code $\cC$ over $\comfield$ of dimension $\codedim/\comfieldexp$ and block length $\codelength$. \\
 
 
-\noindent \textbf{Inputs.} The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \LinBitsDual(\bits,\pi_q, \evalfield,\cC)$.  We assume the tensor split from the previous Section \ref{s:interleaved_setting}, and adopt its notation. 
+\noindent \textbf{Inputs.} The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \LinBitsDual(\bits,\ringmorphism, \evalfield,\cC)$.  We assume the tensor split from the previous Section \ref{s:interleaved_setting}, and adopt its notation. 
 Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with sufficiently large multiplicative order, to be determined later.  
 
 
@@ -806,9 +807,9 @@ The above holds if and only if $(\inp,\oracle, (\bff_{*j})_{j\in [\codedim_2]})\
 \subsection{\ftwoz: an IOP for the general Lin-BitsDual relation}
 
 \renewcommand{\modulemorphism}{\psi}
-\renewcommand{\moduletwo}{N}
+\renewcommand{\moduletwo}{R}
 
-Next we describe our IOP for $\LinModFieldBin$.  We assume the notation of \cref{?}. Namely, $\moduleone$ denotes an $R_M$-module; $\moduletwo$ is an $R_N$-module; and $\modulemorphism:\moduleone \to\moduletwo$ is a module homomorphism with underlying ring homomorphim $\ringmorphism:R_M \to R_N$.  Let $\gamma_1, \ldots, \gamma_\moduledegree$ be a $R_M$-base of  $M_\ring$. 
+Next we describe our IOP for $\LinModFieldBin$.  We assume the notation of \cref{?}. Namely, $\moduleone$ denotes an $R_M$-module; $R$ is a ring; and $\modulemorphism:\moduleone \to\moduletwo$ is a module homomorphism with underlying ring homomorphism $\ringmorphism:R_M \to R$.  Let $\gamma_1, \ldots, \gamma_\moduledegree$ be a $R_M$-base of $M$. 
 
 
 
@@ -818,14 +819,14 @@ We will need the following result.
 
 
 \begin{lemma}\label{l:bitify}
-    Let $\bff\in \moduleonebound^{\codedim_0}$, and let $\vv\in \moduletwo^{\codedim_0}$. Then
+    Let $\bff\in \moduleonebound^{\codedim_0}$, and let $\vv\in \moduletwo^{\codedim_0}$. Then %\albertimportant{Something's off later: $\uu$ is a vector with module elements. We don't have an IOP in such setting. Do we need to ask that $\moduletwo$ is a ring as well? We could keep module, but then in the tensor decomposition we have to be careful that we respect the modularity. Not sure it is worth it. But if $\moduletwo$ is a ring (or algebra), isn't it just better to restrict to $\ZZ$ or finite fields?}
     %
     $$
     \langle \modulemorphism(\bff), \vv \rangle = \langle \ringmorphism(\mathsf{bits}(\bff)), \uu \rangle
     $$
     where
     \begin{equation}\label{e:u_def}
-    \uu \defeq   \left(\vv \otimes \left(1, \ringmorphism(2), \ldots, \ringmorphism(2^{B-1})\right) \otimes \left(\modulemorphism(\gamma_1), \ldots, \modulemorphism(\gamma_{\moduledegree})\right)\right) \in \KK^{\codedim_0\cdot \moduledegree \cdot B}
+    \uu \defeq   \left(\vv \otimes \left(1, \ringmorphism(2), \ldots, \ringmorphism(2^{B-1})\right) \otimes \left(\modulemorphism(\gamma_1), \ldots, \modulemorphism(\gamma_{\moduledegree})\right)\right) \in R^{\codedim_0\cdot \moduledegree \cdot B}
     \end{equation}
 \end{lemma}
 \begin{proof}
@@ -840,7 +841,7 @@ as needed.
 
 \begin{construction}[IOP for $\LinModFieldBin$]\label{c:LinModFieldBin}
 
- \textbf{Parameters.} $$(R_M,R_N, \moduleone,\moduletwo, \moduledegree,\ringmorphism, \modulemorphism, (\gamma_1, \ldots, \gamma_\moduledegree), \codedim_0, B, \codedim_1,\codedim_2, \comfield,\cC)$$ comprised of: two rings $R_M, R_N$; a ring morphism $\ringmorphism:R_M \to R_N$; a $R_M$-module $\moduleone$ of dimension $\moduledegree$; an $R_N$-module $\moduletwo$; a module homomorphism $\modulemorphism:\moduleone\to \moduletwo$; a $R_M$-base $\gamma_1, \ldots, \gamma_{\moduledegree}$ of $M_R$; a witness length $\codedim_0$; a bit-size bound $B$; tensor decomposition dimensions $\codedim_1, \codedim_2$ for \cref{c:core_iop} satisfying $\codedim_1\cdot \codedim_2 = \codedim_0 \cdot \moduledegree\cdot B/2^\comfieldexp$; a binary field $\comfield$;  a linear code $\cC$ over $\comfield$ of dimension $\codedim_0\cdot \moduledegree\cdot B/\comfieldexp$ and block length $\codelength$.\\
+ \textbf{Parameters.} $$(R_M, R, \moduleone,\moduledegree,\ringmorphism, \modulemorphism, (\gamma_1, \ldots, \gamma_\moduledegree), \codedim_0, B, \codedim_1,\codedim_2, \comfield,\cC)$$ comprised of: two rings $R_M, R$; a ring morphism $\ringmorphism:R_M \to R$; a $R_M$-module $\moduleone$ of dimension $\moduledegree$;  a module homomorphism $\modulemorphism:\moduleone\to \moduletwo$; a $R_M$-base $\gamma_1, \ldots, \gamma_{\moduledegree}$ of $M_R$; a witness length $\codedim_0$; a bit-size bound $B$; tensor decomposition dimensions $\codedim_1, \codedim_2$ for \cref{c:core_iop} satisfying $\codedim_1\cdot \codedim_2 = \codedim_0 \cdot \moduledegree\cdot B/\comfieldexp$; a binary field $\comfield$; a linear code $\cC$ over $\comfield$ of dimension $\codedim_0\cdot \moduledegree\cdot B/\comfieldexp$ and block length $\codelength$.\\
 
 
 
@@ -851,7 +852,7 @@ f = \Enc_{\cC}\circ \pack\circ\pi_2(\mathsf{bits}(\bff)),\qquad \langle \modulem
 $$
 \begin{enumerate}[leftmargin=*]
      \item By \cref{l:bitify}, the   claim $(\inp,\oracle, \wit) \in \LinModFieldBin(\moduleonebound,\modulemorphism, R,  \cC)$ is equivalent to the claim \begin{equation}\label{e:iop_final_linear_claim}
-    \left(\inp'=(\uu,\mu), \oracle' = f=\Enc_{\cC}\circ \pack\circ\pi_2(\mathsf{bits}(\ff)), \wit' = \mathsf{bits}(\ff)\right) \in \LinBitsDual(\bits,\pi_q, \KK,\cC).
+    \left(\inp'=(\uu,\mu), \oracle' = f=\Enc_{\cC}\circ \pack\circ\pi_2(\mathsf{bits}(\ff)), \wit' = \mathsf{bits}(\ff)\right) \in \LinBitsDual(\bits,\ringmorphism, R,\cC).
 \end{equation}
 Accordingly, prover and verifier use \cref{c:core_iop} to prove \eqref{e:iop_final_linear_claim}. They use parameters $(\KK,q,\comfield,\codedim_0\cdot \moduledegree\cdot B,\codedim_1,\codedim_2,\cC)$.  See \cref{r:tensor_dec_u} for comments on how to use tensor decompositions of $\uu$ in \cref{c:core_iop}.
 \end{enumerate}
@@ -859,10 +860,10 @@ Accordingly, prover and verifier use \cref{c:core_iop} to prove \eqref{e:iop_fin
 
 
 \begin{remark}[Tensor decompositions of $\uu$]\label{r:tensor_dec_u}
-Recall that \cref{c:core_iop} considers a (possibly trivial) tensor decomposition of its public input vector $\uu$ (denoted $\vv$ in \cref{c:core_iop}). This decomposition need not be given by some of the tensor factors in \cref{e:u_def}. For example, in many applications, the input vector $\vv$ for $\LinModFieldBin(\moduleonebound,\modulemorphism \KK,  \cC)$ may admit further tensor decompositions, say $\vv=\vv^{(1)}\otimes \vv^{(2)}$ (e.g.\ if $\vv$ is of the form $(\eq(\bb,\rr))_{\bb\in\bits^{\log \codedim_0}}$. In that case, we may use a tensor decomposition for $\uu$ in \cref{c:core_iop} of the form, say, $\uu=\uu^{(1)}\otimes \uu^{(2)}$, where
+Recall that \cref{c:core_iop} considers a (possibly trivial) tensor decomposition of its public input vector $\uu$ (denoted $\vv$ in \cref{c:core_iop}). This decomposition need not be given by some of the tensor factors in \cref{e:u_def}. For example, in many applications, the input vector $\vv$ for $\LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo,  \cC)$ may admit further tensor decompositions, say $\vv=\vv^{(1)}\otimes \vv^{(2)}$ (e.g.\ if $\vv$ is of the form $(\eq(\bb,\rr))_{\bb\in\bits^{\log \codedim_0}}$. In that case, we may use a tensor decomposition for $\uu$ in \cref{c:core_iop} of the form, say, $\uu=\uu^{(1)}\otimes \uu^{(2)}$, where
 %
 $$
-\uu^{(1)} \defeq \vv^{(1)},\quad \uu^{(2)}\defeq \vv^{(2)}\otimes \left(1, \pi_q(2), \ldots, \pi_q(2^{B-1})\right) \otimes \left(\modulemorphism(\gamma_1), \ldots, \modulemorphism(\gamma_{\moduledegree})\right).
+\uu^{(1)} \defeq \vv^{(1)},\quad \uu^{(2)}\defeq \vv^{(2)}\otimes \left(1, \ringmorphism(2), \ldots, \ringmorphism(2^{B-1})\right) \otimes \left(\modulemorphism(\gamma_1), \ldots, \modulemorphism(\gamma_{\moduledegree})\right).
 $$
 See \cref{s:parameter_instantiation} for comments on how to choose close-to-optimal tensor split dimensions for $\uu^{(1)}$ and $\uu^{(2)}$.
 \end{remark}
@@ -873,7 +874,7 @@ See \cref{s:parameter_instantiation} for comments on how to choose close-to-opti
     $$
     If $\degevalfield=0$, i.e.\ $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$ IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}$.
 \end{theorem}
-\begin{proof} Deferred to \cref{a:LinModFieldBin}. In short, the result is a consequence of \cref{l:bitify}, which establishes an equivalence between  triples for $\LinModFieldBin(M_{R_{\leq B}},\modulemorphism, \KK, \cC)$ and $\LinBitsDual(bits,\pi_q, \KK,\cC)$. \cref{l:bitify} further provides a method for efficiently computing one triple from the other. This allows to build a round-by-round knowledge soundness state and an extractor for \cref{c:LinModFieldBin} from those of \cref{c:core_iop}.
+\begin{proof} Deferred to \cref{a:LinModFieldBin}. In short, the result is a consequence of \cref{l:bitify}, which establishes an equivalence between  triples for $\LinModFieldBin(M_{R_{\leq B}},\modulemorphism, \moduletwo, \cC)$ and $\LinBitsDual(\bits,\ringmorphism, R,\cC)$. \cref{l:bitify} further provides a method for efficiently computing one triple from the other. This allows to build a round-by-round knowledge soundness state and an extractor for \cref{c:LinModFieldBin} from those of \cref{c:core_iop}.
 \end{proof}
 
 \subsection{Parameter instantiation}\label{s:parameter_instantiation}
