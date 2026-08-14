@@ -1,0 +1,89 @@
+\subsubsection{Raw performance of \ftwoz}
+
+We benchmark the \ftwoz polynomial commitment scheme on binary committed
+witnesses containing $2^i$ bits, for $20\leq i\leq 30$.  All measurements use
+one-bit words, eight Rayon threads, and the \texttt{custom:3:4} Ligerito
+configuration (rate $1/8$ and $k=4$).  For $i\in\{20,21\}$, the same rate and
+$k$ are retained while the size-dependent Johnson and out-of-domain parameters
+are mechanically re-derived from the $i=22$ policy template.
+
+\Cref{tab:f2z-pcs-headline} reports medians over 21 clean measured repetitions
+per exponent, following one excluded warm-up.  The prover measurement covers
+the PCS opening/proving work and excludes the initial commitment.  The proof
+size is the exact serialized size.  Peak memory is measured separately: it is
+one prover run's high-water mark of outstanding Rust heap bytes, including the
+live commitment hint, rather than a percentile over the 21 timing repetitions.
+
+\begin{table}[H]
+  \centering
+  \small
+  \setlength{\tabcolsep}{7pt}
+  \caption{Headline performance of the \ftwoz PCS.  Prover and verifier times
+    are $P_{50}$ values over 21 measured repetitions per exponent; proof size is
+    exact.  Peak heap is a separate single-run high-water measurement.  One
+    warm-up is excluded, and memory is reported in MiB ($2^{20}$ bytes).}
+  \label{tab:f2z-pcs-headline}
+  \begin{tabular}{@{}c r r r r@{}}
+    \toprule
+    Witness bits & Prover $P_{50}$ (ms) & Verifier $P_{50}$ (ms)
+      & Proof (bytes) & Peak heap (MiB) \\
+    \midrule
+    $2^{20}$ &   39.99 & 2.26 &  61{,}004 &    7.73 \\
+    $2^{21}$ &   22.35 & 2.26 &  67{,}704 &   13.77 \\
+    $2^{22}$ &   25.85 & 2.93 &  72{,}884 &   27.23 \\
+    $2^{23}$ &   54.08 & 2.59 &  90{,}628 &   51.13 \\
+    $2^{24}$ &   85.81 & 3.59 &  97{,}480 &  101.68 \\
+    $2^{25}$ &  115.46 & 3.99 & 111{,}316 &  196.80 \\
+    $2^{26}$ &  186.97 & 3.74 & 126{,}296 &  392.38 \\
+    $2^{27}$ &  314.85 & 4.29 & 150{,}136 &  771.70 \\
+    $2^{28}$ &  590.05 & 5.51 & 158{,}316 & 1540.89 \\
+    $2^{29}$ & 1185.87 & 5.81 & 205{,}440 & 3055.69 \\
+    $2^{30}$ & 2521.30 & 7.51 & 213{,}692 & 6106.07 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+To expose prover cost, we separately instrument the prover span.  Its eight
+direct child spans are disjoint and ordered: construction of the powers-of-two
+claims (Claims), the merged forest proof (Forest), the folded evaluation vector
+(Fold-$v$), pre-sumcheck table construction (Pre-SC tbl.), the pre-sumcheck
+(Pre-SC), ring switching (Ring sw.), basis combination (Combine), and the
+recursive Ligerito opening (Ligerito).  These spans cover between $96.7\%$ and
+$100.0\%$ of the prover span; the small remaining gaps are untagged orchestration
+costs.  For each exponent, \cref{tab:f2z-pcs-prover-breakdown} uses 21 fresh
+instrumented trials following one excluded warm-up and reports the per-phase
+$P_{50}$ time.  These are marginal phase medians, so values from different
+columns need not add to the median total.  Instrumentation makes this capture
+distinct from the clean headline timing capture above.
+
+\begin{table}[H]
+  \centering
+  \small
+  \setlength{\tabcolsep}{3.5pt}
+  \caption{$P_{50}$ breakdown of \ftwoz PCS prover time (ms), measured over 21
+    instrumented trials per exponent after one excluded warm-up.}
+  \label{tab:f2z-pcs-prover-breakdown}
+  \begin{adjustbox}{max width=\textwidth}
+  \begin{tabular}{@{}c r r r r r r r r@{}}
+    \toprule
+    Witness bits & Claims & Forest & Fold-$v$ & Pre-SC tbl.
+      & Pre-SC & Ring sw. & Combine & Ligerito \\
+    \midrule
+    $2^{20}$ &  1.041 &    7.381 &   0.216 &   0.906 & 0.306 &  0.537 &  0.194 &  28.170 \\
+    $2^{21}$ &  1.128 &   11.160 &   0.379 &   0.995 & 0.313 &  0.613 &  0.216 &   7.847 \\
+    $2^{22}$ &  2.094 &   14.874 &   0.581 &   1.285 & 0.407 &  0.690 &  0.273 &   5.660 \\
+    $2^{23}$ &  2.514 &   26.595 &   1.269 &   1.629 & 0.392 &  0.944 &  0.342 &  23.302 \\
+    $2^{24}$ &  3.999 &   36.532 &   2.024 &   2.316 & 0.511 &  1.187 &  0.450 &  33.238 \\
+    $2^{25}$ &  3.456 &   66.175 &   3.915 &   3.168 & 0.499 &  1.657 &  0.609 &  32.010 \\
+    $2^{26}$ &  7.207 &  111.494 &   7.603 &   5.749 & 0.742 &  2.660 &  1.026 &  43.590 \\
+    $2^{27}$ &  6.244 &  213.288 &  14.724 &  11.764 & 0.761 &  4.413 &  1.711 &  63.638 \\
+    $2^{28}$ & 12.367 &  432.259 &  29.550 &  32.762 & 0.980 &  7.812 &  2.954 &  66.605 \\
+    $2^{29}$ & 15.060 &  830.232 &  59.129 &  67.993 & 0.999 & 14.193 &  5.852 & 106.686 \\
+    $2^{30}$ & 28.507 & 2124.145 & 119.767 & 143.439 & 1.556 & 30.288 & 16.957 & 142.740 \\
+    \bottomrule
+  \end{tabular}
+  \end{adjustbox}
+\end{table}
+
+\FloatBarrier
+

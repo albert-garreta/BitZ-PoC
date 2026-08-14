@@ -348,7 +348,7 @@ $$
 \end{definition}
 
 
-\subsection{Interactive Oracle Reductions (IOR) of proximity}
+\subsection{Interactive Oracle Reductions (IOR) of proximity}\label{s:IORs}
 
 A public-coin \emph{Interactive Oracle Reduction (IOR) of proximity} $\Pi=(\prover,\verifier)$ from a relation $\Relation$ to a relation $\Relation'$ is specified as follows. The prover $\prover$ receives $(\inp, \oracle,\wit)\in \Relation$. The verifier $\verifier$ receives $\inp$ and query access to $\oracle$. They interact for $k$ rounds. In round $j\in[k]$, the prover sends an oracle $\provermsg_j$ and the verifier sends a uniformly random message $\verifiermsg_j\in\{0,1\}^{r_j}$. After the $k$ rounds, the verifier makes  queries to $\oracle$ and to $\provermsg_1,\ldots,\provermsg_k$. Then:
 \begin{itemize}[nosep]
@@ -388,11 +388,11 @@ Let $\Pi = (\prover, \verifier)$ be an IOR from a relation $\Relation$ to $\Rela
 A $k$-round IOR $\Pi$ has \emph{round-by-round knowledge soundness with relaxation} with errors $(\knowledgeerror_1,\ldots,\knowledgeerror_k)$ if there exists a knowledge state function $\kstate$ as in \cref{def:knowledge-state-function} and a deterministic extractor $\rbrextractor$ such that for every $(\inp,\oracle)$, every $j\in[k]$, and every transcript $\tr$ where the verifier is about to send $\verifiermsg_j$,
 \[
   \Pr_{\verifiermsg_j}\!\left[
-  \exists\,\kswit \ \left| \ \begin{array}{l}
+  \exists\,\kswit \ \text{such that} \ \begin{array}{l}
   \wedge\ \kstate\bigl(\inp,\oracle,\tr,\rbrextractor(\inp,\oracle,\tr\Vert\verifiermsg_j,\kswit)\bigr)=0\\
   \wedge\ \kstate(\inp,\oracle,\tr\Vert\verifiermsg_j,\kswit)=1
   \end{array}
-  \right.\right]
+ \right]
   \ \le\ \knowledgeerror_j(\inp,\oracle).
 \]
 If $(\widetilde{\Relation}, \widetilde{\Relation'})=(\Relation, \Relation')$ then we say the round-by-round knowledge soundness of $\Pi$ is \emph{without relaxation}.
@@ -403,13 +403,41 @@ If $(\widetilde{\Relation}, \widetilde{\Relation'})=(\Relation, \Relation')$ the
 %
 \end{remark}
 
+
+\paragraph{Grinding}\albert{Review}
+ Grinding \cite{?} is a technique where, given am IOP $\Pi$ for a relation $\Relation$ with relaxation $\widetilde{\Relation}$ with round-by-round knowledge errors $\kappa_1,\ldots, \kappa_k$,  produces a new IOP $\Pi'$ for $\Relation$ with   round-by-round knowledge with relaxation $\widetilde{\Relation}$ with errors $$2^{-\alpha_1}\cdot \kappa_1,\ldots, 2^{-\alpha_k}\cdot \kappa_k.$$ The new IOP $\Pi'$ works exactly as $\Pi$, except that, at each round $i\in [t]$, the verifier samples a random string of $\alpha_i$ bits, called \emph{grinding string}, which sends alongside its message, and rejects unless all bits are $0$. 
+
+ Clearly $\Pi'$ is not  necessarily complete, even if $\Pi$ is. The goal is to use the BCS compilation of IOP's, and not the IOP's themselves (i.e.\ the compilation where oracles are replaces by Merkle roots and where interactiveness is removed through the Fiat-Shamir transform) To this end, one chooses $\alpha_1, \ldots, \alpha_k$ small enough that, the prover of the BCS transform of $\Pi'$ can \emph{grind} transcripts until all of the grinding strings in the transcript are the zero string. This results in the prover having to compute  per round $i\in [t]$, an average of $2^{\alpha_i}$  hashes of its $i$-th message followed by a small string of bits (in practice, one has the prover send a small string of bits next to its message, so that during grinding, it does not need to produce fresh Merkle roots at each grinding iteration). In \cref{tab:grinding-cost}, we provide example grinding times for different values of $\alpha_i$.
+ 
+ The round-by-round knowledge errors of $\Pi'$ are obtained by defining a state function which is exactly as the state function of $\Pi$, except that the function outputs zero if some of the aforementioned strings of bits are not the zero string. The extractor for $\Pi'$ is defined as the extractor for $\Pi$, ignoring the additional strings of bits in the transcript.
+
+\begin{table}[H]
+  \centering
+  \small
+  \setlength{\tabcolsep}{5pt}
+  \caption{Cost of finding a $64$-bit nonce such that $\text{BLAKE3}(\mathsf{msg}, \mathsf{nonce})$ has at least $\alpha$ leading zero
+    bits, with $\mathsf{msg}$ of $256$ bits. Single and multi-threaded on a MacBook Air M4 16GB. \albert{As implemented in Flock?}}
+  \label{tab:grinding-cost}
+      \begin{tabular}{@{}l rrrrrrrr@{}}
+    \toprule
+    $\alpha$ & 18 & 19 & 20 & 21 & 22 & 23 & 24 & 25 \\
+    \midrule
+    Mean, $1$ thread (ms)     & 12.3 & 19.5 & 42.8 & 82.2 & 203.8 & 464.4 & 808.5 & 1291.4 \\
+    Median, $1$ thread (ms)   &  9.2 & 16.3 & 27.8 & 55.2 & 140.6 & 358.1 & 608.5 &  852.0 \\
+    Mean, $10$ threads (ms)   &  2.3 &  3.5 &  8.9 & 14.3 &  35.5 &  84.6 & 148.6 &  240.8 \\
+    Median, $10$ threads (ms) &  1.8 &  2.5 &  6.8 &  9.6 &  26.9 &  68.0 & 111.3 &  161.8 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+ 
+
 \section{\ftwoz IOP for Lin-BitsDual}
 
 
 
 
 %
-\john{I actually don't like this name. There's too many things in the protocol that is linear and it's too vague}
+%\john{I actually don't like this name. There's too many things in the protocol that is linear and it's too vague}
 
 \albertimportant{Need to discuss somewhere that range checks are free}
 
@@ -418,10 +446,13 @@ If $(\widetilde{\Relation}, \widetilde{\Relation'})=(\Relation, \Relation')$ the
 
 
 
-
 \renewcommand{\ringtwo}{\FF_q}
 \renewcommand{\ringmorphism}{\pi_q}
-Let $\comfield$ be a field with $2^{\comfieldexp}$ elements. Let
+In this section we define the main linear relations we work with. We start by fixing notation:
+
+\paragraph{Notation and terminology}
+\begin{itemize}[leftmargin=*]
+    \item Let $\comfield$ be a field with $2^{\comfieldexp}$ elements. Let
 %
 $
 \beta_1, \ldots, \beta_\comfieldexp \in \comfield
@@ -438,9 +469,19 @@ $$
 \pack(\uu)_{j} = \uu_{(j-1)\cdot \comfieldexp +1 }\cdot \beta_1 + \ldots + \uu_{(j-1)\cdot \comfieldexp +\comfieldexp-1 }\cdot \beta_{\comfieldexp-1}+\uu_{j \cdot \comfieldexp} \cdot \beta_\comfieldexp \in \comfield.
 $$
 %
+\item 
  Let $\codedim\geq 1$ be a dimension parameter, $\cC$ a code over $\comfield$ of dimension $\codedim/\comfieldexp$ and block length $\codelength$.  
-
+ \item 
  Let $R$ be a ring (typically $R$ is either $\ZZ$ or a finite field, not necessarily prime) and let $\pi:\ZZ \to R$ be a ring homomorphism (possibly the identity if $R=\ZZ$).
+ \item Let $R_M$ be a ring, possibly different than $R$, let $\ringmorphism:R_M \to R$ be a ring homomorphism. Let $M$ be a $R_M$-module and  let $\psi: \moduleone \to R$ be a module homomorphism (with underlying ring homomorphism $\ringmorphism$).
+\item 
+Fix a vector length $\codedim_0$. Let $\bff \in \moduleonebound^{\codedim_0}$ and write %$\bff=(\bff_{*1}, \ldots, \bff_{*\moduledegree})$ 
+$\bff=\sum_{j\in [\moduledegree]} \bff_{*j}\cdot \gamma_j$
+with $\bff_{*j}\in \ringbitbound{B}^{\codedim_0}$ for all $j\in [\moduledegree]$. Then write $$\bff_{*j}= \sum_{k=1}^{B}\  \bff_{*jk}\cdot 2^{k-1} $$ for some vectors $$\bff_{*jk}\in \{0,1\}^{\codedim_0}\subseteq R^{\codedim_0},$$ for all $j,k$.  We define   $\mathsf{bits}(\bff)\in \bits^{\codedim_0\cdot\moduledegree\cdot  B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B}$ as the vector with integer entries obtained by concatenating the vectors $\bff_{*jk}$ and, if $\ring = \FF$, lifting their entries to $\bits \subseteq \ZZ$ via $\pi_q^{-1}$, i.e.\ \begin{equation}\label{e:bits_of_f}\mathsf{bits}(\bff) \defeq \left(\mathsf{lift}(\bff_{*jk})\mid  j\in [\moduledegree], k\in [B]\right)\in \bits^{\codedim_0\cdot\moduledegree\cdot B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B},\end{equation}
+where $\mathsf{lift}$ is the identity function if $\ring=\ZZ$,  and  $\mathsf{lift} = \pi_q^{-1}$ if $\ring=\FF$.
+\end{itemize}
+ 
+
 \begin{definition} The \emph{Core Lin-BitsDual} relation  is defined as
 %
 $$
@@ -462,19 +503,11 @@ $$
 
 \renewcommand{\moduleone}{M}
 \renewcommand{\moduleonebound}{M_{\leq B}}
-
-\paragraph{The general Lin-BitsDual relation.}
-We now define the general Lin-BitsDual relation. Let $R_M$ be a ring and let $M$ be a $R_M$-module. Let $R$ be a ring. Let $\psi: \moduleone \to N$ be a module homomorphism (with underlying ring homomorphism $\ringmorphism:R_M \to R$).
-
-
-Fix a vector length $\codedim_0$. Let $\bff \in \moduleonebound^{\codedim_0}$ and write %$\bff=(\bff_{*1}, \ldots, \bff_{*\moduledegree})$ 
-$\bff=\sum_{j\in [\moduledegree]} \bff_{*j}\cdot \gamma_j$
-with $\bff_{*j}\in \ringbitbound{B}^{\codedim_0}$ for all $j\in [\moduledegree]$. Then write $$\bff_{*j}= \sum_{k=1}^{B}\  \bff_{*jk}\cdot 2^{k-1} $$ for some vectors $$\bff_{*jk}\in \{0,1\}^{\codedim_0}\subseteq R^{\codedim_0},$$ for all $j,k$.  We define   $\mathsf{bits}(\bff)\in \bits^{\codedim_0\cdot\moduledegree\cdot  B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B}$ as the vector with integer entries obtained by concatenating the vectors $\bff_{*jk}$ and, if $\ring = \FF$, lifting their entries to $\bits \subseteq \ZZ$ via $\pi_q^{-1}$, i.e.\ \begin{equation}\label{e:bits_of_f}\mathsf{bits}(\bff) \defeq \left(\mathsf{lift}(\bff_{*jk})\mid  j\in [\moduledegree], k\in [B]\right)\in \bits^{\codedim_0\cdot\moduledegree\cdot B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B},\end{equation}
-where $\mathsf{lift}$ is the identity function if $\ring=\ZZ$,  and  $\mathsf{lift} = \pi_q^{-1}$ if $\ring=\FF$.
+\renewcommand{\moduletwo}{R}
 
 
 
-Let $\cC$ be a linear code over $\comfield$ of dimension $(\codedim_0\cdot B \cdot \moduledegree)/\comfieldexp$ and blocklength $\codelength$. 
+Assume $\cC$ is a linear code over $\comfield$ of dimension $(\codedim_0\cdot B \cdot \moduledegree)/\comfieldexp$ and blocklength $\codelength$. 
 \begin{definition} The \emph{general Lin-BitsDual}  relation is defined as
 %
 \begin{align*}
@@ -486,9 +519,7 @@ Let $\cC$ be a linear code over $\comfield$ of dimension $(\codedim_0\cdot B \cd
 \end{align*}
 \end{definition}
 %
-When there is no risk of confusion, we denote $\LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)$ simply by $\LinModFieldBin$.
-
-The Core Lin-BitsDual relation is precisely $\LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)$ after taking $\moduleone=\ZZ$, $B=1$, and $\modulemorphism$ a morphism from $\ZZ$ to $R$. %For example, if $\ringtwo=\ZZ$, $\modulemorphism$ can be $\mathsf{id}$, and if $\ringtwo=\FF$, then $\modulemorphism$ can be $\pi_q$, i.e.\ reduction modulo $q$.
+When there is no risk of confusion, we denote $\LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)$ simply by $\LinModFieldBin$. The Core Lin-BitsDual relation is precisely $\LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)$ after taking $\moduleone=\ZZ$, $B=1$, and $\modulemorphism$ a morphism from $\ZZ$ to $R$. %For example, if $\ringtwo=\ZZ$, $\modulemorphism$ can be $\mathsf{id}$, and if $\ringtwo=\FF$, then $\modulemorphism$ can be $\pi_q$, i.e.\ reduction modulo $q$.
 
 
 %When $Q$ and $\yy$ are such that $\yy=(\rr,\mu)\in \FF^{\log\codedim}\times \FF$ and $$Q(\yy,\ff)= \mle{\bff}(\rr)-\mu,$$ we denote $\Relation_{\cC, \FF}^{Q}$  by $\Relation_{\cC, \FF}^{\mathsf{mle}}$. 
@@ -594,22 +625,33 @@ We define $\picanon^\ZZ: \ZZ\to\ZZ$ as the identity map.  If $R=\ZZ$, we let $\d
 We let $\Pi_{\iopp}$ be an IOP for $\LIN(\comfield,\cC, \pack)$. In our instantiation, $\Pi_{\iopp}$ is the WHIR protocol \cite{whir} over binary fields, with ring-switching \cite{?} as described in \cref{s:ring_switch} \albert{proper reference?}, and with proximity parameter set to the Johnson bound.   
 
 \begin{construction}[IOP for the core {$\LinBitsDual$ relation}]\label{c:core_iop}
-\noindent \textbf{Parameters.} $(R,\ringmorphism, \comfield,\codedim,\codedim_1,\codedim_2,\cC)$ comprised of: a ring $R$ and a ring homomorphism $\ringmorphism: \ZZ\to R$; a binary field $\comfield$ a witness length $\codedim$; tensor decomposition dimensions $\codedim_1, \codedim_2$ for \cref{c:core_iop} satisfying $\codedim_1\cdot \codedim_2 = \codedim$; a linear code $\cC$ over $\comfield$ of dimension $\codedim/\comfieldexp$ and block length $\codelength$. \\
+\noindent \textbf{Parameters.} $(R,\ringmorphism, \comfield,\codedim,\codedim_1,\codedim_2,\cC)$ comprised of: a ring $R$ and a ring homomorphism $\ringmorphism: \ZZ\to R$; a binary field $\comfield$ a witness length $\codedim$; tensor decomposition dimensions $\codedim_1, \codedim_2$ for \cref{c:core_iop} satisfying $\codedim_1\cdot \codedim_2 = \codedim$; a linear code $\cC$ over $\comfield$ of dimension $\codedim/\comfieldexp$ and block length $\codelength$. 
 
+Let $\cP$ be a set of primes with $\max\{\cP\}< (|\comfield|-1)/\codedim_1$.
+\\
 
 \noindent \textbf{Inputs.} The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \LinBitsDual(\bits,\ringmorphism, \evalfield,\cC)$.  We assume the tensor split from the previous Section \ref{s:interleaved_setting}, and adopt its notation. 
-Let $\basegenerator\in \comfield$ be a nonzero element from $\comfield$ with sufficiently large multiplicative order, to be determined later.  
+
+
+Let $\basegenerator\in \comfield$ be the generator of the multiplicative subgroup of $\comfield$.   The integer $q$ denotes the characteristic of $R$ if $R$ is a finite field, or if $R=\ZZ$ then
+\begin{equation}\label{e:q_definition_if_R_is_Z}
+q = \codedim_1 \cdot \lVert \vv \rVert_\infty +1.
+\end{equation}
 
 
 \begin{enumerate}[leftmargin=*] 
-\item \textbf{Round 1: lifting the constraint over $\evalfield$ to {$\ZZ$}, \albert{not the best description?}} 
+\item \textbf{Round 1: transforming the constraint over $\evalfield$ to an integer constraint with bounded integers.} 
 \begin{itemize}[leftmargin=*]
     \item The prover sends $\mu_1, \ldots, \mu_{\codedim_2}\in \range{0}{q-1}^{\leq \degevalfield}[X]$ such that, over $\ZZ[X]$, \begin{equation}\label{e:tensored_equality}\langle \bff_{*j}, \picanon^{-1}(\vv^{(1)})\rangle = \mu_j \qquad \text{for all } j\in [\codedim_2].\end{equation} 
 \item The verifier checks that \begin{equation}\label{e:tensor_decomposition_reconstruction}\sum_{j\in [\codedim_2]} \picanon(\mu_j)\cdot \vv_j^{(2)}  = \mu\qquad \text{over } \evalfield.\end{equation} 
 Next, prover and verifier will focus on certifying that \eqref{e:tensored_equality} holds for all $j\in [\codedim_2]$.
 
 In \cref{s:proof_size_opt} we describe a variation in which, instead of sending the elements $\mu_1, \ldots, \mu_{\codedim_2}$, the prover commits to their bit-decomposition over $\comfield$, and proves \eqref{e:tensor_decomposition_reconstruction} the present IOR. This saves on proof size and verifier time when $\codedim$ is large.
-\item If $\evalfield$ is a finite field and $\degevalfield=0$, continue to the next step. Otherwise, if $\evalfield=\ZZ$ or $\degevalfield>1$, the verifier uniformly samples and sends a  prime $q'$ from a fixed set of primes $\cP$ ($\cP$ is a protocol parameter), and, if $\evalfield$ is a field, an element $\alpha\in \FF_{q'}$. Now update
+\item \textbf{Optional step: Projecting the integer claim to a prime field, and then lifting it back up to $\ZZ$.} The following step triggers in the following scenarios:
+\begin{itemize}
+    \item $\degevalfield>0$.
+    \item $\degevalfield=0$ and $q\geq |\comfield|-1$. 
+\end{itemize} The verifier uniformly samples and sends a  prime $q'$ from $\cP$, and, if $\degevalfield>0$,  an element $\alpha\in \FF_{q'}$. Now update
 %
 \begin{align*}
 \vv^{(1)}{} &\gets \pi_{q',\alpha}\circ \picanon^{-1}\left(\vv^{(1)}\right)\in \FF_{q'},\\
@@ -654,13 +696,14 @@ Notice that \begin{equation}\label{e:Q_F2Z_intermediate}\left(\inp=((g^{\bm{\gam
 
 
 \begin{remark}[Reducing proof size by committing to the elements $\mu_1, \ldots, \mu_{\codedim_2}$]  
-When $\codedim=\codedim_1\cdot \codedim_2$ is such that $\codedim_2$ is large, say $\codedim\geq 2^{11}$, the elements $\mu_1,\ldots, \mu_{\codedim_2}\in \ZZ$ sent at Step 1 of \cref{c:core_iop} may start to dominate the proof size. For example, for $\codedim=2^{13}$ and $\mu_i$ of $128$ bits, the elements $\mu_1,\ldots, \mu_{\codedim_2}$ amount to $131$ KB.  To mitigate this cost, the idea is to  have the prover commit to the vector $(\mu_1,\ldots, \mu_{\codedim_2})$ and then prove \eqref{e:tensor_decomposition_reconstruction}, i.e.\ 
+When $\codedim=\codedim_1\cdot \codedim_2$ is such that $\codedim_2$ is large, say $\codedim\geq 2^{11}$, the elements $\mu_1,\ldots, \mu_{\codedim_2}\in \ZZ$ sent at Step 1 of \cref{c:core_iop} may start to dominate the proof size. For example, for $\codedim=2^{13}$ and $\mu_i$ of $128$ bits, the elements $\mu_1,\ldots, \mu_{\codedim_2}$ amount to $131$ KB.  To mitigate this cost,  one can have the prover commit to the vector $(\mu_1,\ldots, \mu_{\codedim_2})$ and then prove \eqref{e:tensor_decomposition_reconstruction}, i.e.\ 
 %
 $$
-\sum_{j\in [\codedim_1]} \pievalfield(\mu_j)\cdot \vv_j^{(2)}  = \mu \qquad \text{over } \evalfield.
+\langle \bff_{*j}, \picanon^{-1}(\vv^{(1)})\rangle = \mu_j \qquad \text{for all } j\in [\codedim_2].
 $$
 %
-using an IOP for constrained codes. Concretely, the prover commits to the vector $\mathsf{bits}(\mu)$ of bits forming the elements $(\mu_1, \ldots, \mu_{\codedim_2})$ using \ftwoz, and then proves \eqref{e:tensor_decomposition_reconstruction} using \cref{c:core_iop}. At the end of \cref{c:core_iop}, the prover is left with an inner product claim for the vector $\pi_2(\mathsf{bits}(\mu))$.  \albert{TODO: explain how to batch this claim with the WHIR IOP for the final step of \cref{c:core_iop}}
+using an IOP for constrained codes. Concretely, the prover commits to the vector $\mathsf{bits}(\mu)$ of bits forming the elements $(\mu_1, \ldots, \mu_{\codedim_2})$ using \ftwoz, and then proves \eqref{e:tensor_decomposition_reconstruction} using \cref{c:core_iop}.  %At the end of \cref{c:core_iop}, the prover is left with an inner product claim for the vector $\pi_2(\mathsf{bits}(\mu))$.  
+%
 \end{remark}
 
 
@@ -677,9 +720,7 @@ For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\FF 2 \ZZ},
 \begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:core_iop}]\label{t:thm_core_IOPP} \albert{Completeness missing}
    Let $\delta \in (0,1)$ be a proximity parameter.  Assume $g$ has multiplicative order $\mathsf{ord}(g)$ with 
    %
-   $$\mathsf{ord}(g) > (\codedim_1+1) \cdot (q_{\max}-1),$$ 
-   where $q_{\max}$ is the largest prime in $\cP$.
-   
+   $$\mathsf{ord}(g) > (\codedim_1+1) \cdot (\max{\cP}-1).$$ 
    %
    Assume $\Pi_{\mathsf{red}}$ is a perfectly complete $t_\red$-round IOR from $\PESAT$ to $\LIN$ with round-by-round knowledge soundness  with relaxation $\PESAT^\delta,\LIN^{\delta}$, with errors  $(\ksred_1, \ldots, \ksred_{t_\red})$. Assume $\Pi_{\iopp}$ is a perfectly complete $t_{\iopp}$-round IOP  from $\LIN$ (i.e.\ an IOR from $\LIN$ to the trivial relation $\bot$) with round-by-round knowledge soundness with relaxation $(\LIN^{\delta}, \bot)$, and errors $$\ksiopp_1,\ldots, \ksiopp_{t_\iopp}.$$ 
 %
@@ -688,7 +729,7 @@ For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\FF 2 \ZZ},
     $$
     \kappa_0 = \frac{\degevalfield}{q_{\min}} + \frac{\log(\codedim_1 +1) + \log(q-1)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}
     $$
-    and $q_{\min}$ is the smallest prime in the set of sampleable primes $\cP$ from Step 3 of \cref{c:core_iop}. 
+    and $q_{\min}$ is the smallest prime in the set of sampleable primes $\cP$ from Step 3 of \cref{c:core_iop}.  Recall that $q$ is either the charactersitic of $R$ if $R$ is a finite field, or $q=\codedim_1 \cdot \lVert \vv\rVert_{\infty} +1$ if $R=\ZZ$.
 
     If  $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$ IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $(\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}$.
 \end{theorem}
@@ -813,7 +854,7 @@ Next we describe our IOP for $\LinModFieldBin$.  We assume the notation of \cref
 
 
 
-We let $\codedim_1,\codedim_2$ be tensor decomposition parameters (to be used in \cref{c:core_iop}) be such that $\codedim_1\cdot \codedim_2= \codedim_0\cdot \moduledegree\cdot B$. We assume that $\cC$ is a linear code over $\comfield$ of dimension $\codedim_0\cdot \moduledegree\cdot B/2^{\comfieldexp}$. %, which is a $\codedim_2$-interleaving of a code $\cC_1$ over $\comfield$ of dimension $\codedim_1/2^{\comfieldexp}$.
+We let $\codedim_1,\codedim_2$ be tensor decomposition parameters (to be used in \cref{c:core_iop}) be such that $\codedim_1\cdot \codedim_2= \codedim_0\cdot \moduledegree\cdot B$. We assume that $\cC$ is a linear code over $\comfield$ of dimension $\codedim_0\cdot \moduledegree\cdot B/\comfieldexp$. %, which is a $\codedim_2$-interleaving of a code $\cC_1$ over $\comfield$ of dimension $\codedim_1/2^{\comfieldexp}$.
 
 We will need the following result.
 
@@ -877,13 +918,92 @@ See \cref{s:parameter_instantiation} for comments on how to choose close-to-opti
 \begin{proof} Deferred to \cref{a:LinModFieldBin}. In short, the result is a consequence of \cref{l:bitify}, which establishes an equivalence between  triples for $\LinModFieldBin(M_{R_{\leq B}},\modulemorphism, \moduletwo, \cC)$ and $\LinBitsDual(\bits,\ringmorphism, R,\cC)$. \cref{l:bitify} further provides a method for efficiently computing one triple from the other. This allows to build a round-by-round knowledge soundness state and an extractor for \cref{c:LinModFieldBin} from those of \cref{c:core_iop}.
 \end{proof}
 
-\subsection{Parameter instantiation}\label{s:parameter_instantiation}
-\albertimportant{todo}
+\subsection{Instantiation}\label{s:parameter_instantiation}
 
-\albert{Discuss what's the best tensor decomposition dimension}
+We next describe how to instantiate \cref{c:core_iop,c:LinModFieldBin} so as to achieve $\lambda=100$ or $\lambda=128$ bits of security, while keeping the protocols as efficient as possible.  
 
-\albert{Staying in 128-bit binary field and achieving 128-bit security with grinding and tensor decomposition}
 
+In terms of security, we need to ensure the following:
+\begin{enumerate}
+    \item $|\comfield|-1 >  (\codedim_1 + 1) \cdot (\max\cP-1).$  A requisite in our \cref{t:thm_core_IOPP,t:thm_LinModFieldBits}, to, intuitively, ensure that the inner product in the exponent of $g\in \comfield$ does not overflow. 
+    \item The round-by-round knowledge soundness errors of \cref{c:core_iop} $\kappa_0^*, (\kappa_{i,\red})_i, (\kappa_{i,\iopp})_i$ are all at most $2^{-\lambda}$. 
+\end{enumerate}
+%
+
+
+In terms of efficiency, the most important step of \cref{c:core_iop} to be aware of is Phase 2, where one uses an IOR $\Pi_{\red}$ to reduce the claim 
+$$
+\prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \pi_2(\bff_{ij}) +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\codedim_2],
+$$
+into a linear claim on $\pi(\bff)$. In our instantiation, $\Pi_{\red}$ is the GKR protocol for multiple grand product claims,
+%
+equipped with the optimizations discussed in \cref{?}. This is the most expensive prover part of \cref{c:core_iop,c:LinModFieldBin}, constituting between $50\%$ to $66\%$ of prover costs, cf.\ \cref{?}. Because of this, it is important for efficiency that operating in $\comfield$ is as efficient as possible. 
+
+With this in mind, we target using $\comfield$ with $\comfieldexp\approx 128$. A natural candidate is the $2^{128}$ sized binary field in GHASH representation \cref{?}  $$\comfield= \FF_2[X]/(X^{128} + X^7 + X^2 + X + 1).$$ \albert{Explain why it is performant. Discuss b127 too}.  
+
+
+Before anything else, we discuss the constraint  $|\comfield|-1 >  (\codedim_1 + 1) \cdot (\max\cP-1)$. 
+%
+First of all, we set $\codedim_1, \codedim_2$ with $\codedim_1\cdot \codedim_2 = \codedim$ according to the following rule of thumb:
+%
+$$
+\log(\codedim_1) \approx 0.6 \cdot \log(\codedim), \quad \log(\codedim_2) \approx 0.4\cdot \log(\codedim)
+$$
+%
+This split was chosen through experimental observation, being the split that consistently leads to roughly the best balance in prover and verifier time, and proof size.  
+
+
+To ground our analysis, we assume $\codedim\leq2^{35}$ (so the witness consists of $\leq 2^{35}$ bits), say, and $\codedim_1 \leq 2^{14}$ following our rule of thumb.  This leaves us with $$\max\cP \leq 2^{114.0001} = 2^{114 + \eps}.$$ 
+
+We now discuss how to make the errors $\kappa_0^*, (\kappa_{i,\red})_i, (\kappa_{i,\iopp})_i$ be all at most $2^{-\lambda}$. 
+
+
+\paragraph{The errors $\kappa_{i,\iopp}$} Regarding Phase 3, we instantiate our IOP for $\LIN(\comfield, \pack, \cC)$ as the WHIR protocol, with the ring switching from \cref{?} \albert{does ring switching add new soundness errors? 
+} \albertimportant{We need a more formal description of the combination of the ring switch and WHIR? (I.e. inside a construction environment).} We assume it is configured at $\lambda$ bits of security, and so $\kappa_{i,\iopp}< 2^{-\lambda}$. We do not discuss this further since WHIR is a well-known IOP \albertimportant{should we, because we run it on $128$ bit field, so 128-bits of security there is not common practice (i.e.\ people use larger fields?)}.
+
+\paragraph{The errors $\kappa_{i,\red}$.} As mentioned, our $\Pi_{\red}$ IOR is the GKR protocol for multiple grand product claims from \cref{?}. Accordingly we have $\eps_{i,\red}\leq 3/|\comfield|$. This immediately guarantees $\lambda=100$ bits of security. To achieve $\lambda=128$ bits of security, one can do two bits of grinding (\cref{s:IORs}) per round. 
+
+
+\paragraph{The error $\kappa_0^*$.}
+ The error $\kappa_0^*$ is perhaps the most delicate, as it (sometimes) demands at the same time that $\min\cP$ and  $|\cP|$ are large, while still satisfying $\max\cP \leq (|\comfield|-1)/(\codedim_1 + 1) +1$. Recall that in many scenarios $\kappa_0^*$ does not exist in the IOP  (i.e.\ sometimes our IOP skips the first verifier message).  These scenarios are described in Item 3 of Round 1 of \cref{c:core_iop}. 
+
+
+Recall (\cref{t:thm_core_IOPP})
+    $$
+    \kappa_0^* = \frac{\degevalfield}{q_{\min}} + \frac{\log(\codedim_1 +1) + \log(q-1)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor},
+      $$
+    where $q$ is either the characteristic of $R$ or $\codedim_1 \cdot \lVert \vv^{(1)}\rVert +1$ if $R=\ZZ$ \albertimportant{Only for \cref{c:core_iop}}. 
+
+    The adjustment for $\kappa_0^*$ (if needed at all) is highly dependent on $\degevalfield$. Concretely, if $\degevalfield=0$, then the term $\degevalfield/q_{\min}$ is zero. This allows to take $\cP$ as all primes smaller than $2^{114+\eps}$. There are approximately $2^{114}/114$.
+
+    We select $\cP$ to be the set of all primes in a range $[2^a, 2^b]$. There are approximately  $$|\cP|\approx (2^b/b - 2^a/a)/\log_e(2)$$ such primes.  Using $b\leq 114$,  $\codedim_1\leq 2^{14}$, and plugging these values into $\kappa_0*$ we obtain
+     %
+     $$
+    \kappa_0*\lessapprox f(a)\defeq \frac{\degevalfield}{2^a} + \frac{14 + \log(q-1)}{\frac{a}{114}\cdot 2^{114} - 2^a}.
+    $$
+    We now calculate  minima for different values of $\degevalfield$ and $q$.  
+
+    To fix intuition, $\degevalfield$ and $q$ are determined by the field or ring a PIOP runs on. For example, in our full proving system from \cref{?}, constraints can be over $\ZZ$ or $\ZZ[X]$, then they are projected to a random prime field $\FF_q$, a PIOP is ran on them, and an MLE claim over $\FF_p$ is produced. Then \cref{c:LinModFieldBin} is used to prove those claims. The size of $q$ is set so that the PIOP achieves $\lambda$ bits of security. A very conservative choice in this setting is $q\leq 2^{256}$, but also $q\leq 2^{128}$ is feasible if $\lambda=100$ or one is willing to use grinding during the PIOP. 
+
+    Another setting is to have constraints over a finite field $\KK$ such as a degree $4$ or $5$ extension of the Babybear field, or a degree $2$ or $3$ extension of the Goldilocks field. 
+    
+    For these choices of $(\degevalfield,\log_2(q))$, the corresponding minima for $f$ is as follows:
+\begin{table}[H]
+  \centering
+  \begin{tabular}{rrrrrr}
+    \toprule
+    $d$ & $\log q$ & $a^{*}$ & $\log f(a^{*})$ & Bit-deficit to $128$ & Grinding time \\
+    \midrule
+    0 & 256 & 108 & -106.3 & 22& 27ms \\
+    0 & 128 & 108 & -107.3 & 21 & 9.6ms\\
+    3 & 64 & 112 & -107.6 & 21 & 9.6ms\\
+   5 & 32 & 112 & -108.0 & 20 & 6.8ms\\
+    \bottomrule
+  \end{tabular}
+  \caption{Minima $a^{*}$ of $f(a)$ for different values of $\degevalfield$ and $\log(q)$. The first error term $\kappa_0^*$ satisifes $\kappa_0^* = 1/2^{-\log f(a^*)}$. We include the bits left required to achieve  $\kappa_0^* < 1/2^{128}$ and the cost of grinding such amount of bits, in a MacBook Air M4 16GB, multi-threaded, using Blake3 as hash function.}
+  \label{tab:min-f}
+\end{table}
+    
 
 \section{Extensions, variations, and optimizations}
 
@@ -1547,6 +1667,8 @@ The compression output is the word vector $H^{\mathrm{out}}$ defined by
 
 
 \section{Deferred proofs}
+
+\albertimportant{Notation changed significantly recently. REVIEW}
 
 \subsection{Completeness and soundness of \cref{c:LinModFieldBin}}\label{a:LinModFieldBin}
 
