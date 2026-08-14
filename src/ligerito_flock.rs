@@ -35,6 +35,7 @@
 
 use flock_core::challenger::Challenger;
 use flock_core::field::F128;
+use flock_core::merkle::Hash;
 use flock_core::ntt::additive_ntt_f128::AdditiveNttF128;
 use flock_core::pcs::basefold::{
     self, BaseFoldProof as FlockBaseFoldProof, VerifyError as FlockVerifyError,
@@ -94,6 +95,13 @@ impl PackedBits for F128 {
 
 fn gf_slice_to_f128(v: &[Gf]) -> Vec<F128> {
     v.iter().map(|&g| gf_to_f128(g)).collect()
+}
+
+const MLE_EVAL_MOD_Q_TRANSCRIPT_LABEL: &[u8] = b"f2z-pcs/mle-eval-mod-q/v1";
+
+fn absorb_mle_eval_mod_q_root(transcript: &mut impl Transcript, root: &Hash) {
+    transcript.absorb_slice(MLE_EVAL_MOD_Q_TRANSCRIPT_LABEL);
+    transcript.absorb_slice(root);
 }
 
 // ---------------------------------------------------------------------
@@ -1212,6 +1220,8 @@ pub fn prove_mle_eval_mod_q_ligerito(
     pc: &LigProverConfig,
 ) -> IntEvalRsLigModQProof {
     use crate::pcs::{chunk_row_weights, mod_q_chunk_width, mod_q_num_chunks};
+
+    absorb_mle_eval_mod_q_root(transcript, hint.root());
     let c_w = mod_q_chunk_width(p);
     let lch = mod_q_num_chunks(p, q_bits);
     let chunks = chunk_row_weights(row_weights_q, c_w, lch);
@@ -1318,6 +1328,8 @@ where
     use crate::pcs::{
         chunk_row_weights, mod_q_chunk_width, mod_q_num_chunks, recombine_read_off,
     };
+
+    absorb_mle_eval_mod_q_root(transcript, &commitment.root);
     let c_w = mod_q_chunk_width(p);
     let lch = mod_q_num_chunks(p, q_bits);
     if proof.mfs.len() != lch
@@ -7367,6 +7379,38 @@ mod tests {
     fn sample(seed: u64) -> Gf {
         let hi = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(29) ^ 0x1234_5678_9ABC_DEF0;
         Gf::from_words([seed ^ 0xA5A5_5A5A_0F0F_F0F0, hi])
+    }
+
+    #[test]
+    fn mod_q_root_prefix_encoding_is_stable_and_root_sensitive() {
+        let root_a = core::array::from_fn(|i| i as u8);
+        let mut via_helper = Blake3Transcript::new();
+        absorb_mle_eval_mod_q_root(&mut via_helper, &root_a);
+        let challenge_a: Gf = via_helper.get_field_challenge(&());
+
+        let mut explicit = Blake3Transcript::new();
+        explicit.absorb_slice(MLE_EVAL_MOD_Q_TRANSCRIPT_LABEL);
+        explicit.absorb_slice(&root_a);
+        let explicit_challenge: Gf = explicit.get_field_challenge(&());
+        assert_eq!(
+            challenge_a, explicit_challenge,
+            "root-prefix framing changed"
+        );
+        assert_eq!(
+            *challenge_a.words(),
+            [17_415_676_208_349_607_439, 9_887_866_971_790_199_839],
+            "update only for an intentional protocol version"
+        );
+
+        let mut root_b = root_a;
+        root_b[31] ^= 1;
+        let mut changed_root = Blake3Transcript::new();
+        absorb_mle_eval_mod_q_root(&mut changed_root, &root_b);
+        let challenge_b: Gf = changed_root.get_field_challenge(&());
+        assert_ne!(
+            challenge_a, challenge_b,
+            "the first challenge must depend on the root"
+        );
     }
 
     /// Field bridging is the identity on words, and multiplication agrees —
