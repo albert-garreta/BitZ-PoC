@@ -34,10 +34,15 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 /// Whether profiling is active this process. Cached on first read; set
-/// `OBLONG_PROFILE` (to any value) in the environment to enable.
+/// `OBLONG_PROFILE` (to any value) in the environment to enable. The PCS
+/// benchmark's structured interval mode also enables these legacy scopes so
+/// they join the same canonical trace as flock's native profiling spans.
 fn enabled() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("OBLONG_PROFILE").is_some())
+    *ON.get_or_init(|| {
+        std::env::var_os("OBLONG_PROFILE").is_some()
+            || std::env::var_os("F2Z_BENCH_INTERVALS").is_some()
+    })
 }
 
 /// Optional process-wide probe returning the current **peak** resident-set size
@@ -113,6 +118,10 @@ thread_local! {
 #[must_use = "the region is only timed for as long as the guard is alive"]
 pub struct Scope {
     active: bool,
+    /// Mirrors the legacy scope into the canonical tracing subscriber when the
+    /// optional interval-profiling feature is enabled.
+    #[cfg(feature = "interval-profiling")]
+    _trace: Option<tracing::span::EnteredSpan>,
 }
 
 impl Drop for Scope {
@@ -120,6 +129,12 @@ impl Drop for Scope {
         if !self.active {
             return;
         }
+        // Close the canonical wall-clock span before doing any legacy
+        // profiler bookkeeping below. Otherwise the exported interval would
+        // include STACK/RECORDS updates and RSS probes after the measured
+        // region has actually finished.
+        #[cfg(feature = "interval-profiling")]
+        drop(self._trace.take());
         let Some(frame) = STACK.with(|s| s.borrow_mut().pop()) else {
             return;
         };
@@ -175,7 +190,11 @@ impl Drop for Scope {
 #[inline]
 pub fn scope(label: &'static str) -> Scope {
     if !enabled() {
-        return Scope { active: false };
+        return Scope {
+            active: false,
+            #[cfg(feature = "interval-profiling")]
+            _trace: None,
+        };
     }
     let start = Instant::now();
     let rss_start = rss_now();
@@ -187,9 +206,31 @@ pub fn scope(label: &'static str) -> Scope {
     STACK.with(|s| {
         let mut stack = s.borrow_mut();
         let depth = stack.len();
-        stack.push(Frame { label, start, children: Duration::ZERO, depth, order, rss_start });
+        stack.push(Frame {
+            label,
+            start,
+            children: Duration::ZERO,
+            depth,
+            order,
+            rss_start,
+        });
     });
-    Scope { active: true }
+    #[cfg(feature = "interval-profiling")]
+    let trace = Some(
+        tracing::info_span!(
+            "F2Z prof scope",
+            component = label,
+            short_name = label,
+            scope_kind = "procedure",
+            tag_proving = true,
+        )
+        .entered(),
+    );
+    Scope {
+        active: true,
+        #[cfg(feature = "interval-profiling")]
+        _trace: trace,
+    }
 }
 
 /// Drain this thread's accumulated records, returning `(label, inclusive
@@ -205,7 +246,10 @@ pub fn take_totals() -> Vec<(&'static str, f64)> {
     RECORDS.with(|r| {
         let mut records = r.borrow_mut();
         records.sort_by_key(|rec| rec.order);
-        let out = records.iter().map(|rec| (rec.label, rec.inclusive.as_secs_f64())).collect();
+        let out = records
+            .iter()
+            .map(|rec| (rec.label, rec.inclusive.as_secs_f64()))
+            .collect();
         records.clear();
         out
     })
@@ -236,7 +280,11 @@ pub fn dump_and_reset(header: &str) {
             .map(|rec| rec.inclusive)
             .sum();
         let denom = if root.is_zero() {
-            records.iter().map(|rec| rec.inclusive).max().unwrap_or_default()
+            records
+                .iter()
+                .map(|rec| rec.inclusive)
+                .max()
+                .unwrap_or_default()
         } else {
             root
         };
@@ -270,7 +318,11 @@ pub fn dump_and_reset(header: &str) {
             // `Δrss` = peak-RSS growth this region caused; `@` = process peak at
             // exit. Inclusive of children, matching the time columns.
             let mem_note = if rec.has_rss {
-                format!("  Δrss=+{:>8.1}MiB  @{:>9.1}MiB", mib(rec.rss_delta), mib(rec.rss_end))
+                format!(
+                    "  Δrss=+{:>8.1}MiB  @{:>9.1}MiB",
+                    mib(rec.rss_delta),
+                    mib(rec.rss_end)
+                )
             } else {
                 String::new()
             };

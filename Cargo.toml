@@ -25,6 +25,8 @@ flock-core = { path = "/Users/albertgarretafontelles/flock/crates/flock-core" }
 # length-prefixed bincode blob (bincode 1.3, matching flock's own pin).
 bincode = "1.3"
 serde = { version = "1", features = ["derive"] }
+tracing = { version = "0.1", default-features = false, features = ["std"], optional = true }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["std", "registry"], optional = true }
 
 [dev-dependencies]
 
@@ -45,6 +47,7 @@ harness = false
 [features]
 default = ["parallel"]
 parallel = ["dep:rayon"]
+interval-profiling = ["parallel", "flock-core/profiling", "dep:tracing", "dep:tracing-subscriber"]
 unchecked = []
 
 # Match the upstream zinc-plus release profile — without fat LTO +

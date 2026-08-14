@@ -4,8 +4,8 @@
 //!
 //! Everything hot runs flock-core's optimized code (succinctlabs/flock,
 //! MIT OR Apache-2.0): the NEON/cache-blocked additive NTT, the SHA-256
-//! Merkle commit with octopus multi-proofs, and `pcs::basefold` (at M2:
-//! `pcs::ligerito`). zinc keeps the protocol layers around it — the forest
+//! Merkle commit with octopus multi-proofs, and `pcs::ligerito`. zinc keeps
+//! the protocol layers around it — the forest
 //! GKR, the pre-sumcheck, the (thin) ring-switch orchestration — and the ONE
 //! Fiat–Shamir chain is preserved by driving flock's `Challenger` trait from
 //! zinc's [`Transcript`] ([`ZincChallenger`]).
@@ -20,26 +20,20 @@
 //! * zinc [`crate::ligerito::ring_switch_prove`]/`_verify` handle the
 //!   `s_v` message and the r″ recombination (O(2^{m_p}) — not hot), emitting
 //!   the weight table `B(y) = Φ_{r″}(eq(r_hi, y))` and the target `β₀`.
-//! * flock `basefold::prove`/`verify` prove `Σ_y P(y)·B(y) = β₀` against
-//!   flock's commitment, with `a` = the packed witness (codeword side) and
-//!   `b` = the weight table, exactly flock's own PCS wiring
-//!   (`pcs.rs::open`). The closing `final_b` check is
-//!   [`crate::ligerito::tensor_eq_phi_eval`] — the succinct
-//!   tensor-algebra evaluation.
+//! * flock `ligerito` proves `Σ_y P(y)·B(y) = β₀` against flock's
+//!   commitment, with `a` = the packed witness (codeword side) and `b` = the
+//!   weight table, exactly flock's own PCS wiring.
 //!
-//! Query counts are flock's soundness-pinned `default_fri_queries(rate)`
-//! (243 at rate 1/2, 148 at rate 1/4); the `RsOpenConfig::num_queries` knob
-//! does not apply on this backend. Note flock's Merkle is SHA-256 without
+//! Upstream flock removed the legacy BaseFold backend (`c557d08`), so the
+//! BaseFold-backed variants of the above are gone; Ligerito is the only
+//! opening path. Query counts come from the Ligerito security config, not
+//! from the former `default_fri_queries(rate)`; the `RsOpenConfig::num_queries`
+//! knob does not apply on this backend. Note flock's Merkle is SHA-256 without
 //! leaf/node domain separation (flagged upstream as non-production) — carried
 //! as-is for now; recorded in the ledger.
 
 use flock_core::challenger::Challenger;
 use flock_core::field::F128;
-use flock_core::ntt::additive_ntt_f128::AdditiveNttF128;
-use flock_core::pcs::basefold::{
-    self, BaseFoldProof as FlockBaseFoldProof, VerifyError as FlockVerifyError,
-    default_fri_queries,
-};
 use flock_core::pcs::commit::{Commitment, PcsParams, ProverData, commit};
 use flock_core::pcs::ligerito::{
     self, LigeritoProof, LigeritoSecurityConfig, ProverConfig as LigProverConfig,
@@ -54,10 +48,10 @@ use crate::transcript::traits::Transcript;
 use crate::pcs::{IntEvalParams, ShaF2Layout, final_eval_ring};
 use crate::ligerito::{
     IntEvalRsError, LOG_PACKING, PackedBits, RingSwitchProof, RsOpenConfig, RsOpenError,
-    packed_vars, phi_byte_tables, phi_from_words, prove_int_eval_common,
+    packed_vars, phi_byte_tables, phi_from_words,
     prove_int_eval_merged_common, prove_x_claims_batched_common, repack_leaf_bits,
     residual_b_evals, ring_switch_prove, ring_switch_verify, row_bit_vars, rs_fast,
-    sv_fold_mfr, tensor_eq_phi_eval, verify_int_eval_common, verify_int_eval_merged_common,
+    sv_fold_mfr, verify_int_eval_merged_common,
     verify_x_claims_batched_common,
 };
 use crate::merged_forest::MergedForestProof;
@@ -262,6 +256,9 @@ fn commit_rs_flock_from_rows(
         log_inv_rate,
         log_batch_size: log_batch,
         profile: Default::default(),
+        // flock gained a selectable Merkle/FS hash (8790722); the default is
+        // SHA-256, which is what this backend has always committed with.
+        merkle_hash: Default::default(),
     };
     let (commitment, prover_data) = commit(&p_msg, &params);
     FlockCommitHint { rows, packed_cols, p_msg, commitment, prover_data }
@@ -334,8 +331,8 @@ pub fn sha_lig_configs(m_p: usize) -> Result<(LigProverConfig, LigVerifierConfig
     custom_johnson_config(m, 1, 4).to_prover_verifier_configs()
 }
 
-/// [`commit_rs_flock_with`] at the shape in `cfg` (the BaseFold backend's
-/// entry point; the Ligerito path derives its shape from the level config —
+/// [`commit_rs_flock_with`] at the shape in `cfg` (the Ligerito path derives
+/// its shape from the level config —
 /// see [`lig_configs`] + [`commit_rs_ligerito`]).
 pub fn commit_rs_flock(p: &IntEvalParams, data: &[u128], cfg: &RsOpenConfig) -> FlockCommitHint {
     commit_rs_flock_with(p, data, cfg.log_inv_rate, cfg.log_batch)
@@ -386,6 +383,7 @@ pub fn lig_configs(
                 grinding_bits: pc.grinding_bits.clone(),
                 fold_grinding_bits: pc.fold_grinding_bits.clone(),
                 ood_samples: pc.ood_samples.clone(),
+                merkle_hash: pc.merkle_hash,
             };
             Ok((pc, vc))
         }
@@ -395,7 +393,7 @@ pub fn lig_configs(
 /// Build a Johnson-regime Ligerito security config for `(m, base rate
 /// `2^-r0`, L0 interleave `2^k0`)` at the embedded profiles' per-level
 /// target and query-grinding convention, using flock's own machinery end
-/// to end: the embedded slim config as the field template (header strings,
+/// to end: an embedded slim config as the field template (header strings,
 /// `eta`, grinding, target), `scripts/soundness.py`'s ladder rule (rate +1
 /// per level, 3-bit folds until the residual is ≤ 5), queries /
 /// fold-grinding / OOD solved against
@@ -412,10 +410,22 @@ pub fn lig_configs(
 /// [`paper_predicted_ood_bits`]: flock_core::pcs::ligerito::LigeritoLevelConfig::paper_predicted_ood_bits
 #[allow(clippy::arithmetic_side_effects, clippy::missing_panics_doc)]
 pub fn custom_johnson_config(m: usize, r0: usize, k0: usize) -> LigeritoSecurityConfig {
-    let slim = ligerito::embedded_security_config(m, ligerito::LigeritoProfile::Slim)
-        .unwrap_or_else(|| panic!("no embedded slim template for m={m}"));
+    let log_n = m.checked_sub(LOG_PACKING).expect("custom m must be at least LOG_PACKING");
+    // The embedded range starts at m=22 because that is flock's deployed
+    // domain, not because the Johnson/OOD formulas start there. For smaller
+    // explicit custom probes, borrow m=22 only for length-independent policy
+    // metadata; every length-dependent shape and soundness diagnostic below
+    // is re-derived for the requested m and rechecked by validate().
+    let template_m = match m {
+        20 | 21 => 22,
+        _ if ligerito::embedded_security_config(m, ligerito::LigeritoProfile::Slim).is_some() => m,
+        _ => panic!("no embedded slim template for m={m}"),
+    };
+    let slim = ligerito::embedded_security_config(template_m, ligerito::LigeritoProfile::Slim)
+        .expect("m=22 slim template is embedded");
     let mut cfg = LigeritoSecurityConfig::from_toml_str(slim).expect("slim template validates");
-    let log_n = cfg.log_n;
+    cfg.m = m;
+    cfg.log_n = log_n;
     assert!(k0 >= 1 && k0 < log_n, "custom initial_k out of range");
     let tmpl = cfg.levels[0].clone();
 
@@ -467,6 +477,16 @@ pub fn custom_johnson_config(m: usize, r0: usize, k0: usize) -> LigeritoSecurity
             lv
         })
         .collect();
+    for (i, lv) in cfg.levels.iter().enumerate() {
+        let block_len = 1usize
+            .checked_shl((lv.log_msg_cols + lv.log_inv_rate) as u32)
+            .expect("custom block length exponent fits usize");
+        assert!(
+            lv.queries <= block_len,
+            "custom L{i}: {} queries exceed block length {block_len}",
+            lv.queries
+        );
+    }
     cfg.validate().expect("custom config passes flock's validator");
     cfg
 }
@@ -482,15 +502,8 @@ pub fn commit_rs_ligerito(
 }
 
 // ---------------------------------------------------------------------
-// Open (ring-switch on zinc side, BaseFold on flock side)
+// Open (ring-switch on zinc side, Ligerito on flock side)
 // ---------------------------------------------------------------------
-
-/// Proof of one bit-MLE claim through the flock backend.
-#[derive(Clone, Debug)]
-pub struct FlockRsOpenProof {
-    pub ring: RingSwitchProof,
-    pub basefold: FlockBaseFoldProof,
-}
 
 /// Errors of the flock-backed opening / end-to-end verification.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -500,82 +513,21 @@ pub enum FlockRsError {
     Common(IntEvalRsError),
     /// The zinc-side ring-switch rejected.
     RingSwitch(RsOpenError),
-    /// flock's BaseFold verifier rejected.
-    Basefold(FlockVerifyError),
     /// `final_b` disagrees with the succinct weight evaluation
     /// `B̂(challenges)` (the tensor-algebra check).
+    ///
+    /// NOT CONSTRUCTED since flock removed BaseFold (`c557d08`): its only
+    /// construction site was the BaseFold opening. The check itself is NOT
+    /// lost — the Ligerito path performs the equivalent residual-basis
+    /// evaluation inside `recursive_verifier_with_basis_succinct` via the
+    /// `eval_b`/`residual_b_evals` closure, and surfaces failure as
+    /// [`FlockRsError::LigeritoReject`]. Retained for API stability.
     FinalWeight,
     /// flock's Ligerito succinct verifier rejected (boolean API — the
     /// failing stage is not surfaced).
     LigeritoReject,
     /// A sent chunk fold failed the free range check `u < 2^{c_w+t+W}`.
     ChunkRange { chunk: usize, col: usize },
-}
-
-/// Prove `M̂(point) = μ` (μ implied by the transcript) through ring-switch +
-/// flock BaseFold.
-pub fn prove_rs_open_flock(
-    transcript: &mut (impl Transcript + Send),
-    hint: &FlockCommitHint,
-    point: &[Gf],
-) -> FlockRsOpenProof {
-    let r_hi = &point[LOG_PACKING..];
-    // zinc-side ring-switch over the packed message (converted view).
-    let p_msg_gf: Vec<Gf> = hint.p_msg.iter().map(|&f| f128_to_gf(f)).collect();
-    let (ring, b_tbl, beta0) = ring_switch_prove(transcript, &p_msg_gf, r_hi);
-
-    let params = &hint.commitment.params;
-    let ntt = AdditiveNttF128::standard(params.k_code());
-    let basefold = basefold::prove(
-        &hint.p_msg,
-        gf_slice_to_f128(&b_tbl),
-        gf_to_f128(beta0),
-        &hint.prover_data.codeword,
-        &hint.prover_data.merkle_tree,
-        &ntt,
-        params.log_inv_rate,
-        params.log_batch_size,
-        default_fri_queries(params.log_inv_rate),
-        &mut ZincChallenger(transcript),
-    );
-    FlockRsOpenProof { ring, basefold }
-}
-
-/// Verify `M̂(point) = μ` against the flock commitment.
-pub fn verify_rs_open_flock(
-    transcript: &mut (impl Transcript + Send),
-    commitment: &Commitment,
-    mu: Gf,
-    point: &[Gf],
-    proof: &FlockRsOpenProof,
-) -> Result<(), FlockRsError> {
-    if point.len() != commitment.params.m {
-        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
-    }
-    let (r_lo, r_hi) = point.split_at(LOG_PACKING);
-    let (eq_r2, beta0) =
-        ring_switch_verify(transcript, &proof.ring, mu, r_lo).map_err(FlockRsError::RingSwitch)?;
-
-    let params = &commitment.params;
-    let ntt = AdditiveNttF128::standard(params.k_code());
-    let challenges = basefold::verify(
-        gf_to_f128(beta0),
-        &proof.basefold,
-        &commitment.root,
-        &ntt,
-        params.log_inv_rate,
-        params.log_batch_size,
-        &mut ZincChallenger(transcript),
-    )
-    .map_err(FlockRsError::Basefold)?;
-
-    // Closing check: final_b == B̂(challenges), succinctly.
-    let chals_gf: Vec<Gf> = challenges.iter().map(|&f| f128_to_gf(f)).collect();
-    let expected_b = tensor_eq_phi_eval(&chals_gf, r_hi, &eq_r2);
-    if f128_to_gf(proof.basefold.final_b) != expected_b {
-        return Err(FlockRsError::FinalWeight);
-    }
-    Ok(())
 }
 
 // ---------------------------------------------------------------------
@@ -658,14 +610,6 @@ pub fn verify_rs_open_ligerito(
 // ---------------------------------------------------------------------
 // End-to-end
 // ---------------------------------------------------------------------
-
-/// End-to-end proof with the flock-backed opening.
-pub struct IntEvalRsFlockProof {
-    pub forest: ProductForestProof<Gf>,
-    pub v: Vec<u128>,
-    pub presum: MultiDegreeSumcheckProof<Gf>,
-    pub open: FlockRsOpenProof,
-}
 
 /// End-to-end proof with the Ligerito opening. The forest is the MERGED
 /// product forest (payload O(Σ(s+k)) K-elements instead of the per-tree
@@ -787,6 +731,9 @@ pub fn commit_rs_ligerito_batch(
         log_inv_rate: pc.log_inv_rates[0],
         log_batch_size: pc.initial_k,
         profile: Default::default(),
+        // flock gained a selectable Merkle/FS hash (8790722); the default is
+        // SHA-256, which is what this backend has always committed with.
+        merkle_hash: Default::default(),
     };
     let (commitment, prover_data) = commit(&p_msg, &params);
     FlockBatchCommitHint { rows: rows_all, p_msg, commitment, prover_data }
@@ -7300,58 +7247,6 @@ impl IntEvalRsLigModQProof {
     }
 }
 
-/// Prove an integer-MLE evaluation with the flock-backed opening. The
-/// forest GKR, `v` message, and pre-sumcheck are shared with the zinc
-/// backend ([`prove_int_eval_common`]).
-pub fn prove_rs_flock(
-    transcript: &mut (impl Transcript + Send),
-    hint: &FlockCommitHint,
-    p: &IntEvalParams,
-    data: &[u128],
-    row_weights: &[u128],
-    alpha: Gf,
-) -> IntEvalRsFlockProof {
-    let (forest, v, presum, point) =
-        prove_int_eval_common(transcript, p, data, row_weights, alpha, &hint.rows, Some(&hint.packed_cols));
-    let open = prove_rs_open_flock(transcript, hint, &point);
-    IntEvalRsFlockProof { forest, v, presum, open }
-}
-
-/// Verify an integer-MLE evaluation with the flock-backed opening.
-#[allow(clippy::too_many_arguments)] // mirrors `f2_int_eval::verify`'s surface
-pub fn verify_rs_flock<R>(
-    transcript: &mut (impl Transcript + Send),
-    commitment: &Commitment,
-    proof: &IntEvalRsFlockProof,
-    p: &IntEvalParams,
-    row_weights: &[u128],
-    col_weights: &[R],
-    g_r: R,
-    alpha: Gf,
-    claimed_eval: R,
-) -> Result<(), FlockRsError>
-where
-    R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
-{
-    let (point, mu) = verify_int_eval_common(
-        transcript,
-        &proof.forest,
-        &proof.v,
-        &proof.presum,
-        p,
-        row_weights,
-        alpha,
-    )
-    .map_err(FlockRsError::Common)?;
-
-    verify_rs_open_flock(transcript, commitment, mu, &point, &proof.open)?;
-
-    let computed = final_eval_ring(&proof.v, col_weights, g_r);
-    if computed != claimed_eval {
-        return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
-    }
-    Ok(())
-}
 
 // ---------------------------------------------------------------------
 // Tests
@@ -7367,6 +7262,49 @@ mod tests {
     fn sample(seed: u64) -> Gf {
         let hi = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(29) ^ 0x1234_5678_9ABC_DEF0;
         Gf::from_words([seed ^ 0xA5A5_5A5A_0F0F_F0F0, hi])
+    }
+
+    #[test]
+    fn custom_johnson_small_sizes_are_valid_and_feasible() {
+        let expected = [
+            (20usize, 13usize, 3usize, vec![(9usize, 4usize, 3usize, 60usize), (6, 3, 4, 45), (3, 3, 5, 36)]),
+            (21usize, 14usize, 4usize, vec![(10usize, 4usize, 3usize, 60usize), (7, 3, 4, 45), (4, 3, 5, 36)]),
+        ];
+        for (m, log_n, final_log_n, levels) in expected {
+            let cfg = custom_johnson_config(m, 3, 4);
+            assert_eq!(cfg.m, m);
+            assert_eq!(cfg.log_n, log_n);
+            assert_eq!(cfg.initial_k, 4);
+            assert_eq!(cfg.final_block.yr_log_n, final_log_n);
+            assert_eq!(
+                cfg.levels.iter().map(|lv| lv.fold_grinding_bits).collect::<Vec<_>>(),
+                if m == 20 { vec![8, 4, 2] } else { vec![9, 5, 3] }
+            );
+            assert_eq!(
+                cfg.levels.iter().map(|lv| lv.ood_samples).collect::<Vec<_>>(),
+                vec![0, 1, 1]
+            );
+            assert_eq!(
+                cfg.levels
+                    .iter()
+                    .map(|lv| {
+                        (lv.log_msg_cols, lv.log_num_interleaved, lv.log_inv_rate, lv.queries)
+                    })
+                    .collect::<Vec<_>>(),
+                levels
+            );
+            cfg.validate().expect("derived small custom config validates");
+            let toml = cfg.to_toml_string().expect("serialize config");
+            let roundtrip =
+                LigeritoSecurityConfig::from_toml_str(&toml).expect("roundtrip validates");
+            let (pc, vc) = roundtrip.to_prover_verifier_configs().expect("config pair");
+            assert_eq!(pc.log_inv_rates[0], 3);
+            assert_eq!(pc.initial_k, 4);
+            assert_eq!(pc.queries, vc.queries);
+            for lv in &roundtrip.levels {
+                assert!(lv.queries <= 1usize << (lv.log_msg_cols + lv.log_inv_rate));
+            }
+        }
     }
 
     /// Field bridging is the identity on words, and multiplication agrees —

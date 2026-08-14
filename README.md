@@ -261,9 +261,9 @@ The shape header reports the fill as `live=<C>/<2^s>`, and the `proof:`
 line carries an `fnv` fingerprint of the serialized bytes — the handle for
 byte-identity A/Bs across prover knobs.
 
-`scripts/bench_csv.sh` sweeps shapes × profiles one process at a time (the
-measurement protocol) and writes one CSV row per run —
-`scripts/bench_csv.sh -p "fast,slim,slim3" --phases` covers the reference
+`python3 scripts/bench_csv.py` sweeps shapes × profiles one process at a time
+(the measurement protocol) and writes one CSV row per run —
+`python3 scripts/bench_csv.py -p "fast,slim,slim3" --phases` covers the reference
 shapes; `--big` appends n=30–32 (memory-healthy box required), `-j 1`
 single-threads, `-h` for all knobs. Output lands in `bench_results/`.
 

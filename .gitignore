@@ -1,4 +1,5 @@
 /target
+__pycache__/
 
 # LaTeX build intermediates (docs/verifier-note)
 docs/**/*.aux
