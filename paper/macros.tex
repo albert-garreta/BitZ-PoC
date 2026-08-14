@@ -1420,7 +1420,7 @@
 \newcommand{\bfh}{\mathbf{h}}
 \newcommand{\ftwoz}{{$\mathbb {F}2\mathbb{Z}\ $}}
 
-\newcommand{\comfieldexp}{n}
+\newcommand{\comfieldexp}{\nu}
 \newcommand{\pack}{\mathsf{Pack}_\comfieldexp}
 \newcommand{\comfield}{\FF_{2^\comfieldexp}}
 %\newcommand{\evalfield}{\FF_{q}}
@@ -1429,7 +1429,7 @@
 \renewcommand{\oracle}{\mathbbm{y}}
 \renewcommand{\Enc}{\mathsf{Enc}}
 \newcommand{\picomfield}{\pi_{2}}
-\newcommand{\pievalfield}{\psi}
+\newcommand{\pievalfield}{\pi_q}
 \newcommand{\basegenerator}{g}
 \newcommand{\wordsize}{{32}}
 \newcommand{\degevalfield}{\mathsf{deg}(\KK)}
@@ -1557,8 +1557,32 @@
 \newcommand{\PIMSAT}{\Relation_{\mathsf{PIMSAT}}}
 \newcommand{\moduledegree}{d}
 \renewcommand{\ideal}{\mathcal{I}}
-\newcommand{\numrows}{2^\nu}
+\newcommand{\numrows}{n}
 
 \newcommand{\ringbitbound}[1]{\ring_{\leq{#1}}}
-\newcommand{\ringdegbound}[1]{\ring^{\leq{#1}}}
-\newcommand{\ringtwobounds}[2]{\ring_{\leq {#1}}^{\leq{#2}}}
+\newcommand{\ringdegbound}[1]{\ring^{<{#1}}}
+\newcommand{\ringtwobounds}[2]{\ring_{\leq {#1}}^{<{#2}}}
+
+\newcommand{\hamming}{\Delta}
+
+\newcommand{\LinBitsDual}{\Relation_{\mathsf{Lin-BitsDual}}}
+%\newcommand{\LinModFieldBin}{\Relation_{\mathsf{Lin-ModFieldsBin}}}
+\newcommand{\LinModFieldBin}{\Relation_{\mathsf{Lin-BitsDual}}}
+
+\renewcommand{\red}{\mathsf{red}} 
+\newcommand{\iopp}{\mathsf{iopp}} 
+
+\newcommand{\ksred}{{\kappa_{\red}}}
+\newcommand{\ksiopp}{{\kappa_{\iopp}}}
+\newcommand{\LIN}{\Relation_{\mathsf{Lin}}}
+\newcommand{\Mmatrix}{N}
+
+\newcommand{\ringtwo}{R_{\mathsf{e}}}
+
+\newcommand{\moduleone}{{M_\ring}}
+\newcommand{\moduletwo}{{\ringtwo}}
+\newcommand{\ringmorphism}{\pi}
+\newcommand{\modulemorphism}{\psi}
+\newcommand{\moduleonebound}{{M_{\ringbitbound{B}}}}
+
+\newcommand{\picanon}{\pi_{\mathsf{canon}}}

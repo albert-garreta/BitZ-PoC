@@ -317,20 +317,25 @@ fn resolve_configs(
         let mut it = rest.split(':');
         let r0: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or_else(|| usage());
         let k0: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or_else(|| usage());
-        if m_p + LOG_PACKING >= 22 {
-            let cfg = custom_johnson_config(m_p + LOG_PACKING, r0, k0);
-            let pair = cfg.to_prover_verifier_configs().expect("custom config pair");
-            return (pair, format!("custom-k{k0}"));
-        }
-        let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
-            .expect("adhoc cfg");
-        return (pair, "adhoc".to_string());
+        let cfg = custom_johnson_config(m_p + LOG_PACKING, r0, k0);
+        let pair = cfg.to_prover_verifier_configs().expect("custom config pair");
+        return (pair, format!("custom-k{k0}"));
     }
     let (cfg, tag): (LigConfig, &str) = if m_p + LOG_PACKING >= 22 {
         match profile {
             "fast" => (LigConfig::Embedded(LigeritoProfile::Fast), "fast"),
             "slim" => (LigConfig::Embedded(LigeritoProfile::Slim), "slim"),
-            "slim3" => (LigConfig::Embedded(LigeritoProfile::Slim3), "slim3"),
+            // Upstream flock has no rate-1/8 embedded profile (Fast/Secure are
+            // 1/2, Slim is 1/4). Keep `slim3`'s RATE rather than silently
+            // downgrading to Slim, at the cost of the audited per-level
+            // geometry — hence the warning and the distinct tag.
+            "slim3" => {
+                eprintln!(
+                    "note: no embedded rate-1/8 profile in this flock; \
+                     using the ad-hoc UDR geometry at rate 1/8 (UNAUDITED)"
+                );
+                (LigConfig::Adhoc { log_batch: 6, log_inv_rate: 3 }, "slim3-adhoc")
+            }
             "secure" => (LigConfig::Embedded(LigeritoProfile::Secure), "secure"),
             other => {
                 eprintln!("unknown profile: {other}");

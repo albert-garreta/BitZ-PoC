@@ -8266,7 +8266,6 @@ mod tests {
     /// duplicate with a DIFFERENT claimed value is rejected by the
     /// verifier. Plus the degenerate shared-point families: the pure-XOR
     /// singleton (AND channel elided) and j = 1 (all claims dedupe to one).
-    #[test]
     /// The shared-point family under `x_fold_extra`: the
     /// p_x-parameterized core (extraction, folds, forests, presum,
     /// cascade, rings) re-splits end to end. Cross-split consistency:
