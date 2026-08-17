@@ -100,11 +100,13 @@ backrefpages = {cited on pp.},% originally "cited on pages"
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
-\section{Introduction}
+\section{[Just notes -- do not read] Introduction}
 
 \subsection{Contributions}
 
 F2Z: Proving linear claims over any field (possibly an extension field) or integers, for a vector of bits committed on a binary field. \albert{What happens if we replace FRI by F2Z in Plonky3?}
+
+We can handle arbitrary linear weights in our claims, of arbitrary bit-size and in arbtitrary extension degrees, and still use a smallish binary field like GHASH during our protocol (not obvious at all because ``proving in the exponent in principle only allows for using $\lessapprox 90$-ish integer bits. \albert{This is a good story for the technical overview}
 
 Follow up  on Zinc+: we adopt its constraint system and greatly boost its performance with the aforementioned F2Z
 
@@ -247,6 +249,12 @@ Thus some scientific contributions of F2Z-SNARK are
 %World Foundation, Lev Soukhanov, Remco, Ulrich, Giacomo, Marcin
 
 \paragraph{Usage and non-usage of AI} This document was written without the assistance of AI. We used AI in our implementation and experiments, as explained in \cref{??}.
+
+
+\section{[Just notes -- do not read] Technical overview}
+
+
+Thoughts: We can handle arbitrary linear weights in our claims, of arbitrary bit-size and in arbtitrary extension degrees, and still use a smallish binary field like GHASH during our protocol (not obvious at all because ``proving in the exponent in principle only allows for using $\lessapprox 90$-ish integer bits. \albert{This is a good story for the technical overview}
 
 \section{Preliminaries}
 
@@ -1003,12 +1011,8 @@ Recall (\cref{t:thm_core_IOPP})
   \caption{Minima $a^{*}$ of $f(a)$ for different values of $\degevalfield$ and $\log(q)$. The first error term $\kappa_0^*$ satisifes $\kappa_0^* = 1/2^{-\log f(a^*)}$. We include the bits left required to achieve  $\kappa_0^* < 1/2^{128}$ and the cost of grinding such amount of bits, in a MacBook Air M4 16GB, multi-threaded, using Blake3 as hash function.}
   \label{tab:min-f}
 \end{table}
-    
 
-\section{Extensions, variations, and optimizations}
-
-
-\subsection{Virtualization of $\FF_2$-linear combinations lifted to integers}\label{s:virtualization}
+\section{Virtualization of $\FF_2$-linear combinations lifted to integers}\label{s:virtualization}
 
 \newcommand{\virtual}{\mathsf{virtual}}
 
@@ -1098,31 +1102,55 @@ Now prover and verifier use an IOP for $\LIN(\comfield, \cC, \pack)$ to prove \e
 
 
 
-\subsection{An optimized GKR protocol for the \ftwoz grand products via lookup tables}
+    
+
+\section{A GKR protocol for low entropy batched grand products via lookup tables}
+
+
+
+\albertimportant{Explain somewhere: why we do $\ell_2$ grand products instead of just one: sublinear verifier, lookup tables enabling the optimizations here, --something else? }
+
 
 The bulk of the work in \ftwoz (\cref{c:core_iop}) is to reduce the claim over the binary field $\comfield$
 \begin{equation}\label{e:main_grand_product}
 \prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \pi_2(\bff_{ij}) +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\codedim_2]
 \end{equation}
-to an inner product claim  of the form $\langle \vv, \pi_2(\bff)\rangle =\mu$ over $\comfield$, for some $\vv\in \comfield^{\codedim}$, where here $\bff\in \bits^\codedim \subseteq \ZZ^\codedim$.  For the purposes of this reduction, it is irrelevant that $\bff$ is defined over the integers: we will only consider the vector $\pi_2(\bff)$.
+to an inner product claim  of the form $\langle \vv, \pi_2(\bff)\rangle =\mu$ over $\comfield$, for some $\vv\in \comfield^{\codedim}$, where here $\bff\in \bits^\codedim \subseteq \ZZ^\codedim$.  Recall that $$\codedim=\codedim_1\cdot \codedim_2.$$ To fix intuition,  in our instantiation (cf.\ \cref{s:instantiation}) we set $\codedim_1 \approx \codedim^{0.6}, \codedim_2=\codedim^{0.4}$. %For the purposes of this reduction, it is irrelevant that $\bff$ is defined over the integers: we will only consider the vector $\pi_2(\bff)$.
 
-More precisely, we need to instantiate an IOR $\Pi_{\red}$ that reduces triples from 
+
+\renewcommand{\comfield}{\KK}
+
+
+Cryptographically speaking, our protocol is simply a standard batched version of the GKR protocol applied to grand products from \cite{?}. However, our implementation uses lookup tables (i.e.\ preprocessed data) to optimize the prover time of such protocol. In particular, our techniques leverage the fact that the factors in \eqref{e:main_grand_product} have \emph{low entropy}, in the sense that for every $i\in [\codedim_1]$ and $j\in [\codedim_2]$, the $i$-th factor in the $j$-th grand product of \eqref{e:main_grand_product} can take only two values, depending on whether $\bff_{ij}=0$ or $\bff_{ij}=1$.  
+
+\newcommand{\gkrpol}{p}
+
+
+ The optimizations we introduce apply to any (batched) grand product with low entropy factors, and not only to the grand product in \eqref{e:main_grand_product}. They also work on any field. Because of this, we will describe a general protocol IOR  that, given a finite field $\KK$; %a code $\cC$ and map $T$ as in \cref{?}\footnote{The code $\cC$ and map $T$ are  not used throughout the entirety of the IOR.}; 
+ a subset $S\subseteq \KK$; and dimensions $\codedim=\codedim_1\cdot \codedim_2$, reduces triples from 
 %
 \begin{align*}
-&\PESAT(\comfield, Q_{\FF 2 \ZZ},\cC, \pack)\\ &\qquad = \left\{ \left(\begin{aligned} &\inp=(\yy,\bm{\mu})\in \comfield^{\codedim_1}\times \comfield^{\codedim_2}, \\&\oracle = g\in \comfield^{\codelength}, \\ &\wit=\bff= (\bff_{*j})_{j\in [\codedim_2]}\in \FF_2^{\codedim_1 \times \codedim_2}\end{aligned}\right) \;\middle|\;  \begin{aligned} &f= \Enc_{\cC}\circ\pack\circ \picomfield(\bff) \\ \wedge \  &\Pi_{i=1}^{\codedim_1} \left((\yy_i-1)\cdot \bff_{ij} +1\right) = \bm{\mu}_j  \text{ for all } j\in [\codedim_2]\end{aligned}  \right\}.
+&\PESAT(\comfield, \gkrpol)\\ &\qquad = \left\{ \left(\begin{aligned} &\inp=(\yy,\bm{\mu})\in \comfield^{\codedim_1}\times \comfield^{\codedim_2}, \\
+&\oracle=\bot,\\
+%&\oracle = f\in \KK^{\codelength},\\ 
+&\wit=\bff= (\bff_{*j})_{j\in [\codedim_2]}\in S^{\codedim_1 \times \codedim_2} \subseteq \KK^{\codedim_1 \times \codedim_2}\end{aligned}\right) \;\middle|\;  \begin{aligned}   % &f =\Enc_{\cC}\circ T(\bff)\\ 
+&\prod_{i\in[\codedim_1]} \gkrpol(\yy_i, \bff_{ij}) = \bm{\mu}_j \ \text{ for all } j\in [\codedim_2]\end{aligned}  \right\},
 \end{align*}
 %
 to triples in 
 %
 $$
-\LIN( \comfield,\cC,\pack)  = \left\{ \left(\begin{aligned} &\inp=(\uu,\mu)\in \comfield^\inplen, \\&\oracle = g \in \comfield^{\codelength}, \\ &\wit= \bff\in (\FF_2^\codedim)\end{aligned}\right) \;\middle|\;  \begin{aligned} 
-&g=\Enc_{\cC}\circ \pack (\bff) \\    &\langle \uu, \bff\rangle = \mu  \end{aligned}\right\}.
+\LIN( \comfield)  = \left\{ \left(\begin{aligned} &\inp=(\uu,\mu)\in \comfield^\codedim \times \comfield, \\
+&\oracle=\bot,\\
+%&\oracle = f\in \comfield^{\codelength}, \\ 
+&\wit= \bff\in S^{\codedim_1\times \codedim_2}\subseteq \KK^{\codedim_1 \times \codedim_2}\end{aligned}\right) \;\middle|\;  \begin{aligned} 
+%&f=\Enc_{\cC}\circ T (\bff) \\   
+&\langle \uu, \bff\rangle = \mu  \end{aligned}\right\}.
 $$
 %
-We do this reduction via the GKR protocol for multiple grand products \albert{what to cite?}, and make several implementation-level optimizations for it.  
-%
+One can additionally add an encoding $f=\Enc_\cC\circ T (\bff)$ as an oracle $\yy$ in the above relations (matching the context in which we use the IOR), but our IOR does not make any use of it whatsoever, hence we omit it. 
 
-In our instantiation, $\Pi_{\red}$ is the GKR protocol for grand products, with several crucial optimizations in its implementation. We briefly describe $\Pi_{\red}$ now. Then describe the most important optimizations. We assume $\codedim_1,\codedim_2$ are powers of two:
+We  describe $\Pi_{\red}$ now. AWe will describe our implementation-level optimizations afterwards. s we mentioned, cryprographically/protocol-wise, our protocol is a standard batched GKR for grand productes.  We assume $\codedim_1,\codedim_2$ are powers of two:
 %
 $$
 \codedim_1 = 2^{r_1}, \quad \codedim_2 = 2^{r_2}.
@@ -1130,14 +1158,11 @@ $$
 We index $[\codedim_1],[\codedim_2]$ via elements of the hypercubes $\bits^{\log \codedim_1}, \bits^{\log \codedim_2}$, respectively.
 %
 \renewcommand{\cc}{\mathbf{c}}
-\begin{construction}[An IOR $\Pi_\red$ from $\PESAT(\comfield, Q_{\FF 2 \ZZ},\cC, \pack)$ to $\LIN( \comfield,\cC,\pack)$]\label{c:gkr_grand_product}
-\textbf{Parameters.} \\
+\begin{construction}[An IOR $\Pi_\red$ from $\PESAT(\comfield, \gkrpol)$ to $\LIN( \comfield)$]\label{c:gkr_grand_product}
+\noindent \textbf{Input.}   Prover and verifier receive $(\yy,\bm{\mu}),  \in \comfield^{\codedim_1} \times  \comfield^{\codedim_2}$. Prover receives also $\bff\in S^{\codedim_1\times \codedim_2}\subseteq\comfield^{\codedim_1\times \codedim_2}$.
 
 
-\noindent \textbf{Input.}   Prover and verifier receive $(\yy,\bm{\mu}), g \in \comfield^{\codedim_1} \times  \comfield^{\codedim_2} \times \comfield^{\codelength}$. Prover receives also $\bff\in \FF_2^{\codedim_1\times \codedim_2}$.
-
-
-Let $L_{r_1}$ be a multilinear polynomial over $\comfield$ on $r_1 + r_2$ variables such that $$L_{r_1}(\bb,\cc)=(g^{\bm{\gamma}_{\bb}} -1) \cdot \bff_{\bb,\cc} +1 \quad  \text{ for all } (\bb,\cc) \in \bits^{r_1} \times \bits^{r_2}.$$ 
+Let $L_{r_1}$ be a  \emph{multilinear} polynomial over $\comfield$ on $r_1 + r_2$ variables such that $$L_{r_1}(\bb,\cc)= \gkrpol(\yy_{\bb}, \bff_{\bb,\cc}) \quad  \text{ for all } (\bb,\cc) \in \bits^{r_1} \times \bits^{r_2}.$$ (note that $\gkrpol$ may not be multilinear).  
      For $i=0,\ldots, r_1-1$, let $L_i$ be a multilinear polynomial on $r_2 + i$ variables  such that 
       $$
   L_{i}(\bb,\cc)  =  L_{i+1}(\bb,0,\cc) \cdot L_{i+1}(\bb,1, \cc)  \quad \text{for all } \bb\in \bits^{i} \times \bits^{r_2}.
@@ -1183,119 +1208,173 @@ Let $L_{r_1}$ be a multilinear polynomial over $\comfield$ on $r_1 + r_2$ variab
     This claim is equivalent to
     %
     \begin{equation}\label{e:gkr_leaf_claim}
-    \sum_{(\bb,\cc)\in \bits^{r_1} \times \bits^{r_2}} \left((\mle{g^{\bm{\gamma}}}(\bb) -1) \cdot \mle{\bff}(\bb,\cc) +1\right)\cdot \eq((\bb,\cc), \bm{\alpha}^{(r_1)}) = C^{(r_1)},
+    \sum_{(\bb,\cc)\in \bits^{r_1} \times \bits^{r_2}} \gkrpol(\yy_{\bb},\bff_{\bb,\cc}) \cdot \eq((\bb,\cc), \bm{\alpha}^{(r_1)}) = C^{(r_1)},
     \end{equation}
-    %
-    where $g^{\bm{\gamma}}$ is the vector $(g^{\bm{\gamma}_\bb})_{\bb\in\bits^{r_1}}$.
-    
-    Prover and verifier run the sumcheck protocol \albertimportant{No need, it's already a linear claim} for \cref{e:gkr_leaf_claim}, reducing \cref{e:gkr_leaf_claim} to 
-    %
-    \begin{equation}\label{e:gkr_final_mles}
-    \mle{g^{\bm{\gamma}}}(\rr_f) = a_f,\qquad \mle{\bff}(\rr_f, \rr_f') = b_f 
-    \end{equation}
-    for some $\rr_f'\in \comfield^{r_1}$,  $\rr_f\in \comfield^{r_2}$, $a_f,b_f\in \comfield$.
-    \item The verifier checks $\mle{g^{\bm{\gamma}}}(\rr_f) = a_f$ itself. \albert{Discuss how one would make the verifier succinct here if wished} 
-    \item The prover and verifier output
+    If $\gkrpol$ is multilinear, then \eqref{e:gkr_leaf_claim} is a linear claim on $\bff$. Namely, it is equivalent to
     %
     $$
-    (\inp'=((\rr_f,\rr_f'), b_f),\ \oracle' = f, \ \wit' = \bff) \in \LIN(\comfield,\cC, \pack).
+    \langle \uu, \bff \rangle = C^{(r_1)} + \mu
     $$
+    for some $\uu\in \KK^{\codedim}, \mu\in \KK$. In this case, prover and verifier output 
+    %
+        $$
+    (\inp'=(\uu, C^{(r_1)}+\mu),\ \bot, \ \wit' = \bff) \in \LIN(\comfield).
+    $$
+    %
+    Otherwise, i.e.\ if $\gkrpol$ is not multilinear, prover and verifier run a sumcheck for the claim \eqref{e:gkr_leaf_claim}, which results in MLE claims for $\yy$ and $\bff$. The verifier checks the claim for $\yy$ itself, and prover and verifier output the MLE claim for $\bff$.
 \end{enumerate}
     
 \end{construction}
 
 
-\subsubsection{Optimization via lookup tables} We optimize \cref{c:gkr_grand_product} as follows. We start with the following observation: for every $(\bb,\cc)\in \bits^{r_1} \times \bits^{r_2}$, we have $\bff_{\bb,\cc}\in \bits$, and so
+\subsection{Optimization via lookup tables} We optimize \cref{c:gkr_grand_product} as follows.  For simplicity we assume
 %
-$$L_{r_1}(\bb,\cc)=(g^{\bm{\gamma}_{\bb}} -1) \cdot \bff_{\bb,\cc} +1 = 
+$$
+S=\bits \subseteq \KK,
+$$
+but any small subset of $\KK$ is amenable to the techniques discussed here.
+
+
+\paragraph{Setup} We start with the following observation: for every $(\bb,\cc)\in \bits^{r_1} \times \bits^{r_2}$, we have $\bff_{\bb,\cc}\in S=\bits$, and so
+%
+$$L_{r_1}(\bb,\cc)=\gkrpol(\yy_{\bb}, \bff_{\bb,\cc})= 
 \begin{cases}
-    g^{\bm{\gamma}_{\bb}} & \text{if } \bff_{\bb,\cc}=1\\
+    \yy_{\bb} & \text{if } \bff_{\bb,\cc}=1\\
     1 & \text{if } \bff_{\bb,\cc}=0.
 \end{cases}$$
 %
-The values $g^{\bm{\gamma}_\bb}$ and $1$ do not depend on $\cc$. Hence the prover can compute the lookup table $T\subseteq (\comfield\times \comfield)^{\bits^{r_1}}$:
+The values $\yy_{\bb}$ and $1$ do not depend on $\cc$. Hence the prover can set up the lookup table $T_{r_1}\subseteq (\comfield\times \comfield)^{\bits^{r_1}}$ defined as
 %
 $$
-T_{r_1}[\bb]= (g^{\bm{\gamma}_\bb}, 1)
+T_{r_1}[\bb]= (\yy_{\bb}, 1) \qquad \text{for all } \bb \in \bits^{r_1}
 $$
-at the beginning of the protocol, and use it to obtain the values $L_{r_1}(\bb,\cc)$. Importantly, this table has size $2 \cdot 2^{r_1} = 2\cdot \codedim_1$, as opposed to $O(\codedim)=O(\codedim_1\cdot \codedim_2)$. This (among others, cf.\ \cref{?} \albertimportant{todo: benefits of the tensor decomp}), is one of the reasons why we use the tensor decomposition structure, i.e.\ the split given by $\codedim=\codedim_1\cdot \codedim_2$, in \cref{c:core_iop}.
+at the beginning of the protocol, and use it to obtain the values $L_{r_1}(\bb,\cc)$. %Since $\yy$ is part of the input, this is essentially a no-op 
+In our instantiation, $\yy_{\bb}=g^{\bm{\gamma}_{\bb}}$ (cf.\ \cref{?}), and so the prover precomputes the elements $g^{\bm{\gamma}_{\bb}}$ at the beginning of the protocol. 
 
-As we will explain later, the prover will also precompute compute similar tables, for $0\leq i\leq r_1-1$, $$T_{r_1-i}\in (\comfield^{2^{i+1}})^{\bits^{r_1-i}}$$ for the values $L_{r_1-i}(\bb',\cc)$. Again, $T_{r_1-i}$ has size independent of $\codedim_2$. 
+
+As we will explain later, the prover will also precompute  similar tables, for $0\leq i\leq r_1-1$, $$T_{r_1-i}\in (\comfield^{2^{i+1}})^{\bits^{r_1-i}}$$ for the values $L_{r_1-i}(\bb,\cc)$, and other tables relevant for the different sumcheck rounds of \cref{c:gkr_grand_product}. 
+
+Importantly, all these tables have size independent of $\codedim_2$.  This (among others, cf.\ \cref{?}), is one of the reasons why we use the tensor decomposition structure, i.e.\ the split given by $\codedim=\codedim_1\cdot \codedim_2$, in \cref{c:core_iop}.
+
+\begin{remark}
+    All precomputed data in this section depends on the input vector $\yy$ of $\PESAT(\comfield,\gkrpol)$. Since, in a wider context where \cref{c:gkr_grand_product} is a subprocess of a larger proof system, $\yy$ typically depends on verifier's challenges, these precomputations must be done at \emph{runtime}. 
+\end{remark}
 
 
-\paragraph{Step 2, $i=r_1-1$}
-Concretely, the table $T_{r_1}$ is leveraged at Step 2, $i=r_1-1$, of \cref{c:gkr_grand_product} when running the sumcheck for the claim
+
+\paragraph{First prover message in the last sumcheck in Step 2 of \cref{c:gkr_grand_product}}
+We start by analyzing Step 2 with $i=r_1-1$. In this step prover and verifier run a sumcheck for the claim
 %
 $$
-C^{(r_1-1)} = \sum_{(\bb,\cc)\in \bits^{r_1-1}\times \bits^{r_2}} L_{r_1}(\bb,0,\cc) \cdot L_{r_1}(\bb,1,\cc) \cdot \eq(\bb,\cc;\bm{\alpha}^{(i)})
+C^{(r_1-1)}= \sum_{(\bb,\cc)\in \bits^{r_1-1}\times \bits^{r_2}} L_{r_1}(\bb,0,\cc) \cdot L_{r_1}(\bb,1,\cc) \cdot \eq(\bb,\cc;\bm{\alpha}^{(i)})
 $$
 %
-This is the most expensive step of \cref{c:gkr_grand_product} for the prover, since it is the sumcheck over the largest number of variables of the protocol. For $1\leq j\leq r_1-1$, the $j$-th prover message in this sumcheck invocation is, if $\bm{\rho}^{(j)}=(\rho_1, \ldots, \rho_{j-1})$ is the vector of verifier challenges so far,
+This is the most expensive step of \cref{c:gkr_grand_product} for the prover (if done naively), since it is the sumcheck over the largest number of variables throughout \cref{c:gkr_grand_product}. 
+
+For $1\leq j\leq r_1-1$, the $j$-th prover message in this sumcheck is, if $\bm{\rho}^{(j)}=(\rho_1, \ldots, \rho_{j-1})$ is the vector of verifier challenges so far in this sumecheck,
 %
-$$
-h_j(X)\defeq \sum_{(\bb',\cc)\in \bits^{r_1-1-j}\times \bits^{r_2}} L_{r_1}(\bm{\rho}^{(j)}, X, \bb',0,\cc) \cdot L_{r_1}(\bm{\rho}^{(j)}, X, \bb',1,\cc)\cdot \eq(\bm{\rho}^{(j)}, X, \bb',\cc;\bm{\alpha}^{(i)})
-$$
+\begin{align*}
+h_j(X)&\defeq \sum_{(\bb,\cc)\in \bits^{r_1-1-j}\times \bits^{r_2}} L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc) \cdot L_{r_1}(\bm{\rho}^{(j)}, X, \bb,1,\cc)\cdot \eq(\bm{\rho}^{(j)}, X, \bb,\cc;\bm{\alpha}^{(i)})\\
+&= \sum_{\cc\in \bits^{r_2}}\left( \sum_{\bb\in \bits^{r_1-1-j}}L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc) \cdot L_{r_1}(\bm{\rho}^{(j)}, X, \bb,1,\cc) \cdot \eq(\bm{\rho}^{(j)}, \bb;\bm{\alpha}^{(i,1)})\right)\cdot   \eq(X,\cc;\bm{\alpha}^{(i,2)}) \\
+&= \sum_{\cc\in \bits^{r_2}}h_{j,\cc}(X)\cdot   \eq(X,\cc;\bm{\alpha}^{(i,2)}),
+\end{align*}
+for $\alpha^{(i)} = (\alpha^{(i,1)}, \alpha^{(i,2)})\in \bits^{r_1-j-1}\times \bits^{r_2+1}$.
 %
 We claim that
 %
+\begin{equation}\label{e:grand_product_Lr1}
+L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc) = \left(L_{r_1}(\bm{\rho}^{(j)}, 1, \bb,0,\cc) -  L_{r_1}(\bm{\rho}^{(j)}, 0, \bb,0,\cc)\right)\cdot X + L_{r_1}(\bm{\rho}^{(j)}, 0, \bb,0,\cc)
+\end{equation}
+Indeed, $L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc)$ is a linear polynomial, and the right-hand side in the above expression is the line passing through the two evaluations of  $L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc)$ at $X=0$ and $X=1$. An analogous expression holds for $L_{r_1}(\bm{\rho}^{(j)}, X, \bb, 1, \cc)$:
 $$
-L_{r_1}(\bm{\rho}^{(j)}, X, \bb',0,\cc) = \left(L_{r_1}(\bm{\rho}^{(j)}, 1, \bb',0,\cc) -  L_{r_1}(\bm{\rho}^{(j)}, 0, \bb',0,\cc)\right)\cdot X + L_{r_1}(\bm{\rho}^{(j)}, 0, \bb',0,\cc)
+L_{r_1}(\bm{\rho}^{(j)}, X, \bb,1,\cc) = \left(L_{r_1}(\bm{\rho}^{(j)}, 1, \bb,1,\cc) -  L_{r_1}(\bm{\rho}^{(j)}, 0, \bb,1,\cc)\right)\cdot X + L_{r_1}(\bm{\rho}^{(j)}, 0, \bb,1,\cc).
 $$
-Indeed, $L_{r_1}(\bm{\rho}^{(j)}, X, \bb',0,\cc)$ is a linear polynomial and hence is determined by its evaluation at two values of $X$. The right-hand side in the above expression is the line passing through the two evaluations of  $L_{r_1}(\bm{\rho}^{(j)}, X, \bb',0,\cc)$ at $X=0$ and $X=1$. Renaming
+%
+Renaming
 %
 $$
-E_{\eps_1\eps_2}[\bb',\cc] = L_{r_1}(\bm{\rho}^{(j)}, \eps_1, \bb', \eps_2,\cc)
+E_{\eps_1\eps_2}[\bb,\cc] = L_{r_1}(\bm{\rho}^{(j)}, \eps_1, \bb, \eps_2,\cc) \qquad \eps_1,\eps_2\in \bits, \qquad \omega[\bb]\defeq \eq(\bm{\rho}^{(j)}, \bb;\bm{\alpha}^{(i,1)}),
 $$
 we obtain
 %
-$
-h_j(X) =\sum_{(\bb',\cc)\in \bits^{r_1-1-j}\times \bits^{r_2}} X^2 \cdot A_2[\bb',\cc] + X\cdot A_1[\bb',\cc] + A_0[\bb',\cc]
-$
-where \albertimportant{double check}
+$$
+h_{j,\cc}(X) =\sum_{\bb\in \bits^{r_1-1-j}} X^2 \cdot A_2[\bb,\cc] + X\cdot A_1[\bb,\cc] + A_0[\bb,\cc]
+$$
+ where,   \albert{double check}
 $$
 \begin{aligned}
-A_0[\bb',\cc] &\defeq E_{0,0}[\bb',\cc]\cdot E_{0,1}[\bb',\cc],\\ 
-A_1[\bb',\cc] &\defeq  (E_{10}[\bb',\cc]-E_{00}[\bb',\cc])\cdot E_{01}[\bb',\cc] + (E_{11}[\bb',\cc]-E_{01}[\bb',\cc])\cdot E_{00}[\bb',\cc]\\
-A_2[\bb',\cc] &\defeq (E_{10}[\bb',\cc]-E_{00}[\bb',\cc])\cdot (E_{11}[\bb',\cc]-E_{01}[\bb',\cc])
+A_0[\bb,\cc] &\defeq E_{00}[\bb,\cc]\cdot E_{01} [\bb,\cc]\cdot \omega[\bb],\\ 
+A_1[\bb,\cc] &\defeq  \left((E_{10}[\bb,\cc]-E_{00}[\bb,\cc])\cdot E_{01}[\bb,\cc] + (E_{11}[\bb,\cc]-E_{01}[\bb,\cc])\cdot E_{00}[\bb,\cc]\right) )\cdot \omega[\bb]\\
+A_2[\bb,\cc] &\defeq (E_{10}[\bb,\cc]-E_{00}[\bb,\cc])\cdot (E_{11}[\bb,\cc]-E_{01}[\bb,\cc])\cdot \omega[\bb].
 \end{aligned}
 $$
 %
-Now, for $j=1$, we have $\bm{\rho}^{(j)}= \bot$, and hence each value $E_{\eps_1\eps_2}[\bb',\cc]$ can be obtained by querying $T_{r_1}[\bb']$ and selecting $g^{\bm{\gamma}_{\bb'}}$ or $1$ depending on whether $\bff_{\bb',\cc} = 1$ or $0$. A consequence of this is that  the coefficients themselves $A_k[\bb',\cc]$ ($k\in [3]$) can be obtained through a precomputed table, as follows:
+Now, for $j=1$, we have $\bm{\rho}^{(j)}= \bot$, and hence each value $E_{\eps_1\eps_2}[\bb,\cc]$ can be obtained by querying $T_{r_1}[\bb]$ and selecting $\yy_{\bb}$ or $1$ depending on whether $\bff_{\bb,\cc} = 1$ or $0$. A consequence  is that  the coefficients themselves $A_k[\bb,\cc]$ ($k\in [3]$) can be obtained through a lookup table, as follows:
 %
-note we have $$A_0[\bb',\cc] = 
-    T_{r_1}[0,\bb',0,\cc][\bff_{(0,\bb',0),\cc}] \cdot    T_{r_1}[0,\bb', 1,\cc][\bff_{(0,\bb',1),\cc}] 
+ we have $$A_0[\bb,\cc] = 
+    T_{r_1}[0,\bb,0,\cc][\bff_{(0,\bb,0),\cc}] \cdot    T_{r_1}[0,\bb, 1,\cc][\bff_{(0,\bb,1),\cc}] \cdot \omega[\bb]
 $$
 Hence
 %
 $$
-A_0[\bb',\cc] = \begin{cases}
-    g^{\bm{\gamma}_{0,\bb',0}} \cdot  g^{\bm{\gamma}_{0,\bb',1}}&\text{if } \bff_{(0,\bb',0),\cc}=\bff_{(0,\bb',1),\cc}=1 \\  
-    g^{\bm{\gamma}_{0,\bb',0}} &\text{if } \bff_{(0,\bb',0),\cc}=1,\ \bff_{(0,\bb',1),\cc}=0\\
-    g^{\bm{\gamma}_{0,\bb',1}}& \text{if } \bff_{(0,\bb',0),\cc}=0,\ \bff_{(0,\bb',1),\cc}=1 \\
-    1 &\text{if } \bff_{(0,\bb',0),\cc}= \bff_{(0,\bb',1),\cc}=0
+A_0[\bb,\cc] = \begin{cases}
+    \yy_{0,\bb,0} \cdot  \yy_{0,\bb,1} \cdot \omega[\bb]&\text{if } \bff_{(0,\bb,0),\cc}=1,\ \bff_{(0,\bb,1),\cc}=1 \\  
+    \yy_{0,\bb,0} \cdot \omega[\bb]&\text{if } \bff_{(0,\bb,0),\cc}=1,\ \bff_{(0,\bb,1),\cc}=0\\
+    \yy_{0,\bb,1}\cdot \omega[\bb]& \text{if } \bff_{(0,\bb,0),\cc}=0,\ \bff_{(0,\bb,1),\cc}=1 \\
+    \omega[\bb] &\text{if } \bff_{(0,\bb,0),\cc}= 0,\  \bff_{(0,\bb,1),\cc}=0
 \end{cases}
 $$
 %
-Hence the prover can precompute the table $$T^{A_0} \in (\comfield^{4})^{2^{r_1-2}}$$ given by $T^{A_0}[\bb']=(g^{\bm{\gamma}_{0,\bb',0}} \cdot  g^{\bm{\gamma}_{0,\bb',1}}, g^{\bm{\gamma}_{0,\bb',0}}, g^{\bm{\gamma}_{0,\bb',1}}, 1)$
-and use it to obtain the values $A_{0}[\bb',\cc]$. Notice that the size of $T^{A_0}$, again, does not depend on $\codedim_2=2^{r_2}$.
+Hence the prover can precompute the table $$T^{A_0} \in (\comfield^{4})^{2^{r_1-2}}=\comfield^{\codedim_1}$$ given by $T^{A_0}[\bb]=(\yy_{0,\bb,0} \cdot  \yy_{0,\bb,1}\cdot \omega[\bb], \yy_{0,\bb,0}\cdot \omega[\bb], \yy_{0,\bb,1}\cdot \omega[\bb],  \omega[\bb])$
+and use it to obtain the values $A_{0}[\bb,\cc]$. %\begin{equation}\label{e: A0_factor_T0}A_0[\bb,\cc] = T^{A_0}[\bb,\cc] \cdot \eq(\cc;\bm{\alpha}^{(i,2)}).\end{equation} 
+
+The size of $T^{A_0}$, again, does not depend on $\codedim_2=2^{r_2}$. $T^{A_0}$ and $A_0$ can thus be computed with at most $2\cdot 2^{r_1-2} =\codedim_1/2$ multiplications, and no additions.% Once $T^{A_0}$ is computed, $A_0$ can be computed with at most $2^{r_1-2 + r_2} = \codedim/4$ multiplications and no additions, assuming the values  $\eq(\cc;\bm{\alpha}^{(i,2)})$ have also been computed \albert{account for the cost of these values somewhere}. The overall cost of computing $A_0$ is $\codedim/4 + \codedim_1/4$ multiplications. 
+
+The prover can compute similar tables $T^{A_1}, T^{A_2}$, of the same size as $T^{A_0}$, for the coefficients $A_1[\bb,\cc], A_2[\bb,\cc]$. %, and then use a similar identity as \cref{e: A0_factor_T0} to compute $A_1, A_2$. \albert{Some optimizations may apply}.    
+ Once $A_0,A_1,A_2$ are computed, the prover can compute $h_{j, \cc}(X)$ with $3\cdot 2^{r_1-2}=3\cdot \codedim_1/4$ additions. Then the prover can compute $h_1(X)$ with at most $6\cdot 2^{r_2} = 3\cdot 2^{r_2+1}$ additions and multiplications. 
+ 
+To compute  $T^{A_1}$, the prover makes at most $3\cdot 2^{r_1-2}$ multiplications and additions; for $T^{A_2}$ it makes at most $2\cdot 2^{r_1-2} = 2^{r_1-1}$ multiplications and additions.  In \cref{t:gkr_step1_costs} we record the total upper bound of multiplications and additions for computing $h_1(X)$. 
 
 
-The prover can compute similar tables $T^{A_1}, T^{A_2}$, of the same size as $T^{A_0}$, for the coefficients $A_1[\bb',\cc], A_2[\bb',\cc]$ \albert{Some optimizations may apply}.    
-
-Overall, once $T^{A_0}, T^{A_1}, T^{A_2}$ are computed, the prover can compute $h_1(X)$ with at most than $3\cdot 2^{r_1-2 +r_2}$ additions in $\comfield$ and zero multiplications. To compute $T^{A_0}$, assuming $T_{r_1}$ is already computed, the prover makes $2^{r_1-2}$ multiplications in $\comfield$. For  $T^{A_1}$ it makes at most $3$ additions and $2$ multiplications, and for $T^{A_2}$ it makes at most $2$ additions and $1$ multiplication. \albertimportant{Optimizations may apply here}. \albertimportant{Create a table}.  
-
-On the other hand, a naive approach to compute $h_j(X)$ would require \albertimportant{fill in, make a table}.
+ On the other hand, a standard generic approach to compute $h_{1,\cc}(X)$ would require $O(\codedim)=O(\codedim_1\cdot \codedim_2)$ multiplications and additions, even if using the few known sumcheck optimizations that apply in our settings \albert{which ones, exactly?}. Crucially, we note that out sumcheck features summands of full field bit size $\log|\KK|$, which voids some known powerful optimizations when the summands are small, e.g.\ the univariate skip \cite{?} and some optimizations from \cite{?} \albertimportant{This is a crucial point. It should be highlighted more. And it should be an important point of the introduction and technical overview}
 
 
-\paragraph{Computing $h_2(X)$ and beyond, in Step 2, $i={r_1}-1$}
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c|c}
+         & Our approach & Standard/generic \\
+         \hline
+        Multiplications & $\leq   7\cdot \codedim_1/4 +  6\cdot \codedim_2 $ &$O(\codedim_1\cdot \codedim_2)$\\
+        \hline
+        Additions & $\leq 2\cdot\codedim_1 +  6\cdot \codedim_2$ & $O(\codedim_1\cdot \codedim_2)$
+    \end{tabular}
+    \caption{The cost in field operations of the first sumcheck round of the last sumcheck in \cref{c:gkr_grand_product} (Step 2 with $i=r_1-1$). For intuition, $\codedim_1$ and $\codedim_2$ are roughly $\sqrt{\codedim}$ where $\codedim=\codedim_1\cdot \codedim_2$ is the witness size. In our approach, we additionally require $O(\codedim)$ reads into some tables of size $O(\codedim_1)$ \albert{provide exact number and size of tables}.}
+    \label{t:gkr_step1_costs}
+\end{table}
 
 
 
 
+\paragraph{First prover message in the last sumcheck in Step 2 of \cref{c:gkr_grand_product}} Next we focus on computing $h_2(X)$. Substituting $X$ by the verifier's first sumcheck challenge $\rho_1$ in \cref{e:grand_product_Lr1}, we have
+%
+\begin{align*}
+L_{r_1}(\rho_1,\bb,0, \cc) &=  \left(E_{10}[\bb,\cc] - E[00][\bb,\cc]\right) \cdot \rho_1 + E_{00}[\bb,\cc]\\ &= \begin{cases}
+\left(\yy_{1,\bb,0} - \yy_{0,\bb,0}\right)\cdot \rho_1 + \yy_{0,\bb,0} &\text{if } \bff_{(0,\bb,0),\cc}=1,\ \bff_{(0,\bb,1),\cc}=1 \\  
+\left(1 - \yy_{0,\bb,0}\right)\cdot \rho_1 + \yy_{0,\bb,0}&\text{if } \bff_{(0,\bb,0),\cc}=1,\ \bff_{(0,\bb,1),\cc}=0\\
+\left(\yy_{1,\bb,0} - 1\right)\cdot \rho_1 + 1 & \text{if } \bff_{(0,\bb,0),\cc}=0,\ \bff_{(0,\bb,1),\cc}=1 \\
+    1 &\text{if } \bff_{(0,\bb,0),\cc}=0,\  \bff_{(0,\bb,1),\cc}=0
+\end{cases}
+\end{align*}
+%
+A similar expression holds for $L_{r_1}(\rho_1, \bb,1,\cc)$. The idea now is that we can compute $h_2(X)$ in essentially  the same way as we computed $h_1(X)$, but this time, instead of starting with the table $$T_{r_1}\in (\comfield^2)^{\bits^{r_1}}, \quad T_{r_1}[\bb]=(\yy_\bb, 1),$$
+which allowed us to access the values $L_{r_1}(\bb, \cc)$, we start with the table
+%
+$$
+T_{r_1}^{(2)} \in (\comfield^4)^{\bits^{r_1-1}},\quad T_{r_1}^{(2)}[\bb] = (\left(\yy_{1,\bb,0} - \yy_{0,\bb,0}\right)\cdot \rho_1 + \yy_{0,\bb,0}, \left(1 - \yy_{0,\bb,0}\right)\cdot \rho_1 + \yy_{0,\bb,0}, \left(\yy_{1,\bb,0} - 1\right)\cdot \rho_1 + 1, 1)
+$$
+which allows to obtain the values $L_{r_1}(\rho_0,\bb,\cc)$ for all $\bb\in \bits^{r_1-1}\times \bits^{r_2}$ with a simple read of $T_{r_1}^{(2)}$.
 
 
-
-\albertimportant{Explain somewhere why we do many grand products instead of just one: sublinear verifier, lookup tables, --does it help with proof size?, }
 
 
 
@@ -1303,6 +1382,7 @@ On the other hand, a naive approach to compute $h_j(X)$ would require \albertimp
 
 
 
+\renewcommand{\comfield}{\FF_{2^{\comfieldexp}}}
 
 
 \subsection{Optimizing \ftwoz for virtualized inputs $\pi_2^{-1}(M\cdot \pi_2(\bff))$}\label{s:opt_virtual}
@@ -1317,6 +1397,9 @@ In \cref{c:virtual_iop}, at Step 2, prover and verifier use $\Pi_{\mathsf{red}}^
 to $\codedim_2$ inner product claims over $\comfield$ for the vectors $M_0\cdot \pi_2(\bff_{*j})$. In many applications of interest (see \cref{?}), the vectors $M_0\cdot \pi_2(\bff_{*j})$ are larger than $\bff_{*j}$, but contain entries that are structured expressions of the entries in $\bff_{*j}$. For example, in \cref{e:virtual_example}, $M\cdot \pi_2(\bff)$ is the concatenation of $\pi_2(\bff)$ and the vector with entries $\pi_2(\bff)_i \xor \pi_2(\bff)_{i+1}$. 
 
 A natural question is whether, in such scenarios, the proof of \eqref{e:grand_product_with_virtuals} can be optimized so that it costs less than a full proof for $\ell_2$ arbitrary input vectors of the same length as $M_0\cdot \pi_2(\bff_{*j})$. In this section we show that this is indeed possible.
+
+
+
 
 
 
