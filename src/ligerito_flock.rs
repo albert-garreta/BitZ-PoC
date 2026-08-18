@@ -43,7 +43,7 @@ use flock_core::pcs::basefold::{
 use flock_core::pcs::commit::{Commitment, PcsParams, ProverData, commit};
 use flock_core::pcs::ligerito::{
     self, LigeritoProof, LigeritoSecurityConfig, ProverConfig as LigProverConfig,
-    VerifierConfig as LigVerifierConfig,
+    SoundnessRegime, VerifierConfig as LigVerifierConfig,
 };
 
 use crate::piop::lookup::gkr_product::ProductForestProof;
@@ -507,6 +507,87 @@ pub fn custom_johnson_config_bits(
         })
         .collect();
     cfg.validate().expect("custom config passes flock's validator");
+    cfg
+}
+
+/// Queries-only security: a **UDR-regime** config at the
+/// [`custom_johnson_config`] ladder geometry with ZERO grinding of either
+/// kind — no query-phase PoW, no fold-challenge PoW — and no OOD samples
+/// (the unique-decoding list has size 1, so nothing needs binding). The
+/// entire target is paid in codeword queries at the UDR radius
+/// `γ = δ/2 − 3/(δ·n)` (≈0.83 bits/query at rate 1/8), so proofs grow
+/// where the Johnson configs would instead grind.
+///
+/// Ceiling: the UDR fold error is `128 − log₂(γ·len + 1)` per level with
+/// NOTHING to recover it (that is the point — recovering it is what
+/// `fold_grinding_bits` does), so the max round-by-round target is set by
+/// the LONGEST codeword (L0): ≈115 bits at n = 22, ≈109 at n = 28,
+/// shrinking one bit per witness doubling. A target above the ceiling
+/// fails flock's `validate()` with the exact shortfall. Exposed on the
+/// CLI/bench as `udr:<log_inv_rate>:<initial_k>[:<bits>]`.
+#[allow(clippy::arithmetic_side_effects, clippy::missing_panics_doc)]
+pub fn custom_udr_config_bits(
+    m: usize,
+    r0: usize,
+    k0: usize,
+    target_bits: Option<usize>,
+) -> LigeritoSecurityConfig {
+    let slim = ligerito::embedded_security_config(m, ligerito::LigeritoProfile::Slim)
+        .unwrap_or_else(|| panic!("no embedded slim template for m={m}"));
+    let mut cfg = LigeritoSecurityConfig::from_toml_str(slim).expect("slim template validates");
+    let log_n = cfg.log_n;
+    assert!(k0 >= 1 && k0 < log_n, "custom initial_k out of range");
+    if let Some(bits) = target_bits {
+        cfg.target_security_bits = bits;
+    }
+    let tmpl = cfg.levels[0].clone();
+
+    // Same ladder as `custom_johnson_config`.
+    let mut shapes = vec![(log_n - k0, k0, k0, r0)];
+    let mut n_run = log_n - k0;
+    let mut rate = r0;
+    while n_run > 5 {
+        let kr = 3.min(n_run);
+        rate += 1;
+        shapes.push((n_run - kr, kr, kr, rate));
+        n_run -= kr;
+    }
+    cfg.initial_k = k0;
+    cfg.final_block.yr_log_n = n_run;
+    cfg.levels = shapes
+        .iter()
+        .map(|&(mc, il, kr, r)| {
+            let mut lv = tmpl.clone();
+            if let Some(bits) = target_bits {
+                lv.target_security_bits = bits;
+            }
+            lv.log_inv_rate = r;
+            lv.log_msg_cols = mc;
+            lv.log_num_interleaved = il;
+            lv.k_recursive = kr;
+            // UDR, queries-only: no grinding of either kind, no OOD.
+            lv.regime = SoundnessRegime::Udr;
+            lv.eta = None;
+            lv.proximity_loss = Some(0.0);
+            lv.grinding_bits = 0;
+            lv.fold_grinding_bits = 0;
+            lv.ood_samples = 0;
+            lv.expected_eps_ood_bits = None;
+            // Queries cover the FULL target (no query grinding to offset).
+            let need_q = lv.target_security_bits as f64;
+            lv.queries = (1..=100_000)
+                .find(|&q| {
+                    lv.queries = q;
+                    lv.paper_predicted_bits().1 + 1e-3 >= need_q
+                })
+                .expect("query search converges");
+            let (pg, qb) = lv.paper_predicted_bits();
+            lv.expected_eps_pg_bits = pg;
+            lv.expected_eps_query_bits = qb;
+            lv
+        })
+        .collect();
+    cfg.validate().expect("custom UDR config passes flock's validator");
     cfg
 }
 

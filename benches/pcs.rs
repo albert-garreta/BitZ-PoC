@@ -31,8 +31,12 @@
 //!   `custom:<log_inv_rate>:<initial_k>[:<bits>]` — the optional `bits`
 //!   sets the round-by-round security target (default 100; e.g.
 //!   `custom:3:4:128` for a ~128-bit opener, queries/grinding/OOD
-//!   re-solved and flock-validator-gated). Below m = 22 every profile
-//!   falls back to the ad-hoc rate-1/4 config (unaudited, test-only).
+//!   re-solved and flock-validator-gated), or
+//!   `udr:<log_inv_rate>:<initial_k>[:<bits>]` — queries-ONLY security
+//!   (UDR regime, zero grinding of either kind, zero OOD; ceiling ≈115
+//!   bits at n=22 / ≈109 at n=28 from the L0 UDR fold error). Below
+//!   m = 22 every profile falls back to the ad-hoc rate-1/4 config
+//!   (unaudited, test-only).
 //! - `F2Z_BENCH_EXT`: also run the extension-field arm against the same
 //!   commitment — `1`/`gl2` = Goldilocks² (e=2), `bb4` = BabyBear⁴
 //!   (X⁴ − 11, the Plonky3 challenge field; e=4), `kb5` = a KoalaBear
@@ -56,7 +60,7 @@ use f2z::ligerito_flock::{
     verify_mle_eval_mod_q_ligerito,
 };
 use f2z::pcs::{IntEvalParams, mod_q_num_chunks, smallest_generator};
-use f2z::ligerito_flock::custom_johnson_config_bits;
+use f2z::ligerito_flock::{custom_johnson_config_bits, custom_udr_config_bits};
 use flock_core::pcs::ligerito::{LigeritoProfile, ProverConfig as LigPc, VerifierConfig as LigVc};
 
 /// The bench's Ligerito config source: the audited embedded profile chosen
@@ -71,6 +75,35 @@ use flock_core::pcs::ligerito::{LigeritoProfile, ProverConfig as LigPc, Verifier
 fn bench_lig_configs(m_p: usize) -> ((LigPc, LigVc), String) {
     let prof =
         std::env::var("F2Z_LIG_PROFILE").unwrap_or_else(|_| "custom:3:4".to_string());
+    // Queries-only UDR geometry: udr:<log_inv_rate>:<initial_k>[:<bits>] —
+    // zero grinding (either kind), zero OOD; the target is paid entirely in
+    // queries. Ceiling = the L0 UDR fold error (≈115 bits at n=22, ≈109 at
+    // n=28); above it flock's validator rejects with the shortfall.
+    if let Some(rest) = prof.strip_prefix("udr:") {
+        let mut it = rest.split(':');
+        let r0: usize = it
+            .next()
+            .and_then(|x| x.parse().ok())
+            .expect("udr:<log_inv_rate>:<initial_k>[:<bits>]");
+        let k0: usize = it
+            .next()
+            .and_then(|x| x.parse().ok())
+            .expect("udr:<log_inv_rate>:<initial_k>[:<bits>]");
+        let bits: Option<usize> =
+            it.next().map(|x| x.parse().expect("udr:<log_inv_rate>:<initial_k>:<bits>"));
+        if m_p + LOG_PACKING >= 22 {
+            let cfg = custom_udr_config_bits(m_p + LOG_PACKING, r0, k0, bits);
+            let pair = cfg.to_prover_verifier_configs().expect("udr config pair");
+            let tag = match bits {
+                Some(b) => format!("udr-k{k0}-{b}b"),
+                None => format!("udr-k{k0}"),
+            };
+            return (pair, tag);
+        }
+        let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
+            .expect("adhoc cfg");
+        return (pair, "adhoc".to_string());
+    }
     if let Some(rest) = prof.strip_prefix("custom:") {
         let mut it = rest.split(':');
         let r0: usize =

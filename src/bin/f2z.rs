@@ -26,8 +26,10 @@
 //!   (rate 1/8) | `fast` (rate 1/2) | `secure`
 //!   (the embedded profiles) | any `custom:<log_inv_rate>:<initial_k>[:<bits>]`
 //!   (validator-gated Johnson geometry; optional `bits` = round-by-round
-//!   security target, default 100 — e.g. `custom:3:4:128`). Below
-//!   `m = n < 22` every choice
+//!   security target, default 100 — e.g. `custom:3:4:128`) |
+//!   `udr:<log_inv_rate>:<initial_k>[:<bits>]` (queries-only UDR: zero
+//!   grinding, zero OOD; ceiling ≈115 bits at n=22 / ≈109 at n=28).
+//!   Below `m = n < 22` every choice
 //!   falls back to the ad-hoc test config (UNAUDITED).
 //! - `--word-bits W` — cell width (power of two; default 1).
 //! - `--family j2|j3|j4|j2s|j3s|j4s` — run the EXPERIMENTAL mod-q RLC
@@ -81,7 +83,8 @@ use std::time::Instant;
 
 use f2z::ligerito::{LOG_PACKING, packed_vars};
 use f2z::ligerito_flock::{
-    LigConfig, commit_rs_ligerito_rows, custom_johnson_config_bits, lig_configs,
+    LigConfig, commit_rs_ligerito_rows, custom_johnson_config_bits, custom_udr_config_bits,
+    lig_configs,
     mle_eval_mod_q_lig_size_breakdown, prove_mle_eval_mod_q_ligerito,
     verify_mle_eval_mod_q_ligerito,
 };
@@ -171,7 +174,7 @@ fn median(mut v: Vec<f64>) -> f64 {
 fn usage() -> ! {
     eprintln!(
         "usage: f2z <n> [<t> <s> [<W>]] [--threads N] [--reps R] \
-         [--profile slim|slim3|fast|secure|custom:<log_inv_rate>:<initial_k>[:<bits>] (default custom:3:4)] [--word-bits W] \
+         [--profile slim|slim3|fast|secure|custom:<r>:<k>[:<bits>]|udr:<r>:<k>[:<bits>] (default custom:3:4)] [--word-bits W] \
          [--family j2|j3|j4|j2s|j3s|j4s] [--taps vx|family|collapse|rotxor|sched]\n\
          [--taps-delta D] [--taps-rounds R] [--taps-grp G]\n\
          (n = t + s; W = cell width, power of two, default 1;\n\
@@ -316,6 +319,27 @@ fn resolve_configs(
     ),
     String,
 ) {
+    if let Some(rest) = profile.strip_prefix("udr:") {
+        // Queries-only UDR geometry — zero grinding, zero OOD; see
+        // `custom_udr_config_bits`. Ceiling ≈ 115 bits at n=22, ≈109 at
+        // n=28 (L0 UDR fold error); above it validate() rejects.
+        let mut it = rest.split(':');
+        let r0: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or_else(|| usage());
+        let k0: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or_else(|| usage());
+        let bits: Option<usize> = it.next().map(|x| x.parse().ok().unwrap_or_else(|| usage()));
+        if m_p + LOG_PACKING >= 22 {
+            let cfg = custom_udr_config_bits(m_p + LOG_PACKING, r0, k0, bits);
+            let pair = cfg.to_prover_verifier_configs().expect("udr config pair");
+            let tag = match bits {
+                Some(b) => format!("udr-k{k0}-{b}b"),
+                None => format!("udr-k{k0}"),
+            };
+            return (pair, tag);
+        }
+        let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
+            .expect("adhoc cfg");
+        return (pair, "adhoc".to_string());
+    }
     if let Some(rest) = profile.strip_prefix("custom:") {
         let mut it = rest.split(':');
         let r0: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or_else(|| usage());
