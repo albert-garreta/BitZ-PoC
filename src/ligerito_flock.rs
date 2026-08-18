@@ -412,11 +412,38 @@ pub fn lig_configs(
 /// [`paper_predicted_ood_bits`]: flock_core::pcs::ligerito::LigeritoLevelConfig::paper_predicted_ood_bits
 #[allow(clippy::arithmetic_side_effects, clippy::missing_panics_doc)]
 pub fn custom_johnson_config(m: usize, r0: usize, k0: usize) -> LigeritoSecurityConfig {
+    custom_johnson_config_bits(m, r0, k0, None)
+}
+
+/// [`custom_johnson_config`] with an explicit round-by-round security
+/// target (bits). `None` keeps the slim template's target (100). The
+/// target is flock's round-by-round notion — total security is the
+/// MINIMUM over rounds, the quantity that governs Fiat–Shamir security —
+/// and the existing per-level solvers adapt to it unchanged: the query
+/// count grows to cover `target − grinding_bits`, `fold_grinding_bits`
+/// absorbs the proximity-gap shortfall, and OOD samples escalate until
+/// they clear the target on their own. Everything stays gated by flock's
+/// `validate()`. Exposed on the CLI/bench as
+/// `custom:<log_inv_rate>:<initial_k>:<bits>`.
+///
+/// Ceiling: the challenge field is `GF(2^128)`, so per-round error terms
+/// are floored near `2^-128` minus list-size/length slack — targets much
+/// above ~128 fail validation rather than silently degrade.
+#[allow(clippy::arithmetic_side_effects, clippy::missing_panics_doc)]
+pub fn custom_johnson_config_bits(
+    m: usize,
+    r0: usize,
+    k0: usize,
+    target_bits: Option<usize>,
+) -> LigeritoSecurityConfig {
     let slim = ligerito::embedded_security_config(m, ligerito::LigeritoProfile::Slim)
         .unwrap_or_else(|| panic!("no embedded slim template for m={m}"));
     let mut cfg = LigeritoSecurityConfig::from_toml_str(slim).expect("slim template validates");
     let log_n = cfg.log_n;
     assert!(k0 >= 1 && k0 < log_n, "custom initial_k out of range");
+    if let Some(bits) = target_bits {
+        cfg.target_security_bits = bits;
+    }
     let tmpl = cfg.levels[0].clone();
 
     // derive_ladder: (log_msg_cols, log_num_interleaved, k_recursive, rate).
@@ -436,6 +463,9 @@ pub fn custom_johnson_config(m: usize, r0: usize, k0: usize) -> LigeritoSecurity
         .enumerate()
         .map(|(i, &(mc, il, kr, r))| {
             let mut lv = tmpl.clone();
+            if let Some(bits) = target_bits {
+                lv.target_security_bits = bits;
+            }
             lv.log_inv_rate = r;
             lv.log_msg_cols = mc;
             lv.log_num_interleaved = il;
@@ -454,15 +484,24 @@ pub fn custom_johnson_config(m: usize, r0: usize, k0: usize) -> LigeritoSecurity
             lv.fold_grinding_bits = (lv.target_security_bits as f64 - pg).ceil().max(0.0) as usize;
             lv.expected_eps_pg_bits = pg;
             lv.expected_eps_query_bits = qb;
-            // OOD must clear the target on its own (L0 uses the implicit
-            // post-commit binding, s = 0; deeper levels escalate samples).
-            loop {
-                let ood = lv.paper_predicted_ood_bits().expect("johnson_ood prediction");
-                if ood + 1e-3 >= lv.target_security_bits as f64 {
-                    lv.expected_eps_ood_bits = Some(ood);
-                    break;
+            // OOD must clear the target on its own. Deeper levels escalate
+            // samples; L0 CANNOT (its s = 0 implicit post-commit binding is
+            // fixed at `128 − log₂(list) − log₂(μ)` bits — the hard,
+            // field-limited ceiling on the round-by-round target). Record
+            // L0's bits as-is and let `validate()` report honestly when a
+            // requested target exceeds them.
+            if i == 0 {
+                lv.expected_eps_ood_bits =
+                    Some(lv.paper_predicted_ood_bits().expect("johnson_ood prediction"));
+            } else {
+                loop {
+                    let ood = lv.paper_predicted_ood_bits().expect("johnson_ood prediction");
+                    if ood + 1e-3 >= lv.target_security_bits as f64 {
+                        lv.expected_eps_ood_bits = Some(ood);
+                        break;
+                    }
+                    lv.ood_samples += 1;
                 }
-                lv.ood_samples += 1;
             }
             lv
         })

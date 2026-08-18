@@ -24,8 +24,10 @@
 //! - `--profile P` — Ligerito config: `custom:3:4` (default; validator-gated
 //!   Johnson geometry at rate 1/8, initial_k 4) | `slim` (rate 1/4) | `slim3`
 //!   (rate 1/8) | `fast` (rate 1/2) | `secure`
-//!   (the embedded profiles) | any `custom:<log_inv_rate>:<initial_k>`
-//!   (validator-gated Johnson geometry). Below `m = n < 22` every choice
+//!   (the embedded profiles) | any `custom:<log_inv_rate>:<initial_k>[:<bits>]`
+//!   (validator-gated Johnson geometry; optional `bits` = round-by-round
+//!   security target, default 100 — e.g. `custom:3:4:128`). Below
+//!   `m = n < 22` every choice
 //!   falls back to the ad-hoc test config (UNAUDITED).
 //! - `--word-bits W` — cell width (power of two; default 1).
 //! - `--family j2|j3|j4|j2s|j3s|j4s` — run the EXPERIMENTAL mod-q RLC
@@ -79,7 +81,7 @@ use std::time::Instant;
 
 use f2z::ligerito::{LOG_PACKING, packed_vars};
 use f2z::ligerito_flock::{
-    LigConfig, commit_rs_ligerito_rows, custom_johnson_config, lig_configs,
+    LigConfig, commit_rs_ligerito_rows, custom_johnson_config_bits, lig_configs,
     mle_eval_mod_q_lig_size_breakdown, prove_mle_eval_mod_q_ligerito,
     verify_mle_eval_mod_q_ligerito,
 };
@@ -169,7 +171,7 @@ fn median(mut v: Vec<f64>) -> f64 {
 fn usage() -> ! {
     eprintln!(
         "usage: f2z <n> [<t> <s> [<W>]] [--threads N] [--reps R] \
-         [--profile slim|slim3|fast|secure|custom:<log_inv_rate>:<initial_k> (default custom:3:4)] [--word-bits W] \
+         [--profile slim|slim3|fast|secure|custom:<log_inv_rate>:<initial_k>[:<bits>] (default custom:3:4)] [--word-bits W] \
          [--family j2|j3|j4|j2s|j3s|j4s] [--taps vx|family|collapse|rotxor|sched]\n\
          [--taps-delta D] [--taps-rounds R] [--taps-grp G]\n\
          (n = t + s; W = cell width, power of two, default 1;\n\
@@ -318,10 +320,17 @@ fn resolve_configs(
         let mut it = rest.split(':');
         let r0: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or_else(|| usage());
         let k0: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or_else(|| usage());
+        // Optional round-by-round security target: custom:<r>:<k>:<bits>
+        // (e.g. custom:3:4:128). Absent → the slim template's 100.
+        let bits: Option<usize> = it.next().map(|x| x.parse().ok().unwrap_or_else(|| usage()));
         if m_p + LOG_PACKING >= 22 {
-            let cfg = custom_johnson_config(m_p + LOG_PACKING, r0, k0);
+            let cfg = custom_johnson_config_bits(m_p + LOG_PACKING, r0, k0, bits);
             let pair = cfg.to_prover_verifier_configs().expect("custom config pair");
-            return (pair, format!("custom-k{k0}"));
+            let tag = match bits {
+                Some(b) => format!("custom-k{k0}-{b}b"),
+                None => format!("custom-k{k0}"),
+            };
+            return (pair, tag);
         }
         let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
             .expect("adhoc cfg");

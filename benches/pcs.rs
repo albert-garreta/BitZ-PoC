@@ -28,7 +28,10 @@
 //!   rate 1/8, initial_k = 4), `slim` (embedded; fewer queries + 16-bit
 //!   grinding at the same 100-bit target, the proof-size profile), `fast`
 //!   (base RS rate 1/2), `secure` (120-bit UDR), or any
-//!   `custom:<log_inv_rate>:<initial_k>`. Below m = 22 every profile
+//!   `custom:<log_inv_rate>:<initial_k>[:<bits>]` — the optional `bits`
+//!   sets the round-by-round security target (default 100; e.g.
+//!   `custom:3:4:128` for a ~128-bit opener, queries/grinding/OOD
+//!   re-solved and flock-validator-gated). Below m = 22 every profile
 //!   falls back to the ad-hoc rate-1/4 config (unaudited, test-only).
 //! - `F2Z_BENCH_EXT`: also run the extension-field arm against the same
 //!   commitment — `1`/`gl2` = Goldilocks² (e=2), `bb4` = BabyBear⁴
@@ -53,7 +56,7 @@ use f2z::ligerito_flock::{
     verify_mle_eval_mod_q_ligerito,
 };
 use f2z::pcs::{IntEvalParams, mod_q_num_chunks, smallest_generator};
-use f2z::ligerito_flock::custom_johnson_config;
+use f2z::ligerito_flock::custom_johnson_config_bits;
 use flock_core::pcs::ligerito::{LigeritoProfile, ProverConfig as LigPc, VerifierConfig as LigVc};
 
 /// The bench's Ligerito config source: the audited embedded profile chosen
@@ -74,13 +77,21 @@ fn bench_lig_configs(m_p: usize) -> ((LigPc, LigVc), String) {
             it.next().and_then(|x| x.parse().ok()).expect("custom:<log_inv_rate>:<initial_k>");
         let k0: usize =
             it.next().and_then(|x| x.parse().ok()).expect("custom:<log_inv_rate>:<initial_k>");
+        // Optional round-by-round security target: custom:<r>:<k>:<bits>
+        // (e.g. custom:3:4:128). Absent → the slim template's 100.
+        let bits: Option<usize> =
+            it.next().map(|x| x.parse().expect("custom:<log_inv_rate>:<initial_k>:<bits>"));
         // `custom_johnson_config` needs an embedded template (m = 22..=35);
         // below that, fall back to the ad-hoc config — the same boundary as
         // `sha_lig_configs`, so a `custom:*` sweep mirrors the library default.
         if m_p + LOG_PACKING >= 22 {
-            let cfg = custom_johnson_config(m_p + LOG_PACKING, r0, k0);
+            let cfg = custom_johnson_config_bits(m_p + LOG_PACKING, r0, k0, bits);
             let pair = cfg.to_prover_verifier_configs().expect("custom config pair");
-            return (pair, format!("custom-k{k0}"));
+            let tag = match bits {
+                Some(b) => format!("custom-k{k0}-{b}b"),
+                None => format!("custom-k{k0}"),
+            };
+            return (pair, tag);
         }
         let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
             .expect("adhoc cfg");
