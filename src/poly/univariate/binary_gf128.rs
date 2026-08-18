@@ -1260,9 +1260,15 @@ fn reduce_256_to_128(prod: [u64; 4]) -> [u64; 2] {
 //     terms off one EXT-swapped operand) — on Apple silicon PMULL
 //     throughput is wide enough that the 4th multiply is cheaper than
 //     Karatsuba's extra XOR/EXT dependencies on the critical path;
-//   * reduction: the standard 3-PMULL fold against `g = X^7+X^2+X+1`
-//     (`0x87`): `hi ⊗ g` lands in words 0..2, and the ≤7-bit word-2
-//     overflow re-folds once more into word 0.
+//   * reduction (reduced multiply/square): the two-stage 64-bit fold
+//     over the RAW 3-limb product — `fold(mid, hi)` then `fold(lo, ·)`,
+//     each one EXT + one PMULL against `g = X^7+X^2+X+1` (`0x87`) —
+//     ported from Binius64's aarch64 GHASH pipeline (2 PMULLs, no
+//     compose, no overflow pass; see `fold_x64`);
+//   * reduction (composed 256-bit form, i.e. the wide accumulator):
+//     the standard 3-PMULL fold `reduce_256` — `hi ⊗ g` lands in words
+//     0..2, and the ≤7-bit word-2 overflow re-folds once more into
+//     word 0.
 //
 // Value-exact: the same carryless products and the same modular
 // reduction, so callers see bit-identical field elements.
@@ -1319,9 +1325,38 @@ pub(crate) mod neon {
         }
     }
 
+    /// Two-stage 64-bit fold: `t0 + X^64·t1 (mod f)` — ported from
+    /// Binius64's aarch64 GHASH reduce (`gf2_128_reduce` in
+    /// binius-field). The low half of `t1` shifts into the high word;
+    /// the high half folds against `g = 0x87` with ONE PMULL (≤ 70-bit
+    /// result, no overflow pass needed). Chaining two folds over the
+    /// RAW 3-limb schoolbook product `(lo, mid, hi)` — `fold(mid, hi)`
+    /// then `fold(lo, ·)` — reduces without ever composing the aligned
+    /// 256-bit form: one PMULL and two EXTs fewer per multiply than
+    /// `clmul_256` + `reduce_256`. Value-exact: the remainder mod `f`
+    /// is unique and the result degree is < 128, so outputs are
+    /// bit-identical to the composed pipeline.
+    #[inline(always)]
+    pub(crate) unsafe fn fold_x64(
+        t0: uint64x2_t,
+        t1: uint64x2_t,
+        g: uint64x2_t,
+        z: uint64x2_t,
+    ) -> uint64x2_t {
+        // SAFETY: as `pmull_lo`.
+        unsafe {
+            let shifted = vextq_u64(z, t1, 1); // t1.lo · X^64
+            let folded = pmull_hi(t1, g); // t1.hi ⊗ g (≤ 70 bits)
+            veorq_u64(t0, veorq_u64(shifted, folded))
+        }
+    }
+
     /// Reduce a 256-bit product `(lo, hi)` modulo
     /// `X^128 + X^7 + X^2 + X + 1` — the 3-PMULL fold against
-    /// `g = 0x87`. (An EOR3 three-way combine was tried here for parity
+    /// `g = 0x87`. Still used by the COMPOSED-form paths (the wide
+    /// accumulator, whose `(lo, hi)` layout has already merged the mid
+    /// limb); the reduced multiply/square below use the cheaper 3-limb
+    /// [`fold_x64`] chain instead. (An EOR3 three-way combine was tried here for parity
     /// with the b127 pipeline's SHA3 use and REVERTED: under the
     /// interleaved-rep field bench it measured +13 % on batch multiply,
     /// +9 % on dependent chains and +18 % on squaring chains — the
@@ -1346,7 +1381,10 @@ pub(crate) mod neon {
         }
     }
 
-    /// Fully NEON-resident reduced multiply on word pairs.
+    /// Fully NEON-resident reduced multiply on word pairs: 4-PMULL
+    /// schoolbook to the raw 3-limb product, then the two-stage
+    /// [`fold_x64`] reduction — 6 PMULLs total (was 7 via
+    /// `clmul_256` + `reduce_256`).
     #[inline(always)]
     pub(crate) fn mul_words(a: &[u64; 2], b: &[u64; 2]) -> [u64; 2] {
         // SAFETY: as `pmull_lo`; loads/stores are on valid 16-byte
@@ -1354,8 +1392,15 @@ pub(crate) mod neon {
         unsafe {
             let va = vld1q_u64(a.as_ptr());
             let vb = vld1q_u64(b.as_ptr());
-            let (lo, hi) = clmul_256(va, vb);
-            let r = reduce_256(lo, hi);
+            let g = vdupq_n_u64(0x87);
+            let z = vdupq_n_u64(0);
+            let t00 = pmull_lo(va, vb); // a0·b0
+            let t11 = pmull_hi(va, vb); // a1·b1
+            let bsw = vextq_u64(vb, vb, 1); // [b1, b0]
+            let mid = veorq_u64(pmull_lo(va, bsw), pmull_hi(va, bsw)); // a0·b1 ^ a1·b0
+            // product = t00 + X^64·(mid + X^64·t11): fold twice.
+            let t1 = fold_x64(mid, t11, g, z);
+            let r = fold_x64(t00, t1, g, z);
             let mut out = [0u64; 2];
             vst1q_u64(out.as_mut_ptr(), r);
             out
@@ -1364,7 +1409,14 @@ pub(crate) mod neon {
 
     /// NEON-resident reduced SQUARE: in char 2 the cross terms cancel,
     /// so `(a_0 + X^{64}a_1)^2 = a_0^2 + X^{128}a_1^2` — two PMULLs +
-    /// the fold.
+    /// the fold. Squaring KEEPS the composed `reduce_256` (5 PMULLs):
+    /// the 3-limb `fold_x64` chain was tried here (4 PMULLs, the
+    /// Binius64 square) and REVERTED — its mid-chain EOR serializes the
+    /// two reduction PMULLs, measuring +38 % on latency-bound square
+    /// chains and +37 % on the Itoh–Tsujii inverse, where `reduce_256`
+    /// issues its two `hi ⊗ g` PMULLs in parallel. (The reduced
+    /// MULTIPLY keeps `fold_x64`: throughput-bound, and it saves a
+    /// PMULL + two EXTs there.)
     #[inline(always)]
     pub(crate) fn square_words(a: &[u64; 2]) -> [u64; 2] {
         // SAFETY: as `pmull_lo`.
@@ -1381,7 +1433,8 @@ pub(crate) mod neon {
 
     /// `n` successive squarings with the value held in a vector register
     /// throughout — one load, one store, no per-step `Uint` bounce. The
-    /// Itoh–Tsujii ladder's squaring runs.
+    /// Itoh–Tsujii ladder's squaring runs. Composed `reduce_256` on
+    /// purpose — see [`square_words`].
     #[inline]
     pub(crate) fn square_n_words(a: &[u64; 2], n: usize) -> [u64; 2] {
         // SAFETY: as `pmull_lo`.
