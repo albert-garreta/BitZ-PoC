@@ -521,10 +521,18 @@ pub fn custom_johnson_config_bits(
 /// Ceiling: the UDR fold error is `128 − log₂(γ·len + 1)` per level with
 /// NOTHING to recover it (that is the point — recovering it is what
 /// `fold_grinding_bits` does), so the max round-by-round target is set by
-/// the LONGEST codeword (L0): ≈115 bits at n = 22, ≈109 at n = 28,
-/// shrinking one bit per witness doubling. A target above the ceiling
-/// fails flock's `validate()` with the exact shortfall. Exposed on the
-/// CLI/bench as `udr:<log_inv_rate>:<initial_k>[:<bits>]`.
+/// the LONGEST codeword (L0): at r0 = 3 ≈115 bits at n = 22, ≈109 at
+/// n = 28, shrinking one bit per witness doubling. A target above the
+/// ceiling fails flock's `validate()` with the exact shortfall.
+///
+/// Unlike the Johnson regime, LOWERING the inverse rate RAISES the
+/// ceiling (shorter codeword → smaller exceptional set): r0 = 1
+/// (rate 1/2) measures 118 bits at n = 22 / 112 at n = 28, with a
+/// cheaper commit (2× expansion instead of 8×) and lower peak, paid in
+/// per-query bits (0.41 vs 0.83) → ~2× the queries → larger proof.
+/// `udr:1:4:<max>` is the highest-security zero-grinding configuration
+/// this analysis supports. Exposed on the CLI/bench as
+/// `udr:<log_inv_rate>:<initial_k>[:<bits>]`.
 #[allow(clippy::arithmetic_side_effects, clippy::missing_panics_doc)]
 pub fn custom_udr_config_bits(
     m: usize,
