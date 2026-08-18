@@ -23,10 +23,12 @@
 //!   `F2Z_COL_ELIDE=1` (the default) the forest skips those trees; set
 //!   `F2Z_COL_ELIDE=0` to measure the same instance un-elided. The
 //!   printed `proof-fnv` is identical either way (byte-identity pin).
-//! - `F2Z_LIG_PROFILE`: embedded Ligerito profile at `m = m_p + 7 ≥ 22` —
-//!   `slim` (default; base RS rate 1/8, k=4 — fewer queries + 16-bit
+//! - `F2Z_LIG_PROFILE`: Ligerito profile at `m = m_p + 7 ≥ 22` —
+//!   `custom:3:4` (DEFAULT; validator-gated Johnson geometry at base RS
+//!   rate 1/8, initial_k = 4), `slim` (embedded; fewer queries + 16-bit
 //!   grinding at the same 100-bit target, the proof-size profile), `fast`
-//!   (base RS rate 1/2), `secure` (120-bit UDR). Below m = 22 every profile
+//!   (base RS rate 1/2), `secure` (120-bit UDR), or any
+//!   `custom:<log_inv_rate>:<initial_k>`. Below m = 22 every profile
 //!   falls back to the ad-hoc rate-1/4 config (unaudited, test-only).
 //! - `F2Z_BENCH_EXT`: also run the extension-field arm against the same
 //!   commitment — `1`/`gl2` = Goldilocks² (e=2), `bb4` = BabyBear⁴
@@ -64,7 +66,8 @@ use flock_core::pcs::ligerito::{LigeritoProfile, ProverConfig as LigPc, Verifier
 /// `custom:<log_inv_rate>:<initial_k>` builds a Johnson config at that
 /// geometry via [`custom_johnson_config`] (flock-validator-gated).
 fn bench_lig_configs(m_p: usize) -> ((LigPc, LigVc), String) {
-    let prof = std::env::var("F2Z_LIG_PROFILE").unwrap_or_default();
+    let prof =
+        std::env::var("F2Z_LIG_PROFILE").unwrap_or_else(|_| "custom:3:4".to_string());
     if let Some(rest) = prof.strip_prefix("custom:") {
         let mut it = rest.split(':');
         let r0: usize =
@@ -94,7 +97,8 @@ fn bench_lig_configs(m_p: usize) -> ((LigPc, LigVc), String) {
             "fast" => (LigConfig::Embedded(LigeritoProfile::Fast), "fast"),
             "slim3" => (LigConfig::Embedded(LigeritoProfile::Slim3), "slim3"),
             "secure" => (LigConfig::Embedded(LigeritoProfile::Secure), "secure"),
-            // unset (default) or unrecognized → slim, the default profile
+            // unrecognized → slim (unset never lands here: the env default
+            // is "custom:3:4", handled by the custom branch above)
             _ => (LigConfig::Embedded(LigeritoProfile::Slim), "slim"),
         }
     } else {

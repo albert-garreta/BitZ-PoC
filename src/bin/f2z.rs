@@ -21,9 +21,10 @@
 //! - `--threads N` / `-j N` — rayon pool size; `1` = single-threaded.
 //!   Default: all cores (or `RAYON_NUM_THREADS`).
 //! - `--reps R` — timing repetitions (median reported; default 3).
-//! - `--profile P` — Ligerito config: `slim` (default, rate 1/4) | `slim3`
+//! - `--profile P` — Ligerito config: `custom:3:4` (default; validator-gated
+//!   Johnson geometry at rate 1/8, initial_k 4) | `slim` (rate 1/4) | `slim3`
 //!   (rate 1/8) | `fast` (rate 1/2) | `secure`
-//!   (the embedded profiles) | `custom:<log_inv_rate>:<initial_k>`
+//!   (the embedded profiles) | any `custom:<log_inv_rate>:<initial_k>`
 //!   (validator-gated Johnson geometry). Below `m = n < 22` every choice
 //!   falls back to the ad-hoc test config (UNAUDITED).
 //! - `--word-bits W` — cell width (power of two; default 1).
@@ -168,7 +169,7 @@ fn median(mut v: Vec<f64>) -> f64 {
 fn usage() -> ! {
     eprintln!(
         "usage: f2z <n> [<t> <s> [<W>]] [--threads N] [--reps R] \
-         [--profile slim|slim3|fast|secure|custom:<log_inv_rate>:<initial_k>] [--word-bits W] \
+         [--profile slim|slim3|fast|secure|custom:<log_inv_rate>:<initial_k> (default custom:3:4)] [--word-bits W] \
          [--family j2|j3|j4|j2s|j3s|j4s] [--taps vx|family|collapse|rotxor|sched]\n\
          [--taps-delta D] [--taps-rounds R] [--taps-grp G]\n\
          (n = t + s; W = cell width, power of two, default 1;\n\
@@ -216,7 +217,7 @@ fn parse_args() -> Opts {
         s: None,
         threads: None,
         reps: 3,
-        profile: "slim".to_string(),
+        profile: "custom:3:4".to_string(),
         word_bits: 1,
         family: None,
         taps: None,
