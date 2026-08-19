@@ -540,6 +540,44 @@ pub fn custom_udr_config_bits(
     k0: usize,
     target_bits: Option<usize>,
 ) -> LigeritoSecurityConfig {
+    udr_config_impl(m, r0, k0, target_bits, false)
+}
+
+/// [`custom_udr_config_bits`] with **fold-grinding allowed**: the per-level
+/// proximity-gap shortfall `target − eps_pg` is recovered by PoW on each
+/// fold challenge (flock's `fold_grinding_bits`), lifting the UDR ceiling
+/// all the way to targets the queries can pay for — including 128. This is
+/// CHEAP in UDR, unlike Johnson: the UDR exceptional set is only
+/// `γ·len + 1`, so `eps_pg` sits at 112–119 bits at our shapes and the
+/// grind is 9–16 bits per fold (µs–ms of hashing), where the Johnson pg
+/// (~100 bits) would demand 2^28-class grinds. Queries still cover the
+/// FULL target (no query-phase grinding), and there are still no OOD
+/// samples. Exposed on the CLI/bench as
+/// `udrg:<log_inv_rate>:<initial_k>[:<bits>]`; `udrg:1:4:128` is the
+/// 128-bit configuration.
+///
+/// Honest scope: 128 here means every term flock TRACKS (proximity gap +
+/// grind, query phase) clears 2^-128 round-by-round. Untracked
+/// field-limited rounds (each degree-d sumcheck message, error ≈ d/2^128)
+/// sit at ~126–127 bits — the GF(2^128) floor no parameter escapes.
+#[allow(clippy::arithmetic_side_effects, clippy::missing_panics_doc)]
+pub fn custom_udr_grind_config_bits(
+    m: usize,
+    r0: usize,
+    k0: usize,
+    target_bits: Option<usize>,
+) -> LigeritoSecurityConfig {
+    udr_config_impl(m, r0, k0, target_bits, true)
+}
+
+#[allow(clippy::arithmetic_side_effects)]
+fn udr_config_impl(
+    m: usize,
+    r0: usize,
+    k0: usize,
+    target_bits: Option<usize>,
+    fold_grind: bool,
+) -> LigeritoSecurityConfig {
     let slim = ligerito::embedded_security_config(m, ligerito::LigeritoProfile::Slim)
         .unwrap_or_else(|| panic!("no embedded slim template for m={m}"));
     let mut cfg = LigeritoSecurityConfig::from_toml_str(slim).expect("slim template validates");
@@ -573,7 +611,7 @@ pub fn custom_udr_config_bits(
             lv.log_msg_cols = mc;
             lv.log_num_interleaved = il;
             lv.k_recursive = kr;
-            // UDR, queries-only: no grinding of either kind, no OOD.
+            // UDR: no query-phase grinding, no OOD.
             lv.regime = SoundnessRegime::Udr;
             lv.eta = None;
             lv.proximity_loss = Some(0.0);
@@ -590,6 +628,12 @@ pub fn custom_udr_config_bits(
                 })
                 .expect("query search converges");
             let (pg, qb) = lv.paper_predicted_bits();
+            // udrg only: recover the pg shortfall with per-fold PoW
+            // (cheap here — pg is 112–119, so the grind is 9–16 bits).
+            if fold_grind {
+                lv.fold_grinding_bits =
+                    (lv.target_security_bits as f64 - pg).ceil().max(0.0) as usize;
+            }
             lv.expected_eps_pg_bits = pg;
             lv.expected_eps_query_bits = qb;
             lv

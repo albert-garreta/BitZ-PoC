@@ -84,7 +84,7 @@ use std::time::Instant;
 use f2z::ligerito::{LOG_PACKING, packed_vars};
 use f2z::ligerito_flock::{
     LigConfig, commit_rs_ligerito_rows, custom_johnson_config_bits, custom_udr_config_bits,
-    lig_configs,
+    custom_udr_grind_config_bits, lig_configs,
     mle_eval_mod_q_lig_size_breakdown, prove_mle_eval_mod_q_ligerito,
     verify_mle_eval_mod_q_ligerito,
 };
@@ -319,6 +319,26 @@ fn resolve_configs(
     ),
     String,
 ) {
+    if let Some(rest) = profile.strip_prefix("udrg:") {
+        // UDR + fold-grinding: pg shortfall recovered by cheap per-fold
+        // PoW; targets up to 128 validate. `udrg:1:4:128` = 128-bit config.
+        let mut it = rest.split(':');
+        let r0: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or_else(|| usage());
+        let k0: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or_else(|| usage());
+        let bits: Option<usize> = it.next().map(|x| x.parse().ok().unwrap_or_else(|| usage()));
+        if m_p + LOG_PACKING >= 22 {
+            let cfg = custom_udr_grind_config_bits(m_p + LOG_PACKING, r0, k0, bits);
+            let pair = cfg.to_prover_verifier_configs().expect("udrg config pair");
+            let tag = match bits {
+                Some(b) => format!("udrg-k{k0}-{b}b"),
+                None => format!("udrg-k{k0}"),
+            };
+            return (pair, tag);
+        }
+        let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
+            .expect("adhoc cfg");
+        return (pair, "adhoc".to_string());
+    }
     if let Some(rest) = profile.strip_prefix("udr:") {
         // Queries-only UDR geometry — zero grinding, zero OOD; see
         // `custom_udr_config_bits`. Ceiling ≈ 115 bits at n=22, ≈109 at

@@ -60,7 +60,9 @@ use f2z::ligerito_flock::{
     verify_mle_eval_mod_q_ligerito,
 };
 use f2z::pcs::{IntEvalParams, mod_q_num_chunks, smallest_generator};
-use f2z::ligerito_flock::{custom_johnson_config_bits, custom_udr_config_bits};
+use f2z::ligerito_flock::{
+    custom_johnson_config_bits, custom_udr_config_bits, custom_udr_grind_config_bits,
+};
 use flock_core::pcs::ligerito::{LigeritoProfile, ProverConfig as LigPc, VerifierConfig as LigVc};
 
 /// The bench's Ligerito config source: the audited embedded profile chosen
@@ -79,6 +81,35 @@ fn bench_lig_configs(m_p: usize) -> ((LigPc, LigVc), String) {
     // zero grinding (either kind), zero OOD; the target is paid entirely in
     // queries. Ceiling = the L0 UDR fold error (≈115 bits at n=22, ≈109 at
     // n=28); above it flock's validator rejects with the shortfall.
+    // UDR + fold-grinding: udrg:<log_inv_rate>:<initial_k>[:<bits>] — the
+    // pg shortfall is recovered by cheap per-fold PoW (9–16 bits at our
+    // shapes), so targets up to 128 validate; queries still pay the full
+    // target. `udrg:1:4:128` = the 128-bit configuration.
+    if let Some(rest) = prof.strip_prefix("udrg:") {
+        let mut it = rest.split(':');
+        let r0: usize = it
+            .next()
+            .and_then(|x| x.parse().ok())
+            .expect("udrg:<log_inv_rate>:<initial_k>[:<bits>]");
+        let k0: usize = it
+            .next()
+            .and_then(|x| x.parse().ok())
+            .expect("udrg:<log_inv_rate>:<initial_k>[:<bits>]");
+        let bits: Option<usize> =
+            it.next().map(|x| x.parse().expect("udrg:<log_inv_rate>:<initial_k>:<bits>"));
+        if m_p + LOG_PACKING >= 22 {
+            let cfg = custom_udr_grind_config_bits(m_p + LOG_PACKING, r0, k0, bits);
+            let pair = cfg.to_prover_verifier_configs().expect("udrg config pair");
+            let tag = match bits {
+                Some(b) => format!("udrg-k{k0}-{b}b"),
+                None => format!("udrg-k{k0}"),
+            };
+            return (pair, tag);
+        }
+        let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
+            .expect("adhoc cfg");
+        return (pair, "adhoc".to_string());
+    }
     if let Some(rest) = prof.strip_prefix("udr:") {
         let mut it = rest.split(':');
         let r0: usize = it
