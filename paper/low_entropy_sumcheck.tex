@@ -1,0 +1,347 @@
+\section{Sumcheck protocol for low entropy sums}
+
+\newcommand{\sumcheckpolone}{U}
+\newcommand{\sumcheckpoltwo}{V}
+\renewcommand{\cc}{\mathbf{c}}
+
+In this section we introduce an optimization for the sumcheck protocol in specific settings. Intuitively, we study sumcheck claims of the form
+%
+$$
+\sum_{(\bb,\cc)\in \bits^{r_1} \times \bits^{r_2}} u(\bb,\cc) \cdot v(\bb,\cc) =\mu \qquad \text{over } \KK
+$$
+where $\KK$ is an arbitrary field,  $\mu\in \KK$, $u,v$ are polynomials (of arbitrary degree --in particular $u$ or $v$ could be the constant $1$ polynomial) on $r\defeq r_1 + r_2$ variables $\YY, \ZZZ$ ($|\YY|=r_1, |\ZZZ|=r_2$), satisfying the following ``low-entropy'' property: for each $\bb,\cc$ there exist small sets $S_u(\bb)\subseteq \KK$ and $S_v(\cc)\subseteq \KK$ such that
+$$u(\bb,\cc)\in S_u(\bb), \quad v(\bb,\cc)\in S_v(\cc).$$
+%
+For intuition, we think of $r_i \approx 0.5\cdot r$ for both $i=1,2$. Our goal is to design a sumcheck prover for such settings that performs $O(2^{r_1} + 2^{r_2})$ field operations (as opposed to  $O(2^{r})=O(2^{r_1}\cdot 2^{r_2})$, plus $O(2^r)$ reads into some tables of size $O(2^{r_1})$ and $O(2^{r_2})$, which are computed at runtime in time $O(2^{r_1} + 2^{r_2})$.
+
+
+
+
+\begin{example}
+    \albert{Examples of low-entropy sumchecks: 1) many sumchecks in our GKR protocol. 2) Scenarios where the witness has entries in a small set (e.g.\ bits) and the witness has been organized as a matrix, and we rung a sumcheck for each row on a fixed polynomial on the witness row. 3) Sumchecks arising from witnesses containing bits, where the univariate skip pays off?? 4) more?}
+\end{example}
+
+\subsection{The sumcheck protocol and the low-entropy condition}
+At the protocol level, we simply run the standard sumcheck protocol. Our optimizations are only at the implementation-level, and do not alter  sumcheck protocol-wise. For convenience, we describe  sumcheck  in \cref{c:sumchek}. We formalize our  sumcheck  as an IOR from   
+%
+$$
+\Relation_{\mathsf{sumcheck}} = \left\{  \begin{aligned} &\inp=(Q,\mu)\in \KK[X_1,\ldots, X_r]\times  \KK,\\ &\oracle=\bot, \ \wit=\bot \end{aligned}   \ \left|  \ \sum_{\xx\in \bits^r} Q(\xx)=\mu \right.\right\}
+$$
+ to
+$$
+\Relation_{\mathsf{pol-eval}}  = \left\{ \left(\begin{aligned} &\inp=(Q, \bm{\rho},\mu)\in \KK[X_1,\ldots, X_r]\times \KK^r \times \KK, \\
+&\oracle=\bot,
+%&\oracle = f\in \comfield^{\codelength}, \\ 
+\ \wit= \bot\end{aligned}\right) \;\middle|\;  \begin{aligned} 
+%&f=\Enc_{\cC}\circ T (\bff) \\   
+&Q(\bm{\rho}) = \mu  \end{aligned}\right\}.
+$$
+where $\codedim=2^r$. 
+%
+\begin{remark}[Sumcheck relations are simplified]
+    In practice, sumcheck is used in a wider context where $Q$ is a public polynomial expression on the MLE of a private witness $\bff$ and the MLE of public input $\yy$, with $\oracle$ containing an oracle to an encoding of $\bff$. In this case we would have $Q(\xx)= Q'(\xx,\mle{\yy}(\xx), \mle{\bff}(\xx))$ for some other polynomial $Q'$. 
+    
+    We omit formalizing such setting because of 1) simplicity; 2) even if the sumcheck terms have the form $Q'(\xx,\mle{\yy}(\xx), \mle{\bff}(\xx))$, the sumcheck IOR does not make any specific usage of such a polynomial form, and it treats it as an abstract polynomial on $\xx$; 3) the sumcheck IOR does not make any oracle queries.
+\end{remark}
+
+
+We are interested in the following \emph{low-entropy} setting.  Let $\codedim= 2^r=\codedim_1\cdot \codedim_2 = 2^{r_1} \cdot 2^{r_2}$.
+
+\newcommand{\setsize}{s}
+
+\bigskip \noindent \textbf{Low-entropy assumption:}  There exists polynomials $U,V$ on $r$ variables %,%, and vectors $\yy^{(1)}\in \KK^{\codedim_1}, \yy^{(2)}\in \KK^{\codedim_2}$, 
+such that for all $\xx=(\bb,\cc)\in \bits^{r_1}\times \bits^{r_2}$, 
+%
+\begin{enumerate}
+\item $Q(\bb,\cc) = U(\bb,\cc) \cdot V(\bb,\cc)$.
+\item There exist  sets  $S_{U,\bb}\subseteq \KK$ and $S_{V,\cc}\subseteq \KK$ of small size $\setsize$, i.e.
+%
+$$
+|S_{U,\bb}|, |S_{V,\bb}|\leq s
+$$
+such that 
+$$U(\bb,\cc) \in S_{U,\bb},\qquad V(\bb,\cc) \in S_{V,\bb}.$$
+\end{enumerate}
+
+
+%\bigskip
+
+We now describe the standard sumcheck IOR.  
+\begin{construction}[Standard sumcheck IOR from $\Relation_{\mathsf{sumcheck}}$ to $\Relation_{\mathsf{pol-eval}}$]\label{c:sumcheck}
+\textbf{Input.} The prover and verifier receive $(\inp, \oracle)$ and the prover also receives $\wit$ such that  $(\inp, \oracle, \wit) \in \Relation_{\mathsf{sumcheck}}$.
+
+
+%
+\begin{enumerate}[leftmargin=*]
+    \item Let $\bm{\rho}^{(0)}=\bot$ and $\mu^{(0)}=\mu$. 
+    For $i\in [r]$:
+\begin{enumerate}[leftmargin=*]
+    \item The prover computes the univariate polynomial 
+    %
+    $
+    h_i(X) \defeq \sum_{\xx\in \bits^{r-i}} Q(\bm{\rho}^{(i-1)}, X, \xx) 
+    $
+    %
+    and sends $h_i(X)$ to the verifier.
+    \item The verifier checks that $h_i(0) + h_i(1)=\mu^{(i-1)}$. Then it samples and sends $\rho_i \in \KK$. Prover and verifier set $\bm{\rho}^{(i)} = (\bm{\rho}^{(i-1)}, \rho_i)$,  $\mu^{(i)}=h_i(\rho_i)$.
+\end{enumerate}
+\item The prover and verifier output
+$\inp'=(Q, \bm{\rho}, \mu^{(r)}), \ \oracle'=\bot,\ \wit' = \bff.$
+\end{enumerate}
+\end{construction}
+
+\subsection{Attaining square root prover field operations via lookup tables}
+We now explain how to optimize the prover of \cref{c:sumcheck} when the low-entropy assumptions hold. We start by describing a method for computing the first prover message $h_1(X)$. %For simplicity we assume that $S=\bits$, i.e.\ all entries of $\bff$ belong to $\bits$. 
+
+
+ The prover starts by defining
+%
+$$
+T_{U, 1} \in (\comfield^{ s})^{\ell_1}, \quad T_{U,1}[\bb] = S_{U,\bb}, \quad 
+T_{V, 1} \in (\comfield^{ s})^{\ell_2}, \quad T_{V,1}[\cc] = S_{V,\cc}.
+$$
+
+For $1\leq j\leq r_1$, the $j$-th prover message in this sumcheck is, if $\bm{\rho}^{(j)}=(\rho_1, \ldots, \rho_{j-1})$ is the vector of verifier challenges so far in this sumcheck,
+%
+\begin{align*}
+h_j(X)&\defeq \sum_{(\bb,\cc)\in \bits^{r_1-j}\times \bits^{r_2}}Q(\bm{\rho}^{(j)}, X, \bb,\cc)=\sum_{(\bb,\cc)\in \bits^{r_1-j}\times \bits^{r_2}}U(\bm{\rho}^{(j)}, X, \bb,\cc)\cdot V(\bm{\rho}^{(j)}, X, \bb,\cc).
+\end{align*}
+%
+We claim that
+%
+\begin{equation}\label{e:grand_product_Lr1}
+U(\bm{\rho}^{(j)}, X, \bb,\cc) = \left(U(\bm{\rho}^{(j)}, 1, \bb,\cc) -  U(\bm{\rho}^{(j)}, 0, \bb,\cc)\right)\cdot X + U(\bm{\rho}^{(j)}, 0, \bb,\cc)
+\end{equation}
+Indeed, $U(\bm{\rho}^{(j)}, X, \bb,\cc)$ is a linear polynomial \albertimportant{not necessarily}, and the right-hand side in the above expression is the line passing through the two evaluations of  $L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc)$ at $X=0$ and $X=1$. An analogous expression holds for $L_{r_1}(\bm{\rho}^{(j)}, X, \bb, 1, \cc)$:
+$$
+L_{r_1}(\bm{\rho}^{(j)}, X, \bb,1,\cc) = \left(L_{r_1}(\bm{\rho}^{(j)}, 1, \bb,1,\cc) -  L_{r_1}(\bm{\rho}^{(j)}, 0, \bb,1,\cc)\right)\cdot X + L_{r_1}(\bm{\rho}^{(j)}, 0, \bb,1,\cc).
+$$
+
+
+ 
+----
+
+
+\paragraph{Setup} We start with the following observation: for every $(\bb,\cc)\in \bits^{r_1} \times \bits^{r_2}$, we have $\bff_{\bb,\cc}\in S=\bits$, and so 
+%
+$$L_{r_1}(\bb,\cc)=\gkrpol(\zz_{\bb}, \bff_{\bb,\cc})= 
+\begin{cases}
+    y_{\bb}^{(1)}\defeq p(\zz_{\bb},1) & \text{if } \bff_{\bb,\cc}=1\\
+     y_{\bb}^{(0)}\defeq p(\zz_{\bb},0) & \text{if } \bff_{\bb,\cc}=0.
+\end{cases}$$
+%
+The values $\yy_{\bb}^{(0)}, \yy_{\bb}^{(1)}$   do not depend on $\cc$. Hence the prover can set up the lookup table $T_{r_1}\subseteq (\comfield\times \comfield)^{\bits^{r_1}}$ defined as
+%
+$$
+T_{r_1}[\bb]= (\yy_{\bb}^{(1)}, \yy_{\bb}^{(0)}) \qquad \text{for all } \bb \in \bits^{r_1}
+$$
+at the beginning of the protocol, and use it to obtain the values $L_{r_1}(\bb,\cc)$. %Since $\yy$ is part of the input, this is essentially a no-op 
+In our instantiation, $\yy_{\bb}^{(1)}=g^{\bm{\gamma}_{\bb}}$ and $\yy_\bb^{(0)}=1$ (cf.\ \cref{?}), and so the prover precomputes the elements $g^{\bm{\gamma}_{\bb}}$ at the beginning of the protocol. 
+
+
+As we will explain later, the prover will also precompute  similar tables, for $0\leq i\leq r_1-1$, $$T_{r_1-i}\in (\comfield^{2^{i+1}})^{\bits^{r_1-i}}$$ for the values $L_{r_1-i}(\bb,\cc)$, and other tables relevant for the different sumcheck rounds of \cref{c:gkr_grand_product}. 
+
+Importantly, all these tables have size independent of $\codedim_2$.  This (among others, cf.\ \cref{?}), is one of the reasons why we use the tensor decomposition structure, i.e.\ the split given by $\codedim=\codedim_1\cdot \codedim_2$, in \cref{c:core_iop}.
+
+\begin{remark}
+    All precomputed data in this section depends on the input vector $\zz$ of $\PESAT(\comfield,\gkrpol)$, and possibly on further verifier challenges. Since, in a wider context where \cref{c:gkr_grand_product} is a subprocess of a larger proof system, $\yy$ typically depends on verifier's challenges, these precomputations must be done at \emph{runtime}. 
+\end{remark}
+
+
+
+\paragraph{First prover message in the last sumcheck in Step 2 of \cref{c:gkr_grand_product}}
+We start by analyzing Step 2 with $i=r_1-1$. In this step prover and verifier run a sumcheck for the claim
+%
+$$
+C^{(r_1-1)}= \sum_{(\bb,\cc)\in \bits^{r_1-1}\times \bits^{r_2}} L_{r_1}(\bb,0,\cc) \cdot L_{r_1}(\bb,1,\cc) \cdot \eq(\bb,\cc;\bm{\alpha}^{(i)})
+$$
+%
+This is the most expensive step of \cref{c:gkr_grand_product} for the prover (if done naively), since it is the sumcheck over the largest number of variables throughout \cref{c:gkr_grand_product}. 
+
+%
+Renaming
+%
+$$
+E_{\eps_1\eps_2}[\bb,\cc] = L_{r_1}(\bm{\rho}^{(j)}, \eps_1, \bb, \eps_2,\cc) \qquad \eps_1,\eps_2\in \bits, \qquad \omega[\bb]\defeq \eq(\bm{\rho}^{(j)}, \bb;\bm{\alpha}^{(i,1)}),
+$$
+we obtain
+%
+$$
+h_{j,\cc}(X) =\sum_{\bb\in \bits^{r_1-1-j}} X^2 \cdot A_2[\bb,\cc] + X\cdot A_1[\bb,\cc] + A_0[\bb,\cc]
+$$
+ where,   \albert{double check}
+$$
+\begin{aligned}
+A_0[\bb,\cc] &\defeq E_{00}[\bb,\cc]\cdot E_{01} [\bb,\cc]\cdot \omega[\bb],\\ 
+A_1[\bb,\cc] &\defeq  \left((E_{10}[\bb,\cc]-E_{00}[\bb,\cc])\cdot E_{01}[\bb,\cc] + (E_{11}[\bb,\cc]-E_{01}[\bb,\cc])\cdot E_{00}[\bb,\cc]\right) )\cdot \omega[\bb]\\
+A_2[\bb,\cc] &\defeq (E_{10}[\bb,\cc]-E_{00}[\bb,\cc])\cdot (E_{11}[\bb,\cc]-E_{01}[\bb,\cc])\cdot \omega[\bb].
+\end{aligned}
+$$
+%
+Now, for $j=1$, we have $\bm{\rho}^{(j)}= \bot$, and hence each value $E_{\eps_1\eps_2}[\bb,\cc]$ can be obtained by querying $T_{r_1}[\bb]$ and selecting $T_{r_1}[\bb][0]$ or $T_{r_1}[\bb][1]$  depending on whether $\bff_{\bb,\cc} = 1$ or $0$. A consequence  is that  the coefficients themselves $A_k[\bb,\cc]$ ($k\in [3]$) can be obtained through a lookup table, as follows:
+%
+ we have $$A_0[\bb,\cc] = 
+    T_{r_1}[0,\bb,0,\cc][\bff_{(0,\bb,0),\cc}] \cdot    T_{r_1}[0,\bb, 1,\cc][\bff_{(0,\bb,1),\cc}] \cdot \omega[\bb]
+$$
+Hence
+%
+$$
+A_0[\bb,\cc] = \begin{cases}
+    \yy_{0,\bb,0}^{(1)} \cdot  \yy_{0,\bb,1}^{(1)} \cdot \omega[\bb]&\text{if } \bff_{(0,\bb,0),\cc}=1,\ \bff_{(0,\bb,1),\cc}=1 \\  
+    \yy_{0,\bb,0}^{(1)} \cdot  \yy_{0,\bb,1}^{(0)}\cdot \omega[\bb]&\text{if } \bff_{(0,\bb,0),\cc}=1,\ \bff_{(0,\bb,1),\cc}=0\\
+     \yy_{0,\bb,0}^{(0)} \cdot  \yy_{0,\bb,1}\cdot \omega[\bb]& \text{if } \bff_{(0,\bb,0),\cc}=0,\ \bff_{(0,\bb,1),\cc}=1 \\
+    \yy_{0,\bb,0}^{(0)} \cdot  \yy_{0,\bb,1}^{(0)} \cdot  \omega[\bb] &\text{if } \bff_{(0,\bb,0),\cc}= 0,\  \bff_{(0,\bb,1),\cc}=0
+\end{cases}
+$$
+%
+Thus the prover can precompute the table $$T^{A_0} \in (\comfield^{4})^{\bits^{r_1-2}}=\comfield^{\codedim_1}$$ given by $T^{A_0}[\bb]=(\yy_{0,\bb,0}^{(1)} \cdot  \yy_{0,\bb,1}^{(1)} \cdot \omega[\bb],  
+    \yy_{0,\bb,0}^{(1)} \cdot  \yy_{0,\bb,1}^{(0)}\cdot \omega[\bb],  \yy_{0,\bb,0}^{(0)} \cdot  \yy_{0,\bb,1}\cdot \omega[\bb],  \yy_{0,\bb,0}^{(0)} \cdot  \yy_{0,\bb,1}^{(0)} \cdot  \omega[\bb])$
+and use it to obtain every value $A_{0}[\bb,\cc]$ through a single read into $T^{A_0}$. %\begin{equation}\label{e: A0_factor_T0}A_0[\bb,\cc] = T^{A_0}[\bb,\cc] \cdot \eq(\cc;\bm{\alpha}^{(i,2)}).\end{equation} 
+
+The size of $T^{A_0}$, again, does not depend on $\codedim_2=2^{r_2}$. $T^{A_0}$ and $A_0$ can  be computed with at most $2\cdot 2^{r_1-2} =\codedim_1/2$ multiplications, and no additions.% Once $T^{A_0}$ is computed, $A_0$ can be computed with at most $2^{r_1-2 + r_2} = \codedim/4$ multiplications and no additions, assuming the values  $\eq(\cc;\bm{\alpha}^{(i,2)})$ have also been computed \albert{account for the cost of these values somewhere}. The overall cost of computing $A_0$ is $\codedim/4 + \codedim_1/4$ multiplications. 
+
+The prover can compute similar tables $T^{A_1}, T^{A_2}$, of the same size as $T^{A_0}$, for the coefficients $A_1[\bb,\cc], A_2[\bb,\cc]$. %, and then use a similar identity as \cref{e: A0_factor_T0} to compute $A_1, A_2$. \albert{Some optimizations may apply}.    
+ Once $A_0,A_1,A_2$ are computed, the prover can compute $h_{j, \cc}(X)$ with $3\cdot 2^{r_1-2}=3\cdot \codedim_1/4$ additions. Then the prover can compute $h_1(X)$ with at most $6\cdot 2^{r_2} = 3\cdot 2^{r_2+1}$ additions and multiplications. 
+ 
+To compute  $T^{A_1}$, the prover makes at most $3\cdot 2^{r_1-2}$ multiplications and additions; for $T^{A_2}$ it makes at most $2\cdot 2^{r_1-2} = 2^{r_1-1}$ multiplications and additions.  In \cref{t:gkr_step1_costs} we record the total upper bound of multiplications and additions for computing $h_1(X)$. 
+
+
+ On the other hand, a standard generic approach to compute $h_{1,\cc}(X)$ would require $O(\codedim)=O(\codedim_1\cdot \codedim_2)$ multiplications and additions, even if using the few known sumcheck optimizations that apply in our settings \albert{which ones, exactly?}. Crucially, we note that out sumcheck features summands of full field bit size $\log|\KK|$, which voids some known powerful optimizations when the summands are small, e.g.\ the univariate skip \cite{?} and some optimizations from \cite{?} \albertimportant{This is a crucial point. It should be highlighted more. And it should be an important point of the introduction and technical overview}
+
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c|c}
+         & Our approach & Standard/generic \\
+         \hline
+        Multiplications & $\leq   7\cdot \codedim_1/4 +  6\cdot \codedim_2 $ &$O(\codedim_1\cdot \codedim_2)$\\
+        \hline
+        Additions & $\leq 2\cdot\codedim_1 +  6\cdot \codedim_2$ & $O(\codedim_1\cdot \codedim_2)$
+    \end{tabular}
+    \caption{The cost in field operations of the first sumcheck round of the last sumcheck in \cref{c:gkr_grand_product} (Step 2 with $i=r_1-1$). For intuition, $\codedim_1$ and $\codedim_2$ are roughly $\sqrt{\codedim}$ where $\codedim=\codedim_1\cdot \codedim_2$ is the witness size. In our approach, we additionally require $O(\codedim)$ reads into some tables of size $O(\codedim_1)$ \albert{provide exact number and size of tables}.}
+    \label{t:gkr_step1_costs}
+\end{table}
+
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c|c}
+        Table & Dimension & Size (KB) ($\codedim_1=2^{14}, \log|\KK|=128$)\\
+        \hline
+        $T_{r_1}$ & $(\KK^{2})^{\codedim_1}$ & $524$ \\
+        \hline
+        $T^{A_0}, T^{A_1}, T^{A_2}$ & $(\KK^{4})^{\codedim_1/4}$  each & $262$ each
+    \end{tabular}
+    \caption{Caption}
+    \label{tab:placeholder}
+\end{table}
+
+
+\subsection{Application to the \ftwoz grand product}
+
+\subsubsection{The grand product GKR}
+
+
+We  describe a general protocol IOR  that, given a finite field $\KK$; %a code $\cC$ and map $T$ as in \cref{?}\footnote{The code $\cC$ and map $T$ are  not used throughout the entirety of the IOR.}; 
+ a subset $S\subseteq \KK$; and dimensions $\codedim=\codedim_1\cdot \codedim_2$, reduces triples from 
+%
+\begin{align*}
+&\PESAT(\comfield, \gkrpol)\\ &\qquad = \left\{ \left(\begin{aligned} &\inp=(\zz,\bm{\mu})\in \comfield^{\codedim_1}\times \comfield^{\codedim_2}, \\
+&\oracle=\bot,\\
+%&\oracle = f\in \KK^{\codelength},\\ 
+&\wit=\bff= (\bff_{*j})_{j\in [\codedim_2]}\in S^{\codedim_1 \times \codedim_2} \subseteq \KK^{\codedim_1 \times \codedim_2}\end{aligned}\right) \;\middle|\;  \begin{aligned}   % &f =\Enc_{\cC}\circ T(\bff)\\ 
+&\prod_{i\in[\codedim_1]} \gkrpol(\zz_i, \bff_{ij}) = \bm{\mu}_j \ \text{ for all } j\in [\codedim_2]\end{aligned}  \right\},
+\end{align*}
+%
+to triples in 
+%
+$$
+\LIN( \comfield)  = \left\{ \left(\begin{aligned} &\inp=(\uu,\mu)\in \comfield^\codedim \times \comfield, \\
+&\oracle=\bot,\\
+%&\oracle = f\in \comfield^{\codelength}, \\ 
+&\wit= \bff\in \{0,1\}^{\codedim_1\times \codedim_2}\subseteq \KK^{\codedim_1 \times \codedim_2}\end{aligned}\right) \;\middle|\;  \begin{aligned} 
+%&f=\Enc_{\cC}\circ T (\bff) \\   
+&\langle \uu, \bff\rangle = \mu  \end{aligned}\right\},
+$$
+%
+One can additionally add an encoding $f=\Enc_\cC\circ T (\bff)$ as an oracle $\yy$ in the above relations (matching the context in which we use the IOR), but our IOR does not make any use of it whatsoever, hence we omit it. 
+
+We  describe $\Pi_{\red}$ now. AWe will describe our implementation-level optimizations afterwards. s we mentioned, cryprographically/protocol-wise, our protocol is a standard batched GKR for grand productes.  We assume $\codedim_1,\codedim_2$ are powers of two:
+%
+$$
+\codedim_1 = 2^{r_1}, \quad \codedim_2 = 2^{r_2}.
+$$
+We index $[\codedim_1],[\codedim_2]$ via elements of the hypercubes $\bits^{\log \codedim_1}, \bits^{\log \codedim_2}$, respectively.
+%
+\renewcommand{\cc}{\mathbf{c}}
+\begin{construction}[An IOR $\Pi_\red$ from $\PESAT(\comfield, \gkrpol)$ to $\LIN( \comfield)$]\label{c:gkr_grand_product}
+\noindent \textbf{Input.}   Prover and verifier receive $(\yy,\bm{\mu}),  \in \comfield^{\codedim_1} \times  \comfield^{\codedim_2}$. Prover receives also $\bff\in S^{\codedim_1\times \codedim_2}\subseteq\comfield^{\codedim_1\times \codedim_2}$.
+
+
+Let $L_{r_1}$ be a  \emph{multilinear} polynomial over $\comfield$ on $r_1 + r_2$ variables such that $$L_{r_1}(\bb,\cc)= \gkrpol(\zz_{\bb}, \bff_{\bb,\cc}) \quad  \text{ for all } (\bb,\cc) \in \bits^{r_1} \times \bits^{r_2}.$$ (note that $\gkrpol$ may not be multilinear).  
+     For $i=0,\ldots, r_1-1$, let $L_i$ be a multilinear polynomial on $r_2 + i$ variables  such that 
+      $$
+  L_{i}(\bb,\cc)  =  L_{i+1}(\bb,0,\cc) \cdot L_{i+1}(\bb,1, \cc)  \quad \text{for all } \bb\in \bits^{i} \times \bits^{r_2}.
+    $$
+\begin{enumerate}[leftmargin=*]
+    \item The verifier sends $\bm{\alpha}^{(0)}\in \comfield^{r_2}$. Both prover and verifier compute $C_0\defeq \mle{L_0}(\bm{\alpha}^{(0)})$ (note that $L_0$ is the multilinear extension of $\bm{\mu}$ over $\comfield$). 
+    \item  For $i=0,\ldots, r_1-1$:
+    \begin{enumerate}[leftmargin=*]
+        \item The prover and verifier run the sumcheck protocol for the following claim:
+    %
+    $$
+    C^{(i)} =  \sum_{(\bb,\cc)\in \bits^i \times \bits^{r_2}}  L_{i+1}(\bb,0,\cc) \cdot L_{i+1}(\bb,1,\cc) \cdot \eq(\bb, \cc; \bm{\alpha}^{(i)}). 
+    $$
+    %
+    At the end of the sumcheck protocol, the prover and verifier are left with a claim of the form
+    %
+    \begin{equation}\label{e:gkr_intermediate}
+    L_{i+1}(\rr_\bb^{(i)},0,\rr_{\cc}^{(i)}) = a_{0}^{(i)}, \qquad L_{i+1}(\rr_\bb^{(i)},1,\rr_{\cc}^{(i)}) = a_{1}^{(i)}
+    \end{equation}
+    %
+    for some $\rr_\bb^{(i)}\in \comfield^{i}$, $\rr_\cc^{(i)}\in \comfield^{r_2}$ and $a_{0}^{(i)},a_{1}^{(i)}\in \comfield$.
+    %
+    \item The prover and verifier unify the two claims from \eqref{e:gkr_intermediate} into a single one via the following standard procedure:
+    \begin{enumerate}[leftmargin=*]
+        \item The verifier sends a random element $\beta^{(i)}$.
+        \item The claim \eqref{e:gkr_intermediate} is replaced by
+        %
+        $$
+        L_{i+1}(\rr_\bb^{(i)},\beta^{(i)},\rr_{\cc}^{(i)}) = C^{(i+1)} \defeq a_0^{(i)} \cdot (1-\beta^{(i)}) + a_1^{(i)} \cdot \beta^{(i)}.
+        $$
+        Let 
+        $$
+        \bm{\alpha}^{(i+1)} \defeq (\rr_\bb^{(i)},\beta^{(i)},\rr_{\cc}^{(i)}).
+        $$
+    \end{enumerate}
+    %
+    \end{enumerate}
+    \item At this stage, the prover and verifier are left with the claim
+    %
+    $$
+    L_{r_1}(\bm{\alpha}^{(r_1)}) = C^{(r_1)}.
+    $$
+    This claim is equivalent to
+    %
+    \begin{equation}\label{e:gkr_leaf_claim}
+    \sum_{(\bb,\cc)\in \bits^{r_1} \times \bits^{r_2}} \gkrpol(\zz_{\bb},\bff_{\bb,\cc}) \cdot \eq((\bb,\cc), \bm{\alpha}^{(r_1)}) = C^{(r_1)},
+    \end{equation}
+    If $\gkrpol$ is multilinear, then \eqref{e:gkr_leaf_claim} is a linear claim on $\bff$. Namely, it is equivalent to
+    %
+    $$
+    \langle \uu, \bff \rangle = C^{(r_1)} + \mu
+    $$
+    for some $\uu\in \KK^{\codedim}, \mu\in \KK$. In this case, prover and verifier output 
+    %
+        $$
+    (\inp'=(\uu, C^{(r_1)}+\mu),\ \bot, \ \wit' = \bff) \in \LIN(\comfield).
+    $$
+    %
+    Otherwise, i.e.\ if $\gkrpol$ is not multilinear, prover and verifier run a sumcheck for the claim \eqref{e:gkr_leaf_claim}, which results in MLE claims for $\yy$ and $\bff$. The verifier checks the claim for $\yy$ itself, and prover and verifier output the MLE claim for $\bff$.
+\end{enumerate}
+    
+\end{construction}
+
+\subsubsection{Low-entropy sumchecks in the \ftwoz grand product GKR}
+
+
