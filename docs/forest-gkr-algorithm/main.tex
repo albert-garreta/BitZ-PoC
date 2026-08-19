@@ -1,0 +1,1209 @@
+\documentclass[11pt]{article}
+
+% ---------------------------------------------------------------------------
+% The F2Z forest-GKR ALGORITHM note. Build: latexmk -pdf main.tex
+% The protocol itself, in execution order, plus the lookup-table machinery
+% the prover runs it on — deliberately free of scheduling/kernel detail.
+% Companion notes: docs/forest-gkr-note/ (the prover engineering, measured),
+% docs/verifier-note/ (every verifier check), docs/DESIGN.md (the pipeline).
+% ---------------------------------------------------------------------------
+
+\usepackage[margin=1.05in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
+
+% --- notation (aligned with docs/forest-gkr-note/main.tex) ------------------
+\newcommand{\F}{\mathbb{F}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\K}{\mathbb{K}}            % the binding field GF(2^128)
+\newcommand{\Kx}{\K^{\times}}
+\newcommand{\Ftwo}{\F_2}
+\newcommand{\Fq}{\F_q}                 % the evaluation field (char != 2)
+\newcommand{\bits}{\{0,1\}}
+\newcommand{\INT}{\mathsf{INT}}
+\newcommand{\mle}[1]{\widetilde{#1}}
+\newcommand{\eq}{\mathsf{eq}}
+\newcommand{\cw}{c_w}
+\newcommand{\absorb}{\textbf{absorb}}
+\newcommand{\squeeze}{\textbf{squeeze}}
+% \code: typewriter names; underscores allow a line break after them.
+\newcommand{\code}[1]{{\def\_{\textunderscore\allowbreak}\texttt{#1}}}
+
+\tolerance=1600
+\setlength{\emergencystretch}{1.8em}
+\hbadness=2500
+
+\newtheorem{remark}{Remark}
+\theoremstyle{definition}
+\newtheorem{identity}{Identity}
+
+\title{The F2Z forest GKR:\\ an algorithmic description}
+\author{The \code{f2z-pcs} repository}
+\date{2026-08-15}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+This is the \emph{algorithmic} companion to the prover-engineering note
+\code{docs/forest-gkr-note}: the protocol the merged grand-product forest
+performs, written in the order the prover and verifier execute it --- the
+statement, the entry, the layer loop, the exit discharge into the
+ring-switch/Ligerito opening, the read-off, and the soundness chain ---
+followed by a self-contained account of the lookup-table machinery by
+which the prover runs the bottom of the forest without ever materialising
+it.  Kernel internals, software prefetch and the full measured cost tables
+live in the companion note; nothing in the execution machinery described
+here changes a transcript byte.  Everything here is implemented in
+\code{src/merged\_forest.rs}, \code{src/piop/sumcheck/eq\_factored.rs}
+and \code{src/ligerito.rs}; \S\ref{sec:code} maps the text to function
+names.
+\end{abstract}
+
+\tableofcontents
+
+% ===========================================================================
+\section{What the forest certifies}
+\label{sec:claim}
+
+F2Z proves an integer multilinear-extension evaluation
+$\mle{\INT(D)}(r) = y \in \Fq$ over data $D$ whose \emph{bits} are
+committed with a characteristic-2 commitment.  The instance shape is
+$(t, s, W)$: $D$ is a $2^t \times 2^s$ matrix of $W$-bit cells, arranged
+as the single-bit matrix
+\[
+  M[c][i] \in \bits, \qquad
+  i = (b \ll \log_2 W)\,|\,j \in \bits^{d}, \qquad
+  d = t + \log_2 W,
+\]
+with $b$ the row, $c$ the column, $j$ the bit position inside the cell.
+Splitting the evaluation point $r$ into its row and column halves, the
+claim decomposes as
+\[
+  y \;=\; \sum_{c} \eq(c, r_{\mathrm{col}})
+          \cdot u_c \bmod q,
+  \qquad
+  u_c \;=\; \sum_{b} w_b \cdot \INT\!\big(D(b,c)\big),
+  \qquad
+  w_b = \eq(b, r_{\mathrm{row}}) \bmod q
+\]
+with the row weights $w_b$ lifted to integers in $[0, q)$.  The prover
+will simply \emph{send} the per-column integers and let the verifier do
+the column combination in the clear; the entire difficulty is certifying
+the sent integers against the $\Ftwo$ commitment, since parities destroy
+magnitudes.  F2Z carries the integer fold in the exponent of
+$\K = \mathrm{GF}(2^{128})$, with $\alpha \in \Kx$ a fixed public
+generator.
+
+For one chunk of the mod-$q$ opening (chunking is \S\ref{sec:chunks};
+read this section at $L = 1$, i.e.\ $W_b = w_b$), with public $\cw$-bit
+weights $W_b$, define the public \emph{leaf constants} and the
+\emph{leaves}
+\begin{equation}\label{eq:leaves}
+  \tau(i) \;=\; \alpha^{W_b 2^j} - 1,
+  \qquad
+  \Lambda[c][i] \;=\; 1 + M[c][i]\cdot\tau(i)
+  \;\in\; \{\,1,\ \alpha^{W_b 2^j}\,\}
+\end{equation}
+(in $\K$, $-1 = +1$; the $-$ form is kept for readability).  Then,
+purely by construction,
+\begin{equation}\label{eq:product}
+  \prod_{i \in \bits^d} \Lambda[c][i]
+  \;=\; \alpha^{\sum_{b,j} W_b 2^j\, M[c][i]}
+  \;=\; \alpha^{u_c}.
+\end{equation}
+So ``the sent integers are the true weighted folds of the committed
+bits'' \emph{is} the statement that $\alpha^{u_c}$ equals a grand
+product of $2^d$ factors, each of which is $1$ or a public constant
+\emph{selected by one committed bit} --- for all $2^s$ columns at once.
+That is the claim the forest certifies.  The factors being
+\emph{bit-affine} in the committed data (degree $1$ in each bit) is what
+every later step leans on.
+
+% ===========================================================================
+\section{The protocol}
+\label{sec:protocol}
+
+The proof is a product-tree GKR in the lineage of
+\cite{GKR15,Thaler13}: one binary product tree per column, walked from
+the roots \emph{down} to the leaves, one sumcheck per tree level.  Three
+F2Z-specific choices shape it:
+(i) the roots are never sent --- the verifier recomputes them as
+$\alpha^{u_c}$ from the sent integers;
+(ii) the $2^s$ trees are \emph{merged}: the column index is just $s$
+more multilinear variables, so one sumcheck per level covers every tree
+and nothing per-tree ever enters the transcript;
+(iii) the leaf layer is never committed --- because leaves are
+bit-affine, the final leaf claim converts into a bare evaluation of the
+committed bit matrix, discharged by the PCS opener.
+
+\subsection{Entry: integers, roots, one claim}
+\label{sec:entry}
+
+\begin{enumerate}[leftmargin=2.2em, itemsep=2pt]
+\item $P \to V$: the integer folds $u_c$ for every column $c$
+  (16 bytes each; the \code{us} vector of the proof stream).
+\item $V$: range-check every $u_c < 2^{\cw + t + W} = 2^{127}$, and
+  check that $\alpha$ generates $\Kx$.  Together these make
+  $x \mapsto \alpha^x$ \emph{injective} on every value that can occur
+  ($\operatorname{ord} \alpha = 2^{128} - 1$).
+\item Both sides: $R_c \leftarrow \alpha^{u_c}$ (the verifier by a
+  fixed-base comb from the sent integers; the honest prover has them as
+  the tops of its trees --- their equality is precisely the claim under
+  proof), then
+  \[
+    \absorb(\mathtt{0x30}: R_0, \dots, R_{2^s-1}), \qquad
+    \zeta \leftarrow \squeeze(\K^s), \qquad
+    C \leftarrow \mle{R}(\zeta),
+  \]
+  each side computing the entry claim $C = \mle{R}(\zeta)$ itself
+  ($O(2^s)$ work).  Set $z_x \leftarrow (\,)$, $z_c \leftarrow \zeta$.
+\end{enumerate}
+
+The absorb is the binding: a prover whose later messages were generated
+against different roots faces challenges derived from \emph{these}
+roots.  And instead of $2^s$ separate root claims, the verifier holds
+from here on exactly \emph{one} running claim, about the MLE of the root
+vector at a random point.
+
+\subsection{The descent: one sumcheck per level}
+\label{sec:descent}
+
+Index the values of tree $c$ at depth $\ell$ (root $= 0$, leaves $= d$)
+by $x \in \bits^\ell$, giving one multilinear family per level,
+$L_\ell(x, c)$ with $x$ the low variables and $c$ the high ones, related
+by the product recursion (children paired on the \emph{top} in-tree
+bit: node $x$'s children sit at positions $x$ and $x + 2^\ell$ of level
+$\ell+1$):
+\begin{equation}\label{eq:recursion}
+  L_\ell(x, c) \;=\;
+  \underbrace{L_{\ell+1}(x, 0, c)}_{E_c(x)} \cdot
+  \underbrace{L_{\ell+1}(x, 1, c)}_{O_c(x)}.
+\end{equation}
+$L_0(\cdot, c) = R_c$ are the roots and $L_d = \Lambda$ the leaves.
+
+\medskip
+\noindent
+\textbf{Invariant.}  Entering layer $\ell$ the verifier holds one claim
+$C = \mle{L_\ell}(z_x, z_c)$, $z_x \in \K^\ell$, $z_c \in \K^s$.  By
+\eqref{eq:recursion} and multilinearity it factors coordinate-wise:
+\begin{equation}\label{eq:layer}
+  C \;=\; \sum_{x \in \bits^\ell} \sum_{c \in \bits^s}
+     \eq(x, z_x)\,\eq(c, z_c)\; E_c(x)\, O_c(x).
+\end{equation}
+The layer converts this into the same kind of claim one level down:
+
+\begin{enumerate}[leftmargin=2.2em, itemsep=2pt]
+\item \textbf{Phase A} (the $\ell$ in-tree variables; skipped at
+  $\ell = 0$).  A sumcheck over $x$ of \eqref{eq:layer}, binding
+  $x \to r_x \in \K^\ell$; every round polynomial has degree 3
+  ($\eq \cdot E \cdot O$).  Verifier checks: phase A's claimed sum
+  equals the running claim $C$, and its final value equals
+  $\eq(r_x, z_x) \cdot (\text{phase B's claimed sum})$.
+\item \textbf{Phase B} (the $s$ tree variables).  A sumcheck over $c$
+  of the residual $\sum_c \eq(c, z_c)\, \mle{E_c}(r_x)\,
+  \mle{O_c}(r_x)$, binding $c \to r_c \in \K^s$.
+\item \textbf{Closing pair and line step.}
+  $P \to V$: the two children
+  \[
+    (p, q) \;=\; \big(\mle{L_{\ell+1}}(r_x, 0, r_c),\;
+                      \mle{L_{\ell+1}}(r_x, 1, r_c)\big).
+  \]
+  Verifier checks phase B's final value $= \eq(r_c, z_c)\cdot p\cdot q$.
+  Then both sides run
+  \[
+  \begin{gathered}
+    \absorb(\mathtt{0x32}: p, q), \qquad
+    \lambda \leftarrow \squeeze(\K), \\
+    C \leftarrow p + \lambda\,(q - p), \qquad
+    z_x \leftarrow r_x \| \lambda, \qquad
+    z_c \leftarrow r_c .
+  \end{gathered}
+  \]
+\end{enumerate}
+
+The line step is the standard two-to-one reduction: the sumcheck leaves
+\emph{two} evaluations of level $\ell+1$ (the children at
+$(r_x, \cdot\,, r_c)$); folding them along the paired variable with a
+fresh $\lambda$ gives back a single claim
+$C = \mle{L_{\ell+1}}(r_x \| \lambda,\, r_c)$, restoring the invariant.
+(The code calls $\lambda$ \code{mu}; $- = +$ in char 2.)
+
+After $d$ layers the loop exits with the \emph{exit claim}
+\[
+  e_d \;=\; C \;\overset{\text{honest}}{=}\; \mle{\Lambda}(z_x, z_c),
+  \qquad z = (z_x, z_c) \in \K^{d+s},
+\]
+one evaluation of the leaf MLE at a random point.
+
+\begin{remark}[Merging]
+A naive realisation runs $2^s$ independent GKRs and pays a per-tree
+child pair every layer --- $O(2^s d)$ proof.  Treating the tree index as
+$s$ more MLE variables makes the per-layer payload $O(\ell + s)$ round
+messages plus \emph{one} child pair, and phase A's per-tree finals
+$\big(\mle{E_c}(r_x), \mle{O_c}(r_x)\big)$ stay prover-internal ---
+nothing per-tree is ever absorbed or sent.  At the deployed shapes the
+sent folds ($16 \cdot 2^s$ bytes) are the larger forest-side proof item.
+\end{remark}
+
+\begin{remark}[The A/B split is bookkeeping, not protocol]
+Semantically each layer is one $(\ell + s)$-variable sumcheck of
+\eqref{eq:layer}; the implementation processes the $x$ variables first
+(the $2^s$ trees run as eq-weighted groups sharing the point $z_x$, each
+tree's $\eq(c, z_c)$ riding as a per-group scalar) and then the $c$
+variables over the tiny per-tree finals.  The split is what the lazy
+per-tree round bodies of \S\ref{sec:luts} and the across-tree
+parallelism need; the transcript cost is one extra sumcheck header per
+layer.
+\end{remark}
+
+\subsection{The exit claim and its discharge}
+\label{sec:discharge}
+
+The leaf layer never becomes an oracle.  Substituting
+\eqref{eq:leaves} into the exit claim, splitting
+$\eq((i,c), z) = \eq(i, z_x)\,\eq(c, z_c)$ and using
+$\sum \eq = 1$:
+\begin{equation}\label{eq:exit}
+  e_d - 1
+  \;=\; \sum_{i \in \bits^d} R[i]\cdot m[i],
+  \qquad
+  \begin{aligned}
+    R[i] &= \eq(i, z_x)\,\tau(i)
+      && \text{(public, size } 2^d\text{)},\\
+    m[i] &= \textstyle\sum_c \eq(c, z_c)\, M[c][i]
+      && \text{(the $z_c$-combined rows)}.
+  \end{aligned}
+\end{equation}
+The exit claim is thus already a $\K$-linear functional of the committed
+bits --- but against a \emph{dense, unstructured} weight vector $R$ (the
+$\alpha$-powers destroy any tensor structure), which the opener cannot
+consume: it proves plain MLE \emph{point} evaluations.  One last
+\textbf{degree-2 sumcheck} (the ``presum'') separates the factors:
+
+\begin{enumerate}[leftmargin=2.2em, itemsep=2pt]
+\item Run a $d$-round degree-2 sumcheck on
+  $\sum_i R(i)\, m(i) = e_d - 1$, binding $i \to r^*$.  (Verifier
+  checks its claimed sum against the forest's $e_d$.)
+\item $V$: evaluate $\mle{R}(r^*)$ \emph{itself} --- the verifier's one
+  linear-cost step, $O(2^t \cdot W)$, with the $\alpha^{W_b}$ bases from
+  the same fixed-base comb; reject if $\mle{R}(r^*) = 0$.  Set
+  \[
+    \mu \;\leftarrow\; \frac{\text{final sumcheck value}}{\mle{R}(r^*)}.
+  \]
+\item The residual claim is
+  $\mle{M}(r^* \| z_c) = \mu$ --- a \emph{bare MLE evaluation of the
+  committed bit matrix at a random point}, every $\alpha$-dependent
+  factor moved to the verifier's side of the equation.
+\end{enumerate}
+
+From here the opening is out of the forest's hands: the ring switch
+sends 128 partial evaluations $s_v$ (checked against $\mu$), the $L$
+chunks' residual claims are $\eta$-combined, and \emph{one} recursive
+Ligerito call certifies the batch against the Merkle commitment
+(black box here; verifier note \S6).
+
+\subsection{Read-off and the soundness chain}
+\label{sec:soundness}
+
+The verifier finishes in the clear, in $\Fq$:
+\[
+  y \;=\; \sum_c \eq(c, r_{\mathrm{col}}) \cdot
+          \Big(\sum_l 2^{\cw l}\, u^{(l)}_c\Big) \bmod q,
+\]
+checked against the claimed value.  The chain, bottom-up --- each link
+one of the steps above:
+\begin{itemize}[itemsep=1pt]
+\item \emph{Ligerito opening} $\Rightarrow$ $\mu$ is the true
+  $\mle{M}(r^* \| z_c)$ of the committed bits;
+\item \emph{presum $+$ the verifier's own $\mle{R}(r^*)$} $\Rightarrow$
+  the exit claim $e_d$ is the true $\mle{\Lambda}(z)$;
+\item \emph{$d$ layer sumchecks} $\Rightarrow$ $\mle{R}(\zeta)$ is the
+  true MLE of the actual products $\prod_i \Lambda[c][i]$;
+\item \emph{the absorb $+$ random $\zeta$} $\Rightarrow$ each root
+  $R_c$ equals its product (Schwartz--Zippel over $\K$);
+\item \emph{$R_c := \alpha^{u_c}$, the range check, the generator
+  check} $\Rightarrow$ the sent $u_c$ \emph{are} the integer folds of
+  the committed bits (injectivity of the exponent map below
+  $\operatorname{ord}\alpha$);
+\item \emph{recombination} $\Rightarrow$ $y = \mle{\INT(D)}(r) \bmod q$.
+\end{itemize}
+Both the range check and the generator check are load-bearing: without
+either, $\alpha^{u} = \alpha^{u'}$ stops implying $u = u'$.
+
+\medskip
+\noindent
+\textbf{Costs at a glance.}  Verifier: $O(2^s)$ exponentiations for the
+roots $+$ $O(2^s)$ for the entry MLE and the read-off,
+$O\big(\sum_\ell (\ell + s)\big) = O(d^2/2 + ds)$ round checks, and the
+one $O(2^t W)$ evaluation of $\mle{R}(r^*)$ --- milliseconds at every
+deployed shape.  Proof, forest side: the folds $16 \cdot 2^s$\,B plus
+${\approx}\,32\big(\tfrac{d(d-1)}{2} + ds\big)$\,B of round messages and
+$32d$\,B of pairs, per chunk.  Prover: the forest $+$ presum phase is
+$O(2^{d+s})$ field work and 81--96\,\% of an F2Z prove; \S\ref{sec:luts}
+is about how it is actually spent.
+
+\subsection{Chunking: why there can be several forests}
+\label{sec:chunks}
+
+A full ${\sim}q_{\mathrm{bits}}$-bit weight $w_b$ would let
+$\sum_b w_b\,\INT(D(b,c))$ overflow $2^{127}$ and break injectivity.  So
+the weights are split into base-$2^{\cw}$ limbs, $\cw = 127 - t - W$,
+$w_b = \sum_l 2^{\cw l}\, W^{(l)}_b$, and \emph{everything in
+\S\S\ref{sec:entry}--\ref{sec:discharge} runs once per limb} on the same
+transcript and the same commitment: per-limb integers $u^{(l)}_c$,
+per-limb forest, per-limb presum, each chunk-fold satisfying
+$u^{(l)}_c < 2^{\cw + t + W} = 2^{127}$ by construction.  The $L$
+residual bit-MLE claims (at different points) are $\eta$-RLC'd into the
+single Ligerito call, and the verifier reassembles
+$\sum_l 2^{\cw l} u^{(l)}_c$ in the read-off.  At the deployed shapes
+($q = 2^{100} - 15$, $t \le 26$) one has $\cw \ge 100$, so $L = 1$: the
+whole scheme can be read with one chunk in mind.
+
+% ===========================================================================
+\section{Execution: the lookup-table prover}
+\label{sec:luts}
+
+Nothing below changes the protocol.  The tables exist to execute
+\emph{phase A of the bottom three layers} (and the level build beneath
+them) --- the rounds whose operand buffers $E_c, O_c$ would otherwise be
+the two bottom levels of the forest, $2^{d+s}$ and $2^{d+s-1}$
+$\K$-elements (4\,GiB $+$ 2\,GiB at $n = 28$).  Their messages and folds
+are computed \emph{as if} those buffers existed, from lookups keyed by
+committed bits; the transcript is byte-identical either way (pinned by
+\code{lazy\_matches\_eager} in every schedule).
+
+\subsection{What a round and a fold are}
+\label{sec:roundfold}
+
+Fix one layer $\ell$ and one tree, and look at its phase A through the
+prover's eyes.  It is an ordinary $k$-variable sumcheck, $k = \ell$, of
+\[
+  S \;=\; \sum_{x \in \bits^k} w(x)\, E(x)\, O(x),
+  \qquad w(x) = \eq(x, z_x),
+\]
+with $E, O$ --- the tree's two halves of the input level --- held as two
+arrays of $2^k$ field elements.  The prover never manipulates a
+polynomial symbolically; everything it does is one of two passes over
+these arrays.
+
+\paragraph{A round is one message--challenge exchange.}
+The sumcheck runs $k$ rounds, one per variable, lowest index first
+(a \emph{round} is a step \emph{within} one layer's phase A, not a
+layer).  In round $j$ the prover sends the univariate
+\[
+  P_j(X) \;=\; \sum_{y \in \bits^{k-j}}
+    \big(\mle{w}\,\mle{E}\,\mle{O}\big)
+    (\rho_1, \dots, \rho_{j-1},\, X,\, y)
+\]
+--- the variables already bound are fixed at the earlier challenges, the
+current one is left symbolic, the tail is still summed over the cube;
+degree $3$ here, each factor being multilinear.  The verifier checks
+$P_j(0) + P_j(1)$ against its running claim, draws $\rho_j$, and the
+claim becomes $P_j(\rho_j)$.  After $k$ rounds nothing is left to sum:
+the claim concerns the single random point
+$r_x = (\rho_1, \dots, \rho_k)$.
+
+\paragraph{The prover's state, and slots.}
+$P_j$ is a sum, over the remaining cube, of products of
+\emph{restrictions} of multilinears --- and a multilinear restricted to
+$(\rho_1, \dots, \rho_{j-1}, X, b)$ is \emph{affine in $X$}, determined
+by its two endpoints at $X = 0, 1$.  The prover therefore keeps each
+array in the state ``bound prefix substituted, suffix still Boolean'',
+\[
+  E_j[y] \;=\; \mle{E}(\rho_1, \dots, \rho_{j-1},\, y),
+  \qquad y \in \bits^{k-j+1}
+\]
+($E_1$ is the raw input), because those endpoints are then
+\emph{literally stored entries}: grouping the entries into \emph{slots}
+--- slot $b$ is the adjacent pair $(2b, 2b{+}1)$, the two settings of
+the current variable ---
+\[
+  \mle{E}(\rho_1, \dots, \rho_{j-1},\, X,\, b)
+  \;=\; E_j[2b] + X\,\big(E_j[2b{+}1] - E_j[2b]\big),
+\]
+and likewise for $O$ and $w$ --- though the $w$-line, unlike the other
+two, will need no stored array at all (the closing paragraph of this
+section) --- whence
+\[
+  P_j(X) \;=\; \sum_{b \in \bits^{k-j}}
+    \big[\text{$w$-line}\big](X)\cdot
+    \big[\text{$E$-line}\big](X)\cdot
+    \big[\text{$O$-line}\big](X).
+\]
+One sweep over the slots --- two stored entries per slot per array ---
+accumulates the message's coefficients: the $A_0, A_1, A_2$ of
+\S\ref{sec:msgs}, the $w$ factor riding as the precomputed suffix
+weights $\omega_b$.  (At Boolean points the entries \emph{are} the
+current summand values, which is why $P_j(0) + P_j(1)$ matches the
+running claim for the honest prover.)  Keeping the arrays in this state
+is what makes the prover \emph{linear-time}: round $j$'s passes cost
+$O(2^{k-j+1})$, the sizes halve, so a layer totals $O(2^k)$ ---
+whereas recomputing the restrictions from the raw arrays each round
+(each endpoint a fresh $2^{j-1}$-term $\eq$-weighted sum) would pay an
+extra factor of $k$.
+
+\paragraph{A fold is the array update after the challenge.}
+Once $\rho_j$ arrives, substitute it --- evaluate every slot's line at
+$X = \rho_j$:
+\begin{equation}\label{eq:folddef}
+  E_{j+1}[b] \;=\; E_j[2b] + \rho_j\,\big(E_j[2b{+}1] - E_j[2b]\big),
+\end{equation}
+one linear pass that merges each pair into one entry and \emph{halves}
+the array, $2^{k-j+1} \to 2^{k-j}$.  Rounds are the protocol's clock;
+folds are the bookkeeping tick that advances the arrays to the next
+round's state.  A $k$-variable phase A thus walks
+$2^k \to 2^{k-1} \to \dots \to 1$, and the last fold's single entries
+are the per-tree finals $\mle{E}(r_x), \mle{O}(r_x)$ handed to phase B.
+Unrolling \eqref{eq:folddef}: after $f$ folds,
+\[
+  E_{f+1}[b] \;=\; \sum_{\varepsilon \in \bits^{f}}
+    \eq\big((\rho_1, \dots, \rho_f),\, \varepsilon\big)\cdot
+    E_1[\,2^f b + \varepsilon\,],
+\]
+a \emph{fixed} $\K$-linear combination --- coefficients global across
+trees and positions --- of one \emph{contiguous, aligned block} of $2^f$
+round-1 entries.  (The alignment is why the LUT rounds below read their
+case indices as aligned 2-bit, nibble and byte windows of the committed
+bits.)
+
+\paragraph{The $w$-line needs no table.}
+The eq weight is the one factor whose line is never read from a stored
+array, because $\eq$ factors coordinate-wise:
+$\eq(x, z) = \prod_i \eq_1(x_i; z_i)$ with
+$\eq_1(x; z) = zx + (1{-}z)(1{-}x)$, degree 1 in each variable
+separately.  Writing $z_1, \dots, z_k$ for the coordinates of $z_x$,
+the restriction to round $j$, slot $b$ splits along exactly those
+lines:
+\[
+  \mle{w}(\rho_1, \dots, \rho_{j-1},\, X,\, b)
+  \;=\;
+  \underbrace{\prod_{i<j}\eq_1(\rho_i;\, z_i)}_{\textstyle A_j}
+  \;\cdot\;
+  \underbrace{\eq_1(X;\, z_j)}_{\text{public, slot-independent}}
+  \;\cdot\;
+  \underbrace{\prod_{i>j}\eq_1(b_{i-j};\, z_i)}_{\textstyle
+    \omega_b = V_j[b]}
+\]
+and each piece has a different fate.  The \emph{prefix scalar} $A_j$
+depends only on past challenges: one running field element, one
+multiply per round ($A_{j+1} = A_j\,\eq_1(\rho_j; z_j)$) --- and in
+the multi-tree phase A it is seeded with the tree's group scale
+$\eq(c, z_c)$, which is how the merged layer's per-tree weights ride
+along for free.  The \emph{current-variable factor} $\eq_1(X; z_j)$
+carries all of the $w$-line's $X$-dependence and is the same public
+line for every slot, so it is pulled outside the sum --- the prover
+never multiplies by it at all (next paragraph).  The \emph{suffix
+weight} $\omega_b = V_j[b]$ is the only per-slot part; since $b$ is
+Boolean, each factor is $z_i$ or $1 - z_i$, so $V_j$ is a tensor, and
+all $k$ of them are precomputed back-to-front ($V_k = [1]$,
+$V_j = \eq_1(\cdot\,; z_{j+1}) \otimes V_{j+1}$;
+\code{suffix\_tensors}) in $O(2^k)$ \emph{total} --- the cost of one
+eq-table build --- once per phase-A call and shared by every tree,
+since all trees share the point $z_x$.  The round polynomial
+therefore factors,
+\[
+  P_j(X) \;=\; \eq_1(X;\, z_j)\cdot \hat H_j(X),
+  \qquad
+  \hat H_j \;=\; \sum_{c} A_{c,j} \sum_b \omega_b\,
+    \big[\text{$E$-line}\big]\,\big[\text{$O$-line}\big],
+\]
+with $\hat H_j$ quadratic: the $(A_0, A_1, A_2)$ of \S\ref{sec:msgs}
+are its per-tree coefficients, and the entire per-slot $w$ handling is
+one scalar weighting folded into the $E$ side --- the 5-multiply
+schedule $\omega e_0$, $\omega e_1$, $(\omega e_0)\,o_0$,
+$(\omega e_1)\,o_1$, $\Delta E\,\Delta O$.  ``Folding $w$'' costs
+nothing pass-shaped: one multiply into the prefix scalar and a step to
+the next, half-length suffix tensor.
+
+\paragraph{Where the public factor ends up: the verifier's side.}
+Because $\eq_1(X; z_j)$ is public, the prover sends only
+$\hat H_j$'s two non-constant coefficients $(\hat H_1, \hat H_2)$ ---
+Gruen's factored round format.  The verifier recovers the constant
+from its running claim: expanding
+$S_j = P_j(0) + P_j(1) = (1{-}z_j)\,\hat H(0) + z_j\,\hat H(1)$, the
+$\pm z_j \hat H_0$ terms cancel, leaving
+\[
+  \hat H_0 \;=\; S_j - z_j\,(\hat H_1 + \hat H_2)
+\]
+--- an identity over any field, no inversion --- after which it
+advances $S_{j+1} = \eq_1(\rho_j;\, z_j)\cdot\hat H_j(\rho_j)$
+(\code{verify\_eq\_inner\_sumcheck\_gruen}).  Soundness is unchanged:
+the prover is thereby restricted to degree-3 polynomials divisible by
+the public linear factor --- a \emph{subset} of the generic message
+space, so the standard round analysis applies verbatim.
+
+\subsection{Low entropy and the width laws}
+\label{sec:width}
+
+Everything rests on one observation: a node $r$ levels above the leaves
+is the product of the $2^r$ leaves beneath it, and each leaf is $1$ or
+the public constant $\alpha^{W_b 2^j}$ --- so the node's value is one of
+$2^{2^r}$ \emph{position-indexed constants, selected by $2^r$ committed
+bits, independent of the tree}.  One shared table can serve all $2^s$
+trees; per tree one only reads bits.
+
+The second ingredient is what a fold (\S\ref{sec:roundfold}) does to
+such an entry: after $f$ folds, an array entry is a fixed $\K$-linear
+combination of $2^f$ round-1 entries with globally shared coefficients
+--- so if each round-1 entry was selected by $w$ committed bits out of a
+shared position table, the folded entry is selected by the $2^f w$ bits
+of its block, from a new position table with the challenges baked in.
+Folding a bit-affine leaf pair makes this concrete --- using
+$(1{+}\rho) + \rho = 1$ in char 2:
+\begin{equation}\label{eq:fold}
+  v' \;=\; (1{+}\rho)(1 + m_0\tau_0) + \rho\,(1 + m_1\tau_1)
+      \;=\; 1 + m_0\,(1{+}\rho)\tau_0 + m_1\,\rho\,\tau_1 ,
+\end{equation}
+a 4-case function of the bit pair $(m_0, m_1)$, again from a
+position-indexed, tree-shared table (now with $\rho$ baked in).  Hence
+two \emph{width laws}, each of which squares the case count: going up a
+level ($2^w \to 2^{2w}$ cases, the parent coupling two selects) and
+folding a round (identically).  An entry of level $d - r$ after $f$
+folds depends on $2^{r+f}$ committed bits --- $r$ \emph{fixed} for a
+layer (how far above the leaves its input level sits), $f$
+\emph{advancing} $0, 1, 2, \dots$ with the layer's own rounds --- and
+its case table holds
+$2^{2^{r+f}}$ cases per position:
+
+\begin{center}
+\small
+\begin{tabular}{ccccl}
+\toprule
+$r + f$ & bits/entry & cases & table at $d = 17$ & \\
+\midrule
+0 & 1 & 2      & 2\,MiB  & the $\tau$ halves \\
+1 & 2 & 4      & 4\,MiB  & \code{te}, \code{to} \\
+2 & 4 & 16     & 8\,MiB  & $T4$ \\
+3 & 8 & 256    & ${\approx}128$\,MiB & --- not built \\
+4 & 16 & 65\,536 & ${\approx}8$\,GiB & --- exceeds what it would replace \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Why the cap is $r + f \le 2$.}
+The cap is \emph{not} a soundness or correctness constraint --- any
+depth would emit the identical transcript.  It is the economics knee of
+a doubly-exponential blow-up ($+1$ \emph{squares} the case count), set
+by three compounding facts.
+(i) \emph{Cache residency.}  The value of a shared table is that all
+$2^s$ trees gather from it with data-dependent (bit-selected) indices;
+that pays only while the table is cache-resident.  The measured rule of
+thumb is that one gather sweep over the 8\,MiB $T4$ already costs about
+one \emph{streaming} pass over the level it replaces; a 128\,MiB table
+turns every gather into a DRAM miss and costs \emph{more} than the dense
+computation --- the rounds are gather-bound, not multiply-bound.  (Direct
+evidence that the knee is residency: even within the cap, the 16-case
+precombined leaf $\Delta\Delta$ table stops paying once it outgrows L2
+and the code auto-switches to a factored 4-entry form, \S\ref{sec:msgs}.)
+(ii) \emph{Build amortisation.}  A table costs one multiply per entry to
+build; at $r{+}f = 3$ the build makes $32\times$ more values than the
+level it serves has nodes per tree, eroding the $2^s$-fold amortisation
+before the miss costs are even counted.
+(iii) \emph{Diminishing returns.}  Each $+1$ buys one more round run off
+bits --- one more halving of where dense buffers are born.  The 16-case
+machinery already runs three rounds off the leaves; the marginal fourth
+would halve an already-small object at the price of the 128\,MiB table.
+Where a round \emph{message} couples several entries into a wider select
+(the pair round's $\Delta E \cdot \Delta O$ term couples 8 bits), the
+code does not build the 256-case table either: it \emph{factors} the
+term into two 16-case tables joined by one explicit multiply.  Sixteen
+cases is the last table size that earns its bytes; anything wider is
+recovered by arithmetic on 16-case pieces.  (A separate, structural
+guard --- a prefix of $f$ LUT rounds needs $k \ge f{+}1$ variables ---
+just says the last LUT round must still have a fold in which the dense
+buffers get born; it governs shallow trees, not the cap.)
+
+\subsection{What the prover holds}
+\label{sec:tables}
+
+All shared tables are megabytes, amortised over the $2^s$ trees; the
+per-tree state during the LUT rounds is \emph{only the bit arrays}.
+Write $q_1 = 2^{d-2}$, $q_2 = 2^{d-1}$.
+
+\begin{center}
+\small
+\begin{tabular}{l>{\raggedright\arraybackslash}p{5.6cm}lc}
+\toprule
+object & contents & index & at $d{=}17$ \\
+\midrule
+\code{lbits}/\code{rbits} (per tree) &
+  the column's bits, split at the midpoint &
+  bit $i$, 64/word & 32\,MiB total \\
+$v$, $\tau$ halves &
+  $v(i) = \alpha^{W_b 2^j}$, $\tau = v - 1$; case $0$ ($=1$) unstored &
+  position $i$ & 2\,MiB \\
+\code{pair} &
+  $v(i)\,v(i{+}q_2)$ --- the only level-$(d{-}1)$ case not in $v$ &
+  $i < q_2$ & 1\,MiB \\
+\code{te}, \code{to} &
+  the 4 cases $\{1, \tau_{\mathrm{lo}}, \tau_{\mathrm{hi}},
+    \tau_{\mathrm{lo}}\tau_{\mathrm{hi}}\}$ of a level-$(d{-}1)$ node
+  (E/O halves; O's offset baked in) &
+  $4y \,|\, (m_{\mathrm{lo}} | m_{\mathrm{hi}}{\ll}1)$ & 4\,MiB \\
+$T4$ &
+  all 16 values of a level-$(d{-}2)$ node ($\code{te}\cdot\code{to}$) &
+  $(y{\ll}4)|(c_E{\ll}2)|c_O$ & 8\,MiB \\
+per-round tables &
+  suffix-eq weights $\omega_b$ and past challenges baked into case
+  tables (\S\ref{sec:msgs}--\ref{sec:stash}) &
+  slot $\times$ case & MiB-scale \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The midpoint split of the bits is the top-bit pairing convention of
+\eqref{eq:recursion} made physical: a level-$(d{-}1)$ node at position
+$i$ multiplies leaves $i$ and $i + q_2$, and its two selecting bits are
+bit $i$ of \code{lbits} and bit $i$ of \code{rbits} --- the same index
+into both arrays, read as aligned bit windows word-wise.
+
+\subsection{Use 1: round messages as gathers (the leaf round, worked)}
+\label{sec:msgs}
+
+A phase-A round accumulates three coefficients over slots $b$ (with
+$\omega_b$ the driver's suffix-tensor eq weight --- $V_j[b]$ in the
+code --- and entries $2b, 2b{+}1$ per side):
+\[
+  A_0 = \sum_b \omega_b\, E[2b]\,O[2b], \quad
+  A_2 = \sum_b \omega_b\, \Delta E_b\, \Delta O_b, \quad
+  A_1 = \Big(\sum_b \omega_b\, E[2b{+}1]\,O[2b{+}1]\Big) + A_0 + A_2
+\]
+(the $A_1$ form is the char-2 reading of $A_1 = H(1) - A_0 - A_2$).
+At the leaf layer the entries are \emph{defined} as
+$E[i] = 1 + l_i\,\tau_L[i]$, $O[i] = 1 + r_i\,\tau_R[i]$ ($l, r$ the
+committed bit halves).  Expanding in char 2:
+\begin{align*}
+  \omega_b\,E[2b]\,O[2b]
+  &\;=\; \omega_b \;+\;
+     \big(\, l\cdot\omega_b\tau_L + r\cdot\omega_b\tau_R
+        + lr\cdot\omega_b\tau_L\tau_R \,\big)
+   && \text{a 4-case select,} \\
+  \Delta E_b \;=\; E[2b{+}1] - E[2b]
+  &\;=\; l_{2b}\,\tau_L[2b] + l_{2b+1}\,\tau_L[2b{+}1]
+   && \text{the } 1\text{s \emph{cancel},} \\
+  \omega_b\,\Delta E_b\,\Delta O_b
+  &\;=\; \sum_{\varepsilon,\delta \in \bits}
+     l_\varepsilon r_\delta\cdot
+     \omega_b \tau_{L\varepsilon}\tau_{R\delta}
+   && \text{a 16-case subset sum.}
+\end{align*}
+\paragraph{The three tables.}
+Every slot contribution is a subset sum of \emph{eight} products ---
+$\omega_b\tau_{L\varepsilon}$, $\omega_b\tau_{R\delta}$,
+$\omega_b\tau_{L\varepsilon}\tau_{R\delta}$
+($\varepsilon, \delta \in \bits$, all at slot $b$'s two positions) ---
+plus a bare $\omega_b$ from each of the even and odd products.
+\code{build\_leaf\_tables} precombines the subset sums, once per $\tau$
+set, at 8 multiplies (4 singles, 4 crosses) and ${\sim}20$ adds per
+slot:
+\begin{itemize}[itemsep=2pt]
+\item $\code{t\_a0}[(b{\ll}2) \,|\, (m_{L0} \,|\, m_{R0}{\ll}1)]$ ---
+  the 4 cases
+  $\{\,0,\ \omega_b\tau_{L0},\ \omega_b\tau_{R0},\
+  \omega_b\tau_{L0} + \omega_b\tau_{R0} +
+  \omega_b\tau_{L0}\tau_{R0}\,\}$
+  of the even product's non-constant part;
+\item \code{t\_a1} --- the same at the odd positions;
+\item the $\Delta\Delta$ table,
+  $\code{t\_a2}[(b{\ll}4) \,|\, c_l \,|\, (c_r{\ll}2)]$ --- the 16
+  subset sums of the four cross products, selected by
+  $m_{L\varepsilon} \wedge m_{R\delta}$;
+\end{itemize}
+and the constants collapse into one per-set scalar
+$\code{w\_sum} = \sum_b \omega_b$ --- tree-independent, added once at
+the end of the round.  Together: $4 + 4 + 16 = 24$ entries (384 B) per
+slot, ${\approx}12.6$ MB at the $n = 28$ leaf layer ($k = 16$).
+
+\paragraph{The slot body.}
+A \emph{tree's} round is then, per slot:
+\[
+  \begin{aligned}
+    &c_l \leftarrow \text{2-bit window of \code{lbits} at } 2b; \quad
+     c_r \leftarrow \text{same in \code{rbits}}
+     && \text{(32 slots per \code{u64} read)}\\
+    &A_0 \mathrel{+}= \code{t\_a0}[(b{\ll}2)\,|\,c_{l,0}\,|\,c_{r,0}{\ll}1], \qquad
+     S_1 \mathrel{+}= \code{t\_a1}[(b{\ll}2)\,|\,c_{l,1}\,|\,c_{r,1}{\ll}1], \\
+    &A_2 \mathrel{+}= \Delta\Delta[(b{\ll}4)\,|\,c_l\,|\,c_r{\ll}2]
+  \end{aligned}
+\]
+--- here $S_1$ collects the \emph{odd product sum}
+$\sum_b \omega_b E[2b{+}1]O[2b{+}1] = H(1)$ (constants via
+\code{w\_sum}), and the round ends with the finalisation
+$A_1 = S_1 + A_0 + A_2$.  Per slot this is three unconditional indexed
+loads and three XOR adds,
+\textbf{zero multiplications, zero branches} on committed bits (a
+branchy ``skip the multiply by $1$'' variant was measured slower:
+50/50 random bits make it mispredict-bound).  The build is paid once
+per set; the gathers are paid per tree: $O(2^k)$ shared multiplies
+replace $O(2^k)$ multiplies \emph{per tree}, an amortisation of
+$\mathit{live} \approx 2^s$.
+
+\paragraph{Assembling the layer message.}
+The triple a tree accumulates is its quadratic cofactor
+$H_c = (A_0, A_1, A_2)$.  The driver multiplies each by the group's
+running prefix scalar (seeded with $\eq(c, z_c)$,
+\S\ref{sec:descent}) and XORs across trees into \emph{wide} unreduced
+256-bit accumulators, with one polynomial reduction per accumulator per
+round --- exact, because the reduction is $\Ftwo$-linear.  Since the
+$\eq$ factor of the round polynomial is public, the message sent is
+just the two non-constant coefficients of the summed cofactor
+(Gruen's factored round format).
+
+\paragraph{Two forms of the $\Delta\Delta$ table.}
+The 16 $\Delta\Delta$ cases are subset sums of only four products, so
+the table ships in two interchangeable forms (\code{LeafA2},
+auto-picked by footprint; \code{F2Z\_LEAF\_A2\_FACTORED} forces):
+\emph{precombined} --- 16 entries per slot, one load and one add ---
+or \emph{factored} --- only the four raw cross products
+$[p_{00}, p_{10}, p_{01}, p_{11}]$ per slot (one sequential 64-B
+line), consumed by four branchless masked adds that reduce pairwise,
+so the $A_2$ accumulator still takes one add.  Factored shrinks the
+leaf tables from 24 to 12 entries per slot and wins outright once the
+precombined set outgrows the P-cluster L2 (the auto threshold,
+$2^{k-1} \ge 2^{15}$): at $n = 30$ the leaf round drops $2.1\times$
+($307 \to 147$ ms); at the still-L2-resident $n = 26$ it loses
+${\approx}1.2$ ms.  Both forms accumulate identical field elements.
+
+\paragraph{One level up: the 16-case pair body.}
+At the pair layer the entries are themselves 4-case
+\code{te}/\code{to} selects, so a slot is keyed by four 2-bit cases
+$(c_{E0}, c_{E1}, c_{O0}, c_{O1})$, read as 2-bit windows at $2b$ and
+$2b + 2^k$ (\code{pair2\_cases}; the E/O offset is even, so no window
+straddles a word).  The $\Delta E\cdot\Delta O$ term now couples
+8 bits --- 256 cases, past the cap of \S\ref{sec:width} --- so it is
+never fully precombined.  Two exact forms exist
+(\code{Pair2Tables}):
+\begin{itemize}[itemsep=2pt]
+\item \emph{precombined} (opt-out, \code{F2Z\_PAIR2\_FACTORED=0}):
+  four 16-case tables per slot ---
+  $\code{t\_a0}[b{\ll}4 \,|\, (c_{E0}{\ll}2 \,|\, c_{O0})]$
+  ${} = \omega_b\,TE_{2b}[c_{E0}]\,TO_{2b}[c_{O0}]$, the odd \code{t\_a1},
+  the weighted difference $\code{t\_wde}$
+  ${} = \omega_b\big(TE_{2b}[c_{E0}] + TE_{2b+1}[c_{E1}]\big)$, and
+  the raw \code{t\_do} --- so the cross term
+  is ONE wide multiply per slot; but the tables hold 64 entries per
+  slot (16 MiB at the $n = 28$ pair layer, past L2), and the four
+  gather streams' misses dominate the round;
+\item \emph{factored} (the default): only the suffix-weighted
+  $\code{wte}[i] = \omega_{i \gg 3}\cdot\code{te}[i]$ is built (the
+  layout of \code{te} itself, 8 entries per slot), and the body
+  recombines against the set's raw \code{to}: per slot, the weighted
+  even and odd wide products plus
+  $(\code{wte}_0 + \code{wte}_1)(\code{to}_0 + \code{to}_1)$ ---
+  three wide multiplies against a $4\times$ smaller, L2-resident
+  table set.
+\end{itemize}
+The two agree exactly: $\omega\,TE_0 + \omega\,TE_1$ \emph{is} the
+precombined $\omega(TE_0 + TE_1)$ (distributivity), the products keep
+the build's association $(\omega\,TE)\cdot TO$, and the deferred
+reduction is $\Ftwo$-linear.  The measured lesson generalises across
+this section: \emph{multiplies are cheap next to bytes that miss}.
+This one body (\code{pair2\_factored\_body}) serves \emph{four}
+rounds: round 1 of \code{Pair2Bits}/\code{Pair3Bits} over
+$(\code{te}, \code{to})$, and round 2 of
+\code{Leaf2Bits}/\code{Leaf3Bits} over the stashed value sets of
+\S\ref{sec:stash} --- only the case extraction differs.
+
+\subsection{Use 2: folds kept as tables (the stash)}
+\label{sec:stash}
+
+Round 1's fold should materialise round 2's buffers ---
+$\mathit{live}\cdot 2^{k-1}$ $\K$-elements across the trees.  It does
+not, because of one fact: \emph{the fold of a bit-selected buffer is
+again a bit-selected buffer}.  So the prover never writes the folded
+values --- it writes down the new (shared) selection table and keeps
+using the bits.
+
+\paragraph{Two representations of a buffer.}
+A sumcheck operand can exist \emph{dense} --- an array of
+$\K$-elements per tree, as \S\ref{sec:roundfold} assumed --- or in
+\emph{case form}: one shared position-indexed table $T$ plus the
+per-tree bits, under the convention that entry $p$ of tree $c$'s
+buffer \emph{is defined as} $T[p][\,\text{a few of $c$'s bits at fixed
+positions}\,]$.  In case form the buffer is a \emph{rule}, not memory:
+no per-tree $\K$-element exists anywhere.  At the leaf layer the
+buffers start in case form for free --- $E[i] = 1 + m_i\,\tau_L[i]$ is
+the 2-case rule $\{1,\ 1{+}\tau_L[i]\}$ selected by one bit --- and
+\S\ref{sec:msgs} already showed how a \emph{message pass} runs on that
+form, by gathers.  What remains is the fold, and this is where the two
+representations differ: folding a dense buffer is a write pass
+\emph{per tree}; folding a rule is a rewrite of the rule --- one new
+table, no tree touched.
+
+\paragraph{Folding the rule.}
+Substitute the case form into the fold \eqref{eq:folddef} at challenge
+$\rho_1$ (char 2 cancels the $1$s, as in \eqref{eq:fold}):
+\[
+  E'[p] \;=\; (1{+}\rho_1)\,E[2p] + \rho_1\,E[2p{+}1]
+  \;=\; 1 + m_{2p}\,(1{+}\rho_1)\tau_L[2p]
+          + m_{2p+1}\,\rho_1\tau_L[2p{+}1].
+\]
+The right-hand side is a function of the bit \emph{pair}
+$(m_{2p}, m_{2p+1})$, and its four possible values depend only on the
+position and $\rho_1$ --- not on the tree.  So the fold of \emph{every
+tree at once} is the one shared table
+\[
+  F_1[p][\,m_0 \,|\, m_1{\ll}1\,] \;=\;
+  1 + m_0\,(1{+}\rho_1)\tau_L[2p] + m_1\,\rho_1\tau_L[2p{+}1]
+\]
+(4 entries per position, \code{build\_leaf\_fold\_tables}; one per
+side, $F_1^L$ from $\tau_L$, $F_1^R$ from $\tau_R$), and
+\emph{executing} it per tree is optional.  \code{LeafBits} does
+execute it --- one $F_1$ gather per entry, writing dense round-2
+buffers --- but \code{Leaf2Bits} and \code{Leaf3Bits} instead
+\emph{stash} $F_1$: round 2's buffer of tree $c$ is henceforth
+\emph{defined} as $p \mapsto F_1[p][m_{2p}, m_{2p+1}]$, and nothing
+per-tree is written.  Round 2's message pass runs on the rule by
+gathers: slot $b$ needs entries $2b, 2b{+}1$, i.e.\ the aligned nibble
+$m_{4b..4b+3}$ of the \emph{original} bits, split into two 2-bit
+cases (\code{leaf2\_cases}).  And by a layout coincidence the code
+exploits, ``4 cases per position, two sides'' is exactly the pair
+layer's native value format (\code{Pair2TauSet},
+$\code{te} = F_1^L$, $\code{to} = F_1^R$) --- so round 2 \emph{is}
+the pair-layer 16-case body of \S\ref{sec:msgs}, run over the stash.
+
+\paragraph{Iterating, and stopping.}
+At $\rho_2$ the same substitution folds the 4-case rule into a
+16-case one:
+\[
+  E''[q] \;=\; (1{+}\rho_2)\,F_1[2q][c_0] + \rho_2\,F_1[2q{+}1][c_1]
+  \;=:\; F_2[q][\,(c_0{\ll}2) \,|\, c_1\,],
+\]
+a function of the four original bits $m_{4q..4q+3}$
+(\code{build\_pair2\_fold\_tables}, 16 entries per position).
+\code{Leaf3Bits} stashes $F_2$ as round 3's value tables; round 3
+gathers with byte windows ($m_{8b..8b+7}$ per slot, the nibble halves
+swapping into the index via \code{leaf3\_idx}) and runs the plain
+dense body over the gathered values --- at 8 selecting bits a
+precombined slot table would cost more bytes than the multiplies it
+saves (\S\ref{sec:width}).  There the chain stops: $\rho_3$'s fold
+would need a 256-case $F_3$ --- each stash step \emph{squares} the
+cases while only halving the positions, so the shared table
+\emph{doubles} every step, the width law of \S\ref{sec:width} marching
+toward its cap --- so round 3's fold is \emph{executed}: per tree,
+gather the two $F_2$ values of each slot and write
+$(1{+}\rho_3)(\cdot) + \rho_3(\cdot)$ into real arrays.  These are the
+first per-tree $\K$-elements of the whole layer, $2^{k-3}$ per side;
+rounds 4 onwards are ordinary dense sumcheck.
+\code{Pair2Bits}/\code{Pair3Bits} are the same chain started one level
+up, where the initial buffer is already a 2-bit-selected rule
+$(\code{te}, \code{to})$, so the counting begins at 4 cases and the
+cap arrives one round sooner (\code{pair3\_idx} keys the stashed
+round-2 rule).
+
+\paragraph{The prover's physical state, round by round.}
+For \code{Leaf3Bits}, one $\tau$ set; table sizes count both sides, at
+the $n = 28$ leaf layer ($k = 16$, $\mathit{live} = 2048$):
+
+\begin{center}
+\small
+\begin{tabular}{lllr}
+\toprule
+ & round $j$'s buffer exists as & shared table & at $k{=}16$ \\
+\midrule
+round 1 & bits $+$ $\tau$ halves: $1 + m_i\,\tau[i]$ &
+  $2\cdot 2^k$ entries & 2\,MiB \\
+round 2 & bits $+$ $F_1[p][\,m_{2p}, m_{2p+1}\,]$ &
+  $2\cdot 4\cdot 2^{k-1}$ & 4\,MiB \\
+round 3 & bits $+$ $F_2[q][\,m_{4q..4q+3}\,]$ &
+  $2\cdot 16\cdot 2^{k-2}$ & 8\,MiB \\
+rounds 4+ & dense per-tree buffers & --- & 512\,MiB \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Until round 3's fold, the only per-tree state is the original bit
+array; the challenges live inside the tables.  The cascade, per
+driver entry (``stash'' = the round's fold is kept as the next round's
+value tables; ``dense ($\cdot$)'' = the fold materialises buffers of
+that size per side per tree):
+
+\begin{center}
+\small
+\begin{tabular}{lllll}
+\toprule
+entry & needs & round 1 & round 2 & round 3 \\
+\midrule
+\code{LeafBits}  & $k \ge 2$ & leaf LUT & dense ($2^{k-1}$) & \\
+\code{Leaf2Bits} & $k \ge 3$ & leaf LUT, stash & pair body &
+  dense ($2^{k-2}$) \\
+\code{Leaf3Bits} & $k \ge 4$ & leaf LUT, stash & pair body, stash &
+  inline; dense ($2^{k-3}$) \\
+\code{Pair2Bits} & $k \ge 2$ & pair body & dense ($2^{k-1}$) & \\
+\code{Pair3Bits} & $k \ge 3$ & pair body, stash &
+  inline; dense ($2^{k-2}$) & \\
+\code{T4Bits}    & $k \ge 2$ & inline $T4$; dense ($2^{k-1}$) & & \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The ``needs'' column is \S\ref{sec:width}'s structural guard ($k \ge
+f{+}1$: the last LUT round must still have a fold, where the dense
+buffers get born).  \code{F2Z\_LUT3=0} forces the shallower
+\code{Pair2}/\code{Leaf2} prefixes at every depth --- the same path
+depth-4 trees take; depth-3 trees run \code{LeafBits} alone.
+
+\paragraph{Reading the cases.}
+Each round down a cascade reads a wider aligned bit window per slot,
+always keyed by the \emph{original} committed bits --- nothing
+per-tree is ever written between rounds, which is the point:
+
+\begin{center}
+\small
+\begin{tabular}{lll}
+\toprule
+round body & windows per slot & helper \\
+\midrule
+leaf round 1 & two 2-bit fields at $2b$ & inline \\
+\code{Leaf2}/\code{Leaf3} round 2 & two nibbles at $4b$ &
+  \code{leaf2\_cases} \\
+\code{Leaf3} round 3 & two bytes at $8b$ & \code{leaf3\_idx} \\
+\code{Pair2}/\code{Pair3} round 1 &
+  four 2-bit fields at $2b,\ 2b{+}2^k$ & \code{pair2\_cases} \\
+\code{Pair3} round 2 & four nibbles at $4b,\ 4b{+}2^k$ &
+  \code{pair3\_idx} \\
+\code{T4Bits} round 1 & 16 single bits & \code{t4bits\_idx} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The windows are \S\ref{sec:roundfold}'s contiguous-block fact made
+physical: after $f$ folds an entry's selecting bits are one aligned
+$2^{f}{\cdot}w$-bit block, and the E/O offset $2^k$ stays even at
+every round, so no window ever straddles a word.
+
+\paragraph{Economics.}
+The count that decides everything: an executed fold stores one value
+per position \emph{per tree}; a stashed one stores 4 (resp.\ 16)
+values per position \emph{in total}.  Materialising at round $j$ thus
+costs $\mathit{live}\cdot 2^{k-j}$ values per side; the stash costs
+$4\cdot 2^{k-j}$ resp.\ $16\cdot 2^{k-j}$
+entries per side \emph{per $\tau$ set} --- factors $\mathit{live}/4$
+and $\mathit{live}/16$, i.e.\ $512\times$ and $128\times$ at the
+deployed $s = 11$.  Concretely, at the $n = 28$ leaf layer ($k = 16$,
+$\mathit{live} = 2048$): executing round 1's fold would write 2 GiB of
+round-2 buffers, where the stash is 4 MiB; round 2's stash is 8 MiB
+against a 1 GiB materialisation; and the first dense buffers, at
+round 3's fold, are $2^{n-3}\cdot 16$ B $= 512$ MiB.  It is this LUT
+prefix depth, not the storage schedule, that fixes the bottom layers'
+resident set.
+
+\subsection{Use 3: generating the dense region from $T4$}
+\label{sec:jit}
+
+Above the pair layer the entropy argument runs out ($r + f \le 2$), so
+$T4$ is used not to \emph{avoid} buffers but to \emph{create} them
+cheaply --- and the remaining freedom, which level is stored, which
+regenerated, which implicit, is the memory schedule.
+
+\paragraph{The stored chain, and the build.}
+\code{build\_levels} builds each tree's upper levels bottom-up by
+repeated \code{parent\_halves\_top} ($v[i] = E[i]\cdot O[i]$,
+re-split at the new midpoint), parallel across trees, then regroups the
+chains level-major; the roots fall out of level 1.  The chain's
+\emph{top} level is produced directly from bits and $T4$
+(\code{gen\_top}), one subcube of the level-width observation
+(\S\ref{sec:width}) per position: under L/2 one $T4$ gather ($=$ level
+$d{-}2$); under L/4 the product of the pair $\{y,\ y{+}2^{d-3}\}$ ---
+2 gathers, 1 multiply ($=$ level $d{-}3$); under L/8 the quadruple
+$\{y,\ y{+}2^{d-4},\ y{+}2^{d-3},\ y{+}3\cdot 2^{d-4}\}$ --- 4 gathers,
+3 multiplies ($=$ level $d{-}4$).  Levels $d$ and $d{-}1$ (and, below
+L/2, $d{-}2$) therefore never exist at build time: each of their
+positions is gathered exactly once, with the materialise-then-read
+round trip removed.  The chain that remains sums to
+${\approx}\,2^{\mathrm{top}+1}$ values per tree --- a quarter of the
+leaf count under L/4, an eighth under L/8, whence the names --- and
+\code{drive\_grouped} takes each level with \code{mem::take} as its
+layer starts, so the chain shrinks as the forest climbs.  The stored
+chain and the JIT level below it are equal-sized and never
+simultaneously live.
+
+\paragraph{The JIT level, and fused generation.}
+Under L/4, layer $d{-}3$ regenerates its input level $d{-}2$ per tree
+($2^{d-3}$ values per half, one 4-bit-indexed $T4$ gather each) into
+dense buffers that die when the layer ends; under L/8, layer $d{-}4$
+does the same for level $d{-}3$ at two gathers and a multiply per
+value.  By default the generation pass is not just a write:
+\code{jit\_layer\_generate} accumulates the layer's opening round(s)
+\emph{as it writes}.  In the plain form
+(\code{dense\_jit\_fused\_round1}) that is round 1's coefficient
+triple; with the driver's double-fold on and $k \ge 3$
+(\code{dense\_jit\_fused\_grid}) it is the whole $3{\times}3$
+bivariate grid
+$G(X_1, X_2) = \sum_b V(b)\,L(X_1, X_2, b)\,R(X_1, X_2, b)$ --- nine
+field elements per tree, from which round 1's message
+$\sum_{x_2} \eq_1(x_2;\, q)\,G(X_1, x_2)$ \emph{and} round 2's
+$G(\rho_1, X_2)$ both derive, so the level's first actual read is
+round 3's pass, which then folds two deferred challenges at once.
+Either way the result reaches the driver through its
+\code{pre\_round1} hook and is value-exact against the passes it
+replaces: XOR accumulation is order-free and the deferred reduction
+$\Ftwo$-linear.
+
+\paragraph{The 4-leaf round (L/8 only).}
+One level further up, \code{T4Bits} runs a whole layer off bits:
+each entry is a single inline 16-case $T4$ gather ---
+\code{t4bits\_idx} assembles $(j{\ll}4) \,|\, (c_E{\ll}2) \,|\, c_O$
+from four committed bits read straight from the transposed leaf
+halves at $j$ and $j + 2^{k+1}$ --- with dense buffers at its fold.
+The layer's input level is neither stored nor regenerated; combined
+with the JIT level below it, this is what makes L/8 an eighth.
+
+\paragraph{The three schedules.}
+The schedules differ in nothing but the fate of levels $d{-}2$ and
+$d{-}3$:
+
+\begin{center}
+\small
+\begin{tabular}{llll}
+\toprule
+ & L/2 (\code{l2}) & L/4 (default) & L/8 (\code{l8}) \\
+\midrule
+chain tops at & level $d{-}2$ & level $d{-}3$ & level $d{-}4$ \\
+per top position & 1 $T4$ gather & 2 gathers, 1 mul & 4 gathers, 3 muls \\
+level $d{-}2$ & stored & JIT at layer $d{-}3$ & implicit (\code{T4Bits}) \\
+level $d{-}3$ & stored & stored & JIT at layer $d{-}4$ \\
+peak resident & ${\approx}2^n{\cdot}8$\,B & ${\approx}2^n{\cdot}4$\,B &
+  ${\approx}2^n{\cdot}2$\,B \\
+needs depth & $\ge 4$ & $\ge 4$ & $\ge 5$ (else L/4) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Schedule choice is a near-pure \emph{memory} decision.  The measured
+rule of thumb: one $T4$ gather sweep costs about one streaming pass
+over the level it would have saved --- so L/2, which removes the JIT
+sweep but doubles the resident set, comes out flat to worse than L/4,
+while L/8 costs $+5$--$13\,\%$ of prove and is what makes $n \ge 31$
+fit a 16\,GB box.  The time levers live inside the round bodies of
+\S\S\ref{sec:msgs}--\ref{sec:stash}, not in the ladder.
+
+\paragraph{Only live columns are built.}
+A committed column whose bits are all zero has every leaf
+$\alpha^0 = 1$, hence every level and its root $= 1$.  Since a phase-A
+round message is $\sum_c \eq(c, z_c)\,H_c$ and every constant-1 tree
+has the \emph{same} $H_c$, the trailing run of zero columns collapses
+into \emph{one} synthetic group with all-ones buffers and scale
+$\sum_{c \ge \mathit{live}} \eq(c, z_c)$ (\code{col\_elide},
+\code{live\_cols}).  The absorbed root vector is still padded with the
+known $1$s, so the statement is unchanged; on a JIT layer the
+synthetic group is born inside the generation pass.  Char-2
+re-association is exact, so the transcript is byte-identical to the
+un-elided forest (\code{col\_elision\_matches\_full}): a witness of
+$N$ cells padded to $2^n$ pays the forest for
+$\lceil N / 2^{t + \log_2 W} \rceil$ columns instead of $2^s$.
+Everything in this section runs over the live leading trees only.
+
+\paragraph{The ladder, per layer.}
+Seen from the layers, the default schedule reads:
+
+\begin{center}
+\small
+\begin{tabular}{lllll}
+\toprule
+layer & input level & entries exist as & LUT rounds & dense born \\
+\midrule
+$d{-}1$ (leaf) & leaves & $1 + m\tau$ over the $\tau$ halves &
+  1--3 (2-bit, nibble, byte) & round 3's fold \\
+$d{-}2$ (pair) & $d{-}1$ & 4-case \code{te}/\code{to} selects &
+  1, 2 & round 2's fold \\
+$d{-}3$ & $d{-}2$ & JIT from $T4$ gathers & (fused into generation) &
+  at generation \\
+$\le d{-}4$ & $\le d{-}3$ & stored chain & --- & prebuilt \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Why the transcript is unchanged}
+\label{sec:identity}
+
+Every device above is a re-association of the same field arithmetic:
+precombined entries are subset sums the dense path computes per entry
+(distributivity); the char-2 identities $1 + 1 = 0$ and
+$(1{+}\rho) + \rho = 1$ are what cancel the leaves' $1$s and keep folded
+entries affine; XOR accumulation is order-free and the deferred wide
+reduction $\Ftwo$-linear.  Same field elements, same transcript order;
+the verifier and the proof codec never learn which path ran.  The
+byte-identity is pinned in every schedule and depth regime
+(\code{lazy\_matches\_eager}, \code{lazy\_multi\_matches\_eager},
+\code{col\_elision\_matches\_full}).
+
+% ===========================================================================
+\section{Where this sits in the code}
+\label{sec:code}
+
+\begin{center}
+\small
+\begin{tabular}{>{\raggedright\arraybackslash}p{5.9cm}>{\raggedright\arraybackslash}p{8.9cm}}
+\toprule
+this note & code \\
+\midrule
+the layer loop (\S\ref{sec:descent}) &
+  \code{drive\_grouped} / \code{verify\_merged\_forest} \\
+per-layer proof (phase A, phase B, $(p,q)$) &
+  \code{MergedLayer} (\code{sc\_x}, \code{sc\_c}, \code{pair}) \\
+the line challenge $\lambda$ & \code{mu} \\
+the integer folds $u_c$ & \code{fold\_values\_bits}; proof field \code{us} \\
+$\alpha$-power table $v(i)$ & \code{chunk\_pow2\_table} \\
+$R$ table / $m$ table (\S\ref{sec:discharge}) &
+  \code{row\_bit\_weights} / \code{xi\_combined\_rows} \\
+the presum & \code{MultiDegreeSumcheck} in
+  \code{prove/verify\_int\_eval\_merged\_common} \\
+range/generator/root checks, $\mu$ extraction &
+  \code{verify\_int\_eval\_merged\_common} \\
+chunk loop, $\eta$-RLC, the one Ligerito call &
+  \code{prove/verify\_mle\_eval\_mod\_q\_ligerito} \\
+the lazy prover & \code{prove\_merged\_forest\_lazy} \\
+LUT round bodies (\S\ref{sec:msgs}--\ref{sec:stash}) &
+  \code{GroupBufs}: \code{LeafBits}, \code{Leaf2Bits}, \code{Leaf3Bits},
+  \code{Pair2Bits}, \code{Pair3Bits}, \code{T4Bits} \\
+leaf tables $\code{t\_a0}/\code{t\_a1}/\Delta\Delta/\code{w\_sum}$ &
+  \code{build\_leaf\_tables} \\
+fold/stash tables & \code{build\_leaf\_fold\_tables},
+  \code{build\_pair2\_fold\_tables} \\
+shared level tables & \code{leaf\_tau\_halves},
+  \code{layer1\_pair\_table}, \code{te}/\code{to}, $T4$ \\
+JIT generation (fused round 1 / grid) & \code{jit\_layer\_generate} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+For the checks in full detail see \code{docs/verifier-note/}; for the
+schedules, kernels, fusion, and the measured cost tables see
+\code{docs/forest-gkr-note/}; for the surrounding pipeline (commit,
+ring switch, Ligerito, serialization) see \code{docs/DESIGN.md}.  The
+standard caveats carry over: flock's Merkle domain separation is a
+flagged upstream item, the ad-hoc Ligerito config regime is unaudited,
+and the scheme is not zero-knowledge.
+
+% ===========================================================================
+\begin{thebibliography}{9}\small
+
+\bibitem{GKR15} S.~Goldwasser, Y.~T.~Kalai, G.~N.~Rothblum.
+\emph{Delegating computation: interactive proofs for muggles.}
+J.~ACM 62(4), 2015 (STOC 2008).
+
+\bibitem{Thaler13} J.~Thaler.
+\emph{Time-optimal interactive proofs for circuit evaluation.}
+CRYPTO 2013.  (The product-tree GKR specialisation the layers
+instantiate.)
+
+\bibitem{Libra} T.~Xie, J.~Zhang, Y.~Zhang, C.~Papamanthou, D.~Song.
+\emph{Libra: succinct zero-knowledge proofs with optimal prover
+computation.}  CRYPTO 2019.  (The eq-factored linear-time prover
+lineage.)
+
+\bibitem{Soukhanov} L.~Soukhanov.
+\emph{The characteristic-2 field-switching note}, \S9.  (The
+integer-MLE-over-$\Ftwo$ construction F2Z realises; internal.)
+
+\end{thebibliography}
+
+\end{document}
