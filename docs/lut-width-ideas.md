@@ -165,6 +165,19 @@ where tables outgrow L2.
 
 ### I4 — Factored `T4` consumption at n ≥ 30 (and `te`/`to` as views)
 
+> **MEASURED 2026-08-20** (`T4Src`, landed default-ON for L/2+L/4 — where
+> `T4` is then never built at all — precombined kept on L/8;
+> `F2Z_T4_FACTORED=0/1` forces; alternated in-window pairs): L/4 `gen_top`
+> **−23%** at n=28 (53.5→41.0 ms medians, far less volatile), build/bitgen
+> **−9..−12%** at n=29 (3/3 pairs each, and churn-immune: worst-case
+> bitgen 130 vs 215 ms under a swap event); l8 at n=30 the JIT wins −30%
+> (2/3 pairs) but the 4-gather `gen_top` is wash-to-worse (its extra
+> multiplies bite) — hence the schedule-split default. The surprise: the
+> win starts at n=28 where `T4` is nominally L2-resident — the paired
+> `at(y)·at(y+h3)` access defeats locality earlier than table size alone
+> suggests. Footprint: −8/−16/−32 MiB (n=28/29/30) plus the build
+> multiplies, on the default schedule.
+
 `T4` is gathered by `gen_top`, the JIT layer, and `T4Bits`; at n=30/32 it is
 32/128 MiB and every gather misses (the `F2Z_T4_PRFM` default flipping on at
 ≥16 MiB is the tell). By identity (C):

@@ -167,6 +167,58 @@ fn build_levels(
     (levels, roots)
 }
 
+/// Where a level-(d−2) value comes from: the precombined 16-case `T4`
+/// gather, or — probe I4 of `docs/lut-width-ideas.md`
+/// (`F2Z_T4_FACTORED=1`) — the same product recomputed from the 4-case
+/// `te`/`to` tables (`T4[y≪4|(cE≪2)|cO] = te[(y≪2)|cE]·to[(y≪2)|cO]`, the
+/// build's own association): one multiply per value against two
+/// line-local streams with half the footprint, in place of a
+/// data-dependent 256-B-group line pick. Identical field elements either
+/// way, so the transcript is byte-identical.
+#[derive(Clone, Copy)]
+enum T4Src<'a> {
+    Pre(&'a [Gf]),
+    Fact { te: &'a [Gf], to: &'a [Gf] },
+}
+
+impl T4Src<'_> {
+    #[inline(always)]
+    #[allow(clippy::arithmetic_side_effects)]
+    fn get(&self, j: usize, ce: usize, co: usize) -> Gf {
+        match self {
+            T4Src::Pre(t4) => t4[(j << 4) | (ce << 2) | co],
+            T4Src::Fact { te, to } => te[(j << 2) | ce] * to[(j << 2) | co],
+        }
+    }
+}
+
+/// Factored-T4 knob: `F2Z_T4_FACTORED=0/1` forces precombined/factored
+/// for the single-instance prover's `gen_top`/JIT consumers; unset (the
+/// default) picks by schedule — factored on L/2 and L/4 (where `T4` is
+/// then not built at all: −16·2^{d−2}·16 B footprint and the build
+/// multiplies), precombined on L/8 (T4Bits needs the table anyway, and
+/// its 4-gather `gen_top` amplifies the factored form's extra
+/// multiplies). Measured (alternated in-window pairs): L/4 `gen_top`
+/// −23% at n=28 (53.5→41.0 ms medians, far less volatile) and
+/// build/bitgen −9..−12% at n=29, 3/3 pairs each; l8 at n=30 the JIT
+/// wins −30% (2/3) but `gen_top` is wash-to-worse on a churned box.
+/// Byte-identical either way (the build's own association is `te·to`).
+/// Read once per process.
+fn t4_factored() -> Option<bool> {
+    static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+    *ENV.get_or_init(|| match std::env::var("F2Z_T4_FACTORED") {
+        Ok(v) if v == "0" => Some(false),
+        Ok(v) if v == "1" => Some(true),
+        _ => None,
+    })
+}
+
+/// The [`T4Src`] for a consumer site under the resolved knob setting.
+#[inline]
+fn t4_src<'a>(fact: bool, t4: &'a [Gf], te: &'a [Gf], to: &'a [Gf]) -> T4Src<'a> {
+    if fact { T4Src::Fact { te, to } } else { T4Src::Pre(t4) }
+}
+
 /// Level-(d−2) values straight from one tree's TRANSPOSED leaf-bit halves
 /// and the 16-case 4-leaf table: position `j` selects
 /// `t4[(j≪4) | (cE≪2) | cO]` with `cE = lbits.bit(j) | rbits.bit(j)≪1` and
@@ -177,7 +229,7 @@ fn build_levels(
 /// over the column-lane store, which touch one full word per bit (the
 /// build/JIT gen was the dominant residual read stream at big n).
 #[allow(clippy::arithmetic_side_effects)]
-fn t4_level_values(lbits: &[u64], rbits: &[u64], t4: &[Gf], q1: usize) -> Vec<Gf> {
+fn t4_level_values(lbits: &[u64], rbits: &[u64], t4: T4Src, q1: usize) -> Vec<Gf> {
     let mut out = Vec::with_capacity(q1);
     if q1 >= 64 {
         let wq = q1 >> 6;
@@ -189,7 +241,7 @@ fn t4_level_values(lbits: &[u64], rbits: &[u64], t4: &[Gf], q1: usize) -> Vec<Gf
             for b in 0..64 {
                 let ce = (((le >> b) & 1) | (((ro >> b) & 1) << 1)) as usize;
                 let co = (((lo >> b) & 1) | (((roo >> b) & 1) << 1)) as usize;
-                out.push(t4[(((w << 6) | b) << 4) | (ce << 2) | co]);
+                out.push(t4.get((w << 6) | b, ce, co));
             }
         }
     } else {
@@ -197,7 +249,7 @@ fn t4_level_values(lbits: &[u64], rbits: &[u64], t4: &[Gf], q1: usize) -> Vec<Gf
         for j in 0..q1 {
             let ce = bit(lbits, j) | (bit(rbits, j) << 1);
             let co = bit(lbits, j + q1) | (bit(rbits, j + q1) << 1);
-            out.push(t4[(j << 4) | (ce << 2) | co]);
+            out.push(t4.get(j, ce, co));
         }
     }
     out
@@ -209,7 +261,7 @@ fn t4_level_values(lbits: &[u64], rbits: &[u64], t4: &[Gf], q1: usize) -> Vec<Gf
 /// then be sliced (a transient 2× on the biggest level the forest ever
 /// stores).
 #[allow(clippy::arithmetic_side_effects)]
-fn t4_level_halves(lbits: &[u64], rbits: &[u64], t4: &[Gf], q1: usize) -> (Vec<Gf>, Vec<Gf>) {
+fn t4_level_halves(lbits: &[u64], rbits: &[u64], t4: T4Src, q1: usize) -> (Vec<Gf>, Vec<Gf>) {
     let hh = q1 >> 1;
     let mut e = Vec::with_capacity(hh);
     let mut o = Vec::with_capacity(hh);
@@ -226,7 +278,7 @@ fn t4_level_halves(lbits: &[u64], rbits: &[u64], t4: &[Gf], q1: usize) -> (Vec<G
             for b in 0..64 {
                 let ce = (((le >> b) & 1) | (((ro >> b) & 1) << 1)) as usize;
                 let co = (((lo >> b) & 1) | (((roo >> b) & 1) << 1)) as usize;
-                out.push(t4[(((w << 6) | b) << 4) | (ce << 2) | co]);
+                out.push(t4.get((w << 6) | b, ce, co));
             }
         }
     } else {
@@ -284,7 +336,7 @@ fn jit_grid() -> bool {
 struct T4At<'a> {
     lbits: &'a [u64],
     rbits: &'a [u64],
-    t4: &'a [Gf],
+    t4: T4Src<'a>,
     q1: usize,
 }
 
@@ -298,14 +350,17 @@ impl T4At<'_> {
         }
         let ce = bit(self.lbits, j) | (bit(self.rbits, j) << 1);
         let co = bit(self.lbits, j + self.q1) | (bit(self.rbits, j + self.q1) << 1);
-        self.t4[(j << 4) | (ce << 2) | co]
+        self.t4.get(j, ce, co)
     }
 
     /// `prfm pldl1keep` for position `j`'s table line — the same index
     /// computation as [`Self::at`], issued ahead of use ([`t4_prfm`]).
+    /// Precombined source only: the factored streams are line-local in
+    /// the position, which the hardware prefetcher already covers.
     #[inline(always)]
     #[allow(clippy::arithmetic_side_effects)]
     fn prefetch_at(&self, j: usize) {
+        let T4Src::Pre(t4) = self.t4 else { return };
         #[inline(always)]
         fn bit(bits: &[u64], p: usize) -> usize {
             ((bits[p >> 6] >> (p & 63)) & 1) as usize
@@ -313,7 +368,7 @@ impl T4At<'_> {
         let ce = bit(self.lbits, j) | (bit(self.rbits, j) << 1);
         let co = bit(self.lbits, j + self.q1) | (bit(self.rbits, j + self.q1) << 1);
         crate::piop::sumcheck::eq_factored::prefetch_l1(
-            self.t4,
+            t4,
             (j << 4) | (ce << 2) | co,
         );
     }
@@ -930,7 +985,13 @@ fn prove_merged_forest_lazy_sched(
     // treats every 16-entry row as its own nested parallel iterator and
     // the collect goes unindexed — measured ~836× slower than the same
     // arithmetic serially (upstream zinc-plus fix `e19b0e1`, 2026-07-16).
-    let t4: Vec<Gf> = {
+    // Under [`t4_factored`] the consumers recompute te·to themselves, so
+    // the table is only built where the T4Bits round needs it precombined
+    // (the L/8 schedule).
+    let t4f = t4_factored().unwrap_or(!(l8 && depth >= 5));
+    let t4: Vec<Gf> = if t4f && !(l8 && depth >= 5) {
+        Vec::new()
+    } else {
         let rows: Vec<[Gf; 16]> = cfg_into_iter!(0..q1, 1 << 10)
             .map(|y| {
                 let mut row = [Gf::one(); 16];
@@ -955,7 +1016,7 @@ fn prove_merged_forest_lazy_sched(
         let (levels, roots) = build_levels(live, depth - 2, |c| {
             let cb = col_bits.as_ref().expect("leaf bits alive for the build");
             let (lb, rb) = &cb[c];
-            t4_level_halves(lb, rb, &t4, q1)
+            t4_level_halves(lb, rb, t4_src(t4f, &t4, &te, &to), q1)
         });
         drop(t4);
         let bit_layer = |ell: usize, _zx: &[Gf]| -> Option<BitLayer> {
@@ -1023,7 +1084,7 @@ fn prove_merged_forest_lazy_sched(
             // exists: each of its positions is gathered exactly once
             // here, so this is the same gather count with the
             // materialise-then-read round trip removed.
-            let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
+            let at = T4At { lbits: lb, rbits: rb, t4: t4_src(t4f, &t4, &te, &to), q1 };
             let v3 = |y: usize| -> Gf {
                 if t4_pf {
                     let yp = y + PRFM_DIST;
@@ -1053,7 +1114,7 @@ fn prove_merged_forest_lazy_sched(
                     let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
                     jit_layer_generate(hh, zx, live, has_const, |c| {
                         let (lb, rb) = &cb[c];
-                        let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
+                        let at = T4At { lbits: lb, rbits: rb, t4: t4_src(t4f, &t4, &te, &to), q1 };
                         (
                             move |j| at.at(j),
                             move |j| {
@@ -1071,7 +1132,7 @@ fn prove_merged_forest_lazy_sched(
                             // get truncate()-folded, which never releases
                             // capacity) through the whole layer — a split_off
                             // would carry a 2× allocation.
-                            let full = t4_level_values(lb, rb, &t4, q1);
+                            let full = t4_level_values(lb, rb, t4_src(t4f, &t4, &te, &to), q1);
                             GroupBufs::Dense(vec![(
                                 full[..hh].to_vec(),
                                 full[hh..].to_vec(),
@@ -1156,7 +1217,7 @@ fn prove_merged_forest_lazy_sched(
         let (lb, rb) = &cb[c];
         // Level d−4 straight from T4 gathers (each position once) — the
         // full level-(d−2) buffer never exists (see the L/4 build).
-        let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
+        let at = T4At { lbits: lb, rbits: rb, t4: t4_src(t4f, &t4, &te, &to), q1 };
         let v4 = |y: usize| -> Gf {
             if t4_pf {
                 let yp = y + PRFM_DIST;
@@ -1187,7 +1248,7 @@ fn prove_merged_forest_lazy_sched(
                 let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
                 jit_layer_generate(hh, zx, live, has_const, |c| {
                     let (lb, rb) = &cb[c];
-                    let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
+                    let at = T4At { lbits: lb, rbits: rb, t4: t4_src(t4f, &t4, &te, &to), q1 };
                     (
                         move |y| at.at(y) * at.at(y + h3),
                         move |y| {
@@ -1202,7 +1263,7 @@ fn prove_merged_forest_lazy_sched(
                 let bufs: Vec<GroupBufs<Gf>> = cfg_into_iter!(0..live)
                     .map(|c| {
                         let (lb, rb) = &cb[c];
-                        let full = t4_level_values(lb, rb, &t4, q1);
+                        let full = t4_level_values(lb, rb, t4_src(t4f, &t4, &te, &to), q1);
                         let e: Vec<Gf> = (0..hh).map(|y| full[y] * full[y + h3]).collect();
                         let o: Vec<Gf> = (hh..h3).map(|y| full[y] * full[y + h3]).collect();
                         GroupBufs::Dense(vec![(e, o)])
@@ -1527,6 +1588,9 @@ pub fn prove_merged_forest_lazy_quad(
     };
     let te = build_cases(0);
     let to = build_cases(q1);
+    // QUAD path: factored T4 consumption is opt-in only (unmeasured
+    // here; `T4` is always built — the arity-4 layers keep reading it).
+    let t4f = t4_factored().unwrap_or(false);
     let t4: Vec<Gf> = {
         let rows: Vec<[Gf; 16]> = cfg_into_iter!(0..q1, 1 << 10)
             .map(|y| {
@@ -1549,7 +1613,7 @@ pub fn prove_merged_forest_lazy_quad(
     let (mut levels, roots) = build_levels_quad(num_trees, depth - 3, |c| {
         let cb = col_bits.as_ref().expect("leaf bits alive for the build");
         let (lb, rb) = &cb[c];
-        let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
+        let at = T4At { lbits: lb, rbits: rb, t4: t4_src(t4f, &t4, &te, &to), q1 };
         let v3 = |y: usize| -> Gf {
             if t4_pf {
                 let yp = y + PRFM_DIST;
@@ -1587,7 +1651,7 @@ pub fn prove_merged_forest_lazy_quad(
             cfg_into_iter!(0..num_trees)
                 .map(|c| {
                     let (lb, rb) = &cb[c];
-                    let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
+                    let at = T4At { lbits: lb, rbits: rb, t4: t4_src(t4f, &t4, &te, &to), q1 };
                     let quarter = |lo: usize| -> Vec<Gf> {
                         (lo..lo + hq)
                             .map(|j| {
@@ -1680,7 +1744,7 @@ pub fn prove_merged_forest_lazy_quad(
                     cfg_into_iter!(0..num_trees)
                         .map(|c| {
                             let (lb, rb) = &cb[c];
-                            let at = T4At { lbits: lb, rbits: rb, t4: &t4, q1 };
+                            let at = T4At { lbits: lb, rbits: rb, t4: t4_src(t4f, &t4, &te, &to), q1 };
                             let (pair, coeffs) = dense_jit_fused_round1(
                                 hh,
                                 &v1,
@@ -1705,7 +1769,7 @@ pub fn prove_merged_forest_lazy_quad(
                 let bufs: Vec<GroupBufs<Gf>> = cfg_into_iter!(0..num_trees)
                     .map(|c| {
                         let (lb, rb) = &cb[c];
-                        let full = t4_level_values(lb, rb, &t4, q1);
+                        let full = t4_level_values(lb, rb, T4Src::Pre(&t4), q1);
                         GroupBufs::Dense(vec![(full[..hh].to_vec(), full[hh..].to_vec())])
                     })
                     .collect();
@@ -2396,7 +2460,7 @@ fn prove_merged_forest_lazy_multi_sched(
             let (lb, rb) = &cb[c];
             // Paired T4 gathers — level d−2 never materialises (see the
             // single prover's L/4 build).
-            let at = T4At { lbits: lb, rbits: rb, t4, q1 };
+            let at = T4At { lbits: lb, rbits: rb, t4: T4Src::Pre(t4), q1 };
             let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
             let v3 = |y: usize| -> Gf {
                 if t4_pf {
@@ -2426,7 +2490,7 @@ fn prove_merged_forest_lazy_multi_sched(
                             .as_ref()
                             .expect("leaf bits alive for the JIT regen");
                         let (lb, rb) = &cb[c];
-                        let at = T4At { lbits: lb, rbits: rb, t4, q1 };
+                        let at = T4At { lbits: lb, rbits: rb, t4: T4Src::Pre(t4), q1 };
                         let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
                         (
                             move |j| at.at(j),
@@ -2448,7 +2512,7 @@ fn prove_merged_forest_lazy_multi_sched(
                             let (lb, rb) = &cb[c];
                             // Exact-capacity halves: a split_off would carry
                             // 2× allocation through the layer.
-                            let full = t4_level_values(lb, rb, t4, q1);
+                            let full = t4_level_values(lb, rb, T4Src::Pre(t4), q1);
                             GroupBufs::Dense(vec![(
                                 full[..hh].to_vec(),
                                 full[hh..].to_vec(),
@@ -2534,7 +2598,7 @@ fn prove_merged_forest_lazy_multi_sched(
         let (lb, rb) = &cb[c];
         // Paired T4 gathers — level d−2 never materialises (see the
         // single prover's L/8 build).
-        let at = T4At { lbits: lb, rbits: rb, t4, q1 };
+        let at = T4At { lbits: lb, rbits: rb, t4: T4Src::Pre(t4), q1 };
         let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
         let v4 = |y: usize| -> Gf {
             if t4_pf {
@@ -2567,7 +2631,7 @@ fn prove_merged_forest_lazy_multi_sched(
                         .as_ref()
                         .expect("leaf bits alive for the JIT regen");
                     let (lb, rb) = &cb[c];
-                    let at = T4At { lbits: lb, rbits: rb, t4, q1 };
+                    let at = T4At { lbits: lb, rbits: rb, t4: T4Src::Pre(t4), q1 };
                     let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
                     (
                         move |y| at.at(y) * at.at(y + h3),
@@ -2588,7 +2652,7 @@ fn prove_merged_forest_lazy_multi_sched(
                             .as_ref()
                             .expect("leaf bits alive for the JIT regen");
                         let (lb, rb) = &cb[c];
-                        let full = t4_level_values(lb, rb, t4, q1);
+                        let full = t4_level_values(lb, rb, T4Src::Pre(t4), q1);
                         let e: Vec<Gf> = (0..hh).map(|y| full[y] * full[y + h3]).collect();
                         let o: Vec<Gf> = (hh..h3).map(|y| full[y] * full[y + h3]).collect();
                         GroupBufs::Dense(vec![(e, o)])
