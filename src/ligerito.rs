@@ -779,10 +779,62 @@ fn prove_fold_forest_fast(
 
 /// `v_c = Σ_b w_b·D[(b,c)]` computed from the packed bit rows (W-bit cells
 /// reassembled per set bit) — avoids re-streaming the `u128` data tensor.
+///
+/// Two exact forms (u128 addition is associative and the total stays
+/// `< 2^127` by the chunking bound, so reassociation is value-exact —
+/// identical `us`, identical transcript):
+///
+/// - **nibble-LUT** (the default — S3 of `docs/forest-speedup-ideas.md`):
+///   precombine each 4-bit group's weight sums ONCE
+///   (`tbl[g≪4 | nib] = Σ_{i∈nib} w_{4g+i}·2^{j}`, `16·row_len/4` u128
+///   entries shared by all `2^s` columns), then each column is an
+///   unconditional table-add per nonzero nibble — no per-bit
+///   trailing-zeros walk, no data-dependent shift;
+/// - **tz-walk** (`F2Z_FOLDV_LUT=0`): the original per-set-bit scan.
 #[allow(clippy::arithmetic_side_effects)]
 pub(crate) fn fold_values_bits(p: &IntEvalParams, rows: &[Vec<u64>], row_weights: &[u128]) -> Vec<u128> {
     let log_w = p.word_bits.trailing_zeros() as usize;
     let mask = p.word_bits.wrapping_sub(1);
+    if foldv_lut() {
+        // Per-BIT weight of bit i: w_{i≫log_w}·2^{i&mask}; zero beyond
+        // row_len (the packed words' padding bits are zero anyway, but
+        // the table covers every word's 16 nibble groups).
+        let row_len = p.rows() << log_w;
+        let words = row_len.div_ceil(64);
+        let groups = words << 4;
+        let wbit = |i: usize| -> u128 {
+            if i < row_len { row_weights[i >> log_w] << (i & mask) } else { 0 }
+        };
+        let tbl: Vec<u128> = {
+            let rows_t: Vec<[u128; 16]> = cfg_into_iter!(0..groups, 1 << 12)
+                .map(|g| {
+                    let mut t = [0u128; 16];
+                    for nib in 1..16usize {
+                        // t[nib] = t[nib without its lowest bit] + that bit's weight.
+                        t[nib] = t[nib & (nib - 1)]
+                            + wbit((g << 2) | nib.trailing_zeros() as usize);
+                    }
+                    t
+                })
+                .collect();
+            rows_t.into_flattened()
+        };
+        return cfg_into_iter!(0..p.cols())
+            .map(|c| {
+                let mut acc = 0u128;
+                for (wi, &word) in rows[c].iter().enumerate() {
+                    let mut w = word;
+                    let mut g = wi << 4;
+                    while w != 0 {
+                        acc += tbl[(g << 4) | (w & 15) as usize];
+                        w >>= 4;
+                        g += 1;
+                    }
+                }
+                acc
+            })
+            .collect();
+    }
     cfg_into_iter!(0..p.cols())
         .map(|c| {
             let mut acc = 0u128;
@@ -798,6 +850,14 @@ pub(crate) fn fold_values_bits(p: &IntEvalParams, rows: &[Vec<u64>], row_weights
             acc
         })
         .collect()
+}
+
+/// [`fold_values_bits`] form choice: `F2Z_FOLDV_LUT=0` opts back into the
+/// per-set-bit trailing-zeros walk (diagnostic / A-B). Read once per
+/// process.
+fn foldv_lut() -> bool {
+    static ENV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENV.get_or_init(|| std::env::var("F2Z_FOLDV_LUT").map_or(true, |v| v != "0"))
 }
 
 /// One fused pass folding `K` weight sets at once: per column,

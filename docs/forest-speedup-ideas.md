@@ -62,6 +62,13 @@ pass also accumulates the layer's next round-pair grid, deleting the first
 low risk; byte-identical by the same order-free-XOR argument.
 
 ### S3 — 4-Russians the integer fold (`fold_v`, 27 ms)
+
+> **MEASURED 2026-08-20, LANDED DEFAULT-ON** (`F2Z_FOLDV_LUT=0` opts out):
+> `mc:fold_v` 24.7–34.5 → **5.8–6.1 ms** at n=28 (~4.5×, −4–6% of prove)
+> and run-to-run volatility collapses (±0.3 ms vs ±10). The multi-set
+> (`fold_cols_multi_k`, extension path) keeps the tz-walk for now — its K
+> sets would need K tables; same trick applies if ext:step1_folds ever
+> shows up in a profile.
 `fold_values_bits` walks set bits (trailing-zeros loop) and does a
 data-dependent `acc += row_weights[i] << j` per bit. Precombine 4-row
 groups once per prove: `T[g][nibble] = Σ_{i∈nibble} W_{4g+i}` (16·2^{t−2}
