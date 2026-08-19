@@ -110,6 +110,22 @@ miss" says measure it at n ≥ 30.
 
 ### I2 — Never precombine a stash: factored rounds 4 and 5 (`Leaf4Bits`/`Leaf5Bits`)
 
+> **MEASURED 2026-08-20** (`Leaf4Bits` landed, opt-in `F2Z_LUT4=1`, depth
+> ≥ 6; byte-identity pinned depths 6–9 × {L/4, l8, l2, fuse-off, LEAF8,
+> LUT3-off}): the mechanism works exactly as designed — the ρ₃ reweight
+> is ~free (sub-ms, shared), round 4 runs off bits at 13.5 ms + 18.2 ms
+> fold vs the 23–27 ms `leaf3mat` + a halved dense round 4 (n=28
+> medians), dense birth drops 512→256 MiB. Net time: **wash at n=28**
+> (prove −8%/+2%/−2% by pair), **inconclusive at n=30 l8** on a churned
+> box (pair1 −5% prove/−24% grid, pairs 2–3 churn-dominated losses).
+> **Peak RSS unchanged** (3.44→3.54 GB at n=30 l8): the process peak is
+> the BUILD phase (chain + hint), not the leaf residue — so I2 standalone
+> buys neither time nor peak; its value is (a) the proof that factored
+> stashes are byte-identical and cheap, and (b) the bottom half of the
+> L/16 program (I6), where the chain top moves too and the leaf residue
+> becomes the binding term. Default stays OFF; revisit inside I6 and on a
+> fresh box.
+
 Apply identity (B) instead of building `F₃`:
 
 - After ρ₃, **reweight `F₂` in place** (one shared sweep, `16·2^{k−2}` muls

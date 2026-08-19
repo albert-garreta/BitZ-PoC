@@ -844,6 +844,16 @@ pub(crate) fn forest_lut3() -> bool {
     std::env::var("F2Z_LUT3").map_or(true, |v| v != "0")
 }
 
+/// FOUR bit-driven leaf rounds (`Leaf4Bits` — probe I2 of
+/// `docs/lut-width-ideas.md`): the leaf residue halves again
+/// (`2^{d−4}`/side) with the shared-table footprint frozen at the 16-case
+/// level (round 3's fold ρ₃-reweights the stashed sets instead of
+/// building the width law's 256-case `F₃`). `F2Z_LUT4=1` opts in (needs
+/// depth ≥ 6, i.e. leaf k ≥ 5); default off pending measurement.
+pub(crate) fn forest_lut4() -> bool {
+    std::env::var("F2Z_LUT4").is_ok_and(|v| v == "1")
+}
+
 /// **Live-column elision** — the padding lever. A committed column whose
 /// bits are all zero folds to `u_c = 0`, so every leaf of its tree is
 /// `α^0 = 1`, every level is 1, and its root is 1. Such a tree costs the
@@ -1043,13 +1053,16 @@ fn prove_merged_forest_lazy_sched(
                 })
             } else if ell == depth - 1 {
                 let deep = depth >= 5 && forest_lut3();
+                let deep4 = depth >= 6 && forest_lut4();
                 Some(BitLayer {
                     bufs: col_bits
                         .take()
                         .expect("leaf bits consumed once")
                         .into_iter()
                         .map(|(lbits, rbits)| {
-                            if deep {
+                            if deep4 {
+                                GroupBufs::Leaf4Bits { lbits, rbits, tau_set: 0 }
+                            } else if deep {
                                 GroupBufs::Leaf3Bits { lbits, rbits, tau_set: 0 }
                             } else {
                                 GroupBufs::Leaf2Bits { lbits, rbits, tau_set: 0 }
@@ -1178,13 +1191,16 @@ fn prove_merged_forest_lazy_sched(
                 // after round 2. Under `F2Z_LUT3` (depth ≥ 5, so k ≥ 4)
                 // three rounds (Leaf3Bits): the leaf residue halves.
                 let deep = depth >= 5 && forest_lut3();
+                let deep4 = depth >= 6 && forest_lut4();
                 Some(BitLayer {
                     bufs: col_bits
                         .take()
                         .expect("leaf bits consumed once")
                         .into_iter()
                         .map(|(lbits, rbits)| {
-                            if deep {
+                            if deep4 {
+                                GroupBufs::Leaf4Bits { lbits, rbits, tau_set: 0 }
+                            } else if deep {
                                 GroupBufs::Leaf3Bits { lbits, rbits, tau_set: 0 }
                             } else {
                                 GroupBufs::Leaf2Bits { lbits, rbits, tau_set: 0 }
@@ -1317,13 +1333,20 @@ fn prove_merged_forest_lazy_sched(
             })
         } else if ell == depth - 1 {
             // Three bit-driven rounds (k = d−1 ≥ 4): the leaf-round set
-            // is ≈ L/8.
+            // is ≈ L/8 — four under `F2Z_LUT4` (depth ≥ 6): ≈ L/16.
+            let deep4 = depth >= 6 && forest_lut4();
             Some(BitLayer {
                 bufs: col_bits
                     .take()
                     .expect("leaf bits consumed once")
                     .into_iter()
-                    .map(|(lbits, rbits)| GroupBufs::Leaf3Bits { lbits, rbits, tau_set: 0 })
+                    .map(|(lbits, rbits)| {
+                        if deep4 {
+                            GroupBufs::Leaf4Bits { lbits, rbits, tau_set: 0 }
+                        } else {
+                            GroupBufs::Leaf3Bits { lbits, rbits, tau_set: 0 }
+                        }
+                    })
                     .collect(),
                 tau_sets: vec![leaf_tau.clone()],
                 pair_tau_sets: Vec::new(),

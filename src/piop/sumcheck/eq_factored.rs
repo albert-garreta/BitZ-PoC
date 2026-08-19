@@ -155,6 +155,24 @@ pub enum GroupBufs<F> {
         rbits: Vec<u64>,
         tau_set: usize,
     },
+    /// **Bit-affine leaf layer, FOUR bit-driven rounds** (`k ≥ 5` — probe
+    /// I2 of `docs/lut-width-ideas.md`): [`Leaf3Bits`](GroupBufs::Leaf3Bits)
+    /// one round deeper WITHOUT the 256-case `F₃` table the width law
+    /// would demand. Rounds 1–3 run its bodies unchanged; round 3's fold
+    /// keeps the bits and ρ₃-REWEIGHTS the stashed 16-case sets in place
+    /// of consuming them (even positions ×(1+ρ₃), odd ×ρ₃ —
+    /// [`reweight_fold_tables_in_place`]), so a round-4 entry is the XOR
+    /// of TWO gathers, `G[2p][c₀] + G[2p+1][c₁] = (1+ρ₃)F₂[2p][c₀] +
+    /// ρ₃F₂[2p+1][c₁]` — the fold IS a two-term factorization, the table
+    /// footprint stays frozen at the 16-case level. Round 4's message and
+    /// fold read two aligned 16-bit windows per side per slot; dense
+    /// buffers materialise only at round 4's fold (`2^{k−4}`/side — the
+    /// leaf residue halves again vs [`Leaf3Bits`](GroupBufs::Leaf3Bits)).
+    Leaf4Bits {
+        lbits: Vec<u64>,
+        rbits: Vec<u64>,
+        tau_set: usize,
+    },
     /// **Bit-selected product layer, TWO bit-driven rounds** (`k ≥ 3`):
     /// [`Pair2Bits`](GroupBufs::Pair2Bits) one round deeper — round 1 runs
     /// its case-LUT body unchanged; round 1's fold keeps the bits and
@@ -725,6 +743,171 @@ where
     Pair2FoldTables { f_e: build(&set.te), f_o: build(&set.to) }
 }
 
+/// The Leaf4Bits round-3 "fold": ρ₃-reweight a stashed 16-case set IN
+/// PLACE — even positions ×(1+ρ₃), odd ×ρ₃ — so the round-4 entry at
+/// position `p` is the XOR of two gathers,
+/// `G[2p][c₀] + G[2p+1][c₁] = (1+ρ₃)·F₂[2p][c₀] + ρ₃·F₂[2p+1][c₁]`
+/// (exact by distributivity). The fold IS a two-term factorization: the
+/// 256-case `F₃` of the width law is never built, the shared-table
+/// footprint stays at the 16-case level (`docs/lut-width-ideas.md` I2).
+/// Cost: one multiply per stashed entry, shared across every tree.
+#[allow(clippy::arithmetic_side_effects)]
+fn reweight_fold_tables_in_place<F>(rho: &F, one: &F, set: &mut Pair2FoldTables<F>)
+where
+    F: InnerTransparentField,
+{
+    let one_plus_rho = one.clone() + rho;
+    let rw = |t: &mut Vec<F>| {
+        for (q, chunk) in t.chunks_mut(16).enumerate() {
+            let f = if q & 1 == 0 { &one_plus_rho } else { rho };
+            for v in chunk.iter_mut() {
+                *v = f.clone() * &*v;
+            }
+        }
+    };
+    rw(&mut set.f_e);
+    rw(&mut set.f_o);
+}
+
+/// The Leaf3Bits round-3 message body (also Leaf4Bits round 3 — identical
+/// state): values INLINE from the stashed 16-case tables — one aligned
+/// byte per side per slot — then the dense single-pair 5-multiply
+/// schedule. Same field values as the dense round over materialised
+/// round-3 buffers (exact identities; the wide accumulation order matches
+/// the dense body's).
+#[allow(clippy::arithmetic_side_effects)]
+fn leaf3_round3_msg<F>(
+    vs: &Pair2FoldTables<F>,
+    lbits: &[u64],
+    rbits: &[u64],
+    half: usize,
+    suffix_t: &[F],
+    zero: &F,
+) -> (F, F, F)
+where
+    F: InnerTransparentField + WideMulAcc,
+{
+    let prfm = lut_prfm(half);
+    let mut a0 = F::wide_zero(zero);
+    let mut a1 = F::wide_zero(zero);
+    let mut a2 = F::wide_zero(zero);
+    for b in 0..half {
+        if prfm && b + PRFM_DIST < half {
+            let bp = b + PRFM_DIST;
+            let pp = bp << 3;
+            let plb = ((lbits[pp >> 6] >> (pp & 63)) & 255) as u32 as usize;
+            let prb = ((rbits[pp >> 6] >> (pp & 63)) & 255) as u32 as usize;
+            let ep = bp << 1;
+            prefetch_l1(&vs.f_e, (ep << 4) | leaf3_idx(plb & 15));
+            prefetch_l1(&vs.f_e, ((ep | 1) << 4) | leaf3_idx(plb >> 4));
+            prefetch_l1(&vs.f_o, (ep << 4) | leaf3_idx(prb & 15));
+            prefetch_l1(&vs.f_o, ((ep | 1) << 4) | leaf3_idx(prb >> 4));
+        }
+        let p = b << 3;
+        let bl = ((lbits[p >> 6] >> (p & 63)) & 255) as u32 as usize;
+        let br = ((rbits[p >> 6] >> (p & 63)) & 255) as u32 as usize;
+        let e = b << 1;
+        let l0 = &vs.f_e[(e << 4) | leaf3_idx(bl & 15)];
+        let l1 = &vs.f_e[((e | 1) << 4) | leaf3_idx(bl >> 4)];
+        let r0 = &vs.f_o[(e << 4) | leaf3_idx(br & 15)];
+        let r1 = &vs.f_o[((e | 1) << 4) | leaf3_idx(br >> 4)];
+        let w = &suffix_t[b];
+        let l0w = w.clone() * l0;
+        let l1w = w.clone() * l1;
+        let wc0 = F::mul_wide(&l0w, r0);
+        let w11 = F::mul_wide(&l1w, r1);
+        let dr = r1.clone() - r0;
+        let dl = l1w - &l0w;
+        let wc2 = F::mul_wide(&dl, &dr);
+        F::wide_add_assign(&mut a0, &wc0);
+        F::wide_add_assign(&mut a2, &wc2);
+        F::wide_add_assign(&mut a1, &w11);
+        F::wide_sub_assign(&mut a1, &wc0);
+        F::wide_sub_assign(&mut a1, &wc2);
+    }
+    (F::from_wide(a0), F::from_wide(a1), F::from_wide(a2))
+}
+
+/// A Leaf4Bits round-4 entry pair `(v₀, v₁)` for one side of one slot:
+/// each entry the XOR of two gathers from the ρ₃-reweighted set (`t` =
+/// `f_e` with `lbits`, `f_o` with `rbits`), keyed by the slot's aligned
+/// 16-bit window `w16` (four nibbles = round-3 positions `4b..4b+4`).
+#[inline(always)]
+#[allow(clippy::arithmetic_side_effects)]
+fn leaf4_entry_pair<F>(t: &[F], e: usize, w16: usize) -> (F, F)
+where
+    F: InnerTransparentField,
+{
+    let v0 = t[(e << 4) | leaf3_idx(w16 & 15)].clone()
+        + &t[((e | 1) << 4) | leaf3_idx((w16 >> 4) & 15)];
+    let v1 = t[((e | 2) << 4) | leaf3_idx((w16 >> 8) & 15)].clone()
+        + &t[((e | 3) << 4) | leaf3_idx(w16 >> 12)];
+    (v0, v1)
+}
+
+/// Prefetch the four table lines a [`leaf4_entry_pair`] will touch.
+#[inline(always)]
+#[allow(clippy::arithmetic_side_effects)]
+fn leaf4_prefetch<F>(t: &[F], e: usize, w16: usize) {
+    prefetch_l1(t, (e << 4) | leaf3_idx(w16 & 15));
+    prefetch_l1(t, ((e | 1) << 4) | leaf3_idx((w16 >> 4) & 15));
+    prefetch_l1(t, ((e | 2) << 4) | leaf3_idx((w16 >> 8) & 15));
+    prefetch_l1(t, ((e | 3) << 4) | leaf3_idx(w16 >> 12));
+}
+
+/// The Leaf4Bits round-4 message body: entries as XOR-of-two-gathers from
+/// the reweighted sets ([`reweight_fold_tables_in_place`]) — two aligned
+/// 16-bit windows per side per slot — then the dense single-pair
+/// 5-multiply schedule, wide accumulation order matching the dense body.
+#[allow(clippy::arithmetic_side_effects)]
+fn leaf4_round4_msg<F>(
+    vs: &Pair2FoldTables<F>,
+    lbits: &[u64],
+    rbits: &[u64],
+    half: usize,
+    suffix_t: &[F],
+    zero: &F,
+) -> (F, F, F)
+where
+    F: InnerTransparentField + WideMulAcc,
+{
+    let prfm = lut_prfm(half);
+    let mut a0 = F::wide_zero(zero);
+    let mut a1 = F::wide_zero(zero);
+    let mut a2 = F::wide_zero(zero);
+    for b in 0..half {
+        if prfm && b + PRFM_DIST < half {
+            let bp = b + PRFM_DIST;
+            let pp = bp << 4;
+            let plb = ((lbits[pp >> 6] >> (pp & 63)) & 0xFFFF) as u32 as usize;
+            let prb = ((rbits[pp >> 6] >> (pp & 63)) & 0xFFFF) as u32 as usize;
+            let ep = bp << 2;
+            leaf4_prefetch(&vs.f_e, ep, plb);
+            leaf4_prefetch(&vs.f_o, ep, prb);
+        }
+        let p = b << 4;
+        let bl = ((lbits[p >> 6] >> (p & 63)) & 0xFFFF) as u32 as usize;
+        let br = ((rbits[p >> 6] >> (p & 63)) & 0xFFFF) as u32 as usize;
+        let e = b << 2;
+        let (l0, l1) = leaf4_entry_pair(&vs.f_e, e, bl);
+        let (r0, r1) = leaf4_entry_pair(&vs.f_o, e, br);
+        let w = &suffix_t[b];
+        let l0w = w.clone() * &l0;
+        let l1w = w.clone() * &l1;
+        let wc0 = F::mul_wide(&l0w, &r0);
+        let w11 = F::mul_wide(&l1w, &r1);
+        let dr = r1 - &r0;
+        let dl = l1w - &l0w;
+        let wc2 = F::mul_wide(&dl, &dr);
+        F::wide_add_assign(&mut a0, &wc0);
+        F::wide_add_assign(&mut a2, &wc2);
+        F::wide_add_assign(&mut a1, &w11);
+        F::wide_sub_assign(&mut a1, &wc0);
+        F::wide_sub_assign(&mut a1, &wc2);
+    }
+    (F::from_wide(a0), F::from_wide(a1), F::from_wide(a2))
+}
+
 /// The four 2-bit cases of slot `b`'s entries: `(cE0, cE1)` from the
 /// adjacent bit pair at position `2b`, `(cO0, cO1)` from the pair at
 /// `2b + H` (`H` even ⇒ the pair never straddles a word).
@@ -1260,7 +1443,8 @@ where
                         && pair_tau_sets[*tau_set].to.len() == 4 << k
                 }
                 GroupBufs::Leaf2Bits { lbits, rbits, tau_set }
-                | GroupBufs::Leaf3Bits { lbits, rbits, tau_set } => {
+                | GroupBufs::Leaf3Bits { lbits, rbits, tau_set }
+                | GroupBufs::Leaf4Bits { lbits, rbits, tau_set } => {
                     lbits.len() == (1usize << k).div_ceil(64)
                         && rbits.len() == (1usize << k).div_ceil(64)
                         && *tau_set < tau_sets.len()
@@ -1286,6 +1470,7 @@ where
     let has_pair = groups.iter().any(|g| matches!(g.bufs, GroupBufs::Pair2Bits { .. }));
     let has_leaf2 = groups.iter().any(|g| matches!(g.bufs, GroupBufs::Leaf2Bits { .. }));
     let has_leaf3 = groups.iter().any(|g| matches!(g.bufs, GroupBufs::Leaf3Bits { .. }));
+    let has_leaf4 = groups.iter().any(|g| matches!(g.bufs, GroupBufs::Leaf4Bits { .. }));
     let has_pair3 = groups.iter().any(|g| matches!(g.bufs, GroupBufs::Pair3Bits { .. }));
     let has_t4b = groups.iter().any(|g| matches!(g.bufs, GroupBufs::T4Bits { .. }));
     let one = F::one_with_cfg(field_cfg);
@@ -1308,7 +1493,7 @@ where
     // The Gruen message format factors ONE eq1 out of the whole round
     // polynomial — meaningless unless every group sits at the same point.
     assert!(!gruen || shared_q, "Gruen-format rounds require a shared eq point");
-    if has_leaf || has_pair || has_leaf2 || has_leaf3 || has_pair3 || has_t4b {
+    if has_leaf || has_pair || has_leaf2 || has_leaf3 || has_leaf4 || has_pair3 || has_t4b {
         // The bit expansions' 1-cancellations are char-2 identities, the
         // shared tables assume one suffix tensor, and round 1 must have a
         // fold (j < k) to materialise the dense round-2 buffers.
@@ -1323,6 +1508,9 @@ where
     }
     if has_leaf3 {
         assert!(k >= 4, "Leaf3Bits groups need k >= 4 (use Leaf2Bits at k = 3)");
+    }
+    if has_leaf4 {
+        assert!(k >= 5, "Leaf4Bits groups need k >= 5 (use Leaf3Bits at k = 4)");
     }
     if has_pair3 {
         assert!(k >= 3, "Pair3Bits groups need k >= 3 (use Pair2Bits at k = 2)");
@@ -1360,6 +1548,9 @@ where
     // next round's per-position value tables (read inline).
     let mut pair3_value_sets: Vec<Pair2FoldTables<F>> = Vec::new();
     let mut leaf3_value_sets: Vec<Pair2FoldTables<F>> = Vec::new();
+    // Leaf4Bits round-4 state: the ρ₃-REWEIGHTED 16-case sets (the round-3
+    // fold kept as tables — F₃ is never built; entry = XOR of two gathers).
+    let mut leaf4_value_sets: Vec<Pair2FoldTables<F>> = Vec::new();
     // Pass fusion: deferred fold challenges — pushed when a round's fold is
     // skipped, consumed by the next pass. One under plain fusion; TWO once
     // the double-fold binds a pair of variables per pass.
@@ -1378,8 +1569,8 @@ where
 
         // Shared leaf tables for round 1 (one per tau set; every group of a
         // set only XOR-selects from them).
-        let leaf_tables: Vec<LeafTables<F>> = if j == 1 && (has_leaf || has_leaf2 || has_leaf3)
-        {
+        let leaf_tables: Vec<LeafTables<F>> =
+            if j == 1 && (has_leaf || has_leaf2 || has_leaf3 || has_leaf4) {
             let _g = crate::utils::prof::scope("eqf:leaf_tables");
             let v1 = &suffix[0][0];
             cfg_iter!(tau_sets).map(|(tl, tr)| build_leaf_tables(v1, tl, tr, &zero)).collect()
@@ -1395,7 +1586,8 @@ where
         };
         // Leaf2Bits round-2 message tables: the [`Pair2Tables`] of the
         // stashed ρ₁-dependent value sets, weighted by V_2.
-        let leaf2_tables: Vec<Pair2Tables<F>> = if j == 2 && (has_leaf2 || has_leaf3) {
+        let leaf2_tables: Vec<Pair2Tables<F>> = if j == 2 && (has_leaf2 || has_leaf3 || has_leaf4)
+        {
             let _g = crate::utils::prof::scope("eqf:leaf2_tables");
             let v2 = &suffix[0][1];
             cfg_iter!(leaf2_value_sets).map(|set| build_pair2_tables(v2, set)).collect()
@@ -1633,46 +1825,73 @@ where
                     // only skipped bytes pay). Same field values as the
                     // dense round over materialised round-3 buffers.
                     debug_assert_eq!(j, 3, "leaf3-bit groups are consumed in round 3");
-                    let vs = &leaf3_value_sets[*tau_set];
-                    let prfm = lut_prfm(half);
-                    let mut a0 = F::wide_zero(&zero);
-                    let mut a1 = F::wide_zero(&zero);
-                    let mut a2 = F::wide_zero(&zero);
-                    for b in 0..half {
-                        if prfm && b + PRFM_DIST < half {
-                            let bp = b + PRFM_DIST;
-                            let pp = bp << 3;
-                            let plb = ((lbits[pp >> 6] >> (pp & 63)) & 255) as u32 as usize;
-                            let prb = ((rbits[pp >> 6] >> (pp & 63)) & 255) as u32 as usize;
-                            let ep = bp << 1;
-                            prefetch_l1(&vs.f_e, (ep << 4) | leaf3_idx(plb & 15));
-                            prefetch_l1(&vs.f_e, ((ep | 1) << 4) | leaf3_idx(plb >> 4));
-                            prefetch_l1(&vs.f_o, (ep << 4) | leaf3_idx(prb & 15));
-                            prefetch_l1(&vs.f_o, ((ep | 1) << 4) | leaf3_idx(prb >> 4));
+                    leaf3_round3_msg(
+                        &leaf3_value_sets[*tau_set],
+                        lbits,
+                        rbits,
+                        half,
+                        suffix_t,
+                        &zero,
+                    )
+                }
+                GroupBufs::Leaf4Bits { lbits, rbits, tau_set } if j == 1 => {
+                    // Round 1: the LeafBits body (same shared tables).
+                    leaf_round1_body(&leaf_tables[*tau_set], lbits, rbits, half, &zero)
+                }
+                GroupBufs::Leaf4Bits { lbits, rbits, tau_set } if j == 2 => {
+                    // Round 2: the Leaf2Bits body (same shared round-2
+                    // tables over the same stashed value sets).
+                    match &leaf2_tables[*tau_set] {
+                        Pair2Tables::Factored { wte } => pair2_factored_body(
+                            wte,
+                            &leaf2_value_sets[*tau_set].to,
+                            half,
+                            &zero,
+                            |b| leaf2_cases(lbits, rbits, b),
+                        ),
+                        Pair2Tables::Precombined { t_a0, t_a1, t_wde, t_do } => {
+                            let mut a0 = zero.clone();
+                            let mut t11 = zero.clone();
+                            let mut a2w = F::wide_zero(&zero);
+                            for b in 0..half {
+                                let (ce0, ce1, co0, co1) = leaf2_cases(lbits, rbits, b);
+                                a0 += &t_a0[(b << 4) | (ce0 << 2) | co0];
+                                t11 += &t_a1[(b << 4) | (ce1 << 2) | co1];
+                                let wde = &t_wde[(b << 4) | (ce0 << 2) | ce1];
+                                let dro = &t_do[(b << 4) | (co0 << 2) | co1];
+                                F::wide_add_assign(&mut a2w, &F::mul_wide(wde, dro));
+                            }
+                            let a2 = F::from_wide(a2w);
+                            let a1 = t11 + &a0 + &a2;
+                            (a0, a1, a2)
                         }
-                        let p = b << 3;
-                        let bl = ((lbits[p >> 6] >> (p & 63)) & 255) as u32 as usize;
-                        let br = ((rbits[p >> 6] >> (p & 63)) & 255) as u32 as usize;
-                        let e = b << 1;
-                        let l0 = &vs.f_e[(e << 4) | leaf3_idx(bl & 15)];
-                        let l1 = &vs.f_e[((e | 1) << 4) | leaf3_idx(bl >> 4)];
-                        let r0 = &vs.f_o[(e << 4) | leaf3_idx(br & 15)];
-                        let r1 = &vs.f_o[((e | 1) << 4) | leaf3_idx(br >> 4)];
-                        let w = &suffix_t[b];
-                        let l0w = w.clone() * l0;
-                        let l1w = w.clone() * l1;
-                        let wc0 = F::mul_wide(&l0w, r0);
-                        let w11 = F::mul_wide(&l1w, r1);
-                        let dr = r1.clone() - r0;
-                        let dl = l1w - &l0w;
-                        let wc2 = F::mul_wide(&dl, &dr);
-                        F::wide_add_assign(&mut a0, &wc0);
-                        F::wide_add_assign(&mut a2, &wc2);
-                        F::wide_add_assign(&mut a1, &w11);
-                        F::wide_sub_assign(&mut a1, &wc0);
-                        F::wide_sub_assign(&mut a1, &wc2);
                     }
-                    (F::from_wide(a0), F::from_wide(a1), F::from_wide(a2))
+                }
+                GroupBufs::Leaf4Bits { lbits, rbits, tau_set } if j == 3 => {
+                    // Round 3: the Leaf3Bits body over the same stashed
+                    // sets (still un-reweighted at message time).
+                    leaf3_round3_msg(
+                        &leaf3_value_sets[*tau_set],
+                        lbits,
+                        rbits,
+                        half,
+                        suffix_t,
+                        &zero,
+                    )
+                }
+                GroupBufs::Leaf4Bits { lbits, rbits, tau_set } => {
+                    // Round 4: entries as XOR-of-two-gathers from the
+                    // ρ₃-reweighted sets — F₃ is never built; the table
+                    // footprint stays at the 16-case level.
+                    debug_assert_eq!(j, 4, "leaf4-bit groups are consumed in round 4");
+                    leaf4_round4_msg(
+                        &leaf4_value_sets[*tau_set],
+                        lbits,
+                        rbits,
+                        half,
+                        suffix_t,
+                        &zero,
+                    )
                 }
                 GroupBufs::Pair3Bits { lbits, rbits, tau_set } if j == 1 => {
                     // Round 1: the Pair2Bits body (same shared tables).
@@ -1981,12 +2200,20 @@ where
                 (GroupBufs::Dense(_), _) => "eqf:msg:dense_postlut",
                 (GroupBufs::LeafBits { .. }, _) => "eqf:msg:leafbits",
                 (GroupBufs::Pair2Bits { .. }, _) => "eqf:msg:pair2",
-                (GroupBufs::Leaf2Bits { .. }, 1) | (GroupBufs::Leaf3Bits { .. }, 1) => {
-                    "eqf:msg:leaf_r1"
-                }
+                (
+                    GroupBufs::Leaf2Bits { .. }
+                    | GroupBufs::Leaf3Bits { .. }
+                    | GroupBufs::Leaf4Bits { .. },
+                    1,
+                ) => "eqf:msg:leaf_r1",
                 (GroupBufs::Leaf2Bits { .. }, _) => "eqf:msg:leaf2_r2",
-                (GroupBufs::Leaf3Bits { .. }, 2) => "eqf:msg:leaf3_r2",
-                (GroupBufs::Leaf3Bits { .. }, _) => "eqf:msg:leaf3_r3",
+                (GroupBufs::Leaf3Bits { .. } | GroupBufs::Leaf4Bits { .. }, 2) => {
+                    "eqf:msg:leaf3_r2"
+                }
+                (GroupBufs::Leaf3Bits { .. }, _) | (GroupBufs::Leaf4Bits { .. }, 3) => {
+                    "eqf:msg:leaf3_r3"
+                }
+                (GroupBufs::Leaf4Bits { .. }, _) => "eqf:msg:leaf4_r4",
                 (GroupBufs::Pair3Bits { .. }, 1) => "eqf:msg:pair3_r1",
                 (GroupBufs::Pair3Bits { .. }, _) => "eqf:msg:pair3_r2",
                 (GroupBufs::T4Bits { .. }, _) => "eqf:msg:t4bits",
@@ -2093,7 +2320,7 @@ where
             // Shared leaf fold tables (need ρ, so built here) — one per tau
             // set; every leaf group's fold is then two XOR-selects per entry.
             let leaf_fold_tables: Vec<LeafFoldTables<F>> =
-                if j == 1 && (has_leaf || has_leaf2 || has_leaf3) {
+                if j == 1 && (has_leaf || has_leaf2 || has_leaf3 || has_leaf4) {
                     cfg_iter!(tau_sets)
                         .map(|(tl, tr)| build_leaf_fold_tables(&rho, &one, tl, tr))
                         .collect()
@@ -2109,7 +2336,7 @@ where
                 Vec::new()
             };
             let leaf2_fold_tables: Vec<Pair2FoldTables<F>> =
-                if j == 2 && (has_leaf2 || has_leaf3) {
+                if j == 2 && (has_leaf2 || has_leaf3 || has_leaf4) {
                     cfg_iter!(leaf2_value_sets)
                         .map(|set| build_pair2_fold_tables(&rho, &one, set))
                         .collect()
@@ -2240,6 +2467,45 @@ where
                         *gb = GroupBufs::Dense(vec![(l, r)]);
                     }
                 }
+                GroupBufs::Leaf4Bits { lbits, rbits, tau_set } => {
+                    if j <= 3 {
+                        // Rounds 1–2 keep the bits (stash bookkeeping
+                        // below); round 3's "fold" is the shared ρ₃
+                        // REWEIGHT of the stashed sets (also below) —
+                        // still nothing per-tree.
+                    } else {
+                        // Round 4's fold: inline-materialise the dense
+                        // round-5 buffers — each round-4 value the XOR of
+                        // two gathers from the reweighted sets, folded by
+                        // the one-multiply `v_0 + ρ₄(v_0 + v_1)`.
+                        let vs = &leaf4_value_sets[*tau_set];
+                        let prfm = lut_prfm(half);
+                        let mut l = Vec::with_capacity(half);
+                        let mut r = Vec::with_capacity(half);
+                        for b in 0..half {
+                            if prfm && b + PRFM_DIST < half {
+                                let bp = b + PRFM_DIST;
+                                let pp = bp << 4;
+                                let plb =
+                                    ((lbits[pp >> 6] >> (pp & 63)) & 0xFFFF) as u32 as usize;
+                                let prb =
+                                    ((rbits[pp >> 6] >> (pp & 63)) & 0xFFFF) as u32 as usize;
+                                let ep = bp << 2;
+                                leaf4_prefetch(&vs.f_e, ep, plb);
+                                leaf4_prefetch(&vs.f_o, ep, prb);
+                            }
+                            let p = b << 4;
+                            let bl = ((lbits[p >> 6] >> (p & 63)) & 0xFFFF) as u32 as usize;
+                            let br = ((rbits[p >> 6] >> (p & 63)) & 0xFFFF) as u32 as usize;
+                            let e = b << 2;
+                            let (v0, v1) = leaf4_entry_pair(&vs.f_e, e, bl);
+                            l.push(v0.clone() + &(rho.clone() * &(v0 + &v1)));
+                            let (u0, u1) = leaf4_entry_pair(&vs.f_o, e, br);
+                            r.push(u0.clone() + &(rho.clone() * &(u0 + &u1)));
+                        }
+                        *gb = GroupBufs::Dense(vec![(l, r)]);
+                    }
+                }
                 GroupBufs::Pair3Bits { lbits, rbits, tau_set } => {
                     if j == 1 {
                         // Round 1's fold keeps the bits; its fold tables
@@ -2328,6 +2594,8 @@ where
                 }
                 (GroupBufs::Leaf2Bits { .. }, _) => "eqf:fold:leaf2mat",
                 (GroupBufs::Leaf3Bits { .. }, _) => "eqf:fold:leaf3mat",
+                (GroupBufs::Leaf4Bits { .. }, 1 | 2 | 3) => "eqf:fold:stash",
+                (GroupBufs::Leaf4Bits { .. }, _) => "eqf:fold:leaf4mat",
                 (GroupBufs::Pair3Bits { .. }, 1) => "eqf:fold:stash",
                 (GroupBufs::Pair3Bits { .. }, _) => "eqf:fold:pair3mat",
                 (GroupBufs::T4Bits { .. }, _) => "eqf:fold:t4mat",
@@ -2341,7 +2609,7 @@ where
             #[cfg(not(feature = "parallel"))]
             bufs.iter_mut().for_each(fold_group);
             drop(_g_fold);
-            if has_leaf2 || has_leaf3 {
+            if has_leaf2 || has_leaf3 || has_leaf4 {
                 if j == 1 {
                     // Stash round 1's fold tables as the round-2 value
                     // sets: `t_l[(p≪2)|case]` is exactly the folded entry
@@ -2352,15 +2620,39 @@ where
                         .map(|ft| Pair2TauSet { te: ft.t_l, to: ft.t_r })
                         .collect();
                 } else if j == 2 {
-                    if has_leaf3 {
+                    if has_leaf3 || has_leaf4 {
                         // Round 2's fold tables ARE the round-3 value
                         // tables (16-case per position, ρ₁ρ₂-dependent).
                         leaf3_value_sets = leaf2_fold_tables;
                     }
                     leaf2_value_sets = Vec::new();
-                } else if j == 3 && has_leaf3 {
+                } else if j == 3 {
+                    if has_leaf4 {
+                        // Leaf4Bits round-3 fold: the sets are ρ₃-REWEIGHTED
+                        // (shared, one multiply per entry), not consumed —
+                        // they become the round-4 value sets. Taken when no
+                        // Leaf3Bits group still needs the originals.
+                        let mut sets = if has_leaf3 {
+                            leaf3_value_sets
+                                .iter()
+                                .map(|s| Pair2FoldTables {
+                                    f_e: s.f_e.clone(),
+                                    f_o: s.f_o.clone(),
+                                })
+                                .collect::<Vec<_>>()
+                        } else {
+                            core::mem::take(&mut leaf3_value_sets)
+                        };
+                        for set in sets.iter_mut() {
+                            reweight_fold_tables_in_place(&rho, &one, set);
+                        }
+                        leaf4_value_sets = sets;
+                    }
                     // All Leaf3Bits groups materialised — free the sets.
                     leaf3_value_sets = Vec::new();
+                } else if j == 4 && has_leaf4 {
+                    // All Leaf4Bits groups materialised — free the sets.
+                    leaf4_value_sets = Vec::new();
                 }
             }
             if has_pair3 {
@@ -2390,6 +2682,7 @@ where
                     | GroupBufs::Pair2Bits { .. }
                     | GroupBufs::Leaf2Bits { .. }
                     | GroupBufs::Leaf3Bits { .. }
+                    | GroupBufs::Leaf4Bits { .. }
                     | GroupBufs::Pair3Bits { .. }
                     | GroupBufs::T4Bits { .. } => {
                         unreachable!("bit-selected groups materialise at their fold (k asserts)")
