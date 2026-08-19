@@ -73,6 +73,16 @@ plus muls.
 
 ### I1 — Finish the leaf-table factorization: 8 entries per slot (from 12/24)
 
+> **MEASURED 2026-08-19** (`LeafTables::Raw8`, landed with auto-pick
+> `half ≥ 2^17`, `F2Z_LEAF8=0/1` forces; l8, churned box, alternated
+> in-window pairs, `eqf:msg:leaf_r1` medians): n=28 **+18%** (31.4→37.2 ms),
+> n=29 **+15%** (72→82.5) — the split form's two picks are line-local and
+> L2-cheap, and 10 masked adds out-cost the 64 B/slot saved — but n=30
+> **−6%** (202.4→189.5 ms, 3/3 pairs) plus ~2× cheaper build once
+> DRAM-bound. Verdict: real but modest, regime exactly the ΔΔ knee one
+> size later; the interesting consequence is that masked-add ALU ≈ 6 adds
+> costs about 64 sequential bytes at this size — calibrates I3's economics.
+
 The build already makes exactly 8 products per slot (4 singles
 `ωτ_{L0}, ωτ_{L1}, ωτ_{R0}, ωτ_{R1}`, 4 crosses `p_εδ = ωτ_{Lε}τ_{Rδ}`) and
 then spends ~20 adds precombining them into 24 (or 12) stored entries. Store

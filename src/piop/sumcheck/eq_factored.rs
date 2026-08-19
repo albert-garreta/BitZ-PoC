@@ -220,25 +220,53 @@ pub struct EqInnerGroupMixed<F> {
     pub bufs: GroupBufs<F>,
 }
 
-/// Round-1 message tables for one leaf `tau` set, in **case-LUT** form:
-/// the char-2 expansion of each accumulator's per-slot contribution is
-/// precombined over the selecting bits, so a group does ONE unconditional
-/// table add per accumulator per slot (3 loads + 3 adds — no per-term
-/// masking, ~⅓ the table traffic):
+/// Round-1 message tables for one leaf `tau` set, two interchangeable
+/// forms (byte-identical sums either way — subset-sum re-association only;
+/// consumed by [`leaf_round1_body`]).
+///
+/// **`Split`** (the default) — **case-LUT** form: the char-2 expansion of
+/// each accumulator's per-slot contribution is precombined over the
+/// selecting bits, so a group does ONE unconditional table add per
+/// accumulator per slot (3 loads + 3 adds — no per-term masking, ~⅓ the
+/// table traffic):
 ///
 /// - `t_a0[(b≪2) | (m_{L0} | m_{R0}≪1)]` = the `Σ w·l0·r0` slot term
 ///   `m_{L0}·wτ_{L0} + m_{R0}·wτ_{R0} + m_{L0}m_{R0}·wτ_{L0}τ_{R0}`;
 /// - `t_a1[(b≪2) | (m_{L1} | m_{R1}≪1)]` = the odd (`Σ w·l1·r1`) variant;
-/// - `t_a2[(b≪4) | (lp | rp≪2)]` = the `Σ w·ΔL·ΔR` combo of the four
-///   cross products `wτ_{Lε}τ_{Rδ}` selected by `m_{Lε}∧m_{Rδ}`.
+/// - the [`LeafA2`] ΔΔ term (16-case precombined or factored 4-entry) —
 ///
-/// Shared by every group of the set: 8 multiplies + ~20 adds per slot,
-/// built once.
-struct LeafTables<F> {
-    t_a0: Vec<F>,
-    t_a1: Vec<F>,
-    a2: LeafA2<F>,
-    w_sum: F,
+/// 24 or 12 entries per slot, 8 multiplies + ~20 adds per slot to build,
+/// built once and shared by every group of the set.
+///
+/// **`Raw8`** (probe I1 of `docs/lut-width-ideas.md`) — the build's 8 raw
+/// products per slot with NO precombining:
+/// `[wτ_{L0}, wτ_{L1}, wτ_{R0}, wτ_{R1}, p00, p10, p01, p11]` at `b≪3`,
+/// one 128-B sequential block per slot (2 lines vs the split form's 3),
+/// consumed by branchless masked adds only — zero case-indexed loads; the
+/// [`LeafA2::Factored`] idea carried to the whole table set.
+enum LeafTables<F> {
+    Split { t_a0: Vec<F>, t_a1: Vec<F>, a2: LeafA2<F>, w_sum: F },
+    Raw8 { t: Vec<F>, w_sum: F },
+}
+
+/// Leaf-table form choice: `F2Z_LEAF8=0/1` forces split/[`Raw8`]; unset
+/// (the default) picks by footprint — Raw8 iff `half ≥ 2^17`, i.e. once
+/// even the 12-entry split set (`192·half` B) is ~25 MB, well past the
+/// P-cluster L2. Measured (l8, churned box, alternated in-window pairs,
+/// `eqf:msg:leaf_r1` medians): n=28 Raw8 LOSES +18% (31.4→37.2 ms),
+/// n=29 +15% (72→82.5) — the split form's two line-local picks are
+/// L2-cheap and 10 masked adds out-cost the 64 B/slot saved — but n=30
+/// Raw8 WINS −6% (202.4→189.5 ms, 3/3 pairs) plus a ~2× cheaper table
+/// build once the stream is DRAM-bound. Byte-identical proofs either way.
+/// Read once per process.
+fn leaf8(half: usize) -> bool {
+    static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+    let env = *ENV.get_or_init(|| match std::env::var("F2Z_LEAF8") {
+        Ok(v) if v == "0" => Some(false),
+        Ok(v) if v == "1" => Some(true),
+        _ => None,
+    });
+    env.unwrap_or(half >= 1 << 17)
 }
 
 /// The `Σ w·ΔL·ΔR` term's table form.
@@ -359,6 +387,27 @@ where
     let half = v1.len();
     debug_assert_eq!(tau_l.len(), half << 1);
     debug_assert_eq!(tau_r.len(), half << 1);
+    if leaf8(half) {
+        // Raw8: store the 8 build products per slot verbatim — no
+        // precombining adds at all (consumption masks them in,
+        // [`leaf_round1_body`]).
+        let mut t = Vec::with_capacity(half << 3);
+        let mut w_sum = zero.clone();
+        for b in 0..half {
+            let w = &v1[b];
+            let sl0 = w.clone() * &tau_l[b << 1];
+            let sl1 = w.clone() * &tau_l[(b << 1) | 1];
+            let sr0 = w.clone() * &tau_r[b << 1];
+            let sr1 = w.clone() * &tau_r[(b << 1) | 1];
+            let p00 = sl0.clone() * &tau_r[b << 1];
+            let p11 = sl1.clone() * &tau_r[(b << 1) | 1];
+            let p10 = sl1.clone() * &tau_r[b << 1];
+            let p01 = sl0.clone() * &tau_r[(b << 1) | 1];
+            t.extend([sl0, sl1, sr0, sr1, p00, p10, p01, p11]);
+            w_sum += w;
+        }
+        return LeafTables::Raw8 { t, w_sum };
+    }
     let factored = leaf_a2_factored(half);
     let mut t_a0 = Vec::with_capacity(half << 2);
     let mut t_a1 = Vec::with_capacity(half << 2);
@@ -412,7 +461,77 @@ where
         w_sum += w;
     }
     let a2 = if factored { LeafA2::Factored(t_a2) } else { LeafA2::Precombined(t_a2) };
-    LeafTables { t_a0, t_a1, a2, w_sum }
+    LeafTables::Split { t_a0, t_a1, a2, w_sum }
+}
+
+/// The shared leaf round-1 body (LeafBits round 1 = Leaf2Bits/Leaf3Bits
+/// round 1): accumulate the `Σ w·l0·r0` / `Σ w·l1·r1` / `Σ w·ΔL·ΔR`
+/// coefficient triple over the slots, each slot keyed by the two aligned
+/// 2-bit windows of the committed bit halves — zero multiplications, zero
+/// branches on committed bits. Both [`LeafTables`] forms accumulate the
+/// exact same field elements (precombined entries are subset sums of the
+/// masked-added raw products; field addition is exact and commutative; in
+/// char 2, `a1 = Σw11 − Σwc0 − Σwc2 = t11 + a0 + a2`).
+#[allow(clippy::arithmetic_side_effects)]
+fn leaf_round1_body<F>(
+    lt: &LeafTables<F>,
+    lbits: &[u64],
+    rbits: &[u64],
+    half: usize,
+    zero: &F,
+) -> (F, F, F)
+where
+    F: InnerTransparentField + WideMulAcc,
+{
+    let mut a0 = zero.clone();
+    let mut t11 = zero.clone();
+    let mut a2 = zero.clone();
+    match lt {
+        LeafTables::Split { t_a0, t_a1, a2: a2t, w_sum } => {
+            for b in 0..half {
+                // Positions 2b, 2b+1 of the half share word b/32 at bit
+                // offset 2·(b mod 32).
+                let lp = ((lbits[b >> 5] >> ((b & 31) << 1)) & 3) as u32 as usize;
+                let rp = ((rbits[b >> 5] >> ((b & 31) << 1)) & 3) as u32 as usize;
+                a0 += &t_a0[(b << 2) | (lp & 1) | ((rp & 1) << 1)];
+                t11 += &t_a1[(b << 2) | (lp >> 1) | (rp & 2)];
+                leaf_a2_slot_add(&mut a2, a2t, b, lp, rp, zero);
+            }
+            a0 += w_sum;
+            t11 += w_sum;
+        }
+        LeafTables::Raw8 { t, w_sum } => {
+            for b in 0..half {
+                let lp = ((lbits[b >> 5] >> ((b & 31) << 1)) & 3) as u32 as usize;
+                let rp = ((rbits[b >> 5] >> ((b & 31) << 1)) & 3) as u32 as usize;
+                let e = &t[b << 3..(b << 3) + 8];
+                // Singles of the even and odd products.
+                F::add_assign_masked(&mut a0, &e[0], lp & 1 != 0); // wτ_{L0}
+                F::add_assign_masked(&mut a0, &e[2], rp & 1 != 0); // wτ_{R0}
+                F::add_assign_masked(&mut t11, &e[1], lp & 2 != 0); // wτ_{L1}
+                F::add_assign_masked(&mut t11, &e[3], rp & 2 != 0); // wτ_{R1}
+                // Crosses: p00/p11 feed a0/t11 AND the ΔΔ sum under the
+                // same mask — masked once into temps, added to both; the
+                // pairwise temp tree keeps every accumulator at one add
+                // per slot (the [`leaf_a2_slot_add`] chain profile).
+                let mut c00 = zero.clone();
+                F::add_assign_masked(&mut c00, &e[4], lp & rp & 1 != 0); // m_{L0}∧m_{R0}
+                let mut c11 = zero.clone();
+                F::add_assign_masked(&mut c11, &e[7], lp & rp & 2 != 0); // m_{L1}∧m_{R1}
+                a0 += &c00;
+                t11 += &c11;
+                let mut ta = c00;
+                F::add_assign_masked(&mut ta, &e[5], (lp >> 1) & rp & 1 != 0); // m_{L1}∧m_{R0}
+                let mut tb = c11;
+                F::add_assign_masked(&mut tb, &e[6], lp & (rp >> 1) & 1 != 0); // m_{L0}∧m_{R1}
+                a2 += ta + tb;
+            }
+            a0 += w_sum;
+            t11 += w_sum;
+        }
+    }
+    let a1 = t11 + &a0 + &a2;
+    (a0, a1, a2)
 }
 
 /// Round-1 fold tables for one leaf `tau` set, in **case-LUT** form: the
@@ -1426,50 +1545,18 @@ where
                 GroupBufs::LeafBits { lbits, rbits, tau_set } => {
                     // Bit-affine leaf layer, round 1 only: each slot's
                     // contribution to `Σ w·l0·r0`, `Σ w·l1·r1` and `Σ w·ΔΔ`
-                    // is ONE precombined case-LUT entry (see [`LeafTables`])
-                    // selected by the committed bits — zero multiplications
-                    // and three unconditional adds per slot. The sums are
-                    // the exact same field elements the dense body
-                    // accumulates (field addition is exact + commutative;
-                    // in char 2, `a1 = Σw11 − Σwc0 − Σwc2 = t11 + a0 + a2`).
+                    // comes off the shared [`LeafTables`] selected by the
+                    // committed bits — zero multiplications, zero branches
+                    // per slot ([`leaf_round1_body`]). The sums are the
+                    // exact same field elements the dense body accumulates.
                     debug_assert_eq!(j, 1, "leaf-bit groups are consumed in round 1");
-                    let lt = &leaf_tables[*tau_set];
-                    let mut a0 = zero.clone();
-                    let mut t11 = zero.clone();
-                    let mut a2 = zero.clone();
-                    for b in 0..half {
-                        // Positions 2b, 2b+1 of the half share word b/32 at
-                        // bit offset 2·(b mod 32).
-                        let lp = ((lbits[b >> 5] >> ((b & 31) << 1)) & 3) as u32 as usize;
-                        let rp = ((rbits[b >> 5] >> ((b & 31) << 1)) & 3) as u32 as usize;
-                        a0 += &lt.t_a0[(b << 2) | (lp & 1) | ((rp & 1) << 1)];
-                        t11 += &lt.t_a1[(b << 2) | (lp >> 1) | (rp & 2)];
-                        leaf_a2_slot_add(&mut a2, &lt.a2, b, lp, rp, &zero);
-                    }
-                    a0 += &lt.w_sum;
-                    t11 += &lt.w_sum;
-                    let a1 = t11 + &a0 + &a2;
-                    (a0, a1, a2)
+                    leaf_round1_body(&leaf_tables[*tau_set], lbits, rbits, half, &zero)
                 }
                 GroupBufs::Leaf2Bits { lbits, rbits, tau_set } if j == 1 => {
                     // Round 1: identical to the LeafBits body (the same
                     // shared [`LeafTables`] — the leaves are the same
                     // implicit `1 + m·τ` values).
-                    let lt = &leaf_tables[*tau_set];
-                    let mut a0 = zero.clone();
-                    let mut t11 = zero.clone();
-                    let mut a2 = zero.clone();
-                    for b in 0..half {
-                        let lp = ((lbits[b >> 5] >> ((b & 31) << 1)) & 3) as u32 as usize;
-                        let rp = ((rbits[b >> 5] >> ((b & 31) << 1)) & 3) as u32 as usize;
-                        a0 += &lt.t_a0[(b << 2) | (lp & 1) | ((rp & 1) << 1)];
-                        t11 += &lt.t_a1[(b << 2) | (lp >> 1) | (rp & 2)];
-                        leaf_a2_slot_add(&mut a2, &lt.a2, b, lp, rp, &zero);
-                    }
-                    a0 += &lt.w_sum;
-                    t11 += &lt.w_sum;
-                    let a1 = t11 + &a0 + &a2;
-                    (a0, a1, a2)
+                    leaf_round1_body(&leaf_tables[*tau_set], lbits, rbits, half, &zero)
                 }
                 GroupBufs::Leaf2Bits { lbits, rbits, tau_set } => {
                     // Round 2: the Pair2Bits case-LUT round over the
@@ -1508,21 +1595,7 @@ where
                 }
                 GroupBufs::Leaf3Bits { lbits, rbits, tau_set } if j == 1 => {
                     // Round 1: the LeafBits body (same shared tables).
-                    let lt = &leaf_tables[*tau_set];
-                    let mut a0 = zero.clone();
-                    let mut t11 = zero.clone();
-                    let mut a2 = zero.clone();
-                    for b in 0..half {
-                        let lp = ((lbits[b >> 5] >> ((b & 31) << 1)) & 3) as u32 as usize;
-                        let rp = ((rbits[b >> 5] >> ((b & 31) << 1)) & 3) as u32 as usize;
-                        a0 += &lt.t_a0[(b << 2) | (lp & 1) | ((rp & 1) << 1)];
-                        t11 += &lt.t_a1[(b << 2) | (lp >> 1) | (rp & 2)];
-                        leaf_a2_slot_add(&mut a2, &lt.a2, b, lp, rp, &zero);
-                    }
-                    a0 += &lt.w_sum;
-                    t11 += &lt.w_sum;
-                    let a1 = t11 + &a0 + &a2;
-                    (a0, a1, a2)
+                    leaf_round1_body(&leaf_tables[*tau_set], lbits, rbits, half, &zero)
                 }
                 GroupBufs::Leaf3Bits { lbits, rbits, tau_set } if j == 2 => {
                     // Round 2: the Leaf2Bits body (same shared round-2
