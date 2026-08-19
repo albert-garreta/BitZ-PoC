@@ -25,13 +25,30 @@
 //! Char 2 is detected exactly at runtime (`1+1 == 0`); any other field
 //! accumulates `H(c3)` in the same pass, keeping the driver field-generic.
 //!
-//! **Byte-identical** to [`MLSumcheck::prove_as_subprotocol`] over the
-//! materialised `[eq_1, …, eq_T, all L's, all R's]` with the degree-3 comb
-//! `Σ_t eq_t·Σ_i L_i·R_i`: the same round polynomials evaluated at the same
-//! nodes, the same transcript ops (the `nvars`/`degree` header, the `P(1..)`
-//! tail absorb, the post-draw challenge re-absorb), the same proof layout —
-//! the generic [`MLSumcheck::verify_as_subprotocol`] verifies it unchanged,
-//! so every caller's existing test doubles as an equivalence check.
+//! Two round-message formats share the machinery:
+//!
+//! - **Generic** (`gruen = false`): **byte-identical** to
+//!   [`MLSumcheck::prove_as_subprotocol`] over the materialised
+//!   `[eq_1, …, eq_T, all L's, all R's]` with the degree-3 comb
+//!   `Σ_t eq_t·Σ_i L_i·R_i`: the same round polynomials evaluated at the same
+//!   nodes, the same transcript ops (the `nvars`/`degree` header, the `P(1..)`
+//!   tail absorb, the post-draw challenge re-absorb), the same proof layout —
+//!   the generic [`MLSumcheck::verify_as_subprotocol`] verifies it unchanged.
+//!   Required whenever groups carry DIFFERENT eq points (no common linear
+//!   factor exists).
+//! - **Gruen** (`gruen = true`, shared-`q` only): Gruen's degree reduction
+//!   for a known linear factor (ePrint 2024/108). With every group at one
+//!   point, `P_j(X) = eq1(X; q[j−1]) · Ĥ_j(X)` with `Ĥ_j = Σ_t A_t·H_t`
+//!   quadratic, and the round message is `Ĥ_j`'s two non-constant monomial
+//!   coefficients `(Ĥ1, Ĥ2)` — TWO field elements instead of three. The
+//!   verifier ([`verify_eq_inner_sumcheck_gruen`]) reconstructs the constant
+//!   one from the running claim via `S_j = P_j(0) + P_j(1) =
+//!   Ĥ0 + q[j−1]·(Ĥ1 + Ĥ2)` (an identity over ANY field: the `(1−q)Ĥ0 +
+//!   qĤ0` cross terms collapse) and chains `S_{j+1} = eq1(ρ_j; q[j−1]) ·
+//!   Ĥ_j(ρ_j)`. Same header, same absorb order; only the tail length
+//!   changes. The forest's merged-GKR layers (always shared-point) run this
+//!   mode; the sent values differ from the Generic mode, so prover and
+//!   verifier must agree on the mode per instance.
 
 use crypto_primitives::FromPrimitiveWithConfig;
 use num_traits::Zero;
@@ -43,7 +60,8 @@ use crate::utils::{
 };
 
 use super::prover::{NatEvaluatedPolyWithoutConstant, ProverMsg};
-use super::SumcheckProof;
+use super::verifier::Subclaim;
+use super::{SumCheckError, SumcheckProof};
 
 /// One eq-weighted group: contributes
 /// `scale·eq(x; q)·Σ_i pairs[i].0(x)·pairs[i].1(x)` to the proven sum. All
@@ -964,8 +982,104 @@ where
         pair_tau_sets,
         t4_sets,
         None,
+        false,
         field_cfg,
     )
+}
+
+/// [`prove_eq_inner_sumcheck_mixed`] in the **Gruen** round-message format
+/// (see the module doc): every round sends the two non-constant coefficients
+/// of the quadratic cofactor instead of the three degree-3 tail nodes.
+/// Requires all groups at ONE shared eq point (asserted). Verified by
+/// [`verify_eq_inner_sumcheck_gruen`], NOT the generic sumcheck verifier.
+#[allow(clippy::arithmetic_side_effects, clippy::type_complexity)]
+pub fn prove_eq_inner_sumcheck_mixed_gruen<F>(
+    transcript: &mut impl Transcript,
+    groups: Vec<EqInnerGroupMixed<F>>,
+    tau_sets: &[(Vec<F>, Vec<F>)],
+    pair_tau_sets: &[Pair2TauSet<F>],
+    t4_sets: &[Vec<F>],
+    field_cfg: &F::Config,
+) -> (SumcheckProof<F>, Vec<F>, Vec<Vec<(F, F)>>)
+where
+    F: InnerTransparentField + FromPrimitiveWithConfig + WideMulAcc + Send + Sync,
+    F::Inner: ConstTranscribable + Zero + Default + Send + Sync,
+    F::Modulus: ConstTranscribable,
+    F::Config: Sync,
+{
+    prove_eq_inner_sumcheck_mixed_pre(
+        transcript,
+        groups,
+        tau_sets,
+        pair_tau_sets,
+        t4_sets,
+        None,
+        true,
+        field_cfg,
+    )
+}
+
+/// Verify a **Gruen-format** eq-factored sumcheck against the shared eq
+/// point `q` (round order — coordinate `i` is round `i`'s). Round `i`'s
+/// message carries exactly the two non-constant coefficients `(Ĥ1, Ĥ2)` of
+/// the quadratic cofactor `Ĥ_i`, with the full round polynomial
+/// `P_i(X) = eq1(X; q[i])·Ĥ_i(X)`. The verifier reconstructs
+/// `Ĥ0 = S_i − q[i]·(Ĥ1 + Ĥ2)` from the running claim `S_i` (the identity
+/// `S_i = P_i(0) + P_i(1) = Ĥ0 + q[i]·(Ĥ1 + Ĥ2)` holds over any field —
+/// no inversion needed) and chains `S_{i+1} = eq1(ρ_i; q[i])·Ĥ_i(ρ_i)`.
+/// Transcript ops mirror the prover exactly: the `(k, 3)` header, then per
+/// round tail absorb → challenge draw → challenge re-absorb. Restricting
+/// the prover to multiples of the public `eq1` factor only shrinks a
+/// cheater's message space, so the standard sumcheck round analysis
+/// applies unchanged.
+///
+/// Returns the [`Subclaim`]: the bound point and the expected evaluation of
+/// the full summand (all `eq1` factors included) — the same contract as
+/// [`MLSumcheck::verify_as_subprotocol`] on the Generic format.
+#[allow(clippy::arithmetic_side_effects)]
+pub fn verify_eq_inner_sumcheck_gruen<F>(
+    transcript: &mut impl Transcript,
+    q: &[F],
+    proof: &SumcheckProof<F>,
+    field_cfg: &F::Config,
+) -> Result<Subclaim<F>, SumCheckError<F>>
+where
+    F: InnerTransparentField + FromPrimitiveWithConfig,
+    F::Inner: ConstTranscribable,
+    F::Modulus: ConstTranscribable,
+{
+    let k = q.len();
+    assert!(k >= 1, "eq-factored sumcheck needs >= 1 variable");
+    let mut buf = vec![0u8; F::Inner::NUM_BYTES];
+    // Header — mirror the prover.
+    transcript.absorb_random_field(&F::from_with_cfg(k as u64, field_cfg), &mut buf);
+    transcript.absorb_random_field(&F::from_with_cfg(3u64, field_cfg), &mut buf);
+    if proof.messages.len() != k {
+        return Err(SumCheckError::InvalidProofLength { expected: k, got: proof.messages.len() });
+    }
+    let one = F::one_with_cfg(field_cfg);
+    let mut expected = proof.claimed_sum.clone();
+    let mut point: Vec<F> = Vec::with_capacity(k);
+    for (i, msg) in proof.messages.iter().enumerate() {
+        let tail = &msg.0.tail_evaluations;
+        if tail.len() != 2 {
+            // A Generic-format (or otherwise malformed) round message must
+            // not decode under this verifier.
+            return Err(SumCheckError::MaxDegreeExceeded);
+        }
+        transcript.absorb_random_field_slice(tail, &mut buf);
+        let rho: F = transcript.get_field_challenge(field_cfg);
+        transcript.absorb_random_field(&rho, &mut buf);
+        let (c1, c2) = (tail[0].clone(), tail[1].clone());
+        let qi = &q[i];
+        let c0 = expected - &(qi.clone() * &(c1.clone() + &c2));
+        // Horner: Ĥ(ρ) = Ĥ0 + ρ·(Ĥ1 + ρ·Ĥ2).
+        let h_at = c0 + &(rho.clone() * &(c1 + &(rho.clone() * &c2)));
+        let e1 = (one.clone() - qi) * &(one.clone() - &rho) + &(qi.clone() * &rho);
+        expected = e1 * &h_at;
+        point.push(rho);
+    }
+    Ok(Subclaim { point, expected_evaluation: expected })
 }
 
 /// [`prove_eq_inner_sumcheck_mixed`] with optionally PRECOMPUTED round-1
@@ -988,6 +1102,7 @@ pub fn prove_eq_inner_sumcheck_mixed_pre<F>(
     pair_tau_sets: &[Pair2TauSet<F>],
     t4_sets: &[Vec<F>],
     mut pre_round1: Option<PreRound<F>>,
+    gruen: bool,
     field_cfg: &F::Config,
 ) -> (SumcheckProof<F>, Vec<F>, Vec<Vec<(F, F)>>)
 where
@@ -1071,6 +1186,9 @@ where
     // compute them ONCE in that case, else once per group. (The L·R products,
     // which differ per group, still drive the per-group round-body parallelism.)
     let shared_q = !groups.is_empty() && groups.iter().all(|g| g.q == groups[0].q);
+    // The Gruen message format factors ONE eq1 out of the whole round
+    // polynomial — meaningless unless every group sits at the same point.
+    assert!(!gruen || shared_q, "Gruen-format rounds require a shared eq point");
     if has_leaf || has_pair || has_leaf2 || has_leaf3 || has_pair3 || has_t4b {
         // The bit expansions' 1-cancellations are char-2 identities, the
         // shared tables assume one suffix tensor, and round 1 must have a
@@ -1184,9 +1302,9 @@ where
         // skipped multiply saves — and was removed.) Parallel **across
         // groups**, with a minimum batch so tiny late-round bodies amortise
         // the rayon dispatch.
-        let compute_h = |t: usize, bufs: &[GroupBufs<F>]| -> (F, F, F, F) {
+        let compute_h = |t: usize, bufs: &[GroupBufs<F>]| -> (F, F, F) {
             let suffix_t = &suffix[if shared_q { 0 } else { t }][j - 1];
-            let (a0, a1, a2) = match &bufs[t] {
+            match &bufs[t] {
                 GroupBufs::Dense(group_bufs) if group_bufs.len() == 1 => {
                     // Single pair (the GKR forest): fold the weight straight
                     // into L, so the weighted coefficients drop out with no
@@ -1200,12 +1318,7 @@ where
                         F::eqf_single_pair_round(l, r, &suffix_t[..half], half)
                     };
                     if let Some(res) = kernel_res {
-                        let (a0, a1, a2) = res;
-                        let h0 = a0.clone();
-                        let h1 = a0.clone() + &a1 + &a2;
-                        let h2 = a0.clone() + &(c2.clone() * &a1) + &(c2sq.clone() * &a2);
-                        let h3 = a0 + &(c3.clone() * &a1) + &(c3sq.clone() * &a2);
-                        return (h0, h1, h2, h3);
+                        return res;
                     }
                     let mut a0 = F::wide_zero(&zero);
                     let mut a1 = F::wide_zero(&zero);
@@ -1234,16 +1347,12 @@ where
                     // into each L side, deferred reduction) takes over when
                     // available — value-exact vs the generic loop below.
                     if let [(l0, r0), (l1, r1)] = group_bufs.as_slice() {
-                        if let Some((a0, a1, a2)) = if eqf_nokernel() {
+                        if let Some(res) = if eqf_nokernel() {
                             None
                         } else {
                             F::eqf_two_pair_round(l0, r0, l1, r1, &suffix_t[..half], half)
                         } {
-                            let h0 = a0.clone();
-                            let h1 = a0.clone() + &a1 + &a2;
-                            let h2 = a0.clone() + &(c2.clone() * &a1) + &(c2sq.clone() * &a2);
-                            let h3 = a0 + &(c3.clone() * &a1) + &(c3sq.clone() * &a2);
-                            return (h0, h1, h2, h3);
+                            return res;
                         }
                     }
                     // Multiple pairs (e.g. the lookup binding): sum
@@ -1608,28 +1717,16 @@ where
                     }
                     (F::from_wide(a0), F::from_wide(a1), F::from_wide(a2))
                 }
-            };
-            // Coefficients → node evaluations the M-combination consumes.
-            let h0 = a0.clone();
-            let h1 = a0.clone() + &a1 + &a2;
-            let h2 = a0.clone() + &(c2.clone() * &a1) + &(c2sq.clone() * &a2);
-            let h3 = a0 + &(c3.clone() * &a1) + &(c3sq.clone() * &a2);
-            (h0, h1, h2, h3)
+            }
         };
         // Message pass — fused with the deferred fold when one is pending:
         // one pass reads the unfolded buffers, folds ρ_{j−1} in registers
         // into the prefix, and accumulates this round's coefficients from
         // the folded pairs — identical field values, identical transcript
-        // order.
-        // Coefficients → node evaluations, the one conversion every path
-        // ends in.
-        let to_h = |(a0, a1, a2): (F, F, F)| -> (F, F, F, F) {
-            let h0 = a0.clone();
-            let h1 = a0.clone() + &a1 + &a2;
-            let h2 = a0.clone() + &(c2.clone() * &a1) + &(c2sq.clone() * &a2);
-            let h3 = a0 + &(c3.clone() * &a1) + &(c3sq.clone() * &a2);
-            (h0, h1, h2, h3)
-        };
+        // order. Every path below yields per-group COEFFICIENT triples
+        // `(A0, A1, A2)` of the quadratic `H_t`; the message combination at
+        // the end converts them per format (Gruen: the combined triple is
+        // the message; Generic: node evaluations).
         // A double-fold pass covers rounds (j, j+1); the grid is only
         // produced when round j+1 is NOT the last, so round k always runs
         // a real pass and the final interpolation never sees a deferred
@@ -1639,11 +1736,11 @@ where
             && j + 1 < k
             && !(j == 1 && pre_round1.is_some())
             && bufs.iter().all(|gb| matches!(gb, GroupBufs::Dense(p) if p.len() == 1));
-        let hs: Vec<(F, F, F, F)> = if let Some(g) = grid.take() {
+        let hs: Vec<(F, F, F)> = if let Some(g) = grid.take() {
             // Round j+1 of a double-fold pass: nine field elements per
             // group, evaluated at the challenge just drawn. No pass.
             let rho_prev = grid_rho.take().expect("grid follows its round's challenge");
-            g.iter().map(|gg| to_h(grid_next_round(gg, &rho_prev))).collect()
+            g.iter().map(|gg| grid_next_round(gg, &rho_prev)).collect()
         } else if double_now {
             let _g_msg = crate::utils::prof::scope("eqf:grid");
             let quads = half >> 1;
@@ -1671,7 +1768,7 @@ where
             let hs = out
                 .iter()
                 .enumerate()
-                .map(|(t, g)| to_h(grid_this_round(g, &qs[if shared_q { 0 } else { t }][j], &one)))
+                .map(|(t, g)| grid_this_round(g, &qs[if shared_q { 0 } else { t }][j], &one))
                 .collect();
             grid = Some(out);
             hs
@@ -1680,16 +1777,16 @@ where
             // round's message.
             let _g_msg = crate::utils::prof::scope("eqf:fmsg2");
             let pend = core::mem::take(&mut pending);
-            let pass = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F, F) {
+            let pass = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F) {
                 let suffix_t = &suffix[if shared_q { 0 } else { t }][j - 1];
                 let GroupBufs::Dense(group_bufs) = gb else {
                     unreachable!("deferred folds require all-Dense single-pair groups")
                 };
                 let (l, r) = &mut group_bufs[0];
-                to_h(dense_msg_pass_d(l, r, &pend, &suffix_t[..half], half, &zero))
+                dense_msg_pass_d(l, r, &pend, &suffix_t[..half], half, &zero)
             };
             #[cfg(feature = "parallel")]
-            let out: Vec<(F, F, F, F)> = {
+            let out: Vec<(F, F, F)> = {
                 let min_len = (512usize / half.max(1)).max(1);
                 bufs.par_iter_mut()
                     .enumerate()
@@ -1698,7 +1795,7 @@ where
                     .collect()
             };
             #[cfg(not(feature = "parallel"))]
-            let out: Vec<(F, F, F, F)> =
+            let out: Vec<(F, F, F)> =
                 bufs.iter_mut().enumerate().map(|(t, gb)| pass(t, gb)).collect();
             out
         } else if j == 1 && pre_round1.is_some() {
@@ -1711,14 +1808,14 @@ where
             // reads these buffers is round 3, already folding two
             // challenges.
             match pre_round1.take().expect("checked is_some") {
-                PreRound::Coeffs(pre) => pre.into_iter().map(to_h).collect(),
+                PreRound::Coeffs(pre) => pre,
                 PreRound::Grid(g) => {
                     assert!(k >= 3, "a pre-round grid needs a non-final round 2");
-                    let hs: Vec<(F, F, F, F)> = g
+                    let hs: Vec<(F, F, F)> = g
                         .iter()
                         .enumerate()
                         .map(|(t, gg)| {
-                            to_h(grid_this_round(gg, &qs[if shared_q { 0 } else { t }][1], &one))
+                            grid_this_round(gg, &qs[if shared_q { 0 } else { t }][1], &one)
                         })
                         .collect();
                     grid = Some(g);
@@ -1727,7 +1824,7 @@ where
             }
         } else if let Some(rho_prev) = pending.pop() {
             let _g_msg = crate::utils::prof::scope("eqf:fmsg");
-            let fused = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F, F) {
+            let fused = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F) {
                 let suffix_t = &suffix[if shared_q { 0 } else { t }][j - 1];
                 let GroupBufs::Dense(group_bufs) = gb else {
                     unreachable!("fused rounds require all-Dense single-pair groups")
@@ -1786,14 +1883,10 @@ where
                 };
                 l.truncate(half << 1);
                 r.truncate(half << 1);
-                let h0 = a0.clone();
-                let h1 = a0.clone() + &a1 + &a2;
-                let h2 = a0.clone() + &(c2.clone() * &a1) + &(c2sq.clone() * &a2);
-                let h3 = a0 + &(c3.clone() * &a1) + &(c3sq.clone() * &a2);
-                (h0, h1, h2, h3)
+                (a0, a1, a2)
             };
             #[cfg(feature = "parallel")]
-            let out: Vec<(F, F, F, F)> = {
+            let out: Vec<(F, F, F)> = {
                 let min_len = (512usize / half.max(1)).max(1);
                 bufs.par_iter_mut()
                     .enumerate()
@@ -1802,7 +1895,7 @@ where
                     .collect()
             };
             #[cfg(not(feature = "parallel"))]
-            let out: Vec<(F, F, F, F)> =
+            let out: Vec<(F, F, F)> =
                 bufs.iter_mut().enumerate().map(|(t, gb)| fused(t, gb)).collect();
             out
         } else {
@@ -1827,7 +1920,7 @@ where
             };
             let _g_msg = crate::utils::prof::scope(msg_label);
             #[cfg(feature = "parallel")]
-            let out: Vec<(F, F, F, F)> = {
+            let out: Vec<(F, F, F)> = {
                 // ≥ ~512 element-pairs per task so late-round tiny bodies don't
                 // drown in rayon dispatch overhead.
                 let min_len = (512usize / half.max(1)).max(1);
@@ -1838,31 +1931,63 @@ where
                     .collect()
             };
             #[cfg(not(feature = "parallel"))]
-            let out: Vec<(F, F, F, F)> =
+            let out: Vec<(F, F, F)> =
                 (0..num_groups).map(|t| compute_h(t, &bufs)).collect();
             out
         };
 
-        // M(c) = Σ_t A_t · eq1(c; q_t[j−1]) · H_t(c) at the four nodes.
-        let mut m = (zero.clone(), zero.clone(), zero.clone(), zero.clone());
-        for (t, h) in hs.into_iter().enumerate() {
-            let qj = &qs[t][j - 1];
-            let e0 = one.clone() - qj;
-            let e1 = qj.clone();
-            let eq1_at =
-                |c: &F| -> F { e0.clone() * &(one.clone() - c) + &(e1.clone() * c) };
-            let h3 = if char2 { h.0.clone() + &h.1 + &h.2 } else { h.3 };
-            let a = &a_scalars[t];
-            m.0 += a.clone() * &(e0.clone() * &h.0);
-            m.1 += a.clone() * &(e1.clone() * &h.1);
-            m.2 += a.clone() * &(eq1_at(&c2) * &h.2);
-            m.3 += a.clone() * &(eq1_at(&c3) * &h3);
-        }
-
-        if j == 1 {
-            claimed_sum = m.0.clone() + &m.1;
-        }
-        let tail = vec![m.1, m.2, m.3];
+        let tail = if gruen {
+            // Gruen format (shared q, asserted): the round polynomial is
+            // P(X) = eq1(X; q[j−1]) · Ĥ(X) with Ĥ = Σ_t A_t·H_t quadratic;
+            // send Ĥ's two non-constant monomial coefficients. The verifier
+            // reconstructs Ĥ0 from the running claim via
+            // S = P(0) + P(1) = Ĥ0 + q[j−1]·(Ĥ1 + Ĥ2) (any field: the
+            // (1−q)Ĥ0 + qĤ0 cross terms collapse to Ĥ0).
+            let qj = &qs[0][j - 1];
+            let mut ch = (zero.clone(), zero.clone(), zero.clone());
+            for (t, h) in hs.into_iter().enumerate() {
+                let a = &a_scalars[t];
+                ch.0 += a.clone() * &h.0;
+                ch.1 += a.clone() * &h.1;
+                ch.2 += a.clone() * &h.2;
+            }
+            if j == 1 {
+                claimed_sum = ch.0.clone() + &(qj.clone() * &(ch.1.clone() + &ch.2));
+            }
+            vec![ch.1, ch.2]
+        } else {
+            // Generic format: M(c) = Σ_t A_t · eq1(c; q_t[j−1]) · H_t(c) at
+            // the four nodes (per-group coefficient→node conversion, then
+            // the eq1-weighted combination — value-identical to converting
+            // inside each group body). In char 2 the fourth node is the
+            // affine-flat sum H(0)+H(1)+H(X).
+            let mut m = (zero.clone(), zero.clone(), zero.clone(), zero.clone());
+            for (t, h) in hs.into_iter().enumerate() {
+                let qj = &qs[t][j - 1];
+                let e0 = one.clone() - qj;
+                let e1 = qj.clone();
+                let eq1_at =
+                    |c: &F| -> F { e0.clone() * &(one.clone() - c) + &(e1.clone() * c) };
+                let (a0, a1, a2) = h;
+                let h0 = a0.clone();
+                let h1 = a0.clone() + &a1 + &a2;
+                let h2 = a0.clone() + &(c2.clone() * &a1) + &(c2sq.clone() * &a2);
+                let h3 = if char2 {
+                    h0.clone() + &h1 + &h2
+                } else {
+                    a0 + &(c3.clone() * &a1) + &(c3sq.clone() * &a2)
+                };
+                let a = &a_scalars[t];
+                m.0 += a.clone() * &(e0.clone() * &h0);
+                m.1 += a.clone() * &(e1.clone() * &h1);
+                m.2 += a.clone() * &(eq1_at(&c2) * &h2);
+                m.3 += a.clone() * &(eq1_at(&c3) * &h3);
+            }
+            if j == 1 {
+                claimed_sum = m.0.clone() + &m.1;
+            }
+            vec![m.1, m.2, m.3]
+        };
         transcript.absorb_random_field_slice(&tail, &mut buf);
         messages.push(ProverMsg(NatEvaluatedPolyWithoutConstant::new(tail)));
 
@@ -2215,6 +2340,118 @@ mod tests {
     fn sample(seed: u64) -> Gf {
         let hi = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(29) ^ 0x1234_5678_9ABC_DEF0;
         Gf::from_words([seed ^ 0xA5A5_5A5A_0F0F_F0F0, hi])
+    }
+
+    /// MLE evaluation by sequential low-variable folds (char-2: `−` = `+`).
+    fn mle_fold(v: &[Gf], r: &[Gf]) -> Gf {
+        let mut cur = v.to_vec();
+        for rho in r {
+            cur = (0..cur.len() / 2)
+                .map(|i| cur[2 * i] + *rho * (cur[2 * i + 1] + cur[2 * i]))
+                .collect();
+        }
+        cur[0]
+    }
+
+    /// Gruen-format roundtrip: shared-point Dense groups (single- and
+    /// two-pair, several scales) prove under
+    /// [`prove_eq_inner_sumcheck_mixed_gruen`]; the claimed sum equals the
+    /// directly computed eq-weighted sum, [`verify_eq_inner_sumcheck_gruen`]
+    /// replays the challenges and its subclaim closes on the true MLE
+    /// evaluations; malformed shapes (a Generic-format 3-element round, a
+    /// dropped round) are rejected.
+    #[test]
+    fn gruen_roundtrip_and_shape_rejection() {
+        use crate::transcript::Blake3Transcript;
+        for (k, pair_counts) in
+            [(1usize, vec![1usize]), (2, vec![1, 1, 1]), (5, vec![1, 2]), (6, vec![2])]
+        {
+            let n = 1usize << k;
+            let q: Vec<Gf> = (0..k).map(|i| sample(0x4100 + (k * 31 + i) as u64)).collect();
+            let mk = |seed: u64| -> Vec<Gf> { (0..n).map(|i| sample(seed + i as u64)).collect() };
+            let dense: Vec<(Gf, Vec<(Vec<Gf>, Vec<Gf>)>)> = pair_counts
+                .iter()
+                .enumerate()
+                .map(|(t, &np)| {
+                    let scale = sample(0x4200 + t as u64);
+                    let pairs = (0..np)
+                        .map(|i| {
+                            let base = 0x4300 + ((t * 8 + i) * 4 * n) as u64;
+                            (mk(base), mk(base + n as u64))
+                        })
+                        .collect();
+                    (scale, pairs)
+                })
+                .collect();
+            let groups: Vec<EqInnerGroupMixed<Gf>> = dense
+                .iter()
+                .map(|(scale, pairs)| EqInnerGroupMixed {
+                    q: q.clone(),
+                    scale: *scale,
+                    bufs: GroupBufs::Dense(pairs.clone()),
+                })
+                .collect();
+            let mut pt = Blake3Transcript::new();
+            let (proof, r, finals) =
+                prove_eq_inner_sumcheck_mixed_gruen(&mut pt, groups, &[], &[], &[], &());
+            assert!(proof.messages.iter().all(|m| m.0.tail_evaluations.len() == 2));
+
+            // The claimed sum is the actual eq-weighted sum.
+            let eq_at = |i: usize, pt_: &[Gf]| -> Gf {
+                (0..k).fold(Gf::one(), |a, b| {
+                    a * if (i >> b) & 1 == 1 { pt_[b] } else { Gf::one() + pt_[b] }
+                })
+            };
+            let want_sum = dense.iter().fold(Gf::zero(), |acc, (scale, pairs)| {
+                (0..n).fold(acc, |a, i| {
+                    let inner = pairs
+                        .iter()
+                        .fold(Gf::zero(), |s, (l, rr)| s + l[i] * rr[i]);
+                    a + *scale * eq_at(i, &q) * inner
+                })
+            });
+            assert_eq!(proof.claimed_sum, want_sum, "claimed sum k={k}");
+
+            // Verify: same challenges, subclaim closes on the true MLE evals.
+            let mut vt = Blake3Transcript::new();
+            let sub = verify_eq_inner_sumcheck_gruen(&mut vt, &q, &proof, &()).expect("verify");
+            assert_eq!(sub.point, r, "challenge replay k={k}");
+            let eq_rq = (0..k).fold(Gf::one(), |a, i| {
+                a * (r[i] * q[i] + (Gf::one() + r[i]) * (Gf::one() + q[i]))
+            });
+            let want_eval = dense.iter().zip(finals.iter()).fold(
+                Gf::zero(),
+                |a, ((scale, pairs), fin)| {
+                    let inner = pairs.iter().zip(fin.iter()).fold(
+                        Gf::zero(),
+                        |s, ((l, rr), &(fl, fr))| {
+                            assert_eq!(fl, mle_fold(l, &r), "final L k={k}");
+                            assert_eq!(fr, mle_fold(rr, &r), "final R k={k}");
+                            s + fl * fr
+                        },
+                    );
+                    a + *scale * eq_rq * inner
+                },
+            );
+            assert_eq!(sub.expected_evaluation, want_eval, "subclaim closes k={k}");
+
+            // Shape rejections: a Generic-format (3-element) round message,
+            // and a dropped round.
+            let mut bad = proof.clone();
+            bad.messages[0].0.tail_evaluations.push(Gf::one());
+            let mut vt = Blake3Transcript::new();
+            assert!(
+                verify_eq_inner_sumcheck_gruen(&mut vt, &q, &bad, &()).is_err(),
+                "3-element round must be rejected (k={k})"
+            );
+            let mut bad = proof.clone();
+            bad.messages.pop();
+            let mut vt = Blake3Transcript::new();
+            assert!(
+                verify_eq_inner_sumcheck_gruen(&mut vt, &q, &bad, &()).is_err(),
+                "dropped round must be rejected (k={k})"
+            );
+        }
     }
 
     /// The two [`LeafA2`] forms accumulate the identical ΔΔ value for every

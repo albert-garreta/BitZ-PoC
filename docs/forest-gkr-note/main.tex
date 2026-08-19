@@ -70,8 +70,9 @@ variables with the trees as eq-weighted groups sharing one reduction
 point; phase~B binds the tree-index variables over the per-tree finals,
 which never enter the transcript.  The driver materialises no $\eq$
 tables, accumulates round coefficients in unreduced $256$-bit form, and
-gets the fourth Lagrange node for free from a characteristic-2
-affine-flat identity.  (iii)~\emph{Laziness}: the leaf layer and the
+sends each round in Gruen's factored form: the two non-constant
+coefficients of the quadratic cofactor, the shared $\eq$ factor and the
+constant coefficient being the verifier's to reconstruct.  (iii)~\emph{Laziness}: the leaf layer and the
 bottom product levels are never built --- the bottom layers run
 branchless case-LUT sumcheck rounds straight off the packed committed
 bits against shared $\tau$-product tables, one intermediate level is
@@ -225,12 +226,13 @@ Each of the $d$ layers contributes one \code{MergedLayer} to the proof:
 an optional phase-A sumcheck ($\ell$ rounds, absent at $\ell = 0$), a
 phase-B sumcheck ($s$ rounds), and a closing child pair --- $O(\ell+s)$
 $\K$-elements.  Summed over layers this is
-${\approx}\,48\big(\tfrac{d(d-1)}{2} + ds\big)$ bytes of round messages
-plus $32d$ bytes of pairs (degree-3 rounds carry three 16-byte tail
-values each, \S\ref{sec:driver}); at the deployed shapes the
+${\approx}\,32\big(\tfrac{d(d-1)}{2} + ds\big)$ bytes of round messages
+plus $32d$ bytes of pairs (a degree-3 round carries the two 16-byte
+non-constant coefficients of its quadratic cofactor --- Gruen's factored
+form, \S\ref{sec:driver}); at the deployed shapes the
 \emph{sent folds} $16\cdot 2^s$\,B are the larger forest-side item
-(e.g.\ $n = 28$, $s = 11$: 32\,KiB of folds vs.\ ${\approx}16$\,KiB of
-forest messages, 50.7\,KiB forest-side total).
+(e.g.\ $n = 28$, $s = 11$: 32\,KiB of folds vs.\ ${\approx}11$\,KiB of
+forest messages, ${\approx}45.7$\,KiB forest-side total).
 
 % ===========================================================================
 \section{The layer protocol}
@@ -330,13 +332,20 @@ shape
   \sum_{x} \sum_{g} \eq(x; q_g)\cdot \mathrm{scale}_g \cdot
   L_g(x)\,R_g(x)
 \]
---- an eq-weighted sum of inner products of multilinear pairs --- and is
-\textbf{byte-identical} to the generic \code{MLSumcheck} prover run over
-the materialised comb $[\eq_1, \dots, L\text{'s}, R\text{'s}]$ with the
-degree-3 combiner $\sum_g \eq_g\, L_g R_g$: same round polynomials, same
-transcript operations (header, tail absorbs, post-draw challenge
-re-absorb), same proof layout.  The generic verifier verifies it
-unchanged --- there is no bespoke verification path to audit.
+--- an eq-weighted sum of inner products of multilinear pairs --- in one
+of two round-message formats.  In its \emph{generic} format the driver
+is \textbf{byte-identical} to the generic \code{MLSumcheck} prover run
+over the materialised comb $[\eq_1, \dots, L\text{'s}, R\text{'s}]$ with
+the degree-3 combiner $\sum_g \eq_g\, L_g R_g$: same round polynomials,
+same transcript operations (header, tail absorbs, post-draw challenge
+re-absorb), same proof layout, and the generic verifier verifies it
+unchanged.  The forest's layers (all groups at one shared point) instead
+run the \emph{Gruen} format (2026-08-15): two coefficients per round
+instead of three tail evaluations, verified by a dedicated
+${\sim}$20-line coefficient-form round check
+(\code{verify\_eq\_inner\_sumcheck\_gruen}); see the
+coefficient-accumulation paragraph below.  The RLC-discharge cascades,
+whose groups sit at \emph{different} points, keep the generic format.
 
 \paragraph{Never materialise $\eq$.}
 Round $j$ (binding the \emph{low} variable, as the generic prover does)
@@ -367,28 +376,38 @@ been split into three parts, none of them a materialised multiplicand:
 $H$ is quadratic and the $\eq_1$ factor linear, so $P_j$ has degree 3,
 matching the pinned verifier degree.
 
-\paragraph{Coefficient-space accumulation, wide sums, free fourth node.}
+\paragraph{Coefficient-space accumulation, wide sums, two-element
+messages.}
 The per-slot inner loop accumulates the \emph{coefficients}
 $(A_0, A_1, A_2)$ of $H$ in the round variable rather than its node
-values, so the Lagrange-node multiplies stay out of the hot loop; the
+values, so no per-node multiplies enter the hot loop; the
 single-pair case costs 5 field multiplies per slot (the suffix weight is
 folded into $L$: $w{\cdot}l_0$, $w{\cdot}l_1$, then three products
 $\smash{(w l_0)r_0}$, $\smash{(w l_1)r_1}$,
 $\Delta L\cdot\Delta R$).  The three products feed
 \code{WideMulAcc} accumulators: unreduced 256-bit carry-less sums with
 \emph{one} polynomial reduction per accumulator per round --- exact,
-because the reduction is $\Ftwo$-linear.  Round messages are sent as
-tail evaluations $P_j(1), P_j(2), P_j(3)$ only; the verifier
-reconstructs $P_j(0)$ from the chained sum (the claimed-sum trick
-\cite{Gruen24}).  The fourth node is free in characteristic 2: the
-evaluation points $\{0, 1, X, X{+}1\}$ (bit-pattern convention) form an
-$\Ftwo$-affine 2-flat, and over such a flat every polynomial of degree
-$\le 2$ sums to zero, so $H(X{+}1) = H(0) + H(1) + H(X)$.  The
-detection is exact at runtime ($1 + 1 = 0$), keeping the driver
-field-generic.  On aarch64 the whole-buffer message and fold passes
-dispatch to fused NEON kernels (\code{eqf\_single\_pair\_round} and
-friends; \code{F2Z\_EQF\_NOKERNEL=1} forces the generic loops for
-A/B diagnosis).
+because the reduction is $\Ftwo$-linear.  In the Gruen format
+\cite{Gruen24} the coefficients are also what is \emph{sent}: with the
+shared point, $P_j(X) = \eq_1(X; q[j{-}1])\cdot\hat H_j(X)$ where
+$\hat H_j = \sum_g A_{g,j} H_{g,j}$, and the round message is the pair
+$(\hat H_1, \hat H_2)$ --- the polynomial is never evaluated at any
+node.  The verifier reconstructs
+$\hat H_0 = S_j - q[j{-}1]\,(\hat H_1 + \hat H_2)$ from the chained sum
+$S_j = P_j(0) + P_j(1)$ (an identity over any field --- the
+$(1{-}q)\hat H_0 + q\hat H_0$ cross terms collapse; no inversions) and
+advances $S_{j+1} = \eq_1(\rho_j; q[j{-}1])\cdot\hat H_j(\rho_j)$.
+A cheating prover is thereby restricted to degree-3 polynomials
+divisible by the public $\eq_1$ factor --- a subset of the generic
+message space, so the standard round analysis applies unchanged.
+(The generic format instead converts the triple to the four Lagrange
+nodes $\{0, 1, X, X{+}1\}$ and sends three tails; in characteristic 2
+those nodes form an $\Ftwo$-affine 2-flat over which every quadratic
+sums to zero, so the fourth node is the sum of the other three.)  On
+aarch64 the whole-buffer message and fold passes dispatch to fused NEON
+kernels (\code{eqf\_single\_pair\_round} and friends;
+\code{F2Z\_EQF\_NOKERNEL=1} forces the generic loops for A/B
+diagnosis).
 
 \paragraph{Pass fusion.}
 By default the driver defers each round's fold and runs it \emph{fused
@@ -1095,7 +1114,10 @@ re-measure; full tables and the measurement protocol in
 7.7\,KiB ($n{=}16$) $\to$ 50.7\,KiB ($n{=}28$) $\to$ 151.8\,KiB
 ($n{=}32$), of which the sent folds are $16\cdot2^s$\,B
 (\S\ref{sec:merged}); the Ligerito blob dominates the stream
-throughout.  Threading: the build is parallel across trees, round
+throughout.  (2026-08-15: these figures predate the Gruen round format,
+which removes a further 16\,B per sumcheck round --- measured
+forest-side $32.4 \to 28.0$\,KiB at $n = 26$, prover and verifier time
+unchanged within noise.)  Threading: the build is parallel across trees, round
 bodies across groups (with a minimum batch so tiny late rounds amortise
 dispatch), phase B and the upper layers effectively serial; the
 MT/ST prove ratio grows from ${\approx}1.6\times$ at $n = 22$ to

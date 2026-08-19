@@ -39,8 +39,9 @@
 
 use crate::pcs::IntEvalParams;
 use crate::piop::sumcheck::eq_factored::{
-    EqInnerGroupMixed, GroupBufs, PRFM_DIST, Pair2TauSet, prove_eq_inner_sumcheck_mixed,
+    EqInnerGroupMixed, GroupBufs, PRFM_DIST, Pair2TauSet, prove_eq_inner_sumcheck_mixed_gruen,
     PreRound, prove_eq_inner_sumcheck_mixed_pre, suffix_tensors,
+    verify_eq_inner_sumcheck_gruen,
 };
 use crate::piop::sumcheck::{MLSumcheck, SumcheckProof};
 use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
@@ -630,6 +631,7 @@ fn drive_grouped(
                 &pair_tau_sets,
                 &t4_sets,
                 pre_round1,
+                true,
                 &(),
             );
             // The elided trees' L and R are the all-ones multilinear, so
@@ -659,7 +661,7 @@ fn drive_grouped(
             bufs: GroupBufs::Dense(vec![(e_vec, o_vec)]),
         };
         let (sc_c, r_c, finals_b) =
-            prove_eq_inner_sumcheck_mixed(transcript, vec![group_b], &[], &[], &[], &());
+            prove_eq_inner_sumcheck_mixed_gruen(transcript, vec![group_b], &[], &[], &[], &());
         let pair = finals_b[0][0];
         drop(_g);
 
@@ -1447,6 +1449,7 @@ fn run_arity2_layer(
         &bl.pair_tau_sets,
         &bl.t4_sets,
         bl.round1,
+        true,
         &(),
     );
     let mut e_vec = Vec::with_capacity(num_trees);
@@ -1465,7 +1468,7 @@ fn run_arity2_layer(
         bufs: GroupBufs::Dense(vec![(e_vec, o_vec)]),
     };
     let (sc_c, r_c, finals_b) =
-        prove_eq_inner_sumcheck_mixed(transcript, vec![group_b], &[], &[], &[], &());
+        prove_eq_inner_sumcheck_mixed_gruen(transcript, vec![group_b], &[], &[], &[], &());
     let pair = finals_b[0][0];
     drop(_g);
 
@@ -1866,14 +1869,13 @@ pub fn verify_merged_forest_quad(
         if sc_x.claimed_sum != claim {
             return Err(MergedForestError::LayerClaim { layer: li });
         }
-        let vars = z_x.len();
-        let sub = MLSumcheck::<Gf>::verify_as_subprotocol(transcript, vars, 3, sc_x, &())
+        let sub = verify_eq_inner_sumcheck_gruen(transcript, &z_x, sc_x, &())
             .map_err(|_| MergedForestError::LayerClaim { layer: li })?;
         let eqx = eq_eval(&sub.point, &z_x, one).map_err(|_| MergedForestError::Shape)?;
         if sub.expected_evaluation != eqx * layer.sc_c.claimed_sum {
             return Err(MergedForestError::LayerClaim { layer: li });
         }
-        let sub_c = MLSumcheck::<Gf>::verify_as_subprotocol(transcript, s, 3, &layer.sc_c, &())
+        let sub_c = verify_eq_inner_sumcheck_gruen(transcript, &z_c, &layer.sc_c, &())
             .map_err(|_| MergedForestError::LayerClaim { layer: li })?;
         let (p_, q_) = layer.pair;
         let eqc = eq_eval(&sub_c.point, &z_c, one).map_err(|_| MergedForestError::Shape)?;
@@ -2717,7 +2719,7 @@ pub fn verify_merged_forest(
             if sc_x.claimed_sum != claim {
                 return Err(MergedForestError::LayerClaim { layer: ell });
             }
-            let sub = MLSumcheck::<Gf>::verify_as_subprotocol(transcript, ell, 3, sc_x, &())
+            let sub = verify_eq_inner_sumcheck_gruen(transcript, &z_x, sc_x, &())
                 .map_err(|_| MergedForestError::LayerClaim { layer: ell })?;
             let eqx = eq_eval(&sub.point, &z_x, one)
                 .map_err(|_| MergedForestError::Shape)?;
@@ -2728,7 +2730,7 @@ pub fn verify_merged_forest(
         };
 
         // Phase B: the s tree-index variables, closing on the child pair.
-        let sub_c = MLSumcheck::<Gf>::verify_as_subprotocol(transcript, s, 3, &layer.sc_c, &())
+        let sub_c = verify_eq_inner_sumcheck_gruen(transcript, &z_c, &layer.sc_c, &())
             .map_err(|_| MergedForestError::LayerClaim { layer: ell })?;
         let (p_, q_) = layer.pair;
         let eqc = eq_eval(&sub_c.point, &z_c, one).map_err(|_| MergedForestError::Shape)?;
