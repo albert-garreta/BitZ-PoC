@@ -53,6 +53,19 @@ Expected if the design's projection holds: −15–25% of forest. This is the
 highest-value open item in the repo for prover time at deployed shapes.
 
 ### S2 — Mat+grid fusion (port a landed pattern)
+
+> **MEASURED 2026-08-20, LANDED DEFAULT-ON** (`F2Z_MAT_GRID=0` opts out):
+> the materialising folds accumulate the next round-pair's grid over
+> just-written quads (cache-hot readback) and deposit it; a new
+> deposited-grid message branch reads it with no pass, so the fresh
+> buffers' first DRAM read moves to round j+3. n=28: grid 94.7→78–92 ms,
+> mats +10–15 ms, prove **−1%** (3/3 pairs — the grid compute was partly
+> hidden under the removed read's latency, so the net is smaller than the
+> read). n=29 l8: grid −28/−31 ms vs mats +12/+17, prove **−2.5/−6.5%**
+> (2/2) — grows with memory pressure. Caveat: a col-elided witness adds a
+> Dense synthetic group among the bit groups, which disables the deposit
+> (mixed-group fallback); special-casing its all-ones grid is a cheap
+> follow-up if elided shapes matter.
 `pair3mat`/`leaf3mat` write 512 MiB each and then the first dense grid pass
 re-reads what was just written. `jit_layer_generate` already solves exactly
 this for the JIT layer (`dense_jit_fused_grid`: accumulate the 3×3 grid

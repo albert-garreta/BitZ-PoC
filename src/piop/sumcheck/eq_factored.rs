@@ -999,6 +999,20 @@ fn eqf_fuse_enabled() -> bool {
 /// messages in the same transcript order, and every accumulation is
 /// `F₂`-linear in the reduction. `F2Z_EQF_DOUBLE=0` opts out. Read once
 /// per process.
+/// Mat+grid fusion (S2 of `docs/forest-speedup-ideas.md`): a
+/// materialising fold accumulates the next round-pair's bivariate grid
+/// over the values it writes (cache-hot, quad by quad), and deposits it —
+/// so the fresh dense buffers' first actual read is round j+3's pass,
+/// the same one-generation-pass shape `PreRound::Grid` gives the JIT
+/// layers. `F2Z_MAT_GRID=0` opts out (the first dense round then re-reads
+/// the just-written buffers from DRAM). Byte-identical either way: the
+/// deposited grid is the exact per-quad accumulation the dense grid pass
+/// would compute over the same values. Read once per process.
+fn mat_grid_enabled() -> bool {
+    static ENV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENV.get_or_init(|| std::env::var("F2Z_MAT_GRID").map_or(true, |v| v != "0"))
+}
+
 pub(crate) fn eqf_double() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("F2Z_EQF_DOUBLE").map_or(true, |v| v != "0"))
@@ -1103,32 +1117,7 @@ where
         // Logical quad: index (b≪2) | (x₂≪1) | x₁.
         let lv: [F; 4] = core::array::from_fn(|i| fold_logical(l, base | i, pending));
         let rv: [F; 4] = core::array::from_fn(|i| fold_logical(r, base | i, pending));
-        // The weight rides the L side only, folded in BEFORE the grid
-        // (which is linear in the four values); the buffer keeps the
-        // unweighted folds.
-        let lw: [F; 4] = core::array::from_fn(|i| suffix[b].clone() * &lv[i]);
-        // Node grids {0, 1, ∞}² from the four multilinear values: rows
-        // v = x₂ node, columns u = x₁ node.
-        let grid = |v: &[F; 4]| -> [F; 9] {
-            let d00 = v[1].clone() - &v[0]; // ∂x₁ at x₂ = 0
-            let d01 = v[3].clone() - &v[2]; // ∂x₁ at x₂ = 1
-            [
-                v[0].clone(),
-                v[1].clone(),
-                d00.clone(),
-                v[2].clone(),
-                v[3].clone(),
-                d01.clone(),
-                v[2].clone() - &v[0],
-                v[3].clone() - &v[1],
-                d01 - &d00,
-            ]
-        };
-        let lg = grid(&lw);
-        let rg = grid(&rv);
-        for (a, (x, y)) in acc.iter_mut().zip(lg.iter().zip(rg.iter())) {
-            F::wide_add_assign(a, &F::mul_wide(x, y));
-        }
+        grid_quad_acc(&mut acc, &lv, &rv, &suffix[b]);
         // Land the folded quad in the prefix — writes trail the reads
         // (the next quad's first physical index is `(b+1)·2^{d+2}`).
         if d > 0 {
@@ -1142,8 +1131,52 @@ where
         l.truncate(quads << 2);
         r.truncate(quads << 2);
     }
-    // Node → X₁-monomial per x₂ node: a₀ = H(0), a₂ = H(∞),
-    // a₁ = H(1) − H(0) − H(∞).
+    grid_finish(acc)
+}
+
+/// One quad's contribution to a bivariate grid accumulator: the weight
+/// rides the `L` side only, folded in BEFORE the node grids (which are
+/// linear in the four values); node grids `{0, 1, ∞}²` by differences
+/// alone (char 2: XORs), nine wide products.
+#[allow(clippy::arithmetic_side_effects)]
+#[inline(always)]
+fn grid_quad_acc<F>(acc: &mut [F::Wide; 9], lv: &[F; 4], rv: &[F; 4], w: &F)
+where
+    F: InnerTransparentField + WideMulAcc,
+{
+    let lw: [F; 4] = core::array::from_fn(|i| w.clone() * &lv[i]);
+    // Node grids {0, 1, ∞}² from the four multilinear values: rows
+    // v = x₂ node, columns u = x₁ node.
+    let grid = |v: &[F; 4]| -> [F; 9] {
+        let d00 = v[1].clone() - &v[0]; // ∂x₁ at x₂ = 0
+        let d01 = v[3].clone() - &v[2]; // ∂x₁ at x₂ = 1
+        [
+            v[0].clone(),
+            v[1].clone(),
+            d00.clone(),
+            v[2].clone(),
+            v[3].clone(),
+            d01.clone(),
+            v[2].clone() - &v[0],
+            v[3].clone() - &v[1],
+            d01 - &d00,
+        ]
+    };
+    let lg = grid(&lw);
+    let rg = grid(rv);
+    for (a, (x, y)) in acc.iter_mut().zip(lg.iter().zip(rg.iter())) {
+        F::wide_add_assign(a, &F::mul_wide(x, y));
+    }
+}
+
+/// Reduce a grid accumulator and convert node rows to `X₁`-monomial
+/// coefficients per `x₂` node: `a₀ = H(0)`, `a₂ = H(∞)`,
+/// `a₁ = H(1) − H(0) − H(∞)`.
+#[allow(clippy::arithmetic_side_effects)]
+fn grid_finish<F>(acc: [F::Wide; 9]) -> [F; 9]
+where
+    F: InnerTransparentField + WideMulAcc,
+{
     let e: [F; 9] = acc.map(F::from_wide);
     core::array::from_fn(|i| {
         let (u, v) = (i / 3, i % 3);
@@ -2028,11 +2061,22 @@ where
             && j + 1 < k
             && !(j == 1 && pre_round1.is_some())
             && bufs.iter().all(|gb| matches!(gb, GroupBufs::Dense(p) if p.len() == 1));
-        let hs: Vec<(F, F, F)> = if let Some(g) = grid.take() {
+        let hs: Vec<(F, F, F)> = if grid_rho.is_some() {
             // Round j+1 of a double-fold pass: nine field elements per
             // group, evaluated at the challenge just drawn. No pass.
-            let rho_prev = grid_rho.take().expect("grid follows its round's challenge");
+            let g = grid.take().expect("a grid challenge implies a grid");
+            let rho_prev = grid_rho.take().expect("checked is_some");
             g.iter().map(|gg| grid_next_round(gg, &rho_prev)).collect()
+        } else if let Some(g) = &grid {
+            // A grid DEPOSITED by the previous round's materialising fold
+            // (mat+grid fusion): this round's message reads off it — no
+            // pass — and the grid stays put; this round's challenge stamps
+            // `grid_rho` exactly as after an in-pass production, and the
+            // next round consumes it above.
+            g.iter()
+                .enumerate()
+                .map(|(t, gg)| grid_this_round(gg, &qs[if shared_q { 0 } else { t }][j], &one))
+                .collect()
         } else if double_now {
             let _g_msg = crate::utils::prof::scope("eqf:grid");
             let quads = half >> 1;
@@ -2343,9 +2387,18 @@ where
                 } else {
                     Vec::new()
                 };
+            // Mat+grid fusion ([`mat_grid_enabled`]): materialising folds
+            // below accumulate the next round-pair's grid over the values
+            // they write and return it; when EVERY group produced one, it
+            // is deposited as this driver's `grid` state (the message
+            // branch for a deposited grid reads it with no pass). Needs
+            // the two grid rounds (j+1, j+2) to not include the last
+            // round, exactly like an in-pass production.
+            let mat_grid_now = mat_grid_enabled() && eqf_double() && j + 2 < k;
             // Fold every group's L,R at ρ. Parallel **across groups**; the
             // per-vector fold is sequential (the groups are the big dimension).
-            let fold_group = |gb: &mut GroupBufs<F>| match gb {
+            let fold_group = |gb: &mut GroupBufs<F>| -> Option<[F; 9]> {
+                match gb {
                 GroupBufs::Dense(group_bufs) => {
                     for (l, r) in group_bufs.iter_mut() {
                         // Fold each buffer in place: write index `b` is only ever
@@ -2366,6 +2419,7 @@ where
                         fold_in_place(l);
                         fold_in_place(r);
                     }
+                    None
                 }
                 GroupBufs::LeafBits { lbits, rbits, tau_set } => {
                     // Materialise the dense round-2 buffers straight from the
@@ -2386,6 +2440,7 @@ where
                     let l = build(lbits, &ft.t_l);
                     let r = build(rbits, &ft.t_r);
                     *gb = GroupBufs::Dense(vec![(l, r)]);
+                    None
                 }
                 GroupBufs::Pair2Bits { lbits, rbits, tau_set } => {
                     // Materialise the dense round-2 buffers from the bits via
@@ -2402,6 +2457,7 @@ where
                         r.push(ft.f_o[(b << 4) | (co0 << 2) | co1].clone());
                     }
                     *gb = GroupBufs::Dense(vec![(l, r)]);
+                    None
                 }
                 GroupBufs::Leaf2Bits { lbits, rbits, tau_set } => {
                     if j == 1 {
@@ -2424,11 +2480,13 @@ where
                         }
                         *gb = GroupBufs::Dense(vec![(l, r)]);
                     }
+                    None
                 }
                 GroupBufs::Leaf3Bits { lbits, rbits, tau_set } => {
                     if j <= 2 {
                         // Rounds 1-2 keep the bits; the round-2 fold
                         // tables get stashed as `leaf3_value_sets` below.
+                        None
                     } else {
                         // Round 3's fold: inline-materialise the dense
                         // round-4 buffers — `v' = v_0 + ρ₃(v_0 + v_1)`
@@ -2439,6 +2497,9 @@ where
                         let prfm = lut_prfm(half);
                         let mut l = Vec::with_capacity(half);
                         let mut r = Vec::with_capacity(half);
+                        let mut g9 = mat_grid_now
+                            .then(|| core::array::from_fn::<_, 9, _>(|_| F::wide_zero(&zero)));
+                        let sfx: &[F] = if g9.is_some() { &suffix[0][j + 1] } else { &[] };
                         for b in 0..half {
                             if prfm && b + PRFM_DIST < half {
                                 let bp = b + PRFM_DIST;
@@ -2463,8 +2524,22 @@ where
                             let u0 = &vs.f_o[(e << 4) | leaf3_idx(br & 15)];
                             let u1 = &vs.f_o[((e | 1) << 4) | leaf3_idx(br >> 4)];
                             r.push(u0.clone() + &(rho.clone() * &(u0.clone() + u1)));
+                            if b & 3 == 3 {
+                                if let Some(acc) = g9.as_mut() {
+                                    // Cache-hot readback of the quad just
+                                    // written — the fresh buffers' first
+                                    // DRAM read moves to round j+3's pass.
+                                    let base = b - 3;
+                                    let lv: [F; 4] =
+                                        core::array::from_fn(|i| l[base + i].clone());
+                                    let rv: [F; 4] =
+                                        core::array::from_fn(|i| r[base + i].clone());
+                                    grid_quad_acc(acc, &lv, &rv, &sfx[base >> 2]);
+                                }
+                            }
                         }
                         *gb = GroupBufs::Dense(vec![(l, r)]);
+                        g9.map(grid_finish)
                     }
                 }
                 GroupBufs::Leaf4Bits { lbits, rbits, tau_set } => {
@@ -2473,6 +2548,7 @@ where
                         // below); round 3's "fold" is the shared ρ₃
                         // REWEIGHT of the stashed sets (also below) —
                         // still nothing per-tree.
+                        None
                     } else {
                         // Round 4's fold: inline-materialise the dense
                         // round-5 buffers — each round-4 value the XOR of
@@ -2482,6 +2558,9 @@ where
                         let prfm = lut_prfm(half);
                         let mut l = Vec::with_capacity(half);
                         let mut r = Vec::with_capacity(half);
+                        let mut g9 = mat_grid_now
+                            .then(|| core::array::from_fn::<_, 9, _>(|_| F::wide_zero(&zero)));
+                        let sfx: &[F] = if g9.is_some() { &suffix[0][j + 1] } else { &[] };
                         for b in 0..half {
                             if prfm && b + PRFM_DIST < half {
                                 let bp = b + PRFM_DIST;
@@ -2502,14 +2581,26 @@ where
                             l.push(v0.clone() + &(rho.clone() * &(v0 + &v1)));
                             let (u0, u1) = leaf4_entry_pair(&vs.f_o, e, br);
                             r.push(u0.clone() + &(rho.clone() * &(u0 + &u1)));
+                            if b & 3 == 3 {
+                                if let Some(acc) = g9.as_mut() {
+                                    let base = b - 3;
+                                    let lv: [F; 4] =
+                                        core::array::from_fn(|i| l[base + i].clone());
+                                    let rv: [F; 4] =
+                                        core::array::from_fn(|i| r[base + i].clone());
+                                    grid_quad_acc(acc, &lv, &rv, &sfx[base >> 2]);
+                                }
+                            }
                         }
                         *gb = GroupBufs::Dense(vec![(l, r)]);
+                        g9.map(grid_finish)
                     }
                 }
                 GroupBufs::Pair3Bits { lbits, rbits, tau_set } => {
                     if j == 1 {
                         // Round 1's fold keeps the bits; its fold tables
                         // get stashed as `pair3_value_sets` below.
+                        None
                     } else {
                         // Round 2's fold: inline-materialise the dense
                         // round-3 buffers from the stashed tables (same
@@ -2520,6 +2611,9 @@ where
                         let prfm = lut_prfm(half);
                         let mut l = Vec::with_capacity(half);
                         let mut r = Vec::with_capacity(half);
+                        let mut g9 = mat_grid_now
+                            .then(|| core::array::from_fn::<_, 9, _>(|_| F::wide_zero(&zero)));
+                        let sfx: &[F] = if g9.is_some() { &suffix[0][j + 1] } else { &[] };
                         for b in 0..half {
                             if prfm && b + PRFM_DIST < half {
                                 let bp = b + PRFM_DIST;
@@ -2558,8 +2652,19 @@ where
                             let u0 = &vs.f_o[(e << 4) | pair3_idx(ml & 3, mr & 3)];
                             let u1 = &vs.f_o[((e | 1) << 4) | pair3_idx(ml >> 2, mr >> 2)];
                             r.push(u0.clone() + &(rho.clone() * &(u0.clone() + u1)));
+                            if b & 3 == 3 {
+                                if let Some(acc) = g9.as_mut() {
+                                    let base = b - 3;
+                                    let lv: [F; 4] =
+                                        core::array::from_fn(|i| l[base + i].clone());
+                                    let rv: [F; 4] =
+                                        core::array::from_fn(|i| r[base + i].clone());
+                                    grid_quad_acc(acc, &lv, &rv, &sfx[base >> 2]);
+                                }
+                            }
                         }
                         *gb = GroupBufs::Dense(vec![(l, r)]);
+                        g9.map(grid_finish)
                     }
                 }
                 GroupBufs::T4Bits { lbits, rbits, tau_set } => {
@@ -2581,6 +2686,8 @@ where
                         r.push(u0.clone() + &(rho.clone() * &(u0.clone() + u1)));
                     }
                     *gb = GroupBufs::Dense(vec![(l, r)]);
+                    None
+                }
                 }
             };
             // Diagnostic-only: split folds by shape — bit-keeping stashes vs
@@ -2602,13 +2709,23 @@ where
             };
             let _g_fold = crate::utils::prof::scope(fold_label);
             #[cfg(feature = "parallel")]
-            {
+            let mat_grids: Vec<Option<[F; 9]>> = {
                 let min_len = (512usize / half.max(1)).max(1);
-                bufs.par_iter_mut().with_min_len(min_len).for_each(fold_group);
-            }
+                bufs.par_iter_mut().with_min_len(min_len).map(fold_group).collect()
+            };
             #[cfg(not(feature = "parallel"))]
-            bufs.iter_mut().for_each(fold_group);
+            let mat_grids: Vec<Option<[F; 9]>> = bufs.iter_mut().map(fold_group).collect();
             drop(_g_fold);
+            if mat_grid_now
+                && !mat_grids.is_empty()
+                && mat_grids.iter().all(Option::is_some)
+            {
+                // Every group's materialising fold produced the next
+                // round-pair's grid — deposit it; `grid_rho` stays unset
+                // until the NEXT round's challenge (the deposited-grid
+                // message branch), exactly the in-pass production timing.
+                grid = Some(mat_grids.into_iter().flatten().collect());
+            }
             if has_leaf2 || has_leaf3 || has_leaf4 {
                 if j == 1 {
                     // Stash round 1's fold tables as the round-2 value
