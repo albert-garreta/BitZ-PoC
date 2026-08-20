@@ -2373,6 +2373,21 @@
     <bcf:datasource type="file" datatype="bibtex" glob="false">references.bib</bcf:datasource>
   </bcf:bibdata>
   <bcf:section number="0">
+    <bcf:citekey order="1" intorder="1">BCPS18</bcf:citekey>
+    <bcf:citekey order="2" intorder="1">linear-accumulation</bcf:citekey>
+    <bcf:citekey order="3" intorder="1">linear accumulation</bcf:citekey>
+    <bcf:citekey order="4" intorder="1">zinc</bcf:citekey>
+    <bcf:citekey order="5" intorder="1">WHIR?</bcf:citekey>
+    <bcf:citekey order="6" intorder="1">TCC:BCFW25</bcf:citekey>
+    <bcf:citekey order="7" intorder="1">zincplus</bcf:citekey>
+    <bcf:citekey order="8" intorder="1">ccs</bcf:citekey>
+    <bcf:citekey order="9" intorder="1">air</bcf:citekey>
+    <bcf:citekey order="10" intorder="1">linear-accumulation</bcf:citekey>
+    <bcf:citekey order="10" intorder="2">zinc</bcf:citekey>
+    <bcf:citekey order="10" intorder="3">zincplus</bcf:citekey>
+    <bcf:citekey order="11" intorder="1">zincplus</bcf:citekey>
+    <bcf:citekey order="12" intorder="1">zincplus</bcf:citekey>
+    <bcf:citekey order="13" intorder="1">FIPS180-4</bcf:citekey>
   </bcf:section>
   <!-- SORTING TEMPLATES -->
   <bcf:sortingtemplate name="anyt">
@@ -2407,4 +2422,14 @@
     </bcf:sort>
   </bcf:sortingtemplate>
   <!-- DATALISTS -->
+  <bcf:datalist section="0"
+                name="anyt/global//global/global/global"
+                type="entry"
+                sortingtemplatename="anyt"
+                sortingnamekeytemplatename="global"
+                labelprefix=""
+                uniquenametemplatename="global"
+                labelalphanametemplatename="global"
+                namehashtemplatename="global">
+  </bcf:datalist>
 </bcf:controlfile>
