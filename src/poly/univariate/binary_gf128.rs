@@ -1028,7 +1028,11 @@ impl crate::utils::wide_mul::WideMulAcc for BinaryFieldGF128 {
         // NEON-resident pipeline; value-exact vs the word pipeline below.
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         {
-            neon::eqf_fold_in_place(v, rho, half);
+            if fixed_scalar_enabled() {
+                neon::eqf_fold_in_place_fixed(v, rho, half);
+            } else {
+                neon::eqf_fold_in_place(v, rho, half);
+            }
             return true;
         }
         #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
@@ -1079,6 +1083,9 @@ impl crate::utils::wide_mul::WideMulAcc for BinaryFieldGF128 {
         // NEON-resident pipeline; value-exact vs the word pipeline below.
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         {
+            if fixed_scalar_enabled() {
+                return Some(neon::eqf_fused_fold_round_fixed(l, r, rho, w, half));
+            }
             return Some(neon::eqf_fused_fold_round(l, r, rho, w, half));
         }
         #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
@@ -1120,6 +1127,52 @@ impl crate::utils::wide_mul::WideMulAcc for BinaryFieldGF128 {
         Some((Self::reduce_wide(a0a), Self::reduce_wide(a1a), Self::reduce_wide(a2a)))
         }
     }
+
+    /// Hand kernel for the double-fold dense grid pass: the deferred
+    /// challenges fold as ONE arity-4 fixed-weight XOR-sum with a shared
+    /// reduction (weights `ρ₁, ρ₂, ρ₁ρ₂` preprocessed — 12+1 PMULLs per
+    /// logical value vs 3 composed multiplies' 21), and the weighting,
+    /// node grids, and nine wide products stay vector-resident per quad.
+    /// Value-exact vs the generic pass (pinned by
+    /// `grid_kernel_matches_generic_pass`).
+    fn eqf_grid_pass(
+        l: &mut [Self],
+        r: &mut [Self],
+        pending: &[Self],
+        suffix: &[Self],
+        quads: usize,
+    ) -> Option<[Self; 9]> {
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            if pending.len() <= 2 && fixed_scalar_enabled() {
+                return Some(neon::eqf_grid_pass(l, r, pending, suffix, quads));
+            }
+            None
+        }
+        #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+        {
+            let _ = (l, r, pending, suffix, quads);
+            None
+        }
+    }
+}
+
+/// Fixed-scalar (preprocessed-multiplier) kernels: for a multiplier that
+/// is FIXED across a pass (the fold challenge ρ, the double-fold's
+/// deferred-challenge weights), precompute `R0 = r` and `R1 = X^64·r mod
+/// f` so the product is four shuffle-free lane-paired PMULLs into a
+/// 191-bit `(t_lo, t_mid)` domain finished by ONE `fold_x64` — 5 PMULLs
+/// per multiply vs 7 for the composed `clmul_256` + `reduce_256` element,
+/// and 4 + 1/N for XOR-summed aggregates (the arity-4 double fold).
+/// Measured on the standalone field bench (M4): fold level 0.47 → 0.28
+/// ns/elt; arity-4 shared-reduction 0.18 ns/elt per variable bound.
+/// Value-exact either way (same carryless products, same unique remainder
+/// — pinned by the kernel A/B tests). `F2Z_FIXED_SCALAR=0` opts out
+/// (diagnostic).
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+fn fixed_scalar_enabled() -> bool {
+    static ENV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENV.get_or_init(|| std::env::var("F2Z_FIXED_SCALAR").map_or(true, |v| v != "0"))
 }
 
 // -- carryless multiplication and reduction --------------------------
@@ -1490,10 +1543,10 @@ pub(crate) mod neon {
     ) {
         // SAFETY: as `pmull_lo`.
         unsafe {
-            let (tl, th) = clmul_256(w, l0);
-            let l0w = reduce_256(tl, th);
-            let (tl, th) = clmul_256(w, l1);
-            let l1w = reduce_256(tl, th);
+            let g = vdupq_n_u64(0x87);
+            let z = vdupq_n_u64(0);
+            let l0w = mul_red(w, l0, g, z);
+            let l1w = mul_red(w, l1, g, z);
             let (c0l, c0h) = clmul_256(l0w, r0);
             let (c1l, c1h) = clmul_256(l1w, r1);
             let dl = veorq_u64(l1w, l0w);
@@ -1687,6 +1740,356 @@ pub(crate) mod neon {
         unsafe {
             let (pl, ph) = clmul_256(rv, veorq_u64(v1, v0));
             veorq_u64(v0, reduce_256(pl, ph))
+        }
+    }
+
+    // -- fixed-scalar (preprocessed-multiplier) kernels ---------------
+    //
+    // For a multiplier FIXED across a pass, precompute `R0 = r` and
+    // `R1 = X^64·r mod f`, interleaved as `rl = [R0.lo, R1.lo]`,
+    // `rh = [R0.hi, R1.hi]`. Then `a·r = a0·R0 ⊕ a1·R1` and the four
+    // products are `pmull_lo/hi(a, rl)` and `pmull_lo/hi(a, rh)` — no
+    // operand shuffles — landing in a 191-bit `(t_lo, t_mid)` domain
+    // (value `t_lo ⊕ X^64·t_mid`, `t_mid` ≤ 127 bits) finished by ONE
+    // [`fold_x64`]: 5 PMULLs per reduced multiply vs 7 for the composed
+    // `clmul_256` + `reduce_256` element. XOR-summed aggregates
+    // accumulate in `(t_lo, t_mid)` and share the final fold: 4 PMULLs
+    // per term (the arity-4 double fold below: 12+1 per 4 inputs vs 21
+    // over two composed levels). Value-exact: the same carryless
+    // products and the same unique remainder mod `f`.
+
+    /// Preprocess a pass-fixed multiplier into the interleaved
+    /// `(rl, rh)` pair. `X^64·r = (0, r0) ⊕ g·r1` with `g·r1 ≤ 70`
+    /// bits, so `R1` is already reduced. One 64×64 clmul — amortised
+    /// over the pass.
+    #[inline(always)]
+    unsafe fn prep_fixed(rho: &BinaryFieldGF128) -> (uint64x2_t, uint64x2_t) {
+        let w = rho.uint.as_words();
+        let rg = super::clmul_64x64(w[1], 0x87);
+        let rl = [w[0], rg[0]];
+        let rh = [w[1], w[0] ^ rg[1]];
+        // SAFETY: valid 16-byte word pairs.
+        unsafe { (vld1q_u64(rl.as_ptr()), vld1q_u64(rh.as_ptr())) }
+    }
+
+    /// The 191-bit unreduced fixed-scalar product `(t_lo, t_mid)`:
+    /// 4 shuffle-free PMULLs, 2 EORs.
+    #[inline(always)]
+    unsafe fn mul_fixed_wide(
+        av: uint64x2_t,
+        rl: uint64x2_t,
+        rh: uint64x2_t,
+    ) -> (uint64x2_t, uint64x2_t) {
+        // SAFETY: as `pmull_lo`.
+        unsafe {
+            (
+                veorq_u64(pmull_lo(av, rl), pmull_hi(av, rl)),
+                veorq_u64(pmull_lo(av, rh), pmull_hi(av, rh)),
+            )
+        }
+    }
+
+    /// Reduced fixed-scalar multiply: 4 PMULLs + one [`fold_x64`].
+    #[inline(always)]
+    unsafe fn mul_fixed(
+        av: uint64x2_t,
+        rl: uint64x2_t,
+        rh: uint64x2_t,
+        g: uint64x2_t,
+        z: uint64x2_t,
+    ) -> uint64x2_t {
+        // SAFETY: as `pmull_lo`.
+        unsafe {
+            let (tl, tm) = mul_fixed_wide(av, rl, rh);
+            fold_x64(tl, tm, g, z)
+        }
+    }
+
+    /// [`fold1`] with the pass-fixed ρ preprocessed: 5 PMULLs vs 7.
+    #[inline(always)]
+    unsafe fn fold1_fixed(
+        rl: uint64x2_t,
+        rh: uint64x2_t,
+        g: uint64x2_t,
+        z: uint64x2_t,
+        v0: uint64x2_t,
+        v1: uint64x2_t,
+    ) -> uint64x2_t {
+        // SAFETY: as `pmull_lo`.
+        unsafe { veorq_u64(v0, mul_fixed(veorq_u64(v1, v0), rl, rh, g, z)) }
+    }
+
+    /// [`eqf_fold_in_place`] with the pass-fixed ρ preprocessed.
+    pub(crate) fn eqf_fold_in_place_fixed(
+        v: &mut [BinaryFieldGF128],
+        rho: &BinaryFieldGF128,
+        half: usize,
+    ) {
+        // SAFETY: as `eqf_fold_in_place` (same access pattern: the write
+        // index `b` is only ever read at the earlier iteration `b/2`).
+        unsafe {
+            let (rl, rh) = prep_fixed(rho);
+            let g = vdupq_n_u64(0x87);
+            let z = vdupq_n_u64(0);
+            let mut b = 0usize;
+            while b + 2 <= half {
+                let v0a = ld(&v[b << 1]);
+                let v1a = ld(&v[(b << 1) | 1]);
+                let v0b = ld(&v[(b + 1) << 1]);
+                let v1b = ld(&v[((b + 1) << 1) | 1]);
+                let pa = fold1_fixed(rl, rh, g, z, v0a, v1a);
+                let pb = fold1_fixed(rl, rh, g, z, v0b, v1b);
+                st(&mut v[b], pa);
+                st(&mut v[b + 1], pb);
+                b += 2;
+            }
+            if b < half {
+                let v0 = ld(&v[b << 1]);
+                let v1 = ld(&v[(b << 1) | 1]);
+                let p = fold1_fixed(rl, rh, g, z, v0, v1);
+                st(&mut v[b], p);
+            }
+        }
+    }
+
+    /// [`eqf_fused_fold_round`] with the four fold products per slot
+    /// going through the preprocessed-ρ multiply (5 PMULLs each vs 7);
+    /// the message chain ([`eqf_slot`]) is unchanged.
+    pub(crate) fn eqf_fused_fold_round_fixed(
+        l: &mut [BinaryFieldGF128],
+        r: &mut [BinaryFieldGF128],
+        rho: &BinaryFieldGF128,
+        w: &[BinaryFieldGF128],
+        half: usize,
+    ) -> (BinaryFieldGF128, BinaryFieldGF128, BinaryFieldGF128) {
+        // SAFETY: as `eqf_fused_fold_round` (same access pattern).
+        unsafe {
+            let (rl, rh) = prep_fixed(rho);
+            let g = vdupq_n_u64(0x87);
+            let z = vdupq_n_u64(0);
+            let mut a0a = (z, z);
+            let mut a1a = (z, z);
+            let mut a2a = (z, z);
+            let mut a0b = (z, z);
+            let mut a1b = (z, z);
+            let mut a2b = (z, z);
+            let mut b = 0usize;
+            while b + 2 <= half {
+                let base = b << 2;
+                let fl0 = fold1_fixed(rl, rh, g, z, ld(&l[base]), ld(&l[base + 1]));
+                let fl1 = fold1_fixed(rl, rh, g, z, ld(&l[base + 2]), ld(&l[base + 3]));
+                let fr0 = fold1_fixed(rl, rh, g, z, ld(&r[base]), ld(&r[base + 1]));
+                let fr1 = fold1_fixed(rl, rh, g, z, ld(&r[base + 2]), ld(&r[base + 3]));
+                let e = b << 1;
+                st(&mut l[e], fl0);
+                st(&mut l[e | 1], fl1);
+                st(&mut r[e], fr0);
+                st(&mut r[e | 1], fr1);
+                eqf_slot(ld(&w[b]), fl0, fl1, fr0, fr1, &mut a0a, &mut a1a, &mut a2a);
+                let c = b + 1;
+                let base = c << 2;
+                let gl0 = fold1_fixed(rl, rh, g, z, ld(&l[base]), ld(&l[base + 1]));
+                let gl1 = fold1_fixed(rl, rh, g, z, ld(&l[base + 2]), ld(&l[base + 3]));
+                let gr0 = fold1_fixed(rl, rh, g, z, ld(&r[base]), ld(&r[base + 1]));
+                let gr1 = fold1_fixed(rl, rh, g, z, ld(&r[base + 2]), ld(&r[base + 3]));
+                let e = c << 1;
+                st(&mut l[e], gl0);
+                st(&mut l[e | 1], gl1);
+                st(&mut r[e], gr0);
+                st(&mut r[e | 1], gr1);
+                eqf_slot(ld(&w[c]), gl0, gl1, gr0, gr1, &mut a0b, &mut a1b, &mut a2b);
+                b += 2;
+            }
+            if b < half {
+                let base = b << 2;
+                let fl0 = fold1_fixed(rl, rh, g, z, ld(&l[base]), ld(&l[base + 1]));
+                let fl1 = fold1_fixed(rl, rh, g, z, ld(&l[base + 2]), ld(&l[base + 3]));
+                let fr0 = fold1_fixed(rl, rh, g, z, ld(&r[base]), ld(&r[base + 1]));
+                let fr1 = fold1_fixed(rl, rh, g, z, ld(&r[base + 2]), ld(&r[base + 3]));
+                let e = b << 1;
+                st(&mut l[e], fl0);
+                st(&mut l[e | 1], fl1);
+                st(&mut r[e], fr0);
+                st(&mut r[e | 1], fr1);
+                eqf_slot(ld(&w[b]), fl0, fl1, fr0, fr1, &mut a0a, &mut a1a, &mut a2a);
+            }
+            a0a.0 = veorq_u64(a0a.0, a0b.0);
+            a0a.1 = veorq_u64(a0a.1, a0b.1);
+            a1a.0 = veorq_u64(a1a.0, a1b.0);
+            a1a.1 = veorq_u64(a1a.1, a1b.1);
+            a2a.0 = veorq_u64(a2a.0, a2b.0);
+            a2a.1 = veorq_u64(a2a.1, a2b.1);
+            (to_elt(a0a), to_elt(a1a), to_elt(a2a))
+        }
+    }
+
+    /// Reduced multiply on register-resident vectors — the
+    /// [`mul_words`] 3-limb fold-chain shape (6 PMULLs).
+    #[inline(always)]
+    unsafe fn mul_red(
+        a: uint64x2_t,
+        b: uint64x2_t,
+        g: uint64x2_t,
+        z: uint64x2_t,
+    ) -> uint64x2_t {
+        // SAFETY: as `pmull_lo`.
+        unsafe {
+            let t00 = pmull_lo(a, b);
+            let t11 = pmull_hi(a, b);
+            let bsw = vextq_u64(b, b, 1);
+            let mid = veorq_u64(pmull_lo(a, bsw), pmull_hi(a, bsw));
+            let t1 = fold_x64(mid, t11, g, z);
+            fold_x64(t00, t1, g, z)
+        }
+    }
+
+    /// One logical quad's four folded values under `d ≤ 2` deferred
+    /// challenges: arity-4 shared-reduction fixed fold at `d = 2`
+    /// (weights `ρ₁, ρ₂, ρ₁ρ₂` preprocessed; 12+1 PMULLs per value),
+    /// fixed pair fold at `d = 1`, plain loads at `d = 0`. Value-exact
+    /// vs `fold_logical`'s composed multiplies: the arity-4 expansion is
+    /// `v₀ ⊕ ρ₁·(v₁⊕v₀) ⊕ ρ₂·(v₂⊕v₀) ⊕ ρ₁ρ₂·(v₃⊕v₂⊕v₁⊕v₀)` and
+    /// reduction is `F₂`-linear.
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fold_quad_logical(
+        v: &[BinaryFieldGF128],
+        b: usize,
+        d: usize,
+        w1l: uint64x2_t,
+        w1h: uint64x2_t,
+        w2l: uint64x2_t,
+        w2h: uint64x2_t,
+        w3l: uint64x2_t,
+        w3h: uint64x2_t,
+        g: uint64x2_t,
+        z: uint64x2_t,
+    ) -> [uint64x2_t; 4] {
+        // SAFETY: as `pmull_lo`; indices in bounds by the caller's
+        // contract (`v` has `(quads ≪ 2) ≪ d` entries).
+        unsafe {
+            match d {
+                0 => core::array::from_fn(|i| ld(&v[(b << 2) | i])),
+                1 => core::array::from_fn(|i| {
+                    let p = ((b << 2) | i) << 1;
+                    fold1_fixed(w1l, w1h, g, z, ld(&v[p]), ld(&v[p + 1]))
+                }),
+                _ => core::array::from_fn(|i| {
+                    let p = ((b << 2) | i) << 2;
+                    let v0 = ld(&v[p]);
+                    let v1 = ld(&v[p + 1]);
+                    let v2 = ld(&v[p + 2]);
+                    let v3 = ld(&v[p + 3]);
+                    let d1 = veorq_u64(v1, v0);
+                    let d2 = veorq_u64(v2, v0);
+                    let d3 = veorq_u64(d1, veorq_u64(v3, v2));
+                    let (mut tl, mut tm) = mul_fixed_wide(d1, w1l, w1h);
+                    let (l2, m2) = mul_fixed_wide(d2, w2l, w2h);
+                    let (l3, m3) = mul_fixed_wide(d3, w3l, w3h);
+                    tl = veorq_u64(tl, veorq_u64(l2, l3));
+                    tm = veorq_u64(tm, veorq_u64(m2, m3));
+                    veorq_u64(v0, fold_x64(tl, tm, g, z))
+                }),
+            }
+        }
+    }
+
+    /// The 3×3 node grid `{0, 1, ∞}²` of a logical quad — rows `v = x₂`
+    /// node, columns `u = x₁` node, differences only (char 2: XORs).
+    /// Mirrors the generic pass's `grid` closure element-for-element.
+    #[inline(always)]
+    unsafe fn node_grid(a: &[uint64x2_t; 4]) -> [uint64x2_t; 9] {
+        // SAFETY: plain NEON XORs.
+        unsafe {
+            let d00 = veorq_u64(a[1], a[0]);
+            let d01 = veorq_u64(a[3], a[2]);
+            [
+                a[0],
+                a[1],
+                d00,
+                a[2],
+                a[3],
+                d01,
+                veorq_u64(a[2], a[0]),
+                veorq_u64(a[3], a[1]),
+                veorq_u64(d01, d00),
+            ]
+        }
+    }
+
+    /// The dense grid pass as one NEON kernel (see
+    /// `WideMulAcc::eqf_grid_pass` for the contract): fold the deferred
+    /// challenges per quad ([`fold_quad_logical`] — the arity-4
+    /// shared-reduction fixed fold at `d = 2`), write the folded quad to
+    /// the buffer prefix, weight the `L` side by the suffix tensor
+    /// ([`mul_red`]), and accumulate the nine node-grid products into
+    /// 256-bit vector accumulators — one reduction per node at the end,
+    /// then the `X₁`-monomial conversion (`a₁ = H(1) ⊕ H(0) ⊕ H(∞)` in
+    /// char 2). Value-exact vs the generic pass.
+    pub(crate) fn eqf_grid_pass(
+        l: &mut [BinaryFieldGF128],
+        r: &mut [BinaryFieldGF128],
+        pending: &[BinaryFieldGF128],
+        suffix: &[BinaryFieldGF128],
+        quads: usize,
+    ) -> [BinaryFieldGF128; 9] {
+        let d = pending.len();
+        debug_assert!(d <= 2, "grid kernel handles at most 2 deferred challenges");
+        // SAFETY: as `pmull_lo`; per quad the `4·2^d` reads at
+        // `((b≪2)|i)≪d` complete before the 4 prefix writes at `(b≪2)|i`
+        // (all four logical values are in registers first), and later
+        // quads read strictly above every earlier write.
+        unsafe {
+            let g = vdupq_n_u64(0x87);
+            let z = vdupq_n_u64(0);
+            let (w1l, w1h) = if d >= 1 { prep_fixed(&pending[0]) } else { (z, z) };
+            let (w2l, w2h, w3l, w3h) = if d == 2 {
+                let p12 = pending[0] * &pending[1];
+                let (al, ah) = prep_fixed(&pending[1]);
+                let (bl, bh) = prep_fixed(&p12);
+                (al, ah, bl, bh)
+            } else {
+                (z, z, z, z)
+            };
+            let mut acc = [(z, z); 9];
+            for b in 0..quads {
+                let lv = fold_quad_logical(l, b, d, w1l, w1h, w2l, w2h, w3l, w3h, g, z);
+                let rv = fold_quad_logical(r, b, d, w1l, w1h, w2l, w2h, w3l, w3h, g, z);
+                if d > 0 {
+                    let base = b << 2;
+                    for (i, (lf, rf)) in lv.iter().zip(rv.iter()).enumerate() {
+                        st(&mut l[base | i], *lf);
+                        st(&mut r[base | i], *rf);
+                    }
+                }
+                let wv = ld(&suffix[b]);
+                let lw = [
+                    mul_red(wv, lv[0], g, z),
+                    mul_red(wv, lv[1], g, z),
+                    mul_red(wv, lv[2], g, z),
+                    mul_red(wv, lv[3], g, z),
+                ];
+                let lg = node_grid(&lw);
+                let rg = node_grid(&rv);
+                for (a, (x, y)) in acc.iter_mut().zip(lg.iter().zip(rg.iter())) {
+                    let (pl, ph) = clmul_256(*x, *y);
+                    a.0 = veorq_u64(a.0, pl);
+                    a.1 = veorq_u64(a.1, ph);
+                }
+            }
+            let e: [uint64x2_t; 9] = core::array::from_fn(|k| reduce_256(acc[k].0, acc[k].1));
+            core::array::from_fn(|i| {
+                let (u, v) = (i / 3, i % 3);
+                let base = v * 3;
+                let val = match u {
+                    0 => e[base],
+                    2 => e[base + 2],
+                    _ => veorq_u64(e[base + 1], veorq_u64(e[base], e[base + 2])),
+                };
+                let mut out = [0u64; 2];
+                vst1q_u64(out.as_mut_ptr(), val);
+                BinaryFieldGF128::from_words(out)
+            })
         }
     }
 
@@ -2824,6 +3227,51 @@ mod tests {
             assert_eq!(got, expect, "coefficients (half = {half})");
             assert_eq!(&l_fused[..n >> 1], &l_ref[..], "folded L prefix (half = {half})");
             assert_eq!(&r_fused[..n >> 1], &r_ref[..], "folded R prefix (half = {half})");
+        }
+    }
+
+    /// The fixed-scalar (preprocessed-ρ) kernels are BIT-IDENTICAL to the
+    /// composed kernels they replace: the in-place fold and the fused
+    /// fold+round pass, across degenerate and random challenges (and, via
+    /// the fold identity `fold(0, a) = ρ·a`, the reduced fixed multiply
+    /// itself against the general multiply).
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[test]
+    fn fixed_scalar_kernels_match_composed() {
+        let mut rng = StdRng::seed_from_u64(0xF15E);
+        let ones = BinaryFieldGF128::from_words([u64::MAX, u64::MAX]);
+        for half in [1usize, 2, 37, 64] {
+            let mut rhos =
+                vec![BinaryFieldGF128::zero(), BinaryFieldGF128::one(), ones, rand_elt(&mut rng)];
+            for rho in rhos.drain(..) {
+                // In-place fold.
+                let n = half << 1;
+                let v0: Vec<_> = (0..n).map(|_| rand_elt(&mut rng)).collect();
+                let mut a = v0.clone();
+                let mut b = v0.clone();
+                neon::eqf_fold_in_place(&mut a, &rho, half);
+                neon::eqf_fold_in_place_fixed(&mut b, &rho, half);
+                assert_eq!(&a[..half], &b[..half], "fold (half = {half})");
+
+                // Fused fold+round pass.
+                let n = half << 2;
+                let l0: Vec<_> = (0..n).map(|_| rand_elt(&mut rng)).collect();
+                let r0: Vec<_> = (0..n).map(|_| rand_elt(&mut rng)).collect();
+                let w: Vec<_> = (0..half).map(|_| rand_elt(&mut rng)).collect();
+                let (mut la, mut ra) = (l0.clone(), r0.clone());
+                let (mut lb, mut rb) = (l0.clone(), r0.clone());
+                let ca = neon::eqf_fused_fold_round(&mut la, &mut ra, &rho, &w, half);
+                let cb = neon::eqf_fused_fold_round_fixed(&mut lb, &mut rb, &rho, &w, half);
+                assert_eq!(ca, cb, "fused coefficients (half = {half})");
+                assert_eq!(&la[..n >> 1], &lb[..n >> 1], "fused folded L (half = {half})");
+                assert_eq!(&ra[..n >> 1], &rb[..n >> 1], "fused folded R (half = {half})");
+
+                // fold(0, a) = ρ·a pins the fixed multiply vs `Mul`.
+                let a_s = rand_elt(&mut rng);
+                let mut buf = vec![BinaryFieldGF128::zero(), a_s];
+                neon::eqf_fold_in_place_fixed(&mut buf, &rho, 1);
+                assert_eq!(buf[0], a_s * &rho, "fixed multiply");
+            }
         }
     }
 

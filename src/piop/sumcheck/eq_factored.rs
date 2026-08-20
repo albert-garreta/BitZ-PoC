@@ -1111,6 +1111,28 @@ where
     let d = pending.len();
     debug_assert_eq!(l.len(), (quads << 2) << d, "grid pass reads the unfolded buffers");
     debug_assert_eq!(suffix.len(), quads, "grid weight is the round j+1 suffix tensor");
+    // Hand kernel (fixed-scalar arity-4 fold + vector-resident grid) when
+    // the field ships one — value-exact vs the generic body below.
+    if let Some(res) = F::eqf_grid_pass(l.as_mut_slice(), r.as_mut_slice(), pending, suffix, quads)
+    {
+        if d > 0 {
+            l.truncate(quads << 2);
+            r.truncate(quads << 2);
+        }
+        return res;
+    }
+    dense_grid_pass_generic(l, r, pending, suffix, quads, zero)
+}
+
+/// The generic (trait-op) grid pass — the fallback when the field ships
+/// no hand kernel, and the reference `eqf_grid_pass` overrides are
+/// pinned against.
+#[allow(clippy::arithmetic_side_effects)]
+fn dense_grid_pass_generic<F>(l: &mut Vec<F>, r: &mut Vec<F>, pending: &[F], suffix: &[F], quads: usize, zero: &F) -> [F; 9]
+where
+    F: InnerTransparentField + WideMulAcc,
+{
+    let d = pending.len();
     let mut acc = core::array::from_fn::<_, 9, _>(|_| F::wide_zero(zero));
     for b in 0..quads {
         let base = b << 2;
@@ -2834,6 +2856,103 @@ mod tests {
                 .collect();
         }
         cur[0]
+    }
+
+    /// Measurement (not a correctness gate): isolated kernel-vs-generic
+    /// timing for the grid pass (d = 2) and the fused fold+round pass.
+    /// `cargo test --release grid_pass_kernel_timing -- --ignored --nocapture`
+    #[test]
+    #[ignore = "grid/fused kernel timing — measurement"]
+    fn grid_pass_kernel_timing() {
+        use std::time::Instant;
+        let quads = 1usize << 13; // 2^17 physical elements per side at d=2 (2 MB)
+        let d = 2usize;
+        let n = (quads << 2) << d;
+        let l0: Vec<Gf> = (0..n).map(|i| sample(0xB000 + i as u64)).collect();
+        let r0: Vec<Gf> = (0..n).map(|i| sample(0xC000 + i as u64)).collect();
+        let pending: Vec<Gf> = (0..d).map(|i| sample(0xD000 + i as u64)).collect();
+        let suffix: Vec<Gf> = (0..quads).map(|i| sample(0xE000 + i as u64)).collect();
+        let zero = Gf::zero();
+        let reps = 20usize;
+        let mut best = [f64::MAX; 2];
+        for _ in 0..reps {
+            let (mut lg, mut rg) = (l0.clone(), r0.clone());
+            let t0 = Instant::now();
+            let a = dense_grid_pass_generic(&mut lg, &mut rg, &pending, &suffix, quads, &zero);
+            best[0] = best[0].min(t0.elapsed().as_secs_f64());
+            let (mut lk, mut rk) = (l0.clone(), r0.clone());
+            let t0 = Instant::now();
+            let b = dense_grid_pass(&mut lk, &mut rk, &pending, &suffix, quads, &zero);
+            best[1] = best[1].min(t0.elapsed().as_secs_f64());
+            assert_eq!(a, b);
+        }
+        println!(
+            "grid pass (quads=2^13, d=2): generic {:.3} ms | dispatched {:.3} ms  ({:.2}x)",
+            best[0] * 1e3,
+            best[1] * 1e3,
+            best[0] / best[1]
+        );
+
+        // Fused fold+round: composed vs fixed-ρ kernels, directly.
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            use crate::poly::univariate::binary_gf128::neon;
+            let half = 1usize << 15; // 2^17 entries per side (2 MB)
+            let n = half << 2;
+            let l0: Vec<Gf> = (0..n).map(|i| sample(0xF000 + i as u64)).collect();
+            let r0: Vec<Gf> = (0..n).map(|i| sample(0xF100 + i as u64)).collect();
+            let w: Vec<Gf> = (0..half).map(|i| sample(0xF200 + i as u64)).collect();
+            let rho = sample(0xF300);
+            let mut best = [f64::MAX; 2];
+            for _ in 0..reps {
+                let (mut la, mut ra) = (l0.clone(), r0.clone());
+                let t0 = Instant::now();
+                let ca = neon::eqf_fused_fold_round(&mut la, &mut ra, &rho, &w, half);
+                best[0] = best[0].min(t0.elapsed().as_secs_f64());
+                let (mut lb, mut rb) = (l0.clone(), r0.clone());
+                let t0 = Instant::now();
+                let cb = neon::eqf_fused_fold_round_fixed(&mut lb, &mut rb, &rho, &w, half);
+                best[1] = best[1].min(t0.elapsed().as_secs_f64());
+                assert_eq!(ca, cb);
+            }
+            println!(
+                "fused fold+round (half=2^15): composed {:.3} ms | fixed {:.3} ms  ({:.2}x)",
+                best[0] * 1e3,
+                best[1] * 1e3,
+                best[0] / best[1]
+            );
+        }
+    }
+
+    /// The field's `eqf_grid_pass` hand kernel (when the target ships
+    /// one) is VALUE-EXACT vs the generic grid pass — coefficients AND
+    /// folded prefixes — at every deferred-challenge depth the driver
+    /// produces (`d = 0, 1, 2`). On targets without a kernel the
+    /// dispatcher takes the generic path and the check is trivial.
+    #[test]
+    fn grid_kernel_matches_generic_pass() {
+        for d in 0usize..=2 {
+            for quads in [1usize, 2, 5, 16] {
+                let n = (quads << 2) << d;
+                let seed = 0x9000 + (d * 131 + quads) as u64;
+                let l0: Vec<Gf> = (0..n).map(|i| sample(seed + i as u64)).collect();
+                let r0: Vec<Gf> = (0..n).map(|i| sample(seed + 0x1_0000 + i as u64)).collect();
+                let pending: Vec<Gf> =
+                    (0..d).map(|i| sample(seed + 0x2_0000 + i as u64)).collect();
+                let suffix: Vec<Gf> =
+                    (0..quads).map(|i| sample(seed + 0x3_0000 + i as u64)).collect();
+                let zero = Gf::zero();
+
+                let (mut lg, mut rg) = (l0.clone(), r0.clone());
+                let expect =
+                    dense_grid_pass_generic(&mut lg, &mut rg, &pending, &suffix, quads, &zero);
+                let (mut lk, mut rk) = (l0.clone(), r0.clone());
+                let got = dense_grid_pass(&mut lk, &mut rk, &pending, &suffix, quads, &zero);
+                assert_eq!(got, expect, "grid coefficients (d = {d}, quads = {quads})");
+                assert_eq!(lg, lk, "folded L prefix (d = {d}, quads = {quads})");
+                assert_eq!(rg, rk, "folded R prefix (d = {d}, quads = {quads})");
+            }
+        }
     }
 
     /// Gruen-format roundtrip: shared-point Dense groups (single- and
