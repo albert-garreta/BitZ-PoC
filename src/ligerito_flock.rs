@@ -8114,6 +8114,46 @@ mod tests {
                 proof_q_naive.to_bytes(),
                 "quad kernel bodies must be transcript-identical (t={t},W={w})"
             );
+            // BOTTOM MERGE (`F2Z_QUAD=2` — the pair and leaf layers as
+            // ONE arity-4 bit-driven layer, `prove_quad_bottom_sumcheck`):
+            // roundtrip, wrong-claim rejection, codec, and the v1/v2
+            // plans are mutually incompatible (layer counts differ).
+            unsafe { std::env::set_var("F2Z_QUAD", "2") };
+            let mut pt = Blake3Transcript::new();
+            let proof_q2 =
+                prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc);
+            let mut vt = Blake3Transcript::new();
+            verify_mle_eval_mod_q_ligerito(
+                &mut vt, &hint.commitment, &proof_q2, &p, &rw_q, &col_w, alpha, y, q_bits,
+                &vc,
+            )
+            .unwrap_or_else(|e| panic!("quad-v2 mod-q (t={t},W={w}) failed: {e:?}"));
+            let mut vt = Blake3Transcript::new();
+            assert_eq!(
+                verify_mle_eval_mod_q_ligerito(
+                    &mut vt, &hint.commitment, &proof_q2, &p, &rw_q, &col_w, alpha,
+                    y + Fq::from(1u128), q_bits, &vc,
+                ),
+                Err(FlockRsError::Common(IntEvalRsError::ReadOff)),
+                "quad-v2 wrong claim must be rejected (t={t},W={w})"
+            );
+            let rt2 = IntEvalRsLigModQProof::from_bytes(&proof_q2.to_bytes())
+                .expect("quad-v2 proof codec roundtrip");
+            let mut vt = Blake3Transcript::new();
+            verify_mle_eval_mod_q_ligerito(
+                &mut vt, &hint.commitment, &rt2, &p, &rw_q, &col_w, alpha, y, q_bits, &vc,
+            )
+            .expect("decoded quad-v2 proof verifies");
+            // A v1 proof must not pass under the v2 plan.
+            let mut vt = Blake3Transcript::new();
+            assert!(
+                verify_mle_eval_mod_q_ligerito(
+                    &mut vt, &hint.commitment, &proof_q, &p, &rw_q, &col_w, alpha, y, q_bits,
+                    &vc,
+                )
+                .is_err(),
+                "a v1 quad proof must be rejected under the v2 plan (t={t},W={w})"
+            );
             unsafe { std::env::remove_var("F2Z_QUAD") };
             // A quad proof must NOT pass the arity-2 dispatch (different
             // transcript shape — the quad layers' pair2 rejects).

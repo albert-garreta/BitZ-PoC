@@ -557,13 +557,13 @@ where
 /// m_1·ρτ_1` (char 2, the 1s of `v_1 − v_0` cancel), precombined over the
 /// bit pair — `t[(b≪2) | (m_0 | m_1≪1)]` — so each group's fold is ONE
 /// indexed load per entry.
-struct LeafFoldTables<F> {
-    t_l: Vec<F>,
-    t_r: Vec<F>,
+pub(crate) struct LeafFoldTables<F> {
+    pub(crate) t_l: Vec<F>,
+    pub(crate) t_r: Vec<F>,
 }
 
 #[allow(clippy::arithmetic_side_effects)]
-fn build_leaf_fold_tables<F>(rho: &F, one: &F, tau_l: &[F], tau_r: &[F]) -> LeafFoldTables<F>
+pub(crate) fn build_leaf_fold_tables<F>(rho: &F, one: &F, tau_l: &[F], tau_r: &[F]) -> LeafFoldTables<F>
 where
     F: InnerTransparentField,
 {
@@ -715,13 +715,13 @@ where
 /// `v' = v_0 + ρ(v_1 − v_0) = (1+ρ)·v_0 + ρ·v_1` (char 2), precombined
 /// over the two positions' cases — `f[b≪4 | (c0≪2|c1)]` — so each group's
 /// fold is ONE indexed load per entry.
-struct Pair2FoldTables<F> {
-    f_e: Vec<F>,
-    f_o: Vec<F>,
+pub(crate) struct Pair2FoldTables<F> {
+    pub(crate) f_e: Vec<F>,
+    pub(crate) f_o: Vec<F>,
 }
 
 #[allow(clippy::arithmetic_side_effects)]
-fn build_pair2_fold_tables<F>(rho: &F, one: &F, set: &Pair2TauSet<F>) -> Pair2FoldTables<F>
+pub(crate) fn build_pair2_fold_tables<F>(rho: &F, one: &F, set: &Pair2TauSet<F>) -> Pair2FoldTables<F>
 where
     F: InnerTransparentField,
 {
@@ -949,7 +949,7 @@ fn leaf2_cases(lbits: &[u64], rbits: &[u64], b: usize) -> (usize, usize, usize, 
 /// nibble-half swap.
 #[inline]
 #[allow(clippy::arithmetic_side_effects)]
-fn leaf3_idx(nib: usize) -> usize {
+pub(crate) fn leaf3_idx(nib: usize) -> usize {
     ((nib & 3) << 2) | (nib >> 2)
 }
 

@@ -1380,7 +1380,10 @@ fn prove_merged_forest_lazy_sched(
 // transcript shape from the arity-2 forest, so prover and verifier
 // dispatch on [`quad_active`] together.
 
-use crate::piop::sumcheck::quad::{QuadGroup, prove_quad_eq_sumcheck};
+use crate::piop::sumcheck::quad::{
+    QuadBitGroup, QuadBottomTables, QuadGroup, prove_quad_bottom_sumcheck,
+    prove_quad_eq_sumcheck,
+};
 
 /// Does the QUAD forest apply? `F2Z_QUAD=1`, the L/4 schedule (the quad
 /// plan builds its chain at level d−3), depth ≥ 8. Transcript-shape
@@ -1388,8 +1391,8 @@ use crate::piop::sumcheck::quad::{QuadGroup, prove_quad_eq_sumcheck};
 /// var is the experiment's out-of-band configuration. Read per call.
 pub fn quad_active(p: &IntEvalParams) -> bool {
     let knob = std::env::var("F2Z_QUAD").unwrap_or_default();
-    let forced = knob == "force";
-    if !(forced || knob == "1") || forest_schedule() != ForestSchedule::L4 {
+    let forced = knob == "force" || knob == "force2";
+    if !(forced || knob == "1" || knob == "2") || forest_schedule() != ForestSchedule::L4 {
         return false;
     }
     let log_w = p.word_bits.trailing_zeros() as usize;
@@ -1398,8 +1401,10 @@ pub fn quad_active(p: &IntEvalParams) -> bool {
         return false;
     }
     // The measured knee (below): quad and the double-fold are
-    // SUBSTITUTES, so `=1` engages only where arity 4 still wins.
-    forced || row_len.trailing_zeros() as usize + p.s <= QUAD_N_MAX
+    // SUBSTITUTES, so `=1` engages only where arity 4 still wins. The
+    // v2 bottom merge extends the winning region (see [`QUAD2_N_MAX`]).
+    let n_max = if knob == "2" { QUAD2_N_MAX } else { QUAD_N_MAX };
+    forced || row_len.trailing_zeros() as usize + p.s <= n_max
 }
 
 /// The QUAD knee in `n = depth + s`, measured 2026-07-31 in paired
@@ -1422,10 +1427,30 @@ pub fn quad_active(p: &IntEvalParams) -> bool {
 /// case's 9), which is what would push this knee back up.
 const QUAD_N_MAX: usize = 25;
 
+/// The v2 (bottom-merge) knee: with the pair and leaf layers merged into
+/// one bit-driven arity-4 layer, the quad plan wins THROUGH the measured
+/// range (2026-08-20, paired in-window runs vs base, prove): n=24
+/// −25.3 % (v1 −18.5 %), n=26 −3..−9 % (v1 +3.4 %), n=28 −2..−6.3 %
+/// (3/3 pairs; v1 was a wash there). Beyond n=28 unmeasured (n ≥ 30
+/// needs a memory-fresh box) — `F2Z_QUAD=force2` to probe.
+const QUAD2_N_MAX: usize = 28;
+
+/// The BOTTOM-MERGE variant (`F2Z_QUAD=2` / `force2` — S1 of
+/// `docs/forest-speedup-ideas.md`, design in
+/// `docs/quad-bottom-merge-prompt.md`): the arity-2 pair and leaf layers
+/// are replaced by ONE arity-4 bit-driven layer (output d−2, consuming
+/// the leaves — [`prove_quad_bottom_sumcheck`]). Transcript-shape
+/// changing exactly like [`quad_active`] itself; prover and verifier
+/// both read it. Read per call.
+pub(crate) fn quad_v2() -> bool {
+    matches!(std::env::var("F2Z_QUAD").as_deref(), Ok("2") | Ok("force2"))
+}
+
 /// The quad layer plan for tree depth `d`: quads deliver claims at even
 /// levels `2, 4, …, P` (`P = d−2` if even, else `d−3`); a single arity-2
 /// "parity" layer bridges `P → d−2` when `d−2` is odd; the pair (`d−2`)
-/// and leaf (`d−1`) layers are always arity-2.
+/// and leaf (`d−1`) layers are always arity-2 — except under
+/// [`quad_v2`], where ONE bottom quad layer (output d−2) replaces them.
 pub(crate) struct QuadPlan {
     /// Output levels of the quad layers (ascending: 0, 2, …, P−2).
     pub quad_outputs: Vec<usize>,
@@ -1812,6 +1837,105 @@ pub fn prove_merged_forest_lazy_quad(
     }
     drop(t4);
 
+    if quad_v2() {
+        // BOTTOM MERGE (`F2Z_QUAD=2`): the pair and leaf layers as ONE
+        // arity-4 bit-driven layer — output d−2, consuming the leaves,
+        // whose quarters are never materialised
+        // ([`prove_quad_bottom_sumcheck`]). One phase A over d−2 vars
+        // replaces the two arity-2 phase As (and one phase B + line step
+        // disappear); the exit claim shape is unchanged.
+        let (sc_x, r_x, finals) = {
+            let _g = crate::utils::prof::scope("mf:phaseA");
+            // The unweighted 16-case ΔΔ table: round 1's p₂ gathers —
+            // subset sums of the leaf-affine Δ cross products per
+            // position pair, both table halves.
+            let t_dd: Vec<Gf> = {
+                let rows: Vec<[Gf; 16]> = cfg_into_iter!(0..(q2 >> 1), 1 << 10)
+                    .map(|p| {
+                        let base = p << 1;
+                        let c00 = leaf_tau.0[base] * leaf_tau.1[base];
+                        let c10 = leaf_tau.0[base + 1] * leaf_tau.1[base];
+                        let c01 = leaf_tau.0[base] * leaf_tau.1[base + 1];
+                        let c11 = leaf_tau.0[base + 1] * leaf_tau.1[base + 1];
+                        let mut row = [Gf::zero(); 16];
+                        for (c, slot) in row.iter_mut().enumerate() {
+                            let mut v = Gf::zero();
+                            if c & 0b0101 == 0b0101 {
+                                v += c00;
+                            }
+                            if c & 0b0110 == 0b0110 {
+                                v += c10;
+                            }
+                            if c & 0b1001 == 0b1001 {
+                                v += c01;
+                            }
+                            if c & 0b1010 == 0b1010 {
+                                v += c11;
+                            }
+                            *slot = v;
+                        }
+                        row
+                    })
+                    .collect();
+                rows.into_flattened()
+            };
+            let eq_zc = build_eq_x_r_vec(&z_c, &()).expect("s >= 1");
+            let groups: Vec<QuadBitGroup> = col_bits
+                .take()
+                .expect("leaf bits consumed once")
+                .into_iter()
+                .zip(eq_zc.iter())
+                .map(|((lbits, rbits), &scale)| QuadBitGroup { scale, lbits, rbits })
+                .collect();
+            let tabs = QuadBottomTables {
+                te: &te,
+                to: &to,
+                t_dd: &t_dd,
+                tau_l: &leaf_tau.0,
+                tau_r: &leaf_tau.1,
+            };
+            let (sc, r_x, finals) =
+                prove_quad_bottom_sumcheck(transcript, z_x.clone(), groups, &tabs);
+            (Some(sc), r_x, finals)
+        };
+        let _g = crate::utils::prof::scope("mf:phaseB");
+        let mut bufs_b: [Vec<Gf>; 4] = [
+            Vec::with_capacity(num_trees),
+            Vec::with_capacity(num_trees),
+            Vec::with_capacity(num_trees),
+            Vec::with_capacity(num_trees),
+        ];
+        for f in &finals {
+            for m in 0..4 {
+                bufs_b[m].push(f[m]);
+            }
+        }
+        let group_b = QuadGroup { q: z_c.clone(), scale: one, bufs: bufs_b };
+        let (sc_c, r_c, finals_b) = prove_quad_eq_sumcheck(transcript, vec![group_b]);
+        let quad = finals_b[0];
+        drop(_g);
+
+        absorb_gfs(transcript, 0x33, &quad);
+        let mu_a: Gf = transcript.get_field_challenge(&());
+        let mu_b: Gf = transcript.get_field_challenge(&());
+        claim = quad_interp(quad, mu_a, mu_b);
+        let mut nx = r_x;
+        nx.push(mu_a);
+        nx.push(mu_b);
+        z_x = nx;
+        z_c = r_c;
+        out_layers.push(MergedLayer {
+            sc_x,
+            sc_c,
+            pair: (quad[0], quad[1]),
+            pair2: Some((quad[2], quad[3])),
+        });
+
+        let mut z = z_x;
+        z.extend_from_slice(&z_c);
+        return (roots, MergedForestProof { layers: out_layers }, z, claim);
+    }
+
     // Pair layer (output d−2): the L/4 Pair3Bits/Pair2Bits round over
     // the shared 4-case tables.
     {
@@ -1888,8 +2012,24 @@ pub fn verify_merged_forest_quad(
         return Err(MergedForestError::Shape);
     }
     let plan = quad_plan(depth);
-    let n_layers = plan.quad_outputs.len() + usize::from(plan.parity) + 2;
-    if roots.len() != 1usize << s || proof.layers.len() != n_layers {
+    // The layer-kind sequence: quad outputs, then the arity-2 tail —
+    // parity? + pair + leaf under v1; parity? + the BOTTOM quad
+    // (output d−2, [`quad_v2`]) under v2.
+    enum LKind {
+        Quad(usize),
+        Arity2,
+    }
+    let mut kinds: Vec<LKind> = plan.quad_outputs.iter().map(|&e| LKind::Quad(e)).collect();
+    if plan.parity {
+        kinds.push(LKind::Arity2);
+    }
+    if quad_v2() {
+        kinds.push(LKind::Quad(depth - 2));
+    } else {
+        kinds.push(LKind::Arity2);
+        kinds.push(LKind::Arity2);
+    }
+    if roots.len() != 1usize << s || proof.layers.len() != kinds.len() {
         return Err(MergedForestError::Shape);
     }
     let one = Gf::one();
@@ -1899,83 +2039,89 @@ pub fn verify_merged_forest_quad(
     let mut z_x: Vec<Gf> = Vec::new();
     let mut z_c: Vec<Gf> = zeta;
 
-    let mut layer_iter = proof.layers.iter().enumerate();
-    for &ell in &plan.quad_outputs {
-        let (li, layer) = layer_iter.next().expect("layer count checked");
-        let quad = match (layer.pair, layer.pair2) {
-            ((q0, q1), Some((q2, q3))) => [q0, q1, q2, q3],
-            _ => return Err(MergedForestError::Shape),
-        };
-        let r_x = if ell == 0 {
-            if layer.sc_x.is_some() {
-                return Err(MergedForestError::Shape);
-            }
-            if layer.sc_c.claimed_sum != claim {
-                return Err(MergedForestError::LayerClaim { layer: li });
-            }
-            Vec::new()
-        } else {
-            let sc_x = layer.sc_x.as_ref().ok_or(MergedForestError::Shape)?;
-            if sc_x.claimed_sum != claim {
-                return Err(MergedForestError::LayerClaim { layer: li });
-            }
-            let sub = MLSumcheck::<Gf>::verify_as_subprotocol(transcript, ell, 5, sc_x, &())
-                .map_err(|_| MergedForestError::LayerClaim { layer: li })?;
-            let eqx =
-                eq_eval(&sub.point, &z_x, one).map_err(|_| MergedForestError::Shape)?;
-            if sub.expected_evaluation != eqx * layer.sc_c.claimed_sum {
-                return Err(MergedForestError::LayerClaim { layer: li });
-            }
-            sub.point
-        };
+    for (li, (layer, kind)) in proof.layers.iter().zip(&kinds).enumerate() {
+        match kind {
+            LKind::Quad(ell) => {
+                let ell = *ell;
+                let quad = match (layer.pair, layer.pair2) {
+                    ((q0, q1), Some((q2, q3))) => [q0, q1, q2, q3],
+                    _ => return Err(MergedForestError::Shape),
+                };
+                let r_x = if ell == 0 {
+                    if layer.sc_x.is_some() {
+                        return Err(MergedForestError::Shape);
+                    }
+                    if layer.sc_c.claimed_sum != claim {
+                        return Err(MergedForestError::LayerClaim { layer: li });
+                    }
+                    Vec::new()
+                } else {
+                    let sc_x = layer.sc_x.as_ref().ok_or(MergedForestError::Shape)?;
+                    if sc_x.claimed_sum != claim {
+                        return Err(MergedForestError::LayerClaim { layer: li });
+                    }
+                    let sub =
+                        MLSumcheck::<Gf>::verify_as_subprotocol(transcript, ell, 5, sc_x, &())
+                            .map_err(|_| MergedForestError::LayerClaim { layer: li })?;
+                    let eqx = eq_eval(&sub.point, &z_x, one)
+                        .map_err(|_| MergedForestError::Shape)?;
+                    if sub.expected_evaluation != eqx * layer.sc_c.claimed_sum {
+                        return Err(MergedForestError::LayerClaim { layer: li });
+                    }
+                    sub.point
+                };
 
-        let sub_c = MLSumcheck::<Gf>::verify_as_subprotocol(transcript, s, 5, &layer.sc_c, &())
-            .map_err(|_| MergedForestError::LayerClaim { layer: li })?;
-        let eqc = eq_eval(&sub_c.point, &z_c, one).map_err(|_| MergedForestError::Shape)?;
-        if sub_c.expected_evaluation != eqc * quad[0] * quad[1] * quad[2] * quad[3] {
-            return Err(MergedForestError::LayerClaim { layer: li });
-        }
+                let sub_c =
+                    MLSumcheck::<Gf>::verify_as_subprotocol(transcript, s, 5, &layer.sc_c, &())
+                        .map_err(|_| MergedForestError::LayerClaim { layer: li })?;
+                let eqc =
+                    eq_eval(&sub_c.point, &z_c, one).map_err(|_| MergedForestError::Shape)?;
+                if sub_c.expected_evaluation != eqc * quad[0] * quad[1] * quad[2] * quad[3] {
+                    return Err(MergedForestError::LayerClaim { layer: li });
+                }
 
-        absorb_gfs(transcript, 0x33, &quad);
-        let mu_a: Gf = transcript.get_field_challenge(&());
-        let mu_b: Gf = transcript.get_field_challenge(&());
-        claim = quad_interp(quad, mu_a, mu_b);
-        let mut nx = r_x;
-        nx.push(mu_a);
-        nx.push(mu_b);
-        z_x = nx;
-        z_c = sub_c.point;
-    }
-
-    // The arity-2 tail: parity? + pair + leaf.
-    for (li, layer) in layer_iter {
-        if layer.pair2.is_some() {
-            return Err(MergedForestError::Shape);
+                absorb_gfs(transcript, 0x33, &quad);
+                let mu_a: Gf = transcript.get_field_challenge(&());
+                let mu_b: Gf = transcript.get_field_challenge(&());
+                claim = quad_interp(quad, mu_a, mu_b);
+                let mut nx = r_x;
+                nx.push(mu_a);
+                nx.push(mu_b);
+                z_x = nx;
+                z_c = sub_c.point;
+            }
+            LKind::Arity2 => {
+                if layer.pair2.is_some() {
+                    return Err(MergedForestError::Shape);
+                }
+                let sc_x = layer.sc_x.as_ref().ok_or(MergedForestError::Shape)?;
+                if sc_x.claimed_sum != claim {
+                    return Err(MergedForestError::LayerClaim { layer: li });
+                }
+                let sub = verify_eq_inner_sumcheck_gruen(transcript, &z_x, sc_x, &())
+                    .map_err(|_| MergedForestError::LayerClaim { layer: li })?;
+                let eqx =
+                    eq_eval(&sub.point, &z_x, one).map_err(|_| MergedForestError::Shape)?;
+                if sub.expected_evaluation != eqx * layer.sc_c.claimed_sum {
+                    return Err(MergedForestError::LayerClaim { layer: li });
+                }
+                let sub_c = verify_eq_inner_sumcheck_gruen(transcript, &z_c, &layer.sc_c, &())
+                    .map_err(|_| MergedForestError::LayerClaim { layer: li })?;
+                let (p_, q_) = layer.pair;
+                let eqc =
+                    eq_eval(&sub_c.point, &z_c, one).map_err(|_| MergedForestError::Shape)?;
+                if sub_c.expected_evaluation != eqc * p_ * q_ {
+                    return Err(MergedForestError::LayerClaim { layer: li });
+                }
+                absorb_gfs(transcript, 0x32, &[p_, q_]);
+                let mu: Gf = transcript.get_field_challenge(&());
+                claim = p_ + mu * (p_ + q_);
+                let mut nx = sub.point;
+                nx.push(mu);
+                z_x = nx;
+                z_c = sub_c.point;
+            }
         }
-        let sc_x = layer.sc_x.as_ref().ok_or(MergedForestError::Shape)?;
-        if sc_x.claimed_sum != claim {
-            return Err(MergedForestError::LayerClaim { layer: li });
-        }
-        let sub = verify_eq_inner_sumcheck_gruen(transcript, &z_x, sc_x, &())
-            .map_err(|_| MergedForestError::LayerClaim { layer: li })?;
-        let eqx = eq_eval(&sub.point, &z_x, one).map_err(|_| MergedForestError::Shape)?;
-        if sub.expected_evaluation != eqx * layer.sc_c.claimed_sum {
-            return Err(MergedForestError::LayerClaim { layer: li });
-        }
-        let sub_c = verify_eq_inner_sumcheck_gruen(transcript, &z_c, &layer.sc_c, &())
-            .map_err(|_| MergedForestError::LayerClaim { layer: li })?;
-        let (p_, q_) = layer.pair;
-        let eqc = eq_eval(&sub_c.point, &z_c, one).map_err(|_| MergedForestError::Shape)?;
-        if sub_c.expected_evaluation != eqc * p_ * q_ {
-            return Err(MergedForestError::LayerClaim { layer: li });
-        }
-        absorb_gfs(transcript, 0x32, &[p_, q_]);
-        let mu: Gf = transcript.get_field_challenge(&());
-        claim = p_ + mu * (p_ + q_);
-        let mut nx = sub.point;
-        nx.push(mu);
-        z_x = nx;
-        z_c = sub_c.point;
     }
     let mut z = z_x;
     z.extend_from_slice(&z_c);

@@ -42,6 +42,23 @@ n≥30 regime where gathers leave the roofline.
 ## 3. Tier 1 — structural, designs exist, deployed-shape wins
 
 ### S1 — The QUAD bottom-merge (the one big open structural lever)
+
+> **MEASURED 2026-08-20, LANDED as `F2Z_QUAD=2`** (opt-in — it changes
+> the transcript, like the whole quad lane; `force2` bypasses the knee):
+> `prove_quad_bottom_sumcheck` runs the merged layer's rounds 1–3 off the
+> committed bits (round 1: te/to gathers + one new unweighted 16-case ΔΔ
+> table feed `quad_cross_k` directly — the pairing subtlety resolved by
+> pairing ACROSS the top bit and permuting the finals back; rounds 2–3:
+> the arity-2 cascade's own F₁/F₂ stash builders, τ-sliced per quarter),
+> then the dense fused flow. Pinned transcript-identical to the dense
+> quad driver over materialised quarters (`bottom_matches_dense_quad`,
+> k=4..7); forest roundtrips at both parities + W=32, wrong-claim, codec,
+> cross-plan rejection. Measured vs base (paired in-window, prove):
+> **n=24 −25.3% (v1: −18.5%), n=26 −3..−9% (v1: +3.4%), n=28 −2..−6.3%,
+> 3/3 pairs (v1: wash)** — the pass-halving survives in the gather-bound
+> bottom exactly as projected, and the quad knee moves from n≤25 to
+> n≤28 (`QUAD2_N_MAX`). Beyond n=28: fresh box. Carried limits: L/4
+> only, peak unchanged (JIT-level-bound), α full-order throughout.
 `docs/quad-bottom-merge-prompt.md`, gate `F2Z_QUAD=2`. Merge the leaf and
 pair layers into ONE arity-4, degree-5 layer whose phase A runs k = d−2
 rounds instead of (d−1) + (d−2) — the 152 ms LUT block (messages + mats) is
