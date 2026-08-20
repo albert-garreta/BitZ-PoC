@@ -4,8 +4,8 @@
 //!
 //! Everything hot runs flock-core's optimized code (succinctlabs/flock,
 //! MIT OR Apache-2.0): the NEON/cache-blocked additive NTT, the SHA-256
-//! Merkle commit with octopus multi-proofs, and `pcs::basefold` (at M2:
-//! `pcs::ligerito`). zinc keeps the protocol layers around it — the forest
+//! Merkle commit with octopus multi-proofs, and `pcs::ligerito` (the
+//! recursive prover/verifier). zinc keeps the protocol layers around it — the forest
 //! GKR, the pre-sumcheck, the (thin) ring-switch orchestration — and the ONE
 //! Fiat–Shamir chain is preserved by driving flock's `Challenger` trait from
 //! zinc's [`Transcript`] ([`ZincChallenger`]).
@@ -20,26 +20,20 @@
 //! * zinc [`crate::ligerito::ring_switch_prove`]/`_verify` handle the
 //!   `s_v` message and the r″ recombination (O(2^{m_p}) — not hot), emitting
 //!   the weight table `B(y) = Φ_{r″}(eq(r_hi, y))` and the target `β₀`.
-//! * flock `basefold::prove`/`verify` prove `Σ_y P(y)·B(y) = β₀` against
-//!   flock's commitment, with `a` = the packed witness (codeword side) and
-//!   `b` = the weight table, exactly flock's own PCS wiring
-//!   (`pcs.rs::open`). The closing `final_b` check is
-//!   [`crate::ligerito::tensor_eq_phi_eval`] — the succinct
-//!   tensor-algebra evaluation.
+//! * flock `ligerito::recursive_prover_with_basis`/
+//!   `recursive_verifier_with_basis_succinct` prove `Σ_y P(y)·B(y) = β₀`
+//!   against flock's commitment, with `a` = the packed witness (codeword
+//!   side) and `b` = the weight table. The closing residual check evaluates
+//!   the weight basis succinctly at the recursion's challenges.
 //!
-//! Query counts are flock's soundness-pinned `default_fri_queries(rate)`
-//! (243 at rate 1/2, 148 at rate 1/4); the `RsOpenConfig::num_queries` knob
+//! Query counts and grinding come from the embedded Ligerito security
+//! configs ([`sha_lig_configs`]); the `RsOpenConfig::num_queries` knob
 //! does not apply on this backend. Note flock's Merkle is SHA-256 without
 //! leaf/node domain separation (flagged upstream as non-production) — carried
 //! as-is for now; recorded in the ledger.
 
 use flock_core::challenger::Challenger;
 use flock_core::field::F128;
-use flock_core::ntt::additive_ntt_f128::AdditiveNttF128;
-use flock_core::pcs::basefold::{
-    self, BaseFoldProof as FlockBaseFoldProof, VerifyError as FlockVerifyError,
-    default_fri_queries,
-};
 use flock_core::pcs::commit::{Commitment, PcsParams, ProverData, commit};
 use flock_core::pcs::ligerito::{
     self, LigeritoProof, LigeritoSecurityConfig, ProverConfig as LigProverConfig,
@@ -54,10 +48,10 @@ use crate::transcript::traits::Transcript;
 use crate::pcs::{IntEvalParams, ShaF2Layout, final_eval_ring};
 use crate::ligerito::{
     IntEvalRsError, LOG_PACKING, PackedBits, RingSwitchProof, RsOpenConfig, RsOpenError,
-    packed_vars, phi_byte_tables, phi_from_words, prove_int_eval_common,
+    packed_vars, phi_byte_tables, phi_from_words,
     prove_int_eval_merged_common, prove_x_claims_batched_common, repack_leaf_bits,
     residual_b_evals, ring_switch_prove, ring_switch_verify, row_bit_vars, rs_fast,
-    sv_fold_mfr, tensor_eq_phi_eval, verify_int_eval_common, verify_int_eval_merged_common,
+    sv_fold_mfr, verify_int_eval_merged_common,
     verify_x_claims_batched_common,
 };
 use crate::merged_forest::MergedForestProof;
@@ -262,6 +256,7 @@ fn commit_rs_flock_from_rows(
         log_inv_rate,
         log_batch_size: log_batch,
         profile: Default::default(),
+        merkle_hash: Default::default(),
     };
     let (commitment, prover_data) = commit(&p_msg, &params);
     FlockCommitHint { rows, packed_cols, p_msg, commitment, prover_data }
@@ -386,6 +381,7 @@ pub fn lig_configs(
                 grinding_bits: pc.grinding_bits.clone(),
                 fold_grinding_bits: pc.fold_grinding_bits.clone(),
                 ood_samples: pc.ood_samples.clone(),
+                merkle_hash: Default::default(),
             };
             Ok((pc, vc))
         }
@@ -653,16 +649,19 @@ pub fn commit_rs_ligerito(
     commit_rs_flock_with(p, data, pc.log_inv_rates[0], pc.initial_k)
 }
 
-// ---------------------------------------------------------------------
-// Open (ring-switch on zinc side, BaseFold on flock side)
-// ---------------------------------------------------------------------
-
-/// Proof of one bit-MLE claim through the flock backend.
-#[derive(Clone, Debug)]
-pub struct FlockRsOpenProof {
-    pub ring: RingSwitchProof,
-    pub basefold: FlockBaseFoldProof,
+/// Release flock's process-global scratch pool
+/// ([`flock_core::scratch::clear`]). flock retains the open's large `F128`
+/// buffers across proves (up to ~1 codeword + the fold set) to skip
+/// page-fault/munmap churn on repeated proves; call this after the last
+/// prove of a batch — or before measuring a single prove's peak — to return
+/// that memory to the OS.
+pub fn flock_scratch_clear() {
+    flock_core::scratch::clear();
 }
+
+// ---------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------
 
 /// Errors of the flock-backed opening / end-to-end verification.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -672,8 +671,6 @@ pub enum FlockRsError {
     Common(IntEvalRsError),
     /// The zinc-side ring-switch rejected.
     RingSwitch(RsOpenError),
-    /// flock's BaseFold verifier rejected.
-    Basefold(FlockVerifyError),
     /// `final_b` disagrees with the succinct weight evaluation
     /// `B̂(challenges)` (the tensor-algebra check).
     FinalWeight,
@@ -696,71 +693,6 @@ pub enum FlockRsError {
     ExtReadOff,
 }
 
-/// Prove `M̂(point) = μ` (μ implied by the transcript) through ring-switch +
-/// flock BaseFold.
-pub fn prove_rs_open_flock(
-    transcript: &mut (impl Transcript + Send),
-    hint: &FlockCommitHint,
-    point: &[Gf],
-) -> FlockRsOpenProof {
-    let r_hi = &point[LOG_PACKING..];
-    // zinc-side ring-switch over the packed message (converted view).
-    let p_msg_gf: Vec<Gf> = hint.p_msg.iter().map(|&f| f128_to_gf(f)).collect();
-    let (ring, b_tbl, beta0) = ring_switch_prove(transcript, &p_msg_gf, r_hi);
-
-    let params = &hint.commitment.params;
-    let ntt = AdditiveNttF128::standard(params.k_code());
-    let basefold = basefold::prove(
-        &hint.p_msg,
-        gf_slice_to_f128(&b_tbl),
-        gf_to_f128(beta0),
-        &hint.prover_data.codeword,
-        &hint.prover_data.merkle_tree,
-        &ntt,
-        params.log_inv_rate,
-        params.log_batch_size,
-        default_fri_queries(params.log_inv_rate),
-        &mut ZincChallenger(transcript),
-    );
-    FlockRsOpenProof { ring, basefold }
-}
-
-/// Verify `M̂(point) = μ` against the flock commitment.
-pub fn verify_rs_open_flock(
-    transcript: &mut (impl Transcript + Send),
-    commitment: &Commitment,
-    mu: Gf,
-    point: &[Gf],
-    proof: &FlockRsOpenProof,
-) -> Result<(), FlockRsError> {
-    if point.len() != commitment.params.m {
-        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
-    }
-    let (r_lo, r_hi) = point.split_at(LOG_PACKING);
-    let (eq_r2, beta0) =
-        ring_switch_verify(transcript, &proof.ring, mu, r_lo).map_err(FlockRsError::RingSwitch)?;
-
-    let params = &commitment.params;
-    let ntt = AdditiveNttF128::standard(params.k_code());
-    let challenges = basefold::verify(
-        gf_to_f128(beta0),
-        &proof.basefold,
-        &commitment.root,
-        &ntt,
-        params.log_inv_rate,
-        params.log_batch_size,
-        &mut ZincChallenger(transcript),
-    )
-    .map_err(FlockRsError::Basefold)?;
-
-    // Closing check: final_b == B̂(challenges), succinctly.
-    let chals_gf: Vec<Gf> = challenges.iter().map(|&f| f128_to_gf(f)).collect();
-    let expected_b = tensor_eq_phi_eval(&chals_gf, r_hi, &eq_r2);
-    if f128_to_gf(proof.basefold.final_b) != expected_b {
-        return Err(FlockRsError::FinalWeight);
-    }
-    Ok(())
-}
 
 // ---------------------------------------------------------------------
 // Ligerito opening (M2): tapered levels, induced bases, grinding, OOD
@@ -842,14 +774,6 @@ pub fn verify_rs_open_ligerito(
 // ---------------------------------------------------------------------
 // End-to-end
 // ---------------------------------------------------------------------
-
-/// End-to-end proof with the flock-backed opening.
-pub struct IntEvalRsFlockProof {
-    pub forest: ProductForestProof<Gf>,
-    pub v: Vec<u128>,
-    pub presum: MultiDegreeSumcheckProof<Gf>,
-    pub open: FlockRsOpenProof,
-}
 
 /// End-to-end proof with the Ligerito opening. The forest is the MERGED
 /// product forest (payload O(Σ(s+k)) K-elements instead of the per-tree
@@ -971,6 +895,7 @@ pub fn commit_rs_ligerito_batch(
         log_inv_rate: pc.log_inv_rates[0],
         log_batch_size: pc.initial_k,
         profile: Default::default(),
+        merkle_hash: Default::default(),
     };
     let (commitment, prover_data) = commit(&p_msg, &params);
     FlockBatchCommitHint { rows: rows_all, p_msg, commitment, prover_data }
@@ -1465,6 +1390,9 @@ pub fn prove_mle_eval_mod_q_ligerito(
             &hint.prover_data.codeword,
             &hint.prover_data.merkle_tree,
             (gf_to_f128(u0), gf_to_f128(u2)),
+            // Round-1 lookahead coefficients: not accumulated by our
+            // b_comb pass (flock computes the lookahead from round 1 on).
+            None,
             &mut ZincChallenger(transcript),
         ),
         None => ligerito::recursive_prover_with_basis(
@@ -7854,59 +7782,6 @@ impl IntEvalRsLigExtProof {
         let base = IntEvalRsLigModQProof::from_bytes(base_bytes)?;
         Ok(IntEvalRsLigExtProof { mus, base })
     }
-}
-
-/// Prove an integer-MLE evaluation with the flock-backed opening. The
-/// forest GKR, `v` message, and pre-sumcheck are shared with the zinc
-/// backend ([`prove_int_eval_common`]).
-pub fn prove_rs_flock(
-    transcript: &mut (impl Transcript + Send),
-    hint: &FlockCommitHint,
-    p: &IntEvalParams,
-    data: &[u128],
-    row_weights: &[u128],
-    alpha: Gf,
-) -> IntEvalRsFlockProof {
-    let (forest, v, presum, point) =
-        prove_int_eval_common(transcript, p, data, row_weights, alpha, &hint.rows, Some(&hint.packed_cols));
-    let open = prove_rs_open_flock(transcript, hint, &point);
-    IntEvalRsFlockProof { forest, v, presum, open }
-}
-
-/// Verify an integer-MLE evaluation with the flock-backed opening.
-#[allow(clippy::too_many_arguments)] // mirrors `f2_int_eval::verify`'s surface
-pub fn verify_rs_flock<R>(
-    transcript: &mut (impl Transcript + Send),
-    commitment: &Commitment,
-    proof: &IntEvalRsFlockProof,
-    p: &IntEvalParams,
-    row_weights: &[u128],
-    col_weights: &[R],
-    g_r: R,
-    alpha: Gf,
-    claimed_eval: R,
-) -> Result<(), FlockRsError>
-where
-    R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
-{
-    let (point, mu) = verify_int_eval_common(
-        transcript,
-        &proof.forest,
-        &proof.v,
-        &proof.presum,
-        p,
-        row_weights,
-        alpha,
-    )
-    .map_err(FlockRsError::Common)?;
-
-    verify_rs_open_flock(transcript, commitment, mu, &point, &proof.open)?;
-
-    let computed = final_eval_ring(&proof.v, col_weights, g_r);
-    if computed != claimed_eval {
-        return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
-    }
-    Ok(())
 }
 
 // ---------------------------------------------------------------------

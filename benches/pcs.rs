@@ -429,6 +429,11 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     // appear only under `OBLONG_PROFILE=1` (the timed medians above then
     // carry ~µs-scale scope overhead — enable it for breakdown runs, not
     // for headline timing); the proof-size split is always available.
+    // Release flock's cross-prove scratch pool first: the reported prove
+    // peak is the production single-prove shape (pool cold), not the
+    // reps-warmed pool stacked under the forest. The timed medians above
+    // deliberately keep the warm pool — that IS the steady-state timing.
+    f2z::ligerito_flock::flock_scratch_clear();
     reset_peak();
     let _ = f2z::utils::prof::take_totals(); // drain the timed reps' records
     let split_proof = {

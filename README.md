@@ -35,7 +35,7 @@ binding) plus a de-black-boxing degree-2 **pre-sumcheck** that strips the
 into an inner-product claim on the packed polynomial, and the `L` chunk claims
 are `η`-batched into **one** recursive Ligerito call whose closing residual is
 evaluated succinctly by a tensor-algebra trick (`O(m·128²)`, no `2^m`-sized
-table). Everything hot — commit, additive-NTT encode, BaseFold/Ligerito folding
+table). Everything hot — commit, additive-NTT encode, Ligerito folding
 + Merkle — runs `flock-core`'s optimized code; the ring-switch and the GKR
 forest run over the native `GF(2^128)` type. The earlier flat linear-code
 opening has been removed.
@@ -112,12 +112,19 @@ Pinned by `mod_q_ligerito_padded_witness_trims_us`.
 
 ## Dependencies
 
-- **`flock-core`** — the ring-switch / additive-NTT / BaseFold / Ligerito hot
+- **`flock-core`** — the ring-switch / additive-NTT / Ligerito hot
   paths (Succinct Labs' *Flock*, `MIT OR Apache-2.0`). **Pinned as a LOCAL PATH
   dependency** in `Cargo.toml`
-  (`flock-core = { path = "…/flock/crates/flock-core" }`), exactly as
-  `zinc-plus` pins it — **adjust the path for your checkout**. flock-core itself
-  pins `bincode 1.3` and `serde 1`.
+  (`flock-core = { path = "…/flock-f2z-port/crates/flock-core" }`) —
+  **adjust the path for your checkout**. The pinned checkout is the
+  `f2z-k4-port` branch of the flock repo: upstream `main` at `e636760`
+  (Ligerito lookahead + NTT deep-pass + all-core pool + selectable hashes)
+  plus one commit carrying the k=4 / Slim3 config generation this crate's
+  embedded profiles use. Proofs are byte-identical to the previous pin
+  (`a08a84b` + the same config layer); see `examples/proof_digest.rs`.
+  flock-core itself pins `bincode 1.3` and `serde 1`. Note flock's prover
+  now retains large scratch buffers across proves
+  (`ligerito_flock::flock_scratch_clear` releases them).
 - `crypto-primitives` / `crypto-bigint` (field & bigint), `blake3`, `rayon`.
 
 ## Building and testing

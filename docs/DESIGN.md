@@ -222,7 +222,7 @@ in the zinc-plus ledger:
   (char-2 cross terms cancel), vector-register wide accumulators — no NEON↔GPR
   domain crossings on any multiply path; every other target keeps a scalar-word
   pipeline bit-identically (`neon_mul_matches_scalar_pipeline`).
-- **flock hot paths**: the additive-NTT commit encode, the BaseFold/Ligerito
+- **flock hot paths**: the additive-NTT commit encode, the Ligerito
   folds, and the SHA-256 Merkle all run `flock-core`'s optimized (NEON) code; a
   single Fiat–Shamir chain is driven across the zinc and flock layers through a
   `Challenger` bridge (`ZincChallenger`).
@@ -233,8 +233,8 @@ in the zinc-plus ledger:
   log_inv_rate }` builds a `default_config` (unique-decoding query counts, no
   grinding/OOD); the embedded audited profiles route through
   `LigeritoSecurityConfig`. `log_inv_rate = 2` (rate 1/4) with `log_batch = 2`
-  is the tested default; FRI query counts follow flock's soundness-pinned
-  `default_fri_queries`.
+  is the tested default; query counts are `default_config`'s own
+  unique-decoding derivation.
 - **Proof size** is shape-determined; for W=1 the optimum keeps `s* ≈ 7–8` and
   folds `t* ≈ 0.6n` of the variables; the mod-q chunking removes the magnitude
   cap that would otherwise force small `t` at full-width weights. Measured sizes:
