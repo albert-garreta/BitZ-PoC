@@ -109,6 +109,28 @@ build is 2^{t+2} adds shared across all 2^s columns. Expected 27 → ~10 ms
 (−3–4% of prove). Also applies to `fold_values_bits_multi` (batched sets:
 one shared nibble stream, K tables).
 
+### S4 — Mats stash precombine + slot tile (landed 2026-08-21)
+
+> **MEASURED, LANDED DEFAULT-ON** (`F2Z_MATS_PRE=0` / `F2Z_MATS_TILE=0`
+> opt out; commit 26c22c4). Two stages on pair3mat/leaf3mat:
+> (1) reweight the shared stash ONCE per mat round (even 16-case chunks
+> ×(1+ρ), odd ×ρ — the Leaf4 round-3 factorization) so every written
+> entry is two picks + XOR instead of a one-multiply fold. Removing
+> ~2^25 fixed-ρ muls per mat measured a **WASH alone** — the mats run at
+> ~65 cyc/entry-pair MT, fully memory-stall-bound, the muls ride free
+> (same lesson as the fixed-scalar cool-box verdict). (2) With the mats
+> now pick/XOR-pure, the slot tile applies: blocks outer, groups inner,
+> disjoint per-(block, group) writes via raw base pointers, grid deposit
+> riding per block with XOR-reduced wide partials (order-free ⇒
+> byte-identical). Block-size law INVERTED vs leaf_r1: tb
+> 16/32/64/128/256/512 = 83/63/58/52/48/44 ms vs 60.5 untiled — bigger
+> blocks win (per-(group, block) overheads dominate slice residency;
+> 8 blocks starves 10 threads). Default `tb = max(64, half/16)` = 16
+> blocks. Paired A/B n=28: **−7.7% prove** (median of ratios, churned
+> window; tile arm churn-IMMUNE — 1.2% spread vs 27% untiled); quiet
+> same-day windows 433.8 → 420.7 ms (−3.0%). n=26 wash, no regression.
+> Falls back per round to the per-group fold on any non-uniform shape.
+
 ## 4. Tier 2 — the n≥30 regime (where gathers leave the roofline)
 
 Everything gather-bound degrades past L2, and this is where the measured
@@ -126,6 +148,31 @@ items, from `docs/lut-width-ideas.md`:
 ## 5. Tier 2b — hardware primitives (exploratory probes, high variance)
 
 ### H1 — SME2 on M4: fixed-operand muls as GF(2) matrix products
+
+> **MEASURED 2026-08-21, CLOSED** (probe: `docs/probes/sme_bmopa_probe.c`,
+> M4 SVL=512, `SME_BI32I32=1`, clang 21 `-march=armv8.7-a+sme2+aes` — an
+> armv9 base SIGILLs: M4's SVE is streaming-only). Three independent
+> killers, any one sufficient:
+> 1. **The "binary" outer product is not GF(2).** Unit probes decode
+>    BMOPA as `ZA[r][c] += popcount(XNOR(Zn[r], Zm[c]))` — the
+>    binary-neural-net inner product with an INTEGER accumulator, not an
+>    XOR/parity accumulate. GF(2) parity is only recoverable per element
+>    via `((wt(A)+wt(B)+S−128)/2) mod 2` — per-row/col weight tables +
+>    subtract/shift/mask on every ZA element, a nonlinear post-process
+>    that multiplies the extraction cost.
+> 2. **Throughput floor already ties NEON.** BMOPA issues at ~1/cycle
+>    (0.26 ns); the 2-BMOPA-per-input floor of a 128×128 matmul is
+>    0.55 ns/mul — equal to the NEON fixed-scalar pipeline's measured
+>    0.52 ns/mul (load+mul+store 0.66) before any extraction.
+> 3. **ZA readback drains the unit.** The full kernel (BMOPA + bit-0
+>    extraction, before any parity fix-up) measured 23.4 ns/mul — each
+>    MOVA-after-BMOPA round-trips the shared accelerator (~10+ cyc/read,
+>    128 reads per 16 inputs). Transpose-in adds 1.6–2.3 ns/mul.
+> Verdict: the PMULL pipeline stays the right primitive on this hardware;
+> the matrix-engine lane is closed for GF(2^128) work (and with it H2's
+> "some engine changes the constant" hope — Apple's binary op is BNN
+> XNOR-count, not F₂ algebra).
+
 Every fold multiplies a whole stream by round-fixed elements ((1+ρ), ρ) —
 ~200M of the prove's muls have a FIXED operand. Multiplication by a fixed
 K-element is a 128×128 F₂-matrix; applied to a bit-sliced batch of values
