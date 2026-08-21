@@ -31,7 +31,7 @@ use crypto_primitives::{
 pub trait WideMulAcc: Sized {
     /// The accumulator representation (unreduced for char-2 carryless
     /// fields; `Self` for fields whose multiply is cheapest reduced).
-    type Wide: Clone;
+    type Wide: Clone + Send;
 
     /// The additive-identity accumulator. Takes the field zero so
     /// runtime-config fields can seed config-carrying values.

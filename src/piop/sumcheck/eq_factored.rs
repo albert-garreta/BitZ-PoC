@@ -597,6 +597,158 @@ fn leaf_tile_enabled() -> bool {
     *ON.get_or_init(|| std::env::var("F2Z_LEAF_TILE").map_or(true, |v| v != "0"))
 }
 
+/// The shared-stash fold precombine (`F2Z_MATS_PRE=0` opts out): scale the
+/// 3-bit value stashes by the round's fold weights ONCE — even 16-case
+/// chunks ×(1+ρ), odd ×ρ, the Leaf4 round-3 factorization — so the
+/// materialising folds push two-pick XORs with no per-entry multiply
+/// (`(1+ρ)v₀ + ρv₁ = v₀ + ρ(v₀+v₁)` exactly, char-2 distributivity).
+fn mats_pre_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("F2Z_MATS_PRE").map_or(true, |v| v != "0"))
+}
+
+/// Slot-tiled materialising folds over the reweighted stashes
+/// (`F2Z_MATS_TILE=0` opts out). See [`mats_fold_tiled`].
+fn mats_tile_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("F2Z_MATS_TILE").map_or(true, |v| v != "0"))
+}
+
+/// Slot-block width for [`mats_fold_tiled`]: `F2Z_MATS_TILE_B` fixes it;
+/// the default is `max(64, half/16)` — a constant 16 blocks, which the
+/// 2026-08-21 sweep measured monotonically better than smaller blocks
+/// (per-(group, block) overheads — write-chunk granularity, accumulator
+/// sweeps, bits reloads — dominate slice residency; 8 blocks starves the
+/// 10 threads).
+fn mats_tile_b(half: usize) -> usize {
+    static B: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
+    let env = *B.get_or_init(|| {
+        std::env::var("F2Z_MATS_TILE_B").ok().and_then(|v| v.parse().ok())
+    });
+    env.unwrap_or_else(|| (half / 16).max(64))
+}
+
+/// Slot-tiled materialising fold for the 3-bit stash rounds (Pair3Bits
+/// round 2 / Leaf3Bits round 3), engaged on the [`mats_pre_enabled`]
+/// reweighted stash where each entry is two picks and one XOR: slot-blocks
+/// OUTER keep the block's stash slices L1-resident across every tree
+/// (tree-outer iteration re-streams the shared multi-MB stash from L2 per
+/// group); the group-inner sweep writes each group's `[b0, b1)` range of
+/// its pre-allocated dense buffers through raw base pointers — ranges are
+/// disjoint per block, so blocks parallelize. The mat+grid deposit rides
+/// inside each block over the just-computed quads; its per-(block, group)
+/// wide partials XOR-reduce across blocks — order-free char-2 wide
+/// accumulation of the identical per-quad products, so the deposited grid
+/// is bit-identical to the serial fold's. Per-entry values are the same
+/// two picks XORed, in the same output order: byte-identical proofs.
+#[allow(clippy::arithmetic_side_effects)]
+fn mats_fold_tiled<F, I>(
+    views: &[(&[u64], &[u64])],
+    vs: &Pair2FoldTables<F>,
+    half: usize,
+    mat_grid_now: bool,
+    sfx: &[F],
+    zero: &F,
+    idx4: I,
+) -> (Vec<(Vec<F>, Vec<F>)>, Vec<Option<[F; 9]>>)
+where
+    F: InnerTransparentField + WideMulAcc + Send + Sync,
+    <F as WideMulAcc>::Wide: Send,
+    I: Fn(&[u64], &[u64], usize) -> (usize, usize, usize, usize) + Sync,
+{
+    let num_groups = views.len();
+    // Block width: a multiple of 4 (quads never straddle blocks — `half`
+    // is a power of two, so every block start is quad-aligned).
+    let tb = {
+        let b = mats_tile_b(half).clamp(4, half.max(4));
+        (b - (b % 4)).max(4)
+    };
+    let nblocks = half.div_ceil(tb);
+    let mut outs: Vec<(Vec<F>, Vec<F>)> = (0..num_groups)
+        .map(|_| (Vec::with_capacity(half), Vec::with_capacity(half)))
+        .collect();
+    struct SendPtr<T>(*mut T);
+    unsafe impl<T> Send for SendPtr<T> {}
+    unsafe impl<T> Sync for SendPtr<T> {}
+    let ptrs: Vec<(SendPtr<F>, SendPtr<F>)> = outs
+        .iter_mut()
+        .map(|(l, r)| (SendPtr(l.as_mut_ptr()), SendPtr(r.as_mut_ptr())))
+        .collect();
+    let run_block = |blk: usize| -> Vec<[F::Wide; 9]> {
+        let b0 = blk * tb;
+        let b1 = half.min(b0 + tb);
+        let mut grids: Vec<[F::Wide; 9]> = if mat_grid_now {
+            (0..num_groups).map(|_| core::array::from_fn(|_| F::wide_zero(zero))).collect()
+        } else {
+            Vec::new()
+        };
+        let mut ql: [F; 4] = core::array::from_fn(|_| zero.clone());
+        let mut qr: [F; 4] = core::array::from_fn(|_| zero.clone());
+        for (g, (lbits, rbits)) in views.iter().enumerate() {
+            let lp = ptrs[g].0 .0;
+            let rp = ptrs[g].1 .0;
+            for b in b0..b1 {
+                let (i0, i1, i2, i3) = idx4(lbits, rbits, b);
+                let lv = vs.f_e[i0].clone() + &vs.f_e[i1];
+                let rv = vs.f_o[i2].clone() + &vs.f_o[i3];
+                // SAFETY: block `blk` exclusively owns indices `[b0, b1)`
+                // of every group's buffers (blocks partition `[0, half)`),
+                // and the base pointers stay valid for the whole pass (no
+                // reallocation — capacity `half` reserved above).
+                if mat_grid_now {
+                    unsafe {
+                        lp.add(b).write(lv.clone());
+                        rp.add(b).write(rv.clone());
+                    }
+                    ql[b & 3] = lv;
+                    qr[b & 3] = rv;
+                    if b & 3 == 3 {
+                        grid_quad_acc(&mut grids[g], &ql, &qr, &sfx[(b - 3) >> 2]);
+                    }
+                } else {
+                    unsafe {
+                        lp.add(b).write(lv);
+                        rp.add(b).write(rv);
+                    }
+                }
+            }
+        }
+        grids
+    };
+    let merge = |mut a: Vec<[F::Wide; 9]>, b: Vec<[F::Wide; 9]>| -> Vec<[F::Wide; 9]> {
+        for (x, y) in a.iter_mut().zip(b.iter()) {
+            for (u, v) in x.iter_mut().zip(y.iter()) {
+                F::wide_add_assign(u, v);
+            }
+        }
+        a
+    };
+    #[cfg(feature = "parallel")]
+    let grid_sum: Vec<[F::Wide; 9]> = (0..nblocks)
+        .into_par_iter()
+        .map(run_block)
+        .reduce_with(merge)
+        .expect("nblocks >= 1");
+    #[cfg(not(feature = "parallel"))]
+    let grid_sum: Vec<[F::Wide; 9]> =
+        (0..nblocks).map(run_block).reduce(merge).expect("nblocks >= 1");
+    drop(ptrs);
+    for (l, r) in outs.iter_mut() {
+        // SAFETY: every index `< half` of both buffers was written exactly
+        // once by its owning block.
+        unsafe {
+            l.set_len(half);
+            r.set_len(half);
+        }
+    }
+    let mat_grids: Vec<Option<[F; 9]>> = if mat_grid_now {
+        grid_sum.into_iter().map(|acc| Some(grid_finish(acc))).collect()
+    } else {
+        (0..num_groups).map(|_| None).collect()
+    };
+    (outs, mat_grids)
+}
+
 #[allow(clippy::arithmetic_side_effects)]
 fn leaf_round1_tiled<F>(
     bufs: &[GroupBufs<F>],
@@ -912,13 +1064,24 @@ where
     F: InnerTransparentField,
 {
     let one_plus_rho = one.clone() + rho;
+    // Parallel over aligned 32-entry blocks (= one even + one odd 16-case
+    // chunk; a 16-entry tail block is a lone even chunk). Per-entry
+    // products and memory order unchanged (byte-identical).
     let rw = |t: &mut Vec<F>| {
-        for (q, chunk) in t.chunks_mut(16).enumerate() {
-            let f = if q & 1 == 0 { &one_plus_rho } else { rho };
-            for v in chunk.iter_mut() {
-                *v = f.clone() * &*v;
+        let body = |blk: &mut [F]| {
+            let cut = blk.len().min(16);
+            let (e, o) = blk.split_at_mut(cut);
+            for v in e.iter_mut() {
+                *v = one_plus_rho.clone() * &*v;
             }
-        }
+            for v in o.iter_mut() {
+                *v = rho.clone() * &*v;
+            }
+        };
+        #[cfg(feature = "parallel")]
+        t.par_chunks_mut(32).for_each(body);
+        #[cfg(not(feature = "parallel"))]
+        t.chunks_mut(32).for_each(body);
     };
     rw(&mut set.f_e);
     rw(&mut set.f_o);
@@ -2623,6 +2786,24 @@ where
                 } else {
                     Vec::new()
                 };
+            // Shared-stash fold precombine ([`mats_pre_enabled`]): reweight
+            // the 3-bit stashes by the round-fixed fold weights ONCE (even
+            // 16-case chunks ×(1+ρ), odd ×ρ) so the materialising folds
+            // below push `v0 + v1` picks with no per-entry multiply —
+            // value-exact by char-2 distributivity, one multiply per shared
+            // entry instead of one per written entry per tree. Skipped when
+            // Leaf4 groups exist: their j=3 bookkeeping clones the RAW
+            // leaf3 sets for the ρ₃ reweight.
+            let mats_pre = mats_pre_enabled()
+                && ((has_pair3 && j == 2) || (has_leaf3 && !has_leaf4 && j == 3));
+            if mats_pre {
+                let _g = crate::utils::prof::scope("eqf:mats_pre");
+                let sets =
+                    if j == 2 { &mut pair3_value_sets } else { &mut leaf3_value_sets };
+                for set in sets.iter_mut() {
+                    reweight_fold_tables_in_place(&rho, &one, set);
+                }
+            }
             // Mat+grid fusion ([`mat_grid_enabled`]): materialising folds
             // below accumulate the next round-pair's grid over the values
             // they write and return it; when EVERY group produced one, it
@@ -2756,10 +2937,19 @@ where
                             let e = b << 1;
                             let v0 = &vs.f_e[(e << 4) | leaf3_idx(bl & 15)];
                             let v1 = &vs.f_e[((e | 1) << 4) | leaf3_idx(bl >> 4)];
-                            l.push(v0.clone() + &(rho.clone() * &(v0.clone() + v1)));
+                            l.push(if mats_pre {
+                                // Stash reweighted above: entry IS the fold.
+                                v0.clone() + v1
+                            } else {
+                                v0.clone() + &(rho.clone() * &(v0.clone() + v1))
+                            });
                             let u0 = &vs.f_o[(e << 4) | leaf3_idx(br & 15)];
                             let u1 = &vs.f_o[((e | 1) << 4) | leaf3_idx(br >> 4)];
-                            r.push(u0.clone() + &(rho.clone() * &(u0.clone() + u1)));
+                            r.push(if mats_pre {
+                                u0.clone() + u1
+                            } else {
+                                u0.clone() + &(rho.clone() * &(u0.clone() + u1))
+                            });
                             if b & 3 == 3 {
                                 if let Some(acc) = g9.as_mut() {
                                     // Cache-hot readback of the quad just
@@ -2884,10 +3074,19 @@ where
                             let e = b << 1;
                             let v0 = &vs.f_e[(e << 4) | pair3_idx(nl & 3, nr & 3)];
                             let v1 = &vs.f_e[((e | 1) << 4) | pair3_idx(nl >> 2, nr >> 2)];
-                            l.push(v0.clone() + &(rho.clone() * &(v0.clone() + v1)));
+                            l.push(if mats_pre {
+                                // Stash reweighted above: entry IS the fold.
+                                v0.clone() + v1
+                            } else {
+                                v0.clone() + &(rho.clone() * &(v0.clone() + v1))
+                            });
                             let u0 = &vs.f_o[(e << 4) | pair3_idx(ml & 3, mr & 3)];
                             let u1 = &vs.f_o[((e | 1) << 4) | pair3_idx(ml >> 2, mr >> 2)];
-                            r.push(u0.clone() + &(rho.clone() * &(u0.clone() + u1)));
+                            r.push(if mats_pre {
+                                u0.clone() + u1
+                            } else {
+                                u0.clone() + &(rho.clone() * &(u0.clone() + u1))
+                            });
                             if b & 3 == 3 {
                                 if let Some(acc) = g9.as_mut() {
                                     let base = b - 3;
@@ -2943,15 +3142,101 @@ where
                 (GroupBufs::Pair3Bits { .. }, _) => "eqf:fold:pair3mat",
                 (GroupBufs::T4Bits { .. }, _) => "eqf:fold:t4mat",
             };
-            let _g_fold = crate::utils::prof::scope(fold_label);
-            #[cfg(feature = "parallel")]
-            let mat_grids: Vec<Option<[F; 9]>> = {
-                let min_len = par_min_len(num_groups, half);
-                bufs.par_iter_mut().with_min_len(min_len).map(fold_group).collect()
+            // Slot-tiled materialising fold over the reweighted stash
+            // ([`mats_fold_tiled`], probe gate `F2Z_MATS_TILE`): engaged
+            // only when every group is the round's uniform single-set
+            // 3-bit shape; any other mix falls back to the per-group
+            // fold below.
+            let tiled_mats: Option<(Vec<(Vec<F>, Vec<F>)>, Vec<Option<[F; 9]>>)> = if mats_pre
+                && mats_tile_enabled()
+            {
+                let _g_t = crate::utils::prof::scope("eqf:fold:mats_tile");
+                let sfx: &[F] = if mat_grid_now { &suffix[0][j + 1] } else { &[] };
+                let sets_uniform =
+                    if j == 2 { pair3_value_sets.len() == 1 } else { leaf3_value_sets.len() == 1 };
+                let views: Option<Vec<(&[u64], &[u64])>> = if sets_uniform {
+                    bufs.iter()
+                        .map(|gb| match gb {
+                            GroupBufs::Pair3Bits { lbits, rbits, tau_set: 0 } if j == 2 => {
+                                Some((lbits.as_slice(), rbits.as_slice()))
+                            }
+                            GroupBufs::Leaf3Bits { lbits, rbits, tau_set: 0 } if j == 3 => {
+                                Some((lbits.as_slice(), rbits.as_slice()))
+                            }
+                            _ => None,
+                        })
+                        .collect()
+                } else {
+                    None
+                };
+                views.map(|views| {
+                    if j == 2 {
+                        let h_off = half << 2; // 2^k at j = 2
+                        mats_fold_tiled(
+                            &views,
+                            &pair3_value_sets[0],
+                            half,
+                            mat_grid_now,
+                            sfx,
+                            &zero,
+                            |lb: &[u64], rb: &[u64], b: usize| {
+                                let pe = b << 2;
+                                let nl = ((lb[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
+                                let nr = ((rb[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
+                                let po = pe + h_off;
+                                let ml = ((lb[po >> 6] >> (po & 63)) & 15) as u32 as usize;
+                                let mr = ((rb[po >> 6] >> (po & 63)) & 15) as u32 as usize;
+                                let e = b << 1;
+                                (
+                                    (e << 4) | pair3_idx(nl & 3, nr & 3),
+                                    ((e | 1) << 4) | pair3_idx(nl >> 2, nr >> 2),
+                                    (e << 4) | pair3_idx(ml & 3, mr & 3),
+                                    ((e | 1) << 4) | pair3_idx(ml >> 2, mr >> 2),
+                                )
+                            },
+                        )
+                    } else {
+                        mats_fold_tiled(
+                            &views,
+                            &leaf3_value_sets[0],
+                            half,
+                            mat_grid_now,
+                            sfx,
+                            &zero,
+                            |lb: &[u64], rb: &[u64], b: usize| {
+                                let p = b << 3;
+                                let bl = ((lb[p >> 6] >> (p & 63)) & 255) as u32 as usize;
+                                let br = ((rb[p >> 6] >> (p & 63)) & 255) as u32 as usize;
+                                let e = b << 1;
+                                (
+                                    (e << 4) | leaf3_idx(bl & 15),
+                                    ((e | 1) << 4) | leaf3_idx(bl >> 4),
+                                    (e << 4) | leaf3_idx(br & 15),
+                                    ((e | 1) << 4) | leaf3_idx(br >> 4),
+                                )
+                            },
+                        )
+                    }
+                })
+            } else {
+                None
             };
-            #[cfg(not(feature = "parallel"))]
-            let mat_grids: Vec<Option<[F; 9]>> = bufs.iter_mut().map(fold_group).collect();
-            drop(_g_fold);
+            let mat_grids: Vec<Option<[F; 9]>> = if let Some((outs, grids)) = tiled_mats {
+                for ((l, r), gb) in outs.into_iter().zip(bufs.iter_mut()) {
+                    *gb = GroupBufs::Dense(vec![(l, r)]);
+                }
+                grids
+            } else {
+                let _g_fold = crate::utils::prof::scope(fold_label);
+                #[cfg(feature = "parallel")]
+                let out: Vec<Option<[F; 9]>> = {
+                    let min_len = par_min_len(num_groups, half);
+                    bufs.par_iter_mut().with_min_len(min_len).map(fold_group).collect()
+                };
+                #[cfg(not(feature = "parallel"))]
+                let out: Vec<Option<[F; 9]>> = bufs.iter_mut().map(fold_group).collect();
+                out
+            };
             if mat_grid_now
                 && !mat_grids.is_empty()
                 && mat_grids.iter().all(Option::is_some)
