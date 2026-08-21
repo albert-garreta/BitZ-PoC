@@ -699,6 +699,72 @@ pub(crate) fn xi_combined_rows(p: &IntEvalParams, rows: &[Vec<u64>], eq_xi: &[Gf
     m
 }
 
+/// [`xi_combined_rows`] off the hint's 64-column-per-word store: per lane
+/// group `g`, precombine `eq_xi` into 8 byte-position subset-sum tables
+/// (`tb[pos][byte] = Σ_{b∈byte} eq_xi[64g + 8·pos + b]`, built by
+/// doubling), then every output position is `8·⌈cols/64⌉` table gathers —
+/// no per-column scatter, no tz-walk dependency chain (the
+/// [`phi_byte_tables`] trick on the ξ axis; ~2× the scatter form at
+/// n = 28 and it reads `packed_cols` instead of re-scanning `rows`).
+/// Exact char-2 re-association — byte-identical.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn xi_combined_rows_packed(
+    p: &IntEvalParams,
+    packed_cols: &[Vec<u64>],
+    eq_xi: &[Gf],
+) -> Vec<Gf> {
+    let t_w = row_bit_vars(p);
+    let len = 1usize << t_w;
+    let cols = p.cols();
+    let groups = cols.div_ceil(64);
+    debug_assert!(packed_cols.len() >= groups && packed_cols[0].len() == len);
+    let tables: Vec<Vec<Gf>> = cfg_into_iter!(0..groups)
+        .map(|g| {
+            let mut t = vec![Gf::zero(); 8 << 8];
+            for pos in 0..8usize {
+                let base_col = (g << 6) | (pos << 3);
+                let tb = &mut t[pos << 8..(pos + 1) << 8];
+                for b in 0..8usize {
+                    let c = base_col + b;
+                    if c >= cols {
+                        break;
+                    }
+                    let w = eq_xi[c];
+                    let lim = 1usize << b;
+                    for m in 0..lim {
+                        tb[m | lim] = tb[m] + w;
+                    }
+                }
+            }
+            t
+        })
+        .collect();
+    // Group-OUTER accumulation per output chunk: each group's positions
+    // stream sequentially, its 32 KB table stays L1-hot, and the chunk's
+    // output slots are L1-resident RMW — no cross-group pointer chases in
+    // the inner loop and no 256-deep serial add chain per output.
+    let mut m = vec![Gf::zero(); len];
+    cfg_chunks_mut!(m, 1 << 10).enumerate().for_each(|(ci, chunk)| {
+        let base = ci << 10;
+        for (g, tg) in tables.iter().enumerate() {
+            let src = &packed_cols[g][base..base + chunk.len()];
+            for (slot, &x) in chunk.iter_mut().zip(src.iter()) {
+                let mut x = x;
+                let mut pos = 0usize;
+                while x != 0 {
+                    let byte = (x & 0xFF) as usize;
+                    if byte != 0 {
+                        *slot += tg[(pos << 8) | byte];
+                    }
+                    x >>= 8;
+                    pos += 1;
+                }
+            }
+        }
+    });
+    m
+}
+
 /// Column-lane packing `packed_cols[g][i]`: lane k of word g at row-bit i
 /// holds `M[64g+k][i]` — the layout the branch-native bit-affine lazy
 /// forest consumes. Built directly from the data tensor.
@@ -1285,7 +1351,11 @@ pub(crate) fn prove_int_eval_merged_common(
     let (z_bj, z_c) = z.split_at(t_w);
     let eq_zc = build_eq_x_r_vec(z_c, &()).expect("s >= 1");
     let r_tbl = row_bit_weights(p, row_weights, alpha, z_bj);
-    let m_tbl = xi_combined_rows(p, rows, &eq_zc);
+    let m_tbl = if rs_fast() {
+        xi_combined_rows_packed(p, packed_cols, &eq_zc)
+    } else {
+        xi_combined_rows(p, rows, &eq_zc)
+    };
     drop(_g_tbls);
 
     let zero_inner = Gf::zero().into_inner();

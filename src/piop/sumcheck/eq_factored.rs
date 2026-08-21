@@ -56,7 +56,7 @@ use num_traits::Zero;
 use rayon::prelude::*;
 use crate::transcript::traits::{ConstTranscribable, Transcript};
 use crate::utils::{
-    cfg_iter, inner_transparent_field::InnerTransparentField, wide_mul::WideMulAcc,
+    cfg_into_iter, cfg_iter, inner_transparent_field::InnerTransparentField, wide_mul::WideMulAcc,
 };
 
 use super::prover::{NatEvaluatedPolyWithoutConstant, ProverMsg};
@@ -569,17 +569,23 @@ where
 {
     let half = tau_l.len() >> 1;
     let one_plus_rho = one.clone() + rho;
+    // Parallel over positions (the shared set builds serially otherwise —
+    // one tau set per layer, several MB per build at the deployed shapes);
+    // per-entry values and memory order unchanged, so byte-identical.
     let build = |tau: &[F]| -> Vec<F> {
-        let mut t = Vec::with_capacity(half << 2);
-        for b in 0..half {
-            let f0 = one_plus_rho.clone() * &tau[b << 1];
-            let f1 = rho.clone() * &tau[(b << 1) | 1];
-            t.push(one.clone());
-            t.push(one.clone() + &f0);
-            t.push(one.clone() + &f1);
-            t.push(one.clone() + &f0 + &f1);
-        }
-        t
+        let rows: Vec<[F; 4]> = cfg_into_iter!(0..half, 1 << 10)
+            .map(|b| {
+                let f0 = one_plus_rho.clone() * &tau[b << 1];
+                let f1 = rho.clone() * &tau[(b << 1) | 1];
+                [
+                    one.clone(),
+                    one.clone() + &f0,
+                    one.clone() + &f1,
+                    one.clone() + &f0 + &f1,
+                ]
+            })
+            .collect();
+        rows.into_flattened()
     };
     LeafFoldTables { t_l: build(tau_l), t_r: build(tau_r) }
 }
@@ -727,18 +733,18 @@ where
 {
     let half = set.te.len() >> 3;
     let one_plus_rho = one.clone() + rho;
+    // Parallel over position pairs — see [`build_leaf_fold_tables`];
+    // per-entry values and memory order unchanged (byte-identical).
     let build = |t: &[F]| -> Vec<F> {
-        let mut f = Vec::with_capacity(half << 4);
-        for b in 0..half {
-            let e0: Vec<F> = (0..4).map(|c| one_plus_rho.clone() * &t[(b << 3) | c]).collect();
-            let e1: Vec<F> = (0..4).map(|c| rho.clone() * &t[(b << 3) | 4 | c]).collect();
-            for c0 in 0..4 {
-                for c1 in 0..4 {
-                    f.push(e0[c0].clone() + &e1[c1]);
-                }
-            }
-        }
-        f
+        let rows: Vec<[F; 16]> = cfg_into_iter!(0..half, 1 << 9)
+            .map(|b| {
+                let e0: Vec<F> =
+                    (0..4).map(|c| one_plus_rho.clone() * &t[(b << 3) | c]).collect();
+                let e1: Vec<F> = (0..4).map(|c| rho.clone() * &t[(b << 3) | 4 | c]).collect();
+                core::array::from_fn(|m| e0[m >> 2].clone() + &e1[m & 3])
+            })
+            .collect();
+        rows.into_flattened()
     };
     Pair2FoldTables { f_e: build(&set.te), f_o: build(&set.to) }
 }
@@ -1122,6 +1128,30 @@ where
         return res;
     }
     dense_grid_pass_generic(l, r, pending, suffix, quads, zero)
+}
+
+/// Task granularity for the per-group parallel passes: >= ~512
+/// element-pairs per task so late-round tiny bodies don't drown in rayon
+/// dispatch overhead. `F2Z_PAR_CHUNK=<d>` additionally floors the chunk
+/// at groups/(d*threads) — coarser equal-work tasks that shed the
+/// per-item split/steal checks (diagnostic knob; read once). MEASURED
+/// 2026-08-21 at n = 28, paired in-window: d = 4 is a wash-to-loss
+/// (+1.4 % median prove) — rayon's fine steal-driven splitting absorbs
+/// this box's background jitter better than coarse chunks; the ~20 % of
+/// on-CPU samples inside `bridge_producer_consumer` are apparently spent
+/// overlapping stalls, not wasted. Default 0 keeps the plain 512 floor.
+#[cfg(feature = "parallel")]
+pub(crate) fn par_min_len(groups: usize, half: usize) -> usize {
+    let by_work = (512usize / half.max(1)).max(1);
+    static DIV: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    let d = *DIV.get_or_init(|| {
+        std::env::var("F2Z_PAR_CHUNK").ok().and_then(|v| v.parse().ok()).unwrap_or(0)
+    });
+    if d == 0 {
+        return by_work;
+    }
+    let by_tasks = groups / (d * rayon::current_num_threads()).max(1);
+    by_work.max(by_tasks).max(1)
 }
 
 /// The generic (trait-op) grid pass — the fallback when the field ships
@@ -1578,11 +1608,18 @@ where
             cfg_iter!(groups).map(|g| suffix_tensors(&g.q, field_cfg)).collect()
         }
     };
-    let qs: Vec<Vec<F>> = groups.iter().map(|g| g.q.clone()).collect();
-    let scales: Vec<F> = groups.iter().map(|g| g.scale.clone()).collect();
-    // Per-group fold buffers.
-    let mut bufs: Vec<GroupBufs<F>> = groups.into_iter().map(|g| g.bufs).collect();
-    let num_groups = qs.len();
+    // Destructure once — the groups are consumed here anyway, so the
+    // per-group `q` vectors move instead of cloning (2^s clones per layer
+    // otherwise; byte-identical).
+    let num_groups = groups.len();
+    let mut qs: Vec<Vec<F>> = Vec::with_capacity(num_groups);
+    let mut scales: Vec<F> = Vec::with_capacity(num_groups);
+    let mut bufs: Vec<GroupBufs<F>> = Vec::with_capacity(num_groups);
+    for g in groups {
+        qs.push(g.q);
+        scales.push(g.scale);
+        bufs.push(g.bufs);
+    }
 
     let _g = crate::utils::prof::scope("eqf:rounds");
     let mut buf = vec![0u8; F::Inner::NUM_BYTES];
@@ -2113,7 +2150,7 @@ where
             };
             #[cfg(feature = "parallel")]
             let out: Vec<[F; 9]> = {
-                let min_len = (512usize / quads.max(1)).max(1);
+                let min_len = par_min_len(bufs.len(), quads);
                 bufs.par_iter_mut()
                     .enumerate()
                     .with_min_len(min_len)
@@ -2145,7 +2182,7 @@ where
             };
             #[cfg(feature = "parallel")]
             let out: Vec<(F, F, F)> = {
-                let min_len = (512usize / half.max(1)).max(1);
+                let min_len = par_min_len(num_groups, half);
                 bufs.par_iter_mut()
                     .enumerate()
                     .with_min_len(min_len)
@@ -2245,7 +2282,7 @@ where
             };
             #[cfg(feature = "parallel")]
             let out: Vec<(F, F, F)> = {
-                let min_len = (512usize / half.max(1)).max(1);
+                let min_len = par_min_len(num_groups, half);
                 bufs.par_iter_mut()
                     .enumerate()
                     .with_min_len(min_len)
@@ -2289,7 +2326,7 @@ where
             let out: Vec<(F, F, F)> = {
                 // ≥ ~512 element-pairs per task so late-round tiny bodies don't
                 // drown in rayon dispatch overhead.
-                let min_len = (512usize / half.max(1)).max(1);
+                let min_len = par_min_len(num_groups, half);
                 (0..num_groups)
                     .into_par_iter()
                     .with_min_len(min_len)
@@ -2302,6 +2339,7 @@ where
             out
         };
 
+        let _g_close = crate::utils::prof::scope("eqf:close");
         let tail = if gruen {
             // Gruen format (shared q, asserted): the round polynomial is
             // P(X) = eq1(X; q[j−1]) · Ĥ(X) with Ĥ = Σ_t A_t·H_t quadratic;
@@ -2370,6 +2408,7 @@ where
             let e = (one.clone() - qj) * &(one.clone() - &rho) + &(qj.clone() * &rho);
             *a = a.clone() * &e;
         }
+        drop(_g_close);
         if j < k {
             // Pass fusion (the default): defer this round's fold into the
             // next round's message pass when every group is Dense
@@ -2732,7 +2771,7 @@ where
             let _g_fold = crate::utils::prof::scope(fold_label);
             #[cfg(feature = "parallel")]
             let mat_grids: Vec<Option<[F; 9]>> = {
-                let min_len = (512usize / half.max(1)).max(1);
+                let min_len = par_min_len(num_groups, half);
                 bufs.par_iter_mut().with_min_len(min_len).map(fold_group).collect()
             };
             #[cfg(not(feature = "parallel"))]

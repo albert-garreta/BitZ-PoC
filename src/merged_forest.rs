@@ -47,7 +47,7 @@ use crate::piop::sumcheck::{MLSumcheck, SumcheckProof};
 use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
 use crate::poly::utils::{build_eq_x_r_vec, eq_eval};
 use crate::transcript::traits::Transcript;
-use crate::utils::cfg_into_iter;
+use crate::utils::{cfg_into_iter, cfg_iter};
 use crate::utils::wide_mul::WideMulAcc;
 
 #[cfg(feature = "parallel")]
@@ -942,9 +942,13 @@ fn prove_merged_forest_lazy_sched(
         return prove_merged_forest(transcript, &dense, depth, s);
     }
 
+    let _g_pre = crate::utils::prof::scope("mf:l1tabs");
     let pair_tbl = layer1_pair_table(p, pow2, log_w, row_len);
     let leaf_tau = leaf_tau_halves(p, pow2, one, log_w, row_len);
+    drop(_g_pre);
+    let _g_ext = crate::utils::prof::scope("mf:extract_bits");
     let mut col_bits = Some(extract_column_bit_halves(packed_cols, live, row_len));
+    drop(_g_ext);
 
     if depth < 4 {
         // Only the leaf layer is bit-driven (Pair2Bits needs k = d−2 ≥ 2).
@@ -975,6 +979,7 @@ fn prove_merged_forest_lazy_sched(
     let q1 = row_len >> 2; // 2^{d−2}
     let q2 = row_len >> 1; // 2^{d−1}
     let v = |i: usize| -> Gf { pow2[i >> log_w][i & mask_w] };
+    let _g_teto = crate::utils::prof::scope("mf:teto");
     let build_cases = |base: usize| -> Vec<Gf> {
         let mut t = Vec::with_capacity(q1 << 2);
         for y in 0..q1 {
@@ -988,6 +993,7 @@ fn prove_merged_forest_lazy_sched(
     };
     let te = build_cases(0);
     let to = build_cases(q1);
+    drop(_g_teto);
 
     // 4-leaf product table for building level d−2 straight from the bits:
     // T4[y≪4 | (cE≪2|cO)] = te[4y+cE]·to[4y+cO]. Collect the INDEXED
@@ -1165,13 +1171,13 @@ fn prove_merged_forest_lazy_sched(
             } else if ell == depth - 2 {
                 // Under `F2Z_LUT3` (depth ≥ 5, so k = d−2 ≥ 3) the pair
                 // layer runs one more bit-driven round (Pair3Bits): its
-                // materialized residue halves.
+                // materialized residue halves. The per-tree bit clones sum
+                // to `2^{n-3}` bytes — parallel copy (byte-identical).
                 let deep = depth >= 5 && forest_lut3();
                 Some(BitLayer {
-                    bufs: col_bits
+                    bufs: cfg_iter!(col_bits
                         .as_ref()
-                        .expect("leaf bits alive for the pair layer")
-                        .iter()
+                        .expect("leaf bits alive for the pair layer"))
                         .map(|(lbits, rbits)| {
                             let (lbits, rbits) = (lbits.clone(), rbits.clone());
                             if deep {

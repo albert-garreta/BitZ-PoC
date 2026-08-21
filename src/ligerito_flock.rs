@@ -133,14 +133,55 @@ impl<T: Transcript + Send> Challenger for ZincChallenger<'_, T> {
 
     fn grind_pow(&mut self, bits: u32) -> u64 {
         let seed = self.pow_seed();
-        let mut nonce = 0u64;
-        loop {
-            if pow_ok(&seed, nonce, bits) {
-                self.0.absorb_slice(&nonce.to_le_bytes());
-                return nonce;
+        // Parallel smallest-nonce search (prover-side only; the verifier
+        // checks whatever nonce arrives): scan fixed waves of the nonce
+        // space and take each wave's MINIMUM hit — the first wave with a
+        // hit yields exactly the serial scan's nonce, so the transcript
+        // stays byte-identical. The expected serial cost is 2^bits hashes
+        // (~6.5 ms at 16 bits); waves parallelize it ~#cores. Below ~2^11
+        // expected hashes the fork-join overhead outweighs the win — stay
+        // serial there.
+        #[cfg(feature = "parallel")]
+        let nonce = if bits >= 11 {
+            use rayon::prelude::*;
+            const CHUNK_LOG: u64 = 12;
+            const CHUNKS: usize = 32; // wave = 32 · 4096 = 2^17 nonces
+            let mut base = 0u64;
+            loop {
+                let hit = (0..CHUNKS)
+                    .into_par_iter()
+                    .filter_map(|c| {
+                        // First hit in the chunk = the chunk's minimum.
+                        let start = base + ((c as u64) << CHUNK_LOG);
+                        (start..start + (1 << CHUNK_LOG)).find(|&n| pow_ok(&seed, n, bits))
+                    })
+                    .min();
+                if let Some(n) = hit {
+                    break n;
+                }
+                base += (CHUNKS as u64) << CHUNK_LOG;
             }
-            nonce = nonce.wrapping_add(1);
-        }
+        } else {
+            let mut nonce = 0u64;
+            loop {
+                if pow_ok(&seed, nonce, bits) {
+                    break nonce;
+                }
+                nonce = nonce.wrapping_add(1);
+            }
+        };
+        #[cfg(not(feature = "parallel"))]
+        let nonce = {
+            let mut nonce = 0u64;
+            loop {
+                if pow_ok(&seed, nonce, bits) {
+                    break nonce;
+                }
+                nonce = nonce.wrapping_add(1);
+            }
+        };
+        self.0.absorb_slice(&nonce.to_le_bytes());
+        nonce
     }
 
     fn verify_pow(&mut self, nonce: u64, bits: u32) -> bool {
@@ -1231,17 +1272,17 @@ fn fill_phi_basis_round0(
     eq_his: &[Vec<Gf>],
     etas: &[Gf],
     eq_r2: &[Gf],
-) -> (Gf, Gf) {
-    use crate::utils::wide_mul::WideMulAcc;
+) -> (F128, F128, ligerito::FoldLookahead) {
+    use flock_core::field::F256Unreduced;
     assert_eq!(b.len(), f.len());
-    assert!(b.len() >= 2 && b.len().is_multiple_of(2));
-    const CHUNK: usize = 1 << 12; // even ⇒ (2j, 2j+1) pairs never straddle chunks
+    assert!(b.len() >= 4 && b.len().is_multiple_of(4));
+    const CHUNK: usize = 1 << 12; // multiple of 4 ⇒ lookahead quads never straddle chunks
     let tables: Vec<Vec<Gf>> = eq_his
         .iter()
         .enumerate()
         .map(|(l, _)| phi_byte_tables(eq_r2, etas[l]))
         .collect();
-    let partials: Vec<(Gf, Gf)> = cfg_chunks_mut!(b, CHUNK)
+    let partials: Vec<[F256Unreduced; 8]> = cfg_chunks_mut!(b, CHUNK)
         .enumerate()
         .map(|(ci, chunk)| {
             let base = ci * CHUNK;
@@ -1253,38 +1294,33 @@ fn fill_phi_basis_round0(
                 }
                 *slot = gf_to_f128(acc);
             }
-            let zero = Gf::zero();
-            let mut u0 = <Gf as WideMulAcc>::wide_zero(&zero);
-            let mut u2 = <Gf as WideMulAcc>::wide_zero(&zero);
+            // Round-0 message AND round-1 lookahead coefficients in the
+            // same pass, via flock's group-of-4 Karatsuba kernel — the
+            // exact accumulator flock's own `pcs::commit_and_prove`
+            // b-combine pass feeds `lookahead_finish` (byte-identical
+            // transcript pinned upstream). Unreduced 256-bit XOR
+            // accumulation; reduction is F₂-linear, so one reduce at the
+            // end equals the old per-chunk reduce-then-add.
+            let mut acc = [F256Unreduced::ZERO; 8];
             let mut j = 0usize;
-            while j + 1 < chunk.len() {
-                let b0 = f128_to_gf(chunk[j]);
-                let b1 = f128_to_gf(chunk[j + 1]);
-                let f0 = f128_to_gf(f[base + j]);
-                let f1 = f128_to_gf(f[base + j + 1]);
-                <Gf as WideMulAcc>::wide_add_assign(
-                    &mut u0,
-                    &<Gf as WideMulAcc>::mul_wide(&f0, &b0),
-                );
-                <Gf as WideMulAcc>::wide_add_assign(
-                    &mut u2,
-                    &<Gf as WideMulAcc>::mul_wide(&(f0 + f1), &(b0 + b1)),
-                );
-                j += 2;
+            while j + 3 < chunk.len() {
+                let y = base + j;
+                let fq = [f[y], f[y + 1], f[y + 2], f[y + 3]];
+                let bq = [chunk[j], chunk[j + 1], chunk[j + 2], chunk[j + 3]];
+                ligerito::lookahead_accum_group(&fq, &bq, &mut acc);
+                j += 4;
             }
-            (
-                <Gf as WideMulAcc>::from_wide(u0),
-                <Gf as WideMulAcc>::from_wide(u2),
-            )
+            acc
         })
         .collect();
-    let mut u0 = Gf::zero();
-    let mut u2 = Gf::zero();
-    for (p0, p2) in &partials {
-        u0 += *p0;
-        u2 += *p2;
+    let mut acc = [F256Unreduced::ZERO; 8];
+    for part in &partials {
+        for (a, p) in acc.iter_mut().zip(part.iter()) {
+            *a ^= *p;
+        }
     }
-    (u0, u2)
+    let (msg, la) = ligerito::lookahead_finish(acc);
+    (msg.u_0, msg.u_2, la)
 }
 
 // ---------------------------------------------------------------------
@@ -1382,17 +1418,18 @@ pub fn prove_mle_eval_mod_q_ligerito(
 
     let _g_l = crate::utils::prof::scope("mq:lig");
     let lig = match round0 {
-        Some((u0, u2)) => ligerito::recursive_prover_with_basis_precomputed_round0(
+        Some((u0, u2, la)) => ligerito::recursive_prover_with_basis_precomputed_round0(
             pc,
             hint.p_msg.clone(),
             b_comb,
             gf_to_f128(target),
             &hint.prover_data.codeword,
             &hint.prover_data.merkle_tree,
-            (gf_to_f128(u0), gf_to_f128(u2)),
-            // Round-1 lookahead coefficients: not accumulated by our
-            // b_comb pass (flock computes the lookahead from round 1 on).
-            None,
+            (u0, u2),
+            // Round-1 lookahead accumulated by our fused b_comb pass:
+            // round 1 becomes a skip round and the prover's entry pass
+            // over (f, b) never runs (byte-identical, pinned upstream).
+            Some(la),
             &mut ZincChallenger(transcript),
         ),
         None => ligerito::recursive_prover_with_basis(
@@ -9556,12 +9593,12 @@ mod tests {
         }
 
         let mut b = vec![F128::ZERO; n];
-        let (u0, u2) = fill_phi_basis_round0(&mut b, &p_msg, &eq_his, &etas, &eq_r2);
+        let (u0, u2, _la) = fill_phi_basis_round0(&mut b, &p_msg, &eq_his, &etas, &eq_r2);
         for (y, (got, want)) in b.iter().zip(expect_b.iter()).enumerate() {
             assert_eq!((got.lo, got.hi), (want.lo, want.hi), "basis slot {y}");
         }
-        assert_eq!(u0, exp_u0, "u_0");
-        assert_eq!(u2, exp_u2, "u_2");
+        assert_eq!(f128_to_gf(u0), exp_u0, "u_0");
+        assert_eq!(f128_to_gf(u2), exp_u2, "u_2");
     }
     // ── Structured-tap claim tests (EXPERIMENTAL API) ────────────────────
 
