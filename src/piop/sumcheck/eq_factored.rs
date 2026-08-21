@@ -398,9 +398,15 @@ pub(crate) fn prefetch_l1<F>(v: &[F], idx: usize) {
 }
 
 #[allow(clippy::arithmetic_side_effects)]
-fn build_leaf_tables<F>(v1: &[F], tau_l: &[F], tau_r: &[F], zero: &F) -> LeafTables<F>
+fn build_leaf_tables<F>(
+    v1: &[F],
+    tau_l: &[F],
+    tau_r: &[F],
+    zero: &F,
+    tile: bool,
+) -> LeafTables<F>
 where
-    F: InnerTransparentField,
+    F: InnerTransparentField + Send + Sync,
 {
     let half = v1.len();
     debug_assert_eq!(tau_l.len(), half << 1);
@@ -426,12 +432,14 @@ where
         }
         return LeafTables::Raw8 { t, w_sum };
     }
-    let factored = leaf_a2_factored(half);
-    let mut t_a0 = Vec::with_capacity(half << 2);
-    let mut t_a1 = Vec::with_capacity(half << 2);
-    let mut t_a2 = Vec::with_capacity(if factored { half << 2 } else { half << 4 });
-    let mut w_sum = zero.clone();
-    for b in 0..half {
+    // The tiled round body keeps every slot block L1-resident, which
+    // resurrects the cheap 16-case ΔΔ pick (one gather per slot) that the
+    // tree-outer form had to abandon at DRAM-scale shapes — so when the
+    // caller will tile, build Precombined regardless of the residency
+    // gate. Measured at n = 28: tile+precombined leaf_r1 ≈ 19 ms vs the
+    // tree-outer factored form's ≈ 29 ms.
+    let factored = if tile { false } else { leaf_a2_factored(half) };
+    let per_slot = |b: usize| -> ([F; 4], [F; 4], [F; 4]) {
         let w = &v1[b];
         let sl0 = w.clone() * &tau_l[b << 1];
         let sl1 = w.clone() * &tau_l[(b << 1) | 1];
@@ -442,41 +450,57 @@ where
         let p10 = sl1.clone() * &tau_r[b << 1];
         let p01 = sl0.clone() * &tau_r[(b << 1) | 1];
         // 4-case singles+pair combos.
-        t_a0.push(zero.clone());
-        t_a0.push(sl0.clone());
-        t_a0.push(sr0.clone());
-        t_a0.push(sl0.clone() + &sr0 + &p00);
-        t_a1.push(zero.clone());
-        t_a1.push(sl1.clone());
-        t_a1.push(sr1.clone());
-        t_a1.push(sl1.clone() + &sr1 + &p11);
+        let a0 = [
+            zero.clone(),
+            sl0.clone(),
+            sr0.clone(),
+            sl0.clone() + &sr0 + &p00,
+        ];
+        let a1 = [
+            zero.clone(),
+            sl1.clone(),
+            sr1.clone(),
+            sl1.clone() + &sr1 + &p11,
+        ];
+        (a0, a1, [p00, p10, p01, p11])
+    };
+    // Parallel over slots — the shared set otherwise builds serially
+    // (one set per layer). Values and memory order unchanged.
+    let rows: Vec<([F; 4], [F; 4], [F; 4])> =
+        cfg_into_iter!(0..half, 1 << 10).map(per_slot).collect();
+    let mut w_sum = zero.clone();
+    for w in v1 {
+        w_sum += w;
+    }
+    let mut t_a0 = Vec::with_capacity(half << 2);
+    let mut t_a1 = Vec::with_capacity(half << 2);
+    let mut t_a2 = Vec::with_capacity(if factored { half << 2 } else { half << 4 });
+    for (a0, a1, p) in rows {
+        t_a0.extend(a0);
+        t_a1.extend(a1);
         if factored {
             // Raw cross products, mask-selected at consumption
             // ([`leaf_a2_slot_add`]).
-            t_a2.push(p00);
-            t_a2.push(p10);
-            t_a2.push(p01);
-            t_a2.push(p11);
+            t_a2.extend_from_slice(&p[..4]);
         } else {
             // 16-case ΔΔ combos: case c = m_{L0} | m_{L1}≪1 | m_{R0}≪2 | m_{R1}≪3.
             for c in 0..16usize {
                 let mut v = zero.clone();
                 if c & 0b0101 == 0b0101 {
-                    v += &p00; // m_{L0}∧m_{R0}
+                    v += &p[0]; // m_{L0}∧m_{R0}
                 }
                 if c & 0b0110 == 0b0110 {
-                    v += &p10; // m_{L1}∧m_{R0}
+                    v += &p[1]; // m_{L1}∧m_{R0}
                 }
                 if c & 0b1001 == 0b1001 {
-                    v += &p01; // m_{L0}∧m_{R1}
+                    v += &p[2]; // m_{L0}∧m_{R1}
                 }
                 if c & 0b1010 == 0b1010 {
-                    v += &p11; // m_{L1}∧m_{R1}
+                    v += &p[3]; // m_{L1}∧m_{R1}
                 }
                 t_a2.push(v);
             }
         }
-        w_sum += w;
     }
     let a2 = if factored { LeafA2::Factored(t_a2) } else { LeafA2::Precombined(t_a2) };
     LeafTables::Split { t_a0, t_a1, a2, w_sum }
@@ -550,6 +574,131 @@ where
     }
     let a1 = t11 + &a0 + &a2;
     (a0, a1, a2)
+}
+
+/// Slot-tiled leaf round-1 (probe I5 of `docs/lut-width-ideas.md`, the
+/// n = 28 site): the tree-outer form re-streams the whole shared table
+/// set once PER TREE (6 MB × 2^s ≈ 12 GB of L2 traffic at n = 28 — the
+/// round is L2-bandwidth-bound, not ALU-bound), so invert: slot-blocks
+/// OUTER (a 256-slot block of all three tables is ~48 KB — L1-resident),
+/// trees INNER with the three accumulators in registers. Table traffic
+/// drops to one stream per block-chunk; the per-slot ALU is the exact
+/// [`leaf_round1_body`] Split schedule. Per-tree coefficients are the
+/// same XOR terms in a different order — byte-identical.
+///
+/// Returns per-group `Some((a0, a1, a2))` for the leaf-bit groups
+/// (`w_sum` folded in, node conversion applied — the body's own
+/// finalization), `None` for any other group (the caller computes those
+/// with the per-group body). Engages only on the single-tau-set shape
+/// (the forest); multi-set callers keep the tree-outer form.
+/// `F2Z_LEAF_TILE=0` opts out (read once per process).
+fn leaf_tile_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("F2Z_LEAF_TILE").map_or(true, |v| v != "0"))
+}
+
+#[allow(clippy::arithmetic_side_effects)]
+fn leaf_round1_tiled<F>(
+    bufs: &[GroupBufs<F>],
+    leaf_tables: &[LeafTables<F>],
+    half: usize,
+    zero: &F,
+) -> Option<Vec<Option<(F, F, F)>>>
+where
+    F: InnerTransparentField + WideMulAcc + Send + Sync,
+{
+    if leaf_tables.len() != 1 {
+        return None;
+    }
+    let LeafTables::Split { t_a0, t_a1, a2: a2t, w_sum } = &leaf_tables[0] else {
+        // Raw8 is the n ≥ 30 form — its sequential 128-B slot blocks are
+        // already stream-shaped; tile only the split form.
+        return None;
+    };
+    // Per-group bit views; `None` marks a group the tile doesn't cover.
+    let views: Vec<Option<(&[u64], &[u64])>> = bufs
+        .iter()
+        .map(|gb| match gb {
+            GroupBufs::LeafBits { lbits, rbits, tau_set }
+            | GroupBufs::Leaf2Bits { lbits, rbits, tau_set }
+            | GroupBufs::Leaf3Bits { lbits, rbits, tau_set }
+            | GroupBufs::Leaf4Bits { lbits, rbits, tau_set }
+                if *tau_set == 0 =>
+            {
+                Some((lbits.as_slice(), rbits.as_slice()))
+            }
+            _ => None,
+        })
+        .collect();
+    if views.iter().all(|v| v.is_none()) {
+        return None;
+    }
+
+    // Slot block sized to keep the block's table lines L1-resident:
+    // split+factored = 12 entries/slot (192 B) → 256 slots ≈ 48 KB;
+    // split+precombined = 24 entries/slot (384 B) → 128 slots ≈ 48 KB.
+    let tb = match a2t {
+        LeafA2::Precombined(_) => 128,
+        LeafA2::Factored(_) => 256,
+    };
+    let nblocks = half.div_ceil(tb).max(1);
+    let ngroups = bufs.len();
+    let zero3 = || vec![(zero.clone(), zero.clone(), zero.clone()); ngroups];
+    let body = |acc: &mut [(F, F, F)], blk: usize| {
+        let s0 = blk * tb;
+        let s1 = (s0 + tb).min(half);
+        for (t, view) in views.iter().enumerate() {
+            let Some((lb, rb)) = view else { continue };
+            let slot = &mut acc[t];
+            let (mut a0, mut t11, mut a2) =
+                (slot.0.clone(), slot.1.clone(), slot.2.clone());
+            for b in s0..s1 {
+                let lp = ((lb[b >> 5] >> ((b & 31) << 1)) & 3) as u32 as usize;
+                let rp = ((rb[b >> 5] >> ((b & 31) << 1)) & 3) as u32 as usize;
+                a0 += &t_a0[(b << 2) | (lp & 1) | ((rp & 1) << 1)];
+                t11 += &t_a1[(b << 2) | (lp >> 1) | (rp & 2)];
+                leaf_a2_slot_add(&mut a2, a2t, b, lp, rp, zero);
+            }
+            *slot = (a0, t11, a2);
+        }
+    };
+    #[cfg(feature = "parallel")]
+    let acc: Vec<(F, F, F)> = (0..nblocks)
+        .into_par_iter()
+        .fold(zero3, |mut acc, blk| {
+            body(&mut acc, blk);
+            acc
+        })
+        .reduce(zero3, |mut a, b| {
+            for (x, y) in a.iter_mut().zip(b) {
+                x.0 += &y.0;
+                x.1 += &y.1;
+                x.2 += &y.2;
+            }
+            a
+        });
+    #[cfg(not(feature = "parallel"))]
+    let acc: Vec<(F, F, F)> = {
+        let mut acc = zero3();
+        for blk in 0..nblocks {
+            body(&mut acc, blk);
+        }
+        acc
+    };
+
+    Some(
+        acc.into_iter()
+            .zip(views.iter())
+            .map(|((a0, t11, a2), view)| {
+                view.map(|_| {
+                    let a0 = a0 + w_sum;
+                    let t11 = t11 + w_sum;
+                    let a1 = t11 + &a0 + &a2;
+                    (a0, a1, a2)
+                })
+            })
+            .collect(),
+    )
 }
 
 /// Round-1 fold tables for one leaf `tau` set, in **case-LUT** form: the
@@ -1665,7 +1814,12 @@ where
             if j == 1 && (has_leaf || has_leaf2 || has_leaf3 || has_leaf4) {
             let _g = crate::utils::prof::scope("eqf:leaf_tables");
             let v1 = &suffix[0][0];
-            cfg_iter!(tau_sets).map(|(tl, tr)| build_leaf_tables(v1, tl, tr, &zero)).collect()
+            // Mirror [`leaf_round1_tiled`]'s engagement condition: the
+            // tiled body wants the Precombined ΔΔ form.
+            let tile = leaf_tile_enabled() && tau_sets.len() == 1;
+            cfg_iter!(tau_sets)
+                .map(|(tl, tr)| build_leaf_tables(v1, tl, tr, &zero, tile))
+                .collect()
         } else {
             Vec::new()
         };
@@ -2322,21 +2476,42 @@ where
                 (GroupBufs::T4Bits { .. }, _) => "eqf:msg:t4bits",
             };
             let _g_msg = crate::utils::prof::scope(msg_label);
-            #[cfg(feature = "parallel")]
-            let out: Vec<(F, F, F)> = {
-                // ≥ ~512 element-pairs per task so late-round tiny bodies don't
-                // drown in rayon dispatch overhead.
-                let min_len = par_min_len(num_groups, half);
-                (0..num_groups)
-                    .into_par_iter()
-                    .with_min_len(min_len)
-                    .map(|t| compute_h(t, &bufs))
-                    .collect()
+            // Slot-tiled round-1 form for the leaf-bit groups (see
+            // [`leaf_round1_tiled`]); any group the tile doesn't cover
+            // (e.g. the elided-witness constant Dense group) falls back
+            // to the per-group body. The pair-shaped rounds measured a
+            // WASH under the same tiling (2026-08-21, both table forms:
+            // they are wide-mul-bound, not table-bandwidth-bound) — only
+            // the pick/XOR-heavy leaf round 1 profits.
+            let tiled = if j == 1 && leaf_tile_enabled() {
+                let _g_tile = crate::utils::prof::scope("eqf:tile_r1");
+                leaf_round1_tiled(&bufs, &leaf_tables, half, &zero)
+            } else {
+                None
             };
-            #[cfg(not(feature = "parallel"))]
-            let out: Vec<(F, F, F)> =
-                (0..num_groups).map(|t| compute_h(t, &bufs)).collect();
-            out
+            if let Some(tiled) = tiled {
+                tiled
+                    .into_iter()
+                    .enumerate()
+                    .map(|(t, v)| v.unwrap_or_else(|| compute_h(t, &bufs)))
+                    .collect()
+            } else {
+                #[cfg(feature = "parallel")]
+                let out: Vec<(F, F, F)> = {
+                    // ≥ ~512 element-pairs per task so late-round tiny bodies
+                    // don't drown in rayon dispatch overhead.
+                    let min_len = par_min_len(num_groups, half);
+                    (0..num_groups)
+                        .into_par_iter()
+                        .with_min_len(min_len)
+                        .map(|t| compute_h(t, &bufs))
+                        .collect()
+                };
+                #[cfg(not(feature = "parallel"))]
+                let out: Vec<(F, F, F)> =
+                    (0..num_groups).map(|t| compute_h(t, &bufs)).collect();
+                out
+            }
         };
 
         let _g_close = crate::utils::prof::scope("eqf:close");

@@ -760,7 +760,7 @@ pub fn prove_rs_open_ligerito(
 
     let lig = ligerito::recursive_prover_with_basis(
         pc,
-        hint.p_msg.clone(),
+        par_clone_f128(&hint.p_msg),
         gf_slice_to_f128(&b_tbl),
         gf_to_f128(beta0),
         &hint.prover_data.codeword,
@@ -1039,7 +1039,7 @@ pub fn prove_rs_ligerito_batch(
 
     let lig = ligerito::recursive_prover_with_basis(
         pc,
-        hint.p_msg.clone(),
+        par_clone_f128(&hint.p_msg),
         b_comb,
         gf_to_f128(target),
         &hint.prover_data.codeword,
@@ -1214,6 +1214,24 @@ fn dense_ring_sv(p_msg: &[F128], eq_hi: &[Gf]) -> Vec<Gf> {
         }
     }
     s
+}
+
+/// Parallel copy of the packed message — `Vec::clone` of the 2^{m_p}·16-B
+/// buffer is a single-thread memcpy (~2–3 ms at n = 28); the flock prover
+/// entry point consumes an owned Vec while the hint must keep its copy, so
+/// the copy itself is unavoidable but its wall time is not. Byte-identical
+/// (pure data movement).
+fn par_clone_f128(src: &[F128]) -> Vec<F128> {
+    #[cfg(feature = "parallel")]
+    {
+        let mut out = vec![F128::ZERO; src.len()];
+        out.par_chunks_mut(1 << 16)
+            .zip(src.par_chunks(1 << 16))
+            .for_each(|(d, s)| d.copy_from_slice(s));
+        out
+    }
+    #[cfg(not(feature = "parallel"))]
+    src.to_vec()
 }
 
 /// Overwrite `b[y] = Σ_l η_l·Φ_{r″}(eq_his[l][y])` — the η-combined
@@ -1420,7 +1438,7 @@ pub fn prove_mle_eval_mod_q_ligerito(
     let lig = match round0 {
         Some((u0, u2, la)) => ligerito::recursive_prover_with_basis_precomputed_round0(
             pc,
-            hint.p_msg.clone(),
+            par_clone_f128(&hint.p_msg),
             b_comb,
             gf_to_f128(target),
             &hint.prover_data.codeword,
@@ -1434,7 +1452,7 @@ pub fn prove_mle_eval_mod_q_ligerito(
         ),
         None => ligerito::recursive_prover_with_basis(
             pc,
-            hint.p_msg.clone(),
+            par_clone_f128(&hint.p_msg),
             b_comb,
             gf_to_f128(target),
             &hint.prover_data.codeword,
@@ -2361,7 +2379,7 @@ fn prove_mod_q_lig_xor_impl(
     let _g_lig = crate::utils::prof::scope("mq:lig");
     let lig = ligerito::recursive_prover_with_basis(
         pc,
-        hint.p_msg.clone(),
+        par_clone_f128(&hint.p_msg),
         b_comb,
         gf_to_f128(target),
         &hint.prover_data.codeword,
@@ -4167,7 +4185,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
     let _g_lig = crate::utils::prof::scope("tap:lig");
     let lig = ligerito::recursive_prover_with_basis(
         pc,
-        hint.p_msg.clone(),
+        par_clone_f128(&hint.p_msg),
         b_comb,
         gf_to_f128(target),
         &hint.prover_data.codeword,
@@ -4958,7 +4976,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
     let _g_l = crate::utils::prof::scope("tapf:lig");
     let lig = ligerito::recursive_prover_with_basis(
         pc,
-        hint.p_msg.clone(),
+        par_clone_f128(&hint.p_msg),
         b_comb,
         gf_to_f128(target),
         &hint.prover_data.codeword,
@@ -6552,7 +6570,7 @@ fn prove_rlc_families_closure(
     let _g_l = crate::utils::prof::scope("rlc:lig");
     ligerito::recursive_prover_with_basis(
         pc,
-        hint.p_msg.clone(),
+        par_clone_f128(&hint.p_msg),
         b_comb,
         gf_to_f128(target),
         &hint.prover_data.codeword,
