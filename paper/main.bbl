@@ -16,5 +16,282 @@
   {}
 \endgroup
 
+
+\refsection{0}
+  \datalist[entry]{anyt/global//global/global/global}
+    \entry{zincplus}{unpublished}{}{}
+      \name{author}{7}{}{%
+        {{hash=684af2d3cd0b91930914300fff8da42b}{%
+           family={Abdugafarov},
+           familyi={A\bibinitperiod},
+           given={Alexander},
+           giveni={A\bibinitperiod}}}%
+        {{hash=330e03ae855cd69c42df94452422c97a}{%
+           family={Garreta},
+           familyi={G\bibinitperiod},
+           given={Albert},
+           giveni={A\bibinitperiod}}}%
+        {{hash=d6e7552c865637927e1649455d2326f4}{%
+           family={Kumar},
+           familyi={K\bibinitperiod},
+           given={Amit},
+           giveni={A\bibinitperiod}}}%
+        {{hash=a8f103de91334b0678c87b523558f1b9}{%
+           family={Osadnik},
+           familyi={O\bibinitperiod},
+           given={Micha{ł}},
+           giveni={M\bibinitperiod}}}%
+        {{hash=e314283c746bd2dea3a28aad0d15ab56}{%
+           family={Vesely},
+           familyi={V\bibinitperiod},
+           given={Psi},
+           giveni={P\bibinitperiod}}}%
+        {{hash=ef2bf7f9d1da32cff3b4b03b9b46b8a2}{%
+           family={Vlasov},
+           familyi={V\bibinitperiod},
+           given={Ilia},
+           giveni={I\bibinitperiod}}}%
+        {{hash=b0be43d05b24015bfee00ec3f8defc56}{%
+           family={Zheng},
+           familyi={Z\bibinitperiod},
+           given={Kai\bibnamedelima Zhe},
+           giveni={K\bibinitperiod\bibinitdelim Z\bibinitperiod}}}%
+      }
+      \strng{namehash}{8a25ea8f648f31acc42bcbb54b067a08}
+      \strng{fullhash}{c911d012c1f38994e8c8a8b26559a0cd}
+      \strng{fullhashraw}{c911d012c1f38994e8c8a8b26559a0cd}
+      \strng{bibnamehash}{8a25ea8f648f31acc42bcbb54b067a08}
+      \strng{authorbibnamehash}{8a25ea8f648f31acc42bcbb54b067a08}
+      \strng{authornamehash}{8a25ea8f648f31acc42bcbb54b067a08}
+      \strng{authorfullhash}{c911d012c1f38994e8c8a8b26559a0cd}
+      \strng{authorfullhashraw}{c911d012c1f38994e8c8a8b26559a0cd}
+      \field{labelalpha}{Abd+26}
+      \field{sortinit}{A}
+      \field{sortinithash}{2f401846e2029bad6b3ecc16d50031e2}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{note}{Manuscript, May 8, 2026}
+      \field{title}{Zinc+: {SNARKs} for Polynomial Rings}
+      \field{year}{2026}
+    \endentry
+    \entry{whir}{inproceedings}{}{}
+      \name{author}{4}{}{%
+        {{hash=36055a75177bd6e233171873c66b1329}{%
+           family={Arnon},
+           familyi={A\bibinitperiod},
+           given={Gal},
+           giveni={G\bibinitperiod}}}%
+        {{hash=dfbdc8dc8205deeb7a8fbc765799dd0b}{%
+           family={Chiesa},
+           familyi={C\bibinitperiod},
+           given={Alessandro},
+           giveni={A\bibinitperiod}}}%
+        {{hash=18d30560b6562486915f4613e5fa1095}{%
+           family={Fenzi},
+           familyi={F\bibinitperiod},
+           given={Giacomo},
+           giveni={G\bibinitperiod}}}%
+        {{hash=7e9d4a5192683290c59adf2c9b3d8dca}{%
+           family={Yogev},
+           familyi={Y\bibinitperiod},
+           given={Eylon},
+           giveni={E\bibinitperiod}}}%
+      }
+      \name{editor}{2}{}{%
+        {{hash=a5cf36db5a8bff12419022f6f31208ed}{%
+           family={Fehr},
+           familyi={F\bibinitperiod},
+           given={Serge},
+           giveni={S\bibinitperiod}}}%
+        {{hash=52b1d5cf71b1a5f3f05e8f3cbf2770c4}{%
+           family={Fouque},
+           familyi={F\bibinitperiod},
+           given={Pierre{-}Alain},
+           giveni={P\bibinitperiod}}}%
+      }
+      \list{publisher}{1}{%
+        {Springer}%
+      }
+      \strng{namehash}{31e23718bdea4c68df88305bced54468}
+      \strng{fullhash}{31e23718bdea4c68df88305bced54468}
+      \strng{fullhashraw}{31e23718bdea4c68df88305bced54468}
+      \strng{bibnamehash}{31e23718bdea4c68df88305bced54468}
+      \strng{authorbibnamehash}{31e23718bdea4c68df88305bced54468}
+      \strng{authornamehash}{31e23718bdea4c68df88305bced54468}
+      \strng{authorfullhash}{31e23718bdea4c68df88305bced54468}
+      \strng{authorfullhashraw}{31e23718bdea4c68df88305bced54468}
+      \strng{editorbibnamehash}{e019a26c356986107f11c3afc9ec938f}
+      \strng{editornamehash}{e019a26c356986107f11c3afc9ec938f}
+      \strng{editorfullhash}{e019a26c356986107f11c3afc9ec938f}
+      \strng{editorfullhashraw}{e019a26c356986107f11c3afc9ec938f}
+      \field{labelalpha}{ACFY25}
+      \field{sortinit}{A}
+      \field{sortinithash}{2f401846e2029bad6b3ecc16d50031e2}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{booktitle}{Advances in Cryptology - {EUROCRYPT} 2025 - 44th Annual International Conference on the Theory and Applications of Cryptographic Techniques, Madrid, Spain, May 4-8, 2025, Proceedings, Part {IV}}
+      \field{series}{Lecture Notes in Computer Science}
+      \field{title}{{WHIR:} Reed-Solomon Proximity Testing with Super-Fast Verification}
+      \field{volume}{15604}
+      \field{year}{2025}
+      \field{pages}{214\bibrangedash 243}
+      \range{pages}{30}
+      \verb{doi}
+      \verb 10.1007/978-3-031-91134-7\_8
+      \endverb
+      \verb{urlraw}
+      \verb https://doi.org/10.1007/978-3-031-91134-7\_8
+      \endverb
+      \verb{url}
+      \verb https://doi.org/10.1007/978-3-031-91134-7%5C_8
+      \endverb
+    \endentry
+    \entry{FIPS180-4}{report}{}{}
+      \name{author}{1}{}{%
+        {{hash=ef9cb61878e61d434507444346b29d1a}{%
+           family={{National Institute of Standards and Technology}},
+           familyi={N\bibinitperiod}}}%
+      }
+      \list{institution}{1}{%
+        {U.S. Department of Commerce}%
+      }
+      \strng{namehash}{ef9cb61878e61d434507444346b29d1a}
+      \strng{fullhash}{ef9cb61878e61d434507444346b29d1a}
+      \strng{fullhashraw}{ef9cb61878e61d434507444346b29d1a}
+      \strng{bibnamehash}{ef9cb61878e61d434507444346b29d1a}
+      \strng{authorbibnamehash}{ef9cb61878e61d434507444346b29d1a}
+      \strng{authornamehash}{ef9cb61878e61d434507444346b29d1a}
+      \strng{authorfullhash}{ef9cb61878e61d434507444346b29d1a}
+      \strng{authorfullhashraw}{ef9cb61878e61d434507444346b29d1a}
+      \field{labelalpha}{Nat15}
+      \field{sortinit}{N}
+      \field{sortinithash}{22369a73d5f88983a108b63f07f37084}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{number}{FIPS PUB 180-4}
+      \field{title}{Secure Hash Standard ({SHS})}
+      \field{type}{techreport}
+      \field{year}{2015}
+      \verb{urlraw}
+      \verb https://doi.org/10.6028/NIST.FIPS.180-4
+      \endverb
+      \verb{url}
+      \verb https://doi.org/10.6028/NIST.FIPS.180-4
+      \endverb
+    \endentry
+    \entry{spartan}{misc}{}{}
+      \name{author}{1}{}{%
+        {{hash=adb7b0f18cfe0030d246619b1e419124}{%
+           family={Setty},
+           familyi={S\bibinitperiod},
+           given={Srinath},
+           giveni={S\bibinitperiod}}}%
+      }
+      \strng{namehash}{adb7b0f18cfe0030d246619b1e419124}
+      \strng{fullhash}{adb7b0f18cfe0030d246619b1e419124}
+      \strng{fullhashraw}{adb7b0f18cfe0030d246619b1e419124}
+      \strng{bibnamehash}{adb7b0f18cfe0030d246619b1e419124}
+      \strng{authorbibnamehash}{adb7b0f18cfe0030d246619b1e419124}
+      \strng{authornamehash}{adb7b0f18cfe0030d246619b1e419124}
+      \strng{authorfullhash}{adb7b0f18cfe0030d246619b1e419124}
+      \strng{authorfullhashraw}{adb7b0f18cfe0030d246619b1e419124}
+      \field{labelalpha}{Set19}
+      \field{sortinit}{S}
+      \field{sortinithash}{b164b07b29984b41daf1e85279fbc5ab}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{howpublished}{Cryptology ePrint Archive, Paper 2019/550}
+      \field{note}{\url{https://eprint.iacr.org/2019/550}}
+      \field{title}{Spartan: Efficient and general-purpose {zkSNARKs} without trusted setup}
+      \field{year}{2019}
+      \verb{urlraw}
+      \verb https://eprint.iacr.org/2019/550
+      \endverb
+      \verb{url}
+      \verb https://eprint.iacr.org/2019/550
+      \endverb
+    \endentry
+    \entry{ethstark}{misc}{}{}
+      \name{author}{1}{}{%
+        {{hash=7d358b6c4defc75bb05ab3a9761ad185}{%
+           family={StarkWare},
+           familyi={S\bibinitperiod}}}%
+      }
+      \strng{namehash}{7d358b6c4defc75bb05ab3a9761ad185}
+      \strng{fullhash}{7d358b6c4defc75bb05ab3a9761ad185}
+      \strng{fullhashraw}{7d358b6c4defc75bb05ab3a9761ad185}
+      \strng{bibnamehash}{7d358b6c4defc75bb05ab3a9761ad185}
+      \strng{authorbibnamehash}{7d358b6c4defc75bb05ab3a9761ad185}
+      \strng{authornamehash}{7d358b6c4defc75bb05ab3a9761ad185}
+      \strng{authorfullhash}{7d358b6c4defc75bb05ab3a9761ad185}
+      \strng{authorfullhashraw}{7d358b6c4defc75bb05ab3a9761ad185}
+      \field{labelalpha}{Sta21}
+      \field{sortinit}{S}
+      \field{sortinithash}{b164b07b29984b41daf1e85279fbc5ab}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{howpublished}{Online}
+      \field{note}{Version 1.2}
+      \field{title}{{ethSTARK} Documentation}
+      \field{year}{2021}
+      \verb{urlraw}
+      \verb https://eprint.iacr.org/2021/582
+      \endverb
+      \verb{url}
+      \verb https://eprint.iacr.org/2021/582
+      \endverb
+    \endentry
+    \entry{ccs}{misc}{}{}
+      \name{author}{3}{}{%
+        {{hash=adb7b0f18cfe0030d246619b1e419124}{%
+           family={Setty},
+           familyi={S\bibinitperiod},
+           given={Srinath},
+           giveni={S\bibinitperiod}}}%
+        {{hash=3a3494692023101d1ccddbb75d675624}{%
+           family={Thaler},
+           familyi={T\bibinitperiod},
+           given={Justin},
+           giveni={J\bibinitperiod}}}%
+        {{hash=ef56aea335c966e618e66e57d7a65c23}{%
+           family={Wahby},
+           familyi={W\bibinitperiod},
+           given={Riad},
+           giveni={R\bibinitperiod}}}%
+      }
+      \strng{namehash}{b4aa032b00d0ef30c045fa21dce32ac4}
+      \strng{fullhash}{b4aa032b00d0ef30c045fa21dce32ac4}
+      \strng{fullhashraw}{b4aa032b00d0ef30c045fa21dce32ac4}
+      \strng{bibnamehash}{b4aa032b00d0ef30c045fa21dce32ac4}
+      \strng{authorbibnamehash}{b4aa032b00d0ef30c045fa21dce32ac4}
+      \strng{authornamehash}{b4aa032b00d0ef30c045fa21dce32ac4}
+      \strng{authorfullhash}{b4aa032b00d0ef30c045fa21dce32ac4}
+      \strng{authorfullhashraw}{b4aa032b00d0ef30c045fa21dce32ac4}
+      \field{labelalpha}{STW23}
+      \field{sortinit}{S}
+      \field{sortinithash}{b164b07b29984b41daf1e85279fbc5ab}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{howpublished}{Cryptology {ePrint} Archive, Paper 2023/552}
+      \field{title}{Customizable constraint systems for succinct arguments}
+      \field{year}{2023}
+      \verb{urlraw}
+      \verb https://eprint.iacr.org/2023/552
+      \endverb
+      \verb{url}
+      \verb https://eprint.iacr.org/2023/552
+      \endverb
+    \endentry
+  \enddatalist
+  \missing{?}
+  \missing{BCPS18}
+  \missing{TCC:BCFW25}
+  \missing{WHIR?}
+  \missing{air}
+  \missing{flock}
+  \missing{linear accumulation}
+  \missing{linear-accumulation}
+  \missing{zinc}
+\endrefsection
 \endinput
 

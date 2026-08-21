@@ -1,65 +1,90 @@
-\contentsline {section}{\numberline {1}Introduction}{1}{section.1}%
-\contentsline {subsection}{\numberline {1.1}Contributions}{1}{subsection.1.1}%
-\contentsline {subsection}{\numberline {1.2}Ramblings (warm-up for the true intro)}{1}{subsection.1.2}%
-\contentsline {paragraph}{Efficiency and costs}{2}{paragraph*.1}%
-\contentsline {paragraph}{Specific performance}{3}{paragraph*.2}%
-\contentsline {paragraph}{Scientific contributions}{3}{paragraph*.4}%
-\contentsline {subsection}{\numberline {1.3}Acknowledgements}{5}{subsection.1.3}%
-\contentsline {section}{\numberline {2}Preliminaries}{5}{section.2}%
-\contentsline {paragraph}{General notation}{5}{paragraph*.5}%
-\contentsline {subsection}{\numberline {2.1}Algebra}{5}{subsection.2.1}%
-\contentsline {subsection}{\numberline {2.2}Linear codes and relations}{6}{subsection.2.2}%
-\contentsline {paragraph}{Linear codes}{6}{paragraph*.6}%
-\contentsline {paragraph}{Relations}{6}{paragraph*.7}%
-\contentsline {paragraph}{Polynomial Equation Satisfiability (PESAT) over finite fields}{6}{paragraph*.8}%
-\contentsline {subsection}{\numberline {2.3}Interactive Oracle Reductions (IOR) of proximity}{7}{subsection.2.3}%
-\contentsline {section}{\numberline {3}{$\mathbb {F}2\mathbb {Z}\ $}IOPP for Lin-ModFieldBin}{8}{section.3}%
-\contentsline {subsection}{\numberline {3.1}The Lin-ModFieldBin and the Lin-BitsDual relations}{8}{subsection.3.1}%
-\contentsline {paragraph}{Packing in $\ensuremath {\mathbb {F}}_{2^n}$.}{8}{paragraph*.9}%
-\contentsline {paragraph}{The bits of a vector over $M_{\ensuremath {R}\xspace _{\leq {B}}}$.}{8}{paragraph*.10}%
-\contentsline {paragraph}{The Lin-ModFieldBin relation}{9}{paragraph*.11}%
-\contentsline {paragraph}{The Lin-BitsDual relation}{9}{paragraph*.12}%
-\contentsline {subsection}{\numberline {3.2}Tensor decomposition, interleaved codes, and products of constrained codes}{9}{subsection.3.2}%
-\contentsline {subsection}{\numberline {3.3}The core {{$\mathbb {F}2\mathbb {Z}\ $}} IOP for Lin-BitsDual}{10}{subsection.3.3}%
-\contentsline {subsection}{\numberline {3.4}Soundness and completeness}{12}{subsection.3.4}%
-\contentsline {paragraph}{Completeness and soundness of $\Pi _1$}{13}{paragraph*.13}%
-\contentsline {subsection}{\numberline {3.5}{$\mathbb {F}2\mathbb {Z}\ $}: an IOP for Lin-ModFieldBin}{14}{subsection.3.5}%
-\contentsline {section}{\numberline {4}[Old] Extensions, variations, and optimizations}{15}{section.4}%
-\contentsline {subsection}{\numberline {4.1}Virtualization of $\ensuremath {\mathbb {F}}_2$-linear combinations lifted to integers}{15}{subsection.4.1}%
-\contentsline {subsubsection}{\numberline {4.1.1}Optimizing {$\mathbb {F}2\mathbb {Z}\ $}for virtualized inputs $\pi _2^{-1}(M\cdot \pi _2(\mathbf {f}))$}{18}{subsubsection.4.1.1}%
-\contentsline {subsection}{\numberline {4.2}An optimized GKR protocol for the {$\mathbb {F}2\mathbb {Z}\ $}grand products}{18}{subsection.4.2}%
-\contentsline {subsection}{\numberline {4.3}Proof size optimization for large inputs}{18}{subsection.4.3}%
-\contentsline {section}{\numberline {5}{$\mathbb {F}2\mathbb {Z}\ $}for PIMSAT}{19}{section.5}%
-\contentsline {subsection}{\numberline {5.1}Polynomial Ideal Membership Satisfiability (PIMSAT)}{19}{subsection.5.1}%
-\contentsline {subsection}{\numberline {5.2}{$\mathbb {F}2\mathbb {Z}\ $}-IOP: an IOP for PIMSAT with oracles in binary fields}{20}{subsection.5.2}%
-\contentsline {subsection}{\numberline {5.3}Univariate skip as ideal membership}{22}{subsection.5.3}%
-\contentsline {subsection}{\numberline {5.4}Repeated computations through ideal membership}{22}{subsection.5.4}%
-\contentsline {section}{\numberline {6}Adding Zero Knowledge}{22}{section.6}%
-\contentsline {subsection}{\numberline {6.1}PIOP}{22}{subsection.6.1}%
-\contentsline {subsection}{\numberline {6.2}F2Z-PCS}{22}{subsection.6.2}%
-\contentsline {section}{\numberline {7}Open questions for us}{23}{section.7}%
-\contentsline {section}{\numberline {8}Case-study}{23}{section.8}%
-\contentsline {subsection}{\numberline {8.1}Integer and modular multiplication}{24}{subsection.8.1}%
-\contentsline {subsection}{\numberline {8.2}SHA-256 hashing}{24}{subsection.8.2}%
-\contentsline {paragraph}{SHA-256 compression overview}{24}{paragraph*.15}%
-\contentsline {paragraph}{Message schedule.}{24}{paragraph*.16}%
-\contentsline {paragraph}{Compression loop.}{25}{paragraph*.17}%
-\contentsline {subsection}{\numberline {8.3}Experiments}{25}{subsection.8.3}%
-\contentsline {subsubsection}{\numberline {8.3.1}Comparison with Hyrax}{25}{subsubsection.8.3.1}%
-\contentsline {subsubsection}{\numberline {8.3.2}Comparison with Flock}{25}{subsubsection.8.3.2}%
-\contentsline {section}{\numberline {A}Ring switching via Galois orbits}{26}{appendix.A}%
-\contentsline {section}{\numberline {B}Bilinear Embeddings}{27}{appendix.B}%
-\contentsline {subsection}{\numberline {B.1}Background}{27}{subsection.B.1}%
-\contentsline {subsubsection}{\numberline {B.1.1}Perfect pairings}{27}{subsubsection.B.1.1}%
-\contentsline {subsubsection}{\numberline {B.1.2}Succinct vectors}{28}{subsubsection.B.1.2}%
-\contentsline {subsection}{\numberline {B.2}Structure}{28}{subsection.B.2}%
-\contentsline {subsection}{\numberline {B.3}Constructions}{30}{subsection.B.3}%
-\contentsline {subsubsection}{\numberline {B.3.1}Trace embedding}{31}{subsubsection.B.3.1}%
-\contentsline {subsubsection}{\numberline {B.3.2}Coefficient projection}{32}{subsubsection.B.3.2}%
-\contentsline {subsection}{\numberline {B.4}Extension openings}{32}{subsection.B.4}%
-\contentsline {subsubsection}{\numberline {B.4.1}Batching protocol}{32}{subsubsection.B.4.1}%
-\contentsline {subsubsection}{\numberline {B.4.2}Folding protocol}{34}{subsubsection.B.4.2}%
-\contentsline {paragraph}{Single folding round.}{35}{paragraph*.18}%
-\contentsline {paragraph}{Towerless folding.}{39}{paragraph*.19}%
-\contentsline {paragraph}{}{39}{paragraph*.20}%
-\contentsline {section}{\numberline {C}GKR protocol for multiple grand products}{39}{appendix.C}%
+\contentsline {section}{\numberline {1}Introduction}{3}{section.1}%
+\contentsline {subsection}{\numberline {1.1}[Notes/Draft] Contributions}{3}{subsection.1.1}%
+\contentsline {paragraph}{Applications}{3}{paragraph*.1}%
+\contentsline {subsection}{\numberline {1.2}Related work}{4}{subsection.1.2}%
+\contentsline {subsection}{\numberline {1.3}Acknowledgements}{4}{subsection.1.3}%
+\contentsline {paragraph}{Usage and non-usage of AI}{4}{paragraph*.2}%
+\contentsline {subsection}{\numberline {1.4}Ramblings (warm-up for the true intro)}{4}{subsection.1.4}%
+\contentsline {paragraph}{Efficiency and costs}{4}{paragraph*.3}%
+\contentsline {paragraph}{Specific performance}{5}{paragraph*.4}%
+\contentsline {paragraph}{Scientific contributions}{5}{paragraph*.6}%
+\contentsline {section}{\numberline {2} Technical overview}{7}{section.2}%
+\contentsline {subsection}{\numberline {2.1}{$\mathbb {F}2\mathbb {Z}\ $}\ for R1CS over integers with virtual linear constraints over $\ensuremath {\mathbb {F}}_2$}{7}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Scratch notes}{7}{subsection.2.2}%
+\contentsline {section}{\numberline {3}Preliminaries}{7}{section.3}%
+\contentsline {paragraph}{General notation}{7}{paragraph*.7}%
+\contentsline {subsection}{\numberline {3.1}Algebra}{8}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Linear codes and relations}{8}{subsection.3.2}%
+\contentsline {paragraph}{Linear codes}{8}{paragraph*.8}%
+\contentsline {paragraph}{Relations}{8}{paragraph*.9}%
+\contentsline {paragraph}{Polynomial Equation Satisfiability (PESAT) over finite fields}{9}{paragraph*.10}%
+\contentsline {subsection}{\numberline {3.3}Interactive Oracle Reductions (IOR) of proximity}{9}{subsection.3.3}%
+\contentsline {paragraph}{Grinding}{10}{paragraph*.11}%
+\contentsline {section}{\numberline {4}{$\mathbb {F}2\mathbb {Z}\ $}\ IOP for Lin-BitsDual}{11}{section.4}%
+\contentsline {subsection}{\numberline {4.1}The Lin-BitsDual relation}{11}{subsection.4.1}%
+\contentsline {paragraph}{Notation and terminology}{11}{paragraph*.13}%
+\contentsline {subsection}{\numberline {4.2}Tensor decomposition, interleaved codes, and products of constrained codes}{12}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}The {{$\mathbb {F}2\mathbb {Z}\ $}} IOP for the core Lin-BitsDual relation}{14}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.4}Soundness and completeness}{16}{subsection.4.4}%
+\contentsline {paragraph}{Completeness and soundness of $\Pi _1$}{17}{paragraph*.14}%
+\contentsline {subsection}{\numberline {4.5}{$\mathbb {F}2\mathbb {Z}\ $}: an IOP for the general Lin-BitsDual relation}{19}{subsection.4.5}%
+\contentsline {subsection}{\numberline {4.6}Instantiation}{20}{subsection.4.6}%
+\contentsline {paragraph}{The errors $\kappa _{i,\mathsf {iopp}}$}{21}{paragraph*.15}%
+\contentsline {paragraph}{The errors $\kappa _{i,\mathsf {red}}$.}{22}{paragraph*.16}%
+\contentsline {paragraph}{The error $\kappa _0^*$.}{22}{paragraph*.17}%
+\contentsline {section}{\numberline {5}Virtualization of $\ensuremath {\mathbb {F}}_2$-linear combinations lifted to integers}{23}{section.5}%
+\contentsline {section}{\numberline {6}A GKR protocol for low entropy batched grand products via lookup tables}{25}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Optimization via lookup tables}{27}{subsection.6.1}%
+\contentsline {paragraph}{Setup}{27}{paragraph*.19}%
+\contentsline {paragraph}{First prover message in the last sumcheck in Step 2 of \cref {c:gkr_grand_product}}{28}{paragraph*.20}%
+\contentsline {paragraph}{Subsequent prover messages in the last sumcheck in Step 2 of \cref {c:gkr_grand_product}}{31}{paragraph*.22}%
+\contentsline {paragraph}{The rest of sumchecks in Step 2 of \cref {c:gkr_grand_product}}{32}{paragraph*.24}%
+\contentsline {subsection}{\numberline {6.2}Other optimizations for \cref {c:core_iop}}{33}{subsection.6.2}%
+\contentsline {paragraph}{Using $4$ factor multiplication (instead of $2$) in the last step of the GKR grand product}{33}{paragraph*.25}%
+\contentsline {paragraph}{Step 1 of \cref {c:core_iop} via lookup tables}{33}{paragraph*.26}%
+\contentsline {subsection}{\numberline {6.3}Optimizing {$\mathbb {F}2\mathbb {Z}\ $}\ for virtualized inputs $\pi _2^{-1}(M\cdot \pi _2(\mathbf {f}))$}{33}{subsection.6.3}%
+\contentsline {section}{\numberline {7}{$\mathbb {F}2\mathbb {Z}\ $}\ for PIMSAT}{33}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Polynomial Ideal Membership Satisfiability (PIMSAT)}{33}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}An IOP for PIMSAT with oracles in binary fields}{35}{subsection.7.2}%
+\contentsline {subsection}{\numberline {7.3}The $\mathsf {CM}$ constraint system: composition of $\mathbb {Z}$-linear with $\ensuremath {\mathbb {F}}_2$-linear constraints}{38}{subsection.7.3}%
+\contentsline {section}{\numberline {8}Experiments}{39}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Instantiation}{39}{subsection.8.1}%
+\contentsline {subsection}{\numberline {8.2}Experimental results}{40}{subsection.8.2}%
+\contentsline {subsubsection}{\numberline {8.2.1}Raw performance of {$\mathbb {F}2\mathbb {Z}\ $}}{40}{subsubsection.8.2.1}%
+\contentsline {subsubsection}{\numberline {8.2.2}Integer and modular multiplication}{40}{subsubsection.8.2.2}%
+\contentsline {subsubsection}{\numberline {8.2.3}SHA-256 hashing}{40}{subsubsection.8.2.3}%
+\contentsline {paragraph}{SHA-256 compression overview}{40}{paragraph*.28}%
+\contentsline {paragraph}{Message schedule.}{41}{paragraph*.29}%
+\contentsline {paragraph}{Compression loop.}{41}{paragraph*.30}%
+\contentsline {subsubsection}{\numberline {8.2.4}Falcon signature verification}{42}{subsubsection.8.2.4}%
+\contentsline {subsubsection}{\numberline {8.2.5}RSA and Poseidon}{42}{subsubsection.8.2.5}%
+\contentsline {subsubsection}{\numberline {8.2.6}Hashing followed by Falcon signature verification}{42}{subsubsection.8.2.6}%
+\contentsline {subsubsection}{\numberline {8.2.7}Comparison with Hyrax}{42}{subsubsection.8.2.7}%
+\contentsline {section}{References}{42}{subsubsection.8.2.7}%
+\contentsline {section}{\numberline {A}Deferred proofs}{43}{appendix.A}%
+\contentsline {subsection}{\numberline {A.1}Completeness and soundness of \cref {c:LinModFieldBin}}{43}{subsection.A.1}%
+\contentsline {subsection}{\numberline {A.2}Completeness and soundness of \cref {c:iop_pimsat}}{44}{subsection.A.2}%
+\contentsline {paragraph}{Description of $\Pi _1$.}{45}{paragraph*.31}%
+\contentsline {paragraph}{Description of $\Pi _2$.}{45}{paragraph*.32}%
+\contentsline {paragraph}{Description of $\Pi _3$}{45}{paragraph*.33}%
+\contentsline {subsubsection}{\numberline {A.2.1}Proof of \cref {l:Pi_123_is_good}}{49}{subsubsection.A.2.1}%
+\contentsline {section}{\numberline {B}Ring switching via Galois orbits}{50}{appendix.B}%
+\contentsline {section}{\numberline {C}Bilinear Embeddings}{51}{appendix.C}%
+\contentsline {subsection}{\numberline {C.1}Background}{51}{subsection.C.1}%
+\contentsline {subsubsection}{\numberline {C.1.1}Perfect pairings}{51}{subsubsection.C.1.1}%
+\contentsline {subsubsection}{\numberline {C.1.2}Succinct vectors}{52}{subsubsection.C.1.2}%
+\contentsline {subsection}{\numberline {C.2}Structure}{53}{subsection.C.2}%
+\contentsline {subsection}{\numberline {C.3}Constructions}{55}{subsection.C.3}%
+\contentsline {subsubsection}{\numberline {C.3.1}Trace embedding}{55}{subsubsection.C.3.1}%
+\contentsline {subsubsection}{\numberline {C.3.2}Coefficient projection}{56}{subsubsection.C.3.2}%
+\contentsline {subsection}{\numberline {C.4}Extension openings}{57}{subsection.C.4}%
+\contentsline {subsubsection}{\numberline {C.4.1}Batching protocol}{57}{subsubsection.C.4.1}%
+\contentsline {subsubsection}{\numberline {C.4.2}Folding protocol}{58}{subsubsection.C.4.2}%
+\contentsline {paragraph}{Single folding round.}{59}{paragraph*.34}%
+\contentsline {paragraph}{Towerless folding.}{63}{paragraph*.35}%
+\contentsline {paragraph}{}{63}{paragraph*.36}%
+\contentsline {section}{\numberline {D}Scratch}{63}{appendix.D}%
+\contentsline {subsection}{\numberline {D.1}Adding Zero Knowledge}{63}{subsection.D.1}%
+\contentsline {subsubsection}{\numberline {D.1.1}PIOP}{63}{subsubsection.D.1.1}%
+\contentsline {subsubsection}{\numberline {D.1.2}F2Z-PCS}{63}{subsubsection.D.1.2}%
+\contentsline {subsection}{\numberline {D.2}Open questions for us}{64}{subsection.D.2}%

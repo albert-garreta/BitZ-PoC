@@ -51,7 +51,7 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\newcommand{\plaintitle}{$\FF 2\ZZ$: Proofs in arbitrary domains with commitments in binary fields}
+\newcommand{\plaintitle}{$\mathbb{B}\text{it}\ZZ$: Proofs in arbitrary domains with commitments in binary fields}
 
 \PassOptionsToPackage{hyphens}{url}\usepackage{hyperref}
 \hypersetup{
@@ -91,7 +91,6 @@ backrefpages = {cited on pp.},% originally "cited on pages"
 \maketitle
 
 \begin{abstract}
-\albert{Should the name be $\FF 2 \FF$?}
 \end{abstract}
 
 \setcounter{tocdepth}{3}
@@ -100,16 +99,13 @@ backrefpages = {cited on pp.},% originally "cited on pages"
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
-\section{[Just notes -- do not read] Introduction}
+\section{Introduction}
 
-\subsection{Contributions}
+\subsection{[Notes/Draft] Contributions}
 
 F2Z: Proving linear claims over any field (possibly an extension field) or integers, for a vector of bits committed on a binary field. \albert{What happens if we replace FRI by F2Z in Plonky3?}
-<<<<<<< HEAD
-=======
 
 We can handle arbitrary linear weights in our claims, of arbitrary bit-size and in arbtitrary extension degrees, and still use a smallish binary field like GHASH during our protocol (not obvious at all because ``proving in the exponent in principle only allows for using $\lessapprox 90$-ish integer bits. \albert{This is a good story for the technical overview}
->>>>>>> a39fc8ef85452a2be886133d38140bdc2ddeb35e
 
 Follow up  on Zinc+: we adopt its constraint system and greatly boost its performance with the aforementioned F2Z
 
@@ -146,6 +142,23 @@ In the F2Z world, when elements in the computation never exceed 100 bits, we can
 
 
 \albert{Motivate ideals somewhere (intro?)}
+
+
+\subsection{Related work}
+
+Integers and more: Zaratan, Zinc, Zinc+, Qaren, Limber
+
+Binary fields. Binius papers and Binius64, Flock, BinarySpartan
+
+\subsection{Acknowledgements}
+%World Foundation, Lev Soukhanov, Remco, Ulrich, Giacomo, Marcin
+
+\paragraph{Usage and non-usage of AI} This document was essentially written without the assistance of AI. AI was only used to identify typos, and for the cost accounting in \cref{s:gkr_low_entropy}. 
+
+We used AI in our implementation and experiments, as explained in \cref{??}.
+
+
+
 
 \subsection{Ramblings (warm-up for the true intro)}
 Why does this paper exist? F2Z has many similarities to Binius64, so why F2Z at all? First of all, Binius64 is an end-to-end proving system, while F2Z is a PCS. Let's consider F2Z-SNARK a SNARK for proving R1CS constraints over $\ZZ$  or $\ZZ[X]$ with ideals. Flock is also related to F2Z-SNARK, though less so, since Flock is a more use-case specific SNARK for proving bit-intensive computations. We should also keep in mind that Flock is, at the end of the day, Binius64 on steroid optimizations. In general, I think of Flock as subsumed by a Binius64 repo that adopts Flock's optimizations. Hence I will not discuss Flock too much here.
@@ -205,15 +218,11 @@ $2^{17}$ int mul 32bits & 74/2.4/86/124 & & 218/9/313/? & NA & 571/7.6/373/? & \
    \hline
     1M int mul 32bits & 266/3.7/119/863 & & 3800/62/440/? & NA & 5050/10.2/520/? & \\
        \hline
-<<<<<<< HEAD
-    $2^{17}$ BabyBear mul & 56/2.7/142/88 & &  & NA & 58/6.3/307/99  & \\
-=======
     1M int mul 128bits & 266/3.7/119/863 & & 3800/62/440/? & NA & 5050/10.2/520/? & \\
        \hline
     $2^{17}$ BabyBear mults &  & &  & NA & 56/7/306/?  & \\
->>>>>>> a39fc8ef85452a2be886133d38140bdc2ddeb35e
        \hline
-    $2^{20}$ BabyBear mul & 328/4.1/216/682 & &  & NA & 411/10.4/473/713 & \\
+    1M BabyBear mults &  & &  & NA & 400/11/478/? & \\
 \hline
 $2^7$ SHA & 12.7/1.75/71/14* & \text{expected negl.} & 37/3.4/249/? & 33/25/112/? & & \\
 \hline
@@ -221,11 +230,11 @@ $2^7$ SHA & 12.7/1.75/71/14* & \text{expected negl.} & 37/3.4/249/? & 33/25/112/
 \hline
  $2^{15}$ SHA & 1320/4.8/170/3080* & \text{expected negl.} & \text{Stuck} & 425/25/233/? & & \\
 \hline
-$2^8$ Blake3 & 25/2.2/100/23 & \text{expected negl.} & 31/2.6/249/? & 256/254/111/? & 28/78/4524/48 & \\
+$2^8$ Blake3 & 22/2/71/23 & \text{expected negl.} & 31/2.6/249/? & 256/254/111/? & & \\
 \hline
-$2^{11}$ Blake3 & 110/3.5/151/174 & \text{expected negl.} &  & 253/249/153/? & 155/86/4582/179 & \\
+$2^{11}$ Blake3 & 91/2.8/105/164 & \text{expected negl.} &  & 253/249/153/? & & \\
 \hline
-$2^{15}$ Blake3 & 1257/5.4/322/2696 & \text{expected negl.} & \text{Stuck} & 386/267/160/? & 2696/94/4717/2477 &
+$2^{15}$ Blake3 & 1100/4.7/161/2550 & \text{expected negl.} & \text{Stuck} & 386/267/160/? & &
 \end{tabular}}
 \caption{
 \albert{Our stuff is 128 bits of security? (Once we add grinding?) How many queries?} 
@@ -233,9 +242,7 @@ $2^{15}$ Blake3 & 1257/5.4/322/2696 & \text{expected negl.} & \text{Stuck} & 386
 \albert{Missing costs for F2Z PIOP. Note these are negligible for the hash benches though, and likely quite less than the grand product cost in other benches. All these were obtained asking AI to run benches. For the final paper we should make sure we are doing fair and correct benching (e.g.\ I'm not sure memory consumption is measured the same way across benches, especially for Binius, which is max RSS), but this helps get a rough idea how F2Z performs relatively to other systems.} Prover\_ time(ms)/Verifier\_time(ms)/Proof\_size(KB)/Peak\_memory(MB). Integer mult measure one million u16 x u16 -> u32 mults. F2Z-PCS does not include PIOP costs -- these are negligible in the hash benches (linear constraints), but should be accounted for in the other benches (degree 2 constraints).Ran in MacBook Air M4 16GB.\\ 
 \indent \hspace{1cm} Flock's verifier seems a bit broken in general. Flock's Blake3 prover for small number of hashes seems broken too. I modified Flock's Ligerito config so that it produces smaller proofs at very little extra cost.  For Blake3 we couldn't do $2^7$ hashes becase Flock errors out on $2^7$ hashes \albert{todo: make SHA also do $2^8$ instead of $2^7$}  \\ 
 \indent \hspace{1cm} F2Z-PCS hash performance was ``proxied'' as follows: for SHA-256, $2^{14+k}$ witness corresponds to $2^k$ hashes. Better arithmetization may be possible. We *DID NOT* leverage virtualization of XOR, which allows to run Ligerito for $2^{12+k}$ witness size, rather than $2^{14+k}$ (The GKR grand product still would use use $2^{14+k}$ factors). \albert{VERY IMPORTANT: It is possible that the GKR grand product can be optimized in this setting. Right now we are just proving a  $2^{14+k}$ on unstructured bits, but in reality many of these bits are linear combinations in $\FF_2$ of witness bits.}\\
-\indent \hspace{1cm} Binius64 achieves the highest number of mults per second at $2^{17}$ mults. Binius64 at multiplication of 16bit integers pays a  penalty because the system uses 64-bit words by default, so it either uses a  64 bits per 16bit witness element and range check the word, or pack different 16 and 32 bit integers into the same 64 bit word, but then it has to relate the product of the 64 bit words to the products of the original words (or unpack them as 64 bit words before multiplying). OTOH doing more Binius-native mults (32x32 ->64 bits) does not perform amazingly either \albert{This most likely heavily disproves my belief that Binius64 and F2Z-SNARK are similar in integer multiplication. This is a good showcase of the flexibility of arithmetizing the way we do: we don't need to use predefined word sizes: here our R1CS is just reconstruction of integers via linear combinations with powers of twos, and Hadamard product (note that we are not measuring the cost of the PIOP in F2Z! But it should be cheaper than the grand product, and amenable to some better optimization (univariate skip e.g.). But in any case, I'm not even sure the issue is the rigidity of the arithmetization in Binius64, since 32x32->64 is Binius friendly as far as I understand, and performance is mid} \\
-\indent \hspace{1cm} BabyBear mul rows measure native BabyBear field mults (medians of 3). Plonky3 = native 3-column AIR ($a\cdot b=c$, no range checks), challenges in the quartic extension $\text{BabyBear}^4$, TwoAdicFriPcs with FriParameters::new\_benchmark (rate 1/2, 100 queries, 16-bit query PoW), Poseidon2 Merkle; a complete STARK (includes the quotient commitment). F2Z-PCS = the trace's bit decomposition ($3\times 31 = 93$ bits/mul, zero-padded to $2^{24}$ / $2^{27}$ cells) committed over $\FF_2$ and opened at a point in the same quartic extension $\KK = \FF_p[X]/(X^4-11)$ via Step 3 of \cref{c:core_iop} (the random-prime projection, $q'\approx 100$ bits); prover = commit + open ($3.3+52.3$ / $23.7+303.8$ ms); PIOP (zerocheck) costs excluded, as for the other F2Z-PCS rows; $\pm 10$--$15\%$ run-to-run band on prove medians. Peak memory: Plonky3 measured as max RSS, F2Z as heap high-water -- comparable but not identical notions. \\
-\indent \hspace{1cm} Blake3 rows, Plonky3 column: Blake3Air (9168 columns, one compression per row; 8704 boolean + 464 sixteen-bit-limb columns $\approx 2^{14}$ committed bits per compression) over BabyBear at the same new\_benchmark FRI settings -- the 100 query openings of the 9168-wide trace dominate, hence the $\approx 4.5$--$4.7$ MB proofs and $\approx 80$--$95$ ms verify. The F2Z-PCS Blake3 cells were re-measured in the same session/box as commit + open of the same trace's bits ($2^{14+k}$ cells for $2^k$ compressions) at a $\text{BabyBear}^4$ point via Step 3 of \cref{c:core_iop} (prover = commit + open: $2.0+23.1$ / $5.6+103.9$ / $123.1+1134.3$ ms), superseding the earlier prime-field-point measurements. }
+\indent \hspace{1cm} Binius64 achieves the highest number of mults per second at $2^{17}$ mults. Binius64 at multiplication of 16bit integers pays a  penalty because the system uses 64-bit words by default, so it either uses a  64 bits per 16bit witness element and range check the word, or pack different 16 and 32 bit integers into the same 64 bit word, but then it has to relate the product of the 64 bit words to the products of the original words (or unpack them as 64 bit words before multiplying). OTOH doing more Binius-native mults (32x32 ->64 bits) does not perform amazingly either \albert{This most likely heavily disproves my belief that Binius64 and F2Z-SNARK are similar in integer multiplication. This is a good showcase of the flexibility of arithmetizing the way we do: we don't need to use predefined word sizes: here our R1CS is just reconstruction of integers via linear combinations with powers of twos, and Hadamard product (note that we are not measuring the cost of the PIOP in F2Z! But it should be cheaper than the grand product, and amenable to some better optimization (univariate skip e.g.). But in any case, I'm not even sure the issue is the rigidity of the arithmetization in Binius64, since 32x32->64 is Binius friendly as far as I understand, and performance is mid} }
     \label{tab:placeholder}
 \end{table}
 
@@ -270,18 +277,17 @@ Thus some scientific contributions of F2Z-SNARK are
 
 \albert{Noting so I don't forget: the idea of F2Z being a drop-in replacament alternative to Hyrax (PQ secure and more efficient) may be a good extra motivating point}
 
-\subsection{Acknowledgements}
-%World Foundation, Lev Soukhanov, Remco, Ulrich, Giacomo, Marcin
+\section{ Technical overview}
 
-\paragraph{Usage and non-usage of AI} This document was essentially written without the assistance of AI. AI was only used to identify typos, and for the cost accounting in \cref{s:gkr_low_entropy}. 
+\subsection{\ftwoz \ for R1CS over integers with virtual linear constraints over $\FF_2$}\label{s:iop_forRELCM}
 
-We used AI in our implementation and experiments, as explained in \cref{??}.
+\albert{TODO}
 
 
-\section{[Just notes -- do not read] Technical overview}
-
+\subsection{Scratch notes}
 
 Thoughts: We can handle arbitrary linear weights in our claims, of arbitrary bit-size and in arbtitrary extension degrees, and still use a smallish binary field like GHASH during our protocol (not obvious at all because ``proving in the exponent in principle only allows for using $\lessapprox 90$-ish integer bits. \albert{This is a good story for the technical overview}
+
 
 \section{Preliminaries}
 
@@ -466,7 +472,7 @@ If $(\widetilde{\Relation}, \widetilde{\Relation'})=(\Relation, \Relation')$ the
 \end{table}
  
 
-\section{\ftwoz IOP for Lin-BitsDual}
+\section{\ftwoz \ IOP for Lin-BitsDual}
 
 
 
@@ -603,13 +609,13 @@ where $\bff_{*j} = (\bff_{ij})_{i\in[\codedim_1]}$.
 %
 % We use $0$ and $1$ indistinctly to denote the zero and one integer, and zero and one field elements. 
 %
-Consider the relation  (cf.\ \cref{d:pesat}) $\PESAT(\comfield, Q_{\FF 2 \ZZ},\cC, \pack)$ for $\ell_2$ constraint polynomials $Q_{\FF 2 \ZZ}$ so that
+Consider the relation  (cf.\ \cref{d:pesat}) $\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack)$ for $\ell_2$ constraint polynomials $Q_{\mathbb{B}\text{it}\ZZ}$ so that
 %
 \begin{align*}
-&\PESAT(\comfield, Q_{\FF 2 \ZZ},\cC, \pack)\\ &\qquad = \left\{ \left(\begin{aligned} &\inp=(\yy,\bm{\mu})\in \comfield^{\codedim_1}\times \comfield^{\codedim_2}, \\&\oracle = f\in \comfield^{\codelength}, \\ &\wit=\bff= (\bff_{*j})_{j\in [\codedim_2]}\in \FF_2^{\codedim_1 \times \codedim_2}\end{aligned}\right) \;\middle|\;  \begin{aligned} &f= \Enc_{\cC}\circ\pack\circ \picomfield(\bff) \\ \wedge \  &\Pi_{i=1}^{\codedim_1} \left((\yy_i-1)\cdot \bff_{ij} +1\right) = \bm{\mu}_j  \text{ for all } j\in [\codedim_2]\end{aligned}  \right\}.
+&\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack)\\ &\qquad = \left\{ \left(\begin{aligned} &\inp=(\yy,\bm{\mu})\in \comfield^{\codedim_1}\times \comfield^{\codedim_2}, \\&\oracle = f\in \comfield^{\codelength}, \\ &\wit=\bff= (\bff_{*j})_{j\in [\codedim_2]}\in \FF_2^{\codedim_1 \times \codedim_2}\end{aligned}\right) \;\middle|\;  \begin{aligned} &f= \Enc_{\cC}\circ\pack\circ \picomfield(\bff) \\ \wedge \  &\Pi_{i=1}^{\codedim_1} \left((\yy_i-1)\cdot \bff_{ij} +1\right) = \bm{\mu}_j  \text{ for all } j\in [\codedim_2]\end{aligned}  \right\}.
 \end{align*}
 %
-We omit an explicit description of the polynomials $Q_{\FF 2 \ZZ}$, since the fact that the above relation is a particular instance of the PESAT relation is not relevant in this paper.
+We omit an explicit description of the polynomials $Q_{\mathbb{B}\text{it}\ZZ}$, since the fact that the above relation is a particular instance of the PESAT relation is not relevant in this paper.
 
 
 
@@ -618,7 +624,7 @@ We omit an explicit description of the polynomials $Q_{\FF 2 \ZZ}$, since the fa
 and 
  $$f = \Enc_{\cC_1^{\equiv \codedim_2}}\circ\pack\circ \picomfield(\bff) =  (\Enc_{\cC_1}\circ \pack\circ \picomfield(\bff_{*j}))_{j\in [\codedim_2]}\in \comfield^{\codelength}.$$
 %
- \albert{If we do interleacing, the reason why we work with an interleaved $\PESAT(\comfield, Q_{\FF 2 \ZZ},\cC_1^{\equiv \codedim_2}, \pack)$ rather than $\codedim_2$ copies of a non-interleaved PESAT is rather technical. It has to do with keeping the same distance parameter when doing the reduction from $\LinBitsDual$ to $\LIN$. If we simply considered separate encodings of $\pack(\bff_{*j})$, the proximity parameter in from $\LIN$ to $\LinBitsDual$ would grow by a factor of $\codedim_2$.}
+ \albert{If we do interleacing, the reason why we work with an interleaved $\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC_1^{\equiv \codedim_2}, \pack)$ rather than $\codedim_2$ copies of a non-interleaved PESAT is rather technical. It has to do with keeping the same distance parameter when doing the reduction from $\LinBitsDual$ to $\LIN$. If we simply considered separate encodings of $\pack(\bff_{*j})$, the proximity parameter in from $\LIN$ to $\LinBitsDual$ would grow by a factor of $\codedim_2$.}
 %
 \end{remark}
 
@@ -628,13 +634,13 @@ and
 We assume prover and verifier have access to an IOR $\Pi_{\mathsf{red}}$  that reduces 
 %
 $
-\PESAT(\comfield, Q_{\FF 2 \ZZ},\cC, \pack)$ to $\LIN(\comfield, \cC, \pack)$, where, recall, this latter relation has predicates of the form $\langle \bfg, \uu\rangle = \mu'$ with $\bfg,\uu$ vectors over $\comfield$, and $g=\Enc_{\cC}\circ \pack(\bfg)$.   In our instantiation $\Pi_{\mathsf{red}}$ is an optimized GKR protocol for  grand products \cref{?}, which reduces the initial grand product claims to MLE evaluation claims of $\yy$ and $\bff$ over $\comfield$. As we explain in \cref{s:opt_virtual}, we design several optimizations for the specific shape of our grand products.
+\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack)$ to $\LIN(\comfield, \cC, \pack)$, where, recall, this latter relation has predicates of the form $\langle \bfg, \uu\rangle = \mu'$ with $\bfg,\uu$ vectors over $\comfield$, and $g=\Enc_{\cC}\circ \pack(\bfg)$.   In our instantiation $\Pi_{\mathsf{red}}$ is an optimized GKR protocol for  grand products \cref{?}, which reduces the initial grand product claims to MLE evaluation claims of $\yy$ and $\bff$ over $\comfield$. As we explain in \cref{s:opt_virtual}, we design several optimizations for the specific shape of our grand products.
 
 %
 %
 We assume $\Pi_{\mathsf{red}}$ works so that the verifier never queries $\oracle$; and that, given an input
 %
-$$\left(\inp=(\yy,\bm{\mu}),\  \oracle= f, \ \wit=\picomfield(\bff)\right)\in \PESAT(\comfield, Q_{\FF 2 \ZZ},\cC, \pack),$$
+$$\left(\inp=(\yy,\bm{\mu}),\  \oracle= f, \ \wit=\picomfield(\bff)\right)\in \PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack),$$
 %
 $\Pi_{\mathsf{red}}$ outputs
 %
@@ -675,15 +681,9 @@ q = \codedim_1 \cdot \lVert \vv \rVert_\infty +1.
 
 
 \begin{enumerate}[leftmargin=*] 
-<<<<<<< HEAD
-\item \textbf{Round 1: lifting the constraint over $\evalfield$ to {$\ZZ$}} 
-\begin{itemize}[leftmargin=*]
-    \item The prover sends $\mu_1, \ldots, \mu_{\codedim_2}\in \range{0}{q-1}^{\leq \degevalfield}[X]$ such that \begin{equation}\label{e:tensored_equality}\langle \bff_{*j}, \picanon^{-1}(\vv^{(1)})\rangle = \mu_j \qquad \text{for all } j\in [\codedim_2].\end{equation} 
-=======
 \item \textbf{Round 1: transforming the constraint over $\evalfield$ to an integer constraint with bounded integers.} 
 \begin{itemize}[leftmargin=*]
     \item The prover sends $\mu_1, \ldots, \mu_{\codedim_2}\in \range{0}{q-1}^{\leq \degevalfield}[X]$ such that, over $\ZZ[X]$, \begin{equation}\label{e:tensored_equality}\langle \bff_{*j}, \picanon^{-1}(\vv^{(1)})\rangle = \mu_j \qquad \text{for all } j\in [\codedim_2].\end{equation} 
->>>>>>> a39fc8ef85452a2be886133d38140bdc2ddeb35e
 \item The verifier checks that \begin{equation}\label{e:tensor_decomposition_reconstruction}\sum_{j\in [\codedim_2]} \picanon(\mu_j)\cdot \vv_j^{(2)}  = \mu\qquad \text{over } \evalfield.\end{equation} 
 Next, prover and verifier will focus on certifying that \eqref{e:tensored_equality} holds for all $j\in [\codedim_2]$.
 
@@ -714,7 +714,7 @@ This claim is equivalent to
 $$
 \prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \pi_2(\bff_{ij}) +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\codedim_2].
 $$
-Notice that \begin{equation}\label{e:Q_F2Z_intermediate}\left(\inp=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ (g^{\mu_j})_{j\in [\codedim_2]}),\  \oracle= f, \ \wit=\picomfield(\bff)\right)\in \PESAT(\comfield, Q_{\FF 2 \ZZ},\cC, \pack).
+Notice that \begin{equation}\label{e:Q_F2Z_intermediate}\left(\inp=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ (g^{\mu_j})_{j\in [\codedim_2]}),\  \oracle= f, \ \wit=\picomfield(\bff)\right)\in \PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack).
 \end{equation}
 % \ulrich{%
 % Suggestion: 
@@ -726,22 +726,6 @@ Notice that \begin{equation}\label{e:Q_F2Z_intermediate}\left(\inp=((g^{\bm{\gam
 %
  At the end of this IOR, they are left with the following claim to prove: 
 %
-<<<<<<< HEAD
-\begin{equation}\label{e:iopp_mle_claims}
-\left((\vv, \mu_j'), \ f_{*j}, \ \picomfield(\bff_{*j})\right)_{j\in [\codedim_2]} \in \left(\Relation_{\mathsf{Lin}}( \comfield,\cC_1,\pack)\right)^{\codedim_2}\end{equation} for some vector $\vv$ and field elements $\mu_j'$ output during the IOR $\Pi_{\mathsf{red}}^{\codedim_2}$. 
-\end{itemize}
-\item \textbf{Phase 2: Using an IOPP over {$\comfield$}.} Prover and  verifier engage in an IOP  to certify the claims \eqref{e:iopp_mle_claims}. 
-\end{enumerate}
-\end{construction}
-
-\albert{Three fixes flagged while implementing this construction (steps counted as in \cref{t:thm_core_IOPP}, so the $q'$-sampling is Step 3): (a) after the Step-3 update, the claim $\prod_{i \in [\codedim_1]} g^{\bm{\gamma}_i\cdot \bff_{ij}} = g^{\mu_j}$ is unsatisfiable for an honest prover -- the updated $\mu_j$ is reduced into $\range{0}{q'-1}$, while the product's exponent $\langle \bff_{*j}, \bm{\gamma}\rangle$ is only congruent to it mod $q'$. Restate Step 4 with the prover sending the exact integer fold $\mu_j' = \langle \bff_{*j}, \bm{\gamma}\rangle$ and the verifier checking $\mu_j' \equiv \mu_j(\alpha) \pmod{q'}$ ($\mu_j$ = the Step-1 polynomial, $\alpha$ = the Step-3 point); this is what the implementation does. (b) In Step 1 the coefficient range of $\mu_j$ should be $\range{0}{\codedim_1(q-1)}$ (a sum of $\codedim_1$ lifted values), degree $\leq \degevalfield-1$. (c) Step 3's case split skips $\degevalfield=1$ -- it should read ``if $\degevalfield \leq 1$, continue''.}
-
-\renewcommand{\red}{\mathsf{red}}
-\newcommand{\iopp}{\mathsf{iopp}} 
-
-\newcommand{\ksred}{{\kappa_{\red}}}
-\newcommand{\ksiopp}{{\kappa_{\iopp}}}
-=======
 \begin{align*}\label{e:iopp_mle_claims}
 &\left((\vv, \mu'), \ f, \ \picomfield(\bff)\right) \in \LIN( \comfield,\cC,\pack)\\& \qquad\qquad\qquad = \left\{ \left(\begin{aligned} &\inp=(\uu,\mu)\in \comfield^\inplen, \\&\oracle = g \in \comfield^{\codelength}, \\ &\wit= \bfg\in (\FF_2^\codedim)\end{aligned}\right) \;\middle|\;  \begin{aligned} 
 &g=\Enc_{\cC}\circ \pack (\bfg) \\    &\langle \uu, \bfg\rangle = \mu  \end{aligned}\right\}
@@ -768,27 +752,12 @@ using an IOP for constrained codes. Concretely, the prover commits to the vector
 \albert{todo}
 \end{remark}
 
->>>>>>> a39fc8ef85452a2be886133d38140bdc2ddeb35e
 
 
 \subsection{Soundness and completeness}
 
 
-<<<<<<< HEAD
-
-\begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:core_iop}]\label{t:thm_core_IOPP}
-    Assume $\Pi_{\mathsf{red}}^{\codedim_2}$ is a perfectly complete $t_\red$-round IOR from $\PESAT(\comfield, Q_{\FF 2 \ZZ},\cC_1, \pack)^{\codedim_2}$ to $\Relation_{\mathsf{Lin}}(\comfield, \cC_1, \pack)^{\codedim_2}$ with round-by-round knowledge soundness errors $(\ksred_1, \ldots, \ksred_{t_\red})$. Assume $\Pi_{\iopp}$ is a perfectly complete $t_{\iopp}$-round IOPP \albert{IOPP or IOP?} from $\Relation_{\mathsf{Lin}}(\comfield, \cC_1, \pack)^{\codedim_2}$ with round-by-round knowledge soundness errors $\ksiopp_1,\ldots, \ksiopp_{t_\iopp}$. 
-
-    Then, if $\degevalfield>0$, \cref{c:core_iop} is a perfectly complete $1+t_\red+t_\iopp$ IOPP for $\Relation_{\mathsf{Lin-BitsDual}}$ with round-by-round knowledge soundness errors $\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}$, where
-    %
-    $$
-    \kappa_0 = \frac{\degevalfield}{q_{\min}} + \frac{\log(\codedim_1 +1) + \log(q-1)}{|\cP|\cdot \log(q_{\min})}
-    $$
-    and $q_{\min}$ is the smallest prime in the set of sampleable primes $\cP$ from Step 3 of \cref{c:core_iop}. 
-
-    If $\degevalfield=0$, i.e.\ $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$ IOPP with round-by-round knowledge soundness errors $\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}$.
-=======
-For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\FF 2 \ZZ},\cC, \pack),\qquad \LIN = \LIN(\comfield, \cC, \pack).$$
+For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack),\qquad \LIN = \LIN(\comfield, \cC, \pack).$$
 \begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:core_iop}]\label{t:thm_core_IOPP} \albert{Completeness missing}
    Let $\delta \in (0,1)$ be a proximity parameter.  Assume $g$ has multiplicative order $\mathsf{ord}(g)$ with 
    %
@@ -804,17 +773,12 @@ For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\FF 2 \ZZ},
     and $q_{\min}$ is the smallest prime in the set of sampleable primes $\cP$ from Step 3 of \cref{c:core_iop}.  Recall that $q$ is either the charactersitic of $R$ if $R$ is a finite field, or $q=\codedim_1 \cdot \lVert \vv\rVert_{\infty} +1$ if $R=\ZZ$.
 
     If  $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$ IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $(\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}$.
->>>>>>> a39fc8ef85452a2be886133d38140bdc2ddeb35e
 \end{theorem}
 
 
 
 
-<<<<<<< HEAD
-To prove \cref{t:thm_core_IOPP} we begin with the following lemma, which is implicit in \cite{zincplus} \albert{or is it explicit as a particular case of reductions on $\QQ[X]$?}. 
-=======
 To prove \cref{t:thm_core_IOPP} we begin with the following lemma, which is implicit in \cite{zincplus}. 
->>>>>>> a39fc8ef85452a2be886133d38140bdc2ddeb35e
 \begin{lemma}\label{l:reduction_lemma}
 Let $h(X)\in \ZZ[X]$ be a nonzero polynomial of degree $\leq d$ and with coefficients in the range $\range{-2^{B}+1}{2^B-1}$. Let $\cP$ be a set of primes, and let $q_{\min}$ be the smallest prime in $\cP$. Then 
 %
@@ -827,90 +791,6 @@ Let $\cE_{\mathsf{prime}}$ be the event that $f(X)$ is  a multiple of $q$. Then,
 %
 Now, every nonzero coefficient of $f(X)$ is divisible by at most $B/\lfloor\log(q_{\min})\rfloor$ primes from $\cP$. Hence, the probability that $\cE_{\mathsf{prime}}$ occurs is at most $(B/\lfloor\log(q_{\min})\rfloor)/|\cP|$, and the lemma follows.
 %
-<<<<<<< HEAD
-\end{proof}
-
-
-\begin{proof}[Proof of \cref{t:thm_core_IOPP}]
-%
-We decompose \cref{c:core_iop} into three IORs $\Pi_1, \Pi_2, \Pi_3$.  The first one, $\Pi_1$, is a $1$-round IOR from $\Relation_{\mathsf{Lin-BitsDual}}$ to $\PESAT(\comfield, Q_{\FF 2 \ZZ}, \cC_1, \pack)^{\codedim_2}$, and it consists of applying Round 1 of \cref{c:core_iop}, and outputting $$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \wit_j=\picomfield(\bff_{*j})\right)_{j\in [\codedim_2]},$$ as described at the beginning of Phase 1 of \cref{c:core_iop}. The second IOR, $\Pi_2$, is simply $\Pi_{\mathsf{red}}^{\codedim_2}$, reducing $\PESAT(\comfield, Q_{\FF 2 \ZZ}, \cC_1, \pack)^{\codedim_2}$ to $\left(\Relation_{\cC_1, \comfield,\pack}\right)^{\codedim_2}$. Finally, the third IOR, $\Pi_3$, is simply the IOP of proximity $\Pi_{\iopp}$ for $\left(\Relation_{\cC_1, \comfield,\pack}\right)^{\codedim_2}$.
-
-
-By the composition of IORs result (cf.\ \cref{r:ior_compositoin}), it suffices to show that $\Pi_1$ has round-by-round knowledge error $\kappa_0$, and is perfectly complete. 
-
-
-
-
-
-\paragraph{Completeness and soundness of $\Pi_1$}
-
-We describe a knowledge state function $\kstate$. Let $\inp=(\vv,\mu)\in \evalfield^{\codedim} \times \evalfield$ and  $\yy=f\in \comfield^{\codelength}$. Let $\tr$ be a partial interaction transcript for \cref{c:core_iop}. We start by setting $\kstate$ so that the first two conditions in \cref{?} are met. Precisely, if   $\tr=\empty$, we set $kstate(\inp,\oracle,\tr,\ww) = 1$ if and only if $(\inp, \oracle, \ww)\in \Relation_{\mathsf{Lin-BitsDual}}$; and we have $\kstate$ output zero on inputs  $(\inp,\oracle,\tr||\pi,\ww)$ where $\pi$ is a prover  message \albert{notation collision} and $\kstate(\inp,\oracle,\tr,\ww)=0$.
-
-After the verifier's first message, $\tr$ is as follows:
-%
-$$
-\tr=(\mu_1, \ldots,\mu_{\codedim_2}, q',\alpha) \in \range{0}{q-1}^{\leq \degevalfield}[X]^{\codedim_2} \times \cP \times \FF_{q'}.
-$$
-%
-We define $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if $\ww=\ff\in \bits^{\codedim}\subseteq \ZZ^\codedim$,  $\ff=(\ff_{*j})_{j\in [\codedim_2]}\in \left(\bits^{\codedim_1}\right)^{\codedim_2}$, and 
-%
-\begin{equation}\label{e:core_iop_proof_eq1}
-    \begin{aligned}
-&\langle \bff_{*j}, \pi_{q'}^{-1}(\pi_{q',\alpha}(\pi_{\mathsf{canon}}^{-1}(\vv^{(1)})))\rangle = \pi_{q'}^{-1}(\pi_{q',\alpha}(\mu_j)) \\
-&f_{*j} = \Enc_{\cC_1}(\pack(\pi_2((\bff_{*j})))).
-    \end{aligned}\qquad \text{ for all } j\in [\codedim_2]
-\end{equation}
-\albert{something about the oracle?}
-We define $\rbrextractor(\inp,\oracle,\bm{\mu}\Vert q',\alpha,\ww)=\ww$. Let $\bm{\mu}=(\mu_1,\ldots, \mu_{\codedim_2})$. We next show that 
-%
-\[
-  \Pr_{q',\alpha'}\!\left[
-  \exists\,\ww \ \left| \ \begin{array}{l}
-  \wedge\ \kstate\bigl(\inp,\oracle,\bm{\mu},\rbrextractor(\inp,\oracle,\bm{\mu}, q',\alpha,\ww)\bigr)=0\\
-  \wedge\ \kstate(\inp,\oracle,\bm{\mu}, q', \alpha, \ww)=1
-  \end{array}
-  \right.\right]
-  \ \le\ \kappa_0(??).
-\]
-Indeed, let $\ww'= \rbrextractor(\inp,\oracle,\bm{\mu}, q',\alpha,\ww)$. Assume $\kstate(\inp,\oracle,\bm{\mu}, q', \alpha, \ww)=1$ and  $\kstate(\inp,\oracle,\bm{\mu},  \rbrextractor(\inp,\oracle,\bm{\mu}, q',\alpha,\ww))=\kstate(\inp,\oracle,\bm{\mu},  \ww)=0$.
-The latter occurs if and only if  $\kstate\bigl(\inp,\oracle,\ww\bigr)=0$, which in turn occurs if and only if  $(\inp,\oracle,\ww)\notin \Relation_{\mathsf{Lin-BitsDual}}$. Thus we have to bound the probability over $q',\alpha$ that $(\inp,\oracle,\ww)\notin \Relation_{\mathsf{Lin-BitsDual}}$ and $\ww=(\bff_{*j})$ satisfies \cref{e:core_iop_proof_eq1}. To that end, assume $(\inp,\oracle,\ww)\notin \Relation_{\mathsf{Lin-BitsDual}}$. Then $\langle \pi_q(\bff_{*j}), \vv^{(1)} \rangle\neq \mu_j$ over $\KK$ for some $j\in [\codedim_2]$. In particular, $\langle \bff_{*j}), \pi_{\mathsf{canon}}^{-1}(\vv^{(1)}) \rangle\neq \pi_{\mathsf{canon}}^{-1}(\mu_j)$ over $\ZZ[X]$. Let $$p_j(X)\defeq  \langle \bff_{*j}, \pi_{\mathsf{canon}}^{-1}(\vv^{(1)}) \rangle- \pi_{\mathsf{canon}}^{-1}(\mu_j) \in \ZZ[X].
-$$
-Then $p_j$ is a nonzero integer polynomial of degree $\leq \degevalfield$ and with coefficients of absolute value at most $\codedim_1\cdot (q-1) + (q-1)$ (here we use that all entries in $\bff_{*j}$ are bits). Now, if $\bff_{*j}$ satisfies \cref{e:core_iop_proof_eq1}, then, applying $\pi_{q'}$ on both sides, reorganizing terms,  using that $\pi_{q'}(\bff_{*j})=\pi_{q',\alpha}(\bff_{*j})$ and the linearity of $\pi_{q', \alpha}$,
-%
-$$
-0=\langle \pi_{q'}(\bff_{*j}), \pi_{q',\alpha}(\pi_{\mathsf{canon}}^{-1}(\vv^{(1)}))\rangle -\pi_{q',\alpha}(\mu_j) = \pi_{q', \alpha}\left(\langle \bff_{*j}, \pi_{\mathsf{canon}}^{-1}(\vv^{(1)})\rangle -\mu_j\right) = \pi_{q', \alpha}(p_j(X)). 
-$$
-%
-Hence 
-%
-$$
-\Pr_{q',\alpha}[(\inp,\oracle,\ww)\notin \Relation_{\mathsf{Lin-BitsDual}}, \text{ and }\ww=(\bff_{*j}) \text{ satisfies  \cref{e:core_iop_proof_eq1}}] \leq \Pr_{q',\alpha}[\pi_{q',\alpha}(p_j(X))=0] 
-$$
-%
-By \cref{l:reduction_lemma},
-%
-$$
-\Pr_{q',\alpha}[\pi_{q',\alpha}(p_j(X))=0] \leq \frac{\log(\codedim_1+1) + \log(q-1)}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{\degevalfield}{q_{\min}} = \kappa_0,
-$$
-as needed.
-
-It remains to see that if  $\tr$ is a full transcript of $\Pi_1$, then $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if verifier with input $(\inp,\oracle, \tr)$ outputs $(\inp',\oracle')$ such that $(\inp',\oracle', \ww)\in \PESAT(\comfield,Q_{\FF 2 \ZZ},\cC_1, \pack)^{\codedim_2}$ \albert{yes?}. The output of the verifier is 
-$$\left(\inp_j=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ g^{\mu_j}),\  \oracle_j= f_{*j}, \ \right)_{j\in [\codedim_2]},$$
-%
-where $$\bm{\gamma} = \pi_{q'}^{-1}(\pi_{q',\alpha}(\pi_{\mathsf{canon}}^{-1}(\vv^{(1)}))) \in \range{0}{q'-1}^{\codedim_1}\subseteq \ZZ^{\codedim_1}.$$ Now, write as before $\tr=(\bm{\mu}, q', \alpha)$. By definition, $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if $\ww=(\bff_{*j})_{j\in [\codedim_2]}$ satisfies \eqref{e:core_iop_proof_eq1}. 
-The equalities in \eqref{e:core_iop_proof_eq1}  take place in $\ZZ$. Concretely, the right-hand-side is an integer in the range $\range{0}{q'-1}$, and hence so is the left-hand-side.  Hence if the multiplicative order of $g$ (the generator of $\comfield^*$) is larger than $q'-1$, we have that \eqref{e:core_iop_proof_eq1} holds if and only if \albert{shouldn't we account for the growth $\codedim_1\cdot (q'-1)$? Also how does the need of having many samplable primes affect the maximum possible size of $q'$?}
-%
-\begin{equation*}
-    \begin{aligned}
-&g^{\langle \bff_{*j}, \bm{\gamma}\rangle} = g^{\pi_{q'}^{-1}(\pi_{q',\alpha}(\mu_j))}\\
-& f_{*j}=\Enc_{\cC_1}(\pack(\pi_2((\bff_{*j}))))
-\end{aligned}\qquad \text{ for all } j\in [\codedim_2].
-\end{equation*}
-%
-The above holds if and only if $(\inp_j,\oracle_j, \bff_{*j})_{j\in [\codedim_2]}\in \PESAT(\comfield, Q_{\FF 2 \ZZ}, \cC_1, \pack)$.
-%
-=======
->>>>>>> a39fc8ef85452a2be886133d38140bdc2ddeb35e
 \end{proof}
 
 
@@ -1081,6 +961,9 @@ See \cref{s:parameter_instantiation} for comments on how to choose close-to-opti
 
 \subsection{Instantiation}\label{s:instantiation}
 
+We instantiate \cref{c:core_iop} by letting $\Pi_{\red}$ be an optimized GKR protocol for multiple grand product claims of certain form. The IOP $\Pi_\iopp$ is taken to be WHIR \cite{whir} with the ring switching step from \cref{Binuius}.
+
+
 We next describe how to instantiate \cref{c:core_iop,c:LinModFieldBin} so as to achieve $\lambda=100$ or $\lambda=128$ bits of security, while keeping the protocols as efficient as possible.  
 
 
@@ -1096,7 +979,7 @@ In terms of efficiency, the most important step of \cref{c:core_iop} to be aware
 $$
 \prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \pi_2(\bff_{ij}) +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\codedim_2],
 $$
-into a linear claim on $\pi(\bff)$. In our instantiation, $\Pi_{\red}$ is the GKR protocol for multiple grand product claims,
+into a linear claim on $\pi(\bff)$. As mentioned, in our instantiation, $\Pi_{\red}$ is the GKR protocol for multiple grand product claims,
 %
 equipped with the optimizations discussed in \cref{?}. This is the most expensive prover part of \cref{c:core_iop,c:LinModFieldBin}, constituting between $50\%$ to $66\%$ of prover costs, cf.\ \cref{?}. Because of this, it is important for efficiency that operating in $\comfield$ is as efficient as possible. 
 
@@ -1171,6 +1054,7 @@ Recall (\cref{t:thm_core_IOPP})
 
 %
 
+\albertimportant{Add a result about expressiveness of $A \pi^{-1} M\pi(\bff)$: arbitrary circuits. Minimilaity o}
 
 
 In this section we expand the core relation $\LinBitsDual$ to impose, instead of constraints of the form $f=\Enc_\cC\circ \pack\circ \pi_2(\bff)$ and $\langle \pievalfield(\bff), \vv  \rangle = \mu$, where $\bff\in \bits^{\codedim} \subseteq \ZZ^{\codedim}$, constraints as $\Enc_\cC\circ\pack\circ\pi_2(\bff) = f$  and $$\langle \pievalfield\circ \pi_2^{-1}(\Mmatrix\cdot \pi_2(\bff)) \rangle = \mu$$ for a matrix $\Mmatrix\in \FF_{2}^{\codedim' \times \codedim}$. Precisely, given a new parameter $\codedim'$, we define 
@@ -1236,7 +1120,7 @@ Now prover and verifier use an IOP for $\LIN(\comfield, \cC, \pack)$ to prove \e
 \begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:virtual_iop}]\label{t:virtual_iop} 
 \albertimportant{Should we be more formal with this theorem?} \albert{Completeness missing}
    Under the same hypothesis as \cref{t:thm_core_IOPP} for $\delta,\basegenerator, \codedim',\codedim_1, \codedim_2, \Pi_\red, \Pi_\iopp$,  \cref{c:virtual_iop} is a perfectly complete IOP for $\LinBitsDual^{\virtual}$  and has round-by-round knowledge soundness with relaxation $((\LinBitsDual^{\virtual})^{\delta}, \bot)$, with errors $$\kappa_0^*, (\ksred_i)_{i\in [t_\red]}, (\ksiopp)_{i\in [t_\iopp]}$$ as defined in \cref{t:thm_core_IOPP}.  
-   The errors $\kappa_{\red,i}$ correspond to the errors of  the IOR $\Pi_\red$ when used on triples of the form $$(\inp_\red=((g^{\bm{\gamma}_i})_{i\in [\codedim_1]}, (g^{\mu_j})_{j\in [\codedim_2]}), \oracle_\red=f, \wit_\red =\pi_2(\bfh))\in \PESAT(\comfield,Q_{\FF 2 \ZZ}, \pack)$$ for certain $\bm{\gamma}_i$ and $\mu_j$ (so, the witness has dimension $\codedim'$ and we use the decomposition $\codedim' = \codedim_1 \cdot \codedim_2$). The errors $\kappa_{\iopp,i}$ correspond to the errors of  the IOP $\Pi_\iopp$ when used on triples of the form $$(\inp_\iopp=(\Mmatrix^\mathsf{T} \cdot \vv, \mu'), \oracle_\iopp=f, \wit_\iopp=\pi_2(\bff))\in \LIN(\comfield,\cC,\pack),$$
+   The errors $\kappa_{\red,i}$ correspond to the errors of  the IOR $\Pi_\red$ when used on triples of the form $$(\inp_\red=((g^{\bm{\gamma}_i})_{i\in [\codedim_1]}, (g^{\mu_j})_{j\in [\codedim_2]}), \oracle_\red=f, \wit_\red =\pi_2(\bfh))\in \PESAT(\comfield,Q_{\mathbb{B}\text{it}\ZZ}, \pack)$$ for certain $\bm{\gamma}_i$ and $\mu_j$ (so, the witness has dimension $\codedim'$ and we use the decomposition $\codedim' = \codedim_1 \cdot \codedim_2$). The errors $\kappa_{\iopp,i}$ correspond to the errors of  the IOP $\Pi_\iopp$ when used on triples of the form $$(\inp_\iopp=(\Mmatrix^\mathsf{T} \cdot \vv, \mu'), \oracle_\iopp=f, \wit_\iopp=\pi_2(\bff))\in \LIN(\comfield,\cC,\pack),$$
     so that the witness has dimension $\codedim$.
 
 
@@ -1624,11 +1508,11 @@ Hence, in practice one stops using our optimization after a few rounds of sumche
         \hline
         $T_{A_2}^{(3)}$ & $(\KK^{2^{16}})^{2^{r_1-4}}$  &  --- & $4295$ & no
     \end{tabular}
-    \caption{Dimensions, build costs, and sizes of the tables for computing $h_1(X), h_2(X), h_3(X)$, with $\log|\KK|\approx 128$. We use the example size $\codedim_1=2^{r_1}=2^{16}$, which following our instantiation ($\codedim_1\approx \codedim^{0.6}$, \cref{s:instantiation}) this corresponds to a total witness size $\codedim  \approx 2^{27}$. }
+    \caption{Dimensions, build costs, and sizes of the tables for computing $h_1(X), h_2(X), h_3(X)$, with $\log|\KK|\approx 128$. We use the example size $\codedim_1=2^{r_1}=2^{16}$, which following our instantiation ($\codedim_1\approx \codedim^{0.6}$, \cref{s:instantiation}) this corresponds to a total witness size $\codedim  \approx 2^{27}$. \albertimportant{It seems we do not always build $T_{A_0}^{(2)}$ and $T_{S_1}^{(2)}$?}}
 \label{tab:gkr_tables}
 \end{table}
 
- Instead of building the table $T_{A_2}^{(2)}$ to obtain the values $A_2^{(2)}[\bb,\cc]$, the prover  reads $T_{r_1}^{(2)}[0,\bb,0] \in \KK^{4}$ and  $T_{r_1}^{(2)}[0,\bb,1]\in \KK^4$, selects  and multiplies an entry from $T_{r_1}^{(2)}[0,\bb,0]$ with an entry of $T_{r_1}^{(2)}[0,\bb,1]$, and with $\omega^{(2)}[\bb]$.  In  Round 3 we only use the table $T_{r_1}^{(3)}$, and otherwise perform sumcheck normally. 
+ Instead of building the table $T_{A_2}^{(2)}$ to obtain the values $A_2^{(2)}[\bb,\cc]$, the prover  reads  $T_{r_1}^{(2)}$  at appropriate values and computes $A_2^{(2)}[\bb,\cc]$ using some of the elements in the vectors read this way.  In  Round 3 we only use the table $T_{r_1}^{(3)}$, and otherwise perform sumcheck normally. 
 
 
 \paragraph{The rest of sumchecks in Step 2 of \cref{c:gkr_grand_product}} So far we have discussed the last sumcheck from Step 2 of \cref{c:gkr_grand_product}, corresponding to the lower layer of the binary tree of products of our GKR circuit for the grand products. 
@@ -1645,13 +1529,26 @@ In our implementation we want to keep all tables in cache. Because of this, the 
 
 
 
+\subsection{Other optimizations for \cref{c:core_iop}}
+
+\paragraph{Using $4$ factor multiplication (instead of $2$) in the last step of the GKR grand product}
+
+In Step 2 we reduce the number of sumchecks by $1$ (so now there are $r_1-2$ sumchecks) by making the last sumcheck certify the claim
+$$
+C^{(r_1-2)}= \sum_{(\bb,\cc)\in \bits^{r_1-2}\times \bits^{r_2}} L_{r_1}(\bb,0,0,\cc) \cdot L_{r_1}(\bb,0,1,\cc)\cdot L_{r_1}(\bb,1,0,\cc)\cdot  L_{r_1}(\bb,1,1,\cc) \cdot \eq(\bb,\cc;\bm{\alpha}^{(i)})
+$$
+I.e.\ 
+
+\paragraph{Step 1 of \cref{c:core_iop} via lookup tables} In Step 1 of \cref{c:core_iop}, the prover computes the elements $\mu_1,\ldots,\mu_{\codedim_2}$ again by means of a lookup table $T$, which is indexed over  $i\in [\ell_1/4]$ and contains the $16$-length vectors $$T[i]= (\sum_{k\in [4]} \eps_k \cdot \picanon^{-1}(\vv^{(1)})_{4*(i-1) + k})_{\eps_1,\ldots, \eps_4 \in \bits} \in \ZZ[X]^{16}.$$
+
 
 
 \renewcommand{\comfield}{\FF_{2^{\comfieldexp}}}
 
 
-\subsection{Optimizing \ftwoz for virtualized inputs $\pi_2^{-1}(M\cdot \pi_2(\bff))$}\label{s:opt_virtual}
+\subsection{Optimizing \ftwoz\ for virtualized inputs $\pi_2^{-1}(M\cdot \pi_2(\bff))$}\label{s:opt_virtual}
 
+\albertimportant{Leaving this section out (add to our open problems list)}
 
 In \cref{c:virtual_iop}, at Step 2, prover and verifier use $\Pi_{\mathsf{red}}^{\ell_2}$  to reduce the claim
 %
@@ -1671,15 +1568,15 @@ A natural question is whether, in such scenarios, the proof of \eqref{e:grand_pr
 
 
 
-\section{\ftwoz  for PIMSAT}
+\section{\ftwoz \  for PIMSAT}
 %\john{Can't we operate on multiple polynomial rings, namely $Z[X]$ and $F_2[X]$} \albert{Yes but we don't want the complexity of doing so}
 
 
 \subsection{Polynomial Ideal Membership Satisfiability (PIMSAT)}
 
-\albertimportant{todo: add the virtualization formalism. }
+%\albertimportant{todo: add the virtualization formalism. }
 
-Throughout this section $R$ denotes either $\ZZ$ or a finite field $\FF$ with $q^e$ elements.
+Throughout this section $R$ denotes either $\ZZ$ or a finite field $\FF$ with $q^e$ elements. \albertimportant{Actually it may be good to allow $R$ to be $\QQ$, so we can inline constraints more easily (even though we can write the constraints over $\QQ$ and then turn them into $\ZZ$ constraints by multiplying by the LCM, so maybe it's not worth the added complexity}
 
 In this section we describe a variation of the PESAT  relation (cf.\ \cref{d:pesat}), called \emph{Polynomial Ideal Membership Satisfiability (PIMSAT)}. It generalizes PESAT by allowing polynomial constraints over polynomial rings (or modules), and by replacing equality to zero by ideal membership. PIMSAT is a subset of the UCS relation from \cite{zincplus} (cf.\ \cref{r:pimsat_vs_ucs}). %On the other hand, PIMSAT operates exclusively on the polynomial ring $\ZZ[X]$.
 
@@ -1769,7 +1666,7 @@ The main difference between PIMSAT and UCS  is that the later allows for witness
 
 
 
-\subsection{\ftwoz-IOP: an IOP for PIMSAT with oracles in binary fields}
+\subsection{An IOP for PIMSAT with oracles in binary fields}
 
 %\john{Since we would have a lot of repeated hash computations, would there be a way to fold them like using sumfold before Step 2? Albert, I remember running an experiment on this using Hyrax and sumfold and seems to perform 2x faster than the baseline zinc+. Even though we used elliptic curve commitments, we maybe able to a similar folding technique } \albert{I thought about that. The issue is that the commitments are in binary fields and the claims to fold in $R[X]$, so folding here requires really novel research, if possible at all (efficiently).}
 
@@ -1857,7 +1754,7 @@ Accordingly, prover and verifier use the IOR $\Pi_{\KK}$  to reduce \eqref{e:bat
 %
 for some $\vv \in \KK^{ \codedim_0}$  and some $\mu\in \KK$.
 \end{itemize}
-\item \textbf{Using the \ftwoz IOR for $\LinModFieldBin$.}
+\item \textbf{Using the \ftwoz \ IOR for $\LinModFieldBin$.}
 \begin{itemize}[leftmargin=*]
 \item The initial claim $(\inp,\bot,\wit)\in \PIMSAT$ has been replaced by $((\vv,\mu),\bot,\pi(\bff))\in \LIN(\KK)$.  Notice that $\pi:\ring[X] \to \KK$ induces a $\pi_q$-module homomorphism $\psi:\ringdegbound{\moduledegree}[X] \to \KK$ given by $\psi(h(X)) = \pi(h(X))$. Hence
 %
@@ -1970,6 +1867,66 @@ as needed.
 \albert{Repeated computations through ideal membership?}
 
 
+\subsection{The $\mathsf{CM}$ constraint system: composition of  $\ZZ$-linear  with $\FF_2$-linear constraints}
+
+\albertimportant{Not sure this is needed depending on how we write the technical overview.} 
+
+\albertimportant{Maybe we should have general R1CS here, not just linear R1CS. And then describe the CM relation a subset of the more general R1CS relation}
+
+In this section we focus on a specific subset of $\PIMSAT(\{0,1\},\pp,\bot)$, and we extend it with the same virtualization mechanism introduced in \cref{s:virtualization} for the relation $\LinBitsDual^{\mathsf{virtual}}(\bits, \pi_q, R, \cC)$.
+
+As usual, let $\codedim'$ be a vector length. Let $C\in \ZZ^{\numrows\times  \codedim'}$ be an integer matrix, and let $\pp_{\mathsf{CM}} = (\pp_{\mathsf{CM}, i})_{i\in [n]}$ be such that for any $(\xx,\ww)\in \ZZ^{\codedim'}$, $$\pp_i(\xx,\qq) = \langle C_{i*}\cdot (\xx,\ww)\rangle,$$ where $C_{i*}$ denotes the $i$-th row of $C$. %Let further $\codedim$ be a witness length, 
+Let further $\inplen$ be a public input length, and let  $\Mmatrix\in \FF_2^{\codedim'\times (\codedim + \inplen)}$ be a matrix with entries in $\FF_2$.  Let $\cC$ be a linear code over $\comfield$ of dimension $\codedim/\comfieldexp$ and block length $\codelength$.
+
+\newcommand{\RELCM}{\Relation_{\mathsf{CM}}}
+
+\begin{definition}
+    
+The $\mathsf{CM}$ relation is defined as follows:
+%
+$$
+\RELCM \defeq \left\{ \begin{aligned}
+    &\inp= (\xx, C, \Mmatrix)\in \bits^{\inplen} \times \ZZ^{\numrows\times \codedim'} \times \FF_2^{\codedim' \times (\inplen+\codedim)}\\
+    &\oracle = \bot\\
+    %& \oracle = f \in \comfield^{\codelength} \\
+    & \wit = \bff \in \bits^{\codedim} \subseteq \ZZ^\codedim
+\end{aligned}\  \left| \  \begin{aligned} %&f=\Enc_\cC \circ \pack \circ \pi_2(\bff)\\ 
+&C \cdot \pi_2^{-1}\left(  \Mmatrix\cdot \pi_2(\zz)\right)=0 \ \text{in } \ZZ \\& \zz = (\xx,\bff)\in \ZZ^{\inplen} \times \ZZ^{\codedim} \end{aligned} \right.\right\}
+$$
+\end{definition}
+
+\begin{remark}
+%
+    $\RELCM$ is related to PIMSAT and $\LinBitsDual^{\mathsf{virtual}}$ in the sense that $\RELCM$ is the result of taking  $\PIMSAT(\bits, \pp_{\mathsf{CM}}, \bot)$ (i.e.\ the PIMSAT relation with $R=\ZZ, \moduledegree=0, B=1$ and no ideals) and replacing the vector input-witness vector in PIMSAT by a vector of the form $\mathbf{h}= \pi_2^{-1}\left(\Mmatrix\cdot \pi_2(\bff)\right)$.
+    %
+\end{remark}
+
+In our implementation and in \cref{?} we arithmetize SHA-256 as an instance of $\RELCM$. 
+
+
+In \cref{s:IOP_for_RELCM} \albert{Technical overview} we described an IOP for $\RELCM$. This IOP is simply the result of instantiating the IOP in \cref{c:iop_pimsat} for  $\PIMSAT(\bits, \pp_{\mathsf{CM}}, \bot)$, and using  the \ftwoz \ IOP in \cref{c:virtual_iop} for the relation $\LinBitsDual^{\mathsf{virtual}}$  (cf.\ \cref{s:virtualization}) to prove the final inner product claims of \cref{c:iop_pimsat} (cf.\ Step 4), instead of using the plain \ftwoz version from \cref{c:core_iop}.
+
+
+\begin{remark}[The $\RELCM$ relation is NP-complete]
+
+Any Boolean circuit can be arithmetized as an instance of $\RELCM$. Indeed, since any boolean circuit can be written as a system of equations using the operations XOR and AND, it suffices to prove that, given $x,y,z\in \bits$, we can express both of the following constraints as an instance of $\RELCM$:
+%
+$$    x \xor y = z,\qquad \qquad 
+    x \band y = z.
+$$
+Indeed, $x \xor y = z$ if and only if $\pi_2^{-1}(\pi_2(x) + \pi_2(y))=z$, where here $+$ means addition modulo $2$. Further, $x \band y = z$  if and only if  
+%
+$$
+2\cdot z =  x+y - \pi_2^{-1}(\pi_2(x) + \pi_2(y)).
+$$    
+One can verify this last equivalence for example  by directly inspecting that it holds for the four possible combinations of $x,y\in \bits$.
+\end{remark}
+
+
+
+
+\albertimportant{Todo: Expressiveness result of Remco}
+
 \section{Experiments}
 \subsection{Instantiation}
 
@@ -2014,8 +1971,6 @@ $$
 for some $\rr^{(2)} \in \KK^{\log \codedim}$  and some $\mu\in \KK$. In other words, $((\rr^{(2)},\mu),\bot,\pi(\bff)) \in \Relation_{\mathsf{mle}}$ over $\KK$.
 \end{remark}
 
-<<<<<<< HEAD
-=======
 
 
 \subsection{Experimental results}
@@ -2028,7 +1983,6 @@ We measure the performance of \cref{c:core_iop} for committing  to witnesses $\b
  
  
  In \cref{?} we present performance for the case $q\leq 2^{105}$, $\moduledegree=1$, in which case  so the optional step of Round 1 of \cref{c:core_iop} is omitted (cf.\ \cref{s:instantiation}). In \cref{?} we make the same measurement for the case $\moduledegree=5$ and $q\leq 2^{32}$. 
->>>>>>> a39fc8ef85452a2be886133d38140bdc2ddeb35e
 
 
 

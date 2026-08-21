@@ -1,0 +1,60 @@
+[0] Config.pm:328> INFO - This is Biber 2.21
+[0] Config.pm:331> INFO - Logfile is 'main.blg'
+[29] biber-darwin:342> INFO - === Fri Aug 21, 2026, 09:18:14
+[38] Biber.pm:421> INFO - Reading 'main.bcf'
+[67] Biber.pm:1002> INFO - Found 15 citekeys in bib section 0
+[72] Biber.pm:4487> INFO - Processing section 0
+[76] Biber.pm:4678> INFO - Looking for bibtex file 'references.bib' for section 0
+[78] bibtex.pm:1713> INFO - LaTeX decoding ...
+[132] bibtex.pm:1519> INFO - Found BibTeX data source 'references.bib'
+[165] UCollate.pm:68> INFO - Overriding locale 'en-US' defaults 'variable = shifted' with 'variable = non-ignorable'
+[165] UCollate.pm:68> INFO - Overriding locale 'en-US' defaults 'normalization = NFD' with 'normalization = prenormalized'
+[165] Biber.pm:4307> INFO - Sorting list 'anyt/global//global/global/global' of type 'entry' with template 'anyt' and locale 'en-US'
+[165] Biber.pm:4313> INFO - No sort tailoring available for locale 'en-US'
+[170] bbl.pm:676> INFO - Writing 'main.bbl' with encoding 'UTF-8'
+[171] bbl.pm:779> INFO - Output to main.bbl
+[171] Biber.pm:132> WARN - Possible typo (case mismatch) between datasource keys: 'ccs' and 'CCS' in file 'references.bib'
+[171] Biber.pm:132> WARN - Possible typo (case mismatch) between datasource keys: 'STIR' and 'stir' in file 'references.bib'
+[171] Biber.pm:132> WARN - Possible typo (case mismatch) between datasource keys: 'WHIR' and 'whir' in file 'references.bib'
+[171] Biber.pm:132> WARN - Possible typo (case mismatch) between datasource keys: 'latticefold' and 'LatticeFold' in file 'references.bib'
+[171] Biber.pm:132> WARN - Duplicate entry key: 'logupgkr' in file 'references.bib', skipping ...
+[171] Biber.pm:132> WARN - Possible typo (case mismatch) between datasource keys: 'nova' and 'Nova' in file 'references.bib'
+[171] Biber.pm:132> WARN - Possible typo (case mismatch) between datasource keys: 'hypernova' and 'HyperNova' in file 'references.bib'
+[171] Biber.pm:132> WARN - Possible typo (case mismatch) between datasource keys: 'protostar' and 'ProtoStar' in file 'references.bib'
+[171] Biber.pm:132> WARN - Possible typo (case mismatch) between datasource keys: 'plonk' and 'PLONK' in file 'references.bib'
+[172] Biber.pm:132> WARN - Duplicate entry key: 'lasso' in file 'references.bib', skipping ...
+[172] Biber.pm:132> WARN - Duplicate entry key: 'cq' in file 'references.bib', skipping ...
+[172] Biber.pm:132> WARN - Possible typo (case mismatch) between datasource keys: 'kzg' and 'KZG' in file 'references.bib'
+[172] Biber.pm:132> WARN - Possible typo (case mismatch) between datasource keys: 'marlin' and 'Marlin' in file 'references.bib'
+[172] Biber.pm:132> WARN - Possible typo (case mismatch) between datasource keys: 'spartan' and 'Spartan' in file 'references.bib'
+[172] Biber.pm:132> WARN - Duplicate entry key: 'plonk' in file 'references.bib', skipping ...
+[172] Biber.pm:132> WARN - Possible typo (case mismatch) between datasource keys: 'jolt' and 'Jolt' in file 'references.bib'
+[172] Biber.pm:132> WARN - Duplicate entry key: 'quarks' in file 'references.bib', skipping ...
+[172] Biber.pm:132> WARN - Duplicate entry key: 'caulk' in file 'references.bib', skipping ...
+[172] Biber.pm:132> WARN - Duplicate entry key: 'baloo' in file 'references.bib', skipping ...
+[172] Biber.pm:132> WARN - Duplicate entry key: 'cq' in file 'references.bib', skipping ...
+[172] Biber.pm:132> WARN - Duplicate entry key: 'multilinearkzg' in file 'references.bib', skipping ...
+[172] Biber.pm:132> WARN - Duplicate entry key: 'testudo' in file 'references.bib', skipping ...
+[172] Biber.pm:132> WARN - Duplicate entry key: 'pipp' in file 'references.bib', skipping ...
+[172] Biber.pm:132> WARN - Duplicate entry key: 'sumcheck' in file 'references.bib', skipping ...
+[172] Biber.pm:132> WARN - Duplicate entry key: 'hyperplonk' in file 'references.bib', skipping ...
+[172] Biber.pm:132> WARN - Possible typo (case mismatch) between datasource keys: 'dark' and 'DARK' in file 'references.bib'
+[172] Biber.pm:132> WARN - Duplicate entry key: 'attema' in file 'references.bib', skipping ...
+[172] Biber.pm:132> WARN - Duplicate entry key: 'binius' in file 'references.bib', skipping ...
+[172] Biber.pm:132> WARN - Duplicate entry key: 'ccs' in file 'references.bib', skipping ...
+[172] Biber.pm:132> WARN - Possible typo (case mismatch) between datasource keys: 'brakedown' and 'Brakedown' in file 'references.bib'
+[172] Biber.pm:132> WARN - Possible typo (case mismatch) between datasource keys: 'fri' and 'FRI' in file 'references.bib'
+[172] Biber.pm:132> WARN - Possible typo (case mismatch) between datasource keys: 'ligero' and 'Ligero' in file 'references.bib'
+[172] Biber.pm:132> WARN - Duplicate entry key: 'fribinius' in file 'references.bib', skipping ...
+[172] Biber.pm:132> WARN - Possible typo (case mismatch) between datasource keys: 'fractal' and 'Fractal' in file 'references.bib'
+[172] Biber.pm:132> WARN - Possible typo (case mismatch) between citation and datasource keys: 'zinc' and 'Zinc' in file 'references.bib'
+[172] Biber.pm:132> WARN - I didn't find a database entry for 'BCPS18' (section 0)
+[172] Biber.pm:132> WARN - I didn't find a database entry for 'linear-accumulation' (section 0)
+[172] Biber.pm:132> WARN - I didn't find a database entry for 'linear accumulation' (section 0)
+[172] Biber.pm:132> WARN - I didn't find a database entry for 'zinc' (section 0)
+[172] Biber.pm:132> WARN - I didn't find a database entry for 'WHIR?' (section 0)
+[172] Biber.pm:132> WARN - I didn't find a database entry for 'TCC:BCFW25' (section 0)
+[172] Biber.pm:132> WARN - I didn't find a database entry for '?' (section 0)
+[172] Biber.pm:132> WARN - I didn't find a database entry for 'air' (section 0)
+[172] Biber.pm:132> WARN - I didn't find a database entry for 'flock' (section 0)
+[172] Biber.pm:134> INFO - WARNINGS: 44
