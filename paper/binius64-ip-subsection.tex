@@ -1,0 +1,63 @@
+% Proposed subsubsection for §Experiments / Experimental results.
+% Suggested placement: after \subsubsection{Integer and modular multiplication},
+% before \subsubsection{SHA-256 hashing} — or \input{binius64-ip-subsection} there.
+%
+% DRAFTED BY AI (Claude) from the measured data in
+% docs/binius64-inner-product-benchmarks.md — if inserted, the
+% "Usage and non-usage of AI" paragraph should be extended to cover it
+% (its existing sentence "We used AI in our implementation and
+% experiments, as explained in \cref{??}" could point here).
+%
+% Needs a bib entry; none named binius64 exists in references.bib yet:
+% @misc{binius64,
+%   author = {{Irreducible / The Binius Developers}},
+%   title  = {Binius64},
+%   year   = {2026},
+%   howpublished = {\url{https://github.com/binius-zk/binius64}},
+%   note   = {commit \texttt{7ad579a1}},
+% }
+
+\subsubsection{Isolating the inner-product mechanism: comparison with Binius64's machinery}\label{s:exp_binius64_ip}
+
+We isolate the mechanism at the heart of \cref{c:core_iop} --- certifying $g^{\langle \vv, \bff\rangle} = g^{\mu}$ by grand products over $\comfield$ --- and measure it against Binius64's exponentiation machinery \cite{binius64} in the two claim shapes of \cref{s:?}: \albert{cref the comparison paragraph in the TO}
+(1) $\vv$ public with a tensor decomposition and $\bff$ a committed bit vector (the shape arising in \ftwoz), and (2) both $\vv$ and $\bff$ committed $64$-bit word vectors with no tensor structure (the shape arising in Binius64's integer multiplication). All arms run multi-threaded on the same machine (MacBook Air M4, 16GB, 10 threads) over the same $\comfield=\FF_{2^{128}}$ in GHASH representation; Binius64 is upstream commit \texttt{7ad579a1} built with its parallel feature; every driver checks the resulting product root against a directly computed $g^{\mu}$; times are medians of $3$ runs. Both sides are measured \emph{before} the commitment opening: the \ftwoz\ column is the grand-product (GKR forest) phase of the prover, with the full prover including the commitment opening in parentheses.
+
+\paragraph{Shape (1).} We realize the claim with Binius64's own components --- their eager product-tree prover over the bit-affine leaves $1 + \bff_i\cdot (g^{\vv_i}-1)$, with the leaf claim discharged by their selector mlecheck --- in two arms: \emph{structure-oblivious} (one product of length $\ell$; the leaf values cost $\ell$ exponentiations), and \emph{split-gifted}, where we hand their prover the tensor split for free ($\ell_1$ exponentiations and $\ell_2$ batched subcube products), which their machinery cannot exploit further: the shared base vector must still be materialized at full length $\ell$ and folded densely each round, whereas the \ftwoz\ prover replaces it by the lookup tables of \cref{s:gkr_low_entropy}. Weights are $100$-bit, matching the single-chunk regime of \cref{s:instantiation}.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccccc}
+\toprule
+ & \multicolumn{3}{c}{prover time (ms)} & \multicolumn{2}{c}{peak memory} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-6}
+$\ell$ & B64 oblivious & B64 split-gifted & \ftwoz & B64 & \ftwoz \\
+\midrule
+$2^{20}$ & $98$    & $11$    & $\mathbf{6.6}$ \ ($10.1$)  & $121$ MB  & $6.4$ MB \\
+$2^{22}$ & $399$   & $33$    & $\mathbf{12.2}$ \ ($18.3$) & $480$ MB  & $25$ MB \\
+$2^{24}$ & $1\,790$ & $133$  & $\mathbf{38.0}$ \ ($49.9$) & $1.9$ GB  & $96$ MB \\
+$2^{26}$ & $7\,229$ & $1\,835$ & $\mathbf{104}$ \ ($129$) & $6.2$ GB  & $378$ MB \\
+\bottomrule
+\end{tabular}
+\caption{Shape (1): $g^{\langle \vv,\bff\rangle}=g^{\mu}$ with $\vv$ public ($100$-bit, tensor-decomposable) and $\bff$ committed bits, on Binius64's machinery (two arms) and on \ftwoz. \ftwoz\ times are the grand-product phase (full prover with opening in parentheses); the Binius64 arms stop at the analogous point. Memory for the Binius64 columns is the oblivious arm; the split arm is within $15\%$ of it.}
+\label{tab:binius64-ip-setting1}
+\end{table}
+
+The oblivious arm is dominated ($>90\%$) by the $\ell$ leaf exponentiations, confirming the $O(\ell_1)$-vs-$O(\ell)$ separation of \cref{s:gkr_low_entropy} (the verifier-side separation is analogous); it also cannot express the production claim at all once the tensor factors exceed the exponent budget, since monolithic weights $\vv^{(2)}_j\cdot \vv^{(1)}_i$ of two $\approx 100$-bit factors overflow $\mathsf{ord}(g)$. The residual $1.7\times$--$18\times$ of the split-gifted arm, at $15$--$19\times$ the memory, is the price of eager layer materialization and dense base folding against the lookup tables of \cref{s:gkr_low_entropy}, and it grows with $\ell$ as the eager working set leaves cache.
+
+\paragraph{Shape (2).} Conversely, shape (2) is bilinear in the witness, and \ftwoz\ has no mechanism for it: there is no public factor to tabulate. Binius64's native pipeline (per-row variable-base exponentiation $g^{\vv_i \bff_i}$ through its four product trees, Frobenius selector discharge and committed LogUp* power-table lookup, plus one accumulation product over the $2^i$ row roots, which we add) proves $\langle \vv,\bff\rangle = \mu \bmod 2^{128}-1$ in the times below; it is strong at cache-resident sizes ($0.79\,\mu$s per $64\times 64$ product at $2^{16}$ rows) and degrades beyond them, hitting a memory wall at $2^{21}$--$2^{22}$ rows ($\approx 5.5$ KiB of eagerly materialized tree layers per row).
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcccccc}
+\toprule
+rows & $2^{12}$ & $2^{14}$ & $2^{16}$ & $2^{18}$ & $2^{20}$ & $2^{22}$ \\
+\midrule
+time (ms) & $16$ & $23$ & $52$ & $230$ & $2\,100$ & --- \\
+peak memory & $42$ MB & $104$ MB & $373$ MB & $1.5$ GB & $4.6$ GB & $\approx 20$ GB \\
+\bottomrule
+\end{tabular}
+\caption{Shape (2): $g^{\langle \vv,\bff\rangle}=g^{\mu}$ with both vectors committed $64$-bit words, on Binius64's machinery ($2^{22}$ exceeds the machine's memory; \ftwoz\ has no mechanism for this shape).}
+\label{tab:binius64-ip-setting2}
+\end{table}
+
+Since a shape-(2) instance at $2^i$ rows commits $2^{i+7}$ witness bits, the two shapes are best compared at equal committed input: shape (2) at $2^{16}/2^{18}/2^{20}$ rows against shape (1) at $\ell = 2^{23}/2^{25}/2^{27}$, where \ftwoz\ measures $19.4/58.1/188.3$ ms. Per committed witness bit the ratio is $2.7\times$, $4.0\times$ and $11.2\times$ in favor of \ftwoz\ --- widening with size for the same cache reasons --- at $6$--$8\times$ less memory. The residual factor is the cost of certifying a claim that is bilinear in the witness rather than linear with public structured weights: each mechanism is efficient at the claim shape it was built for, and neither side's optimizations transfer across that boundary.
