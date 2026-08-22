@@ -113,15 +113,42 @@ direct mod-(2^128−1) computation.
 | 2^12 | 16.0 ms | 1.6 | 0.1 | 14.3 | 3.9 µs | 42 MB |
 | 2^14 | 22.7 ms | 3.9 | 0.2 | 16.8 | 1.39 µs | 104 MB |
 | 2^16 | 51.6 ms | 15.9 | 0.7 | 34.9 | 0.79 µs | 373 MB |
+| 2^18 | ~230 ms | ~120 | 2.0 | ~106 | 0.88 µs | 1.45 GB |
+| 2^20 | ~2 100 ms | ~1 100 | 14 | ~985 | 2.0 µs | 4.62 GB |
 
-This is their home turf and it is genuinely strong: ~0.8 µs per
-64×64→128 product-with-accumulation at 2^16 rows, with a ~15 ms
-LogUp\*/table fixed floor. **F2Z has no native mechanism for this claim**
+Same-ℓ ladder as setting 1 (requested): measured through 2^20; the
+per-product cost rises 0.79 → 2.0 µs between 2^16 and 2^20 as the
+~5.5 KiB/row eager witness (four materialized tree-layer chains) leaves
+cache. **2^21 needs ~9 GB and 2^22 ≈ 18–23 GB — past this 16 GB box**:
+the same-ℓ points 2^22–2^26 are unrunnable in one shot. Time
+extrapolates linearly at the ≥2^20 rate (2^22 ≈ 8.5 s, 2^24 ≈ 34 s,
+2^26 ≈ 135 s, labeled EXTRAPOLATED); memory extrapolates to 18/74/296 GB,
+which is the real bound. A production deployment would batch rows
+(their M4 chip system is data-parallel batching), making the wall
+per-batch — the time extrapolation then stands, the memory bound
+becomes the batch size.
+
+This is their home turf and it is genuinely strong at cache-resident
+sizes: ~0.8 µs per 64×64→128 product-with-accumulation at 2^16 rows,
+with a ~15 ms LogUp\*/table fixed floor. **F2Z has no native mechanism for this claim**
 — the exponent is bilinear in witness, so there is no public factor to
 tabulate and no low-entropy leaf property; per the muls audit, the
 import path (their variable-base + Frobenius machinery on top of our
 commitment) prices a word×word Hadamard opening at ≈3–4× a plain
 opening.
+
+### Matched-ℓ cross-setting comparison (ℓ = 2^20)
+
+At the same inner-product length, the ⟨witness, witness⟩ word claim
+costs ~2.1 s / 4.6 GB against the ⟨public-tensor, bits⟩ claim's 6.6 ms /
+6.4 MB (F2Z) — **~320× time, ~740× memory per position**. But a
+setting-2 position carries 128 committed witness bits (two words) versus
+setting 1's single bit, so per *witness bit* the gap nearly closes:
+~15 ns/bit (theirs, 2^20·128 bits) vs ~6.3 ns/bit (F2Z forest, 2^20
+bits) — about 2.4×. Both framings are correct: per-claim-dimension the
+public/tensor structure is worth orders of magnitude; per-committed-bit
+the two mechanisms are within a small factor, each efficient at the
+claim shape it was built for.
 
 ## Verdict
 
