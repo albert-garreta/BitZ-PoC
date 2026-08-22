@@ -60,4 +60,21 @@ peak memory & $42$ MB & $104$ MB & $373$ MB & $1.5$ GB & $4.6$ GB & $\approx 20$
 \label{tab:binius64-ip-setting2}
 \end{table}
 
-Since a shape-(2) instance at $2^i$ rows commits $2^{i+7}$ witness bits, the two shapes are best compared at equal committed input: shape (2) at $2^{16}/2^{18}/2^{20}$ rows against shape (1) at $\ell = 2^{23}/2^{25}/2^{27}$, where \ftwoz\ measures $19.4/58.1/188.3$ ms. Per committed witness bit the ratio is $2.7\times$, $4.0\times$ and $11.2\times$ in favor of \ftwoz\ --- widening with size for the same cache reasons --- at $6$--$8\times$ less memory. The residual factor is the cost of certifying a claim that is bilinear in the witness rather than linear with public structured weights: each mechanism is efficient at the claim shape it was built for, and neither side's optimizations transfer across that boundary.
+Since a shape-(2) instance at $2^i$ rows commits $2^{i+7}$ witness bits, the two shapes are best compared at equal committed input; \cref{tab:binius64-ip-cross} pairs them accordingly. Per committed witness bit the gap is $2.7\times$--$11.2\times$ in favor of \ftwoz\ --- widening with size for the same cache reasons --- at $6$--$8\times$ less memory. The residual factor is the cost of certifying a claim that is bilinear in the witness rather than linear with public structured weights: each mechanism is efficient at the claim shape it was built for, and neither side's optimizations transfer across that boundary.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccccc}
+\toprule
+ & \multicolumn{2}{c}{prover time (ms)} & & \multicolumn{2}{c}{peak memory} \\
+\cmidrule(lr){2-3}\cmidrule(lr){5-6}
+committed bits & shape (2) & shape (1), \ftwoz & ratio & shape (2) & \ftwoz \\
+\midrule
+$2^{23}$ & $52$ \ ($2^{16}$ rows)    & $19.4$ \ ($\ell=2^{23}$)  & $2.7\times$  & $373$ MB & $49$ MB \\
+$2^{25}$ & $230$ \ ($2^{18}$ rows)   & $58.1$ \ ($\ell=2^{25}$)  & $4.0\times$  & $1.5$ GB & $190$ MB \\
+$2^{27}$ & $2\,100$ \ ($2^{20}$ rows) & $188.3$ \ ($\ell=2^{27}$) & $11.2\times$ & $4.6$ GB & $748$ MB \\
+\bottomrule
+\end{tabular}
+\caption{Cross-shape comparison at equal committed witness bits: a shape-(2) instance at $2^i$ rows commits $2^{i+7}$ statement-witness bits and is paired with a shape-(1) instance at $\ell = 2^{i+7}$. Shape-(1) times are the \ftwoz\ grand-product phase. Counting Binius64's advice columns ($c_{\mathsf{lo}}, c_{\mathsf{hi}}$; $256$ bits per row) instead would pair $2^i$ rows with $\ell=2^{i+8}$ and move the ratios $\approx 2\times$ in its favor.}
+\label{tab:binius64-ip-cross}
+\end{table}
