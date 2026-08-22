@@ -137,18 +137,38 @@ import path (their variable-base + Frobenius machinery on top of our
 commitment) prices a word×word Hadamard opening at ≈3–4× a plain
 opening.
 
-### Matched-ℓ cross-setting comparison (ℓ = 2^20)
+### Cross-setting comparison — normalize by committed witness bits (ℓ = 2^{i+7})
 
-At the same inner-product length, the ⟨witness, witness⟩ word claim
-costs ~2.1 s / 4.6 GB against the ⟨public-tensor, bits⟩ claim's 6.6 ms /
-6.4 MB (F2Z) — **~320× time, ~740× memory per position**. But a
-setting-2 position carries 128 committed witness bits (two words) versus
-setting 1's single bit, so per *witness bit* the gap nearly closes:
-~15 ns/bit (theirs, 2^20·128 bits) vs ~6.3 ns/bit (F2Z forest, 2^20
-bits) — about 2.4×. Both framings are correct: per-claim-dimension the
-public/tensor structure is worth orders of magnitude; per-committed-bit
-the two mechanisms are within a small factor, each efficient at the
-claim shape it was built for.
+A setting-2 instance at 2^i rows commits 128·2^i = 2^{i+7} statement-
+witness bits (v and w, 64 each per row); a setting-1 instance at
+ℓ = 2^{i+7} commits the same. Since both deliver one scalar claim over
+their committed input, equal committed bits is the right normalization
+for the task "prove one inner product over committed data" — this is
+the headline cross-setting table (F2Z shapes measured directly at
+n = 23, 25, 27, t = 0.6n, chunks=1):
+
+| committed bits | Setting 2 (2^i rows) | Setting 1 F2Z forest (ℓ=2^{i+7}) | time ratio | memory |
+|---|---|---|---|---|
+| 2^23 | 2^16 rows: 51.6 ms | n=23: 19.4 ms | **2.7×** | 373 MB vs 49 MB |
+| 2^25 | 2^18 rows: ~230 ms | n=25: 58.1 ms | **4.0×** | 1.45 GB vs 190 MB |
+| 2^27 | 2^20 rows: ~2 100 ms | n=27: 188.3 ms | **11.2×** | 4.62 GB vs 748 MB |
+
+Per committed bit: setting 2 runs 6.2 → 6.9 → 15.6 ns/bit (degrading —
+the eager working set leaves cache) while the F2Z forest runs 2.3 →
+1.7 → 1.4 ns/bit (improving — table amortization); hence the widening
+ratio. With the F2Z full prove (Ligerito opening included, which the
+setting-2 arm lacks) the ratios are 1.9× / 3.2× / 9.5×.
+
+Conventions and caveats for this table: (i) 128 bits/row counts the
+STATEMENT witness (v, w); their realization also commits the c_lo/c_hi
+advice columns (256 bits/row) and the LogUp\* pushforward — counting
+those would match ℓ = 2^{i+8} and move the factor ~2× in their favor;
+state the convention when quoting. (ii) The claims still differ in
+kind — public tensor-structured weights vs witness weights — which is
+the structural point being illustrated, not an unfairness. (iii) The
+per-position (equal-ℓ) framing answers a different question: at
+ℓ = 2^20 the witness×witness claim costs ~320× the time and ~740× the
+memory of the public×bits claim per claim dimension.
 
 ## Verdict
 
