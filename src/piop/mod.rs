@@ -1,4 +1,5 @@
 pub mod lookup;
+pub mod spartan;
 pub mod sumcheck;
 
 /// A combination function `f(evals) -> value` over a per-hypercube-point value

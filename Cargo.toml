@@ -20,7 +20,7 @@ rand_core = "0.9"
 # The ring-switch + recursive Ligerito opener (commit / BaseFold / Ligerito
 # hot paths). Pinned as a LOCAL PATH dependency, exactly as zinc-plus pins it;
 # see README.md. flock-core itself pins bincode 1.3 and serde 1.
-flock-core = { path = "/Users/albertgarretafontelles/flock/crates/flock-core" }
+flock-core = { path = "../flock/crates/flock-core" }
 # The host proof stream carries flock's serde `LigeritoProof` as a
 # length-prefixed bincode blob (bincode 1.3, matching flock's own pin).
 bincode = "1.3"
