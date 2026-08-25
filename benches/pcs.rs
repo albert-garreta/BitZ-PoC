@@ -170,11 +170,11 @@ fn bench_lig_configs(m_p: usize) -> ((LigPc, LigVc), String) {
     } else if m_p + LOG_PACKING >= 22 {
         match prof.as_str() {
             "fast" => (LigConfig::Embedded(LigeritoProfile::Fast), "fast"),
-            "slim3" => (LigConfig::Embedded(LigeritoProfile::Slim3), "slim3"),
+            "slim" => (LigConfig::Embedded(LigeritoProfile::Slim), "slim"),
             "secure" => (LigConfig::Embedded(LigeritoProfile::Secure), "secure"),
-            // unrecognized → slim (unset never lands here: the env default
-            // is "custom:3:4", handled by the custom branch above)
-            _ => (LigConfig::Embedded(LigeritoProfile::Slim), "slim"),
+            other => panic!(
+                "unknown F2Z_LIG_PROFILE {other:?}: expected fast, slim, secure, custom:*, udr:*, or udrg:*"
+            ),
         }
     } else {
         (LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 }, "adhoc")

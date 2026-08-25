@@ -8,7 +8,7 @@
 #
 #   -o        output CSV (default bench_results/f2z-<timestamp>.csv)
 #   -p        comma-separated profile list for F2Z_LIG_PROFILE
-#             (default: "" = the bench default; e.g. "fast,slim,slim3,custom:4:4")
+#             (default: "" = the bench default; e.g. "fast,slim,custom:3:4,custom:4:4")
 #   -s        space-separated t:s:W shapes (default: the reference n=16..28 list)
 #   -r        timing reps per shape (default 3)
 #   -j        RAYON_NUM_THREADS (default: all cores; 1 = single-threaded)

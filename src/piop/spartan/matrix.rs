@@ -47,6 +47,11 @@ pub enum SpartanMatrixError {
         row: usize,
     },
 
+    /// Raw CSC offsets must start at zero, be nondecreasing, and end at the
+    /// number of stored entries.
+    #[error("invalid CSC column offsets")]
+    InvalidCscOffsets,
+
     /// `A`, `B`, and `C` do not describe one common R1CS shape.
     #[error("A, B, and C must have identical, nonempty dimensions")]
     InvalidR1csShape,
@@ -197,6 +202,56 @@ impl<F> SparseMatrix<F> {
         }
 
         Ok(Self::from_validated_columns(row_count, columns))
+    }
+
+    /// Constructs a matrix directly from flat CSC storage.
+    ///
+    /// `column_offsets` contains one start offset per logical column plus a
+    /// final sentinel equal to `entries.len()`. Offsets must begin at zero and
+    /// be nondecreasing. Within every resulting column, entry rows must be
+    /// strictly increasing and smaller than `row_count`.
+    pub fn try_from_csc(
+        row_count: usize,
+        column_offsets: Vec<usize>,
+        entries: Vec<(usize, F)>,
+    ) -> Result<Self, SpartanMatrixError> {
+        if column_offsets.first() != Some(&0)
+            || column_offsets.last() != Some(&entries.len())
+            || column_offsets
+                .windows(2)
+                .any(|bounds| bounds[0] > bounds[1])
+        {
+            return Err(SpartanMatrixError::InvalidCscOffsets);
+        }
+
+        for (column, bounds) in column_offsets.windows(2).enumerate() {
+            let mut previous = None;
+            for (row, _) in &entries[bounds[0]..bounds[1]] {
+                if *row >= row_count {
+                    return Err(SpartanMatrixError::RowOutOfBounds {
+                        column,
+                        row: *row,
+                        rows: row_count,
+                    });
+                }
+                if let Some(previous) = previous
+                    && previous >= *row
+                {
+                    return Err(SpartanMatrixError::RowsNotStrictlyIncreasing {
+                        column,
+                        previous,
+                        row: *row,
+                    });
+                }
+                previous = Some(*row);
+            }
+        }
+
+        Ok(Self {
+            row_count,
+            column_offsets: column_offsets.into_boxed_slice(),
+            entries: entries.into_boxed_slice(),
+        })
     }
 
     fn from_validated_columns(row_count: usize, columns: Vec<Vec<(usize, F)>>) -> Self {
@@ -1085,8 +1140,20 @@ mod tests {
         let from_rows = SparseMatrix::try_from_rows(5, rows.clone()).unwrap();
         let from_columns =
             SparseMatrix::try_from_columns(rows.len(), columns_from_rows(5, &rows)).unwrap();
+        let from_csc = SparseMatrix::try_from_csc(
+            rows.len(),
+            vec![0, 2, 2, 3, 4, 4],
+            vec![
+                (0, field(2, &config)),
+                (2, field(5, &config)),
+                (2, field(7, &config)),
+                (0, field(3, &config)),
+            ],
+        )
+        .unwrap();
 
         assert_eq!(from_rows, from_columns);
+        assert_eq!(from_rows, from_csc);
     }
 
     #[test]
@@ -1122,6 +1189,38 @@ mod tests {
             SparseMatrix::try_from_columns(2, vec![vec![], vec![(2, value())]]),
             Err(SpartanMatrixError::RowOutOfBounds {
                 column: 1,
+                row: 2,
+                rows: 2,
+            })
+        );
+        assert_eq!(
+            SparseMatrix::<F128>::try_from_csc(2, vec![], vec![]),
+            Err(SpartanMatrixError::InvalidCscOffsets)
+        );
+        assert_eq!(
+            SparseMatrix::<F128>::try_from_csc(2, vec![1], vec![]),
+            Err(SpartanMatrixError::InvalidCscOffsets)
+        );
+        assert_eq!(
+            SparseMatrix::try_from_csc(2, vec![0, 2], vec![(0, value())]),
+            Err(SpartanMatrixError::InvalidCscOffsets)
+        );
+        assert_eq!(
+            SparseMatrix::<F128>::try_from_csc(2, vec![0, 1, 0], vec![]),
+            Err(SpartanMatrixError::InvalidCscOffsets)
+        );
+        assert_eq!(
+            SparseMatrix::try_from_csc(2, vec![0, 2], vec![(1, value()), (0, value())]),
+            Err(SpartanMatrixError::RowsNotStrictlyIncreasing {
+                column: 0,
+                previous: 1,
+                row: 0,
+            })
+        );
+        assert_eq!(
+            SparseMatrix::try_from_csc(2, vec![0, 1], vec![(2, value())]),
+            Err(SpartanMatrixError::RowOutOfBounds {
+                column: 0,
                 row: 2,
                 rows: 2,
             })

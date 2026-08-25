@@ -13,16 +13,16 @@
 //!    - All groups fix variable `i` at `r_i`
 //! 3. Each group produces a subclaim at the shared point r = (r_1, ..., r_n)
 
-use crypto_primitives::{FromPrimitiveWithConfig, PrimeField};
-use num_traits::Zero;
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
-use std::marker::PhantomData;
 use crate::poly::mle::DenseMultilinearExtension;
 use crate::transcript::traits::{ConstTranscribable, GenTranscribable, Transcribable, Transcript};
 use crate::utils::{
     add, cfg_iter, cfg_iter_mut, inner_transparent_field::InnerTransparentField, mul,
 };
+use crypto_primitives::{FromPrimitiveWithConfig, PrimeField};
+use num_traits::Zero;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+use std::marker::PhantomData;
 
 use crate::piop::CombFn;
 
@@ -178,6 +178,28 @@ impl<F> MultiDegreeSumcheckProof<F> {
     /// sums before running the sumcheck.
     pub fn claimed_sums(&self) -> &[F] {
         &self.claimed_sums
+    }
+
+    /// Whether the proof has exactly the expected groups, degrees, and round
+    /// message shapes.
+    ///
+    /// Protocol wrappers use this before transcript mutation so malformed
+    /// decoded proofs cannot reach the verifier's assertion-based internal
+    /// invariants or select a prover-controlled degree bound.
+    pub(crate) fn has_shape(&self, num_vars: usize, degrees: &[usize]) -> bool {
+        self.degrees == degrees
+            && self.group_messages.len() == degrees.len()
+            && self.claimed_sums.len() == degrees.len()
+            && self
+                .group_messages
+                .iter()
+                .zip(degrees)
+                .all(|(messages, degree)| {
+                    messages.len() == num_vars
+                        && messages
+                            .iter()
+                            .all(|message| message.0.tail_evaluations.len() == *degree)
+                })
     }
 }
 
@@ -532,6 +554,7 @@ impl<F: FromPrimitiveWithConfig> MultiDegreeSumcheck<F> {
     pub fn verify_as_subprotocol(
         transcript: &mut impl Transcript,
         num_vars: usize,
+        expected_degrees: &[usize],
         proof: &MultiDegreeSumcheckProof<F>,
         config: &F::Config,
     ) -> Result<MultiDegreeSubClaims<F>, SumCheckError<F>>
@@ -540,12 +563,10 @@ impl<F: FromPrimitiveWithConfig> MultiDegreeSumcheck<F> {
         F::Inner: ConstTranscribable,
         F::Modulus: ConstTranscribable,
     {
-        assert!(
-            num_vars > 0,
-            "Attempts to prove a constant: num_vars must be > 0"
-        );
-        let num_groups = proof.degrees.len();
-        assert!(num_groups != 0, "need at least one degree group");
+        if num_vars == 0 || !proof.has_shape(num_vars, expected_degrees) {
+            return Err(SumCheckError::InvalidProofShape);
+        }
+        let num_groups = expected_degrees.len();
 
         let mut buf = vec![0; F::Inner::NUM_BYTES];
         let nvars_field = F::from_with_cfg(num_vars as u64, config);
@@ -555,30 +576,13 @@ impl<F: FromPrimitiveWithConfig> MultiDegreeSumcheck<F> {
 
         let mut verifier_states: Vec<VerifierState<F>> = (0..num_groups)
             .map(|j| {
-                let degree = proof.degrees[j];
+                let degree = expected_degrees[j];
                 let degree_field = F::from_with_cfg(degree as u64, config);
                 transcript.absorb_random_field(&degree_field, &mut buf);
 
                 VerifierState::new(num_vars, degree, config)
             })
             .collect();
-
-        for msgs in &proof.group_messages {
-            if msgs.len() != num_vars {
-                return Err(SumCheckError::InvalidProofLength {
-                    expected: num_vars,
-                    got: msgs.len(),
-                });
-            }
-        }
-
-        assert_eq!(
-            verifier_states.len(),
-            proof.group_messages.len(),
-            "number of verifier states ({}) must match number of proof groups ({})",
-            verifier_states.len(),
-            proof.group_messages.len(),
-        );
 
         for i in 0..num_vars {
             proof.group_messages.iter().for_each(|msg| {
@@ -620,3 +624,40 @@ impl<F: FromPrimitiveWithConfig> MultiDegreeSumcheck<F> {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn message(tail_len: usize) -> SumcheckProverMsg<u64> {
+        SumcheckProverMsg(NatEvaluatedPolyWithoutConstant {
+            tail_evaluations: vec![0; tail_len],
+        })
+    }
+
+    #[test]
+    fn proof_shape_check_pins_groups_rounds_and_degrees() {
+        let valid = MultiDegreeSumcheckProof {
+            group_messages: vec![vec![message(2); 3]],
+            claimed_sums: vec![0],
+            degrees: vec![2],
+        };
+        assert!(valid.has_shape(3, &[2]));
+        assert!(!valid.has_shape(2, &[2]));
+        assert!(!valid.has_shape(3, &[3]));
+
+        let no_groups = MultiDegreeSumcheckProof::<u64> {
+            group_messages: vec![],
+            claimed_sums: vec![],
+            degrees: vec![],
+        };
+        assert!(!no_groups.has_shape(3, &[2]));
+
+        let wrong_tail = MultiDegreeSumcheckProof {
+            group_messages: vec![vec![message(1); 3]],
+            claimed_sums: vec![0],
+            degrees: vec![2],
+        };
+        assert!(!wrong_tail.has_shape(3, &[2]));
+    }
+}

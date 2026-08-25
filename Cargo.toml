@@ -17,8 +17,8 @@ thiserror = "2.0"
 rayon = { version = "1.10", optional = true }
 rand = "0.9"
 rand_core = "0.9"
-# The ring-switch + recursive Ligerito opener (commit / BaseFold / Ligerito
-# hot paths). Pinned as a LOCAL PATH dependency, exactly as zinc-plus pins it;
+# The ring-switch + recursive Ligerito opener (commit / recursive folding hot
+# paths). Pinned as a LOCAL PATH dependency, exactly as zinc-plus pins it;
 # see README.md. flock-core itself pins bincode 1.3 and serde 1.
 flock-core = { path = "../flock/crates/flock-core" }
 # The host proof stream carries flock's serde `LigeritoProof` as a
@@ -41,6 +41,13 @@ harness = false
 # GF(2^128)-GHASH vs GF(2^127)-b127 head-to-head on the prover's hot
 # patterns (batch/chain mul, squares, comb powers, wide-dot, eqf kernels).
 # Reps via F2Z_BENCH_REPS.
+
+[[bench]]
+name = "u32_mul"
+harness = false
+# Integer u32×u32→u64 R1CS through the generic Spartan PIOP, with the
+# terminal assignment claim discharged against the compact F2 witness by F2Z.
+# Exponents via F2Z_MUL_EXPONENTS; reps via F2Z_BENCH_REPS.
 
 [features]
 default = ["parallel"]

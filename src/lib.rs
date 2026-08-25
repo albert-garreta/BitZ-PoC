@@ -15,14 +15,19 @@
 //! The **only** PCS opener is the flock-backed **ring-switch + recursive
 //! Ligerito** pipeline ([`ligerito_flock`]): the committed bit-matrix is
 //! packed 128 bits per `GF(2^128)` element and RS-encoded/Merkleized by
-//! [`flock-core`](flock_core); each mod-`q` limb chunk contributes a
+//! [`flock-core`](flock_core) under the hash recorded in the commitment;
+//! each mod-`q` limb chunk contributes a
 //! [merged product forest][merged_forest] + a de-black-boxing pre-sumcheck,
 //! and the L chunk claims are `η`-batched into ONE recursive Ligerito call
 //! whose closing residual is evaluated succinctly by the ring-switch
 //! tensor-algebra ([`ligerito::tensor_eq_phi_eval`]).
 //!
-//! Entry points: [`ligerito_flock::commit_rs_flock`] /
-//! [`ligerito_flock::commit_rs_flock_with`],
+//! Config-aware commitment entry points are
+//! [`ligerito_flock::commit_rs_ligerito`],
+//! [`ligerito_flock::commit_rs_ligerito_rows`], and
+//! [`ligerito_flock::commit_rs_ligerito_packed`]. The explicit low-level
+//! [`ligerito_flock::commit_rs_flock`] /
+//! [`ligerito_flock::commit_rs_flock_with`] entries retain SHA-256.
 //! [`ligerito_flock::prove_mle_eval_mod_q_ligerito`],
 //! [`ligerito_flock::verify_mle_eval_mod_q_ligerito`], with the proof object
 //! [`ligerito_flock::IntEvalRsLigModQProof`] and its

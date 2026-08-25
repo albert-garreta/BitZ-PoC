@@ -35,7 +35,7 @@ binding) plus a de-black-boxing degree-2 **pre-sumcheck** that strips the
 into an inner-product claim on the packed polynomial, and the `L` chunk claims
 are `η`-batched into **one** recursive Ligerito call whose closing residual is
 evaluated succinctly by a tensor-algebra trick (`O(m·128²)`, no `2^m`-sized
-table). Everything hot — commit, additive-NTT encode, BaseFold/Ligerito folding
+table). Everything hot — commit, additive-NTT encode, recursive Ligerito folding
 + Merkle — runs `flock-core`'s optimized code; the ring-switch and the GKR
 forest run over the native `GF(2^128)` type. The earlier flat linear-code
 opening has been removed.
@@ -46,7 +46,7 @@ opening has been removed.
 use f2z::pcs::{IntEvalParams, smallest_generator};
 use f2z::ligerito::packed_vars;
 use f2z::ligerito_flock::{
-    IntEvalRsLigModQProof, LigConfig, commit_rs_flock_with, lig_configs,
+    IntEvalRsLigModQProof, LigConfig, commit_rs_ligerito, lig_configs,
     prove_mle_eval_mod_q_ligerito, verify_mle_eval_mod_q_ligerito,
 };
 use f2z::transcript::Blake3Transcript;
@@ -60,7 +60,7 @@ let (pc, vc) = lig_configs(
 )?;
 
 // Commit the bits (root published before any challenge).
-let hint = commit_rs_flock_with(&p, &data, pc.log_inv_rates[0], pc.initial_k);
+let hint = commit_rs_ligerito(&p, &data, &pc);
 
 // Prove MLE[INT(D)](r) = y ∈ F_q  (row_weights_q = eq(r₁,·) lifted into [0,q)).
 let mut pt = Blake3Transcript::new();
@@ -112,7 +112,7 @@ Pinned by `mod_q_ligerito_padded_witness_trims_us`.
 
 ## Dependencies
 
-- **`flock-core`** — the ring-switch / additive-NTT / BaseFold / Ligerito hot
+- **`flock-core`** — the ring-switch / additive-NTT / recursive-Ligerito hot
   paths (Succinct Labs' *Flock*, `MIT OR Apache-2.0`). **Pinned as a LOCAL PATH
   dependency** in `Cargo.toml`
   (`flock-core = { path = "…/flock/crates/flock-core" }`), exactly as
@@ -193,9 +193,10 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
   default all cores / `RAYON_NUM_THREADS`).
 - `--reps R` — timing repetitions (medians reported; **every rep is
   verified**; default 3).
-- `--profile` — Ligerito config, resolved exactly like the bench: `slim`
-  (default; rate 1/4, k=4) / `slim3` (rate 1/8, k=4) / `fast` (rate 1/2,
-  k=4) / `secure` (embedded profiles at `m = n ≥ 22`) or
+- `--profile` — Ligerito config, resolved exactly like the bench:
+  `custom:3:4` (default; validator-gated Johnson geometry at rate 1/8,
+  k=4) / `slim` (rate 1/4, k=4) / `fast` (rate 1/2, k=4) / `secure`
+  (embedded profiles at `m = n ≥ 22`) or
   `custom:<log_inv_rate>:<initial_k>` (validator-gated Johnson geometry);
   below `m = 22` everything falls back to the ad-hoc test config
   (UNAUDITED).
@@ -263,7 +264,7 @@ byte-identity A/Bs across prover knobs.
 
 `scripts/bench_csv.sh` sweeps shapes × profiles one process at a time (the
 measurement protocol) and writes one CSV row per run —
-`scripts/bench_csv.sh -p "fast,slim,slim3" --phases` covers the reference
+`scripts/bench_csv.sh -p "fast,slim,custom:3:4" --phases` covers the reference
 shapes; `--big` appends n=30–32 (memory-healthy box required), `-j 1`
 single-threads, `-h` for all knobs. Output lands in `bench_results/`.
 

@@ -22,8 +22,8 @@
 //!   Default: all cores (or `RAYON_NUM_THREADS`).
 //! - `--reps R` — timing repetitions (median reported; default 3).
 //! - `--profile P` — Ligerito config: `custom:3:4` (default; validator-gated
-//!   Johnson geometry at rate 1/8, initial_k 4) | `slim` (rate 1/4) | `slim3`
-//!   (rate 1/8) | `fast` (rate 1/2) | `secure`
+//!   Johnson geometry at rate 1/8, initial_k 4) | `slim` (rate 1/4) |
+//!   `fast` (rate 1/2) | `secure`
 //!   (the embedded profiles) | any `custom:<log_inv_rate>:<initial_k>[:<bits>]`
 //!   (validator-gated Johnson geometry; optional `bits` = round-by-round
 //!   security target, default 100 — e.g. `custom:3:4:128`) |
@@ -174,7 +174,7 @@ fn median(mut v: Vec<f64>) -> f64 {
 fn usage() -> ! {
     eprintln!(
         "usage: f2z <n> [<t> <s> [<W>]] [--threads N] [--reps R] \
-         [--profile slim|slim3|fast|secure|custom:<r>:<k>[:<bits>]|udr:<r>:<k>[:<bits>] (default custom:3:4)] [--word-bits W] \
+         [--profile slim|fast|secure|custom:<r>:<k>[:<bits>]|udr:<r>:<k>[:<bits>] (default custom:3:4)] [--word-bits W] \
          [--family j2|j3|j4|j2s|j3s|j4s] [--taps vx|family|collapse|rotxor|sched]\n\
          [--taps-delta D] [--taps-rounds R] [--taps-grp G]\n\
          (n = t + s; W = cell width, power of two, default 1;\n\
@@ -384,7 +384,6 @@ fn resolve_configs(
         match profile {
             "fast" => (LigConfig::Embedded(LigeritoProfile::Fast), "fast"),
             "slim" => (LigConfig::Embedded(LigeritoProfile::Slim), "slim"),
-            "slim3" => (LigConfig::Embedded(LigeritoProfile::Slim3), "slim3"),
             "secure" => (LigConfig::Embedded(LigeritoProfile::Secure), "secure"),
             other => {
                 eprintln!("unknown profile: {other}");

@@ -1,7 +1,7 @@
 //! Regenerate flock's embedded profile TOMLs at a chosen Johnson geometry:
 //!
 //! ```text
-//! cargo run --release --example gen_lig_configs -- <log_inv_rate> <initial_k> <slim|slim3|fast>
+//! cargo run --release --example gen_lig_configs -- <log_inv_rate> <initial_k> <slim|fast>
 //! ```
 //!
 //! For every m = 22..=35, builds the config via
@@ -26,15 +26,15 @@ fn main() {
     let r0: usize = args
         .next()
         .and_then(|x| x.parse().ok())
-        .expect("usage: gen_lig_configs <log_inv_rate> <initial_k> <slim|slim3|fast>");
+        .expect("usage: gen_lig_configs <log_inv_rate> <initial_k> <slim|fast>");
     let k0: usize = args
         .next()
         .and_then(|x| x.parse().ok())
-        .expect("usage: gen_lig_configs <log_inv_rate> <initial_k> <slim|slim3|fast>");
-    let profile = args.next().expect("usage: gen_lig_configs <log_inv_rate> <initial_k> <slim|slim3|fast>");
+        .expect("usage: gen_lig_configs <log_inv_rate> <initial_k> <slim|fast>");
+    let profile = args.next().expect("usage: gen_lig_configs <log_inv_rate> <initial_k> <slim|fast>");
     assert!(
-        profile == "slim" || profile == "fast" || profile == "slim3",
-        "profile must be slim, slim3 or fast (secure is not generated here)"
+        profile == "slim" || profile == "fast",
+        "profile must be slim or fast (secure is not generated here)"
     );
     for m in 22usize..=35 {
         let cfg = custom_johnson_config(m, r0, k0);
