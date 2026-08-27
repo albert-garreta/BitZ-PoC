@@ -65,6 +65,225 @@ pub(crate) trait SumcheckLinearReducer: Sync {
     fn reduce(&self, accumulator: Self::Accumulator) -> Result<MontyField<2>, SumcheckError>;
 }
 
+/// How the native `u64` witness is folded into the field after round zero.
+/// Selection happens once per table, before the pair loop.
+#[cfg(any(test, feature = "bench-internals"))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum NativeWitnessFoldPolicy {
+    Immediate,
+    Delayed,
+}
+
+/// How field-valued inner-round coefficient sums are accumulated.
+///
+/// The threshold form permits a delayed large-table prefix followed by an
+/// immediate tail. The decision is made once per round, outside every MAC
+/// loop.
+#[cfg(any(test, feature = "bench-internals"))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum FieldCoefficientPolicy {
+    Immediate,
+    Delayed,
+    DelayedAtOrAbovePairs(usize),
+}
+
+#[cfg(any(test, feature = "bench-internals"))]
+impl FieldCoefficientPolicy {
+    #[inline]
+    const fn use_delayed(self, pair_count: usize) -> bool {
+        match self {
+            Self::Immediate => false,
+            Self::Delayed => true,
+            Self::DelayedAtOrAbovePairs(minimum_pairs) => pair_count >= minimum_pairs,
+        }
+    }
+}
+
+trait U32InnerArithmeticPolicy: Sync {
+    fn native_coefficients(
+        &self,
+        batched_matrix: &[MontyField<2>],
+        witness: &[u64],
+        zero: &MontyField<2>,
+    ) -> Result<[MontyField<2>; 2], SumcheckError>;
+
+    fn fold_native_witness(
+        &self,
+        input: &[u64],
+        output: &mut [MontyField<2>],
+        challenge: &MontyField<2>,
+        zero: &MontyField<2>,
+        field_cfg: &crypto_bigint::modular::MontyParams<2>,
+    ) -> Result<(), SumcheckError>;
+
+    fn field_coefficients(
+        &self,
+        batched_matrix: &[MontyField<2>],
+        witness: &[MontyField<2>],
+    ) -> Result<[MontyField<2>; 2], SumcheckError>;
+
+    fn fold_and_compute_field_coefficients(
+        &self,
+        batched_matrix: &[MontyField<2>],
+        witness: &[MontyField<2>],
+        batched_matrix_output: &mut [MontyField<2>],
+        witness_output: &mut [MontyField<2>],
+        challenge: &MontyField<2>,
+    ) -> Result<[MontyField<2>; 2], SumcheckError>;
+}
+
+struct DelayedU32InnerArithmetic<'a, R> {
+    reducer: &'a R,
+}
+
+impl<R> U32InnerArithmeticPolicy for DelayedU32InnerArithmetic<'_, R>
+where
+    R: SumcheckProductReducer<MontyField<2>> + SumcheckLinearReducer,
+{
+    #[inline]
+    fn native_coefficients(
+        &self,
+        batched_matrix: &[MontyField<2>],
+        witness: &[u64],
+        zero: &MontyField<2>,
+    ) -> Result<[MontyField<2>; 2], SumcheckError> {
+        sum_u32_native_inner_coefficients_without_linear(
+            batched_matrix,
+            witness,
+            zero,
+            self.reducer,
+        )
+    }
+
+    #[inline]
+    fn fold_native_witness(
+        &self,
+        input: &[u64],
+        output: &mut [MontyField<2>],
+        challenge: &MontyField<2>,
+        zero: &MontyField<2>,
+        _field_cfg: &crypto_bigint::modular::MontyParams<2>,
+    ) -> Result<(), SumcheckError> {
+        fold_u64_table_to_field(input, output, challenge, zero, self.reducer)
+    }
+
+    #[inline]
+    fn field_coefficients(
+        &self,
+        batched_matrix: &[MontyField<2>],
+        witness: &[MontyField<2>],
+    ) -> Result<[MontyField<2>; 2], SumcheckError> {
+        sum_inner_round_coefficients_without_linear(batched_matrix, witness, self.reducer)
+    }
+
+    #[inline]
+    fn fold_and_compute_field_coefficients(
+        &self,
+        batched_matrix: &[MontyField<2>],
+        witness: &[MontyField<2>],
+        batched_matrix_output: &mut [MontyField<2>],
+        witness_output: &mut [MontyField<2>],
+        challenge: &MontyField<2>,
+    ) -> Result<[MontyField<2>; 2], SumcheckError> {
+        fold_and_compute_next_inner_round_coefficients_without_linear(
+            batched_matrix,
+            witness,
+            batched_matrix_output,
+            witness_output,
+            challenge,
+            self.reducer,
+        )
+    }
+}
+
+#[cfg(any(test, feature = "bench-internals"))]
+struct SelectedU32InnerArithmetic<'a, NR, DR, IR> {
+    native_reducer: &'a NR,
+    delayed_field_reducer: &'a DR,
+    immediate_field_reducer: &'a IR,
+    native_fold_policy: NativeWitnessFoldPolicy,
+    field_coefficient_policy: FieldCoefficientPolicy,
+}
+
+#[cfg(any(test, feature = "bench-internals"))]
+impl<NR, DR, IR> U32InnerArithmeticPolicy for SelectedU32InnerArithmetic<'_, NR, DR, IR>
+where
+    NR: SumcheckLinearReducer,
+    DR: SumcheckProductReducer<MontyField<2>>,
+    IR: SumcheckProductReducer<MontyField<2>>,
+{
+    #[inline]
+    fn native_coefficients(
+        &self,
+        batched_matrix: &[MontyField<2>],
+        witness: &[u64],
+        zero: &MontyField<2>,
+    ) -> Result<[MontyField<2>; 2], SumcheckError> {
+        sum_u32_native_inner_coefficients_without_linear(
+            batched_matrix,
+            witness,
+            zero,
+            self.native_reducer,
+        )
+    }
+
+    #[inline]
+    fn fold_native_witness(
+        &self,
+        input: &[u64],
+        output: &mut [MontyField<2>],
+        challenge: &MontyField<2>,
+        zero: &MontyField<2>,
+        field_cfg: &crypto_bigint::modular::MontyParams<2>,
+    ) -> Result<(), SumcheckError> {
+        match self.native_fold_policy {
+            NativeWitnessFoldPolicy::Immediate => {
+                fold_u64_table_to_field_immediate(input, output, challenge, field_cfg);
+                Ok(())
+            }
+            NativeWitnessFoldPolicy::Delayed => {
+                fold_u64_table_to_field(input, output, challenge, zero, self.native_reducer)
+            }
+        }
+    }
+
+    #[inline]
+    fn field_coefficients(
+        &self,
+        batched_matrix: &[MontyField<2>],
+        witness: &[MontyField<2>],
+    ) -> Result<[MontyField<2>; 2], SumcheckError> {
+        sum_inner_round_coefficients_selected(
+            batched_matrix,
+            witness,
+            self.delayed_field_reducer,
+            self.immediate_field_reducer,
+            self.field_coefficient_policy,
+        )
+    }
+
+    #[inline]
+    fn fold_and_compute_field_coefficients(
+        &self,
+        batched_matrix: &[MontyField<2>],
+        witness: &[MontyField<2>],
+        batched_matrix_output: &mut [MontyField<2>],
+        witness_output: &mut [MontyField<2>],
+        challenge: &MontyField<2>,
+    ) -> Result<[MontyField<2>; 2], SumcheckError> {
+        fold_and_compute_next_inner_round_selected(
+            batched_matrix,
+            witness,
+            batched_matrix_output,
+            witness_output,
+            challenge,
+            self.delayed_field_reducer,
+            self.immediate_field_reducer,
+            self.field_coefficient_policy,
+        )
+    }
+}
+
 /// Compatibility policy matching the original eagerly reduced prover.
 pub(crate) struct ImmediateSumcheckReducer<F> {
     zero: F,
@@ -1029,7 +1248,8 @@ where
 }
 
 /// Proves the first inner round with the exact native u32 assignment, then
-/// continues with field-valued witness and matrix tables.
+/// continues with field-valued witness and matrix tables using the fixed
+/// production policy: delayed coefficients and delayed native folding.
 pub(crate) fn prove_inner_sumcheck_u32_native_with_reducer<R>(
     transcript: &mut impl Transcript,
     initial_claim: MontyField<2>,
@@ -1040,6 +1260,66 @@ pub(crate) fn prove_inner_sumcheck_u32_native_with_reducer<R>(
 ) -> Result<InnerSumcheckOutput<MontyField<2>>, SumcheckError>
 where
     R: SumcheckProductReducer<MontyField<2>> + SumcheckLinearReducer,
+{
+    let policy = DelayedU32InnerArithmetic { reducer };
+    prove_inner_sumcheck_u32_native(
+        transcript,
+        initial_claim,
+        batched_matrix_mle,
+        witness_mle,
+        field_cfg,
+        &policy,
+    )
+}
+
+/// Benchmark-only inner arithmetic selection used by the controlled policy
+/// sweep. Production callers use [`prove_inner_sumcheck_u32_native_with_reducer`].
+#[cfg(any(test, feature = "bench-internals"))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prove_inner_sumcheck_u32_native_with_policy<NR, DR, IR>(
+    transcript: &mut impl Transcript,
+    initial_claim: MontyField<2>,
+    batched_matrix_mle: DenseMultilinearExtension<MontyField<2>>,
+    witness_mle: DenseMultilinearExtension<u64>,
+    field_cfg: &crypto_bigint::modular::MontyParams<2>,
+    native_reducer: &NR,
+    delayed_field_reducer: &DR,
+    immediate_field_reducer: &IR,
+    native_fold_policy: NativeWitnessFoldPolicy,
+    field_coefficient_policy: FieldCoefficientPolicy,
+) -> Result<InnerSumcheckOutput<MontyField<2>>, SumcheckError>
+where
+    NR: SumcheckLinearReducer,
+    DR: SumcheckProductReducer<MontyField<2>>,
+    IR: SumcheckProductReducer<MontyField<2>>,
+{
+    let policy = SelectedU32InnerArithmetic {
+        native_reducer,
+        delayed_field_reducer,
+        immediate_field_reducer,
+        native_fold_policy,
+        field_coefficient_policy,
+    };
+    prove_inner_sumcheck_u32_native(
+        transcript,
+        initial_claim,
+        batched_matrix_mle,
+        witness_mle,
+        field_cfg,
+        &policy,
+    )
+}
+
+fn prove_inner_sumcheck_u32_native<P>(
+    transcript: &mut impl Transcript,
+    initial_claim: MontyField<2>,
+    batched_matrix_mle: DenseMultilinearExtension<MontyField<2>>,
+    witness_mle: DenseMultilinearExtension<u64>,
+    field_cfg: &crypto_bigint::modular::MontyParams<2>,
+    policy: &P,
+) -> Result<InnerSumcheckOutput<MontyField<2>>, SumcheckError>
+where
+    P: U32InnerArithmeticPolicy,
 {
     let num_vars = batched_matrix_mle.num_vars;
     if !has_dense_shape(&batched_matrix_mle)
@@ -1074,12 +1354,10 @@ where
         });
     }
 
-    let coefficients_without_linear = sum_u32_native_inner_coefficients_without_linear(
-        &batched_matrix,
-        &native_witness,
-        &zero,
-        reducer,
-    )?;
+    let coefficients_without_linear = {
+        let _scope = crate::utils::prof::scope("spartan:inner_native_coefficients");
+        policy.native_coefficients(&batched_matrix, &native_witness, &zero)?
+    };
     let challenge = recover_full_round_polynomial_and_sample_next_challenge(
         transcript,
         &mut current_claim,
@@ -1094,50 +1372,54 @@ where
     let mut folded_matrix = vec![zero.clone(); next_len];
     fold_table(&batched_matrix, &mut folded_matrix, &challenge);
     let mut witness = vec![zero.clone(); next_len];
-    fold_u64_table_to_field(&native_witness, &mut witness, &challenge, &zero, reducer)?;
+    {
+        let _scope = crate::utils::prof::scope("spartan:inner_native_witness_fold");
+        policy.fold_native_witness(&native_witness, &mut witness, &challenge, &zero, field_cfg)?;
+    }
     batched_matrix = folded_matrix;
 
-    let mut coefficients_without_linear = if next_len > 1 {
-        sum_inner_round_coefficients_without_linear(&batched_matrix, &witness, reducer)?
-    } else {
-        std::array::from_fn(|_| zero.clone())
-    };
-    let mut batched_matrix_scratch = vec![zero.clone(); batched_matrix.len() / 2];
-    let mut witness_scratch = vec![zero.clone(); witness.len() / 2];
-
-    while batched_matrix.len() > 1 {
-        let challenge = recover_full_round_polynomial_and_sample_next_challenge(
-            transcript,
-            &mut current_claim,
-            &coefficients_without_linear,
-            &mut round_polynomials,
-            &mut eval_points,
-            &zero,
-            field_cfg,
-        );
-
-        let next_len = batched_matrix.len() / 2;
-        batched_matrix_scratch.truncate(next_len);
-        witness_scratch.truncate(next_len);
-
-        if next_len == 1 {
-            batched_matrix_scratch[0] =
-                interpolate_pair(&batched_matrix[0], &batched_matrix[1], &challenge);
-            witness_scratch[0] = interpolate_pair(&witness[0], &witness[1], &challenge);
+    {
+        let _scope = crate::utils::prof::scope("spartan:inner_field_rounds");
+        let mut coefficients_without_linear = if next_len > 1 {
+            policy.field_coefficients(&batched_matrix, &witness)?
         } else {
-            coefficients_without_linear =
-                fold_and_compute_next_inner_round_coefficients_without_linear(
+            std::array::from_fn(|_| zero.clone())
+        };
+        let mut batched_matrix_scratch = vec![zero.clone(); batched_matrix.len() / 2];
+        let mut witness_scratch = vec![zero.clone(); witness.len() / 2];
+
+        while batched_matrix.len() > 1 {
+            let challenge = recover_full_round_polynomial_and_sample_next_challenge(
+                transcript,
+                &mut current_claim,
+                &coefficients_without_linear,
+                &mut round_polynomials,
+                &mut eval_points,
+                &zero,
+                field_cfg,
+            );
+
+            let next_len = batched_matrix.len() / 2;
+            batched_matrix_scratch.truncate(next_len);
+            witness_scratch.truncate(next_len);
+
+            if next_len == 1 {
+                batched_matrix_scratch[0] =
+                    interpolate_pair(&batched_matrix[0], &batched_matrix[1], &challenge);
+                witness_scratch[0] = interpolate_pair(&witness[0], &witness[1], &challenge);
+            } else {
+                coefficients_without_linear = policy.fold_and_compute_field_coefficients(
                     &batched_matrix,
                     &witness,
                     &mut batched_matrix_scratch,
                     &mut witness_scratch,
                     &challenge,
-                    reducer,
                 )?;
-        }
+            }
 
-        std::mem::swap(&mut batched_matrix, &mut batched_matrix_scratch);
-        std::mem::swap(&mut witness, &mut witness_scratch);
+            std::mem::swap(&mut batched_matrix, &mut batched_matrix_scratch);
+            std::mem::swap(&mut witness, &mut witness_scratch);
+        }
     }
 
     let batched_matrix_evaluation = batched_matrix[0].clone();
@@ -1234,6 +1516,26 @@ where
             },
         );
     reduce_two_accumulators(accumulators, reducer)
+}
+
+#[cfg(any(test, feature = "bench-internals"))]
+fn sum_inner_round_coefficients_selected<DR, IR>(
+    batched_matrix: &[MontyField<2>],
+    witness: &[MontyField<2>],
+    delayed_reducer: &DR,
+    immediate_reducer: &IR,
+    policy: FieldCoefficientPolicy,
+) -> Result<[MontyField<2>; 2], SumcheckError>
+where
+    DR: SumcheckProductReducer<MontyField<2>>,
+    IR: SumcheckProductReducer<MontyField<2>>,
+{
+    let pair_count = batched_matrix.len() / 2;
+    if policy.use_delayed(pair_count) {
+        sum_inner_round_coefficients_without_linear(batched_matrix, witness, delayed_reducer)
+    } else {
+        sum_inner_round_coefficients_without_linear(batched_matrix, witness, immediate_reducer)
+    }
 }
 
 #[inline]
@@ -1343,6 +1645,44 @@ where
             },
         );
     reduce_two_accumulators(accumulators, reducer)
+}
+
+#[allow(clippy::too_many_arguments)]
+#[cfg(any(test, feature = "bench-internals"))]
+fn fold_and_compute_next_inner_round_selected<DR, IR>(
+    batched_matrix: &[MontyField<2>],
+    witness: &[MontyField<2>],
+    batched_matrix_output: &mut [MontyField<2>],
+    witness_output: &mut [MontyField<2>],
+    challenge: &MontyField<2>,
+    delayed_reducer: &DR,
+    immediate_reducer: &IR,
+    policy: FieldCoefficientPolicy,
+) -> Result<[MontyField<2>; 2], SumcheckError>
+where
+    DR: SumcheckProductReducer<MontyField<2>>,
+    IR: SumcheckProductReducer<MontyField<2>>,
+{
+    let next_round_pair_count = batched_matrix_output.len() / 2;
+    if policy.use_delayed(next_round_pair_count) {
+        fold_and_compute_next_inner_round_coefficients_without_linear(
+            batched_matrix,
+            witness,
+            batched_matrix_output,
+            witness_output,
+            challenge,
+            delayed_reducer,
+        )
+    } else {
+        fold_and_compute_next_inner_round_coefficients_without_linear(
+            batched_matrix,
+            witness,
+            batched_matrix_output,
+            witness_output,
+            challenge,
+            immediate_reducer,
+        )
+    }
 }
 
 #[inline]
@@ -1799,6 +2139,35 @@ where
     }
     debug_assert!(zero.cfg() == challenge.cfg());
     Ok(())
+}
+
+#[cfg(any(test, feature = "bench-internals"))]
+fn fold_u64_table_to_field_immediate(
+    input: &[u64],
+    output: &mut [MontyField<2>],
+    challenge: &MontyField<2>,
+    field_cfg: &crypto_bigint::modular::MontyParams<2>,
+) {
+    debug_assert_eq!(input.len(), 2 * output.len());
+
+    let fold_pair = |pair: &[u64], value: &mut MontyField<2>| {
+        let low = native_to_field(pair[0], field_cfg);
+        let high = native_to_field(pair[1], field_cfg);
+        *value = interpolate_pair(&low, &high, challenge);
+    };
+
+    #[cfg(feature = "parallel")]
+    if should_parallelize(output.len()) {
+        input
+            .par_chunks_exact(2)
+            .zip(output.par_iter_mut())
+            .for_each(|(pair, value)| fold_pair(pair, value));
+        return;
+    }
+
+    for (pair, value) in input.chunks_exact(2).zip(output) {
+        fold_pair(pair, value);
+    }
 }
 
 fn fold_u64_product_tables_to_field<R>(

@@ -14,11 +14,17 @@ use super::{
     },
     squeeze_field,
     sumcheck::{
-        CryptoBigintSumcheckReducer, ImmediateSumcheckReducer, OptimizedSumcheckReducer,
-        OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProductReducer, SumcheckProof,
+        CryptoBigintSumcheckReducer, ImmediateSumcheckReducer, InnerSumcheckOutput,
+        OptimizedSumcheckReducer, OuterSumcheckProof, R1csProductMles, SumcheckError,
+        SumcheckLinearReducer, SumcheckProductReducer, SumcheckProof,
         prove_inner_sumcheck_u32_native_with_reducer, prove_inner_sumcheck_with_reducer,
         prove_outer_sumcheck_u32_native_with_reducer, prove_outer_sumcheck_with_reducer,
     },
+};
+
+#[cfg(any(test, feature = "bench-internals"))]
+use super::sumcheck::{
+    FieldCoefficientPolicy, NativeWitnessFoldPolicy, prove_inner_sumcheck_u32_native_with_policy,
 };
 
 /// Domain separator for the native Spartan PIOP transcript.
@@ -53,6 +59,35 @@ pub enum SpartanReductionStrategy {
     DelayedBarrett,
     /// Five-limb accumulation with a `crypto-bigint` reference remainder.
     DelayedCryptoBigint,
+}
+
+/// Native-witness fold policy exposed only for controlled benchmarks.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SpartanInnerNativeFold {
+    Immediate,
+    Delayed,
+}
+
+/// Field coefficient-accumulation policy exposed only for controlled
+/// benchmarks.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SpartanInnerFieldAccumulation {
+    Immediate,
+    Delayed,
+    DelayedAtOrAbovePairs(usize),
+}
+
+/// The two independent policy choices varied by the inner-sumcheck sweep.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SpartanInnerPolicy {
+    pub native_witness_fold: SpartanInnerNativeFold,
+    pub field_coefficients: SpartanInnerFieldAccumulation,
 }
 
 /// Failures while composing or checking the Spartan PIOP.
@@ -173,13 +208,38 @@ where
     }
 }
 
-/// Runs the u32 multiplication prover while retaining its exact `u64`
-/// products and assignment through the first round of each sumcheck.
-///
-/// The immediate strategy projects the complete native tables before proving,
-/// matching the compatibility path. Delayed strategies reduce the outer
-/// products and inner witness into field-valued tables at their respective
-/// first-round challenge boundaries.
+/// Runs the production u32 multiplication prover while retaining its exact
+/// `u64` products and assignment through the first round of each sumcheck.
+/// Native coefficients, native witness folding, and every later field
+/// coefficient sum use delayed Barrett reduction. Field-MLE folding remains
+/// immediate.
+pub fn prove_spartan_piop_u32_native(
+    transcript: &mut impl Transcript,
+    matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
+    assignment_oracle_binding: &[u8; 32],
+    products: R1csProductMles<u64>,
+    assignment: DenseMultilinearExtension<u64>,
+) -> Result<
+    (
+        SpartanPiopProof<MontyField<2>>,
+        ScaledMleEvaluationClaim<MontyField<2>>,
+    ),
+    SpartanError,
+> {
+    validate_native_u32_prover_inputs(matrices, &products, &assignment)?;
+    let reducer = OptimizedSumcheckReducer::new(matrices.config())?;
+    prove_spartan_piop_u32_native_with_reducer(
+        transcript,
+        matrices,
+        assignment_oracle_binding,
+        products,
+        assignment,
+        &reducer,
+    )
+}
+
+/// Runs the u32 multiplication prover with an explicitly selected reduction
+/// strategy. Prefer [`prove_spartan_piop_u32_native`] for production proving.
 pub fn prove_spartan_piop_u32_native_with_strategy(
     transcript: &mut impl Transcript,
     matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
@@ -235,6 +295,58 @@ pub fn prove_spartan_piop_u32_native_with_strategy(
     }
 }
 
+/// Runs the native-u64 Spartan prover with a fixed delayed-Barrett outer
+/// sumcheck and a benchmark-selected inner policy.
+///
+/// This entry point is intentionally benchmark-only: it holds the outer
+/// arithmetic and witness representation constant so inner policies can be
+/// compared without changing the statement or transcript.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub fn prove_spartan_piop_u32_native_barrett_with_inner_policy(
+    transcript: &mut impl Transcript,
+    matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
+    assignment_oracle_binding: &[u8; 32],
+    products: R1csProductMles<u64>,
+    assignment: DenseMultilinearExtension<u64>,
+    policy: SpartanInnerPolicy,
+) -> Result<
+    (
+        SpartanPiopProof<MontyField<2>>,
+        ScaledMleEvaluationClaim<MontyField<2>>,
+    ),
+    SpartanError,
+> {
+    validate_native_u32_prover_inputs(matrices, &products, &assignment)?;
+    let delayed = OptimizedSumcheckReducer::new(matrices.config())?;
+    let immediate = ImmediateSumcheckReducer::new(matrices.config());
+    let native_fold_policy = match policy.native_witness_fold {
+        SpartanInnerNativeFold::Immediate => NativeWitnessFoldPolicy::Immediate,
+        SpartanInnerNativeFold::Delayed => NativeWitnessFoldPolicy::Delayed,
+    };
+    let field_coefficient_policy = match policy.field_coefficients {
+        SpartanInnerFieldAccumulation::Immediate => FieldCoefficientPolicy::Immediate,
+        SpartanInnerFieldAccumulation::Delayed => FieldCoefficientPolicy::Delayed,
+        SpartanInnerFieldAccumulation::DelayedAtOrAbovePairs(minimum_pairs) => {
+            FieldCoefficientPolicy::DelayedAtOrAbovePairs(minimum_pairs)
+        }
+    };
+
+    prove_spartan_piop_u32_native_with_inner_policy(
+        transcript,
+        matrices,
+        assignment_oracle_binding,
+        products,
+        assignment,
+        &delayed,
+        &delayed,
+        &delayed,
+        &immediate,
+        native_fold_policy,
+        field_coefficient_policy,
+    )
+}
+
 fn prove_spartan_piop_u32_native_with_reducer<R>(
     transcript: &mut impl Transcript,
     matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
@@ -250,7 +362,104 @@ fn prove_spartan_piop_u32_native_with_reducer<R>(
     SpartanError,
 >
 where
-    R: SumcheckProductReducer<MontyField<2>> + super::sumcheck::SumcheckLinearReducer,
+    R: SumcheckProductReducer<MontyField<2>> + SumcheckLinearReducer,
+{
+    prove_spartan_piop_u32_native_with_inner(
+        transcript,
+        matrices,
+        assignment_oracle_binding,
+        products,
+        assignment,
+        reducer,
+        |transcript, initial_claim, batched_matrix, assignment, field_config| {
+            prove_inner_sumcheck_u32_native_with_reducer(
+                transcript,
+                initial_claim,
+                batched_matrix,
+                assignment,
+                field_config,
+                reducer,
+            )
+        },
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+#[cfg(any(test, feature = "bench-internals"))]
+fn prove_spartan_piop_u32_native_with_inner_policy<OR, NR, DR, IR>(
+    transcript: &mut impl Transcript,
+    matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
+    assignment_oracle_binding: &[u8; 32],
+    products: R1csProductMles<u64>,
+    assignment: DenseMultilinearExtension<u64>,
+    outer_reducer: &OR,
+    native_inner_reducer: &NR,
+    delayed_inner_reducer: &DR,
+    immediate_inner_reducer: &IR,
+    native_fold_policy: NativeWitnessFoldPolicy,
+    field_coefficient_policy: FieldCoefficientPolicy,
+) -> Result<
+    (
+        SpartanPiopProof<MontyField<2>>,
+        ScaledMleEvaluationClaim<MontyField<2>>,
+    ),
+    SpartanError,
+>
+where
+    OR: SumcheckProductReducer<MontyField<2>> + SumcheckLinearReducer,
+    NR: SumcheckLinearReducer,
+    DR: SumcheckProductReducer<MontyField<2>>,
+    IR: SumcheckProductReducer<MontyField<2>>,
+{
+    prove_spartan_piop_u32_native_with_inner(
+        transcript,
+        matrices,
+        assignment_oracle_binding,
+        products,
+        assignment,
+        outer_reducer,
+        |transcript, initial_claim, batched_matrix, assignment, field_config| {
+            prove_inner_sumcheck_u32_native_with_policy(
+                transcript,
+                initial_claim,
+                batched_matrix,
+                assignment,
+                field_config,
+                native_inner_reducer,
+                delayed_inner_reducer,
+                immediate_inner_reducer,
+                native_fold_policy,
+                field_coefficient_policy,
+            )
+        },
+    )
+}
+
+fn prove_spartan_piop_u32_native_with_inner<T, OR, P>(
+    transcript: &mut T,
+    matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
+    assignment_oracle_binding: &[u8; 32],
+    products: R1csProductMles<u64>,
+    assignment: DenseMultilinearExtension<u64>,
+    outer_reducer: &OR,
+    prove_inner: P,
+) -> Result<
+    (
+        SpartanPiopProof<MontyField<2>>,
+        ScaledMleEvaluationClaim<MontyField<2>>,
+    ),
+    SpartanError,
+>
+where
+    T: Transcript,
+    OR: SumcheckProductReducer<MontyField<2>> + SumcheckLinearReducer,
+    P: FnOnce(
+        &mut T,
+        MontyField<2>,
+        DenseMultilinearExtension<MontyField<2>>,
+        DenseMultilinearExtension<u64>,
+        &crypto_bigint::modular::MontyParams<2>,
+    ) -> Result<InnerSumcheckOutput<MontyField<2>>, SumcheckError>,
 {
     absorb_statement(transcript, matrices, assignment_oracle_binding);
 
@@ -267,7 +476,7 @@ where
             equality_factors,
             products,
             field_config,
-            reducer,
+            outer_reducer,
         )?
     };
 
@@ -284,13 +493,12 @@ where
     };
     let inner = {
         let _scope = crate::utils::prof::scope("spartan:inner_sumcheck");
-        prove_inner_sumcheck_u32_native_with_reducer(
+        prove_inner(
             transcript,
             inner_initial_claim,
             batched_matrix,
             assignment,
             field_config,
-            reducer,
         )?
     };
 
@@ -977,6 +1185,94 @@ mod tests {
         }
     }
 
+    fn native_u32_inner_policies_match(modulus: u128) {
+        let config = config(modulus);
+        let inputs = [
+            (0, u32::MAX),
+            (1, 1),
+            (u32::MAX, u32::MAX),
+            (0x8000_0000, 2),
+            (17, 19),
+        ];
+        let witness = U32MulWitness::from_inputs(&inputs).unwrap();
+        let matrices = prepare_u32_mul_relation(*witness.layout(), &config).unwrap();
+        let (assignment, products) = project_u32_mul_native_witness(&witness).into_parts();
+        let assignment_binding = [0x6D; 32];
+        let delayed = OptimizedSumcheckReducer::new(&config).unwrap();
+        let immediate = ImmediateSumcheckReducer::new(&config);
+        let native_policies = [
+            NativeWitnessFoldPolicy::Immediate,
+            NativeWitnessFoldPolicy::Delayed,
+        ];
+        let field_policies = [
+            FieldCoefficientPolicy::Immediate,
+            FieldCoefficientPolicy::Delayed,
+            FieldCoefficientPolicy::DelayedAtOrAbovePairs(0),
+            FieldCoefficientPolicy::DelayedAtOrAbovePairs(4_096),
+            FieldCoefficientPolicy::DelayedAtOrAbovePairs(usize::MAX),
+        ];
+        let mut production_transcript = Blake3Transcript::new();
+        let (production_proof, production_claim) = prove_spartan_piop_u32_native(
+            &mut production_transcript,
+            &matrices,
+            &assignment_binding,
+            products.clone(),
+            assignment.clone(),
+        )
+        .unwrap();
+        let production_continuation: u128 = production_transcript.get_challenge();
+        let reference = (
+            production_proof.clone(),
+            production_claim.clone(),
+            production_continuation,
+        );
+
+        let mut verifier_transcript = Blake3Transcript::new();
+        let verified = verify_spartan_proof(
+            &mut verifier_transcript,
+            &matrices,
+            &assignment_binding,
+            &production_proof,
+        )
+        .unwrap();
+        assert_eq!(production_claim, verified);
+
+        for native_policy in native_policies {
+            for field_policy in field_policies {
+                let mut transcript = Blake3Transcript::new();
+                let (proof, claim) = prove_spartan_piop_u32_native_with_inner_policy(
+                    &mut transcript,
+                    &matrices,
+                    &assignment_binding,
+                    products.clone(),
+                    assignment.clone(),
+                    &delayed,
+                    &delayed,
+                    &delayed,
+                    &immediate,
+                    native_policy,
+                    field_policy,
+                )
+                .unwrap();
+                let continuation: u128 = transcript.get_challenge();
+
+                assert_eq!(proof, reference.0);
+                assert_eq!(claim, reference.1);
+                assert_eq!(continuation, reference.2);
+
+                let mut verifier_transcript = Blake3Transcript::new();
+                let verified = verify_spartan_proof(
+                    &mut verifier_transcript,
+                    &matrices,
+                    &assignment_binding,
+                    &proof,
+                )
+                .unwrap();
+                assert_eq!(claim, verified);
+            }
+        }
+    }
+
     #[test]
     fn piop_is_generic_across_runtime_prime_configurations() {
         round_trip(Q100);
@@ -993,6 +1289,12 @@ mod tests {
     fn native_u32_first_round_is_proof_and_transcript_exact_at_boundaries() {
         native_u32_reduction_strategies_match(Q100);
         native_u32_reduction_strategies_match((1_u128 << 127) - 1);
+    }
+
+    #[test]
+    fn native_u32_inner_policies_are_proof_and_transcript_exact() {
+        native_u32_inner_policies_match(Q100);
+        native_u32_inner_policies_match((1_u128 << 127) - 1);
     }
 
     #[test]

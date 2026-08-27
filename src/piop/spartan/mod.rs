@@ -17,8 +17,8 @@ pub mod workflow;
 pub use f2z::{
     F2zOpeningClaim, SpartanF2zError, SpartanF2zField, U32MulSpartanF2zProof,
     bitify_u32_mul_spartan_claim, commit_u32_mul_witness, prove_u32_mul_spartan_and_f2z,
-    prove_u32_mul_spartan_and_f2z_with_strategy, spartan_f2z_field_config,
-    verify_u32_mul_spartan_and_f2z,
+    prove_u32_mul_spartan_and_f2z_from_witness, prove_u32_mul_spartan_and_f2z_with_strategy,
+    spartan_f2z_field_config, verify_u32_mul_spartan_and_f2z,
 };
 
 pub use matrix::{
@@ -29,8 +29,14 @@ pub use matrix::{
 pub use piop::{
     SPARTAN_ASSIGNMENT_ORACLE_DOMAIN, SPARTAN_PIOP_DOMAIN, SpartanError, SpartanPiopProof,
     SpartanReductionStrategy, prove_spartan_nonsuccinct, prove_spartan_piop,
-    prove_spartan_piop_u32_native_with_strategy, prove_spartan_piop_with_strategy,
-    verify_spartan_proof, verify_spartan_with_mle_claim,
+    prove_spartan_piop_u32_native, prove_spartan_piop_u32_native_with_strategy,
+    prove_spartan_piop_with_strategy, verify_spartan_proof, verify_spartan_with_mle_claim,
+};
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub use piop::{
+    SpartanInnerFieldAccumulation, SpartanInnerNativeFold, SpartanInnerPolicy,
+    prove_spartan_piop_u32_native_barrett_with_inner_policy,
 };
 pub use sumcheck::{OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProof};
 pub use u32_mul::{

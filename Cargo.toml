@@ -49,6 +49,13 @@ harness = false
 # terminal assignment claim discharged against the compact F2 witness by F2Z.
 # Exponents via F2Z_MUL_EXPONENTS; reps via F2Z_BENCH_REPS.
 
+[[bench]]
+name = "u32_mul_inner_policy"
+harness = false
+required-features = ["bench-internals"]
+# Controlled PIOP-only sweep with a fixed delayed-Barrett outer sumcheck.
+# It varies native witness folding and field coefficient accumulation only.
+
 [features]
 default = ["parallel"]
 parallel = ["dep:rayon"]
@@ -56,6 +63,8 @@ unchecked = []
 # Benchmark-only allocator instrumentation. The latency binary deliberately
 # omits this feature so allocation accounting cannot bias the timing gate.
 bench-peak-memory = []
+# Exposes narrowly scoped policy controls used by controlled benchmark binaries.
+bench-internals = []
 
 # Match the upstream zinc-plus release profile — without fat LTO +
 # codegen-units=1 the vendored field kernels and the sumcheck driver lose

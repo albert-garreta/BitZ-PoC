@@ -14,7 +14,8 @@
 //!
 //! `F2Z_MUL_EXPONENTS=15 F2Z_BENCH_REPS=1` is the smallest production smoke
 //! shape. `F2Z_SPARTAN_REDUCTION` selects `immediate`, `delayed-barrett`, or
-//! `delayed-crypto-bigint`. `F2Z_BENCH_PASS=latency|memory|both` separates the
+//! `delayed-crypto-bigint`; the production default is `delayed-barrett`.
+//! `F2Z_BENCH_PASS=latency|memory|both` separates the
 //! measured repetitions from the extra peak-heap proof. Memory measurement
 //! requires the benchmark-only `bench-peak-memory` feature. The default is
 //! latency-only so an ordinary invocation has no allocator instrumentation.
@@ -153,8 +154,8 @@ impl BenchmarkPass {
 
 fn reduction_strategy() -> SpartanReductionStrategy {
     match std::env::var("F2Z_SPARTAN_REDUCTION").as_deref() {
-        Ok("immediate") | Err(_) => SpartanReductionStrategy::Immediate,
-        Ok("delayed-barrett") => SpartanReductionStrategy::DelayedBarrett,
+        Ok("immediate") => SpartanReductionStrategy::Immediate,
+        Ok("delayed-barrett") | Err(_) => SpartanReductionStrategy::DelayedBarrett,
         Ok("delayed-crypto-bigint") => SpartanReductionStrategy::DelayedCryptoBigint,
         Ok(value) => panic!(
             "unsupported F2Z_SPARTAN_REDUCTION={value}; use immediate, delayed-barrett, or delayed-crypto-bigint"
