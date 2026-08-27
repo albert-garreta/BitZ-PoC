@@ -340,93 +340,26 @@ fn selector_matrix<C: Clone>(
     SparseMatrix::try_from_csc(rows, column_offsets, entries)
 }
 
-/// Field-valued public relation prepared for reuse across witness batches.
-#[derive(Clone, Debug)]
-pub struct PreparedU32MulRelation<F>
-where
-    F: SpartanField,
-{
-    layout: U32MulLayout,
-    matrices: PreparedConstraintMatrices<F>,
-}
-
-impl<F> PreparedU32MulRelation<F>
-where
-    F: SpartanField,
-{
-    /// Integer and committed-bit layout bound to this statement.
-    pub const fn layout(&self) -> &U32MulLayout {
-        &self.layout
-    }
-
-    /// Prepared field-valued Spartan matrices.
-    pub const fn matrices(&self) -> &PreparedConstraintMatrices<F> {
-        &self.matrices
-    }
-
-    /// Moves out the layout and prepared matrices.
-    pub fn into_parts(self) -> (U32MulLayout, PreparedConstraintMatrices<F>) {
-        (self.layout, self.matrices)
-    }
-}
-
 /// Generates and prepares the field-valued selector matrices.
 pub fn prepare_u32_mul_relation<F>(
     layout: U32MulLayout,
     field_config: &F::Config,
-) -> Result<PreparedU32MulRelation<F>, U32MulError>
+) -> Result<PreparedConstraintMatrices<F>, U32MulError>
 where
     F: SpartanField,
 {
     let matrices = u32_mul_constraint_matrices(&layout, F::one_with_cfg(field_config))?;
-    let matrices = PreparedConstraintMatrices::new(matrices, field_config)?;
-    Ok(PreparedU32MulRelation { layout, matrices })
+    Ok(PreparedConstraintMatrices::new(matrices, field_config)?)
 }
 
-/// Field projection of an exact integer assignment and its matrix products.
-#[derive(Clone, Debug)]
-pub struct ProjectedU32MulWitness<F> {
-    layout: U32MulLayout,
-    assignment: DenseMultilinearExtension<F>,
-    products: R1csProductMles<F>,
-}
-
-impl<F> ProjectedU32MulWitness<F> {
-    /// Integer and committed-bit layout used for this projection.
-    pub const fn layout(&self) -> &U32MulLayout {
-        &self.layout
-    }
-
-    /// Padded field-valued assignment MLE.
-    pub const fn assignment(&self) -> &DenseMultilinearExtension<F> {
-        &self.assignment
-    }
-
-    /// Padded field-valued `Az`, `Bz`, and `Cz` MLEs.
-    pub const fn products(&self) -> &R1csProductMles<F> {
-        &self.products
-    }
-
-    /// Moves out the layout, assignment MLE, and product MLEs.
-    pub fn into_parts(
-        self,
-    ) -> (
-        U32MulLayout,
-        DenseMultilinearExtension<F>,
-        R1csProductMles<F>,
-    ) {
-        (self.layout, self.assignment, self.products)
-    }
-}
-
-/// Projects the exact native assignment and selector products into a Spartan
-/// field. Since all native values fit in `u64`, this conversion is exact for
-/// the F2Z field and for every other supported Spartan field with modulus
-/// greater than `u64::MAX`.
+/// Converts the exact native assignment and selector products into the
+/// generic values consumed by [`super::prove_spartan_and_f2z`]. Since all
+/// native values fit in `u64`, this conversion is exact for every supported
+/// Spartan field.
 pub fn project_u32_mul_witness<F>(
     witness: &U32MulWitness,
     field_config: &F::Config,
-) -> Result<ProjectedU32MulWitness<F>, U32MulError>
+) -> Result<(DenseMultilinearExtension<F>, R1csProductMles<F>), U32MulError>
 where
     F: SpartanField + FromWithConfig<u64>,
 {
@@ -454,11 +387,7 @@ where
         field_config,
     )?;
 
-    Ok(ProjectedU32MulWitness {
-        layout: witness.layout,
-        assignment,
-        products,
-    })
+    Ok((assignment, products))
 }
 
 #[cfg(test)]
@@ -622,19 +551,18 @@ mod tests {
         let inputs = [(2, 3), (u32::MAX, u32::MAX), (11, 13)];
         let witness = U32MulWitness::from_inputs(&inputs).unwrap();
         let relation = prepare_u32_mul_relation::<F128>(*witness.layout(), &config).unwrap();
-        let projected = project_u32_mul_witness::<F128>(&witness, &config).unwrap();
+        let (assignment, products) = project_u32_mul_witness::<F128>(&witness, &config).unwrap();
 
-        assert_eq!(relation.layout(), projected.layout());
         assert_eq!(
-            projected.assignment().evaluations.len(),
-            relation.matrices().matrices().column_count()
+            assignment.evaluations.len(),
+            relation.matrices().column_count()
         );
-        assert_eq!(projected.assignment().evaluations[0], field(1, &config));
+        assert_eq!(assignment.evaluations[0], field(1, &config));
 
         for row in 0..inputs.len() {
-            let az = &projected.products().az.evaluations[row];
-            let bz = &projected.products().bz.evaluations[row];
-            let cz = &projected.products().cz.evaluations[row];
+            let az = &products.az.evaluations[row];
+            let bz = &products.bz.evaluations[row];
+            let cz = &products.cz.evaluations[row];
             let mut product = az.clone();
             product *= bz;
             assert_eq!(&product, cz);

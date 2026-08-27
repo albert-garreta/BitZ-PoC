@@ -21,9 +21,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use f2z::piop::spartan::{
-    SpartanF2zField, U32MulWitness, commit_u32_mul_witness, prepare_u32_mul_relation,
-    project_u32_mul_witness, prove_spartan_and_f2z, spartan_f2z_field_config,
-    verify_spartan_and_f2z,
+    SpartanF2zField, U32MulSpartanF2zProof, U32MulWitness, commit_u32_mul_witness,
+    prepare_u32_mul_relation, project_u32_mul_witness, prove_u32_mul_spartan_and_f2z,
+    spartan_f2z_field_config, verify_u32_mul_spartan_and_f2z,
 };
 use f2z::transcript::Blake3Transcript;
 use f2z::{ligerito::packed_vars, ligerito_flock::sha_lig_configs};
@@ -197,7 +197,7 @@ fn exponents() -> Vec<usize> {
     }
 }
 
-fn spartan_payload_elements(proof: &f2z::piop::spartan::SpartanF2zProof) -> usize {
+fn spartan_payload_elements(proof: &U32MulSpartanF2zProof) -> usize {
     4 * proof.spartan.outer.sumcheck.round_polynomials.len()
         + 3
         + 3 * proof.spartan.inner.round_polynomials.len()
@@ -241,20 +241,24 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
     let commit_ms = started.elapsed().as_secs_f64() * 1e3;
 
     // Excluded warm-up. This is also the first end-to-end correctness check.
-    let warm_witness = project_u32_mul_witness::<SpartanF2zField>(&witness, &field_config)
-        .expect("warm-up projection succeeds");
+    let (warm_assignment, warm_products) =
+        project_u32_mul_witness::<SpartanF2zField>(&witness, &field_config)
+            .expect("warm-up projection succeeds");
     let mut prover_transcript = Blake3Transcript::new();
-    let warm_proof = prove_spartan_and_f2z(
+    let warm_proof = prove_u32_mul_spartan_and_f2z(
         &mut prover_transcript,
         &relation,
-        warm_witness,
+        &layout,
+        warm_assignment,
+        warm_products,
         &commitment_hint,
     )
     .expect("warm-up proving succeeds");
     let mut verifier_transcript = Blake3Transcript::new();
-    verify_spartan_and_f2z(
+    verify_u32_mul_spartan_and_f2z(
         &mut verifier_transcript,
         &relation,
+        &layout,
         &commitment_hint.commitment,
         &warm_proof,
     )
@@ -269,15 +273,18 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
     for _ in 0..reps {
         // Projection/cloning is setup for the by-value Spartan prover and is
         // deliberately outside the headline proof timer.
-        let projected = project_u32_mul_witness::<SpartanF2zField>(&witness, &field_config)
-            .expect("measured projection succeeds");
+        let (assignment, products) =
+            project_u32_mul_witness::<SpartanF2zField>(&witness, &field_config)
+                .expect("measured projection succeeds");
 
         let mut prover_transcript = Blake3Transcript::new();
         let started = Instant::now();
-        let proof = prove_spartan_and_f2z(
+        let proof = prove_u32_mul_spartan_and_f2z(
             &mut prover_transcript,
             &relation,
-            projected,
+            &layout,
+            assignment,
+            products,
             &commitment_hint,
         )
         .expect("combined proving succeeds");
@@ -287,9 +294,10 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
 
         let mut verifier_transcript = Blake3Transcript::new();
         let started = Instant::now();
-        verify_spartan_and_f2z(
+        verify_u32_mul_spartan_and_f2z(
             &mut verifier_transcript,
             &relation,
+            &layout,
             &commitment_hint.commitment,
             &proof,
         )
@@ -310,17 +318,20 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
 
     // One extra proof supplies the peak-heap measurement and optional phase
     // scopes without retaining a second field-valued witness template.
-    let projected = project_u32_mul_witness::<SpartanF2zField>(&witness, &field_config)
-        .expect("peak projection succeeds");
+    let (assignment, products) =
+        project_u32_mul_witness::<SpartanF2zField>(&witness, &field_config)
+            .expect("peak projection succeeds");
     drop(witness);
     let _ = f2z::utils::prof::take_totals();
     let live_before_prove = live_mib();
     reset_peak();
     let mut prover_transcript = Blake3Transcript::new();
-    let peak_proof = prove_spartan_and_f2z(
+    let peak_proof = prove_u32_mul_spartan_and_f2z(
         &mut prover_transcript,
         &relation,
-        projected,
+        &layout,
+        assignment,
+        products,
         &commitment_hint,
     )
     .expect("peak proving succeeds");
@@ -328,9 +339,10 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
     let peak = peak_mib();
     let _ = f2z::utils::prof::take_totals();
     let mut verifier_transcript = Blake3Transcript::new();
-    verify_spartan_and_f2z(
+    verify_u32_mul_spartan_and_f2z(
         &mut verifier_transcript,
         &relation,
+        &layout,
         &commitment_hint.commitment,
         &peak_proof,
     )

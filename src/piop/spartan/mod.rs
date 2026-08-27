@@ -12,11 +12,12 @@ pub mod matrix;
 pub mod piop;
 pub mod sumcheck;
 pub mod u32_mul;
+pub mod workflow;
 
 pub use f2z::{
-    F2zOpeningClaim, SpartanF2zError, SpartanF2zField, SpartanF2zProof, bitify_spartan_claim,
-    commit_u32_mul_witness, prove_spartan_and_f2z, spartan_f2z_field_config,
-    verify_spartan_and_f2z,
+    F2zOpeningClaim, SpartanF2zError, SpartanF2zField, U32MulSpartanF2zProof,
+    bitify_u32_mul_spartan_claim, commit_u32_mul_witness, prove_u32_mul_spartan_and_f2z,
+    spartan_f2z_field_config, verify_u32_mul_spartan_and_f2z,
 };
 
 pub use matrix::{
@@ -31,9 +32,16 @@ pub use piop::{
 };
 pub use sumcheck::{OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProof};
 pub use u32_mul::{
-    PreparedU32MulRelation, ProjectedU32MulWitness, U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS,
-    U32_MUL_X_BITS, U32_MUL_Y_BITS, U32MulError, U32MulLayout, U32MulWitness,
-    prepare_u32_mul_relation, project_u32_mul_witness, u32_mul_constraint_matrices,
+    U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS, U32_MUL_X_BITS, U32_MUL_Y_BITS, U32MulError,
+    U32MulLayout, U32MulWitness, prepare_u32_mul_relation, project_u32_mul_witness,
+    u32_mul_constraint_matrices,
+};
+pub use workflow::{
+    BinarySparseMatrix, BinarySparseRow, BitifiedSpartanClaim, CompiledVirtualXorClaim,
+    DirectOpeningWeights, F2zCompatibleField, F2zOpeningProof, SpartanF2zOpening, SpartanF2zProof,
+    SpartanF2zVerifierOpening, VirtualizedF2zOpening, bitify_spartan_claim,
+    direct_opening_from_spartan_claim, prove_spartan_and_f2z, verify_spartan_and_f2z,
+    virtual_opening_from_spartan_claim,
 };
 
 use std::slice;

@@ -33,18 +33,17 @@ use crate::{
         prove_mle_eval_mod_q_ligerito, sha_lig_configs, verify_mle_eval_mod_q_ligerito,
     },
     pcs::{FQ_BITS, FQ_MOD, Fq, ProjectCanonicalU128, eq_le_table_fq, fq_mul, fq_sub},
-    poly::univariate::binary_gf128::BinaryFieldGF128,
+    poly::{mle::DenseMultilinearExtension, univariate::binary_gf128::BinaryFieldGF128},
     transcript::traits::Transcript,
 };
 
 use super::{
-    SpartanField, absorb_spartan_message,
+    PreparedConstraintMatrices, R1csProductMles, SpartanField, absorb_spartan_message,
     matrix::ScaledMleEvaluationClaim,
     piop::{SpartanError, SpartanPiopProof, prove_spartan_piop, verify_spartan_proof},
     u32_mul::{
-        PreparedU32MulRelation, ProjectedU32MulWitness, U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS,
-        U32_MUL_PRODUCT_SLOT_START, U32_MUL_X_BITS, U32_MUL_X_SLOT_START, U32_MUL_Y_BITS,
-        U32_MUL_Y_SLOT_START, U32MulError, U32MulLayout,
+        U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS, U32_MUL_PRODUCT_SLOT_START, U32_MUL_X_BITS,
+        U32_MUL_X_SLOT_START, U32_MUL_Y_BITS, U32_MUL_Y_SLOT_START, U32MulError, U32MulLayout,
     },
 };
 
@@ -71,6 +70,14 @@ pub struct F2zOpeningClaim {
 }
 
 impl F2zOpeningClaim {
+    pub(crate) fn new(row_weights_q: Vec<u128>, col_weights: Vec<Fq>, claimed: Fq) -> Self {
+        Self {
+            row_weights_q,
+            col_weights,
+            claimed,
+        }
+    }
+
     /// Canonical `F_q` representatives for the folded F2Z row weights.
     pub fn row_weights_q(&self) -> &[u128] {
         &self.row_weights_q
@@ -89,14 +96,14 @@ impl F2zOpeningClaim {
 
 /// The combined proof.  There is deliberately no combined proof codec.
 #[derive(Clone)]
-pub struct SpartanF2zProof {
+pub struct U32MulSpartanF2zProof {
     /// Spartan's outer and inner sumchecks.
     pub spartan: SpartanPiopProof<SpartanF2zField>,
     /// F2Z opening of the derived compact-bit claim.
     pub f2z: IntEvalRsLigModQProof,
 }
 
-impl SpartanF2zProof {
+impl U32MulSpartanF2zProof {
     /// Spartan proof component, exposed for benchmark payload accounting.
     pub const fn spartan(&self) -> &SpartanPiopProof<SpartanF2zField> {
         &self.spartan
@@ -126,7 +133,7 @@ pub enum SpartanF2zError {
     #[error("the prepared relation does not use q = 2^100 - 15")]
     UnsupportedFieldModulus,
 
-    #[error("the relation and projected witness use different u32-multiplication layouts")]
+    #[error("the prepared matrices do not match the u32-multiplication layout")]
     RelationWitnessLayoutMismatch,
 
     #[error("the compact bit rows do not match the u32-multiplication layout")]
@@ -155,6 +162,27 @@ pub enum SpartanF2zError {
 
     #[error("a host length does not fit the canonical transcript encoding")]
     BindingEncodingOverflow,
+
+    #[error("the bit width {0} is not supported by the Spartan/F2Z bridge")]
+    InvalidBitWidth(usize),
+
+    #[error("the direct F2Z tensor geometry does not match the Spartan assignment")]
+    InvalidDirectGeometry,
+
+    #[error("the structured virtualization matrix or its tensor layout is invalid")]
+    InvalidVirtualizationMatrix,
+
+    #[error("the virtualized witness does not match the public virtualization shape")]
+    InvalidVirtualizedWitness,
+
+    #[error("the compiled F2Z component claims do not equal the Spartan terminal claim")]
+    VirtualClaimMismatch,
+
+    #[error("the F2Z proof variant does not match the public virtualization mode")]
+    ProofModeMismatch,
+
+    #[error("the virtualized F2Z proof has an invalid component-claim shape")]
+    InvalidVirtualComponentClaims,
 }
 
 /// Constructs the fixed `q = 2^100 - 15` runtime field configuration.
@@ -192,7 +220,7 @@ pub fn commit_u32_mul_witness(
 /// the four assignment blocks; the preceding coordinates select a gate.  F2Z
 /// places the low gate coordinates on the clear column axis and the high gate
 /// coordinates together with the 128 bit slots on the folded row axis.
-pub fn bitify_spartan_claim(
+pub fn bitify_u32_mul_spartan_claim(
     claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
     layout: &U32MulLayout,
 ) -> Result<F2zOpeningClaim, SpartanF2zError> {
@@ -294,30 +322,29 @@ pub fn bitify_spartan_claim(
 /// assignment claim against the compact bit commitment.
 ///
 /// This production entry point requires at least `2^15` multiplication slots.
-pub fn prove_spartan_and_f2z<T: Transcript + Send>(
+pub fn prove_u32_mul_spartan_and_f2z<T: Transcript + Send>(
     transcript: &mut T,
-    relation: &PreparedU32MulRelation<SpartanF2zField>,
-    witness: ProjectedU32MulWitness<SpartanF2zField>,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField>,
+    layout: &U32MulLayout,
+    assignment: DenseMultilinearExtension<SpartanF2zField>,
+    products: R1csProductMles<SpartanF2zField>,
     hint: &FlockCommitHint,
-) -> Result<SpartanF2zProof, SpartanF2zError> {
-    validate_relation(relation)?;
-    validate_layout_geometry(relation.layout())?;
-    let p = relation.layout().f2z_params();
-    let (pc, vc) = configs_for_layout(relation.layout())?;
+) -> Result<U32MulSpartanF2zProof, SpartanF2zError> {
+    validate_relation(matrices)?;
+    validate_relation_layout(matrices, layout)?;
+    validate_layout_geometry(layout)?;
+    let p = layout.f2z_params();
+    let (pc, vc) = configs_for_layout(layout)?;
     validate_config_pair(&p, &pc, &vc)?;
     validate_bit_rows(&p, hint.rows())?;
     validate_commitment(&p, &hint.commitment, &pc)?;
-    if witness.layout() != relation.layout() {
-        return Err(SpartanF2zError::RelationWitnessLayoutMismatch);
-    }
-    let assignment_binding = assignment_binding(relation.layout(), &hint.commitment)?;
-    let (_, assignment, products) = witness.into_parts();
+    let assignment_binding = assignment_binding(layout, &hint.commitment)?;
 
     let (spartan, terminal_claim) = {
         let _scope = crate::utils::prof::scope("spartan-f2z:spartan_prove");
         prove_spartan_piop(
             transcript,
-            relation.matrices(),
+            matrices,
             &assignment_binding,
             products,
             assignment,
@@ -326,10 +353,10 @@ pub fn prove_spartan_and_f2z<T: Transcript + Send>(
 
     let opening = {
         let _scope = crate::utils::prof::scope("spartan-f2z:bitify_prover");
-        let opening = bitify_spartan_claim(&terminal_claim, relation.layout())?;
+        let opening = bitify_u32_mul_spartan_claim(&terminal_claim, layout)?;
         absorb_opening_claim(
             transcript,
-            relation,
+            matrices,
             &assignment_binding,
             &terminal_claim,
             &opening,
@@ -350,7 +377,7 @@ pub fn prove_spartan_and_f2z<T: Transcript + Send>(
         )
     };
 
-    Ok(SpartanF2zProof { spartan, f2z })
+    Ok(U32MulSpartanF2zProof { spartan, f2z })
 }
 
 /// Verifies both proof systems on one transcript.
@@ -358,37 +385,34 @@ pub fn prove_spartan_and_f2z<T: Transcript + Send>(
 /// The terminal Spartan claim is always derived from `proof.spartan`; it is
 /// never supplied by or trusted from the prover.
 /// This production entry point requires at least `2^15` multiplication slots.
-pub fn verify_spartan_and_f2z<T: Transcript + Send>(
+pub fn verify_u32_mul_spartan_and_f2z<T: Transcript + Send>(
     transcript: &mut T,
-    relation: &PreparedU32MulRelation<SpartanF2zField>,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField>,
+    layout: &U32MulLayout,
     commitment: &Commitment,
-    proof: &SpartanF2zProof,
+    proof: &U32MulSpartanF2zProof,
 ) -> Result<(), SpartanF2zError> {
-    validate_relation(relation)?;
-    validate_layout_geometry(relation.layout())?;
-    let p = relation.layout().f2z_params();
-    let (pc, vc) = configs_for_layout(relation.layout())?;
+    validate_relation(matrices)?;
+    validate_relation_layout(matrices, layout)?;
+    validate_layout_geometry(layout)?;
+    let p = layout.f2z_params();
+    let (pc, vc) = configs_for_layout(layout)?;
     validate_config_pair(&p, &pc, &vc)?;
     validate_commitment(&p, commitment, &pc)?;
     validate_f2z_proof_shape(&p, &proof.f2z)?;
-    let assignment_binding = assignment_binding(relation.layout(), commitment)?;
+    let assignment_binding = assignment_binding(layout, commitment)?;
 
     let terminal_claim = {
         let _scope = crate::utils::prof::scope("spartan-f2z:spartan_verify");
-        verify_spartan_proof(
-            transcript,
-            relation.matrices(),
-            &assignment_binding,
-            &proof.spartan,
-        )?
+        verify_spartan_proof(transcript, matrices, &assignment_binding, &proof.spartan)?
     };
 
     let opening = {
         let _scope = crate::utils::prof::scope("spartan-f2z:bitify_verifier");
-        let opening = bitify_spartan_claim(&terminal_claim, relation.layout())?;
+        let opening = bitify_u32_mul_spartan_claim(&terminal_claim, layout)?;
         absorb_opening_claim(
             transcript,
-            relation,
+            matrices,
             &assignment_binding,
             &terminal_claim,
             &opening,
@@ -461,10 +485,16 @@ fn validate_layout_geometry(layout: &U32MulLayout) -> Result<(), SpartanF2zError
     Ok(())
 }
 
-fn validate_f2z_proof_shape(
+pub(crate) fn validate_f2z_proof_shape(
     p: &crate::pcs::IntEvalParams,
     proof: &IntEvalRsLigModQProof,
 ) -> Result<(), SpartanF2zError> {
+    if !p.word_bits.is_power_of_two() || p.word_bits > u128::BITS as usize {
+        return Err(SpartanF2zError::InvalidF2zProofShape);
+    }
+    let row_bit_vars =
+        p.t.checked_add(p.word_bits.trailing_zeros() as usize)
+            .ok_or(SpartanF2zError::InvalidF2zProofShape)?;
     let chunks = crate::pcs::mod_q_num_chunks(p, FQ_BITS);
     let columns = checked_pow2(p.s)?;
     if proof.mfs.len() != chunks
@@ -474,7 +504,7 @@ fn validate_f2z_proof_shape(
         || proof
             .presums
             .iter()
-            .any(|presum| !presum.has_shape(p.t, &[2]))
+            .any(|presum| !presum.has_shape(row_bit_vars, &[2]))
         || proof.us.iter().any(|values| values.len() > columns)
         || proof.rings.iter().any(|ring| ring.s_v.len() != 128)
     {
@@ -499,7 +529,7 @@ fn validate_bit_rows(
     Ok(())
 }
 
-fn validate_config_pair(
+pub(crate) fn validate_config_pair(
     p: &crate::pcs::IntEvalParams,
     pc: &LigProverConfig,
     vc: &LigVerifierConfig,
@@ -519,7 +549,7 @@ fn validate_config_pair(
     Ok(())
 }
 
-fn validate_commitment(
+pub(crate) fn validate_commitment(
     p: &crate::pcs::IntEvalParams,
     commitment: &Commitment,
     pc: &LigProverConfig,
@@ -541,11 +571,23 @@ fn validate_commitment(
 }
 
 fn validate_relation(
-    relation: &PreparedU32MulRelation<SpartanF2zField>,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField>,
 ) -> Result<(), SpartanF2zError> {
     let expected = SpartanF2zField::canonical_modulus_encoding(&spartan_f2z_field_config());
-    if relation.matrices().field_modulus_encoding() != expected {
+    if matrices.field_modulus_encoding() != expected {
         return Err(SpartanF2zError::UnsupportedFieldModulus);
+    }
+    Ok(())
+}
+
+fn validate_relation_layout(
+    matrices: &PreparedConstraintMatrices<SpartanF2zField>,
+    layout: &U32MulLayout,
+) -> Result<(), SpartanF2zError> {
+    if matrices.matrices().row_count() != layout.multiplications()
+        || matrices.matrices().column_count() != layout.assignment_len()
+    {
+        return Err(SpartanF2zError::RelationWitnessLayoutMismatch);
     }
     Ok(())
 }
@@ -630,18 +672,18 @@ fn assignment_binding(
 
 fn absorb_opening_claim<T: Transcript>(
     transcript: &mut T,
-    relation: &PreparedU32MulRelation<SpartanF2zField>,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField>,
     assignment_binding: &[u8; 32],
     terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
     opening: &F2zOpeningClaim,
 ) -> Result<(), SpartanF2zError> {
-    let digest = opening_claim_digest(relation, assignment_binding, terminal_claim, opening)?;
+    let digest = opening_claim_digest(matrices, assignment_binding, terminal_claim, opening)?;
     absorb_spartan_message(transcript, OPENING_CLAIM_DOMAIN, &digest);
     Ok(())
 }
 
 fn opening_claim_digest(
-    relation: &PreparedU32MulRelation<SpartanF2zField>,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField>,
     assignment_binding: &[u8; 32],
     terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
     opening: &F2zOpeningClaim,
@@ -649,7 +691,7 @@ fn opening_claim_digest(
     let mut hasher = Hasher::new();
     hasher.update(OPENING_CLAIM_DOMAIN);
     hasher.update(assignment_binding);
-    hasher.update(relation.matrices().digest());
+    hasher.update(matrices.digest());
 
     hash_usize(&mut hasher, terminal_claim.point().len())?;
     for coordinate in terminal_claim.point() {
@@ -676,7 +718,7 @@ fn hash_usize(hasher: &mut Hasher, value: usize) -> Result<(), SpartanF2zError> 
     Ok(())
 }
 
-const fn profile_code(profile: LigeritoProfile) -> u8 {
+pub(crate) const fn profile_code(profile: LigeritoProfile) -> u8 {
     match profile {
         LigeritoProfile::Fast => 0,
         LigeritoProfile::Slim => 1,
@@ -684,35 +726,38 @@ const fn profile_code(profile: LigeritoProfile) -> u8 {
     }
 }
 
-const fn hash_code(hash: HashKind) -> u8 {
+pub(crate) const fn hash_code(hash: HashKind) -> u8 {
     match hash {
         HashKind::Sha256 => 0,
         HashKind::Blake3 => 1,
     }
 }
 
-fn packed_variables(p: &crate::pcs::IntEvalParams) -> Result<usize, SpartanF2zError> {
-    if p.t < LOG_PACKING {
+pub(crate) fn packed_variables(p: &crate::pcs::IntEvalParams) -> Result<usize, SpartanF2zError> {
+    if !p.word_bits.is_power_of_two() || p.word_bits > u128::BITS as usize {
         return Err(SpartanF2zError::InvalidF2zParameters);
     }
-    let expected =
-        p.t.checked_sub(LOG_PACKING)
-            .and_then(|folded| folded.checked_add(p.s))
+    let row_bit_vars =
+        p.t.checked_add(p.word_bits.trailing_zeros() as usize)
             .ok_or(SpartanF2zError::InvalidF2zParameters)?;
+    let expected = row_bit_vars
+        .checked_sub(LOG_PACKING)
+        .and_then(|folded| folded.checked_add(p.s))
+        .ok_or(SpartanF2zError::InvalidF2zParameters)?;
     if packed_vars(p) != expected {
         return Err(SpartanF2zError::InvalidF2zParameters);
     }
     Ok(expected)
 }
 
-fn checked_pow2(exponent: usize) -> Result<usize, SpartanF2zError> {
+pub(crate) fn checked_pow2(exponent: usize) -> Result<usize, SpartanF2zError> {
     let exponent = u32::try_from(exponent).map_err(|_| SpartanF2zError::InvalidF2zParameters)?;
     1_usize
         .checked_shl(exponent)
         .ok_or(SpartanF2zError::InvalidF2zParameters)
 }
 
-fn f2z_generator() -> BinaryFieldGF128 {
+pub(crate) fn f2z_generator() -> BinaryFieldGF128 {
     static GENERATOR: OnceLock<BinaryFieldGF128> = OnceLock::new();
     *GENERATOR.get_or_init(crate::pcs::smallest_generator)
 }
@@ -783,7 +828,7 @@ mod tests {
         let mut point = gate_point.to_vec();
         point.extend([block_low, block_high]);
         let terminal = terminal_claim(&point, scale, value);
-        let opening = bitify_spartan_claim(&terminal, layout).unwrap();
+        let opening = bitify_u32_mul_spartan_claim(&terminal, layout).unwrap();
 
         let rows = witness.f2z_bit_rows();
         let mut read_off = Fq(0);
@@ -806,7 +851,8 @@ mod tests {
             .map(|coordinate| Fq((coordinate + 2) as u128))
             .collect::<Vec<_>>();
         point.extend([Fq(7), Fq(11)]);
-        let opening = bitify_spartan_claim(&terminal_claim(&point, Fq(0), Fq(0)), &layout).unwrap();
+        let opening =
+            bitify_u32_mul_spartan_claim(&terminal_claim(&point, Fq(0), Fq(0)), &layout).unwrap();
 
         assert!(opening.row_weights_q().iter().any(|&weight| weight != 0));
         assert!(opening.col_weights().iter().all(|&weight| weight == Fq(0)));
@@ -824,7 +870,7 @@ mod tests {
         let mut point = gate_point.to_vec();
         point.extend([Fq(0), Fq(0)]);
 
-        let opening = bitify_spartan_claim(
+        let opening = bitify_u32_mul_spartan_claim(
             &terminal_claim(&point, scale, scale * constant_evaluation),
             &layout,
         )
@@ -850,7 +896,7 @@ mod tests {
         let claim = ScaledMleEvaluationClaim::new(point.into_boxed_slice(), zero.clone(), zero);
 
         assert!(matches!(
-            bitify_spartan_claim(&claim, &layout),
+            bitify_u32_mul_spartan_claim(&claim, &layout),
             Err(SpartanF2zError::ClaimFieldMismatch)
         ));
     }
