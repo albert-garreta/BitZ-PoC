@@ -1594,6 +1594,7 @@ Recall (\cref{t:thm_core_IOPP})
 
 \albertimportant{Comment about larger witness (grinding does not scale) using the generalized Binius mod $2^n$ approach}
 
+
 \section{A GKR protocol for low entropy batched grand products via lookup tables}\label{s:gkr_low_entropy}
 
 
@@ -1856,7 +1857,7 @@ The prover  proceeds as follows:
 In \cref{t:gkr_step1_costs} we record the total upper bounds for computing $h_1(X)$. In our application we obtain lower numbers since $\yy_\bb^{(0)}=1$ and we work in characteristic two, hence  constant terms cancel inside the differences from \cref{e:TA2}.  Our implementation, in our use-case, builds all three tables with $8$ multiplications and roughly $20$ additions per index $\bb\in \bits^{r_1-2}$, i.e.\ ${\approx}\,2\codedim_1$ multiplications in total.
 
 
- On the other hand, a standard generic approach to compute $h_{1}(X)$ would require $O(\codedim)=O(\codedim_1\cdot \codedim_2)$ multiplications and additions, even if using the few  sumcheck optimizations that apply in our settings (to our knowledge) \albert{which ones, exactly?}. Crucially, we note that our sumcheck features summands of full field bit size $\log|\KK|$, which voids some known powerful optimizations when the summands are small, e.g.\ the univariate skip \cite{?} and some optimizations from \cite{?} \albertimportant{This is a crucial point. It should be highlighted more. And it should be an important point of the introduction and technical overview}
+ On the other hand, a standard generic approach to compute $h_{1}(X)$ would require $O(\codedim)=O(\codedim_1\cdot \codedim_2)$ multiplications and additions, even if using the few  sumcheck optimizations that apply in our settings (to our knowledge) \albert{which ones, exactly?}. Crucially, we note that our sumcheck features summands of full field bit size $\log|\KK|$, which voids some known powerful optimizations when the summands are small, e.g.\ the univariate skip \cite{gruen} and some optimizations from \cite{?} \albertimportant{This is a crucial point. It should be highlighted more. And it should be an important point of the introduction and technical overview}
 
 
 \begin{table}[H]
@@ -2002,6 +2003,7 @@ I.e.\
 
 \renewcommand{\comfield}{\FF_{2^{\comfieldexp}}}
 
+
 \section{\ftwoz \  for UPESAT}
 %\john{Can't we operate on multiple polynomial rings, namely $Z[X]$ and $F_2[X]$} \albert{Yes but we don't want the complexity of doing so}
 
@@ -2093,7 +2095,7 @@ The main difference between UPESAT and UCS  is that the later allows for witness
 
 
 \subsection{An IOP for UPESAT with oracles in binary fields}\label{s:iop_upesat}
-
+\albertimportant{Needs a pass to update notation}
 %\john{Since we would have a lot of repeated hash computations, would there be a way to fold them like using sumfold before Step 2? Albert, I remember running an experiment on this using Hyrax and sumfold and seems to perform 2x faster than the baseline zinc+. Even though we used elliptic curve commitments, we maybe able to a similar folding technique } \albert{I thought about that. The issue is that the commitments are in binary fields and the claims to fold in $R[X]$, so folding here requires really novel research, if possible at all (efficiently).}
 
 We now describe an IOP for $\UPESAT$. 
@@ -2141,7 +2143,7 @@ The  claim that  $\mathbf{p}_{\bb}^{(i)}(\xx, \bff) \in (h_i)$  for all  $\bb\in
    Q^{(i)}(\zz) \in (h_i) \qquad  \text{ for all } \zz\in \bits^{n'}, \ i \in [\iota].
 \end{equation}
 %
-\item If $\ring=\FF$, we let $\KK$ be a large enough (to be determined later) extension of $\FF$. If $\ring=\ZZ$, verifier samples a prime  from a set of prime $\cP$ (cf.\ \cref{r:sampling_field} for comments on how to do this in practice). Abusing the notation, we denote the prime by $q$ and denote $\FF_q$ by $\KK$.
+\item If $\ring=\FF$, we let $\KK$ be a large enough (to be determined later) extension of $\FF$. If $\ring=\ZZ$, verifier samples a prime  from a set of primes $\cP$ (cf.\ \cref{r:sampling_field} for comments on how to do this in practice). Abusing the notation, we denote the prime by $q$ and denote $\FF_q$ by $\KK$.
 
 The claim \eqref{e:iop_ideal_eq} is replaced by
 %
@@ -2252,7 +2254,7 @@ Prover and verifier now use \cref{c:LinModFieldBin} to prove  \eqref{e:iop_final
         \hline
         $\kappa_1$               & $\frac{B_{\max}\cdot \left(1+\max\left(\nabla(\pp) - d_{\min},0\right)\right)}{|\cP|\cdot \lfloor\log(|\KK_{\min}|)\rfloor} + \frac{1}{|\KK_{\min}|}$ & $\frac{1}{|\KK_{\min}|}$ & $\frac{1}{|\KK_{\min}|}$
     \end{tabular}
-    \caption{Variations in number of rounds and errors of \cref{c:iop_pimsat} depending on whether $\ring =\ZZ$ or $\ring=\FF$, and on whether $\KK$ is a prime field or a proper extension field}
+    \caption{\albertimportant{Outdated. Fix.} Variations in number of rounds and errors of \cref{c:iop_pimsat} depending on whether $\ring =\ZZ$ or $\ring=\FF$, and on whether $\KK$ is a prime field or a proper extension field}
 \end{table}
 
 

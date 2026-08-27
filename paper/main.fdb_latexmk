@@ -7,10 +7,10 @@
   "main.bbl"
   "main.blg"
   (rewritten before read)
-["pdflatex"] 1787825724.53001 "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" "main.pdf" "main" 1787825726.2246 2
+["pdflatex"] 1787829629.85013 "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" "main.pdf" "main" 1787829631.58103 2
   "/Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm10.657pk" 1776501489.11392 7808 6a049d449f6ee1b878a120976685d109 ""
   "/Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm8.600pk" 1776501487.73383 5580 11384d216537db22ad7711221f99aacd ""
-  "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" 1787825723.77491 281498 63a33ce453ca0fa96272b34a5c42e38c ""
+  "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" 1787829627.5471 281587 ab04b864a20334cca4e2d47c6f5df4b0 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-t1.enc" 1136849721 2971 def0b6c1f0b107b3b936def894055589 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc" 1136849721 2900 1537cc8184ad1792082cd229ecc269f4 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
@@ -368,11 +368,11 @@
   "/usr/local/texlive/2026/texmf-var/web2c/pdftex/pdflatex.fmt" 1776500545 3636771 b0d19629fdc98bdfa4d378986b1cd147 ""
   "/usr/local/texlive/2026/texmf.cnf" 1774209515 577 648cd9f92f9c0eac486f4c71c85cfbbe ""
   "macros.tex" 1787817409.40912 52402 8dab5449c796e5d2345020d3c281ed64 ""
-  "main.aux" 1787825725.90578 42742 005d2c4ecdc230540d9c937a953ca132 "pdflatex"
+  "main.aux" 1787829631.19438 42771 e79bc87fcfcf620eb09381bf15214acc "pdflatex"
   "main.bbl" 1787510590.39225 4588 47639833d47c1d572d83c83684065cef "bibtex main"
-  "main.out" 1787825725.90801 11761 3fea073f881615982a79e53198a0999e "pdflatex"
-  "main.tex" 1787825723.77491 281498 63a33ce453ca0fa96272b34a5c42e38c ""
-  "main.toc" 1787825725.9082 10427 af5a5bd0bfd3e1037aa423705779acbe "pdflatex"
+  "main.out" 1787829631.19657 11761 3fea073f881615982a79e53198a0999e "pdflatex"
+  "main.tex" 1787829627.5471 281587 ab04b864a20334cca4e2d47c6f5df4b0 ""
+  "main.toc" 1787829631.19676 10422 c2984c69e08e59eaf08085a46e744437 "pdflatex"
   (generated)
   "main.aux"
   "main.log"
