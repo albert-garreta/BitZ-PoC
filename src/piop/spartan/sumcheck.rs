@@ -9,9 +9,244 @@
 use rayon::prelude::*;
 use thiserror::Error;
 
-use crate::{poly::mle::DenseMultilinearExtension, transcript::traits::Transcript};
+use crate::{
+    poly::mle::DenseMultilinearExtension,
+    transcript::traits::Transcript,
+    utils::delayed_reduction::{
+        Accumulatable, CryptoBigintMonty128Reducer, DelayedReductionError,
+        MontyLinearAccumulator128, MontyProductAccumulator128, OptimizedMonty128Reducer, Reduce,
+    },
+};
+use crypto_primitives::{FromWithConfig, PrimeField, crypto_bigint_monty::MontyField};
+use num_traits::Zero;
 
 use super::{SpartanField, absorb_field_elements, squeeze_field};
+
+/// Product accumulation policy used by the sumcheck prover.
+///
+/// The immediate implementation stores a reduced field element. Delayed
+/// implementations use a wide integer and reduce only after all worker-local
+/// accumulators have been merged. Keeping the policy monomorphized avoids a
+/// strategy branch in the product loops.
+pub(crate) trait SumcheckProductReducer<F>: Sync
+where
+    F: SpartanField,
+{
+    type Accumulator: Send;
+
+    fn accumulator_zero(&self) -> Self::Accumulator;
+    fn multiply_accumulate(&self, accumulator: &mut Self::Accumulator, lhs: &F, rhs: &F);
+    fn merge(&self, accumulator: &mut Self::Accumulator, other: Self::Accumulator);
+    fn reduce(&self, accumulator: Self::Accumulator) -> Result<F, SumcheckError>;
+}
+
+/// Native-linear accumulation policy used only at the u32 prover's first
+/// sumcheck round and native-to-field fold boundary.
+///
+/// A separate trait keeps the Montgomery scale visible: these accumulators
+/// contain `field * u64` terms (`R` scaling), unlike the `field * field`
+/// products (`R^2` scaling) handled by [`SumcheckProductReducer`].
+pub(crate) trait SumcheckLinearReducer: Sync {
+    type Accumulator: Send;
+
+    fn accumulator_zero(&self) -> Self::Accumulator;
+    fn multiply_accumulate(
+        &self,
+        accumulator: &mut Self::Accumulator,
+        lhs: &MontyField<2>,
+        rhs: &u64,
+    );
+    #[cfg_attr(not(feature = "parallel"), allow(dead_code))]
+    fn merge(&self, accumulator: &mut Self::Accumulator, other: Self::Accumulator);
+    fn reduce(&self, accumulator: Self::Accumulator) -> Result<MontyField<2>, SumcheckError>;
+}
+
+/// Compatibility policy matching the original eagerly reduced prover.
+pub(crate) struct ImmediateSumcheckReducer<F> {
+    zero: F,
+}
+
+impl<F> ImmediateSumcheckReducer<F>
+where
+    F: SpartanField,
+{
+    pub(crate) fn new(field_cfg: &F::Config) -> Self {
+        Self {
+            zero: F::zero_with_cfg(field_cfg),
+        }
+    }
+}
+
+impl<F> SumcheckProductReducer<F> for ImmediateSumcheckReducer<F>
+where
+    F: SpartanField + Sync,
+{
+    type Accumulator = F;
+
+    #[inline]
+    fn accumulator_zero(&self) -> Self::Accumulator {
+        self.zero.clone()
+    }
+
+    #[inline]
+    fn multiply_accumulate(&self, accumulator: &mut Self::Accumulator, lhs: &F, rhs: &F) {
+        *accumulator += &mul(lhs, rhs);
+    }
+
+    #[inline]
+    fn merge(&self, accumulator: &mut Self::Accumulator, other: Self::Accumulator) {
+        *accumulator += &other;
+    }
+
+    #[inline]
+    fn reduce(&self, accumulator: Self::Accumulator) -> Result<F, SumcheckError> {
+        Ok(accumulator)
+    }
+}
+
+pub(crate) struct OptimizedSumcheckReducer {
+    reducer: OptimizedMonty128Reducer,
+}
+
+impl OptimizedSumcheckReducer {
+    pub(crate) fn new(
+        field_cfg: &crypto_bigint::modular::MontyParams<2>,
+    ) -> Result<Self, SumcheckError> {
+        Ok(Self {
+            reducer: OptimizedMonty128Reducer::new(field_cfg)?,
+        })
+    }
+}
+
+impl SumcheckProductReducer<MontyField<2>> for OptimizedSumcheckReducer {
+    type Accumulator = MontyProductAccumulator128;
+
+    #[inline]
+    fn accumulator_zero(&self) -> Self::Accumulator {
+        MontyProductAccumulator128::zero()
+    }
+
+    #[inline]
+    fn multiply_accumulate(
+        &self,
+        accumulator: &mut Self::Accumulator,
+        lhs: &MontyField<2>,
+        rhs: &MontyField<2>,
+    ) {
+        accumulator.multiply_accumulate(lhs, rhs);
+    }
+
+    #[inline]
+    fn merge(&self, accumulator: &mut Self::Accumulator, other: Self::Accumulator) {
+        *accumulator += other;
+    }
+
+    #[inline]
+    fn reduce(&self, accumulator: Self::Accumulator) -> Result<MontyField<2>, SumcheckError> {
+        Ok(accumulator.reduce(&self.reducer)?)
+    }
+}
+
+impl SumcheckLinearReducer for OptimizedSumcheckReducer {
+    type Accumulator = MontyLinearAccumulator128;
+
+    #[inline]
+    fn accumulator_zero(&self) -> Self::Accumulator {
+        MontyLinearAccumulator128::zero()
+    }
+
+    #[inline]
+    fn multiply_accumulate(
+        &self,
+        accumulator: &mut Self::Accumulator,
+        lhs: &MontyField<2>,
+        rhs: &u64,
+    ) {
+        accumulator.multiply_accumulate(lhs, rhs);
+    }
+
+    #[inline]
+    fn merge(&self, accumulator: &mut Self::Accumulator, other: Self::Accumulator) {
+        *accumulator += other;
+    }
+
+    #[inline]
+    fn reduce(&self, accumulator: Self::Accumulator) -> Result<MontyField<2>, SumcheckError> {
+        Ok(accumulator.reduce(&self.reducer)?)
+    }
+}
+
+pub(crate) struct CryptoBigintSumcheckReducer {
+    reducer: CryptoBigintMonty128Reducer,
+}
+
+impl CryptoBigintSumcheckReducer {
+    pub(crate) fn new(
+        field_cfg: &crypto_bigint::modular::MontyParams<2>,
+    ) -> Result<Self, SumcheckError> {
+        Ok(Self {
+            reducer: CryptoBigintMonty128Reducer::new(field_cfg)?,
+        })
+    }
+}
+
+impl SumcheckProductReducer<MontyField<2>> for CryptoBigintSumcheckReducer {
+    type Accumulator = MontyProductAccumulator128;
+
+    #[inline]
+    fn accumulator_zero(&self) -> Self::Accumulator {
+        MontyProductAccumulator128::zero()
+    }
+
+    #[inline]
+    fn multiply_accumulate(
+        &self,
+        accumulator: &mut Self::Accumulator,
+        lhs: &MontyField<2>,
+        rhs: &MontyField<2>,
+    ) {
+        accumulator.multiply_accumulate(lhs, rhs);
+    }
+
+    #[inline]
+    fn merge(&self, accumulator: &mut Self::Accumulator, other: Self::Accumulator) {
+        *accumulator += other;
+    }
+
+    #[inline]
+    fn reduce(&self, accumulator: Self::Accumulator) -> Result<MontyField<2>, SumcheckError> {
+        Ok(accumulator.reduce(&self.reducer)?)
+    }
+}
+
+impl SumcheckLinearReducer for CryptoBigintSumcheckReducer {
+    type Accumulator = MontyLinearAccumulator128;
+
+    #[inline]
+    fn accumulator_zero(&self) -> Self::Accumulator {
+        MontyLinearAccumulator128::zero()
+    }
+
+    #[inline]
+    fn multiply_accumulate(
+        &self,
+        accumulator: &mut Self::Accumulator,
+        lhs: &MontyField<2>,
+        rhs: &u64,
+    ) {
+        accumulator.multiply_accumulate(lhs, rhs);
+    }
+
+    #[inline]
+    fn merge(&self, accumulator: &mut Self::Accumulator, other: Self::Accumulator) {
+        *accumulator += other;
+    }
+
+    #[inline]
+    fn reduce(&self, accumulator: Self::Accumulator) -> Result<MontyField<2>, SumcheckError> {
+        Ok(accumulator.reduce(&self.reducer)?)
+    }
+}
 
 /// Failures produced while reducing or checking a sumcheck claim.
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
@@ -28,8 +263,12 @@ pub enum SumcheckError {
     InvalidProductDimensions,
     #[error("sumcheck equality tables have incompatible dimensions")]
     InvalidEqualityDimensions,
+    #[error("native u32 product tables contain a multiplicand wider than 32 bits")]
+    NativeMultiplicandOutOfRange,
     #[error("invalid dense multilinear-extension table")]
     InvalidMleOperation,
+    #[error(transparent)]
+    DelayedReduction(#[from] DelayedReductionError),
 }
 
 /// Sumcheck round polynomials in coefficient form.
@@ -189,6 +428,7 @@ where
 }
 
 /// Proves the equality-weighted cubic outer sumcheck.
+#[cfg(test)]
 pub(crate) fn prove_outer_sumcheck<F>(
     transcript: &mut impl Transcript,
     initial_claim: F,
@@ -198,6 +438,29 @@ pub(crate) fn prove_outer_sumcheck<F>(
 ) -> Result<OuterSumcheckOutput<F>, SumcheckError>
 where
     F: SpartanField,
+{
+    let reducer = ImmediateSumcheckReducer::new(field_cfg);
+    prove_outer_sumcheck_with_reducer(
+        transcript,
+        initial_claim,
+        (eq_low, eq_high),
+        products,
+        field_cfg,
+        &reducer,
+    )
+}
+
+pub(crate) fn prove_outer_sumcheck_with_reducer<F, R>(
+    transcript: &mut impl Transcript,
+    initial_claim: F,
+    (eq_low, eq_high): (DenseMultilinearExtension<F>, DenseMultilinearExtension<F>),
+    products: R1csProductMles<F>,
+    field_cfg: &F::Config,
+    reducer: &R,
+) -> Result<OuterSumcheckOutput<F>, SumcheckError>
+where
+    F: SpartanField,
+    R: SumcheckProductReducer<F>,
 {
     let num_vars = products.az.num_vars;
     if !has_dense_shape(&products.az)
@@ -219,6 +482,7 @@ where
     }
 
     let zero = F::zero_with_cfg(field_cfg);
+    let cubic_interpolation = CubicInterpolation::new(field_cfg);
     let mut eq_low = eq_low.evaluations;
     let mut eq_high = eq_high.evaluations;
     let mut products = R1csProductTableBuffers::from_mles(products);
@@ -234,8 +498,10 @@ where
     let mut coefficients_without_linear = compute_coefficients_without_linear(
         &products,
         EqualityPairs::new(&eq_low, &eq_high),
-        &zero,
-    );
+        &current_claim,
+        &cubic_interpolation,
+        reducer,
+    )?;
 
     // Bind the low equality variables first. The product traversal folds the
     // active tables and prepares the next round polynomial in one pass.
@@ -262,8 +528,10 @@ where
                 &mut product_scratch,
                 &challenge,
                 EqualityPairs::new(&eq_low_scratch, &eq_high),
-                &zero,
-            );
+                &current_claim,
+                &cubic_interpolation,
+                reducer,
+            )?;
         } else {
             debug_assert_eq!(next_product_len, 1);
             fold_product_tables(&products, &mut product_scratch, &challenge);
@@ -307,8 +575,10 @@ where
                 &mut product_scratch,
                 &challenge,
                 EqualityPairs::new(&eq_low, &eq_high_scratch),
-                &zero,
-            );
+                &current_claim,
+                &cubic_interpolation,
+                reducer,
+            )?;
         }
 
         products.swap(&mut product_scratch);
@@ -332,6 +602,251 @@ where
         cz_mle_claim.clone(),
     ];
     absorb_field_elements(transcript, &terminal_evaluations);
+
+    Ok(OuterSumcheckOutput {
+        proof: OuterSumcheckProof {
+            sumcheck: SumcheckProof { round_polynomials },
+            az_mle_claim,
+            bz_mle_claim,
+            cz_mle_claim,
+        },
+        eval_points,
+        final_claim: current_claim,
+    })
+}
+
+/// Proves the first outer round from exact native u32 relation products, then
+/// continues with the ordinary field-valued prover.
+///
+/// The native tables are consumed at the first Fiat--Shamir challenge. Every
+/// folded entry is reduced to the field before it is stored or used in a later
+/// multiplication.
+pub(crate) fn prove_outer_sumcheck_u32_native_with_reducer<R>(
+    transcript: &mut impl Transcript,
+    initial_claim: MontyField<2>,
+    (eq_low, eq_high): (
+        DenseMultilinearExtension<MontyField<2>>,
+        DenseMultilinearExtension<MontyField<2>>,
+    ),
+    products: R1csProductMles<u64>,
+    field_cfg: &crypto_bigint::modular::MontyParams<2>,
+    reducer: &R,
+) -> Result<OuterSumcheckOutput<MontyField<2>>, SumcheckError>
+where
+    R: SumcheckProductReducer<MontyField<2>> + SumcheckLinearReducer,
+{
+    let num_vars = products.az.num_vars;
+    if !has_dense_shape(&products.az)
+        || !has_dense_shape(&products.bz)
+        || !has_dense_shape(&products.cz)
+        || products.bz.num_vars != num_vars
+        || products.cz.num_vars != num_vars
+    {
+        return Err(SumcheckError::InvalidProductDimensions);
+    }
+    if products
+        .az
+        .evaluations
+        .iter()
+        .chain(&products.bz.evaluations)
+        .any(|&value| value > u64::from(u32::MAX))
+    {
+        return Err(SumcheckError::NativeMultiplicandOutOfRange);
+    }
+    if !has_dense_shape(&eq_low)
+        || !has_dense_shape(&eq_high)
+        || eq_low
+            .num_vars
+            .checked_add(eq_high.num_vars)
+            .is_none_or(|eq_vars| eq_vars != num_vars)
+    {
+        return Err(SumcheckError::InvalidEqualityDimensions);
+    }
+
+    let zero = MontyField::<2>::zero_with_cfg(field_cfg);
+    let cubic_interpolation = CubicInterpolation::new(field_cfg);
+    let mut eq_low = eq_low.evaluations;
+    let mut eq_high = eq_high.evaluations;
+    let native_products = R1csProductTableBuffers::from_mles(products);
+    let mut current_claim = initial_claim;
+    let mut eval_points = Vec::with_capacity(num_vars);
+    let mut round_polynomials = Vec::with_capacity(num_vars);
+
+    if num_vars == 0 {
+        let az_mle_claim = native_to_field(native_products.az[0], field_cfg);
+        let bz_mle_claim = native_to_field(native_products.bz[0], field_cfg);
+        let cz_mle_claim = native_to_field(native_products.cz[0], field_cfg);
+        debug_assert_eq!(
+            current_claim,
+            mul(
+                &mul(&eq_low[0], &eq_high[0]),
+                &sub(&mul(&az_mle_claim, &bz_mle_claim), &cz_mle_claim),
+            )
+        );
+        absorb_field_elements(
+            transcript,
+            &[
+                az_mle_claim.clone(),
+                bz_mle_claim.clone(),
+                cz_mle_claim.clone(),
+            ],
+        );
+        return Ok(OuterSumcheckOutput {
+            proof: OuterSumcheckProof {
+                sumcheck: SumcheckProof { round_polynomials },
+                az_mle_claim,
+                bz_mle_claim,
+                cz_mle_claim,
+            },
+            eval_points,
+            final_claim: current_claim,
+        });
+    }
+
+    let coefficients_without_linear = compute_u32_native_outer_coefficients_without_linear(
+        &native_products,
+        EqualityPairs::new(&eq_low, &eq_high),
+        &zero,
+        reducer,
+    )?;
+    let challenge = recover_full_round_polynomial_and_sample_next_challenge(
+        transcript,
+        &mut current_claim,
+        &coefficients_without_linear,
+        &mut round_polynomials,
+        &mut eval_points,
+        &zero,
+        field_cfg,
+    );
+
+    let mut products =
+        fold_u64_product_tables_to_field(&native_products, &challenge, &zero, field_cfg, reducer)?;
+    if eq_low.len() > 1 {
+        let mut folded_eq_low = vec![zero.clone(); eq_low.len() / 2];
+        fold_table(&eq_low, &mut folded_eq_low, &challenge);
+        eq_low = folded_eq_low;
+    } else {
+        let mut folded_eq_high = vec![zero.clone(); eq_high.len() / 2];
+        fold_table(&eq_high, &mut folded_eq_high, &challenge);
+        eq_high = folded_eq_high;
+    }
+
+    let mut coefficients_without_linear = if products.len() > 1 {
+        compute_coefficients_without_linear(
+            &products,
+            EqualityPairs::new(&eq_low, &eq_high),
+            &current_claim,
+            &cubic_interpolation,
+            reducer,
+        )?
+    } else {
+        std::array::from_fn(|_| zero.clone())
+    };
+
+    // From this boundary onward every active table is field-valued. This is
+    // the same loop structure as the generic prover, beginning at round one.
+    let mut product_scratch = R1csProductTableBuffers::filled(products.len() / 2, &zero);
+    let mut eq_low_scratch = vec![zero.clone(); eq_low.len() / 2];
+    let mut eq_high_scratch = vec![zero.clone(); eq_high.len() / 2];
+
+    while eq_low.len() > 1 {
+        let challenge = recover_full_round_polynomial_and_sample_next_challenge(
+            transcript,
+            &mut current_claim,
+            &coefficients_without_linear,
+            &mut round_polynomials,
+            &mut eval_points,
+            &zero,
+            field_cfg,
+        );
+
+        let next_product_len = products.len() / 2;
+        let next_eq_low_len = eq_low.len() / 2;
+        product_scratch.truncate(next_product_len);
+        eq_low_scratch.truncate(next_eq_low_len);
+        fold_table(&eq_low, &mut eq_low_scratch, &challenge);
+
+        if next_product_len > 1 {
+            coefficients_without_linear = fold_products_and_compute_next(
+                &products,
+                &mut product_scratch,
+                &challenge,
+                EqualityPairs::new(&eq_low_scratch, &eq_high),
+                &current_claim,
+                &cubic_interpolation,
+                reducer,
+            )?;
+        } else {
+            debug_assert_eq!(next_product_len, 1);
+            fold_product_tables(&products, &mut product_scratch, &challenge);
+        }
+
+        products.swap(&mut product_scratch);
+        std::mem::swap(&mut eq_low, &mut eq_low_scratch);
+    }
+
+    debug_assert_eq!(eq_low.len(), 1);
+    debug_assert_eq!(products.len(), eq_high.len());
+
+    while eq_high.len() > 1 {
+        let challenge = recover_full_round_polynomial_and_sample_next_challenge(
+            transcript,
+            &mut current_claim,
+            &coefficients_without_linear,
+            &mut round_polynomials,
+            &mut eval_points,
+            &zero,
+            field_cfg,
+        );
+
+        let next_eq_high_len = eq_high.len() / 2;
+        product_scratch.truncate(next_eq_high_len);
+        eq_high_scratch.truncate(next_eq_high_len);
+
+        if next_eq_high_len == 1 {
+            fold_products_and_eq(
+                &products,
+                &mut product_scratch,
+                &eq_high,
+                &mut eq_high_scratch,
+                &challenge,
+            );
+        } else {
+            fold_table(&eq_high, &mut eq_high_scratch, &challenge);
+            coefficients_without_linear = fold_products_and_compute_next(
+                &products,
+                &mut product_scratch,
+                &challenge,
+                EqualityPairs::new(&eq_low, &eq_high_scratch),
+                &current_claim,
+                &cubic_interpolation,
+                reducer,
+            )?;
+        }
+
+        products.swap(&mut product_scratch);
+        std::mem::swap(&mut eq_high, &mut eq_high_scratch);
+    }
+
+    let az_mle_claim = products.az[0].clone();
+    let bz_mle_claim = products.bz[0].clone();
+    let cz_mle_claim = products.cz[0].clone();
+    debug_assert_eq!(
+        current_claim,
+        mul(
+            &mul(&eq_low[0], &eq_high[0]),
+            &sub(&mul(&az_mle_claim, &bz_mle_claim), &cz_mle_claim),
+        )
+    );
+
+    absorb_field_elements(
+        transcript,
+        &[
+            az_mle_claim.clone(),
+            bz_mle_claim.clone(),
+            cz_mle_claim.clone(),
+        ],
+    );
 
     Ok(OuterSumcheckOutput {
         proof: OuterSumcheckProof {
@@ -394,6 +909,7 @@ impl<F: Clone> R1csProductTableBuffers<F> {
 /// Proves the quadratic inner claim
 ///
 /// `initial_claim = sum_y batched_matrix(y) * witness(y)`.
+#[cfg(test)]
 pub(crate) fn prove_inner_sumcheck<F>(
     transcript: &mut impl Transcript,
     initial_claim: F,
@@ -403,6 +919,29 @@ pub(crate) fn prove_inner_sumcheck<F>(
 ) -> Result<InnerSumcheckOutput<F>, SumcheckError>
 where
     F: SpartanField,
+{
+    let reducer = ImmediateSumcheckReducer::new(field_cfg);
+    prove_inner_sumcheck_with_reducer(
+        transcript,
+        initial_claim,
+        batched_matrix_mle,
+        witness_mle,
+        field_cfg,
+        &reducer,
+    )
+}
+
+pub(crate) fn prove_inner_sumcheck_with_reducer<F, R>(
+    transcript: &mut impl Transcript,
+    initial_claim: F,
+    batched_matrix_mle: DenseMultilinearExtension<F>,
+    witness_mle: DenseMultilinearExtension<F>,
+    field_cfg: &F::Config,
+    reducer: &R,
+) -> Result<InnerSumcheckOutput<F>, SumcheckError>
+where
+    F: SpartanField,
+    R: SumcheckProductReducer<F>,
 {
     let num_vars = batched_matrix_mle.num_vars;
     if !has_dense_shape(&batched_matrix_mle)
@@ -423,7 +962,7 @@ where
         let mut batched_matrix_scratch = vec![zero.clone(); batched_matrix.len() / 2];
         let mut witness_scratch = vec![zero.clone(); witness.len() / 2];
         let mut coefficients_without_linear =
-            sum_inner_round_coefficients_without_linear(&batched_matrix, &witness, &zero);
+            sum_inner_round_coefficients_without_linear(&batched_matrix, &witness, reducer)?;
 
         for _round in 0..num_vars {
             let challenge = recover_full_round_polynomial_and_sample_next_challenge(
@@ -455,8 +994,8 @@ where
                         &mut batched_matrix_scratch,
                         &mut witness_scratch,
                         &challenge,
-                        &zero,
-                    );
+                        reducer,
+                    )?;
             }
 
             std::mem::swap(&mut batched_matrix, &mut batched_matrix_scratch);
@@ -482,84 +1021,226 @@ where
     })
 }
 
+/// Proves the first inner round with the exact native u32 assignment, then
+/// continues with field-valued witness and matrix tables.
+pub(crate) fn prove_inner_sumcheck_u32_native_with_reducer<R>(
+    transcript: &mut impl Transcript,
+    initial_claim: MontyField<2>,
+    batched_matrix_mle: DenseMultilinearExtension<MontyField<2>>,
+    witness_mle: DenseMultilinearExtension<u64>,
+    field_cfg: &crypto_bigint::modular::MontyParams<2>,
+    reducer: &R,
+) -> Result<InnerSumcheckOutput<MontyField<2>>, SumcheckError>
+where
+    R: SumcheckProductReducer<MontyField<2>> + SumcheckLinearReducer,
+{
+    let num_vars = batched_matrix_mle.num_vars;
+    if !has_dense_shape(&batched_matrix_mle)
+        || !has_dense_shape(&witness_mle)
+        || witness_mle.num_vars != num_vars
+    {
+        return Err(SumcheckError::InvalidProductDimensions);
+    }
+
+    let zero = MontyField::<2>::zero_with_cfg(field_cfg);
+    let mut batched_matrix = batched_matrix_mle.evaluations;
+    let native_witness = witness_mle.evaluations;
+    let mut current_claim = initial_claim;
+    let mut eval_points = Vec::with_capacity(num_vars);
+    let mut round_polynomials = Vec::with_capacity(num_vars);
+
+    if num_vars == 0 {
+        let batched_matrix_evaluation = batched_matrix[0].clone();
+        let witness_evaluation = native_to_field(native_witness[0], field_cfg);
+        debug_assert_eq!(
+            current_claim,
+            mul(&batched_matrix_evaluation, &witness_evaluation)
+        );
+        return Ok(InnerSumcheckOutput {
+            sumcheck: SumcheckProverOutput {
+                proof: SumcheckProof { round_polynomials },
+                eval_points,
+                final_claim: current_claim,
+            },
+            batched_matrix_evaluation,
+            witness_evaluation,
+        });
+    }
+
+    let coefficients_without_linear = sum_u32_native_inner_coefficients_without_linear(
+        &batched_matrix,
+        &native_witness,
+        &zero,
+        reducer,
+    )?;
+    let challenge = recover_full_round_polynomial_and_sample_next_challenge(
+        transcript,
+        &mut current_claim,
+        &coefficients_without_linear,
+        &mut round_polynomials,
+        &mut eval_points,
+        &zero,
+        field_cfg,
+    );
+
+    let next_len = batched_matrix.len() / 2;
+    let mut folded_matrix = vec![zero.clone(); next_len];
+    fold_table(&batched_matrix, &mut folded_matrix, &challenge);
+    let mut witness = vec![zero.clone(); next_len];
+    fold_u64_table_to_field(&native_witness, &mut witness, &challenge, &zero, reducer)?;
+    batched_matrix = folded_matrix;
+
+    let mut coefficients_without_linear = if next_len > 1 {
+        sum_inner_round_coefficients_without_linear(&batched_matrix, &witness, reducer)?
+    } else {
+        std::array::from_fn(|_| zero.clone())
+    };
+    let mut batched_matrix_scratch = vec![zero.clone(); batched_matrix.len() / 2];
+    let mut witness_scratch = vec![zero.clone(); witness.len() / 2];
+
+    while batched_matrix.len() > 1 {
+        let challenge = recover_full_round_polynomial_and_sample_next_challenge(
+            transcript,
+            &mut current_claim,
+            &coefficients_without_linear,
+            &mut round_polynomials,
+            &mut eval_points,
+            &zero,
+            field_cfg,
+        );
+
+        let next_len = batched_matrix.len() / 2;
+        batched_matrix_scratch.truncate(next_len);
+        witness_scratch.truncate(next_len);
+
+        if next_len == 1 {
+            batched_matrix_scratch[0] =
+                interpolate_pair(&batched_matrix[0], &batched_matrix[1], &challenge);
+            witness_scratch[0] = interpolate_pair(&witness[0], &witness[1], &challenge);
+        } else {
+            coefficients_without_linear =
+                fold_and_compute_next_inner_round_coefficients_without_linear(
+                    &batched_matrix,
+                    &witness,
+                    &mut batched_matrix_scratch,
+                    &mut witness_scratch,
+                    &challenge,
+                    reducer,
+                )?;
+        }
+
+        std::mem::swap(&mut batched_matrix, &mut batched_matrix_scratch);
+        std::mem::swap(&mut witness, &mut witness_scratch);
+    }
+
+    let batched_matrix_evaluation = batched_matrix[0].clone();
+    let witness_evaluation = witness[0].clone();
+    debug_assert_eq!(
+        current_claim,
+        mul(&batched_matrix_evaluation, &witness_evaluation)
+    );
+
+    Ok(InnerSumcheckOutput {
+        sumcheck: SumcheckProverOutput {
+            proof: SumcheckProof { round_polynomials },
+            eval_points,
+            final_claim: current_claim,
+        },
+        batched_matrix_evaluation,
+        witness_evaluation,
+    })
+}
+
 #[inline]
-fn compute_inner_pair_coefficients_without_linear<F>(
+fn accumulate_inner_pair_coefficients_without_linear<F, R>(
+    accumulators: &mut [R::Accumulator; 2],
     matrix_zero: &F,
     matrix_one: &F,
     witness_zero: &F,
     witness_one: &F,
-) -> [F; 2]
-where
+    reducer: &R,
+) where
     F: SpartanField,
+    R: SumcheckProductReducer<F>,
 {
-    [
-        mul(matrix_zero, witness_zero),
-        mul(
-            &sub(matrix_one, matrix_zero),
-            &sub(witness_one, witness_zero),
-        ),
-    ]
+    reducer.multiply_accumulate(&mut accumulators[0], matrix_zero, witness_zero);
+    reducer.multiply_accumulate(
+        &mut accumulators[1],
+        &sub(matrix_one, matrix_zero),
+        &sub(witness_one, witness_zero),
+    );
 }
 
-fn sum_inner_round_coefficients_without_linear<F>(
+fn sum_inner_round_coefficients_without_linear<F, R>(
     batched_matrix: &[F],
     witness: &[F],
-    zero: &F,
-) -> [F; 2]
+    reducer: &R,
+) -> Result<[F; 2], SumcheckError>
 where
     F: SpartanField,
+    R: SumcheckProductReducer<F>,
 {
     debug_assert_eq!(batched_matrix.len(), witness.len());
     debug_assert!(batched_matrix.len() >= 2);
 
     #[cfg(feature = "parallel")]
     if should_parallelize(batched_matrix.len() / 2) {
-        return batched_matrix
+        let accumulators = batched_matrix
             .par_chunks_exact(2)
             .zip(witness.par_chunks_exact(2))
             .fold(
-                || [zero.clone(), zero.clone()],
-                |sum, (matrix, witness)| {
-                    add_coefficients(
-                        sum,
-                        compute_inner_pair_coefficients_without_linear(
-                            &matrix[0],
-                            &matrix[1],
-                            &witness[0],
-                            &witness[1],
-                        ),
-                    )
+                || std::array::from_fn(|_| reducer.accumulator_zero()),
+                |mut accumulators, (matrix, witness)| {
+                    accumulate_inner_pair_coefficients_without_linear(
+                        &mut accumulators,
+                        &matrix[0],
+                        &matrix[1],
+                        &witness[0],
+                        &witness[1],
+                        reducer,
+                    );
+                    accumulators
                 },
             )
-            .reduce(|| [zero.clone(), zero.clone()], add_coefficients::<F, 2>);
+            .reduce(
+                || std::array::from_fn(|_| reducer.accumulator_zero()),
+                |left, right| merge_accumulators(left, right, reducer),
+            );
+        return reduce_two_accumulators(accumulators, reducer);
     }
 
-    batched_matrix
+    let accumulators = batched_matrix
         .chunks_exact(2)
         .zip(witness.chunks_exact(2))
-        .fold([zero.clone(), zero.clone()], |sum, (matrix, witness)| {
-            add_coefficients(
-                sum,
-                compute_inner_pair_coefficients_without_linear(
+        .fold(
+            std::array::from_fn(|_| reducer.accumulator_zero()),
+            |mut accumulators, (matrix, witness)| {
+                accumulate_inner_pair_coefficients_without_linear(
+                    &mut accumulators,
                     &matrix[0],
                     &matrix[1],
                     &witness[0],
                     &witness[1],
-                ),
-            )
-        })
+                    reducer,
+                );
+                accumulators
+            },
+        );
+    reduce_two_accumulators(accumulators, reducer)
 }
 
 #[inline]
-fn fold_inner_chunk<F>(
+fn fold_inner_chunk<F, R>(
     batched_matrix: &[F],
     witness: &[F],
     batched_matrix_output: &mut [F],
     witness_output: &mut [F],
     challenge: &F,
-) -> [F; 2]
+    reducer: &R,
+) -> [R::Accumulator; 2]
 where
     F: SpartanField,
+    R: SumcheckProductReducer<F>,
 {
     debug_assert_eq!(batched_matrix.len(), 4);
     debug_assert_eq!(witness.len(), 4);
@@ -577,25 +1258,30 @@ where
 
     batched_matrix_output.clone_from_slice(&folded_matrix);
     witness_output.clone_from_slice(&folded_witness);
-    compute_inner_pair_coefficients_without_linear(
+    let mut accumulators = std::array::from_fn(|_| reducer.accumulator_zero());
+    accumulate_inner_pair_coefficients_without_linear(
+        &mut accumulators,
         &folded_matrix[0],
         &folded_matrix[1],
         &folded_witness[0],
         &folded_witness[1],
-    )
+        reducer,
+    );
+    accumulators
 }
 
 /// Folds both active inner tables and prepares the next round's `[c0, c2]`.
-fn fold_and_compute_next_inner_round_coefficients_without_linear<F>(
+fn fold_and_compute_next_inner_round_coefficients_without_linear<F, R>(
     batched_matrix: &[F],
     witness: &[F],
     batched_matrix_output: &mut [F],
     witness_output: &mut [F],
     challenge: &F,
-    zero: &F,
-) -> [F; 2]
+    reducer: &R,
+) -> Result<[F; 2], SumcheckError>
 where
     F: SpartanField,
+    R: SumcheckProductReducer<F>,
 {
     debug_assert_eq!(batched_matrix.len(), witness.len());
     debug_assert!(batched_matrix.len() >= 4);
@@ -604,66 +1290,399 @@ where
 
     #[cfg(feature = "parallel")]
     if should_parallelize(batched_matrix.len() / 4) {
-        return batched_matrix
+        let accumulators = batched_matrix
             .par_chunks_exact(4)
             .zip(witness.par_chunks_exact(4))
             .zip(batched_matrix_output.par_chunks_exact_mut(2))
             .zip(witness_output.par_chunks_exact_mut(2))
             .fold(
-                || [zero.clone(), zero.clone()],
-                |sum, (((matrix, witness), matrix_output), witness_output)| {
-                    add_coefficients(
-                        sum,
-                        fold_inner_chunk(matrix, witness, matrix_output, witness_output, challenge),
-                    )
+                || std::array::from_fn(|_| reducer.accumulator_zero()),
+                |accumulators, (((matrix, witness), matrix_output), witness_output)| {
+                    let contribution = fold_inner_chunk(
+                        matrix,
+                        witness,
+                        matrix_output,
+                        witness_output,
+                        challenge,
+                        reducer,
+                    );
+                    merge_accumulators(accumulators, contribution, reducer)
                 },
             )
-            .reduce(|| [zero.clone(), zero.clone()], add_coefficients::<F, 2>);
+            .reduce(
+                || std::array::from_fn(|_| reducer.accumulator_zero()),
+                |left, right| merge_accumulators(left, right, reducer),
+            );
+        return reduce_two_accumulators(accumulators, reducer);
     }
 
-    batched_matrix
+    let accumulators = batched_matrix
         .chunks_exact(4)
         .zip(witness.chunks_exact(4))
         .zip(batched_matrix_output.chunks_exact_mut(2))
         .zip(witness_output.chunks_exact_mut(2))
         .fold(
-            [zero.clone(), zero.clone()],
-            |sum, (((matrix, witness), matrix_output), witness_output)| {
-                add_coefficients(
-                    sum,
-                    fold_inner_chunk(matrix, witness, matrix_output, witness_output, challenge),
-                )
+            std::array::from_fn(|_| reducer.accumulator_zero()),
+            |accumulators, (((matrix, witness), matrix_output), witness_output)| {
+                let contribution = fold_inner_chunk(
+                    matrix,
+                    witness,
+                    matrix_output,
+                    witness_output,
+                    challenge,
+                    reducer,
+                );
+                merge_accumulators(accumulators, contribution, reducer)
             },
-        )
+        );
+    reduce_two_accumulators(accumulators, reducer)
 }
 
 #[inline]
-fn add_coefficients<F, const COEFFS: usize>(left: [F; COEFFS], right: [F; COEFFS]) -> [F; COEFFS]
+fn merge_accumulators<F, R, const COEFFS: usize>(
+    mut left: [R::Accumulator; COEFFS],
+    right: [R::Accumulator; COEFFS],
+    reducer: &R,
+) -> [R::Accumulator; COEFFS]
 where
     F: SpartanField,
+    R: SumcheckProductReducer<F>,
 {
-    std::array::from_fn(|index| add(&left[index], &right[index]))
+    for (left, right) in left.iter_mut().zip(right) {
+        reducer.merge(left, right);
+    }
+    left
 }
 
-fn sum_coefficients<F, const COEFFS: usize>(
-    len: usize,
-    contribution: impl Fn(usize) -> [F; COEFFS] + Sync,
-    zero: &F,
-) -> [F; COEFFS]
+#[inline]
+fn reduce_two_accumulators<F, R>(
+    accumulators: [R::Accumulator; 2],
+    reducer: &R,
+) -> Result<[F; 2], SumcheckError>
 where
     F: SpartanField,
+    R: SumcheckProductReducer<F>,
+{
+    let [c0, c2] = accumulators;
+    Ok([reducer.reduce(c0)?, reducer.reduce(c2)?])
+}
+
+#[inline]
+fn reduce_three_accumulators<F, R>(
+    accumulators: [R::Accumulator; 3],
+    reducer: &R,
+) -> Result<[F; 3], SumcheckError>
+where
+    F: SpartanField,
+    R: SumcheckProductReducer<F>,
+{
+    let [c0, c2, c3] = accumulators;
+    Ok([
+        reducer.reduce(c0)?,
+        reducer.reduce(c2)?,
+        reducer.reduce(c3)?,
+    ])
+}
+
+fn sum_product_accumulators<F, R, const COEFFS: usize>(
+    len: usize,
+    contribution: impl Fn(&mut [R::Accumulator; COEFFS], usize) + Sync,
+    reducer: &R,
+) -> [R::Accumulator; COEFFS]
+where
+    F: SpartanField,
+    R: SumcheckProductReducer<F>,
 {
     #[cfg(feature = "parallel")]
     if should_parallelize(len) {
-        return (0..len).into_par_iter().map(&contribution).reduce(
-            || std::array::from_fn(|_| zero.clone()),
-            add_coefficients::<F, COEFFS>,
-        );
+        return (0..len)
+            .into_par_iter()
+            .fold(
+                || std::array::from_fn(|_| reducer.accumulator_zero()),
+                |mut accumulators, index| {
+                    contribution(&mut accumulators, index);
+                    accumulators
+                },
+            )
+            .reduce(
+                || std::array::from_fn(|_| reducer.accumulator_zero()),
+                |left, right| merge_accumulators(left, right, reducer),
+            );
     }
 
-    (0..len).fold(std::array::from_fn(|_| zero.clone()), |sum, index| {
-        add_coefficients(sum, contribution(index))
-    })
+    (0..len).fold(
+        std::array::from_fn(|_| reducer.accumulator_zero()),
+        |mut accumulators, index| {
+            contribution(&mut accumulators, index);
+            accumulators
+        },
+    )
+}
+
+#[inline]
+fn native_to_field(
+    value: u64,
+    field_cfg: &crypto_bigint::modular::MontyParams<2>,
+) -> MontyField<2> {
+    MontyField::<2>::from_with_cfg(value, field_cfg)
+}
+
+#[inline]
+fn native_u32_product(left: u64, right: u64) -> u64 {
+    debug_assert!(left <= u64::from(u32::MAX));
+    debug_assert!(right <= u64::from(u32::MAX));
+    // Both operands were validated before the transcript was mutated.
+    left * right
+}
+
+fn sum_linear_accumulators<R, const COEFFS: usize>(
+    len: usize,
+    contribution: impl Fn(&mut [<R as SumcheckLinearReducer>::Accumulator; COEFFS], usize) + Sync,
+    reducer: &R,
+) -> [<R as SumcheckLinearReducer>::Accumulator; COEFFS]
+where
+    R: SumcheckLinearReducer,
+{
+    #[cfg(feature = "parallel")]
+    if should_parallelize(len) {
+        return (0..len)
+            .into_par_iter()
+            .fold(
+                || std::array::from_fn(|_| <R as SumcheckLinearReducer>::accumulator_zero(reducer)),
+                |mut accumulators, index| {
+                    contribution(&mut accumulators, index);
+                    accumulators
+                },
+            )
+            .reduce(
+                || std::array::from_fn(|_| <R as SumcheckLinearReducer>::accumulator_zero(reducer)),
+                |mut left, right| {
+                    for (left, right) in left.iter_mut().zip(right) {
+                        <R as SumcheckLinearReducer>::merge(reducer, left, right);
+                    }
+                    left
+                },
+            );
+    }
+
+    (0..len).fold(
+        std::array::from_fn(|_| <R as SumcheckLinearReducer>::accumulator_zero(reducer)),
+        |mut accumulators, index| {
+            contribution(&mut accumulators, index);
+            accumulators
+        },
+    )
+}
+
+fn compute_u32_native_outer_coefficients_without_linear<R>(
+    products: &R1csProductTableBuffers<u64>,
+    equality_pairs: EqualityPairs<'_, MontyField<2>>,
+    zero: &MontyField<2>,
+    reducer: &R,
+) -> Result<[MontyField<2>; 3], SumcheckError>
+where
+    R: SumcheckLinearReducer,
+{
+    let pair_count = products.len() / 2;
+    let accumulators = sum_linear_accumulators(
+        pair_count,
+        |accumulators, pair| {
+            let index = 2 * pair;
+            let [eq_zero, eq_one] = equality_pairs.pair(pair);
+            let neg_eq_zero = sub(zero, &eq_zero);
+            let eq_delta = sub(&eq_one, &eq_zero);
+            let neg_eq_delta = sub(zero, &eq_delta);
+            let twice_eq_zero = add(&eq_zero, &eq_zero);
+            let twice_eq_one = add(&eq_one, &eq_one);
+            let three_eq_zero = add(&twice_eq_zero, &eq_zero);
+            let p00_c2_weight = sub(&three_eq_zero, &twice_eq_one);
+            let cross_c2_weight = sub(&eq_one, &twice_eq_zero);
+
+            let az_zero = products.az[index];
+            let az_one = products.az[index + 1];
+            let bz_zero = products.bz[index];
+            let bz_one = products.bz[index + 1];
+            let cz_zero = products.cz[index];
+            let cz_one = products.cz[index + 1];
+            let p00 = native_u32_product(az_zero, bz_zero);
+            let p01 = native_u32_product(az_zero, bz_one);
+            let p10 = native_u32_product(az_one, bz_zero);
+            let p11 = native_u32_product(az_one, bz_one);
+
+            // c0 = e0 * (p00 - c0).
+            <R as SumcheckLinearReducer>::multiply_accumulate(
+                reducer,
+                &mut accumulators[0],
+                &eq_zero,
+                &p00,
+            );
+            <R as SumcheckLinearReducer>::multiply_accumulate(
+                reducer,
+                &mut accumulators[0],
+                &neg_eq_zero,
+                &cz_zero,
+            );
+
+            // For c2, expand all native differences first and encode every
+            // sign in its field weight:
+            //
+            //   e0*p11 + (3e0-2e1)*p00 + (e1-2e0)*(p01+p10)
+            //   + (e1-e0)*c0 + (e0-e1)*c1.
+            for (weight, value) in [
+                (&eq_zero, p11),
+                (&p00_c2_weight, p00),
+                (&cross_c2_weight, p01),
+                (&cross_c2_weight, p10),
+                (&eq_delta, cz_zero),
+                (&neg_eq_delta, cz_one),
+            ] {
+                <R as SumcheckLinearReducer>::multiply_accumulate(
+                    reducer,
+                    &mut accumulators[1],
+                    weight,
+                    &value,
+                );
+            }
+
+            // c3 = (e1-e0) * (p11-p01-p10+p00).
+            for (weight, value) in [
+                (&eq_delta, p11),
+                (&eq_delta, p00),
+                (&neg_eq_delta, p01),
+                (&neg_eq_delta, p10),
+            ] {
+                <R as SumcheckLinearReducer>::multiply_accumulate(
+                    reducer,
+                    &mut accumulators[2],
+                    weight,
+                    &value,
+                );
+            }
+        },
+        reducer,
+    );
+
+    let [c0, c2, c3] = accumulators;
+    Ok([
+        <R as SumcheckLinearReducer>::reduce(reducer, c0)?,
+        <R as SumcheckLinearReducer>::reduce(reducer, c2)?,
+        <R as SumcheckLinearReducer>::reduce(reducer, c3)?,
+    ])
+}
+
+fn sum_u32_native_inner_coefficients_without_linear<R>(
+    batched_matrix: &[MontyField<2>],
+    witness: &[u64],
+    zero: &MontyField<2>,
+    reducer: &R,
+) -> Result<[MontyField<2>; 2], SumcheckError>
+where
+    R: SumcheckLinearReducer,
+{
+    debug_assert_eq!(batched_matrix.len(), witness.len());
+    debug_assert!(batched_matrix.len() >= 2);
+
+    let pair_count = batched_matrix.len() / 2;
+    let accumulators = sum_linear_accumulators(
+        pair_count,
+        |accumulators, pair| {
+            let index = 2 * pair;
+            let matrix_delta = sub(&batched_matrix[index + 1], &batched_matrix[index]);
+            let neg_matrix_delta = sub(zero, &matrix_delta);
+
+            <R as SumcheckLinearReducer>::multiply_accumulate(
+                reducer,
+                &mut accumulators[0],
+                &batched_matrix[index],
+                &witness[index],
+            );
+            // (m1-m0)(w1-w0) = (m1-m0)w1 + (m0-m1)w0.
+            <R as SumcheckLinearReducer>::multiply_accumulate(
+                reducer,
+                &mut accumulators[1],
+                &matrix_delta,
+                &witness[index + 1],
+            );
+            <R as SumcheckLinearReducer>::multiply_accumulate(
+                reducer,
+                &mut accumulators[1],
+                &neg_matrix_delta,
+                &witness[index],
+            );
+        },
+        reducer,
+    );
+
+    let [c0, c2] = accumulators;
+    Ok([
+        <R as SumcheckLinearReducer>::reduce(reducer, c0)?,
+        <R as SumcheckLinearReducer>::reduce(reducer, c2)?,
+    ])
+}
+
+fn fold_u64_table_to_field<R>(
+    input: &[u64],
+    output: &mut [MontyField<2>],
+    challenge: &MontyField<2>,
+    zero: &MontyField<2>,
+    reducer: &R,
+) -> Result<(), SumcheckError>
+where
+    R: SumcheckLinearReducer,
+{
+    debug_assert_eq!(input.len(), 2 * output.len());
+    let one = MontyField::<2>::one_with_cfg(challenge.cfg());
+    let one_minus_challenge = sub(&one, challenge);
+
+    let fold_pair = |pair: &[u64], value: &mut MontyField<2>| -> Result<(), SumcheckError> {
+        let mut accumulator = <R as SumcheckLinearReducer>::accumulator_zero(reducer);
+        <R as SumcheckLinearReducer>::multiply_accumulate(
+            reducer,
+            &mut accumulator,
+            &one_minus_challenge,
+            &pair[0],
+        );
+        <R as SumcheckLinearReducer>::multiply_accumulate(
+            reducer,
+            &mut accumulator,
+            challenge,
+            &pair[1],
+        );
+        *value = <R as SumcheckLinearReducer>::reduce(reducer, accumulator)?;
+        Ok(())
+    };
+
+    #[cfg(feature = "parallel")]
+    if should_parallelize(output.len()) {
+        return input
+            .par_chunks_exact(2)
+            .zip(output.par_iter_mut())
+            .try_for_each(|(pair, value)| fold_pair(pair, value));
+    }
+
+    for (pair, value) in input.chunks_exact(2).zip(output) {
+        fold_pair(pair, value)?;
+    }
+    debug_assert!(zero.cfg() == challenge.cfg());
+    Ok(())
+}
+
+fn fold_u64_product_tables_to_field<R>(
+    input: &R1csProductTableBuffers<u64>,
+    challenge: &MontyField<2>,
+    zero: &MontyField<2>,
+    field_cfg: &crypto_bigint::modular::MontyParams<2>,
+    reducer: &R,
+) -> Result<R1csProductTableBuffers<MontyField<2>>, SumcheckError>
+where
+    R: SumcheckLinearReducer,
+{
+    debug_assert_eq!(challenge.cfg(), field_cfg);
+    let mut output = R1csProductTableBuffers::filled(input.len() / 2, zero);
+    fold_u64_table_to_field(&input.az, &mut output.az, challenge, zero, reducer)?;
+    fold_u64_table_to_field(&input.bz, &mut output.bz, challenge, zero, reducer)?;
+    fold_u64_table_to_field(&input.cz, &mut output.cz, challenge, zero, reducer)?;
+    Ok(output)
 }
 
 #[cfg(feature = "parallel")]
@@ -677,7 +1696,8 @@ fn should_parallelize(work_items: usize) -> bool {
 
 #[inline]
 #[allow(clippy::too_many_arguments)]
-fn cubic_contribution<F>(
+fn accumulate_cubic_evaluations<F, R>(
+    accumulators: &mut [R::Accumulator; 3],
     eq_zero: &F,
     eq_one: &F,
     az_zero: &F,
@@ -686,30 +1706,74 @@ fn cubic_contribution<F>(
     bz_one: &F,
     cz_zero: &F,
     cz_one: &F,
-) -> [F; 3]
+    reducer: &R,
+) where
+    F: SpartanField,
+    R: SumcheckProductReducer<F>,
+{
+    // Evaluate the cubic at 0, 2, and 3. Compared with expanding its
+    // coefficients inside every pair, this saves one reduced field product
+    // and one delayed product per pair. The missing value at 1 is recovered
+    // from the sumcheck identity after the three accumulators are reduced.
+    let residual_zero = sub(&mul(az_zero, bz_zero), cz_zero);
+    reducer.multiply_accumulate(&mut accumulators[0], eq_zero, &residual_zero);
+
+    let eq_two = sub(&add(eq_one, eq_one), eq_zero);
+    let az_two = sub(&add(az_one, az_one), az_zero);
+    let bz_two = sub(&add(bz_one, bz_one), bz_zero);
+    let cz_two = sub(&add(cz_one, cz_one), cz_zero);
+    let residual_two = sub(&mul(&az_two, &bz_two), &cz_two);
+    reducer.multiply_accumulate(&mut accumulators[1], &eq_two, &residual_two);
+
+    let eq_three = add(&eq_two, &sub(eq_one, eq_zero));
+    let az_three = add(&az_two, &sub(az_one, az_zero));
+    let bz_three = add(&bz_two, &sub(bz_one, bz_zero));
+    let cz_three = add(&cz_two, &sub(cz_one, cz_zero));
+    let residual_three = sub(&mul(&az_three, &bz_three), &cz_three);
+    reducer.multiply_accumulate(&mut accumulators[2], &eq_three, &residual_three);
+}
+
+/// Public-modulus constants used to interpolate a cubic from evaluations at
+/// 0, 1, 2, and 3. They are prepared once per outer sumcheck, outside every
+/// product loop.
+struct CubicInterpolation<F> {
+    half: F,
+    sixth: F,
+}
+
+impl<F> CubicInterpolation<F>
 where
     F: SpartanField,
 {
-    let eq_delta = sub(eq_one, eq_zero);
-    let az_delta = sub(az_one, az_zero);
-    let bz_delta = sub(bz_one, bz_zero);
-    let cz_delta = sub(cz_one, cz_zero);
+    fn new(field_cfg: &F::Config) -> Self {
+        let one = F::one_with_cfg(field_cfg);
+        let two = add(&one, &one);
+        let three = add(&two, &one);
+        let six = add(&three, &three);
+        Self {
+            half: one.clone() / &two,
+            sixth: one / &six,
+        }
+    }
 
-    let residual_zero = sub(&mul(az_zero, bz_zero), cz_zero);
-    let residual_linear = sub(
-        &add(&mul(az_zero, &bz_delta), &mul(&az_delta, bz_zero)),
-        &cz_delta,
-    );
-    let residual_quadratic = mul(&az_delta, &bz_delta);
+    /// Converts `[g(0), g(2), g(3)]` to `[c0, c2, c3]`, deriving
+    /// `g(1) = current_claim - g(0)` from the sumcheck relation.
+    fn coefficients_without_linear(&self, current_claim: &F, evaluations: [F; 3]) -> [F; 3] {
+        let [at_zero, at_two, at_three] = evaluations;
+        let at_one = sub(current_claim, &at_zero);
+        let three_at_one = add(&add(&at_one, &at_one), &at_one);
+        let three_at_two = add(&add(&at_two, &at_two), &at_two);
+        let third_difference = sub(
+            &add(&sub(&at_three, &three_at_two), &three_at_one),
+            &at_zero,
+        );
+        let c3 = mul(&third_difference, &self.sixth);
 
-    [
-        mul(eq_zero, &residual_zero),
-        add(
-            &mul(eq_zero, &residual_quadratic),
-            &mul(&eq_delta, &residual_linear),
-        ),
-        mul(&eq_delta, &residual_quadratic),
-    ]
+        let second_difference = add(&sub(&at_two, &add(&at_one, &at_one)), &at_zero);
+        let three_c3 = add(&add(&c3, &c3), &c3);
+        let c2 = sub(&mul(&second_difference, &self.half), &three_c3);
+        [at_zero, c2, c3]
+    }
 }
 
 /// Restores the omitted linear coefficient of a round polynomial.
@@ -829,36 +1893,145 @@ where
             mul(&self.low[2 * low_pair + 1], high_weight),
         ]
     }
+
+    /// Returns the two low-factor evaluations for one adjacent pair.
+    ///
+    /// This is used by the two-level outer accumulation while low variables
+    /// remain active. The corresponding high factor is constant over every
+    /// `low_pair_count()` consecutive product pairs.
+    #[inline]
+    fn low_pair(&self, pair: usize) -> [&F; 2] {
+        debug_assert!(self.low_bits > 0);
+        [&self.low[2 * pair], &self.low[2 * pair + 1]]
+    }
+
+    #[inline]
+    fn low_pair_count(&self) -> usize {
+        self.low.len() / 2
+    }
 }
 
-/// Computes `[c0, c2, c3]` from adjacent pairs in the product tables.
-fn compute_coefficients_without_linear<F>(
+/// The two-level equality decomposition replaces one immediate field
+/// multiplication per cubic evaluation and product pair with one delayed MAC
+/// and one reduction per high-equality bucket. Very short low buckets do not
+/// amortize that reduction, so retain the direct product for their final
+/// rounds.
+const TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS: usize = 8;
+
+/// Computes the outer cubic evaluations in two delayed-reduction levels.
+///
+/// For each high-equality bucket, the first level accumulates
+/// `eq_low * residual` over all low pairs and reduces that subtotal. The
+/// second level accumulates `eq_high * subtotal`. At no point is
+/// `eq_low * eq_high` formed with an immediate field multiplication.
+fn compute_two_level_cubic_evaluations<F, R>(
     products: &R1csProductTableBuffers<F>,
-    equality_pairs: EqualityPairs<'_, F>,
-    zero: &F,
-) -> [F; 3]
+    equality_pairs: &EqualityPairs<'_, F>,
+    reducer: &R,
+) -> Result<[F; 3], SumcheckError>
 where
     F: SpartanField,
+    R: SumcheckProductReducer<F>,
+{
+    let low_pair_count = equality_pairs.low_pair_count();
+    debug_assert!(low_pair_count > 0);
+    debug_assert_eq!(
+        products.len() / 2,
+        low_pair_count * equality_pairs.high.len()
+    );
+
+    let accumulate_high_bucket =
+        |mut outer: [R::Accumulator; 3], high_index: usize| -> Result<_, SumcheckError> {
+            let mut inner = std::array::from_fn(|_| reducer.accumulator_zero());
+            let product_pair_start = high_index * low_pair_count;
+
+            for low_pair_index in 0..low_pair_count {
+                let product_index = 2 * (product_pair_start + low_pair_index);
+                let [eq_zero, eq_one] = equality_pairs.low_pair(low_pair_index);
+                accumulate_cubic_evaluations(
+                    &mut inner,
+                    eq_zero,
+                    eq_one,
+                    &products.az[product_index],
+                    &products.az[product_index + 1],
+                    &products.bz[product_index],
+                    &products.bz[product_index + 1],
+                    &products.cz[product_index],
+                    &products.cz[product_index + 1],
+                    reducer,
+                );
+            }
+
+            let inner = reduce_three_accumulators(inner, reducer)?;
+            let high_weight = &equality_pairs.high[high_index];
+            for (outer, inner) in outer.iter_mut().zip(&inner) {
+                reducer.multiply_accumulate(outer, high_weight, inner);
+            }
+            Ok(outer)
+        };
+
+    #[cfg(feature = "parallel")]
+    if should_parallelize(products.len() / 2) {
+        let accumulators = (0..equality_pairs.high.len())
+            .into_par_iter()
+            .try_fold(
+                || std::array::from_fn(|_| reducer.accumulator_zero()),
+                accumulate_high_bucket,
+            )
+            .try_reduce(
+                || std::array::from_fn(|_| reducer.accumulator_zero()),
+                |left, right| Ok(merge_accumulators(left, right, reducer)),
+            )?;
+        return reduce_three_accumulators(accumulators, reducer);
+    }
+
+    let mut accumulators = std::array::from_fn(|_| reducer.accumulator_zero());
+    for high_index in 0..equality_pairs.high.len() {
+        accumulators = accumulate_high_bucket(accumulators, high_index)?;
+    }
+    reduce_three_accumulators(accumulators, reducer)
+}
+
+/// Computes `[c0, c2, c3]` from evaluations at 0, 2, and 3 over adjacent
+/// pairs in the product tables.
+fn compute_coefficients_without_linear<F, R>(
+    products: &R1csProductTableBuffers<F>,
+    equality_pairs: EqualityPairs<'_, F>,
+    current_claim: &F,
+    interpolation: &CubicInterpolation<F>,
+    reducer: &R,
+) -> Result<[F; 3], SumcheckError>
+where
+    F: SpartanField,
+    R: SumcheckProductReducer<F>,
 {
     let pair_count = products.len() / 2;
-    sum_coefficients(
-        pair_count,
-        |pair| {
-            let index = 2 * pair;
-            let [eq_zero, eq_one] = equality_pairs.pair(pair);
-            cubic_contribution(
-                &eq_zero,
-                &eq_one,
-                &products.az[index],
-                &products.az[index + 1],
-                &products.bz[index],
-                &products.bz[index + 1],
-                &products.cz[index],
-                &products.cz[index + 1],
-            )
-        },
-        zero,
-    )
+    let evaluations = if equality_pairs.low_pair_count() >= TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS {
+        compute_two_level_cubic_evaluations(products, &equality_pairs, reducer)?
+    } else {
+        let accumulators = sum_product_accumulators(
+            pair_count,
+            |accumulators, pair| {
+                let index = 2 * pair;
+                let [eq_zero, eq_one] = equality_pairs.pair(pair);
+                accumulate_cubic_evaluations(
+                    accumulators,
+                    &eq_zero,
+                    &eq_one,
+                    &products.az[index],
+                    &products.az[index + 1],
+                    &products.bz[index],
+                    &products.bz[index + 1],
+                    &products.cz[index],
+                    &products.cz[index + 1],
+                    reducer,
+                );
+            },
+            reducer,
+        );
+        reduce_three_accumulators(accumulators, reducer)?
+    };
+    Ok(interpolation.coefficients_without_linear(current_claim, evaluations))
 }
 
 #[inline]
@@ -950,19 +2123,22 @@ fn fold_product_tables<F>(
 }
 
 /// Folds all product tables and accumulates the next round polynomial.
-fn fold_products_and_compute_next<F>(
+fn fold_products_and_compute_next<F, R>(
     input: &R1csProductTableBuffers<F>,
     output: &mut R1csProductTableBuffers<F>,
     challenge: &F,
     equality_pairs: EqualityPairs<'_, F>,
-    zero: &F,
-) -> [F; 3]
+    current_claim: &F,
+    interpolation: &CubicInterpolation<F>,
+    reducer: &R,
+) -> Result<[F; 3], SumcheckError>
 where
     F: SpartanField,
+    R: SumcheckProductReducer<F>,
 {
     debug_assert_eq!(input.len(), 2 * output.len());
 
-    let accumulate = |sum: [F; 3],
+    let accumulate = |mut accumulators: [R::Accumulator; 3],
                       chunk: usize,
                       az: &[F],
                       bz: &[F],
@@ -973,19 +2149,26 @@ where
         let [az, bz, cz] =
             fold_product_chunk(az, bz, cz, az_output, bz_output, cz_output, challenge);
         let [eq_zero, eq_one] = equality_pairs.pair(chunk);
-        add_coefficients(
-            sum,
-            cubic_contribution(
-                &eq_zero, &eq_one, &az[0], &az[1], &bz[0], &bz[1], &cz[0], &cz[1],
-            ),
-        )
+        accumulate_cubic_evaluations(
+            &mut accumulators,
+            &eq_zero,
+            &eq_one,
+            &az[0],
+            &az[1],
+            &bz[0],
+            &bz[1],
+            &cz[0],
+            &cz[1],
+            reducer,
+        );
+        accumulators
     };
 
     let chunk_count = output.len() / 2;
 
     #[cfg(feature = "parallel")]
     if should_parallelize(chunk_count) {
-        return (
+        let accumulators = (
             input.az.par_chunks_exact(4),
             input.bz.par_chunks_exact(4),
             input.cz.par_chunks_exact(4),
@@ -996,23 +2179,34 @@ where
             .into_par_iter()
             .enumerate()
             .fold(
-                || [zero.clone(), zero.clone(), zero.clone()],
-                |sum, (chunk, (az, bz, cz, az_output, bz_output, cz_output))| {
-                    accumulate(sum, chunk, az, bz, cz, az_output, bz_output, cz_output)
+                || std::array::from_fn(|_| reducer.accumulator_zero()),
+                |accumulators, (chunk, (az, bz, cz, az_output, bz_output, cz_output))| {
+                    accumulate(
+                        accumulators,
+                        chunk,
+                        az,
+                        bz,
+                        cz,
+                        az_output,
+                        bz_output,
+                        cz_output,
+                    )
                 },
             )
             .reduce(
-                || [zero.clone(), zero.clone(), zero.clone()],
-                add_coefficients::<F, 3>,
+                || std::array::from_fn(|_| reducer.accumulator_zero()),
+                |left, right| merge_accumulators(left, right, reducer),
             );
+        let evaluations = reduce_three_accumulators(accumulators, reducer)?;
+        return Ok(interpolation.coefficients_without_linear(current_claim, evaluations));
     }
 
-    let mut sum = [zero.clone(), zero.clone(), zero.clone()];
+    let mut accumulators = std::array::from_fn(|_| reducer.accumulator_zero());
     for chunk in 0..chunk_count {
         let input_start = 4 * chunk;
         let output_start = 2 * chunk;
-        sum = accumulate(
-            sum,
+        accumulators = accumulate(
+            accumulators,
             chunk,
             &input.az[input_start..input_start + 4],
             &input.bz[input_start..input_start + 4],
@@ -1022,7 +2216,8 @@ where
             &mut output.cz[output_start..output_start + 2],
         );
     }
-    sum
+    let evaluations = reduce_three_accumulators(accumulators, reducer)?;
+    Ok(interpolation.coefficients_without_linear(current_claim, evaluations))
 }
 
 /// Folds the high equality factor and all product tables together.

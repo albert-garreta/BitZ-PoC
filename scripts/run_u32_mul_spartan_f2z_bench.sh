@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run the production u32 × u32 → u64 Spartan/F2Z sweep and convert the
-# benchmark's stable RESULT records into one row per circuit size.
+# Run the u32 × u32 → u64 Spartan/F2Z sweep with a paired immediate-versus-
+# delayed design. One uninstrumented latency executable and, when requested,
+# one peak-allocator executable are built, then invoked in fresh processes for
+# every (size, strategy, pass) tuple.
 #
 # Usage:
-#   scripts/run_u32_mul_spartan_f2z_bench.sh [output.csv]
+#   scripts/run_u32_mul_spartan_f2z_bench.sh [summary.csv]
 #
-# Useful overrides:
-#   F2Z_MUL_EXPONENTS="15 16 17" F2Z_BENCH_REPS=5 \
-#     scripts/run_u32_mul_spartan_f2z_bench.sh results.csv
+# The sibling artifacts are `<stem>_raw.csv`, `<stem>_paired.csv`, and
+# `<stem>.log`. Existing files are never overwritten.
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
@@ -17,106 +18,206 @@ REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 EXPONENTS="${F2Z_MUL_EXPONENTS:-15 16 17 18 19 20 21 22 23 24 25}"
 REPETITIONS="${F2Z_BENCH_REPS:-5}"
 FEATURES="${F2Z_BENCH_FEATURES:-unchecked}"
+THREADS="${RAYON_NUM_THREADS:-10}"
+STRATEGIES="${F2Z_BENCH_STRATEGIES:-immediate delayed-barrett delayed-crypto-bigint}"
+MEMORY_STRATEGIES="${F2Z_BENCH_MEMORY_STRATEGIES:-$STRATEGIES}"
+MEASURE_MEMORY="${F2Z_BENCH_MEASURE_MEMORY:-1}"
+ROOT_SEED="${F2Z_MUL_SEED:-0x5533326d756c0064}"
 RUN_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 RUN_DATE="${RUN_TIMESTAMP%%T*}"
+RUN_STAMP="$(date -u +%Y%m%d-%H%M%S)"
 
-DEFAULT_NAME="u32_mul_spartan_f2z_$(date -u +%Y%m%d-%H%M%S).csv"
-OUTPUT_CSV="${1:-$REPO_ROOT/bench_results/$DEFAULT_NAME}"
-case "$OUTPUT_CSV" in
+DEFAULT_SUMMARY="$REPO_ROOT/bench_results/u32_mul_spartan_f2z_${RUN_STAMP}_summary.csv"
+SUMMARY_CSV="${1:-$DEFAULT_SUMMARY}"
+case "$SUMMARY_CSV" in
     /*) ;;
-    *) OUTPUT_CSV="$REPO_ROOT/$OUTPUT_CSV" ;;
+    *) SUMMARY_CSV="$REPO_ROOT/$SUMMARY_CSV" ;;
+esac
+case "$SUMMARY_CSV" in
+    *.csv) ;;
+    *) echo "summary output must end in .csv" >&2; exit 2 ;;
 esac
 
-OUTPUT_DIR="$(dirname -- "$OUTPUT_CSV")"
-RAW_LOG="${OUTPUT_CSV%.csv}.log"
+ARTIFACT_STEM="${SUMMARY_CSV%.csv}"
+case "$ARTIFACT_STEM" in
+    *_summary) ARTIFACT_STEM="${ARTIFACT_STEM%_summary}" ;;
+esac
+RAW_CSV="${ARTIFACT_STEM}_raw.csv"
+PAIRED_CSV="${ARTIFACT_STEM}_paired.csv"
+RAW_LOG="${ARTIFACT_STEM}.log"
+OUTPUT_DIR="$(dirname -- "$SUMMARY_CSV")"
+
+for output in "$SUMMARY_CSV" "$RAW_CSV" "$PAIRED_CSV" "$RAW_LOG"; do
+    if [[ -e "$output" ]]; then
+        echo "refusing to overwrite existing artifact: $output" >&2
+        exit 2
+    fi
+done
 mkdir -p -- "$OUTPUT_DIR"
 
-echo "Running exponents: $EXPONENTS"
-echo "Measured repetitions: $REPETITIONS (plus one warmup)"
-echo "CSV: $OUTPUT_CSV"
+COMMIT="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+if [[ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=all)" ]]; then
+    GIT_DIRTY=true
+else
+    GIT_DIRTY=false
+fi
+
+BUILD_DIR="$(mktemp -d -t f2z-u32-mul-build.XXXXXX)"
+trap 'rm -rf -- "$BUILD_DIR"' EXIT
+
+build_benchmark() {
+    local label="$1"
+    local features="$2"
+    local build_log="$BUILD_DIR/$label.log"
+    echo "Building $label u32_mul binary with features: $features" >&2
+    (
+        cd -- "$REPO_ROOT"
+        cargo bench --bench u32_mul --features "$features" --no-run 2>&1
+    ) | tee "$build_log" >&2
+
+    local binary
+    binary="$(sed -n 's/^  Executable .* (\(.*u32_mul-[^)]*\))$/\1/p' "$build_log" | tail -n 1)"
+    if [[ -z "$binary" ]]; then
+        echo "could not locate the $label u32_mul benchmark executable" >&2
+        exit 2
+    fi
+    case "$binary" in
+        /*) ;;
+        *) binary="$REPO_ROOT/$binary" ;;
+    esac
+    if [[ ! -x "$binary" ]]; then
+        echo "benchmark executable is not runnable: $binary" >&2
+        exit 2
+    fi
+    echo "$binary"
+}
+
+# The latency executable has no allocator wrapper at all. Peak-heap accounting
+# lives in a separately compiled executable so its atomics cannot bias the
+# latency comparison.
+LATENCY_BENCH_BINARY="$(build_benchmark latency "$FEATURES")"
+LATENCY_BINARY_SHA256="$(shasum -a 256 "$LATENCY_BENCH_BINARY" | awk '{print $1}')"
+MEMORY_BENCH_BINARY=""
+MEMORY_BINARY_SHA256=""
+if [[ "$MEASURE_MEMORY" == "1" ]]; then
+    MEMORY_FEATURES="$FEATURES,bench-peak-memory"
+    MEMORY_BENCH_BINARY="$(build_benchmark memory "$MEMORY_FEATURES")"
+    MEMORY_BINARY_SHA256="$(shasum -a 256 "$MEMORY_BENCH_BINARY" | awk '{print $1}')"
+elif [[ "$MEASURE_MEMORY" != "0" ]]; then
+    echo "F2Z_BENCH_MEASURE_MEMORY must be 0 or 1" >&2
+    exit 2
+fi
+HARDWARE="$(system_profiler SPHardwareDataType 2>/dev/null | awk -F ': ' '/Chip:/{print $2; exit}' || true)"
+if [[ -z "$HARDWARE" ]]; then
+    HARDWARE="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || uname -m)"
+fi
+OPERATING_SYSTEM="$(uname -srm)"
+
+echo "Exponents: $EXPONENTS"
+echo "Strategies: $STRATEGIES"
+echo "Measured repetitions: $REPETITIONS (plus one warmup per process)"
+echo "Rayon threads: $THREADS"
+echo "Root seed: $ROOT_SEED"
+echo "Commit: $COMMIT (dirty=$GIT_DIRTY)"
+echo "Latency binary SHA-256: $LATENCY_BINARY_SHA256"
+if [[ -n "$MEMORY_BINARY_SHA256" ]]; then
+    echo "Memory binary SHA-256: $MEMORY_BINARY_SHA256"
+fi
+echo "Hardware: $HARDWARE"
+echo "Operating system: $OPERATING_SYSTEM"
+echo "Allocator instrumentation: absent from latency binary; enabled only in memory binary"
 echo "Raw log: $RAW_LOG"
 
-(
-    cd -- "$REPO_ROOT"
+run_case() {
+    local binary="$1"
+    local pass="$2"
+    local exponent="$3"
+    local strategy="$4"
+    local order="$5"
+    echo "RUN pass=$pass exponent=$exponent strategy=$strategy order=$order" | tee -a "$RAW_LOG"
     OBLONG_PROFILE=1 \
-    F2Z_MUL_EXPONENTS="$EXPONENTS" \
+    RAYON_NUM_THREADS="$THREADS" \
+    F2Z_MUL_EXPONENTS="$exponent" \
     F2Z_BENCH_REPS="$REPETITIONS" \
-        cargo bench --bench u32_mul --features "$FEATURES"
-) | tee "$RAW_LOG"
-
-awk \
-    -v output="$OUTPUT_CSV" \
-    -v run_date="$RUN_DATE" \
-    -v run_timestamp="$RUN_TIMESTAMP" \
-    -v repetitions="$REPETITIONS" '
-BEGIN {
-    print "benchmark_date,run_timestamp_utc,exponent,multiplications,r1cs_rows,multiplications_per_row,r1cs_columns,r1cs_nnz,integer_witness_values,compact_witness_bits,compact_witness_bytes,spartan_prove_ms,bitify_prove_ms,f2z_prove_ms,combined_prove_ms,spartan_verify_ms,bitify_verify_ms,f2z_verify_ms,combined_verify_ms,spartan_proof_payload_bytes,f2z_proof_bytes,peak_heap_mib,measured_runs,warmup_runs,threads,field_modulus,ligerito_hash,ligerito_inverse_rate,ligerito_initial_k,shape_seed,notes" > output
+    F2Z_BENCH_PASS="$pass" \
+    F2Z_BENCH_ORDER="$order" \
+    F2Z_SPARTAN_REDUCTION="$strategy" \
+        "$binary" 2>&1 | tee -a "$RAW_LOG"
 }
 
-/^rayon threads:/ {
-    threads = $3
-}
-
-/^u32_mul gates=/ {
-    shape_seed = ""
-    for (i = 1; i <= NF; i++) {
-        if ($i ~ /^seed=/) {
-            split($i, seed_parts, "=")
-            shape_seed = seed_parts[2]
-        }
-    }
-}
-
-/RESULT exponent=/ {
-    for (key in field) {
-        delete field[key]
-    }
-    for (i = 1; i <= NF; i++) {
-        if ($i ~ /^[a-z0-9_]+=/) {
-            split($i, pair, "=")
-            field[pair[1]] = pair[2]
-        }
-    }
-
-    multiplications = field["multiplications"] + 0
-    if (threads == "") {
-        threads = 1
-    }
-
-    printf "%s,%s,%d,%.0f,%.0f,1,%.0f,%.0f,%.0f,%.0f,%.0f,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%d,1,%s,2^100-15,SHA-256,1/2,4,%s,\n", \
-        run_date, \
-        run_timestamp, \
-        field["exponent"], \
-        multiplications, \
-        multiplications, \
-        4 * multiplications, \
-        3 * multiplications, \
-        field["integer_witness_values"], \
-        field["compact_witness_bits"], \
-        field["compact_witness_bytes"], \
-        field["spartan_prove_ms"], \
-        field["bitify_prove_ms"], \
-        field["f2z_prove_ms"], \
-        field["prove_ms"], \
-        field["spartan_verify_ms"], \
-        field["bitify_verify_ms"], \
-        field["f2z_verify_ms"], \
-        field["verify_ms"], \
-        field["spartan_bytes"], \
-        field["f2z_bytes"], \
-        field["peak_mib"], \
-        repetitions, \
-        threads, \
-        shape_seed >> output
-    rows++
-}
-
-END {
-    if (rows == 0) {
-        print "No RESULT rows found in benchmark output" > "/dev/stderr"
+# Pairwise-counterbalance the primary Immediate/Barrett comparison: across
+# exponents 15..24 each strategy runs first exactly five times. Reference
+# reduction is scheduled after that pair because it is a correctness oracle,
+# not the optimized path subject to the latency gate.
+exponent_index=0
+for exponent in $EXPONENTS; do
+    read -r -a strategy_array <<< "$STRATEGIES"
+    strategy_count="${#strategy_array[@]}"
+    if (( strategy_count == 0 )); then
+        echo "F2Z_BENCH_STRATEGIES must name at least one strategy" >&2
         exit 2
-    }
-}
-' "$RAW_LOG"
+    fi
+    has_immediate=0
+    has_barrett=0
+    for strategy in "${strategy_array[@]}"; do
+        [[ "$strategy" == "immediate" ]] && has_immediate=1
+        [[ "$strategy" == "delayed-barrett" ]] && has_barrett=1
+    done
+    ordered_strategies=()
+    if ((has_immediate == 1 && has_barrett == 1)); then
+        if ((exponent_index % 2 == 0)); then
+            ordered_strategies+=(immediate delayed-barrett)
+        else
+            ordered_strategies+=(delayed-barrett immediate)
+        fi
+        for strategy in "${strategy_array[@]}"; do
+            if [[ "$strategy" != "immediate" && "$strategy" != "delayed-barrett" ]]; then
+                ordered_strategies+=("$strategy")
+            fi
+        done
+    else
+        ordered_strategies=("${strategy_array[@]}")
+    fi
+    position=1
+    for strategy in "${ordered_strategies[@]}"; do
+        run_case "$LATENCY_BENCH_BINARY" latency "$exponent" "$strategy" "$position"
+        position=$((position + 1))
+    done
+    exponent_index=$((exponent_index + 1))
+done
 
-echo "Saved $OUTPUT_CSV"
+if [[ "$MEASURE_MEMORY" == "1" ]]; then
+    for exponent in $EXPONENTS; do
+        order=1
+        for strategy in $MEMORY_STRATEGIES; do
+            run_case "$MEMORY_BENCH_BINARY" memory "$exponent" "$strategy" "$order"
+            order=$((order + 1))
+        done
+    done
+fi
+
+python3 "$SCRIPT_DIR/u32_mul_bench_report.py" \
+    "$RAW_LOG" \
+    --raw-csv "$RAW_CSV" \
+    --summary-csv "$SUMMARY_CSV" \
+    --paired-csv "$PAIRED_CSV" \
+    --benchmark-date "$RUN_DATE" \
+    --run-timestamp "$RUN_TIMESTAMP" \
+    --commit "$COMMIT" \
+    --git-dirty "$GIT_DIRTY" \
+    --binary-sha256 "$LATENCY_BINARY_SHA256" \
+    --memory-binary-sha256 "$MEMORY_BINARY_SHA256" \
+    --hardware "$HARDWARE" \
+    --operating-system "$OPERATING_SYSTEM" \
+    --cargo-features "$FEATURES" \
+    --root-seed "$ROOT_SEED" \
+    --threads "$THREADS" \
+    --measured-runs "$REPETITIONS" \
+    --expected-exponents "$EXPONENTS" \
+    --strategies "$STRATEGIES" \
+    --memory-strategies "$MEMORY_STRATEGIES" \
+    --measure-memory "$MEASURE_MEMORY"
+
+echo "Saved raw samples: $RAW_CSV"
+echo "Saved medians: $SUMMARY_CSV"
+echo "Saved paired comparison: $PAIRED_CSV"

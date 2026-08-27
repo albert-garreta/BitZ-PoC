@@ -35,7 +35,7 @@ use crate::{
 
 use super::{
     PreparedConstraintMatrices, R1csProductMles, ScaledMleEvaluationClaim, SpartanField,
-    SpartanPiopProof, absorb_spartan_message,
+    SpartanMatrixCoefficient, SpartanPiopProof, absorb_spartan_message,
     f2z::{
         F2zOpeningClaim, SpartanF2zError, checked_pow2, f2z_generator, hash_code, packed_variables,
         profile_code, validate_commitment, validate_config_pair, validate_f2z_proof_shape,
@@ -495,9 +495,9 @@ pub fn virtual_opening_from_spartan_claim(
 /// opening variant.  The supplied product MLEs must correspond to whichever
 /// assignment Spartan receives.
 #[allow(clippy::too_many_arguments)]
-pub fn prove_spartan_and_f2z<T, F>(
+pub fn prove_spartan_and_f2z<T, F, C>(
     transcript: &mut T,
-    matrices: &PreparedConstraintMatrices<F>,
+    matrices: &PreparedConstraintMatrices<F, C>,
     original_witness: DenseMultilinearExtension<F>,
     products: R1csProductMles<F>,
     max_bits: usize,
@@ -507,6 +507,7 @@ pub fn prove_spartan_and_f2z<T, F>(
 where
     T: Transcript + Send,
     F: F2zCompatibleField,
+    C: SpartanMatrixCoefficient<F>,
 {
     let verifier_opening = opening_mode.verifier_opening();
     validate_original_witness_shape(&original_witness, max_bits, verifier_opening)?;
@@ -625,9 +626,9 @@ where
 
 /// Verifies both Spartan and its direct or virtualized F2Z discharge.
 #[allow(clippy::too_many_arguments)]
-pub fn verify_spartan_and_f2z<T, F>(
+pub fn verify_spartan_and_f2z<T, F, C>(
     transcript: &mut T,
-    matrices: &PreparedConstraintMatrices<F>,
+    matrices: &PreparedConstraintMatrices<F, C>,
     max_bits: usize,
     opening_mode: SpartanF2zVerifierOpening<'_>,
     commitment: &Commitment,
@@ -636,6 +637,7 @@ pub fn verify_spartan_and_f2z<T, F>(
 where
     T: Transcript + Send,
     F: F2zCompatibleField,
+    C: SpartanMatrixCoefficient<F>,
 {
     validate_verifier_workflow(matrices, max_bits, opening_mode, commitment, &proof.f2z)?;
     let params = opening_mode.params();
@@ -745,8 +747,8 @@ where
     }
 }
 
-fn validate_prover_workflow<F>(
-    matrices: &PreparedConstraintMatrices<F>,
+fn validate_prover_workflow<F, C>(
+    matrices: &PreparedConstraintMatrices<F, C>,
     witness: &DenseMultilinearExtension<F>,
     max_bits: usize,
     opening_mode: SpartanF2zVerifierOpening<'_>,
@@ -754,6 +756,7 @@ fn validate_prover_workflow<F>(
 ) -> Result<(), SpartanF2zError>
 where
     F: F2zCompatibleField,
+    C: SpartanMatrixCoefficient<F>,
 {
     validate_relation_field(matrices)?;
     validate_assignment_shape(matrices, witness, opening_mode)?;
@@ -765,8 +768,8 @@ where
     validate_bit_rows(params, hint.rows())
 }
 
-fn validate_verifier_workflow<F>(
-    matrices: &PreparedConstraintMatrices<F>,
+fn validate_verifier_workflow<F, C>(
+    matrices: &PreparedConstraintMatrices<F, C>,
     max_bits: usize,
     opening_mode: SpartanF2zVerifierOpening<'_>,
     commitment: &Commitment,
@@ -774,6 +777,7 @@ fn validate_verifier_workflow<F>(
 ) -> Result<(), SpartanF2zError>
 where
     F: F2zCompatibleField,
+    C: SpartanMatrixCoefficient<F>,
 {
     validate_relation_field(matrices)?;
     validate_relation_opening_shape(matrices, opening_mode)?;
@@ -805,11 +809,12 @@ where
     }
 }
 
-fn validate_relation_field<F>(
-    matrices: &PreparedConstraintMatrices<F>,
+fn validate_relation_field<F, C>(
+    matrices: &PreparedConstraintMatrices<F, C>,
 ) -> Result<(), SpartanF2zError>
 where
     F: F2zCompatibleField,
+    C: SpartanMatrixCoefficient<F>,
 {
     if !F::is_f2z_config(matrices.config()) {
         return Err(SpartanF2zError::UnsupportedFieldModulus);
@@ -817,13 +822,14 @@ where
     Ok(())
 }
 
-fn validate_assignment_shape<F>(
-    matrices: &PreparedConstraintMatrices<F>,
+fn validate_assignment_shape<F, C>(
+    matrices: &PreparedConstraintMatrices<F, C>,
     witness: &DenseMultilinearExtension<F>,
     opening_mode: SpartanF2zVerifierOpening<'_>,
 ) -> Result<(), SpartanF2zError>
 where
     F: F2zCompatibleField,
+    C: SpartanMatrixCoefficient<F>,
 {
     validate_relation_opening_shape(matrices, opening_mode)?;
     let expected_len = checked_pow2(witness.num_vars)?;
@@ -833,12 +839,13 @@ where
     Ok(())
 }
 
-fn validate_relation_opening_shape<F>(
-    matrices: &PreparedConstraintMatrices<F>,
+fn validate_relation_opening_shape<F, C>(
+    matrices: &PreparedConstraintMatrices<F, C>,
     opening_mode: SpartanF2zVerifierOpening<'_>,
 ) -> Result<(), SpartanF2zError>
 where
     F: F2zCompatibleField,
+    C: SpartanMatrixCoefficient<F>,
 {
     let expected_vars = match opening_mode {
         SpartanF2zVerifierOpening::Direct { params } => params
@@ -1325,14 +1332,15 @@ fn validate_component_sum(
     Ok(())
 }
 
-fn assignment_binding<F>(
-    matrices: &PreparedConstraintMatrices<F>,
+fn assignment_binding<F, C>(
+    matrices: &PreparedConstraintMatrices<F, C>,
     max_bits: usize,
     opening_mode: SpartanF2zVerifierOpening<'_>,
     commitment: &Commitment,
 ) -> Result<[u8; 32], SpartanF2zError>
 where
     F: F2zCompatibleField,
+    C: SpartanMatrixCoefficient<F>,
 {
     let mut hasher = Hasher::new();
     hasher.update(ASSIGNMENT_BINDING_DOMAIN);
@@ -1355,9 +1363,9 @@ where
     Ok(*hasher.finalize().as_bytes())
 }
 
-fn absorb_direct_opening<F>(
+fn absorb_direct_opening<F, C>(
     transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<F>,
+    matrices: &PreparedConstraintMatrices<F, C>,
     assignment_binding: &[u8; 32],
     claim: &BitifiedSpartanClaim,
     params: &IntEvalParams,
@@ -1365,6 +1373,7 @@ fn absorb_direct_opening<F>(
 ) -> Result<(), SpartanF2zError>
 where
     F: F2zCompatibleField,
+    C: SpartanMatrixCoefficient<F>,
 {
     let mut hasher = opening_digest_prefix(matrices, assignment_binding, claim)?;
     hasher.update(&[0]);
@@ -1381,9 +1390,9 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-fn absorb_virtual_opening<F>(
+fn absorb_virtual_opening<F, C>(
     transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<F>,
+    matrices: &PreparedConstraintMatrices<F, C>,
     assignment_binding: &[u8; 32],
     claim: &BitifiedSpartanClaim,
     matrix: &BinarySparseMatrix,
@@ -1393,6 +1402,7 @@ fn absorb_virtual_opening<F>(
 ) -> Result<(), SpartanF2zError>
 where
     F: F2zCompatibleField,
+    C: SpartanMatrixCoefficient<F>,
 {
     let mut hasher = opening_digest_prefix(matrices, assignment_binding, claim)?;
     hasher.update(&[1]);
@@ -1426,13 +1436,14 @@ where
     Ok(())
 }
 
-fn opening_digest_prefix<F>(
-    matrices: &PreparedConstraintMatrices<F>,
+fn opening_digest_prefix<F, C>(
+    matrices: &PreparedConstraintMatrices<F, C>,
     assignment_binding: &[u8; 32],
     claim: &BitifiedSpartanClaim,
 ) -> Result<Hasher, SpartanF2zError>
 where
     F: F2zCompatibleField,
+    C: SpartanMatrixCoefficient<F>,
 {
     let mut hasher = Hasher::new();
     hasher.update(OPENING_CLAIM_DOMAIN);

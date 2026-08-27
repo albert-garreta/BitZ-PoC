@@ -5,12 +5,133 @@
 //! supply the three matrices `A`, `B`, and `C`, their row products, and the
 //! complete assignment consumed by those matrices.
 
+use std::borrow::Cow;
+
 use blake3::Hasher;
 use thiserror::Error;
 
 use crate::poly::mle::DenseMultilinearExtension;
 
 use super::{SpartanField, SpartanFieldError, sumcheck::R1csProductMles};
+
+/// A sparse R1CS coefficient that can act on values in `F`.
+///
+/// The coefficient's canonical encoding is always the encoding of the
+/// corresponding element of `F`. Consequently, a Boolean matrix containing
+/// `true` has the same prepared-statement digest as a field-valued matrix
+/// containing `F::one_with_cfg(field_config)` at the same coordinates.
+pub trait SpartanMatrixCoefficient<F>: Clone
+where
+    F: SpartanField,
+{
+    /// Validates coefficient-specific invariants against the prepared field.
+    fn validate(&self, field_modulus_encoding: &[u8]) -> Result<(), SpartanMatrixError>;
+
+    /// Whether this is an explicit zero, which sparse matrices forbid.
+    fn is_zero(&self) -> bool;
+
+    /// Canonical encoding of this coefficient as an element of `F`.
+    fn canonical_field_encoding<'a>(
+        &'a self,
+        field_config: &F::Config,
+        field_one_encoding: &'a [u8],
+    ) -> Cow<'a, [u8]>;
+
+    /// Multiplies a field value by this coefficient.
+    fn scale(&self, value: &F, field_config: &F::Config) -> F;
+
+    /// Computes one CSC column's dot product with field-valued row weights.
+    fn column_dot(
+        column: &[(usize, Self)],
+        row_weights: &[F],
+        zero: &F,
+        field_config: &F::Config,
+    ) -> F
+    where
+        Self: Sized,
+    {
+        let mut evaluation = zero.clone();
+        for (row, coefficient) in column {
+            evaluation += &coefficient.scale(&row_weights[*row], field_config);
+        }
+        evaluation
+    }
+}
+
+impl<F> SpartanMatrixCoefficient<F> for F
+where
+    F: SpartanField,
+{
+    fn validate(&self, field_modulus_encoding: &[u8]) -> Result<(), SpartanMatrixError> {
+        validate_element_field(self, field_modulus_encoding)
+    }
+
+    fn is_zero(&self) -> bool {
+        F::is_zero(self)
+    }
+
+    fn canonical_field_encoding<'a>(
+        &'a self,
+        _field_config: &F::Config,
+        _field_one_encoding: &'a [u8],
+    ) -> Cow<'a, [u8]> {
+        Cow::Owned(self.canonical_element_encoding())
+    }
+
+    fn scale(&self, value: &F, _field_config: &F::Config) -> F {
+        mul(value, self)
+    }
+}
+
+impl<F> SpartanMatrixCoefficient<F> for bool
+where
+    F: SpartanField,
+{
+    fn validate(&self, _field_modulus_encoding: &[u8]) -> Result<(), SpartanMatrixError> {
+        Ok(())
+    }
+
+    fn is_zero(&self) -> bool {
+        !*self
+    }
+
+    fn canonical_field_encoding<'a>(
+        &'a self,
+        field_config: &F::Config,
+        field_one_encoding: &'a [u8],
+    ) -> Cow<'a, [u8]> {
+        if *self {
+            Cow::Borrowed(field_one_encoding)
+        } else {
+            Cow::Owned(F::zero_with_cfg(field_config).canonical_element_encoding())
+        }
+    }
+
+    fn scale(&self, value: &F, field_config: &F::Config) -> F {
+        if *self {
+            value.clone()
+        } else {
+            F::zero_with_cfg(field_config)
+        }
+    }
+
+    fn column_dot(
+        column: &[(usize, Self)],
+        row_weights: &[F],
+        zero: &F,
+        field_config: &F::Config,
+    ) -> F {
+        if let [(row, true)] = column {
+            return row_weights[*row].clone();
+        }
+
+        let mut evaluation = zero.clone();
+        for (row, coefficient) in column {
+            evaluation += &coefficient.scale(&row_weights[*row], field_config);
+        }
+        evaluation
+    }
+}
 
 /// Failures while constructing or evaluating a Spartan matrix statement.
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
@@ -362,11 +483,11 @@ impl<F> ConstraintMatrices<F> {
 
 /// A validated, digest-bound R1CS matrix statement prepared for reuse.
 #[derive(Clone, Debug)]
-pub struct PreparedConstraintMatrices<F>
+pub struct PreparedConstraintMatrices<F, C = F>
 where
     F: SpartanField,
 {
-    matrices: ConstraintMatrices<F>,
+    matrices: ConstraintMatrices<C>,
     field_config: F::Config,
     field_modulus_encoding: Vec<u8>,
     digest: [u8; 32],
@@ -374,21 +495,22 @@ where
     num_column_vars: usize,
 }
 
-impl<F> PreparedConstraintMatrices<F>
+impl<F, C> PreparedConstraintMatrices<F, C>
 where
     F: SpartanField,
+    C: SpartanMatrixCoefficient<F>,
 {
     /// Validates the coefficient field, computes padded domain widths, and
     /// commits to the complete public statement with BLAKE3.
     pub fn new(
-        matrices: ConstraintMatrices<F>,
+        matrices: ConstraintMatrices<C>,
         field_config: &F::Config,
     ) -> Result<Self, SpartanMatrixError> {
         F::validate_config(field_config)?;
         let num_row_vars = padded_num_vars(matrices.row_count())?;
         let num_column_vars = padded_num_vars(matrices.column_count())?;
         let field_modulus_encoding = F::canonical_modulus_encoding(field_config);
-        let digest = constraint_matrix_digest(&matrices, &field_modulus_encoding)?;
+        let digest = constraint_matrix_digest(&matrices, field_config, &field_modulus_encoding)?;
 
         Ok(Self {
             matrices,
@@ -401,7 +523,7 @@ where
     }
 
     /// Validated `A`, `B`, and `C` matrices.
-    pub const fn matrices(&self) -> &ConstraintMatrices<F> {
+    pub const fn matrices(&self) -> &ConstraintMatrices<C> {
         &self.matrices
     }
 
@@ -462,13 +584,16 @@ where
             .zip(self.matrices.b().columns())
             .zip(self.matrices.c().columns())
         {
-            let mut evaluation = sparse_column_dot(a_column, &row_weights, &zero);
+            let mut evaluation =
+                sparse_column_dot(a_column, &row_weights, &zero, &self.field_config);
             if !b_column.is_empty() {
-                let b_evaluation = sparse_column_dot(b_column, &row_weights, &zero);
+                let b_evaluation =
+                    sparse_column_dot(b_column, &row_weights, &zero, &self.field_config);
                 evaluation += &mul(rho, &b_evaluation);
             }
             if !c_column.is_empty() {
-                let c_evaluation = sparse_column_dot(c_column, &row_weights, &zero);
+                let c_evaluation =
+                    sparse_column_dot(c_column, &row_weights, &zero, &self.field_config);
                 evaluation += &mul(&rho_squared, &c_evaluation);
             }
             evaluations.push(evaluation);
@@ -515,12 +640,27 @@ where
         let column_weights = eq_table(column_point, &self.field_config)?;
         let zero = F::zero_with_cfg(&self.field_config);
         let rho_squared = mul(rho, rho);
-        let mut evaluation =
-            evaluate_sparse_matrix(self.matrices.a(), &row_weights, &column_weights, &zero);
-        let b_evaluation =
-            evaluate_sparse_matrix(self.matrices.b(), &row_weights, &column_weights, &zero);
-        let c_evaluation =
-            evaluate_sparse_matrix(self.matrices.c(), &row_weights, &column_weights, &zero);
+        let mut evaluation = evaluate_sparse_matrix(
+            self.matrices.a(),
+            &row_weights,
+            &column_weights,
+            &zero,
+            &self.field_config,
+        );
+        let b_evaluation = evaluate_sparse_matrix(
+            self.matrices.b(),
+            &row_weights,
+            &column_weights,
+            &zero,
+            &self.field_config,
+        );
+        let c_evaluation = evaluate_sparse_matrix(
+            self.matrices.c(),
+            &row_weights,
+            &column_weights,
+            &zero,
+            &self.field_config,
+        );
         evaluation += &mul(rho, &b_evaluation);
         evaluation += &mul(&rho_squared, &c_evaluation);
 
@@ -817,30 +957,34 @@ where
         .ok_or(SpartanMatrixError::InvalidMleOperation)
 }
 
-fn sparse_column_dot<F>(column: &[(usize, F)], row_weights: &[F], zero: &F) -> F
-where
-    F: SpartanField,
-{
-    let mut evaluation = zero.clone();
-    for (row, coefficient) in column {
-        evaluation += &mul(&row_weights[*row], coefficient);
-    }
-    evaluation
-}
-
-fn evaluate_sparse_matrix<F>(
-    matrix: &SparseMatrix<F>,
+fn sparse_column_dot<F, C>(
+    column: &[(usize, C)],
     row_weights: &[F],
-    column_weights: &[F],
     zero: &F,
+    field_config: &F::Config,
 ) -> F
 where
     F: SpartanField,
+    C: SpartanMatrixCoefficient<F>,
+{
+    C::column_dot(column, row_weights, zero, field_config)
+}
+
+fn evaluate_sparse_matrix<F, C>(
+    matrix: &SparseMatrix<C>,
+    row_weights: &[F],
+    column_weights: &[F],
+    zero: &F,
+    field_config: &F::Config,
+) -> F
+where
+    F: SpartanField,
+    C: SpartanMatrixCoefficient<F>,
 {
     let mut evaluation = zero.clone();
     for (column, entries) in matrix.columns().enumerate() {
         if !entries.is_empty() {
-            let column_evaluation = sparse_column_dot(entries, row_weights, zero);
+            let column_evaluation = sparse_column_dot(entries, row_weights, zero, field_config);
             evaluation += &mul(&column_weights[column], &column_evaluation);
         }
     }
@@ -900,18 +1044,19 @@ impl<'a, F> CanonicalRows<'a, F> {
     }
 }
 
-fn validate_matrix_field<F>(
+fn validate_matrix_coefficients<F, C>(
     matrix_name: &'static str,
-    rows: &CanonicalRows<'_, F>,
+    rows: &CanonicalRows<'_, C>,
     modulus_encoding: &[u8],
 ) -> Result<(), SpartanMatrixError>
 where
     F: SpartanField,
+    C: SpartanMatrixCoefficient<F>,
 {
     for (row_index, row) in rows.rows().enumerate() {
         for (column, coefficient) in row {
-            validate_element_field(*coefficient, modulus_encoding)?;
-            if F::is_zero(*coefficient) {
+            coefficient.validate(modulus_encoding)?;
+            if coefficient.is_zero() {
                 return Err(SpartanMatrixError::ExplicitZeroCoefficient {
                     matrix: matrix_name,
                     row: row_index,
@@ -947,18 +1092,21 @@ where
     Ok(())
 }
 
-fn constraint_matrix_digest<F>(
-    matrices: &ConstraintMatrices<F>,
+fn constraint_matrix_digest<F, C>(
+    matrices: &ConstraintMatrices<C>,
+    field_config: &F::Config,
     field_modulus_encoding: &[u8],
 ) -> Result<[u8; 32], SpartanMatrixError>
 where
     F: SpartanField,
+    C: SpartanMatrixCoefficient<F>,
 {
     let mut hash = Hasher::new();
     hash.update(b"f2z/spartan/constraint-matrices/v2");
     hash_bytes(&mut hash, field_modulus_encoding)?;
     hash_usize(&mut hash, matrices.row_count())?;
     hash_usize(&mut hash, matrices.column_count())?;
+    let field_one_encoding = F::one_with_cfg(field_config).canonical_element_encoding();
 
     for (matrix_name, label, matrix) in [
         ("A", b'A', matrices.a()),
@@ -969,13 +1117,15 @@ where
         // therefore uses O(rows + nnz(matrix)) auxiliary memory, not three
         // nested row-vector transposes held simultaneously.
         let rows = CanonicalRows::new(matrix);
-        validate_matrix_field(matrix_name, &rows, field_modulus_encoding)?;
+        validate_matrix_coefficients::<F, C>(matrix_name, &rows, field_modulus_encoding)?;
         hash.update(&[label]);
         for row in rows.rows() {
             hash_usize(&mut hash, row.len())?;
             for (column, coefficient) in row {
                 hash_usize(&mut hash, *column)?;
-                hash_bytes(&mut hash, &coefficient.canonical_element_encoding())?;
+                let encoding =
+                    coefficient.canonical_field_encoding(field_config, &field_one_encoding);
+                hash_bytes(&mut hash, encoding.as_ref())?;
             }
         }
     }
@@ -1288,6 +1438,78 @@ mod tests {
             .evaluate_batched(&row_point, &rho, &column_point)
             .unwrap();
         assert_eq!(dense_evaluation, sparse_evaluation);
+    }
+
+    #[test]
+    fn boolean_one_coefficients_match_field_one_statement_and_evaluation() {
+        let config = config();
+        let one = F128::one_with_cfg(&config);
+        let field_matrix = SparseMatrix::try_from_rows(
+            4,
+            vec![
+                vec![(0, one.clone()), (3, one.clone())],
+                vec![(1, one.clone())],
+                vec![(2, one)],
+            ],
+        )
+        .unwrap();
+        let boolean_matrix = SparseMatrix::try_from_rows(
+            4,
+            vec![vec![(0, true), (3, true)], vec![(1, true)], vec![(2, true)]],
+        )
+        .unwrap();
+        let field_prepared = PreparedConstraintMatrices::new(
+            ConstraintMatrices::new(field_matrix.clone(), field_matrix.clone(), field_matrix)
+                .unwrap(),
+            &config,
+        )
+        .unwrap();
+        let boolean_prepared = PreparedConstraintMatrices::<F128, bool>::new(
+            ConstraintMatrices::new(
+                boolean_matrix.clone(),
+                boolean_matrix.clone(),
+                boolean_matrix,
+            )
+            .unwrap(),
+            &config,
+        )
+        .unwrap();
+
+        assert_eq!(field_prepared.digest(), boolean_prepared.digest());
+
+        let row_point = [field(7, &config), field(11, &config)];
+        let column_point = [field(13, &config), field(17, &config)];
+        let rho = field(19, &config);
+        assert_eq!(
+            field_prepared.bind_and_batch(&row_point, &rho).unwrap(),
+            boolean_prepared.bind_and_batch(&row_point, &rho).unwrap()
+        );
+        assert_eq!(
+            field_prepared
+                .evaluate_batched(&row_point, &rho, &column_point)
+                .unwrap(),
+            boolean_prepared
+                .evaluate_batched(&row_point, &rho, &column_point)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn prepared_boolean_statement_rejects_explicit_false_coefficients() {
+        let config = config();
+        let false_matrix = SparseMatrix::try_from_rows(1, vec![vec![(0, false)]]).unwrap();
+        let true_matrix = SparseMatrix::try_from_rows(1, vec![vec![(0, true)]]).unwrap();
+        let matrices =
+            ConstraintMatrices::new(false_matrix, true_matrix.clone(), true_matrix).unwrap();
+
+        assert!(matches!(
+            PreparedConstraintMatrices::<F128, bool>::new(matrices, &config),
+            Err(SpartanMatrixError::ExplicitZeroCoefficient {
+                matrix: "A",
+                row: 0,
+                column: 0,
+            })
+        ));
     }
 
     #[test]

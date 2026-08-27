@@ -11,7 +11,7 @@ use crate::{pcs::IntEvalParams, poly::mle::DenseMultilinearExtension};
 
 use super::{
     ConstraintMatrices, PreparedConstraintMatrices, R1csProductMles, SparseMatrix, SpartanField,
-    SpartanMatrixError, build_assignment_mle, build_product_mles,
+    SpartanMatrixError, SpartanRelationBackend, build_assignment_mle, build_product_mles,
 };
 
 /// Number of committed little-endian bits used for each left operand.
@@ -33,6 +33,23 @@ const ASSIGNMENT_BLOCKS: usize = 4;
 // Keep even small relation fixtures in the geometry accepted by the F2Z row
 // packer. The combined production proof applies its stricter 2^15 minimum.
 const MIN_CAPACITY: usize = 1 << 8;
+
+/// Integer relation backend used by the u32 multiplication Spartan prover.
+///
+/// Boolean selector matrices act on an exact u64 assignment and produce exact
+/// u64 matrix products. Field conversion is deferred to the first sumcheck
+/// fold boundary.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct U32MulRelationBackend;
+
+impl<F> SpartanRelationBackend<F> for U32MulRelationBackend
+where
+    F: SpartanField,
+{
+    type MatrixCoeff = bool;
+    type Witness = u64;
+    type Product = u64;
+}
 
 /// Failures while constructing the integer multiplication relation.
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
@@ -153,6 +170,35 @@ impl U32MulLayout {
 pub struct U32MulWitness {
     layout: U32MulLayout,
     assignment: Box<[u64]>,
+}
+
+/// Native MLE tables retained before Spartan's first field-valued fold.
+///
+/// The assignment and the three row products preserve the exact integer
+/// values of the u32 multiplication relation. They are padded to the same
+/// Boolean domains as their field-valued counterparts, but no modular
+/// projection has occurred yet.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct U32MulNativeMles {
+    assignment: DenseMultilinearExtension<u64>,
+    products: R1csProductMles<u64>,
+}
+
+impl U32MulNativeMles {
+    /// Complete native assignment MLE.
+    pub const fn assignment(&self) -> &DenseMultilinearExtension<u64> {
+        &self.assignment
+    }
+
+    /// Native `Az`, `Bz`, and `Cz` MLEs.
+    pub const fn products(&self) -> &R1csProductMles<u64> {
+        &self.products
+    }
+
+    /// Moves out the assignment and product MLEs.
+    pub fn into_parts(self) -> (DenseMultilinearExtension<u64>, R1csProductMles<u64>) {
+        (self.assignment, self.products)
+    }
 }
 
 impl U32MulWitness {
@@ -344,12 +390,46 @@ fn selector_matrix<C: Clone>(
 pub fn prepare_u32_mul_relation<F>(
     layout: U32MulLayout,
     field_config: &F::Config,
-) -> Result<PreparedConstraintMatrices<F>, U32MulError>
+) -> Result<PreparedConstraintMatrices<F, bool>, U32MulError>
 where
     F: SpartanField,
 {
-    let matrices = u32_mul_constraint_matrices(&layout, F::one_with_cfg(field_config))?;
+    let matrices = u32_mul_constraint_matrices(&layout, true)?;
     Ok(PreparedConstraintMatrices::new(matrices, field_config)?)
+}
+
+/// Pads the exact integer assignment and products without projecting them to
+/// the Spartan field.
+///
+/// This is the input boundary for a native first sumcheck round. A prover must
+/// reduce each resulting round claim to `F` before transcript absorption and
+/// must fold these tables into field-valued MLEs before a later multiplication.
+pub fn project_u32_mul_native_witness(witness: &U32MulWitness) -> U32MulNativeMles {
+    let assignment = DenseMultilinearExtension {
+        evaluations: witness.assignment().to_vec(),
+        num_vars: witness.assignment().len().ilog2() as usize,
+    };
+
+    let product_len = witness.layout.multiplications.next_power_of_two();
+    let product_vars = product_len.ilog2() as usize;
+    let padded_product = |values: &[u64]| {
+        let mut evaluations = values.to_vec();
+        evaluations.resize(product_len, 0);
+        DenseMultilinearExtension {
+            evaluations,
+            num_vars: product_vars,
+        }
+    };
+    let products = R1csProductMles {
+        az: padded_product(witness.az()),
+        bz: padded_product(witness.bz()),
+        cz: padded_product(witness.cz()),
+    };
+
+    U32MulNativeMles {
+        assignment,
+        products,
+    }
 }
 
 /// Converts the exact native assignment and selector products into the
@@ -478,6 +558,28 @@ mod tests {
     }
 
     #[test]
+    fn native_mles_preserve_values_and_pad_only_the_row_domain() {
+        let inputs = [(2, 3), (u32::MAX, u32::MAX), (11, 13)];
+        let witness = U32MulWitness::from_inputs(&inputs).unwrap();
+        let native = project_u32_mul_native_witness(&witness);
+
+        assert_eq!(
+            native.assignment().num_vars,
+            witness.layout().gate_vars() + 2
+        );
+        assert_eq!(native.assignment().evaluations, witness.assignment());
+        assert_eq!(native.products().az.num_vars, 2);
+        assert_eq!(native.products().bz.num_vars, 2);
+        assert_eq!(native.products().cz.num_vars, 2);
+        assert_eq!(&native.products().az.evaluations[..3], witness.az());
+        assert_eq!(&native.products().bz.evaluations[..3], witness.bz());
+        assert_eq!(&native.products().cz.evaluations[..3], witness.cz());
+        assert_eq!(native.products().az.evaluations[3], 0);
+        assert_eq!(native.products().bz.evaluations[3], 0);
+        assert_eq!(native.products().cz.evaluations[3], 0);
+    }
+
+    #[test]
     fn generic_matrices_are_exact_csc_selectors() {
         let layout = U32MulLayout::new(3).unwrap();
         let matrices = u32_mul_constraint_matrices(&layout, 1_u64).unwrap();
@@ -570,5 +672,26 @@ mod tests {
             assert_eq!(bz, &field(witness.bz()[row], &config));
             assert_eq!(cz, &field(witness.cz()[row], &config));
         }
+    }
+
+    #[test]
+    fn prepared_u32_relation_uses_boolean_selectors() {
+        let config = config();
+        let layout = U32MulLayout::new(3).unwrap();
+        let relation = prepare_u32_mul_relation::<F128>(layout, &config).unwrap();
+        let capacity = layout.capacity();
+
+        assert_eq!(
+            relation.matrices().a().column(capacity),
+            Some(&[(0, true)][..])
+        );
+        assert_eq!(
+            relation.matrices().b().column(2 * capacity + 1),
+            Some(&[(1, true)][..])
+        );
+        assert_eq!(
+            relation.matrices().c().column(3 * capacity + 2),
+            Some(&[(2, true)][..])
+        );
     }
 }

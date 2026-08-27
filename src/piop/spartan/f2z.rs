@@ -40,10 +40,15 @@ use crate::{
 use super::{
     PreparedConstraintMatrices, R1csProductMles, SpartanField, absorb_spartan_message,
     matrix::ScaledMleEvaluationClaim,
-    piop::{SpartanError, SpartanPiopProof, prove_spartan_piop, verify_spartan_proof},
+    piop::{
+        SpartanError, SpartanPiopProof, SpartanReductionStrategy,
+        prove_spartan_piop_u32_native_with_strategy, prove_spartan_piop_with_strategy,
+        verify_spartan_proof,
+    },
     u32_mul::{
         U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS, U32_MUL_PRODUCT_SLOT_START, U32_MUL_X_BITS,
         U32_MUL_X_SLOT_START, U32_MUL_Y_BITS, U32_MUL_Y_SLOT_START, U32MulError, U32MulLayout,
+        U32MulWitness, project_u32_mul_native_witness, project_u32_mul_witness,
     },
 };
 
@@ -324,12 +329,102 @@ pub fn bitify_u32_mul_spartan_claim(
 /// This production entry point requires at least `2^15` multiplication slots.
 pub fn prove_u32_mul_spartan_and_f2z<T: Transcript + Send>(
     transcript: &mut T,
-    matrices: &PreparedConstraintMatrices<SpartanF2zField>,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField, bool>,
     layout: &U32MulLayout,
     assignment: DenseMultilinearExtension<SpartanF2zField>,
     products: R1csProductMles<SpartanF2zField>,
     hint: &FlockCommitHint,
 ) -> Result<U32MulSpartanF2zProof, SpartanF2zError> {
+    let (p, pc, assignment_binding) = prepare_combined_prover(matrices, layout, hint)?;
+    let (spartan, terminal_claim) = {
+        let _scope = crate::utils::prof::scope("spartan-f2z:spartan_prove");
+        prove_spartan_piop_with_strategy(
+            transcript,
+            matrices,
+            &assignment_binding,
+            products,
+            assignment,
+            SpartanReductionStrategy::Immediate,
+        )?
+    };
+    finish_combined_prover(
+        transcript,
+        matrices,
+        layout,
+        hint,
+        &p,
+        &pc,
+        &assignment_binding,
+        spartan,
+        terminal_claim,
+    )
+}
+
+/// Proves the u32 multiplication workflow with a reduction strategy selected
+/// once before entering the Spartan product loops.
+pub fn prove_u32_mul_spartan_and_f2z_with_strategy<T: Transcript + Send>(
+    transcript: &mut T,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField, bool>,
+    layout: &U32MulLayout,
+    witness: &U32MulWitness,
+    hint: &FlockCommitHint,
+    strategy: SpartanReductionStrategy,
+) -> Result<U32MulSpartanF2zProof, SpartanF2zError> {
+    if witness.layout() != layout {
+        return Err(SpartanF2zError::RelationWitnessLayoutMismatch);
+    }
+    let (p, pc, assignment_binding) = prepare_combined_prover(matrices, layout, hint)?;
+
+    // Projection is deliberately outside the Spartan timing scope. Immediate
+    // mode materializes the original field tables, while delayed modes keep
+    // the exact u64 relation through the first outer and inner rounds.
+    let (spartan, terminal_claim) = match strategy {
+        SpartanReductionStrategy::Immediate => {
+            let (assignment, products) =
+                project_u32_mul_witness::<SpartanF2zField>(witness, matrices.config())?;
+            let _scope = crate::utils::prof::scope("spartan-f2z:spartan_prove");
+            prove_spartan_piop_with_strategy(
+                transcript,
+                matrices,
+                &assignment_binding,
+                products,
+                assignment,
+                strategy,
+            )?
+        }
+        SpartanReductionStrategy::DelayedBarrett
+        | SpartanReductionStrategy::DelayedCryptoBigint => {
+            let (assignment, products) = project_u32_mul_native_witness(witness).into_parts();
+            let _scope = crate::utils::prof::scope("spartan-f2z:spartan_prove");
+            prove_spartan_piop_u32_native_with_strategy(
+                transcript,
+                matrices,
+                &assignment_binding,
+                products,
+                assignment,
+                strategy,
+            )?
+        }
+    };
+
+    finish_combined_prover(
+        transcript,
+        matrices,
+        layout,
+        hint,
+        &p,
+        &pc,
+        &assignment_binding,
+        spartan,
+        terminal_claim,
+    )
+}
+
+fn prepare_combined_prover(
+    matrices: &PreparedConstraintMatrices<SpartanF2zField, bool>,
+    layout: &U32MulLayout,
+    hint: &FlockCommitHint,
+) -> Result<(crate::pcs::IntEvalParams, LigProverConfig, [u8; 32]), SpartanF2zError> {
     validate_relation(matrices)?;
     validate_relation_layout(matrices, layout)?;
     validate_layout_geometry(layout)?;
@@ -339,18 +434,21 @@ pub fn prove_u32_mul_spartan_and_f2z<T: Transcript + Send>(
     validate_bit_rows(&p, hint.rows())?;
     validate_commitment(&p, &hint.commitment, &pc)?;
     let assignment_binding = assignment_binding(layout, &hint.commitment)?;
+    Ok((p, pc, assignment_binding))
+}
 
-    let (spartan, terminal_claim) = {
-        let _scope = crate::utils::prof::scope("spartan-f2z:spartan_prove");
-        prove_spartan_piop(
-            transcript,
-            matrices,
-            &assignment_binding,
-            products,
-            assignment,
-        )?
-    };
-
+#[allow(clippy::too_many_arguments)]
+fn finish_combined_prover<T: Transcript + Send>(
+    transcript: &mut T,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField, bool>,
+    layout: &U32MulLayout,
+    hint: &FlockCommitHint,
+    p: &crate::pcs::IntEvalParams,
+    pc: &LigProverConfig,
+    assignment_binding: &[u8; 32],
+    spartan: SpartanPiopProof<SpartanF2zField>,
+    terminal_claim: ScaledMleEvaluationClaim<SpartanF2zField>,
+) -> Result<U32MulSpartanF2zProof, SpartanF2zError> {
     let opening = {
         let _scope = crate::utils::prof::scope("spartan-f2z:bitify_prover");
         let opening = bitify_u32_mul_spartan_claim(&terminal_claim, layout)?;
@@ -369,11 +467,11 @@ pub fn prove_u32_mul_spartan_and_f2z<T: Transcript + Send>(
         prove_mle_eval_mod_q_ligerito(
             transcript,
             hint,
-            &p,
+            p,
             opening.row_weights_q(),
             FQ_BITS,
             f2z_generator(),
-            &pc,
+            pc,
         )
     };
 
@@ -387,7 +485,7 @@ pub fn prove_u32_mul_spartan_and_f2z<T: Transcript + Send>(
 /// This production entry point requires at least `2^15` multiplication slots.
 pub fn verify_u32_mul_spartan_and_f2z<T: Transcript + Send>(
     transcript: &mut T,
-    matrices: &PreparedConstraintMatrices<SpartanF2zField>,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField, bool>,
     layout: &U32MulLayout,
     commitment: &Commitment,
     proof: &U32MulSpartanF2zProof,
@@ -571,7 +669,7 @@ pub(crate) fn validate_commitment(
 }
 
 fn validate_relation(
-    matrices: &PreparedConstraintMatrices<SpartanF2zField>,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField, bool>,
 ) -> Result<(), SpartanF2zError> {
     let expected = SpartanF2zField::canonical_modulus_encoding(&spartan_f2z_field_config());
     if matrices.field_modulus_encoding() != expected {
@@ -581,7 +679,7 @@ fn validate_relation(
 }
 
 fn validate_relation_layout(
-    matrices: &PreparedConstraintMatrices<SpartanF2zField>,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField, bool>,
     layout: &U32MulLayout,
 ) -> Result<(), SpartanF2zError> {
     if matrices.matrices().row_count() != layout.multiplications()
@@ -672,7 +770,7 @@ fn assignment_binding(
 
 fn absorb_opening_claim<T: Transcript>(
     transcript: &mut T,
-    matrices: &PreparedConstraintMatrices<SpartanF2zField>,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField, bool>,
     assignment_binding: &[u8; 32],
     terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
     opening: &F2zOpeningClaim,
@@ -683,7 +781,7 @@ fn absorb_opening_claim<T: Transcript>(
 }
 
 fn opening_claim_digest(
-    matrices: &PreparedConstraintMatrices<SpartanF2zField>,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField, bool>,
     assignment_binding: &[u8; 32],
     terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
     opening: &F2zOpeningClaim,
@@ -767,7 +865,8 @@ mod tests {
     use crypto_primitives::FromWithConfig;
 
     use super::*;
-    use crate::piop::spartan::u32_mul::U32MulWitness;
+    use crate::piop::spartan::u32_mul::{U32MulWitness, prepare_u32_mul_relation};
+    use crate::transcript::Blake3Transcript;
 
     fn terminal_claim(
         point: &[Fq],
@@ -911,5 +1010,62 @@ mod tests {
 
         let production = U32MulLayout::new(1 << MIN_PRODUCTION_GATE_VARS).unwrap();
         configs_for_layout(&production).expect("the smallest embedded profile is available");
+    }
+
+    #[test]
+    #[ignore = "runs three production-sized Spartan/F2Z proofs"]
+    fn combined_strategies_are_byte_exact_and_all_verify() {
+        let witness =
+            U32MulWitness::from_fn(1 << MIN_PRODUCTION_GATE_VARS, |index| match index & 3 {
+                0 => (0, u32::MAX),
+                1 => (u32::MAX, u32::MAX),
+                _ => {
+                    let value = (index as u32).wrapping_mul(0x9E37_79B9);
+                    (value, value.rotate_left(13) ^ 0xA5A5_5A5A)
+                }
+            })
+            .unwrap();
+        let layout = *witness.layout();
+        let field_config = spartan_f2z_field_config();
+        let matrices = prepare_u32_mul_relation::<SpartanF2zField>(layout, &field_config).unwrap();
+        let hint = commit_u32_mul_witness(&layout, witness.f2z_bit_rows()).unwrap();
+        let mut reference: Option<(SpartanPiopProof<SpartanF2zField>, Vec<u8>, u128)> = None;
+
+        for strategy in [
+            SpartanReductionStrategy::Immediate,
+            SpartanReductionStrategy::DelayedBarrett,
+            SpartanReductionStrategy::DelayedCryptoBigint,
+        ] {
+            let mut prover_transcript = Blake3Transcript::new();
+            let proof = prove_u32_mul_spartan_and_f2z_with_strategy(
+                &mut prover_transcript,
+                &matrices,
+                &layout,
+                &witness,
+                &hint,
+                strategy,
+            )
+            .unwrap();
+            let continuation = prover_transcript.get_challenge::<u128>();
+
+            let mut verifier_transcript = Blake3Transcript::new();
+            verify_u32_mul_spartan_and_f2z(
+                &mut verifier_transcript,
+                &matrices,
+                &layout,
+                &hint.commitment,
+                &proof,
+            )
+            .unwrap();
+
+            let f2z_bytes = proof.f2z.to_bytes();
+            if let Some((reference_spartan, reference_f2z, reference_continuation)) = &reference {
+                assert_eq!(&proof.spartan, reference_spartan);
+                assert_eq!(&f2z_bytes, reference_f2z);
+                assert_eq!(&continuation, reference_continuation);
+            } else {
+                reference = Some((proof.spartan, f2z_bytes, continuation));
+            }
+        }
     }
 }

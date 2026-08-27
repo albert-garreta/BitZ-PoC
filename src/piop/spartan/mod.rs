@@ -17,24 +17,26 @@ pub mod workflow;
 pub use f2z::{
     F2zOpeningClaim, SpartanF2zError, SpartanF2zField, U32MulSpartanF2zProof,
     bitify_u32_mul_spartan_claim, commit_u32_mul_witness, prove_u32_mul_spartan_and_f2z,
-    spartan_f2z_field_config, verify_u32_mul_spartan_and_f2z,
+    prove_u32_mul_spartan_and_f2z_with_strategy, spartan_f2z_field_config,
+    verify_u32_mul_spartan_and_f2z,
 };
 
 pub use matrix::{
     ConstraintMatrices, MleClaimError, PreparedConstraintMatrices, ScaledMleEvaluationClaim,
-    SparseMatrix, SpartanMatrixError, build_assignment_mle, build_boolean_assignment_mle,
-    build_product_mles, eq_eval, eq_table, make_equality_factors,
+    SparseMatrix, SpartanMatrixCoefficient, SpartanMatrixError, build_assignment_mle,
+    build_boolean_assignment_mle, build_product_mles, eq_eval, eq_table, make_equality_factors,
 };
 pub use piop::{
     SPARTAN_ASSIGNMENT_ORACLE_DOMAIN, SPARTAN_PIOP_DOMAIN, SpartanError, SpartanPiopProof,
-    prove_spartan_nonsuccinct, prove_spartan_piop, verify_spartan_proof,
-    verify_spartan_with_mle_claim,
+    SpartanReductionStrategy, prove_spartan_nonsuccinct, prove_spartan_piop,
+    prove_spartan_piop_u32_native_with_strategy, prove_spartan_piop_with_strategy,
+    verify_spartan_proof, verify_spartan_with_mle_claim,
 };
 pub use sumcheck::{OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProof};
 pub use u32_mul::{
     U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS, U32_MUL_X_BITS, U32_MUL_Y_BITS, U32MulError,
-    U32MulLayout, U32MulWitness, prepare_u32_mul_relation, project_u32_mul_witness,
-    u32_mul_constraint_matrices,
+    U32MulLayout, U32MulNativeMles, U32MulRelationBackend, U32MulWitness, prepare_u32_mul_relation,
+    project_u32_mul_native_witness, project_u32_mul_witness, u32_mul_constraint_matrices,
 };
 pub use workflow::{
     BinarySparseMatrix, BinarySparseRow, BitifiedSpartanClaim, CompiledVirtualXorClaim,
@@ -123,6 +125,20 @@ pub trait SpartanField: PrimeField {
     /// time; callers should normally use [`squeeze_field`], which performs the
     /// post-draw absorption required by this crate's transcript convention.
     fn sample_uniform<T: Transcript>(transcript: &mut T, field_cfg: &Self::Config) -> Self;
+}
+
+/// Type-level relation boundary connecting sparse coefficients, witness
+/// entries, and matrix-product entries before they are folded into `F`.
+pub trait SpartanRelationBackend<F>
+where
+    F: SpartanField,
+{
+    /// Coefficient type stored by the prepared sparse matrices.
+    type MatrixCoeff: SpartanMatrixCoefficient<F>;
+    /// Native value type stored by the assignment MLE.
+    type Witness;
+    /// Native value type stored by `Az`, `Bz`, and `Cz`.
+    type Product;
 }
 
 impl<const LIMBS: usize> SpartanField for MontyField<LIMBS> {

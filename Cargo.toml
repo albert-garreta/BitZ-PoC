@@ -53,6 +53,9 @@ harness = false
 default = ["parallel"]
 parallel = ["dep:rayon"]
 unchecked = []
+# Benchmark-only allocator instrumentation. The latency binary deliberately
+# omits this feature so allocation accounting cannot bias the timing gate.
+bench-peak-memory = []
 
 # Match the upstream zinc-plus release profile — without fat LTO +
 # codegen-units=1 the vendored field kernels and the sumcheck driver lose
