@@ -56,7 +56,8 @@ use num_traits::Zero;
 use rayon::prelude::*;
 use crate::transcript::traits::{ConstTranscribable, Transcript};
 use crate::utils::{
-    cfg_into_iter, cfg_iter, inner_transparent_field::InnerTransparentField, wide_mul::WideMulAcc,
+    cfg_chunks, cfg_into_iter, cfg_iter, cfg_iter_mut,
+    inner_transparent_field::InnerTransparentField, wide_mul::WideMulAcc,
 };
 
 use super::prover::{NatEvaluatedPolyWithoutConstant, ProverMsg};
@@ -83,6 +84,13 @@ pub struct EqInnerGroup<F> {
 pub enum GroupBufs<F> {
     /// Materialised `(L, R)` pair vectors — the general case.
     Dense(Vec<(Vec<F>, Vec<F>)>),
+    /// Single-pair Dense group whose `(L, R)` live in the driver's shared
+    /// [`FlatDense`] store (segment = the group's index): the wide-shallow
+    /// forest layout. Semantically identical to a single-pair `Dense`
+    /// group; only the storage is flat. Requires the driver's `flat`
+    /// parameter, a shared point (group 0 carries `q`, the rest leave it
+    /// empty) and the Gruen format.
+    Flat,
     /// **Bit-affine leaf layer** (char-2 forests, single pair): entry `i` of
     /// `L` is *defined* as `1 + lbits[i]·tau_l[i]` (and `R` from `rbits` /
     /// `tau_r`), with the `tau` coefficient arrays shared across groups via
@@ -236,6 +244,89 @@ pub struct EqInnerGroupMixed<F> {
     pub q: Vec<F>,
     pub scale: F,
     pub bufs: GroupBufs<F>,
+}
+
+/// Shared flat storage for all-[`GroupBufs::Flat`] single-pair groups:
+/// group `t`'s `L` values occupy `l[t·seg .. (t+1)·seg]` (same for `R`),
+/// of which only the logical prefix is live once rounds start folding —
+/// the passes are handed exact prefix lengths, so no truncation happens
+/// (the fold writes land in the prefix exactly as the `Dense` in-place
+/// folds do). One allocation per side per layer replaces `2^s` per-group
+/// vectors: the wide-shallow forest's per-group allocation floor.
+pub struct FlatDense<F> {
+    pub l: Vec<F>,
+    pub r: Vec<F>,
+    /// Allocated stride per group per side (the layer's initial `2^k`).
+    pub seg: usize,
+}
+
+/// Map a body over every group's `(L, R)` segment of a [`FlatDense`]
+/// store, in group order (parallel with the driver's per-group task
+/// granularity when the feature is on). The body sees the FULL segment;
+/// it slices the live prefix itself.
+#[allow(clippy::arithmetic_side_effects)]
+fn flat_map_segments<F, T, Body>(fs: &mut FlatDense<F>, half: usize, body: Body) -> Vec<T>
+where
+    F: Send + Sync,
+    T: Send,
+    Body: Fn(usize, &mut [F], &mut [F]) -> T + Sync + Send,
+{
+    let seg = fs.seg;
+    #[cfg(feature = "parallel")]
+    {
+        let n = fs.l.len() / seg.max(1);
+        let min_len = par_min_len(n, half);
+        fs.l
+            .par_chunks_mut(seg)
+            .zip(fs.r.par_chunks_mut(seg))
+            .with_min_len(min_len)
+            .enumerate()
+            .map(|(t, (lseg, rseg))| body(t, lseg, rseg))
+            .collect()
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        let _ = half;
+        fs.l
+            .chunks_mut(seg)
+            .zip(fs.r.chunks_mut(seg))
+            .enumerate()
+            .map(|(t, (lseg, rseg))| body(t, lseg, rseg))
+            .collect()
+    }
+}
+
+/// Read-only sibling of [`flat_map_segments`] (the no-fold message pass).
+#[allow(clippy::arithmetic_side_effects)]
+fn flat_map_segments_ref<F, T, Body>(fs: &FlatDense<F>, half: usize, body: Body) -> Vec<T>
+where
+    F: Send + Sync,
+    T: Send,
+    Body: Fn(usize, &[F], &[F]) -> T + Sync + Send,
+{
+    let seg = fs.seg;
+    #[cfg(feature = "parallel")]
+    {
+        let n = fs.l.len() / seg.max(1);
+        let min_len = par_min_len(n, half);
+        fs.l
+            .par_chunks(seg)
+            .zip(fs.r.par_chunks(seg))
+            .with_min_len(min_len)
+            .enumerate()
+            .map(|(t, (lseg, rseg))| body(t, lseg, rseg))
+            .collect()
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        let _ = half;
+        fs.l
+            .chunks(seg)
+            .zip(fs.r.chunks(seg))
+            .enumerate()
+            .map(|(t, (lseg, rseg))| body(t, lseg, rseg))
+            .collect()
+    }
 }
 
 /// Round-1 message tables for one leaf `tau` set, two interchangeable
@@ -607,11 +698,25 @@ fn mats_pre_enabled() -> bool {
     *ON.get_or_init(|| std::env::var("F2Z_MATS_PRE").map_or(true, |v| v != "0"))
 }
 
-/// Slot-tiled materialising folds over the reweighted stashes
-/// (`F2Z_MATS_TILE=0` opts out). See [`mats_fold_tiled`].
-fn mats_tile_enabled() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F2Z_MATS_TILE").map_or(true, |v| v != "0"))
+/// Slot-tiled materialising folds over the reweighted stashes:
+/// `F2Z_MATS_TILE=0/1` forces the per-group/tiled path; unset (the
+/// default) engages the tile only at `half ≥ 2^12` (the mats rounds run
+/// at `half = 2^{d−4}`, so d ≥ 16). The tile's per-(group, block) costs
+/// (write-chunk granularity, wide-partial grid reductions, bits reloads
+/// × the 16 blocks) amortize over `tb = half/16` slots; at wide-shallow
+/// splits the blocks pin at the 64-slot floor while the group count
+/// multiplies 8–16×, and the tile inverts to a heavy loss (n=28 t=s=14:
+/// prove 1421 → 648 ms from disengaging it, 2026-08-26). The deep arms
+/// keep their measured win (n=28 t=17: `half = 2^13`, −7.7 % churned
+/// window). Byte-identical either way. See [`mats_fold_tiled`].
+fn mats_tile_engaged(half: usize) -> bool {
+    static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+    let env = *ENV.get_or_init(|| match std::env::var("F2Z_MATS_TILE") {
+        Ok(v) if v == "0" => Some(false),
+        Ok(v) if v == "1" => Some(true),
+        _ => None,
+    });
+    env.unwrap_or(half >= 1 << 12)
 }
 
 /// Slot-block width for [`mats_fold_tiled`]: `F2Z_MATS_TILE_B` fixes it;
@@ -1336,6 +1441,25 @@ pub(crate) fn eqf_double() -> bool {
     *ON.get_or_init(|| std::env::var("F2Z_EQF_DOUBLE").map_or(true, |v| v != "0"))
 }
 
+/// Double-fold engagement floor on the round's `half`: below it the round
+/// runs the fused single-fold path instead of producing a grid. The grid
+/// saves one pass over `4·half` buffer entries but costs ~20+ multiplies
+/// of per-group bookkeeping (`[F; 9]` build + two grid evaluations), so at
+/// tiny halves with many groups (the wide-shallow forest tail) the
+/// bookkeeping exceeds the saved pass. Both paths are byte-identical per
+/// round (the 9-combo flag pin), so a per-round mix is transcript-safe.
+/// `F2Z_EQF_DOUBLE_MIN` overrides; default 64 — the measured minimum of
+/// the in-window sweep at n=30 15:15 (0/16/64/256/1024 → 5729/5228/4944/
+/// 5383/6623 ms prove, 2026-08-27): higher floors start discarding the
+/// double-fold where it genuinely wins. Read once per process.
+fn eqf_double_min_half() -> usize {
+    static ENV: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
+    let env = *ENV.get_or_init(|| {
+        std::env::var("F2Z_EQF_DOUBLE_MIN").ok().and_then(|v| v.parse().ok())
+    });
+    env.unwrap_or(64)
+}
+
 /// Diagnostic (opt-in): bypass the hand-fused NEON whole-buffer kernels
 /// (message + fold + fused fold+round), forcing the generic fallback
 /// loops — isolates pass-structure gains from kernel quality in A/B runs.
@@ -1426,20 +1550,47 @@ fn dense_grid_pass<F>(l: &mut Vec<F>, r: &mut Vec<F>, pending: &[F], suffix: &[F
 where
     F: InnerTransparentField + WideMulAcc,
 {
+    let res = dense_grid_pass_slices(l.as_mut_slice(), r.as_mut_slice(), pending, suffix, quads, zero);
+    if !pending.is_empty() {
+        l.truncate(quads << 2);
+        r.truncate(quads << 2);
+    }
+    res
+}
+
+/// [`dense_grid_pass`] on exact-prefix slices (the [`FlatDense`] path):
+/// identical kernel dispatch and body, folded values land in the prefix,
+/// no truncation — the caller hands the next pass a shorter prefix.
+#[allow(clippy::arithmetic_side_effects)]
+fn dense_grid_pass_slices<F>(l: &mut [F], r: &mut [F], pending: &[F], suffix: &[F], quads: usize, zero: &F) -> [F; 9]
+where
+    F: InnerTransparentField + WideMulAcc,
+{
     let d = pending.len();
-    debug_assert_eq!(l.len(), (quads << 2) << d, "grid pass reads the unfolded buffers");
+    debug_assert_eq!(l.len(), (quads << 2) << d, "grid pass reads the unfolded prefix");
     debug_assert_eq!(suffix.len(), quads, "grid weight is the round j+1 suffix tensor");
     // Hand kernel (fixed-scalar arity-4 fold + vector-resident grid) when
     // the field ships one — value-exact vs the generic body below.
-    if let Some(res) = F::eqf_grid_pass(l.as_mut_slice(), r.as_mut_slice(), pending, suffix, quads)
-    {
-        if d > 0 {
-            l.truncate(quads << 2);
-            r.truncate(quads << 2);
-        }
+    if let Some(res) = F::eqf_grid_pass(l, r, pending, suffix, quads) {
         return res;
     }
-    dense_grid_pass_generic(l, r, pending, suffix, quads, zero)
+    let mut acc = core::array::from_fn::<_, 9, _>(|_| F::wide_zero(zero));
+    for b in 0..quads {
+        let base = b << 2;
+        // Logical quad: index (b≪2) | (x₂≪1) | x₁.
+        let lv: [F; 4] = core::array::from_fn(|i| fold_logical(l, base | i, pending));
+        let rv: [F; 4] = core::array::from_fn(|i| fold_logical(r, base | i, pending));
+        grid_quad_acc(&mut acc, &lv, &rv, &suffix[b]);
+        // Land the folded quad in the prefix — writes trail the reads
+        // (the next quad's first physical index is `(b+1)·2^{d+2}`).
+        if d > 0 {
+            for (i, (lf, rf)) in lv.into_iter().zip(rv).enumerate() {
+                l[base | i] = lf;
+                r[base | i] = rf;
+            }
+        }
+    }
+    grid_finish(acc)
 }
 
 /// Task granularity for the per-group parallel passes: >= ~512
@@ -1496,6 +1647,112 @@ where
         r.truncate(quads << 2);
     }
     grid_finish(acc)
+}
+
+/// The fused deferred-fold + single-pair message pass on exact-prefix
+/// slices ([`FlatDense`] path and the `Dense` fmsg branch's shared core):
+/// fold `ρ_{j−1}` from the `4·half`-entry prefix into the `2·half` prefix
+/// and accumulate this round's coefficient triple — kernel when the field
+/// ships one, else the generic fused loop. Identical field values either
+/// way (the driver's original inline body, verbatim).
+#[allow(clippy::arithmetic_side_effects)]
+fn dense_fused_fold_round_slices<F>(
+    l: &mut [F],
+    r: &mut [F],
+    rho_prev: &F,
+    suffix: &[F],
+    half: usize,
+    zero: &F,
+) -> (F, F, F)
+where
+    F: InnerTransparentField + WideMulAcc,
+{
+    debug_assert_eq!(l.len(), half << 2, "fused round reads the unfolded prefix");
+    let kernel = if eqf_nokernel() {
+        None
+    } else {
+        F::eqf_fused_fold_round(l, r, rho_prev, &suffix[..half], half)
+    };
+    if let Some(res) = kernel {
+        return res;
+    }
+    let mut a0 = F::wide_zero(zero);
+    let mut a1 = F::wide_zero(zero);
+    let mut a2 = F::wide_zero(zero);
+    for b in 0..half {
+        let base = b << 2;
+        // The deferred fold — the eager scalar fold's exact formula
+        // `v0 + ρ·(v1 − v0)`, in registers.
+        let fold1 = |v: &[F], i: usize| -> F {
+            let v0 = v[i].clone();
+            let d = v[i + 1].clone() - &v0;
+            v0 + &(rho_prev.clone() * &d)
+        };
+        let fl0 = fold1(l, base);
+        let fl1 = fold1(l, base + 2);
+        let fr0 = fold1(r, base);
+        let fr1 = fold1(r, base + 2);
+        // The dense single-pair message body over the folded pair.
+        let w = &suffix[b];
+        let l0w = w.clone() * &fl0;
+        let l1w = w.clone() * &fl1;
+        let wc0 = F::mul_wide(&l0w, &fr0);
+        let w11 = F::mul_wide(&l1w, &fr1);
+        let dr = fr1.clone() - &fr0;
+        let dl = l1w - &l0w;
+        let wc2 = F::mul_wide(&dl, &dr);
+        F::wide_add_assign(&mut a0, &wc0);
+        F::wide_add_assign(&mut a2, &wc2);
+        F::wide_add_assign(&mut a1, &w11);
+        F::wide_sub_assign(&mut a1, &wc0);
+        F::wide_sub_assign(&mut a1, &wc2);
+        // Land the folded values in the prefix — writes trail the reads,
+        // so in place is safe.
+        let e = b << 1;
+        l[e] = fl0;
+        l[e + 1] = fl1;
+        r[e] = fr0;
+        r[e + 1] = fr1;
+    }
+    (F::from_wide(a0), F::from_wide(a1), F::from_wide(a2))
+}
+
+/// The plain dense single-pair round body on exact-prefix slices
+/// ([`FlatDense`] path): kernel when available, else the generic
+/// weight-folded-into-`L` loop — `compute_h`'s single-pair arm, verbatim.
+#[allow(clippy::arithmetic_side_effects)]
+fn dense_single_pair_round_slices<F>(l: &[F], r: &[F], suffix: &[F], half: usize, zero: &F) -> (F, F, F)
+where
+    F: InnerTransparentField + WideMulAcc,
+{
+    let kernel = if eqf_nokernel() {
+        None
+    } else {
+        F::eqf_single_pair_round(l, r, &suffix[..half], half)
+    };
+    if let Some(res) = kernel {
+        return res;
+    }
+    let mut a0 = F::wide_zero(zero);
+    let mut a1 = F::wide_zero(zero);
+    let mut a2 = F::wide_zero(zero);
+    for b in 0..half {
+        let w = &suffix[b];
+        let l0w = w.clone() * &l[b << 1];
+        let l1w = w.clone() * &l[(b << 1) | 1];
+        let (r0, r1) = (&r[b << 1], &r[(b << 1) | 1]);
+        let wc0 = F::mul_wide(&l0w, r0);
+        let w11 = F::mul_wide(&l1w, r1);
+        let dr = r1.clone() - r0;
+        let dl = l1w - &l0w;
+        let wc2 = F::mul_wide(&dl, &dr);
+        F::wide_add_assign(&mut a0, &wc0);
+        F::wide_add_assign(&mut a2, &wc2);
+        F::wide_add_assign(&mut a1, &w11);
+        F::wide_sub_assign(&mut a1, &wc0);
+        F::wide_sub_assign(&mut a1, &wc2);
+    }
+    (F::from_wide(a0), F::from_wide(a1), F::from_wide(a2))
 }
 
 /// One quad's contribution to a bivariate grid accumulator: the weight
@@ -1589,6 +1846,19 @@ fn dense_msg_pass_d<F>(l: &mut Vec<F>, r: &mut Vec<F>, pending: &[F], suffix: &[
 where
     F: InnerTransparentField + WideMulAcc,
 {
+    let res = dense_msg_pass_d_slices(l.as_mut_slice(), r.as_mut_slice(), pending, suffix, half, zero);
+    l.truncate(half << 1);
+    r.truncate(half << 1);
+    res
+}
+
+/// [`dense_msg_pass_d`] on exact-prefix slices (the [`FlatDense`] path):
+/// same folds and accumulation, no truncation.
+#[allow(clippy::arithmetic_side_effects)]
+fn dense_msg_pass_d_slices<F>(l: &mut [F], r: &mut [F], pending: &[F], suffix: &[F], half: usize, zero: &F) -> (F, F, F)
+where
+    F: InnerTransparentField + WideMulAcc,
+{
     debug_assert_eq!(l.len(), (half << 1) << pending.len(), "d-fold pass buffer shape");
     let mut a0 = F::wide_zero(zero);
     let mut a1 = F::wide_zero(zero);
@@ -1617,9 +1887,24 @@ where
         r[e] = fr0;
         r[e | 1] = fr1;
     }
-    l.truncate(half << 1);
-    r.truncate(half << 1);
     (F::from_wide(a0), F::from_wide(a1), F::from_wide(a2))
+}
+
+/// One side of the unfused in-place fold on a live prefix (the
+/// [`FlatDense`] arm of the Dense fold): kernel when available, else the
+/// scalar formula — identical values, no truncation.
+#[allow(clippy::arithmetic_side_effects)]
+fn flat_fold_side<F>(v: &mut [F], rho: &F, half: usize)
+where
+    F: InnerTransparentField + WideMulAcc,
+{
+    if eqf_nokernel() || !F::eqf_fold_in_place(v, rho, half) {
+        for b in 0..half {
+            let v0 = v[b << 1].clone();
+            let diff = v[(b << 1) | 1].clone() - &v0;
+            v[b] = v0 + &(rho.clone() * &diff);
+        }
+    }
 }
 
 /// Prove `Σ_x Σ_t eq(x; q_t)·Σ_i L_{t,i}(x)·R_{t,i}(x)` (see the module
@@ -1681,6 +1966,7 @@ where
         pair_tau_sets,
         t4_sets,
         None,
+        None,
         false,
         field_cfg,
     )
@@ -1712,6 +1998,7 @@ where
         tau_sets,
         pair_tau_sets,
         t4_sets,
+        None,
         None,
         true,
         field_cfg,
@@ -1801,6 +2088,7 @@ pub fn prove_eq_inner_sumcheck_mixed_pre<F>(
     pair_tau_sets: &[Pair2TauSet<F>],
     t4_sets: &[Vec<F>],
     mut pre_round1: Option<PreRound<F>>,
+    flat: Option<FlatDense<F>>,
     gruen: bool,
     field_cfg: &F::Config,
 ) -> (SumcheckProof<F>, Vec<F>, Vec<Vec<(F, F)>>)
@@ -1810,18 +2098,40 @@ where
     F::Modulus: ConstTranscribable,
     F::Config: Sync,
 {
+    // Flat single-pair storage (the wide-shallow forest layout): all
+    // groups are `Flat` markers over ONE shared store, group 0 carries the
+    // shared point and the rest leave `q` empty (no clones). Semantically
+    // each marker is a single-pair Dense group.
+    let mut flat = flat;
+    let all_flat = flat.is_some();
+    if let Some(fs) = &flat {
+        assert!(
+            groups.iter().all(|g| matches!(g.bufs, GroupBufs::Flat)),
+            "a flat store requires all-Flat groups"
+        );
+        assert!(gruen, "flat groups share their point — Gruen format only");
+        assert_eq!(fs.l.len(), groups.len() * fs.seg, "flat store shape (L)");
+        assert_eq!(fs.r.len(), groups.len() * fs.seg, "flat store shape (R)");
+        assert_eq!(fs.seg, 1usize << groups.first().map_or(0, |g| g.q.len()), "flat seg = 2^k");
+    } else {
+        assert!(
+            groups.iter().all(|g| !matches!(g.bufs, GroupBufs::Flat)),
+            "Flat groups need the driver's flat store"
+        );
+    }
     if let Some(pre) = &pre_round1 {
         assert_eq!(pre.len(), groups.len(), "one (A0, A1, A2) triple per group");
         assert!(
-            groups.iter().all(|g| matches!(g.bufs, GroupBufs::Dense(_))),
+            all_flat || groups.iter().all(|g| matches!(g.bufs, GroupBufs::Dense(_))),
             "precomputed round-1 coefficients require all-Dense groups"
         );
     }
     let k = groups.first().map_or(0, |g| g.q.len());
     debug_assert!(k >= 1, "eq-factored sumcheck needs ≥ 1 variable");
-    debug_assert!(groups.iter().all(|g| {
-        g.q.len() == k
+    debug_assert!(groups.iter().enumerate().all(|(t, g)| {
+        (g.q.len() == k || (all_flat && t > 0 && g.q.is_empty()))
             && match &g.bufs {
+                GroupBufs::Flat => true,
                 GroupBufs::Dense(pairs) => {
                     pairs.iter().all(|(l, r)| l.len() == 1 << k && r.len() == 1 << k)
                 }
@@ -1886,7 +2196,8 @@ where
     // (all trees reduce to one point), so the suffix tensors are identical —
     // compute them ONCE in that case, else once per group. (The L·R products,
     // which differ per group, still drive the per-group round-body parallelism.)
-    let shared_q = !groups.is_empty() && groups.iter().all(|g| g.q == groups[0].q);
+    let shared_q =
+        all_flat || (!groups.is_empty() && groups.iter().all(|g| g.q == groups[0].q));
     // The Gruen message format factors ONE eq1 out of the whole round
     // polynomial — meaningless unless every group sits at the same point.
     assert!(!gruen || shared_q, "Gruen-format rounds require a shared eq point");
@@ -2025,41 +2336,17 @@ where
         let compute_h = |t: usize, bufs: &[GroupBufs<F>]| -> (F, F, F) {
             let suffix_t = &suffix[if shared_q { 0 } else { t }][j - 1];
             match &bufs[t] {
+                GroupBufs::Flat => {
+                    unreachable!("Flat groups run the driver's flat message branch")
+                }
                 GroupBufs::Dense(group_bufs) if group_bufs.len() == 1 => {
                     // Single pair (the GKR forest): fold the weight straight
                     // into L, so the weighted coefficients drop out with no
                     // separate `w·i`. A field's fused kernel (interleaved
                     // independent slot chains — value-exact) takes over when
-                    // available.
+                    // available — inside [`dense_single_pair_round_slices`].
                     let (l, r) = &group_bufs[0];
-                    let kernel_res = if eqf_nokernel() {
-                        None
-                    } else {
-                        F::eqf_single_pair_round(l, r, &suffix_t[..half], half)
-                    };
-                    if let Some(res) = kernel_res {
-                        return res;
-                    }
-                    let mut a0 = F::wide_zero(&zero);
-                    let mut a1 = F::wide_zero(&zero);
-                    let mut a2 = F::wide_zero(&zero);
-                    for b in 0..half {
-                        let w = &suffix_t[b];
-                        let l0w = w.clone() * &l[b << 1];
-                        let l1w = w.clone() * &l[(b << 1) | 1];
-                        let (r0, r1) = (&r[b << 1], &r[(b << 1) | 1]);
-                        let wc0 = F::mul_wide(&l0w, r0);
-                        let w11 = F::mul_wide(&l1w, r1);
-                        let dr = r1.clone() - r0;
-                        let dl = l1w - &l0w;
-                        let wc2 = F::mul_wide(&dl, &dr);
-                        F::wide_add_assign(&mut a0, &wc0);
-                        F::wide_add_assign(&mut a2, &wc2);
-                        F::wide_add_assign(&mut a1, &w11);
-                        F::wide_sub_assign(&mut a1, &wc0);
-                        F::wide_sub_assign(&mut a1, &wc2);
-                    }
-                    (F::from_wide(a0), F::from_wide(a1), F::from_wide(a2))
+                    dense_single_pair_round_slices(l, r, suffix_t, half, &zero)
                 }
                 GroupBufs::Dense(group_bufs) => {
                     // Two pairs (the fraction-GKR layer combine): a field's
@@ -2433,10 +2720,12 @@ where
         // a real pass and the final interpolation never sees a deferred
         // fold.
         let double_now = eqf_double()
+            && half >= eqf_double_min_half()
             && grid.is_none()
             && j + 1 < k
             && !(j == 1 && pre_round1.is_some())
-            && bufs.iter().all(|gb| matches!(gb, GroupBufs::Dense(p) if p.len() == 1));
+            && (all_flat
+                || bufs.iter().all(|gb| matches!(gb, GroupBufs::Dense(p) if p.len() == 1)));
         let hs: Vec<(F, F, F)> = if grid_rho.is_some() {
             // Round j+1 of a double-fold pass: nine field elements per
             // group, evaluated at the challenge just drawn. No pass.
@@ -2457,26 +2746,42 @@ where
             let _g_msg = crate::utils::prof::scope("eqf:grid");
             let quads = half >> 1;
             let pend = core::mem::take(&mut pending);
-            let pass = |t: usize, gb: &mut GroupBufs<F>| -> [F; 9] {
-                let suffix_t = &suffix[if shared_q { 0 } else { t }][j];
-                let GroupBufs::Dense(group_bufs) = gb else {
-                    unreachable!("double-fold requires all-Dense single-pair groups")
+            let out: Vec<[F; 9]> = if let Some(fs) = flat.as_mut() {
+                let read = (quads << 2) << pend.len();
+                let sfx = &suffix[0][j][..quads];
+                flat_map_segments(fs, quads, |_t, lseg, rseg| {
+                    dense_grid_pass_slices(
+                        &mut lseg[..read],
+                        &mut rseg[..read],
+                        &pend,
+                        sfx,
+                        quads,
+                        &zero,
+                    )
+                })
+            } else {
+                let pass = |t: usize, gb: &mut GroupBufs<F>| -> [F; 9] {
+                    let suffix_t = &suffix[if shared_q { 0 } else { t }][j];
+                    let GroupBufs::Dense(group_bufs) = gb else {
+                        unreachable!("double-fold requires all-Dense single-pair groups")
+                    };
+                    let (l, r) = &mut group_bufs[0];
+                    dense_grid_pass(l, r, &pend, &suffix_t[..quads], quads, &zero)
                 };
-                let (l, r) = &mut group_bufs[0];
-                dense_grid_pass(l, r, &pend, &suffix_t[..quads], quads, &zero)
+                #[cfg(feature = "parallel")]
+                let o: Vec<[F; 9]> = {
+                    let min_len = par_min_len(bufs.len(), quads);
+                    bufs.par_iter_mut()
+                        .enumerate()
+                        .with_min_len(min_len)
+                        .map(|(t, gb)| pass(t, gb))
+                        .collect()
+                };
+                #[cfg(not(feature = "parallel"))]
+                let o: Vec<[F; 9]> =
+                    bufs.iter_mut().enumerate().map(|(t, gb)| pass(t, gb)).collect();
+                o
             };
-            #[cfg(feature = "parallel")]
-            let out: Vec<[F; 9]> = {
-                let min_len = par_min_len(bufs.len(), quads);
-                bufs.par_iter_mut()
-                    .enumerate()
-                    .with_min_len(min_len)
-                    .map(|(t, gb)| pass(t, gb))
-                    .collect()
-            };
-            #[cfg(not(feature = "parallel"))]
-            let out: Vec<[F; 9]> =
-                bufs.iter_mut().enumerate().map(|(t, gb)| pass(t, gb)).collect();
             let hs = out
                 .iter()
                 .enumerate()
@@ -2489,27 +2794,42 @@ where
             // round's message.
             let _g_msg = crate::utils::prof::scope("eqf:fmsg2");
             let pend = core::mem::take(&mut pending);
-            let pass = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F) {
-                let suffix_t = &suffix[if shared_q { 0 } else { t }][j - 1];
-                let GroupBufs::Dense(group_bufs) = gb else {
-                    unreachable!("deferred folds require all-Dense single-pair groups")
+            if let Some(fs) = flat.as_mut() {
+                let read = (half << 1) << pend.len();
+                let sfx = &suffix[0][j - 1][..half];
+                flat_map_segments(fs, half, |_t, lseg, rseg| {
+                    dense_msg_pass_d_slices(
+                        &mut lseg[..read],
+                        &mut rseg[..read],
+                        &pend,
+                        sfx,
+                        half,
+                        &zero,
+                    )
+                })
+            } else {
+                let pass = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F) {
+                    let suffix_t = &suffix[if shared_q { 0 } else { t }][j - 1];
+                    let GroupBufs::Dense(group_bufs) = gb else {
+                        unreachable!("deferred folds require all-Dense single-pair groups")
+                    };
+                    let (l, r) = &mut group_bufs[0];
+                    dense_msg_pass_d(l, r, &pend, &suffix_t[..half], half, &zero)
                 };
-                let (l, r) = &mut group_bufs[0];
-                dense_msg_pass_d(l, r, &pend, &suffix_t[..half], half, &zero)
-            };
-            #[cfg(feature = "parallel")]
-            let out: Vec<(F, F, F)> = {
-                let min_len = par_min_len(num_groups, half);
-                bufs.par_iter_mut()
-                    .enumerate()
-                    .with_min_len(min_len)
-                    .map(|(t, gb)| pass(t, gb))
-                    .collect()
-            };
-            #[cfg(not(feature = "parallel"))]
-            let out: Vec<(F, F, F)> =
-                bufs.iter_mut().enumerate().map(|(t, gb)| pass(t, gb)).collect();
-            out
+                #[cfg(feature = "parallel")]
+                let o: Vec<(F, F, F)> = {
+                    let min_len = par_min_len(num_groups, half);
+                    bufs.par_iter_mut()
+                        .enumerate()
+                        .with_min_len(min_len)
+                        .map(|(t, gb)| pass(t, gb))
+                        .collect()
+                };
+                #[cfg(not(feature = "parallel"))]
+                let o: Vec<(F, F, F)> =
+                    bufs.iter_mut().enumerate().map(|(t, gb)| pass(t, gb)).collect();
+                o
+            }
         } else if j == 1 && pre_round1.is_some() {
             // Round-1 work arrived precomputed (fused into the caller's
             // buffer generation): only the coefficient→node conversion
@@ -2536,88 +2856,64 @@ where
             }
         } else if let Some(rho_prev) = pending.pop() {
             let _g_msg = crate::utils::prof::scope("eqf:fmsg");
-            let fused = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F) {
-                let suffix_t = &suffix[if shared_q { 0 } else { t }][j - 1];
-                let GroupBufs::Dense(group_bufs) = gb else {
-                    unreachable!("fused rounds require all-Dense single-pair groups")
-                };
-                let (l, r) = &mut group_bufs[0];
-                debug_assert_eq!(l.len(), half << 2, "fused round reads unfolded buffers");
-                // A field's hand-fused fold+round kernel takes over when
-                // available (value-exact; writes the same folded prefix).
-                let kernel = if eqf_nokernel() {
-                    None
-                } else {
-                    F::eqf_fused_fold_round(l, r, &rho_prev, &suffix_t[..half], half)
-                };
-                let (a0, a1, a2) = if let Some(res) = kernel {
+            if let Some(fs) = flat.as_mut() {
+                let read = half << 2;
+                let sfx = &suffix[0][j - 1];
+                flat_map_segments(fs, half, |_t, lseg, rseg| {
+                    dense_fused_fold_round_slices(
+                        &mut lseg[..read],
+                        &mut rseg[..read],
+                        &rho_prev,
+                        sfx,
+                        half,
+                        &zero,
+                    )
+                })
+            } else {
+                let fused = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F) {
+                    let suffix_t = &suffix[if shared_q { 0 } else { t }][j - 1];
+                    let GroupBufs::Dense(group_bufs) = gb else {
+                        unreachable!("fused rounds require all-Dense single-pair groups")
+                    };
+                    let (l, r) = &mut group_bufs[0];
+                    debug_assert_eq!(l.len(), half << 2, "fused round reads unfolded buffers");
+                    // A field's hand-fused fold+round kernel takes over when
+                    // available (value-exact; writes the same folded prefix) —
+                    // inside [`dense_fused_fold_round_slices`].
+                    let res = dense_fused_fold_round_slices(
+                        l.as_mut_slice(),
+                        r.as_mut_slice(),
+                        &rho_prev,
+                        suffix_t,
+                        half,
+                        &zero,
+                    );
+                    l.truncate(half << 1);
+                    r.truncate(half << 1);
                     res
-                } else {
-                    let mut a0 = F::wide_zero(&zero);
-                    let mut a1 = F::wide_zero(&zero);
-                    let mut a2 = F::wide_zero(&zero);
-                    for b in 0..half {
-                        let base = b << 2;
-                        // The deferred fold — the eager scalar fold's exact
-                        // formula `v0 + ρ·(v1 − v0)`, in registers.
-                        let fold1 = |v: &[F], i: usize| -> F {
-                            let v0 = v[i].clone();
-                            let d = v[i + 1].clone() - &v0;
-                            v0 + &(rho_prev.clone() * &d)
-                        };
-                        let fl0 = fold1(l, base);
-                        let fl1 = fold1(l, base + 2);
-                        let fr0 = fold1(r, base);
-                        let fr1 = fold1(r, base + 2);
-                        // The dense single-pair message body over the folded pair.
-                        let w = &suffix_t[b];
-                        let l0w = w.clone() * &fl0;
-                        let l1w = w.clone() * &fl1;
-                        let wc0 = F::mul_wide(&l0w, &fr0);
-                        let w11 = F::mul_wide(&l1w, &fr1);
-                        let dr = fr1.clone() - &fr0;
-                        let dl = l1w - &l0w;
-                        let wc2 = F::mul_wide(&dl, &dr);
-                        F::wide_add_assign(&mut a0, &wc0);
-                        F::wide_add_assign(&mut a2, &wc2);
-                        F::wide_add_assign(&mut a1, &w11);
-                        F::wide_sub_assign(&mut a1, &wc0);
-                        F::wide_sub_assign(&mut a1, &wc2);
-                        // Land the folded values in the prefix — writes trail
-                        // the reads, so in place is safe.
-                        let e = b << 1;
-                        l[e] = fl0;
-                        l[e + 1] = fl1;
-                        r[e] = fr0;
-                        r[e + 1] = fr1;
-                    }
-                    (F::from_wide(a0), F::from_wide(a1), F::from_wide(a2))
                 };
-                l.truncate(half << 1);
-                r.truncate(half << 1);
-                (a0, a1, a2)
-            };
-            #[cfg(feature = "parallel")]
-            let out: Vec<(F, F, F)> = {
-                let min_len = par_min_len(num_groups, half);
-                bufs.par_iter_mut()
-                    .enumerate()
-                    .with_min_len(min_len)
-                    .map(|(t, gb)| fused(t, gb))
-                    .collect()
-            };
-            #[cfg(not(feature = "parallel"))]
-            let out: Vec<(F, F, F)> =
-                bufs.iter_mut().enumerate().map(|(t, gb)| fused(t, gb)).collect();
-            out
+                #[cfg(feature = "parallel")]
+                let o: Vec<(F, F, F)> = {
+                    let min_len = par_min_len(num_groups, half);
+                    bufs.par_iter_mut()
+                        .enumerate()
+                        .with_min_len(min_len)
+                        .map(|(t, gb)| fused(t, gb))
+                        .collect()
+                };
+                #[cfg(not(feature = "parallel"))]
+                let o: Vec<(F, F, F)> =
+                    bufs.iter_mut().enumerate().map(|(t, gb)| fused(t, gb)).collect();
+                o
+            }
         } else {
             // Diagnostic-only: split the aggregate `eqf:msg` bucket by round
             // shape (the LUT prefixes vs the dense kernels) — the labels are
             // resolved from the representative group, all forest groups
             // being same-variant.
             let msg_label = match (&bufs[0], j) {
-                (GroupBufs::Dense(_), 1) => "eqf:msg:dense_r1",
-                (GroupBufs::Dense(_), _) => "eqf:msg:dense_postlut",
+                (GroupBufs::Dense(_) | GroupBufs::Flat, 1) => "eqf:msg:dense_r1",
+                (GroupBufs::Dense(_) | GroupBufs::Flat, _) => "eqf:msg:dense_postlut",
                 (GroupBufs::LeafBits { .. }, _) => "eqf:msg:leafbits",
                 (GroupBufs::Pair2Bits { .. }, _) => "eqf:msg:pair2",
                 (
@@ -2639,6 +2935,16 @@ where
                 (GroupBufs::T4Bits { .. }, _) => "eqf:msg:t4bits",
             };
             let _g_msg = crate::utils::prof::scope(msg_label);
+            if let Some(fs) = &flat {
+                // Flat no-fold message pass (round 1 of a stored layer):
+                // read-only over the segments' live prefix.
+                let read = half << 1;
+                let sfx = &suffix[0][j - 1];
+                let hs: Vec<(F, F, F)> = flat_map_segments_ref(fs, half, |_t, lseg, rseg| {
+                    dense_single_pair_round_slices(&lseg[..read], &rseg[..read], sfx, half, &zero)
+                });
+                hs
+            } else {
             // Slot-tiled round-1 form for the leaf-bit groups (see
             // [`leaf_round1_tiled`]); any group the tile doesn't cover
             // (e.g. the elided-witness constant Dense group) falls back
@@ -2675,6 +2981,7 @@ where
                     (0..num_groups).map(|t| compute_h(t, &bufs)).collect();
                 out
             }
+            }
         };
 
         let _g_close = crate::utils::prof::scope("eqf:close");
@@ -2686,12 +2993,26 @@ where
             // S = P(0) + P(1) = Ĥ0 + q[j−1]·(Ĥ1 + Ĥ2) (any field: the
             // (1−q)Ĥ0 + qĤ0 cross terms collapse to Ĥ0).
             let qj = &qs[0][j - 1];
+            // Chunked Σ_t A_t·H_t (parallel at forest widths): field
+            // addition is associative, so the chunk re-association is
+            // value-identical — same message, byte-identical transcript.
             let mut ch = (zero.clone(), zero.clone(), zero.clone());
-            for (t, h) in hs.into_iter().enumerate() {
-                let a = &a_scalars[t];
-                ch.0 += a.clone() * &h.0;
-                ch.1 += a.clone() * &h.1;
-                ch.2 += a.clone() * &h.2;
+            let partials: Vec<(F, F, F)> = cfg_chunks!(hs, 1 << 10)
+                .zip(cfg_chunks!(a_scalars, 1 << 10))
+                .map(|(hc, ac)| {
+                    let mut p = (zero.clone(), zero.clone(), zero.clone());
+                    for (h, a) in hc.iter().zip(ac.iter()) {
+                        p.0 += a.clone() * &h.0;
+                        p.1 += a.clone() * &h.1;
+                        p.2 += a.clone() * &h.2;
+                    }
+                    p
+                })
+                .collect();
+            for p in partials {
+                ch.0 += &p.0;
+                ch.1 += &p.1;
+                ch.2 += &p.2;
             }
             if j == 1 {
                 claimed_sum = ch.0.clone() + &(qj.clone() * &(ch.1.clone() + &ch.2));
@@ -2741,10 +3062,18 @@ where
         }
 
         // A_{t,j+1} = A_{t,j} · eq1(ρ_j; q_t[j−1]); fold all L, R at ρ_j.
-        for (t, a) in a_scalars.iter_mut().enumerate() {
-            let qj = &qs[t][j - 1];
+        if shared_q {
+            // One shared eq1 factor (the per-group value is identical), in
+            // a parallel sweep at forest widths — same products either way.
+            let qj = &qs[0][j - 1];
             let e = (one.clone() - qj) * &(one.clone() - &rho) + &(qj.clone() * &rho);
-            *a = a.clone() * &e;
+            cfg_iter_mut!(a_scalars, 1 << 11).for_each(|a| *a = a.clone() * &e);
+        } else {
+            for (t, a) in a_scalars.iter_mut().enumerate() {
+                let qj = &qs[t][j - 1];
+                let e = (one.clone() - qj) * &(one.clone() - &rho) + &(qj.clone() * &rho);
+                *a = a.clone() * &e;
+            }
         }
         drop(_g_close);
         if j < k {
@@ -2754,7 +3083,8 @@ where
             // Stash bookkeeping below only matters for LUT groups, which
             // never reach here fused.
             if eqf_fuse_enabled()
-                && bufs.iter().all(|gb| matches!(gb, GroupBufs::Dense(p) if p.len() == 1))
+                && (all_flat
+                    || bufs.iter().all(|gb| matches!(gb, GroupBufs::Dense(p) if p.len() == 1)))
             {
                 pending.push(rho.clone());
                 randomness.push(rho);
@@ -2816,6 +3146,9 @@ where
             // per-vector fold is sequential (the groups are the big dimension).
             let fold_group = |gb: &mut GroupBufs<F>| -> Option<[F; 9]> {
                 match gb {
+                GroupBufs::Flat => {
+                    unreachable!("Flat groups fold through the driver's flat fold branch")
+                }
                 GroupBufs::Dense(group_bufs) => {
                     for (l, r) in group_bufs.iter_mut() {
                         // Fold each buffer in place: write index `b` is only ever
@@ -3128,7 +3461,7 @@ where
             // Diagnostic-only: split folds by shape — bit-keeping stashes vs
             // the LUT→Dense materialising folds vs plain dense folds.
             let fold_label = match (&bufs[0], j) {
-                (GroupBufs::Dense(_), _) => "eqf:fold:dense",
+                (GroupBufs::Dense(_) | GroupBufs::Flat, _) => "eqf:fold:dense",
                 (GroupBufs::LeafBits { .. }, _) => "eqf:fold:leafmat",
                 (GroupBufs::Pair2Bits { .. }, _) => "eqf:fold:pair2mat",
                 (GroupBufs::Leaf2Bits { .. }, 1) | (GroupBufs::Leaf3Bits { .. }, 1 | 2) => {
@@ -3148,7 +3481,7 @@ where
             // 3-bit shape; any other mix falls back to the per-group
             // fold below.
             let tiled_mats: Option<(Vec<(Vec<F>, Vec<F>)>, Vec<Option<[F; 9]>>)> = if mats_pre
-                && mats_tile_enabled()
+                && mats_tile_engaged(half)
             {
                 let _g_t = crate::utils::prof::scope("eqf:fold:mats_tile");
                 let sfx: &[F] = if mat_grid_now { &suffix[0][j + 1] } else { &[] };
@@ -3226,6 +3559,18 @@ where
                     *gb = GroupBufs::Dense(vec![(l, r)]);
                 }
                 grids
+            } else if let Some(fs) = flat.as_mut() {
+                // Unfused flat fold (`F2Z_EQF_FUSE=0` only — fused rounds
+                // defer their folds into the next pass): fold each
+                // segment's live prefix in place, exactly the Dense
+                // in-place fold without the truncation.
+                let _g_fold = crate::utils::prof::scope(fold_label);
+                let read = half << 1;
+                let _: Vec<()> = flat_map_segments(fs, half, |_t, lseg, rseg| {
+                    flat_fold_side(&mut lseg[..read], &rho, half);
+                    flat_fold_side(&mut rseg[..read], &rho, half);
+                });
+                Vec::new()
             } else {
                 let _g_fold = crate::utils::prof::scope(fold_label);
                 #[cfg(feature = "parallel")]
@@ -3307,26 +3652,38 @@ where
             // Final interpolation of every pair at ρ_k. (Leaf-bit groups
             // materialised at the round-1 fold — `k ≥ 2` is asserted — so
             // only Dense groups reach here.)
-            let interp = |v: &Vec<F>| -> F {
+            let interp = |v: &[F]| -> F {
                 v[0].clone() + &(rho.clone() * &(v[1].clone() - &v[0]))
             };
-            let final_evals: Vec<Vec<(F, F)>> = bufs
-                .iter()
-                .map(|gb| match gb {
-                    GroupBufs::Dense(group_bufs) => {
-                        group_bufs.iter().map(|(l, r)| (interp(l), interp(r))).collect()
-                    }
-                    GroupBufs::LeafBits { .. }
-                    | GroupBufs::Pair2Bits { .. }
-                    | GroupBufs::Leaf2Bits { .. }
-                    | GroupBufs::Leaf3Bits { .. }
-                    | GroupBufs::Leaf4Bits { .. }
-                    | GroupBufs::Pair3Bits { .. }
-                    | GroupBufs::T4Bits { .. } => {
-                        unreachable!("bit-selected groups materialise at their fold (k asserts)")
-                    }
-                })
-                .collect();
+            let final_evals: Vec<Vec<(F, F)>> = if let Some(fs) = &flat {
+                // The last round always ran a real pass (grid production is
+                // gated off the final round), so each segment's live prefix
+                // is the folded pair — exactly a Dense buffer of length 2.
+                fs.l.chunks(fs.seg)
+                    .zip(fs.r.chunks(fs.seg))
+                    .map(|(lseg, rseg)| vec![(interp(&lseg[..2]), interp(&rseg[..2]))])
+                    .collect()
+            } else {
+                bufs.iter()
+                    .map(|gb| match gb {
+                        GroupBufs::Dense(group_bufs) => {
+                            group_bufs.iter().map(|(l, r)| (interp(l), interp(r))).collect()
+                        }
+                        GroupBufs::Flat => {
+                            unreachable!("Flat groups take the flat finals branch")
+                        }
+                        GroupBufs::LeafBits { .. }
+                        | GroupBufs::Pair2Bits { .. }
+                        | GroupBufs::Leaf2Bits { .. }
+                        | GroupBufs::Leaf3Bits { .. }
+                        | GroupBufs::Leaf4Bits { .. }
+                        | GroupBufs::Pair3Bits { .. }
+                        | GroupBufs::T4Bits { .. } => {
+                            unreachable!("bit-selected groups materialise at their fold (k asserts)")
+                        }
+                    })
+                    .collect()
+            };
             randomness.push(rho);
             return (SumcheckProof { messages, claimed_sum }, randomness, final_evals);
         }
