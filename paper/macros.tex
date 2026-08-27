@@ -1418,13 +1418,14 @@
 
 \newcommand{\bfg}{\mathbf{g}}
 \newcommand{\bfh}{\mathbf{h}}
-\newcommand{\ftwoz}{{$\mathbb {F}2\mathbb{Z}\ $}}
+\newcommand{\ftwoz}{{$\mathbb{B}\text{it}\ZZ$}}
 
 \newcommand{\comfieldexp}{\nu}
 \newcommand{\pack}{\mathsf{Pack}_\comfieldexp}
 \newcommand{\comfield}{\FF_{2^\comfieldexp}}
 %\newcommand{\evalfield}{\FF_{q}}
 \newcommand{\evalfield}{\KK}
+\newcommand{\FFext}{\FF_{\mathsf{ext}}}
 \newcommand{\bff}{\mathbf{f}}
 \renewcommand{\oracle}{\mathbbm{y}}
 \renewcommand{\Enc}{\mathsf{Enc}}
@@ -1554,7 +1555,8 @@
 \newcommand{\ErrorBatching}{\varepsilon_{\Tiny{\mathsf{batch}}}}
 
 
-\newcommand{\PIMSAT}{\Relation_{\mathsf{PIMSAT}}}
+\newcommand{\UPESAT}{\Relation_{\mathsf{UPESAT}}}
+\newcommand{\PIMSAT}{\UPESAT} % old name of UPESAT, kept as an alias
 \newcommand{\moduledegree}{d}
 \renewcommand{\ideal}{\mathcal{I}}
 \newcommand{\numrows}{n}
@@ -1588,3 +1590,5 @@
 \newcommand{\picanon}{\pi_{\mathsf{canon}}}
 
 \newcommand{\gkrpol}{p}
+\renewcommand{\cc}{\mathbf{c}}
+\newcommand{\RELCM}{\Relation_{\mathsf{CM}}}
