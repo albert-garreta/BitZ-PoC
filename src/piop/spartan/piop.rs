@@ -473,6 +473,7 @@ where
         prove_outer_sumcheck_u32_native_with_reducer(
             transcript,
             MontyField::<2>::zero_with_cfg(field_config),
+            &tau,
             equality_factors,
             products,
             field_config,
@@ -540,6 +541,7 @@ where
         prove_outer_sumcheck_with_reducer(
             transcript,
             F::zero_with_cfg(field_config),
+            &tau,
             equality_factors,
             products,
             field_config,
