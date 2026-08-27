@@ -310,49 +310,67 @@ fn mac(accumulator: u64, lhs: u64, rhs: u64, carry: u64) -> (u64, u64) {
 }
 
 #[inline(always)]
-fn propagate_carry(limbs: &mut [u64; 5], start: usize, mut carry: u64) -> u64 {
-    let mut i = start;
-    while i < 5 {
-        let value = (limbs[i] as u128) + (carry as u128);
-        limbs[i] = value as u64;
-        carry = (value >> 64) as u64;
-        i += 1;
-    }
-    carry
-}
-
-#[inline(always)]
 fn multiply_accumulate_2x2(accumulator: &mut [u64; 5], lhs: [u64; 2], rhs: [u64; 2]) {
-    let mut i = 0;
-    while i < 2 {
-        let (word0, carry) = mac(accumulator[i], lhs[i], rhs[0], 0);
-        accumulator[i] = word0;
-        let (word1, carry) = mac(accumulator[i + 1], lhs[i], rhs[1], carry);
-        accumulator[i + 1] = word1;
-        let carry_out = propagate_carry(accumulator, i + 2, carry);
-        debug_assert_eq!(carry_out, 0, "five-limb delayed accumulator overflow");
-        i += 1;
-    }
+    // Finish both schoolbook rows before propagating into the two high limbs.
+    // This avoids walking the high accumulator once per row.
+    let (word_0, carry_00) = mac(accumulator[0], lhs[0], rhs[0], 0);
+    let (row_0_word_1, row_0_carry) = mac(accumulator[1], lhs[0], rhs[1], carry_00);
+    let (word_1, carry_10) = mac(row_0_word_1, lhs[1], rhs[0], 0);
+
+    let column_2 = (accumulator[2] as u128) + (row_0_carry as u128);
+    let (word_2, carry_11) = mac(column_2 as u64, lhs[1], rhs[1], carry_10);
+    let column_3 = (accumulator[3] as u128) + (carry_11 as u128) + (column_2 >> 64);
+    let column_4 = (accumulator[4] as u128) + (column_3 >> 64);
+
+    accumulator[0] = word_0;
+    accumulator[1] = word_1;
+    accumulator[2] = word_2;
+    accumulator[3] = column_3 as u64;
+    accumulator[4] = column_4 as u64;
+    debug_assert_eq!(column_4 >> 64, 0, "five-limb delayed accumulator overflow");
 }
 
 #[inline(always)]
 fn multiply_accumulate_2x1(accumulator: &mut [u64; 5], lhs: [u64; 2], rhs: u64) {
-    let (word0, carry) = mac(accumulator[0], lhs[0], rhs, 0);
-    accumulator[0] = word0;
-    let (word1, carry) = mac(accumulator[1], lhs[1], rhs, carry);
-    accumulator[1] = word1;
-    let carry_out = propagate_carry(accumulator, 2, carry);
-    debug_assert_eq!(carry_out, 0, "five-limb delayed accumulator overflow");
+    let product_0 = (lhs[0] as u128) * (rhs as u128);
+    let product_1 = (lhs[1] as u128) * (rhs as u128);
+
+    let column_0 = (accumulator[0] as u128) + ((product_0 as u64) as u128);
+    let column_1 = (accumulator[1] as u128)
+        + (product_0 >> 64)
+        + ((product_1 as u64) as u128)
+        + (column_0 >> 64);
+    let column_2 = (accumulator[2] as u128) + (product_1 >> 64) + (column_1 >> 64);
+    let column_3 = (accumulator[3] as u128) + (column_2 >> 64);
+
+    accumulator[0] = column_0 as u64;
+    accumulator[1] = column_1 as u64;
+    accumulator[2] = column_2 as u64;
+    accumulator[3] = column_3 as u64;
+    // Fewer than 2^64 products of a 128-bit value and a u64 fit in four
+    // limbs, so the fifth limb remains unused for a valid linear accumulator.
+    debug_assert_eq!(
+        ((column_3 >> 64) as u64) | accumulator[4],
+        0,
+        "five-limb delayed accumulator overflow"
+    );
 }
 
 #[inline(always)]
 fn add_masked_2(accumulator: &mut [u64; 5], value: [u64; 2], mask: u64) {
-    let sum = (accumulator[0] as u128) + ((value[0] & mask) as u128);
-    accumulator[0] = sum as u64;
-    let sum = (accumulator[1] as u128) + ((value[1] & mask) as u128) + (sum >> 64);
-    accumulator[1] = sum as u64;
-    let carry_out = propagate_carry(accumulator, 2, (sum >> 64) as u64);
-    debug_assert_eq!(carry_out, 0, "five-limb delayed accumulator overflow");
+    let column_0 = (accumulator[0] as u128) + ((value[0] & mask) as u128);
+    let column_1 = (accumulator[1] as u128) + ((value[1] & mask) as u128) + (column_0 >> 64);
+    let column_2 = (accumulator[2] as u128) + (column_1 >> 64);
+
+    accumulator[0] = column_0 as u64;
+    accumulator[1] = column_1 as u64;
+    accumulator[2] = column_2 as u64;
+    // Fewer than 2^64 selected 128-bit values fit in three limbs.
+    debug_assert_eq!(
+        ((column_2 >> 64) as u64) | accumulator[3] | accumulator[4],
+        0,
+        "five-limb delayed accumulator overflow"
+    );
 }
 
 /// Folds `limbs[4] * 2^256` into four limbs via `2^256 mod q = R^2 mod q`.

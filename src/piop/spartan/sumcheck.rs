@@ -34,6 +34,10 @@ where
 {
     type Accumulator: Send;
 
+    /// Whether this monomorphized reducer should factor split equality
+    /// weights into two delayed-accumulation levels.
+    const FACTOR_SPLIT_EQUALITY: bool;
+
     fn accumulator_zero(&self) -> Self::Accumulator;
     fn multiply_accumulate(&self, accumulator: &mut Self::Accumulator, lhs: &F, rhs: &F);
     fn merge(&self, accumulator: &mut Self::Accumulator, other: Self::Accumulator);
@@ -82,6 +86,7 @@ where
     F: SpartanField + Sync,
 {
     type Accumulator = F;
+    const FACTOR_SPLIT_EQUALITY: bool = false;
 
     #[inline]
     fn accumulator_zero(&self) -> Self::Accumulator {
@@ -120,6 +125,7 @@ impl OptimizedSumcheckReducer {
 
 impl SumcheckProductReducer<MontyField<2>> for OptimizedSumcheckReducer {
     type Accumulator = MontyProductAccumulator128;
+    const FACTOR_SPLIT_EQUALITY: bool = true;
 
     #[inline]
     fn accumulator_zero(&self) -> Self::Accumulator {
@@ -192,6 +198,7 @@ impl CryptoBigintSumcheckReducer {
 
 impl SumcheckProductReducer<MontyField<2>> for CryptoBigintSumcheckReducer {
     type Accumulator = MontyProductAccumulator128;
+    const FACTOR_SPLIT_EQUALITY: bool = true;
 
     #[inline]
     fn accumulator_zero(&self) -> Self::Accumulator {
@@ -1474,6 +1481,97 @@ where
     )
 }
 
+#[inline]
+fn reduce_three_linear_accumulators<R>(
+    accumulators: [<R as SumcheckLinearReducer>::Accumulator; 3],
+    reducer: &R,
+) -> Result<[MontyField<2>; 3], SumcheckError>
+where
+    R: SumcheckLinearReducer,
+{
+    let [c0, c2, c3] = accumulators;
+    Ok([
+        <R as SumcheckLinearReducer>::reduce(reducer, c0)?,
+        <R as SumcheckLinearReducer>::reduce(reducer, c2)?,
+        <R as SumcheckLinearReducer>::reduce(reducer, c3)?,
+    ])
+}
+
+#[inline]
+fn accumulate_u32_native_outer_pair<R>(
+    accumulators: &mut [<R as SumcheckLinearReducer>::Accumulator; 3],
+    products: &R1csProductTableBuffers<u64>,
+    index: usize,
+    eq_zero: &MontyField<2>,
+    eq_one: &MontyField<2>,
+    zero: &MontyField<2>,
+    reducer: &R,
+) where
+    R: SumcheckLinearReducer,
+{
+    let neg_eq_zero = sub(zero, eq_zero);
+    let eq_delta = sub(eq_one, eq_zero);
+    let neg_eq_delta = sub(zero, &eq_delta);
+    let twice_eq_zero = add(eq_zero, eq_zero);
+    let twice_eq_one = add(eq_one, eq_one);
+    let three_eq_zero = add(&twice_eq_zero, eq_zero);
+    let p00_c2_weight = sub(&three_eq_zero, &twice_eq_one);
+    let cross_c2_weight = sub(eq_one, &twice_eq_zero);
+
+    let az_zero = products.az[index];
+    let az_one = products.az[index + 1];
+    let bz_zero = products.bz[index];
+    let bz_one = products.bz[index + 1];
+    let cz_zero = products.cz[index];
+    let cz_one = products.cz[index + 1];
+    let p00 = native_u32_product(az_zero, bz_zero);
+    let p01 = native_u32_product(az_zero, bz_one);
+    let p10 = native_u32_product(az_one, bz_zero);
+    let p11 = native_u32_product(az_one, bz_one);
+
+    // c0 = e0 * (p00 - c0).
+    <R as SumcheckLinearReducer>::multiply_accumulate(reducer, &mut accumulators[0], eq_zero, &p00);
+    <R as SumcheckLinearReducer>::multiply_accumulate(
+        reducer,
+        &mut accumulators[0],
+        &neg_eq_zero,
+        &cz_zero,
+    );
+
+    // c2 = e0*p11 + (3e0-2e1)*p00 + (e1-2e0)*(p01+p10)
+    //      + (e1-e0)*c0 + (e0-e1)*c1.
+    for (weight, value) in [
+        (eq_zero, p11),
+        (&p00_c2_weight, p00),
+        (&cross_c2_weight, p01),
+        (&cross_c2_weight, p10),
+        (&eq_delta, cz_zero),
+        (&neg_eq_delta, cz_one),
+    ] {
+        <R as SumcheckLinearReducer>::multiply_accumulate(
+            reducer,
+            &mut accumulators[1],
+            weight,
+            &value,
+        );
+    }
+
+    // c3 = (e1-e0) * (p11-p01-p10+p00).
+    for (weight, value) in [
+        (&eq_delta, p11),
+        (&eq_delta, p00),
+        (&neg_eq_delta, p01),
+        (&neg_eq_delta, p10),
+    ] {
+        <R as SumcheckLinearReducer>::multiply_accumulate(
+            reducer,
+            &mut accumulators[2],
+            weight,
+            &value,
+        );
+    }
+}
+
 fn compute_u32_native_outer_coefficients_without_linear<R>(
     products: &R1csProductTableBuffers<u64>,
     equality_pairs: EqualityPairs<'_, MontyField<2>>,
@@ -1481,93 +1579,129 @@ fn compute_u32_native_outer_coefficients_without_linear<R>(
     reducer: &R,
 ) -> Result<[MontyField<2>; 3], SumcheckError>
 where
-    R: SumcheckLinearReducer,
+    R: SumcheckLinearReducer + SumcheckProductReducer<MontyField<2>>,
 {
     let pair_count = products.len() / 2;
+    let low_pair_count = equality_pairs.low_pair_count();
+
+    // The first round uses the same eq_out * (sum eq_in * residual)
+    // decomposition, with exact native u32 products feeding field×u64 inner
+    // accumulators and field×field outer accumulators.
+    if R::FACTOR_SPLIT_EQUALITY && low_pair_count >= TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS {
+        let accumulate_high_bucket = |mut outer: [<R as SumcheckProductReducer<MontyField<2>>>::Accumulator;
+                                          3],
+                                      high_index: usize|
+         -> Result<_, SumcheckError> {
+            let mut inner =
+                std::array::from_fn(|_| <R as SumcheckLinearReducer>::accumulator_zero(reducer));
+            let product_pair_start = high_index * low_pair_count;
+            for low_pair_index in 0..low_pair_count {
+                let index = 2 * (product_pair_start + low_pair_index);
+                let [eq_zero, eq_one] = equality_pairs.low_pair(low_pair_index);
+                accumulate_u32_native_outer_pair(
+                    &mut inner, products, index, eq_zero, eq_one, zero, reducer,
+                );
+            }
+
+            let inner = reduce_three_linear_accumulators(inner, reducer)?;
+            let high_weight = &equality_pairs.high[high_index];
+            for (outer, inner) in outer.iter_mut().zip(&inner) {
+                <R as SumcheckProductReducer<MontyField<2>>>::multiply_accumulate(
+                    reducer,
+                    outer,
+                    high_weight,
+                    inner,
+                );
+            }
+            Ok(outer)
+        };
+
+        #[cfg(feature = "parallel")]
+        let accumulators = if should_parallelize(pair_count) {
+            (0..equality_pairs.high.len())
+                .into_par_iter()
+                .try_fold(
+                    || {
+                        std::array::from_fn(|_| {
+                            <R as SumcheckProductReducer<MontyField<2>>>::accumulator_zero(reducer)
+                        })
+                    },
+                    accumulate_high_bucket,
+                )
+                .try_reduce(
+                    || {
+                        std::array::from_fn(|_| {
+                            <R as SumcheckProductReducer<MontyField<2>>>::accumulator_zero(reducer)
+                        })
+                    },
+                    |left, right| Ok(merge_accumulators(left, right, reducer)),
+                )?
+        } else {
+            let mut accumulators = std::array::from_fn(|_| {
+                <R as SumcheckProductReducer<MontyField<2>>>::accumulator_zero(reducer)
+            });
+            for high_index in 0..equality_pairs.high.len() {
+                accumulators = accumulate_high_bucket(accumulators, high_index)?;
+            }
+            accumulators
+        };
+
+        #[cfg(not(feature = "parallel"))]
+        let accumulators = {
+            let mut accumulators = std::array::from_fn(|_| {
+                <R as SumcheckProductReducer<MontyField<2>>>::accumulator_zero(reducer)
+            });
+            for high_index in 0..equality_pairs.high.len() {
+                accumulators = accumulate_high_bucket(accumulators, high_index)?;
+            }
+            accumulators
+        };
+
+        return reduce_three_accumulators(accumulators, reducer);
+    }
+
+    if R::FACTOR_SPLIT_EQUALITY
+        && equality_pairs.low.len() == 1
+        && pair_count >= FACTORED_HIGH_EQUALITY_MIN_PAIRS
+    {
+        let accumulators = sum_linear_accumulators(
+            pair_count,
+            |accumulators, pair| {
+                let [eq_zero, eq_one] = equality_pairs.high_pair(pair);
+                accumulate_u32_native_outer_pair(
+                    accumulators,
+                    products,
+                    2 * pair,
+                    eq_zero,
+                    eq_one,
+                    zero,
+                    reducer,
+                );
+            },
+            reducer,
+        );
+        let evaluations = reduce_three_linear_accumulators(accumulators, reducer)?;
+        return delayed_scale_cubic_evaluations(evaluations, &equality_pairs.low[0], reducer);
+    }
+
     let accumulators = sum_linear_accumulators(
         pair_count,
         |accumulators, pair| {
             let index = 2 * pair;
             let [eq_zero, eq_one] = equality_pairs.pair(pair);
-            let neg_eq_zero = sub(zero, &eq_zero);
-            let eq_delta = sub(&eq_one, &eq_zero);
-            let neg_eq_delta = sub(zero, &eq_delta);
-            let twice_eq_zero = add(&eq_zero, &eq_zero);
-            let twice_eq_one = add(&eq_one, &eq_one);
-            let three_eq_zero = add(&twice_eq_zero, &eq_zero);
-            let p00_c2_weight = sub(&three_eq_zero, &twice_eq_one);
-            let cross_c2_weight = sub(&eq_one, &twice_eq_zero);
-
-            let az_zero = products.az[index];
-            let az_one = products.az[index + 1];
-            let bz_zero = products.bz[index];
-            let bz_one = products.bz[index + 1];
-            let cz_zero = products.cz[index];
-            let cz_one = products.cz[index + 1];
-            let p00 = native_u32_product(az_zero, bz_zero);
-            let p01 = native_u32_product(az_zero, bz_one);
-            let p10 = native_u32_product(az_one, bz_zero);
-            let p11 = native_u32_product(az_one, bz_one);
-
-            // c0 = e0 * (p00 - c0).
-            <R as SumcheckLinearReducer>::multiply_accumulate(
-                reducer,
-                &mut accumulators[0],
+            accumulate_u32_native_outer_pair(
+                accumulators,
+                products,
+                index,
                 &eq_zero,
-                &p00,
-            );
-            <R as SumcheckLinearReducer>::multiply_accumulate(
+                &eq_one,
+                zero,
                 reducer,
-                &mut accumulators[0],
-                &neg_eq_zero,
-                &cz_zero,
             );
-
-            // For c2, expand all native differences first and encode every
-            // sign in its field weight:
-            //
-            //   e0*p11 + (3e0-2e1)*p00 + (e1-2e0)*(p01+p10)
-            //   + (e1-e0)*c0 + (e0-e1)*c1.
-            for (weight, value) in [
-                (&eq_zero, p11),
-                (&p00_c2_weight, p00),
-                (&cross_c2_weight, p01),
-                (&cross_c2_weight, p10),
-                (&eq_delta, cz_zero),
-                (&neg_eq_delta, cz_one),
-            ] {
-                <R as SumcheckLinearReducer>::multiply_accumulate(
-                    reducer,
-                    &mut accumulators[1],
-                    weight,
-                    &value,
-                );
-            }
-
-            // c3 = (e1-e0) * (p11-p01-p10+p00).
-            for (weight, value) in [
-                (&eq_delta, p11),
-                (&eq_delta, p00),
-                (&neg_eq_delta, p01),
-                (&neg_eq_delta, p10),
-            ] {
-                <R as SumcheckLinearReducer>::multiply_accumulate(
-                    reducer,
-                    &mut accumulators[2],
-                    weight,
-                    &value,
-                );
-            }
         },
         reducer,
     );
-
-    let [c0, c2, c3] = accumulators;
-    Ok([
-        <R as SumcheckLinearReducer>::reduce(reducer, c0)?,
-        <R as SumcheckLinearReducer>::reduce(reducer, c2)?,
-        <R as SumcheckLinearReducer>::reduce(reducer, c3)?,
-    ])
+    reduce_three_linear_accumulators(accumulators, reducer)
 }
 
 fn sum_u32_native_inner_coefficients_without_linear<R>(
@@ -1909,21 +2043,51 @@ where
     fn low_pair_count(&self) -> usize {
         self.low.len() / 2
     }
+
+    #[inline]
+    fn high_pair(&self, pair: usize) -> [&F; 2] {
+        debug_assert_eq!(self.low_bits, 0);
+        [&self.high[2 * pair], &self.high[2 * pair + 1]]
+    }
 }
 
-/// The two-level equality decomposition replaces one immediate field
-/// multiplication per cubic evaluation and product pair with one delayed MAC
-/// and one reduction per high-equality bucket. Very short low buckets do not
-/// amortize that reduction, so retain the direct product for their final
-/// rounds.
+/// The Spartan2-style two-level decomposition evaluates the four-factor term
+///
+/// `eq_out * eq_in * A * B`
+///
+/// as `eq_out * (sum(eq_in * (A * B - C)))`: first reduce one inner subtotal
+/// per `eq_out` bucket, then delayed-MAC that subtotal into the outer sum. This
+/// removes the N-scaling immediate `eq_out * eq_in` multiplication. Very short
+/// buckets do not amortize the inner reduction, so their tail rounds retain
+/// the direct product.
 const TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS: usize = 8;
+
+/// Scaling a complete high-half subtotal costs three extra reductions. Avoid
+/// that fixed cost once only a handful of product pairs remain.
+const FACTORED_HIGH_EQUALITY_MIN_PAIRS: usize = 8;
+
+fn delayed_scale_cubic_evaluations<F, R>(
+    evaluations: [F; 3],
+    factor: &F,
+    reducer: &R,
+) -> Result<[F; 3], SumcheckError>
+where
+    F: SpartanField,
+    R: SumcheckProductReducer<F>,
+{
+    let mut accumulators = std::array::from_fn(|_| reducer.accumulator_zero());
+    for (accumulator, evaluation) in accumulators.iter_mut().zip(&evaluations) {
+        reducer.multiply_accumulate(accumulator, factor, evaluation);
+    }
+    reduce_three_accumulators(accumulators, reducer)
+}
 
 /// Computes the outer cubic evaluations in two delayed-reduction levels.
 ///
-/// For each high-equality bucket, the first level accumulates
-/// `eq_low * residual` over all low pairs and reduces that subtotal. The
-/// second level accumulates `eq_high * subtotal`. At no point is
-/// `eq_low * eq_high` formed with an immediate field multiplication.
+/// For each `eq_out` (high-factor) bucket, the first level accumulates
+/// `eq_in * (A * B - C)` over all low pairs and reduces that subtotal. The
+/// second level accumulates `eq_out * subtotal`. At no point is
+/// `eq_out * eq_in` formed with an immediate field multiplication.
 fn compute_two_level_cubic_evaluations<F, R>(
     products: &R1csProductTableBuffers<F>,
     equality_pairs: &EqualityPairs<'_, F>,
@@ -1992,6 +2156,44 @@ where
     reduce_three_accumulators(accumulators, reducer)
 }
 
+/// Accumulates against the remaining high equality table first, then applies
+/// the already-bound low equality scalar once per cubic evaluation.
+fn compute_high_factored_cubic_evaluations<F, R>(
+    products: &R1csProductTableBuffers<F>,
+    equality_pairs: &EqualityPairs<'_, F>,
+    reducer: &R,
+) -> Result<[F; 3], SumcheckError>
+where
+    F: SpartanField,
+    R: SumcheckProductReducer<F>,
+{
+    debug_assert_eq!(equality_pairs.low.len(), 1);
+    let pair_count = products.len() / 2;
+    debug_assert_eq!(pair_count, equality_pairs.high.len() / 2);
+    let accumulators = sum_product_accumulators(
+        pair_count,
+        |accumulators, pair| {
+            let index = 2 * pair;
+            let [eq_zero, eq_one] = equality_pairs.high_pair(pair);
+            accumulate_cubic_evaluations(
+                accumulators,
+                eq_zero,
+                eq_one,
+                &products.az[index],
+                &products.az[index + 1],
+                &products.bz[index],
+                &products.bz[index + 1],
+                &products.cz[index],
+                &products.cz[index + 1],
+                reducer,
+            );
+        },
+        reducer,
+    );
+    let evaluations = reduce_three_accumulators(accumulators, reducer)?;
+    delayed_scale_cubic_evaluations(evaluations, &equality_pairs.low[0], reducer)
+}
+
 /// Computes `[c0, c2, c3]` from evaluations at 0, 2, and 3 over adjacent
 /// pairs in the product tables.
 fn compute_coefficients_without_linear<F, R>(
@@ -2006,8 +2208,15 @@ where
     R: SumcheckProductReducer<F>,
 {
     let pair_count = products.len() / 2;
-    let evaluations = if equality_pairs.low_pair_count() >= TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS {
+    let evaluations = if R::FACTOR_SPLIT_EQUALITY
+        && equality_pairs.low_pair_count() >= TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS
+    {
         compute_two_level_cubic_evaluations(products, &equality_pairs, reducer)?
+    } else if R::FACTOR_SPLIT_EQUALITY
+        && equality_pairs.low.len() == 1
+        && pair_count >= FACTORED_HIGH_EQUALITY_MIN_PAIRS
+    {
+        compute_high_factored_cubic_evaluations(products, &equality_pairs, reducer)?
     } else {
         let accumulators = sum_product_accumulators(
             pair_count,
@@ -2122,6 +2331,205 @@ fn fold_product_tables<F>(
     fold_table(&input.cz, &mut output.cz, challenge);
 }
 
+/// Fused product-table fold and two-level equality accumulation for an active
+/// low equality table. Each high bucket owns contiguous input/output ranges,
+/// which keeps the parallel path allocation-free and race-free.
+fn fold_products_and_compute_next_two_level<F, R>(
+    input: &R1csProductTableBuffers<F>,
+    output: &mut R1csProductTableBuffers<F>,
+    challenge: &F,
+    equality_pairs: &EqualityPairs<'_, F>,
+    reducer: &R,
+) -> Result<[F; 3], SumcheckError>
+where
+    F: SpartanField,
+    R: SumcheckProductReducer<F>,
+{
+    let low_pair_count = equality_pairs.low_pair_count();
+    debug_assert!(low_pair_count > 0);
+    debug_assert_eq!(output.len() / 2, low_pair_count * equality_pairs.high.len());
+    let input_values_per_high = 4 * low_pair_count;
+    let output_values_per_high = 2 * low_pair_count;
+
+    let accumulate_high_bucket = |mut outer: [R::Accumulator; 3],
+                                  high_index: usize,
+                                  az: &[F],
+                                  bz: &[F],
+                                  cz: &[F],
+                                  az_output: &mut [F],
+                                  bz_output: &mut [F],
+                                  cz_output: &mut [F]|
+     -> Result<_, SumcheckError> {
+        let mut inner = std::array::from_fn(|_| reducer.accumulator_zero());
+        for low_pair_index in 0..low_pair_count {
+            let input_start = 4 * low_pair_index;
+            let output_start = 2 * low_pair_index;
+            let [az, bz, cz] = fold_product_chunk(
+                &az[input_start..input_start + 4],
+                &bz[input_start..input_start + 4],
+                &cz[input_start..input_start + 4],
+                &mut az_output[output_start..output_start + 2],
+                &mut bz_output[output_start..output_start + 2],
+                &mut cz_output[output_start..output_start + 2],
+                challenge,
+            );
+            let [eq_zero, eq_one] = equality_pairs.low_pair(low_pair_index);
+            accumulate_cubic_evaluations(
+                &mut inner, eq_zero, eq_one, &az[0], &az[1], &bz[0], &bz[1], &cz[0], &cz[1],
+                reducer,
+            );
+        }
+
+        let inner = reduce_three_accumulators(inner, reducer)?;
+        let high_weight = &equality_pairs.high[high_index];
+        for (outer, inner) in outer.iter_mut().zip(&inner) {
+            reducer.multiply_accumulate(outer, high_weight, inner);
+        }
+        Ok(outer)
+    };
+
+    #[cfg(feature = "parallel")]
+    if should_parallelize(output.len() / 2) {
+        let accumulators = (
+            input.az.par_chunks_exact(input_values_per_high),
+            input.bz.par_chunks_exact(input_values_per_high),
+            input.cz.par_chunks_exact(input_values_per_high),
+            output.az.par_chunks_exact_mut(output_values_per_high),
+            output.bz.par_chunks_exact_mut(output_values_per_high),
+            output.cz.par_chunks_exact_mut(output_values_per_high),
+        )
+            .into_par_iter()
+            .enumerate()
+            .try_fold(
+                || std::array::from_fn(|_| reducer.accumulator_zero()),
+                |outer, (high_index, (az, bz, cz, az_output, bz_output, cz_output))| {
+                    accumulate_high_bucket(
+                        outer, high_index, az, bz, cz, az_output, bz_output, cz_output,
+                    )
+                },
+            )
+            .try_reduce(
+                || std::array::from_fn(|_| reducer.accumulator_zero()),
+                |left, right| Ok(merge_accumulators(left, right, reducer)),
+            )?;
+        return reduce_three_accumulators(accumulators, reducer);
+    }
+
+    let mut accumulators = std::array::from_fn(|_| reducer.accumulator_zero());
+    for high_index in 0..equality_pairs.high.len() {
+        let input_start = high_index * input_values_per_high;
+        let output_start = high_index * output_values_per_high;
+        accumulators = accumulate_high_bucket(
+            accumulators,
+            high_index,
+            &input.az[input_start..input_start + input_values_per_high],
+            &input.bz[input_start..input_start + input_values_per_high],
+            &input.cz[input_start..input_start + input_values_per_high],
+            &mut output.az[output_start..output_start + output_values_per_high],
+            &mut output.bz[output_start..output_start + output_values_per_high],
+            &mut output.cz[output_start..output_start + output_values_per_high],
+        )?;
+    }
+    reduce_three_accumulators(accumulators, reducer)
+}
+
+/// Fused product-table fold for the high-variable phase. The N-scaling loop
+/// uses only high equality factors; the common low scalar is applied after
+/// the three global subtotals have been reduced.
+fn fold_products_and_compute_next_high_factored<F, R>(
+    input: &R1csProductTableBuffers<F>,
+    output: &mut R1csProductTableBuffers<F>,
+    challenge: &F,
+    equality_pairs: &EqualityPairs<'_, F>,
+    reducer: &R,
+) -> Result<[F; 3], SumcheckError>
+where
+    F: SpartanField,
+    R: SumcheckProductReducer<F>,
+{
+    debug_assert_eq!(equality_pairs.low.len(), 1);
+    let accumulate = |mut accumulators: [R::Accumulator; 3],
+                      chunk: usize,
+                      az: &[F],
+                      bz: &[F],
+                      cz: &[F],
+                      az_output: &mut [F],
+                      bz_output: &mut [F],
+                      cz_output: &mut [F]| {
+        let [az, bz, cz] =
+            fold_product_chunk(az, bz, cz, az_output, bz_output, cz_output, challenge);
+        let [eq_zero, eq_one] = equality_pairs.high_pair(chunk);
+        accumulate_cubic_evaluations(
+            &mut accumulators,
+            eq_zero,
+            eq_one,
+            &az[0],
+            &az[1],
+            &bz[0],
+            &bz[1],
+            &cz[0],
+            &cz[1],
+            reducer,
+        );
+        accumulators
+    };
+
+    let chunk_count = output.len() / 2;
+
+    #[cfg(feature = "parallel")]
+    if should_parallelize(chunk_count) {
+        let accumulators = (
+            input.az.par_chunks_exact(4),
+            input.bz.par_chunks_exact(4),
+            input.cz.par_chunks_exact(4),
+            output.az.par_chunks_exact_mut(2),
+            output.bz.par_chunks_exact_mut(2),
+            output.cz.par_chunks_exact_mut(2),
+        )
+            .into_par_iter()
+            .enumerate()
+            .fold(
+                || std::array::from_fn(|_| reducer.accumulator_zero()),
+                |accumulators, (chunk, (az, bz, cz, az_output, bz_output, cz_output))| {
+                    accumulate(
+                        accumulators,
+                        chunk,
+                        az,
+                        bz,
+                        cz,
+                        az_output,
+                        bz_output,
+                        cz_output,
+                    )
+                },
+            )
+            .reduce(
+                || std::array::from_fn(|_| reducer.accumulator_zero()),
+                |left, right| merge_accumulators(left, right, reducer),
+            );
+        let evaluations = reduce_three_accumulators(accumulators, reducer)?;
+        return delayed_scale_cubic_evaluations(evaluations, &equality_pairs.low[0], reducer);
+    }
+
+    let mut accumulators = std::array::from_fn(|_| reducer.accumulator_zero());
+    for chunk in 0..chunk_count {
+        let input_start = 4 * chunk;
+        let output_start = 2 * chunk;
+        accumulators = accumulate(
+            accumulators,
+            chunk,
+            &input.az[input_start..input_start + 4],
+            &input.bz[input_start..input_start + 4],
+            &input.cz[input_start..input_start + 4],
+            &mut output.az[output_start..output_start + 2],
+            &mut output.bz[output_start..output_start + 2],
+            &mut output.cz[output_start..output_start + 2],
+        );
+    }
+    let evaluations = reduce_three_accumulators(accumulators, reducer)?;
+    delayed_scale_cubic_evaluations(evaluations, &equality_pairs.low[0], reducer)
+}
+
 /// Folds all product tables and accumulates the next round polynomial.
 fn fold_products_and_compute_next<F, R>(
     input: &R1csProductTableBuffers<F>,
@@ -2137,6 +2545,33 @@ where
     R: SumcheckProductReducer<F>,
 {
     debug_assert_eq!(input.len(), 2 * output.len());
+
+    if R::FACTOR_SPLIT_EQUALITY
+        && equality_pairs.low_pair_count() >= TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS
+    {
+        let evaluations = fold_products_and_compute_next_two_level(
+            input,
+            output,
+            challenge,
+            &equality_pairs,
+            reducer,
+        )?;
+        return Ok(interpolation.coefficients_without_linear(current_claim, evaluations));
+    }
+
+    if R::FACTOR_SPLIT_EQUALITY
+        && equality_pairs.low.len() == 1
+        && output.len() / 2 >= FACTORED_HIGH_EQUALITY_MIN_PAIRS
+    {
+        let evaluations = fold_products_and_compute_next_high_factored(
+            input,
+            output,
+            challenge,
+            &equality_pairs,
+            reducer,
+        )?;
+        return Ok(interpolation.coefficients_without_linear(current_claim, evaluations));
+    }
 
     let accumulate = |mut accumulators: [R::Accumulator; 3],
                       chunk: usize,
@@ -2591,6 +3026,136 @@ mod tests {
                 squeeze_field::<F128, _>(&mut verifier_transcript, &field_cfg),
             );
         }
+    }
+
+    #[test]
+    fn factorized_outer_kernels_match_immediate_proof() {
+        fn prove_with_reducer<R>(
+            initial_claim: &F128,
+            equality_factors: &(
+                DenseMultilinearExtension<F128>,
+                DenseMultilinearExtension<F128>,
+            ),
+            products: &R1csProductMles<F128>,
+            field_cfg: &<F128 as PrimeField>::Config,
+            reducer: &R,
+        ) -> (OuterSumcheckOutput<F128>, F128)
+        where
+            R: SumcheckProductReducer<F128>,
+        {
+            let mut transcript = Blake3Transcript::new();
+            let output = prove_outer_sumcheck_with_reducer(
+                &mut transcript,
+                initial_claim.clone(),
+                equality_factors.clone(),
+                products.clone(),
+                field_cfg,
+                reducer,
+            )
+            .unwrap();
+            let continuation = squeeze_field(&mut transcript, field_cfg);
+            (output, continuation)
+        }
+
+        let field_cfg = config();
+        let zero = F128::zero_with_cfg(&field_cfg);
+        let num_vars = 10;
+        let table_len = 1 << num_vars;
+        let products = R1csProductMles {
+            az: DenseMultilinearExtension::from_evaluations_vec(
+                num_vars,
+                (0..table_len)
+                    .map(|index| field(index as u64 + 2, &field_cfg))
+                    .collect(),
+                zero.clone(),
+            ),
+            bz: DenseMultilinearExtension::from_evaluations_vec(
+                num_vars,
+                (0..table_len)
+                    .map(|index| field(3 * index as u64 + 5, &field_cfg))
+                    .collect(),
+                zero.clone(),
+            ),
+            cz: DenseMultilinearExtension::from_evaluations_vec(
+                num_vars,
+                (0..table_len)
+                    .map(|index| field((index * index) as u64 + 7, &field_cfg))
+                    .collect(),
+                zero.clone(),
+            ),
+        };
+        let tau = (0..num_vars)
+            .map(|index| field(2 * index as u64 + 3, &field_cfg))
+            .collect::<Vec<_>>();
+        let (low_point, high_point) = tau.split_at(num_vars / 2);
+        let equality_factors = (
+            DenseMultilinearExtension {
+                evaluations: eq_table(low_point, &field_cfg).unwrap(),
+                num_vars: low_point.len(),
+            },
+            DenseMultilinearExtension {
+                evaluations: eq_table(high_point, &field_cfg).unwrap(),
+                num_vars: high_point.len(),
+            },
+        );
+
+        let full_equality = eq_table(&tau, &field_cfg).unwrap();
+        let mut initial_claim = zero;
+        for (index, equality) in full_equality.iter().enumerate() {
+            let residual = sub(
+                &mul(
+                    &products.az.evaluations[index],
+                    &products.bz.evaluations[index],
+                ),
+                &products.cz.evaluations[index],
+            );
+            initial_claim += &mul(equality, &residual);
+        }
+
+        let immediate = ImmediateSumcheckReducer::new(&field_cfg);
+        let optimized = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
+        let reference = CryptoBigintSumcheckReducer::new(&field_cfg).unwrap();
+        let (immediate_output, immediate_continuation) = prove_with_reducer(
+            &initial_claim,
+            &equality_factors,
+            &products,
+            &field_cfg,
+            &immediate,
+        );
+        let (optimized_output, optimized_continuation) = prove_with_reducer(
+            &initial_claim,
+            &equality_factors,
+            &products,
+            &field_cfg,
+            &optimized,
+        );
+        let (reference_output, reference_continuation) = prove_with_reducer(
+            &initial_claim,
+            &equality_factors,
+            &products,
+            &field_cfg,
+            &reference,
+        );
+
+        assert_eq!(optimized_output.proof, immediate_output.proof);
+        assert_eq!(optimized_output.eval_points, immediate_output.eval_points);
+        assert_eq!(optimized_output.final_claim, immediate_output.final_claim);
+        assert_eq!(optimized_continuation, immediate_continuation);
+        assert_eq!(reference_output.proof, immediate_output.proof);
+        assert_eq!(reference_output.eval_points, immediate_output.eval_points);
+        assert_eq!(reference_output.final_claim, immediate_output.final_claim);
+        assert_eq!(reference_continuation, immediate_continuation);
+
+        let mut verifier_transcript = Blake3Transcript::new();
+        let verified = immediate_output
+            .proof
+            .verify(&mut verifier_transcript, initial_claim, &tau, &field_cfg)
+            .unwrap();
+        assert_eq!(verified.eval_points, immediate_output.eval_points);
+        assert_eq!(
+            squeeze_field::<F128, _>(&mut verifier_transcript, &field_cfg),
+            immediate_continuation
+        );
     }
 
     #[test]
