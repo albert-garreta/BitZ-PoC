@@ -4,7 +4,7 @@ set -euo pipefail
 # Run the u32 × u32 → u64 Spartan/F2Z sweep with a paired immediate-versus-
 # delayed design. One uninstrumented latency executable and, when requested,
 # one peak-allocator executable are built, then invoked in fresh processes for
-# every (size, strategy, pass) tuple.
+# every (word width, size, strategy, pass) tuple.
 #
 # Usage:
 #   scripts/run_u32_mul_spartan_f2z_bench.sh [summary.csv]
@@ -16,6 +16,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 
 EXPONENTS="${F2Z_MUL_EXPONENTS:-15 16 17 18 19 20 21 22 23 24 25}"
+WORD_BITS="${F2Z_MUL_WORD_BITS:-1}"
 REPETITIONS="${F2Z_BENCH_REPS:-5}"
 FEATURES="${F2Z_BENCH_FEATURES:-unchecked}"
 THREADS="${RAYON_NUM_THREADS:-10}"
@@ -114,6 +115,7 @@ fi
 OPERATING_SYSTEM="$(uname -srm)"
 
 echo "Exponents: $EXPONENTS"
+echo "F2Z word bits: $WORD_BITS"
 echo "Strategies: $STRATEGIES"
 echo "Measured repetitions: $REPETITIONS (plus one warmup per process)"
 echo "Rayon threads: $THREADS"
@@ -131,12 +133,14 @@ echo "Raw log: $RAW_LOG"
 run_case() {
     local binary="$1"
     local pass="$2"
-    local exponent="$3"
-    local strategy="$4"
-    local order="$5"
-    echo "RUN pass=$pass exponent=$exponent strategy=$strategy order=$order" | tee -a "$RAW_LOG"
+    local word_bits="$3"
+    local exponent="$4"
+    local strategy="$5"
+    local order="$6"
+    echo "RUN pass=$pass word_bits=$word_bits exponent=$exponent strategy=$strategy order=$order" | tee -a "$RAW_LOG"
     OBLONG_PROFILE=1 \
     RAYON_NUM_THREADS="$THREADS" \
+    F2Z_MUL_WORD_BITS="$word_bits" \
     F2Z_MUL_EXPONENTS="$exponent" \
     F2Z_BENCH_REPS="$REPETITIONS" \
     F2Z_BENCH_PASS="$pass" \
@@ -146,52 +150,61 @@ run_case() {
 }
 
 # Pairwise-counterbalance the primary Immediate/Barrett comparison: across
-# exponents 15..24 each strategy runs first exactly five times. Reference
+# benchmark shapes each strategy runs first equally often when the shape count
+# is even. Reference
 # reduction is scheduled after that pair because it is a correctness oracle,
 # not the optimized path subject to the latency gate.
 exponent_index=0
-for exponent in $EXPONENTS; do
-    read -r -a strategy_array <<< "$STRATEGIES"
-    strategy_count="${#strategy_array[@]}"
-    if (( strategy_count == 0 )); then
-        echo "F2Z_BENCH_STRATEGIES must name at least one strategy" >&2
+for word_bits in $WORD_BITS; do
+    if [[ "$word_bits" != "1" && "$word_bits" != "8" ]]; then
+        echo "F2Z_MUL_WORD_BITS entries must be 1 or 8; got $word_bits" >&2
         exit 2
     fi
-    has_immediate=0
-    has_barrett=0
-    for strategy in "${strategy_array[@]}"; do
-        [[ "$strategy" == "immediate" ]] && has_immediate=1
-        [[ "$strategy" == "delayed-barrett" ]] && has_barrett=1
-    done
-    ordered_strategies=()
-    if ((has_immediate == 1 && has_barrett == 1)); then
-        if ((exponent_index % 2 == 0)); then
-            ordered_strategies+=(immediate delayed-barrett)
-        else
-            ordered_strategies+=(delayed-barrett immediate)
+    for exponent in $EXPONENTS; do
+        read -r -a strategy_array <<< "$STRATEGIES"
+        strategy_count="${#strategy_array[@]}"
+        if (( strategy_count == 0 )); then
+            echo "F2Z_BENCH_STRATEGIES must name at least one strategy" >&2
+            exit 2
         fi
+        has_immediate=0
+        has_barrett=0
         for strategy in "${strategy_array[@]}"; do
-            if [[ "$strategy" != "immediate" && "$strategy" != "delayed-barrett" ]]; then
-                ordered_strategies+=("$strategy")
-            fi
+            [[ "$strategy" == "immediate" ]] && has_immediate=1
+            [[ "$strategy" == "delayed-barrett" ]] && has_barrett=1
         done
-    else
-        ordered_strategies=("${strategy_array[@]}")
-    fi
-    position=1
-    for strategy in "${ordered_strategies[@]}"; do
-        run_case "$LATENCY_BENCH_BINARY" latency "$exponent" "$strategy" "$position"
-        position=$((position + 1))
+        ordered_strategies=()
+        if ((has_immediate == 1 && has_barrett == 1)); then
+            if ((exponent_index % 2 == 0)); then
+                ordered_strategies+=(immediate delayed-barrett)
+            else
+                ordered_strategies+=(delayed-barrett immediate)
+            fi
+            for strategy in "${strategy_array[@]}"; do
+                if [[ "$strategy" != "immediate" && "$strategy" != "delayed-barrett" ]]; then
+                    ordered_strategies+=("$strategy")
+                fi
+            done
+        else
+            ordered_strategies=("${strategy_array[@]}")
+        fi
+        position=1
+        for strategy in "${ordered_strategies[@]}"; do
+            run_case "$LATENCY_BENCH_BINARY" latency "$word_bits" "$exponent" "$strategy" "$position"
+            position=$((position + 1))
+        done
+        exponent_index=$((exponent_index + 1))
     done
-    exponent_index=$((exponent_index + 1))
 done
 
 if [[ "$MEASURE_MEMORY" == "1" ]]; then
-    for exponent in $EXPONENTS; do
-        order=1
-        for strategy in $MEMORY_STRATEGIES; do
-            run_case "$MEMORY_BENCH_BINARY" memory "$exponent" "$strategy" "$order"
-            order=$((order + 1))
+    for word_bits in $WORD_BITS; do
+        for exponent in $EXPONENTS; do
+            order=1
+            for strategy in $MEMORY_STRATEGIES; do
+                run_case "$MEMORY_BENCH_BINARY" memory "$word_bits" "$exponent" "$strategy" "$order"
+                order=$((order + 1))
+            done
         done
     done
 fi
@@ -213,6 +226,7 @@ python3 "$SCRIPT_DIR/u32_mul_bench_report.py" \
     --root-seed "$ROOT_SEED" \
     --threads "$THREADS" \
     --measured-runs "$REPETITIONS" \
+    --expected-word-bits "$WORD_BITS" \
     --expected-exponents "$EXPONENTS" \
     --strategies "$STRATEGIES" \
     --memory-strategies "$MEMORY_STRATEGIES" \

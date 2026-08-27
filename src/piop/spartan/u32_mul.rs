@@ -34,6 +34,28 @@ const ASSIGNMENT_BLOCKS: usize = 4;
 // packer. The combined production proof applies its stricter 2^15 minimum.
 const MIN_CAPACITY: usize = 1 << 8;
 
+/// Logical F2Z word width used to pack the 128 committed bits for each
+/// multiplication.
+///
+/// `W1` retains the original one-bit-cell layout. `W8` packs each consecutive
+/// group of eight global bit slots into one little-endian byte-sized cell.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(u8)]
+pub enum U32MulF2zWidth {
+    /// One committed bit per logical F2Z cell.
+    #[default]
+    W1 = 1,
+    /// Eight committed bits per logical F2Z cell.
+    W8 = 8,
+}
+
+impl U32MulF2zWidth {
+    /// Number of committed bits in each logical F2Z cell.
+    pub const fn word_bits(self) -> usize {
+        self as usize
+    }
+}
+
 /// Integer relation backend used by the u32 multiplication Spartan prover.
 ///
 /// Boolean selector matrices act on an exact u64 assignment and produce exact
@@ -73,6 +95,7 @@ pub struct U32MulLayout {
     multiplications: usize,
     capacity: usize,
     gate_vars: usize,
+    f2z_width: U32MulF2zWidth,
 }
 
 impl U32MulLayout {
@@ -83,6 +106,18 @@ impl U32MulLayout {
     /// The combined Spartan/F2Z production API additionally requires at least
     /// `2^15` slots so it can use a validator-gated Ligerito profile.
     pub fn new(multiplications: usize) -> Result<Self, U32MulError> {
+        Self::new_with_f2z_width(multiplications, U32MulF2zWidth::W1)
+    }
+
+    /// Creates a layout with an explicit logical F2Z word width.
+    ///
+    /// The integer assignment and Spartan relation are independent of this
+    /// choice. Only the compact committed-bit tensor changes: `W8` groups each
+    /// eight consecutive global bit slots into one little-endian logical cell.
+    pub fn new_with_f2z_width(
+        multiplications: usize,
+        f2z_width: U32MulF2zWidth,
+    ) -> Result<Self, U32MulError> {
         if multiplications == 0 {
             return Err(U32MulError::EmptyBatch);
         }
@@ -102,6 +137,7 @@ impl U32MulLayout {
             multiplications,
             capacity,
             gate_vars,
+            f2z_width,
         })
     }
 
@@ -120,41 +156,72 @@ impl U32MulLayout {
         self.gate_vars
     }
 
+    /// Logical word width used by the compact F2Z commitment.
+    pub const fn f2z_width(&self) -> U32MulF2zWidth {
+        self.f2z_width
+    }
+
     /// Logical integer assignment length: four blocks of `capacity` values.
     pub const fn assignment_len(&self) -> usize {
         ASSIGNMENT_BLOCKS * self.capacity
     }
 
-    /// F2Z shape for the slot-major 32/32/64-bit witness.
+    /// F2Z shape for the compact 32/32/64-bit witness.
     ///
     /// If `g = log2(capacity)`, the low `s = floor(g/2)` gate coordinates
-    /// become F2Z columns. The remaining gate coordinates and seven slot
-    /// coordinates become the `t = 7 + g - s` folded row variables. Since
-    /// `W = 1`, [`crate::ligerito::packed_vars`] of this shape is exactly `g`.
+    /// become F2Z columns and `h = g - s` high gate coordinates remain on the
+    /// row axis. Packing `W` consecutive bit slots into one logical cell leaves
+    /// `7 - log2(W)` word-slot coordinates, so
+    /// `t = h + 7 - log2(W)`. In both supported layouts,
+    /// [`crate::ligerito::packed_vars`] is exactly `g`.
     pub const fn f2z_params(&self) -> IntEvalParams {
         let s = self.gate_vars / 2;
+        let h = self.gate_vars - s;
+        let word_bits = self.f2z_width.word_bits();
+        let log_word_bits = word_bits.trailing_zeros() as usize;
         IntEvalParams {
-            t: 7 + self.gate_vars - s,
+            t: h + 7 - log_word_bits,
             s,
-            word_bits: 1,
+            word_bits,
         }
     }
 
-    /// Maps `(bit_slot, gate)` to the F2Z row-major cell `(b, c)`.
+    /// Maps `(bit_slot, gate)` to the F2Z bit position `(b, c, j)`.
     ///
-    /// Both coordinates use little-endian Boolean-index order, and therefore
-    /// `params.cell_index(b, c) == bit_slot * capacity + gate`.
-    pub const fn f2z_cell(&self, bit_slot: usize, gate: usize) -> Option<(usize, usize)> {
+    /// `b` is the folded-row index, `c` is the clear-column index, and `j` is
+    /// the little-endian bit within the `W`-bit logical cell. Gate coordinates
+    /// use little-endian Boolean-index order on both axes.
+    pub const fn f2z_bit_position(
+        &self,
+        bit_slot: usize,
+        gate: usize,
+    ) -> Option<(usize, usize, usize)> {
         if bit_slot >= U32_MUL_BIT_SLOTS || gate >= self.capacity {
             return None;
         }
 
         let s = self.gate_vars / 2;
+        let h = self.gate_vars - s;
         let column_mask = (1usize << s) - 1;
         let gate_high = gate >> s;
-        let b = (bit_slot << (self.gate_vars - s)) | gate_high;
+        let word_bits = self.f2z_width.word_bits();
+        let word_slot = bit_slot / word_bits;
+        let b = (word_slot << h) | gate_high;
         let c = gate & column_mask;
-        Some((b, c))
+        let j = bit_slot % word_bits;
+        Some((b, c, j))
+    }
+
+    /// Maps `(bit_slot, gate)` to its containing F2Z row-major cell `(b, c)`.
+    ///
+    /// For `W8`, eight consecutive bit slots intentionally share one cell.
+    /// Prefer [`Self::f2z_bit_position`] whenever the within-cell bit index
+    /// matters.
+    pub const fn f2z_cell(&self, bit_slot: usize, gate: usize) -> Option<(usize, usize)> {
+        match self.f2z_bit_position(bit_slot, gate) {
+            Some((b, c, _)) => Some((b, c)),
+            None => None,
+        }
     }
 }
 
@@ -204,7 +271,16 @@ impl U32MulNativeMles {
 impl U32MulWitness {
     /// Constructs the exact assignment from explicit operand pairs.
     pub fn from_inputs(inputs: &[(u32, u32)]) -> Result<Self, U32MulError> {
-        Self::from_fn(inputs.len(), |index| inputs[index])
+        Self::from_inputs_with_f2z_width(inputs, U32MulF2zWidth::W1)
+    }
+
+    /// Constructs the exact assignment with an explicit logical F2Z word
+    /// width.
+    pub fn from_inputs_with_f2z_width(
+        inputs: &[(u32, u32)],
+        f2z_width: U32MulF2zWidth,
+    ) -> Result<Self, U32MulError> {
+        Self::from_fn_with_f2z_width(inputs.len(), f2z_width, |index| inputs[index])
     }
 
     /// Constructs the exact assignment without retaining a separate input
@@ -212,9 +288,20 @@ impl U32MulWitness {
     #[allow(clippy::arithmetic_side_effects)]
     pub fn from_fn(
         multiplications: usize,
+        input: impl FnMut(usize) -> (u32, u32),
+    ) -> Result<Self, U32MulError> {
+        Self::from_fn_with_f2z_width(multiplications, U32MulF2zWidth::W1, input)
+    }
+
+    /// Constructs the exact assignment with an explicit logical F2Z word
+    /// width, without retaining a separate input vector.
+    #[allow(clippy::arithmetic_side_effects)]
+    pub fn from_fn_with_f2z_width(
+        multiplications: usize,
+        f2z_width: U32MulF2zWidth,
         mut input: impl FnMut(usize) -> (u32, u32),
     ) -> Result<Self, U32MulError> {
-        let layout = U32MulLayout::new(multiplications)?;
+        let layout = U32MulLayout::new_with_f2z_width(multiplications, f2z_width)?;
         let capacity = layout.capacity;
         let mut assignment = vec![0_u64; layout.assignment_len()];
         assignment[0] = 1;
@@ -277,16 +364,17 @@ impl U32MulWitness {
         &self.product_values()[..self.layout.multiplications]
     }
 
-    /// Builds the compact W=1 F2Z rows without materializing a `u128` cell
-    /// tensor.
+    /// Builds the compact F2Z rows without materializing a `u128` cell tensor.
     ///
-    /// The result has `p.cols()` rows and `p.rows()/64` words per row. Bit
-    /// `b` of row `c` is the cell `(b,c)`. Slots `0..32`, `32..64`, and
-    /// `64..128` contain little-endian bits of `x`, `y`, and `product`.
+    /// The result has `p.cols()` rows and `p.rows() * W / 64` words per row.
+    /// Bit `b * W + j` of row `c` is bit `j` of logical cell `(b,c)`. Global
+    /// slots `0..32`, `32..64`, and `64..128` contain little-endian bits of
+    /// `x`, `y`, and `product`.
     #[allow(clippy::arithmetic_side_effects)]
     pub fn f2z_bit_rows(&self) -> Vec<Vec<u64>> {
         let params = self.layout.f2z_params();
-        let words_per_row = params.rows() / u64::BITS as usize;
+        let bits_per_row = params.rows() * params.word_bits;
+        let words_per_row = bits_per_row / u64::BITS as usize;
         let mut rows = vec![vec![0_u64; words_per_row]; params.cols()];
 
         for gate in 0..self.layout.multiplications {
@@ -338,10 +426,12 @@ fn write_value_bits(
         if value & (1_u64 << bit) == 0 {
             continue;
         }
-        let (b, c) = layout
-            .f2z_cell(slot_offset + bit, gate)
+        let (b, c, j) = layout
+            .f2z_bit_position(slot_offset + bit, gate)
             .expect("witness bit coordinates are in bounds");
-        rows[c][b / u64::BITS as usize] |= 1_u64 << (b % u64::BITS as usize);
+        let packed_bit = b * layout.f2z_width().word_bits() + j;
+        rows[c][packed_bit / u64::BITS as usize] |=
+            1_u64 << (packed_bit % u64::BITS as usize);
     }
 }
 
@@ -489,22 +579,44 @@ mod tests {
     }
 
     #[test]
-    fn layout_pads_to_a_power_of_two_and_maps_cells_slot_major() {
+    fn layout_pads_to_a_power_of_two_and_maps_bits_for_each_word_width() {
         assert_eq!(U32MulLayout::new(0), Err(U32MulError::EmptyBatch));
 
         for (multiplications, capacity) in [(1, 256), (3, 256), (256, 256), (257, 512)] {
-            let layout = U32MulLayout::new(multiplications).unwrap();
-            assert_eq!(layout.multiplications(), multiplications);
-            assert_eq!(layout.capacity(), capacity);
-            assert_eq!(layout.assignment_len(), 4 * capacity);
+            assert_eq!(
+                U32MulLayout::new(multiplications).unwrap(),
+                U32MulLayout::new_with_f2z_width(multiplications, U32MulF2zWidth::W1)
+                    .unwrap()
+            );
 
-            let p = layout.f2z_params();
-            assert_eq!(p.word_bits, 1);
-            assert_eq!(p.cells(), U32_MUL_BIT_SLOTS * capacity);
-            for slot in 0..U32_MUL_BIT_SLOTS {
-                for gate in 0..capacity {
-                    let (b, c) = layout.f2z_cell(slot, gate).unwrap();
-                    assert_eq!(p.cell_index(b, c), slot * capacity + gate);
+            for width in [U32MulF2zWidth::W1, U32MulF2zWidth::W8] {
+                let layout = U32MulLayout::new_with_f2z_width(multiplications, width).unwrap();
+                assert_eq!(layout.multiplications(), multiplications);
+                assert_eq!(layout.capacity(), capacity);
+                assert_eq!(layout.assignment_len(), 4 * capacity);
+                assert_eq!(layout.f2z_width(), width);
+
+                let p = layout.f2z_params();
+                let word_bits = width.word_bits();
+                let s = layout.gate_vars() / 2;
+                let h = layout.gate_vars() - s;
+                assert_eq!(p.word_bits, word_bits);
+                assert_eq!(p.t, h + 7 - word_bits.trailing_zeros() as usize);
+                assert_eq!(p.cells() * word_bits, U32_MUL_BIT_SLOTS * capacity);
+                assert_eq!(layout.f2z_bit_position(U32_MUL_BIT_SLOTS, 0), None);
+                assert_eq!(layout.f2z_bit_position(0, capacity), None);
+                for slot in 0..U32_MUL_BIT_SLOTS {
+                    for gate in 0..capacity {
+                        let (b, c, j) = layout.f2z_bit_position(slot, gate).unwrap();
+                        assert_eq!(b, ((slot / word_bits) << h) | (gate >> s));
+                        assert_eq!(c, gate & ((1usize << s) - 1));
+                        assert_eq!(j, slot % word_bits);
+                        assert_eq!(
+                            p.cell_index(b, c),
+                            (slot / word_bits) * capacity + gate
+                        );
+                        assert_eq!(layout.f2z_cell(slot, gate), Some((b, c)));
+                    }
                 }
             }
         }
@@ -517,6 +629,7 @@ mod tests {
         let capacity = witness.layout().capacity();
 
         assert_eq!(capacity, 256);
+        assert_eq!(witness.layout().f2z_width(), U32MulF2zWidth::W1);
         assert_eq!(witness.assignment()[0], 1);
         assert!(
             witness.assignment()[1..capacity]
@@ -547,14 +660,19 @@ mod tests {
     #[test]
     fn from_fn_generates_each_input_once_without_an_input_buffer() {
         let mut calls = Vec::new();
-        let witness = U32MulWitness::from_fn(5, |index| {
-            calls.push(index);
-            (index as u32, (index + 1) as u32)
-        })
+        let witness = U32MulWitness::from_fn_with_f2z_width(
+            5,
+            U32MulF2zWidth::W8,
+            |index| {
+                calls.push(index);
+                (index as u32, (index + 1) as u32)
+            },
+        )
         .unwrap();
 
         assert_eq!(calls, (0..5).collect::<Vec<_>>());
         assert_eq!(witness.cz(), &[0, 2, 6, 12, 20]);
+        assert_eq!(witness.layout().f2z_width(), U32MulF2zWidth::W8);
     }
 
     #[test]
@@ -609,39 +727,49 @@ mod tests {
     }
 
     #[test]
-    fn packed_rows_reconstruct_the_32_32_64_bit_witness() {
+    fn packed_rows_reconstruct_the_32_32_64_bit_witness_for_each_word_width() {
         let inputs = [(0x8000_0001, 3), (u32::MAX, u32::MAX), (17, 19)];
-        let witness = U32MulWitness::from_inputs(&inputs).unwrap();
-        let layout = witness.layout();
-        let p = layout.f2z_params();
-        let rows = witness.f2z_bit_rows();
+        for width in [U32MulF2zWidth::W1, U32MulF2zWidth::W8] {
+            let witness = U32MulWitness::from_inputs_with_f2z_width(&inputs, width).unwrap();
+            let layout = witness.layout();
+            let p = layout.f2z_params();
+            let rows = witness.f2z_bit_rows();
 
-        assert_eq!(rows.len(), p.cols());
-        assert!(rows.iter().all(|row| row.len() == p.rows() / 64));
+            assert_eq!(rows.len(), p.cols());
+            assert!(
+                rows.iter()
+                    .all(|row| row.len() == p.rows() * p.word_bits / 64)
+            );
 
-        for gate in 0..layout.capacity() {
-            let values = [
-                (
-                    U32_MUL_X_SLOT_START,
-                    U32_MUL_X_BITS,
-                    witness.x_values()[gate],
-                ),
-                (
-                    U32_MUL_Y_SLOT_START,
-                    U32_MUL_Y_BITS,
-                    witness.y_values()[gate],
-                ),
-                (
-                    U32_MUL_PRODUCT_SLOT_START,
-                    U32_MUL_PRODUCT_BITS,
-                    witness.product_values()[gate],
-                ),
-            ];
-            for (slot_offset, bit_width, value) in values {
-                for bit in 0..bit_width {
-                    let (b, c) = layout.f2z_cell(slot_offset + bit, gate).unwrap();
-                    let committed_bit = (rows[c][b / 64] >> (b % 64)) & 1;
-                    assert_eq!(committed_bit, (value >> bit) & 1);
+            for gate in 0..layout.capacity() {
+                let values = [
+                    (
+                        U32_MUL_X_SLOT_START,
+                        U32_MUL_X_BITS,
+                        witness.x_values()[gate],
+                    ),
+                    (
+                        U32_MUL_Y_SLOT_START,
+                        U32_MUL_Y_BITS,
+                        witness.y_values()[gate],
+                    ),
+                    (
+                        U32_MUL_PRODUCT_SLOT_START,
+                        U32_MUL_PRODUCT_BITS,
+                        witness.product_values()[gate],
+                    ),
+                ];
+                for (slot_offset, bit_width, value) in values {
+                    for bit in 0..bit_width {
+                        let (b, c, j) = layout
+                            .f2z_bit_position(slot_offset + bit, gate)
+                            .unwrap();
+                        let packed_bit = b * p.word_bits + j;
+                        let committed_bit = (rows[c][packed_bit / 64]
+                            >> (packed_bit % 64))
+                            & 1;
+                        assert_eq!(committed_bit, (value >> bit) & 1);
+                    }
                 }
             }
         }

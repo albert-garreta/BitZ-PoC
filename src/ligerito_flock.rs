@@ -51,7 +51,7 @@ use crate::ligerito::{
     verify_x_claims_batched_common,
 };
 use crate::merged_forest::MergedForestProof;
-use crate::pcs::{IntEvalParams, ShaF2Layout, final_eval_ring};
+use crate::pcs::{IntEvalParams, ModQWeightChunks, ShaF2Layout, final_eval_ring};
 use crate::taps::TapOp;
 use crate::utils::{cfg_chunks_mut, cfg_into_iter, cfg_iter};
 
@@ -739,32 +739,41 @@ pub enum FlockRsError {
 /// seven in-pack bit coordinates.
 fn validate_ligerito_commitment(
     commitment: &Commitment,
-    vc: &LigVerifierConfig,
+    config: &impl LigeritoStatementConfig,
 ) -> Result<(), FlockRsError> {
-    let recursive_levels = vc.recursive_steps;
+    let recursive_levels = config.recursive_steps();
     let Some(levels) = recursive_levels.checked_add(1) else {
         return Err(FlockRsError::CommitmentConfig);
     };
+    let log_inv_rates = config.log_inv_rates();
+    let recursive_log_msg_cols = config.recursive_log_msg_cols();
+    let recursive_ks = config.recursive_ks();
+    let queries = config.queries();
+    let grinding_bits = config.grinding_bits();
+    let fold_grinding_bits = config.fold_grinding_bits();
+    let ood_samples = config.ood_samples();
     if recursive_levels == 0
-        || vc.log_inv_rates.len() != levels
-        || vc.recursive_log_msg_cols.len() != recursive_levels
-        || vc.recursive_ks.len() != recursive_levels
-        || vc.queries.len() != levels
-        || vc.grinding_bits.len() != levels
-        || vc.fold_grinding_bits.len() != levels
-        || vc.ood_samples.len() != levels
-        || vc.log_inv_rates.iter().any(|&rate| rate == 0)
-        || vc.queries.iter().any(|&queries| queries == 0)
-        || vc.ood_samples[0] != 0
+        || log_inv_rates.len() != levels
+        || recursive_log_msg_cols.len() != recursive_levels
+        || recursive_ks.len() != recursive_levels
+        || queries.len() != levels
+        || grinding_bits.len() != levels
+        || fold_grinding_bits.len() != levels
+        || ood_samples.len() != levels
+        || log_inv_rates.iter().any(|&rate| rate == 0)
+        || queries.iter().any(|&query_count| query_count == 0)
+        || ood_samples[0] != 0
     {
         return Err(FlockRsError::CommitmentConfig);
     }
-    let Some(&log_inv_rate) = vc.log_inv_rates.first() else {
+    let Some(&log_inv_rate) = log_inv_rates.first() else {
         return Err(FlockRsError::CommitmentConfig);
     };
-    let Some(log_message_len) = vc
-        .initial_log_msg_cols
-        .checked_add(vc.initial_log_num_interleaved)
+    let initial_log_msg_cols = config.initial_log_msg_cols();
+    let initial_log_num_interleaved = config.initial_log_num_interleaved();
+    let initial_k = config.initial_k();
+    let Some(log_message_len) =
+        initial_log_msg_cols.checked_add(initial_log_num_interleaved)
     else {
         return Err(FlockRsError::CommitmentConfig);
     };
@@ -774,7 +783,7 @@ fn validate_ligerito_commitment(
     if expected_m >= usize::BITS as usize {
         return Err(FlockRsError::CommitmentConfig);
     }
-    let Some(initial_block_log) = vc.initial_log_msg_cols.checked_add(log_inv_rate) else {
+    let Some(initial_block_log) = initial_log_msg_cols.checked_add(log_inv_rate) else {
         return Err(FlockRsError::CommitmentConfig);
     };
     let Some(initial_block_len) = u32::try_from(initial_block_log)
@@ -783,20 +792,20 @@ fn validate_ligerito_commitment(
     else {
         return Err(FlockRsError::CommitmentConfig);
     };
-    if vc.queries[0] > initial_block_len {
+    if queries[0] > initial_block_len {
         return Err(FlockRsError::CommitmentConfig);
     }
-    let mut remaining = vc.initial_log_msg_cols;
+    let mut remaining = initial_log_msg_cols;
     for i in 0..recursive_levels {
-        let k = vc.recursive_ks[i];
+        let k = recursive_ks[i];
         if k == 0 || k > remaining {
             return Err(FlockRsError::CommitmentConfig);
         }
         remaining -= k;
-        if vc.recursive_log_msg_cols[i] != remaining {
+        if recursive_log_msg_cols[i] != remaining {
             return Err(FlockRsError::CommitmentConfig);
         }
-        let Some(block_log) = remaining.checked_add(vc.log_inv_rates[i + 1]) else {
+        let Some(block_log) = remaining.checked_add(log_inv_rates[i + 1]) else {
             return Err(FlockRsError::CommitmentConfig);
         };
         let Some(block_len) = u32::try_from(block_log)
@@ -805,16 +814,16 @@ fn validate_ligerito_commitment(
         else {
             return Err(FlockRsError::CommitmentConfig);
         };
-        if vc.queries[i + 1] > block_len {
+        if queries[i + 1] > block_len {
             return Err(FlockRsError::CommitmentConfig);
         }
     }
     let params = &commitment.params;
     if params.m != expected_m
         || params.log_inv_rate != log_inv_rate
-        || params.log_batch_size != vc.initial_k
-        || vc.initial_log_num_interleaved != vc.initial_k
-        || params.merkle_hash != vc.merkle_hash
+        || params.log_batch_size != initial_k
+        || initial_log_num_interleaved != initial_k
+        || params.merkle_hash != config.merkle_hash()
     {
         return Err(FlockRsError::CommitmentConfig);
     }
@@ -907,6 +916,24 @@ fn checked_mod_q_geometry(
     }
     let c_w = 127usize - tw;
     Ok((geometry, c_w, q_bits.div_ceil(c_w)))
+}
+
+fn checked_prepared_mod_q_geometry(
+    p: &IntEvalParams,
+    chunks: &ModQWeightChunks,
+    q_bits: usize,
+) -> Result<(IntEvalGeometry, usize, usize), FlockRsError> {
+    let shape = || FlockRsError::RingSwitch(RsOpenError::Shape);
+    let (geometry, chunk_width, chunk_count) = checked_mod_q_geometry(p, q_bits)?;
+    if chunks.is_empty()
+        || chunks.row_count() != geometry.rows
+        || chunks.chunk_width() != chunk_width
+        || chunks.len() != chunk_count
+        || chunks.q_bits() != q_bits
+    {
+        return Err(shape());
+    }
+    Ok((geometry, chunk_width, chunk_count))
 }
 
 fn checked_virtual_xor_geometry(
@@ -1020,6 +1047,8 @@ const RS_OPEN_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/rs-open/v1";
 const RS_EVAL_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/rs-eval/v1";
 const RS_EVAL_BATCH_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/rs-eval-batch/v1";
 const MOD_Q_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q/v1";
+const U32_MOD_Q_OPENING_V2_STATEMENT_DOMAIN: &[u8] =
+    b"f2z/spartan-f2z/u32-mod-q-opening/v2";
 const EXT_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/ext/v1";
 const MOD_Q_XOR_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q-xor/v1";
 const MOD_Q_XOR_ONLY_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q-xor-only/v1";
@@ -1041,6 +1070,23 @@ const FIELD_XOR_CLAIMS: u8 = 7;
 /// `absorb_slice` call.
 struct StatementFrame<'a, T: Transcript> {
     transcript: &'a mut T,
+}
+
+/// Capability proving that a canonical public statement was absorbed before
+/// entering a mod-q after-statement core.
+///
+/// Its constructor and field are private to this module. Keeping the token
+/// affine (neither `Copy` nor `Clone`) makes every core invocation consume one
+/// concrete binding operation rather than relying on a call-site comment.
+#[must_use = "a bound mod-q statement must be consumed by an after-statement core"]
+pub(crate) struct BoundModQStatement {
+    _private: (),
+}
+
+impl BoundModQStatement {
+    const fn new() -> Self {
+        Self { _private: () }
+    }
 }
 
 impl<'a, T: Transcript> StatementFrame<'a, T> {
@@ -1186,7 +1232,9 @@ impl<'a, T: Transcript> StatementFrame<'a, T> {
     }
 }
 
-trait LigeritoStatementConfig {
+/// Read-only canonical view shared by prover and verifier Ligerito configs
+/// when binding a public statement.
+pub(crate) trait LigeritoStatementConfig {
     fn log_inv_rates(&self) -> &[usize];
     fn recursive_steps(&self) -> usize;
     fn initial_log_msg_cols(&self) -> usize;
@@ -1314,7 +1362,7 @@ fn absorb_mod_q_statement(
     q_bits: usize,
     alpha: Gf,
     config: &impl LigeritoStatementConfig,
-) {
+) -> BoundModQStatement {
     let mut frame = StatementFrame::new(transcript, MOD_Q_STATEMENT_DOMAIN);
     frame.commitment(commitment);
     frame.ligerito_config(config);
@@ -1322,6 +1370,30 @@ fn absorb_mod_q_statement(
     frame.u128s(0x30, row_weights_q);
     frame.usize(0x31, q_bits);
     frame.gf128(0x32, alpha);
+    BoundModQStatement::new()
+}
+
+/// Bind the compact Spartan-to-F2Z bridge instead of a dense row-weight
+/// table. The bridge digest is produced by the versioned u32 adapter; this
+/// lower frame additionally commits to every Ligerito parameter consumed by
+/// the prepared-chunk core.
+pub(crate) fn absorb_u32_mod_q_opening_v2_statement(
+    transcript: &mut impl Transcript,
+    commitment: &Commitment,
+    p: &IntEvalParams,
+    bridge_digest: &[u8; 32],
+    q_bits: usize,
+    alpha: Gf,
+    config: &impl LigeritoStatementConfig,
+) -> BoundModQStatement {
+    let mut frame = StatementFrame::new(transcript, U32_MOD_Q_OPENING_V2_STATEMENT_DOMAIN);
+    frame.commitment(commitment);
+    frame.ligerito_config(config);
+    frame.int_eval_params(p);
+    frame.bytes(0x30, bridge_digest);
+    frame.usize(0x31, q_bits);
+    frame.gf128(0x32, alpha);
+    BoundModQStatement::new()
 }
 
 fn absorb_ext_statement(
@@ -1333,7 +1405,7 @@ fn absorb_ext_statement(
     proj: &crate::ext_proj::ExtProjParams,
     alpha: Gf,
     config: &impl LigeritoStatementConfig,
-) {
+) -> BoundModQStatement {
     let mut frame = StatementFrame::new(transcript, EXT_STATEMENT_DOMAIN);
     frame.commitment(commitment);
     frame.ligerito_config(config);
@@ -1343,6 +1415,7 @@ fn absorb_ext_statement(
     frame.usize(0x32, proj.prime_bits);
     frame.usize(0x33, proj.mr_rounds);
     frame.gf128(0x34, alpha);
+    BoundModQStatement::new()
 }
 
 // ---------------------------------------------------------------------
@@ -2091,11 +2164,9 @@ pub fn prove_mle_eval_mod_q_ligerito(
         .expect("valid integer-evaluation commitment geometry");
     checked_mod_q_geometry(p, q_bits).expect("valid mod-q geometry");
     assert_eq!(row_weights_q.len(), geometry.rows, "row-weight length");
-    assert!(
-        weights_fit_q_bits(row_weights_q, q_bits),
-        "q_bits must be in [1, 126] and every row weight must be < 2^q_bits"
-    );
-    absorb_mod_q_statement(
+    let chunks = ModQWeightChunks::from_dense(p, row_weights_q, q_bits)
+        .expect("q_bits must be in [1, 126] and every row weight must be < 2^q_bits");
+    let bound_statement = absorb_mod_q_statement(
         transcript,
         &hint.commitment,
         p,
@@ -2108,11 +2179,66 @@ pub fn prove_mle_eval_mod_q_ligerito(
         transcript,
         hint,
         p,
-        row_weights_q,
+        &chunks,
+        alpha,
+        pc,
+        bound_statement,
+    )
+}
+
+/// Prove the u32 Spartan bridge using a validated, already-chunked row
+/// functional and the compact v2 statement frame.
+///
+/// This is crate-private so the generic dense v1 API and transcript remain
+/// unchanged. All static checks complete before the v2 frame mutates the
+/// caller's transcript.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prove_mle_eval_mod_q_ligerito_prepared_u32_v2(
+    transcript: &mut (impl Transcript + Send),
+    hint: &FlockCommitHint,
+    p: &IntEvalParams,
+    chunks: &ModQWeightChunks,
+    bridge_digest: &[u8; 32],
+    q_bits: usize,
+    alpha: Gf,
+    pc: &LigProverConfig,
+) -> Result<IntEvalRsLigModQProof, FlockRsError> {
+    validate_ligerito_commitment(&hint.commitment, pc)?;
+    let commitment_geometry = validate_int_eval_geometry(&hint.commitment, p, 0)?;
+    let (geometry, _, _) = checked_prepared_mod_q_geometry(p, chunks, q_bits)?;
+    let expected_words = 1usize
+        .checked_shl(u32::try_from(geometry.row_bit_vars).map_err(|_| {
+            FlockRsError::RingSwitch(RsOpenError::Shape)
+        })?)
+        .and_then(|bits| bits.checked_div(u64::BITS as usize))
+        .ok_or(FlockRsError::RingSwitch(RsOpenError::Shape))?;
+    if geometry.rows != commitment_geometry.rows
+        || geometry.cols != commitment_geometry.cols
+        || hint.rows.len() != geometry.cols
+        || hint.rows.iter().any(|row| row.len() != expected_words)
+    {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+
+    let bound_statement = absorb_u32_mod_q_opening_v2_statement(
+        transcript,
+        &hint.commitment,
+        p,
+        bridge_digest,
         q_bits,
         alpha,
         pc,
-    )
+    );
+    Ok(prove_mle_eval_mod_q_ligerito_after_statement(
+        transcript,
+        hint,
+        p,
+        chunks,
+        alpha,
+        pc,
+        bound_statement,
+    ))
 }
 
 /// Mod-q prover after the surrounding protocol has already bound a statement
@@ -2122,21 +2248,18 @@ fn prove_mle_eval_mod_q_ligerito_after_statement(
     transcript: &mut (impl Transcript + Send),
     hint: &FlockCommitHint,
     p: &IntEvalParams,
-    row_weights_q: &[u128],
-    q_bits: usize,
+    chunks: &ModQWeightChunks,
     alpha: Gf,
     pc: &LigProverConfig,
+    _bound_statement: BoundModQStatement,
 ) -> IntEvalRsLigModQProof {
-    use crate::pcs::{chunk_row_weights, mod_q_chunk_width, mod_q_num_chunks};
-    let c_w = mod_q_chunk_width(p);
-    let lch = mod_q_num_chunks(p, q_bits);
-    let chunks = chunk_row_weights(row_weights_q, c_w, lch);
+    let lch = chunks.len();
 
     let mut mfs = Vec::with_capacity(lch);
     let mut us = Vec::with_capacity(lch);
     let mut presums = Vec::with_capacity(lch);
     let mut points = Vec::with_capacity(lch);
-    for w_l in &chunks {
+    for w_l in chunks.chunks() {
         let (mf, u, ps, pt) = prove_int_eval_merged_common(
             transcript,
             p,
@@ -2248,28 +2371,102 @@ where
 {
     validate_ligerito_commitment(commitment, vc)?;
     let (geometry, c_w, lch) = checked_mod_q_shape(commitment, proof, p, q_bits)?;
-    if row_weights_q.len() != geometry.rows
-        || col_weights.len() != geometry.cols
-        || !weights_fit_q_bits(row_weights_q, q_bits)
-    {
+    if row_weights_q.len() != geometry.rows || col_weights.len() != geometry.cols {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
-    absorb_mod_q_statement(transcript, commitment, p, row_weights_q, q_bits, alpha, vc);
+    let chunks = ModQWeightChunks::from_dense(p, row_weights_q, q_bits)
+        .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?;
+    let bound_statement =
+        absorb_mod_q_statement(transcript, commitment, p, row_weights_q, q_bits, alpha, vc);
     use crate::pcs::recombine_read_off;
     let us = verify_mod_q_lig_core_after_statement(
         transcript,
         commitment,
         proof,
         p,
-        row_weights_q,
+        &chunks,
         alpha,
-        q_bits,
         vc,
+        bound_statement,
     )?;
 
     // Recombine in R: y = Σ_c w′_c · Σ_l 2^{c_w·l}·u_c^{(l)}.
     let v_flat: Vec<u128> = us.iter().flat_map(|u| u.iter().copied()).collect();
     let y = recombine_read_off(p, &v_flat, 0, col_weights, c_w, lch);
+    if y != claimed {
+        return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
+    }
+    Ok(())
+}
+
+/// Verify the u32 Spartan bridge from validated, already-chunked row weights
+/// under the compact v2 statement frame, including the ordinary final
+/// column-weight read-off.
+///
+/// All adversarial shape and metadata checks complete before the transcript
+/// is mutated.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn verify_mle_eval_mod_q_ligerito_prepared_u32_v2<R>(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: &IntEvalRsLigModQProof,
+    p: &IntEvalParams,
+    chunks: &ModQWeightChunks,
+    col_weights: &[R],
+    bridge_digest: &[u8; 32],
+    alpha: Gf,
+    claimed: R,
+    q_bits: usize,
+    vc: &LigVerifierConfig,
+) -> Result<(), FlockRsError>
+where
+    R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
+{
+    validate_ligerito_commitment(commitment, vc)?;
+    let (geometry, chunk_width, chunk_count) =
+        checked_mod_q_shape(commitment, proof, p, q_bits)?;
+    let (prepared_geometry, prepared_chunk_width, prepared_chunk_count) =
+        checked_prepared_mod_q_geometry(p, chunks, q_bits)?;
+    if geometry.rows != prepared_geometry.rows
+        || geometry.cols != prepared_geometry.cols
+        || chunk_width != prepared_chunk_width
+        || chunk_count != prepared_chunk_count
+        || col_weights.len() != geometry.cols
+    {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+
+    let bound_statement = absorb_u32_mod_q_opening_v2_statement(
+        transcript,
+        commitment,
+        p,
+        bridge_digest,
+        q_bits,
+        alpha,
+        vc,
+    );
+    let us = verify_mod_q_lig_core_after_statement(
+        transcript,
+        commitment,
+        proof,
+        p,
+        chunks,
+        alpha,
+        vc,
+        bound_statement,
+    )?;
+
+    use crate::pcs::recombine_read_off;
+    let v_flat: Vec<u128> = us.iter().flat_map(|u| u.iter().copied()).collect();
+    let y = recombine_read_off(
+        p,
+        &v_flat,
+        0,
+        col_weights,
+        chunk_width,
+        chunk_count,
+    );
     if y != claimed {
         return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
     }
@@ -2291,15 +2488,14 @@ fn verify_mod_q_lig_core_after_statement(
     commitment: &Commitment,
     proof: &IntEvalRsLigModQProof,
     p: &IntEvalParams,
-    row_weights_q: &[u128],
+    chunks: &ModQWeightChunks,
     alpha: Gf,
-    q_bits: usize,
     vc: &LigVerifierConfig,
+    _bound_statement: BoundModQStatement,
 ) -> Result<Vec<Vec<u128>>, FlockRsError> {
     validate_ligerito_commitment(commitment, vc)?;
-    use crate::pcs::{chunk_row_weights, mod_q_chunk_width, mod_q_num_chunks};
-    let c_w = mod_q_chunk_width(p);
-    let lch = mod_q_num_chunks(p, q_bits);
+    let c_w = chunks.chunk_width();
+    let lch = chunks.len();
     if proof.mfs.len() != lch
         || proof.us.len() != lch
         || proof.presums.len() != lch
@@ -2307,8 +2503,6 @@ fn verify_mod_q_lig_core_after_statement(
     {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
-    let chunks = chunk_row_weights(row_weights_q, c_w, lch);
-
     // Re-pad the transmitted chunk folds to the full `2^s`: a padded
     // witness's trailing all-zero columns fold to 0 and are not sent (see
     // `to_bytes`). Forcing those entries to zero is exactly what the
@@ -2345,7 +2539,7 @@ fn verify_mod_q_lig_core_after_statement(
             &us[l],
             &proof.presums[l],
             p,
-            &chunks[l],
+            &chunks.chunks()[l],
             alpha,
         )
         .map_err(FlockRsError::Common)?;
@@ -2504,7 +2698,7 @@ pub fn prove_mle_eval_ext_ligerito(
             "weight coordinates must be < 2^q_bits"
         );
     }
-    absorb_ext_statement(
+    let bound_statement = absorb_ext_statement(
         transcript,
         &hint.commitment,
         p,
@@ -2534,16 +2728,18 @@ pub fn prove_mle_eval_ext_ligerito(
     let q_proj = sample_proj_prime(transcript, proj);
     let alpha_proj = sample_proj_point(transcript, q_proj);
     let gamma = projected_row_weights(weight_coords, q_proj, alpha_proj);
+    let gamma_chunks = ModQWeightChunks::from_dense(p, &gamma, proj.prime_bits)
+        .expect("projected extension weights have a canonical chunking");
 
     // Steps 4–6: the ordinary mod-q' opening at γ.
     let base = prove_mle_eval_mod_q_ligerito_after_statement(
         transcript,
         hint,
         p,
-        &gamma,
-        proj.prime_bits,
+        &gamma_chunks,
         alpha,
         pc,
+        bound_statement,
     );
     IntEvalRsLigExtProof { mus, base }
 }
@@ -2645,7 +2841,7 @@ where
         m.resize(cols, 0);
         mus.push(m);
     }
-    absorb_ext_statement(
+    let bound_statement = absorb_ext_statement(
         transcript,
         commitment,
         p,
@@ -2661,6 +2857,8 @@ where
     let q_proj = sample_proj_prime(transcript, proj);
     let alpha_proj = sample_proj_point(transcript, q_proj);
     let gamma = projected_row_weights(weight_coords, q_proj, alpha_proj);
+    let gamma_chunks = ModQWeightChunks::from_dense(p, &gamma, proj.prime_bits)
+        .map_err(|()| FlockRsError::ExtShape)?;
 
     // Steps 4–6: the mod-q' core binds `us[l][c] = ⟨bits_c, chunk_l(γ)⟩`.
     let us = verify_mod_q_lig_core_after_statement(
@@ -2668,10 +2866,10 @@ where
         commitment,
         &proof.base,
         p,
-        &gamma,
+        &gamma_chunks,
         alpha,
-        proj.prime_bits,
         vc,
+        bound_statement,
     )?;
 
     // (A) Per-column congruence mod q': the certified folds must equal the
@@ -9281,6 +9479,7 @@ mod tests {
             .map(|i| sample(0xfeed_1000 + i as u64))
             .collect();
         let row_weights = vec![3u128, 5, 8, 13];
+        let bridge_digest = [0x3cu8; 32];
         let batch_weights = vec![row_weights.clone(), vec![21u128, 34, 55]];
         let ext_weights = vec![row_weights.clone(), vec![1u128, 2, 3, 4]];
         let proj = crate::ext_proj::ExtProjParams::default();
@@ -9329,13 +9528,66 @@ mod tests {
             ),
             assert_root_bound_statement(
                 &commitment,
-                |t, c| absorb_mod_q_statement(t, c, &p, &row_weights, FQ_BITS, alpha, &pc),
-                |t, c| absorb_mod_q_statement(t, c, &p, &row_weights, FQ_BITS, alpha, &vc),
+                |t, c| {
+                    let _ =
+                        absorb_mod_q_statement(t, c, &p, &row_weights, FQ_BITS, alpha, &pc);
+                },
+                |t, c| {
+                    let _ =
+                        absorb_mod_q_statement(t, c, &p, &row_weights, FQ_BITS, alpha, &vc);
+                },
             ),
             assert_root_bound_statement(
                 &commitment,
-                |t, c| absorb_ext_statement(t, c, &p, &ext_weights, FQ_BITS, &proj, alpha, &pc),
-                |t, c| absorb_ext_statement(t, c, &p, &ext_weights, FQ_BITS, &proj, alpha, &vc),
+                |t, c| {
+                    let _ = absorb_u32_mod_q_opening_v2_statement(
+                        t,
+                        c,
+                        &p,
+                        &bridge_digest,
+                        FQ_BITS,
+                        alpha,
+                        &pc,
+                    );
+                },
+                |t, c| {
+                    let _ = absorb_u32_mod_q_opening_v2_statement(
+                        t,
+                        c,
+                        &p,
+                        &bridge_digest,
+                        FQ_BITS,
+                        alpha,
+                        &vc,
+                    );
+                },
+            ),
+            assert_root_bound_statement(
+                &commitment,
+                |t, c| {
+                    let _ = absorb_ext_statement(
+                        t,
+                        c,
+                        &p,
+                        &ext_weights,
+                        FQ_BITS,
+                        &proj,
+                        alpha,
+                        &pc,
+                    );
+                },
+                |t, c| {
+                    let _ = absorb_ext_statement(
+                        t,
+                        c,
+                        &p,
+                        &ext_weights,
+                        FQ_BITS,
+                        &proj,
+                        alpha,
+                        &vc,
+                    );
+                },
             ),
             assert_root_bound_statement(
                 &commitment,
@@ -9936,6 +10188,107 @@ mod tests {
                 "quad proof must be rejected by the arity-2 verifier (t={t},W={w})"
             );
         }
+    }
+
+    #[test]
+    fn prepared_u32_v2_w8_roundtrips_and_binds_public_inputs() {
+        use crate::pcs::{FQ_BITS, Fq};
+
+        let _env = QUAD_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let p = IntEvalParams {
+            t: 7,
+            s: 5,
+            word_bits: 8,
+        };
+        let (pc, vc) = lig_configs(
+            packed_vars(&p),
+            LigConfig::Adhoc {
+                log_batch: 2,
+                log_inv_rate: 2,
+            },
+        )
+        .expect("ad-hoc config");
+        let data = (0..p.cells())
+            .map(|cell| ((cell as u128).wrapping_mul(17).wrapping_add(3)) & 0xff)
+            .collect::<Vec<_>>();
+        let row_weights = (0..p.rows())
+            .map(|row| row as u128 + 1)
+            .collect::<Vec<_>>();
+        let col_weights = (0..p.cols())
+            .map(|column| Fq::from(column as u128 + 1))
+            .collect::<Vec<_>>();
+        let mut claimed = Fq::from(0_u128);
+        for column in 0..p.cols() {
+            let mut folded = Fq::from(0_u128);
+            for row in 0..p.rows() {
+                folded = folded
+                    + Fq::from(row_weights[row])
+                        * Fq::from(data[p.cell_index(row, column)]);
+            }
+            claimed = claimed + col_weights[column] * folded;
+        }
+
+        let hint = commit_rs_ligerito(&p, &data, &pc);
+        let chunks = ModQWeightChunks::from_dense(&p, &row_weights, FQ_BITS).unwrap();
+        let bridge_digest = [0x6du8; 32];
+        let alpha = smallest_generator();
+        let mut prover_transcript = Blake3Transcript::new();
+        let proof = prove_mle_eval_mod_q_ligerito_prepared_u32_v2(
+            &mut prover_transcript,
+            &hint,
+            &p,
+            &chunks,
+            &bridge_digest,
+            FQ_BITS,
+            alpha,
+            &pc,
+        )
+        .unwrap();
+
+        let verify = |chunks: &ModQWeightChunks,
+                      cols: &[Fq],
+                      digest: &[u8; 32],
+                      value: Fq| {
+            let mut transcript = Blake3Transcript::new();
+            verify_mle_eval_mod_q_ligerito_prepared_u32_v2(
+                &mut transcript,
+                &hint.commitment,
+                &proof,
+                &p,
+                chunks,
+                cols,
+                digest,
+                alpha,
+                value,
+                FQ_BITS,
+                &vc,
+            )
+        };
+        verify(&chunks, &col_weights, &bridge_digest, claimed).unwrap();
+
+        let mut wrong_digest = bridge_digest;
+        wrong_digest[0] ^= 1;
+        assert!(verify(&chunks, &col_weights, &wrong_digest, claimed).is_err());
+
+        let mut wrong_rows = row_weights.clone();
+        wrong_rows[0] += 1;
+        let wrong_chunks = ModQWeightChunks::from_dense(&p, &wrong_rows, FQ_BITS).unwrap();
+        assert!(
+            verify(&wrong_chunks, &col_weights, &bridge_digest, claimed).is_err()
+        );
+
+        let mut wrong_cols = col_weights.clone();
+        wrong_cols[0] = wrong_cols[0] + Fq::from(1_u128);
+        assert!(verify(&chunks, &wrong_cols, &bridge_digest, claimed).is_err());
+        assert!(
+            verify(
+                &chunks,
+                &col_weights,
+                &bridge_digest,
+                claimed + Fq::from(1_u128),
+            )
+            .is_err()
+        );
     }
 
     /// Extension-field evaluation (paper `c:core_iop` Steps 1–3) over

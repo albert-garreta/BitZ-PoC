@@ -55,6 +55,10 @@ SAMPLE_FIELDS = (
     "order",
     "strategy",
     "reduction_backend",
+    "word_bits",
+    "f2z_t",
+    "f2z_s",
+    "f2z_chunks",
     "exponent",
     "multiplications",
     "sample",
@@ -65,10 +69,12 @@ SAMPLE_FIELDS = (
     "spartan_inner_ms",
     "bitify_prove_ms",
     "f2z_prove_ms",
+    "f2z_prepare_prove_ms",
     "verify_ms",
     "spartan_verify_ms",
     "bitify_verify_ms",
     "f2z_verify_ms",
+    "f2z_prepare_verify_ms",
     "verified",
     "r1cs_rows",
     "multiplications_per_row",
@@ -90,6 +96,10 @@ SUMMARY_FIELDS = (
     "order",
     "strategy",
     "reduction_backend",
+    "word_bits",
+    "f2z_t",
+    "f2z_s",
+    "f2z_chunks",
     "exponent",
     "multiplications",
     "r1cs_rows",
@@ -108,10 +118,12 @@ SUMMARY_FIELDS = (
     "spartan_inner_ms",
     "bitify_prove_ms",
     "f2z_prove_ms",
+    "f2z_prepare_prove_ms",
     "verify_ms",
     "spartan_verify_ms",
     "bitify_verify_ms",
     "f2z_verify_ms",
+    "f2z_prepare_verify_ms",
     "spartan_proof_payload_bytes",
     "f2z_proof_bytes",
     "peak_heap_mib",
@@ -124,6 +136,10 @@ SUMMARY_FIELDS = (
 
 PAIRED_FIELDS = (
     "scope",
+    "word_bits",
+    "f2z_t",
+    "f2z_s",
+    "f2z_chunks",
     "exponent",
     "multiplications",
     "baseline_strategy",
@@ -160,6 +176,20 @@ TIMING_FIELDS = (
     "f2z_verify_ms",
 )
 
+OPTIONAL_TIMING_FIELDS = (
+    # Nested within the corresponding F2Z phase; report independently and do
+    # not add them to any top-level total.
+    "f2z_prepare_prove_ms",
+    "f2z_prepare_verify_ms",
+)
+
+SHAPE_FIELDS = (
+    "word_bits",
+    "f2z_t",
+    "f2z_s",
+    "f2z_chunks",
+)
+
 RESULT_DETAIL_FIELDS = (
     "r1cs_rows",
     "r1cs_columns",
@@ -171,6 +201,8 @@ RESULT_DETAIL_FIELDS = (
     "f2z_proof_bytes",
     "shape_seed",
 )
+
+Pair = tuple[int, int, str]
 
 
 def parse_args() -> argparse.Namespace:
@@ -191,6 +223,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--root-seed", required=True)
     parser.add_argument("--threads", required=True)
     parser.add_argument("--measured-runs", required=True, type=int)
+    parser.add_argument(
+        "--expected-word-bits",
+        "--word-bits",
+        dest="expected_word_bits",
+        default="1",
+    )
     parser.add_argument("--expected-exponents", required=True)
     parser.add_argument("--expected-strategies", "--strategies", dest="expected_strategies", required=True)
     parser.add_argument(
@@ -215,7 +253,23 @@ def unique_cli_values(values: list[str], name: str) -> tuple[str, ...]:
     return tuple(values)
 
 
-def expected_inputs(args: argparse.Namespace) -> tuple[tuple[int, ...], tuple[str, ...], tuple[str, ...]]:
+def expected_inputs(
+    args: argparse.Namespace,
+) -> tuple[tuple[int, ...], tuple[int, ...], tuple[str, ...], tuple[str, ...]]:
+    try:
+        word_bit_values = [int(value) for value in words(args.expected_word_bits)]
+    except ValueError as error:
+        raise SystemExit(f"invalid --expected-word-bits: {error}") from error
+    word_bit_strings = unique_cli_values(
+        [str(value) for value in word_bit_values], "expected word bits"
+    )
+    word_bits = tuple(int(value) for value in word_bit_strings)
+    unsupported_widths = set(word_bits) - {1, 8}
+    if unsupported_widths:
+        raise SystemExit(
+            "expected word bits must contain only 1 or 8: "
+            + ", ".join(str(value) for value in sorted(unsupported_widths))
+        )
     try:
         exponent_values = [int(value) for value in words(args.expected_exponents)]
     except ValueError as error:
@@ -241,7 +295,7 @@ def expected_inputs(args: argparse.Namespace) -> tuple[tuple[int, ...], tuple[st
         raise SystemExit("--measured-runs must be positive")
     if args.measure_memory == "1" and not args.memory_binary_sha256:
         raise SystemExit("memory measurement requires --memory-binary-sha256")
-    return exponents, strategies, memory_strategies
+    return word_bits, exponents, strategies, memory_strategies
 
 
 def key_values(line: str, marker: str) -> dict[str, str] | None:
@@ -292,6 +346,44 @@ def exponent(record: dict[str, str]) -> int:
     return int(record["exponent"])
 
 
+def word_bits(record: dict[str, str]) -> int:
+    return int(record["word_bits"])
+
+
+def normalize_record_shape(record: dict[str, str], kind: str) -> None:
+    """Validate new shape metadata and infer the historical W1 defaults."""
+    try:
+        exp = int(record["exponent"])
+        width = int(record.get("word_bits", "1"))
+    except (KeyError, ValueError) as error:
+        raise SystemExit(f"invalid {kind} shape identity: {record}") from error
+    if width not in (1, 8):
+        raise SystemExit(f"unsupported {kind} word_bits={width}; expected 1 or 8")
+
+    s = exp // 2
+    t = exp - s + 7 - {1: 0, 8: 3}[width]
+    chunk_width = 127 - t - width
+    if chunk_width <= 0:
+        raise SystemExit(
+            f"invalid {kind} F2Z chunk width for exponent={exp}, word_bits={width}"
+        )
+    expected = {
+        "word_bits": str(width),
+        "f2z_t": str(t),
+        "f2z_s": str(s),
+        "f2z_chunks": str((100 + chunk_width - 1) // chunk_width),
+    }
+    for field, value in expected.items():
+        if field in record and record[field] != value:
+            raise SystemExit(
+                f"invalid {kind} {field} for exponent={exp}, word_bits={width}: "
+                f"reported={record[field]}, expected={value}"
+            )
+        record[field] = value
+    for field in OPTIONAL_TIMING_FIELDS:
+        record.setdefault(field, "NA")
+
+
 def strategy_rank(name: str) -> int:
     return {
         "immediate": 0,
@@ -334,17 +426,17 @@ def historical(exp: int) -> tuple[str, str]:
 
 
 def paired_rows(summaries: list[dict[str, str]]) -> list[dict[str, str]]:
-    by_exponent: dict[int, dict[str, dict[str, str]]] = {}
+    by_shape: dict[tuple[int, int], dict[str, dict[str, str]]] = {}
     for row in summaries:
-        by_exponent.setdefault(exponent(row), {})[row["strategy"]] = row
+        by_shape.setdefault((word_bits(row), exponent(row)), {})[row["strategy"]] = row
 
     rows: list[dict[str, str]] = []
-    ratios: dict[str, list[float]] = {}
-    passing: dict[str, int] = {}
-    totals: dict[str, int] = {}
-    remaining_improves: dict[str, bool] = {}
-    for exp in sorted(by_exponent):
-        strategies = by_exponent[exp]
+    ratios: dict[tuple[int, str], list[float]] = {}
+    passing: dict[tuple[int, str], int] = {}
+    totals: dict[tuple[int, str], int] = {}
+    remaining_improves: dict[tuple[int, str], bool] = {}
+    for width, exp in sorted(by_shape):
+        strategies = by_shape[(width, exp)]
         baseline = strategies.get("immediate")
         if baseline is None:
             continue
@@ -358,14 +450,21 @@ def paired_rows(summaries: list[dict[str, str]]) -> list[dict[str, str]]:
             reduction = 100.0 * (1.0 - ratio)
             primary = 15 <= exp <= 24
             passed = reduction >= 15.0
+            aggregate = (width, name)
             if primary:
-                ratios.setdefault(name, []).append(ratio)
-                passing[name] = passing.get(name, 0) + int(passed)
-                totals[name] = totals.get(name, 0) + 1
-                remaining_improves[name] = remaining_improves.get(name, True) and reduction > 0.0
+                ratios.setdefault(aggregate, []).append(ratio)
+                passing[aggregate] = passing.get(aggregate, 0) + int(passed)
+                totals[aggregate] = totals.get(aggregate, 0) + 1
+                remaining_improves[aggregate] = (
+                    remaining_improves.get(aggregate, True) and reduction > 0.0
+                )
             rows.append(
                 {
                     "scope": "size",
+                    "word_bits": str(width),
+                    "f2z_t": baseline["f2z_t"],
+                    "f2z_s": baseline["f2z_s"],
+                    "f2z_chunks": baseline["f2z_chunks"],
                     "exponent": str(exp),
                     "multiplications": baseline["multiplications"],
                     "baseline_strategy": "immediate",
@@ -385,19 +484,28 @@ def paired_rows(summaries: list[dict[str, str]]) -> list[dict[str, str]]:
                 }
             )
 
-    for name, samples in ratios.items():
+    for (width, name), samples in sorted(ratios.items()):
         geometric_ratio = math.exp(sum(math.log(value) for value in samples) / len(samples))
         geometric_reduction = 100.0 * (1.0 - geometric_ratio)
-        count = passing[name]
-        total = totals[name]
-        overall = total == 10 and count >= 9 and geometric_reduction >= 15.0 and remaining_improves[name]
+        aggregate = (width, name)
+        count = passing[aggregate]
+        total = totals[aggregate]
+        overall = (
+            total == 10
+            and count >= 9
+            and geometric_reduction >= 15.0
+            and remaining_improves[aggregate]
+        )
         rows.append(
             {
                 "scope": "overall",
+                "word_bits": str(width),
                 "baseline_strategy": "immediate",
                 "optimized_strategy": name,
                 "reduction_backend": next(
-                    row["reduction_backend"] for row in summaries if row["strategy"] == name
+                    row["reduction_backend"]
+                    for row in summaries
+                    if word_bits(row) == width and row["strategy"] == name
                 ),
                 "sizes_passing": str(count),
                 "sizes_total": str(total),
@@ -417,9 +525,9 @@ def write_csv(path: Path, fieldnames: tuple[str, ...], rows: Iterable[dict[str, 
             writer.writerow(output_row(metadata, row, (*STATIC_FIELDS, *fieldnames)))
 
 
-def record_pair(record: dict[str, str], kind: str) -> tuple[int, str]:
+def record_pair(record: dict[str, str], kind: str) -> Pair:
     try:
-        return exponent(record), record["strategy"]
+        return word_bits(record), exponent(record), record["strategy"]
     except (KeyError, ValueError) as error:
         raise SystemExit(f"invalid {kind} identity: {record}") from error
 
@@ -431,7 +539,7 @@ def require_fields(record: dict[str, str], fields: Iterable[str], kind: str) -> 
 
 
 def compare_pair_sets(
-    observed: set[tuple[int, str]], expected: set[tuple[int, str]], kind: str
+    observed: set[Pair], expected: set[Pair], kind: str
 ) -> None:
     missing = expected - observed
     unexpected = observed - expected
@@ -445,7 +553,7 @@ def compare_pair_sets(
 
 
 def validate_result_median(
-    result: dict[str, str], field: str, computed: float, pair: tuple[int, str]
+    result: dict[str, str], field: str, computed: float, pair: Pair
 ) -> None:
     reported = f64(result, field)
     tolerance = max(1.0e-6, abs(computed) * 1.0e-9)
@@ -459,38 +567,67 @@ def validate_result_median(
     result[field] = formatted_timing(computed)
 
 
+def validate_optional_result_median(
+    result: dict[str, str],
+    samples: list[dict[str, str]],
+    field: str,
+    pair: Pair,
+) -> None:
+    values = [sample[field] for sample in samples]
+    missing = [value == "NA" for value in values]
+    if all(missing):
+        if result[field] != "NA":
+            raise SystemExit(
+                f"RESULT diagnostic mismatch for {pair} {field}: "
+                f"reported={result[field]}, samples are all NA"
+            )
+        return
+    if any(missing):
+        raise SystemExit(f"mixed numeric/NA SAMPLE diagnostics for {pair} {field}: {values}")
+    computed = benchmark_median(f64(sample, field) for sample in samples)
+    validate_result_median(result, field, computed, pair)
+
+
 def main() -> None:
     args = parse_args()
-    exponents, strategies, memory_strategies = expected_inputs(args)
+    widths, exponents, strategies, memory_strategies = expected_inputs(args)
     metadata = static_metadata(args)
-    samples_by_pair: defaultdict[tuple[int, str], list[dict[str, str]]] = defaultdict(list)
-    results_by_pair: defaultdict[tuple[int, str], list[dict[str, str]]] = defaultdict(list)
-    memory_by_pair: defaultdict[tuple[int, str], list[dict[str, str]]] = defaultdict(list)
+    samples_by_pair: defaultdict[Pair, list[dict[str, str]]] = defaultdict(list)
+    results_by_pair: defaultdict[Pair, list[dict[str, str]]] = defaultdict(list)
+    memory_by_pair: defaultdict[Pair, list[dict[str, str]]] = defaultdict(list)
     for line in args.log.read_text(encoding="utf-8").splitlines():
         sample = key_values(line, "SAMPLE ")
         if sample is not None:
+            normalize_record_shape(sample, "SAMPLE")
             samples_by_pair[record_pair(sample, "SAMPLE")].append(sample)
             continue
         result = key_values(line, "RESULT ")
         if result is not None:
+            normalize_record_shape(result, "RESULT")
             results_by_pair[record_pair(result, "RESULT")].append(result)
             continue
         peak = key_values(line, "MEMORY ")
         if peak is not None:
+            normalize_record_shape(peak, "MEMORY")
             memory_by_pair[record_pair(peak, "MEMORY")].append(peak)
 
-    expected_latency_pairs = set(product(exponents, strategies))
+    expected_latency_pairs = set(product(widths, exponents, strategies))
     compare_pair_sets(set(samples_by_pair), expected_latency_pairs, "SAMPLE")
     compare_pair_sets(set(results_by_pair), expected_latency_pairs, "RESULT")
 
     expected_memory_pairs = (
-        set(product(exponents, memory_strategies)) if args.measure_memory == "1" else set()
+        set(product(widths, exponents, memory_strategies))
+        if args.measure_memory == "1"
+        else set()
     )
     compare_pair_sets(set(memory_by_pair), expected_memory_pairs, "MEMORY")
 
     summaries: list[dict[str, str]] = []
     samples: list[dict[str, str]] = []
-    for pair in sorted(expected_latency_pairs, key=lambda value: (value[0], strategy_rank(value[1]))):
+    for pair in sorted(
+        expected_latency_pairs,
+        key=lambda value: (value[0], value[1], strategy_rank(value[2])),
+    ):
         result_records = results_by_pair[pair]
         if len(result_records) != 1:
             raise SystemExit(f"expected exactly one RESULT record for {pair}, found {len(result_records)}")
@@ -502,10 +639,12 @@ def main() -> None:
                 "order",
                 "strategy",
                 "reduction_backend",
+                *SHAPE_FIELDS,
                 "exponent",
                 "multiplications",
                 "verified_samples",
                 *TIMING_FIELDS,
+                *OPTIONAL_TIMING_FIELDS,
                 *RESULT_DETAIL_FIELDS,
             ),
             "RESULT",
@@ -538,11 +677,13 @@ def main() -> None:
                     "order",
                     "strategy",
                     "reduction_backend",
+                    *SHAPE_FIELDS,
                     "exponent",
                     "multiplications",
                     "sample",
                     "verified",
                     *TIMING_FIELDS,
+                    *OPTIONAL_TIMING_FIELDS,
                 ),
                 "SAMPLE",
             )
@@ -554,7 +695,12 @@ def main() -> None:
                 sample_indices.append(int(sample["sample"]))
             except ValueError as error:
                 raise SystemExit(f"invalid SAMPLE index for {pair}: {sample['sample']}") from error
-            for identity in ("order", "reduction_backend", "multiplications"):
+            for identity in (
+                "order",
+                "reduction_backend",
+                "multiplications",
+                *SHAPE_FIELDS,
+            ):
                 if sample[identity] != result[identity]:
                     raise SystemExit(
                         f"SAMPLE/RESULT {identity} mismatch for {pair}: "
@@ -569,6 +715,8 @@ def main() -> None:
         for field in TIMING_FIELDS:
             computed = benchmark_median(f64(sample, field) for sample in pair_samples)
             validate_result_median(result, field, computed, pair)
+        for field in OPTIONAL_TIMING_FIELDS:
+            validate_optional_result_median(result, pair_samples, field, pair)
 
         memory_records = memory_by_pair.get(pair, [])
         if len(memory_records) > 1:
@@ -582,6 +730,7 @@ def main() -> None:
                     "order",
                     "strategy",
                     "reduction_backend",
+                    *SHAPE_FIELDS,
                     "exponent",
                     "multiplications",
                     "peak_heap_mib",
@@ -594,7 +743,7 @@ def main() -> None:
                 raise SystemExit(f"MEMORY record has non-memory pass for {pair}: {memory['pass']}")
             if memory["verified"].lower() != "true":
                 raise SystemExit(f"unverified MEMORY record for {pair}: {memory}")
-            for identity in ("reduction_backend", "multiplications"):
+            for identity in ("reduction_backend", "multiplications", *SHAPE_FIELDS):
                 if memory[identity] != result[identity]:
                     raise SystemExit(
                         f"MEMORY/RESULT {identity} mismatch for {pair}: "
@@ -607,7 +756,7 @@ def main() -> None:
         result["peak_heap_mib"] = memory["peak_heap_mib"] if memory else ""
         result["live_before_prove_mib"] = memory["live_before_prove_mib"] if memory else ""
         result["memory_order"] = memory["order"] if memory else ""
-        historical_ms, historical_target = historical(pair[0])
+        historical_ms, historical_target = historical(pair[1])
         result["historical_spartan_prove_ms"] = historical_ms
         result["historical_15pct_target_ms"] = historical_target
         result["all_samples_passed"] = "true"
@@ -624,11 +773,16 @@ def main() -> None:
 
     ordered_samples = sorted(
         samples,
-        key=lambda row: (exponent(row), int(row["order"]), int(row["sample"])),
+        key=lambda row: (
+            word_bits(row),
+            exponent(row),
+            int(row["order"]),
+            int(row["sample"]),
+        ),
     )
     ordered_summaries = sorted(
         summaries,
-        key=lambda row: (exponent(row), strategy_rank(row["strategy"])),
+        key=lambda row: (word_bits(row), exponent(row), strategy_rank(row["strategy"])),
     )
 
     write_csv(args.raw_csv, SAMPLE_FIELDS, ordered_samples, metadata)

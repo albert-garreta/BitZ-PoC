@@ -17,7 +17,8 @@ pub(crate) mod univariate_skip_native;
 pub mod workflow;
 
 pub use f2z::{
-    F2zOpeningClaim, SpartanF2zError, SpartanF2zField, U32MulSpartanF2zProof,
+    F2zOpeningClaim, SpartanF2zError, SpartanF2zField, U32BitifiedClaim,
+    U32MulSpartanF2zProof,
     bitify_u32_mul_spartan_claim, commit_u32_mul_witness, prove_u32_mul_spartan_and_f2z,
     prove_u32_mul_spartan_and_f2z_from_witness, prove_u32_mul_spartan_and_f2z_with_strategy,
     spartan_f2z_field_config, verify_u32_mul_spartan_and_f2z,
@@ -45,8 +46,9 @@ pub use piop::{
 pub use sumcheck::{OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProof};
 pub use u32_mul::{
     U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS, U32_MUL_X_BITS, U32_MUL_Y_BITS, U32MulError,
-    U32MulLayout, U32MulNativeMles, U32MulRelationBackend, U32MulWitness, prepare_u32_mul_relation,
-    project_u32_mul_native_witness, project_u32_mul_witness, u32_mul_constraint_matrices,
+    U32MulF2zWidth, U32MulLayout, U32MulNativeMles, U32MulRelationBackend, U32MulWitness,
+    prepare_u32_mul_relation, project_u32_mul_native_witness, project_u32_mul_witness,
+    u32_mul_constraint_matrices,
 };
 pub use univariate_skip::{
     UnivariateSkipOuterSumcheckProof, UnivariateSkipProof, UnivariateSkipSpartanPiopProof,

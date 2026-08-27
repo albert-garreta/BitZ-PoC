@@ -30,15 +30,16 @@ use crate::{
     ligerito::{LOG_PACKING, packed_vars},
     ligerito_flock::{
         FlockCommitHint, FlockRsError, IntEvalRsLigModQProof, commit_rs_ligerito_rows,
-        prove_mle_eval_mod_q_ligerito, sha_lig_configs, verify_mle_eval_mod_q_ligerito,
+        prove_mle_eval_mod_q_ligerito_prepared_u32_v2, sha_lig_configs,
+        verify_mle_eval_mod_q_ligerito_prepared_u32_v2,
     },
-    pcs::{FQ_BITS, FQ_MOD, Fq, ProjectCanonicalU128, eq_le_table_fq, fq_mul, fq_sub},
+    pcs::{FQ_BITS, FQ_MOD, Fq, ProjectCanonicalU128, fq_mul, fq_sub},
     poly::{mle::DenseMultilinearExtension, univariate::binary_gf128::BinaryFieldGF128},
     transcript::traits::Transcript,
 };
 
 use super::{
-    PreparedConstraintMatrices, R1csProductMles, SpartanField, absorb_spartan_message,
+    PreparedConstraintMatrices, R1csProductMles, SpartanField,
     matrix::ScaledMleEvaluationClaim,
     piop::{
         SpartanError, SpartanPiopProof, SpartanReductionStrategy,
@@ -56,8 +57,8 @@ use super::{
 /// oracle binding.
 const ASSIGNMENT_BINDING_DOMAIN: &[u8] = b"f2z/spartan-f2z/assignment/v1";
 
-/// Domain of the translated opening claim absorbed between Spartan and F2Z.
-const OPENING_CLAIM_DOMAIN: &[u8] = b"f2z/spartan-f2z/opening/v1";
+/// Domain of the compact, factorized claim bound between Spartan and F2Z.
+const BITIFIED_CLAIM_DOMAIN: &[u8] = b"f2z/spartan-f2z/bitified-claim/v2";
 
 /// Embedded, validator-gated Ligerito profiles begin at a 22-variable
 /// committed bit MLE: seven slot variables plus fifteen gate variables.
@@ -70,6 +71,51 @@ pub type SpartanF2zField = F128;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct F2zOpeningClaim {
     row_weights_q: Vec<u128>,
+    col_weights: Vec<Fq>,
+    claimed: Fq,
+}
+
+/// Compact result of applying the public u32-multiplication bitification map.
+///
+/// The row and column functionals remain factorized here.  They are compiled
+/// directly into the mod-q chunk representation at the F2Z boundary, so the
+/// deterministic Bitify reduction does not allocate either dense weight
+/// vector.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct U32BitifiedClaim {
+    params: crate::pcs::IntEvalParams,
+    gate_low: Box<[Fq]>,
+    gate_high: Box<[Fq]>,
+    rows: U32BitifiedRows,
+    col_scale: Fq,
+    claimed: Fq,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum U32BitifiedRows {
+    Structured { x: Fq, y: Fq, product: Fq },
+    ConstantDummy,
+}
+
+impl U32BitifiedClaim {
+    /// Public F2Z geometry selected by the statement-bound u32 layout.
+    pub const fn params(&self) -> crate::pcs::IntEvalParams {
+        self.params
+    }
+
+    /// Claimed value after subtracting the public constant-block term.
+    pub const fn claimed(&self) -> Fq {
+        self.claimed
+    }
+
+    /// Configured logical word width.
+    pub const fn word_bits(&self) -> usize {
+        self.params.word_bits
+    }
+}
+
+struct PreparedU32BitifiedClaim {
+    chunks: crate::pcs::ModQWeightChunks,
     col_weights: Vec<Fq>,
     claimed: Fq,
 }
@@ -223,12 +269,13 @@ pub fn commit_u32_mul_witness(
 ///
 /// Spartan's point is low-coordinate-first.  Its final two coordinates select
 /// the four assignment blocks; the preceding coordinates select a gate.  F2Z
-/// places the low gate coordinates on the clear column axis and the high gate
-/// coordinates together with the 128 bit slots on the folded row axis.
+/// places the low gate coordinates on the clear column axis. The high gate
+/// coordinates and logical word slots form the folded row axis; for `W = 8`,
+/// the remaining three bit coordinates live inside each logical cell.
 pub fn bitify_u32_mul_spartan_claim(
     claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
     layout: &U32MulLayout,
-) -> Result<F2zOpeningClaim, SpartanF2zError> {
+) -> Result<U32BitifiedClaim, SpartanF2zError> {
     validate_layout_geometry(layout)?;
     validate_claim_field(claim)?;
 
@@ -257,68 +304,40 @@ pub fn bitify_u32_mul_spartan_claim(
     let y_factor = one_minus_low * block_high;
     let product_factor = block_low * block_high;
 
-    let (gate_low, gate_high) = gate_point.split_at(p.s);
-    let eq_low = eq_le_table_fq(gate_low);
-    let eq_high = eq_le_table_fq(gate_high);
-    if eq_low.len() != checked_pow2(p.s)? || eq_high.len() != checked_pow2(gate_vars - p.s)? {
-        return Err(SpartanF2zError::InvalidF2zParameters);
-    }
-
     let scale = Fq(claim.scale().canonical_u128());
     let value = Fq(claim.value().canonical_u128());
-    let constant_evaluation = constant_factor * eq_low[0] * eq_high[0];
+    let constant_evaluation = gate_point.iter().copied().fold(constant_factor, |acc, coordinate| {
+        acc * Fq(fq_sub(one.0, coordinate.0))
+    });
     let adjusted_claim = Fq(fq_sub(value.0, fq_mul(scale.0, constant_evaluation.0)));
-
-    let row_count = checked_pow2(p.t)?;
-    let high_gate_vars = gate_vars - p.s;
-    let mut row_weights_q = vec![0_u128; row_count];
-    fill_slot_weights(
-        &mut row_weights_q,
-        U32_MUL_X_SLOT_START,
-        U32_MUL_X_BITS,
-        x_factor,
-        &eq_high,
-        high_gate_vars,
-    )?;
-    fill_slot_weights(
-        &mut row_weights_q,
-        U32_MUL_Y_SLOT_START,
-        U32_MUL_Y_BITS,
-        y_factor,
-        &eq_high,
-        high_gate_vars,
-    )?;
-    fill_slot_weights(
-        &mut row_weights_q,
-        U32_MUL_PRODUCT_SLOT_START,
-        U32_MUL_PRODUCT_BITS,
-        product_factor,
-        &eq_high,
-        high_gate_vars,
-    )?;
 
     // Put the Spartan scale on the clear column side.  Thus a zero scale does
     // not erase the row functional that the exponent-fold protocol certifies.
-    let mut col_weights = eq_low
-        .into_iter()
-        .map(|weight| scale * weight)
-        .collect::<Vec<_>>();
-
-    // At block point 00 the variable part is identically zero.  The F2Z
-    // prover still needs a nonempty row functional, so use a deterministic
-    // dummy row with an all-zero clear read-off.  This requires no division or
-    // challenge retry and preserves the zero adjusted claim exactly.
-    if row_weights_q.iter().all(|&weight| weight == 0) {
+    let mut col_scale = scale;
+    let rows = if x_factor == Fq(0) && y_factor == Fq(0) && product_factor == Fq(0) {
+        // At block point 00 the variable part is identically zero.  The F2Z
+        // prover still needs a nonempty row functional, so use a deterministic
+        // dummy row with an all-zero clear read-off.
         if adjusted_claim != Fq(0) {
             return Err(SpartanF2zError::InvalidConstantOnlyClaim);
         }
-        row_weights_q[0] = 1;
-        col_weights.fill(Fq(0));
-    }
+        col_scale = Fq(0);
+        U32BitifiedRows::ConstantDummy
+    } else {
+        U32BitifiedRows::Structured {
+            x: x_factor,
+            y: y_factor,
+            product: product_factor,
+        }
+    };
 
-    Ok(F2zOpeningClaim {
-        row_weights_q,
-        col_weights,
+    let (gate_low, gate_high) = gate_point.split_at(p.s);
+    Ok(U32BitifiedClaim {
+        params: p,
+        gate_low: gate_low.to_vec().into_boxed_slice(),
+        gate_high: gate_high.to_vec().into_boxed_slice(),
+        rows,
+        col_scale,
         claimed: adjusted_claim,
     })
 }
@@ -477,30 +496,36 @@ fn finish_combined_prover<T: Transcript + Send>(
     spartan: SpartanPiopProof<SpartanF2zField>,
     terminal_claim: ScaledMleEvaluationClaim<SpartanF2zField>,
 ) -> Result<U32MulSpartanF2zProof, SpartanF2zError> {
-    let opening = {
+    let (opening, bridge_digest) = {
         let _scope = crate::utils::prof::scope("spartan-f2z:bitify_prover");
         let opening = bitify_u32_mul_spartan_claim(&terminal_claim, layout)?;
-        absorb_opening_claim(
-            transcript,
+        let bridge_digest = bitified_claim_digest(
             matrices,
-            &assignment_binding,
+            assignment_binding,
+            layout,
             &terminal_claim,
             &opening,
         )?;
-        opening
+        (opening, bridge_digest)
     };
 
     let f2z = {
         let _scope = crate::utils::prof::scope("spartan-f2z:f2z_prove");
-        prove_mle_eval_mod_q_ligerito(
+        let prepared = {
+            let _scope = crate::utils::prof::scope("spartan-f2z:f2z_prepare_prover");
+            prepare_u32_bitified_claim(&opening)?
+        };
+        prove_mle_eval_mod_q_ligerito_prepared_u32_v2(
             transcript,
             hint,
             p,
-            opening.row_weights_q(),
+            &prepared.chunks,
+            &bridge_digest,
             FQ_BITS,
             f2z_generator(),
             pc,
         )
+        .map_err(SpartanF2zError::F2z)?
     };
 
     Ok(U32MulSpartanF2zProof { spartan, f2z })
@@ -533,30 +558,35 @@ pub fn verify_u32_mul_spartan_and_f2z<T: Transcript + Send>(
         verify_spartan_proof(transcript, matrices, &assignment_binding, &proof.spartan)?
     };
 
-    let opening = {
+    let (opening, bridge_digest) = {
         let _scope = crate::utils::prof::scope("spartan-f2z:bitify_verifier");
         let opening = bitify_u32_mul_spartan_claim(&terminal_claim, layout)?;
-        absorb_opening_claim(
-            transcript,
+        let bridge_digest = bitified_claim_digest(
             matrices,
             &assignment_binding,
+            layout,
             &terminal_claim,
             &opening,
         )?;
-        opening
+        (opening, bridge_digest)
     };
 
     let result = {
         let _scope = crate::utils::prof::scope("spartan-f2z:f2z_verify");
-        verify_mle_eval_mod_q_ligerito(
+        let prepared = {
+            let _scope = crate::utils::prof::scope("spartan-f2z:f2z_prepare_verifier");
+            prepare_u32_bitified_claim(&opening)?
+        };
+        verify_mle_eval_mod_q_ligerito_prepared_u32_v2(
             transcript,
             commitment,
             &proof.f2z,
             &p,
-            opening.row_weights_q(),
-            opening.col_weights(),
+            &prepared.chunks,
+            &prepared.col_weights,
+            &bridge_digest,
             f2z_generator(),
-            opening.claimed(),
+            prepared.claimed,
             FQ_BITS,
             &vc,
         )
@@ -577,16 +607,18 @@ fn configs_for_layout(
 
 fn validate_layout_geometry(layout: &U32MulLayout) -> Result<(), SpartanF2zError> {
     let p = layout.f2z_params();
-    if p.word_bits != 1
+    if !matches!(p.word_bits, 1 | 8)
         || p.t < LOG_PACKING
         || p.s > layout.gate_vars()
         || p.t.saturating_add(p.word_bits) > 126
     {
         return Err(SpartanF2zError::InvalidF2zParameters);
     }
-    let total_vars =
-        p.t.checked_add(p.s)
-            .ok_or(SpartanF2zError::InvalidF2zParameters)?;
+    let total_vars = p
+        .t
+        .checked_add(p.word_bits.trailing_zeros() as usize)
+        .and_then(|value| value.checked_add(p.s))
+        .ok_or(SpartanF2zError::InvalidF2zParameters)?;
     if total_vars
         != layout
             .gate_vars()
@@ -599,13 +631,14 @@ fn validate_layout_geometry(layout: &U32MulLayout) -> Result<(), SpartanF2zError
 
     let row_count = checked_pow2(p.t)?;
     let col_count = checked_pow2(p.s)?;
-    let cells = row_count
+    let committed_bits = row_count
         .checked_mul(col_count)
+        .and_then(|cells| cells.checked_mul(p.word_bits))
         .ok_or(SpartanF2zError::InvalidF2zParameters)?;
-    let expected_cells = U32_MUL_BIT_SLOTS
+    let expected_bits = U32_MUL_BIT_SLOTS
         .checked_mul(layout.capacity())
         .ok_or(SpartanF2zError::InvalidF2zParameters)?;
-    if cells != expected_cells || packed_variables(&p)? != layout.gate_vars() {
+    if committed_bits != expected_bits || packed_variables(&p)? != layout.gate_vars() {
         return Err(SpartanF2zError::InvalidF2zParameters);
     }
     Ok(())
@@ -645,10 +678,13 @@ fn validate_bit_rows(
 ) -> Result<(), SpartanF2zError> {
     let row_count = checked_pow2(p.t)?;
     let col_count = checked_pow2(p.s)?;
-    if row_count % u64::BITS as usize != 0 || rows.len() != col_count {
+    let row_bits = row_count
+        .checked_mul(p.word_bits)
+        .ok_or(SpartanF2zError::InvalidBitRows)?;
+    if row_bits % u64::BITS as usize != 0 || rows.len() != col_count {
         return Err(SpartanF2zError::InvalidBitRows);
     }
-    let words_per_col = row_count / u64::BITS as usize;
+    let words_per_col = row_bits / u64::BITS as usize;
     if rows.iter().any(|row| row.len() != words_per_col) {
         return Err(SpartanF2zError::InvalidBitRows);
     }
@@ -668,6 +704,15 @@ pub(crate) fn validate_config_pair(
         || pc.initial_k >= m_p
         || pc.initial_k != vc.initial_k
         || pc.log_inv_rates != vc.log_inv_rates
+        || pc.recursive_steps != vc.recursive_steps
+        || pc.initial_log_msg_cols != vc.initial_log_msg_cols
+        || pc.initial_log_num_interleaved != vc.initial_log_num_interleaved
+        || pc.recursive_log_msg_cols != vc.recursive_log_msg_cols
+        || pc.recursive_ks != vc.recursive_ks
+        || pc.queries != vc.queries
+        || pc.grinding_bits != vc.grinding_bits
+        || pc.fold_grinding_bits != vc.fold_grinding_bits
+        || pc.ood_samples != vc.ood_samples
         || pc.merkle_hash != vc.merkle_hash
     {
         return Err(SpartanF2zError::InvalidF2zParameters);
@@ -736,37 +781,149 @@ fn validate_claim_field(
     Ok(())
 }
 
-fn fill_slot_weights(
-    row_weights_q: &mut [u128],
-    slot_start: usize,
-    bit_count: usize,
-    block_factor: Fq,
-    eq_high: &[Fq],
-    high_gate_vars: usize,
-) -> Result<(), SpartanF2zError> {
-    let high_gate_count = checked_pow2(high_gate_vars)?;
-    if eq_high.len() != high_gate_count {
+fn prepare_u32_bitified_claim(
+    opening: &U32BitifiedClaim,
+) -> Result<PreparedU32BitifiedClaim, SpartanF2zError> {
+    let p = opening.params;
+    if opening.gate_low.len() != p.s
+        || opening.gate_high.len() != p.t + p.word_bits.trailing_zeros() as usize - 7
+    {
         return Err(SpartanF2zError::InvalidF2zParameters);
     }
 
-    let mut bit_weight = Fq(1);
-    for bit in 0..bit_count {
-        let slot = slot_start
-            .checked_add(bit)
-            .ok_or(SpartanF2zError::InvalidF2zParameters)?;
-        let row_base = slot
-            .checked_mul(high_gate_count)
-            .ok_or(SpartanF2zError::InvalidF2zParameters)?;
-        for (gate_high, equality_weight) in eq_high.iter().copied().enumerate() {
-            let row = row_base
-                .checked_add(gate_high)
-                .ok_or(SpartanF2zError::InvalidF2zParameters)?;
-            let Some(output) = row_weights_q.get_mut(row) else {
-                return Err(SpartanF2zError::InvalidF2zParameters);
-            };
-            *output = (block_factor * bit_weight * equality_weight).0;
+    let eq_low = eq_le_table_fq_one_mul(&opening.gate_low)?;
+    let col_weights = if opening.col_scale == Fq(0) {
+        vec![Fq(0); eq_low.len()]
+    } else {
+        eq_low
+            .into_iter()
+            .map(|weight| opening.col_scale * weight)
+            .collect()
+    };
+
+    let row_count = checked_pow2(p.t)?;
+    let chunk_width = crate::pcs::mod_q_chunk_width(&p);
+    let chunk_count = crate::pcs::mod_q_num_chunks(&p, FQ_BITS);
+    let mut chunks = vec![vec![0_u128; row_count]; chunk_count];
+
+    match opening.rows {
+        U32BitifiedRows::ConstantDummy => chunks[0][0] = 1,
+        U32BitifiedRows::Structured { x, y, product } => {
+            let eq_high = eq_le_table_fq_one_mul(&opening.gate_high)?;
+            fill_block_weight_chunks(
+                &mut chunks,
+                U32_MUL_X_SLOT_START,
+                U32_MUL_X_BITS,
+                p.word_bits,
+                x,
+                &eq_high,
+                chunk_width,
+            )?;
+            fill_block_weight_chunks(
+                &mut chunks,
+                U32_MUL_Y_SLOT_START,
+                U32_MUL_Y_BITS,
+                p.word_bits,
+                y,
+                &eq_high,
+                chunk_width,
+            )?;
+            fill_block_weight_chunks(
+                &mut chunks,
+                U32_MUL_PRODUCT_SLOT_START,
+                U32_MUL_PRODUCT_BITS,
+                p.word_bits,
+                product,
+                &eq_high,
+                chunk_width,
+            )?;
         }
-        bit_weight = bit_weight + bit_weight;
+    }
+
+    let chunks = crate::pcs::ModQWeightChunks::from_chunks(&p, FQ_BITS, chunks)
+        .map_err(|_| SpartanF2zError::InvalidF2zParameters)?;
+    Ok(PreparedU32BitifiedClaim {
+        chunks,
+        col_weights,
+        claimed: opening.claimed,
+    })
+}
+
+fn eq_le_table_fq_one_mul(point: &[Fq]) -> Result<Vec<Fq>, SpartanF2zError> {
+    let expected = checked_pow2(point.len())?;
+    let mut acc = vec![Fq(1)];
+    for &coordinate in point {
+        let len = acc.len();
+        let mut next = vec![Fq(0); len * 2];
+        for (index, parent) in acc.into_iter().enumerate() {
+            let one_child = parent * coordinate;
+            next[index] = Fq(fq_sub(parent.0, one_child.0));
+            next[len + index] = one_child;
+        }
+        acc = next;
+    }
+    if acc.len() != expected {
+        return Err(SpartanF2zError::InvalidF2zParameters);
+    }
+    Ok(acc)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fill_block_weight_chunks(
+    chunks: &mut [Vec<u128>],
+    bit_slot_start: usize,
+    bit_count: usize,
+    word_bits: usize,
+    block_factor: Fq,
+    eq_high: &[Fq],
+    chunk_width: usize,
+) -> Result<(), SpartanF2zError> {
+    if !matches!(word_bits, 1 | 8)
+        || bit_slot_start % word_bits != 0
+        || bit_count % word_bits != 0
+    {
+        return Err(SpartanF2zError::InvalidF2zParameters);
+    }
+    let word_slot_start = bit_slot_start / word_bits;
+    let word_count = bit_count / word_bits;
+    let high_gate_count = eq_high.len();
+    if !high_gate_count.is_power_of_two() || chunks.is_empty() {
+        return Err(SpartanF2zError::InvalidF2zParameters);
+    }
+
+    for (gate_high, equality_weight) in eq_high.iter().copied().enumerate() {
+        let mut value = block_factor * equality_weight;
+        for word in 0..word_count {
+            let word_slot = word_slot_start
+                .checked_add(word)
+                .ok_or(SpartanF2zError::InvalidF2zParameters)?;
+            let row = word_slot
+                .checked_mul(high_gate_count)
+                .and_then(|base| base.checked_add(gate_high))
+                .ok_or(SpartanF2zError::InvalidF2zParameters)?;
+            write_weight_chunks(chunks, row, value.0, chunk_width)?;
+            for _ in 0..word_bits {
+                value = value + value;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn write_weight_chunks(
+    chunks: &mut [Vec<u128>],
+    row: usize,
+    weight: u128,
+    chunk_width: usize,
+) -> Result<(), SpartanF2zError> {
+    let mask = (1_u128 << chunk_width).wrapping_sub(1);
+    let mut shift = 0_usize;
+    for chunk in chunks {
+        let Some(output) = chunk.get_mut(row) else {
+            return Err(SpartanF2zError::InvalidF2zParameters);
+        };
+        *output = (weight >> shift) & mask;
+        shift = shift.wrapping_add(chunk_width);
     }
     Ok(())
 }
@@ -796,28 +953,36 @@ fn assignment_binding(
     Ok(*hasher.finalize().as_bytes())
 }
 
-fn absorb_opening_claim<T: Transcript>(
-    transcript: &mut T,
+fn bitified_claim_digest(
     matrices: &PreparedConstraintMatrices<SpartanF2zField, bool>,
     assignment_binding: &[u8; 32],
+    layout: &U32MulLayout,
     terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
-    opening: &F2zOpeningClaim,
-) -> Result<(), SpartanF2zError> {
-    let digest = opening_claim_digest(matrices, assignment_binding, terminal_claim, opening)?;
-    absorb_spartan_message(transcript, OPENING_CLAIM_DOMAIN, &digest);
-    Ok(())
-}
-
-fn opening_claim_digest(
-    matrices: &PreparedConstraintMatrices<SpartanF2zField, bool>,
-    assignment_binding: &[u8; 32],
-    terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
-    opening: &F2zOpeningClaim,
+    opening: &U32BitifiedClaim,
 ) -> Result<[u8; 32], SpartanF2zError> {
     let mut hasher = Hasher::new();
-    hasher.update(OPENING_CLAIM_DOMAIN);
+    hasher.update(BITIFIED_CLAIM_DOMAIN);
     hasher.update(assignment_binding);
+    hash_usize(&mut hasher, matrices.field_modulus_encoding().len())?;
+    hasher.update(matrices.field_modulus_encoding());
     hasher.update(matrices.digest());
+    hasher.update(&FQ_MOD.to_le_bytes());
+
+    hash_usize(&mut hasher, layout.multiplications())?;
+    hash_usize(&mut hasher, layout.capacity())?;
+    hash_usize(&mut hasher, layout.assignment_len())?;
+    hash_usize(&mut hasher, layout.gate_vars())?;
+    hash_usize(&mut hasher, opening.params.t)?;
+    hash_usize(&mut hasher, opening.params.s)?;
+    hash_usize(&mut hasher, opening.params.word_bits)?;
+    hash_usize(&mut hasher, U32_MUL_X_SLOT_START)?;
+    hash_usize(&mut hasher, U32_MUL_X_BITS)?;
+    hash_usize(&mut hasher, U32_MUL_Y_SLOT_START)?;
+    hash_usize(&mut hasher, U32_MUL_Y_BITS)?;
+    hash_usize(&mut hasher, U32_MUL_PRODUCT_SLOT_START)?;
+    hash_usize(&mut hasher, U32_MUL_PRODUCT_BITS)?;
+    // Mapping version 1: little-endian bits and 00/01/10/11 block order.
+    hasher.update(&[1, 0, 0, 1, 2, 3]);
 
     hash_usize(&mut hasher, terminal_claim.point().len())?;
     for coordinate in terminal_claim.point() {
@@ -826,14 +991,26 @@ fn opening_claim_digest(
     hasher.update(&terminal_claim.scale().canonical_element_encoding());
     hasher.update(&terminal_claim.value().canonical_element_encoding());
 
-    hash_usize(&mut hasher, opening.row_weights_q.len())?;
-    for weight in &opening.row_weights_q {
-        hasher.update(&weight.to_le_bytes());
+    hash_usize(&mut hasher, opening.gate_low.len())?;
+    for coordinate in &opening.gate_low {
+        hasher.update(&coordinate.0.to_le_bytes());
     }
-    hash_usize(&mut hasher, opening.col_weights.len())?;
-    for weight in &opening.col_weights {
-        hasher.update(&weight.0.to_le_bytes());
+    hash_usize(&mut hasher, opening.gate_high.len())?;
+    for coordinate in &opening.gate_high {
+        hasher.update(&coordinate.0.to_le_bytes());
     }
+    match opening.rows {
+        U32BitifiedRows::Structured { x, y, product } => {
+            hasher.update(&[0]);
+            hasher.update(&x.0.to_le_bytes());
+            hasher.update(&y.0.to_le_bytes());
+            hasher.update(&product.0.to_le_bytes());
+        }
+        U32BitifiedRows::ConstantDummy => {
+            hasher.update(&[1]);
+        }
+    }
+    hasher.update(&opening.col_scale.0.to_le_bytes());
     hasher.update(&opening.claimed.0.to_le_bytes());
     Ok(*hasher.finalize().as_bytes())
 }
@@ -893,7 +1070,10 @@ mod tests {
     use crypto_primitives::FromWithConfig;
 
     use super::*;
-    use crate::piop::spartan::u32_mul::{U32MulWitness, prepare_u32_mul_relation};
+    use crate::pcs::eq_le_table_fq;
+    use crate::piop::spartan::u32_mul::{
+        U32MulF2zWidth, U32MulWitness, prepare_u32_mul_relation,
+    };
     use crate::transcript::Blake3Transcript;
 
     fn terminal_claim(
@@ -913,62 +1093,85 @@ mod tests {
         )
     }
 
+    fn prepared_row_weight(prepared: &PreparedU32BitifiedClaim, row: usize) -> u128 {
+        let mut value = 0_u128;
+        let mut shift = 0_usize;
+        for chunk in prepared.chunks.chunks() {
+            value |= chunk[row] << shift;
+            shift += prepared.chunks.chunk_width();
+        }
+        value
+    }
+
     #[test]
     fn bitification_is_the_adjoint_of_integer_reconstruction() {
-        let witness =
-            U32MulWitness::from_inputs(&[(0, u32::MAX), (1, 7), (u32::MAX, u32::MAX)]).unwrap();
-        let layout = witness.layout();
-        let p = layout.f2z_params();
+        for width in [U32MulF2zWidth::W1, U32MulF2zWidth::W8] {
+            let witness = U32MulWitness::from_inputs_with_f2z_width(
+                &[(0, u32::MAX), (1, 7), (u32::MAX, u32::MAX)],
+                width,
+            )
+            .unwrap();
+            let layout = witness.layout();
+            let p = layout.f2z_params();
 
-        // Non-Boolean selector coordinates exercise all four assignment
-        // blocks, rather than reducing this to a single block lookup.
-        let gate_point = (0..layout.gate_vars())
-            .map(|coordinate| Fq((coordinate + 2) as u128))
-            .collect::<Vec<_>>();
-        assert_eq!(gate_point.len(), layout.gate_vars());
-        let block_low = Fq(7);
-        let block_high = Fq(11);
-        let scale = Fq(13);
-        let one = Fq(1);
-        let one_minus_low = Fq(fq_sub(one.0, block_low.0));
-        let one_minus_high = Fq(fq_sub(one.0, block_high.0));
-        let factors = [
-            one_minus_low * one_minus_high,
-            block_low * one_minus_high,
-            one_minus_low * block_high,
-            block_low * block_high,
-        ];
-        let eq_gate = eq_le_table_fq(&gate_point);
+            // Non-Boolean selector coordinates exercise all four assignment
+            // blocks, rather than reducing this to a single block lookup.
+            let gate_point = (0..layout.gate_vars())
+                .map(|coordinate| Fq((coordinate + 2) as u128))
+                .collect::<Vec<_>>();
+            assert_eq!(gate_point.len(), layout.gate_vars());
+            let block_low = Fq(7);
+            let block_high = Fq(11);
+            let scale = Fq(13);
+            let one = Fq(1);
+            let one_minus_low = Fq(fq_sub(one.0, block_low.0));
+            let one_minus_high = Fq(fq_sub(one.0, block_high.0));
+            let factors = [
+                one_minus_low * one_minus_high,
+                block_low * one_minus_high,
+                one_minus_low * block_high,
+                block_low * block_high,
+            ];
+            let eq_gate = eq_le_table_fq(&gate_point);
 
-        let assignment = witness.assignment();
-        let mut assignment_evaluation = Fq(0);
-        for block in 0..4 {
-            for gate in 0..layout.capacity() {
-                assignment_evaluation = assignment_evaluation
-                    + factors[block]
-                        * eq_gate[gate]
-                        * Fq::from(u128::from(assignment[block * layout.capacity() + gate]));
+            let assignment = witness.assignment();
+            let mut assignment_evaluation = Fq(0);
+            for block in 0..4 {
+                for gate in 0..layout.capacity() {
+                    assignment_evaluation = assignment_evaluation
+                        + factors[block]
+                            * eq_gate[gate]
+                            * Fq::from(u128::from(assignment[block * layout.capacity() + gate]));
+                }
             }
-        }
-        let value = scale * assignment_evaluation;
+            let value = scale * assignment_evaluation;
 
-        let mut point = gate_point.to_vec();
-        point.extend([block_low, block_high]);
-        let terminal = terminal_claim(&point, scale, value);
-        let opening = bitify_u32_mul_spartan_claim(&terminal, layout).unwrap();
+            let mut point = gate_point.to_vec();
+            point.extend([block_low, block_high]);
+            let terminal = terminal_claim(&point, scale, value);
+            let opening = bitify_u32_mul_spartan_claim(&terminal, layout).unwrap();
+            let prepared = prepare_u32_bitified_claim(&opening).unwrap();
 
-        let rows = witness.f2z_bit_rows();
-        let mut read_off = Fq(0);
-        for b in 0..p.rows() {
-            for c in 0..p.cols() {
-                let bit = (rows[c][b / u64::BITS as usize] >> (b % u64::BITS as usize)) & 1;
-                read_off = read_off
-                    + Fq::from(u128::from(bit))
-                        * Fq(opening.row_weights_q()[b])
-                        * opening.col_weights()[c];
+            let rows = witness.f2z_bit_rows();
+            let mut read_off = Fq(0);
+            for b in 0..p.rows() {
+                for c in 0..p.cols() {
+                    let mut cell = 0_u128;
+                    for j in 0..p.word_bits {
+                        let packed_bit = b * p.word_bits + j;
+                        let bit = (rows[c][packed_bit / u64::BITS as usize]
+                            >> (packed_bit % u64::BITS as usize))
+                            & 1;
+                        cell |= u128::from(bit) << j;
+                    }
+                    read_off = read_off
+                        + Fq::from(cell)
+                            * Fq(prepared_row_weight(&prepared, b))
+                            * prepared.col_weights[c];
+                }
             }
+            assert_eq!(read_off, opening.claimed());
         }
-        assert_eq!(read_off, opening.claimed());
     }
 
     #[test]
@@ -980,9 +1183,10 @@ mod tests {
         point.extend([Fq(7), Fq(11)]);
         let opening =
             bitify_u32_mul_spartan_claim(&terminal_claim(&point, Fq(0), Fq(0)), &layout).unwrap();
+        let prepared = prepare_u32_bitified_claim(&opening).unwrap();
 
-        assert!(opening.row_weights_q().iter().any(|&weight| weight != 0));
-        assert!(opening.col_weights().iter().all(|&weight| weight == Fq(0)));
+        assert!((0..opening.params.rows()).any(|row| prepared_row_weight(&prepared, row) != 0));
+        assert!(prepared.col_weights.iter().all(|&weight| weight == Fq(0)));
         assert_eq!(opening.claimed(), Fq(0));
     }
 
@@ -1002,13 +1206,10 @@ mod tests {
             &layout,
         )
         .unwrap();
-        assert_eq!(opening.row_weights_q()[0], 1);
-        assert!(
-            opening.row_weights_q()[1..]
-                .iter()
-                .all(|&weight| weight == 0)
-        );
-        assert!(opening.col_weights().iter().all(|&weight| weight == Fq(0)));
+        let prepared = prepare_u32_bitified_claim(&opening).unwrap();
+        assert_eq!(prepared_row_weight(&prepared, 0), 1);
+        assert!((1..opening.params.rows()).all(|row| prepared_row_weight(&prepared, row) == 0));
+        assert!(prepared.col_weights.iter().all(|&weight| weight == Fq(0)));
         assert_eq!(opening.claimed(), Fq(0));
     }
 
@@ -1036,8 +1237,51 @@ mod tests {
             Err(SpartanF2zError::UnauditedF2zParameters)
         ));
 
-        let production = U32MulLayout::new(1 << MIN_PRODUCTION_GATE_VARS).unwrap();
-        configs_for_layout(&production).expect("the smallest embedded profile is available");
+        for width in [U32MulF2zWidth::W1, U32MulF2zWidth::W8] {
+            let production = U32MulLayout::new_with_f2z_width(
+                1 << MIN_PRODUCTION_GATE_VARS,
+                width,
+            )
+            .unwrap();
+            configs_for_layout(&production).expect("the smallest embedded profile is available");
+        }
+    }
+
+    #[test]
+    #[ignore = "runs one production-sized W=8 Spartan/F2Z proof"]
+    fn combined_w8_proof_verifies() {
+        let witness = U32MulWitness::from_fn_with_f2z_width(
+            1 << MIN_PRODUCTION_GATE_VARS,
+            U32MulF2zWidth::W8,
+            |index| {
+                let value = (index as u32).wrapping_mul(0x9E37_79B9);
+                (value, value.rotate_left(13) ^ 0xA5A5_5A5A)
+            },
+        )
+        .unwrap();
+        let layout = *witness.layout();
+        let field_config = spartan_f2z_field_config();
+        let matrices = prepare_u32_mul_relation::<SpartanF2zField>(layout, &field_config).unwrap();
+        let hint = commit_u32_mul_witness(&layout, witness.f2z_bit_rows()).unwrap();
+
+        let mut prover_transcript = Blake3Transcript::new();
+        let proof = prove_u32_mul_spartan_and_f2z_from_witness(
+            &mut prover_transcript,
+            &matrices,
+            &layout,
+            &witness,
+            &hint,
+        )
+        .unwrap();
+        let mut verifier_transcript = Blake3Transcript::new();
+        verify_u32_mul_spartan_and_f2z(
+            &mut verifier_transcript,
+            &matrices,
+            &layout,
+            &hint.commitment,
+            &proof,
+        )
+        .unwrap();
     }
 
     #[test]
