@@ -57,6 +57,13 @@ required-features = ["bench-internals"]
 # It varies native witness folding and field coefficient accumulation only.
 
 [[bench]]
+name = "eq_tables"
+harness = false
+required-features = ["bench-internals"]
+# Controlled legacy-versus-current equality-table builder benchmark.
+# Widths 8, 12, and 16; alternating median samples and explicit PR 1 gates.
+
+[[bench]]
 name = "u32_mul_outer_skip"
 harness = false
 # Controlled PIOP-only comparison of the standard outer sumcheck against the

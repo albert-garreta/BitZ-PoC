@@ -38,7 +38,7 @@ use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
 use crate::poly::utils::build_eq_x_r_vec;
 use crate::transcript::traits::Transcript;
 
-use crate::utils::{cfg_into_iter, cfg_iter};
+use crate::utils::{cfg_into_iter, cfg_iter, cfg_iter_mut};
 
 use crypto_primitives::crypto_bigint_monty::MontyField;
 
@@ -411,20 +411,72 @@ impl core::ops::Mul for Fq {
 /// host PIOP's α-combined witness-MLE claim. (Contrast the standalone tests'
 /// `eq_table_fq`, which is big-endian.)
 pub fn eq_le_table_fq(point: &[Fq]) -> Vec<Fq> {
-    let one = Fq(1u128 % FQ_MOD);
-    let mut acc = vec![one];
-    for r in point {
-        let one_minus_r = Fq(fq_sub(one.0, r.0));
-        let mut next = Vec::with_capacity(acc.len().wrapping_mul(2));
-        for &e in &acc {
-            next.push(e * one_minus_r);
-        }
-        for &e in &acc {
-            next.push(e * *r);
-        }
-        acc = next;
+    debug_assert!(
+        point.iter().all(|r| r.0 < FQ_MOD),
+        "eq_le_table_fq requires canonical Fq inputs"
+    );
+    let table_len = u32::try_from(point.len())
+        .ok()
+        .and_then(|num_vars| 1usize.checked_shl(num_vars))
+        .expect("eq_le_table_fq domain must fit into usize");
+    let mut table = vec![Fq(0); table_len];
+    table[0] = Fq(1);
+
+    let mut half = 1usize;
+    for challenge in point {
+        let active_len = half
+            .checked_mul(2)
+            .expect("checked equality-table domain cannot overflow");
+        let (zero_children, one_children) = table[..active_len].split_at_mut(half);
+        cfg_iter_mut!(zero_children)
+            .zip(cfg_iter_mut!(one_children))
+            .for_each(|(zero, one)| {
+                let parent = *zero;
+                let one_child = parent * *challenge;
+                *zero = Fq(fq_sub(parent.0, one_child.0));
+                *one = one_child;
+            });
+        half = active_len;
     }
-    acc
+    table
+}
+
+#[cfg(test)]
+mod eq_le_table_fq_tests {
+    use super::*;
+
+    fn direct_eq(point: &[Fq], index: usize) -> Fq {
+        Fq(point.iter().enumerate().fold(1u128, |acc, (bit, challenge)| {
+            let factor =
+                if index >> bit & 1 == 1 { challenge.0 } else { fq_sub(1, challenge.0) };
+            fq_mul(acc, factor)
+        }))
+    }
+
+    #[test]
+    fn empty_input_is_one() {
+        assert_eq!(eq_le_table_fq(&[]), vec![Fq(1)]);
+    }
+
+    #[test]
+    fn two_coordinates_use_little_endian_order() {
+        let point = [Fq(2), Fq(3)];
+        // Indices 0, 1, 2, 3 represent [00, 10, 01, 11].
+        assert_eq!(
+            eq_le_table_fq(&point),
+            vec![Fq(2), Fq(FQ_MOD - 4), Fq(FQ_MOD - 3), Fq(6)]
+        );
+    }
+
+    #[test]
+    fn non_boolean_table_matches_direct_formula_and_sums_to_one() {
+        let point = [Fq(0), Fq(1), Fq(FQ_MOD - 1), Fq(123_456_789)];
+        let table = eq_le_table_fq(&point);
+        for (index, &evaluation) in table.iter().enumerate() {
+            assert_eq!(evaluation, direct_eq(&point, index), "entry {index}");
+        }
+        assert_eq!(table.iter().fold(0u128, |acc, value| fq_add(acc, value.0)), 1);
+    }
 }
 
 /// Extract the canonical integer (standard, *not* Montgomery, form) of a host

@@ -399,7 +399,7 @@ fn t4_prfm(t4_bytes: usize) -> bool {
 /// "materialise, then run the round-1 message pass over what was just
 /// written". `value(j)` supplies position `j ∈ 0..2·hh` (`E` half below
 /// `hh`, `O` half above); `v1` is the layer's round-1 suffix tensor
-/// `V_1` (length `hh/2` — [`suffix_tensors`]`[0]` over the layer's `q`,
+/// `V_1` (length `hh/2` — [`suffix_tensors`]'s `tensor(0)` over the layer's `q`,
 /// the SAME tensor the driver builds for its remaining rounds).
 ///
 /// Value-exact vs the driver's round-1 kernel over the same buffers: the
@@ -467,7 +467,8 @@ fn dense_jit_fused_round1(
 /// pass over them (round 3) already folds two challenges. On the JIT
 /// layer — the largest dense buffer the forest ever holds (`2^{n−2}`
 /// values) — that removes one full streaming pass in each direction.
-/// `v2` is the layer's round-2 suffix tensor `V_2` ([`suffix_tensors`]`[1]`,
+/// `v2` is the layer's round-2 suffix tensor `V_2` ([`suffix_tensors`]'s
+/// `tensor(1)`,
 /// length `hh/4`). Value-exact against the driver's own grid pass over
 /// the same buffers (same weighted node grids, same wide products,
 /// `F₂`-linear reduction).
@@ -552,7 +553,7 @@ where
     let one = Gf::one();
     let tensors = suffix_tensors(zx, &());
     if crate::piop::sumcheck::eq_factored::eqf_double() && zx.len() >= 3 && jit_grid() {
-        let v2 = &tensors[1];
+        let v2 = tensors.tensor(1);
         let generated: Vec<(GroupBufs<Gf>, [Gf; 9])> = cfg_into_iter!(0..num_trees)
             .map(|c| {
                 let (value, look) = mk(c);
@@ -573,7 +574,7 @@ where
         }
         (bufs, Some(PreRound::Grid(grid)))
     } else {
-        let v1 = &tensors[0];
+        let v1 = tensors.tensor(0);
         let generated: Vec<(GroupBufs<Gf>, (Gf, Gf, Gf))> = cfg_into_iter!(0..num_trees)
             .map(|c| {
                 let (value, look) = mk(c);
@@ -1786,8 +1787,8 @@ pub fn prove_merged_forest_lazy_quad(
             let _g = crate::utils::prof::scope("mf:bitgen");
             let cb = col_bits.as_ref().expect("leaf bits alive for the parity layer");
             if jit_round1_fuse() {
-                let v1: Vec<Gf> =
-                    suffix_tensors(&z_x, &()).into_iter().next().expect("z_x non-empty");
+                let tensors = suffix_tensors(&z_x, &());
+                let v1 = tensors.tensor(0);
                 let generated: Vec<(GroupBufs<Gf>, (Gf, Gf, Gf))> =
                     cfg_into_iter!(0..num_trees)
                         .map(|c| {
@@ -1795,7 +1796,7 @@ pub fn prove_merged_forest_lazy_quad(
                             let at = T4At { lbits: lb, rbits: rb, t4: t4_src(t4f, &t4, &te, &to), q1 };
                             let (pair, coeffs) = dense_jit_fused_round1(
                                 hh,
-                                &v1,
+                                v1,
                                 |j| at.at(j),
                                 |j| {
                                     if t4_pf {
