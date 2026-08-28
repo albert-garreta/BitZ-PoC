@@ -44,6 +44,14 @@ harness = false
 # Reps via F2Z_BENCH_REPS.
 
 [[bench]]
+name = "cm_and"
+harness = false
+# CM-AND relation (paper \Relation_CM): batched 32-bit x AND y = z via ONE
+# linear constraint per gate, with w = x XOR y as an F2-VIRTUAL block -
+# committed bits are x|y|z only, w is derived by the virtual F2Z opening.
+# Exponents via F2Z_CM_EXPONENTS; reps via F2Z_BENCH_REPS.
+
+[[bench]]
 name = "u32_mul"
 harness = false
 # Integer u32×u32→u64 R1CS through the generic Spartan PIOP, with the

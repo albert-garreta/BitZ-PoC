@@ -96,6 +96,49 @@ impl F2CellMap {
         })
     }
 
+    /// Builds the map directly from flat CSR storage — the memory-honest
+    /// constructor for large structured maps (no per-row `Vec` headers).
+    ///
+    /// `row_offsets` has one start offset per derived cell plus a final
+    /// sentinel equal to `entries.len()`; offsets start at zero and are
+    /// nondecreasing. Within every row, source cells are strictly
+    /// increasing and smaller than `cols`.
+    pub fn try_from_csr(
+        rows: usize,
+        cols: usize,
+        row_offsets: Vec<usize>,
+        entries: Vec<u32>,
+    ) -> Result<Self, F2CellMapError> {
+        if u32::try_from(cols).is_err()
+            || row_offsets.len() != rows + 1
+            || row_offsets.first() != Some(&0)
+            || row_offsets.last() != Some(&entries.len())
+            || row_offsets.windows(2).any(|b| b[0] > b[1])
+        {
+            return Err(F2CellMapError::ShapeTooLarge);
+        }
+        for (row, bounds) in row_offsets.windows(2).enumerate() {
+            let mut previous: Option<u32> = None;
+            for &col in &entries[bounds[0]..bounds[1]] {
+                if col as usize >= cols {
+                    return Err(F2CellMapError::ColOutOfBounds { row, col });
+                }
+                if let Some(prev) = previous
+                    && prev >= col
+                {
+                    return Err(F2CellMapError::ColsNotStrictlyIncreasing { row });
+                }
+                previous = Some(col);
+            }
+        }
+        Ok(Self {
+            rows,
+            cols,
+            row_offsets: row_offsets.into_boxed_slice(),
+            entries: entries.into_boxed_slice(),
+        })
+    }
+
     /// Number of derived cells (`h`-side).
     pub const fn rows(&self) -> usize {
         self.rows
@@ -204,6 +247,26 @@ mod tests {
         assert_eq!(
             F2CellMap::try_from_rows(2, 4, vec![vec![]]),
             Err(F2CellMapError::ShapeTooLarge)
+        );
+    }
+
+    #[test]
+    fn csr_constructor_matches_row_constructor_and_validates() {
+        let lists = vec![vec![0u32, 3], vec![], vec![1, 2]];
+        let a = F2CellMap::try_from_rows(3, 4, lists).unwrap();
+        let b = F2CellMap::try_from_csr(3, 4, vec![0, 2, 2, 4], vec![0, 3, 1, 2]).unwrap();
+        assert_eq!(a, b);
+        assert_eq!(a.digest(), b.digest());
+
+        assert!(F2CellMap::try_from_csr(3, 4, vec![0, 2, 2], vec![0, 3]).is_err());
+        assert!(F2CellMap::try_from_csr(3, 4, vec![0, 2, 1, 2], vec![0, 3]).is_err());
+        assert_eq!(
+            F2CellMap::try_from_csr(1, 4, vec![0, 2], vec![3, 3]),
+            Err(F2CellMapError::ColsNotStrictlyIncreasing { row: 0 })
+        );
+        assert_eq!(
+            F2CellMap::try_from_csr(1, 4, vec![0, 1], vec![4]),
+            Err(F2CellMapError::ColOutOfBounds { row: 0, col: 4 })
         );
     }
 

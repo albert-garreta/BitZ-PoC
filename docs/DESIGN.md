@@ -160,6 +160,44 @@ the dedicated machinery below; this entry point is the fully general one.
 Pinned by `tests/virtual_open.rs` (direct-vs-virtual agreement, both chunk
 regimes, tamper battery).
 
+## CM-AND: an R1CS with a virtual block (paper `\Relation_CM`)
+
+`piop::spartan::cm` wires a complete R1CS through the virtualization
+path — the paper's NP-completeness gadget as a running system. Per gate,
+32-bit words `x`, `y`, `z`, `w` satisfy ONE linear constraint
+`x + y − w − 2z = 0` over `F_q` (exact over ℤ, all values < 2^33); since
+`x + y = (x⊕y) + 2(x∧y)` bitwise-exactly, the constraint FORCES
+`z = x ∧ y` as soon as `w = x ⊕ y` bit-for-bit. That XOR identity is
+imposed STRUCTURALLY, not proven: the commitment carries only the
+`x`/`y`/`z` bits (`f`), and the canonical `F2CellMap` of the layout
+derives every `w` bit as the XOR of the matching `x`/`y` bits inside
+`prove/verify_mle_eval_mod_q_ligerito_virtual`. The Spartan side is
+`A = B = 0` with one `C` row per gate — the pure CM shape (ℤ-linear
+constraints composed with `F₂`-linear derivation), NP-complete per the
+paper's `r:CM_is_NP_complete`.
+
+Pipeline: the assignment `[const | x | y | z | w]` (five blocks padded
+to eight, `gate_vars + 3` claim coordinates) runs ordinary Spartan with
+the commitment root + layout + MAP DIGEST bound into the statement
+pre-challenge; `bitify_cm_and_claim` transposes the terminal claim into
+row/column weights over the DERIVED grid `h` (the adjoint of the four
+32-bit reconstructions, constant block subtracted publicly); the virtual
+opening does the rest. Entry points mirror the u32 bridge:
+`commit_cm_and_witness` / `prove_cm_and_f2z` / `verify_cm_and_f2z`
+(production, ≥ 2^15 gate slots) plus `_with_config` variants for
+sub-audit test shapes. `IntEvalRsLigVirtProof` now carries the exact
+byte codec (`to_bytes`/`from_bytes`, canonical + tamper-rejecting, base
+forest-layer encoding). Pinned by `tests/cm_virtual.rs` (honest
+roundtrips, codec, FALSE relation with consistent bits rejected, honest
+relation with INCONSISTENT committed bits rejected, statement mismatch,
+production gating); bench `benches/cm_and.rs`
+(`F2Z_CM_EXPONENTS`/`F2Z_BENCH_REPS`).
+
+Accounting per gate: derived grid 128 bits (x|y|z|w), committed 96 live
+bits — the `w` block rides free. Both grids share one shape (the 4:3
+saving pads back to the power of two); XOR-heavier relations (the SHA-256
+CM arithmetization) are where the derived/committed gap widens.
+
 ## Mod-q RLC claim families (EXPERIMENTAL)
 
 `prove/verify_mle_eval_mod_q_ligerito_rlc_family`: k claims

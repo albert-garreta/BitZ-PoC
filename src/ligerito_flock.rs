@@ -7905,6 +7905,7 @@ impl IntEvalRsLigExtProof {
 /// End-to-end proof of a mod-q claim on the derived vector `h = M·f`:
 /// per-chunk forests/folds/pre-sumchecks on `h` (`p_h` geometry), the
 /// degree-2 bridge sumcheck, and the single-point opening of `f`.
+#[derive(Clone)]
 pub struct IntEvalRsLigVirtProof {
     /// Per weight chunk: the merged product forest on `h`.
     pub mfs: Vec<MergedForestProof>,
@@ -8285,6 +8286,128 @@ where
         return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------
+// Host proof-stream (de)serialization of `IntEvalRsLigVirtProof`
+// ---------------------------------------------------------------------
+
+impl IntEvalRsLigVirtProof {
+    /// Serialize the virtual-opening proof into the host proof stream:
+    /// per chunk the merged forest, the (canonically zero-tail-trimmed)
+    /// chunk folds, and the pre-sumcheck — each encoded EXACTLY like the
+    /// base [`IntEvalRsLigModQProof::to_bytes`] — then the bridge
+    /// sumcheck, the ring-switch `s_v` message, and the flock
+    /// [`LigeritoProof`] as a length-prefixed `bincode` 1.3 blob.
+    /// Mirrors [`Self::from_bytes`].
+    #[allow(clippy::arithmetic_side_effects)]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        use crate::proof_codec::Writer;
+        let mut w = Writer::new();
+        let lch = self.mfs.len();
+        w.len(lch);
+        for l in 0..lch {
+            w.len(self.mfs[l].layers.len());
+            for layer in &self.mfs[l].layers {
+                // Flag bits: 1 = sc_x present, 2 = quad (pair2 present) —
+                // the base forest-layer encoding, byte for byte.
+                let flag = layer.sc_x.is_some() as usize
+                    | ((layer.pair2.is_some() as usize) << 1);
+                w.len(flag);
+                if let Some(sc) = &layer.sc_x {
+                    w.transcribable(sc);
+                }
+                w.transcribable(&layer.sc_c);
+                w.gf(&layer.pair.0);
+                w.gf(&layer.pair.1);
+                if let Some(p2) = &layer.pair2 {
+                    w.gf(&p2.0);
+                    w.gf(&p2.1);
+                }
+            }
+            let u_l = &self.us[l];
+            let n_u = transmitted_us_len(u_l);
+            w.len(n_u);
+            for &u in &u_l[..n_u] {
+                w.u128(u);
+            }
+            w.transcribable(&self.presums[l]);
+        }
+        w.transcribable(&self.bridge);
+        w.len(self.open.ring.s_v.len());
+        for g in &self.open.ring.s_v {
+            w.gf(g);
+        }
+        let lig_bytes = bincode::serialize(&self.open.lig).expect("LigeritoProof bincode encode");
+        w.len(lig_bytes.len());
+        w.bytes(&lig_bytes);
+        w.into_vec()
+    }
+
+    /// Deserialize the virtual-opening proof from the host proof stream.
+    /// Mirrors [`Self::to_bytes`]; rejects non-minimal chunk-fold
+    /// encodings exactly like the base codec.
+    #[allow(clippy::arithmetic_side_effects)]
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, crate::proof_codec::CodecError> {
+        use crate::merged_forest::{MergedForestProof, MergedLayer};
+        use crate::proof_codec::{CodecError, Reader};
+        let mut r = Reader::new(bytes);
+        let lch = r.len()?;
+        let mut mfs = Vec::with_capacity(lch.min(64));
+        let mut us = Vec::with_capacity(lch.min(64));
+        let mut presums = Vec::with_capacity(lch.min(64));
+        for _ in 0..lch {
+            let n_layers = r.len()?;
+            let mut layers = Vec::with_capacity(n_layers.min(64));
+            for _ in 0..n_layers {
+                let flag = r.len()?;
+                let sc_x = if flag & 1 == 1 {
+                    Some(r.transcribable::<crate::piop::sumcheck::SumcheckProof<Gf>>()?)
+                } else {
+                    None
+                };
+                let sc_c = r.transcribable::<crate::piop::sumcheck::SumcheckProof<Gf>>()?;
+                let p0 = r.gf()?;
+                let p1 = r.gf()?;
+                let pair2 = if flag & 2 == 2 {
+                    let p2 = r.gf()?;
+                    let p3 = r.gf()?;
+                    Some((p2, p3))
+                } else {
+                    None
+                };
+                layers.push(MergedLayer { sc_x, sc_c, pair: (p0, p1), pair2 });
+            }
+            mfs.push(MergedForestProof { layers });
+            let n_u = r.len()?;
+            let mut u = Vec::with_capacity(n_u.min(r.remaining() / 16));
+            for _ in 0..n_u {
+                u.push(r.u128()?);
+            }
+            if u.last() == Some(&0) {
+                return Err(CodecError::NonCanonical);
+            }
+            us.push(u);
+            presums.push(r.transcribable::<MultiDegreeSumcheckProof<Gf>>()?);
+        }
+        let bridge = r.transcribable::<MultiDegreeSumcheckProof<Gf>>()?;
+        let n_sv = r.len()?;
+        let mut s_v = Vec::with_capacity(n_sv.min(r.remaining() / 16));
+        for _ in 0..n_sv {
+            s_v.push(r.gf()?);
+        }
+        let n_bytes = r.len()?;
+        let lig_bytes = r.take(n_bytes)?;
+        let lig: LigeritoProof =
+            bincode::deserialize(lig_bytes).map_err(|e| CodecError::Bincode(e.to_string()))?;
+        Ok(IntEvalRsLigVirtProof {
+            mfs,
+            us,
+            presums,
+            bridge,
+            open: LigOpenProof { ring: RingSwitchProof { s_v }, lig },
+        })
+    }
 }
 
 // ---------------------------------------------------------------------

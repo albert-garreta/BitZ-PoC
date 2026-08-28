@@ -43,6 +43,9 @@
 //! sumcheck reduces the transposed linear claim to one point evaluation
 //! of `f̂`, and the standard ring-switch + Ligerito opening finishes. The
 //! verifier's `M`-dependent cost is `O(L·#rows + nnz)` field ops.
+//! [`piop::spartan::cm`] wires a full R1CS through this path — the
+//! paper's CM relation: batched `x ∧ y = z` via one LINEAR constraint
+//! per gate with `w = x ⊕ y` as a virtual (derived, uncommitted) block.
 
 pub mod ext_proj;
 pub mod f2map;

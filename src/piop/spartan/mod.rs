@@ -7,12 +7,20 @@
 //! in this module give every protocol phase one canonical element encoding and
 //! one unbiased Fiat--Shamir challenge sampler.
 
+pub mod cm;
 pub mod f2z;
 pub mod matrix;
 pub mod piop;
 pub mod sumcheck;
 pub mod u32_mul;
 
+pub use cm::{
+    CM_AND_F_LIVE_SLOTS, CM_AND_H_SLOTS, CM_AND_WORD_BITS, CmAndError, CmAndLayout, CmAndWitness, CmF2zError, CmF2zProof, CmOpeningClaim,
+    PreparedCmAndRelation, ProjectedCmAndWitness, bitify_cm_and_claim, cm_and_map,
+    commit_cm_and_witness, commit_cm_and_witness_with_config, prepare_cm_and_relation,
+    project_cm_and_witness, prove_cm_and_f2z, prove_cm_and_f2z_with_config,
+    verify_cm_and_f2z, verify_cm_and_f2z_with_config,
+};
 pub use f2z::{
     F2zOpeningClaim, SpartanF2zError, SpartanF2zField, SpartanF2zProof, bitify_spartan_claim,
     commit_u32_mul_witness, prove_spartan_and_f2z, spartan_f2z_field_config,

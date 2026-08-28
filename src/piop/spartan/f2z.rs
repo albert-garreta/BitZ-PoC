@@ -57,7 +57,7 @@ const OPENING_CLAIM_DOMAIN: &[u8] = b"f2z/spartan-f2z/opening/v1";
 
 /// Embedded, validator-gated Ligerito profiles begin at a 22-variable
 /// committed bit MLE: seven slot variables plus fifteen gate variables.
-const MIN_PRODUCTION_GATE_VARS: usize = 15;
+pub(crate) const MIN_PRODUCTION_GATE_VARS: usize = 15;
 
 /// Runtime-configured Spartan field used by the concrete F2Z adapter.
 pub type SpartanF2zField = F128;
@@ -483,7 +483,7 @@ fn validate_f2z_proof_shape(
     Ok(())
 }
 
-fn validate_bit_rows(
+pub(crate) fn validate_bit_rows(
     p: &crate::pcs::IntEvalParams,
     rows: &[Vec<u64>],
 ) -> Result<(), SpartanF2zError> {
@@ -499,7 +499,7 @@ fn validate_bit_rows(
     Ok(())
 }
 
-fn validate_config_pair(
+pub(crate) fn validate_config_pair(
     p: &crate::pcs::IntEvalParams,
     pc: &LigProverConfig,
     vc: &LigVerifierConfig,
@@ -519,7 +519,7 @@ fn validate_config_pair(
     Ok(())
 }
 
-fn validate_commitment(
+pub(crate) fn validate_commitment(
     p: &crate::pcs::IntEvalParams,
     commitment: &Commitment,
     pc: &LigProverConfig,
@@ -568,7 +568,7 @@ fn validate_claim_field(
     Ok(())
 }
 
-fn fill_slot_weights(
+pub(crate) fn fill_slot_weights(
     row_weights_q: &mut [u128],
     slot_start: usize,
     bit_count: usize,
@@ -676,7 +676,7 @@ fn hash_usize(hasher: &mut Hasher, value: usize) -> Result<(), SpartanF2zError> 
     Ok(())
 }
 
-const fn profile_code(profile: LigeritoProfile) -> u8 {
+pub(crate) const fn profile_code(profile: LigeritoProfile) -> u8 {
     match profile {
         LigeritoProfile::Fast => 0,
         LigeritoProfile::Slim => 1,
@@ -685,7 +685,7 @@ const fn profile_code(profile: LigeritoProfile) -> u8 {
     }
 }
 
-const fn hash_code(hash: HashKind) -> u8 {
+pub(crate) const fn hash_code(hash: HashKind) -> u8 {
     match hash {
         HashKind::Sha256 => 0,
         HashKind::Blake3 => 1,
@@ -713,7 +713,7 @@ fn checked_pow2(exponent: usize) -> Result<usize, SpartanF2zError> {
         .ok_or(SpartanF2zError::InvalidF2zParameters)
 }
 
-fn f2z_generator() -> BinaryFieldGF128 {
+pub(crate) fn f2z_generator() -> BinaryFieldGF128 {
     static GENERATOR: OnceLock<BinaryFieldGF128> = OnceLock::new();
     *GENERATOR.get_or_init(crate::pcs::smallest_generator)
 }
