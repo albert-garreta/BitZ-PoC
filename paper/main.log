@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.4.18)  20 AUG 2026 09:07
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.4.18)  28 AUG 2026 16:58
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -857,228 +857,7 @@ Package: stmaryrd 1994/03/03 St Mary's Road symbol package
 \symstmry=\mathgroup9
 LaTeX Font Info:    Overwriting symbol font `stmry' in version `bold'
 (Font)                  U/stmry/m/n --> U/stmry/b/n on input line 89.
-) (/usr/local/texlive/2026/texmf-dist/tex/latex/biblatex/biblatex.sty
-Package: biblatex 2025/07/10 v3.21 programmable bibliographies (PK/MW)
- (/usr/local/texlive/2026/texmf-dist/tex/latex/logreq/logreq.sty
-Package: logreq 2010/08/04 v1.0 xml request logger
-\lrq@indent=\count417
- (/usr/local/texlive/2026/texmf-dist/tex/latex/logreq/logreq.def
-File: logreq.def 2010/08/04 v1.0 logreq spec v1.0
-)) (/usr/local/texlive/2026/texmf-dist/tex/latex/url/url.sty
-\Urlmuskip=\muskip18
-Package: url 2013/09/16  ver 3.4  Verb mode for urls, etc.
-)
-\c@tabx@nest=\count418
-\c@listtotal=\count419
-\c@listcount=\count420
-\c@liststart=\count421
-\c@liststop=\count422
-\c@citecount=\count423
-\c@citetotal=\count424
-\c@multicitecount=\count425
-\c@multicitetotal=\count426
-\c@instcount=\count427
-\c@maxnames=\count428
-\c@minnames=\count429
-\c@maxitems=\count430
-\c@minitems=\count431
-\c@citecounter=\count432
-\c@maxcitecounter=\count433
-\c@savedcitecounter=\count434
-\c@uniquelist=\count435
-\c@uniquename=\count436
-\c@refsection=\count437
-\c@refsegment=\count438
-\c@maxextratitle=\count439
-\c@maxextratitleyear=\count440
-\c@maxextraname=\count441
-\c@maxextradate=\count442
-\c@maxextraalpha=\count443
-\c@abbrvpenalty=\count444
-\c@highnamepenalty=\count445
-\c@lownamepenalty=\count446
-\c@maxparens=\count447
-\c@parenlevel=\count448
-\blx@tempcnta=\count449
-\blx@tempcntb=\count450
-\blx@tempcntc=\count451
-\c@blx@maxsection=\count452
-\blx@maxsegment@0=\count453
-\blx@notetype=\count454
-\blx@parenlevel@text=\count455
-\blx@parenlevel@foot=\count456
-\blx@sectionciteorder@0=\count457
-\blx@sectionciteorderinternal@0=\count458
-\blx@entrysetcounter=\count459
-\blx@biblioinstance=\count460
-\labelnumberwidth=\skip166
-\labelalphawidth=\skip167
-\biblabelsep=\skip168
-\bibitemsep=\skip169
-\bibnamesep=\skip170
-\bibinitsep=\skip171
-\bibparsep=\skip172
-\bibhang=\skip173
-\blx@bcfin=\read3
-\blx@bcfout=\write5
-\blx@langwohyphens=\language91
-\c@mincomprange=\count461
-\c@maxcomprange=\count462
-\c@mincompwidth=\count463
-Package biblatex Info: Trying to load biblatex default data model...
-Package biblatex Info: ... file 'blx-dm.def' found.
- (/usr/local/texlive/2026/texmf-dist/tex/latex/biblatex/blx-dm.def
-File: blx-dm.def 2025/07/10 v3.21 biblatex datamodel (PK/MW)
-)
-Package biblatex Info: Trying to load biblatex style data model...
-Package biblatex Info: ... file 'alphabetic.dbx' not found.
-Package biblatex Info: Trying to load biblatex custom data model...
-Package biblatex Info: ... file 'biblatex-dm.cfg' not found.
-\c@afterword=\count464
-\c@savedafterword=\count465
-\c@annotator=\count466
-\c@savedannotator=\count467
-\c@author=\count468
-\c@savedauthor=\count469
-\c@bookauthor=\count470
-\c@savedbookauthor=\count471
-\c@commentator=\count472
-\c@savedcommentator=\count473
-\c@editor=\count474
-\c@savededitor=\count475
-\c@editora=\count476
-\c@savededitora=\count477
-\c@editorb=\count478
-\c@savededitorb=\count479
-\c@editorc=\count480
-\c@savededitorc=\count481
-\c@foreword=\count482
-\c@savedforeword=\count483
-\c@holder=\count484
-\c@savedholder=\count485
-\c@introduction=\count486
-\c@savedintroduction=\count487
-\c@namea=\count488
-\c@savednamea=\count489
-\c@nameb=\count490
-\c@savednameb=\count491
-\c@namec=\count492
-\c@savednamec=\count493
-\c@translator=\count494
-\c@savedtranslator=\count495
-\c@shortauthor=\count496
-\c@savedshortauthor=\count497
-\c@shorteditor=\count498
-\c@savedshorteditor=\count499
-\c@labelname=\count500
-\c@savedlabelname=\count501
-\c@institution=\count502
-\c@savedinstitution=\count503
-\c@lista=\count504
-\c@savedlista=\count505
-\c@listb=\count506
-\c@savedlistb=\count507
-\c@listc=\count508
-\c@savedlistc=\count509
-\c@listd=\count510
-\c@savedlistd=\count511
-\c@liste=\count512
-\c@savedliste=\count513
-\c@listf=\count514
-\c@savedlistf=\count515
-\c@location=\count516
-\c@savedlocation=\count517
-\c@organization=\count518
-\c@savedorganization=\count519
-\c@origlocation=\count520
-\c@savedoriglocation=\count521
-\c@origpublisher=\count522
-\c@savedorigpublisher=\count523
-\c@publisher=\count524
-\c@savedpublisher=\count525
-\c@language=\count526
-\c@savedlanguage=\count527
-\c@origlanguage=\count528
-\c@savedoriglanguage=\count529
-\c@pageref=\count530
-\c@savedpageref=\count531
-\shorthandwidth=\skip174
-\shortjournalwidth=\skip175
-\shortserieswidth=\skip176
-\shorttitlewidth=\skip177
-\shortauthorwidth=\skip178
-\shorteditorwidth=\skip179
-\locallabelnumberwidth=\skip180
-\locallabelalphawidth=\skip181
-\localshorthandwidth=\skip182
-\localshortjournalwidth=\skip183
-\localshortserieswidth=\skip184
-\localshorttitlewidth=\skip185
-\localshortauthorwidth=\skip186
-\localshorteditorwidth=\skip187
-Package biblatex Info: Trying to load compatibility code...
-Package biblatex Info: ... file 'blx-compat.def' found.
- (/usr/local/texlive/2026/texmf-dist/tex/latex/biblatex/blx-compat.def
-File: blx-compat.def 2025/07/10 v3.21 biblatex compatibility (PK/MW)
-)
-Package biblatex Info: Trying to load generic definitions...
-Package biblatex Info: ... file 'biblatex.def' found.
- (/usr/local/texlive/2026/texmf-dist/tex/latex/biblatex/biblatex.def
-File: biblatex.def 2025/07/10 v3.21 biblatex compatibility (PK/MW)
-\c@textcitecount=\count532
-\c@textcitetotal=\count533
-\c@textcitemaxnames=\count534
-\c@biburlbigbreakpenalty=\count535
-\c@biburlbreakpenalty=\count536
-\c@biburlnumpenalty=\count537
-\c@biburlucpenalty=\count538
-\c@biburllcpenalty=\count539
-\biburlbigskip=\muskip19
-\biburlnumskip=\muskip20
-\biburlucskip=\muskip21
-\biburllcskip=\muskip22
-\c@smartand=\count540
-)
-Package biblatex Info: Trying to load bibliography style 'alphabetic'...
-Package biblatex Info: ... file 'alphabetic.bbx' found.
- (/usr/local/texlive/2026/texmf-dist/tex/latex/biblatex/bbx/alphabetic.bbx
-File: alphabetic.bbx 2025/07/10 v3.21 biblatex bibliography style (PK/MW)
-Package biblatex Info: Trying to load bibliography style 'standard'...
-Package biblatex Info: ... file 'standard.bbx' found.
- (/usr/local/texlive/2026/texmf-dist/tex/latex/biblatex/bbx/standard.bbx
-File: standard.bbx 2025/07/10 v3.21 biblatex bibliography style (PK/MW)
-\c@bbx:relatedcount=\count541
-\c@bbx:relatedtotal=\count542
-))
-Package biblatex Info: Trying to load citation style 'alphabetic'...
-Package biblatex Info: ... file 'alphabetic.cbx' found.
- (/usr/local/texlive/2026/texmf-dist/tex/latex/biblatex/cbx/alphabetic.cbx
-File: alphabetic.cbx 2025/07/10 v3.21 biblatex citation style (PK/MW)
-Package biblatex Info: Redefining '\cite'.
-Package biblatex Info: Redefining '\parencite'.
-Package biblatex Info: Redefining '\footcite'.
-Package biblatex Info: Redefining '\footcitetext'.
-Package biblatex Info: Redefining '\smartcite'.
-Package biblatex Info: Redefining '\textcite'.
-Package biblatex Info: Redefining '\textcites'.
-Package biblatex Info: Redefining '\cites'.
-Package biblatex Info: Redefining '\parencites'.
-Package biblatex Info: Redefining '\smartcites'.
-)
-Package biblatex Info: Trying to load configuration file...
-Package biblatex Info: ... file 'biblatex.cfg' found.
- (/usr/local/texlive/2026/texmf-dist/tex/latex/biblatex/biblatex.cfg
-File: biblatex.cfg 
-)
-Package biblatex Info: Input encoding 'utf8' detected.
-Package biblatex Info: Document encoding is UTF8 ....
-Package biblatex Info: ... and expl3
-(biblatex)             2026-01-19 L3 programming layer (loader) 
-(biblatex)             is new enough (at least 2020/04/06),
-(biblatex)             setting 'casechanger=expl3'.
- (/usr/local/texlive/2026/texmf-dist/tex/latex/biblatex/blx-case-expl3.sty
-Package: blx-case-expl3 2025/07/10 v3.21 expl3 case changing code for biblatex
-)) (/usr/local/texlive/2026/texmf-dist/tex/latex/hyperref/hyperref.sty
+) (/usr/local/texlive/2026/texmf-dist/tex/latex/hyperref/hyperref.sty
 Package: hyperref 2026-01-29 v7.01p Hypertext links for LaTeX
  (/usr/local/texlive/2026/texmf-dist/tex/generic/pdfescape/pdfescape.sty
 Package: pdfescape 2019/12/09 v1.15 Implements pdfTeX's escape features (HO)
@@ -1091,13 +870,13 @@ Package: refcount 2019/12/15 v3.6 Data extraction from label references (HO)
 ) (/usr/local/texlive/2026/texmf-dist/tex/generic/gettitlestring/gettitlestring.sty
 Package: gettitlestring 2019/12/15 v1.6 Cleanup title references (HO)
 )
-\c@section@level=\count543
+\c@section@level=\count417
 ) (/usr/local/texlive/2026/texmf-dist/tex/generic/stringenc/stringenc.sty
 Package: stringenc 2019/11/29 v1.12 Convert strings between diff. encodings (HO)
 )
 \@linkdim=\dimen341
-\Hy@linkcounter=\count544
-\Hy@pagecounter=\count545
+\Hy@linkcounter=\count418
+\Hy@pagecounter=\count419
  (/usr/local/texlive/2026/texmf-dist/tex/latex/hyperref/pd1enc.def
 File: pd1enc.def 2026-01-29 v7.01p Hyperref: PDFDocEncoding definition (HO)
 Now handling font encoding PD1 ...
@@ -1105,7 +884,7 @@ Now handling font encoding PD1 ...
 ) (/usr/local/texlive/2026/texmf-dist/tex/generic/intcalc/intcalc.sty
 Package: intcalc 2019/12/15 v1.3 Expandable calculations with integers (HO)
 )
-\Hy@SavedSpaceFactor=\count546
+\Hy@SavedSpaceFactor=\count420
  (/usr/local/texlive/2026/texmf-dist/tex/latex/hyperref/puenc.def
 File: puenc.def 2026-01-29 v7.01p Hyperref: PDF Unicode definition (HO)
 Now handling font encoding PU ...
@@ -1118,7 +897,11 @@ Package hyperref Info: Plain pages OFF on input line 4216.
 Package hyperref Info: Backreferencing OFF on input line 4221.
 Package hyperref Info: Implicit mode ON; LaTeX internals redefined.
 Package hyperref Info: Bookmarks ON on input line 4468.
-\c@Hy@tempcnt=\count547
+\c@Hy@tempcnt=\count421
+ (/usr/local/texlive/2026/texmf-dist/tex/latex/url/url.sty
+\Urlmuskip=\muskip18
+Package: url 2013/09/16  ver 3.4  Verb mode for urls, etc.
+)
 LaTeX Info: Redefining \url on input line 4807.
 \XeTeXLinkMargin=\dimen342
  (/usr/local/texlive/2026/texmf-dist/tex/generic/bitset/bitset.sty
@@ -1126,7 +909,7 @@ Package: bitset 2019/12/09 v1.3 Handle bit-vector datatype (HO)
  (/usr/local/texlive/2026/texmf-dist/tex/generic/bigintcalc/bigintcalc.sty
 Package: bigintcalc 2019/12/15 v1.5 Expandable calculations on big integers (HO)
 ))
-\Fld@menulength=\count548
+\Fld@menulength=\count422
 \Field@Width=\dimen343
 \Fld@charsize=\dimen344
 Package hyperref Info: Hyper figures OFF on input line 6084.
@@ -1136,16 +919,16 @@ Package hyperref Info: backreferencing OFF on input line 6099.
 Package hyperref Info: Link coloring OFF on input line 6104.
 Package hyperref Info: Link coloring with OCG OFF on input line 6109.
 Package hyperref Info: PDF/A mode OFF on input line 6114.
-\Hy@abspage=\count549
-\c@Item=\count550
-\c@Hfootnote=\count551
+\Hy@abspage=\count423
+\c@Item=\count424
+\c@Hfootnote=\count425
 )
 Package hyperref Info: Driver (autodetected): hpdftex.
  (/usr/local/texlive/2026/texmf-dist/tex/latex/hyperref/hpdftex.def
 File: hpdftex.def 2026-01-29 v7.01p Hyperref driver for pdfTeX
-\HyAnn@Count=\count552
-\Fld@listcount=\count553
-\c@bookmark@seq@number=\count554
+\HyAnn@Count=\count426
+\Fld@listcount=\count427
+\c@bookmark@seq@number=\count428
  (/usr/local/texlive/2026/texmf-dist/tex/latex/rerunfilecheck/rerunfilecheck.sty
 Package: rerunfilecheck 2025-06-21 v1.11 Rerun checks for auxiliary files (HO)
  (/usr/local/texlive/2026/texmf-dist/tex/generic/uniquecounter/uniquecounter.sty
@@ -1153,18 +936,18 @@ Package: uniquecounter 2019/12/15 v1.4 Provide unlimited unique counter (HO)
 )
 Package uniquecounter Info: New unique counter `rerunfilecheck' on input line 284.
 )
-\Hy@SectionHShift=\skip188
+\Hy@SectionHShift=\skip166
 )
-Package hyperref Info: Option `colorlinks' set `true' on input line 65.
-Package hyperref Info: Option `breaklinks' set `true' on input line 65.
+Package hyperref Info: Option `colorlinks' set `true' on input line 66.
+Package hyperref Info: Option `breaklinks' set `true' on input line 66.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 65.
+(hyperref)                removing `math shift' on input line 66.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 65.
+(hyperref)                removing `math shift' on input line 66.
 
 (/usr/local/texlive/2026/texmf-dist/tex/latex/cleveref/cleveref.sty
 Package: cleveref 2018/03/27 v0.21.4 Intelligent cross-referencing
@@ -1194,22 +977,22 @@ File: pgflibraryarrows.meta.code.tex 2025-08-29 v3.1.11a (3.1.11a)
 \pgfarrowwidth=\dimen347
 \pgfarrowlinewidth=\dimen348
 ) (./macros.tex
-\c@theorem=\count555
+\c@theorem=\count429
  (/usr/local/texlive/2026/texmf-dist/tex/latex/tcolorbox/tcolorbox.sty
 Package: tcolorbox 2025/11/28 version 6.9.0 text color boxes
  (/usr/local/texlive/2026/texmf-dist/tex/latex/tools/verbatim.sty
 Package: verbatim 2024-01-22 v1.5x LaTeX2e package for verbatim enhancements
 \every@verbatim=\toks60
 \verbatim@line=\toks61
-\verbatim@in@stream=\read4
+\verbatim@in@stream=\read3
 )
 \tcb@titlebox=\box90
 \tcb@upperbox=\box91
 \tcb@lowerbox=\box92
 \tcb@phantombox=\box93
-\c@tcbbreakpart=\count556
-\c@tcblayer=\count557
-\c@tcolorbox@number=\count558
+\c@tcbbreakpart=\count430
+\c@tcblayer=\count431
+\c@tcolorbox@number=\count432
 \l__tcobox_tmpa_box=\box94
 \l__tcobox_tmpa_dim=\dimen349
 \tcb@temp=\box95
@@ -1218,10 +1001,10 @@ Package: verbatim 2024-01-22 v1.5x LaTeX2e package for verbatim enhancements
 \tcb@temp=\box98
  (/usr/local/texlive/2026/texmf-dist/tex/latex/tcolorbox/tcbraster.code.tex
 Library (tcolorbox): 'tcbraster.code.tex' version '6.9.0'
-\c@tcbrastercolumn=\count559
-\c@tcbrasterrow=\count560
-\c@tcbrasternum=\count561
-\c@tcbraster=\count562
+\c@tcbrastercolumn=\count433
+\c@tcbrasterrow=\count434
+\c@tcbrasternum=\count435
+\c@tcbraster=\count436
 ) (/usr/local/texlive/2026/texmf-dist/tex/latex/tcolorbox/tcbskins.code.tex
 Library (tcolorbox): 'tcbskins.code.tex' version '6.9.0'
 (/usr/local/texlive/2026/texmf-dist/tex/latex/tikzfill/tikzfill.image.sty
@@ -1251,30 +1034,30 @@ Library (tcolorbox): 'tcbfitting.code.tex' version '6.9.0'
 \tcbfitdim=\dimen350
 \tcb@lowerfitdim=\dimen351
 \tcb@upperfitdim=\dimen352
-\tcb@cur@hbadness=\count563
+\tcb@cur@hbadness=\count437
 ) (/usr/local/texlive/2026/texmf-dist/tex/latex/tcolorbox/tcblistingsutf8.code.tex
 Library (tcolorbox): 'tcblistingsutf8.code.tex' version '6.9.0'
 (/usr/local/texlive/2026/texmf-dist/tex/latex/tcolorbox/tcblistings.code.tex
 Library (tcolorbox): 'tcblistings.code.tex' version '6.9.0'
 (/usr/local/texlive/2026/texmf-dist/tex/latex/listings/listings.sty
-\lst@mode=\count564
+\lst@mode=\count438
 \lst@gtempboxa=\box103
 \lst@token=\toks62
-\lst@length=\count565
+\lst@length=\count439
 \lst@currlwidth=\dimen353
-\lst@column=\count566
-\lst@pos=\count567
+\lst@column=\count440
+\lst@pos=\count441
 \lst@lostspace=\dimen354
 \lst@width=\dimen355
-\lst@newlines=\count568
-\lst@lineno=\count569
+\lst@newlines=\count442
+\lst@lineno=\count443
 \lst@maxwidth=\dimen356
  (/usr/local/texlive/2026/texmf-dist/tex/latex/listings/lstpatch.sty
 File: lstpatch.sty 2025/11/14 1.11b (Carsten Heinz)
 ) (/usr/local/texlive/2026/texmf-dist/tex/latex/listings/lstmisc.sty
 File: lstmisc.sty 2025/11/14 1.11b (Carsten Heinz)
-\c@lstnumber=\count570
-\lst@skipnumbers=\count571
+\c@lstnumber=\count444
+\lst@skipnumbers=\count445
 \lst@framebox=\box104
 ) (/usr/local/texlive/2026/texmf-dist/tex/latex/listings/listings.cfg
 File: listings.cfg 2025/11/14 1.11b listings configuration
@@ -1292,7 +1075,7 @@ Library (tcolorbox): 'tcblistingscore.code.tex' version '6.9.0'
 (/usr/local/texlive/2026/texmf-dist/tex/latex/tcolorbox/tcbprocessing.code.tex
 Library (tcolorbox): 'tcbprocessing.code.tex' version '6.9.0'
 )
-\c@tcblisting=\count572
+\c@tcblisting=\count446
 )) (/usr/local/texlive/2026/texmf-dist/tex/latex/listingsutf8/listingsutf8.sty
 Package: listingsutf8 2019-12-10 v1.5 Allow UTF-8 in listings input (HO)
 )) (/usr/local/texlive/2026/texmf-dist/tex/latex/tcolorbox/tcbexternal.code.tex
@@ -1310,42 +1093,40 @@ Library (tcolorbox): 'tcbposter.code.tex' version '6.9.0'
 ))
 \symmathx=\mathgroup10
 )
-Package translations Info: No language package found. I am going to use `english' as default language. on input line 90.
-\@quotelevel=\count573
-\@quotereset=\count574
+Package translations Info: No language package found. I am going to use `english' as default language. on input line 88.
  (./main.aux)
 \openout1 = `main.aux'.
 
-LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 90.
-LaTeX Font Info:    ... okay on input line 90.
-LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 90.
-LaTeX Font Info:    ... okay on input line 90.
-LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 90.
-LaTeX Font Info:    ... okay on input line 90.
-LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 90.
-LaTeX Font Info:    ... okay on input line 90.
-LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 90.
-LaTeX Font Info:    ... okay on input line 90.
-LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 90.
-LaTeX Font Info:    ... okay on input line 90.
-LaTeX Font Info:    Checking defaults for U/mathx/m/n on input line 90.
-LaTeX Font Info:    ... okay on input line 90.
-LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 90.
-LaTeX Font Info:    ... okay on input line 90.
-LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 90.
-LaTeX Font Info:    ... okay on input line 90.
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 88.
+LaTeX Font Info:    ... okay on input line 88.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 88.
+LaTeX Font Info:    ... okay on input line 88.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 88.
+LaTeX Font Info:    ... okay on input line 88.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 88.
+LaTeX Font Info:    ... okay on input line 88.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 88.
+LaTeX Font Info:    ... okay on input line 88.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 88.
+LaTeX Font Info:    ... okay on input line 88.
+LaTeX Font Info:    Checking defaults for U/mathx/m/n on input line 88.
+LaTeX Font Info:    ... okay on input line 88.
+LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 88.
+LaTeX Font Info:    ... okay on input line 88.
+LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 88.
+LaTeX Font Info:    ... okay on input line 88.
  (/usr/local/texlive/2026/texmf-dist/tex/context/base/mkii/supp-pdf.mkii
 [Loading MPS to PDF converter (version 2006.09.02).]
-\scratchcounter=\count575
+\scratchcounter=\count447
 \scratchdimen=\dimen357
 \scratchbox=\box105
-\nofMPsegments=\count576
-\nofMParguments=\count577
+\nofMPsegments=\count448
+\nofMParguments=\count449
 \everyMPshowfont=\toks63
-\MPscratchCnt=\count578
+\MPscratchCnt=\count450
 \MPscratchDim=\dimen358
-\MPnumerator=\count579
-\makeMPintoPDFobject=\count580
+\MPnumerator=\count451
+\makeMPintoPDFobject=\count452
 \everyMPtoPDFconversion=\toks64
 ) (/usr/local/texlive/2026/texmf-dist/tex/latex/epstopdf-pkg/epstopdf-base.sty
 Package: epstopdf-base 2020-01-24 v2.11 Base part for package epstopdf
@@ -1355,51 +1136,106 @@ File: epstopdf-sys.cfg 2010/07/13 v1.3 Configuration of (r)epstopdf for TeX Live
 )) (/usr/local/texlive/2026/texmf-dist/tex/latex/translations/translations-basic-dictionary-english.trsl
 File: translations-basic-dictionary-english.trsl (english translation file `translations-basic-dictionary')
 )
-Package translations Info: loading dictionary `translations-basic-dictionary' for `english'. on input line 90.
+Package translations Info: loading dictionary `translations-basic-dictionary' for `english'. on input line 88.
 Package caption Info: Begin \AtBeginDocument code.
 Package caption Info: float package is loaded.
 Package caption Info: hyperref package is loaded.
 Package caption Info: listings package is loaded.
 Package caption Info: wrapfig package is loaded.
 Package caption Info: End \AtBeginDocument code.
-Package biblatex Info: Trying to load language 'english'...
-Package biblatex Info: ... file 'english.lbx' found.
- (/usr/local/texlive/2026/texmf-dist/tex/latex/biblatex/lbx/english.lbx
-File: english.lbx 2025/07/10 v3.21 biblatex localization (PK/MW)
-)
-Package biblatex Info: Input encoding 'utf8' detected.
-Package biblatex Info: Automatic encoding selection.
-(biblatex)             Assuming data encoding 'utf8'.
-\openout5 = `main.bcf'.
+Package hyperref Info: Link coloring ON on input line 88.
+\@outlinefile=\write5
+\openout5 = `main.out'.
 
-Package biblatex Info: Trying to load bibliographic data...
-Package biblatex Info: ... file 'main.bbl' found.
- (./main.bbl)
-Package biblatex Info: Reference section=0 on input line 90.
-Package biblatex Info: Reference segment=0 on input line 90.
-Package hyperref Info: Link coloring ON on input line 90.
-\@outlinefile=\write6
-\openout6 = `main.out'.
-
-\c@lstlisting=\count581
+\c@lstlisting=\count453
  (/usr/local/texlive/2026/texmf-dist/tex/latex/base/inputenc.sty
 Package: inputenc 2024/02/08 v1.3d Input encoding file
 \inpenc@prehook=\toks65
 \inpenc@posthook=\toks66
 )
-LaTeX Font Info:    Trying to load font information for U+msa on input line 92.
+LaTeX Font Info:    Trying to load font information for U+msa on input line 90.
  (/usr/local/texlive/2026/texmf-dist/tex/latex/amsfonts/umsa.fd
 File: umsa.fd 2013/01/14 v3.01 AMS symbols A
 )
-LaTeX Font Info:    Trying to load font information for U+msb on input line 92.
+LaTeX Font Info:    Trying to load font information for U+msb on input line 90.
  (/usr/local/texlive/2026/texmf-dist/tex/latex/amsfonts/umsb.fd
 File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 )
-LaTeX Font Info:    Trying to load font information for U+stmry on input line 92.
+LaTeX Font Info:    Trying to load font information for U+stmry on input line 90.
  (/usr/local/texlive/2026/texmf-dist/tex/latex/stmaryrd/Ustmry.fd)
 No file main.toc.
-\tf@toc=\write7
-\openout7 = `main.toc'.
+\tf@toc=\write6
+\openout6 = `main.toc'.
+
+LaTeX Font Info:    Trying to load font information for U+bbm on input line 103.
+(/usr/local/texlive/2026/texmf-dist/tex/latex/bbm-macros/ubbm.fd
+File: ubbm.fd 1999/03/15 V 1.2 Font definition for bbm font - TH
+)
+
+LaTeX Warning: Citation `??' on page 1 undefined on input line 109.
+
+
+LaTeX Warning: Citation `??' on page 1 undefined on input line 109.
+
+
+LaTeX Warning: Citation `cryptoeprint:2023/824' on page 1 undefined on input line 112.
+
+
+LaTeX Warning: Citation `CircleSTARKs' on page 1 undefined on input line 112.
+
+
+LaTeX Warning: Citation `risc0:whitepaper' on page 1 undefined on input line 112.
+
+
+LaTeX Warning: Citation `plonky2:repo' on page 1 undefined on input line 112.
+
+
+LaTeX Warning: Citation `zaratan' on page 1 undefined on input line 117.
+
+
+LaTeX Warning: Citation `zinc' on page 1 undefined on input line 117.
+
+
+LaTeX Warning: Citation `zincplus' on page 1 undefined on input line 117.
+
+
+LaTeX Warning: Citation `qaren' on page 1 undefined on input line 117.
+
+
+LaTeX Warning: Citation `limber' on page 1 undefined on input line 117.
+
+
+LaTeX Warning: Citation `more' on page 1 undefined on input line 117.
+
+
+LaTeX Warning: Reference `i:arithmetization' on page 1 undefined on input line 117.
+
+
+LaTeX Warning: Reference `r:non_prime_characteristics' on page 1 undefined on input line 117.
+
+
+LaTeX Warning: Citation `stark' on page 1 undefined on input line 118.
+
+
+LaTeX Warning: Citation `cryptoeprint:2022/1542' on page 1 undefined on input line 118.
+
+
+LaTeX Warning: Citation `binius2' on page 1 undefined on input line 118.
+
+
+LaTeX Warning: Citation `hashcaster:repo' on page 1 undefined on input line 118.
+
+
+LaTeX Warning: Citation `flock' on page 1 undefined on input line 118.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 118.
+
+
+LaTeX Warning: Citation `binius' on page 1 undefined on input line 118.
+
+
+LaTeX Warning: Citation `binius2' on page 1 undefined on input line 118.
 
 [1
 
@@ -1407,463 +1243,2306 @@ No file main.toc.
 
 LaTeX Warning: No \author given.
 
-] [2{/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc}]
+{/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc}]
 
-LaTeX Warning: No positions in optional float specifier.
-               Default added (so using `tbp') on input line 160.
-
-
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 202.
+LaTeX Warning: Citation `binius64' on page 2 undefined on input line 124.
 
 
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 202.
-
-/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:202: Dimension too large.
-\caption@slc ...ke {#1}{#2}}\ifdim \wd \@tempboxa 
-                                                  >\caption@width \endgroup ...
-l.202 ...earlier prime-field-point measurements. }
-                                                  
-I can't work with sizes bigger than about 19 feet.
-Continue and I'll use the largest value I can.
+LaTeX Warning: Citation `lev' on page 2 undefined on input line 124.
 
 
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 202.
+LaTeX Warning: Reference `i:arithmetization' on page 2 undefined on input line 129.
 
 
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 202.
+LaTeX Warning: Citation `binius' on page 2 undefined on input line 130.
 
 
-LaTeX Warning: Float too large for page by 74.56976pt on input line 204.
-
-[3] [4] [5]
-
-LaTeX Warning: Citation 'BCPS18' on page 6 undefined on input line 294.
-
-LaTeX Font Info:    Trying to load font information for U+bbm on input line 307.
-(/usr/local/texlive/2026/texmf-dist/tex/latex/bbm-macros/ubbm.fd
-File: ubbm.fd 1999/03/15 V 1.2 Font definition for bbm font - TH
-)
-
-LaTeX Warning: Citation 'linear-accumulation' on page 6 undefined on input line 312.
+LaTeX Warning: Citation `binius2' on page 2 undefined on input line 130.
 
 
-LaTeX Warning: Citation 'linear accumulation' on page 6 undefined on input line 312.
+LaTeX Warning: Citation `zaratan' on page 2 undefined on input line 131.
 
 
-LaTeX Warning: Citation 'zinc' on page 6 undefined on input line 312.
+LaTeX Warning: Citation `qaren' on page 2 undefined on input line 135.
 
 
-LaTeX Warning: Citation 'WHIR?' on page 6 undefined on input line 345.
+LaTeX Warning: Citation `limber' on page 2 undefined on input line 135.
+
+
+LaTeX Warning: Citation `?' on page 2 undefined on input line 141.
+
+
+LaTeX Warning: Reference `t:intro_table_experiments' on page 1 undefined on input line 141.
+
+
+LaTeX Warning: Citation `?' on page 2 undefined on input line 141.
+
+
+LaTeX Warning: Reference `s:instantiation' on page 1 undefined on input line 143.
+
+
+LaTeX Warning: Reference `r:?' on page 1 undefined on input line 143.
+
+
+LaTeX Warning: Citation `limber' on page 2 undefined on input line 157.
+
+[2]
+
+LaTeX Warning: Reference `e:intro' on page 3 undefined on input line 189.
+
+
+LaTeX Warning: Reference `e:intro' on page 3 undefined on input line 195.
+
+
+LaTeX Warning: Citation `gruen' on page 3 undefined on input line 195.
+
+
+LaTeX Warning: Reference `e:intro' on page 3 undefined on input line 196.
+
+[3]
+
+LaTeX Warning: Reference `e:intro' on page 4 undefined on input line 207.
+
+
+LaTeX Warning: Reference `e:intro' on page 4 undefined on input line 207.
+
+
+LaTeX Warning: Reference `e:intro_2' on page 4 undefined on input line 213.
+
+
+LaTeX Warning: Reference `e:intro_2' on page 4 undefined on input line 213.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 231.
+
+[4]
+
+LaTeX Warning: Reference `r:CM_is_NP_complete' on page 1 undefined on input line 246.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 246.
+
+
+LaTeX Warning: Citation `binius64' on page 5 undefined on input line 246.
+
+
+LaTeX Warning: Citation `flock' on page 5 undefined on input line 246.
+
+
+LaTeX Warning: Citation `zaratan' on page 5 undefined on input line 250.
+
+
+LaTeX Warning: Citation `zinc' on page 5 undefined on input line 250.
+
+
+LaTeX Warning: Citation `qaren' on page 5 undefined on input line 250.
+
+
+LaTeX Warning: Citation `zincplus' on page 5 undefined on input line 250.
+
+
+LaTeX Warning: Citation `limber' on page 5 undefined on input line 250.
+
+
+LaTeX Warning: Citation `zaratan' on page 5 undefined on input line 250.
+
+
+LaTeX Warning: Citation `DARK' on page 5 undefined on input line 250.
+
+
+LaTeX Warning: Citation `BlockDARK' on page 5 undefined on input line 250.
+
+
+LaTeX Warning: Citation `zinc' on page 5 undefined on input line 252.
+
+
+LaTeX Warning: Citation `zinc' on page 5 undefined on input line 252.
+
+
+LaTeX Warning: Citation `zincplus' on page 5 undefined on input line 254.
+
+
+LaTeX Warning: Citation `zinc' on page 5 undefined on input line 254.
+
+
+LaTeX Warning: Citation `zinc+' on page 5 undefined on input line 254.
+
+
+LaTeX Warning: Citation `zinc' on page 5 undefined on input line 254.
+
+
+LaTeX Warning: Citation `qaren' on page 5 undefined on input line 258.
+
+
+LaTeX Warning: Citation `zinc' on page 5 undefined on input line 258.
+
+
+LaTeX Warning: Citation `zinc' on page 5 undefined on input line 258.
+
+
+LaTeX Warning: Citation `zincplus' on page 5 undefined on input line 258.
+
+
+LaTeX Warning: Citation `qaren' on page 5 undefined on input line 258.
+
+
+LaTeX Warning: Citation `limber' on page 5 undefined on input line 260.
+
+
+LaTeX Warning: Citation `qaren' on page 5 undefined on input line 260.
+
+
+LaTeX Warning: Citation `zinc' on page 5 undefined on input line 260.
+
+
+LaTeX Warning: Citation `zincplus' on page 5 undefined on input line 260.
+
+
+LaTeX Warning: Citation `?' on page 5 undefined on input line 260.
+
+[5]
+
+LaTeX Warning: Citation `FRI' on page 6 undefined on input line 262.
+
+
+LaTeX Warning: Citation `stark' on page 6 undefined on input line 262.
+
+
+LaTeX Warning: Citation `linearSizedIOPs' on page 6 undefined on input line 262.
+
+
+LaTeX Warning: Citation `cryptoeprint:2022/1542' on page 6 undefined on input line 262.
+
+
+LaTeX Warning: Citation `binius' on page 6 undefined on input line 262.
+
+
+LaTeX Warning: Citation `binius2' on page 6 undefined on input line 262.
+
+
+LaTeX Warning: Citation `binius64' on page 6 undefined on input line 262.
+
+
+LaTeX Warning: Citation `binius2' on page 6 undefined on input line 262.
+
+
+LaTeX Warning: Citation `binius64' on page 6 undefined on input line 263.
+
+
+LaTeX Warning: Citation `hashcaster:repo' on page 6 undefined on input line 263.
+
+
+LaTeX Warning: Citation `Blaze' on page 6 undefined on input line 263.
+
+
+LaTeX Warning: Citation `tensorswitch' on page 6 undefined on input line 263.
+
+
+LaTeX Warning: Citation `Bolt' on page 6 undefined on input line 263.
+
+
+LaTeX Warning: Citation `lev:hashcaster' on page 6 undefined on input line 268.
+
+
+LaTeX Warning: Citation `FRIBinius:Galois' on page 6 undefined on input line 268.
+
+
+LaTeX Warning: Citation `stark' on page 6 undefined on input line 268.
+
+
+LaTeX Warning: Citation `flock' on page 6 undefined on input line 270.
+
+
+LaTeX Warning: Citation `binius64' on page 6 undefined on input line 270.
+
+
+LaTeX Warning: Citation `linearSizedIOPs' on page 6 undefined on input line 270.
+
+
+LaTeX Warning: Citation `binaryspartan' on page 6 undefined on input line 270.
+
+
+LaTeX Warning: Citation `binius64' on page 6 undefined on input line 270.
+
+
+LaTeX Warning: Citation `lev' on page 6 undefined on input line 276.
+
+
+LaTeX Warning: Citation `lev' on page 6 undefined on input line 276.
+
+
+LaTeX Warning: Reference `r:comparison_grand_product_binius_lev' on page 1 undefined on input line 276.
+
+
+LaTeX Warning: Citation `qaren' on page 6 undefined on input line 278.
+
+
+LaTeX Warning: Citation `limber' on page 6 undefined on input line 278.
+
+
+LaTeX Warning: Reference `s:gkr_low_entropy' on page 1 undefined on input line 294.
+
+
+LaTeX Warning: Reference `??' on page 1 undefined on input line 296.
 
 [6]
 
-LaTeX Warning: Citation 'TCC:BCFW25' on page 7 undefined on input line 370.
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 305.
 
 
-Overfull \hbox (36.88037pt too wide) in paragraph at lines 370--371
-[]\T1/cmr/m/n/10.95 We pro-ceed to de-fine round-by-round knowl-edge sound-ness of an IOR, as pre-sented in [[]]. 
- []
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 305.
 
 
-LaTeX Warning: Reference `def:knowledge-state-function' on page 1 undefined on input line 385.
+LaTeX Warning: Reference `s:to_general_bitz' on page 1 undefined on input line 307.
+
+
+LaTeX Warning: Reference `s:to_general_bitz' on page 1 undefined on input line 309.
+
+
+LaTeX Warning: Citation `binius' on page 7 undefined on input line 322.
+
+
+LaTeX Warning: Reference `e:intro_eq_0' on page 7 undefined on input line 323.
+
+
+LaTeX Warning: Citation `zaratan' on page 7 undefined on input line 325.
+
+
+LaTeX Warning: Reference `s:to_general_bitz' on page 1 undefined on input line 325.
+
+
+LaTeX Warning: Citation `zaratan' on page 7 undefined on input line 330.
+
+
+LaTeX Warning: Citation `zincplus' on page 7 undefined on input line 330.
+
+
+LaTeX Warning: Citation `limber' on page 7 undefined on input line 330.
+
+
+LaTeX Warning: Reference `e:intro_eq_05' on page 7 undefined on input line 330.
 
 [7]
 
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 403.
+LaTeX Warning: Reference `s:to_general_bitz' on page 1 undefined on input line 340.
 
 
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 403.
+LaTeX Warning: Reference `e:intro_eq_1' on page 8 undefined on input line 344.
 
 
-LaTeX Warning: Reference `?' on page 1 undefined on input line 417.
+LaTeX Warning: Reference `r:tensor_dec_u' on page 1 undefined on input line 348.
+
+
+LaTeX Warning: Reference `r:large_prime_field_in_BitZ_PCS' on page 1 undefined on input line 350.
+
+
+LaTeX Warning: Reference `e:intro_eq_2' on page 8 undefined on input line 353.
+
+
+LaTeX Warning: Reference `r:large_prime_field_in_BitZ_PCS' on page 1 undefined on input line 355.
+
+
+LaTeX Warning: Reference `e:intro_eq_2' on page 8 undefined on input line 359.
+
+
+LaTeX Warning: Reference `e:intro_eq_2' on page 8 undefined on input line 366.
 
 [8]
 
-LaTeX Warning: Reference `?' on page 1 undefined on input line 533.
+LaTeX Warning: Reference `e:intro_eq_3' on page 9 undefined on input line 369.
 
 
-LaTeX Warning: Reference `?' on page 1 undefined on input line 546.
+LaTeX Warning: Reference `e:intro_eq_4' on page 9 undefined on input line 378.
+
+
+LaTeX Warning: Citation `binius64' on page 9 undefined on input line 384.
+
+
+LaTeX Warning: Citation `lev' on page 9 undefined on input line 384.
+
+
+LaTeX Warning: Reference `r:comparison_grand_product_binius_lev' on page 1 undefined on input line 384.
+
+
+LaTeX Warning: Reference `s:to_low_entropy_gkr' on page 1 undefined on input line 388.
+
+
+LaTeX Warning: Reference `s:gkr_low_entropy' on page 1 undefined on input line 388.
+
+
+LaTeX Warning: Reference `e:intro_eq_5' on page 9 undefined on input line 392.
+
+
+LaTeX Warning: Citation `binius' on page 9 undefined on input line 392.
+
+
+LaTeX Warning: Citation `binius2' on page 9 undefined on input line 392.
+
+
+LaTeX Warning: Citation `flock' on page 9 undefined on input line 392.
+
+
+LaTeX Warning: Citation `binius' on page 9 undefined on input line 392.
+
+
+LaTeX Warning: Citation `binius2' on page 9 undefined on input line 392.
+
+
+LaTeX Warning: Reference `e:intro_eq_5' on page 9 undefined on input line 392.
+
+
+LaTeX Warning: Citation `whir' on page 9 undefined on input line 392.
+
+
+LaTeX Warning: Reference `a:ring_switch_remco' on page 1 undefined on input line 392.
+
+
+LaTeX Warning: Reference `a:ring_switch_1' on page 1 undefined on input line 392.
+
+
+LaTeX Warning: Reference `s:instantiation' on page 1 undefined on input line 398.
+
+
+LaTeX Warning: Reference `s:to_general_bitz' on page 1 undefined on input line 405.
 
 [9]
 
-LaTeX Warning: Reference `?' on page 1 undefined on input line 564.
+LaTeX Warning: Citation `binius64' on page 10 undefined on input line 414.
+
+
+LaTeX Warning: Citation `lev' on page 10 undefined on input line 414.
+
+
+LaTeX Warning: Reference `r:comparison_grand_product_binius_lev' on page 1 undefined on input line 414.
+
+
+LaTeX Warning: Reference `s:to_general_bitz' on page 1 undefined on input line 419.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 570.
+(hyperref)                removing `math shift' on input line 423.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 570.
+(hyperref)                removing `subscript' on input line 423.
 
 
-LaTeX Warning: Reference `?' on page 1 undefined on input line 571.
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 423.
 
 
-LaTeX Warning: Reference `?' on page 1 undefined on input line 571.
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 423.
 
 
-LaTeX Warning: Reference `' on page 10 undefined on input line 575.
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 423.
 
 
-LaTeX Warning: Reference `e:tensored_equality' on page 10 undefined on input line 584.
+LaTeX Warning: Reference `e:intro_eq_5' on page 10 undefined on input line 427.
 
 
-LaTeX Warning: Reference `?' on page 1 undefined on input line 586.
+LaTeX Warning: Reference `e:intro_eq_5_virtual' on page 10 undefined on input line 444.
 
 
-LaTeX Warning: Reference `e:tensor_decomposition_reconstruction' on page 10 undefined on input line 586.
+LaTeX Warning: Reference `e:intro_eq_5_virtual' on page 10 undefined on input line 444.
 
 [10]
-Overfull \hbox (25.71254pt too wide) detected at line 610
-[][][][][] \OMS/cmsy/m/n/10.95 2 R[]\OT1/cmr/m/n/10.95 (\U/msb/m/n/10.95 F[]\OML/cmm/m/it/10.95 ; Q[]; \OMS/cmsy/m/n/10.95 C[]\OML/cmm/m/it/10.95 ; [][]\OT1/cmr/m/n/10.95 ) []\OML/cmm/m/it/10.95 j \OMS/cmsy/m/n/10.95 2 \OT1/cmr/m/n/10.95 [\OML/cmm/m/it/10.95 `[]\OT1/cmr/m/n/10.95 ]\OML/cmm/m/it/10.95 :
+Overfull \hbox (14.40872pt too wide) detected at line 470
+[]
  []
 
 
-LaTeX Warning: Reference `?' on page 1 undefined on input line 616.
+LaTeX Warning: Reference `r:CM_is_NP_complete' on page 1 undefined on input line 484.
 
 
-LaTeX Warning: Reference `e:iopp_mle_claims' on page 11 undefined on input line 625.
+LaTeX Warning: Reference `s:sha256-f2-arithmetization' on page 1 undefined on input line 487.
 
 
-LaTeX Warning: Reference `t:thm_core_IOPP' on page 1 undefined on input line 629.
+LaTeX Warning: Reference `s:to_simple_bitz' on page 1 undefined on input line 526.
+
+
+LaTeX Warning: Reference `s:instantiation' on page 1 undefined on input line 530.
+
+
+LaTeX Warning: Reference `e:intro_eq_4_repeated' on page 11 undefined on input line 530.
+
+
+LaTeX Warning: Citation `thaler?' on page 11 undefined on input line 530.
 
 [11]
 
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 642.
+LaTeX Warning: Reference `e:to_gkr_polys' on page 1 undefined on input line 539.
 
 
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 645.
+LaTeX Warning: Reference `s:gkr_low_entropy' on page 1 undefined on input line 541.
 
 
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 650.
+LaTeX Warning: Reference `e:intro_grand_product_eq_1' on page 12 undefined on input line 551.
 
 
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 652.
+LaTeX Warning: Reference `s:to_simple_bitz' on page 1 undefined on input line 551.
 
 
-LaTeX Warning: Reference `t:thm_core_IOPP' on page 1 undefined on input line 658.
+LaTeX Warning: Reference `c:gkr_grand_product' on page 1 undefined on input line 555.
 
 
-LaTeX Warning: Citation 'zincplus' on page 12 undefined on input line 658.
-
-
-LaTeX Warning: Reference `t:thm_core_IOPP' on page 1 undefined on input line 674.
-
-
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 676.
-
-
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 676.
-
-
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 676.
+LaTeX Warning: Citation `binius64' on page 12 undefined on input line 596.
 
 [12]
 
-LaTeX Warning: Reference `r:ior_compositoin' on page 1 undefined on input line 679.
+LaTeX Warning: Citation `binius64' on page 13 undefined on input line 604.
 
 
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 687.
+LaTeX Warning: Citation `binius64' on page 13 undefined on input line 604.
 
 
-LaTeX Warning: Reference `?' on page 1 undefined on input line 687.
+LaTeX Warning: Citation `logupstar' on page 13 undefined on input line 604.
 
 
-LaTeX Warning: Reference `e:core_iop_proof_eq1' on page 1 undefined on input line 716.
+LaTeX Warning: Reference `binius64' on page 1 undefined on input line 607.
 
 
-Overfull \hbox (87.37799pt too wide) in paragraph at lines 714--716
-\T1/cmr/m/n/10.95 Indeed, let $\OT1/cmr/bx/n/10.95 w[] \OT1/cmr/m/n/10.95 = \OMS/cmsy/m/n/10.95 E[]\OT1/cmr/m/n/10.95 (\U/bbm/m/n/10.95 x\OML/cmm/m/it/10.95 ; \U/bbm/m/n/10.95 y\OML/cmm/m/it/10.95 ; \OML/cmm/b/it/10.95 ^^V\OML/cmm/m/it/10.95 ; q[]; ; \OT1/cmr/bx/n/10.95 w\OT1/cmr/m/n/10.95 )$\T1/cmr/m/n/10.95 . As-sume $[]\OT1/cmr/m/n/10.95 (\U/bbm/m/n/10.95 x\OML/cmm/m/it/10.95 ; \U/bbm/m/n/10.95 y\OML/cmm/m/it/10.95 ; \OML/cmm/b/it/10.95 ^^V\OML/cmm/m/it/10.95 ; q[]; ; \OT1/cmr/bx/n/10.95 w\OT1/cmr/m/n/10.95 ) = 1$ \T1/cmr/m/n/10.95 and $[]\OT1/cmr/m/n/10.95 (\U/bbm/m/n/10.95 x\OML/cmm/m/it/10.95 ; \U/bbm/m/n/10.95 y\OML/cmm/m/it/10.95 ; \OML/cmm/b/it/10.95 ^^V\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 E[]\OT1/cmr/m/n/10.95 (\U/bbm/m/n/10.95 x\OML/cmm/m/it/10.95 ; \U/bbm/m/n/10.95 y\OML/cmm/m/it/10.95 ; \OML/cmm/b/it/10.95 ^^V\OML/cmm/m/it/10.95 ; q[]; ; \OT1/cmr/bx/n/10.95 w\OT1/cmr/m/n/10.95 )) =
- []
+LaTeX Warning: Reference `s:exp_binius64_ip' on page 1 undefined on input line 609.
 
 
-LaTeX Warning: Reference `e:core_iop_proof_eq1' on page 1 undefined on input line 718.
+LaTeX Warning: Citation `lev' on page 13 undefined on input line 612.
 
 
-LaTeX Warning: Reference `e:core_iop_proof_eq1' on page 1 undefined on input line 727.
+LaTeX Warning: Citation `lev' on page 13 undefined on input line 612.
 
 
-LaTeX Warning: Reference `l:reduction_lemma' on page 1 undefined on input line 730.
+LaTeX Warning: Citation `lev' on page 13 undefined on input line 612.
+
+
+LaTeX Warning: Citation `basefold' on page 13 undefined on input line 612.
+
+
+LaTeX Warning: Citation `whir' on page 13 undefined on input line 612.
+
+
+LaTeX Warning: Citation `logupstar' on page 13 undefined on input line 612.
+
+
+LaTeX Warning: Citation `lev' on page 13 undefined on input line 614.
+
+
+LaTeX Warning: Citation `binius64' on page 13 undefined on input line 614.
+
+
+LaTeX Warning: Citation `lev' on page 13 undefined on input line 614.
+
+
+LaTeX Warning: Citation `lev' on page 13 undefined on input line 616.
+
+
+LaTeX Warning: Citation `lev' on page 13 undefined on input line 616.
+
+
+LaTeX Warning: Citation `lev' on page 13 undefined on input line 616.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 623.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 623.
 
 [13]
 
-LaTeX Warning: Reference `e:core_iop_proof_eq1' on page 14 undefined on input line 740.
+LaTeX Warning: Reference `s:to_simple_bitz' on page 1 undefined on input line 629.
 
 
-LaTeX Warning: Reference `e:core_iop_proof_eq1' on page 14 undefined on input line 741.
+Overfull \hbox (8.56169pt too wide) detected at line 647
+\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R[]\OT1/cmr/m/n/10.95 [\OML/cmm/m/it/10.95 X\OT1/cmr/m/n/10.95 ]\OML/cmm/m/it/10.95 ; \OT1/cmr/bx/n/10.95 p\OML/cmm/m/it/10.95 ; \OML/cmm/b/it/10.95 R\OT1/cmr/m/n/10.95 ) = []
+ []
 
 
-LaTeX Warning: Reference `e:core_iop_proof_eq1' on page 14 undefined on input line 741.
+LaTeX Warning: Citation `zaratan' on page 14 undefined on input line 652.
 
 
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 759.
+LaTeX Warning: Citation `zinc' on page 14 undefined on input line 652.
 
 
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 759.
+LaTeX Warning: Citation `zinc' on page 14 undefined on input line 652.
 
 
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 783.
+LaTeX Warning: Citation `limber' on page 14 undefined on input line 652.
 
 
-LaTeX Warning: Reference `e:iop_final_linear_claim' on page 14 undefined on input line 783.
+LaTeX Warning: Citation `zincplus' on page 14 undefined on input line 655.
+
+
+LaTeX Warning: Reference `r:pimsat_vs_ucs' on page 1 undefined on input line 655.
+
+
+LaTeX Warning: Reference `s:to_f2_virtual' on page 1 undefined on input line 660.
+
+
+LaTeX Warning: Reference `s:to_simple_bitz' on page 1 undefined on input line 667.
 
 [14]
 
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 795.
+LaTeX Warning: Citation `zincplus' on page 15 undefined on input line 695.
 
 
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `subscript' on input line 795.
+LaTeX Warning: Reference `s:iop_upesat' on page 1 undefined on input line 695.
 
 
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 795.
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 695.
 
 
-LaTeX Warning: Reference `?' on page 1 undefined on input line 823.
+LaTeX Warning: Citation `zincplus' on page 15 undefined on input line 695.
+
+
+LaTeX Warning: Reference `s:to_simple_bitz' on page 1 undefined on input line 700.
+
+
+LaTeX Warning: Reference `r:other_module_morphisms' on page 1 undefined on input line 716.
 
 [15]
 
-LaTeX Warning: Reference `e:M_pi_f' on page 16 undefined on input line 832.
+LaTeX Warning: Reference `s:to_simple_bitz' on page 1 undefined on input line 720.
 
 
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 834.
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 740.
 
 
-LaTeX Warning: Reference `e:virtual_IOPP_intermediate' on page 16 undefined on input line 851.
-
-
-LaTeX Warning: Reference `?' on page 1 undefined on input line 865.
-
-
-LaTeX Warning: Reference `c: Galois ring-switch IOP' on page 1 undefined on input line 877.
-
-
-LaTeX Warning: Reference `e:final_virt_equation' on page 16 undefined on input line 877.
+LaTeX Warning: Reference `c:LinModFieldBin' on page 1 undefined on input line 740.
 
 [16]
 
-LaTeX Warning: Reference `e:final_ring_switched_equation' on page 17 undefined on input line 882.
+LaTeX Warning: Citation `BCPS18' on page 17 undefined on input line 789.
 
 
-LaTeX Warning: Reference `c:virtual_iop' on page 1 undefined on input line 924.
+LaTeX Warning: Citation `linear-accumulation' on page 17 undefined on input line 811.
 
 
-LaTeX Warning: Reference `c:virtual_iop' on page 1 undefined on input line 927.
+LaTeX Warning: Citation `linear-accumulation' on page 17 undefined on input line 811.
 
 
-LaTeX Warning: Reference `c: Galois ring-switch IOP' on page 1 undefined on input line 931.
+LaTeX Warning: Citation `zinc' on page 17 undefined on input line 811.
 
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:817: Undefined control sequence.
+l.817 \PESAT
+            (\FF,\pp) = \left\{\left.
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
 
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 938.
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:834: Undefined control sequence.
+l.834 \PESAT
+            (\FF, \pp, \cC, T) \defeq \left\{ \left(\begin{aligned} &\inp=\x...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
 
 [17]
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 943.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 943.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 943.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\pi' on input line 943.
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:837: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.837 ...$\codedim=\inplen$), the relation $\PESAT
+                                                  (\FF,\pp, \cC, T)$ is call...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
 
 
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `subscript' on input line 943.
+LaTeX Warning: Citation `WHIR?' on page 18 undefined on input line 837.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:839: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.839 ...ition}[Relaxation of $\PESAT$ and $\LIN$]
+                                                  Given $\delta \in (0,1)$, ...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:839: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.839 ... (0,1)$, the \emph{relaxation} of $\PESAT
+                                                  $ and $\LIN$, denoted
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:842: Undefined control sequence.
+l.842 \PESAT
+            ^\delta, \qquad \qquad \LIN^{\delta}
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:845: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.845 are the relations defined exactly as $\PESAT
+                                                  $ and $\LIN$, respectively...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
 
 
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `superscript' on input line 943.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\cdot' on input line 943.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\pi' on input line 943.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `subscript' on input line 943.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 943.
-
-
-LaTeX Warning: Reference `c:virtual_iop' on page 1 undefined on input line 946.
-
-
-LaTeX Warning: Reference `?' on page 1 undefined on input line 952.
-
-
-LaTeX Warning: Reference `e:virtual_example' on page 1 undefined on input line 952.
-
-
-LaTeX Warning: Reference `e:grand_product_with_virtuals' on page 18 undefined on input line 954.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 962.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 962.
-
-
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 964.
-
-
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 976.
-
-
-LaTeX Warning: Reference `e:tensor_decomposition_reconstruction' on page 18 undefined on input line 976.
-
-
-LaTeX Warning: Reference `e:tensor_decomposition_reconstruction' on page 18 undefined on input line 982.
-
-
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 982.
-
-
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 982.
-
-
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 982.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 986.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 986.
+LaTeX Warning: Citation `TCC:BCFW25' on page 18 undefined on input line 874.
 
 [18]
 
-LaTeX Warning: Reference `?' on page 1 undefined on input line 1007.
+LaTeX Warning: Reference `def:knowledge-state-function' on page 1 undefined on input line 890.
 
 
-LaTeX Warning: Citation 'ccs' on page 19 undefined on input line 1041.
+LaTeX Warning: Citation `?' on page 19 undefined on input line 910.
 
 
-LaTeX Warning: Citation 'air' on page 19 undefined on input line 1041.
-
-
-Overfull \hbox (9.30298pt too wide) in paragraph at lines 1068--1070
-\T1/cmr/m/n/10.95 where $[]\OT1/cmr/m/n/10.95 (\OT1/cmr/bx/n/10.95 b\OT1/cmr/m/n/10.95 )$ \T1/cmr/m/n/10.95 de-notes the non-neg-a-tive in-te-ger whose bit-representation is $\OT1/cmr/bx/n/10.95 b$\T1/cmr/m/n/10.95 . The re-la-tion $\OMS/cmsy/m/n/10.95 R[]$
- []
-
-
-LaTeX Warning: Reference `e:pimsat_ronecs' on page 1 undefined on input line 1073.
-
-
-LaTeX Warning: Citation 'linear-accumulation' on page 19 undefined on input line 1073.
-
-
-LaTeX Warning: Citation 'zinc' on page 19 undefined on input line 1073.
-
-
-LaTeX Warning: Citation 'zincplus' on page 19 undefined on input line 1073.
+LaTeX Warning: Reference `tab:grinding-cost' on page 1 undefined on input line 912.
 
 [19]
 
-LaTeX Warning: Citation 'zincplus' on page 20 undefined on input line 1077.
-
-
-LaTeX Warning: Citation 'zincplus' on page 20 undefined on input line 1078.
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 936.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 1084.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 1084.
-
-
-LaTeX Warning: Reference `d:pesat' on page 1 undefined on input line 1088.
-
-
-LaTeX Warning: Reference `?' on page 1 undefined on input line 1102.
-
-
-LaTeX Warning: Reference `e:iop_ideal_eq' on page 20 undefined on input line 1117.
-
-
-LaTeX Warning: Reference `d:projections' on page 1 undefined on input line 1122.
+(hyperref)                removing `math shift' on input line 936.
 
 [20]
 
-LaTeX Warning: Reference `d:projections' on page 1 undefined on input line 1132.
+LaTeX Warning: Reference `d:pesat' on page 1 undefined on input line 1057.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1057: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.1057 ... relation  (cf.\ \cref{d:pesat}) $\PESAT
+                                                  (\comfield, Q_{\mathbb{B}\...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1061: Undefined control sequence.
+<argument>  &\PESAT 
+                    (\comfield , Q_{\mathbb {B}\text {it}\ZZ },\cC , \pack )...
+l.1061 \end{align*}
+                   
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1061: Undefined control sequence.
+<argument>  &\PESAT 
+                    (\comfield , Q_{\mathbb {B}\text {it}\ZZ },\cC , \pack )...
+l.1061 \end{align*}
+                   
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1082: Undefined control sequence.
+l.1082 \PESAT
+             (\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack)$ to $\LIN(\c...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
 
 
-LaTeX Warning: Reference `e:projected_Q_claim' on page 21 undefined on input line 1132.
+LaTeX Warning: Reference `s:gkr_low_entropy' on page 1 undefined on input line 1082.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1088: Undefined control sequence.
+l.1088 ... \wit=\picomfield(\bff)\right)\in \PESAT
+                                                  (\comfield, Q_{\mathbb{B}\...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
 
 
-LaTeX Warning: Reference `e:batched_projected_claim' on page 21 undefined on input line 1138.
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1098.
 
 
-LaTeX Warning: Reference `d:pesat' on page 1 undefined on input line 1138.
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1098.
 
 
-LaTeX Warning: Reference `e:batched_projected_claim' on page 21 undefined on input line 1140.
+LaTeX Warning: Reference `s:interleaved_setting' on page 1 undefined on input line 1099.
 
 
-LaTeX Warning: Reference `c:LinModFieldBin' on page 1 undefined on input line 1147.
+LaTeX Warning: Reference `s:linmodfieldbin' on page 1 undefined on input line 1099.
 
 [21]
 
-LaTeX Warning: Reference `e:iop_projected_claims' on page 22 undefined on input line 1198.
+LaTeX Warning: Citation `whir' on page 22 undefined on input line 1116.
 
 
-LaTeX Warning: Reference `d:pesat' on page 1 undefined on input line 1198.
+LaTeX Warning: Citation `binius' on page 22 undefined on input line 1116.
 
 
-LaTeX Warning: Reference `e:iop_projected_claims' on page 22 undefined on input line 1204.
+LaTeX Warning: Reference `a:ring_switch_1' on page 1 undefined on input line 1116.
 
 
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1232.
+Underfull \hbox (badness 10000) in paragraph at lines 1122--1124
+
+ []
 
 
-LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1236.
+LaTeX Warning: Reference `s:interleaved_setting' on page 22 undefined on input line 1125.
+
+
+LaTeX Warning: Reference `e:tensored_equality' on page 22 undefined on input line 1139.
+
+
+LaTeX Warning: Reference `r:core_iop_optional_sumcheck' on page 1 undefined on input line 1141.
+
+
+LaTeX Warning: Reference `e:tensor_decomposition_reconstruction' on page 22 undefined on input line 1141.
 
 [22]
 
-LaTeX Warning: Reference `s:opt_virtual' on page 1 undefined on input line 1278.
+LaTeX Warning: Reference `t:thm_core_IOPP' on page 1 undefined on input line 1160.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1177: Undefined control sequence.
+l.1177 ... \wit=\picomfield(\bff)\right)\in \PESAT
+                                                  (\comfield, Q_{\mathbb{B}\...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `e:Q_F2Z_intermediate' on page 23 undefined on input line 1184.
+
+
+LaTeX Warning: Reference `s:gkr_low_entropy' on page 1 undefined on input line 1184.
+
+
+LaTeX Warning: Reference `e:iopp_mle_claims' on page 23 undefined on input line 1194.
 
 [23]
 
-LaTeX Warning: Citation 'FIPS180-4' on page 24 undefined on input line 1295.
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1200.
 
-[24] [25] [26] [27] [28]
-Overfull \hbox (5.645pt too wide) in paragraph at lines 1692--1695
+
+LaTeX Warning: Reference `e:tensor_decomposition_reconstruction' on page 24 undefined on input line 1200.
+
+
+LaTeX Warning: Reference `e:tensor_decomposition_reconstruction' on page 24 undefined on input line 1206.
+
+
+LaTeX Warning: Reference `c:LinModFieldBin' on page 1 undefined on input line 1206.
+
+
+LaTeX Warning: Reference `s: general_bitz' on page 1 undefined on input line 1206.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1214: Undefined control sequence.
+l.1214 ...dability, we temporarily denote $$\PESAT
+                                                  =\PESAT(\comfield, Q_{\mat...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1214: Undefined control sequence.
+l.1214 ...y, we temporarily denote $$\PESAT=\PESAT
+                                                  (\comfield, Q_{\mathbb{B}\...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1215.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1220: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.1220 ...complete $t_\red$-round IOR from $\PESAT
+                                                  $ to $\LIN$ with round-by-...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1220: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.1220 ...ledge soundness  with relaxation $\PESAT
+                                                  ^\delta,\LIN^{\delta}$, wi...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1222.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1227.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1233.
+
+
+LaTeX Warning: Reference `t:thm_core_IOPP' on page 1 undefined on input line 1239.
+
+
+LaTeX Warning: Citation `zincplus' on page 24 undefined on input line 1239.
+
+[24]
+
+LaTeX Warning: Reference `t:thm_core_IOPP' on page 1 undefined on input line 1255.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1257.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1257.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1257: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.1257 ...round IOR from $\LinBitsDual$ to $\PESAT
+                                                  $, and it consists of appl...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1257.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1257.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1257: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.1257 ...y $\Pi_{\mathsf{red}}$, reducing $\PESAT
+                                                  $ to $\left(\LIN\right)$. ...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `r:ior_compositoin' on page 1 undefined on input line 1260.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1268.
+
+
+LaTeX Warning: Reference `def:knowledge-state-function' on page 1 undefined on input line 1268.
+
+
+LaTeX Warning: Reference `def:knowledge-state-function' on page 1 undefined on input line 1296.
+
+
+LaTeX Warning: Reference `e:core_iop_proof_eq1' on page 25 undefined on input line 1296.
+
+
+LaTeX Warning: Reference `e:core_iop_proof_eq1' on page 25 undefined on input line 1296.
+
+[25]
+
+LaTeX Warning: Reference `e:break_soundness_1' on page 26 undefined on input line 1303.
+
+
+LaTeX Warning: Reference `e:break_soundness_2' on page 26 undefined on input line 1305.
+
+
+LaTeX Warning: Reference `e:core_iop_proof_eq1' on page 26 undefined on input line 1307.
+
+
+LaTeX Warning: Reference `e:core_iop_proof_eq1' on page 26 undefined on input line 1316.
+
+
+LaTeX Warning: Reference `l:reduction_lemma' on page 1 undefined on input line 1319.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1326: Undefined control sequence.
+l.1326 ...ch that $(\inp',\oracle', \ww)\in \PESAT
+                                                  ^{\delta}$. The output of ...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `e:core_iop_proof_eq1' on page 26 undefined on input line 1329.
+
+
+LaTeX Warning: Reference `e:core_iop_proof_eq1' on page 26 undefined on input line 1330.
+
+
+LaTeX Warning: Reference `e:core_iop_proof_eq1' on page 26 undefined on input line 1330.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1339: Undefined control sequence.
+l.1339 ...bff_{*j})_{j\in [\codedim_2]})\in \PESAT
+                                                  ^\delta$.
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+[26] [27]
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1389.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1389.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 1393.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1397.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1425.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1425--1426
+
+ []
+
+
+LaTeX Warning: Reference `l:bitify' on page 1 undefined on input line 1435.
+
+[28]
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1438.
+
+
+LaTeX Warning: Reference `e:iop_final_linear_claim' on page 29 undefined on input line 1438.
+
+
+LaTeX Warning: Reference `r:tensor_dec_u' on page 1 undefined on input line 1438.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1438.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1444.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1444.
+
+
+LaTeX Warning: Reference `e:u_def' on page 1 undefined on input line 1444.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1444.
+
+
+LaTeX Warning: Reference `s:parameter_instantiation' on page 1 undefined on input line 1449.
+
+
+LaTeX Warning: Reference `t:thm_core_IOPP' on page 1 undefined on input line 1453.
+
+
+LaTeX Warning: Reference `c:LinModFieldBin' on page 1 undefined on input line 1453.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1456.
+
+
+LaTeX Warning: Reference `a:LinModFieldBin' on page 1 undefined on input line 1458.
+
+
+LaTeX Warning: Reference `l:bitify' on page 1 undefined on input line 1458.
+
+
+LaTeX Warning: Reference `l:bitify' on page 1 undefined on input line 1458.
+
+
+LaTeX Warning: Reference `c:LinModFieldBin' on page 1 undefined on input line 1458.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1458.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1464.
+
+
+LaTeX Warning: Citation `whir' on page 29 undefined on input line 1464.
+
+
+LaTeX Warning: Citation `binius' on page 29 undefined on input line 1464.
+
+
+LaTeX Warning: Reference `a:ring_switch_1' on page 1 undefined on input line 1464.
+
+
+LaTeX Warning: Reference `c:LinModFieldBin' on page 1 undefined on input line 1468.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1468.
+
+
+LaTeX Warning: Reference `r:beyond_gridning' on page 1 undefined on input line 1468.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1470.
+
+
+LaTeX Warning: Reference `t:thm_LinModFieldBits' on page 1 undefined on input line 1477.
+
+
+LaTeX Warning: Reference `t:thm_core_IOPP' on page 1 undefined on input line 1477.
+
+[29]
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1478.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1483.
+
+
+LaTeX Warning: Reference `s:gkr_low_entropy' on page 1 undefined on input line 1489.
+
+
+LaTeX Warning: Reference `c:LinModFieldBin' on page 1 undefined on input line 1489.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1489.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 1489.
+
+
+LaTeX Warning: Citation `binius' on page 30 undefined on input line 1512.
+
+
+LaTeX Warning: Reference `a:ring_switch_1' on page 1 undefined on input line 1512.
+
+
+LaTeX Warning: Citation `s:grinding' on page 30 undefined on input line 1512.
+
+
+LaTeX Warning: Citation `stir-repo' on page 30 undefined on input line 1512.
+
+
+LaTeX Warning: Citation `whir-repo' on page 30 undefined on input line 1512.
+
+
+LaTeX Warning: Reference `e: grand_products_again' on page 1 undefined on input line 1515.
+
+
+LaTeX Warning: Reference `s:gkr_low_entropy' on page 1 undefined on input line 1515.
+
+
+LaTeX Warning: Reference `s:IORs' on page 1 undefined on input line 1515.
+
+[30]
+
+LaTeX Warning: Reference `s:to_simple_bitz' on page 1 undefined on input line 1529.
+
+
+LaTeX Warning: Reference `s:iop_upesat' on page 1 undefined on input line 1529.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1529.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1529.
+
+
+LaTeX Warning: Reference `tab:grinding-cost' on page 1 undefined on input line 1532.
+
+
+LaTeX Warning: Reference `r:first_projection_security' on page 1 undefined on input line 1534.
+
+
+LaTeX Warning: Reference `e:codedim_1_proportion' on page 31 undefined on input line 1547.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1570.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1570.
+
+
+LaTeX Warning: Reference `t:thm_core_IOPP' on page 1 undefined on input line 1571.
+
+[31]
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1589.
+
+
+LaTeX Warning: Citation `binius64' on page 32 undefined on input line 1649.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1649.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1651.
+
+[32]
+
+LaTeX Warning: Reference `s:gkr_low_entropy' on page 1 undefined on input line 1660.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1671.
+
+
+LaTeX Warning: Reference `s:instantiation' on page 1 undefined on input line 1675.
+
+
+LaTeX Warning: Citation `?' on page 33 undefined on input line 1681.
+
+
+LaTeX Warning: Reference `e:main_grand_product' on page 33 undefined on input line 1681.
+
+
+LaTeX Warning: Reference `e:main_grand_product' on page 33 undefined on input line 1681.
+
+
+LaTeX Warning: Reference `e:main_grand_product' on page 33 undefined on input line 1685.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1696: Undefined control sequence.
+<argument>  &\PESAT 
+                    (\comfield , \gkrpol )\\ &\qquad = \left \{ \left (\begi...
+l.1696 \end{align*}
+                   
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1696: Undefined control sequence.
+<argument>  &\PESAT 
+                    (\comfield , \gkrpol )\\ &\qquad = \left \{ \left (\begi...
+l.1696 \end{align*}
+                   
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+[33]
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1718: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.1718 ...mfield, \gkrpol)$ to $\LIN( \comfield)$]
+                                                  \label{c:gkr_grand_product}
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `e:gkr_intermediate' on page 34 undefined on input line 1746.
+
+
+LaTeX Warning: Reference `e:gkr_intermediate' on page 34 undefined on input line 1749.
+
+
+LaTeX Warning: Reference `e:gkr_leaf_claim' on page 34 undefined on input line 1771.
+
+[34]
+
+LaTeX Warning: Reference `e:gkr_leaf_claim' on page 35 undefined on input line 1782.
+
+
+LaTeX Warning: Reference `c:gkr_grand_product' on page 1 undefined on input line 1788.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 1815.
+
+
+LaTeX Warning: Reference `c:gkr_grand_product' on page 1 undefined on input line 1820.
+
+
+LaTeX Warning: Reference `e:size_T_r1_i' on page 35 undefined on input line 1820.
+
+[35]
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 1828.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 1828.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1831: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.1831 ...nds on the input vector $\zz$ of $\PESAT
+                                                  (\comfield,\gkrpol)$, and ...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `c:gkr_grand_product' on page 1 undefined on input line 1831.
+
+
+LaTeX Warning: Reference `c:gkr_grand_product' on page 1 undefined on input line 1836.
+
+
+LaTeX Warning: Reference `c:gkr_grand_product' on page 1 undefined on input line 1843.
+
+
+LaTeX Warning: Reference `c:gkr_grand_product' on page 1 undefined on input line 1843.
+
+
+Overfull \hbox (40.46162pt too wide) detected at line 1851
+[]
+ []
+
+[36] [37]
+
+LaTeX Warning: Reference `t:gkr_step1_costs' on page 1 undefined on input line 1923.
+
+
+LaTeX Warning: Reference `e:TA2' on page 1 undefined on input line 1923.
+
+
+LaTeX Warning: Citation `gruen' on page 38 undefined on input line 1926.
+
+
+LaTeX Warning: Citation `?' on page 38 undefined on input line 1926.
+
+
+LaTeX Warning: Reference `c:gkr_grand_product' on page 1 undefined on input line 1941.
+
+
+LaTeX Warning: Reference `s:instantiation' on page 1 undefined on input line 1941.
+
+
+LaTeX Warning: Reference `c:gkr_grand_product' on page 1 undefined on input line 1941.
+
+
+LaTeX Warning: Reference `s:instantiation' on page 1 undefined on input line 1941.
+
+
+LaTeX Warning: Reference `c:gkr_grand_product' on page 1 undefined on input line 1949.
+
+
+LaTeX Warning: Reference `e:grand_product_Lr2' on page 1 undefined on input line 1949.
+
+
+LaTeX Warning: Reference `e:grand_product_Lr1' on page 1 undefined on input line 1949.
+
+[38]
+Overfull \hbox (28.80296pt too wide) detected at line 1961
+\OML/cmm/m/it/10.95 T[] \OMS/cmsy/m/n/10.95 2 \OT1/cmr/m/n/10.95 (\U/msb/m/n/10.95 K[]\OT1/cmr/m/n/10.95 )[] []\OML/cmm/m/it/10.95 T[]\OT1/cmr/m/n/10.95 [\OT1/cmr/bx/n/10.95 b\OT1/cmr/m/n/10.95 ] = (\OT1/cmr/bx/n/10.95 y[]\OML/cmm/m/it/10.95 ; \OT1/cmr/bx/n/10.95 y[]\OT1/cmr/m/n/10.95 )[]\OML/cmm/m/it/10.95 L[]\OT1/cmr/m/n/10.95 (\OT1/cmr/bx/n/10.95 b\OML/cmm/m/it/10.95 ; \OT1/cmr/bx/n/10.95 c\OT1/cmr/m/n/10.95 ) = \OML/cmm/m/it/10.95 T[]\OT1/cmr/m/n/10.95 [\OT1/cmr/bx/n/10.95 b\OT1/cmr/m/n/10.95 ][\OT1/cmr/bx/n/10.95 f[]\OT1/cmr/m/n/10.95 ]\OML/cmm/m/it/10.95 ;  \OT1/cmr/m/n/10.95 (\OT1/cmr/bx/n/10.95 b\OML/cmm/m/it/10.95 ; \OT1/cmr/bx/n/10.95 c\OT1/cmr/m/n/10.95 ) \OMS/cmsy/m/n/10.95 2 f\OT1/cmr/m/n/10.95 0\OML/cmm/m/it/10.95 ; \OT1/cmr/m/n/10.95 1\OMS/cmsy/m/n/10.95 g[] ^^B f\OT1/cmr/m/n/10.95 0\OML/cmm/m/it/10.95 ; \OT1/cmr/m/n/10.95 1\OMS/cmsy/m/n/10.95 g[]\OML/cmm/m/it/10.95 ;
+ []
+
+
+LaTeX Warning: Reference `tab:gkr_tables' on page 1 undefined on input line 1997.
+
+
+LaTeX Warning: Reference `s:instantiation' on page 1 undefined on input line 2033.
+
+
+LaTeX Warning: Reference `s:instantiation' on page 1 undefined on input line 2033.
+
+[39]
+
+LaTeX Warning: Reference `c:gkr_grand_product' on page 1 undefined on input line 2040.
+
+
+LaTeX Warning: Reference `c:gkr_grand_product' on page 1 undefined on input line 2040.
+
+
+LaTeX Warning: Reference `e:size_T_r1_i' on page 1 undefined on input line 2047.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 2054.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `\new@ifnextchar' on input line 2054.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `subscript' on input line 2054.
+
+[40]
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 2066.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 2066.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 2073.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 2073.
+
+
+LaTeX Warning: Reference `d:pesat' on page 1 undefined on input line 2084.
+
+
+LaTeX Warning: Citation `zincplus' on page 41 undefined on input line 2084.
+
+
+LaTeX Warning: Reference `r:pimsat_vs_ucs' on page 1 undefined on input line 2084.
+
+[41]
+
+LaTeX Warning: Citation `ccs' on page 42 undefined on input line 2125.
+
+
+LaTeX Warning: Citation `ethstark' on page 42 undefined on input line 2125.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2130: Undefined control sequence.
+l.2130 \ronecsideal
+                    \defeq \left\{\left.
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2145: Undefined control sequence.
+<recently read> \ronecsideal 
+                             
+l.2145 The relation $\ronecsideal
+                                 $ is  precisely $\UPESAT(\ringtwobounds{B}{...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `e:pimsat_ronecs' on page 1 undefined on input line 2148.
+
+
+LaTeX Warning: Citation `linear-accumulation' on page 42 undefined on input line 2148.
+
+
+LaTeX Warning: Citation `zinc' on page 42 undefined on input line 2148.
+
+
+LaTeX Warning: Citation `zincplus' on page 42 undefined on input line 2148.
+
+
+LaTeX Warning: Citation `zincplus' on page 42 undefined on input line 2152.
+
+
+LaTeX Warning: Citation `zincplus' on page 42 undefined on input line 2153.
+
+
+LaTeX Warning: Reference `c:LinModFieldBin' on page 1 undefined on input line 2173.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2180: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.2180 ...t given $(\inp,\bot, \wit)$ for  $\PESAT
+                                                  (\KK,\pp)$ (for any collec...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+[42]
+
+LaTeX Warning: Citation `spartan' on page 43 undefined on input line 2183.
+
+
+LaTeX Warning: Citation `ethstark' on page 43 undefined on input line 2183.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 2188--2191
+
+ []
+
+
+LaTeX Warning: Reference `e:bits_of_f' on page 43 undefined on input line 2199.
+
+
+LaTeX Warning: Reference `r:sampling_field' on page 1 undefined on input line 2212.
+
+
+LaTeX Warning: Reference `e:iop_ideal_eq' on page 43 undefined on input line 2214.
+
+
+LaTeX Warning: Reference `d:projections' on page 1 undefined on input line 2219.
+
+
+LaTeX Warning: Reference `s:univ_skip_ideal_membership' on page 1 undefined on input line 2230.
+
+
+LaTeX Warning: Citation `flock' on page 43 undefined on input line 2230.
+
+[43]
+
+LaTeX Warning: Reference `d:projections' on page 1 undefined on input line 2235.
+
+
+LaTeX Warning: Reference `e:projected_Q_claim' on page 44 undefined on input line 2235.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2241: Undefined control sequence.
+l.2241 ...at $(\pi(\xx),\bot, \pi(\bff))\in \PESAT
+                                                  (\KK,\hat{\pp})$ (cf.\ \cr...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `d:pesat' on page 1 undefined on input line 2241.
+
+
+LaTeX Warning: Reference `e:batched_projected_claim' on page 44 undefined on input line 2244.
+
+
+LaTeX Warning: Reference `c:LinModFieldBin' on page 1 undefined on input line 2260.
+
+
+LaTeX Warning: Reference `e:iop_final_claim' on page 44 undefined on input line 2260.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2275.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2275.
+
+
+Overfull \hbox (75.68141pt too wide) in paragraph at lines 2275--2277
+[]\T1/cmr/bx/n/10.95 Theorem 6.5 \T1/cmr/m/n/10.95 (Com-plete-ness and round-by-round knowl-edge sound-ness of [])\T1/cmr/bx/n/10.95 . []\T1/cmr/m/it/10.95 Let $\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R; M[]; d; `[]; B; `[]; `[]; \U/msb/m/n/10.95 F[]\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 C[]\OT1/cmr/m/n/10.95 )$
+ []
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2277.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2277: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.2277 ...ound perfectly complete IOR from $\PESAT
+                                                  (\KK, \pp)$ to $\LIN(\KK)$...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `c:LinModFieldBin' on page 1 undefined on input line 2279.
+
+
+LaTeX Warning: Reference `t:thm_LinModFieldBits' on page 1 undefined on input line 2280.
+
+
+LaTeX Warning: Reference `t:thm_core_IOPP' on page 1 undefined on input line 2280.
+
+
+LaTeX Warning: Reference `c:LinModFieldBin' on page 1 undefined on input line 2280.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2280.
+
+[44]
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2289.
+
+
+LaTeX Warning: Reference `t:errors_pimsat' on page 1 undefined on input line 2310.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2310.
+
+
+LaTeX Warning: No positions in optional float specifier.
+               Default added (so using `tbp') on input line 2312.
+
+
+Overfull \hbox (16.6868pt too wide) in paragraph at lines 2314--2323
+ [][] 
+ []
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2323.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2323.
+
+
+LaTeX Warning: Reference `t:thm_iop_pimsat' on page 1 undefined on input line 2327.
+
+
+LaTeX Warning: Reference `a:iop_pimsat' on page 1 undefined on input line 2327.
+
+[45]
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 2347.
+
+
+Overfull \hbox (1.845pt too wide) in paragraph at lines 2347--2350
+\T1/cmr/m/n/10.95 The con-di-tion $\OML/cmm/m/it/10.95 ^^Y[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 f\OT1/cmr/m/n/10.95 ) \OMS/cmsy/m/n/10.95 2 \OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 ^^Y[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 h\OT1/cmr/m/n/10.95 ))$ \T1/cmr/m/n/10.95 thus im-plies that $\OML/cmm/m/it/10.95 ^^Y[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R\OT1/cmr/m/n/10.95 ) = 0$\T1/cmr/m/n/10.95 . There are at most $[][]\OT1/cmr/m/n/10.95 (\OMS/cmsy/m/n/10.95 k\OML/cmm/m/it/10.95 R\OMS/cmsy/m/n/10.95 k[]\OT1/cmr/m/n/10.95 )\OML/cmm/m/it/10.95 =\OMS/cmsy/m/n/10.95 b[] \OML/cmm/m/it/10.95 q[]\OMS/cmsy/m/n/10.95 c$
+ []
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2377: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.2377 ...n take the IOR $\Pi_{\KK}$  from $\PESAT
+                                                  (\KK,\hat{\pp})$ to $\LIN(...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2377.
+
+[46]
+
+LaTeX Warning: Reference `e:iop_projected_claims' on page 47 undefined on input line 2395.
+
+
+LaTeX Warning: Reference `d:pesat' on page 1 undefined on input line 2395.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2398: Undefined control sequence.
+l.2398 (\pi(\xx), \bot, \pi(\bff))\in \PESAT
+                                            .
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `e:iop_projected_claims' on page 47 undefined on input line 2401.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 2415.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 2415.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 2417.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 2417.
+
+
+LaTeX Warning: Reference `s:instantiation' on page 1 undefined on input line 2417.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 2421.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 2421.
+
+
+LaTeX Warning: Reference `s:instantiation' on page 1 undefined on input line 2421.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 2421.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 2427.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2427.
+
+
+LaTeX Warning: Citation `FIPS180-4' on page 47 undefined on input line 2436.
+
+[47] [48] (./main.bbl [49]) [50]
+
+LaTeX Warning: Reference `c:LinModFieldBin' on page 1 undefined on input line 2585.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `\new@ifnextchar' on input line 2585.
+
+
+LaTeX Warning: Reference `t:thm_core_IOPP' on page 1 undefined on input line 2589.
+
+
+LaTeX Warning: Reference `e:iop_final_linear_claim' on page 51 undefined on input line 2589.
+
+
+LaTeX Warning: Reference `l:bitify' on page 1 undefined on input line 2589.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 2589.
+
+
+LaTeX Warning: Reference `c:LinModFieldBin' on page 1 undefined on input line 2589.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 2594.
+
+
+Overfull \hbox (4.09543pt too wide) in paragraph at lines 2593--2595
+\T1/cmr/m/n/10.95 where if $\U/bbm/m/n/10.95 x \OT1/cmr/m/n/10.95 = (\OT1/cmr/bx/n/10.95 v\OML/cmm/m/it/10.95 ; ^^V\OT1/cmr/m/n/10.95 )$ \T1/cmr/m/n/10.95 then $\U/bbm/m/n/10.95 x[] \OT1/cmr/m/n/10.95 = (\OT1/cmr/bx/n/10.95 u\OML/cmm/m/it/10.95 ; ^^V\OT1/cmr/m/n/10.95 )$ \T1/cmr/m/n/10.95 is de-fined as in []. For empty tran-scripts we let $[]\OT1/cmr/m/n/10.95 (\U/bbm/m/n/10.95 x\OML/cmm/m/it/10.95 ; \U/bbm/m/n/10.95 y\OML/cmm/m/it/10.95 ; \OT1/cmr/bx/n/10.95 w\OT1/cmr/m/n/10.95 ) =
+ []
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 2596.
+
+
+LaTeX Warning: Reference `c:LinModFieldBin' on page 1 undefined on input line 2596.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 2613.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 2627.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 2629.
+
+[51]
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2641.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `\new@ifnextchar' on input line 2641.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `subscript' on input line 2641.
+
+
+LaTeX Warning: Reference `t:thm_iop_pimsat' on page 1 undefined on input line 2645.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2645: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.2645 ...n extension of the definition of $\PESAT
+                                                  (\KK, \pp)$ and $\LIN(\KK)...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 2645.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2647: Undefined control sequence.
+l.2647 \PESAT
+             (\ringtwobounds{B}{\moduledegree}, \KK, \pp,\psi_\KK, \cC) \def...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2653: Undefined control sequence.
+l.2653 \PESAT
+             (\ringtwobounds{B}{\moduledegree}, \KK, \pp, \modulemorphism, \...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2692: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.2692 ...ound perfectly complete IOR from $\PESAT
+                                                  (\KK,\pp)$ to $\LIN(\KK)$ ...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2694: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.2694 ... there is an IOR $\Pi_\KK'$ from $\PESAT
+                                                  (\ringtwobounds{B}{\module...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2694: Undefined control sequence.
+l.2694 ...ledge soundness with relaxation $(\PESAT
+                                                  (\ringtwobounds{B}{\module...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+[52]
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2704.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2712: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.2712 ...uledegree}, \pp,\bm{R}, \cC)$ to $\PESAT
+                                                  (\ringtwobounds{B}{\module...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2712.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2712.
+
+
+Overfull \hbox (17.52399pt too wide) in paragraph at lines 2712--2712
+[] []\T1/cmr/bx/n/10.95 De-scrip-tion of $\OT1/cmr/m/n/10.95 ^^E[]$\T1/cmr/bx/n/10.95 .[] \T1/cmr/m/n/10.95 The IOR $\OT1/cmr/m/n/10.95 ^^E[]$ \T1/cmr/m/n/10.95 is a two-round IOR from $\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R[]; \OT1/cmr/bx/n/10.95 p\OML/cmm/m/it/10.95 ; \OML/cmm/b/it/10.95 R\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 C\OT1/cmr/m/n/10.95 )$ \T1/cmr/m/n/10.95 to $\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R[]; \U/msb/m/n/10.95 K\OML/cmm/m/it/10.95 ; []; ^^Y; \OMS/cmsy/m/n/10.95 C\OT1/cmr/m/n/10.95 )$\T1/cmr/m/n/10.95 ,
+ []
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2712: Undefined control sequence.
+l.2712 ...ier output $$(\pi(\xx),f,\bff)\in \PESAT
+                                                  (\ringtwobounds{B}{\module...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2714: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.2714 ...uledegree}, \pp,\bm{R}, \cC)$ to $\PESAT
+                                                  (\ringtwobounds{B}{\module...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2714.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2714.
+
+
+Overfull \hbox (17.52399pt too wide) in paragraph at lines 2714--2714
+[] []\T1/cmr/bx/n/10.95 De-scrip-tion of $\OT1/cmr/m/n/10.95 ^^E[]$\T1/cmr/bx/n/10.95 .[] \T1/cmr/m/n/10.95 The IOR $\OT1/cmr/m/n/10.95 ^^E[]$ \T1/cmr/m/n/10.95 is a two-round IOR from $\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R[]; \OT1/cmr/bx/n/10.95 p\OML/cmm/m/it/10.95 ; \OML/cmm/b/it/10.95 R\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 C\OT1/cmr/m/n/10.95 )$ \T1/cmr/m/n/10.95 to $\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R[]; \U/msb/m/n/10.95 K\OML/cmm/m/it/10.95 ; []; ^^Y; \OMS/cmsy/m/n/10.95 C\OT1/cmr/m/n/10.95 )$\T1/cmr/m/n/10.95 ,
+ []
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2714: Undefined control sequence.
+l.2714 ...ier output $$(\pi(\xx),f,\bff)\in \PESAT
+                                                  (\ringtwobounds{B}{\module...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2719: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.2719 The IOR $\Pi_2$ is an IOR from $\PESAT
+                                             (\ringtwobounds{B}{\moduledegre...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `l:lift_pesat_to_encodings' on page 1 undefined on input line 2720.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2720.
+
+
+LaTeX Warning: Reference `l:lift_pesat_to_encodings' on page 1 undefined on input line 2720.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2720: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.2720 ...ings}, $\Pi_\KK'$ is an IOR from $\PESAT
+                                                  (\ringtwobounds{B}{\module...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2720: Undefined control sequence.
+l.2720 ...ound knowledge with relaxation  $(\PESAT
+                                                  (\ringtwobounds{B}{\module...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+Overfull \hbox (2.3487pt too wide) in paragraph at lines 2719--2721
+\T1/cmr/m/n/10.95 rounds, and with round-by-round knowl-edge with re-lax-ation $\OT1/cmr/m/n/10.95 ((\OML/cmm/m/it/10.95 R[]; \U/msb/m/n/10.95 K\OML/cmm/m/it/10.95 ; []; ^^Y; \OMS/cmsy/m/n/10.95 C\OT1/cmr/m/n/10.95 )[]\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R[]; \U/msb/m/n/10.95 K\OML/cmm/m/it/10.95 ; ^^Y; \OMS/cmsy/m/n/10.95 C\OT1/cmr/m/n/10.95 )[])$
+ []
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2725.
+
+
+LaTeX Warning: Reference `c:LinModFieldBin' on page 1 undefined on input line 2725.
+
+
+LaTeX Warning: Reference `t:thm_LinModFieldBits' on page 1 undefined on input line 2725.
+
+
+LaTeX Warning: Reference `t:thm_iop_pimsat' on page 1 undefined on input line 2725.
+
+
+LaTeX Warning: Reference `c:LinModFieldBin' on page 1 undefined on input line 2725.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2728.
+
+[53]
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2733.
+
+
+LaTeX Warning: Reference `a:Pi_123_is_good' on page 1 undefined on input line 2741.
+
+
+LaTeX Warning: Reference `l:Pi_123_is_good' on page 1 undefined on input line 2744.
+
+
+LaTeX Warning: Reference `r:ior_compositoin' on page 1 undefined on input line 2744.
+
+
+LaTeX Warning: Reference `t:thm_core_IOPP' on page 1 undefined on input line 2744.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2747: Undefined control sequence.
+<recently read> \PESAT 
+                       
+l.2747 ...uledegree}, \pp,\bm{R}, \cC)$ to $\PESAT
+                                                  (\ringtwobounds{B}{\module...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2747: Undefined control sequence.
+l.2747 ...edegree}, \pp,\bm{R}, \cC)^\delta,\PESAT
+                                                  (\ringtwobounds{B}{\module...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2755: Undefined control sequence.
+l.2755 ...y if $(\pi(\xx), f, \pi(\bff))\in \PESAT
+                                                  (\ringtwobounds{B}{\module...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `def:knowledge-state-function' on page 1 undefined on input line 2763.
+
+[54]
+
+LaTeX Warning: Reference `e:boring_proof_eq1' on page 55 undefined on input line 2783.
+
+
+LaTeX Warning: Reference `e:boring_proof_eq1' on page 55 undefined on input line 2783.
+
+
+LaTeX Warning: Reference `e:boring_proof_eq2' on page 55 undefined on input line 2783.
+
+
+LaTeX Warning: Reference `e:boring_proof_eq2' on page 55 undefined on input line 2785.
+
+
+LaTeX Warning: Reference `lem:ideals_modular projection' on page 1 undefined on input line 2785.
+
+
+LaTeX Warning: Reference `t:thm_iop_pimsat' on page 1 undefined on input line 2790.
+
+
+LaTeX Warning: Reference `e:boring_proof_eq1' on page 55 undefined on input line 2797.
+
+
+LaTeX Warning: Reference `e:boring_proof_eq2' on page 55 undefined on input line 2797.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:2819: Undefined control sequence.
+l.2819 ...arrow \ (\pi(\inp), f, \pi(f))\in \PESAT
+                                                  (\ringtwobounds{B}{\module...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+[55]
+
+LaTeX Warning: Reference `e:boring_proof_eq3' on page 56 undefined on input line 2822.
+
+
+LaTeX Warning: Reference `e:boring_proof_eq4' on page 56 undefined on input line 2822.
+
+
+LaTeX Warning: Reference `e:boring_proof_eq3' on page 56 undefined on input line 2822.
+
+
+LaTeX Warning: Reference `t:thm_iop_pimsat' on page 1 undefined on input line 2860.
+
+[56]
+
+LaTeX Warning: Reference `l:Pi_123_is_good' on page 1 undefined on input line 2873.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `\new@ifnextchar' on input line 2873.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `subscript' on input line 2873.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `subscript' on input line 2873.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `subscript' on input line 2873.
+
+
+LaTeX Warning: Reference `l:Pi_123_is_good' on page 1 undefined on input line 2875.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2875.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2877.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2877.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2877.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 2877.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2879.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2879.
+
+
+LaTeX Warning: Reference `def:knowledge-state-function' on page 1 undefined on input line 2890.
+
+
+LaTeX Warning: Reference `def:knowledge-state-function' on page 1 undefined on input line 2890.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2892.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2892.
+
+
+LaTeX Warning: Reference `def:knowledge-state-function' on page 1 undefined on input line 2892.
+
+
+LaTeX Warning: Reference `def:knowledge-state-function' on page 1 undefined on input line 2892.
+
+
+LaTeX Warning: Reference `def:knowledge-state-function' on page 1 undefined on input line 2892.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2892.
+
+
+Overfull \hbox (29.87556pt too wide) in paragraph at lines 2892--2893
+\T1/cmr/m/n/10.95 since $\OT1/cmr/m/n/10.95 (\U/bbm/m/n/10.95 x\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 ?\OML/cmm/m/it/10.95 ; \OT1/cmr/bx/n/10.95 w\OT1/cmr/m/n/10.95 ) \OMS/cmsy/m/n/10.95 62 R[]$\T1/cmr/m/n/10.95 , it fol-lows that $\OT1/cmr/m/n/10.95 (\U/bbm/m/n/10.95 x\OML/cmm/m/it/10.95 ; f; \OT1/cmr/bx/n/10.95 w\OT1/cmr/m/n/10.95 ) \OMS/cmsy/m/n/10.95 62 R[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R[]; \OT1/cmr/bx/n/10.95 p\OML/cmm/m/it/10.95 ; \OML/cmm/b/it/10.95 R\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 C\OT1/cmr/m/n/10.95 )[]$\T1/cmr/m/n/10.95 . Hence $[]\OT1/cmr/m/n/10.95 (\U/bbm/m/n/10.95 x\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 ?\OML/cmm/m/it/10.95 ; f; \OT1/cmr/bx/n/10.95 w\OT1/cmr/m/n/10.95 ) =
+ []
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2895.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2903.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2903.
+
+
+LaTeX Warning: Reference `def:knowledge-state-function' on page 1 undefined on input line 2903.
+
+
+Overfull \hbox (22.29428pt too wide) in paragraph at lines 2903--2904
+[]\T1/cmr/m/n/10.95 Notice that the ver-i-fier of [] given $\OT1/cmr/m/n/10.95 (\U/bbm/m/n/10.95 x\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 ?\OML/cmm/m/it/10.95 ; \OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 f; [][]\OT1/cmr/m/n/10.95 ))$ \T1/cmr/m/n/10.95 makes ex-actly the same checks as $\OT1/cmss/m/n/10.95 V[]\OT1/cmr/m/n/10.95 (\U/bbm/m/n/10.95 x\OML/cmm/m/it/10.95 ; f; \OT1/cmr/m/n/10.95 (\OMS/cmsy/m/n/10.95 ?\OML/cmm/m/it/10.95 ; [][]\OT1/cmr/m/n/10.95 ))$\T1/cmr/m/n/10.95 .
+ []
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2908.
+
+
+Overfull \hbox (37.3027pt too wide) in paragraph at lines 2908--2909
+[]\T1/cmr/m/n/10.95 Now as-sume $\OT1/cmr/m/n/10.95 ^^E[]$ \T1/cmr/m/n/10.95 has round-by-round knowl-edge sound-ness with re-lax-ation $\OT1/cmr/m/n/10.95 (\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R[]; \OT1/cmr/bx/n/10.95 p\OML/cmm/m/it/10.95 ; \OML/cmm/b/it/10.95 R\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 C\OT1/cmr/m/n/10.95 )[]\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 ?\OT1/cmr/m/n/10.95 )$
+ []
+
+[57]
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2910.
+
+
+LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 2914.
+
+
+LaTeX Warning: Reference `l:Pi_123_is_good' on page 1 undefined on input line 2931.
+
+[58] [59] [60] [61]
+Overfull \hbox (5.645pt too wide) in paragraph at lines 3216--3219
 []\T1/cmr/m/n/10.95 Can be di-rectly shown us-ing a ba-sis ex-pan-sion. Write $\OT1/cmr/bx/n/10.95 w \OT1/cmr/m/n/10.95 = [][] \OML/cmm/m/it/10.95 w[]\OT1/cmr/bx/n/10.95 e[]$
  []
 
-[29] [30] [31] [32]
+[62] [63] [64] [65]
 
-LaTeX Warning: Reference `suc-embed' on page 33 undefined on input line 1913.
+LaTeX Warning: Reference `suc-embed' on page 66 undefined on input line 3440.
 
-[33] [34] [35] [36] [37] [38]
+[66] [67] [68] [69] [70] [71]
 
-LaTeX Warning: Empty bibliography on input line 2263.
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 3789.
 
-[39] (./main.aux)
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `subscript' on input line 3789.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 3789.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:3798: Undefined control sequence.
+<argument>  &\LinBitsDual ^\virtual 
+                                    (\bits ,\pi _q, \evalfield ,\cC )\\ &\qq...
+l.3798 \end{align*}
+                   
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:3798: Undefined control sequence.
+<argument>  &\LinBitsDual ^\virtual 
+                                    (\bits ,\pi _q, \evalfield ,\cC )\\ &\qq...
+l.3798 \end{align*}
+                   
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:3801: Undefined control sequence.
+l.3801 ...e intuition that  $\LinBitsDual^\virtual
+                                                  (\bits,\pi_q, \evalfield,\...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+[72]
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:3805: Undefined control sequence.
+<argument> ...nt (IOP for $\LinBitsDual ^\virtual 
+                                                  $)}
+l.3805 ...uction}[IOP for $\LinBitsDual^\virtual$]
+                                                  \label{c:virtual_iop}
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:3805: Missing { inserted.
+<to be read again> 
+                   $
+l.3805 ...uction}[IOP for $\LinBitsDual^\virtual$]
+                                                  \label{c:virtual_iop}
+A left brace was mandatory here, so I've put one in.
+You might want to delete and/or insert some corrections
+so that I will find a matching right brace soon.
+(If you're confused by all this, try typing `I}' now.)
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:3805: Missing } inserted.
+<inserted text> 
+                }
+l.3805 ...uction}[IOP for $\LinBitsDual^\virtual$]
+                                                  \label{c:virtual_iop}
+I've inserted something that you may have forgotten.
+(See the <inserted text> above.)
+With luck, this will get me unwedged. But if you
+really didn't forget anything, try typing `2' now; then
+my insertion and my current dilemma will both disappear.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 3806--3807
+
+ []
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:3809: Undefined control sequence.
+l.3809 ...\oracle, \wit) \in \LinBitsDual^\virtual
+                                                  (\bits,\pi_q, \evalfield,\...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 3816.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 3816.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 3816.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 3825.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 3831.
+
+
+LaTeX Warning: Reference `e:virtualization_final_claim' on page 73 undefined on input line 3845.
+
+[73]
+
+LaTeX Warning: Reference `c:virtual_iop' on page 1 undefined on input line 3854.
+
+
+LaTeX Warning: Reference `t:thm_core_IOPP' on page 1 undefined on input line 3856.
+
+
+LaTeX Warning: Reference `c:virtual_iop' on page 1 undefined on input line 3856.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:3856: Undefined control sequence.
+l.3856 ...complete IOP for $\LinBitsDual^{\virtual
+                                                  }$  and has round-by-round...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:3856: Undefined control sequence.
+l.3856 ...ith relaxation $((\LinBitsDual^{\virtual
+                                                  })^{\delta}, \bot)$, with ...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `t:thm_core_IOPP' on page 1 undefined on input line 3856.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:3857: Undefined control sequence.
+l.3857 ...red=f, \wit_\red =\pi_2(\bfh))\in \PESAT
+                                                  (\comfield,Q_{\mathbb{B}\t...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 3861.
+
+
+LaTeX Warning: Reference `c:virtual_iop' on page 1 undefined on input line 3861.
+
+
+LaTeX Warning: Reference `c:virtual_iop' on page 1 undefined on input line 3864.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 3864.
+
+
+LaTeX Warning: Reference `t:thm_core_IOPP' on page 1 undefined on input line 3864.
+
+
+LaTeX Warning: Reference `c:virtual_iop' on page 1 undefined on input line 3870.
+
+
+LaTeX Warning: Reference `c:virtual_iop' on page 1 undefined on input line 3871.
+
+
+LaTeX Warning: Reference `c:core_iop' on page 1 undefined on input line 3871.
+
+
+LaTeX Warning: Reference `a:ring_switch_1' on page 1 undefined on input line 3871.
+
+
+LaTeX Warning: Reference `whir' on page 1 undefined on input line 3871.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 3871.
+
+
+LaTeX Warning: Reference `c:virtual_iop' on page 1 undefined on input line 3871.
+
+
+LaTeX Warning: Reference `s:instantiation' on page 1 undefined on input line 3871.
+
+[74] (./main.aux)
  ***********
 LaTeX2e <2025-11-01>
 L3 programming layer <2026-01-19>
@@ -1886,29 +3565,21 @@ Package rerunfilecheck Warning: File `main.out' has changed.
 
 Package rerunfilecheck Info: Checksums for `main.out':
 (rerunfilecheck)             Before: <no file>
-(rerunfilecheck)             After:  F7307502A66AFC49FD6AF55F731B99A3;9432.
-
-Package biblatex Warning: Please (re)run Biber on the file:
-(biblatex)                main
-(biblatex)                and rerun LaTeX afterwards.
-
-Package logreq Info: Writing requests to 'main.run.xml'.
-\openout1 = `main.run.xml'.
-
+(rerunfilecheck)             After:  380E919249B54FBF8F8317962C4FFBE9;12021.
  ) 
 Here is how much of TeX's memory you used:
- 50085 strings out of 467525
- 1030550 string characters out of 5418982
- 1941188 words of memory out of 5000000
- 78026 multiletter control sequences out of 15000+600000
- 675184 words of font info for 181 fonts, out of 8000000 for 9000
+ 43321 strings out of 467525
+ 892123 string characters out of 5418982
+ 1386741 words of memory out of 5000000
+ 71135 multiletter control sequences out of 15000+600000
+ 676353 words of font info for 182 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 99i,15n,117p,5296b,1439s stack positions out of 10000i,1000n,20000p,200000b,200000s
- </Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm10.657pk></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi5.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi6.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi7.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmib10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cmextra/cmmib8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr12.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr17.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr5.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr6.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr7.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmss10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmss8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy6.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy7.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/symbols/msam10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx0900.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1000.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1095.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1200.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1440.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm0600.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm0800.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm0900.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1000.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1095.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1200.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfti0900.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfti1095.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sftt0900.pfb>
-Output written on main.pdf (39 pages, 762388 bytes).
+ 99i,19n,117p,1756b,1443s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ </Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm8.600pk> </Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm10.657pk></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx6.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cmextra/cmex8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cmextra/cmex9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi5.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi6.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi7.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmib10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cmextra/cmmib8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr5.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr6.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr7.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmss10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmss8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmss9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy5.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy6.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy7.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/symbols/msam10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/symbols/msbm7.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbi1095.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx0900.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1000.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1095.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1200.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1440.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm0600.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm0800.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm0900.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1000.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1095.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1200.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1728.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfti0800.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfti0900.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfti1095.pfb>
+Output written on main.pdf (74 pages, 1026755 bytes).
 PDF statistics:
- 635 PDF objects out of 1000 (max. 8388607)
- 476 compressed objects within 5 object streams
- 194 named destinations out of 1000 (max. 500000)
+ 999 PDF objects out of 1000 (max. 8388607)
+ 787 compressed objects within 8 object streams
+ 363 named destinations out of 1000 (max. 500000)
  157 words of extra memory for PDF output out of 10000 (max. 10000000)
 

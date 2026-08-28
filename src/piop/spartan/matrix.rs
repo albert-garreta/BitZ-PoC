@@ -8,6 +8,8 @@
 use std::borrow::Cow;
 
 use blake3::Hasher;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 use thiserror::Error;
 
 use crate::poly::mle::DenseMultilinearExtension;
@@ -20,7 +22,7 @@ use super::{SpartanField, SpartanFieldError, sumcheck::R1csProductMles};
 /// corresponding element of `F`. Consequently, a Boolean matrix containing
 /// `true` has the same prepared-statement digest as a field-valued matrix
 /// containing `F::one_with_cfg(field_config)` at the same coordinates.
-pub trait SpartanMatrixCoefficient<F>: Clone
+pub trait SpartanMatrixCoefficient<F>: Clone + Sync
 where
     F: SpartanField,
 {
@@ -685,7 +687,7 @@ where
         validate_elements_field(row_point, &self.field_modulus_encoding)?;
         validate_element_field(rho, &self.field_modulus_encoding)?;
 
-        let row_weights = eq_table(row_point, &self.field_config)?;
+        let row_weights = eq_table_prover(row_point, &self.field_config)?;
         self.bind_and_batch_with_validated_row_weights(&row_weights, rho)
     }
 
@@ -730,15 +732,20 @@ where
 
         let zero = F::zero_with_cfg(&self.field_config);
         let rho_squared = mul(rho, rho);
-        let mut evaluations = Vec::with_capacity(domain_size(self.num_column_vars)?);
 
-        for ((a_column, b_column), c_column) in self
+        // Column-parallel over the live columns (each column's value is
+        // independent, and its inner sums are untouched — identical
+        // values in identical order to the sequential zip).
+        let live_columns = self
             .matrices
             .a()
-            .columns()
-            .zip(self.matrices.b().columns())
-            .zip(self.matrices.c().columns())
-        {
+            .column_count()
+            .min(self.matrices.b().column_count())
+            .min(self.matrices.c().column_count());
+        let column_evaluation = |index: usize| -> F {
+            let a_column = self.matrices.a().column(index).unwrap_or(&[]);
+            let b_column = self.matrices.b().column(index).unwrap_or(&[]);
+            let c_column = self.matrices.c().column(index).unwrap_or(&[]);
             let mut evaluation =
                 sparse_column_dot(a_column, row_weights, &zero, &self.field_config);
             if !b_column.is_empty() {
@@ -751,8 +758,20 @@ where
                     sparse_column_dot(c_column, row_weights, &zero, &self.field_config);
                 evaluation += &mul(&rho_squared, &c_evaluation);
             }
-            evaluations.push(evaluation);
-        }
+            evaluation
+        };
+        #[cfg(feature = "parallel")]
+        let mut evaluations: Vec<F> =
+            if live_columns >= (1 << 12) && rayon::current_num_threads() > 1 {
+                (0..live_columns)
+                    .into_par_iter()
+                    .map(column_evaluation)
+                    .collect()
+            } else {
+                (0..live_columns).map(column_evaluation).collect()
+            };
+        #[cfg(not(feature = "parallel"))]
+        let mut evaluations: Vec<F> = (0..live_columns).map(column_evaluation).collect();
         evaluations.resize(domain_size(self.num_column_vars)?, zero);
 
         Ok(DenseMultilinearExtension {
@@ -1102,6 +1121,45 @@ where
             let parent = zero_child.clone();
             *one_child = mul(&parent, challenge);
             *zero_child = sub(&parent, one_child);
+        }
+    }
+
+    Ok(table)
+}
+
+/// PROVER-side [`eq_table`] with the per-level doubling parallelized
+/// (each level's pair expansions are independent; the products — and
+/// therefore the table — are identical to the sequential build). The
+/// verifier's evaluation path keeps the plain [`eq_table`].
+fn eq_table_prover<F>(point: &[F], field_config: &F::Config) -> Result<Vec<F>, SpartanMatrixError>
+where
+    F: SpartanField,
+{
+    let modulus_encoding = F::canonical_modulus_encoding(field_config);
+    validate_elements_field(point, &modulus_encoding)?;
+    let table_len = domain_size(point.len())?;
+    let zero = F::zero_with_cfg(field_config);
+    let mut table = vec![zero; table_len];
+    table[0] = F::one_with_cfg(field_config);
+
+    for (coordinate, challenge) in point.iter().enumerate() {
+        let half = domain_size(coordinate)?;
+        let (zero_children, one_children) = table[..2 * half].split_at_mut(half);
+        let expand = |zero_child: &mut F, one_child: &mut F| {
+            let parent = zero_child.clone();
+            *one_child = mul(&parent, challenge);
+            *zero_child = sub(&parent, one_child);
+        };
+        #[cfg(feature = "parallel")]
+        if half >= (1 << 13) && rayon::current_num_threads() > 1 {
+            zero_children
+                .par_iter_mut()
+                .zip(one_children.par_iter_mut())
+                .for_each(|(zero_child, one_child)| expand(zero_child, one_child));
+            continue;
+        }
+        for (zero_child, one_child) in zero_children.iter_mut().zip(one_children) {
+            expand(zero_child, one_child);
         }
     }
 
@@ -1773,6 +1831,24 @@ mod tests {
         assert_eq!(high.evaluations, eq_table(&point[1..], &config).unwrap());
     }
 
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn prover_equality_table_matches_sequential_at_parallel_threshold() {
+        let config = config();
+        let point: Vec<_> = (0..14)
+            .map(|coordinate| field((coordinate + 2) as u64, &config))
+            .collect();
+        let expected = eq_table(&point, &config).unwrap();
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .unwrap();
+
+        let actual = pool.install(|| eq_table_prover(&point, &config)).unwrap();
+
+        assert_eq!(actual, expected);
+    }
+
     #[test]
     fn bound_table_and_independent_sparse_evaluation_agree() {
         let config = config();
@@ -2071,6 +2147,74 @@ mod tests {
             boolean_prepared
                 .evaluate_batched(&row_point, &rho, &column_point)
                 .unwrap()
+        );
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn indexed_parallel_binding_is_exact_for_generic_coefficients_at_threshold() {
+        let config = config();
+        let column_count = (1 << 12) + 1;
+        let boolean_rows = vec![
+            vec![(0, true), (1 << 12, true)],
+            vec![(1, true), (1 << 11, true)],
+            vec![(2, true)],
+            vec![(3, true), ((1 << 12) - 1, true)],
+        ];
+        let one = F128::one_with_cfg(&config);
+        let field_rows: Vec<Vec<(usize, F128)>> = boolean_rows
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .map(|(column, _)| (*column, one.clone()))
+                    .collect()
+            })
+            .collect();
+        let boolean_matrix =
+            || SparseMatrix::try_from_rows(column_count, boolean_rows.clone()).unwrap();
+        let field_matrix =
+            || SparseMatrix::try_from_rows(column_count, field_rows.clone()).unwrap();
+        let boolean_prepared = PreparedConstraintMatrices::<F128, bool>::new(
+            ConstraintMatrices::new(boolean_matrix(), boolean_matrix(), boolean_matrix()).unwrap(),
+            &config,
+        )
+        .unwrap();
+        let field_prepared = PreparedConstraintMatrices::<F128>::new(
+            ConstraintMatrices::new(field_matrix(), field_matrix(), field_matrix()).unwrap(),
+            &config,
+        )
+        .unwrap();
+        let row_point = [field(7, &config), field(11, &config)];
+        let rho = field(13, &config);
+        let sequential_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
+        let parallel_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .unwrap();
+
+        let sequential_boolean = sequential_pool
+            .install(|| boolean_prepared.bind_and_batch(&row_point, &rho))
+            .unwrap();
+        let parallel_boolean = parallel_pool
+            .install(|| boolean_prepared.bind_and_batch(&row_point, &rho))
+            .unwrap();
+        let sequential_field = sequential_pool
+            .install(|| field_prepared.bind_and_batch(&row_point, &rho))
+            .unwrap();
+        let parallel_field = parallel_pool
+            .install(|| field_prepared.bind_and_batch(&row_point, &rho))
+            .unwrap();
+
+        assert_eq!(parallel_boolean, sequential_boolean);
+        assert_eq!(parallel_field, sequential_field);
+        assert_eq!(parallel_boolean, parallel_field);
+        assert!(
+            parallel_boolean.evaluations[column_count..]
+                .iter()
+                .all(|value| <F128 as PrimeField>::is_zero(value))
         );
     }
 

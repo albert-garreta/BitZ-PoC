@@ -1,10 +1,11 @@
-//! Flock-backed ring-switch + recursive-Ligerito opening for the
-//! integer-MLE-evaluation protocol.
+//! Flock-backed RS opening for the integer-MLE-eval protocol — the
+//! **performance backend** of [`crate::f2_int_ligerito`] (feature
+//! `flock-pcs`).
 //!
 //! Everything hot runs flock-core's optimized code (succinctlabs/flock,
-//! MIT OR Apache-2.0): the NEON/cache-blocked additive NTT, configurable
-//! Merkle commits with octopus multi-proofs, and `pcs::ligerito`. zinc keeps
-//! the protocol layers around it — the forest
+//! MIT OR Apache-2.0): the NEON/cache-blocked additive NTT, the SHA-256
+//! Merkle commit with octopus multi-proofs, and `pcs::ligerito` (the
+//! recursive prover/verifier). zinc keeps the protocol layers around it — the forest
 //! GKR, the pre-sumcheck, the (thin) ring-switch orchestration — and the ONE
 //! Fiat–Shamir chain is preserved by driving flock's `Challenger` trait from
 //! zinc's [`Transcript`] ([`ZincChallenger`]).
@@ -19,15 +20,17 @@
 //! * zinc [`crate::ligerito::ring_switch_prove`]/`_verify` handle the
 //!   `s_v` message and the r″ recombination (O(2^{m_p}) — not hot), emitting
 //!   the weight table `B(y) = Φ_{r″}(eq(r_hi, y))` and the target `β₀`.
-//! * flock's recursive Ligerito prover/verifier prove
-//!   `Σ_y P(y)·B(y) = β₀` against the commitment. Its succinct
-//!   residual callback uses [`crate::ligerito::residual_b_evals`] to evaluate
-//!   the induced basis without materializing an exponential table.
+//! * flock `ligerito::recursive_prover_with_basis`/
+//!   `recursive_verifier_with_basis_succinct` prove `Σ_y P(y)·B(y) = β₀`
+//!   against flock's commitment, with `a` = the packed witness (codeword
+//!   side) and `b` = the weight table. The closing residual check evaluates
+//!   the weight basis succinctly at the recursion's challenges.
 //!
-//! Query counts, grinding, and OOD sampling come from the selected Ligerito
-//! config. Merkle hashing is carried by that config and recorded in the
-//! public commitment parameters; the explicit low-level commit entry points
-//! retain flock's SHA-256 default.
+//! Query counts and grinding come from the embedded Ligerito security
+//! configs ([`sha_lig_configs`]); the `RsOpenConfig::num_queries` knob
+//! does not apply on this backend. Note flock's Merkle is SHA-256 without
+//! leaf/node domain separation (flagged upstream as non-production) — carried
+//! as-is for now; recorded in the ledger.
 
 use flock_core::challenger::Challenger;
 use flock_core::field::F128;
@@ -40,7 +43,7 @@ use flock_core::pcs::ligerito::{
 
 use crate::piop::lookup::gkr_product::ProductForestProof;
 use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheckProof;
-use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
+use crate::poly::univariate::binary_gf128::{BinaryFieldGF128 as Gf, FixedGfMul};
 use crate::transcript::traits::Transcript;
 
 use crate::ligerito::{
@@ -130,14 +133,55 @@ impl<T: Transcript + Send> Challenger for ZincChallenger<'_, T> {
 
     fn grind_pow(&mut self, bits: u32) -> u64 {
         let seed = self.pow_seed();
-        let mut nonce = 0u64;
-        loop {
-            if pow_ok(&seed, nonce, bits) {
-                self.0.absorb_slice(&nonce.to_le_bytes());
-                return nonce;
+        // Parallel smallest-nonce search (prover-side only; the verifier
+        // checks whatever nonce arrives): scan fixed waves of the nonce
+        // space and take each wave's MINIMUM hit — the first wave with a
+        // hit yields exactly the serial scan's nonce, so the transcript
+        // stays byte-identical. The expected serial cost is 2^bits hashes
+        // (~6.5 ms at 16 bits); waves parallelize it ~#cores. Below ~2^11
+        // expected hashes the fork-join overhead outweighs the win — stay
+        // serial there.
+        #[cfg(feature = "parallel")]
+        let nonce = if bits >= 11 {
+            use rayon::prelude::*;
+            const CHUNK_LOG: u64 = 12;
+            const CHUNKS: usize = 32; // wave = 32 · 4096 = 2^17 nonces
+            let mut base = 0u64;
+            loop {
+                let hit = (0..CHUNKS)
+                    .into_par_iter()
+                    .filter_map(|c| {
+                        // First hit in the chunk = the chunk's minimum.
+                        let start = base + ((c as u64) << CHUNK_LOG);
+                        (start..start + (1 << CHUNK_LOG)).find(|&n| pow_ok(&seed, n, bits))
+                    })
+                    .min();
+                if let Some(n) = hit {
+                    break n;
+                }
+                base += (CHUNKS as u64) << CHUNK_LOG;
             }
-            nonce = nonce.wrapping_add(1);
-        }
+        } else {
+            let mut nonce = 0u64;
+            loop {
+                if pow_ok(&seed, nonce, bits) {
+                    break nonce;
+                }
+                nonce = nonce.wrapping_add(1);
+            }
+        };
+        #[cfg(not(feature = "parallel"))]
+        let nonce = {
+            let mut nonce = 0u64;
+            loop {
+                if pow_ok(&seed, nonce, bits) {
+                    break nonce;
+                }
+                nonce = nonce.wrapping_add(1);
+            }
+        };
+        self.0.absorb_slice(&nonce.to_le_bytes());
+        nonce
     }
 
     fn verify_pow(&mut self, nonce: u64, bits: u32) -> bool {
@@ -366,10 +410,9 @@ pub fn sha_lig_configs(m_p: usize) -> Result<(LigProverConfig, LigVerifierConfig
     custom_johnson_config(m, 1, 4).to_prover_verifier_configs()
 }
 
-/// [`commit_rs_flock_with`] at the shape in `cfg`. This explicit low-level
-/// entry point retains flock's default SHA-256 Merkle hash; the Ligerito path
-/// derives both shape and hash from its prover config — see [`lig_configs`]
-/// and [`commit_rs_ligerito`].
+/// [`commit_rs_flock_with`] at the shape in `cfg` (the BaseFold backend's
+/// entry point; the Ligerito path derives its shape from the level config —
+/// see [`lig_configs`] + [`commit_rs_ligerito`]).
 pub fn commit_rs_flock(p: &IntEvalParams, data: &[u128], cfg: &RsOpenConfig) -> FlockCommitHint {
     commit_rs_flock_with(p, data, cfg.log_inv_rate, cfg.log_batch)
 }
@@ -386,6 +429,12 @@ pub enum LigConfig {
     /// deployed f2-int sizes at W=1 (`m = n`). The commit shape
     /// (`log_inv_rate`, `log_batch = initial_k`) comes from the config.
     Embedded(ligerito::LigeritoProfile),
+    /// A validator-gated Johnson config derived from flock's embedded slim
+    /// template at the requested base rate and L0 interleaving.
+    CustomJohnson {
+        log_inv_rate: usize,
+        initial_k: usize,
+    },
     /// `ligerito::default_config` for ad-hoc/test shapes (UDR query counts,
     /// no grinding/OOD; per-level parameters not audited).
     Adhoc {
@@ -406,6 +455,13 @@ pub fn lig_configs(
                 .ok_or_else(|| format!("no embedded ligerito config for m={m}"))?;
             let sec = LigeritoSecurityConfig::from_toml_str(toml)?;
             sec.to_prover_verifier_configs()
+        }
+        LigConfig::CustomJohnson {
+            log_inv_rate,
+            initial_k,
+        } => {
+            let m = m_p.wrapping_add(LOG_PACKING);
+            custom_johnson_config(m, log_inv_rate, initial_k).to_prover_verifier_configs()
         }
         LigConfig::Adhoc {
             log_batch,
@@ -696,8 +752,22 @@ pub fn commit_rs_ligerito(
     data: &[u128],
     pc: &LigProverConfig,
 ) -> FlockCommitHint {
-    commit_rs_ligerito_rows(p, repack_leaf_bits(p, data), pc)
+    commit_rs_flock_with(p, data, pc.log_inv_rates[0], pc.initial_k)
 }
+
+/// Release flock's process-global scratch pool
+/// ([`flock_core::scratch::clear`]). flock retains the open's large `F128`
+/// buffers across proves (up to ~1 codeword + the fold set) to skip
+/// page-fault/munmap churn on repeated proves; call this after the last
+/// prove of a batch — or before measuring a single prove's peak — to return
+/// that memory to the OS.
+pub fn flock_scratch_clear() {
+    flock_core::scratch::clear();
+}
+
+// ---------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------
 
 /// Errors of the flock-backed opening / end-to-end verification.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -708,8 +778,11 @@ pub enum FlockRsError {
     /// The zinc-side ring-switch rejected.
     RingSwitch(RsOpenError),
     /// The public commitment metadata does not describe the L0 code and
-    /// Merkle tree selected by the supplied Ligerito verifier config.
+    /// Merkle tree selected by the supplied Ligerito config.
     CommitmentConfig,
+    /// `final_b` disagrees with the succinct weight evaluation
+    /// `B̂(challenges)` (the tensor-algebra check).
+    FinalWeight,
     /// flock's Ligerito succinct verifier rejected (boolean API — the
     /// failing stage is not surfaced).
     LigeritoReject,
@@ -731,6 +804,10 @@ pub enum FlockRsError {
     /// The extension-field read-off failed:
     /// `Σ_c v_c^{(2)}·π_canon(μ_c) ≠ μ` over the evaluation field `K`.
     ExtReadOff,
+    /// The virtual opening's batching message failed the
+    /// coefficient-projection check `Σ_i c₀(h_i)·X^i = Σ_l η_l·μ_l`
+    /// (paper batching-protocol step 3).
+    VirtualBatch,
 }
 
 /// Reject a commitment/config mismatch before any Fiat–Shamir state is
@@ -772,8 +849,7 @@ fn validate_ligerito_commitment(
     let initial_log_msg_cols = config.initial_log_msg_cols();
     let initial_log_num_interleaved = config.initial_log_num_interleaved();
     let initial_k = config.initial_k();
-    let Some(log_message_len) =
-        initial_log_msg_cols.checked_add(initial_log_num_interleaved)
+    let Some(log_message_len) = initial_log_msg_cols.checked_add(initial_log_num_interleaved)
     else {
         return Err(FlockRsError::CommitmentConfig);
     };
@@ -1047,8 +1123,7 @@ const RS_OPEN_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/rs-open/v1";
 const RS_EVAL_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/rs-eval/v1";
 const RS_EVAL_BATCH_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/rs-eval-batch/v1";
 const MOD_Q_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q/v1";
-const U32_MOD_Q_OPENING_V2_STATEMENT_DOMAIN: &[u8] =
-    b"f2z/spartan-f2z/u32-mod-q-opening/v2";
+const U32_MOD_Q_OPENING_V2_STATEMENT_DOMAIN: &[u8] = b"f2z/spartan-f2z/u32-mod-q-opening/v2";
 const EXT_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/ext/v1";
 const MOD_Q_XOR_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q-xor/v1";
 const MOD_Q_XOR_ONLY_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q-xor-only/v1";
@@ -1437,26 +1512,13 @@ pub fn prove_rs_open_ligerito(
     point: &[Gf],
     pc: &LigProverConfig,
 ) -> LigOpenProof {
-    assert_eq!(point.len(), hint.commitment.params.m, "opening point shape");
-    absorb_rs_open_statement(transcript, &hint.commitment, point, pc);
-    prove_rs_open_ligerito_after_statement(transcript, hint, point, pc)
-}
-
-/// Direct-opening prover after the surrounding protocol has already bound a
-/// statement containing the commitment root.
-fn prove_rs_open_ligerito_after_statement(
-    transcript: &mut (impl Transcript + Send),
-    hint: &FlockCommitHint,
-    point: &[Gf],
-    pc: &LigProverConfig,
-) -> LigOpenProof {
     let r_hi = &point[LOG_PACKING..];
     let p_msg_gf: Vec<Gf> = hint.p_msg.iter().map(|&f| f128_to_gf(f)).collect();
     let (ring, b_tbl, beta0) = ring_switch_prove(transcript, &p_msg_gf, r_hi);
 
     let lig = ligerito::recursive_prover_with_basis(
         pc,
-        hint.p_msg.clone(),
+        par_clone_f128(&hint.p_msg),
         gf_slice_to_f128(&b_tbl),
         gf_to_f128(beta0),
         &hint.prover_data.codeword,
@@ -1477,24 +1539,9 @@ pub fn verify_rs_open_ligerito(
     proof: &LigOpenProof,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
-    validate_ligerito_commitment(commitment, vc)?;
-    if point.len() != commitment.params.m || proof.ring.s_v.len() != 128 {
+    if point.len() != commitment.params.m {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
-    absorb_rs_open_statement(transcript, commitment, point, vc);
-    verify_rs_open_ligerito_after_statement(transcript, commitment, mu, point, proof, vc)
-}
-
-/// Direct-opening verifier after the surrounding protocol has already bound
-/// a statement containing the commitment root.
-fn verify_rs_open_ligerito_after_statement(
-    transcript: &mut (impl Transcript + Send),
-    commitment: &Commitment,
-    mu: Gf,
-    point: &[Gf],
-    proof: &LigOpenProof,
-    vc: &LigVerifierConfig,
-) -> Result<(), FlockRsError> {
     let (r_lo, r_hi) = point.split_at(LOG_PACKING);
     let (eq_r2, beta0) =
         ring_switch_verify(transcript, &proof.ring, mu, r_lo).map_err(FlockRsError::RingSwitch)?;
@@ -1550,7 +1597,6 @@ pub fn prove_rs_ligerito(
     alpha: Gf,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigProof {
-    absorb_rs_eval_statement(transcript, &hint.commitment, p, row_weights, alpha, pc);
     let (mf, v, presum, point) = prove_int_eval_merged_common(
         transcript,
         p,
@@ -1559,7 +1605,7 @@ pub fn prove_rs_ligerito(
         row_weights,
         alpha,
     );
-    let open = prove_rs_open_ligerito_after_statement(transcript, hint, &point, pc);
+    let open = prove_rs_open_ligerito(transcript, hint, &point, pc);
     IntEvalRsLigProof {
         mf,
         v,
@@ -1585,13 +1631,6 @@ pub fn verify_rs_ligerito<R>(
 where
     R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
 {
-    validate_ligerito_commitment(commitment, vc)?;
-    let geometry = validate_int_eval_geometry(commitment, p, 0)?;
-    if row_weights.len() != geometry.rows || col_weights.len() != geometry.cols {
-        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
-    }
-    validate_single_proof_shape(proof, geometry)?;
-    absorb_rs_eval_statement(transcript, commitment, p, row_weights, alpha, vc);
     let (point, mu) = verify_int_eval_merged_common(
         transcript,
         &proof.mf,
@@ -1603,7 +1642,7 @@ where
     )
     .map_err(FlockRsError::Common)?;
 
-    verify_rs_open_ligerito_after_statement(transcript, commitment, mu, &point, &proof.open, vc)?;
+    verify_rs_open_ligerito(transcript, commitment, mu, &point, &proof.open, vc)?;
 
     let computed = final_eval_ring(&proof.v, col_weights, g_r);
     if computed != claimed_eval {
@@ -1713,12 +1752,6 @@ pub fn prove_rs_ligerito_batch(
     pc: &LigProverConfig,
 ) -> IntEvalRsLigBatchProof {
     let l = hint.rows.len();
-    assert_eq!(
-        row_weights.len(),
-        l,
-        "one row-weight vector per committed slice"
-    );
-    absorb_rs_eval_batch_statement(transcript, &hint.commitment, p, row_weights, alpha, pc);
     let m_p = packed_vars(p);
     let log_l = l.trailing_zeros() as usize;
     let slice = 1usize << m_p;
@@ -1793,7 +1826,7 @@ pub fn prove_rs_ligerito_batch(
 
     let lig = ligerito::recursive_prover_with_basis(
         pc,
-        hint.p_msg.clone(),
+        par_clone_f128(&hint.p_msg),
         b_comb,
         gf_to_f128(target),
         &hint.prover_data.codeword,
@@ -1828,45 +1861,18 @@ pub fn verify_rs_ligerito_batch<R>(
 where
     R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
 {
-    validate_ligerito_commitment(commitment, vc)?;
     let l = proof.mfs.len();
     if !(l.is_power_of_two() && l >= 2)
         || proof.vs.len() != l
         || proof.presums.len() != l
         || proof.rings.len() != l
         || row_weights.len() != l
-        || col_weights.len() != l
-        || g_r.len() != l
         || claimed_evals.len() != l
     {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
-    let log_l = l.trailing_zeros() as usize;
-    let geometry = validate_int_eval_geometry(commitment, p, log_l)?;
-    if row_weights
-        .iter()
-        .any(|weights| weights.len() != geometry.rows)
-        || col_weights
-            .iter()
-            .any(|weights| weights.len() != geometry.cols)
-    {
-        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
-    }
-    if proof.vs.iter().any(|v| v.len() != geometry.cols) {
-        return Err(FlockRsError::Common(IntEvalRsError::Forest));
-    }
-    if proof
-        .presums
-        .iter()
-        .any(|presum| !presum.has_shape(geometry.row_bit_vars, &[2]))
-    {
-        return Err(FlockRsError::Common(IntEvalRsError::PreSumcheck));
-    }
-    if proof.rings.iter().any(|ring| ring.s_v.len() != 128) {
-        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
-    }
-    absorb_rs_eval_batch_statement(transcript, commitment, p, row_weights, alpha, vc);
     let m_p = packed_vars(p);
+    let log_l = l.trailing_zeros() as usize;
 
     let mut points = Vec::with_capacity(l);
     let mut mus = Vec::with_capacity(l);
@@ -2008,6 +2014,24 @@ fn dense_ring_sv(p_msg: &[F128], eq_hi: &[Gf]) -> Vec<Gf> {
         }
     }
     s
+}
+
+/// Parallel copy of the packed message — `Vec::clone` of the 2^{m_p}·16-B
+/// buffer is a single-thread memcpy (~2–3 ms at n = 28); the flock prover
+/// entry point consumes an owned Vec while the hint must keep its copy, so
+/// the copy itself is unavoidable but its wall time is not. Byte-identical
+/// (pure data movement).
+fn par_clone_f128(src: &[F128]) -> Vec<F128> {
+    #[cfg(feature = "parallel")]
+    {
+        let mut out = vec![F128::ZERO; src.len()];
+        out.par_chunks_mut(1 << 16)
+            .zip(src.par_chunks(1 << 16))
+            .for_each(|(d, s)| d.copy_from_slice(s));
+        out
+    }
+    #[cfg(not(feature = "parallel"))]
+    src.to_vec()
 }
 
 /// Overwrite `b[y] = Σ_l η_l·Φ_{r″}(eq_his[l][y])` — the η-combined
@@ -2166,24 +2190,11 @@ pub fn prove_mle_eval_mod_q_ligerito(
     assert_eq!(row_weights_q.len(), geometry.rows, "row-weight length");
     let chunks = ModQWeightChunks::from_dense(p, row_weights_q, q_bits)
         .expect("q_bits must be in [1, 126] and every row weight must be < 2^q_bits");
-    let bound_statement = absorb_mod_q_statement(
-        transcript,
-        &hint.commitment,
-        p,
-        row_weights_q,
-        q_bits,
-        alpha,
-        pc,
-    );
-    prove_mle_eval_mod_q_ligerito_after_statement(
-        transcript,
-        hint,
-        p,
-        &chunks,
-        alpha,
-        pc,
-        bound_statement,
-    )
+    // Keep the established standalone transcript: this public entry point
+    // begins directly with the proof core. Statement-owning callers use the
+    // affine after-statement adapter below so they cannot accidentally absorb
+    // a second frame.
+    prove_mle_eval_mod_q_ligerito_raw(transcript, hint, p, &chunks, alpha, pc)
 }
 
 /// Prove the u32 Spartan bridge using a validated, already-chunked row
@@ -2208,9 +2219,10 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_prepared_u32_v2(
     let commitment_geometry = validate_int_eval_geometry(&hint.commitment, p, 0)?;
     let (geometry, _, _) = checked_prepared_mod_q_geometry(p, chunks, q_bits)?;
     let expected_words = 1usize
-        .checked_shl(u32::try_from(geometry.row_bit_vars).map_err(|_| {
-            FlockRsError::RingSwitch(RsOpenError::Shape)
-        })?)
+        .checked_shl(
+            u32::try_from(geometry.row_bit_vars)
+                .map_err(|_| FlockRsError::RingSwitch(RsOpenError::Shape))?,
+        )
         .and_then(|bits| bits.checked_div(u64::BITS as usize))
         .ok_or(FlockRsError::RingSwitch(RsOpenError::Shape))?;
     if geometry.rows != commitment_geometry.rows
@@ -2252,6 +2264,20 @@ fn prove_mle_eval_mod_q_ligerito_after_statement(
     alpha: Gf,
     pc: &LigProverConfig,
     _bound_statement: BoundModQStatement,
+) -> IntEvalRsLigModQProof {
+    prove_mle_eval_mod_q_ligerito_raw(transcript, hint, p, chunks, alpha, pc)
+}
+
+/// Transcript-neutral mod-q prover core shared by the standalone API and
+/// callers that already absorbed a versioned surrounding statement.
+#[allow(clippy::arithmetic_side_effects)]
+fn prove_mle_eval_mod_q_ligerito_raw(
+    transcript: &mut (impl Transcript + Send),
+    hint: &FlockCommitHint,
+    p: &IntEvalParams,
+    chunks: &ModQWeightChunks,
+    alpha: Gf,
+    pc: &LigProverConfig,
 ) -> IntEvalRsLigModQProof {
     let lch = chunks.len();
 
@@ -2322,7 +2348,7 @@ fn prove_mle_eval_mod_q_ligerito_after_statement(
     let lig = match round0 {
         Some((u0, u2)) => ligerito::recursive_prover_with_basis_precomputed_round0(
             pc,
-            hint.p_msg.clone(),
+            par_clone_f128(&hint.p_msg),
             b_comb,
             gf_to_f128(target),
             &hint.prover_data.codeword,
@@ -2332,7 +2358,7 @@ fn prove_mle_eval_mod_q_ligerito_after_statement(
         ),
         None => ligerito::recursive_prover_with_basis(
             pc,
-            hint.p_msg.clone(),
+            par_clone_f128(&hint.p_msg),
             b_comb,
             gf_to_f128(target),
             &hint.prover_data.codeword,
@@ -2376,19 +2402,8 @@ where
     }
     let chunks = ModQWeightChunks::from_dense(p, row_weights_q, q_bits)
         .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?;
-    let bound_statement =
-        absorb_mod_q_statement(transcript, commitment, p, row_weights_q, q_bits, alpha, vc);
     use crate::pcs::recombine_read_off;
-    let us = verify_mod_q_lig_core_after_statement(
-        transcript,
-        commitment,
-        proof,
-        p,
-        &chunks,
-        alpha,
-        vc,
-        bound_statement,
-    )?;
+    let us = verify_mod_q_lig_core(transcript, commitment, proof, p, &chunks, alpha, vc)?;
 
     // Recombine in R: y = Σ_c w′_c · Σ_l 2^{c_w·l}·u_c^{(l)}.
     let v_flat: Vec<u128> = us.iter().flat_map(|u| u.iter().copied()).collect();
@@ -2424,8 +2439,7 @@ where
     R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
 {
     validate_ligerito_commitment(commitment, vc)?;
-    let (geometry, chunk_width, chunk_count) =
-        checked_mod_q_shape(commitment, proof, p, q_bits)?;
+    let (geometry, chunk_width, chunk_count) = checked_mod_q_shape(commitment, proof, p, q_bits)?;
     let (prepared_geometry, prepared_chunk_width, prepared_chunk_count) =
         checked_prepared_mod_q_geometry(p, chunks, q_bits)?;
     if geometry.rows != prepared_geometry.rows
@@ -2459,14 +2473,7 @@ where
 
     use crate::pcs::recombine_read_off;
     let v_flat: Vec<u128> = us.iter().flat_map(|u| u.iter().copied()).collect();
-    let y = recombine_read_off(
-        p,
-        &v_flat,
-        0,
-        col_weights,
-        chunk_width,
-        chunk_count,
-    );
+    let y = recombine_read_off(p, &v_flat, 0, col_weights, chunk_width, chunk_count);
     if y != claimed {
         return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
     }
@@ -2492,6 +2499,22 @@ fn verify_mod_q_lig_core_after_statement(
     alpha: Gf,
     vc: &LigVerifierConfig,
     _bound_statement: BoundModQStatement,
+) -> Result<Vec<Vec<u128>>, FlockRsError> {
+    verify_mod_q_lig_core(transcript, commitment, proof, p, chunks, alpha, vc)
+}
+
+/// Transcript-neutral verifier core shared by the standalone API and callers
+/// that already absorbed a versioned surrounding statement.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+fn verify_mod_q_lig_core(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: &IntEvalRsLigModQProof,
+    p: &IntEvalParams,
+    chunks: &ModQWeightChunks,
+    alpha: Gf,
+    vc: &LigVerifierConfig,
 ) -> Result<Vec<Vec<u128>>, FlockRsError> {
     validate_ligerito_commitment(commitment, vc)?;
     let c_w = chunks.chunk_width();
@@ -2770,43 +2793,31 @@ pub fn verify_mle_eval_ext_ligerito<R>(
 where
     R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
 {
-    validate_ligerito_commitment(commitment, vc)?;
     use crate::ext_proj::{ProjArith, projected_row_weights, sample_proj_point, sample_proj_prime};
-    use crate::pcs::recombine_read_off;
+    use crate::pcs::{mod_q_chunk_width, mod_q_num_chunks, recombine_read_off};
     let ext_deg = weight_coords.len();
-    if ext_deg < 2
-        || !(1..=126).contains(&q_bits)
-        || !(32..=120).contains(&proj.prime_bits)
-        || !(1..=256).contains(&proj.mr_rounds)
-        || basis.len() != ext_deg
-    {
-        return Err(FlockRsError::ExtShape);
-    }
-    let geometry = validate_int_eval_geometry(commitment, p, 0)?;
-    let Some(tw) = p.t.checked_add(p.word_bits) else {
-        return Err(FlockRsError::ExtShape);
-    };
-    if tw > 126
-        || col_weights.len() != geometry.cols
-        || weight_coords
-            .iter()
-            .any(|weights| weights.len() != geometry.rows)
-    {
-        return Err(FlockRsError::ExtShape);
-    }
+    assert!(
+        ext_deg >= 2,
+        "extension degree must be ≥ 2 (use verify_mle_eval_mod_q_ligerito for prime fields)"
+    );
+    assert!((1..=126).contains(&q_bits), "q_bits must be in [1, 126]");
+    assert_eq!(
+        basis.len(),
+        ext_deg,
+        "one basis image per weight coordinate"
+    );
+    proj.validate();
     let coord_bound = 1u128 << q_bits;
-    if weight_coords
-        .iter()
-        .flatten()
-        .any(|&coordinate| coordinate >= coord_bound)
-    {
-        return Err(FlockRsError::ExtShape);
+    for wc in weight_coords {
+        assert_eq!(wc.len(), p.rows(), "one weight coordinate per row");
+        assert!(
+            wc.iter().all(|&x| x < coord_bound),
+            "weight coordinates must be < 2^q_bits"
+        );
     }
-    let c_w = 127usize - tw;
-    let l1 = q_bits.div_ceil(c_w);
-    let (_, base_c_w, l2) = checked_mod_q_shape(commitment, &proof.base, p, proj.prime_bits)?;
-    debug_assert_eq!(base_c_w, c_w);
-    let cols = geometry.cols;
+    let c_w = mod_q_chunk_width(p);
+    let l1 = mod_q_num_chunks(p, q_bits);
+    let cols = p.cols();
 
     // Step-1 folds: shape, re-pad (the codec trims all-zero tails), and the
     // free range check at the honest per-chunk bound — chunk `l` of a
@@ -2814,10 +2825,7 @@ where
     // an honest fold is `< 2^{t+W+w_l}` (≤ the old `2^{c_w+t+W} = 2^127`).
     // Bounding the sent values bounds the difference polynomial's
     // coefficients in the Schwartz–Zippel argument.
-    let Some(expected_mus) = ext_deg.checked_mul(l1) else {
-        return Err(FlockRsError::ExtShape);
-    };
-    if proof.mus.len() != expected_mus {
+    if proof.mus.len() != ext_deg.wrapping_mul(l1) {
         return Err(FlockRsError::ExtShape);
     }
     let mut mus: Vec<Vec<u128>> = Vec::with_capacity(proof.mus.len());
@@ -2825,9 +2833,8 @@ where
         if m.len() > cols {
             return Err(FlockRsError::ExtShape);
         }
-        let used_bits = c_w * (k % l1);
-        let w_l = c_w.min(q_bits - used_bits);
-        let bound = 1u128 << (w_l + tw);
+        let w_l = c_w.min(q_bits.wrapping_sub(c_w.wrapping_mul(k % l1)));
+        let bound = 1u128 << w_l.wrapping_add(p.t).wrapping_add(p.word_bits);
         for (c, &x) in m.iter().enumerate() {
             if x >= bound {
                 return Err(FlockRsError::ExtChunkRange {
@@ -2880,6 +2887,7 @@ where
     // Montgomery multiplication (plain×monty) and a modular add.
     let _g_checks = crate::utils::prof::scope("ext:checks");
     let zq = ProjArith::new(q_proj);
+    let l2 = mod_q_num_chunks(p, proj.prime_bits);
     let chunk_base = zq.reduce(1u128 << c_w);
     let base_pows = zq.powers(chunk_base, l1.max(l2));
     let alpha_pows = zq.powers(alpha_proj, ext_deg);
@@ -3226,35 +3234,7 @@ pub fn prove_mle_eval_mod_q_ligerito_with_virtual_xors(
     alpha: Gf,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigModQXorProof {
-    let (base, p_x, x_geometry) =
-        checked_virtual_xor_geometry(&hint.commitment, layout).expect("valid virtual-XOR layout");
-    checked_mod_q_geometry(&layout.p, q_bits).expect("valid main mod-q geometry");
-    if !xors.is_empty() {
-        checked_mod_q_geometry(&p_x, q_bits).expect("valid virtual-XOR mod-q geometry");
-    }
-    assert_eq!(row_weights_q.len(), base.rows, "main row-weight length");
-    assert!(
-        weights_fit_q_bits(row_weights_q, q_bits),
-        "every main row weight must be < 2^q_bits"
-    );
-    assert!(
-        xors.iter()
-            .all(|claim| claim.row_weights_q.len() == x_geometry.rows
-                && weights_fit_q_bits(claim.row_weights_q, q_bits)),
-        "every virtual-XOR row-weight vector must have the expected length and values < 2^q_bits"
-    );
-    absorb_mod_q_xor_statement(
-        transcript,
-        MOD_Q_XOR_STATEMENT_DOMAIN,
-        &hint.commitment,
-        layout,
-        Some(row_weights_q),
-        q_bits,
-        xors,
-        alpha,
-        pc,
-    );
-    prove_mod_q_lig_xor_after_statement(
+    prove_mod_q_lig_xor_impl(
         transcript,
         hint,
         layout,
@@ -3291,32 +3271,12 @@ pub fn prove_mle_eval_mod_q_ligerito_claims_only(
         !xors.is_empty(),
         "claims-only mode needs at least one virtual claim"
     );
-    let (_, p_x, x_geometry) =
-        checked_virtual_xor_geometry(&hint.commitment, layout).expect("valid virtual-XOR layout");
-    checked_mod_q_geometry(&p_x, q_bits).expect("valid virtual-XOR mod-q geometry");
-    assert!(
-        xors.iter()
-            .all(|claim| claim.row_weights_q.len() == x_geometry.rows
-                && weights_fit_q_bits(claim.row_weights_q, q_bits)),
-        "every virtual-XOR row-weight vector must have the expected length and values < 2^q_bits"
-    );
-    absorb_mod_q_xor_statement(
-        transcript,
-        MOD_Q_XOR_ONLY_STATEMENT_DOMAIN,
-        &hint.commitment,
-        layout,
-        None,
-        q_bits,
-        xors,
-        alpha,
-        pc,
-    );
-    prove_mod_q_lig_xor_after_statement(transcript, hint, layout, None, q_bits, xors, alpha, pc)
+    prove_mod_q_lig_xor_impl(transcript, hint, layout, None, q_bits, xors, alpha, pc)
 }
 
 #[allow(clippy::arithmetic_side_effects)]
 #[allow(clippy::too_many_arguments)]
-fn prove_mod_q_lig_xor_after_statement(
+fn prove_mod_q_lig_xor_impl(
     transcript: &mut (impl Transcript + Send),
     hint: &FlockCommitHint,
     layout: &ShaF2Layout,
@@ -3326,20 +3286,19 @@ fn prove_mod_q_lig_xor_after_statement(
     alpha: Gf,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigModQXorProof {
-    use crate::pcs::{chunk_row_weights, complement_elision, extract_virtual_xor_rows};
+    use crate::pcs::{
+        chunk_row_weights, complement_elision, extract_virtual_xor_rows, mod_q_chunk_width,
+        mod_q_num_chunks, virtual_xor_params,
+    };
     let p = &layout.p;
-    let (base, p_x, x_geometry) =
-        checked_virtual_xor_geometry(&hint.commitment, layout).expect("valid virtual-XOR layout");
-    let (_, c_w, main_lch) = checked_mod_q_geometry(p, q_bits).expect("valid mod-q geometry");
-    assert!(main_rw.map_or(true, |weights| {
-        weights.len() == base.rows && weights_fit_q_bits(weights, q_bits)
-    }));
-    assert!(xors.iter().all(|claim| {
-        claim.row_weights_q.len() == x_geometry.rows
-            && weights_fit_q_bits(claim.row_weights_q, q_bits)
-    }));
-    let lch = main_rw.map_or(0, |_| main_lch);
-    let chunks = main_rw.map_or_else(Vec::new, |rw| chunk_row_weights(rw, c_w, lch));
+    assert_eq!(
+        p.word_bits, 1,
+        "virtual-XOR claims assume the W=1 SHA layout"
+    );
+    let lch = main_rw.map_or(0, |_| mod_q_num_chunks(p, q_bits));
+    let chunks = main_rw.map_or_else(Vec::new, |rw| {
+        chunk_row_weights(rw, mod_q_chunk_width(p), lch)
+    });
 
     // Main chunks — identical to `prove_mle_eval_mod_q_ligerito`.
     let _g_main = crate::utils::prof::scope("mq:main_chunks");
@@ -3382,6 +3341,7 @@ fn prove_mod_q_lig_xor_after_statement(
 
     // Virtual-XOR side: extract each ACTIVE claim's rows, then run ONE
     // batched merged forest per weight chunk of the x tensor.
+    let p_x = virtual_xor_params(layout);
     let (c_w_x, lch_x) = if active.is_empty() {
         (0usize, 0usize)
     } else {
@@ -3390,9 +3350,7 @@ fn prove_mod_q_lig_xor_after_statement(
             "x-claim pre-sumcheck needs t' ≥ 6 (whole-word rows); got t'={}",
             p_x.t
         );
-        let (_, c_w_x, lch_x) =
-            checked_mod_q_geometry(&p_x, q_bits).expect("valid virtual-XOR mod-q geometry");
-        (c_w_x, lch_x)
+        (mod_q_chunk_width(&p_x), mod_q_num_chunks(&p_x, q_bits))
     };
     let mut xor_sides: Vec<VirtXorSide> = xors
         .iter()
@@ -3563,7 +3521,7 @@ fn prove_mod_q_lig_xor_after_statement(
     let _g_lig = crate::utils::prof::scope("mq:lig");
     let lig = ligerito::recursive_prover_with_basis(
         pc,
-        hint.p_msg.clone(),
+        par_clone_f128(&hint.p_msg),
         b_comb,
         gf_to_f128(target),
         &hint.prover_data.codeword,
@@ -3603,13 +3561,11 @@ pub fn verify_mle_eval_mod_q_ligerito_with_virtual_xors<R>(
 where
     R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
 {
-    validate_ligerito_commitment(commitment, vc)?;
-    verify_mod_q_lig_xor_after_statement(
+    verify_mod_q_lig_xor_impl(
         transcript,
         commitment,
         proof,
         layout,
-        Some(MOD_Q_XOR_STATEMENT_DOMAIN),
         Some((row_weights_q, col_weights, claimed)),
         alpha,
         q_bits,
@@ -3636,32 +3592,21 @@ pub fn verify_mle_eval_mod_q_ligerito_claims_only<R>(
 where
     R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
 {
-    validate_ligerito_commitment(commitment, vc)?;
     if xors.is_empty() {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
-    verify_mod_q_lig_xor_after_statement(
-        transcript,
-        commitment,
-        proof,
-        layout,
-        Some(MOD_Q_XOR_ONLY_STATEMENT_DOMAIN),
-        None,
-        alpha,
-        q_bits,
-        xors,
-        vc,
+    verify_mod_q_lig_xor_impl(
+        transcript, commitment, proof, layout, None, alpha, q_bits, xors, vc,
     )
 }
 
 #[allow(clippy::arithmetic_side_effects)]
 #[allow(clippy::too_many_arguments)]
-fn verify_mod_q_lig_xor_after_statement<R>(
+fn verify_mod_q_lig_xor_impl<R>(
     transcript: &mut (impl Transcript + Send),
     commitment: &Commitment,
     proof: &IntEvalRsLigModQXorProof,
     layout: &ShaF2Layout,
-    statement_domain: Option<&[u8]>,
     main: Option<(&[u128], &[R], R)>,
     alpha: Gf,
     q_bits: usize,
@@ -3671,25 +3616,17 @@ fn verify_mod_q_lig_xor_after_statement<R>(
 where
     R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
 {
-    validate_ligerito_commitment(commitment, vc)?;
-    use crate::pcs::{chunk_row_weights, complement_elision, recombine_read_off};
+    use crate::pcs::{
+        chunk_row_weights, complement_elision, mod_q_chunk_width, mod_q_num_chunks,
+        recombine_read_off, virtual_xor_params,
+    };
     let p = &layout.p;
-    let (base, p_x, x_geometry) = checked_virtual_xor_geometry(commitment, layout)?;
-    let (_, c_w, main_lch) = checked_mod_q_geometry(p, q_bits)?;
-    let lch = main.map_or(0, |_| main_lch);
-    if main.is_some_and(|(row_weights, col_weights, _)| {
-        row_weights.len() != base.rows
-            || col_weights.len() != base.cols
-            || !weights_fit_q_bits(row_weights, q_bits)
-    }) || xors.iter().any(|cl| {
-        (cl.cols.is_empty() && cl.constant == 0 && !cl.has_external)
-            || cl.cols.iter().any(|&i| i >= layout.num_cols)
-            || cl.row_weights_q.len() != x_geometry.rows
-            || cl.col_weights.len() != x_geometry.cols
-            || !weights_fit_q_bits(cl.row_weights_q, q_bits)
-    }) {
+    if p.word_bits != 1 {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
+    let c_w = mod_q_chunk_width(p);
+    let lch = main.map_or(0, |_| mod_q_num_chunks(p, q_bits));
+    let p_x = virtual_xor_params(layout);
 
     // Complement elision — the same statement-level partition the prover
     // computed; derived claims carry no machinery.
@@ -3705,11 +3642,7 @@ where
     let (c_w_x, lch_x) = if active.is_empty() {
         (0usize, 0usize)
     } else {
-        if x_geometry.row_bit_vars < 6 {
-            return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
-        }
-        let (_, c_w_x, lch_x) = checked_mod_q_geometry(&p_x, q_bits)?;
-        (c_w_x, lch_x)
+        (mod_q_chunk_width(&p_x), mod_q_num_chunks(&p_x, q_bits))
     };
     let num_xor_rings: usize = active
         .iter()
@@ -3736,25 +3669,13 @@ where
         };
         if (cl.cols.is_empty() && cl.constant == 0 && !cl.has_external)
             || cl.cols.iter().any(|&i| i >= layout.num_cols)
-            || cl.row_weights_q.len() != x_geometry.rows
-            || cl.col_weights.len() != x_geometry.cols
+            || cl.row_weights_q.len() != p_x.rows()
+            || cl.col_weights.len() != p_x.cols()
             || xs.us.len() != expected_us
             || xs.externals.len() != expected_externals
         {
             return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
         }
-    }
-    let x_degrees = vec![2; active.len()];
-    if proof
-        .presums
-        .iter()
-        .any(|presum| !presum.has_shape(row_bit_vars(p), &[2]))
-        || proof
-            .x_presums
-            .iter()
-            .any(|presum| !presum.has_shape(row_bit_vars(&p_x), &x_degrees))
-    {
-        return Err(FlockRsError::Common(IntEvalRsError::PreSumcheck));
     }
 
     // Derived (complement) claims: the base's column weights must match,
@@ -3779,20 +3700,6 @@ where
         if cl_j.claimed + cl_i.claimed != s_row * s_col {
             return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
         }
-    }
-
-    if let Some(domain) = statement_domain {
-        absorb_mod_q_xor_statement(
-            transcript,
-            domain,
-            commitment,
-            layout,
-            main.map(|(row_weights, _, _)| row_weights),
-            q_bits,
-            xors,
-            alpha,
-            vc,
-        );
     }
 
     // Main chunks: range checks + merged-common verify, as before.
@@ -4400,10 +4307,6 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_collapse(
     assert!(!claims.is_empty(), "need at least one claim");
     let p_x = virtual_xor_params(layout);
     assert_eq!(row_weights_q.len(), p_x.rows(), "shared row-weight length");
-    assert!(
-        weights_fit_q_bits(row_weights_q, FQ_BITS),
-        "every shared row weight must be < 2^FQ_BITS"
-    );
     assert_eq!(col_weights.len(), p_x.cols(), "shared col-weight length");
     for cl in claims {
         assert_tap_op(layout, &cl.op);
@@ -4445,7 +4348,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_collapse(
             row_weights_q: &branch_rows[pi],
         })
         .collect();
-    prove_mod_q_lig_xor_after_statement(transcript, hint, layout, None, FQ_BITS, &vx, alpha, pc)
+    prove_mle_eval_mod_q_ligerito_claims_only(transcript, hint, layout, FQ_BITS, &vx, alpha, pc)
 }
 
 /// Verify a uniform-op shared-point collapse (EXPERIMENTAL): derives the
@@ -4464,7 +4367,6 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_collapse(
     alpha: Gf,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
-    validate_ligerito_commitment(commitment, vc)?;
     use crate::pcs::{
         FQ_BITS, FQ_MOD, Fq, fq_add, fq_challenge, fq_mul, mod_q_chunk_width, mod_q_num_chunks,
         recombine_read_off, virtual_xor_params, xor_canonical_cols,
@@ -4479,7 +4381,6 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_collapse(
     let p_x = virtual_xor_params(layout);
     if claims.is_empty()
         || row_weights_q.len() != p_x.rows()
-        || !weights_fit_q_bits(row_weights_q, FQ_BITS)
         || col_weights.len() != p_x.cols()
         || claims.iter().any(|cl| {
             !tap_shape_ok(layout, &cl.op.with_col(0))
@@ -4547,8 +4448,8 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_collapse(
             claimed: ys[pi],
         })
         .collect();
-    let obligations = verify_mod_q_lig_xor_after_statement(
-        transcript, commitment, proof, layout, None, None, alpha, FQ_BITS, &vx, vc,
+    let obligations = verify_mle_eval_mod_q_ligerito_claims_only(
+        transcript, commitment, proof, layout, alpha, FQ_BITS, &vx, vc,
     )?;
     debug_assert!(obligations.is_empty(), "no external terms in the collapse");
     Ok(())
@@ -4706,10 +4607,6 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_composed(
     assert!(!claims.is_empty(), "need at least one claim");
     let p_x = virtual_xor_params(layout);
     assert_eq!(row_weights_q.len(), p_x.rows(), "shared row-weight length");
-    assert!(
-        weights_fit_q_bits(row_weights_q, FQ_BITS),
-        "every shared row weight must be < 2^FQ_BITS"
-    );
     assert_eq!(col_weights.len(), p_x.cols(), "shared col-weight length");
     for cl in claims {
         assert_tap_op(layout, &cl.outer);
@@ -4768,7 +4665,6 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_composed(
     alpha: Gf,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
-    validate_ligerito_commitment(commitment, vc)?;
     use crate::pcs::{
         FQ_BITS, FQ_MOD, Fq, fq_add, fq_challenge, fq_mul, mod_q_chunk_width, mod_q_num_chunks,
         recombine_read_off, virtual_xor_params,
@@ -4784,7 +4680,6 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_composed(
     let p_x = virtual_xor_params(layout);
     if claims.is_empty()
         || row_weights_q.len() != p_x.rows()
-        || !weights_fit_q_bits(row_weights_q, FQ_BITS)
         || col_weights.len() != p_x.cols()
         || claims.iter().any(|cl| {
             !tap_shape_ok(layout, &cl.outer.with_col(0))
@@ -5008,10 +4903,6 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_multiweight(
     assert!(!claims.is_empty(), "need at least one claim");
     let p_x = virtual_xor_params(layout);
     assert_eq!(row_weights_q.len(), p_x.rows(), "shared row-weight length");
-    assert!(
-        weights_fit_q_bits(row_weights_q, FQ_BITS),
-        "every shared row weight must be < 2^FQ_BITS"
-    );
     for cl in claims {
         assert_tap_op(layout, &cl.op);
         assert_collapse_op_delta(layout, &cl.op);
@@ -5045,7 +4936,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_multiweight(
             row_weights_q: &branch_rows[pi],
         })
         .collect();
-    prove_mod_q_lig_xor_after_statement(transcript, hint, layout, None, FQ_BITS, &vx, alpha, pc)
+    prove_mle_eval_mod_q_ligerito_claims_only(transcript, hint, layout, FQ_BITS, &vx, alpha, pc)
 }
 
 /// Verify a multiweight collapse (EXPERIMENTAL): γ-combines each
@@ -5064,7 +4955,6 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_multiweight(
     alpha: Gf,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
-    validate_ligerito_commitment(commitment, vc)?;
     use crate::pcs::{
         FQ_BITS, FQ_MOD, Fq, fq_add, fq_challenge, fq_mul, mod_q_chunk_width, mod_q_num_chunks,
         recombine_read_off, virtual_xor_params, xor_canonical_cols,
@@ -5079,7 +4969,6 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_multiweight(
     let p_x = virtual_xor_params(layout);
     if claims.is_empty()
         || row_weights_q.len() != p_x.rows()
-        || !weights_fit_q_bits(row_weights_q, FQ_BITS)
         || claims.iter().any(|cl| {
             !tap_shape_ok(layout, &cl.op.with_col(0))
                 || !collapse_op_delta_ok(layout, &cl.op)
@@ -5156,8 +5045,8 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_multiweight(
             claimed: ys[pi],
         })
         .collect();
-    let obligations = verify_mod_q_lig_xor_after_statement(
-        transcript, commitment, proof, layout, None, None, alpha, FQ_BITS, &vx, vc,
+    let obligations = verify_mle_eval_mod_q_ligerito_claims_only(
+        transcript, commitment, proof, layout, alpha, FQ_BITS, &vx, vc,
     )?;
     debug_assert!(obligations.is_empty(), "no external terms in the collapse");
     Ok(())
@@ -5325,15 +5214,13 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
     alpha: Gf,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigModQTapProof {
-    use crate::pcs::chunk_row_weights;
+    use crate::pcs::{chunk_row_weights, mod_q_chunk_width, mod_q_num_chunks, virtual_xor_params};
     use crate::taps::{
         assert_tap, assert_tap_layout, extract_virtual_tap_rows, tap_support_tables,
     };
     assert_tap_layout(layout);
     assert!(!claims.is_empty(), "need at least one tap claim");
-    let (_, p_x, x_geometry) =
-        checked_virtual_xor_geometry(&hint.commitment, layout).expect("valid tap layout");
-    let (_, c_w_x, lch_x) = checked_mod_q_geometry(&p_x, q_bits).expect("valid tap mod-q geometry");
+    let p_x = virtual_xor_params(layout);
     assert!(row_bit_vars(&p_x) >= 6, "x-claim pre-sumcheck needs t' ≥ 6");
     for cl in claims {
         for tap in cl.taps {
@@ -5342,12 +5229,8 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
         assert!(!cl.taps.is_empty(), "tap claim needs at least one term");
         assert_eq!(
             cl.row_weights_q.len(),
-            x_geometry.rows,
+            p_x.rows(),
             "tap claim row-weight length"
-        );
-        assert!(
-            weights_fit_q_bits(cl.row_weights_q, q_bits),
-            "every tap row weight must be < 2^q_bits"
         );
     }
     let stmt: Vec<(&[TapOp], &[u128])> = claims
@@ -5355,6 +5238,9 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
         .map(|cl| (cl.taps, cl.row_weights_q))
         .collect();
     absorb_tap_statement(transcript, hint.root(), layout, q_bits, &stmt);
+
+    let c_w_x = mod_q_chunk_width(&p_x);
+    let lch_x = mod_q_num_chunks(&p_x, q_bits);
 
     // Extraction + the batched forests/presums, per binary claim block
     // (one padless forest + presum per (block, chunk); extraction is
@@ -5486,7 +5372,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
     let _g_lig = crate::utils::prof::scope("tap:lig");
     let lig = ligerito::recursive_prover_with_basis(
         pc,
-        hint.p_msg.clone(),
+        par_clone_f128(&hint.p_msg),
         b_comb,
         gf_to_f128(target),
         &hint.prover_data.codeword,
@@ -5518,32 +5404,30 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_claims<R>(
 where
     R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
 {
-    validate_ligerito_commitment(commitment, vc)?;
-    use crate::pcs::{chunk_row_weights, recombine_read_off};
+    use crate::pcs::{
+        chunk_row_weights, mod_q_chunk_width, mod_q_num_chunks, recombine_read_off,
+        virtual_xor_params,
+    };
     use crate::taps::{residual_b_evals_tap, tap_closure_desc};
     let p = &layout.p;
-    let (_, p_x, x_geometry) = checked_virtual_xor_geometry(commitment, layout)?;
-    let tap_pack_ok = layout
-        .tw
-        .checked_add(layout.log_cols)
-        .is_some_and(|width| width >= LOG_PACKING);
     if p.word_bits != 1
         || layout.x_fold_extra >= p.s
         || (layout.x_fold_extra > 0 && layout.bit_vars.wrapping_add(layout.tw) < 6)
-        || !tap_pack_ok
+        || layout.tw + layout.log_cols < 7
     {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
     if claims.is_empty() {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
-    let (_, c_w_x, lch_x) = checked_mod_q_geometry(&p_x, q_bits)?;
+    let p_x = virtual_xor_params(layout);
+    let c_w_x = mod_q_chunk_width(&p_x);
+    let lch_x = mod_q_num_chunks(&p_x, q_bits);
     for cl in claims {
         if cl.taps.iter().any(|t| !tap_shape_ok(layout, t))
             || cl.taps.is_empty()
-            || cl.row_weights_q.len() != x_geometry.rows
-            || cl.col_weights.len() != x_geometry.cols
-            || !weights_fit_q_bits(cl.row_weights_q, q_bits)
+            || cl.row_weights_q.len() != p_x.rows()
+            || cl.col_weights.len() != p_x.cols()
         {
             return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
         }
@@ -6319,7 +6203,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
     let _g_l = crate::utils::prof::scope("tapf:lig");
     let lig = ligerito::recursive_prover_with_basis(
         pc,
-        hint.p_msg.clone(),
+        par_clone_f128(&hint.p_msg),
         b_comb,
         gf_to_f128(target),
         &hint.prover_data.codeword,
@@ -6348,7 +6232,6 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_family(
     alpha: Gf,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
-    validate_ligerito_commitment(commitment, vc)?;
     use crate::merged_forest::verify_merged_forest;
     use crate::pcs::{
         FQ_BITS, FixedBasePow, Fq, fq_add, fq_challenge, fq_mul, is_generator, mod_q_chunk_width,
@@ -6421,16 +6304,6 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_family(
         let mut mus_s1 = Vec::with_capacity(lch_x);
         let mut mus_ge2 = Vec::with_capacity(lch_x);
         for (l, chunk_w) in case_chunks_all[ci].iter().enumerate() {
-            let case_pow = rlc_case_pow_table(chunk_w, alpha);
-            let taus = rlc_tau_tables(&case_pow);
-            let active = rlc_active_channels(&taus);
-            let expected_degrees = vec![2; active.len()];
-            if active.is_empty()
-                || active.iter().any(|s| s.count_ones() > 4)
-                || !side.presums[l].has_shape(t_x, &expected_degrees)
-            {
-                return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
-            }
             for (c, &u) in side.us[l].iter().enumerate() {
                 if u >= bound {
                     return Err(FlockRsError::ChunkRange { chunk: l, col: c });
@@ -6439,10 +6312,19 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_family(
             let roots: Vec<Gf> = side.us[l].iter().map(|&u| comb.pow(u)).collect();
             let (z, e_d) = verify_merged_forest(transcript, &roots, &side.mfs[l], t_x, p_x.s)
                 .map_err(|_| FlockRsError::Common(IntEvalRsError::Forest))?;
+            // Statement-side channel structure first: it pins the presum's
+            // expected group count and degrees (all cascade groups are
+            // degree 2).
+            let case_pow = rlc_case_pow_table(chunk_w, alpha);
+            let taus = rlc_tau_tables(&case_pow);
+            let active = rlc_active_channels(&taus);
+            if active.is_empty() || active.iter().any(|s| s.count_ones() > 4) {
+                return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+            }
             let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(
                 transcript,
                 t_x,
-                &expected_degrees,
+                &vec![2; active.len()],
                 &side.presums[l],
                 &(),
             )
@@ -8028,7 +7910,7 @@ fn prove_rlc_families_closure(
     let _g_l = crate::utils::prof::scope("rlc:lig");
     ligerito::recursive_prover_with_basis(
         pc,
-        hint.p_msg.clone(),
+        par_clone_f128(&hint.p_msg),
         b_comb,
         gf_to_f128(target),
         &hint.prover_data.codeword,
@@ -8059,7 +7941,6 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
     alpha: Gf,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
-    validate_ligerito_commitment(commitment, vc)?;
     use crate::pcs::{
         FQ_BITS, FQ_MOD, Fq, fq_challenge, mod_q_chunk_width, mod_q_num_chunks, rlc_case_weights,
         rlc_chunk_case_weights, virtual_xor_params,
@@ -8160,7 +8041,6 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
     alpha: Gf,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
-    validate_ligerito_commitment(commitment, vc)?;
     use crate::pcs::{
         FQ_BITS, FQ_MOD, Fq, fq_challenge, mod_q_chunk_width, mod_q_num_chunks,
         rlc_case_weights_shared_point, rlc_chunk_case_weights, rlc_gamma_cases, virtual_xor_params,
@@ -8251,7 +8131,6 @@ fn verify_rlc_family_core(
     alpha: Gf,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
-    validate_ligerito_commitment(commitment, vc)?;
     let part = RlcPartView {
         mfs: &proof.mfs,
         us: &proof.us,
@@ -8341,19 +8220,6 @@ fn verify_rlc_family_front(
     let mut mus_ge2: Vec<Vec<Gf>> = Vec::with_capacity(lch_x); // [l][active-ge2 idx]
     let mut actives: Vec<Vec<usize>> = Vec::with_capacity(lch_x);
     for (l, chunk_w) in case_chunks.iter().enumerate() {
-        // The O(2^j·2^{t'}) step: case powers → τ_S → the ACTIVE
-        // channels. Pin their proof shape before the forest or sumcheck can
-        // consume any further Fiat–Shamir state.
-        let case_pow = {
-            let _g = crate::utils::prof::scope("rlcv:pows");
-            rlc_case_pow_table(chunk_w, alpha)
-        };
-        let taus = rlc_tau_tables(&case_pow);
-        let active = rlc_active_channels(&taus);
-        let expected_degrees = vec![2; active.len()];
-        if active.is_empty() || !part.presums[l].has_shape(t_x, &expected_degrees) {
-            return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
-        }
         for (c, &u) in part.us[l].iter().enumerate() {
             if u >= bound {
                 return Err(FlockRsError::ChunkRange { chunk: l, col: c });
@@ -8365,16 +8231,27 @@ fn verify_rlc_family_front(
         };
         let (z, e_d) = verify_merged_forest(transcript, &roots, &part.mfs[l], t_x, p_x.s)
             .map_err(|_| FlockRsError::Common(IntEvalRsError::Forest))?;
+        // The O(2^j·2^{t'}) step first — statement-side: case powers → τ_S →
+        // the ACTIVE channels (zero channels are elided on both sides). The
+        // active set pins the presum's expected group count and degrees
+        // (all cascade groups are degree 2).
+        let case_pow = {
+            let _g = crate::utils::prof::scope("rlcv:pows");
+            rlc_case_pow_table(chunk_w, alpha)
+        };
+        let taus = rlc_tau_tables(&case_pow);
+        let active = rlc_active_channels(&taus);
+        if active.is_empty() {
+            return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+        }
         let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(
             transcript,
             t_x,
-            &expected_degrees,
+            &vec![2; active.len()],
             &part.presums[l],
             &(),
         )
         .map_err(|_| FlockRsError::Common(IntEvalRsError::PreSumcheck))?;
-        // Zero channels are elided on both sides; evaluate each active
-        // R̂_S(r*) residual at the shared sumcheck point.
         let sums = part.presums[l].claimed_sums();
         if sums.len() != active.len() {
             return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
@@ -8625,7 +8502,6 @@ fn verify_rlc_families_closure(
     parts: &[(&[RingSwitchProof], &[Vec<Gf>])],
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
-    validate_ligerito_commitment(commitment, vc)?;
     use crate::poly::utils::build_eq_x_r_vec;
     let n_rings: usize = parts.iter().map(|(r, _)| r.len()).sum();
     let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
@@ -8831,7 +8707,6 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_families_shared_point(
     alpha: Gf,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
-    validate_ligerito_commitment(commitment, vc)?;
     use crate::pcs::{
         FQ_BITS, FQ_MOD, Fq, fq_challenge, mod_q_chunk_width, mod_q_num_chunks, recombine_read_off,
         rlc_case_weights_shared_point, rlc_chunk_case_weights, rlc_gamma_cases, virtual_xor_params,
@@ -9373,6 +9248,1044 @@ impl IntEvalRsLigExtProof {
 }
 
 // ---------------------------------------------------------------------
+// F₂-VIRTUALIZATION (paper `s:to_f2_virtual` / `s:virtualization`,
+// construction `c:virtual_iop`): open a mod-q claim about the DERIVED
+// vector `h = M·f` over `F₂` against the commitment to `f` alone. `M` is
+// a public sparse [`F2CellMap`] between the two bit-cell grids; `h` is
+// never committed.
+//
+// Pipeline (the paper's "run `c:core_iop` until Phase 3, then transpose",
+// closed by the ring switch for ARBITRARY inner products — the batching
+// protocol of appendix `a:ring_switch_remco` §"Extension openings",
+// instantiated with the §"Coefficient projection" embedding):
+//
+//   1. The prover materializes `h`'s bit rows and runs the ORDINARY
+//      per-chunk machinery on them — integer chunk folds `us`, merged
+//      product forests, de-black-boxing pre-sumchecks
+//      ([`prove_int_eval_merged_common`]) — with `p_h` geometry. Nothing
+//      here touches the oracle: the verifier recomputes the roots from
+//      the sent `us` and is left with per-chunk residual claims
+//      `ĥ(pt_l) = μ_l` about the (uncommitted) derived bit-MLE.
+//   2. Both sides draw η's and transpose through `Mᵀ` at the commitment
+//      field (char 2, where XOR is addition): `h := Σ_l η_l·μ_l =
+//      ⟨W, f⟩_K` with `W := Σ_l η_l·Mᵀ eq(pt_l)` over `f`'s cells —
+//      the appendix's `⟨w, a⟩_E = h` with `F = F₂`, `E = K`, `w = f`,
+//      `a = W`. The embedding triple is `W = Id` (the commitment already
+//      packs cells in the MONOMIAL basis, bit `v` ↔ `X^v`), `H = c₀`,
+//      and `A` = the `μ_H`-dual basis ([`crate::dual_basis`]:
+//      reversal of the `v ≥ 1` coordinates + seven GHASH corrections).
+//   3. Batching protocol: the prover sends the d = 128 dual-packed plane
+//      inner products `h_i = ⟨pack(f), A(a_i)⟩_K` (`a_i` = bit-plane `i`
+//      of the weights; tag 0x48). The verifier checks step 3,
+//      `Σ_i c₀(h_i)·X^i = h`, draws the zero-evader `ρ` (LOG_PACKING
+//      challenges, eq-expanded to `K^128` — the ring-switch `r″`
+//      convention, RBR error ≤ LOG_PACKING/|K|), and both sides reduce
+//      to the ONE native Ligerito inner product
+//      `⟨pack(f), a′⟩_K = h′ := Σ_i ρ_i·h_i`, with
+//      `a′(y) = Σ_v Φ_ρ(W_{(v,y)})·A(e_v)`. No bridge sumcheck, no
+//      point opening, no division anywhere (`f₀ = 1`).
+//
+// Both sides exploit the same char-2 reassociations (exact — XOR is
+// K-addition): with `E_r := Σ_l η_l·eq_{bits(r)}(pt_l)` per derived
+// cell and `G_r := Σ_{j ∈ row(r)} pack(f)[y_j]·A(e_{v_j})`,
+//
+//      h_i = Σ_r bit_i(E_r)·G_r,
+//      a′(y) = Σ_r Φ_ρ(E_r)·Σ_{j ∈ row(r), y_j = y} A(e_{v_j}),
+//
+// so neither `W` nor any `f`-side table is ever materialized: the prover
+// streams `M`'s nonempty rows twice (`O(#rows + nnz)` K-ops each pass),
+// and the verifier builds the SAME dense `a′` once
+// (`O(#rows + nnz + 2^{m_p})` K-ops) and answers the Ligerito residual
+// hook by MLE-folding it.
+//
+// IDENTITY FAST PATH: when `M` is the identity and both grids share one
+// row layout ([`virtual_id_fast_eligible`]), `h`'s bit rows ARE `f`'s
+// and every per-chunk claim is a claim on `f`'s own flat bit-MLE — the
+// prover skips apply/pack and both batching passes entirely and runs
+// the BASE opening ([`prove_mle_eval_mod_q_ligerito`]'s tail: per-chunk
+// eq ring-switch `s_v`, shared `r″`, η-batched Ligerito) after the same
+// v2 statement absorb, emitting the [`VirtOpenTail::Eq`] tail. The
+// switch `F2Z_VIRT_ID_FAST` (default ON, `=0` disables) is PROVER-side
+// only: on an eligible statement the verifier accepts either tail (each
+// is an individually sound reduction of the same claim — with `h = f`
+// the eq-tensor weights are exactly the base path's); on any other
+// statement the eq tail is rejected as a shape error, since there the
+// base verification would bind `f̂(pt_l)` where the claim is
+// `(M·f)ˆ(pt_l)`.
+//
+// Soundness chain (informal; mirrors the base path plus two fresh
+// terms): the forests bind the sent `us` as exponent folds of whatever
+// row data underlies the leaves, and each pre-sumcheck + `R̂(r*)`
+// division pins `μ_l` as that data's bit-MLE value at the random exit
+// point `pt_l` — exactly as in the base path. The Ligerito call binds
+// `⟨pack(f), a′⟩ = h′` for the COMMITTED `f` with `a′` derived from the
+// statement alone, so if any sent `h_i` differs from its true value the
+// ρ-batch accepts with probability ≤ LOG_PACKING/|K| (the eq-tensor
+// zero-evader ε of the batching protocol — account it next to the
+// η-batch error `L/|K|`). With all `h_i` true, step 3 IS
+// `Σ_l η_l μ_l = ⟨W, f⟩` (the bilinear-embedding identity
+// `⟨a_i, f⟩_{F₂} = c₀(h_i)` blockwise, paper theorem "Structure of
+// bilinear embeddings"), i.e. `μ_l = (M·f)ˆ(pt_l)` for every chunk
+// except with probability `≈ (L + LOG_PACKING)/|K|`. From there the base
+// path's argument applies verbatim with `h := M·f`. The statement
+// (commitment root, both geometries, `M`'s digest, the row weights,
+// `q_bits`, α) is digest-absorbed before any challenge, so the new API
+// is self-binding.
+// ---------------------------------------------------------------------
+
+/// The virtual opening's closing messages after the per-chunk claims —
+/// which of the two (individually sound) tails the prover ran.
+#[derive(Clone)]
+pub enum VirtOpenTail {
+    /// General `M`: the dual-basis batching message
+    /// `hs[i] = ⟨pack(f), A(a_i)⟩_K` for bit-plane `i` of the transposed
+    /// weights (always 128 elements), followed by the ρ-batched call.
+    Batch { hs: Vec<Gf> },
+    /// Identity-`M` fast path (`h = f` cell for cell, same row layout):
+    /// the BASE path's per-chunk eq ring-switch messages — no `h`
+    /// materialization, no batching passes. The verifier accepts this
+    /// tail only when the statement is eligible (see
+    /// [`virtual_id_fast_eligible`]).
+    Eq { rings: Vec<RingSwitchProof> },
+}
+
+/// End-to-end proof of a mod-q claim on the derived vector `h = M·f`:
+/// per-chunk forests/folds/pre-sumchecks on `h` (`p_h` geometry), then
+/// one of the two closing tails ([`VirtOpenTail`]) and the ONE Ligerito
+/// call on `f`'s commitment.
+#[derive(Clone)]
+pub struct IntEvalRsLigVirtProof {
+    /// Per weight chunk: the merged product forest on `h`.
+    pub mfs: Vec<MergedForestProof>,
+    /// `us[l]` = the `2^{s_h}` chunk folds `u_c^{(l)}` of `h`.
+    pub us: Vec<Vec<u128>>,
+    /// Per weight chunk: the de-black-boxing pre-sumcheck on `h`.
+    pub presums: Vec<MultiDegreeSumcheckProof<Gf>>,
+    /// The closing messages (general dual-basis batch, or the
+    /// identity-`M` eq ring switch).
+    pub tail: VirtOpenTail,
+    /// The Ligerito opening (`⟨pack(f), a′⟩ = h′` for the batch tail;
+    /// the base path's η-batched call for the eq tail).
+    pub lig: LigeritoProof,
+}
+
+/// Whether the STATEMENT admits the identity fast path: `M` is the
+/// identity and both grids share one row layout (`t + log₂W` and `s`
+/// equal), so `h`'s bit rows ARE `f`'s and every per-chunk claim is a
+/// claim on `f`'s own flat bit-MLE. Deterministic in the statement —
+/// prover and verifier need no coordination.
+pub fn virtual_id_fast_eligible(
+    map: &crate::f2map::F2CellMap,
+    p_h: &IntEvalParams,
+    p_f: &IntEvalParams,
+) -> bool {
+    use crate::f2map::cell_row_bits;
+    map.is_identity() && cell_row_bits(p_h) == cell_row_bits(p_f) && p_h.s == p_f.s
+}
+
+/// The identity fast-path switch (default ON; `F2Z_VIRT_ID_FAST=0`
+/// disables). PROVER-side only: it selects which tail is produced on an
+/// eligible statement; the verifier accepts either tail there (both are
+/// sound), so no cross-process agreement is needed. Read per call so
+/// tests can toggle it.
+fn virt_id_fast() -> bool {
+    std::env::var("F2Z_VIRT_ID_FAST").map_or(true, |v| v != "0")
+}
+
+/// Digest-absorbs the virtual opening's complete statement before any
+/// challenge is drawn: commitment root and geometry, both cell shapes,
+/// the map digest, the claimed row weights, `q_bits`, and `α`.
+fn absorb_virtual_statement(
+    transcript: &mut impl Transcript,
+    commitment: &Commitment,
+    p_h: &IntEvalParams,
+    p_f: &IntEvalParams,
+    map: &crate::f2map::F2CellMap,
+    row_weights_q: &[u128],
+    q_bits: usize,
+    alpha: Gf,
+) -> BoundModQStatement {
+    let mut hash = blake3::Hasher::new();
+    // v2: the dual-basis batching protocol (h_i message + ρ-batched
+    // Ligerito call) replaced the bridge sumcheck + point opening.
+    hash.update(b"f2z/mod-q-virtual-statement/v2");
+    hash.update(&commitment.root);
+    for v in [
+        commitment.params.m,
+        commitment.params.log_inv_rate,
+        commitment.params.log_batch_size,
+        p_h.t,
+        p_h.s,
+        p_h.word_bits,
+        p_f.t,
+        p_f.s,
+        p_f.word_bits,
+        q_bits,
+        row_weights_q.len(),
+    ] {
+        hash.update(&(v as u64).to_le_bytes());
+    }
+    hash.update(&map.digest());
+    for w in row_weights_q {
+        hash.update(&w.to_le_bytes());
+    }
+    let aw = alpha.words();
+    hash.update(&aw[0].to_le_bytes());
+    hash.update(&aw[1].to_le_bytes());
+    let mut frame = Vec::with_capacity(33);
+    frame.push(0x56u8); // 'V'
+    frame.extend_from_slice(hash.finalize().as_bytes());
+    transcript.absorb_slice(&frame);
+    BoundModQStatement::new()
+}
+
+/// The η-combined per-derived-cell transpose coefficients
+/// `E_r = Σ_l η_l·eq_{bits(r)}(pt_l)`, factored over the (row, column)
+/// split of `r`'s flat index with the η's folded into the column tables
+/// once — one product per (cell, chunk), exactly the old `mqv:wcoef`
+/// formula, now evaluated on demand instead of materialized.
+struct VirtRowCoeffs {
+    eq_rs: Vec<Vec<Gf>>,
+    scaled_zc: Vec<Vec<Gf>>,
+    t_wh: usize,
+    h_mask: usize,
+}
+
+impl VirtRowCoeffs {
+    #[allow(clippy::arithmetic_side_effects)]
+    fn new(points: &[Vec<Gf>], etas: &[Gf], t_wh: usize) -> Self {
+        use crate::poly::utils::build_eq_x_r_vec;
+        let eq_rs: Vec<Vec<Gf>> = points
+            .iter()
+            .map(|pt| build_eq_x_r_vec(&pt[..t_wh], &()).expect("t_wh >= 1"))
+            .collect();
+        let scaled_zc: Vec<Vec<Gf>> = points
+            .iter()
+            .zip(etas.iter())
+            .map(|(pt, &eta)| {
+                build_eq_x_r_vec(&pt[t_wh..], &())
+                    .expect("s_h >= 1")
+                    .into_iter()
+                    .map(|x| eta * x)
+                    .collect()
+            })
+            .collect();
+        Self {
+            eq_rs,
+            scaled_zc,
+            t_wh,
+            h_mask: (1usize << t_wh) - 1,
+        }
+    }
+
+    #[allow(clippy::arithmetic_side_effects)]
+    #[inline]
+    fn coeff(&self, r: usize) -> Gf {
+        let (c, b) = (r >> self.t_wh, r & self.h_mask);
+        let mut acc = Gf::zero();
+        for (l, zc) in self.scaled_zc.iter().enumerate() {
+            acc += self.eq_rs[l][b] * zc[c];
+        }
+        acc
+    }
+}
+
+/// One 16-row block of the `h_i` scatter, method-of-four-Russians: four
+/// 16-entry subset-sum tables over the `G_r` values, then per byte
+/// position two 8×8 bit transposes of the `E_r` patterns and per output
+/// bit four lookups + three adds + ONE accumulator RMW — halving the
+/// per-bit RMW count of the 8-row block at the same table-build cost
+/// ([`sv_fold_mfr`]'s kernel widened; exact field sums either way).
+#[allow(clippy::arithmetic_side_effects)]
+#[inline]
+fn hs_scatter_block16(s: &mut [Gf; 128], wits: &[[u64; 2]; 16], vals: &[Gf; 16]) {
+    use crate::ligerito::{subset_sums_4, transpose_8x8_bits};
+    let t0 = subset_sums_4([vals[0], vals[1], vals[2], vals[3]]);
+    let t1 = subset_sums_4([vals[4], vals[5], vals[6], vals[7]]);
+    let t2 = subset_sums_4([vals[8], vals[9], vals[10], vals[11]]);
+    let t3 = subset_sums_4([vals[12], vals[13], vals[14], vals[15]]);
+    let mut m_bytes = [[0u8; 16]; 16];
+    for (e, slot) in m_bytes.iter_mut().enumerate() {
+        slot[..8].copy_from_slice(&wits[e][0].to_le_bytes());
+        slot[8..].copy_from_slice(&wits[e][1].to_le_bytes());
+    }
+    for r_byte in 0..16 {
+        let lo8: u64 = (m_bytes[0][r_byte] as u64)
+            | ((m_bytes[1][r_byte] as u64) << 8)
+            | ((m_bytes[2][r_byte] as u64) << 16)
+            | ((m_bytes[3][r_byte] as u64) << 24)
+            | ((m_bytes[4][r_byte] as u64) << 32)
+            | ((m_bytes[5][r_byte] as u64) << 40)
+            | ((m_bytes[6][r_byte] as u64) << 48)
+            | ((m_bytes[7][r_byte] as u64) << 56);
+        let hi8: u64 = (m_bytes[8][r_byte] as u64)
+            | ((m_bytes[9][r_byte] as u64) << 8)
+            | ((m_bytes[10][r_byte] as u64) << 16)
+            | ((m_bytes[11][r_byte] as u64) << 24)
+            | ((m_bytes[12][r_byte] as u64) << 32)
+            | ((m_bytes[13][r_byte] as u64) << 40)
+            | ((m_bytes[14][r_byte] as u64) << 48)
+            | ((m_bytes[15][r_byte] as u64) << 56);
+        let tb_lo = transpose_8x8_bits(lo8).to_le_bytes();
+        let tb_hi = transpose_8x8_bits(hi8).to_le_bytes();
+        let base = r_byte * 8;
+        for p in 0..8usize {
+            let m0 = tb_lo[p];
+            let m1 = tb_hi[p];
+            s[base + p] += (t0[(m0 & 0x0F) as usize] + t1[(m0 >> 4) as usize])
+                + (t2[(m1 & 0x0F) as usize] + t3[(m1 >> 4) as usize]);
+        }
+    }
+}
+
+/// The batching message `h_i = Σ_r bit_i(E_r)·G_r`,
+/// `G_r = Σ_{j ∈ row(r)} pack(f)[j >> 7]·A(e_{j & 127})` — one streaming
+/// pass over `M`'s nonempty rows (`O(#rows + nnz)` K-ops), chunk-parallel
+/// with per-chunk partial accumulators merged by field addition (exact,
+/// order-independent). Neither `W` nor the coefficient table exists.
+#[allow(clippy::arithmetic_side_effects)]
+fn virtual_hs_fold(
+    map: &crate::f2map::F2CellMap,
+    coeffs: &VirtRowCoeffs,
+    p_msg: &[F128],
+    a_cols: &[Gf; 128],
+) -> Vec<Gf> {
+    let (offs_all, entries) = map.csr();
+    const CHUNK: usize = 1 << 13;
+    let n_chunks = map.rows().div_ceil(CHUNK).max(1);
+    let partials: Vec<[Gf; 128]> = cfg_into_iter!(0..n_chunks)
+        .map(|ci| {
+            let lo = ci * CHUNK;
+            let hi = (lo + CHUNK).min(map.rows());
+            let mut s = [Gf::zero(); 128];
+            let mut wits = [[0u64; 2]; 16];
+            let mut vals = [Gf::zero(); 16];
+            let mut fill = 0usize;
+            // Single-chunk (L = 1) fast path: within a column run the
+            // scaled entry is a pass-fixed multiplier — hoist its
+            // preprocessed 5-PMULL form ([`FixedGfMul`], value-exact)
+            // and refresh it only at column boundaries.
+            let single = coeffs.scaled_zc.len() == 1;
+            let mut cur_c = usize::MAX;
+            let mut zc_fix = FixedGfMul::new(Gf::zero());
+            // Stream the CSR offsets: one load per row, reused as the
+            // next row's start.
+            let mut start = offs_all[lo];
+            for r in lo..hi {
+                let end = offs_all[r + 1];
+                let row_start = start;
+                start = end;
+                if end == row_start {
+                    continue;
+                }
+                let sources = &entries[row_start as usize..end as usize];
+                // `G_r = Σ_j A(e_{v_j})·pack(f)[y_j]` through the
+                // preprocessed dual-basis columns (value-exact; the
+                // single-source shortcut is `0 + x = x`).
+                let g = if let [j] = sources {
+                    let j = *j as usize;
+                    f128_to_gf(p_msg[j >> LOG_PACKING]) * a_cols[j & 127]
+                } else {
+                    let mut g = Gf::zero();
+                    for &j in sources {
+                        let j = j as usize;
+                        g += f128_to_gf(p_msg[j >> LOG_PACKING]) * a_cols[j & 127];
+                    }
+                    g
+                };
+                let e_r = if single {
+                    let c = r >> coeffs.t_wh;
+                    if c != cur_c {
+                        cur_c = c;
+                        zc_fix = FixedGfMul::new(coeffs.scaled_zc[0][c]);
+                    }
+                    zc_fix.mul(coeffs.eq_rs[0][r & coeffs.h_mask])
+                } else {
+                    coeffs.coeff(r)
+                };
+                wits[fill] = *e_r.words();
+                vals[fill] = g;
+                fill += 1;
+                if fill == 16 {
+                    hs_scatter_block16(&mut s, &wits, &vals);
+                    fill = 0;
+                }
+            }
+            for k in 0..fill {
+                crate::ligerito::sv_scalar_accum(&mut s, wits[k], vals[k]);
+            }
+            s
+        })
+        .collect();
+    let mut s = vec![Gf::zero(); 128];
+    for part in &partials {
+        for (a, b) in s.iter_mut().zip(part.iter()) {
+            *a += *b;
+        }
+    }
+    s
+}
+
+/// The ρ-batched dual-basis Ligerito basis, dense over the `2^{m_p}`
+/// packs: `a′(y) = Σ_r Φ_ρ(E_r)·Σ_{j ∈ row(r), j >> 7 = y} A(e_{j&127})`
+/// — one streaming pass over `M`'s nonempty rows
+/// (`O(#rows + nnz + 2^{m_p})` K-ops), range-parallel with per-range
+/// partial vectors merged by field addition. Prover and verifier BOTH
+/// call this, so the opened basis is identical by construction.
+///
+/// (A per-slot PREMULTIPLIED-table variant — `phi_byte_tables(ρ, A(e_v))`
+/// per source slot, saving the per-nonzero product — was measured SLOWER
+/// at the 2^15 CM shape: the 8 MB table set evicts the one L1-resident
+/// 64 KB Φ table the plain path gathers from. Values are identical
+/// either way, so this is purely a schedule choice.)
+#[allow(clippy::arithmetic_side_effects)]
+fn virtual_a_prime(
+    map: &crate::f2map::F2CellMap,
+    coeffs: &VirtRowCoeffs,
+    rho: &[Gf],
+    a_cols: &[Gf; 128],
+    n_packs: usize,
+) -> Vec<Gf> {
+    let phi_tables = phi_byte_tables(rho, Gf::one());
+    // Few large ranges: each carries a full-size partial vector.
+    let n_ranges = map.rows().div_ceil(1 << 18).clamp(1, 16);
+    let per = map.rows().div_ceil(n_ranges).max(1);
+    let partials: Vec<Vec<Gf>> = cfg_into_iter!(0..n_ranges)
+        .map(|ri| {
+            let lo = ri * per;
+            let hi = (lo + per).min(map.rows());
+            let mut a = vec![Gf::zero(); n_packs];
+            for r in lo..hi {
+                let sources = map.row(r);
+                if sources.is_empty() {
+                    continue;
+                }
+                let phi = phi_from_words(*coeffs.coeff(r).words(), &phi_tables);
+                for &j in sources {
+                    let j = j as usize;
+                    a[j >> LOG_PACKING] += phi * a_cols[j & 127];
+                }
+            }
+            a
+        })
+        .collect();
+    let mut iter = partials.into_iter();
+    let mut a = iter.next().expect("at least one range");
+    for part in iter {
+        for (acc, p) in a.iter_mut().zip(part.iter()) {
+            *acc += *p;
+        }
+    }
+    a
+}
+
+/// PROVER-side twin of [`virtual_a_prime`]: the same values (pinned by
+/// `virtual_hs_and_a_prime_match_cellwise` and every roundtrip test —
+/// prover basis and verifier basis must agree or Ligerito rejects),
+/// with the CSR offsets streamed and both multiplies routed through the
+/// fixed-scalar kernels ([`PreppedRowCoeffs`], preprocessed `A(e_v)`
+/// columns). The verifier keeps calling [`virtual_a_prime`] — this fork
+/// exists so prover tuning cannot touch the verifier's code path.
+#[allow(clippy::arithmetic_side_effects)]
+fn virtual_a_prime_prover(
+    map: &crate::f2map::F2CellMap,
+    coeffs: &VirtRowCoeffs,
+    rho: &[Gf],
+    a_cols: &[Gf; 128],
+    n_packs: usize,
+) -> Vec<Gf> {
+    let phi_tables = phi_byte_tables(rho, Gf::one());
+    let (offs_all, entries) = map.csr();
+    // Few large ranges: each carries a full-size partial vector.
+    let n_ranges = map.rows().div_ceil(1 << 18).clamp(1, 16);
+    let per = map.rows().div_ceil(n_ranges).max(1);
+    let partials: Vec<Vec<Gf>> = cfg_into_iter!(0..n_ranges)
+        .map(|ri| {
+            let lo = ri * per;
+            let hi = (lo + per).min(map.rows());
+            let mut a = vec![Gf::zero(); n_packs];
+            if lo >= hi {
+                return a;
+            }
+            // (The hs fold's hoisted fixed-scalar coefficient was tried
+            // here too and measured a slight LOSS — this loop is
+            // Φ-gather-bound, and the extra multiplier state hurts
+            // register pressure. Values identical either way.)
+            let mut start = offs_all[lo];
+            for r in lo..hi {
+                let end = offs_all[r + 1];
+                let row_start = start;
+                start = end;
+                if end == row_start {
+                    continue;
+                }
+                let phi = phi_from_words(*coeffs.coeff(r).words(), &phi_tables);
+                for &j in &entries[row_start as usize..end as usize] {
+                    let j = j as usize;
+                    a[j >> LOG_PACKING] += phi * a_cols[j & 127];
+                }
+            }
+            a
+        })
+        .collect();
+    let mut iter = partials.into_iter();
+    let mut a = iter.next().expect("at least one range");
+    for part in iter {
+        for (acc, p) in a.iter_mut().zip(part.iter()) {
+            *acc += *p;
+        }
+    }
+    a
+}
+
+/// Prove `Σ_c w'_c·(Σ_b rw[b]·h_{b,c}) = y ∈ 𝔽_q` for the derived vector
+/// `h = M·f`, against the commitment to `f` (`hint_f`). Same claim shape
+/// as [`prove_mle_eval_mod_q_ligerito`], with `h` in `p_h` geometry —
+/// `row_weights_q[b] ∈ [0, 2^q_bits)` over `h`'s `2^{t_h}` rows.
+#[allow(clippy::arithmetic_side_effects)]
+pub fn prove_mle_eval_mod_q_ligerito_virtual(
+    transcript: &mut (impl Transcript + Send),
+    hint_f: &FlockCommitHint,
+    p_h: &IntEvalParams,
+    p_f: &IntEvalParams,
+    map: &crate::f2map::F2CellMap,
+    row_weights_q: &[u128],
+    q_bits: usize,
+    alpha: Gf,
+    pc: &LigProverConfig,
+) -> IntEvalRsLigVirtProof {
+    use crate::f2map::{cell_count, cell_row_bits};
+    use crate::poly::utils::build_eq_x_r_vec;
+
+    let t_wh = cell_row_bits(p_h);
+    let t_wf = cell_row_bits(p_f);
+    assert_eq!(map.rows(), cell_count(p_h), "map rows must match p_h cells");
+    assert_eq!(map.cols(), cell_count(p_f), "map cols must match p_f cells");
+    assert_eq!(row_weights_q.len(), p_h.rows(), "row-weight length");
+    assert_eq!(
+        hint_f.commitment.params.m,
+        t_wf + p_f.s,
+        "commitment geometry must match p_f"
+    );
+    validate_ligerito_commitment(&hint_f.commitment, pc)
+        .expect("commitment metadata must match the Ligerito config");
+    let chunks = ModQWeightChunks::from_dense(p_h, row_weights_q, q_bits)
+        .expect("q_bits must be in [1, 126] and every row weight must be < 2^q_bits");
+    let lch = chunks.len();
+
+    let bound_statement = {
+        let _g = crate::utils::prof::scope("mqv:stmt");
+        absorb_virtual_statement(
+            transcript,
+            &hint_f.commitment,
+            p_h,
+            p_f,
+            map,
+            row_weights_q,
+            q_bits,
+            alpha,
+        )
+    };
+
+    // Identity fast path: `h = f` (same cells, same row layout), so the
+    // whole derived-vector machinery — apply/pack, the `h_i` fold, the
+    // `a′` build — is skipped and the BASE opening runs on `f`'s own
+    // rows under `p_h`'s claim shape (the flat bit-MLE is
+    // layout-agnostic, and the layouts coincide here anyway).
+    if virtual_id_fast_eligible(map, p_h, p_f) && virt_id_fast() {
+        let _g = crate::utils::prof::scope("mqv:idfast");
+        let base = prove_mle_eval_mod_q_ligerito_after_statement(
+            transcript,
+            hint_f,
+            p_h,
+            &chunks,
+            alpha,
+            pc,
+            bound_statement,
+        );
+        return IntEvalRsLigVirtProof {
+            mfs: base.mfs,
+            us: base.us,
+            presums: base.presums,
+            tail: VirtOpenTail::Eq { rings: base.rings },
+            lig: base.lig,
+        };
+    }
+    // The general virtual protocol below is itself the after-statement core.
+    drop(bound_statement);
+
+    // (1) The core pipeline on the derived rows — `h` is never committed.
+    let h_rows = {
+        let _g = crate::utils::prof::scope("mqv:apply");
+        map.apply(p_h, p_f, hint_f.rows())
+    };
+    let h_packed = {
+        let _g = crate::utils::prof::scope("mqv:pack");
+        crate::ligerito::pack_columns_from_rows(p_h, &h_rows)
+    };
+    let mut mfs = Vec::with_capacity(lch);
+    let mut us = Vec::with_capacity(lch);
+    let mut presums = Vec::with_capacity(lch);
+    let mut points = Vec::with_capacity(lch);
+    for w_l in chunks.chunks() {
+        let (mf, u, ps, pt) =
+            prove_int_eval_merged_common(transcript, p_h, &h_rows, Some(&h_packed), w_l, alpha);
+        mfs.push(mf);
+        us.push(u);
+        presums.push(ps);
+        points.push(pt);
+    }
+    drop(h_packed);
+    drop(h_rows);
+
+    // (2) Transpose at the commitment field: with fresh η's,
+    // `Σ_l η_l·μ_l = ⟨W, f⟩_K`, `W := Σ_l η_l·Mᵀ eq(pt_l)` — evaluated
+    // on demand through `E_r` (never materialized).
+    let etas: Vec<Gf> = transcript.get_field_challenges(lch, &());
+    let coeffs = VirtRowCoeffs::new(&points, &etas, t_wh);
+    let a_cols = crate::dual_basis::dual_basis_cols();
+    debug_assert!(
+        t_wf >= LOG_PACKING,
+        "packing needs t_wf >= 7 (asserted at commit)"
+    );
+    debug_assert_eq!(hint_f.p_msg.len() << LOG_PACKING, cell_count(p_f));
+
+    // (3) The batching message `h_i` (paper batching protocol, step 2).
+    let hs = {
+        let _g = crate::utils::prof::scope("mqv:hs");
+        virtual_hs_fold(map, &coeffs, &hint_f.p_msg, &a_cols)
+    };
+    crate::ligerito::absorb_hs(transcript, &hs);
+
+    // (4) The zero-evader ρ (eq-expanded LOG_PACKING challenges — the
+    // ring-switch `r″` convention) and the ρ-batched claim
+    // `⟨pack(f), a′⟩ = h′`.
+    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let rho = build_eq_x_r_vec(&r2, &()).expect("r2");
+    let h_prime = rho
+        .iter()
+        .zip(hs.iter())
+        .fold(Gf::zero(), |acc, (&r, &h)| acc + r * h);
+    let b_comb: Vec<F128> = {
+        let _g = crate::utils::prof::scope("mqv:aprime");
+        let n_packs = hint_f.p_msg.len();
+        virtual_a_prime_prover(map, &coeffs, &rho, &a_cols, n_packs)
+            .into_iter()
+            .map(gf_to_f128)
+            .collect()
+    };
+
+    // (5) ONE native Ligerito inner product on f's commitment.
+    let lig = {
+        let _g = crate::utils::prof::scope("mqv:lig");
+        ligerito::recursive_prover_with_basis(
+            pc,
+            par_clone_f128(&hint_f.p_msg),
+            b_comb,
+            gf_to_f128(h_prime),
+            &hint_f.prover_data.codeword,
+            &hint_f.prover_data.merkle_tree,
+            &mut ZincChallenger(transcript),
+        )
+    };
+    IntEvalRsLigVirtProof {
+        mfs,
+        us,
+        presums,
+        tail: VirtOpenTail::Batch { hs },
+        lig,
+    }
+}
+
+/// Verify a virtual mod-q claim `Σ_c w'_c·(Σ_b rw[b]·h_{b,c}) = claimed`
+/// for `h = M·f` against `f`'s commitment. `col_weights[c] ∈ R` over
+/// `h`'s `2^{s_h}` columns. The verifier's `M`-dependent cost is
+/// `O(L·#rows(M) + nnz(M) + 2^{m_p})` field operations (`2^{m_p}` =
+/// `f`'s pack count, for the dense `a′` it MLE-folds at the Ligerito
+/// residual hook).
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub fn verify_mle_eval_mod_q_ligerito_virtual<R>(
+    transcript: &mut (impl Transcript + Send),
+    commitment_f: &Commitment,
+    proof: &IntEvalRsLigVirtProof,
+    p_h: &IntEvalParams,
+    p_f: &IntEvalParams,
+    map: &crate::f2map::F2CellMap,
+    row_weights_q: &[u128],
+    col_weights: &[R],
+    alpha: Gf,
+    claimed: R,
+    q_bits: usize,
+    vc: &LigVerifierConfig,
+) -> Result<(), FlockRsError>
+where
+    R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
+{
+    use crate::pcs::recombine_read_off;
+    use crate::poly::utils::build_eq_x_r_vec;
+
+    let shape = || FlockRsError::RingSwitch(RsOpenError::Shape);
+    let (h_geometry, c_w, lch) = checked_mod_q_geometry(p_h, q_bits)?;
+    let f_geometry = validate_int_eval_geometry(commitment_f, p_f, 0)?;
+    let h_cells = h_geometry
+        .rows
+        .checked_mul(p_h.word_bits)
+        .and_then(|count| count.checked_mul(h_geometry.cols))
+        .ok_or_else(shape)?;
+    let f_cells = f_geometry
+        .rows
+        .checked_mul(p_f.word_bits)
+        .and_then(|count| count.checked_mul(f_geometry.cols))
+        .ok_or_else(shape)?;
+    let t_wh = h_geometry.row_bit_vars;
+    let t_wf = f_geometry.row_bit_vars;
+    if t_wh < LOG_PACKING
+        || map.rows() != h_cells
+        || map.cols() != f_cells
+        || row_weights_q.len() != h_geometry.rows
+        || col_weights.len() != h_geometry.cols
+        || proof.mfs.len() != lch
+        || proof.us.len() != lch
+        || proof.presums.len() != lch
+    {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+    validate_ligerito_commitment(commitment_f, vc)?;
+    let chunks = ModQWeightChunks::from_dense(p_h, row_weights_q, q_bits)
+        .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?;
+
+    let bound_statement = {
+        let _g = crate::utils::prof::scope("mqv:stmt");
+        absorb_virtual_statement(
+            transcript,
+            commitment_f,
+            p_h,
+            p_f,
+            map,
+            row_weights_q,
+            q_bits,
+            alpha,
+        )
+    };
+
+    // Tail routing. The eq tail is accepted ONLY on statements where the
+    // identity fast path is eligible (`h = f`, one shared row layout) —
+    // there the per-chunk claims are claims on `f`'s own bit-MLE and the
+    // base path's verification binds the same statement. The batch tail
+    // is always accepted (the general protocol also covers identity
+    // maps). Routing is a function of statement + proof shape only.
+    let hs = match &proof.tail {
+        VirtOpenTail::Eq { rings } => {
+            if !virtual_id_fast_eligible(map, p_h, p_f) {
+                return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+            }
+            let _g = crate::utils::prof::scope("mqv:vidfast");
+            let base = IntEvalRsLigModQProof {
+                mfs: proof.mfs.clone(),
+                us: proof.us.clone(),
+                presums: proof.presums.clone(),
+                rings: rings.clone(),
+                lig: proof.lig.clone(),
+            };
+            let us = verify_mod_q_lig_core_after_statement(
+                transcript,
+                commitment_f,
+                &base,
+                p_h,
+                &chunks,
+                alpha,
+                vc,
+                bound_statement,
+            )?;
+            let v_flat: Vec<u128> = us.iter().flat_map(|u| u.iter().copied()).collect();
+            let y = recombine_read_off(p_h, &v_flat, 0, col_weights, c_w, lch);
+            if y != claimed {
+                return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
+            }
+            return Ok(());
+        }
+        VirtOpenTail::Batch { hs } => {
+            // The general virtual verifier below is itself the
+            // after-statement core.
+            drop(bound_statement);
+            hs
+        }
+    };
+    if hs.len() != 128 {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+
+    // Re-pad the transmitted chunk folds to the full `2^{s_h}` (see the
+    // base path: trailing all-zero columns fold to 0 and may be trimmed).
+    let cols_h = h_geometry.cols;
+    let mut us: Vec<Vec<u128>> = Vec::with_capacity(lch);
+    for u in &proof.us {
+        if u.len() > cols_h {
+            return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+        }
+        let mut u = u.clone();
+        u.resize(cols_h, 0);
+        us.push(u);
+    }
+
+    // Per-chunk range bound 2^{c_w+t+W} (= 2^127 by construction).
+    let range_shift = c_w + p_h.t + p_h.word_bits;
+    debug_assert_eq!(range_shift, 127);
+    let bound = 1u128 << range_shift;
+
+    // (1) The core pipeline on the derived claims: forests + pre-sumchecks
+    // pin the per-chunk residuals `ĥ(pt_l) = μ_l`.
+    let mut points = Vec::with_capacity(lch);
+    let mut mus = Vec::with_capacity(lch);
+    for l in 0..lch {
+        for (k, &u) in us[l].iter().enumerate() {
+            if u >= bound {
+                return Err(FlockRsError::ChunkRange { chunk: l, col: k });
+            }
+        }
+        let (pt, mu) = verify_int_eval_merged_common(
+            transcript,
+            &proof.mfs[l],
+            &us[l],
+            &proof.presums[l],
+            p_h,
+            &chunks.chunks()[l],
+            alpha,
+        )
+        .map_err(FlockRsError::Common)?;
+        points.push(pt);
+        mus.push(mu);
+    }
+
+    // (2) The transpose and the batching protocol's step 3:
+    // `h = Σ_l η_l·μ_l` must equal `Σ_i c₀(h_i)·X^i` — the
+    // coefficient-projection read-off of the sent plane inner products.
+    let etas: Vec<Gf> = transcript.get_field_challenges(lch, &());
+    let h: Gf = etas
+        .iter()
+        .zip(mus.iter())
+        .fold(Gf::zero(), |acc, (&e, &m)| acc + e * m);
+    let mut assembled = [0u64; 2];
+    for (i, g) in hs.iter().enumerate() {
+        assembled[i >> 6] |= crate::dual_basis::c0_bit(*g) << (i & 63);
+    }
+    if Gf::from_words(assembled) != h {
+        return Err(FlockRsError::VirtualBatch);
+    }
+    crate::ligerito::absorb_hs(transcript, hs);
+
+    // (3) The zero-evader ρ and the reduced claim's target
+    // `h′ = Σ_i ρ_i·h_i`.
+    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let rho = build_eq_x_r_vec(&r2, &()).expect("r2");
+    let h_prime = rho
+        .iter()
+        .zip(hs.iter())
+        .fold(Gf::zero(), |acc, (&r, &hi)| acc + r * hi);
+
+    // (4) The basis `a′` — the SAME streaming build as the prover's
+    // (`O(#rows + nnz + 2^{m_p})` K-ops, sparse in `M`) — and the
+    // succinct Ligerito verification of `⟨pack(f), a′⟩ = h′`. The
+    // residual hook answers by MLE-folding `a′` at the accumulated
+    // challenges (LSB-first, matching the sumcheck's binding order).
+    let coeffs = VirtRowCoeffs::new(&points, &etas, t_wh);
+    let a_cols = crate::dual_basis::dual_basis_cols();
+    let m_p = t_wf + p_f.s - LOG_PACKING;
+    let a_prime = {
+        let _g = crate::utils::prof::scope("mqv:vaprime");
+        virtual_a_prime(map, &coeffs, &rho, &a_cols, 1usize << m_p)
+    };
+    let eval_b = |ris: &[F128], yr_log_n: usize| -> Vec<F128> {
+        let mut tbl = a_prime.clone();
+        for &ri in ris {
+            crate::ligerito::bind_low(&mut tbl, f128_to_gf(ri));
+        }
+        debug_assert_eq!(tbl.len(), 1usize << yr_log_n);
+        tbl.into_iter().map(gf_to_f128).collect()
+    };
+    {
+        let _g = crate::utils::prof::scope("mqv:vlig");
+        let ok = ligerito::recursive_verifier_with_basis_succinct(
+            vc,
+            &proof.lig,
+            m_p,
+            gf_to_f128(h_prime),
+            &commitment_f.root,
+            eval_b,
+            &mut ZincChallenger(transcript),
+        );
+        if !ok {
+            return Err(FlockRsError::LigeritoReject);
+        }
+    }
+
+    // (5) Recombine in R: claimed = Σ_c w′_c · Σ_l 2^{c_w·l}·u_c^{(l)}.
+    let v_flat: Vec<u128> = us.iter().flat_map(|u| u.iter().copied()).collect();
+    let y = recombine_read_off(p_h, &v_flat, 0, col_weights, c_w, lch);
+    if y != claimed {
+        return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------
+// Host proof-stream (de)serialization of `IntEvalRsLigVirtProof`
+// ---------------------------------------------------------------------
+
+impl IntEvalRsLigVirtProof {
+    /// Serialize the virtual-opening proof into the host proof stream:
+    /// per chunk the merged forest, the (canonically zero-tail-trimmed)
+    /// chunk folds, and the pre-sumcheck — each encoded EXACTLY like the
+    /// base [`IntEvalRsLigModQProof::to_bytes`] — then ONE tail tag byte
+    /// (0 = batch, 1 = identity-fast eq), the tail (batch: the 128
+    /// `h_i`; eq: per chunk the 128-element `s_v` — both fixed counts,
+    /// no length prefixes), and the flock [`LigeritoProof`] as a
+    /// length-prefixed `bincode` 1.3 blob. Mirrors [`Self::from_bytes`].
+    #[allow(clippy::arithmetic_side_effects)]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        use crate::proof_codec::Writer;
+        let mut w = Writer::new();
+        let lch = self.mfs.len();
+        w.len(lch);
+        for l in 0..lch {
+            w.len(self.mfs[l].layers.len());
+            for layer in &self.mfs[l].layers {
+                // Flag bits: 1 = sc_x present, 2 = quad (pair2 present) —
+                // the base forest-layer encoding, byte for byte.
+                let flag = layer.sc_x.is_some() as usize | ((layer.pair2.is_some() as usize) << 1);
+                w.len(flag);
+                if let Some(sc) = &layer.sc_x {
+                    w.transcribable(sc);
+                }
+                w.transcribable(&layer.sc_c);
+                w.gf(&layer.pair.0);
+                w.gf(&layer.pair.1);
+                if let Some(p2) = &layer.pair2 {
+                    w.gf(&p2.0);
+                    w.gf(&p2.1);
+                }
+            }
+            let u_l = &self.us[l];
+            let n_u = transmitted_us_len(u_l);
+            w.len(n_u);
+            for &u in &u_l[..n_u] {
+                w.u128(u);
+            }
+            w.transcribable(&self.presums[l]);
+        }
+        match &self.tail {
+            VirtOpenTail::Batch { hs } => {
+                assert_eq!(hs.len(), 128, "batching message is always 128 elements");
+                w.bytes(&[0u8]);
+                for g in hs {
+                    w.gf(g);
+                }
+            }
+            VirtOpenTail::Eq { rings } => {
+                assert_eq!(rings.len(), lch, "one ring-switch message per chunk");
+                w.bytes(&[1u8]);
+                for ring in rings {
+                    assert_eq!(ring.s_v.len(), 128, "s_v is always 128 elements");
+                    for g in &ring.s_v {
+                        w.gf(g);
+                    }
+                }
+            }
+        }
+        let lig_bytes = bincode::serialize(&self.lig).expect("LigeritoProof bincode encode");
+        w.len(lig_bytes.len());
+        w.bytes(&lig_bytes);
+        w.into_vec()
+    }
+
+    /// Deserialize the virtual-opening proof from the host proof stream.
+    /// Mirrors [`Self::to_bytes`]; rejects non-minimal chunk-fold
+    /// encodings exactly like the base codec.
+    #[allow(clippy::arithmetic_side_effects)]
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, crate::proof_codec::CodecError> {
+        use crate::merged_forest::{MergedForestProof, MergedLayer};
+        use crate::proof_codec::{CodecError, Reader};
+        let mut r = Reader::new(bytes);
+        let lch = r.len()?;
+        let mut mfs = Vec::with_capacity(lch.min(64));
+        let mut us = Vec::with_capacity(lch.min(64));
+        let mut presums = Vec::with_capacity(lch.min(64));
+        for _ in 0..lch {
+            let n_layers = r.len()?;
+            let mut layers = Vec::with_capacity(n_layers.min(64));
+            for _ in 0..n_layers {
+                let flag = r.len()?;
+                let sc_x = if flag & 1 == 1 {
+                    Some(r.transcribable::<crate::piop::sumcheck::SumcheckProof<Gf>>()?)
+                } else {
+                    None
+                };
+                let sc_c = r.transcribable::<crate::piop::sumcheck::SumcheckProof<Gf>>()?;
+                let p0 = r.gf()?;
+                let p1 = r.gf()?;
+                let pair2 = if flag & 2 == 2 {
+                    let p2 = r.gf()?;
+                    let p3 = r.gf()?;
+                    Some((p2, p3))
+                } else {
+                    None
+                };
+                layers.push(MergedLayer {
+                    sc_x,
+                    sc_c,
+                    pair: (p0, p1),
+                    pair2,
+                });
+            }
+            mfs.push(MergedForestProof { layers });
+            let n_u = r.len()?;
+            let mut u = Vec::with_capacity(n_u.min(r.remaining() / 16));
+            for _ in 0..n_u {
+                u.push(r.u128()?);
+            }
+            if u.last() == Some(&0) {
+                return Err(CodecError::NonCanonical);
+            }
+            us.push(u);
+            presums.push(r.transcribable::<MultiDegreeSumcheckProof<Gf>>()?);
+        }
+        let tail = match r.take(1)?[0] {
+            0 => {
+                let mut hs = Vec::with_capacity(128);
+                for _ in 0..128 {
+                    hs.push(r.gf()?);
+                }
+                VirtOpenTail::Batch { hs }
+            }
+            1 => {
+                let mut rings = Vec::with_capacity(lch.min(64));
+                for _ in 0..lch {
+                    let mut s_v = Vec::with_capacity(128);
+                    for _ in 0..128 {
+                        s_v.push(r.gf()?);
+                    }
+                    rings.push(RingSwitchProof { s_v });
+                }
+                VirtOpenTail::Eq { rings }
+            }
+            _ => return Err(CodecError::NonCanonical),
+        };
+        let n_bytes = r.len()?;
+        let lig_bytes = r.take(n_bytes)?;
+        let lig: LigeritoProof =
+            bincode::deserialize(lig_bytes).map_err(|e| CodecError::Bincode(e.to_string()))?;
+        Ok(IntEvalRsLigVirtProof {
+            mfs,
+            us,
+            presums,
+            tail,
+            lig,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------
 
@@ -9410,363 +10323,100 @@ mod tests {
         assert_eq!(LOG_PACKING, flock_core::pcs::pack::LOG_PACKING);
     }
 
-    fn assert_root_bound_statement<P, V>(
-        commitment: &Commitment,
-        prover_absorb: P,
-        verifier_absorb: V,
-    ) -> u128
-    where
-        P: Fn(&mut Blake3Transcript, &Commitment),
-        V: Fn(&mut Blake3Transcript, &Commitment),
-    {
-        let mut prover_transcript = Blake3Transcript::new();
-        prover_absorb(&mut prover_transcript, commitment);
-        let prover_challenge: u128 = prover_transcript.get_challenge();
-
-        let mut verifier_transcript = Blake3Transcript::new();
-        verifier_absorb(&mut verifier_transcript, commitment);
-        let verifier_challenge: u128 = verifier_transcript.get_challenge();
-        assert_eq!(
-            prover_challenge, verifier_challenge,
-            "prover/verifier frame mismatch"
-        );
-
-        let mut other_commitment = commitment.clone();
-        other_commitment.root[0] ^= 1;
-        let mut other_transcript = Blake3Transcript::new();
-        verifier_absorb(&mut other_transcript, &other_commitment);
-        let other_challenge: u128 = other_transcript.get_challenge();
-        assert_ne!(
-            prover_challenge, other_challenge,
-            "the commitment root must precede and affect the first challenge"
-        );
-        prover_challenge
-    }
-
-    /// Every formerly late-bound base API has a symmetric, versioned root
-    /// frame before its first challenge, and sibling protocols cannot collide.
+    /// The streaming row-factored batching passes equal the cell-wise
+    /// definitions (weights `W = Σ_l η_l·Mᵀ eq(pt_l)` materialized, then
+    /// scanned) on a small map with empty rows and cross-row duplicate
+    /// sources — pinning the char-2 reassociations
+    /// `bit_i(Σ_r E_r) = ⊕_r bit_i(E_r)` and `Φ_ρ(Σ_r E_r) = Σ_r Φ_ρ(E_r)`
+    /// the prover and verifier both rely on.
     #[test]
-    fn base_statement_frames_are_symmetric_domain_separated_and_root_bound() {
-        use std::collections::HashSet;
+    fn virtual_hs_and_a_prime_match_cellwise() {
+        use crate::f2map::{F2CellMap, cell_count, cell_row_bits};
 
-        use crate::pcs::{FQ_BITS, Fq};
-
-        let p = IntEvalParams {
-            t: 10,
-            s: 5,
+        let p_f = IntEvalParams {
+            t: 8,
+            s: 2,
             word_bits: 1,
-        };
-        let (pc, vc) = lig_configs(
-            packed_vars(&p),
-            LigConfig::Adhoc {
-                log_batch: 2,
-                log_inv_rate: 2,
-            },
-        )
-        .expect("ad-hoc config");
-        let commitment = Commitment {
-            root: [0x5au8; 32],
-            params: PcsParams {
-                m: packed_vars(&p) + LOG_PACKING,
-                log_inv_rate: pc.log_inv_rates[0],
-                log_batch_size: pc.initial_k,
-                profile: ligerito::LigeritoProfile::Slim,
-                merkle_hash: pc.merkle_hash,
-            },
-        };
-        let alpha = sample(0xfeed_0001);
-        let point: Vec<Gf> = (0..commitment.params.m)
-            .map(|i| sample(0xfeed_1000 + i as u64))
-            .collect();
-        let row_weights = vec![3u128, 5, 8, 13];
-        let bridge_digest = [0x3cu8; 32];
-        let batch_weights = vec![row_weights.clone(), vec![21u128, 34, 55]];
-        let ext_weights = vec![row_weights.clone(), vec![1u128, 2, 3, 4]];
-        let proj = crate::ext_proj::ExtProjParams::default();
-        let layout = ShaF2Layout {
-            p: p.clone(),
-            num_cols: 2,
-            log_cols: 1,
-            bit_vars: 5,
-            num_vars: 9,
-            tw: 4,
-            x_fold_extra: 0,
-        };
-        let xor_cols = [0usize, 1];
-        let xor_weights = [89u128, 144, 233];
-        let xor_prover = [VirtualXorClaim {
-            cols: &xor_cols,
-            constant: 0xa5,
-            external_rows: None,
-            row_weights_q: &xor_weights,
-        }];
-        let xor_col_weights = [Fq::from(1u128), Fq::from(2u128)];
-        let xor_verifier = [VirtualXorVerifyClaim {
-            cols: &xor_cols,
-            constant: 0xa5,
-            has_external: false,
-            row_weights_q: &xor_weights,
-            col_weights: &xor_col_weights,
-            claimed: Fq::from(3u128),
-        }];
-
-        let challenges = [
-            assert_root_bound_statement(
-                &commitment,
-                |t, c| absorb_rs_open_statement(t, c, &point, &pc),
-                |t, c| absorb_rs_open_statement(t, c, &point, &vc),
-            ),
-            assert_root_bound_statement(
-                &commitment,
-                |t, c| absorb_rs_eval_statement(t, c, &p, &row_weights, alpha, &pc),
-                |t, c| absorb_rs_eval_statement(t, c, &p, &row_weights, alpha, &vc),
-            ),
-            assert_root_bound_statement(
-                &commitment,
-                |t, c| absorb_rs_eval_batch_statement(t, c, &p, &batch_weights, alpha, &pc),
-                |t, c| absorb_rs_eval_batch_statement(t, c, &p, &batch_weights, alpha, &vc),
-            ),
-            assert_root_bound_statement(
-                &commitment,
-                |t, c| {
-                    let _ =
-                        absorb_mod_q_statement(t, c, &p, &row_weights, FQ_BITS, alpha, &pc);
-                },
-                |t, c| {
-                    let _ =
-                        absorb_mod_q_statement(t, c, &p, &row_weights, FQ_BITS, alpha, &vc);
-                },
-            ),
-            assert_root_bound_statement(
-                &commitment,
-                |t, c| {
-                    let _ = absorb_u32_mod_q_opening_v2_statement(
-                        t,
-                        c,
-                        &p,
-                        &bridge_digest,
-                        FQ_BITS,
-                        alpha,
-                        &pc,
-                    );
-                },
-                |t, c| {
-                    let _ = absorb_u32_mod_q_opening_v2_statement(
-                        t,
-                        c,
-                        &p,
-                        &bridge_digest,
-                        FQ_BITS,
-                        alpha,
-                        &vc,
-                    );
-                },
-            ),
-            assert_root_bound_statement(
-                &commitment,
-                |t, c| {
-                    let _ = absorb_ext_statement(
-                        t,
-                        c,
-                        &p,
-                        &ext_weights,
-                        FQ_BITS,
-                        &proj,
-                        alpha,
-                        &pc,
-                    );
-                },
-                |t, c| {
-                    let _ = absorb_ext_statement(
-                        t,
-                        c,
-                        &p,
-                        &ext_weights,
-                        FQ_BITS,
-                        &proj,
-                        alpha,
-                        &vc,
-                    );
-                },
-            ),
-            assert_root_bound_statement(
-                &commitment,
-                |t, c| {
-                    absorb_mod_q_xor_statement(
-                        t,
-                        MOD_Q_XOR_STATEMENT_DOMAIN,
-                        c,
-                        &layout,
-                        Some(&row_weights),
-                        FQ_BITS,
-                        &xor_prover,
-                        alpha,
-                        &pc,
-                    )
-                },
-                |t, c| {
-                    absorb_mod_q_xor_statement(
-                        t,
-                        MOD_Q_XOR_STATEMENT_DOMAIN,
-                        c,
-                        &layout,
-                        Some(&row_weights),
-                        FQ_BITS,
-                        &xor_verifier,
-                        alpha,
-                        &vc,
-                    )
-                },
-            ),
-            assert_root_bound_statement(
-                &commitment,
-                |t, c| {
-                    absorb_mod_q_xor_statement(
-                        t,
-                        MOD_Q_XOR_ONLY_STATEMENT_DOMAIN,
-                        c,
-                        &layout,
-                        None,
-                        FQ_BITS,
-                        &xor_prover,
-                        alpha,
-                        &pc,
-                    )
-                },
-                |t, c| {
-                    absorb_mod_q_xor_statement(
-                        t,
-                        MOD_Q_XOR_ONLY_STATEMENT_DOMAIN,
-                        c,
-                        &layout,
-                        None,
-                        FQ_BITS,
-                        &xor_verifier,
-                        alpha,
-                        &vc,
-                    )
-                },
-            ),
-        ];
-        assert_eq!(
-            challenges.into_iter().collect::<HashSet<_>>().len(),
-            challenges.len()
-        );
-    }
-
-    /// Config-aware commits must use the Ligerito config's L0 metadata.
-    /// Every metadata mismatch is rejected before the verifier consumes
-    /// Fiat–Shamir state.
-    #[test]
-    fn ligerito_merkle_hash_propagates_and_mismatch_rejects() {
-        let p = IntEvalParams {
-            t: 10,
-            s: 5,
+        }; // 2^10 cells, 8 packs
+        let p_h = IntEvalParams {
+            t: 7,
+            s: 3,
             word_bits: 1,
-        };
-        let m_p = packed_vars(&p);
-        let (mut pc, mut vc) = lig_configs(
-            m_p,
-            LigConfig::Adhoc {
-                log_batch: 2,
-                log_inv_rate: 2,
-            },
-        )
-        .expect("ad-hoc config");
-        assert_eq!(pc.merkle_hash, HashKind::Sha256);
-        assert_eq!(vc.merkle_hash, HashKind::Sha256);
+        }; // 2^10 derived cells
+        let n_f = cell_count(&p_f);
+        let n_h = cell_count(&p_h);
+        let t_wh = cell_row_bits(&p_h);
+        let lists: Vec<Vec<u32>> = (0..n_h)
+            .map(|i| {
+                if i % 5 == 4 {
+                    return Vec::new(); // empty rows
+                }
+                // Deliberate cross-row duplicates: nearby rows share cells.
+                let a = ((i * 7 + 3) % n_f) as u32;
+                let b = ((i / 2 * 13 + 11) % n_f) as u32;
+                let mut l = vec![a.min(b), a.max(b)];
+                l.dedup();
+                l
+            })
+            .collect();
+        let map = F2CellMap::try_from_rows(n_h, n_f, lists).unwrap();
 
-        let data: Vec<u128> = (0..p.cells())
-            .map(|i| u128::from((i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 63))
+        let points: Vec<Vec<Gf>> = (0..2)
+            .map(|l| {
+                (0..t_wh + p_h.s)
+                    .map(|k| sample(0x9000 + (l * 64 + k) as u64))
+                    .collect()
+            })
+            .collect();
+        let etas = vec![sample(0xA1), sample(0xA2)];
+        let coeffs = VirtRowCoeffs::new(&points, &etas, t_wh);
+        let a_cols = crate::dual_basis::dual_basis_cols();
+        let n_packs = n_f >> LOG_PACKING;
+        let p_msg: Vec<F128> = (0..n_packs)
+            .map(|y| gf_to_f128(sample(0xB000 + y as u64)))
             .collect();
 
-        let low_level = commit_rs_flock_with(&p, &data, pc.log_inv_rates[0], pc.initial_k);
-        assert_eq!(low_level.commitment.params.merkle_hash, HashKind::Sha256);
-        drop(low_level);
+        // Materialized weights (the old `mqv:wcoef` + `mqv:wtbl`).
+        let mut w_tbl = vec![Gf::zero(); n_f];
+        for (r, sources) in map.nonempty_rows() {
+            let c = coeffs.coeff(r);
+            for &j in sources {
+                w_tbl[j as usize] += c;
+            }
+        }
 
-        pc.merkle_hash = HashKind::Blake3;
-        vc.merkle_hash = HashKind::Blake3;
-        let hint = commit_rs_ligerito(&p, &data, &pc);
-        assert_eq!(hint.commitment.params.merkle_hash, HashKind::Blake3);
+        // h_i: streaming vs cell-wise plane scan.
+        let hs = virtual_hs_fold(&map, &coeffs, &p_msg, &a_cols);
+        let mut expect = vec![Gf::zero(); 128];
+        for (j, wj) in w_tbl.iter().enumerate() {
+            let w = wj.words();
+            let g = f128_to_gf(p_msg[j >> LOG_PACKING]) * a_cols[j & 127];
+            for (i, e) in expect.iter_mut().enumerate() {
+                if (w[i >> 6] >> (i & 63)) & 1 == 1 {
+                    *e += g;
+                }
+            }
+        }
+        assert_eq!(hs, expect, "h_i fold");
 
-        let point: Vec<Gf> = (0..hint.commitment.params.m)
-            .map(|i| sample(0xB1_A0_0000 + i as u64))
-            .collect();
-        let mut prover_transcript = Blake3Transcript::new();
-        let proof = prove_rs_open_ligerito(&mut prover_transcript, &hint, &point, &pc);
-        let mu = crate::ligerito::mle_eval(&proof.ring.s_v, &point[..LOG_PACKING]);
-
-        let mut verifier_transcript = Blake3Transcript::new();
-        verify_rs_open_ligerito(
-            &mut verifier_transcript,
-            &hint.commitment,
-            mu,
-            &point,
-            &proof,
-            &vc,
-        )
-        .expect("matching BLAKE3 config verifies");
-
-        // A malformed ring message is rejected before the public statement
-        // frame mutates the caller's transcript.
-        let mut bad_ring = proof.clone();
-        bad_ring.ring.s_v.pop();
-        let mut rejected = Blake3Transcript::new();
-        rejected.absorb_slice(b"direct-ring-shape-prefix");
-        let mut untouched = rejected.clone();
-        assert_eq!(
-            verify_rs_open_ligerito(&mut rejected, &hint.commitment, mu, &point, &bad_ring, &vc,),
-            Err(FlockRsError::RingSwitch(RsOpenError::Shape)),
-        );
-        assert_eq!(
-            rejected.get_challenge::<u128>(),
-            untouched.get_challenge::<u128>()
-        );
-
-        let assert_metadata_rejected = |commitment: &Commitment, config: &LigVerifierConfig| {
-            let mut actual = Blake3Transcript::new();
-            actual.absorb_slice(b"metadata-tamper-prefix");
-            let mut untouched = actual.clone();
-            assert_eq!(
-                verify_rs_open_ligerito(&mut actual, commitment, mu, &point, &proof, config,),
-                Err(FlockRsError::CommitmentConfig),
-            );
-            let actual_continuation: u128 = actual.get_challenge();
-            let untouched_continuation: u128 = untouched.get_challenge();
-            assert_eq!(actual_continuation, untouched_continuation);
-        };
-
-        let mut bad_m = hint.commitment.clone();
-        bad_m.params.m += 1;
-        assert_metadata_rejected(&bad_m, &vc);
-
-        let mut bad_rate = hint.commitment.clone();
-        bad_rate.params.log_inv_rate += 1;
-        assert_metadata_rejected(&bad_rate, &vc);
-
-        let mut bad_batch = hint.commitment.clone();
-        bad_batch.params.log_batch_size += 1;
-        assert_metadata_rejected(&bad_batch, &vc);
-
-        let mut bad_hash = hint.commitment.clone();
-        bad_hash.params.merkle_hash = HashKind::Sha256;
-        assert_metadata_rejected(&bad_hash, &vc);
-
-        let mut wrong_vc = vc.clone();
-        wrong_vc.initial_log_num_interleaved += 1;
-        assert_metadata_rejected(&hint.commitment, &wrong_vc);
-
-        let mut short_queries = vc.clone();
-        short_queries.queries.pop();
-        assert_metadata_rejected(&hint.commitment, &short_queries);
-
-        let mut short_recursive_cols = vc.clone();
-        short_recursive_cols.recursive_log_msg_cols.pop();
-        assert_metadata_rejected(&hint.commitment, &short_recursive_cols);
-
-        let mut bad_l0_ood = vc.clone();
-        bad_l0_ood.ood_samples[0] = 1;
-        assert_metadata_rejected(&hint.commitment, &bad_l0_ood);
+        // a′: the shared (verifier) build and the prover fork must both
+        // equal the cell-wise Φ_ρ scan — and therefore each other.
+        let rho: Vec<Gf> = (0..128).map(|i| sample(0xC000 + i as u64)).collect();
+        let a = virtual_a_prime(&map, &coeffs, &rho, &a_cols, n_packs);
+        let a_prover = virtual_a_prime_prover(&map, &coeffs, &rho, &a_cols, n_packs);
+        assert_eq!(a, a_prover, "prover fork must match the shared build");
+        let mut expect_a = vec![Gf::zero(); n_packs];
+        for (j, wj) in w_tbl.iter().enumerate() {
+            let w = wj.words();
+            let mut phi = Gf::zero();
+            for (i, r) in rho.iter().enumerate() {
+                if (w[i >> 6] >> (i & 63)) & 1 == 1 {
+                    phi += *r;
+                }
+            }
+            expect_a[j >> LOG_PACKING] += phi * a_cols[j & 127];
+        }
+        assert_eq!(a, expect_a, "a' build");
     }
 
     /// Mod-q MLE evaluation through the Ligerito opener: 1-chunk (W=1) and
@@ -9879,88 +10529,6 @@ mod tests {
                 &vc,
             )
             .unwrap_or_else(|e| panic!("mod-q (t={t},W={w},L={lch}) failed: {e:?}"));
-
-            let assert_shape_rejected_without_absorb =
-                |candidate: &IntEvalRsLigModQProof, rows: &[u128], cols: &[Fq]| {
-                    let mut rejected = Blake3Transcript::new();
-                    rejected.absorb_slice(b"mod-q-static-shape-prefix");
-                    let mut untouched = rejected.clone();
-                    assert_eq!(
-                        verify_mle_eval_mod_q_ligerito(
-                            &mut rejected,
-                            &hint.commitment,
-                            candidate,
-                            &p,
-                            rows,
-                            cols,
-                            alpha,
-                            y,
-                            q_bits,
-                            &vc,
-                        ),
-                        Err(FlockRsError::RingSwitch(RsOpenError::Shape)),
-                    );
-                    assert_eq!(
-                        rejected.get_challenge::<u128>(),
-                        untouched.get_challenge::<u128>()
-                    );
-                };
-            assert_shape_rejected_without_absorb(&proof, &rw_q[..rw_q.len() - 1], &col_w);
-            assert_shape_rejected_without_absorb(&proof, &rw_q, &col_w[..col_w.len() - 1]);
-            let mut high_bit_rows = rw_q.clone();
-            high_bit_rows[0] = 1u128 << q_bits;
-            assert_shape_rejected_without_absorb(&proof, &high_bit_rows, &col_w);
-            let mut prover_rejected = Blake3Transcript::new();
-            prover_rejected.absorb_slice(b"mod-q-prover-high-weight-prefix");
-            let mut untouched = prover_rejected.clone();
-            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                prove_mle_eval_mod_q_ligerito(
-                    &mut prover_rejected,
-                    &hint,
-                    &p,
-                    &high_bit_rows,
-                    q_bits,
-                    alpha,
-                    &pc,
-                )
-            }));
-            assert!(
-                outcome.is_err(),
-                "prover accepted a row weight with bit q_bits set"
-            );
-            assert_eq!(
-                prover_rejected.get_challenge::<u128>(),
-                untouched.get_challenge::<u128>()
-            );
-            let mut bad_top_shape = proof.clone();
-            bad_top_shape.rings[0].s_v.pop();
-            assert_shape_rejected_without_absorb(&bad_top_shape, &rw_q, &col_w);
-
-            // Commitment metadata is checked by the shared mod-q core before
-            // any statement or proof transcript messages are consumed.
-            let mut bad_commitment = hint.commitment.clone();
-            bad_commitment.params.log_inv_rate += 1;
-            let mut rejected = Blake3Transcript::new();
-            rejected.absorb_slice(b"mod-q-metadata-prefix");
-            let mut untouched = rejected.clone();
-            assert_eq!(
-                verify_mle_eval_mod_q_ligerito(
-                    &mut rejected,
-                    &bad_commitment,
-                    &proof,
-                    &p,
-                    &rw_q,
-                    &col_w,
-                    alpha,
-                    y,
-                    q_bits,
-                    &vc,
-                ),
-                Err(FlockRsError::CommitmentConfig),
-            );
-            let rejected_continuation: u128 = rejected.get_challenge();
-            let untouched_continuation: u128 = untouched.get_challenge();
-            assert_eq!(rejected_continuation, untouched_continuation);
 
             // Wrong claim.
             let mut vt = Blake3Transcript::new();
@@ -10211,9 +10779,7 @@ mod tests {
         let data = (0..p.cells())
             .map(|cell| ((cell as u128).wrapping_mul(17).wrapping_add(3)) & 0xff)
             .collect::<Vec<_>>();
-        let row_weights = (0..p.rows())
-            .map(|row| row as u128 + 1)
-            .collect::<Vec<_>>();
+        let row_weights = (0..p.rows()).map(|row| row as u128 + 1).collect::<Vec<_>>();
         let col_weights = (0..p.cols())
             .map(|column| Fq::from(column as u128 + 1))
             .collect::<Vec<_>>();
@@ -10221,9 +10787,8 @@ mod tests {
         for column in 0..p.cols() {
             let mut folded = Fq::from(0_u128);
             for row in 0..p.rows() {
-                folded = folded
-                    + Fq::from(row_weights[row])
-                        * Fq::from(data[p.cell_index(row, column)]);
+                folded =
+                    folded + Fq::from(row_weights[row]) * Fq::from(data[p.cell_index(row, column)]);
             }
             claimed = claimed + col_weights[column] * folded;
         }
@@ -10245,10 +10810,7 @@ mod tests {
         )
         .unwrap();
 
-        let verify = |chunks: &ModQWeightChunks,
-                      cols: &[Fq],
-                      digest: &[u8; 32],
-                      value: Fq| {
+        let verify = |chunks: &ModQWeightChunks, cols: &[Fq], digest: &[u8; 32], value: Fq| {
             let mut transcript = Blake3Transcript::new();
             verify_mle_eval_mod_q_ligerito_prepared_u32_v2(
                 &mut transcript,
@@ -10273,9 +10835,7 @@ mod tests {
         let mut wrong_rows = row_weights.clone();
         wrong_rows[0] += 1;
         let wrong_chunks = ModQWeightChunks::from_dense(&p, &wrong_rows, FQ_BITS).unwrap();
-        assert!(
-            verify(&wrong_chunks, &col_weights, &bridge_digest, claimed).is_err()
-        );
+        assert!(verify(&wrong_chunks, &col_weights, &bridge_digest, claimed).is_err());
 
         let mut wrong_cols = col_weights.clone();
         wrong_cols[0] = wrong_cols[0] + Fq::from(1_u128);
@@ -10434,63 +10994,6 @@ mod tests {
                 &vc,
             )
             .unwrap_or_else(|e| panic!("ext (t={t},W={w},L1={l1},L2={l2}) failed: {e:?}"));
-
-            // Invalid extension parameters and malformed embedded mod-q
-            // messages are rejected without panicking or absorbing the EXT
-            // statement/Step-1 folds.
-            let mut bad_proj = proj;
-            bad_proj.prime_bits = 0;
-            let mut rejected = Blake3Transcript::new();
-            rejected.absorb_slice(b"ext-static-shape-prefix");
-            let mut untouched = rejected.clone();
-            assert_eq!(
-                verify_mle_eval_ext_ligerito(
-                    &mut rejected,
-                    &hint.commitment,
-                    &proof,
-                    &p,
-                    &coords,
-                    &col_w,
-                    &basis,
-                    alpha,
-                    y,
-                    q_bits,
-                    &bad_proj,
-                    &vc,
-                ),
-                Err(FlockRsError::ExtShape),
-            );
-            assert_eq!(
-                rejected.get_challenge::<u128>(),
-                untouched.get_challenge::<u128>()
-            );
-
-            let mut bad_base_shape = proof.clone();
-            bad_base_shape.base.rings[0].s_v.pop();
-            let mut rejected = Blake3Transcript::new();
-            rejected.absorb_slice(b"ext-base-shape-prefix");
-            let mut untouched = rejected.clone();
-            assert_eq!(
-                verify_mle_eval_ext_ligerito(
-                    &mut rejected,
-                    &hint.commitment,
-                    &bad_base_shape,
-                    &p,
-                    &coords,
-                    &col_w,
-                    &basis,
-                    alpha,
-                    y,
-                    q_bits,
-                    &proj,
-                    &vc,
-                ),
-                Err(FlockRsError::RingSwitch(RsOpenError::Shape)),
-            );
-            assert_eq!(
-                rejected.get_challenge::<u128>(),
-                untouched.get_challenge::<u128>()
-            );
 
             // Wrong claim → the K-side read-off rejects.
             let mut vt = Blake3Transcript::new();
@@ -10987,22 +11490,6 @@ mod tests {
         MultiDegreeSumcheckProof::<Gf>::read_transcription_bytes_exact(&buf)
     }
 
-    /// Decode the same sumcheck payload with a prover-selected degree of 1.
-    /// Protocol verifiers must reject this shape before feeding it to the
-    /// assertion-based sumcheck verifier or consuming its transcript.
-    fn rlc_wrong_degree_mds(p: &MultiDegreeSumcheckProof<Gf>) -> MultiDegreeSumcheckProof<Gf> {
-        use crate::transcript::traits::{ConstTranscribable, GenTranscribable, Transcribable};
-
-        let mut buf = vec![0u8; p.get_num_bytes()];
-        p.write_transcription_bytes_exact(&mut buf);
-        let cfg_bytes =
-            <<Gf as crypto_primitives::Field>::Modulus as ConstTranscribable>::NUM_BYTES;
-        let word_bytes = <u32 as ConstTranscribable>::NUM_BYTES;
-        let degree_offset = cfg_bytes + 2 * word_bytes;
-        1u32.write_transcription_bytes_exact(&mut buf[degree_offset..degree_offset + word_bytes]);
-        MultiDegreeSumcheckProof::<Gf>::read_transcription_bytes_exact(&buf)
-    }
-
     /// Flip one byte of a plain sumcheck proof through its transcription
     /// codec (offset from the END).
     fn rlc_tamper_sc(
@@ -11248,48 +11735,6 @@ mod tests {
                     "{what} accepted"
                 );
             };
-
-            // A decoded proof cannot select the sumcheck degree. Reject it
-            // after the statement/gamma prefix, but before the forest or
-            // malformed sumcheck mutates the remaining transcript.
-            let bad_shape = rebuild(&proof, &|p2| {
-                p2.presums[0] = rlc_wrong_degree_mds(&p2.presums[0]);
-            });
-            let mut rejected = Blake3Transcript::new();
-            assert_eq!(
-                verify_mle_eval_mod_q_ligerito_rlc_family(
-                    &mut rejected,
-                    &hint.commitment,
-                    &bad_shape,
-                    &layout,
-                    &family_cols,
-                    &claims,
-                    &colw,
-                    alpha,
-                    &vc,
-                ),
-                Err(FlockRsError::RingSwitch(RsOpenError::Shape)),
-            );
-            let mut prefix = Blake3Transcript::new();
-            let claim_cs: Vec<u128> = claims.iter().map(|claim| claim.claimed).collect();
-            let claim_weights: Vec<&[u128]> =
-                claims.iter().map(|claim| claim.row_weights_q).collect();
-            absorb_rlc_family_statement(
-                &mut prefix,
-                hint.root(),
-                &layout,
-                &family_cols,
-                &forms,
-                &claim_cs,
-                &claim_weights,
-            );
-            for _ in &claims {
-                let _ = crate::pcs::fq_challenge(&mut prefix);
-            }
-            let rejected_continuation: u128 = rejected.get_challenge();
-            let prefix_continuation: u128 = prefix.get_challenge();
-            assert_eq!(rejected_continuation, prefix_continuation);
-
             check_rejected(&rebuild(&proof, &|p2| p2.us[0][0] ^= 1), "tampered u fold");
 
             // Out-of-range fold hits the free range check.
@@ -12384,82 +12829,6 @@ mod tests {
         )
         .expect("virtual-XOR path verifies the same statement");
         assert!(obligations.is_empty());
-
-        // The batched x-claim verifier fixes one degree-2 group per active
-        // claim. Reject decoded prover-selected degree metadata before its
-        // merged forest can consume any transcript state.
-        let mut vx_bad_shape = IntEvalRsLigModQXorProof {
-            mfs: vx_proof.mfs.clone(),
-            us: vx_proof.us.clone(),
-            presums: vx_proof.presums.clone(),
-            x_mfs: vx_proof.x_mfs.clone(),
-            x_presums: vx_proof.x_presums.clone(),
-            xors: vx_proof
-                .xors
-                .iter()
-                .map(|side| VirtXorSide {
-                    us: side.us.clone(),
-                    externals: side.externals.clone(),
-                })
-                .collect(),
-            rings: vx_proof.rings.clone(),
-            lig: vx_proof.lig.clone(),
-        };
-        vx_bad_shape.x_presums[0] = rlc_wrong_degree_mds(&vx_bad_shape.x_presums[0]);
-        let mut rejected = Blake3Transcript::new();
-        rejected.absorb_slice(b"batched-x-shape-prefix");
-        let mut untouched = rejected.clone();
-        assert_eq!(
-            verify_mle_eval_mod_q_ligerito_claims_only(
-                &mut rejected,
-                &hint.commitment,
-                &vx_bad_shape,
-                &layout,
-                alpha,
-                FQ_BITS,
-                &vx_claims,
-                &vc,
-            ),
-            Err(FlockRsError::Common(IntEvalRsError::PreSumcheck)),
-        );
-        let rejected_continuation: u128 = rejected.get_challenge();
-        let untouched_continuation: u128 = untouched.get_challenge();
-        assert_eq!(rejected_continuation, untouched_continuation);
-
-        // The chunk decomposition is exact: a weight with bit q_bits set
-        // must not be silently truncated by the claims-only path.
-        let mut high_rws = rws.clone();
-        high_rws[0][0] = 1u128 << FQ_BITS;
-        let high_claims: Vec<VirtualXorVerifyClaim<'_, Fq>> = (0..3)
-            .map(|i| VirtualXorVerifyClaim {
-                cols: &col_lists[i],
-                constant: 0,
-                has_external: false,
-                row_weights_q: &high_rws[i],
-                col_weights: &colw,
-                claimed: Fq::from(cs[i]),
-            })
-            .collect();
-        let mut rejected = Blake3Transcript::new();
-        rejected.absorb_slice(b"batched-x-high-weight-prefix");
-        let mut untouched = rejected.clone();
-        assert_eq!(
-            verify_mle_eval_mod_q_ligerito_claims_only(
-                &mut rejected,
-                &hint.commitment,
-                &vx_proof,
-                &layout,
-                alpha,
-                FQ_BITS,
-                &high_claims,
-                &vc,
-            ),
-            Err(FlockRsError::RingSwitch(RsOpenError::Shape)),
-        );
-        assert_eq!(
-            rejected.get_challenge::<u128>(),
-            untouched.get_challenge::<u128>()
-        );
 
         // Cross-check is non-vacuous: a wrong claimed value fails BOTH paths.
         let mut cs_bad = cs.clone();
@@ -14049,38 +14418,6 @@ mod tests {
             verify_with(&proof, &expected).is_ok(),
             "honest proof verifies"
         );
-
-        // The active-channel set fixes every presum's group count and
-        // degree. A decoded degree-1 proof is rejected before the first
-        // forest or sumcheck consumes the post-statement transcript.
-        {
-            let mut p2 = clone_proof(&proof);
-            p2.clusters[0].presums[0] = rlc_wrong_degree_mds(&p2.clusters[0].presums[0]);
-            let mut rejected = Blake3Transcript::new();
-            assert_eq!(
-                verify_mle_eval_mod_q_ligerito_tap_family(
-                    &mut rejected,
-                    &hint.commitment,
-                    &p2,
-                    &layout,
-                    &clusters,
-                    &colw,
-                    alpha,
-                    &vc,
-                ),
-                Err(FlockRsError::RingSwitch(RsOpenError::Shape)),
-            );
-            let mut prefix = Blake3Transcript::new();
-            absorb_tap_family_statement(&mut prefix, hint.root(), &layout, &clusters);
-            for cluster in &clusters {
-                for _ in cluster.claims {
-                    let _ = crate::pcs::fq_challenge(&mut prefix);
-                }
-            }
-            let rejected_continuation: u128 = rejected.get_challenge();
-            let prefix_continuation: u128 = prefix.get_challenge();
-            assert_eq!(rejected_continuation, prefix_continuation);
-        }
 
         let mut bad_vals = expected.clone();
         bad_vals[4] = (bad_vals[4] + 1) % FQ_MOD;

@@ -1379,17 +1379,17 @@ pub(crate) fn extract_column_bit_halves(
         (0..num_cols).map(|_| (vec![0u64; half_words], vec![0u64; half_words])).collect();
     // transpose64 of 64 consecutive position-words yields, per lane j, the
     // position-packed word of column 64g+j — the exact target layout.
-    let mut block = [0u64; 64];
-    for (g, grp) in packed_cols.iter().enumerate() {
-        let lanes = 64.min(num_cols.saturating_sub(g << 6));
-        if lanes == 0 {
-            continue;
-        }
+    // Column groups write disjoint 64-column output chunks, so the groups
+    // parallelize cleanly (measured 33 → ~4 ms at n = 28: the serial scan's
+    // 64-line-sparse scatter per block was the forest preamble's whole
+    // self-time). Pure data movement — byte-identical.
+    let per_group = |(grp, cols): (&Vec<u64>, &mut [(Vec<u64>, Vec<u64>)])| {
+        let mut block = [0u64; 64];
         for w in 0..row_len >> 6 {
             block.copy_from_slice(&grp[w << 6..(w + 1) << 6]);
             transpose64(&mut block);
-            for (j, word) in block.iter().enumerate().take(lanes) {
-                let dst = &mut out[(g << 6) | j];
+            for (j, word) in block.iter().enumerate().take(cols.len()) {
+                let dst = &mut cols[j];
                 if w < half_words {
                     dst.0[w] = *word;
                 } else {
@@ -1397,7 +1397,17 @@ pub(crate) fn extract_column_bit_halves(
                 }
             }
         }
+    };
+    #[cfg(feature = "parallel")]
+    {
+        use rayon::prelude::*;
+        packed_cols
+            .par_iter()
+            .zip(out.par_chunks_mut(64))
+            .for_each(per_group);
     }
+    #[cfg(not(feature = "parallel"))]
+    packed_cols.iter().zip(out.chunks_mut(64)).for_each(per_group);
     out
 }
 

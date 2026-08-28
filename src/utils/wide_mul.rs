@@ -31,7 +31,7 @@ use crypto_primitives::{
 pub trait WideMulAcc: Sized {
     /// The accumulator representation (unreduced for char-2 carryless
     /// fields; `Self` for fields whose multiply is cheapest reduced).
-    type Wide: Clone;
+    type Wide: Clone + Send;
 
     /// The additive-identity accumulator. Takes the field zero so
     /// runtime-config fields can seed config-carrying values.
@@ -127,6 +127,29 @@ pub trait WideMulAcc: Sized {
         _w: &[Self],
         _half: usize,
     ) -> Option<(Self, Self, Self)> {
+        None
+    }
+
+    /// Optional kernel for the double-fold dense grid pass
+    /// (`F2Z_EQF_DOUBLE`'s `dense_grid_pass` body): per quad `b < quads`,
+    /// fold the `pending` deferred challenges (`d = pending.len() ≤ 2`)
+    /// into the 4 logical values `lv[i] = fold(l, (b≪2)|i, pending)` (same
+    /// for `r`), write them back to the buffer prefix when `d > 0` (the
+    /// caller truncates), weight the `L` side by `suffix[b]`, and
+    /// accumulate the two 3×3 node grids' nine products. Returns the
+    /// `X₁`-monomial-converted nine coefficients (`[A_u[v]]` at `u·3+v`) —
+    /// exactly the generic pass's return. Any override must be VALUE-EXACT
+    /// (only reorder exact field ops; for the arity-4 fold, the expansion
+    /// `v₀ + ρ₁·(v₁−v₀) + ρ₂·(v₂−v₀) + ρ₁ρ₂·(v₃−v₂−v₁+v₀)` and shared
+    /// reduction are exact — reduction is `F₂`-linear); return `None` to
+    /// use the driver's generic pass.
+    fn eqf_grid_pass(
+        _l: &mut [Self],
+        _r: &mut [Self],
+        _pending: &[Self],
+        _suffix: &[Self],
+        _quads: usize,
+    ) -> Option<[Self; 9]> {
         None
     }
 }

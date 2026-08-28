@@ -17,9 +17,11 @@ thiserror = "2.0"
 rayon = { version = "1.10", optional = true }
 rand = "0.9"
 rand_core = "0.9"
-# The ring-switch + recursive Ligerito opener (commit / recursive folding hot
-# paths). Pinned as a LOCAL PATH dependency, exactly as zinc-plus pins it;
-# see README.md. flock-core itself pins bincode 1.3 and serde 1.
+# The ring-switch + recursive Ligerito opener (commit / Ligerito hot paths).
+# Kept as a portable LOCAL PATH dependency on the sibling flock checkout.
+# The k=4 Johnson configuration is generated in this crate, so the dependency
+# does not need a private `Slim3` enum variant; see README.md.
+# flock-core itself pins bincode 1.3 and serde 1.
 flock-core = { path = "../flock/crates/flock-core" }
 # The host proof stream carries flock's serde `LigeritoProof` as a
 # length-prefixed bincode blob (bincode 1.3, matching flock's own pin).
@@ -41,6 +43,14 @@ harness = false
 # GF(2^128)-GHASH vs GF(2^127)-b127 head-to-head on the prover's hot
 # patterns (batch/chain mul, squares, comb powers, wide-dot, eqf kernels).
 # Reps via F2Z_BENCH_REPS.
+
+[[bench]]
+name = "cm_and"
+harness = false
+# CM-AND relation (paper \Relation_CM): batched 32-bit x AND y = z via ONE
+# linear constraint per gate, with w = x XOR y as an F2-VIRTUAL block -
+# committed bits are x|y|z only, w is derived by the virtual F2Z opening.
+# Exponents via F2Z_CM_EXPONENTS; reps via F2Z_BENCH_REPS.
 
 [[bench]]
 name = "u32_mul"

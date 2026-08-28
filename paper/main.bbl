@@ -1,20 +1,120 @@
-% $ biblatex auxiliary file $
-% $ biblatex bbl format version 3.3 $
-% Do not modify the above lines!
-%
-% This is an auxiliary file used by the 'biblatex' package.
-% This file may safely be deleted. It will be recreated by
-% biber as required.
-%
-\begingroup
-\makeatletter
-\@ifundefined{ver@biblatex.sty}
-  {\@latex@error
-     {Missing 'biblatex' package}
-     {The bibliography requires the 'biblatex' package.}
-      \aftergroup\endinput}
-  {}
-\endgroup
+\newcommand{\etalchar}[1]{$^{#1}$}
+\begin{thebibliography}{BSBHR18}
 
-\endinput
+\bibitem[ACFY25]{whir}
+Gal Arnon, Alessandro Chiesa, Giacomo Fenzi, and Eylon Yogev.
+\newblock {WHIR:} reed-solomon proximity testing with super-fast verification.
+\newblock In Serge Fehr and Pierre{-}Alain Fouque, editors, {\em Advances in
+  Cryptology - {EUROCRYPT} 2025 - 44th Annual International Conference on the
+  Theory and Applications of Cryptographic Techniques, Madrid, Spain, May 4-8,
+  2025, Proceedings, Part {IV}}, volume 15604 of {\em Lecture Notes in Computer
+  Science}, pages 214--243. Springer, 2025.
 
+\bibitem[AGK{\etalchar{+}}26]{zincplus}
+Alexander Abdugafarov, Albert Garreta, Amit Kumar, Michał Osadnik, Psi Vesely,
+  Ilia Vlasov, and Kai~Zhe Zheng.
+\newblock Zinc+: {SNARKs} for polynomial rings.
+\newblock Cryptology {ePrint} Archive, Paper 2026/855, 2026.
+
+\bibitem[BFS19]{DARK}
+Benedikt B{\"u}nz, Ben Fisch, and Alan Szepieniec.
+\newblock Transparent {SNARKs} from {DARK} compilers.
+\newblock Cryptology {ePrint} Archive, Paper 2019/1229, 2019.
+\newblock EUROCRYPT 2020.
+
+\bibitem[BHR{\etalchar{+}}21]{BlockDARK}
+Alexander~R. Block, Justin Holmgren, Alon Rosen, Ron~D. Rothblum, and Pratik
+  Soni.
+\newblock Time- and space-efficient arguments from groups of unknown order.
+\newblock Cryptology {ePrint} Archive, Paper 2021/358, 2021.
+\newblock CRYPTO 2021.
+
+\bibitem[Bin26]{binius64}
+Binius64.
+\newblock Binius64 whitepaper.
+\newblock GitHub repository, 2026.
+
+\bibitem[BRW26]{flock}
+Benedikt Bünz, Ron Rothblum, and William Wang.
+\newblock Flock: Fast proving for batch boolean computations.
+\newblock Cryptology {ePrint} Archive, Paper 2026/1329, 2026.
+
+\bibitem[BSBHR18]{pre_ring_switch}
+Eli Ben-Sasson, Iddo Bentov, Yinon Horesh, and Michael Riabzev.
+\newblock Scalable, transparent, and post-quantum secure computational
+  integrity.
+\newblock Cryptology {ePrint} Archive, Paper 2018/046, 2018.
+
+\bibitem[CHA24]{zaratan}
+Matteo Campanelli and Mathias Hall-Andersen.
+\newblock Fully succinct arguments over the integers from first principles.
+\newblock Cryptology {ePrint} Archive, Paper 2024/1548, 2024.
+
+\bibitem[CXNB26]{limber}
+Jessica Chen, Lucas Xia, Wilson Nguyen, and Benedikt Bünz.
+\newblock Limber: Low overhead {SNARKs} for integers from any {PCS}.
+\newblock Cryptology {ePrint} Archive, Paper 2026/1635, 2026.
+
+\bibitem[DP23]{binius}
+Benjamin~E. Diamond and Jim Posen.
+\newblock Succinct arguments over towers of binary fields.
+\newblock Cryptology {ePrint} Archive, Paper 2023/1784, 2023.
+\newblock EUROCRYPT 2025.
+
+\bibitem[DP24]{binius2}
+Benjamin~E. Diamond and Jim Posen.
+\newblock Polylogarithmic proofs for multilinears over binary towers.
+\newblock Cryptology {ePrint} Archive, Paper 2024/504, 2024.
+
+\bibitem[GWV{\etalchar{+}}25]{zinc}
+Albert Garreta, Hendrik Waldner, Ilia Vlasov, Katerina Hristova, Luca
+  Dall’Ava, Marko {\v C}upi{\'c}, and Matthew Klein.
+\newblock Zinc: Succinct arguments with small arithmetization overheads from
+  iops of proximity to the integers.
+\newblock In {\em Advances in Cryptology – CRYPTO 2025: 45th Annual
+  International Cryptology Conference, Santa Barbara, CA, USA, August 17–21,
+  2025, Proceedings, Part VII}, pages 259--291, Berlin, Heidelberg, 2025.
+  Springer-Verlag.
+
+\bibitem[{Nat}15]{FIPS180-4}
+{National Institute of Standards and Technology}.
+\newblock Secure hash standard ({SHS}).
+\newblock Technical Report FIPS PUB 180-4, U.S. Department of Commerce, 2015.
+
+\bibitem[Set19]{spartan}
+Srinath Setty.
+\newblock Spartan: Efficient and general-purpose {zkSNARKs} without trusted
+  setup.
+\newblock Cryptology {ePrint} Archive, Paper 2019/550, 2019.
+\newblock CRYPTO 2020.
+
+\bibitem[Sou26]{lev}
+Lev Soukhanov.
+\newblock Char 2 fieldswitch.
+\newblock HackMD post, 2026.
+
+\bibitem[SSPP26]{qaren}
+Alireza Shirzad, Sriram Sridhar, Dimitrios Papadopoulos, and Charalampos
+  Papamanthou.
+\newblock Relaxed modular {PCS} from arbitrary {PCS} and applications to
+  {SNARKs} for integers.
+\newblock Cryptology {ePrint} Archive, Paper 2026/347, 2026.
+
+\bibitem[Sta21]{ethstark}
+StarkWare.
+\newblock {ethSTARK} documentation.
+\newblock Online, 2021.
+\newblock Version 1.2.
+
+\bibitem[STW23]{ccs}
+Srinath Setty, Justin Thaler, and Riad Wahby.
+\newblock Customizable constraint systems for succinct arguments.
+\newblock Cryptology {ePrint} Archive, Paper 2023/552, 2023.
+
+\bibitem[ZCF23]{basefold}
+Hadas Zeilberger, Binyi Chen, and Ben Fisch.
+\newblock Basefold: Efficient field-agnostic polynomial commitment schemes from
+  foldable codes.
+\newblock Cryptology ePrint Archive, Paper 2023/1705, 2023.
+
+\end{thebibliography}

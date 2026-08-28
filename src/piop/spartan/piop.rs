@@ -2,6 +2,8 @@
 
 use blake3::Hasher;
 use crypto_primitives::{FromWithConfig, PrimeField, crypto_bigint_monty::MontyField};
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 use thiserror::Error;
 
 use crate::{poly::mle::DenseMultilinearExtension, transcript::traits::Transcript};
@@ -620,14 +622,20 @@ where
     C: SpartanMatrixCoefficient<F>,
     R: SumcheckProductReducer<F>,
 {
-    validate_prover_inputs(matrices, &products, &assignment)?;
+    {
+        let _g = crate::utils::prof::scope("sp:validate");
+        validate_prover_inputs(matrices, &products, &assignment)?;
+    }
     absorb_statement(transcript, matrices, assignment_oracle_binding);
 
     let field_config = matrices.config();
     let tau = (0..matrices.num_row_vars())
         .map(|_| squeeze_field(transcript, field_config))
         .collect::<Vec<F>>();
-    let equality_factors = make_equality_factors(&tau, field_config)?;
+    let equality_factors = {
+        let _g = crate::utils::prof::scope("sp:eq");
+        make_equality_factors(&tau, field_config)?
+    };
     let outer = {
         let _scope = crate::utils::prof::scope("spartan:outer_sumcheck");
         prove_outer_sumcheck_with_reducer(
@@ -1206,10 +1214,16 @@ where
         return Err(SpartanMatrixError::InvalidAssignmentConstant.into());
     }
     let zero = F::zero_with_cfg(matrices.config());
-    if assignment.evaluations[matrices.matrices().column_count()..]
-        .iter()
-        .any(|value| value != &zero)
-    {
+    let padding = &assignment.evaluations[matrices.matrices().column_count()..];
+    #[cfg(feature = "parallel")]
+    let has_nonzero = if padding.len() >= (1 << 14) && rayon::current_num_threads() > 1 {
+        padding.par_iter().any(|value| value != &zero)
+    } else {
+        padding.iter().any(|value| value != &zero)
+    };
+    #[cfg(not(feature = "parallel"))]
+    let has_nonzero = padding.iter().any(|value| value != &zero);
+    if has_nonzero {
         return Err(SpartanError::InvalidAssignmentPadding);
     }
     Ok(())
@@ -1368,11 +1382,45 @@ where
     F: SpartanField,
     C: SpartanMatrixCoefficient<F>,
 {
-    for value in values {
-        if F::canonical_modulus_encoding(value.cfg()) != matrices.field_modulus_encoding() {
-            return Err(SpartanError::FieldConfigurationMismatch);
+    // Elements built under one configuration share the SAME `Config`
+    // reference, so encode-and-compare only when the pointer changes:
+    // the sweep stays one canonicity check per element instead of one
+    // modulus-encoding allocation each. The accepted set is unchanged
+    // (pointer-equal configs have equal encodings; a new pointer takes
+    // the full comparison).
+    let sweep = |values: &[F]| -> bool {
+        let mut verified_cfg: Option<*const F::Config> = None;
+        for value in values {
+            let cfg_ptr: *const F::Config = value.cfg();
+            if verified_cfg != Some(cfg_ptr) {
+                if F::canonical_modulus_encoding(value.cfg()) != matrices.field_modulus_encoding() {
+                    return false;
+                }
+                verified_cfg = Some(cfg_ptr);
+            }
+            if value.validate_element().is_err() {
+                return false;
+            }
         }
-        value.validate_element().map_err(SpartanMatrixError::from)?;
+        true
+    };
+    #[cfg(feature = "parallel")]
+    let all_valid = if values.len() >= (1 << 14) && rayon::current_num_threads() > 1 {
+        values.par_chunks(1 << 12).all(|chunk| sweep(chunk))
+    } else {
+        sweep(values)
+    };
+    #[cfg(not(feature = "parallel"))]
+    let all_valid = sweep(values);
+    if !all_valid {
+        // Sequential re-scan for the canonical first error.
+        for value in values {
+            if F::canonical_modulus_encoding(value.cfg()) != matrices.field_modulus_encoding() {
+                return Err(SpartanError::FieldConfigurationMismatch);
+            }
+            value.validate_element().map_err(SpartanMatrixError::from)?;
+        }
+        unreachable!("parallel validation rejected but the canonical scan found no error");
     }
     Ok(())
 }
@@ -2239,6 +2287,164 @@ mod tests {
             &assignment,
         )
         .unwrap();
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn parallel_field_validation_preserves_first_error_and_pre_absorption() {
+        let config = config(Q100);
+        let foreign_config = self::config((1_u128 << 127) - 1);
+        let one = F128::one_with_cfg(&config);
+        let zero = F128::zero_with_cfg(&config);
+        let logical_rows = (1 << 13) + 1;
+        let matrix = || {
+            SparseMatrix::try_from_rows(
+                1,
+                (0..logical_rows)
+                    .map(|row| {
+                        if row == 0 {
+                            vec![(0, one.clone())]
+                        } else {
+                            Vec::new()
+                        }
+                    })
+                    .collect(),
+            )
+            .unwrap()
+        };
+        let matrices = PreparedConstraintMatrices::new(
+            ConstraintMatrices::new(matrix(), matrix(), matrix()).unwrap(),
+            &config,
+        )
+        .unwrap();
+        assert_eq!(matrices.num_row_vars(), 14);
+
+        let sequential_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
+        let parallel_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .unwrap();
+        let foreign = field(1, &foreign_config);
+        let malformed = F128::new_unchecked(Uint::from(u128::MAX), &config);
+
+        let mut foreign_first = vec![zero.clone(); 1 << 14];
+        foreign_first[17] = foreign.clone();
+        foreign_first[(1 << 13) + 3] = malformed.clone();
+        let sequential_error = sequential_pool
+            .install(|| validate_elements_field(&foreign_first, &matrices))
+            .unwrap_err();
+        let parallel_error = parallel_pool
+            .install(|| validate_elements_field(&foreign_first, &matrices))
+            .unwrap_err();
+        assert_eq!(sequential_error, SpartanError::FieldConfigurationMismatch);
+        assert_eq!(parallel_error, sequential_error);
+
+        let mut malformed_first = vec![zero.clone(); 1 << 14];
+        malformed_first[17] = malformed;
+        malformed_first[(1 << 13) + 3] = foreign;
+        let sequential_error = sequential_pool
+            .install(|| validate_elements_field(&malformed_first, &matrices))
+            .unwrap_err();
+        let parallel_error = parallel_pool
+            .install(|| validate_elements_field(&malformed_first, &matrices))
+            .unwrap_err();
+        assert_eq!(parallel_error, sequential_error);
+        assert_eq!(
+            sequential_error,
+            SpartanError::Matrix(SpartanMatrixError::InvalidFieldConfiguration(
+                crate::piop::spartan::SpartanFieldError::NonCanonicalElement,
+            ))
+        );
+
+        let products = R1csProductMles {
+            az: DenseMultilinearExtension {
+                evaluations: foreign_first,
+                num_vars: 14,
+            },
+            bz: DenseMultilinearExtension {
+                evaluations: vec![zero.clone(); 1 << 14],
+                num_vars: 14,
+            },
+            cz: DenseMultilinearExtension {
+                evaluations: vec![zero; 1 << 14],
+                num_vars: 14,
+            },
+        };
+        let assignment = DenseMultilinearExtension {
+            evaluations: vec![one.clone()],
+            num_vars: 0,
+        };
+        let mut rejected_transcript = Blake3Transcript::new();
+        let result = parallel_pool.install(|| {
+            prove_spartan_piop(
+                &mut rejected_transcript,
+                &matrices,
+                &[0x5a; 32],
+                products,
+                assignment,
+            )
+        });
+        assert_eq!(result, Err(SpartanError::FieldConfigurationMismatch));
+
+        let mut fresh_transcript = Blake3Transcript::new();
+        assert_eq!(
+            rejected_transcript.get_challenge::<u128>(),
+            fresh_transcript.get_challenge::<u128>()
+        );
+
+        let logical_columns = (1 << 15) + 1;
+        let wide_matrix =
+            || SparseMatrix::try_from_rows(logical_columns, vec![vec![(0, one.clone())]]).unwrap();
+        let wide_matrices = PreparedConstraintMatrices::new(
+            ConstraintMatrices::new(wide_matrix(), wide_matrix(), wide_matrix()).unwrap(),
+            &config,
+        )
+        .unwrap();
+        assert_eq!(wide_matrices.num_column_vars(), 16);
+        let mut padded_assignment = DenseMultilinearExtension {
+            evaluations: vec![F128::zero_with_cfg(&config); 1 << 16],
+            num_vars: 16,
+        };
+        padded_assignment.evaluations[0] = one.clone();
+        *padded_assignment.evaluations.last_mut().unwrap() = one.clone();
+        let sequential_error = sequential_pool
+            .install(|| validate_assignment(&wide_matrices, &padded_assignment))
+            .unwrap_err();
+        let parallel_error = parallel_pool
+            .install(|| validate_assignment(&wide_matrices, &padded_assignment))
+            .unwrap_err();
+        assert_eq!(sequential_error, SpartanError::InvalidAssignmentPadding);
+        assert_eq!(parallel_error, sequential_error);
+
+        let one_value = DenseMultilinearExtension {
+            evaluations: vec![one],
+            num_vars: 0,
+        };
+        let products = R1csProductMles {
+            az: one_value.clone(),
+            bz: one_value.clone(),
+            cz: one_value,
+        };
+        let mut rejected_transcript = Blake3Transcript::new();
+        let result = parallel_pool.install(|| {
+            prove_spartan_piop(
+                &mut rejected_transcript,
+                &wide_matrices,
+                &[0xa5; 32],
+                products,
+                padded_assignment,
+            )
+        });
+        assert_eq!(result, Err(SpartanError::InvalidAssignmentPadding));
+
+        let mut fresh_transcript = Blake3Transcript::new();
+        assert_eq!(
+            rejected_transcript.get_challenge::<u128>(),
+            fresh_transcript.get_challenge::<u128>()
+        );
     }
 
     #[test]

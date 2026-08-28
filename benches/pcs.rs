@@ -170,11 +170,17 @@ fn bench_lig_configs(m_p: usize) -> ((LigPc, LigVc), String) {
     } else if m_p + LOG_PACKING >= 22 {
         match prof.as_str() {
             "fast" => (LigConfig::Embedded(LigeritoProfile::Fast), "fast"),
-            "slim" => (LigConfig::Embedded(LigeritoProfile::Slim), "slim"),
-            "secure" => (LigConfig::Embedded(LigeritoProfile::Secure), "secure"),
-            other => panic!(
-                "unknown F2Z_LIG_PROFILE {other:?}: expected fast, slim, secure, custom:*, udr:*, or udrg:*"
+            "slim3" => (
+                LigConfig::CustomJohnson {
+                    log_inv_rate: 3,
+                    initial_k: 4,
+                },
+                "slim3",
             ),
+            "secure" => (LigConfig::Embedded(LigeritoProfile::Secure), "secure"),
+            // unrecognized → slim (unset never lands here: the env default
+            // is "custom:3:4", handled by the custom branch above)
+            _ => (LigConfig::Embedded(LigeritoProfile::Slim), "slim"),
         }
     } else {
         (LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 }, "adhoc")
@@ -429,6 +435,11 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     // appear only under `OBLONG_PROFILE=1` (the timed medians above then
     // carry ~µs-scale scope overhead — enable it for breakdown runs, not
     // for headline timing); the proof-size split is always available.
+    // Release flock's cross-prove scratch pool first: the reported prove
+    // peak is the production single-prove shape (pool cold), not the
+    // reps-warmed pool stacked under the forest. The timed medians above
+    // deliberately keep the warm pool — that IS the steady-state timing.
+    f2z::ligerito_flock::flock_scratch_clear();
     reset_peak();
     let _ = f2z::utils::prof::take_totals(); // drain the timed reps' records
     let split_proof = {

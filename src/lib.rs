@@ -15,27 +15,46 @@
 //! The **only** PCS opener is the flock-backed **ring-switch + recursive
 //! Ligerito** pipeline ([`ligerito_flock`]): the committed bit-matrix is
 //! packed 128 bits per `GF(2^128)` element and RS-encoded/Merkleized by
-//! [`flock-core`](flock_core) under the hash recorded in the commitment;
-//! each mod-`q` limb chunk contributes a
+//! [`flock-core`](flock_core); each mod-`q` limb chunk contributes a
 //! [merged product forest][merged_forest] + a de-black-boxing pre-sumcheck,
 //! and the L chunk claims are `η`-batched into ONE recursive Ligerito call
 //! whose closing residual is evaluated succinctly by the ring-switch
 //! tensor-algebra ([`ligerito::tensor_eq_phi_eval`]).
 //!
-//! Config-aware commitment entry points are
-//! [`ligerito_flock::commit_rs_ligerito`],
-//! [`ligerito_flock::commit_rs_ligerito_rows`], and
-//! [`ligerito_flock::commit_rs_ligerito_packed`]. The explicit low-level
-//! [`ligerito_flock::commit_rs_flock`] /
-//! [`ligerito_flock::commit_rs_flock_with`] entries retain SHA-256.
+//! Entry points: [`ligerito_flock::commit_rs_flock`] /
+//! [`ligerito_flock::commit_rs_flock_with`],
 //! [`ligerito_flock::prove_mle_eval_mod_q_ligerito`],
 //! [`ligerito_flock::verify_mle_eval_mod_q_ligerito`], with the proof object
 //! [`ligerito_flock::IntEvalRsLigModQProof`] and its
 //! [`to_bytes`][ligerito_flock::IntEvalRsLigModQProof::to_bytes] /
 //! [`from_bytes`][ligerito_flock::IntEvalRsLigModQProof::from_bytes] host
 //! codec. See `docs/DESIGN.md` for the protocol and the serialization format.
+//!
+//! ## F₂-virtualization
+//!
+//! Claims about a DERIVED vector `h = M·f` (a public sparse
+//! [`F₂`-linear map][f2map::F2CellMap] of the committed bits) are opened
+//! against the commitment to `f` alone —
+//! [`ligerito_flock::prove_mle_eval_mod_q_ligerito_virtual`] /
+//! [`ligerito_flock::verify_mle_eval_mod_q_ligerito_virtual`]: the
+//! per-chunk forests and pre-sumchecks run on `h` without ever touching
+//! the oracle, the terminal claims are transposed through `Mᵀ` at the
+//! commitment field (XOR is addition in char 2), and the transposed
+//! arbitrary-weight inner product is opened NATIVELY by the dual-basis
+//! ring switch ([`dual_basis`], the paper's bilinear-embedding batching
+//! protocol): a 128-element plane message `h_i`, one zero-evader `ρ`,
+//! and ONE Ligerito call — no bridge sumcheck, no point opening. The
+//! verifier's `M`-dependent cost is `O(L·#rows + nnz + 2^{m_p})` field
+//! ops. When `M` is the identity on a shared row layout the opening
+//! routes to the plain base path instead (the identity fast path,
+//! `F2Z_VIRT_ID_FAST`), skipping the derived-vector machinery entirely.
+//! [`piop::spartan::cm`] wires a full R1CS through this path — the
+//! paper's CM relation: batched `x ∧ y = z` via one LINEAR constraint
+//! per gate with `w = x ⊕ y` as a virtual (derived, uncommitted) block.
 
+pub mod dual_basis;
 pub mod ext_proj;
+pub mod f2map;
 pub mod ligerito;
 pub mod ligerito_flock;
 pub mod merged_forest;

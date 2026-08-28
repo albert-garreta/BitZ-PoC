@@ -318,7 +318,7 @@ pub fn prove_quad_eq_sumcheck(
             };
             #[cfg(feature = "parallel")]
             {
-                let min_len = (512usize / half.max(1)).max(1);
+                let min_len = crate::piop::sumcheck::eq_factored::par_min_len(bufs.len(), half);
                 bufs.par_iter_mut().with_min_len(min_len).map(fused).collect()
             }
             #[cfg(not(feature = "parallel"))]
@@ -355,7 +355,7 @@ pub fn prove_quad_eq_sumcheck(
             };
             #[cfg(feature = "parallel")]
             {
-                let min_len = (512usize / half.max(1)).max(1);
+                let min_len = crate::piop::sumcheck::eq_factored::par_min_len(bufs.len(), half);
                 bufs.par_iter().with_min_len(min_len).map(compute).collect()
             }
             #[cfg(not(feature = "parallel"))]
@@ -515,7 +515,8 @@ pub fn prove_quad_bottom_sumcheck(
         ($body:expr, $half:expr) => {{
             #[cfg(feature = "parallel")]
             {
-                let min_len = (512usize / ($half).max(1)).max(1);
+                let min_len =
+                    crate::piop::sumcheck::eq_factored::par_min_len(groups.len(), $half);
                 groups.par_iter().with_min_len(min_len).map($body).collect::<Vec<[Gf; 5]>>()
             }
             #[cfg(not(feature = "parallel"))]
@@ -675,7 +676,7 @@ pub fn prove_quad_bottom_sumcheck(
     };
     #[cfg(feature = "parallel")]
     let mut bufs: Vec<[Vec<Gf>; 4]> = {
-        let min_len = (512usize / half3.max(1)).max(1);
+        let min_len = crate::piop::sumcheck::eq_factored::par_min_len(groups.len(), half3);
         groups.par_iter().with_min_len(min_len).map(mat_group).collect()
     };
     #[cfg(not(feature = "parallel"))]
@@ -720,7 +721,7 @@ pub fn prove_quad_bottom_sumcheck(
             };
             #[cfg(feature = "parallel")]
             {
-                let min_len = (512usize / half.max(1)).max(1);
+                let min_len = crate::piop::sumcheck::eq_factored::par_min_len(bufs.len(), half);
                 bufs.par_iter_mut().with_min_len(min_len).map(fused).collect()
             }
             #[cfg(not(feature = "parallel"))]
@@ -749,7 +750,7 @@ pub fn prove_quad_bottom_sumcheck(
             };
             #[cfg(feature = "parallel")]
             {
-                let min_len = (512usize / half.max(1)).max(1);
+                let min_len = crate::piop::sumcheck::eq_factored::par_min_len(bufs.len(), half);
                 bufs.par_iter().with_min_len(min_len).map(compute).collect()
             }
             #[cfg(not(feature = "parallel"))]
