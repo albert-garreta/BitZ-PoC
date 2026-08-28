@@ -40,7 +40,8 @@ pub enum F2CellMapError {
     /// the sparse representation (and therefore the statement digest)
     /// canonical.
     ColsNotStrictlyIncreasing { row: usize },
-    /// The declared shape does not fit the flat index type.
+    /// The declared shape (or the entry count — offsets are stored as
+    /// `u32`, so `nnz ≤ u32::MAX`) does not fit the flat index types.
     ShapeTooLarge,
 }
 
@@ -53,7 +54,7 @@ pub enum F2CellMapError {
 pub struct F2CellMap {
     rows: usize,
     cols: usize,
-    row_offsets: Box<[usize]>,
+    row_offsets: Box<[u32]>,
     entries: Box<[u32]>,
     digest: [u8; 32],
     identity: bool,
@@ -84,13 +85,16 @@ impl F2CellMap {
             }
         }
 
-        let mut row_offsets = Vec::with_capacity(rows + 1);
-        row_offsets.push(0usize);
         let nnz: usize = row_lists.iter().map(Vec::len).sum();
+        if u32::try_from(nnz).is_err() {
+            return Err(F2CellMapError::ShapeTooLarge);
+        }
+        let mut row_offsets = Vec::with_capacity(rows + 1);
+        row_offsets.push(0u32);
         let mut entries = Vec::with_capacity(nnz);
         for list in row_lists {
             entries.extend(list);
-            row_offsets.push(entries.len());
+            row_offsets.push(entries.len() as u32);
         }
         Ok(Self::sealed(
             rows,
@@ -110,30 +114,67 @@ impl F2CellMap {
     pub fn try_from_csr(
         rows: usize,
         cols: usize,
-        row_offsets: Vec<usize>,
+        row_offsets: Vec<u32>,
         entries: Vec<u32>,
     ) -> Result<Self, F2CellMapError> {
         if u32::try_from(cols).is_err()
+            || u32::try_from(entries.len()).is_err()
             || row_offsets.len() != rows + 1
             || row_offsets.first() != Some(&0)
-            || row_offsets.last() != Some(&entries.len())
-            || row_offsets.windows(2).any(|b| b[0] > b[1])
+            || row_offsets.last().map(|&o| o as usize) != Some(entries.len())
         {
             return Err(F2CellMapError::ShapeTooLarge);
         }
-        for (row, bounds) in row_offsets.windows(2).enumerate() {
-            let mut previous: Option<u32> = None;
-            for &col in &entries[bounds[0]..bounds[1]] {
-                if col as usize >= cols {
-                    return Err(F2CellMapError::ColOutOfBounds { row, col });
+        // One parallel validation sweep (offset monotonicity plus per-row
+        // bounds and strict increase); the canonical first-error scan
+        // reruns sequentially only when something is invalid.
+        const RANGE: usize = 1 << 16;
+        let n_ranges = rows.div_ceil(RANGE).max(1);
+        let all_valid = crate::cfg_into_iter!(0..n_ranges).all(|ri| {
+            let lo = ri * RANGE;
+            let hi = ((ri + 1) * RANGE).min(rows);
+            let mut start = row_offsets[lo];
+            for r in lo..hi {
+                let end = row_offsets[r + 1];
+                if end < start {
+                    return false;
                 }
-                if let Some(prev) = previous
-                    && prev >= col
-                {
-                    return Err(F2CellMapError::ColsNotStrictlyIncreasing { row });
+                let mut previous: Option<u32> = None;
+                for &col in &entries[start as usize..end as usize] {
+                    if col as usize >= cols {
+                        return false;
+                    }
+                    if let Some(prev) = previous
+                        && prev >= col
+                    {
+                        return false;
+                    }
+                    previous = Some(col);
                 }
-                previous = Some(col);
+                start = end;
             }
+            true
+        });
+        if !all_valid {
+            // Reproduce the old scan's error precedence exactly.
+            if row_offsets.windows(2).any(|b| b[0] > b[1]) {
+                return Err(F2CellMapError::ShapeTooLarge);
+            }
+            for (row, bounds) in row_offsets.windows(2).enumerate() {
+                let mut previous: Option<u32> = None;
+                for &col in &entries[bounds[0] as usize..bounds[1] as usize] {
+                    if col as usize >= cols {
+                        return Err(F2CellMapError::ColOutOfBounds { row, col });
+                    }
+                    if let Some(prev) = previous
+                        && prev >= col
+                    {
+                        return Err(F2CellMapError::ColsNotStrictlyIncreasing { row });
+                    }
+                    previous = Some(col);
+                }
+            }
+            unreachable!("parallel validation rejected but the canonical scan found no error");
         }
         Ok(Self::sealed(
             rows,
@@ -145,7 +186,7 @@ impl F2CellMap {
 
     /// Finishes construction: the map is immutable, so its canonical
     /// digest and the identity flag are computed once here and cached.
-    fn sealed(rows: usize, cols: usize, row_offsets: Box<[usize]>, entries: Box<[u32]>) -> Self {
+    fn sealed(rows: usize, cols: usize, row_offsets: Box<[u32]>, entries: Box<[u32]>) -> Self {
         let mut map = Self {
             rows,
             cols,
@@ -176,7 +217,7 @@ impl F2CellMap {
 
     /// The source cells of derived cell `i`.
     pub fn row(&self, i: usize) -> &[u32] {
-        &self.entries[self.row_offsets[i]..self.row_offsets[i + 1]]
+        &self.entries[self.row_offsets[i] as usize..self.row_offsets[i + 1] as usize]
     }
 
     /// Whether the map is the identity (`h = f`: square, every row `r`
@@ -189,14 +230,14 @@ impl F2CellMap {
     fn compute_identity(&self) -> bool {
         self.rows == self.cols
             && self.entries.len() == self.rows
-            && self.row_offsets.iter().enumerate().all(|(i, &o)| o == i)
+            && self.row_offsets.iter().enumerate().all(|(i, &o)| o as usize == i)
             && self.entries.iter().enumerate().all(|(i, &e)| e as usize == i)
     }
 
     /// The raw CSR storage `(row_offsets, entries)` — for streaming
     /// scans that walk consecutive rows (one offset load per row instead
     /// of two bounds-checked [`Self::row`] loads).
-    pub(crate) fn csr(&self) -> (&[usize], &[u32]) {
+    pub(crate) fn csr(&self) -> (&[u32], &[u32]) {
         (&self.row_offsets, &self.entries)
     }
 
@@ -206,7 +247,7 @@ impl F2CellMap {
             .windows(2)
             .enumerate()
             .filter(|(_, b)| b[0] != b[1])
-            .map(|(i, b)| (i, &self.entries[b[0]..b[1]]))
+            .map(|(i, b)| (i, &self.entries[b[0] as usize..b[1] as usize]))
     }
 
     /// Canonical BLAKE3 digest of the map (shape + sparse content). Bound
@@ -229,17 +270,39 @@ impl F2CellMap {
         hash.update(&(self.cols as u64).to_le_bytes());
         hash.update(&(self.entries.len() as u64).to_le_bytes());
 
-        let mut buffer = Vec::with_capacity(self.row_offsets.len() * 8);
-        for offset in self.row_offsets.iter() {
-            buffer.extend_from_slice(&(*offset as u64).to_le_bytes());
+        // The SAME byte stream as ever (every offset as u64 LE, every
+        // entry as u32 LE — BLAKE3 is a byte stream, so chunked staging
+        // is bit-identical to one giant buffer), without the
+        // former whole-array transient copies.
+        const CHUNK: usize = 1 << 21;
+        let mut buffer = Vec::with_capacity(CHUNK * 8);
+        for block in self.row_offsets.chunks(CHUNK) {
+            buffer.clear();
+            for &offset in block {
+                buffer.extend_from_slice(&(offset as u64).to_le_bytes());
+            }
+            hash.update_rayon(&buffer);
         }
-        hash.update_rayon(&buffer);
-        buffer.clear();
-        buffer.reserve(self.entries.len() * 4);
-        for entry in self.entries.iter() {
-            buffer.extend_from_slice(&entry.to_le_bytes());
+        #[cfg(target_endian = "little")]
+        {
+            // u32 LE entries are exactly their in-memory bytes.
+            // SAFETY: a &[u32] reinterpreted as its underlying bytes.
+            let bytes = unsafe {
+                core::slice::from_raw_parts(
+                    self.entries.as_ptr().cast::<u8>(),
+                    self.entries.len() * 4,
+                )
+            };
+            hash.update_rayon(bytes);
         }
-        hash.update_rayon(&buffer);
+        #[cfg(not(target_endian = "little"))]
+        for block in self.entries.chunks(CHUNK * 2) {
+            buffer.clear();
+            for &entry in block {
+                buffer.extend_from_slice(&entry.to_le_bytes());
+            }
+            hash.update_rayon(&buffer);
+        }
         *hash.finalize().as_bytes()
     }
 
@@ -288,7 +351,7 @@ impl F2CellMap {
                             continue;
                         }
                         let mut bit = 0u64;
-                        for &j in &self.entries[row_start..end] {
+                        for &j in &self.entries[row_start as usize..end as usize] {
                             let j = j as usize;
                             let (c_f, b_f) = (j >> t_wf, j & f_mask);
                             bit ^= (f_rows[c_f][b_f >> 6] >> (b_f & 63)) & 1;

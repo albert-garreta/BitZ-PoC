@@ -8094,24 +8094,27 @@ impl VirtRowCoeffs {
     }
 }
 
-/// One 8-row block of the `h_i` scatter, method-of-four-Russians: two
+/// One 16-row block of the `h_i` scatter, method-of-four-Russians: four
 /// 16-entry subset-sum tables over the `G_r` values, then per byte
-/// position one 8×8 bit transpose of the `E_r` patterns and per output
-/// bit two lookups + one accumulator RMW ([`sv_fold_mfr`]'s inner body,
-/// with the scan running over the WEIGHT's bits). Exact field sums.
+/// position two 8×8 bit transposes of the `E_r` patterns and per output
+/// bit four lookups + three adds + ONE accumulator RMW — halving the
+/// per-bit RMW count of the 8-row block at the same table-build cost
+/// ([`sv_fold_mfr`]'s kernel widened; exact field sums either way).
 #[allow(clippy::arithmetic_side_effects)]
 #[inline]
-fn hs_scatter_block(s: &mut [Gf; 128], wits: &[[u64; 2]; 8], vals: &[Gf; 8]) {
+fn hs_scatter_block16(s: &mut [Gf; 128], wits: &[[u64; 2]; 16], vals: &[Gf; 16]) {
     use crate::ligerito::{subset_sums_4, transpose_8x8_bits};
-    let lo_tbl = subset_sums_4([vals[0], vals[1], vals[2], vals[3]]);
-    let hi_tbl = subset_sums_4([vals[4], vals[5], vals[6], vals[7]]);
-    let mut m_bytes = [[0u8; 16]; 8];
+    let t0 = subset_sums_4([vals[0], vals[1], vals[2], vals[3]]);
+    let t1 = subset_sums_4([vals[4], vals[5], vals[6], vals[7]]);
+    let t2 = subset_sums_4([vals[8], vals[9], vals[10], vals[11]]);
+    let t3 = subset_sums_4([vals[12], vals[13], vals[14], vals[15]]);
+    let mut m_bytes = [[0u8; 16]; 16];
     for (e, slot) in m_bytes.iter_mut().enumerate() {
         slot[..8].copy_from_slice(&wits[e][0].to_le_bytes());
         slot[8..].copy_from_slice(&wits[e][1].to_le_bytes());
     }
     for r_byte in 0..16 {
-        let combined: u64 = (m_bytes[0][r_byte] as u64)
+        let lo8: u64 = (m_bytes[0][r_byte] as u64)
             | ((m_bytes[1][r_byte] as u64) << 8)
             | ((m_bytes[2][r_byte] as u64) << 16)
             | ((m_bytes[3][r_byte] as u64) << 24)
@@ -8119,10 +8122,22 @@ fn hs_scatter_block(s: &mut [Gf; 128], wits: &[[u64; 2]; 8], vals: &[Gf; 8]) {
             | ((m_bytes[5][r_byte] as u64) << 40)
             | ((m_bytes[6][r_byte] as u64) << 48)
             | ((m_bytes[7][r_byte] as u64) << 56);
-        let tb = transpose_8x8_bits(combined).to_le_bytes();
+        let hi8: u64 = (m_bytes[8][r_byte] as u64)
+            | ((m_bytes[9][r_byte] as u64) << 8)
+            | ((m_bytes[10][r_byte] as u64) << 16)
+            | ((m_bytes[11][r_byte] as u64) << 24)
+            | ((m_bytes[12][r_byte] as u64) << 32)
+            | ((m_bytes[13][r_byte] as u64) << 40)
+            | ((m_bytes[14][r_byte] as u64) << 48)
+            | ((m_bytes[15][r_byte] as u64) << 56);
+        let tb_lo = transpose_8x8_bits(lo8).to_le_bytes();
+        let tb_hi = transpose_8x8_bits(hi8).to_le_bytes();
         let base = r_byte * 8;
-        for (p, &mask) in tb.iter().enumerate() {
-            s[base + p] += lo_tbl[(mask & 0x0F) as usize] + hi_tbl[(mask >> 4) as usize];
+        for p in 0..8usize {
+            let m0 = tb_lo[p];
+            let m1 = tb_hi[p];
+            s[base + p] += (t0[(m0 & 0x0F) as usize] + t1[(m0 >> 4) as usize])
+                + (t2[(m1 & 0x0F) as usize] + t3[(m1 >> 4) as usize]);
         }
     }
 }
@@ -8147,8 +8162,8 @@ fn virtual_hs_fold(
             let lo = ci * CHUNK;
             let hi = (lo + CHUNK).min(map.rows());
             let mut s = [Gf::zero(); 128];
-            let mut wits = [[0u64; 2]; 8];
-            let mut vals = [Gf::zero(); 8];
+            let mut wits = [[0u64; 2]; 16];
+            let mut vals = [Gf::zero(); 16];
             let mut fill = 0usize;
             // Single-chunk (L = 1) fast path: within a column run the
             // scaled entry is a pass-fixed multiplier — hoist its
@@ -8167,7 +8182,7 @@ fn virtual_hs_fold(
                 if end == row_start {
                     continue;
                 }
-                let sources = &entries[row_start..end];
+                let sources = &entries[row_start as usize..end as usize];
                 // `G_r = Σ_j A(e_{v_j})·pack(f)[y_j]` through the
                 // preprocessed dual-basis columns (value-exact; the
                 // single-source shortcut is `0 + x = x`).
@@ -8195,8 +8210,8 @@ fn virtual_hs_fold(
                 wits[fill] = *e_r.words();
                 vals[fill] = g;
                 fill += 1;
-                if fill == 8 {
-                    hs_scatter_block(&mut s, &wits, &vals);
+                if fill == 16 {
+                    hs_scatter_block16(&mut s, &wits, &vals);
                     fill = 0;
                 }
             }
@@ -8309,7 +8324,7 @@ fn virtual_a_prime_prover(
                     continue;
                 }
                 let phi = phi_from_words(*coeffs.coeff(r).words(), &phi_tables);
-                for &j in &entries[row_start..end] {
+                for &j in &entries[row_start as usize..end as usize] {
                     let j = j as usize;
                     a[j >> LOG_PACKING] += phi * a_cols[j & 127];
                 }

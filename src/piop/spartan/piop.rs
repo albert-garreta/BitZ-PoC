@@ -1,6 +1,8 @@
 //! Composition of Spartan's outer and inner sumchecks.
 
 use blake3::Hasher;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 use thiserror::Error;
 
 use crate::{poly::mle::DenseMultilinearExtension, transcript::traits::Transcript};
@@ -88,21 +90,30 @@ pub fn prove_spartan_piop<F>(
 where
     F: SpartanField,
 {
-    validate_prover_inputs(matrices, &products, &assignment)?;
+    {
+        let _g = crate::utils::prof::scope("sp:validate");
+        validate_prover_inputs(matrices, &products, &assignment)?;
+    }
     absorb_statement(transcript, matrices, assignment_oracle_binding);
 
     let field_config = matrices.config();
     let tau = (0..matrices.num_row_vars())
         .map(|_| squeeze_field(transcript, field_config))
         .collect::<Vec<F>>();
-    let equality_factors = make_equality_factors(&tau, field_config)?;
-    let outer = prove_outer_sumcheck(
-        transcript,
-        F::zero_with_cfg(field_config),
-        equality_factors,
-        products,
-        field_config,
-    )?;
+    let equality_factors = {
+        let _g = crate::utils::prof::scope("sp:eq");
+        make_equality_factors(&tau, field_config)?
+    };
+    let outer = {
+        let _g = crate::utils::prof::scope("sp:outer");
+        prove_outer_sumcheck(
+            transcript,
+            F::zero_with_cfg(field_config),
+            equality_factors,
+            products,
+            field_config,
+        )?
+    };
 
     // The outer prover absorbed [Az(r_x), Bz(r_x), Cz(r_x)] before returning.
     let rho = squeeze_field(transcript, field_config);
@@ -112,14 +123,20 @@ where
         &outer.proof.cz_mle_claim,
         &rho,
     );
-    let batched_matrix = matrices.bind_and_batch(&outer.eval_points, &rho)?;
-    let inner = prove_inner_sumcheck(
-        transcript,
-        inner_initial_claim,
-        batched_matrix,
-        assignment,
-        field_config,
-    )?;
+    let batched_matrix = {
+        let _g = crate::utils::prof::scope("sp:bind");
+        matrices.bind_and_batch(&outer.eval_points, &rho)?
+    };
+    let inner = {
+        let _g = crate::utils::prof::scope("sp:inner");
+        prove_inner_sumcheck(
+            transcript,
+            inner_initial_claim,
+            batched_matrix,
+            assignment,
+            field_config,
+        )?
+    };
 
     let claim = ScaledMleEvaluationClaim::new(
         inner.sumcheck.eval_points.into_boxed_slice(),
@@ -295,10 +312,16 @@ where
         return Err(SpartanMatrixError::InvalidAssignmentConstant.into());
     }
     let zero = F::zero_with_cfg(matrices.config());
-    if assignment.evaluations[matrices.matrices().column_count()..]
-        .iter()
-        .any(|value| value != &zero)
-    {
+    let padding = &assignment.evaluations[matrices.matrices().column_count()..];
+    #[cfg(feature = "parallel")]
+    let has_nonzero = if padding.len() >= (1 << 14) && rayon::current_num_threads() > 1 {
+        padding.par_iter().any(|value| value != &zero)
+    } else {
+        padding.iter().any(|value| value != &zero)
+    };
+    #[cfg(not(feature = "parallel"))]
+    let has_nonzero = padding.iter().any(|value| value != &zero);
+    if has_nonzero {
         return Err(SpartanError::InvalidAssignmentPadding);
     }
     Ok(())
@@ -395,11 +418,46 @@ fn validate_elements_field<F>(
 where
     F: SpartanField,
 {
-    for value in values {
-        if F::canonical_modulus_encoding(value.cfg()) != matrices.field_modulus_encoding() {
-            return Err(SpartanError::FieldConfigurationMismatch);
+    // Elements built under one configuration share the SAME `Config`
+    // reference, so encode-and-compare only when the pointer changes:
+    // the sweep stays one canonicity check per element instead of one
+    // modulus-encoding allocation each. The accepted set is unchanged
+    // (pointer-equal configs have equal encodings; a new pointer takes
+    // the full comparison).
+    let sweep = |values: &[F]| -> bool {
+        let mut verified_cfg: Option<*const F::Config> = None;
+        for value in values {
+            let cfg_ptr: *const F::Config = value.cfg();
+            if verified_cfg != Some(cfg_ptr) {
+                if F::canonical_modulus_encoding(value.cfg()) != matrices.field_modulus_encoding()
+                {
+                    return false;
+                }
+                verified_cfg = Some(cfg_ptr);
+            }
+            if value.validate_element().is_err() {
+                return false;
+            }
         }
-        value.validate_element().map_err(SpartanMatrixError::from)?;
+        true
+    };
+    #[cfg(feature = "parallel")]
+    let all_valid = if values.len() >= (1 << 14) && rayon::current_num_threads() > 1 {
+        values.par_chunks(1 << 12).all(|chunk| sweep(chunk))
+    } else {
+        sweep(values)
+    };
+    #[cfg(not(feature = "parallel"))]
+    let all_valid = sweep(values);
+    if !all_valid {
+        // Sequential re-scan for the canonical first error.
+        for value in values {
+            if F::canonical_modulus_encoding(value.cfg()) != matrices.field_modulus_encoding() {
+                return Err(SpartanError::FieldConfigurationMismatch);
+            }
+            value.validate_element().map_err(SpartanMatrixError::from)?;
+        }
+        unreachable!("parallel validation rejected but the canonical scan found no error");
     }
     Ok(())
 }

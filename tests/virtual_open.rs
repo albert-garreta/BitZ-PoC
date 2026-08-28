@@ -366,7 +366,8 @@ fn virtual_open_identity_fast_path() {
         lig_configs(packed_vars(&p), LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 }).unwrap();
     let rows_f = f_rows(&p, 0x1D_FA57);
     let n = cell_count(&p);
-    let map = F2CellMap::try_from_csr(n, n, (0..=n).collect(), (0..n as u32).collect()).unwrap();
+    let map =
+        F2CellMap::try_from_csr(n, n, (0..=n as u32).collect(), (0..n as u32).collect()).unwrap();
     assert!(map.is_identity());
     let hint = commit_rs_ligerito_rows(&p, rows_f.clone(), &pc);
 

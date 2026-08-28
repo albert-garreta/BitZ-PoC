@@ -30,6 +30,8 @@
 //! a 3-variable block selector.
 
 use blake3::Hasher;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 use crypto_primitives::{FromWithConfig, PrimeField};
 use flock_core::pcs::{
     commit::Commitment,
@@ -249,26 +251,75 @@ pub fn cm_and_map(layout: &CmAndLayout) -> Result<F2CellMap, CmAndError> {
         .capacity
         .checked_mul(CM_AND_F_LIVE_SLOTS + 2 * CM_AND_WORD_BITS)
         .ok_or(CmAndError::DomainTooLarge)?;
-    let mut row_offsets = Vec::with_capacity(n + 1);
-    let mut entries = Vec::with_capacity(nnz);
-    row_offsets.push(0usize);
+    if u32::try_from(nnz).is_err() {
+        return Err(CmAndError::DomainTooLarge);
+    }
 
     let s = layout.gate_vars / 2;
     let t = 7 + layout.gate_vars - s;
-    let high_mask = (1usize << (layout.gate_vars - s)) - 1;
-    for flat_h in 0..n {
-        let b = flat_h & ((1usize << t) - 1);
-        let c = flat_h >> t;
-        let slot = b >> (layout.gate_vars - s);
-        let gate = ((b & high_mask) << s) | c;
-        if slot < CM_AND_W_SLOT {
-            entries.push(layout.flat_cell(slot, gate) as u32);
-        } else {
-            let j = slot - CM_AND_W_SLOT;
-            entries.push(layout.flat_cell(CM_AND_X_SLOT + j, gate) as u32);
-            entries.push(layout.flat_cell(CM_AND_Y_SLOT + j, gate) as u32);
+    let sh = layout.gate_vars - s;
+    let t_mask = (1usize << t) - 1;
+    let high_mask = (1usize << sh) - 1;
+
+    // Closed-form entry offsets (per column 160·2^sh entries; slots below
+    // `CM_AND_W_SLOT` carry one source, `w` slots two), so the CSR fills
+    // range-parallel into preallocated storage — identical rows, entries,
+    // and offsets (and therefore digest) to the sequential push loop.
+    let per_col = (CM_AND_F_LIVE_SLOTS + 2 * CM_AND_WORD_BITS) << sh;
+    let entry_start = |r: usize| -> usize {
+        let b = r & t_mask;
+        let c = r >> t;
+        let slot = b >> sh;
+        let low = b & high_mask;
+        let ones = slot.min(CM_AND_W_SLOT);
+        let twos = slot.saturating_sub(CM_AND_W_SLOT);
+        let in_col =
+            ((ones + 2 * twos) << sh) + if slot >= CM_AND_W_SLOT { 2 * low } else { low };
+        c * per_col + in_col
+    };
+    debug_assert_eq!(entry_start(n), nnz);
+
+    let mut row_offsets = vec![0u32; n + 1];
+    let mut entries = vec![0u32; nnz];
+    {
+        const RANGE: usize = 1 << 18;
+        let n_ranges = n.div_ceil(RANGE).max(1);
+        let mut jobs = Vec::with_capacity(n_ranges);
+        let mut offs_rest: &mut [u32] = &mut row_offsets[1..];
+        let mut ent_rest: &mut [u32] = &mut entries[..];
+        let mut ent_pos = 0usize;
+        for ri in 0..n_ranges {
+            let lo = ri * RANGE;
+            let hi = ((ri + 1) * RANGE).min(n);
+            let (offs_win, offs_next) = offs_rest.split_at_mut(hi - lo);
+            let ent_end = entry_start(hi);
+            let (ent_win, ent_next) = ent_rest.split_at_mut(ent_end - ent_pos);
+            jobs.push((lo, hi, ent_pos, offs_win, ent_win));
+            offs_rest = offs_next;
+            ent_rest = ent_next;
+            ent_pos = ent_end;
         }
-        row_offsets.push(entries.len());
+        crate::cfg_into_iter!(jobs).for_each(|(lo, hi, ent_base, offs_win, ent_win)| {
+            let mut k = 0usize;
+            for (i, r) in (lo..hi).enumerate() {
+                let b = r & t_mask;
+                let c = r >> t;
+                let slot = b >> sh;
+                let gate = ((b & high_mask) << s) | c;
+                if slot < CM_AND_W_SLOT {
+                    ent_win[k] = layout.flat_cell(slot, gate) as u32;
+                    k += 1;
+                } else {
+                    let j = slot - CM_AND_W_SLOT;
+                    ent_win[k] = layout.flat_cell(CM_AND_X_SLOT + j, gate) as u32;
+                    k += 1;
+                    ent_win[k] = layout.flat_cell(CM_AND_Y_SLOT + j, gate) as u32;
+                    k += 1;
+                }
+                offs_win[i] = (ent_base + k) as u32;
+            }
+            debug_assert_eq!(k, ent_win.len());
+        });
     }
     F2CellMap::try_from_csr(n, n, row_offsets, entries).map_err(CmAndError::Map)
 }

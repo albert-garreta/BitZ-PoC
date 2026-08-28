@@ -252,7 +252,12 @@ the CSR offsets (6.1 → 1.4 ms — the per-bit `|=` RMW was the cost, not
 the XOR gathers); both batching passes stream offsets and shortcut
 single-source rows; the `h_i` fold hoists the L = 1 per-column scaled
 coefficient as a preprocessed 5-PMULL fixed-scalar multiplier
-(`FixedGfMul`, refreshed at column boundaries; −0.4 ms). Two measured
+(`FixedGfMul`, refreshed at column boundaries; −0.4 ms); the `h_i`
+scatter runs 16-row four-Russians blocks (four subset tables, one
+accumulator RMW per output bit per 16 rows — half the 8-row block's;
+hs 12.9 → 11.7 ms, −11% at 2^18). A dual-accumulator ping-pong for the
+8-row block measured NEUTRAL (the out-of-order window already bridges
+the cross-block RMW chains). Two measured
 NEGATIVE results to remember: per-slot premultiplied Φ tables
 (128 × 64 KB fusing `A(e_v)` into the gather) are ~1.5× slower — the
 8 MB set evicts the one L1-resident table — and PER-ELEMENT
@@ -261,7 +266,18 @@ loads + branch beat the 2-PMULL saving; the kernel only pays hoisted
 across a run). Remaining levers: the MFR scatter (~115 ops/row — a
 plane-transpose or wider-block variant), fusing the `a′` build with
 the Ligerito round-0 message (`fill_phi_basis_round0`-style), and
-closed-form `E_r` streaming for eq-structured maps (taps-style). The
+closed-form `E_r` streaming for eq-structured maps (taps-style).
+`F2CellMap` stores u32 offsets (nnz ≤ 2^32 enforced; the digest still
+hashes them as u64 LE, so digests are unchanged), hashes its digest in
+bounded staging chunks (no whole-array transients), and validates CSR
+input with one parallel sweep (canonical first-error re-scan only on
+failure); `cm_and_map` fills its CSR range-parallel from closed-form
+entry offsets — identical rows and digest to the sequential push loop.
+On the Spartan side (prover-only): `validate_elements_field` sweeps
+chunk-parallel with a config-pointer fast path (33 → 9.5 ms at 2^18),
+`bind_and_batch` evaluates its columns in parallel over a
+level-parallel prover eq table (27.7 → 15.2 ms), and the verifier keeps
+the sequential `eq_table`/`evaluate_batched` path untouched. The
 identity fast path at the same shape (t=15, s=7, W=1, embedded config)
 measures prove 19.3 ms / verify 2.2 ms — vs 49.7 / 11.2 for the batch
 tail forced (`F2Z_VIRT_ID_FAST=0`) on the same identity instance.
@@ -270,16 +286,17 @@ Scaling (same box): 2^18 gates = prove 408 ms / verify 135 ms /
 166 KiB — every phase within ~10% of linear from 2^15 (apply exactly
 ×8.0, Spartan ×8.0, `h_i` ×8.7, `a′` ×8.6; the forest SUB-linear
 ×5.6). 2^20 gates = prove 2.3–2.6 s / verify 0.74–1.1 s / 208 KiB /
-heap peak 4.45 GiB (live 3.4 GiB before prove), of which the map CSR
-alone is 1.75 GiB — at that footprint a 16 GB box's memory compressor
-sets the pace (`apply` pays ~400 ms re-faulting the CSR vs ~46 linear;
-±40% run-to-run swings; healthy-box extrapolation ≈ 1.6 s / 0.6 s).
-The top scaling lever is the CSR itself: 8-byte offsets for 2^27
-derived cells; u32 offsets (valid while nnz < 2^32) would halve the
-offsets array, and structured maps (CM's identity+fixed-offset
-pattern) need no stored offsets at all. At 2^20 the Spartan verifier
-(~0.4 s) rivals the whole F2Z verify — an outer-PIOP cost, not a
-virtualization one.
+heap peak 4.10 GiB (live 2.9 GiB before prove; u32 offsets shaved
+512 MiB), of which the map CSR is 1.2 GiB — at that footprint a 16 GB
+box's memory compressor still sets the pace (`apply` pays ~350 ms
+re-faulting the CSR vs ~46 linear, and `sp:validate`/`sp:inner` pay
+similar re-fault taxes; ±40% run-to-run swings; healthy-box
+extrapolation ≈ 1.5 s / 0.6 s). The remaining scaling lever is
+eliminating the stored CSR entirely for structured maps (CM's
+identity+fixed-offset pattern needs no offsets or entries at all —
+closed-form row generation). At 2^20 the Spartan verifier (~0.4 s)
+rivals the whole F2Z verify — an outer-PIOP cost, not a virtualization
+one.
 
 ## Mod-q RLC claim families (EXPERIMENTAL)
 
