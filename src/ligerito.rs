@@ -161,7 +161,7 @@ pub(crate) fn absorb_rlc_betas(transcript: &mut impl Transcript, vals: &[Gf]) {
 /// In-place multilinear bind of the LOWEST index bit:
 /// `tbl'[i] = tbl[2i] + r·(tbl[2i] + tbl[2i+1])`.
 #[allow(clippy::arithmetic_side_effects)]
-fn bind_low(tbl: &mut Vec<Gf>, r: Gf) {
+pub(crate) fn bind_low(tbl: &mut Vec<Gf>, r: Gf) {
     let half = tbl.len() >> 1;
     for i in 0..half {
         let u = tbl[2 * i];
@@ -340,6 +340,12 @@ pub(crate) fn absorb_sv(transcript: &mut impl Transcript, s: &[Gf]) {
     absorb_gf_slice(transcript, 0x20, s);
 }
 
+/// Absorb the virtual opening's dual-basis batching message `h_i`
+/// (fresh domain tag — NOT the `s_v` tag 0x20).
+pub(crate) fn absorb_hs(transcript: &mut impl Transcript, s: &[Gf]) {
+    absorb_gf_slice(transcript, 0x48, s);
+}
+
 // ---------------------------------------------------------------------
 // Ring-switch fold kernels (flock-derived; `F2Z_RS_FAST`)
 // ---------------------------------------------------------------------
@@ -377,7 +383,7 @@ impl PackedBits for Gf {
 /// Hacker's Delight §7-3 8×8 bit-matrix transpose stored in a `u64`
 /// (bit `r·8 + c` of the input ↦ bit `c·8 + r` of the output).
 #[inline(always)]
-fn transpose_8x8_bits(mut x: u64) -> u64 {
+pub(crate) fn transpose_8x8_bits(mut x: u64) -> u64 {
     let t = (x ^ (x >> 7)) & 0x00AA_00AA_00AA_00AAu64;
     x = x ^ t ^ (t << 7);
     let t = (x ^ (x >> 14)) & 0x0000_CCCC_0000_CCCCu64;
@@ -390,7 +396,7 @@ fn transpose_8x8_bits(mut x: u64) -> u64 {
 /// `sums[mask] = Σ_{k : bit_k(mask)} e[k]` (15 additions by doubling).
 #[allow(clippy::arithmetic_side_effects)]
 #[inline(always)]
-fn subset_sums_4(e: [Gf; 4]) -> [Gf; 16] {
+pub(crate) fn subset_sums_4(e: [Gf; 4]) -> [Gf; 16] {
     let mut sums = [Gf::zero(); 16];
     for (i, &v) in e.iter().enumerate() {
         let half = 1usize << i;
@@ -404,7 +410,7 @@ fn subset_sums_4(e: [Gf; 4]) -> [Gf; 16] {
 /// Scalar bit-scan tail: `s[j] += e` for every set bit `j` of `w`.
 #[allow(clippy::arithmetic_side_effects)]
 #[inline(always)]
-fn sv_scalar_accum(s: &mut [Gf], w: [u64; 2], e: Gf) {
+pub(crate) fn sv_scalar_accum(s: &mut [Gf], w: [u64; 2], e: Gf) {
     for wi in 0..2usize {
         let mut bits = w[wi];
         while bits != 0 {

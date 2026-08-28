@@ -137,28 +137,46 @@ geometries, the row weights, `q_bits`, and `α`); only `f` is committed.
    pre-sumchecks. Nothing touches the oracle — the verifier recomputes the
    roots from the sent `us` and derives per-chunk residual claims
    `ĥ(pt_l) = μ_l` exactly as in the base path.
-2. Transpose bridge: with fresh `η`s, `Σ_l η_l μ_l = ⟨W, f⟩` where
+2. Transpose: with fresh `η`s, `h := Σ_l η_l μ_l = ⟨W, f⟩_K` where
    `W = Σ_l η_l·Mᵀ eq(pt_l)` over `f`'s cells (XOR is addition in the
-   char-2 commitment field, so the transpose is exact). One degree-2
-   sumcheck over `f`'s `t_wf + s_f` cell variables reduces this to
-   `Ŵ(ρ)·f̂(ρ)` at a random `ρ`; the verifier evaluates `Ŵ(ρ)` itself,
-   sparse in `M` (`O(L·#rows + nnz)` field ops — Spartan-style
-   linear-in-the-statement cost), and divides (`Ŵ(ρ) = 0` rejects;
-   negligible).
-3. The remaining POINT claim `f̂(ρ) = μ_f` is opened by the standard
-   eq-based ring-switch + recursive Ligerito (`prove/verify_rs_open_ligerito`)
-   against `f`'s root. The F_q read-off is the base recombination over
-   `h`'s columns.
+   char-2 commitment field, so the transpose is exact). This is the
+   paper's arbitrary-inner-product setting `⟨w, a⟩_E = h` (appendix
+   "Bilinear Embeddings" → "Extension openings") with `F = F₂`, `E = K`,
+   `w = f`, `a = W`, solved by the dual-basis embedding: `W_map = Id`
+   (the commitment packs cells in the monomial basis), `H = c₀`, and `A`
+   the GHASH dual basis (`src/dual_basis.rs` — reversal of the `v ≥ 1`
+   coordinates plus seven XOR corrections; `f₀ = 1`, no inversion).
+3. Batching protocol (one round): the prover sends the 128 dual-packed
+   plane inner products `h_i = ⟨pack(f), A(a_i)⟩_K` (bit-planes `a_i` of
+   `W`; 2 KiB, tag 0x48). The verifier checks `Σ_i c₀(h_i)·X^i = h`,
+   draws the zero-evader `ρ` (7 challenges eq-expanded to `K^128`, the
+   ring-switch `r″` convention), and both sides reduce to ONE native
+   Ligerito inner product `⟨pack(f), a′⟩ = h′ = Σ_i ρ_i·h_i` with
+   `a′(y) = Σ_v Φ_ρ(W_{(v,y)})·A(e_v)`. The F_q read-off is the base
+   recombination over `h`'s columns.
 
-Soundness mirrors the base path plus two fresh `2^-128`-class terms (the
-η-batch and the bridge sumcheck); the derived-side pipeline errors are the
-base errors with `h := M·f`. Prover extra cost: `O(nnz)` to build `h`,
-`O(L·#rows + nnz + ℓ_f)` for `W`, and the `2·16·ℓ_f`-byte bridge tables
-(`ℓ_f` = `f`'s cell count — the SMALL side in the intended `f`-compact
-use). Structured maps (XOR of committed columns, taps) should keep using
+Neither `W` nor any `f`-side table is materialized: with
+`E_r = Σ_l η_l·eq_{bits(r)}(pt_l)` per derived cell, char-2 linearity
+gives `h_i = Σ_r bit_i(E_r)·G_r` (`G_r = Σ_{j∈row(r)} pack(f)[y_j]·A(e_{v_j})`)
+and `a′(y) = Σ_r Φ_ρ(E_r)·Σ_{j∈row(r), y_j=y} A(e_{v_j})`, so the prover
+streams `M`'s nonempty rows twice (`O(#rows + nnz)` K-ops each) and the
+verifier builds the SAME dense `a′` once (`O(#rows + nnz + 2^{m_p})`
+K-ops, `2^{m_p}` = `f`'s pack count) and answers the succinct Ligerito
+residual hook by MLE-folding it.
+
+Soundness mirrors the base path plus two fresh `2^-128`-class terms: the
+η-batch (`L/|K|`) and the batching protocol's zero-evader
+(`ε ≤ LOG_PACKING/|K|` — Ligerito binds `⟨pack(f), a′⟩ = h′` for the
+committed `f` with `a′` statement-derived, so wrong `h_i` survive the
+ρ-batch with probability ≤ ε, and true `h_i` make step 3 exactly
+`Σ_l η_l μ_l = ⟨W, f⟩` by the bilinear-embedding identity). The
+derived-side pipeline errors are the base errors with `h := M·f`.
+Structured maps (XOR of committed columns, taps) should keep using
 the dedicated machinery below; this entry point is the fully general one.
 Pinned by `tests/virtual_open.rs` (direct-vs-virtual agreement, both chunk
-regimes, tamper battery).
+regimes, tamper battery including the batching message) and the
+brute-force embedding tests in `src/dual_basis.rs` (Gaussian dual solve,
+Hankel form, plane decomposition, per-pack batched basis).
 
 ## CM-AND: an R1CS with a virtual block (paper `\Relation_CM`)
 
@@ -198,16 +216,21 @@ bits — the `w` block rides free. Both grids share one shape (the 4:3
 saving pads back to the power of two); XOR-heavier relations (the SHA-256
 CM arithmetization) are where the derived/committed gap widens.
 
-Measured (M4, 4 P-threads, 2^15 gates): prove ~78 ms (Spartan 12 |
-bitify 6 | virtual F2Z 58: apply 6 + forest 12 + bridge 28 + open 10),
-verify ~19 ms (Ŵ(ρ) ~5 ms parallel), proof 117.5 KB. The virtual layer
-is engineered transcript-preserving: cached map digests (bulk BLAKE3 —
-a per-element update loop cost ~100 ms/side), the η-scaled one-mul
-transpose coefficients, parallel apply/coeff/bit-table builds, and the
-wide product-pair evaluator on the bridge sumcheck are all exact GF
-reassociations (pinned by an unchanged proof digest). Remaining levers:
-a `Round1FastPath` over the 0/1 `f` table (mul-free bridge round 1), an
-out-of-place parallel `fix_variables` fold, and closed-form `Ŵ(ρ)` for
+Measured (M4, 2^15 gates, dual-basis ring switch): prove ~68 ms
+(Spartan 13 | bitify 6 | virtual F2Z 48: apply 6 + forest 11 +
+`h_i` fold 13.3 + `a′` build 9.3 + Ligerito 6.0), verify
+~23 ms (`a′` build 9.3 ms — the verifier's whole
+`M`-dependent cost; was 4.7 for the bridge's `Ŵ(ρ)`), proof
+113.2 KiB (−2.6 KiB vs the bridge protocol:
+the bridge sumcheck and the `s_v` message are gone, the 2 KiB `h_i`
+message arrived). Memory: no `W` table, no coefficient table, no `f`
+bit table, no bridge MLE copies — the passes stream `M`'s rows; the
+only sizable transient is the 8 MB premultiplied per-slot Φ tables
+(gated on `#rows + nnz ≥ 2^18`; exact GF distributivity, so values and
+transcript are identical with or without them). Remaining levers: the
+`h_i` fold's MFR scatter (~115 ops/row — a plane-transpose or wider
+block variant), fusing the `a′` build with the Ligerito round-0 message
+(`fill_phi_basis_round0`-style), and closed-form `E_r` streaming for
 eq-structured maps (taps-style).
 
 ## Mod-q RLC claim families (EXPERIMENTAL)

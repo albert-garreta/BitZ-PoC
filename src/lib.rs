@@ -39,14 +39,18 @@
 //! [`ligerito_flock::verify_mle_eval_mod_q_ligerito_virtual`]: the
 //! per-chunk forests and pre-sumchecks run on `h` without ever touching
 //! the oracle, the terminal claims are transposed through `Mᵀ` at the
-//! commitment field (XOR is addition in char 2), a degree-2 bridge
-//! sumcheck reduces the transposed linear claim to one point evaluation
-//! of `f̂`, and the standard ring-switch + Ligerito opening finishes. The
-//! verifier's `M`-dependent cost is `O(L·#rows + nnz)` field ops.
+//! commitment field (XOR is addition in char 2), and the transposed
+//! arbitrary-weight inner product is opened NATIVELY by the dual-basis
+//! ring switch ([`dual_basis`], the paper's bilinear-embedding batching
+//! protocol): a 128-element plane message `h_i`, one zero-evader `ρ`,
+//! and ONE Ligerito call — no bridge sumcheck, no point opening. The
+//! verifier's `M`-dependent cost is `O(L·#rows + nnz + 2^{m_p})` field
+//! ops.
 //! [`piop::spartan::cm`] wires a full R1CS through this path — the
 //! paper's CM relation: batched `x ∧ y = z` via one LINEAR constraint
 //! per gate with `w = x ⊕ y` as a virtual (derived, uncommitted) block.
 
+pub mod dual_basis;
 pub mod ext_proj;
 pub mod f2map;
 pub mod ligerito;

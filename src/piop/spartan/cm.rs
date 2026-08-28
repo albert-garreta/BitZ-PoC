@@ -681,8 +681,8 @@ pub fn bitify_cm_and_claim(
 pub struct CmF2zProof {
     /// Spartan's outer and inner sumchecks.
     pub spartan: SpartanPiopProof<SpartanF2zField>,
-    /// Virtual F2Z opening (forests on `h = M·f`, bridge sumcheck, and
-    /// the single-point opening of `f`).
+    /// Virtual F2Z opening (forests on `h = M·f`, the dual-basis
+    /// batching message, and the ONE ρ-batched Ligerito call on `f`).
     pub f2z: IntEvalRsLigVirtProof,
 }
 

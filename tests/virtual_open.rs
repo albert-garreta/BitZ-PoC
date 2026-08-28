@@ -7,8 +7,9 @@
 //! `prove_mle_eval_mod_q_ligerito` accepts the same `y`; (b) the virtual
 //! roundtrip across a 1-chunk W=1 shape and a 2-chunk W=32 shape;
 //! (c) rejection of a wrong claim, an out-of-range chunk fold, swapped
-//! pre-sumchecks, a non-generator α, a substituted map, and a wrong
-//! geometry.
+//! pre-sumchecks, a tampered batching message (both a c₀-visible flip
+//! and a step-3-consistent one), a non-generator α, a substituted map,
+//! and a wrong geometry.
 
 
 use f2z::f2map::{F2CellMap, cell_count, cell_row_bits};
@@ -125,11 +126,8 @@ fn clone_proof(p: &IntEvalRsLigVirtProof) -> IntEvalRsLigVirtProof {
         mfs: p.mfs.clone(),
         us: p.us.clone(),
         presums: p.presums.clone(),
-        bridge: p.bridge.clone(),
-        open: f2z::ligerito_flock::LigOpenProof {
-            ring: p.open.ring.clone(),
-            lig: p.open.lig.clone(),
-        },
+        hs: p.hs.clone(),
+        lig: p.lig.clone(),
     }
 }
 
@@ -210,8 +208,8 @@ fn run_shape(p_h: IntEvalParams, seed: u64) {
         Err(FlockRsError::ChunkRange { .. })
     ));
 
-    // A bridge from a different statement (swapped with another chunk's
-    // presum) must not verify.
+    // Pre-sumchecks from a different statement (swapped between chunks)
+    // must not verify.
     if proof.presums.len() > 1 {
         let mut bad = clone_proof(&proof);
         bad.presums.swap(0, 1);
@@ -224,6 +222,34 @@ fn run_shape(p_h: IntEvalParams, seed: u64) {
             .is_err()
         );
     }
+
+    // A batching-message value flip that touches c₀ fails the step-3
+    // coefficient-projection check outright.
+    let mut bad = clone_proof(&proof);
+    bad.hs[5] = bad.hs[5] + f2z::poly::univariate::binary_gf128::BinaryFieldGF128::one();
+    let mut vt = Blake3Transcript::new();
+    assert_eq!(
+        verify_mle_eval_mod_q_ligerito_virtual(
+            &mut vt, &hint_f.commitment, &bad, &p_h, &p_f, &map, &rw_q, &col_w, alpha, y, Q_BITS,
+            &vc_f,
+        ),
+        Err(FlockRsError::VirtualBatch),
+    );
+
+    // A step-3-CONSISTENT tamper (upper coordinates of one h_i, c₀
+    // untouched) passes the projection check but must still be rejected:
+    // the ρ-batched target no longer matches the committed basis claim,
+    // and the h_i are transcript-bound before ρ is drawn.
+    let mut bad = clone_proof(&proof);
+    bad.hs[7] = bad.hs[7] + f2z::poly::univariate::binary_gf128::BinaryFieldGF128::from_words([1 << 9, 0]);
+    let mut vt = Blake3Transcript::new();
+    assert!(
+        verify_mle_eval_mod_q_ligerito_virtual(
+            &mut vt, &hint_f.commitment, &bad, &p_h, &p_f, &map, &rw_q, &col_w, alpha, y, Q_BITS,
+            &vc_f,
+        )
+        .is_err()
+    );
 
     // Non-generator α.
     let mut vt = Blake3Transcript::new();

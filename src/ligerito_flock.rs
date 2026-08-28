@@ -732,12 +732,10 @@ pub enum FlockRsError {
     /// The extension-field read-off failed:
     /// `Σ_c v_c^{(2)}·π_canon(μ_c) ≠ μ` over the evaluation field `K`.
     ExtReadOff,
-    /// The virtual opening's bridge sumcheck rejected, or its claimed sum
-    /// disagrees with the η-batched derived-vector chunk claims.
-    VirtualBridge,
-    /// The transposed weight MLE vanished at the bridge exit point
-    /// (`Ŵ(ρ) = 0`; negligible-probability event, cannot divide).
-    VirtualWeightZero,
+    /// The virtual opening's batching message failed the
+    /// coefficient-projection check `Σ_i c₀(h_i)·X^i = Σ_l η_l·μ_l`
+    /// (paper batching-protocol step 3).
+    VirtualBatch,
 }
 
 
@@ -7866,7 +7864,10 @@ impl IntEvalRsLigExtProof {
 // a public sparse [`F2CellMap`] between the two bit-cell grids; `h` is
 // never committed.
 //
-// Pipeline (the paper's "run `c:core_iop` until Phase 3, then transpose"):
+// Pipeline (the paper's "run `c:core_iop` until Phase 3, then transpose",
+// closed by the ring switch for ARBITRARY inner products — the batching
+// protocol of appendix `a:ring_switch_remco` §"Extension openings",
+// instantiated with the §"Coefficient projection" embedding):
 //
 //   1. The prover materializes `h`'s bit rows and runs the ORDINARY
 //      per-chunk machinery on them — integer chunk folds `us`, merged
@@ -7876,35 +7877,61 @@ impl IntEvalRsLigExtProof {
 //      the sent `us` and is left with per-chunk residual claims
 //      `ĥ(pt_l) = μ_l` about the (uncommitted) derived bit-MLE.
 //   2. Both sides draw η's and transpose through `Mᵀ` at the commitment
-//      field (char 2, where XOR is addition): `Σ_l η_l·ĥ(pt_l) =
-//      ⟨W, f⟩` with `W := Σ_l η_l·Mᵀ eq(pt_l)` over `f`'s cells. A
-//      degree-2 BRIDGE sumcheck over `f`'s `t_wf + s_f` cell variables
-//      reduces `⟨W, f⟩ = Σ_l η_l μ_l` to `Ŵ(ρ)·f̂(ρ)` at a random `ρ`.
-//   3. The verifier evaluates `Ŵ(ρ)` itself — sparse in `M`
-//      (`O(L·#rows(M) + nnz(M))` field ops, the Spartan-style
-//      linear-in-the-statement cost; there is no `2^{cells}` pass) —
-//      divides, and the remaining POINT claim `f̂(ρ) = μ_f` is opened by
-//      the standard eq-based ring-switch + recursive Ligerito
-//      ([`prove_rs_open_ligerito`] / [`verify_rs_open_ligerito`]).
+//      field (char 2, where XOR is addition): `h := Σ_l η_l·μ_l =
+//      ⟨W, f⟩_K` with `W := Σ_l η_l·Mᵀ eq(pt_l)` over `f`'s cells —
+//      the appendix's `⟨w, a⟩_E = h` with `F = F₂`, `E = K`, `w = f`,
+//      `a = W`. The embedding triple is `W = Id` (the commitment already
+//      packs cells in the MONOMIAL basis, bit `v` ↔ `X^v`), `H = c₀`,
+//      and `A` = the `μ_H`-dual basis ([`crate::dual_basis`]:
+//      reversal of the `v ≥ 1` coordinates + seven GHASH corrections).
+//   3. Batching protocol: the prover sends the d = 128 dual-packed plane
+//      inner products `h_i = ⟨pack(f), A(a_i)⟩_K` (`a_i` = bit-plane `i`
+//      of the weights; tag 0x48). The verifier checks step 3,
+//      `Σ_i c₀(h_i)·X^i = h`, draws the zero-evader `ρ` (LOG_PACKING
+//      challenges, eq-expanded to `K^128` — the ring-switch `r″`
+//      convention, RBR error ≤ LOG_PACKING/|K|), and both sides reduce
+//      to the ONE native Ligerito inner product
+//      `⟨pack(f), a′⟩_K = h′ := Σ_i ρ_i·h_i`, with
+//      `a′(y) = Σ_v Φ_ρ(W_{(v,y)})·A(e_v)`. No bridge sumcheck, no
+//      point opening, no division anywhere (`f₀ = 1`).
+//
+// Both sides exploit the same char-2 reassociations (exact — XOR is
+// K-addition): with `E_r := Σ_l η_l·eq_{bits(r)}(pt_l)` per derived
+// cell and `G_r := Σ_{j ∈ row(r)} pack(f)[y_j]·A(e_{v_j})`,
+//
+//      h_i = Σ_r bit_i(E_r)·G_r,
+//      a′(y) = Σ_r Φ_ρ(E_r)·Σ_{j ∈ row(r), y_j = y} A(e_{v_j}),
+//
+// so neither `W` nor any `f`-side table is ever materialized: the prover
+// streams `M`'s nonempty rows twice (`O(#rows + nnz)` K-ops each pass),
+// and the verifier builds the SAME dense `a′` once
+// (`O(#rows + nnz + 2^{m_p})` K-ops) and answers the Ligerito residual
+// hook by MLE-folding it.
 //
 // Soundness chain (informal; mirrors the base path plus two fresh
 // terms): the forests bind the sent `us` as exponent folds of whatever
 // row data underlies the leaves, and each pre-sumcheck + `R̂(r*)`
 // division pins `μ_l` as that data's bit-MLE value at the random exit
-// point `pt_l` — exactly as in the base path. The η-batch (error
-// `L/|K|`) plus the bridge sumcheck (error `≈ 2·(t_wf+s_f)/|K|`) then
-// force `Σ_l η_l μ_l = ⟨W, f⟩` for the COMMITTED `f` (bound through
-// `f̂(ρ)` by the ring-switch + Ligerito opening at `ρ`), i.e.
-// `μ_l = (M·f)ˆ(pt_l)` for every chunk except with probability
-// `≈ (L + 2·(t_wf+s_f))/|K|`. From there the base path's argument
-// applies verbatim with `h := M·f`. The statement (commitment root,
-// both geometries, `M`'s digest, the row weights, `q_bits`, α) is
-// digest-absorbed before any challenge, so the new API is self-binding.
+// point `pt_l` — exactly as in the base path. The Ligerito call binds
+// `⟨pack(f), a′⟩ = h′` for the COMMITTED `f` with `a′` derived from the
+// statement alone, so if any sent `h_i` differs from its true value the
+// ρ-batch accepts with probability ≤ LOG_PACKING/|K| (the eq-tensor
+// zero-evader ε of the batching protocol — account it next to the
+// η-batch error `L/|K|`). With all `h_i` true, step 3 IS
+// `Σ_l η_l μ_l = ⟨W, f⟩` (the bilinear-embedding identity
+// `⟨a_i, f⟩_{F₂} = c₀(h_i)` blockwise, paper theorem "Structure of
+// bilinear embeddings"), i.e. `μ_l = (M·f)ˆ(pt_l)` for every chunk
+// except with probability `≈ (L + LOG_PACKING)/|K|`. From there the base
+// path's argument applies verbatim with `h := M·f`. The statement
+// (commitment root, both geometries, `M`'s digest, the row weights,
+// `q_bits`, α) is digest-absorbed before any challenge, so the new API
+// is self-binding.
 // ---------------------------------------------------------------------
 
 /// End-to-end proof of a mod-q claim on the derived vector `h = M·f`:
 /// per-chunk forests/folds/pre-sumchecks on `h` (`p_h` geometry), the
-/// degree-2 bridge sumcheck, and the single-point opening of `f`.
+/// d = 128 batching message `h_i`, and the ONE ρ-batched Ligerito call
+/// on `f`'s commitment.
 #[derive(Clone)]
 pub struct IntEvalRsLigVirtProof {
     /// Per weight chunk: the merged product forest on `h`.
@@ -7913,10 +7940,11 @@ pub struct IntEvalRsLigVirtProof {
     pub us: Vec<Vec<u128>>,
     /// Per weight chunk: the de-black-boxing pre-sumcheck on `h`.
     pub presums: Vec<MultiDegreeSumcheckProof<Gf>>,
-    /// The degree-2 transpose bridge `⟨W, f⟩` over `f`'s cell variables.
-    pub bridge: MultiDegreeSumcheckProof<Gf>,
-    /// Ring-switch + Ligerito opening of `f̂(ρ)`.
-    pub open: LigOpenProof,
+    /// The batching message: `hs[i] = ⟨pack(f), A(a_i)⟩_K` for bit-plane
+    /// `i` of the transposed weights (always 128 elements).
+    pub hs: Vec<Gf>,
+    /// The ρ-batched Ligerito opening `⟨pack(f), a′⟩ = h′`.
+    pub lig: LigeritoProof,
 }
 
 /// Digest-absorbs the virtual opening's complete statement before any
@@ -7933,7 +7961,9 @@ fn absorb_virtual_statement(
     alpha: Gf,
 ) {
     let mut hash = blake3::Hasher::new();
-    hash.update(b"f2z/mod-q-virtual-statement/v1");
+    // v2: the dual-basis batching protocol (h_i message + ρ-batched
+    // Ligerito call) replaced the bridge sumcheck + point opening.
+    hash.update(b"f2z/mod-q-virtual-statement/v2");
     hash.update(&commitment.root);
     for v in [
         commitment.params.m,
@@ -7963,6 +7993,193 @@ fn absorb_virtual_statement(
     transcript.absorb_slice(&frame);
 }
 
+/// The η-combined per-derived-cell transpose coefficients
+/// `E_r = Σ_l η_l·eq_{bits(r)}(pt_l)`, factored over the (row, column)
+/// split of `r`'s flat index with the η's folded into the column tables
+/// once — one product per (cell, chunk), exactly the old `mqv:wcoef`
+/// formula, now evaluated on demand instead of materialized.
+struct VirtRowCoeffs {
+    eq_rs: Vec<Vec<Gf>>,
+    scaled_zc: Vec<Vec<Gf>>,
+    t_wh: usize,
+    h_mask: usize,
+}
+
+impl VirtRowCoeffs {
+    #[allow(clippy::arithmetic_side_effects)]
+    fn new(points: &[Vec<Gf>], etas: &[Gf], t_wh: usize) -> Self {
+        use crate::poly::utils::build_eq_x_r_vec;
+        let eq_rs: Vec<Vec<Gf>> = points
+            .iter()
+            .map(|pt| build_eq_x_r_vec(&pt[..t_wh], &()).expect("t_wh >= 1"))
+            .collect();
+        let scaled_zc: Vec<Vec<Gf>> = points
+            .iter()
+            .zip(etas.iter())
+            .map(|(pt, &eta)| {
+                build_eq_x_r_vec(&pt[t_wh..], &())
+                    .expect("s_h >= 1")
+                    .into_iter()
+                    .map(|x| eta * x)
+                    .collect()
+            })
+            .collect();
+        Self { eq_rs, scaled_zc, t_wh, h_mask: (1usize << t_wh) - 1 }
+    }
+
+    #[allow(clippy::arithmetic_side_effects)]
+    #[inline]
+    fn coeff(&self, r: usize) -> Gf {
+        let (c, b) = (r >> self.t_wh, r & self.h_mask);
+        let mut acc = Gf::zero();
+        for (l, zc) in self.scaled_zc.iter().enumerate() {
+            acc += self.eq_rs[l][b] * zc[c];
+        }
+        acc
+    }
+}
+
+/// One 8-row block of the `h_i` scatter, method-of-four-Russians: two
+/// 16-entry subset-sum tables over the `G_r` values, then per byte
+/// position one 8×8 bit transpose of the `E_r` patterns and per output
+/// bit two lookups + one accumulator RMW ([`sv_fold_mfr`]'s inner body,
+/// with the scan running over the WEIGHT's bits). Exact field sums.
+#[allow(clippy::arithmetic_side_effects)]
+#[inline]
+fn hs_scatter_block(s: &mut [Gf; 128], wits: &[[u64; 2]; 8], vals: &[Gf; 8]) {
+    use crate::ligerito::{subset_sums_4, transpose_8x8_bits};
+    let lo_tbl = subset_sums_4([vals[0], vals[1], vals[2], vals[3]]);
+    let hi_tbl = subset_sums_4([vals[4], vals[5], vals[6], vals[7]]);
+    let mut m_bytes = [[0u8; 16]; 8];
+    for (e, slot) in m_bytes.iter_mut().enumerate() {
+        slot[..8].copy_from_slice(&wits[e][0].to_le_bytes());
+        slot[8..].copy_from_slice(&wits[e][1].to_le_bytes());
+    }
+    for r_byte in 0..16 {
+        let combined: u64 = (m_bytes[0][r_byte] as u64)
+            | ((m_bytes[1][r_byte] as u64) << 8)
+            | ((m_bytes[2][r_byte] as u64) << 16)
+            | ((m_bytes[3][r_byte] as u64) << 24)
+            | ((m_bytes[4][r_byte] as u64) << 32)
+            | ((m_bytes[5][r_byte] as u64) << 40)
+            | ((m_bytes[6][r_byte] as u64) << 48)
+            | ((m_bytes[7][r_byte] as u64) << 56);
+        let tb = transpose_8x8_bits(combined).to_le_bytes();
+        let base = r_byte * 8;
+        for (p, &mask) in tb.iter().enumerate() {
+            s[base + p] += lo_tbl[(mask & 0x0F) as usize] + hi_tbl[(mask >> 4) as usize];
+        }
+    }
+}
+
+/// The batching message `h_i = Σ_r bit_i(E_r)·G_r`,
+/// `G_r = Σ_{j ∈ row(r)} pack(f)[j >> 7]·A(e_{j & 127})` — one streaming
+/// pass over `M`'s nonempty rows (`O(#rows + nnz)` K-ops), chunk-parallel
+/// with per-chunk partial accumulators merged by field addition (exact,
+/// order-independent). Neither `W` nor the coefficient table exists.
+#[allow(clippy::arithmetic_side_effects)]
+fn virtual_hs_fold(
+    map: &crate::f2map::F2CellMap,
+    coeffs: &VirtRowCoeffs,
+    p_msg: &[F128],
+    a_cols: &[Gf; 128],
+) -> Vec<Gf> {
+    const CHUNK: usize = 1 << 13;
+    let n_chunks = map.rows().div_ceil(CHUNK).max(1);
+    let partials: Vec<[Gf; 128]> = cfg_into_iter!(0..n_chunks)
+        .map(|ci| {
+            let lo = ci * CHUNK;
+            let hi = (lo + CHUNK).min(map.rows());
+            let mut s = [Gf::zero(); 128];
+            let mut wits = [[0u64; 2]; 8];
+            let mut vals = [Gf::zero(); 8];
+            let mut fill = 0usize;
+            for r in lo..hi {
+                let sources = map.row(r);
+                if sources.is_empty() {
+                    continue;
+                }
+                let mut g = Gf::zero();
+                for &j in sources {
+                    let j = j as usize;
+                    g += f128_to_gf(p_msg[j >> LOG_PACKING]) * a_cols[j & 127];
+                }
+                wits[fill] = *coeffs.coeff(r).words();
+                vals[fill] = g;
+                fill += 1;
+                if fill == 8 {
+                    hs_scatter_block(&mut s, &wits, &vals);
+                    fill = 0;
+                }
+            }
+            for k in 0..fill {
+                crate::ligerito::sv_scalar_accum(&mut s, wits[k], vals[k]);
+            }
+            s
+        })
+        .collect();
+    let mut s = vec![Gf::zero(); 128];
+    for part in &partials {
+        for (a, b) in s.iter_mut().zip(part.iter()) {
+            *a += *b;
+        }
+    }
+    s
+}
+
+/// The ρ-batched dual-basis Ligerito basis, dense over the `2^{m_p}`
+/// packs: `a′(y) = Σ_r Φ_ρ(E_r)·Σ_{j ∈ row(r), j >> 7 = y} A(e_{j&127})`
+/// — one streaming pass over `M`'s nonempty rows
+/// (`O(#rows + nnz + 2^{m_p})` K-ops), range-parallel with per-range
+/// partial vectors merged by field addition. Prover and verifier BOTH
+/// call this, so the opened basis is identical by construction.
+///
+/// (A per-slot PREMULTIPLIED-table variant — `phi_byte_tables(ρ, A(e_v))`
+/// per source slot, saving the per-nonzero product — was measured SLOWER
+/// at the 2^15 CM shape: the 8 MB table set evicts the one L1-resident
+/// 64 KB Φ table the plain path gathers from. Values are identical
+/// either way, so this is purely a schedule choice.)
+#[allow(clippy::arithmetic_side_effects)]
+fn virtual_a_prime(
+    map: &crate::f2map::F2CellMap,
+    coeffs: &VirtRowCoeffs,
+    rho: &[Gf],
+    a_cols: &[Gf; 128],
+    n_packs: usize,
+) -> Vec<Gf> {
+    let phi_tables = phi_byte_tables(rho, Gf::one());
+    // Few large ranges: each carries a full-size partial vector.
+    let n_ranges = map.rows().div_ceil(1 << 18).clamp(1, 16);
+    let per = map.rows().div_ceil(n_ranges).max(1);
+    let partials: Vec<Vec<Gf>> = cfg_into_iter!(0..n_ranges)
+        .map(|ri| {
+            let lo = ri * per;
+            let hi = (lo + per).min(map.rows());
+            let mut a = vec![Gf::zero(); n_packs];
+            for r in lo..hi {
+                let sources = map.row(r);
+                if sources.is_empty() {
+                    continue;
+                }
+                let phi = phi_from_words(*coeffs.coeff(r).words(), &phi_tables);
+                for &j in sources {
+                    let j = j as usize;
+                    a[j >> LOG_PACKING] += phi * a_cols[j & 127];
+                }
+            }
+            a
+        })
+        .collect();
+    let mut iter = partials.into_iter();
+    let mut a = iter.next().expect("at least one range");
+    for part in iter {
+        for (acc, p) in a.iter_mut().zip(part.iter()) {
+            *acc += *p;
+        }
+    }
+    a
+}
+
 /// Prove `Σ_c w'_c·(Σ_b rw[b]·h_{b,c}) = y ∈ 𝔽_q` for the derived vector
 /// `h = M·f`, against the commitment to `f` (`hint_f`). Same claim shape
 /// as [`prove_mle_eval_mod_q_ligerito`], with `h` in `p_h` geometry —
@@ -7982,7 +8199,6 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual(
     use crate::f2map::{cell_count, cell_row_bits};
     use crate::pcs::{chunk_row_weights, mod_q_chunk_width, mod_q_num_chunks};
     use crate::poly::utils::build_eq_x_r_vec;
-    use crypto_primitives::Field as _;
 
     let t_wh = cell_row_bits(p_h);
     let t_wf = cell_row_bits(p_f);
@@ -8043,131 +8259,59 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual(
     drop(h_packed);
     drop(h_rows);
 
-    // (2) Transpose bridge: W := Σ_l η_l·Mᵀ eq(pt_l) over f's cells, then
-    // the degree-2 sumcheck on ⟨W, f⟩.
+    // (2) Transpose at the commitment field: with fresh η's,
+    // `Σ_l η_l·μ_l = ⟨W, f⟩_K`, `W := Σ_l η_l·Mᵀ eq(pt_l)` — evaluated
+    // on demand through `E_r` (never materialized).
     let etas: Vec<Gf> = transcript.get_field_challenges(lch, &());
-    let _g_b = crate::utils::prof::scope("mqv:bridge");
-    let eq_rs: Vec<Vec<Gf>> = points
-        .iter()
-        .map(|pt| build_eq_x_r_vec(&pt[..t_wh], &()).expect("t_wh >= 1"))
-        .collect();
-    // Fold each η into its column table once: the per-cell transpose
-    // coefficient is then `Σ_l eq_rs_l[b]·(η_l·eq_zc_l)[c]` — one product
-    // per (cell, chunk). Exact reassociation only (GF multiplication is
-    // associative), so W is bit-identical to the definition.
-    let scaled_zc: Vec<Vec<Gf>> = points
-        .iter()
-        .zip(etas.iter())
-        .map(|(pt, &eta)| {
-            build_eq_x_r_vec(&pt[t_wh..], &())
-                .expect("s_h >= 1")
-                .into_iter()
-                .map(|x| eta * x)
-                .collect()
-        })
-        .collect();
+    let coeffs = VirtRowCoeffs::new(&points, &etas, t_wh);
+    let a_cols = crate::dual_basis::dual_basis_cols();
+    debug_assert!(t_wf >= LOG_PACKING, "packing needs t_wf >= 7 (asserted at commit)");
+    debug_assert_eq!(hint_f.p_msg.len() << LOG_PACKING, cell_count(p_f));
 
-    // (2a) Per-derived-cell coefficients, in parallel (a map with many
-    // empty rows pays for its dead cells here; the scatter below skips
-    // them).
-    let n_h_cells = map.rows();
-    let h_mask = (1usize << t_wh) - 1;
-    let coeff_tbl: Vec<Gf> = {
-        let _g = crate::utils::prof::scope("mqv:wcoef");
-        cfg_into_iter!(0..n_h_cells)
-            .map(|i| {
-                let (c, b) = (i >> t_wh, i & h_mask);
-                let mut acc = Gf::zero();
-                for (l, zc) in scaled_zc.iter().enumerate() {
-                    acc += eq_rs[l][b] * zc[c];
-                }
-                acc
-            })
+    // (3) The batching message `h_i` (paper batching protocol, step 2).
+    let hs = {
+        let _g = crate::utils::prof::scope("mqv:hs");
+        virtual_hs_fold(map, &coeffs, &hint_f.p_msg, &a_cols)
+    };
+    crate::ligerito::absorb_hs(transcript, &hs);
+
+    // (4) The zero-evader ρ (eq-expanded LOG_PACKING challenges — the
+    // ring-switch `r″` convention) and the ρ-batched claim
+    // `⟨pack(f), a′⟩ = h′`.
+    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let rho = build_eq_x_r_vec(&r2, &()).expect("r2");
+    let h_prime = rho.iter().zip(hs.iter()).fold(Gf::zero(), |acc, (&r, &h)| acc + r * h);
+    let b_comb: Vec<F128> = {
+        let _g = crate::utils::prof::scope("mqv:aprime");
+        let n_packs = hint_f.p_msg.len();
+        virtual_a_prime(map, &coeffs, &rho, &a_cols, n_packs)
+            .into_iter()
+            .map(gf_to_f128)
             .collect()
     };
 
-    // (2b) The multiplication-free transpose scatter.
-    let n_f = cell_count(p_f);
-    let mut w_tbl = vec![Gf::zero(); n_f];
-    {
-        let _g = crate::utils::prof::scope("mqv:wtbl");
-        for (i, sources) in map.nonempty_rows() {
-            let coeff = coeff_tbl[i];
-            for &j in sources {
-                w_tbl[j as usize] += coeff;
-            }
-        }
-    }
-    drop(coeff_tbl);
-
-    // (2c) f's bit table, per-column parallel (column segments are
-    // disjoint).
-    let f_mask = (1usize << t_wf) - 1;
-    let one = Gf::one();
-    let mut f_tbl = vec![Gf::zero(); n_f];
-    let f_rows = hint_f.rows();
-    {
-        let _g = crate::utils::prof::scope("mqv:ftbl");
-        cfg_chunks_mut!(f_tbl, 1usize << t_wf)
-            .enumerate()
-            .for_each(|(c, segment)| {
-                for (wi, &word) in f_rows[c].iter().enumerate() {
-                    let mut bits = word;
-                    while bits != 0 {
-                        let tz = bits.trailing_zeros() as usize;
-                        segment[((wi << 6) | tz) & f_mask] = one;
-                        bits &= bits.wrapping_sub(1);
-                    }
-                }
-            });
-    }
-
-    let nvars = t_wf + p_f.s;
-    let zero_inner = Gf::zero().into_inner();
-    let to_mle = |tbl: Vec<Gf>| {
-        crate::poly::mle::DenseMultilinearExtension::from_evaluations_vec(
-            nvars,
-            tbl.into_iter().map(|g| g.into_inner()).collect(),
-            zero_inner,
+    // (5) ONE native Ligerito inner product on f's commitment.
+    let lig = {
+        let _g = crate::utils::prof::scope("mqv:lig");
+        ligerito::recursive_prover_with_basis(
+            pc,
+            par_clone_f128(&hint_f.p_msg),
+            b_comb,
+            gf_to_f128(h_prime),
+            &hint_f.prover_data.codeword,
+            &hint_f.prover_data.merkle_tree,
+            &mut ZincChallenger(transcript),
         )
     };
-    let group = crate::piop::sumcheck::multi_degree::MultiDegreeSumcheckGroup::new(
-        2,
-        vec![to_mle(w_tbl), to_mle(f_tbl)],
-        Box::new(|vals: &[Gf]| vals[0] * vals[1]),
-    );
-    // The wide product-pair round evaluator (delayed-reduction
-    // accumulators) — the presum's fast path, byte-identical round
-    // messages.
-    let group = if crate::ligerito::rs_fast() {
-        group.with_round_evaluator(Box::new(crate::ligerito::ProdPairWideEvaluator))
-    } else {
-        group
-    };
-    let (bridge, states) = {
-        let _g = crate::utils::prof::scope("mqv:sc");
-        crate::piop::sumcheck::multi_degree::MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(
-            transcript,
-            vec![group],
-            nvars,
-            &(),
-        )
-    };
-    let rho = states[0].randomness.clone();
-    drop(_g_b);
-
-    // (3) The standard single-point opening of f̂(ρ).
-    let open = {
-        let _g = crate::utils::prof::scope("mqv:open");
-        prove_rs_open_ligerito(transcript, hint_f, &rho, pc)
-    };
-    IntEvalRsLigVirtProof { mfs, us, presums, bridge, open }
+    IntEvalRsLigVirtProof { mfs, us, presums, hs, lig }
 }
 
 /// Verify a virtual mod-q claim `Σ_c w'_c·(Σ_b rw[b]·h_{b,c}) = claimed`
 /// for `h = M·f` against `f`'s commitment. `col_weights[c] ∈ R` over
 /// `h`'s `2^{s_h}` columns. The verifier's `M`-dependent cost is
-/// `O(L·#rows(M) + nnz(M))` field operations.
+/// `O(L·#rows(M) + nnz(M) + 2^{m_p})` field operations (`2^{m_p}` =
+/// `f`'s pack count, for the dense `a′` it MLE-folds at the Ligerito
+/// residual hook).
 #[allow(clippy::arithmetic_side_effects)]
 #[allow(clippy::too_many_arguments)]
 pub fn verify_mle_eval_mod_q_ligerito_virtual<R>(
@@ -8200,9 +8344,11 @@ where
         || row_weights_q.len() != p_h.rows()
         || col_weights.len() != p_h.cols()
         || commitment_f.params.m != t_wf + p_f.s
+        || t_wf < LOG_PACKING
         || proof.mfs.len() != lch
         || proof.us.len() != lch
         || proof.presums.len() != lch
+        || proof.hs.len() != 128
     {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
@@ -8264,92 +8410,63 @@ where
         mus.push(mu);
     }
 
-    // (2) The transpose bridge.
+    // (2) The transpose and the batching protocol's step 3:
+    // `h = Σ_l η_l·μ_l` must equal `Σ_i c₀(h_i)·X^i` — the
+    // coefficient-projection read-off of the sent plane inner products.
     let etas: Vec<Gf> = transcript.get_field_challenges(lch, &());
-    let nvars = t_wf + p_f.s;
-    let subclaims =
-        crate::piop::sumcheck::multi_degree::MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(
-            transcript,
-            nvars,
-            &[2],
-            &proof.bridge,
-            &(),
-        )
-        .map_err(|_| FlockRsError::VirtualBridge)?;
-    let batched: Gf = etas
+    let h: Gf = etas
         .iter()
         .zip(mus.iter())
         .fold(Gf::zero(), |acc, (&e, &m)| acc + e * m);
-    if proof.bridge.claimed_sums() != [batched] {
-        return Err(FlockRsError::VirtualBridge);
+    let mut assembled = [0u64; 2];
+    for (i, g) in proof.hs.iter().enumerate() {
+        assembled[i >> 6] |= crate::dual_basis::c0_bit(*g) << (i & 63);
     }
-    let rho = subclaims.point().to_vec();
-    let expected = subclaims.expected_evaluations()[0];
+    if Gf::from_words(assembled) != h {
+        return Err(FlockRsError::VirtualBatch);
+    }
+    crate::ligerito::absorb_hs(transcript, &proof.hs);
 
-    // (3) `Ŵ(ρ)` — sparse in `M`: eq tables on both sides of the split,
-    // one combined coefficient per nonempty row, one gather per nonzero.
-    // The η's are folded into the column tables once, and the reduction
-    // runs over parallel derived-cell ranges — exact GF reassociation
-    // only, so the value is bit-identical to the serial definition.
-    let eq_rs: Vec<Vec<Gf>> = points
-        .iter()
-        .map(|pt| build_eq_x_r_vec(&pt[..t_wh], &()).expect("t_wh >= 1"))
-        .collect();
-    let scaled_zc: Vec<Vec<Gf>> = points
-        .iter()
-        .zip(etas.iter())
-        .map(|(pt, &eta)| {
-            build_eq_x_r_vec(&pt[t_wh..], &())
-                .expect("s_h >= 1")
-                .into_iter()
-                .map(|x| eta * x)
-                .collect()
-        })
-        .collect();
-    let eq_rho_row = build_eq_x_r_vec(&rho[..t_wf], &()).expect("t_wf >= 1");
-    let eq_rho_col = build_eq_x_r_vec(&rho[t_wf..], &()).expect("s_f >= 1");
-    let f_mask = (1usize << t_wf) - 1;
-    let h_mask = (1usize << t_wh) - 1;
-    let w_hat = {
-        let _g = crate::utils::prof::scope("mqv:vwhat");
-        const CHUNK: usize = 1 << 14;
-        let n_chunks = map.rows().div_ceil(CHUNK).max(1);
-        let partials: Vec<Gf> = cfg_into_iter!(0..n_chunks)
-            .map(|ci| {
-                let lo = ci * CHUNK;
-                let hi = (lo + CHUNK).min(map.rows());
-                let mut acc = Gf::zero();
-                for i in lo..hi {
-                    let sources = map.row(i);
-                    if sources.is_empty() {
-                        continue;
-                    }
-                    let (c, b) = (i >> t_wh, i & h_mask);
-                    let mut coeff = Gf::zero();
-                    for (l, zc) in scaled_zc.iter().enumerate() {
-                        coeff += eq_rs[l][b] * zc[c];
-                    }
-                    let mut eq_sum = Gf::zero();
-                    for &j in sources {
-                        let j = j as usize;
-                        eq_sum += eq_rho_col[j >> t_wf] * eq_rho_row[j & f_mask];
-                    }
-                    acc += coeff * eq_sum;
-                }
-                acc
-            })
-            .collect();
-        partials.into_iter().fold(Gf::zero(), |a, b| a + b)
+    // (3) The zero-evader ρ and the reduced claim's target
+    // `h′ = Σ_i ρ_i·h_i`.
+    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let rho = build_eq_x_r_vec(&r2, &()).expect("r2");
+    let h_prime = rho.iter().zip(proof.hs.iter()).fold(Gf::zero(), |acc, (&r, &hi)| acc + r * hi);
+
+    // (4) The basis `a′` — the SAME streaming build as the prover's
+    // (`O(#rows + nnz + 2^{m_p})` K-ops, sparse in `M`) — and the
+    // succinct Ligerito verification of `⟨pack(f), a′⟩ = h′`. The
+    // residual hook answers by MLE-folding `a′` at the accumulated
+    // challenges (LSB-first, matching the sumcheck's binding order).
+    let coeffs = VirtRowCoeffs::new(&points, &etas, t_wh);
+    let a_cols = crate::dual_basis::dual_basis_cols();
+    let m_p = t_wf + p_f.s - LOG_PACKING;
+    let a_prime = {
+        let _g = crate::utils::prof::scope("mqv:vaprime");
+        virtual_a_prime(map, &coeffs, &rho, &a_cols, 1usize << m_p)
     };
-    if w_hat.is_zero() {
-        return Err(FlockRsError::VirtualWeightZero);
-    }
-    let mu_f = expected * w_hat.inverse();
-
-    // (4) The standard single-point opening of f̂(ρ) against f's root.
+    let eval_b = |ris: &[F128], yr_log_n: usize| -> Vec<F128> {
+        let mut tbl = a_prime.clone();
+        for &ri in ris {
+            crate::ligerito::bind_low(&mut tbl, f128_to_gf(ri));
+        }
+        debug_assert_eq!(tbl.len(), 1usize << yr_log_n);
+        tbl.into_iter().map(gf_to_f128).collect()
+    };
     {
-        let _g = crate::utils::prof::scope("mqv:vopen");
-        verify_rs_open_ligerito(transcript, commitment_f, mu_f, &rho, &proof.open, vc)?;
+        let _g = crate::utils::prof::scope("mqv:vlig");
+        let ok = ligerito::recursive_verifier_with_basis_succinct(
+            vc,
+            &proof.lig,
+            m_p,
+            gf_to_f128(h_prime),
+            &commitment_f.root,
+            eval_b,
+            &mut ZincChallenger(transcript),
+        );
+        if !ok {
+            return Err(FlockRsError::LigeritoReject);
+        }
     }
 
     // (5) Recombine in R: claimed = Σ_c w′_c · Σ_l 2^{c_w·l}·u_c^{(l)}.
@@ -8369,8 +8486,8 @@ impl IntEvalRsLigVirtProof {
     /// Serialize the virtual-opening proof into the host proof stream:
     /// per chunk the merged forest, the (canonically zero-tail-trimmed)
     /// chunk folds, and the pre-sumcheck — each encoded EXACTLY like the
-    /// base [`IntEvalRsLigModQProof::to_bytes`] — then the bridge
-    /// sumcheck, the ring-switch `s_v` message, and the flock
+    /// base [`IntEvalRsLigModQProof::to_bytes`] — then the 128 batching
+    /// `h_i` (fixed count, no length prefix), and the flock
     /// [`LigeritoProof`] as a length-prefixed `bincode` 1.3 blob.
     /// Mirrors [`Self::from_bytes`].
     #[allow(clippy::arithmetic_side_effects)]
@@ -8406,12 +8523,11 @@ impl IntEvalRsLigVirtProof {
             }
             w.transcribable(&self.presums[l]);
         }
-        w.transcribable(&self.bridge);
-        w.len(self.open.ring.s_v.len());
-        for g in &self.open.ring.s_v {
+        assert_eq!(self.hs.len(), 128, "batching message is always 128 elements");
+        for g in &self.hs {
             w.gf(g);
         }
-        let lig_bytes = bincode::serialize(&self.open.lig).expect("LigeritoProof bincode encode");
+        let lig_bytes = bincode::serialize(&self.lig).expect("LigeritoProof bincode encode");
         w.len(lig_bytes.len());
         w.bytes(&lig_bytes);
         w.into_vec()
@@ -8463,23 +8579,15 @@ impl IntEvalRsLigVirtProof {
             us.push(u);
             presums.push(r.transcribable::<MultiDegreeSumcheckProof<Gf>>()?);
         }
-        let bridge = r.transcribable::<MultiDegreeSumcheckProof<Gf>>()?;
-        let n_sv = r.len()?;
-        let mut s_v = Vec::with_capacity(n_sv.min(r.remaining() / 16));
-        for _ in 0..n_sv {
-            s_v.push(r.gf()?);
+        let mut hs = Vec::with_capacity(128);
+        for _ in 0..128 {
+            hs.push(r.gf()?);
         }
         let n_bytes = r.len()?;
         let lig_bytes = r.take(n_bytes)?;
         let lig: LigeritoProof =
             bincode::deserialize(lig_bytes).map_err(|e| CodecError::Bincode(e.to_string()))?;
-        Ok(IntEvalRsLigVirtProof {
-            mfs,
-            us,
-            presums,
-            bridge,
-            open: LigOpenProof { ring: RingSwitchProof { s_v }, lig },
-        })
+        Ok(IntEvalRsLigVirtProof { mfs, us, presums, hs, lig })
     }
 }
 
@@ -8519,6 +8627,87 @@ mod tests {
             assert_eq!(f128_to_gf(fa + fb), a + b, "add mismatch at {i}");
         }
         assert_eq!(LOG_PACKING, flock_core::pcs::pack::LOG_PACKING);
+    }
+
+    /// The streaming row-factored batching passes equal the cell-wise
+    /// definitions (weights `W = Σ_l η_l·Mᵀ eq(pt_l)` materialized, then
+    /// scanned) on a small map with empty rows and cross-row duplicate
+    /// sources — pinning the char-2 reassociations
+    /// `bit_i(Σ_r E_r) = ⊕_r bit_i(E_r)` and `Φ_ρ(Σ_r E_r) = Σ_r Φ_ρ(E_r)`
+    /// the prover and verifier both rely on.
+    #[test]
+    fn virtual_hs_and_a_prime_match_cellwise() {
+        use crate::f2map::{F2CellMap, cell_count, cell_row_bits};
+
+        let p_f = IntEvalParams { t: 8, s: 2, word_bits: 1 }; // 2^10 cells, 8 packs
+        let p_h = IntEvalParams { t: 7, s: 3, word_bits: 1 }; // 2^10 derived cells
+        let n_f = cell_count(&p_f);
+        let n_h = cell_count(&p_h);
+        let t_wh = cell_row_bits(&p_h);
+        let lists: Vec<Vec<u32>> = (0..n_h)
+            .map(|i| {
+                if i % 5 == 4 {
+                    return Vec::new(); // empty rows
+                }
+                // Deliberate cross-row duplicates: nearby rows share cells.
+                let a = ((i * 7 + 3) % n_f) as u32;
+                let b = ((i / 2 * 13 + 11) % n_f) as u32;
+                let mut l = vec![a.min(b), a.max(b)];
+                l.dedup();
+                l
+            })
+            .collect();
+        let map = F2CellMap::try_from_rows(n_h, n_f, lists).unwrap();
+
+        let points: Vec<Vec<Gf>> = (0..2)
+            .map(|l| (0..t_wh + p_h.s).map(|k| sample(0x9000 + (l * 64 + k) as u64)).collect())
+            .collect();
+        let etas = vec![sample(0xA1), sample(0xA2)];
+        let coeffs = VirtRowCoeffs::new(&points, &etas, t_wh);
+        let a_cols = crate::dual_basis::dual_basis_cols();
+        let n_packs = n_f >> LOG_PACKING;
+        let p_msg: Vec<F128> = (0..n_packs)
+            .map(|y| gf_to_f128(sample(0xB000 + y as u64)))
+            .collect();
+
+        // Materialized weights (the old `mqv:wcoef` + `mqv:wtbl`).
+        let mut w_tbl = vec![Gf::zero(); n_f];
+        for (r, sources) in map.nonempty_rows() {
+            let c = coeffs.coeff(r);
+            for &j in sources {
+                w_tbl[j as usize] += c;
+            }
+        }
+
+        // h_i: streaming vs cell-wise plane scan.
+        let hs = virtual_hs_fold(&map, &coeffs, &p_msg, &a_cols);
+        let mut expect = vec![Gf::zero(); 128];
+        for (j, wj) in w_tbl.iter().enumerate() {
+            let w = wj.words();
+            let g = f128_to_gf(p_msg[j >> LOG_PACKING]) * a_cols[j & 127];
+            for (i, e) in expect.iter_mut().enumerate() {
+                if (w[i >> 6] >> (i & 63)) & 1 == 1 {
+                    *e += g;
+                }
+            }
+        }
+        assert_eq!(hs, expect, "h_i fold");
+
+        // a′: streaming vs cell-wise Φ_ρ scan.
+        let rho: Vec<Gf> = (0..128).map(|i| sample(0xC000 + i as u64)).collect();
+        let a = virtual_a_prime(&map, &coeffs, &rho, &a_cols, n_packs);
+        let mut expect_a = vec![Gf::zero(); n_packs];
+        for (j, wj) in w_tbl.iter().enumerate() {
+            let w = wj.words();
+            let mut phi = Gf::zero();
+            for (i, r) in rho.iter().enumerate() {
+                if (w[i >> 6] >> (i & 63)) & 1 == 1 {
+                    phi += *r;
+                }
+            }
+            expect_a[j >> LOG_PACKING] += phi * a_cols[j & 127];
+        }
+        assert_eq!(a, expect_a, "a' build");
     }
 
     /// Mod-q MLE evaluation through the Ligerito opener: 1-chunk (W=1) and
