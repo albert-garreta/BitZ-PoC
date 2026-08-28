@@ -198,6 +198,18 @@ bits — the `w` block rides free. Both grids share one shape (the 4:3
 saving pads back to the power of two); XOR-heavier relations (the SHA-256
 CM arithmetization) are where the derived/committed gap widens.
 
+Measured (M4, 4 P-threads, 2^15 gates): prove ~78 ms (Spartan 12 |
+bitify 6 | virtual F2Z 58: apply 6 + forest 12 + bridge 28 + open 10),
+verify ~19 ms (Ŵ(ρ) ~5 ms parallel), proof 117.5 KB. The virtual layer
+is engineered transcript-preserving: cached map digests (bulk BLAKE3 —
+a per-element update loop cost ~100 ms/side), the η-scaled one-mul
+transpose coefficients, parallel apply/coeff/bit-table builds, and the
+wide product-pair evaluator on the bridge sumcheck are all exact GF
+reassociations (pinned by an unchanged proof digest). Remaining levers:
+a `Round1FastPath` over the 0/1 `f` table (mul-free bridge round 1), an
+out-of-place parallel `fix_variables` fold, and closed-form `Ŵ(ρ)` for
+eq-structured maps (taps-style).
+
 ## Mod-q RLC claim families (EXPERIMENTAL)
 
 `prove/verify_mle_eval_mod_q_ligerito_rlc_family`: k claims

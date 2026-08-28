@@ -7963,26 +7963,6 @@ fn absorb_virtual_statement(
     transcript.absorb_slice(&frame);
 }
 
-/// `Σ_l η_l·eq_{cell i}(pt_l)` for one derived cell `i` — the combined
-/// transpose coefficient of `M`'s row `i`. `eq_rs_l`/`eq_zc_l` are the
-/// row/column eq tables of `pt_l` in `p_h`'s split.
-#[allow(clippy::arithmetic_side_effects)]
-#[inline]
-fn virtual_row_coeff(
-    i: usize,
-    t_wh: usize,
-    etas: &[Gf],
-    eq_rs: &[Vec<Gf>],
-    eq_zc: &[Vec<Gf>],
-) -> Gf {
-    let (c, b) = (i >> t_wh, i & ((1usize << t_wh) - 1));
-    let mut acc = Gf::zero();
-    for (l, &eta) in etas.iter().enumerate() {
-        acc += eta * eq_rs[l][b] * eq_zc[l][c];
-    }
-    acc
-}
-
 /// Prove `Σ_c w'_c·(Σ_b rw[b]·h_{b,c}) = y ∈ 𝔽_q` for the derived vector
 /// `h = M·f`, against the commitment to `f` (`hint_f`). Same claim shape
 /// as [`prove_mle_eval_mod_q_ligerito`], with `h` in `p_h` geometry —
@@ -8015,16 +7995,19 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual(
         "commitment geometry must match p_f"
     );
 
-    absorb_virtual_statement(
-        transcript,
-        &hint_f.commitment,
-        p_h,
-        p_f,
-        map,
-        row_weights_q,
-        q_bits,
-        alpha,
-    );
+    {
+        let _g = crate::utils::prof::scope("mqv:stmt");
+        absorb_virtual_statement(
+            transcript,
+            &hint_f.commitment,
+            p_h,
+            p_f,
+            map,
+            row_weights_q,
+            q_bits,
+            alpha,
+        );
+    }
 
     // (1) The core pipeline on the derived rows — `h` is never committed.
     let h_rows = {
@@ -8068,33 +8051,75 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual(
         .iter()
         .map(|pt| build_eq_x_r_vec(&pt[..t_wh], &()).expect("t_wh >= 1"))
         .collect();
-    let eq_zc: Vec<Vec<Gf>> = points
+    // Fold each η into its column table once: the per-cell transpose
+    // coefficient is then `Σ_l eq_rs_l[b]·(η_l·eq_zc_l)[c]` — one product
+    // per (cell, chunk). Exact reassociation only (GF multiplication is
+    // associative), so W is bit-identical to the definition.
+    let scaled_zc: Vec<Vec<Gf>> = points
         .iter()
-        .map(|pt| build_eq_x_r_vec(&pt[t_wh..], &()).expect("s_h >= 1"))
+        .zip(etas.iter())
+        .map(|(pt, &eta)| {
+            build_eq_x_r_vec(&pt[t_wh..], &())
+                .expect("s_h >= 1")
+                .into_iter()
+                .map(|x| eta * x)
+                .collect()
+        })
         .collect();
 
+    // (2a) Per-derived-cell coefficients, in parallel (a map with many
+    // empty rows pays for its dead cells here; the scatter below skips
+    // them).
+    let n_h_cells = map.rows();
+    let h_mask = (1usize << t_wh) - 1;
+    let coeff_tbl: Vec<Gf> = {
+        let _g = crate::utils::prof::scope("mqv:wcoef");
+        cfg_into_iter!(0..n_h_cells)
+            .map(|i| {
+                let (c, b) = (i >> t_wh, i & h_mask);
+                let mut acc = Gf::zero();
+                for (l, zc) in scaled_zc.iter().enumerate() {
+                    acc += eq_rs[l][b] * zc[c];
+                }
+                acc
+            })
+            .collect()
+    };
+
+    // (2b) The multiplication-free transpose scatter.
     let n_f = cell_count(p_f);
     let mut w_tbl = vec![Gf::zero(); n_f];
-    for (i, sources) in map.nonempty_rows() {
-        let coeff = virtual_row_coeff(i, t_wh, &etas, &eq_rs, &eq_zc);
-        for &j in sources {
-            w_tbl[j as usize] += coeff;
+    {
+        let _g = crate::utils::prof::scope("mqv:wtbl");
+        for (i, sources) in map.nonempty_rows() {
+            let coeff = coeff_tbl[i];
+            for &j in sources {
+                w_tbl[j as usize] += coeff;
+            }
         }
     }
+    drop(coeff_tbl);
+
+    // (2c) f's bit table, per-column parallel (column segments are
+    // disjoint).
     let f_mask = (1usize << t_wf) - 1;
     let one = Gf::one();
     let mut f_tbl = vec![Gf::zero(); n_f];
     let f_rows = hint_f.rows();
-    for (c, row) in f_rows.iter().enumerate() {
-        let base = c << t_wf;
-        for (wi, &word) in row.iter().enumerate() {
-            let mut bits = word;
-            while bits != 0 {
-                let tz = bits.trailing_zeros() as usize;
-                f_tbl[base | (((wi << 6) | tz) & f_mask)] = one;
-                bits &= bits.wrapping_sub(1);
-            }
-        }
+    {
+        let _g = crate::utils::prof::scope("mqv:ftbl");
+        cfg_chunks_mut!(f_tbl, 1usize << t_wf)
+            .enumerate()
+            .for_each(|(c, segment)| {
+                for (wi, &word) in f_rows[c].iter().enumerate() {
+                    let mut bits = word;
+                    while bits != 0 {
+                        let tz = bits.trailing_zeros() as usize;
+                        segment[((wi << 6) | tz) & f_mask] = one;
+                        bits &= bits.wrapping_sub(1);
+                    }
+                }
+            });
     }
 
     let nvars = t_wf + p_f.s;
@@ -8111,13 +8136,23 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual(
         vec![to_mle(w_tbl), to_mle(f_tbl)],
         Box::new(|vals: &[Gf]| vals[0] * vals[1]),
     );
-    let (bridge, states) =
+    // The wide product-pair round evaluator (delayed-reduction
+    // accumulators) — the presum's fast path, byte-identical round
+    // messages.
+    let group = if crate::ligerito::rs_fast() {
+        group.with_round_evaluator(Box::new(crate::ligerito::ProdPairWideEvaluator))
+    } else {
+        group
+    };
+    let (bridge, states) = {
+        let _g = crate::utils::prof::scope("mqv:sc");
         crate::piop::sumcheck::multi_degree::MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(
             transcript,
             vec![group],
             nvars,
             &(),
-        );
+        )
+    };
     let rho = states[0].randomness.clone();
     drop(_g_b);
 
@@ -8172,16 +8207,19 @@ where
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
 
-    absorb_virtual_statement(
-        transcript,
-        commitment_f,
-        p_h,
-        p_f,
-        map,
-        row_weights_q,
-        q_bits,
-        alpha,
-    );
+    {
+        let _g = crate::utils::prof::scope("mqv:stmt");
+        absorb_virtual_statement(
+            transcript,
+            commitment_f,
+            p_h,
+            p_f,
+            map,
+            row_weights_q,
+            q_bits,
+            alpha,
+        );
+    }
 
     let chunks = chunk_row_weights(row_weights_q, c_w, lch);
 
@@ -8250,34 +8288,69 @@ where
 
     // (3) `Ŵ(ρ)` — sparse in `M`: eq tables on both sides of the split,
     // one combined coefficient per nonempty row, one gather per nonzero.
+    // The η's are folded into the column tables once, and the reduction
+    // runs over parallel derived-cell ranges — exact GF reassociation
+    // only, so the value is bit-identical to the serial definition.
     let eq_rs: Vec<Vec<Gf>> = points
         .iter()
         .map(|pt| build_eq_x_r_vec(&pt[..t_wh], &()).expect("t_wh >= 1"))
         .collect();
-    let eq_zc: Vec<Vec<Gf>> = points
+    let scaled_zc: Vec<Vec<Gf>> = points
         .iter()
-        .map(|pt| build_eq_x_r_vec(&pt[t_wh..], &()).expect("s_h >= 1"))
+        .zip(etas.iter())
+        .map(|(pt, &eta)| {
+            build_eq_x_r_vec(&pt[t_wh..], &())
+                .expect("s_h >= 1")
+                .into_iter()
+                .map(|x| eta * x)
+                .collect()
+        })
         .collect();
     let eq_rho_row = build_eq_x_r_vec(&rho[..t_wf], &()).expect("t_wf >= 1");
     let eq_rho_col = build_eq_x_r_vec(&rho[t_wf..], &()).expect("s_f >= 1");
     let f_mask = (1usize << t_wf) - 1;
-    let mut w_hat = Gf::zero();
-    for (i, sources) in map.nonempty_rows() {
-        let coeff = virtual_row_coeff(i, t_wh, &etas, &eq_rs, &eq_zc);
-        let mut eq_sum = Gf::zero();
-        for &j in sources {
-            let j = j as usize;
-            eq_sum += eq_rho_col[j >> t_wf] * eq_rho_row[j & f_mask];
-        }
-        w_hat += coeff * eq_sum;
-    }
+    let h_mask = (1usize << t_wh) - 1;
+    let w_hat = {
+        let _g = crate::utils::prof::scope("mqv:vwhat");
+        const CHUNK: usize = 1 << 14;
+        let n_chunks = map.rows().div_ceil(CHUNK).max(1);
+        let partials: Vec<Gf> = cfg_into_iter!(0..n_chunks)
+            .map(|ci| {
+                let lo = ci * CHUNK;
+                let hi = (lo + CHUNK).min(map.rows());
+                let mut acc = Gf::zero();
+                for i in lo..hi {
+                    let sources = map.row(i);
+                    if sources.is_empty() {
+                        continue;
+                    }
+                    let (c, b) = (i >> t_wh, i & h_mask);
+                    let mut coeff = Gf::zero();
+                    for (l, zc) in scaled_zc.iter().enumerate() {
+                        coeff += eq_rs[l][b] * zc[c];
+                    }
+                    let mut eq_sum = Gf::zero();
+                    for &j in sources {
+                        let j = j as usize;
+                        eq_sum += eq_rho_col[j >> t_wf] * eq_rho_row[j & f_mask];
+                    }
+                    acc += coeff * eq_sum;
+                }
+                acc
+            })
+            .collect();
+        partials.into_iter().fold(Gf::zero(), |a, b| a + b)
+    };
     if w_hat.is_zero() {
         return Err(FlockRsError::VirtualWeightZero);
     }
     let mu_f = expected * w_hat.inverse();
 
     // (4) The standard single-point opening of f̂(ρ) against f's root.
-    verify_rs_open_ligerito(transcript, commitment_f, mu_f, &rho, &proof.open, vc)?;
+    {
+        let _g = crate::utils::prof::scope("mqv:vopen");
+        verify_rs_open_ligerito(transcript, commitment_f, mu_f, &rho, &proof.open, vc)?;
+    }
 
     // (5) Recombine in R: claimed = Σ_c w′_c · Σ_l 2^{c_w·l}·u_c^{(l)}.
     let v_flat: Vec<u128> = us.iter().flat_map(|u| u.iter().copied()).collect();

@@ -1228,7 +1228,7 @@ pub(crate) fn verify_int_eval_common(
 /// `{0, 1, F::from(2)}`; reduction is `F₂`-linear and the outer sums are
 /// exact), so the emitted proof is byte-identical. Attached under
 /// [`rs_fast`] purely so `F2Z_RS_FAST=0` restores the generic path for A/B.
-struct ProdPairWideEvaluator;
+pub(crate) struct ProdPairWideEvaluator;
 
 impl crate::piop::sumcheck::prover::RoundPolyEvaluator<Gf> for ProdPairWideEvaluator {
     #[allow(clippy::arithmetic_side_effects)]

@@ -14,6 +14,8 @@
 //! `(r_lo, r_hi) = (point[..7], point[7..])` split.
 
 use blake3::Hasher;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 use crate::pcs::IntEvalParams;
 
@@ -53,6 +55,7 @@ pub struct F2CellMap {
     cols: usize,
     row_offsets: Box<[usize]>,
     entries: Box<[u32]>,
+    digest: [u8; 32],
 }
 
 impl F2CellMap {
@@ -88,12 +91,12 @@ impl F2CellMap {
             entries.extend(list);
             row_offsets.push(entries.len());
         }
-        Ok(Self {
+        Ok(Self::sealed(
             rows,
             cols,
-            row_offsets: row_offsets.into_boxed_slice(),
-            entries: entries.into_boxed_slice(),
-        })
+            row_offsets.into_boxed_slice(),
+            entries.into_boxed_slice(),
+        ))
     }
 
     /// Builds the map directly from flat CSR storage — the memory-honest
@@ -131,12 +134,26 @@ impl F2CellMap {
                 previous = Some(col);
             }
         }
-        Ok(Self {
+        Ok(Self::sealed(
             rows,
             cols,
-            row_offsets: row_offsets.into_boxed_slice(),
-            entries: entries.into_boxed_slice(),
-        })
+            row_offsets.into_boxed_slice(),
+            entries.into_boxed_slice(),
+        ))
+    }
+
+    /// Finishes construction: the map is immutable, so its canonical
+    /// digest is computed once here and cached.
+    fn sealed(rows: usize, cols: usize, row_offsets: Box<[usize]>, entries: Box<[u32]>) -> Self {
+        let mut map = Self {
+            rows,
+            cols,
+            row_offsets,
+            entries,
+            digest: [0; 32],
+        };
+        map.digest = map.compute_digest();
+        map
     }
 
     /// Number of derived cells (`h`-side).
@@ -170,18 +187,35 @@ impl F2CellMap {
 
     /// Canonical BLAKE3 digest of the map (shape + sparse content). Bound
     /// into the virtual opening's transcript statement.
-    pub fn digest(&self) -> [u8; 32] {
+    ///
+    /// The stream is the little-endian concatenation of the header, every
+    /// offset (as `u64`), and every entry (as `u32`). Large maps hash it
+    /// through bulk staging buffers (BLAKE3 is a byte stream, so this is
+    /// bit-identical to per-element updates) with multi-threaded hashing —
+    /// a per-element `update` loop costs ~10 ns of call overhead per
+    /// element, ~100 ms at a 2^22-cell map.
+    pub const fn digest(&self) -> [u8; 32] {
+        self.digest
+    }
+
+    fn compute_digest(&self) -> [u8; 32] {
         let mut hash = Hasher::new();
         hash.update(b"f2z/f2-cell-map/v1");
         hash.update(&(self.rows as u64).to_le_bytes());
         hash.update(&(self.cols as u64).to_le_bytes());
         hash.update(&(self.entries.len() as u64).to_le_bytes());
+
+        let mut buffer = Vec::with_capacity(self.row_offsets.len() * 8);
         for offset in self.row_offsets.iter() {
-            hash.update(&(*offset as u64).to_le_bytes());
+            buffer.extend_from_slice(&(*offset as u64).to_le_bytes());
         }
+        hash.update_rayon(&buffer);
+        buffer.clear();
+        buffer.reserve(self.entries.len() * 4);
         for entry in self.entries.iter() {
-            hash.update(&entry.to_le_bytes());
+            buffer.extend_from_slice(&entry.to_le_bytes());
         }
+        hash.update_rayon(&buffer);
         *hash.finalize().as_bytes()
     }
 
@@ -208,19 +242,29 @@ impl F2CellMap {
             "f_rows word count"
         );
 
+        // Derived columns own disjoint flat-index ranges (`(c << t_wh) | b`),
+        // so each output row is filled independently, in parallel.
         let mut h_rows = vec![vec![0u64; h_row_len / 64]; 1usize << p_h.s];
-        for (i, sources) in self.nonempty_rows() {
-            let mut bit = 0u64;
-            for &j in sources {
-                let j = j as usize;
-                let (c_f, b_f) = (j >> t_wf, j & f_mask);
-                bit ^= (f_rows[c_f][b_f >> 6] >> (b_f & 63)) & 1;
-            }
-            if bit != 0 {
-                let (c_h, b_h) = (i >> t_wh, i & (h_row_len - 1));
-                h_rows[c_h][b_h >> 6] |= 1u64 << (b_h & 63);
-            }
-        }
+        crate::cfg_iter_mut!(h_rows)
+            .enumerate()
+            .for_each(|(c_h, out_row)| {
+                let base = c_h << t_wh;
+                for b_h in 0..h_row_len {
+                    let sources = self.row(base | b_h);
+                    if sources.is_empty() {
+                        continue;
+                    }
+                    let mut bit = 0u64;
+                    for &j in sources {
+                        let j = j as usize;
+                        let (c_f, b_f) = (j >> t_wf, j & f_mask);
+                        bit ^= (f_rows[c_f][b_f >> 6] >> (b_f & 63)) & 1;
+                    }
+                    if bit != 0 {
+                        out_row[b_h >> 6] |= 1u64 << (b_h & 63);
+                    }
+                }
+            });
         h_rows
     }
 }
