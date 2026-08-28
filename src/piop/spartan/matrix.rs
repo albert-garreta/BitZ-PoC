@@ -213,6 +213,10 @@ pub enum SpartanMatrixError {
     #[error("row point has width {actual}, expected {expected}")]
     InvalidRowPointLength { expected: usize, actual: usize },
 
+    /// A row-domain weight table has the wrong padded length.
+    #[error("row-weight table has length {actual}, expected {expected}")]
+    InvalidRowWeightsLength { expected: usize, actual: usize },
+
     /// A column-domain evaluation point has the wrong width.
     #[error("column point has width {actual}, expected {expected}")]
     InvalidColumnPointLength { expected: usize, actual: usize },
@@ -573,6 +577,48 @@ where
         validate_element_field(rho, &self.field_modulus_encoding)?;
 
         let row_weights = eq_table(row_point, &self.field_config)?;
+        self.bind_and_batch_with_validated_row_weights(&row_weights, rho)
+    }
+
+    /// Constructs the dense column MLE from an explicit field-valued row
+    /// functional:
+    ///
+    /// `D(j) = sum_i row_weights[i] (A[i,j] + rho B[i,j] + rho^2 C[i,j])`.
+    ///
+    /// `row_weights` covers the complete padded row domain in little-endian
+    /// index order. Weights for padding rows are accepted but have no effect
+    /// because the sparse matrices contain only logical rows.
+    #[allow(dead_code)]
+    pub(crate) fn bind_and_batch_with_row_weights(
+        &self,
+        row_weights: &[F],
+        rho: &F,
+    ) -> Result<DenseMultilinearExtension<F>, SpartanMatrixError> {
+        let expected_row_weights = domain_size(self.num_row_vars)?;
+        if row_weights.len() != expected_row_weights {
+            return Err(SpartanMatrixError::InvalidRowWeightsLength {
+                expected: expected_row_weights,
+                actual: row_weights.len(),
+            });
+        }
+        validate_elements_field(row_weights, &self.field_modulus_encoding)?;
+        validate_element_field(rho, &self.field_modulus_encoding)?;
+
+        self.bind_and_batch_with_validated_row_weights(row_weights, rho)
+    }
+
+    /// Binding core for row weights already derived from transcript-validated
+    /// points under this matrix configuration.
+    ///
+    /// Keeping this separate avoids rescanning and re-encoding every entry of
+    /// the exponentially sized equality table on the standard prover path.
+    pub(crate) fn bind_and_batch_with_validated_row_weights(
+        &self,
+        row_weights: &[F],
+        rho: &F,
+    ) -> Result<DenseMultilinearExtension<F>, SpartanMatrixError> {
+        debug_assert_eq!(row_weights.len(), 1usize << self.num_row_vars);
+
         let zero = F::zero_with_cfg(&self.field_config);
         let rho_squared = mul(rho, rho);
         let mut evaluations = Vec::with_capacity(domain_size(self.num_column_vars)?);
@@ -585,15 +631,15 @@ where
             .zip(self.matrices.c().columns())
         {
             let mut evaluation =
-                sparse_column_dot(a_column, &row_weights, &zero, &self.field_config);
+                sparse_column_dot(a_column, row_weights, &zero, &self.field_config);
             if !b_column.is_empty() {
                 let b_evaluation =
-                    sparse_column_dot(b_column, &row_weights, &zero, &self.field_config);
+                    sparse_column_dot(b_column, row_weights, &zero, &self.field_config);
                 evaluation += &mul(rho, &b_evaluation);
             }
             if !c_column.is_empty() {
                 let c_evaluation =
-                    sparse_column_dot(c_column, &row_weights, &zero, &self.field_config);
+                    sparse_column_dot(c_column, row_weights, &zero, &self.field_config);
                 evaluation += &mul(&rho_squared, &c_evaluation);
             }
             evaluations.push(evaluation);
@@ -637,26 +683,75 @@ where
         validate_element_field(rho, &self.field_modulus_encoding)?;
 
         let row_weights = eq_table(row_point, &self.field_config)?;
+        self.evaluate_batched_with_validated_row_weights(&row_weights, rho, column_point)
+    }
+
+    /// Directly evaluates the batched matrices against an explicit
+    /// field-valued row functional and a multilinear column point:
+    ///
+    /// `sum_i row_weights[i] (A(i, column_point)
+    ///     + rho B(i, column_point) + rho^2 C(i, column_point))`.
+    ///
+    /// `row_weights` covers the complete padded row domain in little-endian
+    /// index order.
+    #[allow(dead_code)]
+    pub(crate) fn evaluate_batched_with_row_weights(
+        &self,
+        row_weights: &[F],
+        rho: &F,
+        column_point: &[F],
+    ) -> Result<F, SpartanMatrixError> {
+        let expected_row_weights = domain_size(self.num_row_vars)?;
+        if row_weights.len() != expected_row_weights {
+            return Err(SpartanMatrixError::InvalidRowWeightsLength {
+                expected: expected_row_weights,
+                actual: row_weights.len(),
+            });
+        }
+        if column_point.len() != self.num_column_vars {
+            return Err(SpartanMatrixError::InvalidColumnPointLength {
+                expected: self.num_column_vars,
+                actual: column_point.len(),
+            });
+        }
+        validate_elements_field(row_weights, &self.field_modulus_encoding)?;
+        validate_elements_field(column_point, &self.field_modulus_encoding)?;
+        validate_element_field(rho, &self.field_modulus_encoding)?;
+
+        self.evaluate_batched_with_validated_row_weights(row_weights, rho, column_point)
+    }
+
+    /// Evaluation core for row weights and challenges already validated under
+    /// this matrix configuration.
+    pub(crate) fn evaluate_batched_with_validated_row_weights(
+        &self,
+        row_weights: &[F],
+        rho: &F,
+        column_point: &[F],
+    ) -> Result<F, SpartanMatrixError> {
+        debug_assert_eq!(row_weights.len(), 1usize << self.num_row_vars);
+        debug_assert_eq!(column_point.len(), self.num_column_vars);
+
         let column_weights = eq_table(column_point, &self.field_config)?;
         let zero = F::zero_with_cfg(&self.field_config);
         let rho_squared = mul(rho, rho);
         let mut evaluation = evaluate_sparse_matrix(
             self.matrices.a(),
-            &row_weights,
+            row_weights,
             &column_weights,
             &zero,
             &self.field_config,
         );
         let b_evaluation = evaluate_sparse_matrix(
             self.matrices.b(),
-            &row_weights,
+            row_weights,
             &column_weights,
             &zero,
             &self.field_config,
         );
         let c_evaluation = evaluate_sparse_matrix(
             self.matrices.c(),
-            &row_weights,
+            row_weights,
             &column_weights,
             &zero,
             &self.field_config,
@@ -1438,6 +1533,103 @@ mod tests {
             .evaluate_batched(&row_point, &rho, &column_point)
             .unwrap();
         assert_eq!(dense_evaluation, sparse_evaluation);
+    }
+
+    #[test]
+    fn explicit_equality_row_weights_match_point_based_matrix_operations() {
+        let config = config();
+        let a = SparseMatrix::try_from_rows(
+            3,
+            vec![
+                vec![(0, field(2, &config)), (2, field(3, &config))],
+                vec![(1, field(5, &config))],
+                vec![(0, field(7, &config))],
+            ],
+        )
+        .unwrap();
+        let b = SparseMatrix::try_from_rows(
+            3,
+            vec![
+                vec![(1, field(11, &config))],
+                vec![(2, field(13, &config))],
+                vec![],
+            ],
+        )
+        .unwrap();
+        let c = SparseMatrix::try_from_rows(
+            3,
+            vec![
+                vec![(0, field(17, &config))],
+                vec![],
+                vec![(2, field(19, &config))],
+            ],
+        )
+        .unwrap();
+        let prepared =
+            PreparedConstraintMatrices::new(ConstraintMatrices::new(a, b, c).unwrap(), &config)
+                .unwrap();
+        let row_point = [field(23, &config), field(29, &config)];
+        let row_weights = eq_table(&row_point, &config).unwrap();
+        let column_point = [field(31, &config), field(37, &config)];
+        let rho = field(41, &config);
+
+        assert_eq!(
+            prepared.bind_and_batch(&row_point, &rho).unwrap(),
+            prepared
+                .bind_and_batch_with_row_weights(&row_weights, &rho)
+                .unwrap()
+        );
+        assert_eq!(
+            prepared
+                .evaluate_batched(&row_point, &rho, &column_point)
+                .unwrap(),
+            prepared
+                .evaluate_batched_with_row_weights(&row_weights, &rho, &column_point)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn explicit_row_weight_operations_validate_length_and_field() {
+        let config = config();
+        let other_config = F128::make_cfg(&Uint::from(OTHER_TEST_MODULUS)).unwrap();
+        let matrix = || {
+            SparseMatrix::try_from_rows(1, vec![vec![(0, field(1, &config))], vec![], vec![]])
+                .unwrap()
+        };
+        let prepared = PreparedConstraintMatrices::new(
+            ConstraintMatrices::new(matrix(), matrix(), matrix()).unwrap(),
+            &config,
+        )
+        .unwrap();
+        let rho = field(2, &config);
+        let column_point: [F128; 0] = [];
+        let short_weights = vec![field(3, &config); 3];
+
+        assert_eq!(
+            prepared.bind_and_batch_with_row_weights(&short_weights, &rho),
+            Err(SpartanMatrixError::InvalidRowWeightsLength {
+                expected: 4,
+                actual: 3,
+            })
+        );
+        assert_eq!(
+            prepared.evaluate_batched_with_row_weights(&short_weights, &rho, &column_point,),
+            Err(SpartanMatrixError::InvalidRowWeightsLength {
+                expected: 4,
+                actual: 3,
+            })
+        );
+
+        let foreign_weights = vec![field(3, &other_config); 4];
+        assert_eq!(
+            prepared.bind_and_batch_with_row_weights(&foreign_weights, &rho),
+            Err(SpartanMatrixError::FieldConfigurationMismatch)
+        );
+        assert_eq!(
+            prepared.evaluate_batched_with_row_weights(&foreign_weights, &rho, &column_point,),
+            Err(SpartanMatrixError::FieldConfigurationMismatch)
+        );
     }
 
     #[test]

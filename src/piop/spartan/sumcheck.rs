@@ -494,6 +494,10 @@ pub enum SumcheckError {
     NativeMultiplicandOutOfRange,
     #[error("invalid dense multilinear-extension table")]
     InvalidMleOperation,
+    #[error("a sumcheck value uses a different field configuration")]
+    FieldConfigurationMismatch,
+    #[error("a sumcheck value has a noncanonical field representation")]
+    NonCanonicalFieldElement,
     #[error(transparent)]
     DelayedReduction(#[from] DelayedReductionError),
 }

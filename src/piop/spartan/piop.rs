@@ -20,6 +20,13 @@ use super::{
         prove_inner_sumcheck_u32_native_with_reducer, prove_inner_sumcheck_with_reducer,
         prove_outer_sumcheck_u32_native_with_reducer, prove_outer_sumcheck_with_reducer,
     },
+    univariate_skip::{
+        PrefixUnivariateRowBinding, UnivariateSkipOuterSumcheckProof, UnivariateSkipProof,
+        UnivariateSkipSpartanPiopProof, prove_univariate_skip_outer_sumcheck_with_reducer,
+    },
+    univariate_skip_native::{
+        compute_u32_native_skip_message_validated, fold_u32_native_prefix_validated,
+    },
 };
 
 #[cfg(any(test, feature = "bench-internals"))]
@@ -33,6 +40,13 @@ use super::sumcheck::{
 /// statement digests, runtime field configurations, exact challenge sampling,
 /// and an explicit assignment-oracle binding.
 pub const SPARTAN_PIOP_DOMAIN: &[u8] = b"f2z/spartan/piop/v2";
+
+/// Domain separator for the opt-in known-zero univariate-skip PIOP.
+///
+/// The standard `v2` schedule deliberately retains its original domain and
+/// transcript bytes.  A distinct domain prevents either proof shape from
+/// being replayed as the other.
+pub const SPARTAN_UNIVARIATE_SKIP_PIOP_DOMAIN: &[u8] = b"f2z/spartan/piop/univariate-skip/v1";
 
 /// Domain separator for the assignment-oracle commitment in the PIOP
 /// statement.
@@ -119,6 +133,15 @@ pub enum SpartanError {
 
     #[error("the supplied opening claim is not the claim derived from the proof")]
     InvalidMleClaim,
+
+    #[error("univariate skip supports K in 1..=4, got {skip_vars}")]
+    InvalidUnivariateSkipVariables { skip_vars: usize },
+
+    #[error("cannot skip {skip_vars} variables from an outer sumcheck with {row_vars} variables")]
+    UnivariateSkipExceedsRowVariables { skip_vars: usize, row_vars: usize },
+
+    #[error("univariate-skip proof has {actual} finite evaluations, expected {expected}")]
+    InvalidUnivariateSkipMessageLength { expected: usize, actual: usize },
 }
 
 /// Runs the complete outer and inner Spartan reductions.
@@ -148,6 +171,42 @@ where
         assignment_oracle_binding,
         products,
         assignment,
+        &reducer,
+    )
+}
+
+/// Runs Spartan with an explicit known-zero univariate skip for the first
+/// `skip_vars` little-endian row variables.
+///
+/// This is a distinct proof protocol and transcript domain. The existing
+/// [`prove_spartan_piop`] entry point always retains the standard cubic outer
+/// sumcheck.
+pub fn prove_spartan_piop_with_univariate_skip<F, C>(
+    transcript: &mut impl Transcript,
+    matrices: &PreparedConstraintMatrices<F, C>,
+    assignment_oracle_binding: &[u8; 32],
+    products: R1csProductMles<F>,
+    assignment: DenseMultilinearExtension<F>,
+    skip_vars: usize,
+) -> Result<
+    (
+        UnivariateSkipSpartanPiopProof<F>,
+        ScaledMleEvaluationClaim<F>,
+    ),
+    SpartanError,
+>
+where
+    F: SpartanField,
+    C: SpartanMatrixCoefficient<F>,
+{
+    let reducer = ImmediateSumcheckReducer::new(matrices.config());
+    prove_spartan_piop_with_univariate_skip_and_reducer(
+        transcript,
+        matrices,
+        assignment_oracle_binding,
+        products,
+        assignment,
+        skip_vars,
         &reducer,
     )
 }
@@ -234,6 +293,39 @@ pub fn prove_spartan_piop_u32_native(
         assignment_oracle_binding,
         products,
         assignment,
+        &reducer,
+    )
+}
+
+/// Runs the production native-u32 Spartan prover with an explicit known-zero
+/// univariate prefix skip.
+///
+/// Native `Az` and `Bz` interpolation remains exact in signed `i64`, while
+/// `Cz` and the residual use signed `i128`. After the skip challenge all three
+/// tables are folded into the configured field and the existing cubic tail is
+/// reused unchanged.
+pub fn prove_spartan_piop_u32_native_with_univariate_skip(
+    transcript: &mut impl Transcript,
+    matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
+    assignment_oracle_binding: &[u8; 32],
+    products: R1csProductMles<u64>,
+    assignment: DenseMultilinearExtension<u64>,
+    skip_vars: usize,
+) -> Result<
+    (
+        UnivariateSkipSpartanPiopProof<MontyField<2>>,
+        ScaledMleEvaluationClaim<MontyField<2>>,
+    ),
+    SpartanError,
+> {
+    let reducer = OptimizedSumcheckReducer::new(matrices.config())?;
+    prove_spartan_piop_u32_native_with_univariate_skip_and_reducer(
+        transcript,
+        matrices,
+        assignment_oracle_binding,
+        products,
+        assignment,
+        skip_vars,
         &reducer,
     )
 }
@@ -586,6 +678,203 @@ where
     Ok((proof, claim))
 }
 
+fn prove_spartan_piop_with_univariate_skip_and_reducer<F, C, R>(
+    transcript: &mut impl Transcript,
+    matrices: &PreparedConstraintMatrices<F, C>,
+    assignment_oracle_binding: &[u8; 32],
+    products: R1csProductMles<F>,
+    assignment: DenseMultilinearExtension<F>,
+    skip_vars: usize,
+    reducer: &R,
+) -> Result<
+    (
+        UnivariateSkipSpartanPiopProof<F>,
+        ScaledMleEvaluationClaim<F>,
+    ),
+    SpartanError,
+>
+where
+    F: SpartanField,
+    C: SpartanMatrixCoefficient<F>,
+    R: SumcheckProductReducer<F>,
+{
+    validate_prover_inputs(matrices, &products, &assignment)?;
+    let skip_vars = validate_univariate_skip_variables(skip_vars, matrices.num_row_vars())?;
+    absorb_univariate_skip_statement(transcript, matrices, assignment_oracle_binding, skip_vars);
+
+    let field_config = matrices.config();
+    let tail_vars = matrices.num_row_vars() - usize::from(skip_vars);
+    let tau_tail = (0..tail_vars)
+        .map(|_| squeeze_field(transcript, field_config))
+        .collect::<Vec<F>>();
+    let equality_factors = make_equality_factors(&tau_tail, field_config)?;
+    let outer = {
+        let _scope = crate::utils::prof::scope("spartan:outer_univariate_skip");
+        prove_univariate_skip_outer_sumcheck_with_reducer(
+            transcript,
+            usize::from(skip_vars),
+            &tau_tail,
+            equality_factors,
+            products,
+            field_config,
+            reducer,
+        )?
+    };
+
+    // The reused cubic tail absorbed [Az(r), Bz(r), Cz(r)] before returning.
+    let rho = squeeze_field(transcript, field_config);
+    let inner_initial_claim = batched_product_claim(
+        &outer.proof.tail.az_mle_claim,
+        &outer.proof.tail.bz_mle_claim,
+        &outer.proof.tail.cz_mle_claim,
+        &rho,
+    );
+    let batched_matrix = {
+        let _scope = crate::utils::prof::scope("spartan:bind_and_batch");
+        let row_weights = outer
+            .row_binding
+            .row_weights(matrices.num_row_vars(), field_config)?;
+        matrices.bind_and_batch_with_validated_row_weights(&row_weights, &rho)?
+    };
+    let inner = {
+        let _scope = crate::utils::prof::scope("spartan:inner_sumcheck");
+        prove_inner_sumcheck_with_reducer(
+            transcript,
+            inner_initial_claim,
+            batched_matrix,
+            assignment,
+            field_config,
+            reducer,
+        )?
+    };
+
+    let claim = ScaledMleEvaluationClaim::new(
+        inner.sumcheck.eval_points.into_boxed_slice(),
+        inner.batched_matrix_evaluation,
+        inner.sumcheck.final_claim,
+    );
+    let proof = UnivariateSkipSpartanPiopProof {
+        outer: outer.proof,
+        inner: inner.sumcheck.proof,
+    };
+    Ok((proof, claim))
+}
+
+fn prove_spartan_piop_u32_native_with_univariate_skip_and_reducer<R>(
+    transcript: &mut impl Transcript,
+    matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
+    assignment_oracle_binding: &[u8; 32],
+    products: R1csProductMles<u64>,
+    assignment: DenseMultilinearExtension<u64>,
+    skip_vars: usize,
+    reducer: &R,
+) -> Result<
+    (
+        UnivariateSkipSpartanPiopProof<MontyField<2>>,
+        ScaledMleEvaluationClaim<MontyField<2>>,
+    ),
+    SpartanError,
+>
+where
+    R: SumcheckProductReducer<MontyField<2>> + SumcheckLinearReducer,
+{
+    validate_native_u32_prover_inputs(matrices, &products, &assignment)?;
+    let skip_vars = validate_univariate_skip_variables(skip_vars, matrices.num_row_vars())?;
+    absorb_univariate_skip_statement(transcript, matrices, assignment_oracle_binding, skip_vars);
+
+    let field_config = matrices.config();
+    let tail_vars = matrices.num_row_vars() - usize::from(skip_vars);
+    let tau_tail = (0..tail_vars)
+        .map(|_| squeeze_field(transcript, field_config))
+        .collect::<Vec<MontyField<2>>>();
+    let equality_factors = make_equality_factors(&tau_tail, field_config)?;
+
+    let outer = {
+        let _scope = crate::utils::prof::scope("spartan:outer_univariate_skip");
+        let message = {
+            let _scope = crate::utils::prof::scope("spartan:univariate_skip_message");
+            compute_u32_native_skip_message_validated(
+                usize::from(skip_vars),
+                &equality_factors,
+                &products,
+                field_config,
+                reducer,
+            )?
+        };
+        let skip = UnivariateSkipProof::from_ordered_message(usize::from(skip_vars), message)?;
+        let reduction = skip.verify_reduction(transcript, field_config)?;
+        let folded = {
+            let _scope = crate::utils::prof::scope("spartan:univariate_skip_prefix_fold");
+            fold_u32_native_prefix_validated(
+                usize::from(skip_vars),
+                products,
+                &reduction.z,
+                field_config,
+                reducer,
+            )?
+        };
+        let tail = {
+            let _scope = crate::utils::prof::scope("spartan:univariate_skip_tail");
+            prove_outer_sumcheck_with_reducer(
+                transcript,
+                reduction.q_at_z,
+                &tau_tail,
+                equality_factors,
+                folded,
+                field_config,
+                reducer,
+            )?
+        };
+        let row_binding = PrefixUnivariateRowBinding {
+            skip_vars,
+            z: reduction.z,
+            tail_point: tail.eval_points,
+        };
+        (
+            UnivariateSkipOuterSumcheckProof {
+                skip,
+                tail: tail.proof,
+            },
+            row_binding,
+        )
+    };
+
+    let rho = squeeze_field(transcript, field_config);
+    let inner_initial_claim = batched_product_claim(
+        &outer.0.tail.az_mle_claim,
+        &outer.0.tail.bz_mle_claim,
+        &outer.0.tail.cz_mle_claim,
+        &rho,
+    );
+    let batched_matrix = {
+        let _scope = crate::utils::prof::scope("spartan:bind_and_batch");
+        let row_weights = outer.1.row_weights(matrices.num_row_vars(), field_config)?;
+        matrices.bind_and_batch_with_validated_row_weights(&row_weights, &rho)?
+    };
+    let inner = {
+        let _scope = crate::utils::prof::scope("spartan:inner_sumcheck");
+        prove_inner_sumcheck_u32_native_with_reducer(
+            transcript,
+            inner_initial_claim,
+            batched_matrix,
+            assignment,
+            field_config,
+            reducer,
+        )?
+    };
+
+    let claim = ScaledMleEvaluationClaim::new(
+        inner.sumcheck.eval_points.into_boxed_slice(),
+        inner.batched_matrix_evaluation,
+        inner.sumcheck.final_claim,
+    );
+    let proof = UnivariateSkipSpartanPiopProof {
+        outer: outer.0,
+        inner: inner.sumcheck.proof,
+    };
+    Ok((proof, claim))
+}
+
 /// Verifies both sumchecks and returns the terminal scaled assignment claim
 /// `D(r_y) * h(r_y) = final_claim`.
 pub fn verify_spartan_proof<F, C>(
@@ -627,6 +916,61 @@ where
         field_config,
     )?;
     let matrix_evaluation = matrices.evaluate_batched(&outer.eval_points, &rho, &column_point)?;
+
+    Ok(ScaledMleEvaluationClaim::new(
+        column_point.into_boxed_slice(),
+        matrix_evaluation,
+        final_claim,
+    ))
+}
+
+/// Verifies the opt-in univariate-skip Spartan reduction and returns the
+/// terminal scaled assignment claim `D(r_y) * h(r_y) = final_claim`.
+///
+/// The outer proof verifies only the known-zero prefix reduction and its
+/// ordinary cubic tail. This function completes the matrix binding and inner
+/// sumcheck exactly as the standard Spartan verifier does.
+pub fn verify_spartan_univariate_skip_proof<F, C>(
+    transcript: &mut impl Transcript,
+    matrices: &PreparedConstraintMatrices<F, C>,
+    assignment_oracle_binding: &[u8; 32],
+    proof: &UnivariateSkipSpartanPiopProof<F>,
+) -> Result<ScaledMleEvaluationClaim<F>, SpartanError>
+where
+    F: SpartanField,
+    C: SpartanMatrixCoefficient<F>,
+{
+    validate_univariate_skip_proof(matrices, proof)?;
+    let skip_vars = proof.outer.skip.skip_vars;
+    absorb_univariate_skip_statement(transcript, matrices, assignment_oracle_binding, skip_vars);
+
+    let field_config = matrices.config();
+    let tail_vars = matrices.num_row_vars() - usize::from(skip_vars);
+    let tau_tail = (0..tail_vars)
+        .map(|_| squeeze_field(transcript, field_config))
+        .collect::<Vec<F>>();
+    let outer = proof
+        .outer
+        .verify(transcript, &tau_tail, matrices.num_row_vars(), field_config)?;
+
+    let rho = squeeze_field(transcript, field_config);
+    let inner_initial_claim = batched_product_claim(
+        &outer.az_mle_claim,
+        &outer.bz_mle_claim,
+        &outer.cz_mle_claim,
+        &rho,
+    );
+    let (column_point, final_claim) = proof.inner.verify(
+        transcript,
+        inner_initial_claim,
+        matrices.num_column_vars(),
+        field_config,
+    )?;
+    let row_weights = outer
+        .row_binding
+        .row_weights(matrices.num_row_vars(), field_config)?;
+    let matrix_evaluation =
+        matrices.evaluate_batched_with_validated_row_weights(&row_weights, &rho, &column_point)?;
 
     Ok(ScaledMleEvaluationClaim::new(
         column_point.into_boxed_slice(),
@@ -708,6 +1052,46 @@ fn absorb_statement<F, C>(
         SPARTAN_ASSIGNMENT_ORACLE_DOMAIN,
         assignment_oracle_binding,
     );
+}
+
+fn validate_univariate_skip_variables(
+    skip_vars: usize,
+    row_vars: usize,
+) -> Result<u8, SpartanError> {
+    if !(1..=4).contains(&skip_vars) {
+        return Err(SpartanError::InvalidUnivariateSkipVariables { skip_vars });
+    }
+    if skip_vars > row_vars {
+        return Err(SpartanError::UnivariateSkipExceedsRowVariables {
+            skip_vars,
+            row_vars,
+        });
+    }
+    Ok(skip_vars as u8)
+}
+
+fn absorb_univariate_skip_statement<F, C>(
+    transcript: &mut impl Transcript,
+    matrices: &PreparedConstraintMatrices<F, C>,
+    assignment_oracle_binding: &[u8; 32],
+    skip_vars: u8,
+) where
+    F: SpartanField,
+    C: SpartanMatrixCoefficient<F>,
+{
+    absorb_spartan_message(transcript, b"protocol", SPARTAN_UNIVARIATE_SKIP_PIOP_DOMAIN);
+    absorb_spartan_message(
+        transcript,
+        b"field-modulus",
+        matrices.field_modulus_encoding(),
+    );
+    absorb_spartan_message(transcript, b"matrix-statement", matrices.digest());
+    absorb_spartan_message(
+        transcript,
+        SPARTAN_ASSIGNMENT_ORACLE_DOMAIN,
+        assignment_oracle_binding,
+    );
+    absorb_spartan_message(transcript, b"univariate-skip-vars", &[skip_vars]);
 }
 
 fn validate_prover_inputs<F, C>(
@@ -895,6 +1279,65 @@ where
             proof.outer.az_mle_claim.clone(),
             proof.outer.bz_mle_claim.clone(),
             proof.outer.cz_mle_claim.clone(),
+        ],
+        matrices,
+    )?;
+    for round in &proof.inner.round_polynomials {
+        validate_elements_field(round, matrices)?;
+    }
+    Ok(())
+}
+
+fn validate_univariate_skip_proof<F, C>(
+    matrices: &PreparedConstraintMatrices<F, C>,
+    proof: &UnivariateSkipSpartanPiopProof<F>,
+) -> Result<(), SpartanError>
+where
+    F: SpartanField,
+    C: SpartanMatrixCoefficient<F>,
+{
+    let skip_vars = usize::from(proof.outer.skip.skip_vars);
+    validate_univariate_skip_variables(skip_vars, matrices.num_row_vars())?;
+
+    let expected_finite = (1usize << skip_vars) - 2;
+    let actual_finite = proof.outer.skip.finite_q_evaluations.len();
+    if actual_finite != expected_finite {
+        return Err(SpartanError::InvalidUnivariateSkipMessageLength {
+            expected: expected_finite,
+            actual: actual_finite,
+        });
+    }
+
+    let expected_tail_rounds = matrices.num_row_vars() - skip_vars;
+    let actual_tail_rounds = proof.outer.tail.sumcheck.round_polynomials.len();
+    if actual_tail_rounds != expected_tail_rounds {
+        return Err(SumcheckError::InvalidRoundCount {
+            expected: expected_tail_rounds,
+            actual: actual_tail_rounds,
+        }
+        .into());
+    }
+    if proof.inner.round_polynomials.len() != matrices.num_column_vars() {
+        return Err(SumcheckError::InvalidRoundCount {
+            expected: matrices.num_column_vars(),
+            actual: proof.inner.round_polynomials.len(),
+        }
+        .into());
+    }
+
+    validate_elements_field(&proof.outer.skip.finite_q_evaluations, matrices)?;
+    validate_elements_field(
+        std::slice::from_ref(&proof.outer.skip.q_at_infinity),
+        matrices,
+    )?;
+    for round in &proof.outer.tail.sumcheck.round_polynomials {
+        validate_elements_field(round, matrices)?;
+    }
+    validate_elements_field(
+        &[
+            proof.outer.tail.az_mle_claim.clone(),
+            proof.outer.tail.bz_mle_claim.clone(),
+            proof.outer.tail.cz_mle_claim.clone(),
         ],
         matrices,
     )?;
@@ -1275,6 +1718,122 @@ mod tests {
         }
     }
 
+    fn univariate_skip_round_trip(modulus: u128) {
+        let field_config = config(modulus);
+        let (matrices, products, assignment) = fixture(&field_config);
+        let assignment_binding = nonsuccinct_assignment_digest(&matrices, &assignment).unwrap();
+
+        for skip_vars in 1..=matrices.num_row_vars() {
+            let mut prover_transcript = Blake3Transcript::new();
+            let (proof, claim) = prove_spartan_piop_with_univariate_skip(
+                &mut prover_transcript,
+                &matrices,
+                &assignment_binding,
+                products.clone(),
+                assignment.clone(),
+                skip_vars,
+            )
+            .unwrap();
+
+            assert_eq!(usize::from(proof.outer.skip.skip_vars), skip_vars);
+            assert_eq!(
+                proof.outer.skip.finite_q_evaluations.len(),
+                (1usize << skip_vars) - 2
+            );
+            assert_eq!(
+                proof.outer.tail.sumcheck.round_polynomials.len(),
+                matrices.num_row_vars() - skip_vars
+            );
+            let outer_fields = proof.outer.skip.finite_q_evaluations.len()
+                + 1
+                + 4 * proof.outer.tail.sumcheck.round_polynomials.len()
+                + 3;
+            assert_eq!(
+                outer_fields,
+                4 * matrices.num_row_vars() - 4 * skip_vars + (1usize << skip_vars) + 2
+            );
+
+            let mut verifier_transcript = Blake3Transcript::new();
+            let verified = verify_spartan_univariate_skip_proof(
+                &mut verifier_transcript,
+                &matrices,
+                &assignment_binding,
+                &proof,
+            )
+            .unwrap();
+            assert_eq!(claim, verified);
+            claim
+                .nonsuccinct_verify(&assignment, &field_config)
+                .unwrap();
+            assert_eq!(
+                prover_transcript.get_challenge::<u128>(),
+                verifier_transcript.get_challenge::<u128>()
+            );
+        }
+    }
+
+    fn native_univariate_skip_round_trip(modulus: u128) {
+        let field_config = config(modulus);
+        let inputs = (0..16)
+            .map(|index| match index % 4 {
+                0 => (0, u32::MAX),
+                1 => (1, 1),
+                2 => (u32::MAX, u32::MAX),
+                _ => (0x8000_0000 + index as u32, 17 + index as u32),
+            })
+            .collect::<Vec<_>>();
+        let witness = U32MulWitness::from_inputs(&inputs).unwrap();
+        let matrices = prepare_u32_mul_relation(*witness.layout(), &field_config).unwrap();
+        assert!(matrices.num_row_vars() >= 4);
+        let native = project_u32_mul_native_witness(&witness);
+        let (assignment, products) = native.into_parts();
+        let assignment_binding = [0x6D; 32];
+
+        for skip_vars in 1..=4 {
+            let mut generic_transcript = Blake3Transcript::new();
+            let (generic_proof, generic_claim) = prove_spartan_piop_with_univariate_skip(
+                &mut generic_transcript,
+                &matrices,
+                &assignment_binding,
+                project_native_products(products.clone(), &field_config),
+                project_native_mle(assignment.clone(), &field_config),
+                skip_vars,
+            )
+            .unwrap();
+
+            let mut prover_transcript = Blake3Transcript::new();
+            let (proof, claim) = prove_spartan_piop_u32_native_with_univariate_skip(
+                &mut prover_transcript,
+                &matrices,
+                &assignment_binding,
+                products.clone(),
+                assignment.clone(),
+                skip_vars,
+            )
+            .unwrap();
+            assert_eq!(proof, generic_proof);
+            assert_eq!(claim, generic_claim);
+            if skip_vars == matrices.num_row_vars() {
+                assert!(proof.outer.tail.sumcheck.round_polynomials.is_empty());
+            }
+
+            let mut verifier_transcript = Blake3Transcript::new();
+            let verified = verify_spartan_univariate_skip_proof(
+                &mut verifier_transcript,
+                &matrices,
+                &assignment_binding,
+                &proof,
+            )
+            .unwrap();
+            assert_eq!(claim, verified);
+            let generic_continuation = generic_transcript.get_challenge::<u128>();
+            let native_continuation = prover_transcript.get_challenge::<u128>();
+            let verifier_continuation = verifier_transcript.get_challenge::<u128>();
+            assert_eq!(native_continuation, verifier_continuation);
+            assert_eq!(generic_continuation, verifier_continuation);
+        }
+    }
+
     #[test]
     fn piop_is_generic_across_runtime_prime_configurations() {
         round_trip(Q100);
@@ -1297,6 +1856,265 @@ mod tests {
     fn native_u32_inner_policies_are_proof_and_transcript_exact() {
         native_u32_inner_policies_match(Q100);
         native_u32_inner_policies_match((1_u128 << 127) - 1);
+    }
+
+    #[test]
+    fn univariate_skip_piop_is_generic_and_transcript_exact() {
+        univariate_skip_round_trip(Q100);
+        univariate_skip_round_trip((1_u128 << 127) - 1);
+    }
+
+    #[test]
+    fn native_u32_univariate_skip_piop_supports_every_k() {
+        native_univariate_skip_round_trip(Q100);
+        native_univariate_skip_round_trip((1_u128 << 127) - 1);
+    }
+
+    #[test]
+    fn univariate_skip_rejects_malformed_and_tampered_proofs() {
+        let field_config = config(Q100);
+        let (matrices, products, assignment) = fixture(&field_config);
+        let assignment_binding = nonsuccinct_assignment_digest(&matrices, &assignment).unwrap();
+        let mut prover_transcript = Blake3Transcript::new();
+        let (proof, _) = prove_spartan_piop_with_univariate_skip(
+            &mut prover_transcript,
+            &matrices,
+            &assignment_binding,
+            products.clone(),
+            assignment.clone(),
+            2,
+        )
+        .unwrap();
+        let one = field(1, &field_config);
+
+        for coordinate in 0..proof.outer.skip.finite_q_evaluations.len() {
+            let mut tampered = proof.clone();
+            tampered.outer.skip.finite_q_evaluations[coordinate] += &one;
+            assert!(
+                verify_spartan_univariate_skip_proof(
+                    &mut Blake3Transcript::new(),
+                    &matrices,
+                    &assignment_binding,
+                    &tampered,
+                )
+                .is_err(),
+                "finite coordinate {coordinate} must be binding"
+            );
+        }
+
+        let mut tampered_infinity = proof.clone();
+        tampered_infinity.outer.skip.q_at_infinity += &one;
+        assert!(
+            verify_spartan_univariate_skip_proof(
+                &mut Blake3Transcript::new(),
+                &matrices,
+                &assignment_binding,
+                &tampered_infinity,
+            )
+            .is_err()
+        );
+
+        let mut tampered_tail = proof.clone();
+        tampered_tail.outer.tail.sumcheck.round_polynomials[0][0] += &one;
+        assert!(
+            verify_spartan_univariate_skip_proof(
+                &mut Blake3Transcript::new(),
+                &matrices,
+                &assignment_binding,
+                &tampered_tail,
+            )
+            .is_err()
+        );
+
+        for terminal in 0..3 {
+            let mut tampered_terminal = proof.clone();
+            match terminal {
+                0 => tampered_terminal.outer.tail.az_mle_claim += &one,
+                1 => tampered_terminal.outer.tail.bz_mle_claim += &one,
+                2 => tampered_terminal.outer.tail.cz_mle_claim += &one,
+                _ => unreachable!(),
+            }
+            assert!(
+                verify_spartan_univariate_skip_proof(
+                    &mut Blake3Transcript::new(),
+                    &matrices,
+                    &assignment_binding,
+                    &tampered_terminal,
+                )
+                .is_err(),
+                "terminal claim {terminal} must be binding"
+            );
+        }
+
+        let mut malformed_k = proof.clone();
+        malformed_k.outer.skip.skip_vars = 0;
+        let mut malformed_transcript = Blake3Transcript::new();
+        let mut untouched_transcript = malformed_transcript.clone();
+        assert_eq!(
+            verify_spartan_univariate_skip_proof(
+                &mut malformed_transcript,
+                &matrices,
+                &assignment_binding,
+                &malformed_k,
+            ),
+            Err(SpartanError::InvalidUnivariateSkipVariables { skip_vars: 0 })
+        );
+        assert_eq!(
+            malformed_transcript.get_challenge::<u128>(),
+            untouched_transcript.get_challenge::<u128>()
+        );
+
+        let mut malformed_message = proof.clone();
+        malformed_message.outer.skip.finite_q_evaluations = malformed_message
+            .outer
+            .skip
+            .finite_q_evaluations
+            .iter()
+            .take(1)
+            .cloned()
+            .collect();
+        let mut malformed_transcript = Blake3Transcript::new();
+        let mut untouched_transcript = malformed_transcript.clone();
+        assert_eq!(
+            verify_spartan_univariate_skip_proof(
+                &mut malformed_transcript,
+                &matrices,
+                &assignment_binding,
+                &malformed_message,
+            ),
+            Err(SpartanError::InvalidUnivariateSkipMessageLength {
+                expected: 2,
+                actual: 1,
+            })
+        );
+        assert_eq!(
+            malformed_transcript.get_challenge::<u128>(),
+            untouched_transcript.get_challenge::<u128>()
+        );
+
+        let mut malformed_tail = proof.clone();
+        malformed_tail.outer.tail.sumcheck.round_polynomials.pop();
+        let mut malformed_transcript = Blake3Transcript::new();
+        let mut untouched_transcript = malformed_transcript.clone();
+        assert_eq!(
+            verify_spartan_univariate_skip_proof(
+                &mut malformed_transcript,
+                &matrices,
+                &assignment_binding,
+                &malformed_tail,
+            ),
+            Err(SpartanError::Sumcheck(SumcheckError::InvalidRoundCount {
+                expected: 1,
+                actual: 0,
+            }))
+        );
+        assert_eq!(
+            malformed_transcript.get_challenge::<u128>(),
+            untouched_transcript.get_challenge::<u128>()
+        );
+
+        let mut malformed_inner = proof.clone();
+        malformed_inner.inner.round_polynomials.pop();
+        let mut malformed_transcript = Blake3Transcript::new();
+        let mut untouched_transcript = malformed_transcript.clone();
+        assert_eq!(
+            verify_spartan_univariate_skip_proof(
+                &mut malformed_transcript,
+                &matrices,
+                &assignment_binding,
+                &malformed_inner,
+            ),
+            Err(SpartanError::Sumcheck(SumcheckError::InvalidRoundCount {
+                expected: matrices.num_column_vars(),
+                actual: matrices.num_column_vars() - 1,
+            }))
+        );
+        assert_eq!(
+            malformed_transcript.get_challenge::<u128>(),
+            untouched_transcript.get_challenge::<u128>()
+        );
+
+        let mut cross_k = proof.clone();
+        cross_k.outer.skip.skip_vars = 3;
+        let mut malformed_transcript = Blake3Transcript::new();
+        let mut untouched_transcript = malformed_transcript.clone();
+        assert_eq!(
+            verify_spartan_univariate_skip_proof(
+                &mut malformed_transcript,
+                &matrices,
+                &assignment_binding,
+                &cross_k,
+            ),
+            Err(SpartanError::InvalidUnivariateSkipMessageLength {
+                expected: 6,
+                actual: 2,
+            })
+        );
+        assert_eq!(
+            malformed_transcript.get_challenge::<u128>(),
+            untouched_transcript.get_challenge::<u128>()
+        );
+
+        let other_config = config((1_u128 << 127) - 1);
+        let mut foreign_field = proof.clone();
+        foreign_field.outer.skip.finite_q_evaluations[0] = field(1, &other_config);
+        let mut malformed_transcript = Blake3Transcript::new();
+        let mut untouched_transcript = malformed_transcript.clone();
+        assert_eq!(
+            verify_spartan_univariate_skip_proof(
+                &mut malformed_transcript,
+                &matrices,
+                &assignment_binding,
+                &foreign_field,
+            ),
+            Err(SpartanError::FieldConfigurationMismatch)
+        );
+        assert_eq!(
+            malformed_transcript.get_challenge::<u128>(),
+            untouched_transcript.get_challenge::<u128>()
+        );
+
+        for skip_vars in [0, 4, 5] {
+            let mut actual = Blake3Transcript::new();
+            let mut untouched = actual.clone();
+            assert!(
+                prove_spartan_piop_with_univariate_skip(
+                    &mut actual,
+                    &matrices,
+                    &assignment_binding,
+                    products.clone(),
+                    assignment.clone(),
+                    skip_vars,
+                )
+                .is_err()
+            );
+            assert_eq!(
+                actual.get_challenge::<u128>(),
+                untouched.get_challenge::<u128>()
+            );
+        }
+    }
+
+    #[test]
+    fn univariate_skip_domain_and_k_are_bound_before_the_first_challenge() {
+        let field_config = config(Q100);
+        let (matrices, _, _) = fixture(&field_config);
+        let assignment_binding = [0xA7; 32];
+
+        let mut standard = Blake3Transcript::new();
+        absorb_statement(&mut standard, &matrices, &assignment_binding);
+        let standard_challenge = squeeze_field::<F128, _>(&mut standard, &field_config);
+
+        let mut skip_k2 = Blake3Transcript::new();
+        absorb_univariate_skip_statement(&mut skip_k2, &matrices, &assignment_binding, 2);
+        let skip_k2_challenge = squeeze_field::<F128, _>(&mut skip_k2, &field_config);
+
+        let mut skip_k3 = Blake3Transcript::new();
+        absorb_univariate_skip_statement(&mut skip_k3, &matrices, &assignment_binding, 3);
+        let skip_k3_challenge = squeeze_field::<F128, _>(&mut skip_k3, &field_config);
+
+        assert_ne!(standard_challenge, skip_k2_challenge);
+        assert_ne!(skip_k2_challenge, skip_k3_challenge);
     }
 
     #[test]

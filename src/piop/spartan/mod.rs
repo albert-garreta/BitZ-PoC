@@ -12,6 +12,8 @@ pub mod matrix;
 pub mod piop;
 pub mod sumcheck;
 pub mod u32_mul;
+pub mod univariate_skip;
+pub(crate) mod univariate_skip_native;
 pub mod workflow;
 
 pub use f2z::{
@@ -27,10 +29,12 @@ pub use matrix::{
     build_boolean_assignment_mle, build_product_mles, eq_eval, eq_table, make_equality_factors,
 };
 pub use piop::{
-    SPARTAN_ASSIGNMENT_ORACLE_DOMAIN, SPARTAN_PIOP_DOMAIN, SpartanError, SpartanPiopProof,
-    SpartanReductionStrategy, prove_spartan_nonsuccinct, prove_spartan_piop,
-    prove_spartan_piop_u32_native, prove_spartan_piop_u32_native_with_strategy,
-    prove_spartan_piop_with_strategy, verify_spartan_proof, verify_spartan_with_mle_claim,
+    SPARTAN_ASSIGNMENT_ORACLE_DOMAIN, SPARTAN_PIOP_DOMAIN, SPARTAN_UNIVARIATE_SKIP_PIOP_DOMAIN,
+    SpartanError, SpartanPiopProof, SpartanReductionStrategy, prove_spartan_nonsuccinct,
+    prove_spartan_piop, prove_spartan_piop_u32_native, prove_spartan_piop_u32_native_with_strategy,
+    prove_spartan_piop_u32_native_with_univariate_skip, prove_spartan_piop_with_strategy,
+    prove_spartan_piop_with_univariate_skip, verify_spartan_proof,
+    verify_spartan_univariate_skip_proof, verify_spartan_with_mle_claim,
 };
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
@@ -43,6 +47,9 @@ pub use u32_mul::{
     U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS, U32_MUL_X_BITS, U32_MUL_Y_BITS, U32MulError,
     U32MulLayout, U32MulNativeMles, U32MulRelationBackend, U32MulWitness, prepare_u32_mul_relation,
     project_u32_mul_native_witness, project_u32_mul_witness, u32_mul_constraint_matrices,
+};
+pub use univariate_skip::{
+    UnivariateSkipOuterSumcheckProof, UnivariateSkipProof, UnivariateSkipSpartanPiopProof,
 };
 pub use workflow::{
     BinarySparseMatrix, BinarySparseRow, BitifiedSpartanClaim, CompiledVirtualXorClaim,
