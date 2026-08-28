@@ -15,14 +15,12 @@ Run it with:
 ```sh
 RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- 24
 RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
-    28 17 11 --threads 1 --reps 5 --profile slim
+    28 --threads 1 --reps 5 --profile custom:3:4
 ```
 
 `f2z <n> [<t> <s> [<W>]] [--threads N] [--reps R] [--profile P] [--word-bits W]`:
 
-`n` is log(|w|) and t, s means we organize w into a 2^t x 2^s matrix (leads to 2^s grand products with 2^t factors each).
-
-The best profile is `custom:3:4`
+`n` is log(|w|)
 
 
 # AI SPAGHETTI README
