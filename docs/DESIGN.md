@@ -164,6 +164,21 @@ verifier builds the SAME dense `a′` once (`O(#rows + nnz + 2^{m_p})`
 K-ops, `2^{m_p}` = `f`'s pack count) and answers the succinct Ligerito
 residual hook by MLE-folding it.
 
+Identity fast path (`virtual_id_fast_eligible`): when `M` is the
+identity (`F2CellMap::is_identity`, cached at construction) and both
+grids share one row layout (`t + log₂W` and `s` equal), `h`'s bit rows
+ARE `f`'s and every per-chunk claim is a claim on `f`'s own flat
+bit-MLE — the prover skips apply/pack and both batching passes and runs
+the BASE opening after the same statement absorb, emitting the
+`VirtOpenTail::Eq` tail (per-chunk `s_v` ring switch, η-batched
+Ligerito) instead of `VirtOpenTail::Batch`. `F2Z_VIRT_ID_FAST=0` opts
+out (prover-side only): on an eligible statement the verifier accepts
+EITHER tail — each is an individually sound reduction of the same claim
+— while on any other statement the eq tail is a shape error (there the
+base verification would bind `f̂(pt_l)` where the claim is
+`(M·f)ˆ(pt_l)`). The codec carries one tail tag byte (0 = batch,
+1 = eq) between the chunk section and the tail.
+
 Soundness mirrors the base path plus two fresh `2^-128`-class terms: the
 η-batch (`L/|K|`) and the batching protocol's zero-evader
 (`ε ≤ LOG_PACKING/|K|` — Ligerito binds `⟨pack(f), a′⟩ = h′` for the
@@ -225,13 +240,18 @@ Measured (M4, 2^15 gates, dual-basis ring switch): prove ~68 ms
 the bridge sumcheck and the `s_v` message are gone, the 2 KiB `h_i`
 message arrived). Memory: no `W` table, no coefficient table, no `f`
 bit table, no bridge MLE copies — the passes stream `M`'s rows; the
-only sizable transient is the 8 MB premultiplied per-slot Φ tables
-(gated on `#rows + nnz ≥ 2^18`; exact GF distributivity, so values and
-transcript are identical with or without them). Remaining levers: the
+only sizable transients are the per-range `a′` partials and one 64 KB
+Φ table (a premultiplied per-slot table variant — 128 × 64 KB, fusing
+the `A(e_v)` product into the gather — measured ~1.5× SLOWER despite
+fewer ops: it evicts the single L1-resident table; values are identical
+either way, so it stays a pure schedule choice). Remaining levers: the
 `h_i` fold's MFR scatter (~115 ops/row — a plane-transpose or wider
 block variant), fusing the `a′` build with the Ligerito round-0 message
 (`fill_phi_basis_round0`-style), and closed-form `E_r` streaming for
-eq-structured maps (taps-style).
+eq-structured maps (taps-style). The identity fast path at the same
+shape (t=15, s=7, W=1, embedded config) measures prove 19.3 ms /
+verify 2.2 ms — vs 49.7 / 11.2 for the batch tail forced (`F2Z_VIRT_ID_FAST=0`)
+on the same identity instance.
 
 ## Mod-q RLC claim families (EXPERIMENTAL)
 

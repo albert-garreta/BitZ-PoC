@@ -56,6 +56,7 @@ pub struct F2CellMap {
     row_offsets: Box<[usize]>,
     entries: Box<[u32]>,
     digest: [u8; 32],
+    identity: bool,
 }
 
 impl F2CellMap {
@@ -143,7 +144,7 @@ impl F2CellMap {
     }
 
     /// Finishes construction: the map is immutable, so its canonical
-    /// digest is computed once here and cached.
+    /// digest and the identity flag are computed once here and cached.
     fn sealed(rows: usize, cols: usize, row_offsets: Box<[usize]>, entries: Box<[u32]>) -> Self {
         let mut map = Self {
             rows,
@@ -151,8 +152,10 @@ impl F2CellMap {
             row_offsets,
             entries,
             digest: [0; 32],
+            identity: false,
         };
         map.digest = map.compute_digest();
+        map.identity = map.compute_identity();
         map
     }
 
@@ -174,6 +177,20 @@ impl F2CellMap {
     /// The source cells of derived cell `i`.
     pub fn row(&self, i: usize) -> &[u32] {
         &self.entries[self.row_offsets[i]..self.row_offsets[i + 1]]
+    }
+
+    /// Whether the map is the identity (`h = f`: square, every row `r`
+    /// exactly `[r]`). Cached at construction; the virtual opening's
+    /// fast path is gated on it.
+    pub const fn is_identity(&self) -> bool {
+        self.identity
+    }
+
+    fn compute_identity(&self) -> bool {
+        self.rows == self.cols
+            && self.entries.len() == self.rows
+            && self.row_offsets.iter().enumerate().all(|(i, &o)| o == i)
+            && self.entries.iter().enumerate().all(|(i, &e)| e as usize == i)
     }
 
     /// Iterator over `(derived cell, source cells)` for the nonempty rows.
@@ -312,6 +329,27 @@ mod tests {
             F2CellMap::try_from_csr(1, 4, vec![0, 1], vec![4]),
             Err(F2CellMapError::ColOutOfBounds { row: 0, col: 4 })
         );
+    }
+
+    #[test]
+    fn is_identity_detects_exactly_the_identity() {
+        let id = |n: usize| {
+            F2CellMap::try_from_rows(n, n, (0..n as u32).map(|i| vec![i]).collect()).unwrap()
+        };
+        assert!(id(1).is_identity());
+        assert!(id(8).is_identity());
+        // One empty row.
+        let m = F2CellMap::try_from_rows(2, 2, vec![vec![0], vec![]]).unwrap();
+        assert!(!m.is_identity());
+        // A permutation.
+        let m = F2CellMap::try_from_rows(2, 2, vec![vec![1], vec![0]]).unwrap();
+        assert!(!m.is_identity());
+        // One extra source.
+        let m = F2CellMap::try_from_rows(2, 2, vec![vec![0, 1], vec![1]]).unwrap();
+        assert!(!m.is_identity());
+        // Non-square.
+        let m = F2CellMap::try_from_rows(2, 3, vec![vec![0], vec![1]]).unwrap();
+        assert!(!m.is_identity());
     }
 
     #[test]

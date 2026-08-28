@@ -7908,6 +7908,21 @@ impl IntEvalRsLigExtProof {
 // (`O(#rows + nnz + 2^{m_p})` K-ops) and answers the Ligerito residual
 // hook by MLE-folding it.
 //
+// IDENTITY FAST PATH: when `M` is the identity and both grids share one
+// row layout ([`virtual_id_fast_eligible`]), `h`'s bit rows ARE `f`'s
+// and every per-chunk claim is a claim on `f`'s own flat bit-MLE — the
+// prover skips apply/pack and both batching passes entirely and runs
+// the BASE opening ([`prove_mle_eval_mod_q_ligerito`]'s tail: per-chunk
+// eq ring-switch `s_v`, shared `r″`, η-batched Ligerito) after the same
+// v2 statement absorb, emitting the [`VirtOpenTail::Eq`] tail. The
+// switch `F2Z_VIRT_ID_FAST` (default ON, `=0` disables) is PROVER-side
+// only: on an eligible statement the verifier accepts either tail (each
+// is an individually sound reduction of the same claim — with `h = f`
+// the eq-tensor weights are exactly the base path's); on any other
+// statement the eq tail is rejected as a shape error, since there the
+// base verification would bind `f̂(pt_l)` where the claim is
+// `(M·f)ˆ(pt_l)`.
+//
 // Soundness chain (informal; mirrors the base path plus two fresh
 // terms): the forests bind the sent `us` as exponent folds of whatever
 // row data underlies the leaves, and each pre-sumcheck + `R̂(r*)`
@@ -7928,10 +7943,26 @@ impl IntEvalRsLigExtProof {
 // is self-binding.
 // ---------------------------------------------------------------------
 
+/// The virtual opening's closing messages after the per-chunk claims —
+/// which of the two (individually sound) tails the prover ran.
+#[derive(Clone)]
+pub enum VirtOpenTail {
+    /// General `M`: the dual-basis batching message
+    /// `hs[i] = ⟨pack(f), A(a_i)⟩_K` for bit-plane `i` of the transposed
+    /// weights (always 128 elements), followed by the ρ-batched call.
+    Batch { hs: Vec<Gf> },
+    /// Identity-`M` fast path (`h = f` cell for cell, same row layout):
+    /// the BASE path's per-chunk eq ring-switch messages — no `h`
+    /// materialization, no batching passes. The verifier accepts this
+    /// tail only when the statement is eligible (see
+    /// [`virtual_id_fast_eligible`]).
+    Eq { rings: Vec<RingSwitchProof> },
+}
+
 /// End-to-end proof of a mod-q claim on the derived vector `h = M·f`:
-/// per-chunk forests/folds/pre-sumchecks on `h` (`p_h` geometry), the
-/// d = 128 batching message `h_i`, and the ONE ρ-batched Ligerito call
-/// on `f`'s commitment.
+/// per-chunk forests/folds/pre-sumchecks on `h` (`p_h` geometry), then
+/// one of the two closing tails ([`VirtOpenTail`]) and the ONE Ligerito
+/// call on `f`'s commitment.
 #[derive(Clone)]
 pub struct IntEvalRsLigVirtProof {
     /// Per weight chunk: the merged product forest on `h`.
@@ -7940,11 +7971,35 @@ pub struct IntEvalRsLigVirtProof {
     pub us: Vec<Vec<u128>>,
     /// Per weight chunk: the de-black-boxing pre-sumcheck on `h`.
     pub presums: Vec<MultiDegreeSumcheckProof<Gf>>,
-    /// The batching message: `hs[i] = ⟨pack(f), A(a_i)⟩_K` for bit-plane
-    /// `i` of the transposed weights (always 128 elements).
-    pub hs: Vec<Gf>,
-    /// The ρ-batched Ligerito opening `⟨pack(f), a′⟩ = h′`.
+    /// The closing messages (general dual-basis batch, or the
+    /// identity-`M` eq ring switch).
+    pub tail: VirtOpenTail,
+    /// The Ligerito opening (`⟨pack(f), a′⟩ = h′` for the batch tail;
+    /// the base path's η-batched call for the eq tail).
     pub lig: LigeritoProof,
+}
+
+/// Whether the STATEMENT admits the identity fast path: `M` is the
+/// identity and both grids share one row layout (`t + log₂W` and `s`
+/// equal), so `h`'s bit rows ARE `f`'s and every per-chunk claim is a
+/// claim on `f`'s own flat bit-MLE. Deterministic in the statement —
+/// prover and verifier need no coordination.
+pub fn virtual_id_fast_eligible(
+    map: &crate::f2map::F2CellMap,
+    p_h: &IntEvalParams,
+    p_f: &IntEvalParams,
+) -> bool {
+    use crate::f2map::cell_row_bits;
+    map.is_identity() && cell_row_bits(p_h) == cell_row_bits(p_f) && p_h.s == p_f.s
+}
+
+/// The identity fast-path switch (default ON; `F2Z_VIRT_ID_FAST=0`
+/// disables). PROVER-side only: it selects which tail is produced on an
+/// eligible statement; the verifier accepts either tail there (both are
+/// sound), so no cross-process agreement is needed. Read per call so
+/// tests can toggle it.
+fn virt_id_fast() -> bool {
+    std::env::var("F2Z_VIRT_ID_FAST").map_or(true, |v| v != "0")
 }
 
 /// Digest-absorbs the virtual opening's complete statement before any
@@ -8225,6 +8280,24 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual(
         );
     }
 
+    // Identity fast path: `h = f` (same cells, same row layout), so the
+    // whole derived-vector machinery — apply/pack, the `h_i` fold, the
+    // `a′` build — is skipped and the BASE opening runs on `f`'s own
+    // rows under `p_h`'s claim shape (the flat bit-MLE is
+    // layout-agnostic, and the layouts coincide here anyway).
+    if virtual_id_fast_eligible(map, p_h, p_f) && virt_id_fast() {
+        let _g = crate::utils::prof::scope("mqv:idfast");
+        let base =
+            prove_mle_eval_mod_q_ligerito(transcript, hint_f, p_h, row_weights_q, q_bits, alpha, pc);
+        return IntEvalRsLigVirtProof {
+            mfs: base.mfs,
+            us: base.us,
+            presums: base.presums,
+            tail: VirtOpenTail::Eq { rings: base.rings },
+            lig: base.lig,
+        };
+    }
+
     // (1) The core pipeline on the derived rows — `h` is never committed.
     let h_rows = {
         let _g = crate::utils::prof::scope("mqv:apply");
@@ -8303,7 +8376,7 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual(
             &mut ZincChallenger(transcript),
         )
     };
-    IntEvalRsLigVirtProof { mfs, us, presums, hs, lig }
+    IntEvalRsLigVirtProof { mfs, us, presums, tail: VirtOpenTail::Batch { hs }, lig }
 }
 
 /// Verify a virtual mod-q claim `Σ_c w'_c·(Σ_b rw[b]·h_{b,c}) = claimed`
@@ -8348,7 +8421,6 @@ where
         || proof.mfs.len() != lch
         || proof.us.len() != lch
         || proof.presums.len() != lch
-        || proof.hs.len() != 128
     {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
@@ -8365,6 +8437,48 @@ where
             q_bits,
             alpha,
         );
+    }
+
+    // Tail routing. The eq tail is accepted ONLY on statements where the
+    // identity fast path is eligible (`h = f`, one shared row layout) —
+    // there the per-chunk claims are claims on `f`'s own bit-MLE and the
+    // base path's verification binds the same statement. The batch tail
+    // is always accepted (the general protocol also covers identity
+    // maps). Routing is a function of statement + proof shape only.
+    let hs = match &proof.tail {
+        VirtOpenTail::Eq { rings } => {
+            if !virtual_id_fast_eligible(map, p_h, p_f) {
+                return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+            }
+            let _g = crate::utils::prof::scope("mqv:vidfast");
+            let base = IntEvalRsLigModQProof {
+                mfs: proof.mfs.clone(),
+                us: proof.us.clone(),
+                presums: proof.presums.clone(),
+                rings: rings.clone(),
+                lig: proof.lig.clone(),
+            };
+            let us = verify_mod_q_lig_core(
+                transcript,
+                commitment_f,
+                &base,
+                p_h,
+                row_weights_q,
+                alpha,
+                q_bits,
+                vc,
+            )?;
+            let v_flat: Vec<u128> = us.iter().flat_map(|u| u.iter().copied()).collect();
+            let y = recombine_read_off(p_h, &v_flat, 0, col_weights, c_w, lch);
+            if y != claimed {
+                return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
+            }
+            return Ok(());
+        }
+        VirtOpenTail::Batch { hs } => hs,
+    };
+    if hs.len() != 128 {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
 
     let chunks = chunk_row_weights(row_weights_q, c_w, lch);
@@ -8419,19 +8533,19 @@ where
         .zip(mus.iter())
         .fold(Gf::zero(), |acc, (&e, &m)| acc + e * m);
     let mut assembled = [0u64; 2];
-    for (i, g) in proof.hs.iter().enumerate() {
+    for (i, g) in hs.iter().enumerate() {
         assembled[i >> 6] |= crate::dual_basis::c0_bit(*g) << (i & 63);
     }
     if Gf::from_words(assembled) != h {
         return Err(FlockRsError::VirtualBatch);
     }
-    crate::ligerito::absorb_hs(transcript, &proof.hs);
+    crate::ligerito::absorb_hs(transcript, hs);
 
     // (3) The zero-evader ρ and the reduced claim's target
     // `h′ = Σ_i ρ_i·h_i`.
     let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
     let rho = build_eq_x_r_vec(&r2, &()).expect("r2");
-    let h_prime = rho.iter().zip(proof.hs.iter()).fold(Gf::zero(), |acc, (&r, &hi)| acc + r * hi);
+    let h_prime = rho.iter().zip(hs.iter()).fold(Gf::zero(), |acc, (&r, &hi)| acc + r * hi);
 
     // (4) The basis `a′` — the SAME streaming build as the prover's
     // (`O(#rows + nnz + 2^{m_p})` K-ops, sparse in `M`) — and the
@@ -8486,10 +8600,11 @@ impl IntEvalRsLigVirtProof {
     /// Serialize the virtual-opening proof into the host proof stream:
     /// per chunk the merged forest, the (canonically zero-tail-trimmed)
     /// chunk folds, and the pre-sumcheck — each encoded EXACTLY like the
-    /// base [`IntEvalRsLigModQProof::to_bytes`] — then the 128 batching
-    /// `h_i` (fixed count, no length prefix), and the flock
-    /// [`LigeritoProof`] as a length-prefixed `bincode` 1.3 blob.
-    /// Mirrors [`Self::from_bytes`].
+    /// base [`IntEvalRsLigModQProof::to_bytes`] — then ONE tail tag byte
+    /// (0 = batch, 1 = identity-fast eq), the tail (batch: the 128
+    /// `h_i`; eq: per chunk the 128-element `s_v` — both fixed counts,
+    /// no length prefixes), and the flock [`LigeritoProof`] as a
+    /// length-prefixed `bincode` 1.3 blob. Mirrors [`Self::from_bytes`].
     #[allow(clippy::arithmetic_side_effects)]
     pub fn to_bytes(&self) -> Vec<u8> {
         use crate::proof_codec::Writer;
@@ -8523,9 +8638,24 @@ impl IntEvalRsLigVirtProof {
             }
             w.transcribable(&self.presums[l]);
         }
-        assert_eq!(self.hs.len(), 128, "batching message is always 128 elements");
-        for g in &self.hs {
-            w.gf(g);
+        match &self.tail {
+            VirtOpenTail::Batch { hs } => {
+                assert_eq!(hs.len(), 128, "batching message is always 128 elements");
+                w.bytes(&[0u8]);
+                for g in hs {
+                    w.gf(g);
+                }
+            }
+            VirtOpenTail::Eq { rings } => {
+                assert_eq!(rings.len(), lch, "one ring-switch message per chunk");
+                w.bytes(&[1u8]);
+                for ring in rings {
+                    assert_eq!(ring.s_v.len(), 128, "s_v is always 128 elements");
+                    for g in &ring.s_v {
+                        w.gf(g);
+                    }
+                }
+            }
         }
         let lig_bytes = bincode::serialize(&self.lig).expect("LigeritoProof bincode encode");
         w.len(lig_bytes.len());
@@ -8579,15 +8709,32 @@ impl IntEvalRsLigVirtProof {
             us.push(u);
             presums.push(r.transcribable::<MultiDegreeSumcheckProof<Gf>>()?);
         }
-        let mut hs = Vec::with_capacity(128);
-        for _ in 0..128 {
-            hs.push(r.gf()?);
-        }
+        let tail = match r.take(1)?[0] {
+            0 => {
+                let mut hs = Vec::with_capacity(128);
+                for _ in 0..128 {
+                    hs.push(r.gf()?);
+                }
+                VirtOpenTail::Batch { hs }
+            }
+            1 => {
+                let mut rings = Vec::with_capacity(lch.min(64));
+                for _ in 0..lch {
+                    let mut s_v = Vec::with_capacity(128);
+                    for _ in 0..128 {
+                        s_v.push(r.gf()?);
+                    }
+                    rings.push(RingSwitchProof { s_v });
+                }
+                VirtOpenTail::Eq { rings }
+            }
+            _ => return Err(CodecError::NonCanonical),
+        };
         let n_bytes = r.len()?;
         let lig_bytes = r.take(n_bytes)?;
         let lig: LigeritoProof =
             bincode::deserialize(lig_bytes).map_err(|e| CodecError::Bincode(e.to_string()))?;
-        Ok(IntEvalRsLigVirtProof { mfs, us, presums, hs, lig })
+        Ok(IntEvalRsLigVirtProof { mfs, us, presums, tail, lig })
     }
 }
 

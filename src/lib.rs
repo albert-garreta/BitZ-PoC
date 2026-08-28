@@ -45,7 +45,9 @@
 //! protocol): a 128-element plane message `h_i`, one zero-evader `ρ`,
 //! and ONE Ligerito call — no bridge sumcheck, no point opening. The
 //! verifier's `M`-dependent cost is `O(L·#rows + nnz + 2^{m_p})` field
-//! ops.
+//! ops. When `M` is the identity on a shared row layout the opening
+//! routes to the plain base path instead (the identity fast path,
+//! `F2Z_VIRT_ID_FAST`), skipping the derived-vector machinery entirely.
 //! [`piop::spartan::cm`] wires a full R1CS through this path — the
 //! paper's CM relation: batched `x ∧ y = z` via one LINEAR constraint
 //! per gate with `w = x ⊕ y` as a virtual (derived, uncommitted) block.

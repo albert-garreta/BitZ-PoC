@@ -15,8 +15,8 @@
 use f2z::f2map::{F2CellMap, cell_count, cell_row_bits};
 use f2z::ligerito::IntEvalRsError;
 use f2z::ligerito_flock::{
-    FlockRsError, IntEvalRsLigVirtProof, LigConfig, commit_rs_ligerito_rows, lig_configs,
-    prove_mle_eval_mod_q_ligerito, prove_mle_eval_mod_q_ligerito_virtual,
+    FlockRsError, IntEvalRsLigVirtProof, LigConfig, VirtOpenTail, commit_rs_ligerito_rows,
+    lig_configs, prove_mle_eval_mod_q_ligerito, prove_mle_eval_mod_q_ligerito_virtual,
     verify_mle_eval_mod_q_ligerito, verify_mle_eval_mod_q_ligerito_virtual,
 };
 use f2z::ligerito::{RsOpenError, packed_vars};
@@ -126,8 +126,17 @@ fn clone_proof(p: &IntEvalRsLigVirtProof) -> IntEvalRsLigVirtProof {
         mfs: p.mfs.clone(),
         us: p.us.clone(),
         presums: p.presums.clone(),
-        hs: p.hs.clone(),
+        tail: p.tail.clone(),
         lig: p.lig.clone(),
+    }
+}
+
+/// The batch tail's `h_i` vector, mutable (all `run_shape` proofs use
+/// non-identity maps, so they carry the batch tail).
+fn hs_mut(p: &mut IntEvalRsLigVirtProof) -> &mut Vec<f2z::poly::univariate::binary_gf128::BinaryFieldGF128> {
+    match &mut p.tail {
+        VirtOpenTail::Batch { hs } => hs,
+        VirtOpenTail::Eq { .. } => panic!("expected the batch tail"),
     }
 }
 
@@ -226,7 +235,10 @@ fn run_shape(p_h: IntEvalParams, seed: u64) {
     // A batching-message value flip that touches c₀ fails the step-3
     // coefficient-projection check outright.
     let mut bad = clone_proof(&proof);
-    bad.hs[5] = bad.hs[5] + f2z::poly::univariate::binary_gf128::BinaryFieldGF128::one();
+    {
+        let hs = hs_mut(&mut bad);
+        hs[5] = hs[5] + f2z::poly::univariate::binary_gf128::BinaryFieldGF128::one();
+    }
     let mut vt = Blake3Transcript::new();
     assert_eq!(
         verify_mle_eval_mod_q_ligerito_virtual(
@@ -241,7 +253,10 @@ fn run_shape(p_h: IntEvalParams, seed: u64) {
     // the ρ-batched target no longer matches the committed basis claim,
     // and the h_i are transcript-bound before ρ is drawn.
     let mut bad = clone_proof(&proof);
-    bad.hs[7] = bad.hs[7] + f2z::poly::univariate::binary_gf128::BinaryFieldGF128::from_words([1 << 9, 0]);
+    {
+        let hs = hs_mut(&mut bad);
+        hs[7] = hs[7] + f2z::poly::univariate::binary_gf128::BinaryFieldGF128::from_words([1 << 9, 0]);
+    }
     let mut vt = Blake3Transcript::new();
     assert!(
         verify_mle_eval_mod_q_ligerito_virtual(
@@ -335,4 +350,103 @@ fn virtual_open_single_live_row() {
         &vc_f,
     )
     .expect("single-live-row virtual roundtrip");
+}
+
+/// Identity `M` with one shared row layout: the fast path routes to the
+/// base eq ring switch (`Eq` tail — no apply/pack, no `h_i` fold, no
+/// `a′` build); with the switch off the general batch tail proves the
+/// same statement; the verifier accepts either tail there but rejects
+/// the eq tail on a non-eligible statement.
+#[test]
+fn virtual_open_identity_fast_path() {
+    use f2z::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
+    let p = IntEvalParams { t: 10, s: 5, word_bits: 1 };
+    let alpha = smallest_generator();
+    let (pc, vc) =
+        lig_configs(packed_vars(&p), LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 }).unwrap();
+    let rows_f = f_rows(&p, 0x1D_FA57);
+    let n = cell_count(&p);
+    let map = F2CellMap::try_from_csr(n, n, (0..=n).collect(), (0..n as u32).collect()).unwrap();
+    assert!(map.is_identity());
+    let hint = commit_rs_ligerito_rows(&p, rows_f.clone(), &pc);
+
+    let rw_q: Vec<u128> =
+        (0..p.rows()).map(|b| (splitmix(0xF457 ^ b as u64) as u128) % Q).collect();
+    let col_w: Vec<Fq> = (0..p.cols()).map(|c| Fq::from(c as u128 + 3)).collect();
+    // h = f: the expected value reads f's own cells.
+    let y = expected_y(&p, &rows_f, &rw_q, &col_w);
+
+    // Fast path (default ON): the proof carries the eq tail and verifies.
+    let mut pt = Blake3Transcript::new();
+    let proof = prove_mle_eval_mod_q_ligerito_virtual(
+        &mut pt, &hint, &p, &p, &map, &rw_q, Q_BITS, alpha, &pc,
+    );
+    assert!(
+        matches!(proof.tail, VirtOpenTail::Eq { .. }),
+        "identity map with matching layout must take the fast path"
+    );
+    let mut vt = Blake3Transcript::new();
+    verify_mle_eval_mod_q_ligerito_virtual(
+        &mut vt, &hint.commitment, &proof, &p, &p, &map, &rw_q, &col_w, alpha, y, Q_BITS, &vc,
+    )
+    .expect("identity fast-path roundtrip");
+
+    // Codec: the eq tail roundtrips canonically and the decoded proof
+    // verifies.
+    let bytes = proof.to_bytes();
+    let decoded = IntEvalRsLigVirtProof::from_bytes(&bytes).expect("eq-tail decode");
+    assert_eq!(decoded.to_bytes(), bytes, "codec is a bijection on its image");
+    let mut vt = Blake3Transcript::new();
+    verify_mle_eval_mod_q_ligerito_virtual(
+        &mut vt, &hint.commitment, &decoded, &p, &p, &map, &rw_q, &col_w, alpha, y, Q_BITS, &vc,
+    )
+    .expect("decoded fast-path proof verifies");
+
+    // A tampered ring-switch message must not verify.
+    let mut bad = clone_proof(&proof);
+    match &mut bad.tail {
+        VirtOpenTail::Eq { rings } => rings[0].s_v[3] = rings[0].s_v[3] + Gf::one(),
+        VirtOpenTail::Batch { .. } => unreachable!(),
+    }
+    let mut vt = Blake3Transcript::new();
+    assert!(
+        verify_mle_eval_mod_q_ligerito_virtual(
+            &mut vt, &hint.commitment, &bad, &p, &p, &map, &rw_q, &col_w, alpha, y, Q_BITS, &vc,
+        )
+        .is_err()
+    );
+
+    // The eq tail is rejected outright on a non-eligible statement (a
+    // non-identity map of the same shape) — the routing gate fires even
+    // before any transcript divergence matters.
+    let mut lists: Vec<Vec<u32>> = (0..n).map(|i| vec![i as u32]).collect();
+    lists[0] = vec![0, 1];
+    let map2 = F2CellMap::try_from_rows(n, n, lists).unwrap();
+    assert!(!map2.is_identity());
+    let mut vt = Blake3Transcript::new();
+    assert!(
+        verify_mle_eval_mod_q_ligerito_virtual(
+            &mut vt, &hint.commitment, &proof, &p, &p, &map2, &rw_q, &col_w, alpha, y, Q_BITS,
+            &vc,
+        )
+        .is_err()
+    );
+
+    // Switch off: the general dual-basis tail proves the identity map
+    // too, and the (env-independent) verifier accepts it as well.
+    unsafe { std::env::set_var("F2Z_VIRT_ID_FAST", "0") };
+    let mut pt = Blake3Transcript::new();
+    let general = prove_mle_eval_mod_q_ligerito_virtual(
+        &mut pt, &hint, &p, &p, &map, &rw_q, Q_BITS, alpha, &pc,
+    );
+    unsafe { std::env::remove_var("F2Z_VIRT_ID_FAST") };
+    assert!(
+        matches!(general.tail, VirtOpenTail::Batch { .. }),
+        "F2Z_VIRT_ID_FAST=0 must fall back to the batch tail"
+    );
+    let mut vt = Blake3Transcript::new();
+    verify_mle_eval_mod_q_ligerito_virtual(
+        &mut vt, &hint.commitment, &general, &p, &p, &map, &rw_q, &col_w, alpha, y, Q_BITS, &vc,
+    )
+    .expect("batch tail on an identity map verifies");
 }
