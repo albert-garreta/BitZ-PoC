@@ -266,6 +266,21 @@ identity fast path at the same shape (t=15, s=7, W=1, embedded config)
 measures prove 19.3 ms / verify 2.2 ms — vs 49.7 / 11.2 for the batch
 tail forced (`F2Z_VIRT_ID_FAST=0`) on the same identity instance.
 
+Scaling (same box): 2^18 gates = prove 408 ms / verify 135 ms /
+166 KiB — every phase within ~10% of linear from 2^15 (apply exactly
+×8.0, Spartan ×8.0, `h_i` ×8.7, `a′` ×8.6; the forest SUB-linear
+×5.6). 2^20 gates = prove 2.3–2.6 s / verify 0.74–1.1 s / 208 KiB /
+heap peak 4.45 GiB (live 3.4 GiB before prove), of which the map CSR
+alone is 1.75 GiB — at that footprint a 16 GB box's memory compressor
+sets the pace (`apply` pays ~400 ms re-faulting the CSR vs ~46 linear;
+±40% run-to-run swings; healthy-box extrapolation ≈ 1.6 s / 0.6 s).
+The top scaling lever is the CSR itself: 8-byte offsets for 2^27
+derived cells; u32 offsets (valid while nnz < 2^32) would halve the
+offsets array, and structured maps (CM's identity+fixed-offset
+pattern) need no stored offsets at all. At 2^20 the Spartan verifier
+(~0.4 s) rivals the whole F2Z verify — an outer-PIOP cost, not a
+virtualization one.
+
 ## Mod-q RLC claim families (EXPERIMENTAL)
 
 `prove/verify_mle_eval_mod_q_ligerito_rlc_family`: k claims
