@@ -8,6 +8,8 @@
 use blake3::Hasher;
 use thiserror::Error;
 
+use core::slice;
+
 use crate::{pcs::IntEvalParams, sparse_matrix::SparseMatrix};
 
 /// Number of bit cells (`2^{t+log₂W+s}`) in an integer-evaluation shape.
@@ -32,6 +34,41 @@ pub enum PreparedVirtualMapError {
     /// The fixed-width canonical digest cannot encode this host shape.
     #[error("virtual map dimensions do not fit the canonical u64 encoding")]
     ShapeTooLarge,
+
+    /// A repeated map needs at least one instance and all derived dimensions
+    /// must fit the host index type.
+    #[error("virtual map repetition has invalid or overflowing geometry")]
+    InvalidRepetition,
+}
+
+/// Read-only interface needed by the virtual-opening protocol.
+///
+/// Arbitrary maps use [`PreparedVirtualMap`]'s canonical CSC storage. Large
+/// batches can instead expose an implicit tensor repetition without allocating
+/// the fully expanded CSC column-offset array.
+pub trait VirtualMap: Sync {
+    /// Iterator over the derived rows touched by one source column.
+    type ColumnRows<'a>: ExactSizeIterator<Item = usize>
+    where
+        Self: 'a;
+
+    /// Number of derived cells.
+    fn rows(&self) -> usize;
+
+    /// Number of committed source cells.
+    fn cols(&self) -> usize;
+
+    /// Number of implicit-one entries.
+    fn nnz(&self) -> usize;
+
+    /// Canonical statement digest.
+    fn digest(&self) -> [u8; 32];
+
+    /// Whether the complete map is exactly the identity.
+    fn is_identity(&self) -> bool;
+
+    /// Derived row indices for one source column, in increasing order.
+    fn column_rows(&self, column: usize) -> Option<Self::ColumnRows<'_>>;
 }
 
 /// A validated binary CSC matrix with transcript metadata cached once.
@@ -90,6 +127,176 @@ impl PreparedVirtualMap {
     /// Whether this is exactly the square identity matrix.
     pub const fn is_identity(&self) -> bool {
         self.identity
+    }
+}
+
+impl VirtualMap for PreparedVirtualMap {
+    type ColumnRows<'a> = core::iter::Copied<slice::Iter<'a, usize>>;
+
+    fn rows(&self) -> usize {
+        self.rows()
+    }
+
+    fn cols(&self) -> usize {
+        self.cols()
+    }
+
+    fn nnz(&self) -> usize {
+        self.nnz()
+    }
+
+    fn digest(&self) -> [u8; 32] {
+        self.digest()
+    }
+
+    fn is_identity(&self) -> bool {
+        self.is_identity()
+    }
+
+    fn column_rows(&self, column: usize) -> Option<Self::ColumnRows<'_>> {
+        Some(self.matrix.column(column)?.row_indices().iter().copied())
+    }
+}
+
+/// Tensor repetition of one local CSC map over independent instances.
+///
+/// Global bit-cell indices follow the virtual protocol's row-low ordering:
+/// `global = local * instances + instance`. Consequently a local edge
+/// `local_source -> local_derived` becomes, for every `instance`,
+/// `local_source * instances + instance -> local_derived * instances + instance`.
+/// Only the local CSC is stored.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RepeatedVirtualMap {
+    local: PreparedVirtualMap,
+    instances: usize,
+    instance_bits: Option<u32>,
+    rows: usize,
+    cols: usize,
+    nnz: usize,
+    digest: [u8; 32],
+}
+
+impl RepeatedVirtualMap {
+    /// Prepares an implicit tensor repetition of `local`.
+    pub fn new(
+        local: PreparedVirtualMap,
+        instances: usize,
+    ) -> Result<Self, PreparedVirtualMapError> {
+        if instances == 0 {
+            return Err(PreparedVirtualMapError::InvalidRepetition);
+        }
+        let rows = local
+            .rows()
+            .checked_mul(instances)
+            .ok_or(PreparedVirtualMapError::InvalidRepetition)?;
+        let cols = local
+            .cols()
+            .checked_mul(instances)
+            .ok_or(PreparedVirtualMapError::InvalidRepetition)?;
+        let nnz = local
+            .nnz()
+            .checked_mul(instances)
+            .ok_or(PreparedVirtualMapError::InvalidRepetition)?;
+
+        let mut hash = Hasher::new();
+        hash.update(b"f2z/repeated-virtual-map/v1");
+        hash.update(&local.digest());
+        for value in [instances, rows, cols, nnz] {
+            hash.update(
+                &u64::try_from(value)
+                    .map_err(|_| PreparedVirtualMapError::ShapeTooLarge)?
+                    .to_le_bytes(),
+            );
+        }
+        let digest = *hash.finalize().as_bytes();
+
+        Ok(Self {
+            local,
+            instances,
+            instance_bits: instances.is_power_of_two().then(|| instances.ilog2()),
+            rows,
+            cols,
+            nnz,
+            digest,
+        })
+    }
+
+    /// Local canonical CSC map repeated by this view.
+    pub const fn local(&self) -> &PreparedVirtualMap {
+        &self.local
+    }
+
+    /// Number of independent repetitions.
+    pub const fn instances(&self) -> usize {
+        self.instances
+    }
+}
+
+/// Row iterator for one column of a [`RepeatedVirtualMap`].
+pub struct RepeatedColumnRows<'a> {
+    rows: slice::Iter<'a, usize>,
+    instance: usize,
+    instances: usize,
+}
+
+impl Iterator for RepeatedColumnRows<'_> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.rows
+            .next()
+            .map(|row| row * self.instances + self.instance)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.rows.size_hint()
+    }
+}
+
+impl ExactSizeIterator for RepeatedColumnRows<'_> {}
+
+impl VirtualMap for RepeatedVirtualMap {
+    type ColumnRows<'a> = RepeatedColumnRows<'a>;
+
+    fn rows(&self) -> usize {
+        self.rows
+    }
+
+    fn cols(&self) -> usize {
+        self.cols
+    }
+
+    fn nnz(&self) -> usize {
+        self.nnz
+    }
+
+    fn digest(&self) -> [u8; 32] {
+        self.digest
+    }
+
+    fn is_identity(&self) -> bool {
+        self.local.is_identity() && self.local.rows() == self.local.cols()
+    }
+
+    fn column_rows(&self, column: usize) -> Option<Self::ColumnRows<'_>> {
+        if column >= self.cols {
+            return None;
+        }
+        let (local_column, instance) = match self.instance_bits {
+            Some(bits) => (column >> bits, column & (self.instances - 1)),
+            None => (column / self.instances, column % self.instances),
+        };
+        let rows = self
+            .local
+            .matrix()
+            .column(local_column)?
+            .row_indices()
+            .iter();
+        Some(RepeatedColumnRows {
+            rows,
+            instance,
+            instances: self.instances,
+        })
     }
 }
 
@@ -183,5 +390,39 @@ mod tests {
         );
         assert_eq!(a.digest(), b.digest());
         assert_ne!(a.digest(), c.digest());
+    }
+
+    #[test]
+    fn repeated_map_is_an_implicit_tensor_product() {
+        let local = prepared(3, vec![vec![(0, true), (2, true)], vec![(1, true)]]);
+        let repeated = RepeatedVirtualMap::new(local.clone(), 4).unwrap();
+        assert_eq!(repeated.rows(), 12);
+        assert_eq!(repeated.cols(), 8);
+        assert_eq!(repeated.nnz(), 12);
+        assert_eq!(repeated.instances(), 4);
+        assert_eq!(
+            repeated.column_rows(2).unwrap().collect::<Vec<_>>(),
+            vec![2, 10]
+        );
+        assert_eq!(
+            repeated.column_rows(7).unwrap().collect::<Vec<_>>(),
+            vec![7]
+        );
+        assert!(repeated.column_rows(8).is_none());
+        assert_ne!(repeated.digest(), local.digest());
+        assert_ne!(
+            repeated.digest(),
+            RepeatedVirtualMap::new(local, 2).unwrap().digest()
+        );
+    }
+
+    #[test]
+    fn repeated_map_rejects_zero_instances_and_preserves_identity() {
+        let identity = prepared(2, vec![vec![(0, true)], vec![(1, true)]]);
+        assert_eq!(
+            RepeatedVirtualMap::new(identity.clone(), 0),
+            Err(PreparedVirtualMapError::InvalidRepetition)
+        );
+        assert!(RepeatedVirtualMap::new(identity, 3).unwrap().is_identity());
     }
 }

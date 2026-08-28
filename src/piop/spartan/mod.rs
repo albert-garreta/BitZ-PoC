@@ -12,6 +12,7 @@ pub mod f2z;
 pub mod matrix;
 pub mod opening_mode;
 pub mod piop;
+pub mod sha256;
 pub mod sumcheck;
 pub mod u32_mul;
 pub mod univariate_skip;
@@ -55,6 +56,19 @@ pub use piop::{
 pub use piop::{
     SpartanInnerFieldAccumulation, SpartanInnerNativeFold, SpartanInnerPolicy,
     prove_spartan_piop_u32_native_barrett_with_inner_policy,
+};
+pub use sha256::{
+    SHA256_CONSTRAINT_LOCAL_VARS, SHA256_CONSTRAINT_STRIDE, SHA256_CONSTRAINTS,
+    SHA256_F_BAR_LIVE_BITS, SHA256_F_LIVE_BITS, SHA256_F_LOCAL_VARS, SHA256_F_STRIDE,
+    SHA256_H_BAR_LIVE_BITS, SHA256_H_LOCAL_VARS, SHA256_H_STRIDE, Sha256CompressionInput,
+    Sha256CompressionProof, Sha256CompressionWitnessBatch, Sha256ConstraintError, Sha256F2zError,
+    Sha256WitnessError,
+    commit_sha256_compression_witness, commit_sha256_compression_witness_with_config,
+    generate_sha256_compression_witnesses, prepare_sha256_compression_batch,
+    prove_sha256_compressions_spartan_and_f2z,
+    prove_sha256_compressions_spartan_and_f2z_with_config, sha256_compression_configs,
+    verify_sha256_compressions_spartan_and_f2z,
+    verify_sha256_compressions_spartan_and_f2z_with_config,
 };
 pub use sumcheck::{OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProof};
 pub use u32_mul::{

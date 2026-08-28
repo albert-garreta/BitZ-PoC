@@ -815,7 +815,7 @@ pub enum FlockRsError {
 /// consumed. The Ligerito config describes the packed message length as its
 /// initial column and interleave dimensions; the public commitment adds the
 /// seven in-pack bit coordinates.
-fn validate_ligerito_commitment(
+pub(crate) fn validate_ligerito_commitment(
     commitment: &Commitment,
     config: &impl LigeritoStatementConfig,
 ) -> Result<(), FlockRsError> {
@@ -9377,11 +9377,10 @@ pub struct IntEvalRsLigVirtProof {
 /// equal), so `h`'s bit rows ARE `f`'s and every per-chunk claim is a
 /// claim on `f`'s own flat bit-MLE. Deterministic in the statement —
 /// prover and verifier need no coordination.
-pub fn virtual_id_fast_eligible(
-    map: &crate::f2map::PreparedVirtualMap,
-    p_h: &IntEvalParams,
-    p_f: &IntEvalParams,
-) -> bool {
+pub fn virtual_id_fast_eligible<M>(map: &M, p_h: &IntEvalParams, p_f: &IntEvalParams) -> bool
+where
+    M: crate::f2map::VirtualMap,
+{
     use crate::f2map::cell_row_bits;
     map.is_identity() && cell_row_bits(p_h) == cell_row_bits(p_f) && p_h.s == p_f.s
 }
@@ -9398,16 +9397,19 @@ fn virt_id_fast() -> bool {
 /// Digest-absorbs the virtual opening's complete statement before any
 /// challenge is drawn: commitment root and geometry, both cell shapes,
 /// the map digest, the claimed row weights, `q_bits`, and `α`.
-fn absorb_virtual_statement(
+fn absorb_virtual_statement<M>(
     transcript: &mut impl Transcript,
     commitment: &Commitment,
     p_h: &IntEvalParams,
     p_f: &IntEvalParams,
-    map: &crate::f2map::PreparedVirtualMap,
+    map: &M,
     row_weights_q: &[u128],
     q_bits: usize,
     alpha: Gf,
-) -> BoundModQStatement {
+) -> BoundModQStatement
+where
+    M: crate::f2map::VirtualMap,
+{
     let mut hash = blake3::Hasher::new();
     // v2: the dual-basis batching protocol (h_i message + ρ-batched
     // Ligerito call) replaced the bridge sumcheck + point opening.
@@ -9546,30 +9548,32 @@ fn hs_scatter_block16(s: &mut [Gf; 128], wits: &[[u64; 2]; 16], vals: &[Gf; 16])
 /// weight vector nor a coefficient table is materialized.
 #[allow(clippy::arithmetic_side_effects)]
 #[inline]
-fn virtual_column_weight(
-    map: &crate::f2map::PreparedVirtualMap,
-    column: usize,
-    coeffs: &VirtRowCoeffs,
-) -> Gf {
-    let entries = map.matrix().column(column).expect("source column in bounds");
-    debug_assert!(entries.coefficients().iter().all(|coefficient| *coefficient));
-    entries
-        .row_indices()
-        .iter()
-        .fold(Gf::zero(), |acc, &row| acc + coeffs.coeff(row))
+fn virtual_column_weight<M>(map: &M, column: usize, coeffs: &VirtRowCoeffs) -> Gf
+where
+    M: crate::f2map::VirtualMap,
+{
+    map.column_rows(column)
+        .expect("source column in bounds")
+        .fold(Gf::zero(), |acc, row| acc + coeffs.coeff(row))
 }
 
 /// The batching message computed by streaming source columns of the CSC map.
 /// For source cell `j`, `W_j = Σ_{r:M[r,j]=1} E_r`; bit plane `i`
 /// contributes `bit_i(W_j) · pack(f)[j>>7] · A(e_{j&127})`.
 #[allow(clippy::arithmetic_side_effects)]
-fn virtual_hs_fold(
-    map: &crate::f2map::PreparedVirtualMap,
+fn virtual_hs_fold<M>(
+    map: &M,
     coeffs: &VirtRowCoeffs,
     p_msg: &[F128],
     a_cols: &[Gf; 128],
-) -> Vec<Gf> {
-    const CHUNK: usize = 1 << 13;
+) -> Vec<Gf>
+where
+    M: crate::f2map::VirtualMap,
+{
+    // Keep the per-chunk 128-element accumulator comfortably below the
+    // production source vector: at the 2^16 SHA batch this bounds the merge
+    // buffer at 16 MiB instead of 128 MiB while retaining thousands of tasks.
+    const CHUNK: usize = 1 << 16;
     let n_chunks = map.cols().div_ceil(CHUNK).max(1);
     let partials: Vec<[Gf; 128]> = cfg_into_iter!(0..n_chunks)
         .map(|chunk| {
@@ -9614,13 +9618,16 @@ fn virtual_hs_fold(
 /// source columns. Each worker owns one output pack, so no partial dense
 /// vectors or scatter synchronization are needed.
 #[allow(clippy::arithmetic_side_effects)]
-fn virtual_a_prime(
-    map: &crate::f2map::PreparedVirtualMap,
+fn virtual_a_prime<M>(
+    map: &M,
     coeffs: &VirtRowCoeffs,
     rho: &[Gf],
     a_cols: &[Gf; 128],
     n_packs: usize,
-) -> Vec<Gf> {
+) -> Vec<Gf>
+where
+    M: crate::f2map::VirtualMap,
+{
     debug_assert_eq!(map.cols(), n_packs << LOG_PACKING);
     let phi_tables = phi_byte_tables(rho, Gf::one());
     let mut result = vec![Gf::zero(); n_packs];
@@ -9652,18 +9659,21 @@ fn virtual_a_prime(
 /// geometry, including malformed `h_rows`, a map/commitment shape mismatch,
 /// fewer than two derived columns, or out-of-range mod-q weights.
 #[allow(clippy::arithmetic_side_effects)]
-pub fn prove_mle_eval_mod_q_ligerito_virtual(
+pub fn prove_mle_eval_mod_q_ligerito_virtual<M>(
     transcript: &mut (impl Transcript + Send),
     hint_f: &FlockCommitHint,
     h_rows: &[Vec<u64>],
     p_h: &IntEvalParams,
     p_f: &IntEvalParams,
-    map: &crate::f2map::PreparedVirtualMap,
+    map: &M,
     row_weights_q: &[u128],
     q_bits: usize,
     alpha: Gf,
     pc: &LigProverConfig,
-) -> IntEvalRsLigVirtProof {
+) -> IntEvalRsLigVirtProof
+where
+    M: crate::f2map::VirtualMap,
+{
     use crate::poly::utils::build_eq_x_r_vec;
 
     let (h_geometry, _, _) = checked_mod_q_geometry(p_h, q_bits)
@@ -9833,13 +9843,13 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual(
 /// basis that the Ligerito residual hook MLE-folds.
 #[allow(clippy::arithmetic_side_effects)]
 #[allow(clippy::too_many_arguments)]
-pub fn verify_mle_eval_mod_q_ligerito_virtual<R>(
+pub fn verify_mle_eval_mod_q_ligerito_virtual<R, M>(
     transcript: &mut (impl Transcript + Send),
     commitment_f: &Commitment,
     proof: &IntEvalRsLigVirtProof,
     p_h: &IntEvalParams,
     p_f: &IntEvalParams,
-    map: &crate::f2map::PreparedVirtualMap,
+    map: &M,
     row_weights_q: &[u128],
     col_weights: &[R],
     alpha: Gf,
@@ -9849,6 +9859,7 @@ pub fn verify_mle_eval_mod_q_ligerito_virtual<R>(
 ) -> Result<(), FlockRsError>
 where
     R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
+    M: crate::f2map::VirtualMap,
 {
     use crate::pcs::recombine_read_off;
     use crate::poly::utils::build_eq_x_r_vec;
