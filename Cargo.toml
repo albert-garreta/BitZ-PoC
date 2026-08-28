@@ -43,6 +43,13 @@ harness = false
 # patterns (batch/chain mul, squares, comb powers, wide-dot, eqf kernels).
 # Reps via F2Z_BENCH_REPS.
 
+[[bench]]
+name = "u32_mul"
+harness = false
+# Integer u32×u32→u64 R1CS through the generic Spartan PIOP, with the
+# terminal assignment claim discharged against the compact F2 witness by F2Z.
+# Exponents via F2Z_MUL_EXPONENTS; reps via F2Z_BENCH_REPS.
+
 [features]
 default = ["parallel"]
 parallel = ["dep:rayon"]

@@ -7,9 +7,17 @@
 //! in this module give every protocol phase one canonical element encoding and
 //! one unbiased Fiat--Shamir challenge sampler.
 
+pub mod f2z;
 pub mod matrix;
 pub mod piop;
 pub mod sumcheck;
+pub mod u32_mul;
+
+pub use f2z::{
+    F2zOpeningClaim, SpartanF2zError, SpartanF2zField, SpartanF2zProof, bitify_spartan_claim,
+    commit_u32_mul_witness, prove_spartan_and_f2z, spartan_f2z_field_config,
+    verify_spartan_and_f2z,
+};
 
 pub use matrix::{
     ConstraintMatrices, MleClaimError, PreparedConstraintMatrices, ScaledMleEvaluationClaim,
@@ -22,6 +30,11 @@ pub use piop::{
     verify_spartan_with_mle_claim,
 };
 pub use sumcheck::{OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProof};
+pub use u32_mul::{
+    PreparedU32MulRelation, ProjectedU32MulWitness, U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS,
+    U32_MUL_X_BITS, U32_MUL_Y_BITS, U32MulError, U32MulLayout, U32MulWitness,
+    prepare_u32_mul_relation, project_u32_mul_witness, u32_mul_constraint_matrices,
+};
 
 use std::slice;
 

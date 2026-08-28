@@ -1188,8 +1188,9 @@ pub(crate) fn verify_int_eval_common(
         .iter()
         .zip(eq_xi.iter())
         .fold(Gf::zero(), |acc, (l, e)| acc + *e * (*l - one));
-    let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(transcript, t_w, presum, &())
-        .map_err(|_| IntEvalRsError::PreSumcheck)?;
+    let subclaims =
+        MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(transcript, t_w, &[2], presum, &())
+            .map_err(|_| IntEvalRsError::PreSumcheck)?;
     if presum.claimed_sums() != [y_xi] {
         return Err(IntEvalRsError::PreSumcheck);
     }
@@ -1562,8 +1563,14 @@ pub(crate) fn verify_x_claims_batched_common(
     let (z, e_d) = verify_merged_forest(transcript, &roots, mf, t_w, p.s.wrapping_add(log_n))
         .map_err(|_| IntEvalRsError::Forest)?;
 
-    let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(transcript, t_w, presum, &())
-        .map_err(|_| IntEvalRsError::PreSumcheck)?;
+    let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(
+        transcript,
+        t_w,
+        &vec![2; n_real],
+        presum,
+        &(),
+    )
+    .map_err(|_| IntEvalRsError::PreSumcheck)?;
     let sums = presum.claimed_sums();
     if sums.len() != n_real {
         return Err(IntEvalRsError::PreSumcheck);
@@ -1666,8 +1673,9 @@ pub(crate) fn verify_int_eval_merged_common(
 
     // (3a) Pre-sumcheck against the forest exit claim: for the bit-affine
     // leaves `1 + M·(A−1)`, `Σ eq·M·A = e_d − 1` (`= e_d + 1` in char 2).
-    let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(transcript, t_w, presum, &())
-        .map_err(|_| IntEvalRsError::PreSumcheck)?;
+    let subclaims =
+        MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(transcript, t_w, &[2], presum, &())
+            .map_err(|_| IntEvalRsError::PreSumcheck)?;
     let one = Gf::one();
     if presum.claimed_sums() != [e_d + one] {
         return Err(IntEvalRsError::PreSumcheck);

@@ -320,6 +320,8 @@ pub enum SumCheckError<F> {
     MaxDegreeExceeded,
     #[error("invalid proof length: expected {expected}, got {got}")]
     InvalidProofLength { expected: usize, got: usize },
+    #[error("invalid multi-degree sumcheck proof shape")]
+    InvalidProofShape,
     #[error("verifier failed to evaluate a round polynomial: {0}")]
     UnivariateEvaluationError(EvaluationError),
 }

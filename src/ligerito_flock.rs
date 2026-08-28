@@ -5079,21 +5079,25 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_family(
             let roots: Vec<Gf> = side.us[l].iter().map(|&u| comb.pow(u)).collect();
             let (z, e_d) = verify_merged_forest(transcript, &roots, &side.mfs[l], t_x, p_x.s)
                 .map_err(|_| FlockRsError::Common(IntEvalRsError::Forest))?;
+            // Statement-side channel structure first: it pins the presum's
+            // expected group count and degrees (all cascade groups are
+            // degree 2).
+            let case_pow = rlc_case_pow_table(chunk_w, alpha);
+            let taus = rlc_tau_tables(&case_pow);
+            let active = rlc_active_channels(&taus);
+            if active.is_empty() || active.iter().any(|s| s.count_ones() > 4) {
+                return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+            }
             let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(
                 transcript,
                 t_x,
+                &vec![2; active.len()],
                 &side.presums[l],
                 &(),
             )
             .map_err(|_| FlockRsError::Common(IntEvalRsError::PreSumcheck))?;
-            let case_pow = rlc_case_pow_table(chunk_w, alpha);
-            let taus = rlc_tau_tables(&case_pow);
-            let active = rlc_active_channels(&taus);
             let sums = side.presums[l].claimed_sums();
-            if active.is_empty()
-                || sums.len() != active.len()
-                || active.iter().any(|s| s.count_ones() > 4)
-            {
+            if sums.len() != active.len() {
                 return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
             }
             if sums.iter().fold(Gf::zero(), |a, &b| a + b) != e_d + one {
@@ -6876,19 +6880,29 @@ fn verify_rlc_family_front(
         };
         let (z, e_d) = verify_merged_forest(transcript, &roots, &part.mfs[l], t_x, p_x.s)
             .map_err(|_| FlockRsError::Common(IntEvalRsError::Forest))?;
-        let subclaims =
-            MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(transcript, t_x, &part.presums[l], &())
-                .map_err(|_| FlockRsError::Common(IntEvalRsError::PreSumcheck))?;
-        // The O(2^j·2^{t'}) step: case powers → τ_S → the ACTIVE channels
-        // (zero channels are elided on both sides) → R̂_S(r*).
+        // The O(2^j·2^{t'}) step first — statement-side: case powers → τ_S →
+        // the ACTIVE channels (zero channels are elided on both sides). The
+        // active set pins the presum's expected group count and degrees
+        // (all cascade groups are degree 2).
         let case_pow = {
             let _g = crate::utils::prof::scope("rlcv:pows");
             rlc_case_pow_table(chunk_w, alpha)
         };
         let taus = rlc_tau_tables(&case_pow);
         let active = rlc_active_channels(&taus);
+        if active.is_empty() {
+            return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+        }
+        let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(
+            transcript,
+            t_x,
+            &vec![2; active.len()],
+            &part.presums[l],
+            &(),
+        )
+        .map_err(|_| FlockRsError::Common(IntEvalRsError::PreSumcheck))?;
         let sums = part.presums[l].claimed_sums();
-        if active.is_empty() || sums.len() != active.len() {
+        if sums.len() != active.len() {
             return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
         }
         if sums.iter().fold(Gf::zero(), |a, &b| a + b) != e_d + one {
