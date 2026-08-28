@@ -126,177 +126,75 @@ prover +~10 ms on 146 ms, verifier +~0.2 ms on 3.1 ms, proof +20.6 KiB on
 
 ## F₂-virtualization (paper `s:to_f2_virtual` / `c:virtual_iop`)
 
-`prove/verify_mle_eval_mod_q_ligerito_virtual`: the mod-q claim is about the
-DERIVED vector `h = M·f` for a public sparse `F₂` map `M`
-(`f2map::F2CellMap`, canonical CSR over flat bit cells, digest-bound into
-the transcript statement together with the commitment root, both
-geometries, the row weights, `q_bits`, and `α`); only `f` is committed.
+`prove/verify_mle_eval_mod_q_ligerito_virtual` opens a claim about a derived
+vector `h = M f` against a commitment to `f` alone. The public binary map is
+stored once as the crate-wide canonical `SparseMatrix<bool>` in CSC form and
+validated by `PreparedVirtualMap`. The prepared wrapper rejects explicit
+`false` coefficients, caches exact-identity detection, and hashes the CSC
+shape, column offsets, and row indices into the existing virtual statement
+domain.
 
-1. The prover materializes `h`'s bit rows and runs the ORDINARY per-chunk
-   machinery on them (`p_h` geometry): chunk folds `us`, merged forests,
-   pre-sumchecks. Nothing touches the oracle — the verifier recomputes the
-   roots from the sent `us` and derives per-chunk residual claims
-   `ĥ(pt_l) = μ_l` exactly as in the base path.
-2. Transpose: with fresh `η`s, `h := Σ_l η_l μ_l = ⟨W, f⟩_K` where
-   `W = Σ_l η_l·Mᵀ eq(pt_l)` over `f`'s cells (XOR is addition in the
-   char-2 commitment field, so the transpose is exact). This is the
-   paper's arbitrary-inner-product setting `⟨w, a⟩_E = h` (appendix
-   "Bilinear Embeddings" → "Extension openings") with `F = F₂`, `E = K`,
-   `w = f`, `a = W`, solved by the dual-basis embedding: `W_map = Id`
-   (the commitment packs cells in the monomial basis), `H = c₀`, and `A`
-   the GHASH dual basis (`src/dual_basis.rs` — reversal of the `v ≥ 1`
-   coordinates plus seven XOR corrections; `f₀ = 1`, no inversion).
-3. Batching protocol (one round): the prover sends the 128 dual-packed
-   plane inner products `h_i = ⟨pack(f), A(a_i)⟩_K` (bit-planes `a_i` of
-   `W`; 2 KiB, tag 0x48). The verifier checks `Σ_i c₀(h_i)·X^i = h`,
-   draws the zero-evader `ρ` (7 challenges eq-expanded to `K^128`, the
-   ring-switch `r″` convention), and both sides reduce to ONE native
-   Ligerito inner product `⟨pack(f), a′⟩ = h′ = Σ_i ρ_i·h_i` with
-   `a′(y) = Σ_v Φ_ρ(W_{(v,y)})·A(e_v)`. The F_q read-off is the base
-   recombination over `h`'s columns.
+Witness synthesis supplies both packed `f` rows and packed `h` rows. The
+virtual prover consumes `h_rows` directly; production proving never computes a
+forward `M f` product. Only `f` is committed, and the verifier never receives
+`h`.
 
-Neither `W` nor any `f`-side table is materialized: with
-`E_r = Σ_l η_l·eq_{bits(r)}(pt_l)` per derived cell, char-2 linearity
-gives `h_i = Σ_r bit_i(E_r)·G_r` (`G_r = Σ_{j∈row(r)} pack(f)[y_j]·A(e_{v_j})`)
-and `a′(y) = Σ_r Φ_ρ(E_r)·Σ_{j∈row(r), y_j=y} A(e_{v_j})`, so the prover
-streams `M`'s nonempty rows twice (`O(#rows + nnz)` K-ops each) and the
-verifier builds the SAME dense `a′` once (`O(#rows + nnz + 2^{m_p})`
-K-ops, `2^{m_p}` = `f`'s pack count) and answers the succinct Ligerito
-residual hook by MLE-folding it.
+1. The prover runs the ordinary per-chunk forest and pre-sumcheck pipeline on
+   supplied `h`, leaving residual claims `ĥ(pt_l) = μ_l`.
+2. Fresh `η_l` combine those claims. For derived cell `r`, define
+   `E_r = Σ_l η_l eq_r(pt_l)`; for source cell `j`, the CSC gather computes
+   `W_j = Σ_{r:M[r,j]=1} E_r`, i.e. the needed `Mᵀ` action.
+3. The prover sends the 128 dual-basis plane inner products `h_i`. After the
+   zero-evader `ρ`, both sides reduce to one native Ligerito opening with
+   `a'(j>>7) += Φ_ρ(W_j) A(e_{j&127})`.
 
-Identity fast path (`virtual_id_fast_eligible`): when `M` is the
-identity (`F2CellMap::is_identity`, cached at construction) and both
-grids share one row layout (`t + log₂W` and `s` equal), `h`'s bit rows
-ARE `f`'s and every per-chunk claim is a claim on `f`'s own flat
-bit-MLE — the prover skips apply/pack and both batching passes and runs
-the BASE opening after the same statement absorb, emitting the
-`VirtOpenTail::Eq` tail (per-chunk `s_v` ring switch, η-batched
-Ligerito) instead of `VirtOpenTail::Batch`. `F2Z_VIRT_ID_FAST=0` opts
-out (prover-side only): on an eligible statement the verifier accepts
-EITHER tail — each is an individually sound reduction of the same claim
-— while on any other statement the eq tail is a shape error (there the
-base verification would bind `f̂(pt_l)` where the claim is
-`(M·f)ˆ(pt_l)`). The codec carries one tail tag byte (0 = batch,
-1 = eq) between the chunk section and the tail.
+Neither `W` nor a dense transposed matrix is materialized. The `h_i` pass uses
+parallel source-column chunks with 128-element partial accumulators. The shared
+prover/verifier `a'` builder assigns each 128-column source pack to one output,
+so no dense per-worker partial vectors or synchronized scatters are needed.
 
-Soundness mirrors the base path plus two fresh `2^-128`-class terms: the
-η-batch (`L/|K|`) and the batching protocol's zero-evader
-(`ε ≤ LOG_PACKING/|K|` — Ligerito binds `⟨pack(f), a′⟩ = h′` for the
-committed `f` with `a′` statement-derived, so wrong `h_i` survive the
-ρ-batch with probability ≤ ε, and true `h_i` make step 3 exactly
-`Σ_l η_l μ_l = ⟨W, f⟩` by the bilinear-embedding identity). The
-derived-side pipeline errors are the base errors with `h := M·f`.
-Structured maps (XOR of committed columns, taps) should keep using
-the dedicated machinery below; this entry point is the fully general one.
-Pinned by `tests/virtual_open.rs` (direct-vs-virtual agreement, both chunk
-regimes, tamper battery including the batching message) and the
-brute-force embedding tests in `src/dual_basis.rs` (Gaussian dual solve,
-Hankel form, plane decomposition, per-pack batched basis).
+When the prepared map is exactly the identity and both tensor layouts agree,
+the prover may emit `VirtOpenTail::Eq` and run the base opening directly on
+committed `f`. Otherwise it emits `VirtOpenTail::Batch`. The verifier accepts
+the eq tail only for an eligible public statement. `F2Z_VIRT_ID_FAST=0` forces
+the general batch tail for diagnostics.
 
-## CM-AND: an R1CS with a virtual block (paper `\Relation_CM`)
+The statement transcript order is unchanged: absorb the commitment and
+geometries, canonical CSC map digest, row weights, `q_bits`, and `α`; run the
+chunk protocol; draw `η`; absorb `h_i`; draw `ρ`; then run Ligerito. The CSC
+digest intentionally replaces the former CSR digest without a version bump, so
+old virtual proofs are not compatible.
 
-`piop::spartan::cm` wires a complete R1CS through the virtualization
-path — the paper's NP-completeness gadget as a running system. Per gate,
-32-bit words `x`, `y`, `z`, `w` satisfy ONE linear constraint
-`x + y − w − 2z = 0` over `F_q` (exact over ℤ, all values < 2^33); since
-`x + y = (x⊕y) + 2(x∧y)` bitwise-exactly, the constraint FORCES
-`z = x ∧ y` as soon as `w = x ⊕ y` bit-for-bit. That XOR identity is
-imposed STRUCTURALLY, not proven: the commitment carries only the
-`x`/`y`/`z` bits (`f`), and the canonical `F2CellMap` of the layout
-derives every `w` bit as the XOR of the matching `x`/`y` bits inside
-`prove/verify_mle_eval_mod_q_ligerito_virtual`. The Spartan side is
-`A = B = 0` with one `C` row per gate — the pure CM shape (ℤ-linear
-constraints composed with `F₂`-linear derivation), NP-complete per the
-paper's `r:CM_is_NP_complete`.
+## CM-AND: an R1CS with a virtual block (paper `\\Relation_CM`)
 
-Pipeline: the assignment `[const | x | y | z | w]` (five blocks padded
-to eight, `gate_vars + 3` claim coordinates) runs ordinary Spartan with
-the commitment root + layout + MAP DIGEST bound into the statement
-pre-challenge; `bitify_cm_and_claim` transposes the terminal claim into
-row/column weights over the DERIVED grid `h` (the adjoint of the four
-32-bit reconstructions, constant block subtracted publicly); the virtual
-opening does the rest. Entry points mirror the u32 bridge:
-`commit_cm_and_witness` / `prove_cm_and_f2z` / `verify_cm_and_f2z`
-(production, ≥ 2^15 gate slots) plus `_with_config` variants for
-sub-audit test shapes. `IntEvalRsLigVirtProof` now carries the exact
-byte codec (`to_bytes`/`from_bytes`, canonical + tamper-rejecting, base
-forest-layer encoding). Pinned by `tests/cm_virtual.rs` (honest
-roundtrips, codec, FALSE relation with consistent bits rejected, honest
-relation with INCONSISTENT committed bits rejected, statement mismatch,
-production gating); bench `benches/cm_and.rs`
-(`F2Z_CM_EXPONENTS`/`F2Z_BENCH_REPS`).
+`piop::spartan::cm` is the current virtualized client. Per gate, 32-bit words
+`x`, `y`, `z`, and `w` satisfy the linear constraint
+`x + y - w - 2z = 0`. Synthesis records `w = x XOR y`, so this constraint
+forces `z = x AND y`.
 
-Accounting per gate: derived grid 128 bits (x|y|z|w), committed 96 live
-bits — the `w` block rides free. Both grids share one shape (the 4:3
-saving pads back to the power of two); XOR-heavier relations (the SHA-256
-CM arithmetization) are where the derived/committed gap widens.
+The committed grid `f` contains the `x`, `y`, and `z` bits. The synthesized
+grid `h` contains `x`, `y`, `z`, and `w`. `cm_and_map` constructs its public
+map directly as CSC columns:
 
-Measured (M4, 2^15 gates, dual-basis ring switch, after the prover
-pass): prove ~61 ms (Spartan 13 | bitify 6 | virtual F2Z ~41:
-apply 1.4 + forest 11 + `h_i` fold 12.9 + `a′` build 9.3 +
-Ligerito 6.0), verify ~23 ms (`a′` build 9.3 ms — the verifier's whole
-`M`-dependent cost; was 4.7 for the bridge's `Ŵ(ρ)`), proof
-113.2 KiB (−2.6 KiB vs the bridge protocol:
-the bridge sumcheck and the `s_v` message are gone, the 2 KiB `h_i`
-message arrived). Memory: no `W` table, no coefficient table, no `f`
-bit table, no bridge MLE copies — the passes stream `M`'s rows; the
-only sizable transients are the per-range `a′` partials and one 64 KB
-Φ table.
+- an x or y source bit feeds its identity row and the matching w row;
+- a z source bit feeds only its identity row;
+- padded source slots have empty columns.
 
-Prover-pass notes (all exact reassociations — the proof digest is
-byte-stable through them; the verifier's code path is untouched, with
-`virtual_a_prime_prover` a prover-only twin of the shared build pinned
-equal by the cellwise test and every roundtrip): `F2CellMap::apply`
-accumulates each output word in a register with one store and streams
-the CSR offsets (6.1 → 1.4 ms — the per-bit `|=` RMW was the cost, not
-the XOR gathers); both batching passes stream offsets and shortcut
-single-source rows; the `h_i` fold hoists the L = 1 per-column scaled
-coefficient as a preprocessed 5-PMULL fixed-scalar multiplier
-(`FixedGfMul`, refreshed at column boundaries; −0.4 ms); the `h_i`
-scatter runs 16-row four-Russians blocks (four subset tables, one
-accumulator RMW per output bit per 16 rows — half the 8-row block's;
-hs 12.9 → 11.7 ms, −11% at 2^18). A dual-accumulator ping-pong for the
-8-row block measured NEUTRAL (the out-of-order window already bridges
-the cross-block RMW chains). Two measured
-NEGATIVE results to remember: per-slot premultiplied Φ tables
-(128 × 64 KB fusing `A(e_v)` into the gather) are ~1.5× slower — the
-8 MB set evicts the one L1-resident table — and PER-ELEMENT
-`FixedGfMul` routing of the `A(e_v)` products is also slower (the prep
-loads + branch beat the 2-PMULL saving; the kernel only pays hoisted
-across a run). Remaining levers: the MFR scatter (~115 ops/row — a
-plane-transpose or wider-block variant), fusing the `a′` build with
-the Ligerito round-0 message (`fill_phi_basis_round0`-style), and
-closed-form `E_r` streaming for eq-structured maps (taps-style).
-`F2CellMap` stores u32 offsets (nnz ≤ 2^32 enforced; the digest still
-hashes them as u64 LE, so digests are unchanged), hashes its digest in
-bounded staging chunks (no whole-array transients), and validates CSR
-input with one parallel sweep (canonical first-error re-scan only on
-failure); `cm_and_map` fills its CSR range-parallel from closed-form
-entry offsets — identical rows and digest to the sequential push loop.
-On the Spartan side (prover-only): `validate_elements_field` sweeps
-chunk-parallel with a config-pointer fast path (33 → 9.5 ms at 2^18),
-`bind_and_batch` evaluates its columns in parallel over a
-level-parallel prover eq table (27.7 → 15.2 ms), and the verifier keeps
-the sequential `eq_table`/`evaluate_batched` path untouched. The
-identity fast path at the same shape (t=15, s=7, W=1, embedded config)
-measures prove 19.3 ms / verify 2.2 ms — vs 49.7 / 11.2 for the batch
-tail forced (`F2Z_VIRT_ID_FAST=0`) on the same identity instance.
+`project_cm_and_witness` produces one `EvaluatedSpartanAssignment` containing
+assignment `h` and products `Ah`, `Bh`, and `Ch`, plus packed `h_rows`, from
+the same `CmAndWitness`. The unchanged Spartan PIOP proves the R1CS over `h`.
+Its terminal assignment claim is bitified and passed to virtual F2Z, which
+binds it to the commitment to `f` through the public CSC map.
 
-Scaling (same box): 2^18 gates = prove 408 ms / verify 135 ms /
-166 KiB — every phase within ~10% of linear from 2^15 (apply exactly
-×8.0, Spartan ×8.0, `h_i` ×8.7, `a′` ×8.6; the forest SUB-linear
-×5.6). 2^20 gates = prove 2.3–2.6 s / verify 0.74–1.1 s / 208 KiB /
-heap peak 4.10 GiB (live 2.9 GiB before prove; u32 offsets shaved
-512 MiB), of which the map CSR is 1.2 GiB — at that footprint a 16 GB
-box's memory compressor still sets the pace (`apply` pays ~350 ms
-re-faulting the CSR vs ~46 linear, and `sp:validate`/`sp:inner` pay
-similar re-fault taxes; ±40% run-to-run swings; healthy-box
-extrapolation ≈ 1.5 s / 0.6 s). The remaining scaling lever is
-eliminating the stored CSR entirely for structured maps (CM's
-identity+fixed-offset pattern needs no offsets or entries at all —
-closed-form row generation). At 2^20 the Spartan verifier (~0.4 s)
-rivals the whole F2Z verify — an outer-PIOP cost, not a virtualization
-one.
+Combined proof types use sealed compile-time modes. Direct u32 multiplication
+pairs Spartan with `IntEvalRsLigModQProof`; CM pairs Spartan with
+`IntEvalRsLigVirtProof`. Relation-specific prove/verify functions remain
+concrete, while `SpartanF2zProof<S, M>` prevents a Direct opening from being
+passed to a Virtualized verifier.
+
+SHA-256 witness synthesis and affine constants are intentionally outside this
+refactor; a future client only needs to supply synthesized `f`, `h`,
+`Ah/Bh/Ch`, and a prepared public CSC map.
 
 ## Mod-q RLC claim families (EXPERIMENTAL)
 

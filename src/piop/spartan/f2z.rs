@@ -45,7 +45,7 @@ use crate::utils::cfg_iter_mut;
 use rayon::prelude::*;
 
 use super::{
-    PreparedConstraintMatrices, R1csProductMles, SpartanField,
+    Direct, PreparedConstraintMatrices, R1csProductMles, SpartanF2zProof, SpartanField,
     matrix::ScaledMleEvaluationClaim,
     piop::{
         SpartanError, SpartanPiopProof, SpartanReductionStrategy,
@@ -74,14 +74,6 @@ pub(crate) const MIN_PRODUCTION_GATE_VARS: usize = 15;
 
 /// Runtime-configured Spartan field used by the concrete F2Z adapter.
 pub type SpartanF2zField = F128;
-
-/// A terminal F2Z read-off claim obtained from a Spartan assignment claim.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct F2zOpeningClaim {
-    row_weights_q: Vec<u128>,
-    col_weights: Vec<Fq>,
-    claimed: Fq,
-}
 
 /// Compact result of applying the public u32-multiplication bitification map.
 ///
@@ -127,72 +119,13 @@ struct PreparedU32BitifiedClaim {
     claimed: Fq,
 }
 
-impl F2zOpeningClaim {
-    pub(crate) fn new(row_weights_q: Vec<u128>, col_weights: Vec<Fq>, claimed: Fq) -> Self {
-        Self {
-            row_weights_q,
-            col_weights,
-            claimed,
-        }
-    }
+/// Direct opening paired with the ordinary Spartan PIOP.
+pub type U32MulSpartanF2zProof =
+    SpartanF2zProof<SpartanPiopProof<SpartanF2zField>, Direct>;
 
-    /// Canonical `F_q` representatives for the folded F2Z row weights.
-    pub fn row_weights_q(&self) -> &[u128] {
-        &self.row_weights_q
-    }
-
-    /// Clear-column weights used for F2Z's final read-off.
-    pub fn col_weights(&self) -> &[Fq] {
-        &self.col_weights
-    }
-
-    /// Claimed value after subtracting the public constant-block term.
-    pub const fn claimed(&self) -> Fq {
-        self.claimed
-    }
-}
-
-/// The combined proof.  There is deliberately no combined proof codec.
-#[derive(Clone)]
-pub struct U32MulSpartanF2zProof {
-    /// Spartan's outer and inner sumchecks.
-    pub spartan: SpartanPiopProof<SpartanF2zField>,
-    /// F2Z opening of the derived compact-bit claim.
-    pub f2z: IntEvalRsLigModQProof,
-}
-
-/// The combined proof using Spartan's known-zero univariate prefix skip.
-#[derive(Clone)]
-pub struct U32MulUnivariateSkipSpartanF2zProof {
-    /// Spartan's skipped-prefix outer proof and ordinary inner sumcheck.
-    pub spartan: UnivariateSkipSpartanPiopProof<SpartanF2zField>,
-    /// F2Z opening of the derived compact-bit claim.
-    pub f2z: IntEvalRsLigModQProof,
-}
-
-impl U32MulUnivariateSkipSpartanF2zProof {
-    /// Spartan proof component, exposed for benchmark payload accounting.
-    pub const fn spartan(&self) -> &UnivariateSkipSpartanPiopProof<SpartanF2zField> {
-        &self.spartan
-    }
-
-    /// F2Z proof component, exposed for its existing exact byte codec.
-    pub const fn f2z(&self) -> &IntEvalRsLigModQProof {
-        &self.f2z
-    }
-}
-
-impl U32MulSpartanF2zProof {
-    /// Spartan proof component, exposed for benchmark payload accounting.
-    pub const fn spartan(&self) -> &SpartanPiopProof<SpartanF2zField> {
-        &self.spartan
-    }
-
-    /// F2Z proof component, exposed for its existing exact byte codec.
-    pub const fn f2z(&self) -> &IntEvalRsLigModQProof {
-        &self.f2z
-    }
-}
+/// Direct opening paired with Spartan's known-zero univariate prefix skip.
+pub type U32MulUnivariateSkipSpartanF2zProof =
+    SpartanF2zProof<UnivariateSkipSpartanPiopProof<SpartanF2zField>, Direct>;
 
 /// Failures in layout validation, claim translation, or either proof system.
 #[derive(Debug, Error)]
@@ -242,26 +175,6 @@ pub enum SpartanF2zError {
     #[error("a host length does not fit the canonical transcript encoding")]
     BindingEncodingOverflow,
 
-    #[error("the bit width {0} is not supported by the Spartan/F2Z bridge")]
-    InvalidBitWidth(usize),
-
-    #[error("the direct F2Z tensor geometry does not match the Spartan assignment")]
-    InvalidDirectGeometry,
-
-    #[error("the structured virtualization matrix or its tensor layout is invalid")]
-    InvalidVirtualizationMatrix,
-
-    #[error("the virtualized witness does not match the public virtualization shape")]
-    InvalidVirtualizedWitness,
-
-    #[error("the compiled F2Z component claims do not equal the Spartan terminal claim")]
-    VirtualClaimMismatch,
-
-    #[error("the F2Z proof variant does not match the public virtualization mode")]
-    ProofModeMismatch,
-
-    #[error("the virtualized F2Z proof has an invalid component-claim shape")]
-    InvalidVirtualComponentClaims,
 }
 
 /// Constructs the fixed `q = 2^100 - 15` runtime field configuration.
@@ -566,7 +479,7 @@ pub fn prove_u32_mul_spartan_and_f2z_with_univariate_skip<T: Transcript + Send>(
         &assignment_binding,
         &terminal_claim,
     )?;
-    Ok(U32MulUnivariateSkipSpartanF2zProof { spartan, f2z })
+    Ok(U32MulUnivariateSkipSpartanF2zProof::new(spartan, f2z))
 }
 
 fn prepare_combined_prover(
@@ -608,7 +521,7 @@ fn finish_combined_prover<T: Transcript + Send>(
         assignment_binding,
         &terminal_claim,
     )?;
-    Ok(U32MulSpartanF2zProof { spartan, f2z })
+    Ok(U32MulSpartanF2zProof::new(spartan, f2z))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -675,12 +588,12 @@ pub fn verify_u32_mul_spartan_and_f2z<T: Transcript + Send>(
     let (pc, vc) = configs_for_layout(layout)?;
     validate_config_pair(&p, &pc, &vc)?;
     validate_commitment(&p, commitment, &pc)?;
-    validate_f2z_proof_shape(&p, &proof.f2z)?;
+    validate_f2z_proof_shape(&p, proof.f2z())?;
     let assignment_binding = assignment_binding(layout, commitment)?;
 
     let terminal_claim = {
         let _scope = crate::utils::prof::scope("spartan-f2z:spartan_verify");
-        verify_spartan_proof(transcript, matrices, &assignment_binding, &proof.spartan)?
+        verify_spartan_proof(transcript, matrices, &assignment_binding, proof.spartan())?
     };
 
     verify_terminal_claim_with_f2z(
@@ -688,7 +601,7 @@ pub fn verify_u32_mul_spartan_and_f2z<T: Transcript + Send>(
         matrices,
         layout,
         commitment,
-        &proof.f2z,
+        proof.f2z(),
         &p,
         &vc,
         &assignment_binding,
@@ -712,7 +625,7 @@ pub fn verify_u32_mul_spartan_and_f2z_with_univariate_skip<T: Transcript + Send>
     let (pc, vc) = configs_for_layout(layout)?;
     validate_config_pair(&p, &pc, &vc)?;
     validate_commitment(&p, commitment, &pc)?;
-    validate_f2z_proof_shape(&p, &proof.f2z)?;
+    validate_f2z_proof_shape(&p, proof.f2z())?;
     let assignment_binding = assignment_binding(layout, commitment)?;
 
     let terminal_claim = {
@@ -721,7 +634,7 @@ pub fn verify_u32_mul_spartan_and_f2z_with_univariate_skip<T: Transcript + Send>
             transcript,
             matrices,
             &assignment_binding,
-            &proof.spartan,
+            proof.spartan(),
         )?
     };
 
@@ -730,7 +643,7 @@ pub fn verify_u32_mul_spartan_and_f2z_with_univariate_skip<T: Transcript + Send>
         matrices,
         layout,
         commitment,
-        &proof.f2z,
+        proof.f2z(),
         &p,
         &vc,
         &assignment_binding,
@@ -1651,8 +1564,9 @@ mod tests {
                     &proof,
                 )
                 .unwrap();
-                let f2z_bytes = proof.f2z.to_bytes();
-                (proof.spartan, f2z_bytes, continuation)
+                let (spartan, f2z) = proof.into_components();
+                let f2z_bytes = f2z.to_bytes();
+                (spartan, f2z_bytes, continuation)
             };
 
         let mut production_transcript = Blake3Transcript::new();

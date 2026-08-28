@@ -86,10 +86,10 @@ fn cm_and_virtual_roundtrips() {
 #[test]
 fn cm_and_proof_codec_roundtrips_and_rejects_tampering() {
     let fx = honest_fixture(300, 0xC0DE_C0DE);
-    let bytes = fx.proof.f2z.to_bytes();
+    let bytes = fx.proof.f2z().to_bytes();
     let decoded = IntEvalRsLigVirtProof::from_bytes(&bytes).expect("canonical decode");
     assert_eq!(decoded.to_bytes(), bytes, "codec is a bijection on its image");
-    let reproof = CmF2zProof { spartan: fx.proof.spartan.clone(), f2z: decoded };
+    let reproof = CmF2zProof::new(fx.proof.spartan().clone(), decoded);
     verify_fixture(&fx, &reproof).expect("decoded proof verifies");
 
     // Every truncation must fail to decode.
@@ -108,7 +108,7 @@ fn cm_and_proof_codec_roundtrips_and_rejects_tampering() {
         .ok()
         .and_then(|r| r.ok());
         if let Some(decoded) = decoded {
-            let reproof = CmF2zProof { spartan: fx.proof.spartan.clone(), f2z: decoded };
+            let reproof = CmF2zProof::new(fx.proof.spartan().clone(), decoded);
             assert!(
                 verify_fixture(&fx, &reproof).is_err(),
                 "tampered byte {position} verified"
@@ -149,6 +149,45 @@ fn cm_and_rejects_a_false_relation_with_consistent_bits() {
         verify_cm_and_f2z_with_config(&mut vt, &relation, &hint.commitment, &proof, &vc).ok()
     });
     assert!(accepted.is_none(), "a false AND relation was accepted");
+}
+
+/// Spartan alone accepts these integers because `x + y - w - 2z = 0`, but
+/// the virtual map requires `w = x XOR y`. The combined proof must therefore
+/// reject even though the R1CS residual is exactly zero.
+#[test]
+fn cm_and_rejects_spartan_valid_but_xor_invalid_witness() {
+    let config = f2z::piop::spartan::spartan_f2z_field_config();
+    let witness = CmAndWitness::from_gate_values(3, |i| {
+        if i == 0 {
+            // 3 + 5 - 8 - 2*0 = 0, but 8 != 3 XOR 5.
+            (3, 5, 0, 8)
+        } else {
+            let r = splitmix(0xC05E ^ i as u64);
+            let (x, y) = (r as u32, (r >> 32) as u32);
+            (x, y, x & y, x ^ y)
+        }
+    })
+    .unwrap();
+    let layout = *witness.layout();
+    let relation = prepare_cm_and_relation::<SpartanF2zField>(layout, &config).unwrap();
+    let (pc, vc) = adhoc_configs(&layout);
+    let hint = commit_cm_and_witness_with_config(&layout, witness.f_bit_rows(), &pc).unwrap();
+    let projected = project_cm_and_witness::<SpartanF2zField>(&witness, &config).unwrap();
+
+    let accepted = catch_unwind(AssertUnwindSafe(|| {
+        let mut pt = Blake3Transcript::new();
+        prove_cm_and_f2z_with_config(&mut pt, &relation, projected, &hint, &pc)
+    }))
+    .ok()
+    .and_then(|result| result.ok())
+    .and_then(|proof| {
+        let mut vt = Blake3Transcript::new();
+        verify_cm_and_f2z_with_config(&mut vt, &relation, &hint.commitment, &proof, &vc).ok()
+    });
+    assert!(
+        accepted.is_none(),
+        "a Spartan-valid witness with an invalid virtual XOR was accepted"
+    );
 }
 
 /// An honest relation whose COMMITTED bits disagree with the Spartan

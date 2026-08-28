@@ -12,7 +12,7 @@
 //! and a wrong geometry.
 
 
-use f2z::f2map::{F2CellMap, cell_count, cell_row_bits};
+use f2z::f2map::{PreparedVirtualMap, cell_count, cell_row_bits};
 use f2z::ligerito::IntEvalRsError;
 use f2z::ligerito_flock::{
     FlockRsError, IntEvalRsLigVirtProof, LigConfig, VirtOpenTail, commit_rs_ligerito_rows,
@@ -21,6 +21,7 @@ use f2z::ligerito_flock::{
 };
 use f2z::ligerito::{LOG_PACKING, RsOpenError, packed_vars};
 use f2z::pcs::{IntEvalParams, smallest_generator};
+use f2z::sparse_matrix::SparseMatrix;
 use f2z::transcript::{Blake3Transcript, traits::Transcript};
 
 const Q: u128 = (1u128 << 100) - 15;
@@ -83,21 +84,71 @@ fn bit_at(rows: &[Vec<u64>], t_w: usize, flat: usize) -> u64 {
 
 /// A deterministic sparse map: derived cell `i` = XOR of up to three
 /// pseudo-random source cells; every seventh row is empty.
-fn test_map(n_h: usize, n_f: usize, seed: u64) -> F2CellMap {
-    let lists: Vec<Vec<u32>> = (0..n_h)
+fn prepared_from_rows(
+    rows: usize,
+    columns: usize,
+    lists: Vec<Vec<usize>>,
+) -> PreparedVirtualMap {
+    let matrix = SparseMatrix::try_from_rows(
+        columns,
+        lists
+            .into_iter()
+            .map(|row| row.into_iter().map(|column| (column, true)).collect())
+            .collect(),
+    )
+    .unwrap();
+    assert_eq!(matrix.row_count(), rows);
+    PreparedVirtualMap::new(matrix).unwrap()
+}
+
+fn test_map(n_h: usize, n_f: usize, seed: u64) -> PreparedVirtualMap {
+    let lists: Vec<Vec<usize>> = (0..n_h)
         .map(|i| {
             if i % 7 == 6 {
                 return Vec::new();
             }
-            let mut l: Vec<u32> = (0..=(i % 3))
-                .map(|k| (splitmix(seed ^ ((i as u64) << 8) ^ k as u64) % n_f as u64) as u32)
+            let mut l: Vec<usize> = (0..=(i % 3))
+                .map(|k| (splitmix(seed ^ ((i as u64) << 8) ^ k as u64) % n_f as u64) as usize)
                 .collect();
             l.sort_unstable();
             l.dedup();
             l
         })
         .collect();
-    F2CellMap::try_from_rows(n_h, n_f, lists).unwrap()
+    prepared_from_rows(n_h, n_f, lists)
+}
+
+/// Test-only forward multiplication. Production proving receives synthesized
+/// `h` and never exposes an `M f` operation.
+fn apply_map(
+    map: &PreparedVirtualMap,
+    p_h: &IntEvalParams,
+    p_f: &IntEvalParams,
+    f_rows: &[Vec<u64>],
+) -> Vec<Vec<u64>> {
+    let t_wh = cell_row_bits(p_h);
+    let t_wf = cell_row_bits(p_f);
+    let mut h_rows = vec![vec![0u64; (1usize << t_wh) / 64]; 1usize << p_h.s];
+    for (source, column) in map.matrix().columns().enumerate() {
+        if bit_at(f_rows, t_wf, source) == 0 {
+            continue;
+        }
+        for &derived in column.row_indices() {
+            let (c, b) = (derived >> t_wh, derived & ((1 << t_wh) - 1));
+            h_rows[c][b >> 6] ^= 1u64 << (b & 63);
+        }
+    }
+    h_rows
+}
+
+fn row_lists(map: &PreparedVirtualMap) -> Vec<Vec<usize>> {
+    let mut rows = vec![Vec::new(); map.rows()];
+    for (source, column) in map.matrix().columns().enumerate() {
+        for &derived in column.row_indices() {
+            rows[derived].push(source);
+        }
+    }
+    rows
 }
 
 /// The claimed value `y = Σ_c w'_c · Σ_b rw[b] · WORD(b, c)` computed
@@ -151,12 +202,12 @@ fn run_shape(p_h: IntEvalParams, seed: u64) {
     let map = test_map(cell_count(&p_h), cell_count(&p_f), seed ^ 0xF00D);
     let hint_f = commit_rs_ligerito_rows(&p_f, rows_f.clone(), &pc_f);
 
-    // Independent naive h (cross-checks `F2CellMap::apply`).
+    // Independent test-only forward multiplication.
     let t_wf = cell_row_bits(&p_f);
     let t_wh = cell_row_bits(&p_h);
-    let h_rows = map.apply(&p_h, &p_f, &rows_f);
-    for (i, sources) in (0..cell_count(&p_h)).map(|i| (i, map.row(i))) {
-        let expect = sources.iter().fold(0u64, |a, &j| a ^ bit_at(&rows_f, t_wf, j as usize));
+    let h_rows = apply_map(&map, &p_h, &p_f, &rows_f);
+    for (i, sources) in row_lists(&map).iter().enumerate() {
+        let expect = sources.iter().fold(0u64, |a, &j| a ^ bit_at(&rows_f, t_wf, j));
         assert_eq!(bit_at(&h_rows, t_wh, i), expect, "derived cell {i}");
     }
 
@@ -171,7 +222,7 @@ fn run_shape(p_h: IntEvalParams, seed: u64) {
     // Virtual proof against f's commitment.
     let mut pt = Blake3Transcript::new();
     let proof = prove_mle_eval_mod_q_ligerito_virtual(
-        &mut pt, &hint_f, &p_h, &p_f, &map, &rw_q, Q_BITS, alpha, &pc_f,
+        &mut pt, &hint_f, &h_rows, &p_h, &p_f, &map, &rw_q, Q_BITS, alpha, &pc_f,
     );
     let mut vt = Blake3Transcript::new();
     verify_mle_eval_mod_q_ligerito_virtual(
@@ -279,12 +330,12 @@ fn run_shape(p_h: IntEvalParams, seed: u64) {
     // A substituted map (one extra source in the first nonempty row) must
     // not verify: the statement digest, the derived claims, and Ŵ all
     // change.
-    let mut lists: Vec<Vec<u32>> = (0..map.rows()).map(|i| map.row(i).to_vec()).collect();
+    let mut lists = row_lists(&map);
     let target = lists.iter().position(|l| !l.is_empty()).unwrap();
-    let extra = (0..cell_count(&p_f) as u32).find(|j| !lists[target].contains(j)).unwrap();
+    let extra = (0..cell_count(&p_f)).find(|j| !lists[target].contains(j)).unwrap();
     lists[target].push(extra);
     lists[target].sort_unstable();
-    let map2 = F2CellMap::try_from_rows(map.rows(), map.cols(), lists).unwrap();
+    let map2 = prepared_from_rows(map.rows(), map.cols(), lists);
     let mut vt = Blake3Transcript::new();
     assert!(
         verify_mle_eval_mod_q_ligerito_virtual(
@@ -331,10 +382,10 @@ fn virtual_open_single_live_row() {
     let rows_f = f_rows(&p_f, 0x51_4E);
     // One nonempty derived row XORing three sources.
     let mut lists = vec![Vec::new(); cell_count(&p_h)];
-    lists[137] = vec![3u32, 1000, 8000];
-    let map = F2CellMap::try_from_rows(cell_count(&p_h), cell_count(&p_f), lists).unwrap();
+    lists[137] = vec![3usize, 1000, 8000];
+    let map = prepared_from_rows(cell_count(&p_h), cell_count(&p_f), lists);
     let hint_f = commit_rs_ligerito_rows(&p_f, rows_f.clone(), &pc_f);
-    let h_rows = map.apply(&p_h, &p_f, &rows_f);
+    let h_rows = apply_map(&map, &p_h, &p_f, &rows_f);
 
     let rw_q: Vec<u128> = (0..p_h.rows()).map(|b| (b as u128 * 977 + 3) % Q).collect();
     let col_w: Vec<Fq> = (0..p_h.cols()).map(|c| Fq::from(c as u128 + 2)).collect();
@@ -342,7 +393,7 @@ fn virtual_open_single_live_row() {
 
     let mut pt = Blake3Transcript::new();
     let proof = prove_mle_eval_mod_q_ligerito_virtual(
-        &mut pt, &hint_f, &p_h, &p_f, &map, &rw_q, Q_BITS, alpha, &pc_f,
+        &mut pt, &hint_f, &h_rows, &p_h, &p_f, &map, &rw_q, Q_BITS, alpha, &pc_f,
     );
     let mut vt = Blake3Transcript::new();
     verify_mle_eval_mod_q_ligerito_virtual(
@@ -350,10 +401,49 @@ fn virtual_open_single_live_row() {
         &vc_f,
     )
     .expect("single-live-row virtual roundtrip");
+
+    // The prover may supply any correctly shaped synthesized h, but the
+    // virtual relation binds it to the committed f. A changed h and matching
+    // changed read-off claim must therefore still be rejected.
+    let mut wrong_h = h_rows;
+    wrong_h[0][0] ^= 1;
+    let wrong_y = expected_y(&p_h, &wrong_h, &rw_q, &col_w);
+    let mut pt = Blake3Transcript::new();
+    let wrong = prove_mle_eval_mod_q_ligerito_virtual(
+        &mut pt,
+        &hint_f,
+        &wrong_h,
+        &p_h,
+        &p_f,
+        &map,
+        &rw_q,
+        Q_BITS,
+        alpha,
+        &pc_f,
+    );
+    let mut vt = Blake3Transcript::new();
+    assert!(
+        verify_mle_eval_mod_q_ligerito_virtual(
+            &mut vt,
+            &hint_f.commitment,
+            &wrong,
+            &p_h,
+            &p_f,
+            &map,
+            &rw_q,
+            &col_w,
+            alpha,
+            wrong_y,
+            Q_BITS,
+            &vc_f,
+        )
+        .is_err(),
+        "a synthesized h inconsistent with committed f was accepted"
+    );
 }
 
 /// Identity `M` with one shared row layout: the fast path routes to the
-/// base eq ring switch (`Eq` tail — no apply/pack, no `h_i` fold, no
+/// base eq ring switch (`Eq` tail — supplied `h` is unused, no `h_i` fold, no
 /// `a′` build); with the switch off the general batch tail proves the
 /// same statement; the verifier accepts either tail there but rejects
 /// the eq tail on a non-eligible statement.
@@ -366,8 +456,10 @@ fn virtual_open_identity_fast_path() {
         lig_configs(packed_vars(&p), LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 }).unwrap();
     let rows_f = f_rows(&p, 0x1D_FA57);
     let n = cell_count(&p);
-    let map =
-        F2CellMap::try_from_csr(n, n, (0..=n as u32).collect(), (0..n as u32).collect()).unwrap();
+    let map = PreparedVirtualMap::new(
+        SparseMatrix::try_from_binary_csc(n, (0..=n).collect(), (0..n).collect()).unwrap(),
+    )
+    .unwrap();
     assert!(map.is_identity());
     let hint = commit_rs_ligerito_rows(&p, rows_f.clone(), &pc);
 
@@ -380,7 +472,7 @@ fn virtual_open_identity_fast_path() {
     // Fast path (default ON): the proof carries the eq tail and verifies.
     let mut pt = Blake3Transcript::new();
     let proof = prove_mle_eval_mod_q_ligerito_virtual(
-        &mut pt, &hint, &p, &p, &map, &rw_q, Q_BITS, alpha, &pc,
+        &mut pt, &hint, &rows_f, &p, &p, &map, &rw_q, Q_BITS, alpha, &pc,
     );
     assert!(
         matches!(proof.tail, VirtOpenTail::Eq { .. }),
@@ -441,6 +533,11 @@ fn virtual_open_identity_fast_path() {
         &p,
         Q_BITS,
     );
+    reject_shape_without_absorption(
+        &IntEvalParams { t: p.t + p.s, s: 0, word_bits: 1 },
+        &p,
+        Q_BITS,
+    );
     reject_shape_without_absorption(&p, &p, 0);
 
     // Codec: the eq tail roundtrips canonically and the decoded proof
@@ -471,9 +568,9 @@ fn virtual_open_identity_fast_path() {
     // The eq tail is rejected outright on a non-eligible statement (a
     // non-identity map of the same shape) — the routing gate fires even
     // before any transcript divergence matters.
-    let mut lists: Vec<Vec<u32>> = (0..n).map(|i| vec![i as u32]).collect();
+    let mut lists: Vec<Vec<usize>> = (0..n).map(|i| vec![i]).collect();
     lists[0] = vec![0, 1];
-    let map2 = F2CellMap::try_from_rows(n, n, lists).unwrap();
+    let map2 = prepared_from_rows(n, n, lists);
     assert!(!map2.is_identity());
     let mut vt = Blake3Transcript::new();
     assert!(
@@ -489,7 +586,7 @@ fn virtual_open_identity_fast_path() {
     unsafe { std::env::set_var("F2Z_VIRT_ID_FAST", "0") };
     let mut pt = Blake3Transcript::new();
     let general = prove_mle_eval_mod_q_ligerito_virtual(
-        &mut pt, &hint, &p, &p, &map, &rw_q, Q_BITS, alpha, &pc,
+        &mut pt, &hint, &rows_f, &p, &p, &map, &rw_q, Q_BITS, alpha, &pc,
     );
     unsafe { std::env::remove_var("F2Z_VIRT_ID_FAST") };
     assert!(

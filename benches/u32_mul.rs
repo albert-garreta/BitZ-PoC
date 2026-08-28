@@ -386,24 +386,24 @@ enum BenchProof {
 impl BenchProof {
     fn f2z_bytes(&self) -> usize {
         match self {
-            Self::Standard(proof) => proof.f2z.to_bytes().len(),
-            Self::UnivariateSkip(proof) => proof.f2z.to_bytes().len(),
+            Self::Standard(proof) => proof.f2z().to_bytes().len(),
+            Self::UnivariateSkip(proof) => proof.f2z().to_bytes().len(),
         }
     }
 
     fn spartan_payload_elements(&self) -> usize {
         match self {
             Self::Standard(proof) => {
-                4 * proof.spartan.outer.sumcheck.round_polynomials.len()
+                4 * proof.spartan().outer.sumcheck.round_polynomials.len()
                     + 3
-                    + 3 * proof.spartan.inner.round_polynomials.len()
+                    + 3 * proof.spartan().inner.round_polynomials.len()
             }
             Self::UnivariateSkip(proof) => {
-                proof.spartan.outer.skip.finite_q_evaluations.len()
+                proof.spartan().outer.skip.finite_q_evaluations.len()
                     + 1
-                    + 4 * proof.spartan.outer.tail.sumcheck.round_polynomials.len()
+                    + 4 * proof.spartan().outer.tail.sumcheck.round_polynomials.len()
                     + 3
-                    + 3 * proof.spartan.inner.round_polynomials.len()
+                    + 3 * proof.spartan().inner.round_polynomials.len()
             }
         }
     }

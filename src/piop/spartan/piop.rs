@@ -1475,7 +1475,7 @@ mod tests {
         let mut products = vec![F128::zero_with_cfg(config); matrix.row_count()];
         for (column, entries) in matrix.columns().enumerate() {
             for (row, coefficient) in entries {
-                products[*row] += &(coefficient.clone() * &assignment[column]);
+                products[row] += &(coefficient.clone() * &assignment[column]);
             }
         }
         products

@@ -10,12 +10,12 @@
 pub mod cm;
 pub mod f2z;
 pub mod matrix;
+pub mod opening_mode;
 pub mod piop;
 pub mod sumcheck;
 pub mod u32_mul;
 pub mod univariate_skip;
 pub(crate) mod univariate_skip_native;
-pub mod workflow;
 
 pub use cm::{
     CM_AND_F_LIVE_SLOTS, CM_AND_H_SLOTS, CM_AND_WORD_BITS, CmAndError, CmAndLayout, CmAndWitness, CmF2zError, CmF2zProof, CmOpeningClaim,
@@ -25,7 +25,7 @@ pub use cm::{
     verify_cm_and_f2z, verify_cm_and_f2z_with_config,
 };
 pub use f2z::{
-    F2zOpeningClaim, SpartanF2zError, SpartanF2zField, U32BitifiedClaim, U32MulSpartanF2zProof,
+    SpartanF2zError, SpartanF2zField, U32BitifiedClaim, U32MulSpartanF2zProof,
     U32MulUnivariateSkipSpartanF2zProof, bitify_u32_mul_spartan_claim, commit_u32_mul_witness,
     prove_u32_mul_spartan_and_f2z, prove_u32_mul_spartan_and_f2z_from_witness,
     prove_u32_mul_spartan_and_f2z_with_strategy,
@@ -37,6 +37,10 @@ pub use matrix::{
     ConstraintMatrices, MleClaimError, PreparedConstraintMatrices, ScaledMleEvaluationClaim,
     SparseMatrix, SpartanMatrixCoefficient, SpartanMatrixError, build_assignment_mle,
     build_boolean_assignment_mle, build_product_mles, eq_eval, eq_table, make_equality_factors,
+};
+pub use crate::sparse_matrix::SparseMatrixError;
+pub use opening_mode::{
+    Direct, EvaluatedSpartanAssignment, OpeningMode, SpartanF2zProof, Virtualized,
 };
 pub use piop::{
     SPARTAN_ASSIGNMENT_ORACLE_DOMAIN, SPARTAN_PIOP_DOMAIN, SPARTAN_UNIVARIATE_SKIP_PIOP_DOMAIN,
@@ -61,13 +65,6 @@ pub use u32_mul::{
 };
 pub use univariate_skip::{
     UnivariateSkipOuterSumcheckProof, UnivariateSkipProof, UnivariateSkipSpartanPiopProof,
-};
-pub use workflow::{
-    BinarySparseMatrix, BinarySparseRow, BitifiedSpartanClaim, CompiledVirtualXorClaim,
-    DirectOpeningWeights, F2zCompatibleField, F2zOpeningProof, SpartanF2zOpening, SpartanF2zProof,
-    SpartanF2zVerifierOpening, VirtualizedF2zOpening, bitify_spartan_claim,
-    direct_opening_from_spartan_claim, prove_spartan_and_f2z, verify_spartan_and_f2z,
-    virtual_opening_from_spartan_claim,
 };
 
 use std::slice;

@@ -70,7 +70,7 @@ fn main() {
     );
     f2z::utils::prof::dump_and_reset("cm_probe");
 
-    eprintln!("proof: virtual F2Z {} B", proof.f2z.to_bytes().len());
-    let digest = blake3::hash(&proof.f2z.to_bytes());
+    eprintln!("proof: virtual F2Z {} B", proof.f2z().to_bytes().len());
+    let digest = blake3::hash(&proof.f2z().to_bytes());
     eprintln!("f2z proof digest: {}", digest.to_hex());
 }

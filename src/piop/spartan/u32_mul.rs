@@ -502,9 +502,15 @@ fn selector_matrix<C: Clone>(
         *boundary = row + 1;
     }
     column_offsets[offset + rows + 1..].fill(rows);
-    let entries = (0..rows).map(|row| (row, one.clone())).collect::<Vec<_>>();
+    let row_indices = (0..rows).collect();
+    let coefficients = (0..rows).map(|_| one.clone()).collect();
 
-    SparseMatrix::try_from_csc(rows, column_offsets, entries)
+    Ok(SparseMatrix::try_from_csc_parts(
+        rows,
+        column_offsets,
+        row_indices,
+        coefficients,
+    )?)
 }
 
 /// Generates and prepares the field-valued selector matrices.
@@ -554,9 +560,9 @@ pub fn project_u32_mul_native_witness(witness: &U32MulWitness) -> U32MulNativeMl
 }
 
 /// Converts the exact native assignment and selector products into the
-/// generic values consumed by [`super::prove_spartan_and_f2z`]. Since all
-/// native values fit in `u64`, this conversion is exact for every supported
-/// Spartan field.
+/// generic field values consumed by the field-generic Spartan prover. Since
+/// all native values fit in `u64`, this conversion is exact for every
+/// supported Spartan field.
 pub fn project_u32_mul_witness<F>(
     witness: &U32MulWitness,
     field_config: &F::Config,
@@ -741,20 +747,19 @@ mod tests {
         }
 
         for row in 0..layout.multiplications() {
-            assert_eq!(matrices.a().column(capacity + row), Some(&[(row, 1)][..]));
-            assert_eq!(
-                matrices.b().column(2 * capacity + row),
-                Some(&[(row, 1)][..])
-            );
-            assert_eq!(
-                matrices.c().column(3 * capacity + row),
-                Some(&[(row, 1)][..])
-            );
+            for column in [
+                matrices.a().column(capacity + row).unwrap(),
+                matrices.b().column(2 * capacity + row).unwrap(),
+                matrices.c().column(3 * capacity + row).unwrap(),
+            ] {
+                assert_eq!(column.row_indices(), &[row]);
+                assert_eq!(column.coefficients(), &[1]);
+            }
         }
-        assert_eq!(matrices.a().column(0), Some(&[][..]));
-        assert_eq!(matrices.a().column(2 * capacity), Some(&[][..]));
-        assert_eq!(matrices.b().column(capacity), Some(&[][..]));
-        assert_eq!(matrices.c().column(2 * capacity), Some(&[][..]));
+        assert!(matrices.a().column(0).unwrap().is_empty());
+        assert!(matrices.a().column(2 * capacity).unwrap().is_empty());
+        assert!(matrices.b().column(capacity).unwrap().is_empty());
+        assert!(matrices.c().column(2 * capacity).unwrap().is_empty());
     }
 
     #[test]
@@ -840,17 +845,13 @@ mod tests {
         let relation = prepare_u32_mul_relation::<F128>(layout, &config).unwrap();
         let capacity = layout.capacity();
 
-        assert_eq!(
-            relation.matrices().a().column(capacity),
-            Some(&[(0, true)][..])
-        );
-        assert_eq!(
-            relation.matrices().b().column(2 * capacity + 1),
-            Some(&[(1, true)][..])
-        );
-        assert_eq!(
-            relation.matrices().c().column(3 * capacity + 2),
-            Some(&[(2, true)][..])
-        );
+        for (column, row) in [
+            (relation.matrices().a().column(capacity).unwrap(), 0),
+            (relation.matrices().b().column(2 * capacity + 1).unwrap(), 1),
+            (relation.matrices().c().column(3 * capacity + 2).unwrap(), 2),
+        ] {
+            assert_eq!(column.row_indices(), &[row]);
+            assert_eq!(column.coefficients(), &[true]);
+        }
     }
 }

@@ -180,10 +180,10 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
     }
 
     let last_proof = last_proof.expect("at least one repetition");
-    let f2z_bytes = last_proof.f2z.to_bytes().len();
-    let spartan_elements = 4 * last_proof.spartan.outer.sumcheck.round_polynomials.len()
+    let f2z_bytes = last_proof.f2z().to_bytes().len();
+    let spartan_elements = 4 * last_proof.spartan().outer.sumcheck.round_polynomials.len()
         + 3
-        + 3 * last_proof.spartan.inner.round_polynomials.len();
+        + 3 * last_proof.spartan().inner.round_polynomials.len();
     drop(last_proof);
 
     // One extra proof for the peak-heap measurement.

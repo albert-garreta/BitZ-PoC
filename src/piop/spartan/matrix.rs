@@ -12,7 +12,12 @@ use blake3::Hasher;
 use rayon::prelude::*;
 use thiserror::Error;
 
-use crate::poly::mle::DenseMultilinearExtension;
+use crate::{
+    poly::mle::DenseMultilinearExtension,
+    sparse_matrix::{SparseColumn, SparseMatrixError},
+};
+
+pub use crate::sparse_matrix::SparseMatrix;
 
 use super::{SpartanField, SpartanFieldError, sumcheck::R1csProductMles};
 
@@ -44,7 +49,7 @@ where
 
     /// Computes one CSC column's dot product with field-valued row weights.
     fn column_dot(
-        column: &[(usize, Self)],
+        column: SparseColumn<'_, Self>,
         row_weights: &[F],
         zero: &F,
         field_config: &F::Config,
@@ -54,7 +59,7 @@ where
     {
         let mut evaluation = zero.clone();
         for (row, coefficient) in column {
-            evaluation += &coefficient.scale(&row_weights[*row], field_config);
+            evaluation += &coefficient.scale(&row_weights[row], field_config);
         }
         evaluation
     }
@@ -118,18 +123,18 @@ where
     }
 
     fn column_dot(
-        column: &[(usize, Self)],
+        column: SparseColumn<'_, Self>,
         row_weights: &[F],
         zero: &F,
         field_config: &F::Config,
     ) -> F {
-        if let [(row, true)] = column {
-            return row_weights[*row].clone();
+        if let Some((row, true)) = column.single() {
+            return row_weights[row].clone();
         }
 
         let mut evaluation = zero.clone();
         for (row, coefficient) in column {
-            evaluation += &coefficient.scale(&row_weights[*row], field_config);
+            evaluation += &coefficient.scale(&row_weights[row], field_config);
         }
         evaluation
     }
@@ -138,42 +143,9 @@ where
 /// Failures while constructing or evaluating a Spartan matrix statement.
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum SpartanMatrixError {
-    /// A sparse entry refers to a column outside the declared matrix width.
-    #[error("column {column} in row {row} is outside a {columns}-column matrix")]
-    ColumnOutOfBounds {
-        row: usize,
-        column: usize,
-        columns: usize,
-    },
-
-    /// Sparse rows must have a unique canonical order.
-    #[error("columns in row {row} are not strictly increasing: {previous}, then {column}")]
-    ColumnsNotStrictlyIncreasing {
-        row: usize,
-        previous: usize,
-        column: usize,
-    },
-
-    /// A sparse entry refers to a row outside the declared matrix height.
-    #[error("row {row} in column {column} is outside a {rows}-row matrix")]
-    RowOutOfBounds {
-        column: usize,
-        row: usize,
-        rows: usize,
-    },
-
-    /// CSC columns must have a unique canonical order.
-    #[error("rows in column {column} are not strictly increasing: {previous}, then {row}")]
-    RowsNotStrictlyIncreasing {
-        column: usize,
-        previous: usize,
-        row: usize,
-    },
-
-    /// Raw CSC offsets must start at zero, be nondecreasing, and end at the
-    /// number of stored entries.
-    #[error("invalid CSC column offsets")]
-    InvalidCscOffsets,
+    /// The generic CSC matrix is malformed.
+    #[error(transparent)]
+    SparseMatrix(#[from] SparseMatrixError),
 
     /// `A`, `B`, and `C` do not describe one common R1CS shape.
     #[error("A, B, and C must have identical, nonempty dimensions")]
@@ -334,197 +306,6 @@ where
             weights.push(weight);
         });
         weights
-    }
-}
-
-/// A sparse matrix in compressed sparse column (CSC) form.
-///
-/// Each column occupies one contiguous range in `entries`. Within a column,
-/// row indices are strictly increasing, so the representation of a sparse
-/// matrix is canonical. Logical rows and columns are retained even when they
-/// are empty.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SparseMatrix<F> {
-    row_count: usize,
-    column_offsets: Box<[usize]>,
-    entries: Box<[(usize, F)]>,
-}
-
-impl<F> SparseMatrix<F> {
-    /// Constructs a CSC matrix from row-local `(column, coefficient)` entries.
-    ///
-    /// Every row must use strictly increasing in-bounds column indices. This
-    /// makes the sparse representation unique and, consequently, makes the
-    /// prepared statement digest independent of map iteration order.
-    pub fn try_from_rows(
-        columns: usize,
-        rows: Vec<Vec<(usize, F)>>,
-    ) -> Result<Self, SpartanMatrixError> {
-        for (row, entries) in rows.iter().enumerate() {
-            let mut previous = None;
-            for (column, _) in entries {
-                if *column >= columns {
-                    return Err(SpartanMatrixError::ColumnOutOfBounds {
-                        row,
-                        column: *column,
-                        columns,
-                    });
-                }
-                if let Some(previous) = previous
-                    && previous >= *column
-                {
-                    return Err(SpartanMatrixError::ColumnsNotStrictlyIncreasing {
-                        row,
-                        previous,
-                        column: *column,
-                    });
-                }
-                previous = Some(*column);
-            }
-        }
-
-        let row_count = rows.len();
-        let mut column_entries: Vec<Vec<(usize, F)>> = (0..columns).map(|_| Vec::new()).collect();
-        for (row, entries) in rows.into_iter().enumerate() {
-            for (column, coefficient) in entries {
-                column_entries[column].push((row, coefficient));
-            }
-        }
-
-        Ok(Self::from_validated_columns(row_count, column_entries))
-    }
-
-    /// Constructs a CSC matrix from column-local `(row, coefficient)` entries.
-    ///
-    /// Every column must use strictly increasing in-bounds row indices. Empty
-    /// trailing rows and columns remain part of the logical matrix shape.
-    pub fn try_from_columns(
-        row_count: usize,
-        columns: Vec<Vec<(usize, F)>>,
-    ) -> Result<Self, SpartanMatrixError> {
-        for (column, entries) in columns.iter().enumerate() {
-            let mut previous = None;
-            for (row, _) in entries {
-                if *row >= row_count {
-                    return Err(SpartanMatrixError::RowOutOfBounds {
-                        column,
-                        row: *row,
-                        rows: row_count,
-                    });
-                }
-                if let Some(previous) = previous
-                    && previous >= *row
-                {
-                    return Err(SpartanMatrixError::RowsNotStrictlyIncreasing {
-                        column,
-                        previous,
-                        row: *row,
-                    });
-                }
-                previous = Some(*row);
-            }
-        }
-
-        Ok(Self::from_validated_columns(row_count, columns))
-    }
-
-    /// Constructs a matrix directly from flat CSC storage.
-    ///
-    /// `column_offsets` contains one start offset per logical column plus a
-    /// final sentinel equal to `entries.len()`. Offsets must begin at zero and
-    /// be nondecreasing. Within every resulting column, entry rows must be
-    /// strictly increasing and smaller than `row_count`.
-    pub fn try_from_csc(
-        row_count: usize,
-        column_offsets: Vec<usize>,
-        entries: Vec<(usize, F)>,
-    ) -> Result<Self, SpartanMatrixError> {
-        if column_offsets.first() != Some(&0)
-            || column_offsets.last() != Some(&entries.len())
-            || column_offsets
-                .windows(2)
-                .any(|bounds| bounds[0] > bounds[1])
-        {
-            return Err(SpartanMatrixError::InvalidCscOffsets);
-        }
-
-        for (column, bounds) in column_offsets.windows(2).enumerate() {
-            let mut previous = None;
-            for (row, _) in &entries[bounds[0]..bounds[1]] {
-                if *row >= row_count {
-                    return Err(SpartanMatrixError::RowOutOfBounds {
-                        column,
-                        row: *row,
-                        rows: row_count,
-                    });
-                }
-                if let Some(previous) = previous
-                    && previous >= *row
-                {
-                    return Err(SpartanMatrixError::RowsNotStrictlyIncreasing {
-                        column,
-                        previous,
-                        row: *row,
-                    });
-                }
-                previous = Some(*row);
-            }
-        }
-
-        Ok(Self {
-            row_count,
-            column_offsets: column_offsets.into_boxed_slice(),
-            entries: entries.into_boxed_slice(),
-        })
-    }
-
-    fn from_validated_columns(row_count: usize, columns: Vec<Vec<(usize, F)>>) -> Self {
-        let mut column_offsets = Vec::with_capacity(columns.len() + 1);
-        column_offsets.push(0);
-
-        let entry_count = columns.iter().map(Vec::len).sum();
-        let mut entries = Vec::with_capacity(entry_count);
-        for column in columns {
-            entries.extend(column);
-            column_offsets.push(entries.len());
-        }
-
-        Self {
-            row_count,
-            column_offsets: column_offsets.into_boxed_slice(),
-            entries: entries.into_boxed_slice(),
-        }
-    }
-
-    /// Entries in `column`, as `(row, coefficient)` pairs.
-    ///
-    /// The returned slice is a zero-copy view into the CSC storage.
-    pub fn column(&self, column: usize) -> Option<&[(usize, F)]> {
-        let start = *self.column_offsets.get(column)?;
-        let end = *self.column_offsets.get(column.checked_add(1)?)?;
-        Some(&self.entries[start..end])
-    }
-
-    /// Zero-copy column slices in logical column-index order.
-    pub fn columns(&self) -> impl ExactSizeIterator<Item = &[(usize, F)]> + '_ {
-        self.column_offsets
-            .windows(2)
-            .map(|bounds| &self.entries[bounds[0]..bounds[1]])
-    }
-
-    /// Number of stored sparse entries.
-    pub fn nnz(&self) -> usize {
-        self.entries.len()
-    }
-
-    /// Number of logical rows before Boolean-domain padding.
-    pub const fn row_count(&self) -> usize {
-        self.row_count
-    }
-
-    /// Number of logical columns, including constant column zero.
-    pub const fn column_count(&self) -> usize {
-        self.column_offsets.len() - 1
     }
 }
 
@@ -743,9 +524,9 @@ where
             .min(self.matrices.b().column_count())
             .min(self.matrices.c().column_count());
         let column_evaluation = |index: usize| -> F {
-            let a_column = self.matrices.a().column(index).unwrap_or(&[]);
-            let b_column = self.matrices.b().column(index).unwrap_or(&[]);
-            let c_column = self.matrices.c().column(index).unwrap_or(&[]);
+            let a_column = self.matrices.a().column(index).expect("live column");
+            let b_column = self.matrices.b().column(index).expect("live column");
+            let c_column = self.matrices.c().column(index).expect("live column");
             let mut evaluation =
                 sparse_column_dot(a_column, row_weights, &zero, &self.field_config);
             if !b_column.is_empty() {
@@ -1307,7 +1088,7 @@ where
 }
 
 fn sparse_column_dot<F, C>(
-    column: &[(usize, C)],
+    column: SparseColumn<'_, C>,
     row_weights: &[F],
     zero: &F,
     field_config: &F::Config,
@@ -1350,7 +1131,7 @@ impl<'a, F> CanonicalRows<'a, F> {
         let mut row_offsets = vec![0; matrix.row_count() + 1];
         for column in matrix.columns() {
             for (row, _) in column {
-                row_offsets[*row + 1] += 1;
+                row_offsets[row + 1] += 1;
             }
         }
 
@@ -1366,16 +1147,14 @@ impl<'a, F> CanonicalRows<'a, F> {
         // scatter needs neither `F: Clone` nor unsafe uninitialized storage.
         // The final cursor check guarantees that every slot was overwritten.
         let mut entries = matrix
-            .entries
+            .coefficients()
             .first()
-            .map_or_else(Vec::new, |(_, coefficient)| {
-                vec![(0, coefficient); matrix.nnz()]
-            });
+            .map_or_else(Vec::new, |coefficient| vec![(0, coefficient); matrix.nnz()]);
         for (column, column_entries) in matrix.columns().enumerate() {
             for (row, coefficient) in column_entries {
-                let position = next_entry[*row];
+                let position = next_entry[row];
                 entries[position] = (column, coefficient);
-                next_entry[*row] += 1;
+                next_entry[row] += 1;
             }
         }
         debug_assert_eq!(next_entry.as_slice(), &row_offsets[1..]);
@@ -1492,7 +1271,7 @@ where
     // column. `partition_point` avoids scanning the potentially enormous
     // empty prefix of selector matrices.
     let first_nonzero_boundary = matrix
-        .column_offsets
+        .column_offsets()
         .partition_point(|entry_offset| *entry_offset == 0);
     let offset = first_nonzero_boundary.checked_sub(1)?;
     if offset.checked_add(rows)? > matrix.column_count() {
@@ -1500,13 +1279,14 @@ where
     }
 
     for row in 0..rows {
-        if matrix.column_offsets[offset + row] != row
-            || matrix.column_offsets[offset + row + 1] != row + 1
+        if matrix.column_offsets()[offset + row] != row
+            || matrix.column_offsets()[offset + row + 1] != row + 1
         {
             return None;
         }
-        let (entry_row, coefficient) = &matrix.entries[row];
-        if *entry_row != row
+        let entry_row = matrix.row_indices()[row];
+        let coefficient = &matrix.coefficients()[row];
+        if entry_row != row
             || coefficient
                 .canonical_field_encoding(field_config, field_one_encoding)
                 .as_ref()
@@ -1696,13 +1476,19 @@ mod tests {
         assert_eq!(matrix.column_count(), 5);
         assert_eq!(matrix.nnz(), 4);
         assert_eq!(matrix.columns().len(), 5);
-        assert_eq!(matrix.column(0), Some(&[(0, two), (2, five)][..]));
-        assert_eq!(matrix.column(1), Some(&[][..]));
-        assert_eq!(matrix.column(2), Some(&[(2, seven)][..]));
-        assert_eq!(matrix.column(3), Some(&[(0, three)][..]));
-        assert_eq!(matrix.column(4), Some(&[][..]));
-        assert_eq!(matrix.column(5), None);
-        assert_eq!(matrix.column(usize::MAX), None);
+        let column = matrix.column(0).unwrap();
+        assert_eq!(column.row_indices(), &[0, 2]);
+        assert_eq!(column.coefficients(), &[two, five]);
+        assert!(matrix.column(1).unwrap().is_empty());
+        let column = matrix.column(2).unwrap();
+        assert_eq!(column.row_indices(), &[2]);
+        assert_eq!(column.coefficients(), &[seven]);
+        let column = matrix.column(3).unwrap();
+        assert_eq!(column.row_indices(), &[0]);
+        assert_eq!(column.coefficients(), &[three]);
+        assert!(matrix.column(4).unwrap().is_empty());
+        assert!(matrix.column(5).is_none());
+        assert!(matrix.column(usize::MAX).is_none());
     }
 
     #[test]
@@ -1740,7 +1526,7 @@ mod tests {
 
         assert_eq!(
             SparseMatrix::try_from_rows(2, vec![vec![(1, value()), (1, value())]]),
-            Err(SpartanMatrixError::ColumnsNotStrictlyIncreasing {
+            Err(SparseMatrixError::ColumnsNotStrictlyIncreasing {
                 row: 0,
                 previous: 1,
                 column: 1,
@@ -1748,7 +1534,7 @@ mod tests {
         );
         assert_eq!(
             SparseMatrix::try_from_rows(2, vec![vec![(2, value())]]),
-            Err(SpartanMatrixError::ColumnOutOfBounds {
+            Err(SparseMatrixError::ColumnOutOfBounds {
                 row: 0,
                 column: 2,
                 columns: 2,
@@ -1756,7 +1542,7 @@ mod tests {
         );
         assert_eq!(
             SparseMatrix::try_from_columns(2, vec![vec![(1, value()), (0, value())], vec![]]),
-            Err(SpartanMatrixError::RowsNotStrictlyIncreasing {
+            Err(SparseMatrixError::RowsNotStrictlyIncreasing {
                 column: 0,
                 previous: 1,
                 row: 0,
@@ -1764,7 +1550,7 @@ mod tests {
         );
         assert_eq!(
             SparseMatrix::try_from_columns(2, vec![vec![], vec![(2, value())]]),
-            Err(SpartanMatrixError::RowOutOfBounds {
+            Err(SparseMatrixError::RowOutOfBounds {
                 column: 1,
                 row: 2,
                 rows: 2,
@@ -1772,23 +1558,23 @@ mod tests {
         );
         assert_eq!(
             SparseMatrix::<F128>::try_from_csc(2, vec![], vec![]),
-            Err(SpartanMatrixError::InvalidCscOffsets)
+            Err(SparseMatrixError::InvalidCscOffsets)
         );
         assert_eq!(
             SparseMatrix::<F128>::try_from_csc(2, vec![1], vec![]),
-            Err(SpartanMatrixError::InvalidCscOffsets)
+            Err(SparseMatrixError::InvalidCscOffsets)
         );
         assert_eq!(
             SparseMatrix::try_from_csc(2, vec![0, 2], vec![(0, value())]),
-            Err(SpartanMatrixError::InvalidCscOffsets)
+            Err(SparseMatrixError::InvalidCscOffsets)
         );
         assert_eq!(
             SparseMatrix::<F128>::try_from_csc(2, vec![0, 1, 0], vec![]),
-            Err(SpartanMatrixError::InvalidCscOffsets)
+            Err(SparseMatrixError::InvalidCscOffsets)
         );
         assert_eq!(
             SparseMatrix::try_from_csc(2, vec![0, 2], vec![(1, value()), (0, value())]),
-            Err(SpartanMatrixError::RowsNotStrictlyIncreasing {
+            Err(SparseMatrixError::RowsNotStrictlyIncreasing {
                 column: 0,
                 previous: 1,
                 row: 0,
@@ -1796,7 +1582,7 @@ mod tests {
         );
         assert_eq!(
             SparseMatrix::try_from_csc(2, vec![0, 1], vec![(2, value())]),
-            Err(SpartanMatrixError::RowOutOfBounds {
+            Err(SparseMatrixError::RowOutOfBounds {
                 column: 0,
                 row: 2,
                 rows: 2,
