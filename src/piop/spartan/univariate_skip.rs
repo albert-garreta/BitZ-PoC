@@ -11,7 +11,7 @@ use crate::{poly::mle::DenseMultilinearExtension, transcript::traits::Transcript
 
 use super::{
     SpartanField, absorb_field_elements,
-    matrix::eq_table,
+    matrix::{PrefixUnivariateRowFactors, make_equality_factors},
     squeeze_field,
     sumcheck::{
         OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProductReducer, SumcheckProof,
@@ -60,12 +60,12 @@ impl<F> PrefixUnivariateRowBinding<F>
 where
     F: SpartanField,
 {
-    /// Materializes weights in the matrices' little-endian row order.
-    pub(crate) fn row_weights(
+    /// Builds the small prefix vector and the two tail equality factors.
+    pub(crate) fn row_factors(
         &self,
         num_row_vars: usize,
         field_cfg: &F::Config,
-    ) -> Result<Vec<F>, SumcheckError> {
+    ) -> Result<PrefixUnivariateRowFactors<F>, SumcheckError> {
         let skip_vars = usize::from(self.skip_vars);
         validate_skip_vars(skip_vars, num_row_vars)?;
         if self.tail_point.len() != num_row_vars - skip_vars {
@@ -74,15 +74,26 @@ where
 
         let block_len = 1usize << skip_vars;
         let prefix_weights = lagrange_weights_at(&self.z, block_len, field_cfg);
-        let tail_weights = eq_table(&self.tail_point, field_cfg)
+        let (tail_low, tail_high) = make_equality_factors(&self.tail_point, field_cfg)
             .map_err(|_| SumcheckError::InvalidEqualityDimensions)?;
-        let mut weights = Vec::with_capacity(block_len * tail_weights.len());
-        for tail_weight in tail_weights {
-            for prefix_weight in &prefix_weights {
-                weights.push(mul(&tail_weight, prefix_weight));
-            }
-        }
-        Ok(weights)
+        PrefixUnivariateRowFactors::new(
+            skip_vars,
+            prefix_weights,
+            tail_low,
+            tail_high,
+            num_row_vars,
+        )
+        .map_err(|_| SumcheckError::InvalidEqualityDimensions)
+    }
+
+    /// Materializes weights in the matrices' little-endian row order.
+    #[allow(dead_code)]
+    pub(crate) fn row_weights(
+        &self,
+        num_row_vars: usize,
+        field_cfg: &F::Config,
+    ) -> Result<Vec<F>, SumcheckError> {
+        Ok(self.row_factors(num_row_vars, field_cfg)?.materialize())
     }
 }
 

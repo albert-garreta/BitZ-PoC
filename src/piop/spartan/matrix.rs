@@ -238,6 +238,103 @@ pub enum MleClaimError {
     InvalidEvaluation,
 }
 
+/// Compact row functional produced by a prefix-univariate outer reduction.
+///
+/// For `M = 2^K` and `row = s + M * x`, the represented weight is
+///
+/// `prefix[s] * tail_low[x_low] * tail_high[x_high]`.
+///
+/// Keeping the three factors separate avoids materializing the complete
+/// `2^num_row_vars` row-weight table when the prepared matrix layout supports
+/// streamed row binding.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PrefixUnivariateRowFactors<F> {
+    skip_vars: usize,
+    prefix: Box<[F]>,
+    tail_low: Box<[F]>,
+    tail_high: Box<[F]>,
+    tail_low_vars: usize,
+    num_row_vars: usize,
+}
+
+impl<F> PrefixUnivariateRowFactors<F>
+where
+    F: SpartanField,
+{
+    pub(crate) fn new(
+        skip_vars: usize,
+        prefix: Vec<F>,
+        tail_low: DenseMultilinearExtension<F>,
+        tail_high: DenseMultilinearExtension<F>,
+        num_row_vars: usize,
+    ) -> Result<Self, SpartanMatrixError> {
+        let expected_prefix = domain_size(skip_vars)?;
+        let expected_low = domain_size(tail_low.num_vars)?;
+        let expected_high = domain_size(tail_high.num_vars)?;
+        let actual_rows = prefix
+            .len()
+            .checked_mul(tail_low.evaluations.len())
+            .and_then(|length| length.checked_mul(tail_high.evaluations.len()))
+            .ok_or(SpartanMatrixError::DomainTooLarge)?;
+        let expected_rows = domain_size(num_row_vars)?;
+        if prefix.len() != expected_prefix
+            || tail_low.evaluations.len() != expected_low
+            || tail_high.evaluations.len() != expected_high
+            || skip_vars
+                .checked_add(tail_low.num_vars)
+                .and_then(|width| width.checked_add(tail_high.num_vars))
+                != Some(num_row_vars)
+            || actual_rows != expected_rows
+        {
+            return Err(SpartanMatrixError::InvalidRowWeightsLength {
+                expected: expected_rows,
+                actual: actual_rows,
+            });
+        }
+
+        Ok(Self {
+            skip_vars,
+            prefix: prefix.into_boxed_slice(),
+            tail_low: tail_low.evaluations.into_boxed_slice(),
+            tail_high: tail_high.evaluations.into_boxed_slice(),
+            tail_low_vars: tail_low.num_vars,
+            num_row_vars,
+        })
+    }
+
+    /// Visits every logical row in little-endian `s + 2^K*x` order.
+    fn for_each_row(&self, logical_rows: usize, mut consume: impl FnMut(usize, F)) {
+        debug_assert!(logical_rows <= 1usize << self.num_row_vars);
+        let block_len = 1usize << self.skip_vars;
+        let low_mask = self.tail_low.len() - 1;
+        let suffixes = logical_rows.div_ceil(block_len);
+
+        for suffix in 0..suffixes {
+            let low_index = suffix & low_mask;
+            let high_index = suffix >> self.tail_low_vars;
+            let tail_weight = mul(&self.tail_low[low_index], &self.tail_high[high_index]);
+            let row_start = suffix * block_len;
+            let active = block_len.min(logical_rows - row_start);
+            for prefix_index in 0..active {
+                consume(
+                    row_start + prefix_index,
+                    mul(&self.prefix[prefix_index], &tail_weight),
+                );
+            }
+        }
+    }
+
+    /// Reference/fallback materialization in canonical row order.
+    pub(crate) fn materialize(&self) -> Vec<F> {
+        let mut weights = Vec::with_capacity(1usize << self.num_row_vars);
+        self.for_each_row(1usize << self.num_row_vars, |row, weight| {
+            debug_assert_eq!(row, weights.len());
+            weights.push(weight);
+        });
+        weights
+    }
+}
+
 /// A sparse matrix in compressed sparse column (CSC) form.
 ///
 /// Each column occupies one contiguous range in `entries`. Within a column,
@@ -486,6 +583,14 @@ impl<F> ConstraintMatrices<F> {
 }
 
 /// A validated, digest-bound R1CS matrix statement prepared for reuse.
+#[derive(Clone, Copy, Debug)]
+struct DisjointUnitSelectorTriplet {
+    rows: usize,
+    a_offset: usize,
+    b_offset: usize,
+    c_offset: usize,
+}
+
 #[derive(Clone, Debug)]
 pub struct PreparedConstraintMatrices<F, C = F>
 where
@@ -497,6 +602,7 @@ where
     digest: [u8; 32],
     num_row_vars: usize,
     num_column_vars: usize,
+    selector_triplet: Option<DisjointUnitSelectorTriplet>,
 }
 
 impl<F, C> PreparedConstraintMatrices<F, C>
@@ -515,6 +621,8 @@ where
         let num_column_vars = padded_num_vars(matrices.column_count())?;
         let field_modulus_encoding = F::canonical_modulus_encoding(field_config);
         let digest = constraint_matrix_digest(&matrices, field_config, &field_modulus_encoding)?;
+        let selector_triplet =
+            detect_disjoint_unit_selector_triplet::<F, C>(&matrices, field_config);
 
         Ok(Self {
             matrices,
@@ -523,6 +631,7 @@ where
             digest,
             num_row_vars,
             num_column_vars,
+            selector_triplet,
         })
     }
 
@@ -652,6 +761,45 @@ where
         })
     }
 
+    /// Constructs the dense batched column MLE from a three-factor
+    /// prefix-univariate row functional.
+    ///
+    /// Disjoint unit-selector matrices are streamed a row block at a time, so
+    /// the complete row-weight tensor is never allocated. Other matrix layouts
+    /// retain the existing materialized implementation as a correctness- and
+    /// latency-preserving fallback.
+    pub(crate) fn bind_and_batch_with_prefix_univariate_factors(
+        &self,
+        factors: &PrefixUnivariateRowFactors<F>,
+        rho: &F,
+    ) -> Result<DenseMultilinearExtension<F>, SpartanMatrixError> {
+        if factors.num_row_vars != self.num_row_vars {
+            return Err(SpartanMatrixError::InvalidRowWeightsLength {
+                expected: domain_size(self.num_row_vars)?,
+                actual: domain_size(factors.num_row_vars)?,
+            });
+        }
+
+        let Some(layout) = self.selector_triplet else {
+            let row_weights = factors.materialize();
+            return self.bind_and_batch_with_validated_row_weights(&row_weights, rho);
+        };
+
+        let zero = F::zero_with_cfg(&self.field_config);
+        let rho_squared = mul(rho, rho);
+        let mut evaluations = vec![zero; domain_size(self.num_column_vars)?];
+        factors.for_each_row(layout.rows, |row, weight| {
+            evaluations[layout.a_offset + row] = weight.clone();
+            evaluations[layout.b_offset + row] = mul(rho, &weight);
+            evaluations[layout.c_offset + row] = mul(&rho_squared, &weight);
+        });
+
+        Ok(DenseMultilinearExtension {
+            evaluations,
+            num_vars: self.num_column_vars,
+        })
+    }
+
     /// Directly evaluates
     ///
     /// `A(row_point, column_point) + rho B(row_point, column_point)
@@ -760,6 +908,54 @@ where
         evaluation += &mul(&rho_squared, &c_evaluation);
 
         Ok(evaluation)
+    }
+
+    /// Evaluates the batched matrices against a three-factor
+    /// prefix-univariate row functional without constructing its tensor
+    /// product when the prepared selector layout supports row streaming.
+    pub(crate) fn evaluate_batched_with_prefix_univariate_factors(
+        &self,
+        factors: &PrefixUnivariateRowFactors<F>,
+        rho: &F,
+        column_point: &[F],
+    ) -> Result<F, SpartanMatrixError> {
+        if factors.num_row_vars != self.num_row_vars {
+            return Err(SpartanMatrixError::InvalidRowWeightsLength {
+                expected: domain_size(self.num_row_vars)?,
+                actual: domain_size(factors.num_row_vars)?,
+            });
+        }
+        if column_point.len() != self.num_column_vars {
+            return Err(SpartanMatrixError::InvalidColumnPointLength {
+                expected: self.num_column_vars,
+                actual: column_point.len(),
+            });
+        }
+
+        let Some(layout) = self.selector_triplet else {
+            let row_weights = factors.materialize();
+            return self.evaluate_batched_with_validated_row_weights(
+                &row_weights,
+                rho,
+                column_point,
+            );
+        };
+
+        let column_weights = eq_table(column_point, &self.field_config)?;
+        let zero = F::zero_with_cfg(&self.field_config);
+        let mut a_evaluation = zero.clone();
+        let mut b_evaluation = zero.clone();
+        let mut c_evaluation = zero;
+        factors.for_each_row(layout.rows, |row, weight| {
+            a_evaluation += &mul(&weight, &column_weights[layout.a_offset + row]);
+            b_evaluation += &mul(&weight, &column_weights[layout.b_offset + row]);
+            c_evaluation += &mul(&weight, &column_weights[layout.c_offset + row]);
+        });
+
+        let rho_squared = mul(rho, rho);
+        a_evaluation += &mul(rho, &b_evaluation);
+        a_evaluation += &mul(&rho_squared, &c_evaluation);
+        Ok(a_evaluation)
     }
 }
 
@@ -1187,6 +1383,84 @@ where
     Ok(())
 }
 
+fn detect_disjoint_unit_selector_triplet<F, C>(
+    matrices: &ConstraintMatrices<C>,
+    field_config: &F::Config,
+) -> Option<DisjointUnitSelectorTriplet>
+where
+    F: SpartanField,
+    C: SpartanMatrixCoefficient<F>,
+{
+    let rows = matrices.row_count();
+    let columns = matrices.column_count();
+    let field_one_encoding = F::one_with_cfg(field_config).canonical_element_encoding();
+    let a_offset =
+        contiguous_unit_selector_offset::<F, C>(matrices.a(), field_config, &field_one_encoding)?;
+    let b_offset =
+        contiguous_unit_selector_offset::<F, C>(matrices.b(), field_config, &field_one_encoding)?;
+    let c_offset =
+        contiguous_unit_selector_offset::<F, C>(matrices.c(), field_config, &field_one_encoding)?;
+
+    let a_end = a_offset.checked_add(rows)?;
+    let b_end = b_offset.checked_add(rows)?;
+    let c_end = c_offset.checked_add(rows)?;
+    if a_end > b_offset || b_end > c_offset || c_end > columns {
+        return None;
+    }
+
+    Some(DisjointUnitSelectorTriplet {
+        rows,
+        a_offset,
+        b_offset,
+        c_offset,
+    })
+}
+
+fn contiguous_unit_selector_offset<F, C>(
+    matrix: &SparseMatrix<C>,
+    field_config: &F::Config,
+    field_one_encoding: &[u8],
+) -> Option<usize>
+where
+    F: SpartanField,
+    C: SpartanMatrixCoefficient<F>,
+{
+    let rows = matrix.row_count();
+    if matrix.nnz() != rows {
+        return None;
+    }
+
+    // The first nonzero CSC boundary immediately follows the first occupied
+    // column. `partition_point` avoids scanning the potentially enormous
+    // empty prefix of selector matrices.
+    let first_nonzero_boundary = matrix
+        .column_offsets
+        .partition_point(|entry_offset| *entry_offset == 0);
+    let offset = first_nonzero_boundary.checked_sub(1)?;
+    if offset.checked_add(rows)? > matrix.column_count() {
+        return None;
+    }
+
+    for row in 0..rows {
+        if matrix.column_offsets[offset + row] != row
+            || matrix.column_offsets[offset + row + 1] != row + 1
+        {
+            return None;
+        }
+        let (entry_row, coefficient) = &matrix.entries[row];
+        if *entry_row != row
+            || coefficient
+                .canonical_field_encoding(field_config, field_one_encoding)
+                .as_ref()
+                != field_one_encoding
+        {
+            return None;
+        }
+    }
+
+    Some(offset)
+}
+
 fn constraint_matrix_digest<F, C>(
     matrices: &ConstraintMatrices<C>,
     field_config: &F::Config,
@@ -1585,6 +1859,120 @@ mod tests {
                 .unwrap(),
             prepared
                 .evaluate_batched_with_row_weights(&row_weights, &rho, &column_point)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn prefix_univariate_factors_stream_disjoint_selectors_exactly() {
+        let config = config();
+        let rows = 6;
+        let columns = 32;
+        let selector = |offset: usize| {
+            SparseMatrix::try_from_rows(
+                columns,
+                (0..rows).map(|row| vec![(offset + row, true)]).collect(),
+            )
+            .unwrap()
+        };
+        let prepared = PreparedConstraintMatrices::<F128, bool>::new(
+            ConstraintMatrices::new(selector(8), selector(16), selector(24)).unwrap(),
+            &config,
+        )
+        .unwrap();
+        assert!(prepared.selector_triplet.is_some());
+
+        let tail_point = [field(43, &config)];
+        let (tail_low, tail_high) = make_equality_factors(&tail_point, &config).unwrap();
+        let factors = PrefixUnivariateRowFactors::new(
+            2,
+            [2, 3, 5, 7]
+                .into_iter()
+                .map(|value| field(value, &config))
+                .collect(),
+            tail_low,
+            tail_high,
+            prepared.num_row_vars(),
+        )
+        .unwrap();
+        let row_weights = factors.materialize();
+        let rho = field(47, &config);
+        let column_point = [
+            field(53, &config),
+            field(59, &config),
+            field(61, &config),
+            field(67, &config),
+            field(71, &config),
+        ];
+
+        assert_eq!(
+            prepared
+                .bind_and_batch_with_prefix_univariate_factors(&factors, &rho)
+                .unwrap(),
+            prepared
+                .bind_and_batch_with_validated_row_weights(&row_weights, &rho)
+                .unwrap()
+        );
+        assert_eq!(
+            prepared
+                .evaluate_batched_with_prefix_univariate_factors(&factors, &rho, &column_point,)
+                .unwrap(),
+            prepared
+                .evaluate_batched_with_validated_row_weights(&row_weights, &rho, &column_point,)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn prefix_univariate_factors_preserve_generic_matrix_fallback() {
+        let config = config();
+        let matrix = || {
+            SparseMatrix::try_from_rows(
+                8,
+                vec![
+                    vec![(0, field(2, &config)), (7, field(3, &config))],
+                    vec![(2, field(5, &config))],
+                    vec![(4, field(7, &config))],
+                    vec![],
+                ],
+            )
+            .unwrap()
+        };
+        let prepared = PreparedConstraintMatrices::new(
+            ConstraintMatrices::new(matrix(), matrix(), matrix()).unwrap(),
+            &config,
+        )
+        .unwrap();
+        assert!(prepared.selector_triplet.is_none());
+
+        let tail_point = [field(11, &config)];
+        let (tail_low, tail_high) = make_equality_factors(&tail_point, &config).unwrap();
+        let factors = PrefixUnivariateRowFactors::new(
+            1,
+            vec![field(13, &config), field(17, &config)],
+            tail_low,
+            tail_high,
+            prepared.num_row_vars(),
+        )
+        .unwrap();
+        let row_weights = factors.materialize();
+        let rho = field(19, &config);
+        let column_point = [field(23, &config), field(29, &config), field(31, &config)];
+
+        assert_eq!(
+            prepared
+                .bind_and_batch_with_prefix_univariate_factors(&factors, &rho)
+                .unwrap(),
+            prepared
+                .bind_and_batch_with_validated_row_weights(&row_weights, &rho)
+                .unwrap()
+        );
+        assert_eq!(
+            prepared
+                .evaluate_batched_with_prefix_univariate_factors(&factors, &rho, &column_point,)
+                .unwrap(),
+            prepared
+                .evaluate_batched_with_validated_row_weights(&row_weights, &rho, &column_point,)
                 .unwrap()
         );
     }

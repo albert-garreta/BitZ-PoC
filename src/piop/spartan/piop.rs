@@ -731,10 +731,10 @@ where
     );
     let batched_matrix = {
         let _scope = crate::utils::prof::scope("spartan:bind_and_batch");
-        let row_weights = outer
+        let row_factors = outer
             .row_binding
-            .row_weights(matrices.num_row_vars(), field_config)?;
-        matrices.bind_and_batch_with_validated_row_weights(&row_weights, &rho)?
+            .row_factors(matrices.num_row_vars(), field_config)?;
+        matrices.bind_and_batch_with_prefix_univariate_factors(&row_factors, &rho)?
     };
     let inner = {
         let _scope = crate::utils::prof::scope("spartan:inner_sumcheck");
@@ -848,8 +848,8 @@ where
     );
     let batched_matrix = {
         let _scope = crate::utils::prof::scope("spartan:bind_and_batch");
-        let row_weights = outer.1.row_weights(matrices.num_row_vars(), field_config)?;
-        matrices.bind_and_batch_with_validated_row_weights(&row_weights, &rho)?
+        let row_factors = outer.1.row_factors(matrices.num_row_vars(), field_config)?;
+        matrices.bind_and_batch_with_prefix_univariate_factors(&row_factors, &rho)?
     };
     let inner = {
         let _scope = crate::utils::prof::scope("spartan:inner_sumcheck");
@@ -966,11 +966,14 @@ where
         matrices.num_column_vars(),
         field_config,
     )?;
-    let row_weights = outer
+    let row_factors = outer
         .row_binding
-        .row_weights(matrices.num_row_vars(), field_config)?;
-    let matrix_evaluation =
-        matrices.evaluate_batched_with_validated_row_weights(&row_weights, &rho, &column_point)?;
+        .row_factors(matrices.num_row_vars(), field_config)?;
+    let matrix_evaluation = matrices.evaluate_batched_with_prefix_univariate_factors(
+        &row_factors,
+        &rho,
+        &column_point,
+    )?;
 
     Ok(ScaledMleEvaluationClaim::new(
         column_point.into_boxed_slice(),
