@@ -7,10 +7,10 @@
   "main.bbl"
   "main.blg"
   (rewritten before read)
-["pdflatex"] 1787929136.18843 "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" "main.pdf" "main" 1787929138.17621 2
+["pdflatex"] 1787947970.24317 "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" "main.pdf" "main" 1787947971.9325 2
   "/Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm10.657pk" 1776501489.11392 7808 6a049d449f6ee1b878a120976685d109 ""
   "/Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm8.600pk" 1776501487.73383 5580 11384d216537db22ad7711221f99aacd ""
-  "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" 1787929135.77904 287540 ed612dfa06156cb59311179feb9b89cd ""
+  "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" 1787947969.92246 287313 b041e5253fc1b3732d20f9f01f890663 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-t1.enc" 1136849721 2971 def0b6c1f0b107b3b936def894055589 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc" 1136849721 2900 1537cc8184ad1792082cd229ecc269f4 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
@@ -367,12 +367,12 @@
   "/usr/local/texlive/2026/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1776500619 5573038 b99aad5e4898a9034e953632f940512b ""
   "/usr/local/texlive/2026/texmf-var/web2c/pdftex/pdflatex.fmt" 1776500545 3636771 b0d19629fdc98bdfa4d378986b1cd147 ""
   "/usr/local/texlive/2026/texmf.cnf" 1774209515 577 648cd9f92f9c0eac486f4c71c85cfbbe ""
-  "macros.tex" 1787817409.40912 52402 8dab5449c796e5d2345020d3c281ed64 ""
-  "main.aux" 1787929137.72793 43719 59a6248bff8fb9e5a1b5599a5848a435 "pdflatex"
+  "macros.tex" 1787947785.1169 52450 d15f01f067a68fd61393749ae2152e0e ""
+  "main.aux" 1787947971.63716 43697 c98980f339391a9e898c25e79b1155ea "pdflatex"
   "main.bbl" 1787510590.39225 4588 47639833d47c1d572d83c83684065cef "bibtex main"
-  "main.out" 1787929137.73016 12021 380e919249b54fbf8f8317962c4ffbe9 "pdflatex"
-  "main.tex" 1787929135.77904 287540 ed612dfa06156cb59311179feb9b89cd ""
-  "main.toc" 1787929137.73042 10458 b29fe8a13008631b80e362d5ce93c83b "pdflatex"
+  "main.out" 1787947971.63944 11915 a095c7802c5a63462fdbdb55c49d2d71 "pdflatex"
+  "main.tex" 1787947969.92246 287313 b041e5253fc1b3732d20f9f01f890663 ""
+  "main.toc" 1787947971.63967 10443 762451c4bcd13d7b5f6b9a4cd81865fb "pdflatex"
   (generated)
   "main.aux"
   "main.log"
