@@ -7,6 +7,8 @@
 //! in this module give every protocol phase one canonical element encoding and
 //! one unbiased Fiat--Shamir challenge sampler.
 
+pub mod baby_bear_f2z;
+pub mod baby_bear_mul;
 pub mod cm;
 pub mod f2z;
 pub mod grinding;
@@ -20,6 +22,19 @@ pub mod u32_mul;
 pub mod univariate_skip;
 pub(crate) mod univariate_skip_native;
 
+pub use baby_bear_f2z::{
+    bitify_baby_bear_mul_spartan_claim, commit_baby_bear_mul_witness,
+    prove_baby_bear_mul_spartan_and_f2z,
+    prove_baby_bear_mul_spartan_and_f2z_from_witness,
+    prove_baby_bear_mul_spartan_and_f2z_with_strategy, verify_baby_bear_mul_spartan_and_f2z,
+    BabyBearBitifiedClaim, BabyBearMulSpartanF2zProof, BabyBearSpartanF2zError,
+};
+pub use baby_bear_mul::{
+    baby_bear_mul_constraint_matrices, prepare_baby_bear_mul_relation,
+    project_baby_bear_mul_native_witness, project_baby_bear_mul_witness,
+    sample_baby_bear_operand_with, BabyBearMulCoefficient, BabyBearMulError, BabyBearMulLayout,
+    BabyBearMulNativeMles, BabyBearMulRelationBackend, BabyBearMulWitness, BABY_BEAR_MODULUS,
+};
 pub use cm::{
     bitify_cm_and_claim, cm_and_map, commit_cm_and_witness, commit_cm_and_witness_with_config,
     prepare_cm_and_relation, project_cm_and_witness, prove_cm_and_f2z,

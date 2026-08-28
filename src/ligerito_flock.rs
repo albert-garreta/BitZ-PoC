@@ -1160,7 +1160,10 @@ const RS_OPEN_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/rs-open/v1";
 const RS_EVAL_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/rs-eval/v1";
 const RS_EVAL_BATCH_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/rs-eval-batch/v1";
 const MOD_Q_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q/v1";
-const U32_MOD_Q_OPENING_V2_STATEMENT_DOMAIN: &[u8] = b"f2z/spartan-f2z/u32-mod-q-opening/v2";
+const U32_MOD_Q_OPENING_V2_STATEMENT_DOMAIN: &[u8] =
+    b"f2z/spartan-f2z/u32-mod-q-opening/v2";
+const BABY_BEAR_MOD_Q_OPENING_V2_STATEMENT_DOMAIN: &[u8] =
+    b"f2z/spartan-baby-bear-f2z/mod-q-opening/v2";
 const EXT_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/ext/v1";
 const MOD_Q_XOR_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q-xor/v1";
 const MOD_Q_XOR_ONLY_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q-xor-only/v1";
@@ -1499,7 +1502,53 @@ pub(crate) fn absorb_u32_mod_q_opening_v2_statement(
     alpha: Gf,
     config: &impl LigeritoStatementConfig,
 ) -> BoundModQStatement {
-    let mut frame = StatementFrame::new(transcript, U32_MOD_Q_OPENING_V2_STATEMENT_DOMAIN);
+    absorb_prepared_mod_q_opening_v2_statement(
+        transcript,
+        commitment,
+        p,
+        bridge_digest,
+        q_bits,
+        alpha,
+        config,
+        U32_MOD_Q_OPENING_V2_STATEMENT_DOMAIN,
+    )
+}
+
+/// Bind the compact BabyBear Spartan-to-F2Z bridge under its own application
+/// domain while reusing the prepared mod-q core.
+pub(crate) fn absorb_baby_bear_mod_q_opening_v2_statement(
+    transcript: &mut impl Transcript,
+    commitment: &Commitment,
+    p: &IntEvalParams,
+    bridge_digest: &[u8; 32],
+    q_bits: usize,
+    alpha: Gf,
+    config: &impl LigeritoStatementConfig,
+) -> BoundModQStatement {
+    absorb_prepared_mod_q_opening_v2_statement(
+        transcript,
+        commitment,
+        p,
+        bridge_digest,
+        q_bits,
+        alpha,
+        config,
+        BABY_BEAR_MOD_Q_OPENING_V2_STATEMENT_DOMAIN,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn absorb_prepared_mod_q_opening_v2_statement(
+    transcript: &mut impl Transcript,
+    commitment: &Commitment,
+    p: &IntEvalParams,
+    bridge_digest: &[u8; 32],
+    q_bits: usize,
+    alpha: Gf,
+    config: &impl LigeritoStatementConfig,
+    domain: &[u8],
+) -> BoundModQStatement {
+    let mut frame = StatementFrame::new(transcript, domain);
     frame.commitment(commitment);
     frame.ligerito_config(config);
     frame.int_eval_params(p);
@@ -2253,6 +2302,65 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_prepared_u32_v2(
     alpha: Gf,
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigModQProof, FlockRsError> {
+    prove_mle_eval_mod_q_ligerito_prepared_spartan_v2(
+        transcript,
+        hint,
+        p,
+        chunks,
+        bridge_digest,
+        q_bits,
+        alpha,
+        pc,
+        PreparedSpartanBridge::U32,
+    )
+}
+
+/// BabyBear counterpart of the prepared u32 bridge. The proof core is shared,
+/// but the lower statement frame remains application-domain-separated.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prove_mle_eval_mod_q_ligerito_prepared_baby_bear_v2(
+    transcript: &mut (impl Transcript + Send),
+    hint: &FlockCommitHint,
+    p: &IntEvalParams,
+    chunks: &ModQWeightChunks,
+    bridge_digest: &[u8; 32],
+    q_bits: usize,
+    alpha: Gf,
+    pc: &LigProverConfig,
+) -> Result<IntEvalRsLigModQProof, FlockRsError> {
+    prove_mle_eval_mod_q_ligerito_prepared_spartan_v2(
+        transcript,
+        hint,
+        p,
+        chunks,
+        bridge_digest,
+        q_bits,
+        alpha,
+        pc,
+        PreparedSpartanBridge::BabyBear,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum PreparedSpartanBridge {
+    U32,
+    BabyBear,
+}
+
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+fn prove_mle_eval_mod_q_ligerito_prepared_spartan_v2(
+    transcript: &mut (impl Transcript + Send),
+    hint: &FlockCommitHint,
+    p: &IntEvalParams,
+    chunks: &ModQWeightChunks,
+    bridge_digest: &[u8; 32],
+    q_bits: usize,
+    alpha: Gf,
+    pc: &LigProverConfig,
+    bridge: PreparedSpartanBridge,
+) -> Result<IntEvalRsLigModQProof, FlockRsError> {
     validate_ligerito_commitment(&hint.commitment, pc)?;
     let commitment_geometry = validate_int_eval_geometry(&hint.commitment, p, 0)?;
     let (geometry, _, _) = checked_prepared_mod_q_geometry(p, chunks, q_bits)?;
@@ -2271,15 +2379,26 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_prepared_u32_v2(
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
 
-    let bound_statement = absorb_u32_mod_q_opening_v2_statement(
-        transcript,
-        &hint.commitment,
-        p,
-        bridge_digest,
-        q_bits,
-        alpha,
-        pc,
-    );
+    let bound_statement = match bridge {
+        PreparedSpartanBridge::U32 => absorb_u32_mod_q_opening_v2_statement(
+            transcript,
+            &hint.commitment,
+            p,
+            bridge_digest,
+            q_bits,
+            alpha,
+            pc,
+        ),
+        PreparedSpartanBridge::BabyBear => absorb_baby_bear_mod_q_opening_v2_statement(
+            transcript,
+            &hint.commitment,
+            p,
+            bridge_digest,
+            q_bits,
+            alpha,
+            pc,
+        ),
+    };
     Ok(prove_mle_eval_mod_q_ligerito_after_statement(
         transcript,
         hint,
@@ -2477,6 +2596,76 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_prepared_u32_v2<R>(
 where
     R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
 {
+    verify_mle_eval_mod_q_ligerito_prepared_spartan_v2(
+        transcript,
+        commitment,
+        proof,
+        p,
+        chunks,
+        col_weights,
+        bridge_digest,
+        alpha,
+        claimed,
+        q_bits,
+        vc,
+        PreparedSpartanBridge::U32,
+    )
+}
+
+/// BabyBear counterpart of the prepared u32 verifier bridge.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn verify_mle_eval_mod_q_ligerito_prepared_baby_bear_v2<R>(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: &IntEvalRsLigModQProof,
+    p: &IntEvalParams,
+    chunks: &ModQWeightChunks,
+    col_weights: &[R],
+    bridge_digest: &[u8; 32],
+    alpha: Gf,
+    claimed: R,
+    q_bits: usize,
+    vc: &LigVerifierConfig,
+) -> Result<(), FlockRsError>
+where
+    R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
+{
+    verify_mle_eval_mod_q_ligerito_prepared_spartan_v2(
+        transcript,
+        commitment,
+        proof,
+        p,
+        chunks,
+        col_weights,
+        bridge_digest,
+        alpha,
+        claimed,
+        q_bits,
+        vc,
+        PreparedSpartanBridge::BabyBear,
+    )
+}
+
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+fn verify_mle_eval_mod_q_ligerito_prepared_spartan_v2<R>(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: &IntEvalRsLigModQProof,
+    p: &IntEvalParams,
+    chunks: &ModQWeightChunks,
+    col_weights: &[R],
+    bridge_digest: &[u8; 32],
+    alpha: Gf,
+    claimed: R,
+    q_bits: usize,
+    vc: &LigVerifierConfig,
+    bridge: PreparedSpartanBridge,
+) -> Result<(), FlockRsError>
+where
+    R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
+{
     validate_ligerito_commitment(commitment, vc)?;
     let (geometry, chunk_width, chunk_count) = checked_mod_q_shape(commitment, proof, p, q_bits)?;
     let (prepared_geometry, prepared_chunk_width, prepared_chunk_count) =
@@ -2490,15 +2679,26 @@ where
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
 
-    let bound_statement = absorb_u32_mod_q_opening_v2_statement(
-        transcript,
-        commitment,
-        p,
-        bridge_digest,
-        q_bits,
-        alpha,
-        vc,
-    );
+    let bound_statement = match bridge {
+        PreparedSpartanBridge::U32 => absorb_u32_mod_q_opening_v2_statement(
+            transcript,
+            commitment,
+            p,
+            bridge_digest,
+            q_bits,
+            alpha,
+            vc,
+        ),
+        PreparedSpartanBridge::BabyBear => absorb_baby_bear_mod_q_opening_v2_statement(
+            transcript,
+            commitment,
+            p,
+            bridge_digest,
+            q_bits,
+            alpha,
+            vc,
+        ),
+    };
     let us = verify_mod_q_lig_core_after_statement(
         transcript,
         commitment,
@@ -11291,13 +11491,81 @@ mod tests {
         let mut wrong_cols = col_weights.clone();
         wrong_cols[0] = wrong_cols[0] + Fq::from(1_u128);
         assert!(verify(&chunks, &wrong_cols, &bridge_digest, claimed).is_err());
-        assert!(verify(
+        assert!(
+            verify(
+                &chunks,
+                &col_weights,
+                &bridge_digest,
+                claimed + Fq::from(1_u128),
+            )
+            .is_err()
+        );
+
+        // Exercise the BabyBear-specific prepared wrapper in ordinary CI and
+        // prove that its lower statement domain cannot accept a u32 proof (or
+        // vice versa), even when every other public input is identical.
+        let mut baby_bear_prover_transcript = Blake3Transcript::new();
+        let baby_bear_proof = prove_mle_eval_mod_q_ligerito_prepared_baby_bear_v2(
+            &mut baby_bear_prover_transcript,
+            &hint,
+            &p,
+            &chunks,
+            &bridge_digest,
+            FQ_BITS,
+            alpha,
+            &pc,
+        )
+        .unwrap();
+        let mut baby_bear_verifier_transcript = Blake3Transcript::new();
+        verify_mle_eval_mod_q_ligerito_prepared_baby_bear_v2(
+            &mut baby_bear_verifier_transcript,
+            &hint.commitment,
+            &baby_bear_proof,
+            &p,
             &chunks,
             &col_weights,
             &bridge_digest,
-            claimed + Fq::from(1_u128),
+            alpha,
+            claimed,
+            FQ_BITS,
+            &vc,
         )
-        .is_err());
+        .unwrap();
+
+        let mut wrong_u32_domain = Blake3Transcript::new();
+        assert!(
+            verify_mle_eval_mod_q_ligerito_prepared_u32_v2(
+                &mut wrong_u32_domain,
+                &hint.commitment,
+                &baby_bear_proof,
+                &p,
+                &chunks,
+                &col_weights,
+                &bridge_digest,
+                alpha,
+                claimed,
+                FQ_BITS,
+                &vc,
+            )
+            .is_err()
+        );
+        let mut wrong_baby_bear_domain = Blake3Transcript::new();
+        assert!(
+            verify_mle_eval_mod_q_ligerito_prepared_baby_bear_v2(
+                &mut wrong_baby_bear_domain,
+                &hint.commitment,
+                &proof,
+                &p,
+                &chunks,
+                &col_weights,
+                &bridge_digest,
+                alpha,
+                claimed,
+                FQ_BITS,
+                &vc,
+            )
+            .is_err()
+        );
     }
 
     /// Extension-field evaluation (paper `c:core_iop` Steps 1–3) over

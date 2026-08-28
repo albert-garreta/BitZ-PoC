@@ -288,15 +288,13 @@ pub fn prove_spartan_piop_u32_native(
     ),
     SpartanError,
 > {
-    validate_native_u32_prover_inputs(matrices, &products, &assignment)?;
-    let reducer = OptimizedSumcheckReducer::new(matrices.config())?;
-    prove_spartan_piop_u32_native_with_reducer(
+    prove_spartan_piop_native_u64_with_strategy(
         transcript,
         matrices,
         assignment_oracle_binding,
         products,
         assignment,
-        &reducer,
+        SpartanReductionStrategy::DelayedBarrett,
     )
 }
 
@@ -349,6 +347,39 @@ pub fn prove_spartan_piop_u32_native_with_strategy(
     ),
     SpartanError,
 > {
+    prove_spartan_piop_native_u64_with_strategy(
+        transcript,
+        matrices,
+        assignment_oracle_binding,
+        products,
+        assignment,
+        strategy,
+    )
+}
+
+/// Runs the native-u64 Spartan prover with sparse coefficients supplied by the
+/// relation. Multiplicands remain bounded to 32 bits so the existing native
+/// sumcheck accumulation bounds continue to apply.
+///
+/// This crate-private entry point lets relations such as BabyBear reuse the
+/// optimized u32-native kernels without widening the public u32 API.
+pub(crate) fn prove_spartan_piop_native_u64_with_strategy<C>(
+    transcript: &mut impl Transcript,
+    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    assignment_oracle_binding: &[u8; 32],
+    products: R1csProductMles<u64>,
+    assignment: DenseMultilinearExtension<u64>,
+    strategy: SpartanReductionStrategy,
+) -> Result<
+    (
+        SpartanPiopProof<MontyField<2>>,
+        ScaledMleEvaluationClaim<MontyField<2>>,
+    ),
+    SpartanError,
+>
+where
+    C: SpartanMatrixCoefficient<MontyField<2>>,
+{
     validate_native_u32_prover_inputs(matrices, &products, &assignment)?;
 
     match strategy {
@@ -442,9 +473,9 @@ pub fn prove_spartan_piop_u32_native_barrett_with_inner_policy(
     )
 }
 
-fn prove_spartan_piop_u32_native_with_reducer<R>(
+fn prove_spartan_piop_u32_native_with_reducer<C, R>(
     transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
+    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
     assignment_oracle_binding: &[u8; 32],
     products: R1csProductMles<u64>,
     assignment: DenseMultilinearExtension<u64>,
@@ -457,6 +488,7 @@ fn prove_spartan_piop_u32_native_with_reducer<R>(
     SpartanError,
 >
 where
+    C: SpartanMatrixCoefficient<MontyField<2>>,
     R: SumcheckProductReducer<MontyField<2>> + SumcheckLinearReducer,
 {
     prove_spartan_piop_u32_native_with_inner(
@@ -481,9 +513,9 @@ where
 
 #[allow(clippy::too_many_arguments)]
 #[cfg(any(test, feature = "bench-internals"))]
-fn prove_spartan_piop_u32_native_with_inner_policy<OR, NR, DR, IR>(
+fn prove_spartan_piop_u32_native_with_inner_policy<C, OR, NR, DR, IR>(
     transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
+    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
     assignment_oracle_binding: &[u8; 32],
     products: R1csProductMles<u64>,
     assignment: DenseMultilinearExtension<u64>,
@@ -501,6 +533,7 @@ fn prove_spartan_piop_u32_native_with_inner_policy<OR, NR, DR, IR>(
     SpartanError,
 >
 where
+    C: SpartanMatrixCoefficient<MontyField<2>>,
     OR: SumcheckProductReducer<MontyField<2>> + SumcheckLinearReducer,
     NR: SumcheckLinearReducer,
     DR: SumcheckProductReducer<MontyField<2>>,
@@ -530,9 +563,9 @@ where
     )
 }
 
-fn prove_spartan_piop_u32_native_with_inner<T, OR, P>(
+fn prove_spartan_piop_u32_native_with_inner<T, C, OR, P>(
     transcript: &mut T,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
+    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
     assignment_oracle_binding: &[u8; 32],
     products: R1csProductMles<u64>,
     assignment: DenseMultilinearExtension<u64>,
@@ -547,6 +580,7 @@ fn prove_spartan_piop_u32_native_with_inner<T, OR, P>(
 >
 where
     T: Transcript,
+    C: SpartanMatrixCoefficient<MontyField<2>>,
     OR: SumcheckProductReducer<MontyField<2>> + SumcheckLinearReducer,
     P: FnOnce(
         &mut T,
@@ -1130,11 +1164,14 @@ where
     validate_assignment(matrices, assignment)
 }
 
-fn validate_native_u32_prover_inputs(
-    matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
+fn validate_native_u32_prover_inputs<C>(
+    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
     products: &R1csProductMles<u64>,
     assignment: &DenseMultilinearExtension<u64>,
-) -> Result<(), SpartanError> {
+) -> Result<(), SpartanError>
+where
+    C: SpartanMatrixCoefficient<MontyField<2>>,
+{
     let row_vars = matrices.num_row_vars();
     if products.az.num_vars != row_vars
         || products.bz.num_vars != row_vars
