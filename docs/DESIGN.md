@@ -124,6 +124,42 @@ prover +~10 ms on 146 ms, verifier +~0.2 ms on 3.1 ms, proof +20.6 KiB on
 142.7 KiB. For `e = 1` use the base `prove/verify_mle_eval_mod_q_ligerito`
 (Step 3 is the identity there; the ext entry points reject it).
 
+## F₂-virtualization (paper `s:to_f2_virtual` / `c:virtual_iop`)
+
+`prove/verify_mle_eval_mod_q_ligerito_virtual`: the mod-q claim is about the
+DERIVED vector `h = M·f` for a public sparse `F₂` map `M`
+(`f2map::F2CellMap`, canonical CSR over flat bit cells, digest-bound into
+the transcript statement together with the commitment root, both
+geometries, the row weights, `q_bits`, and `α`); only `f` is committed.
+
+1. The prover materializes `h`'s bit rows and runs the ORDINARY per-chunk
+   machinery on them (`p_h` geometry): chunk folds `us`, merged forests,
+   pre-sumchecks. Nothing touches the oracle — the verifier recomputes the
+   roots from the sent `us` and derives per-chunk residual claims
+   `ĥ(pt_l) = μ_l` exactly as in the base path.
+2. Transpose bridge: with fresh `η`s, `Σ_l η_l μ_l = ⟨W, f⟩` where
+   `W = Σ_l η_l·Mᵀ eq(pt_l)` over `f`'s cells (XOR is addition in the
+   char-2 commitment field, so the transpose is exact). One degree-2
+   sumcheck over `f`'s `t_wf + s_f` cell variables reduces this to
+   `Ŵ(ρ)·f̂(ρ)` at a random `ρ`; the verifier evaluates `Ŵ(ρ)` itself,
+   sparse in `M` (`O(L·#rows + nnz)` field ops — Spartan-style
+   linear-in-the-statement cost), and divides (`Ŵ(ρ) = 0` rejects;
+   negligible).
+3. The remaining POINT claim `f̂(ρ) = μ_f` is opened by the standard
+   eq-based ring-switch + recursive Ligerito (`prove/verify_rs_open_ligerito`)
+   against `f`'s root. The F_q read-off is the base recombination over
+   `h`'s columns.
+
+Soundness mirrors the base path plus two fresh `2^-128`-class terms (the
+η-batch and the bridge sumcheck); the derived-side pipeline errors are the
+base errors with `h := M·f`. Prover extra cost: `O(nnz)` to build `h`,
+`O(L·#rows + nnz + ℓ_f)` for `W`, and the `2·16·ℓ_f`-byte bridge tables
+(`ℓ_f` = `f`'s cell count — the SMALL side in the intended `f`-compact
+use). Structured maps (XOR of committed columns, taps) should keep using
+the dedicated machinery below; this entry point is the fully general one.
+Pinned by `tests/virtual_open.rs` (direct-vs-virtual agreement, both chunk
+regimes, tamper battery).
+
 ## Mod-q RLC claim families (EXPERIMENTAL)
 
 `prove/verify_mle_eval_mod_q_ligerito_rlc_family`: k claims

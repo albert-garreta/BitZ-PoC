@@ -29,8 +29,23 @@
 //! [`to_bytes`][ligerito_flock::IntEvalRsLigModQProof::to_bytes] /
 //! [`from_bytes`][ligerito_flock::IntEvalRsLigModQProof::from_bytes] host
 //! codec. See `docs/DESIGN.md` for the protocol and the serialization format.
+//!
+//! ## F₂-virtualization
+//!
+//! Claims about a DERIVED vector `h = M·f` (a public sparse
+//! [`F₂`-linear map][f2map::F2CellMap] of the committed bits) are opened
+//! against the commitment to `f` alone —
+//! [`ligerito_flock::prove_mle_eval_mod_q_ligerito_virtual`] /
+//! [`ligerito_flock::verify_mle_eval_mod_q_ligerito_virtual`]: the
+//! per-chunk forests and pre-sumchecks run on `h` without ever touching
+//! the oracle, the terminal claims are transposed through `Mᵀ` at the
+//! commitment field (XOR is addition in char 2), a degree-2 bridge
+//! sumcheck reduces the transposed linear claim to one point evaluation
+//! of `f̂`, and the standard ring-switch + Ligerito opening finishes. The
+//! verifier's `M`-dependent cost is `O(L·#rows + nnz)` field ops.
 
 pub mod ext_proj;
+pub mod f2map;
 pub mod ligerito;
 pub mod ligerito_flock;
 pub mod merged_forest;

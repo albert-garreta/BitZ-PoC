@@ -732,6 +732,12 @@ pub enum FlockRsError {
     /// The extension-field read-off failed:
     /// `Σ_c v_c^{(2)}·π_canon(μ_c) ≠ μ` over the evaluation field `K`.
     ExtReadOff,
+    /// The virtual opening's bridge sumcheck rejected, or its claimed sum
+    /// disagrees with the η-batched derived-vector chunk claims.
+    VirtualBridge,
+    /// The transposed weight MLE vanished at the bridge exit point
+    /// (`Ŵ(ρ) = 0`; negligible-probability event, cannot divide).
+    VirtualWeightZero,
 }
 
 
@@ -7851,6 +7857,434 @@ impl IntEvalRsLigExtProof {
         let base = IntEvalRsLigModQProof::from_bytes(base_bytes)?;
         Ok(IntEvalRsLigExtProof { mus, base })
     }
+}
+
+// ---------------------------------------------------------------------
+// F₂-VIRTUALIZATION (paper `s:to_f2_virtual` / `s:virtualization`,
+// construction `c:virtual_iop`): open a mod-q claim about the DERIVED
+// vector `h = M·f` over `F₂` against the commitment to `f` alone. `M` is
+// a public sparse [`F2CellMap`] between the two bit-cell grids; `h` is
+// never committed.
+//
+// Pipeline (the paper's "run `c:core_iop` until Phase 3, then transpose"):
+//
+//   1. The prover materializes `h`'s bit rows and runs the ORDINARY
+//      per-chunk machinery on them — integer chunk folds `us`, merged
+//      product forests, de-black-boxing pre-sumchecks
+//      ([`prove_int_eval_merged_common`]) — with `p_h` geometry. Nothing
+//      here touches the oracle: the verifier recomputes the roots from
+//      the sent `us` and is left with per-chunk residual claims
+//      `ĥ(pt_l) = μ_l` about the (uncommitted) derived bit-MLE.
+//   2. Both sides draw η's and transpose through `Mᵀ` at the commitment
+//      field (char 2, where XOR is addition): `Σ_l η_l·ĥ(pt_l) =
+//      ⟨W, f⟩` with `W := Σ_l η_l·Mᵀ eq(pt_l)` over `f`'s cells. A
+//      degree-2 BRIDGE sumcheck over `f`'s `t_wf + s_f` cell variables
+//      reduces `⟨W, f⟩ = Σ_l η_l μ_l` to `Ŵ(ρ)·f̂(ρ)` at a random `ρ`.
+//   3. The verifier evaluates `Ŵ(ρ)` itself — sparse in `M`
+//      (`O(L·#rows(M) + nnz(M))` field ops, the Spartan-style
+//      linear-in-the-statement cost; there is no `2^{cells}` pass) —
+//      divides, and the remaining POINT claim `f̂(ρ) = μ_f` is opened by
+//      the standard eq-based ring-switch + recursive Ligerito
+//      ([`prove_rs_open_ligerito`] / [`verify_rs_open_ligerito`]).
+//
+// Soundness chain (informal; mirrors the base path plus two fresh
+// terms): the forests bind the sent `us` as exponent folds of whatever
+// row data underlies the leaves, and each pre-sumcheck + `R̂(r*)`
+// division pins `μ_l` as that data's bit-MLE value at the random exit
+// point `pt_l` — exactly as in the base path. The η-batch (error
+// `L/|K|`) plus the bridge sumcheck (error `≈ 2·(t_wf+s_f)/|K|`) then
+// force `Σ_l η_l μ_l = ⟨W, f⟩` for the COMMITTED `f` (bound through
+// `f̂(ρ)` by the ring-switch + Ligerito opening at `ρ`), i.e.
+// `μ_l = (M·f)ˆ(pt_l)` for every chunk except with probability
+// `≈ (L + 2·(t_wf+s_f))/|K|`. From there the base path's argument
+// applies verbatim with `h := M·f`. The statement (commitment root,
+// both geometries, `M`'s digest, the row weights, `q_bits`, α) is
+// digest-absorbed before any challenge, so the new API is self-binding.
+// ---------------------------------------------------------------------
+
+/// End-to-end proof of a mod-q claim on the derived vector `h = M·f`:
+/// per-chunk forests/folds/pre-sumchecks on `h` (`p_h` geometry), the
+/// degree-2 bridge sumcheck, and the single-point opening of `f`.
+pub struct IntEvalRsLigVirtProof {
+    /// Per weight chunk: the merged product forest on `h`.
+    pub mfs: Vec<MergedForestProof>,
+    /// `us[l]` = the `2^{s_h}` chunk folds `u_c^{(l)}` of `h`.
+    pub us: Vec<Vec<u128>>,
+    /// Per weight chunk: the de-black-boxing pre-sumcheck on `h`.
+    pub presums: Vec<MultiDegreeSumcheckProof<Gf>>,
+    /// The degree-2 transpose bridge `⟨W, f⟩` over `f`'s cell variables.
+    pub bridge: MultiDegreeSumcheckProof<Gf>,
+    /// Ring-switch + Ligerito opening of `f̂(ρ)`.
+    pub open: LigOpenProof,
+}
+
+/// Digest-absorbs the virtual opening's complete statement before any
+/// challenge is drawn: commitment root and geometry, both cell shapes,
+/// the map digest, the claimed row weights, `q_bits`, and `α`.
+fn absorb_virtual_statement(
+    transcript: &mut impl Transcript,
+    commitment: &Commitment,
+    p_h: &IntEvalParams,
+    p_f: &IntEvalParams,
+    map: &crate::f2map::F2CellMap,
+    row_weights_q: &[u128],
+    q_bits: usize,
+    alpha: Gf,
+) {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"f2z/mod-q-virtual-statement/v1");
+    hash.update(&commitment.root);
+    for v in [
+        commitment.params.m,
+        commitment.params.log_inv_rate,
+        commitment.params.log_batch_size,
+        p_h.t,
+        p_h.s,
+        p_h.word_bits,
+        p_f.t,
+        p_f.s,
+        p_f.word_bits,
+        q_bits,
+        row_weights_q.len(),
+    ] {
+        hash.update(&(v as u64).to_le_bytes());
+    }
+    hash.update(&map.digest());
+    for w in row_weights_q {
+        hash.update(&w.to_le_bytes());
+    }
+    let aw = alpha.words();
+    hash.update(&aw[0].to_le_bytes());
+    hash.update(&aw[1].to_le_bytes());
+    let mut frame = Vec::with_capacity(33);
+    frame.push(0x56u8); // 'V'
+    frame.extend_from_slice(hash.finalize().as_bytes());
+    transcript.absorb_slice(&frame);
+}
+
+/// `Σ_l η_l·eq_{cell i}(pt_l)` for one derived cell `i` — the combined
+/// transpose coefficient of `M`'s row `i`. `eq_rs_l`/`eq_zc_l` are the
+/// row/column eq tables of `pt_l` in `p_h`'s split.
+#[allow(clippy::arithmetic_side_effects)]
+#[inline]
+fn virtual_row_coeff(
+    i: usize,
+    t_wh: usize,
+    etas: &[Gf],
+    eq_rs: &[Vec<Gf>],
+    eq_zc: &[Vec<Gf>],
+) -> Gf {
+    let (c, b) = (i >> t_wh, i & ((1usize << t_wh) - 1));
+    let mut acc = Gf::zero();
+    for (l, &eta) in etas.iter().enumerate() {
+        acc += eta * eq_rs[l][b] * eq_zc[l][c];
+    }
+    acc
+}
+
+/// Prove `Σ_c w'_c·(Σ_b rw[b]·h_{b,c}) = y ∈ 𝔽_q` for the derived vector
+/// `h = M·f`, against the commitment to `f` (`hint_f`). Same claim shape
+/// as [`prove_mle_eval_mod_q_ligerito`], with `h` in `p_h` geometry —
+/// `row_weights_q[b] ∈ [0, 2^q_bits)` over `h`'s `2^{t_h}` rows.
+#[allow(clippy::arithmetic_side_effects)]
+pub fn prove_mle_eval_mod_q_ligerito_virtual(
+    transcript: &mut (impl Transcript + Send),
+    hint_f: &FlockCommitHint,
+    p_h: &IntEvalParams,
+    p_f: &IntEvalParams,
+    map: &crate::f2map::F2CellMap,
+    row_weights_q: &[u128],
+    q_bits: usize,
+    alpha: Gf,
+    pc: &LigProverConfig,
+) -> IntEvalRsLigVirtProof {
+    use crate::f2map::{cell_count, cell_row_bits};
+    use crate::pcs::{chunk_row_weights, mod_q_chunk_width, mod_q_num_chunks};
+    use crate::poly::utils::build_eq_x_r_vec;
+    use crypto_primitives::Field as _;
+
+    let t_wh = cell_row_bits(p_h);
+    let t_wf = cell_row_bits(p_f);
+    assert_eq!(map.rows(), cell_count(p_h), "map rows must match p_h cells");
+    assert_eq!(map.cols(), cell_count(p_f), "map cols must match p_f cells");
+    assert_eq!(row_weights_q.len(), p_h.rows(), "row-weight length");
+    assert_eq!(
+        hint_f.commitment.params.m,
+        t_wf + p_f.s,
+        "commitment geometry must match p_f"
+    );
+
+    absorb_virtual_statement(
+        transcript,
+        &hint_f.commitment,
+        p_h,
+        p_f,
+        map,
+        row_weights_q,
+        q_bits,
+        alpha,
+    );
+
+    // (1) The core pipeline on the derived rows — `h` is never committed.
+    let h_rows = {
+        let _g = crate::utils::prof::scope("mqv:apply");
+        map.apply(p_h, p_f, hint_f.rows())
+    };
+    let h_packed = {
+        let _g = crate::utils::prof::scope("mqv:pack");
+        crate::ligerito::pack_columns_from_rows(p_h, &h_rows)
+    };
+    let c_w = mod_q_chunk_width(p_h);
+    let lch = mod_q_num_chunks(p_h, q_bits);
+    let chunks = chunk_row_weights(row_weights_q, c_w, lch);
+
+    let mut mfs = Vec::with_capacity(lch);
+    let mut us = Vec::with_capacity(lch);
+    let mut presums = Vec::with_capacity(lch);
+    let mut points = Vec::with_capacity(lch);
+    for w_l in &chunks {
+        let (mf, u, ps, pt) = prove_int_eval_merged_common(
+            transcript,
+            p_h,
+            &h_rows,
+            Some(&h_packed),
+            w_l,
+            alpha,
+        );
+        mfs.push(mf);
+        us.push(u);
+        presums.push(ps);
+        points.push(pt);
+    }
+    drop(h_packed);
+    drop(h_rows);
+
+    // (2) Transpose bridge: W := Σ_l η_l·Mᵀ eq(pt_l) over f's cells, then
+    // the degree-2 sumcheck on ⟨W, f⟩.
+    let etas: Vec<Gf> = transcript.get_field_challenges(lch, &());
+    let _g_b = crate::utils::prof::scope("mqv:bridge");
+    let eq_rs: Vec<Vec<Gf>> = points
+        .iter()
+        .map(|pt| build_eq_x_r_vec(&pt[..t_wh], &()).expect("t_wh >= 1"))
+        .collect();
+    let eq_zc: Vec<Vec<Gf>> = points
+        .iter()
+        .map(|pt| build_eq_x_r_vec(&pt[t_wh..], &()).expect("s_h >= 1"))
+        .collect();
+
+    let n_f = cell_count(p_f);
+    let mut w_tbl = vec![Gf::zero(); n_f];
+    for (i, sources) in map.nonempty_rows() {
+        let coeff = virtual_row_coeff(i, t_wh, &etas, &eq_rs, &eq_zc);
+        for &j in sources {
+            w_tbl[j as usize] += coeff;
+        }
+    }
+    let f_mask = (1usize << t_wf) - 1;
+    let one = Gf::one();
+    let mut f_tbl = vec![Gf::zero(); n_f];
+    let f_rows = hint_f.rows();
+    for (c, row) in f_rows.iter().enumerate() {
+        let base = c << t_wf;
+        for (wi, &word) in row.iter().enumerate() {
+            let mut bits = word;
+            while bits != 0 {
+                let tz = bits.trailing_zeros() as usize;
+                f_tbl[base | (((wi << 6) | tz) & f_mask)] = one;
+                bits &= bits.wrapping_sub(1);
+            }
+        }
+    }
+
+    let nvars = t_wf + p_f.s;
+    let zero_inner = Gf::zero().into_inner();
+    let to_mle = |tbl: Vec<Gf>| {
+        crate::poly::mle::DenseMultilinearExtension::from_evaluations_vec(
+            nvars,
+            tbl.into_iter().map(|g| g.into_inner()).collect(),
+            zero_inner,
+        )
+    };
+    let group = crate::piop::sumcheck::multi_degree::MultiDegreeSumcheckGroup::new(
+        2,
+        vec![to_mle(w_tbl), to_mle(f_tbl)],
+        Box::new(|vals: &[Gf]| vals[0] * vals[1]),
+    );
+    let (bridge, states) =
+        crate::piop::sumcheck::multi_degree::MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(
+            transcript,
+            vec![group],
+            nvars,
+            &(),
+        );
+    let rho = states[0].randomness.clone();
+    drop(_g_b);
+
+    // (3) The standard single-point opening of f̂(ρ).
+    let open = {
+        let _g = crate::utils::prof::scope("mqv:open");
+        prove_rs_open_ligerito(transcript, hint_f, &rho, pc)
+    };
+    IntEvalRsLigVirtProof { mfs, us, presums, bridge, open }
+}
+
+/// Verify a virtual mod-q claim `Σ_c w'_c·(Σ_b rw[b]·h_{b,c}) = claimed`
+/// for `h = M·f` against `f`'s commitment. `col_weights[c] ∈ R` over
+/// `h`'s `2^{s_h}` columns. The verifier's `M`-dependent cost is
+/// `O(L·#rows(M) + nnz(M))` field operations.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub fn verify_mle_eval_mod_q_ligerito_virtual<R>(
+    transcript: &mut (impl Transcript + Send),
+    commitment_f: &Commitment,
+    proof: &IntEvalRsLigVirtProof,
+    p_h: &IntEvalParams,
+    p_f: &IntEvalParams,
+    map: &crate::f2map::F2CellMap,
+    row_weights_q: &[u128],
+    col_weights: &[R],
+    alpha: Gf,
+    claimed: R,
+    q_bits: usize,
+    vc: &LigVerifierConfig,
+) -> Result<(), FlockRsError>
+where
+    R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
+{
+    use crate::f2map::{cell_count, cell_row_bits};
+    use crate::pcs::{chunk_row_weights, mod_q_chunk_width, mod_q_num_chunks, recombine_read_off};
+    use crate::poly::utils::build_eq_x_r_vec;
+
+    let t_wh = cell_row_bits(p_h);
+    let t_wf = cell_row_bits(p_f);
+    let c_w = mod_q_chunk_width(p_h);
+    let lch = mod_q_num_chunks(p_h, q_bits);
+    if map.rows() != cell_count(p_h)
+        || map.cols() != cell_count(p_f)
+        || row_weights_q.len() != p_h.rows()
+        || col_weights.len() != p_h.cols()
+        || commitment_f.params.m != t_wf + p_f.s
+        || proof.mfs.len() != lch
+        || proof.us.len() != lch
+        || proof.presums.len() != lch
+    {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+
+    absorb_virtual_statement(
+        transcript,
+        commitment_f,
+        p_h,
+        p_f,
+        map,
+        row_weights_q,
+        q_bits,
+        alpha,
+    );
+
+    let chunks = chunk_row_weights(row_weights_q, c_w, lch);
+
+    // Re-pad the transmitted chunk folds to the full `2^{s_h}` (see the
+    // base path: trailing all-zero columns fold to 0 and may be trimmed).
+    let cols_h = p_h.cols();
+    let mut us: Vec<Vec<u128>> = Vec::with_capacity(lch);
+    for u in &proof.us {
+        if u.len() > cols_h {
+            return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+        }
+        let mut u = u.clone();
+        u.resize(cols_h, 0);
+        us.push(u);
+    }
+
+    // Per-chunk range bound 2^{c_w+t+W} (= 2^127 by construction).
+    let range_shift = c_w.wrapping_add(p_h.t).wrapping_add(p_h.word_bits);
+    let bound = 1u128 << range_shift;
+
+    // (1) The core pipeline on the derived claims: forests + pre-sumchecks
+    // pin the per-chunk residuals `ĥ(pt_l) = μ_l`.
+    let mut points = Vec::with_capacity(lch);
+    let mut mus = Vec::with_capacity(lch);
+    for l in 0..lch {
+        for (k, &u) in us[l].iter().enumerate() {
+            if u >= bound {
+                return Err(FlockRsError::ChunkRange { chunk: l, col: k });
+            }
+        }
+        let (pt, mu) = verify_int_eval_merged_common(
+            transcript,
+            &proof.mfs[l],
+            &us[l],
+            &proof.presums[l],
+            p_h,
+            &chunks[l],
+            alpha,
+        )
+        .map_err(FlockRsError::Common)?;
+        points.push(pt);
+        mus.push(mu);
+    }
+
+    // (2) The transpose bridge.
+    let etas: Vec<Gf> = transcript.get_field_challenges(lch, &());
+    let nvars = t_wf + p_f.s;
+    let subclaims =
+        crate::piop::sumcheck::multi_degree::MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(
+            transcript,
+            nvars,
+            &[2],
+            &proof.bridge,
+            &(),
+        )
+        .map_err(|_| FlockRsError::VirtualBridge)?;
+    let batched: Gf = etas
+        .iter()
+        .zip(mus.iter())
+        .fold(Gf::zero(), |acc, (&e, &m)| acc + e * m);
+    if proof.bridge.claimed_sums() != [batched] {
+        return Err(FlockRsError::VirtualBridge);
+    }
+    let rho = subclaims.point().to_vec();
+    let expected = subclaims.expected_evaluations()[0];
+
+    // (3) `Ŵ(ρ)` — sparse in `M`: eq tables on both sides of the split,
+    // one combined coefficient per nonempty row, one gather per nonzero.
+    let eq_rs: Vec<Vec<Gf>> = points
+        .iter()
+        .map(|pt| build_eq_x_r_vec(&pt[..t_wh], &()).expect("t_wh >= 1"))
+        .collect();
+    let eq_zc: Vec<Vec<Gf>> = points
+        .iter()
+        .map(|pt| build_eq_x_r_vec(&pt[t_wh..], &()).expect("s_h >= 1"))
+        .collect();
+    let eq_rho_row = build_eq_x_r_vec(&rho[..t_wf], &()).expect("t_wf >= 1");
+    let eq_rho_col = build_eq_x_r_vec(&rho[t_wf..], &()).expect("s_f >= 1");
+    let f_mask = (1usize << t_wf) - 1;
+    let mut w_hat = Gf::zero();
+    for (i, sources) in map.nonempty_rows() {
+        let coeff = virtual_row_coeff(i, t_wh, &etas, &eq_rs, &eq_zc);
+        let mut eq_sum = Gf::zero();
+        for &j in sources {
+            let j = j as usize;
+            eq_sum += eq_rho_col[j >> t_wf] * eq_rho_row[j & f_mask];
+        }
+        w_hat += coeff * eq_sum;
+    }
+    if w_hat.is_zero() {
+        return Err(FlockRsError::VirtualWeightZero);
+    }
+    let mu_f = expected * w_hat.inverse();
+
+    // (4) The standard single-point opening of f̂(ρ) against f's root.
+    verify_rs_open_ligerito(transcript, commitment_f, mu_f, &rho, &proof.open, vc)?;
+
+    // (5) Recombine in R: claimed = Σ_c w′_c · Σ_l 2^{c_w·l}·u_c^{(l)}.
+    let v_flat: Vec<u128> = us.iter().flat_map(|u| u.iter().copied()).collect();
+    let y = recombine_read_off(p_h, &v_flat, 0, col_weights, c_w, lch);
+    if y != claimed {
+        return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------
