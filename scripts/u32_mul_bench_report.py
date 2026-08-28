@@ -53,6 +53,8 @@ STATIC_FIELDS = (
 SAMPLE_FIELDS = (
     "pass",
     "order",
+    "protocol",
+    "skip_vars",
     "strategy",
     "reduction_backend",
     "word_bits",
@@ -94,6 +96,8 @@ SAMPLE_FIELDS = (
 SUMMARY_FIELDS = (
     "pass",
     "order",
+    "protocol",
+    "skip_vars",
     "strategy",
     "reduction_backend",
     "word_bits",

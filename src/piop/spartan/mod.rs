@@ -17,11 +17,12 @@ pub(crate) mod univariate_skip_native;
 pub mod workflow;
 
 pub use f2z::{
-    F2zOpeningClaim, SpartanF2zError, SpartanF2zField, U32BitifiedClaim,
-    U32MulSpartanF2zProof,
-    bitify_u32_mul_spartan_claim, commit_u32_mul_witness, prove_u32_mul_spartan_and_f2z,
-    prove_u32_mul_spartan_and_f2z_from_witness, prove_u32_mul_spartan_and_f2z_with_strategy,
-    spartan_f2z_field_config, verify_u32_mul_spartan_and_f2z,
+    F2zOpeningClaim, SpartanF2zError, SpartanF2zField, U32BitifiedClaim, U32MulSpartanF2zProof,
+    U32MulUnivariateSkipSpartanF2zProof, bitify_u32_mul_spartan_claim, commit_u32_mul_witness,
+    prove_u32_mul_spartan_and_f2z, prove_u32_mul_spartan_and_f2z_from_witness,
+    prove_u32_mul_spartan_and_f2z_with_strategy,
+    prove_u32_mul_spartan_and_f2z_with_univariate_skip, spartan_f2z_field_config,
+    verify_u32_mul_spartan_and_f2z, verify_u32_mul_spartan_and_f2z_with_univariate_skip,
 };
 
 pub use matrix::{

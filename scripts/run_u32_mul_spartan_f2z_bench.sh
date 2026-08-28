@@ -24,6 +24,7 @@ STRATEGIES="${F2Z_BENCH_STRATEGIES:-immediate delayed-barrett delayed-crypto-big
 MEMORY_STRATEGIES="${F2Z_BENCH_MEMORY_STRATEGIES:-$STRATEGIES}"
 MEASURE_MEMORY="${F2Z_BENCH_MEASURE_MEMORY:-1}"
 ROOT_SEED="${F2Z_MUL_SEED:-0x5533326d756c0064}"
+OUTER_SKIP="${F2Z_SPARTAN_OUTER_SKIP:-0}"
 RUN_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 RUN_DATE="${RUN_TIMESTAMP%%T*}"
 RUN_STAMP="$(date -u +%Y%m%d-%H%M%S)"
@@ -120,6 +121,7 @@ echo "Strategies: $STRATEGIES"
 echo "Measured repetitions: $REPETITIONS (plus one warmup per process)"
 echo "Rayon threads: $THREADS"
 echo "Root seed: $ROOT_SEED"
+echo "Outer sumcheck univariate skip K: $OUTER_SKIP"
 echo "Commit: $COMMIT (dirty=$GIT_DIRTY)"
 echo "Latency binary SHA-256: $LATENCY_BINARY_SHA256"
 if [[ -n "$MEMORY_BINARY_SHA256" ]]; then
@@ -146,6 +148,7 @@ run_case() {
     F2Z_BENCH_PASS="$pass" \
     F2Z_BENCH_ORDER="$order" \
     F2Z_SPARTAN_REDUCTION="$strategy" \
+    F2Z_SPARTAN_OUTER_SKIP="$OUTER_SKIP" \
         "$binary" 2>&1 | tee -a "$RAW_LOG"
 }
 

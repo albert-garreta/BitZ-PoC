@@ -49,14 +49,16 @@ use super::{
     matrix::ScaledMleEvaluationClaim,
     piop::{
         SpartanError, SpartanPiopProof, SpartanReductionStrategy,
-        prove_spartan_piop_u32_native_with_strategy, prove_spartan_piop_with_strategy,
-        verify_spartan_proof,
+        prove_spartan_piop_u32_native_with_strategy,
+        prove_spartan_piop_u32_native_with_univariate_skip, prove_spartan_piop_with_strategy,
+        verify_spartan_proof, verify_spartan_univariate_skip_proof,
     },
     u32_mul::{
         U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS, U32_MUL_PRODUCT_SLOT_START, U32_MUL_X_BITS,
         U32_MUL_X_SLOT_START, U32_MUL_Y_BITS, U32_MUL_Y_SLOT_START, U32MulError, U32MulLayout,
         U32MulWitness, project_u32_mul_native_witness, project_u32_mul_witness,
     },
+    univariate_skip::UnivariateSkipSpartanPiopProof,
 };
 
 /// Domain of the commitment-and-layout digest used as Spartan's assignment
@@ -157,6 +159,27 @@ pub struct U32MulSpartanF2zProof {
     pub spartan: SpartanPiopProof<SpartanF2zField>,
     /// F2Z opening of the derived compact-bit claim.
     pub f2z: IntEvalRsLigModQProof,
+}
+
+/// The combined proof using Spartan's known-zero univariate prefix skip.
+#[derive(Clone)]
+pub struct U32MulUnivariateSkipSpartanF2zProof {
+    /// Spartan's skipped-prefix outer proof and ordinary inner sumcheck.
+    pub spartan: UnivariateSkipSpartanPiopProof<SpartanF2zField>,
+    /// F2Z opening of the derived compact-bit claim.
+    pub f2z: IntEvalRsLigModQProof,
+}
+
+impl U32MulUnivariateSkipSpartanF2zProof {
+    /// Spartan proof component, exposed for benchmark payload accounting.
+    pub const fn spartan(&self) -> &UnivariateSkipSpartanPiopProof<SpartanF2zField> {
+        &self.spartan
+    }
+
+    /// F2Z proof component, exposed for its existing exact byte codec.
+    pub const fn f2z(&self) -> &IntEvalRsLigModQProof {
+        &self.f2z
+    }
 }
 
 impl U32MulSpartanF2zProof {
@@ -507,6 +530,45 @@ pub fn prove_u32_mul_spartan_and_f2z_with_strategy<T: Transcript + Send>(
     )
 }
 
+/// Proves the complete u32 multiplication workflow with Spartan's known-zero
+/// univariate prefix skip and the production delayed-Barrett reducer.
+pub fn prove_u32_mul_spartan_and_f2z_with_univariate_skip<T: Transcript + Send>(
+    transcript: &mut T,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField, bool>,
+    layout: &U32MulLayout,
+    witness: &U32MulWitness,
+    hint: &FlockCommitHint,
+    skip_vars: usize,
+) -> Result<U32MulUnivariateSkipSpartanF2zProof, SpartanF2zError> {
+    if witness.layout() != layout {
+        return Err(SpartanF2zError::RelationWitnessLayoutMismatch);
+    }
+    let (p, pc, assignment_binding) = prepare_combined_prover(matrices, layout, hint)?;
+    let (assignment, products) = project_u32_mul_native_witness(witness).into_parts();
+    let (spartan, terminal_claim) = {
+        let _scope = crate::utils::prof::scope("spartan-f2z:spartan_prove");
+        prove_spartan_piop_u32_native_with_univariate_skip(
+            transcript,
+            matrices,
+            &assignment_binding,
+            products,
+            assignment,
+            skip_vars,
+        )?
+    };
+    let f2z = prove_terminal_claim_with_f2z(
+        transcript,
+        matrices,
+        layout,
+        hint,
+        &p,
+        &pc,
+        &assignment_binding,
+        &terminal_claim,
+    )?;
+    Ok(U32MulUnivariateSkipSpartanF2zProof { spartan, f2z })
+}
+
 fn prepare_combined_prover(
     matrices: &PreparedConstraintMatrices<SpartanF2zField, bool>,
     layout: &U32MulLayout,
@@ -536,14 +598,38 @@ fn finish_combined_prover<T: Transcript + Send>(
     spartan: SpartanPiopProof<SpartanF2zField>,
     terminal_claim: ScaledMleEvaluationClaim<SpartanF2zField>,
 ) -> Result<U32MulSpartanF2zProof, SpartanF2zError> {
+    let f2z = prove_terminal_claim_with_f2z(
+        transcript,
+        matrices,
+        layout,
+        hint,
+        p,
+        pc,
+        assignment_binding,
+        &terminal_claim,
+    )?;
+    Ok(U32MulSpartanF2zProof { spartan, f2z })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prove_terminal_claim_with_f2z<T: Transcript + Send>(
+    transcript: &mut T,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField, bool>,
+    layout: &U32MulLayout,
+    hint: &FlockCommitHint,
+    p: &crate::pcs::IntEvalParams,
+    pc: &LigProverConfig,
+    assignment_binding: &[u8; 32],
+    terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
+) -> Result<IntEvalRsLigModQProof, SpartanF2zError> {
     let (opening, bridge_digest) = {
         let _scope = crate::utils::prof::scope("spartan-f2z:bitify_prover");
-        let opening = bitify_u32_mul_spartan_claim(&terminal_claim, layout)?;
+        let opening = bitify_u32_mul_spartan_claim(terminal_claim, layout)?;
         let bridge_digest = bitified_claim_digest(
             matrices,
             assignment_binding,
             layout,
-            &terminal_claim,
+            terminal_claim,
             &opening,
         )?;
         (opening, bridge_digest)
@@ -567,8 +653,7 @@ fn finish_combined_prover<T: Transcript + Send>(
         )
         .map_err(SpartanF2zError::F2z)?
     };
-
-    Ok(U32MulSpartanF2zProof { spartan, f2z })
+    Ok(f2z)
 }
 
 /// Verifies both proof systems on one transcript.
@@ -598,14 +683,81 @@ pub fn verify_u32_mul_spartan_and_f2z<T: Transcript + Send>(
         verify_spartan_proof(transcript, matrices, &assignment_binding, &proof.spartan)?
     };
 
-    let (opening, bridge_digest) = {
-        let _scope = crate::utils::prof::scope("spartan-f2z:bitify_verifier");
-        let opening = bitify_u32_mul_spartan_claim(&terminal_claim, layout)?;
-        let bridge_digest = bitified_claim_digest(
+    verify_terminal_claim_with_f2z(
+        transcript,
+        matrices,
+        layout,
+        commitment,
+        &proof.f2z,
+        &p,
+        &vc,
+        &assignment_binding,
+        &terminal_claim,
+    )
+}
+
+/// Verifies the combined proof whose Spartan outer sumcheck uses a known-zero
+/// univariate prefix skip.
+pub fn verify_u32_mul_spartan_and_f2z_with_univariate_skip<T: Transcript + Send>(
+    transcript: &mut T,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField, bool>,
+    layout: &U32MulLayout,
+    commitment: &Commitment,
+    proof: &U32MulUnivariateSkipSpartanF2zProof,
+) -> Result<(), SpartanF2zError> {
+    validate_relation(matrices)?;
+    validate_relation_layout(matrices, layout)?;
+    validate_layout_geometry(layout)?;
+    let p = layout.f2z_params();
+    let (pc, vc) = configs_for_layout(layout)?;
+    validate_config_pair(&p, &pc, &vc)?;
+    validate_commitment(&p, commitment, &pc)?;
+    validate_f2z_proof_shape(&p, &proof.f2z)?;
+    let assignment_binding = assignment_binding(layout, commitment)?;
+
+    let terminal_claim = {
+        let _scope = crate::utils::prof::scope("spartan-f2z:spartan_verify");
+        verify_spartan_univariate_skip_proof(
+            transcript,
             matrices,
             &assignment_binding,
+            &proof.spartan,
+        )?
+    };
+
+    verify_terminal_claim_with_f2z(
+        transcript,
+        matrices,
+        layout,
+        commitment,
+        &proof.f2z,
+        &p,
+        &vc,
+        &assignment_binding,
+        &terminal_claim,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn verify_terminal_claim_with_f2z<T: Transcript + Send>(
+    transcript: &mut T,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField, bool>,
+    layout: &U32MulLayout,
+    commitment: &Commitment,
+    f2z_proof: &IntEvalRsLigModQProof,
+    p: &crate::pcs::IntEvalParams,
+    vc: &LigVerifierConfig,
+    assignment_binding: &[u8; 32],
+    terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
+) -> Result<(), SpartanF2zError> {
+    let (opening, bridge_digest) = {
+        let _scope = crate::utils::prof::scope("spartan-f2z:bitify_verifier");
+        let opening = bitify_u32_mul_spartan_claim(terminal_claim, layout)?;
+        let bridge_digest = bitified_claim_digest(
+            matrices,
+            assignment_binding,
             layout,
-            &terminal_claim,
+            terminal_claim,
             &opening,
         )?;
         (opening, bridge_digest)
@@ -620,15 +772,15 @@ pub fn verify_u32_mul_spartan_and_f2z<T: Transcript + Send>(
         verify_mle_eval_mod_q_ligerito_prepared_u32_v2(
             transcript,
             commitment,
-            &proof.f2z,
-            &p,
+            f2z_proof,
+            p,
             &prepared.chunks,
             &prepared.col_weights,
             &bridge_digest,
             f2z_generator(),
             prepared.claimed,
             FQ_BITS,
-            &vc,
+            vc,
         )
     };
     result.map_err(SpartanF2zError::F2z)

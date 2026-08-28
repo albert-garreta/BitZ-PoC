@@ -30,15 +30,19 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use f2z::piop::spartan::{
-    SpartanF2zField, SpartanReductionStrategy, U32MulF2zWidth, U32MulSpartanF2zProof,
-    U32MulWitness, commit_u32_mul_witness, prepare_u32_mul_relation, project_u32_mul_witness,
-    prove_u32_mul_spartan_and_f2z_with_strategy, spartan_f2z_field_config,
-    verify_u32_mul_spartan_and_f2z,
-};
+use f2z::ligerito_flock::FlockCommitHint;
 use f2z::pcs::{FQ_BITS, mod_q_num_chunks};
+use f2z::piop::spartan::{
+    PreparedConstraintMatrices, SpartanF2zError, SpartanF2zField, SpartanReductionStrategy,
+    U32MulF2zWidth, U32MulLayout, U32MulSpartanF2zProof, U32MulUnivariateSkipSpartanF2zProof,
+    U32MulWitness, commit_u32_mul_witness, prepare_u32_mul_relation, project_u32_mul_witness,
+    prove_u32_mul_spartan_and_f2z_with_strategy,
+    prove_u32_mul_spartan_and_f2z_with_univariate_skip, spartan_f2z_field_config,
+    verify_u32_mul_spartan_and_f2z, verify_u32_mul_spartan_and_f2z_with_univariate_skip,
+};
 use f2z::transcript::Blake3Transcript;
 use f2z::{ligerito::packed_vars, ligerito_flock::sha_lig_configs};
+use flock_core::pcs::commit::Commitment;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 #[cfg(feature = "bench-peak-memory")]
@@ -227,7 +231,12 @@ fn phase_ms(phases: &[(&'static str, f64)], label: &str) -> Option<f64> {
 }
 
 impl PhaseSamples {
-    fn record_prove(&mut self, phases: &[(&'static str, f64)], total_ms: f64) {
+    fn record_prove(
+        &mut self,
+        phases: &[(&'static str, f64)],
+        total_ms: f64,
+        protocol: OuterProtocol,
+    ) {
         let (Some(spartan), Some(bitify), Some(f2z)) = (
             phase_ms(phases, "spartan-f2z:spartan_prove"),
             phase_ms(phases, "spartan-f2z:bitify_prover"),
@@ -236,7 +245,7 @@ impl PhaseSamples {
             return;
         };
         self.spartan_prove_ms.push(spartan);
-        if let Some(value) = phase_ms(phases, "spartan:outer_sumcheck") {
+        if let Some(value) = phase_ms(phases, protocol.outer_phase()) {
             self.spartan_outer_ms.push(value);
         }
         if let Some(value) = phase_ms(phases, "spartan:bind_and_batch") {
@@ -328,6 +337,133 @@ fn f2z_width() -> U32MulF2zWidth {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OuterProtocol {
+    Standard,
+    UnivariateSkip(usize),
+}
+
+impl OuterProtocol {
+    fn from_env() -> Self {
+        match env_usize("F2Z_SPARTAN_OUTER_SKIP", 0) {
+            0 => Self::Standard,
+            skip_vars @ 1..=4 => Self::UnivariateSkip(skip_vars),
+            value => panic!("F2Z_SPARTAN_OUTER_SKIP must be 0 or an integer in 1..=4; got {value}"),
+        }
+    }
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Standard => "standard",
+            Self::UnivariateSkip(1) => "skip-k1",
+            Self::UnivariateSkip(2) => "skip-k2",
+            Self::UnivariateSkip(3) => "skip-k3",
+            Self::UnivariateSkip(4) => "skip-k4",
+            Self::UnivariateSkip(_) => unreachable!(),
+        }
+    }
+
+    const fn skip_vars(self) -> usize {
+        match self {
+            Self::Standard => 0,
+            Self::UnivariateSkip(skip_vars) => skip_vars,
+        }
+    }
+
+    const fn outer_phase(self) -> &'static str {
+        match self {
+            Self::Standard => "spartan:outer_sumcheck",
+            Self::UnivariateSkip(_) => "spartan:outer_univariate_skip",
+        }
+    }
+}
+
+enum BenchProof {
+    Standard(U32MulSpartanF2zProof),
+    UnivariateSkip(U32MulUnivariateSkipSpartanF2zProof),
+}
+
+impl BenchProof {
+    fn f2z_bytes(&self) -> usize {
+        match self {
+            Self::Standard(proof) => proof.f2z.to_bytes().len(),
+            Self::UnivariateSkip(proof) => proof.f2z.to_bytes().len(),
+        }
+    }
+
+    fn spartan_payload_elements(&self) -> usize {
+        match self {
+            Self::Standard(proof) => {
+                4 * proof.spartan.outer.sumcheck.round_polynomials.len()
+                    + 3
+                    + 3 * proof.spartan.inner.round_polynomials.len()
+            }
+            Self::UnivariateSkip(proof) => {
+                proof.spartan.outer.skip.finite_q_evaluations.len()
+                    + 1
+                    + 4 * proof.spartan.outer.tail.sumcheck.round_polynomials.len()
+                    + 3
+                    + 3 * proof.spartan.inner.round_polynomials.len()
+            }
+        }
+    }
+}
+
+fn prove_combined(
+    transcript: &mut Blake3Transcript,
+    relation: &PreparedConstraintMatrices<SpartanF2zField, bool>,
+    layout: &U32MulLayout,
+    witness: &U32MulWitness,
+    commitment_hint: &FlockCommitHint,
+    strategy: SpartanReductionStrategy,
+    protocol: OuterProtocol,
+) -> Result<BenchProof, SpartanF2zError> {
+    match protocol {
+        OuterProtocol::Standard => prove_u32_mul_spartan_and_f2z_with_strategy(
+            transcript,
+            relation,
+            layout,
+            witness,
+            commitment_hint,
+            strategy,
+        )
+        .map(BenchProof::Standard),
+        OuterProtocol::UnivariateSkip(skip_vars) => {
+            assert_eq!(
+                strategy,
+                SpartanReductionStrategy::DelayedBarrett,
+                "univariate skip uses the production delayed-Barrett reducer"
+            );
+            prove_u32_mul_spartan_and_f2z_with_univariate_skip(
+                transcript,
+                relation,
+                layout,
+                witness,
+                commitment_hint,
+                skip_vars,
+            )
+            .map(BenchProof::UnivariateSkip)
+        }
+    }
+}
+
+fn verify_combined(
+    transcript: &mut Blake3Transcript,
+    relation: &PreparedConstraintMatrices<SpartanF2zField, bool>,
+    layout: &U32MulLayout,
+    commitment: &Commitment,
+    proof: &BenchProof,
+) -> Result<(), SpartanF2zError> {
+    match proof {
+        BenchProof::Standard(proof) => {
+            verify_u32_mul_spartan_and_f2z(transcript, relation, layout, commitment, proof)
+        }
+        BenchProof::UnivariateSkip(proof) => verify_u32_mul_spartan_and_f2z_with_univariate_skip(
+            transcript, relation, layout, commitment, proof,
+        ),
+    }
+}
+
 fn parse_seed(value: &str) -> u64 {
     if let Some(hex) = value
         .strip_prefix("0x")
@@ -359,18 +495,13 @@ fn exponents() -> Vec<usize> {
     }
 }
 
-fn spartan_payload_elements(proof: &U32MulSpartanF2zProof) -> usize {
-    4 * proof.spartan.outer.sumcheck.round_polynomials.len()
-        + 3
-        + 3 * proof.spartan.inner.round_polynomials.len()
-}
-
 fn bench_exponent(
     exponent: usize,
     reps: usize,
     root_seed: u64,
     pass: BenchmarkPass,
     strategy: SpartanReductionStrategy,
+    protocol: OuterProtocol,
     f2z_width: U32MulF2zWidth,
     order: usize,
 ) {
@@ -414,17 +545,18 @@ fn bench_exponent(
 
     // Excluded warm-up. This is also the first end-to-end correctness check.
     let mut prover_transcript = Blake3Transcript::new();
-    let warm_proof = prove_u32_mul_spartan_and_f2z_with_strategy(
+    let warm_proof = prove_combined(
         &mut prover_transcript,
         &relation,
         &layout,
         &witness,
         &commitment_hint,
         strategy,
+        protocol,
     )
     .expect("warm-up proving succeeds");
     let mut verifier_transcript = Blake3Transcript::new();
-    verify_u32_mul_spartan_and_f2z(
+    verify_combined(
         &mut verifier_transcript,
         &relation,
         &layout,
@@ -446,23 +578,24 @@ fn bench_exponent(
         for sample_index in 0..reps {
             let mut prover_transcript = Blake3Transcript::new();
             let started = Instant::now();
-            let proof = prove_u32_mul_spartan_and_f2z_with_strategy(
+            let proof = prove_combined(
                 &mut prover_transcript,
                 &relation,
                 &layout,
                 &witness,
                 &commitment_hint,
                 strategy,
+                protocol,
             )
             .expect("combined proving succeeds");
             let measured_prove_ms = started.elapsed().as_secs_f64() * 1e3;
             prove_ms.push(measured_prove_ms);
             let prove_phases = f2z::utils::prof::take_totals();
-            phase_samples.record_prove(&prove_phases, measured_prove_ms);
+            phase_samples.record_prove(&prove_phases, measured_prove_ms, protocol);
 
             let mut verifier_transcript = Blake3Transcript::new();
             let started = Instant::now();
-            verify_u32_mul_spartan_and_f2z(
+            verify_combined(
                 &mut verifier_transcript,
                 &relation,
                 &layout,
@@ -476,7 +609,7 @@ fn bench_exponent(
             phase_samples.record_verify(&verify_phases, measured_verify_ms);
 
             let sample_spartan = optional_ms(phase_ms(&prove_phases, "spartan-f2z:spartan_prove"));
-            let sample_outer = optional_ms(phase_ms(&prove_phases, "spartan:outer_sumcheck"));
+            let sample_outer = optional_ms(phase_ms(&prove_phases, protocol.outer_phase()));
             let sample_bind = optional_ms(phase_ms(&prove_phases, "spartan:bind_and_batch"));
             let sample_inner = optional_ms(phase_ms(&prove_phases, "spartan:inner_sumcheck"));
             let sample_bitify = optional_ms(phase_ms(&prove_phases, "spartan-f2z:bitify_prover"));
@@ -488,12 +621,12 @@ fn bench_exponent(
             let sample_bitify_verify =
                 optional_ms(phase_ms(&verify_phases, "spartan-f2z:bitify_verifier"));
             let sample_f2z_verify = optional_ms(phase_ms(&verify_phases, "spartan-f2z:f2z_verify"));
-            let sample_f2z_prepare_verify = optional_ms(phase_ms(
-                &verify_phases,
-                "spartan-f2z:f2z_prepare_verifier",
-            ));
+            let sample_f2z_prepare_verify =
+                optional_ms(phase_ms(&verify_phases, "spartan-f2z:f2z_prepare_verifier"));
             println!(
-                "  SAMPLE pass=latency order={order} strategy={strategy_label} reduction_backend={backend_label} word_bits={} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} multiplications={multiplications} sample={sample_index} prove_ms={measured_prove_ms:.9} spartan_prove_ms={sample_spartan} spartan_outer_ms={sample_outer} spartan_bind_ms={sample_bind} spartan_inner_ms={sample_inner} bitify_prove_ms={sample_bitify} f2z_prove_ms={sample_f2z} f2z_prepare_prove_ms={sample_f2z_prepare} verify_ms={measured_verify_ms:.9} spartan_verify_ms={sample_spartan_verify} bitify_verify_ms={sample_bitify_verify} f2z_verify_ms={sample_f2z_verify} f2z_prepare_verify_ms={sample_f2z_prepare_verify} verified=true",
+                "  SAMPLE pass=latency order={order} protocol={} skip_vars={} strategy={strategy_label} reduction_backend={backend_label} word_bits={} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} multiplications={multiplications} sample={sample_index} prove_ms={measured_prove_ms:.9} spartan_prove_ms={sample_spartan} spartan_outer_ms={sample_outer} spartan_bind_ms={sample_bind} spartan_inner_ms={sample_inner} bitify_prove_ms={sample_bitify} f2z_prove_ms={sample_f2z} f2z_prepare_prove_ms={sample_f2z_prepare} verify_ms={measured_verify_ms:.9} spartan_verify_ms={sample_spartan_verify} bitify_verify_ms={sample_bitify_verify} f2z_verify_ms={sample_f2z_verify} f2z_prepare_verify_ms={sample_f2z_prepare_verify} verified=true",
+                protocol.name(),
+                protocol.skip_vars(),
                 params.word_bits,
                 params.t,
                 params.s,
@@ -504,8 +637,8 @@ fn bench_exponent(
         }
 
         let last_proof = last_proof.expect("at least one benchmark repetition");
-        let f2z_proof_bytes = last_proof.f2z.to_bytes().len();
-        let spartan_elements = spartan_payload_elements(&last_proof);
+        let f2z_proof_bytes = last_proof.f2z_bytes();
+        let spartan_elements = last_proof.spartan_payload_elements();
         let spartan_payload_bytes = spartan_elements * 16;
         let prove_median_ms = median(prove_ms);
         let verify_median_ms = median(verify_ms);
@@ -528,20 +661,21 @@ fn bench_exponent(
         let live_before_prove = live_mib();
         reset_peak();
         let mut prover_transcript = Blake3Transcript::new();
-        let peak_proof = prove_u32_mul_spartan_and_f2z_with_strategy(
+        let peak_proof = prove_combined(
             &mut prover_transcript,
             &relation,
             &layout,
             &witness,
             &commitment_hint,
             strategy,
+            protocol,
         )
         .expect("peak proving succeeds");
         black_box(&peak_proof);
         let peak = peak_mib();
         let _ = f2z::utils::prof::take_totals();
         let mut verifier_transcript = Blake3Transcript::new();
-        verify_u32_mul_spartan_and_f2z(
+        verify_combined(
             &mut verifier_transcript,
             &relation,
             &layout,
@@ -551,7 +685,9 @@ fn bench_exponent(
         .expect("peak-memory proof verifies");
         let _ = f2z::utils::prof::take_totals();
         println!(
-            "  MEMORY pass=memory order={order} strategy={strategy_label} reduction_backend={backend_label} word_bits={} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} multiplications={multiplications} peak_heap_mib={peak:.6} live_before_prove_mib={live_before_prove:.6} verified=true",
+            "  MEMORY pass=memory order={order} protocol={} skip_vars={} strategy={strategy_label} reduction_backend={backend_label} word_bits={} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} multiplications={multiplications} peak_heap_mib={peak:.6} live_before_prove_mib={live_before_prove:.6} verified=true",
+            protocol.name(),
+            protocol.skip_vars(),
             params.word_bits,
             params.t,
             params.s,
@@ -562,12 +698,15 @@ fn bench_exponent(
     let (lig_pc, _) = sha_lig_configs(packed_vars(&params)).expect("production Ligerito config");
     println!();
     println!(
-        "u32_mul gates=2^{exponent} ({multiplications}) W={} [production]  seed={shape_seed:#018x}",
+        "u32_mul gates=2^{exponent} ({multiplications}) W={} [{}]  seed={shape_seed:#018x}",
         params.word_bits,
+        protocol.name(),
     );
     println!(
-        "  benchmark: pass={} order={order} strategy={strategy_label} reduction={backend_label} t={} s={} chunks={f2z_chunks}",
+        "  benchmark: pass={} order={order} protocol={} skip_vars={} strategy={strategy_label} reduction={backend_label} t={} s={} chunks={f2z_chunks}",
         pass.as_str(),
+        protocol.name(),
+        protocol.skip_vars(),
         params.t,
         params.s,
     );
@@ -646,7 +785,9 @@ fn bench_exponent(
             let f2z_prepare_prove = optional_ms(phases.f2z_prepare_prove_ms);
             let f2z_prepare_verify = optional_ms(phases.f2z_prepare_verify_ms);
             println!(
-                "  RESULT pass=latency order={order} strategy={strategy_label} reduction_backend={backend_label} word_bits={} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} multiplications={multiplications} r1cs_rows={multiplications} r1cs_columns={} r1cs_nnz={} integer_witness_values={} compact_witness_bits={} compact_witness_bytes={} prove_ms={prove_median_ms:.9} spartan_prove_ms={:.9} spartan_outer_ms={outer} spartan_bind_ms={bind} spartan_inner_ms={inner} bitify_prove_ms={:.9} f2z_prove_ms={:.9} f2z_prepare_prove_ms={f2z_prepare_prove} verify_ms={verify_median_ms:.9} spartan_verify_ms={:.9} bitify_verify_ms={:.9} f2z_verify_ms={:.9} f2z_prepare_verify_ms={f2z_prepare_verify} spartan_proof_payload_bytes={spartan_payload_bytes} f2z_proof_bytes={f2z_proof_bytes} shape_seed={shape_seed:#018x} verified_samples={reps}",
+                "  RESULT pass=latency order={order} protocol={} skip_vars={} strategy={strategy_label} reduction_backend={backend_label} word_bits={} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} multiplications={multiplications} r1cs_rows={multiplications} r1cs_columns={} r1cs_nnz={} integer_witness_values={} compact_witness_bits={} compact_witness_bytes={} prove_ms={prove_median_ms:.9} spartan_prove_ms={:.9} spartan_outer_ms={outer} spartan_bind_ms={bind} spartan_inner_ms={inner} bitify_prove_ms={:.9} f2z_prove_ms={:.9} f2z_prepare_prove_ms={f2z_prepare_prove} verify_ms={verify_median_ms:.9} spartan_verify_ms={:.9} bitify_verify_ms={:.9} f2z_verify_ms={:.9} f2z_prepare_verify_ms={f2z_prepare_verify} spartan_proof_payload_bytes={spartan_payload_bytes} f2z_proof_bytes={f2z_proof_bytes} shape_seed={shape_seed:#018x} verified_samples={reps}",
+                protocol.name(),
+                protocol.skip_vars(),
                 params.word_bits,
                 params.t,
                 params.s,
@@ -682,6 +823,7 @@ fn main() {
         "F2Z_BENCH_PASS=memory|both requires --features bench-peak-memory"
     );
     let strategy = reduction_strategy();
+    let protocol = OuterProtocol::from_env();
     let f2z_width = f2z_width();
     let order = env_usize("F2Z_BENCH_ORDER", 1);
     assert!(order > 0, "F2Z_BENCH_ORDER must be positive");
@@ -698,14 +840,18 @@ fn main() {
         f2z_width.word_bits(),
     );
     println!(
-        "benchmark pass: {}; strategy: {}; order: {order}",
+        "benchmark pass: {}; protocol: {} (skip_vars={}); strategy: {}; order: {order}",
         pass.as_str(),
+        protocol.name(),
+        protocol.skip_vars(),
         strategy_name(strategy),
     );
 
     for exponent in exponents() {
         flock_core::scratch::clear();
-        bench_exponent(exponent, reps, seed, pass, strategy, f2z_width, order);
+        bench_exponent(
+            exponent, reps, seed, pass, strategy, protocol, f2z_width, order,
+        );
     }
     flock_core::scratch::clear();
 }
