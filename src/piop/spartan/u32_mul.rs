@@ -376,31 +376,44 @@ impl U32MulWitness {
         let bits_per_row = params.rows() * params.word_bits;
         let words_per_row = bits_per_row / u64::BITS as usize;
         let mut rows = vec![vec![0_u64; words_per_row]; params.cols()];
+        let s = self.layout.gate_vars / 2;
+        let high_gate_count = 1_usize << (self.layout.gate_vars - s);
+        let column_mask = (1_usize << s) - 1;
+        let width = self.layout.f2z_width;
+        let x_values = self.x_values();
+        let y_values = self.y_values();
+        let product_values = self.product_values();
 
         for gate in 0..self.layout.multiplications {
-            write_value_bits(
-                &mut rows,
-                &self.layout,
-                gate,
+            let column = gate & column_mask;
+            let gate_high = gate >> s;
+            let row = &mut rows[column];
+            write_compact_value(
+                row,
+                width,
+                high_gate_count,
+                gate_high,
                 U32_MUL_X_SLOT_START,
                 U32_MUL_X_BITS,
-                self.x_values()[gate],
+                x_values[gate],
             );
-            write_value_bits(
-                &mut rows,
-                &self.layout,
-                gate,
+            write_compact_value(
+                row,
+                width,
+                high_gate_count,
+                gate_high,
                 U32_MUL_Y_SLOT_START,
                 U32_MUL_Y_BITS,
-                self.y_values()[gate],
+                y_values[gate],
             );
-            write_value_bits(
-                &mut rows,
-                &self.layout,
-                gate,
+            write_compact_value(
+                row,
+                width,
+                high_gate_count,
+                gate_high,
                 U32_MUL_PRODUCT_SLOT_START,
                 U32_MUL_PRODUCT_BITS,
-                self.product_values()[gate],
+                product_values[gate],
             );
         }
 
@@ -414,24 +427,42 @@ impl U32MulWitness {
 }
 
 #[allow(clippy::arithmetic_side_effects)]
-fn write_value_bits(
-    rows: &mut [Vec<u64>],
-    layout: &U32MulLayout,
-    gate: usize,
+fn write_compact_value(
+    row: &mut [u64],
+    width: U32MulF2zWidth,
+    high_gate_count: usize,
+    gate_high: usize,
     slot_offset: usize,
     bit_width: usize,
     value: u64,
 ) {
-    for bit in 0..bit_width {
-        if value & (1_u64 << bit) == 0 {
-            continue;
+    match width {
+        U32MulF2zWidth::W1 => {
+            let mut remaining = if bit_width == u64::BITS as usize {
+                value
+            } else {
+                value & ((1_u64 << bit_width) - 1)
+            };
+            while remaining != 0 {
+                let bit = remaining.trailing_zeros() as usize;
+                let packed_bit = (slot_offset + bit) * high_gate_count + gate_high;
+                row[packed_bit / u64::BITS as usize] |=
+                    1_u64 << (packed_bit % u64::BITS as usize);
+                remaining &= remaining - 1;
+            }
         }
-        let (b, c, j) = layout
-            .f2z_bit_position(slot_offset + bit, gate)
-            .expect("witness bit coordinates are in bounds");
-        let packed_bit = b * layout.f2z_width().word_bits() + j;
-        rows[c][packed_bit / u64::BITS as usize] |=
-            1_u64 << (packed_bit % u64::BITS as usize);
+        U32MulF2zWidth::W8 => {
+            let word_slot_start = slot_offset / u8::BITS as usize;
+            for byte in 0..bit_width / u8::BITS as usize {
+                let byte_value = (value >> (byte * u8::BITS as usize)) & u8::MAX as u64;
+                if byte_value == 0 {
+                    continue;
+                }
+                let byte_index =
+                    (word_slot_start + byte) * high_gate_count + gate_high;
+                row[byte_index / 8] |= byte_value << ((byte_index % 8) * u8::BITS as usize);
+            }
+        }
     }
 }
 

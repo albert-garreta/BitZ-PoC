@@ -1074,10 +1074,10 @@ pub fn mod_q_num_chunks(p: &IntEvalParams, q_bits: usize) -> usize {
 /// A validated base-`2^c_w` decomposition of one public mod-`q` row-weight
 /// vector.
 ///
-/// The fields are deliberately private: callers may construct this value only
-/// through [`Self::from_dense`] or [`Self::from_chunks`], so the Ligerito core
-/// can consume already-prepared limbs without reopening a path for malformed
-/// chunk counts, row lengths, or high bits.
+/// The fields are deliberately private: every constructor and range setter
+/// validates the public geometry and canonical weight bounds, so the Ligerito
+/// core can consume already-prepared limbs without reopening a path for
+/// malformed chunk counts, row lengths, or high bits.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ModQWeightChunks {
     chunks: Vec<Vec<u128>>,
@@ -1087,33 +1087,106 @@ pub(crate) struct ModQWeightChunks {
 }
 
 impl ModQWeightChunks {
-    /// Validate and decompose canonical row weights in `[0, 2^q_bits)`.
-    pub(crate) fn from_dense(
+    /// Adopt an owned dense vector directly when the geometry needs exactly
+    /// one chunk. This is the production u32 fast path: no zero-fill and no
+    /// dense-to-chunk copy are needed.
+    pub(crate) fn from_single_chunk(
         p: &IntEvalParams,
-        row_weights_q: &[u128],
         q_bits: usize,
+        weights: Vec<u128>,
     ) -> Result<Self, ()> {
         let (row_count, chunk_width, chunk_count) = mod_q_weight_chunk_shape(p, q_bits)?;
-        let bound = 1u128
-            .checked_shl(u32::try_from(q_bits).map_err(|_| ())?)
-            .ok_or(())?;
-        if row_weights_q.len() != row_count || row_weights_q.iter().any(|&weight| weight >= bound) {
+        if chunk_count != 1 || weights.len() != row_count {
             return Err(());
         }
-
+        let bound = 1_u128
+            .checked_shl(u32::try_from(q_bits).map_err(|_| ())?)
+            .ok_or(())?;
+        if weights.iter().any(|&weight| weight >= bound) {
+            return Err(());
+        }
         Ok(Self {
-            chunks: chunk_row_weights(row_weights_q, chunk_width, chunk_count),
+            chunks: vec![weights],
             row_count,
             chunk_width,
             q_bits,
         })
     }
 
+    /// Allocate a validated all-zero chunk matrix. Callers can populate
+    /// contiguous canonical ranges through [`Self::set_weight_range`] without
+    /// constructing a dense weight vector or rescanning generated chunks.
+    pub(crate) fn zeroed(p: &IntEvalParams, q_bits: usize) -> Result<Self, ()> {
+        let (row_count, chunk_width, chunk_count) = mod_q_weight_chunk_shape(p, q_bits)?;
+        Ok(Self {
+            chunks: vec![vec![0_u128; row_count]; chunk_count],
+            row_count,
+            chunk_width,
+            q_bits,
+        })
+    }
+
+    /// Set one contiguous range from canonical dense weights, decomposing it
+    /// directly into the already-allocated chunk-major representation.
+    pub(crate) fn set_weight_range(
+        &mut self,
+        row_start: usize,
+        weights: &[u128],
+    ) -> Result<(), ()> {
+        let row_end = row_start.checked_add(weights.len()).ok_or(())?;
+        if row_end > self.row_count {
+            return Err(());
+        }
+        let bound = 1_u128
+            .checked_shl(u32::try_from(self.q_bits).map_err(|_| ())?)
+            .ok_or(())?;
+
+        let limb_mask = (1_u128 << self.chunk_width).wrapping_sub(1);
+        let mut shift = 0_usize;
+        for (chunk_index, chunk) in self.chunks.iter_mut().enumerate() {
+            let output = chunk.get_mut(row_start..row_end).ok_or(())?;
+            if chunk_index == 0 {
+                cfg_iter_mut!(output, 256)
+                    .zip(cfg_iter!(weights, 256))
+                    .try_for_each(|(limb, weight)| {
+                        if *weight >= bound {
+                            Err(())
+                        } else {
+                            *limb = (*weight >> shift) & limb_mask;
+                            Ok(())
+                        }
+                    })?;
+            } else {
+                cfg_iter_mut!(output, 256)
+                    .zip(cfg_iter!(weights, 256))
+                    .for_each(|(limb, weight)| *limb = (*weight >> shift) & limb_mask);
+            }
+            shift = shift.wrapping_add(self.chunk_width);
+        }
+        Ok(())
+    }
+
+    /// Validate and decompose canonical row weights in `[0, 2^q_bits)`.
+    pub(crate) fn from_dense(
+        p: &IntEvalParams,
+        row_weights_q: &[u128],
+        q_bits: usize,
+    ) -> Result<Self, ()> {
+        let mut chunks = Self::zeroed(p, q_bits)?;
+        if row_weights_q.len() != chunks.row_count {
+            return Err(());
+        }
+        chunks.set_weight_range(0, row_weights_q)?;
+        Ok(chunks)
+    }
+
     /// Validate an existing chunk-major decomposition.
     ///
     /// Every chunk must have exactly `2^t` rows. Limbs in chunk `l` are
-    /// restricted to the remaining `min(c_w, q_bits - c_w*l)` bits, and their
-    /// checked reconstruction must remain below `2^q_bits`.
+    /// restricted to the remaining `min(c_w, q_bits - c_w*l)` bits. Those
+    /// disjoint per-limb bounds already imply reconstruction below
+    /// `2^q_bits`, so validation scans each chunk once without rebuilding
+    /// every dense row weight.
     pub(crate) fn from_chunks(
         p: &IntEvalParams,
         q_bits: usize,
@@ -1124,27 +1197,13 @@ impl ModQWeightChunks {
             return Err(());
         }
 
-        let q_bound = 1u128
-            .checked_shl(u32::try_from(q_bits).map_err(|_| ())?)
-            .ok_or(())?;
-        for row in 0..row_count {
-            let mut reconstructed = 0u128;
-            for (chunk_index, chunk) in chunks.iter().enumerate() {
-                let shift = chunk_width.checked_mul(chunk_index).ok_or(())?;
-                let limb_bits = chunk_width.min(q_bits.checked_sub(shift).ok_or(())?);
-                let limb_bound = 1u128
-                    .checked_shl(u32::try_from(limb_bits).map_err(|_| ())?)
-                    .ok_or(())?;
-                let limb = chunk[row];
-                if limb >= limb_bound {
-                    return Err(());
-                }
-                let shifted = limb
-                    .checked_shl(u32::try_from(shift).map_err(|_| ())?)
-                    .ok_or(())?;
-                reconstructed = reconstructed.checked_add(shifted).ok_or(())?;
-            }
-            if reconstructed >= q_bound {
+        for (chunk_index, chunk) in chunks.iter().enumerate() {
+            let shift = chunk_width.checked_mul(chunk_index).ok_or(())?;
+            let limb_bits = chunk_width.min(q_bits.checked_sub(shift).ok_or(())?);
+            let limb_bound = 1_u128
+                .checked_shl(u32::try_from(limb_bits).map_err(|_| ())?)
+                .ok_or(())?;
+            if chunk.iter().any(|&limb| limb >= limb_bound) {
                 return Err(());
             }
         }
@@ -1461,9 +1520,21 @@ mod rlc_tests {
         assert_eq!(prepared.len(), 2);
         assert_eq!(prepared.q_bits(), q_bits);
 
+        let mut generated = ModQWeightChunks::zeroed(&p, q_bits).unwrap();
+        generated.set_weight_range(0, &dense).unwrap();
+        assert_eq!(generated, prepared);
+
         let reconstructed =
             ModQWeightChunks::from_chunks(&p, q_bits, prepared.chunks().to_vec()).unwrap();
         assert_eq!(reconstructed, prepared);
+
+        let single_q_bits = 100;
+        let single_dense = (0..p.rows())
+            .map(|row| (row as u128 + 1) << 61)
+            .collect::<Vec<_>>();
+        let adopted =
+            ModQWeightChunks::from_single_chunk(&p, single_q_bits, single_dense.clone()).unwrap();
+        assert_eq!(adopted.chunks()[0], single_dense);
     }
 
     #[test]
