@@ -193,6 +193,13 @@ impl F2CellMap {
             && self.entries.iter().enumerate().all(|(i, &e)| e as usize == i)
     }
 
+    /// The raw CSR storage `(row_offsets, entries)` — for streaming
+    /// scans that walk consecutive rows (one offset load per row instead
+    /// of two bounds-checked [`Self::row`] loads).
+    pub(crate) fn csr(&self) -> (&[usize], &[u32]) {
+        (&self.row_offsets, &self.entries)
+    }
+
     /// Iterator over `(derived cell, source cells)` for the nonempty rows.
     pub fn nonempty_rows(&self) -> impl Iterator<Item = (usize, &[u32])> + '_ {
         self.row_offsets
@@ -260,26 +267,35 @@ impl F2CellMap {
         );
 
         // Derived columns own disjoint flat-index ranges (`(c << t_wh) | b`),
-        // so each output row is filled independently, in parallel.
+        // so each output row is filled independently, in parallel. The
+        // offsets stream (one load per cell) and each 64-bit output word
+        // accumulates in a register with ONE store — bit-identical to the
+        // per-bit RMW form.
         let mut h_rows = vec![vec![0u64; h_row_len / 64]; 1usize << p_h.s];
         crate::cfg_iter_mut!(h_rows)
             .enumerate()
             .for_each(|(c_h, out_row)| {
                 let base = c_h << t_wh;
-                for b_h in 0..h_row_len {
-                    let sources = self.row(base | b_h);
-                    if sources.is_empty() {
-                        continue;
+                let offs = &self.row_offsets[base..=base + h_row_len];
+                let mut start = offs[0];
+                for (wi, out_word) in out_row.iter_mut().enumerate() {
+                    let mut acc = 0u64;
+                    for k in 0..64usize {
+                        let end = offs[(wi << 6) + k + 1];
+                        let row_start = start;
+                        start = end;
+                        if end == row_start {
+                            continue;
+                        }
+                        let mut bit = 0u64;
+                        for &j in &self.entries[row_start..end] {
+                            let j = j as usize;
+                            let (c_f, b_f) = (j >> t_wf, j & f_mask);
+                            bit ^= (f_rows[c_f][b_f >> 6] >> (b_f & 63)) & 1;
+                        }
+                        acc |= bit << k;
                     }
-                    let mut bit = 0u64;
-                    for &j in sources {
-                        let j = j as usize;
-                        let (c_f, b_f) = (j >> t_wf, j & f_mask);
-                        bit ^= (f_rows[c_f][b_f >> 6] >> (b_f & 63)) & 1;
-                    }
-                    if bit != 0 {
-                        out_row[b_h >> 6] |= 1u64 << (b_h & 63);
-                    }
+                    *out_word = acc;
                 }
             });
         h_rows

@@ -42,7 +42,7 @@ use flock_core::pcs::ligerito::{
 
 use crate::piop::lookup::gkr_product::ProductForestProof;
 use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheckProof;
-use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
+use crate::poly::univariate::binary_gf128::{BinaryFieldGF128 as Gf, FixedGfMul};
 use crate::transcript::traits::Transcript;
 
 use crate::pcs::{IntEvalParams, ShaF2Layout, final_eval_ring};
@@ -8139,6 +8139,7 @@ fn virtual_hs_fold(
     p_msg: &[F128],
     a_cols: &[Gf; 128],
 ) -> Vec<Gf> {
+    let (offs_all, entries) = map.csr();
     const CHUNK: usize = 1 << 13;
     let n_chunks = map.rows().div_ceil(CHUNK).max(1);
     let partials: Vec<[Gf; 128]> = cfg_into_iter!(0..n_chunks)
@@ -8149,17 +8150,49 @@ fn virtual_hs_fold(
             let mut wits = [[0u64; 2]; 8];
             let mut vals = [Gf::zero(); 8];
             let mut fill = 0usize;
+            // Single-chunk (L = 1) fast path: within a column run the
+            // scaled entry is a pass-fixed multiplier — hoist its
+            // preprocessed 5-PMULL form ([`FixedGfMul`], value-exact)
+            // and refresh it only at column boundaries.
+            let single = coeffs.scaled_zc.len() == 1;
+            let mut cur_c = usize::MAX;
+            let mut zc_fix = FixedGfMul::new(Gf::zero());
+            // Stream the CSR offsets: one load per row, reused as the
+            // next row's start.
+            let mut start = offs_all[lo];
             for r in lo..hi {
-                let sources = map.row(r);
-                if sources.is_empty() {
+                let end = offs_all[r + 1];
+                let row_start = start;
+                start = end;
+                if end == row_start {
                     continue;
                 }
-                let mut g = Gf::zero();
-                for &j in sources {
-                    let j = j as usize;
-                    g += f128_to_gf(p_msg[j >> LOG_PACKING]) * a_cols[j & 127];
-                }
-                wits[fill] = *coeffs.coeff(r).words();
+                let sources = &entries[row_start..end];
+                // `G_r = Σ_j A(e_{v_j})·pack(f)[y_j]` through the
+                // preprocessed dual-basis columns (value-exact; the
+                // single-source shortcut is `0 + x = x`).
+                let g = if let [j] = sources {
+                    let j = *j as usize;
+                    f128_to_gf(p_msg[j >> LOG_PACKING]) * a_cols[j & 127]
+                } else {
+                    let mut g = Gf::zero();
+                    for &j in sources {
+                        let j = j as usize;
+                        g += f128_to_gf(p_msg[j >> LOG_PACKING]) * a_cols[j & 127];
+                    }
+                    g
+                };
+                let e_r = if single {
+                    let c = r >> coeffs.t_wh;
+                    if c != cur_c {
+                        cur_c = c;
+                        zc_fix = FixedGfMul::new(coeffs.scaled_zc[0][c]);
+                    }
+                    zc_fix.mul(coeffs.eq_rs[0][r & coeffs.h_mask])
+                } else {
+                    coeffs.coeff(r)
+                };
+                wits[fill] = *e_r.words();
                 vals[fill] = g;
                 fill += 1;
                 if fill == 8 {
@@ -8218,6 +8251,65 @@ fn virtual_a_prime(
                 }
                 let phi = phi_from_words(*coeffs.coeff(r).words(), &phi_tables);
                 for &j in sources {
+                    let j = j as usize;
+                    a[j >> LOG_PACKING] += phi * a_cols[j & 127];
+                }
+            }
+            a
+        })
+        .collect();
+    let mut iter = partials.into_iter();
+    let mut a = iter.next().expect("at least one range");
+    for part in iter {
+        for (acc, p) in a.iter_mut().zip(part.iter()) {
+            *acc += *p;
+        }
+    }
+    a
+}
+
+/// PROVER-side twin of [`virtual_a_prime`]: the same values (pinned by
+/// `virtual_hs_and_a_prime_match_cellwise` and every roundtrip test —
+/// prover basis and verifier basis must agree or Ligerito rejects),
+/// with the CSR offsets streamed and both multiplies routed through the
+/// fixed-scalar kernels ([`PreppedRowCoeffs`], preprocessed `A(e_v)`
+/// columns). The verifier keeps calling [`virtual_a_prime`] — this fork
+/// exists so prover tuning cannot touch the verifier's code path.
+#[allow(clippy::arithmetic_side_effects)]
+fn virtual_a_prime_prover(
+    map: &crate::f2map::F2CellMap,
+    coeffs: &VirtRowCoeffs,
+    rho: &[Gf],
+    a_cols: &[Gf; 128],
+    n_packs: usize,
+) -> Vec<Gf> {
+    let phi_tables = phi_byte_tables(rho, Gf::one());
+    let (offs_all, entries) = map.csr();
+    // Few large ranges: each carries a full-size partial vector.
+    let n_ranges = map.rows().div_ceil(1 << 18).clamp(1, 16);
+    let per = map.rows().div_ceil(n_ranges).max(1);
+    let partials: Vec<Vec<Gf>> = cfg_into_iter!(0..n_ranges)
+        .map(|ri| {
+            let lo = ri * per;
+            let hi = (lo + per).min(map.rows());
+            let mut a = vec![Gf::zero(); n_packs];
+            if lo >= hi {
+                return a;
+            }
+            // (The hs fold's hoisted fixed-scalar coefficient was tried
+            // here too and measured a slight LOSS — this loop is
+            // Φ-gather-bound, and the extra multiplier state hurts
+            // register pressure. Values identical either way.)
+            let mut start = offs_all[lo];
+            for r in lo..hi {
+                let end = offs_all[r + 1];
+                let row_start = start;
+                start = end;
+                if end == row_start {
+                    continue;
+                }
+                let phi = phi_from_words(*coeffs.coeff(r).words(), &phi_tables);
+                for &j in &entries[row_start..end] {
                     let j = j as usize;
                     a[j >> LOG_PACKING] += phi * a_cols[j & 127];
                 }
@@ -8357,7 +8449,7 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual(
     let b_comb: Vec<F128> = {
         let _g = crate::utils::prof::scope("mqv:aprime");
         let n_packs = hint_f.p_msg.len();
-        virtual_a_prime(map, &coeffs, &rho, &a_cols, n_packs)
+        virtual_a_prime_prover(map, &coeffs, &rho, &a_cols, n_packs)
             .into_iter()
             .map(gf_to_f128)
             .collect()
@@ -8840,9 +8932,12 @@ mod tests {
         }
         assert_eq!(hs, expect, "h_i fold");
 
-        // a′: streaming vs cell-wise Φ_ρ scan.
+        // a′: the shared (verifier) build and the prover fork must both
+        // equal the cell-wise Φ_ρ scan — and therefore each other.
         let rho: Vec<Gf> = (0..128).map(|i| sample(0xC000 + i as u64)).collect();
         let a = virtual_a_prime(&map, &coeffs, &rho, &a_cols, n_packs);
+        let a_prover = virtual_a_prime_prover(&map, &coeffs, &rho, &a_cols, n_packs);
+        assert_eq!(a, a_prover, "prover fork must match the shared build");
         let mut expect_a = vec![Gf::zero(); n_packs];
         for (j, wj) in w_tbl.iter().enumerate() {
             let w = wj.words();

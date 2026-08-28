@@ -1175,6 +1175,57 @@ fn fixed_scalar_enabled() -> bool {
     *ENV.get_or_init(|| std::env::var("F2Z_FIXED_SCALAR").map_or(true, |v| v != "0"))
 }
 
+/// A preprocessed pass-fixed multiplier for element-at-a-time use: on
+/// NEON the interleaved `(R0, R1) = (r, X^64·r mod f)` word pairs drive
+/// the 5-PMULL fixed-scalar multiply (the [`neon`] kernels' `prep_fixed`
+/// form); elsewhere — and under `F2Z_FIXED_SCALAR=0` — the composed
+/// multiply runs. Value-exact either way (same carryless products, same
+/// unique remainder mod `f` — the fixed-scalar kernel guarantee), so
+/// callers may route any multiply-by-a-pass-constant through this
+/// freely without perturbing transcripts.
+#[derive(Clone, Copy)]
+pub(crate) struct FixedGfMul {
+    scalar: BinaryFieldGF128,
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    rl: [u64; 2],
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    rh: [u64; 2],
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    fast: bool,
+}
+
+impl FixedGfMul {
+    pub(crate) fn new(scalar: BinaryFieldGF128) -> Self {
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            // `prep_fixed`'s formula: `X^64·r = (0, r0) ⊕ g·r1` with
+            // `g·r1 ≤ 70` bits, so `R1` is already reduced.
+            let w = scalar.uint.as_words();
+            let rg = clmul_64x64(w[1], 0x87);
+            Self {
+                scalar,
+                rl: [w[0], rg[0]],
+                rh: [w[1], w[0] ^ rg[1]],
+                fast: fixed_scalar_enabled(),
+            }
+        }
+        #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+        {
+            Self { scalar }
+        }
+    }
+
+    /// `scalar · a`, bit-identical to the composed multiply.
+    #[inline(always)]
+    pub(crate) fn mul(&self, a: BinaryFieldGF128) -> BinaryFieldGF128 {
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        if self.fast {
+            return neon::fixed_mul_words(&self.rl, &self.rh, &a);
+        }
+        self.scalar * a
+    }
+}
+
 // -- carryless multiplication and reduction --------------------------
 //
 // 128×128 → 256-bit carryless product, computed as four 64×64 clmuls
@@ -1786,6 +1837,29 @@ pub(crate) mod neon {
                 veorq_u64(pmull_lo(av, rl), pmull_hi(av, rl)),
                 veorq_u64(pmull_lo(av, rh), pmull_hi(av, rh)),
             )
+        }
+    }
+
+    /// One element-at-a-time reduced fixed-scalar multiply from the
+    /// stored `(rl, rh)` word pairs of a [`super::FixedGfMul`]: 4
+    /// shuffle-free PMULLs + one [`fold_x64`]. Value-exact vs the
+    /// composed multiply.
+    #[inline(always)]
+    pub(crate) fn fixed_mul_words(
+        rl: &[u64; 2],
+        rh: &[u64; 2],
+        a: &BinaryFieldGF128,
+    ) -> BinaryFieldGF128 {
+        // SAFETY: valid 16-byte word pairs; intrinsics as `mul_fixed`.
+        unsafe {
+            let g = vdupq_n_u64(0x87);
+            let z = vdupq_n_u64(0);
+            let rlv = vld1q_u64(rl.as_ptr());
+            let rhv = vld1q_u64(rh.as_ptr());
+            let r = mul_fixed(ld(a), rlv, rhv, g, z);
+            let mut out = [0u64; 2];
+            vst1q_u64(out.as_mut_ptr(), r);
+            BinaryFieldGF128::from_words(out)
         }
     }
 
@@ -3236,6 +3310,34 @@ mod tests {
     /// the fold identity `fold(0, a) = ρ·a`, the reduced fixed multiply
     /// itself against the general multiply).
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[test]
+    fn fixed_gf_mul_matches_composed() {
+        let mut rng = StdRng::seed_from_u64(0xF16E);
+        let mut scalars = vec![
+            BinaryFieldGF128::zero(),
+            BinaryFieldGF128::one(),
+            BinaryFieldGF128::from_words([u64::MAX, u64::MAX]),
+        ];
+        // Monomials (the dual-basis columns' shape) and randoms.
+        for k in [1usize, 6, 63, 64, 65, 121, 127] {
+            let mut w = [0u64; 2];
+            w[k >> 6] = 1u64 << (k & 63);
+            scalars.push(BinaryFieldGF128::from_words(w));
+        }
+        for _ in 0..8 {
+            scalars.push(rand_elt(&mut rng));
+        }
+        for s in scalars {
+            let f = FixedGfMul::new(s);
+            for _ in 0..32 {
+                let a = rand_elt(&mut rng);
+                assert_eq!(f.mul(a), s * a, "scalar {:?}", s.uint.as_words());
+            }
+            assert_eq!(f.mul(BinaryFieldGF128::zero()), BinaryFieldGF128::zero());
+            assert_eq!(f.mul(BinaryFieldGF128::one()), s);
+        }
+    }
+
     #[test]
     fn fixed_scalar_kernels_match_composed() {
         let mut rng = StdRng::seed_from_u64(0xF15E);

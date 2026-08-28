@@ -231,27 +231,40 @@ bits — the `w` block rides free. Both grids share one shape (the 4:3
 saving pads back to the power of two); XOR-heavier relations (the SHA-256
 CM arithmetization) are where the derived/committed gap widens.
 
-Measured (M4, 2^15 gates, dual-basis ring switch): prove ~68 ms
-(Spartan 13 | bitify 6 | virtual F2Z 48: apply 6 + forest 11 +
-`h_i` fold 13.3 + `a′` build 9.3 + Ligerito 6.0), verify
-~23 ms (`a′` build 9.3 ms — the verifier's whole
+Measured (M4, 2^15 gates, dual-basis ring switch, after the prover
+pass): prove ~61 ms (Spartan 13 | bitify 6 | virtual F2Z ~41:
+apply 1.4 + forest 11 + `h_i` fold 12.9 + `a′` build 9.3 +
+Ligerito 6.0), verify ~23 ms (`a′` build 9.3 ms — the verifier's whole
 `M`-dependent cost; was 4.7 for the bridge's `Ŵ(ρ)`), proof
 113.2 KiB (−2.6 KiB vs the bridge protocol:
 the bridge sumcheck and the `s_v` message are gone, the 2 KiB `h_i`
 message arrived). Memory: no `W` table, no coefficient table, no `f`
 bit table, no bridge MLE copies — the passes stream `M`'s rows; the
 only sizable transients are the per-range `a′` partials and one 64 KB
-Φ table (a premultiplied per-slot table variant — 128 × 64 KB, fusing
-the `A(e_v)` product into the gather — measured ~1.5× SLOWER despite
-fewer ops: it evicts the single L1-resident table; values are identical
-either way, so it stays a pure schedule choice). Remaining levers: the
-`h_i` fold's MFR scatter (~115 ops/row — a plane-transpose or wider
-block variant), fusing the `a′` build with the Ligerito round-0 message
-(`fill_phi_basis_round0`-style), and closed-form `E_r` streaming for
-eq-structured maps (taps-style). The identity fast path at the same
-shape (t=15, s=7, W=1, embedded config) measures prove 19.3 ms /
-verify 2.2 ms — vs 49.7 / 11.2 for the batch tail forced (`F2Z_VIRT_ID_FAST=0`)
-on the same identity instance.
+Φ table.
+
+Prover-pass notes (all exact reassociations — the proof digest is
+byte-stable through them; the verifier's code path is untouched, with
+`virtual_a_prime_prover` a prover-only twin of the shared build pinned
+equal by the cellwise test and every roundtrip): `F2CellMap::apply`
+accumulates each output word in a register with one store and streams
+the CSR offsets (6.1 → 1.4 ms — the per-bit `|=` RMW was the cost, not
+the XOR gathers); both batching passes stream offsets and shortcut
+single-source rows; the `h_i` fold hoists the L = 1 per-column scaled
+coefficient as a preprocessed 5-PMULL fixed-scalar multiplier
+(`FixedGfMul`, refreshed at column boundaries; −0.4 ms). Two measured
+NEGATIVE results to remember: per-slot premultiplied Φ tables
+(128 × 64 KB fusing `A(e_v)` into the gather) are ~1.5× slower — the
+8 MB set evicts the one L1-resident table — and PER-ELEMENT
+`FixedGfMul` routing of the `A(e_v)` products is also slower (the prep
+loads + branch beat the 2-PMULL saving; the kernel only pays hoisted
+across a run). Remaining levers: the MFR scatter (~115 ops/row — a
+plane-transpose or wider-block variant), fusing the `a′` build with
+the Ligerito round-0 message (`fill_phi_basis_round0`-style), and
+closed-form `E_r` streaming for eq-structured maps (taps-style). The
+identity fast path at the same shape (t=15, s=7, W=1, embedded config)
+measures prove 19.3 ms / verify 2.2 ms — vs 49.7 / 11.2 for the batch
+tail forced (`F2Z_VIRT_ID_FAST=0`) on the same identity instance.
 
 ## Mod-q RLC claim families (EXPERIMENTAL)
 
