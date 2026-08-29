@@ -23,6 +23,14 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
 `n` is log(|w|)
 
 
+## Dependencies
+
+- https://github.com/albert-garreta/flock-mod
+- https://github.com/worldfnd/f2z-benchmark
+- [Albert: I'm not sure what this is. Leaving it here just in case] **`crypto-primitives`** — vendored at `vendor/crypto-primitives` (NethermindEth, Apache-2.0; see `vendor/crypto-primitives/VENDORED.md` for
+  the pinned revision and the crypto-bigint 0.7.5 / rand 0.10 port).
+
+
 # AI SPAGHETTI README
 F2Z is a polynomial commitment scheme for **integer data committed over a
 cheap characteristic-2 code**: it proves
