@@ -971,7 +971,7 @@ $$
 \item 
  Let $\codedim\geq 1$ be a dimension parameter divisible by $\comfieldexp$, $\cC$ a code over $\comfield$ of dimension $\codedim/\comfieldexp$ and blocklength $\codelength$.  
  \item 
- Let $R$ be a ring (typically $R$ is either $\ZZ$ or a finite field, not necessarily a prime field) and let $\pi:\ZZ \to R$ be a ring homomorphism (possibly the identity if $R=\ZZ$).
+ Let $R$ be a ring (typically $R$ is either $\ZZ$ or a finite field, not necessarily a prime field) and let $\pi:\ZZ \to R$ be a ring homomorphism (not necessarily surjective, and possibly the identity if $R=\ZZ$).
 \end{itemize}
  
 
@@ -1118,7 +1118,7 @@ $$ In words, $\picanon^{\KK}{}^{-1}$ simply takes an element from $\KK$ represen
 \renewcommand{\picanon}{{\pi_{\mathsf{canon}}^R}}
 
 \begin{construction}[IOP for the core {$\LinBitsDual$ relation}]\label{c:core_iop}
-\noindent \textbf{Parameters.} $(R,\ringmorphism, \comfield,\codedim,\codedim_1,\codedim_2,\cC)$ comprised of: a ring $R$ (either $\ZZ$ or a finite field) and a ring homomorphism $\ringmorphism: \ZZ\to R$; a binary field $\comfield$; a witness length $\codedim$ divisible by $\comfieldexp$; tensor decomposition dimensions $\codedim_1, \codedim_2$  satisfying $\codedim_1\cdot \codedim_2 = \codedim$; a linear code $\cC$ over $\comfield$ of dimension $\codedim/\comfieldexp$ and blocklength $\codelength$. 
+\noindent \textbf{Parameters.} $(R,\ringmorphism, \comfield,\codedim,\codedim_1,\codedim_2,\cC)$ comprised of: a ring $R$  and a ring homomorphism $\ringmorphism: \ZZ\to R$; a binary field $\comfield$; a witness length $\codedim$ divisible by $\comfieldexp$; tensor decomposition dimensions $\codedim_1, \codedim_2$  satisfying $\codedim_1\cdot \codedim_2 = \codedim$; a linear code $\cC$ over $\comfield$ of dimension $\codedim/\comfieldexp$ and blocklength $\codelength$. 
 
 Let $\cP$ be a set of primes with $\max\cP< (|\comfield|-1)/(\codedim_1+1)$.
 \\
@@ -1126,7 +1126,7 @@ Let $\cP$ be a set of primes with $\max\cP< (|\comfield|-1)/(\codedim_1+1)$.
 \noindent \textbf{Inputs.} The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \LinBitsDual(\bits,\ringmorphism, \evalfield,\cC)$.  We assume the tensor split from the previous \cref{s:interleaved_setting}, and adopt its notation. 
 
 
-Let $\basegenerator\in \comfield$ be a fixed generator of the multiplicative group $\comfield^*$.   Let $q\in \ZZ$ denote the characteristic of $R$ if $R$ is a finite field, or if $R=\ZZ$ then
+Let $\basegenerator\in \comfield$ be a fixed generator of the multiplicative group $\comfield^*$.   Let $q\in \ZZ$ denote the characteristic of $R$ if $R$ has nonzero characteristic, or if $R$ has zero characteristic, then
 \begin{equation}\label{e:q_definition_if_R_is_Z}
 q = \codedim_1 \cdot \lVert \vv \rVert_\infty +1.
 \end{equation}
@@ -1139,7 +1139,7 @@ q = \codedim_1 \cdot \lVert \vv \rVert_\infty +1.
 \item The verifier checks that \begin{equation}\label{e:tensor_decomposition_reconstruction}\sum_{j\in [\codedim_2]} \picanon(\mu_j)\cdot \vv_j^{(2)}  = \mu\qquad \text{over } \evalfield.\end{equation} 
 Next, prover and verifier will focus on certifying that \eqref{e:tensored_equality} holds for all $j\in [\codedim_2]$.
 
-In \cref{r:core_iop_optional_sumcheck} we describe a variation in which, instead of sending the elements $\mu_1, \ldots, \mu_{\codedim_2}$, the prover commits to their bit-decomposition over $\comfield$, and proves \eqref{e:tensor_decomposition_reconstruction} using the present IOR. This saves on proof size and verifier time when $\codedim$ is large.
+In \cref{r:core_iop_optional_sumcheck} we describe a variation in which, instead of sending the elements $\mu_1, \ldots, \mu_{\codedim_2}$, the prover commits to their bit-decomposition over $\comfield$, and proves \eqref{e:tensor_decomposition_reconstruction} with \cref{c:LinModFieldBin}. This saves on proof size and verifier time when $\codedim$ is large.
 \item \textbf{Optional step: Projecting the integer claim to a prime field, and then lifting it back up to $\ZZ$.} The following step triggers in the following scenarios:
 \begin{itemize}
     \item $\degevalfield>1$.
