@@ -1,5 +1,5 @@
 # Fdb version 4
-["bibtex main"] 0 "main.aux" "main.bbl" "main" 1788026849.76164 0
+["bibtex main"] 0 "main.aux" "main.bbl" "main" 1788038276.92634 0
   "/usr/local/texlive/2026/texmf-dist/bibtex/bst/base/alpha.bst" 1292289607 23907 a5f93555796fb564b924339521f10a7c ""
   "main.aux" 0 -1 0 "pdflatex"
   "paper/references.bib" 0 -1 0 ""
@@ -7,10 +7,10 @@
   "main.bbl"
   "main.blg"
   (rewritten before read)
-["pdflatex"] 1788026847.89411 "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" "main.pdf" "main" 1788026849.76178 0
+["pdflatex"] 1788038275.14666 "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" "main.pdf" "main" 1788038276.92651 0
   "/Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm10.657pk" 1776501489.11392 7808 6a049d449f6ee1b878a120976685d109 ""
   "/Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm8.600pk" 1776501487.73383 5580 11384d216537db22ad7711221f99aacd ""
-  "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" 1788026847.65204 290427 b34a9dfa15b48066c9ba6a8a792dbb91 ""
+  "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" 1788038272.80686 292650 d796fa1b66d2d9c29c99c7164a7fe3b5 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-t1.enc" 1136849721 2971 def0b6c1f0b107b3b936def894055589 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc" 1136849721 2900 1537cc8184ad1792082cd229ecc269f4 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
@@ -367,12 +367,12 @@
   "/usr/local/texlive/2026/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1776500619 5573038 b99aad5e4898a9034e953632f940512b ""
   "/usr/local/texlive/2026/texmf-var/web2c/pdftex/pdflatex.fmt" 1776500545 3636771 b0d19629fdc98bdfa4d378986b1cd147 ""
   "/usr/local/texlive/2026/texmf.cnf" 1774209515 577 648cd9f92f9c0eac486f4c71c85cfbbe ""
-  "macros.tex" 1788026601.41909 52801 f6718ab748e0393fe32f1b561c7bdb1c ""
-  "main.aux" 1788026849.41973 43626 63d10e2ebe79ac759ae6080e9e670ecd "pdflatex"
+  "macros.tex" 1788036903.60958 52874 a14a6b36a5e21e948f4153b73c0d0813 ""
+  "main.aux" 1788038276.60466 44539 a445b7738ddf6d56bd6a46f7582e5260 "pdflatex"
   "main.bbl" 1787510590.39225 4588 47639833d47c1d572d83c83684065cef "bibtex main"
-  "main.out" 1788026849.42293 11915 a095c7802c5a63462fdbdb55c49d2d71 "pdflatex"
-  "main.tex" 1788026847.65204 290427 b34a9dfa15b48066c9ba6a8a792dbb91 ""
-  "main.toc" 1788026849.42311 10443 e54c4acc13540a1fabe1c2ce5b79c826 "pdflatex"
+  "main.out" 1788038276.60716 12051 3c892ac76bcebdb41b4216057b06c386 "pdflatex"
+  "main.tex" 1788038272.80686 292650 d796fa1b66d2d9c29c99c7164a7fe3b5 ""
+  "main.toc" 1788038276.60737 10684 63d33e45e48f93b625d8e9c3caabf02f "pdflatex"
   (generated)
   "main.aux"
   "main.log"
