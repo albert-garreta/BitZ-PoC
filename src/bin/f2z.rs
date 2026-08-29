@@ -384,7 +384,13 @@ fn resolve_configs(
         match profile {
             "fast" => (LigConfig::Embedded(LigeritoProfile::Fast), "fast"),
             "slim" => (LigConfig::Embedded(LigeritoProfile::Slim), "slim"),
-            "slim3" => (LigConfig::Embedded(LigeritoProfile::Slim3), "slim3"),
+            "slim3" => (
+                LigConfig::CustomJohnson {
+                    log_inv_rate: 3,
+                    initial_k: 4,
+                },
+                "slim3",
+            ),
             "secure" => (LigConfig::Embedded(LigeritoProfile::Secure), "secure"),
             other => {
                 eprintln!("unknown profile: {other}");

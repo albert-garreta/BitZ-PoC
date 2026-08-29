@@ -38,7 +38,7 @@ use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
 use crate::poly::utils::build_eq_x_r_vec;
 use crate::transcript::traits::Transcript;
 
-use crate::utils::{cfg_into_iter, cfg_iter};
+use crate::utils::{cfg_into_iter, cfg_iter, cfg_iter_mut};
 
 use crypto_primitives::crypto_bigint_monty::MontyField;
 
@@ -411,20 +411,72 @@ impl core::ops::Mul for Fq {
 /// host PIOP's α-combined witness-MLE claim. (Contrast the standalone tests'
 /// `eq_table_fq`, which is big-endian.)
 pub fn eq_le_table_fq(point: &[Fq]) -> Vec<Fq> {
-    let one = Fq(1u128 % FQ_MOD);
-    let mut acc = vec![one];
-    for r in point {
-        let one_minus_r = Fq(fq_sub(one.0, r.0));
-        let mut next = Vec::with_capacity(acc.len().wrapping_mul(2));
-        for &e in &acc {
-            next.push(e * one_minus_r);
-        }
-        for &e in &acc {
-            next.push(e * *r);
-        }
-        acc = next;
+    debug_assert!(
+        point.iter().all(|r| r.0 < FQ_MOD),
+        "eq_le_table_fq requires canonical Fq inputs"
+    );
+    let table_len = u32::try_from(point.len())
+        .ok()
+        .and_then(|num_vars| 1usize.checked_shl(num_vars))
+        .expect("eq_le_table_fq domain must fit into usize");
+    let mut table = vec![Fq(0); table_len];
+    table[0] = Fq(1);
+
+    let mut half = 1usize;
+    for challenge in point {
+        let active_len = half
+            .checked_mul(2)
+            .expect("checked equality-table domain cannot overflow");
+        let (zero_children, one_children) = table[..active_len].split_at_mut(half);
+        cfg_iter_mut!(zero_children)
+            .zip(cfg_iter_mut!(one_children))
+            .for_each(|(zero, one)| {
+                let parent = *zero;
+                let one_child = parent * *challenge;
+                *zero = Fq(fq_sub(parent.0, one_child.0));
+                *one = one_child;
+            });
+        half = active_len;
     }
-    acc
+    table
+}
+
+#[cfg(test)]
+mod eq_le_table_fq_tests {
+    use super::*;
+
+    fn direct_eq(point: &[Fq], index: usize) -> Fq {
+        Fq(point.iter().enumerate().fold(1u128, |acc, (bit, challenge)| {
+            let factor =
+                if index >> bit & 1 == 1 { challenge.0 } else { fq_sub(1, challenge.0) };
+            fq_mul(acc, factor)
+        }))
+    }
+
+    #[test]
+    fn empty_input_is_one() {
+        assert_eq!(eq_le_table_fq(&[]), vec![Fq(1)]);
+    }
+
+    #[test]
+    fn two_coordinates_use_little_endian_order() {
+        let point = [Fq(2), Fq(3)];
+        // Indices 0, 1, 2, 3 represent [00, 10, 01, 11].
+        assert_eq!(
+            eq_le_table_fq(&point),
+            vec![Fq(2), Fq(FQ_MOD - 4), Fq(FQ_MOD - 3), Fq(6)]
+        );
+    }
+
+    #[test]
+    fn non_boolean_table_matches_direct_formula_and_sums_to_one() {
+        let point = [Fq(0), Fq(1), Fq(FQ_MOD - 1), Fq(123_456_789)];
+        let table = eq_le_table_fq(&point);
+        for (index, &evaluation) in table.iter().enumerate() {
+            assert_eq!(evaluation, direct_eq(&point, index), "entry {index}");
+        }
+        assert_eq!(table.iter().fold(0u128, |acc, value| fq_add(acc, value.0)), 1);
+    }
 }
 
 /// Extract the canonical integer (standard, *not* Montgomery, form) of a host
@@ -1019,6 +1071,208 @@ pub fn mod_q_num_chunks(p: &IntEvalParams, q_bits: usize) -> usize {
     q_bits.div_ceil(mod_q_chunk_width(p)).max(1)
 }
 
+/// A validated base-`2^c_w` decomposition of one public mod-`q` row-weight
+/// vector.
+///
+/// The fields are deliberately private: every constructor and range setter
+/// validates the public geometry and canonical weight bounds, so the Ligerito
+/// core can consume already-prepared limbs without reopening a path for
+/// malformed chunk counts, row lengths, or high bits.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ModQWeightChunks {
+    chunks: Vec<Vec<u128>>,
+    row_count: usize,
+    chunk_width: usize,
+    q_bits: usize,
+}
+
+impl ModQWeightChunks {
+    /// Adopt an owned dense vector directly when the geometry needs exactly
+    /// one chunk. This is the production u32 fast path: no zero-fill and no
+    /// dense-to-chunk copy are needed.
+    pub(crate) fn from_single_chunk(
+        p: &IntEvalParams,
+        q_bits: usize,
+        weights: Vec<u128>,
+    ) -> Result<Self, ()> {
+        let (row_count, chunk_width, chunk_count) = mod_q_weight_chunk_shape(p, q_bits)?;
+        if chunk_count != 1 || weights.len() != row_count {
+            return Err(());
+        }
+        let bound = 1_u128
+            .checked_shl(u32::try_from(q_bits).map_err(|_| ())?)
+            .ok_or(())?;
+        if weights.iter().any(|&weight| weight >= bound) {
+            return Err(());
+        }
+        Ok(Self {
+            chunks: vec![weights],
+            row_count,
+            chunk_width,
+            q_bits,
+        })
+    }
+
+    /// Allocate a validated all-zero chunk matrix. Callers can populate
+    /// contiguous canonical ranges through [`Self::set_weight_range`] without
+    /// constructing a dense weight vector or rescanning generated chunks.
+    pub(crate) fn zeroed(p: &IntEvalParams, q_bits: usize) -> Result<Self, ()> {
+        let (row_count, chunk_width, chunk_count) = mod_q_weight_chunk_shape(p, q_bits)?;
+        Ok(Self {
+            chunks: vec![vec![0_u128; row_count]; chunk_count],
+            row_count,
+            chunk_width,
+            q_bits,
+        })
+    }
+
+    /// Set one contiguous range from canonical dense weights, decomposing it
+    /// directly into the already-allocated chunk-major representation.
+    pub(crate) fn set_weight_range(
+        &mut self,
+        row_start: usize,
+        weights: &[u128],
+    ) -> Result<(), ()> {
+        let row_end = row_start.checked_add(weights.len()).ok_or(())?;
+        if row_end > self.row_count {
+            return Err(());
+        }
+        let bound = 1_u128
+            .checked_shl(u32::try_from(self.q_bits).map_err(|_| ())?)
+            .ok_or(())?;
+
+        let limb_mask = (1_u128 << self.chunk_width).wrapping_sub(1);
+        let mut shift = 0_usize;
+        for (chunk_index, chunk) in self.chunks.iter_mut().enumerate() {
+            let output = chunk.get_mut(row_start..row_end).ok_or(())?;
+            if chunk_index == 0 {
+                cfg_iter_mut!(output, 256)
+                    .zip(cfg_iter!(weights, 256))
+                    .try_for_each(|(limb, weight)| {
+                        if *weight >= bound {
+                            Err(())
+                        } else {
+                            *limb = (*weight >> shift) & limb_mask;
+                            Ok(())
+                        }
+                    })?;
+            } else {
+                cfg_iter_mut!(output, 256)
+                    .zip(cfg_iter!(weights, 256))
+                    .for_each(|(limb, weight)| *limb = (*weight >> shift) & limb_mask);
+            }
+            shift = shift.wrapping_add(self.chunk_width);
+        }
+        Ok(())
+    }
+
+    /// Validate and decompose canonical row weights in `[0, 2^q_bits)`.
+    pub(crate) fn from_dense(
+        p: &IntEvalParams,
+        row_weights_q: &[u128],
+        q_bits: usize,
+    ) -> Result<Self, ()> {
+        let mut chunks = Self::zeroed(p, q_bits)?;
+        if row_weights_q.len() != chunks.row_count {
+            return Err(());
+        }
+        chunks.set_weight_range(0, row_weights_q)?;
+        Ok(chunks)
+    }
+
+    /// Validate an existing chunk-major decomposition.
+    ///
+    /// Every chunk must have exactly `2^t` rows. Limbs in chunk `l` are
+    /// restricted to the remaining `min(c_w, q_bits - c_w*l)` bits. Those
+    /// disjoint per-limb bounds already imply reconstruction below
+    /// `2^q_bits`, so validation scans each chunk once without rebuilding
+    /// every dense row weight.
+    pub(crate) fn from_chunks(
+        p: &IntEvalParams,
+        q_bits: usize,
+        chunks: Vec<Vec<u128>>,
+    ) -> Result<Self, ()> {
+        let (row_count, chunk_width, chunk_count) = mod_q_weight_chunk_shape(p, q_bits)?;
+        if chunks.len() != chunk_count || chunks.iter().any(|chunk| chunk.len() != row_count) {
+            return Err(());
+        }
+
+        for (chunk_index, chunk) in chunks.iter().enumerate() {
+            let shift = chunk_width.checked_mul(chunk_index).ok_or(())?;
+            let limb_bits = chunk_width.min(q_bits.checked_sub(shift).ok_or(())?);
+            let limb_bound = 1_u128
+                .checked_shl(u32::try_from(limb_bits).map_err(|_| ())?)
+                .ok_or(())?;
+            if chunk.iter().any(|&limb| limb >= limb_bound) {
+                return Err(());
+            }
+        }
+
+        Ok(Self {
+            chunks,
+            row_count,
+            chunk_width,
+            q_bits,
+        })
+    }
+
+    /// Chunk-major limbs, `chunks[l][b]`.
+    pub(crate) fn chunks(&self) -> &[Vec<u128>] {
+        &self.chunks
+    }
+
+    /// Number of row weights in each chunk.
+    pub(crate) const fn row_count(&self) -> usize {
+        self.row_count
+    }
+
+    /// Limb width `c_w = 127 - t - W`.
+    pub(crate) const fn chunk_width(&self) -> usize {
+        self.chunk_width
+    }
+
+    /// Number of chunks `L = ceil(q_bits / c_w)`.
+    pub(crate) const fn len(&self) -> usize {
+        self.chunks.len()
+    }
+
+    /// Whether no chunks are present (always false for a validated value).
+    pub(crate) const fn is_empty(&self) -> bool {
+        self.chunks.is_empty()
+    }
+
+    /// Bit length against which the decomposition was validated.
+    pub(crate) const fn q_bits(&self) -> usize {
+        self.q_bits
+    }
+}
+
+fn mod_q_weight_chunk_shape(
+    p: &IntEvalParams,
+    q_bits: usize,
+) -> Result<(usize, usize, usize), ()> {
+    if !p.word_bits.is_power_of_two()
+        || p.word_bits > u128::BITS as usize
+        || !(1..=126).contains(&q_bits)
+    {
+        return Err(());
+    }
+    let row_count = u32::try_from(p.t)
+        .ok()
+        .and_then(|t| 1usize.checked_shl(t))
+        .ok_or(())?;
+    let tw = p.t.checked_add(p.word_bits).ok_or(())?;
+    if tw > 126 {
+        return Err(());
+    }
+    let chunk_width = 127usize.checked_sub(tw).ok_or(())?;
+    let chunk_count = q_bits.div_ceil(chunk_width);
+    if chunk_count == 0 {
+        return Err(());
+    }
+    Ok((row_count, chunk_width, chunk_count))
+}
+
 /// Decompose each ~`q_bits`-bit row weight into base-`2^{c_w}` limbs:
 /// `W_chunks[l][b] = (w_b ≫ c_w·l) & (2^{c_w}−1)`, so `w_b = Σ_l W_chunks[l][b]·2^{c_w·l}`
 /// (X-note §6.1). `row_weights_q[b] = w_b ∈ [0, q)` is the canonical integer rep of
@@ -1257,6 +1511,78 @@ pub(crate) fn build_column_layer1_halves(
 #[allow(clippy::arithmetic_side_effects)]
 mod rlc_tests {
     use super::*;
+
+    #[test]
+    fn validated_mod_q_weight_chunks_round_trip_dense_decomposition() {
+        let p = IntEvalParams {
+            t: 3,
+            s: 2,
+            word_bits: 1,
+        };
+        let q_bits = 126;
+        let dense = (0..p.rows())
+            .map(|row| (1u128 << 125) | ((row as u128 + 1) << 61) | row as u128)
+            .collect::<Vec<_>>();
+
+        let prepared = ModQWeightChunks::from_dense(&p, &dense, q_bits).unwrap();
+        assert_eq!(prepared.row_count(), p.rows());
+        assert_eq!(prepared.chunk_width(), 123);
+        assert_eq!(prepared.len(), 2);
+        assert_eq!(prepared.q_bits(), q_bits);
+
+        let mut generated = ModQWeightChunks::zeroed(&p, q_bits).unwrap();
+        generated.set_weight_range(0, &dense).unwrap();
+        assert_eq!(generated, prepared);
+
+        let reconstructed =
+            ModQWeightChunks::from_chunks(&p, q_bits, prepared.chunks().to_vec()).unwrap();
+        assert_eq!(reconstructed, prepared);
+
+        let single_q_bits = 100;
+        let single_dense = (0..p.rows())
+            .map(|row| (row as u128 + 1) << 61)
+            .collect::<Vec<_>>();
+        let adopted =
+            ModQWeightChunks::from_single_chunk(&p, single_q_bits, single_dense.clone()).unwrap();
+        assert_eq!(adopted.chunks()[0], single_dense);
+    }
+
+    #[test]
+    fn validated_mod_q_weight_chunks_reject_malformed_shapes_and_limbs() {
+        let p = IntEvalParams {
+            t: 3,
+            s: 0,
+            word_bits: 1,
+        };
+        let q_bits = 126;
+        let dense = vec![7u128; p.rows()];
+        let prepared = ModQWeightChunks::from_dense(&p, &dense, q_bits).unwrap();
+
+        assert!(
+            ModQWeightChunks::from_dense(&p, &dense[..dense.len() - 1], q_bits).is_err()
+        );
+        let mut out_of_range_dense = dense.clone();
+        out_of_range_dense[0] = 1u128 << q_bits;
+        assert!(
+            ModQWeightChunks::from_dense(&p, &out_of_range_dense, q_bits).is_err()
+        );
+
+        let mut wrong_count = prepared.chunks().to_vec();
+        wrong_count.pop();
+        assert!(ModQWeightChunks::from_chunks(&p, q_bits, wrong_count).is_err());
+
+        let mut wrong_rows = prepared.chunks().to_vec();
+        wrong_rows[0].pop();
+        assert!(ModQWeightChunks::from_chunks(&p, q_bits, wrong_rows).is_err());
+
+        let mut wide_low_limb = prepared.chunks().to_vec();
+        wide_low_limb[0][0] = 1u128 << prepared.chunk_width();
+        assert!(ModQWeightChunks::from_chunks(&p, q_bits, wide_low_limb).is_err());
+
+        let mut wide_final_limb = prepared.chunks().to_vec();
+        wide_final_limb[1][0] = 1u128 << (q_bits - prepared.chunk_width());
+        assert!(ModQWeightChunks::from_chunks(&p, q_bits, wide_final_limb).is_err());
+    }
 
     /// The 2^j-case leaf select is multilinear in the j bits:
     /// `α^{W(m)} = 1 + Σ_{∅≠S⊆[j]} τ_S · Π_{i∈S} m_i` for every case `m`,

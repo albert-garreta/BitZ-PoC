@@ -86,15 +86,16 @@ paper; check each with a brute-force unit test at tiny sizes:
   machinery implements (today with `ρ = eq_r2`), and `A(e_v)` is the
   dual-basis image of slot v (column v of the Hankel `A`).
 - Sparse closing (the verifier's succinct basis evaluation): because
-  K-addition is F₂-addition, `Φ_ρ` distributes over W's sparse
-  definition, giving
+  K-addition is F₂-addition, the CSC implementation gathers
 
-      â′(z) = Σ_{(r → (v,y)) ∈ M} eq_z(y) · A(e_v) · Φ_ρ(E_r),
+      W_j = Σ_{r:M[r,j]=1} E_r,
       E_r := Σ_l η_l·eq_{h-cell r}(pt_l),
 
-  i.e. **O(#rows(M) + nnz(M))** K-ops — the same cost class as the
-  current `Ŵ(ρ)` evaluation (`mqv:vwhat`), NOT d× worse. One
-  `Φ_ρ` gather per nonempty h-row, one mul-add per nonzero.
+  then contributes `Φ_ρ(W_j)·A(e_{j mod 128})` to source pack
+  `j/128`. The current on-demand implementation costs **O(L·nnz(M) +
+  #cols(M))** K-ops because it reevaluates `E_r` per incidence. A future
+  cached-`E` variant could trade derived-row storage for
+  `O(L·#rows(M) + nnz(M))` work on higher-degree maps.
 - Correspondence sanity check: specializing `a` to today's eq-tensor
   weights must reproduce the existing eq ring switch's structure
   (`s_v ↔ h_i`, `r″/eq_r2 ↔ ρ`, `ring_switch_verify`'s
@@ -160,7 +161,7 @@ paper; check each with a brute-force unit test at tiny sizes:
   (`to_bytes`/`from_bytes`, keep it canonical + tamper-rejecting; the
   old layout has no external consumers — the API is days old) and
   `validate_f2z_proof_shape`-style checks (`hs.len() == 128`).
-- Transcript order: statement digest (unchanged, cached in `F2CellMap`),
+- Transcript order: statement digest (cached in `PreparedVirtualMap` from the canonical CSC),
   chunks (unchanged), η's (unchanged), absorb the `h_i` (use
   `absorb_sv`'s tag discipline — pick a fresh tag byte, don't reuse
   0x20), draw ρ, then the Ligerito call on the same transcript. This

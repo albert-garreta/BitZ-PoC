@@ -1,3 +1,4 @@
+pub mod delayed_reduction;
 pub mod inner_product;
 pub mod mul_by_scalar;
 pub mod named;

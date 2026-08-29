@@ -1468,36 +1468,93 @@ fn eqf_nokernel() -> bool {
     *ON.get_or_init(|| std::env::var_os("F2Z_EQF_NOKERNEL").is_some())
 }
 
+/// Flat storage for the per-round suffix tensors `V_1, …, V_k`.
+///
+/// Levels are appended while expanding backwards, so the physical layout is
+/// `[V_k, V_{k-1}, …, V_1]`. `offsets[round]` maps the prover's zero-based
+/// round index back to `V_{round+1}` without copying a level.
+pub(crate) struct SuffixTensorArena<F> {
+    values: Vec<F>,
+    offsets: Vec<usize>,
+}
+
+impl<F> SuffixTensorArena<F> {
+    /// Returns `V_{round+1}` in little-endian Boolean-cube order.
+    #[inline]
+    pub(crate) fn tensor(&self, round: usize) -> &[F] {
+        let start = self.offsets[round];
+        let end = if round == 0 { self.values.len() } else { self.offsets[round - 1] };
+        &self.values[start..end]
+    }
+
+    /// Number of suffix tensors (equivalently, the number of coordinates).
+    #[inline]
+    pub(crate) fn len(&self) -> usize {
+        self.offsets.len()
+    }
+
+    #[inline]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.offsets.is_empty()
+    }
+}
+
 /// Per-group suffix tensors `V_j` (`j = 1..=k`), built back-to-front:
 /// `V_k = [1]`, `V_j[2b' | b0] = eq1(b0; q[j])·V_{j+1}[b']`.
+///
+/// `q[0]` is intentionally excluded: the active and already-bound
+/// coordinates are represented by the prover's prefix scalar. Each expansion
+/// computes the one-child first and derives the zero-child with one
+/// subtraction, for one multiplication and one subtraction per parent.
 #[allow(clippy::arithmetic_side_effects)]
-pub(crate) fn suffix_tensors<F>(q: &[F], field_cfg: &F::Config) -> Vec<Vec<F>>
+pub(crate) fn suffix_tensors<F>(q: &[F], field_cfg: &F::Config) -> SuffixTensorArena<F>
 where
     F: InnerTransparentField + Send + Sync,
     F::Config: Sync,
 {
     let k = q.len();
-    let one = F::one_with_cfg(field_cfg);
-    let zero = F::zero_with_cfg(field_cfg);
-    let mut suffix = Vec::with_capacity(k);
-    let mut cur = vec![one.clone()];
-    suffix.push(cur.clone());
-    for j in (1..k).rev() {
-        let e1 = q[j].clone();
-        let e0 = one.clone() - &e1;
-        let mut next = vec![zero.clone(); cur.len() * 2];
-        // Sequential within a group; the caller builds all groups' suffix
-        // tensors in parallel (across groups), so nesting parallelism here
-        // would only add overhead on these short vectors.
-        next.chunks_mut(2).zip(cur.iter()).for_each(|(pair, v)| {
-            pair[0] = v.clone() * &e0;
-            pair[1] = v.clone() * &e1;
-        });
-        suffix.push(next.clone());
-        cur = next;
+    let shift = u32::try_from(k).expect("suffix tensor width does not fit in u32");
+    let capacity = 1usize
+        .checked_shl(shift)
+        .and_then(|size| size.checked_sub(1))
+        .expect("suffix tensor arena size overflows usize");
+    let mut values = Vec::with_capacity(capacity);
+    let mut offsets = vec![0usize; k];
+    if k == 0 {
+        return SuffixTensorArena { values, offsets };
     }
-    suffix.reverse(); // suffix[j−1] = V_j, length 2^{k−j}
-    suffix
+
+    values.push(F::one_with_cfg(field_cfg));
+    offsets[k - 1] = 0;
+    let mut source_start = 0;
+    for round in (0..k - 1).rev() {
+        let source_end = values.len();
+        offsets[round] = source_end;
+        let challenge = &q[round + 1];
+        // Sequential within a group; the caller builds all groups' arenas in
+        // parallel, so nesting parallelism here only adds overhead.
+        for index in source_start..source_end {
+            let parent = values[index].clone();
+            let one_child = parent.clone() * challenge;
+            let zero_child = parent - &one_child;
+            values.extend([zero_child, one_child]);
+        }
+        source_start = source_end;
+    }
+    debug_assert_eq!(values.len(), capacity);
+    SuffixTensorArena { values, offsets }
+}
+
+/// Controlled-benchmark view of the flat suffix arena.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub fn suffix_tensor_arena_for_bench<F>(q: &[F], field_cfg: &F::Config) -> (Vec<F>, Vec<usize>)
+where
+    F: InnerTransparentField + Send + Sync,
+    F::Config: Sync,
+{
+    let arena = suffix_tensors(q, field_cfg);
+    (arena.values, arena.offsets)
 }
 
 /// One deferred-fold step — the eager fold's exact formula
@@ -2223,7 +2280,7 @@ where
     if has_pair3 {
         assert!(k >= 3, "Pair3Bits groups need k >= 3 (use Pair2Bits at k = 2)");
     }
-    let suffix: Vec<Vec<Vec<F>>> = {
+    let suffix: Vec<SuffixTensorArena<F>> = {
         let _g = crate::utils::prof::scope("eqf:suffix");
         if shared_q {
             vec![suffix_tensors(&groups[0].q, field_cfg)]
@@ -2231,6 +2288,7 @@ where
             cfg_iter!(groups).map(|g| suffix_tensors(&g.q, field_cfg)).collect()
         }
     };
+    debug_assert!(suffix.iter().all(|arena| arena.len() == k && arena.is_empty() == (k == 0)));
     // Destructure once — the groups are consumed here anyway, so the
     // per-group `q` vectors move instead of cloning (2^s clones per layer
     // otherwise; byte-identical).
@@ -2287,7 +2345,7 @@ where
         let leaf_tables: Vec<LeafTables<F>> =
             if j == 1 && (has_leaf || has_leaf2 || has_leaf3 || has_leaf4) {
             let _g = crate::utils::prof::scope("eqf:leaf_tables");
-            let v1 = &suffix[0][0];
+            let v1 = suffix[0].tensor(0);
             // Mirror [`leaf_round1_tiled`]'s engagement condition: the
             // tiled body wants the Precombined ΔΔ form.
             let tile = leaf_tile_enabled() && tau_sets.len() == 1;
@@ -2299,7 +2357,7 @@ where
         };
         let pair2_tables: Vec<Pair2Tables<F>> = if j == 1 && (has_pair || has_pair3) {
             let _g = crate::utils::prof::scope("eqf:pair2_tables");
-            let v1 = &suffix[0][0];
+            let v1 = suffix[0].tensor(0);
             cfg_iter!(pair_tau_sets).map(|set| build_pair2_tables(v1, set)).collect()
         } else {
             Vec::new()
@@ -2309,7 +2367,7 @@ where
         let leaf2_tables: Vec<Pair2Tables<F>> = if j == 2 && (has_leaf2 || has_leaf3 || has_leaf4)
         {
             let _g = crate::utils::prof::scope("eqf:leaf2_tables");
-            let v2 = &suffix[0][1];
+            let v2 = suffix[0].tensor(1);
             cfg_iter!(leaf2_value_sets).map(|set| build_pair2_tables(v2, set)).collect()
         } else {
             Vec::new()
@@ -2334,7 +2392,7 @@ where
         // groups**, with a minimum batch so tiny late-round bodies amortise
         // the rayon dispatch.
         let compute_h = |t: usize, bufs: &[GroupBufs<F>]| -> (F, F, F) {
-            let suffix_t = &suffix[if shared_q { 0 } else { t }][j - 1];
+            let suffix_t = suffix[if shared_q { 0 } else { t }].tensor(j - 1);
             match &bufs[t] {
                 GroupBufs::Flat => {
                     unreachable!("Flat groups run the driver's flat message branch")
@@ -2748,7 +2806,7 @@ where
             let pend = core::mem::take(&mut pending);
             let out: Vec<[F; 9]> = if let Some(fs) = flat.as_mut() {
                 let read = (quads << 2) << pend.len();
-                let sfx = &suffix[0][j][..quads];
+                let sfx = &suffix[0].tensor(j)[..quads];
                 flat_map_segments(fs, quads, |_t, lseg, rseg| {
                     dense_grid_pass_slices(
                         &mut lseg[..read],
@@ -2761,7 +2819,7 @@ where
                 })
             } else {
                 let pass = |t: usize, gb: &mut GroupBufs<F>| -> [F; 9] {
-                    let suffix_t = &suffix[if shared_q { 0 } else { t }][j];
+                    let suffix_t = suffix[if shared_q { 0 } else { t }].tensor(j);
                     let GroupBufs::Dense(group_bufs) = gb else {
                         unreachable!("double-fold requires all-Dense single-pair groups")
                     };
@@ -2796,7 +2854,7 @@ where
             let pend = core::mem::take(&mut pending);
             if let Some(fs) = flat.as_mut() {
                 let read = (half << 1) << pend.len();
-                let sfx = &suffix[0][j - 1][..half];
+                let sfx = &suffix[0].tensor(j - 1)[..half];
                 flat_map_segments(fs, half, |_t, lseg, rseg| {
                     dense_msg_pass_d_slices(
                         &mut lseg[..read],
@@ -2809,7 +2867,7 @@ where
                 })
             } else {
                 let pass = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F) {
-                    let suffix_t = &suffix[if shared_q { 0 } else { t }][j - 1];
+                    let suffix_t = suffix[if shared_q { 0 } else { t }].tensor(j - 1);
                     let GroupBufs::Dense(group_bufs) = gb else {
                         unreachable!("deferred folds require all-Dense single-pair groups")
                     };
@@ -2858,7 +2916,7 @@ where
             let _g_msg = crate::utils::prof::scope("eqf:fmsg");
             if let Some(fs) = flat.as_mut() {
                 let read = half << 2;
-                let sfx = &suffix[0][j - 1];
+                let sfx = suffix[0].tensor(j - 1);
                 flat_map_segments(fs, half, |_t, lseg, rseg| {
                     dense_fused_fold_round_slices(
                         &mut lseg[..read],
@@ -2871,7 +2929,7 @@ where
                 })
             } else {
                 let fused = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F) {
-                    let suffix_t = &suffix[if shared_q { 0 } else { t }][j - 1];
+                    let suffix_t = suffix[if shared_q { 0 } else { t }].tensor(j - 1);
                     let GroupBufs::Dense(group_bufs) = gb else {
                         unreachable!("fused rounds require all-Dense single-pair groups")
                     };
@@ -2939,7 +2997,7 @@ where
                 // Flat no-fold message pass (round 1 of a stored layer):
                 // read-only over the segments' live prefix.
                 let read = half << 1;
-                let sfx = &suffix[0][j - 1];
+                let sfx = suffix[0].tensor(j - 1);
                 let hs: Vec<(F, F, F)> = flat_map_segments_ref(fs, half, |_t, lseg, rseg| {
                     dense_single_pair_round_slices(&lseg[..read], &rseg[..read], sfx, half, &zero)
                 });
@@ -3249,7 +3307,7 @@ where
                         let mut r = Vec::with_capacity(half);
                         let mut g9 = mat_grid_now
                             .then(|| core::array::from_fn::<_, 9, _>(|_| F::wide_zero(&zero)));
-                        let sfx: &[F] = if g9.is_some() { &suffix[0][j + 1] } else { &[] };
+                        let sfx: &[F] = if g9.is_some() { suffix[0].tensor(j + 1) } else { &[] };
                         for b in 0..half {
                             if prfm && b + PRFM_DIST < half {
                                 let bp = b + PRFM_DIST;
@@ -3319,7 +3377,7 @@ where
                         let mut r = Vec::with_capacity(half);
                         let mut g9 = mat_grid_now
                             .then(|| core::array::from_fn::<_, 9, _>(|_| F::wide_zero(&zero)));
-                        let sfx: &[F] = if g9.is_some() { &suffix[0][j + 1] } else { &[] };
+                        let sfx: &[F] = if g9.is_some() { suffix[0].tensor(j + 1) } else { &[] };
                         for b in 0..half {
                             if prfm && b + PRFM_DIST < half {
                                 let bp = b + PRFM_DIST;
@@ -3372,7 +3430,7 @@ where
                         let mut r = Vec::with_capacity(half);
                         let mut g9 = mat_grid_now
                             .then(|| core::array::from_fn::<_, 9, _>(|_| F::wide_zero(&zero)));
-                        let sfx: &[F] = if g9.is_some() { &suffix[0][j + 1] } else { &[] };
+                        let sfx: &[F] = if g9.is_some() { suffix[0].tensor(j + 1) } else { &[] };
                         for b in 0..half {
                             if prfm && b + PRFM_DIST < half {
                                 let bp = b + PRFM_DIST;
@@ -3484,7 +3542,7 @@ where
                 && mats_tile_engaged(half)
             {
                 let _g_t = crate::utils::prof::scope("eqf:fold:mats_tile");
-                let sfx: &[F] = if mat_grid_now { &suffix[0][j + 1] } else { &[] };
+                let sfx: &[F] = if mat_grid_now { suffix[0].tensor(j + 1) } else { &[] };
                 let sets_uniform =
                     if j == 2 { pair3_value_sets.len() == 1 } else { leaf3_value_sets.len() == 1 };
                 let views: Option<Vec<(&[u64], &[u64])>> = if sets_uniform {
@@ -3696,7 +3754,6 @@ where
 mod tests {
     use super::*;
     use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
-    use crypto_primitives::Field;
 
     fn sample(seed: u64) -> Gf {
         let hi = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(29) ^ 0x1234_5678_9ABC_DEF0;
@@ -3712,6 +3769,71 @@ mod tests {
                 .collect();
         }
         cur[0]
+    }
+
+    fn direct_suffix_tensor(q: &[Gf], round: usize) -> Vec<Gf> {
+        let width = q.len() - round - 1;
+        (0..1usize << width)
+            .map(|index| {
+                q[round + 1..].iter().enumerate().fold(Gf::one(), |product, (bit, challenge)| {
+                    let factor =
+                        if (index >> bit) & 1 == 1 { *challenge } else { Gf::one() - *challenge };
+                    product * factor
+                })
+            })
+            .collect()
+    }
+
+    #[test]
+    fn suffix_tensor_arena_matches_independent_products() {
+        for k in 0..=6usize {
+            let q: Vec<Gf> = (0..k).map(|i| sample(0x5100 + (k * 17 + i) as u64)).collect();
+            let arena = suffix_tensors(&q, &());
+            assert_eq!(arena.len(), k);
+            assert_eq!(arena.is_empty(), k == 0);
+            assert_eq!(arena.values.len(), (1usize << k) - 1);
+
+            let mut physical = Vec::with_capacity(arena.values.len());
+            for round in (0..k).rev() {
+                let expected = direct_suffix_tensor(&q, round);
+                assert_eq!(arena.tensor(round).len(), 1usize << (k - round - 1));
+                assert_eq!(arena.tensor(round), expected, "level mismatch for k={k}, round={round}");
+                assert_eq!(arena.offsets[round], (1usize << (k - round - 1)) - 1);
+                physical.extend(expected);
+            }
+            assert_eq!(arena.values, physical, "physical level order for k={k}");
+
+            // The first coordinate is the active/prefix coordinate and must
+            // not affect any suffix level.
+            if k > 0 {
+                let mut changed_q0 = q.clone();
+                changed_q0[0] = sample(0xDEAD_0000 + k as u64);
+                let changed = suffix_tensors(&changed_q0, &());
+                assert_eq!(changed.values, arena.values, "q[0] leaked into suffixes for k={k}");
+                assert_eq!(changed.offsets, arena.offsets);
+            }
+        }
+
+        // Explicit little-endian order: the first remaining coordinate is
+        // the low bit, hence `[00, 10, 01, 11]`.
+        let a = sample(0xA11CE);
+        let b = sample(0xB0B);
+        let arena = suffix_tensors(&[sample(0xCAFE), a, b], &());
+        assert_eq!(
+            arena.tensor(0),
+            &[(Gf::one() - a) * (Gf::one() - b), a * (Gf::one() - b), (Gf::one() - a) * b, a * b]
+        );
+
+        // Boolean challenges make every level one-hot, including both zero
+        // and one edges of the recurrence.
+        let boolean_q = [sample(0xF00D), Gf::zero(), Gf::one(), Gf::zero(), Gf::one()];
+        let arena = suffix_tensors(&boolean_q, &());
+        for round in 0..boolean_q.len() {
+            let expected = direct_suffix_tensor(&boolean_q, round);
+            assert_eq!(arena.tensor(round), expected);
+            assert_eq!(arena.tensor(round).iter().filter(|&&value| value == Gf::one()).count(), 1);
+            assert!(arena.tensor(round).iter().all(|&value| value == Gf::zero() || value == Gf::one()));
+        }
     }
 
     /// Measurement (not a correctness gate): isolated kernel-vs-generic

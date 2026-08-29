@@ -137,17 +137,13 @@ Pinned by `mod_q_ligerito_padded_witness_trims_us`.
 ## Dependencies
 
 - **`flock-core`** — the ring-switch / additive-NTT / Ligerito hot
-  paths (Succinct Labs' *Flock*, `MIT OR Apache-2.0`). **Pinned as a LOCAL PATH
-  dependency** in `Cargo.toml`
-  (`flock-core = { path = "…/flock-f2z-port/crates/flock-core" }`) —
-  **adjust the path for your checkout**. The pinned checkout is the
-  `f2z-k4-port` branch of the flock repo: upstream `main` at `e636760`
-  (Ligerito lookahead + NTT deep-pass + all-core pool + selectable hashes)
-  plus one commit carrying the k=4 / Slim3 config generation this crate's
-  embedded profiles use. Proofs are byte-identical to the previous pin
-  (`a08a84b` + the same config layer); see `examples/proof_digest.rs`.
-  flock-core itself pins `bincode 1.3` and `serde 1`. Note flock's prover
-  now retains large scratch buffers across proves
+  paths (Succinct Labs' *Flock*, `MIT OR Apache-2.0`). `Cargo.toml` uses the
+  portable sibling path `../flock/crates/flock-core`. The checkout must expose
+  selectable Merkle hashes and the precomputed-round-0 Ligerito API. This
+  crate derives the k=4 Johnson configuration locally from flock's embedded
+  slim template (`LigConfig::CustomJohnson`), so it does not require a private
+  `LigeritoProfile::Slim3` variant. `flock-core` itself pins `bincode 1.3` and
+  `serde 1`. Note flock's prover retains large scratch buffers across proves
   (`ligerito_flock::flock_scratch_clear` releases them).
 - `crypto-primitives` / `crypto-bigint` (field & bigint), `blake3`, `rayon`.
 

@@ -279,7 +279,7 @@ pub fn prove_quad_eq_sumcheck(
 
     for j in 1..=k {
         let half = 1usize << (k - j);
-        let suffix_j = &suffix[j - 1];
+        let suffix_j = suffix.tensor(j - 1);
 
         let hs: Vec<[Gf; 5]> = if let Some(rho_prev) = pending_rho.take() {
             // Fused fold + message: buffers hold 4·half unfolded entries.
@@ -529,7 +529,7 @@ pub fn prove_quad_bottom_sumcheck(
     // ---- round 1: coefficients straight off te/to + the ΔΔ table ----
     let half1 = 1usize << (k - 1);
     {
-        let suffix_1 = &suffix[0];
+        let suffix_1 = suffix.tensor(0);
         let r1 = |g: &QuadBitGroup| -> [Gf; 5] {
             let mut acc = wide5(&zero);
             for s in 0..half1 {
@@ -570,7 +570,7 @@ pub fn prove_quad_bottom_sumcheck(
     // ---- round 2: (a, δ) per multiplicand off F₁ (nibble windows) ----
     let half2 = 1usize << (k - 2);
     {
-        let suffix_2 = &suffix[1];
+        let suffix_2 = suffix.tensor(1);
         let qoff = 1usize << (k - 1); // Q10/Q11's F₁ pair-position base
         let r2 = |g: &QuadBitGroup| -> [Gf; 5] {
             let mut acc = wide5(&zero);
@@ -616,7 +616,7 @@ pub fn prove_quad_bottom_sumcheck(
     let half3 = 1usize << (k - 3);
     let qoff3 = 1usize << (k - 2); // Q10/Q11's F₂ position base
     {
-        let suffix_3 = &suffix[2];
+        let suffix_3 = suffix.tensor(2);
         let r3 = |g: &QuadBitGroup| -> [Gf; 5] {
             let mut acc = wide5(&zero);
             for s in 0..half3 {
@@ -690,7 +690,7 @@ pub fn prove_quad_bottom_sumcheck(
     let mut pending_rho: Option<Gf> = None;
     for j in 4..=k {
         let half = 1usize << (k - j);
-        let suffix_j = &suffix[j - 1];
+        let suffix_j = suffix.tensor(j - 1);
         let hs: Vec<[Gf; 5]> = if let Some(rho_prev) = pending_rho.take() {
             let fused = |b: &mut [Vec<Gf>; 4]| -> [Gf; 5] {
                 let mut acc = wide5(&zero);
@@ -787,7 +787,6 @@ pub fn prove_quad_bottom_sumcheck(
 mod tests {
     use super::*;
     use crate::transcript::Blake3Transcript;
-    use crypto_primitives::Field;
 
     fn sample(seed: u64) -> Gf {
         let hi = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(29) ^ 0x1234_5678_9ABC_DEF0;

@@ -18,10 +18,9 @@
 
 use f2z::ligerito_flock::custom_johnson_config;
 
-const FLOCK_CFG_DIR: &str =
-    "/Users/albertgarretafontelles/flock/crates/flock-core/configs/ligerito";
-
 fn main() {
+    let flock_cfg_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../flock/crates/flock-core/configs/ligerito");
     let mut args = std::env::args().skip(1);
     let r0: usize = args
         .next()
@@ -39,15 +38,16 @@ fn main() {
     for m in 22usize..=35 {
         let cfg = custom_johnson_config(m, r0, k0);
         let toml = cfg.to_toml_string().expect("serialize");
-        let path = format!("{FLOCK_CFG_DIR}/m{m}_{profile}.toml");
+        let path = flock_cfg_dir.join(format!("m{m}_{profile}.toml"));
         std::fs::write(&path, &toml).expect("write profile toml");
         let l0 = &cfg.levels[0];
         println!(
-            "m={m}: L0 rate 1/{} k={} queries {} (levels {:?}) -> {path}",
+            "m={m}: L0 rate 1/{} k={} queries {} (levels {:?}) -> {}",
             1usize << l0.log_inv_rate,
             cfg.initial_k,
             l0.queries,
             cfg.levels.iter().map(|l| (l.log_inv_rate, l.queries)).collect::<Vec<_>>(),
+            path.display(),
         );
     }
 }

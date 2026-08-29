@@ -32,20 +32,21 @@
 //!
 //! ## F₂-virtualization
 //!
-//! Claims about a DERIVED vector `h = M·f` (a public sparse
-//! [`F₂`-linear map][f2map::F2CellMap] of the committed bits) are opened
-//! against the commitment to `f` alone —
+//! Claims about a DERIVED vector `h = M·f` (a public canonical CSC
+//! [`F₂`-linear map][f2map::PreparedVirtualMap] of the committed bits) are
+//! opened against the commitment to `f` alone —
 //! [`ligerito_flock::prove_mle_eval_mod_q_ligerito_virtual`] /
 //! [`ligerito_flock::verify_mle_eval_mod_q_ligerito_virtual`]: the
-//! per-chunk forests and pre-sumchecks run on `h` without ever touching
-//! the oracle, the terminal claims are transposed through `Mᵀ` at the
+//! synthesis supplies both `f` and `h`; per-chunk forests and pre-sumchecks
+//! run on `h` without ever touching the oracle, the terminal claims are
+//! transposed through `Mᵀ` at the
 //! commitment field (XOR is addition in char 2), and the transposed
 //! arbitrary-weight inner product is opened NATIVELY by the dual-basis
 //! ring switch ([`dual_basis`], the paper's bilinear-embedding batching
 //! protocol): a 128-element plane message `h_i`, one zero-evader `ρ`,
 //! and ONE Ligerito call — no bridge sumcheck, no point opening. The
-//! verifier's `M`-dependent cost is `O(L·#rows + nnz + 2^{m_p})` field
-//! ops. When `M` is the identity on a shared row layout the opening
+//! verifier's `M`-dependent cost is `O(L·nnz + #cols)` field ops. When `M`
+//! is the identity on a shared row layout the opening
 //! routes to the plain base path instead (the identity fast path,
 //! `F2Z_VIRT_ID_FAST`), skipping the derived-vector machinery entirely.
 //! [`piop::spartan::cm`] wires a full R1CS through this path — the
@@ -62,6 +63,7 @@ pub mod pcs;
 pub mod piop;
 pub mod poly;
 pub mod proof_codec;
+pub mod sparse_matrix;
 pub mod taps;
 pub mod transcript;
 pub mod utils;
@@ -104,6 +106,8 @@ pub use ligerito_flock::{
     verify_mle_eval_mod_q_ligerito_tap_collapse,
 };
 pub use pcs::IntEvalParams;
+pub use f2map::{PreparedVirtualMap, PreparedVirtualMapError};
+pub use sparse_matrix::{SparseColumn, SparseMatrix, SparseMatrixError};
 pub use poly::univariate::binary_b127::BinaryFieldB127;
 pub use poly::univariate::binary_gf128::BinaryFieldGF128;
 pub use taps::{TapOp, extract_virtual_tap_rows};
