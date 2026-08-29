@@ -3,7 +3,7 @@ pub mod dense;
 use crypto_primitives::PrimeField;
 pub use dense::DenseMultilinearExtension;
 
-use rand::prelude::*;
+use rand::{prelude::*, rand_core::RngCore};
 use std::{
     fmt::Debug,
     ops::{Add, AddAssign, SubAssign},

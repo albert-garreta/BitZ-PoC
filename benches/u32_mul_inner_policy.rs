@@ -13,7 +13,7 @@ use f2z::piop::spartan::{
     verify_spartan_proof,
 };
 use f2z::transcript::Blake3Transcript;
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand::{Rng, RngExt, SeedableRng, rngs::StdRng};
 
 const ASSIGNMENT_BINDING: [u8; 32] = [0x49; 32];
 

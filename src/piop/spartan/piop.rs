@@ -553,7 +553,7 @@ where
         MontyField<2>,
         DenseMultilinearExtension<MontyField<2>>,
         DenseMultilinearExtension<u64>,
-        &crypto_bigint::modular::MontyParams<2>,
+        &crypto_bigint::modular::FixedMontyParams<2>,
     ) -> Result<InnerSumcheckOutput<MontyField<2>>, SumcheckError>,
 {
     absorb_statement(transcript, matrices, assignment_oracle_binding);
@@ -1173,7 +1173,7 @@ fn validate_native_u32_prover_inputs(
 
 fn project_native_mle(
     mle: DenseMultilinearExtension<u64>,
-    field_config: &crypto_bigint::modular::MontyParams<2>,
+    field_config: &crypto_bigint::modular::FixedMontyParams<2>,
 ) -> DenseMultilinearExtension<MontyField<2>> {
     DenseMultilinearExtension {
         evaluations: mle
@@ -1187,7 +1187,7 @@ fn project_native_mle(
 
 fn project_native_products(
     products: R1csProductMles<u64>,
-    field_config: &crypto_bigint::modular::MontyParams<2>,
+    field_config: &crypto_bigint::modular::FixedMontyParams<2>,
 ) -> R1csProductMles<MontyField<2>> {
     R1csProductMles {
         az: project_native_mle(products.az, field_config),

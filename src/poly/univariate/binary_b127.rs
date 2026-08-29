@@ -1686,7 +1686,7 @@ impl crate::utils::from_ref::FromRef<BinaryFieldB127> for BinaryFieldB127 {
 mod tests {
     use super::*;
     use crate::utils::wide_mul::WideMulAcc;
-    use rand::{RngCore, SeedableRng, rngs::StdRng};
+    use rand::{SeedableRng, rand_core::Rng as _, rngs::StdRng};
 
     fn rand_elt(rng: &mut StdRng) -> BinaryFieldB127 {
         BinaryFieldB127::from_words([rng.next_u64(), rng.next_u64() & MASK_HI_B127])

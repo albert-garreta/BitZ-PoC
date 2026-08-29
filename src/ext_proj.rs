@@ -27,7 +27,7 @@
 //! This module holds the pieces that are *new* relative to the prime-field
 //! path: the transcript prime/point sampling (deterministic and identical on
 //! both sides), fast mod-`q'` scalar arithmetic for a runtime modulus
-//! (Montgomery via `crypto-bigint`'s [`MontyForm`]), and the weight
+//! (Montgomery via `crypto-bigint`'s [`FixedMontyForm`]), and the weight
 //! projection `γ`. The opening itself reuses the existing mod-`q` pipeline
 //! verbatim (see `ligerito_flock::prove_mle_eval_ext_ligerito`).
 
@@ -35,7 +35,7 @@ use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
 use crate::transcript::traits::Transcript;
 use crate::utils::cfg_into_iter;
 
-use crypto_bigint::modular::{MontyForm, MontyParams};
+use crypto_bigint::modular::{FixedMontyForm, FixedMontyParams};
 use crypto_bigint::{Odd, U128};
 use crypto_primes::hazmat::MillerRabin;
 use crypto_primes::{is_prime, Flavor};
@@ -391,7 +391,7 @@ fn u128_from_uint(x: &U128) -> u128 {
 /// per-column congruence checks). Values enter and leave in canonical
 /// `[0, q')` form (inputs are reduced on entry).
 pub struct ProjArith {
-    params: MontyParams<{ U128::LIMBS }>,
+    params: FixedMontyParams<{ U128::LIMBS }>,
     q: u128,
 }
 
@@ -408,7 +408,7 @@ impl ProjArith {
         );
         let odd = Odd::new(U128::from_u128(q_proj)).expect("modulus is odd");
         Self {
-            params: MontyParams::new_vartime(odd),
+            params: FixedMontyParams::new_vartime(odd),
             q: q_proj,
         }
     }
@@ -429,18 +429,18 @@ impl ProjArith {
         }
     }
 
-    fn to_monty(&self, x: u128) -> MontyForm<{ U128::LIMBS }> {
-        MontyForm::new(&U128::from_u128(self.reduce(x)), self.params)
+    fn to_monty(&self, x: u128) -> FixedMontyForm<{ U128::LIMBS }> {
+        FixedMontyForm::new(&U128::from_u128(self.reduce(x)), &self.params)
     }
 
-    fn from_monty(m: &MontyForm<{ U128::LIMBS }>) -> u128 {
+    fn from_monty(m: &FixedMontyForm<{ U128::LIMBS }>) -> u128 {
         let w = m.retrieve().to_words();
         u128::from(w[0]) | (u128::from(w[1]) << 64)
     }
 
     /// A canonical value converted ONCE into Montgomery form, for use as the
     /// fixed factor of many [`Self::mul_plain_by`] calls (power tables).
-    pub fn monty_factor(&self, x: u128) -> MontyForm<{ U128::LIMBS }> {
+    pub fn monty_factor(&self, x: u128) -> FixedMontyForm<{ U128::LIMBS }> {
         self.to_monty(x)
     }
 
@@ -449,8 +449,8 @@ impl ProjArith {
     /// domain conversions: interpreting plain `a` as a Montgomery residue
     /// makes the reduction built into the multiply land the product back
     /// in plain form (`mont_mul(a, x·R) = a·x·R·R⁻¹ = a·x mod q'`).
-    pub fn mul_plain_by(&self, a: u128, x_monty: &MontyForm<{ U128::LIMBS }>) -> u128 {
-        let a_form = MontyForm::from_montgomery(U128::from_u128(self.reduce(a)), self.params);
+    pub fn mul_plain_by(&self, a: u128, x_monty: &FixedMontyForm<{ U128::LIMBS }>) -> u128 {
+        let a_form = FixedMontyForm::from_montgomery(U128::from_u128(self.reduce(a)), &self.params);
         u128_from_uint(&(a_form * x_monty).to_montgomery())
     }
 
@@ -500,7 +500,7 @@ pub fn projected_row_weights(coords: &[Vec<u128>], q_proj: u128, alpha_proj: u12
     // α'^d as prepared Montgomery factors (d ≥ 1; the d = 0 term is the
     // plain coordinate itself) — each row term is then ONE Montgomery
     // multiplication via the plain×monty trick, no domain conversions.
-    let pow_monty: Vec<MontyForm<{ U128::LIMBS }>> = zq
+    let pow_monty: Vec<FixedMontyForm<{ U128::LIMBS }>> = zq
         .powers(alpha_proj, ext_deg)
         .into_iter()
         .skip(1)

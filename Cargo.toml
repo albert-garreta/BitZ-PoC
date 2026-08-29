@@ -6,9 +6,9 @@ description = "F2Z: integer-MLE-evaluation PCS over an F2 commitment via a GF(2^
 repository = "https://github.com/NethermindEth/f2z"
 
 [dependencies]
-crypto-primitives = { git = "https://github.com/NethermindEth/crypto-primitives.git", rev = "2cf39db886a76dc3e961cbb9c86fb5ab042381ef", features = ["std", "crypto_bigint", "rand"] }
-crypto-bigint = "=0.7.0-rc.9"
-crypto-primes = "=0.7.0-pre.3"
+crypto-primitives = { path = "vendor/crypto-primitives", features = ["std", "crypto_bigint", "rand"] }
+crypto-bigint = "=0.7.5"
+crypto-primes = "=0.7.2"
 derive_more = { version = "2.1.1", features = ["full"] }
 blake3 = { version = "1.8", features = ["rayon"] }
 itertools = "0.14"
@@ -16,14 +16,14 @@ num-traits = "0.2"
 num-bigint = "0.4"
 thiserror = "2.0"
 rayon = { version = "1.10", optional = true }
-rand = "0.9"
-rand_core = "0.9"
+rand = "0.10"
+rand_core = "0.10"
 # The ring-switch + recursive Ligerito opener (commit / Ligerito hot paths).
 # Kept as a portable LOCAL PATH dependency on the sibling flock checkout.
 # The k=4 Johnson configuration is generated in this crate, so the dependency
 # does not need a private `Slim3` enum variant; see README.md.
 # flock-core itself pins bincode 1.3 and serde 1.
-flock-core = { path = "/Users/albertgarretafontelles/flock-f2z-port/crates/flock-core" }
+flock-core = { git = "https://github.com/albert-garreta/flock-mod.git", rev = "ed4c0cd9aceeae15248bf4f24a70d96fe37b2395" }
 # The host proof stream carries flock's serde `LigeritoProof` as a
 # length-prefixed bincode blob (bincode 1.3, matching flock's own pin).
 bincode = "1.3"

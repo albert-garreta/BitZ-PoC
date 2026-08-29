@@ -145,15 +145,23 @@ Pinned by `mod_q_ligerito_padded_witness_trims_us`.
 ## Dependencies
 
 - **`flock-core`** — the ring-switch / additive-NTT / Ligerito hot
-  paths (Succinct Labs' *Flock*, `MIT OR Apache-2.0`). `Cargo.toml` uses the
-  portable sibling path `../flock/crates/flock-core`. The checkout must expose
-  selectable Merkle hashes and the precomputed-round-0 Ligerito API. This
-  crate derives the k=4 Johnson configuration locally from flock's embedded
-  slim template (`LigConfig::CustomJohnson`), so it does not require a private
-  `LigeritoProfile::Slim3` variant. `flock-core` itself pins `bincode 1.3` and
-  `serde 1`. Note flock's prover retains large scratch buffers across proves
+  paths (Succinct Labs' *Flock*, `MIT OR Apache-2.0`). `Cargo.toml` pins the
+  published modified fork by revision:
+  [`albert-garreta/flock-mod`](https://github.com/albert-garreta/flock-mod)
+  (upstream plus the k=4 L0 interleaving, the Slim3 rate-1/8 profile, and the
+  lookahead exports the precomputed-round-0 API needs), so a fresh clone
+  builds with no sibling checkout. For local flock development, override the
+  dependency with an uncommitted `path` edit or a `[patch]` entry.
+  `flock-core` itself pins `bincode 1.3` and `serde 1`. Note flock's prover
+  retains large scratch buffers across proves
   (`ligerito_flock::flock_scratch_clear` releases them).
-- `crypto-primitives` / `crypto-bigint` (field & bigint), `blake3`, `rayon`.
+- **`crypto-primitives`** — vendored at `vendor/crypto-primitives`
+  (NethermindEth, Apache-2.0; see `vendor/crypto-primitives/VENDORED.md` for
+  the pinned revision and the crypto-bigint 0.7.5 / rand 0.10 port).
+- **`circuit`** — SHA-256/F2Z circuit synthesis from the sibling checkout
+  `../f2z-benchmark/crates/circuit` (clone `worldfnd/f2z-benchmark` at `main`
+  next to this repository).
+- `crypto-bigint 0.7.5`, `crypto-primes`, `blake3`, `rayon`.
 
 ## Building and testing
 

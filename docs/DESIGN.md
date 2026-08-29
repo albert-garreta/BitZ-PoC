@@ -153,6 +153,21 @@ parallel source-column chunks with 128-element partial accumulators. The shared
 prover/verifier `a'` builder assigns each 128-column source pack to one output,
 so no dense per-worker partial vectors or synchronized scatters are needed.
 
+Both passes obtain their weights from a per-run engine (`VirtColumnWeights`)
+rather than folding `E_r` per nonzero. For a power-of-two tensor repetition
+(`RepeatedVirtualMap`, `global = local·2^k + instance` — the SHA batch shape)
+the eq tensor factors over the instance/local bit split:
+`W_{(lc,inst)} = Σ_l eq_inst_l[inst]·S_{l,lc}` with
+`S_{l,lc} = η_l·Σ_{lr∈localcol(lc)} eq_loc_l[lr]` precomputed once in
+`O(L·(local_rows + nnz_local))` field ops. One weight then costs `L`
+multiplies instead of the streamed fold's `L·deg` — per nonzero, per pass,
+on BOTH prover and verifier — and a local column with all `S_{·,lc} = 0`
+skips its whole 128-column pack in one check. Field associativity and
+distributivity make every value bit-identical to the streamed fold
+(`virtual_pack_weights_match_generic`), so transcripts are unchanged; maps
+without a power-of-two repetition keep the streamed fold as the engine's
+generic arm.
+
 When the prepared map is exactly the identity and both tensor layouts agree,
 the prover may emit `VirtOpenTail::Eq` and run the base opening directly on
 committed `f`. Otherwise it emits `VirtOpenTail::Batch`. The verifier accepts

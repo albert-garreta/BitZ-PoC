@@ -73,7 +73,7 @@ impl Monty128ReductionBackend for CryptoBigintReduction {}
 /// Neither optimized reduction path performs division or remainder.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct Monty128Reducer<B: Monty128ReductionBackend> {
-    config: crypto_bigint::modular::MontyParams<2>,
+    config: crypto_bigint::modular::FixedMontyParams<2>,
     modulus: [u64; 2],
     montgomery_one: [u64; 2],
     r2: [u64; 2],
@@ -91,11 +91,11 @@ pub(crate) type CryptoBigintMonty128Reducer = Monty128Reducer<CryptoBigintReduct
 impl<B: Monty128ReductionBackend> Monty128Reducer<B> {
     /// Prepares constants for an odd runtime modulus in `(2^64, 2^128)`.
     ///
-    /// The input is a `MontyParams<2>`, so oddness and the 128-bit upper bound
+    /// The input is a `FixedMontyParams<2>`, so oddness and the 128-bit upper bound
     /// are already enforced by `crypto-bigint`. The lower bound is the one
     /// required by the fixed `k = 2` Barrett construction used here.
     pub(crate) fn new(
-        config: &crypto_bigint::modular::MontyParams<2>,
+        config: &crypto_bigint::modular::FixedMontyParams<2>,
     ) -> Result<Self, DelayedReductionError> {
         let modulus_value = config.modulus().get();
         let modulus = words2(&modulus_value);
@@ -107,7 +107,7 @@ impl<B: Monty128ReductionBackend> Monty128Reducer<B> {
         // public modulus and is never invoked from an accumulation hot loop.
         let numerator = CryptoUint::<5>::from_words([0, 0, 0, 0, 1]);
         let nonzero_modulus = NonZero::new(CryptoUint::<2>::from_words(modulus))
-            .expect("MontyParams always contains a nonzero modulus");
+            .expect("FixedMontyParams always contains a nonzero modulus");
         let (mu, _) = numerator.div_rem_vartime(&nonzero_modulus);
         let mu_words = mu.to_words();
         debug_assert_eq!(mu_words[3], 0);
@@ -286,7 +286,7 @@ fn raw_words(value: &MontyField<2>) -> [u64; 2] {
 #[inline(always)]
 fn field_from_raw(
     words: [u64; 2],
-    config: &crypto_bigint::modular::MontyParams<2>,
+    config: &crypto_bigint::modular::FixedMontyParams<2>,
 ) -> MontyField<2> {
     MontyField::from_montgomery(FieldUint::from_words(words), config)
 }
@@ -554,19 +554,19 @@ mod tests {
     use crypto_bigint::{Odd, Uint as CryptoUint};
     use crypto_primes::{Flavor, is_prime};
     use crypto_primitives::{FromWithConfig, PrimeField};
-    use rand::{Rng, SeedableRng, rngs::StdRng};
+    use rand::{Rng, RngExt, SeedableRng, rngs::StdRng};
 
     type F = MontyField<2>;
 
-    fn config(modulus: u128) -> crypto_bigint::modular::MontyParams<2> {
+    fn config(modulus: u128) -> crypto_bigint::modular::FixedMontyParams<2> {
         let words = [modulus as u64, (modulus >> 64) as u64];
         let modulus =
             Odd::new(CryptoUint::<2>::from_words(words)).expect("test modulus must be odd");
-        crypto_bigint::modular::MontyParams::new_vartime(modulus)
+        crypto_bigint::modular::FixedMontyParams::new_vartime(modulus)
     }
 
     fn assert_backends(
-        config: &crypto_bigint::modular::MontyParams<2>,
+        config: &crypto_bigint::modular::FixedMontyParams<2>,
         fields: &[(F, F, u64, bool)],
     ) {
         let optimized = OptimizedMonty128Reducer::new(config).unwrap();

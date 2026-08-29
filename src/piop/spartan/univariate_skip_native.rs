@@ -11,7 +11,7 @@
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use crypto_bigint::subtle::{Choice, ConditionallySelectable};
+use crypto_bigint::{Choice, CtSelect};
 use crypto_primitives::{crypto_bigint_monty::MontyField, FromWithConfig, PrimeField};
 
 use crate::poly::mle::DenseMultilinearExtension;
@@ -22,7 +22,7 @@ use super::{
 };
 
 type Field = MontyField<2>;
-type FieldConfig = crypto_bigint::modular::MontyParams<2>;
+type FieldConfig = crypto_bigint::modular::FixedMontyParams<2>;
 type LinearAccumulator<R> = <R as SumcheckLinearReducer>::Accumulator;
 type ProductAccumulator<R> = <R as SumcheckProductReducer<Field>>::Accumulator;
 
@@ -628,7 +628,7 @@ fn accumulate_signed_i128<R>(
     let sign_mask = (value >> 127) as u128;
     let magnitude = ((value as u128) ^ sign_mask).wrapping_sub(sign_mask);
     let selected_weight = Field::from_montgomery(
-        ConditionallySelectable::conditional_select(
+        CtSelect::ct_select(
             weight.as_montgomery(),
             negative_weight.as_montgomery(),
             Choice::from((sign_mask & 1) as u8),
