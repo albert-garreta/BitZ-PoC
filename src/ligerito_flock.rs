@@ -1412,6 +1412,7 @@ const fn ligerito_profile_code(profile: ligerito::LigeritoProfile) -> u8 {
         ligerito::LigeritoProfile::Fast => 0,
         ligerito::LigeritoProfile::Slim => 1,
         ligerito::LigeritoProfile::Secure => 2,
+        ligerito::LigeritoProfile::Slim3 => 3,
     }
 }
 
@@ -2391,6 +2392,7 @@ fn prove_mle_eval_mod_q_ligerito_raw(
             &hint.prover_data.codeword,
             &hint.prover_data.merkle_tree,
             (gf_to_f128(u0), gf_to_f128(u2)),
+            None,
             &mut ZincChallenger(transcript),
         ),
         None => ligerito::recursive_prover_with_basis(
