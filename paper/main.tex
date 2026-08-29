@@ -127,7 +127,7 @@ The prover and verifier algorithms efficiency and design is affected by the choi
  \bigskip
  \begin{enumerate}[leftmargin=*,nosep]
      \item \ftwoz \ can prove polynomial constraints over essentially arbitrary rings $R$, including $\ZZ$, prime fields, lattices, binary fields, arbitrary field extensions, polynomial rings, etc., addressing Item \ref{i:arithmetization} above (\ftwoz\ can handle constraints over different rings at once).
-     \item In its initial commitment step, \ftwoz's decomposes the witness $\wit$ into a vector of bits $\mathsf{bits}(\wit)$, and commits to $\mathsf{bits}(\wit)$ over a binary field $\comfield$ with an error correcting code (leveraging the packing technique from \cite{binius,binius2}).
+     \item In its initial commitment step, \ftwoz's decomposes the witness $\wit$ into a vector of bits $\bitstext(\wit)$, and commits to $\bitstext(\wit)$ over a binary field $\comfield$ with an error correcting code (leveraging the packing technique from \cite{binius,binius2}).
      \item The initial polynomial constraints over the ring(s) $R$ are reduced to an MLE evaluation claim (or more generally, an inner product claim) over a finite field $\FF$, of the form $\langle \vv, \pi(\wit)\rangle = \mu\in \FF$, where $\pi$ is a projection from $R$ to $\FF$ and $\vv$ is a vector of elements from $\FF$.  The field $\FF$ can be a fixed field extension, a random prime field (following \cite{zaratan}), or a fixed prime field, depending on what  the ring(s) $R$ is (are).
      \item \ftwoz's Polynomial Commitment Scheme (PCS)  enables proving such linear claim efficiently. It operates, for the most part,    over $\comfield$. Thus, \ftwoz\ benefits of many of the advantages of running proof systems over binary fields (Item 2 discussed earlier one).   See below for a brief description of \ftwoz's PCS.
  \end{enumerate} 
@@ -178,57 +178,57 @@ We manage to instantiate our protocol using $\comfield=\FF_{2^{128}}$ in GHASH r
 %
  \ftwoz \ proves the aforementioned claim $\langle \vv, \pi(\wit)\rangle = \mu$ over a finite field $\FF$ as follows. We  describe first an initial, mostly insufficient, attempt.
      \begin{enumerate}[leftmargin=*,nosep]
-         \item  \textbf{Bitification.} First, it transforms the  claim into a claim of the form  $\langle \uu, \pi(\mathsf{bits}(\wit))\rangle = \mu$ over $\FF$, for some $\uu$.
-         \item \textbf{Lift to integers.} Assuming $\FF$ is a prime field of size $q$ and $\pi_q:\ZZ\to \FF$ is reduction modulo $|\FF|$, the prover sends $\mu'\in \ZZ$ such that $\langle \pi_q^{-1}(\uu), \mathsf{bits}(\wit)\rangle = \mu'$ in $\ZZ$.
-         \item \textbf{Proof in the exponent of $\comfield$.} Now take a generator $g$ of the multiplicative subgroup $\comfield^*$ of $\comfield$, and prove that $g^{\langle \pi_q^{-1}(\uu), \mathsf{bits}(\wit)\rangle} = g^{\mu'}$ in $\comfield$. Concretely, we have
+         \item  \textbf{Bitification.} First, it transforms the  claim into a claim of the form  $\langle \uu, \pi(\bitstext(\wit))\rangle = \mu$ over $\FF$, for some $\uu$.
+         \item \textbf{Lift to integers.} Assuming $\FF$ is a prime field of size $q$ and $\pi_q:\ZZ\to \FF$ is reduction modulo $|\FF|$, the prover sends $\mu'\in \ZZ$ such that $\langle \pi_q^{-1}(\uu), \bitstext(\wit)\rangle = \mu'$ in $\ZZ$.
+         \item \textbf{Proof in the exponent of $\comfield$.} Now take a generator $g$ of the multiplicative subgroup $\comfield^*$ of $\comfield$, and prove that $g^{\langle \pi_q^{-1}(\uu), \bitstext(\wit)\rangle} = g^{\mu'}$ in $\comfield$. Concretely, we have
          \begin{equation}\label{e:intro}
-         g^{\langle \pi_q^{-1}(\uu), \mathsf{bits}(\wit)\rangle} = \prod_{i} \left((g^{\pi_q^{-1}(\uu_i)} -1) \cdot \mathsf{bits}(\ww)_i + 1 \right) = g^{\mu'},
+         g^{\langle \pi_q^{-1}(\uu), \bitstext(\wit)\rangle} = \prod_{i} \left((g^{\pi_q^{-1}(\uu_i)} -1) \cdot \bitstext(\ww)_i + 1 \right) = g^{\mu'},
          \end{equation}
-         which is a polynomial expression over $\comfield$ on the vector $\mathsf{bits}(\ww)$ that we committed over $\comfield$. 
+         which is a polynomial expression over $\comfield$ on the vector $\bitstext(\ww)$ that we committed over $\comfield$. 
          
          This is a standard situation where there is no ``wrong-field'' arithmetic, hence in principle one can use any proof system over $\comfield$ to prove \eqref{e:intro}.
      \end{enumerate}  
 There are several issues with this attempt:
 \begin{itemize}[leftmargin=*,nosep]
     \item First, $\FF$ may not be a prime field, in which case there is no natural lift to integers in Step 2; rather, there is a lift to integer polynomials $\ZZ[X]$. 
-    \item Second, even if $\FF$ is a prime field,  $q=|\FF|$ may be large and the linear expression $\langle \pi_q^{-1}(\uu), \mathsf{bits}(\wit)\rangle$ may overflow the order of $g\in \comfield^{*}$, which is $2^{\comfieldexp}-1$. In this case, proving  $\langle \pi_q^{-1}(\uu), \mathsf{bits}(\wit)\rangle = \mu'$  ``in the exponent of $g$'' is unsound. 
-    \item Third, even if neither of these problems hold, \eqref{e:intro} is, in principle, an expensive constraint to prove: indeed, it is a length $|\mathsf{bits}(\ww)|$ grand product of, essentially, arbitrary factors from $\comfield$ (typically $\approx$128 bit elements).  Grand products can be expensive to prove, and furthermore the fact that the factors are large prevents us from using known sumcheck optimizations such as univariate skips \cite{gruen} and \albert{what else?}.
-    \item Four, when proving \eqref{e:intro}, typically one ends up with an MLE evaluation claim on the vector $(g^{\pi_q^{-1}(\uu)_i})_i$ (and another on $\mathsf{bits}(\ww)$, which is proved with any PCS over $\comfield$). If the verifier checks the claim itself, then it pays a linear cost. If the prover proves this claim, then it is essentially back to square one.
+    \item Second, even if $\FF$ is a prime field,  $q=|\FF|$ may be large and the linear expression $\langle \pi_q^{-1}(\uu), \bitstext(\wit)\rangle$ may overflow the order of $g\in \comfield^{*}$, which is $2^{\comfieldexp}-1$. In this case, proving  $\langle \pi_q^{-1}(\uu), \bitstext(\wit)\rangle = \mu'$  ``in the exponent of $g$'' is unsound. 
+    \item Third, even if neither of these problems hold, \eqref{e:intro} is, in principle, an expensive constraint to prove: indeed, it is a length $|\bitstext(\ww)|$ grand product of, essentially, arbitrary factors from $\comfield$ (typically $\approx$128 bit elements).  Grand products can be expensive to prove, and furthermore the fact that the factors are large prevents us from using known sumcheck optimizations such as univariate skips \cite{gruen} and \albert{what else?}.
+    \item Four, when proving \eqref{e:intro}, typically one ends up with an MLE evaluation claim on the vector $(g^{\pi_q^{-1}(\uu)_i})_i$ (and another on $\bitstext(\ww)$, which is proved with any PCS over $\comfield$). If the verifier checks the claim itself, then it pays a linear cost. If the prover proves this claim, then it is essentially back to square one.
 \end{itemize}
 
 \bigskip
 
-\noindent We solve these issues as follows: 1) if $\FF$ is a proper extension, at Step 2 we lift to a claim $\langle \picanon^{-1}(\uu), \mathsf{bits}(\wit)\rangle = \mu' \in \ZZ[X]$ over $\ZZ[X]$,  where $\picanon:\ZZ[X] \to \FF$ is a canonical projection of $\ZZ[X]$ onto $\FF$. Then the verifier sends a random prime $q'$ of $\approx |\comfield^*|/|\mathsf{bits}(\ww)|$ size (small enough to avoid the issue of overflowing in the exponent), and a random element $\alpha\in \FF_{q'}$; then the previous claim is replaced by  $\langle \pi_{q',\alpha}\circ \picanon^{-1}(\uu), \pi_{q',\alpha}(\mathsf{bits}(\wit))\rangle = \pi_{q',\alpha}(\mu') \in \FF_{q'}$ where $\pi_{q',\alpha}(f(X)) = \pi_{q'}(f)(\alpha)\in \FF_{q'}$. Now we re-enter Step 2 with this new claim.
+\noindent We solve these issues as follows: 1) if $\FF$ is a proper extension, at Step 2 we lift to a claim $\langle \picanon^{-1}(\uu), \bitstext(\wit)\rangle = \mu' \in \ZZ[X]$ over $\ZZ[X]$,  where $\picanon:\ZZ[X] \to \FF$ is a canonical projection of $\ZZ[X]$ onto $\FF$. Then the verifier sends a random prime $q'$ of $\approx |\comfield^*|/|\bitstext(\ww)|$ size (small enough to avoid the issue of overflowing in the exponent), and a random element $\alpha\in \FF_{q'}$; then the previous claim is replaced by  $\langle \pi_{q',\alpha}\circ \picanon^{-1}(\uu), \pi_{q',\alpha}(\bitstext(\wit))\rangle = \pi_{q',\alpha}(\mu') \in \FF_{q'}$ where $\pi_{q',\alpha}(f(X)) = \pi_{q'}(f)(\alpha)\in \FF_{q'}$. Now we re-enter Step 2 with this new claim.
 
-2) If $\FF$ is too large of a prime field, we follow a similar approach as above: once we have the integer claim $\langle \pi_q^{-1}(\uu), \mathsf{bits}(\wit)\rangle = \mu'$, the verifier samples a random ``small'' prime $q'$, reduce the claim modulo $q'$, and then re-enter Step 2 with this new claim.
+2) If $\FF$ is too large of a prime field, we follow a similar approach as above: once we have the integer claim $\langle \pi_q^{-1}(\uu), \bitstext(\wit)\rangle = \mu'$, the verifier samples a random ``small'' prime $q'$, reduce the claim modulo $q'$, and then re-enter Step 2 with this new claim.
 
 \albert{remove?} We emphasize again that we manage to instantiate \ftwoz\ with 128 bits of security, using $\comfield=\FF_{2^{128}}$, while having no limitation on the size of the ring $R$ we start with.
 
-3) The main idea is to split  \eqref{e:intro} into $\approx\sqrt{|\mathsf{bits}(\ww)|}$ grand products of the same form as \eqref{e:intro}, so that, even though in total there are $|\mathsf{bits}(\ww)|$ factors among all of them, these factors can only take $\sqrt{|\mathsf{bits}(\ww)|}$ values. More concretely, we assume $\uu=\uu^{(1)} \otimes \uu^{(2)}$ tensor-decomposes into $\approx \sqrt{|\mathsf{bits}(\ww)|}$ sized factors (this is typically the case since $\vv$ is usually an ``eq'' vector), and then, assuming the notation of Step 3 above, we aim to prove  $\langle \pi_q^{-1}(\uu^{(1)}), \mathsf{bits}(\wit)_{*j}\rangle = \mu_j'$ in $\ZZ$  for all $j\in [|\uu^{(2)}|]$, such that $\sum_{j} \pi_q(\mu_j') \cdot \uu_j^{(2)} = \mu$, where we index   $\mathsf{bits}(\wit)$ with indices $i\in [|\uu^{(1)}|], j\in [|\uu^{(2)}|]$. We then set up a grand product for each of these claims, obtaining 
+3) The main idea is to split  \eqref{e:intro} into $\approx\sqrt{|\bitstext(\ww)|}$ grand products of the same form as \eqref{e:intro}, so that, even though in total there are $|\bitstext(\ww)|$ factors among all of them, these factors can only take $\sqrt{|\bitstext(\ww)|}$ values. More concretely, we assume $\uu=\uu^{(1)} \otimes \uu^{(2)}$ tensor-decomposes into $\approx \sqrt{|\bitstext(\ww)|}$ sized factors (this is typically the case since $\vv$ is usually an ``eq'' vector), and then, assuming the notation of Step 3 above, we aim to prove  $\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\wit)_{*j}\rangle = \mu_j'$ in $\ZZ$  for all $j\in [|\uu^{(2)}|]$, such that $\sum_{j} \pi_q(\mu_j') \cdot \uu_j^{(2)} = \mu$, where we index   $\bitstext(\wit)$ with indices $i\in [|\uu^{(1)}|], j\in [|\uu^{(2)}|]$. We then set up a grand product for each of these claims, obtaining 
   \begin{equation}\label{e:intro_2}
-         g^{\langle \pi_q^{-1}(\uu^{(1)}), \mathsf{bits}(\wit)_{*j}\rangle} = \prod_{i} (g^{\pi_q^{-1}(\uu_i^{(1)})} -1) \cdot \mathsf{bits}(\ww)_{ij} + 1 = g^{\mu_j'} \qquad \text{for all } j.
+         g^{\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\wit)_{*j}\rangle} = \prod_{i} (g^{\pi_q^{-1}(\uu_i^{(1)})} -1) \cdot \bitstext(\ww)_{ij} + 1 = g^{\mu_j'} \qquad \text{for all } j.
          \end{equation}
-There are $|\mathsf{bits}(\wit)|$ factors in total, but only $\approx \sqrt{|\mathsf{bits}(\wit)|}$ different values these factors can take. 
+There are $|\bitstext(\wit)|$ factors in total, but only $\approx \sqrt{|\bitstext(\wit)|}$ different values these factors can take. 
 
-We say \eqref{e:intro_2} is a \emph{low entropy batched grand product}. To prove \eqref{e:intro_2} we use a batched GKR protocol with the following  optimization, among others: because of the low-entropy phenomenon, we build several small lookup tables of size $O(\sqrt{|\mathsf{bits}(\ww)|})$ (of a few MB at most) which are used during the most expensive sumcheck rounds of the GKR protocol. Concretely, the last sumcheck (the most expensive one), uses $3$ lookup tables to compute the first three messages of the prover; the second last sumcheck does the same for the first two prover messages (with two tables); and the third last sumcheck does the same for the first prover message (with one table).
+We say \eqref{e:intro_2} is a \emph{low entropy batched grand product}. To prove \eqref{e:intro_2} we use a batched GKR protocol with the following  optimization, among others: because of the low-entropy phenomenon, we build several small lookup tables of size $O(\sqrt{|\bitstext(\ww)|})$ (of a few MB at most) which are used during the most expensive sumcheck rounds of the GKR protocol. Concretely, the last sumcheck (the most expensive one), uses $3$ lookup tables to compute the first three messages of the prover; the second last sumcheck does the same for the first two prover messages (with two tables); and the third last sumcheck does the same for the first prover message (with one table).
 
 
-The above solution also takes care of Issue 4: the batched GKR protocol outputs MLE evaluation claims on $(g^{\pi_q^{-1}(\uu^{(1)})_i})_i$ (and $\mathsf{bits}(\ww)$, which are dealt with the PCS over $\comfield$). This is an $O(\sqrt{|\mathsf{bits}(\ww)|})$ vector, and the verifier can check this claim by itself cheaply.
+The above solution also takes care of Issue 4: the batched GKR protocol outputs MLE evaluation claims on $(g^{\pi_q^{-1}(\uu^{(1)})_i})_i$ (and $\bitstext(\ww)$, which are dealt with the PCS over $\comfield$). This is an $O(\sqrt{|\bitstext(\ww)|})$ vector, and the verifier can check this claim by itself cheaply.
 
 
 
     % \begin{enumerate}         
-      %   \item  Then, if necessary (if $\FF$ is not a prime field or if $\FF$ is too large), it replaces this claim by a new claim over a small prime field $\FF'$ (with $|\FF'|\lessapprox |\comfield|/\sqrt{|\mathsf{bits}(\ww)|}$). 
-      %   \item Then it splits the current claim into $\approx \sqrt{|\mathsf{bits}(\ww)|}$  linear claims on chunks of $\mathsf{bits}(\ww)$ (leveraging tensor decomposability of $\uu$). 
+      %   \item  Then, if necessary (if $\FF$ is not a prime field or if $\FF$ is too large), it replaces this claim by a new claim over a small prime field $\FF'$ (with $|\FF'|\lessapprox |\comfield|/\sqrt{|\bitstext(\ww)|}$). 
+      %   \item Then it splits the current claim into $\approx \sqrt{|\bitstext(\ww)|}$  linear claims on chunks of $\bitstext(\ww)$ (leveraging tensor decomposability of $\uu$). 
       %   \item Then, finally, it proves all the resulting claims in the exponent of a generator of $\comfield^*$, via a batched GKR grand product argument.
 
-       %  The factors of these batched grand products turn out to have ``low-entropy'' (meaning that there are $|\mathsf{bits}(\ww)|$ factors but only   $\approx \sqrt{|\mathsf{bits}(\ww)|}$ possible values among them. We design specific optimizations that leverage such phenomenon. 
-      %   \item The grand product argument outputs a standard linear claim on $\mathsf{bits}(\ww)$ over $\comfield$, which we prove with WHIR \cite{whir} and the ring switching techniques from \cite{binius,binius2}.
+       %  The factors of these batched grand products turn out to have ``low-entropy'' (meaning that there are $|\bitstext(\ww)|$ factors but only   $\approx \sqrt{|\bitstext(\ww)|}$ possible values among them. We design specific optimizations that leverage such phenomenon. 
+      %   \item The grand product argument outputs a standard linear claim on $\bitstext(\ww)$ over $\comfield$, which we prove with WHIR \cite{whir} and the ring switching techniques from \cite{binius,binius2}.
     % \end{enumerate}
 
  \bigskip 
  
- \paragraph{Virtual $\FF_2$-linear transforms, NP-complete dually linear relations, and arithmetization of SHA-256} Observe that, once we have a standard linear claim on $\mathsf{bits}(\ww)$ in $\comfield$, we could replace  $\mathsf{bits}(\ww)$ by a linear expression on some other committed vector $\ff$ over $\comfield$, so that $\mathsf{bits}(\ww) = M \cdot \ff$ for some matrix $M$. The final linear claim can then be replaced by a linear claim for $\ff$. Hence, we can, instead of committing to $\mathsf{bits}(\ww)$, commit to $\bff$ and treat $\ww$ and $\mathsf{bits}(\ww)$ as virtual vectors. See \cref{?} for details. 
+ \paragraph{Virtual $\FF_2$-linear transforms, NP-complete dually linear relations, and arithmetization of SHA-256} Observe that, once we have a standard linear claim on $\bitstext(\ww)$ in $\comfield$, we could replace  $\bitstext(\ww)$ by a linear expression on some other committed vector $\ff$ over $\comfield$, so that $\bitstext(\ww) = M \cdot \ff$ for some matrix $M$. The final linear claim can then be replaced by a linear claim for $\ff$. Hence, we can, instead of committing to $\bitstext(\ww)$, commit to $\bff$ and treat $\ww$ and $\bitstext(\ww)$ as virtual vectors. See \cref{?} for details. 
  
  This allows \ftwoz\  to prove polynomial constraints over $R$ on vectors $\ww$ that are a virtual $\FF_2$-linear combination of a committed vector $\ff\in \comfield^{\codedim'}$. For example, \ftwoz \ can efficiently prove the following R1CS-like relation: 
 %
@@ -315,11 +315,14 @@ where $A,B,C$ are $m\times (\inplen + n)$ matrices over $R$.
 
 %\noindent \ftwoz \ proceeds as follows:
 
- \paragraph{Step 1: Commitment in $\comfield$.} The prover creates a vector $\mathsf{bits}(\ww) \in \bits^{\codedim} \subseteq \ZZ^{\codedim}$ of integer bits, according to some public specification of how to represent elements  $r\in R$ as a linear combination of  bits, i.e.\ $r=L(\mathsf{bits}(r))$ for $L: \{0,1\}^{\codedim/n}\to R$ a linear map.  For example, if $R=\ZZ$, then $L(b_1,\ldots, b_{B}) = \sum_{i\in [B]} 2^{i-1} \cdot b_i$.
+ \paragraph{Step 1: Commitment in $\comfield$.} The prover creates a vector $\bitstext(\ww) \in \bits^{\codedim} \subseteq \ZZ^{\codedim}$ of integer bits, according to some public specification of how to represent elements  $r\in R$ as a linear combination of  bits, i.e.\ $r=L(\bitstext(r))$ for $L: \{0,1\}^{\codedim/n}\to R$ a linear map.  For example, if $R=\ZZ$, then $L(b_1,\ldots, b_{B}) = \sum_{i\in [B]} 2^{i-1} \cdot b_i$.
 
-     Then the prover looks at $\mathsf{bits}(\ww)$ as a vector from $\FF_2^{\codedim}$, encodes it with a Reed-Solomon code (or any other code) over $\comfield$, and sends a Merkle root of the resulting codeword to the verifier. 
+     Then the prover looks at $\bitstext(\ww)$ as a vector from $\FF_2^{\codedim}$, encodes it with a Reed-Solomon code (or any other code) over $\comfield$, and sends a Merkle root of the resulting codeword to the verifier. 
 
-     When encoding $\mathsf{bits}(\ww)$, every $\comfieldexp$ bits $b_1, \ldots, b_\comfieldexp$ are packed as a single field element $\sum_{i\in [\comfield]} X^{i-1}\cdot b_i$ from $\comfield$, following \cite{binius} (one can use a different $\FF_2$-base than the monomial base $(X^i)_i$).
+     When encoding $\bitstext(\ww)$, every $\comfieldexp$ bits $b_1, \ldots, b_\comfieldexp$ are packed as a single field element $\sum_{i\in [\comfield]} X^{i-1}\cdot b_i$ from $\comfield$, following \cite{binius} (one can use a different $\FF_2$-base than the monomial base $(X^i)_i$).
+     
+     \albertimportant{We may want to mention that we do an OOD sample if we are working beyond the UDR}
+     
      \paragraph{Step 2: Projection to a   finite field $\FF$.}  \albertimportant{} If necessary, the verifier samples a random map $\pi$ from $R$ to a finite field $\FF$ of $\approx \lambda$ bit size (not necessarily a prime field). Then the claim \eqref{e:intro_eq_0} is replaced by
 \begin{equation}\label{e:intro_eq_05}\pi(\pp_i)(\pi(\xx),\pi(\ww))=0 \qquad \text{in  } \FF \qquad \text{ for all } i.\end{equation} 
 The form of the samplable maps $\pi$ depends on the type of ring $R$ we started with. For example, if $R=\ZZ$, then $\pi$ is reduction modulo a random prime $q$, following \cite{zaratan}. If $R=\KK$ is a finite field (not necessarily a prime field), then $\pi$ is always the identity. In \cref{s:to_general_bitz} we discuss other rings and other projections.
@@ -341,55 +344,56 @@ For simplicity, we assume $\FF_{\mathsf{ext}}=\FF$ is a prime field. We discuss 
 
 
 
-\paragraph{Step 4: Bitification of the linear claim.} The claim \eqref{e:intro_eq_1} is replaced by \begin{equation}\label{e:intro_eq_2}\langle \uu, \pi(\mathsf{bits}(\ww))\rangle =\mu \qquad \text{in  } \FF,
+\paragraph{Step 4: Bitification of the linear claim.} The claim \eqref{e:intro_eq_1} is replaced by \begin{equation}\label{e:intro_eq_2}\langle \uu, \pi(\bitstext(\ww))\rangle =\mu \qquad \text{in  } \FF,
 \end{equation} 
-for a new $\uu\in \FF^{\codedim}$. This transformation is done using the linear bit representation $L$ mentioned in Step 1. Concretely, representing $L$ as matrix multiplication and indexing vectors appropriately, $\langle \vv, \pi(\ww)\rangle = \langle \vv, \pi( L \cdot \mathsf{bits}(\ww)) \rangle = \langle \pi(L)^{\mathsf{T}}\cdot \vv, \pi(\mathsf{bits}(\ww)) \rangle$.
+for a new $\uu\in \FF^{\codedim}$. This transformation is done using the linear bit representation $L$ mentioned in Step 1. Concretely, representing $L$ as matrix multiplication and indexing vectors appropriately, $\langle \vv, \pi(\ww)\rangle = \langle \vv, \pi( L \cdot \bitstext(\ww)) \rangle = \langle \pi(L)^{\mathsf{T}}\cdot \vv, \pi(\bitstext(\ww)) \rangle$.
 
 The new vector $\uu$ still admits tensor decompositions $\uu=\uu^{(1)} \otimes \uu^{(2)}$ with, say $\uu^{(1)}\in \FF^{\codedim_1}$ and $\uu^{(2)}\in \FF^{\codedim_2}$. Indeed, one can see that $L= \mathsf{Id}_{n\times n} \otimes L'$ for some vector $L'\in R^{\codedim/n}$ and $\mathsf{Id}$ the identity matrix of dimension $n$. Then for example $\uu^{(1)} = \vv^{(1)}$ and $\uu^{(2)} = \vv^{(2)} \otimes \pi(L')$, see \cref{r:tensor_dec_u} for details \albert{Review. Maybe I could prove it here}. Other choices of decompositions may lead to better efficiency later.  % assume for the sake of efficiency later on that $\uu$ also admits a tensor decomposition $\uu=\uu_1\otimes \uu_2 \in \FF_q^{\codedim_1 \cdot \codedim_2}$. This is in general a free assumption, see \cref{r:tensor_dec_u} \albert{add a remark not in the main body?}.
  
- We assume that  $|\FF|<  |\comfield|/\codedim_1$, a condition needed for soundness later in Step 5.2. Below in in \cref{r:large_prime_field_in_BitZ_PCS} we explain   how to handle larger $\FF$. We note that this is a very constraining assumption because, when for example aiming to use $\comfield=\FF_{2^{128}}$ (a highly performant binary field) and 128 bits of security, one can easily have $\FF$ with $|\FF|\geq  |\comfield|/\codedim_1$.
+ We assume that  $|\FF|<  \fieldboundsizeexponent$, a condition needed for soundness later in Step 5.2. Below in in \cref{r:large_prime_field_in_BitZ_PCS} we explain   how to handle larger $\FF$. We note that this is a very constraining assumption because, when for example aiming to use $\comfield=\FF_{2^{128}}$ (a highly performant binary field) and 128 bits of security, one can easily have $\FF$ with $|\FF|\geq  \fieldboundsizeexponent$.
 
 
-     \paragraph{Step 5: \ftwoz \ Polynomial Commitment Scheme (PCS).} Our \ftwoz\  PCS  enables efficiently proving  \eqref{e:intro_eq_2} with $\mathsf{bits}(\ww)$ being committed over $\comfield$ (in packed form). This is done as follows:
+     \paragraph{Step 5: \ftwoz \ Polynomial Commitment Scheme (PCS).} Our \ftwoz\  PCS  enables efficiently proving  \eqref{e:intro_eq_2} with $\bitstext(\ww)$ being committed over $\comfield$ (in packed form). This is done as follows:
 
-     \paragraph{Step 5.0: reducing the prime modulus if necessary.} This step triggers if the condition  $|\FF|< |\comfield|/\codedim_1$ is not met. We explain this step below in \cref{r:large_prime_field_in_BitZ_PCS} and assume for now that the condition holds. 
+
+     \paragraph{Step 5.0: reducing the prime modulus if necessary.} This step triggers if the condition  $|\FF|< \fieldboundsizeexponent$ is not met. We explain this step below in \cref{r:large_prime_field_in_BitZ_PCS} and assume for now that the condition holds. 
      
      When $\FFext$ is a proper field extension, this step always triggers.
 
-     \paragraph{Step 5.1: Transformation of \eqref{e:intro_eq_2} into a batch of low-magnitude integer claim.} The prover organizes $\mathsf{bits}(\ww)$ into a $\codedim_1\times \codedim_2$ matrix with columns $\mathsf{bits}(\ww)_{*j}\in \bits^{\codedim_1}$ ($j\in [\codedim_2]$). Then it publishes   $\eta_1,\ldots, \eta_{\codedim_2}\in  \ZZ$ defined as 
-         $\eta_j=\langle \pi^{-1}(\uu^{(1)}), \mathsf{bits}(\ww)_{*j}\rangle$  in $\ZZ$, for all $j\in [\codedim_2]$.  
+     \paragraph{Step 5.1: Transformation of \eqref{e:intro_eq_2} into a batch of low-magnitude integer claim.} The prover organizes $\bitstext(\ww)$ into a $\codedim_1\times \codedim_2$ matrix with columns $\bitstext(\ww)_{*j}\in \bits^{\codedim_1}$ ($j\in [\codedim_2]$). Then it publishes   $\eta_1,\ldots, \eta_{\codedim_2}\in  \ZZ$ defined as 
+         $\eta_j=\langle \pi^{-1}(\uu^{(1)}), \bitstext(\ww)_{*j}\rangle$  in $\ZZ$, for all $j\in [\codedim_2]$.  
          Then the verifier checks that \albert{Add a remark about the possibility of proving the below with a sumcheck}
          %
          $$
         \sum_{j\in [\codedim_2]} \pi(\eta_j) \cdot \uu_j^{(2)} = \mu \qquad \text{in  } \FF,
          $$
-         and \eqref{e:intro_eq_2} is replaced by the integer claim \begin{equation}\label{e:intro_eq_3}\langle \pi^{-1}(\uu^{(1)}), \mathsf{bits}(\ww)_{*j}\rangle =\eta_j \qquad \text{in  } \ZZ \qquad \text{for all } j\in [\codedim_2],
+         and \eqref{e:intro_eq_2} is replaced by the integer claim \begin{equation}\label{e:intro_eq_3}\langle \pi^{-1}(\uu^{(1)}), \bitstext(\ww)_{*j}\rangle =\eta_j \qquad \text{in  } \ZZ \qquad \text{for all } j\in [\codedim_2],
         \end{equation} 
         where $\pi^{-1}$ is the canonical representation of elements from $\FF$ as integers in the range $\range{0}{|\FF|-1}$.
-        \paragraph{Step 5.2: Exponentiation in $\comfield$ and grand product in $\comfield$.}  Since we assumed $|\FF|< |\comfield|/\codedim_1$, \eqref{e:intro_eq_3} is true if and only if
+        \paragraph{Step 5.2: Exponentiation in $\comfield$ and grand product in $\comfield$.}  Since we assumed $|\FF|< \fieldboundsizeexponent$, \eqref{e:intro_eq_3} is true if and only if
           \begin{equation}\label{e:intro_eq_4}
           \begin{aligned}
-          g^{\eta_j}  &= g^{\langle \pi^{-1}(\uu), \mathsf{bits}(\ww)_{*j}\rangle}\\ &= g^{\sum_{i\in[\codedim_1]} \pi^{-1}(\uu_i) \cdot \mathsf{bits}(\ww)_{ij} } = \prod_{i\in [\codedim_1]} g^{ \pi^{-1}(\uu_i) \cdot \mathsf{bits}(\ww)_{ij} } 
-          \\ &= \prod_{i\in [\codedim_1]} \left(\left(g^{\pi^{-1}(\uu_i)} -1\right)\cdot \mathsf{bits}(\ww)_{ij}  +1\right) \qquad \text{in  } \comfield \qquad \text{for all } j\in [\codedim_2],
+          g^{\eta_j}  &= g^{\langle \pi^{-1}(\uu), \bitstext(\ww)_{*j}\rangle}\\ &= g^{\sum_{i\in[\codedim_1]} \pi^{-1}(\uu_i) \cdot \bitstext(\ww)_{ij} } = \prod_{i\in [\codedim_1]} g^{ \pi^{-1}(\uu_i) \cdot \bitstext(\ww)_{ij} } 
+          \\ &= \prod_{i\in [\codedim_1]} \left(\left(g^{\pi^{-1}(\uu_i)} -1\right)\cdot \bitstext(\ww)_{ij}  +1\right) \qquad \text{in  } \comfield \qquad \text{for all } j\in [\codedim_2],
           \end{aligned}
         \end{equation} 
-        where $g$ is a generator of the multiplicative subgroup of $\comfield$, and in the middle expression, $\mathsf{bits}(\ww)_{ij}$ denotes the $i,j$-th entry (a bit) in $\mathsf{bits}(\ww)$ seen as an element of $\comfield$.
+        where $g$ is a generator of the multiplicative subgroup of $\comfield$, and in the middle expression, $\bitstext(\ww)_{ij}$ denotes the $i,j$-th entry (a bit) in $\bitstext(\ww)$ seen as an element of $\comfield$.
 
         The prover and verifier run  a batched grand product PIOP over the binary field $\comfield$ for the claim  \eqref{e:intro_eq_4}, obtaining as a result a new claim of the form
-        \begin{equation}\label{e:intro_eq_5} \langle \zz, \mathsf{bits}(\ww)_{*j} \rangle = c_j \qquad \text{in  } \comfield \qquad \text{for all } j\in [\codedim_2],
+        \begin{equation}\label{e:intro_eq_5} \langle \zz, \bitstext(\ww)_{*j} \rangle = c_j \qquad \text{in  } \comfield \qquad \text{for all } j\in [\codedim_2],
         \end{equation} 
-        for some $\zz\in \comfield^{\codedim_1}$ and $c_j\in \comfield$. In general, these claims can be batched to \begin{equation} \label{e:intro_eq_5_batched}\langle \zz', \mathsf{bits}(\ww) \rangle = c \qquad \text{in  } \comfield\end{equation} for  $\zz'\in \comfield^{\codedim}, c\in \comfield$ with, for example, $\zz'=(\alpha_1,\ldots, \alpha_{\codedim_2}) \otimes \zz$ for $\alpha_1, \ldots, \alpha_{\codedim_2}$ verifier's randomness, and $c=\sum_{j\in [\codedim_2]} \alpha_j\cdot c_j$. 
-        However, in most instantiations this step may not be necessary, especially if using an interleaved code to commit to $\mathsf{bits}(\ww)$ \albert{In the GKR grand product section of the main body I may need to mention batching?}. 
+        for some $\zz\in \comfield^{\codedim_1}$ and $c_j\in \comfield$. In general, these claims can be batched to \begin{equation} \label{e:intro_eq_5_batched}\langle \zz', \bitstext(\ww) \rangle = c \qquad \text{in  } \comfield\end{equation} for  $\zz'\in \comfield^{\codedim}, c\in \comfield$ with, for example, $\zz'=(\alpha_1,\ldots, \alpha_{\codedim_2}) \otimes \zz$ for $\alpha_1, \ldots, \alpha_{\codedim_2}$ verifier's randomness, and $c=\sum_{j\in [\codedim_2]} \alpha_j\cdot c_j$. 
+        However, in most instantiations this step may not be necessary, especially if using an interleaved code to commit to $\bitstext(\ww)$ \albert{In the GKR grand product section of the main body I may need to mention batching?}. 
 
         This exponentiation trick is inspired by  \cite{binius64,lev}, where the same idea is used in  different contexts, see \cref{r:comparison_grand_product_binius_lev}. 
 
 
 
-        This is by far the most expensive step of \ftwoz. Our grand product PIOP is a simple GKR protocol for grand products, for which we design novel \albert{to our knowledge} prover optimizations, see \cref{s:to_low_entropy_gkr} below and \cref{s:gkr_low_entropy}. These optimizations exploit the ``low entropy'' of the factors $(g^{\pi^{-1}}-1)\cdot \mathsf{bits}(\ww)_{ij} +1$ across $(i,j)\in [\codedim_1]\times [\codedim_2]$, in the sense that across $\codedim=\codedim_1\cdot \codedim_2$ factors, there are only $\codedim_1+1=O(\sqrt{\codedim})$ possible values taken by these factors.  This is why it is important to have the vectors $\vv$ and $\uu$ admit a tensor split into $\approx$square-root sized factors. % See \cref{?,s:gkr_low_entropy} for more details.
+        This is by far the most expensive step of \ftwoz. Our grand product PIOP is a simple GKR protocol for grand products, for which we design novel \albert{to our knowledge} prover optimizations, see \cref{s:to_low_entropy_gkr} below and \cref{s:gkr_low_entropy}. These optimizations exploit the ``low entropy'' of the factors $(g^{\pi^{-1}}-1)\cdot \bitstext(\ww)_{ij} +1$ across $(i,j)\in [\codedim_1]\times [\codedim_2]$, in the sense that across $\codedim=\codedim_1\cdot \codedim_2$ factors, there are only $\codedim_1+1=O(\sqrt{\codedim})$ possible values taken by these factors.  This is why it is important to have the vectors $\vv$ and $\uu$ admit a tensor split into $\approx$square-root sized factors. % See \cref{?,s:gkr_low_entropy} for more details.
 
 
   
- \paragraph{Step 5.3: Proving linear claims over $\comfield$.} At this point, since $\mathsf{bits}(\ww)$ was committed over $\comfield$ (in packed form), one can prove \eqref{e:intro_eq_5} (or the batched version of it) via standard methods such as in \cite{binius,binius2,flock}. Concretely, we use the so-called ring switch from \cite{binius,binius2} to turn \eqref{e:intro_eq_5} into linear claims about the packed binary field elements we encoded, and then use WHIR \cite{whir} over $\comfield$ to prove these claims. See \cref{a:ring_switch_1,a:ring_switch_remco} for details on ring-switching. 
+ \paragraph{Step 5.3: Proving linear claims over $\comfield$.} At this point, since $\bitstext(\ww)$ was committed over $\comfield$ (in packed form), one can prove \eqref{e:intro_eq_5} (or the batched version of it) via standard methods such as in \cite{binius,binius2,flock}. Concretely, we use the so-called ring switch from \cite{binius,binius2} to turn \eqref{e:intro_eq_5} into linear claims about the packed binary field elements we encoded, and then use WHIR \cite{whir} over $\comfield$ to prove these claims. See \cref{a:ring_switch_1,a:ring_switch_remco} for details on ring-switching. 
 
 
 \bigskip       
@@ -402,10 +406,10 @@ The new vector $\uu$ still admits tensor decompositions $\uu=\uu^{(1)} \otimes \
 
 \begin{remark}[Description of Step 5.0]\label{r:large_prime_field_in_BitZ_PCS}
 \albertimportant{In the actual protocol this step is done after Step 5.1. I think they are equivalent but should unify}
-    Assume that $\FFext=\FF$ is a prime field (the general case is described in \cref{s:to_general_bitz}), in Step 5.0, the condition $|\FF|< |\comfield|/\codedim_1$ does not hold. Then the prover sends an integer $\mu'\in \ZZ$ such that
+    Assume that $\FFext=\FF$ is a prime field (the general case is described in \cref{s:to_general_bitz}), and that in Step 5.0 the condition $|\FF|< \fieldboundsizeexponent$ does not hold. Then the prover sends an integer $\mu'\in \ZZ$ such that
     %
-    $$\langle  \pi^{-1}(\uu^{(1)})\otimes \pi^{-1}(\uu^{(2)}), \mathsf{bits}(\uu)\rangle = \mu' \qquad \text{in } \ZZ,$$    
-    The verifier checks that $\pi(\mu')=\mu$, and responds with a random prime $q$ such that $q< |\comfield|/\codedim_1$ Then prover and verifier proceed to Step 5.1 after updating $\FF \gets \FF_{q'}$ the prime field with $q'$ elements, $\pi\gets \pi_{q'}$, $\mu \gets \pi_q(\mu')$, and $\uu\gets \pi_q\circ \pi^{-1}(\uu^{(1)}) \otimes \pi_q\circ \pi^{-1}(\uu^{(2)})$.
+    $$\langle  \pi^{-1}(\uu^{(1)})\otimes \pi^{-1}(\uu^{(2)}), \bitstext(\ww)\rangle = \mu' \qquad \text{in } \ZZ,$$    
+    The verifier checks that $\pi(\mu')=\mu$, and responds with a random prime $q$ such that $q< \fieldboundsizeexponent$ Then prover and verifier proceed to Step 5.1 after updating $\FF \gets \FF_{q'}$ the prime field with $q'$ elements, $\pi\gets \pi_{q'}$, $\mu \gets \pi_q(\mu')$, and $\uu\gets \pi_q\circ \pi^{-1}(\uu^{(1)}) \otimes \pi_q\circ \pi^{-1}(\uu^{(2)})$.
 \end{remark}
 
 
@@ -425,23 +429,23 @@ The new vector $\uu$ still admits tensor decompositions $\uu=\uu^{(1)} \otimes \
 
 
 Observe that, at the end of the day, Step 5.2 outputs a linear claim of the form\footnote{We start with the batched version of the claim, but the ideas in this section can be adapted to \eqref{e:intro_eq_5} as well.}
-\begin{equation}\label{e:intro_eq_5_repeated} \langle \zz, \mathsf{bits}(\ww) \rangle = c \qquad \text{in  } \comfield,
+\begin{equation}\label{e:intro_eq_5_repeated} \langle \zz, \bitstext(\ww) \rangle = c \qquad \text{in  } \comfield,
 \end{equation} 
-for some $\zz\in \comfield^{\codedim}$ and $c\in \comfield$. This is a standard linear claim over $\comfield$ for the vector $\mathsf{bits}(\ww)$ which we committed to previously. 
+for some $\zz\in \comfield^{\codedim}$ and $c\in \comfield$. This is a standard linear claim over $\comfield$ for the vector $\bitstext(\ww)$ which we committed to previously. 
 
 
-Now, say that we know that $\mathsf{bits}(\ww)$ is a linear transformation of a vector $\bff\in  \FF_2^{\codedim'} \subseteq  \comfield^{\codedim'}$, so that
+Now, say that we know that $\bitstext(\ww)$ is a linear transformation of a vector $\bff\in  \FF_2^{\codedim'} \subseteq  \comfield^{\codedim'}$, so that
 %
 $$
-\mathsf{bits}(\ww) = M \cdot \bff \qquad \text{ in } \comfield,
+\bitstext(\ww) = M \cdot \bff \qquad \text{ in } \comfield,
 $$
 for some matrix $M\in \FF_2^{\codedim\times \codedim'}$.
 Then 
 %
 \begin{equation}\label{e:intro_eq_5_virtual}
- \langle \zz, \mathsf{bits}(\ww) \rangle  =  \langle M^{\mathsf{T}}\cdot \zz, \bff \rangle = c \qquad \text{in  } \comfield.
+ \langle \zz, \bitstext(\ww) \rangle  =  \langle M^{\mathsf{T}}\cdot \zz, \bff \rangle = c \qquad \text{in  } \comfield.
 \end{equation}
-Hence, in this scenario, one can commit to $\bff$ instead of $\mathsf{bits}(\ww)$ (again, in packed formed if necessary),  replace the claim \eqref{e:intro_eq_5_virtual}, and prove \eqref{e:intro_eq_5_virtual} in Step 5.3 of \ftwoz. 
+Hence, in this scenario, one can commit to $\bff$ instead of $\bitstext(\ww)$ (again, in packed formed if necessary),  replace the claim \eqref{e:intro_eq_5_virtual}, and prove \eqref{e:intro_eq_5_virtual} in Step 5.3 of \ftwoz. 
 
 
 
@@ -449,13 +453,13 @@ Thus, \ftwoz\ can be expanded so as to prove claims where we are given a public 
 
 \begin{equation}\label{e:intro_eq_0_virtual}
 \begin{cases}
-&\pp_i(\xx,\ww)=0 \qquad \text{in  } R \qquad \text{ for all } i\in [m], \\ &\mathsf{bits}(\ww)=\pi_2^{-1}(M\cdot \bff)
+&\pp_i(\xx,\ww)=0 \qquad \text{in  } R \qquad \text{ for all } i\in [m], \\ &\bitstext(\ww)=\pi_2^{-1}(M\cdot \bff)
 \end{cases}
 \end{equation}
 %
-where  $\pp=(\pp_i)_{i\in [m]}$ is a collection of polynomials over $R$; and $\pi_2$ is reduction modulo $2$ \albert{I may have been loose about when $\mathsf{bits}(\ww)$ is in $\FF_2$ and when in integers during the technical overview, review}.  
+where  $\pp=(\pp_i)_{i\in [m]}$ is a collection of polynomials over $R$; and $\pi_2$ is reduction modulo $2$ \albert{I may have been loose about when $\bitstext(\ww)$ is in $\FF_2$ and when in integers during the technical overview, review}.  
 
-A particularly interesting instantiation of this relation is the following R1CS-like relation over the integers, where $\ww$ is a vector of bits (hence $\ww=\mathsf{bits}(\ww)$) and $\ww= \pi_2^{-1}(M\cdot \bff)$:
+A particularly interesting instantiation of this relation is the following R1CS-like relation over the integers, where $\ww$ is a vector of bits (hence $\ww=\bitstext(\ww)$) and $\ww= \pi_2^{-1}(M\cdot \bff)$:
 
 
     
@@ -524,13 +528,13 @@ One can verify this last equivalence for example  by directly inspecting that it
 
 \subsection{GKR for low-entropy batched grand products}\label{s:to_low_entropy_gkr}
    Recall that, in Step 5.2 of \ftwoz \ (\cref{s:to_simple_bitz}) the prover must prove that
-          \begin{equation}\label{e:intro_eq_4_repeated}g^{\langle \pi^{-1}(\uu), \mathsf{bits}(\ww)_{*j}\rangle} = \prod_{i\in [\codedim_1]} \left(g^{\pi^{-1}(\uu_i)} -1\right)\cdot \mathsf{bits}(\ww)_{ij}  +1 =g^{\eta_j} \qquad \text{in  } \comfield \qquad \text{for all } j\in [\codedim_2].
+          \begin{equation}\label{e:intro_eq_4_repeated}g^{\langle \pi^{-1}(\uu), \bitstext(\ww)_{*j}\rangle} = \prod_{i\in [\codedim_1]} \left(g^{\pi^{-1}(\uu_i)} -1\right)\cdot \bitstext(\ww)_{ij}  +1 =g^{\eta_j} \qquad \text{in  } \comfield \qquad \text{for all } j\in [\codedim_2].
         \end{equation} 
         %
         For efficiency purposes, we assume  both $\codedim_1$ and $\codedim_2$ are $O(\sqrt{\codedim})$ (see \cref{s:instantiation} for exact parameter instantiations).  At a protocol level, we simply prove \eqref{e:intro_eq_4_repeated} with a standard GKR protocol for grand products \cite{thaler?}. Concretely, let $\codedim_1=2^{r_1}$ and $\codedim_2=2^{r_2}$. We set up multilinear polynomials $L_{0}, L_1,\ldots, L_{r_1}$ on $r_2 + i$ variables for $i\in \range{0}{r_1}$, respectively, such that 
         %
         $$
-        L_{r_1}(\bb,\cc) = \left(g^{\pi^{-1}(\uu_i)} -1\right)\cdot \mathsf{bits}(\ww)_{ij}  +1  \quad  \text{ for all } (\bb,\cc) \in \bits^{r_1} \times \bits^{r_2},
+        L_{r_1}(\bb,\cc) = \left(g^{\pi^{-1}(\uu_i)} -1\right)\cdot \bitstext(\ww)_{ij}  +1  \quad  \text{ for all } (\bb,\cc) \in \bits^{r_1} \times \bits^{r_2},
         $$
         and, for $i=0,\ldots, r_1-1$
       \begin{equation}\label{e:to_gkr_polys}
@@ -544,7 +548,7 @@ One can verify this last equivalence for example  by directly inspecting that it
     At the end of the GKR grand product, the prover and verifier are left with MLE evaluation claims of the form:
     %
     \begin{equation}\label{e:intro_grand_product_eq_1}
-    \mle{g^{\pi^{-1}(\uu)}}(\rr) = a,\qquad \mle{\mathsf{bits}(\ww)_{*j}}(\rr)=a_j \qquad \text{for all } j \in [\codedim_2]
+    \mle{g^{\pi^{-1}(\uu)}}(\rr) = a,\qquad \mle{\bitstext(\ww)_{*j}}(\rr)=a_j \qquad \text{for all } j \in [\codedim_2]
     \end{equation}
     for some $\rr\in \comfield^{r_1}$, where $\mle{*}$ denotes MLE extension, and $g^{\pi^{-1}(\uu)}$ is the vector with entries $g^{\pi^{-1}(\uu_i)}$. 
     
@@ -640,7 +644,7 @@ $$
 \end{aligned} 
 \ \right| \ 
 \begin{aligned}
-    %& f = \Enc_{\cC}\circ \pack \circ \picomfield(\mathsf{bits}(\bff)),\\
+    %& f = \Enc_{\cC}\circ \pack \circ \picomfield(\bitstext(\bff)),\\
     &\mathbf{p}_{j}^{(i)}(\xx, \ww) = 0 \ \text{ in } R_i \ \text{ for all } j\in [\numrows], \ i \in [\iota]
 \end{aligned}
 \right\}
@@ -657,7 +661,7 @@ We note that UPESAT is a subset of the more general UCS relation from \cite{zinc
 
 \bigskip
 
-Similarly as in \cref{s:to_f2_virtual}, \ftwoz\ can also handle a variation of $\UPESAT$ where $\mathsf{bits}(\ww)$ is a $\FF_2$-linear transformation of a vector of bits $\bff\in \comfield^{\codedim'}$. 
+Similarly as in \cref{s:to_f2_virtual}, \ftwoz\ can also handle a variation of $\UPESAT$ where $\bitstext(\ww)$ is a $\FF_2$-linear transformation of a vector of bits $\bff\in \comfield^{\codedim'}$. 
 
 \begin{example}
     \albert{I could briefly explain here how to arithmetize the computations in our experiments.}
@@ -700,7 +704,7 @@ The  general case where not all ideals $(h_i(X))$ are  zero is dealt  in the sam
 \paragraph{The case when $\FFext$ is a proper extension} Next we discuss the scenario where $\FF_{\mathsf{ext}}$ is a proper field extension at the end of Step 3 of \cref{s:to_simple_bitz}. In this case, Step 4 proceeds in the same way as in the normal case. At the end of Step 4 prover and verifier are left with the claim
 %
 $$
-\langle \uu, \pi(\mathsf{bits}(\ww))\rangle = \mu \qquad \text{in } \FFext,
+\langle \uu, \pi(\bitstext(\ww))\rangle = \mu \qquad \text{in } \FFext,
 $$
 for some $\uu\in \FFext^{\codedim}$ and $\mu\in \FFext$.  
 
@@ -708,8 +712,8 @@ After Step 4, Step 5.0 triggers \albertimportant{Again, in the main body this st
 
 The prover sends an integer polynomial $\mu'\in \ZZ[X]$ such that
     %
-    $$\langle  \picanon^{-1}(\uu^{(1)})\otimes \picanon^{-1}(\uu^{(2)}), \mathsf{bits}(\uu)\rangle = \mu' \qquad \text{in } \ZZ[X],$$    
-    The verifier checks that $\picanon(\mu')=\mu$, and responds with a random prime $q'$ such that $q'< |\comfield|/\codedim_1$  and with a random prime field element $\alpha\in \FF_{q'}$. Then prover and verifier proceed to Step 5.1 after updating $\FFext \gets \FF_{q'}$, $\pi\gets \pi_{q',\alpha}$, $\mu \gets \pi_{q',\alpha}(\mu')\in \FF_{q'}$, and $$\uu\gets \pi_{q',\alpha}\circ \picanon^{-1}(\uu^{(1)}) \otimes \pi_{q',\alpha}\circ \picanon^{-1}(\uu^{(2)}),$$
+    $$\langle  \picanon^{-1}(\uu^{(1)})\otimes \picanon^{-1}(\uu^{(2)}), \bitstext(\uu)\rangle = \mu' \qquad \text{in } \ZZ[X],$$    
+    The verifier checks that $\picanon(\mu')=\mu$, and responds with a random prime $q'$ such that $q'< \fieldboundsizeexponent$  and with a random prime field element $\alpha\in \FF_{q'}$. Then prover and verifier proceed to Step 5.1 after updating $\FFext \gets \FF_{q'}$, $\pi\gets \pi_{q',\alpha}$, $\mu \gets \pi_{q',\alpha}(\mu')\in \FF_{q'}$, and $$\uu\gets \pi_{q',\alpha}\circ \picanon^{-1}(\uu^{(1)}) \otimes \pi_{q',\alpha}\circ \picanon^{-1}(\uu^{(2)}),$$
     where $\pi_{q',\alpha}: \ZZ[X] \to \FF_{q'}$ is defined as $$\pi_{q',\alpha}(g(X)) = \pi_{q'}(g)(\alpha) \in \FF_{q'}.$$
 \albert{Again, say a few words of why this is sound (once I've written the soundness intuition for the basic protocol}
 
@@ -758,21 +762,45 @@ The rest of \ftwoz \ proceeds exactly as in \cref{s:to_simple_bitz}.
 
 We use $\circ$ to denote composition of maps, so that for maps $f: S_1\to S_2$ and $g:S_2\to S_3$, we have $f\circ g: S_1 \to S_3$ defined as $f\circ g(x) = f(g(x))$. 
 
-\subsection{Algebra}
-We write $\FF_q$ for the finite field with $q$ elements (where $q$ is a prime or a prime power), $\QQ$ for the field of rational numbers, and $\ZZ$ for the ring of integers. %An ideal $I$ of a ring $R$ generated by a set $S\subseteq R$ is denoted $(S)$.
+\subsection{Algebra}\label{s:prelims_algebra}
+We write $\FF_q$ for the finite field with $q$ elements (where $q$ is a prime or a prime power), $\QQ$ for the field of rational numbers, and $\ZZ$ for the ring of integers.  We let $$\pi_q :\ZZ\to \FF_q$$ denote reduction modulo $q$
 
-The \emph{characteristic} of a ring $\ring$ is the largest $c\geq 1$, if it exists, such that $1 + \overset{c}{\ldots} + 1 = 0$ in $\ring$. Otherwise, if $1 + \overset{c}{\ldots} + 1 \neq 0$ for all $c$, the characteristic is zero. By $\range{0}{n}_\ring$ we denote all elements in $\ring$ of the form $1 + \overset{i}{\ldots} + 1$ for $i=0,\ldots, n$. For us, typically $R=\ZZ$ or $\ring$ is a finite field $\FF$. 
+All rings in this work are associative, commutative, finitely generated as $\ZZ$-modules\footnote{This excludes the field of rational numbers $\QQ$} \albert{Really? We exclude the rationals?}, and have an identity. Given a ring $R$, we write $R[X_1, \ldots, X_n]$ for the ring of polynomials with coefficients in $R$ and variables $X_1, \ldots, X_n$ (not necessarily multilinear). 
+ %An ideal $I$ of a ring $R$ generated by a set $S\subseteq R$ is denoted $(S)$.
 
+\newcommand{\Char}{\mathsf{char}}
+\renewcommand{\dim}{\mathsf{dim}}
 
-We let $R[X]$ be the ring of univariate polynomials with coefficients in $R$, on the variable $X$. For a tuple of variables $\YY=(Y_1,\ldots, Y_\mu)$, $R[\YY]$ denotes multivariate polynomials with coefficients in $R$.  Given a degree bound $\moduledegree\geq 1$, a bit-size bound $B\geq 1$, we define 
+ The \emph{characteristic} of a ring $\ring$, denoted $\Char(R)$, is the largest $c\geq 1$, if it exists, such that $1 + \overset{c}{\ldots} + 1 = 0$ in $\ring$. Otherwise, if $1 + \overset{c}{\ldots} + 1 \neq 0$ for all $c$, the characteristic is zero.
+ By $\range{0}{n}_\ring$ we denote all elements in $\ring$ of the form $1 + \overset{i}{\ldots} + 1$ for $i=0,\ldots, n$.
+ 
+ Any ring $R$ is a $\FF_{\Char{R}}$-module. We say the \emph{dimension} of $R$, denoted $\dim(R)$, is the minimum number of generators of $R$ as a $\FF_{\Char{R}}$-module. Every ring $R$ admits a canonical surjective ring homomorphism
 %
 $$
-\ringtwobounds{B}{\moduledegree}[X]\defeq \left\{a(X) \in R[X]\ \left| \ a(X) = \sum_{i=0}^{d} a_i\cdot X^i, \ \text{for some } a_i \in \range{0}{2^B-1}_R, \ \text{for all }i \ \right.\right\},
+\picanon^{R} : \ZZ[X_1,\ldots, X_{\dim(R)}] \to R.
 $$
-When we place no degree or bit-size bound, we use the notation $\ringbitbound{B}[X]$ and $\ringdegbound{\moduledegree}[X]$, respectively. Note that $R^{\leq d}[X]$ is an $R$-module of dimension $(d+1)$, admitting as base $1, X, \ldots, X^d$.
+This homomorphism consists in reducing coefficients modulo $\Char{R}$, and then taking a quotient by some ideal from $\FF_{\Char(R)}[X_1, \ldots, X_{\dim(R)}]$. 
+
+\begin{example}
+    If  $R=\FF_q$ is a prime field with $q$ elements, then $\Char(R)=q$, $\dim(R)=1$, and $\picanon^{\FF_q}:\ZZ \to \FF_q$ is simply reduction modulo $q$. 
+    
+    If $R$ is a field extension of a prime field $\FF_q$ of degree $d$, then $\Char(R)=q$, $\dim(R)=d$, and $\picanon^R:\ZZ[X_1, \ldots, X_d]$ consists in reducing coefficients modulo $q$, and then modding out by the ideal generated by $X_1-X_2, \ldots, X_1-X_d$ and an irreducible polynomial $h(X_1)\in \FF_{q}[X_1]$. 
+
+    \albert{Add lattice examples}
+\end{example}
+
+Given a  ring $R$, $n$ variables $X_1, \ldots, X_n$, and a bit-size bound $B\geq 1$, we define 
+%
+$$
+R_{\leq B}[X_1, \ldots, X_n]
+$$
+%
+as the subset of $R[X_1, \ldots, X_n]$ formed by polynomials all whose coefficients are in the set $\range{0}{2^B-1}_R$.  
 
 
-Given a ring homomorphism $\psi: \ring_1\to \ring_2$, a $\ring_1$-module $M_{\ring_1}$, and a $\ring_2$-module, a $\psi$-module homomorphism between $M_{\ring_1}$ and $M_{\ring_2}$ is a map $\phi$ such that $\phi(\alpha\cdot a + \beta \cdot b) = \psi(\alpha)\cdot \phi(a) + \psi(\beta) \cdot \phi(b)$ for all $\alpha,\beta\in \ring_1$ and $a,b\in M_{\ring_1}$.
+\bigskip
+
+\albertimportant{Not sure we want to keep the module stuff} Given a ring homomorphism $\psi: \ring_1\to \ring_2$, a $\ring_1$-module $M_{\ring_1}$, and a $\ring_2$-module, a $\psi$-module homomorphism between $M_{\ring_1}$ and $M_{\ring_2}$ is a map $\phi$ such that $\phi(\alpha\cdot a + \beta \cdot b) = \psi(\alpha)\cdot \phi(a) + \psi(\beta) \cdot \phi(b)$ for all $\alpha,\beta\in \ring_1$ and $a,b\in M_{\ring_1}$.
 
    
 Given a base $\alpha_1,\ldots, \alpha_\moduledegree$ for $M_\ring$, we let $\moduleonebound$ be the subset of $M_\ring$ with elements whose coordinates belong to $\ringbitbound{B}$ in this base.
@@ -971,7 +999,7 @@ $$
 \item 
  Let $\codedim\geq 1$ be a dimension parameter divisible by $\comfieldexp$, $\cC$ a code over $\comfield$ of dimension $\codedim/\comfieldexp$ and blocklength $\codelength$.  
  \item 
- Let $R$ be a ring (typically $R$ is either $\ZZ$ or a finite field, not necessarily a prime field) and let $\pi:\ZZ \to R$ be a ring homomorphism (not necessarily surjective, and possibly the identity if $R=\ZZ$).
+ Let $R$ be a ring (typically $R$ is either $\ZZ$ or a finite field, not necessarily a prime field) and let $\pi:\ZZ \to R$  be reduction modulo the characteristic of $R$.
 \end{itemize}
  
 
@@ -1096,78 +1124,109 @@ $$
 This is indeed the case with GKR: GKR reduces the initial circuit evaluation claim with a witness input, into an MLE evaluation claim of the same witness, without querying any oracle in-between. 
 
 \subsection{The {\ftwoz} IOP for the core Lin-BitsDual relation}
-We provide an IOP for $\LinBitsDual$ next. We assume the notation from the previous two \cref{s:linmodfieldbin,s:interleaved_setting} together with:
+We provide an IOP for $\LinBitsDual$ next. We assume the notation from the previous two \cref{s:linmodfieldbin,s:interleaved_setting}, and from the preliminary \cref{s:prelims_algebra}, together with:
 \renewcommand{\evalfield}{R}
 \begin{itemize}[leftmargin=*]
 \item Given a prime $p$ and the morphism $\pi_{p}:\ZZ \to \FF_{p}$ consisting of reduction modulo $p$, we fix an inverse map of the form $\pi_{p}^{-1} : \FF_{p} \to \range{0}{p-1} \subseteq \ZZ$. 
-\item Given a finite field $\KK$ which is an extension of a prime field $\FF_p$ of degree $\degevalfield$, we let $\picanon^\KK: \ZZ[X] \to \KK$ be the canonical homomorphism from $\ZZ[X]$ to $\KK$: namely, if $\KK=\ZZ[X]/(p,h(X))$  for a polynomial $h(X)$ irreducible over $\FF_p[X]$, then $\picanon^\KK$ consists in modding $p$ out, and taking the quotient by $(h(X))$ (if $\KK$ is the prime field $\FF_p$, then $\picanon^\KK$ is just $\pi_p$). We fix an inverse for $\picanon^{\KK}$ of the form $$\picanon^{\KK}{}^{-1}: \KK \to \range{0}{p-1}^{<\degevalfield}[X] \subseteq \ZZ[X].
-$$ In words, $\picanon^{\KK}{}^{-1}$ simply takes an element from $\KK$ represented as a degree $< \deg(h(X))$ polynomial over $\FF_p$, and applies $\pi_{p}^{-1}$ to it. We remark that one could choose any other such ``inverse'' maps, e.g.\ for $\pi_{p}^{-1}$ one may prefer to use centered representatives. 
+%\item Given a finite field $\KK$ which is an extension of a prime field $\FF_p$ of degree $\degevalfield$, we let $\picanon^\KK: \ZZ[X] \to \KK$ be the canonical homomorphism from $\ZZ[X]$ to $\KK$: namely, if $\KK=\ZZ[X]/(p,h(X))$  for a polynomial $h(X)$ irreducible over $\FF_p[X]$, then $\picanon^\KK$ consists in modding $p$ out, and taking the quotient by $(h(X))$ (if $\KK$ is the prime field $\FF_p$, then $\picanon^\KK$ is just $\pi_p$). We fix an inverse for $\picanon^{\KK}$ of the form $$\picanon^{\KK}{}^{-1}: \KK \to \range{0}{p-1}^{<\degevalfield}[X] \subseteq \ZZ[X].
+%$$ In words, $\picanon^{\KK}{}^{-1}$ simply takes an element from $\KK$ represented as a degree $< \deg(h(X))$ polynomial over $\FF_p$, and applies $\pi_{p}^{-1}$ to it. We remark that one could choose any other such ``inverse'' maps, e.g.\ for $\pi_{p}^{-1}$ one may prefer to use centered representatives. 
 
 
 
 
 
-\item Define $\picanon^\ZZ: \ZZ\to\ZZ$ as the identity map.  We define $\deg(\ZZ)=1$.
+%\item Define $\picanon^\ZZ: \ZZ\to\ZZ$ as the identity map.  We define $\deg(\ZZ)=1$.
 
 
 
 \item Let $\Pi_{\iopp}$ be an IOP for $\LIN(\comfield,\cC, \pack)$. In our instantiation, $\Pi_{\iopp}$ is the WHIR protocol \cite{whir} over binary fields, with ring-switching \cite{binius} as described in \cref{a:ring_switch_1}, and with proximity parameter set to the Johnson bound.   
+\item 
+Let $\codedim_1,\codedim_2$ be dimension parameters,  and $R$ a ring,  as in the previous sections. We let $\cP$ be a set of primes with $\max\cP< \fieldboundsizeexponent$. For every prime $q\in \cP$, let $\cM_q$ be a set of morphism $\pirand:\ZZ[X_1,\ldots, X_{\dim(R)}] \to \FF_q$. We will sample primes and morphisms from $\cP$ and $\cM_q$. \albertimportant{Provide examples}
 \end{itemize}
 
 \renewcommand{\degevalfield}{\deg(\evalfield)}
 \renewcommand{\picanon}{{\pi_{\mathsf{canon}}^R}}
 
-\begin{construction}[IOP for the core {$\LinBitsDual$ relation}]\label{c:core_iop}
-\noindent \textbf{Parameters.} $(R,\ringmorphism, \comfield,\codedim,\codedim_1,\codedim_2,\cC)$ comprised of: a ring $R$  and a ring homomorphism $\ringmorphism: \ZZ\to R$; a binary field $\comfield$; a witness length $\codedim$ divisible by $\comfieldexp$; tensor decomposition dimensions $\codedim_1, \codedim_2$  satisfying $\codedim_1\cdot \codedim_2 = \codedim$; a linear code $\cC$ over $\comfield$ of dimension $\codedim/\comfieldexp$ and blocklength $\codelength$. 
 
-Let $\cP$ be a set of primes with $\max\cP< (|\comfield|-1)/(\codedim_1+1)$.
+\albertimportant{This construction is missing OOD sample when we work beyond the UDR. Formalizing OOD sampling is a bit of a pain: we need to define a relation $\LinBitsDual^{\rr,y}$ which is the same as $\LinBitsDual$ but adds the constraint $\mle{\pack\circ\pi_2(\mathsf{\bits}(\bff))}(\rr) =y$ in $\comfield$. We do the same for $\UPESAT$. Then we present \cref{c:core_iop}  as a protocol for $\LinBitsDual^{\rr,y}$, and in \cref{c:LinModFieldBin} present an IOP for the general $\LinBitsDual$ relation where we first do an OOD sample, reducing to $\LinBitsDual^{\rr,y}$. In \cref{c:iop_pimsat} we also add an initial reduction from $\UPESAT$ to $\UPESAT^{\rr, y}$. All this is standard, so I am considering to write a short  section  glossing this over. The question is how to state the formal soundness results}
+
+\begin{construction}[IOP for the core {$\LinBitsDual$ relation}]\label{c:core_iop}
+\noindent \textbf{Parameters.} $(R, \comfield,\codedim,\codedim_1,\codedim_2,\cC)$ comprised of: a binary field $\comfield$; a witness length $\codedim$ divisible by $\comfieldexp$; tensor decomposition dimensions $\codedim_1, \codedim_2$  satisfying $\codedim_1\cdot \codedim_2 = \codedim$; a linear code $\cC$ over $\comfield$ of dimension $\codedim/\comfieldexp$ and blocklength $\codelength$. 
 \\
 
 \noindent \textbf{Inputs.} The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \LinBitsDual(\bits,\ringmorphism, \evalfield,\cC)$.  We assume the tensor split from the previous \cref{s:interleaved_setting}, and adopt its notation. 
 
 
-Let $\basegenerator\in \comfield$ be a fixed generator of the multiplicative group $\comfield^*$.   Let $q\in \ZZ$ denote the characteristic of $R$ if $R$ has nonzero characteristic, or if $R$ has zero characteristic, then
-\begin{equation}\label{e:q_definition_if_R_is_Z}
-q = \codedim_1 \cdot \lVert \vv \rVert_\infty +1.
-\end{equation}
-If $R$ has zero characteristic, we assume the entries of $\vv$ are nonnegative integers, and that the tensor factors $\vv^{(1)}, \vv^{(2)}$ are chosen with nonnegative entries as well (this is always possible when $\vv\neq \bm{0}$, by negating both factors if necessary; note that then $\lVert \vv^{(1)}\rVert_\infty \leq \lVert \vv\rVert_\infty$ whenever $\vv^{(2)}\neq \bm{0}$). The modifications needed to handle arbitrary integer entries are straightforward: one uses centered representatives for the maps $\pi_p^{-1}$ and $\picanon^{-1}$, and sets $q = 2\codedim_1 \cdot \lVert \vv\rVert_\infty +1$.
+Let $\basegenerator\in \comfield$ be a fixed generator of the multiplicative group $\comfield^*$.   %Let $q\in \ZZ$ denote the characteristic of $R$ if $R$ has nonzero characteristic, or if $R$ has zero characteristic, then \albertimportant{Review that if $\vv$ has negative entries, things are fine}
+%\begin{equation}\label{e:q_definition_if_R_is_Z}
+%q = \codedim_1 \cdot \lVert \vv \rVert_\infty +1.
+%\end{equation}
+
 
 
 \begin{enumerate}[leftmargin=*] 
-\item \textbf{Round 1: transforming the constraint over $\evalfield$ to an integer constraint with bounded integers.} 
+\item \textbf{Round 1 (optional): replacing $R$ by a ``small'' prime field $\FF_q$.}  \albertimportant{Round numbering has changed}
 \begin{itemize}[leftmargin=*]
-    \item The prover sends $\mu_1, \ldots, \mu_{\codedim_2}\in \range{0}{q-1}^{< \degevalfield}[X]$ such that, over $\ZZ[X]$, \begin{equation}\label{e:tensored_equality}\langle \bff_{*j}, \picanon^{-1}(\vv^{(1)})\rangle = \mu_j \qquad \text{for all } j\in [\codedim_2].\end{equation} 
-\item The verifier checks that \begin{equation}\label{e:tensor_decomposition_reconstruction}\sum_{j\in [\codedim_2]} \picanon(\mu_j)\cdot \vv_j^{(2)}  = \mu\qquad \text{over } \evalfield.\end{equation} 
+\item This step can be skipped if $R$ is a prime field $\FF_q$ and $q < \fieldboundsizeexponent$ \albertimportant{also if $R=\ZZ$ and $\vv$ has small entries. But let's leave for a future remark}. %, or if $R=\ZZ$ and $\lVert \vv \rVert < \fieldboundsizeexponent$.
+
+The prover sends $\mu' \in \ZZ[X_1, \ldots, X_{\dim(R)}]$ such that
+%
+$$
+\langle \picanon{}^{-1}(\vv^{(1)}) \otimes \picanon{}^{-1}(\vv^{(2)}) , \bitstext(\bff) \rangle = \mu' \qquad \text{in } \ZZ[X_1, \ldots, X_{\dim(R)}]
+$$
+%
+The verifier checks that $\picanon(\mu')=\mu$ and replies with a random prime $q\in \cP$ and a random morphism 
+%
+$$
+\pirand : \ZZ[X_1, \ldots, X_{\dim(R)}] \to \FF_q
+$$
+selected from a family of samplable morphism (specified by the protocol) \albert{explain how these may look like}. The prover and verifier update:
+\begin{align*}
+\vv^{(1)}{} &\gets \pirand\circ \picanon^{-1}\left(\vv^{(1)}\right)\in \FF_{q}^{\codedim_1},\\
+\vv^{(2)}{} &\gets \pirand\circ \picanon^{-1}\left(\vv^{(2)}\right)\in \FF_{q}^{\codedim_1},\\
+\mu&\gets \pirand(\mu')\in \FF_q,
+\end{align*}
+Prover and verifier now set to prove the updated claim 
+%
+\begin{equation}\label{e:core_bitz_eq_new_0}
+\langle \vv^{(1)} \otimes \vv^{(2)}, \pi_q(\bitstext(\bff))\rangle = \mu \qquad \text{over } \FF_q.
+\end{equation}
+\end{itemize}
+\item \textbf{Round 2: transforming \eqref{e:core_bitz_eq_new_0} to $\codedim_2$ integer constraints with bounded integers.}
+\begin{itemize}[leftmargin=*]
+    \item The prover sends integers $\mu_1, \ldots, \mu_{\codedim_2}\leq (q-1)\cdot \codedim_1$ such that, over $\ZZ$, \begin{equation}\label{e:tensored_equality}\langle \bff_{*j}, \pi_q^{-1}(\vv^{(1)})\rangle = \mu_j \qquad \text{for all } j\in [\codedim_2].\end{equation} 
+\item The verifier checks that \begin{equation}\label{e:tensor_decomposition_reconstruction}\sum_{j\in [\codedim_2]} \pi_q(\mu_j)\cdot \vv_j^{(2)}  = \mu\qquad \text{over } \FF_q.\end{equation} 
 Next, prover and verifier will focus on certifying that \eqref{e:tensored_equality} holds for all $j\in [\codedim_2]$.
 
 In \cref{r:core_iop_optional_sumcheck} we describe a variation in which, instead of sending the elements $\mu_1, \ldots, \mu_{\codedim_2}$, the prover commits to their bit-decomposition over $\comfield$, and proves \eqref{e:tensor_decomposition_reconstruction} with \cref{c:LinModFieldBin}. This saves on proof size and verifier time when $\codedim$ is large.
-\item \textbf{Optional step: Projecting the integer claim to a prime field, and then lifting it back up to $\ZZ$.} The following step triggers in the following scenarios:
-\begin{itemize}
-    \item $\degevalfield>1$.
-    \item $\degevalfield=1$ and $q\geq (|\comfield|-1)/(\codedim_1+1)$.  \albert{Review if I need the $+1$ in the denominator}
-\end{itemize} The verifier uniformly samples and sends a  prime $q'$ from $\cP$, and, if $\degevalfield>1$,  an element $\alpha\in \FF_{q'}$. Now update
+%\item \textbf{Optional step: Projecting the integer claim to a prime field, and then lifting it back up to $\ZZ$.} The following step triggers in the following scenarios:
+%\begin{itemize}
+%    \item $\degevalfield>1$.
+%    \item $\degevalfield=1$ and $q\geq (|\comfield|-1)/(\codedim_1+1)$.  \albert{Review if I need the $+1$ in the denominator}
+%\end{itemize} The verifier uniformly samples and sends a  prime $q'$ from $\cP$, and, if $\degevalfield>1$,  an element $\alpha\in \FF_{q'}$. Now update
 %
-\begin{align*}
-\vv^{(1)}{} &\gets \pi_{q',\alpha}\circ \picanon^{-1}\left(\vv^{(1)}\right)\in \FF_{q'}^{\codedim_1},\\
-\mu_j &\gets \pi_{q'}^{-1}\circ \pi_{q',\alpha}(\mu_j) \in \range{0}{q'-1}\subseteq \ZZ, \qquad j\in [\codedim_2],\\
-q&\gets q',
-\end{align*}
-where, recall, $\pi_{q',\alpha}:\ZZ[X]\to \FF_{q'}$ is defined as coefficient-wise reduction modulo $q'$ and then evaluation of $X$ at $\alpha$.
-\end{itemize}
+%\begin{align*}
+%\vv^{(1)}{} &\gets \pi_{q',\alpha}\circ \picanon^{-1}\left(\vv^{(1)}\right)\in \FF_{q'}^{\codedim_1},\\
+%\mu_j &\gets \pi_{q'}^{-1}\circ \pi_{q',\alpha}(\mu_j) \in \range{0}{q'-1}\subseteq \ZZ, \qquad j\in [\codedim_2],\\
+%q&\gets q',
+%\end{align*}
+%where, recall, $\pi_{q',\alpha}:\ZZ[X]\to \FF_{q'}$ is defined as coefficient-wise reduction modulo $q'$ and then evaluation of $X$ at $\alpha$.
+%\end{itemize}
 %
-\begin{remark}
-[Using any module homomorphism instead of $\pi_{q',\alpha}$]\label{r:other_module_morphisms}
-Instead of sampling $\pi_{q',\alpha}$, the verifier could sample other $\ZZ$-module homomorphisms from $\ZZ^{<\mathsf{deg}(R)}[X]$ to a prime field. For example it could sample a prime $q'$ and $\mathsf{deg}(R)$ random elements $\alpha_1,\ldots, \alpha_{\mathsf{deg}(R)}\in \FF_{q'}$, and then prover and verifier use the map $\pi_{q',\alpha_1,\ldots, \alpha_{\mathsf{deg}(R)}}(f(X)) = \sum_{i\in [\mathsf{deg}(R)]}\pi_{q'}(f_{i}) \cdot \alpha_i$, where $f(X)=\sum_{i\in [\mathsf{deg}(R)]} f_{i}\cdot X^{i-1}$. 
-
-For such a class of maps, the error term $(\mathsf{deg}(R)-1)/q_{\min}$ of \cref{t:thm_core_IOPP} becomes $1/q_{\min}$.
-\end{remark}
+%\begin{remark}
+%[Using any module homomorphism instead of $\pi_{q',\alpha}$]\label{r:other_module_morphisms}
+%Instead of sampling $\pi_{q',\alpha}$, the verifier could sample other $\ZZ$-module homomorphisms from $\ZZ^{<\mathsf{deg}(R)}[X]$ to a prime field. For example it could sample a prime $q'$ and $\mathsf{deg}(R)$ random elements $\alpha_1,\ldots, \alpha_{\mathsf{deg}(R)}\in \FF_{q'}$, and then prover and verifier use the map $\pi_{q',\alpha_1,\ldots, \alpha_{\mathsf{deg}(R)}}(f(X)) = \sum_{i\in [\mathsf{deg}(R)]}\pi_{q'}(f_{i}) \cdot \alpha_i$, where $f(X)=\sum_{i\in [\mathsf{deg}(R)]} f_{i}\cdot X^{i-1}$. 
+%$$
+%For such a class of maps, the error term $(\mathsf{deg}(R)-1)/q_{\min}$ of \cref{t:thm_core_IOPP} becomes $1/q_{\min}$.
+%\end{remark}
 
 %
 %For ease of readability onwards, we use the same symbols $\vv^{(1)}$ and $q$ for the pre- and post-update vectors and primes in this step.
-\item \textbf{Phase 2: Transforming the claim into a PESAT claim over {$\comfield$}, and invoking the IOR {$\Pi_{\mathsf{red}}$}.}
+\end{itemize}
+\item \textbf{Phase 3: Transforming the claim into a PESAT claim over {$\comfield$}, and invoking the IOR {$\Pi_{\mathsf{red}}$}.}
 \begin{itemize}[leftmargin=*]
-\item Note that, at this point of the protocol, either $\vv^{(1)}\in \FF_q^{\codedim_1}$ (namely, if $R$ has nonzero characteristic or the optional projection step was executed), or $R$ has zero characteristic and $\vv^{(1)}\in \range{0}{q-1}^{\codedim_1}\subseteq \ZZ^{\codedim_1}$ (by the nonnegativity assumption below \eqref{e:q_definition_if_R_is_Z}).
-Prover and verifier define $$\bm{\gamma} = \pi_{q}^{-1}(\vv^{(1)}) \in \range{0}{q-1}^{\codedim_1}\subseteq \ZZ^{\codedim_1}$$ in the former case, and $\bm{\gamma} = \vv^{(1)}$ in the latter, and set to prove the following claim:
+\item 
+Prover and verifier define $$\bm{\gamma} = \pi_{q}^{-1}(\vv^{(1)}) \in \range{0}{q-1}^{\codedim_1}\subseteq \ZZ^{\codedim_1},$$ and set to prove the following claim:
 %
 $$
 \prod_{i \in [\codedim_1]} g^{\bm{\gamma}_i\cdot \bff_{ij}}  = g^{\mu_j} \in \comfield, \qquad \text{for all } j\in [\codedim_2].
@@ -1189,11 +1248,11 @@ Notice that \begin{equation}\label{e:Q_F2Z_intermediate}\left(\inp=((g^{\bm{\gam
  At the end of this IOR, they are left with the following claim to prove: 
 %
 \begin{equation}\label{e:iopp_mle_claims}
-\left((\vv, \mu'), \ f, \ \picomfield(\bff)\right) \in \LIN( \comfield,\cC,\pack)= \left\{ \left(\begin{aligned} &\inp=(\uu,\mu)\in \comfield^\inplen, \\&\oracle = g \in \comfield^{\codelength}, \\ &\wit= \bfg\in (\FF_2^\codedim)\end{aligned}\right) \;\middle|\;  \begin{aligned} 
+\left((\vv, \mu'), \ f, \ \picomfield(\bff)\right) \in \LIN( \comfield,\cC,\pack)= \left\{ \left(\begin{aligned} &\inp=(\uu,\mu)\in \comfield^\inplen, \\&\oracle = g \in \comfield^{\codelength}, \\ &\wit= \bfg\in \FF_2^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} 
 &g=\Enc_{\cC}\circ \pack (\bfg) \\    &\langle \uu, \bfg\rangle = \mu  \end{aligned}\right\}
 \end{equation} for some vector $\vv$ and field element $\mu'$ output during the IOR $\Pi_{\mathsf{red}}$. 
 \end{itemize}
-\item \textbf{Phase 3: Using an IOP over {$\comfield$}.} Prover and  verifier engage in an IOP  to certify the claims \eqref{e:iopp_mle_claims}. 
+\item \textbf{Phase 4: Using an IOP over {$\comfield$}.} Prover and  verifier engage in an IOP  to certify the claims \eqref{e:iopp_mle_claims}. 
 \end{enumerate}
 \end{construction}
 
@@ -1202,10 +1261,10 @@ Notice that \begin{equation}\label{e:Q_F2Z_intermediate}\left(\inp=((g^{\bm{\gam
 When $\codedim=\codedim_1\cdot \codedim_2$ is such that $\codedim_2$ is large, the elements $\mu_1,\ldots, \mu_{\codedim_2}\in \ZZ$ sent at Step 1 of \cref{c:core_iop} may start to dominate the proof size. For example, for $\codedim=2^{13}$ and $\mu_i$ of $128$ bits, the elements $\mu_1,\ldots, \mu_{\codedim_2}$ amount to $131$ KB.  To mitigate this cost,  one can have the prover commit to the vector $(\mu_1,\ldots, \mu_{\codedim_2})$ and then prove \eqref{e:tensor_decomposition_reconstruction}, i.e.\ 
 %
 $$
-\langle \bff_{*j}, \picanon^{-1}(\vv^{(1)})\rangle = \mu_j \qquad \text{for all } j\in [\codedim_2].
+\langle \bff_{*j}, \pi_q^{-1}(\vv^{(1)})\rangle = \mu_j \qquad \text{for all } j\in [\codedim_2].
 $$
 %
-using an IOP for constrained codes. Concretely, the prover commits to the vector $\mathsf{bits}(\mu)$ of bits forming the elements $(\mu_1, \ldots, \mu_{\codedim_2})$ using \ftwoz, and then proves \eqref{e:tensor_decomposition_reconstruction} using \cref{c:LinModFieldBin} from \cref{s: general_bitz}.   %At the end of \cref{c:core_iop}, the prover is left with an inner product claim for the vector $\pi_2(\mathsf{bits}(\mu))$.  
+using an IOP for constrained codes. Concretely, the prover commits to the vector $\bitstext(\mu)$ of bits forming the elements $(\mu_1, \ldots, \mu_{\codedim_2})$ using \ftwoz, and then proves \eqref{e:tensor_decomposition_reconstruction} using \cref{c:LinModFieldBin} from \cref{s: general_bitz}.   %At the end of \cref{c:core_iop}, the prover is left with an inner product claim for the vector $\pi_2(\bitstext(\mu))$.  
 %
 \end{remark}
 
@@ -1217,19 +1276,22 @@ For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\
 \begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:core_iop}]\label{t:thm_core_IOPP} 
    Let $\delta \in (0,1)$ be a proximity parameter.  Assume \albert{can we remove the $-1$ from $\max \cP -1$?}
    %
-   $$|\comfield|-1 > (\codedim_1+1) \cdot (\max{\cP}-1).$$ 
+   $$|\comfield|-1 > 2\cdot \codedim_1 \cdot (\max{\cP}-1).$$ 
    %
    Assume $\Pi_{\mathsf{red}}$ is a perfectly complete $t_\red$-round IOR from $\PESAT$ to $\LIN$ with round-by-round knowledge soundness  with relaxation $(\PESAT^\delta,\LIN^{\delta})$, with errors  $(\ksred_1, \ldots, \ksred_{t_\red})$. Assume $\Pi_{\iopp}$ is a perfectly complete $t_{\iopp}$-round IOP  for $\LIN$ (i.e.\ an IOR from $\LIN$ to the trivial relation $\bot$) with round-by-round knowledge soundness with relaxation $(\LIN^{\delta}, \bot)$, and errors $$\ksiopp_1,\ldots, \ksiopp_{t_\iopp}.$$ 
 %
-    Then, if $\degevalfield>1$ or $\degevalfield=1$ and $q\geq (|\comfield|-1)/(\codedim_1+1)$, \cref{c:core_iop} is a perfectly complete $(1+t_\red+t_\iopp)$-round IOP for $\LinBitsDual$ with round-by-round knowledge soundness with relaxation $(\LinBitsDual^{\delta}, \bot)$, with errors $$\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]},$$ where
+    Then \cref{c:core_iop} is a perfectly complete $(1+t_\red+t_\iopp)$-round IOP for $\LinBitsDual$ with round-by-round knowledge soundness with relaxation $(\LinBitsDual^{\delta}, \bot)$, with errors $$\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]},$$ where
     %
     $$
-    \kappa_0 = \frac{\degevalfield-1}{q_{\min}} + \frac{\log(\codedim_1 +1) + \log(q-1)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}
+    \kappa_0 = \theta(R,\codedim_1) + \frac{\log(2\cdot \codedim_1) + \log(q-1)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor};
     $$
-    and $q_{\min}$ is the smallest prime in the set of sampleable primes $\cP$ from Step 3 of \cref{c:core_iop}.  Recall that $q$ is either the characteristic of $R$ if $R$ is a finite field, or $q=\codedim_1 \cdot \lVert \vv\rVert_{\infty} +1$ if $R=\ZZ$.
-
-
-    If  $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$-round IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $(\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]}$.
+     $q_{\min}$ is the smallest prime in the set of sampleable primes $\cP$ from Step 3 of \cref{c:core_iop}; and $\theta(R,\codedim_1)$ is the \albertimportant{define}.
+    
+    The error term $\kappa_0$ is void if Round 1 is not executed, and in that case \cref{c:core_iop} has one round less.
+    %Recall that $q$ is either the characteristic of $R$ if $R$ is a finite field, or $q=\codedim_1 \cdot \lVert \vv\rVert_{\infty} +1$ if $R=\ZZ$.
+%
+%
+    %If  $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$-round IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $(\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]}$.
 \end{theorem}
 
 
@@ -1251,7 +1313,7 @@ Now, every nonzero coefficient of $h(X)$ is divisible by at most $B/\lfloor\log(
 \end{proof}
 
 
-\begin{proof}[Proof of \cref{t:thm_core_IOPP}] \albertimportant{Needs review. Notation may have drifted}
+\begin{proof}[Proof of \cref{t:thm_core_IOPP}] 
 %
 The completeness of \cref{c:core_iop} is clear from its description.  To prove its soundness,  we decompose \cref{c:core_iop} into three IORs $\Pi_1, \Pi_2, \Pi_3$.  The first one, $\Pi_1$, is a $1$-round IOR from $\LinBitsDual$ to $\PESAT$, and it consists of applying Round 1 of \cref{c:core_iop}, and outputting $$\left(\inp=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ (g^{\mu_j})_{j\in [\codedim_2]}),\  \oracle= f, \ \wit=\picomfield(\bff)\right),$$ as described at the beginning of Phase 1 of \cref{c:core_iop}. The second IOR, $\Pi_2$, is simply $\Pi_{\mathsf{red}}$, reducing $\PESAT$ to $\LIN$. Finally, the third IOR, $\Pi_3$, is simply the IOP $\Pi_{\iopp}$ for $\LIN$.
 
@@ -1352,15 +1414,15 @@ We now proceed to describe a generalization of $\LinBitsDual(\bits, \pi, R, \cC)
 \item 
 Fix a vector length $\codedim_0$. Let $\bff \in \moduleonebound^{\codedim_0}$ and write %$\bff=(\bff_{*1}, \ldots, \bff_{*\moduledegree})$ 
 $\bff=\sum_{j\in [\moduledegree]} \bff_{*j}\cdot \gamma_j$
-with $\bff_{*j}\in \ringbitbound{B}^{\codedim_0}$ for all $j\in [\moduledegree]$. Then write $$\bff_{*j}= \sum_{k=1}^{B}\  \bff_{*jk}\cdot 2^{k-1} $$ for some vectors $$\bff_{*jk}\in \{0,1\}^{\codedim_0}\subseteq R^{\codedim_0},$$ for all $j,k$.  We define   $\mathsf{bits}(\bff)\in \bits^{\codedim_0\cdot\moduledegree\cdot  B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B}$ as the vector with integer entries obtained by concatenating the vectors $\bff_{*jk}$ and, if $\ring = \FF$, lifting their entries to $\bits \subseteq \ZZ$ via $\pi_q^{-1}$, i.e.\ \begin{equation}\label{e:bits_of_f}\mathsf{bits}(\bff) \defeq \left(\mathsf{lift}(\bff_{*jk})\mid  j\in [\moduledegree], k\in [B]\right)\in \bits^{\codedim_0\cdot\moduledegree\cdot B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B},\end{equation}
+with $\bff_{*j}\in \ringbitbound{B}^{\codedim_0}$ for all $j\in [\moduledegree]$. Then write $$\bff_{*j}= \sum_{k=1}^{B}\  \bff_{*jk}\cdot 2^{k-1} $$ for some vectors $$\bff_{*jk}\in \{0,1\}^{\codedim_0}\subseteq R^{\codedim_0},$$ for all $j,k$.  We define   $\bitstext(\bff)\in \bits^{\codedim_0\cdot\moduledegree\cdot  B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B}$ as the vector with integer entries obtained by concatenating the vectors $\bff_{*jk}$ and, if $\ring = \FF$, lifting their entries to $\bits \subseteq \ZZ$ via $\pi_q^{-1}$, i.e.\ \begin{equation}\label{e:bits_of_f}\bitstext(\bff) \defeq \left(\mathsf{lift}(\bff_{*jk})\mid  j\in [\moduledegree], k\in [B]\right)\in \bits^{\codedim_0\cdot\moduledegree\cdot B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B},\end{equation}
 where $\mathsf{lift}$ is the identity function if $\ring=\ZZ$,  and  $\mathsf{lift} = \pi_q^{-1}$ if $\ring=\FF$.
 
-\begin{remark}[Non-uniform bit-decomposition sizes]\label{r: non_uniform_bit_decomposition} In practical settings, it is possible that not all entries of $\bff$ have the same bit size. For example, some chunks of $\bff$ may be comprised of vectors, while others may be comprised of generic module elements. However, our definition of $\mathsf{bits}(\bff)$ allocates $\moduledegree\cdot B$ bits for every entry of $\bff$, no matter its size.
+\begin{remark}[Non-uniform bit-decomposition sizes]\label{r: non_uniform_bit_decomposition} In practical settings, it is possible that not all entries of $\bff$ have the same bit size. For example, some chunks of $\bff$ may be comprised of vectors, while others may be comprised of generic module elements. However, our definition of $\bitstext(\bff)$ allocates $\moduledegree\cdot B$ bits for every entry of $\bff$, no matter its size.
 
-In this case one can define $\mathsf{bits}(\bff)$  as a vector from $\bits^{\codedim}\subseteq \ZZ^\codedim$ (for a different smaller $\codedim$) such that 
+In this case one can define $\bitstext(\bff)$  as a vector from $\bits^{\codedim}\subseteq \ZZ^\codedim$ (for a different smaller $\codedim$) such that 
 %
 $$
-L\cdot \pi(\mathsf{bits}(\bff)) = \bff
+L\cdot \pi(\bitstext(\bff)) = \bff
 $$
 for some public and fixed matrix $L\in M^{\codedim_0 \times \codedim}$.
 %
@@ -1375,7 +1437,7 @@ Assume $\cC$ is a linear code over $\comfield$ of dimension $(\codedim_0\cdot B 
 \begin{align*}
  &\LinModFieldBin(\moduleonebound,\modulemorphism,R,  \cC)\\ &\qquad\qquad\qquad= \left\{ \left(\begin{aligned} &\inp=(\vv,\mu)\in R^{ \codedim_0}  \times R, \\
  &\oracle = f \in \comfield^{\codelength}, \\ &\wit= \bff\in \moduleonebound^{\codedim_0}\end{aligned}\right) \;\middle|\;  \begin{aligned}  
- &f = \Enc_{\cC}\circ \pack\circ\pi_2(\mathsf{bits}(\bff)),\\
+ &f = \Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\bff)),\\
  &\langle \modulemorphism(\bff), \vv \rangle = \mu 
  \end{aligned} \right\}.
 \end{align*}
@@ -1402,7 +1464,7 @@ We will need the following result.
     Let $\bff\in \moduleonebound^{\codedim_0}$, and let $\vv\in \moduletwo^{\codedim_0}$. Then %\albertimportant{Something's off later: $\uu$ is a vector with module elements. We don't have an IOP in such setting. Do we need to ask that $\moduletwo$ is a ring as well? We could keep module, but then in the tensor decomposition we have to be careful that we respect the modularity. Not sure it is worth it. But if $\moduletwo$ is a ring (or algebra), isn't it just better to restrict to $\ZZ$ or finite fields?}
     %
     $$
-    \langle \modulemorphism(\bff), \vv \rangle = \langle \ringmorphism(\mathsf{bits}(\bff)), \uu \rangle
+    \langle \modulemorphism(\bff), \vv \rangle = \langle \ringmorphism(\bitstext(\bff)), \uu \rangle
     $$
     where
     \begin{equation}\label{e:u_def}
@@ -1414,7 +1476,7 @@ Rewriting $\langle \modulemorphism(\bff), \vv \rangle$, we obtain
 %
 \begin{align}
     \langle \modulemorphism(\bff),\vv\rangle &= \langle \modulemorphism\left(\sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \bff_{*jk} \cdot 2^{k-1} \cdot \gamma_j\right), \vv \rangle\label{e:iop_linear_claim_1}\\ &= \langle \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \ringmorphism(\bff_{*jk}) \cdot \ringmorphism(2^{k-1}) \cdot \modulemorphism(\gamma_j),\vv \rangle,\label{e:iop_linear_claim_2}\\
-    &= \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \ringmorphism(2^{k-1}) \cdot \modulemorphism(\gamma_j)\cdot \langle \ringmorphism(\bff_{*jk}), \vv \rangle \notag\\ &=   \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \sum_{i\in [\codedim_0]} \ringmorphism(2^{k-1}) \cdot \modulemorphism(\gamma_j)\cdot  \langle \ringmorphism(\bff_{ijk}), \vv_i \rangle= \langle \ringmorphism(\mathsf{bits}(\bff)), \uu \rangle \notag,
+    &= \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \ringmorphism(2^{k-1}) \cdot \modulemorphism(\gamma_j)\cdot \langle \ringmorphism(\bff_{*jk}), \vv \rangle \notag\\ &=   \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \sum_{i\in [\codedim_0]} \ringmorphism(2^{k-1}) \cdot \modulemorphism(\gamma_j)\cdot  \langle \ringmorphism(\bff_{ijk}), \vv_i \rangle= \langle \ringmorphism(\bitstext(\bff)), \uu \rangle \notag,
 \end{align}
 as needed.
 \end{proof}
@@ -1428,11 +1490,11 @@ as needed.
 \noindent \textbf{Inputs.} The prover and verifier receive $\inp=(\vv, \mu)\in R^{\codedim_0}\times \moduletwo$ and  $\oracle= f \in \comfield^\codelength$. The prover receives  $\wit= \bff\in \moduleonebound^{\codedim_0}$ such that $(\inp,\oracle, \wit) \in \LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo, \cC)$, i.e., 
 %
 $$
-f = \Enc_{\cC}\circ \pack\circ\pi_2(\mathsf{bits}(\bff)),\qquad \langle \modulemorphism(\bff), \vv \rangle = \mu.
+f = \Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\bff)),\qquad \langle \modulemorphism(\bff), \vv \rangle = \mu.
 $$
 \begin{enumerate}[leftmargin=*]
      \item By \cref{l:bitify}, the   claim $(\inp,\oracle, \wit) \in \LinModFieldBin(\moduleonebound,\modulemorphism, R,  \cC)$ is equivalent to the claim \begin{equation}\label{e:iop_final_linear_claim}
-    \left(\inp'=(\uu,\mu), \oracle' = f=\Enc_{\cC}\circ \pack\circ\pi_2(\mathsf{bits}(\ff)), \wit' = \mathsf{bits}(\ff)\right) \in \LinBitsDual(\bits,\ringmorphism, R,\cC).
+    \left(\inp'=(\uu,\mu), \oracle' = f=\Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\ff)), \wit' = \bitstext(\ff)\right) \in \LinBitsDual(\bits,\ringmorphism, R,\cC).
 \end{equation}
 where $\uu =   \left(\vv \otimes \left(1, \ringmorphism(2), \ldots, \ringmorphism(2^{B-1})\right) \otimes \left(\modulemorphism(\gamma_1), \ldots, \modulemorphism(\gamma_{\moduledegree})\right)\right)$. Accordingly, prover and verifier use \cref{c:core_iop} to prove \eqref{e:iop_final_linear_claim}. They use parameters $(\KK,q,\comfield,\codedim_0\cdot \moduledegree\cdot B,\codedim_1,\codedim_2,\cC)$.  See \cref{r:tensor_dec_u} for comments on how to use tensor decompositions of $\uu$ in \cref{c:core_iop}.
 \end{enumerate}
@@ -1479,7 +1541,7 @@ In terms of security, we need to ensure the following:
 %
 
 
-In terms of efficiency, the most important step of \cref{c:core_iop} to be aware of is Phase 2, where one uses an IOR $\Pi_{\red}$ to reduce the claim 
+In terms of efficiency, the most important step of \cref{c:core_iop} to be aware of is Phase 3, where one uses an IOR $\Pi_{\red}$ to reduce the claim 
 \begin{equation}\label{e: grand_products_again}
 \prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \pi_2(\bff_{ij}) +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\codedim_2],
 \end{equation}
@@ -1508,7 +1570,7 @@ In general, choosing $\codedim_1 \approx \codedim^{0.6}$ can lead to better prov
 We now discuss how to make the errors $\kappa_0^*, (\kappa_{i,\red})_i, (\kappa_{i,\iopp})_i$ be all at most $2^{-\lambda}$. 
 
 
-\paragraph{The errors $\kappa_{i,\iopp}$.} Regarding Phase 3, we instantiate our IOP for $\LIN(\comfield, \pack, \cC)$ as the WHIR protocol, with the ring switching from \cite{binius}  (see \cref{a:ring_switch_1}). The ring switching step adds an error term of the form $1/\comfield$. If targetting 128 bits of security, we use grinding \cite{s:grinding} of $1$ bit in this round. WHIR is configured at any desired $\lambda\leq 128$ bits of security using $|\comfield|=2^{128}$ following \cite{stir-repo,whir-repo}. We do not discuss this further since WHIR is a well-known IOP, and it is well-kown that it can achieve $128$ bits of security in $128$ bit fields when codewords have dimension approximately $2^{30}$ (assuming an interleaved RS code).
+\paragraph{The errors $\kappa_{i,\iopp}$.} Regarding Phase 4, we instantiate our IOP for $\LIN(\comfield, \pack, \cC)$ as the WHIR protocol, with the ring switching from \cite{binius}  (see \cref{a:ring_switch_1}). The ring switching step adds an error term of the form $1/\comfield$. If targetting 128 bits of security, we use grinding \cite{s:grinding} of $1$ bit in this round. WHIR is configured at any desired $\lambda\leq 128$ bits of security using $|\comfield|=2^{128}$ following \cite{stir-repo,whir-repo}. We do not discuss this further since WHIR is a well-known IOP, and it is well-kown that it can achieve $128$ bits of security in $128$ bit fields when codewords have dimension approximately $2^{30}$ (assuming an interleaved RS code).
 
 
 \paragraph{The errors $\kappa_{i,\red}$.} As mentioned, our $\Pi_{\red}$ IOR is the GKR protocol for multiple grand product claims from \cref{e: grand_products_again}, see \cref{s:gkr_low_entropy}. Each round of the GKR protocol is a round of either a  sumcheck for a polynomial of degree $3$, or a unification of two evaluation claims of the same multilinear polynomial.  Accordingly we have $\eps_{i,\red}\leq 3/|\comfield|$ for all $i$. This immediately guarantees $\lambda=100$ bits of security. To achieve $\lambda=128$ bits of security, one can do two bits of grinding (\cref{s:IORs}) per round. 
@@ -1645,9 +1707,9 @@ Recall (\cref{t:thm_core_IOPP})
  
  \medskip
  
- \noindent \textbf{Method 2}: We generalize an idea from \cite{binius64}. In this setting we make the assumption that the entries in $\bm{\gamma}$ (cf.\ Phase 2 of \cref{c:core_iop}) are smaller than $|\comfield|-1$.
+ \noindent \textbf{Method 2}: We generalize an idea from \cite{binius64}. In this setting we make the assumption that the entries in $\bm{\gamma}$ (cf.\ Phase 3 of \cref{c:core_iop}) are smaller than $|\comfield|-1$.
  
- Note that when we attempt to prove the integer equalities $\langle \bm{\gamma}, \bff_{*j}\rangle =\mu_j$ ($j\in [\codedim_2]$)  ``in the exponent'' during Phase 2 of \cref{c:core_iop}, what we are really doing is proving the equalities modulo $|\comfield|-1$.  So far, we have used $\comfield$ large enough hat this distinction does not matter, in that, because of the total possible magnitudes of $\langle \bm{\gamma}, \bff_{*j}\rangle$ does not exceed $|\comfield|-2$.  
+ Note that when we attempt to prove the integer equalities $\langle \bm{\gamma}, \bff_{*j}\rangle =\mu_j$ ($j\in [\codedim_2]$)  ``in the exponent'' during Phase 3 of \cref{c:core_iop}, what we are really doing is proving the equalities modulo $|\comfield|-1$.  So far, we have used $\comfield$ large enough hat this distinction does not matter, in that, because of the total possible magnitudes of $\langle \bm{\gamma}, \bff_{*j}\rangle$ does not exceed $|\comfield|-2$.  
 
     If that is not the case, one can, in addition to proving  $\langle \bm{\gamma}, \bff_{*j}\rangle =\mu_j$  modulo $|\comfield|-1$, prove the same equality modulo $\codedim_1$. This works because since $\codedim_1$ and $|\comfield|-1$ are coprime (because $\codedim_1$ is a power of two), by the CRT, if both equalities are true, then  $\langle\bm{\gamma}, \bff_{*j}\rangle -\mu_j$ is an integer multiple of $\codedim_1\cdot (|\comfield|-1)$. However, because the entries of $\bff$ are bits and the entries of $\bm{\gamma}$ are at most $|\comfield|-2$, this means that   $\langle \bm{\gamma}, \bff_{*j}\rangle = \mu_j$ as integers. 
 
@@ -2113,7 +2175,7 @@ $$
 \end{aligned} 
 \ \right| \ 
 \begin{aligned}
-    %& f = \Enc_{\cC}\circ \pack \circ \picomfield(\mathsf{bits}(\bff)),\\
+    %& f = \Enc_{\cC}\circ \pack \circ \picomfield(\bitstext(\bff)),\\
     &\mathbf{p}_{j}^{(i)}(\xx, \bff) = 0 \ \text{ in } R_i \ \text{ for all } j\in [\numrows], \ i \in [\iota]
 \end{aligned}
 \right\}
@@ -2135,7 +2197,7 @@ Let $\ring,\inplen,\codedim,\numrows,\iota, R_1, \ldots, R_{\iota}, B, \modulede
 \end{aligned} 
 \ \right| \ 
 \begin{aligned}
- %& f = \Enc_{\cC}\circ \pack \circ \picomfield(\mathsf{bits}(\bff)),\\  
+ %& f = \Enc_{\cC}\circ \pack \circ \picomfield(\bitstext(\bff)),\\  
  &\left(\left(A^{(i)}\cdot \zz\right)\circ \left(B^{(i)}\cdot \zz\right) - \left(C^{(i)}\cdot \zz\right)\right)_{j} = 0 \ \text{ in } R_i \\ &\qquad\qquad \qquad \qquad \qquad \text{ for all } j\in [\numrows], \ i \in [\iota]\\
     &\ \zz=(\xx, \bff)
 \end{aligned}
@@ -2195,7 +2257,7 @@ $(R,M_R,\moduledegree,  \codedim_0, B, \codedim_1,\codedim_2, \comfield,\cC_1^{\
 \begin{enumerate}[leftmargin=*] 
 \item \textbf{Round 1: oracles.}
 \begin{itemize}[leftmargin=*]
-\item The prover  computes $$f= \Enc_{\cC}\circ \pack\circ\pi_2(\mathsf{bits}(\bff)) \in \comfield^{\codelength}$$ (cf.\ \eqref{e:bits_of_f}) and sends  the verifier oracle access to $f$. 
+\item The prover  computes $$f= \Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\bff)) \in \comfield^{\codelength}$$ (cf.\ \eqref{e:bits_of_f}) and sends  the verifier oracle access to $f$. 
 \item The prover forms the multilinear polynomial, for all $i\in [\iota]$,
 %
 $$
@@ -2592,12 +2654,12 @@ $$
 $$
 where if $\inp=(\vv,\mu)$ then $\inp'=(\uu,\mu)$ is defined as in \cref{?}. For  empty transcripts we let $\kstate(\inp,\oracle,\ww)=1$ if and only if $(\inp,\oracle,\ww)\in \LinModFieldBin(M_{R_{\leq B}},\modulemorphism, \KK, \cC_1^{\equiv \codedim_2})^\delta$. If $\tr$ is a transcript containing uniquely the first prover message, then we let $\kstate(\inp, \oracle, \tr, \ww) = \kstate(\inp, \oracle, \ww)$. 
 
-Further, let $\cE'$ be an extractor for \cref{c:core_iop}. We define an extractor $\cE$ for \cref{c:LinModFieldBin} as follows: if $\tr$ is neither empty nor consisting in just one prover message, $\cE(\inp,\oracle,\tr, \ww) \defeq \cE'(\inp', \oracle, \tr, \ww)$. For $\tr$ empty, we let $\cE(\inp, \oracle, \ww)$ proceeds as follows: first it computes $$\bfg=\cE'(\inp',\oracle, \ww).$$  If $\bfg\in \{0,1\}^{\codedim_0\cdot B \cdot \moduledegree} \subseteq \ZZ^{\codedim_0\cdot B \cdot \moduledegree}$, then let $\bff\in M_{R_{\leq B}}^{\codedim_0}$ such that $\mathsf{bits}(\bff)=\bfg$, concretely, index $\bff$ as $\bfg=(\bfg_{ijk})_{i\in [\codedim_0], j\in [\moduledegree], k\in [B]}$. Let $\phi= \mathsf{id}$ be the identity map if $\ring=\ZZ$, and $\phi=\pi_q$ if $\ring$ is a field of characteristic $q$. Then output 
+Further, let $\cE'$ be an extractor for \cref{c:core_iop}. We define an extractor $\cE$ for \cref{c:LinModFieldBin} as follows: if $\tr$ is neither empty nor consisting in just one prover message, $\cE(\inp,\oracle,\tr, \ww) \defeq \cE'(\inp', \oracle, \tr, \ww)$. For $\tr$ empty, we let $\cE(\inp, \oracle, \ww)$ proceeds as follows: first it computes $$\bfg=\cE'(\inp',\oracle, \ww).$$  If $\bfg\in \{0,1\}^{\codedim_0\cdot B \cdot \moduledegree} \subseteq \ZZ^{\codedim_0\cdot B \cdot \moduledegree}$, then let $\bff\in M_{R_{\leq B}}^{\codedim_0}$ such that $\bitstext(\bff)=\bfg$, concretely, index $\bff$ as $\bfg=(\bfg_{ijk})_{i\in [\codedim_0], j\in [\moduledegree], k\in [B]}$. Let $\phi= \mathsf{id}$ be the identity map if $\ring=\ZZ$, and $\phi=\pi_q$ if $\ring$ is a field of characteristic $q$. Then output 
 %
 $$
 \bff \defeq  \sum_{j\in [\moduledegree],k\in [B]} \gamma_j \cdot 2^{k-1} \cdot \phi(\bfg_{*jk}),
 $$
-where $\bfg_{*jk}=(\bfg_{ijk})_{i\in [\codedim_0]}\in \bits^{\codedim_0} \subseteq \ZZ^{\codedim_0}$. Then $\mathsf{bits}(\bff)=\bfg$ \albert{more detail?}. 
+where $\bfg_{*jk}=(\bfg_{ijk})_{i\in [\codedim_0]}\in \bits^{\codedim_0} \subseteq \ZZ^{\codedim_0}$. Then $\bitstext(\bff)=\bfg$ \albert{more detail?}. 
 
 If $\tr$ is a transcript consisting of only one prover message, we let $\cE(\inp,\oracle, \tr,\ww) = \cE(\inp,\oracle,\ww)$.
 
@@ -2609,7 +2671,7 @@ $$
 ((\uu,\mu),\oracle, \bfg) \in \LinBitsDual(\bits,\pi_q,\KK,\cC_1^{\codedim_2}) \ \Leftrightarrow \ ((\vv,\mu),\oracle, \bff) \in \LinModFieldBin(M_{R_{\leq B}},\modulemorphism, \KK, \cC_1^{\equiv \codedim_2}).
 $$
 %
-Indeed, this follows from \cref{?}, which yields $$\langle \modulemorphism(\bff), \vv\rangle = \langle \pi_q(\mathsf{bits}(\bff)), \uu \rangle = \langle \pi_q(\bfg), \uu \rangle.$$ \albert{increase detail?}.
+Indeed, this follows from \cref{?}, which yields $$\langle \modulemorphism(\bff), \vv\rangle = \langle \pi_q(\bitstext(\bff)), \uu \rangle = \langle \pi_q(\bfg), \uu \rangle.$$ \albert{increase detail?}.
 
 
 
@@ -2644,7 +2706,7 @@ If $\kstate'(\inp',\oracle,\tr, \rho, \ww)=1$ then with probability $1-\kappa_0$
 To prove \cref{t:thm_iop_pimsat}, we will need to introduce an extension of the definition of $\PESAT(\KK, \pp)$ and $\LIN(\KK)$ so that these relations can hold witnesses in $\ringtwobounds{B}{\moduledegree}$ and their encodings over a binary field. Namely, given a field of characteristic $q$ and a $\pi_q$-module homomorphism (cf.\ \cref{?}) $\psi_\KK:\ringdegbound{\moduledegree}[X]\to \KK$, we define:
 $$
 \PESAT(\ringtwobounds{B}{\moduledegree}, \KK, \pp,\psi_\KK, \cC) \defeq \left\{ \left(\begin{aligned} &\inp=\xx\in \KK^\inplen, \\&\oracle = f \in (\comfield)^{\codelength}, \\ &\wit= \bff\in (\ringtwobounds{B}{\moduledegree})^{\codedim_0}\end{aligned}\right) \;\middle|\;  \begin{aligned} 
-&f=\Enc_{\cC}\circ \pack \circ \pi_2(\mathsf{bits}(\bff)) \\ \wedge \  &\pp_i(\xx, \psi_\KK(\bff)) = 0  \text{ for all } i\in [\numrows]\end{aligned}\right\}
+&f=\Enc_{\cC}\circ \pack \circ \pi_2(\bitstext(\bff)) \\ \wedge \  &\pp_i(\xx, \psi_\KK(\bff)) = 0  \text{ for all } i\in [\numrows]\end{aligned}\right\}
 $$
 Note that when $\pp$ contains a single linear polynomial, then
 %
@@ -2669,7 +2731,7 @@ $$
 \end{aligned} 
 \ \right| \ 
 \begin{aligned}
-    & f = \Enc_{\cC}\circ \pack \circ \picomfield(\mathsf{bits}(\bff)),\\
+    & f = \Enc_{\cC}\circ \pack \circ \picomfield(\bitstext(\bff)),\\
     &\mathbf{p}_{j}^{(i)}(\xx, \bff) = 0 \ \text{ in } R_i \ \text{ for all } j\in [\numrows], \ i \in [\iota]
 \end{aligned}
 \right\}
@@ -2680,7 +2742,7 @@ $$
 %\UPESAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{R})  = \UPESAT, \qquad \UPESAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{R}, \cC)  = \UPESAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{R}, \cC).
 %$$
 %
-As usual, for the relations $\Relation$ that contain the constraint $f=\Enc_{\cC}\circ \pack \circ \pi_2(\mathsf{bits}(\bff))$, we also consider their \emph{relaxed} version $\Relation^\delta$, where such constraint is replaced by $\hamming(f,\Enc_{\cC}\circ \pack \circ \pi_2(\mathsf{bits}(\bff)))<\delta$.
+As usual, for the relations $\Relation$ that contain the constraint $f=\Enc_{\cC}\circ \pack \circ \pi_2(\bitstext(\bff))$, we also consider their \emph{relaxed} version $\Relation^\delta$, where such constraint is replaced by $\hamming(f,\Enc_{\cC}\circ \pack \circ \pi_2(\bitstext(\bff)))<\delta$.
 
 
 
@@ -2705,7 +2767,7 @@ Let $\delta\in (0,1)$. Then there is an IOR $\Pi_\KK'$ from $\PESAT(\ringtwoboun
 %The first one, $\Pi_0$ \albertimportant{Not needed?}, is a $1$-round IOR from 
 
 
-%\paragraph{Description of $\Pi_1$.} In $\Pi_0$, given $(\inp,\bot, \wit)\in \PIMSAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{\ideal})$ as input, the prover sends $f=\Enc_{\cC}\circ \pack \pi_2(\mathsf{bits}(\bff))$ to the verifier, and the verifier replies with an empty message. Then the IOR outputs $(\inp,f,\wit)\in \PIMSAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{\ideal}, \cC, \pack)$. The first item in Round 1 of \cref{c:iop_pimsat} follows precisely this IOR: prover computes and sends $f$, and prover and verifier are left with $(\inp,f)$ and $(\inp,f,\bff)\in \PIMSAT(\cC, \pack)$.
+%\paragraph{Description of $\Pi_1$.} In $\Pi_0$, given $(\inp,\bot, \wit)\in \PIMSAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{\ideal})$ as input, the prover sends $f=\Enc_{\cC}\circ \pack \pi_2(\bitstext(\bff))$ to the verifier, and the verifier replies with an empty message. Then the IOR outputs $(\inp,f,\wit)\in \PIMSAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{\ideal}, \cC, \pack)$. The first item in Round 1 of \cref{c:iop_pimsat} follows precisely this IOR: prover computes and sends $f$, and prover and verifier are left with $(\inp,f)$ and $(\inp,f,\bff)\in \PIMSAT(\cC, \pack)$.
 
 
 \paragraph{Description of $\Pi_1$.} The IOR $\Pi_1$ is a two-round IOR from $\UPESAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{R}, \cC)$ to $\PESAT(\ringtwobounds{B}{\moduledegree},\KK, \hat{\pp},\pi,\cC)$, for some polynomials $\hat{\pp}$ and $\pi_q$-module homomorphism $\pi:\ringtwobounds{B}{\moduledegree} \to \KK$. In $\Pi_1$, verifier and prover receive $(\inp, f)$ and $(\inp, f,\bff)\in \UPESAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{R}, \cC)$ as inputs, respectively. In the first round, prover and verifier simulate Round 1 of \cref{c:iop_pimsat}, skipping the first item (computing and sending the encoding $f$ of $\bff$), since $f$ is already in the input of the prover and verifier. The prover instead  sends an empty message $\bot$. For the second round of $\Pi_1$, prover and verifier simulate Round 2 of \cref{c:iop_pimsat}. At the end of $\Pi_1$, prover and verifier output $$(\pi(\xx),f,\bff)\in \PESAT(\ringtwobounds{B}{\moduledegree},\KK, \hat{\pp},\pi,\cC),$$
@@ -2720,7 +2782,7 @@ $\Pi_\KK'$ given by \cref{l:lift_pesat_to_encodings}, where $\Pi_\KK$ is the IOR
 
 \paragraph{Description of $\Pi_3$}
 
-
+\albertimportant{Should it be named $\Pi_4$?}
 The IOR $\Pi_3$ is an IOP for $\LIN(\ringtwobounds{B}{\moduledegree},\KK,\pi,\cC)$. It consists  in applying Phase 4 of \cref{c:iop_pimsat}, i.e.\ simulating \cref{c:LinModFieldBin} with inputs $((\vv,\mu), f,\bff)$. By \cref{t:thm_LinModFieldBits} and the hypothesis of \cref{t:thm_iop_pimsat}, \cref{c:LinModFieldBin} is a $(\tau_{\mathsf{\mathsf{ext}}}+t_\red+t_\iopp)$-round perfectly complete IOP for $\LIN(\ringtwobounds{B}{\moduledegree},\KK,\pi,\cC)$ with round-by-round knowledge with relaxation $(\LIN(\ringtwobounds{B}{\moduledegree},\KK,\pi,\cC)^\delta,\bot)$, with errors $\kappa_{\mathsf{lift-proj}}^*, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]}$.
 
 
@@ -2753,7 +2815,7 @@ Due to \cref{l:Pi_123_is_good}, it  suffices to show that $\Pi_{123}$ is perfect
 \albertimportant{Probably needs some polishing and review}
     Indeed, let $\inp=\xx, \oracle=f$ be an input and oracle for $\UPESAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{R}, \cC)$. For any $\ww$ define $\kstate(\inp,f, \ww)=1$ if and only if $(\inp,f,\ww)\in \UPESAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{R}, \cC)^\delta$. Given a full transcript $\tr=(\bot, (\KK,\rr),  (u_1,\ldots, u_\iota),(\theta_1,\ldots, \theta_\iota, \alpha))$ for $\Pi_{1}$, define $\kstate(\inp, f, \tr, \ww) = 1$ if and only if $(\pi(\xx), f, \pi(\bff))\in \PESAT(\ringtwobounds{B}{\moduledegree}, \KK, \hat{\pp},  \pi, \cC)^\delta$, where $\pi=\pi_{q,\alpha}$, $q$ being the characteristic of $\KK$ and $\alpha$ one of the verifier's messages in $\tr$. For partial transcripts where the prover $\tr$ is about to send a message $m$, let $\kstate(\inp,f,\tr, m, \ww) = \kstate(\inp, f,\tr,\ww)$. 
 
-    We now define  $\kstate(\inp, f, \tr, \ww)$ where $\tr$ is nonempty and such that prover is about to move.  The only undefined setting is when $\tr=(\bot, (\KK,\rr))$. In this case we define $\kstate(\inp, f, \tr, \ww) = 1$ if and only if $$\Delta(f,\Enc_\cC\circ \pack \circ \pi_2(\mathsf{bits}(\ww)) < \delta$$ and $\pi_q(Q_{\ww}^{(i)})(\rr)\in (\pi_q(h_i))$ for all $i\in [\iota]$,  where 
+    We now define  $\kstate(\inp, f, \tr, \ww)$ where $\tr$ is nonempty and such that prover is about to move.  The only undefined setting is when $\tr=(\bot, (\KK,\rr))$. In this case we define $\kstate(\inp, f, \tr, \ww) = 1$ if and only if $$\Delta(f,\Enc_\cC\circ \pack \circ \pi_2(\bitstext(\ww)) < \delta$$ and $\pi_q(Q_{\ww}^{(i)})(\rr)\in (\pi_q(h_i))$ for all $i\in [\iota]$,  where 
     %
     $$
     Q_{\ww}^{(i)}(\mathbf{Z})\defeq\sum_{\bb\in\bits^{n'}}\pp_{\bb}^{(i)}(\xx,\ww) \cdot \eq(\bb, \mathbf{Z}) \in \ring[X]. 
@@ -2778,8 +2840,8 @@ Observe that $\kstate$ satisfies the three conditions of \cref{def:knowledge-sta
 % 
 By our definition of $\kstate$, $P_1$ is the probability that 
 %
-\begin{equation}\label{e:boring_proof_eq1}\pi_q(Q_{\ww}^{(i)})(\rr) \in (\pi_q(h_i)) \text{ for all } i\in [\iota] \text{ and } \Delta(f, \Enc_{\cC}\circ \pack \circ \pi_2(\mathsf{bits}(\ww))<\delta
-\end{equation} while at the same time \begin{equation}\label{e:boring_proof_eq2}\pp_\bb^{(i)}(\xx,\ww)\not\in (h_i) \text{ for some } \bb\in \bits^{n'} \text{ and } i\in [\iota]\end{equation} or $\Delta(f, \Enc_{\cC}\circ \pack \circ \pi_2(\mathsf{bits}(\ww))\geq\delta$. Clearly, the latter condition cannot hold if \eqref{e:boring_proof_eq1} holds; hence we will study the probability  that \eqref{e:boring_proof_eq1} and \eqref{e:boring_proof_eq2} hold simultaneously.  We ultimately want to prove that $P_1 \leq \kappa_1$.
+\begin{equation}\label{e:boring_proof_eq1}\pi_q(Q_{\ww}^{(i)})(\rr) \in (\pi_q(h_i)) \text{ for all } i\in [\iota] \text{ and } \Delta(f, \Enc_{\cC}\circ \pack \circ \pi_2(\bitstext(\ww))<\delta
+\end{equation} while at the same time \begin{equation}\label{e:boring_proof_eq2}\pp_\bb^{(i)}(\xx,\ww)\not\in (h_i) \text{ for some } \bb\in \bits^{n'} \text{ and } i\in [\iota]\end{equation} or $\Delta(f, \Enc_{\cC}\circ \pack \circ \pi_2(\bitstext(\ww))\geq\delta$. Clearly, the latter condition cannot hold if \eqref{e:boring_proof_eq1} holds; hence we will study the probability  that \eqref{e:boring_proof_eq1} and \eqref{e:boring_proof_eq2} hold simultaneously.  We ultimately want to prove that $P_1 \leq \kappa_1$.
 
 Let $E_1$ be the event that \eqref{e:boring_proof_eq2} holds and $\pi_q(\pp_\bb^{(i)}(\xx,\ww))\in (\pi_q(h_i))$ for all $\bb,i$. By \cref{lem:ideals_modular projection}, 
 %
@@ -2816,9 +2878,9 @@ Finally, we bound the following probability, corresponding to the round-by-round
 \end{align*}
 %
 By definition, \begin{equation}\label{e:boring_proof_eq3}\kstate(\inp,f, \bot,(\KK,\rr),(u_i)_{i\in [\iota]},((\theta_i)_{i\in[\iota]},\alpha), \ww)=1 \ \Leftrightarrow \ (\pi(\inp), f, \pi(f))\in \PESAT(\ringtwobounds{B}{\moduledegree}, \KK, \hat{\pp}, \cC)^\delta\end{equation} and verifier does not abort \albert{It's not completely transparent how verifier accepts or aborts in the definition of RBR KS}; while $$\kstate\bigl(\inp,f,\bot,(\KK,\rr), (u_i)_{i\in[\iota]},\ww\bigr)=\kstate\bigl(\inp,f,\bot,(\KK,\rr),\ww\bigr)=0$$  if and only if 
-$\Delta(f,\Enc_\cC\circ \pack \circ \pi_2(\mathsf{bits}(\ww)) \geq \delta$ or \begin{equation}\label{e:boring_proof_eq4}\pi_q(Q_{\ww}^{(i)})(\rr)\not\in (\pi_q(h_i)) \text{ for some } i\in [\iota].\end{equation}  
+$\Delta(f,\Enc_\cC\circ \pack \circ \pi_2(\bitstext(\ww)) \geq \delta$ or \begin{equation}\label{e:boring_proof_eq4}\pi_q(Q_{\ww}^{(i)})(\rr)\not\in (\pi_q(h_i)) \text{ for some } i\in [\iota].\end{equation}  
 %
-Let $E$ be the event that  \eqref{e:boring_proof_eq3} and \eqref{e:boring_proof_eq4} hold. Again, $P_2= \Pr_{(\theta_i),\alpha}[E]$, since \eqref{e:boring_proof_eq3} forces $\Delta(f,\Enc_\cC\circ \pack \circ \pi_2(\mathsf{bits}(\ww)) < \delta$.
+Let $E$ be the event that  \eqref{e:boring_proof_eq3} and \eqref{e:boring_proof_eq4} hold. Again, $P_2= \Pr_{(\theta_i),\alpha}[E]$, since \eqref{e:boring_proof_eq3} forces $\Delta(f,\Enc_\cC\circ \pack \circ \pi_2(\bitstext(\ww)) < \delta$.
 
 Now, if $E$ occurs then
 $$
@@ -3814,14 +3876,14 @@ The prover and verifier receive $\inp=(\mu, \vv,\Mmatrix)\in \evalfield \times \
  %
  Prover and verifier execute \cref{c:core_iop} until before Phase 3, with parameters\footnote{\cref{c:core_iop} would require a code $\cC$ as parameter whose dimension matches $\codedim'$. This is not the case in our current setting, but since \cref{c:core_iop} is run only up to before Phase 3 (and so the code $\cC$ is not used in this partial run), this is not an issue.}
      $$
-     (\evalfield,\ringmorphism, \comfield, \codedim', \codedim_1, \codedim_2, \cC)
+     (\evalfield,\comfield, \codedim', \codedim_1, \codedim_2, \cC)
      $$ 
      and inputs 
     $$
     \inp' = (\mu, \vv),  \quad \oracle'=f,\quad  \wit' = \bfh \in \{0,1\}^{\codedim'} \subseteq \ZZ^{\codedim'}.
     $$
      Note that until that point, the verifier has not made any queries to $\oracle'$. So, in terms of completeness, it does not matter, yet, that $f$ is not the encoding of $\pi_2(\bfh)=M\cdot \pi_2(\bff)$.
- \item  At the end of Phase 2 of \cref{c:core_iop}, prover and verifier are left with the claims 
+ \item  At the end of Phase 3 of \cref{c:core_iop}, prover and verifier are left with the claims 
 \begin{align*}\label{e:iopp_mle_claims_2}
 &\left((\vv, \mu'), \ f, \ \picomfield(\bfh)\right) \in \LIN( \comfield,\cC,\pack) \\& \qquad\qquad\qquad = \left\{ \left(\begin{aligned} &\inp=(\uu,\mu)\in \comfield^\inplen, \\&\oracle = g \in \comfield^{\codelength}, \\ &\wit= \bfg\in (\comfield^\codedim)\end{aligned}\right) \;\middle|\;  \begin{aligned} 
 &g=\Enc_{\cC}\circ \pack (\bfg) \\    &\langle \uu, \bfg\rangle = \mu  \end{aligned}\right\}
@@ -3860,14 +3922,14 @@ Now prover and verifier use an IOP for $\LIN(\comfield, \cC, \pack)$ to prove \e
     The error $\kappa_0^*$ is only present if $\degevalfield>0$. Otherwise, \cref{c:core_iop} (and thus \cref{c:virtual_iop} has one round less) and $\kappa_0^*$ is not part of the soundness errors. 
 \end{theorem}
 \begin{proof}
-    \albert{Too vague?} The proof results from observing that \cref{c:virtual_iop} is the composition of an IOR $\Pi_1$ from $\LinBitsDual^{\mathsf{virtual}}(\bits, \pi, R,\cC)$ to $\LIN(\comfield,\cC, \pack)$, with an IOP $\Pi_2$ for $\LIN(\comfield,\cC, \pack)$.  In $\Pi_1$ the input is $(\inp=(\mu,\vv, \Mmatrix), \oracle = f, \wit=\bff).$ The output is $((A^{\mathsf{T}}\cdot \vv, \mu'), f, \pi_2(\bff))$. The IOR  $\Pi_1$ is exactly the same as \cref{c:core_iop}  with input $((\mu, \vv), f, \bfh)$, until Phase 3. Hence by the same arguments as in the proof of \cref{t:thm_core_IOPP}, it is perfectly complete and has errors $\kappa_0^*, (\kappa_{\red,i})_i$ with parameters set as $(R,\pi, \comfield,\codedim',\codedim_1,\codedim_2,\cC)$. The IOP $\Pi_2$ is perfectly complete and has round-by-round knowledge errors $\kappa_{\iopp, i}$ by assumption.
+    \albert{Too vague?} The proof results from observing that \cref{c:virtual_iop} is the composition of an IOR $\Pi_1$ from $\LinBitsDual^{\mathsf{virtual}}(\bits, \pi, R,\cC)$ to $\LIN(\comfield,\cC, \pack)$, with an IOP $\Pi_2$ for $\LIN(\comfield,\cC, \pack)$.  In $\Pi_1$ the input is $(\inp=(\mu,\vv, \Mmatrix), \oracle = f, \wit=\bff).$ The output is $((A^{\mathsf{T}}\cdot \vv, \mu'), f, \pi_2(\bff))$. The IOR  $\Pi_1$ is exactly the same as \cref{c:core_iop}  with input $((\mu, \vv), f, \bfh)$, until Phase 4. Hence by the same arguments as in the proof of \cref{t:thm_core_IOPP}, it is perfectly complete and has errors $\kappa_0^*, (\kappa_{\red,i})_i$ with parameters set as $(R,\pi, \comfield,\codedim',\codedim_1,\codedim_2,\cC)$. The IOP $\Pi_2$ is perfectly complete and has round-by-round knowledge errors $\kappa_{\iopp, i}$ by assumption.
     %
     %\albert{Todo. Or is it too obvious to do it?}
 \end{proof}
 
 
 \begin{remark}[Instantiating \cref{c:virtual_iop}]
-    \cref{c:virtual_iop} works in the exact same way as \cref{c:core_iop} until Phase 3, where an IOP for $\LIN(\comfield,\cC, \pack)$ is invoked on a slightly different instance-oracle-triple. The latter IOP is a standard combination of ring switching \cref{a:ring_switch_1} and WHIR \cref{whir}, plus perhaps additional processes to make verification time cheaper \cref{?}. The whole \cref{c:virtual_iop} can be instantiated as discussed in \cref{s:instantiation}, assuming this latter IOP is instantiated correctly (it is a standard IOP, so we do not discuss it further).  
+    \cref{c:virtual_iop} works in the exact same way as \cref{c:core_iop} until Phase 4, where an IOP for $\LIN(\comfield,\cC, \pack)$ is invoked on a slightly different instance-oracle-triple. The latter IOP is a standard combination of ring switching \cref{a:ring_switch_1} and WHIR \cref{whir}, plus perhaps additional processes to make verification time cheaper \cref{?}. The whole \cref{c:virtual_iop} can be instantiated as discussed in \cref{s:instantiation}, assuming this latter IOP is instantiated correctly (it is a standard IOP, so we do not discuss it further).  
 \end{remark}
 
 
