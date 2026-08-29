@@ -10660,7 +10660,7 @@ mod tests {
     /// Serializes the test that MUTATES the process-global `F2Z_QUAD` env
     /// var against quad-eligible (row_len ≥ 256) prove/verify pairs that
     /// must see a stable value across their whole run.
-    static QUAD_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    use crate::utils::QUAD_ENV_LOCK;
 
     /// Field bridging is the identity on words, and multiplication agrees —
     /// the two `GF(2^128)` implementations are the same field in the same

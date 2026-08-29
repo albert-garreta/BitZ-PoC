@@ -61,3 +61,11 @@ pub fn powers<R: Semiring>(x: R, one: R, num_pows: usize) -> Vec<R> {
 // `#[macro_export]` macros land at the crate root; re-export them here so
 // vendored `zinc_utils::`-style paths keep working after the rename.
 pub use crate::{add, cfg_chunks, cfg_chunks_mut, cfg_into_iter, cfg_iter, cfg_iter_mut, mul, neg, sub};
+
+/// Serializes tests that read or mutate process-global `F2Z_*` environment
+/// switches. A test that toggles a transcript-shaping variable (for example
+/// `F2Z_QUAD`) must hold this lock for its whole body; an end-to-end
+/// prove/verify test that must observe one stable value across its run
+/// takes the same lock. Poisoning is ignored: the lock only serializes.
+#[cfg(test)]
+pub(crate) static QUAD_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
