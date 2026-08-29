@@ -1263,6 +1263,7 @@ pub(crate) const fn profile_code(profile: LigeritoProfile) -> u8 {
         LigeritoProfile::Fast => 0,
         LigeritoProfile::Slim => 1,
         LigeritoProfile::Secure => 2,
+        LigeritoProfile::Slim3 => 3,
     }
 }
 

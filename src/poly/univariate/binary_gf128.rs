@@ -1183,7 +1183,6 @@ fn fixed_scalar_enabled() -> bool {
 /// unique remainder mod `f` — the fixed-scalar kernel guarantee), so
 /// callers may route any multiply-by-a-pass-constant through this
 /// freely without perturbing transcripts.
-#[cfg(all(test, target_arch = "aarch64", target_feature = "neon"))]
 #[derive(Clone, Copy)]
 pub(crate) struct FixedGfMul {
     scalar: BinaryFieldGF128,
@@ -1195,7 +1194,6 @@ pub(crate) struct FixedGfMul {
     fast: bool,
 }
 
-#[cfg(all(test, target_arch = "aarch64", target_feature = "neon"))]
 impl FixedGfMul {
     pub(crate) fn new(scalar: BinaryFieldGF128) -> Self {
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
@@ -1846,7 +1844,6 @@ pub(crate) mod neon {
     /// stored `(rl, rh)` word pairs of a [`super::FixedGfMul`]: 4
     /// shuffle-free PMULLs + one [`fold_x64`]. Value-exact vs the
     /// composed multiply.
-    #[cfg(test)]
     #[inline(always)]
     pub(crate) fn fixed_mul_words(
         rl: &[u64; 2],

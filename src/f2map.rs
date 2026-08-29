@@ -69,6 +69,15 @@ pub trait VirtualMap: Sync {
 
     /// Derived row indices for one source column, in increasing order.
     fn column_rows(&self, column: usize) -> Option<Self::ColumnRows<'_>>;
+
+    /// The map's implicit tensor repetition, when it has one: the local
+    /// map and the instance count, with global bit-cell indices laid out
+    /// `global = local · instances + instance`. Lets the virtual-opening
+    /// prover and verifier factor per-column work over the repetition.
+    /// Default: no structure exposed.
+    fn repetition(&self) -> Option<(&PreparedVirtualMap, usize)> {
+        None
+    }
 }
 
 /// A validated binary CSC matrix with transcript metadata cached once.
@@ -297,6 +306,10 @@ impl VirtualMap for RepeatedVirtualMap {
             instance,
             instances: self.instances,
         })
+    }
+
+    fn repetition(&self) -> Option<(&PreparedVirtualMap, usize)> {
+        Some((&self.local, self.instances))
     }
 }
 

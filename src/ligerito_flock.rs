@@ -44,7 +44,7 @@ use flock_core::pcs::ligerito::{
 use crate::cfg_iter_mut;
 use crate::piop::lookup::gkr_product::ProductForestProof;
 use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheckProof;
-use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
+use crate::poly::univariate::binary_gf128::{BinaryFieldGF128 as Gf, FixedGfMul};
 use crate::transcript::traits::Transcript;
 
 use crate::ligerito::{
@@ -1412,6 +1412,7 @@ const fn ligerito_profile_code(profile: ligerito::LigeritoProfile) -> u8 {
         ligerito::LigeritoProfile::Fast => 0,
         ligerito::LigeritoProfile::Slim => 1,
         ligerito::LigeritoProfile::Secure => 2,
+        ligerito::LigeritoProfile::Slim3 => 3,
     }
 }
 
@@ -2391,6 +2392,7 @@ fn prove_mle_eval_mod_q_ligerito_raw(
             &hint.prover_data.codeword,
             &hint.prover_data.merkle_tree,
             (gf_to_f128(u0), gf_to_f128(u2)),
+            None,
             &mut ZincChallenger(transcript),
         ),
         None => ligerito::recursive_prover_with_basis(
@@ -9599,13 +9601,165 @@ where
         .fold(Gf::zero(), |acc, row| acc + coeffs.coeff(row))
 }
 
+/// Per-prove column-weight engine for the batching passes: fills whole
+/// 128-column source packs with `W_j = Σ_{r:M[r,j]=1} E_r`
+/// (`E_r = Σ_l η_l·eq_{bits(r)}(pt_l)`).
+///
+/// For a power-of-two tensor repetition (`global = local·2^k + instance`,
+/// [`crate::f2map::VirtualMap::repetition`]) the eq tensor factors over
+/// the instance/local bit split, so
+///
+/// ```text
+/// W_{(lc, inst)} = Σ_l eq_inst_l[inst] · S_{l,lc},
+/// S_{l,lc}       = η_l · Σ_{lr ∈ localcol(lc)} eq_loc_l[lr],
+/// ```
+///
+/// with the `S` tables precomputed once in `O(L·(local_rows + nnz_local))`
+/// field ops. One weight then costs `L` multiplies instead of the
+/// streamed fold's `L·deg`, and a local column with all `S_{·,lc} = 0`
+/// zeroes its whole pack in one check. Field associativity and
+/// distributivity make every value BIT-IDENTICAL to the streamed
+/// per-nonzero fold — prover and verifier transcripts are unchanged
+/// (pinned by `virtual_pack_weights_match_generic`).
+enum VirtColumnWeights<'a, M: crate::f2map::VirtualMap> {
+    /// Factored tensor-repetition tables.
+    Repeated {
+        /// `k`: the instance coordinates are the low `k` bits.
+        instance_bits: usize,
+        /// Per chunk `l`: eq table over `pt_l[..k]` (`2^k` entries).
+        eq_inst: Vec<Vec<Gf>>,
+        /// Per chunk `l`: `η_l`-scaled local-column sums of the eq table
+        /// over `pt_l[k..]`.
+        s: Vec<Vec<Gf>>,
+        _map: core::marker::PhantomData<&'a M>,
+    },
+    /// The streamed per-nonzero fold (any map).
+    Generic {
+        map: &'a M,
+        coeffs: VirtRowCoeffs,
+    },
+}
+
+impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
+    #[allow(clippy::arithmetic_side_effects)]
+    fn new(map: &'a M, points: &[Vec<Gf>], etas: &[Gf], t_wh: usize) -> Self {
+        use crate::poly::utils::build_eq_x_r_vec;
+        if let Some((local, instances)) = map.repetition()
+            && instances.is_power_of_two()
+            && instances > 1
+        {
+            let k = instances.trailing_zeros() as usize;
+            if points.iter().all(|pt| k < pt.len()) {
+                debug_assert_eq!(local.rows() << k, map.rows());
+                debug_assert_eq!(local.cols() << k, map.cols());
+                let eq_inst: Vec<Vec<Gf>> = points
+                    .iter()
+                    .map(|pt| build_eq_x_r_vec(&pt[..k], &()).expect("k >= 1"))
+                    .collect();
+                let s: Vec<Vec<Gf>> = points
+                    .iter()
+                    .zip(etas.iter())
+                    .map(|(pt, &eta)| {
+                        let eq_loc =
+                            build_eq_x_r_vec(&pt[k..], &()).expect("local coords non-empty");
+                        local
+                            .matrix()
+                            .columns()
+                            .map(|column| {
+                                let sum = column
+                                    .row_indices()
+                                    .iter()
+                                    .fold(Gf::zero(), |acc, &lr| acc + eq_loc[lr]);
+                                eta * sum
+                            })
+                            .collect()
+                    })
+                    .collect();
+                return Self::Repeated {
+                    instance_bits: k,
+                    eq_inst,
+                    s,
+                    _map: core::marker::PhantomData,
+                };
+            }
+        }
+        Self::Generic {
+            map,
+            coeffs: VirtRowCoeffs::new(points, etas, t_wh),
+        }
+    }
+
+    /// Fills the 128 weights of source pack `pack`. Returns `false` when
+    /// the pack is structurally all-zero and may be skipped — exact: a
+    /// zero weight contributes nothing to either batching pass.
+    #[allow(clippy::arithmetic_side_effects)]
+    #[inline]
+    fn pack_weights(&self, pack: usize, out: &mut [Gf; 128]) -> bool {
+        let base = pack << LOG_PACKING;
+        match self {
+            Self::Repeated {
+                instance_bits: k,
+                eq_inst,
+                s,
+                ..
+            } => {
+                if *k >= LOG_PACKING {
+                    // All 128 columns share one local column: hoist its
+                    // scaled sums (pass-fixed multipliers).
+                    let lc = base >> k;
+                    let inst0 = base & ((1usize << k) - 1);
+                    out.fill(Gf::zero());
+                    let mut live = false;
+                    for (eq_inst_l, s_l) in eq_inst.iter().zip(s.iter()) {
+                        let s_lc = s_l[lc];
+                        if s_lc == Gf::zero() {
+                            continue;
+                        }
+                        live = true;
+                        let fixed = FixedGfMul::new(s_lc);
+                        for (target, &weight) in
+                            out.iter_mut().zip(eq_inst_l[inst0..inst0 + 128].iter())
+                        {
+                            *target += fixed.mul(weight);
+                        }
+                    }
+                    live
+                } else {
+                    let mask = (1usize << k) - 1;
+                    let mut live = false;
+                    for (slot, target) in out.iter_mut().enumerate() {
+                        let column = base | slot;
+                        let (lc, inst) = (column >> k, column & mask);
+                        let mut acc = Gf::zero();
+                        for (eq_inst_l, s_l) in eq_inst.iter().zip(s.iter()) {
+                            acc += eq_inst_l[inst] * s_l[lc];
+                        }
+                        live |= acc != Gf::zero();
+                        *target = acc;
+                    }
+                    live
+                }
+            }
+            Self::Generic { map, coeffs } => {
+                let mut live = false;
+                for (slot, target) in out.iter_mut().enumerate() {
+                    let weight = virtual_column_weight(*map, base | slot, coeffs);
+                    live |= weight != Gf::zero();
+                    *target = weight;
+                }
+                live
+            }
+        }
+    }
+}
+
 /// The batching message computed by streaming source columns of the CSC map.
 /// For source cell `j`, `W_j = Σ_{r:M[r,j]=1} E_r`; bit plane `i`
 /// contributes `bit_i(W_j) · pack(f)[j>>7] · A(e_{j&127})`.
 #[allow(clippy::arithmetic_side_effects)]
 fn virtual_hs_fold<M>(
     map: &M,
-    coeffs: &VirtRowCoeffs,
+    weights: &VirtColumnWeights<'_, M>,
     p_msg: &[F128],
     a_cols: &[Gf; 128],
 ) -> Vec<Gf>
@@ -9614,29 +9768,38 @@ where
 {
     // Keep the per-chunk 128-element accumulator comfortably below the
     // production source vector: at the 2^16 SHA batch this bounds the merge
-    // buffer at 16 MiB instead of 128 MiB while retaining thousands of tasks.
-    const CHUNK: usize = 1 << 16;
-    let n_chunks = map.cols().div_ceil(CHUNK).max(1);
+    // buffer at 16 MiB instead of 128 MiB while retaining thousands of
+    // tasks. 2^9 packs = the previous 2^16-column chunk boundaries, so the
+    // nonzero-column accumulation order is unchanged.
+    const PACKS_PER_CHUNK: usize = 1 << 9;
+    let n_packs = map.cols() >> LOG_PACKING;
+    let n_chunks = n_packs.div_ceil(PACKS_PER_CHUNK).max(1);
     let partials: Vec<[Gf; 128]> = cfg_into_iter!(0..n_chunks)
         .map(|chunk| {
-            let lo = chunk * CHUNK;
-            let hi = (lo + CHUNK).min(map.cols());
+            let lo = chunk * PACKS_PER_CHUNK;
+            let hi = (lo + PACKS_PER_CHUNK).min(n_packs);
             let mut hs = [Gf::zero(); 128];
             let mut wits = [[0u64; 2]; 16];
             let mut vals = [Gf::zero(); 16];
             let mut fill = 0usize;
+            let mut pack_w = [Gf::zero(); 128];
 
-            for column in lo..hi {
-                let weight = virtual_column_weight(map, column, coeffs);
-                if weight == Gf::zero() {
+            for pack in lo..hi {
+                if !weights.pack_weights(pack, &mut pack_w) {
                     continue;
                 }
-                wits[fill] = *weight.words();
-                vals[fill] = f128_to_gf(p_msg[column >> LOG_PACKING]) * a_cols[column & 127];
-                fill += 1;
-                if fill == 16 {
-                    hs_scatter_block16(&mut hs, &wits, &vals);
-                    fill = 0;
+                let p_val = f128_to_gf(p_msg[pack]);
+                for (slot, &weight) in pack_w.iter().enumerate() {
+                    if weight == Gf::zero() {
+                        continue;
+                    }
+                    wits[fill] = *weight.words();
+                    vals[fill] = p_val * a_cols[slot];
+                    fill += 1;
+                    if fill == 16 {
+                        hs_scatter_block16(&mut hs, &wits, &vals);
+                        fill = 0;
+                    }
                 }
             }
             for index in 0..fill {
@@ -9661,7 +9824,7 @@ where
 #[allow(clippy::arithmetic_side_effects)]
 fn virtual_a_prime<M>(
     map: &M,
-    coeffs: &VirtRowCoeffs,
+    weights: &VirtColumnWeights<'_, M>,
     rho: &[Gf],
     a_cols: &[Gf; 128],
     n_packs: usize,
@@ -9675,10 +9838,16 @@ where
     cfg_iter_mut!(result)
         .enumerate()
         .for_each(|(pack, output)| {
-            let base = pack << LOG_PACKING;
+            let mut pack_w = [Gf::zero(); 128];
+            if !weights.pack_weights(pack, &mut pack_w) {
+                // Φ_ρ(0)·A(e_v) = 0: an all-zero pack contributes nothing.
+                return;
+            }
             let mut acc = Gf::zero();
-            for slot in 0..128 {
-                let weight = virtual_column_weight(map, base | slot, coeffs);
+            for (slot, &weight) in pack_w.iter().enumerate() {
+                if weight == Gf::zero() {
+                    continue;
+                }
                 let phi = phi_from_words(*weight.words(), &phi_tables);
                 acc += phi * a_cols[slot];
             }
@@ -9898,7 +10067,10 @@ where
     // `Σ_l η_l·μ_l = ⟨W, f⟩_K`, `W := Σ_l η_l·Mᵀ eq(pt_l)` — evaluated
     // on demand through `E_r` (never materialized).
     let etas: Vec<Gf> = transcript.get_field_challenges(lch, &());
-    let coeffs = VirtRowCoeffs::new(&points, &etas, t_wh);
+    let weights = {
+        let _g = crate::utils::prof::scope("mqv:wprep");
+        VirtColumnWeights::new(map, &points, &etas, t_wh)
+    };
     let a_cols = crate::dual_basis::dual_basis_cols();
     debug_assert!(
         t_wf >= LOG_PACKING,
@@ -9909,7 +10081,7 @@ where
     // (3) The batching message `h_i` (paper batching protocol, step 2).
     let hs = {
         let _g = crate::utils::prof::scope("mqv:hs");
-        virtual_hs_fold(map, &coeffs, &hint_f.p_msg, &a_cols)
+        virtual_hs_fold(map, &weights, &hint_f.p_msg, &a_cols)
     };
     crate::ligerito::absorb_hs(transcript, &hs);
 
@@ -9925,7 +10097,7 @@ where
     let b_comb: Vec<F128> = {
         let _g = crate::utils::prof::scope("mqv:aprime");
         let n_packs = hint_f.p_msg.len();
-        virtual_a_prime(map, &coeffs, &rho, &a_cols, n_packs)
+        virtual_a_prime(map, &weights, &rho, &a_cols, n_packs)
             .into_iter()
             .map(gf_to_f128)
             .collect()
@@ -10233,12 +10405,15 @@ where
     // succinct Ligerito verification of `⟨pack(f), a′⟩ = h′`. The
     // residual hook answers by MLE-folding `a′` at the accumulated
     // challenges (LSB-first, matching the sumcheck's binding order).
-    let coeffs = VirtRowCoeffs::new(&points, &etas, t_wh);
+    let weights = {
+        let _g = crate::utils::prof::scope("mqv:vwprep");
+        VirtColumnWeights::new(map, &points, &etas, t_wh)
+    };
     let a_cols = crate::dual_basis::dual_basis_cols();
     let m_p = t_wf + p_f.s - LOG_PACKING;
     let a_prime = {
         let _g = crate::utils::prof::scope("mqv:vaprime");
-        virtual_a_prime(map, &coeffs, &rho, &a_cols, 1usize << m_p)
+        virtual_a_prime(map, &weights, &rho, &a_cols, 1usize << m_p)
     };
     let eval_b = |ris: &[F128], yr_log_n: usize| -> Vec<F128> {
         let mut tbl = a_prime.clone();
@@ -10531,6 +10706,72 @@ mod tests {
     /// sources — pinning the char-2 reassociations
     /// `bit_i(Σ_r E_r) = ⊕_r bit_i(E_r)` and `Φ_ρ(Σ_r E_r) = Σ_r Φ_ρ(E_r)`
     /// the prover and verifier both rely on.
+    /// The factored tensor-repetition weight engine equals the streamed
+    /// per-nonzero fold bit-for-bit — on both the hoisted (k ≥ 7) and
+    /// small-instance (k < 7) paths — so engine selection cannot move a
+    /// transcript. Also pins the pack-skip contract: `live == false`
+    /// implies an all-zero pack.
+    #[test]
+    fn virtual_pack_weights_match_generic() {
+        use crate::f2map::{PreparedVirtualMap, RepeatedVirtualMap};
+        use crate::sparse_matrix::SparseMatrix;
+
+        let local_rows = 32usize;
+        let local_cols = 16usize;
+        // An empty local column, a dense one, and small pseudo-random ones.
+        let columns: Vec<Vec<(usize, bool)>> = (0..local_cols)
+            .map(|c| {
+                if c == 3 {
+                    return Vec::new();
+                }
+                if c == 5 {
+                    return (0..local_rows).map(|r| (r, true)).collect();
+                }
+                let mut rows: Vec<usize> = (0..=(c % 4))
+                    .map(|k| (c * 7 + k * 11 + 3) % local_rows)
+                    .collect();
+                rows.sort_unstable();
+                rows.dedup();
+                rows.into_iter().map(|r| (r, true)).collect()
+            })
+            .collect();
+        let local = PreparedVirtualMap::new(
+            SparseMatrix::try_from_columns(local_rows, columns).unwrap(),
+        )
+        .unwrap();
+
+        for instances in [16usize, 256] {
+            let repeated = RepeatedVirtualMap::new(local.clone(), instances).unwrap();
+            let vars = crate::f2map::VirtualMap::rows(&repeated).trailing_zeros() as usize;
+            let t_wh = vars / 2;
+            let points: Vec<Vec<Gf>> = (0..2u64)
+                .map(|l| (0..vars).map(|k| sample(0x7000 + l * 64 + k as u64)).collect())
+                .collect();
+            let etas = vec![sample(0xE1), sample(0xE2)];
+            let structured = VirtColumnWeights::new(&repeated, &points, &etas, t_wh);
+            assert!(
+                matches!(structured, VirtColumnWeights::Repeated { .. }),
+                "power-of-two repetition must take the factored path"
+            );
+            let generic = VirtColumnWeights::Generic {
+                map: &repeated,
+                coeffs: VirtRowCoeffs::new(&points, &etas, t_wh),
+            };
+            let n_packs = crate::f2map::VirtualMap::cols(&repeated) >> LOG_PACKING;
+            assert!(n_packs >= 2);
+            for pack in 0..n_packs {
+                let mut fast = [Gf::zero(); 128];
+                let mut slow = [Gf::zero(); 128];
+                let live = structured.pack_weights(pack, &mut fast);
+                let _ = generic.pack_weights(pack, &mut slow);
+                assert_eq!(fast, slow, "pack {pack} (instances {instances})");
+                if !live {
+                    assert!(fast.iter().all(|w| *w == Gf::zero()));
+                }
+            }
+        }
+    }
+
     #[test]
     fn virtual_hs_and_a_prime_match_cellwise() {
         use crate::{
@@ -10583,6 +10824,7 @@ mod tests {
             .collect();
         let etas = vec![sample(0xA1), sample(0xA2)];
         let coeffs = VirtRowCoeffs::new(&points, &etas, t_wh);
+        let weights = VirtColumnWeights::new(&map, &points, &etas, t_wh);
         let a_cols = crate::dual_basis::dual_basis_cols();
         let n_packs = n_f >> LOG_PACKING;
         let p_msg: Vec<F128> = (0..n_packs)
@@ -10598,7 +10840,7 @@ mod tests {
         }
 
         // h_i: streaming vs cell-wise plane scan.
-        let hs = virtual_hs_fold(&map, &coeffs, &p_msg, &a_cols);
+        let hs = virtual_hs_fold(&map, &weights, &p_msg, &a_cols);
         let mut expect = vec![Gf::zero(); 128];
         for (j, wj) in w_tbl.iter().enumerate() {
             let w = wj.words();
@@ -10613,7 +10855,7 @@ mod tests {
 
         // a′: the shared prover/verifier build equals the cell-wise Φ_ρ scan.
         let rho: Vec<Gf> = (0..128).map(|i| sample(0xC000 + i as u64)).collect();
-        let a = virtual_a_prime(&map, &coeffs, &rho, &a_cols, n_packs);
+        let a = virtual_a_prime(&map, &weights, &rho, &a_cols, n_packs);
         let mut expect_a = vec![Gf::zero(); n_packs];
         for (j, wj) in w_tbl.iter().enumerate() {
             let w = wj.words();
