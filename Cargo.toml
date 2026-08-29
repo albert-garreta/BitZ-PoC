@@ -87,6 +87,13 @@ harness = false
 # opt-in known-zero univariate prefix skip for K=1,2,3,4.
 
 [[bench]]
+name = "multiswap"
+harness = false
+# Limber's wired MultiSwap Mod-R1CS (6209 rows, k=0) through Spartan over a
+# transcript-sampled 113-bit prime + the runtime-prime F2Z bit opening.
+# Reps via F2Z_MULTISWAP_REPS; run RAYON_NUM_THREADS=1 for Limber parity.
+
+[[bench]]
 name = "sha256_compressions"
 harness = false
 # Independent SHA-256 compression batches through the structured Spartan +
