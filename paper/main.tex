@@ -1130,6 +1130,7 @@ Let $\basegenerator\in \comfield$ be a fixed generator of the multiplicative gro
 \begin{equation}\label{e:q_definition_if_R_is_Z}
 q = \codedim_1 \cdot \lVert \vv \rVert_\infty +1.
 \end{equation}
+If $R$ has zero characteristic, we assume the entries of $\vv$ are nonnegative integers, and that the tensor factors $\vv^{(1)}, \vv^{(2)}$ are chosen with nonnegative entries as well (this is always possible when $\vv\neq \bm{0}$, by negating both factors if necessary; note that then $\lVert \vv^{(1)}\rVert_\infty \leq \lVert \vv\rVert_\infty$ whenever $\vv^{(2)}\neq \bm{0}$). The modifications needed to handle arbitrary integer entries are straightforward: one uses centered representatives for the maps $\pi_p^{-1}$ and $\picanon^{-1}$, and sets $q = 2\codedim_1 \cdot \lVert \vv\rVert_\infty +1$.
 
 
 \begin{enumerate}[leftmargin=*] 
@@ -1165,8 +1166,8 @@ For such a class of maps, the error term $(\mathsf{deg}(R)-1)/q_{\min}$ of \cref
 %For ease of readability onwards, we use the same symbols $\vv^{(1)}$ and $q$ for the pre- and post-update vectors and primes in this step.
 \item \textbf{Phase 2: Transforming the claim into a PESAT claim over {$\comfield$}, and invoking the IOR {$\Pi_{\mathsf{red}}$}.}
 \begin{itemize}[leftmargin=*]
-\item Note that, at this point of the protocol, $\vv^{(1)}\in \FF_q^{\codedim_1}$. 
-Prover and verifier define $$\bm{\gamma} = \pi_{q}^{-1}(\vv^{(1)}) \in \range{0}{q-1}^{\codedim_1}\subseteq \ZZ^{\codedim_1},$$ and set to prove the following claim:
+\item Note that, at this point of the protocol, either $\vv^{(1)}\in \FF_q^{\codedim_1}$ (namely, if $R$ has nonzero characteristic or the optional projection step was executed), or $R$ has zero characteristic and $\vv^{(1)}\in \range{0}{q-1}^{\codedim_1}\subseteq \ZZ^{\codedim_1}$ (by the nonnegativity assumption below \eqref{e:q_definition_if_R_is_Z}).
+Prover and verifier define $$\bm{\gamma} = \pi_{q}^{-1}(\vv^{(1)}) \in \range{0}{q-1}^{\codedim_1}\subseteq \ZZ^{\codedim_1}$$ in the former case, and $\bm{\gamma} = \vv^{(1)}$ in the latter, and set to prove the following claim:
 %
 $$
 \prod_{i \in [\codedim_1]} g^{\bm{\gamma}_i\cdot \bff_{ij}}  = g^{\mu_j} \in \comfield, \qquad \text{for all } j\in [\codedim_2].
@@ -1263,7 +1264,7 @@ By the composition of IORs result (cf.\ \cref{r:ior_compositoin}), it suffices t
 
 \paragraph{Completeness and soundness of $\Pi_1$}
 
-We describe a knowledge state function $\kstate$. Let $\inp=(\mu,\vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle=f\in \comfield^{\codelength}$. Let $\tr$ be a partial interaction transcript for \cref{c:core_iop}. We start by setting $\kstate$ so that the first two conditions in \cref{def:knowledge-state-function} are met. Precisely, if   $\tr=\emptyset$, we set $\kstate(\inp,\oracle,\tr,\ww) = 1$ if and only if $(\inp, \oracle, \ww)\in \LinBitsDual^{\delta}$; and we have $\kstate$ output zero on inputs  $(\inp,\oracle,\tr,m,\ww)$ where $m$ is a prover  message  and $\kstate(\inp,\oracle,\tr,\ww)=0$.
+We describe a knowledge state function $\kstate$. Let $\inp=(\mu,\vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle=f\in \comfield^{\codelength}$. Let $\tr$ be a partial interaction transcript for \cref{c:core_iop}. We start by setting $\kstate$ so that the first two conditions in \cref{def:knowledge-state-function} are met. Precisely, if   $\tr=\emptyset$, we set $\kstate(\inp,\oracle,\tr,\ww) = 1$ if and only if $(\inp, \oracle, \ww)\in \LinBitsDual^{\delta}$; and, if $\tr$ is a partial transcript where the prover is about to move and $m$ is a prover message, we set $\kstate(\inp,\oracle,\tr\Vert m,\ww)=\kstate(\inp,\oracle,\tr,\ww)$.
 
 After the verifier's first message, $\tr$ is as follows:
 %
@@ -1291,7 +1292,7 @@ We define $\rbrextractor(\inp,\oracle,\bm{\mu}, q',\alpha,\ww)=\ww$. Let $\bm{\m
   \ \le\ \kappa_0.
 \]
 Assume $$\kstate(\inp,\oracle,\bm{\mu}, q', \alpha, \ww)=1 \quad \text{and} \quad \kstate(\inp,\oracle,\bm{\mu},  \rbrextractor(\inp,\oracle,\bm{\mu}, q',\alpha,\ww))=\kstate(\inp,\oracle,\bm{\mu},  \ww)=0.$$
-The latter occurs if and only if  $\kstate\bigl(\inp,\oracle,\ww\bigr)=0$ (by Condition 2 in \cref{def:knowledge-state-function}), which in turn occurs if and only if  $(\inp,\oracle,\ww)\notin \LinBitsDual^{\delta}$. Since $\kstate(\inp,\oracle,\bm{\mu}, q', \alpha, \ww)=1$, we have $\ww=\bff=(\bff_{*j})_{j\in[\codedim_2]}$ satisfies \eqref{e:core_iop_proof_eq1}. Thus we have to bound the probability over $q',\alpha$ that $(\inp,\oracle,\ww)\notin \LinBitsDual^{\delta}$ and $(\bff_{*j})_j$ satisfies \eqref{e:core_iop_proof_eq1}. To that end, assume $(\inp,\oracle,\ww)\notin \LinBitsDual^\delta$. Then one of the following holds:
+The latter occurs if and only if  $\kstate\bigl(\inp,\oracle,\ww\bigr)=0$ (by the definition of $\kstate$ on transcripts ending with a prover message), which in turn occurs if and only if  $(\inp,\oracle,\ww)\notin \LinBitsDual^{\delta}$. Since $\kstate(\inp,\oracle,\bm{\mu}, q', \alpha, \ww)=1$, we have $\ww=\bff=(\bff_{*j})_{j\in[\codedim_2]}$ satisfies \eqref{e:core_iop_proof_eq1}. Thus we have to bound the probability over $q',\alpha$ that $(\inp,\oracle,\ww)\notin \LinBitsDual^{\delta}$ and $(\bff_{*j})_j$ satisfies \eqref{e:core_iop_proof_eq1}. To that end, assume $(\inp,\oracle,\ww)\notin \LinBitsDual^\delta$. Then one of the following holds:
 %
 \begin{align}
    &\langle \modulemorphism(\bff_{*j}), \vv^{(1)} \rangle\neq \mu_j \text{ over } \evalfield \text{ for some } j\in [\codedim_2] \label{e:break_soundness_2}\\
