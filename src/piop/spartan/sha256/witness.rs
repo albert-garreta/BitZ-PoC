@@ -8,7 +8,7 @@
 use std::array;
 
 use circuit::{
-    matrix_products::RuntimeModulus,
+    matrix_products::{IntegerProducts, MatrixProducts, RuntimeModulus},
     sha256::{compression_circuit, COMPRESSION_HINT_BITS, COMPRESSION_INPUT_BITS},
     witgen::{PackedWitness, ProductWitgen},
 };
@@ -20,8 +20,8 @@ use thiserror::Error;
 use rayon::prelude::*;
 
 use crate::{
-    pcs::{IntEvalParams, FQ_MOD},
-    piop::spartan::{f2z::spartan_f2z_field_config, sumcheck::R1csProductMles, SpartanField},
+    pcs::IntEvalParams,
+    piop::spartan::{sumcheck::R1csProductMles, SpartanField},
     poly::mle::DenseMultilinearExtension,
 };
 
@@ -34,6 +34,38 @@ use super::constraints::{
 /// One independent SHA-256 compression input: chaining state and message block.
 pub type Sha256CompressionInput = ([u32; 8], [u32; 16]);
 
+/// Public input and claimed output for one SHA-256 compression.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Sha256CompressionStatement {
+    /// Initial eight-word chaining state.
+    pub state: [u32; 8],
+    /// Sixteen-word message block.
+    pub block: [u32; 16],
+    /// Claimed eight-word state after compression.
+    pub claimed_output: [u32; 8],
+}
+
+impl Sha256CompressionStatement {
+    /// Builds a public compression statement from the circuit input and its
+    /// claimed output.
+    pub const fn new((state, block): Sha256CompressionInput, claimed_output: [u32; 8]) -> Self {
+        Self {
+            state,
+            block,
+            claimed_output,
+        }
+    }
+
+    /// Iterates over the canonical transcript order: state, block, output.
+    pub(crate) fn words(&self) -> impl Iterator<Item = u32> + '_ {
+        self.state
+            .iter()
+            .chain(&self.block)
+            .chain(&self.claimed_output)
+            .copied()
+    }
+}
+
 /// Tuple returned by [`generate_sha256_compression_witnesses`]: committed
 /// source rows, synthesized assignment rows, Spartan products, and native
 /// compression outputs. This remains a tuple so callers can immediately move
@@ -44,6 +76,75 @@ pub type Sha256CompressionWitnessBatch = (
     R1csProductMles<F128>,
     Vec<[u32; 8]>,
 );
+
+/// A complete q-independent SHA-256 witness batch.
+///
+/// Boolean source and assignment rows are packed immediately, but the three
+/// R1CS matrix products remain exact signed integers. The caller can therefore
+/// commit to [`Self::source_rows`] before a transcript-selected prime is known,
+/// then invoke [`Self::project_products`] under that prime without replaying
+/// the SHA circuit.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExactSha256CompressionWitnessBatch {
+    source_rows: Vec<Vec<u64>>,
+    assignment_rows: Vec<Vec<u64>>,
+    exact_products: IntegerProducts,
+    outputs: Vec<[u32; 8]>,
+    instances: usize,
+}
+
+impl ExactSha256CompressionWitnessBatch {
+    /// Packed committed Boolean source rows, including the leading-one row.
+    pub fn source_rows(&self) -> &[Vec<u64>] {
+        &self.source_rows
+    }
+
+    /// Packed synthesized integer-assignment rows.
+    pub fn assignment_rows(&self) -> &[Vec<u64>] {
+        &self.assignment_rows
+    }
+
+    /// Native SHA-256 compression outputs in batch-instance order.
+    pub fn outputs(&self) -> &[[u32; 8]] {
+        &self.outputs
+    }
+
+    /// Exact signed integer `A h`, `B h`, and `C h` values in
+    /// instance-major, live-constraint-row order.
+    pub const fn exact_products(&self) -> &IntegerProducts {
+        &self.exact_products
+    }
+
+    /// Reduces the retained exact products under an explicitly selected and
+    /// validated runtime prime field.
+    pub fn project_products(
+        &self,
+        field_config: &<F128 as PrimeField>::Config,
+    ) -> Result<R1csProductMles<F128>, Sha256WitnessError> {
+        <F128 as SpartanField>::validate_config(field_config)
+            .map_err(|_| Sha256WitnessError::InvalidFieldConfiguration)?;
+        let modulus = RuntimeModulus::<2>::new(BigUint::from_bytes_le(
+            &F128::canonical_modulus_encoding(field_config),
+        ))
+        .map_err(|_| Sha256WitnessError::InvalidFieldConfiguration)?;
+        let products = self.exact_products.reduce_parallel(&modulus);
+        Ok(pack_products(self.instances, &products, field_config))
+    }
+
+    /// Consumes this exact batch after explicitly projecting its products.
+    pub fn into_projected(
+        self,
+        field_config: &<F128 as PrimeField>::Config,
+    ) -> Result<Sha256CompressionWitnessBatch, Sha256WitnessError> {
+        let products = self.project_products(field_config)?;
+        Ok((
+            self.source_rows,
+            self.assignment_rows,
+            products,
+            self.outputs,
+        ))
+    }
+}
 
 /// Failures while generating or packing a SHA-256 compression batch.
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
@@ -56,7 +157,13 @@ pub enum Sha256WitnessError {
     #[error("SHA-256 circuit witness has an unexpected local shape")]
     UnexpectedCircuitShape,
 
+    /// Product projection requires a genuine, sufficiently large runtime
+    /// prime field.
+    #[error("SHA-256 witness products use an invalid runtime prime field")]
+    InvalidFieldConfiguration,
+
     /// Product reduction must use the fixed field shared by Spartan and F2Z.
+    #[deprecated(note = "runtime-prime projection supersedes the fixed-modulus restriction")]
     #[error("SHA-256 witness products use an unsupported field modulus")]
     UnsupportedFieldModulus,
 }
@@ -64,47 +171,57 @@ pub enum Sha256WitnessError {
 struct CompressionShard {
     f: PackedWitness,
     h_bar: PackedWitness,
-    a: Box<[[u64; 2]]>,
-    b: Box<[[u64; 2]]>,
-    c: Box<[[u64; 2]]>,
+    exact_products: IntegerProducts,
     output: [u32; 8],
+}
+
+/// Generates packed Boolean rows and retains exact signed Spartan products
+/// without consulting a runtime modulus.
+pub fn generate_sha256_compression_witnesses_exact(
+    inputs: &[Sha256CompressionInput],
+    p_f: &IntEvalParams,
+    p_h: &IntEvalParams,
+) -> Result<ExactSha256CompressionWitnessBatch, Sha256WitnessError> {
+    validate_geometry(inputs.len(), p_f, p_h)?;
+
+    #[cfg(feature = "parallel")]
+    let shards: Vec<CompressionShard> = inputs
+        .par_iter()
+        .map(generate_one)
+        .collect::<Result<_, _>>()?;
+    #[cfg(not(feature = "parallel"))]
+    let shards: Vec<CompressionShard> =
+        inputs.iter().map(generate_one).collect::<Result<_, _>>()?;
+
+    let source_rows = pack_source_rows(&shards);
+    let assignment_rows = pack_derived_rows(&shards);
+    let outputs = shards.iter().map(|shard| shard.output).collect();
+    let exact_products = flatten_exact_products(shards);
+
+    Ok(ExactSha256CompressionWitnessBatch {
+        source_rows,
+        assignment_rows,
+        exact_products,
+        outputs,
+        instances: inputs.len(),
+    })
 }
 
 /// Generates packed `f`, synthesized `h_bar`, and reduced Spartan products for
 /// a complete batch. The returned row stores are already in
 /// [`crate::ligerito_flock::commit_rs_ligerito_rows`] layout.
+///
+/// This compatibility wrapper performs both phases back-to-back. New
+/// commit-before-q flows should call
+/// [`generate_sha256_compression_witnesses_exact`] and project only after the
+/// transcript selects the runtime prime.
 pub fn generate_sha256_compression_witnesses(
     inputs: &[Sha256CompressionInput],
     p_f: &IntEvalParams,
     p_h: &IntEvalParams,
     field_config: &<F128 as PrimeField>::Config,
 ) -> Result<Sha256CompressionWitnessBatch, Sha256WitnessError> {
-    validate_geometry(inputs.len(), p_f, p_h)?;
-    if F128::canonical_modulus_encoding(field_config)
-        != F128::canonical_modulus_encoding(&spartan_f2z_field_config())
-    {
-        return Err(Sha256WitnessError::UnsupportedFieldModulus);
-    }
-    let modulus = RuntimeModulus::<2>::new(BigUint::from(FQ_MOD))
-        .expect("the fixed Spartan modulus fits two limbs");
-
-    #[cfg(feature = "parallel")]
-    let shards: Vec<CompressionShard> = inputs
-        .par_iter()
-        .map(|input| generate_one(input, &modulus))
-        .collect::<Result<_, _>>()?;
-    #[cfg(not(feature = "parallel"))]
-    let shards: Vec<CompressionShard> = inputs
-        .iter()
-        .map(|input| generate_one(input, &modulus))
-        .collect::<Result<_, _>>()?;
-
-    let f_rows = pack_source_rows(&shards);
-    let h_rows = pack_derived_rows(&shards);
-    let products = pack_products(&shards, field_config);
-    let outputs = shards.iter().map(|shard| shard.output).collect();
-
-    Ok((f_rows, h_rows, products, outputs))
+    generate_sha256_compression_witnesses_exact(inputs, p_f, p_h)?.into_projected(field_config)
 }
 
 fn validate_geometry(
@@ -126,10 +243,7 @@ fn validate_geometry(
     Ok(())
 }
 
-fn generate_one(
-    input: &Sha256CompressionInput,
-    modulus: &RuntimeModulus<2>,
-) -> Result<CompressionShard, Sha256WitnessError> {
+fn generate_one(input: &Sha256CompressionInput) -> Result<CompressionShard, Sha256WitnessError> {
     let input_bits = compression_input_bits(input);
     let mut generator = ProductWitgen::with_inputs_and_capacity(
         &input_bits,
@@ -145,7 +259,6 @@ fn generate_one(
     {
         return Err(Sha256WitnessError::UnexpectedCircuitShape);
     }
-    let reduced = exact.reduce_parallel(modulus);
     let output = array::from_fn(|word| {
         (0..32).fold(0u32, |value, bit| {
             value | (u32::from(output_bits[word * 32 + bit]) << bit)
@@ -154,9 +267,7 @@ fn generate_one(
     Ok(CompressionShard {
         f,
         h_bar,
-        a: reduced.a_mw.values().to_vec().into_boxed_slice(),
-        b: reduced.b_mw.values().to_vec().into_boxed_slice(),
-        c: reduced.c_mw.values().to_vec().into_boxed_slice(),
+        exact_products: exact,
         output,
     })
 }
@@ -233,11 +344,36 @@ fn transpose_witness_rows(
     }
 }
 
+fn flatten_exact_products(shards: Vec<CompressionShard>) -> IntegerProducts {
+    let capacity = shards.len() * SHA256_CONSTRAINTS;
+    let mut products = IntegerProducts {
+        a_mw: Vec::with_capacity(capacity),
+        b_mw: Vec::with_capacity(capacity),
+        c_mw: Vec::with_capacity(capacity),
+    };
+    for shard in shards {
+        let IntegerProducts {
+            mut a_mw,
+            mut b_mw,
+            mut c_mw,
+        } = shard.exact_products;
+        products.a_mw.append(&mut a_mw);
+        products.b_mw.append(&mut b_mw);
+        products.c_mw.append(&mut c_mw);
+    }
+    products
+}
+
 fn pack_products(
-    shards: &[CompressionShard],
+    instances: usize,
+    products: &MatrixProducts<2>,
     field_config: &<F128 as PrimeField>::Config,
 ) -> R1csProductMles<F128> {
-    let table_len = shards.len() * SHA256_CONSTRAINT_STRIDE;
+    debug_assert_eq!(products.a_mw.len(), instances * SHA256_CONSTRAINTS);
+    debug_assert_eq!(products.b_mw.len(), instances * SHA256_CONSTRAINTS);
+    debug_assert_eq!(products.c_mw.len(), instances * SHA256_CONSTRAINTS);
+
+    let table_len = instances * SHA256_CONSTRAINT_STRIDE;
     let zero = F128::zero_with_cfg(field_config);
     let mut az = vec![zero.clone(); table_len];
     let mut bz = vec![zero.clone(); table_len];
@@ -247,22 +383,38 @@ fn pack_products(
     az.par_chunks_mut(SHA256_CONSTRAINT_STRIDE)
         .zip(bz.par_chunks_mut(SHA256_CONSTRAINT_STRIDE))
         .zip(cz.par_chunks_mut(SHA256_CONSTRAINT_STRIDE))
-        .zip(shards.par_iter())
-        .for_each(|(((a_out, b_out), c_out), shard)| {
-            write_product_block(a_out, &shard.a, field_config);
-            write_product_block(b_out, &shard.b, field_config);
-            write_product_block(c_out, &shard.c, field_config);
+        .enumerate()
+        .for_each(|(instance, ((a_out, b_out), c_out))| {
+            let start = instance * SHA256_CONSTRAINTS;
+            let end = start + SHA256_CONSTRAINTS;
+            write_product_block(a_out, &products.a_mw.values()[start..end], field_config);
+            write_product_block(b_out, &products.b_mw.values()[start..end], field_config);
+            write_product_block(c_out, &products.c_mw.values()[start..end], field_config);
         });
     #[cfg(not(feature = "parallel"))]
-    for (instance, shard) in shards.iter().enumerate() {
-        let start = instance * SHA256_CONSTRAINT_STRIDE;
-        let end = start + SHA256_CONSTRAINT_STRIDE;
-        write_product_block(&mut az[start..end], &shard.a, field_config);
-        write_product_block(&mut bz[start..end], &shard.b, field_config);
-        write_product_block(&mut cz[start..end], &shard.c, field_config);
+    for instance in 0..instances {
+        let output_start = instance * SHA256_CONSTRAINT_STRIDE;
+        let output_end = output_start + SHA256_CONSTRAINT_STRIDE;
+        let input_start = instance * SHA256_CONSTRAINTS;
+        let input_end = input_start + SHA256_CONSTRAINTS;
+        write_product_block(
+            &mut az[output_start..output_end],
+            &products.a_mw.values()[input_start..input_end],
+            field_config,
+        );
+        write_product_block(
+            &mut bz[output_start..output_end],
+            &products.b_mw.values()[input_start..input_end],
+            field_config,
+        );
+        write_product_block(
+            &mut cz[output_start..output_end],
+            &products.c_mw.values()[input_start..input_end],
+            field_config,
+        );
     }
 
-    let num_vars = shards.len().ilog2() as usize + SHA256_CONSTRAINT_LOCAL_VARS;
+    let num_vars = instances.ilog2() as usize + SHA256_CONSTRAINT_LOCAL_VARS;
     R1csProductMles {
         az: DenseMultilinearExtension {
             evaluations: az,
@@ -314,11 +466,21 @@ mod tests {
     use super::*;
     use crate::{
         f2map::VirtualMap,
+        pcs::FQ_MOD,
         piop::spartan::{
-            f2z::spartan_f2z_field_config, sha256::constraints::prepare_sha256_compression_batch,
+            f2z::spartan_f2z_field_config,
+            sha256::constraints::{
+                prepare_sha256_compression_batch, prepare_sha256_compression_batch_integer,
+            },
         },
         sparse_matrix::SparseMatrix,
     };
+
+    const OTHER_TEST_PRIME: u128 = (1_u128 << 127) - 1;
+
+    fn config(modulus: u128) -> <F128 as PrimeField>::Config {
+        F128::make_cfg(&Uint::from(modulus)).expect("odd test modulus")
+    }
 
     fn abc_input() -> Sha256CompressionInput {
         (
@@ -391,6 +553,19 @@ mod tests {
     }
 
     #[test]
+    fn public_statement_words_use_canonical_order() {
+        let state = array::from_fn(|index| index as u32);
+        let block = array::from_fn(|index| 8 + index as u32);
+        let output = array::from_fn(|index| 24 + index as u32);
+        let statement = Sha256CompressionStatement::new((state, block), output);
+
+        assert_eq!(
+            statement.words().collect::<Vec<_>>(),
+            (0..32).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn transposed_rows_preserve_instance_bits() {
         let (_, _, p_f, p_h) = prepare_sha256_compression_batch(6).unwrap();
         let cfg = spartan_f2z_field_config();
@@ -411,6 +586,50 @@ mod tests {
         assert!(h_rows[SHA256_H_BAR_LIVE_BITS..]
             .iter()
             .all(|row| row[0] == 0));
+    }
+
+    #[test]
+    fn exact_products_project_under_distinct_runtime_primes() {
+        let prepared = prepare_sha256_compression_batch_integer(0).unwrap();
+        let exact = generate_sha256_compression_witnesses_exact(
+            &[abc_input()],
+            prepared.source_params(),
+            prepared.assignment_params(),
+        )
+        .unwrap();
+
+        assert_eq!(exact.exact_products().a_mw.len(), SHA256_CONSTRAINTS);
+        assert_eq!(exact.exact_products().b_mw.len(), SHA256_CONSTRAINTS);
+        assert_eq!(exact.exact_products().c_mw.len(), SHA256_CONSTRAINTS);
+        let h_bits = exact
+            .assignment_rows()
+            .iter()
+            .map(|row| row[0] & 1 == 1)
+            .collect::<Vec<_>>();
+
+        for modulus in [FQ_MOD, OTHER_TEST_PRIME] {
+            let field_config = config(modulus);
+            let matrices = prepared.project(&field_config).unwrap();
+            let products = exact.project_products(&field_config).unwrap();
+            assert_matrix_product(
+                matrices.matrices().a(),
+                &h_bits,
+                &products.az.evaluations,
+                &field_config,
+            );
+            assert_matrix_product(
+                matrices.matrices().b(),
+                &h_bits,
+                &products.bz.evaluations,
+                &field_config,
+            );
+            assert_matrix_product(
+                matrices.matrices().c(),
+                &h_bits,
+                &products.cz.evaluations,
+                &field_config,
+            );
+        }
     }
 
     fn assert_matrix_product(

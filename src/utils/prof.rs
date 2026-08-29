@@ -10,12 +10,16 @@
 //! [`dump_and_reset`] once per measured unit (e.g. just after a criterion
 //! `bench.iter`) to print the tree — in execution order, indented by depth, with
 //! each region's share of the total instrumented time — to stderr, then clear.
+//! Set `OBLONG_PROFILE_INTERVALS` to retain each observed half-open interval;
+//! [`take_intervals`] then exposes those raw intervals to a trace writer without
+//! changing the aggregate reporting API.
 //!
 //! **Zero-cost when off.** Every [`scope`] checks a process-cached flag and,
-//! when `OBLONG_PROFILE` is unset, returns an inert guard whose `Drop` does
-//! nothing; [`dump_and_reset`] is then a no-op. Enable with `OBLONG_PROFILE=1`
-//! in the environment. Because criterion lets stderr through while capturing
-//! stdout, the table lands next to the benchmark output.
+//! when both profiler environment variables are unset, returns an inert guard
+//! whose `Drop` does nothing; [`dump_and_reset`] is then a no-op. Enable the
+//! aggregate table with `OBLONG_PROFILE=1`. Because criterion lets stderr
+//! through while capturing stdout, the table lands next to the benchmark
+//! output.
 //!
 //! **Threading.** Timing is thread-local: place scopes on the control-flow
 //! thread (which blocks on any rayon join inside the region), *not* inside
@@ -26,8 +30,9 @@
 //! the oblong Hadamard discharge (`prove_oblong_and_*` in `zinc-poly`); see
 //! `documentation/f2x-sha-todo.md`.
 
-#![allow(clippy::arithmetic_side_effects)] // diagnostic-only timing arithmetic;
-// overflow here would mean a single thread spent ~580 years in one region.
+// Diagnostic-only timing arithmetic; overflow would mean a single thread spent
+// roughly 580 years in one region.
+#![allow(clippy::arithmetic_side_effects)]
 
 use std::cell::{Cell, RefCell};
 use std::sync::OnceLock;
@@ -37,7 +42,16 @@ use std::time::{Duration, Instant};
 /// `OBLONG_PROFILE` (to any value) in the environment to enable.
 fn enabled() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("OBLONG_PROFILE").is_some())
+    *ON.get_or_init(|| {
+        std::env::var_os("OBLONG_PROFILE").is_some()
+            || std::env::var_os("OBLONG_PROFILE_INTERVALS").is_some()
+    })
+}
+
+/// Whether completed scopes should also be retained as raw intervals.
+fn intervals_enabled() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("OBLONG_PROFILE_INTERVALS").is_some())
 }
 
 /// Optional process-wide probe returning the current **peak** resident-set size
@@ -76,6 +90,10 @@ struct Frame {
     depth: usize,
     /// Monotonic entry rank, for stable execution-order printing.
     order: u64,
+    /// Parent entry rank, retained for the raw interval tree.
+    parent_order: Option<u64>,
+    /// Entry offset from this thread's trace epoch.
+    start_ns: u64,
     /// Peak RSS (bytes) observed at scope entry, if a probe is registered.
     rss_start: Option<u64>,
 }
@@ -98,6 +116,21 @@ struct Record {
     has_rss: bool,
 }
 
+/// One observed, half-open profiling interval on the calling thread.
+///
+/// Times are offsets from a per-thread monotonic epoch. `order` uniquely
+/// identifies the span until [`take_intervals`] drains the current trace;
+/// `parent_order` is the enclosing span's order, if any.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProfileInterval {
+    pub label: &'static str,
+    pub start_ns: u64,
+    pub end_ns: u64,
+    pub depth: usize,
+    pub order: u64,
+    pub parent_order: Option<u64>,
+}
+
 thread_local! {
     /// Currently-open frames, innermost last. Popped LIFO on guard drop.
     static STACK: RefCell<Vec<Frame>> = const { RefCell::new(Vec::new()) };
@@ -105,6 +138,10 @@ thread_local! {
     static RECORDS: RefCell<Vec<Record>> = const { RefCell::new(Vec::new()) };
     /// Monotonic entry counter, for execution-order sorting.
     static ORDER: Cell<u64> = const { Cell::new(0) };
+    /// Epoch shared by all raw intervals drained together on this thread.
+    static INTERVAL_EPOCH: RefCell<Option<Instant>> = const { RefCell::new(None) };
+    /// Completed raw intervals, retained only with `OBLONG_PROFILE_INTERVALS`.
+    static INTERVALS: RefCell<Vec<ProfileInterval>> = const { RefCell::new(Vec::new()) };
 }
 
 /// RAII timing guard returned by [`scope`]. On drop it pops this thread's scope
@@ -125,6 +162,19 @@ impl Drop for Scope {
         };
         let elapsed = frame.start.elapsed();
         let self_time = elapsed.saturating_sub(frame.children);
+        if intervals_enabled() {
+            let elapsed_ns = u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX);
+            INTERVALS.with(|intervals| {
+                intervals.borrow_mut().push(ProfileInterval {
+                    label: frame.label,
+                    start_ns: frame.start_ns,
+                    end_ns: frame.start_ns.saturating_add(elapsed_ns),
+                    depth: frame.depth,
+                    order: frame.order,
+                    parent_order: frame.parent_order,
+                });
+            });
+        }
         // Peak-RSS growth caused by this region (exit peak − entry peak). Since
         // `ru_maxrss` is monotonic the delta is non-negative; `rss_end` is the
         // process high-water at exit.
@@ -171,7 +221,7 @@ impl Drop for Scope {
 /// Open a timing region labelled `label`. Bind the returned guard (e.g.
 /// `let _g = prof::scope("uair:alpha_project");`) so the region is timed until
 /// the guard drops at end of the enclosing block; guards opened while another is
-/// alive nest under it. Cheap no-op when `OBLONG_PROFILE` is unset.
+/// alive nest under it. Cheap no-op when both profiler variables are unset.
 #[inline]
 pub fn scope(label: &'static str) -> Scope {
     if !enabled() {
@@ -184,12 +234,55 @@ pub fn scope(label: &'static str) -> Scope {
         o.set(v + 1);
         v
     });
+    let start_ns = if intervals_enabled() {
+        INTERVAL_EPOCH.with(|epoch| {
+            let mut epoch = epoch.borrow_mut();
+            let origin = epoch.get_or_insert(start);
+            u64::try_from(start.duration_since(*origin).as_nanos()).unwrap_or(u64::MAX)
+        })
+    } else {
+        0
+    };
     STACK.with(|s| {
         let mut stack = s.borrow_mut();
         let depth = stack.len();
-        stack.push(Frame { label, start, children: Duration::ZERO, depth, order, rss_start });
+        let parent_order = stack.last().map(|frame| frame.order);
+        stack.push(Frame {
+            label,
+            start,
+            children: Duration::ZERO,
+            depth,
+            order,
+            parent_order,
+            start_ns,
+            rss_start,
+        });
     });
     Scope { active: true }
+}
+
+/// Drain the calling thread's raw intervals in entry order.
+///
+/// The returned intervals share one monotonic nanosecond clock domain and use
+/// half-open `[start_ns, end_ns)` bounds. Call only after all scopes belonging
+/// to the measured unit have dropped. Empty when
+/// `OBLONG_PROFILE_INTERVALS` is unset.
+pub fn take_intervals() -> Vec<ProfileInterval> {
+    if !intervals_enabled() {
+        return Vec::new();
+    }
+    let stack_is_empty = STACK.with(|stack| stack.borrow().is_empty());
+    debug_assert!(
+        stack_is_empty,
+        "cannot drain intervals while scopes are open"
+    );
+    let mut out = INTERVALS.with(|intervals| std::mem::take(&mut *intervals.borrow_mut()));
+    out.sort_by_key(|interval| interval.order);
+    if stack_is_empty {
+        ORDER.with(|order| order.set(0));
+        INTERVAL_EPOCH.with(|epoch| *epoch.borrow_mut() = None);
+    }
+    out
 }
 
 /// Drain this thread's accumulated records, returning `(label, inclusive
@@ -205,7 +298,10 @@ pub fn take_totals() -> Vec<(&'static str, f64)> {
     RECORDS.with(|r| {
         let mut records = r.borrow_mut();
         records.sort_by_key(|rec| rec.order);
-        let out = records.iter().map(|rec| (rec.label, rec.inclusive.as_secs_f64())).collect();
+        let out = records
+            .iter()
+            .map(|rec| (rec.label, rec.inclusive.as_secs_f64()))
+            .collect();
         records.clear();
         out
     })
@@ -236,7 +332,11 @@ pub fn dump_and_reset(header: &str) {
             .map(|rec| rec.inclusive)
             .sum();
         let denom = if root.is_zero() {
-            records.iter().map(|rec| rec.inclusive).max().unwrap_or_default()
+            records
+                .iter()
+                .map(|rec| rec.inclusive)
+                .max()
+                .unwrap_or_default()
         } else {
             root
         };
@@ -270,7 +370,11 @@ pub fn dump_and_reset(header: &str) {
             // `Δrss` = peak-RSS growth this region caused; `@` = process peak at
             // exit. Inclusive of children, matching the time columns.
             let mem_note = if rec.has_rss {
-                format!("  Δrss=+{:>8.1}MiB  @{:>9.1}MiB", mib(rec.rss_delta), mib(rec.rss_end))
+                format!(
+                    "  Δrss=+{:>8.1}MiB  @{:>9.1}MiB",
+                    mib(rec.rss_delta),
+                    mib(rec.rss_end)
+                )
             } else {
                 String::new()
             };

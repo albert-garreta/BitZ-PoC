@@ -34,6 +34,7 @@ serde = { version = "1", features = ["derive"] }
 circuit = { path = "../f2z-benchmark/crates/circuit", default-features = false }
 
 [dev-dependencies]
+serde_json = "1"
 
 [[bench]]
 name = "pcs"
@@ -106,6 +107,13 @@ bench-internals = []
 [profile.release]
 lto = true
 codegen-units = 1
+
+# Release-equivalent benchmark codegen with profiler-readable DWARF. Keeping
+# symbols in the built-in bench profile lets xctrace resolve Rust hot paths.
+[profile.bench]
+debug = 2
+strip = false
+split-debuginfo = "unpacked"
 
 # Release codegen + DWARF, for profilers (sample/samply). Separate target
 # dir, so alternating profile/measure runs never invalidates release caches.

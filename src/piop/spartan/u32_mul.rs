@@ -10,8 +10,8 @@ use thiserror::Error;
 use crate::{pcs::IntEvalParams, poly::mle::DenseMultilinearExtension};
 
 use super::{
-    ConstraintMatrices, PreparedConstraintMatrices, R1csProductMles, SparseMatrix, SpartanField,
-    SpartanMatrixError, SpartanRelationBackend, build_assignment_mle, build_product_mles,
+    build_assignment_mle, build_product_mles, ConstraintMatrices, PreparedConstraintMatrices,
+    R1csProductMles, SparseMatrix, SpartanField, SpartanMatrixError, SpartanRelationBackend,
 };
 
 /// Number of committed little-endian bits used for each left operand.
@@ -446,8 +446,7 @@ fn write_compact_value(
             while remaining != 0 {
                 let bit = remaining.trailing_zeros() as usize;
                 let packed_bit = (slot_offset + bit) * high_gate_count + gate_high;
-                row[packed_bit / u64::BITS as usize] |=
-                    1_u64 << (packed_bit % u64::BITS as usize);
+                row[packed_bit / u64::BITS as usize] |= 1_u64 << (packed_bit % u64::BITS as usize);
                 remaining &= remaining - 1;
             }
         }
@@ -458,8 +457,7 @@ fn write_compact_value(
                 if byte_value == 0 {
                     continue;
                 }
-                let byte_index =
-                    (word_slot_start + byte) * high_gate_count + gate_high;
+                let byte_index = (word_slot_start + byte) * high_gate_count + gate_high;
                 row[byte_index / 8] |= byte_value << ((byte_index % 8) * u8::BITS as usize);
             }
         }
@@ -600,7 +598,7 @@ where
 #[cfg(test)]
 mod tests {
     use crypto_primitives::{
-        FromWithConfig, PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint,
+        crypto_bigint_monty::F128, crypto_bigint_uint::Uint, FromWithConfig, PrimeField,
     };
 
     use super::*;
@@ -622,8 +620,7 @@ mod tests {
         for (multiplications, capacity) in [(1, 256), (3, 256), (256, 256), (257, 512)] {
             assert_eq!(
                 U32MulLayout::new(multiplications).unwrap(),
-                U32MulLayout::new_with_f2z_width(multiplications, U32MulF2zWidth::W1)
-                    .unwrap()
+                U32MulLayout::new_with_f2z_width(multiplications, U32MulF2zWidth::W1).unwrap()
             );
 
             for width in [U32MulF2zWidth::W1, U32MulF2zWidth::W8] {
@@ -648,10 +645,7 @@ mod tests {
                         assert_eq!(b, ((slot / word_bits) << h) | (gate >> s));
                         assert_eq!(c, gate & ((1usize << s) - 1));
                         assert_eq!(j, slot % word_bits);
-                        assert_eq!(
-                            p.cell_index(b, c),
-                            (slot / word_bits) * capacity + gate
-                        );
+                        assert_eq!(p.cell_index(b, c), (slot / word_bits) * capacity + gate);
                         assert_eq!(layout.f2z_cell(slot, gate), Some((b, c)));
                     }
                 }
@@ -668,11 +662,9 @@ mod tests {
         assert_eq!(capacity, 256);
         assert_eq!(witness.layout().f2z_width(), U32MulF2zWidth::W1);
         assert_eq!(witness.assignment()[0], 1);
-        assert!(
-            witness.assignment()[1..capacity]
-                .iter()
-                .all(|&value| value == 0)
-        );
+        assert!(witness.assignment()[1..capacity]
+            .iter()
+            .all(|&value| value == 0));
         assert_eq!(&witness.x_values()[..3], &[0, 1, u64::from(u32::MAX)]);
         assert_eq!(
             &witness.y_values()[..3],
@@ -684,11 +676,9 @@ mod tests {
         );
         assert!(witness.x_values()[3..].iter().all(|&value| value == 0));
         assert!(witness.y_values()[3..].iter().all(|&value| value == 0));
-        assert!(
-            witness.product_values()[3..]
-                .iter()
-                .all(|&value| value == 0)
-        );
+        assert!(witness.product_values()[3..]
+            .iter()
+            .all(|&value| value == 0));
         assert_eq!(witness.az(), &witness.x_values()[..3]);
         assert_eq!(witness.bz(), &witness.y_values()[..3]);
         assert_eq!(witness.cz(), &witness.product_values()[..3]);
@@ -697,14 +687,10 @@ mod tests {
     #[test]
     fn from_fn_generates_each_input_once_without_an_input_buffer() {
         let mut calls = Vec::new();
-        let witness = U32MulWitness::from_fn_with_f2z_width(
-            5,
-            U32MulF2zWidth::W8,
-            |index| {
-                calls.push(index);
-                (index as u32, (index + 1) as u32)
-            },
-        )
+        let witness = U32MulWitness::from_fn_with_f2z_width(5, U32MulF2zWidth::W8, |index| {
+            calls.push(index);
+            (index as u32, (index + 1) as u32)
+        })
         .unwrap();
 
         assert_eq!(calls, (0..5).collect::<Vec<_>>());
@@ -772,10 +758,9 @@ mod tests {
             let rows = witness.f2z_bit_rows();
 
             assert_eq!(rows.len(), p.cols());
-            assert!(
-                rows.iter()
-                    .all(|row| row.len() == p.rows() * p.word_bits / 64)
-            );
+            assert!(rows
+                .iter()
+                .all(|row| row.len() == p.rows() * p.word_bits / 64));
 
             for gate in 0..layout.capacity() {
                 let values = [
@@ -797,13 +782,9 @@ mod tests {
                 ];
                 for (slot_offset, bit_width, value) in values {
                     for bit in 0..bit_width {
-                        let (b, c, j) = layout
-                            .f2z_bit_position(slot_offset + bit, gate)
-                            .unwrap();
+                        let (b, c, j) = layout.f2z_bit_position(slot_offset + bit, gate).unwrap();
                         let packed_bit = b * p.word_bits + j;
-                        let committed_bit = (rows[c][packed_bit / 64]
-                            >> (packed_bit % 64))
-                            & 1;
+                        let committed_bit = (rows[c][packed_bit / 64] >> (packed_bit % 64)) & 1;
                         assert_eq!(committed_bit, (value >> bit) & 1);
                     }
                 }

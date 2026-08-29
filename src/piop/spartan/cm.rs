@@ -38,30 +38,31 @@ use flock_core::pcs::{
 use thiserror::Error;
 
 use crate::{
-    f2map::{PreparedVirtualMap, PreparedVirtualMapError, cell_count},
-    ligerito::{LOG_PACKING, packed_vars},
+    f2map::{cell_count, PreparedVirtualMap, PreparedVirtualMapError},
+    ligerito::{packed_vars, LOG_PACKING},
     ligerito_flock::{
-        FlockCommitHint, FlockRsError, commit_rs_ligerito_rows,
-        prove_mle_eval_mod_q_ligerito_virtual, sha_lig_configs,
-        verify_mle_eval_mod_q_ligerito_virtual,
+        commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito_virtual, sha_lig_configs,
+        verify_mle_eval_mod_q_ligerito_virtual, FlockCommitHint, FlockRsError,
     },
-    pcs::{FQ_BITS, FQ_MOD, Fq, IntEvalParams, ProjectCanonicalU128, eq_le_table_fq, fq_mul, fq_sub},
+    pcs::{
+        eq_le_table_fq, fq_mul, fq_sub, Fq, IntEvalParams, ProjectCanonicalU128, FQ_BITS, FQ_MOD,
+    },
     transcript::traits::Transcript,
 };
 
 use super::{
-    EvaluatedSpartanAssignment, SpartanF2zProof, SpartanField, Virtualized,
     absorb_spartan_message,
     f2z::{
-        MIN_PRODUCTION_GATE_VARS, SpartanF2zError, SpartanF2zField, f2z_generator,
-        fill_slot_weights, spartan_f2z_field_config, validate_bit_rows, validate_commitment,
-        validate_config_pair,
+        f2z_generator, fill_slot_weights, spartan_f2z_field_config, validate_bit_rows,
+        validate_commitment, validate_config_pair, SpartanF2zError, SpartanF2zField,
+        MIN_PRODUCTION_GATE_VARS,
     },
     matrix::{
-        ConstraintMatrices, PreparedConstraintMatrices, ScaledMleEvaluationClaim, SparseMatrix,
-        SpartanMatrixError, build_assignment_mle, build_product_mles,
+        build_assignment_mle, build_product_mles, ConstraintMatrices, PreparedConstraintMatrices,
+        ScaledMleEvaluationClaim, SparseMatrix, SpartanMatrixError,
     },
-    piop::{SpartanError, SpartanPiopProof, prove_spartan_piop, verify_spartan_proof},
+    piop::{prove_spartan_piop, verify_spartan_proof, SpartanError, SpartanPiopProof},
+    EvaluatedSpartanAssignment, SpartanF2zProof, SpartanField, Virtualized,
 };
 
 /// Word width of every gate operand.
@@ -181,7 +182,11 @@ impl CmAndLayout {
             .and_then(|cells| cells.checked_mul(2))
             .ok_or(CmAndError::DomainTooLarge)?;
         let gate_vars = capacity.trailing_zeros() as usize;
-        Ok(Self { gates, capacity, gate_vars })
+        Ok(Self {
+            gates,
+            capacity,
+            gate_vars,
+        })
     }
 
     /// Number of live gates.
@@ -209,7 +214,11 @@ impl CmAndLayout {
     /// use the same geometry; they differ only in which slots are live.
     pub const fn f2z_params(&self) -> IntEvalParams {
         let s = self.gate_vars / 2;
-        IntEvalParams { t: 7 + self.gate_vars - s, s, word_bits: 1 }
+        IntEvalParams {
+            t: 7 + self.gate_vars - s,
+            s,
+            word_bits: 1,
+        }
     }
 
     /// Maps `(bit_slot, gate)` to the row-major cell `(b, c)` — identical
@@ -331,7 +340,10 @@ impl CmAndWitness {
             assignment[3 * capacity + gate] = u64::from(z);
             assignment[4 * capacity + gate] = u64::from(w);
         }
-        Ok(Self { layout, assignment: assignment.into_boxed_slice() })
+        Ok(Self {
+            layout,
+            assignment: assignment.into_boxed_slice(),
+        })
     }
 
     /// Shape shared by the assignment and both bit grids.
@@ -352,11 +364,7 @@ impl CmAndWitness {
     /// Builds the compact committed rows of `f` (`x`/`y`/`z` bits; slots
     /// `[96, 128)` zero) in the commit layout of the shared shape.
     pub fn f_bit_rows(&self) -> Vec<Vec<u64>> {
-        self.bit_rows(&[
-            (CM_AND_X_SLOT, 1),
-            (CM_AND_Y_SLOT, 2),
-            (CM_AND_Z_SLOT, 3),
-        ])
+        self.bit_rows(&[(CM_AND_X_SLOT, 1), (CM_AND_Y_SLOT, 2), (CM_AND_Z_SLOT, 3)])
     }
 
     /// Builds synthesized derived rows of `h` (`x`/`y`/`z`/`w` bits).
@@ -457,10 +465,16 @@ where
         })
         .collect();
     let c = SparseMatrix::try_from_rows(columns, c_rows).map_err(SpartanMatrixError::from)?;
-    let matrices =
-        PreparedConstraintMatrices::new(ConstraintMatrices::new(empty.clone(), empty, c)?, field_config)?;
+    let matrices = PreparedConstraintMatrices::new(
+        ConstraintMatrices::new(empty.clone(), empty, c)?,
+        field_config,
+    )?;
     let map = cm_and_map(&layout)?;
-    Ok(PreparedCmAndRelation { layout, matrices, map })
+    Ok(PreparedCmAndRelation {
+        layout,
+        matrices,
+        map,
+    })
 }
 
 /// Field projection of a CM-AND assignment and its (all-linear) R1CS
@@ -490,9 +504,7 @@ impl<F> ProjectedCmAndWitness<F> {
     }
 
     /// Moves out the layout, Spartan witness bundle, and synthesized rows.
-    pub fn into_parts(
-        self,
-    ) -> (CmAndLayout, EvaluatedSpartanAssignment<F>, Vec<Vec<u64>>) {
+    pub fn into_parts(self) -> (CmAndLayout, EvaluatedSpartanAssignment<F>, Vec<Vec<u64>>) {
         (self.layout, self.spartan, self.h_rows)
     }
 }
@@ -530,8 +542,11 @@ where
         })
         .collect();
     let products = build_product_mles(&zeros, &zeros, &cz, live, field_config)?;
-    let assignment =
-        build_assignment_mle(&field_assignment, witness.layout.assignment_len(), field_config)?;
+    let assignment = build_assignment_mle(
+        &field_assignment,
+        witness.layout.assignment_len(),
+        field_config,
+    )?;
     Ok(ProjectedCmAndWitness {
         layout: witness.layout,
         spartan: EvaluatedSpartanAssignment::new(assignment, products),
@@ -568,7 +583,9 @@ impl CmOpeningClaim {
 
 fn checked_pow2(exponent: usize) -> Result<usize, CmF2zError> {
     let exponent = u32::try_from(exponent).map_err(|_| CmF2zError::InvalidF2zParameters)?;
-    1usize.checked_shl(exponent).ok_or(CmF2zError::InvalidF2zParameters)
+    1usize
+        .checked_shl(exponent)
+        .ok_or(CmF2zError::InvalidF2zParameters)
 }
 
 fn validate_cm_claim_field(
@@ -599,7 +616,9 @@ fn validate_cm_layout_geometry(layout: &CmAndLayout) -> Result<(), CmF2zError> {
     {
         return Err(CmF2zError::InvalidF2zParameters);
     }
-    let total_vars = p.t.checked_add(p.s).ok_or(CmF2zError::InvalidF2zParameters)?;
+    let total_vars =
+        p.t.checked_add(p.s)
+            .ok_or(CmF2zError::InvalidF2zParameters)?;
     if total_vars
         != layout
             .gate_vars()
@@ -705,7 +724,10 @@ pub fn bitify_cm_and_claim(
     // The Spartan scale rides the clear column side, exactly as in the
     // direct bridge; the zero-weight and constant-only degeneracies get
     // the same deterministic handling.
-    let mut col_weights = eq_low.into_iter().map(|weight| scale * weight).collect::<Vec<_>>();
+    let mut col_weights = eq_low
+        .into_iter()
+        .map(|weight| scale * weight)
+        .collect::<Vec<_>>();
     if row_weights_q.iter().all(|&weight| weight == 0) {
         if adjusted_claim != Fq(0) {
             return Err(CmF2zError::InvalidConstantOnlyClaim);
@@ -714,15 +736,17 @@ pub fn bitify_cm_and_claim(
         col_weights.fill(Fq(0));
     }
 
-    Ok(CmOpeningClaim { row_weights_q, col_weights, claimed: adjusted_claim })
+    Ok(CmOpeningClaim {
+        row_weights_q,
+        col_weights,
+        claimed: adjusted_claim,
+    })
 }
 
 /// Virtualized opening paired with the ordinary Spartan PIOP.
 pub type CmF2zProof = SpartanF2zProof<SpartanPiopProof<SpartanF2zField>, Virtualized>;
 
-fn cm_configs(
-    layout: &CmAndLayout,
-) -> Result<(LigProverConfig, LigVerifierConfig), CmF2zError> {
+fn cm_configs(layout: &CmAndLayout) -> Result<(LigProverConfig, LigVerifierConfig), CmF2zError> {
     if layout.gate_vars() < MIN_PRODUCTION_GATE_VARS {
         return Err(CmF2zError::UnauditedF2zParameters);
     }
@@ -989,7 +1013,7 @@ pub fn verify_cm_and_f2z<T: Transcript + Send>(
 
 #[cfg(test)]
 mod tests {
-    use crypto_primitives::{PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint};
+    use crypto_primitives::{crypto_bigint_monty::F128, crypto_bigint_uint::Uint, PrimeField};
 
     use super::*;
 
@@ -1034,7 +1058,10 @@ mod tests {
         // Source z columns feed only their identity row.
         for (slot, gate) in [(64usize, 0usize), (81, 2), (95, 255)] {
             let source = layout.flat_cell(slot, gate);
-            assert_eq!(map.matrix().column(source).unwrap().row_indices(), &[source]);
+            assert_eq!(
+                map.matrix().column(source).unwrap().row_indices(),
+                &[source]
+            );
         }
         // Padded source w slots are structurally dead.
         for (bit, gate) in [(0usize, 0usize), (17, 2), (31, 255)] {
@@ -1060,9 +1087,11 @@ mod tests {
         let h_rows = witness.h_bit_rows();
         let layout = witness.layout();
         for (gate, (x, y)) in inputs.iter().enumerate() {
-            for (slot_start, value) in
-                [(CM_AND_X_SLOT, *x), (CM_AND_Y_SLOT, *y), (CM_AND_Z_SLOT, x & y)]
-            {
+            for (slot_start, value) in [
+                (CM_AND_X_SLOT, *x),
+                (CM_AND_Y_SLOT, *y),
+                (CM_AND_Z_SLOT, x & y),
+            ] {
                 for bit in 0..CM_AND_WORD_BITS {
                     let (b, c) = layout.cell(slot_start + bit, gate).unwrap();
                     let committed = (f_rows[c][b / 64] >> (b % 64)) & 1;
@@ -1088,15 +1117,13 @@ mod tests {
         let witness = CmAndWitness::from_inputs(&[(3, 5), (0xffff_0000, 0x00ff_00ff)]).unwrap();
         let projected = project_cm_and_witness::<SpartanF2zField>(&witness, &config).unwrap();
         let zero = SpartanF2zField::zero_with_cfg(&config);
-        assert!(
-            projected
-                .spartan()
-                .products()
-                .cz
-                .evaluations
-                .iter()
-                .all(|v| v == &zero)
-        );
+        assert!(projected
+            .spartan()
+            .products()
+            .cz
+            .evaluations
+            .iter()
+            .all(|v| v == &zero));
 
         let bad = CmAndWitness::from_gate_values(2, |i| {
             let (x, y) = [(3u32, 5u32), (0xffff_0000, 0x00ff_00ff)][i];
@@ -1112,8 +1139,7 @@ mod tests {
     #[test]
     fn relation_coefficients_follow_the_runtime_field_modulus() {
         let config = F128::make_cfg(&Uint::from((1_u128 << 127) - 1)).unwrap();
-        let witness = CmAndWitness::from_inputs(&[(3, 5), (0xffff_0000, 0x00ff_00ff)])
-            .unwrap();
+        let witness = CmAndWitness::from_inputs(&[(3, 5), (0xffff_0000, 0x00ff_00ff)]).unwrap();
         let relation = prepare_cm_and_relation::<F128>(*witness.layout(), &config).unwrap();
         let projected = project_cm_and_witness::<F128>(&witness, &config).unwrap();
 
@@ -1130,11 +1156,9 @@ mod tests {
             &projected.spartan().products().cz.evaluations[..witness.layout().gates()],
             matrix_products.as_slice(),
         );
-        assert!(
-            matrix_products
-                .iter()
-                .all(|value| <F128 as PrimeField>::is_zero(value))
-        );
+        assert!(matrix_products
+            .iter()
+            .all(|value| <F128 as PrimeField>::is_zero(value)));
     }
 
     #[test]
@@ -1146,8 +1170,9 @@ mod tests {
         let p = layout.f2z_params();
         let config = spartan_f2z_field_config();
 
-        let gate_point: Vec<Fq> =
-            (0..layout.gate_vars()).map(|i| Fq((i + 2) as u128)).collect();
+        let gate_point: Vec<Fq> = (0..layout.gate_vars())
+            .map(|i| Fq((i + 2) as u128))
+            .collect();
         let sel: [Fq; 3] = [Fq(7), Fq(11), Fq(29)];
         let scale = Fq(13);
         let eq_sel = eq_le_table_fq(&sel);
@@ -1198,7 +1223,10 @@ mod tests {
     #[test]
     fn production_entry_points_gate_small_layouts() {
         let layout = CmAndLayout::new(3).unwrap();
-        assert!(matches!(cm_configs(&layout), Err(CmF2zError::UnauditedF2zParameters)));
+        assert!(matches!(
+            cm_configs(&layout),
+            Err(CmF2zError::UnauditedF2zParameters)
+        ));
         let production = CmAndLayout::new(1 << MIN_PRODUCTION_GATE_VARS).unwrap();
         cm_configs(&production).expect("the smallest embedded profile is available");
     }

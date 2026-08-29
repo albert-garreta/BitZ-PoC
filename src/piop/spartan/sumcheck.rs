@@ -18,10 +18,17 @@ use crate::{
     },
 };
 use crypto_bigint::subtle::{Choice, ConditionallySelectable};
-use crypto_primitives::{FromWithConfig, PrimeField, crypto_bigint_monty::MontyField};
+use crypto_primitives::{crypto_bigint_monty::MontyField, FromWithConfig, PrimeField};
 use num_traits::Zero;
 
-use super::{SpartanField, absorb_field_elements, squeeze_field};
+use super::{
+    absorb_field_elements,
+    grinding::{
+        grind_and_absorb, verify_and_absorb, GrindingDomain, GrindingError, GrindingRound,
+        MAX_GRINDING_BITS,
+    },
+    squeeze_field, SpartanField,
+};
 
 /// Product accumulation policy used by the sumcheck prover.
 ///
@@ -499,7 +506,131 @@ pub enum SumcheckError {
     #[error("a sumcheck value has a noncanonical field representation")]
     NonCanonicalFieldElement,
     #[error(transparent)]
+    Grinding(#[from] GrindingError),
+    #[error("sumcheck proof has {actual} grinding nonces, expected {expected}")]
+    InvalidGrindingNonceCount { expected: usize, actual: usize },
+    #[error(transparent)]
     DelayedReduction(#[from] DelayedReductionError),
+}
+
+/// Controls the transcript boundary between an absorbed round polynomial and
+/// the verifier challenge that follows it.
+trait RoundBoundaryPolicy {
+    /// Validates policy-level proof shape before the transcript is mutated.
+    fn validate(&self, _expected_rounds: usize) -> Result<(), SumcheckError> {
+        Ok(())
+    }
+
+    /// Processes the prover message after absorption and before its challenge.
+    fn after_round<T: Transcript>(
+        &mut self,
+        transcript: &mut T,
+        round: usize,
+    ) -> Result<(), SumcheckError>;
+}
+
+/// Existing sumcheck transcript behavior: no bytes between message and
+/// challenge.
+struct UngrindedRoundBoundary;
+
+impl RoundBoundaryPolicy for UngrindedRoundBoundary {
+    fn after_round<T: Transcript>(
+        &mut self,
+        _transcript: &mut T,
+        _round: usize,
+    ) -> Result<(), SumcheckError> {
+        Ok(())
+    }
+}
+
+struct ProverGrindingRoundBoundary<D> {
+    bits: u32,
+    nonces: Vec<u64>,
+    _domain: core::marker::PhantomData<fn() -> D>,
+}
+
+impl<D> ProverGrindingRoundBoundary<D> {
+    fn new(bits: u32) -> Self {
+        Self {
+            bits,
+            nonces: Vec::new(),
+            _domain: core::marker::PhantomData,
+        }
+    }
+}
+
+impl<D: GrindingDomain> RoundBoundaryPolicy for ProverGrindingRoundBoundary<D> {
+    fn validate(&self, _expected_rounds: usize) -> Result<(), SumcheckError> {
+        validate_grinding_configuration::<D>(self.bits)
+    }
+
+    fn after_round<T: Transcript>(
+        &mut self,
+        transcript: &mut T,
+        round: usize,
+    ) -> Result<(), SumcheckError> {
+        let _scope = crate::utils::prof::scope("spartan:round_grinding_prove");
+        let round = u64::try_from(round).expect("an in-memory sumcheck round index fits in u64");
+        let nonce = grind_and_absorb::<D, _>(transcript, GrindingRound::new(round), self.bits)?;
+        self.nonces.push(nonce);
+        Ok(())
+    }
+}
+
+struct VerifierGrindingRoundBoundary<'a, D> {
+    bits: u32,
+    nonces: &'a [u64],
+    _domain: core::marker::PhantomData<fn() -> D>,
+}
+
+impl<'a, D> VerifierGrindingRoundBoundary<'a, D> {
+    fn new(bits: u32, nonces: &'a [u64]) -> Self {
+        Self {
+            bits,
+            nonces,
+            _domain: core::marker::PhantomData,
+        }
+    }
+}
+
+impl<D: GrindingDomain> RoundBoundaryPolicy for VerifierGrindingRoundBoundary<'_, D> {
+    fn validate(&self, expected_rounds: usize) -> Result<(), SumcheckError> {
+        validate_grinding_configuration::<D>(self.bits)?;
+        if self.nonces.len() != expected_rounds {
+            return Err(SumcheckError::InvalidGrindingNonceCount {
+                expected: expected_rounds,
+                actual: self.nonces.len(),
+            });
+        }
+        Ok(())
+    }
+
+    fn after_round<T: Transcript>(
+        &mut self,
+        transcript: &mut T,
+        round: usize,
+    ) -> Result<(), SumcheckError> {
+        let _scope = crate::utils::prof::scope("spartan:round_grinding_verify");
+        let round_index =
+            u64::try_from(round).expect("an in-memory sumcheck round index fits in u64");
+        verify_and_absorb::<D, _>(
+            transcript,
+            GrindingRound::new(round_index),
+            self.bits,
+            self.nonces[round],
+        )?;
+        Ok(())
+    }
+}
+
+fn validate_grinding_configuration<D: GrindingDomain>(bits: u32) -> Result<(), SumcheckError> {
+    if !(1..=MAX_GRINDING_BITS).contains(&bits) {
+        return Err(GrindingError::InvalidDifficulty { bits }.into());
+    }
+    if D::DOMAIN.is_empty() {
+        return Err(GrindingError::EmptyDomain.into());
+    }
+    Ok(())
 }
 
 /// Sumcheck round polynomials in coefficient form.
@@ -525,6 +656,27 @@ where
         expected_rounds: usize,
         field_cfg: &F::Config,
     ) -> Result<(Vec<F>, F), SumcheckError> {
+        let mut round_boundary = UngrindedRoundBoundary;
+        self.verify_with_round_boundary(
+            transcript,
+            initial_claim,
+            expected_rounds,
+            field_cfg,
+            &mut round_boundary,
+        )
+    }
+
+    fn verify_with_round_boundary<P>(
+        &self,
+        transcript: &mut impl Transcript,
+        initial_claim: F,
+        expected_rounds: usize,
+        field_cfg: &F::Config,
+        round_boundary: &mut P,
+    ) -> Result<(Vec<F>, F), SumcheckError>
+    where
+        P: RoundBoundaryPolicy,
+    {
         if COEFFS == 0 {
             return Err(SumcheckError::EmptyRoundPolynomial);
         }
@@ -535,6 +687,11 @@ where
                 expected: expected_rounds,
                 actual: actual_rounds,
             });
+        }
+        round_boundary.validate(expected_rounds)?;
+        validate_field_elements(core::slice::from_ref(&initial_claim), field_cfg)?;
+        for coefficients in &self.round_polynomials {
+            validate_field_elements(coefficients, field_cfg)?;
         }
 
         let zero = F::zero_with_cfg(field_cfg);
@@ -556,6 +713,7 @@ where
                 return Err(SumcheckError::InvalidRoundClaim { round });
             }
 
+            round_boundary.after_round(transcript, round)?;
             let challenge = squeeze_field(transcript, field_cfg);
             current_claim = evaluate_polynomial(coefficients, &challenge, &zero);
             eval_points.push(challenge);
@@ -628,15 +786,74 @@ where
         tau: &[F],
         field_cfg: &F::Config,
     ) -> Result<OuterSumcheckVerifierOutput<F>, SumcheckError> {
-        let (eval_points, final_claim) =
-            self.sumcheck
-                .verify(transcript, initial_claim, tau.len(), field_cfg)?;
+        let mut round_boundary = UngrindedRoundBoundary;
+        self.verify_with_round_boundary(
+            transcript,
+            initial_claim,
+            tau,
+            field_cfg,
+            &mut round_boundary,
+        )
+    }
 
+    /// Verifies a cubic outer sumcheck with one PoW nonce adjacent to every
+    /// round polynomial.
+    ///
+    /// The nonce at index `i` is checked after round polynomial `i` is
+    /// absorbed and before challenge `i` is sampled. `D` supplies the typed,
+    /// protocol-specific grinding domain; `grinding_bits` is fixed across all
+    /// rounds in this proof.
+    pub(crate) fn verify_grinded<D: GrindingDomain>(
+        &self,
+        transcript: &mut impl Transcript,
+        initial_claim: F,
+        tau: &[F],
+        field_cfg: &F::Config,
+        grinding_nonces: &[u64],
+        grinding_bits: u32,
+    ) -> Result<OuterSumcheckVerifierOutput<F>, SumcheckError> {
+        let mut round_boundary =
+            VerifierGrindingRoundBoundary::<D>::new(grinding_bits, grinding_nonces);
+        self.verify_with_round_boundary(
+            transcript,
+            initial_claim,
+            tau,
+            field_cfg,
+            &mut round_boundary,
+        )
+    }
+
+    fn verify_with_round_boundary<P>(
+        &self,
+        transcript: &mut impl Transcript,
+        initial_claim: F,
+        tau: &[F],
+        field_cfg: &F::Config,
+        round_boundary: &mut P,
+    ) -> Result<OuterSumcheckVerifierOutput<F>, SumcheckError>
+    where
+        P: RoundBoundaryPolicy,
+    {
         let terminal_evaluations = [
             self.az_mle_claim.clone(),
             self.bz_mle_claim.clone(),
             self.cz_mle_claim.clone(),
         ];
+        // All verifier-supplied field elements must be checked before the
+        // first proof byte is absorbed. Runtime Montgomery values otherwise
+        // carry their own configuration, and mixed-config arithmetic is not
+        // a protocol-level field coercion.
+        validate_field_elements(tau, field_cfg)?;
+        validate_field_elements(&terminal_evaluations, field_cfg)?;
+
+        let (eval_points, final_claim) = self.sumcheck.verify_with_round_boundary(
+            transcript,
+            initial_claim,
+            tau.len(),
+            field_cfg,
+            round_boundary,
+        )?;
+
         absorb_field_elements(transcript, &terminal_evaluations);
 
         let eq = eq_eval(tau, &eval_points, field_cfg)?;
@@ -701,6 +918,76 @@ where
     F: SpartanField,
     R: SumcheckProductReducer<F>,
 {
+    let mut round_boundary = UngrindedRoundBoundary;
+    prove_outer_sumcheck_with_reducer_and_round_boundary(
+        transcript,
+        initial_claim,
+        tau,
+        (eq_low, eq_high),
+        products,
+        field_cfg,
+        reducer,
+        &mut round_boundary,
+    )
+}
+
+/// Proves the cubic outer sumcheck with one PoW nonce between every absorbed
+/// round polynomial and its following Fiat--Shamir challenge.
+///
+/// Returned nonces are in round order, so `nonces[i]` is adjacent to
+/// `proof.sumcheck.round_polynomials[i]`. `D` supplies a typed,
+/// protocol-specific grinding domain and `grinding_bits` is fixed for all
+/// rounds. The ordinary [`prove_outer_sumcheck_with_reducer`] path remains
+/// ungrinded and transcript-compatible with existing proofs.
+pub(crate) fn prove_outer_sumcheck_with_reducer_grinded<D, F, R>(
+    transcript: &mut impl Transcript,
+    initial_claim: F,
+    tau: &[F],
+    (eq_low, eq_high): (DenseMultilinearExtension<F>, DenseMultilinearExtension<F>),
+    products: R1csProductMles<F>,
+    field_cfg: &F::Config,
+    reducer: &R,
+    grinding_bits: u32,
+) -> Result<(OuterSumcheckOutput<F>, Vec<u64>), SumcheckError>
+where
+    D: GrindingDomain,
+    F: SpartanField,
+    R: SumcheckProductReducer<F>,
+{
+    let mut round_boundary = ProverGrindingRoundBoundary::<D>::new(grinding_bits);
+    let output = prove_outer_sumcheck_with_reducer_and_round_boundary(
+        transcript,
+        initial_claim,
+        tau,
+        (eq_low, eq_high),
+        products,
+        field_cfg,
+        reducer,
+        &mut round_boundary,
+    )?;
+    debug_assert_eq!(
+        round_boundary.nonces.len(),
+        output.proof.sumcheck.round_polynomials.len()
+    );
+    Ok((output, round_boundary.nonces))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prove_outer_sumcheck_with_reducer_and_round_boundary<F, R, P>(
+    transcript: &mut impl Transcript,
+    initial_claim: F,
+    tau: &[F],
+    (eq_low, eq_high): (DenseMultilinearExtension<F>, DenseMultilinearExtension<F>),
+    products: R1csProductMles<F>,
+    field_cfg: &F::Config,
+    reducer: &R,
+    round_boundary: &mut P,
+) -> Result<OuterSumcheckOutput<F>, SumcheckError>
+where
+    F: SpartanField,
+    R: SumcheckProductReducer<F>,
+    P: RoundBoundaryPolicy,
+{
     let num_vars = products.az.num_vars;
     if !has_dense_shape(&products.az)
         || !has_dense_shape(&products.bz)
@@ -722,6 +1009,7 @@ where
     {
         return Err(SumcheckError::InvalidEqualityDimensions);
     }
+    round_boundary.validate(num_vars)?;
 
     let zero = F::zero_with_cfg(field_cfg);
     let one = F::one_with_cfg(field_cfg);
@@ -764,7 +1052,7 @@ where
     // Bind the low equality variables first. The product traversal folds the
     // active tables and prepares the next round polynomial in one pass.
     while eq_low.len() > 1 {
-        let challenge = recover_full_round_polynomial_and_sample_next_challenge(
+        let challenge = recover_full_round_polynomial_and_sample_next_challenge_with_boundary(
             transcript,
             &mut current_claim,
             &coefficients_without_linear,
@@ -772,7 +1060,8 @@ where
             &mut eval_points,
             &zero,
             field_cfg,
-        );
+            round_boundary,
+        )?;
 
         let next_product_len = products.len() / 2;
         product_scratch.truncate(next_product_len);
@@ -815,7 +1104,7 @@ where
     debug_assert_eq!(products.len(), eq_high.len());
 
     while eq_high.len() > 1 {
-        let challenge = recover_full_round_polynomial_and_sample_next_challenge(
+        let challenge = recover_full_round_polynomial_and_sample_next_challenge_with_boundary(
             transcript,
             &mut current_claim,
             &coefficients_without_linear,
@@ -823,7 +1112,8 @@ where
             &mut eval_points,
             &zero,
             field_cfg,
-        );
+            round_boundary,
+        )?;
 
         let next_eq_high_len = eq_high.len() / 2;
         debug_assert_eq!(products.len() / 2, next_eq_high_len);
@@ -2628,6 +2918,42 @@ fn recover_full_round_polynomial_and_sample_next_challenge<
 where
     F: SpartanField,
 {
+    let mut round_boundary = UngrindedRoundBoundary;
+    recover_full_round_polynomial_and_sample_next_challenge_with_boundary(
+        transcript,
+        current_claim,
+        coefficients_without_linear,
+        round_polynomials,
+        eval_points,
+        zero,
+        field_cfg,
+        &mut round_boundary,
+    )
+    .expect("the ungrinded round boundary is infallible")
+}
+
+/// Completes and records one round under an explicit message/challenge
+/// boundary policy.
+#[allow(clippy::too_many_arguments)]
+fn recover_full_round_polynomial_and_sample_next_challenge_with_boundary<
+    F,
+    P,
+    const INPUT_COEFFS: usize,
+    const COEFFS: usize,
+>(
+    transcript: &mut impl Transcript,
+    current_claim: &mut F,
+    coefficients_without_linear: &[F; INPUT_COEFFS],
+    round_polynomials: &mut Vec<[F; COEFFS]>,
+    eval_points: &mut Vec<F>,
+    zero: &F,
+    field_cfg: &F::Config,
+    round_boundary: &mut P,
+) -> Result<F, SumcheckError>
+where
+    F: SpartanField,
+    P: RoundBoundaryPolicy,
+{
     let coefficients =
         reconstruct_round_coefficients(current_claim, coefficients_without_linear, zero);
     let at_one = coefficients
@@ -2639,11 +2965,12 @@ where
     debug_assert_eq!(*current_claim, add(&coefficients[0], &at_one));
 
     absorb_field_elements(transcript, &coefficients);
+    round_boundary.after_round(transcript, round_polynomials.len())?;
     let challenge = squeeze_field(transcript, field_cfg);
     *current_claim = evaluate_polynomial(&coefficients, &challenge, zero);
     round_polynomials.push(coefficients);
     eval_points.push(challenge.clone());
-    challenge
+    Ok(challenge)
 }
 
 /// Allocation-free view of equality weights with the active coordinate
@@ -3226,6 +3553,22 @@ fn has_dense_shape<F>(mle: &DenseMultilinearExtension<F>) -> bool {
     mle.num_vars < usize::BITS as usize && mle.evaluations.len() == 1usize << mle.num_vars
 }
 
+fn validate_field_elements<F>(values: &[F], field_cfg: &F::Config) -> Result<(), SumcheckError>
+where
+    F: SpartanField,
+{
+    let expected_modulus = F::canonical_modulus_encoding(field_cfg);
+    for value in values {
+        if F::canonical_modulus_encoding(value.cfg()) != expected_modulus {
+            return Err(SumcheckError::FieldConfigurationMismatch);
+        }
+        value
+            .validate_element()
+            .map_err(|_| SumcheckError::NonCanonicalFieldElement)?;
+    }
+    Ok(())
+}
+
 #[inline]
 fn add<F: SpartanField>(left: &F, right: &F) -> F {
     left.clone() + right
@@ -3244,10 +3587,16 @@ fn mul<F: SpartanField>(left: &F, right: &F) -> F {
 #[cfg(test)]
 mod tests {
     use crypto_primitives::{
-        FromWithConfig, PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint,
+        crypto_bigint_monty::F128, crypto_bigint_uint::Uint, FromWithConfig, PrimeField,
     };
 
-    use crate::{piop::spartan::matrix::eq_table, transcript::Blake3Transcript};
+    use crate::{
+        piop::spartan::{
+            grinding::{derive_grinding_seed, grinding_nonce_is_valid},
+            matrix::eq_table,
+        },
+        transcript::Blake3Transcript,
+    };
 
     use super::*;
 
@@ -3259,6 +3608,82 @@ mod tests {
 
     fn field(value: u64, field_cfg: &<F128 as PrimeField>::Config) -> F128 {
         F128::from_with_cfg(value, field_cfg)
+    }
+
+    enum TestOuterGrinding {}
+
+    impl GrindingDomain for TestOuterGrinding {
+        const DOMAIN: &'static [u8] = b"test/spartan/outer-sumcheck-grinding/v1";
+    }
+
+    type OuterTestInstance = (
+        F128,
+        Vec<F128>,
+        (
+            DenseMultilinearExtension<F128>,
+            DenseMultilinearExtension<F128>,
+        ),
+        R1csProductMles<F128>,
+    );
+
+    fn outer_test_instance(
+        num_vars: usize,
+        field_cfg: &<F128 as PrimeField>::Config,
+    ) -> OuterTestInstance {
+        let zero = F128::zero_with_cfg(field_cfg);
+        let table_len = 1_usize << num_vars;
+        let products = R1csProductMles {
+            az: DenseMultilinearExtension::from_evaluations_vec(
+                num_vars,
+                (0..table_len)
+                    .map(|index| field(index as u64 + 2, field_cfg))
+                    .collect(),
+                zero.clone(),
+            ),
+            bz: DenseMultilinearExtension::from_evaluations_vec(
+                num_vars,
+                (0..table_len)
+                    .map(|index| field(3 * index as u64 + 5, field_cfg))
+                    .collect(),
+                zero.clone(),
+            ),
+            cz: DenseMultilinearExtension::from_evaluations_vec(
+                num_vars,
+                (0..table_len)
+                    .map(|index| field((index * index) as u64 + 7, field_cfg))
+                    .collect(),
+                zero,
+            ),
+        };
+        let tau = (0..num_vars)
+            .map(|index| field(2 * index as u64 + 2, field_cfg))
+            .collect::<Vec<_>>();
+        let full_equality = eq_table(&tau, field_cfg).unwrap();
+        let mut initial_claim = F128::zero_with_cfg(field_cfg);
+        for (index, equality) in full_equality.iter().enumerate() {
+            let residual = sub(
+                &mul(
+                    &products.az.evaluations[index],
+                    &products.bz.evaluations[index],
+                ),
+                &products.cz.evaluations[index],
+            );
+            initial_claim += &mul(equality, &residual);
+        }
+
+        let split = num_vars / 2;
+        let (low_point, high_point) = tau.split_at(split);
+        let equality_factors = (
+            DenseMultilinearExtension {
+                evaluations: eq_table(low_point, field_cfg).unwrap(),
+                num_vars: low_point.len(),
+            },
+            DenseMultilinearExtension {
+                evaluations: eq_table(high_point, field_cfg).unwrap(),
+                num_vars: high_point.len(),
+            },
+        );
+        (initial_claim, tau, equality_factors, products)
     }
 
     #[test]
@@ -3407,6 +3832,182 @@ mod tests {
         assert_eq!(
             squeeze_field::<F128, _>(&mut prover_transcript, &field_cfg),
             squeeze_field::<F128, _>(&mut verifier_transcript, &field_cfg)
+        );
+    }
+
+    #[test]
+    fn grinded_outer_sumcheck_replays_and_continues_in_lockstep() {
+        const NUM_VARS: usize = 4;
+        const GRINDING_BITS: u32 = 8;
+
+        let field_cfg = config();
+        let (initial_claim, tau, equality_factors, products) =
+            outer_test_instance(NUM_VARS, &field_cfg);
+        let reducer = ImmediateSumcheckReducer::new(&field_cfg);
+        let mut prover_transcript = Blake3Transcript::new();
+        let (output, nonces) =
+            prove_outer_sumcheck_with_reducer_grinded::<TestOuterGrinding, _, _>(
+                &mut prover_transcript,
+                initial_claim.clone(),
+                &tau,
+                equality_factors,
+                products,
+                &field_cfg,
+                &reducer,
+                GRINDING_BITS,
+            )
+            .unwrap();
+
+        assert_eq!(nonces.len(), NUM_VARS);
+        assert_eq!(nonces.len(), output.proof.sumcheck.round_polynomials.len());
+
+        let mut verifier_transcript = Blake3Transcript::new();
+        let verified = output
+            .proof
+            .verify_grinded::<TestOuterGrinding>(
+                &mut verifier_transcript,
+                initial_claim,
+                &tau,
+                &field_cfg,
+                &nonces,
+                GRINDING_BITS,
+            )
+            .unwrap();
+
+        assert_eq!(verified.eval_points, output.eval_points);
+        assert_eq!(verified.az_mle_claim, output.proof.az_mle_claim);
+        assert_eq!(verified.bz_mle_claim, output.proof.bz_mle_claim);
+        assert_eq!(verified.cz_mle_claim, output.proof.cz_mle_claim);
+        assert_eq!(
+            squeeze_field::<F128, _>(&mut prover_transcript, &field_cfg),
+            squeeze_field::<F128, _>(&mut verifier_transcript, &field_cfg),
+        );
+    }
+
+    #[test]
+    fn outer_verifier_rejects_malformed_runtime_field_elements_before_absorption() {
+        const NUM_VARS: usize = 2;
+
+        let field_cfg = config();
+        let other_cfg = F128::make_cfg(&Uint::from((1_u128 << 127) - 1)).unwrap();
+        let (initial_claim, tau, equality_factors, products) =
+            outer_test_instance(NUM_VARS, &field_cfg);
+        let output = prove_outer_sumcheck(
+            &mut Blake3Transcript::new(),
+            initial_claim.clone(),
+            &tau,
+            equality_factors,
+            products,
+            &field_cfg,
+        )
+        .unwrap();
+
+        let mut foreign_round = output.proof.clone();
+        foreign_round.sumcheck.round_polynomials[0][0] = field(1, &other_cfg);
+        let mut actual = Blake3Transcript::new();
+        let mut untouched = actual.clone();
+        assert_eq!(
+            foreign_round.verify(&mut actual, initial_claim.clone(), &tau, &field_cfg),
+            Err(SumcheckError::FieldConfigurationMismatch)
+        );
+        assert_eq!(
+            squeeze_field::<F128, _>(&mut actual, &field_cfg),
+            squeeze_field::<F128, _>(&mut untouched, &field_cfg)
+        );
+
+        let mut malformed_terminal = output.proof;
+        malformed_terminal.az_mle_claim = F128::new_unchecked(Uint::from(u128::MAX), &field_cfg);
+        let mut actual = Blake3Transcript::new();
+        let mut untouched = actual.clone();
+        assert_eq!(
+            malformed_terminal.verify(&mut actual, initial_claim, &tau, &field_cfg),
+            Err(SumcheckError::NonCanonicalFieldElement)
+        );
+        assert_eq!(
+            squeeze_field::<F128, _>(&mut actual, &field_cfg),
+            squeeze_field::<F128, _>(&mut untouched, &field_cfg)
+        );
+    }
+
+    #[test]
+    fn grinded_outer_sumcheck_rejects_invalid_and_miscounted_nonces() {
+        const NUM_VARS: usize = 3;
+        const GRINDING_BITS: u32 = 8;
+
+        let field_cfg = config();
+        let (initial_claim, tau, equality_factors, products) =
+            outer_test_instance(NUM_VARS, &field_cfg);
+        let reducer = ImmediateSumcheckReducer::new(&field_cfg);
+        let mut prover_transcript = Blake3Transcript::new();
+        let (output, nonces) =
+            prove_outer_sumcheck_with_reducer_grinded::<TestOuterGrinding, _, _>(
+                &mut prover_transcript,
+                initial_claim.clone(),
+                &tau,
+                equality_factors,
+                products,
+                &field_cfg,
+                &reducer,
+                GRINDING_BITS,
+            )
+            .unwrap();
+
+        let mut short_transcript = Blake3Transcript::new();
+        let mut untouched_transcript = short_transcript.clone();
+        assert_eq!(
+            output.proof.verify_grinded::<TestOuterGrinding>(
+                &mut short_transcript,
+                initial_claim.clone(),
+                &tau,
+                &field_cfg,
+                &nonces[..NUM_VARS - 1],
+                GRINDING_BITS,
+            ),
+            Err(SumcheckError::InvalidGrindingNonceCount {
+                expected: NUM_VARS,
+                actual: NUM_VARS - 1,
+            })
+        );
+        assert_eq!(
+            squeeze_field::<F128, _>(&mut short_transcript, &field_cfg),
+            squeeze_field::<F128, _>(&mut untouched_transcript, &field_cfg),
+        );
+
+        // Reconstruct the first boundary seed and choose a nonce that is
+        // definitely invalid rather than relying on `valid_nonce + 1`.
+        let mut seed_transcript = Blake3Transcript::new();
+        absorb_field_elements(
+            &mut seed_transcript,
+            &output.proof.sumcheck.round_polynomials[0],
+        );
+        let seed = derive_grinding_seed::<TestOuterGrinding, _>(
+            &mut seed_transcript,
+            GrindingRound::new(0),
+            GRINDING_BITS,
+        )
+        .unwrap();
+        let invalid_nonce = (0..=u64::MAX)
+            .find(|&nonce| {
+                nonce != nonces[0] && !grinding_nonce_is_valid(&seed, nonce, GRINDING_BITS).unwrap()
+            })
+            .unwrap();
+        let mut invalid_nonces = nonces;
+        invalid_nonces[0] = invalid_nonce;
+
+        let mut verifier_transcript = Blake3Transcript::new();
+        assert_eq!(
+            output.proof.verify_grinded::<TestOuterGrinding>(
+                &mut verifier_transcript,
+                initial_claim,
+                &tau,
+                &field_cfg,
+                &invalid_nonces,
+                GRINDING_BITS,
+            ),
+            Err(SumcheckError::Grinding(GrindingError::InvalidNonce {
+                nonce: invalid_nonce,
+                bits: GRINDING_BITS,
+            }))
         );
     }
 

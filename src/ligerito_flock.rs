@@ -26,36 +26,36 @@
 //!   side) and `b` = the weight table. The closing residual check evaluates
 //!   the weight basis succinctly at the recursion's challenges.
 //!
-//! Query counts and grinding come from the embedded Ligerito security
-//! configs ([`sha_lig_configs`]); the `RsOpenConfig::num_queries` knob
-//! does not apply on this backend. Note flock's Merkle is SHA-256 without
-//! leaf/node domain separation (flagged upstream as non-production) — carried
-//! as-is for now; recorded in the ledger.
+//! Query counts, fold grinding, and the BLAKE3 Merkle hash come from the
+//! validator-gated Ligerito security configs ([`sha_lig_configs`]); the
+//! `RsOpenConfig::num_queries` knob does not apply on this backend.
 
+use crypto_bigint::U128;
+use crypto_primes::{is_prime, Flavor};
 use flock_core::challenger::Challenger;
 use flock_core::field::F128;
 use flock_core::merkle::HashKind;
-use flock_core::pcs::commit::{Commitment, PcsParams, ProverData, commit};
+use flock_core::pcs::commit::{commit, Commitment, PcsParams, ProverData};
 use flock_core::pcs::ligerito::{
     self, LigeritoProof, LigeritoSecurityConfig, ProverConfig as LigProverConfig, SoundnessRegime,
     VerifierConfig as LigVerifierConfig,
 };
 
+use crate::cfg_iter_mut;
 use crate::piop::lookup::gkr_product::ProductForestProof;
 use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheckProof;
 use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
-use crate::cfg_iter_mut;
 use crate::transcript::traits::Transcript;
 
 use crate::ligerito::{
-    IntEvalRsError, LOG_PACKING, PackedBits, RingSwitchProof, RsOpenConfig, RsOpenError,
     packed_vars, phi_byte_tables, phi_from_words, prove_int_eval_merged_common,
     prove_x_claims_batched_common, repack_leaf_bits, residual_b_evals, ring_switch_prove,
     ring_switch_verify, row_bit_vars, rs_fast, sv_fold_mfr, verify_int_eval_merged_common,
-    verify_x_claims_batched_common,
+    verify_x_claims_batched_common, IntEvalRsError, PackedBits, RingSwitchProof, RsOpenConfig,
+    RsOpenError, LOG_PACKING,
 };
 use crate::merged_forest::MergedForestProof;
-use crate::pcs::{IntEvalParams, ModQWeightChunks, ShaF2Layout, final_eval_ring};
+use crate::pcs::{final_eval_ring, IntEvalParams, ModQWeightChunks, ShaF2Layout};
 use crate::taps::TapOp;
 use crate::utils::{cfg_chunks_mut, cfg_into_iter, cfg_iter};
 
@@ -143,7 +143,9 @@ impl<T: Transcript + Send> Challenger for ZincChallenger<'_, T> {
         // expected hashes the fork-join overhead outweighs the win — stay
         // serial there.
         #[cfg(feature = "parallel")]
-        let nonce = if bits >= 11 {
+        let nonce = if bits == 0 {
+            0
+        } else if bits >= 11 {
             use rayon::prelude::*;
             const CHUNK_LOG: u64 = 12;
             const CHUNKS: usize = 32; // wave = 32 · 4096 = 2^17 nonces
@@ -172,7 +174,9 @@ impl<T: Transcript + Send> Challenger for ZincChallenger<'_, T> {
             }
         };
         #[cfg(not(feature = "parallel"))]
-        let nonce = {
+        let nonce = if bits == 0 {
+            0
+        } else {
             let mut nonce = 0u64;
             loop {
                 if pow_ok(&seed, nonce, bits) {
@@ -187,7 +191,15 @@ impl<T: Transcript + Send> Challenger for ZincChallenger<'_, T> {
 
     fn verify_pow(&mut self, nonce: u64, bits: u32) -> bool {
         let seed = self.pow_seed();
-        let ok = pow_ok(&seed, nonce, bits);
+        // A zero-bit site has no work requirement, but it still needs one
+        // canonical proof representation. Accepting any nonce here would give
+        // a prover a free 64-bit Fiat--Shamir reroll before the next query
+        // challenge.
+        let ok = if bits == 0 {
+            nonce == 0
+        } else {
+            pow_ok(&seed, nonce, bits)
+        };
         // Absorb regardless, keeping the transcript in lockstep with the
         // prover; an honest verifier rejects on `false` anyway.
         self.0.absorb_slice(&nonce.to_le_bytes());
@@ -380,18 +392,11 @@ pub fn commit_rs_ligerito_packed(
     )
 }
 
-/// The Ligerito config pair for a SHA-shaped opening at `m_p` packed
-/// variables. For the deployed regime (`m = m_p + 7 = 22..=35`, i.e. every
-/// deployed SHA size `nv ≥ 12`) the default is the best rate-1/2 config we
-/// found: a validator-gated Johnson-regime config at base rate 1/2 (`r0 = 1`)
-/// with `initial_k = 4` — 183 L0 queries + 16-bit query grinding, a smaller
-/// proof than the k=6 Fast profile at the same rate. Below `m = 22` it falls
-/// back to the ad-hoc `default_config` (UDR, unaudited — test shapes only).
-/// Prover and verifier both derive their config here.
+/// Legacy Ligerito configuration used by non-paper adapters and compatibility
+/// proof paths.
 pub fn sha_lig_configs(m_p: usize) -> Result<(LigProverConfig, LigVerifierConfig), String> {
     let m = m_p + LOG_PACKING;
     if m < 22 {
-        // Ad-hoc UDR config for small/test shapes (unaudited).
         return lig_configs(
             m_p,
             LigConfig::Adhoc {
@@ -400,15 +405,33 @@ pub fn sha_lig_configs(m_p: usize) -> Result<(LigProverConfig, LigVerifierConfig
             },
         );
     }
-    // Default (m = 22..=35): the best rate-1/2 config we found — Johnson-regime,
-    // base rate 1/2 (r0 = 1), initial_k = 4 (183 L0 queries + 16-bit query
-    // grinding), built via flock's validator-gated `custom_johnson_config` from
-    // the embedded slim TOML template. f2z-pcs reads `initial_k` from the config,
-    // so the k = 4 batch needs no extra wiring.
     if ligerito::embedded_security_config(m, ligerito::LigeritoProfile::Slim).is_none() {
         return Err(format!("no embedded ligerito template for m={m}"));
     }
     custom_johnson_config(m, 1, 4).to_prover_verifier_configs()
+}
+
+/// Paper-128 Ligerito config pair for a SHA-shaped opening at `m_p` packed
+/// variables.
+///
+/// The profile admits `m = m_p + 7 = 20..=29` (batches `2^7..=2^16`) and
+/// uses validator-gated UDR parameters with fold grinding so every term
+/// tracked by Ligerito reaches 128 bits round by round. Merkle commitments use
+/// BLAKE3. Shapes outside that window are rejected instead of silently
+/// falling back to an ad-hoc configuration.
+pub fn sha_paper128_lig_configs(
+    m_p: usize,
+) -> Result<(LigProverConfig, LigVerifierConfig), String> {
+    let m = m_p + LOG_PACKING;
+    if !(20..=29).contains(&m) {
+        return Err(format!(
+            "SHA Ligerito production profile requires m in [20, 29], got {m}"
+        ));
+    }
+    let mut security = custom_udr_grind_config_bits(m, 1, 4, Some(128));
+    security.hash = "blake3".into();
+    security.validate()?;
+    security.to_prover_verifier_configs()
 }
 
 /// [`commit_rs_flock_with`] at the shape in `cfg` (the BaseFold backend's
@@ -680,10 +703,20 @@ fn udr_config_impl(
     target_bits: Option<usize>,
     fold_grind: bool,
 ) -> LigeritoSecurityConfig {
-    let slim = ligerito::embedded_security_config(m, ligerito::LigeritoProfile::Slim)
-        .unwrap_or_else(|| panic!("no embedded slim template for m={m}"));
+    // Embedded production tables start at m=22.  Only scalar/default fields
+    // are borrowed from the template: `m`, `log_n`, every level shape, the
+    // target, and the final block are rebuilt below, so the m=22 template is
+    // also a sound seed for the paper's m=20 and m=21 SHA endpoints.
+    let template_m = m.max(22);
+    let slim = ligerito::embedded_security_config(template_m, ligerito::LigeritoProfile::Slim)
+        .unwrap_or_else(|| panic!("no embedded slim template for m={template_m}"));
     let mut cfg = LigeritoSecurityConfig::from_toml_str(slim).expect("slim template validates");
-    let log_n = cfg.log_n;
+    let log_n = m
+        .checked_sub(LOG_PACKING)
+        .expect("custom UDR witness has at least LOG_PACKING variables");
+    cfg.m = m;
+    cfg.log_n = log_n;
+    cfg.analysis_version = "udr_maximal_radius_with_fold_grinding".into();
     assert!(k0 >= 1 && k0 < log_n, "custom initial_k out of range");
     if let Some(bits) = target_bits {
         cfg.target_security_bits = bits;
@@ -695,7 +728,10 @@ fn udr_config_impl(
     let mut n_run = log_n - k0;
     let mut rate = r0;
     while n_run > 5 {
-        let kr = 3.min(n_run);
+        // Leave a five-variable final block.  For m=20/21 the last fold is
+        // only one/two variables; blindly taking three would leave a codeword
+        // too short for the 128-bit query count.
+        let kr = 3.min(n_run - 5);
         rate += 1;
         shapes.push((n_run - kr, kr, kr, rate));
         n_run -= kr;
@@ -2794,7 +2830,7 @@ pub fn verify_mle_eval_ext_ligerito<R>(
 where
     R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
 {
-    use crate::ext_proj::{ProjArith, projected_row_weights, sample_proj_point, sample_proj_prime};
+    use crate::ext_proj::{projected_row_weights, sample_proj_point, sample_proj_prime, ProjArith};
     use crate::pcs::{mod_q_chunk_width, mod_q_num_chunks, recombine_read_off};
     let ext_deg = weight_coords.len();
     assert!(
@@ -4267,7 +4303,7 @@ fn tap_collapse_combined_cols(
     e_col: &[crate::pcs::Fq],
     plan: &[(Vec<usize>, usize)],
 ) -> Vec<Vec<crate::pcs::Fq>> {
-    use crate::pcs::{Fq, fq_add, fq_mul, xor_canonical_cols};
+    use crate::pcs::{fq_add, fq_mul, xor_canonical_cols, Fq};
     let mut acc: Vec<Vec<u128>> = plan.iter().map(|_| vec![0u128; e_col.len()]).collect();
     for (cl, &gam) in claims.iter().zip(gammas.iter()) {
         let branches = tap_collapse_col_weights(layout, &cl.op, e_col);
@@ -4302,7 +4338,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_collapse(
     alpha: Gf,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigModQXorProof {
-    use crate::pcs::{FQ_BITS, FQ_MOD, fq_challenge, virtual_xor_params, xor_canonical_cols};
+    use crate::pcs::{fq_challenge, virtual_xor_params, xor_canonical_cols, FQ_BITS, FQ_MOD};
     use crate::taps::{assert_tap_layout, assert_tap_op};
     assert_tap_layout(layout);
     assert!(!claims.is_empty(), "need at least one claim");
@@ -4369,8 +4405,8 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_collapse(
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
     use crate::pcs::{
-        FQ_BITS, FQ_MOD, Fq, fq_add, fq_challenge, fq_mul, mod_q_chunk_width, mod_q_num_chunks,
-        recombine_read_off, virtual_xor_params, xor_canonical_cols,
+        fq_add, fq_challenge, fq_mul, mod_q_chunk_width, mod_q_num_chunks, recombine_read_off,
+        virtual_xor_params, xor_canonical_cols, Fq, FQ_BITS, FQ_MOD,
     };
     if layout.p.word_bits != 1
         || layout.x_fold_extra >= layout.p.s
@@ -4602,7 +4638,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_composed(
     alpha: Gf,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigModQTapProof {
-    use crate::pcs::{FQ_BITS, FQ_MOD, fq_challenge, virtual_xor_params};
+    use crate::pcs::{fq_challenge, virtual_xor_params, FQ_BITS, FQ_MOD};
     use crate::taps::{assert_tap, assert_tap_layout, assert_tap_op, tap_canonical_ops};
     assert_tap_layout(layout);
     assert!(!claims.is_empty(), "need at least one claim");
@@ -4667,8 +4703,8 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_composed(
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
     use crate::pcs::{
-        FQ_BITS, FQ_MOD, Fq, fq_add, fq_challenge, fq_mul, mod_q_chunk_width, mod_q_num_chunks,
-        recombine_read_off, virtual_xor_params,
+        fq_add, fq_challenge, fq_mul, mod_q_chunk_width, mod_q_num_chunks, recombine_read_off,
+        virtual_xor_params, Fq, FQ_BITS, FQ_MOD,
     };
     use crate::taps::tap_canonical_ops;
     if layout.p.word_bits != 1
@@ -4898,7 +4934,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_multiweight(
     alpha: Gf,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigModQXorProof {
-    use crate::pcs::{FQ_BITS, FQ_MOD, fq_challenge, virtual_xor_params, xor_canonical_cols};
+    use crate::pcs::{fq_challenge, virtual_xor_params, xor_canonical_cols, FQ_BITS, FQ_MOD};
     use crate::taps::{assert_tap_layout, assert_tap_op};
     assert_tap_layout(layout);
     assert!(!claims.is_empty(), "need at least one claim");
@@ -4957,8 +4993,8 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_multiweight(
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
     use crate::pcs::{
-        FQ_BITS, FQ_MOD, Fq, fq_add, fq_challenge, fq_mul, mod_q_chunk_width, mod_q_num_chunks,
-        recombine_read_off, virtual_xor_params, xor_canonical_cols,
+        fq_add, fq_challenge, fq_mul, mod_q_chunk_width, mod_q_num_chunks, recombine_read_off,
+        virtual_xor_params, xor_canonical_cols, Fq, FQ_BITS, FQ_MOD,
     };
     if layout.p.word_bits != 1
         || layout.x_fold_extra >= layout.p.s
@@ -5746,7 +5782,7 @@ fn absorb_tap_family_statement(
 /// Validate a stream-family statement (shared prover asserts / verifier
 /// shape checks).
 fn tap_family_check(layout: &ShaF2Layout, clusters: &[TapFamilyCluster<'_>]) -> bool {
-    use crate::pcs::{FQ_MOD, virtual_xor_params};
+    use crate::pcs::{virtual_xor_params, FQ_MOD};
     let p_x = virtual_xor_params(layout);
     if clusters.is_empty()
         || layout.p.word_bits != 1
@@ -5856,8 +5892,8 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
 ) -> IntEvalRsLigTapFamilyProof {
     use crate::merged_forest::prove_merged_forest;
     use crate::pcs::{
-        FQ_BITS, fq_challenge, mod_q_chunk_width, mod_q_num_chunks, rlc_case_pow_table,
-        rlc_case_weights, rlc_chunk_case_weights, rlc_tau_tables, virtual_xor_params,
+        fq_challenge, mod_q_chunk_width, mod_q_num_chunks, rlc_case_pow_table, rlc_case_weights,
+        rlc_chunk_case_weights, rlc_tau_tables, virtual_xor_params, FQ_BITS,
     };
     use crate::piop::sumcheck::multi_degree::{MultiDegreeSumcheck, MultiDegreeSumcheckGroup};
     use crate::poly::mle::DenseMultilinearExtension;
@@ -6235,9 +6271,9 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_family(
 ) -> Result<(), FlockRsError> {
     use crate::merged_forest::verify_merged_forest;
     use crate::pcs::{
-        FQ_BITS, FixedBasePow, Fq, fq_add, fq_challenge, fq_mul, is_generator, mod_q_chunk_width,
-        mod_q_num_chunks, recombine_read_off, rlc_case_pow_table, rlc_case_weights,
-        rlc_chunk_case_weights, rlc_tau_tables, virtual_xor_params,
+        fq_add, fq_challenge, fq_mul, is_generator, mod_q_chunk_width, mod_q_num_chunks,
+        recombine_read_off, rlc_case_pow_table, rlc_case_weights, rlc_chunk_case_weights,
+        rlc_tau_tables, virtual_xor_params, FixedBasePow, Fq, FQ_BITS,
     };
     use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheck;
     use crate::poly::utils::build_eq_x_r_vec;
@@ -6959,7 +6995,7 @@ fn rlc_prove_eqf_level(
     specs: &[RlcEqfSpec<'_>],
 ) -> (RlcDischargeEqf, Vec<Gf>, Vec<(Gf, Gf)>) {
     use crate::piop::sumcheck::eq_factored::{
-        EqInnerGroupMixed, GroupBufs, prove_eq_inner_sumcheck_mixed,
+        prove_eq_inner_sumcheck_mixed, EqInnerGroupMixed, GroupBufs,
     };
     use crate::poly::utils::build_eq_x_r_vec;
     let cols = p_x.cols();
@@ -7187,8 +7223,8 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family(
     pc: &LigProverConfig,
 ) -> IntEvalRsLigRlcFamilyProof {
     use crate::pcs::{
-        FQ_BITS, FQ_MOD, fq_challenge, mod_q_chunk_width, mod_q_num_chunks, rlc_case_weights,
-        rlc_chunk_case_weights, virtual_xor_params,
+        fq_challenge, mod_q_chunk_width, mod_q_num_chunks, rlc_case_weights,
+        rlc_chunk_case_weights, virtual_xor_params, FQ_BITS, FQ_MOD,
     };
 
     let p = &layout.p;
@@ -7296,8 +7332,8 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
     pc: &LigProverConfig,
 ) -> IntEvalRsLigRlcFamilyProof {
     use crate::pcs::{
-        FQ_BITS, FQ_MOD, fq_challenge, mod_q_chunk_width, mod_q_num_chunks,
-        rlc_case_weights_shared_point, rlc_chunk_case_weights, rlc_gamma_cases, virtual_xor_params,
+        fq_challenge, mod_q_chunk_width, mod_q_num_chunks, rlc_case_weights_shared_point,
+        rlc_chunk_case_weights, rlc_gamma_cases, virtual_xor_params, FQ_BITS, FQ_MOD,
     };
 
     let p = &layout.p;
@@ -7943,8 +7979,8 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family(
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
     use crate::pcs::{
-        FQ_BITS, FQ_MOD, Fq, fq_challenge, mod_q_chunk_width, mod_q_num_chunks, rlc_case_weights,
-        rlc_chunk_case_weights, virtual_xor_params,
+        fq_challenge, mod_q_chunk_width, mod_q_num_chunks, rlc_case_weights,
+        rlc_chunk_case_weights, virtual_xor_params, Fq, FQ_BITS, FQ_MOD,
     };
 
     let p = &layout.p;
@@ -8043,8 +8079,8 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
     use crate::pcs::{
-        FQ_BITS, FQ_MOD, Fq, fq_challenge, mod_q_chunk_width, mod_q_num_chunks,
-        rlc_case_weights_shared_point, rlc_chunk_case_weights, rlc_gamma_cases, virtual_xor_params,
+        fq_challenge, mod_q_chunk_width, mod_q_num_chunks, rlc_case_weights_shared_point,
+        rlc_chunk_case_weights, rlc_gamma_cases, virtual_xor_params, Fq, FQ_BITS, FQ_MOD,
     };
 
     let p = &layout.p;
@@ -8152,7 +8188,7 @@ fn verify_rlc_family_core(
         &[(&proof.rings, &r_his)],
         vc,
     )?;
-    use crate::pcs::{Fq, mod_q_chunk_width, recombine_read_off, virtual_xor_params};
+    use crate::pcs::{mod_q_chunk_width, recombine_read_off, virtual_xor_params, Fq};
     let p_x = virtual_xor_params(layout);
     let c_w_x = mod_q_chunk_width(&p_x);
     let lch_x = case_chunks.len();
@@ -8193,8 +8229,8 @@ fn verify_rlc_family_front(
 ) -> Result<Vec<Vec<Gf>>, FlockRsError> {
     use crate::merged_forest::verify_merged_forest;
     use crate::pcs::{
-        FixedBasePow, is_generator, mod_q_chunk_width, rlc_case_pow_table, rlc_tau_tables,
-        virtual_xor_params,
+        is_generator, mod_q_chunk_width, rlc_case_pow_table, rlc_tau_tables, virtual_xor_params,
+        FixedBasePow,
     };
     use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheck;
     use crate::poly::utils::build_eq_x_r_vec;
@@ -8624,8 +8660,8 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_families_shared_point(
     pc: &LigProverConfig,
 ) -> IntEvalRsLigRlcFamiliesProof {
     use crate::pcs::{
-        FQ_BITS, FQ_MOD, fq_challenge, mod_q_chunk_width, mod_q_num_chunks,
-        rlc_case_weights_shared_point, rlc_chunk_case_weights, rlc_gamma_cases, virtual_xor_params,
+        fq_challenge, mod_q_chunk_width, mod_q_num_chunks, rlc_case_weights_shared_point,
+        rlc_chunk_case_weights, rlc_gamma_cases, virtual_xor_params, FQ_BITS, FQ_MOD,
     };
     let p = &layout.p;
     assert_eq!(
@@ -8709,8 +8745,9 @@ pub fn verify_mle_eval_mod_q_ligerito_rlc_families_shared_point(
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
     use crate::pcs::{
-        FQ_BITS, FQ_MOD, Fq, fq_challenge, mod_q_chunk_width, mod_q_num_chunks, recombine_read_off,
+        fq_challenge, mod_q_chunk_width, mod_q_num_chunks, recombine_read_off,
         rlc_case_weights_shared_point, rlc_chunk_case_weights, rlc_gamma_cases, virtual_xor_params,
+        Fq, FQ_BITS, FQ_MOD,
     };
     let p = &layout.p;
     let p_x = virtual_xor_params(layout);
@@ -9396,7 +9433,9 @@ fn virt_id_fast() -> bool {
 
 /// Digest-absorbs the virtual opening's complete statement before any
 /// challenge is drawn: commitment root and geometry, both cell shapes,
-/// the map digest, the claimed row weights, `q_bits`, and `α`.
+/// the map digest, the claimed row weights, the full modulus `q`, `q_bits`,
+/// and `α`.
+#[allow(clippy::too_many_arguments)]
 fn absorb_virtual_statement<M>(
     transcript: &mut impl Transcript,
     commitment: &Commitment,
@@ -9404,6 +9443,7 @@ fn absorb_virtual_statement<M>(
     p_f: &IntEvalParams,
     map: &M,
     row_weights_q: &[u128],
+    q: u128,
     q_bits: usize,
     alpha: Gf,
 ) -> BoundModQStatement
@@ -9411,9 +9451,10 @@ where
     M: crate::f2map::VirtualMap,
 {
     let mut hash = blake3::Hasher::new();
-    // v2: the dual-basis batching protocol (h_i message + ρ-batched
-    // Ligerito call) replaced the bridge sumcheck + point opening.
-    hash.update(b"f2z/mod-q-virtual-statement/v2");
+    // v3 additionally binds the full runtime modulus rather than only its
+    // bit length.  Distinct primes with one bit length must never share a
+    // subprotocol statement.
+    hash.update(b"f2z/mod-q-virtual-statement/v3");
     hash.update(&commitment.root);
     for v in [
         commitment.params.m,
@@ -9430,6 +9471,7 @@ where
     ] {
         hash.update(&(v as u64).to_le_bytes());
     }
+    hash.update(&q.to_le_bytes());
     hash.update(&map.digest());
     for w in row_weights_q {
         hash.update(&w.to_le_bytes());
@@ -9590,8 +9632,7 @@ where
                     continue;
                 }
                 wits[fill] = *weight.words();
-                vals[fill] =
-                    f128_to_gf(p_msg[column >> LOG_PACKING]) * a_cols[column & 127];
+                vals[fill] = f128_to_gf(p_msg[column >> LOG_PACKING]) * a_cols[column & 127];
                 fill += 1;
                 if fill == 16 {
                     hs_scatter_block16(&mut hs, &wits, &vals);
@@ -9674,6 +9715,78 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual<M>(
 where
     M: crate::f2map::VirtualMap,
 {
+    prove_mle_eval_mod_q_ligerito_virtual_with_modulus(
+        transcript,
+        hint_f,
+        h_rows,
+        p_h,
+        p_f,
+        map,
+        row_weights_q,
+        crate::pcs::FQ_MOD,
+        q_bits,
+        alpha,
+        pc,
+    )
+}
+
+/// Runtime-prime form of [`prove_mle_eval_mod_q_ligerito_virtual`].
+///
+/// `q` is transcript-derived by the statement-owning protocol.  It is bound
+/// into this subprotocol's statement in full; `q_bits` controls chunk geometry
+/// and must be the actual bit length of `q`.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub fn prove_mle_eval_mod_q_ligerito_virtual_runtime<M>(
+    transcript: &mut (impl Transcript + Send),
+    hint_f: &FlockCommitHint,
+    h_rows: &[Vec<u64>],
+    p_h: &IntEvalParams,
+    p_f: &IntEvalParams,
+    map: &M,
+    row_weights_q: &[u128],
+    q: u128,
+    q_bits: usize,
+    alpha: Gf,
+    pc: &LigProverConfig,
+) -> Result<IntEvalRsLigVirtProof, FlockRsError>
+where
+    M: crate::f2map::VirtualMap,
+{
+    validate_runtime_q(q, q_bits, row_weights_q)?;
+    Ok(prove_mle_eval_mod_q_ligerito_virtual_with_modulus(
+        transcript,
+        hint_f,
+        h_rows,
+        p_h,
+        p_f,
+        map,
+        row_weights_q,
+        q,
+        q_bits,
+        alpha,
+        pc,
+    ))
+}
+
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+fn prove_mle_eval_mod_q_ligerito_virtual_with_modulus<M>(
+    transcript: &mut (impl Transcript + Send),
+    hint_f: &FlockCommitHint,
+    h_rows: &[Vec<u64>],
+    p_h: &IntEvalParams,
+    p_f: &IntEvalParams,
+    map: &M,
+    row_weights_q: &[u128],
+    q: u128,
+    q_bits: usize,
+    alpha: Gf,
+    pc: &LigProverConfig,
+) -> IntEvalRsLigVirtProof
+where
+    M: crate::f2map::VirtualMap,
+{
     use crate::poly::utils::build_eq_x_r_vec;
 
     let (h_geometry, _, _) = checked_mod_q_geometry(p_h, q_bits)
@@ -9684,7 +9797,10 @@ where
         h_geometry.row_bit_vars >= LOG_PACKING,
         "h rows must contain at least one 128-bit pack"
     );
-    assert!(p_h.s >= 1, "virtual opening requires at least two h columns");
+    assert!(
+        p_h.s >= 1,
+        "virtual opening requires at least two h columns"
+    );
     let h_cells = h_geometry
         .rows
         .checked_mul(p_h.word_bits)
@@ -9725,6 +9841,7 @@ where
             p_f,
             map,
             row_weights_q,
+            q,
             q_bits,
             alpha,
         )
@@ -9861,7 +9978,94 @@ where
     R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
     M: crate::f2map::VirtualMap,
 {
-    use crate::pcs::recombine_read_off;
+    verify_mle_eval_mod_q_ligerito_virtual_with_read_off(
+        transcript,
+        commitment_f,
+        proof,
+        p_h,
+        p_f,
+        map,
+        row_weights_q,
+        crate::pcs::FQ_MOD,
+        q_bits,
+        alpha,
+        vc,
+        col_weights.len(),
+        |v, c_w, lch| crate::pcs::recombine_read_off(p_h, v, 0, col_weights, c_w, lch) == claimed,
+    )
+}
+
+/// Runtime-prime verifier for the virtual mod-`q` opening.
+///
+/// All row/column weights and the claim are canonical integers in `[0, q)`.
+/// Recombination is performed by the same [`crate::ext_proj::ProjArith`]
+/// context as the SHA integer-to-field projection, never by the legacy fixed
+/// `Fq` operators.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub fn verify_mle_eval_mod_q_ligerito_virtual_runtime<M>(
+    transcript: &mut (impl Transcript + Send),
+    commitment_f: &Commitment,
+    proof: &IntEvalRsLigVirtProof,
+    p_h: &IntEvalParams,
+    p_f: &IntEvalParams,
+    map: &M,
+    row_weights_q: &[u128],
+    col_weights_q: &[u128],
+    alpha: Gf,
+    claimed_q: u128,
+    q: u128,
+    q_bits: usize,
+    vc: &LigVerifierConfig,
+) -> Result<(), FlockRsError>
+where
+    M: crate::f2map::VirtualMap,
+{
+    validate_runtime_q(q, q_bits, row_weights_q)?;
+    if claimed_q >= q || col_weights_q.iter().any(|&weight| weight >= q) {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+    let arithmetic = crate::ext_proj::ProjArith::new(q);
+    verify_mle_eval_mod_q_ligerito_virtual_with_read_off(
+        transcript,
+        commitment_f,
+        proof,
+        p_h,
+        p_f,
+        map,
+        row_weights_q,
+        q,
+        q_bits,
+        alpha,
+        vc,
+        col_weights_q.len(),
+        |v, c_w, lch| {
+            recombine_read_off_runtime(p_h, v, col_weights_q, c_w, lch, &arithmetic) == claimed_q
+        },
+    )
+}
+
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+fn verify_mle_eval_mod_q_ligerito_virtual_with_read_off<M, C>(
+    transcript: &mut (impl Transcript + Send),
+    commitment_f: &Commitment,
+    proof: &IntEvalRsLigVirtProof,
+    p_h: &IntEvalParams,
+    p_f: &IntEvalParams,
+    map: &M,
+    row_weights_q: &[u128],
+    q: u128,
+    q_bits: usize,
+    alpha: Gf,
+    vc: &LigVerifierConfig,
+    col_weight_count: usize,
+    read_off_accepts: C,
+) -> Result<(), FlockRsError>
+where
+    M: crate::f2map::VirtualMap,
+    C: Fn(&[u128], usize, usize) -> bool,
+{
     use crate::poly::utils::build_eq_x_r_vec;
 
     let shape = || FlockRsError::RingSwitch(RsOpenError::Shape);
@@ -9884,7 +10088,7 @@ where
         || map.rows() != h_cells
         || map.cols() != f_cells
         || row_weights_q.len() != h_geometry.rows
-        || col_weights.len() != h_geometry.cols
+        || col_weight_count != h_geometry.cols
         || proof.mfs.len() != lch
         || proof.us.len() != lch
         || proof.presums.len() != lch
@@ -9904,6 +10108,7 @@ where
             p_f,
             map,
             row_weights_q,
+            q,
             q_bits,
             alpha,
         )
@@ -9939,8 +10144,7 @@ where
                 bound_statement,
             )?;
             let v_flat: Vec<u128> = us.iter().flat_map(|u| u.iter().copied()).collect();
-            let y = recombine_read_off(p_h, &v_flat, 0, col_weights, c_w, lch);
-            if y != claimed {
+            if !read_off_accepts(&v_flat, c_w, lch) {
                 return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
             }
             return Ok(());
@@ -10062,11 +10266,48 @@ where
 
     // (5) Recombine in R: claimed = Σ_c w′_c · Σ_l 2^{c_w·l}·u_c^{(l)}.
     let v_flat: Vec<u128> = us.iter().flat_map(|u| u.iter().copied()).collect();
-    let y = recombine_read_off(p_h, &v_flat, 0, col_weights, c_w, lch);
-    if y != claimed {
+    if !read_off_accepts(&v_flat, c_w, lch) {
         return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
     }
     Ok(())
+}
+
+fn validate_runtime_q(q: u128, q_bits: usize, row_weights_q: &[u128]) -> Result<(), FlockRsError> {
+    let actual_bits = (u128::BITS - q.leading_zeros()) as usize;
+    if q <= 2
+        || q & 1 == 0
+        || q >= (1_u128 << 126)
+        || q_bits != actual_bits
+        || !is_prime(Flavor::Any, &U128::from_u128(q))
+        || row_weights_q.iter().any(|&weight| weight >= q)
+    {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+    Ok(())
+}
+
+#[allow(clippy::arithmetic_side_effects)]
+fn recombine_read_off_runtime(
+    p: &IntEvalParams,
+    values: &[u128],
+    col_weights_q: &[u128],
+    chunk_width: usize,
+    chunk_count: usize,
+    arithmetic: &crate::ext_proj::ProjArith,
+) -> u128 {
+    let chunk_base = arithmetic.reduce(1_u128 << chunk_width);
+    let mut result = 0_u128;
+    for (column, &column_weight) in col_weights_q.iter().enumerate() {
+        let mut column_value = 0_u128;
+        let mut place = 1_u128;
+        for chunk in 0..chunk_count {
+            let index = (chunk << p.s) + column;
+            column_value = arithmetic.add(column_value, arithmetic.mul(place, values[index]));
+            place = arithmetic.mul(place, chunk_base);
+        }
+        result = arithmetic.add(result, arithmetic.mul(column_weight, column_value));
+    }
+    result
 }
 
 // ---------------------------------------------------------------------
@@ -10263,6 +10504,27 @@ mod tests {
         assert_eq!(LOG_PACKING, flock_core::pcs::pack::LOG_PACKING);
     }
 
+    #[test]
+    fn zinc_zero_bit_pow_nonce_is_canonical() {
+        let mut prover_transcript = Blake3Transcript::new();
+        let mut verifier_transcript = Blake3Transcript::new();
+        let prover_next = {
+            let mut challenger = ZincChallenger(&mut prover_transcript);
+            assert_eq!(challenger.grind_pow(0), 0);
+            challenger.sample_f128()
+        };
+        let verifier_next = {
+            let mut challenger = ZincChallenger(&mut verifier_transcript);
+            assert!(challenger.verify_pow(0, 0));
+            challenger.sample_f128()
+        };
+        assert_eq!(prover_next, verifier_next);
+
+        let mut malformed_transcript = Blake3Transcript::new();
+        let mut challenger = ZincChallenger(&mut malformed_transcript);
+        assert!(!challenger.verify_pow(1, 0));
+    }
+
     /// The streaming row-factored batching passes equal the cell-wise
     /// definitions (weights `W = Σ_l η_l·Mᵀ eq(pt_l)` materialized, then
     /// scanned) on a small map with empty rows and cross-row duplicate
@@ -10272,7 +10534,7 @@ mod tests {
     #[test]
     fn virtual_hs_and_a_prime_match_cellwise() {
         use crate::{
-            f2map::{PreparedVirtualMap, cell_count, cell_row_bits},
+            f2map::{cell_count, cell_row_bits, PreparedVirtualMap},
             sparse_matrix::SparseMatrix,
         };
 
@@ -10707,7 +10969,7 @@ mod tests {
 
     #[test]
     fn prepared_u32_v2_w8_roundtrips_and_binds_public_inputs() {
-        use crate::pcs::{FQ_BITS, Fq};
+        use crate::pcs::{Fq, FQ_BITS};
 
         let _env = QUAD_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let p = IntEvalParams {
@@ -10787,15 +11049,13 @@ mod tests {
         let mut wrong_cols = col_weights.clone();
         wrong_cols[0] = wrong_cols[0] + Fq::from(1_u128);
         assert!(verify(&chunks, &wrong_cols, &bridge_digest, claimed).is_err());
-        assert!(
-            verify(
-                &chunks,
-                &col_weights,
-                &bridge_digest,
-                claimed + Fq::from(1_u128),
-            )
-            .is_err()
-        );
+        assert!(verify(
+            &chunks,
+            &col_weights,
+            &bridge_digest,
+            claimed + Fq::from(1_u128),
+        )
+        .is_err());
     }
 
     /// Extension-field evaluation (paper `c:core_iop` Steps 1–3) over
@@ -11196,7 +11456,7 @@ mod tests {
     /// verifies against the un-changed verifier surface.
     #[test]
     fn mod_q_ligerito_padded_witness_trims_us() {
-        use crate::pcs::{FQ_BITS, Fq};
+        use crate::pcs::{Fq, FQ_BITS};
         let alpha = smallest_generator();
         let p = IntEvalParams {
             t: 10,
@@ -11330,7 +11590,7 @@ mod tests {
 
     // ── RLC claim-family tests (EXPERIMENTAL API) ────────────────────────
 
-    use crate::pcs::{FQ_BITS, FQ_MOD, Fq, extract_virtual_xor_rows, virtual_xor_params};
+    use crate::pcs::{extract_virtual_xor_rows, virtual_xor_params, Fq, FQ_BITS, FQ_MOD};
 
     /// Synthetic W=1 layout for family tests: 4 UAIR columns of 8 bit
     /// positions over 2^10 trace rows; t = 9, s = 6 (n = 15); the x tensor
@@ -12788,20 +13048,18 @@ mod tests {
             })
             .collect();
         let mut vt = Blake3Transcript::new();
-        assert!(
-            verify_mle_eval_mod_q_ligerito_rlc_family(
-                &mut vt,
-                &hint.commitment,
-                &rlc_proof,
-                &layout,
-                &family_cols,
-                &claims_bad,
-                &colw,
-                alpha,
-                &vc,
-            )
-            .is_err()
-        );
+        assert!(verify_mle_eval_mod_q_ligerito_rlc_family(
+            &mut vt,
+            &hint.commitment,
+            &rlc_proof,
+            &layout,
+            &family_cols,
+            &claims_bad,
+            &colw,
+            alpha,
+            &vc,
+        )
+        .is_err());
         let vx_claims_bad: Vec<VirtualXorVerifyClaim<'_, Fq>> = (0..3)
             .map(|i| VirtualXorVerifyClaim {
                 cols: &col_lists[i],
@@ -12813,19 +13071,17 @@ mod tests {
             })
             .collect();
         let mut vt = Blake3Transcript::new();
-        assert!(
-            verify_mle_eval_mod_q_ligerito_claims_only(
-                &mut vt,
-                &hint.commitment,
-                &vx_proof,
-                &layout,
-                alpha,
-                FQ_BITS,
-                &vx_claims_bad,
-                &vc,
-            )
-            .is_err()
-        );
+        assert!(verify_mle_eval_mod_q_ligerito_claims_only(
+            &mut vt,
+            &hint.commitment,
+            &vx_proof,
+            &layout,
+            alpha,
+            FQ_BITS,
+            &vx_claims_bad,
+            &vc,
+        )
+        .is_err());
     }
 
     /// The fused basis-fill + round-0 message equals the scalar `η·Φ` fill
@@ -12879,7 +13135,7 @@ mod tests {
     }
     // ── Structured-tap claim tests (EXPERIMENTAL API) ────────────────────
 
-    use crate::taps::{TapOp, extract_virtual_tap_rows};
+    use crate::taps::{extract_virtual_tap_rows, TapOp};
 
     /// W=1 tap test layout, `tw = 6` (pack cut at the column bit): 2 UAIR
     /// bit-columns over 2^14 trace rows; x tensor t' = 6, s = 8; group
@@ -12921,7 +13177,11 @@ mod tests {
 
     /// The layout's tap group width for the tests.
     fn tap_grp(layout: &ShaF2Layout) -> usize {
-        if layout.tw == 9 { 5 } else { 3 }
+        if layout.tw == 9 {
+            5
+        } else {
+            3
+        }
     }
 
     /// The j = 2, k = 6 target instance of the structured-taps prompt

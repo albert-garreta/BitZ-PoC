@@ -10,13 +10,14 @@
 use crate::{poly::mle::DenseMultilinearExtension, transcript::traits::Transcript};
 
 use super::{
-    SpartanField, absorb_field_elements,
-    matrix::{PrefixUnivariateRowFactors, make_equality_factors},
+    absorb_field_elements,
+    matrix::{make_equality_factors, PrefixUnivariateRowFactors},
     squeeze_field,
     sumcheck::{
-        OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProductReducer, SumcheckProof,
-        prove_outer_sumcheck_with_reducer,
+        prove_outer_sumcheck_with_reducer, OuterSumcheckProof, R1csProductMles, SumcheckError,
+        SumcheckProductReducer, SumcheckProof,
     },
+    SpartanField,
 };
 
 /// The known-zero univariate message preceding the cubic tail sumcheck.
@@ -950,7 +951,7 @@ const fn interpolation_denominators<const FINITE_COUNT: usize>(
 #[cfg(test)]
 mod tests {
     use crypto_primitives::{
-        FromWithConfig, PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint,
+        crypto_bigint_monty::F128, crypto_bigint_uint::Uint, FromWithConfig, PrimeField,
     };
 
     use crate::{piop::spartan::matrix::make_equality_factors, transcript::Blake3Transcript};

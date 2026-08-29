@@ -19,7 +19,7 @@ use crate::{
 
 pub use crate::sparse_matrix::SparseMatrix;
 
-use super::{SpartanField, SpartanFieldError, sumcheck::R1csProductMles};
+use super::{sumcheck::R1csProductMles, SpartanField, SpartanFieldError};
 
 /// A sparse R1CS coefficient that can act on values in `F`.
 ///
@@ -1399,7 +1399,7 @@ where
 #[cfg(test)]
 mod tests {
     use crypto_primitives::{
-        FromWithConfig, PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint,
+        crypto_bigint_monty::F128, crypto_bigint_uint::Uint, FromWithConfig, PrimeField,
     };
 
     use super::*;
@@ -1997,11 +1997,9 @@ mod tests {
         assert_eq!(parallel_boolean, sequential_boolean);
         assert_eq!(parallel_field, sequential_field);
         assert_eq!(parallel_boolean, parallel_field);
-        assert!(
-            parallel_boolean.evaluations[column_count..]
-                .iter()
-                .all(|value| <F128 as PrimeField>::is_zero(value))
-        );
+        assert!(parallel_boolean.evaluations[column_count..]
+            .iter()
+            .all(|value| <F128 as PrimeField>::is_zero(value)));
     }
 
     #[test]

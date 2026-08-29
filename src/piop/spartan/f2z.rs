@@ -14,7 +14,7 @@
 use std::sync::OnceLock;
 
 use blake3::Hasher;
-use crypto_primitives::{PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint};
+use crypto_primitives::{crypto_bigint_monty::F128, crypto_bigint_uint::Uint, PrimeField};
 use flock_core::{
     merkle::HashKind,
     pcs::{
@@ -28,13 +28,13 @@ use thiserror::Error;
 
 use crate::{
     ext_proj::ProjArith,
-    ligerito::{LOG_PACKING, packed_vars},
+    ligerito::{packed_vars, LOG_PACKING},
     ligerito_flock::{
-        FlockCommitHint, FlockRsError, IntEvalRsLigModQProof, commit_rs_ligerito_rows,
-        prove_mle_eval_mod_q_ligerito_prepared_u32_v2, sha_lig_configs,
-        verify_mle_eval_mod_q_ligerito_prepared_u32_v2,
+        commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito_prepared_u32_v2, sha_lig_configs,
+        verify_mle_eval_mod_q_ligerito_prepared_u32_v2, FlockCommitHint, FlockRsError,
+        IntEvalRsLigModQProof,
     },
-    pcs::{FQ_BITS, FQ_MOD, Fq, ProjectCanonicalU128, fq_sub},
+    pcs::{fq_sub, Fq, ProjectCanonicalU128, FQ_BITS, FQ_MOD},
     poly::{mle::DenseMultilinearExtension, univariate::binary_gf128::BinaryFieldGF128},
     transcript::traits::{GenTranscribable, Transcript},
 };
@@ -45,20 +45,20 @@ use crate::utils::cfg_iter_mut;
 use rayon::prelude::*;
 
 use super::{
-    Direct, PreparedConstraintMatrices, R1csProductMles, SpartanF2zProof, SpartanField,
     matrix::ScaledMleEvaluationClaim,
     piop::{
-        SpartanError, SpartanPiopProof, SpartanReductionStrategy,
         prove_spartan_piop_u32_native_with_strategy,
         prove_spartan_piop_u32_native_with_univariate_skip, prove_spartan_piop_with_strategy,
-        verify_spartan_proof, verify_spartan_univariate_skip_proof,
+        verify_spartan_proof, verify_spartan_univariate_skip_proof, SpartanError, SpartanPiopProof,
+        SpartanReductionStrategy,
     },
     u32_mul::{
-        U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS, U32_MUL_PRODUCT_SLOT_START, U32_MUL_X_BITS,
-        U32_MUL_X_SLOT_START, U32_MUL_Y_BITS, U32_MUL_Y_SLOT_START, U32MulError, U32MulLayout,
-        U32MulWitness, project_u32_mul_native_witness, project_u32_mul_witness,
+        project_u32_mul_native_witness, project_u32_mul_witness, U32MulError, U32MulLayout,
+        U32MulWitness, U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS, U32_MUL_PRODUCT_SLOT_START,
+        U32_MUL_X_BITS, U32_MUL_X_SLOT_START, U32_MUL_Y_BITS, U32_MUL_Y_SLOT_START,
     },
     univariate_skip::UnivariateSkipSpartanPiopProof,
+    Direct, PreparedConstraintMatrices, R1csProductMles, SpartanF2zProof, SpartanField,
 };
 
 /// Domain of the commitment-and-layout digest used as Spartan's assignment
@@ -120,8 +120,7 @@ struct PreparedU32BitifiedClaim {
 }
 
 /// Direct opening paired with the ordinary Spartan PIOP.
-pub type U32MulSpartanF2zProof =
-    SpartanF2zProof<SpartanPiopProof<SpartanF2zField>, Direct>;
+pub type U32MulSpartanF2zProof = SpartanF2zProof<SpartanPiopProof<SpartanF2zField>, Direct>;
 
 /// Direct opening paired with Spartan's known-zero univariate prefix skip.
 pub type U32MulUnivariateSkipSpartanF2zProof =
@@ -174,7 +173,6 @@ pub enum SpartanF2zError {
 
     #[error("a host length does not fit the canonical transcript encoding")]
     BindingEncodingOverflow,
-
 }
 
 /// Constructs the fixed `q = 2^100 - 15` runtime field configuration.
@@ -1310,7 +1308,7 @@ mod tests {
 
     use super::*;
     use crate::pcs::{eq_le_table_fq, fq_add};
-    use crate::piop::spartan::u32_mul::{U32MulF2zWidth, U32MulWitness, prepare_u32_mul_relation};
+    use crate::piop::spartan::u32_mul::{prepare_u32_mul_relation, U32MulF2zWidth, U32MulWitness};
     use crate::transcript::Blake3Transcript;
 
     fn terminal_claim(

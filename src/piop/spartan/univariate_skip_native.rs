@@ -12,7 +12,7 @@
 use rayon::prelude::*;
 
 use crypto_bigint::subtle::{Choice, ConditionallySelectable};
-use crypto_primitives::{FromWithConfig, PrimeField, crypto_bigint_monty::MontyField};
+use crypto_primitives::{crypto_bigint_monty::MontyField, FromWithConfig, PrimeField};
 
 use crate::poly::mle::DenseMultilinearExtension;
 
@@ -803,7 +803,7 @@ const TOP_DIFFERENCE_K4: [i64; 16] = [
 #[cfg(test)]
 mod tests {
     use crypto_primitives::{
-        FromWithConfig, PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint,
+        crypto_bigint_monty::F128, crypto_bigint_uint::Uint, FromWithConfig, PrimeField,
     };
 
     use super::*;

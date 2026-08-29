@@ -1,7 +1,7 @@
 //! Composition of Spartan's outer and inner sumchecks.
 
 use blake3::Hasher;
-use crypto_primitives::{FromWithConfig, PrimeField, crypto_bigint_monty::MontyField};
+use crypto_primitives::{crypto_bigint_monty::MontyField, FromWithConfig, PrimeField};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use thiserror::Error;
@@ -9,31 +9,32 @@ use thiserror::Error;
 use crate::{poly::mle::DenseMultilinearExtension, transcript::traits::Transcript};
 
 use super::{
-    SpartanField, absorb_spartan_message,
+    absorb_spartan_message,
     matrix::{
-        MleClaimError, PreparedConstraintMatrices, ScaledMleEvaluationClaim,
-        SpartanMatrixCoefficient, SpartanMatrixError, make_equality_factors,
+        make_equality_factors, MleClaimError, PreparedConstraintMatrices, ScaledMleEvaluationClaim,
+        SpartanMatrixCoefficient, SpartanMatrixError,
     },
     squeeze_field,
     sumcheck::{
+        prove_inner_sumcheck_u32_native_with_reducer, prove_inner_sumcheck_with_reducer,
+        prove_outer_sumcheck_u32_native_with_reducer, prove_outer_sumcheck_with_reducer,
         CryptoBigintSumcheckReducer, ImmediateSumcheckReducer, InnerSumcheckOutput,
         OptimizedSumcheckReducer, OuterSumcheckProof, R1csProductMles, SumcheckError,
         SumcheckLinearReducer, SumcheckProductReducer, SumcheckProof,
-        prove_inner_sumcheck_u32_native_with_reducer, prove_inner_sumcheck_with_reducer,
-        prove_outer_sumcheck_u32_native_with_reducer, prove_outer_sumcheck_with_reducer,
     },
     univariate_skip::{
-        PrefixUnivariateRowBinding, UnivariateSkipOuterSumcheckProof, UnivariateSkipProof,
-        UnivariateSkipSpartanPiopProof, prove_univariate_skip_outer_sumcheck_with_reducer,
+        prove_univariate_skip_outer_sumcheck_with_reducer, PrefixUnivariateRowBinding,
+        UnivariateSkipOuterSumcheckProof, UnivariateSkipProof, UnivariateSkipSpartanPiopProof,
     },
     univariate_skip_native::{
         compute_u32_native_skip_message_validated, fold_u32_native_prefix_validated,
     },
+    SpartanField,
 };
 
 #[cfg(any(test, feature = "bench-internals"))]
 use super::sumcheck::{
-    FieldCoefficientPolicy, NativeWitnessFoldPolicy, prove_inner_sumcheck_u32_native_with_policy,
+    prove_inner_sumcheck_u32_native_with_policy, FieldCoefficientPolicy, NativeWitnessFoldPolicy,
 };
 
 /// Domain separator for the native Spartan PIOP transcript.
@@ -1439,19 +1440,19 @@ where
 #[cfg(test)]
 mod tests {
     use crypto_primitives::{
-        FromWithConfig, PrimeField,
         crypto_bigint_monty::{F128, F192},
         crypto_bigint_uint::Uint,
+        FromWithConfig, PrimeField,
     };
 
-    use crate::transcript::{Blake3Transcript, traits::Transcript};
+    use crate::transcript::{traits::Transcript, Blake3Transcript};
 
     use super::*;
     use crate::piop::spartan::matrix::{
-        ConstraintMatrices, SparseMatrix, build_assignment_mle, build_product_mles,
+        build_assignment_mle, build_product_mles, ConstraintMatrices, SparseMatrix,
     };
     use crate::piop::spartan::u32_mul::{
-        U32MulWitness, prepare_u32_mul_relation, project_u32_mul_native_witness,
+        prepare_u32_mul_relation, project_u32_mul_native_witness, U32MulWitness,
     };
 
     const Q100: u128 = (1_u128 << 100) - 15;
@@ -1526,12 +1527,11 @@ mod tests {
         )
         .unwrap();
         let cz = multiply(&c, &assignment_values, config);
-        assert!(
-            az.iter()
-                .zip(&bz)
-                .zip(&cz)
-                .all(|((az, bz), cz)| az.clone() * bz == *cz)
-        );
+        assert!(az
+            .iter()
+            .zip(&bz)
+            .zip(&cz)
+            .all(|((az, bz), cz)| az.clone() * bz == *cz));
 
         let prepared =
             PreparedConstraintMatrices::new(ConstraintMatrices::new(a, b, c).unwrap(), config)
@@ -1955,27 +1955,23 @@ mod tests {
 
         let mut tampered_infinity = proof.clone();
         tampered_infinity.outer.skip.q_at_infinity += &one;
-        assert!(
-            verify_spartan_univariate_skip_proof(
-                &mut Blake3Transcript::new(),
-                &matrices,
-                &assignment_binding,
-                &tampered_infinity,
-            )
-            .is_err()
-        );
+        assert!(verify_spartan_univariate_skip_proof(
+            &mut Blake3Transcript::new(),
+            &matrices,
+            &assignment_binding,
+            &tampered_infinity,
+        )
+        .is_err());
 
         let mut tampered_tail = proof.clone();
         tampered_tail.outer.tail.sumcheck.round_polynomials[0][0] += &one;
-        assert!(
-            verify_spartan_univariate_skip_proof(
-                &mut Blake3Transcript::new(),
-                &matrices,
-                &assignment_binding,
-                &tampered_tail,
-            )
-            .is_err()
-        );
+        assert!(verify_spartan_univariate_skip_proof(
+            &mut Blake3Transcript::new(),
+            &matrices,
+            &assignment_binding,
+            &tampered_tail,
+        )
+        .is_err());
 
         for terminal in 0..3 {
             let mut tampered_terminal = proof.clone();
@@ -2128,17 +2124,15 @@ mod tests {
         for skip_vars in [0, 4, 5] {
             let mut actual = Blake3Transcript::new();
             let mut untouched = actual.clone();
-            assert!(
-                prove_spartan_piop_with_univariate_skip(
-                    &mut actual,
-                    &matrices,
-                    &assignment_binding,
-                    products.clone(),
-                    assignment.clone(),
-                    skip_vars,
-                )
-                .is_err()
-            );
+            assert!(prove_spartan_piop_with_univariate_skip(
+                &mut actual,
+                &matrices,
+                &assignment_binding,
+                products.clone(),
+                assignment.clone(),
+                skip_vars,
+            )
+            .is_err());
             assert_eq!(
                 actual.get_challenge::<u128>(),
                 untouched.get_challenge::<u128>()
@@ -2464,28 +2458,24 @@ mod tests {
         let mut tampered_proof = proof.clone();
         tampered_proof.outer.sumcheck.round_polynomials[0][0] += &F128::one_with_cfg(&config);
         let mut verifier_transcript = Blake3Transcript::new();
-        assert!(
-            verify_spartan_proof(
-                &mut verifier_transcript,
-                &matrices,
-                &assignment_binding,
-                &tampered_proof,
-            )
-            .is_err()
-        );
+        assert!(verify_spartan_proof(
+            &mut verifier_transcript,
+            &matrices,
+            &assignment_binding,
+            &tampered_proof,
+        )
+        .is_err());
 
         let mut tampered_terminal = proof.clone();
         tampered_terminal.outer.az_mle_claim += &F128::one_with_cfg(&config);
         let mut verifier_transcript = Blake3Transcript::new();
-        assert!(
-            verify_spartan_proof(
-                &mut verifier_transcript,
-                &matrices,
-                &assignment_binding,
-                &tampered_terminal,
-            )
-            .is_err()
-        );
+        assert!(verify_spartan_proof(
+            &mut verifier_transcript,
+            &matrices,
+            &assignment_binding,
+            &tampered_terminal,
+        )
+        .is_err());
 
         let foreign_config = self::config((1_u128 << 127) - 1);
         let mut foreign_proof = proof.clone();
@@ -2510,16 +2500,14 @@ mod tests {
         let mut tampered_assignment = assignment;
         tampered_assignment.evaluations[1] += &F128::one_with_cfg(&config);
         let mut verifier_transcript = Blake3Transcript::new();
-        assert!(
-            verify_spartan_with_mle_claim(
-                &mut verifier_transcript,
-                &matrices,
-                &proof,
-                &claim,
-                &tampered_assignment,
-            )
-            .is_err()
-        );
+        assert!(verify_spartan_with_mle_claim(
+            &mut verifier_transcript,
+            &matrices,
+            &proof,
+            &claim,
+            &tampered_assignment,
+        )
+        .is_err());
     }
 
     #[test]
