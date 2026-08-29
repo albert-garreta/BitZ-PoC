@@ -7,14 +7,15 @@ mod witness;
 
 pub use constraints::{
     prepare_sha256_compression_batch, prepare_sha256_compression_batch_integer,
-    PreparedSha256CompressionBatch, Sha256ConstraintError, SHA256_CONSTRAINTS,
-    SHA256_CONSTRAINT_LOCAL_VARS, SHA256_CONSTRAINT_STRIDE, SHA256_F_BAR_LIVE_BITS,
-    SHA256_F_LIVE_BITS, SHA256_F_LOCAL_VARS, SHA256_F_STRIDE, SHA256_H_BAR_LIVE_BITS,
-    SHA256_H_LOCAL_VARS, SHA256_H_STRIDE,
+    sha256_assignment_params, PreparedSha256CompressionBatch, Sha256ConstraintError,
+    SHA256_CONSTRAINTS, SHA256_CONSTRAINT_LOCAL_VARS, SHA256_CONSTRAINT_STRIDE,
+    SHA256_F_BAR_LIVE_BITS, SHA256_F_LIVE_BITS, SHA256_F_LOCAL_VARS, SHA256_F_STRIDE,
+    SHA256_H_BAR_LIVE_BITS, SHA256_H_LOCAL_VARS, SHA256_H_STRIDE,
 };
 pub use prime::{
-    sample_sha256_mod_q_context, Sha256ModQContext, Sha256PrimeError, Sha256PrimeProfile,
-    SHA256_COMMITMENT_FIELD_BITS, SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS,
+    sample_sha256_mod_q_context, sha256_prime_interval_bits, Sha256ModQContext, Sha256PrimeError,
+    Sha256PrimeProfile, SHA256_COMMITMENT_FIELD_BITS, SHA256_MAX_LOG_COMPRESSIONS,
+    SHA256_MIN_LOG_COMPRESSIONS,
 };
 pub use proof::{
     commit_sha256_compression_witness, commit_sha256_compression_witness_with_config,

@@ -194,7 +194,7 @@ pub fn generate_sha256_compression_witnesses_exact(
         inputs.iter().map(generate_one).collect::<Result<_, _>>()?;
 
     let source_rows = pack_source_rows(&shards);
-    let assignment_rows = pack_derived_rows(&shards);
+    let assignment_rows = pack_derived_rows(&shards, p_h);
     let outputs = shards.iter().map(|shard| shard.output).collect();
     let exact_products = flatten_exact_products(shards);
 
@@ -229,12 +229,17 @@ fn validate_geometry(
     p_f: &IntEvalParams,
     p_h: &IntEvalParams,
 ) -> Result<(), Sha256WitnessError> {
+    let log_compressions = instances.trailing_zeros() as usize;
+    // The assignment split may cap its folded side below the instance count
+    // (`p_h.t <= k`, leftover instance bits on the read-off side) — see
+    // `sha256_assignment_params`. The flat assignment vector is unchanged;
+    // only the row slicing below depends on the split.
     if instances == 0
         || !instances.is_power_of_two()
         || p_f.rows() != instances
-        || p_h.rows() != instances
+        || p_h.t > log_compressions
+        || p_h.s != SHA256_H_LOCAL_VARS + (log_compressions - p_h.t)
         || p_f.s != SHA256_F_LOCAL_VARS
-        || p_h.s != SHA256_H_LOCAL_VARS
         || p_f.word_bits != 1
         || p_h.word_bits != 1
     {
@@ -303,12 +308,37 @@ fn pack_source_rows(shards: &[CompressionShard]) -> Vec<Vec<u64>> {
     rows
 }
 
-fn pack_derived_rows(shards: &[CompressionShard]) -> Vec<Vec<u64>> {
-    let words_per_row = shards.len().div_ceil(64);
-    let mut rows = vec![vec![0u64; words_per_row]; SHA256_H_STRIDE];
-    transpose_witness_rows(shards, &mut rows, SHA256_H_BAR_LIVE_BITS, 0, |shard| {
-        &shard.h_bar
-    });
+fn pack_derived_rows(shards: &[CompressionShard], p_h: &IntEvalParams) -> Vec<Vec<u64>> {
+    // Row slicing under a capped fold (`2^t`-bit rows, `t <= k`): flat
+    // assignment index `local·2^k + inst` becomes row
+    // `local·R + (inst >> t)`, bit `inst & (2^t - 1)`, with
+    // `R = 2^{k-t}` row blocks per local coordinate. `R = 1` is the
+    // historical layout bit-for-bit.
+    let repetitions = shards.len() / p_h.rows();
+    let row_bits = p_h.rows();
+    let mut rows = vec![vec![0u64; row_bits.div_ceil(64)]; SHA256_H_STRIDE * repetitions];
+    if repetitions > 1 && row_bits < 64 {
+        // Sub-word row slicing (test-scale splits only): place bits one at
+        // a time — the 64-lane transpose below assumes whole-word rows.
+        for (instance, shard) in shards.iter().enumerate() {
+            let (block, bit) = (instance / row_bits, instance % row_bits);
+            let words = shard.h_bar.words();
+            for local in 0..SHA256_H_BAR_LIVE_BITS {
+                if words[local >> 6] >> (local & 63) & 1 == 1 {
+                    rows[local * repetitions + block][bit >> 6] |= 1u64 << (bit & 63);
+                }
+            }
+        }
+        return rows;
+    }
+    transpose_witness_rows_sliced(
+        shards,
+        &mut rows,
+        SHA256_H_BAR_LIVE_BITS,
+        0,
+        repetitions,
+        |shard| &shard.h_bar,
+    );
     rows
 }
 
@@ -319,12 +349,34 @@ fn transpose_witness_rows(
     output_offset: usize,
     witness: impl Fn(&CompressionShard) -> &PackedWitness,
 ) {
+    transpose_witness_rows_sliced(shards, rows, live_bits, output_offset, 1, witness);
+}
+
+/// [`transpose_witness_rows`] with each witness coordinate spread over
+/// `repetitions` consecutive output rows of `instances / repetitions` bits
+/// each (the capped-fold assignment slicing). `repetitions = 1` is the
+/// whole-instance-range layout. Requires whole-word rows
+/// (`instances / repetitions` a multiple of 64) when `repetitions > 1`.
+fn transpose_witness_rows_sliced(
+    shards: &[CompressionShard],
+    rows: &mut [Vec<u64>],
+    live_bits: usize,
+    output_offset: usize,
+    repetitions: usize,
+    witness: impl Fn(&CompressionShard) -> &PackedWitness,
+) {
+    let words_per_row = shards.len() / repetitions / 64;
     // Each group owns one word in every output row. A range loop makes that
     // intentionally strided 64x64 transpose explicit.
     #[allow(clippy::needless_range_loop)]
     for group in 0..shards.len().div_ceil(64) {
         let first_instance = group * 64;
         let active = (shards.len() - first_instance).min(64);
+        let (block_index, block_word) = if repetitions > 1 {
+            (group / words_per_row, group % words_per_row)
+        } else {
+            (0, group)
+        };
         for input_word in 0..live_bits.div_ceil(64) {
             let mut block = [0u64; 64];
             for lane in 0..active {
@@ -338,7 +390,8 @@ fn transpose_witness_rows(
             let bit_start = input_word * 64;
             let bit_end = (bit_start + 64).min(live_bits);
             for bit in bit_start..bit_end {
-                rows[output_offset + bit][group] = block[bit - bit_start];
+                rows[(output_offset + bit) * repetitions + block_index][block_word] =
+                    block[bit - bit_start];
             }
         }
     }
@@ -586,6 +639,69 @@ mod tests {
         assert!(h_rows[SHA256_H_BAR_LIVE_BITS..]
             .iter()
             .all(|row| row[0] == 0));
+    }
+
+    #[test]
+    fn capped_fold_reslices_the_same_flat_assignment_vector() {
+        // A capped assignment split (`t < k`) must produce the SAME flat
+        // vector as the whole-instance-range slicing, at flat index
+        // `local·2^k + inst = (local·R + inst>>t)·2^t + (inst & (2^t-1))`.
+        // Exercise both the whole-word transpose path (k=8, t in {7, 8})
+        // and the sub-word scalar path (k=3, t=2).
+        for (log_compressions, capped_t) in [(8_usize, 7_usize), (3, 2)] {
+            let instances = 1 << log_compressions;
+            let inputs = (0..instances)
+                .map(|instance| {
+                    let mut input = abc_input();
+                    input.1[0] ^= instance as u32;
+                    input.1[1] ^= (instance as u32).rotate_left(7);
+                    input
+                })
+                .collect::<Vec<_>>();
+            let p_f = IntEvalParams {
+                t: log_compressions,
+                s: SHA256_F_LOCAL_VARS,
+                word_bits: 1,
+            };
+            let reference_p_h = IntEvalParams {
+                t: log_compressions,
+                s: SHA256_H_LOCAL_VARS,
+                word_bits: 1,
+            };
+            let capped_p_h = IntEvalParams {
+                t: capped_t,
+                s: SHA256_H_LOCAL_VARS + (log_compressions - capped_t),
+                word_bits: 1,
+            };
+            let reference =
+                generate_sha256_compression_witnesses_exact(&inputs, &p_f, &reference_p_h)
+                    .unwrap();
+            let capped =
+                generate_sha256_compression_witnesses_exact(&inputs, &p_f, &capped_p_h).unwrap();
+
+            assert_eq!(reference.source_rows(), capped.source_rows());
+            let repetitions = 1 << (log_compressions - capped_t);
+            assert_eq!(
+                capped.assignment_rows().len(),
+                SHA256_H_STRIDE * repetitions
+            );
+            let row_bits = 1 << capped_t;
+            for local in 0..SHA256_H_STRIDE {
+                for inst in 0..instances {
+                    let reference_bit =
+                        reference.assignment_rows()[local][inst >> 6] >> (inst & 63) & 1;
+                    let sliced_row = local * repetitions + (inst >> capped_t);
+                    let sliced_bit = inst & (row_bits - 1);
+                    let capped_bit = capped.assignment_rows()[sliced_row][sliced_bit >> 6]
+                        >> (sliced_bit & 63)
+                        & 1;
+                    assert_eq!(
+                        reference_bit, capped_bit,
+                        "k={log_compressions} t={capped_t} local={local} inst={inst}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

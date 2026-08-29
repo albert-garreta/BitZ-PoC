@@ -254,14 +254,14 @@ pub fn prove_sha256_compressions_paper128_with_config<T: Transcript + Send>(
     let p_f = prepared.source_params();
     let p_h = prepared.assignment_params();
     let map = prepared.map();
-    let profile = Sha256PrimeProfile::new(p_h.t)?;
+    let profile = Sha256PrimeProfile::new(p_f.t)?;
 
     validate_public_statement(p_h, public_statement)?;
     validate_common_geometry(None, map, p_h, p_f)?;
     validate_rows(p_f, witness.source_rows())?;
     validate_constant_one_column(p_f, witness.source_rows())?;
     validate_rows(p_h, witness.assignment_rows())?;
-    if witness.outputs().len() != p_h.rows() || hint_f.rows() != witness.source_rows() {
+    if witness.outputs().len() != p_f.rows() || hint_f.rows() != witness.source_rows() {
         return Err(Sha256F2zError::InvalidGeometry);
     }
     validate_ligerito_commitment(&hint_f.commitment, pc).map_err(Sha256F2zError::F2z)?;
@@ -308,7 +308,7 @@ pub fn prove_sha256_compressions_paper128_with_config<T: Transcript + Send>(
     absorb_projected_sha256_relation(transcript, &matrices);
 
     let field_config = mod_q.field_config();
-    let row_vars = SHA256_CONSTRAINT_LOCAL_VARS + p_h.t;
+    let row_vars = SHA256_CONSTRAINT_LOCAL_VARS + sha256_batch_exponent(p_h);
     let tau = (0..row_vars)
         .map(|_| squeeze_field(transcript, field_config))
         .collect::<Vec<SpartanF2zField>>();
@@ -440,13 +440,14 @@ pub fn verify_sha256_compressions_paper128_with_config<T: Transcript + Send>(
     let p_f = prepared.source_params();
     let p_h = prepared.assignment_params();
     let map = prepared.map();
-    let profile = Sha256PrimeProfile::new(p_h.t)?;
+    let profile = Sha256PrimeProfile::new(p_f.t)?;
 
     validate_public_statement(p_h, public_statement)?;
     validate_common_geometry(None, map, p_h, p_f)?;
     validate_ligerito_commitment(commitment_f, vc).map_err(Sha256F2zError::F2z)?;
     if commitment_f.params.m != p_f.t + p_f.s
-        || proof.outer.sumcheck.round_polynomials.len() != SHA256_CONSTRAINT_LOCAL_VARS + p_h.t
+        || proof.outer.sumcheck.round_polynomials.len()
+            != SHA256_CONSTRAINT_LOCAL_VARS + sha256_batch_exponent(p_h)
     {
         return Err(Sha256F2zError::InvalidGeometry);
     }
@@ -485,7 +486,7 @@ pub fn verify_sha256_compressions_paper128_with_config<T: Transcript + Send>(
     absorb_projected_sha256_relation(transcript, &matrices);
 
     let field_config = mod_q.field_config();
-    let row_vars = SHA256_CONSTRAINT_LOCAL_VARS + p_h.t;
+    let row_vars = SHA256_CONSTRAINT_LOCAL_VARS + sha256_batch_exponent(p_h);
     let tau = (0..row_vars)
         .map(|_| squeeze_field(transcript, field_config))
         .collect::<Vec<SpartanF2zField>>();
@@ -593,7 +594,7 @@ pub fn verify_sha256_compressions_paper128<T: Transcript + Send>(
 /// against the commitment to `[1 | f]`.
 ///
 /// `public_statement` is ordered by batch instance and must contain exactly
-/// `2^p_h.t` state/block/claimed-output triples.
+/// one state/block/claimed-output triple per compression instance.
 #[allow(clippy::too_many_arguments)]
 pub fn prove_sha256_compressions_spartan_and_f2z_with_config<T: Transcript + Send>(
     transcript: &mut T,
@@ -629,7 +630,7 @@ pub fn prove_sha256_compressions_spartan_and_f2z_with_config<T: Transcript + Sen
     );
 
     let field_config = matrices.config();
-    let row_vars = SHA256_CONSTRAINT_LOCAL_VARS + p_h.t;
+    let row_vars = SHA256_CONSTRAINT_LOCAL_VARS + sha256_batch_exponent(p_h);
     let tau = (0..row_vars)
         .map(|_| squeeze_field(transcript, field_config))
         .collect::<Vec<SpartanF2zField>>();
@@ -705,7 +706,7 @@ pub fn prove_sha256_compressions_spartan_and_f2z_with_config<T: Transcript + Sen
 /// Proves using the production configuration derived from `p_f`.
 ///
 /// `public_statement` is ordered by batch instance and must contain exactly
-/// `2^p_h.t` entries.
+/// one entry per compression instance.
 #[allow(clippy::too_many_arguments)]
 pub fn prove_sha256_compressions_spartan_and_f2z<T: Transcript + Send>(
     transcript: &mut T,
@@ -736,7 +737,7 @@ pub fn prove_sha256_compressions_spartan_and_f2z<T: Transcript + Send>(
 /// Verifies the repeated SHA-256 proof under an explicit Ligerito config.
 ///
 /// `public_statement` is ordered by batch instance and must contain exactly
-/// `2^p_h.t` state/block/claimed-output triples.
+/// one state/block/claimed-output triple per compression instance.
 #[allow(clippy::too_many_arguments)]
 pub fn verify_sha256_compressions_spartan_and_f2z_with_config<T: Transcript + Send>(
     transcript: &mut T,
@@ -770,7 +771,7 @@ pub fn verify_sha256_compressions_spartan_and_f2z_with_config<T: Transcript + Se
     );
 
     let field_config = matrices.config();
-    let row_vars = SHA256_CONSTRAINT_LOCAL_VARS + p_h.t;
+    let row_vars = SHA256_CONSTRAINT_LOCAL_VARS + sha256_batch_exponent(p_h);
     let tau = (0..row_vars)
         .map(|_| squeeze_field(transcript, field_config))
         .collect::<Vec<SpartanF2zField>>();
@@ -846,7 +847,7 @@ pub fn verify_sha256_compressions_spartan_and_f2z_with_config<T: Transcript + Se
 /// Verifies using the production configuration derived from `p_f`.
 ///
 /// `public_statement` is ordered by batch instance and must contain exactly
-/// `2^p_h.t` entries.
+/// one entry per compression instance.
 #[allow(clippy::too_many_arguments)]
 pub fn verify_sha256_compressions_spartan_and_f2z<T: Transcript + Send>(
     transcript: &mut T,
@@ -883,7 +884,7 @@ fn factorized_opening_claim(
     public_io_batch: &SpartanF2zField,
     claimed: SpartanF2zField,
 ) -> Result<(Vec<u128>, Vec<u128>, u128), Sha256F2zError> {
-    let expected = SHA256_CONSTRAINT_LOCAL_VARS + p_h.t;
+    let expected = SHA256_CONSTRAINT_LOCAL_VARS + sha256_batch_exponent(p_h);
     if row_point.len() != expected
         || public_slot_weights.len() != SHA256_PUBLIC_WORDS * SHA256_PUBLIC_WORD_BITS
     {
@@ -892,9 +893,17 @@ fn factorized_opening_claim(
     validate_public_statement(p_h, public_statement)?;
 
     let (local_point, instance_point) = row_point.split_at(SHA256_CONSTRAINT_LOCAL_VARS);
-    let instance_weights =
-        eq_table(instance_point, matrices.config()).map_err(SpartanError::from)?;
-    let row_weights_q = instance_weights
+    // The instance equality tensor factors at the assignment split: the low
+    // `p_h.t` instance coordinates become the mod-q folded row weights, the
+    // remaining high coordinates join the read-off column weights (below).
+    // Both eq tables are little-endian in the index, so
+    // `eq(instance_point)[hi·2^t + lo] = folded[lo]·carried[hi]` exactly;
+    // at `p_h.t = k` the carried table is `[1]` and every value matches the
+    // unsplit factorization bit for bit.
+    let (folded_point, carried_point) = instance_point.split_at(p_h.t);
+    let folded_weights = eq_table(folded_point, matrices.config()).map_err(SpartanError::from)?;
+    let carried_weights = eq_table(carried_point, matrices.config()).map_err(SpartanError::from)?;
+    let row_weights_q = folded_weights
         .iter()
         .map(|value| value.canonical_u128())
         .collect::<Vec<_>>();
@@ -939,7 +948,8 @@ fn factorized_opening_claim(
 
     let zero = SpartanF2zField::zero_with_cfg(matrices.config());
     let mut public_value = zero.clone();
-    for (instance_weight, statement) in instance_weights.iter().zip(public_statement) {
+    let folded_mask = folded_weights.len() - 1;
+    for (instance, statement) in public_statement.iter().enumerate() {
         let mut instance_value = zero.clone();
         for (word_slot, word) in statement.words().enumerate() {
             for bit in 0..SHA256_PUBLIC_WORD_BITS {
@@ -949,15 +959,20 @@ fn factorized_opening_claim(
                 }
             }
         }
-        public_value += &(instance_weight.clone() * &instance_value);
+        let instance_weight =
+            folded_weights[instance & folded_mask].clone() * &carried_weights[instance >> p_h.t];
+        public_value += &(instance_weight * &instance_value);
     }
     claimed += &(public_io_batch.clone() * &public_value);
 
-    let col_weights = local_columns
-        .evaluations
-        .into_iter()
-        .map(|value| value.canonical_u128())
-        .collect::<Vec<_>>();
+    // Read-off column `c = local·2^{k-t} + hi` carries the local matrix
+    // weight times the high-instance equality factor.
+    let mut col_weights = Vec::with_capacity(local_columns.evaluations.len() * carried_weights.len());
+    for local_value in &local_columns.evaluations {
+        for carried in &carried_weights {
+            col_weights.push((local_value.clone() * carried).canonical_u128());
+        }
+    }
     Ok((row_weights_q, col_weights, claimed.canonical_u128()))
 }
 
@@ -1009,10 +1024,13 @@ fn validate_common_geometry(
     p_f: &IntEvalParams,
 ) -> Result<(), Sha256F2zError> {
     validate_source_params(p_f)?;
+    // `p_f.t` is the batch exponent `k`; the assignment split may cap its
+    // folded side below it (`p_h.t <= k`, `p_h.s = 15 + k - p_h.t` — see
+    // `sha256_assignment_params`). Both splits slice the same flat vectors.
     if p_h.word_bits != 1
-        || p_h.t != p_f.t
-        || p_h.s != SHA256_H_LOCAL_VARS
-        || map.instances() != p_h.rows()
+        || p_h.t > p_f.t
+        || p_h.s != SHA256_H_LOCAL_VARS + (p_f.t - p_h.t)
+        || map.instances() != p_f.rows()
         || map.rows() != cell_count(p_h)
         || map.cols() != cell_count(p_f)
         || !map_fixes_constant_assignment(map)
@@ -1120,7 +1138,7 @@ fn validate_products(
     products: &R1csProductMles<SpartanF2zField>,
     p_h: &IntEvalParams,
 ) -> Result<(), Sha256F2zError> {
-    let num_vars = SHA256_CONSTRAINT_LOCAL_VARS + p_h.t;
+    let num_vars = SHA256_CONSTRAINT_LOCAL_VARS + sha256_batch_exponent(p_h);
     let expected = 1usize
         .checked_shl(u32::try_from(num_vars).map_err(|_| Sha256F2zError::InvalidGeometry)?)
         .ok_or(Sha256F2zError::InvalidGeometry)?;
@@ -1173,11 +1191,20 @@ fn validate_verifier_inputs(
     validate_common(matrices, map, p_h, p_f)?;
     validate_ligerito_commitment(commitment_f, vc).map_err(Sha256F2zError::F2z)?;
     if commitment_f.params.m != p_f.t + p_f.s
-        || proof.spartan().sumcheck.round_polynomials.len() != SHA256_CONSTRAINT_LOCAL_VARS + p_h.t
+        || proof.spartan().sumcheck.round_polynomials.len()
+            != SHA256_CONSTRAINT_LOCAL_VARS + sha256_batch_exponent(p_h)
     {
         return Err(Sha256F2zError::InvalidGeometry);
     }
     Ok(())
+}
+
+/// Batch exponent `k` recovered from the assignment split: the opening may
+/// cap its folded side below the instance count (`t <= k`, the leftover
+/// instance bits on the read-off side — see `sha256_assignment_params`), so
+/// `k = t + (s - 15)`. [`validate_common_geometry`] pins the relation.
+fn sha256_batch_exponent(p_h: &IntEvalParams) -> usize {
+    p_h.t + p_h.s.saturating_sub(SHA256_H_LOCAL_VARS)
 }
 
 fn validate_public_statement(
@@ -1185,7 +1212,10 @@ fn validate_public_statement(
     public_statement: &[Sha256CompressionStatement],
 ) -> Result<(), Sha256F2zError> {
     let expected = 1_usize
-        .checked_shl(u32::try_from(p_h.t).map_err(|_| Sha256F2zError::InvalidGeometry)?)
+        .checked_shl(
+            u32::try_from(sha256_batch_exponent(p_h))
+                .map_err(|_| Sha256F2zError::InvalidGeometry)?,
+        )
         .ok_or(Sha256F2zError::InvalidGeometry)?;
     if public_statement.len() != expected {
         return Err(Sha256F2zError::InvalidPublicStatementLength {
@@ -1273,7 +1303,7 @@ fn absorb_sha256_paper_statement(
     absorb_spartan_message(
         transcript,
         b"instance-vars",
-        &(prepared.assignment_params().t as u64).to_le_bytes(),
+        &(prepared.source_params().t as u64).to_le_bytes(),
     );
     absorb_spartan_message(transcript, b"public-sha256-io", public_statement_binding);
     absorb_spartan_message(transcript, b"assignment-oracle", assignment_binding);
@@ -1350,7 +1380,11 @@ fn absorb_sha256_statement(
         matrices.field_modulus_encoding(),
     );
     absorb_spartan_message(transcript, b"matrix-statement", matrices.digest());
-    absorb_spartan_message(transcript, b"instance-vars", &(p_h.t as u64).to_le_bytes());
+    absorb_spartan_message(
+        transcript,
+        b"instance-vars",
+        &(sha256_batch_exponent(p_h) as u64).to_le_bytes(),
+    );
     absorb_spartan_message(transcript, b"public-sha256-io", public_statement_binding);
     absorb_spartan_message(transcript, b"assignment-oracle", assignment_binding);
 }
@@ -1584,6 +1618,80 @@ mod tests {
 
         let mut false_statement = public_statement.clone();
         false_statement[3].claimed_output[0] ^= 1;
+        let mut false_transcript = Blake3Transcript::new();
+        assert!(verify_sha256_compressions_paper128_with_config(
+            &mut false_transcript,
+            &prepared,
+            &false_statement,
+            &hint.commitment,
+            &proof,
+            &vc,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn paper128_roundtrip_with_capped_assignment_fold() {
+        // The production cap only bites at 2^14+ compressions; force the
+        // same machinery at unit scale: k = 8 with t = 7, so every layer —
+        // witness row slicing (two row blocks per local coordinate), the
+        // split claim factorization, and the virtual opening under the
+        // re-sliced geometry — runs with `t < k`.
+        const LOG_COMPRESSIONS: usize = 8;
+        let capped_p_h = IntEvalParams {
+            t: 7,
+            s: SHA256_H_LOCAL_VARS + (LOG_COMPRESSIONS - 7),
+            word_bits: 1,
+        };
+        let prepared =
+            super::super::constraints::prepare_sha256_compression_batch_integer_with_params(
+                LOG_COMPRESSIONS,
+                capped_p_h,
+            )
+            .unwrap();
+        assert_eq!(prepared.assignment_params(), &capped_p_h);
+        let inputs = (0..1usize << LOG_COMPRESSIONS)
+            .map(input)
+            .collect::<Vec<_>>();
+        let witness = generate_sha256_compression_witnesses_exact(
+            &inputs,
+            prepared.source_params(),
+            prepared.assignment_params(),
+        )
+        .unwrap();
+        let public_statement = public_statements(&inputs, witness.outputs());
+        let (pc, vc) = sha256_compression_configs(prepared.source_params()).unwrap();
+        let hint = commit_sha256_paper128_witness_with_config(&prepared, &witness, &pc).unwrap();
+
+        let mut prover_transcript = Blake3Transcript::new();
+        let proof = prove_sha256_compressions_paper128_with_config(
+            &mut prover_transcript,
+            &prepared,
+            &public_statement,
+            &witness,
+            &hint,
+            &pc,
+        )
+        .unwrap();
+        // The outer sumcheck still runs over all 2^k instances.
+        assert_eq!(
+            proof.outer_nonces().len(),
+            SHA256_CONSTRAINT_LOCAL_VARS + LOG_COMPRESSIONS
+        );
+
+        let mut verifier_transcript = Blake3Transcript::new();
+        verify_sha256_compressions_paper128_with_config(
+            &mut verifier_transcript,
+            &prepared,
+            &public_statement,
+            &hint.commitment,
+            &proof,
+            &vc,
+        )
+        .unwrap();
+
+        let mut false_statement = public_statement.clone();
+        false_statement[LOG_COMPRESSIONS].claimed_output[3] ^= 4;
         let mut false_transcript = Blake3Transcript::new();
         assert!(verify_sha256_compressions_paper128_with_config(
             &mut false_transcript,

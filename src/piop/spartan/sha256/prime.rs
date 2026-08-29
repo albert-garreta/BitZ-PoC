@@ -24,6 +24,20 @@ pub const SHA256_MAX_LOG_COMPRESSIONS: usize = 16;
 /// Width of the fixed commitment/exponent field.
 pub const SHA256_COMMITMENT_FIELD_BITS: usize = 128;
 
+/// Bit length of the paper's prime interval for one batch size: primes are
+/// sampled from `[2^{b-1}, 2^b)` with `b = min(113, 128 - log_compressions)`
+/// (113 bits up to `2^15` compressions, 112 at `2^16` where the injective
+/// no-wrap lift `(2^t + 1)(q - 1) <= 2^128 - 1` bites). Total for every
+/// exponent so shape helpers can consult it outside the supported window.
+pub const fn sha256_prime_interval_bits(log_compressions: usize) -> usize {
+    let headroom = SHA256_COMMITMENT_FIELD_BITS.saturating_sub(log_compressions);
+    if headroom < 113 {
+        headroom
+    } else {
+        113
+    }
+}
+
 /// Public interval and grinding parameters determined by the batch size.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Sha256PrimeProfile {
@@ -43,7 +57,7 @@ impl Sha256PrimeProfile {
         }
 
         let instances = 1_u128 << log_compressions;
-        let interval_bits = 113_usize.min(SHA256_COMMITMENT_FIELD_BITS - log_compressions);
+        let interval_bits = sha256_prime_interval_bits(log_compressions);
         let min_prime = 1_u128 << (interval_bits - 1);
         // The integer lift used by the paper must fit injectively in the
         // 128-bit commitment/exponent field:

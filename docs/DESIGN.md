@@ -174,6 +174,43 @@ committed `f`. Otherwise it emits `VirtOpenTail::Batch`. The verifier accepts
 the eq tail only for an eligible public statement. `F2Z_VIRT_ID_FAST=0` forces
 the general batch tail for diagnostics.
 
+### The SHA assignment split caps its fold at one chunk
+
+The assignment opening's `(t, s)` split is a free statement parameter: any
+`t + s = 15 + k` re-slices the SAME flat vector (`flat = local·2^k + inst`,
+instance low), so witness slicing, the claim factorization and the opening
+geometry move together while the map, the committed `f`, and the flat data
+stay fixed. `sha256_assignment_params` picks the largest `t` with
+`c_w = 127 − t − 1 ≥ q_bits`, i.e. `t = min(k, 126 − q_bits)` against the
+paper profile's batch-determined prime width (113 bits through `2^15`, 112
+at `2^16`): `t = k` through `2^13` (the historical split, transcripts
+unchanged), `t = 13` at `2^14`/`2^15`, `t = 14` at `2^16`. That keeps the
+mod-q opening at `L = 1` — ONE grand-product forest + pre-sumcheck instead
+of two over all `2^{15+k}` cells (the forests are ~70 % of the virtual
+opening) — and shrinks the verifier's `2^t` row-weight table. The costs sit
+on the read-off side: the per-column `u_c` payload is `L·2^s·16` bytes, so
+one capped chunk is byte-neutral at `2^14` (`2^16·16 B` vs `2·2^15·16 B`)
+and ×2 at `2^15`/`2^16` versus the two-chunk split it replaces; the
+`eq(instance)` tensor factors at the cap (low `t` coordinates → mod-q row
+weights, high `k − t` → column weights), exactly — at `t = k` the carried
+table is `[1]` and every value matches the unsplit factorization bit for
+bit. Trailing dead assignment columns stay trailing under the re-slicing
+(dead local coordinates map to contiguous trailing column blocks), so
+live-column elision keeps its full effect.
+
+Measured at the `2^14` batch (M4, 8 threads, interleaved same-box pair):
+`f2z_prove` 2.5–3.5 s (two chunks, box-state dependent) → 2.0–2.1 s (one
+chunk, `mc:forest` count 2 → 1 in the trace), `f2z_verify` ~190–220 →
+~165–177 ms, proof 1 008 385 → 994 481 B; `2^13` and below are
+byte-identical to the uncapped split at fixed bench seeds. The remaining
+single-chunk shape tax at `t = 13, s = 16` is bitgen/segment overhead of
+the wide-shallow flat store at the `2^29`-cell scale: under the SHA
+bench's resident set, `F2Z_FLAT_FOREST=0` measured a further −6–10 % at
+`2^14` but +24 % at `2^13` (byte-identical knob both ways) — flat wins
+until its fresh multi-GB JIT stores start faulting, so the default gate
+is unchanged; a store-size-aware gate or a per-prove arena is the
+follow-up if `2^14`+ batches become the production point.
+
 The statement transcript order is unchanged: absorb the commitment and
 geometries, canonical CSC map digest, row weights, `q_bits`, and `α`; run the
 chunk protocol; draw `η`; absorb `h_i`; draw `ρ`; then run Ligerito. The CSC
