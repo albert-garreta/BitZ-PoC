@@ -1036,7 +1036,7 @@ mod tests {
 
     #[test]
     fn static_layout_tables_match_the_requested_domains() {
-        assert_eq!(K1_EXTERIOR_NODES, []);
+        assert!(K1_EXTERIOR_NODES.is_empty());
         assert_eq!(K2_EXTERIOR_NODES, [-1, 4]);
         assert_eq!(K3_EXTERIOR_NODES, [-1, 8, -2, 9, -3, 10]);
         assert_eq!(K4_EXTERIOR_NODES[0..4], [-1, 16, -2, 17]);

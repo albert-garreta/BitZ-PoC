@@ -39,7 +39,7 @@ use f2z::{
     poly::mle::DenseMultilinearExtension,
     transcript::Blake3Transcript,
 };
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand::{Rng, RngExt, SeedableRng, rngs::StdRng};
 
 const ASSIGNMENT_BINDING: [u8; 32] = [0x73; 32];
 const FIELD_ELEMENT_BYTES: usize = 16;

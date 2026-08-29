@@ -43,7 +43,7 @@ use f2z::piop::spartan::{
 use f2z::transcript::Blake3Transcript;
 use f2z::{ligerito::packed_vars, ligerito_flock::sha_lig_configs};
 use flock_core::pcs::commit::Commitment;
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand::{Rng, RngExt, SeedableRng, rngs::StdRng};
 
 #[cfg(feature = "bench-peak-memory")]
 struct PeakAlloc;

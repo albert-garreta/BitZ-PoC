@@ -17,7 +17,7 @@ use crate::{
         MontyLinearAccumulator128, MontyProductAccumulator128, OptimizedMonty128Reducer, Reduce,
     },
 };
-use crypto_bigint::subtle::{Choice, ConditionallySelectable};
+use crypto_bigint::{Choice, CtSelect};
 use crypto_primitives::{crypto_bigint_monty::MontyField, FromWithConfig, PrimeField};
 use num_traits::Zero;
 
@@ -121,7 +121,7 @@ trait U32InnerArithmeticPolicy: Sync {
         output: &mut [MontyField<2>],
         challenge: &MontyField<2>,
         zero: &MontyField<2>,
-        field_cfg: &crypto_bigint::modular::MontyParams<2>,
+        field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
     ) -> Result<(), SumcheckError>;
 
     fn field_coefficients(
@@ -170,7 +170,7 @@ where
         output: &mut [MontyField<2>],
         challenge: &MontyField<2>,
         zero: &MontyField<2>,
-        _field_cfg: &crypto_bigint::modular::MontyParams<2>,
+        _field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
     ) -> Result<(), SumcheckError> {
         fold_u64_table_to_field(input, output, challenge, zero, self.reducer)
     }
@@ -242,7 +242,7 @@ where
         output: &mut [MontyField<2>],
         challenge: &MontyField<2>,
         zero: &MontyField<2>,
-        field_cfg: &crypto_bigint::modular::MontyParams<2>,
+        field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
     ) -> Result<(), SumcheckError> {
         match self.native_fold_policy {
             NativeWitnessFoldPolicy::Immediate => {
@@ -342,7 +342,7 @@ pub(crate) struct OptimizedSumcheckReducer {
 
 impl OptimizedSumcheckReducer {
     pub(crate) fn new(
-        field_cfg: &crypto_bigint::modular::MontyParams<2>,
+        field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
     ) -> Result<Self, SumcheckError> {
         Ok(Self {
             reducer: OptimizedMonty128Reducer::new(field_cfg)?,
@@ -415,7 +415,7 @@ pub(crate) struct CryptoBigintSumcheckReducer {
 
 impl CryptoBigintSumcheckReducer {
     pub(crate) fn new(
-        field_cfg: &crypto_bigint::modular::MontyParams<2>,
+        field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
     ) -> Result<Self, SumcheckError> {
         Ok(Self {
             reducer: CryptoBigintMonty128Reducer::new(field_cfg)?,
@@ -1295,7 +1295,7 @@ pub(crate) fn prove_outer_sumcheck_u32_native_with_reducer<R>(
         DenseMultilinearExtension<MontyField<2>>,
     ),
     products: R1csProductMles<u64>,
-    field_cfg: &crypto_bigint::modular::MontyParams<2>,
+    field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
     reducer: &R,
 ) -> Result<OuterSumcheckOutput<MontyField<2>>, SumcheckError>
 where
@@ -1737,7 +1737,7 @@ pub(crate) fn prove_inner_sumcheck_u32_native_with_reducer<R>(
     initial_claim: MontyField<2>,
     batched_matrix_mle: DenseMultilinearExtension<MontyField<2>>,
     witness_mle: DenseMultilinearExtension<u64>,
-    field_cfg: &crypto_bigint::modular::MontyParams<2>,
+    field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
     reducer: &R,
 ) -> Result<InnerSumcheckOutput<MontyField<2>>, SumcheckError>
 where
@@ -1763,7 +1763,7 @@ pub(crate) fn prove_inner_sumcheck_u32_native_with_policy<NR, DR, IR>(
     initial_claim: MontyField<2>,
     batched_matrix_mle: DenseMultilinearExtension<MontyField<2>>,
     witness_mle: DenseMultilinearExtension<u64>,
-    field_cfg: &crypto_bigint::modular::MontyParams<2>,
+    field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
     native_reducer: &NR,
     delayed_field_reducer: &DR,
     immediate_field_reducer: &IR,
@@ -1797,7 +1797,7 @@ fn prove_inner_sumcheck_u32_native<P>(
     initial_claim: MontyField<2>,
     batched_matrix_mle: DenseMultilinearExtension<MontyField<2>>,
     witness_mle: DenseMultilinearExtension<u64>,
-    field_cfg: &crypto_bigint::modular::MontyParams<2>,
+    field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
     policy: &P,
 ) -> Result<InnerSumcheckOutput<MontyField<2>>, SumcheckError>
 where
@@ -2234,7 +2234,7 @@ where
 #[inline]
 fn native_to_field(
     value: u64,
-    field_cfg: &crypto_bigint::modular::MontyParams<2>,
+    field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
 ) -> MontyField<2> {
     MontyField::<2>::from_with_cfg(value, field_cfg)
 }
@@ -2317,7 +2317,7 @@ fn multiply_accumulate_signed_linear<R>(
     let magnitude = ((value as u128) ^ sign_mask).wrapping_sub(sign_mask) as u64;
     let is_negative = Choice::from((sign_mask & 1) as u8);
     let selected_weight = MontyField::from_montgomery(
-        ConditionallySelectable::conditional_select(
+        CtSelect::ct_select(
             weight.as_montgomery(),
             negative_weight.as_montgomery(),
             is_negative,
@@ -2633,7 +2633,7 @@ fn fold_u64_table_to_field_immediate(
     input: &[u64],
     output: &mut [MontyField<2>],
     challenge: &MontyField<2>,
-    field_cfg: &crypto_bigint::modular::MontyParams<2>,
+    field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
 ) {
     debug_assert_eq!(input.len(), 2 * output.len());
 
@@ -2661,7 +2661,7 @@ fn fold_u64_product_tables_to_field<R>(
     input: &R1csProductTableBuffers<u64>,
     challenge: &MontyField<2>,
     zero: &MontyField<2>,
-    field_cfg: &crypto_bigint::modular::MontyParams<2>,
+    field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
     reducer: &R,
 ) -> Result<R1csProductTableBuffers<MontyField<2>>, SumcheckError>
 where
