@@ -11,6 +11,7 @@ pub mod cm;
 pub mod f2z;
 pub mod grinding;
 pub mod matrix;
+pub mod multiswap;
 pub mod opening_mode;
 pub mod piop;
 pub mod sha256;
