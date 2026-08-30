@@ -190,13 +190,9 @@ pub enum SpartanF2zError {
     #[error(transparent)]
     Grinding(#[from] GrindingError),
 
-    /// The paper path supports single-prime profiles whose PIOP rounds
-    /// need no grinding (λ <= ~111 at these shapes); per-round PIOP
-    /// grinding for the u32 Spartan drivers is not wired yet.
-    #[error(
-        "the u32 paper path requires a single-prime profile with zero PIOP \
-         round grinding"
-    )]
+    /// The paper path supports single-prime profiles only (the two-prime
+    /// Strategy 2 belongs to the MultiSwap-style adapters).
+    #[error("the u32 paper path requires a single-prime security profile")]
     UnsupportedPaperProfile,
 
     /// The derived prime interval must keep the row weights to one
@@ -1422,6 +1418,19 @@ impl GrindingDomain for U32MulTerminalGrinding {
     const DOMAIN: &'static [u8] = b"f2z/spartan-u32-mul/grinding/terminal/v1";
 }
 
+/// The per-challenge PIOP grinding domain of the u32 paper path: at a
+/// nonzero difficulty, EVERY challenge the Spartan PIOP draws (τ
+/// coordinates, outer/bind/inner round challenges) is preceded by one
+/// boundary here. The difficulty is the profile's initial bound
+/// `ceil(λ + log2(arity) − (b−1))` — the maximum any single draw needs —
+/// so this is conservative but uniformly round-by-round sound, unlike the
+/// SHA path's per-boundary-tuned schedule.
+enum U32MulPiopGrinding {}
+
+impl GrindingDomain for U32MulPiopGrinding {
+    const DOMAIN: &'static [u8] = b"f2z/spartan-u32-mul/grinding/piop/v1";
+}
+
 /// The public statement facts the security-profile derivation consumes for
 /// a u32 multiplication batch: per-row integer defects `|x*y - z|` are
 /// below `2^65` (bounded to `2^80` conservatively, far below any sampled
@@ -1470,10 +1479,7 @@ impl PreparedU32MulRelation {
             .next_power_of_two()
             .trailing_zeros() as usize;
         let security = P::instantiate(&u32_mul_instance_facts(&p, row_vars))?;
-        if security.projection_full_width
-            || security.reduction.is_some()
-            || security.piop_round_grinding_bits > 0
-        {
+        if security.projection_full_width || security.reduction.is_some() {
             return Err(SpartanF2zError::UnsupportedPaperProfile);
         }
         let raw = u32_mul_constraint_matrices(&layout, true)?;
@@ -1506,6 +1512,7 @@ impl PreparedU32MulRelation {
 pub struct U32MulPaperProof {
     initial_nonce: u64,
     terminal_nonce: u64,
+    piop_nonces: Vec<u64>,
     spartan: SpartanPiopProof<SpartanF2zField>,
     f2z: IntEvalRsLigModQProof,
 }
@@ -1533,6 +1540,7 @@ impl U32MulPaperProof {
     pub fn grinding_nonce_count(&self, security: &IopSecurityParams) -> usize {
         usize::from(security.initial_grinding_bits > 0)
             + usize::from(security.terminal_grinding_bits > 0)
+            + self.piop_nonces.len()
             + self.f2z.grinding_nonces.len()
     }
 }
@@ -1559,6 +1567,15 @@ fn check_boundary_u32<D: GrindingDomain, T: Transcript>(
         return Ok(());
     }
     verify_and_absorb::<D, _>(transcript, GrindingRound::new(0), bits, nonce)
+}
+
+/// Uniform per-draw PIOP grinding difficulty: the maximum requirement of
+/// any single drawn challenge (the τ/initial bound dominates the cubic
+/// round bound at every shape).
+fn piop_wrap_bits(security: &IopSecurityParams) -> u32 {
+    security
+        .initial_grinding_bits
+        .max(security.piop_round_grinding_bits)
 }
 
 /// Samples the Step-2 prime from the profile interval and builds its
@@ -1659,20 +1676,30 @@ pub fn prove_u32_mul_paper<T: Transcript + Send>(
     };
     drop(step2_scope);
 
-    // Step 3: the native u64 Spartan PIOP over F_q.
-    let (spartan, terminal_claim) = {
+    // Step 3: the native u64 Spartan PIOP over F_q, every drawn challenge
+    // preceded by one PIOP grinding boundary at the profile's difficulty
+    // (a transparent pass-through at λ = 100).
+    let (spartan, terminal_claim, piop_nonces) = {
         let _step3 = crate::utils::prof::scope("step3:piop_prove");
         let _scope = crate::utils::prof::scope("spartan-f2z:spartan_prove");
         let native = project_u32_mul_native_witness(witness);
         let (assignment, products) = native.into_parts();
-        prove_spartan_piop_u32_native_with_strategy(
+        let mut grinder: crate::piop::spartan::grinding::ProverGrindingTranscript<
+            _,
+            U32MulPiopGrinding,
+        > = crate::piop::spartan::grinding::ProverGrindingTranscript::new(
             transcript,
+            piop_wrap_bits(security),
+        );
+        let (spartan, terminal_claim) = prove_spartan_piop_u32_native_with_strategy(
+            &mut grinder,
             &matrices,
             &binding,
             products,
             assignment,
             strategy,
-        )?
+        )?;
+        (spartan, terminal_claim, grinder.finish())
     };
 
     // Step 4: bitification at the runtime prime, plus the terminal
@@ -1725,6 +1752,7 @@ pub fn prove_u32_mul_paper<T: Transcript + Send>(
     Ok(U32MulPaperProof {
         initial_nonce,
         terminal_nonce,
+        piop_nonces,
         spartan,
         f2z,
     })
@@ -1765,7 +1793,18 @@ pub fn verify_u32_mul_paper<T: Transcript + Send>(
     let terminal_claim = {
         let _step3 = crate::utils::prof::scope("step3:piop_verify");
         let _scope = crate::utils::prof::scope("spartan-f2z:spartan_verify");
-        verify_spartan_proof(transcript, &matrices, &binding, &proof.spartan)?
+        let mut grinder: crate::piop::spartan::grinding::VerifierGrindingTranscript<
+            _,
+            U32MulPiopGrinding,
+        > = crate::piop::spartan::grinding::VerifierGrindingTranscript::new(
+            transcript,
+            piop_wrap_bits(security),
+            &proof.piop_nonces,
+        );
+        let terminal_claim =
+            verify_spartan_proof(&mut grinder, &matrices, &binding, &proof.spartan)?;
+        grinder.finish()?;
+        terminal_claim
     };
 
     let step4_scope = crate::utils::prof::scope("step4:bitify_verify");
@@ -1909,6 +1948,43 @@ mod tests {
             Err(SpartanF2zError::UnsupportedPaperProfile)
                 | Err(SpartanF2zError::Profile(ProfileError::GrindingTooExpensive { .. }))
         ));
+
+        // λ = 128 is genuine on this path too: the initial boundary, every
+        // PIOP draw, and the forest rounds all carry proof-of-work.
+        let prepared128 =
+            PreparedU32MulRelation::new_with_profile::<super::super::profile::Lambda128>(layout)
+                .unwrap();
+        assert!(prepared128.security().initial_grinding_bits > 0);
+        assert_eq!(prepared128.security().forest_round_grinding_bits, 2);
+        let mut prover_transcript = crate::transcript::Blake3Transcript::new();
+        let proof128 = prove_u32_mul_paper(
+            &mut prover_transcript,
+            &prepared128,
+            &witness,
+            &hint,
+            SpartanReductionStrategy::DelayedBarrett,
+        )
+        .unwrap();
+        assert!(!proof128.piop_nonces.is_empty());
+        assert!(!proof128.f2z().grinding_nonces.is_empty());
+        let mut verifier_transcript = crate::transcript::Blake3Transcript::new();
+        verify_u32_mul_paper(
+            &mut verifier_transcript,
+            &prepared128,
+            &hint.commitment,
+            &proof128,
+        )
+        .unwrap();
+        let mut tampered = proof128.clone();
+        tampered.piop_nonces[3] ^= 1;
+        let mut verifier_transcript = crate::transcript::Blake3Transcript::new();
+        assert!(verify_u32_mul_paper(
+            &mut verifier_transcript,
+            &prepared128,
+            &hint.commitment,
+            &tampered
+        )
+        .is_err());
     }
 
 

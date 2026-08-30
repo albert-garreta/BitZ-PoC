@@ -43,7 +43,9 @@ use flock_core::pcs::ligerito::{
 
 use crate::cfg_iter_mut;
 use crate::piop::lookup::gkr_product::ProductForestProof;
-use crate::piop::spartan::grinding::{ProverGrindingTranscript, VerifierGrindingTranscript};
+use crate::piop::spartan::grinding::{
+    ForestRoundGrinding, ProverGrindingTranscript, VerifierGrindingTranscript,
+};
 use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheckProof;
 use crate::poly::univariate::binary_gf128::{BinaryFieldGF128 as Gf, FixedGfMul};
 use crate::transcript::traits::Transcript;
@@ -2361,6 +2363,7 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_prepared_baby_bear_v2(
     bridge_digest: &[u8; 32],
     q_bits: usize,
     alpha: Gf,
+    forest_grinding_bits: u32,
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigModQProof, FlockRsError> {
     prove_mle_eval_mod_q_ligerito_prepared_spartan_v2(
@@ -2371,7 +2374,7 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_prepared_baby_bear_v2(
         bridge_digest,
         q_bits,
         alpha,
-        0,
+        forest_grinding_bits,
         pc,
         PreparedSpartanBridge::BabyBear,
     )
@@ -2491,7 +2494,8 @@ fn prove_mle_eval_mod_q_ligerito_raw(
 ) -> IntEvalRsLigModQProof {
     let lch = chunks.len();
 
-    let mut grinder = ProverGrindingTranscript::new(transcript, forest_grinding_bits);
+    let mut grinder: ProverGrindingTranscript<_, ForestRoundGrinding> =
+        ProverGrindingTranscript::new(transcript, forest_grinding_bits);
     let mut mfs = Vec::with_capacity(lch);
     let mut us = Vec::with_capacity(lch);
     let mut presums = Vec::with_capacity(lch);
@@ -2692,6 +2696,78 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_prepared_u32_runtime(
     forest_grinding_bits: u32,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
+    verify_mle_eval_mod_q_ligerito_prepared_spartan_runtime(
+        transcript,
+        commitment,
+        proof,
+        p,
+        chunks,
+        col_weights_q,
+        bridge_digest,
+        alpha,
+        claimed_q,
+        q,
+        q_bits,
+        forest_grinding_bits,
+        vc,
+        PreparedSpartanBridge::U32,
+    )
+}
+
+/// BabyBear counterpart of the runtime u32 verifier bridge.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn verify_mle_eval_mod_q_ligerito_prepared_baby_bear_runtime(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: &IntEvalRsLigModQProof,
+    p: &IntEvalParams,
+    chunks: &ModQWeightChunks,
+    col_weights_q: &[u128],
+    bridge_digest: &[u8; 32],
+    alpha: Gf,
+    claimed_q: u128,
+    q: u128,
+    q_bits: usize,
+    forest_grinding_bits: u32,
+    vc: &LigVerifierConfig,
+) -> Result<(), FlockRsError> {
+    verify_mle_eval_mod_q_ligerito_prepared_spartan_runtime(
+        transcript,
+        commitment,
+        proof,
+        p,
+        chunks,
+        col_weights_q,
+        bridge_digest,
+        alpha,
+        claimed_q,
+        q,
+        q_bits,
+        forest_grinding_bits,
+        vc,
+        PreparedSpartanBridge::BabyBear,
+    )
+}
+
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+fn verify_mle_eval_mod_q_ligerito_prepared_spartan_runtime(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: &IntEvalRsLigModQProof,
+    p: &IntEvalParams,
+    chunks: &ModQWeightChunks,
+    col_weights_q: &[u128],
+    bridge_digest: &[u8; 32],
+    alpha: Gf,
+    claimed_q: u128,
+    q: u128,
+    q_bits: usize,
+    forest_grinding_bits: u32,
+    vc: &LigVerifierConfig,
+    bridge: PreparedSpartanBridge,
+) -> Result<(), FlockRsError> {
     validate_ligerito_commitment(commitment, vc)?;
     let (geometry, chunk_width, chunk_count) = checked_mod_q_shape(commitment, proof, p, q_bits)?;
     let (prepared_geometry, prepared_chunk_width, prepared_chunk_count) =
@@ -2707,15 +2783,26 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_prepared_u32_runtime(
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
 
-    let bound_statement = absorb_u32_mod_q_opening_v2_statement(
-        transcript,
-        commitment,
-        p,
-        bridge_digest,
-        q_bits,
-        alpha,
-        vc,
-    );
+    let bound_statement = match bridge {
+        PreparedSpartanBridge::U32 => absorb_u32_mod_q_opening_v2_statement(
+            transcript,
+            commitment,
+            p,
+            bridge_digest,
+            q_bits,
+            alpha,
+            vc,
+        ),
+        PreparedSpartanBridge::BabyBear => absorb_baby_bear_mod_q_opening_v2_statement(
+            transcript,
+            commitment,
+            p,
+            bridge_digest,
+            q_bits,
+            alpha,
+            vc,
+        ),
+    };
     let us = verify_mod_q_lig_core_after_statement(
         transcript,
         commitment,
@@ -2927,7 +3014,7 @@ fn verify_mod_q_lig_core(
     let range_shift = c_w.wrapping_add(p.t).wrapping_add(p.word_bits);
     let bound = 1u128 << range_shift;
 
-    let mut grinder =
+    let mut grinder: VerifierGrindingTranscript<_, ForestRoundGrinding> =
         VerifierGrindingTranscript::new(transcript, forest_grinding_bits, &proof.grinding_nonces);
     let mut points = Vec::with_capacity(lch);
     let mut mus = Vec::with_capacity(lch);
@@ -10445,7 +10532,8 @@ where
         let _g = crate::utils::prof::scope("mqv:pack");
         crate::ligerito::pack_columns_from_rows(p_h, h_rows)
     };
-    let mut grinder = ProverGrindingTranscript::new(transcript, forest_grinding_bits);
+    let mut grinder: ProverGrindingTranscript<_, ForestRoundGrinding> =
+        ProverGrindingTranscript::new(transcript, forest_grinding_bits);
     let mut mfs = Vec::with_capacity(lch);
     let mut us = Vec::with_capacity(lch);
     let mut presums = Vec::with_capacity(lch);
@@ -10757,7 +10845,7 @@ where
 
     // (1) The core pipeline on the derived claims: forests + pre-sumchecks
     // pin the per-chunk residuals `ĥ(pt_l) = μ_l`.
-    let mut grinder =
+    let mut grinder: VerifierGrindingTranscript<_, ForestRoundGrinding> =
         VerifierGrindingTranscript::new(transcript, forest_grinding_bits, &proof.grinding_nonces);
     let mut points = Vec::with_capacity(lch);
     let mut mus = Vec::with_capacity(lch);
@@ -11727,6 +11815,7 @@ mod tests {
             &bridge_digest,
             FQ_BITS,
             alpha,
+            0,
             &pc,
         )
         .unwrap();

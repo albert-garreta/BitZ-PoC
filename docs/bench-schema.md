@@ -114,11 +114,12 @@ unless `OBLONG_PROFILE=1` is set.
 ## Which benches adopt what
 
 - **Full schema** (uniform block + RESULT line + step scopes):
-  `multiswap`, `sha256_compressions`, `u32_mul`, `pcs` (PCS-only: steps
-  2/3/4/5.0 are `na`).
+  `multiswap`, `sha256_compressions`, `u32_mul`, `baby_bear_mul` (two rows
+  per shape: `profile=lambda100` and `profile=lambda128` on one witness),
+  `lambda_sweep`, `pcs` (PCS-only: steps 2/3/4/5.0 are `na`).
 - **Micro/policy benches — exempt** (own output, strict-env check only):
   `field`, `eq_tables`, `u32_mul_inner_policy`, `u32_mul_outer_skip`,
-  `cm_and`, `baby_bear_mul` (its RESULT keys are pinned by
-  `scripts/baby_bear_mul_bench_report.py`; port it together with that script).
+  `cm_and`. (`scripts/baby_bear_mul_bench_report.py` still targets the
+  pre-schema BabyBear output — commit b7713d8; porting it is open.)
 - `examples/reference_measure.rs`, `src/bin/f2z.rs`: unchanged output,
   documented here as exempt.

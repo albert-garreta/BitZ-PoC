@@ -325,22 +325,24 @@ impl GrindingDomain for ForestRoundGrinding {
 }
 
 /// Prover-side transcript adapter: before every challenge drawn through
-/// it, grinds one [`ForestRoundGrinding`] boundary at the configured
-/// difficulty and records the nonce. At difficulty 0 it is a transparent
-/// pass-through — not one transcript byte moves.
+/// it, grinds one boundary in the domain `D` (default
+/// [`ForestRoundGrinding`]) at the configured difficulty and records the
+/// nonce. At difficulty 0 it is a transparent pass-through — not one
+/// transcript byte moves.
 ///
-/// Wrap exactly the opening region whose rounds the difficulty covers and
-/// call [`Self::finish`] to recover the nonces for the proof; leave the
-/// inner Ligerito call OUTSIDE the wrapper (flock carries its own
-/// grinding configuration).
-pub struct ProverGrindingTranscript<'a, T> {
+/// Wrap exactly the region whose rounds the difficulty covers and call
+/// [`Self::finish`] to recover the nonces for the proof; leave any inner
+/// Ligerito call OUTSIDE the wrapper (flock carries its own grinding
+/// configuration).
+pub struct ProverGrindingTranscript<'a, T, D = ForestRoundGrinding> {
     inner: &'a mut T,
     bits: u32,
     next_index: u64,
     nonces: Vec<u64>,
+    _domain: PhantomData<fn() -> D>,
 }
 
-impl<'a, T: Transcript> ProverGrindingTranscript<'a, T> {
+impl<'a, T: Transcript, D: GrindingDomain> ProverGrindingTranscript<'a, T, D> {
     /// Wraps `inner` at `bits` difficulty per drawn challenge.
     pub fn new(inner: &'a mut T, bits: u32) -> Self {
         Self {
@@ -348,6 +350,7 @@ impl<'a, T: Transcript> ProverGrindingTranscript<'a, T> {
             bits,
             next_index: 0,
             nonces: Vec::new(),
+            _domain: PhantomData,
         }
     }
 
@@ -357,13 +360,13 @@ impl<'a, T: Transcript> ProverGrindingTranscript<'a, T> {
     }
 }
 
-impl<T: Transcript> Transcript for ProverGrindingTranscript<'_, T> {
+impl<T: Transcript, D: GrindingDomain> Transcript for ProverGrindingTranscript<'_, T, D> {
     fn get_challenge<C: ConstTranscribable>(&mut self) -> C {
         if self.bits > 0 {
-            let round = GrindingRound::<ForestRoundGrinding>::new(self.next_index);
+            let round = GrindingRound::<D>::new(self.next_index);
             self.next_index = self.next_index.wrapping_add(1);
             let nonce = grind_and_absorb(self.inner, round, self.bits)
-                .expect("forest grinding difficulty is validated by the profile");
+                .expect("per-round grinding difficulty is validated by the profile");
             self.nonces.push(nonce);
         }
         self.inner.get_challenge()
@@ -387,16 +390,17 @@ impl<T: Transcript> Transcript for ProverGrindingTranscript<'_, T> {
 /// difficulty. Nonce failures and count mismatches are deferred to
 /// [`Self::finish`] so the transcript stays deterministic — the caller
 /// MUST propagate that result before accepting the proof.
-pub struct VerifierGrindingTranscript<'a, 'n, T> {
+pub struct VerifierGrindingTranscript<'a, 'n, T, D = ForestRoundGrinding> {
     inner: &'a mut T,
     bits: u32,
     next_index: u64,
     nonces: &'n [u64],
     consumed: usize,
     failure: Option<GrindingError>,
+    _domain: PhantomData<fn() -> D>,
 }
 
-impl<'a, 'n, T: Transcript> VerifierGrindingTranscript<'a, 'n, T> {
+impl<'a, 'n, T: Transcript, D: GrindingDomain> VerifierGrindingTranscript<'a, 'n, T, D> {
     /// Wraps `inner`, checking `nonces` at `bits` difficulty per draw.
     pub fn new(inner: &'a mut T, bits: u32, nonces: &'n [u64]) -> Self {
         Self {
@@ -406,6 +410,7 @@ impl<'a, 'n, T: Transcript> VerifierGrindingTranscript<'a, 'n, T> {
             nonces,
             consumed: 0,
             failure: None,
+            _domain: PhantomData,
         }
     }
 
@@ -426,10 +431,10 @@ impl<'a, 'n, T: Transcript> VerifierGrindingTranscript<'a, 'n, T> {
     }
 }
 
-impl<T: Transcript> Transcript for VerifierGrindingTranscript<'_, '_, T> {
+impl<T: Transcript, D: GrindingDomain> Transcript for VerifierGrindingTranscript<'_, '_, T, D> {
     fn get_challenge<C: ConstTranscribable>(&mut self) -> C {
         if self.bits > 0 {
-            let round = GrindingRound::<ForestRoundGrinding>::new(self.next_index);
+            let round = GrindingRound::<D>::new(self.next_index);
             self.next_index = self.next_index.wrapping_add(1);
             // A missing nonce absorbs a canonical zero so the transcript
             // stays deterministic; `finish` reports the failure.
@@ -613,7 +618,8 @@ mod tests {
     fn grinding_transcripts_stay_in_lockstep_and_gate_the_nonces() {
         const BITS: u32 = 6;
         let mut prover_inner = transcript();
-        let mut prover = ProverGrindingTranscript::new(&mut prover_inner, BITS);
+        let mut prover: ProverGrindingTranscript<_, ForestRoundGrinding> =
+            ProverGrindingTranscript::new(&mut prover_inner, BITS);
         let a: u128 = prover.get_challenge();
         prover.absorb_slice(b"round message");
         let b: u128 = prover.get_challenge();
@@ -621,7 +627,8 @@ mod tests {
         assert_eq!(nonces.len(), 2);
 
         let mut verifier_inner = transcript();
-        let mut verifier = VerifierGrindingTranscript::new(&mut verifier_inner, BITS, &nonces);
+        let mut verifier : VerifierGrindingTranscript<_, ForestRoundGrinding> =
+            VerifierGrindingTranscript::new(&mut verifier_inner, BITS, &nonces);
         let va: u128 = verifier.get_challenge();
         verifier.absorb_slice(b"round message");
         let vb: u128 = verifier.get_challenge();
@@ -632,7 +639,8 @@ mod tests {
         let mut bad = nonces.clone();
         bad[1] ^= 1;
         let mut verifier_inner = transcript();
-        let mut verifier = VerifierGrindingTranscript::new(&mut verifier_inner, BITS, &bad);
+        let mut verifier : VerifierGrindingTranscript<_, ForestRoundGrinding> =
+            VerifierGrindingTranscript::new(&mut verifier_inner, BITS, &bad);
         let _: u128 = verifier.get_challenge();
         verifier.absorb_slice(b"round message");
         let _: u128 = verifier.get_challenge();
@@ -640,7 +648,8 @@ mod tests {
 
         // Leftover nonces are caught at finish.
         let mut verifier_inner = transcript();
-        let mut verifier = VerifierGrindingTranscript::new(&mut verifier_inner, BITS, &nonces);
+        let mut verifier : VerifierGrindingTranscript<_, ForestRoundGrinding> =
+            VerifierGrindingTranscript::new(&mut verifier_inner, BITS, &nonces);
         let _: u128 = verifier.get_challenge();
         assert!(verifier.finish().is_err());
     }
@@ -648,7 +657,8 @@ mod tests {
     #[test]
     fn zero_difficulty_grinding_transcript_is_a_transparent_passthrough() {
         let mut wrapped_inner = transcript();
-        let mut wrapped = ProverGrindingTranscript::new(&mut wrapped_inner, 0);
+        let mut wrapped: ProverGrindingTranscript<_, ForestRoundGrinding> =
+            ProverGrindingTranscript::new(&mut wrapped_inner, 0);
         wrapped.absorb_slice(b"message");
         let a: u128 = wrapped.get_challenge();
         assert!(wrapped.finish().is_empty());
@@ -659,7 +669,8 @@ mod tests {
         assert_eq!(a, b);
 
         let mut verifier_inner = transcript();
-        let mut verifier = VerifierGrindingTranscript::new(&mut verifier_inner, 0, &[]);
+        let mut verifier: VerifierGrindingTranscript<_, ForestRoundGrinding> =
+            VerifierGrindingTranscript::new(&mut verifier_inner, 0, &[]);
         verifier.absorb_slice(b"message");
         let c: u128 = verifier.get_challenge();
         verifier.finish().unwrap();

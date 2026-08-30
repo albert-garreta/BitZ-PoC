@@ -73,9 +73,11 @@ harness = false
 [[bench]]
 name = "baby_bear_mul"
 harness = false
-# Independent BabyBear multiplications represented by the exact integer
-# relation a*b = c + p*k, with the assignment opened through F2Z.
-# Exponents via F2Z_BABY_BEAR_MUL_EXPONENTS; reps via F2Z_BENCH_REPS.
+# Independent BabyBear multiplications (a*b = c + p*k) through the PAPER
+# path (transcript-sampled Step-2 prime), TWO rows per shape on one
+# witness: Lambda100 and Lambda128. Unified output schema
+# (docs/bench-schema.md). Exponents via F2Z_BENCH_SHAPES (alias
+# F2Z_BABY_BEAR_MUL_EXPONENTS); reps via F2Z_BENCH_REPS.
 
 [[bench]]
 name = "u32_mul_inner_policy"

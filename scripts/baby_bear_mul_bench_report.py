@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+#
+# COMPATIBILITY NOTE (2026-08-30): this script parses the PRE-SCHEMA output
+# of benches/baby_bear_mul.rs (its original SAMPLE/RESULT/MEMORY records and
+# the bench-peak-memory pass). The bench now emits the unified
+# `RESULT schema=f2z/1` format (docs/bench-schema.md) with two rows per
+# shape (Lambda100 + Lambda128) and no memory pass. To reproduce the output
+# this script expects, run the bench from commit b7713d8. Porting this
+# audit harness to the unified schema is an open task.
+#
 """Convert stable baby_bear_mul benchmark records into comparison CSV files."""
 
 from __future__ import annotations
