@@ -42,6 +42,12 @@ F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
   cargo bench --bench u32_mul --features unchecked
 ```
 
+### Babybear mult — λ=100; exponents ≥ 15:
+```sh
+F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
+  cargo bench --bench baby_bear_mul --features unchecked
+```
+
 ### SHA with 100 and 128 bits of security with designs: Lambda100 / LegacySha128Design / Lambda128:
 ```sh
 F2Z_BENCH_SHAPES=12 F2Z_BENCH_REPS=3 RUSTFLAGS="-C target-cpu=native" \
