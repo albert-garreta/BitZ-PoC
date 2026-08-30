@@ -24,33 +24,34 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
 
 ## Integer R1CS with F_2 virtualization
 
-u32 * u32 -> u64
-
+### MultiSwap — (2 modular exponentiations on a 2048 bit RSA modulus + Poseidon hashing):
 ```sh
-RUSTFLAGS="-C target-cpu=native" \
-RAYON_NUM_THREADS=8 \
-F2Z_MUL_EXPONENTS="15" \
-F2Z_BENCH_REPS=1 \
-cargo bench --bench u32_mul --features unchecked
-````
+RAYON_NUM_THREADS=1 RUSTFLAGS="-C target-cpu=native" \
+  cargo bench --bench multiswap --features unchecked
+```
 
-BabyBear
+### SHA-256 — λ=100 bits of security; exponents 7..16:
 ```sh
-RUSTFLAGS="-C target-cpu=native" \
-RAYON_NUM_THREADS=8 \
-F2Z_BABY_BEAR_MUL_EXPONENTS="15" \
-F2Z_BENCH_REPS=1 \
-cargo bench --bench baby_bear_mul --features unchecked
-````
+F2Z_BENCH_SHAPES=14 F2Z_BENCH_REPS=3 RUSTFLAGS="-C target-cpu=native" \
+  cargo bench --bench sha256_compressions --features unchecked
+```
 
-SHA-256
+### u32×u32 -> u64 — λ=100; exponents ≥ 15:
 ```sh
-RUSTFLAGS="-C target-cpu=native" \
-RAYON_NUM_THREADS=8 \
-OBLONG_PROFILE=1 \
-F2Z_SHA_LOG2S="7" \
-F2Z_SHA_REPS=1 \
-cargo bench --bench sha256_compressions --features unchecked
+F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
+  cargo bench --bench u32_mul --features unchecked
+```
+
+### SHA with 100 and 128 bits of security with designs: Lambda100 / LegacySha128Design / Lambda128:
+```sh
+F2Z_BENCH_SHAPES=12 F2Z_BENCH_REPS=3 RUSTFLAGS="-C target-cpu=native" \
+  cargo bench --bench lambda_sweep --features unchecked
+```
+
+### PCS-only (t:s:W triples; profiling stays opt-in here — add OBLONG_PROFILE=1 for the phase line):
+```sh
+F2Z_BENCH_SHAPES="17:11:1" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
+  cargo bench --bench pcs --features unchecked
 ```
 
 ## Dependencies
