@@ -1,5 +1,5 @@
 # Fdb version 4
-["bibtex main"] 0 "main.aux" "main.bbl" "main" 1788085503.6979 0
+["bibtex main"] 0 "main.aux" "main.bbl" "main" 0 0
   "/usr/local/texlive/2026/texmf-dist/bibtex/bst/base/alpha.bst" 1292289607 23907 a5f93555796fb564b924339521f10a7c ""
   "main.aux" 0 -1 0 "pdflatex"
   "paper/references.bib" 0 -1 0 ""
@@ -7,10 +7,10 @@
   "main.bbl"
   "main.blg"
   (rewritten before read)
-["pdflatex"] 1788085501.66542 "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" "main.pdf" "main" 1788085503.69814 0
+["pdflatex"] 1788113058.53571 "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" "main.pdf" "main" 1788113060.20209 0
   "/Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm10.657pk" 1776501489.11392 7808 6a049d449f6ee1b878a120976685d109 ""
   "/Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm8.600pk" 1776501487.73383 5580 11384d216537db22ad7711221f99aacd ""
-  "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" 1788085499.07347 300123 64afac5dc30d2d4ba6b4b34af4c5c4bb ""
+  "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" 1788113056.72443 308711 5361041a23a6140e58793955ab79a4e8 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-t1.enc" 1136849721 2971 def0b6c1f0b107b3b936def894055589 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc" 1136849721 2900 1537cc8184ad1792082cd229ecc269f4 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
@@ -369,12 +369,12 @@
   "/usr/local/texlive/2026/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1776500619 5573038 b99aad5e4898a9034e953632f940512b ""
   "/usr/local/texlive/2026/texmf-var/web2c/pdftex/pdflatex.fmt" 1776500545 3636771 b0d19629fdc98bdfa4d378986b1cd147 ""
   "/usr/local/texlive/2026/texmf.cnf" 1774209515 577 648cd9f92f9c0eac486f4c71c85cfbbe ""
-  "macros.tex" 1788036903.60958 52874 a14a6b36a5e21e948f4153b73c0d0813 ""
-  "main.aux" 1788085503.32949 47558 419a8d15feed604fe6a4b8bafd160216 "pdflatex"
+  "macros.tex" 1788107225.41154 52873 f8568fb3babe467ddef6f654d3f956c7 ""
+  "main.aux" 1788113059.89841 47733 17ed8ef5b2ec1e1fe89dde5583c5b21a "pdflatex"
   "main.bbl" 1787510590.39225 4588 47639833d47c1d572d83c83684065cef "bibtex main"
-  "main.out" 1788085503.33344 12026 08dc15d268cd1429837cda5854ff5106 "pdflatex"
-  "main.tex" 1788085499.07347 300123 64afac5dc30d2d4ba6b4b34af4c5c4bb ""
-  "main.toc" 1788085503.33373 10623 be7f2b224f17899d251fb7a6783b2c4f "pdflatex"
+  "main.out" 1788113059.9008 12026 08dc15d268cd1429837cda5854ff5106 "pdflatex"
+  "main.tex" 1788113056.72443 308711 5361041a23a6140e58793955ab79a4e8 ""
+  "main.toc" 1788113059.90099 10623 5804678abef42cc2945fdf7448cb68c5 "pdflatex"
   (generated)
   "main.aux"
   "main.log"

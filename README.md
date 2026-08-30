@@ -30,7 +30,7 @@ RAYON_NUM_THREADS=1 RUSTFLAGS="-C target-cpu=native" \
   cargo bench --bench multiswap --features unchecked
 ```
 
-### SHA-256 — λ=100 bits of security; exponents 7..16:
+### SHA-256 — λ=100 bits of security
 ```sh
 F2Z_BENCH_SHAPES=14 F2Z_BENCH_REPS=3 RUSTFLAGS="-C target-cpu=native" \
   cargo bench --bench sha256_compressions --features unchecked
