@@ -12,6 +12,8 @@
 //!   cargo bench --bench cm_and --features unchecked
 //! ```
 
+mod common;
+
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::hint::black_box;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -270,6 +272,7 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
 }
 
 fn main() {
+    common::enforce_known_env();
     let _ = flock_core::init_perf_thread_pool();
     let reps = env_usize("F2Z_BENCH_REPS", 5);
     assert!(reps > 0, "F2Z_BENCH_REPS must be positive");

@@ -20,6 +20,8 @@
 //! allocator accounting in the latency run. `F2Z_BENCH_ORDER` rotates the
 //! first measured protocol across fresh processes.
 
+mod common;
+
 use std::{hint::black_box, time::Instant};
 
 #[cfg(feature = "bench-peak-memory")]
@@ -839,6 +841,7 @@ fn enable_phase_profiling() {
 }
 
 fn main() {
+    common::enforce_known_env();
     enable_phase_profiling();
     let _ = flock_core::init_perf_thread_pool();
     let repetitions = env_usize("F2Z_BENCH_REPS", DEFAULT_REPETITIONS);

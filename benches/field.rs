@@ -24,6 +24,8 @@
 //! Knobs: `F2Z_BENCH_REPS` (timing repetitions per pattern, median
 //! reported; default 5). Idle the box; expect ±5 % run-to-run.
 
+mod common;
+
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -480,6 +482,7 @@ fn run_b127_pfold(reps: usize) {
 }
 
 fn main() {
+    common::enforce_known_env();
     let reps: usize =
         std::env::var("F2Z_BENCH_REPS").ok().and_then(|v| v.parse().ok()).unwrap_or(5);
 

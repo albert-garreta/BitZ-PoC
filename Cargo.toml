@@ -64,7 +64,8 @@ name = "u32_mul"
 harness = false
 # Integer u32×u32→u64 R1CS through the generic Spartan PIOP, with the
 # terminal assignment claim discharged against the compact F2 witness by F2Z.
-# Exponents via F2Z_MUL_EXPONENTS; reps via F2Z_BENCH_REPS.
+# Unified output schema (docs/bench-schema.md). Exponents via
+# F2Z_BENCH_SHAPES (alias F2Z_MUL_EXPONENTS); reps via F2Z_BENCH_REPS.
 
 [[bench]]
 name = "baby_bear_mul"
@@ -98,13 +99,16 @@ name = "multiswap"
 harness = false
 # Limber's wired MultiSwap Mod-R1CS (6209 rows, k=0) through Spartan over a
 # transcript-sampled 113-bit prime + the runtime-prime F2Z bit opening.
-# Reps via F2Z_MULTISWAP_REPS; run RAYON_NUM_THREADS=1 for Limber parity.
+# Unified output schema (docs/bench-schema.md). Reps via F2Z_BENCH_REPS
+# (alias F2Z_MULTISWAP_REPS); run RAYON_NUM_THREADS=1 for Limber parity.
 
 [[bench]]
 name = "sha256_compressions"
 harness = false
 # Independent SHA-256 compression batches through the structured Spartan +
-# virtual F2Z path. Exponents via F2Z_SHA_LOG2S; reps via F2Z_SHA_REPS.
+# virtual F2Z path. Unified output schema (docs/bench-schema.md). Exponents
+# via F2Z_BENCH_SHAPES (alias F2Z_SHA_LOG2S); reps via F2Z_BENCH_REPS
+# (alias F2Z_SHA_REPS).
 
 [features]
 default = ["parallel"]

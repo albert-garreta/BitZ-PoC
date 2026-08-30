@@ -22,6 +22,8 @@
 //! requires the benchmark-only `bench-peak-memory` feature. The default is
 //! latency-only so an ordinary invocation has no allocator instrumentation.
 
+mod common;
+
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -834,6 +836,7 @@ fn bench_exponent(
 }
 
 fn main() {
+    common::enforce_known_env();
     let _ = flock_core::init_perf_thread_pool();
     let reps = env_usize("F2Z_BENCH_REPS", 5);
     assert!(reps > 0, "F2Z_BENCH_REPS must be positive");

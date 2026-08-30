@@ -4,22 +4,30 @@
 //! claim is then discharged against the compact 32/32/64-bit witness with F2Z.
 //! Every measured proof is verified through the combined verifier.
 //!
-//! Defaults to the production sweep `2^15, ..., 2^25` multiplications. Override
-//! it with `F2Z_MUL_EXPONENTS`, for example:
+//! Output follows the unified schema (`docs/bench-schema.md`): the
+//! end-to-end prover (`prove_ms`) covers bit packing, commitment, Spartan,
+//! bitification, and the F2Z opening, re-run per repetition. Witness
+//! generation and relation preparation are excluded and reported one-time.
+//! This path has no sampled projection prime yet (fixed legacy modulus
+//! `2^100 - 15`), so `s2_project` and `lambda` report `na`.
+//!
+//! Defaults to the production sweep `2^15, ..., 2^25` multiplications.
+//! Override with `F2Z_BENCH_SHAPES` (deprecated alias `F2Z_MUL_EXPONENTS`):
 //!
 //! ```text
-//! F2Z_MUL_EXPONENTS="15 17 19" F2Z_BENCH_REPS=3 \
+//! F2Z_BENCH_SHAPES="15 17 19" F2Z_BENCH_REPS=3 \
 //!   cargo bench --bench u32_mul --features unchecked
 //! ```
 //!
-//! `F2Z_MUL_EXPONENTS=15 F2Z_BENCH_REPS=1` is the smallest production smoke
+//! `F2Z_BENCH_SHAPES=15 F2Z_BENCH_REPS=1` is the smallest production smoke
 //! shape. `F2Z_SPARTAN_REDUCTION` selects `immediate`, `delayed-barrett`, or
 //! `delayed-crypto-bigint`; the production default is `delayed-barrett`.
 //! `F2Z_MUL_WORD_BITS=1|8` selects the F2Z word width; the default is `1`.
-//! `F2Z_BENCH_PASS=latency|memory|both` separates the
-//! measured repetitions from the extra peak-heap proof. Memory measurement
-//! requires the benchmark-only `bench-peak-memory` feature. The default is
-//! latency-only so an ordinary invocation has no allocator instrumentation.
+//! `F2Z_BENCH_PASS=latency|memory|both` separates the measured repetitions
+//! from the extra peak-heap proof. Memory measurement requires the
+//! benchmark-only `bench-peak-memory` feature.
+
+mod common;
 
 use std::hint::black_box;
 use std::time::Instant;
@@ -35,7 +43,7 @@ use f2z::pcs::{FQ_BITS, mod_q_num_chunks};
 use f2z::piop::spartan::{
     PreparedConstraintMatrices, SpartanF2zError, SpartanF2zField, SpartanReductionStrategy,
     U32MulF2zWidth, U32MulLayout, U32MulSpartanF2zProof, U32MulUnivariateSkipSpartanF2zProof,
-    U32MulWitness, commit_u32_mul_witness, prepare_u32_mul_relation, project_u32_mul_witness,
+    U32MulWitness, commit_u32_mul_witness, prepare_u32_mul_relation,
     prove_u32_mul_spartan_and_f2z_with_strategy,
     prove_u32_mul_spartan_and_f2z_with_univariate_skip, spartan_f2z_field_config,
     verify_u32_mul_spartan_and_f2z, verify_u32_mul_spartan_and_f2z_with_univariate_skip,
@@ -118,11 +126,6 @@ fn peak_mib() -> f64 {
     unreachable!("memory pass requires the bench-peak-memory feature")
 }
 
-fn median(mut samples: Vec<f64>) -> f64 {
-    samples.sort_by(|left, right| left.total_cmp(right));
-    samples[samples.len() / 2]
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum BenchmarkPass {
     Latency,
@@ -177,149 +180,6 @@ const fn strategy_name(strategy: SpartanReductionStrategy) -> &'static str {
     }
 }
 
-const fn reduction_backend(strategy: SpartanReductionStrategy) -> &'static str {
-    match strategy {
-        SpartanReductionStrategy::Immediate => "immediate",
-        SpartanReductionStrategy::DelayedBarrett => "barrett",
-        SpartanReductionStrategy::DelayedCryptoBigint => "crypto-bigint",
-    }
-}
-
-fn optional_ms(value: Option<f64>) -> String {
-    value.map_or_else(|| "NA".to_owned(), |value| format!("{value:.9}"))
-}
-
-#[derive(Default)]
-struct PhaseSamples {
-    spartan_prove_ms: Vec<f64>,
-    spartan_outer_ms: Vec<f64>,
-    spartan_bind_ms: Vec<f64>,
-    spartan_inner_ms: Vec<f64>,
-    bitify_prove_ms: Vec<f64>,
-    f2z_prove_ms: Vec<f64>,
-    f2z_prepare_prove_ms: Vec<f64>,
-    prove_residual_ms: Vec<f64>,
-    spartan_verify_ms: Vec<f64>,
-    bitify_verify_ms: Vec<f64>,
-    f2z_verify_ms: Vec<f64>,
-    f2z_prepare_verify_ms: Vec<f64>,
-    verify_residual_ms: Vec<f64>,
-}
-
-#[derive(Clone, Copy)]
-struct PhaseMedians {
-    spartan_prove_ms: f64,
-    spartan_outer_ms: Option<f64>,
-    spartan_bind_ms: Option<f64>,
-    spartan_inner_ms: Option<f64>,
-    bitify_prove_ms: f64,
-    f2z_prove_ms: f64,
-    f2z_prepare_prove_ms: Option<f64>,
-    prove_residual_ms: f64,
-    spartan_verify_ms: f64,
-    bitify_verify_ms: f64,
-    f2z_verify_ms: f64,
-    f2z_prepare_verify_ms: Option<f64>,
-    verify_residual_ms: f64,
-}
-
-fn phase_ms(phases: &[(&'static str, f64)], label: &str) -> Option<f64> {
-    phases
-        .iter()
-        .find(|(phase, _)| *phase == label)
-        .map(|(_, seconds)| seconds * 1e3)
-}
-
-impl PhaseSamples {
-    fn record_prove(
-        &mut self,
-        phases: &[(&'static str, f64)],
-        total_ms: f64,
-        protocol: OuterProtocol,
-    ) {
-        let (Some(spartan), Some(bitify), Some(f2z)) = (
-            phase_ms(phases, "spartan-f2z:spartan_prove"),
-            phase_ms(phases, "spartan-f2z:bitify_prover"),
-            phase_ms(phases, "spartan-f2z:f2z_prove"),
-        ) else {
-            return;
-        };
-        self.spartan_prove_ms.push(spartan);
-        if let Some(value) = phase_ms(phases, protocol.outer_phase()) {
-            self.spartan_outer_ms.push(value);
-        }
-        if let Some(value) = phase_ms(phases, "spartan:bind_and_batch") {
-            self.spartan_bind_ms.push(value);
-        }
-        if let Some(value) = phase_ms(phases, "spartan:inner_sumcheck") {
-            self.spartan_inner_ms.push(value);
-        }
-        self.bitify_prove_ms.push(bitify);
-        self.f2z_prove_ms.push(f2z);
-        if let Some(value) = phase_ms(phases, "spartan-f2z:f2z_prepare_prover") {
-            self.f2z_prepare_prove_ms.push(value);
-        }
-        // `f2z_prepare_prover` is nested under the F2Z phase, so it remains a
-        // diagnostic and is deliberately not subtracted again here.
-        self.prove_residual_ms
-            .push((total_ms - spartan - bitify - f2z).max(0.0));
-    }
-
-    fn record_verify(&mut self, phases: &[(&'static str, f64)], total_ms: f64) {
-        let (Some(spartan), Some(bitify), Some(f2z)) = (
-            phase_ms(phases, "spartan-f2z:spartan_verify"),
-            phase_ms(phases, "spartan-f2z:bitify_verifier"),
-            phase_ms(phases, "spartan-f2z:f2z_verify"),
-        ) else {
-            return;
-        };
-        self.spartan_verify_ms.push(spartan);
-        self.bitify_verify_ms.push(bitify);
-        self.f2z_verify_ms.push(f2z);
-        if let Some(value) = phase_ms(phases, "spartan-f2z:f2z_prepare_verifier") {
-            self.f2z_prepare_verify_ms.push(value);
-        }
-        // The verifier prepare scope is likewise nested under F2Z.
-        self.verify_residual_ms
-            .push((total_ms - spartan - bitify - f2z).max(0.0));
-    }
-
-    fn medians(&self, reps: usize) -> Option<PhaseMedians> {
-        let complete = [
-            self.spartan_prove_ms.len(),
-            self.bitify_prove_ms.len(),
-            self.f2z_prove_ms.len(),
-            self.prove_residual_ms.len(),
-            self.spartan_verify_ms.len(),
-            self.bitify_verify_ms.len(),
-            self.f2z_verify_ms.len(),
-            self.verify_residual_ms.len(),
-        ]
-        .into_iter()
-        .all(|count| count == reps);
-        complete.then(|| PhaseMedians {
-            spartan_prove_ms: median(self.spartan_prove_ms.clone()),
-            spartan_outer_ms: (self.spartan_outer_ms.len() == reps)
-                .then(|| median(self.spartan_outer_ms.clone())),
-            spartan_bind_ms: (self.spartan_bind_ms.len() == reps)
-                .then(|| median(self.spartan_bind_ms.clone())),
-            spartan_inner_ms: (self.spartan_inner_ms.len() == reps)
-                .then(|| median(self.spartan_inner_ms.clone())),
-            bitify_prove_ms: median(self.bitify_prove_ms.clone()),
-            f2z_prove_ms: median(self.f2z_prove_ms.clone()),
-            f2z_prepare_prove_ms: (self.f2z_prepare_prove_ms.len() == reps)
-                .then(|| median(self.f2z_prepare_prove_ms.clone())),
-            prove_residual_ms: median(self.prove_residual_ms.clone()),
-            spartan_verify_ms: median(self.spartan_verify_ms.clone()),
-            bitify_verify_ms: median(self.bitify_verify_ms.clone()),
-            f2z_verify_ms: median(self.f2z_verify_ms.clone()),
-            f2z_prepare_verify_ms: (self.f2z_prepare_verify_ms.len() == reps)
-                .then(|| median(self.f2z_prepare_verify_ms.clone())),
-            verify_residual_ms: median(self.verify_residual_ms.clone()),
-        })
-    }
-}
-
 fn env_usize(name: &str, default: usize) -> usize {
     match std::env::var(name) {
         Ok(value) => value
@@ -367,13 +227,6 @@ impl OuterProtocol {
         match self {
             Self::Standard => 0,
             Self::UnivariateSkip(skip_vars) => skip_vars,
-        }
-    }
-
-    const fn outer_phase(self) -> &'static str {
-        match self {
-            Self::Standard => "spartan:outer_sumcheck",
-            Self::UnivariateSkip(_) => "spartan:outer_univariate_skip",
         }
     }
 }
@@ -464,37 +317,58 @@ fn verify_combined(
     }
 }
 
-fn parse_seed(value: &str) -> u64 {
-    if let Some(hex) = value
-        .strip_prefix("0x")
-        .or_else(|| value.strip_prefix("0X"))
-    {
-        u64::from_str_radix(hex, 16).expect("F2Z_MUL_SEED contains a valid hexadecimal u64")
-    } else {
-        value
-            .parse()
-            .expect("F2Z_MUL_SEED contains a valid decimal u64")
-    }
-}
-
 fn exponents() -> Vec<usize> {
-    match std::env::var("F2Z_MUL_EXPONENTS") {
-        Ok(value) => value
-            .split([',', ' '])
-            .filter(|part| !part.is_empty())
-            .map(|part| {
-                let exponent: usize = part.parse().expect("F2Z_MUL_EXPONENTS contains integers");
-                assert!(
-                    exponent >= 15,
-                    "the combined proof requires at least 2^15 gate slots"
-                );
-                exponent
-            })
-            .collect(),
-        Err(_) => (15..=25).collect(),
-    }
+    common::shapes(Some("F2Z_MUL_EXPONENTS")).map_or_else(
+        || (15..=25).collect(),
+        |shapes| {
+            shapes
+                .iter()
+                .map(|part| {
+                    let exponent: usize =
+                        part.parse().expect("F2Z_BENCH_SHAPES contains integers");
+                    assert!(
+                        exponent >= 15,
+                        "the combined proof requires at least 2^15 gate slots"
+                    );
+                    exponent
+                })
+                .collect()
+        },
+    )
 }
 
+/// One end-to-end prove: bit-pack + commit (Step 1) + the combined proof.
+#[allow(clippy::too_many_arguments)]
+fn prove_e2e(
+    relation: &PreparedConstraintMatrices<SpartanF2zField, bool>,
+    layout: &U32MulLayout,
+    witness: &U32MulWitness,
+    strategy: SpartanReductionStrategy,
+    protocol: OuterProtocol,
+) -> (BenchProof, FlockCommitHint, f64, f64) {
+    let prove_started = Instant::now();
+    let commit_started = Instant::now();
+    let bit_rows = witness.f2z_bit_rows();
+    let commitment_hint =
+        commit_u32_mul_witness(layout, bit_rows).expect("F2Z commitment succeeds");
+    let commit_ms = common::elapsed_ms(commit_started);
+
+    let mut prover_transcript = Blake3Transcript::new();
+    let proof = prove_combined(
+        &mut prover_transcript,
+        relation,
+        layout,
+        witness,
+        &commitment_hint,
+        strategy,
+        protocol,
+    )
+    .expect("combined proving succeeds");
+    let prove_ms = common::elapsed_ms(prove_started);
+    (proof, commitment_hint, prove_ms, commit_ms)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn bench_exponent(
     exponent: usize,
     reps: usize,
@@ -504,6 +378,7 @@ fn bench_exponent(
     protocol: OuterProtocol,
     f2z_width: U32MulF2zWidth,
     order: usize,
+    threads: usize,
 ) {
     let multiplications = 1usize
         .checked_shl(u32::try_from(exponent).expect("exponent fits u32"))
@@ -511,87 +386,51 @@ fn bench_exponent(
     let shape_seed = root_seed ^ (exponent as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
     let mut rng = StdRng::seed_from_u64(shape_seed);
 
+    // Witness generation (excluded from prove).
     let started = Instant::now();
     let witness = U32MulWitness::from_fn_with_f2z_width(multiplications, f2z_width, |_| {
         (rng.random::<u32>(), rng.random::<u32>())
     })
     .expect("valid u32 multiplication witness");
-    let witness_ms = started.elapsed().as_secs_f64() * 1e3;
+    let witness_ms = common::elapsed_ms(started);
     let layout = *witness.layout();
     let params = layout.f2z_params();
     let f2z_chunks = mod_q_num_chunks(&params, FQ_BITS);
 
+    // One-time public preprocessing (excluded from prove).
     let field_config = spartan_f2z_field_config();
     let started = Instant::now();
     let relation =
         prepare_u32_mul_relation::<SpartanF2zField>(layout, &field_config).expect("valid relation");
-    let relation_ms = started.elapsed().as_secs_f64() * 1e3;
-
-    let started = Instant::now();
-    let projected = project_u32_mul_witness::<SpartanF2zField>(&witness, &field_config)
-        .expect("field projection succeeds");
-    black_box(&projected);
-    let projection_ms = started.elapsed().as_secs_f64() * 1e3;
-    drop(projected);
-
-    let started = Instant::now();
-    let bit_rows = witness.f2z_bit_rows();
-    let bit_rows_ms = started.elapsed().as_secs_f64() * 1e3;
-
-    let started = Instant::now();
-    let commitment_hint =
-        commit_u32_mul_witness(&layout, bit_rows).expect("F2Z commitment succeeds");
-    let commit_ms = started.elapsed().as_secs_f64() * 1e3;
+    let setup_ms = common::elapsed_ms(started);
 
     // Excluded warm-up. This is also the first end-to-end correctness check.
-    let mut prover_transcript = Blake3Transcript::new();
-    let warm_proof = prove_combined(
-        &mut prover_transcript,
-        &relation,
-        &layout,
-        &witness,
-        &commitment_hint,
-        strategy,
-        protocol,
-    )
-    .expect("warm-up proving succeeds");
+    let (warm_proof, warm_hint, _, _) =
+        prove_e2e(&relation, &layout, &witness, strategy, protocol);
     let mut verifier_transcript = Blake3Transcript::new();
     verify_combined(
         &mut verifier_transcript,
         &relation,
         &layout,
-        &commitment_hint.commitment,
+        &warm_hint.commitment,
         &warm_proof,
     )
     .expect("warm-up combined verification succeeds");
     drop(warm_proof);
+    drop(warm_hint);
     let _ = f2z::utils::prof::take_totals();
 
     let strategy_label = strategy_name(strategy);
-    let backend_label = reduction_backend(strategy);
-    let mut latency_metrics = None;
+    let mut latency = None;
     if pass.measures_latency() {
-        let mut prove_ms = Vec::with_capacity(reps);
-        let mut verify_ms = Vec::with_capacity(reps);
-        let mut phase_samples = PhaseSamples::default();
+        let mut prover = common::StepSamples::default();
+        let mut verifier = common::StepSamples::default();
         let mut last_proof = None;
         for sample_index in 0..reps {
-            let mut prover_transcript = Blake3Transcript::new();
-            let started = Instant::now();
-            let proof = prove_combined(
-                &mut prover_transcript,
-                &relation,
-                &layout,
-                &witness,
-                &commitment_hint,
-                strategy,
-                protocol,
-            )
-            .expect("combined proving succeeds");
-            let measured_prove_ms = started.elapsed().as_secs_f64() * 1e3;
-            prove_ms.push(measured_prove_ms);
+            let _ = f2z::utils::prof::take_totals();
+            let (proof, commitment_hint, prove_ms, commit_ms) =
+                prove_e2e(&relation, &layout, &witness, strategy, protocol);
             let prove_phases = f2z::utils::prof::take_totals();
-            phase_samples.record_prove(&prove_phases, measured_prove_ms, protocol);
 
             let mut verifier_transcript = Blake3Transcript::new();
             let started = Instant::now();
@@ -603,54 +442,21 @@ fn bench_exponent(
                 &proof,
             )
             .expect("combined verification succeeds");
-            let measured_verify_ms = started.elapsed().as_secs_f64() * 1e3;
-            verify_ms.push(measured_verify_ms);
+            let verify_ms = common::elapsed_ms(started);
             let verify_phases = f2z::utils::prof::take_totals();
-            phase_samples.record_verify(&verify_phases, measured_verify_ms);
 
-            let sample_spartan = optional_ms(phase_ms(&prove_phases, "spartan-f2z:spartan_prove"));
-            let sample_outer = optional_ms(phase_ms(&prove_phases, protocol.outer_phase()));
-            let sample_bind = optional_ms(phase_ms(&prove_phases, "spartan:bind_and_batch"));
-            let sample_inner = optional_ms(phase_ms(&prove_phases, "spartan:inner_sumcheck"));
-            let sample_bitify = optional_ms(phase_ms(&prove_phases, "spartan-f2z:bitify_prover"));
-            let sample_f2z = optional_ms(phase_ms(&prove_phases, "spartan-f2z:f2z_prove"));
-            let sample_f2z_prepare =
-                optional_ms(phase_ms(&prove_phases, "spartan-f2z:f2z_prepare_prover"));
-            let sample_spartan_verify =
-                optional_ms(phase_ms(&verify_phases, "spartan-f2z:spartan_verify"));
-            let sample_bitify_verify =
-                optional_ms(phase_ms(&verify_phases, "spartan-f2z:bitify_verifier"));
-            let sample_f2z_verify = optional_ms(phase_ms(&verify_phases, "spartan-f2z:f2z_verify"));
-            let sample_f2z_prepare_verify =
-                optional_ms(phase_ms(&verify_phases, "spartan-f2z:f2z_prepare_verifier"));
             println!(
-                "  SAMPLE pass=latency order={order} protocol={} skip_vars={} strategy={strategy_label} reduction_backend={backend_label} word_bits={} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} multiplications={multiplications} sample={sample_index} prove_ms={measured_prove_ms:.9} spartan_prove_ms={sample_spartan} spartan_outer_ms={sample_outer} spartan_bind_ms={sample_bind} spartan_inner_ms={sample_inner} bitify_prove_ms={sample_bitify} f2z_prove_ms={sample_f2z} f2z_prepare_prove_ms={sample_f2z_prepare} verify_ms={measured_verify_ms:.9} spartan_verify_ms={sample_spartan_verify} bitify_verify_ms={sample_bitify_verify} f2z_verify_ms={sample_f2z_verify} f2z_prepare_verify_ms={sample_f2z_prepare_verify} verified=true",
-                protocol.name(),
-                protocol.skip_vars(),
-                params.word_bits,
-                params.t,
-                params.s,
+                "  SAMPLE exponent={exponent} sample={} multiplications={multiplications} commit_ms={commit_ms:.6} prove_ms={prove_ms:.6} verify_ms={verify_ms:.6} verified=true",
+                sample_index + 1,
             );
-
+            prover.record_prove(prove_ms, commit_ms, &prove_phases);
+            verifier.record_verify(verify_ms, &verify_phases);
             black_box(&proof);
             last_proof = Some(proof);
         }
 
         let last_proof = last_proof.expect("at least one benchmark repetition");
-        let f2z_proof_bytes = last_proof.f2z_bytes();
-        let spartan_elements = last_proof.spartan_payload_elements();
-        let spartan_payload_bytes = spartan_elements * 16;
-        let prove_median_ms = median(prove_ms);
-        let verify_median_ms = median(verify_ms);
-        let phase_medians = phase_samples.medians(reps);
-        latency_metrics = Some((
-            prove_median_ms,
-            verify_median_ms,
-            phase_medians,
-            f2z_proof_bytes,
-            spartan_elements,
-            spartan_payload_bytes,
-        ));
+        latency = Some((prover, verifier, last_proof));
     }
 
     let mut memory_metrics = None;
@@ -660,17 +466,8 @@ fn bench_exponent(
         let _ = f2z::utils::prof::take_totals();
         let live_before_prove = live_mib();
         reset_peak();
-        let mut prover_transcript = Blake3Transcript::new();
-        let peak_proof = prove_combined(
-            &mut prover_transcript,
-            &relation,
-            &layout,
-            &witness,
-            &commitment_hint,
-            strategy,
-            protocol,
-        )
-        .expect("peak proving succeeds");
+        let (peak_proof, peak_hint, _, _) =
+            prove_e2e(&relation, &layout, &witness, strategy, protocol);
         black_box(&peak_proof);
         let peak = peak_mib();
         let _ = f2z::utils::prof::take_totals();
@@ -679,18 +476,16 @@ fn bench_exponent(
             &mut verifier_transcript,
             &relation,
             &layout,
-            &commitment_hint.commitment,
+            &peak_hint.commitment,
             &peak_proof,
         )
         .expect("peak-memory proof verifies");
         let _ = f2z::utils::prof::take_totals();
         println!(
-            "  MEMORY pass=memory order={order} protocol={} skip_vars={} strategy={strategy_label} reduction_backend={backend_label} word_bits={} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} multiplications={multiplications} peak_heap_mib={peak:.6} live_before_prove_mib={live_before_prove:.6} verified=true",
+            "  MEMORY pass=memory order={order} protocol={} skip_vars={} strategy={strategy_label} word_bits={} exponent={exponent} multiplications={multiplications} peak_heap_mib={peak:.6} live_before_prove_mib={live_before_prove:.6} verified=true",
             protocol.name(),
             protocol.skip_vars(),
             params.word_bits,
-            params.t,
-            params.s,
         );
         memory_metrics = Some((live_before_prove, peak));
     }
@@ -703,7 +498,7 @@ fn bench_exponent(
         protocol.name(),
     );
     println!(
-        "  benchmark: pass={} order={order} protocol={} skip_vars={} strategy={strategy_label} reduction={backend_label} t={} s={} chunks={f2z_chunks}",
+        "  benchmark: pass={} order={order} protocol={} skip_vars={} strategy={strategy_label} t={} s={} chunks={f2z_chunks}",
         pass.as_str(),
         protocol.name(),
         protocol.skip_vars(),
@@ -723,87 +518,42 @@ fn bench_exponent(
         (16usize * layout.capacity()) as f64 / (1024.0 * 1024.0),
     );
     println!(
-        "  witness: {} integer values | {} compact bits / {} bytes | 1 multiplication per row",
-        layout.assignment_len(),
-        128usize * layout.capacity(),
-        16usize * layout.capacity(),
-    );
-    println!(
         "  Ligerito: inverse rate=2^{} initial_k={} hash={:?}",
         lig_pc.log_inv_rates[0], lig_pc.initial_k, lig_pc.merkle_hash,
     );
-    println!(
-        "  setup: witness {witness_ms:9.2} ms | relation {relation_ms:9.2} ms | projection {projection_ms:9.2} ms"
-    );
-    println!("         bit-pack {bit_rows_ms:8.2} ms | commitment {commit_ms:9.2} ms");
-    if let Some((
-        prove_median_ms,
-        verify_median_ms,
-        phase_medians,
-        f2z_proof_bytes,
-        spartan_elements,
-        spartan_payload_bytes,
-    )) = latency_metrics
-    {
-        println!("  prove:  {prove_median_ms:9.2} ms   (median of {reps})");
-        println!("  verify: {verify_median_ms:9.2} ms");
-        if let Some(phases) = phase_medians {
-            println!(
-                "  Spartan split: outer {} ms | bind {} ms | inner {} ms",
-                optional_ms(phases.spartan_outer_ms),
-                optional_ms(phases.spartan_bind_ms),
-                optional_ms(phases.spartan_inner_ms),
-            );
-            println!(
-                "  prove split: Spartan {:9.2} ms | bitify {:8.2} ms | F2Z PCS {:9.2} ms | residual {:7.2} ms",
-                phases.spartan_prove_ms,
-                phases.bitify_prove_ms,
-                phases.f2z_prove_ms,
-                phases.prove_residual_ms,
-            );
-            println!(
-                "  verify split: Spartan {:8.2} ms | bitify {:8.2} ms | F2Z PCS {:9.2} ms | residual {:7.2} ms",
-                phases.spartan_verify_ms,
-                phases.bitify_verify_ms,
-                phases.f2z_verify_ms,
-                phases.verify_residual_ms,
-            );
-            println!(
-                "  F2Z prepare (nested diagnostic): prover {} ms | verifier {} ms",
-                optional_ms(phases.f2z_prepare_prove_ms),
-                optional_ms(phases.f2z_prepare_verify_ms),
-            );
-        }
-        println!(
-            "  proof:  F2Z {:9} B | Spartan canonical field payload {:6} elements / {:6} B",
-            f2z_proof_bytes, spartan_elements, spartan_payload_bytes,
-        );
-        if let Some(phases) = phase_medians {
-            let outer = optional_ms(phases.spartan_outer_ms);
-            let bind = optional_ms(phases.spartan_bind_ms);
-            let inner = optional_ms(phases.spartan_inner_ms);
-            let f2z_prepare_prove = optional_ms(phases.f2z_prepare_prove_ms);
-            let f2z_prepare_verify = optional_ms(phases.f2z_prepare_verify_ms);
-            println!(
-                "  RESULT pass=latency order={order} protocol={} skip_vars={} strategy={strategy_label} reduction_backend={backend_label} word_bits={} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} multiplications={multiplications} r1cs_rows={multiplications} r1cs_columns={} r1cs_nnz={} integer_witness_values={} compact_witness_bits={} compact_witness_bytes={} prove_ms={prove_median_ms:.9} spartan_prove_ms={:.9} spartan_outer_ms={outer} spartan_bind_ms={bind} spartan_inner_ms={inner} bitify_prove_ms={:.9} f2z_prove_ms={:.9} f2z_prepare_prove_ms={f2z_prepare_prove} verify_ms={verify_median_ms:.9} spartan_verify_ms={:.9} bitify_verify_ms={:.9} f2z_verify_ms={:.9} f2z_prepare_verify_ms={f2z_prepare_verify} spartan_proof_payload_bytes={spartan_payload_bytes} f2z_proof_bytes={f2z_proof_bytes} shape_seed={shape_seed:#018x} verified_samples={reps}",
-                protocol.name(),
-                protocol.skip_vars(),
-                params.word_bits,
-                params.t,
-                params.s,
-                4 * layout.capacity(),
-                3 * multiplications,
-                layout.assignment_len(),
-                128usize * layout.capacity(),
-                16usize * layout.capacity(),
-                phases.spartan_prove_ms,
-                phases.bitify_prove_ms,
-                phases.f2z_prove_ms,
-                phases.spartan_verify_ms,
-                phases.bitify_verify_ms,
-                phases.f2z_verify_ms,
-            );
-        }
+    if let Some((prover, verifier, last_proof)) = latency {
+        let spartan_elements = last_proof.spartan_payload_elements();
+        let report = common::BenchReport {
+            bench: "u32_mul",
+            shape: format!("2p{exponent}"),
+            extra: vec![
+                ("multiplications".into(), multiplications.to_string()),
+                ("protocol".into(), protocol.name().into()),
+                ("skip_vars".into(), protocol.skip_vars().to_string()),
+                ("strategy".into(), strategy_label.into()),
+                ("word_bits".into(), params.word_bits.to_string()),
+                ("f2z_t".into(), params.t.to_string()),
+                ("f2z_s".into(), params.s.to_string()),
+                ("f2z_chunks".into(), f2z_chunks.to_string()),
+                ("order".into(), order.to_string()),
+                ("shape_seed".into(), format!("{shape_seed:#018x}")),
+            ],
+            // No sampled projection prime yet: the path runs over the fixed
+            // legacy modulus 2^100 - 15, so no lambda claim is made.
+            lambda: None,
+            threads,
+            reps,
+            seed: Some(root_seed),
+            witness_ms,
+            setup_ms,
+            prover: prover.medians(),
+            verifier: verifier.medians(),
+            proof: common::ProofBytes {
+                piop: spartan_elements * 16,
+                open: last_proof.f2z_bytes(),
+            },
+        };
+        report.print_human();
     }
     if let Some((live_before_prove, peak)) = memory_metrics {
         println!(
@@ -814,9 +564,8 @@ fn bench_exponent(
 }
 
 fn main() {
-    let _ = flock_core::init_perf_thread_pool();
-    let reps = env_usize("F2Z_BENCH_REPS", 5);
-    assert!(reps > 0, "F2Z_BENCH_REPS must be positive");
+    let threads = common::init();
+    let reps = common::reps(None, 5);
     let pass = BenchmarkPass::from_env();
     assert!(
         !pass.measures_memory() || cfg!(feature = "bench-peak-memory"),
@@ -827,14 +576,11 @@ fn main() {
     let f2z_width = f2z_width();
     let order = env_usize("F2Z_BENCH_ORDER", 1);
     assert!(order > 0, "F2Z_BENCH_ORDER must be positive");
-    let seed = std::env::var("F2Z_MUL_SEED")
-        .ok()
-        .map(|value| parse_seed(&value))
-        .unwrap_or(0x5533_326d_756c_0064);
+    let seed = common::seed(Some("F2Z_MUL_SEED"), 0x5533_326d_756c_0064);
 
     println!("u32 × u32 → u64: Spartan PIOP + F2Z assignment opening");
     #[cfg(feature = "parallel")]
-    println!("rayon threads: {}", rayon::current_num_threads());
+    println!("rayon threads: {threads}");
     println!(
         "repetitions: {reps}; root seed: {seed:#018x}; F2Z word bits: {}",
         f2z_width.word_bits(),
@@ -850,7 +596,7 @@ fn main() {
     for exponent in exponents() {
         flock_core::scratch::clear();
         bench_exponent(
-            exponent, reps, seed, pass, strategy, protocol, f2z_width, order,
+            exponent, reps, seed, pass, strategy, protocol, f2z_width, order, threads,
         );
     }
     flock_core::scratch::clear();

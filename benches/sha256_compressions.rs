@@ -3,22 +3,26 @@
 //! runtime-prime paper path: commit before q, transcript-derived 112/113-bit prime,
 //! exact-integer projection, and per-round Spartan grinding.
 //!
-//! The headline prover boundary matches Flock's `prove_fast`: witness
-//! synthesis, bit packing, commitment, Spartan, and the PCS opening are all
-//! timed. Public relation construction and deterministic input generation are
-//! excluded. Every measured proof is verified.
+//! Output follows the unified schema (`docs/bench-schema.md`): the
+//! end-to-end prover (`prove_ms`) covers bit packing, commitment, the prime
+//! draw + grinding, Spartan, bitification, and the PCS opening. Witness
+//! synthesis and public relation construction are excluded and reported
+//! separately. Every measured proof is verified.
 //!
 //! Defaults to the complete paper range `2^7, ..., 2^16` with three measured
 //! repetitions after one warm-up. Override with, for example:
 //!
 //! ```text
-//! OBLONG_PROFILE=1 F2Z_SHA_LOG2S="10 12" F2Z_SHA_REPS=1 \
+//! F2Z_BENCH_SHAPES="10 12" F2Z_BENCH_REPS=1 \
 //!   cargo bench --bench sha256_compressions --features unchecked
 //! ```
 //!
-//! Set `F2Z_SHA_TRACE_PATH=/path/to/trace.jsonl` together with
+//! (`F2Z_SHA_LOG2S` / `F2Z_SHA_REPS` / `F2Z_SHA_SEED` are deprecated
+//! aliases.) Set `F2Z_SHA_TRACE_PATH=/path/to/trace.jsonl` together with
 //! `OBLONG_PROFILE_INTERVALS=1` to emit one canonical `zkperf.trace/v1` run per
 //! warm-up/sample, including observed nested profiler intervals.
+
+mod common;
 
 use std::{
     collections::HashMap,
@@ -46,20 +50,14 @@ use f2z::{
 };
 use serde_json::{json, Value};
 
-#[derive(Clone, Copy, Debug)]
-struct Timings {
+/// One rep's raw measurements; step extraction happens in `common`.
+struct RepTiming {
     witness_ms: f64,
     commit_ms: f64,
-    proof_ms: f64,
-    end_to_end_ms: f64,
+    prove_ms: f64,
     verify_ms: f64,
-    spartan_prove_ms: Option<f64>,
-    opening_prepare_prove_ms: Option<f64>,
-    f2z_prove_ms: Option<f64>,
-    spartan_verify_ms: Option<f64>,
-    opening_prepare_verify_ms: Option<f64>,
-    f2z_verify_ms: Option<f64>,
-    spartan_elements: usize,
+    prove_phases: Vec<(&'static str, f64)>,
+    verify_phases: Vec<(&'static str, f64)>,
     spartan_bytes: usize,
     f2z_bytes: usize,
 }
@@ -636,49 +634,26 @@ fn make_inputs(compressions: usize, seed: u64) -> Vec<Sha256CompressionInput> {
         .collect()
 }
 
-fn env_usize(name: &str, default: usize) -> usize {
-    std::env::var(name)
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(default)
-}
-
 fn exponents() -> Vec<usize> {
-    let value =
-        std::env::var("F2Z_SHA_LOG2S").unwrap_or_else(|_| "7 8 9 10 11 12 13 14 15 16".to_owned());
-    let exponents = value
-        .split([',', ' '])
-        .filter(|part| !part.is_empty())
+    let shapes = common::shapes(Some("F2Z_SHA_LOG2S")).unwrap_or_else(|| {
+        "7 8 9 10 11 12 13 14 15 16"
+            .split(' ')
+            .map(str::to_owned)
+            .collect()
+    });
+    shapes
+        .iter()
         .map(|part| {
             let exponent = part
                 .parse::<usize>()
-                .expect("F2Z_SHA_LOG2S contains integer exponents");
+                .expect("F2Z_BENCH_SHAPES contains integer exponents");
             assert!(
                 (SHA256_MIN_LOG_COMPRESSIONS..=SHA256_MAX_LOG_COMPRESSIONS).contains(&exponent),
                 "paper SHA runtime-prime profile supports exponents 7 through 16"
             );
             exponent
         })
-        .collect::<Vec<_>>();
-    assert!(!exponents.is_empty(), "F2Z_SHA_LOG2S must not be empty");
-    exponents
-}
-
-fn phase_ms(phases: &[(&'static str, f64)], label: &str) -> Option<f64> {
-    phases
-        .iter()
-        .find(|(phase, _)| *phase == label)
-        .map(|(_, seconds)| seconds * 1e3)
-}
-
-fn median(samples: &[f64]) -> f64 {
-    let mut sorted = samples.to_vec();
-    sorted.sort_by(|left, right| left.total_cmp(right));
-    sorted[sorted.len() / 2]
-}
-
-fn best(samples: &[f64]) -> f64 {
-    samples.iter().copied().fold(f64::INFINITY, f64::min)
+        .collect()
 }
 
 fn fmt_ms(milliseconds: f64) -> String {
@@ -696,13 +671,13 @@ fn run_once(
     prepared: &PreparedSha256CompressionBatch,
     pc: &flock_core::pcs::ligerito::ProverConfig,
     vc: &flock_core::pcs::ligerito::VerifierConfig,
-) -> (Timings, Vec<ProfileInterval>) {
+) -> (RepTiming, Vec<ProfileInterval>) {
     let _ = f2z::utils::prof::take_totals();
     let _ = f2z::utils::prof::take_intervals();
     let verified_trial_scope = f2z::utils::prof::scope("sha256-trace:verified_trial");
-    let total_started = Instant::now();
-    let prover_scope = f2z::utils::prof::scope("sha256-trace:end_to_end_prove");
 
+    // Witness synthesis and public-statement materialization are excluded
+    // from the prover boundary (docs/bench-schema.md).
     let started = Instant::now();
     let witness = {
         let _scope = f2z::utils::prof::scope("sha256-trace:witness_generation");
@@ -713,7 +688,6 @@ fn run_once(
         )
         .expect("SHA witness synthesis succeeds")
     };
-    let witness_ms = started.elapsed().as_secs_f64() * 1e3;
     let statements = {
         let _scope = f2z::utils::prof::scope("sha256-trace:statement_materialization");
         let statements = inputs
@@ -725,7 +699,12 @@ fn run_once(
         black_box(&statements);
         statements
     };
+    let witness_ms = started.elapsed().as_secs_f64() * 1e3;
+    let _ = f2z::utils::prof::take_totals();
 
+    // End-to-end prove: Step 1 commit + the paper128 proof.
+    let prover_scope = f2z::utils::prof::scope("sha256-trace:end_to_end_prove");
+    let prove_started = Instant::now();
     let started = Instant::now();
     let hint = {
         let _scope = f2z::utils::prof::scope("sha256-trace:commit");
@@ -735,7 +714,6 @@ fn run_once(
     let commit_ms = started.elapsed().as_secs_f64() * 1e3;
 
     let mut prover_transcript = Blake3Transcript::new();
-    let started = Instant::now();
     let proof = {
         let _scope = f2z::utils::prof::scope("sha256-trace:proof");
         prove_sha256_compressions_paper128_with_config(
@@ -748,9 +726,8 @@ fn run_once(
         )
         .expect("SHA proof succeeds")
     };
-    let proof_ms = started.elapsed().as_secs_f64() * 1e3;
     drop(prover_scope);
-    let end_to_end_ms = total_started.elapsed().as_secs_f64() * 1e3;
+    let prove_ms = prove_started.elapsed().as_secs_f64() * 1e3;
     let prove_phases = f2z::utils::prof::take_totals();
 
     let mut verifier_transcript = Blake3Transcript::new();
@@ -782,40 +759,24 @@ fn run_once(
         .len();
     let spartan_bytes = spartan_elements * field_bytes + 8 * (proof.outer_nonces().len() + 2);
 
-    let timings = Timings {
+    let timing = RepTiming {
         witness_ms,
         commit_ms,
-        proof_ms,
-        end_to_end_ms,
+        prove_ms,
         verify_ms,
-        spartan_prove_ms: phase_ms(&prove_phases, "sha256-paper128:spartan_outer_prove"),
-        opening_prepare_prove_ms: phase_ms(&prove_phases, "sha256-paper128:opening_prepare_prover"),
-        f2z_prove_ms: phase_ms(&prove_phases, "sha256-paper128:f2z_prove"),
-        spartan_verify_ms: phase_ms(&verify_phases, "sha256-paper128:spartan_outer_verify"),
-        opening_prepare_verify_ms: phase_ms(
-            &verify_phases,
-            "sha256-paper128:opening_prepare_verifier",
-        ),
-        f2z_verify_ms: phase_ms(&verify_phases, "sha256-paper128:f2z_verify"),
-        spartan_elements,
+        prove_phases,
+        verify_phases,
         spartan_bytes,
         f2z_bytes,
     };
-    (timings, intervals)
-}
-
-fn optional_median(samples: &[Timings], field: impl Fn(&Timings) -> Option<f64>) -> Option<f64> {
-    samples
-        .iter()
-        .map(field)
-        .collect::<Option<Vec<_>>>()
-        .map(|values| median(&values))
+    (timing, intervals)
 }
 
 fn bench_exponent(
     exponent: usize,
     reps: usize,
     root_seed: u64,
+    threads: usize,
     trace_writer: &mut Option<TraceWriter>,
 ) {
     let compressions = 1usize
@@ -850,7 +811,10 @@ fn bench_exponent(
     }
     black_box(warm);
 
-    let mut samples = Vec::with_capacity(reps);
+    let mut prover = common::StepSamples::default();
+    let mut verifier = common::StepSamples::default();
+    let mut witness_samples = Vec::with_capacity(reps);
+    let mut last = None;
     for sample in 0..reps {
         let input_seed = shape_seed ^ ((sample + 1) as u64).wrapping_mul(0xd6e8_feb8_6659_fd93);
         let inputs = make_inputs(compressions, input_seed);
@@ -859,118 +823,55 @@ fn bench_exponent(
             writer.write_run(exponent, shape_seed, Trial::Sample(sample), &intervals);
         }
         println!(
-            "  SAMPLE exponent={exponent} sample={} compressions={compressions} end_to_end_ms={:.6} witness_ms={:.6} commit_ms={:.6} proof_ms={:.6} verify_ms={:.6} verified=true",
+            "  SAMPLE exponent={exponent} sample={} compressions={compressions} witness_ms={:.6} commit_ms={:.6} prove_ms={:.6} verify_ms={:.6} verified=true",
             sample + 1,
-            timing.end_to_end_ms,
             timing.witness_ms,
             timing.commit_ms,
-            timing.proof_ms,
+            timing.prove_ms,
             timing.verify_ms,
         );
-        samples.push(timing);
+        prover.record_prove(timing.prove_ms, timing.commit_ms, &timing.prove_phases);
+        verifier.record_verify(timing.verify_ms, &timing.verify_phases);
+        witness_samples.push(timing.witness_ms);
+        last = Some(timing);
     }
+    let last = last.expect("positive repetition count");
 
-    let e2e = samples
-        .iter()
-        .map(|sample| sample.end_to_end_ms)
-        .collect::<Vec<_>>();
-    let witness = samples
-        .iter()
-        .map(|sample| sample.witness_ms)
-        .collect::<Vec<_>>();
-    let commit = samples
-        .iter()
-        .map(|sample| sample.commit_ms)
-        .collect::<Vec<_>>();
-    let proof = samples
-        .iter()
-        .map(|sample| sample.proof_ms)
-        .collect::<Vec<_>>();
-    let verify = samples
-        .iter()
-        .map(|sample| sample.verify_ms)
-        .collect::<Vec<_>>();
-    let e2e_median = median(&e2e);
-    let e2e_best = best(&e2e);
-    let proof_median = median(&proof);
-    let throughput = compressions as f64 / (e2e_median / 1e3);
-    let proof_throughput = compressions as f64 / (proof_median / 1e3);
-    let last = samples.last().expect("positive repetition count");
-
+    let prover_medians = prover.medians();
+    let throughput = compressions as f64 / (prover_medians.total / 1e3);
     println!(
-        "  end-to-end prove: {} median | {} best | {:10.0} compressions/s",
-        fmt_ms(e2e_median),
-        fmt_ms(e2e_best),
-        throughput,
+        "  end-to-end prove: {} median | {throughput:10.0} compressions/s",
+        fmt_ms(prover_medians.total),
     );
-    println!(
-        "  median split: witness {} | commit {} | Spartan+virtual-F2Z {} ({:10.0} compressions/s)",
-        fmt_ms(median(&witness)),
-        fmt_ms(median(&commit)),
-        fmt_ms(proof_median),
-        proof_throughput,
-    );
-    println!("  verify: {}", fmt_ms(median(&verify)));
-
-    let spartan_prove = optional_median(&samples, |sample| sample.spartan_prove_ms);
-    let opening_prove = optional_median(&samples, |sample| sample.opening_prepare_prove_ms);
-    let f2z_prove = optional_median(&samples, |sample| sample.f2z_prove_ms);
-    let spartan_verify = optional_median(&samples, |sample| sample.spartan_verify_ms);
-    let opening_verify = optional_median(&samples, |sample| sample.opening_prepare_verify_ms);
-    let f2z_verify = optional_median(&samples, |sample| sample.f2z_verify_ms);
-    if let (Some(spartan), Some(opening), Some(f2z)) = (spartan_prove, opening_prove, f2z_prove) {
-        println!(
-            "  proof internals: outer Spartan {} | claim factorization {} | virtual F2Z {}",
-            fmt_ms(spartan),
-            fmt_ms(opening),
-            fmt_ms(f2z),
-        );
-    }
-    if let (Some(spartan), Some(opening), Some(f2z)) = (spartan_verify, opening_verify, f2z_verify)
-    {
-        println!(
-            "  verify internals: outer Spartan {} | claim factorization {} | virtual F2Z {}",
-            fmt_ms(spartan),
-            fmt_ms(opening),
-            fmt_ms(f2z),
-        );
-    }
-    println!(
-        "  proof: virtual F2Z {} B | Spartan payload {} elements / {} B",
-        last.f2z_bytes, last.spartan_elements, last.spartan_bytes,
-    );
-
-    let profile = |value: Option<f64>| value.unwrap_or(f64::NAN);
-    println!(
-        "  RESULT exponent={exponent} compressions={compressions} repetitions={reps} warmups=1 end_to_end_median_ms={e2e_median:.6} end_to_end_best_ms={e2e_best:.6} throughput_compressions_per_s={throughput:.3} witness_median_ms={:.6} commit_median_ms={:.6} proof_median_ms={proof_median:.6} proof_throughput_compressions_per_s={proof_throughput:.3} spartan_prove_median_ms={:.6} opening_prepare_prove_median_ms={:.6} f2z_prove_median_ms={:.6} verify_median_ms={:.6} spartan_verify_median_ms={:.6} opening_prepare_verify_median_ms={:.6} f2z_verify_median_ms={:.6} spartan_payload_elements={} spartan_payload_bytes={} f2z_proof_bytes={} verified_samples={reps} shape_seed={shape_seed:#018x}",
-        median(&witness),
-        median(&commit),
-        profile(spartan_prove),
-        profile(opening_prove),
-        profile(f2z_prove),
-        median(&verify),
-        profile(spartan_verify),
-        profile(opening_verify),
-        profile(f2z_verify),
-        last.spartan_elements,
-        last.spartan_bytes,
-        last.f2z_bytes,
-    );
+    let report = common::BenchReport {
+        bench: "sha256",
+        shape: format!("2p{exponent}"),
+        extra: vec![
+            ("compressions".into(), compressions.to_string()),
+            ("throughput_per_s".into(), format!("{throughput:.3}")),
+            ("shape_seed".into(), format!("{shape_seed:#018x}")),
+        ],
+        lambda: Some(128),
+        threads,
+        reps,
+        seed: Some(root_seed),
+        witness_ms: common::median(&witness_samples),
+        setup_ms,
+        prover: prover_medians,
+        verifier: verifier.medians(),
+        proof: common::ProofBytes {
+            piop: last.spartan_bytes,
+            open: last.f2z_bytes,
+        },
+    };
+    report.print_human();
 }
 
 fn main() {
-    let _ = flock_core::init_perf_thread_pool();
-    #[cfg(feature = "parallel")]
-    let threads = rayon::current_num_threads();
-    #[cfg(not(feature = "parallel"))]
-    let threads = 1;
+    let threads = common::init();
     let mut trace_writer = TraceWriter::from_env(threads);
-    let reps = env_usize("F2Z_SHA_REPS", 3);
-    assert!(reps > 0, "F2Z_SHA_REPS must be positive");
-    let root_seed = std::env::var("F2Z_SHA_SEED")
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(0x4632_5a5f_5348_4132);
+    let reps = common::reps(Some("F2Z_SHA_REPS"), 3);
+    let root_seed = common::seed(Some("F2Z_SHA_SEED"), 0x4632_5a5f_5348_4132);
 
     println!("SHA-256: synthesized [1|f], h=Mf, Ah/Bh/Ch; repeated outer Spartan + virtual F2Z");
     #[cfg(feature = "parallel")]
@@ -979,15 +880,10 @@ fn main() {
     if let Some(path) = std::env::var_os("F2Z_SHA_TRACE_PATH") {
         println!("canonical interval trace: {}", Path::new(&path).display());
     }
-    if std::env::var_os("OBLONG_PROFILE").is_none()
-        && std::env::var_os("OBLONG_PROFILE_INTERVALS").is_none()
-    {
-        println!("phase profiling: disabled (set OBLONG_PROFILE=1 for internal splits)");
-    }
 
     for exponent in exponents() {
         flock_core::scratch::clear();
-        bench_exponent(exponent, reps, root_seed, &mut trace_writer);
+        bench_exponent(exponent, reps, root_seed, threads, &mut trace_writer);
     }
     flock_core::scratch::clear();
 }

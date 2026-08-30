@@ -4,6 +4,8 @@
 //! native `u64` through inner round zero. Only native witness folding and
 //! field-valued coefficient accumulation vary.
 
+mod common;
+
 use std::{hint::black_box, time::Instant};
 
 use f2z::piop::spartan::{
@@ -242,6 +244,7 @@ fn bench_exponent(
 }
 
 fn main() {
+    common::enforce_known_env();
     let _ = flock_core::init_perf_thread_pool();
     let reps = env_usize("F2Z_BENCH_REPS", 5);
     assert!(reps > 0);

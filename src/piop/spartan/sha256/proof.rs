@@ -283,6 +283,8 @@ pub fn prove_sha256_compressions_paper128_with_config<T: Transcript + Send>(
         assignment_binding
     };
 
+    // Paper §2.1 Step 2: pre-draw grinding, prime sample, projection mod q.
+    let step2_scope = crate::utils::prof::scope("step2:project_prove");
     let initial_nonce = {
         let _scope = crate::utils::prof::scope("sha256-paper128:initial_grinding_prove");
         grind_and_absorb::<Sha256InitialGrinding, _>(
@@ -306,7 +308,10 @@ pub fn prove_sha256_compressions_paper128_with_config<T: Transcript + Send>(
     validate_common_geometry(Some(&matrices), map, p_h, p_f)?;
     validate_products(&products, p_h)?;
     absorb_projected_sha256_relation(transcript, &matrices);
+    drop(step2_scope);
 
+    // Step 3: the Spartan outer PIOP over F_q (round grinding included).
+    let step3_scope = crate::utils::prof::scope("step3:piop_prove");
     let field_config = mod_q.field_config();
     let row_vars = SHA256_CONSTRAINT_LOCAL_VARS + p_h.t;
     let tau = (0..row_vars)
@@ -333,6 +338,10 @@ pub fn prove_sha256_compressions_paper128_with_config<T: Transcript + Send>(
         )
         .map_err(SpartanError::from)?
     };
+    drop(step3_scope);
+
+    // Step 4: bitification — terminal grinding + claim factorization.
+    let step4_scope = crate::utils::prof::scope("step4:bitify_prove");
     let terminal_nonce = {
         let _scope = crate::utils::prof::scope("sha256-paper128:terminal_grinding_prove");
         grind_and_absorb::<Sha256TerminalGrinding, _>(
@@ -379,8 +388,11 @@ pub fn prove_sha256_compressions_paper128_with_config<T: Transcript + Send>(
             claimed_q,
         )?;
     }
+    drop(step4_scope);
 
+    // Steps 5.1–5.3: the virtual F2Z opening.
     let f2z = {
+        let _step5 = crate::utils::prof::scope("step5:open_prove");
         let _scope = crate::utils::prof::scope("sha256-paper128:f2z_prove");
         prove_mle_eval_mod_q_ligerito_virtual_runtime(
             transcript,
@@ -464,6 +476,7 @@ pub fn verify_sha256_compressions_paper128_with_config<T: Transcript + Send>(
         );
         assignment_binding
     };
+    let step2_scope = crate::utils::prof::scope("step2:project_verify");
     {
         let _scope = crate::utils::prof::scope("sha256-paper128:initial_grinding_verify");
         verify_and_absorb::<Sha256InitialGrinding, _>(
@@ -483,7 +496,9 @@ pub fn verify_sha256_compressions_paper128_with_config<T: Transcript + Send>(
     };
     validate_common_geometry(Some(&matrices), map, p_h, p_f)?;
     absorb_projected_sha256_relation(transcript, &matrices);
+    drop(step2_scope);
 
+    let step3_scope = crate::utils::prof::scope("step3:piop_verify");
     let field_config = mod_q.field_config();
     let row_vars = SHA256_CONSTRAINT_LOCAL_VARS + p_h.t;
     let tau = (0..row_vars)
@@ -503,6 +518,9 @@ pub fn verify_sha256_compressions_paper128_with_config<T: Transcript + Send>(
             )
             .map_err(SpartanError::from)?
     };
+    drop(step3_scope);
+
+    let step4_scope = crate::utils::prof::scope("step4:bitify_verify");
     {
         let _scope = crate::utils::prof::scope("sha256-paper128:terminal_grinding_verify");
         verify_and_absorb::<Sha256TerminalGrinding, _>(
@@ -550,7 +568,9 @@ pub fn verify_sha256_compressions_paper128_with_config<T: Transcript + Send>(
             claimed_q,
         )?;
     }
+    drop(step4_scope);
 
+    let _step5 = crate::utils::prof::scope("step5:open_verify");
     let _scope = crate::utils::prof::scope("sha256-paper128:f2z_verify");
     verify_mle_eval_mod_q_ligerito_virtual_runtime(
         transcript,

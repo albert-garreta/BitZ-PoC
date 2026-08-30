@@ -295,6 +295,8 @@ pub fn prove_multiswap_mod_r1cs<T: Transcript + Send>(
     let binding = assignment_binding(prepared, &hint.commitment);
     absorb_spartan_message(transcript, b"multiswap-statement", &binding);
 
+    // Paper §2.1 Step 2: fingerprint-prime draw + integer→F_Q projection.
+    let step2_scope = crate::utils::prof::scope("step2:project_prove");
     let fingerprint = {
         let _scope = crate::utils::prof::scope("multiswap:fingerprint_prime_prove");
         sample_multiswap_fingerprint_context(transcript, prepared.profile())?
@@ -309,8 +311,11 @@ pub fn prove_multiswap_mod_r1cs<T: Transcript + Send>(
         let _scope = crate::utils::prof::scope("multiswap:witness_projection_prove");
         assignment.project::<SpartanF2zField>(prepared.relation(), fingerprint.field_config())?
     };
+    drop(step2_scope);
 
+    // Step 3: the Spartan PIOP over F_Q.
     let (spartan, terminal_claim) = {
+        let _step3 = crate::utils::prof::scope("step3:piop_prove");
         let _scope = crate::utils::prof::scope("multiswap:spartan_prove");
         prove_spartan_piop_with_strategy(
             transcript,
@@ -322,11 +327,15 @@ pub fn prove_multiswap_mod_r1cs<T: Transcript + Send>(
         )?
     };
 
+    // Step 4: bitification of the terminal linear claim.
     let opening = {
+        let _step4 = crate::utils::prof::scope("step4:bitify_prove");
         let _scope = crate::utils::prof::scope("multiswap:bitify_prove");
         bitify_multiswap_claim(&terminal_claim, prepared.layout(), &fingerprint)?
     };
 
+    // Step 5.0: exact integer lift, grinded fresh-prime draw, re-projection.
+    let step5_0_scope = crate::utils::prof::scope("step5_0:reduce_prove");
     let mu_prime = {
         let _scope = crate::utils::prof::scope("multiswap:integer_lift_prove");
         step50_integer_lift(hint.rows(), &opening.row_weights_q, &opening.col_weights_q)
@@ -359,8 +368,11 @@ pub fn prove_multiswap_mod_r1cs<T: Transcript + Send>(
         &mu_prime,
         q_prime,
     );
+    drop(step5_0_scope);
 
+    // Steps 5.1–5.3: the F2Z opening at the reduced prime.
     let f2z = {
+        let _step5 = crate::utils::prof::scope("step5:open_prove");
         let _scope = crate::utils::prof::scope("multiswap:f2z_prove");
         prove_mle_eval_mod_q_ligerito_virtual_runtime(
             transcript,
@@ -404,6 +416,7 @@ pub fn verify_multiswap_mod_r1cs<T: Transcript + Send>(
     let binding = assignment_binding(prepared, commitment);
     absorb_spartan_message(transcript, b"multiswap-statement", &binding);
 
+    let step2_scope = crate::utils::prof::scope("step2:project_verify");
     let fingerprint = {
         let _scope = crate::utils::prof::scope("multiswap:fingerprint_prime_verify");
         sample_multiswap_fingerprint_context(transcript, prepared.profile())?
@@ -414,18 +427,22 @@ pub fn verify_multiswap_mod_r1cs<T: Transcript + Send>(
             .relation()
             .project::<SpartanF2zField>(fingerprint.field_config())?
     };
+    drop(step2_scope);
 
     let terminal_claim = {
+        let _step3 = crate::utils::prof::scope("step3:piop_verify");
         let _scope = crate::utils::prof::scope("multiswap:spartan_verify");
         verify_spartan_proof(transcript, &matrices, &binding, &proof.spartan)?
     };
 
     let opening = {
+        let _step4 = crate::utils::prof::scope("step4:bitify_verify");
         let _scope = crate::utils::prof::scope("multiswap:bitify_verify");
         bitify_multiswap_claim(&terminal_claim, prepared.layout(), &fingerprint)?
     };
     // Step 5.0: the claimed integer lift must land in the derived mod-Q
     // class and inside the d * Q^2 magnitude bound.
+    let step5_0_scope = crate::utils::prof::scope("step5_0:reduce_verify");
     if !step50_accepts_lift(
         &proof.mu_prime,
         opening.claimed_q,
@@ -455,7 +472,9 @@ pub fn verify_multiswap_mod_r1cs<T: Transcript + Send>(
         &proof.mu_prime,
         q_prime,
     );
+    drop(step5_0_scope);
 
+    let _step5 = crate::utils::prof::scope("step5:open_verify");
     let _scope = crate::utils::prof::scope("multiswap:f2z_verify");
     verify_mle_eval_mod_q_ligerito_virtual_runtime(
         transcript,

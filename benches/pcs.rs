@@ -49,6 +49,8 @@
 //! peak-memory numbers reset per shape and are fine in one process); quote
 //! medians, expect ±5–15 % run-to-run.
 
+mod common;
+
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::hint::black_box;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -282,13 +284,16 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     // m = m_p + 7 ≥ 22, ad-hoc only below. Hardcoding the tiny ad-hoc
     // config at big shapes is catastrophic (n=28 commit measured 292 s
     // ad-hoc vs the embedded profile's sub-second).
+    let setup_started = Instant::now();
     let ((pc, vc), lig_tag) = bench_lig_configs(m_p);
+    let setup_ms = setup_started.elapsed().as_secs_f64() * 1e3;
 
     // Deterministic non-degenerate instance, generated STRAIGHT INTO the
     // per-column bit rows (`repack_leaf_bits` layout: bit `(b<<log₂W)|j`
     // of row `c` = bit `j` of cell `(b,c)`) — the `u128` cell tensor
     // (16 B per cell; 17 GB at n=30) never exists, mirroring the
     // upstream packed-transpose commit restructure.
+    let witness_started = Instant::now();
     let mask = if w >= 128 { u128::MAX } else { (1u128 << w) - 1 };
     let cell = |b: usize, c: usize| -> u128 {
         (p.cell_index(b, c) as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & mask
@@ -354,6 +359,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
         }
         y = y + cw[c] * acc;
     }
+    let witness_ms = witness_started.elapsed().as_secs_f64() * 1e3;
 
     let n = t + s;
     println!(
@@ -452,10 +458,10 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     let prove_peak = peak_mb();
     let phases = f2z::utils::prof::take_totals();
 
-    println!(
-        "  prove:   {:8.2} ms   peak {prove_peak:8.2} MB      (median of {reps})",
-        median(prove_ms)
-    );
+    let prove_median = median(prove_ms);
+    let verify_median = median(verify_ms);
+    println!("  prove:   {prove_median:8.2} ms   peak {prove_peak:8.2} MB      (median of {reps})");
+    let mut forest_split = None;
     if !phases.is_empty() {
         let phase_ms = |labels: &[&str]| -> f64 {
             phases.iter().filter(|(l, _)| labels.contains(l)).map(|(_, s)| s).sum::<f64>() * 1e3
@@ -472,8 +478,9 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
         println!(
             "  phases:  forest+presum {forest_ms:8.2} ms | ligerito open {open_ms:7.2} ms   (one profiled prove)"
         );
+        forest_split = Some((forest_ms, open_ms));
     }
-    println!("  verify:  {:8.2} ms", median(verify_ms));
+    println!("  verify:  {verify_median:8.2} ms");
     println!(
         "  proof:   {bytes:8} B ({:.1} KiB)   serialize {:.0} µs / deserialize {:.0} µs   fnv {proof_fnv:016x}",
         bytes as f64 / 1024.0,
@@ -493,6 +500,57 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
         zb.s_v as f64 / 1024.0,
         lig_b as f64 / 1024.0,
     );
+
+    // Unified RESULT line (docs/bench-schema.md). PCS-only: the whole
+    // measured prove is Steps 5.1–5.3, so steps 2/3/4/5.0 are `na` and the
+    // end-to-end prover is commit + open. The forest/opener detail is
+    // populated only under OBLONG_PROFILE=1 (one profiled prove).
+    let na = common::StepMedians {
+        total: 0.0,
+        commit: None,
+        project: None,
+        piop: None,
+        bitify: None,
+        reduce: None,
+        open: None,
+        residual: 0.0,
+        outer: None,
+        bind: None,
+        inner: None,
+        forest: None,
+        opener: None,
+    };
+    let report = common::BenchReport {
+        bench: "pcs",
+        shape: format!("{t}:{s}:{w}"),
+        extra: vec![
+            ("n".into(), n.to_string()),
+            ("chunks".into(), lch.to_string()),
+            ("lig".into(), lig_tag.clone()),
+            ("fill".into(), format!("{fill}")),
+        ],
+        lambda: None,
+        threads: common::threads(),
+        reps,
+        seed: None,
+        witness_ms,
+        setup_ms,
+        prover: common::StepMedians {
+            total: commit_ms + prove_median,
+            commit: Some(commit_ms),
+            open: Some(prove_median),
+            forest: forest_split.map(|(forest, _)| forest),
+            opener: forest_split.map(|(_, open)| open),
+            ..na
+        },
+        verifier: common::StepMedians {
+            total: verify_median,
+            open: Some(verify_median),
+            ..na
+        },
+        proof: common::ProofBytes { piop: 0, open: bytes },
+    };
+    println!("  {}", report.result_line());
 
     // ── Extension-field arm (`F2Z_BENCH_EXT`): the SAME committed
     // instance opened at an extension-field statement (default 100-bit
@@ -852,6 +910,7 @@ fn bench_ext_arm<K: BenchExtField>(
 }
 
 fn main() {
+    common::enforce_known_env();
     println!("F2Z PCS bench — commit/prove/verify + serialized size + peak heap per shape.");
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     println!("(target: aarch64 + neon — the NEON GF(2^128) pipeline is active)");

@@ -6,6 +6,8 @@
 //! builder allocates a fresh table and multiplies both halves at every step.
 //! Each current builder is checked entry-for-entry before any measurements.
 
+mod common;
+
 use std::{hint::black_box, time::Instant};
 
 use f2z::{
@@ -265,6 +267,7 @@ fn sample_count() -> usize {
 }
 
 fn main() {
+    common::enforce_known_env();
     let _ = flock_core::init_perf_thread_pool();
     let samples = sample_count();
     println!(

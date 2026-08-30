@@ -401,8 +401,11 @@ pub fn prove_u32_mul_spartan_and_f2z_with_strategy<T: Transcript + Send>(
     // the exact u64 relation through the first outer and inner rounds.
     let (spartan, terminal_claim) = match strategy {
         SpartanReductionStrategy::Immediate => {
-            let (assignment, products) =
-                project_u32_mul_witness::<SpartanF2zField>(witness, matrices.config())?;
+            let (assignment, products) = {
+                let _step2 = crate::utils::prof::scope("step2:project_prove");
+                project_u32_mul_witness::<SpartanF2zField>(witness, matrices.config())?
+            };
+            let _step3 = crate::utils::prof::scope("step3:piop_prove");
             let _scope = crate::utils::prof::scope("spartan-f2z:spartan_prove");
             prove_spartan_piop_with_strategy(
                 transcript,
@@ -416,6 +419,7 @@ pub fn prove_u32_mul_spartan_and_f2z_with_strategy<T: Transcript + Send>(
         SpartanReductionStrategy::DelayedBarrett
         | SpartanReductionStrategy::DelayedCryptoBigint => {
             let (assignment, products) = project_u32_mul_native_witness(witness).into_parts();
+            let _step3 = crate::utils::prof::scope("step3:piop_prove");
             let _scope = crate::utils::prof::scope("spartan-f2z:spartan_prove");
             prove_spartan_piop_u32_native_with_strategy(
                 transcript,
@@ -457,6 +461,7 @@ pub fn prove_u32_mul_spartan_and_f2z_with_univariate_skip<T: Transcript + Send>(
     let (p, pc, assignment_binding) = prepare_combined_prover(matrices, layout, hint)?;
     let (assignment, products) = project_u32_mul_native_witness(witness).into_parts();
     let (spartan, terminal_claim) = {
+        let _step3 = crate::utils::prof::scope("step3:piop_prove");
         let _scope = crate::utils::prof::scope("spartan-f2z:spartan_prove");
         prove_spartan_piop_u32_native_with_univariate_skip(
             transcript,
@@ -534,6 +539,7 @@ fn prove_terminal_claim_with_f2z<T: Transcript + Send>(
     terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
 ) -> Result<IntEvalRsLigModQProof, SpartanF2zError> {
     let (opening, bridge_digest) = {
+        let _step4 = crate::utils::prof::scope("step4:bitify_prove");
         let _scope = crate::utils::prof::scope("spartan-f2z:bitify_prover");
         let opening = bitify_u32_mul_spartan_claim(terminal_claim, layout)?;
         let bridge_digest = bitified_claim_digest(
@@ -547,6 +553,7 @@ fn prove_terminal_claim_with_f2z<T: Transcript + Send>(
     };
 
     let f2z = {
+        let _step5 = crate::utils::prof::scope("step5:open_prove");
         let _scope = crate::utils::prof::scope("spartan-f2z:f2z_prove");
         let chunks = {
             let _scope = crate::utils::prof::scope("spartan-f2z:f2z_prepare_prover");
@@ -590,6 +597,7 @@ pub fn verify_u32_mul_spartan_and_f2z<T: Transcript + Send>(
     let assignment_binding = assignment_binding(layout, commitment)?;
 
     let terminal_claim = {
+        let _step3 = crate::utils::prof::scope("step3:piop_verify");
         let _scope = crate::utils::prof::scope("spartan-f2z:spartan_verify");
         verify_spartan_proof(transcript, matrices, &assignment_binding, proof.spartan())?
     };
@@ -627,6 +635,7 @@ pub fn verify_u32_mul_spartan_and_f2z_with_univariate_skip<T: Transcript + Send>
     let assignment_binding = assignment_binding(layout, commitment)?;
 
     let terminal_claim = {
+        let _step3 = crate::utils::prof::scope("step3:piop_verify");
         let _scope = crate::utils::prof::scope("spartan-f2z:spartan_verify");
         verify_spartan_univariate_skip_proof(
             transcript,
@@ -662,6 +671,7 @@ fn verify_terminal_claim_with_f2z<T: Transcript + Send>(
     terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
 ) -> Result<(), SpartanF2zError> {
     let (opening, bridge_digest) = {
+        let _step4 = crate::utils::prof::scope("step4:bitify_verify");
         let _scope = crate::utils::prof::scope("spartan-f2z:bitify_verifier");
         let opening = bitify_u32_mul_spartan_claim(terminal_claim, layout)?;
         let bridge_digest = bitified_claim_digest(
@@ -675,6 +685,7 @@ fn verify_terminal_claim_with_f2z<T: Transcript + Send>(
     };
 
     let result = {
+        let _step5 = crate::utils::prof::scope("step5:open_verify");
         let _scope = crate::utils::prof::scope("spartan-f2z:f2z_verify");
         let prepared = {
             let _scope = crate::utils::prof::scope("spartan-f2z:f2z_prepare_verifier");
