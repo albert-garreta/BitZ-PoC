@@ -307,6 +307,33 @@ proof at n=18.
 
 ## Benchmarks
 
+**Unified output schema.** The protocol benches (`multiswap`,
+`sha256_compressions`, `u32_mul`, `pcs`, `lambda_sweep`) share one
+accounting model and one machine-readable `RESULT schema=f2z/1 …` line —
+see `docs/bench-schema.md`. The end-to-end prover includes bit-packing,
+commitment, prime sampling + grinding, the PIOP, bitification, Step 5.0,
+and the F2Z opening; witness generation and one-time preprocessing are
+excluded and reported separately. Each bench prints per-step prover and
+verifier breakdowns keyed to the paper's §2.1 steps, summing to their
+totals with an explicit residual. Canonical env knobs are
+`F2Z_BENCH_REPS` / `F2Z_BENCH_SHAPES` / `F2Z_BENCH_SEED` (old per-bench
+names remain as deprecated aliases), and **any unknown `F2Z_*` variable
+aborts the bench** with the known-knob list.
+
+**Security profiles.** The IOP security level is a compile-time profile
+(`src/piop/spartan/profile.rs`): `Lambda100` (the default — no grinding
+anywhere), `Lambda128` (every term this crate controls ≥ 128 bits,
+including two bits of forest/GKR grinding per round; the flock-internal
+GF(2^128) floor at ~126.4 still binds and is reported as such),
+`Limber114` (the MultiSwap/Limber comparison, pinned), and
+`LegacySha128Design` (the historical SHA schedule, byte-identical to the
+published numbers — pinned by `tests/transcript_pins.rs`). Every interval
+width and grinding difficulty is *derived* from the target plus the shape
+facts, and each instantiation carries a per-term soundness accounting
+(`achieved bits` + the binding term), printed by the benches. The
+`lambda_sweep` bench proves one SHA witness under all three SHA profiles —
+the 100-vs-128 prover-time/proof-size tradeoff table.
+
 `benches/pcs.rs` (plain `harness = false` binary, no criterion) reports, per
 shape: commit / prove / verify wall-clock (medians), serialized proof size,
 codec round-trip time, **peak heap** per phase — the live-heap high-water
