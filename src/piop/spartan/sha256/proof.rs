@@ -120,6 +120,13 @@ impl Sha256Paper128Proof {
     }
 
     /// Virtual F2Z opening proof.
+    /// Mutable access to the virtual F2Z opening — soundness-test hook
+    /// only (tampering with a proof component must be rejected).
+    #[doc(hidden)]
+    pub fn f2z_mut_for_tests(&mut self) -> &mut IntEvalRsLigVirtProof {
+        &mut self.f2z
+    }
+
     pub const fn f2z(&self) -> &IntEvalRsLigVirtProof {
         &self.f2z
     }
@@ -421,6 +428,7 @@ pub fn prove_sha256_compressions_paper128_with_config<T: Transcript + Send>(
             mod_q.q(),
             mod_q.q_bits(),
             f2z_generator(),
+            prepared.security().forest_round_grinding_bits,
             pc,
         )
         .map_err(Sha256F2zError::F2z)?
@@ -601,6 +609,7 @@ pub fn verify_sha256_compressions_paper128_with_config<T: Transcript + Send>(
         claimed_q,
         mod_q.q(),
         mod_q.q_bits(),
+        prepared.security().forest_round_grinding_bits,
         vc,
     )
     .map_err(Sha256F2zError::F2z)

@@ -418,6 +418,7 @@ pub fn prove_multiswap_mod_r1cs<T: Transcript + Send>(
             q_prime,
             q_prime_bits,
             f2z_generator(),
+            prepared.security().forest_round_grinding_bits,
             pc,
         )
         .map_err(MultiswapError::F2z)?
@@ -522,6 +523,7 @@ pub fn verify_multiswap_mod_r1cs<T: Transcript + Send>(
         claimed_reduced,
         q_prime,
         q_prime_bits,
+        prepared.security().forest_round_grinding_bits,
         vc,
     )
     .map_err(MultiswapError::F2z)

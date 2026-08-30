@@ -179,6 +179,7 @@ fn clone_proof(p: &IntEvalRsLigVirtProof) -> IntEvalRsLigVirtProof {
         presums: p.presums.clone(),
         tail: p.tail.clone(),
         lig: p.lig.clone(),
+        grinding_nonces: p.grinding_nonces.clone(),
     }
 }
 

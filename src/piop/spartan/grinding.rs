@@ -306,6 +306,155 @@ fn leading_zero_bits(bytes: &[u8]) -> u32 {
     count
 }
 
+// ---------------------------------------------------------------------
+// Per-challenge grinding transcripts (the forest/GKR + ring-switch hooks)
+// ---------------------------------------------------------------------
+
+/// The forest/opening grinding domain: every challenge drawn inside the
+/// exponent-fold opening region (forest sumcheck rounds, claim
+/// unifications, the ring-switch/batching draws) is preceded by one typed
+/// boundary in this domain when the security profile sets a nonzero
+/// difficulty. Paper §Instantiation: each GKR round carries `3/|K|`
+/// (~2^-126.4), so λ = 128 takes two bits per round; the ring-switch
+/// round's `1/|K|` takes one — a uniform per-draw difficulty of
+/// `max(2, 1)` covers both.
+pub enum ForestRoundGrinding {}
+
+impl GrindingDomain for ForestRoundGrinding {
+    const DOMAIN: &'static [u8] = b"f2z/forest/round-grinding/v1";
+}
+
+/// Prover-side transcript adapter: before every challenge drawn through
+/// it, grinds one [`ForestRoundGrinding`] boundary at the configured
+/// difficulty and records the nonce. At difficulty 0 it is a transparent
+/// pass-through — not one transcript byte moves.
+///
+/// Wrap exactly the opening region whose rounds the difficulty covers and
+/// call [`Self::finish`] to recover the nonces for the proof; leave the
+/// inner Ligerito call OUTSIDE the wrapper (flock carries its own
+/// grinding configuration).
+pub struct ProverGrindingTranscript<'a, T> {
+    inner: &'a mut T,
+    bits: u32,
+    next_index: u64,
+    nonces: Vec<u64>,
+}
+
+impl<'a, T: Transcript> ProverGrindingTranscript<'a, T> {
+    /// Wraps `inner` at `bits` difficulty per drawn challenge.
+    pub fn new(inner: &'a mut T, bits: u32) -> Self {
+        Self {
+            inner,
+            bits,
+            next_index: 0,
+            nonces: Vec::new(),
+        }
+    }
+
+    /// The nonces ground so far, in draw order (empty at difficulty 0).
+    pub fn finish(self) -> Vec<u64> {
+        self.nonces
+    }
+}
+
+impl<T: Transcript> Transcript for ProverGrindingTranscript<'_, T> {
+    fn get_challenge<C: ConstTranscribable>(&mut self) -> C {
+        if self.bits > 0 {
+            let round = GrindingRound::<ForestRoundGrinding>::new(self.next_index);
+            self.next_index = self.next_index.wrapping_add(1);
+            let nonce = grind_and_absorb(self.inner, round, self.bits)
+                .expect("forest grinding difficulty is validated by the profile");
+            self.nonces.push(nonce);
+        }
+        self.inner.get_challenge()
+    }
+
+    fn get_prime<R, P>(&mut self) -> R
+    where
+        R: crypto_primitives::ConstIntSemiring + ConstTranscribable,
+        P: crate::utils::primality::PrimalityTest<R>,
+    {
+        self.inner.get_prime::<R, P>()
+    }
+
+    fn absorb_inner(&mut self, v: &[u8]) {
+        self.inner.absorb_inner(v);
+    }
+}
+
+/// Verifier-side twin of [`ProverGrindingTranscript`]: before every drawn
+/// challenge it checks (and absorbs) the next proof nonce at the same
+/// difficulty. Nonce failures and count mismatches are deferred to
+/// [`Self::finish`] so the transcript stays deterministic — the caller
+/// MUST propagate that result before accepting the proof.
+pub struct VerifierGrindingTranscript<'a, 'n, T> {
+    inner: &'a mut T,
+    bits: u32,
+    next_index: u64,
+    nonces: &'n [u64],
+    consumed: usize,
+    failure: Option<GrindingError>,
+}
+
+impl<'a, 'n, T: Transcript> VerifierGrindingTranscript<'a, 'n, T> {
+    /// Wraps `inner`, checking `nonces` at `bits` difficulty per draw.
+    pub fn new(inner: &'a mut T, bits: u32, nonces: &'n [u64]) -> Self {
+        Self {
+            inner,
+            bits,
+            next_index: 0,
+            nonces,
+            consumed: 0,
+            failure: None,
+        }
+    }
+
+    /// Succeeds iff every drawn challenge consumed one valid nonce and no
+    /// nonce is left over.
+    #[must_use = "an unverified grinding region proves nothing"]
+    pub fn finish(self) -> Result<(), GrindingError> {
+        if let Some(failure) = self.failure {
+            return Err(failure);
+        }
+        if self.consumed != self.nonces.len() {
+            return Err(GrindingError::InvalidNonce {
+                nonce: self.nonces.get(self.consumed).copied().unwrap_or(0),
+                bits: self.bits,
+            });
+        }
+        Ok(())
+    }
+}
+
+impl<T: Transcript> Transcript for VerifierGrindingTranscript<'_, '_, T> {
+    fn get_challenge<C: ConstTranscribable>(&mut self) -> C {
+        if self.bits > 0 {
+            let round = GrindingRound::<ForestRoundGrinding>::new(self.next_index);
+            self.next_index = self.next_index.wrapping_add(1);
+            // A missing nonce absorbs a canonical zero so the transcript
+            // stays deterministic; `finish` reports the failure.
+            let nonce = self.nonces.get(self.consumed).copied().unwrap_or(0);
+            self.consumed = self.consumed.saturating_add(1);
+            if let Err(error) = verify_and_absorb(self.inner, round, self.bits, nonce) {
+                self.failure.get_or_insert(error);
+            }
+        }
+        self.inner.get_challenge()
+    }
+
+    fn get_prime<R, P>(&mut self) -> R
+    where
+        R: crypto_primitives::ConstIntSemiring + ConstTranscribable,
+        P: crate::utils::primality::PrimalityTest<R>,
+    {
+        self.inner.get_prime::<R, P>()
+    }
+
+    fn absorb_inner(&mut self, v: &[u8]) {
+        self.inner.absorb_inner(v);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::transcript::{traits::Transcript, Blake3Transcript};
@@ -458,6 +607,63 @@ mod tests {
             actual.get_challenge::<u128>(),
             untouched.get_challenge::<u128>()
         );
+    }
+
+    #[test]
+    fn grinding_transcripts_stay_in_lockstep_and_gate_the_nonces() {
+        const BITS: u32 = 6;
+        let mut prover_inner = transcript();
+        let mut prover = ProverGrindingTranscript::new(&mut prover_inner, BITS);
+        let a: u128 = prover.get_challenge();
+        prover.absorb_slice(b"round message");
+        let b: u128 = prover.get_challenge();
+        let nonces = prover.finish();
+        assert_eq!(nonces.len(), 2);
+
+        let mut verifier_inner = transcript();
+        let mut verifier = VerifierGrindingTranscript::new(&mut verifier_inner, BITS, &nonces);
+        let va: u128 = verifier.get_challenge();
+        verifier.absorb_slice(b"round message");
+        let vb: u128 = verifier.get_challenge();
+        verifier.finish().unwrap();
+        assert_eq!((a, b), (va, vb));
+
+        // A tampered nonce is caught at finish.
+        let mut bad = nonces.clone();
+        bad[1] ^= 1;
+        let mut verifier_inner = transcript();
+        let mut verifier = VerifierGrindingTranscript::new(&mut verifier_inner, BITS, &bad);
+        let _: u128 = verifier.get_challenge();
+        verifier.absorb_slice(b"round message");
+        let _: u128 = verifier.get_challenge();
+        assert!(verifier.finish().is_err());
+
+        // Leftover nonces are caught at finish.
+        let mut verifier_inner = transcript();
+        let mut verifier = VerifierGrindingTranscript::new(&mut verifier_inner, BITS, &nonces);
+        let _: u128 = verifier.get_challenge();
+        assert!(verifier.finish().is_err());
+    }
+
+    #[test]
+    fn zero_difficulty_grinding_transcript_is_a_transparent_passthrough() {
+        let mut wrapped_inner = transcript();
+        let mut wrapped = ProverGrindingTranscript::new(&mut wrapped_inner, 0);
+        wrapped.absorb_slice(b"message");
+        let a: u128 = wrapped.get_challenge();
+        assert!(wrapped.finish().is_empty());
+
+        let mut plain = transcript();
+        plain.absorb_slice(b"message");
+        let b: u128 = plain.get_challenge();
+        assert_eq!(a, b);
+
+        let mut verifier_inner = transcript();
+        let mut verifier = VerifierGrindingTranscript::new(&mut verifier_inner, 0, &[]);
+        verifier.absorb_slice(b"message");
+        let c: u128 = verifier.get_challenge();
+        verifier.finish().unwrap();
+        assert_eq!(a, c);
     }
 
     #[cfg(feature = "parallel")]
