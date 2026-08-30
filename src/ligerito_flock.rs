@@ -422,13 +422,36 @@ pub fn sha_lig_configs(m_p: usize) -> Result<(LigProverConfig, LigVerifierConfig
 pub fn sha_paper128_lig_configs(
     m_p: usize,
 ) -> Result<(LigProverConfig, LigVerifierConfig), String> {
+    sha_paper128_lig_configs_bits(m_p, 128)
+}
+
+/// [`sha_paper128_lig_configs`] at an arbitrary round-by-round target —
+/// the security-profile wiring point. `target_bits = 128` is the audited
+/// paper configuration; any other target routes through the same
+/// validator-gated UDR/fold-grinding solver but is an explicitly
+/// **unaudited custom target** (marked in the config's analysis version).
+/// Shapes outside the paper window are still rejected rather than falling
+/// back to the unaudited ad-hoc small-shape config.
+pub fn sha_paper128_lig_configs_bits(
+    m_p: usize,
+    target_bits: usize,
+) -> Result<(LigProverConfig, LigVerifierConfig), String> {
     let m = m_p + LOG_PACKING;
     if !(20..=29).contains(&m) {
         return Err(format!(
             "SHA Ligerito production profile requires m in [20, 29], got {m}"
         ));
     }
-    let mut security = custom_udr_grind_config_bits(m, 1, 4, Some(128));
+    if !(64..=128).contains(&target_bits) {
+        return Err(format!(
+            "SHA Ligerito target must be in [64, 128] bits, got {target_bits}"
+        ));
+    }
+    let mut security = custom_udr_grind_config_bits(m, 1, 4, Some(target_bits));
+    if target_bits != 128 {
+        security.analysis_version =
+            "udr_maximal_radius_with_fold_grinding (unaudited custom target)".into();
+    }
     security.hash = "blake3".into();
     security.validate()?;
     security.to_prover_verifier_configs()

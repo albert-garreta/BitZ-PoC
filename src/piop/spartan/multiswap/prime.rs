@@ -65,6 +65,38 @@ const REDUCTION_SAMPLING_DOMAIN: &[u8] = b"f2z/spartan-multiswap/reduction-prime
 /// 128-bit odd integer is prime with probability about `2/(127 ln 2)`.
 const FINGERPRINT_SAMPLING_ATTEMPTS: usize = 64 * 128;
 
+use crate::piop::spartan::profile::{IopInstanceFacts, IopSecurityParams};
+
+/// `⌈log₂⌉` bound on any nonzero integer row defect of the wired MultiSwap
+/// Mod-R1CS: values and matrix coefficients are `< 2^2048` and a live row
+/// has at most 353 entries per matrix, so
+/// `|(Az)_i (Bz)_i - (Cz)_i| < (353·2^4096)² < 2^8210`.
+pub const MULTISWAP_DEFECT_LOG2_BOUND: u32 = 8210;
+
+/// `⌈log₂⌉` bound on the Step-5.0 lift difference: the lifted integer and
+/// the true tensor evaluation are both `< d·Q² <= 2^(25+256)`, so their
+/// difference is `< 2^282`.
+pub const MULTISWAP_STEP50_MAGNITUDE_LOG2: u32 = 282;
+
+/// The public statement facts the security-profile derivation consumes for
+/// a MultiSwap instance with the given F2Z shape and τ arity.
+pub const fn multiswap_instance_facts(
+    opening_t: u32,
+    opening_word_bits: u32,
+    tau_arity: u32,
+) -> IopInstanceFacts {
+    IopInstanceFacts {
+        defect_log2_bound: MULTISWAP_DEFECT_LOG2_BOUND,
+        lift_arity_log2: opening_t,
+        opening_t,
+        opening_word_bits,
+        direct_opening: true,
+        tau_arity,
+        piop_degree: 3,
+        step50_magnitude_log2: MULTISWAP_STEP50_MAGNITUDE_LOG2,
+    }
+}
+
 /// Public interval and grinding parameters of the MultiSwap profile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MultiswapPrimeProfile {
@@ -72,6 +104,7 @@ pub struct MultiswapPrimeProfile {
     fingerprint_max: u128,
     reduction_min: u128,
     reduction_max: u128,
+    reduction_grinding: usize,
 }
 
 impl Default for MultiswapPrimeProfile {
@@ -82,14 +115,34 @@ impl Default for MultiswapPrimeProfile {
 
 impl MultiswapPrimeProfile {
     /// The fixed `[2^127, 2^128)` fingerprint and `[2^112, 2^113)`
-    /// reduction intervals.
+    /// reduction intervals with the 10-bit reduction grind — the values
+    /// [`crate::piop::spartan::profile::Limber114`] derives at the wired
+    /// MultiSwap shape (pinned by a test below).
     pub const fn new() -> Self {
         Self {
             fingerprint_min: 1u128 << 127,
             fingerprint_max: u128::MAX,
             reduction_min: 1u128 << 112,
             reduction_max: (1u128 << 113) - 1,
+            reduction_grinding: 10,
         }
+    }
+
+    /// Adopts an instantiated security profile (Strategy 2 required).
+    pub fn from_security(params: &IopSecurityParams) -> Result<Self, MultiswapPrimeError> {
+        if !params.projection_full_width {
+            return Err(MultiswapPrimeError::ProfileStrategyMismatch);
+        }
+        let reduction = params
+            .reduction
+            .ok_or(MultiswapPrimeError::ProfileStrategyMismatch)?;
+        Ok(Self {
+            fingerprint_min: params.projection_min,
+            fingerprint_max: params.projection_max,
+            reduction_min: reduction.min,
+            reduction_max: reduction.max,
+            reduction_grinding: reduction.grinding_bits as usize,
+        })
     }
 
     /// Inclusive endpoints of the fingerprint-prime interval.
@@ -104,7 +157,7 @@ impl MultiswapPrimeProfile {
 
     /// Proof-of-work bits immediately before the reduction-prime draw.
     pub const fn reduction_grinding_bits(self) -> usize {
-        10
+        self.reduction_grinding
     }
 
     /// Interval and parity admissibility of one fingerprint value.
@@ -257,6 +310,9 @@ pub enum MultiswapPrimeError {
     /// A caller attempted to construct a context with an out-of-profile value.
     #[error("prime {q} is outside the MultiSwap runtime-prime profile")]
     PrimeOutsideProfile { q: u128 },
+    /// The security profile is not a two-prime Strategy-2 configuration.
+    #[error("the MultiSwap path requires a two-prime Strategy-2 security profile")]
+    ProfileStrategyMismatch,
     /// The runtime field backend rejected the sampled modulus.
     #[error("failed to construct the runtime 128-bit prime field")]
     InvalidFieldConfiguration,
@@ -271,7 +327,20 @@ pub enum MultiswapPrimeError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::piop::spartan::profile::{IopSecurityProfile, Limber114};
     use crate::transcript::Blake3Transcript;
+
+    /// The byte-identity keystone: the `Limber114` profile derives exactly
+    /// the constants `MultiswapPrimeProfile::new()` has always carried, so
+    /// the profile-wired path absorbs identical transcript bytes.
+    #[test]
+    fn limber114_derives_the_legacy_profile_verbatim() {
+        let params = Limber114::instantiate(&multiswap_instance_facts(13, 1, 15)).unwrap();
+        assert_eq!(
+            MultiswapPrimeProfile::from_security(&params).unwrap(),
+            MultiswapPrimeProfile::new()
+        );
+    }
 
     #[test]
     fn fingerprint_sampling_is_deterministic_and_full_width() {

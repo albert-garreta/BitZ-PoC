@@ -9,7 +9,11 @@ use thiserror::Error;
 
 use crate::{
     ext_proj::{sample_prime_in_interval, PrimeSamplingError, ProjArith},
-    piop::spartan::{absorb_spartan_message, SpartanField},
+    piop::spartan::{
+        absorb_spartan_message,
+        profile::{IopInstanceFacts, IopSecurityParams, IopSecurityProfile, LegacySha128Design},
+        SpartanField,
+    },
     transcript::traits::Transcript,
 };
 
@@ -24,43 +28,74 @@ pub const SHA256_MAX_LOG_COMPRESSIONS: usize = 16;
 /// Width of the fixed commitment/exponent field.
 pub const SHA256_COMMITMENT_FIELD_BITS: usize = 128;
 
-/// Public interval and grinding parameters determined by the batch size.
+/// τ point arity of the repeated outer zerocheck: eight local constraint
+/// variables plus one per batch doubling.
+pub const SHA256_TAU_LOCAL_VARS: u32 = 8;
+
+/// The public statement facts the security-profile derivation consumes for
+/// a `2^log_compressions` SHA-256 batch: per-row integer defects are far
+/// below any sampled prime (Boolean assignment, coefficients `< 2^33`, a
+/// few hundred entries per row — `< 2^96` conservatively), the Step-5.1
+/// lift sums `2^t` terms, and the opening is the VIRTUAL path (fold width
+/// capped from `q_bits`, so the one-chunk fold bound does not gate q).
+pub const fn sha256_instance_facts(log_compressions: u32) -> IopInstanceFacts {
+    IopInstanceFacts {
+        defect_log2_bound: 96,
+        lift_arity_log2: log_compressions,
+        opening_t: log_compressions,
+        opening_word_bits: 1,
+        direct_opening: false,
+        tau_arity: SHA256_TAU_LOCAL_VARS + log_compressions,
+        piop_degree: 3,
+        step50_magnitude_log2: 0,
+    }
+}
+
+/// Public interval and grinding parameters determined by the batch size and
+/// the selected security profile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Sha256PrimeProfile {
     log_compressions: usize,
     min_prime: u128,
     max_prime: u128,
+    initial_grinding: usize,
+    outer_grinding: usize,
+    terminal_grinding: usize,
 }
 
 impl Sha256PrimeProfile {
-    /// Derives the paper's 112/113-bit prime interval for one batch size.
+    /// The paper's 112/113-bit interval with the 128-design grinding
+    /// schedule (`initial 20|21|22`, `outer 18|19`) — exactly
+    /// [`LegacySha128Design`] instantiated at this batch size, which is
+    /// how those historical tables are derived today.
     pub fn new(log_compressions: usize) -> Result<Self, Sha256PrimeError> {
-        if !(SHA256_MIN_LOG_COMPRESSIONS..=SHA256_MAX_LOG_COMPRESSIONS).contains(&log_compressions)
-        {
-            return Err(Sha256PrimeError::UnsupportedBatchExponent {
-                actual: log_compressions,
-            });
-        }
+        let exponent = validate_batch_exponent(log_compressions)?;
+        let params = LegacySha128Design::instantiate(&sha256_instance_facts(exponent))
+            .map_err(|_| Sha256PrimeError::EmptyPrimeInterval)?;
+        Ok(Self::adopt(&params, log_compressions))
+    }
 
-        let instances = 1_u128 << log_compressions;
-        let interval_bits = 113_usize.min(SHA256_COMMITMENT_FIELD_BITS - log_compressions);
-        let min_prime = 1_u128 << (interval_bits - 1);
-        // The integer lift used by the paper must fit injectively in the
-        // 128-bit commitment/exponent field:
-        //
-        //     (2^t + 1) (q - 1) <= 2^128 - 1.
-        let no_wrap_max = 1 + u128::MAX / (instances + 1);
-        let bit_max = (1_u128 << interval_bits) - 1;
-        let max_prime = bit_max.min(no_wrap_max);
-        if min_prime > max_prime {
-            return Err(Sha256PrimeError::EmptyPrimeInterval);
+    /// Adopts an instantiated security profile (single-prime policy).
+    pub fn from_security(
+        params: &IopSecurityParams,
+        log_compressions: usize,
+    ) -> Result<Self, Sha256PrimeError> {
+        validate_batch_exponent(log_compressions)?;
+        if params.projection_full_width || params.reduction.is_some() {
+            return Err(Sha256PrimeError::ProfileStrategyMismatch);
         }
+        Ok(Self::adopt(params, log_compressions))
+    }
 
-        Ok(Self {
+    fn adopt(params: &IopSecurityParams, log_compressions: usize) -> Self {
+        Self {
             log_compressions,
-            min_prime,
-            max_prime,
-        })
+            min_prime: params.projection_min,
+            max_prime: params.projection_max,
+            initial_grinding: params.initial_grinding_bits as usize,
+            outer_grinding: params.piop_round_grinding_bits as usize,
+            terminal_grinding: params.terminal_grinding_bits as usize,
+        }
     }
 
     /// `t` where the batch contains `2^t` compressions.
@@ -80,26 +115,17 @@ impl Sha256PrimeProfile {
 
     /// Initial proof-of-work bits before sampling `q` and the Spartan point.
     pub const fn initial_grinding_bits(self) -> usize {
-        match self.log_compressions {
-            7 | 8 => 20,
-            9..=15 => 21,
-            16 => 22,
-            _ => unreachable!(),
-        }
+        self.initial_grinding
     }
 
     /// Proof-of-work bits before each cubic outer-sumcheck challenge.
     pub const fn outer_round_grinding_bits(self) -> usize {
-        if self.log_compressions == 16 {
-            19
-        } else {
-            18
-        }
+        self.outer_grinding
     }
 
     /// Proof-of-work bits before the terminal opening challenges.
     pub const fn terminal_grinding_bits(self) -> usize {
-        self.outer_round_grinding_bits()
+        self.terminal_grinding
     }
 
     /// Checks the exact 128-bit no-wrap inequality without overflowing.
@@ -197,6 +223,18 @@ pub fn sample_sha256_mod_q_context(
     Sha256ModQContext::new(profile, q)
 }
 
+fn validate_batch_exponent(log_compressions: usize) -> Result<u32, Sha256PrimeError> {
+    if !(SHA256_MIN_LOG_COMPRESSIONS..=SHA256_MAX_LOG_COMPRESSIONS).contains(&log_compressions) {
+        return Err(Sha256PrimeError::UnsupportedBatchExponent {
+            actual: log_compressions,
+        });
+    }
+    u32::try_from(log_compressions)
+        .map_err(|_| Sha256PrimeError::UnsupportedBatchExponent {
+            actual: log_compressions,
+        })
+}
+
 /// Errors in deriving the paper runtime-prime profile.
 #[derive(Debug, Error)]
 pub enum Sha256PrimeError {
@@ -206,6 +244,9 @@ pub enum Sha256PrimeError {
     /// The derived interval unexpectedly contains no candidate.
     #[error("the SHA-256 runtime-prime interval is empty")]
     EmptyPrimeInterval,
+    /// The security profile is not a single-prime configuration.
+    #[error("the SHA-256 path requires a single-prime security profile")]
+    ProfileStrategyMismatch,
     /// A caller attempted to construct a context with an out-of-profile value.
     #[error("prime {q} is outside the SHA-256 runtime-prime profile")]
     PrimeOutsideProfile { q: u128 },

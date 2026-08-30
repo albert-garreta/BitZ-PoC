@@ -16,6 +16,7 @@ pub mod matrix;
 pub mod multiswap;
 pub mod opening_mode;
 pub mod piop;
+pub mod profile;
 pub mod sha256;
 pub mod sumcheck;
 pub mod u32_mul;
@@ -57,6 +58,11 @@ pub use matrix::{
     make_equality_factors, ConstraintMatrices, MleClaimError, PreparedConstraintMatrices,
     ScaledMleEvaluationClaim, SparseMatrix, SpartanMatrixCoefficient, SpartanMatrixError,
 };
+pub use profile::{
+    IopInstanceFacts, IopSecurityParams, IopSecurityProfile, Lambda100, Lambda128,
+    LegacySha128Design, Limber114, PrimePolicy, ProfileError, ReductionPrimeParams,
+    SoundnessAccounting, SoundnessTerm,
+};
 pub use opening_mode::{
     Direct, EvaluatedSpartanAssignment, OpeningMode, SpartanF2zProof, Virtualized,
 };
@@ -80,10 +86,12 @@ pub use sha256::{
     commit_sha256_paper128_witness, commit_sha256_paper128_witness_with_config,
     generate_sha256_compression_witnesses, generate_sha256_compression_witnesses_exact,
     prepare_sha256_compression_batch, prepare_sha256_compression_batch_integer,
+    prepare_sha256_compression_batch_integer_with_profile,
     prove_sha256_compressions_paper128, prove_sha256_compressions_paper128_with_config,
     prove_sha256_compressions_spartan_and_f2z,
     prove_sha256_compressions_spartan_and_f2z_with_config, sample_sha256_mod_q_context,
-    sha256_compression_configs, verify_sha256_compressions_paper128,
+    sha256_compression_configs, sha256_compression_configs_for,
+    verify_sha256_compressions_paper128,
     verify_sha256_compressions_paper128_with_config, verify_sha256_compressions_spartan_and_f2z,
     verify_sha256_compressions_spartan_and_f2z_with_config, ExactSha256CompressionWitnessBatch,
     PreparedSha256CompressionBatch, Sha256CompressionInput, Sha256CompressionProof,

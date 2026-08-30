@@ -188,6 +188,22 @@ pub fn sha256_compression_configs(
     sha_paper128_lig_configs(packed_vars(p_f)).map_err(Sha256F2zError::LigeritoConfig)
 }
 
+/// Derives the BLAKE3/UDR Ligerito configuration at the prepared batch's
+/// OWN security target (`prepared.security().ligerito_target_bits`) — the
+/// one-λ-for-the-whole-system wiring. Identical to
+/// [`sha256_compression_configs`] at the default 128-bit profiles.
+pub fn sha256_compression_configs_for(
+    prepared: &PreparedSha256CompressionBatch,
+) -> Result<(LigProverConfig, LigVerifierConfig), Sha256F2zError> {
+    let p_f = prepared.source_params();
+    validate_source_params(p_f)?;
+    crate::ligerito_flock::sha_paper128_lig_configs_bits(
+        packed_vars(p_f),
+        prepared.security().ligerito_target_bits,
+    )
+    .map_err(Sha256F2zError::LigeritoConfig)
+}
+
 /// Commits packed extended-source rows `[1 | f]` under an explicit config.
 pub fn commit_sha256_compression_witness_with_config(
     p_f: &IntEvalParams,
@@ -254,7 +270,7 @@ pub fn prove_sha256_compressions_paper128_with_config<T: Transcript + Send>(
     let p_f = prepared.source_params();
     let p_h = prepared.assignment_params();
     let map = prepared.map();
-    let profile = Sha256PrimeProfile::new(p_h.t)?;
+    let profile = Sha256PrimeProfile::from_security(prepared.security(), p_h.t)?;
 
     validate_public_statement(p_h, public_statement)?;
     validate_common_geometry(None, map, p_h, p_f)?;
@@ -452,7 +468,7 @@ pub fn verify_sha256_compressions_paper128_with_config<T: Transcript + Send>(
     let p_f = prepared.source_params();
     let p_h = prepared.assignment_params();
     let map = prepared.map();
-    let profile = Sha256PrimeProfile::new(p_h.t)?;
+    let profile = Sha256PrimeProfile::from_security(prepared.security(), p_h.t)?;
 
     validate_public_statement(p_h, public_statement)?;
     validate_common_geometry(None, map, p_h, p_f)?;

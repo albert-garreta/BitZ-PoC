@@ -63,13 +63,15 @@ use super::super::{
         prove_spartan_piop_with_strategy, verify_spartan_proof, SpartanError, SpartanPiopProof,
         SpartanReductionStrategy,
     },
+    profile::{IopSecurityParams, IopSecurityProfile, Limber114, ProfileError},
     SpartanF2zField, SpartanField,
 };
 use super::{
     circuit::{MultiswapCircuit, MultiswapCircuitError, MULTISWAP_VALUE_BITS},
     prime::{
-        sample_multiswap_fingerprint_context, sample_multiswap_reduction_prime,
-        MultiswapFingerprintContext, MultiswapPrimeError, MultiswapPrimeProfile,
+        multiswap_instance_facts, sample_multiswap_fingerprint_context,
+        sample_multiswap_reduction_prime, MultiswapFingerprintContext, MultiswapPrimeError,
+        MultiswapPrimeProfile,
     },
     reduce::{step50_accepts_lift, step50_integer_lift, step50_reduce},
     relation::{
@@ -105,6 +107,10 @@ pub enum MultiswapError {
     /// Runtime-prime sampling or validation failed.
     #[error(transparent)]
     Prime(#[from] MultiswapPrimeError),
+
+    /// The security profile could not be instantiated at this shape.
+    #[error(transparent)]
+    Profile(#[from] ProfileError),
 
     /// A Fiat--Shamir grinding nonce could not be produced or checked.
     #[error(transparent)]
@@ -144,18 +150,30 @@ pub enum MultiswapError {
 }
 
 /// Setup-once, prime-independent bundle: the integer relation, the identity
-/// opening map, the F2Z shape, and the statement digest.
+/// opening map, the F2Z shape, the instantiated security profile, and the
+/// statement digest.
 pub struct PreparedMultiswapRelation {
     relation: MultiswapIntegerRelation,
     statement_digest: [u8; 32],
     map: RepeatedVirtualMap,
     params: IntEvalParams,
     profile: MultiswapPrimeProfile,
+    security: IopSecurityParams,
 }
 
 impl PreparedMultiswapRelation {
-    /// Prepares the relation, layout, and identity map from a built circuit.
+    /// Prepares the relation, layout, and identity map from a built circuit
+    /// at the pinned [`Limber114`] comparison profile.
     pub fn new(circuit: &MultiswapCircuit) -> Result<Self, MultiswapError> {
+        Self::new_with_profile::<Limber114>(circuit)
+    }
+
+    /// Prepares the relation under an explicit security profile. The
+    /// profile must be a two-prime Strategy-2 configuration (the MultiSwap
+    /// defect bound rules out a single derived-width fingerprint).
+    pub fn new_with_profile<P: IopSecurityProfile>(
+        circuit: &MultiswapCircuit,
+    ) -> Result<Self, MultiswapError> {
         let relation = MultiswapIntegerRelation::new(circuit)?;
         let params = relation.layout().f2z_params();
         let cells = cell_count(&params);
@@ -169,15 +187,30 @@ impl PreparedMultiswapRelation {
             SparseMatrix::try_from_columns(IDENTITY_LOCAL_ROWS, identity_columns)
                 .expect("the identity block is a valid CSC matrix"),
         )?;
-        let map = RepeatedVirtualMap::new(local, cells / IDENTITY_LOCAL_ROWS)?;
+        let cells_per_block = cells / IDENTITY_LOCAL_ROWS;
+        let map = RepeatedVirtualMap::new(local, cells_per_block)?;
         debug_assert!(crate::f2map::VirtualMap::is_identity(&map));
+        let facts = multiswap_instance_facts(
+            u32::try_from(params.t).map_err(|_| MultiswapError::InvalidGeometry)?,
+            u32::try_from(params.word_bits).map_err(|_| MultiswapError::InvalidGeometry)?,
+            u32::try_from(relation.layout().gate_vars() + 2)
+                .map_err(|_| MultiswapError::InvalidGeometry)?,
+        );
+        let security = P::instantiate(&facts)?;
+        let profile = MultiswapPrimeProfile::from_security(&security)?;
         Ok(Self {
             relation,
             statement_digest: circuit.statement_digest(),
             map,
             params,
-            profile: MultiswapPrimeProfile::new(),
+            profile,
+            security,
         })
+    }
+
+    /// The instantiated security parameters and their accounting.
+    pub const fn security(&self) -> &IopSecurityParams {
+        &self.security
     }
 
     /// The prime-independent integer relation.
