@@ -66,7 +66,8 @@ no free text. Common keys in fixed order; bench-specific keys sit between
 ```
 RESULT schema=f2z/1 bench=<multiswap|sha256|u32_mul|pcs|...> shape=<token>
   [bench-specific keys]
-  lambda=<bits|na> threads=<n> reps=<n> warmups=1 seed=<0x…|na>
+  lambda=<bits|na> lambda_achieved=<bits|na> lambda_bind=<term|na>
+  threads=<n> reps=<n> warmups=1 seed=<0x…|na>
   witness_ms= setup_ms=
   prove_ms= s1_commit_ms= s2_project_ms= s3_piop_ms= s4_bitify_ms=
   s5_0_reduce_ms= s5_open_ms= prove_residual_ms=
@@ -76,9 +77,12 @@ RESULT schema=f2z/1 bench=<multiswap|sha256|u32_mul|pcs|...> shape=<token>
   proof_bytes= proof_piop_bytes= proof_open_bytes= verified_samples=
 ```
 
-- `lambda` is the security target the run was measured at (114 for the
-  MultiSwap/Limber comparison; `na` for paths without a sampled projection
-  prime until the IOP security profile lands).
+- `lambda` is the security target the run was measured at (100 is the
+  default profile; 114 pins the MultiSwap/Limber comparison; `na` for
+  paths without a sampled projection prime). `lambda_achieved` is the
+  instantiated profile's achieved bits — the minimum over every soundness
+  term, GF(2^128) floors included — and `lambda_bind` names the binding
+  term (`src/piop/spartan/profile.rs` accounting).
 - `proof_piop_bytes` = Spartan payload + nonces + Step-5.0 lift;
   `proof_open_bytes` = the serialized F2Z opening; `proof_bytes` = their sum.
 - All `*_ms` values are medians over the measured reps; `prove_residual_ms`

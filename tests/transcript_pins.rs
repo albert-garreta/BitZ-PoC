@@ -19,9 +19,10 @@ use f2z::piop::spartan::multiswap::{
 };
 use f2z::piop::spartan::{
     commit_sha256_paper128_witness_with_config, generate_sha256_compression_witnesses_exact,
-    prepare_sha256_compression_batch_integer, prove_sha256_compressions_paper128_with_config,
-    sha256_compression_configs, verify_sha256_compressions_paper128_with_config,
-    Sha256CompressionStatement,
+    prepare_sha256_compression_batch_integer_with_profile,
+    prove_sha256_compressions_paper128_with_config, sha256_compression_configs_for,
+    verify_sha256_compressions_paper128_with_config, IopSecurityProfile, Lambda100,
+    LegacySha128Design, Sha256CompressionStatement,
 };
 use f2z::transcript::Blake3Transcript;
 
@@ -29,9 +30,17 @@ use f2z::transcript::Blake3Transcript;
 const MULTISWAP_MINI_DIGEST: &str =
     "9519afc76f9b5dbaab89942df8673e7a4542d9ee297acb187d3ff439148078b5";
 
-/// The 2^7 SHA-256 batch under the default profile
-/// (`LegacySha128Design`: the historical 128-design grinding schedule).
-const SHA256_2P7_DIGEST: &str =
+/// The 2^7 SHA-256 batch under the DEFAULT profile (`Lambda100`: no
+/// grinding anywhere, Ligerito at 100). Recorded at the deliberate
+/// λ = 100 default flip.
+const SHA256_2P7_LAMBDA100_DIGEST: &str =
+    "5126146691c28d8b0506d8d8613cfefbed5c95694494585fa320c758abc5ccd6";
+
+/// The 2^7 SHA-256 batch under `LegacySha128Design` — the historical
+/// 128-design schedule. This digest is the ORIGINAL pre-profile stream
+/// (recorded at commit 565e532's tree) and must never move: it proves the
+/// legacy profile keeps reproducing the published numbers byte for byte.
+const SHA256_2P7_LEGACY_DIGEST: &str =
     "65ecfa707b276483a4b4405b8a16d0d50c92339719ab877492792de7088b7032";
 
 fn digest_hex(parts: &[&[u8]]) -> String {
@@ -76,10 +85,20 @@ fn multiswap_mini_transcript_is_pinned() {
 }
 
 #[test]
-fn sha256_2p7_transcript_is_pinned() {
+fn sha256_2p7_default_lambda100_transcript_is_pinned() {
+    assert_eq!(sha256_2p7_digest::<Lambda100>(), SHA256_2P7_LAMBDA100_DIGEST);
+}
+
+#[test]
+fn sha256_2p7_legacy_128_design_transcript_is_pinned() {
+    assert_eq!(sha256_2p7_digest::<LegacySha128Design>(), SHA256_2P7_LEGACY_DIGEST);
+}
+
+fn sha256_2p7_digest<P: IopSecurityProfile>() -> String {
     const EXPONENT: usize = 7;
-    let prepared = prepare_sha256_compression_batch_integer(EXPONENT).expect("prepare");
-    let (pc, vc) = sha256_compression_configs(prepared.source_params()).expect("configs");
+    let prepared =
+        prepare_sha256_compression_batch_integer_with_profile::<P>(EXPONENT).expect("prepare");
+    let (pc, vc) = sha256_compression_configs_for(&prepared).expect("configs");
     let inputs: Vec<_> = (0..1usize << EXPONENT)
         .map(|i| {
             let word = |j: usize| (i as u32).wrapping_mul(0x9e37_79b9) ^ (j as u32);
@@ -133,11 +152,10 @@ fn sha256_2p7_transcript_is_pinned() {
         .chain(proof.initial_nonce().to_le_bytes())
         .chain(proof.terminal_nonce().to_le_bytes())
         .collect();
-    let digest = digest_hex(&[
+    digest_hex(&[
         &hint.commitment.root,
         &f2z_bytes,
         outer.as_bytes(),
         &nonces,
-    ]);
-    assert_eq!(digest, SHA256_2P7_DIGEST);
+    ])
 }

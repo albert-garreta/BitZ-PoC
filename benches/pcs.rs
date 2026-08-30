@@ -530,6 +530,8 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
             ("fill".into(), format!("{fill}")),
         ],
         lambda: None,
+        lambda_achieved: None,
+        lambda_bind: None,
         threads: common::threads(),
         reps,
         seed: None,

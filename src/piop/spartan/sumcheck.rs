@@ -561,6 +561,11 @@ impl<D> ProverGrindingRoundBoundary<D> {
 
 impl<D: GrindingDomain> RoundBoundaryPolicy for ProverGrindingRoundBoundary<D> {
     fn validate(&self, _expected_rounds: usize) -> Result<(), SumcheckError> {
+        // Difficulty 0 = the boundary does not exist: no transcript bytes,
+        // no nonces (the λ = 100 profiles).
+        if self.bits == 0 {
+            return Ok(());
+        }
         validate_grinding_configuration::<D>(self.bits)
     }
 
@@ -569,6 +574,9 @@ impl<D: GrindingDomain> RoundBoundaryPolicy for ProverGrindingRoundBoundary<D> {
         transcript: &mut T,
         round: usize,
     ) -> Result<(), SumcheckError> {
+        if self.bits == 0 {
+            return Ok(());
+        }
         let _scope = crate::utils::prof::scope("spartan:round_grinding_prove");
         let round = u64::try_from(round).expect("an in-memory sumcheck round index fits in u64");
         let nonce = grind_and_absorb::<D, _>(transcript, GrindingRound::new(round), self.bits)?;
@@ -595,10 +603,17 @@ impl<'a, D> VerifierGrindingRoundBoundary<'a, D> {
 
 impl<D: GrindingDomain> RoundBoundaryPolicy for VerifierGrindingRoundBoundary<'_, D> {
     fn validate(&self, expected_rounds: usize) -> Result<(), SumcheckError> {
-        validate_grinding_configuration::<D>(self.bits)?;
-        if self.nonces.len() != expected_rounds {
+        // Difficulty 0: the boundary does not exist, so a canonical proof
+        // carries NO nonces.
+        let expected = if self.bits == 0 {
+            0
+        } else {
+            validate_grinding_configuration::<D>(self.bits)?;
+            expected_rounds
+        };
+        if self.nonces.len() != expected {
             return Err(SumcheckError::InvalidGrindingNonceCount {
-                expected: expected_rounds,
+                expected,
                 actual: self.nonces.len(),
             });
         }
@@ -610,6 +625,9 @@ impl<D: GrindingDomain> RoundBoundaryPolicy for VerifierGrindingRoundBoundary<'_
         transcript: &mut T,
         round: usize,
     ) -> Result<(), SumcheckError> {
+        if self.bits == 0 {
+            return Ok(());
+        }
         let _scope = crate::utils::prof::scope("spartan:round_grinding_verify");
         let round_index =
             u64::try_from(round).expect("an in-memory sumcheck round index fits in u64");

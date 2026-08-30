@@ -39,9 +39,9 @@ use f2z::{
     piop::spartan::{
         commit_sha256_paper128_witness_with_config, generate_sha256_compression_witnesses_exact,
         prepare_sha256_compression_batch_integer, prove_sha256_compressions_paper128_with_config,
-        sha256_compression_configs, verify_sha256_compressions_paper128_with_config,
-        PreparedSha256CompressionBatch, Sha256CompressionInput, Sha256CompressionStatement,
-        Sha256PrimeProfile, SpartanField, SHA256_COMMITMENT_FIELD_BITS, SHA256_CONSTRAINTS,
+        sha256_compression_configs_for, verify_sha256_compressions_paper128_with_config,
+        IopSecurityParams, PreparedSha256CompressionBatch, Sha256CompressionInput,
+        Sha256CompressionStatement, SpartanField, SHA256_COMMITMENT_FIELD_BITS, SHA256_CONSTRAINTS,
         SHA256_CONSTRAINT_STRIDE, SHA256_F_BAR_LIVE_BITS, SHA256_F_STRIDE, SHA256_H_BAR_LIVE_BITS,
         SHA256_H_STRIDE, SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS,
     },
@@ -140,6 +140,7 @@ impl TraceWriter {
         &mut self,
         exponent: usize,
         shape_seed: u64,
+        security: &IopSecurityParams,
         trial: Trial,
         intervals: &[ProfileInterval],
     ) {
@@ -155,7 +156,6 @@ impl TraceWriter {
         assert_eq!(roots[0].label, "sha256-trace:verified_trial");
 
         let compressions = 1usize << exponent;
-        let profile = Sha256PrimeProfile::new(exponent).expect("paper SHA exponent");
         let trial_fragment = trial.id_fragment();
         let run_id = format!("sha256-paper128-2p{exponent}-{trial_fragment}");
         let series_id = format!(
@@ -212,15 +212,20 @@ impl TraceWriter {
                     "conceptual_c_nonzeros": 54_120usize * compressions,
                 },
                 "security": {
-                    "target_bits": 128,
+                    "profile": security.profile_name,
+                    "target_bits": security.lambda,
+                    "achieved_bits": security.accounting.achieved_bits(),
+                    "binding_term": security.accounting.binding_term().name,
                     "transcript_hash": "BLAKE3",
                     "commitment_field": format!("GF(2^{SHA256_COMMITMENT_FIELD_BITS})"),
-                    "prime_min": profile.min_prime().to_string(),
-                    "prime_max": profile.max_prime().to_string(),
+                    "prime_min": security.projection_min.to_string(),
+                    "prime_max": security.projection_max.to_string(),
                     "prime_bits": if exponent == SHA256_MAX_LOG_COMPRESSIONS {112} else {113},
-                    "initial_grinding_bits": profile.initial_grinding_bits(),
-                    "outer_round_grinding_bits": profile.outer_round_grinding_bits(),
-                    "terminal_grinding_bits": profile.terminal_grinding_bits(),
+                    "initial_grinding_bits": security.initial_grinding_bits,
+                    "outer_round_grinding_bits": security.piop_round_grinding_bits,
+                    "terminal_grinding_bits": security.terminal_grinding_bits,
+                    "forest_round_grinding_bits": security.forest_round_grinding_bits,
+                    "ligerito_target_bits": security.ligerito_target_bits,
                 },
                 "recursion": {"max_depth": 0, "instance_count": 1},
                 "repetition": {"count": 1},
@@ -786,8 +791,7 @@ fn bench_exponent(
 
     let setup_started = Instant::now();
     let prepared = prepare_sha256_compression_batch_integer(exponent).expect("valid SHA relation");
-    let (pc, vc) =
-        sha256_compression_configs(prepared.source_params()).expect("valid Ligerito config");
+    let (pc, vc) = sha256_compression_configs_for(&prepared).expect("valid Ligerito config");
     let setup_ms = setup_started.elapsed().as_secs_f64() * 1e3;
 
     println!();
@@ -807,7 +811,13 @@ fn bench_exponent(
     let warm_inputs = make_inputs(compressions, shape_seed);
     let (warm, warm_intervals) = run_once(&warm_inputs, &prepared, &pc, &vc);
     if let Some(writer) = trace_writer {
-        writer.write_run(exponent, shape_seed, Trial::Warmup(0), &warm_intervals);
+        writer.write_run(
+            exponent,
+            shape_seed,
+            prepared.security(),
+            Trial::Warmup(0),
+            &warm_intervals,
+        );
     }
     black_box(warm);
 
@@ -820,7 +830,13 @@ fn bench_exponent(
         let inputs = make_inputs(compressions, input_seed);
         let (timing, intervals) = run_once(&inputs, &prepared, &pc, &vc);
         if let Some(writer) = trace_writer {
-            writer.write_run(exponent, shape_seed, Trial::Sample(sample), &intervals);
+            writer.write_run(
+                exponent,
+                shape_seed,
+                prepared.security(),
+                Trial::Sample(sample),
+                &intervals,
+            );
         }
         println!(
             "  SAMPLE exponent={exponent} sample={} compressions={compressions} witness_ms={:.6} commit_ms={:.6} prove_ms={:.6} verify_ms={:.6} verified=true",
@@ -851,7 +867,9 @@ fn bench_exponent(
             ("throughput_per_s".into(), format!("{throughput:.3}")),
             ("shape_seed".into(), format!("{shape_seed:#018x}")),
         ],
-        lambda: Some(128),
+        lambda: Some(prepared.security().lambda),
+        lambda_achieved: Some(prepared.security().accounting.achieved_bits()),
+        lambda_bind: Some(prepared.security().accounting.binding_term().name.into()),
         threads,
         reps,
         seed: Some(root_seed),

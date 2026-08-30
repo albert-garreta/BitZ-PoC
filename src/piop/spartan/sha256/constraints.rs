@@ -24,7 +24,7 @@ use crate::{
 
 use super::super::{
     f2z::{spartan_f2z_field_config, SpartanF2zField},
-    profile::{IopSecurityParams, IopSecurityProfile, LegacySha128Design, ProfileError},
+    profile::{IopSecurityParams, IopSecurityProfile, Lambda100, ProfileError},
     ConstraintMatrices, PreparedConstraintMatrices, SpartanField, SpartanMatrixError,
 };
 use super::prime::sha256_instance_facts;
@@ -180,14 +180,18 @@ struct IntegerLocalRelation {
 static INTEGER_LOCAL_RELATION: OnceLock<IntegerLocalRelation> = OnceLock::new();
 
 /// Prepares the q-independent public relation for
-/// `2^log_compressions` independent SHA-256 compression invocations.
+/// `2^log_compressions` independent SHA-256 compression invocations at the
+/// DEFAULT security profile, [`Lambda100`] (no grinding anywhere; every
+/// term this crate controls ≥ 100 bits). Use
+/// [`prepare_sha256_compression_batch_integer_with_profile`] to select
+/// `Lambda128` or the historical `LegacySha128Design` schedule.
 ///
 /// No runtime modulus is consulted here. The caller must commit to the
 /// Boolean source rows before deriving q and invoking [`PreparedSha256CompressionBatch::project`].
 pub fn prepare_sha256_compression_batch_integer(
     log_compressions: usize,
 ) -> Result<PreparedSha256CompressionBatch, Sha256ConstraintError> {
-    prepare_sha256_compression_batch_integer_with_profile::<LegacySha128Design>(log_compressions)
+    prepare_sha256_compression_batch_integer_with_profile::<Lambda100>(log_compressions)
 }
 
 /// [`prepare_sha256_compression_batch_integer`] under an explicit

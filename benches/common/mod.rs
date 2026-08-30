@@ -448,6 +448,10 @@ pub struct BenchReport {
     pub extra: Vec<(String, String)>,
     /// Security target the run was measured at; `None` prints `na`.
     pub lambda: Option<u32>,
+    /// Achieved bits (min over every soundness term, floors included).
+    pub lambda_achieved: Option<f64>,
+    /// Name of the binding soundness term.
+    pub lambda_bind: Option<String>,
     pub threads: usize,
     pub reps: usize,
     /// Root seed; `None` prints `na` (deterministic benches).
@@ -472,6 +476,12 @@ fn fmt_row(value: Option<f64>) -> String {
 impl BenchReport {
     /// The uniform human block (step rows sum to the totals exactly).
     pub fn print_human(&self) {
+        if let (Some(lambda), Some(achieved)) = (self.lambda, self.lambda_achieved) {
+            println!(
+                "  security: target λ={lambda} | achieved {achieved:.1} bits (binding term: {})",
+                self.lambda_bind.as_deref().unwrap_or("unknown")
+            );
+        }
         println!(
             "  one-time (excluded from prove): witness {:.1} ms | setup {:.1} ms",
             self.witness_ms, self.setup_ms
@@ -533,13 +543,18 @@ impl BenchReport {
         let lambda = self
             .lambda
             .map_or_else(|| "na".to_owned(), |bits| bits.to_string());
+        let lambda_achieved = self
+            .lambda_achieved
+            .map_or_else(|| "na".to_owned(), |bits| format!("{bits:.1}"));
+        let lambda_bind = self.lambda_bind.clone().unwrap_or_else(|| "na".to_owned());
         let seed = self
             .seed
             .map_or_else(|| "na".to_owned(), |seed| format!("{seed:#018x}"));
         let p = &self.prover;
         let v = &self.verifier;
         line.push_str(&format!(
-            " lambda={lambda} threads={} reps={} warmups=1 seed={seed} \
+            " lambda={lambda} lambda_achieved={lambda_achieved} lambda_bind={lambda_bind} \
+             threads={} reps={} warmups=1 seed={seed} \
              witness_ms={:.3} setup_ms={:.3} prove_ms={:.3} s1_commit_ms={} \
              s2_project_ms={} s3_piop_ms={} s4_bitify_ms={} s5_0_reduce_ms={} \
              s5_open_ms={} prove_residual_ms={:.3} s3_outer_ms={} s3_bind_ms={} \

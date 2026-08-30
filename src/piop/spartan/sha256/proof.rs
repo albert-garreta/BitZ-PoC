@@ -78,6 +78,34 @@ impl GrindingDomain for Sha256TerminalGrinding {
     const DOMAIN: &'static [u8] = b"f2z/spartan-sha256/grinding/terminal/v1";
 }
 
+/// Grinds one boundary, or skips it entirely at difficulty 0 (the λ = 100
+/// profiles): no transcript bytes move and the stored nonce is 0.
+fn grind_boundary<D: GrindingDomain, T: Transcript>(
+    transcript: &mut T,
+    bits: u32,
+) -> Result<u64, GrindingError> {
+    if bits == 0 {
+        return Ok(0);
+    }
+    grind_and_absorb::<D, _>(transcript, GrindingRound::new(0), bits)
+}
+
+/// Checks one boundary, or (at difficulty 0) requires the canonical zero
+/// nonce without touching the transcript.
+fn check_boundary<D: GrindingDomain, T: Transcript>(
+    transcript: &mut T,
+    bits: u32,
+    nonce: u64,
+) -> Result<(), GrindingError> {
+    if bits == 0 {
+        if nonce != 0 {
+            return Err(GrindingError::InvalidNonce { nonce, bits });
+        }
+        return Ok(());
+    }
+    verify_and_absorb::<D, _>(transcript, GrindingRound::new(0), bits, nonce)
+}
+
 /// Outer Spartan reduction paired with a virtual opening of the complete
 /// factorized assignment functional.
 pub type Sha256CompressionProof = SpartanF2zProof<OuterSumcheckProof<SpartanF2zField>, Virtualized>;
@@ -258,7 +286,7 @@ pub fn commit_sha256_paper128_witness(
     prepared: &PreparedSha256CompressionBatch,
     witness: &ExactSha256CompressionWitnessBatch,
 ) -> Result<FlockCommitHint, Sha256F2zError> {
-    let (pc, _) = sha256_compression_configs(prepared.source_params())?;
+    let (pc, _) = sha256_compression_configs_for(prepared)?;
     commit_sha256_paper128_witness_with_config(prepared, witness, &pc)
 }
 
@@ -310,9 +338,8 @@ pub fn prove_sha256_compressions_paper128_with_config<T: Transcript + Send>(
     let step2_scope = crate::utils::prof::scope("step2:project_prove");
     let initial_nonce = {
         let _scope = crate::utils::prof::scope("sha256-paper128:initial_grinding_prove");
-        grind_and_absorb::<Sha256InitialGrinding, _>(
+        grind_boundary::<Sha256InitialGrinding, _>(
             transcript,
-            GrindingRound::new(0),
             profile.initial_grinding_bits() as u32,
         )?
     };
@@ -367,9 +394,8 @@ pub fn prove_sha256_compressions_paper128_with_config<T: Transcript + Send>(
     let step4_scope = crate::utils::prof::scope("step4:bitify_prove");
     let terminal_nonce = {
         let _scope = crate::utils::prof::scope("sha256-paper128:terminal_grinding_prove");
-        grind_and_absorb::<Sha256TerminalGrinding, _>(
+        grind_boundary::<Sha256TerminalGrinding, _>(
             transcript,
-            GrindingRound::new(0),
             profile.terminal_grinding_bits() as u32,
         )?
     };
@@ -451,7 +477,7 @@ pub fn prove_sha256_compressions_paper128<T: Transcript + Send>(
     witness: &ExactSha256CompressionWitnessBatch,
     hint_f: &FlockCommitHint,
 ) -> Result<Sha256Paper128Proof, Sha256F2zError> {
-    let (pc, _) = sha256_compression_configs(prepared.source_params())?;
+    let (pc, _) = sha256_compression_configs_for(prepared)?;
     prove_sha256_compressions_paper128_with_config(
         transcript,
         prepared,
@@ -503,9 +529,8 @@ pub fn verify_sha256_compressions_paper128_with_config<T: Transcript + Send>(
     let step2_scope = crate::utils::prof::scope("step2:project_verify");
     {
         let _scope = crate::utils::prof::scope("sha256-paper128:initial_grinding_verify");
-        verify_and_absorb::<Sha256InitialGrinding, _>(
+        check_boundary::<Sha256InitialGrinding, _>(
             transcript,
-            GrindingRound::new(0),
             profile.initial_grinding_bits() as u32,
             proof.initial_nonce,
         )?;
@@ -547,9 +572,8 @@ pub fn verify_sha256_compressions_paper128_with_config<T: Transcript + Send>(
     let step4_scope = crate::utils::prof::scope("step4:bitify_verify");
     {
         let _scope = crate::utils::prof::scope("sha256-paper128:terminal_grinding_verify");
-        verify_and_absorb::<Sha256TerminalGrinding, _>(
+        check_boundary::<Sha256TerminalGrinding, _>(
             transcript,
-            GrindingRound::new(0),
             profile.terminal_grinding_bits() as u32,
             proof.terminal_nonce,
         )?;
@@ -1562,8 +1586,14 @@ mod tests {
 
     #[test]
     fn paper128_runtime_prime_roundtrip() {
+        // Pinned to the grinded legacy schedule: this test exercises the
+        // per-round and initial/terminal grinding machinery, which the
+        // λ = 100 default profile deliberately skips.
         const LOG_COMPRESSIONS: usize = 7;
-        let prepared = prepare_sha256_compression_batch_integer(LOG_COMPRESSIONS).unwrap();
+        let prepared = super::super::super::prepare_sha256_compression_batch_integer_with_profile::<
+            crate::piop::spartan::profile::LegacySha128Design,
+        >(LOG_COMPRESSIONS)
+        .unwrap();
         let inputs = (0..1usize << LOG_COMPRESSIONS)
             .map(input)
             .collect::<Vec<_>>();
@@ -1574,7 +1604,7 @@ mod tests {
         )
         .unwrap();
         let public_statement = public_statements(&inputs, witness.outputs());
-        let (pc, vc) = sha256_compression_configs(prepared.source_params()).unwrap();
+        let (pc, vc) = sha256_compression_configs_for(&prepared).unwrap();
         let hint = commit_sha256_paper128_witness_with_config(&prepared, &witness, &pc).unwrap();
 
         let mut prover_transcript = Blake3Transcript::new();
@@ -1657,7 +1687,7 @@ mod tests {
         )
         .unwrap();
         let public_statement = public_statements(&inputs, witness.outputs());
-        let (pc, vc) = sha256_compression_configs(prepared.source_params()).unwrap();
+        let (pc, vc) = sha256_compression_configs_for(&prepared).unwrap();
         let hint = commit_sha256_paper128_witness_with_config(&prepared, &witness, &pc).unwrap();
 
         // Prover and verifier deliberately agree on each false statement, so

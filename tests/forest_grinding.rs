@@ -6,11 +6,10 @@
 use f2z::ligerito_flock::IntEvalRsLigVirtProof;
 use f2z::piop::spartan::{
     commit_sha256_paper128_witness_with_config, generate_sha256_compression_witnesses_exact,
-    prepare_sha256_compression_batch_integer,
     prepare_sha256_compression_batch_integer_with_profile,
     prove_sha256_compressions_paper128_with_config, sha256_compression_configs_for,
-    verify_sha256_compressions_paper128_with_config, Lambda128, PreparedSha256CompressionBatch,
-    Sha256CompressionStatement,
+    verify_sha256_compressions_paper128_with_config, Lambda128, LegacySha128Design,
+    PreparedSha256CompressionBatch, Sha256CompressionStatement,
 };
 use f2z::transcript::Blake3Transcript;
 
@@ -77,7 +76,12 @@ fn prove_under(
 
 #[test]
 fn lambda128_grinds_every_opening_round_and_gates_the_nonces() {
-    let legacy = prepare_sha256_compression_batch_integer(EXPONENT).expect("legacy prepare");
+    // The 0-difficulty baseline at the SAME Ligerito target (128), so the
+    // size comparison isolates the nonce section.
+    let legacy = prepare_sha256_compression_batch_integer_with_profile::<LegacySha128Design>(
+        EXPONENT,
+    )
+    .expect("legacy prepare");
     let lambda128 =
         prepare_sha256_compression_batch_integer_with_profile::<Lambda128>(EXPONENT)
             .expect("lambda128 prepare");

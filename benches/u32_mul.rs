@@ -541,6 +541,8 @@ fn bench_exponent(
             // No sampled projection prime yet: the path runs over the fixed
             // legacy modulus 2^100 - 15, so no lambda claim is made.
             lambda: None,
+            lambda_achieved: None,
+            lambda_bind: None,
             threads,
             reps,
             seed: Some(root_seed),

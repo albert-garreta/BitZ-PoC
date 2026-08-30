@@ -19,7 +19,7 @@ use f2z::piop::spartan::multiswap::{
 use f2z::piop::spartan::{
     commit_sha256_paper128_witness_with_config, generate_sha256_compression_witnesses_exact,
     prepare_sha256_compression_batch_integer, prove_sha256_compressions_paper128_with_config,
-    sha256_compression_configs, verify_sha256_compressions_paper128_with_config,
+    sha256_compression_configs_for, verify_sha256_compressions_paper128_with_config,
     Sha256CompressionStatement,
 };
 use f2z::transcript::Blake3Transcript;
@@ -67,7 +67,7 @@ fn multiswap_digest() -> String {
 fn sha256_digest() -> String {
     const EXPONENT: usize = 7;
     let prepared = prepare_sha256_compression_batch_integer(EXPONENT).expect("prepare");
-    let (pc, vc) = sha256_compression_configs(prepared.source_params()).expect("configs");
+    let (pc, vc) = sha256_compression_configs_for(&prepared).expect("configs");
     let inputs: Vec<_> = (0..1usize << EXPONENT)
         .map(|i| {
             let word = |j: usize| (i as u32).wrapping_mul(0x9e37_79b9) ^ (j as u32);
