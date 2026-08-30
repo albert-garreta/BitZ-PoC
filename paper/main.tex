@@ -775,7 +775,11 @@ where $M^{\mathsf{T}}$ denotes transposition and $\langle \cdot, \cdot \rangle$ 
 \subsection{Algebra}\label{s:prelims_algebra}
 We write $\FF_q$ for the finite field with $q$ elements (where $q$ is a prime or a prime power), $\QQ$ for the field of rational numbers, and $\ZZ$ for the ring of integers. For an integer $n\geq 1$, $\ZZ/n\ZZ$ denotes the ring of integers modulo $n$. When $n$ is prime, $\ZZ/n\ZZ=\FF_n$. We let $$\pi_n :\ZZ\to \ZZ/n\ZZ$$ denote reduction modulo $n$.
 
-All rings in this work are associative, commutative, finitely generated as $\ZZ$-modules\footnote{This excludes the field of rational numbers $\QQ$} \albert{Really? We exclude the rationals?}, and have an identity. Given a ring $R$, we write $R[X_1, \ldots, X_n]$ for the ring of polynomials with coefficients in $R$ and variables $X_1, \ldots, X_n$ (not necessarily multilinear). 
+All rings in this work are associative, commutative, have a multiplicative identity, and are finitely generated as $\ZZ$-modules \albert{Explain somewhere this stems from the fact that we bitify witnesses and reconstruct the witnesses through a linear map?}. This last condition is equivalent to saying that, as sets, all rings in this paper are of the form $R=S^{m}$ for some $m$, where $S$ is either $\ZZ$ or $\ZZ/n\ZZ$ for some $n$. This condition is satisfied by, for example: 1) all finite rings; 2) $\ZZ$; 3) rings of the form $\ZZ[X]/(h(X))$ for a monic polynomial $h(X)$. It is not satisfied by, for example, $\ZZ[X]$, $\QQ$, $\QQ[X]$. Our work can be easily adapted to support $\ZZ[X]$ (one needs to add degree bounds on several occasions), but not for $\QQ$, $\QQ[X]$. \albert{Really? We exclude the rationals?}
+
+
+
+Given a ring $R$, we write $R[X_1, \ldots, X_n]$ for the ring of polynomials with coefficients in $R$ and variables $X_1, \ldots, X_n$ (not necessarily multilinear). 
 
  The \emph{characteristic} of a ring $\ring$, denoted $\Char(R)$, is the largest $c\geq 1$, if it exists, such that $1 + \overset{c}{\ldots} + 1 = 0$ in $\ring$. Otherwise, if $1 + \overset{c}{\ldots} + 1 \neq 0$ for all $c$, the characteristic is zero.
  By $\range{0}{n}_\ring$ we denote all elements in $\ring$ of the form $1 + \overset{i}{\ldots} + 1$ for $i=0,\ldots, n$.
@@ -2217,7 +2221,8 @@ I.e.\
 
 %\albertimportant{todo: add the virtualization formalism. }
 
-Throughout this section $R$ denotes either $\ZZ$ or a finite field $\FF$ with $q^e$ elements. \albertimportant{Actually it may be good to allow $R$ to be $\QQ$, so we can inline constraints more easily (even though we can write the constraints over $\QQ$ and then turn them into $\ZZ$ constraints by multiplying by the LCM, so maybe it's not worth the added complexity}
+%Throughout this section $R$ denotes either $\ZZ$ or a finite field $\FF$ with $q^e$ elements. 
+\albertimportant{[No time for EC?] It may be good to allow $R$ to be $\QQ$, so we can inline constraints more easily (even though we can write the constraints over $\QQ$ and then turn them into $\ZZ$ constraints by multiplying by the LCM, so maybe it's not worth the added complexity}
 
 In this section we describe a variation of the PESAT  relation (cf.\ \cref{d:pesat}), called \emph{Universal Polynomial Equation Satisfiability (UPESAT)}. It generalizes PESAT by allowing polynomial constraints over a collection of quotient rings of the polynomial ring $\ring[X]$. UPESAT is a subset of the UCS relation from \cite{zincplus} (cf.\ \cref{r:pimsat_vs_ucs}). %On the other hand, UPESAT operates exclusively on the polynomial ring $\ZZ[X]$.
 
@@ -2236,61 +2241,79 @@ In this section we describe a variation of the PESAT  relation (cf.\ \cref{d:pes
 
 
 
-We fix a witness length $\codedim_0$ which we assume is a power of two; an input length $\inplen$; a bit size bound $B$; a degree bound $\moduledegree$; a collection of $\iota$ rings $R_1, \ldots, R_{\iota}$, where each $R_i$ is a quotient ring $R_i=\ring[X]/(h_i)$ for some polynomial $h_i\in \ring[X]$ which is either zero or monic and nonconstant (in the first case, $R_i=\ring[X]$; when $\ring=\FF$, requiring $h_i$ to be monic is no loss of generality); a number of rows $\numrows$; and for each $i\in [\iota]$, a vector of $\numrows$ polynomials
-$$\mathbf{p}^{(i)} = \left(\left.\mathbf{p}_{j}^{(i)} \ \right| \ j\in[\numrows]\right) \in \left((\ring[X])[Y_1,\ldots, Y_{\inplen+\codedim}]\right)^{\numrows}$$ with coefficients in $\ring[X]$ and on $\inplen + \codedim$ variables. Given $a\in \ring[X]$ and $i\in [\iota]$, we say that \emph{$a=0$ holds in $R_i$} if the image of $a$ under the canonical projection $\ring[X]\to R_i$ is zero. We denote $$\pp = (\pp^{(i)})_{i\in [\iota]}, \qquad \bm{R}=(R_i)_{i\in[\iota]}.$$ 
+We fix a witness length $\codedim_0$ which we assume is a power of two; an input length $\inplen$; a bit size bound $B$; a degree bound $\moduledegree$; a collection of $\iota$ rings $R_1, \ldots, R_{\iota}$ of \emph{zero or prime characteristic} (our constraints will be over these rings). As all rings in this paper, we assume $R_1, \ldots, R_\iota$ finitelly generated as modules (see \cref{s:prelims_algebra}). We fix a number of rows $\numrows$; a ring $S$ (our witness will have entries in $S$); and for each $i\in [\iota]$, a   ring homomorphisms $\psi_i: S\to R_i$ and a  vector of $\numrows$ polynomials
+$$\mathbf{p}^{(i)} = \left(\left.\mathbf{p}_{j}^{(i)} \ \right| \ j\in[\numrows]\right) \in \left(R_i[Y_1,\ldots, Y_{\inplen+\codedim}]\right)^{\numrows}$$ with coefficients in $\ring_i$ and on $\inplen + \codedim$ variables. %Given $a\in \ring_i$ and $i\in [\iota]$, we say that \emph{$a=0$ holds in $R_i$} if the image of $a$ under the canonical projection $\ring[X]\to R_i$ is zero. 
+We denote $$\bm{\psi}=(\psi_i)_{i\in [\iota]},\qquad \pp = (\pp^{(i)})_{i\in [\iota]}, \qquad \bm{R}=(R_i)_{i\in[\iota]}.$$ 
 %
 The UPESAT relation with respect to these parameters is defined as
 $$
 %\UPESAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{R}, \cC, \pack) 
-\UPESAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{R}) 
+\UPESAT(\moduleonebound, \bm{\psi}, \pp,\bm{R}) 
 = \left\{\left. 
 \begin{aligned}
-    \inp &= \xx \in \left(\ringtwobounds{B}{\moduledegree}[X]\right)^{\inplen},\\
+    \inp &= \xx \in \left(\moduleonebound\right)^{\inplen},\\
     \oracle &=\bot,\\
     %\oracle &= f \in \comfield^{\codelength},\\
-    \wit &=\bff \in \left(\ringtwobounds{B}{\moduledegree}[X]\right)^\codedim
+    \wit &=\bff \in \left(\moduleonebound\right)^{\codedim_0}
 \end{aligned} 
 \ \right| \ 
 \begin{aligned}
     %& f = \Enc_{\cC}\circ \pack \circ \picomfield(\bitstext(\bff)),\\
-    &\mathbf{p}_{j}^{(i)}(\xx, \bff) = 0 \ \text{ in } R_i \ \text{ for all } j\in [\numrows], \ i \in [\iota]
+    &\mathbf{p}_{j}^{(i)}(\psi_i(\xx), \psi_i(\bff)) = 0 \ \text{ in } R_i \ \text{ for all } j\in [\numrows], \ i \in [\iota]
 \end{aligned}
 \right\}
 $$
-For instance, each $R_i$ can be $\ring[X]$ itself (taking $h_i=0$), the base ring $\ring$ (taking $h_i=X$), a cyclotomic ring such as $\ZZ[X]/(X^{64}+1)$, or, when $\ring=\FF$, any finite extension field of $\FF$ (taking $h_i$ irreducible over $\FF$). When $h_i=0$ for all $i\in [\iota]$, so that the constraints are plain polynomial equations over $\ring[X]$, we write $\UPESAT(\ringtwobounds{B}{\moduledegree}, \pp,\bot)$.
+(See \cref{s:prelims_algebra} for $\moduleonebound$). 
+%For instance, each $R_i$ can be $\ring[X]$ itself (taking $h_i=0$), the base ring $\ring$ (taking $h_i=X$), a cyclotomic ring such as $\ZZ[X]/(X^{64}+1)$, or, when $\ring=\FF$, any finite extension field of $\FF$ (taking $h_i$ irreducible over $\FF$). When $h_i=0$ for all $i\in [\iota]$, so that the constraints are plain polynomial equations over $\ring[X]$, we write $\UPESAT(\ringtwobounds{B}{\moduledegree}, \pp,\bot)$.
 %When $\ideal_i=0$ for all $i$, then $\UPESAT(\ringtwobounds{B}{\moduledegree}, \pp, \bm{R}) = \PESAT(\)$
 
-The next remark explains that all our constructions for $\UPESAT$ apply, in particular, to the usual R1CS, CCS \cite{ccs}, AIR \cite{ethstark}, lookups,  permutation constraints, etc.\ over finite fields.
+%The next remark explains that all our constructions for $\UPESAT$ apply, in particular, to the usual R1CS, CCS \cite{ccs}, AIR \cite{ethstark}, lookups,  permutation constraints, etc.\ over finite fields.
+
+
+Following  \cref{e:pimsat_ronecs} and \cite{linear-accumulation,zinc,zincplus} one can  show that UPESAT allows to express  popular constraint systems such as R1CS, CCS, AIR, and lookup and permutation constraints, over different rings $R_i$, with witnesses and public inputs having entries in a ring $S$ that projects to the rings $R_i$.
+
 
 \begin{example}[R1CS constraints over quotients of {$\ring[X]$}]\label{e:pimsat_ronecs}
-Let $\ring,\inplen,\codedim,\numrows,\iota, R_1, \ldots, R_{\iota}, B, \moduledegree$ be as before, and let $A^{(i)},B^{(i)},C^{(i)}$ be $\numrows \times (\inplen+\codedim)$ matrices with entries in $\ring[X]$ (typically, these are sparse matrices with entries in a small subset of $\ring$), for all $i\in [\iota]$. Then the R1CS-UPESAT relation is defined as:
+Let $S,\inplen,\codedim_0,\numrows,\iota, \bm{R}, \bm{\psi}, \pp, B$ be as before,  with $R_1=\ldots = R_\iota=S$, $\psi_i=\mathsf{Id}$ for all $i$, and let $A^{(i)},B^{(i)},C^{(i)}$ be $\numrows \times (\inplen+\codedim)$ matrices with entries in $S$ (typically, these are sparse matrices with entries in a small subset of $S$), for all $i\in [\iota]$. Then the R1CS-UPESAT relation is defined as:
     $$
 \ronecsideal \defeq \left\{\left. 
 \begin{aligned}
-    \inp &= \xx\in \left(\ringtwobounds{B}{\moduledegree}[X]\right)^{\inplen},\\
+    \inp &= \xx\in \left(\moduleonebound\right)^{\inplen},\\
     \oracle &= \bot,\\
     %\oracle &= f \in \comfield^{\codelength},\\
-    \wit &=\bff \in \left(\ringtwobounds{B}{\moduledegree}[X]\right)^\codedim
+    \wit &=\bff \in \left(\moduleonebound\right)^{\codedim_0}
 \end{aligned} 
 \ \right| \ 
 \begin{aligned}
  %& f = \Enc_{\cC}\circ \pack \circ \picomfield(\bitstext(\bff)),\\  
- &\left(\left(A^{(i)}\cdot \zz\right)\circ \left(B^{(i)}\cdot \zz\right) - \left(C^{(i)}\cdot \zz\right)\right)_{j} = 0 \ \text{ in } R_i \\ &\qquad\qquad \qquad \qquad \qquad \text{ for all } j\in [\numrows], \ i \in [\iota]\\
+ &\left(\left(A^{(i)}\cdot \zz\right)\circ \left(B^{(i)}\cdot \zz\right) - \left(C^{(i)}\cdot \zz\right)\right)_{j} = 0 \ \text{ in } S \\ &\qquad\qquad \qquad \qquad \qquad \text{ for all } j\in [\numrows], \ i \in [\iota]\\
     &\ \zz=(\xx, \bff)
 \end{aligned}
 \right\},
 $$
-The relation $\ronecsideal$ is  precisely $\UPESAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{R})$ with $$\mathbf{p}_{j}^{(i)}(\xx,\bff)= \left(\left(A^{(i)}\cdot \zz\right)\circ \left(B^{(i)}\cdot \zz\right) - \left(C^{(i)}\cdot \zz\right)\right)_{j}.$$
+The relation $\ronecsideal$ is  precisely $\UPESAT(S,\bm{\psi}, \pp,\bm{R})$ with $$\mathbf{p}_{j}^{(i)}(\xx,\bff)= \left(\left(A^{(i)}\cdot \zz\right)\circ \left(B^{(i)}\cdot \zz\right) - \left(C^{(i)}\cdot \zz\right)\right)_{j}.$$
+By selecting, say $S$ a finite field, one recovers the standard R1CS constraint. Setting $S=\ZZ$ one obtains an R1CS constraint over the integers.
 \end{example}
 %
-Following  \cref{e:pimsat_ronecs} and \cite{linear-accumulation,zinc,zincplus} one can  show that UPESAT allows to express  popular constraint systems such as CCS, AIR, and lookup and permutation constraints, over quotients of polynomial rings.
 
 
 
 \begin{remark}[UPESAT vs the UCS relation from Zinc+ \cite{zincplus}]\label{r:pimsat_vs_ucs}
-UPESAT is a particular subset of the widely general UCS relation from \cite{zincplus}. In this work, we will build a IOP for UPESAT with witnesses being committed over binary fields. The same ideas can be used to construct an analogous IOP for UCS with witnesses with entries in a bounded subset of $\ZZ[X]$ (as opposed to $\QQ[X]$ \albert{committing to rational through their bit-decomposition is a bit strange, but it may still be possible?}).  We choose to focus on UPESAT to favor simplicity of exposition and of our IOP. 
+UPESAT is a closely related to the  UCS relation from \cite{zincplus}. Fixing $S=Z[X](X^d)$ for some $d$ leads to UPESAT being a large subset of UCS. In this case, the only  ways in which UCS is more general is that: 1) it supports witnesses with entries in rings of the form  $\QQ[X]/(X^d)$; 2) it allows to have several witness vectors, with one of them typed over $S$, and others typed over the rings $R_i$ (as opposed to  having a unique witness vector typed in $S$).
 
-The main difference between UPESAT and UCS  is that the later allows for witnesses and constraints over arbitrary and multiple domains in the same instance, including rational polynomial rings $\QQ[X]$, and it allows to reuse witness elements in $\QQ[X]$ or $\ZZ[X]$ in other domains such as finite fields and polynomial rings over finite fields, by using   homomorphic projections.
+Other than that, UPESAT is slightly more general in that the ring $S$, the one  where the witness $\bff$ is typed over, is more general than in UCS. 
+
+We choose to focus on UPESAT, rather than UCS, due to its greater simplicity and naturality. Further, on the one hand it is more general than UCS, and on the other, most of the territory in which UCS  is more general can be ported to UPESAT and our schemes in relatively straightforward manner, though technically involved. The exception being the support of $\QQ$ and $\QQ[X]$, whose inclusion in our work may require more than straightforward but technical work\footnote{This is because we commit to the bits that form our witnesses, and reconstruct the original witness from the bits via a linear map. At the very least, it is unclear how to bypass this gap if witnesses are rational \albert{explain somewhere that this is why we ask that rings are finitely generated as modules?}}.
+
+
+%\medskip
+We note that, in UCS, constraints are expressed through membership to ideals generated by monic non-constant polynomials. This is equivalent to expressing them directly over the quotient rings $R_i$ in UPESAT. 
+%
+%In this work, we will build a IOP for UPESAT with witnesses being committed over binary fields. The same ideas can be used to construct an analogous IOP for UCS with witnesses with entries in a bounded subset of $\ZZ[X]$ (as opposed to $\QQ[X]$ \albert{committing to rational through their bit-decomposition is a bit strange, but it may still be possible?}). 
+ %
+ %We choose to focus on UPESAT to favor simplicity of exposition and of our IOP. 
+ %
+%The main difference between UPESAT and UCS  is that the later allows for witnesses and constraints over arbitrary and multiple domains in the same instance, including rational polynomial rings $\QQ[X]$, and it allows to reuse witness elements in $\QQ[X]$ or $\ZZ[X]$ in other domains such as finite fields and polynomial rings over finite fields, by using   homomorphic projections.
 \end{remark}
 
 
@@ -2304,47 +2327,46 @@ The main difference between UPESAT and UCS  is that the later allows for witness
 
 We now describe an IOP for $\UPESAT$. 
 % 
-Given $a\in \ring[X]$ and $i\in [\iota]$, the equation $a=0$ holds in $R_i=\ring[X]/(h_i)$ if and only if $a$ belongs to the ideal $(h_i)$ generated by $h_i$ in $\ring[X]$. Accordingly, our IOP treats the UPESAT constraints as the ideal membership conditions $\pp_j^{(i)}(\xx,\bff)\in (h_i)$ for $j\in [\numrows]$ and $i \in [\iota]$.
-
+%Given $a\in \ring[X]$ and $i\in [\iota]$, the equation $a=0$ holds in $R_i=\ring[X]/(h_i)$ if and only if $a$ belongs to the ideal $(h_i)$ generated by $h_i$ in $\ring[X]$. Accordingly, our IOP treats the UPESAT constraints as the ideal membership conditions $\pp_j^{(i)}(\xx,\bff)\in (h_i)$ for $j\in [\numrows]$ and $i \in [\iota]$.
 % 
-We assume $\numrows=2^{n'}$ is a power of two, and identify $[n]$ with $\bits^{n'}$. 
-Let $\cC$ be a linear code over $\comfield$ of dimension $(\codedim_0\cdot\moduledegree\cdot B)/2^\comfieldexp$ and blocklength $\codelength$. Let $\codedim_1,\codedim_2$ be tensor decomposition parameters, to be used in \cref{c:LinModFieldBin}, so that $\codedim_0\cdot\moduledegree\cdot B=\codedim_1\cdot \codedim_2$. Assume $\cC=\cC_1^{\equiv \codedim_2}$ is the $\codedim_2$-interleaving  of a linear code $\cC_1$ over $\comfield$ of dimension $\codedim_1/2^\comfieldexp$. 
+We assume $\numrows=2^{n'}$ is a power of two, and identify $[n]$ with $\bits^{n'}$.   Let $\codedim\geq 1$ and let $L\in S^{\codedim\times \codedim_0}$ be a \emph{bitification matrix} as in \cref{r: non_uniform_bit_decomposition}. Given $\bff\in \moduleonebound^{\codedim_0}$ we define $\bitstext(\bff)\in \bits^\codedim\subseteq \ZZ^\codedim$ so that $$L \cdot \bitstext(\bff)_S = \bff$$ (see \cref{r: non_uniform_bit_decomposition}). 
+Let $\cC$ be a linear code over $\comfield$ of dimension $\codedim/\comfieldexp$ and blocklength $\codelength$. Let $\codedim_1,\codedim_2$ be tensor decomposition parameters, to be used in \cref{c:LinModFieldBin}, so that $\codedim=\codedim_1\cdot \codedim_2$. Let $\cC$ be  a linear code  over $\comfield$ of dimension $\codedim/\comfieldexp$. 
 
 
-For each prime, recall that $\pi_q:\ZZ\to \FF_q$ denotes reduction modulo $q$; and for every finite field $\KK$ of characteristic $q$,  we convene that $\pi_q$ acts on $\KK$ as the identity. 
+%For each prime, recall that $\pi_q:\ZZ\to \FF_q$ denotes reduction modulo $q$; and for every finite field $\KK$ of characteristic $q$,  we convene that $\pi_q$ acts on $\KK$ as the identity. 
 %
 %For each field $\KK$ of characteristic $q$, let $$\psi_\KK:\ZZ^{<\moduledegree}[X]\to \KK$$ be a $\pi_q$-module homomorphism \albert{give examples?}. If $\FF$ is another field of characteristic $q$, then we convene that $\psi_\KK$ is a $\pi_q=\mathsf{id}$-module homomorphism between the $\FF_q$-modules $\FF^{<\moduledegree}[X]$ and $\KK$. 
 %
-For each finite field $\KK$  let $\Pi_\KK$ be an IOR that given $(\inp,\bot, \wit)$ for  $\PESAT(\KK,\pp)$ (for any collection of polynomials $\pp$), outputs $(\inp',\bot, \wit) \in \LIN(\KK).$
+For each finite field $\KK$  let $\Pi_\KK$ be an IOR that given $(\inp,\bot, \wit)$ for  $\PESAT(\KK,\pp)$ (for any collection of polynomials $\pp$), outputs $(\inp',\bot, \wit) \in \LIN(\KK)$ (see \cref{?} for definitions of these relations). 
 We emphasize that the output of $\Pi_\KK$ has the same witness $\wit$ as the input.
  
-In our instantiations, $\Pi_{\KK}$ is either the usual Spartan \cite{spartan} PIOP over $\KK$, or a STARK-like PIOP \cite{ethstark} over $\KK$.
+In our instantiations, $\Pi_{\KK}$ is  the usual Spartan \cite{spartan} PIOP over $\KK$.
 
 
 
 \begin{construction}\label{c:iop_pimsat}
 [IOP for {$\UPESAT$}]
 \noindent \textbf{Parameters.} 
-$(R,M_R,\moduledegree,  \codedim_0, B, \codedim_1,\codedim_2, \comfield,\cC_1^{\equiv \codedim_2})$ comprised of: a ring $\ring\in \{\ZZ,\FF_{q^e}\}$; an $\ring$-module $M_R$ of dimension $\moduledegree$; a witness length $\codedim_0$; a bit-size bound $B$; a binary field $\comfield$; tensor decomposition dimensions $\codedim_1, \codedim_2$ with $\codedim_1\cdot \codedim_2= \codedim_0\cdot \moduledegree\cdot B$; a $\codedim_2$-interleaving of a code $\cC_1$ over $\comfield$ of dimension $\codedim_1/2^\comfieldexp$.\\
+$(S,\codedim_0, B, \codedim, L,  \codedim_1,\codedim_2, \comfield,\cC)$ \albert{and $\bm{\psi}, \pp, \bm{R}$?} comprised of: a ring $S$; a witness length $\codedim_0$; a bit-size bound $B$; a bit amount $\codedim$; a bitification matrix $L$; a binary field $\comfield$; tensor decomposition dimensions $\codedim_1, \codedim_2$ with $\codedim_1\cdot \codedim_2= \codedim$; a linear code $\cC$ over $\comfield$ of dimension $\codedim/\comfieldexp$.\\
 
 
-\noindent \textbf{Inputs.} The prover and verifier receive $\inp=\xx\in \ringtwobounds{B}{\moduledegree}[X]^{\inplen}$. The prover additionally receives $\wit= \bff\in \ringtwobounds{B}{\moduledegree}[X]^\codedim$ such that $(\inp,\bot, \wit) \in \UPESAT(\ringtwobounds{B}{\moduledegree}, \pp, \bm{R})$. 
+\noindent \textbf{Inputs.} The prover and verifier receive $\inp=\xx\in \moduleonebound^{\inplen}$. The prover additionally receives $\wit= \bff\in \moduleonebound^{\codedim_0}$ such that $(\inp,\bot, \wit) \in \UPESAT(\moduleonebound, \bm{\psi}, \pp, \bm{R})$. 
 
 
 \begin{enumerate}[leftmargin=*] 
-\item \textbf{Round 1: oracles.}
+\item \textbf{Round 1: Oracles.}
 \begin{itemize}[leftmargin=*]
-\item The prover  computes $$f= \Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\bff)) \in \comfield^{\codelength}$$ (cf.\ \eqref{e:bits_of_f}) and sends  the verifier oracle access to $f$. 
+\item The prover  computes $$f= \Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\bff)) \in \comfield^{\codelength}$$  and sends  the verifier oracle access to $f$. 
 \item The prover forms the multilinear polynomial, for all $i\in [\iota]$,
 %
 $$
-Q^{(i)}(Z_1, \ldots, Z_\nu) \defeq \sum_{\bb\in\bits^{n'}}\pp_{\bb}^{(i)}(\xx,\bff) \cdot \eq(\bb, Z_1, \ldots, Z_\nu) \in \left(\ring[X]\right)[Z_1, \ldots, Z_\nu].
+Q^{(i)}(Z_1, \ldots, Z_\nu) \defeq \sum_{\bb\in\bits^{n'}}\pp_{\bb}^{(i)}(\psi_i(\xx),\psi_i(\bff)) \cdot \eq(\bb, Z_1, \ldots, Z_\nu) \in R_i[Z_1, \ldots, Z_\nu].
 $$
 %
-The  claim that  $\mathbf{p}_{\bb}^{(i)}(\xx, \bff) \in (h_i)$  for all  $\bb\in \bits^{n'}$ and $i \in [\iota]$ is equivalent to the claim 
+The  claim that  $\mathbf{p}_{\bb}^{(i)}(\psi_i(\xx), \psi_i(\bff)) =0$ in $R_i$  for all  $\bb\in \bits^{n'}$ and $i \in [\iota]$ is equivalent to the claim 
 %
 \begin{equation}\label{e:iop_ideal_eq}
-   Q^{(i)}(\zz) \in (h_i) \qquad  \text{ for all } \zz\in \bits^{n'}, \ i \in [\iota].
+   Q^{(i)}(\zz) =0 \qquad  \text{ in } R_i \text{ for all } \zz\in \bits^{n'}, \ i \in [\iota].
 \end{equation}
 %
 \item If $\ring=\FF$, we let $\KK$ be a large enough (to be determined later) extension of $\FF$. If $\ring=\ZZ$, verifier samples a prime  from a set of primes $\cP$ (cf.\ \cref{r:sampling_field} for comments on how to do this in practice). Abusing the notation, we denote the prime by $q$ and denote $\FF_q$ by $\KK$.
