@@ -2332,6 +2332,7 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_prepared_u32_v2(
     bridge_digest: &[u8; 32],
     q_bits: usize,
     alpha: Gf,
+    forest_grinding_bits: u32,
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigModQProof, FlockRsError> {
     prove_mle_eval_mod_q_ligerito_prepared_spartan_v2(
@@ -2342,6 +2343,7 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_prepared_u32_v2(
         bridge_digest,
         q_bits,
         alpha,
+        forest_grinding_bits,
         pc,
         PreparedSpartanBridge::U32,
     )
@@ -2369,6 +2371,7 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_prepared_baby_bear_v2(
         bridge_digest,
         q_bits,
         alpha,
+        0,
         pc,
         PreparedSpartanBridge::BabyBear,
     )
@@ -2390,6 +2393,7 @@ fn prove_mle_eval_mod_q_ligerito_prepared_spartan_v2(
     bridge_digest: &[u8; 32],
     q_bits: usize,
     alpha: Gf,
+    forest_grinding_bits: u32,
     pc: &LigProverConfig,
     bridge: PreparedSpartanBridge,
 ) -> Result<IntEvalRsLigModQProof, FlockRsError> {
@@ -2439,7 +2443,7 @@ fn prove_mle_eval_mod_q_ligerito_prepared_spartan_v2(
         alpha,
         pc,
         bound_statement,
-        0,
+        forest_grinding_bits,
     ))
 }
 
@@ -2643,6 +2647,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_prepared_u32_v2<R>(
     alpha: Gf,
     claimed: R,
     q_bits: usize,
+    forest_grinding_bits: u32,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
@@ -2659,9 +2664,78 @@ where
         alpha,
         claimed,
         q_bits,
+        forest_grinding_bits,
         vc,
         PreparedSpartanBridge::U32,
     )
+}
+
+/// Runtime-modulus u32 bridge verifier: identical statement framing and
+/// core to [`verify_mle_eval_mod_q_ligerito_prepared_u32_v2`], but the final
+/// read-off recombines with explicit canonical mod-`q` arithmetic — the
+/// generic `R` recombination assumes a compile-time modulus on `R`'s
+/// operators, which a transcript-sampled prime does not have.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn verify_mle_eval_mod_q_ligerito_prepared_u32_runtime(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: &IntEvalRsLigModQProof,
+    p: &IntEvalParams,
+    chunks: &ModQWeightChunks,
+    col_weights_q: &[u128],
+    bridge_digest: &[u8; 32],
+    alpha: Gf,
+    claimed_q: u128,
+    q: u128,
+    q_bits: usize,
+    forest_grinding_bits: u32,
+    vc: &LigVerifierConfig,
+) -> Result<(), FlockRsError> {
+    validate_ligerito_commitment(commitment, vc)?;
+    let (geometry, chunk_width, chunk_count) = checked_mod_q_shape(commitment, proof, p, q_bits)?;
+    let (prepared_geometry, prepared_chunk_width, prepared_chunk_count) =
+        checked_prepared_mod_q_geometry(p, chunks, q_bits)?;
+    if geometry.rows != prepared_geometry.rows
+        || geometry.cols != prepared_geometry.cols
+        || chunk_width != prepared_chunk_width
+        || chunk_count != prepared_chunk_count
+        || col_weights_q.len() != geometry.cols
+        || claimed_q >= q
+        || col_weights_q.iter().any(|&weight| weight >= q)
+    {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+
+    let bound_statement = absorb_u32_mod_q_opening_v2_statement(
+        transcript,
+        commitment,
+        p,
+        bridge_digest,
+        q_bits,
+        alpha,
+        vc,
+    );
+    let us = verify_mod_q_lig_core_after_statement(
+        transcript,
+        commitment,
+        proof,
+        p,
+        chunks,
+        alpha,
+        vc,
+        bound_statement,
+        forest_grinding_bits,
+    )?;
+
+    let arithmetic = crate::ext_proj::ProjArith::new(q);
+    let v_flat: Vec<u128> = us.iter().flat_map(|u| u.iter().copied()).collect();
+    if recombine_read_off_runtime(p, &v_flat, col_weights_q, chunk_width, chunk_count, &arithmetic)
+        != claimed_q
+    {
+        return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
+    }
+    Ok(())
 }
 
 /// BabyBear counterpart of the prepared u32 verifier bridge.
@@ -2694,6 +2768,7 @@ where
         alpha,
         claimed,
         q_bits,
+        0,
         vc,
         PreparedSpartanBridge::BabyBear,
     )
@@ -2712,6 +2787,7 @@ fn verify_mle_eval_mod_q_ligerito_prepared_spartan_v2<R>(
     alpha: Gf,
     claimed: R,
     q_bits: usize,
+    forest_grinding_bits: u32,
     vc: &LigVerifierConfig,
     bridge: PreparedSpartanBridge,
 ) -> Result<(), FlockRsError>
@@ -2760,7 +2836,7 @@ where
         alpha,
         vc,
         bound_statement,
-        0,
+        forest_grinding_bits,
     )?;
 
     use crate::pcs::recombine_read_off;
@@ -11593,6 +11669,7 @@ mod tests {
             &bridge_digest,
             FQ_BITS,
             alpha,
+            0,
             &pc,
         )
         .unwrap();
@@ -11610,6 +11687,7 @@ mod tests {
                 alpha,
                 value,
                 FQ_BITS,
+                0,
                 &vc,
             )
         };
@@ -11681,6 +11759,7 @@ mod tests {
                 alpha,
                 claimed,
                 FQ_BITS,
+                0,
                 &vc,
             )
             .is_err()

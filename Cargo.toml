@@ -62,10 +62,13 @@ harness = false
 [[bench]]
 name = "u32_mul"
 harness = false
-# Integer u32×u32→u64 R1CS through the generic Spartan PIOP, with the
-# terminal assignment claim discharged against the compact F2 witness by F2Z.
-# Unified output schema (docs/bench-schema.md). Exponents via
-# F2Z_BENCH_SHAPES (alias F2Z_MUL_EXPONENTS); reps via F2Z_BENCH_REPS.
+# Integer u32×u32→u64 R1CS through the Spartan PIOP, with the terminal
+# assignment claim discharged against the compact F2 witness by F2Z. The
+# default (standard outer) runs the PAPER path: commit-before-prime,
+# transcript-sampled Step-2 prime, Lambda100 profile; the univariate-skip
+# variants keep the legacy fixed q = 2^100-15. Unified output schema
+# (docs/bench-schema.md). Exponents via F2Z_BENCH_SHAPES (alias
+# F2Z_MUL_EXPONENTS); reps via F2Z_BENCH_REPS.
 
 [[bench]]
 name = "baby_bear_mul"

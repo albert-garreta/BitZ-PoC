@@ -5,11 +5,13 @@
 //! Every measured proof is verified through the combined verifier.
 //!
 //! Output follows the unified schema (`docs/bench-schema.md`): the
-//! end-to-end prover (`prove_ms`) covers bit packing, commitment, Spartan,
-//! bitification, and the F2Z opening, re-run per repetition. Witness
-//! generation and relation preparation are excluded and reported one-time.
-//! This path has no sampled projection prime yet (fixed legacy modulus
-//! `2^100 - 15`), so `s2_project` and `lambda` report `na`.
+//! end-to-end prover (`prove_ms`) covers bit packing, commitment, the
+//! transcript-sampled Step-2 prime (commit-before-prime, Zaratan order),
+//! Spartan over that runtime field, bitification, and the F2Z opening,
+//! re-run per repetition. Witness generation and relation preparation are
+//! excluded and reported one-time. The default profile is `Lambda100`.
+//! The univariate-skip protocol variants still run the LEGACY fixed-q
+//! path (`q = 2^100 - 15`, `lambda=na`).
 //!
 //! Defaults to the production sweep `2^15, ..., 2^25` multiplications.
 //! Override with `F2Z_BENCH_SHAPES` (deprecated alias `F2Z_MUL_EXPONENTS`):
@@ -41,12 +43,12 @@ use std::{
 use f2z::ligerito_flock::FlockCommitHint;
 use f2z::pcs::{FQ_BITS, mod_q_num_chunks};
 use f2z::piop::spartan::{
-    PreparedConstraintMatrices, SpartanF2zError, SpartanF2zField, SpartanReductionStrategy,
-    U32MulF2zWidth, U32MulLayout, U32MulSpartanF2zProof, U32MulUnivariateSkipSpartanF2zProof,
-    U32MulWitness, commit_u32_mul_witness, prepare_u32_mul_relation,
-    prove_u32_mul_spartan_and_f2z_with_strategy,
+    PreparedConstraintMatrices, PreparedU32MulRelation, SpartanF2zError, SpartanF2zField,
+    SpartanReductionStrategy, U32MulF2zWidth, U32MulLayout, U32MulPaperProof,
+    U32MulUnivariateSkipSpartanF2zProof, U32MulWitness, commit_u32_mul_witness,
+    prepare_u32_mul_relation, prove_u32_mul_paper,
     prove_u32_mul_spartan_and_f2z_with_univariate_skip, spartan_f2z_field_config,
-    verify_u32_mul_spartan_and_f2z, verify_u32_mul_spartan_and_f2z_with_univariate_skip,
+    verify_u32_mul_paper, verify_u32_mul_spartan_and_f2z_with_univariate_skip,
 };
 use f2z::transcript::Blake3Transcript;
 use f2z::{ligerito::packed_vars, ligerito_flock::sha_lig_configs};
@@ -232,25 +234,21 @@ impl OuterProtocol {
 }
 
 enum BenchProof {
-    Standard(U32MulSpartanF2zProof),
+    Paper(U32MulPaperProof),
     UnivariateSkip(U32MulUnivariateSkipSpartanF2zProof),
 }
 
 impl BenchProof {
     fn f2z_bytes(&self) -> usize {
         match self {
-            Self::Standard(proof) => proof.f2z().to_bytes().len(),
+            Self::Paper(proof) => proof.f2z().to_bytes().len(),
             Self::UnivariateSkip(proof) => proof.f2z().to_bytes().len(),
         }
     }
 
     fn spartan_payload_elements(&self) -> usize {
         match self {
-            Self::Standard(proof) => {
-                4 * proof.spartan().outer.sumcheck.round_polynomials.len()
-                    + 3
-                    + 3 * proof.spartan().inner.round_polynomials.len()
-            }
+            Self::Paper(proof) => proof.spartan_payload_elements(),
             Self::UnivariateSkip(proof) => {
                 proof.spartan().outer.skip.finite_q_evaluations.len()
                     + 1
@@ -262,34 +260,40 @@ impl BenchProof {
     }
 }
 
+/// The prepared relation of whichever path the protocol knob selects: the
+/// paper runtime-prime relation (standard outer) or the legacy fixed-q
+/// matrices (univariate-skip variants).
+enum BenchRelation {
+    Paper(PreparedU32MulRelation),
+    Legacy(PreparedConstraintMatrices<SpartanF2zField, bool>),
+}
+
 fn prove_combined(
     transcript: &mut Blake3Transcript,
-    relation: &PreparedConstraintMatrices<SpartanF2zField, bool>,
+    relation: &BenchRelation,
     layout: &U32MulLayout,
     witness: &U32MulWitness,
     commitment_hint: &FlockCommitHint,
     strategy: SpartanReductionStrategy,
     protocol: OuterProtocol,
 ) -> Result<BenchProof, SpartanF2zError> {
-    match protocol {
-        OuterProtocol::Standard => prove_u32_mul_spartan_and_f2z_with_strategy(
-            transcript,
-            relation,
-            layout,
-            witness,
-            commitment_hint,
-            strategy,
-        )
-        .map(BenchProof::Standard),
-        OuterProtocol::UnivariateSkip(skip_vars) => {
+    match relation {
+        BenchRelation::Paper(prepared) => {
+            prove_u32_mul_paper(transcript, prepared, witness, commitment_hint, strategy)
+                .map(BenchProof::Paper)
+        }
+        BenchRelation::Legacy(matrices) => {
             assert_eq!(
                 strategy,
                 SpartanReductionStrategy::DelayedBarrett,
                 "univariate skip uses the production delayed-Barrett reducer"
             );
+            let OuterProtocol::UnivariateSkip(skip_vars) = protocol else {
+                unreachable!("the legacy relation is built only for skip variants")
+            };
             prove_u32_mul_spartan_and_f2z_with_univariate_skip(
                 transcript,
-                relation,
+                matrices,
                 layout,
                 witness,
                 commitment_hint,
@@ -302,18 +306,21 @@ fn prove_combined(
 
 fn verify_combined(
     transcript: &mut Blake3Transcript,
-    relation: &PreparedConstraintMatrices<SpartanF2zField, bool>,
+    relation: &BenchRelation,
     layout: &U32MulLayout,
     commitment: &Commitment,
     proof: &BenchProof,
 ) -> Result<(), SpartanF2zError> {
-    match proof {
-        BenchProof::Standard(proof) => {
-            verify_u32_mul_spartan_and_f2z(transcript, relation, layout, commitment, proof)
+    match (relation, proof) {
+        (BenchRelation::Paper(prepared), BenchProof::Paper(proof)) => {
+            verify_u32_mul_paper(transcript, prepared, commitment, proof)
         }
-        BenchProof::UnivariateSkip(proof) => verify_u32_mul_spartan_and_f2z_with_univariate_skip(
-            transcript, relation, layout, commitment, proof,
-        ),
+        (BenchRelation::Legacy(matrices), BenchProof::UnivariateSkip(proof)) => {
+            verify_u32_mul_spartan_and_f2z_with_univariate_skip(
+                transcript, matrices, layout, commitment, proof,
+            )
+        }
+        _ => unreachable!("relation and proof kinds always match"),
     }
 }
 
@@ -340,7 +347,7 @@ fn exponents() -> Vec<usize> {
 /// One end-to-end prove: bit-pack + commit (Step 1) + the combined proof.
 #[allow(clippy::too_many_arguments)]
 fn prove_e2e(
-    relation: &PreparedConstraintMatrices<SpartanF2zField, bool>,
+    relation: &BenchRelation,
     layout: &U32MulLayout,
     witness: &U32MulWitness,
     strategy: SpartanReductionStrategy,
@@ -397,11 +404,23 @@ fn bench_exponent(
     let params = layout.f2z_params();
     let f2z_chunks = mod_q_num_chunks(&params, FQ_BITS);
 
-    // One-time public preprocessing (excluded from prove).
-    let field_config = spartan_f2z_field_config();
+    // One-time public preprocessing (excluded from prove). The standard
+    // protocol prepares the paper runtime-prime relation (q-independent
+    // exact matrices + the instantiated security profile); the skip
+    // variants prepare the legacy fixed-q matrices.
     let started = Instant::now();
-    let relation =
-        prepare_u32_mul_relation::<SpartanF2zField>(layout, &field_config).expect("valid relation");
+    let relation = match protocol {
+        OuterProtocol::Standard => BenchRelation::Paper(
+            PreparedU32MulRelation::new(layout).expect("valid paper relation"),
+        ),
+        OuterProtocol::UnivariateSkip(_) => {
+            let field_config = spartan_f2z_field_config();
+            BenchRelation::Legacy(
+                prepare_u32_mul_relation::<SpartanF2zField>(layout, &field_config)
+                    .expect("valid relation"),
+            )
+        }
+    };
     let setup_ms = common::elapsed_ms(started);
 
     // Excluded warm-up. This is also the first end-to-end correctness check.
@@ -538,11 +557,22 @@ fn bench_exponent(
                 ("order".into(), order.to_string()),
                 ("shape_seed".into(), format!("{shape_seed:#018x}")),
             ],
-            // No sampled projection prime yet: the path runs over the fixed
-            // legacy modulus 2^100 - 15, so no lambda claim is made.
-            lambda: None,
-            lambda_achieved: None,
-            lambda_bind: None,
+            lambda: match &relation {
+                BenchRelation::Paper(prepared) => Some(prepared.security().lambda),
+                BenchRelation::Legacy(_) => None,
+            },
+            lambda_achieved: match &relation {
+                BenchRelation::Paper(prepared) => {
+                    Some(prepared.security().accounting.achieved_bits())
+                }
+                BenchRelation::Legacy(_) => None,
+            },
+            lambda_bind: match &relation {
+                BenchRelation::Paper(prepared) => {
+                    Some(prepared.security().accounting.binding_term().name.into())
+                }
+                BenchRelation::Legacy(_) => None,
+            },
             threads,
             reps,
             seed: Some(root_seed),

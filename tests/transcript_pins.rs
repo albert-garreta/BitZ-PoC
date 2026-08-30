@@ -24,6 +24,10 @@ use f2z::piop::spartan::{
     verify_sha256_compressions_paper128_with_config, IopSecurityProfile, Lambda100,
     LegacySha128Design, Sha256CompressionStatement,
 };
+use f2z::piop::spartan::{
+    commit_u32_mul_witness, prove_u32_mul_paper, verify_u32_mul_paper, PreparedU32MulRelation,
+    SpartanReductionStrategy, U32MulF2zWidth, U32MulWitness,
+};
 use f2z::transcript::Blake3Transcript;
 
 /// The mini MultiSwap instance under the pinned `Limber114` profile.
@@ -42,6 +46,41 @@ const SHA256_2P7_LAMBDA100_DIGEST: &str =
 /// legacy profile keeps reproducing the published numbers byte for byte.
 const SHA256_2P7_LEGACY_DIGEST: &str =
     "65ecfa707b276483a4b4405b8a16d0d50c92339719ab877492792de7088b7032";
+
+/// The 2^15 u32-multiplication batch under the paper path's default
+/// profile (`Lambda100`, transcript-sampled Step-2 prime). Recorded when
+/// the runtime-prime path landed.
+const U32_PAPER_2P15_DIGEST: &str =
+    "c060beb9a053d6f71b4856fc4e07cd5194f5c5db57cc37bbc75cf63eae4c695d";
+
+#[test]
+fn u32_paper_2p15_transcript_is_pinned() {
+    let witness = U32MulWitness::from_fn_with_f2z_width(1usize << 15, U32MulF2zWidth::W1, |i| {
+        let x = (i as u32).wrapping_mul(0x9e37_79b9) | 1;
+        let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
+        (x, y)
+    })
+    .expect("witness");
+    let layout = *witness.layout();
+    let prepared = PreparedU32MulRelation::new(layout).expect("prepare");
+    let hint = commit_u32_mul_witness(&layout, witness.f2z_bit_rows()).expect("commit");
+    let mut prover_transcript = Blake3Transcript::new();
+    let proof = prove_u32_mul_paper(
+        &mut prover_transcript,
+        &prepared,
+        &witness,
+        &hint,
+        SpartanReductionStrategy::DelayedBarrett,
+    )
+    .expect("prove");
+    let mut verifier_transcript = Blake3Transcript::new();
+    verify_u32_mul_paper(&mut verifier_transcript, &prepared, &hint.commitment, &proof)
+        .expect("verify");
+    let f2z_bytes = proof.f2z().to_bytes();
+    let spartan = format!("{:?}", proof.spartan());
+    let digest = digest_hex(&[&hint.commitment.root, &f2z_bytes, spartan.as_bytes()]);
+    assert_eq!(digest, U32_PAPER_2P15_DIGEST);
+}
 
 fn digest_hex(parts: &[&[u8]]) -> String {
     let mut hasher = Hasher::new();

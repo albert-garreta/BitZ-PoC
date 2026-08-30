@@ -22,6 +22,10 @@ use f2z::piop::spartan::{
     sha256_compression_configs_for, verify_sha256_compressions_paper128_with_config,
     Sha256CompressionStatement,
 };
+use f2z::piop::spartan::{
+    commit_u32_mul_witness, prove_u32_mul_paper, verify_u32_mul_paper, PreparedU32MulRelation,
+    SpartanReductionStrategy, U32MulF2zWidth, U32MulWitness,
+};
 use f2z::transcript::Blake3Transcript;
 
 fn digest_hex(parts: &[&[u8]]) -> String {
@@ -129,7 +133,35 @@ fn sha256_digest() -> String {
     ])
 }
 
+fn u32_paper_digest() -> String {
+    let witness = U32MulWitness::from_fn_with_f2z_width(1usize << 15, U32MulF2zWidth::W1, |i| {
+        let x = (i as u32).wrapping_mul(0x9e37_79b9) | 1;
+        let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
+        (x, y)
+    })
+    .expect("witness");
+    let layout = *witness.layout();
+    let prepared = PreparedU32MulRelation::new(layout).expect("prepare");
+    let hint = commit_u32_mul_witness(&layout, witness.f2z_bit_rows()).expect("commit");
+    let mut prover_transcript = Blake3Transcript::new();
+    let proof = prove_u32_mul_paper(
+        &mut prover_transcript,
+        &prepared,
+        &witness,
+        &hint,
+        SpartanReductionStrategy::DelayedBarrett,
+    )
+    .expect("prove");
+    let mut verifier_transcript = Blake3Transcript::new();
+    verify_u32_mul_paper(&mut verifier_transcript, &prepared, &hint.commitment, &proof)
+        .expect("verify");
+    let f2z_bytes = proof.f2z().to_bytes();
+    let spartan = format!("{:?}", proof.spartan());
+    digest_hex(&[&hint.commitment.root, &f2z_bytes, spartan.as_bytes()])
+}
+
 fn main() {
     println!("multiswap-mini  {}", multiswap_digest());
     println!("sha256-2p7      {}", sha256_digest());
+    println!("u32-paper-2p15  {}", u32_paper_digest());
 }

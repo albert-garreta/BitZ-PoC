@@ -44,12 +44,14 @@ pub use cm::{
     ProjectedCmAndWitness, CM_AND_F_LIVE_SLOTS, CM_AND_H_SLOTS, CM_AND_WORD_BITS,
 };
 pub use f2z::{
-    bitify_u32_mul_spartan_claim, commit_u32_mul_witness, prove_u32_mul_spartan_and_f2z,
-    prove_u32_mul_spartan_and_f2z_from_witness, prove_u32_mul_spartan_and_f2z_with_strategy,
+    bitify_u32_mul_spartan_claim, commit_u32_mul_witness, prove_u32_mul_paper,
+    prove_u32_mul_spartan_and_f2z, prove_u32_mul_spartan_and_f2z_from_witness,
+    prove_u32_mul_spartan_and_f2z_with_strategy,
     prove_u32_mul_spartan_and_f2z_with_univariate_skip, spartan_f2z_field_config,
-    verify_u32_mul_spartan_and_f2z, verify_u32_mul_spartan_and_f2z_with_univariate_skip,
-    SpartanF2zError, SpartanF2zField, U32BitifiedClaim, U32MulSpartanF2zProof,
-    U32MulUnivariateSkipSpartanF2zProof,
+    u32_mul_instance_facts, verify_u32_mul_paper, verify_u32_mul_spartan_and_f2z,
+    verify_u32_mul_spartan_and_f2z_with_univariate_skip, PreparedU32MulRelation,
+    SpartanF2zError, SpartanF2zField, U32BitifiedClaim, U32MulPaperProof,
+    U32MulSpartanF2zProof, U32MulUnivariateSkipSpartanF2zProof,
 };
 
 pub use crate::sparse_matrix::SparseMatrixError;
