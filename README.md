@@ -22,6 +22,36 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
 
 `n` is log(|w|)
 
+## Integer R1CS with F_2 virtualization
+
+u32 * u32 -> u64
+
+```sh
+RUSTFLAGS="-C target-cpu=native" \
+RAYON_NUM_THREADS=8 \
+F2Z_MUL_EXPONENTS="15" \
+F2Z_BENCH_REPS=1 \
+cargo bench --bench u32_mul --features unchecked
+````
+
+BabyBear
+```sh
+RUSTFLAGS="-C target-cpu=native" \
+RAYON_NUM_THREADS=8 \
+F2Z_BABY_BEAR_MUL_EXPONENTS="15" \
+F2Z_BENCH_REPS=1 \
+cargo bench --bench baby_bear_mul --features unchecked
+````
+
+SHA-256
+```sh
+RUSTFLAGS="-C target-cpu=native" \
+RAYON_NUM_THREADS=8 \
+OBLONG_PROFILE=1 \
+F2Z_SHA_LOG2S="7" \
+F2Z_SHA_REPS=1 \
+cargo bench --bench sha256_compressions --features unchecked
+```
 
 ## Dependencies
 
