@@ -103,6 +103,14 @@ harness = false
 # (alias F2Z_MULTISWAP_REPS); run RAYON_NUM_THREADS=1 for Limber parity.
 
 [[bench]]
+name = "lambda_sweep"
+harness = false
+# One SHA-256 witness proved under Lambda100 / LegacySha128Design /
+# Lambda128 (compile-time profiles) in the unified schema - the
+# prover-time / proof-size tradeoff table for the security target.
+# Exponent via F2Z_BENCH_SHAPES (default 12); reps via F2Z_BENCH_REPS.
+
+[[bench]]
 name = "sha256_compressions"
 harness = false
 # Independent SHA-256 compression batches through the structured Spartan +
