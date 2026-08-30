@@ -27,21 +27,56 @@ use crate::{
 
 use super::constraints::{
     SHA256_CONSTRAINTS, SHA256_CONSTRAINT_LOCAL_VARS, SHA256_CONSTRAINT_STRIDE,
-    SHA256_F_BAR_LIVE_BITS, SHA256_F_LIVE_BITS, SHA256_F_LOCAL_VARS, SHA256_F_STRIDE,
-    SHA256_H_BAR_LIVE_BITS, SHA256_H_LOCAL_VARS, SHA256_H_STRIDE,
+    SHA256_F_BAR_LIVE_BITS, SHA256_F_INSTANCE_BITS, SHA256_F_LIVE_BITS,
+    SHA256_H_BAR_LIVE_BITS, SHA256_H_INSTANCE_BITS,
 };
 
 /// One independent SHA-256 compression input: chaining state and message block.
 pub type Sha256CompressionInput = ([u32; 8], [u32; 16]);
 
-/// Public input and claimed output for one SHA-256 compression.
+/// Public claim for one SHA-256 compression.
+///
+/// Let `R = Z / 2^32 Z` be the ring of 32-bit words. This statement is a
+/// tuple `(H, M, H_hat) in R^8 x R^16 x R^8` asserting
+///
+/// `H_hat = Compress_SHA256(H, M)`.
+///
+/// If `V^(64) = (a, b, c, d, e, f, g, h)` is the working state after the 64
+/// SHA-256 rounds, this is equivalently the component-wise relation
+/// `H_hat = H + V^(64) mod 2^32`.
+///
+/// This statement covers one compression invocation only: `M` is an
+/// already-parsed 512-bit message block, so no message padding or byte-to-word
+/// parsing occurs here. Each word `x` is decomposed inside the circuit as
+/// `x = sum_{b=0}^{31} x_b 2^b`, with Boolean bits `x_b` numbered
+/// least-significant first. The canonical public order is `H`, `M`, `H_hat`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Sha256CompressionStatement {
-    /// Initial eight-word chaining state.
+    /// Initial chaining state `H = (H_0, ..., H_7) in R^8`.
+    ///
+    /// These words initialize the SHA-256 working state:
+    /// `(a_0, b_0, c_0, d_0, e_0, f_0, g_0, h_0) = H`.
     pub state: [u32; 8],
-    /// Sixteen-word message block.
+
+    /// One 512-bit message block `M = (M_0, ..., M_15) in R^16`.
+    ///
+    /// The block supplies the first sixteen words of the 64-word message
+    /// schedule: `W_j = M_j` for `0 <= j < 16`. For `16 <= j < 64`,
+    ///
+    /// `W_j = sigma_1(W_{j-2}) + W_{j-7}`
+    /// `    + sigma_0(W_{j-15}) + W_{j-16} mod 2^32`.
+    ///
+    /// Thus `block[j]` represents `M_j = W_j` only for `0 <= j < 16`; the
+    /// remaining schedule words are derived by the compression function.
     pub block: [u32; 16],
-    /// Claimed eight-word state after compression.
+
+    /// Claimed post-compression state
+    /// `H_hat = (H_hat_0, ..., H_hat_7) in R^8`.
+    ///
+    /// A valid statement satisfies
+    /// `H_hat_j = H_j + V_j^(64) mod 2^32` for every `0 <= j < 8`. This is the
+    /// next chaining state after one block, not necessarily a complete
+    /// SHA-256 message digest.
     pub claimed_output: [u32; 8],
 }
 
@@ -86,10 +121,71 @@ pub type Sha256CompressionWitnessBatch = (
 /// the SHA circuit.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExactSha256CompressionWitnessBatch {
+    /// Bit-sliced storage of the padded source table
+    /// `F_tilde in F_2^{N x SHA256_F_STRIDE}`, where `N = instances`.
+    ///
+    /// Row `F_tilde[i, :]` is `f_tilde_i = ((1, f_i), 0, ..., 0)` for
+    /// compression `i`: coordinate zero is the constant one, the next
+    /// [`SHA256_F_LIVE_BITS`] coordinates contain the generated Boolean source
+    /// `f_i`, and the remaining coordinates are zero padding. Storage is
+    /// transposed and packed across instances:
+    ///
+    /// `F_tilde[i, j] = (source_rows[j][i / 64] >> (i % 64)) & 1`.
+    ///
+    /// Thus the outer length is [`SHA256_F_STRIDE`], while every inner vector
+    /// contains `ceil(N / 64)` machine words. Unused lanes in the final word
+    /// are zero.
     source_rows: Vec<Vec<u64>>,
+
+    /// Bit-sliced storage of the padded assignment table
+    /// `H_tilde in F_2^{N x SHA256_H_STRIDE}`.
+    ///
+    /// For compression `i`, let `f_tilde_i = F_tilde[i, :]^T` and
+    /// `h_tilde_i = H_tilde[i, :]^T`. The padded Boolean assignment satisfies
+    /// `h_tilde_i = M_pad f_tilde_i` over `F_2`, where `M_pad` is the
+    /// zero-extended public witness map. Its first
+    /// [`SHA256_H_BAR_LIVE_BITS`] coordinates are the augmented live assignment
+    /// `h_bar_i = (1, h_i)`; all remaining coordinates are zero. It uses the
+    /// same transposed packing as `source_rows`:
+    ///
+    /// `H_tilde[i, j] = (assignment_rows[j][i / 64] >> (i % 64)) & 1`.
+    ///
+    /// Although these values are stored as bits, the R1CS computation embeds
+    /// each one canonically as the integer `0` or `1`.
     assignment_rows: Vec<Vec<u64>>,
+
+    /// The three exact integer matrix-vector products for the live R1CS rows.
+    ///
+    /// If `h_bar_i in {0, 1}^SHA256_H_BAR_LIVE_BITS` is the augmented live
+    /// assignment for instance `i`, canonically embedded into `Z`, then every
+    /// live constraint `r` stores
+    ///
+    /// `a[i, r] = sum_j A_live[r, j] h_bar_i[j]`,
+    /// `b[i, r] = sum_j B_live[r, j] h_bar_i[j]`, and
+    /// `c[i, r] = sum_j C_live[r, j] h_bar_i[j]`
+    ///
+    /// as signed elements of `Z`, so a satisfying row obeys
+    /// `a[i, r] * b[i, r] = c[i, r]` over the integers. Each component is
+    /// flattened in instance-major order at
+    /// `i * SHA256_CONSTRAINTS + r`. No reduction modulo `q` and no padding
+    /// to [`SHA256_CONSTRAINT_STRIDE`] have happened yet.
     exact_products: IntegerProducts,
+
+    /// Native compression results `O_i in (Z / 2^32 Z)^8`, in batch-instance
+    /// and SHA-256 state-word order.
+    ///
+    /// Each `u32` is the canonical representative of one output word:
+    /// `outputs[i][w] = sum_{b=0}^{31} output_bit[i, w, b] * 2^b`, with bits
+    /// numbered least-significant first inside the word.
     outputs: Vec<[u32; 8]>,
+
+    /// Batch cardinality `N = 2^t > 0`.
+    ///
+    /// This equals `outputs.len()` and the logical instance dimension of both
+    /// F2Z tables. It also determines their `ceil(N / 64)` packed-word width
+    /// and partitions each exact product vector into `N` blocks of
+    /// [`SHA256_CONSTRAINTS`] live rows before projection pads each block to
+    /// [`SHA256_CONSTRAINT_STRIDE`].
     instances: usize,
 }
 
@@ -193,8 +289,8 @@ pub fn generate_sha256_compression_witnesses_exact(
     let shards: Vec<CompressionShard> =
         inputs.iter().map(generate_one).collect::<Result<_, _>>()?;
 
-    let source_rows = pack_source_rows(&shards);
-    let assignment_rows = pack_derived_rows(&shards);
+    let source_rows = pack_source_rows(&shards, p_f);
+    let assignment_rows = pack_derived_rows(&shards, p_h);
     let outputs = shards.iter().map(|shard| shard.output).collect();
     let exact_products = flatten_exact_products(shards);
 
@@ -230,13 +326,12 @@ fn validate_geometry(
     p_h: &IntEvalParams,
 ) -> Result<(), Sha256WitnessError> {
     if instances == 0
-        || !instances.is_power_of_two()
-        || p_f.rows() != instances
-        || p_h.rows() != instances
-        || p_f.s != SHA256_F_LOCAL_VARS
-        || p_h.s != SHA256_H_LOCAL_VARS
+        || p_f.s != 0
+        || p_h.s != 0
         || p_f.word_bits != 1
         || p_h.word_bits != 1
+        || p_f.cells() != (1 + instances * SHA256_F_INSTANCE_BITS).next_power_of_two()
+        || p_h.cells() != (1 + instances * SHA256_H_INSTANCE_BITS).next_power_of_two()
     {
         return Err(Sha256WitnessError::InvalidGeometry);
     }
@@ -285,65 +380,144 @@ fn compression_input_bits(
     })
 }
 
-fn pack_source_rows(shards: &[CompressionShard]) -> Vec<Vec<u64>> {
-    let words_per_row = shards.len().div_ceil(64);
-    let mut rows = vec![vec![0u64; words_per_row]; SHA256_F_STRIDE];
-    for (group, word) in rows[0].iter_mut().enumerate() {
-        let active = (shards.len() - group * 64).min(64);
-        *word = if active == 64 {
-            u64::MAX
-        } else {
-            (1u64 << active) - 1
-        };
-    }
-    transpose_witness_rows(shards, &mut rows, SHA256_F_LIVE_BITS, 1, |shard| &shard.f);
-    debug_assert!(rows[SHA256_F_BAR_LIVE_BITS..]
-        .iter()
-        .all(|row| row.iter().all(|word| *word == 0)));
-    rows
-}
-
-fn pack_derived_rows(shards: &[CompressionShard]) -> Vec<Vec<u64>> {
-    let words_per_row = shards.len().div_ceil(64);
-    let mut rows = vec![vec![0u64; words_per_row]; SHA256_H_STRIDE];
-    transpose_witness_rows(shards, &mut rows, SHA256_H_BAR_LIVE_BITS, 0, |shard| {
-        &shard.h_bar
-    });
-    rows
-}
-
-fn transpose_witness_rows(
-    shards: &[CompressionShard],
-    rows: &mut [Vec<u64>],
-    live_bits: usize,
-    output_offset: usize,
-    witness: impl Fn(&CompressionShard) -> &PackedWitness,
-) {
-    // Each group owns one word in every output row. A range loop makes that
-    // intentionally strided 64x64 transpose explicit.
-    #[allow(clippy::needless_range_loop)]
-    for group in 0..shards.len().div_ceil(64) {
-        let first_instance = group * 64;
-        let active = (shards.len() - first_instance).min(64);
-        for input_word in 0..live_bits.div_ceil(64) {
-            let mut block = [0u64; 64];
-            for lane in 0..active {
-                block[lane] = witness(&shards[first_instance + lane])
-                    .words()
-                    .get(input_word)
-                    .copied()
-                    .unwrap_or(0);
-            }
-            transpose64(&mut block);
-            let bit_start = input_word * 64;
-            let bit_end = (bit_start + 64).min(live_bits);
-            for bit in bit_start..bit_end {
-                rows[output_offset + bit][group] = block[bit - bit_start];
+/// Packs the compact Boolean source witnesses into the coordinate-major rows
+/// consumed by the F2Z commitment.
+///
+/// Let `N = shards.len()`. For instance `i`, the shard contains
+///
+/// `f_i = (input_i, hints_i) in F_2^7_144`,
+///
+/// comprising [`COMPRESSION_INPUT_BITS`] input bits followed by
+/// [`COMPRESSION_HINT_BITS`] circuit-hint bits. Distinguish its augmented live
+/// source
+///
+/// `f_bar_i = (1, f_i) in F_2^7_145`
+///
+/// from its power-of-two-padded source
+///
+/// `f_tilde_i = (f_bar_i, 0^1_047) in F_2^8_192`.
+///
+/// These dimensions are [`SHA256_F_LIVE_BITS`],
+/// [`SHA256_F_BAR_LIVE_BITS`], and [`SHA256_F_STRIDE`], respectively. If
+/// `W = ceil(N / 64)`, the result has shape `8_192 x W` machine words and
+/// transposes the conceptual instance-major matrix according to
+///
+/// `rows[j][g] = sum_{ell=0}^{63} f_tilde_{64g+ell}[j] 2^ell`,
+///
+/// where `f_tilde_i[j] = 0` for nonexistent instances `i >= N`. Equivalently,
+/// for every active instance,
+///
+/// `((rows[j][i / 64] >> (i % 64)) & 1) = f_tilde_i[j]`.
+///
+/// Thus packing is least-significant-lane first: `rows[0]` contains the
+/// leading one, `rows[1 + k]` contains `f_i[k]`, coordinates
+/// `j >= SHA256_F_BAR_LIVE_BITS` are zero padding, and unused high lanes of
+/// the final word are zero.
+fn pack_source_rows(shards: &[CompressionShard], params: &IntEvalParams) -> Vec<Vec<u64>> {
+    let mut rows = vec![vec![0u64; params.rows().div_ceil(64)]];
+    set_packed_bit(&mut rows[0], 0);
+    for (instance, shard) in shards.iter().enumerate() {
+        let start = 1 + instance * SHA256_F_INSTANCE_BITS;
+        for bit in 0..SHA256_F_LIVE_BITS {
+            if shard.f.bit(bit) {
+                set_packed_bit(&mut rows[0], start + bit);
             }
         }
     }
+    rows
 }
 
+/// Packs the already-synthesized Boolean assignments into F2Z's
+/// coordinate-major rows.
+///
+/// For instance `i`, let `f_bar_i in F_2^7_145` be the augmented live source
+/// described by [`pack_source_rows`], and let
+///
+/// `M_live in F_2^(20_457 x 7_145)`
+///
+/// be the public live witness map. The shard's live assignment satisfies
+///
+/// `h_bar_i = (1, h_i) = M_live f_bar_i in F_2^20_457`.
+///
+/// [`ProductWitgen`] materializes `h_bar_i` while evaluating the circuit; this
+/// function neither evaluates `M_live` nor derives new witness values. It only
+/// appends the power-of-two padding
+///
+/// `h_tilde_i = (h_bar_i, 0^12_311) in F_2^32_768`
+///
+/// and transposes the existing bits. Equivalently, if
+/// `M_pad in F_2^(32_768 x 8_192)` is `M_live` extended with zero rows and
+/// columns, then `h_tilde_i = M_pad f_tilde_i`. In terms of the named
+/// constants, the live and padded dimensions are
+/// [`SHA256_H_BAR_LIVE_BITS`] and [`SHA256_H_STRIDE`]. For
+/// `N = shards.len()` and `W = ceil(N / 64)`, the returned table has shape
+/// `32_768 x W` machine words and satisfies
+///
+/// `rows[j][g] = sum_{ell=0}^{63} h_tilde_{64g+ell}[j] 2^ell`,
+///
+/// taking `h_tilde_i[j] = 0` for nonexistent instances `i >= N`.
+/// Equivalently, for every active instance,
+///
+/// `((rows[j][i / 64] >> (i % 64)) & 1) = h_tilde_i[j]`.
+///
+/// Packing is least-significant-lane first. Coordinates
+/// `j >= SHA256_H_BAR_LIVE_BITS` and unused high lanes of the final word are
+/// zero.
+fn pack_derived_rows(shards: &[CompressionShard], params: &IntEvalParams) -> Vec<Vec<u64>> {
+    let mut rows = vec![vec![0u64; params.rows().div_ceil(64)]];
+    set_packed_bit(&mut rows[0], 0);
+    for (instance, shard) in shards.iter().enumerate() {
+        let start = 1 + instance * SHA256_H_INSTANCE_BITS;
+        for bit in 1..SHA256_H_BAR_LIVE_BITS {
+            if shard.h_bar.bit(bit) {
+                set_packed_bit(&mut rows[0], start + bit - 1);
+            }
+        }
+    }
+    rows
+}
+
+fn set_packed_bit(words: &mut [u64], bit: usize) {
+    words[bit / u64::BITS as usize] |= 1u64 << (bit % u64::BITS as usize);
+}
+
+/// Concatenates each shard's already-evaluated integer R1CS products.
+///
+/// Let `N = shards.len()`, `m = SHA256_CONSTRAINTS = 184`, and
+/// `n = SHA256_H_BAR_LIVE_BITS = 20_457`. For instance `i`, canonically embed
+/// the live Boolean assignment `h_bar_i in {0, 1}^n` into `Z^n`. The live
+/// integer matrices `A_live, B_live, C_live in Z^(m x n)` define
+///
+/// `a_{i,r} = sum_{j=0}^{n-1} A_live[r,j] h_bar_i[j]`,
+/// `b_{i,r} = sum_{j=0}^{n-1} B_live[r,j] h_bar_i[j]`, and
+/// `c_{i,r} = sum_{j=0}^{n-1} C_live[r,j] h_bar_i[j]`.
+///
+/// This function preserves instance order and stores those exact signed
+/// integers at
+///
+/// `products.a_mw[i * m + r] = a_{i,r}`,
+/// `products.b_mw[i * m + r] = b_{i,r}`, and
+/// `products.c_mw[i * m + r] = c_{i,r}`
+///
+/// for `0 <= i < N` and `0 <= r < m`; hence each returned vector has length
+/// `N * m`. A satisfying generated witness obeys the exact integer identity
+///
+/// `a_{i,r} b_{i,r} = c_{i,r}` in `Z`
+///
+/// on every live row. [`ProductWitgen`] has already evaluated the three
+/// matrix products; this function only concatenates them and does not check
+/// the identity. Taking ownership of `shards` moves the signed-integer
+/// representations without cloning them.
+///
+/// No field projection or constraint-row padding occurs here. After a runtime
+/// prime `q` is selected, [`ExactSha256CompressionWitnessBatch::project_products`]
+/// writes blocks of width `R = SHA256_CONSTRAINT_STRIDE = 256` as
+///
+/// `az[i * R + r] = [a_{i,r}]_q` for `0 <= r < m`,
+/// `az[i * R + r] = 0` for `m <= r < R`,
+///
+/// and analogously for `bz` and `cz`, where `[x]_q` is the image of `x in Z`
+/// in `F_q`.
 fn flatten_exact_products(shards: Vec<CompressionShard>) -> IntegerProducts {
     let capacity = shards.len() * SHA256_CONSTRAINTS;
     let mut products = IntegerProducts {
@@ -373,7 +547,8 @@ fn pack_products(
     debug_assert_eq!(products.b_mw.len(), instances * SHA256_CONSTRAINTS);
     debug_assert_eq!(products.c_mw.len(), instances * SHA256_CONSTRAINTS);
 
-    let table_len = instances * SHA256_CONSTRAINT_STRIDE;
+    let instance_capacity = instances.next_power_of_two();
+    let table_len = instance_capacity * SHA256_CONSTRAINT_STRIDE;
     let zero = F128::zero_with_cfg(field_config);
     let mut az = vec![zero.clone(); table_len];
     let mut bz = vec![zero.clone(); table_len];
@@ -383,6 +558,7 @@ fn pack_products(
     az.par_chunks_mut(SHA256_CONSTRAINT_STRIDE)
         .zip(bz.par_chunks_mut(SHA256_CONSTRAINT_STRIDE))
         .zip(cz.par_chunks_mut(SHA256_CONSTRAINT_STRIDE))
+        .take(instances)
         .enumerate()
         .for_each(|(instance, ((a_out, b_out), c_out))| {
             let start = instance * SHA256_CONSTRAINTS;
@@ -414,7 +590,7 @@ fn pack_products(
         );
     }
 
-    let num_vars = instances.ilog2() as usize + SHA256_CONSTRAINT_LOCAL_VARS;
+    let num_vars = instance_capacity.ilog2() as usize + SHA256_CONSTRAINT_LOCAL_VARS;
     R1csProductMles {
         az: DenseMultilinearExtension {
             evaluations: az,
@@ -439,25 +615,6 @@ fn write_product_block(
     debug_assert_eq!(input.len(), SHA256_CONSTRAINTS);
     for (target, words) in output.iter_mut().zip(input) {
         *target = F128::new_with_cfg(Uint::new((*words).into()), field_config);
-    }
-}
-
-/// In-place 64x64 bit-matrix transpose. Output word `j`'s bit `k` is
-/// input word `k`'s bit `j`.
-#[allow(clippy::arithmetic_side_effects)]
-fn transpose64(matrix: &mut [u64; 64]) {
-    let mut shift = 32usize;
-    let mut mask = 0x0000_0000_ffff_ffffu64;
-    while shift != 0 {
-        let mut index = 0usize;
-        while index < 64 {
-            let swap = ((matrix[index] >> shift) ^ matrix[index | shift]) & mask;
-            matrix[index | shift] ^= swap;
-            matrix[index] ^= swap << shift;
-            index = ((index | shift) + 1) & !shift;
-        }
-        shift >>= 1;
-        mask ^= mask << shift;
     }
 }
 

@@ -32,7 +32,7 @@ serde = { version = "1", features = ["derive"] }
 # Backend-independent SHA-256/F2Z circuit synthesis. The same crate powers
 # `../f2z-benchmark`; using it here keeps symbolic constraints and witness
 # generation on one specification.
-circuit = { path = "/private/tmp/claude-501/-Users-albertgarretafontelles-f2z-pcs/de380bc3-44c4-46f2-8775-aead6491a8d4/scratchpad/f2zb-main/crates/circuit", default-features = false }
+circuit = { path = "../f2z-benchmark/crates/circuit", default-features = false }
 
 [dev-dependencies]
 serde_json = "1"
