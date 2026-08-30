@@ -6,16 +6,23 @@
 //! complete assignment consumed by those matrices.
 
 use std::borrow::Cow;
+use std::marker::PhantomData;
+use std::sync::Arc;
 
 use blake3::Hasher;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use thiserror::Error;
 
+use super::spliced_digest::{SplicedDigestBuilder, SplicedStreamDigest};
 use crate::{
     poly::mle::DenseMultilinearExtension,
     sparse_matrix::{SparseColumn, SparseMatrixError},
 };
+
+/// Domain tag of the prepared-statement digest (`v2`), shared verbatim by
+/// the entry-wise walk and the skeleton's cached stream.
+const CONSTRAINT_MATRIX_DIGEST_DOMAIN: &[u8] = b"f2z/spartan/constraint-matrices/v2";
 
 pub use crate::sparse_matrix::SparseMatrix;
 
@@ -27,7 +34,7 @@ use super::{sumcheck::R1csProductMles, SpartanField, SpartanFieldError};
 /// corresponding element of `F`. Consequently, a Boolean matrix containing
 /// `true` has the same prepared-statement digest as a field-valued matrix
 /// containing `F::one_with_cfg(field_config)` at the same coordinates.
-pub trait SpartanMatrixCoefficient<F>: Clone + Sync
+pub trait SpartanMatrixCoefficient<F>: Clone + Send + Sync
 where
     F: SpartanField,
 {
@@ -138,6 +145,38 @@ where
         }
         evaluation
     }
+}
+
+/// A sparse coefficient whose field action and canonical encoding are the
+/// same under every runtime field configuration.
+///
+/// This is the contract that lets a [`ConstraintMatricesSkeleton`] hoist the
+/// per-statement clone, validation, canonical digesting, and selector
+/// detection out of the per-proof [`PreparedConstraintMatrices`] construction
+/// when the modulus is drawn from the transcript. Implementations promise
+/// that, for every configuration accepted by `F::validate_config`:
+///
+/// - [`SpartanMatrixCoefficient::validate`] succeeds unconditionally,
+/// - [`SpartanMatrixCoefficient::canonical_field_encoding`] returns the exact
+///   bytes written by [`Self::write_modulus_independent_encoding`], and
+/// - [`Self::is_unit`] is `true` exactly when that encoding equals the
+///   field's canonical one-encoding.
+///
+/// Under this contract [`PreparedConstraintMatrices::from_skeleton`] produces
+/// the same statement digest as [`PreparedConstraintMatrices::new`] for every
+/// accepted configuration.
+pub trait ModulusIndependentCoefficient<F>: SpartanMatrixCoefficient<F>
+where
+    F: SpartanField,
+{
+    /// Appends the exact bytes
+    /// [`SpartanMatrixCoefficient::canonical_field_encoding`] returns under
+    /// every accepted configuration.
+    fn write_modulus_independent_encoding(&self, out: &mut Vec<u8>);
+
+    /// Whether this coefficient acts as the multiplicative unit under every
+    /// accepted configuration.
+    fn is_unit(&self) -> bool;
 }
 
 /// Failures while constructing or evaluating a Spartan matrix statement.
@@ -374,12 +413,86 @@ struct DisjointUnitSelectorTriplet {
     c_offset: usize,
 }
 
+/// The modulus-independent core of a prepared R1CS statement: validated,
+/// digest-ready matrices plus the padded domain widths and the detected
+/// selector layout — everything [`PreparedConstraintMatrices::new`] derives
+/// that does not depend on the runtime field configuration.
+///
+/// Protocols that draw their field modulus from the transcript (the paper
+/// Step-2 prime) build this once per relation and instantiate each proof's
+/// [`PreparedConstraintMatrices`] with
+/// [`PreparedConstraintMatrices::from_skeleton`]. That replaces the
+/// per-proof clone, re-validation, selector re-detection, and `O(nnz)`
+/// re-digest of the sparse matrices with a shared-ownership handle and an
+/// `O(log nnz)` digest replay — while producing bit-identical prepared
+/// statements (the digest included) for every accepted configuration.
+#[derive(Clone, Debug)]
+pub struct ConstraintMatricesSkeleton<F, C = F>
+where
+    F: SpartanField,
+{
+    matrices: Arc<ConstraintMatrices<C>>,
+    digest_stream: SplicedStreamDigest,
+    num_row_vars: usize,
+    num_column_vars: usize,
+    selector_triplet: Option<DisjointUnitSelectorTriplet>,
+    _field: PhantomData<fn() -> F>,
+}
+
+impl<F, C> ConstraintMatricesSkeleton<F, C>
+where
+    F: SpartanField,
+    C: ModulusIndependentCoefficient<F>,
+{
+    /// Validates the matrices and caches the modulus-independent part of the
+    /// statement digest.
+    pub fn new(matrices: ConstraintMatrices<C>) -> Result<Self, SpartanMatrixError> {
+        let num_row_vars = padded_num_vars(matrices.row_count())?;
+        let num_column_vars = padded_num_vars(matrices.column_count())?;
+
+        // The digest stream is q-dependent only inside the modulus-encoding
+        // hole right after the domain tag and length prefix; every accepted
+        // configuration writes the same fixed-width encoding there.
+        let modulus_width = F::canonical_encoding_width();
+        let hole_start = CONSTRAINT_MATRIX_DIGEST_DOMAIN
+            .len()
+            .checked_add(8)
+            .ok_or(SpartanMatrixError::DomainTooLarge)?;
+        let hole_end = hole_start
+            .checked_add(modulus_width)
+            .ok_or(SpartanMatrixError::DomainTooLarge)?;
+        let mut builder = SplicedDigestBuilder::new(hole_start..hole_end);
+        stream_constraint_matrix_digest_bytes(&matrices, modulus_width, &mut builder)?;
+        let digest_stream = builder
+            .finish()
+            .map_err(|_| SpartanMatrixError::DomainTooLarge)?;
+
+        let selector_triplet =
+            detect_disjoint_unit_selector_triplet_with(&matrices, |coefficient: &C| {
+                coefficient.is_unit()
+            });
+        Ok(Self {
+            matrices: Arc::new(matrices),
+            digest_stream,
+            num_row_vars,
+            num_column_vars,
+            selector_triplet,
+            _field: PhantomData,
+        })
+    }
+
+    /// Validated `A`, `B`, and `C` matrices.
+    pub fn matrices(&self) -> &ConstraintMatrices<C> {
+        &self.matrices
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PreparedConstraintMatrices<F, C = F>
 where
     F: SpartanField,
 {
-    matrices: ConstraintMatrices<C>,
+    matrices: Arc<ConstraintMatrices<C>>,
     field_config: F::Config,
     field_modulus_encoding: Vec<u8>,
     digest: [u8; 32],
@@ -408,7 +521,7 @@ where
             detect_disjoint_unit_selector_triplet::<F, C>(&matrices, field_config);
 
         Ok(Self {
-            matrices,
+            matrices: Arc::new(matrices),
             field_config: field_config.clone(),
             field_modulus_encoding,
             digest,
@@ -418,8 +531,41 @@ where
         })
     }
 
+    /// Instantiates the prepared statement for one runtime field
+    /// configuration from a modulus-independent skeleton, sharing the
+    /// skeleton's validated matrices instead of cloning them.
+    ///
+    /// This is bit-identical to [`Self::new`] on the same matrices and
+    /// configuration — the statement digest included, by splicing the
+    /// configuration's modulus encoding into the cached digest stream — but
+    /// runs in `O(log nnz)` instead of `O(nnz)`.
+    pub fn from_skeleton(
+        skeleton: &ConstraintMatricesSkeleton<F, C>,
+        field_config: &F::Config,
+    ) -> Result<Self, SpartanMatrixError>
+    where
+        C: ModulusIndependentCoefficient<F>,
+    {
+        F::validate_config(field_config)?;
+        let field_modulus_encoding = F::canonical_modulus_encoding(field_config);
+        let digest = skeleton
+            .digest_stream
+            .digest_with(&field_modulus_encoding)
+            .map_err(|_| SpartanMatrixError::FieldConfigurationMismatch)?;
+
+        Ok(Self {
+            matrices: Arc::clone(&skeleton.matrices),
+            field_config: field_config.clone(),
+            field_modulus_encoding,
+            digest,
+            num_row_vars: skeleton.num_row_vars,
+            num_column_vars: skeleton.num_column_vars,
+            selector_triplet: skeleton.selector_triplet,
+        })
+    }
+
     /// Validated `A`, `B`, and `C` matrices.
-    pub const fn matrices(&self) -> &ConstraintMatrices<C> {
+    pub fn matrices(&self) -> &ConstraintMatrices<C> {
         &self.matrices
     }
 
@@ -1228,15 +1374,24 @@ where
     F: SpartanField,
     C: SpartanMatrixCoefficient<F>,
 {
+    let field_one_encoding = F::one_with_cfg(field_config).canonical_element_encoding();
+    detect_disjoint_unit_selector_triplet_with(matrices, |coefficient: &C| {
+        coefficient
+            .canonical_field_encoding(field_config, &field_one_encoding)
+            .as_ref()
+            == field_one_encoding
+    })
+}
+
+fn detect_disjoint_unit_selector_triplet_with<C>(
+    matrices: &ConstraintMatrices<C>,
+    is_unit: impl Fn(&C) -> bool + Copy,
+) -> Option<DisjointUnitSelectorTriplet> {
     let rows = matrices.row_count();
     let columns = matrices.column_count();
-    let field_one_encoding = F::one_with_cfg(field_config).canonical_element_encoding();
-    let a_offset =
-        contiguous_unit_selector_offset::<F, C>(matrices.a(), field_config, &field_one_encoding)?;
-    let b_offset =
-        contiguous_unit_selector_offset::<F, C>(matrices.b(), field_config, &field_one_encoding)?;
-    let c_offset =
-        contiguous_unit_selector_offset::<F, C>(matrices.c(), field_config, &field_one_encoding)?;
+    let a_offset = contiguous_unit_selector_offset_with(matrices.a(), is_unit)?;
+    let b_offset = contiguous_unit_selector_offset_with(matrices.b(), is_unit)?;
+    let c_offset = contiguous_unit_selector_offset_with(matrices.c(), is_unit)?;
 
     let a_end = a_offset.checked_add(rows)?;
     let b_end = b_offset.checked_add(rows)?;
@@ -1253,15 +1408,10 @@ where
     })
 }
 
-fn contiguous_unit_selector_offset<F, C>(
+fn contiguous_unit_selector_offset_with<C>(
     matrix: &SparseMatrix<C>,
-    field_config: &F::Config,
-    field_one_encoding: &[u8],
-) -> Option<usize>
-where
-    F: SpartanField,
-    C: SpartanMatrixCoefficient<F>,
-{
+    is_unit: impl Fn(&C) -> bool,
+) -> Option<usize> {
     let rows = matrix.row_count();
     if matrix.nnz() != rows {
         return None;
@@ -1286,12 +1436,7 @@ where
         }
         let entry_row = matrix.row_indices()[row];
         let coefficient = &matrix.coefficients()[row];
-        if entry_row != row
-            || coefficient
-                .canonical_field_encoding(field_config, field_one_encoding)
-                .as_ref()
-                != field_one_encoding
-        {
+        if entry_row != row || !is_unit(coefficient) {
             return None;
         }
     }
@@ -1309,7 +1454,7 @@ where
     C: SpartanMatrixCoefficient<F>,
 {
     let mut hash = Hasher::new();
-    hash.update(b"f2z/spartan/constraint-matrices/v2");
+    hash.update(CONSTRAINT_MATRIX_DIGEST_DOMAIN);
     hash_bytes(&mut hash, field_modulus_encoding)?;
     hash_usize(&mut hash, matrices.row_count())?;
     hash_usize(&mut hash, matrices.column_count())?;
@@ -1338,6 +1483,66 @@ where
     }
 
     Ok(*hash.finalize().as_bytes())
+}
+
+/// Streams the exact byte sequence [`constraint_matrix_digest`] hashes into
+/// `builder`, with `modulus_width` placeholder zeros in the modulus-encoding
+/// hole, using each coefficient's modulus-independent encoding.
+///
+/// Mirrors [`constraint_matrix_digest`]'s bytes and its validation: explicit
+/// zeros are rejected with the identical row-major error coordinates, and by
+/// the [`ModulusIndependentCoefficient`] contract per-entry validation cannot
+/// fail for any accepted configuration.
+fn stream_constraint_matrix_digest_bytes<F, C>(
+    matrices: &ConstraintMatrices<C>,
+    modulus_width: usize,
+    builder: &mut SplicedDigestBuilder,
+) -> Result<(), SpartanMatrixError>
+where
+    F: SpartanField,
+    C: ModulusIndependentCoefficient<F>,
+{
+    let push_usize = |builder: &mut SplicedDigestBuilder,
+                      value: usize|
+     -> Result<(), SpartanMatrixError> {
+        let encoded = u64::try_from(value).map_err(|_| SpartanMatrixError::DomainTooLarge)?;
+        builder.push(&encoded.to_le_bytes());
+        Ok(())
+    };
+
+    builder.push(CONSTRAINT_MATRIX_DIGEST_DOMAIN);
+    push_usize(builder, modulus_width)?;
+    builder.push(&vec![0; modulus_width]);
+    push_usize(builder, matrices.row_count())?;
+    push_usize(builder, matrices.column_count())?;
+
+    let mut encoding = Vec::new();
+    for (matrix_name, label, matrix) in [
+        ("A", b'A', matrices.a()),
+        ("B", b'B', matrices.b()),
+        ("C", b'C', matrices.c()),
+    ] {
+        let rows = CanonicalRows::new(matrix);
+        builder.push(&[label]);
+        for (row_index, row) in rows.rows().enumerate() {
+            push_usize(builder, row.len())?;
+            for (column, coefficient) in row {
+                if coefficient.is_zero() {
+                    return Err(SpartanMatrixError::ExplicitZeroCoefficient {
+                        matrix: matrix_name,
+                        row: row_index,
+                        column: *column,
+                    });
+                }
+                push_usize(builder, *column)?;
+                encoding.clear();
+                coefficient.write_modulus_independent_encoding(&mut encoding);
+                push_usize(builder, encoding.len())?;
+                builder.push(&encoding);
+            }
+        }
+    }
+    Ok(())
 }
 
 fn hash_bytes(hash: &mut Hasher, bytes: &[u8]) -> Result<(), SpartanMatrixError> {
@@ -1723,6 +1928,159 @@ mod tests {
                 .evaluate_batched_with_row_weights(&row_weights, &rho, &column_point)
                 .unwrap()
         );
+    }
+
+    fn from_skeleton_and_new_agree_semantically(
+        matrices: &ConstraintMatrices<bool>,
+        config: &<F128 as PrimeField>::Config,
+    ) {
+        let skeleton =
+            ConstraintMatricesSkeleton::<F128, bool>::new(matrices.clone()).unwrap();
+        let from_skeleton =
+            PreparedConstraintMatrices::<F128, bool>::from_skeleton(&skeleton, config).unwrap();
+        let from_new =
+            PreparedConstraintMatrices::<F128, bool>::new(matrices.clone(), config).unwrap();
+
+        assert_eq!(
+            from_skeleton.digest(),
+            from_new.digest(),
+            "the skeleton replay must reproduce the entry-wise digest exactly"
+        );
+        assert_eq!(from_skeleton.matrices(), from_new.matrices());
+        assert_eq!(from_skeleton.num_row_vars(), from_new.num_row_vars());
+        assert_eq!(from_skeleton.num_column_vars(), from_new.num_column_vars());
+        assert_eq!(
+            from_skeleton.field_modulus_encoding(),
+            from_new.field_modulus_encoding()
+        );
+        // The two constructors detect the identical selector layout: for
+        // Boolean coefficients `is_unit` and the encoding comparison agree
+        // under every valid configuration.
+        match (from_skeleton.selector_triplet, from_new.selector_triplet) {
+            (None, None) => {}
+            (Some(a), Some(b)) => {
+                assert_eq!(a.rows, b.rows);
+                assert_eq!(a.a_offset, b.a_offset);
+                assert_eq!(a.b_offset, b.b_offset);
+                assert_eq!(a.c_offset, b.c_offset);
+            }
+            (a, b) => panic!("selector detection diverged: {a:?} vs {b:?}"),
+        }
+
+        let rho = field(47, config);
+        let row_point: Vec<F128> = (0..from_new.num_row_vars())
+            .map(|index| field(3 + index as u64, config))
+            .collect();
+        let column_point: Vec<F128> = (0..from_new.num_column_vars())
+            .map(|index| field(29 + index as u64, config))
+            .collect();
+        assert_eq!(
+            from_skeleton.bind_and_batch(&row_point, &rho).unwrap(),
+            from_new.bind_and_batch(&row_point, &rho).unwrap()
+        );
+        assert_eq!(
+            from_skeleton
+                .evaluate_batched(&row_point, &rho, &column_point)
+                .unwrap(),
+            from_new
+                .evaluate_batched(&row_point, &rho, &column_point)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn skeleton_preparation_matches_direct_preparation() {
+        let config = config();
+        let rows = 6;
+        let columns = 32;
+        let selector = |offset: usize| {
+            SparseMatrix::try_from_rows(
+                columns,
+                (0..rows).map(|row| vec![(offset + row, true)]).collect(),
+            )
+            .unwrap()
+        };
+        let selectors =
+            ConstraintMatrices::new(selector(8), selector(16), selector(24)).unwrap();
+        from_skeleton_and_new_agree_semantically(&selectors, &config);
+
+        let generic = |entries: Vec<Vec<(usize, bool)>>| {
+            SparseMatrix::try_from_rows(8, entries).unwrap()
+        };
+        let irregular = ConstraintMatrices::new(
+            generic(vec![vec![(0, true), (7, true)], vec![(3, true)]]),
+            generic(vec![vec![(1, true)], vec![(2, true), (5, true)]]),
+            generic(vec![vec![(4, true)], vec![]]),
+        )
+        .unwrap();
+        from_skeleton_and_new_agree_semantically(&irregular, &config);
+    }
+
+    #[test]
+    fn skeleton_replay_reproduces_direct_digest_per_modulus() {
+        let config = config();
+        let other_config =
+            F128::make_cfg(&Uint::from(OTHER_TEST_MODULUS)).expect("odd test modulus");
+        let matrix = |column: usize| {
+            SparseMatrix::try_from_rows(8, vec![vec![(column, true)], vec![(column + 1, true)]])
+                .unwrap()
+        };
+        let matrices = ConstraintMatrices::new(matrix(0), matrix(1), matrix(2)).unwrap();
+        let skeleton =
+            ConstraintMatricesSkeleton::<F128, bool>::new(matrices.clone()).unwrap();
+
+        for field_config in [&config, &other_config] {
+            let replayed =
+                PreparedConstraintMatrices::<F128, bool>::from_skeleton(&skeleton, field_config)
+                    .unwrap();
+            let direct =
+                PreparedConstraintMatrices::<F128, bool>::new(matrices.clone(), field_config)
+                    .unwrap();
+            assert_eq!(replayed.digest(), direct.digest());
+        }
+
+        // The digest still separates moduli and topologies.
+        let at_config =
+            PreparedConstraintMatrices::<F128, bool>::from_skeleton(&skeleton, &config).unwrap();
+        let at_other =
+            PreparedConstraintMatrices::<F128, bool>::from_skeleton(&skeleton, &other_config)
+                .unwrap();
+        assert_ne!(at_config.digest(), at_other.digest());
+
+        let moved = ConstraintMatrices::new(matrix(0), matrix(1), matrix(3)).unwrap();
+        let moved_skeleton = ConstraintMatricesSkeleton::<F128, bool>::new(moved).unwrap();
+        let moved_prepared =
+            PreparedConstraintMatrices::<F128, bool>::from_skeleton(&moved_skeleton, &config)
+                .unwrap();
+        assert_ne!(at_config.digest(), moved_prepared.digest());
+    }
+
+    #[test]
+    fn skeleton_rejects_explicit_zero_with_direct_constructor_coordinates() {
+        let config = config();
+        let with_zero = || {
+            let unit = SparseMatrix::try_from_rows(4, vec![vec![(0, true)], vec![(1, true)]])
+                .unwrap();
+            let zeroed = SparseMatrix::try_from_rows(
+                4,
+                vec![vec![(0, true)], vec![(2, false), (3, true)]],
+            )
+            .unwrap();
+            ConstraintMatrices::new(unit.clone(), zeroed, unit).unwrap()
+        };
+        let skeleton_error =
+            ConstraintMatricesSkeleton::<F128, bool>::new(with_zero()).unwrap_err();
+        let direct_error =
+            PreparedConstraintMatrices::<F128, bool>::new(with_zero(), &config).unwrap_err();
+        assert_eq!(
+            skeleton_error,
+            SpartanMatrixError::ExplicitZeroCoefficient {
+                matrix: "B",
+                row: 1,
+                column: 2,
+            }
+        );
+        assert_eq!(skeleton_error, direct_error);
     }
 
     #[test]

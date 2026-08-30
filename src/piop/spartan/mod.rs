@@ -18,6 +18,7 @@ pub mod opening_mode;
 pub mod piop;
 pub mod profile;
 pub mod sha256;
+pub(crate) mod spliced_digest;
 pub mod sumcheck;
 pub mod u32_mul;
 pub mod univariate_skip;
@@ -58,8 +59,9 @@ pub use f2z::{
 pub use crate::sparse_matrix::SparseMatrixError;
 pub use matrix::{
     build_assignment_mle, build_boolean_assignment_mle, build_product_mles, eq_eval, eq_table,
-    make_equality_factors, ConstraintMatrices, MleClaimError, PreparedConstraintMatrices,
-    ScaledMleEvaluationClaim, SparseMatrix, SpartanMatrixCoefficient, SpartanMatrixError,
+    make_equality_factors, ConstraintMatrices, ConstraintMatricesSkeleton, MleClaimError,
+    ModulusIndependentCoefficient, PreparedConstraintMatrices, ScaledMleEvaluationClaim,
+    SparseMatrix, SpartanMatrixCoefficient, SpartanMatrixError,
 };
 pub use profile::{
     IopInstanceFacts, IopSecurityParams, IopSecurityProfile, Lambda100, Lambda128,
@@ -188,6 +190,10 @@ pub trait SpartanField: PrimeField {
     /// Canonical encoding of the modulus selected by `field_cfg`.
     fn canonical_modulus_encoding(field_cfg: &Self::Config) -> Vec<u8>;
 
+    /// Fixed byte width shared by [`Self::canonical_element_encoding`] and
+    /// [`Self::canonical_modulus_encoding`] under every configuration.
+    fn canonical_encoding_width() -> usize;
+
     /// Draws an exactly uniform field element from `transcript`.
     ///
     /// This method advances the transcript for every raw draw, including
@@ -247,6 +253,10 @@ impl<const LIMBS: usize> SpartanField for MontyField<LIMBS> {
         encoding
     }
 
+    fn canonical_encoding_width() -> usize {
+        Uint::<LIMBS>::NUM_BYTES
+    }
+
     #[allow(clippy::arithmetic_side_effects)]
     fn sample_uniform<T: Transcript>(transcript: &mut T, field_cfg: &Self::Config) -> Self {
         let modulus = Uint::new(field_cfg.modulus().get());
@@ -268,6 +278,30 @@ impl<const LIMBS: usize> SpartanField for MontyField<LIMBS> {
                 return Self::new_with_cfg(candidate, field_cfg);
             }
         }
+    }
+}
+
+/// Boolean matrices act by the field's one, whose canonical encoding is the
+/// same fixed-width transcription of `1` under every configuration, so their
+/// prepared statements can be cached modulus-independently.
+impl<const LIMBS: usize> ModulusIndependentCoefficient<MontyField<LIMBS>> for bool {
+    fn write_modulus_independent_encoding(&self, out: &mut Vec<u8>) {
+        // Mirrors `canonical_element_encoding` of the field one: the
+        // canonical residue written through the same fixed-width
+        // transcription. Explicit zeros are rejected before encoding, but
+        // stay total and correct here regardless.
+        let value = if *self {
+            Uint::<LIMBS>::ONE
+        } else {
+            <Uint<LIMBS> as num_traits::ConstZero>::ZERO
+        };
+        let start = out.len();
+        out.resize(start + Uint::<LIMBS>::NUM_BYTES, 0);
+        value.write_transcription_bytes_exact(&mut out[start..]);
+    }
+
+    fn is_unit(&self) -> bool {
+        *self
     }
 }
 

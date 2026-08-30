@@ -1268,7 +1268,7 @@ pub fn baby_bear_mul_instance_facts(
 
 /// Setup-once, prime-independent bundle for the BabyBear paper path.
 pub struct PreparedBabyBearMulRelation {
-    raw: super::ConstraintMatrices<BabyBearMulCoefficient>,
+    skeleton: super::ConstraintMatricesSkeleton<SpartanF2zField, BabyBearMulCoefficient>,
     layout: BabyBearMulLayout,
     security: IopSecurityParams,
 }
@@ -1294,8 +1294,10 @@ impl PreparedBabyBearMulRelation {
             return Err(BabyBearSpartanF2zError::UnsupportedPaperProfile);
         }
         let raw = baby_bear_mul_constraint_matrices(&layout)?;
+        let skeleton =
+            super::ConstraintMatricesSkeleton::new(raw).map_err(SpartanError::from)?;
         Ok(Self {
-            raw,
+            skeleton,
             layout,
             security,
         })
@@ -1502,8 +1504,8 @@ pub fn prove_baby_bear_mul_paper<T: Transcript + Send>(
     let matrices = {
         let _scope =
             crate::utils::prof::scope("baby-bear-spartan-f2z:relation_projection_prove");
-        PreparedConstraintMatrices::<SpartanF2zField, BabyBearMulCoefficient>::new(
-            prepared.raw.clone(),
+        PreparedConstraintMatrices::<SpartanF2zField, BabyBearMulCoefficient>::from_skeleton(
+            &prepared.skeleton,
             &config,
         )
         .map_err(SpartanError::from)?
@@ -1612,8 +1614,8 @@ pub fn verify_baby_bear_mul_paper<T: Transcript + Send>(
     let matrices = {
         let _scope =
             crate::utils::prof::scope("baby-bear-spartan-f2z:relation_projection_verify");
-        PreparedConstraintMatrices::<SpartanF2zField, BabyBearMulCoefficient>::new(
-            prepared.raw.clone(),
+        PreparedConstraintMatrices::<SpartanF2zField, BabyBearMulCoefficient>::from_skeleton(
+            &prepared.skeleton,
             &config,
         )
         .map_err(SpartanError::from)?

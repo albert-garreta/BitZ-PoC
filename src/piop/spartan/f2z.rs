@@ -62,7 +62,8 @@ use super::{
         U32_MUL_Y_SLOT_START,
     },
     univariate_skip::UnivariateSkipSpartanPiopProof,
-    Direct, PreparedConstraintMatrices, R1csProductMles, SpartanF2zProof, SpartanField,
+    ConstraintMatricesSkeleton, Direct, PreparedConstraintMatrices, R1csProductMles,
+    SpartanF2zProof, SpartanField,
 };
 
 /// Domain of the commitment-and-layout digest used as Spartan's assignment
@@ -1454,10 +1455,11 @@ pub fn u32_mul_instance_facts(
 }
 
 /// Setup-once, prime-independent bundle for the paper u32 path: the exact
-/// Boolean constraint matrices (projected per transcript draw), the layout,
-/// and the instantiated security profile.
+/// Boolean constraint matrices with their prime-independent preparation
+/// (skeleton digest, padded widths, selector layout — instantiated per
+/// transcript draw), the layout, and the instantiated security profile.
 pub struct PreparedU32MulRelation {
-    raw: super::ConstraintMatrices<bool>,
+    skeleton: ConstraintMatricesSkeleton<SpartanF2zField, bool>,
     layout: U32MulLayout,
     security: IopSecurityParams,
 }
@@ -1483,8 +1485,9 @@ impl PreparedU32MulRelation {
             return Err(SpartanF2zError::UnsupportedPaperProfile);
         }
         let raw = u32_mul_constraint_matrices(&layout, true)?;
+        let skeleton = ConstraintMatricesSkeleton::new(raw).map_err(SpartanError::from)?;
         Ok(Self {
-            raw,
+            skeleton,
             layout,
             security,
         })
@@ -1671,8 +1674,11 @@ pub fn prove_u32_mul_paper<T: Transcript + Send>(
     let (q, q_bits, config, arith) = sample_u32_mul_mod_q(transcript, security)?;
     let matrices = {
         let _scope = crate::utils::prof::scope("spartan-f2z:relation_projection_prove");
-        PreparedConstraintMatrices::<SpartanF2zField, bool>::new(prepared.raw.clone(), &config)
-            .map_err(SpartanError::from)?
+        PreparedConstraintMatrices::<SpartanF2zField, bool>::from_skeleton(
+            &prepared.skeleton,
+            &config,
+        )
+        .map_err(SpartanError::from)?
     };
     drop(step2_scope);
 
@@ -1785,8 +1791,11 @@ pub fn verify_u32_mul_paper<T: Transcript + Send>(
     let (q, q_bits, config, arith) = sample_u32_mul_mod_q(transcript, security)?;
     let matrices = {
         let _scope = crate::utils::prof::scope("spartan-f2z:relation_projection_verify");
-        PreparedConstraintMatrices::<SpartanF2zField, bool>::new(prepared.raw.clone(), &config)
-            .map_err(SpartanError::from)?
+        PreparedConstraintMatrices::<SpartanF2zField, bool>::from_skeleton(
+            &prepared.skeleton,
+            &config,
+        )
+        .map_err(SpartanError::from)?
     };
     drop(step2_scope);
 

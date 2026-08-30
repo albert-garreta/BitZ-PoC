@@ -30,9 +30,9 @@ use crate::{
 };
 
 use super::{
-    ConstraintMatrices, PreparedConstraintMatrices, R1csProductMles, SparseMatrix, SpartanF2zField,
-    SpartanField, SpartanMatrixCoefficient, SpartanMatrixError, SpartanRelationBackend,
-    build_assignment_mle, build_product_mles,
+    ConstraintMatrices, ModulusIndependentCoefficient, PreparedConstraintMatrices,
+    R1csProductMles, SparseMatrix, SpartanF2zField, SpartanField, SpartanMatrixCoefficient,
+    SpartanMatrixError, SpartanRelationBackend, build_assignment_mle, build_product_mles,
 };
 
 /// The BabyBear prime `2^31 - 2^27 + 1`.
@@ -163,6 +163,24 @@ impl SpartanMatrixCoefficient<SpartanF2zField> for BabyBearMulCoefficient {
             evaluation += &coefficient.scale(&row_weights[row], field_config);
         }
         evaluation
+    }
+}
+
+/// Both public coefficients encode to modulus-independent bytes: `One` to
+/// the field's canonical one (exactly like a Boolean `true`) and `Modulus`
+/// to the embedded BabyBear prime, which is canonical and never the unit in
+/// any accepted (at least 100-bit) Spartan field.
+impl ModulusIndependentCoefficient<SpartanF2zField> for BabyBearMulCoefficient {
+    fn write_modulus_independent_encoding(&self, out: &mut Vec<u8>) {
+        match self {
+            Self::One => ModulusIndependentCoefficient::<SpartanF2zField>::
+                write_modulus_independent_encoding(&true, out),
+            Self::Modulus => out.extend_from_slice(&BABY_BEAR_MODULUS_FIELD_ENCODING),
+        }
+    }
+
+    fn is_unit(&self) -> bool {
+        matches!(self, Self::One)
     }
 }
 
