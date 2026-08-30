@@ -154,7 +154,7 @@ We manage to instantiate our protocol using $\comfield=\FF_{2^{128}}$ in GHASH r
                  \hline
          $2^{20}$ Babybear mults & & \albert{Plonk3} \\
                   \hline
-        Poseidon hash + RSA \cite{limber} & & \albert{Limber} \\
+       RSA accumulator + Poseidon has (MultiSwap \cite{??}, \cref{?}) \cite{limber} & & \albert{Limber} \\
                  \hline
         Falcon & &\\
         \hline
@@ -762,8 +762,18 @@ The rest of \ftwoz \ proceeds exactly as in \cref{s:to_simple_bitz}.
 
 We use $\circ$ to denote composition of maps, so that for maps $f: S_1\to S_2$ and $g:S_2\to S_3$, we have $f\circ g: S_1 \to S_3$ defined as $f\circ g(x) = f(g(x))$. 
 
+Any map $f:S_1 \to S_2$ applies  entry-wise to vectors from $S_1^n$, for any $n$, and similarly for matrices. A map $f$ also applies coefficieny-wise to polynomials with coefficients in $S_1$. A multiplication of a vector  or a matrix by a scalar means that we multiply each entry of the vector or matrix by that scalar. 
+
+We look at vectors both as row vectors and column vectors. When performing matrix-vector multiplications, it will always be clear which one we intend. Given a ring $R$, a  matrix $M\in R^{n\times m}$ and  vectors $\uu\in R^m$, $\vv\in R^n$, one has
+%
+\begin{equation}\label{e:matrix_transpose_inner_product}
+\langle M\cdot \uu, \vv \rangle = \langle \uu, M^{\mathsf{T}} \cdot \vv\rangle,
+\end{equation}
+%
+where $M^{\mathsf{T}}$ denotes transposition and $\langle \cdot, \cdot \rangle$ denotes inner product.
+
 \subsection{Algebra}\label{s:prelims_algebra}
-We write $\FF_q$ for the finite field with $q$ elements (where $q$ is a prime or a prime power), $\QQ$ for the field of rational numbers, and $\ZZ$ for the ring of integers.  We let $$\pi_q :\ZZ\to \FF_q$$ denote reduction modulo $q$
+We write $\FF_q$ for the finite field with $q$ elements (where $q$ is a prime or a prime power), $\QQ$ for the field of rational numbers, and $\ZZ$ for the ring of integers. For an integer $n\geq 1$, $\ZZ/n\ZZ$ denotes the ring of integers modulo $n$. When $n$ is prime, $\ZZ/n\ZZ=\FF_n$. We let $$\pi_n :\ZZ\to \ZZ/n\ZZ$$ denote reduction modulo $n$.
 
 All rings in this work are associative, commutative, finitely generated as $\ZZ$-modules\footnote{This excludes the field of rational numbers $\QQ$} \albert{Really? We exclude the rationals?}, and have an identity. Given a ring $R$, we write $R[X_1, \ldots, X_n]$ for the ring of polynomials with coefficients in $R$ and variables $X_1, \ldots, X_n$ (not necessarily multilinear). 
 
@@ -784,10 +794,10 @@ as the subset of $R[X_1, \ldots, X_n]$ formed by polynomials all whose coefficie
 
 \bigskip
 
-\albertimportant{Not sure we want to keep the module stuff} Given a ring homomorphism $\psi: \ring_1\to \ring_2$, a $\ring_1$-module $M_{\ring_1}$, and a $\ring_2$-module, a $\psi$-module homomorphism between $M_{\ring_1}$ and $M_{\ring_2}$ is a map $\phi$ such that $\phi(\alpha\cdot a + \beta \cdot b) = \psi(\alpha)\cdot \phi(a) + \psi(\beta) \cdot \phi(b)$ for all $\alpha,\beta\in \ring_1$ and $a,b\in M_{\ring_1}$.
+%\albertimportant{Not sure we want to keep the module stuff} Given a ring homomorphism $\psi: \ring_1\to \ring_2$, a $\ring_1$-module $M_{\ring_1}$, and a $\ring_2$-module, a $\psi$-module homomorphism between $M_{\ring_1}$ and $M_{\ring_2}$ is a map $\phi$ such that $\phi(\alpha\cdot a + \beta \cdot b) = \psi(\alpha)\cdot \phi(a) + \psi(\beta) \cdot \phi(b)$ for all $\alpha,\beta\in \ring_1$ and $a,b\in M_{\ring_1}$.
 
    
-Given a base $\alpha_1,\ldots, \alpha_\moduledegree$ for $M_\ring$, we let $\moduleonebound$ be the subset of $M_\ring$ with elements whose coordinates belong to $\ringbitbound{B}$ in this base.
+%Given a base $\alpha_1,\ldots, \alpha_\moduledegree$ for $M_\ring$, we let $\moduleonebound$ be the subset of $M_\ring$ with elements whose coordinates belong to $\ringbitbound{B}$ in this base.
 
 
 
@@ -797,7 +807,7 @@ Given a base $\alpha_1,\ldots, \alpha_\moduledegree$ for $M_\ring$, we let $\mod
 
 %\albertimportant{Let's remove this. The notation above should be enough} Given a  finite field $\FF$ of characteristic $q$, let $a(X)\in \ZZ[X]$ be an irreducible polynomial over $\FF_q$ so that $\FF = \ZZ[X]/(q,a(X))$ \albert{consider isomorphism, or assume all finite fields are represented like this}. We let $$\pi_{\FF}: \ZZ[X] \to \FF$$ be the  canonical homomorphism from $\ZZ[X]$ to $\FF$ obtained by reducing modulo the ideal $(q,a(X))$, i.e.\ by reducing coefficients modulo $q$ and then reducing the resulting polynomial modulo $a(X)$.
 
-A subset $S\subseteq R$ of a commutative ring $R$ is called \emph{exceptional} if for all two distinct $a,b\in R$, the element $a-b$ has a multiplicative inverse in $R$.
+\albert{Needed?} A subset $S\subseteq R$ of a  ring $R$ is called \emph{exceptional} if for all two distinct $a,b\in R$, the element $a-b$ has a multiplicative inverse in $R$.
 \begin{lemma}[Generalized Alon--F{\"u}redi Theorem~\cite{BCPS18}]
 \label{lem:sz_exceptional_sets}
 Let $R$ be a ring and let $S\subseteq R$ be a finite exceptional subset of $R$. Let $f(\YY)\in R[\YY]$ be a nonzero multilinear polynomial in $\mu$ variables. Then
@@ -1105,7 +1115,6 @@ $$
 This is indeed the case with GKR: GKR reduces the initial circuit evaluation claim with a witness input, into an MLE evaluation claim of the same witness, without querying any oracle in-between. 
 
 
-\subsection{Algebraic setup}\label{s:algebraic_setup}
 
 
 
@@ -1120,17 +1129,19 @@ This is indeed the case with GKR: GKR reduces the initial circuit evaluation cla
 
 \paragraph{Algebraic set-up}
 
- Any ring $R$ is a $\FF_{\Char{R}}$-module, where, recall $\Char(R)$ is the characteristic of $R$ (cf.\ \cref{s:prelims_algebra}). We say the \emph{dimension} of $R$, denoted $\dim(R)$, is the minimum number of generators of $R$ as a $\FF_{\Char{R}}$-module. Every ring $R$ admits a canonical surjective ring homomorphism
+ Any ring $R$ is a $\ZZ_{\Char(R)}$-module, where, recall $\Char(R)$ is the characteristic of $R$ (cf.\ \cref{s:prelims_algebra}). We say the \emph{dimension} of $R$, denoted $\dim(R)$, is the minimum number of generators of $R$ as a $\ZZ_{\Char(R)}$-module. Every ring $R$ admits a canonical surjective ring homomorphism
 %
 $$
 \picanon^{R} : \ZZ[X_1,\ldots, X_{\dim(R)-1}] \to R.
 $$
-This homomorphism consists in reducing coefficients modulo $\Char{R}$, and then taking a quotient by some ideal from $\FF_{\Char(R)}[X_1, \ldots, X_{\dim(R)-1}]$. 
+This homomorphism consists in reducing coefficients modulo $\Char{R}$, and then taking a quotient by some ideal from $\ZZ_{\Char(R)}[X_1, \ldots, X_{\dim(R)-1}]$. 
 
 \begin{example}
     If  $R=\FF_q$ is a prime field with $q$ elements, then $\Char(R)=q$, $\dim(R)=1$, and $\picanon^{\FF_q}:\ZZ \to \FF_q$ is simply reduction modulo $q$. 
     
-    If $R$ is a field extension of a prime field $\FF_q$ of degree $d>1$, then $\Char(R)=q$, $\dim(R)=d$, and $\picanon^R:\ZZ[X_1, \ldots, X_{d-1}]$ consists in reducing coefficients modulo $q$, and then modding out by the ideal generated by $X_1-X_2, \ldots, X_1-X_{d-1}$ and an irreducible polynomial $h(X_1)\in \FF_{q}[X_1]$. 
+    If $R$ is a field extension of a prime field $\FF_q$ of degree $d>1$, then $\Char(R)=q$, $\dim(R)=d$, and $\picanon^R:\ZZ[X_1, \ldots, X_{d-1}]$ consists in reducing coefficients modulo $q$, and then modding out by the ideal generated by $X_1-X_2, \ldots, X_1-X_{d-1}$ and an irreducible polynomial $h(X_1)\in \FF_{q}[X_1]$. Indeed,  note that, informally speaking, modding out the polynomials $X_1 - X_i$ means that, in the quotient ring, $X_1 - X_i = 0$, and hence, all variables $X_i$ become $X_1$ ($i=2,\ldots, n$).
+
+    
 
     \albert{Add lattice examples}
 \end{example}
@@ -1155,36 +1166,36 @@ This homomorphism consists in reducing coefficients modulo $\Char{R}$, and then 
 \item 
 Let $\codedim =\codedim_1\cdot \codedim_2$ be dimension parameters,  and $R$ a ring,  as in the previous sections. We let $\cP$ be a set of primes with $\max\cP< \fieldboundsizeexponent$.
 
-For every prime $q\in \cP$, let $\cM_q$ be a set of morphism $\pirand:\ZZ[X_1,\ldots, X_{\dim(R)-1}] \to \FF_q$. The verifier will sample primes and morphisms from $\cP$ and $\cM_q$. We let $\theta(R,\codedim_1)$ be the maximum probability that, for a given nonzero polynomial $h\in \in \ZZ[X_1, \ldots, X_{\dim(R)-1}]$, and random $q\in \cP, \pirand\in \cM_q$, one has $\pirand(h)=0$. Precisely:
+For every prime $q\in \cP$, let $\cM_q$ be a set of morphism $$\pirand:\ZZ[X_1,\ldots, X_{\dim(R)-1}] \to \FF_q.$$ The verifier will sample primes and morphisms from $\cP$ and $\cM_q$. We let $\theta(R,\codedim_1)$ be the maximum probability that, for a given nonzero polynomial $h\in \ZZ[X_1, \ldots, X_{\dim(R)-1}]$, and random $q\in \cP, \pirand\in \cM_q$, one has $\pirand(h)=0$. Precisely:
 %
 $$
-\theta(R,\codedim_1) \defeq  \max_{h\in \ZZ[X_1, \ldots, X_{\dim(R)-1}]\setminus \{0\}}\left\{\Pr_{q\gets \cP, \pirand\gets \cM_q}[ \pirand(h)] \right\}.
+\theta(R,\codedim_1) \defeq  \max_{h\in \ZZ[X_1, \ldots, X_{\dim(R)-1}]\setminus \{0\}}\left\{\Pr_{q\gets \cP, \pirand\gets \cM_q}[ \pirand(h)=0] \right\}.
 $$
 %
 See \cref{l:examples_morphisms} for examples.
 \end{itemize}
 
 \begin{lemma}[Example definitions of  $\cM_q$ and the corresponding $\theta(R,\codedim_1)$]\label{l:examples_morphisms}
-    Let $q=\Char(R)$, $d=\dim(R)$. Let $\cP$ be a set of primes. For each $q\in \cP$ let $\cM_q$  be the set of all maps $\pi: \ZZ[X_1,\ldots, X_d]$ of the form $$\pi(h(X_1, \ldots, X_{d-1})) = \pi_q(h)(\alpha, \ldots, \alpha^{d-1}),$$ for some $\alpha\in \FF_q$, and where $\pi_q(h)$ is $h$ after reducing its coefficients modulo $q$. Then
+    Let  $d=\dim(R)$. Let $\cP$ be a set of primes. For each $q\in \cP$ let $\cM_q$  be the set of all maps $\pi: \ZZ[X_1,\ldots, X_{d-1}]$ of the form $$\pi(h(X_1, \ldots, X_{d-1})) = \pi_q(h)(\alpha, \ldots, \alpha^{d-1}), \qquad \text{for } h\in \ZZ[X_1,\ldots, X_{d-1}]$$ for some $\alpha\in \FF_q$, and where $\pi_q(h)$ is $h$ after reducing its coefficients modulo $q$. Then
     %
     $$
-    \theta(R,\codedim_1) = \frac{\deg(R)}{q_{\min}} + \frac{\log(2\cdot \codedim_1) + \log(q-1)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}
+    \theta(R,\codedim_1) \leq \frac{\deg(R)}{q_{\min}} + \frac{\log(2\cdot \codedim_1) + \log(q-1)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}
     $$
 %
     If, on the contrary, for each $q\in \cP$ we define let $\cM_q$  as the set of all maps $\pi: \ZZ[X_1,\ldots, X_d]$ of the form 
-     $$\pi(h(X_1, \ldots, X_d)) = \pi_q(h)(\alpha_1, \ldots, \alpha_{d-1})$$
+     $$\pi(h(X_1, \ldots, X_d)) = \pi_q(h)(\alpha_1, \ldots, \alpha_{d-1}), \text{for } h\in \ZZ[X_1,\ldots, X_{d-1}],$$
 %
 for some $\alpha_1,\ldots, \alpha_{d-1}\in \FF_q$, then
          $$
-    \theta(R,\codedim_1) = \frac{1}{q_{\min}} + \frac{\log(2\cdot \codedim_1) + \log(q-1)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}
+    \theta(R,\codedim_1) \leq \frac{1}{q_{\min}} + \frac{\log(2\cdot \codedim_1) + \log(q-1)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}
     $$
 \end{lemma}
 \begin{proof}
-    We defer the prove to later \cref{s:soundness_core_iop}.
+    We defer the proof to later in \cref{s:soundness_core_iop}.
 \end{proof}
 
 \renewcommand{\degevalfield}{\deg(\evalfield)}
-\renewcommand{\picanon}{{\pi_{\mathsf{canon}}^R}}
+%\renewcommand{\picanon}{{\pi_{\mathsf{canon}}^R}}
 
 
 \albertimportant{This construction is missing OOD sample when we work beyond the UDR. Formalizing OOD sampling is a bit of a pain: we need to define a relation $\LinBitsDual^{\rr,y}$ which is the same as $\LinBitsDual$ but adds the constraint $\mle{\pack\circ\pi_2(\mathsf{\bits}(\bff))}(\rr) =y$ in $\comfield$. We do the same for $\UPESAT$. Then we present \cref{c:core_iop}  as a protocol for $\LinBitsDual^{\rr,y}$, and in \cref{c:LinModFieldBin} present an IOP for the general $\LinBitsDual$ relation where we first do an OOD sample, reducing to $\LinBitsDual^{\rr,y}$. In \cref{c:iop_pimsat} we also add an initial reduction from $\UPESAT$ to $\UPESAT^{\rr, y}$. All this is standard, so I am considering to write a short  section  glossing this over. The question is how to state the formal soundness results}
@@ -1196,7 +1207,7 @@ for some $\alpha_1,\ldots, \alpha_{d-1}\in \FF_q$, then
 \noindent \textbf{Inputs.} The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \LinBitsDual(\bits,\ringmorphism, \evalfield,\cC)$.  We assume the tensor split from the previous \cref{s:interleaved_setting}, and adopt its notation. 
 
 
-Let $\basegenerator\in \comfield$ be a fixed generator of the multiplicative group $\comfield^*$.   %Let $q\in \ZZ$ denote the characteristic of $R$ if $R$ has nonzero characteristic, or if $R$ has zero characteristic, then \albertimportant{Review that if $\vv$ has negative entries, things are fine}
+Let $\basegenerator\in \comfield$ be a fixed generator of the multiplicative group $\comfield^*$. Denote $\picanon^R$ simply as $\picanon$.  %Let $q\in \ZZ$ denote the characteristic of $R$ if $R$ has nonzero characteristic, or if $R$ has zero characteristic, then \albertimportant{Review that if $\vv$ has negative entries, things are fine}
 %\begin{equation}\label{e:q_definition_if_R_is_Z}
 %q = \codedim_1 \cdot \lVert \vv \rVert_\infty +1.
 %\end{equation}
@@ -1206,31 +1217,35 @@ Let $\basegenerator\in \comfield$ be a fixed generator of the multiplicative gro
 \begin{enumerate}[leftmargin=*] 
 \item \textbf{Round 1 (optional): replacing $R$ by a ``small'' prime field $\FF_q$.}  \albertimportant{Round numbering has changed}
 \begin{itemize}[leftmargin=*]
-\item This step can be skipped if $R$ is a prime field $\FF_q$ and $q < \fieldboundsizeexponent$ \albertimportant{also if $R=\ZZ$ and $\vv$ has small entries. But let's leave for a future remark}. %, or if $R=\ZZ$ and $\lVert \vv \rVert < \fieldboundsizeexponent$.
+\item This step can be skipped if $R$ is a prime field $\FF_q$ and $q < \fieldboundsizeexponent$. %, or if $R=\ZZ$ and $\lVert \vv \rVert < \fieldboundsizeexponent$.
 
-The prover sends $\mu' \in \ZZ[X_1, \ldots, X_{\dim(R)}]$ such that
+The prover sends $\mu' \in \ZZ[X_1, \ldots, X_{\dim(R)-1}]$ such that
 %
 $$
-\langle \picanon{}^{-1}(\vv^{(1)}) \otimes \picanon{}^{-1}(\vv^{(2)}) , \bitstext(\bff) \rangle = \mu' \qquad \text{in } \ZZ[X_1, \ldots, X_{\dim(R)}]
+\langle \picanon^{-1}(\vv^{(1)}) \otimes \picanon^{-1}(\vv^{(2)}) , \bitstext(\bff) \rangle = \mu' \qquad \text{in } \ZZ[X_1, \ldots, X_{\dim(R)-1}]
 $$
 %
-The verifier checks that $\picanon(\mu')=\mu$ and replies with a random prime $q\in \cP$ and a random morphism 
+The verifier checks that $\picanon(\mu')=\mu$, and replies with a random prime $q\in \cP$ and a random morphism 
 %
-$$
+$
 \pirand : \ZZ[X_1, \ldots, X_{\dim(R)}] \to \FF_q
-$$
-selected from a family of samplable morphism (specified by the protocol) \albert{explain how these may look like}. The prover and verifier update:
+$ from $\cM_q$.
+ The prover and verifier update:
 \begin{align*}
 \vv^{(1)}{} &\gets \pirand\circ \picanon^{-1}\left(\vv^{(1)}\right)\in \FF_{q}^{\codedim_1},\\
-\vv^{(2)}{} &\gets \pirand\circ \picanon^{-1}\left(\vv^{(2)}\right)\in \FF_{q}^{\codedim_1},\\
+\vv^{(2)}{} &\gets \pirand\circ \picanon^{-1}\left(\vv^{(2)}\right)\in \FF_{q}^{\codedim_2},\\
 \mu&\gets \pirand(\mu')\in \FF_q,
 \end{align*}
-Prover and verifier now set to prove the updated claim 
+The prover and verifier now set to prove the updated claim 
 %
 \begin{equation}\label{e:core_bitz_eq_new_0}
 \langle \vv^{(1)} \otimes \vv^{(2)}, \pi_q(\bitstext(\bff))\rangle = \mu \qquad \text{over } \FF_q.
 \end{equation}
 \end{itemize}
+\begin{remark}[Skipping Round 1 when $R=\ZZ$ and $\lVert \vv\rVert_{\infty}$ is ``small'']
+\albert{Make sure our completeness and soundness theorem proves this case as well}
+    This step can also be skipped when $R=\ZZ$ and all entries of $\vv^{(1)}$ are nonnegative and less than $\fieldboundsizeexponent$. In that case the claim to prove at the start of Round 2 is $\langle \vv^{(1)} \otimes \vv^{(2)}, \bitstext(\bff)\rangle = \mu $ over $\ZZ$ (exactly the same as when entering Round 1, since Round 1 is skipped). In this case the map $\pi_q$ in Round 2 is simply replaced by the identity map, and $\FF_q$ is replaced by $\ZZ$. In Phase 3, $\bm{\gamma}$ is simply $\vv^{(1)}$. 
+\end{remark}
 \item \textbf{Round 2: transforming \eqref{e:core_bitz_eq_new_0} to $\codedim_2$ integer constraints with bounded integers.}
 \begin{itemize}[leftmargin=*]
     \item The prover sends integers $\mu_1, \ldots, \mu_{\codedim_2}\leq (q-1)\cdot \codedim_1$ such that, over $\ZZ$, \begin{equation}\label{e:tensored_equality}\langle \bff_{*j}, \pi_q^{-1}(\vv^{(1)})\rangle = \mu_j \qquad \text{for all } j\in [\codedim_2].\end{equation} 
@@ -1265,7 +1280,9 @@ In \cref{r:core_iop_optional_sumcheck} we describe a variation in which, instead
 \item \textbf{Phase 3: Transforming the claim into a PESAT claim over {$\comfield$}, and invoking the IOR {$\Pi_{\mathsf{red}}$}.}
 \begin{itemize}[leftmargin=*]
 \item 
-Prover and verifier define $$\bm{\gamma} = \pi_{q}^{-1}(\vv^{(1)}) \in \range{0}{q-1}^{\codedim_1}\subseteq \ZZ^{\codedim_1},$$ and set to prove the following claim:
+Prover and verifier define $$\bm{\gamma} = \pi_{q}^{-1}(\vv^{(1)}) \in \range{0}{q-1}^{\codedim_1}\subseteq \ZZ^{\codedim_1},$$
+%
+and set to prove the following claim:
 %
 $$
 \prod_{i \in [\codedim_1]} g^{\bm{\gamma}_i\cdot \bff_{ij}}  = g^{\mu_j} \in \comfield, \qquad \text{for all } j\in [\codedim_2].
@@ -1313,9 +1330,9 @@ using an IOP for constrained codes. Concretely, the prover commits to the vector
 
 For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack),\qquad \LIN = \LIN(\comfield, \cC, \pack).$$
 \begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:core_iop}]\label{t:thm_core_IOPP} 
-   Let $\delta \in (0,1)$ be a proximity parameter.  Assume \albert{can we remove the $-1$ from $\max \cP -1$?}
+   Let $\delta \in (0,1)$ be a proximity parameter.  Assume 
    %
-   $$|\comfield|-1 > 2\cdot \codedim_1 \cdot (\max{\cP}-1).$$ 
+   $$\max\cP < \fieldboundsizeexponent.$$ 
    %
    Assume $\Pi_{\mathsf{red}}$ is a perfectly complete $t_\red$-round IOR from $\PESAT$ to $\LIN$ with round-by-round knowledge soundness  with relaxation $(\PESAT^\delta,\LIN^{\delta})$, with errors  $(\ksred_1, \ldots, \ksred_{t_\red})$. Assume $\Pi_{\iopp}$ is a perfectly complete $t_{\iopp}$-round IOP  for $\LIN$ (i.e.\ an IOR from $\LIN$ to the trivial relation $\bot$) with round-by-round knowledge soundness with relaxation $(\LIN^{\delta}, \bot)$, and errors $$\ksiopp_1,\ldots, \ksiopp_{t_\iopp}.$$ 
 %
@@ -1335,7 +1352,7 @@ For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\
 
 
 
-To prove \cref{t:thm_core_IOPP} we begin with the following lemma, which is implicit in \cite{zincplus}.  \albertimportant{Needs to be actualized to prove \cref{l:examples_morphisms}.}
+\albertimportant{The rest of this subsection needs to be updated to the new way things have been formalized and stated.} To prove \cref{t:thm_core_IOPP} we begin with the following lemma, which is implicit in \cite{zincplus}.  
 \begin{lemma}\label{l:reduction_lemma}
 Let $h(X)\in \ZZ[X]$ be a nonzero polynomial of degree $\leq d$ and with coefficients in the range $\range{-2^{B}+1}{2^B-1}$. Let $\cP$ be a set of primes, and let $q_{\min}$ be the smallest prime in $\cP$. Then 
 %
@@ -1443,28 +1460,40 @@ The above holds if and only if $(\inp',\oracle', (\bff_{*j})_{j\in [\codedim_2]}
 
 
 
-\subsection{The general Lin-BitsDual relation}
+\subsection{The general Lin-BitsDual relation}\label{s:general_LinBitsDual}
 
 \renewcommand{\modulemorphism}{\psi}
-We now proceed to describe a generalization of $\LinBitsDual(\bits, \pi, R, \cC)$ where the witness $\bff$ has entries in an arbitrary module $M$,  instead of in $\bits\subseteq \ZZ$. We assume the notation from the previous sections, together with:
+\renewcommand{\ringmorphism}{\psi}
+\renewcommand{\moduleonebound}{S_{\leq B}}
+
+We now proceed to describe a generalization of $\LinBitsDual(\bits, \pi, R, \cC)$ where the witness $\bff$ has entries in an arbitrary ring $S$ (finitely generated as a $\ZZ_{\Char(S)}$-module),  instead of in $\bits\subseteq \ZZ$. 
+
+
+
+We assume the notation from the previous sections, together with:
 \begin{itemize}[leftmargin=*]
- \item Let $S$ be a ring, possibly different than $R$, let $\ringmorphism:S \to R$ be a ring homomorphism. Let $M$ be a $S$-module and  let $\psi: \moduleone \to R$ be a module homomorphism (with underlying ring homomorphism $\ringmorphism$ \albert{terminology in preliminaries}).
+ \item Let $S$ be a ring, possibly different than $R$, let $\psi:S \to R$ be a ring homomorphism. %Let $M$ be a $S$-module and  let $\psi: \moduleone \to R$ be a module homomorphism (with underlying ring homomorphism $\ringmorphism$ \albert{terminology in preliminaries}).
 \item 
-Let $\gamma_1,\ldots, \gamma_\moduledegree$ be an $S$-basis of $M$. Fix a vector length $\codedim_0$.  Let $\moduleonebound$ denote the set of elements of $M$ of the form $h=\sum_{i\in [\moduledegree]} h_i\cdot \gamma_i$ for $h_i \in \range{0}{2^B-1}_S$ (cf.\ \cref{s:prelims_algebra}) Let $\bff \in \moduleonebound^{\codedim_0}$, and write %$\bff=(\bff_{*1}, \ldots, \bff_{*\moduledegree})$ 
+Let $d=\dim(S)$ and let $\gamma_1,\ldots, \gamma_\moduledegree$ be a set of generators of  $S$ as a $\ZZ_{\Char(S)}$-module. Fix a vector length $\codedim_0$.  Let $\moduleonebound$ denote the set of elements of $S$ of the form $h=\sum_{i\in [\moduledegree]} h_i\cdot \gamma_i$ for $$h_i \in \range{0}{2^B-1}_S \subseteq \ZZ_{\Char(S)} \subseteq  S$$ (cf.\ \cref{s:prelims_algebra}) \item Let $\bff \in \moduleonebound^{\codedim_0}$, and write %$\bff=(\bff_{*1}, \ldots, \bff_{*\moduledegree})$ 
 $\bff=\sum_{j\in [\moduledegree]} \bff_{*j}\cdot \gamma_j$
-with $\bff_{*j}\in \ringbitbound{B}^{\codedim_0}$ for all $j\in [\moduledegree]$. Then write $$\bff_{*j}= \sum_{k=1}^{B}\  \bff_{*jk}\cdot 2^{k-1} $$ for some vectors $$\bff_{*jk}\in \{0,1\}^{\codedim_0}\subseteq S^{\codedim_0},$$ for all $j,k$.  We define   $$\bitstext(\bff)\in \bits^{\codedim_0\cdot\moduledegree\cdot  B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B}$$ as the vector with integer bit entries obtained by concatenating the vectors $\bff_{*jk}$ and lifting their entries to $\bits \subseteq \ZZ$ in a natural way, i.e.\ \begin{equation}\label{e:bits_of_f}\bitstext(\bff) \defeq \left(\mathsf{lift}(\bff_{*jk})\mid  j\in [\moduledegree], k\in [B]\right)\in \bits^{\codedim_0\cdot\moduledegree\cdot B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B},\end{equation}
+with $\bff_{*j}\in \ZZ_{\Char(S)}^{\codedim_0}$ for all $j\in [\moduledegree]$ (note that  any ring $S$ contains $\ZZ_{\Char(S)}$ as a subring). Then write $$\bff_{*j}= \sum_{k=1}^{B}\  \bff_{*jk}\cdot 2^{k-1} $$ for some vectors $$\bff_{*jk}\in \{0,1\}_S^{\codedim_0}\subseteq S^{\codedim_0},$$ for all $j,k$.  We define   $$\bitstext(\bff)\in \bits^{\codedim_0\cdot\moduledegree\cdot  B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B}$$ as the vector with integer bit entries obtained by concatenating the vectors $\bff_{*jk}$ and lifting their entries to $\bits \subseteq \ZZ$ in a natural way, i.e.\ \begin{equation}\label{e:bits_of_f}\bitstext(\bff) \defeq \left(\mathsf{lift}(\bff_{*jk})\mid  j\in [\moduledegree], k\in [B]\right)\in \bits^{\codedim_0\cdot\moduledegree\cdot B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B},\end{equation}
 where $\mathsf{lift}$ is the identity function if $S=\ZZ$,  and  $\mathsf{lift} = \pi_{\Char(S)}^{-1}$ if $\ring=S$.
 
-\begin{remark}[Non-uniform bit-decomposition sizes]\label{r: non_uniform_bit_decomposition} In practical settings, it is possible that not all entries of $\bff$ have the same bit size. For example, some chunks of $\bff$ may be comprised of vectors, while others may be comprised of generic module elements. However, our definition of $\bitstext(\bff)$ allocates $\moduledegree\cdot B$ bits for every entry of $\bff$, no matter its size.
+\begin{remark}[Non-uniform bit-decomposition sizes]\label{r: non_uniform_bit_decomposition} In practical settings, it is possible that not all entries of $\bff$ have the same bit size. For example, some chunks of $\bff$ may be comprised of elements from $\{0,1\}_S$, while others may be comprised of generic ring elements. However, our definition of $\bitstext(\bff)$ allocates $\moduledegree\cdot B$ bits for every entry of $\bff$, no matter its size.
 
-In this case one can define $\bitstext(\bff)$  as a vector from $\bits^{\codedim}\subseteq \ZZ^\codedim$ (for a different smaller $\codedim$) such that 
+In this case one can define $\bitstext(\bff)$  as a vector from $\bits^{\codedim}\subseteq \ZZ^\codedim$ (for a some  $\codedim$) such that 
 %
 $$
-L\cdot \pi_{\Char(S)}(\bitstext(\bff)) = \bff \in M^{\codedim_0}
+L\cdot \pi_{\Char(S)}(\bitstext(\bff)) = \bff \in S^{\codedim_0}
 $$
-for some public and fixed matrix $L\in M^{\codedim_0 \times \codedim}$.
+for some public and fixed matrix $L\in S^{\codedim_0 \times \codedim}$.
 %
+
+This generalizes the previous definition of $\mathsf{bits}(\bff)$, in that, for such definition, we have $L\cdot \pi_{\Char(S)}(\bitstext(\bff)) = \bff$ where $$L=\mathsf{Id}_{\codedim_0\times \codedim_0} \otimes \pi_{\Char(S)}(1, 2, \ldots, 2^{B-1}) \otimes (\gamma_1, \ldots, \gamma_d) \in S^{\codedim_0\times (\codedim_0\cdot B\cdot d)},$$
+%
+where $\mathsf{Id}_{\codedim_0\times \codedim_0} $ is the $\codedim_0\times \codedim_0$ identity matrix. 
 \end{remark}
+For a general matrix $L$, one needs, for efficiency purposes, to make sure $L$ has enough structure to later support  tensor decomposing certain vectors, as discussed in \cref{r:tensor_dec_u}. In any case, one can always use the matrix $L$ above, which does possess enough structure.
 \item 
 Assume $\cC$ is a linear code over $\comfield$ of dimension $(\codedim_0\cdot B \cdot \moduledegree)/\comfieldexp$ and blocklength $\codelength$. 
 \end{itemize}
@@ -1477,12 +1506,12 @@ Assume $\cC$ is a linear code over $\comfield$ of dimension $(\codedim_0\cdot B 
  &\LinModFieldBin(\moduleonebound,\modulemorphism,R,  \cC)\\ &\qquad\qquad\qquad= \left\{ \left(\begin{aligned} &\inp=(\vv,\mu)\in R^{ \codedim_0}  \times R, \\
  &\oracle = f \in \comfield^{\codelength}, \\ &\wit= \bff\in \moduleonebound^{\codedim_0}\end{aligned}\right) \;\middle|\;  \begin{aligned}  
  &f = \Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\bff)),\\
- &\langle \modulemorphism(\bff), \vv \rangle = \mu 
+ &\langle \modulemorphism(\bff), \vv \rangle = \mu  \qquad  \text{in } R
  \end{aligned} \right\}.
 \end{align*}
 \end{definition}
 %
-When there is no risk of confusion, we denote $\LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)$ simply by $\LinModFieldBin$. The Core Lin-BitsDual relation is precisely $\LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)$ after taking $\moduleone=\ZZ$, $B=1$, and $\modulemorphism = \pi_{\Char(R)}$.
+When there is no risk of confusion, we denote $\LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)$ simply by $\LinModFieldBin$. The Core Lin-BitsDual relation is precisely $\LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)$ after taking $S=\ZZ$, $B=1$, and $\modulemorphism = \pi_{\Char(R)}$.
 
 %\renewcommand{\modulemorphism}
 
@@ -1490,76 +1519,85 @@ When there is no risk of confusion, we denote $\LinModFieldBin(\moduleonebound,\
 
 
 
-Next we describe our IOP for $\LinModFieldBin$.  We assume the notation of \cref{?}. Namely, $\moduleone$ denotes an $S$-module; $R$ is a ring; and $\modulemorphism:\moduleone \to\moduletwo$ is a module homomorphism with underlying ring homomorphism $\ringmorphism:S \to R$.  Let $\gamma_1, \ldots, \gamma_\moduledegree$ be a $S$-base of $M$. 
-
-
-
-We let $\codedim_1,\codedim_2$ be tensor decomposition parameters (to be used in \cref{c:core_iop}) be such that $\codedim_1\cdot \codedim_2= \codedim_0\cdot \moduledegree\cdot B$. We assume that $\cC$ is a linear code over $\comfield$ of dimension $\codedim_0\cdot \moduledegree\cdot B/\comfieldexp$. %, which is a $\codedim_2$-interleaving of a code $\cC_1$ over $\comfield$ of dimension $\codedim_1/2^{\comfieldexp}$.
+Next we describe our IOP for $\LinModFieldBin$.  We assume the notation of \cref{s:general_LinBitsDual}. Let $\codedim_1,\codedim_2$ be tensor decomposition parameters (to be used in \cref{c:core_iop}) be such that $\codedim_1\cdot \codedim_2= \codedim_0\cdot \moduledegree\cdot B$. We assume that $\cC$ is a linear code over $\comfield$ of dimension $\codedim_0\cdot \moduledegree\cdot B/\comfieldexp$. %, which is a $\codedim_2$-interleaving of a code $\cC_1$ over $\comfield$ of dimension $\codedim_1/2^{\comfieldexp}$.
 
 We will need the following result.
 
 
 \begin{lemma}\label{l:bitify}
-    Let $\bff\in \moduleonebound^{\codedim_0}$, and let $\vv\in \moduletwo^{\codedim_0}$. Then %\albertimportant{Something's off later: $\uu$ is a vector with module elements. We don't have an IOP in such setting. Do we need to ask that $\moduletwo$ is a ring as well? We could keep module, but then in the tensor decomposition we have to be careful that we respect the modularity. Not sure it is worth it. But if $\moduletwo$ is a ring (or algebra), isn't it just better to restrict to $\ZZ$ or finite fields?}
+    Let $\bff\in \moduleonebound^{\codedim_0}$, and let $\vv\in \moduletwo^{\codedim_0}$. Then \albertimportant{General comment: I need to discuss how the verifier handles these vectors $\vv$ and $\uu$. Reviewers may complain that verifier could be non-succinct.}
+       \begin{align*}
+   & \langle \modulemorphism(\bff), \vv \rangle = \langle \ringmorphism(\bitstext(\bff)_S),\uu\rangle \in R \\ & 
+    \uu\defeq \psi(L)^{\mathsf{T}}\cdot \vv \in R^{\codedim_0\cdot B\cdot \moduledegree},
+    \end{align*}
     %
-    $$
-    \langle \modulemorphism(\bff), \vv \rangle = \langle \ringmorphism(\bitstext(\bff)), \uu \rangle
-    $$
-    where
-    \begin{equation}\label{e:u_def}
-    \uu \defeq   \left(\vv \otimes \left(1, \ringmorphism(2), \ldots, \ringmorphism(2^{B-1})\right) \otimes \left(\modulemorphism(\gamma_1), \ldots, \modulemorphism(\gamma_{\moduledegree})\right)\right) \in R^{\codedim_0\cdot \moduledegree \cdot B}
+    where $\bitstext(\bff)_S \defeq \pi_{\Char(S)}(\bitstext(\bff))$ is  the vector $\bitstext(\bff)$ projected to $\{0,1\}_S\subseteq S$, and $L$ is the matrix from \cref{r: non_uniform_bit_decomposition}.  In particular, if $L=\mathsf{Id}_{\codedim_0 \times \codedim_0} \otimes \pi_{\Char(S)}(1,\ldots, 2^{B-1})\otimes (\gamma_1, \ldots, \gamma_d) \in S^{\codedim_0 \times (\codedim_0\cdot B\cdot \moduledegree)}$, then \begin{equation}\label{e:u_def}
+    \uu =   \left(\vv \otimes \left(1, \ringmorphism(2), \ldots, \ringmorphism(2^{B-1})\right) \otimes \left(\modulemorphism(\gamma_1), \ldots, \modulemorphism(\gamma_{\moduledegree})\right)\right) \in R^{\codedim_0\cdot \moduledegree \cdot B}
     \end{equation}
 \end{lemma}
 \begin{proof}
-Rewriting $\langle \modulemorphism(\bff), \vv \rangle$, we obtain 
+Rewriting $\langle \modulemorphism(\bff), \vv \rangle$, we obtain  by \cref{r: non_uniform_bit_decomposition,e:matrix_transpose_inner_product}
+$$
+\langle \psi(\bff), \vv\rangle = \langle \psi(L\cdot \bitstext(\bff)_S), \vv\rangle =  \langle \psi(\bitstext(\bff)_S), \psi(L)^{\mathsf{T}} \cdot \vv\rangle 
+$$
 %
+The specific form of $\uu$ in \eqref{e:u_def} is obtained by direct calculation of $\psi(L)^{\mathsf{T}} \cdot \vv$.
+%
+\begin{comment}
 \begin{align}
     \langle \modulemorphism(\bff),\vv\rangle &= \langle \modulemorphism\left(\sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \bff_{*jk} \cdot 2^{k-1} \cdot \gamma_j\right), \vv \rangle\label{e:iop_linear_claim_1}\\ &= \langle \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \ringmorphism(\bff_{*jk}) \cdot \ringmorphism(2^{k-1}) \cdot \modulemorphism(\gamma_j),\vv \rangle,\label{e:iop_linear_claim_2}\\
     &= \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \ringmorphism(2^{k-1}) \cdot \modulemorphism(\gamma_j)\cdot \langle \ringmorphism(\bff_{*jk}), \vv \rangle \notag\\ &=   \sum_{\substack{k\in [B],\\ j\in [\moduledegree]}} \sum_{i\in [\codedim_0]} \ringmorphism(2^{k-1}) \cdot \modulemorphism(\gamma_j)\cdot  \langle \ringmorphism(\bff_{ijk}), \vv_i \rangle= \langle \ringmorphism(\bitstext(\bff)), \uu \rangle \notag,
 \end{align}
 as needed.
+\end{comment}
 \end{proof}
 
 \begin{construction}[IOP for $\LinModFieldBin$]\label{c:LinModFieldBin}
 
- \textbf{Parameters.} $$(S, R, \moduleone,\moduledegree,\ringmorphism, \modulemorphism, (\gamma_1, \ldots, \gamma_\moduledegree), \codedim_0, B, \codedim_1,\codedim_2, \comfield,\cC)$$ comprised of: two rings $S, R$; a ring morphism $\ringmorphism:S \to R$; a $S$-module $\moduleone$ of dimension $\moduledegree$;  a module homomorphism $\modulemorphism:\moduleone\to \moduletwo$; a $S$-base $\gamma_1, \ldots, \gamma_{\moduledegree}$ of $M_R$; a witness length $\codedim_0$; a bit-size bound $B$; tensor decomposition dimensions $\codedim_1, \codedim_2$ for \cref{c:core_iop} satisfying $\codedim_1\cdot \codedim_2 = \codedim_0 \cdot \moduledegree\cdot B/\comfieldexp$; a binary field $\comfield$; a linear code $\cC$ over $\comfield$ of dimension $\codedim_0\cdot \moduledegree\cdot B/\comfieldexp$ and blocklength $\codelength$.\\
-
+ \textbf{Parameters.} $$(S, R, \ringmorphism, \codedim_0, B, \codedim, L, \codedim_1,\codedim_2, \comfield,\cC)$$ comprised of: two rings $S, R$; a ring morphism $\ringmorphism:S \to R$;  a witness length $\codedim_0$; a bit-size bound $B$; a bit number $\codedim$; a \emph{bitification} matrix $L\in S^{\codedim\times \codedim_0}$ as in \cref{r: non_uniform_bit_decomposition}; a tensor decomposition dimensions $\codedim_1, \codedim_2$ for \cref{c:core_iop} satisfying $\codedim_1\cdot \codedim_2 = \codedim/\comfieldexp$; a binary field $\comfield$; a linear code $\cC$ over $\comfield$ of dimension $\codedim/\comfieldexp$ and blocklength $\codelength$.\\
 
 
 \noindent \textbf{Inputs.} The prover and verifier receive $\inp=(\vv, \mu)\in R^{\codedim_0}\times \moduletwo$ and  $\oracle= f \in \comfield^\codelength$. The prover receives  $\wit= \bff\in \moduleonebound^{\codedim_0}$ such that $(\inp,\oracle, \wit) \in \LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo, \cC)$, i.e., 
 %
 $$
-f = \Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\bff)),\qquad \langle \modulemorphism(\bff), \vv \rangle = \mu.
+f = \Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\bff)),\qquad \langle \modulemorphism(\bff), \vv \rangle = \mu \quad \text{in } R.
 $$
 \begin{enumerate}[leftmargin=*]
      \item By \cref{l:bitify}, the   claim $(\inp,\oracle, \wit) \in \LinModFieldBin(\moduleonebound,\modulemorphism, R,  \cC)$ is equivalent to the claim \begin{equation}\label{e:iop_final_linear_claim}
     \left(\inp'=(\uu,\mu), \oracle' = f=\Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\ff)), \wit' = \bitstext(\ff)\right) \in \LinBitsDual(\bits,\ringmorphism, R,\cC).
 \end{equation}
-where $\uu =   \left(\vv \otimes \left(1, \ringmorphism(2), \ldots, \ringmorphism(2^{B-1})\right) \otimes \left(\modulemorphism(\gamma_1), \ldots, \modulemorphism(\gamma_{\moduledegree})\right)\right)$. Accordingly, prover and verifier use \cref{c:core_iop} to prove \eqref{e:iop_final_linear_claim}. They use parameters $(\KK,q,\comfield,\codedim_0\cdot \moduledegree\cdot B,\codedim_1,\codedim_2,\cC)$.  See \cref{r:tensor_dec_u} for comments on how to use tensor decompositions of $\uu$ in \cref{c:core_iop}.
+where $\uu = \psi(L)^{\mathsf{T}}\cdot \vv$. %  \left(\vv \otimes \left(1, \ringmorphism(2), \ldots, \ringmorphism(2^{B-1})\right) \otimes \left(\modulemorphism(\gamma_1), \ldots, \modulemorphism(\gamma_{\moduledegree})\right)\right)$. 
+Accordingly, prover and verifier use \cref{c:core_iop} to prove \eqref{e:iop_final_linear_claim}. They use parameters $(R,\comfield,\codedim,\codedim_1,\codedim_2,\cC)$.  See \cref{r:tensor_dec_u} for comments on how to use tensor decompositions of $\uu$ in \cref{c:core_iop}.
 \end{enumerate}
 \end{construction}
 
 
 \begin{remark}[Tensor decompositions of $\uu$]\label{r:tensor_dec_u}
-Recall that \cref{c:core_iop} considers a (possibly trivial) tensor decomposition of its public input vector $\uu$ (denoted $\vv$ in \cref{c:core_iop}). This decomposition need not be given by some of the tensor factors in \cref{e:u_def}. For example, in many applications, the input vector $\vv$ for $\LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo,  \cC)$ may admit further tensor decompositions, say $\vv=\vv^{(1)}\otimes \vv^{(2)}$ (e.g.\ if $\vv$ is of the form $(\eq(\bb,\rr))_{\bb\in\bits^{\log \codedim_0}}$. In that case, we may use a tensor decomposition for $\uu$ in \cref{c:core_iop} of the form, say, $\uu=\uu^{(1)}\otimes \uu^{(2)}$, where
+Recall that \cref{c:core_iop} considers a (possibly trivial) tensor decomposition of its public input vector $\uu$ (denoted $\vv$ in \cref{c:core_iop}). Moreover, as argued in \cref{s:to_low_entropy_gkr,s:gkr_low_entropy}, this tensor decomposition is crucial for performance of \ftwoz (concretely, we want $\codedim^{0.5}\leq \codedim_1 \leq \codedim^{0.6}$, cf.\ \cref{s:gkr_low_entropy}).   
+
+In many applications, the input vector $\vv$ for $\LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo,  \cC)$ is an ``eq'' vector, i.e.\ a vector of the form $(\eq(\bb,\rr))_{\bb\in\bits^{\log\codedim_0}}$ for some $\rr\in S^{\log \codedim_0}$. In this case  $\vv=\vv^{(1)}\otimes \vv^{(2)}$ with the dimensions of $\vv^{(1)}$, $\vv^{(2)}$ being arbitrary as long as $|\vv^{(1)}|\cdot |\vv^{(2)}|=\codedim_0$. In that case, if \begin{equation}\label{e:canonical_bitification_matrix}L=\mathsf{Id}_{\codedim_0\times \codedim_0} \otimes \pi_{\Char(S)}(1,\ldots, 2^{B-1})\otimes (\gamma_1,\ldots, \gamma_\moduledegree)\end{equation} (cf.\ \cref{r: non_uniform_bit_decomposition}), then $\uu$ has the form \eqref{e:u_def} and we may use a tensor decomposition for $\uu$ in \cref{c:core_iop} of the form, say, $\uu=\uu^{(1)}\otimes \uu^{(2)}$, where
 %
 $$
 \uu^{(1)} \defeq \vv^{(1)},\quad \uu^{(2)}\defeq \vv^{(2)}\otimes \left(1, \ringmorphism(2), \ldots, \ringmorphism(2^{B-1})\right) \otimes \left(\modulemorphism(\gamma_1), \ldots, \modulemorphism(\gamma_{\moduledegree})\right).
 $$
-See \cref{s:parameter_instantiation} for comments on how to choose close-to-optimal tensor split dimensions for $\uu^{(1)}$ and $\uu^{(2)}$.
+%
+For more general matrices $L$, one needs to make sure that $L$ has enough structure to allow for a favorable tensor decomposition of $\uu$. If that is not possible, one can always use the matrix \eqref{e:canonical_bitification_matrix}.
 \end{remark}
 
 \begin{theorem}\label{t:thm_LinModFieldBits}
-    Under the same hypotheses and notation as in \cref{t:thm_core_IOPP}, if $\degevalfield>0$, \cref{c:LinModFieldBin} is a perfectly complete $1+t_\red + t_\iopp$ IOP for $\LinModFieldBin(\moduleonebound,\modulemorphism, \KK, \cC)$ with round-by-round knowledge soundness with relaxation $(\LinModFieldBin^{\delta},\bot)$ and errors $$\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]},$$ where $$
-    \kappa_0 = \frac{\degevalfield}{q_{\min}} + \frac{\log(\codedim_1 +1) + \log(q-1)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}.
-    $$
-    If $\degevalfield=0$, i.e.\ $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$-round IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]}$.
+    Under the same hypotheses and notation as in \cref{t:thm_core_IOPP},\cref{c:LinModFieldBin} is a perfectly complete $1+t_\red + t_\iopp$ IOP for $\LinModFieldBin(\moduleonebound,\modulemorphism, \KK, \cC)$ with round-by-round knowledge soundness with relaxation $(\LinModFieldBin^{\delta},\bot)$ and errors $$\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]},$$ where $
+    \kappa_0 = \theta(R,\codedim_1). %\frac{\degevalfield}{q_{\min}} + \frac{\log(\codedim_1 +1) + \log(q-1)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}.
+    $ (see \cref{t:thm_core_IOPP}).
+    
+    The error term $\kappa_0$ is void if Round 1 is not executed, and in that case \cref{c:LinModFieldBin} has one round less.
+    %If $\degevalfield=0$, i.e.\ $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$-round IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]}$.
 \end{theorem}
-\begin{proof} Deferred to \cref{a:LinModFieldBin}. In short, the result is a consequence of \cref{l:bitify}, which establishes an equivalence between  triples for $\LinModFieldBin(M_{R_{\leq B}},\modulemorphism, \moduletwo, \cC)$ and $\LinBitsDual(\bits,\ringmorphism, R,\cC)$. \cref{l:bitify} further provides a method for efficiently computing one triple from the other. This allows to build a round-by-round knowledge soundness state and an extractor for \cref{c:LinModFieldBin} from those of \cref{c:core_iop}.
+\begin{proof} \albertimportant{Needs to be updated to the new way things have been formalized and stated.} Deferred to \cref{a:LinModFieldBin}. In short, the result is a consequence of \cref{l:bitify}, which establishes an equivalence between  triples for $\LinModFieldBin(M_{R_{\leq B}},\modulemorphism, \moduletwo, \cC)$ and $\LinBitsDual(\bits,\ringmorphism, R,\cC)$. \cref{l:bitify} further provides a method for efficiently computing one triple from the other. This allows to build a round-by-round knowledge soundness state and an extractor for \cref{c:LinModFieldBin} from those of \cref{c:core_iop}.
 \end{proof}
 
 
 \subsection{Instantiation}\label{s:instantiation}
+\albertimportant{Needs to be updated to the new way things have been formalized and stated, and to a corrected bound $\fieldboundsizeexponent$ (used to be $(|\comfield|-1)/(\codedim_1+1)$.}
 
 We instantiate \cref{c:core_iop} by letting $\Pi_{\red}$ be an optimized GKR protocol for multiple grand product claims of certain form. The IOP $\Pi_\iopp$ is taken to be WHIR \cite{whir} with the ring switching step from \cite{binius} (see \cref{a:ring_switch_1}).
 
@@ -2638,8 +2676,59 @@ The compression output is the word vector $H^{\mathrm{out}}$ defined by
 %\input{sha256-f2}
 
 \subsubsection{Falcon signature verification}
-\subsubsection{RSA and Poseidon}
-\albertimportant{Let's compare to with the circuit of Limber}
+
+\subsubsection{RSA accumulation and Poseidon hashing}
+
+We compare Limber \cite{limber}, Zinc+\cite{zincplus} and our \ftwoz  on proving two RSA accumulation updates plus a Poseidon hash evaluation (see Section 7.1 of \cref{limber}). An RSA accumulation  consists  in performing a modular exponentiation on a $2048$-bit RSA modulus. This is exactly the computation with which Limber $\cite{limber}$ experiments with, and indeed we take the corresponding R1CS constraint from their repository. Recall that Limber is a proof system for polynomial relations over the integers,  (see \cref{s:related_work} for further details on Limber, Zinc+, etc.). 
+
+We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber states in the paper that it achieves $128$ bits of security, but its fingerprint step only achieves $114$ bits of security of Limbery in the implementation, because the random prime sampled to perform the fingerprint is of $128$ bits, and no other measures (like, say, grinding) are taken. \albertimportant{Double check and let the authors know.}} 
+
+\albertimportant{need to check the soundness achieved by Zinc+}
+
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{@{}llrrr@{}}
+    \toprule
+    Scheme & Commitment & Prove & Verify & Proof \\
+     &  & (ms) & (ms) & (KB) \\
+    \midrule
+    \ftwoz \ (this work)             & binary field, hash  & \textbf{257}  & \textbf{10.1} & 338 \\
+    Zinc+ \cite{zincplus}$^{\ast}$   & integer code, hash  & 850           & 57.5          & 1418 \\
+    Limber \cite{limber} (Brakedown) & hash                & 1143          & 42.8          & 5885 \\
+    Limber \cite{limber} (Hyrax)     & Tom-256, DL         & 1180          & 35.4          & \textbf{175} \\
+    \midrule
+    Arkworks/Garuda$^{\dagger}$      & BLS12-381, pairing  & 231000        & 25            & 7.2 \\
+    MultiSwap-xJsnark$^{\dagger}$    & BLS12-381, pairing  & 88500         & 2             & 0.2 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Proving one MultiSwap \cite{multiswap} batch update: two RSA-2048
+  accumulator updates verified through Wesolowski proofs, together with a
+  Poseidon-based hash-to-prime.  The four upper rows prove the same integer
+  Mod-R1CS statement of $6209$ modular-multiplication rows and were measured
+  on the same machine (Apple M4, 16GB), single-threaded, as medians of five
+  runs; prover time covers commitment and proving and excludes witness
+  generation.  The two lower rows are circuit-based baselines
+  ($25.2$M and $6.2$M R1CS constraints respectively), for which we quote
+  \cite[Table 1]{limber} verbatim.
+  %
+  \ftwoz \ and Limber sample their fingerprinting prime from the transcript
+  after the commitment and reach round-by-round Fiat--Shamir soundness
+  errors of at most $2^{-114}$.
+  %
+  $^{\ast}$ Zinc+ is benchmarked on the unwired mock circuit of
+  \cite[Table 1, footnote c]{limber}, extended to $8192$ slots: it omits the
+  bit-decomposition and hash-to-prime rows and the range checks on the
+  quotient advice, and uses a fixed rather than a transcript-sampled
+  projecting prime, with $100$ column openings.  Its proof compresses to
+  $686$KB with \texttt{zstd}; the other proofs are reported uncompressed.
+  %
+  $^{\dagger}$ Quoted from \cite{limber}; measured on an M4 Pro, 24GB, and
+  not reproduced here.
+  }
+  \label{t:multiswap}
+\end{table}
+
 
 \subsubsection{Hashing followed by Falcon signature verification}
 
