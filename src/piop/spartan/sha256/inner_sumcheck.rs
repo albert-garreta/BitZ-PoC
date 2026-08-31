@@ -862,22 +862,41 @@ fn prove_compact_tail<const K: usize, T: Transcript, H: Sha256InnerBitSource + ?
     current_claim = evaluate_quadratic(&coefficients, &challenge, &zero);
     round_polynomials.push(coefficients);
     eval_points.push(challenge.clone());
-    fold_first_tail_round_in_place::<K, _>(
-        &mut table,
-        live_len,
-        h_source,
-        &prefix_weights,
-        &challenge,
-        field_cfg,
-        &zero,
-        &one,
-        reducer,
-    )?;
-
     let mut stride = 1usize;
+    // After each nonterminal challenge, the fold pass also prepares the next
+    // round's [c0, c2]. The transcript still receives one ordinary quadratic
+    // per round; only the table traversal that computes it moves earlier.
+    let mut prepared_round = if num_vars > 1 {
+        Some(fold_first_tail_round_and_prepare_next_in_place::<K, _>(
+            &mut table,
+            live_len,
+            h_source,
+            &prefix_weights,
+            &challenge,
+            field_cfg,
+            &zero,
+            &one,
+            reducer,
+        )?)
+    } else {
+        fold_first_tail_round_in_place::<K, _>(
+            &mut table,
+            live_len,
+            h_source,
+            &prefix_weights,
+            &challenge,
+            field_cfg,
+            &zero,
+            &one,
+            reducer,
+        )?;
+        None
+    };
+
     for tail_round in 1..num_vars {
-        let [at_zero, leading] =
-            sum_interleaved_round_coefficients(&table.values, stride, field_cfg, reducer)?;
+        let [at_zero, leading] = prepared_round
+            .take()
+            .expect("every non-initial tail round has prepared coefficients");
         let coefficients = quadratic_coefficients(&current_claim, &at_zero, &leading);
         absorb_field_elements(transcript, &coefficients);
         if grinding_bits != 0 {
@@ -895,7 +914,18 @@ fn prove_compact_tail<const K: usize, T: Transcript, H: Sha256InnerBitSource + ?
         round_polynomials.push(coefficients);
         eval_points.push(challenge.clone());
 
-        fold_interleaved_in_place(&mut table.values, stride, &challenge, field_cfg, &zero);
+        if tail_round + 1 < num_vars {
+            prepared_round = Some(fold_interleaved_and_prepare_next_round_in_place(
+                &mut table.values,
+                stride,
+                &challenge,
+                field_cfg,
+                &zero,
+                reducer,
+            )?);
+        } else {
+            fold_interleaved_in_place(&mut table.values, stride, &challenge, field_cfg, &zero);
+        }
         stride *= 2;
     }
 
@@ -1062,6 +1092,60 @@ fn sum_first_tail_round<const K: usize, H: Sha256InnerBitSource + ?Sized>(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn fold_first_tail_pair_in_place<const K: usize, H: Sha256InnerBitSource + ?Sized>(
+    pair: usize,
+    values: &mut [RawMontgomery],
+    suffix_count: usize,
+    live_len: usize,
+    h_source: &H,
+    prefix_weights: &[Field],
+    challenge: &Field,
+    field_cfg: &FieldConfig,
+    zero: &Field,
+    one: &Field,
+    reducer: &OptimizedSumcheckReducer,
+) -> Result<[Field; 2], SumcheckError> {
+    debug_assert_eq!(values.len(), 2);
+    let low_suffix = 2 * pair;
+    let high_suffix = low_suffix + 1;
+    let h_zero = folded_packed_h::<K, _>(
+        low_suffix,
+        live_len,
+        h_source,
+        prefix_weights,
+        field_cfg,
+        zero,
+        one,
+        reducer,
+    )?;
+    let h_one = if high_suffix < suffix_count {
+        folded_packed_h::<K, _>(
+            high_suffix,
+            live_len,
+            h_source,
+            prefix_weights,
+            field_cfg,
+            zero,
+            one,
+            reducer,
+        )?
+    } else {
+        zero.clone()
+    };
+    let folded_v = interpolate_raw_pair(
+        &values[0],
+        (high_suffix < suffix_count).then_some(&values[1]),
+        challenge,
+        field_cfg,
+        zero,
+    );
+    let folded_h = h_zero.clone() + challenge * &(h_one - &h_zero);
+    values[0] = raw_montgomery(&folded_v);
+    values[1] = raw_montgomery(&folded_h);
+    Ok([folded_v, folded_h])
+}
+
+#[allow(clippy::too_many_arguments)]
 fn fold_first_tail_round_in_place<const K: usize, H: Sha256InnerBitSource + ?Sized>(
     table: &mut CompactPrefixVTable,
     live_len: usize,
@@ -1074,44 +1158,21 @@ fn fold_first_tail_round_in_place<const K: usize, H: Sha256InnerBitSource + ?Siz
     reducer: &OptimizedSumcheckReducer,
 ) -> Result<(), SumcheckError> {
     let suffix_count = table.suffix_count;
-    let fold_pair = |pair: usize, values: &mut [RawMontgomery]| -> Result<(), SumcheckError> {
-        let low_suffix = 2 * pair;
-        let high_suffix = low_suffix + 1;
-        let h_zero = folded_packed_h::<K, _>(
-            low_suffix,
+    let fold_pair = |pair: usize, values: &mut [RawMontgomery]| {
+        fold_first_tail_pair_in_place::<K, _>(
+            pair,
+            values,
+            suffix_count,
             live_len,
             h_source,
             prefix_weights,
+            challenge,
             field_cfg,
             zero,
             one,
             reducer,
-        )?;
-        let h_one = if high_suffix < suffix_count {
-            folded_packed_h::<K, _>(
-                high_suffix,
-                live_len,
-                h_source,
-                prefix_weights,
-                field_cfg,
-                zero,
-                one,
-                reducer,
-            )?
-        } else {
-            zero.clone()
-        };
-        let folded_v = interpolate_raw_pair(
-            &values[0],
-            (high_suffix < suffix_count).then_some(&values[1]),
-            challenge,
-            field_cfg,
-            zero,
-        );
-        let folded_h = h_zero.clone() + challenge * &(h_one - &h_zero);
-        values[0] = raw_montgomery(&folded_v);
-        values[1] = raw_montgomery(&folded_h);
-        Ok(())
+        )
+        .map(|_| ())
     };
 
     #[cfg(feature = "parallel")]
@@ -1132,6 +1193,105 @@ fn fold_first_tail_round_in_place<const K: usize, H: Sha256InnerBitSource + ?Siz
     Ok(())
 }
 
+/// Folds the first tail coordinate and prepares the following round's
+/// `[c0, c2]` buckets while the new interleaved `[V, H]` cells are hot.
+#[allow(clippy::too_many_arguments)]
+fn fold_first_tail_round_and_prepare_next_in_place<
+    const K: usize,
+    H: Sha256InnerBitSource + ?Sized,
+>(
+    table: &mut CompactPrefixVTable,
+    live_len: usize,
+    h_source: &H,
+    prefix_weights: &[Field],
+    challenge: &Field,
+    field_cfg: &FieldConfig,
+    zero: &Field,
+    one: &Field,
+    reducer: &OptimizedSumcheckReducer,
+) -> Result<[Field; 2], SumcheckError> {
+    let suffix_count = table.suffix_count;
+    let fold_and_accumulate = |mut accumulators: [ProductAccumulator; 2],
+                               superchunk: usize,
+                               values: &mut [RawMontgomery]|
+     -> Result<[ProductAccumulator; 2], SumcheckError> {
+        debug_assert!(values.len() == 2 || values.len() == 4);
+        let first_pair = 2 * superchunk;
+        let folded_zero = fold_first_tail_pair_in_place::<K, _>(
+            first_pair,
+            &mut values[..2],
+            suffix_count,
+            live_len,
+            h_source,
+            prefix_weights,
+            challenge,
+            field_cfg,
+            zero,
+            one,
+            reducer,
+        )?;
+        let folded_one = if values.len() == 4 {
+            fold_first_tail_pair_in_place::<K, _>(
+                first_pair + 1,
+                &mut values[2..],
+                suffix_count,
+                live_len,
+                h_source,
+                prefix_weights,
+                challenge,
+                field_cfg,
+                zero,
+                one,
+                reducer,
+            )?
+        } else {
+            [zero.clone(), zero.clone()]
+        };
+
+        product_multiply_accumulate(
+            reducer,
+            &mut accumulators[0],
+            &folded_zero[0],
+            &folded_zero[1],
+        );
+        product_multiply_accumulate(
+            reducer,
+            &mut accumulators[1],
+            &(folded_one[0].clone() - &folded_zero[0]),
+            &(folded_one[1].clone() - &folded_zero[1]),
+        );
+        Ok(accumulators)
+    };
+
+    #[cfg(feature = "parallel")]
+    if table.values.len() / 2 >= 1 << 10 && rayon::current_num_threads() > 1 {
+        let accumulators = table
+            .values
+            .par_chunks_mut(4)
+            .enumerate()
+            .try_fold(
+                || std::array::from_fn(|_| product_accumulator_zero(reducer)),
+                |accumulators, (superchunk, values)| {
+                    fold_and_accumulate(accumulators, superchunk, values)
+                },
+            )
+            .try_reduce(
+                || std::array::from_fn(|_| product_accumulator_zero(reducer)),
+                |left, right| Ok(merge_product_accumulators(left, right, reducer)),
+            )?;
+        table.suffix_count = table.values.len() / 2;
+        return reduce_product_accumulators(accumulators, reducer);
+    }
+
+    let mut accumulators = std::array::from_fn(|_| product_accumulator_zero(reducer));
+    for (superchunk, values) in table.values.chunks_mut(4).enumerate() {
+        accumulators = fold_and_accumulate(accumulators, superchunk, values)?;
+    }
+    table.suffix_count = table.values.len() / 2;
+    reduce_product_accumulators(accumulators, reducer)
+}
+
+#[cfg(test)]
 fn sum_interleaved_round_coefficients(
     values: &[RawMontgomery],
     stride: usize,
@@ -1185,6 +1345,7 @@ fn sum_interleaved_round_coefficients(
     reduce_product_accumulators(accumulators, reducer)
 }
 
+#[cfg(test)]
 fn accumulate_interleaved_chunk(
     accumulators: &mut [ProductAccumulator; 2],
     values: &[RawMontgomery],
@@ -1214,6 +1375,35 @@ fn accumulate_interleaved_chunk(
     );
 }
 
+fn fold_interleaved_chunk_in_place(
+    values: &mut [RawMontgomery],
+    stride: usize,
+    challenge: &Field,
+    field_cfg: &FieldConfig,
+    zero: &Field,
+) -> [Field; 2] {
+    debug_assert!(values.len() >= 2);
+    debug_assert!(values.len() <= 4 * stride);
+    let high_offset = 2 * stride;
+    let folded_v = interpolate_raw_pair(
+        &values[0],
+        values.get(high_offset),
+        challenge,
+        field_cfg,
+        zero,
+    );
+    let folded_h = interpolate_raw_pair(
+        &values[1],
+        values.get(high_offset + 1),
+        challenge,
+        field_cfg,
+        zero,
+    );
+    values[0] = raw_montgomery(&folded_v);
+    values[1] = raw_montgomery(&folded_h);
+    [folded_v, folded_h]
+}
+
 fn fold_interleaved_in_place(
     values: &mut [RawMontgomery],
     stride: usize,
@@ -1224,35 +1414,83 @@ fn fold_interleaved_in_place(
     debug_assert!(!values.is_empty());
     debug_assert_eq!(values.len() % 2, 0);
     let chunk_len = 4 * stride;
-    let fold_chunk = |values: &mut [RawMontgomery]| {
-        let high_offset = 2 * stride;
-        let folded_v = interpolate_raw_pair(
-            &values[0],
-            values.get(high_offset),
-            challenge,
-            field_cfg,
-            zero,
-        );
-        let folded_h = interpolate_raw_pair(
-            &values[1],
-            values.get(high_offset + 1),
-            challenge,
-            field_cfg,
-            zero,
-        );
-        values[0] = raw_montgomery(&folded_v);
-        values[1] = raw_montgomery(&folded_h);
-    };
 
     #[cfg(feature = "parallel")]
     if values.len().div_ceil(chunk_len) >= 1 << 10 && rayon::current_num_threads() > 1 {
-        values.par_chunks_mut(chunk_len).for_each(fold_chunk);
+        values.par_chunks_mut(chunk_len).for_each(|values| {
+            fold_interleaved_chunk_in_place(values, stride, challenge, field_cfg, zero);
+        });
         return;
     }
 
     for chunk in values.chunks_mut(chunk_len) {
-        fold_chunk(chunk);
+        fold_interleaved_chunk_in_place(chunk, stride, challenge, field_cfg, zero);
     }
+}
+
+/// Folds one interleaved tail coordinate and prepares the following round's
+/// `[c0, c2]` buckets from adjacent pairs of newly folded cells.
+fn fold_interleaved_and_prepare_next_round_in_place(
+    values: &mut [RawMontgomery],
+    stride: usize,
+    challenge: &Field,
+    field_cfg: &FieldConfig,
+    zero: &Field,
+    reducer: &OptimizedSumcheckReducer,
+) -> Result<[Field; 2], SumcheckError> {
+    debug_assert!(!values.is_empty());
+    debug_assert_eq!(values.len() % 2, 0);
+    let fold_chunk_len = 4 * stride;
+    let superchunk_len = 2 * fold_chunk_len;
+    let fold_and_accumulate = |mut accumulators: [ProductAccumulator; 2],
+                               values: &mut [RawMontgomery]| {
+        debug_assert!(values.len() >= 2);
+        debug_assert!(values.len() <= superchunk_len);
+        let first_len = values.len().min(fold_chunk_len);
+        let (first, second) = values.split_at_mut(first_len);
+        let folded_zero =
+            fold_interleaved_chunk_in_place(first, stride, challenge, field_cfg, zero);
+        let folded_one = if second.is_empty() {
+            [zero.clone(), zero.clone()]
+        } else {
+            fold_interleaved_chunk_in_place(second, stride, challenge, field_cfg, zero)
+        };
+
+        product_multiply_accumulate(
+            reducer,
+            &mut accumulators[0],
+            &folded_zero[0],
+            &folded_zero[1],
+        );
+        product_multiply_accumulate(
+            reducer,
+            &mut accumulators[1],
+            &(folded_one[0].clone() - &folded_zero[0]),
+            &(folded_one[1].clone() - &folded_zero[1]),
+        );
+        accumulators
+    };
+
+    #[cfg(feature = "parallel")]
+    if values.len().div_ceil(fold_chunk_len) >= 1 << 10 && rayon::current_num_threads() > 1 {
+        let accumulators = values
+            .par_chunks_mut(superchunk_len)
+            .fold(
+                || std::array::from_fn(|_| product_accumulator_zero(reducer)),
+                fold_and_accumulate,
+            )
+            .reduce(
+                || std::array::from_fn(|_| product_accumulator_zero(reducer)),
+                |left, right| merge_product_accumulators(left, right, reducer),
+            );
+        return reduce_product_accumulators(accumulators, reducer);
+    }
+
+    let accumulators = values.chunks_mut(superchunk_len).fold(
+        std::array::from_fn(|_| product_accumulator_zero(reducer)),
+        fold_and_accumulate,
+    );
+    reduce_product_accumulators(accumulators, reducer)
 }
 
 #[inline]
@@ -1541,6 +1779,140 @@ mod tests {
             h_words,
             claim,
         )
+    }
+
+    fn assert_first_tail_fused_matches_reference<const K: usize>() {
+        const NUM_VARS: usize = 8;
+        const LIVE_LEN: usize = 13;
+
+        let field_cfg = spartan_f2z_field_config();
+        let zero = Field::zero_with_cfg(&field_cfg);
+        let one = Field::one_with_cfg(&field_cfg);
+        let reducer = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
+        let values = (0..LIVE_LEN)
+            .map(|index| field(19 * index as u64 + 5, &field_cfg))
+            .collect::<Vec<_>>();
+        let mut h_words = vec![0u64; LIVE_LEN.div_ceil(64)];
+        for index in 0..LIVE_LEN {
+            let bit = ((index * 7 + 3).count_ones() & 1) as u64;
+            h_words[index / 64] |= bit << (index % 64);
+        }
+        let prefix_challenges = (0..K)
+            .map(|index| field(11 * index as u64 + 7, &field_cfg))
+            .collect::<Vec<_>>();
+        let prefix_weights = equality_weights_lsb(&prefix_challenges, &zero, &one);
+        let table = fold_prefix_v_table::<K, _>(
+            NUM_VARS,
+            LIVE_LEN,
+            &|index| Ok(values[index].clone()),
+            &prefix_challenges,
+            &field_cfg,
+            &zero,
+            &one,
+            &reducer,
+        )
+        .unwrap();
+        let mut reference = CompactPrefixVTable {
+            values: table.values.clone(),
+            suffix_count: table.suffix_count,
+        };
+        let mut fused = table;
+        let challenge = field(113, &field_cfg);
+
+        fold_first_tail_round_in_place::<K, _>(
+            &mut reference,
+            LIVE_LEN,
+            &h_words,
+            &prefix_weights,
+            &challenge,
+            &field_cfg,
+            &zero,
+            &one,
+            &reducer,
+        )
+        .unwrap();
+        let expected =
+            sum_interleaved_round_coefficients(&reference.values, 1, &field_cfg, &reducer).unwrap();
+        let actual = fold_first_tail_round_and_prepare_next_in_place::<K, _>(
+            &mut fused,
+            LIVE_LEN,
+            &h_words,
+            &prefix_weights,
+            &challenge,
+            &field_cfg,
+            &zero,
+            &one,
+            &reducer,
+        )
+        .unwrap();
+
+        assert_eq!(fused.values, reference.values, "K={K}");
+        assert_eq!(fused.suffix_count, reference.suffix_count, "K={K}");
+        assert_eq!(actual, expected, "K={K}");
+    }
+
+    #[test]
+    fn fused_first_tail_fold_and_prepare_matches_separate_passes() {
+        assert_first_tail_fused_matches_reference::<0>();
+        assert_first_tail_fused_matches_reference::<1>();
+        assert_first_tail_fused_matches_reference::<2>();
+        assert_first_tail_fused_matches_reference::<3>();
+        assert_first_tail_fused_matches_reference::<4>();
+    }
+
+    #[test]
+    fn fused_interleaved_fold_and_prepare_matches_separate_passes() {
+        let field_cfg = spartan_f2z_field_config();
+        let zero = Field::zero_with_cfg(&field_cfg);
+        let reducer = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
+
+        for stride in [1usize, 2, 4] {
+            let fold_chunk_len = 4 * stride;
+            let lengths = [
+                2,
+                2 * stride + 2,
+                fold_chunk_len,
+                fold_chunk_len + 2,
+                2 * fold_chunk_len,
+                3 * fold_chunk_len + 2,
+                fold_chunk_len * (1 << 10),
+            ];
+            for length in lengths {
+                for challenge in [
+                    zero.clone(),
+                    Field::one_with_cfg(&field_cfg),
+                    field(211, &field_cfg),
+                ] {
+                    let values = (0..length)
+                        .map(|index| raw_montgomery(&field(13 * index as u64 + 17, &field_cfg)))
+                        .collect::<Vec<_>>();
+                    let mut reference = values.clone();
+                    let mut fused = values;
+
+                    fold_interleaved_in_place(
+                        &mut reference,
+                        stride,
+                        &challenge,
+                        &field_cfg,
+                        &zero,
+                    );
+                    let expected = sum_interleaved_round_coefficients(
+                        &reference,
+                        2 * stride,
+                        &field_cfg,
+                        &reducer,
+                    )
+                    .unwrap();
+                    let actual = fold_interleaved_and_prepare_next_round_in_place(
+                        &mut fused, stride, &challenge, &field_cfg, &zero, &reducer,
+                    )
+                    .unwrap();
+
+                    assert_eq!(fused, reference, "stride={stride}, length={length}");
+                    assert_eq!(actual, expected, "stride={stride}, length={length}");
+                }
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
