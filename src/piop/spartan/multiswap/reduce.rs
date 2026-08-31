@@ -160,7 +160,12 @@ mod tests {
 
         let mu = biguint_mod_u128(&lifted, q);
         assert!(step50_accepts_lift(&lifted, mu, q, rw.len() * cw.len()));
-        assert!(!step50_accepts_lift(&lifted, mu ^ 1, q, rw.len() * cw.len()));
+        assert!(!step50_accepts_lift(
+            &lifted,
+            mu ^ 1,
+            q,
+            rw.len() * cw.len()
+        ));
         assert!(!step50_accepts_lift(
             &(&lifted + step50_mu_prime_bound(rw.len() * cw.len(), q)),
             mu,
@@ -172,7 +177,10 @@ mod tests {
         let (rw_reduced, cw_reduced, claimed) = step50_reduce(&rw, &cw, &lifted, q_prime);
         assert!(rw_reduced.iter().all(|&w| w < q_prime));
         assert!(cw_reduced.iter().all(|&w| w < q_prime));
-        assert_eq!(claimed, biguint_mod_u128(&dense_lift(&rows, &rw, &cw), q_prime));
+        assert_eq!(
+            claimed,
+            biguint_mod_u128(&dense_lift(&rows, &rw, &cw), q_prime)
+        );
         // The reduced-factor tensor evaluates to the reduced claim mod q'.
         let reduced_eval = dense_lift(&rows, &rw_reduced, &cw_reduced);
         assert_eq!(biguint_mod_u128(&reduced_eval, q_prime), claimed);

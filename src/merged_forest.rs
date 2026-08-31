@@ -867,7 +867,7 @@ fn drive_grouped(
     s: usize,
     live: usize,
 ) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
-    assert!(depth >= 1 && s >= 1, "merged forest needs depth >= 1, s >= 1");
+    assert!(depth >= 1, "merged forest needs depth >= 1");
     let num_trees = roots.len();
     assert!(live >= 1 && live <= num_trees, "live columns must be in 1..=2^s");
     // Elided trees are constant 1 (see `col_elide`): their whole tail is
@@ -913,7 +913,11 @@ fn drive_grouped(
             (None, Vec::new(), e, o)
         } else {
             let _g = crate::utils::prof::scope("mf:phaseA");
-            let eq_zc = build_eq_x_r_vec(&z_c, &()).expect("s >= 1");
+            let eq_zc = if z_c.is_empty() {
+                vec![one]
+            } else {
+                build_eq_x_r_vec(&z_c, &()).expect("nonempty tree point")
+            };
             // The elided tail's weight, folded into one group's `scale`.
             let const_scale = eq_zc[live..].iter().fold(Gf::zero(), |a, &b| a + b);
             // `bufs` carries `live` real groups, plus the synthetic
@@ -1934,7 +1938,11 @@ fn run_arity2_layer(
 ) -> MergedLayer {
     let one = Gf::one();
     let _g = crate::utils::prof::scope("mf:phaseA");
-    let eq_zc = build_eq_x_r_vec(z_c, &()).expect("s >= 1");
+    let eq_zc = if z_c.is_empty() {
+        vec![one]
+    } else {
+        build_eq_x_r_vec(z_c, &()).expect("nonempty tree point")
+    };
     let groups: Vec<EqInnerGroupMixed<Gf>> = bl
         .bufs
         .into_iter()
@@ -2124,7 +2132,11 @@ pub fn prove_merged_forest_lazy_quad(
                 (None, Vec::new(), finals)
             } else {
                 let _g = crate::utils::prof::scope("mf:phaseA");
-                let eq_zc = build_eq_x_r_vec(&z_c, &()).expect("s >= 1");
+                let eq_zc = if z_c.is_empty() {
+                    vec![one]
+                } else {
+                    build_eq_x_r_vec(&z_c, &()).expect("nonempty tree point")
+                };
                 let groups: Vec<QuadGroup> = quarters
                     .into_iter()
                     .zip(eq_zc.iter())
@@ -2271,7 +2283,11 @@ pub fn prove_merged_forest_lazy_quad(
                     .collect();
                 rows.into_flattened()
             };
-            let eq_zc = build_eq_x_r_vec(&z_c, &()).expect("s >= 1");
+            let eq_zc = if z_c.is_empty() {
+                vec![one]
+            } else {
+                build_eq_x_r_vec(&z_c, &()).expect("nonempty tree point")
+            };
             let groups: Vec<QuadBitGroup> = col_bits
                 .take()
                 .expect("leaf bits consumed once")
@@ -3422,7 +3438,7 @@ mod tests {
 
     #[test]
     fn merged_forest_roundtrips() {
-        for (depth, s) in [(1usize, 2usize), (3, 2), (5, 3), (6, 4)] {
+        for (depth, s) in [(1usize, 0usize), (1, 2), (3, 2), (5, 3), (6, 4)] {
             let leaves: Vec<Gf> =
                 (0..(1usize << (depth + s))).map(|i| sample(0x9000 + i as u64)).collect();
             let mut pt = Blake3Transcript::new();

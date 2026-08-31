@@ -21,15 +21,18 @@
 use std::ops::Range;
 
 use blake3::hazmat::{
-    merge_subtrees_non_root, merge_subtrees_root, ChainingValue, HasherExt, Mode,
+    ChainingValue, HasherExt, Mode, merge_subtrees_non_root, merge_subtrees_root,
 };
-use blake3::{Hasher, CHUNK_LEN};
+use blake3::{CHUNK_LEN, Hasher};
 
 /// Why a spliced digest could not be constructed or evaluated.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum SplicedDigestError {
     /// The hole must lie inside the first chunk and inside the stream.
-    HoleOutOfBounds { hole: Range<usize>, stream_len: usize },
+    HoleOutOfBounds {
+        hole: Range<usize>,
+        stream_len: usize,
+    },
     /// `digest_with` was called with bytes of the wrong length.
     HoleLengthMismatch { expected: usize, actual: usize },
 }

@@ -41,13 +41,14 @@ use num_bigint::BigUint;
 use thiserror::Error;
 
 use crate::{
-    f2map::{cell_count, PreparedVirtualMap, PreparedVirtualMapError, RepeatedVirtualMap, VirtualMap},
+    f2map::{
+        PreparedVirtualMap, PreparedVirtualMapError, RepeatedVirtualMap, VirtualMap, cell_count,
+    },
     ligerito::packed_vars,
     ligerito_flock::{
-        commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito_virtual_runtime,
-        sha_paper128_lig_configs, validate_ligerito_commitment,
-        verify_mle_eval_mod_q_ligerito_virtual_runtime, FlockCommitHint, FlockRsError,
-        IntEvalRsLigVirtProof,
+        FlockCommitHint, FlockRsError, IntEvalRsLigVirtProof, commit_rs_ligerito_rows,
+        prove_mle_eval_mod_q_ligerito_virtual_runtime, validate_ligerito_commitment,
+        validated_udr_lig_configs_for_target, verify_mle_eval_mod_q_ligerito_virtual_runtime,
     },
     pcs::{IntEvalParams, ProjectCanonicalU128},
     sparse_matrix::SparseMatrix,
@@ -55,28 +56,27 @@ use crate::{
 };
 
 use super::super::{
-    absorb_spartan_message,
+    SpartanF2zField, SpartanField, absorb_spartan_message,
     f2z::f2z_generator,
-    grinding::{grind_and_absorb, verify_and_absorb, GrindingDomain, GrindingError, GrindingRound},
-    matrix::{eq_table, ScaledMleEvaluationClaim},
+    grinding::{GrindingDomain, GrindingError, GrindingRound, grind_and_absorb, verify_and_absorb},
+    matrix::{ScaledMleEvaluationClaim, eq_table},
     piop::{
-        prove_spartan_piop_with_strategy, verify_spartan_proof, SpartanError, SpartanPiopProof,
-        SpartanReductionStrategy,
+        SpartanError, SpartanPiopProof, SpartanReductionStrategy, prove_spartan_piop_with_strategy,
+        verify_spartan_proof,
     },
     profile::{IopSecurityParams, IopSecurityProfile, Limber114, ProfileError},
-    SpartanF2zField, SpartanField,
 };
 use super::{
-    circuit::{MultiswapCircuit, MultiswapCircuitError, MULTISWAP_VALUE_BITS},
+    circuit::{MULTISWAP_VALUE_BITS, MultiswapCircuit, MultiswapCircuitError},
     prime::{
+        MultiswapFingerprintContext, MultiswapPrimeError, MultiswapPrimeProfile,
         multiswap_instance_facts, sample_multiswap_fingerprint_context,
-        sample_multiswap_reduction_prime, MultiswapFingerprintContext, MultiswapPrimeError,
-        MultiswapPrimeProfile,
+        sample_multiswap_reduction_prime,
     },
     reduce::{step50_accepts_lift, step50_integer_lift, step50_reduce},
     relation::{
-        MultiswapAssignment, MultiswapIntegerRelation, MultiswapLayout, MultiswapLayoutError,
-        MULTISWAP_QUOS_SLOT_START, MULTISWAP_SLOTS, MULTISWAP_W_SLOT_START,
+        MULTISWAP_QUOS_SLOT_START, MULTISWAP_SLOTS, MULTISWAP_W_SLOT_START, MultiswapAssignment,
+        MultiswapIntegerRelation, MultiswapLayout, MultiswapLayoutError,
     },
 };
 
@@ -248,7 +248,8 @@ impl PreparedMultiswapRelation {
 pub fn multiswap_lig_configs(
     p: &IntEvalParams,
 ) -> Result<(LigProverConfig, LigVerifierConfig), MultiswapError> {
-    sha_paper128_lig_configs(packed_vars(p)).map_err(MultiswapError::LigeritoConfig)
+    validated_udr_lig_configs_for_target(packed_vars(p), 128)
+        .map_err(MultiswapError::LigeritoConfig)
 }
 
 /// Commits prebuilt packed witness/quotient bit rows.
@@ -373,12 +374,7 @@ pub fn prove_multiswap_mod_r1cs<T: Transcript + Send>(
         let _scope = crate::utils::prof::scope("multiswap:integer_lift_prove");
         step50_integer_lift(hint.rows(), &opening.row_weights_q, &opening.col_weights_q)
     };
-    if !step50_accepts_lift(
-        &mu_prime,
-        opening.claimed_q,
-        fingerprint.q(),
-        cell_count(p),
-    ) {
+    if !step50_accepts_lift(&mu_prime, opening.claimed_q, fingerprint.q(), cell_count(p)) {
         return Err(MultiswapError::InvalidIntegerLift);
     }
     absorb_opening_claim(transcript, &binding, &terminal_claim, &opening, &mu_prime);
@@ -485,7 +481,13 @@ pub fn verify_multiswap_mod_r1cs<T: Transcript + Send>(
     ) {
         return Err(MultiswapError::InvalidIntegerLift);
     }
-    absorb_opening_claim(transcript, &binding, &terminal_claim, &opening, &proof.mu_prime);
+    absorb_opening_claim(
+        transcript,
+        &binding,
+        &terminal_claim,
+        &opening,
+        &proof.mu_prime,
+    );
 
     {
         let _scope = crate::utils::prof::scope("multiswap:reduction_grinding_verify");
@@ -701,10 +703,7 @@ fn validate_bit_rows(p: &IntEvalParams, rows: &[Vec<u64>]) -> Result<(), Multisw
 }
 
 /// Digest binding the integer statement, layout, profile, and commitment.
-fn assignment_binding(
-    prepared: &PreparedMultiswapRelation,
-    commitment: &Commitment,
-) -> [u8; 32] {
+fn assignment_binding(prepared: &PreparedMultiswapRelation, commitment: &Commitment) -> [u8; 32] {
     let layout = prepared.layout();
     let p = prepared.params();
     let profile = prepared.profile();
@@ -732,7 +731,12 @@ fn assignment_binding(
     }
     let (fingerprint_min, fingerprint_max) = profile.fingerprint_interval();
     let (reduction_min, reduction_max) = profile.reduction_interval();
-    for bound in [fingerprint_min, fingerprint_max, reduction_min, reduction_max] {
+    for bound in [
+        fingerprint_min,
+        fingerprint_max,
+        reduction_min,
+        reduction_max,
+    ] {
         hasher.update(&bound.to_le_bytes());
     }
     hasher.update(&prepared.map().digest());
@@ -810,14 +814,9 @@ mod tests {
         let _env = env_guard();
         let (prepared, assignment, hint, pc, vc) = mini_setup();
         let mut prover_transcript = Blake3Transcript::new();
-        let proof = prove_multiswap_mod_r1cs(
-            &mut prover_transcript,
-            &prepared,
-            &assignment,
-            &hint,
-            &pc,
-        )
-        .unwrap();
+        let proof =
+            prove_multiswap_mod_r1cs(&mut prover_transcript, &prepared, &assignment, &hint, &pc)
+                .unwrap();
 
         let mut verifier_transcript = Blake3Transcript::new();
         verify_multiswap_mod_r1cs(
@@ -835,14 +834,9 @@ mod tests {
         let _env = env_guard();
         let (prepared, assignment, hint, pc, vc) = mini_setup();
         let mut prover_transcript = Blake3Transcript::new();
-        let mut proof = prove_multiswap_mod_r1cs(
-            &mut prover_transcript,
-            &prepared,
-            &assignment,
-            &hint,
-            &pc,
-        )
-        .unwrap();
+        let mut proof =
+            prove_multiswap_mod_r1cs(&mut prover_transcript, &prepared, &assignment, &hint, &pc)
+                .unwrap();
 
         let mut transcript = Blake3Transcript::new();
         let fingerprint =
@@ -850,14 +844,16 @@ mod tests {
         proof.spartan.outer.az_mle_claim =
             SpartanF2zField::from_with_cfg(12345u64, fingerprint.field_config());
         let mut verifier_transcript = Blake3Transcript::new();
-        assert!(verify_multiswap_mod_r1cs(
-            &mut verifier_transcript,
-            &prepared,
-            &hint.commitment,
-            &proof,
-            &vc,
-        )
-        .is_err());
+        assert!(
+            verify_multiswap_mod_r1cs(
+                &mut verifier_transcript,
+                &prepared,
+                &hint.commitment,
+                &proof,
+                &vc,
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -865,14 +861,9 @@ mod tests {
         let _env = env_guard();
         let (prepared, assignment, hint, pc, vc) = mini_setup();
         let mut prover_transcript = Blake3Transcript::new();
-        let honest = prove_multiswap_mod_r1cs(
-            &mut prover_transcript,
-            &prepared,
-            &assignment,
-            &hint,
-            &pc,
-        )
-        .unwrap();
+        let honest =
+            prove_multiswap_mod_r1cs(&mut prover_transcript, &prepared, &assignment, &hint, &pc)
+                .unwrap();
 
         // Wrong residue class modulo Q: rejected deterministically.
         let mut wrong_class = honest.clone();
@@ -897,14 +888,16 @@ mod tests {
         let mut wrong_lift = honest.clone();
         wrong_lift.mu_prime += BigUint::from(fingerprint.q());
         let mut verifier_transcript = Blake3Transcript::new();
-        assert!(verify_multiswap_mod_r1cs(
-            &mut verifier_transcript,
-            &prepared,
-            &hint.commitment,
-            &wrong_lift,
-            &vc,
-        )
-        .is_err());
+        assert!(
+            verify_multiswap_mod_r1cs(
+                &mut verifier_transcript,
+                &prepared,
+                &hint.commitment,
+                &wrong_lift,
+                &vc,
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -924,23 +917,20 @@ mod tests {
         let hint = commit_multiswap_witness(prepared.params(), rows, &pc).unwrap();
 
         let mut prover_transcript = Blake3Transcript::new();
-        let attempt = prove_multiswap_mod_r1cs(
-            &mut prover_transcript,
-            &prepared,
-            &assignment,
-            &hint,
-            &pc,
-        );
+        let attempt =
+            prove_multiswap_mod_r1cs(&mut prover_transcript, &prepared, &assignment, &hint, &pc);
         if let Ok(proof) = attempt {
             let mut verifier_transcript = Blake3Transcript::new();
-            assert!(verify_multiswap_mod_r1cs(
-                &mut verifier_transcript,
-                &prepared,
-                &hint.commitment,
-                &proof,
-                &vc,
-            )
-            .is_err());
+            assert!(
+                verify_multiswap_mod_r1cs(
+                    &mut verifier_transcript,
+                    &prepared,
+                    &hint.commitment,
+                    &proof,
+                    &vc,
+                )
+                .is_err()
+            );
         }
     }
 }

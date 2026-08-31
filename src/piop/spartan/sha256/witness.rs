@@ -1,47 +1,75 @@
 //! SHA-256 compression witness generation.
 //!
-//! One [`ProductWitgen`] execution produces the Boolean source `f`, the
-//! synthesized integer assignment `h_bar`, and exact `A h_bar`, `B h_bar`,
-//! and `C h_bar` values. Batch packing only transposes these already-generated
-//! values into the row layout consumed by F2Z; it never evaluates `M f`.
+//! One [`Witgen`] execution produces the Boolean source `f` and synthesized
+//! integer assignment `h_bar` without evaluating or retaining any constraint
+//! matrix products. A batch shares one leading constant cell, places every
+//! instance immediately after the preceding instance, and pads only the final
+//! suffix of the complete F2Z domain.
 
 use std::array;
 
 use circuit::{
-    matrix_products::{IntegerProducts, MatrixProducts, RuntimeModulus},
-    sha256::{compression_circuit, COMPRESSION_HINT_BITS, COMPRESSION_INPUT_BITS},
-    witgen::{PackedWitness, ProductWitgen},
+    sha256::{COMPRESSION_HINT_BITS, COMPRESSION_INPUT_BITS, compression_circuit},
+    witgen::{PackedWitness, Witgen},
 };
-use crypto_primitives::{crypto_bigint_monty::F128, crypto_bigint_uint::Uint, PrimeField};
-use num_bigint::BigUint;
 use thiserror::Error;
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use crate::{
-    pcs::IntEvalParams,
-    piop::spartan::{sumcheck::R1csProductMles, SpartanField},
-    poly::mle::DenseMultilinearExtension,
-};
+use crate::pcs::IntEvalParams;
 
 use super::constraints::{
-    SHA256_CONSTRAINTS, SHA256_CONSTRAINT_LOCAL_VARS, SHA256_CONSTRAINT_STRIDE,
-    SHA256_F_BAR_LIVE_BITS, SHA256_F_LIVE_BITS, SHA256_F_LOCAL_VARS, SHA256_F_STRIDE,
-    SHA256_H_BAR_LIVE_BITS, SHA256_H_LOCAL_VARS, SHA256_H_STRIDE,
+    PreparedSha256CompressionBatch, SHA256_F_INSTANCE_BITS, SHA256_F_LIVE_BITS,
+    SHA256_H_BAR_LIVE_BITS, SHA256_H_INSTANCE_BITS,
 };
 
 /// One independent SHA-256 compression input: chaining state and message block.
 pub type Sha256CompressionInput = ([u32; 8], [u32; 16]);
 
-/// Public input and claimed output for one SHA-256 compression.
+/// Public claim for one SHA-256 compression.
+///
+/// Let `R = Z / 2^32 Z` be the ring of 32-bit words. This statement is a
+/// tuple `(H, M, H_hat) in R^8 x R^16 x R^8` asserting
+///
+/// `H_hat = Compress_SHA256(H, M)`.
+///
+/// If `V^(64) = (a, b, c, d, e, f, g, h)` is the working state after the 64
+/// SHA-256 rounds, this is equivalently the component-wise relation
+/// `H_hat = H + V^(64) mod 2^32`.
+///
+/// This statement covers one compression invocation only: `M` is an
+/// already-parsed 512-bit message block, so no message padding or byte-to-word
+/// parsing occurs here. Each word `x` is decomposed inside the circuit as
+/// `x = sum_{b=0}^{31} x_b 2^b`, with Boolean bits `x_b` numbered
+/// least-significant first. The canonical public order is `H`, `M`, `H_hat`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Sha256CompressionStatement {
-    /// Initial eight-word chaining state.
+    /// Initial chaining state `H = (H_0, ..., H_7) in R^8`.
+    ///
+    /// These words initialize the SHA-256 working state:
+    /// `(a_0, b_0, c_0, d_0, e_0, f_0, g_0, h_0) = H`.
     pub state: [u32; 8],
-    /// Sixteen-word message block.
+
+    /// One 512-bit message block `M = (M_0, ..., M_15) in R^16`.
+    ///
+    /// The block supplies the first sixteen words of the 64-word message
+    /// schedule: `W_j = M_j` for `0 <= j < 16`. For `16 <= j < 64`,
+    ///
+    /// `W_j = sigma_1(W_{j-2}) + W_{j-7}`
+    /// `    + sigma_0(W_{j-15}) + W_{j-16} mod 2^32`.
+    ///
+    /// Thus `block[j]` represents `M_j = W_j` only for `0 <= j < 16`; the
+    /// remaining schedule words are derived by the compression function.
     pub block: [u32; 16],
-    /// Claimed eight-word state after compression.
+
+    /// Claimed post-compression state
+    /// `H_hat = (H_hat_0, ..., H_hat_7) in R^8`.
+    ///
+    /// A valid statement satisfies
+    /// `H_hat_j = H_j + V_j^(64) mod 2^32` for every `0 <= j < 8`. This is the
+    /// next chaining state after one block, not necessarily a complete
+    /// SHA-256 message digest.
     pub claimed_output: [u32; 8],
 }
 
@@ -66,41 +94,59 @@ impl Sha256CompressionStatement {
     }
 }
 
-/// Tuple returned by [`generate_sha256_compression_witnesses`]: committed
-/// source rows, synthesized assignment rows, Spartan products, and native
-/// compression outputs. This remains a tuple so callers can immediately move
-/// each component to its one consumer without retaining a wrapper object.
-pub type Sha256CompressionWitnessBatch = (
-    Vec<Vec<u64>>,
-    Vec<Vec<u64>>,
-    R1csProductMles<F128>,
-    Vec<[u32; 8]>,
-);
-
-/// A complete q-independent SHA-256 witness batch.
+/// A complete product-free SHA-256 witness batch.
 ///
-/// Boolean source and assignment rows are packed immediately, but the three
-/// R1CS matrix products remain exact signed integers. The caller can therefore
-/// commit to [`Self::source_rows`] before a transcript-selected prime is known,
-/// then invoke [`Self::project_products`] under that prime without replaying
-/// the SHA circuit.
+/// Boolean source and assignment rows are generated and packed immediately.
+/// No exact or field-valued constraint-matrix products are materialized; the
+/// linear prover consumes the signed sparse relation and packed assignment
+/// bits directly.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ExactSha256CompressionWitnessBatch {
+pub struct Sha256CompressionWitnessBatch {
+    /// Packed F2Z source rows with logical bit layout
+    ///
+    /// `source = [1 | f_0 | f_1 | ... | f_{N-1} | 0 ... 0]`.
+    ///
+    /// The leading constant is shared. Each `f_i` contributes exactly
+    /// [`SHA256_F_INSTANCE_BITS`] adjacent cells, and only the complete
+    /// power-of-two domain has a trailing zero suffix. For F2Z parameters
+    /// `(t, s)`, flat sequence cell `j` is row `j mod 2^t` of column
+    /// `j >> t`; the low `t` sequence bits are the packed-row coordinates.
     source_rows: Vec<Vec<u64>>,
+
+    /// Packed F2Z assignment rows with logical bit layout
+    ///
+    /// `assignment = [1 | h_0[1..] | h_1[1..] | ... | h_{N-1}[1..] | 0 ... 0]`.
+    ///
+    /// Every local augmented assignment `h_bar_i = (1, h_i)` uses the shared
+    /// leading one and contributes exactly [`SHA256_H_INSTANCE_BITS`] adjacent
+    /// nonconstant cells. There are no gaps between instances. Although the
+    /// values are stored as bits, the R1CS computation embeds them canonically
+    /// as the integers `0` and `1`.
     assignment_rows: Vec<Vec<u64>>,
-    exact_products: IntegerProducts,
+
+    /// Native compression results `O_i in (Z / 2^32 Z)^8`, in batch-instance
+    /// and SHA-256 state-word order.
+    ///
+    /// Each `u32` is the canonical representative of one output word:
+    /// `outputs[i][w] = sum_{b=0}^{31} output_bit[i, w, b] * 2^b`, with bits
+    /// numbered least-significant first inside the word.
     outputs: Vec<[u32; 8]>,
+
+    /// Positive batch cardinality `N` (not necessarily a power of two).
+    ///
+    /// This equals `outputs.len()` and the batch geometry's live instance
+    /// count.
     instances: usize,
 }
 
-impl ExactSha256CompressionWitnessBatch {
-    /// Packed committed Boolean source rows, including the leading-one row.
-    pub fn source_rows(&self) -> &[Vec<u64>] {
+impl Sha256CompressionWitnessBatch {
+    /// Packed committed Boolean source rows, including the shared leading-one cell.
+    pub(crate) fn source_rows(&self) -> &[Vec<u64>] {
         &self.source_rows
     }
 
-    /// Packed synthesized integer-assignment rows.
-    pub fn assignment_rows(&self) -> &[Vec<u64>] {
+    /// Packed synthesized Boolean assignment rows.
+    pub(crate) fn assignment_rows(&self) -> &[Vec<u64>] {
         &self.assignment_rows
     }
 
@@ -109,119 +155,83 @@ impl ExactSha256CompressionWitnessBatch {
         &self.outputs
     }
 
-    /// Exact signed integer `A h`, `B h`, and `C h` values in
-    /// instance-major, live-constraint-row order.
-    pub const fn exact_products(&self) -> &IntegerProducts {
-        &self.exact_products
+    /// Reads one cell of the padded packed source domain.
+    #[cfg(test)]
+    pub(crate) fn source_bit(&self, flat_column: usize) -> Option<bool> {
+        packed_rows_bit(&self.source_rows, flat_column)
     }
 
-    /// Reduces the retained exact products under an explicitly selected and
-    /// validated runtime prime field.
-    pub fn project_products(
-        &self,
-        field_config: &<F128 as PrimeField>::Config,
-    ) -> Result<R1csProductMles<F128>, Sha256WitnessError> {
-        <F128 as SpartanField>::validate_config(field_config)
-            .map_err(|_| Sha256WitnessError::InvalidFieldConfiguration)?;
-        let modulus = RuntimeModulus::<2>::new(BigUint::from_bytes_le(
-            &F128::canonical_modulus_encoding(field_config),
-        ))
-        .map_err(|_| Sha256WitnessError::InvalidFieldConfiguration)?;
-        let products = self.exact_products.reduce_parallel(&modulus);
-        Ok(pack_products(self.instances, &products, field_config))
+    /// Reads one cell of the padded packed assignment domain.
+    #[cfg(test)]
+    pub(crate) fn assignment_bit(&self, flat_column: usize) -> Option<bool> {
+        packed_rows_bit(&self.assignment_rows, flat_column)
     }
 
-    /// Consumes this exact batch after explicitly projecting its products.
-    pub fn into_projected(
-        self,
-        field_config: &<F128 as PrimeField>::Config,
-    ) -> Result<Sha256CompressionWitnessBatch, Sha256WitnessError> {
-        let products = self.project_products(field_config)?;
-        Ok((
-            self.source_rows,
-            self.assignment_rows,
-            products,
-            self.outputs,
-        ))
+    /// Number of live compression instances represented by the packed rows.
+    pub(crate) const fn instances(&self) -> usize {
+        self.instances
+    }
+
+    #[cfg(test)]
+    pub(super) fn source_rows_mut_for_tests(&mut self) -> &mut [Vec<u64>] {
+        &mut self.source_rows
+    }
+
+    #[cfg(test)]
+    pub(super) fn assignment_rows_mut_for_tests(&mut self) -> &mut [Vec<u64>] {
+        &mut self.assignment_rows
     }
 }
 
 /// Failures while generating or packing a SHA-256 compression batch.
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum Sha256WitnessError {
-    /// Inputs and F2Z parameters do not describe one common power-of-two batch.
+    /// Inputs and F2Z parameters do not describe one common packed batch.
     #[error("SHA-256 witness inputs do not match the batch geometry")]
     InvalidGeometry,
 
     /// The generated circuit unexpectedly changed its fixed local shape.
     #[error("SHA-256 circuit witness has an unexpected local shape")]
     UnexpectedCircuitShape,
-
-    /// Product projection requires a genuine, sufficiently large runtime
-    /// prime field.
-    #[error("SHA-256 witness products use an invalid runtime prime field")]
-    InvalidFieldConfiguration,
-
-    /// Product reduction must use the fixed field shared by Spartan and F2Z.
-    #[deprecated(note = "runtime-prime projection supersedes the fixed-modulus restriction")]
-    #[error("SHA-256 witness products use an unsupported field modulus")]
-    UnsupportedFieldModulus,
 }
 
-struct CompressionShard {
+struct PackedCompressionShard {
     f: PackedWitness,
     h_bar: PackedWitness,
-    exact_products: IntegerProducts,
     output: [u32; 8],
 }
 
-/// Generates packed Boolean rows and retains exact signed Spartan products
-/// without consulting a runtime modulus.
-pub fn generate_sha256_compression_witnesses_exact(
+/// Generates product-free packed Boolean source and assignment rows.
+pub fn generate_sha256_compression_witnesses(
+    prepared: &PreparedSha256CompressionBatch,
     inputs: &[Sha256CompressionInput],
-    p_f: &IntEvalParams,
-    p_h: &IntEvalParams,
-) -> Result<ExactSha256CompressionWitnessBatch, Sha256WitnessError> {
+) -> Result<Sha256CompressionWitnessBatch, Sha256WitnessError> {
+    if inputs.len() != prepared.instances() {
+        return Err(Sha256WitnessError::InvalidGeometry);
+    }
+    let p_f = prepared.source_params();
+    let p_h = prepared.assignment_params();
     validate_geometry(inputs.len(), p_f, p_h)?;
 
     #[cfg(feature = "parallel")]
-    let shards: Vec<CompressionShard> = inputs
+    let shards: Vec<PackedCompressionShard> = inputs
         .par_iter()
         .map(generate_one)
         .collect::<Result<_, _>>()?;
     #[cfg(not(feature = "parallel"))]
-    let shards: Vec<CompressionShard> =
+    let shards: Vec<PackedCompressionShard> =
         inputs.iter().map(generate_one).collect::<Result<_, _>>()?;
 
-    let source_rows = pack_source_rows(&shards);
-    let assignment_rows = pack_derived_rows(&shards);
+    let source_rows = pack_source_rows(&shards, p_f);
+    let assignment_rows = pack_derived_rows(&shards, p_h);
     let outputs = shards.iter().map(|shard| shard.output).collect();
-    let exact_products = flatten_exact_products(shards);
 
-    Ok(ExactSha256CompressionWitnessBatch {
+    Ok(Sha256CompressionWitnessBatch {
         source_rows,
         assignment_rows,
-        exact_products,
         outputs,
         instances: inputs.len(),
     })
-}
-
-/// Generates packed `f`, synthesized `h_bar`, and reduced Spartan products for
-/// a complete batch. The returned row stores are already in
-/// [`crate::ligerito_flock::commit_rs_ligerito_rows`] layout.
-///
-/// This compatibility wrapper performs both phases back-to-back. New
-/// commit-before-q flows should call
-/// [`generate_sha256_compression_witnesses_exact`] and project only after the
-/// transcript selects the runtime prime.
-pub fn generate_sha256_compression_witnesses(
-    inputs: &[Sha256CompressionInput],
-    p_f: &IntEvalParams,
-    p_h: &IntEvalParams,
-    field_config: &<F128 as PrimeField>::Config,
-) -> Result<Sha256CompressionWitnessBatch, Sha256WitnessError> {
-    generate_sha256_compression_witnesses_exact(inputs, p_f, p_h)?.into_projected(field_config)
 }
 
 fn validate_geometry(
@@ -230,33 +240,35 @@ fn validate_geometry(
     p_h: &IntEvalParams,
 ) -> Result<(), Sha256WitnessError> {
     if instances == 0
-        || !instances.is_power_of_two()
-        || p_f.rows() != instances
-        || p_h.rows() != instances
-        || p_f.s != SHA256_F_LOCAL_VARS
-        || p_h.s != SHA256_H_LOCAL_VARS
         || p_f.word_bits != 1
         || p_h.word_bits != 1
+        || p_f.cells() != (1 + instances * SHA256_F_INSTANCE_BITS).next_power_of_two()
+        || p_h.cells() != (1 + instances * SHA256_H_INSTANCE_BITS).next_power_of_two()
     {
         return Err(Sha256WitnessError::InvalidGeometry);
     }
     Ok(())
 }
 
-fn generate_one(input: &Sha256CompressionInput) -> Result<CompressionShard, Sha256WitnessError> {
+fn generate_one(
+    input: &Sha256CompressionInput,
+) -> Result<PackedCompressionShard, Sha256WitnessError> {
     let input_bits = compression_input_bits(input);
-    let mut generator = ProductWitgen::with_inputs_and_capacity(
+    let mut generator = Witgen::with_inputs_and_capacity(
         &input_bits,
         COMPRESSION_INPUT_BITS + COMPRESSION_HINT_BITS,
     );
     let output_bits = compression_circuit(&mut generator, &input_bits);
-    let (f, h_bar, exact) = generator.into_parts();
-    if f.bit_len() != SHA256_F_LIVE_BITS
-        || h_bar.bit_len() != SHA256_H_BAR_LIVE_BITS
-        || exact.a_mw.len() != SHA256_CONSTRAINTS
-        || exact.b_mw.len() != SHA256_CONSTRAINTS
-        || exact.c_mw.len() != SHA256_CONSTRAINTS
-    {
+    let (f, h_bar) = generator.into_witnesses();
+    finish_packed_shard(f, h_bar, &output_bits)
+}
+
+fn finish_packed_shard(
+    f: PackedWitness,
+    h_bar: PackedWitness,
+    output_bits: &[bool],
+) -> Result<PackedCompressionShard, Sha256WitnessError> {
+    if f.bit_len() != SHA256_F_LIVE_BITS || h_bar.bit_len() != SHA256_H_BAR_LIVE_BITS {
         return Err(Sha256WitnessError::UnexpectedCircuitShape);
     }
     let output = array::from_fn(|word| {
@@ -264,12 +276,7 @@ fn generate_one(input: &Sha256CompressionInput) -> Result<CompressionShard, Sha2
             value | (u32::from(output_bits[word * 32 + bit]) << bit)
         })
     });
-    Ok(CompressionShard {
-        f,
-        h_bar,
-        exact_products: exact,
-        output,
-    })
+    Ok(PackedCompressionShard { f, h_bar, output })
 }
 
 fn compression_input_bits(
@@ -285,202 +292,94 @@ fn compression_input_bits(
     })
 }
 
-fn pack_source_rows(shards: &[CompressionShard]) -> Vec<Vec<u64>> {
-    let words_per_row = shards.len().div_ceil(64);
-    let mut rows = vec![vec![0u64; words_per_row]; SHA256_F_STRIDE];
-    for (group, word) in rows[0].iter_mut().enumerate() {
-        let active = (shards.len() - group * 64).min(64);
-        *word = if active == 64 {
-            u64::MAX
-        } else {
-            (1u64 << active) - 1
-        };
-    }
-    transpose_witness_rows(shards, &mut rows, SHA256_F_LIVE_BITS, 1, |shard| &shard.f);
-    debug_assert!(rows[SHA256_F_BAR_LIVE_BITS..]
-        .iter()
-        .all(|row| row.iter().all(|word| *word == 0)));
-    rows
-}
-
-fn pack_derived_rows(shards: &[CompressionShard]) -> Vec<Vec<u64>> {
-    let words_per_row = shards.len().div_ceil(64);
-    let mut rows = vec![vec![0u64; words_per_row]; SHA256_H_STRIDE];
-    transpose_witness_rows(shards, &mut rows, SHA256_H_BAR_LIVE_BITS, 0, |shard| {
-        &shard.h_bar
-    });
-    rows
-}
-
-fn transpose_witness_rows(
-    shards: &[CompressionShard],
-    rows: &mut [Vec<u64>],
-    live_bits: usize,
-    output_offset: usize,
-    witness: impl Fn(&CompressionShard) -> &PackedWitness,
-) {
-    // Each group owns one word in every output row. A range loop makes that
-    // intentionally strided 64x64 transpose explicit.
-    #[allow(clippy::needless_range_loop)]
-    for group in 0..shards.len().div_ceil(64) {
-        let first_instance = group * 64;
-        let active = (shards.len() - first_instance).min(64);
-        for input_word in 0..live_bits.div_ceil(64) {
-            let mut block = [0u64; 64];
-            for lane in 0..active {
-                block[lane] = witness(&shards[first_instance + lane])
-                    .words()
-                    .get(input_word)
-                    .copied()
-                    .unwrap_or(0);
-            }
-            transpose64(&mut block);
-            let bit_start = input_word * 64;
-            let bit_end = (bit_start + 64).min(live_bits);
-            for bit in bit_start..bit_end {
-                rows[output_offset + bit][group] = block[bit - bit_start];
+/// Packs the compact source witnesses as
+/// `[1 | f_0 | ... | f_{N-1} | trailing zeros]`.
+///
+/// Each `f_i` contains [`COMPRESSION_INPUT_BITS`] input bits followed by
+/// [`COMPRESSION_HINT_BITS`] hint bits, for exactly
+/// [`SHA256_F_INSTANCE_BITS`] cells. Logical cells are packed least-significant
+/// bit first in the semantic sequence. The sequence index is also F2Z's
+/// physical column-major index: its low `t` bits select a packed row and its
+/// high `s` bits select a column.
+fn pack_source_rows<'a>(
+    shards: impl IntoIterator<Item = &'a PackedCompressionShard>,
+    params: &IntEvalParams,
+) -> Vec<Vec<u64>> {
+    let mut rows = empty_packed_rows(params);
+    set_flat_packed_bit(&mut rows, params, 0);
+    for (instance, shard) in shards.into_iter().enumerate() {
+        let start = 1 + instance * SHA256_F_INSTANCE_BITS;
+        for bit in 0..SHA256_F_LIVE_BITS {
+            if shard.f.bit(bit) {
+                set_flat_packed_bit(&mut rows, params, start + bit);
             }
         }
     }
+    rows
 }
 
-fn flatten_exact_products(shards: Vec<CompressionShard>) -> IntegerProducts {
-    let capacity = shards.len() * SHA256_CONSTRAINTS;
-    let mut products = IntegerProducts {
-        a_mw: Vec::with_capacity(capacity),
-        b_mw: Vec::with_capacity(capacity),
-        c_mw: Vec::with_capacity(capacity),
-    };
-    for shard in shards {
-        let IntegerProducts {
-            mut a_mw,
-            mut b_mw,
-            mut c_mw,
-        } = shard.exact_products;
-        products.a_mw.append(&mut a_mw);
-        products.b_mw.append(&mut b_mw);
-        products.c_mw.append(&mut c_mw);
-    }
-    products
-}
-
-fn pack_products(
-    instances: usize,
-    products: &MatrixProducts<2>,
-    field_config: &<F128 as PrimeField>::Config,
-) -> R1csProductMles<F128> {
-    debug_assert_eq!(products.a_mw.len(), instances * SHA256_CONSTRAINTS);
-    debug_assert_eq!(products.b_mw.len(), instances * SHA256_CONSTRAINTS);
-    debug_assert_eq!(products.c_mw.len(), instances * SHA256_CONSTRAINTS);
-
-    let table_len = instances * SHA256_CONSTRAINT_STRIDE;
-    let zero = F128::zero_with_cfg(field_config);
-    let mut az = vec![zero.clone(); table_len];
-    let mut bz = vec![zero.clone(); table_len];
-    let mut cz = vec![zero; table_len];
-
-    #[cfg(feature = "parallel")]
-    az.par_chunks_mut(SHA256_CONSTRAINT_STRIDE)
-        .zip(bz.par_chunks_mut(SHA256_CONSTRAINT_STRIDE))
-        .zip(cz.par_chunks_mut(SHA256_CONSTRAINT_STRIDE))
-        .enumerate()
-        .for_each(|(instance, ((a_out, b_out), c_out))| {
-            let start = instance * SHA256_CONSTRAINTS;
-            let end = start + SHA256_CONSTRAINTS;
-            write_product_block(a_out, &products.a_mw.values()[start..end], field_config);
-            write_product_block(b_out, &products.b_mw.values()[start..end], field_config);
-            write_product_block(c_out, &products.c_mw.values()[start..end], field_config);
-        });
-    #[cfg(not(feature = "parallel"))]
-    for instance in 0..instances {
-        let output_start = instance * SHA256_CONSTRAINT_STRIDE;
-        let output_end = output_start + SHA256_CONSTRAINT_STRIDE;
-        let input_start = instance * SHA256_CONSTRAINTS;
-        let input_end = input_start + SHA256_CONSTRAINTS;
-        write_product_block(
-            &mut az[output_start..output_end],
-            &products.a_mw.values()[input_start..input_end],
-            field_config,
-        );
-        write_product_block(
-            &mut bz[output_start..output_end],
-            &products.b_mw.values()[input_start..input_end],
-            field_config,
-        );
-        write_product_block(
-            &mut cz[output_start..output_end],
-            &products.c_mw.values()[input_start..input_end],
-            field_config,
-        );
-    }
-
-    let num_vars = instances.ilog2() as usize + SHA256_CONSTRAINT_LOCAL_VARS;
-    R1csProductMles {
-        az: DenseMultilinearExtension {
-            evaluations: az,
-            num_vars,
-        },
-        bz: DenseMultilinearExtension {
-            evaluations: bz,
-            num_vars,
-        },
-        cz: DenseMultilinearExtension {
-            evaluations: cz,
-            num_vars,
-        },
-    }
-}
-
-fn write_product_block(
-    output: &mut [F128],
-    input: &[[u64; 2]],
-    field_config: &<F128 as PrimeField>::Config,
-) {
-    debug_assert_eq!(input.len(), SHA256_CONSTRAINTS);
-    for (target, words) in output.iter_mut().zip(input) {
-        *target = F128::new_with_cfg(Uint::new((*words).into()), field_config);
-    }
-}
-
-/// In-place 64x64 bit-matrix transpose. Output word `j`'s bit `k` is
-/// input word `k`'s bit `j`.
-#[allow(clippy::arithmetic_side_effects)]
-fn transpose64(matrix: &mut [u64; 64]) {
-    let mut shift = 32usize;
-    let mut mask = 0x0000_0000_ffff_ffffu64;
-    while shift != 0 {
-        let mut index = 0usize;
-        while index < 64 {
-            let swap = ((matrix[index] >> shift) ^ matrix[index | shift]) & mask;
-            matrix[index | shift] ^= swap;
-            matrix[index] ^= swap << shift;
-            index = ((index | shift) + 1) & !shift;
+/// Packs the already-synthesized Boolean assignments into the F2Z row/column
+/// view without changing their flat logical order.
+///
+/// [`Witgen`] has already materialized each augmented assignment
+/// `h_bar_i = (1, h_i)`. This function stores the constant once, concatenates
+/// the `h_i` portions without gaps, and leaves only the complete domain's
+/// suffix zero: `[1 | h_0 | ... | h_{N-1} | trailing zeros]`.
+fn pack_derived_rows<'a>(
+    shards: impl IntoIterator<Item = &'a PackedCompressionShard>,
+    params: &IntEvalParams,
+) -> Vec<Vec<u64>> {
+    let mut rows = empty_packed_rows(params);
+    set_flat_packed_bit(&mut rows, params, 0);
+    for (instance, shard) in shards.into_iter().enumerate() {
+        let start = 1 + instance * SHA256_H_INSTANCE_BITS;
+        for bit in 1..SHA256_H_BAR_LIVE_BITS {
+            if shard.h_bar.bit(bit) {
+                set_flat_packed_bit(&mut rows, params, start + bit - 1);
+            }
         }
-        shift >>= 1;
-        mask ^= mask << shift;
     }
+    rows
+}
+
+fn empty_packed_rows(params: &IntEvalParams) -> Vec<Vec<u64>> {
+    vec![vec![0u64; params.rows().div_ceil(64)]; params.cols()]
+}
+
+fn set_flat_packed_bit(rows: &mut [Vec<u64>], params: &IntEvalParams, flat_cell: usize) {
+    let column = flat_cell >> params.t;
+    let row = flat_cell & (params.rows() - 1);
+    rows[column][row / u64::BITS as usize] |= 1u64 << (row % u64::BITS as usize);
+}
+
+#[cfg(test)]
+fn packed_rows_bit(rows: &[Vec<u64>], flat_cell: usize) -> Option<bool> {
+    let columns = rows.len();
+    let words_per_column = rows.first()?.len();
+    let rows_per_column = words_per_column.checked_mul(u64::BITS as usize)?;
+    if !columns.is_power_of_two()
+        || !rows_per_column.is_power_of_two()
+        || rows.iter().any(|column| column.len() != words_per_column)
+    {
+        return None;
+    }
+    let column = flat_cell >> rows_per_column.ilog2();
+    let row = flat_cell & (rows_per_column - 1);
+    let words = rows.get(column)?;
+    Some(words[row / u64::BITS as usize] >> (row % u64::BITS as usize) & 1 == 1)
 }
 
 #[cfg(test)]
 mod tests {
+    use num_bigint::BigInt;
+
     use super::*;
     use crate::{
         f2map::VirtualMap,
-        pcs::FQ_MOD,
-        piop::spartan::{
-            f2z::spartan_f2z_field_config,
-            sha256::constraints::{
-                prepare_sha256_compression_batch, prepare_sha256_compression_batch_integer,
-            },
+        piop::spartan::sha256::constraints::{
+            SHA256_CONSTRAINTS, prepare_sha256_compression_batch_for_test,
         },
-        sparse_matrix::SparseMatrix,
     };
-
-    const OTHER_TEST_PRIME: u128 = (1_u128 << 127) - 1;
-
-    fn config(modulus: u128) -> <F128 as PrimeField>::Config {
-        F128::make_cfg(&Uint::from(modulus)).expect("odd test modulus")
-    }
 
     fn abc_input() -> Sha256CompressionInput {
         (
@@ -496,10 +395,14 @@ mod tests {
 
     #[test]
     fn generation_matches_fips_and_packs_both_witnesses() {
-        let (matrices, map, p_f, p_h) = prepare_sha256_compression_batch(0).unwrap();
-        let cfg = spartan_f2z_field_config();
-        let (f_rows, h_rows, products, outputs) =
-            generate_sha256_compression_witnesses(&[abc_input()], &p_f, &p_h, &cfg).unwrap();
+        let prepared = prepare_sha256_compression_batch_for_test(0).unwrap();
+        let witness = generate_sha256_compression_witnesses(&prepared, &[abc_input()]).unwrap();
+        let f_rows = witness.source_rows();
+        let h_rows = witness.assignment_rows();
+        let outputs = witness.outputs();
+        let map = prepared.map();
+        let p_f = prepared.source_params();
+        let p_h = prepared.assignment_params();
 
         assert_eq!(
             outputs[0],
@@ -508,48 +411,49 @@ mod tests {
                 0xf20015ad,
             ]
         );
-        assert_eq!(f_rows.len(), SHA256_F_STRIDE);
-        assert_eq!(h_rows.len(), SHA256_H_STRIDE);
-        assert_eq!(f_rows[0][0] & 1, 1);
-        assert_eq!(h_rows[0][0] & 1, 1);
-        assert_eq!(products.az.evaluations.len(), SHA256_CONSTRAINT_STRIDE);
-        assert!(products.az.evaluations[SHA256_CONSTRAINTS..]
-            .iter()
-            .all(PrimeField::is_zero));
+        assert_eq!(f_rows.len(), p_f.cols());
+        assert_eq!(h_rows.len(), p_h.cols());
+        assert_eq!(witness.instances(), 1);
+        assert_eq!(witness.source_bit(0), Some(true));
+        assert_eq!(witness.assignment_bit(0), Some(true));
 
-        let mut mapped_h = vec![false; SHA256_H_STRIDE];
-        for (source, row) in f_rows.iter().enumerate() {
-            if row[0] & 1 == 0 {
+        let mut mapped_h = vec![false; p_h.cells()];
+        for source in 0..p_f.cells() {
+            if !witness.source_bit(source).unwrap() {
                 continue;
             }
-            for derived in map.local().column_rows(source).unwrap() {
+            for derived in map.column_rows(source).unwrap() {
                 mapped_h[derived] ^= true;
             }
         }
-        assert!(mapped_h
-            .iter()
-            .enumerate()
-            .all(|(row, expected)| *expected == (h_rows[row][0] & 1 == 1)));
+        assert!(
+            mapped_h
+                .iter()
+                .enumerate()
+                .all(|(row, expected)| *expected == witness.assignment_bit(row).unwrap())
+        );
+    }
 
-        let h_bits = h_rows.iter().map(|row| row[0] & 1 == 1).collect::<Vec<_>>();
-        assert_matrix_product(
-            matrices.matrices().a(),
-            &h_bits,
-            &products.az.evaluations,
-            &cfg,
-        );
-        assert_matrix_product(
-            matrices.matrices().b(),
-            &h_bits,
-            &products.bz.evaluations,
-            &cfg,
-        );
-        assert_matrix_product(
-            matrices.matrices().c(),
-            &h_bits,
-            &products.cz.evaluations,
-            &cfg,
-        );
+    #[test]
+    fn flat_sequence_uses_the_native_pcs_row_then_column_order() {
+        let prepared = prepare_sha256_compression_batch_for_test(0).unwrap();
+        let mut anchored_input = abc_input();
+        anchored_input.1[0] |= 1;
+        let witness = generate_sha256_compression_witnesses(&prepared, &[anchored_input]).unwrap();
+        let p_f = prepared.source_params();
+        let p_h = prepared.assignment_params();
+
+        assert_eq!((p_f.t, p_f.s), (7, 6));
+        assert_eq!((p_h.t, p_h.s), (8, 7));
+
+        // Source sequence cell 1 is block[0]'s low bit. In native PCS order
+        // it is row 1 of column 0, not row 0 of column 1.
+        assert_eq!(witness.source_rows()[0][0] >> 1 & 1, 1);
+
+        // The nonidentity Boolean map copies that source bit to local
+        // assignment cell 257. Native order makes this row 1 of column 1.
+        assert!(prepared.map().column_rows(1).unwrap().any(|row| row == 257));
+        assert_eq!(witness.assignment_rows()[1][0] >> 1 & 1, 1);
     }
 
     #[test]
@@ -566,9 +470,19 @@ mod tests {
     }
 
     #[test]
-    fn transposed_rows_preserve_instance_bits() {
-        let (_, _, p_f, p_h) = prepare_sha256_compression_batch(6).unwrap();
-        let cfg = spartan_f2z_field_config();
+    fn generation_rejects_an_input_count_different_from_the_prepared_batch() {
+        let prepared = prepare_sha256_compression_batch_for_test(1).unwrap();
+        assert_eq!(
+            generate_sha256_compression_witnesses(&prepared, &[abc_input()]),
+            Err(Sha256WitnessError::InvalidGeometry)
+        );
+    }
+
+    #[test]
+    fn packed_rows_place_instances_back_to_back() {
+        let prepared = prepare_sha256_compression_batch_for_test(6).unwrap();
+        let p_f = prepared.source_params();
+        let p_h = prepared.assignment_params();
         let inputs = (0..64)
             .map(|instance| {
                 let mut input = abc_input();
@@ -576,77 +490,70 @@ mod tests {
                 input
             })
             .collect::<Vec<_>>();
-        let (f_rows, h_rows, _, _) =
-            generate_sha256_compression_witnesses(&inputs, &p_f, &p_h, &cfg).unwrap();
-        assert_eq!(f_rows[0][0], u64::MAX);
-        assert_eq!(h_rows[0][0], u64::MAX);
-        assert!(f_rows[SHA256_F_BAR_LIVE_BITS..]
-            .iter()
-            .all(|row| row[0] == 0));
-        assert!(h_rows[SHA256_H_BAR_LIVE_BITS..]
-            .iter()
-            .all(|row| row[0] == 0));
+        let exact = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
+        let f_rows = exact.source_rows();
+        let h_rows = exact.assignment_rows();
+        assert_eq!(f_rows.len(), p_f.cols());
+        assert_eq!(h_rows.len(), p_h.cols());
+        assert_eq!(exact.source_bit(0), Some(true));
+        assert_eq!(exact.assignment_bit(0), Some(true));
+
+        for &instance in &[0, 1, 63] {
+            let one_prepared = prepare_sha256_compression_batch_for_test(0).unwrap();
+            let one =
+                generate_sha256_compression_witnesses(&one_prepared, &[inputs[instance]]).unwrap();
+            for bit in 0..SHA256_F_INSTANCE_BITS {
+                let expected = one.source_bit(1 + bit).unwrap();
+                let packed = 1 + instance * SHA256_F_INSTANCE_BITS + bit;
+                assert_eq!(exact.source_bit(packed), Some(expected));
+            }
+            for bit in 0..SHA256_H_INSTANCE_BITS {
+                let expected = one.assignment_bit(1 + bit).unwrap();
+                let packed = 1 + instance * SHA256_H_INSTANCE_BITS + bit;
+                assert_eq!(exact.assignment_bit(packed), Some(expected));
+            }
+        }
+
+        let live_f = 1 + inputs.len() * SHA256_F_INSTANCE_BITS;
+        let live_h = 1 + inputs.len() * SHA256_H_INSTANCE_BITS;
+        assert!((live_f..p_f.cells()).all(|bit| exact.source_bit(bit) == Some(false)));
+        assert!((live_h..p_h.cells()).all(|bit| exact.assignment_bit(bit) == Some(false)));
     }
 
     #[test]
-    fn exact_products_project_under_distinct_runtime_primes() {
-        let prepared = prepare_sha256_compression_batch_integer(0).unwrap();
-        let exact = generate_sha256_compression_witnesses_exact(
-            &[abc_input()],
-            prepared.source_params(),
-            prepared.assignment_params(),
-        )
-        .unwrap();
+    fn packed_assignment_satisfies_the_exact_signed_linear_relation() {
+        let prepared = prepare_sha256_compression_batch_for_test(1).unwrap();
+        let mut second = abc_input();
+        second.1[0] ^= 0x0102_0304;
+        let witness =
+            generate_sha256_compression_witnesses(&prepared, &[abc_input(), second]).unwrap();
+        let relation = prepared.linear_relation();
+        let mut residuals = vec![BigInt::default(); prepared.linear_row_count()];
 
-        assert_eq!(exact.exact_products().a_mw.len(), SHA256_CONSTRAINTS);
-        assert_eq!(exact.exact_products().b_mw.len(), SHA256_CONSTRAINTS);
-        assert_eq!(exact.exact_products().c_mw.len(), SHA256_CONSTRAINTS);
-        let h_bits = exact
-            .assignment_rows()
-            .iter()
-            .map(|row| row[0] & 1 == 1)
-            .collect::<Vec<_>>();
-
-        for modulus in [FQ_MOD, OTHER_TEST_PRIME] {
-            let field_config = config(modulus);
-            let matrices = prepared.project(&field_config).unwrap();
-            let products = exact.project_products(&field_config).unwrap();
-            assert_matrix_product(
-                matrices.matrices().a(),
-                &h_bits,
-                &products.az.evaluations,
-                &field_config,
-            );
-            assert_matrix_product(
-                matrices.matrices().b(),
-                &h_bits,
-                &products.bz.evaluations,
-                &field_config,
-            );
-            assert_matrix_product(
-                matrices.matrices().c(),
-                &h_bits,
-                &products.cz.evaluations,
-                &field_config,
-            );
-        }
-    }
-
-    fn assert_matrix_product(
-        matrix: &SparseMatrix<F128>,
-        assignment: &[bool],
-        expected: &[F128],
-        field_config: &<F128 as PrimeField>::Config,
-    ) {
-        let mut actual = vec![F128::zero_with_cfg(field_config); matrix.row_count()];
-        for (column, bit) in assignment.iter().copied().enumerate() {
-            if !bit {
-                continue;
-            }
-            for (row, coefficient) in matrix.column(column).unwrap() {
-                actual[row] += coefficient;
+        for instance in 0..prepared.instances() {
+            for local_column in 0..relation.column_count() {
+                let flat_column = prepared
+                    .flat_assignment_column(instance, local_column)
+                    .unwrap();
+                if !witness.assignment_bit(flat_column).unwrap() {
+                    continue;
+                }
+                for (local_row, coefficient) in relation
+                    .matrix()
+                    .column(local_column)
+                    .expect("local assignment column")
+                {
+                    let flat_row = prepared.flat_constraint_row(instance, local_row).unwrap();
+                    residuals[flat_row] += coefficient;
+                }
             }
         }
-        assert_eq!(actual, expected);
+
+        assert_eq!(residuals.len(), 2 * SHA256_CONSTRAINTS);
+        assert!(
+            residuals
+                .iter()
+                .all(|residual| residual == &BigInt::default())
+        );
     }
 }

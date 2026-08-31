@@ -9,12 +9,11 @@
 //! transcript-sampled Step-2 prime (commit-before-prime, Zaratan order),
 //! Spartan over that runtime field, bitification, and the F2Z opening,
 //! re-run per repetition. Witness generation and relation preparation are
-//! excluded and reported one-time. The default profile is `Lambda100`.
-//! The univariate-skip protocol variants still run the LEGACY fixed-q
-//! path (`q = 2^100 - 15`, `lambda=na`).
+//! excluded and reported one-time. The default profile is `Lambda100`; the
+//! canonical Spartan outer reduction uses the K=3 univariate-prefix skip.
 //!
 //! Defaults to the production sweep `2^15, ..., 2^25` multiplications.
-//! Override with `F2Z_BENCH_SHAPES` (deprecated alias `F2Z_MUL_EXPONENTS`):
+//! Override with `F2Z_BENCH_SHAPES`:
 //!
 //! ```text
 //! F2Z_BENCH_SHAPES="15 17 19" F2Z_BENCH_REPS=3 \
@@ -22,8 +21,7 @@
 //! ```
 //!
 //! `F2Z_BENCH_SHAPES=15 F2Z_BENCH_REPS=1` is the smallest production smoke
-//! shape. `F2Z_SPARTAN_REDUCTION` selects `immediate`, `delayed-barrett`, or
-//! `delayed-crypto-bigint`; the production default is `delayed-barrett`.
+//! shape. The production reducer is delayed Barrett.
 //! `F2Z_MUL_WORD_BITS=1|8` selects the F2Z word width; the default is `1`.
 //! `F2Z_BENCH_PASS=latency|memory|both` separates the measured repetitions
 //! from the extra peak-heap proof. Memory measurement requires the
@@ -41,19 +39,13 @@ use std::{
 };
 
 use f2z::ligerito_flock::FlockCommitHint;
-use f2z::pcs::{FQ_BITS, mod_q_num_chunks};
+use f2z::pcs::mod_q_num_chunks;
 use f2z::piop::spartan::{
-    PreparedConstraintMatrices, PreparedU32MulRelation, SpartanF2zError, SpartanF2zField,
-    SpartanReductionStrategy, U32MulF2zWidth, U32MulLayout, U32MulPaperProof,
-    U32MulUnivariateSkipSpartanF2zProof, U32MulWitness, commit_u32_mul_witness,
-    prepare_u32_mul_relation, prove_u32_mul_paper,
-    prove_u32_mul_spartan_and_f2z_with_univariate_skip, spartan_f2z_field_config,
-    verify_u32_mul_paper, verify_u32_mul_spartan_and_f2z_with_univariate_skip,
+    PreparedU32MulRelation, U32_MUL_UNIVARIATE_SKIP_VARS, U32MulF2zWidth, U32MulProof,
+    U32MulWitness, commit_u32_mul_witness, prove_u32_mul, verify_u32_mul,
 };
 use f2z::transcript::Blake3Transcript;
-use f2z::{ligerito::packed_vars, ligerito_flock::sha_lig_configs};
-use flock_core::pcs::commit::Commitment;
-use rand::{Rng, RngExt, SeedableRng, rngs::StdRng};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 #[cfg(feature = "bench-peak-memory")]
 struct PeakAlloc;
@@ -163,25 +155,6 @@ impl BenchmarkPass {
     }
 }
 
-fn reduction_strategy() -> SpartanReductionStrategy {
-    match std::env::var("F2Z_SPARTAN_REDUCTION").as_deref() {
-        Ok("immediate") => SpartanReductionStrategy::Immediate,
-        Ok("delayed-barrett") | Err(_) => SpartanReductionStrategy::DelayedBarrett,
-        Ok("delayed-crypto-bigint") => SpartanReductionStrategy::DelayedCryptoBigint,
-        Ok(value) => panic!(
-            "unsupported F2Z_SPARTAN_REDUCTION={value}; use immediate, delayed-barrett, or delayed-crypto-bigint"
-        ),
-    }
-}
-
-const fn strategy_name(strategy: SpartanReductionStrategy) -> &'static str {
-    match strategy {
-        SpartanReductionStrategy::Immediate => "immediate",
-        SpartanReductionStrategy::DelayedBarrett => "delayed-barrett",
-        SpartanReductionStrategy::DelayedCryptoBigint => "delayed-crypto-bigint",
-    }
-}
-
 fn env_usize(name: &str, default: usize) -> usize {
     match std::env::var(name) {
         Ok(value) => value
@@ -199,140 +172,17 @@ fn f2z_width() -> U32MulF2zWidth {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum OuterProtocol {
-    Standard,
-    UnivariateSkip(usize),
-}
-
-impl OuterProtocol {
-    fn from_env() -> Self {
-        match env_usize("F2Z_SPARTAN_OUTER_SKIP", 0) {
-            0 => Self::Standard,
-            skip_vars @ 1..=4 => Self::UnivariateSkip(skip_vars),
-            value => panic!("F2Z_SPARTAN_OUTER_SKIP must be 0 or an integer in 1..=4; got {value}"),
-        }
-    }
-
-    const fn name(self) -> &'static str {
-        match self {
-            Self::Standard => "standard",
-            Self::UnivariateSkip(1) => "skip-k1",
-            Self::UnivariateSkip(2) => "skip-k2",
-            Self::UnivariateSkip(3) => "skip-k3",
-            Self::UnivariateSkip(4) => "skip-k4",
-            Self::UnivariateSkip(_) => unreachable!(),
-        }
-    }
-
-    const fn skip_vars(self) -> usize {
-        match self {
-            Self::Standard => 0,
-            Self::UnivariateSkip(skip_vars) => skip_vars,
-        }
-    }
-}
-
-enum BenchProof {
-    Paper(U32MulPaperProof),
-    UnivariateSkip(U32MulUnivariateSkipSpartanF2zProof),
-}
-
-impl BenchProof {
-    fn f2z_bytes(&self) -> usize {
-        match self {
-            Self::Paper(proof) => proof.f2z().to_bytes().len(),
-            Self::UnivariateSkip(proof) => proof.f2z().to_bytes().len(),
-        }
-    }
-
-    fn spartan_payload_elements(&self) -> usize {
-        match self {
-            Self::Paper(proof) => proof.spartan_payload_elements(),
-            Self::UnivariateSkip(proof) => {
-                proof.spartan().outer.skip.finite_q_evaluations.len()
-                    + 1
-                    + 4 * proof.spartan().outer.tail.sumcheck.round_polynomials.len()
-                    + 3
-                    + 3 * proof.spartan().inner.round_polynomials.len()
-            }
-        }
-    }
-}
-
-/// The prepared relation of whichever path the protocol knob selects: the
-/// paper runtime-prime relation (standard outer) or the legacy fixed-q
-/// matrices (univariate-skip variants).
-enum BenchRelation {
-    Paper(PreparedU32MulRelation),
-    Legacy(PreparedConstraintMatrices<SpartanF2zField, bool>),
-}
-
-fn prove_combined(
-    transcript: &mut Blake3Transcript,
-    relation: &BenchRelation,
-    layout: &U32MulLayout,
-    witness: &U32MulWitness,
-    commitment_hint: &FlockCommitHint,
-    strategy: SpartanReductionStrategy,
-    protocol: OuterProtocol,
-) -> Result<BenchProof, SpartanF2zError> {
-    match relation {
-        BenchRelation::Paper(prepared) => {
-            prove_u32_mul_paper(transcript, prepared, witness, commitment_hint, strategy)
-                .map(BenchProof::Paper)
-        }
-        BenchRelation::Legacy(matrices) => {
-            assert_eq!(
-                strategy,
-                SpartanReductionStrategy::DelayedBarrett,
-                "univariate skip uses the production delayed-Barrett reducer"
-            );
-            let OuterProtocol::UnivariateSkip(skip_vars) = protocol else {
-                unreachable!("the legacy relation is built only for skip variants")
-            };
-            prove_u32_mul_spartan_and_f2z_with_univariate_skip(
-                transcript,
-                matrices,
-                layout,
-                witness,
-                commitment_hint,
-                skip_vars,
-            )
-            .map(BenchProof::UnivariateSkip)
-        }
-    }
-}
-
-fn verify_combined(
-    transcript: &mut Blake3Transcript,
-    relation: &BenchRelation,
-    layout: &U32MulLayout,
-    commitment: &Commitment,
-    proof: &BenchProof,
-) -> Result<(), SpartanF2zError> {
-    match (relation, proof) {
-        (BenchRelation::Paper(prepared), BenchProof::Paper(proof)) => {
-            verify_u32_mul_paper(transcript, prepared, commitment, proof)
-        }
-        (BenchRelation::Legacy(matrices), BenchProof::UnivariateSkip(proof)) => {
-            verify_u32_mul_spartan_and_f2z_with_univariate_skip(
-                transcript, matrices, layout, commitment, proof,
-            )
-        }
-        _ => unreachable!("relation and proof kinds always match"),
-    }
-}
+const PROTOCOL_LABEL: &str = "skip-k3";
+const STRATEGY_LABEL: &str = "delayed-barrett";
 
 fn exponents() -> Vec<usize> {
-    common::shapes(Some("F2Z_MUL_EXPONENTS")).map_or_else(
+    common::shapes(None).map_or_else(
         || (15..=25).collect(),
         |shapes| {
             shapes
                 .iter()
                 .map(|part| {
-                    let exponent: usize =
-                        part.parse().expect("F2Z_BENCH_SHAPES contains integers");
+                    let exponent: usize = part.parse().expect("F2Z_BENCH_SHAPES contains integers");
                     assert!(
                         exponent >= 15,
                         "the combined proof requires at least 2^15 gate slots"
@@ -345,32 +195,20 @@ fn exponents() -> Vec<usize> {
 }
 
 /// One end-to-end prove: bit-pack + commit (Step 1) + the combined proof.
-#[allow(clippy::too_many_arguments)]
 fn prove_e2e(
-    relation: &BenchRelation,
-    layout: &U32MulLayout,
+    relation: &PreparedU32MulRelation,
     witness: &U32MulWitness,
-    strategy: SpartanReductionStrategy,
-    protocol: OuterProtocol,
-) -> (BenchProof, FlockCommitHint, f64, f64) {
+) -> (U32MulProof, FlockCommitHint, f64, f64) {
     let prove_started = Instant::now();
     let commit_started = Instant::now();
     let bit_rows = witness.f2z_bit_rows();
     let commitment_hint =
-        commit_u32_mul_witness(layout, bit_rows).expect("F2Z commitment succeeds");
+        commit_u32_mul_witness(relation, bit_rows).expect("F2Z commitment succeeds");
     let commit_ms = common::elapsed_ms(commit_started);
 
     let mut prover_transcript = Blake3Transcript::new();
-    let proof = prove_combined(
-        &mut prover_transcript,
-        relation,
-        layout,
-        witness,
-        &commitment_hint,
-        strategy,
-        protocol,
-    )
-    .expect("combined proving succeeds");
+    let proof = prove_u32_mul(&mut prover_transcript, relation, witness, &commitment_hint)
+        .expect("combined proving succeeds");
     let prove_ms = common::elapsed_ms(prove_started);
     (proof, commitment_hint, prove_ms, commit_ms)
 }
@@ -381,8 +219,6 @@ fn bench_exponent(
     reps: usize,
     root_seed: u64,
     pass: BenchmarkPass,
-    strategy: SpartanReductionStrategy,
-    protocol: OuterProtocol,
     f2z_width: U32MulF2zWidth,
     order: usize,
     threads: usize,
@@ -402,44 +238,32 @@ fn bench_exponent(
     let witness_ms = common::elapsed_ms(started);
     let layout = *witness.layout();
     let params = layout.f2z_params();
-    let f2z_chunks = mod_q_num_chunks(&params, FQ_BITS);
 
-    // One-time public preprocessing (excluded from prove). The standard
-    // protocol prepares the paper runtime-prime relation (q-independent
-    // exact matrices + the instantiated security profile); the skip
-    // variants prepare the legacy fixed-q matrices.
+    // One-time public preprocessing (excluded from prove): q-independent
+    // exact matrices plus the instantiated runtime-prime security profile.
     let started = Instant::now();
-    let relation = match protocol {
-        OuterProtocol::Standard => BenchRelation::Paper(
-            PreparedU32MulRelation::new(layout).expect("valid paper relation"),
-        ),
-        OuterProtocol::UnivariateSkip(_) => {
-            let field_config = spartan_f2z_field_config();
-            BenchRelation::Legacy(
-                prepare_u32_mul_relation::<SpartanF2zField>(layout, &field_config)
-                    .expect("valid relation"),
-            )
-        }
-    };
+    let relation = PreparedU32MulRelation::new(layout).expect("valid relation");
     let setup_ms = common::elapsed_ms(started);
+    let q_bits = (u128::BITS - relation.security().projection_max.leading_zeros()) as usize;
+    let f2z_chunks = mod_q_num_chunks(&params, q_bits);
 
     // Excluded warm-up. This is also the first end-to-end correctness check.
-    let (warm_proof, warm_hint, _, _) =
-        prove_e2e(&relation, &layout, &witness, strategy, protocol);
+    let (warm_proof, warm_hint, _, _) = prove_e2e(&relation, &witness);
     let mut verifier_transcript = Blake3Transcript::new();
-    verify_combined(
+    verify_u32_mul(
         &mut verifier_transcript,
         &relation,
-        &layout,
         &warm_hint.commitment,
         &warm_proof,
     )
     .expect("warm-up combined verification succeeds");
+    let ligerito_log_inv_rate = warm_hint.commitment.params.log_inv_rate;
+    let ligerito_initial_k = warm_hint.commitment.params.log_batch_size;
+    let ligerito_hash = warm_hint.commitment.params.merkle_hash;
     drop(warm_proof);
     drop(warm_hint);
     let _ = f2z::utils::prof::take_totals();
 
-    let strategy_label = strategy_name(strategy);
     let mut latency = None;
     if pass.measures_latency() {
         let mut prover = common::StepSamples::default();
@@ -447,16 +271,14 @@ fn bench_exponent(
         let mut last_proof = None;
         for sample_index in 0..reps {
             let _ = f2z::utils::prof::take_totals();
-            let (proof, commitment_hint, prove_ms, commit_ms) =
-                prove_e2e(&relation, &layout, &witness, strategy, protocol);
+            let (proof, commitment_hint, prove_ms, commit_ms) = prove_e2e(&relation, &witness);
             let prove_phases = f2z::utils::prof::take_totals();
 
             let mut verifier_transcript = Blake3Transcript::new();
             let started = Instant::now();
-            verify_combined(
+            verify_u32_mul(
                 &mut verifier_transcript,
                 &relation,
-                &layout,
                 &commitment_hint.commitment,
                 &proof,
             )
@@ -465,7 +287,10 @@ fn bench_exponent(
             let verify_phases = f2z::utils::prof::take_totals();
 
             println!(
-                "  SAMPLE exponent={exponent} sample={} multiplications={multiplications} commit_ms={commit_ms:.6} prove_ms={prove_ms:.6} verify_ms={verify_ms:.6} verified=true",
+                "  SAMPLE pass=latency order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} word_bits={} projection_bits={q_bits} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} sample={} multiplications={multiplications} commit_ms={commit_ms:.6} prove_ms={prove_ms:.6} verify_ms={verify_ms:.6} verified=true",
+                params.word_bits,
+                params.t,
+                params.s,
                 sample_index + 1,
             );
             prover.record_prove(prove_ms, commit_ms, &prove_phases);
@@ -485,42 +310,34 @@ fn bench_exponent(
         let _ = f2z::utils::prof::take_totals();
         let live_before_prove = live_mib();
         reset_peak();
-        let (peak_proof, peak_hint, _, _) =
-            prove_e2e(&relation, &layout, &witness, strategy, protocol);
+        let (peak_proof, peak_hint, _, _) = prove_e2e(&relation, &witness);
         black_box(&peak_proof);
         let peak = peak_mib();
         let _ = f2z::utils::prof::take_totals();
         let mut verifier_transcript = Blake3Transcript::new();
-        verify_combined(
+        verify_u32_mul(
             &mut verifier_transcript,
             &relation,
-            &layout,
             &peak_hint.commitment,
             &peak_proof,
         )
         .expect("peak-memory proof verifies");
         let _ = f2z::utils::prof::take_totals();
         println!(
-            "  MEMORY pass=memory order={order} protocol={} skip_vars={} strategy={strategy_label} word_bits={} exponent={exponent} multiplications={multiplications} peak_heap_mib={peak:.6} live_before_prove_mib={live_before_prove:.6} verified=true",
-            protocol.name(),
-            protocol.skip_vars(),
-            params.word_bits,
+            "  MEMORY pass=memory order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} word_bits={} projection_bits={q_bits} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} multiplications={multiplications} peak_heap_mib={peak:.6} live_before_prove_mib={live_before_prove:.6} verified=true",
+            params.word_bits, params.t, params.s,
         );
         memory_metrics = Some((live_before_prove, peak));
     }
 
-    let (lig_pc, _) = sha_lig_configs(packed_vars(&params)).expect("production Ligerito config");
     println!();
     println!(
         "u32_mul gates=2^{exponent} ({multiplications}) W={} [{}]  seed={shape_seed:#018x}",
-        params.word_bits,
-        protocol.name(),
+        params.word_bits, PROTOCOL_LABEL,
     );
     println!(
-        "  benchmark: pass={} order={order} protocol={} skip_vars={} strategy={strategy_label} t={} s={} chunks={f2z_chunks}",
+        "  benchmark: pass={} order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} t={} s={} chunks={f2z_chunks}",
         pass.as_str(),
-        protocol.name(),
-        protocol.skip_vars(),
         params.t,
         params.s,
     );
@@ -538,41 +355,33 @@ fn bench_exponent(
     );
     println!(
         "  Ligerito: inverse rate=2^{} initial_k={} hash={:?}",
-        lig_pc.log_inv_rates[0], lig_pc.initial_k, lig_pc.merkle_hash,
+        ligerito_log_inv_rate, ligerito_initial_k, ligerito_hash,
     );
     if let Some((prover, verifier, last_proof)) = latency {
         let spartan_elements = last_proof.spartan_payload_elements();
+        let boundary_nonces = last_proof.grinding_nonce_count(relation.security())
+            - last_proof.f2z().grinding_nonces.len();
         let report = common::BenchReport {
             bench: "u32_mul",
             shape: format!("2p{exponent}"),
             extra: vec![
+                ("pass".into(), pass.as_str().into()),
                 ("multiplications".into(), multiplications.to_string()),
-                ("protocol".into(), protocol.name().into()),
-                ("skip_vars".into(), protocol.skip_vars().to_string()),
-                ("strategy".into(), strategy_label.into()),
+                ("protocol".into(), PROTOCOL_LABEL.into()),
+                ("skip_vars".into(), U32_MUL_UNIVARIATE_SKIP_VARS.to_string()),
+                ("strategy".into(), STRATEGY_LABEL.into()),
                 ("word_bits".into(), params.word_bits.to_string()),
+                ("projection_bits".into(), q_bits.to_string()),
                 ("f2z_t".into(), params.t.to_string()),
                 ("f2z_s".into(), params.s.to_string()),
                 ("f2z_chunks".into(), f2z_chunks.to_string()),
+                ("exponent".into(), exponent.to_string()),
                 ("order".into(), order.to_string()),
                 ("shape_seed".into(), format!("{shape_seed:#018x}")),
             ],
-            lambda: match &relation {
-                BenchRelation::Paper(prepared) => Some(prepared.security().lambda),
-                BenchRelation::Legacy(_) => None,
-            },
-            lambda_achieved: match &relation {
-                BenchRelation::Paper(prepared) => {
-                    Some(prepared.security().accounting.achieved_bits())
-                }
-                BenchRelation::Legacy(_) => None,
-            },
-            lambda_bind: match &relation {
-                BenchRelation::Paper(prepared) => {
-                    Some(prepared.security().accounting.binding_term().name.into())
-                }
-                BenchRelation::Legacy(_) => None,
-            },
+            lambda: Some(relation.security().lambda),
+            lambda_achieved: Some(relation.security().accounting.achieved_bits()),
+            lambda_bind: Some(relation.security().accounting.binding_term().name.into()),
             threads,
             reps,
             seed: Some(root_seed),
@@ -581,8 +390,8 @@ fn bench_exponent(
             prover: prover.medians(),
             verifier: verifier.medians(),
             proof: common::ProofBytes {
-                piop: spartan_elements * 16,
-                open: last_proof.f2z_bytes(),
+                piop: spartan_elements * 16 + boundary_nonces * std::mem::size_of::<u64>(),
+                open: last_proof.f2z().to_bytes().len(),
             },
         };
         report.print_human();
@@ -603,12 +412,10 @@ fn main() {
         !pass.measures_memory() || cfg!(feature = "bench-peak-memory"),
         "F2Z_BENCH_PASS=memory|both requires --features bench-peak-memory"
     );
-    let strategy = reduction_strategy();
-    let protocol = OuterProtocol::from_env();
     let f2z_width = f2z_width();
     let order = env_usize("F2Z_BENCH_ORDER", 1);
     assert!(order > 0, "F2Z_BENCH_ORDER must be positive");
-    let seed = common::seed(Some("F2Z_MUL_SEED"), 0x5533_326d_756c_0064);
+    let seed = common::seed(None, 0x5533_326d_756c_0064);
 
     println!("u32 × u32 → u64: Spartan PIOP + F2Z assignment opening");
     #[cfg(feature = "parallel")]
@@ -618,18 +425,13 @@ fn main() {
         f2z_width.word_bits(),
     );
     println!(
-        "benchmark pass: {}; protocol: {} (skip_vars={}); strategy: {}; order: {order}",
+        "benchmark pass: {}; protocol: {PROTOCOL_LABEL} (skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS}); strategy: {STRATEGY_LABEL}; order: {order}",
         pass.as_str(),
-        protocol.name(),
-        protocol.skip_vars(),
-        strategy_name(strategy),
     );
 
     for exponent in exponents() {
         flock_core::scratch::clear();
-        bench_exponent(
-            exponent, reps, seed, pass, strategy, protocol, f2z_width, order, threads,
-        );
+        bench_exponent(exponent, reps, seed, pass, f2z_width, order, threads);
     }
     flock_core::scratch::clear();
 }

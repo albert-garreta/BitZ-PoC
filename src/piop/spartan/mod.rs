@@ -25,94 +25,83 @@ pub mod univariate_skip;
 pub(crate) mod univariate_skip_native;
 
 pub use baby_bear_f2z::{
-    baby_bear_mul_instance_facts, bitify_baby_bear_mul_spartan_claim,
-    commit_baby_bear_mul_witness, prove_baby_bear_mul_paper,
+    BabyBearBitifiedClaim, BabyBearMulPaperProof, BabyBearMulSpartanF2zProof,
+    BabyBearSpartanF2zError, PreparedBabyBearMulRelation, baby_bear_mul_instance_facts,
+    bitify_baby_bear_mul_spartan_claim, commit_baby_bear_mul_witness, prove_baby_bear_mul_paper,
     prove_baby_bear_mul_spartan_and_f2z, prove_baby_bear_mul_spartan_and_f2z_from_witness,
     prove_baby_bear_mul_spartan_and_f2z_with_strategy, verify_baby_bear_mul_paper,
-    verify_baby_bear_mul_spartan_and_f2z, BabyBearBitifiedClaim, BabyBearMulPaperProof,
-    BabyBearMulSpartanF2zProof, BabyBearSpartanF2zError, PreparedBabyBearMulRelation,
+    verify_baby_bear_mul_spartan_and_f2z,
 };
 pub use baby_bear_mul::{
+    BABY_BEAR_MODULUS, BabyBearMulCoefficient, BabyBearMulError, BabyBearMulLayout,
+    BabyBearMulNativeMles, BabyBearMulRelationBackend, BabyBearMulWitness,
     baby_bear_mul_constraint_matrices, prepare_baby_bear_mul_relation,
     project_baby_bear_mul_native_witness, project_baby_bear_mul_witness,
-    sample_baby_bear_operand_with, BabyBearMulCoefficient, BabyBearMulError, BabyBearMulLayout,
-    BabyBearMulNativeMles, BabyBearMulRelationBackend, BabyBearMulWitness, BABY_BEAR_MODULUS,
+    sample_baby_bear_operand_with,
 };
 pub use cm::{
+    CM_AND_F_LIVE_SLOTS, CM_AND_H_SLOTS, CM_AND_WORD_BITS, CmAndError, CmAndLayout, CmAndWitness,
+    CmF2zError, CmF2zProof, CmOpeningClaim, PreparedCmAndRelation, ProjectedCmAndWitness,
     bitify_cm_and_claim, cm_and_map, commit_cm_and_witness, commit_cm_and_witness_with_config,
     prepare_cm_and_relation, project_cm_and_witness, prove_cm_and_f2z,
-    prove_cm_and_f2z_with_config, verify_cm_and_f2z, verify_cm_and_f2z_with_config, CmAndError,
-    CmAndLayout, CmAndWitness, CmF2zError, CmF2zProof, CmOpeningClaim, PreparedCmAndRelation,
-    ProjectedCmAndWitness, CM_AND_F_LIVE_SLOTS, CM_AND_H_SLOTS, CM_AND_WORD_BITS,
+    prove_cm_and_f2z_with_config, verify_cm_and_f2z, verify_cm_and_f2z_with_config,
 };
 pub use f2z::{
-    bitify_u32_mul_spartan_claim, commit_u32_mul_witness, prove_u32_mul_paper,
-    prove_u32_mul_spartan_and_f2z, prove_u32_mul_spartan_and_f2z_from_witness,
-    prove_u32_mul_spartan_and_f2z_with_strategy,
-    prove_u32_mul_spartan_and_f2z_with_univariate_skip, spartan_f2z_field_config,
-    u32_mul_instance_facts, verify_u32_mul_paper, verify_u32_mul_spartan_and_f2z,
-    verify_u32_mul_spartan_and_f2z_with_univariate_skip, PreparedU32MulRelation,
-    SpartanF2zError, SpartanF2zField, U32BitifiedClaim, U32MulPaperProof,
-    U32MulSpartanF2zProof, U32MulUnivariateSkipSpartanF2zProof,
+    PreparedU32MulRelation, SpartanF2zError, SpartanF2zField, U32_MUL_UNIVARIATE_SKIP_DEGREE,
+    U32_MUL_UNIVARIATE_SKIP_VARS, U32MulProof, commit_u32_mul_witness, prove_u32_mul,
+    spartan_f2z_field_config, verify_u32_mul,
 };
 
 pub use crate::sparse_matrix::SparseMatrixError;
 pub use matrix::{
-    build_assignment_mle, build_boolean_assignment_mle, build_product_mles, eq_eval, eq_table,
-    make_equality_factors, ConstraintMatrices, ConstraintMatricesSkeleton, MleClaimError,
-    ModulusIndependentCoefficient, PreparedConstraintMatrices, ScaledMleEvaluationClaim,
-    SparseMatrix, SpartanMatrixCoefficient, SpartanMatrixError,
-};
-pub use profile::{
-    IopInstanceFacts, IopSecurityParams, IopSecurityProfile, Lambda100, Lambda128,
-    LegacySha128Design, Limber114, PrimePolicy, ProfileError, ReductionPrimeParams,
-    SoundnessAccounting, SoundnessTerm,
+    ConstraintMatrices, ConstraintMatricesSkeleton, MleClaimError, ModulusIndependentCoefficient,
+    PreparedConstraintMatrices, ScaledMleEvaluationClaim, SparseMatrix, SpartanMatrixCoefficient,
+    SpartanMatrixError, build_assignment_mle, build_boolean_assignment_mle, build_product_mles,
+    eq_eval, eq_table, make_equality_factors,
 };
 pub use opening_mode::{
     Direct, EvaluatedSpartanAssignment, OpeningMode, SpartanF2zProof, Virtualized,
 };
 pub use piop::{
-    prove_spartan_nonsuccinct, prove_spartan_piop, prove_spartan_piop_u32_native,
-    prove_spartan_piop_u32_native_with_strategy,
+    SPARTAN_ASSIGNMENT_ORACLE_DOMAIN, SPARTAN_PIOP_DOMAIN, SPARTAN_UNIVARIATE_SKIP_PIOP_DOMAIN,
+    SpartanError, SpartanPiopProof, SpartanReductionStrategy, prove_spartan_nonsuccinct,
+    prove_spartan_piop, prove_spartan_piop_u32_native,
     prove_spartan_piop_u32_native_with_univariate_skip, prove_spartan_piop_with_strategy,
     prove_spartan_piop_with_univariate_skip, verify_spartan_proof,
-    verify_spartan_univariate_skip_proof, verify_spartan_with_mle_claim, SpartanError,
-    SpartanPiopProof, SpartanReductionStrategy, SPARTAN_ASSIGNMENT_ORACLE_DOMAIN,
-    SPARTAN_PIOP_DOMAIN, SPARTAN_UNIVARIATE_SKIP_PIOP_DOMAIN,
+    verify_spartan_univariate_skip_proof, verify_spartan_with_mle_claim,
 };
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
 pub use piop::{
-    prove_spartan_piop_u32_native_barrett_with_inner_policy, SpartanInnerFieldAccumulation,
-    SpartanInnerNativeFold, SpartanInnerPolicy,
+    SpartanInnerFieldAccumulation, SpartanInnerNativeFold, SpartanInnerPolicy,
+    prove_spartan_piop_u32_native_barrett_with_inner_policy,
+};
+pub use profile::{
+    IopInstanceFacts, IopSecurityParams, IopSecurityProfile, Lambda100, Lambda128, Limber114,
+    PrimePolicy, ProfileError, ReductionPrimeParams, Sha128ReferenceSchedule, SoundnessAccounting,
+    SoundnessTerm,
 };
 pub use sha256::{
-    commit_sha256_compression_witness, commit_sha256_compression_witness_with_config,
-    commit_sha256_paper128_witness, commit_sha256_paper128_witness_with_config,
-    generate_sha256_compression_witnesses, generate_sha256_compression_witnesses_exact,
-    prepare_sha256_compression_batch, prepare_sha256_compression_batch_integer,
-    prepare_sha256_compression_batch_integer_with_profile,
-    prove_sha256_compressions_paper128, prove_sha256_compressions_paper128_with_config,
-    prove_sha256_compressions_spartan_and_f2z,
-    prove_sha256_compressions_spartan_and_f2z_with_config, sample_sha256_mod_q_context,
-    sha256_compression_configs, sha256_compression_configs_for,
-    verify_sha256_compressions_paper128,
-    verify_sha256_compressions_paper128_with_config, verify_sha256_compressions_spartan_and_f2z,
-    verify_sha256_compressions_spartan_and_f2z_with_config, ExactSha256CompressionWitnessBatch,
-    PreparedSha256CompressionBatch, Sha256CompressionInput, Sha256CompressionProof,
-    Sha256CompressionStatement, Sha256CompressionWitnessBatch, Sha256ConstraintError,
-    Sha256F2zError, Sha256ModQContext, Sha256Paper128Proof, Sha256PrimeError, Sha256PrimeProfile,
-    Sha256WitnessError, SHA256_COMMITMENT_FIELD_BITS, SHA256_CONSTRAINTS,
-    SHA256_CONSTRAINT_LOCAL_VARS, SHA256_CONSTRAINT_STRIDE, SHA256_F_BAR_LIVE_BITS,
-    SHA256_F_LIVE_BITS, SHA256_F_LOCAL_VARS, SHA256_F_STRIDE, SHA256_H_BAR_LIVE_BITS,
-    SHA256_H_LOCAL_VARS, SHA256_H_STRIDE, SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS,
+    PreparedSha256CompressionBatch, SHA256_COMMITMENT_FIELD_BITS, SHA256_CONSTRAINTS,
+    SHA256_DEFAULT_INNER_PREFIX_VARS, SHA256_F_BAR_LIVE_BITS, SHA256_F_INSTANCE_BITS,
+    SHA256_F_LIVE_BITS, SHA256_H_BAR_LIVE_BITS, SHA256_H_INSTANCE_BITS,
+    SHA256_INNER_PREFIX_MAX_VARS, SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS,
+    Sha256CompressionInput, Sha256CompressionProof, Sha256CompressionStatement,
+    Sha256CompressionWitnessBatch, Sha256ConstraintError, Sha256F2zError, Sha256PrimeError,
+    Sha256WitnessError, commit_sha256_compression_witness,
+    commit_sha256_compression_witness_with_config, generate_sha256_compression_witnesses,
+    prepare_sha256_compression_batch, prepare_sha256_compression_batch_for_assignment_rows,
+    prepare_sha256_compression_batch_for_assignment_rows_with_profile,
+    prepare_sha256_compression_batch_with_profile, prove_sha256_compressions,
+    prove_sha256_compressions_with_config, prove_sha256_compressions_with_prefix_vars,
+    prove_sha256_compressions_with_prefix_vars_and_config, sha256_compression_configs,
+    verify_sha256_compressions, verify_sha256_compressions_with_config,
 };
 pub use sumcheck::{OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProof};
 pub use u32_mul::{
-    prepare_u32_mul_relation, project_u32_mul_native_witness, project_u32_mul_witness,
-    u32_mul_constraint_matrices, U32MulError, U32MulF2zWidth, U32MulLayout, U32MulNativeMles,
-    U32MulRelationBackend, U32MulWitness, U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS, U32_MUL_X_BITS,
-    U32_MUL_Y_BITS,
+    U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS, U32_MUL_X_BITS, U32_MUL_Y_BITS, U32MulError,
+    U32MulF2zWidth, U32MulLayout, U32MulNativeMles, U32MulRelationBackend, U32MulWitness,
+    prepare_u32_mul_relation, project_u32_mul_native_witness, u32_mul_constraint_matrices,
 };
 pub use univariate_skip::{
     UnivariateSkipOuterSumcheckProof, UnivariateSkipProof, UnivariateSkipSpartanPiopProof,
@@ -120,9 +109,9 @@ pub use univariate_skip::{
 
 use std::slice;
 
-use crypto_primes::{is_prime, Flavor};
+use crypto_primes::{Flavor, is_prime};
 use crypto_primitives::{
-    crypto_bigint_monty::MontyField, crypto_bigint_uint::Uint, ConstSemiring, PrimeField,
+    ConstSemiring, PrimeField, crypto_bigint_monty::MontyField, crypto_bigint_uint::Uint,
 };
 use num_traits::ConstOne;
 use thiserror::Error;
@@ -134,8 +123,8 @@ const FIELD_ELEMENTS_TAG: &[u8] = b"field-elements";
 
 /// Minimum modulus size accepted by the Spartan PIOP.
 ///
-/// This keeps field-size soundness at least as strong as the native F2Z
-/// evaluation field `q = 2^100 - 15`.
+/// This is the protocol's minimum accepted field-size security boundary;
+/// adapters may select any prime modulus meeting it.
 pub const SPARTAN_MIN_MODULUS_BITS: u32 = 100;
 
 /// Why a runtime field configuration is unsafe for Spartan.
@@ -364,8 +353,8 @@ mod tests {
     use std::collections::VecDeque;
 
     use crypto_primitives::{
-        crypto_bigint_monty::F128, crypto_bigint_uint::Uint, ConstIntSemiring, FromWithConfig,
-        PrimeField,
+        ConstIntSemiring, FromWithConfig, PrimeField, crypto_bigint_monty::F128,
+        crypto_bigint_uint::Uint,
     };
 
     use super::*;

@@ -45,13 +45,13 @@
 //! at a total grinding cost of `2^10` hashes instead of the earlier
 //! single-prime profile's `2^21 + 2^18`.
 
-use crypto_primes::{is_prime, Flavor};
-use crypto_primitives::{crypto_bigint_monty::F128, crypto_bigint_uint::Uint, PrimeField};
+use crypto_primes::{Flavor, is_prime};
+use crypto_primitives::{PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint};
 use thiserror::Error;
 
 use crate::{
-    ext_proj::{sample_prime_in_interval, PrimeSamplingError},
-    piop::spartan::{absorb_spartan_message, SpartanField},
+    ext_proj::{PrimeSamplingError, sample_prime_in_interval},
+    piop::spartan::{SpartanField, absorb_spartan_message},
     poly::univariate::binary_gf128::BinaryFieldGF128,
     transcript::traits::Transcript,
 };
@@ -361,8 +361,7 @@ mod tests {
         let profile = MultiswapPrimeProfile::new();
         let mut first = Blake3Transcript::new();
         let mut second = Blake3Transcript::new();
-        let (first_q, first_bits) =
-            sample_multiswap_reduction_prime(&mut first, profile).unwrap();
+        let (first_q, first_bits) = sample_multiswap_reduction_prime(&mut first, profile).unwrap();
         let (second_q, _) = sample_multiswap_reduction_prime(&mut second, profile).unwrap();
         assert_eq!(first_q, second_q);
         assert_eq!(first_bits, 113);
@@ -373,10 +372,8 @@ mod tests {
     fn the_two_sampling_domains_yield_distinct_primes() {
         let profile = MultiswapPrimeProfile::new();
         let mut transcript = Blake3Transcript::new();
-        let fingerprint =
-            sample_multiswap_fingerprint_context(&mut transcript, profile).unwrap();
-        let (reduction, _) =
-            sample_multiswap_reduction_prime(&mut transcript, profile).unwrap();
+        let fingerprint = sample_multiswap_fingerprint_context(&mut transcript, profile).unwrap();
+        let (reduction, _) = sample_multiswap_reduction_prime(&mut transcript, profile).unwrap();
         assert!(fingerprint.q() > reduction);
     }
 }

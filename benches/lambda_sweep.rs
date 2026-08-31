@@ -1,5 +1,5 @@
 //! The λ sweep: one binary proving the SAME SHA-256 witness under each
-//! named security profile — `Lambda100` (the default), `LegacySha128Design`
+//! named security profile — `Lambda100` (the default), `Sha128ReferenceSchedule`
 //! (the historical 128-design PIOP schedule, no forest grinding, ~126.4-bit
 //! floor), and `Lambda128` (every controllable term ≥ 128) — in the unified
 //! output format. This is the prover-time / proof-size tradeoff table that
@@ -25,12 +25,12 @@ use std::hint::black_box;
 use std::time::Instant;
 
 use f2z::piop::spartan::{
-    commit_sha256_paper128_witness_with_config, generate_sha256_compression_witnesses_exact,
-    prepare_sha256_compression_batch_integer_with_profile,
-    prove_sha256_compressions_paper128_with_config, sha256_compression_configs_for,
-    verify_sha256_compressions_paper128_with_config, IopSecurityProfile, Lambda100, Lambda128,
-    LegacySha128Design, Sha256CompressionInput, Sha256CompressionStatement, SpartanField,
-    SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS,
+    IopSecurityProfile, Lambda100, Lambda128, SHA256_MAX_LOG_COMPRESSIONS,
+    SHA256_MIN_LOG_COMPRESSIONS, Sha128ReferenceSchedule, Sha256CompressionInput,
+    Sha256CompressionStatement, SpartanField, commit_sha256_compression_witness_with_config,
+    generate_sha256_compression_witnesses, prepare_sha256_compression_batch_with_profile,
+    prove_sha256_compressions_with_config, sha256_compression_configs,
+    verify_sha256_compressions_with_config,
 };
 use f2z::transcript::Blake3Transcript;
 
@@ -62,9 +62,9 @@ fn sweep_profile<P: IopSecurityProfile>(
 ) {
     let compressions = 1usize << exponent;
     let setup_started = Instant::now();
-    let prepared = prepare_sha256_compression_batch_integer_with_profile::<P>(exponent)
+    let prepared = prepare_sha256_compression_batch_with_profile::<P>(exponent)
         .expect("profile instantiates at this shape");
-    let (pc, vc) = sha256_compression_configs_for(&prepared).expect("Ligerito configs");
+    let (pc, vc) = sha256_compression_configs(&prepared).expect("Ligerito configs");
     let setup_ms = common::elapsed_ms(setup_started);
     let security = prepared.security().clone();
 
@@ -99,12 +99,7 @@ fn sweep_profile<P: IopSecurityProfile>(
     }
 
     let witness_started = Instant::now();
-    let witness = generate_sha256_compression_witnesses_exact(
-        inputs,
-        prepared.source_params(),
-        prepared.assignment_params(),
-    )
-    .expect("witness");
+    let witness = generate_sha256_compression_witnesses(&prepared, inputs).expect("witness");
     let statements: Vec<_> = inputs
         .iter()
         .copied()
@@ -120,11 +115,11 @@ fn sweep_profile<P: IopSecurityProfile>(
         let _ = f2z::utils::prof::take_totals();
         let prove_started = Instant::now();
         let commit_started = Instant::now();
-        let hint = commit_sha256_paper128_witness_with_config(&prepared, &witness, &pc)
+        let hint = commit_sha256_compression_witness_with_config(&prepared, &witness, &pc)
             .expect("commit");
         let commit_ms = common::elapsed_ms(commit_started);
         let mut prover_transcript = Blake3Transcript::new();
-        let proof = prove_sha256_compressions_paper128_with_config(
+        let proof = prove_sha256_compressions_with_config(
             &mut prover_transcript,
             &prepared,
             &statements,
@@ -138,7 +133,7 @@ fn sweep_profile<P: IopSecurityProfile>(
 
         let verify_started = Instant::now();
         let mut verifier_transcript = Blake3Transcript::new();
-        verify_sha256_compressions_paper128_with_config(
+        verify_sha256_compressions_with_config(
             &mut verifier_transcript,
             &prepared,
             &statements,
@@ -162,7 +157,11 @@ fn sweep_profile<P: IopSecurityProfile>(
 
     let f2z_bytes = proof.f2z().to_bytes().len();
     let spartan_elements = 4 * proof.outer().sumcheck.round_polynomials.len() + 3;
-    let field_bytes = proof.outer().az_mle_claim.canonical_element_encoding().len();
+    let field_bytes = proof
+        .outer()
+        .az_mle_claim
+        .canonical_element_encoding()
+        .len();
     let grinding_nonce_count = proof.outer_nonces().len()
         + usize::from(security.initial_grinding_bits > 0)
         + usize::from(security.terminal_grinding_bits > 0);
@@ -206,7 +205,7 @@ fn main() {
         let exponent: usize = shapes[0].parse().expect("integer exponent");
         assert!(
             (SHA256_MIN_LOG_COMPRESSIONS..=SHA256_MAX_LOG_COMPRESSIONS).contains(&exponent),
-            "paper SHA profile supports exponents 7 through 16"
+            "SHA-256 runtime-prime protocol supports exponents 7 through 16"
         );
         exponent
     });
@@ -218,7 +217,7 @@ fn main() {
     );
     println!("(the Limber114 row comes from `cargo bench --bench multiswap`)");
     sweep_profile::<Lambda100>(exponent, &inputs, reps, threads, seed);
-    sweep_profile::<LegacySha128Design>(exponent, &inputs, reps, threads, seed);
+    sweep_profile::<Sha128ReferenceSchedule>(exponent, &inputs, reps, threads, seed);
     sweep_profile::<Lambda128>(exponent, &inputs, reps, threads, seed);
     flock_core::scratch::clear();
 }

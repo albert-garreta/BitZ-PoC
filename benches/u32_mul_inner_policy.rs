@@ -15,7 +15,7 @@ use f2z::piop::spartan::{
     verify_spartan_proof,
 };
 use f2z::transcript::Blake3Transcript;
-use rand::{Rng, RngExt, SeedableRng, rngs::StdRng};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 const ASSIGNMENT_BINDING: [u8; 32] = [0x49; 32];
 
@@ -33,34 +33,22 @@ fn env_usize(name: &str, default: usize) -> usize {
     }
 }
 
-fn parse_seed(value: &str) -> u64 {
-    if let Some(hex) = value
-        .strip_prefix("0x")
-        .or_else(|| value.strip_prefix("0X"))
-    {
-        u64::from_str_radix(hex, 16).expect("F2Z_MUL_SEED contains a valid hexadecimal u64")
-    } else {
-        value
-            .parse()
-            .expect("F2Z_MUL_SEED contains a valid decimal u64")
-    }
-}
-
 fn exponents() -> Vec<usize> {
-    match std::env::var("F2Z_MUL_EXPONENTS") {
-        Ok(value) => value
-            .split([',', ' '])
-            .filter(|part| !part.is_empty())
-            .map(|part| {
-                let exponent = part
-                    .parse::<usize>()
-                    .expect("F2Z_MUL_EXPONENTS contains integers");
-                assert!((15..=23).contains(&exponent));
-                exponent
-            })
-            .collect(),
-        Err(_) => (15..=23).collect(),
-    }
+    common::shapes(None).map_or_else(
+        || (15..=23).collect(),
+        |shapes| {
+            shapes
+                .iter()
+                .map(|part| {
+                    let exponent = part
+                        .parse::<usize>()
+                        .expect("F2Z_BENCH_SHAPES contains integers");
+                    assert!((15..=23).contains(&exponent));
+                    exponent
+                })
+                .collect()
+        },
+    )
 }
 
 fn inner_policy() -> SpartanInnerPolicy {
@@ -248,10 +236,7 @@ fn main() {
     let _ = flock_core::init_perf_thread_pool();
     let reps = env_usize("F2Z_BENCH_REPS", 5);
     assert!(reps > 0);
-    let root_seed = std::env::var("F2Z_MUL_SEED")
-        .ok()
-        .map(|value| parse_seed(&value))
-        .unwrap_or(0x5533_326d_756c_0064);
+    let root_seed = common::seed(None, 0x5533_326d_756c_0064);
     let order = env_usize("F2Z_BENCH_ORDER", 1);
     let policy = inner_policy();
 

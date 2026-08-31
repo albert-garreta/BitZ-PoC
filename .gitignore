@@ -8,3 +8,6 @@ docs/**/*.fls
 docs/**/*.log
 docs/**/*.out
 docs/**/*.toc
+Perfruns/
+.tmp
+flock-zkperf-traces

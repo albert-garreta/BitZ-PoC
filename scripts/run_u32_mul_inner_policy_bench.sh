@@ -8,11 +8,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 
-EXPONENTS="${F2Z_MUL_EXPONENTS:-15 16 17 18 19 20 21 22 23}"
+EXPONENTS="${F2Z_BENCH_SHAPES:-15 16 17 18 19 20 21 22 23}"
 REPETITIONS="${F2Z_BENCH_REPS:-5}"
 FEATURES="${F2Z_BENCH_FEATURES:-unchecked,bench-internals}"
 THREADS="${RAYON_NUM_THREADS:-10}"
-ROOT_SEED="${F2Z_MUL_SEED:-0x5533326d756c0064}"
+ROOT_SEED="${F2Z_BENCH_SEED:-0x5533326d756c0064}"
+# This runner-only knob must not leak into the benchmark binary.
+unset F2Z_BENCH_FEATURES
 RUN_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 RUN_STAMP="$(date -u +%Y%m%d-%H%M%S)"
 
@@ -98,10 +100,10 @@ for exponent in $EXPONENTS; do
         echo "RUN exponent=$exponent native_fold=$native_fold field_accumulation=$field_accumulation order=$position" | tee -a "$RAW_LOG"
         OBLONG_PROFILE=1 \
         RAYON_NUM_THREADS="$THREADS" \
-        F2Z_MUL_EXPONENTS="$exponent" \
+        F2Z_BENCH_SHAPES="$exponent" \
         F2Z_BENCH_REPS="$REPETITIONS" \
         F2Z_BENCH_ORDER="$position" \
-        F2Z_MUL_SEED="$ROOT_SEED" \
+        F2Z_BENCH_SEED="$ROOT_SEED" \
         F2Z_INNER_NATIVE_FOLD="$native_fold" \
         F2Z_INNER_FIELD_ACCUM="$field_accumulation" \
             "$BENCH_BINARY" 2>&1 | tee -a "$RAW_LOG"

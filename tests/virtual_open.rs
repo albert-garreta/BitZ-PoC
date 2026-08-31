@@ -11,15 +11,14 @@
 //! and a step-3-consistent one), a non-generator α, a substituted map,
 //! and a wrong geometry.
 
-
 use f2z::f2map::{PreparedVirtualMap, cell_count, cell_row_bits};
 use f2z::ligerito::IntEvalRsError;
+use f2z::ligerito::{LOG_PACKING, RsOpenError, packed_vars};
 use f2z::ligerito_flock::{
-    FlockRsError, IntEvalRsLigVirtProof, LigConfig, VirtOpenTail, commit_rs_ligerito_rows,
+    FlockRsError, IntEvalRsLigVirtProof, LigConfig, VirtualReductionProof, commit_rs_ligerito_rows,
     lig_configs, prove_mle_eval_mod_q_ligerito, prove_mle_eval_mod_q_ligerito_virtual,
     verify_mle_eval_mod_q_ligerito, verify_mle_eval_mod_q_ligerito_virtual,
 };
-use f2z::ligerito::{LOG_PACKING, RsOpenError, packed_vars};
 use f2z::pcs::{IntEvalParams, smallest_generator};
 use f2z::sparse_matrix::SparseMatrix;
 use f2z::transcript::{Blake3Transcript, traits::Transcript};
@@ -84,11 +83,7 @@ fn bit_at(rows: &[Vec<u64>], t_w: usize, flat: usize) -> u64 {
 
 /// A deterministic sparse map: derived cell `i` = XOR of up to three
 /// pseudo-random source cells; every seventh row is empty.
-fn prepared_from_rows(
-    rows: usize,
-    columns: usize,
-    lists: Vec<Vec<usize>>,
-) -> PreparedVirtualMap {
+fn prepared_from_rows(rows: usize, columns: usize, lists: Vec<Vec<usize>>) -> PreparedVirtualMap {
     let matrix = SparseMatrix::try_from_rows(
         columns,
         lists
@@ -177,27 +172,57 @@ fn clone_proof(p: &IntEvalRsLigVirtProof) -> IntEvalRsLigVirtProof {
         mfs: p.mfs.clone(),
         us: p.us.clone(),
         presums: p.presums.clone(),
-        tail: p.tail.clone(),
+        reduction: p.reduction.clone(),
         lig: p.lig.clone(),
         grinding_nonces: p.grinding_nonces.clone(),
     }
 }
 
-/// The batch tail's `h_i` vector, mutable (all `run_shape` proofs use
-/// non-identity maps, so they carry the batch tail).
-fn hs_mut(p: &mut IntEvalRsLigVirtProof) -> &mut Vec<f2z::poly::univariate::binary_gf128::BinaryFieldGF128> {
-    match &mut p.tail {
-        VirtOpenTail::Batch { hs } => hs,
-        VirtOpenTail::Eq { .. } => panic!("expected the batch tail"),
+/// The AdjointBatch reduction's `h_i` vector, mutable (all `run_shape`
+/// proofs use non-identity maps).
+fn hs_mut(
+    p: &mut IntEvalRsLigVirtProof,
+) -> &mut [f2z::poly::univariate::binary_gf128::BinaryFieldGF128; 128] {
+    match &mut p.reduction {
+        VirtualReductionProof::AdjointBatch { hs } => hs,
+        VirtualReductionProof::Eq { .. } => panic!("expected the adjoint-batch reduction"),
     }
 }
 
-fn run_shape(p_h: IntEvalParams, seed: u64) {
-    let p_f = IntEvalParams { t: 10, s: 5, word_bits: 1 };
+fn assert_proof_pin(
+    label: &str,
+    bytes: &[u8],
+    transcript: &mut Blake3Transcript,
+    expected_hash: &str,
+    expected_next: u128,
+) {
+    assert_eq!(
+        blake3::hash(bytes).to_hex().to_string(),
+        expected_hash,
+        "{label} proof bytes changed"
+    );
+    assert_eq!(
+        transcript.get_challenge::<u128>(),
+        expected_next,
+        "{label} transcript continuation changed"
+    );
+}
+
+fn run_shape(p_h: IntEvalParams, seed: u64, virtual_pin: (&str, u128), direct_pin: (&str, u128)) {
+    let p_f = IntEvalParams {
+        t: 10,
+        s: 5,
+        word_bits: 1,
+    };
     let alpha = smallest_generator();
-    let (pc_f, vc_f) =
-        lig_configs(packed_vars(&p_f), LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
-            .unwrap();
+    let (pc_f, vc_f) = lig_configs(
+        packed_vars(&p_f),
+        LigConfig::Adhoc {
+            log_batch: 2,
+            log_inv_rate: 2,
+        },
+    )
+    .unwrap();
 
     let rows_f = f_rows(&p_f, seed);
     let map = test_map(cell_count(&p_h), cell_count(&p_f), seed ^ 0xF00D);
@@ -208,7 +233,9 @@ fn run_shape(p_h: IntEvalParams, seed: u64) {
     let t_wh = cell_row_bits(&p_h);
     let h_rows = apply_map(&map, &p_h, &p_f, &rows_f);
     for (i, sources) in row_lists(&map).iter().enumerate() {
-        let expect = sources.iter().fold(0u64, |a, &j| a ^ bit_at(&rows_f, t_wf, j));
+        let expect = sources
+            .iter()
+            .fold(0u64, |a, &j| a ^ bit_at(&rows_f, t_wf, j));
         assert_eq!(bit_at(&h_rows, t_wh, i), expect, "derived cell {i}");
     }
 
@@ -216,8 +243,9 @@ fn run_shape(p_h: IntEvalParams, seed: u64) {
         .map(|b| (splitmix(seed ^ 0xBEEF ^ b as u64) as u128) << 40 | b as u128)
         .map(|x| x % Q)
         .collect();
-    let col_w: Vec<Fq> =
-        (0..p_h.cols()).map(|c| Fq::from((splitmix(seed ^ c as u64) & 0xFF) as u128 + 1)).collect();
+    let col_w: Vec<Fq> = (0..p_h.cols())
+        .map(|c| Fq::from((splitmix(seed ^ c as u64) & 0xFF) as u128 + 1))
+        .collect();
     let y = expected_y(&p_h, &h_rows, &rw_q, &col_w);
 
     // Virtual proof against f's commitment.
@@ -225,25 +253,96 @@ fn run_shape(p_h: IntEvalParams, seed: u64) {
     let proof = prove_mle_eval_mod_q_ligerito_virtual(
         &mut pt, &hint_f, &h_rows, &p_h, &p_f, &map, &rw_q, Q_BITS, alpha, &pc_f,
     );
+    let proof_bytes = proof.to_bytes();
+    assert_proof_pin(
+        "non-identity AdjointBatch",
+        &proof_bytes,
+        &mut pt,
+        virtual_pin.0,
+        virtual_pin.1,
+    );
+    let decoded = IntEvalRsLigVirtProof::from_bytes(&proof_bytes)
+        .expect("AdjointBatch proof codec roundtrip");
+    assert_eq!(
+        decoded.to_bytes(),
+        proof_bytes,
+        "virtual codec is canonical"
+    );
+    let hs = match &proof.reduction {
+        VirtualReductionProof::AdjointBatch { hs } => hs,
+        VirtualReductionProof::Eq { .. } => panic!("expected AdjointBatch"),
+    };
+    let mut hs_bytes = Vec::with_capacity(128 * 16);
+    for value in hs.iter() {
+        for word in value.words() {
+            hs_bytes.extend_from_slice(&word.to_le_bytes());
+        }
+    }
+    let hs_start = proof_bytes
+        .windows(hs_bytes.len())
+        .position(|window| window == hs_bytes)
+        .expect("fixed h_i block in virtual proof stream");
+    assert_eq!(proof_bytes[hs_start - 1], 0, "AdjointBatch codec tag");
+    let mut short_hs = proof_bytes.clone();
+    short_hs.drain(hs_start + 127 * 16..hs_start + 128 * 16);
+    assert!(
+        IntEvalRsLigVirtProof::from_bytes(&short_hs).is_err(),
+        "a 127-element h_i block must not decode"
+    );
     let mut vt = Blake3Transcript::new();
     verify_mle_eval_mod_q_ligerito_virtual(
-        &mut vt, &hint_f.commitment, &proof, &p_h, &p_f, &map, &rw_q, &col_w, alpha, y, Q_BITS,
+        &mut vt,
+        &hint_f.commitment,
+        &proof,
+        &p_h,
+        &p_f,
+        &map,
+        &rw_q,
+        &col_w,
+        alpha,
+        y,
+        Q_BITS,
         &vc_f,
     )
-    .unwrap_or_else(|e| panic!("virtual roundtrip (t_h={}, W={}) failed: {e:?}", p_h.t,
-        p_h.word_bits));
+    .unwrap_or_else(|e| {
+        panic!(
+            "virtual roundtrip (t_h={}, W={}) failed: {e:?}",
+            p_h.t, p_h.word_bits
+        )
+    });
 
     // Semantic agreement: the DIRECT path (committing h itself) accepts the
     // same y under the same weights.
-    let (pc_h, vc_h) =
-        lig_configs(packed_vars(&p_h), LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
-            .unwrap();
+    let (pc_h, vc_h) = lig_configs(
+        packed_vars(&p_h),
+        LigConfig::Adhoc {
+            log_batch: 2,
+            log_inv_rate: 2,
+        },
+    )
+    .unwrap();
     let hint_h = commit_rs_ligerito_rows(&p_h, h_rows.clone(), &pc_h);
     let mut pt = Blake3Transcript::new();
     let direct = prove_mle_eval_mod_q_ligerito(&mut pt, &hint_h, &p_h, &rw_q, Q_BITS, alpha, &pc_h);
+    assert_proof_pin(
+        "direct Eq",
+        &direct.to_bytes(),
+        &mut pt,
+        direct_pin.0,
+        direct_pin.1,
+    );
     let mut vt = Blake3Transcript::new();
     verify_mle_eval_mod_q_ligerito(
-        &mut vt, &hint_h.commitment, &direct, &p_h, &rw_q, &col_w, alpha, y, Q_BITS, &vc_h,
+        &mut vt,
+        &hint_h.commitment,
+        &direct,
+        &p_h,
+        &rw_q,
+        &col_w,
+        alpha,
+        y,
+        Q_BITS,
+        &vc_h,
     )
     .expect("direct path agrees with the virtual claim");
 
@@ -251,8 +350,18 @@ fn run_shape(p_h: IntEvalParams, seed: u64) {
     let mut vt = Blake3Transcript::new();
     assert_eq!(
         verify_mle_eval_mod_q_ligerito_virtual(
-            &mut vt, &hint_f.commitment, &proof, &p_h, &p_f, &map, &rw_q, &col_w, alpha,
-            y + Fq::from(1u128), Q_BITS, &vc_f,
+            &mut vt,
+            &hint_f.commitment,
+            &proof,
+            &p_h,
+            &p_f,
+            &map,
+            &rw_q,
+            &col_w,
+            alpha,
+            y + Fq::from(1u128),
+            Q_BITS,
+            &vc_f,
         ),
         Err(FlockRsError::Common(IntEvalRsError::ReadOff)),
     );
@@ -263,7 +372,17 @@ fn run_shape(p_h: IntEvalParams, seed: u64) {
     let mut vt = Blake3Transcript::new();
     assert!(matches!(
         verify_mle_eval_mod_q_ligerito_virtual(
-            &mut vt, &hint_f.commitment, &bad, &p_h, &p_f, &map, &rw_q, &col_w, alpha, y, Q_BITS,
+            &mut vt,
+            &hint_f.commitment,
+            &bad,
+            &p_h,
+            &p_f,
+            &map,
+            &rw_q,
+            &col_w,
+            alpha,
+            y,
+            Q_BITS,
             &vc_f,
         ),
         Err(FlockRsError::ChunkRange { .. })
@@ -277,8 +396,18 @@ fn run_shape(p_h: IntEvalParams, seed: u64) {
         let mut vt = Blake3Transcript::new();
         assert!(
             verify_mle_eval_mod_q_ligerito_virtual(
-                &mut vt, &hint_f.commitment, &bad, &p_h, &p_f, &map, &rw_q, &col_w, alpha, y,
-                Q_BITS, &vc_f,
+                &mut vt,
+                &hint_f.commitment,
+                &bad,
+                &p_h,
+                &p_f,
+                &map,
+                &rw_q,
+                &col_w,
+                alpha,
+                y,
+                Q_BITS,
+                &vc_f,
             )
             .is_err()
         );
@@ -294,7 +423,17 @@ fn run_shape(p_h: IntEvalParams, seed: u64) {
     let mut vt = Blake3Transcript::new();
     assert_eq!(
         verify_mle_eval_mod_q_ligerito_virtual(
-            &mut vt, &hint_f.commitment, &bad, &p_h, &p_f, &map, &rw_q, &col_w, alpha, y, Q_BITS,
+            &mut vt,
+            &hint_f.commitment,
+            &bad,
+            &p_h,
+            &p_f,
+            &map,
+            &rw_q,
+            &col_w,
+            alpha,
+            y,
+            Q_BITS,
             &vc_f,
         ),
         Err(FlockRsError::VirtualBatch),
@@ -307,12 +446,23 @@ fn run_shape(p_h: IntEvalParams, seed: u64) {
     let mut bad = clone_proof(&proof);
     {
         let hs = hs_mut(&mut bad);
-        hs[7] = hs[7] + f2z::poly::univariate::binary_gf128::BinaryFieldGF128::from_words([1 << 9, 0]);
+        hs[7] =
+            hs[7] + f2z::poly::univariate::binary_gf128::BinaryFieldGF128::from_words([1 << 9, 0]);
     }
     let mut vt = Blake3Transcript::new();
     assert!(
         verify_mle_eval_mod_q_ligerito_virtual(
-            &mut vt, &hint_f.commitment, &bad, &p_h, &p_f, &map, &rw_q, &col_w, alpha, y, Q_BITS,
+            &mut vt,
+            &hint_f.commitment,
+            &bad,
+            &p_h,
+            &p_f,
+            &map,
+            &rw_q,
+            &col_w,
+            alpha,
+            y,
+            Q_BITS,
             &vc_f,
         )
         .is_err()
@@ -322,8 +472,18 @@ fn run_shape(p_h: IntEvalParams, seed: u64) {
     let mut vt = Blake3Transcript::new();
     assert_eq!(
         verify_mle_eval_mod_q_ligerito_virtual(
-            &mut vt, &hint_f.commitment, &proof, &p_h, &p_f, &map, &rw_q, &col_w,
-            f2z::poly::univariate::binary_gf128::BinaryFieldGF128::one(), y, Q_BITS, &vc_f,
+            &mut vt,
+            &hint_f.commitment,
+            &proof,
+            &p_h,
+            &p_f,
+            &map,
+            &rw_q,
+            &col_w,
+            f2z::poly::univariate::binary_gf128::BinaryFieldGF128::one(),
+            y,
+            Q_BITS,
+            &vc_f,
         ),
         Err(FlockRsError::Common(IntEvalRsError::ChallengeNotGenerator)),
     );
@@ -333,26 +493,52 @@ fn run_shape(p_h: IntEvalParams, seed: u64) {
     // change.
     let mut lists = row_lists(&map);
     let target = lists.iter().position(|l| !l.is_empty()).unwrap();
-    let extra = (0..cell_count(&p_f)).find(|j| !lists[target].contains(j)).unwrap();
+    let extra = (0..cell_count(&p_f))
+        .find(|j| !lists[target].contains(j))
+        .unwrap();
     lists[target].push(extra);
     lists[target].sort_unstable();
     let map2 = prepared_from_rows(map.rows(), map.cols(), lists);
     let mut vt = Blake3Transcript::new();
     assert!(
         verify_mle_eval_mod_q_ligerito_virtual(
-            &mut vt, &hint_f.commitment, &proof, &p_h, &p_f, &map2, &rw_q, &col_w, alpha, y,
-            Q_BITS, &vc_f,
+            &mut vt,
+            &hint_f.commitment,
+            &proof,
+            &p_h,
+            &p_f,
+            &map2,
+            &rw_q,
+            &col_w,
+            alpha,
+            y,
+            Q_BITS,
+            &vc_f,
         )
         .is_err()
     );
 
     // Geometry mismatch is rejected up front.
-    let p_wrong = IntEvalParams { t: p_h.t, s: p_h.s + 1, word_bits: p_h.word_bits };
+    let p_wrong = IntEvalParams {
+        t: p_h.t,
+        s: p_h.s + 1,
+        word_bits: p_h.word_bits,
+    };
     let mut vt = Blake3Transcript::new();
     assert_eq!(
         verify_mle_eval_mod_q_ligerito_virtual(
-            &mut vt, &hint_f.commitment, &proof, &p_wrong, &p_f, &map, &rw_q, &col_w, alpha, y,
-            Q_BITS, &vc_f,
+            &mut vt,
+            &hint_f.commitment,
+            &proof,
+            &p_wrong,
+            &p_f,
+            &map,
+            &rw_q,
+            &col_w,
+            alpha,
+            y,
+            Q_BITS,
+            &vc_f,
         ),
         Err(FlockRsError::RingSwitch(RsOpenError::Shape)),
     );
@@ -361,25 +547,68 @@ fn run_shape(p_h: IntEvalParams, seed: u64) {
 /// 1-chunk regime: W = 1 derived shape (c_w = 116 ≥ q_bits).
 #[test]
 fn virtual_open_roundtrips_one_chunk_w1() {
-    run_shape(IntEvalParams { t: 9, s: 6, word_bits: 1 }, 0x5EED_0001);
+    run_shape(
+        IntEvalParams {
+            t: 9,
+            s: 6,
+            word_bits: 1,
+        },
+        0x5EED_0001,
+        (
+            "27eba0e8a1afd5ac1d5f70e372390b6ac3554c99d1f871c2670649b59c5fe408",
+            204_570_546_892_575_606_146_720_026_402_923_708_369,
+        ),
+        (
+            "054d319657ddac76616868bf1385b60f6bf86f45cd3d7b8f0b5be1803769741c",
+            309_955_990_109_051_369_771_710_748_047_216_439_850,
+        ),
+    );
 }
 
 /// 2-chunk regime: W = 32 derived shape (c_w = 91 < q_bits = 100).
 #[test]
 fn virtual_open_roundtrips_two_chunks_w32() {
-    run_shape(IntEvalParams { t: 4, s: 6, word_bits: 32 }, 0x5EED_0002);
+    run_shape(
+        IntEvalParams {
+            t: 4,
+            s: 6,
+            word_bits: 32,
+        },
+        0x5EED_0002,
+        (
+            "e5baca86cb36bbbaf4899144fc05f9a649ec4e2eefeb9d9be785368835c3b310",
+            319_005_638_020_492_504_682_831_733_900_486_516_633,
+        ),
+        (
+            "07e3309cb9f9bb3cf9219e94d596297f384608e5fcda78c786b2d026c6367de8",
+            139_231_682_465_937_171_433_285_275_040_497_622_785,
+        ),
+    );
 }
 
 /// A map with a single live derived cell still roundtrips (near-degenerate
 /// forests: all-but-one tree constant).
 #[test]
 fn virtual_open_single_live_row() {
-    let p_h = IntEvalParams { t: 9, s: 6, word_bits: 1 };
-    let p_f = IntEvalParams { t: 10, s: 5, word_bits: 1 };
+    let p_h = IntEvalParams {
+        t: 9,
+        s: 6,
+        word_bits: 1,
+    };
+    let p_f = IntEvalParams {
+        t: 10,
+        s: 5,
+        word_bits: 1,
+    };
     let alpha = smallest_generator();
-    let (pc_f, vc_f) =
-        lig_configs(packed_vars(&p_f), LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
-            .unwrap();
+    let (pc_f, vc_f) = lig_configs(
+        packed_vars(&p_f),
+        LigConfig::Adhoc {
+            log_batch: 2,
+            log_inv_rate: 2,
+        },
+    )
+    .unwrap();
     let rows_f = f_rows(&p_f, 0x51_4E);
     // One nonempty derived row XORing three sources.
     let mut lists = vec![Vec::new(); cell_count(&p_h)];
@@ -398,7 +627,17 @@ fn virtual_open_single_live_row() {
     );
     let mut vt = Blake3Transcript::new();
     verify_mle_eval_mod_q_ligerito_virtual(
-        &mut vt, &hint_f.commitment, &proof, &p_h, &p_f, &map, &rw_q, &col_w, alpha, y, Q_BITS,
+        &mut vt,
+        &hint_f.commitment,
+        &proof,
+        &p_h,
+        &p_f,
+        &map,
+        &rw_q,
+        &col_w,
+        alpha,
+        y,
+        Q_BITS,
         &vc_f,
     )
     .expect("single-live-row virtual roundtrip");
@@ -411,16 +650,7 @@ fn virtual_open_single_live_row() {
     let wrong_y = expected_y(&p_h, &wrong_h, &rw_q, &col_w);
     let mut pt = Blake3Transcript::new();
     let wrong = prove_mle_eval_mod_q_ligerito_virtual(
-        &mut pt,
-        &hint_f,
-        &wrong_h,
-        &p_h,
-        &p_f,
-        &map,
-        &rw_q,
-        Q_BITS,
-        alpha,
-        &pc_f,
+        &mut pt, &hint_f, &wrong_h, &p_h, &p_f, &map, &rw_q, Q_BITS, alpha, &pc_f,
     );
     let mut vt = Blake3Transcript::new();
     assert!(
@@ -444,17 +674,27 @@ fn virtual_open_single_live_row() {
 }
 
 /// Identity `M` with one shared row layout: the fast path routes to the
-/// base eq ring switch (`Eq` tail — supplied `h` is unused, no `h_i` fold, no
-/// `a′` build); with the switch off the general batch tail proves the
-/// same statement; the verifier accepts either tail there but rejects
-/// the eq tail on a non-eligible statement.
+/// base eq ring switch (`Eq` — supplied `h` is unused, no `h_i` fold, no
+/// `a′` build); with the switch off the general AdjointBatch reduction proves the
+/// same statement; the verifier accepts either reduction there but rejects
+/// Eq on a non-eligible statement.
 #[test]
 fn virtual_open_identity_fast_path() {
     use f2z::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
-    let p = IntEvalParams { t: 10, s: 5, word_bits: 1 };
+    let p = IntEvalParams {
+        t: 10,
+        s: 5,
+        word_bits: 1,
+    };
     let alpha = smallest_generator();
-    let (pc, vc) =
-        lig_configs(packed_vars(&p), LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 }).unwrap();
+    let (pc, vc) = lig_configs(
+        packed_vars(&p),
+        LigConfig::Adhoc {
+            log_batch: 2,
+            log_inv_rate: 2,
+        },
+    )
+    .unwrap();
     let rows_f = f_rows(&p, 0x1D_FA57);
     let n = cell_count(&p);
     let map = PreparedVirtualMap::new(
@@ -464,24 +704,43 @@ fn virtual_open_identity_fast_path() {
     assert!(map.is_identity());
     let hint = commit_rs_ligerito_rows(&p, rows_f.clone(), &pc);
 
-    let rw_q: Vec<u128> =
-        (0..p.rows()).map(|b| (splitmix(0xF457 ^ b as u64) as u128) % Q).collect();
+    let rw_q: Vec<u128> = (0..p.rows())
+        .map(|b| (splitmix(0xF457 ^ b as u64) as u128) % Q)
+        .collect();
     let col_w: Vec<Fq> = (0..p.cols()).map(|c| Fq::from(c as u128 + 3)).collect();
     // h = f: the expected value reads f's own cells.
     let y = expected_y(&p, &rows_f, &rw_q, &col_w);
 
-    // Fast path (default ON): the proof carries the eq tail and verifies.
+    // Fast path (default ON): the proof carries Eq and verifies.
     let mut pt = Blake3Transcript::new();
     let proof = prove_mle_eval_mod_q_ligerito_virtual(
         &mut pt, &hint, &rows_f, &p, &p, &map, &rw_q, Q_BITS, alpha, &pc,
     );
+    assert_proof_pin(
+        "virtual identity Eq",
+        &proof.to_bytes(),
+        &mut pt,
+        "8bc30a0648c29ff26b5f41d4ff652c40d6d8954b10bb14e45bf9d535a572512c",
+        218_938_428_708_468_322_662_924_008_685_302_992_257,
+    );
     assert!(
-        matches!(proof.tail, VirtOpenTail::Eq { .. }),
+        matches!(proof.reduction, VirtualReductionProof::Eq { .. }),
         "identity map with matching layout must take the fast path"
     );
     let mut vt = Blake3Transcript::new();
     verify_mle_eval_mod_q_ligerito_virtual(
-        &mut vt, &hint.commitment, &proof, &p, &p, &map, &rw_q, &col_w, alpha, y, Q_BITS, &vc,
+        &mut vt,
+        &hint.commitment,
+        &proof,
+        &p,
+        &p,
+        &map,
+        &rw_q,
+        &col_w,
+        alpha,
+        y,
+        Q_BITS,
+        &vc,
     )
     .expect("identity fast-path roundtrip");
 
@@ -515,58 +774,104 @@ fn virtual_open_identity_fast_path() {
             );
         };
     reject_shape_without_absorption(
-        &IntEvalParams { t: usize::MAX, s: p.s, word_bits: p.word_bits },
+        &IntEvalParams {
+            t: usize::MAX,
+            s: p.s,
+            word_bits: p.word_bits,
+        },
         &p,
         Q_BITS,
     );
     reject_shape_without_absorption(
         &p,
-        &IntEvalParams { t: p.t, s: p.s, word_bits: 0 },
+        &IntEvalParams {
+            t: p.t,
+            s: p.s,
+            word_bits: 0,
+        },
         Q_BITS,
     );
     reject_shape_without_absorption(
-        &IntEvalParams { t: p.t, s: usize::MAX, word_bits: p.word_bits },
+        &IntEvalParams {
+            t: p.t,
+            s: usize::MAX,
+            word_bits: p.word_bits,
+        },
         &p,
         Q_BITS,
     );
     reject_shape_without_absorption(
-        &IntEvalParams { t: LOG_PACKING - 1, s: p.s, word_bits: 1 },
+        &IntEvalParams {
+            t: LOG_PACKING - 1,
+            s: p.s,
+            word_bits: 1,
+        },
         &p,
         Q_BITS,
     );
     reject_shape_without_absorption(
-        &IntEvalParams { t: p.t + p.s, s: 0, word_bits: 1 },
+        &IntEvalParams {
+            t: p.t + p.s,
+            s: 0,
+            word_bits: 1,
+        },
         &p,
         Q_BITS,
     );
     reject_shape_without_absorption(&p, &p, 0);
 
-    // Codec: the eq tail roundtrips canonically and the decoded proof
+    // Codec: Eq roundtrips canonically and the decoded proof
     // verifies.
     let bytes = proof.to_bytes();
     let decoded = IntEvalRsLigVirtProof::from_bytes(&bytes).expect("eq-tail decode");
-    assert_eq!(decoded.to_bytes(), bytes, "codec is a bijection on its image");
+    assert_eq!(
+        decoded.to_bytes(),
+        bytes,
+        "codec is a bijection on its image"
+    );
     let mut vt = Blake3Transcript::new();
     verify_mle_eval_mod_q_ligerito_virtual(
-        &mut vt, &hint.commitment, &decoded, &p, &p, &map, &rw_q, &col_w, alpha, y, Q_BITS, &vc,
+        &mut vt,
+        &hint.commitment,
+        &decoded,
+        &p,
+        &p,
+        &map,
+        &rw_q,
+        &col_w,
+        alpha,
+        y,
+        Q_BITS,
+        &vc,
     )
     .expect("decoded fast-path proof verifies");
 
     // A tampered ring-switch message must not verify.
     let mut bad = clone_proof(&proof);
-    match &mut bad.tail {
-        VirtOpenTail::Eq { rings } => rings[0].s_v[3] = rings[0].s_v[3] + Gf::one(),
-        VirtOpenTail::Batch { .. } => unreachable!(),
+    match &mut bad.reduction {
+        VirtualReductionProof::Eq { rings } => rings[0].s_v[3] = rings[0].s_v[3] + Gf::one(),
+        VirtualReductionProof::AdjointBatch { .. } => unreachable!(),
     }
     let mut vt = Blake3Transcript::new();
     assert!(
         verify_mle_eval_mod_q_ligerito_virtual(
-            &mut vt, &hint.commitment, &bad, &p, &p, &map, &rw_q, &col_w, alpha, y, Q_BITS, &vc,
+            &mut vt,
+            &hint.commitment,
+            &bad,
+            &p,
+            &p,
+            &map,
+            &rw_q,
+            &col_w,
+            alpha,
+            y,
+            Q_BITS,
+            &vc,
         )
         .is_err()
     );
 
-    // The eq tail is rejected outright on a non-eligible statement (a
+    // Eq is rejected outright on a non-eligible statement (a
     // non-identity map of the same shape) — the routing gate fires even
     // before any transcript divergence matters.
     let mut lists: Vec<Vec<usize>> = (0..n).map(|i| vec![i]).collect();
@@ -576,27 +881,58 @@ fn virtual_open_identity_fast_path() {
     let mut vt = Blake3Transcript::new();
     assert!(
         verify_mle_eval_mod_q_ligerito_virtual(
-            &mut vt, &hint.commitment, &proof, &p, &p, &map2, &rw_q, &col_w, alpha, y, Q_BITS,
+            &mut vt,
+            &hint.commitment,
+            &proof,
+            &p,
+            &p,
+            &map2,
+            &rw_q,
+            &col_w,
+            alpha,
+            y,
+            Q_BITS,
             &vc,
         )
         .is_err()
     );
 
-    // Switch off: the general dual-basis tail proves the identity map
+    // Switch off: the general dual-basis reduction proves the identity map
     // too, and the (env-independent) verifier accepts it as well.
     unsafe { std::env::set_var("F2Z_VIRT_ID_FAST", "0") };
     let mut pt = Blake3Transcript::new();
     let general = prove_mle_eval_mod_q_ligerito_virtual(
         &mut pt, &hint, &rows_f, &p, &p, &map, &rw_q, Q_BITS, alpha, &pc,
     );
+    assert_proof_pin(
+        "virtual identity AdjointBatch",
+        &general.to_bytes(),
+        &mut pt,
+        "a84ea6b01e8355f767be29a327719b2eedbaa5ca79c0aa45efbf420708679386",
+        265_177_699_075_422_809_345_164_704_473_886_491_828,
+    );
     unsafe { std::env::remove_var("F2Z_VIRT_ID_FAST") };
     assert!(
-        matches!(general.tail, VirtOpenTail::Batch { .. }),
-        "F2Z_VIRT_ID_FAST=0 must fall back to the batch tail"
+        matches!(
+            general.reduction,
+            VirtualReductionProof::AdjointBatch { .. }
+        ),
+        "F2Z_VIRT_ID_FAST=0 must fall back to AdjointBatch"
     );
     let mut vt = Blake3Transcript::new();
     verify_mle_eval_mod_q_ligerito_virtual(
-        &mut vt, &hint.commitment, &general, &p, &p, &map, &rw_q, &col_w, alpha, y, Q_BITS, &vc,
+        &mut vt,
+        &hint.commitment,
+        &general,
+        &p,
+        &p,
+        &map,
+        &rw_q,
+        &col_w,
+        alpha,
+        y,
+        Q_BITS,
+        &vc,
     )
-    .expect("batch tail on an identity map verifies");
+    .expect("AdjointBatch on an identity map verifies");
 }

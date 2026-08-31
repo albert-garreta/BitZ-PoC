@@ -26,7 +26,7 @@ const CONSTRAINT_MATRIX_DIGEST_DOMAIN: &[u8] = b"f2z/spartan/constraint-matrices
 
 pub use crate::sparse_matrix::SparseMatrix;
 
-use super::{sumcheck::R1csProductMles, SpartanField, SpartanFieldError};
+use super::{SpartanField, SpartanFieldError, sumcheck::R1csProductMles};
 
 /// A sparse R1CS coefficient that can act on values in `F`.
 ///
@@ -1502,13 +1502,12 @@ where
     F: SpartanField,
     C: ModulusIndependentCoefficient<F>,
 {
-    let push_usize = |builder: &mut SplicedDigestBuilder,
-                      value: usize|
-     -> Result<(), SpartanMatrixError> {
-        let encoded = u64::try_from(value).map_err(|_| SpartanMatrixError::DomainTooLarge)?;
-        builder.push(&encoded.to_le_bytes());
-        Ok(())
-    };
+    let push_usize =
+        |builder: &mut SplicedDigestBuilder, value: usize| -> Result<(), SpartanMatrixError> {
+            let encoded = u64::try_from(value).map_err(|_| SpartanMatrixError::DomainTooLarge)?;
+            builder.push(&encoded.to_le_bytes());
+            Ok(())
+        };
 
     builder.push(CONSTRAINT_MATRIX_DIGEST_DOMAIN);
     push_usize(builder, modulus_width)?;
@@ -1604,7 +1603,7 @@ where
 #[cfg(test)]
 mod tests {
     use crypto_primitives::{
-        crypto_bigint_monty::F128, crypto_bigint_uint::Uint, FromWithConfig, PrimeField,
+        FromWithConfig, PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint,
     };
 
     use super::*;
@@ -1934,8 +1933,7 @@ mod tests {
         matrices: &ConstraintMatrices<bool>,
         config: &<F128 as PrimeField>::Config,
     ) {
-        let skeleton =
-            ConstraintMatricesSkeleton::<F128, bool>::new(matrices.clone()).unwrap();
+        let skeleton = ConstraintMatricesSkeleton::<F128, bool>::new(matrices.clone()).unwrap();
         let from_skeleton =
             PreparedConstraintMatrices::<F128, bool>::from_skeleton(&skeleton, config).unwrap();
         let from_new =
@@ -2000,13 +1998,11 @@ mod tests {
             )
             .unwrap()
         };
-        let selectors =
-            ConstraintMatrices::new(selector(8), selector(16), selector(24)).unwrap();
+        let selectors = ConstraintMatrices::new(selector(8), selector(16), selector(24)).unwrap();
         from_skeleton_and_new_agree_semantically(&selectors, &config);
 
-        let generic = |entries: Vec<Vec<(usize, bool)>>| {
-            SparseMatrix::try_from_rows(8, entries).unwrap()
-        };
+        let generic =
+            |entries: Vec<Vec<(usize, bool)>>| SparseMatrix::try_from_rows(8, entries).unwrap();
         let irregular = ConstraintMatrices::new(
             generic(vec![vec![(0, true), (7, true)], vec![(3, true)]]),
             generic(vec![vec![(1, true)], vec![(2, true), (5, true)]]),
@@ -2026,8 +2022,7 @@ mod tests {
                 .unwrap()
         };
         let matrices = ConstraintMatrices::new(matrix(0), matrix(1), matrix(2)).unwrap();
-        let skeleton =
-            ConstraintMatricesSkeleton::<F128, bool>::new(matrices.clone()).unwrap();
+        let skeleton = ConstraintMatricesSkeleton::<F128, bool>::new(matrices.clone()).unwrap();
 
         for field_config in [&config, &other_config] {
             let replayed =
@@ -2059,13 +2054,11 @@ mod tests {
     fn skeleton_rejects_explicit_zero_with_direct_constructor_coordinates() {
         let config = config();
         let with_zero = || {
-            let unit = SparseMatrix::try_from_rows(4, vec![vec![(0, true)], vec![(1, true)]])
-                .unwrap();
-            let zeroed = SparseMatrix::try_from_rows(
-                4,
-                vec![vec![(0, true)], vec![(2, false), (3, true)]],
-            )
-            .unwrap();
+            let unit =
+                SparseMatrix::try_from_rows(4, vec![vec![(0, true)], vec![(1, true)]]).unwrap();
+            let zeroed =
+                SparseMatrix::try_from_rows(4, vec![vec![(0, true)], vec![(2, false), (3, true)]])
+                    .unwrap();
             ConstraintMatrices::new(unit.clone(), zeroed, unit).unwrap()
         };
         let skeleton_error =
@@ -2355,9 +2348,11 @@ mod tests {
         assert_eq!(parallel_boolean, sequential_boolean);
         assert_eq!(parallel_field, sequential_field);
         assert_eq!(parallel_boolean, parallel_field);
-        assert!(parallel_boolean.evaluations[column_count..]
-            .iter()
-            .all(|value| <F128 as PrimeField>::is_zero(value)));
+        assert!(
+            parallel_boolean.evaluations[column_count..]
+                .iter()
+                .all(|value| <F128 as PrimeField>::is_zero(value))
+        );
     }
 
     #[test]

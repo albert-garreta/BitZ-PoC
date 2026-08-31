@@ -88,8 +88,7 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_MAT_GRID",
     // Deprecated aliases.
     "F2Z_MULTISWAP_REPS",
-    "F2Z_MUL_EXPONENTS",
-    "F2Z_MUL_SEED",
+    // U32-specific bench knob.
     "F2Z_MUL_WORD_BITS",
     "F2Z_PAIR2_FACTORED",
     "F2Z_PAR_CHUNK",
@@ -103,10 +102,10 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_SHA_CPU",
     "F2Z_SHA_GIT_REV",
     "F2Z_SHA_LOG2S",
+    "F2Z_SHA_MNUMROWS_LOG2S",
     "F2Z_SHA_REPS",
     "F2Z_SHA_SEED",
     "F2Z_SHA_TRACE_PATH",
-    "F2Z_SPARTAN_OUTER_SKIP",
     "F2Z_SPARTAN_REDUCTION",
     "F2Z_T4_FACTORED",
     "F2Z_T4_PRFM",
@@ -126,7 +125,10 @@ pub fn enforce_known_env() {
         return;
     }
     unknown.sort();
-    eprintln!("error: unknown F2Z_* environment variable(s): {}", unknown.join(", "));
+    eprintln!(
+        "error: unknown F2Z_* environment variable(s): {}",
+        unknown.join(", ")
+    );
     eprintln!("       known knobs (docs/bench-schema.md):");
     for chunk in KNOWN_F2Z_ENV.chunks(4) {
         eprintln!("         {}", chunk.join(" "));
@@ -191,7 +193,9 @@ pub fn shapes(alias: Option<&str>) -> Option<Vec<String>> {
 /// Root seed (decimal or 0x-hex).
 pub fn seed(alias: Option<&str>, default: u64) -> u64 {
     env_with_alias("F2Z_BENCH_SEED", alias).map_or(default, |value| {
-        let parsed = if let Some(hex) = value.strip_prefix("0x").or_else(|| value.strip_prefix("0X"))
+        let parsed = if let Some(hex) = value
+            .strip_prefix("0x")
+            .or_else(|| value.strip_prefix("0X"))
         {
             u64::from_str_radix(hex, 16).ok()
         } else {
@@ -255,8 +259,8 @@ pub const STEP5_VERIFY: &str = "step5:open_verify";
 const S3_OUTER: &[&str] = &[
     "spartan:outer_sumcheck",
     "spartan:outer_univariate_skip",
-    "sha256-paper128:spartan_outer_prove",
-    "sha256-paper128:spartan_outer_verify",
+    "sha256:spartan_outer_prove",
+    "sha256:spartan_outer_verify",
 ];
 const S3_BIND: &[&str] = &["spartan:bind_and_batch"];
 const S3_INNER: &[&str] = &["spartan:inner_sumcheck"];
@@ -325,17 +329,18 @@ impl StepSamples {
     /// Records one prover rep: the end-to-end wall time, the bench-timed
     /// Step 1 (bit-pack + commit) wall time, and the profiler totals drained
     /// after the prove call.
-    pub fn record_prove(
-        &mut self,
-        total_ms: f64,
-        commit_ms: f64,
-        phases: &[(&'static str, f64)],
-    ) {
+    pub fn record_prove(&mut self, total_ms: f64, commit_ms: f64, phases: &[(&'static str, f64)]) {
         self.total.push(total_ms);
         self.commit.push(Some(commit_ms));
         self.record_scopes(
             phases,
-            [STEP2_PROVE, STEP3_PROVE, STEP4_PROVE, STEP5_0_PROVE, STEP5_PROVE],
+            [
+                STEP2_PROVE,
+                STEP3_PROVE,
+                STEP4_PROVE,
+                STEP5_0_PROVE,
+                STEP5_PROVE,
+            ],
         );
     }
 
@@ -470,7 +475,10 @@ fn fmt_opt(value: Option<f64>) -> String {
 }
 
 fn fmt_row(value: Option<f64>) -> String {
-    value.map_or_else(|| "     n/a   ".to_owned(), |value| format!("{value:9.2} ms"))
+    value.map_or_else(
+        || "     n/a   ".to_owned(),
+        |value| format!("{value:9.2} ms"),
+    )
 }
 
 impl BenchReport {
@@ -610,7 +618,9 @@ pub fn median(samples: &[f64]) -> f64 {
 /// was present in every rep.
 fn optional_median(samples: &[Option<f64>]) -> Option<f64> {
     let values: Option<Vec<f64>> = samples.iter().copied().collect();
-    values.filter(|values| !values.is_empty()).map(|values| median(&values))
+    values
+        .filter(|values| !values.is_empty())
+        .map(|values| median(&values))
 }
 
 /// Milliseconds elapsed since `start`.

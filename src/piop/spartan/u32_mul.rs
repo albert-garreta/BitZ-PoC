@@ -4,14 +4,13 @@
 //! representation is materialized separately, in the layout expected by the
 //! F2Z commitment, so bit variables never become part of the R1CS statement.
 
-use crypto_primitives::FromWithConfig;
 use thiserror::Error;
 
 use crate::{pcs::IntEvalParams, poly::mle::DenseMultilinearExtension};
 
 use super::{
-    build_assignment_mle, build_product_mles, ConstraintMatrices, PreparedConstraintMatrices,
-    R1csProductMles, SparseMatrix, SpartanField, SpartanMatrixError, SpartanRelationBackend,
+    ConstraintMatrices, PreparedConstraintMatrices, R1csProductMles, SparseMatrix, SpartanField,
+    SpartanMatrixError, SpartanRelationBackend,
 };
 
 /// Number of committed little-endian bits used for each left operand.
@@ -557,49 +556,9 @@ pub fn project_u32_mul_native_witness(witness: &U32MulWitness) -> U32MulNativeMl
     }
 }
 
-/// Converts the exact native assignment and selector products into the
-/// generic field values consumed by the field-generic Spartan prover. Since
-/// all native values fit in `u64`, this conversion is exact for every
-/// supported Spartan field.
-pub fn project_u32_mul_witness<F>(
-    witness: &U32MulWitness,
-    field_config: &F::Config,
-) -> Result<(DenseMultilinearExtension<F>, R1csProductMles<F>), U32MulError>
-where
-    F: SpartanField + FromWithConfig<u64>,
-{
-    F::validate_config(field_config).map_err(SpartanMatrixError::from)?;
-
-    let field_assignment: Vec<F> = witness
-        .assignment()
-        .iter()
-        .copied()
-        .map(|value| F::from_with_cfg(value, field_config))
-        .collect();
-
-    let capacity = witness.layout.capacity;
-    let live = witness.layout.multiplications;
-    let products = build_product_mles(
-        &field_assignment[capacity..capacity + live],
-        &field_assignment[2 * capacity..2 * capacity + live],
-        &field_assignment[3 * capacity..3 * capacity + live],
-        live,
-        field_config,
-    )?;
-    let assignment = build_assignment_mle(
-        &field_assignment,
-        witness.layout.assignment_len(),
-        field_config,
-    )?;
-
-    Ok((assignment, products))
-}
-
 #[cfg(test)]
 mod tests {
-    use crypto_primitives::{
-        crypto_bigint_monty::F128, crypto_bigint_uint::Uint, FromWithConfig, PrimeField,
-    };
+    use crypto_primitives::{PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint};
 
     use super::*;
 
@@ -607,10 +566,6 @@ mod tests {
 
     fn config() -> <F128 as PrimeField>::Config {
         F128::make_cfg(&Uint::from(TEST_MODULUS)).expect("odd test modulus")
-    }
-
-    fn field(value: u64, config: &<F128 as PrimeField>::Config) -> F128 {
-        F128::from_with_cfg(value, config)
     }
 
     #[test]
@@ -662,9 +617,11 @@ mod tests {
         assert_eq!(capacity, 256);
         assert_eq!(witness.layout().f2z_width(), U32MulF2zWidth::W1);
         assert_eq!(witness.assignment()[0], 1);
-        assert!(witness.assignment()[1..capacity]
-            .iter()
-            .all(|&value| value == 0));
+        assert!(
+            witness.assignment()[1..capacity]
+                .iter()
+                .all(|&value| value == 0)
+        );
         assert_eq!(&witness.x_values()[..3], &[0, 1, u64::from(u32::MAX)]);
         assert_eq!(
             &witness.y_values()[..3],
@@ -676,9 +633,11 @@ mod tests {
         );
         assert!(witness.x_values()[3..].iter().all(|&value| value == 0));
         assert!(witness.y_values()[3..].iter().all(|&value| value == 0));
-        assert!(witness.product_values()[3..]
-            .iter()
-            .all(|&value| value == 0));
+        assert!(
+            witness.product_values()[3..]
+                .iter()
+                .all(|&value| value == 0)
+        );
         assert_eq!(witness.az(), &witness.x_values()[..3]);
         assert_eq!(witness.bz(), &witness.y_values()[..3]);
         assert_eq!(witness.cz(), &witness.product_values()[..3]);
@@ -758,9 +717,10 @@ mod tests {
             let rows = witness.f2z_bit_rows();
 
             assert_eq!(rows.len(), p.cols());
-            assert!(rows
-                .iter()
-                .all(|row| row.len() == p.rows() * p.word_bits / 64));
+            assert!(
+                rows.iter()
+                    .all(|row| row.len() == p.rows() * p.word_bits / 64)
+            );
 
             for gate in 0..layout.capacity() {
                 let values = [
@@ -789,33 +749,6 @@ mod tests {
                     }
                 }
             }
-        }
-    }
-
-    #[test]
-    fn field_projection_preserves_assignment_and_r1cs_products() {
-        let config = config();
-        let inputs = [(2, 3), (u32::MAX, u32::MAX), (11, 13)];
-        let witness = U32MulWitness::from_inputs(&inputs).unwrap();
-        let relation = prepare_u32_mul_relation::<F128>(*witness.layout(), &config).unwrap();
-        let (assignment, products) = project_u32_mul_witness::<F128>(&witness, &config).unwrap();
-
-        assert_eq!(
-            assignment.evaluations.len(),
-            relation.matrices().column_count()
-        );
-        assert_eq!(assignment.evaluations[0], field(1, &config));
-
-        for row in 0..inputs.len() {
-            let az = &products.az.evaluations[row];
-            let bz = &products.bz.evaluations[row];
-            let cz = &products.cz.evaluations[row];
-            let mut product = az.clone();
-            product *= bz;
-            assert_eq!(&product, cz);
-            assert_eq!(az, &field(witness.az()[row], &config));
-            assert_eq!(bz, &field(witness.bz()[row], &config));
-            assert_eq!(cz, &field(witness.cz()[row], &config));
         }
     }
 

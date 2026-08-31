@@ -25,20 +25,20 @@ pub mod reduce;
 pub mod relation;
 
 pub use circuit::{
-    modulus_ell, modulus_n, modulus_p_hash, MultiswapCircuit, MultiswapCircuitError,
-    MultiswapDims, MULTISWAP_VALUE_BITS,
+    MULTISWAP_VALUE_BITS, MultiswapCircuit, MultiswapCircuitError, MultiswapDims, modulus_ell,
+    modulus_n, modulus_p_hash,
 };
 pub use prime::{
-    sample_multiswap_fingerprint_context, sample_multiswap_reduction_prime,
     MultiswapFingerprintContext, MultiswapPrimeError, MultiswapPrimeProfile,
+    sample_multiswap_fingerprint_context, sample_multiswap_reduction_prime,
 };
 pub use proof::{
+    MultiswapError, MultiswapOpeningClaim, MultiswapProof, PreparedMultiswapRelation,
     bitify_multiswap_claim, commit_multiswap_witness, multiswap_lig_configs,
-    prove_multiswap_mod_r1cs, verify_multiswap_mod_r1cs, MultiswapError, MultiswapOpeningClaim,
-    MultiswapProof, PreparedMultiswapRelation,
+    prove_multiswap_mod_r1cs, verify_multiswap_mod_r1cs,
 };
 pub use reduce::{step50_accepts_lift, step50_integer_lift, step50_mu_prime_bound, step50_reduce};
 pub use relation::{
+    MULTISWAP_QUOS_SLOT_START, MULTISWAP_SLOT_VARS, MULTISWAP_SLOTS, MULTISWAP_W_SLOT_START,
     MultiswapAssignment, MultiswapIntegerRelation, MultiswapLayout, MultiswapLayoutError,
-    MULTISWAP_QUOS_SLOT_START, MULTISWAP_SLOTS, MULTISWAP_SLOT_VARS, MULTISWAP_W_SLOT_START,
 };

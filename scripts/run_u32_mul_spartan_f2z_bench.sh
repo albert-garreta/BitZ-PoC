@@ -1,30 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run the u32 × u32 → u64 Spartan/F2Z sweep with a paired immediate-versus-
-# delayed design. One uninstrumented latency executable and, when requested,
-# one peak-allocator executable are built, then invoked in fresh processes for
-# every (word width, size, strategy, pass) tuple.
+# Run the canonical u32 × u32 → u64 Spartan/F2Z sweep. One uninstrumented
+# latency executable and, when requested, one peak-allocator executable are
+# built, then invoked in fresh processes for every (word width, size, pass)
+# tuple.
 #
 # Usage:
 #   scripts/run_u32_mul_spartan_f2z_bench.sh [summary.csv]
 #
-# The sibling artifacts are `<stem>_raw.csv`, `<stem>_paired.csv`, and
-# `<stem>.log`. Existing files are never overwritten.
+# The sibling artifacts are `<stem>_raw.csv` and `<stem>.log`. Existing files
+# are never overwritten.
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 
-EXPONENTS="${F2Z_MUL_EXPONENTS:-15 16 17 18 19 20 21 22 23 24 25}"
+EXPONENTS="${F2Z_BENCH_SHAPES:-15 16 17 18 19 20 21 22 23 24 25}"
 WORD_BITS="${F2Z_MUL_WORD_BITS:-1}"
 REPETITIONS="${F2Z_BENCH_REPS:-5}"
 FEATURES="${F2Z_BENCH_FEATURES:-unchecked}"
 THREADS="${RAYON_NUM_THREADS:-10}"
-STRATEGIES="${F2Z_BENCH_STRATEGIES:-immediate delayed-barrett delayed-crypto-bigint}"
-MEMORY_STRATEGIES="${F2Z_BENCH_MEMORY_STRATEGIES:-$STRATEGIES}"
+STRATEGY="delayed-barrett"
 MEASURE_MEMORY="${F2Z_BENCH_MEASURE_MEMORY:-1}"
-ROOT_SEED="${F2Z_MUL_SEED:-0x5533326d756c0064}"
-OUTER_SKIP="${F2Z_SPARTAN_OUTER_SKIP:-0}"
+ROOT_SEED="${F2Z_BENCH_SEED:-0x5533326d756c0064}"
+# Runner-only knobs must not leak into the benchmark binary: its strict
+# environment validator rejects names the binary itself does not consume.
+unset F2Z_BENCH_FEATURES F2Z_BENCH_MEASURE_MEMORY
 RUN_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 RUN_DATE="${RUN_TIMESTAMP%%T*}"
 RUN_STAMP="$(date -u +%Y%m%d-%H%M%S)"
@@ -45,11 +46,10 @@ case "$ARTIFACT_STEM" in
     *_summary) ARTIFACT_STEM="${ARTIFACT_STEM%_summary}" ;;
 esac
 RAW_CSV="${ARTIFACT_STEM}_raw.csv"
-PAIRED_CSV="${ARTIFACT_STEM}_paired.csv"
 RAW_LOG="${ARTIFACT_STEM}.log"
 OUTPUT_DIR="$(dirname -- "$SUMMARY_CSV")"
 
-for output in "$SUMMARY_CSV" "$RAW_CSV" "$PAIRED_CSV" "$RAW_LOG"; do
+for output in "$SUMMARY_CSV" "$RAW_CSV" "$RAW_LOG"; do
     if [[ -e "$output" ]]; then
         echo "refusing to overwrite existing artifact: $output" >&2
         exit 2
@@ -117,11 +117,11 @@ OPERATING_SYSTEM="$(uname -srm)"
 
 echo "Exponents: $EXPONENTS"
 echo "F2Z word bits: $WORD_BITS"
-echo "Strategies: $STRATEGIES"
+echo "Strategy: $STRATEGY (canonical)"
 echo "Measured repetitions: $REPETITIONS (plus one warmup per process)"
 echo "Rayon threads: $THREADS"
 echo "Root seed: $ROOT_SEED"
-echo "Outer sumcheck univariate skip K: $OUTER_SKIP"
+echo "Outer sumcheck univariate skip K: 3 (canonical)"
 echo "Commit: $COMMIT (dirty=$GIT_DIRTY)"
 echo "Latency binary SHA-256: $LATENCY_BINARY_SHA256"
 if [[ -n "$MEMORY_BINARY_SHA256" ]]; then
@@ -137,77 +137,33 @@ run_case() {
     local pass="$2"
     local word_bits="$3"
     local exponent="$4"
-    local strategy="$5"
-    local order="$6"
-    echo "RUN pass=$pass word_bits=$word_bits exponent=$exponent strategy=$strategy order=$order" | tee -a "$RAW_LOG"
+    local order="$5"
+    echo "RUN pass=$pass word_bits=$word_bits exponent=$exponent strategy=$STRATEGY order=$order" | tee -a "$RAW_LOG"
     OBLONG_PROFILE=1 \
     RAYON_NUM_THREADS="$THREADS" \
     F2Z_MUL_WORD_BITS="$word_bits" \
-    F2Z_MUL_EXPONENTS="$exponent" \
+    F2Z_BENCH_SHAPES="$exponent" \
     F2Z_BENCH_REPS="$REPETITIONS" \
     F2Z_BENCH_PASS="$pass" \
     F2Z_BENCH_ORDER="$order" \
-    F2Z_SPARTAN_REDUCTION="$strategy" \
-    F2Z_SPARTAN_OUTER_SKIP="$OUTER_SKIP" \
+    F2Z_BENCH_SEED="$ROOT_SEED" \
         "$binary" 2>&1 | tee -a "$RAW_LOG"
 }
 
-# Pairwise-counterbalance the primary Immediate/Barrett comparison: across
-# benchmark shapes each strategy runs first equally often when the shape count
-# is even. Reference
-# reduction is scheduled after that pair because it is a correctness oracle,
-# not the optimized path subject to the latency gate.
-exponent_index=0
 for word_bits in $WORD_BITS; do
     if [[ "$word_bits" != "1" && "$word_bits" != "8" ]]; then
         echo "F2Z_MUL_WORD_BITS entries must be 1 or 8; got $word_bits" >&2
         exit 2
     fi
     for exponent in $EXPONENTS; do
-        read -r -a strategy_array <<< "$STRATEGIES"
-        strategy_count="${#strategy_array[@]}"
-        if (( strategy_count == 0 )); then
-            echo "F2Z_BENCH_STRATEGIES must name at least one strategy" >&2
-            exit 2
-        fi
-        has_immediate=0
-        has_barrett=0
-        for strategy in "${strategy_array[@]}"; do
-            [[ "$strategy" == "immediate" ]] && has_immediate=1
-            [[ "$strategy" == "delayed-barrett" ]] && has_barrett=1
-        done
-        ordered_strategies=()
-        if ((has_immediate == 1 && has_barrett == 1)); then
-            if ((exponent_index % 2 == 0)); then
-                ordered_strategies+=(immediate delayed-barrett)
-            else
-                ordered_strategies+=(delayed-barrett immediate)
-            fi
-            for strategy in "${strategy_array[@]}"; do
-                if [[ "$strategy" != "immediate" && "$strategy" != "delayed-barrett" ]]; then
-                    ordered_strategies+=("$strategy")
-                fi
-            done
-        else
-            ordered_strategies=("${strategy_array[@]}")
-        fi
-        position=1
-        for strategy in "${ordered_strategies[@]}"; do
-            run_case "$LATENCY_BENCH_BINARY" latency "$word_bits" "$exponent" "$strategy" "$position"
-            position=$((position + 1))
-        done
-        exponent_index=$((exponent_index + 1))
+        run_case "$LATENCY_BENCH_BINARY" latency "$word_bits" "$exponent" 1
     done
 done
 
 if [[ "$MEASURE_MEMORY" == "1" ]]; then
     for word_bits in $WORD_BITS; do
         for exponent in $EXPONENTS; do
-            order=1
-            for strategy in $MEMORY_STRATEGIES; do
-                run_case "$MEMORY_BENCH_BINARY" memory "$word_bits" "$exponent" "$strategy" "$order"
-                order=$((order + 1))
-            done
+            run_case "$MEMORY_BENCH_BINARY" memory "$word_bits" "$exponent" 1
         done
     done
 fi
@@ -216,7 +172,6 @@ python3 "$SCRIPT_DIR/u32_mul_bench_report.py" \
     "$RAW_LOG" \
     --raw-csv "$RAW_CSV" \
     --summary-csv "$SUMMARY_CSV" \
-    --paired-csv "$PAIRED_CSV" \
     --benchmark-date "$RUN_DATE" \
     --run-timestamp "$RUN_TIMESTAMP" \
     --commit "$COMMIT" \
@@ -231,10 +186,7 @@ python3 "$SCRIPT_DIR/u32_mul_bench_report.py" \
     --measured-runs "$REPETITIONS" \
     --expected-word-bits "$WORD_BITS" \
     --expected-exponents "$EXPONENTS" \
-    --strategies "$STRATEGIES" \
-    --memory-strategies "$MEMORY_STRATEGIES" \
     --measure-memory "$MEASURE_MEMORY"
 
 echo "Saved raw samples: $RAW_CSV"
 echo "Saved medians: $SUMMARY_CSV"
-echo "Saved paired comparison: $PAIRED_CSV"

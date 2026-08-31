@@ -1,5 +1,5 @@
-//! Byte-identity pin for the PROTOCOL proof streams (MultiSwap and the
-//! paper128 SHA-256 path): proves a fixed deterministic instance per path
+//! Byte-identity pin for the protocol proof streams (MultiSwap and SHA-256):
+//! proves a fixed deterministic instance per protocol
 //! and prints the BLAKE3 digest of the serialized proof body plus the
 //! commitment root. Run before and after any change that claims to be
 //! transcript-preserving — matching digests mean byte-identical proofs,
@@ -12,19 +12,18 @@
 
 use blake3::Hasher;
 use f2z::piop::spartan::multiswap::{
+    MultiswapAssignment, MultiswapCircuit, MultiswapDims, PreparedMultiswapRelation,
     commit_multiswap_witness, multiswap_lig_configs, prove_multiswap_mod_r1cs,
-    verify_multiswap_mod_r1cs, MultiswapAssignment, MultiswapCircuit, MultiswapDims,
-    PreparedMultiswapRelation,
+    verify_multiswap_mod_r1cs,
 };
 use f2z::piop::spartan::{
-    commit_sha256_paper128_witness_with_config, generate_sha256_compression_witnesses_exact,
-    prepare_sha256_compression_batch_integer, prove_sha256_compressions_paper128_with_config,
-    sha256_compression_configs_for, verify_sha256_compressions_paper128_with_config,
-    Sha256CompressionStatement,
+    PreparedU32MulRelation, U32MulF2zWidth, U32MulWitness, commit_u32_mul_witness, prove_u32_mul,
+    verify_u32_mul,
 };
 use f2z::piop::spartan::{
-    commit_u32_mul_witness, prove_u32_mul_paper, verify_u32_mul_paper, PreparedU32MulRelation,
-    SpartanReductionStrategy, U32MulF2zWidth, U32MulWitness,
+    Sha256CompressionStatement, commit_sha256_compression_witness,
+    generate_sha256_compression_witnesses, prepare_sha256_compression_batch,
+    prove_sha256_compressions, verify_sha256_compressions,
 };
 use f2z::transcript::Blake3Transcript;
 
@@ -51,8 +50,14 @@ fn multiswap_digest() -> String {
         prove_multiswap_mod_r1cs(&mut prover_transcript, &prepared, &assignment, &hint, &pc)
             .expect("prove");
     let mut verifier_transcript = Blake3Transcript::new();
-    verify_multiswap_mod_r1cs(&mut verifier_transcript, &prepared, &hint.commitment, &proof, &vc)
-        .expect("verify");
+    verify_multiswap_mod_r1cs(
+        &mut verifier_transcript,
+        &prepared,
+        &hint.commitment,
+        &proof,
+        &vc,
+    )
+    .expect("verify");
 
     // Every transcript-visible proof component, framed.
     let f2z_bytes = proof.f2z().to_bytes();
@@ -70,8 +75,7 @@ fn multiswap_digest() -> String {
 
 fn sha256_digest() -> String {
     const EXPONENT: usize = 7;
-    let prepared = prepare_sha256_compression_batch_integer(EXPONENT).expect("prepare");
-    let (pc, vc) = sha256_compression_configs_for(&prepared).expect("configs");
+    let prepared = prepare_sha256_compression_batch(EXPONENT).expect("prepare");
     let inputs: Vec<_> = (0..1usize << EXPONENT)
         .map(|i| {
             let word = |j: usize| (i as u32).wrapping_mul(0x9e37_79b9) ^ (j as u32);
@@ -81,59 +85,46 @@ fn sha256_digest() -> String {
             )
         })
         .collect();
-    let witness = generate_sha256_compression_witnesses_exact(
-        &inputs,
-        prepared.source_params(),
-        prepared.assignment_params(),
-    )
-    .expect("witness");
+    let witness = generate_sha256_compression_witnesses(&prepared, &inputs).expect("witness");
     let statements: Vec<_> = inputs
         .iter()
         .copied()
         .zip(witness.outputs().iter().copied())
         .map(|(input, output)| Sha256CompressionStatement::new(input, output))
         .collect();
-    let hint = commit_sha256_paper128_witness_with_config(&prepared, &witness, &pc)
-        .expect("commit");
+    let hint = commit_sha256_compression_witness(&prepared, &witness).expect("commit");
     let mut prover_transcript = Blake3Transcript::new();
-    let proof = prove_sha256_compressions_paper128_with_config(
+    let proof = prove_sha256_compressions(
         &mut prover_transcript,
         &prepared,
         &statements,
         &witness,
         &hint,
-        &pc,
     )
     .expect("prove");
     let mut verifier_transcript = Blake3Transcript::new();
-    verify_sha256_compressions_paper128_with_config(
+    verify_sha256_compressions(
         &mut verifier_transcript,
         &prepared,
         &statements,
         &hint.commitment,
         &proof,
-        &vc,
     )
     .expect("verify");
 
     let f2z_bytes = proof.f2z().to_bytes();
-    let outer = format!("{:?}", proof.outer());
+    let inner = format!("{:?}", proof.inner());
     let nonces: Vec<u8> = proof
-        .outer_nonces()
+        .inner_nonces()
         .iter()
         .flat_map(|nonce| nonce.to_le_bytes())
         .chain(proof.initial_nonce().to_le_bytes())
         .chain(proof.terminal_nonce().to_le_bytes())
         .collect();
-    digest_hex(&[
-        &hint.commitment.root,
-        &f2z_bytes,
-        outer.as_bytes(),
-        &nonces,
-    ])
+    digest_hex(&[&hint.commitment.root, &f2z_bytes, inner.as_bytes(), &nonces])
 }
 
-fn u32_paper_digest() -> String {
+fn u32_mul_digest() -> String {
     let witness = U32MulWitness::from_fn_with_f2z_width(1usize << 15, U32MulF2zWidth::W1, |i| {
         let x = (i as u32).wrapping_mul(0x9e37_79b9) | 1;
         let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
@@ -142,19 +133,17 @@ fn u32_paper_digest() -> String {
     .expect("witness");
     let layout = *witness.layout();
     let prepared = PreparedU32MulRelation::new(layout).expect("prepare");
-    let hint = commit_u32_mul_witness(&layout, witness.f2z_bit_rows()).expect("commit");
+    let hint = commit_u32_mul_witness(&prepared, witness.f2z_bit_rows()).expect("commit");
     let mut prover_transcript = Blake3Transcript::new();
-    let proof = prove_u32_mul_paper(
-        &mut prover_transcript,
-        &prepared,
-        &witness,
-        &hint,
-        SpartanReductionStrategy::DelayedBarrett,
-    )
-    .expect("prove");
+    let proof = prove_u32_mul(&mut prover_transcript, &prepared, &witness, &hint).expect("prove");
     let mut verifier_transcript = Blake3Transcript::new();
-    verify_u32_mul_paper(&mut verifier_transcript, &prepared, &hint.commitment, &proof)
-        .expect("verify");
+    verify_u32_mul(
+        &mut verifier_transcript,
+        &prepared,
+        &hint.commitment,
+        &proof,
+    )
+    .expect("verify");
     let f2z_bytes = proof.f2z().to_bytes();
     let spartan = format!("{:?}", proof.spartan());
     digest_hex(&[&hint.commitment.root, &f2z_bytes, spartan.as_bytes()])
@@ -163,5 +152,5 @@ fn u32_paper_digest() -> String {
 fn main() {
     println!("multiswap-mini  {}", multiswap_digest());
     println!("sha256-2p7      {}", sha256_digest());
-    println!("u32-paper-2p15  {}", u32_paper_digest());
+    println!("u32-mul-2p15    {}", u32_mul_digest());
 }

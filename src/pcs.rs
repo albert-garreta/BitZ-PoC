@@ -357,13 +357,21 @@ pub struct Fq(pub u128);
 #[inline]
 pub fn fq_add(a: u128, b: u128) -> u128 {
     let s = a.wrapping_add(b);
-    if s >= FQ_MOD { s.wrapping_sub(FQ_MOD) } else { s }
+    if s >= FQ_MOD {
+        s.wrapping_sub(FQ_MOD)
+    } else {
+        s
+    }
 }
 
 /// `(a − b) mod q` for `a, b ∈ [0, q)`.
 #[inline]
 pub fn fq_sub(a: u128, b: u128) -> u128 {
-    if a >= b { a.wrapping_sub(b) } else { a.wrapping_add(FQ_MOD).wrapping_sub(b) }
+    if a >= b {
+        a.wrapping_sub(b)
+    } else {
+        a.wrapping_add(FQ_MOD).wrapping_sub(b)
+    }
 }
 
 /// `(a · b) mod q` by Russian-peasant doubling (no 256-bit dep; `q < 2^100`, so
@@ -446,11 +454,17 @@ mod eq_le_table_fq_tests {
     use super::*;
 
     fn direct_eq(point: &[Fq], index: usize) -> Fq {
-        Fq(point.iter().enumerate().fold(1u128, |acc, (bit, challenge)| {
-            let factor =
-                if index >> bit & 1 == 1 { challenge.0 } else { fq_sub(1, challenge.0) };
-            fq_mul(acc, factor)
-        }))
+        Fq(point
+            .iter()
+            .enumerate()
+            .fold(1u128, |acc, (bit, challenge)| {
+                let factor = if index >> bit & 1 == 1 {
+                    challenge.0
+                } else {
+                    fq_sub(1, challenge.0)
+                };
+                fq_mul(acc, factor)
+            }))
     }
 
     #[test]
@@ -475,7 +489,10 @@ mod eq_le_table_fq_tests {
         for (index, &evaluation) in table.iter().enumerate() {
             assert_eq!(evaluation, direct_eq(&point, index), "entry {index}");
         }
-        assert_eq!(table.iter().fold(0u128, |acc, value| fq_add(acc, value.0)), 1);
+        assert_eq!(
+            table.iter().fold(0u128, |acc, value| fq_add(acc, value.0)),
+            1
+        );
     }
 }
 
@@ -601,7 +618,10 @@ pub fn sha_f2_packed_cols<const D: usize>(
 ) -> Vec<Vec<u64>> {
     use crate::poly::univariate::F2PackU64;
     let p = &layout.p;
-    assert_eq!(p.word_bits, 1, "sha_f2_packed_cols is the W=1 SHA layout builder");
+    assert_eq!(
+        p.word_bits, 1,
+        "sha_f2_packed_cols is the W=1 SHA layout builder"
+    );
     let s = p.s;
     let tw = layout.tw;
     let shift = layout.log_cols + tw;
@@ -609,7 +629,10 @@ pub fn sha_f2_packed_cols<const D: usize>(
     let row_len = p.rows(); // 2^t (W = 1)
     let num_groups = p.cols().div_ceil(64);
     let bit_lanes = D.min(1usize << layout.bit_vars).min(64);
-    debug_assert!(row_len >= 1usize << shift, "b must cover every (j, i, row_hi)");
+    debug_assert!(
+        row_len >= 1usize << shift,
+        "b must cover every (j, i, row_hi)"
+    );
 
     let mut packed_cols: Vec<Vec<u64>> = (0..num_groups).map(|_| vec![0u64; row_len]).collect();
     let fill_group = |g: usize, prow: &mut Vec<u64>| {
@@ -625,7 +648,11 @@ pub fn sha_f2_packed_cols<const D: usize>(
             for row_hi in 0..1usize << tw {
                 let base_row = (row_hi << s) | (g << 6);
                 for (k, w) in block.iter_mut().enumerate() {
-                    *w = if k < lanes { col.evaluations[base_row + k].pack_u64() } else { 0 };
+                    *w = if k < lanes {
+                        col.evaluations[base_row + k].pack_u64()
+                    } else {
+                        0
+                    };
                 }
                 transpose64(&mut block);
                 let b_base = (i << tw) | row_hi;
@@ -636,9 +663,15 @@ pub fn sha_f2_packed_cols<const D: usize>(
         }
     };
     #[cfg(feature = "parallel")]
-    packed_cols.par_iter_mut().enumerate().for_each(|(g, prow)| fill_group(g, prow));
+    packed_cols
+        .par_iter_mut()
+        .enumerate()
+        .for_each(|(g, prow)| fill_group(g, prow));
     #[cfg(not(feature = "parallel"))]
-    packed_cols.iter_mut().enumerate().for_each(|(g, prow)| fill_group(g, prow));
+    packed_cols
+        .iter_mut()
+        .enumerate()
+        .for_each(|(g, prow)| fill_group(g, prow));
 
     packed_cols
 }
@@ -672,7 +705,11 @@ pub fn sha_f2_weights(
         let i = (b >> tw) & col_mask;
         let row_hi = b & fold_mask;
         if i < layout.num_cols {
-            let aij = alpha_canon.get(i).and_then(|a| a.get(j)).copied().unwrap_or(0);
+            let aij = alpha_canon
+                .get(i)
+                .and_then(|a| a.get(j))
+                .copied()
+                .unwrap_or(0);
             *w = fq_mul(aij, eq_fold[row_hi].0);
         }
     }
@@ -697,9 +734,15 @@ pub fn sha_f2_weights(
 /// weights then cover the coordinate list `[b' coords ++ low-δ clear
 /// coords]` and column weights the remaining `s − δ`.
 pub fn virtual_xor_params(layout: &ShaF2Layout) -> IntEvalParams {
-    assert!(layout.x_fold_extra < layout.p.s, "x_fold_extra must leave a clear variable");
+    assert!(
+        layout.x_fold_extra < layout.p.s,
+        "x_fold_extra must leave a clear variable"
+    );
     IntEvalParams {
-        t: layout.bit_vars.wrapping_add(layout.tw).wrapping_add(layout.x_fold_extra),
+        t: layout
+            .bit_vars
+            .wrapping_add(layout.tw)
+            .wrapping_add(layout.x_fold_extra),
         s: layout.p.s.wrapping_sub(layout.x_fold_extra),
         word_bits: 1,
     }
@@ -735,9 +778,16 @@ pub fn extract_virtual_xor_rows(
         !xor_cols.is_empty() || constant != 0 || external.is_some(),
         "virtual XOR needs at least one term"
     );
-    assert!(delta == 0 || t_base >= 6, "x_fold_extra needs word-aligned base rows (t' ≥ 6)");
+    assert!(
+        delta == 0 || t_base >= 6,
+        "x_fold_extra needs word-aligned base rows (t' ≥ 6)"
+    );
     for &i in xor_cols {
-        assert!(i < layout.num_cols, "XORed column {i} out of range (< {})", layout.num_cols);
+        assert!(
+            i < layout.num_cols,
+            "XORed column {i} out of range (< {})",
+            layout.num_cols
+        );
     }
     if layout.bit_vars < 7 {
         assert!(
@@ -746,7 +796,11 @@ pub fn extract_virtual_xor_rows(
         );
     }
     if let Some(e_rows) = external {
-        assert_eq!(e_rows.len(), p_x.cols(), "external rows: one per clear column");
+        assert_eq!(
+            e_rows.len(),
+            p_x.cols(),
+            "external rows: one per clear column"
+        );
     }
     // Base extraction at the NATURAL split (one row per committed row).
     let base: Vec<Vec<u64>> = cfg_into_iter!(0..layout.p.cols())
@@ -818,7 +872,11 @@ pub fn extract_virtual_xor_rows(
 /// into a virtual claim complements every bit of the virtual vector.
 pub fn xor_ones_pattern(layout: &ShaF2Layout) -> u128 {
     let w = 1usize << layout.bit_vars;
-    if w >= 128 { u128::MAX } else { (1u128 << w).wrapping_sub(1) }
+    if w >= 128 {
+        u128::MAX
+    } else {
+        (1u128 << w).wrapping_sub(1)
+    }
 }
 
 /// XOR-canonical form of a virtual claim's column list: sorted, with
@@ -934,12 +992,16 @@ pub fn rlc_case_weights(
         assert_eq!(w.len(), rows, "claim row-weight lengths must agree");
     }
     for &f in forms {
-        assert!(f != 0 && f < cases, "forms must be nonzero bitmasks over [j]");
+        assert!(
+            f != 0 && f < cases,
+            "forms must be nonzero bitmasks over [j]"
+        );
     }
     cfg_into_iter!(0..rows)
         .map(|b| {
-            let d: Vec<u128> =
-                (0..k).map(|i| fq_mul(gammas[i], claim_weights[i][b])).collect();
+            let d: Vec<u128> = (0..k)
+                .map(|i| fq_mul(gammas[i], claim_weights[i][b]))
+                .collect();
             (0..cases)
                 .map(|m| {
                     let mut acc = 0u128;
@@ -961,11 +1023,17 @@ pub fn rlc_case_weights(
 /// are its whole case content. `Γ(0) = 0` (the forms are linear).
 #[allow(clippy::arithmetic_side_effects)] // bounded case/claim loops; fq_* reduce
 pub fn rlc_gamma_cases(gammas: &[u128], forms: &[usize], j: usize) -> Vec<u128> {
-    assert!((1..=4).contains(&j), "RLC family supports j ∈ [1, 4] (2^j-case tables)");
+    assert!(
+        (1..=4).contains(&j),
+        "RLC family supports j ∈ [1, 4] (2^j-case tables)"
+    );
     assert_eq!(gammas.len(), forms.len(), "one γ per claim");
     let cases = 1usize << j;
     for &f in forms {
-        assert!(f != 0 && f < cases, "forms must be nonzero bitmasks over [j]");
+        assert!(
+            f != 0 && f < cases,
+            "forms must be nonzero bitmasks over [j]"
+        );
     }
     (0..cases)
         .map(|m| {
@@ -1019,7 +1087,9 @@ pub fn rlc_chunk_case_weights(
 /// fixed-base comb. Case 0 is `α^0 = 1` by construction.
 pub(crate) fn rlc_case_pow_table(w_cases: &[Vec<u128>], alpha: Gf) -> Vec<Vec<Gf>> {
     let comb = FixedBasePow::new(alpha, 128, 8);
-    cfg_iter!(w_cases).map(|row| row.iter().map(|&w| comb.pow(w)).collect()).collect()
+    cfg_iter!(w_cases)
+        .map(|row| row.iter().map(|&w| comb.pow(w)).collect())
+        .collect()
 }
 
 /// The presum channel tables `τ_S` from one chunk's case α-powers: the
@@ -1032,8 +1102,9 @@ pub(crate) fn rlc_tau_tables(case_pow: &[Vec<Gf>]) -> Vec<Vec<Gf>> {
     let cases = case_pow.first().map_or(1, |r| r.len());
     let j = cases.trailing_zeros() as usize;
     let rows = case_pow.len();
-    let mut out: Vec<Vec<Gf>> =
-        (0..cases).map(|s| (0..rows).map(|b| case_pow[b][s]).collect()).collect();
+    let mut out: Vec<Vec<Gf>> = (0..cases)
+        .map(|s| (0..rows).map(|b| case_pow[b][s]).collect())
+        .collect();
     for d in 0..j {
         for s in 0..cases {
             if (s >> d) & 1 == 1 {
@@ -1084,6 +1155,121 @@ pub(crate) struct ModQWeightChunks {
     row_count: usize,
     chunk_width: usize,
     q_bits: usize,
+}
+
+/// A validated, canonical source of public mod-`q` row weights.
+///
+/// The virtual opening consumes one base-`2^c_w` limb at a time.  Dense
+/// callers can lend an existing limb through [`Self::with_chunk`], while
+/// generated callers use the default implementation to materialize and drop
+/// exactly one `2^t`-row limb.  This keeps the opening transcript identical to
+/// [`ModQWeightChunks`] without requiring all `L` limbs to coexist.
+pub(crate) trait ModQWeightSource: Sync {
+    /// Number of canonical row weights (`2^t`).
+    fn row_count(&self) -> usize;
+
+    /// Limb width `c_w = 127 - t - W`.
+    fn chunk_width(&self) -> usize;
+
+    /// Number of limbs `L = ceil(q_bits / c_w)`.
+    fn chunk_count(&self) -> usize;
+
+    /// Bit length against which every canonical weight is validated.
+    fn q_bits(&self) -> usize;
+
+    /// Return canonical row `row` in `[0, 2^q_bits)`.
+    fn canonical_weight(&self, row: usize) -> Option<u128>;
+
+    /// Lend limb `chunk_index` to one protocol pass.
+    ///
+    /// Generated sources inherit this implementation: it evaluates the
+    /// canonical source directly into one temporary limb, calls `consume`, and
+    /// drops that limb before the next one is produced.
+    #[allow(clippy::arithmetic_side_effects)]
+    fn with_chunk<R>(
+        &self,
+        chunk_index: usize,
+        consume: impl FnOnce(&[u128]) -> R,
+    ) -> Result<R, ()> {
+        if chunk_index >= self.chunk_count() {
+            return Err(());
+        }
+        let shift = self.chunk_width().checked_mul(chunk_index).ok_or(())?;
+        let remaining_bits = self.q_bits().checked_sub(shift).ok_or(())?;
+        let limb_bits = self.chunk_width().min(remaining_bits);
+        let limb_mask = (1_u128 << limb_bits).wrapping_sub(1);
+        let canonical_bound = 1_u128
+            .checked_shl(u32::try_from(self.q_bits()).map_err(|_| ())?)
+            .ok_or(())?;
+        let mut chunk = vec![0_u128; self.row_count()];
+        cfg_iter_mut!(chunk, 256)
+            .enumerate()
+            .try_for_each(|(row, limb)| {
+                let weight = self.canonical_weight(row).ok_or(())?;
+                if weight >= canonical_bound {
+                    return Err(());
+                }
+                *limb = (weight >> shift) & limb_mask;
+                Ok(())
+            })?;
+        Ok(consume(&chunk))
+    }
+}
+
+/// Geometry-checked canonical row-weight generator.
+///
+/// This is the small adapter used by protocol layers whose equality weights
+/// are already represented by compact tensor factors.  The callback evaluates
+/// one canonical row on demand; [`ModQWeightSource::with_chunk`] turns it into
+/// one temporary limb without ever reconstructing a dense equality table or
+/// all limbs.  The callback must be a pure function of `row`, since statement
+/// absorption and each limb pass intentionally reevaluate it.
+pub(crate) struct GeneratedModQWeightSource<F> {
+    canonical_weight: F,
+    row_count: usize,
+    chunk_width: usize,
+    chunk_count: usize,
+    q_bits: usize,
+}
+
+impl<F> GeneratedModQWeightSource<F> {
+    pub(crate) fn new(p: &IntEvalParams, q_bits: usize, canonical_weight: F) -> Result<Self, ()> {
+        let (row_count, chunk_width, chunk_count) = mod_q_weight_chunk_shape(p, q_bits)?;
+        Ok(Self {
+            canonical_weight,
+            row_count,
+            chunk_width,
+            chunk_count,
+            q_bits,
+        })
+    }
+}
+
+impl<F> ModQWeightSource for GeneratedModQWeightSource<F>
+where
+    F: Fn(usize) -> Option<u128> + Sync,
+{
+    fn row_count(&self) -> usize {
+        self.row_count
+    }
+
+    fn chunk_width(&self) -> usize {
+        self.chunk_width
+    }
+
+    fn chunk_count(&self) -> usize {
+        self.chunk_count
+    }
+
+    fn q_bits(&self) -> usize {
+        self.q_bits
+    }
+
+    fn canonical_weight(&self, row: usize) -> Option<u128> {
+        (row < self.row_count)
+            .then(|| (self.canonical_weight)(row))
+            .flatten()
+    }
 }
 
 impl ModQWeightChunks {
@@ -1221,6 +1407,24 @@ impl ModQWeightChunks {
         &self.chunks
     }
 
+    /// Reconstruct the validated canonical row weights in row-major order.
+    ///
+    /// This is intentionally lazy: statement absorption can bind the same
+    /// canonical `u128` sequence accepted by [`Self::from_dense`] without
+    /// materializing a second dense row-weight vector beside the chunk-major
+    /// representation.
+    #[allow(clippy::arithmetic_side_effects)]
+    pub(crate) fn canonical_weights(&self) -> impl ExactSizeIterator<Item = u128> + '_ {
+        (0..self.row_count).map(|row| {
+            self.chunks
+                .iter()
+                .enumerate()
+                .fold(0_u128, |weight, (chunk_index, chunk)| {
+                    weight | (chunk[row] << (self.chunk_width * chunk_index))
+                })
+        })
+    }
+
     /// Number of row weights in each chunk.
     pub(crate) const fn row_count(&self) -> usize {
         self.row_count
@@ -1247,10 +1451,51 @@ impl ModQWeightChunks {
     }
 }
 
-fn mod_q_weight_chunk_shape(
-    p: &IntEvalParams,
-    q_bits: usize,
-) -> Result<(usize, usize, usize), ()> {
+impl ModQWeightSource for ModQWeightChunks {
+    fn row_count(&self) -> usize {
+        self.row_count
+    }
+
+    fn chunk_width(&self) -> usize {
+        self.chunk_width
+    }
+
+    fn chunk_count(&self) -> usize {
+        self.chunks.len()
+    }
+
+    fn q_bits(&self) -> usize {
+        self.q_bits
+    }
+
+    #[allow(clippy::arithmetic_side_effects)]
+    fn canonical_weight(&self, row: usize) -> Option<u128> {
+        if row >= self.row_count {
+            return None;
+        }
+        Some(
+            self.chunks
+                .iter()
+                .enumerate()
+                .fold(0_u128, |weight, (chunk_index, chunk)| {
+                    weight | (chunk[row] << (self.chunk_width * chunk_index))
+                }),
+        )
+    }
+
+    fn with_chunk<R>(
+        &self,
+        chunk_index: usize,
+        consume: impl FnOnce(&[u128]) -> R,
+    ) -> Result<R, ()> {
+        self.chunks
+            .get(chunk_index)
+            .map(|chunk| consume(chunk))
+            .ok_or(())
+    }
+}
+
+fn mod_q_weight_chunk_shape(p: &IntEvalParams, q_bits: usize) -> Result<(usize, usize, usize), ()> {
     if !p.word_bits.is_power_of_two()
         || p.word_bits > u128::BITS as usize
         || !(1..=126).contains(&q_bits)
@@ -1283,7 +1528,12 @@ pub fn chunk_row_weights(row_weights_q: &[u128], c_w: usize, l_chunks: usize) ->
     let mut shift = 0usize; // c_w·l, kept < q_bits < 128 by the loop bound
     let mut out = Vec::with_capacity(l_chunks);
     for _ in 0..l_chunks {
-        out.push(row_weights_q.iter().map(|&w| (w >> shift) & limb_mask).collect());
+        out.push(
+            row_weights_q
+                .iter()
+                .map(|&w| (w >> shift) & limb_mask)
+                .collect(),
+        );
         shift = shift.wrapping_add(c_w);
     }
     out
@@ -1375,8 +1625,9 @@ pub(crate) fn extract_column_bit_halves(
             .collect();
     }
     debug_assert_eq!(half % 64, 0, "row_len >= 128 keeps the halves word-aligned");
-    let mut out: Vec<(Vec<u64>, Vec<u64>)> =
-        (0..num_cols).map(|_| (vec![0u64; half_words], vec![0u64; half_words])).collect();
+    let mut out: Vec<(Vec<u64>, Vec<u64>)> = (0..num_cols)
+        .map(|_| (vec![0u64; half_words], vec![0u64; half_words]))
+        .collect();
     // transpose64 of 64 consecutive position-words yields, per lane j, the
     // position-packed word of column 64g+j — the exact target layout.
     // Column groups write disjoint 64-column output chunks, so the groups
@@ -1407,7 +1658,10 @@ pub(crate) fn extract_column_bit_halves(
             .for_each(per_group);
     }
     #[cfg(not(feature = "parallel"))]
-    packed_cols.iter().zip(out.chunks_mut(64)).for_each(per_group);
+    packed_cols
+        .iter()
+        .zip(out.chunks_mut(64))
+        .for_each(per_group);
     out
 }
 
@@ -1529,6 +1783,7 @@ mod rlc_tests {
         assert_eq!(prepared.chunk_width(), 123);
         assert_eq!(prepared.len(), 2);
         assert_eq!(prepared.q_bits(), q_bits);
+        assert_eq!(prepared.canonical_weights().collect::<Vec<_>>(), dense);
 
         let mut generated = ModQWeightChunks::zeroed(&p, q_bits).unwrap();
         generated.set_weight_range(0, &dense).unwrap();
@@ -1548,6 +1803,37 @@ mod rlc_tests {
     }
 
     #[test]
+    fn generated_mod_q_weight_source_matches_dense_chunks_without_dense_eq_storage() {
+        let p = IntEvalParams {
+            t: 4,
+            s: 3,
+            word_bits: 1,
+        };
+        let q_bits = 126;
+        let canonical =
+            |row: usize| Some((1_u128 << 125) | ((row as u128 + 9) << 65) | row as u128);
+        let dense = (0..p.rows())
+            .map(|row| canonical(row).unwrap())
+            .collect::<Vec<_>>();
+        let chunks = ModQWeightChunks::from_dense(&p, &dense, q_bits).unwrap();
+        let generated = GeneratedModQWeightSource::new(&p, q_bits, canonical).unwrap();
+
+        assert_eq!(generated.row_count(), chunks.row_count());
+        assert_eq!(generated.chunk_width(), chunks.chunk_width());
+        assert_eq!(generated.chunk_count(), chunks.len());
+        for row in 0..p.rows() {
+            assert_eq!(generated.canonical_weight(row), Some(dense[row]));
+        }
+        for chunk_index in 0..chunks.len() {
+            generated
+                .with_chunk(chunk_index, |limb| {
+                    assert_eq!(limb, &chunks.chunks()[chunk_index]);
+                })
+                .unwrap();
+        }
+    }
+
+    #[test]
     fn validated_mod_q_weight_chunks_reject_malformed_shapes_and_limbs() {
         let p = IntEvalParams {
             t: 3,
@@ -1558,14 +1844,10 @@ mod rlc_tests {
         let dense = vec![7u128; p.rows()];
         let prepared = ModQWeightChunks::from_dense(&p, &dense, q_bits).unwrap();
 
-        assert!(
-            ModQWeightChunks::from_dense(&p, &dense[..dense.len() - 1], q_bits).is_err()
-        );
+        assert!(ModQWeightChunks::from_dense(&p, &dense[..dense.len() - 1], q_bits).is_err());
         let mut out_of_range_dense = dense.clone();
         out_of_range_dense[0] = 1u128 << q_bits;
-        assert!(
-            ModQWeightChunks::from_dense(&p, &out_of_range_dense, q_bits).is_err()
-        );
+        assert!(ModQWeightChunks::from_dense(&p, &out_of_range_dense, q_bits).is_err());
 
         let mut wrong_count = prepared.chunks().to_vec();
         wrong_count.pop();
@@ -1640,7 +1922,9 @@ mod rlc_tests {
                     .collect()
             })
             .collect();
-        let gammas: Vec<u128> = (0..k).map(|i| (i as u128 + 1) * 0x1234_5678_9ABC % FQ_MOD).collect();
+        let gammas: Vec<u128> = (0..k)
+            .map(|i| (i as u128 + 1) * 0x1234_5678_9ABC % FQ_MOD)
+            .collect();
         let w_refs: Vec<&[u128]> = weights.iter().map(|w| &w[..]).collect();
         let cw = rlc_case_weights(&w_refs, &gammas, &forms, j);
         for b in 0..rows {
@@ -1684,22 +1968,25 @@ mod rlc_tests {
         for j in 1..=4usize {
             let forms: Vec<usize> = (1..1usize << j).collect(); // maximal family
             let k = forms.len();
-            let gammas: Vec<u128> =
-                (0..k).map(|i| ((i as u128 + 5) * 0x0123_4567_89AB_CDEF) % FQ_MOD).collect();
+            let gammas: Vec<u128> = (0..k)
+                .map(|i| ((i as u128 + 5) * 0x0123_4567_89AB_CDEF) % FQ_MOD)
+                .collect();
             let w_refs: Vec<&[u128]> = (0..k).map(|_| &w[..]).collect();
             let general = rlc_case_weights(&w_refs, &gammas, &forms, j);
             let gcases = rlc_gamma_cases(&gammas, &forms, j);
             assert_eq!(gcases[0], 0, "Γ(0) = 0 for linear forms");
             let shared = rlc_case_weights_shared_point(&w, &gcases);
-            assert_eq!(shared, general, "rank-1 build diverges at j={j} (maximal family)");
+            assert_eq!(
+                shared, general,
+                "rank-1 build diverges at j={j} (maximal family)"
+            );
         }
         // A non-maximal family with a repeated γ-weighted form pattern.
         let forms = [0b01usize, 0b11, 0b11];
         let gammas: Vec<u128> = vec![7, 11, 13];
         let w_refs: Vec<&[u128]> = (0..3).map(|_| &w[..]).collect();
         let general = rlc_case_weights(&w_refs, &gammas, &forms, 2);
-        let shared =
-            rlc_case_weights_shared_point(&w, &rlc_gamma_cases(&gammas, &forms, 2));
+        let shared = rlc_case_weights_shared_point(&w, &rlc_gamma_cases(&gammas, &forms, 2));
         assert_eq!(shared, general, "rank-1 build diverges on repeated forms");
     }
 }

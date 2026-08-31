@@ -38,11 +38,11 @@
 //!   round carries `1/|K|`: `rs_grind = ceil(λ + 1 - 128)⁺` (the paper's
 //!   "two bits per round / one bit" rule at λ = 128).
 //!
-//! These rules **reproduce today's hardcoded tables exactly** — the SHA
+//! These rules **reproduce the historical parameter tables exactly** — the SHA
 //! `initial 20|21|22 / outer 18|19` schedule and MultiSwap's
-//! `[2^112, 2^113)` + 10-bit reduction grind — which is what makes the
-//! default profiles byte-identical to the pre-profile code (pinned by
-//! tests below and by `examples/protocol_digest.rs`).
+//! `[2^112, 2^113)` + 10-bit reduction grind. Transcript domains bind the
+//! selected profile explicitly, so matching parameters do not imply proof-byte
+//! compatibility with an older protocol version.
 //!
 //! # The GF(2^128) floor
 //!
@@ -195,17 +195,16 @@ pub trait IopSecurityProfile: 'static {
     /// One transcript prime or the two-prime Strategy 2.
     const PRIME_POLICY: PrimePolicy;
     /// Ligerito/WHIR round-by-round target (`>= LAMBDA`; 128 is the
-    /// audited paper128 configuration).
+    /// audited production configuration).
     const LIGERITO_TARGET_BITS: usize;
     /// Per-round forest/GKR grinding (`derive_forest_grinding(LAMBDA)` for
-    /// the paper rule; 0 keeps forest bytes identical to the pre-profile
-    /// code).
+    /// the paper rule; 0 disables this grinding boundary).
     const FOREST_ROUND_GRINDING_BITS: u32;
     /// Ring-switch round grinding (`derive_ring_switch_grinding(LAMBDA)`).
     const RING_SWITCH_GRINDING_BITS: u32;
-    /// Legacy escape hatch: profiles that reproduce a historical design
-    /// target may skip the strict `>= LAMBDA` validation (accounting is
-    /// still computed and reported). Never set for new profiles.
+    /// Reference-schedule escape hatch: historical design targets may skip
+    /// strict `>= LAMBDA` validation while still reporting full accounting.
+    /// Never set this for a production profile.
     const DESIGN_ONLY: bool = false;
 
     /// Derives and validates the runtime parameters for one shape.
@@ -266,14 +265,14 @@ impl IopSecurityProfile for Limber114 {
     const RING_SWITCH_GRINDING_BITS: u32 = derive_ring_switch_grinding(114);
 }
 
-/// Today's SHA-256 paper128 configuration, verbatim: the 128-designed
-/// grinding schedule with NO forest or ring-switch grinding, so the whole
-/// system sits at the ~126.4-bit GKR-round floor. Kept so existing numbers
-/// stay reproducible; not called 128.
-pub struct LegacySha128Design;
+/// Historical SHA-256 reference schedule: 128-bit projection, Spartan, and
+/// Ligerito targets, but no forest or ring-switch grinding. It is retained as
+/// an explicit comparison schedule and reaches the ~126.4-bit GKR-round floor;
+/// it is not the default security profile.
+pub struct Sha128ReferenceSchedule;
 
-impl IopSecurityProfile for LegacySha128Design {
-    const NAME: &'static str = "legacy-sha-128-design";
+impl IopSecurityProfile for Sha128ReferenceSchedule {
+    const NAME: &'static str = "sha128-reference-schedule";
     const LAMBDA: u32 = 128;
     const PRIME_POLICY: PrimePolicy = PrimePolicy::SingleDerived;
     const LIGERITO_TARGET_BITS: usize = 128;
@@ -393,9 +392,7 @@ fn derive_params(
     // field policy (113), the sampler cap (126), the no-wrap lift bound,
     // and — for a direct opening — the one-chunk fold width.
     let derived_width = |direct: bool| -> Result<u32, ProfileError> {
-        let mut width = 113
-            .min(126)
-            .min(128 - i64::from(facts.lift_arity_log2));
+        let mut width = 113.min(126).min(128 - i64::from(facts.lift_arity_log2));
         if direct {
             width = width.min(i64::from(c_w));
         }
@@ -446,8 +443,7 @@ fn derive_params(
     let (projection_width, projection_raw) = projection_bits_raw;
     // The initial grinding boundary protects the whole pre-PIOP draw block:
     // the projection prime AND the τ point (error tau_arity/q).
-    let tau_raw =
-        f64::from(projection_width - 1) - f64::from(facts.tau_arity.max(1)).log2();
+    let tau_raw = f64::from(projection_width - 1) - f64::from(facts.tau_arity.max(1)).log2();
     let draw_raw = match projection_raw {
         Some(bits) => bits.min(tau_raw),
         None => tau_raw,
@@ -469,8 +465,7 @@ fn derive_params(
     });
 
     // ── Step 3: PIOP rounds and terminal draws over the projection field ─
-    let round_raw =
-        f64::from(projection_width - 1) - f64::from(facts.piop_degree.max(1)).log2();
+    let round_raw = f64::from(projection_width - 1) - f64::from(facts.piop_degree.max(1)).log2();
     let piop_round_grinding_bits = grind(round_raw, "step3:piop-round")?;
     terms.push(SoundnessTerm {
         name: "step3:piop-round",
@@ -492,8 +487,8 @@ fn derive_params(
         PrimePolicy::TwoFullWidthFingerprint => {
             let width = derived_width(true)?;
             let (min, max) = interval_endpoints(width);
-            let raw = projection_draw_bits(facts.step50_magnitude_log2, width)
-                .unwrap_or(f64::INFINITY);
+            let raw =
+                projection_draw_bits(facts.step50_magnitude_log2, width).unwrap_or(f64::INFINITY);
             let grinding_bits = grind(raw, "step5_0:reduction-draw")?;
             terms.push(SoundnessTerm {
                 name: "step5_0:reduction-draw",
@@ -631,21 +626,29 @@ mod tests {
             .iter()
             .find(|term| term.name == "step2:projection-draw")
             .unwrap();
-        assert!((fingerprint.bits - 114.07).abs() < 0.1, "{}", fingerprint.bits);
+        assert!(
+            (fingerprint.bits - 114.07).abs() < 0.1,
+            "{}",
+            fingerprint.bits
+        );
         let reduction_term = params
             .accounting
             .terms
             .iter()
             .find(|term| term.name == "step5_0:reduction-draw")
             .unwrap();
-        assert!((reduction_term.bits - 114.25).abs() < 0.1, "{}", reduction_term.bits);
+        assert!(
+            (reduction_term.bits - 114.25).abs() < 0.1,
+            "{}",
+            reduction_term.bits
+        );
         assert!(params.accounting.controllable_bits() >= 114.0);
     }
 
     #[test]
-    fn legacy_sha_reproduces_the_grinding_tables_exactly() {
+    fn sha128_reference_reproduces_the_grinding_tables_exactly() {
         for t in 7..=16u32 {
-            let params = LegacySha128Design::instantiate(&sha_facts(t)).unwrap();
+            let params = Sha128ReferenceSchedule::instantiate(&sha_facts(t)).unwrap();
             let expected_initial = match t {
                 7 | 8 => 20,
                 9..=15 => 21,
@@ -687,11 +690,11 @@ mod tests {
             assert_eq!(params.forest_round_grinding_bits, 0);
             assert_eq!(params.ring_switch_grinding_bits, 0);
             assert_eq!(params.ligerito_target_bits, 100);
-            // Same prime interval as the legacy profile: λ moves grinding,
+            // Same prime interval as the reference schedule: λ moves grinding,
             // never the field, so the chunk geometry is λ-independent.
-            let legacy = LegacySha128Design::instantiate(&sha_facts(t)).unwrap();
-            assert_eq!(params.projection_min, legacy.projection_min);
-            assert_eq!(params.projection_max, legacy.projection_max);
+            let reference = Sha128ReferenceSchedule::instantiate(&sha_facts(t)).unwrap();
+            assert_eq!(params.projection_min, reference.projection_min);
+            assert_eq!(params.projection_max, reference.projection_max);
             assert!(params.accounting.controllable_bits() >= 100.0);
             assert!(params.accounting.achieved_bits() >= 100.0);
         }
@@ -716,10 +719,10 @@ mod tests {
     }
 
     #[test]
-    fn legacy_sha_documents_its_floor_instead_of_refusing() {
+    fn sha128_reference_documents_its_floor_instead_of_refusing() {
         // DESIGN_ONLY: the 126.4-bit un-grinded GKR round would fail a
-        // strict λ=128 validation; the legacy profile documents it instead.
-        let params = LegacySha128Design::instantiate(&sha_facts(14)).unwrap();
+        // strict λ=128 validation; the reference schedule documents it.
+        let params = Sha128ReferenceSchedule::instantiate(&sha_facts(14)).unwrap();
         let gkr = params
             .accounting
             .terms

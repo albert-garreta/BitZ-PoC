@@ -24,15 +24,13 @@ use crypto_primitives::{FromWithConfig, PrimeField};
 use thiserror::Error;
 
 use crate::{
-    pcs::IntEvalParams,
-    poly::mle::DenseMultilinearExtension,
-    sparse_matrix::SparseColumn,
+    pcs::IntEvalParams, poly::mle::DenseMultilinearExtension, sparse_matrix::SparseColumn,
 };
 
 use super::{
-    ConstraintMatrices, ModulusIndependentCoefficient, PreparedConstraintMatrices,
-    R1csProductMles, SparseMatrix, SpartanF2zField, SpartanField, SpartanMatrixCoefficient,
-    SpartanMatrixError, SpartanRelationBackend, build_assignment_mle, build_product_mles,
+    ConstraintMatrices, ModulusIndependentCoefficient, PreparedConstraintMatrices, R1csProductMles,
+    SparseMatrix, SpartanF2zField, SpartanField, SpartanMatrixCoefficient, SpartanMatrixError,
+    SpartanRelationBackend, build_assignment_mle, build_product_mles,
 };
 
 /// The BabyBear prime `2^31 - 2^27 + 1`.
@@ -173,8 +171,11 @@ impl SpartanMatrixCoefficient<SpartanF2zField> for BabyBearMulCoefficient {
 impl ModulusIndependentCoefficient<SpartanF2zField> for BabyBearMulCoefficient {
     fn write_modulus_independent_encoding(&self, out: &mut Vec<u8>) {
         match self {
-            Self::One => ModulusIndependentCoefficient::<SpartanF2zField>::
-                write_modulus_independent_encoding(&true, out),
+            Self::One => {
+                ModulusIndependentCoefficient::<SpartanF2zField>::write_modulus_independent_encoding(
+                    &true, out,
+                )
+            }
             Self::Modulus => out.extend_from_slice(&BABY_BEAR_MODULUS_FIELD_ENCODING),
         }
     }
