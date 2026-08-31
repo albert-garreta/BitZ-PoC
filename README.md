@@ -201,9 +201,11 @@ Pinned by `mod_q_ligerito_padded_witness_trims_us`.
 - **`crypto-primitives`** — vendored at `vendor/crypto-primitives`
   (NethermindEth, Apache-2.0; see `vendor/crypto-primitives/VENDORED.md` for
   the pinned revision and the crypto-bigint 0.7.5 / rand 0.10 port).
-- **`circuit`** — SHA-256/F2Z circuit synthesis from the sibling checkout
-  `../f2z-benchmark/crates/circuit` (clone `worldfnd/f2z-benchmark` at `main`
-  next to this repository).
+- **`circuit`** — backend-independent SHA-256/F2Z circuit synthesis copied
+  into `crates/circuit`, with its matrix-field support in `crates/field`.
+  A fresh checkout therefore needs no sibling `f2z-benchmark` repository;
+  provenance and the pinned upstream revision are recorded in
+  `crates/circuit/VENDORED.md`.
 - `crypto-bigint 0.7.5`, `crypto-primes`, `blake3`, `rayon`.
 
 ## Building and testing
@@ -214,6 +216,11 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --example reference_measure
 # both merged-forest schedules are pinned byte-identical to the eager forest:
 RUSTFLAGS="-C target-cpu=native" F2_FOREST_SCHEDULE=l8 cargo test --release \
   merged_forest
+# the copied circuit crate's full tests and benchmark builds:
+RUSTFLAGS="-C target-cpu=native" cargo test --release --all-features --locked \
+  --manifest-path crates/circuit/Cargo.toml
+RUSTFLAGS="-C target-cpu=native" cargo bench --all-features --no-run --locked \
+  --manifest-path crates/circuit/Cargo.toml
 ```
 
 `-C target-cpu=native` is load-bearing on aarch64 (enables PMULL for the NEON
