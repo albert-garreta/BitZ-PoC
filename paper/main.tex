@@ -818,15 +818,19 @@ Let $R$ be a ring and let $S\subseteq R$ be a finite exceptional subset of $R$. 
 $\Pr_{\rr\getsr S^\mu}[f(\rr)=0] \le \mu/|S|$.
 \end{lemma}
 
-\subsection{Linear codes and relations}
+\paragraph{Multilinear extensions} Let $R$ be a ring and let $m\geq 1$. Given $\bb\in \bits^m$ and a tuple $\rr=(\rr_1,\ldots, \rr_m)$ of elements of $R$ (or of variables), we write $$\eq(\bb, \rr) \defeq \prod_{i\in [m]} \left(\bb_i\cdot \rr_i + (1-\bb_i)\cdot (1-\rr_i)\right).$$ Given a vector $\uu\in R^{2^m}$, indexed by $\bits^m$ in the natural way, the \emph{multilinear extension (MLE)} of $\uu$ is the multilinear polynomial $$\mle{\uu}(X_1,\ldots, X_m) \defeq \sum_{\bb\in \bits^m} \uu_{\bb}\cdot \eq(\bb, (X_1,\ldots, X_m)) \in R[X_1, \ldots, X_m].$$ It is the unique multilinear polynomial over $R$ agreeing with $\uu$ on $\bits^m$. Note that, for $\rr\in R^m$, one has $\mle{\uu}(\rr) = \langle (\eq(\bb,\rr))_{\bb\in \bits^m}, \uu\rangle$; that is, an MLE evaluation claim on $\uu$ is a linear claim on $\uu$ whose weight vector is a tensor product of $m$ vectors of length $2$.
+
+\subsection{Linear codes and relations}\label{s:prelims_codes}
 
 \paragraph{Linear codes}
 
 Let $\cC \subseteq \FF^{\codelength}$ be a linear code over $\FF$ of dimension $\codedim$ and blocklength $\codelength$. For $h\geq 1$, the \emph{$h$-interleaving} of $\cC$ is the code $\cC^{\equiv h} \subseteq \left(\FF^{h}\right)^{\codelength}$ of dimension $\codedim\cdot h$ and blocklength $\codelength\cdot h$, whose codewords have the form $$\left((c_{i1},\ldots, c_{ih})\right)_{i\in [\codelength]} \qquad \text{for } (c_{1j},\ldots, c_{\codelength j})\in \cC \qquad \text{for all } j\in [h].$$
 
-Given two words $w_1, w_2$ of length $n$, the relative Hamming distance between $w_1$ and $w_2$ is denoted 
+Given two words $w_1, w_2$ of length $n$, the relative Hamming distance between $w_1$ and $w_2$ is denoted
 %
 $$\hamming(w_1,w_2).$$
+
+The \emph{relative minimum distance} of $\cC$, denoted $\hamming(\cC)$, is the minimum of $\hamming(c_1,c_2)$ over distinct codewords $c_1,c_2\in \cC$. Given $\delta\in (0,1)$ and an integer $L\geq 1$, we say $\cC$ is \emph{$(\delta, L)$-list-decodable} if for every word $w\in \FF^{\codelength}$ there are at most $L$ codewords $c\in \cC$ with $\hamming(w,c)<\delta$. Every code is $(\delta,1)$-list-decodable for $\delta\leq \hamming(\cC)/2$; accordingly, we refer to $\hamming(\cC)/2$ as the \emph{unique decoding radius} of $\cC$.
 
 \paragraph{Relations}
 A \emph{relation} $\Relation$ consists of triples  $(\inp,\oracle;\wit)$, where $\inp$ is the explicit instance, $\oracle$ the implicit instance or oracle, and $\wit$ the witness.  The corresponding language  is 
@@ -1187,18 +1191,18 @@ where $h$ ranges over the polynomials just described. See \cref{l:examples_morph
 
 
 \begin{lemma}[Example definitions of  $\cM_q$ and the corresponding $\theta(R,\codedim)$]\label{l:examples_morphisms}
-    Let  $d=\dim(R)$. Let $\cP$ be a set of primes. For each $q\in \cP$ let $\cM_q$  be the set of all maps $\pi: \ZZ[X_1,\ldots, X_{d-1}]\to \FF_q$ of the form $$\pi(h(X_1, \ldots, X_{d-1})) = \pi_q(h)(\alpha, \ldots, \alpha^{d-1}), \qquad \text{for } h\in \ZZ[X_1,\ldots, X_{d-1}]$$ for some $\alpha\in \FF_q$, and where $\pi_q(h)$ is $h$ after reducing its coefficients modulo $q$. Then
+    Let  $d=\dim(R)$. Let $\cP$ be a set of primes. Assume first that the fixed generators of $R$ satisfy $\gamma_{i+1}=\gamma_2^{i}$ for all $i\in [d-1]$ (as is the case, e.g., for the generators $\gamma_i=x^{i-1}$ of a field extension, cf.\ the example above). For each $q\in \cP$ let $\cM_q$  be the set of all maps $\pi: \ZZ[X_1,\ldots, X_{d-1}]\to \FF_q$ of the form $$\pi(h(X_1, \ldots, X_{d-1})) = \pi_q(h)(\alpha, \alpha^2, \ldots, \alpha^{d-1}), \qquad \text{for } h\in \ZZ[X_1,\ldots, X_{d-1}]$$ for some $\alpha\in \FF_q$, and where $\pi_q(h)$ is $h$ after reducing its coefficients modulo $q$. Then
     %
     $$
-    \theta(R,\codedim) \leq \frac{\deg(R)}{q_{\min}} + \frac{\log(2\cdot \codedim_1) + \log(q-1)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}
+    \theta(R,\codedim) \leq \frac{2\cdot (d-1)}{q_{\min}} + \frac{\log\left(8\cdot d\cdot \codedim\cdot N_R^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}.
     $$
 %
     If, on the contrary, for each $q\in \cP$ we define $\cM_q$  as the set of all maps $\pi: \ZZ[X_1,\ldots, X_{d-1}]\to \FF_q$ of the form 
      $$\pi(h(X_1, \ldots, X_{d-1})) = \pi_q(h)(\alpha_1, \ldots, \alpha_{d-1}), \qquad \text{for } h\in \ZZ[X_1,\ldots, X_{d-1}],$$
 %
-for some $\alpha_1,\ldots, \alpha_{d-1}\in \FF_q$, then \albertimportant{This is wrong? It's always d on the numerator?}
+for some $\alpha_1,\ldots, \alpha_{d-1}\in \FF_q$ (here the generators of $R$ may be arbitrary), then
          $$
-    \theta(R,\codedim) \leq \frac{1}{q_{\min}} + \frac{\log(2\cdot \codedim_1) + \log(q-1)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}
+    \theta(R,\codedim) \leq \frac{2}{q_{\min}} + \frac{\log\left(8\cdot \codedim\cdot N_R^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}.
     $$
 \end{lemma}
 \begin{proof}
@@ -1209,8 +1213,6 @@ for some $\alpha_1,\ldots, \alpha_{d-1}\in \FF_q$, then \albertimportant{This is
 \renewcommand{\degevalfield}{\deg(\evalfield)}
 %\renewcommand{\picanon}{{\pi_{\mathsf{canon}}^R}}
 
-
-\albertimportant{This construction is missing OOD sample when we work beyond the UDR. Formalizing OOD sampling is a bit of a pain: we need to define a relation $\LinBitsDual^{\rr,y}$ which is the same as $\LinBitsDual$ but adds the constraint $\mle{\pack\circ\pi_2(\mathsf{\bits}(\bff))}(\rr) =y$ in $\comfield$. We do the same for $\UPESAT$. Then we present \cref{c:core_iop}  as a protocol for $\LinBitsDual^{\rr,y}$, and in \cref{c:LinModFieldBin} present an IOP for the general $\LinBitsDual$ relation where we first do an OOD sample, reducing to $\LinBitsDual^{\rr,y}$. In \cref{c:iop_pimsat} we also add an initial reduction from $\UPESAT$ to $\UPESAT^{\rr, y}$. All this is standard, so I am considering to write a short  section  glossing this over. The question is how to state the formal soundness results}
 
 \begin{construction}[IOP for the core {$\LinBitsDual$ relation}]\label{c:core_iop}
 \noindent \textbf{Parameters.} $(R, \comfield,\codedim,\codedim_1,\codedim_2,\cC)$ comprised of: a binary field $\comfield$; a witness length $\codedim$ divisible by $\comfieldexp$; tensor decomposition dimensions $\codedim_1, \codedim_2$  satisfying $\codedim_1\cdot \codedim_2 = \codedim$; a linear code $\cC$ over $\comfield$ of dimension $\codedim/\comfieldexp$ and blocklength $\codelength$. 
@@ -1227,7 +1229,8 @@ Let $\basegenerator\in \comfield$ be a fixed generator of the multiplicative gro
 
 
 \begin{enumerate}[leftmargin=*] 
-\item \textbf{Round 1 (optional): replacing $R$ by a ``small'' prime field $\FF_q$.}  \albertimportant{Round numbering has changed}
+\item \textbf{Round 0 (optional): Out Of Domain (OOD) sample.} This step can be skipped if one is aiming to configure the protocol with proximity parameter $\delta$ within the unique decoding radius of $\cC$ (cf.\ \cref{s:prelims_codes}, and see \cref{t:thm_core_IOPP} for the precise requirement). Otherwise, the verifier samples and sends a random $\zeta\in \comfield$, and the prover responds with a value $y\in \comfield$, supposedly $$y=\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta}), \qquad \text{where } \bm{\zeta}\defeq \left(\zeta^{2^0}, \zeta^{2^1}, \ldots, \zeta^{2^{\log (\codedim/\comfieldexp) -1}}\right)$$ (cf.\ \cref{s:prelims_algebra} for the MLE notation $\mle{*}$; recall that $\pack\circ\pi_2(\bff)\in \comfield^{\codedim/\comfieldexp}$). The correctness of $y$ is certified in Phase 4 below.
+\item \textbf{Round 1 (optional): replacing $R$ by a ``small'' prime field $\FF_q$.}
 \begin{itemize}[leftmargin=*]
 \item This step can be skipped if $R$ is a prime field $\FF_q$ and $q < \fieldboundsizeexponent$. %, or if $R=\ZZ$ and $\lVert \vv \rVert < \fieldboundsizeexponent$.
 
@@ -1320,7 +1323,7 @@ Notice that \begin{equation}\label{e:Q_F2Z_intermediate}\left(\inp=((g^{\bm{\gam
 &g=\Enc_{\cC}\circ \pack (\bfg) \\    &\langle \uu, \bfg\rangle = \mu  \end{aligned}\right\}
 \end{equation} for some vector $\vv$ and field element $\mu'$ output during the IOR $\Pi_{\mathsf{red}}$. 
 \end{itemize}
-\item \textbf{Phase 4: Using an IOP over {$\comfield$}.} Prover and  verifier engage in the IOP $\Pi_{\iopp}$  to certify the claims \eqref{e:iopp_mle_claims}. 
+\item \textbf{Phase 4: Using an IOP over {$\comfield$}.} Prover and  verifier engage in the IOP $\Pi_{\iopp}$  to certify the claim \eqref{e:iopp_mle_claims}.  If Round 0 (Out Of Domain sampling) triggered, they use $\Pi_\iopp$ to also certify, in the same run, the evaluation claim from Round 0, namely the claim $$\langle \uu_\zeta, \picomfield(\bff)\rangle = y, \qquad \text{where } (\uu_\zeta)_{(j-1)\cdot \comfieldexp + k} \defeq \eq(j, \bm{\zeta})\cdot \beta_k \quad \text{for } j\in [\codedim/\comfieldexp], \ k\in [\comfieldexp]$$ (identifying $[\codedim/\comfieldexp]$ with $\bits^{\log(\codedim/\comfieldexp)}$, cf.\ \cref{s:prelims_algebra}), so that $\langle \uu_\zeta, \bfg\rangle = \mle{\pack(\bfg)}(\bm{\zeta})$ for every $\bfg\in \FF_2^{\codedim}$; i.e., $\Pi_\iopp$ is used as an IOP for the variant of $\LIN(\comfield,\cC,\pack)$ carrying these two linear constraints on the same witness (the relation $\LIN^{\zeta,y}$ of \cref{s:soundness_core_iop}).
 \end{enumerate}
 \end{construction}
 
@@ -1341,27 +1344,33 @@ using an IOP for constrained codes. Concretely, the prover commits to the vector
 
 
 For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack),\qquad \LIN = \LIN(\comfield, \cC, \pack).$$
+
+To account for Round 0 of \cref{c:core_iop}, we introduce variants of these relations that carry the OOD evaluation claim. We denote by $\PESAT^{\zeta,y}$ the relation consisting of all triples $((\inp, \zeta, y), \oracle, \wit)$, with $\zeta, y\in \comfield$, such that $(\inp,\oracle,\wit)\in \PESAT$ and $$\mle{\pack(\wit)}(\bm{\zeta})=y$$ (viewing the witness $\wit\in \FF_2^{\codedim_1\times \codedim_2}$ as a vector of length $\codedim$; $\bm{\zeta}$ is the evaluation point from Round 0 of \cref{c:core_iop}); that is, the instance is extended with the pair $(\zeta,y)$, and the witness is additionally constrained by the evaluation claim of Round 0. The relation $\LIN^{\zeta,y}$ is defined analogously; note that $\LIN^{\zeta,y}$ imposes two linear constraints on the same witness $\bfg\in \FF_2^{\codedim}$, namely $\langle \uu,\bfg\rangle =\mu$ and $\langle \uu_\zeta, \bfg\rangle = y$ with $\uu_\zeta$ as in Phase 4 of \cref{c:core_iop}, and is thus again (an instance family of) an encoded PESAT relation. The relaxations $\PESAT^{\delta,\zeta,y}$ and $\LIN^{\delta,\zeta,y}$ are obtained by replacing $\PESAT$, $\LIN$ with $\PESAT^\delta$, $\LIN^\delta$ in these definitions.
 \begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:core_iop}]\label{t:thm_core_IOPP} 
-   Let $\delta \in (0,1)$ be a proximity parameter.  Assume 
+   Let $\delta \in (0,1)$ be a proximity parameter, and let $L_\delta\geq 1$ be such that $\cC$ is $(\delta, L_\delta)$-list-decodable (cf.\ \cref{s:prelims_codes}). Assume that Round 0 of \cref{c:core_iop} is executed whenever $L_\delta>1$ (equivalently, Round 0 may be skipped only when $\delta$ is within the unique decoding radius of $\cC$).  Assume
    %
-   $$\max\cP < \fieldboundsizeexponent.$$ 
+   $$\max\cP < \fieldboundsizeexponent.$$
    %
-   Assume $\Pi_{\mathsf{red}}$ is a perfectly complete $t_\red$-round IOR from $\PESAT$ to $\LIN$ with round-by-round knowledge soundness  with relaxation $(\PESAT^\delta,\LIN^{\delta})$, with errors  $(\ksred_1, \ldots, \ksred_{t_\red})$. Assume $\Pi_{\iopp}$ is a perfectly complete $t_{\iopp}$-round IOP  for $\LIN$ (i.e.\ an IOR from $\LIN$ to the trivial relation $\bot$) with round-by-round knowledge soundness with relaxation $(\LIN^{\delta}, \bot)$, and errors $$\ksiopp_1,\ldots, \ksiopp_{t_\iopp}.$$ 
+   Assume $\Pi_{\mathsf{red}}$ is a perfectly complete $t_\red$-round IOR from $\PESAT$ to $\LIN$ with round-by-round knowledge soundness  with relaxation $(\PESAT^\delta,\LIN^{\delta})$, with errors  $(\ksred_1, \ldots, \ksred_{t_\red})$. Assume $\Pi_{\iopp}$ is a perfectly complete $t_{\iopp}$-round IOP  for $\LIN$ (i.e.\ an IOR from $\LIN$ to the trivial relation $\bot$) with round-by-round knowledge soundness with relaxation $(\LIN^{\delta}, \bot)$, and errors $$\ksiopp_1,\ldots, \ksiopp_{t_\iopp}.$$
 %
-    Then \cref{c:core_iop} is a perfectly complete $(1+t_\red+t_\iopp)$-round IOP for $\LinBitsDual$ with round-by-round knowledge soundness with relaxation $(\LinBitsDual^{\delta}, \bot)$, with errors $$\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]},$$ where
+    If Round 0 is executed, assume moreover that the IOR obtained from $\Pi_{\mathsf{red}}$ by extending its instances with a pair $(\zeta,y)\in \comfield^2$ (which the protocol ignores and copies to its output instance) is a perfectly complete IOR from $\PESAT^{\zeta,y}$ to $\LIN^{\zeta,y}$ with round-by-round knowledge soundness with relaxation $(\PESAT^{\delta,\zeta,y},\LIN^{\delta,\zeta,y})$, with the same errors; and, similarly, that $\Pi_{\iopp}$ is a perfectly complete $t_\iopp$-round IOP for $\LIN^{\zeta,y}$ with round-by-round knowledge soundness with relaxation $(\LIN^{\delta,\zeta,y},\bot)$, with the same errors (cf.\ \cref{r:ood_hypotheses}).
+%
+    Then \cref{c:core_iop} is a perfectly complete $(2+t_\red+t_\iopp)$-round IOP for $\LinBitsDual$ with round-by-round knowledge soundness with relaxation $(\LinBitsDual^{\delta}, \bot)$, with errors $$ \kappa_{\mathsf{OOD}}, \kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]},$$ where
     %
     $$
-    \kappa_0 = \theta(R,\codedim)
+    \kappa_{\mathsf{OOD}} \leq \binom{L_\delta}{2}\cdot \frac{\codedim/\comfieldexp-1}{|\comfield|}, \qquad \kappa_0 = \theta(R,\codedim)
     $$
-    (see \cref{l:examples_morphisms}).
-    The error term $\kappa_0$ is void if Round 1 is not executed, and in that case \cref{c:core_iop} has one round less.
+    (see \cref{l:ood_collision,l:examples_morphisms}).
+    The error terms $\kappa_{\mathsf{OOD}}, \kappa_0$ are void if either Round 0 or Round 1 are not executed, respectively. In that case \cref{c:core_iop} has one or two rounds less.
     %Recall that $q$ is either the characteristic of $R$ if $R$ is a finite field, or $q=\codedim_1 \cdot \lVert \vv\rVert_{\infty} +1$ if $R=\ZZ$.
 %
 %
     %If  $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$-round IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $(\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]}$.
 \end{theorem}
 
-
+\begin{remark}[On the additional hypotheses when Round 0 is executed]\label{r:ood_hypotheses}
+The additional hypotheses on $\Pi_{\mathsf{red}}$ and $\Pi_{\iopp}$ are mild. Regarding $\Pi_{\mathsf{red}}$: recall (\cref{s:interleaved_setting}) that $\Pi_{\mathsf{red}}$ never queries the oracle and outputs the same oracle and witness it receives, so the extension amounts to constraining the witness by one additional linear condition that the protocol never interacts with; for our GKR instantiation (\cref{s:gkr_low_entropy}), the standard round-by-round analysis of GKR fixes the witness and treats the proximity condition as an inert conjunct, and the OOD evaluation constraint enters in exactly the same way, leaving the state function, the extractor, and the errors unchanged. Regarding $\Pi_{\iopp}$: as noted above, $\LIN^{\zeta,y}$ imposes two linear constraints on the same encoded witness, and IOPs for constrained codes such as WHIR \cite{whir} natively support any (small) number of linear constraints, batching them internally.
+\end{remark}
 
 
  To prove \cref{l:examples_morphisms} we will use the following lemma, which generalizes \albert{point to lemma} in \cite{zincplus}.
@@ -1389,12 +1398,25 @@ We start with the second family. Since $h$ is nonzero and has total degree at mo
 For the first family, consider the ring homomorphism $\sigma: \ZZ[X_1,\ldots,X_{d-1}]\to \ZZ[Y]$ defined by $\sigma(X_i)=Y^i$ for $i\in [d-1]$, and let $\widetilde{h}\defeq \sigma(h)\in \ZZ[Y]$. Since $\gamma_{i+1}=\gamma_2^{i}$, the homomorphism $\picanon^{R}$ factors as $\picanon^{R} = \rho\circ \sigma$, where $\rho:\ZZ[Y]\to R$ reduces coefficients modulo $\Char(R)$ and maps $Y$ to $\gamma_2$. Hence $\picanon^{R}(h)\neq 0$ implies $\widetilde{h}\neq 0$. Moreover, $\widetilde{h}$ has degree at most $2\cdot (d-1)$, and each of its coefficients is a sum of at most $d$ coefficients of $h$, since for each power $Y^k$, the monomials of $h$ mapping to $Y^k$ under $\sigma$ are among $1$, $X_k$, and the monomials $X_iX_j$ with $i+j=k$, and there are at most $d$ of these. Hence the coefficients of $\widetilde{h}$ lie in $\range{-2^{\widetilde{B}}+1}{2^{\widetilde{B}}-1}$ for $\widetilde{B}\defeq \lfloor \log(d\cdot \codedim\cdot N_R^2)\rfloor + 3\leq \log(8\cdot d\cdot \codedim\cdot N_R^2)$. Finally, $\pi_q(h)(\alpha, \alpha^2, \ldots, \alpha^{d-1}) = \pi_q(\widetilde{h})(\alpha)$ for all $\alpha\in \FF_q$, and hence \cref{l:reduction_lemma} (applied with $m=1$ and total degree $2\cdot (d-1)$) yields $$\Pr_{\substack{q\gets \cP,\\ \alpha \gets \FF_q}}[\pi_q(\widetilde{h})(\alpha)=0] \leq \frac{\widetilde{B}}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{2\cdot (d-1)}{q_{\min}},$$ as needed.
 \end{proof}
 
-\begin{proof}[Proof of \cref{t:thm_core_IOPP}] 
+The following lemma bounds the probability, over the OOD challenge $\zeta$ of Round 0, that two distinct bit vectors close to the oracle share the same OOD evaluation. Throughout, for $\zeta\in \comfield$ we write, as in Round 0 of \cref{c:core_iop}, $$\bm{\zeta}= \left(\zeta^{2^0}, \zeta^{2^1}, \ldots, \zeta^{2^{\log(\codedim/\comfieldexp)-1}}\right)\in \comfield^{\log (\codedim/\comfieldexp)}$$ for the corresponding evaluation point.
+
+\begin{lemma}[OOD collision probability]\label{l:ood_collision}
+Let $\delta\in (0,1)$ and let $L_\delta\geq 1$ be such that $\cC$ is $(\delta,L_\delta)$-list-decodable. Let $f\in \comfield^{\codelength}$, and let $\mathsf{List}(f,\delta)$ denote the set of vectors $\bfg\in \FF_2^{\codedim}$ with $\hamming(f, \Enc_{\cC}\circ \pack(\bfg))<\delta$. For $\zeta\in \comfield$, let $\mathsf{Coll}(f,\zeta)$ denote the event that there exist two distinct $\bfg, \bfg'\in \mathsf{List}(f,\delta)$ with $\mle{\pack(\bfg)}(\bm{\zeta}) = \mle{\pack(\bfg')}(\bm{\zeta})$. Then
 %
-The completeness of \cref{c:core_iop} is clear from its description.  To prove its soundness,  we decompose \cref{c:core_iop} into three IORs $\Pi_1, \Pi_2, \Pi_3$.  The first one, $\Pi_1$, is an IOR from $\LinBitsDual$ to $\PESAT$, and it consists of applying Rounds 1 and 2 of \cref{c:core_iop}, and outputting $$\left(\inp'=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ (g^{\mu_j})_{j\in [\codedim_2]}),\  \oracle'= f, \ \wit'=\picomfield(\bff)\right),$$ as described in Phase 3 of \cref{c:core_iop}. Formally, $\Pi_1$ is a $2$-round IOR whose second verifier message is empty: the prover first sends $\mu'$, the verifier replies with $(q,\pirand)$, and the prover then sends $\bm{\mu}=(\mu_1,\ldots, \mu_{\codedim_2})$. The second IOR, $\Pi_2$, is simply $\Pi_{\mathsf{red}}$, reducing $\PESAT$ to $\LIN$. Finally, the third IOR, $\Pi_3$, is simply the IOP $\Pi_{\iopp}$ for $\LIN$.
+$$
+\Pr_{\zeta\gets \comfield}[\mathsf{Coll}(f,\zeta)] \leq \binom{L_\delta}{2}\cdot \frac{\codedim/\comfieldexp-1}{|\comfield|}.
+$$
+\end{lemma}
+\begin{proof}
+Since $\Enc_{\cC}\circ \pack$ is injective, and $\cC$ is $(\delta, L_\delta)$-list-decodable, we have $|\mathsf{List}(f,\delta)|\leq L_\delta$. Fix two distinct $\bfg, \bfg'\in \mathsf{List}(f,\delta)$. Since $\pack$ is injective, $\pack(\bfg)\neq \pack(\bfg')$, and hence $D\defeq \mle{\pack(\bfg)}-\mle{\pack(\bfg')}$ is a nonzero multilinear polynomial in $m\defeq \log (\codedim/\comfieldexp)$ variables over $\comfield$. The substitution $X_i \gets \zeta^{2^{i-1}}$ maps distinct multilinear monomials $\prod_{i\in T} X_i$ (for $T\subseteq [m]$) to distinct powers $\zeta^{\sum_{i\in T} 2^{i-1}}$, with exponents ranging over $\range{0}{\codedim/\comfieldexp-1}$; hence $D(\bm{\zeta})$, viewed as a polynomial in $\zeta$, is a nonzero univariate polynomial of degree at most $\codedim/\comfieldexp-1$, and it vanishes for at most $\codedim/\comfieldexp-1$ values of $\zeta\in \comfield$. The lemma follows by a union bound over the at most $\binom{L_\delta}{2}$ pairs.
+\end{proof}
+
+\begin{proof}[Proof of \cref{t:thm_core_IOPP}]
+%
+The completeness of \cref{c:core_iop} is clear from its description (for Round 0, note that the honest prover's value $y$ equals $\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta})$, so the additional claim certified in Phase 4 holds).  To prove its soundness, we first treat the case where Round 0 is not executed, so that, by hypothesis, $L_\delta=1$; the case where Round 0 is executed is treated at the end of the proof.  We decompose \cref{c:core_iop} into three IORs $\Pi_1, \Pi_2, \Pi_3$.  The first one, $\Pi_1$, is an IOR from $\LinBitsDual$ to $\PESAT$, and it consists of applying Rounds 1 and 2 of \cref{c:core_iop}, and outputting $$\left(\inp'=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ (g^{\mu_j})_{j\in [\codedim_2]}),\  \oracle'= f, \ \wit'=\picomfield(\bff)\right),$$ as described in Phase 3 of \cref{c:core_iop}. Formally, $\Pi_1$ is a $2$-round IOR whose second verifier message is empty: the prover first sends $\mu'$, the verifier replies with $(q,\pirand)$, and the prover then sends $\bm{\mu}=(\mu_1,\ldots, \mu_{\codedim_2})$. The second IOR, $\Pi_2$, is simply $\Pi_{\mathsf{red}}$, reducing $\PESAT$ to $\LIN$. Finally, the third IOR, $\Pi_3$, is simply the IOP $\Pi_{\iopp}$ for $\LIN$.
 
 
-By the composition of IORs result (cf.\ \cref{r:ior_compositoin}), it suffices to show that $\Pi_1$ has round-by-round knowledge error $\kappa_0$, and is perfectly complete. 
+Below we show that $\Pi_1$ is perfectly complete and has round-by-round knowledge soundness with relaxation $(\LinBitsDual^{\delta}, \PESAT^{\delta})$, with errors $(\kappa_0, 0)$. Since the second verifier message of $\Pi_1$ is empty, it contributes no error, and the last prover message of $\Pi_1$ can be sent together with the first prover message of $\Pi_2$; in this way \cref{c:core_iop} has $1+t_\red+t_\iopp$ rounds. The theorem then follows from the composition of IORs result (cf.\ \cref{r:ior_compositoin}). If Round 1 is skipped, then the messages $\mu'$ and $(q,\pirand)$ and the error $\kappa_0$ disappear, and the arguments below apply after replacing $\pirand\circ \picanon^{-1}$ with the identity map on $\FF_q$ (or on $\ZZ$, in which case $\pi_q$ is also replaced by the identity map, cf.\ \cref{r:skip_round_1_integers}).
 
 
 
@@ -1453,7 +1475,7 @@ The latter occurs if and only if  $(\inp,\oracle,\ww)\notin \LinBitsDual^{\delta
 %
 Define $$h\defeq  \langle \picanon^{-1}(\vv^{(1)}) \otimes \picanon^{-1}(\vv^{(2)}), \bff \rangle- \mu' \ \in \ \ZZ[X_1, \ldots, X_{\dim(R)-1}].
 $$
-Since $\picanon$ is a ring homomorphism satisfying $\picanon\circ \picanon^{-1}=\mathsf{id}$ and restricting to $\pi$ on $\ZZ$, the first condition in \eqref{e:core_iop_proof_eq1} gives $$\picanon(h) = \langle \pi(\bff), \vv^{(1)} \otimes \vv^{(2)} \rangle- \picanon(\mu') = \langle \pi(\bff), \vv\rangle - \mu,$$ which is nonzero by \eqref{e:break_soundness_2}. In particular $h\neq 0$. On the other hand, since $\pirand$ is a ring homomorphism restricting to $\pi_q$ on $\ZZ$, the second condition in \eqref{e:core_iop_proof_eq1} states precisely that $\pirand(h)=0$. Moreover, $h$ has total degree at most $2$ and coefficients in $\range{-4\cdot \codedim\cdot N_R^2}{4\cdot \codedim\cdot N_R^2}$: indeed, the polynomials $\picanon^{-1}(\vv^{(1)}_i)$ and $\picanon^{-1}(\vv^{(2)}_j)$ have total degree at most $1$ and coefficients of absolute value at most $N_R$, the entries of $\bff$ are bits, and $\mu'$ passes the verifier's degree and range checks of Round 1. Since additionally $h\neq 0$, the polynomial $h$ belongs to the class of polynomials over which $\theta(R,\codedim)$ is defined. $$
+Since $\picanon$ is a ring homomorphism satisfying $\picanon\circ \picanon^{-1}=\mathsf{id}$ and restricting to $\pi$ on $\ZZ$, the first condition in \eqref{e:core_iop_proof_eq1} gives $$\picanon(h) = \langle \pi(\bff), \vv^{(1)} \otimes \vv^{(2)} \rangle- \picanon(\mu') = \langle \pi(\bff), \vv\rangle - \mu,$$ which is nonzero by \eqref{e:break_soundness_2}. In particular $h\neq 0$. On the other hand, since $\pirand$ is a ring homomorphism restricting to $\pi_q$ on $\ZZ$, the second condition in \eqref{e:core_iop_proof_eq1} states precisely that $\pirand(h)=0$. Moreover, $h$ has total degree at most $2$ and coefficients in $\range{-4\cdot \codedim\cdot N_R^2}{4\cdot \codedim\cdot N_R^2}$: indeed, the polynomials $\picanon^{-1}(\vv^{(1)}_i)$ and $\picanon^{-1}(\vv^{(2)}_j)$ have total degree at most $1$ and coefficients of absolute value at most $N_R$, the entries of $\bff$ are bits, and $\mu'$ passes the verifier's degree and range checks of Round 1. Since additionally $\picanon(h)\neq 0$, as shown above, the polynomial $h$ belongs to the class of polynomials over which $\theta(R,\codedim)$ is defined. Finally, note that any $\ww$ as in the event at hand satisfies the third condition in \eqref{e:core_iop_proof_eq1}, i.e.\ $\hamming(f,\Enc_{\cC}\circ\pack\circ \pi_2(\ww))< \delta$; since $\cC$ is $(\delta,1)$-list-decodable, there is at most one such $\ww\in \bits^{\codedim}$, and it is determined by $f$. Hence the polynomial $h$ is determined by $(\inp, f, \mu')$; in particular, it is fixed before $(q,\pirand)$ is sampled. Therefore $$
 \Pr_{q,\pirand}[(\inp,\oracle,\ww)\notin \LinBitsDual^\delta, \text{ and }\ww=\bff \text{ satisfies  \eqref{e:core_iop_proof_eq1}}] \leq \Pr_{q\gets \cP,\ \pirand\gets \cM_q}[\pirand(h)=0] \leq \theta(R,\codedim) = \kappa_0,
 $$
 %
@@ -1474,6 +1496,18 @@ Applying $\pi_q$ to \eqref{e:mu_j_integer_equalities}, and using that $\pi_q(\bm
 \end{align*}
 %
 That is, the second condition in \eqref{e:core_iop_proof_eq1} holds. The first condition in \eqref{e:core_iop_proof_eq1} holds because the verifier accepts, and the third one was noted above. Hence $\kstate(\inp,\oracle,(\mu', (q,\pirand)),\ww)=1$, a contradiction.
+
+\bigskip
+
+\paragraph{The case where Round 0 is executed} Assume now that Round 0 is executed, so that $\cC$ is $(\delta, L_\delta)$-list-decodable, possibly with $L_\delta>1$. We modify the decomposition as follows. The IOR $\Pi_1$ now consists of applying Rounds 0, 1 and 2 of \cref{c:core_iop}, and outputting $$\left(\inp'=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ (g^{\mu_j})_{j\in [\codedim_2]},\ \zeta,\ y),\  \oracle'= f, \ \wit'=\picomfield(\bff)\right),$$ so that $\Pi_1$ is an IOR from $\LinBitsDual$ to $\PESAT^{\zeta,y}$. Formally, $\Pi_1$ is now a $3$-round IOR whose third verifier message is empty: the prover's first message is empty, the verifier sends $\zeta$, the prover sends $(y,\mu')$, the verifier replies with $(q,\pirand)$, and the prover then sends $\bm{\mu}$. The IORs $\Pi_2$ and $\Pi_3$ are replaced by the IOR from $\PESAT^{\zeta,y}$ to $\LIN^{\zeta,y}$ obtained from $\Pi_{\mathsf{red}}$, and by the IOP $\Pi_{\iopp}$ for $\LIN^{\zeta,y}$, as in the additional hypotheses of the theorem; their errors are unchanged. Below we show that $\Pi_1$ is perfectly complete and has round-by-round knowledge soundness with relaxation $(\LinBitsDual^{\delta}, \PESAT^{\delta,\zeta,y})$, with errors $(\kappa_{\mathsf{OOD}}, \kappa_0, 0)$; as before, the empty third verifier message contributes no error, the last prover message of $\Pi_1$ can be sent together with the first prover message of $\Pi_2$, and in this way \cref{c:core_iop} has $2+t_\red+t_\iopp$ rounds. The theorem then again follows from \cref{r:ior_compositoin}.
+
+We extend the knowledge state function $\kstate$ from the case above; recall the collision event $\mathsf{Coll}(f,\zeta)$ from \cref{l:ood_collision}. For the empty transcript, and for the transcript $(\bot)$ consisting of the empty first prover message, we set $\kstate=1$ if and only if $(\inp,\oracle,\ww)\in \LinBitsDual^{\delta}$, as before. For $\tr=(\bot, \zeta)$, we set $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if $(\inp,\oracle,\ww)\in \LinBitsDual^{\delta}$ or $\mathsf{Coll}(f,\zeta)$ holds. For $\tr=(\bot,\zeta,(y,\mu'))$, we set $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if $\mathsf{Coll}(f,\zeta)$ holds, or both $(\inp,\oracle,\ww)\in \LinBitsDual^{\delta}$ and $\mle{\pack\circ\pi_2(\ww)}(\bm{\zeta})=y$. For $\tr=(\bot,\zeta,(y,\mu'),(q,\pirand))$, we set $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if $\mathsf{Coll}(f,\zeta)$ holds, or the conditions required in the case above hold (i.e.\ the verifier's degree and range checks on $\mu'$ pass, $\ww=\bff\in \bits^{\codedim}$, and \eqref{e:core_iop_proof_eq1}) together with $\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta})=y$. Finally, for $\tr=(\bot,\zeta,(y,\mu'),(q,\pirand),\bm{\mu})$, or for the full transcript obtained by appending the empty third verifier message, we set $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if the verifier accepts on $\tr$ and $(\inp',\oracle',\ww)\in \PESAT^{\delta,\zeta,y}$, where $(\inp',\oracle')$ is the output of the verifier described above; note that the collision escape $\mathsf{Coll}(f,\zeta)$ is dropped in this last step. As before, the extractor is the identity map $\rbrextractor(\inp,\oracle,\tr,\ww)=\ww$.
+
+We verify the conditions of \cref{def:knowledge-state-function}. The conditions at the empty and full transcripts hold by construction. For the prover message $(y,\mu')$: if $\kstate(\inp,\oracle,(\bot,\zeta),\ww)=0$, then $\mathsf{Coll}(f,\zeta)$ fails and $(\inp,\oracle,\ww)\notin \LinBitsDual^{\delta}$, and hence $\kstate(\inp,\oracle,(\bot,\zeta,(y,\mu')),\ww)=0$ for every prover message $(y,\mu')$. For the prover message $\bm{\mu}$: suppose $\kstate(\inp,\oracle,(\bot,\zeta,(y,\mu'),(q,\pirand)),\ww)=0$ and, towards a contradiction, $\kstate(\inp,\oracle,(\bot,\zeta,(y,\mu'),(q,\pirand),\bm{\mu}),\ww)=1$ for some $\bm{\mu}$. The former excludes $\mathsf{Coll}(f,\zeta)$. The latter gives that the verifier accepts and that $\ww$ satisfies the defining conditions of $\PESAT^{\delta}$ together with $\mle{\pack\circ\pi_2(\ww)}(\bm{\zeta})=y$; by the second statement proved in the case above, the former two imply that $\ww=\bff$ satisfies the verifier's checks on $\mu'$ and \eqref{e:core_iop_proof_eq1}. Hence $\kstate(\inp,\oracle,(\bot,\zeta,(y,\mu'),(q,\pirand)),\ww)=1$, a contradiction.
+
+It remains to bound the errors at the two nonempty verifier messages. For the message $\zeta$: since the extractor is the identity map, the event in \cref{def:rbr-knowledge-new} requires some $\ww$ with $(\inp,\oracle,\ww)\notin \LinBitsDual^{\delta}$ and $\kstate(\inp,\oracle,(\bot,\zeta),\ww)=1$, which forces $\mathsf{Coll}(f,\zeta)$; by \cref{l:ood_collision}, this occurs with probability at most $\binom{L_\delta}{2}\cdot (\codedim/\comfieldexp-1)/|\comfield|=\kappa_{\mathsf{OOD}}$ over $\zeta$. For the message $(q,\pirand)$: assume $\kstate(\inp,\oracle,(\bot,\zeta,(y,\mu'),(q,\pirand)),\ww)=1$ and $\kstate(\inp,\oracle,(\bot,\zeta,(y,\mu')),\ww)=0$. The latter excludes $\mathsf{Coll}(f,\zeta)$, so the former gives that $\ww=\bff\in \bits^{\codedim}$ satisfies \eqref{e:core_iop_proof_eq1} and $\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta})=y$; the latter then further gives $(\inp,\oracle,\bff)\notin \LinBitsDual^{\delta}$. Since $\mathsf{Coll}(f,\zeta)$ fails, there is at most one vector $\bfg\in \FF_2^{\codedim}$ with $\hamming(f, \Enc_{\cC}\circ \pack(\bfg))<\delta$ and $\mle{\pack(\bfg)}(\bm{\zeta})=y$; hence $\pi_2(\bff)$ is this vector, and it is determined by $(f,\zeta,y)$. In particular, $\bff$, and with it the polynomial $h$ from the case above, is fixed before $(q,\pirand)$ is sampled. The rest of the argument is exactly as in the case above: \eqref{e:break_soundness_2} holds, $h$ is nonzero, has total degree at most $2$ and coefficients in $\range{-4\cdot \codedim\cdot N_R^2}{4\cdot \codedim\cdot N_R^2}$, satisfies $\picanon(h)\neq 0$, and the event at hand implies $\pirand(h)=0$, which occurs with probability at most $\theta(R,\codedim)=\kappa_0$ over $(q,\pirand)$.
+
+Finally, $\Pi_1$ is perfectly complete: the honest prover's message $y$ equals $\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta})$, so the output triple belongs to $\PESAT^{\zeta,y}$ whenever the input triple belongs to $\LinBitsDual$, the remaining conditions being as in the case above.
 %
 \end{proof}
 
@@ -1498,7 +1532,7 @@ We assume the notation from the previous sections, together with:
 Let $d=\dim(S)$ and let $\gamma_1,\ldots, \gamma_\moduledegree$ be a set of generators of  $S$ as a $\ZZ_{\Char(S)}$-module. Fix a vector length $\codedim_0$.  Let $\moduleonebound$ denote the set of elements of $S$ of the form $h=\sum_{i\in [\moduledegree]} h_i\cdot \gamma_i$ for $$h_i \in \range{0}{2^B-1}_S \subseteq \ZZ_{\Char(S)} \subseteq  S$$ (cf.\ \cref{s:prelims_algebra}) \item Let $\bff \in \moduleonebound^{\codedim_0}$, and write %$\bff=(\bff_{*1}, \ldots, \bff_{*\moduledegree})$ 
 $\bff=\sum_{j\in [\moduledegree]} \bff_{*j}\cdot \gamma_j$
 with $\bff_{*j}\in \ZZ_{\Char(S)}^{\codedim_0}$ for all $j\in [\moduledegree]$ (note that  any ring $S$ contains $\ZZ_{\Char(S)}$ as a subring). Then write $$\bff_{*j}= \sum_{k=1}^{B}\  \bff_{*jk}\cdot 2^{k-1} $$ for some vectors $$\bff_{*jk}\in \{0,1\}_S^{\codedim_0}\subseteq S^{\codedim_0},$$ for all $j,k$.  We define   $$\bitstext(\bff)\in \bits^{\codedim_0\cdot\moduledegree\cdot  B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B}$$ as the vector with integer bit entries obtained by concatenating the vectors $\bff_{*jk}$ and lifting their entries to $\bits \subseteq \ZZ$ in a natural way, i.e.\ \begin{equation}\label{e:bits_of_f}\bitstext(\bff) \defeq \left(\mathsf{lift}(\bff_{*jk})\mid  j\in [\moduledegree], k\in [B]\right)\in \bits^{\codedim_0\cdot\moduledegree\cdot B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B},\end{equation}
-where $\mathsf{lift}$ is the identity function if $S=\ZZ$,  and  $\mathsf{lift} = \pi_{\Char(S)}^{-1}$ if $\ring=S$.
+where $\mathsf{lift}$ is the identity function if $S=\ZZ$,  and  $\mathsf{lift} = \pi_{\Char(S)}^{-1}$ if $\Char(S)>0$.
 
 \begin{remark}[Non-uniform bit-decomposition sizes]\label{r: non_uniform_bit_decomposition} In practical settings, it is possible that not all entries of $\bff$ have the same bit size. For example, some chunks of $\bff$ may be comprised of elements from $\{0,1\}_S$, while others may be comprised of generic ring elements. However, our definition of $\bitstext(\bff)$ allocates $\moduledegree\cdot B$ bits for every entry of $\bff$, no matter its size.
 
@@ -1540,7 +1574,7 @@ When there is no risk of confusion, we denote $\LinModFieldBin(\moduleonebound,\
 
 
 
-Next we describe our IOP for $\LinModFieldBin$.  We assume the notation of \cref{s:general_LinBitsDual}. Let $\codedim_1,\codedim_2$ be tensor decomposition parameters (to be used in \cref{c:core_iop}) be such that $\codedim_1\cdot \codedim_2= \codedim_0\cdot \moduledegree\cdot B$. We assume that $\cC$ is a linear code over $\comfield$ of dimension $\codedim_0\cdot \moduledegree\cdot B/\comfieldexp$. %, which is a $\codedim_2$-interleaving of a code $\cC_1$ over $\comfield$ of dimension $\codedim_1/2^{\comfieldexp}$.
+Next we describe our IOP for $\LinModFieldBin$.  We assume the notation of \cref{s:general_LinBitsDual}. Let $\codedim_1,\codedim_2$ be tensor decomposition parameters (to be used in \cref{c:core_iop}) such that $\codedim_1\cdot \codedim_2= \codedim_0\cdot \moduledegree\cdot B$. We assume that $\cC$ is a linear code over $\comfield$ of dimension $\codedim_0\cdot \moduledegree\cdot B/\comfieldexp$. %, which is a $\codedim_2$-interleaving of a code $\cC_1$ over $\comfield$ of dimension $\codedim_1/2^{\comfieldexp}$.
 
 We will need the following result.
 
@@ -1575,7 +1609,7 @@ as needed.
 
 \begin{construction}[IOP for $\LinModFieldBin$]\label{c:LinModFieldBin}
 
- \textbf{Parameters.} $$(S, R, \ringmorphism, \codedim_0, B, \codedim, L, \codedim_1,\codedim_2, \comfield,\cC)$$ comprised of: two rings $S, R$; a ring morphism $\ringmorphism:S \to R$;  a witness length $\codedim_0$; a bit-size bound $B$; a bit number $\codedim$; a \emph{bitification} matrix $L\in S^{\codedim\times \codedim_0}$ as in \cref{r: non_uniform_bit_decomposition}; a tensor decomposition dimensions $\codedim_1, \codedim_2$ for \cref{c:core_iop} satisfying $\codedim_1\cdot \codedim_2 = \codedim/\comfieldexp$; a binary field $\comfield$; a linear code $\cC$ over $\comfield$ of dimension $\codedim/\comfieldexp$ and blocklength $\codelength$.\\
+ \textbf{Parameters.} $$(S, R, \ringmorphism, \codedim_0, B, \codedim, L, \codedim_1,\codedim_2, \comfield,\cC)$$ comprised of: two rings $S, R$; a ring morphism $\ringmorphism:S \to R$;  a witness length $\codedim_0$; a bit-size bound $B$; a bit number $\codedim$; a \emph{bitification} matrix $L\in S^{\codedim_0\times \codedim}$ as in \cref{r: non_uniform_bit_decomposition}; tensor decomposition dimensions $\codedim_1, \codedim_2$ for \cref{c:core_iop} satisfying $\codedim_1\cdot \codedim_2 = \codedim$; a binary field $\comfield$; a linear code $\cC$ over $\comfield$ of dimension $\codedim/\comfieldexp$ and blocklength $\codelength$.\\
 
 
 
@@ -1587,7 +1621,7 @@ f = \Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\bff)),\qquad \langle \modulemorph
 $$
 \begin{enumerate}[leftmargin=*]
      \item By \cref{l:bitify}, the   claim $(\inp,\oracle, \wit) \in \LinModFieldBin(\moduleonebound,\modulemorphism, R,  \cC)$ is equivalent to the claim \begin{equation}\label{e:iop_final_linear_claim}
-     \left(\inp'=(\mu, \uu), \oracle' = f=\Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\ff)), \wit' = \bitstext(\ff)\right) \in \LinBitsDual(\bits,\ringmorphism, R,\cC).
+     \left(\inp'=(\mu, \uu), \oracle' = f=\Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\bff)), \wit' = \bitstext(\bff)\right) \in \LinBitsDual(\bits,\pi, R,\cC).
 \end{equation}
 where $\uu = \psi(L)^{\mathsf{T}}\cdot \vv$. %  \left(\vv \otimes \left(1, \ringmorphism(2), \ldots, \ringmorphism(2^{B-1})\right) \otimes \left(\modulemorphism(\gamma_1), \ldots, \modulemorphism(\gamma_{\moduledegree})\right)\right)$. 
 Accordingly, prover and verifier use \cref{c:core_iop} to prove \eqref{e:iop_final_linear_claim}. They use parameters $(R,\comfield,\codedim,\codedim_1,\codedim_2,\cC)$.  See \cref{r:tensor_dec_u} for comments on how to use tensor decompositions of $\uu$ in \cref{c:core_iop}.
@@ -1598,7 +1632,7 @@ Accordingly, prover and verifier use \cref{c:core_iop} to prove \eqref{e:iop_fin
 \begin{remark}[Tensor decompositions of $\uu$]\label{r:tensor_dec_u}
 Recall that \cref{c:core_iop} considers a (possibly trivial) tensor decomposition of its public input vector $\uu$ (denoted $\vv$ in \cref{c:core_iop}). Moreover, as argued in \cref{s:to_low_entropy_gkr,s:gkr_low_entropy}, this tensor decomposition is crucial for performance of \ftwoz (concretely, we want $\codedim^{0.5}\leq \codedim_1 \leq \codedim^{0.6}$, cf.\ \cref{s:gkr_low_entropy}).   
 
-In many applications, the input vector $\vv$ for $\LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo,  \cC)$ is an ``eq'' vector, i.e.\ a vector of the form $(\eq(\bb,\rr))_{\bb\in\bits^{\log\codedim_0}}$ for some $\rr\in S^{\log \codedim_0}$. In this case  $\vv=\vv^{(1)}\otimes \vv^{(2)}$ with the dimensions of $\vv^{(1)}$, $\vv^{(2)}$ being arbitrary as long as $|\vv^{(1)}|\cdot |\vv^{(2)}|=\codedim_0$. In that case, if \begin{equation}\label{e:canonical_bitification_matrix}L=\mathsf{Id}_{\codedim_0\times \codedim_0} \otimes \pi_{\Char(S)}(1,\ldots, 2^{B-1})\otimes (\gamma_1,\ldots, \gamma_\moduledegree)\end{equation} (cf.\ \cref{r: non_uniform_bit_decomposition}), then $\uu$ has the form \eqref{e:u_def} and we may use a tensor decomposition for $\uu$ in \cref{c:core_iop} of the form, say, $\uu=\uu^{(1)}\otimes \uu^{(2)}$, where
+In many applications, the input vector $\vv$ for $\LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo,  \cC)$ is an ``eq'' vector, i.e.\ a vector of the form $(\eq(\bb,\rr))_{\bb\in\bits^{\log\codedim_0}}$ for some $\rr\in \moduletwo^{\log \codedim_0}$. In this case  $\vv=\vv^{(1)}\otimes \vv^{(2)}$ with the dimensions of $\vv^{(1)}$, $\vv^{(2)}$ being arbitrary as long as $|\vv^{(1)}|\cdot |\vv^{(2)}|=\codedim_0$. In that case, if \begin{equation}\label{e:canonical_bitification_matrix}L=\mathsf{Id}_{\codedim_0\times \codedim_0} \otimes \pi_{\Char(S)}(1,\ldots, 2^{B-1})\otimes (\gamma_1,\ldots, \gamma_\moduledegree)\end{equation} (cf.\ \cref{r: non_uniform_bit_decomposition}), then $\uu$ has the form \eqref{e:u_def} and we may use a tensor decomposition for $\uu$ in \cref{c:core_iop} of the form, say, $\uu=\uu^{(1)}\otimes \uu^{(2)}$, where
 %
 $$
 \uu^{(1)} \defeq \vv^{(1)},\quad \uu^{(2)}\defeq \vv^{(2)}\otimes \left(1, \ringmorphism(2), \ldots, \ringmorphism(2^{B-1})\right) \otimes \left(\modulemorphism(\gamma_1), \ldots, \modulemorphism(\gamma_{\moduledegree})\right).
@@ -1608,14 +1642,14 @@ For more general matrices $L$, one needs to make sure that $L$ has enough struct
 \end{remark}
 
 \begin{theorem}\label{t:thm_LinModFieldBits}
-    Under the same hypotheses and notation as in \cref{t:thm_core_IOPP},\cref{c:LinModFieldBin} is a perfectly complete $1+t_\red + t_\iopp$ IOP for $\LinModFieldBin(\moduleonebound,\modulemorphism, \KK, \cC)$ with round-by-round knowledge soundness with relaxation $(\LinModFieldBin^{\delta},\bot)$ and errors $$\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]},$$ where $
+    Under the same hypotheses and notation as in \cref{t:thm_core_IOPP}, \cref{c:LinModFieldBin} is a perfectly complete $(2+t_\red + t_\iopp)$-round IOP for $\LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo, \cC)$ with round-by-round knowledge soundness with relaxation $(\LinModFieldBin^{\delta},\bot)$ and errors $$\kappa_{\mathsf{OOD}}, \kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]},$$ where $\kappa_{\mathsf{OOD}}$ is as in \cref{t:thm_core_IOPP} and $
     \kappa_0 = \theta(R,\codedim). %\frac{\degevalfield}{q_{\min}} + \frac{\log(\codedim_1 +1) + \log(q-1)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}.
-    $ (see \cref{t:thm_core_IOPP}).
+    $ (see \cref{t:thm_core_IOPP}; here $\theta(R,\codedim)$ is computed with respect to the tensor decomposition $\uu=\uu^{(1)}\otimes \uu^{(2)}$ of \cref{r:tensor_dec_u} used in \cref{c:core_iop}, so that for $R=\ZZ$ one has $N_R=\max\left(\lVert \uu^{(1)}\rVert_\infty,\ \lVert \uu^{(2)}\rVert_\infty\right)$).
     
-    The error term $\kappa_0$ is void if Round 1 is not executed, and in that case \cref{c:LinModFieldBin} has one round less.
+    The error terms $\kappa_{\mathsf{OOD}}, \kappa_0$ are void if Round 0 or Round 1 of \cref{c:core_iop} are not executed, respectively. In that case \cref{c:LinModFieldBin} has one or two rounds less.
     %If $\degevalfield=0$, i.e.\ $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$-round IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]}$.
 \end{theorem}
-\begin{proof} \albertimportant{Needs to be updated to the new way things have been formalized and stated.} Deferred to \cref{a:LinModFieldBin}. In short, the result is a consequence of \cref{l:bitify}, which establishes an equivalence between  triples for $\LinModFieldBin(M_{R_{\leq B}},\modulemorphism, \moduletwo, \cC)$ and $\LinBitsDual(\bits,\ringmorphism, R,\cC)$. \cref{l:bitify} further provides a method for efficiently computing one triple from the other. This allows to build a round-by-round knowledge soundness state and an extractor for \cref{c:LinModFieldBin} from those of \cref{c:core_iop}.
+\begin{proof} Deferred to \cref{a:LinModFieldBin}. In short, the result is a consequence of \cref{l:bitify}, which establishes an equivalence between  triples for $\LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo, \cC)$ and $\LinBitsDual(\bits,\pi, \moduletwo,\cC)$. \cref{l:bitify} further provides a method for efficiently computing one triple from the other. This allows to build a round-by-round knowledge soundness state and an extractor for \cref{c:LinModFieldBin} from those of \cref{c:core_iop}.
 \end{proof}
 
 
@@ -1634,7 +1668,7 @@ The contents of this section should be taken as examples of how to instantiate \
 In terms of security, we need to ensure the following:
 \begin{enumerate}
     \item $\max\cP < \fieldboundsizeexponent$.   A requisite in our \cref{t:thm_core_IOPP,t:thm_LinModFieldBits}, to, intuitively, ensure that the inner product in the exponent of $g\in \comfield$ does not overflow.
-    \item The round-by-round knowledge soundness errors of \cref{c:core_iop} $\kappa_0, (\ksred_i)_{i}, (\ksiopp_i)_{i}$ are all at most $2^{-\lambda}$. 
+    \item The round-by-round knowledge soundness errors of \cref{c:core_iop} $\kappa_{\mathsf{OOD}}, \kappa_0, (\ksred_i)_{i}, (\ksiopp_i)_{i}$ are all at most $2^{-\lambda}$.
 \end{enumerate}
 %
 
@@ -1665,18 +1699,20 @@ In general, choosing $\codedim_1 \approx \codedim^{0.6}$ can lead to better prov
 %To ground our analysis, we two witness bounds $\codedim\leq2^{35}$ (so the witness consists of $\leq 2^{35}$ bits), say, and $\codedim_1 \leq 2^{21}$ following our rule of thumb.   
 
 
-We now discuss how to make the errors $\kappa_0, (\ksred_i)_{i}, (\ksiopp_i)_{i}$ be all at most $2^{-\lambda}$. 
+We now discuss how to make the errors $\kappa_{\mathsf{OOD}}, \kappa_0, (\ksred_i)_{i}, (\ksiopp_i)_{i}$ be all at most $2^{-\lambda}$.
 
 
 
-\paragraph{The errors $\kappa_{i,\iopp}$.} Regarding Phase 4, we instantiate our IOP for $\LIN(\comfield, \pack, \cC)$ as the WHIR protocol, with the ring switching from \cite{binius}  (see \cref{a:ring_switch_1}). The ring switching step adds an error term of the form $1/\comfield$. If targetting 128 bits of security, we use grinding  (\cref{s:IORs})  of $1$ bit in this round. WHIR is configured at any desired $\lambda\leq 128$ bits of security using $|\comfield|=2^{128}$ following \cite{stir-repo,whir-repo}. We do not discuss this further since WHIR is a well-known IOP, and it is well-kown that it can achieve $128$ bits of security in $128$ bit fields when codewords have dimension approximately $2^{30}$ (assuming an interleaved RS code).
+\paragraph{The errors $\kappa_{i,\iopp}$.} Regarding Phase 4, we instantiate our IOP for $\LIN(\comfield, \pack, \cC)$ as the WHIR protocol, with the ring switching from \cite{binius}  (see \cref{a:ring_switch_1}). The ring switching step adds an error term of the form $1/|\comfield|$. If targeting 128 bits of security, we use grinding  (\cref{s:IORs})  of $1$ bit in this round. WHIR is configured at any desired $\lambda\leq 128$ bits of security using $|\comfield|=2^{128}$ following \cite{stir-repo,whir-repo}. We do not discuss this further since WHIR is a well-known IOP, and it is well-known that it can achieve $128$ bits of security in $128$ bit fields when codewords have dimension approximately $2^{30}$ (assuming an interleaved RS code).
+
+\paragraph{The error $\kappa_{\mathsf{OOD}}$.} With $\Pi_\iopp$ instantiated as WHIR with proximity parameter set to the Johnson bound, $\delta$ lies beyond the unique decoding radius of $\cC$, so Round 0 of \cref{c:core_iop} is executed and contributes the error $\kappa_{\mathsf{OOD}}\leq \binom{L_\delta}{2}\cdot (\codedim/\comfieldexp-1)/|\comfield|$ (\cref{t:thm_core_IOPP}). For a Reed--Solomon code of rate $\rho$ and $\delta=1-\sqrt{\rho}-\eta$, the Johnson bound gives $L_\delta \leq 1/(2\eta\sqrt{\rho})$, so this term is of the same order as the out-of-domain error terms internal to WHIR itself, and it is handled in the same way: through the choice of $\eta$ and, when targeting $\lambda=128$, grinding (\cref{s:IORs}) at Round 0. If instead $\Pi_\iopp$ is configured within the unique decoding radius, Round 0 is skipped and this term is void.
 
 \paragraph{The errors $\kappa_{i,\red}$.} As mentioned, our $\Pi_{\red}$ IOR is the GKR protocol for multiple grand product claims from \cref{e: grand_products_again}, see \cref{s:gkr_low_entropy}. Each round of the GKR protocol is a round of either a  sumcheck for a polynomial of degree $3$, or a unification of two evaluation claims of the same multilinear polynomial.  Accordingly we have $\ksred_i\leq 3/|\comfield|$ for all $i$. This immediately guarantees $\lambda=100$ bits of security. To achieve $\lambda=128$ bits of security, one can do two bits of grinding (\cref{s:IORs}) per round. 
 
 \paragraph{The error $\kappa_0$.}
  The error $\kappa_0$ is perhaps the most delicate, as it demands at the same time that  $|\cP|$ is large, while still satisfying $\max\cP < \fieldboundsizeexponent$.
   
- Recall that in many scenarios $\kappa_0$ does not exist in the IOP  (i.e.\ sometimes our IOP skips the first verifier message). Concretely, if our initial inner product claim is over $R=\FF_q$ a prime field of size $< \fieldboundsizeexponent$, then  $\kappa_0$  does not appear as an error term, and we do not need to do anything to adjust for it. The term $\kappa_0$ does appear in all other scenarios ($R=\ZZ$ with large or negative entries in $\vv^{(1)}$  \albert{negative?} (cf.\ \cref{r:skip_round_1_integers}), or $R$ a prime field of larger size, or $R$ a proper field extension). We divide our approaches by whether this first step is skipped or not. 
+ Recall that in many scenarios $\kappa_0$ does not exist in the IOP  (i.e.\ sometimes our IOP skips Round 1). Concretely, if our initial inner product claim is over $R=\FF_q$ a prime field of size $< \fieldboundsizeexponent$, then  $\kappa_0$  does not appear as an error term, and we do not need to do anything to adjust for it. The term $\kappa_0$ does appear in all other scenarios ($R=\ZZ$ with large or negative entries in $\vv^{(1)}$  \albert{negative?} (cf.\ \cref{r:skip_round_1_integers}), or $R$ a prime field of larger size, or $R$ a proper field extension). We divide our approaches by whether this first step is skipped or not. 
 
 
 %If $\kappa_0^*$ is indeed an error term present in our scheme, then we have to consider, when targeting $128$ of security, the following restriction: $$\max\cP \leq 2^{128 - 0.6\cdot \log \codedim}.$$ 
@@ -2379,7 +2415,8 @@ $(S,\codedim_0, B, \codedim, L,  \codedim_1,\codedim_2, \comfield,\cC)$ \albert{
 \begin{enumerate}[leftmargin=*] 
 \item \textbf{Round 1: Oracles.}
 \begin{itemize}[leftmargin=*]
-\item The prover  computes $$f= \Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\bff)) \in \comfield^{\codelength}$$  and sends  the verifier oracle access to $f$. 
+\item The prover  computes $$f= \Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\bff)) \in \comfield^{\codelength}$$  and sends  the verifier oracle access to $f$.
+\item \textbf{(Optional) Out Of Domain (OOD) sample.} As in Round 0 of \cref{c:core_iop}: if the protocol is to be configured with proximity parameter $\delta$ beyond the unique decoding radius of $\cC$, the verifier samples and sends a random $\zeta\in \comfield$, and the prover responds with a value $y\in \comfield$, supposedly $y=\mle{\pack\circ\picomfield(\bitstext(\bff))}\left(\zeta^{2^0}, \ldots, \zeta^{2^{\log(\codedim/\comfieldexp)-1}}\right)$. The correctness of $y$ is certified in Step 4 below; there, Round 0 of \cref{c:core_iop} is not executed afresh, and the pair $(\zeta,y)$ plays the role of its Round 0 messages.
 \item The prover forms the multilinear polynomial, for all $i\in [\iota]$,
 %
 $$
@@ -2469,10 +2506,10 @@ Prover and verifier now use \cref{c:LinModFieldBin} to prove  \eqref{e:iop_final
     $$
     and $q_{\min}$ is the smallest prime in the set of sampleable primes $\cP$. 
 \end{itemize}
-    Then \cref{c:iop_pimsat} is a perfectly complete $(2+t_\KK + \tau_{\mathsf{ext}} + t_{\red} +t_\iopp)$-IOP for $\UPESAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{R})$ with round-by-round knowledge soundness without relaxation and errors 
+    Then \cref{c:iop_pimsat} is a perfectly complete $(3+t_\KK + \tau_{\mathsf{ext}} + t_{\red} +t_\iopp)$-IOP for $\UPESAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{R})$ with round-by-round knowledge soundness without relaxation and errors
     %
     $$
-    \kappa_1, \kappa_2, (\kappa_{\Pi_\KK,i})_{i\in [t_{\Pi_\KK}]}, \kappa_{\mathsf{lift-proj}}^*, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]}, 
+    \kappa_{\mathsf{OOD}}, \kappa_1, \kappa_2, (\kappa_{\Pi_\KK,i})_{i\in [t_{\Pi_\KK}]}, \kappa_{\mathsf{lift-proj}}^*, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]},
     $$
     with 
     %
@@ -2487,7 +2524,8 @@ Prover and verifier now use \cref{c:LinModFieldBin} to prove  \eqref{e:iop_final
         \item $\KK_{\min}$ is either $\KK$ if $\ring=\FF$, or  the field $\FF_q$ with $q\in \cP$ with the smallest size if $\ring=\ZZ$,
         \item $d_{\min} \defeq \min\left\{\left.\deg(h_i) \ \right| \ i\in [\iota], \ h_i\neq 0\right\}$, with the convention $d_{\min}=+\infty$ when $h_i=0$ for all $i\in [\iota]$
         \item $\nabla(\pp)\defeq \max\left\{\max_{\bb\in \bits^{n'}, i\in[\iota]}\{\deg_X(\pp_{j}^{(i)}) + (\moduledegree-1)\cdot \max_{t\in [\inplen+\codedim\textit{}]}\deg_{Y_t}(\pp_j^i)\cdot (\inplen+\codedim)\}, \moduledegree\right\}$
-        \item $B_{\max} \defeq \max_{\bb\in \bits^{n'}, i\in [\iota]} \lceil\log(\lVert\pp_{\bb}^{(i)}(\xx,\ff)\rVert_{\infty})\rceil. $
+        \item $B_{\max} \defeq \max_{\bb\in \bits^{n'}, i\in [\iota]} \lceil\log(\lVert\pp_{\bb}^{(i)}(\xx,\ff)\rVert_{\infty})\rceil, $
+        \item $\kappa_{\mathsf{OOD}}$ is as in \cref{t:thm_core_IOPP}; it is void, and the round count is $2+t_\KK + \tau_{\mathsf{ext}} + t_{\red} +t_\iopp$, when the OOD sample in Round 1 of \cref{c:iop_pimsat} is skipped (which requires $\delta$ to be within the unique decoding radius of $\cC$, cf.\ \cref{t:thm_core_IOPP}).
     \end{itemize}
     %
     In \cref{t:errors_pimsat} we describe the variations in number of rounds and errors of \cref{c:iop_pimsat} depending on whether $\ring =\ZZ$ or $\ring=\FF$, and on whether $\KK$ is a prime field or a proper extension field.
@@ -2818,59 +2856,59 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
 
 \subsection{Completeness and soundness of \cref{c:LinModFieldBin}}\label{a:LinModFieldBin}
 
-\albertimportant{I wrote this quite quickly. It may need polishing}
+We now prove \cref{t:thm_LinModFieldBits}. We assume the notation of \cref{s:general_LinBitsDual,s: general_bitz}. In particular, $\pi:\ZZ\to \moduletwo$ denotes reduction modulo $\Char(\moduletwo)$ (cf.\ \cref{s:linmodfieldbin}), and $\uu=\modulemorphism(L)^{\mathsf{T}}\cdot \vv$, as in \cref{c:LinModFieldBin}. As in \cref{s:soundness_core_iop}, we write $\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack)$ and $\LIN = \LIN(\comfield, \cC, \pack)$. For $\delta\in (0,1)$, we write $\LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)^{\delta}$ for the relaxation of the general Lin-BitsDual relation obtained by replacing the constraint $f=\Enc_{\cC}\circ \pack\circ \pi_2(\bitstext(\bff))$ with $\hamming(f, \Enc_{\cC}\circ \pack\circ \pi_2(\bitstext(\bff)))<\delta$, as in \cref{s:linmodfieldbin}.
 
-The result follows  from \cref{t:thm_core_IOPP} and the fact that $(\inp,\oracle, \wit) \in \LinModFieldBin(M_{R_{\leq B}},\psi,\KK, \cC)$ if and only if \eqref{e:iop_final_linear_claim} holds (due to \cref{l:bitify}). More concretely: perfect completeness is immediate. For round-by-round knowledge soundness, let $\kstate'$ be a state function for \cref{c:core_iop}. Then   we define a state function $\kstate$ for \cref{c:LinModFieldBin} as, when $\tr$ is neither an empty transcript or a transcript containing only a prover message (and no verifier messages),
+Observe that \cref{c:LinModFieldBin} is a wrapper around \cref{c:core_iop}: it translates the instance $(\inp,\oracle)=((\mu, \vv), f)$ into the instance $(\inp',\oracle')=((\mu, \uu), f)$, with the same oracle; the honest prover translates its witness $\bff\in \moduleonebound^{\codedim_0}$ into $\bitstext(\bff)\in \bits^{\codedim}$; and prover and verifier then run \cref{c:core_iop} on the translated input. In particular, the interaction transcripts of \cref{c:LinModFieldBin} are exactly those of \cref{c:core_iop}.
+
+We first record how this translation acts on membership in the relations at hand. Throughout, we assume the bitification matrix $L$ satisfies $L\cdot \pi_{\Char(S)}(\bfg)\in \moduleonebound^{\codedim_0}$ for every $\bfg\in \bits^{\codedim}$; this holds for the matrix \eqref{e:canonical_bitification_matrix}, since in that case the $\gamma_j$-coordinates of the entries of $L\cdot \pi_{\Char(S)}(\bfg)$ are of the form $\pi_{\Char(S)}(m)$ for integers $m\in \range{0}{2^B-1}$. We also note that $\modulemorphism\circ \pi_{\Char(S)}$ coincides with $\pi$ on $\ZZ$, both being ring homomorphisms from $\ZZ$ to $\moduletwo$.
+
+First, let $\bff\in \moduleonebound^{\codedim_0}$. We claim that
+%
+\begin{equation}\label{e:appendix_bitify_forward}
+((\mu, \vv), f, \bff)\in \LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)^{\delta} \quad \Longleftrightarrow \quad ((\mu, \uu), f, \bitstext(\bff))\in \LinBitsDual(\bits,\pi, \moduletwo,\cC)^{\delta}.
+\end{equation}
+%
+Indeed, the two distance conditions are literally the same condition, namely $\hamming(f, \Enc_{\cC}\circ \pack\circ \pi_2(\bitstext(\bff)))<\delta$. As for the linear conditions, \cref{l:bitify} gives $\langle \modulemorphism(\bff), \vv\rangle = \langle \modulemorphism(\bitstext(\bff)_S), \uu\rangle = \langle \pi(\bitstext(\bff)), \uu\rangle$, and hence $\langle \modulemorphism(\bff), \vv\rangle = \mu$ if and only if $\langle \pi(\bitstext(\bff)), \uu\rangle = \mu$. The same equivalence holds for the unrelaxed relations, after replacing the distance conditions by the corresponding equalities of codewords.
+
+Second, let $\bfg\in \bits^{\codedim}$ be an arbitrary bit vector, not necessarily of the form $\bitstext(\bff)$, and let $\bff_{\bfg} \defeq L\cdot \pi_{\Char(S)}(\bfg)\in \moduleonebound^{\codedim_0}$. Note that $\bfg$ is a valid choice of bit decomposition $\bitstext(\bff_{\bfg})$, precisely because $L\cdot \pi_{\Char(S)}(\bfg)=\bff_{\bfg}$ (cf.\ \cref{r: non_uniform_bit_decomposition}). We claim that
+%
+\begin{equation}\label{e:appendix_bitify_backward}
+((\mu, \uu), f, \bfg)\in \LinBitsDual(\bits,\pi, \moduletwo,\cC)^{\delta} \quad \Longrightarrow \quad ((\mu, \vv), f, \bff_{\bfg})\in \LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)^{\delta}.
+\end{equation}
+%
+Indeed, with $\bitstext(\bff_{\bfg})=\bfg$, the two distance conditions again coincide, and, by \eqref{e:matrix_transpose_inner_product},
 %
 $$
-\kstate(\inp, \oracle, \tr, \ww) = \kstate'(\inp', \oracle, \tr,\ww),
-$$
-where if $\inp=(\vv,\mu)$ then $\inp'=(\uu,\mu)$ is defined as in \cref{?}. For  empty transcripts we let $\kstate(\inp,\oracle,\ww)=1$ if and only if $(\inp,\oracle,\ww)\in \LinModFieldBin(M_{R_{\leq B}},\modulemorphism, \KK, \cC_1^{\equiv \codedim_2})^\delta$. If $\tr$ is a transcript containing uniquely the first prover message, then we let $\kstate(\inp, \oracle, \tr, \ww) = \kstate(\inp, \oracle, \ww)$. 
-
-Further, let $\cE'$ be an extractor for \cref{c:core_iop}. We define an extractor $\cE$ for \cref{c:LinModFieldBin} as follows: if $\tr$ is neither empty nor consisting in just one prover message, $\cE(\inp,\oracle,\tr, \ww) \defeq \cE'(\inp', \oracle, \tr, \ww)$. For $\tr$ empty, we let $\cE(\inp, \oracle, \ww)$ proceeds as follows: first it computes $$\bfg=\cE'(\inp',\oracle, \ww).$$  If $\bfg\in \{0,1\}^{\codedim_0\cdot B \cdot \moduledegree} \subseteq \ZZ^{\codedim_0\cdot B \cdot \moduledegree}$, then let $\bff\in M_{R_{\leq B}}^{\codedim_0}$ such that $\bitstext(\bff)=\bfg$, concretely, index $\bff$ as $\bfg=(\bfg_{ijk})_{i\in [\codedim_0], j\in [\moduledegree], k\in [B]}$. Let $\phi= \mathsf{id}$ be the identity map if $\ring=\ZZ$, and $\phi=\pi_q$ if $\ring$ is a field of characteristic $q$. Then output 
-%
-$$
-\bff \defeq  \sum_{j\in [\moduledegree],k\in [B]} \gamma_j \cdot 2^{k-1} \cdot \phi(\bfg_{*jk}),
-$$
-where $\bfg_{*jk}=(\bfg_{ijk})_{i\in [\codedim_0]}\in \bits^{\codedim_0} \subseteq \ZZ^{\codedim_0}$. Then $\bitstext(\bff)=\bfg$ \albert{more detail?}. 
-
-If $\tr$ is a transcript consisting of only one prover message, we let $\cE(\inp,\oracle, \tr,\ww) = \cE(\inp,\oracle,\ww)$.
-
-
-
-For the last two cases, we claim that 
-%
-$$
-((\uu,\mu),\oracle, \bfg) \in \LinBitsDual(\bits,\pi_q,\KK,\cC_1^{\codedim_2}) \ \Leftrightarrow \ ((\vv,\mu),\oracle, \bff) \in \LinModFieldBin(M_{R_{\leq B}},\modulemorphism, \KK, \cC_1^{\equiv \codedim_2}).
+\langle \modulemorphism(\bff_{\bfg}), \vv\rangle = \langle \modulemorphism(L)\cdot \left(\modulemorphism\circ \pi_{\Char(S)}(\bfg)\right), \vv\rangle = \langle \modulemorphism\circ \pi_{\Char(S)}(\bfg), \modulemorphism(L)^{\mathsf{T}}\cdot \vv\rangle = \langle \pi(\bfg), \uu\rangle,
 $$
 %
-Indeed, this follows from \cref{?}, which yields $$\langle \modulemorphism(\bff), \vv\rangle = \langle \pi_q(\bitstext(\bff)), \uu \rangle = \langle \pi_q(\bfg), \uu \rangle.$$ \albert{increase detail?}.
+which equals $\mu$ by assumption, so the linear condition holds for $\bff_{\bfg}$ as well.
 
+\bigskip
 
+Perfect completeness of \cref{c:LinModFieldBin} now follows: given $(\inp,\oracle,\wit)\in \LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)$, the unrelaxed version of \eqref{e:appendix_bitify_forward} shows that the translated triple belongs to $\LinBitsDual(\bits,\pi, \moduletwo,\cC)$, and \cref{c:core_iop} is perfectly complete by \cref{t:thm_core_IOPP}.
 
-We now prove that, for any transcript $\tr$ where verifier is about to send its $j$-th message
-\[
-  P_j\defeq \Pr_{\rho}\!\left[
-  \exists\,\ww \ \left| \ \begin{array}{l}
-  \wedge\ \kstate\bigl(\inp,\oracle,\tr,\rbrextractor(\inp,\oracle,\tr, \rho,\ww)\bigr)=0\\
-  \wedge\ \kstate(\inp,\oracle,\tr, \rho,  \ww)=1
-  \end{array}
-  \right.\right]
-  \ \le\ \kappa_j'.
-\]
-where $\kappa_j'$ is the $j$-th error in \cref{?}.
+\bigskip
 
-Indeed, the inequality is immediate if $\tr$ does not consist of a single prover message, since then $\kstate$ and $\cE$ coincide with the state $\kstate'$ and extractor $\cE'$ of \cref{c:core_iop}. For $P_1$, namely if $\tr$ consists of a single prover message, then 
+For round-by-round knowledge soundness, we proceed as in the proof of \cref{t:thm_core_IOPP} and decompose \cref{c:LinModFieldBin} into three IORs; as there, we first present the case where Round 0 of \cref{c:core_iop} is not executed, and discuss the case where it is executed at the end of this subsection. The first IOR, $\Pi_1'$, is the $2$-round IOR from $\LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)$ to $\PESAT$ consisting of the instance translation $(\mu, \vv)\mapsto (\mu, \uu)$ followed by the IOR $\Pi_1$ from the proof of \cref{t:thm_core_IOPP} (i.e.\ Rounds 1 and 2 of \cref{c:core_iop}, with the same output). The second and third IORs are $\Pi_{\mathsf{red}}$ and $\Pi_{\iopp}$, exactly as in the proof of \cref{t:thm_core_IOPP}. Below we show that $\Pi_1'$ is perfectly complete and has round-by-round knowledge soundness with relaxation $(\LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)^{\delta}, \PESAT^{\delta})$, with errors $(\kappa_0, 0)$. The theorem then follows from the composition of IORs result (cf.\ \cref{r:ior_compositoin}), with the same round-count bookkeeping as in the proof of \cref{t:thm_core_IOPP}; here $\kappa_0 = \theta(\moduletwo,\codedim)$ is computed with respect to the tensor decomposition $\uu=\uu^{(1)}\otimes \uu^{(2)}$ fixed for the run of \cref{c:core_iop} (cf.\ \cref{r:tensor_dec_u}). If Round 1 of \cref{c:core_iop} is skipped, then, again as in the proof of \cref{t:thm_core_IOPP}, the error $\kappa_0$ disappears and \cref{c:LinModFieldBin} has one round less.
+
+Let $\kstate_1$ be the knowledge state function for $\Pi_1$ constructed in the proof of \cref{t:thm_core_IOPP}; recall that its extractor is the identity map $\ww\mapsto \ww$. We define a knowledge state function $\kstate$ for $\Pi_1'$ as follows. If $\tr=\emptyset$, we set $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if $(\inp,\oracle,\ww)\in \LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)^{\delta}$. If $\tr=(\mu')$ consists of a single prover message, we set $\kstate(\inp,\oracle,(\mu'),\ww)=\kstate(\inp,\oracle,\emptyset,\ww)$. For every longer transcript $\tr$, we set $\kstate(\inp,\oracle,\tr,\ww) \defeq \kstate_1(\inp',\oracle,\tr,\ww)$. We define the extractor $\rbrextractor$ by $\rbrextractor(\inp,\oracle,(\mu', (q,\pirand)),\ww) \defeq L\cdot \pi_{\Char(S)}(\ww)$ if $\ww\in \bits^{\codedim}$ (and, say, $\rbrextractor(\inp,\oracle,(\mu', (q,\pirand)),\ww) \defeq \ww$ otherwise), and by $\rbrextractor(\inp,\oracle,\tr,\ww) \defeq \ww$ for all other transcripts.
+
+We check that $\kstate$ meets the conditions in \cref{def:knowledge-state-function}. The condition at the empty transcript holds by construction. The condition at prover moves holds at the message $\mu'$ by construction, and at the message $\bm{\mu}$ because there $\kstate$ coincides with $\kstate_1$, which satisfies it (this is the second statement proved for $\Pi_1$ in the proof of \cref{t:thm_core_IOPP}). The condition at full transcripts holds because the verifier of $\Pi_1'$ outputs the same pair as the verifier of $\Pi_1$ on the translated instance, and $\kstate$ coincides with $\kstate_1$ on full transcripts.
+
+It remains to bound the round errors of $\Pi_1'$. For the second verifier message (the empty one), appending it does not change the value of $\kstate$, and hence the corresponding error is $0$, as for $\Pi_1$. For the first verifier message, assume
 %
 $$
-P_1 = \Pr_{\rho}\!\left[
-  \exists\,\ww \ \left| \ \begin{array}{l}
-  \wedge\ \kstate\bigl(\inp,\oracle,\rbrextractor(\inp,\oracle,\tr, \rho,\ww)\bigr)=0\\
-  \wedge\ \kstate'(\inp',\oracle,\tr, \rho, \ww)=1
-  \end{array}
-  \right.\right]
+\kstate(\inp,\oracle,(\mu', (q,\pirand)),\ww)=1 \quad \text{and} \quad \kstate\left(\inp,\oracle,(\mu'), \rbrextractor(\inp,\oracle,(\mu', (q,\pirand)),\ww)\right)=0.
 $$
-If $\kstate'(\inp',\oracle,\tr, \rho, \ww)=1$ then with probability $1-\kappa_0$, $\cE'(\inp',\oracle, \tr, \ww)$ outputs $\bfg$ such that $\kstate'(\inp',\oracle, \tr, \bfg)=1$, hence, in this case, $\kstate'(\inp',\oracle, \bfg)=1$, which holds if and only if $(\inp',\oracle,\bfg)\in \LinBitsDual(\bits,\pi_q, \KK,\cC_1^{\equiv \codedim_2})$. Hence, with probability at least $1-\kappa_0$, $\cE(\inp,\oracle,\tr,\ww)$ outputs $\bff$ such that $(\inp,\oracle,\bff)\in \LinModFieldBin(M_{R_{\leq B}},\modulemorphism, \KK, \cC_1^{\equiv \codedim_2})$. It follows that $P_1\leq \kappa_0$.
+%
+The first equality means that $\kstate_1(\inp',\oracle,(\mu', (q,\pirand)),\ww)=1$; by the definition of $\kstate_1$, this forces $\ww=\bfg\in \bits^{\codedim}$, and so $\rbrextractor$ outputs $\bff_{\bfg} = L\cdot \pi_{\Char(S)}(\bfg)$. The second equality then says that $(\inp,\oracle,\bff_{\bfg})\notin \LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)^{\delta}$, which by \eqref{e:appendix_bitify_backward} implies $(\inp',\oracle,\bfg)\notin \LinBitsDual(\bits,\pi, \moduletwo,\cC)^{\delta}$, i.e.\ $\kstate_1(\inp',\oracle,(\mu'),\bfg)=0$. Since the extractor for $\Pi_1$ is the identity map, the two equalities $\kstate_1(\inp',\oracle,(\mu', (q,\pirand)),\bfg)=1$ and $\kstate_1(\inp',\oracle,(\mu'),\bfg)=0$ describe precisely the event whose probability over $(q,\pirand)$ is bounded by $\kappa_0$ in the proof of \cref{t:thm_core_IOPP}. Hence the probability over $(q,\pirand)$ that some $\ww$ satisfies the two displayed equalities is at most $\kappa_0$, as needed.
+
+Finally, perfect completeness of $\Pi_1'$ follows from the unrelaxed version of \eqref{e:appendix_bitify_forward} together with the perfect completeness of $\Pi_1$.
+
+\bigskip
+
+When Round 0 of \cref{c:core_iop} is executed, the same argument applies with the following adjustments, mirroring the corresponding case in the proof of \cref{t:thm_core_IOPP}. The IOR $\Pi_1'$ now consists of the instance translation followed by the $3$-round version of $\Pi_1$ (Rounds 0, 1 and 2 of \cref{c:core_iop}), and is an IOR from $\LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)$ to $\PESAT^{\zeta,y}$, with relaxation $(\LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)^{\delta}, \PESAT^{\delta,\zeta,y})$ and errors $(\kappa_{\mathsf{OOD}},\kappa_0,0)$; the IORs $\Pi_{\mathsf{red}}$ and $\Pi_{\iopp}$ are replaced by their variants for the relations $\PESAT^{\zeta,y}$, $\LIN^{\zeta,y}$, as in the additional hypotheses of \cref{t:thm_core_IOPP}. The state function $\kstate$ is defined on the transcript prefixes $(\bot)$, $(\bot,\zeta)$ and $(\bot,\zeta,(y,\mu'))$ via $\kstate_1$, exactly as for the longer transcripts above; here we use that the evaluation constraint $\mle{\pack\circ\pi_2(\ww)}(\bm{\zeta})=y$ and the collision event $\mathsf{Coll}(f,\zeta)$ of \cref{l:ood_collision} concern only the bit vector $\ww\in \bits^{\codedim}$ and the oracle $f$, both of which the instance translation leaves untouched, while for the transcripts $\emptyset$ and $(\bot)$ the equivalence \eqref{e:appendix_bitify_forward} is used as before. The error bound at the message $\zeta$ is exactly as for $\Pi_1$ (the event $\mathsf{Coll}(f,\zeta)$ concerns only $f$ and $\zeta$), and the bound at the message $(q,\pirand)$ follows from the corresponding bound for $\Pi_1$ via \eqref{e:appendix_bitify_backward}, as above.
 
 \subsection{Completeness and soundness of \cref{c:iop_pimsat}}\label{a:iop_pimsat}
 
@@ -2935,15 +2973,15 @@ Let $\delta\in (0,1)$. Then there is an IOR $\Pi_\KK'$ from $\PESAT(\ringtwoboun
 
 \bigskip
 
-\noindent We build  three IORs $\Pi_1,\Pi_2,\Pi_3$ whose composition closely mimics \cref{c:iop_pimsat}. 
+\noindent We build  three IORs $\Pi_1,\Pi_2,\Pi_3$ whose composition closely mimics \cref{c:iop_pimsat}.
+
+When the OOD sample in Round 1 of \cref{c:iop_pimsat} is performed, the treatment is exactly parallel to the corresponding case in the proof of \cref{t:thm_core_IOPP}: the relations below are extended with the pair $(\zeta,y)$ in the instance and with the constraint $\mle{\pack\circ\picomfield(\bitstext(\bff))}(\bm{\zeta})=y$ on the witness (cf.\ \cref{s:soundness_core_iop}); the state functions below conjoin this constraint, with the collision escape $\mathsf{Coll}(f,\zeta)$ of \cref{l:ood_collision}; the message $\zeta$ contributes the error $\kappa_{\mathsf{OOD}}$; and, in the arguments below, the uniqueness of the $\delta$-close bit vector consistent with $(\zeta,y)$ plays the role that unique decoding plays when the OOD sample is skipped. For readability, we present the proofs for the case where the OOD sample is skipped.
 
 %The first one, $\Pi_0$ \albertimportant{Not needed?}, is a $1$-round IOR from 
 
 
 %\paragraph{Description of $\Pi_1$.} In $\Pi_0$, given $(\inp,\bot, \wit)\in \PIMSAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{\ideal})$ as input, the prover sends $f=\Enc_{\cC}\circ \pack \pi_2(\bitstext(\bff))$ to the verifier, and the verifier replies with an empty message. Then the IOR outputs $(\inp,f,\wit)\in \PIMSAT(\ringtwobounds{B}{\moduledegree},\pp,\bm{\ideal}, \cC, \pack)$. The first item in Round 1 of \cref{c:iop_pimsat} follows precisely this IOR: prover computes and sends $f$, and prover and verifier are left with $(\inp,f)$ and $(\inp,f,\bff)\in \PIMSAT(\cC, \pack)$.
 
-
-\paragraph{Description of $\Pi_1$.} The IOR $\Pi_1$ is a two-round IOR from $\UPESAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{R}, \cC)$ to $\PESAT(\ringtwobounds{B}{\moduledegree},\KK, \hat{\pp},\pi,\cC)$, for some polynomials $\hat{\pp}$ and $\pi_q$-module homomorphism $\pi:\ringtwobounds{B}{\moduledegree} \to \KK$. In $\Pi_1$, verifier and prover receive $(\inp, f)$ and $(\inp, f,\bff)\in \UPESAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{R}, \cC)$ as inputs, respectively. In the first round, prover and verifier simulate Round 1 of \cref{c:iop_pimsat}, skipping the first item (computing and sending the encoding $f$ of $\bff$), since $f$ is already in the input of the prover and verifier. The prover instead  sends an empty message $\bot$. For the second round of $\Pi_1$, prover and verifier simulate Round 2 of \cref{c:iop_pimsat}. At the end of $\Pi_1$, prover and verifier output $$(\pi(\xx),f,\bff)\in \PESAT(\ringtwobounds{B}{\moduledegree},\KK, \hat{\pp},\pi,\cC),$$
 
 \paragraph{Description of $\Pi_1$.} The IOR $\Pi_1$ is a two-round IOR from $\UPESAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{R}, \cC)$ to $\PESAT(\ringtwobounds{B}{\moduledegree},\KK, \hat{\pp},\pi,\cC)$, for some polynomials $\hat{\pp}$ and $\pi_q$-module homomorphism $\pi:\ringtwobounds{B}{\moduledegree} \to \KK$. In $\Pi_1$, verifier and prover receive $(\inp, f)$ and $(\inp, f,\bff)\in \UPESAT(\ringtwobounds{B}{\moduledegree}, \pp,\bm{R}, \cC)$ as inputs, respectively. In the first round, prover and verifier simulate Round 1 of \cref{c:iop_pimsat}, skipping the first item (computing and sending the encoding $f$ of $\bff$), since $f$ is already in the input of the prover and verifier. The prover instead  sends an empty message $\bot$. For the second round of $\Pi_1$, prover and verifier simulate Round 2 of \cref{c:iop_pimsat}. At the end of $\Pi_1$, prover and verifier output $$(\pi(\xx),f,\bff)\in \PESAT(\ringtwobounds{B}{\moduledegree},\KK, \hat{\pp},\pi,\cC),$$
 where $\hat{\pp}$ and $\pi$ are determined during the execution of $\Pi_1$ \albert{This may be formally incorrect: I don't think current difinitions support relations in an IOR changing depending on the run of the IOR, so we'd need to add the parameters in $\inp$}.
