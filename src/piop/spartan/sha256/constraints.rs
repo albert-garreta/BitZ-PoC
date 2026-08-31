@@ -20,7 +20,7 @@ use thiserror::Error;
 use crate::{
     f2map::{PackedRepeatedVirtualMap, PreparedVirtualMap, PreparedVirtualMapError},
     ligerito::LOG_PACKING,
-    pcs::IntEvalParams,
+    pcs::{IntEvalParams, mod_q_num_chunks},
     sparse_matrix::SparseMatrix,
 };
 
@@ -98,6 +98,11 @@ pub enum Sha256ConstraintError {
     /// unsupported round-by-round target.
     #[error("SHA-256 Ligerito target must be in [64, 128] bits, got {actual}")]
     UnsupportedLigeritoTargetBits { actual: usize },
+
+    /// The SHA virtual opening is deliberately configured to use one
+    /// mod-q weight chunk, hence one merged forest.
+    #[error("SHA-256 opening requires exactly one forest, got {actual}")]
+    UnsupportedOpeningForestCount { actual: usize },
 
     /// The selected security profile is incompatible with the single
     /// transcript-derived-prime SHA protocol.
@@ -415,7 +420,7 @@ fn prepare_sha256_compression_instances_with_profile<P: IopSecurityProfile>(
     let source_vars = packed_domain_vars(instances, SHA256_F_INSTANCE_BITS)?;
     let assignment_vars = packed_domain_vars(instances, SHA256_H_INSTANCE_BITS)?;
     let p_f = balanced_binary_params(source_vars);
-    let p_h = balanced_binary_params(assignment_vars);
+    let p_h = single_forest_binary_params(assignment_vars);
     let map =
         PackedRepeatedVirtualMap::new(local.map.clone(), instances, p_h.cells(), p_f.cells())?;
     let mut facts = sha256_instance_facts(exponent);
@@ -464,6 +469,14 @@ fn validate_prepared_protocol(
     prepared: &PreparedSha256CompressionBatch,
 ) -> Result<(), Sha256ConstraintError> {
     Sha256PrimeProfile::from_security(&prepared.security, prepared.log_instance_capacity)?;
+    let max_q_bits =
+        u128::BITS as usize - prepared.security.projection_max.leading_zeros() as usize;
+    let forest_count = mod_q_num_chunks(&prepared.p_h, max_q_bits);
+    if forest_count != 1 {
+        return Err(Sha256ConstraintError::UnsupportedOpeningForestCount {
+            actual: forest_count,
+        });
+    }
     let target = prepared.security.ligerito_target_bits;
     if !(64..=128).contains(&target) {
         return Err(Sha256ConstraintError::UnsupportedLigeritoTargetBits { actual: target });
@@ -502,6 +515,24 @@ const fn balanced_binary_params(vars: usize) -> IntEvalParams {
         t,
         s: vars - t,
         word_bits: 1,
+    }
+}
+
+/// Splits the derived SHA assignment so every supported runtime-prime weight
+/// fits in one F2Z chunk. The current SHA profiles use at most 113-bit primes;
+/// with Boolean cells, `t <= 127 - 113 - 1 = 13` makes the generic fold bound
+/// strictly smaller than `2^127`. Shapes already balanced below that cap keep
+/// their balanced layout.
+const fn single_forest_binary_params(vars: usize) -> IntEvalParams {
+    let balanced = balanced_binary_params(vars);
+    if balanced.t <= 13 {
+        balanced
+    } else {
+        IntEvalParams {
+            t: 13,
+            s: vars - 13,
+            word_bits: 1,
+        }
     }
 }
 
@@ -922,6 +953,37 @@ mod tests {
                 .unwrap()
                 .next()
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn production_assignment_geometry_uses_one_forest() {
+        for exponent in SHA256_MIN_LOG_COMPRESSIONS..=SHA256_MAX_LOG_COMPRESSIONS {
+            let prepared = prepare_sha256_compression_batch(exponent).unwrap();
+            let max_q_bits =
+                u128::BITS as usize - prepared.security().projection_max.leading_zeros() as usize;
+            assert_eq!(
+                mod_q_num_chunks(prepared.assignment_params(), max_q_bits),
+                1,
+                "log-compressions={exponent}"
+            );
+            if exponent >= 10 {
+                assert_eq!(
+                    *prepared.assignment_params(),
+                    IntEvalParams {
+                        t: 13,
+                        s: exponent + 2,
+                        word_bits: 1,
+                    },
+                    "log-compressions={exponent}"
+                );
+            }
+        }
+
+        let prepared = prepare_sha256_compression_batch(14).unwrap();
+        assert_eq!(
+            u128::BITS as usize - prepared.security().projection_max.leading_zeros() as usize,
+            113
         );
     }
 

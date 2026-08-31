@@ -845,6 +845,11 @@ fn run_once(
         )
         .expect("SHA proof succeeds")
     };
+    assert_eq!(
+        proof.f2z().mfs.len(),
+        1,
+        "every SHA benchmark proof must use exactly one merged forest"
+    );
     drop(prover_scope);
     let prove_ms = prove_started.elapsed().as_secs_f64() * 1e3;
     let prove_phases = f2z::utils::prof::take_totals();
