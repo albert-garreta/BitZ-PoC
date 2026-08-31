@@ -88,6 +88,195 @@ where
     }
 }
 
+/// Coefficients for SHA's physical flat assignment layout without expanding
+/// the instance/local outer product.
+///
+/// The represented table is
+///
+/// ```text
+/// [shared, u[0] * d[0..block_width], ..., u[N - 1] * d[0..block_width]]
+/// ```
+///
+/// where `shared` is already the coefficient of the one physical constant
+/// cell. In the SHA batching protocol the caller computes it as `U * d_0`,
+/// with `U = sum_i u_i`, and passes the nonconstant local coefficients as
+/// `d`. Keeping the factors separate avoids materializing `u ⊗ d`.
+pub(crate) struct Sha256FactoredBlockCoefficients<'a> {
+    shared: Field,
+    instance_weights: &'a [Field],
+    block_coefficients: &'a [Field],
+    live_len: usize,
+}
+
+impl<'a> Sha256FactoredBlockCoefficients<'a> {
+    pub(crate) fn new(
+        shared: Field,
+        instance_weights: &'a [Field],
+        block_coefficients: &'a [Field],
+        field_cfg: &FieldConfig,
+    ) -> Result<Self, SumcheckError> {
+        if instance_weights.is_empty() || block_coefficients.is_empty() {
+            return Err(SumcheckError::InvalidProductDimensions);
+        }
+        validate_field_value(&shared, field_cfg)?;
+        for value in instance_weights.iter().chain(block_coefficients) {
+            validate_field_value(value, field_cfg)?;
+        }
+        let live_len = instance_weights
+            .len()
+            .checked_mul(block_coefficients.len())
+            .and_then(|len| len.checked_add(1))
+            .ok_or(SumcheckError::InvalidProductDimensions)?;
+        Ok(Self {
+            shared,
+            instance_weights,
+            block_coefficients,
+            live_len,
+        })
+    }
+
+    pub(crate) const fn live_len(&self) -> usize {
+        self.live_len
+    }
+
+    #[inline]
+    fn coefficient(&self, index: usize) -> Result<Field, SumcheckError> {
+        if index >= self.live_len {
+            return Err(SumcheckError::InvalidProductDimensions);
+        }
+        if index == 0 {
+            return Ok(self.shared.clone());
+        }
+        let offset = index - 1;
+        let instance = offset / self.block_coefficients.len();
+        let local = offset % self.block_coefficients.len();
+        Ok(self.instance_weights[instance].clone() * &self.block_coefficients[local])
+    }
+}
+
+/// Internal coefficient-source hook. The callback implementation preserves
+/// the existing API, while [`Sha256FactoredBlockCoefficients`] supplies the
+/// block-aware prefix fold used by the optimized SHA path.
+trait Sha256InnerCoefficientSource: Sync {
+    fn coefficient_at(&self, index: usize) -> Result<Field, SumcheckError>;
+
+    fn validate_shape(
+        &self,
+        _live_len: usize,
+        _field_cfg: &FieldConfig,
+    ) -> Result<(), SumcheckError> {
+        Ok(())
+    }
+
+    /// Whether every coefficient returned by this source is known to use the
+    /// shared canonical field configuration. Callback sources are checked at
+    /// every access; the factored source validates its two small factor tables
+    /// once in its constructor.
+    fn coefficients_prevalidated(&self) -> bool {
+        false
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build_prefix_accumulators<const K: usize, H>(
+        &self,
+        num_vars: usize,
+        live_len: usize,
+        h_source: &H,
+        field_cfg: &FieldConfig,
+        zero: &Field,
+        reducer: &OptimizedSumcheckReducer,
+    ) -> Result<PrefixAccumulators, SumcheckError>
+    where
+        H: Sha256InnerBitSource + ?Sized,
+    {
+        build_prefix_accumulators_generic::<K, _, _>(
+            num_vars, live_len, self, h_source, field_cfg, zero, reducer,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn fold_prefix_table<const K: usize>(
+        &self,
+        num_vars: usize,
+        live_len: usize,
+        challenges: &[Field],
+        field_cfg: &FieldConfig,
+        zero: &Field,
+        one: &Field,
+        reducer: &OptimizedSumcheckReducer,
+    ) -> Result<CompactPrefixVTable, SumcheckError> {
+        fold_prefix_v_table_generic::<K, _>(
+            num_vars, live_len, self, challenges, field_cfg, zero, one, reducer,
+        )
+    }
+}
+
+impl<F> Sha256InnerCoefficientSource for F
+where
+    F: Fn(usize) -> Result<Field, SumcheckError> + Sync,
+{
+    #[inline]
+    fn coefficient_at(&self, index: usize) -> Result<Field, SumcheckError> {
+        self(index)
+    }
+}
+
+impl Sha256InnerCoefficientSource for Sha256FactoredBlockCoefficients<'_> {
+    #[inline]
+    fn coefficient_at(&self, index: usize) -> Result<Field, SumcheckError> {
+        self.coefficient(index)
+    }
+
+    fn validate_shape(
+        &self,
+        live_len: usize,
+        field_cfg: &FieldConfig,
+    ) -> Result<(), SumcheckError> {
+        if live_len != self.live_len || self.shared.cfg() != field_cfg {
+            return Err(SumcheckError::InvalidProductDimensions);
+        }
+        Ok(())
+    }
+
+    fn coefficients_prevalidated(&self) -> bool {
+        true
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build_prefix_accumulators<const K: usize, H>(
+        &self,
+        num_vars: usize,
+        live_len: usize,
+        h_source: &H,
+        field_cfg: &FieldConfig,
+        zero: &Field,
+        reducer: &OptimizedSumcheckReducer,
+    ) -> Result<PrefixAccumulators, SumcheckError>
+    where
+        H: Sha256InnerBitSource + ?Sized,
+    {
+        build_factored_prefix_accumulators::<K, _>(
+            num_vars, live_len, self, h_source, field_cfg, zero, reducer,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn fold_prefix_table<const K: usize>(
+        &self,
+        num_vars: usize,
+        live_len: usize,
+        challenges: &[Field],
+        field_cfg: &FieldConfig,
+        zero: &Field,
+        one: &Field,
+        reducer: &OptimizedSumcheckReducer,
+    ) -> Result<CompactPrefixVTable, SumcheckError> {
+        fold_factored_prefix_v_table::<K>(
+            num_vars, live_len, self, challenges, field_cfg, zero, one, reducer,
+        )
+    }
+}
+
 /// Largest supported number of native-small prefix rounds.
 pub const SHA256_INNER_PREFIX_MAX_VARS: usize = 4;
 
@@ -152,13 +341,82 @@ where
     V: Fn(usize) -> Result<Field, SumcheckError> + Sync,
     H: Sha256InnerBitSource + ?Sized,
 {
+    prove_sha256_inner_sumcheck_with_source(
+        transcript,
+        initial_claim,
+        num_vars,
+        live_len,
+        v_at,
+        h_source,
+        prefix_vars,
+        field_cfg,
+        reducer,
+        grinding_bits,
+    )
+}
+
+/// Proves the same ordinary degree-two sumcheck using SHA's factored physical
+/// coefficient layout.
+///
+/// This is transcript-identical to [`prove_sha256_inner_sumcheck`] with a
+/// callback returning `coefficients.coefficient(index)`. The specialization is
+/// prover-only: it retains `u` and `d` separately and folds each contiguous
+/// instance run before multiplying by its `u_i` factor.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prove_sha256_inner_sumcheck_factored<T, H>(
+    transcript: &mut T,
+    initial_claim: Field,
+    num_vars: usize,
+    coefficients: &Sha256FactoredBlockCoefficients<'_>,
+    h_source: &H,
+    prefix_vars: usize,
+    field_cfg: &FieldConfig,
+    reducer: &OptimizedSumcheckReducer,
+    grinding_bits: u32,
+) -> Result<Sha256InnerSumcheckOutput, Sha256InnerSumcheckError>
+where
+    T: Transcript,
+    H: Sha256InnerBitSource + ?Sized,
+{
+    prove_sha256_inner_sumcheck_with_source(
+        transcript,
+        initial_claim,
+        num_vars,
+        coefficients.live_len(),
+        coefficients,
+        h_source,
+        prefix_vars,
+        field_cfg,
+        reducer,
+        grinding_bits,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prove_sha256_inner_sumcheck_with_source<T, S, H>(
+    transcript: &mut T,
+    initial_claim: Field,
+    num_vars: usize,
+    live_len: usize,
+    coefficients: &S,
+    h_source: &H,
+    prefix_vars: usize,
+    field_cfg: &FieldConfig,
+    reducer: &OptimizedSumcheckReducer,
+    grinding_bits: u32,
+) -> Result<Sha256InnerSumcheckOutput, Sha256InnerSumcheckError>
+where
+    T: Transcript,
+    S: Sha256InnerCoefficientSource + ?Sized,
+    H: Sha256InnerBitSource + ?Sized,
+{
     match prefix_vars {
         0 => prove_with_prefix::<0, _, _, _>(
             transcript,
             initial_claim,
             num_vars,
             live_len,
-            v_at,
+            coefficients,
             h_source,
             field_cfg,
             reducer,
@@ -169,7 +427,7 @@ where
             initial_claim,
             num_vars,
             live_len,
-            v_at,
+            coefficients,
             h_source,
             field_cfg,
             reducer,
@@ -180,7 +438,7 @@ where
             initial_claim,
             num_vars,
             live_len,
-            v_at,
+            coefficients,
             h_source,
             field_cfg,
             reducer,
@@ -191,7 +449,7 @@ where
             initial_claim,
             num_vars,
             live_len,
-            v_at,
+            coefficients,
             h_source,
             field_cfg,
             reducer,
@@ -202,7 +460,7 @@ where
             initial_claim,
             num_vars,
             live_len,
-            v_at,
+            coefficients,
             h_source,
             field_cfg,
             reducer,
@@ -236,12 +494,12 @@ pub(crate) fn verify_sha256_inner_sumcheck<T: Transcript>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn prove_with_prefix<const K: usize, T, V, H>(
+fn prove_with_prefix<const K: usize, T, S, H>(
     transcript: &mut T,
     initial_claim: Field,
     num_vars: usize,
     live_len: usize,
-    v_at: &V,
+    coefficients: &S,
     h_source: &H,
     field_cfg: &FieldConfig,
     reducer: &OptimizedSumcheckReducer,
@@ -249,7 +507,7 @@ fn prove_with_prefix<const K: usize, T, V, H>(
 ) -> Result<Sha256InnerSumcheckOutput, Sha256InnerSumcheckError>
 where
     T: Transcript,
-    V: Fn(usize) -> Result<Field, SumcheckError> + Sync,
+    S: Sha256InnerCoefficientSource + ?Sized,
     H: Sha256InnerBitSource + ?Sized,
 {
     validate_inputs::<K, _>(
@@ -260,6 +518,7 @@ where
         field_cfg,
         grinding_bits,
     )?;
+    coefficients.validate_shape(live_len, field_cfg)?;
 
     let zero = Field::zero_with_cfg(field_cfg);
     let one = Field::one_with_cfg(field_cfg);
@@ -269,8 +528,8 @@ where
     let mut round_nonces = Vec::with_capacity(if grinding_bits == 0 { 0 } else { num_vars });
 
     if K > 0 {
-        let accumulators = build_prefix_accumulators::<K, _, _>(
-            num_vars, live_len, v_at, h_source, field_cfg, &zero, reducer,
+        let accumulators = coefficients.build_prefix_accumulators::<K, _>(
+            num_vars, live_len, h_source, field_cfg, &zero, reducer,
         )?;
         let mut lagrange_coefficients = vec![one.clone()];
 
@@ -300,7 +559,7 @@ where
     let prefix_v = fold_prefix_v_table::<K, _>(
         num_vars,
         live_len,
-        v_at,
+        coefficients,
         &eval_points,
         field_cfg,
         &zero,
@@ -409,6 +668,298 @@ impl PrefixBuildState {
     }
 }
 
+/// Per-worker state for the factored prefix pass. Interior prefix blocks are
+/// accumulated without multiplying every local coefficient by `u_i`:
+/// `d(beta) * H(beta)` is summed for a whole instance first, then scaled by
+/// `u_i` once per ternary point.
+struct FactoredPrefixBuildState {
+    partial_sums: Vec<ProductAccumulator>,
+    local_sums: Vec<LinearAccumulator>,
+    d_values: Vec<Field>,
+    d_scratch: Vec<Field>,
+    h_values: Vec<i64>,
+    h_scratch: Vec<i64>,
+}
+
+impl FactoredPrefixBuildState {
+    fn new<const K: usize>(zero: &Field, reducer: &OptimizedSumcheckReducer) -> Self {
+        let prefix_size = 1usize << K;
+        let extension_size = pow3(K);
+        Self {
+            partial_sums: (0..extension_size)
+                .map(|_| product_accumulator_zero(reducer))
+                .collect(),
+            local_sums: (0..extension_size)
+                .map(|_| linear_accumulator_zero(reducer))
+                .collect(),
+            d_values: vec![zero.clone(); prefix_size],
+            d_scratch: vec![zero.clone(); extension_size],
+            h_values: vec![0; prefix_size],
+            h_scratch: vec![0; extension_size],
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_factored_prefix_accumulators<const K: usize, H>(
+    num_vars: usize,
+    live_len: usize,
+    coefficients: &Sha256FactoredBlockCoefficients<'_>,
+    h_source: &H,
+    _field_cfg: &FieldConfig,
+    zero: &Field,
+    reducer: &OptimizedSumcheckReducer,
+) -> Result<PrefixAccumulators, SumcheckError>
+where
+    H: Sha256InnerBitSource + ?Sized,
+{
+    debug_assert!(K > 0);
+    debug_assert_eq!(live_len, coefficients.live_len);
+    debug_assert!(live_len <= 1usize << num_vars);
+    let suffix_count = live_len.div_ceil(1usize << K);
+
+    #[cfg(feature = "parallel")]
+    let interior =
+        if coefficients.instance_weights.len() >= 1 << 6 && rayon::current_num_threads() > 1 {
+            (0..coefficients.instance_weights.len())
+                .into_par_iter()
+                .try_fold(
+                    || FactoredPrefixBuildState::new::<K>(zero, reducer),
+                    |mut state, instance| -> Result<_, SumcheckError> {
+                        accumulate_factored_instance::<K, _>(
+                            &mut state,
+                            coefficients,
+                            h_source,
+                            instance,
+                            zero,
+                            reducer,
+                        )?;
+                        Ok(state)
+                    },
+                )
+                .try_reduce(
+                    || FactoredPrefixBuildState::new::<K>(zero, reducer),
+                    |left, right| Ok(merge_factored_prefix_states(left, right, reducer)),
+                )?
+        } else {
+            accumulate_factored_instances_sequential::<K, _>(coefficients, h_source, zero, reducer)?
+        };
+
+    #[cfg(not(feature = "parallel"))]
+    let interior =
+        accumulate_factored_instances_sequential::<K, _>(coefficients, h_source, zero, reducer)?;
+
+    // Only the block containing the shared cell, the at-most-one block at
+    // each instance boundary, and an incomplete final block take this path.
+    // Their mixed `u_i` factors cannot be pulled outside interpolation.
+    #[cfg(feature = "parallel")]
+    let boundary = if suffix_count >= 1 << 10 && rayon::current_num_threads() > 1 {
+        (0..suffix_count)
+            .into_par_iter()
+            .filter(|&suffix| !factored_suffix_is_interior::<K>(coefficients, suffix))
+            .try_fold(
+                || PrefixBuildState::new::<K>(zero, reducer),
+                |mut state, suffix| -> Result<_, SumcheckError> {
+                    accumulate_suffix::<K, _, _>(
+                        &mut state,
+                        zero.cfg(),
+                        live_len,
+                        suffix,
+                        coefficients,
+                        h_source,
+                        zero,
+                        reducer,
+                    )?;
+                    Ok(state)
+                },
+            )
+            .try_reduce(
+                || PrefixBuildState::new::<K>(zero, reducer),
+                |left, right| Ok(merge_prefix_states(left, right, reducer)),
+            )?
+    } else {
+        accumulate_factored_boundaries_sequential::<K, _>(
+            suffix_count,
+            live_len,
+            coefficients,
+            h_source,
+            zero,
+            reducer,
+        )?
+    };
+
+    #[cfg(not(feature = "parallel"))]
+    let boundary = accumulate_factored_boundaries_sequential::<K, _>(
+        suffix_count,
+        live_len,
+        coefficients,
+        h_source,
+        zero,
+        reducer,
+    )?;
+
+    let interior_values = interior
+        .partial_sums
+        .into_iter()
+        .map(|accumulator| product_reduce(reducer, accumulator))
+        .collect::<Result<Vec<_>, _>>()?;
+    let boundary_values = boundary
+        .partial_sums
+        .into_iter()
+        .map(|accumulator| linear_reduce(reducer, accumulator))
+        .collect::<Result<Vec<_>, _>>()?;
+    let beta_values = interior_values
+        .into_iter()
+        .zip(boundary_values)
+        .map(|(interior, boundary)| interior + &boundary)
+        .collect::<Vec<_>>();
+    Ok(scatter_beta_values::<K>(&beta_values, zero))
+}
+
+fn accumulate_factored_instances_sequential<const K: usize, H>(
+    coefficients: &Sha256FactoredBlockCoefficients<'_>,
+    h_source: &H,
+    zero: &Field,
+    reducer: &OptimizedSumcheckReducer,
+) -> Result<FactoredPrefixBuildState, SumcheckError>
+where
+    H: Sha256InnerBitSource + ?Sized,
+{
+    let mut state = FactoredPrefixBuildState::new::<K>(zero, reducer);
+    for instance in 0..coefficients.instance_weights.len() {
+        accumulate_factored_instance::<K, _>(
+            &mut state,
+            coefficients,
+            h_source,
+            instance,
+            zero,
+            reducer,
+        )?;
+    }
+    Ok(state)
+}
+
+fn accumulate_factored_instance<const K: usize, H>(
+    state: &mut FactoredPrefixBuildState,
+    coefficients: &Sha256FactoredBlockCoefficients<'_>,
+    h_source: &H,
+    instance: usize,
+    zero: &Field,
+    reducer: &OptimizedSumcheckReducer,
+) -> Result<(), SumcheckError>
+where
+    H: Sha256InnerBitSource + ?Sized,
+{
+    let prefix_size = 1usize << K;
+    let block_width = coefficients.block_coefficients.len();
+    let block_start = 1 + instance * block_width;
+    let block_end = block_start + block_width;
+    let first_suffix = block_start.div_ceil(prefix_size);
+    let suffix_end = block_end / prefix_size;
+    if first_suffix >= suffix_end {
+        return Ok(());
+    }
+
+    for suffix in first_suffix..suffix_end {
+        let base = suffix << K;
+        let local_base = base - block_start;
+        state.d_values.resize(prefix_size, zero.clone());
+        state.h_values.resize(prefix_size, 0);
+        for prefix in 0..prefix_size {
+            state.d_values[prefix] = coefficients.block_coefficients[local_base + prefix].clone();
+            state.h_values[prefix] = source_bit(h_source, base + prefix)? as i64;
+        }
+        extend_lsb::<Field, K, _>(
+            &mut state.d_values,
+            &mut state.d_scratch,
+            zero,
+            |high, low| high.clone() - low,
+        );
+        extend_lsb::<i64, K, _>(
+            &mut state.h_values,
+            &mut state.h_scratch,
+            &0,
+            |high, low| *high - *low,
+        );
+        for beta in 0..pow3(K) {
+            linear_multiply_accumulate_signed(
+                reducer,
+                &mut state.local_sums[beta],
+                &state.d_values[beta],
+                state.h_values[beta],
+                zero,
+            );
+        }
+    }
+
+    for (partial, local) in state.partial_sums.iter_mut().zip(&mut state.local_sums) {
+        let local = core::mem::replace(local, linear_accumulator_zero(reducer));
+        let local = linear_reduce(reducer, local)?;
+        product_multiply_accumulate(
+            reducer,
+            partial,
+            &coefficients.instance_weights[instance],
+            &local,
+        );
+    }
+    Ok(())
+}
+
+fn factored_suffix_is_interior<const K: usize>(
+    coefficients: &Sha256FactoredBlockCoefficients<'_>,
+    suffix: usize,
+) -> bool {
+    let prefix_size = 1usize << K;
+    let base = suffix << K;
+    if base == 0 || base + prefix_size > coefficients.live_len {
+        return false;
+    }
+    let local = (base - 1) % coefficients.block_coefficients.len();
+    local + prefix_size <= coefficients.block_coefficients.len()
+}
+
+fn accumulate_factored_boundaries_sequential<const K: usize, H>(
+    suffix_count: usize,
+    live_len: usize,
+    coefficients: &Sha256FactoredBlockCoefficients<'_>,
+    h_source: &H,
+    zero: &Field,
+    reducer: &OptimizedSumcheckReducer,
+) -> Result<PrefixBuildState, SumcheckError>
+where
+    H: Sha256InnerBitSource + ?Sized,
+{
+    let mut state = PrefixBuildState::new::<K>(zero, reducer);
+    for suffix in 0..suffix_count {
+        if factored_suffix_is_interior::<K>(coefficients, suffix) {
+            continue;
+        }
+        accumulate_suffix::<K, _, _>(
+            &mut state,
+            zero.cfg(),
+            live_len,
+            suffix,
+            coefficients,
+            h_source,
+            zero,
+            reducer,
+        )?;
+    }
+    Ok(state)
+}
+
+#[cfg(feature = "parallel")]
+fn merge_factored_prefix_states(
+    mut left: FactoredPrefixBuildState,
+    right: FactoredPrefixBuildState,
+    reducer: &OptimizedSumcheckReducer,
+) -> FactoredPrefixBuildState {
+    for (left, right) in left.partial_sums.iter_mut().zip(right.partial_sums) {
+        product_merge(reducer, left, right);
+    }
+    left
+}
+
 struct PrefixAccumulators {
     rounds: Vec<Vec<[Field; 2]>>,
 }
@@ -442,17 +993,17 @@ impl PrefixAccumulators {
     }
 }
 
-fn build_prefix_accumulators<const K: usize, V, H>(
+fn build_prefix_accumulators_generic<const K: usize, S, H>(
     num_vars: usize,
     live_len: usize,
-    v_at: &V,
+    coefficients: &S,
     h_source: &H,
     field_cfg: &FieldConfig,
     zero: &Field,
     reducer: &OptimizedSumcheckReducer,
 ) -> Result<PrefixAccumulators, SumcheckError>
 where
-    V: Fn(usize) -> Result<Field, SumcheckError> + Sync,
+    S: Sha256InnerCoefficientSource + ?Sized,
     H: Sha256InnerBitSource + ?Sized,
 {
     debug_assert!(K > 0);
@@ -467,7 +1018,14 @@ where
                 || PrefixBuildState::new::<K>(zero, reducer),
                 |mut state, suffix| -> Result<_, SumcheckError> {
                     accumulate_suffix::<K, _, _>(
-                        &mut state, field_cfg, live_len, suffix, v_at, h_source, zero, reducer,
+                        &mut state,
+                        field_cfg,
+                        live_len,
+                        suffix,
+                        coefficients,
+                        h_source,
+                        zero,
+                        reducer,
                     )?;
                     Ok(state)
                 },
@@ -480,7 +1038,7 @@ where
         accumulate_suffixes_sequential::<K, _, _>(
             suffix_count,
             live_len,
-            v_at,
+            coefficients,
             h_source,
             field_cfg,
             zero,
@@ -492,7 +1050,7 @@ where
     let state = accumulate_suffixes_sequential::<K, _, _>(
         suffix_count,
         live_len,
-        v_at,
+        coefficients,
         h_source,
         field_cfg,
         zero,
@@ -507,40 +1065,47 @@ where
     Ok(scatter_beta_values::<K>(&beta_values, zero))
 }
 
-fn accumulate_suffixes_sequential<const K: usize, V, H>(
+fn accumulate_suffixes_sequential<const K: usize, S, H>(
     suffix_count: usize,
     live_len: usize,
-    v_at: &V,
+    coefficients: &S,
     h_source: &H,
     field_cfg: &FieldConfig,
     zero: &Field,
     reducer: &OptimizedSumcheckReducer,
 ) -> Result<PrefixBuildState, SumcheckError>
 where
-    V: Fn(usize) -> Result<Field, SumcheckError> + Sync,
+    S: Sha256InnerCoefficientSource + ?Sized,
     H: Sha256InnerBitSource + ?Sized,
 {
     let mut state = PrefixBuildState::new::<K>(zero, reducer);
     for suffix in 0..suffix_count {
         accumulate_suffix::<K, _, _>(
-            &mut state, field_cfg, live_len, suffix, v_at, h_source, zero, reducer,
+            &mut state,
+            field_cfg,
+            live_len,
+            suffix,
+            coefficients,
+            h_source,
+            zero,
+            reducer,
         )?;
     }
     Ok(state)
 }
 
-fn accumulate_suffix<const K: usize, V, H>(
+fn accumulate_suffix<const K: usize, S, H>(
     state: &mut PrefixBuildState,
     field_cfg: &FieldConfig,
     live_len: usize,
     suffix: usize,
-    v_at: &V,
+    coefficients: &S,
     h_source: &H,
     zero: &Field,
     reducer: &OptimizedSumcheckReducer,
 ) -> Result<(), SumcheckError>
 where
-    V: Fn(usize) -> Result<Field, SumcheckError> + Sync,
+    S: Sha256InnerCoefficientSource + ?Sized,
     H: Sha256InnerBitSource + ?Sized,
 {
     let prefix_size = 1usize << K;
@@ -552,8 +1117,10 @@ where
     let active_prefixes = prefix_size.min(live_len - base);
     for prefix in 0..active_prefixes {
         let index = base | prefix;
-        let value = v_at(index)?;
-        validate_field_value(&value, field_cfg)?;
+        let value = coefficients.coefficient_at(index)?;
+        if !coefficients.coefficients_prevalidated() {
+            validate_field_value(&value, field_cfg)?;
+        }
         state.v_values[prefix] = value;
         state.h_values[prefix] = source_bit(h_source, index)? as i64;
     }
@@ -692,10 +1259,10 @@ fn extend_lsb_axis<T, S>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn fold_prefix_v_table<const K: usize, V>(
+fn fold_prefix_v_table<const K: usize, S>(
     num_vars: usize,
     live_len: usize,
-    v_at: &V,
+    coefficients: &S,
     challenges: &[Field],
     field_cfg: &FieldConfig,
     zero: &Field,
@@ -703,7 +1270,26 @@ fn fold_prefix_v_table<const K: usize, V>(
     reducer: &OptimizedSumcheckReducer,
 ) -> Result<CompactPrefixVTable, SumcheckError>
 where
-    V: Fn(usize) -> Result<Field, SumcheckError> + Sync,
+    S: Sha256InnerCoefficientSource + ?Sized,
+{
+    coefficients.fold_prefix_table::<K>(
+        num_vars, live_len, challenges, field_cfg, zero, one, reducer,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fold_prefix_v_table_generic<const K: usize, S>(
+    num_vars: usize,
+    live_len: usize,
+    coefficients: &S,
+    challenges: &[Field],
+    field_cfg: &FieldConfig,
+    zero: &Field,
+    one: &Field,
+    reducer: &OptimizedSumcheckReducer,
+) -> Result<CompactPrefixVTable, SumcheckError>
+where
+    S: Sha256InnerCoefficientSource + ?Sized,
 {
     debug_assert_eq!(challenges.len(), K);
     debug_assert!(live_len <= 1usize << num_vars);
@@ -714,8 +1300,10 @@ where
         let base = suffix << K;
 
         if K == 0 {
-            let value = v_at(base)?;
-            validate_field_value(&value, field_cfg)?;
+            let value = coefficients.coefficient_at(base)?;
+            if !coefficients.coefficients_prevalidated() {
+                validate_field_value(&value, field_cfg)?;
+            }
             return Ok(raw_montgomery(&value));
         }
 
@@ -723,8 +1311,10 @@ where
         let active_prefixes = prefix_size.min(live_len - base);
         for (prefix, weight) in weights.iter().take(active_prefixes).enumerate() {
             let index = base | prefix;
-            let value = v_at(index)?;
-            validate_field_value(&value, field_cfg)?;
+            let value = coefficients.coefficient_at(index)?;
+            if !coefficients.coefficients_prevalidated() {
+                validate_field_value(&value, field_cfg)?;
+            }
             product_multiply_accumulate(reducer, &mut v_accumulator, weight, &value);
         }
         let v = product_reduce(reducer, v_accumulator)?;
@@ -764,6 +1354,111 @@ where
         *v_out = fold_suffix(suffix)?;
     }
 
+    Ok(table)
+}
+
+/// Block-aware prefix fold for the physical SHA layout. A `2^K` prefix block
+/// may contain the shared cell and may cross an instance boundary. Split it
+/// into maximal same-instance runs and compute
+///
+/// `sum_j weight_j (u_i d_j) = u_i sum_j weight_j d_j`
+///
+/// once per run. This is exact for every block width; in particular it does
+/// not rely on SHA's 20,456-cell block being divisible by `2^K`.
+#[allow(clippy::too_many_arguments)]
+fn fold_factored_prefix_v_table<const K: usize>(
+    num_vars: usize,
+    live_len: usize,
+    coefficients: &Sha256FactoredBlockCoefficients<'_>,
+    challenges: &[Field],
+    field_cfg: &FieldConfig,
+    zero: &Field,
+    one: &Field,
+    reducer: &OptimizedSumcheckReducer,
+) -> Result<CompactPrefixVTable, SumcheckError> {
+    debug_assert_eq!(challenges.len(), K);
+    debug_assert_eq!(live_len, coefficients.live_len);
+    debug_assert!(live_len <= 1usize << num_vars);
+    let prefix_size = 1usize << K;
+    let suffix_count = live_len.div_ceil(prefix_size);
+    let weights = equality_weights_lsb(challenges, zero, one);
+    let block_width = coefficients.block_coefficients.len();
+
+    let fold_suffix = |suffix: usize| -> Result<RawMontgomery, SumcheckError> {
+        let base = suffix << K;
+        if K == 0 {
+            return Ok(raw_montgomery(&coefficients.coefficient(base)?));
+        }
+        let end = live_len.min(base + prefix_size);
+        let mut cursor = base;
+        let mut total = product_accumulator_zero(reducer);
+
+        if cursor == 0 {
+            product_multiply_accumulate(reducer, &mut total, &weights[0], &coefficients.shared);
+            cursor = 1;
+        }
+
+        while cursor < end {
+            let offset = cursor - 1;
+            let instance = offset / block_width;
+            let local = offset % block_width;
+            let run_len = (block_width - local).min(end - cursor);
+            let mut local_fold = product_accumulator_zero(reducer);
+            for run_offset in 0..run_len {
+                let prefix = cursor + run_offset - base;
+                product_multiply_accumulate(
+                    reducer,
+                    &mut local_fold,
+                    &weights[prefix],
+                    &coefficients.block_coefficients[local + run_offset],
+                );
+            }
+            let local_fold = product_reduce(reducer, local_fold)?;
+            product_multiply_accumulate(
+                reducer,
+                &mut total,
+                &coefficients.instance_weights[instance],
+                &local_fold,
+            );
+            cursor += run_len;
+        }
+
+        Ok(raw_montgomery(&product_reduce(reducer, total)?))
+    };
+
+    let zero_raw = raw_montgomery(zero);
+    let storage_len = suffix_count
+        .checked_add(1)
+        .ok_or(SumcheckError::InvalidProductDimensions)?
+        & !1;
+    let mut table = CompactPrefixVTable {
+        values: vec![zero_raw; storage_len],
+        suffix_count,
+    };
+
+    #[cfg(feature = "parallel")]
+    if suffix_count >= 1 << 10 && rayon::current_num_threads() > 1 {
+        table.values[..suffix_count]
+            .par_iter_mut()
+            .enumerate()
+            .try_for_each(|(suffix, output)| -> Result<(), SumcheckError> {
+                *output = fold_suffix(suffix)?;
+                Ok(())
+            })?;
+    } else {
+        for (suffix, output) in table.values[..suffix_count].iter_mut().enumerate() {
+            *output = fold_suffix(suffix)?;
+        }
+    }
+
+    #[cfg(not(feature = "parallel"))]
+    for (suffix, output) in table.values[..suffix_count].iter_mut().enumerate() {
+        *output = fold_suffix(suffix)?;
+    }
+
+    // The constructor validated every factor against `field_cfg`; retain an
+    // explicit shape/config assertion at this boundary for future callers.
+    debug_assert_eq!(coefficients.shared.cfg(), field_cfg);
     Ok(table)
 }
 
@@ -1781,6 +2476,218 @@ mod tests {
         )
     }
 
+    #[test]
+    fn factored_block_source_is_transcript_identical_across_shared_and_block_boundaries() {
+        let field_cfg = spartan_f2z_field_config();
+        let zero = Field::zero_with_cfg(&field_cfg);
+        let reducer = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
+
+        // These widths exercise aligned blocks, blocks smaller than a K=4
+        // prefix, and blocks that cross both K=3 and K=4 prefix boundaries.
+        for block_width in [7usize, 8, 15, 16, 17] {
+            let instance_weights = (0..3)
+                .map(|instance| field(31 * instance as u64 + 5, &field_cfg))
+                .collect::<Vec<_>>();
+            let block_coefficients = (0..block_width)
+                .map(|local| field(19 * local as u64 + 11, &field_cfg))
+                .collect::<Vec<_>>();
+            let source = Sha256FactoredBlockCoefficients::new(
+                field(137, &field_cfg),
+                &instance_weights,
+                &block_coefficients,
+                &field_cfg,
+            )
+            .unwrap();
+            let live_len = source.live_len();
+            let num_vars = live_len.next_power_of_two().ilog2() as usize;
+            let mut h_words = vec![0u64; live_len.div_ceil(u64::BITS as usize)];
+            let mut initial_claim = zero.clone();
+            for index in 0..live_len {
+                let bit = ((index * 29 + block_width).count_ones() & 1) as u64;
+                h_words[index / 64] |= bit << (index % 64);
+                if bit != 0 {
+                    initial_claim += &source.coefficient(index).unwrap();
+                }
+            }
+
+            for grinding_bits in [0, 2] {
+                for prefix_vars in 0..=SHA256_INNER_PREFIX_MAX_VARS.min(num_vars) {
+                    let mut callback_transcript = Blake3Transcript::new();
+                    let callback = prove_sha256_inner_sumcheck(
+                        &mut callback_transcript,
+                        initial_claim.clone(),
+                        num_vars,
+                        live_len,
+                        &|index| source.coefficient(index),
+                        &h_words,
+                        prefix_vars,
+                        &field_cfg,
+                        &reducer,
+                        grinding_bits,
+                    )
+                    .unwrap();
+                    let callback_continuation = callback_transcript.get_challenge::<u128>();
+
+                    let mut factored_transcript = Blake3Transcript::new();
+                    let factored = prove_sha256_inner_sumcheck_factored(
+                        &mut factored_transcript,
+                        initial_claim.clone(),
+                        num_vars,
+                        &source,
+                        &h_words,
+                        prefix_vars,
+                        &field_cfg,
+                        &reducer,
+                        grinding_bits,
+                    )
+                    .unwrap();
+
+                    assert_eq!(factored, callback, "D={block_width}, K={prefix_vars}");
+                    assert_eq!(
+                        factored_transcript.get_challenge::<u128>(),
+                        callback_continuation,
+                        "D={block_width}, K={prefix_vars}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn parallel_factored_prefix_and_boundary_reductions_are_transcript_identical() {
+        const INSTANCES: usize = 64;
+        const BLOCK_WIDTH: usize = 257;
+        const PREFIX_VARS: usize = 4;
+
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .unwrap();
+        pool.install(|| {
+            let field_cfg = spartan_f2z_field_config();
+            let zero = Field::zero_with_cfg(&field_cfg);
+            let reducer = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
+            let instance_weights = (0..INSTANCES)
+                .map(|instance| field(37 * instance as u64 + 3, &field_cfg))
+                .collect::<Vec<_>>();
+            let block_coefficients = (0..BLOCK_WIDTH)
+                .map(|local| field(23 * local as u64 + 7, &field_cfg))
+                .collect::<Vec<_>>();
+            let source = Sha256FactoredBlockCoefficients::new(
+                field(149, &field_cfg),
+                &instance_weights,
+                &block_coefficients,
+                &field_cfg,
+            )
+            .unwrap();
+            let live_len = source.live_len();
+            let num_vars = live_len.next_power_of_two().ilog2() as usize;
+            let mut h_words = vec![0u64; live_len.div_ceil(64)];
+            let mut initial_claim = zero;
+            for index in 0..live_len {
+                let bit = ((index * 41 + 13).count_ones() & 1) as u64;
+                h_words[index / 64] |= bit << (index % 64);
+                if bit != 0 {
+                    initial_claim += &source.coefficient(index).unwrap();
+                }
+            }
+
+            let mut callback_transcript = Blake3Transcript::new();
+            let callback = prove_sha256_inner_sumcheck(
+                &mut callback_transcript,
+                initial_claim.clone(),
+                num_vars,
+                live_len,
+                &|index| source.coefficient(index),
+                &h_words,
+                PREFIX_VARS,
+                &field_cfg,
+                &reducer,
+                0,
+            )
+            .unwrap();
+            let callback_continuation = callback_transcript.get_challenge::<u128>();
+
+            let mut factored_transcript = Blake3Transcript::new();
+            let factored = prove_sha256_inner_sumcheck_factored(
+                &mut factored_transcript,
+                initial_claim,
+                num_vars,
+                &source,
+                &h_words,
+                PREFIX_VARS,
+                &field_cfg,
+                &reducer,
+                0,
+            )
+            .unwrap();
+
+            assert_eq!(factored, callback);
+            assert_eq!(
+                factored_transcript.get_challenge::<u128>(),
+                callback_continuation
+            );
+        });
+    }
+
+    fn assert_sha_width_factored_fold_matches_generic<const K: usize>() {
+        const SHA_BLOCK_WIDTH: usize = 20_456;
+
+        let field_cfg = spartan_f2z_field_config();
+        let zero = Field::zero_with_cfg(&field_cfg);
+        let one = Field::one_with_cfg(&field_cfg);
+        let reducer = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
+        let instance_weights = [field(7, &field_cfg), field(23, &field_cfg)];
+        let block_coefficients = (0..SHA_BLOCK_WIDTH)
+            .map(|local| field((13 * local as u64 + 17) % 65_521, &field_cfg))
+            .collect::<Vec<_>>();
+        let source = Sha256FactoredBlockCoefficients::new(
+            field(101, &field_cfg),
+            &instance_weights,
+            &block_coefficients,
+            &field_cfg,
+        )
+        .unwrap();
+        let live_len = source.live_len();
+        let num_vars = live_len.next_power_of_two().ilog2() as usize;
+        let challenges = (0..K)
+            .map(|round| field(43 * round as u64 + 29, &field_cfg))
+            .collect::<Vec<_>>();
+
+        let generic = fold_prefix_v_table_generic::<K, _>(
+            num_vars,
+            live_len,
+            &|index| source.coefficient(index),
+            &challenges,
+            &field_cfg,
+            &zero,
+            &one,
+            &reducer,
+        )
+        .unwrap();
+        let factored = fold_prefix_v_table::<K, _>(
+            num_vars,
+            live_len,
+            &source,
+            &challenges,
+            &field_cfg,
+            &zero,
+            &one,
+            &reducer,
+        )
+        .unwrap();
+
+        assert_eq!(factored.suffix_count, generic.suffix_count);
+        assert_eq!(factored.values, generic.values);
+    }
+
+    #[test]
+    fn sha_width_factored_fold_handles_divisible_by_eight_not_sixteen_boundaries() {
+        assert_sha_width_factored_fold_matches_generic::<3>();
+        assert_sha_width_factored_fold_matches_generic::<4>();
+    }
+
     fn assert_first_tail_fused_matches_reference<const K: usize>() {
         const NUM_VARS: usize = 8;
         const LIVE_LEN: usize = 13;
@@ -1804,7 +2711,7 @@ mod tests {
         let table = fold_prefix_v_table::<K, _>(
             NUM_VARS,
             LIVE_LEN,
-            &|index| Ok(values[index].clone()),
+            &|index: usize| Ok(values[index].clone()),
             &prefix_challenges,
             &field_cfg,
             &zero,
@@ -2114,7 +3021,7 @@ mod tests {
         let table = fold_prefix_v_table::<2, _>(
             NUM_VARS,
             LIVE_LEN,
-            &|index| Ok(v[index].clone()),
+            &|index: usize| Ok(v[index].clone()),
             &challenges,
             &field_cfg,
             &zero,

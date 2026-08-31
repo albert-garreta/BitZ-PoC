@@ -1,7 +1,7 @@
 //! End-to-end benchmark for independent SHA-256 compressions through the
 //! repeated Spartan relation and virtual F2Z opening. This exercises the
 //! runtime-prime protocol: commit before q, transcript-derived 112/113-bit prime,
-//! exact-integer projection, and per-round Spartan grinding.
+//! signed local-matrix collapse, and per-round Spartan grinding.
 //!
 //! Output follows the unified schema (`docs/bench-schema.md`): the
 //! end-to-end prover (`prove_ms`) covers bit packing, commitment, the prime
@@ -417,9 +417,11 @@ fn describe_span(
     let committing = under("sha256-trace:commit");
     let opening_prepare = has_fragment("opening_prepare_");
     let f2z_opening = has_fragment("f2z_prove") || has_fragment("f2z_verify");
-    let linear_collapse = has_fragment("linear_collapse_");
+    let linear_reducer_init = has_fragment("reducer_init_");
+    let local_relation_collapse = has_fragment("local_relation_collapse_");
+    let product_batch_prepare = has_fragment("product_batch_prepare_");
     let inner_sumcheck = has_fragment("spartan_inner_") || under("spartan:inner_sumcheck");
-    let spartan = linear_collapse || inner_sumcheck;
+    let spartan = inner_sumcheck || local_relation_collapse || product_batch_prepare;
     let sumcheck = inner_sumcheck || under("eqf:rounds") || under("mc:presum_run");
     let in_eq_factored = labels.iter().any(|label| label.starts_with("eqf:"));
     let fri = !in_eq_factored && f2z_opening && (under("mc:forest") || under("mc:fold_v"));
@@ -432,7 +434,7 @@ fn describe_span(
         "witness-generation"
     } else if committing {
         "commit"
-    } else if opening_prepare {
+    } else if opening_prepare || linear_reducer_init || product_batch_prepare {
         "preparation"
     } else if sumcheck {
         "sumcheck"
@@ -461,6 +463,10 @@ fn describe_span(
             push_tag(&mut phase_tags, "opening-proof");
             push_tag(&mut phase_tags, "pcs");
         }
+        if linear_reducer_init || product_batch_prepare {
+            push_tag(&mut phase_tags, "preparation");
+            push_tag(&mut phase_tags, "constraint-proof");
+        }
         if f2z_opening {
             push_tag(&mut phase_tags, "opening-proof");
             push_tag(&mut phase_tags, "pcs");
@@ -485,7 +491,12 @@ fn describe_span(
         | "sha256-trace:commit"
         | "sha256-trace:proof"
         | "sha256-trace:verification"
-        | "sha256:linear_collapse_prover"
+        | "sha256:reducer_init_prover"
+        | "sha256:reducer_init_verifier"
+        | "sha256:local_relation_collapse_prover"
+        | "sha256:local_relation_collapse_verifier"
+        | "sha256:product_batch_prepare_prover"
+        | "sha256:product_batch_prepare_verifier"
         | "sha256:spartan_inner_prove"
         | "sha256:opening_prepare_prover"
         | "sha256:f2z_prove"
@@ -501,7 +512,9 @@ fn describe_span(
         "sha256-trace:witness_generation" => Some("witness-generation"),
         "sha256-trace:commit" => Some("commit"),
         "sha256-trace:verification" => Some("verification"),
-        "sha256:linear_collapse_prover" | "sha256:spartan_inner_prove" => Some("constraint-proof"),
+        "sha256:reducer_init_prover" | "sha256:product_batch_prepare_prover" => Some("preparation"),
+        "sha256:local_relation_collapse_prover" => Some("constraint-proof"),
+        "sha256:spartan_inner_prove" => Some("constraint-proof"),
         "sha256:f2z_prove" => Some("opening-proof"),
         _ => None,
     };
@@ -541,13 +554,21 @@ fn span_names(label: &str) -> (String, String) {
         "sha256:runtime_prime_sample_prover" | "sha256:runtime_prime_sample_verifier" => {
             Some(("Sample transcript-derived runtime prime", "Sample q"))
         }
-        "sha256:relation_projection_prover" | "sha256:relation_projection_verifier" => Some((
-            "Project exact relation coefficients modulo q",
-            "Project relation",
-        )),
-        "sha256:linear_collapse_prover" => Some((
-            "Collapse the flat SHA-256 linear relation",
-            "Linear collapse",
+        "step2:project_prove" | "step2:project_verify" => {
+            Some(("Runtime-field setup and relation binding", "Field setup"))
+        }
+        "sha256:reducer_init_prover" | "sha256:reducer_init_verifier" => {
+            Some(("Initialize the SHA-256 linear reducer", "Reducer init"))
+        }
+        "sha256:local_relation_collapse_prover" | "sha256:local_relation_collapse_verifier" => {
+            Some((
+                "Collapse local SHA-256 relation columns",
+                "Local Cᵀ collapse",
+            ))
+        }
+        "sha256:product_batch_prepare_prover" | "sha256:product_batch_prepare_verifier" => Some((
+            "Prepare factored instance and column batch",
+            "Product batch",
         )),
         "sha256:spartan_inner_prove" => Some(("Prove quadratic inner sumcheck", "Inner sumcheck")),
         "spartan:round_grinding_prove" => Some(("Inner-round prover grinding", "Round PoW")),
@@ -590,13 +611,14 @@ fn span_math(label: &str) -> Vec<&'static str> {
         "sha256:runtime_prime_sample_prover" | "sha256:runtime_prime_sample_verifier" => {
             vec!["q\\leftarrow\\operatorname{PrimeSample}(\\mathsf{tr},I_t)"]
         }
-        "sha256:relation_projection_prover" | "sha256:relation_projection_verifier" => {
-            vec!["\\mathbb Z\\longrightarrow\\mathbb F_q"]
+        "sha256:reducer_init_prover" | "sha256:reducer_init_verifier" => Vec::new(),
+        "sha256:local_relation_collapse_prover" | "sha256:local_relation_collapse_verifier" => {
+            vec!["\\beta_c=\\sum_{r=0}^{183}\\operatorname{eq}(r,\\xi)C[r,c]"]
         }
-        "sha256:linear_collapse_prover" => {
+        "sha256:product_batch_prepare_prover" | "sha256:product_batch_prepare_verifier" => {
             vec![
-                "V_C(y)=\\sum_k\\operatorname{eq}(r_{\\mathrm{con}},k)\\,C[k,y]",
-                "V_{\\mathrm{total}}=V_C+V_{\\mathrm{one}}+V_{\\mathrm{public}}",
+                "d_c=\\beta_c+\\alpha_0\\mathbf 1[c=0]+\\alpha_{\\mathrm{pub}}\\sum_{p:c_p=c}\\lambda_p",
+                "V(i,c)=u_i d_c",
             ]
         }
         "sha256:spartan_inner_prove" | "sha256:spartan_inner_verify" => {
@@ -980,6 +1002,7 @@ fn bench_shape(
             ("compressions".into(), compressions.to_string()),
             ("mnum_rows".into(), assignment_cells.to_string()),
             ("shape_mode".into(), shape.mode().to_owned()),
+            ("step2_semantics".into(), "runtime_field_setup".into()),
             ("inner_prefix_vars".into(), inner_prefix_vars.to_string()),
             ("throughput_per_s".into(), format!("{throughput:.3}")),
             ("shape_seed".into(), format!("{shape_seed:#018x}")),
