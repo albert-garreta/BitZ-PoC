@@ -1,108 +1,108 @@
-\contentsline {section}{\numberline {1}Introduction}{1}{section.1}%
-\contentsline {subsection}{\numberline {1.1}Our contributions}{2}{subsection.1.1}%
-\contentsline {paragraph}{{$\mathbb {B}\text {it}\mathbb {Z}$}'s PCS in a nuthsell.}{3}{paragraph*.2}%
-\contentsline {paragraph}{Virtual $\ensuremath {\mathbb {F}}_2$-linear transforms, NP-complete dually linear relations, and arithmetization of SHA-256}{4}{paragraph*.3}%
-\contentsline {subsection}{\numberline {1.2}Related work}{5}{subsection.1.2}%
-\contentsline {paragraph}{Proof systems over integers and other rings.}{5}{paragraph*.4}%
-\contentsline {paragraph}{Proof systems over binary fields.}{6}{paragraph*.5}%
-\contentsline {paragraph}{Commitments in binary fields with openings in rings $R$ of characteristic different than $2$.}{6}{paragraph*.6}%
-\contentsline {subsection}{\numberline {1.3}Acknowledgements}{6}{subsection.1.3}%
-\contentsline {paragraph}{Usage and non-usage of AI}{6}{paragraph*.7}%
-\contentsline {section}{\numberline {2}Technical overview}{7}{section.2}%
-\contentsline {subsection}{\numberline {2.1}A simple version of {$\mathbb {B}\text {it}\mathbb {Z}$}}{7}{subsection.2.1}%
-\contentsline {paragraph}{Step 1: Commitment in $\ensuremath {\mathbb {F}}_{2^\nu }$.}{7}{paragraph*.8}%
-\contentsline {paragraph}{Step 2: Projection to a finite field $\ensuremath {\mathbb {F}}$.}{7}{paragraph*.9}%
-\contentsline {paragraph}{Step 3: PIOP over $\ensuremath {\mathbb {F}}$.}{8}{paragraph*.10}%
-\contentsline {paragraph}{Step 4: Bitification of the linear claim.}{8}{paragraph*.11}%
-\contentsline {paragraph}{Step 5: {$\mathbb {B}\text {it}\mathbb {Z}$}\ Polynomial Commitment Scheme (PCS).}{8}{paragraph*.12}%
-\contentsline {paragraph}{Step 5.0: reducing the prime modulus if necessary.}{8}{paragraph*.13}%
-\contentsline {paragraph}{Step 5.1: Transformation of \eqref {e:intro_eq_2} into a batch of low-magnitude integer claim.}{9}{paragraph*.14}%
-\contentsline {paragraph}{Step 5.2: Exponentiation in $\ensuremath {\mathbb {F}}_{2^\nu }$ and grand product in $\ensuremath {\mathbb {F}}_{2^\nu }$.}{9}{paragraph*.15}%
-\contentsline {paragraph}{Step 5.3: Proving linear claims over $\ensuremath {\mathbb {F}}_{2^\nu }$.}{10}{paragraph*.16}%
-\contentsline {subsubsection}{\numberline {2.1.1}Intuition of soundness proofs}{10}{subsubsection.2.1.1}%
-\contentsline {subsection}{\numberline {2.2}Virtual $\ensuremath {\mathbb {F}}_2$-linear transforms in {$\mathbb {B}\text {it}\mathbb {Z}$}\ and NP-complete dually linear relations}{10}{subsection.2.2}%
-\contentsline {subsection}{\numberline {2.3}GKR for low-entropy batched grand products}{12}{subsection.2.3}%
-\contentsline {subsubsection}{\numberline {2.3.1}Comparison to other ``prove-in-the-exponent'' usages}{13}{subsubsection.2.3.1}%
-\contentsline {paragraph}{Binius64}{13}{paragraph*.17}%
-\contentsline {paragraph}{The note \cite {lev}.}{13}{paragraph*.18}%
-\contentsline {subsection}{\numberline {2.4}{$\mathbb {B}\text {it}\mathbb {Z}$}\ in full generality}{14}{subsection.2.4}%
-\contentsline {paragraph}{Generalized Step 2.}{15}{paragraph*.19}%
-\contentsline {paragraph}{The case when $\ensuremath {\mathbb {F}}_{\mathsf {ext}}$ is a proper extension}{15}{paragraph*.20}%
-\contentsline {paragraph}{Scratch from another section. Delete?}{16}{paragraph*.21}%
-\contentsline {section}{\numberline {3}Preliminaries}{16}{section.3}%
-\contentsline {paragraph}{General notation}{16}{paragraph*.22}%
-\contentsline {subsection}{\numberline {3.1}Algebra}{17}{subsection.3.1}%
-\contentsline {subsection}{\numberline {3.2}Linear codes and relations}{17}{subsection.3.2}%
-\contentsline {paragraph}{Linear codes}{17}{paragraph*.23}%
-\contentsline {paragraph}{Relations}{18}{paragraph*.24}%
-\contentsline {paragraph}{Polynomial Equation Satisfiability (PESAT) over finite fields}{18}{paragraph*.25}%
-\contentsline {subsection}{\numberline {3.3}Interactive Oracle Reductions (IOR) of proximity}{19}{subsection.3.3}%
-\contentsline {paragraph}{Grinding}{20}{paragraph*.26}%
-\contentsline {section}{\numberline {4}{$\mathbb {B}\text {it}\mathbb {Z}$}\ IOP for Lin-BitsDual}{20}{section.4}%
-\contentsline {subsection}{\numberline {4.1}The core Lin-BitsDual relation}{20}{subsection.4.1}%
-\contentsline {subsection}{\numberline {4.2}Tensor decomposition and products of constrained codes}{21}{subsection.4.2}%
-\contentsline {subsection}{\numberline {4.3}The {{$\mathbb {B}\text {it}\mathbb {Z}$}} IOP for the core Lin-BitsDual relation}{22}{subsection.4.3}%
-\contentsline {paragraph}{Algebraic set-up}{22}{paragraph*.28}%
-\contentsline {paragraph}{The {$\mathbb {B}\text {it}\mathbb {Z}$}\ IOP.}{22}{paragraph*.29}%
-\contentsline {subsection}{\numberline {4.4}Soundness and completeness}{26}{subsection.4.4}%
-\contentsline {paragraph}{Completeness and soundness of $\Pi _1$}{27}{paragraph*.30}%
-\contentsline {subsection}{\numberline {4.5}The general Lin-BitsDual relation}{30}{subsection.4.5}%
-\contentsline {subsection}{\numberline {4.6}The {$\mathbb {B}\text {it}\mathbb {Z}$}\ IOP for the general Lin-BitsDual relation}{31}{subsection.4.6}%
-\contentsline {subsection}{\numberline {4.7}Instantiation}{33}{subsection.4.7}%
-\contentsline {paragraph}{The errors $\kappa _{i,\mathsf {iopp}}$.}{33}{paragraph*.31}%
-\contentsline {paragraph}{The errors $\kappa _{i,\mathsf {red}}$.}{34}{paragraph*.32}%
-\contentsline {paragraph}{The error $\kappa _0$.}{34}{paragraph*.33}%
-\contentsline {paragraph}{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa _0$.}{34}{paragraph*.34}%
-\contentsline {paragraph}{Strategy 2: No or essentially no grinding during the PIOP, and $\kappa _0^*$ is present and grinding is used during the first projection step of \cref {c:core_iop}.}{35}{paragraph*.35}%
-\contentsline {section}{\numberline {5}A GKR protocol for low entropy batched grand products via lookup tables}{37}{section.5}%
-\contentsline {subsection}{\numberline {5.1}Optimization via lookup tables}{39}{subsection.5.1}%
-\contentsline {paragraph}{Setup}{39}{paragraph*.37}%
-\contentsline {paragraph}{First prover message in the last sumcheck in Step 2 of \cref {c:gkr_grand_product}}{40}{paragraph*.38}%
-\contentsline {paragraph}{Subsequent prover messages in the last sumcheck in Step 2 of \cref {c:gkr_grand_product}}{42}{paragraph*.40}%
-\contentsline {paragraph}{The rest of sumchecks in Step 2 of \cref {c:gkr_grand_product}}{44}{paragraph*.42}%
-\contentsline {subsection}{\numberline {5.2}Other optimizations for \cref {c:core_iop}}{44}{subsection.5.2}%
-\contentsline {paragraph}{Using $4$ factor multiplication (instead of $2$) in the last step of the GKR grand product}{44}{paragraph*.43}%
-\contentsline {paragraph}{Step 1 of \cref {c:core_iop} via lookup tables}{45}{paragraph*.44}%
-\contentsline {section}{\numberline {6}{$\mathbb {B}\text {it}\mathbb {Z}$}\ for UPESAT}{45}{section.6}%
-\contentsline {subsection}{\numberline {6.1}Universal Polynomial Equation Satisfiability (UPESAT)}{45}{subsection.6.1}%
-\contentsline {subsection}{\numberline {6.2}An IOP for UPESAT with oracles in binary fields}{46}{subsection.6.2}%
-\contentsline {subsection}{\numberline {6.3}Instantiation}{50}{subsection.6.3}%
-\contentsline {section}{\numberline {7}Experiments}{50}{section.7}%
-\contentsline {subsection}{\numberline {7.1}Instantiation}{50}{subsection.7.1}%
-\contentsline {subsection}{\numberline {7.2}Experimental results}{51}{subsection.7.2}%
-\contentsline {subsubsection}{\numberline {7.2.1}Raw performance of {$\mathbb {B}\text {it}\mathbb {Z}$}}{51}{subsubsection.7.2.1}%
-\contentsline {subsubsection}{\numberline {7.2.2}Integer and modular multiplication}{51}{subsubsection.7.2.2}%
-\contentsline {subsubsection}{\numberline {7.2.3}SHA-256 hashing}{51}{subsubsection.7.2.3}%
-\contentsline {paragraph}{SHA-256 compression overview}{51}{paragraph*.46}%
-\contentsline {paragraph}{Message schedule.}{52}{paragraph*.47}%
-\contentsline {paragraph}{Compression loop.}{52}{paragraph*.48}%
-\contentsline {subsubsection}{\numberline {7.2.4}Falcon signature verification}{53}{subsubsection.7.2.4}%
-\contentsline {subsubsection}{\numberline {7.2.5}RSA accumulation and Poseidon hashing}{53}{subsubsection.7.2.5}%
-\contentsline {subsubsection}{\numberline {7.2.6}Hashing followed by Falcon signature verification}{53}{subsubsection.7.2.6}%
-\contentsline {subsubsection}{\numberline {7.2.7}Comparison with Hyrax}{53}{subsubsection.7.2.7}%
-\contentsline {subsection}{\numberline {7.3}Open questions}{53}{subsection.7.3}%
-\contentsline {section}{References}{54}{subsection.7.3}%
-\contentsline {section}{\numberline {A}Deferred proofs}{55}{appendix.A}%
-\contentsline {subsection}{\numberline {A.1}Completeness and soundness of \cref {c:LinModFieldBin}}{55}{subsection.A.1}%
-\contentsline {subsection}{\numberline {A.2}Completeness and soundness of \cref {c:iop_pimsat}}{56}{subsection.A.2}%
-\contentsline {paragraph}{Description of $\Pi _1$.}{57}{paragraph*.50}%
-\contentsline {paragraph}{Description of $\Pi _1$.}{58}{paragraph*.51}%
-\contentsline {paragraph}{Description of $\Pi _2$.}{58}{paragraph*.52}%
-\contentsline {paragraph}{Description of $\Pi _3$}{58}{paragraph*.53}%
-\contentsline {subsubsection}{\numberline {A.2.1}Proof of \cref {l:Pi_123_is_good}}{61}{subsubsection.A.2.1}%
-\contentsline {section}{\numberline {B}Ring switching via Galois orbits}{63}{appendix.B}%
-\contentsline {section}{\numberline {C}Bilinear Embeddings}{64}{appendix.C}%
-\contentsline {subsection}{\numberline {C.1}Background}{64}{subsection.C.1}%
-\contentsline {subsubsection}{\numberline {C.1.1}Perfect pairings}{64}{subsubsection.C.1.1}%
-\contentsline {subsubsection}{\numberline {C.1.2}Succinct vectors}{65}{subsubsection.C.1.2}%
-\contentsline {subsection}{\numberline {C.2}Structure}{65}{subsection.C.2}%
-\contentsline {subsection}{\numberline {C.3}Constructions}{68}{subsection.C.3}%
-\contentsline {subsubsection}{\numberline {C.3.1}Trace embedding}{68}{subsubsection.C.3.1}%
-\contentsline {subsubsection}{\numberline {C.3.2}Coefficient projection}{69}{subsubsection.C.3.2}%
-\contentsline {subsection}{\numberline {C.4}Extension openings}{70}{subsection.C.4}%
-\contentsline {subsubsection}{\numberline {C.4.1}Batching protocol}{70}{subsubsection.C.4.1}%
-\contentsline {subsubsection}{\numberline {C.4.2}Folding protocol}{71}{subsubsection.C.4.2}%
-\contentsline {paragraph}{Single folding round.}{72}{paragraph*.54}%
-\contentsline {paragraph}{Towerless folding.}{76}{paragraph*.55}%
-\contentsline {paragraph}{}{76}{paragraph*.56}%
-\contentsline {section}{\numberline {D}[Remove?] Virtualization of $\ensuremath {\mathbb {F}}_2$-linear combinations lifted to integers}{76}{appendix.D}%
+\contentsline {section}{\numberline {1}Introduction}{3}{section.1}%
+\contentsline {subsection}{\numberline {1.1}Our contributions}{3}{subsection.1.1}%
+\contentsline {paragraph}{{$\mathbb {B}\text {it}\mathbb {Z}$}'s PCS in a nuthsell.}{4}{paragraph*.2}%
+\contentsline {paragraph}{Virtual $\ensuremath {\mathbb {F}}_2$-linear transforms, NP-complete dually linear relations, and arithmetization of SHA-256}{6}{paragraph*.3}%
+\contentsline {subsection}{\numberline {1.2}Related work}{6}{subsection.1.2}%
+\contentsline {paragraph}{Proof systems over integers and other rings.}{6}{paragraph*.4}%
+\contentsline {paragraph}{Proof systems over binary fields.}{7}{paragraph*.5}%
+\contentsline {paragraph}{Commitments in binary fields with openings in rings $R$ of characteristic different than $2$.}{8}{paragraph*.6}%
+\contentsline {subsection}{\numberline {1.3}Acknowledgements}{8}{subsection.1.3}%
+\contentsline {paragraph}{Usage and non-usage of AI}{8}{paragraph*.7}%
+\contentsline {section}{\numberline {2}Technical overview}{8}{section.2}%
+\contentsline {subsection}{\numberline {2.1}A simple version of {$\mathbb {B}\text {it}\mathbb {Z}$}}{8}{subsection.2.1}%
+\contentsline {paragraph}{Step 1: Commitment in $\ensuremath {\mathbb {F}}_{2^\nu }$.}{9}{paragraph*.8}%
+\contentsline {paragraph}{Step 2: Projection to a finite field $\ensuremath {\mathbb {F}}$.}{9}{paragraph*.9}%
+\contentsline {paragraph}{Step 3: PIOP over $\ensuremath {\mathbb {F}}$.}{9}{paragraph*.10}%
+\contentsline {paragraph}{Step 4: Bitification of the linear claim.}{9}{paragraph*.11}%
+\contentsline {paragraph}{Step 5: {$\mathbb {B}\text {it}\mathbb {Z}$}\ Polynomial Commitment Scheme (PCS).}{10}{paragraph*.12}%
+\contentsline {paragraph}{Step 5.0: reducing the prime modulus if necessary.}{10}{paragraph*.13}%
+\contentsline {paragraph}{Step 5.1: Transformation of \eqref {e:intro_eq_2} into a batch of low-magnitude integer claim.}{10}{paragraph*.14}%
+\contentsline {paragraph}{Step 5.2: Exponentiation in $\ensuremath {\mathbb {F}}_{2^\nu }$ and grand product in $\ensuremath {\mathbb {F}}_{2^\nu }$.}{10}{paragraph*.15}%
+\contentsline {paragraph}{Step 5.3: Proving linear claims over $\ensuremath {\mathbb {F}}_{2^\nu }$.}{11}{paragraph*.16}%
+\contentsline {subsubsection}{\numberline {2.1.1}Intuition of soundness proofs}{12}{subsubsection.2.1.1}%
+\contentsline {subsection}{\numberline {2.2}Virtual $\ensuremath {\mathbb {F}}_2$-linear transforms in {$\mathbb {B}\text {it}\mathbb {Z}$}\ and NP-complete dually linear relations}{12}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}GKR for low-entropy batched grand products}{13}{subsection.2.3}%
+\contentsline {subsubsection}{\numberline {2.3.1}Comparison to other ``prove-in-the-exponent'' usages}{14}{subsubsection.2.3.1}%
+\contentsline {paragraph}{Binius64}{14}{paragraph*.17}%
+\contentsline {paragraph}{The note \cite {lev}.}{15}{paragraph*.18}%
+\contentsline {subsection}{\numberline {2.4}{$\mathbb {B}\text {it}\mathbb {Z}$}\ in full generality}{15}{subsection.2.4}%
+\contentsline {paragraph}{Generalized Step 2.}{16}{paragraph*.19}%
+\contentsline {paragraph}{The case when $\ensuremath {\mathbb {F}}_{\mathsf {ext}}$ is a proper extension}{17}{paragraph*.20}%
+\contentsline {paragraph}{Scratch from another section. Delete?}{18}{paragraph*.21}%
+\contentsline {section}{\numberline {3}Preliminaries}{18}{section.3}%
+\contentsline {paragraph}{General notation}{18}{paragraph*.22}%
+\contentsline {subsection}{\numberline {3.1}Algebra}{18}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Linear codes and relations}{19}{subsection.3.2}%
+\contentsline {paragraph}{Linear codes}{19}{paragraph*.23}%
+\contentsline {paragraph}{Relations}{19}{paragraph*.24}%
+\contentsline {paragraph}{Polynomial Equation Satisfiability (PESAT) over finite fields}{20}{paragraph*.25}%
+\contentsline {subsection}{\numberline {3.3}Interactive Oracle Reductions (IOR) of proximity}{20}{subsection.3.3}%
+\contentsline {paragraph}{Grinding}{21}{paragraph*.26}%
+\contentsline {section}{\numberline {4}{$\mathbb {B}\text {it}\mathbb {Z}$}\ IOP for Lin-BitsDual}{22}{section.4}%
+\contentsline {subsection}{\numberline {4.1}The core Lin-BitsDual relation}{22}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Tensor decomposition and products of constrained codes}{23}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}The {{$\mathbb {B}\text {it}\mathbb {Z}$}} IOP for the core Lin-BitsDual relation}{24}{subsection.4.3}%
+\contentsline {paragraph}{Algebraic set-up}{24}{paragraph*.28}%
+\contentsline {paragraph}{The {$\mathbb {B}\text {it}\mathbb {Z}$}\ IOP.}{24}{paragraph*.29}%
+\contentsline {subsection}{\numberline {4.4}Soundness and completeness}{27}{subsection.4.4}%
+\contentsline {paragraph}{Completeness and soundness of $\Pi _1$}{29}{paragraph*.30}%
+\contentsline {subsection}{\numberline {4.5}The general Lin-BitsDual relation}{31}{subsection.4.5}%
+\contentsline {subsection}{\numberline {4.6}The {$\mathbb {B}\text {it}\mathbb {Z}$}\ IOP for the general Lin-BitsDual relation}{32}{subsection.4.6}%
+\contentsline {subsection}{\numberline {4.7}Instantiation}{34}{subsection.4.7}%
+\contentsline {paragraph}{The errors $\kappa _{i,\mathsf {iopp}}$.}{35}{paragraph*.31}%
+\contentsline {paragraph}{The errors $\kappa _{i,\mathsf {red}}$.}{35}{paragraph*.32}%
+\contentsline {paragraph}{The error $\kappa _0$.}{35}{paragraph*.33}%
+\contentsline {paragraph}{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa _0$.}{36}{paragraph*.34}%
+\contentsline {paragraph}{Strategy 2: No or essentially no grinding during the PIOP, and $\kappa _0^*$ is present and grinding is used during the first projection step of \cref {c:core_iop}.}{36}{paragraph*.35}%
+\contentsline {section}{\numberline {5}A GKR protocol for low entropy batched grand products via lookup tables}{38}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Optimization via lookup tables}{40}{subsection.5.1}%
+\contentsline {paragraph}{Setup}{40}{paragraph*.37}%
+\contentsline {paragraph}{First prover message in the last sumcheck in Step 2 of \cref {c:gkr_grand_product}}{41}{paragraph*.38}%
+\contentsline {paragraph}{Subsequent prover messages in the last sumcheck in Step 2 of \cref {c:gkr_grand_product}}{44}{paragraph*.40}%
+\contentsline {paragraph}{The rest of sumchecks in Step 2 of \cref {c:gkr_grand_product}}{45}{paragraph*.42}%
+\contentsline {subsection}{\numberline {5.2}Other optimizations for \cref {c:core_iop}}{46}{subsection.5.2}%
+\contentsline {paragraph}{Using $4$ factor multiplication (instead of $2$) in the last step of the GKR grand product}{46}{paragraph*.43}%
+\contentsline {paragraph}{Step 1 of \cref {c:core_iop} via lookup tables}{46}{paragraph*.44}%
+\contentsline {section}{\numberline {6}{$\mathbb {B}\text {it}\mathbb {Z}$}\ for UPESAT}{46}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Universal Polynomial Equation Satisfiability (UPESAT)}{46}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}An IOP for UPESAT with oracles in binary fields}{47}{subsection.6.2}%
+\contentsline {subsection}{\numberline {6.3}Instantiation}{51}{subsection.6.3}%
+\contentsline {section}{\numberline {7}Experiments}{51}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Instantiation}{51}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}Experimental results}{52}{subsection.7.2}%
+\contentsline {subsubsection}{\numberline {7.2.1}Raw performance of {$\mathbb {B}\text {it}\mathbb {Z}$}}{52}{subsubsection.7.2.1}%
+\contentsline {subsubsection}{\numberline {7.2.2}Integer and modular multiplication}{52}{subsubsection.7.2.2}%
+\contentsline {subsubsection}{\numberline {7.2.3}SHA-256 hashing}{53}{subsubsection.7.2.3}%
+\contentsline {paragraph}{SHA-256 compression overview}{53}{paragraph*.46}%
+\contentsline {paragraph}{Message schedule.}{53}{paragraph*.47}%
+\contentsline {paragraph}{Compression loop.}{53}{paragraph*.48}%
+\contentsline {subsubsection}{\numberline {7.2.4}Falcon signature verification}{54}{subsubsection.7.2.4}%
+\contentsline {subsubsection}{\numberline {7.2.5}RSA accumulation and Poseidon hashing}{54}{subsubsection.7.2.5}%
+\contentsline {subsubsection}{\numberline {7.2.6}Hashing followed by Falcon signature verification}{55}{subsubsection.7.2.6}%
+\contentsline {subsubsection}{\numberline {7.2.7}Comparison with Hyrax}{55}{subsubsection.7.2.7}%
+\contentsline {subsection}{\numberline {7.3}Open questions}{55}{subsection.7.3}%
+\contentsline {section}{References}{55}{subsection.7.3}%
+\contentsline {section}{\numberline {A}Deferred proofs}{57}{appendix.A}%
+\contentsline {subsection}{\numberline {A.1}Completeness and soundness of \cref {c:LinModFieldBin}}{57}{subsection.A.1}%
+\contentsline {subsection}{\numberline {A.2}Completeness and soundness of \cref {c:iop_pimsat}}{58}{subsection.A.2}%
+\contentsline {paragraph}{Description of $\Pi _1$.}{59}{paragraph*.50}%
+\contentsline {paragraph}{Description of $\Pi _1$.}{59}{paragraph*.51}%
+\contentsline {paragraph}{Description of $\Pi _2$.}{60}{paragraph*.52}%
+\contentsline {paragraph}{Description of $\Pi _3$}{60}{paragraph*.53}%
+\contentsline {subsubsection}{\numberline {A.2.1}Proof of \cref {l:Pi_123_is_good}}{63}{subsubsection.A.2.1}%
+\contentsline {section}{\numberline {B}Ring switching via Galois orbits}{64}{appendix.B}%
+\contentsline {section}{\numberline {C}Bilinear Embeddings}{66}{appendix.C}%
+\contentsline {subsection}{\numberline {C.1}Background}{66}{subsection.C.1}%
+\contentsline {subsubsection}{\numberline {C.1.1}Perfect pairings}{66}{subsubsection.C.1.1}%
+\contentsline {subsubsection}{\numberline {C.1.2}Succinct vectors}{66}{subsubsection.C.1.2}%
+\contentsline {subsection}{\numberline {C.2}Structure}{67}{subsection.C.2}%
+\contentsline {subsection}{\numberline {C.3}Constructions}{69}{subsection.C.3}%
+\contentsline {subsubsection}{\numberline {C.3.1}Trace embedding}{70}{subsubsection.C.3.1}%
+\contentsline {subsubsection}{\numberline {C.3.2}Coefficient projection}{71}{subsubsection.C.3.2}%
+\contentsline {subsection}{\numberline {C.4}Extension openings}{71}{subsection.C.4}%
+\contentsline {subsubsection}{\numberline {C.4.1}Batching protocol}{71}{subsubsection.C.4.1}%
+\contentsline {subsubsection}{\numberline {C.4.2}Folding protocol}{73}{subsubsection.C.4.2}%
+\contentsline {paragraph}{Single folding round.}{74}{paragraph*.54}%
+\contentsline {paragraph}{Towerless folding.}{78}{paragraph*.55}%
+\contentsline {paragraph}{}{78}{paragraph*.56}%
+\contentsline {section}{\numberline {D}[Remove?] Virtualization of $\ensuremath {\mathbb {F}}_2$-linear combinations lifted to integers}{78}{appendix.D}%
