@@ -1176,7 +1176,7 @@ $$
 N_R \defeq \begin{cases} \Char(R)-1 & \text{if } \Char(R)>0,\\ \max\left(\lVert \vv^{(1)}\rVert_\infty,\ \lVert \vv^{(2)}\rVert_\infty\right) & \text{if } R=\ZZ. \end{cases}
 $$
 
-For every prime $q\in \cP$, let $\cM_q$ be a set of ring homomorphisms $$\pirand:\ZZ[X_1,\ldots, X_{\dim(R)-1}] \to \FF_q.$$ The verifier will sample primes and morphisms from $\cP$ and $\cM_q$. We let $\theta(R,\codedim)$ be the maximum probability that $\pirand(h)=0$, over random $q\gets \cP$, $\pirand\gets \cM_q$, and where the maximum is taken over nonzero polynomials $h\in \ZZ[X_1, \ldots, X_{\dim(R)-1}]$ of total degree at most $2$, with coefficients in $\range{-4\cdot \codedim\cdot N_R^2}{4\cdot \codedim\cdot N_R^2}$. Precisely:
+For every prime $q\in \cP$, let $\cM_q$ be a set of ring homomorphisms $$\pirand:\ZZ[X_1,\ldots, X_{\dim(R)-1}] \to \FF_q.$$ The verifier will sample primes and morphisms from $\cP$ and $\cM_q$. We let $\theta(R,\codedim)$ be the maximum probability that $\pirand(h)=0$, over random $q\gets \cP$, $\pirand\gets \cM_q$, and where the maximum is taken over nonzero polynomials $h\in \ZZ[X_1, \ldots, X_{\dim(R)-1}]$ of total degree at most $2$, with coefficients in $\range{-4\cdot \codedim\cdot N_R^2}{4\cdot \codedim\cdot N_R^2}$, and such that $\picanon^{R}(h)\neq 0$. Precisely:
 %
 $$
 \theta(R,\codedim) \defeq  \max_{h}\left\{\Pr_{q\gets \cP, \pirand\gets \cM_q}[ \pirand(h)=0] \right\},
@@ -1364,7 +1364,7 @@ For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\
 
 
 
-\albertimportant{The rest of this subsection needs to be updated to the new way things have been formalized and stated.} To prove \cref{l:examples_morphisms} we will use the following lemma, which generalizes \albert{point to lemma} in \cite{zincplus}.
+ To prove \cref{l:examples_morphisms} we will use the following lemma, which generalizes \albert{point to lemma} in \cite{zincplus}.
 \begin{lemma}\label{l:reduction_lemma}
 Let $h\in \ZZ[X_1, \ldots, X_m]$ be a nonzero polynomial of total degree $\leq d$ and with coefficients in the range $\range{-2^{B}+1}{2^B-1}$. Let $\cP$ be a set of primes, and let $q_{\min}$ be the smallest prime in $\cP$. Given a prime $q$ and $\bm{\alpha}\in \FF_q^m$, write $\pi_{q,\bm{\alpha}}(h)\defeq \pi_q(h)(\bm{\alpha})\in \FF_q$. Then \albert{should we have two cases in the second term? One with denom $1$ and another with denom $d$?}
 %
@@ -1379,6 +1379,15 @@ Now, every nonzero coefficient of $h$ is divisible by at most $B/\lfloor\log(q_{
 %
 \end{proof}
 
+
+
+\begin{proof}[Proof of \cref{l:examples_morphisms}]
+Let $h\in \ZZ[X_1,\ldots, X_{d-1}]$ be a polynomial of total degree at most $2$, with coefficients in $\range{-4\cdot \codedim\cdot N_R^2}{4\cdot \codedim\cdot N_R^2}$, and with $\picanon^{R}(h)\neq 0$ (cf.\ the definition of $\theta(R,\codedim)$). In particular $h$ is nonzero, and its coefficients lie in $\range{-2^{B}+1}{2^{B}-1}$ for $B\defeq \lfloor \log(\codedim\cdot N_R^2)\rfloor + 3 \leq \log(8\cdot \codedim\cdot N_R^2)$.
+
+We start with the second family. Since $h$ is nonzero and has total degree at most $2$, \cref{l:reduction_lemma} (applied with $m=d-1$ variables and total degree $2$) yields $$\Pr_{\substack{q\gets \cP,\\ \bm{\alpha} \gets \FF_q^{d-1}}}[\pi_q(h)(\bm{\alpha})=0] \leq \frac{B}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{2}{q_{\min}},$$ which gives the claimed bound (if $d=1$, then $h$ is a nonzero integer and the second summand is void).
+
+For the first family, consider the ring homomorphism $\sigma: \ZZ[X_1,\ldots,X_{d-1}]\to \ZZ[Y]$ defined by $\sigma(X_i)=Y^i$ for $i\in [d-1]$, and let $\widetilde{h}\defeq \sigma(h)\in \ZZ[Y]$. Since $\gamma_{i+1}=\gamma_2^{i}$, the homomorphism $\picanon^{R}$ factors as $\picanon^{R} = \rho\circ \sigma$, where $\rho:\ZZ[Y]\to R$ reduces coefficients modulo $\Char(R)$ and maps $Y$ to $\gamma_2$. Hence $\picanon^{R}(h)\neq 0$ implies $\widetilde{h}\neq 0$. Moreover, $\widetilde{h}$ has degree at most $2\cdot (d-1)$, and each of its coefficients is a sum of at most $d$ coefficients of $h$, since for each power $Y^k$, the monomials of $h$ mapping to $Y^k$ under $\sigma$ are among $1$, $X_k$, and the monomials $X_iX_j$ with $i+j=k$, and there are at most $d$ of these. Hence the coefficients of $\widetilde{h}$ lie in $\range{-2^{\widetilde{B}}+1}{2^{\widetilde{B}}-1}$ for $\widetilde{B}\defeq \lfloor \log(d\cdot \codedim\cdot N_R^2)\rfloor + 3\leq \log(8\cdot d\cdot \codedim\cdot N_R^2)$. Finally, $\pi_q(h)(\alpha, \alpha^2, \ldots, \alpha^{d-1}) = \pi_q(\widetilde{h})(\alpha)$ for all $\alpha\in \FF_q$, and hence \cref{l:reduction_lemma} (applied with $m=1$ and total degree $2\cdot (d-1)$) yields $$\Pr_{\substack{q\gets \cP,\\ \alpha \gets \FF_q}}[\pi_q(\widetilde{h})(\alpha)=0] \leq \frac{\widetilde{B}}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{2\cdot (d-1)}{q_{\min}},$$ as needed∫.
+\end{proof}
 
 \begin{proof}[Proof of \cref{t:thm_core_IOPP}] 
 %
@@ -1452,7 +1461,7 @@ where the last inequality holds by the definition of $\theta(R,\codedim)$.
 
 \bigskip
 
-It remains to prove the second statement, namely: if $\kstate(\inp,\oracle,(\mu', (q,\pirand)),\ww)=0$, then $\kstate(\inp,\oracle,(\mu', (q,\pirand), \bm{\mu}),\ww)=0$ for every prover message $\bm{\mu}=(\mu_1,\ldots, \mu_{\codedim_2})\in \range{0}{(q-1)\cdot \codedim_1}^{\codedim_2}$. Suppose towards a contradiction that $\kstate(\inp,\oracle,(\mu', (q,\pirand), \bm{\mu}),\ww)=1$, i.e.\ that the verifier accepts and $(\inp',\oracle',\ww)\in \PESAT^{\delta}$. Then $\ww=\bff=(\bff_{*j})_{j\in [\codedim_2]}\in \bits^\codedim$, $\hamming( f,\Enc_{\cC}\circ \pack\circ \pi_2(\bff)) < \delta$, and, for all $j\in [\codedim_2]$, $$g^{\langle \bff_{*j}, \bm{\gamma}\rangle} = \prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \pi_2(\bff_{ij}) +1\right)= g^{\mu_j},$$ and hence $$\langle \bff_{*j}, \bm{\gamma}\rangle = \mu_j \mod \mathsf{ord}(g),$$ where $\mathsf{ord}(g)$ denotes the multiplicative order of $g$. Now, since $\bm{\gamma}_i\in \range{0}{q-1}$, $\mu_j\in \range{0}{(q-1)\cdot \codedim_1}$, and $\bff_{*j}$ contains bits, we have $|\langle \bff_{*j}, \bm{\gamma}\rangle - \mu_j| \leq \codedim_1 \cdot (q-1)$. Since $g$ is a generator of $\comfield^*$ and $q\leq \max\cP< \fieldboundsizeexponent$, we have $$\mathsf{ord}(g) = |\comfield|-1> 2\cdot \codedim_1\cdot \max\cP> \codedim_1 \cdot (q-1),$$ and therefore
+It remains to prove the second statement, namely: if $\kstate(\inp,\oracle,(\mu', (q,\pirand)),\ww)=0$, then $\kstate(\inp,\oracle,(\mu', (q,\pirand), \bm{\mu}),\ww)=0$ for every prover message $\bm{\mu}=(\mu_1,\ldots, \mu_{\codedim_2})\in \range{0}{(q-1)\cdot \codedim_1}^{\codedim_2}$. Suppose towards a contradiction that $\kstate(\inp,\oracle,(\mu', (q,\pirand), \bm{\mu}),\ww)=1$, i.e.\ that the verifier accepts and $(\inp',\oracle',\ww)\in \PESAT^{\delta}$. Then $\ww=\bff=(\bff_{*j})_{j\in [\codedim_2]}\in \bits^\codedim$, $\hamming( f,\Enc_{\cC}\circ \pack\circ \pi_2(\bff)) < \delta$, and, for all $j\in [\codedim_2]$, $$g^{\langle \bff_{*j}, \bm{\gamma}\rangle} = \prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \pi_2(\bff_{ij}) +1\right)= g^{\mu_j},$$ and hence $$\langle \bff_{*j}, \bm{\gamma}\rangle = \mu_j \mod \mathsf{ord}(g),$$ where $\mathsf{ord}(g)$ denotes the multiplicative order of $g$. Now, since $\bm{\gamma}_i\in \range{0}{q-1}$, $\mu_j\in \range{0}{(q-1)\cdot \codedim_1}$, and $\bff_{*j}$ contains bits, we have $|\langle \bff_{*j}, \bm{\gamma}\rangle - \mu_j| \leq \codedim_1 \cdot (q-1)$. Since $g$ is a generator of $\comfield^*$ and $q\leq \max\cP< \fieldboundsizeexponent$, we have $$\mathsf{ord}(g) = |\comfield|-1> \codedim_1\cdot \max\cP \geq \codedim_1\cdot q> \codedim_1 \cdot (q-1),$$ and therefore
 %
 \begin{equation}\label{e:mu_j_integer_equalities}
 \langle \bff_{*j}, \bm{\gamma}\rangle = \mu_j \qquad \text{over } \ZZ, \qquad \text{ for all } j\in [\codedim_2].
@@ -1515,7 +1524,7 @@ Assume $\cC$ is a linear code over $\comfield$ of dimension $(\codedim_0\cdot B 
 \begin{definition} The \emph{general Lin-BitsDual}  relation is defined as
 %
 \begin{align*}
- &\LinModFieldBin(\moduleonebound,\modulemorphism,R,  \cC)\\ &\qquad\qquad\qquad= \left\{ \left(\begin{aligned} & &\inp=(\mu, \vv)\in R  \times R^{ \codedim_0}, \\
+ &\LinModFieldBin(\moduleonebound,\modulemorphism,R,  \cC)\\ &\qquad\qquad\qquad= \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in R  \times R^{ \codedim_0}, \\
  &\oracle = f \in \comfield^{\codelength}, \\ &\wit= \bff\in \moduleonebound^{\codedim_0}\end{aligned}\right) \;\middle|\;  \begin{aligned}  
  &f = \Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\bff)),\\
  &\langle \modulemorphism(\bff), \vv \rangle = \mu  \qquad  \text{in } R
@@ -1611,13 +1620,11 @@ For more general matrices $L$, one needs to make sure that $L$ has enough struct
 
 
 \subsection{Instantiation}\label{s:instantiation}
-\albertimportant{Needs to be updated to the new way things have been formalized and stated, and to a corrected bound $\fieldboundsizeexponent$ (used to be $(|\comfield|-1)/(\codedim_1+1)$.}
-
 We instantiate \cref{c:core_iop} by letting $\Pi_{\red}$ be an optimized GKR protocol for multiple grand product claims of certain form. The IOP $\Pi_\iopp$ is taken to be WHIR \cite{whir} with the ring switching step from \cite{binius} (see \cref{a:ring_switch_1}).
 
 \bigskip
 
-We next provide example  instantiations \cref{c:core_iop,c:LinModFieldBin} so as to achieve  $\lambda=128$ bits of security, while keeping the protocols as efficient as possible, with the main challenge being to use $\comfield$ of size $2^{128}$.  Achieving $\lambda=100$ bits of security is relatively straightforward and we do not discuss it. We use a careful selection of parameters in combination with grinding. In \cref{r:beyond_gridning} we discuss other instantiations and techniques that do not require grinding.
+We next provide example  instantiations of \cref{c:core_iop,c:LinModFieldBin} so as to achieve  $\lambda=128$ bits of security, while keeping the protocols as efficient as possible, with the main challenge being to use $\comfield$ of size $2^{128}$.  Achieving $\lambda=100$ bits of security is relatively straightforward and we do not discuss it. We use a careful selection of parameters in combination with grinding. In \cref{r:beyond_gridning} we discuss other instantiations and techniques that do not require grinding.
 
 The contents of this section should be taken as examples of how to instantiate \cref{c:core_iop}, not as limiting strict rules and settings. Other configurations may be perfectly plausible and practical. 
 
@@ -1626,8 +1633,8 @@ The contents of this section should be taken as examples of how to instantiate \
 
 In terms of security, we need to ensure the following:
 \begin{enumerate}
-    \item $|\comfield|-1 >  (\codedim_1 + 1) \cdot (\max\cP-1)$.   A requisite in our \cref{t:thm_core_IOPP,t:thm_LinModFieldBits}, to, intuitively, ensure that the inner product in the exponent of $g\in \comfield$ does not overflow. 
-    \item The round-by-round knowledge soundness errors of \cref{c:core_iop} $\kappa_0^*, (\kappa_{i,\red})_i, (\kappa_{i,\iopp})_i$ are all at most $2^{-\lambda}$. 
+    \item $\max\cP < \fieldboundsizeexponent$.   A requisite in our \cref{t:thm_core_IOPP,t:thm_LinModFieldBits}, to, intuitively, ensure that the inner product in the exponent of $g\in \comfield$ does not overflow.
+    \item The round-by-round knowledge soundness errors of \cref{c:core_iop} $\kappa_0, (\ksred_i)_{i}, (\ksiopp_i)_{i}$ are all at most $2^{-\lambda}$. 
 \end{enumerate}
 %
 
@@ -1643,7 +1650,7 @@ equipped with the optimizations discuss in \cref{s:gkr_low_entropy}. This is the
 With this in mind, we target using $\comfield$ with $\comfieldexp\approx 128$. A natural candidate is the $2^{128}$ sized binary field in GHASH representation  $$\comfield= \FF_2[X]/(X^{128} + X^7 + X^2 + X + 1).$$ 
 %
 %
-Before anything else, we discuss the constraint  $|\comfield|-1 >  (\codedim_1 + 1) \cdot (\max\cP-1)$. 
+Before anything else, we discuss the constraint  $\max\cP < \fieldboundsizeexponent$. 
 %
 First of all, we set $\codedim_1, \codedim_2$ with $\codedim_1\cdot \codedim_2 = \codedim$ and 
 %
@@ -1658,19 +1665,18 @@ In general, choosing $\codedim_1 \approx \codedim^{0.6}$ can lead to better prov
 %To ground our analysis, we two witness bounds $\codedim\leq2^{35}$ (so the witness consists of $\leq 2^{35}$ bits), say, and $\codedim_1 \leq 2^{21}$ following our rule of thumb.   
 
 
-We now discuss how to make the errors $\kappa_0^*, (\kappa_{i,\red})_i, (\kappa_{i,\iopp})_i$ be all at most $2^{-\lambda}$. 
+We now discuss how to make the errors $\kappa_0, (\ksred_i)_{i}, (\ksiopp_i)_{i}$ be all at most $2^{-\lambda}$. 
 
 
-\paragraph{The errors $\kappa_{i,\iopp}$.} Regarding Phase 4, we instantiate our IOP for $\LIN(\comfield, \pack, \cC)$ as the WHIR protocol, with the ring switching from \cite{binius}  (see \cref{a:ring_switch_1}). The ring switching step adds an error term of the form $1/\comfield$. If targetting 128 bits of security, we use grinding \cite{s:grinding} of $1$ bit in this round. WHIR is configured at any desired $\lambda\leq 128$ bits of security using $|\comfield|=2^{128}$ following \cite{stir-repo,whir-repo}. We do not discuss this further since WHIR is a well-known IOP, and it is well-kown that it can achieve $128$ bits of security in $128$ bit fields when codewords have dimension approximately $2^{30}$ (assuming an interleaved RS code).
 
+\paragraph{The errors $\kappa_{i,\iopp}$.} Regarding Phase 4, we instantiate our IOP for $\LIN(\comfield, \pack, \cC)$ as the WHIR protocol, with the ring switching from \cite{binius}  (see \cref{a:ring_switch_1}). The ring switching step adds an error term of the form $1/\comfield$. If targetting 128 bits of security, we use grinding  (\cref{s:IORs})  of $1$ bit in this round. WHIR is configured at any desired $\lambda\leq 128$ bits of security using $|\comfield|=2^{128}$ following \cite{stir-repo,whir-repo}. We do not discuss this further since WHIR is a well-known IOP, and it is well-kown that it can achieve $128$ bits of security in $128$ bit fields when codewords have dimension approximately $2^{30}$ (assuming an interleaved RS code).
 
-\paragraph{The errors $\kappa_{i,\red}$.} As mentioned, our $\Pi_{\red}$ IOR is the GKR protocol for multiple grand product claims from \cref{e: grand_products_again}, see \cref{s:gkr_low_entropy}. Each round of the GKR protocol is a round of either a  sumcheck for a polynomial of degree $3$, or a unification of two evaluation claims of the same multilinear polynomial.  Accordingly we have $\eps_{i,\red}\leq 3/|\comfield|$ for all $i$. This immediately guarantees $\lambda=100$ bits of security. To achieve $\lambda=128$ bits of security, one can do two bits of grinding (\cref{s:IORs}) per round. 
+\paragraph{The errors $\kappa_{i,\red}$.} As mentioned, our $\Pi_{\red}$ IOR is the GKR protocol for multiple grand product claims from \cref{e: grand_products_again}, see \cref{s:gkr_low_entropy}. Each round of the GKR protocol is a round of either a  sumcheck for a polynomial of degree $3$, or a unification of two evaluation claims of the same multilinear polynomial.  Accordingly we have $\ksred_i\leq 3/|\comfield|$ for all $i$. This immediately guarantees $\lambda=100$ bits of security. To achieve $\lambda=128$ bits of security, one can do two bits of grinding (\cref{s:IORs}) per round. 
 
-
-\paragraph{The error $\kappa_0^*$.}
- The error $\kappa_0^*$ is perhaps the most delicate, as it demands at the same time that  $|\cP|$ is large, while still satisfying $\max\cP < (|\comfield|-1)/(\codedim_1 + 1)$.
- 
- Recall that in many scenarios $\kappa_0^*$ does not exist in the IOP  (i.e.\ sometimes our IOP skips the first verifier message). Concretely, if our initial inner product claim is over $R=\FF_q$ a prime field of size $< (|\comfield|-1)/(\codedim_1 +1)$, then  $\kappa_0^*$  does not appear as an error term, and we do not need to do anything to adjust for it. The term $\kappa_0^*$ does appear in all other scenarios ($R=\ZZ$ or $R$ is a prime field of larger size, or $R$ is a proper field extension). We divide our approaches by whether this first step is skipped or not. 
+\paragraph{The error $\kappa_0$.}
+ The error $\kappa_0$ is perhaps the most delicate, as it demands at the same time that  $|\cP|$ is large, while still satisfying $\max\cP < \fieldboundsizeexponent$.
+  
+ Recall that in many scenarios $\kappa_0$ does not exist in the IOP  (i.e.\ sometimes our IOP skips the first verifier message). Concretely, if our initial inner product claim is over $R=\FF_q$ a prime field of size $< \fieldboundsizeexponent$, then  $\kappa_0$  does not appear as an error term, and we do not need to do anything to adjust for it. The term $\kappa_0$ does appear in all other scenarios ($R=\ZZ$ with large or negative entries in $\vv^{(1)}$  \albert{negative?} (cf.\ \cref{r:skip_round_1_integers}), or $R$ a prime field of larger size, or $R$ a proper field extension). We divide our approaches by whether this first step is skipped or not. 
 
 
 %If $\kappa_0^*$ is indeed an error term present in our scheme, then we have to consider, when targeting $128$ of security, the following restriction: $$\max\cP \leq 2^{128 - 0.6\cdot \log \codedim}.$$ 
@@ -1681,7 +1687,7 @@ We now discuss how to make the errors $\kappa_0^*, (\kappa_{i,\red})_i, (\kappa_
 \noindent For the purposes of this discussion, we assume \ftwoz \ is used within a bigger proof system, as described in \cref{s:to_simple_bitz} or \cref{s:iop_upesat}, so that \ftwoz \ is used to prove an inner product claim for a committed witness, as the last phase of a bigger proving system where 1) first the initial constraint is projected to a finite field $\FF$, or, alternatively, this step is skipped if the constraint is  already over a finite field; and 2) a  PIOP is run over $\FF$ for the projected constraint, outputting an inner product claim on the projected witness. Now, this inner product claim is the input of \cref{c:core_iop}, and we aim to configure \cref{c:core_iop} at 128 bits of security for this setting. 
 
 
-\paragraph{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa_0^*$.} If allowing, say, $18-19$ bits of grinding during each round of the PIOP (which adds $1.8-3.5$ms per round, cf.\ \cref{tab:grinding-cost}), then, say, a Spartan-like PIOP will achieve $128$ bits of security if run on a field $\FF$ of size $\approx 2^{112}$ to  $2^{113}$  (since each one of its rounds is either a sumcheck round for a degree $\leq 3$ polynomial, or a step that batches some claims with error $1/|\FF|$). Hence, if the initial constraint is over $\ZZ$ or $\ZZ[X]$, then we may project it to a $112$-$113$ bit random prime field $\FF$ and run a PIOP over $\FF$. We study this case next. Our analysis also applies if the original constraint was already expressed over a prime field of such size.  
+\paragraph{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa_0$.} If allowing, say, $18-19$ bits of grinding during each round of the PIOP (which adds $1.8-3.5$ms per round, cf.\ \cref{tab:grinding-cost}), then, say, a Spartan-like PIOP will achieve $128$ bits of security if run on a field $\FF$ of size $\approx 2^{112}$ to  $2^{113}$  (since each one of its rounds is either a sumcheck round for a degree $\leq 3$ polynomial, or a step that batches some claims with error $1/|\FF|$). Hence, if the initial constraint is over $\ZZ$ or $\ZZ[X]$, then we may project it to a $112$-$113$ bit random prime field $\FF$ and run a PIOP over $\FF$. We study this case next. Our analysis also applies if the original constraint was already expressed over a prime field of such size.  
 
 Note that the projection of the constraint to $\FF$ also requires to be set up to 128 bits of security. We discuss this in \cref{r:first_projection_security}.
 
@@ -1694,16 +1700,16 @@ Note that the projection of the constraint to $\FF$ also requires to be set up t
 Let $q=|\FF|$. Then if
 %
 $$
-q \leq (|\comfield|-1)/(\codedim_1 +1),
+q < \fieldboundsizeexponent,
 $$
-then $\kappa_0^*$ is not present as an error term, and there is nothing to adjust. Since $|\comfield|=2^{128}$, this occurs as long as $\codedim_1 \lessapprox 2^{15},2^{16}$, and using \eqref{e:codedim_1_proportion}, as long as 
+then $\kappa_0$ is not present as an error term, and there is nothing to adjust. Since $|\comfield|=2^{128}$  and $q\approx 2^{113}, 2^{112}$, this occurs as long as $\codedim_1 \lessapprox 2^{15},2^{16}$, and using \eqref{e:codedim_1_proportion}, as long as 
 %
 $$
-\codedim\lessapprox 2^{30}, 2^{32} \qquad \text{if } \codedim_1\approx\codedim^{0.6}
+\codedim\lessapprox 2^{25}, 2^{26} \qquad \text{if } \codedim_1\approx\codedim^{0.6}
 $$
- and 
+ and
 $$
-\codedim\lessapprox 2^{25}, 2^{28} \qquad \text{if } \codedim_1\approx\codedim^{0.5}
+\codedim\lessapprox 2^{30}, 2^{32} \qquad \text{if } \codedim_1\approx\codedim^{0.5}
 $$
 %
 with these upper bounds depending on how much grinding one is doing at the PIOP level. 
@@ -1719,7 +1725,14 @@ with these upper bounds depending on how much grinding one is doing at the PIOP 
 
 
 
-\paragraph{Strategy 2: No or essentially no grinding during the PIOP, and $\kappa_0^*$ is present and  grinding is used during the first projection step of \cref{c:core_iop}.} We now assume $\FF$ is either a prime field with  $|\FF|> (|\comfield|-1)/(\codedim_1+1)$,  or a proper extension field. In this case  \cref{c:core_iop} goes through an initial projection step with soundness error  $\kappa_0^*$.
+\paragraph{Strategy 2: No or essentially no grinding during the PIOP, and $\kappa_0^*$ is present and  grinding is used during the first projection step of \cref{c:core_iop}.} We now assume $\FF$ is either a prime field with  $|\FF|\geq \fieldboundsizeexponent$,  or a proper extension field. In this case  \cref{c:core_iop} goes through an initial projection step with soundness error  $\kappa_0^*$.
+
+Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\FF, \codedim)$. We instantiate the morphism sets $\cM_q$ as in the first case of \cref{l:examples_morphisms}, i.e.\ $\pirand$ reduces coefficients modulo a sampled prime and evaluates $X_1,\ldots, X_{d-1}$ at $\alpha, \alpha^2, \ldots, \alpha^{d-1}$ for $\alpha$ random, where $d=\dim(\FF)$. In this case, by \cref{l:examples_morphisms},
+    $$
+    \kappa_0 \leq \frac{2\cdot (d-1)}{q_{\min}} + \frac{\log\left(8\cdot d\cdot \codedim\cdot (q-1)^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor},
+      $$
+    where $q$ is  the characteristic of $\FF$ (so that $N_\FF = q-1$).
+
 Recall (\cref{t:thm_core_IOPP})
     $$
     \kappa_0^* = \frac{\mathsf{deg}(\FF)}{q_{\min}} + \frac{\log(\codedim_1 +1) + \log(q-1)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor},
@@ -1729,12 +1742,12 @@ Recall (\cref{t:thm_core_IOPP})
 %
     %The adjustment for $\kappa_0^*$ (if needed at all) is highly dependent on $\degevalfield$. Concretely, if $\degevalfield=0$, then the term $\degevalfield/q_{\min}$ is zero. This allows to take $\cP$ as all primes smaller than $2^{114+\eps}$. There are approximately $2^{114}/114$ of these.
 %
-    We select $\cP$ to be the set of all primes in a range $[2^a, 2^b]$. There are approximately  $$|\cP|\approx (2^b/b - 2^a/a)/\log_e(2)$$ such primes.  Using $b\leq 128 - \tau \cdot \log(\codedim)$,  $\codedim_1\leq 2^{\tau\cdot \log(\codedim)}$,  for $\tau \in \range{0.5}{0.6}$ and plugging these values into $\kappa_0^*$ we obtain
+    We select $\cP$ to be the set of all primes in a range $[2^a, 2^b]$. There are approximately  $$|\cP|\approx (2^b/b - 2^a/a)/\log_e(2)$$ such primes.  Using $b= 128 - \tau \cdot \log(\codedim)$,  $\codedim_1\leq 2^{\tau\cdot \log(\codedim)}$,  for $\tau \in \range{0.5}{0.6}$ and plugging these values into $\kappa_0$ we obtain
      %
      $$
      \begin{aligned}
-    \kappa_0*\lessapprox f(a)&\defeq \frac{\degevalfield}{2^a} + \frac{r_1 + \log(q-1)}{\frac{a}{128 - r_1}\cdot 2^{r_1} - 2^a}.\\
-    r_1&\defeq \tau\cdot \log(\codedim)
+    \kappa_0\lessapprox f(a)&\defeq \frac{2\cdot (d-1)}{2^a} + \frac{\log\left(8\cdot d\cdot \codedim\cdot (q-1)^2\right)\cdot \log_e(2)}{\frac{a}{b}\cdot 2^{b} - 2^a},\\
+    b&\defeq 128 - r_1, \qquad r_1\defeq \tau\cdot \log(\codedim).
     \end{aligned}
     $$
     %
@@ -1742,29 +1755,29 @@ Recall (\cref{t:thm_core_IOPP})
 
     %We also include minima of $f(a)$ for other configurations where $R$ is a finite field of size between $2^{128}$ to $2^{256}$, not necessarily a prime field.
     
-    \begin{table}[H]
+   \begin{table}[H]
   \centering
  \begin{tabular}{rrrrrrrrr}
     \toprule
-    $\log |R|$ & $\degevalfield$ & $\log q$ & $\log \codedim$ & $\tau$ & $a^{*}$ & $\kappa_0^*$ & Bit-deficit to $128$ & Grinding time (ms) \\
+    $\log |\FF|$ & $\dim(\FF)$ & $\log q$ & $\log \codedim$ & $\tau$ & $a^{*}$ & $\kappa_0$ & Bit-deficit to $128$ & Grinding time (ms) \\
     \midrule
-    128 & 0 & 128 & 24 & 0.5 & 110 & $2^{-109.3}$ & 19 & 3.5 \\
-    128 & 0 & 128 & 24 & 0.6 & 107 & $2^{-106.9}$ & 22 & 35.5 \\
-    128 & 0 & 128 & 28 & 0.5 & 108 & $2^{-107.3}$ & 21 & 14.3 \\
-    128 & 0 & 128 & 28 & 0.6 & 105 & $2^{-104.5}$ & 24 & 148.6 \\
-    128 & 0 & 128 & 30 & 0.5 & 107 & $2^{-106.3}$ & 22 & 35.5 \\
-    128 & 0 & 128 & 32 & 0.5 & 106 & $2^{-105.3}$ & 23 & 84.6 \\
+    128 & 1 & 128 & 24 & 0.5 & 110 & $2^{-108.3}$ & 20 & 8.9 \\
+    128 & 1 & 128 & 24 & 0.6 & 107 & $2^{-105.9}$ & 23 & 84.6 \\
+    128 & 1 & 128 & 28 & 0.5 & 108 & $2^{-106.3}$ & 22 & 35.5 \\
+    128 & 1 & 128 & 28 & 0.6 & 105 & $2^{-103.5}$ & 25 & 240.8 \\
+    128 & 1 & 128 & 30 & 0.5 & 107 & $2^{-105.3}$ & 23 & 84.6 \\
+    128 & 1 & 128 & 32 & 0.5 & 106 & $2^{-104.2}$ & 24 & 148.6 \\
     \midrule
-    128 & 4 & 32 & 24 & 0.5 & 114 & $2^{-110.3}$ & 18 & 2.3 \\
-    128 & 4 & 32 & 24 & 0.6 & 111 & $2^{-107.8}$ & 21 & 14.3 \\
-    128 & 4 & 32 & 28 & 0.5 & 112 & $2^{-108.2}$ & 20 & 8.9 \\
-    128 & 4 & 32 & 28 & 0.6 & 109 & $2^{-105.3}$ & 23 & 84.6 \\
-    128 & 4 & 32 & 30 & 0.5 & 111 & $2^{-107.2}$ & 21 & 14.3 \\
-    128 & 4 & 32 & 30 & 0.6 & 108 & $2^{-104.1}$ & 24 & 148.6 \\
-    128 & 4 & 32 & 32 & 0.5 & 110 & $2^{-106.2}$ & 22 & 35.5 \\
+    128 & 4 & 32 & 24 & 0.5 & 114 & $2^{-109.2}$ & 19 & 3.5 \\
+    128 & 4 & 32 & 24 & 0.6 & 111 & $2^{-106.8}$ & 22 & 35.5 \\
+    128 & 4 & 32 & 28 & 0.5 & 112 & $2^{-107.1}$ & 21 & 14.3 \\
+    128 & 4 & 32 & 28 & 0.6 & 109 & $2^{-104.4}$ & 24 & 148.6 \\
+    128 & 4 & 32 & 30 & 0.5 & 111 & $2^{-106.1}$ & 22 & 35.5 \\
+    128 & 4 & 32 & 30 & 0.6 & 108 & $2^{-103.1}$ & 25 & 240.8 \\
+    128 & 4 & 32 & 32 & 0.5 & 110 & $2^{-105.1}$ & 23 & 84.6 \\
     \bottomrule
-  \end{tabular}  \caption{Minima $a^{*}$ of $f(a)$ for different configurations of $R$ (of characteristic $q$ and degree $\degevalfield+1$), witness sizes $\codedim$, and $\tau$ such that $\codedim_1=\codedim^\tau$.  By choosing primes in the interval $[2^{a^*}, 2^{114}]$, we have that the first error term $\kappa_0^*$ satisifes $\kappa_0^* = 1/2^{-\log f(a^*)}$. We include the bits left required to achieve  $\kappa_0^* < 1/2^{128}$ and the cost of grinding such amount of bits, in a MacBook Air M4 16GB, multi-threaded, using Blake3 as hash function.
-  We omit configurations whose grinding cost exceeds $\approx 150$ms; in particular $\tau=0.6$ is omitted for larger $\codedim$.}
+  \end{tabular}  \caption{Minima $a^{*}$ of $f(a)$ for different configurations of $\FF$ (of characteristic $q$ and dimension $d=\dim(\FF)$), witness sizes $\codedim$, and $\tau$ such that $\codedim_1=\codedim^\tau$.  By choosing primes in the interval $[2^{a^*}, 2^{128-r_1}]$, we have that the first error term $\kappa_0$ satisfies $\kappa_0 \lessapprox f(a^*)$. We include the bits left required to achieve  $\kappa_0 < 1/2^{128}$ and the cost of grinding such amount of bits, in a MacBook Air M4 16GB, multi-threaded, using Blake3 as hash function.
+  We omit configurations whose grinding cost exceeds $\approx 250$ms; in particular $\tau=0.6$ is omitted for larger $\codedim$.}
   \label{tab:min-f}
 \end{table}
 
