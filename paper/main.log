@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.4.18)  30 AUG 2026 12:25
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.4.18)  31 AUG 2026 09:10
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1366,308 +1366,340 @@ LaTeX Warning: Reference `r:otheSodule_morphisms' on page 1 undefined on input l
 
 [17] [18]
 
-LaTeX Warning: Citation `BCPS18' on page 19 undefined on input line 811.
+LaTeX Warning: Citation `BCPS18' on page 19 undefined on input line 815.
 
 
-LaTeX Warning: Citation `linear-accumulation' on page 19 undefined on input line 833.
+LaTeX Warning: Citation `linear-accumulation' on page 19 undefined on input line 837.
 
 
-LaTeX Warning: Citation `linear-accumulation' on page 19 undefined on input line 833.
+LaTeX Warning: Citation `linear-accumulation' on page 19 undefined on input line 837.
 
 [19]
 
-LaTeX Warning: Citation `WHIR?' on page 20 undefined on input line 859.
-
-
-LaTeX Warning: Citation `TCC:BCFW25' on page 20 undefined on input line 896.
+LaTeX Warning: Citation `WHIR?' on page 20 undefined on input line 863.
 
 [20]
 
-LaTeX Warning: Citation `?' on page 21 undefined on input line 932.
+LaTeX Warning: Citation `TCC:BCFW25' on page 21 undefined on input line 900.
+
+
+LaTeX Warning: Citation `?' on page 21 undefined on input line 936.
 
 [21]
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 958.
+(hyperref)                removing `math shift' on input line 962.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 958.
+(hyperref)                removing `math shift' on input line 962.
 
 [22]
-Overfull \hbox (8.74507pt too wide) in paragraph at lines 1098--1102
+Overfull \hbox (8.74507pt too wide) in paragraph at lines 1102--1106
 []\T1/cmr/m/n/10.95 We as-sume prover and ver-i-fier have ac-cess to an IOR $\OT1/cmr/m/n/10.95 ^^E[]$ \T1/cmr/m/n/10.95 that re-duces $\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\U/msb/m/n/10.95 F[]\OML/cmm/m/it/10.95 ; Q[]; \OMS/cmsy/m/n/10.95 C\OML/cmm/m/it/10.95 ; [][]\OT1/cmr/m/n/10.95 )$
  []
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 1127.
+(hyperref)                removing `math shift' on input line 1132.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 1127.
+(hyperref)                removing `math shift' on input line 1132.
 
 [23] [24]
-Underfull \hbox (badness 10000) in paragraph at lines 1204--1206
+Underfull \hbox (badness 10000) in paragraph at lines 1216--1218
 
  []
 
-[25] [26] [27] [28] [29] [30]
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 1518.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 1518.
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 1557--1558
-
+[25] [26]
+Overfull \hbox (13.37111pt too wide) detected at line 1321
+[][][][][] \OMS/cmsy/m/n/10.95 2 R[]\OT1/cmr/m/n/10.95 (\U/msb/m/n/10.95 F[]\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 C\OML/cmm/m/it/10.95 ; [][]\OT1/cmr/m/n/10.95 ) = []
  []
 
-[31] [32]
-
-LaTeX Warning: Reference `?' on page 1 undefined on input line 1627.
-
-
-LaTeX Warning: Citation `s:grinding' on page 33 undefined on input line 1650.
+[27] [28]
+Overfull \hbox (3.12419pt too wide) detected at line 1417
+\U/bbm/m/n/10.95 x[] \OT1/cmr/m/n/10.95 = ((\OML/cmm/m/it/10.95 g[]\OT1/cmr/m/n/10.95 )[]\OML/cmm/m/it/10.95 ;  \OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 g[]\OT1/cmr/m/n/10.95 )[])\OML/cmm/m/it/10.95 ;  \U/bbm/m/n/10.95 y[] \OT1/cmr/m/n/10.95 = \OML/cmm/m/it/10.95 f;  []\OML/cmm/b/it/10.95 ^^M \OT1/cmr/m/n/10.95 = \OML/cmm/m/it/10.95 ^^Y[] [] \OMS/cmsy/m/n/10.95 2 \OT1/cmr/m/n/10.95 [0 \OML/cmm/m/it/10.95 :: q \OMS/cmsy/m/n/10.95 ^^@ \OT1/cmr/m/n/10.95 1][] \OMS/cmsy/m/n/10.95 ^^R \U/msb/m/n/10.95 Z[]
+ []
 
 
-LaTeX Warning: Citation `stir-repo' on page 33 undefined on input line 1650.
+Overfull \hbox (12.93997pt too wide) detected at line 1449
+[]\OT1/cmr/m/n/10.95 [(\U/bbm/m/n/10.95 x\OML/cmm/m/it/10.95 ; \U/bbm/m/n/10.95 y\OML/cmm/m/it/10.95 ; \OT1/cmr/bx/n/10.95 w\OT1/cmr/m/n/10.95 ) [] \OMS/cmsy/m/n/10.95 R[]\OML/cmm/m/it/10.95 ; []\OT1/cmr/bx/n/10.95 w \OT1/cmr/m/n/10.95 = \OT1/cmr/bx/n/10.95 f[]\OT1/cmr/m/n/10.95 ] \OMS/cmsy/m/n/10.95 ^^T []\OT1/cmr/m/n/10.95 [\OML/cmm/m/it/10.95 ^^Y[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 h\OT1/cmr/m/n/10.95 ) = 0] \OMS/cmsy/m/n/10.95 ^^T \OML/cmm/m/it/10.95 ^^R\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R; `\OT1/cmr/m/n/10.95 ) = \OML/cmm/m/it/10.95 ^^T[];
+ []
+
+[29]
+Overfull \hbox (1.21529pt too wide) in paragraph at lines 1461--1463
+\T1/cmr/m/n/10.95 Since the ver-i-fier ac-cepts, its check [] in Round 2 passes, i.e. $[][] \OML/cmm/m/it/10.95 ^^Y[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 ^^V[]\OT1/cmr/m/n/10.95 ) \OMS/cmsy/m/n/10.95 ^^A [][] \OT1/cmr/m/n/10.95 =
+ []
 
 
-LaTeX Warning: Citation `whir-repo' on page 33 undefined on input line 1650.
-
-[33] [34] [35] [36]
-
-LaTeX Warning: Citation `?' on page 37 undefined on input line 1819.
-
-[37] [38]
-
-LaTeX Warning: Reference `?' on page 1 undefined on input line 1953.
-
-
-LaTeX Warning: Reference `?' on page 1 undefined on input line 1966.
-
-[39]
-Overfull \hbox (40.46162pt too wide) detected at line 1989
+Overfull \hbox (37.23535pt too wide) detected at line 1465
 []
  []
 
-[40] [41]
+[30] [31]
 
-LaTeX Warning: Citation `gruen' on page 42 undefined on input line 2064.
-
-
-LaTeX Warning: Citation `?' on page 42 undefined on input line 2064.
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1530.
 
 
-Overfull \hbox (28.80296pt too wide) detected at line 2099
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1530.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1569--1570
+
+ []
+
+[32] [33]
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 1641.
+
+
+LaTeX Warning: Citation `s:grinding' on page 34 undefined on input line 1664.
+
+
+LaTeX Warning: Citation `stir-repo' on page 34 undefined on input line 1664.
+
+
+LaTeX Warning: Citation `whir-repo' on page 34 undefined on input line 1664.
+
+[34] [35] [36] [37]
+
+LaTeX Warning: Citation `?' on page 38 undefined on input line 1833.
+
+[38] [39]
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 1967.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 1980.
+
+[40]
+Overfull \hbox (40.46162pt too wide) detected at line 2003
+[]
+ []
+
+[41] [42]
+
+LaTeX Warning: Citation `gruen' on page 43 undefined on input line 2078.
+
+
+LaTeX Warning: Citation `?' on page 43 undefined on input line 2078.
+
+
+Overfull \hbox (28.80296pt too wide) detected at line 2113
 \OML/cmm/m/it/10.95 T[] \OMS/cmsy/m/n/10.95 2 \OT1/cmr/m/n/10.95 (\U/msb/m/n/10.95 K[]\OT1/cmr/m/n/10.95 )[] []\OML/cmm/m/it/10.95 T[]\OT1/cmr/m/n/10.95 [\OT1/cmr/bx/n/10.95 b\OT1/cmr/m/n/10.95 ] = (\OT1/cmr/bx/n/10.95 y[]\OML/cmm/m/it/10.95 ; \OT1/cmr/bx/n/10.95 y[]\OT1/cmr/m/n/10.95 )[]\OML/cmm/m/it/10.95 L[]\OT1/cmr/m/n/10.95 (\OT1/cmr/bx/n/10.95 b\OML/cmm/m/it/10.95 ; \OT1/cmr/bx/n/10.95 c\OT1/cmr/m/n/10.95 ) = \OML/cmm/m/it/10.95 T[]\OT1/cmr/m/n/10.95 [\OT1/cmr/bx/n/10.95 b\OT1/cmr/m/n/10.95 ][\OT1/cmr/bx/n/10.95 f[]\OT1/cmr/m/n/10.95 ]\OML/cmm/m/it/10.95 ;  \OT1/cmr/m/n/10.95 (\OT1/cmr/bx/n/10.95 b\OML/cmm/m/it/10.95 ; \OT1/cmr/bx/n/10.95 c\OT1/cmr/m/n/10.95 ) \OMS/cmsy/m/n/10.95 2 f\OT1/cmr/m/n/10.95 0\OML/cmm/m/it/10.95 ; \OT1/cmr/m/n/10.95 1\OMS/cmsy/m/n/10.95 g[] ^^B f\OT1/cmr/m/n/10.95 0\OML/cmm/m/it/10.95 ; \OT1/cmr/m/n/10.95 1\OMS/cmsy/m/n/10.95 g[]\OML/cmm/m/it/10.95 ;
  []
 
-[42] [43]
+[43] [44]
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\new@ifnextchar' on input line 2192.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `subscript' on input line 2192.
-
-[44]
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 2211.
+(hyperref)                removing `\new@ifnextchar' on input line 2206.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 2211.
+(hyperref)                removing `subscript' on input line 2206.
 
 [45]
 
-LaTeX Warning: Citation `linear-accumulation' on page 46 undefined on input line 2286.
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 2225.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 2225.
+
+
+Overfull \hbox (19.61563pt too wide) detected at line 2275
+\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 S[]; \OML/cmm/b/it/10.95  \OML/cmm/m/it/10.95 ; \OT1/cmr/bx/n/10.95 p\OML/cmm/m/it/10.95 ; \OML/cmm/b/it/10.95 R\OT1/cmr/m/n/10.95 ) = []
+ []
+
+
+LaTeX Warning: Citation `linear-accumulation' on page 46 undefined on input line 2283.
 
 [46]
-Underfull \hbox (badness 10000) in paragraph at lines 2326--2329
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 2350.
+
+[47]
+Underfull \hbox (badness 10000) in paragraph at lines 2358--2361
 
  []
 
 
-LaTeX Warning: Reference `d:projections' on page 1 undefined on input line 2357.
-
-[47]
-
-LaTeX Warning: Reference `d:projections' on page 1 undefined on input line 2373.
+LaTeX Warning: Reference `d:projections' on page 1 undefined on input line 2389.
 
 [48]
 
-LaTeX Warning: No positions in optional float specifier.
-               Default added (so using `tbp') on input line 2450.
-
-
-Overfull \hbox (16.6868pt too wide) in paragraph at lines 2452--2461
- [][] 
- []
+LaTeX Warning: Reference `d:projections' on page 1 undefined on input line 2405.
 
 [49]
 
-LaTeX Warning: Reference `?' on page 1 undefined on input line 2485.
+LaTeX Warning: No positions in optional float specifier.
+               Default added (so using `tbp') on input line 2482.
 
 
-Overfull \hbox (1.845pt too wide) in paragraph at lines 2485--2488
+Overfull \hbox (16.6868pt too wide) in paragraph at lines 2484--2493
+ [][] 
+ []
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 2517.
+
+[50]
+Overfull \hbox (1.845pt too wide) in paragraph at lines 2517--2520
 \T1/cmr/m/n/10.95 The con-di-tion $\OML/cmm/m/it/10.95 ^^Y[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 f\OT1/cmr/m/n/10.95 ) \OMS/cmsy/m/n/10.95 2 \OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 ^^Y[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 h\OT1/cmr/m/n/10.95 ))$ \T1/cmr/m/n/10.95 thus im-plies that $\OML/cmm/m/it/10.95 ^^Y[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R\OT1/cmr/m/n/10.95 ) = 0$\T1/cmr/m/n/10.95 . There are at most $[][]\OT1/cmr/m/n/10.95 (\OMS/cmsy/m/n/10.95 k\OML/cmm/m/it/10.95 R\OMS/cmsy/m/n/10.95 k[]\OT1/cmr/m/n/10.95 )\OML/cmm/m/it/10.95 =\OMS/cmsy/m/n/10.95 b[] \OML/cmm/m/it/10.95 q[]\OMS/cmsy/m/n/10.95 c$
  []
 
-[50]
+[51]
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 2553.
+(hyperref)                removing `math shift' on input line 2585.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 2553.
+(hyperref)                removing `math shift' on input line 2585.
 
 
-LaTeX Warning: Reference `?' on page 1 undefined on input line 2559.
+LaTeX Warning: Reference `?' on page 1 undefined on input line 2591.
 
 
-LaTeX Warning: Reference `?' on page 1 undefined on input line 2559.
+LaTeX Warning: Reference `?' on page 1 undefined on input line 2591.
 
 
-LaTeX Warning: Reference `?' on page 1 undefined on input line 2565.
+LaTeX Warning: Reference `?' on page 1 undefined on input line 2597.
 
-[51] [52]
+[52] [53]
 
-LaTeX Warning: Reference `limber' on page 1 undefined on input line 2682.
-
-
-LaTeX Warning: Reference `s:related_work' on page 1 undefined on input line 2682.
+LaTeX Warning: Reference `limber' on page 1 undefined on input line 2714.
 
 
-LaTeX Warning: Citation `multiswap' on page 53 undefined on input line 2728.
+LaTeX Warning: Reference `s:related_work' on page 1 undefined on input line 2714.
 
 
-LaTeX Warning: Citation `multiswap' on page 53 undefined on input line 2728.
+LaTeX Warning: Citation `multiswap' on page 54 undefined on input line 2760.
 
-[53] (./main.bbl [54] [55])
+
+LaTeX Warning: Citation `multiswap' on page 54 undefined on input line 2760.
+
+[54] (./main.bbl [55])
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\new@ifnextchar' on input line 2774.
+(hyperref)                removing `\new@ifnextchar' on input line 2806.
+
+[56]
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 2815.
 
 
-LaTeX Warning: Reference `?' on page 1 undefined on input line 2783.
-
-
-Overfull \hbox (4.09543pt too wide) in paragraph at lines 2782--2784
+Overfull \hbox (4.09543pt too wide) in paragraph at lines 2814--2816
 \T1/cmr/m/n/10.95 where if $\U/bbm/m/n/10.95 x \OT1/cmr/m/n/10.95 = (\OT1/cmr/bx/n/10.95 v\OML/cmm/m/it/10.95 ; ^^V\OT1/cmr/m/n/10.95 )$ \T1/cmr/m/n/10.95 then $\U/bbm/m/n/10.95 x[] \OT1/cmr/m/n/10.95 = (\OT1/cmr/bx/n/10.95 u\OML/cmm/m/it/10.95 ; ^^V\OT1/cmr/m/n/10.95 )$ \T1/cmr/m/n/10.95 is de-fined as in []. For empty tran-scripts we let $[]\OT1/cmr/m/n/10.95 (\U/bbm/m/n/10.95 x\OML/cmm/m/it/10.95 ; \U/bbm/m/n/10.95 y\OML/cmm/m/it/10.95 ; \OT1/cmr/bx/n/10.95 w\OT1/cmr/m/n/10.95 ) =
  []
 
 
-Overfull \hbox (63.60571pt too wide) in paragraph at lines 2785--2785
+Overfull \hbox (63.60571pt too wide) in paragraph at lines 2817--2817
 \T1/cmr/m/n/10.95 tion 4.12[][] as fol-lows: if $[]$ is nei-ther empty nor con-sist-ing in just one prover mes-sage, $\OMS/cmsy/m/n/10.95 E\OT1/cmr/m/n/10.95 (\U/bbm/m/n/10.95 x\OML/cmm/m/it/10.95 ; \U/bbm/m/n/10.95 y\OML/cmm/m/it/10.95 ; []; \OT1/cmr/bx/n/10.95 w\OT1/cmr/m/n/10.95 )[]\OMS/cmsy/m/n/10.95 E[]\OT1/cmr/m/n/10.95 (\U/bbm/m/n/10.95 x[]\OML/cmm/m/it/10.95 ; \U/bbm/m/n/10.95 y\OML/cmm/m/it/10.95 ; []; \OT1/cmr/bx/n/10.95 w\OT1/cmr/m/n/10.95 )$\T1/cmr/m/n/10.95 .
  []
 
 
-LaTeX Warning: Reference `?' on page 1 undefined on input line 2802.
-
-[56]
-
-LaTeX Warning: Reference `?' on page 1 undefined on input line 2816.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\new@ifnextchar' on input line 2830.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `subscript' on input line 2830.
-
-
 LaTeX Warning: Reference `?' on page 1 undefined on input line 2834.
 
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 2848.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `\new@ifnextchar' on input line 2862.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `subscript' on input line 2862.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 2866.
+
 [57]
-Overfull \hbox (28.22011pt too wide) in paragraph at lines 2883--2884
+Overfull \hbox (28.22011pt too wide) in paragraph at lines 2915--2916
 []\T1/cmr/m/it/10.95 Let $\OML/cmm/m/it/10.95 ^^N \OMS/cmsy/m/n/10.95 2 \OT1/cmr/m/n/10.95 (0\OML/cmm/m/it/10.95 ; \OT1/cmr/m/n/10.95 1)$\T1/cmr/m/it/10.95 . Then there is an IOR $\OT1/cmr/m/n/10.95 ^^E[]$ \T1/cmr/m/it/10.95 from $\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R[]; \U/msb/m/n/10.95 K\OML/cmm/m/it/10.95 ; \OT1/cmr/bx/n/10.95 p\OML/cmm/m/it/10.95 ;  []; \OMS/cmsy/m/n/10.95 C\OT1/cmr/m/n/10.95 )$ \T1/cmr/m/it/10.95 to $\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R[];  []; \U/msb/m/n/10.95 K\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 C\OT1/cmr/m/n/10.95 )$
  []
 
 
-Overfull \hbox (53.31842pt too wide) in paragraph at lines 2901--2901
-[] []\T1/cmr/bx/n/10.95 De-scrip-tion of $\OT1/cmr/m/n/10.95 ^^E[]$\T1/cmr/bx/n/10.95 .[] \T1/cmr/m/n/10.95 The IOR $\OT1/cmr/m/n/10.95 ^^E[]$ \T1/cmr/m/n/10.95 is a two-round IOR from $\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R[]; \OT1/cmr/bx/n/10.95 p\OML/cmm/m/it/10.95 ; \OML/cmm/b/it/10.95 R\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 C\OT1/cmr/m/n/10.95 )$ \T1/cmr/m/n/10.95 to $\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R[]; \U/msb/m/n/10.95 K\OML/cmm/m/it/10.95 ; []; ^^Y; \OMS/cmsy/m/n/10.95 C\OT1/cmr/m/n/10.95 )$\T1/cmr/m/n/10.95 ,
- []
-
-
-Overfull \hbox (53.31842pt too wide) in paragraph at lines 2903--2903
+Overfull \hbox (53.31842pt too wide) in paragraph at lines 2933--2933
 [] []\T1/cmr/bx/n/10.95 De-scrip-tion of $\OT1/cmr/m/n/10.95 ^^E[]$\T1/cmr/bx/n/10.95 .[] \T1/cmr/m/n/10.95 The IOR $\OT1/cmr/m/n/10.95 ^^E[]$ \T1/cmr/m/n/10.95 is a two-round IOR from $\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R[]; \OT1/cmr/bx/n/10.95 p\OML/cmm/m/it/10.95 ; \OML/cmm/b/it/10.95 R\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 C\OT1/cmr/m/n/10.95 )$ \T1/cmr/m/n/10.95 to $\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R[]; \U/msb/m/n/10.95 K\OML/cmm/m/it/10.95 ; []; ^^Y; \OMS/cmsy/m/n/10.95 C\OT1/cmr/m/n/10.95 )$\T1/cmr/m/n/10.95 ,
  []
 
 [58]
-Overfull \hbox (50.77512pt too wide) in paragraph at lines 2922--2924
+Overfull \hbox (53.31842pt too wide) in paragraph at lines 2935--2935
+[] []\T1/cmr/bx/n/10.95 De-scrip-tion of $\OT1/cmr/m/n/10.95 ^^E[]$\T1/cmr/bx/n/10.95 .[] \T1/cmr/m/n/10.95 The IOR $\OT1/cmr/m/n/10.95 ^^E[]$ \T1/cmr/m/n/10.95 is a two-round IOR from $\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R[]; \OT1/cmr/bx/n/10.95 p\OML/cmm/m/it/10.95 ; \OML/cmm/b/it/10.95 R\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 C\OT1/cmr/m/n/10.95 )$ \T1/cmr/m/n/10.95 to $\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R[]; \U/msb/m/n/10.95 K\OML/cmm/m/it/10.95 ; []; ^^Y; \OMS/cmsy/m/n/10.95 C\OT1/cmr/m/n/10.95 )$\T1/cmr/m/n/10.95 ,
+ []
+
+
+Overfull \hbox (50.77512pt too wide) in paragraph at lines 2954--2956
 \OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R[]; \OT1/cmr/bx/n/10.95 p\OML/cmm/m/it/10.95 ; \OML/cmm/b/it/10.95 R\OT1/cmr/m/n/10.95 )$\T1/cmr/m/it/10.95 , and has round-by-round knowl-edge with-out re-lax-ation with er-rors $\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 ^^T[]\OT1/cmr/m/n/10.95 )[]$
  []
 
 [59] [60] [61]
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\new@ifnextchar' on input line 3062.
+(hyperref)                removing `\new@ifnextchar' on input line 3094.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `subscript' on input line 3062.
+(hyperref)                removing `subscript' on input line 3094.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `subscript' on input line 3062.
+(hyperref)                removing `subscript' on input line 3094.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `subscript' on input line 3062.
+(hyperref)                removing `subscript' on input line 3094.
 
-
-Overfull \hbox (15.82552pt too wide) in paragraph at lines 3081--3082
+[62]
+Overfull \hbox (15.82552pt too wide) in paragraph at lines 3113--3114
 []\T1/cmr/m/n/10.95 Let $[]$ be a tran-script of [][]Con-struc-tion 6.3[][] where the prover is about to move and $[]\OT1/cmr/m/n/10.95 (\U/bbm/m/n/10.95 x\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 ?\OML/cmm/m/it/10.95 ; []; \OT1/cmr/bx/n/10.95 w\OT1/cmr/m/n/10.95 ) =
  []
 
 
-Overfull \hbox (33.88956pt too wide) in paragraph at lines 3081--3082
+Overfull \hbox (33.88956pt too wide) in paragraph at lines 3113--3114
 [][]\OT1/cmr/m/n/10.95 (\U/bbm/m/n/10.95 x\OML/cmm/m/it/10.95 ; f; \OT1/cmr/bx/n/10.95 w\OT1/cmr/m/n/10.95 ) = 0$ \T1/cmr/m/n/10.95 (empty tran-script where the prover is about to move), then $[][]\OT1/cmr/m/n/10.95 (\U/bbm/m/n/10.95 x\OML/cmm/m/it/10.95 ; f; \OMS/cmsy/m/n/10.95 ?\OML/cmm/m/it/10.95 ; \OT1/cmr/bx/n/10.95 w\OT1/cmr/m/n/10.95 ) =
  []
 
-[62]
-Overfull \hbox (37.3027pt too wide) in paragraph at lines 3097--3098
+
+Overfull \hbox (37.3027pt too wide) in paragraph at lines 3129--3130
 []\T1/cmr/m/n/10.95 Now as-sume $\OT1/cmr/m/n/10.95 ^^E[]$ \T1/cmr/m/n/10.95 has round-by-round knowl-edge sound-ness with re-lax-ation $\OT1/cmr/m/n/10.95 (\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R[]; \OT1/cmr/bx/n/10.95 p\OML/cmm/m/it/10.95 ; \OML/cmm/b/it/10.95 R\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 C\OT1/cmr/m/n/10.95 )[]\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 ?\OT1/cmr/m/n/10.95 )$
  []
 
 [63] [64] [65] [66]
-Overfull \hbox (5.645pt too wide) in paragraph at lines 3405--3408
+Overfull \hbox (5.645pt too wide) in paragraph at lines 3437--3440
 []\T1/cmr/m/n/10.95 Can be di-rectly shown us-ing a ba-sis ex-pan-sion. Write $\OT1/cmr/bx/n/10.95 w \OT1/cmr/m/n/10.95 = [][] \OML/cmm/m/it/10.95 w[]\OT1/cmr/bx/n/10.95 e[]$
  []
 
 [67] [68] [69] [70] [71] [72] [73] [74] [75] [76]
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 3978.
+(hyperref)                removing `math shift' on input line 4010.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `subscript' on input line 3978.
+(hyperref)                removing `subscript' on input line 4010.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 3978.
+(hyperref)                removing `math shift' on input line 4010.
 
 [77]
-Underfull \hbox (badness 10000) in paragraph at lines 3995--3996
+Underfull \hbox (badness 10000) in paragraph at lines 4027--4028
 
  []
 
 [78]
 
-LaTeX Warning: Reference `whir' on page 1 undefined on input line 4060.
+LaTeX Warning: Reference `whir' on page 1 undefined on input line 4092.
 
 
-LaTeX Warning: Reference `?' on page 1 undefined on input line 4060.
+LaTeX Warning: Reference `?' on page 1 undefined on input line 4092.
 
 [79] (./main.aux)
  ***********
@@ -1687,17 +1719,17 @@ Package rerunfilecheck Info: File `main.out' has not changed.
  ) 
 Here is how much of TeX's memory you used:
  43419 strings out of 467525
- 893626 string characters out of 5418982
- 1393995 words of memory out of 5000000
+ 893639 string characters out of 5418982
+ 1395113 words of memory out of 5000000
  71213 multiletter control sequences out of 15000+600000
  676666 words of font info for 183 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 99i,19n,117p,1756b,1419s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 99i,19n,117p,1756b,1422s stack positions out of 10000i,1000n,20000p,200000b,200000s
  </Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm8.600pk> </Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm10.657pk></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx6.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cmextra/cmex8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cmextra/cmex9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi5.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi6.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi7.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmib10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cmextra/cmmib8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr5.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr6.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr7.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmss10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmss8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmss9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy5.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy6.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy7.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/symbols/msam10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/symbols/msbm7.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbi1095.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx0900.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1000.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1095.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1200.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1440.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm0600.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm0800.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm0900.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1000.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1095.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1200.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1728.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfti0800.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfti0900.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfti1095.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sftt0900.pfb>
-Output written on main.pdf (79 pages, 1094598 bytes).
+Output written on main.pdf (79 pages, 1099127 bytes).
 PDF statistics:
- 1760 PDF objects out of 2073 (max. 8388607)
- 1523 compressed objects within 16 object streams
+ 1761 PDF objects out of 2073 (max. 8388607)
+ 1524 compressed objects within 16 object streams
  376 named destinations out of 1000 (max. 500000)
  629 words of extra memory for PDF output out of 10000 (max. 10000000)
 

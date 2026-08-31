@@ -30,7 +30,7 @@ RAYON_NUM_THREADS=1 RUSTFLAGS="-C target-cpu=native" \
   cargo bench --bench multiswap --features unchecked
 ```
 
-### SHA-256 — λ=100 bits of security; exponents 7..16:
+### SHA-256 — λ=100 bits of security
 ```sh
 F2Z_BENCH_SHAPES=14 F2Z_BENCH_REPS=3 RUSTFLAGS="-C target-cpu=native" \
   cargo bench --bench sha256_compressions --features unchecked
@@ -52,6 +52,12 @@ suffix only.
 ```sh
 F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
   cargo bench --bench u32_mul --features unchecked
+```
+
+### Babybear mult — λ=100; exponents ≥ 15:
+```sh
+F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
+  cargo bench --bench baby_bear_mul --features unchecked
 ```
 
 ### SHA security-profile sweep: Lambda100 / Sha128ReferenceSchedule / Lambda128:
