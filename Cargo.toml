@@ -29,10 +29,9 @@ flock-core = { git = "https://github.com/albert-garreta/flock-mod.git", rev = "e
 # length-prefixed bincode blob (bincode 1.3, matching flock's own pin).
 bincode = "1.3"
 serde = { version = "1", features = ["derive"] }
-# Backend-independent SHA-256/F2Z circuit synthesis. The same crate powers
-# `../f2z-benchmark`; using it here keeps symbolic constraints and witness
-# generation on one specification.
-circuit = { path = "../f2z-benchmark/crates/circuit", default-features = false }
+# Backend-independent SHA-256/F2Z circuit synthesis, copied into this
+# workspace so fresh checkouts do not require a sibling repository.
+circuit = { path = "crates/circuit", default-features = false }
 
 [dev-dependencies]
 serde_json = "1"
