@@ -201,11 +201,11 @@ the same `CmAndWitness`. The unchanged Spartan PIOP proves the R1CS over `h`.
 Its terminal assignment claim is bitified and passed to virtual F2Z, which
 binds it to the commitment to `f` through the public CSC map.
 
-Combined proof types use sealed compile-time modes. Direct u32 multiplication
-pairs Spartan with `IntEvalRsLigModQProof`; CM pairs Spartan with
-`IntEvalRsLigVirtProof`. Relation-specific prove/verify functions remain
-concrete, while `SpartanF2zProof<S, M>` prevents a Direct opening from being
-passed to a Virtualized verifier.
+Canonical u32 multiplication uses `U32MulProof`: its runtime-prime Spartan
+component applies the fixed K=3 univariate-prefix skip and its terminal claim
+is opened by `IntEvalRsLigModQProof`. CM pairs ordinary Spartan with
+`IntEvalRsLigVirtProof`; its sealed `SpartanF2zProof<S, M>` mode prevents a
+direct opening from being passed to a virtualized verifier.
 
 SHA-256 witness synthesis and affine constants are intentionally outside this
 refactor; a future client only needs to supply synthesized `f`, `h`,

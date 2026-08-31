@@ -31,10 +31,10 @@ use thiserror::Error;
 use crate::{pcs::IntEvalParams, poly::mle::DenseMultilinearExtension};
 
 use super::super::{
-    build_assignment_mle, build_product_mles, matrix::SparseMatrix, ConstraintMatrices,
-    PreparedConstraintMatrices, R1csProductMles, SpartanField, SpartanMatrixError,
+    ConstraintMatrices, PreparedConstraintMatrices, R1csProductMles, SpartanField,
+    SpartanMatrixError, build_assignment_mle, build_product_mles, matrix::SparseMatrix,
 };
-use super::circuit::{MultiswapCircuit, MULTISWAP_VALUE_BITS};
+use super::circuit::{MULTISWAP_VALUE_BITS, MultiswapCircuit};
 
 /// Number of committed bit slots per gate (`witness || quotient`).
 pub const MULTISWAP_SLOTS: usize = 2 * MULTISWAP_VALUE_BITS;
@@ -412,8 +412,7 @@ impl MultiswapAssignment {
         let az = product(&relation.a);
         let bz = product(&relation.b);
         let cz = product(&relation.c);
-        let products =
-            build_product_mles(&az, &bz, &cz, relation.live_rows(), field_config)?;
+        let products = build_product_mles(&az, &bz, &cz, relation.live_rows(), field_config)?;
         let assignment = build_assignment_mle(
             &field_assignment,
             self.layout.assignment_len(),
@@ -443,12 +442,16 @@ fn reduce_biguint(value: &BigUint, modulus: &BigUint) -> u128 {
 
 #[cfg(test)]
 mod tests {
-    use crypto_primitives::{crypto_bigint_monty::F128, crypto_bigint_uint::Uint, PrimeField};
+    use crypto_primitives::{PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint};
 
     use super::super::circuit::MultiswapDims;
     use super::*;
 
-    fn mini() -> (MultiswapCircuit, MultiswapIntegerRelation, MultiswapAssignment) {
+    fn mini() -> (
+        MultiswapCircuit,
+        MultiswapIntegerRelation,
+        MultiswapAssignment,
+    ) {
         let circuit = MultiswapCircuit::build(MultiswapDims::mini()).unwrap();
         let relation = MultiswapIntegerRelation::new(&circuit).unwrap();
         let assignment = MultiswapAssignment::new(&circuit).unwrap();
@@ -491,8 +494,7 @@ mod tests {
             ] {
                 let mut reconstructed = BigUint::zero();
                 for slot in 0..MULTISWAP_VALUE_BITS {
-                    let (row, column) =
-                        layout.f2z_bit_position(slot_start + slot, gate).unwrap();
+                    let (row, column) = layout.f2z_bit_position(slot_start + slot, gate).unwrap();
                     let bit = (rows[column][row / 64] >> (row % 64)) & 1;
                     if bit == 1 {
                         reconstructed.set_bit(slot as u64, true);
@@ -544,10 +546,7 @@ mod tests {
         assert_ne!(left, products.cz.evaluations[target]);
     }
 
-    fn tampered_with_quotients(
-        circuit: MultiswapCircuit,
-        quos: Vec<BigUint>,
-    ) -> MultiswapCircuit {
+    fn tampered_with_quotients(circuit: MultiswapCircuit, quos: Vec<BigUint>) -> MultiswapCircuit {
         circuit.with_quotients_for_tests(quos)
     }
 }

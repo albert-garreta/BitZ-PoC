@@ -2092,13 +2092,18 @@ where
     F::Modulus: ConstTranscribable,
 {
     let k = q.len();
-    assert!(k >= 1, "eq-factored sumcheck needs >= 1 variable");
     let mut buf = vec![0u8; F::Inner::NUM_BYTES];
     // Header — mirror the prover.
     transcript.absorb_random_field(&F::from_with_cfg(k as u64, field_cfg), &mut buf);
     transcript.absorb_random_field(&F::from_with_cfg(3u64, field_cfg), &mut buf);
     if proof.messages.len() != k {
         return Err(SumCheckError::InvalidProofLength { expected: k, got: proof.messages.len() });
+    }
+    if k == 0 {
+        return Ok(Subclaim {
+            point: Vec::new(),
+            expected_evaluation: proof.claimed_sum.clone(),
+        });
     }
     let one = F::one_with_cfg(field_cfg);
     let mut expected = proof.claimed_sum.clone();
@@ -2184,7 +2189,7 @@ where
         );
     }
     let k = groups.first().map_or(0, |g| g.q.len());
-    debug_assert!(k >= 1, "eq-factored sumcheck needs ≥ 1 variable");
+    debug_assert!(!groups.is_empty(), "eq-factored sumcheck needs at least one group");
     debug_assert!(groups.iter().enumerate().all(|(t, g)| {
         (g.q.len() == k || (all_flat && t > 0 && g.q.is_empty()))
             && match &g.bufs {
@@ -2307,6 +2312,44 @@ where
     // Header — mirror `prove_as_subprotocol`.
     transcript.absorb_random_field(&F::from_with_cfg(k as u64, field_cfg), &mut buf);
     transcript.absorb_random_field(&F::from_with_cfg(3u64, field_cfg), &mut buf);
+
+    // A zero-variable sumcheck is the direct evaluation of the singleton
+    // Boolean cube. This case occurs when an integer commitment has exactly
+    // one column (`s = 0`): there is no tree-index challenge to sample, but
+    // the claimed sum and closing values still bind the surrounding GKR
+    // layer. Keep the same header absorption as the non-empty protocol so
+    // prover and verifier transcripts remain aligned.
+    if k == 0 {
+        let final_evals: Vec<Vec<(F, F)>> = if let Some(fs) = &flat {
+            debug_assert_eq!(fs.seg, 1);
+            (0..bufs.len())
+                .map(|group| vec![(fs.l[group].clone(), fs.r[group].clone())])
+                .collect()
+        } else {
+            bufs.iter()
+                .map(|group| match group {
+                    GroupBufs::Dense(pairs) => pairs
+                        .iter()
+                        .map(|(left, right)| (left[0].clone(), right[0].clone()))
+                        .collect(),
+                    _ => unreachable!("zero-variable groups must use dense singleton buffers"),
+                })
+                .collect()
+        };
+        let claimed_sum = scales.iter().zip(&final_evals).fold(zero, |sum, (scale, pairs)| {
+            let group_sum = pairs
+                .iter()
+                .fold(F::zero_with_cfg(field_cfg), |acc, (left, right)| {
+                    acc + &(left.clone() * right)
+                });
+            sum + &(scale.clone() * &group_sum)
+        });
+        return (
+            SumcheckProof { messages: Vec::new(), claimed_sum },
+            Vec::new(),
+            final_evals,
+        );
+    }
 
     let mut a_scalars = scales;
     let mut randomness: Vec<F> = Vec::with_capacity(k);
@@ -3944,7 +3987,13 @@ mod tests {
     fn gruen_roundtrip_and_shape_rejection() {
         use crate::transcript::Blake3Transcript;
         for (k, pair_counts) in
-            [(1usize, vec![1usize]), (2, vec![1, 1, 1]), (5, vec![1, 2]), (6, vec![2])]
+            [
+                (0usize, vec![1usize]),
+                (1, vec![1]),
+                (2, vec![1, 1, 1]),
+                (5, vec![1, 2]),
+                (6, vec![2]),
+            ]
         {
             let n = 1usize << k;
             let q: Vec<Gf> = (0..k).map(|i| sample(0x4100 + (k * 31 + i) as u64)).collect();
@@ -4015,22 +4064,24 @@ mod tests {
             );
             assert_eq!(sub.expected_evaluation, want_eval, "subclaim closes k={k}");
 
-            // Shape rejections: a Generic-format (3-element) round message,
-            // and a dropped round.
-            let mut bad = proof.clone();
-            bad.messages[0].0.tail_evaluations.push(Gf::one());
-            let mut vt = Blake3Transcript::new();
-            assert!(
-                verify_eq_inner_sumcheck_gruen(&mut vt, &q, &bad, &()).is_err(),
-                "3-element round must be rejected (k={k})"
-            );
-            let mut bad = proof.clone();
-            bad.messages.pop();
-            let mut vt = Blake3Transcript::new();
-            assert!(
-                verify_eq_inner_sumcheck_gruen(&mut vt, &q, &bad, &()).is_err(),
-                "dropped round must be rejected (k={k})"
-            );
+            if k > 0 {
+                // Shape rejections: a Generic-format (3-element) round
+                // message, and a dropped round.
+                let mut bad = proof.clone();
+                bad.messages[0].0.tail_evaluations.push(Gf::one());
+                let mut vt = Blake3Transcript::new();
+                assert!(
+                    verify_eq_inner_sumcheck_gruen(&mut vt, &q, &bad, &()).is_err(),
+                    "3-element round must be rejected (k={k})"
+                );
+                let mut bad = proof.clone();
+                bad.messages.pop();
+                let mut vt = Blake3Transcript::new();
+                assert!(
+                    verify_eq_inner_sumcheck_gruen(&mut vt, &q, &bad, &()).is_err(),
+                    "dropped round must be rejected (k={k})"
+                );
+            }
         }
     }
 

@@ -38,31 +38,31 @@ use flock_core::pcs::{
 use thiserror::Error;
 
 use crate::{
-    f2map::{cell_count, PreparedVirtualMap, PreparedVirtualMapError},
-    ligerito::{packed_vars, LOG_PACKING},
+    f2map::{PreparedVirtualMap, PreparedVirtualMapError, cell_count},
+    ligerito::{LOG_PACKING, packed_vars},
     ligerito_flock::{
-        commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito_virtual, sha_lig_configs,
-        verify_mle_eval_mod_q_ligerito_virtual, FlockCommitHint, FlockRsError,
+        FlockCommitHint, FlockRsError, commit_rs_ligerito_rows,
+        prove_mle_eval_mod_q_ligerito_virtual, sha_lig_configs,
+        verify_mle_eval_mod_q_ligerito_virtual,
     },
     pcs::{
-        eq_le_table_fq, fq_mul, fq_sub, Fq, IntEvalParams, ProjectCanonicalU128, FQ_BITS, FQ_MOD,
+        FQ_BITS, FQ_MOD, Fq, IntEvalParams, ProjectCanonicalU128, eq_le_table_fq, fq_mul, fq_sub,
     },
     transcript::traits::Transcript,
 };
 
 use super::{
-    absorb_spartan_message,
+    EvaluatedSpartanAssignment, SpartanF2zProof, SpartanField, Virtualized, absorb_spartan_message,
     f2z::{
-        f2z_generator, fill_slot_weights, spartan_f2z_field_config, validate_bit_rows,
-        validate_commitment, validate_config_pair, SpartanF2zError, SpartanF2zField,
-        MIN_PRODUCTION_GATE_VARS,
+        MIN_PRODUCTION_GATE_VARS, SpartanF2zError, SpartanF2zField, f2z_generator,
+        fill_slot_weights, spartan_f2z_field_config, validate_bit_rows, validate_commitment,
+        validate_config_pair,
     },
     matrix::{
-        build_assignment_mle, build_product_mles, ConstraintMatrices, PreparedConstraintMatrices,
-        ScaledMleEvaluationClaim, SparseMatrix, SpartanMatrixError,
+        ConstraintMatrices, PreparedConstraintMatrices, ScaledMleEvaluationClaim, SparseMatrix,
+        SpartanMatrixError, build_assignment_mle, build_product_mles,
     },
-    piop::{prove_spartan_piop, verify_spartan_proof, SpartanError, SpartanPiopProof},
-    EvaluatedSpartanAssignment, SpartanF2zProof, SpartanField, Virtualized,
+    piop::{SpartanError, SpartanPiopProof, prove_spartan_piop, verify_spartan_proof},
 };
 
 /// Word width of every gate operand.
@@ -1013,7 +1013,7 @@ pub fn verify_cm_and_f2z<T: Transcript + Send>(
 
 #[cfg(test)]
 mod tests {
-    use crypto_primitives::{crypto_bigint_monty::F128, crypto_bigint_uint::Uint, PrimeField};
+    use crypto_primitives::{PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint};
 
     use super::*;
 
@@ -1117,13 +1117,15 @@ mod tests {
         let witness = CmAndWitness::from_inputs(&[(3, 5), (0xffff_0000, 0x00ff_00ff)]).unwrap();
         let projected = project_cm_and_witness::<SpartanF2zField>(&witness, &config).unwrap();
         let zero = SpartanF2zField::zero_with_cfg(&config);
-        assert!(projected
-            .spartan()
-            .products()
-            .cz
-            .evaluations
-            .iter()
-            .all(|v| v == &zero));
+        assert!(
+            projected
+                .spartan()
+                .products()
+                .cz
+                .evaluations
+                .iter()
+                .all(|v| v == &zero)
+        );
 
         let bad = CmAndWitness::from_gate_values(2, |i| {
             let (x, y) = [(3u32, 5u32), (0xffff_0000, 0x00ff_00ff)][i];
@@ -1156,9 +1158,11 @@ mod tests {
             &projected.spartan().products().cz.evaluations[..witness.layout().gates()],
             matrix_products.as_slice(),
         );
-        assert!(matrix_products
-            .iter()
-            .all(|value| <F128 as PrimeField>::is_zero(value)));
+        assert!(
+            matrix_products
+                .iter()
+                .all(|value| <F128 as PrimeField>::is_zero(value))
+        );
     }
 
     #[test]

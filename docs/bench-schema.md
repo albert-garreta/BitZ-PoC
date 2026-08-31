@@ -97,8 +97,9 @@ an alias and the canonical name to different values is an error):
 | canonical | replaces | meaning |
 |---|---|---|
 | `F2Z_BENCH_REPS` | `F2Z_SHA_REPS`, `F2Z_MULTISWAP_REPS` | measured reps (plus 1 warm-up) |
-| `F2Z_BENCH_SHAPES` | `F2Z_MUL_EXPONENTS`, `F2Z_SHA_LOG2S`, `F2Z_BABY_BEAR_MUL_EXPONENTS`, `F2Z_CM_EXPONENTS` | bench-specific shape list |
-| `F2Z_BENCH_SEED` | `F2Z_MUL_SEED`, `F2Z_SHA_SEED`, `F2Z_CM_SEED` | root seed |
+| `F2Z_BENCH_SHAPES` | `F2Z_SHA_LOG2S`, `F2Z_BABY_BEAR_MUL_EXPONENTS`, `F2Z_CM_EXPONENTS` | bench-specific shape list |
+| `F2Z_SHA_MNUMROWS_LOG2S` | — | SHA-only alternative shape list: packed assignment domains `MnumRows=2^n` |
+| `F2Z_BENCH_SEED` | `F2Z_SHA_SEED`, `F2Z_CM_SEED` | root seed |
 | `F2Z_BENCH_PASS` | — | `latency|memory|both` |
 
 **Unknown `F2Z_*` variables abort the bench** with the full known-knob list,

@@ -1,32 +1,29 @@
 //! Golden transcript pins for the protocol proof streams.
 //!
-//! Each pin proves a fixed deterministic instance under the DEFAULT
-//! security profile and asserts the BLAKE3 digest of every
+//! Each pin proves a fixed deterministic instance under a named security
+//! profile and asserts the BLAKE3 digest of every
 //! transcript-visible proof component. A changed digest means the
 //! transcript moved: update a pin only in a commit that *intends* a
 //! transcript change, and say so.
 //!
-//! These digests were first recorded before the `IopSecurityProfile`
-//! wiring (commit 565e532's tree) and pin that wiring as byte-identical.
-//! They are also the λ-default pins: zero-difficulty profiles must leave
-//! every one of these bytes untouched.
+//! The SHA pins below intentionally identify the canonical runtime-prime
+//! protocol version and its profile binding.
 
 use blake3::Hasher;
 use f2z::piop::spartan::multiswap::{
+    MultiswapAssignment, MultiswapCircuit, MultiswapDims, PreparedMultiswapRelation,
     commit_multiswap_witness, multiswap_lig_configs, prove_multiswap_mod_r1cs,
-    verify_multiswap_mod_r1cs, MultiswapAssignment, MultiswapCircuit, MultiswapDims,
-    PreparedMultiswapRelation,
+    verify_multiswap_mod_r1cs,
 };
 use f2z::piop::spartan::{
-    commit_sha256_paper128_witness_with_config, generate_sha256_compression_witnesses_exact,
-    prepare_sha256_compression_batch_integer_with_profile,
-    prove_sha256_compressions_paper128_with_config, sha256_compression_configs_for,
-    verify_sha256_compressions_paper128_with_config, IopSecurityProfile, Lambda100,
-    LegacySha128Design, Sha256CompressionStatement,
+    IopSecurityProfile, Lambda100, Sha128ReferenceSchedule, Sha256CompressionStatement,
+    commit_sha256_compression_witness, generate_sha256_compression_witnesses,
+    prepare_sha256_compression_batch_with_profile, prove_sha256_compressions,
+    verify_sha256_compressions,
 };
 use f2z::piop::spartan::{
-    commit_u32_mul_witness, prove_u32_mul_paper, verify_u32_mul_paper, PreparedU32MulRelation,
-    SpartanReductionStrategy, U32MulF2zWidth, U32MulWitness,
+    PreparedU32MulRelation, U32MulF2zWidth, U32MulWitness, commit_u32_mul_witness, prove_u32_mul,
+    verify_u32_mul,
 };
 use f2z::transcript::Blake3Transcript;
 
@@ -38,23 +35,20 @@ const MULTISWAP_MINI_DIGEST: &str =
 /// grinding anywhere, Ligerito at 100). Recorded at the deliberate
 /// λ = 100 default flip.
 const SHA256_2P7_LAMBDA100_DIGEST: &str =
-    "5126146691c28d8b0506d8d8613cfefbed5c95694494585fa320c758abc5ccd6";
+    "80a983708b9dcd30478f19cb982f8b5ef70f17e452f19444c9f1aa97e9e64836";
 
-/// The 2^7 SHA-256 batch under `LegacySha128Design` — the historical
-/// 128-design schedule. This digest is the ORIGINAL pre-profile stream
-/// (recorded at commit 565e532's tree) and must never move: it proves the
-/// legacy profile keeps reproducing the published numbers byte for byte.
-const SHA256_2P7_LEGACY_DIGEST: &str =
-    "65ecfa707b276483a4b4405b8a16d0d50c92339719ab877492792de7088b7032";
+/// The 2^7 SHA-256 batch under the explicit historical comparison schedule.
+/// This pins that schedule within the current runtime-prime protocol.
+const SHA256_2P7_REFERENCE_DIGEST: &str =
+    "4af8d5f51cd34df828044ecc09f0f39c2c1e01ab3eaa3da78210339e9597bd6f";
 
-/// The 2^15 u32-multiplication batch under the paper path's default
-/// profile (`Lambda100`, transcript-sampled Step-2 prime). Recorded when
-/// the runtime-prime path landed.
-const U32_PAPER_2P15_DIGEST: &str =
-    "c060beb9a053d6f71b4856fc4e07cd5194f5c5db57cc37bbc75cf63eae4c695d";
+/// The 2^15 u32-multiplication batch under the canonical runtime-prime,
+/// K=3 univariate-skip protocol and its default `Lambda100` profile.
+const U32_MUL_2P15_DIGEST: &str =
+    "1838bee571c691584bb4f4524ec9d760b73ec2df0b16e55dd669a76bdb8e8bf1";
 
 #[test]
-fn u32_paper_2p15_transcript_is_pinned() {
+fn u32_mul_2p15_transcript_is_pinned() {
     let witness = U32MulWitness::from_fn_with_f2z_width(1usize << 15, U32MulF2zWidth::W1, |i| {
         let x = (i as u32).wrapping_mul(0x9e37_79b9) | 1;
         let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
@@ -63,23 +57,21 @@ fn u32_paper_2p15_transcript_is_pinned() {
     .expect("witness");
     let layout = *witness.layout();
     let prepared = PreparedU32MulRelation::new(layout).expect("prepare");
-    let hint = commit_u32_mul_witness(&layout, witness.f2z_bit_rows()).expect("commit");
+    let hint = commit_u32_mul_witness(&prepared, witness.f2z_bit_rows()).expect("commit");
     let mut prover_transcript = Blake3Transcript::new();
-    let proof = prove_u32_mul_paper(
-        &mut prover_transcript,
-        &prepared,
-        &witness,
-        &hint,
-        SpartanReductionStrategy::DelayedBarrett,
-    )
-    .expect("prove");
+    let proof = prove_u32_mul(&mut prover_transcript, &prepared, &witness, &hint).expect("prove");
     let mut verifier_transcript = Blake3Transcript::new();
-    verify_u32_mul_paper(&mut verifier_transcript, &prepared, &hint.commitment, &proof)
-        .expect("verify");
+    verify_u32_mul(
+        &mut verifier_transcript,
+        &prepared,
+        &hint.commitment,
+        &proof,
+    )
+    .expect("verify");
     let f2z_bytes = proof.f2z().to_bytes();
     let spartan = format!("{:?}", proof.spartan());
     let digest = digest_hex(&[&hint.commitment.root, &f2z_bytes, spartan.as_bytes()]);
-    assert_eq!(digest, U32_PAPER_2P15_DIGEST);
+    assert_eq!(digest, U32_MUL_2P15_DIGEST);
 }
 
 fn digest_hex(parts: &[&[u8]]) -> String {
@@ -106,8 +98,14 @@ fn multiswap_mini_transcript_is_pinned() {
         prove_multiswap_mod_r1cs(&mut prover_transcript, &prepared, &assignment, &hint, &pc)
             .expect("prove");
     let mut verifier_transcript = Blake3Transcript::new();
-    verify_multiswap_mod_r1cs(&mut verifier_transcript, &prepared, &hint.commitment, &proof, &vc)
-        .expect("verify");
+    verify_multiswap_mod_r1cs(
+        &mut verifier_transcript,
+        &prepared,
+        &hint.commitment,
+        &proof,
+        &vc,
+    )
+    .expect("verify");
 
     let f2z_bytes = proof.f2z().to_bytes();
     let mu_prime = proof.mu_prime().to_bytes_le();
@@ -125,19 +123,23 @@ fn multiswap_mini_transcript_is_pinned() {
 
 #[test]
 fn sha256_2p7_default_lambda100_transcript_is_pinned() {
-    assert_eq!(sha256_2p7_digest::<Lambda100>(), SHA256_2P7_LAMBDA100_DIGEST);
+    assert_eq!(
+        sha256_2p7_digest::<Lambda100>(),
+        SHA256_2P7_LAMBDA100_DIGEST
+    );
 }
 
 #[test]
-fn sha256_2p7_legacy_128_design_transcript_is_pinned() {
-    assert_eq!(sha256_2p7_digest::<LegacySha128Design>(), SHA256_2P7_LEGACY_DIGEST);
+fn sha256_2p7_reference_schedule_transcript_is_pinned() {
+    assert_eq!(
+        sha256_2p7_digest::<Sha128ReferenceSchedule>(),
+        SHA256_2P7_REFERENCE_DIGEST
+    );
 }
 
 fn sha256_2p7_digest<P: IopSecurityProfile>() -> String {
     const EXPONENT: usize = 7;
-    let prepared =
-        prepare_sha256_compression_batch_integer_with_profile::<P>(EXPONENT).expect("prepare");
-    let (pc, vc) = sha256_compression_configs_for(&prepared).expect("configs");
+    let prepared = prepare_sha256_compression_batch_with_profile::<P>(EXPONENT).expect("prepare");
     let inputs: Vec<_> = (0..1usize << EXPONENT)
         .map(|i| {
             let word = |j: usize| (i as u32).wrapping_mul(0x9e37_79b9) ^ (j as u32);
@@ -147,38 +149,30 @@ fn sha256_2p7_digest<P: IopSecurityProfile>() -> String {
             )
         })
         .collect();
-    let witness = generate_sha256_compression_witnesses_exact(
-        &inputs,
-        prepared.source_params(),
-        prepared.assignment_params(),
-    )
-    .expect("witness");
+    let witness = generate_sha256_compression_witnesses(&prepared, &inputs).expect("witness");
     let statements: Vec<_> = inputs
         .iter()
         .copied()
         .zip(witness.outputs().iter().copied())
         .map(|(input, output)| Sha256CompressionStatement::new(input, output))
         .collect();
-    let hint =
-        commit_sha256_paper128_witness_with_config(&prepared, &witness, &pc).expect("commit");
+    let hint = commit_sha256_compression_witness(&prepared, &witness).expect("commit");
     let mut prover_transcript = Blake3Transcript::new();
-    let proof = prove_sha256_compressions_paper128_with_config(
+    let proof = prove_sha256_compressions(
         &mut prover_transcript,
         &prepared,
         &statements,
         &witness,
         &hint,
-        &pc,
     )
     .expect("prove");
     let mut verifier_transcript = Blake3Transcript::new();
-    verify_sha256_compressions_paper128_with_config(
+    verify_sha256_compressions(
         &mut verifier_transcript,
         &prepared,
         &statements,
         &hint.commitment,
         &proof,
-        &vc,
     )
     .expect("verify");
 
@@ -191,10 +185,5 @@ fn sha256_2p7_digest<P: IopSecurityProfile>() -> String {
         .chain(proof.initial_nonce().to_le_bytes())
         .chain(proof.terminal_nonce().to_le_bytes())
         .collect();
-    digest_hex(&[
-        &hint.commitment.root,
-        &f2z_bytes,
-        outer.as_bytes(),
-        &nonces,
-    ])
+    digest_hex(&[&hint.commitment.root, &f2z_bytes, outer.as_bytes(), &nonces])
 }

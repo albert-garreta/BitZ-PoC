@@ -26,15 +26,15 @@ use flock_core::pcs::{
 use thiserror::Error;
 
 use crate::{
-    ext_proj::{sample_prime_in_interval, PrimeSamplingError, ProjArith},
+    ext_proj::{PrimeSamplingError, ProjArith, sample_prime_in_interval},
     ligerito::{LOG_PACKING, packed_vars},
     ligerito_flock::{
-        FlockCommitHint, FlockRsError, IntEvalRsLigModQProof, commit_rs_ligerito_rows,
-        prove_mle_eval_mod_q_ligerito_prepared_baby_bear_v2, sha_lig_configs,
-        verify_mle_eval_mod_q_ligerito_prepared_baby_bear_runtime,
-        verify_mle_eval_mod_q_ligerito_prepared_baby_bear_v2,
+        FlockCommitHint, FlockRsError, IntEvalRsLigModQProof, ModQOpeningKind,
+        commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito_with_weight_chunks, sha_lig_configs,
+        verify_mle_eval_mod_q_ligerito_with_weight_chunks,
+        verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime,
     },
-    pcs::{FQ_BITS, FQ_MOD, Fq, ProjectCanonicalU128, fq_sub},
+    pcs::{FQ_BITS, FQ_MOD, Fq, ProjectCanonicalU128},
     poly::mle::DenseMultilinearExtension,
     transcript::traits::{GenTranscribable, Transcript},
 };
@@ -45,23 +45,18 @@ use crate::utils::cfg_iter_mut;
 use rayon::prelude::*;
 
 use super::{
-    PreparedConstraintMatrices, R1csProductMles, SpartanField,
-    absorb_spartan_message,
+    PreparedConstraintMatrices, R1csProductMles, SpartanField, absorb_spartan_message,
     baby_bear_mul::{
         BABY_BEAR_MODULUS, BABY_BEAR_MUL_A_SLOT_START, BABY_BEAR_MUL_B_SLOT_START,
         BABY_BEAR_MUL_BIT_SLOTS, BABY_BEAR_MUL_C_SLOT_START, BABY_BEAR_MUL_K_SLOT_START,
         BABY_BEAR_MUL_SEMANTIC_BIT_SLOTS, BABY_BEAR_MUL_VALUE_BITS, BabyBearMulCoefficient,
-        BabyBearMulError, BabyBearMulLayout, BabyBearMulWitness,
-        baby_bear_mul_constraint_matrices, project_baby_bear_mul_native_witness,
-        project_baby_bear_mul_witness,
+        BabyBearMulError, BabyBearMulLayout, BabyBearMulWitness, baby_bear_mul_constraint_matrices,
+        project_baby_bear_mul_native_witness, project_baby_bear_mul_witness,
     },
+    f2z::{SpartanF2zField, f2z_generator, hash_code, profile_code, spartan_f2z_field_config},
     grinding::{
         GrindingDomain, GrindingError, GrindingRound, ProverGrindingTranscript,
         VerifierGrindingTranscript, grind_and_absorb, verify_and_absorb,
-    },
-    profile::{IopInstanceFacts, IopSecurityParams, IopSecurityProfile, Lambda100, ProfileError},
-    f2z::{
-        SpartanF2zField, f2z_generator, hash_code, profile_code, spartan_f2z_field_config,
     },
     matrix::ScaledMleEvaluationClaim,
     piop::{
@@ -69,6 +64,7 @@ use super::{
         prove_spartan_piop_native_u64_with_strategy, prove_spartan_piop_with_strategy,
         verify_spartan_proof,
     },
+    profile::{IopInstanceFacts, IopSecurityParams, IopSecurityProfile, Lambda100, ProfileError},
 };
 
 /// Domain of the BabyBear commitment-and-layout digest used as Spartan's
@@ -295,7 +291,11 @@ pub(crate) fn bitify_baby_bear_mul_spartan_claim_with(
         Ok(Fq(canonical))
     };
     let sub = |left: u128, right: u128| -> u128 {
-        if right == 0 { left } else { arith.add(left, q - right) }
+        if right == 0 {
+            left
+        } else {
+            arith.add(left, q - right)
+        }
     };
 
     let gate_point = claim.point()[..gate_vars]
@@ -324,9 +324,12 @@ pub(crate) fn bitify_baby_bear_mul_spartan_claim_with(
 
     let scale = project(claim.scale())?;
     let value = project(claim.value())?;
-    let constant_evaluation = gate_point.iter().copied().fold(constant_factor, |acc, coordinate| {
-        mul(acc, Fq(sub(one.0, coordinate.0)))
-    });
+    let constant_evaluation = gate_point
+        .iter()
+        .copied()
+        .fold(constant_factor, |acc, coordinate| {
+            mul(acc, Fq(sub(one.0, coordinate.0)))
+        });
     let adjusted_claim = Fq(sub(value.0, arith.mul(scale.0, constant_evaluation.0)));
 
     // Normalize nonzero scale onto the folded row factors. The verifier then
@@ -361,10 +364,7 @@ pub(crate) fn bitify_baby_bear_mul_spartan_claim_with(
                 mul(scale, k_factor),
             )
         };
-        (
-            BabyBearBitifiedRows::Structured { a, b, c, k },
-            one,
-        )
+        (BabyBearBitifiedRows::Structured { a, b, c, k }, one)
     };
 
     // k is reconstructed raw; p is already bound as matrix C's coefficient.
@@ -549,8 +549,9 @@ fn finish_combined_prover<T: Transcript + Send>(
             let _scope = crate::utils::prof::scope("baby-bear-spartan-f2z:f2z_prepare_prover");
             prepare_baby_bear_bitified_chunks(&opening)?
         };
-        prove_mle_eval_mod_q_ligerito_prepared_baby_bear_v2(
+        prove_mle_eval_mod_q_ligerito_with_weight_chunks(
             transcript,
+            ModQOpeningKind::BabyBearMul,
             hint,
             params,
             &chunks,
@@ -617,8 +618,9 @@ pub fn verify_baby_bear_mul_spartan_and_f2z<T: Transcript + Send>(
             let _scope = crate::utils::prof::scope("baby-bear-spartan-f2z:f2z_prepare_verifier");
             prepare_baby_bear_bitified_claim(&opening)?
         };
-        verify_mle_eval_mod_q_ligerito_prepared_baby_bear_v2(
+        verify_mle_eval_mod_q_ligerito_with_weight_chunks(
             transcript,
+            ModQOpeningKind::BabyBearMul,
             commitment,
             &proof.f2z,
             &params,
@@ -628,6 +630,7 @@ pub fn verify_baby_bear_mul_spartan_and_f2z<T: Transcript + Send>(
             f2z_generator(),
             prepared.claimed,
             FQ_BITS,
+            0,
             &vc,
         )
     };
@@ -956,7 +959,11 @@ fn eq_le_table_fq_fast_with(
         let expand = |zero: &mut Fq, one: &mut Fq| {
             let parent = zero.0;
             let one_child = arith.mul_plain_by(parent, &factor);
-            zero.0 = if one_child == 0 { parent } else { arith.add(parent, q - one_child) };
+            zero.0 = if one_child == 0 {
+                parent
+            } else {
+                arith.add(parent, q - one_child)
+            };
             one.0 = one_child;
         };
         if half < 256 {
@@ -996,7 +1003,11 @@ fn scaled_eq_le_table_fq_into(
         let expand = |zero: &mut u128, one: &mut u128| {
             let parent = *zero;
             let one_child = arith.mul_plain_by(parent, &factor);
-            *zero = if one_child == 0 { parent } else { arith.add(parent, q - one_child) };
+            *zero = if one_child == 0 {
+                parent
+            } else {
+                arith.add(parent, q - one_child)
+            };
             *one = one_child;
         };
         if half < 256 {
@@ -1220,8 +1231,7 @@ fn checked_pow2(exponent: usize) -> Result<usize, BabyBearSpartanF2zError> {
 // path for reproducing old numbers.
 // =====================================================================
 
-const BABY_BEAR_PAPER_PRIME_SAMPLING_DOMAIN: &[u8] =
-    b"f2z/spartan-baby-bear-mul/runtime-prime/v1";
+const BABY_BEAR_PAPER_PRIME_SAMPLING_DOMAIN: &[u8] = b"f2z/spartan-baby-bear-mul/runtime-prime/v1";
 const BABY_BEAR_PAPER_BINDING_DOMAIN: &[u8] = b"f2z/spartan-baby-bear-f2z/assignment/v1-runtime";
 
 enum BabyBearInitialGrinding {}
@@ -1294,8 +1304,7 @@ impl PreparedBabyBearMulRelation {
             return Err(BabyBearSpartanF2zError::UnsupportedPaperProfile);
         }
         let raw = baby_bear_mul_constraint_matrices(&layout)?;
-        let skeleton =
-            super::ConstraintMatricesSkeleton::new(raw).map_err(SpartanError::from)?;
+        let skeleton = super::ConstraintMatricesSkeleton::new(raw).map_err(SpartanError::from)?;
         Ok(Self {
             skeleton,
             layout,
@@ -1395,7 +1404,12 @@ fn sample_baby_bear_mul_mod_q(
     transcript: &mut impl Transcript,
     security: &IopSecurityParams,
 ) -> Result<
-    (u128, usize, <SpartanF2zField as PrimeField>::Config, ProjArith),
+    (
+        u128,
+        usize,
+        <SpartanF2zField as PrimeField>::Config,
+        ProjArith,
+    ),
     BabyBearSpartanF2zError,
 > {
     absorb_spartan_message(
@@ -1502,8 +1516,7 @@ pub fn prove_baby_bear_mul_paper<T: Transcript + Send>(
     )?;
     let (q, q_bits, config, arith) = sample_baby_bear_mul_mod_q(transcript, security)?;
     let matrices = {
-        let _scope =
-            crate::utils::prof::scope("baby-bear-spartan-f2z:relation_projection_prove");
+        let _scope = crate::utils::prof::scope("baby-bear-spartan-f2z:relation_projection_prove");
         PreparedConstraintMatrices::<SpartanF2zField, BabyBearMulCoefficient>::from_skeleton(
             &prepared.skeleton,
             &config,
@@ -1536,14 +1549,8 @@ pub fn prove_baby_bear_mul_paper<T: Transcript + Send>(
     let (opening, bridge_digest) = {
         let _scope = crate::utils::prof::scope("baby-bear-spartan-f2z:bitify_prover");
         let opening = bitify_baby_bear_mul_spartan_claim_with(&terminal_claim, layout, q, &arith)?;
-        let bridge_digest = bitified_claim_digest_with(
-            &matrices,
-            &binding,
-            layout,
-            &terminal_claim,
-            &opening,
-            q,
-        )?;
+        let bridge_digest =
+            bitified_claim_digest_with(&matrices, &binding, layout, &terminal_claim, &opening, q)?;
         (opening, bridge_digest)
     };
     let terminal_nonce = grind_boundary_bb::<BabyBearTerminalGrinding, _>(
@@ -1563,8 +1570,9 @@ pub fn prove_baby_bear_mul_paper<T: Transcript + Send>(
         if chunks.len() != 1 {
             return Err(BabyBearSpartanF2zError::MultiChunkRuntimeWeights);
         }
-        prove_mle_eval_mod_q_ligerito_prepared_baby_bear_v2(
+        prove_mle_eval_mod_q_ligerito_with_weight_chunks(
             transcript,
+            ModQOpeningKind::BabyBearMul,
             hint,
             &params,
             &chunks,
@@ -1612,8 +1620,7 @@ pub fn verify_baby_bear_mul_paper<T: Transcript + Send>(
     )?;
     let (q, q_bits, config, arith) = sample_baby_bear_mul_mod_q(transcript, security)?;
     let matrices = {
-        let _scope =
-            crate::utils::prof::scope("baby-bear-spartan-f2z:relation_projection_verify");
+        let _scope = crate::utils::prof::scope("baby-bear-spartan-f2z:relation_projection_verify");
         PreparedConstraintMatrices::<SpartanF2zField, BabyBearMulCoefficient>::from_skeleton(
             &prepared.skeleton,
             &config,
@@ -1641,14 +1648,8 @@ pub fn verify_baby_bear_mul_paper<T: Transcript + Send>(
     let (opening, bridge_digest) = {
         let _scope = crate::utils::prof::scope("baby-bear-spartan-f2z:bitify_verifier");
         let opening = bitify_baby_bear_mul_spartan_claim_with(&terminal_claim, layout, q, &arith)?;
-        let bridge_digest = bitified_claim_digest_with(
-            &matrices,
-            &binding,
-            layout,
-            &terminal_claim,
-            &opening,
-            q,
-        )?;
+        let bridge_digest =
+            bitified_claim_digest_with(&matrices, &binding, layout, &terminal_claim, &opening, q)?;
         (opening, bridge_digest)
     };
     check_boundary_bb::<BabyBearTerminalGrinding, _>(
@@ -1672,8 +1673,9 @@ pub fn verify_baby_bear_mul_paper<T: Transcript + Send>(
         .iter()
         .map(|weight| weight.0)
         .collect();
-    verify_mle_eval_mod_q_ligerito_prepared_baby_bear_runtime(
+    verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime(
         transcript,
+        ModQOpeningKind::BabyBearMul,
         commitment,
         &proof.f2z,
         &params,
@@ -1737,8 +1739,13 @@ mod tests {
         assert!(proof.piop_nonces.is_empty());
         assert!(proof.f2z().grinding_nonces.is_empty());
         let mut verifier_transcript = crate::transcript::Blake3Transcript::new();
-        verify_baby_bear_mul_paper(&mut verifier_transcript, &prepared, &hint.commitment, &proof)
-            .unwrap();
+        verify_baby_bear_mul_paper(
+            &mut verifier_transcript,
+            &prepared,
+            &hint.commitment,
+            &proof,
+        )
+        .unwrap();
 
         // Determinism.
         let mut second_transcript = crate::transcript::Blake3Transcript::new();
@@ -1753,8 +1760,8 @@ mod tests {
         assert_eq!(second.f2z().to_bytes(), proof.f2z().to_bytes());
 
         // λ = 128: initial + per-draw PIOP + forest boundaries all armed.
-        let prepared128 = PreparedBabyBearMulRelation::new_with_profile::<Lambda128>(layout)
-            .unwrap();
+        let prepared128 =
+            PreparedBabyBearMulRelation::new_with_profile::<Lambda128>(layout).unwrap();
         assert!(prepared128.security().initial_grinding_bits > 0);
         assert_eq!(prepared128.security().forest_round_grinding_bits, 2);
         let mut prover_transcript = crate::transcript::Blake3Transcript::new();
@@ -1781,21 +1788,25 @@ mod tests {
         let mut tampered = proof128.clone();
         tampered.piop_nonces[1] ^= 1;
         let mut verifier_transcript = crate::transcript::Blake3Transcript::new();
-        assert!(verify_baby_bear_mul_paper(
-            &mut verifier_transcript,
-            &prepared128,
-            &hint.commitment,
-            &tampered
-        )
-        .is_err());
+        assert!(
+            verify_baby_bear_mul_paper(
+                &mut verifier_transcript,
+                &prepared128,
+                &hint.commitment,
+                &tampered
+            )
+            .is_err()
+        );
         let mut verifier_transcript = crate::transcript::Blake3Transcript::new();
-        assert!(verify_baby_bear_mul_paper(
-            &mut verifier_transcript,
-            &prepared,
-            &hint.commitment,
-            &proof128
-        )
-        .is_err());
+        assert!(
+            verify_baby_bear_mul_paper(
+                &mut verifier_transcript,
+                &prepared,
+                &hint.commitment,
+                &proof128
+            )
+            .is_err()
+        );
     }
 
     use flock_core::pcs::commit::{Commitment, PcsParams};
@@ -1912,9 +1923,7 @@ mod tests {
             for c in 0..params.cols() {
                 let bit = (rows[c][b / u64::BITS as usize] >> (b % u64::BITS as usize)) & 1;
                 read_off = read_off
-                    + Fq::from(u128::from(bit))
-                        * Fq(row_weights[b])
-                        * prepared.col_weights[c];
+                    + Fq::from(u128::from(bit)) * Fq(row_weights[b]) * prepared.col_weights[c];
             }
         }
         assert_eq!(read_off, prepared.claimed);
@@ -2081,28 +2090,16 @@ mod tests {
         };
         *a = *a + Fq(1);
         assert_ne!(
-            bitified_claim_digest(
-                &matrices,
-                &binding,
-                &layout,
-                &terminal,
-                &tampered_opening,
-            )
-            .unwrap(),
+            bitified_claim_digest(&matrices, &binding, &layout, &terminal, &tampered_opening,)
+                .unwrap(),
             digest
         );
 
         let alternate_layout = BabyBearMulLayout::new(4).unwrap();
         assert_eq!(alternate_layout.capacity(), layout.capacity());
         assert_ne!(
-            bitified_claim_digest(
-                &matrices,
-                &binding,
-                &alternate_layout,
-                &terminal,
-                &opening,
-            )
-            .unwrap(),
+            bitified_claim_digest(&matrices, &binding, &alternate_layout, &terminal, &opening,)
+                .unwrap(),
             digest
         );
 
@@ -2117,12 +2114,9 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let tampered_c = SparseMatrix::try_from_rows(layout.assignment_len(), c_rows).unwrap();
-        let tampered_relation = ConstraintMatrices::new(
-            original.a().clone(),
-            original.b().clone(),
-            tampered_c,
-        )
-        .unwrap();
+        let tampered_relation =
+            ConstraintMatrices::new(original.a().clone(), original.b().clone(), tampered_c)
+                .unwrap();
         let tampered_matrices =
             PreparedConstraintMatrices::<SpartanF2zField, BabyBearMulCoefficient>::new(
                 tampered_relation,
@@ -2130,20 +2124,14 @@ mod tests {
             )
             .unwrap();
         assert_ne!(
-            bitified_claim_digest(
-                &tampered_matrices,
-                &binding,
-                &layout,
-                &terminal,
-                &opening,
-            )
-            .unwrap(),
+            bitified_claim_digest(&tampered_matrices, &binding, &layout, &terminal, &opening,)
+                .unwrap(),
             digest
         );
     }
 
     #[test]
-    fn baby_bear_prepared_statement_has_a_distinct_lower_domain() {
+    fn baby_bear_chunked_weight_statement_has_a_distinct_domain() {
         let layout = BabyBearMulLayout::new(1 << MIN_PRODUCTION_GATE_VARS).unwrap();
         let params = layout.f2z_params();
         let (pc, _) = configs_for_layout(&layout).unwrap();
@@ -2160,8 +2148,9 @@ mod tests {
         let bridge_digest = [0xa5; 32];
 
         let mut baby_bear_transcript = Blake3Transcript::new();
-        let _ = crate::ligerito_flock::absorb_baby_bear_mod_q_opening_v2_statement(
+        let _ = crate::ligerito_flock::absorb_mod_q_weight_chunks_statement(
             &mut baby_bear_transcript,
+            ModQOpeningKind::BabyBearMul,
             &commitment,
             &params,
             &bridge_digest,
@@ -2172,8 +2161,9 @@ mod tests {
         let baby_bear_challenge = baby_bear_transcript.get_challenge::<u128>();
 
         let mut u32_transcript = Blake3Transcript::new();
-        let _ = crate::ligerito_flock::absorb_u32_mod_q_opening_v2_statement(
+        let _ = crate::ligerito_flock::absorb_mod_q_weight_chunks_statement(
             &mut u32_transcript,
+            ModQOpeningKind::U32Mul,
             &commitment,
             &params,
             &bridge_digest,
@@ -2181,10 +2171,7 @@ mod tests {
             f2z_generator(),
             &pc,
         );
-        assert_ne!(
-            u32_transcript.get_challenge::<u128>(),
-            baby_bear_challenge
-        );
+        assert_ne!(u32_transcript.get_challenge::<u128>(), baby_bear_challenge);
     }
 
     #[test]

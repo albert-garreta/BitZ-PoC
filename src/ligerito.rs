@@ -1112,7 +1112,11 @@ pub(crate) fn prove_int_eval_common(
 
     // eq(c, ξ) batching of the per-column leaf claims.
     let xi: Vec<Gf> = transcript.get_field_challenges(p.s, &());
-    let eq_xi = build_eq_x_r_vec(&xi, &()).expect("s >= 1");
+    let eq_xi = if xi.is_empty() {
+        vec![Gf::one()]
+    } else {
+        build_eq_x_r_vec(&xi, &()).expect("nonempty column point")
+    };
 
     // Pre-sumcheck tables: R = q_rowbit(ρ), m_ξ = eq(ξ)-combined rows.
     let t_w = row_bit_vars(p);
@@ -1188,7 +1192,11 @@ pub(crate) fn verify_int_eval_common(
 
     // (3a) eq(ξ) batching + pre-sumcheck.
     let xi: Vec<Gf> = transcript.get_field_challenges(p.s, &());
-    let eq_xi = build_eq_x_r_vec(&xi, &()).expect("s >= 1");
+    let eq_xi = if xi.is_empty() {
+        vec![Gf::one()]
+    } else {
+        build_eq_x_r_vec(&xi, &()).expect("nonempty column point")
+    };
     let one = Gf::one();
     let y_xi = leaf_evals
         .iter()
@@ -1356,7 +1364,11 @@ pub(crate) fn prove_int_eval_merged_common(
 
     let _g_tbls = crate::utils::prof::scope("mc:presum_tbls");
     let (z_bj, z_c) = z.split_at(t_w);
-    let eq_zc = build_eq_x_r_vec(z_c, &()).expect("s >= 1");
+    let eq_zc = if z_c.is_empty() {
+        vec![Gf::one()]
+    } else {
+        build_eq_x_r_vec(z_c, &()).expect("nonempty column point")
+    };
     let r_tbl = row_bit_weights(p, row_weights, alpha, z_bj);
     let m_tbl = if rs_fast() {
         xi_combined_rows_packed(p, packed_cols, &eq_zc)
@@ -1473,7 +1485,11 @@ pub(crate) fn prove_x_claims_batched_common(
     let _g_tbls = crate::utils::prof::scope("mc:presum_tbls");
     let (z_bj, z_cn) = z.split_at(t_w);
     let (z_clear, z_claim) = z_cn.split_at(p.s);
-    let eq_clear = build_eq_x_r_vec(z_clear, &()).expect("s >= 1");
+    let eq_clear = if z_clear.is_empty() {
+        vec![Gf::one()]
+    } else {
+        build_eq_x_r_vec(z_clear, &()).expect("nonempty column point")
+    };
     let eq_claim = if z_claim.is_empty() {
         vec![Gf::one()]
     } else {

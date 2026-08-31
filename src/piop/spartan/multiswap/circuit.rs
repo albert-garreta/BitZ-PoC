@@ -149,23 +149,22 @@ impl MultiswapDims {
     }
 
     const fn wired_ext_cols(&self) -> usize {
-        self.n_group_muls + self.hp_exps * self.rows_per_hp_exp() + 1 + self.poseidon_rows
+        self.n_group_muls
+            + self.hp_exps * self.rows_per_hp_exp()
+            + 1
+            + self.poseidon_rows
             + self.decomp_bits
             + 1
     }
 
     /// Number of live (wired) constraint rows.
     pub const fn num_real_rows(&self) -> usize {
-        self.n_group_exps * self.rows_per_exp()
-            + self.generic_rows()
-            + self.wired_ext_rows()
+        self.n_group_exps * self.rows_per_exp() + self.generic_rows() + self.wired_ext_rows()
     }
 
     /// Number of live witness columns.
     pub const fn num_real_cols(&self) -> usize {
-        self.n_group_exps * self.cols_per_exp()
-            + 3 * self.generic_rows()
-            + self.wired_ext_cols()
+        self.n_group_exps * self.cols_per_exp() + 3 * self.generic_rows() + self.wired_ext_cols()
     }
 }
 
@@ -250,8 +249,7 @@ fn hp_chain_inputs(bits: usize) -> [(BigUint, BigUint); 4] {
     let ms = hp_moduli();
     core::array::from_fn(|i| {
         let base = &ms[i] - BigUint::from(1000u32 + 37 * i as u32);
-        let exponent =
-            (BigUint::from(0x9e37_79b9_7f4a_7c15u64) >> (64 - bits)) ^ BigUint::from(i);
+        let exponent = (BigUint::from(0x9e37_79b9_7f4a_7c15u64) >> (64 - bits)) ^ BigUint::from(i);
         (base, exponent)
     })
 }

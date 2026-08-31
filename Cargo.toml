@@ -64,11 +64,10 @@ name = "u32_mul"
 harness = false
 # Integer u32×u32→u64 R1CS through the Spartan PIOP, with the terminal
 # assignment claim discharged against the compact F2 witness by F2Z. The
-# default (standard outer) runs the PAPER path: commit-before-prime,
-# transcript-sampled Step-2 prime, Lambda100 profile; the univariate-skip
-# variants keep the legacy fixed q = 2^100-15. Unified output schema
-# (docs/bench-schema.md). Exponents via F2Z_BENCH_SHAPES (alias
-# F2Z_MUL_EXPONENTS); reps via F2Z_BENCH_REPS.
+# canonical protocol is commit-before-prime with a transcript-sampled Step-2
+# prime, Lambda100 profile, and K=3 univariate-prefix skip. Unified output
+# schema (docs/bench-schema.md). Exponents via F2Z_BENCH_SHAPES; reps via
+# F2Z_BENCH_REPS.
 
 [[bench]]
 name = "baby_bear_mul"
@@ -96,8 +95,8 @@ required-features = ["bench-internals"]
 [[bench]]
 name = "u32_mul_outer_skip"
 harness = false
-# Controlled PIOP-only comparison of the standard outer sumcheck against the
-# opt-in known-zero univariate prefix skip for K=1,2,3,4.
+# Controlled PIOP-only comparison of the standard outer sumcheck against
+# known-zero univariate prefix skips K=1,2,3,4 (the canonical adapter uses K=3).
 
 [[bench]]
 name = "multiswap"
@@ -110,7 +109,7 @@ harness = false
 [[bench]]
 name = "lambda_sweep"
 harness = false
-# One SHA-256 witness proved under Lambda100 / LegacySha128Design /
+# One SHA-256 witness proved under Lambda100 / Sha128ReferenceSchedule /
 # Lambda128 (compile-time profiles) in the unified schema - the
 # prover-time / proof-size tradeoff table for the security target.
 # Exponent via F2Z_BENCH_SHAPES (default 12); reps via F2Z_BENCH_REPS.

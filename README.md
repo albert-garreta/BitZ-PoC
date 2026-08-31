@@ -36,13 +36,25 @@ F2Z_BENCH_SHAPES=14 F2Z_BENCH_REPS=3 RUSTFLAGS="-C target-cpu=native" \
   cargo bench --bench sha256_compressions --features unchecked
 ```
 
+Size the same benchmark by the packed assignment domain (`MnumRows=2^n`)
+instead of a power-of-two compression count with:
+
+```sh
+F2Z_SHA_MNUMROWS_LOG2S="24 25" F2Z_BENCH_REPS=3 RUSTFLAGS="-C target-cpu=native" \
+  cargo bench --bench sha256_compressions --features unchecked
+```
+
+This uses `floor((2^n - 1) / 20456)` compressions: one shared constant,
+20,456 adjacent assignment cells per compression, and one trailing zero
+suffix only.
+
 ### u32×u32 -> u64 — λ=100; exponents ≥ 15:
 ```sh
 F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
   cargo bench --bench u32_mul --features unchecked
 ```
 
-### SHA with 100 and 128 bits of security with designs: Lambda100 / LegacySha128Design / Lambda128:
+### SHA security-profile sweep: Lambda100 / Sha128ReferenceSchedule / Lambda128:
 ```sh
 F2Z_BENCH_SHAPES=12 F2Z_BENCH_REPS=3 RUSTFLAGS="-C target-cpu=native" \
   cargo bench --bench lambda_sweep --features unchecked
@@ -327,8 +339,8 @@ anywhere), `Lambda128` (every term this crate controls ≥ 128 bits,
 including two bits of forest/GKR grinding per round; the flock-internal
 GF(2^128) floor at ~126.4 still binds and is reported as such),
 `Limber114` (the MultiSwap/Limber comparison, pinned), and
-`LegacySha128Design` (the historical SHA schedule, byte-identical to the
-published numbers — pinned by `tests/transcript_pins.rs`). Every interval
+`Sha128ReferenceSchedule` (the historical SHA parameter schedule, retained
+only as an explicit comparison profile and pinned by `tests/transcript_pins.rs`). Every interval
 width and grinding difficulty is *derived* from the target plus the shape
 facts, and each instantiation carries a per-term soundness accounting
 (`achieved bits` + the binding term), printed by the benches. The

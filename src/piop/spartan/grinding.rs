@@ -462,7 +462,7 @@ impl<T: Transcript, D: GrindingDomain> Transcript for VerifierGrindingTranscript
 
 #[cfg(test)]
 mod tests {
-    use crate::transcript::{traits::Transcript, Blake3Transcript};
+    use crate::transcript::{Blake3Transcript, traits::Transcript};
 
     use super::*;
 
@@ -627,7 +627,7 @@ mod tests {
         assert_eq!(nonces.len(), 2);
 
         let mut verifier_inner = transcript();
-        let mut verifier : VerifierGrindingTranscript<_, ForestRoundGrinding> =
+        let mut verifier: VerifierGrindingTranscript<_, ForestRoundGrinding> =
             VerifierGrindingTranscript::new(&mut verifier_inner, BITS, &nonces);
         let va: u128 = verifier.get_challenge();
         verifier.absorb_slice(b"round message");
@@ -639,7 +639,7 @@ mod tests {
         let mut bad = nonces.clone();
         bad[1] ^= 1;
         let mut verifier_inner = transcript();
-        let mut verifier : VerifierGrindingTranscript<_, ForestRoundGrinding> =
+        let mut verifier: VerifierGrindingTranscript<_, ForestRoundGrinding> =
             VerifierGrindingTranscript::new(&mut verifier_inner, BITS, &bad);
         let _: u128 = verifier.get_challenge();
         verifier.absorb_slice(b"round message");
@@ -648,7 +648,7 @@ mod tests {
 
         // Leftover nonces are caught at finish.
         let mut verifier_inner = transcript();
-        let mut verifier : VerifierGrindingTranscript<_, ForestRoundGrinding> =
+        let mut verifier: VerifierGrindingTranscript<_, ForestRoundGrinding> =
             VerifierGrindingTranscript::new(&mut verifier_inner, BITS, &nonces);
         let _: u128 = verifier.get_challenge();
         assert!(verifier.finish().is_err());

@@ -18,16 +18,16 @@ use crate::{
     },
 };
 use crypto_bigint::{Choice, CtSelect};
-use crypto_primitives::{crypto_bigint_monty::MontyField, FromWithConfig, PrimeField};
+use crypto_primitives::{FromWithConfig, PrimeField, crypto_bigint_monty::MontyField};
 use num_traits::Zero;
 
 use super::{
-    absorb_field_elements,
+    SpartanField, absorb_field_elements,
     grinding::{
-        grind_and_absorb, verify_and_absorb, GrindingDomain, GrindingError, GrindingRound,
-        MAX_GRINDING_BITS,
+        GrindingDomain, GrindingError, GrindingRound, MAX_GRINDING_BITS, grind_and_absorb,
+        verify_and_absorb,
     },
-    squeeze_field, SpartanField,
+    squeeze_field,
 };
 
 /// Product accumulation policy used by the sumcheck prover.
@@ -985,7 +985,11 @@ where
     )?;
     debug_assert_eq!(
         round_boundary.nonces.len(),
-        output.proof.sumcheck.round_polynomials.len()
+        if grinding_bits == 0 {
+            0
+        } else {
+            output.proof.sumcheck.round_polynomials.len()
+        }
     );
     Ok((output, round_boundary.nonces))
 }
@@ -3605,7 +3609,7 @@ fn mul<F: SpartanField>(left: &F, right: &F) -> F {
 #[cfg(test)]
 mod tests {
     use crypto_primitives::{
-        crypto_bigint_monty::F128, crypto_bigint_uint::Uint, FromWithConfig, PrimeField,
+        FromWithConfig, PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint,
     };
 
     use crate::{
