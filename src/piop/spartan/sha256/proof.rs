@@ -1,13 +1,23 @@
-//! Combined Spartan and virtual-F2Z proof for independent SHA-256 compressions.
+//! Flat linear SHA-256 PIOP followed by the virtual F2Z opening.
 //!
-//! The repeated constraint matrices factor as
-//! `I_instances tensor (A_0, B_0, C_0)`. After Spartan's outer sumcheck, the
-//! matrix-bound assignment functional therefore factors into an instance
-//! equality table and one local column table. F2Z opens that complete linear
-//! functional directly, avoiding Spartan's dense global inner-sumcheck table.
+//! The generated SHA circuit has empty R1CS `A` and `B` matrices, so every
+//! live row is the integer-linear equation `C h = 0`.  Batch rows are packed
+//! without per-instance padding at `k = 184 * instance + local_row`.  A random
+//! row collapse produces `V_C = Cᵀ eq(·, r_con)`. Independent shared-one and
+//! public-I/O coefficients are added to form `V_total`, and an ordinary
+//! quadratic sumcheck reduces `Σ_y V_total(y) H(y)` to one equality-shaped
+//! claim consumed by F2Z. Only the complete global row and witness domains have
+//! zero suffixes.
+
+use std::collections::{HashMap, hash_map::Entry};
 
 use blake3::Hasher;
-use crypto_primitives::PrimeField;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
+use crypto_primitives::{
+    PrimeField, crypto_bigint_monty::MontyField, crypto_bigint_uint::Uint as FieldUint,
+};
 use flock_core::pcs::{
     commit::Commitment,
     ligerito::{ProverConfig as LigProverConfig, VerifierConfig as LigVerifierConfig},
@@ -19,59 +29,62 @@ use crate::{
     ligerito::{LOG_PACKING, packed_vars},
     ligerito_flock::{
         FlockCommitHint, FlockRsError, IntEvalRsLigVirtProof, LigeritoStatementConfig,
-        commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito_virtual_runtime,
+        commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
         validate_ligerito_commitment, validated_udr_lig_configs_for_target,
-        verify_mle_eval_mod_q_ligerito_virtual_runtime,
+        verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
     },
-    pcs::{IntEvalParams, ProjectCanonicalU128},
+    pcs::{GeneratedModQWeightSource, IntEvalParams, ModQWeightSource, ProjectCanonicalU128},
     transcript::traits::Transcript,
 };
 
 use super::super::{
-    PreparedConstraintMatrices, SpartanError, SpartanField, absorb_spartan_message,
+    SpartanError, SpartanField, absorb_spartan_message,
     f2z::{SpartanF2zField, f2z_generator, hash_code, profile_code},
     grinding::{GrindingDomain, GrindingError, GrindingRound, grind_and_absorb, verify_and_absorb},
-    make_equality_factors,
     matrix::eq_table,
     squeeze_field,
-    sumcheck::{
-        OptimizedSumcheckReducer, OuterSumcheckProof, R1csProductMles,
-        prove_outer_sumcheck_with_reducer_grinded,
-    },
+    sumcheck::{OptimizedSumcheckReducer, SumcheckError, SumcheckLinearReducer, SumcheckProof},
 };
 
 use super::{
     constraints::{
-        PreparedSha256CompressionBatch, SHA256_CONSTRAINT_LOCAL_VARS, SHA256_H_BAR_LIVE_BITS,
-        SHA256_H_INSTANCE_BITS, SHA256_H_LOCAL_VARS, SHA256_PUBLIC_WORD_BITS, SHA256_PUBLIC_WORDS,
+        PreparedSha256CompressionBatch, PreparedSha256LinearRelation, SHA256_CONSTRAINTS,
+        SHA256_H_BAR_LIVE_BITS, SHA256_PUBLIC_WORD_BITS, SHA256_PUBLIC_WORDS,
         Sha256ConstraintError, sha256_public_f_column, sha256_public_h_column,
     },
+    inner_sumcheck::{
+        SHA256_INNER_PREFIX_MAX_VARS, prove_sha256_inner_sumcheck, verify_sha256_inner_sumcheck,
+    },
     prime::{Sha256PrimeError, Sha256PrimeProfile, sample_sha256_mod_q_context},
-    witness::{Sha256CompressionStatement, Sha256CompressionWitnessBatch, Sha256WitnessError},
+    witness::{Sha256CompressionStatement, Sha256CompressionWitnessBatch},
 };
 
-const SHA256_OPENING_CLAIM_DOMAIN: &[u8] = b"f2z/spartan-sha256-opening/v3";
-const SHA256_CONSTANT_ONE_BATCH_DOMAIN: &[u8] = b"f2z/spartan-sha256/constant-one-batch/v1";
+const SHA256_OPENING_CLAIM_DOMAIN: &[u8] = b"f2z/spartan-sha256-opening/v5";
+const SHA256_CONSTANT_ONE_BATCH_DOMAIN: &[u8] = b"f2z/spartan-sha256/constant-one-batch/v2";
 const SHA256_PUBLIC_STATEMENT_DOMAIN: &[u8] = b"f2z/spartan-sha256/public-statement/v1";
-const SHA256_PUBLIC_IO_BATCH_DOMAIN: &[u8] = b"f2z/spartan-sha256/public-io-batch/v1";
+const SHA256_PUBLIC_IO_BATCH_DOMAIN: &[u8] = b"f2z/spartan-sha256/public-io-batch/v3";
 const SHA256_SHARED_CONSTANT_CELL: usize = 0;
-const SHA256_PROTOCOL_DOMAIN: &[u8] = b"f2z/spartan-sha256-compressions/runtime-prime/v1";
+const SHA256_PROTOCOL_DOMAIN: &[u8] = b"f2z/spartan-sha256-compressions/flat-linear/v2";
 const SHA256_ASSIGNMENT_BINDING_DOMAIN: &[u8] = b"f2z/spartan-sha256-assignment/runtime-prime/v1";
 
+/// One runtime-field element in Montgomery form, without cloning the shared
+/// 128-bit modulus configuration into every dense table entry.
+type RawMontgomery = u128;
+
+/// Default number of low witness-position variables handled by the packed
+/// native-bit prefix kernel.  This is a prover-local performance choice and is
+/// deliberately absent from the proof and transcript.
+pub const SHA256_DEFAULT_INNER_PREFIX_VARS: usize = 2;
+
 enum Sha256InitialGrinding {}
-enum Sha256OuterGrinding {}
-enum Sha256TerminalGrinding {}
+enum Sha256PublicBatchGrinding {}
 
 impl GrindingDomain for Sha256InitialGrinding {
     const DOMAIN: &'static [u8] = b"f2z/spartan-sha256/grinding/initial/v1";
 }
 
-impl GrindingDomain for Sha256OuterGrinding {
-    const DOMAIN: &'static [u8] = b"f2z/spartan-sha256/grinding/outer/v1";
-}
-
-impl GrindingDomain for Sha256TerminalGrinding {
-    const DOMAIN: &'static [u8] = b"f2z/spartan-sha256/grinding/terminal/v1";
+impl GrindingDomain for Sha256PublicBatchGrinding {
+    const DOMAIN: &'static [u8] = b"f2z/spartan-sha256/grinding/public-batch/v1";
 }
 
 /// Grinds one boundary, or skips it entirely at difficulty 0 (the λ = 100
@@ -108,8 +121,8 @@ fn check_boundary<D: GrindingDomain, T: Transcript>(
 #[derive(Clone)]
 pub struct Sha256CompressionProof {
     initial_nonce: u64,
-    outer: OuterSumcheckProof<SpartanF2zField>,
-    outer_nonces: Vec<u64>,
+    inner: SumcheckProof<SpartanF2zField, 3>,
+    inner_nonces: Vec<u64>,
     terminal_nonce: u64,
     f2z: IntEvalRsLigVirtProof,
 }
@@ -120,17 +133,17 @@ impl Sha256CompressionProof {
         self.initial_nonce
     }
 
-    /// Cubic Spartan sumcheck proof.
-    pub const fn outer(&self) -> &OuterSumcheckProof<SpartanF2zField> {
-        &self.outer
+    /// Ordinary quadratic inner-sumcheck proof.
+    pub const fn inner(&self) -> &SumcheckProof<SpartanF2zField, 3> {
+        &self.inner
     }
 
-    /// Nonces adjacent to the outer sumcheck round messages.
-    pub fn outer_nonces(&self) -> &[u64] {
-        &self.outer_nonces
+    /// Nonces adjacent to the inner-sumcheck round messages.
+    pub fn inner_nonces(&self) -> &[u64] {
+        &self.inner_nonces
     }
 
-    /// Nonce after the terminal `Az/Bz/Cz` evaluations.
+    /// Nonce before the public/shared-one batching challenges and inner sumcheck.
     pub const fn terminal_nonce(&self) -> u64 {
         self.terminal_nonce
     }
@@ -147,6 +160,14 @@ pub enum Sha256F2zError {
     /// The local relation, repeated map, witness, and F2Z grids disagree.
     #[error("SHA-256 relation or witness geometry is inconsistent")]
     InvalidGeometry,
+
+    /// The packed native prefix kernel supports only K = 0, ..., 4.
+    #[error("SHA-256 inner prefix must be in 0..={max}, got {actual}")]
+    InvalidInnerPrefix { actual: usize, max: usize },
+
+    /// The prover's final inner-sumcheck claim did not equal `V(r_h) H(r_h)`.
+    #[error("SHA-256 inner sumcheck has an inconsistent terminal product")]
+    InvalidInnerTerminalClaim,
 
     /// A canonical transcript length did not fit its fixed-width encoding.
     #[error("SHA-256 transcript metadata is too large")]
@@ -178,15 +199,11 @@ pub enum Sha256F2zError {
     #[error(transparent)]
     Constraint(#[from] Sha256ConstraintError),
 
-    /// Exact witness-product projection failed.
-    #[error(transparent)]
-    Witness(#[from] Sha256WitnessError),
-
     /// A Fiat--Shamir grinding nonce could not be produced or checked.
     #[error(transparent)]
     Grinding(#[from] GrindingError),
 
-    /// Spartan's outer reduction rejected.
+    /// The SHA quadratic sumcheck rejected.
     #[error(transparent)]
     Spartan(#[from] SpartanError),
 
@@ -220,10 +237,7 @@ fn commit_source_rows_with_config(
     Ok(hint)
 }
 
-/// Commits the q-independent source rows retained by an exact SHA witness.
-///
-/// This convenience API clones the packed source rows because the exact
-/// witness must remain available for post-commitment product projection.
+/// Commits the q-independent source row retained by a packed SHA witness.
 pub fn commit_sha256_compression_witness_with_config(
     prepared: &PreparedSha256CompressionBatch,
     witness: &Sha256CompressionWitnessBatch,
@@ -244,16 +258,19 @@ pub fn commit_sha256_compression_witness(
     commit_sha256_compression_witness_with_config(prepared, witness, &pc)
 }
 
-/// Proves the runtime-prime SHA profile: commit first, grind, derive a bounded
-/// 112/113-bit prime, project exact integers, and run Spartan/F2Z under that
-/// one runtime field configuration.
+/// Proves with an explicit packed-prefix width and Ligerito configuration.
+///
+/// `prefix_vars` must be in `0..=4`.  It selects only the prover kernel; it is
+/// neither serialized nor absorbed.  Every choice emits the same ordinary
+/// quadratic sumcheck transcript.
 #[allow(clippy::too_many_arguments)]
-pub fn prove_sha256_compressions_with_config<T: Transcript + Send>(
+pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Send>(
     transcript: &mut T,
     prepared: &PreparedSha256CompressionBatch,
     public_statement: &[Sha256CompressionStatement],
     witness: &Sha256CompressionWitnessBatch,
     hint_f: &FlockCommitHint,
+    prefix_vars: usize,
     pc: &LigProverConfig,
 ) -> Result<Sha256CompressionProof, Sha256F2zError> {
     let p_f = prepared.source_params();
@@ -268,7 +285,16 @@ pub fn prove_sha256_compressions_with_config<T: Transcript + Send>(
     validate_rows(p_f, witness.source_rows())?;
     validate_shared_constant(witness.source_rows())?;
     validate_rows(p_h, witness.assignment_rows())?;
-    if witness.outputs().len() != prepared.instances() || hint_f.rows() != witness.source_rows() {
+    if prefix_vars > SHA256_INNER_PREFIX_MAX_VARS {
+        return Err(Sha256F2zError::InvalidInnerPrefix {
+            actual: prefix_vars,
+            max: SHA256_INNER_PREFIX_MAX_VARS,
+        });
+    }
+    if witness.instances() != prepared.instances()
+        || witness.outputs().len() != prepared.instances()
+        || hint_f.rows() != witness.source_rows()
+    {
         return Err(Sha256F2zError::InvalidGeometry);
     }
     validate_ligerito_commitment(&hint_f.commitment, pc).map_err(Sha256F2zError::F2z)?;
@@ -290,7 +316,8 @@ pub fn prove_sha256_compressions_with_config<T: Transcript + Send>(
         assignment_binding
     };
 
-    // Protocol §2.1 Step 2: pre-draw grinding, prime sample, projection mod q.
+    // Commit first, then derive the one runtime prime and project the exact
+    // signed linear relation into that field.
     let step2_scope = crate::utils::prof::scope("step2:project_prove");
     let initial_nonce = {
         let _scope = crate::utils::prof::scope("sha256:initial_grinding_prove");
@@ -303,93 +330,120 @@ pub fn prove_sha256_compressions_with_config<T: Transcript + Send>(
         let _scope = crate::utils::prof::scope("sha256:runtime_prime_sample_prover");
         sample_sha256_mod_q_context(transcript, profile)?
     };
-    let matrices = {
+    let linear_relation = {
         let _scope = crate::utils::prof::scope("sha256:relation_projection_prover");
-        prepared.project(mod_q.field_config())?
+        prepared.project_linear_relation(mod_q.field_config())?
     };
-    let products = {
-        let _scope = crate::utils::prof::scope("sha256:product_projection_prover");
-        witness.project_products(mod_q.field_config())?
-    };
-    validate_common_geometry(Some(&matrices), map, p_h, p_f)?;
-    validate_products(&products, map)?;
-    absorb_projected_sha256_relation(transcript, &matrices);
+    validate_common_geometry(Some(&linear_relation), map, p_h, p_f)?;
+    absorb_projected_sha256_relation(transcript, prepared, &linear_relation);
     drop(step2_scope);
 
-    // Step 3: the Spartan outer PIOP over F_q (round grinding included).
+    // Flat row collapse followed by the mandatory degree-two sumcheck over
+    // witness positions.  There is no nonlinear outer sumcheck for SHA.
     let step3_scope = crate::utils::prof::scope("step3:piop_prove");
     let field_config = mod_q.field_config();
-    let row_vars = SHA256_CONSTRAINT_LOCAL_VARS + prepared.log_instance_capacity();
-    let tau = (0..row_vars)
+    let row_vars = flat_constraint_vars(prepared)?;
+    let constraint_point = (0..row_vars)
         .map(|_| squeeze_field(transcript, field_config))
         .collect::<Vec<SpartanF2zField>>();
-    let (equality_factors, reducer) = {
-        let _scope = crate::utils::prof::scope("sha256:spartan_prepare_prover");
-        let equality_factors =
-            make_equality_factors(&tau, field_config).map_err(SpartanError::from)?;
-        let reducer = OptimizedSumcheckReducer::new(field_config).map_err(SpartanError::from)?;
-        (equality_factors, reducer)
-    };
-    let (outer, outer_nonces) = {
-        let _scope = crate::utils::prof::scope("sha256:spartan_outer_prove");
-        prove_outer_sumcheck_with_reducer_grinded::<Sha256OuterGrinding, _, _>(
-            transcript,
-            SpartanF2zField::zero_with_cfg(field_config),
-            &tau,
-            equality_factors,
-            products,
-            field_config,
-            &reducer,
-            profile.outer_round_grinding_bits() as u32,
-        )
-        .map_err(SpartanError::from)?
-    };
-    drop(step3_scope);
-
-    // Step 4: bitification — terminal grinding + claim factorization.
-    let step4_scope = crate::utils::prof::scope("step4:bitify_prove");
+    // The public and shared-one equalities are folded into the same linear
+    // oracle before sumcheck. This keeps the terminal opening rank one:
+    // V_total(r_h) · eq(·, r_h), which can use F2Z's row/column split without
+    // materializing a full assignment-domain weight vector.
     let terminal_nonce = {
-        let _scope = crate::utils::prof::scope("sha256:terminal_grinding_prove");
-        grind_boundary::<Sha256TerminalGrinding, _>(
+        let _scope = crate::utils::prof::scope("sha256:public_batch_grinding_prove");
+        grind_boundary::<Sha256PublicBatchGrinding, _>(
             transcript,
             profile.terminal_grinding_bits() as u32,
         )?
     };
-
-    let rho = squeeze_field(transcript, field_config);
     let constant_one_batch = squeeze_constant_one_batch(transcript, field_config);
+    let public_instance_point = public_instance_point(&constraint_point, prepared.instances())?;
     let (public_slot_weights, public_io_batch) = squeeze_public_io_batch(transcript, field_config);
-    let (row_weights_q, col_weights_q, claimed_q) = {
+    let public_batching = PublicLinearBatching::new(
+        prepared,
+        public_statement,
+        public_instance_point,
+        public_slot_weights.clone(),
+        public_io_batch.clone(),
+        constant_one_batch.clone(),
+        field_config,
+    )?;
+    let reducer = {
+        let _scope = crate::utils::prof::scope("sha256:linear_collapse_prover");
+        OptimizedSumcheckReducer::new(field_config).map_err(SpartanError::from)?
+    };
+    let constraint_weights = compact_eq_table(&constraint_point, field_config)?;
+    let inner = {
+        let _scope = crate::utils::prof::scope("sha256:spartan_inner_prove");
+        let collapsed_value = |flat_column| {
+            let mut value = collapse_flat_linear_column(
+                prepared,
+                &linear_relation,
+                &constraint_weights,
+                &reducer,
+                flat_column,
+            )?;
+            value += &public_batching.coefficient(flat_column, field_config)?;
+            Ok(value)
+        };
+        let h_bit = |flat_column| packed_flat_bit(witness.assignment_rows(), p_h, flat_column);
+        prove_sha256_inner_sumcheck(
+            transcript,
+            public_batching.initial_claim().clone(),
+            p_h.t + p_h.s,
+            prepared.linear_assignment_column_count(),
+            &collapsed_value,
+            &h_bit,
+            prefix_vars,
+            field_config,
+            &reducer,
+            profile.inner_round_grinding_bits() as u32,
+        )
+        .map_err(SpartanError::from)?
+    };
+    if inner.final_claim != inner.v_evaluation.clone() * &inner.h_evaluation {
+        return Err(Sha256F2zError::InvalidInnerTerminalClaim);
+    }
+    drop(constraint_weights);
+    drop(linear_relation);
+    drop(step3_scope);
+
+    // Convert the terminal product to V_total(r_h) * eq(·, r_h). The public
+    // and shared-one terms are already inside V_total, so this opening remains
+    // one factored row/column claim.
+    let step4_scope = crate::utils::prof::scope("step4:bitify_prove");
+    let assignment_equality =
+        FactoredEqualityWeights::new(&inner.eval_points, p_h.t, field_config)?;
+    let (row_weights, col_weights_q, claimed_q) = {
         let _scope = crate::utils::prof::scope("sha256:opening_prepare_prover");
-        factorized_opening_claim(
-            &matrices,
-            map,
+        linear_opening_claim(
+            prepared,
             p_h,
-            &outer.eval_points,
-            &rho,
-            &constant_one_batch,
-            public_statement,
-            &public_slot_weights,
-            &public_io_batch,
-            batched_product_claim(
-                &outer.proof.az_mle_claim,
-                &outer.proof.bz_mle_claim,
-                &outer.proof.cz_mle_claim,
-                &rho,
-            ),
+            assignment_equality,
+            &inner.v_evaluation,
+            inner.final_claim.clone(),
         )?
     };
+    let row_weight_source = GeneratedModQWeightSource::new(p_h, mod_q.q_bits(), |row| {
+        row_weights
+            .get(row)
+            .map(|weight| field_from_raw(*weight, field_config).canonical_u128())
+    })
+    .map_err(|()| Sha256F2zError::InvalidGeometry)?;
     {
         let _scope = crate::utils::prof::scope("sha256:opening_claim_absorb_prover");
         absorb_opening_claim(
             transcript,
             &assignment_binding,
-            &outer.eval_points,
-            &rho,
+            &constraint_point,
+            &inner.eval_points,
+            &inner.v_evaluation,
             &constant_one_batch,
+            public_instance_point,
             &public_slot_weights,
             &public_io_batch,
-            &row_weights_q,
+            &row_weight_source,
             &col_weights_q,
             claimed_q,
         )?;
@@ -400,14 +454,14 @@ pub fn prove_sha256_compressions_with_config<T: Transcript + Send>(
     let f2z = {
         let _step5 = crate::utils::prof::scope("step5:open_prove");
         let _scope = crate::utils::prof::scope("sha256:f2z_prove");
-        prove_mle_eval_mod_q_ligerito_virtual_runtime(
+        prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime(
             transcript,
             hint_f,
             witness.assignment_rows(),
             p_h,
             p_f,
             map,
-            &row_weights_q,
+            &row_weight_source,
             mod_q.q(),
             mod_q.q_bits(),
             f2z_generator(),
@@ -419,11 +473,33 @@ pub fn prove_sha256_compressions_with_config<T: Transcript + Send>(
 
     Ok(Sha256CompressionProof {
         initial_nonce,
-        outer: outer.proof,
-        outer_nonces,
+        inner: inner.sumcheck_proof,
+        inner_nonces: inner.round_nonces,
         terminal_nonce,
         f2z,
     })
+}
+
+/// Proves with the default packed-prefix kernel and an explicit Ligerito
+/// configuration.
+#[allow(clippy::too_many_arguments)]
+pub fn prove_sha256_compressions_with_config<T: Transcript + Send>(
+    transcript: &mut T,
+    prepared: &PreparedSha256CompressionBatch,
+    public_statement: &[Sha256CompressionStatement],
+    witness: &Sha256CompressionWitnessBatch,
+    hint_f: &FlockCommitHint,
+    pc: &LigProverConfig,
+) -> Result<Sha256CompressionProof, Sha256F2zError> {
+    prove_sha256_compressions_with_prefix_vars_and_config(
+        transcript,
+        prepared,
+        public_statement,
+        witness,
+        hint_f,
+        SHA256_DEFAULT_INNER_PREFIX_VARS,
+        pc,
+    )
 }
 
 /// Proves with the prepared batch's derived Ligerito configuration.
@@ -441,6 +517,28 @@ pub fn prove_sha256_compressions<T: Transcript + Send>(
         public_statement,
         witness,
         hint_f,
+        &pc,
+    )
+}
+
+/// Proves with an explicit prover-local packed-prefix width and the prepared
+/// batch's derived Ligerito configuration.
+pub fn prove_sha256_compressions_with_prefix_vars<T: Transcript + Send>(
+    transcript: &mut T,
+    prepared: &PreparedSha256CompressionBatch,
+    public_statement: &[Sha256CompressionStatement],
+    witness: &Sha256CompressionWitnessBatch,
+    hint_f: &FlockCommitHint,
+    prefix_vars: usize,
+) -> Result<Sha256CompressionProof, Sha256F2zError> {
+    let (pc, _) = sha256_compression_configs(prepared)?;
+    prove_sha256_compressions_with_prefix_vars_and_config(
+        transcript,
+        prepared,
+        public_statement,
+        witness,
+        hint_f,
+        prefix_vars,
         &pc,
     )
 }
@@ -467,8 +565,7 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
     validate_ligerito_config_for(prepared, vc)?;
     validate_ligerito_commitment(commitment_f, vc).map_err(Sha256F2zError::F2z)?;
     if commitment_f.params.m != p_f.t + p_f.s
-        || proof.outer.sumcheck.round_polynomials.len()
-            != SHA256_CONSTRAINT_LOCAL_VARS + prepared.log_instance_capacity()
+        || proof.inner.round_polynomials.len() != p_h.t + p_h.s
     {
         return Err(Sha256F2zError::InvalidGeometry);
     }
@@ -499,80 +596,94 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
         let _scope = crate::utils::prof::scope("sha256:runtime_prime_sample_verifier");
         sample_sha256_mod_q_context(transcript, profile)?
     };
-    let matrices = {
+    let linear_relation = {
         let _scope = crate::utils::prof::scope("sha256:relation_projection_verifier");
-        prepared.project(mod_q.field_config())?
+        prepared.project_linear_relation(mod_q.field_config())?
     };
-    validate_common_geometry(Some(&matrices), map, p_h, p_f)?;
-    absorb_projected_sha256_relation(transcript, &matrices);
+    validate_common_geometry(Some(&linear_relation), map, p_h, p_f)?;
+    absorb_projected_sha256_relation(transcript, prepared, &linear_relation);
     drop(step2_scope);
 
     let step3_scope = crate::utils::prof::scope("step3:piop_verify");
     let field_config = mod_q.field_config();
-    let row_vars = SHA256_CONSTRAINT_LOCAL_VARS + prepared.log_instance_capacity();
-    let tau = (0..row_vars)
+    let row_vars = flat_constraint_vars(prepared)?;
+    let constraint_point = (0..row_vars)
         .map(|_| squeeze_field(transcript, field_config))
         .collect::<Vec<SpartanF2zField>>();
-    let outer = {
-        let _scope = crate::utils::prof::scope("sha256:spartan_outer_verify");
-        proof
-            .outer
-            .verify_grinded::<Sha256OuterGrinding>(
-                transcript,
-                SpartanF2zField::zero_with_cfg(field_config),
-                &tau,
-                field_config,
-                &proof.outer_nonces,
-                profile.outer_round_grinding_bits() as u32,
-            )
-            .map_err(SpartanError::from)?
-    };
-    drop(step3_scope);
-
-    let step4_scope = crate::utils::prof::scope("step4:bitify_verify");
     {
-        let _scope = crate::utils::prof::scope("sha256:terminal_grinding_verify");
-        check_boundary::<Sha256TerminalGrinding, _>(
+        let _scope = crate::utils::prof::scope("sha256:public_batch_grinding_verify");
+        check_boundary::<Sha256PublicBatchGrinding, _>(
             transcript,
             profile.terminal_grinding_bits() as u32,
             proof.terminal_nonce,
         )?;
     }
-
-    let rho = squeeze_field(transcript, field_config);
     let constant_one_batch = squeeze_constant_one_batch(transcript, field_config);
+    let public_instance_point = public_instance_point(&constraint_point, prepared.instances())?;
     let (public_slot_weights, public_io_batch) = squeeze_public_io_batch(transcript, field_config);
-    let (row_weights_q, col_weights_q, claimed_q) = {
+    let public_batching = PublicLinearBatching::new(
+        prepared,
+        public_statement,
+        public_instance_point,
+        public_slot_weights.clone(),
+        public_io_batch.clone(),
+        constant_one_batch.clone(),
+        field_config,
+    )?;
+    let (assignment_point, inner_claim) = {
+        let _scope = crate::utils::prof::scope("sha256:spartan_inner_verify");
+        verify_sha256_inner_sumcheck(
+            transcript,
+            public_batching.initial_claim().clone(),
+            &proof.inner,
+            &proof.inner_nonces,
+            p_h.t + p_h.s,
+            field_config,
+            profile.inner_round_grinding_bits() as u32,
+        )
+        .map_err(SpartanError::from)?
+    };
+    drop(step3_scope);
+
+    let step4_scope = crate::utils::prof::scope("step4:bitify_verify");
+    let mut collapsed_evaluation = evaluate_repeated_flat_linear_collapse(
+        prepared,
+        &linear_relation,
+        &constraint_point,
+        &assignment_point,
+    )?;
+    collapsed_evaluation += &public_batching.evaluate(&assignment_point, field_config)?;
+    drop(linear_relation);
+    let assignment_equality = FactoredEqualityWeights::new(&assignment_point, p_h.t, field_config)?;
+    let (row_weights, col_weights_q, claimed_q) = {
         let _scope = crate::utils::prof::scope("sha256:opening_prepare_verifier");
-        factorized_opening_claim(
-            &matrices,
-            map,
+        linear_opening_claim(
+            prepared,
             p_h,
-            &outer.eval_points,
-            &rho,
-            &constant_one_batch,
-            public_statement,
-            &public_slot_weights,
-            &public_io_batch,
-            batched_product_claim(
-                &outer.az_mle_claim,
-                &outer.bz_mle_claim,
-                &outer.cz_mle_claim,
-                &rho,
-            ),
+            assignment_equality,
+            &collapsed_evaluation,
+            inner_claim,
         )?
     };
+    let row_weight_source = GeneratedModQWeightSource::new(p_h, mod_q.q_bits(), |row| {
+        row_weights
+            .get(row)
+            .map(|weight| field_from_raw(*weight, field_config).canonical_u128())
+    })
+    .map_err(|()| Sha256F2zError::InvalidGeometry)?;
     {
         let _scope = crate::utils::prof::scope("sha256:opening_claim_absorb_verifier");
         absorb_opening_claim(
             transcript,
             &assignment_binding,
-            &outer.eval_points,
-            &rho,
+            &constraint_point,
+            &assignment_point,
+            &collapsed_evaluation,
             &constant_one_batch,
+            public_instance_point,
             &public_slot_weights,
             &public_io_batch,
-            &row_weights_q,
+            &row_weight_source,
             &col_weights_q,
             claimed_q,
         )?;
@@ -581,14 +692,14 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
 
     let _step5 = crate::utils::prof::scope("step5:open_verify");
     let _scope = crate::utils::prof::scope("sha256:f2z_verify");
-    verify_mle_eval_mod_q_ligerito_virtual_runtime(
+    verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime(
         transcript,
         commitment_f,
         &proof.f2z,
         p_h,
         p_f,
         map,
-        &row_weights_q,
+        &row_weight_source,
         &col_weights_q,
         f2z_generator(),
         claimed_q,
@@ -619,126 +730,724 @@ pub fn verify_sha256_compressions<T: Transcript + Send>(
     )
 }
 
-fn factorized_opening_claim(
-    matrices: &PreparedConstraintMatrices<SpartanF2zField>,
-    map: &PackedRepeatedVirtualMap,
-    p_h: &IntEvalParams,
-    row_point: &[SpartanF2zField],
-    rho: &SpartanF2zField,
-    constant_one_batch: &SpartanF2zField,
-    public_statement: &[Sha256CompressionStatement],
-    public_slot_weights: &[SpartanF2zField],
-    public_io_batch: &SpartanF2zField,
-    claimed: SpartanF2zField,
-) -> Result<(Vec<u128>, Vec<u128>, u128), Sha256F2zError> {
-    let instance_vars = map.instances().next_power_of_two().ilog2() as usize;
-    let expected = SHA256_CONSTRAINT_LOCAL_VARS + instance_vars;
-    if row_point.len() != expected
-        || p_h.s != 0
-        || public_slot_weights.len() != SHA256_PUBLIC_WORDS * SHA256_PUBLIC_WORD_BITS
-    {
-        return Err(Sha256F2zError::InvalidGeometry);
-    }
-    validate_public_statement(map.instances(), public_statement)?;
+/// Random linear combination of the shared-one and public SHA cells folded
+/// into the inner oracle before sumcheck.
+///
+/// For valid `H`, `sum_y public_coefficient(y) H(y)` equals `initial_claim`.
+/// Moving this identity into `V_total` leaves the terminal coefficient as one
+/// scaled equality tensor, which is exactly separable across F2Z columns and
+/// rows.
+struct PublicLinearBatching {
+    instances: usize,
+    constant_weight: SpartanF2zField,
+    public_batch_weight: SpartanF2zField,
+    instance_point: Vec<SpartanF2zField>,
+    scaled_instance_weights: Vec<SpartanF2zField>,
+    slot_weights: Vec<SpartanF2zField>,
+    initial_claim: SpartanF2zField,
+}
 
-    let (local_point, instance_point) = row_point.split_at(SHA256_CONSTRAINT_LOCAL_VARS);
-    let instance_weights =
-        eq_table(instance_point, matrices.config()).map_err(SpartanError::from)?;
-    let mut local_columns = matrices
-        .bind_and_batch(local_point, rho)
-        .map_err(SpartanError::from)?;
-    let mut claimed = claimed;
-    claimed += constant_one_batch;
-
-    // Batch all public SHA word equalities into the same factorized opening:
-    //
-    //   sum_i eq(instance_point, i) sum_{w,b} lambda[w,b]
-    //       (h[i, public_bit(w,b)] - bit(statement[i][w], b)) = 0.
-    //
-    // All 1024 slot coefficients are independent transcript challenges.  This
-    // keeps the terminal identity degree two in the sampled challenges; a
-    // tensor point over words followed by powers of two would couple slots and
-    // require a larger grinding allowance.
-    for word_slot in 0..SHA256_PUBLIC_WORDS {
-        for bit in 0..SHA256_PUBLIC_WORD_BITS {
-            let slot = word_slot * SHA256_PUBLIC_WORD_BITS + bit;
-            let bit_coefficient = public_io_batch.clone() * &public_slot_weights[slot];
-            let h_column = sha256_public_h_column(word_slot, bit);
-            let column = local_columns
-                .evaluations
-                .get_mut(h_column)
-                .ok_or(Sha256F2zError::InvalidGeometry)?;
-            *column += &bit_coefficient;
-        }
-    }
-
-    // Convert the factorized repeated-matrix functional into the packed
-    // assignment layout.  Every live instance is adjacent to the preceding
-    // one; the only zero padding is the final suffix of this vector.
-    let zero = SpartanF2zField::zero_with_cfg(matrices.config());
-    let mut packed_weights = vec![zero.clone(); p_h.rows()];
-    let mut active_weight_sum = zero.clone();
-    for (instance, instance_weight) in instance_weights.iter().take(map.instances()).enumerate() {
-        active_weight_sum += instance_weight;
-        let start = 1 + instance * SHA256_H_INSTANCE_BITS;
-        let end = start + SHA256_H_INSTANCE_BITS;
-        if end > packed_weights.len() {
+impl PublicLinearBatching {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        prepared: &PreparedSha256CompressionBatch,
+        public_statement: &[Sha256CompressionStatement],
+        public_instance_point: &[SpartanF2zField],
+        slot_weights: Vec<SpartanF2zField>,
+        public_batch_weight: SpartanF2zField,
+        constant_weight: SpartanF2zField,
+        field_config: &<SpartanF2zField as PrimeField>::Config,
+    ) -> Result<Self, Sha256F2zError> {
+        validate_public_statement(prepared.instances(), public_statement)?;
+        if public_instance_point.len() != instance_vars(prepared.instances())?
+            || slot_weights.len() != SHA256_PUBLIC_WORDS * SHA256_PUBLIC_WORD_BITS
+            || public_batch_weight.cfg() != field_config
+            || constant_weight.cfg() != field_config
+            || slot_weights
+                .iter()
+                .any(|weight| weight.cfg() != field_config)
+        {
             return Err(Sha256F2zError::InvalidGeometry);
         }
-        for (target, coefficient) in packed_weights[start..end]
-            .iter_mut()
-            .zip(&local_columns.evaluations[1..SHA256_H_BAR_LIVE_BITS])
-        {
-            *target = instance_weight.clone() * coefficient;
-        }
-    }
-    packed_weights[SHA256_SHARED_CONSTANT_CELL] = active_weight_sum
-        * &local_columns.evaluations[SHA256_SHARED_CONSTANT_CELL]
-        + constant_one_batch;
+        let instance_weights =
+            eq_table(public_instance_point, field_config).map_err(SpartanError::from)?;
+        let scaled_instance_weights = instance_weights
+            .into_iter()
+            .take(prepared.instances())
+            .map(|weight| weight * &public_batch_weight)
+            .collect::<Vec<_>>();
 
-    let mut public_value = zero.clone();
-    for (instance_weight, statement) in instance_weights.iter().zip(public_statement) {
-        let mut instance_value = zero.clone();
-        for (word_slot, word) in statement.words().enumerate() {
-            for bit in 0..SHA256_PUBLIC_WORD_BITS {
-                if word >> bit & 1 == 1 {
+        // A statement has 1,024 public bits.  Compress each eight-bit dot
+        // product into a 256-entry lookup table once, then evaluate each of
+        // the 32 public words with four lookups.  This preserves the exact
+        // field-valued bit dot product while replacing 1,024 per-instance
+        // bit tests and up to 1,024 field multiplications with 128 lookups,
+        // additions, and one multiplication.
+        let byte_tables = weighted_byte_tables(&slot_weights, field_config);
+        let mut initial_claim = constant_weight.clone();
+        for (instance, statement) in public_statement.iter().enumerate() {
+            let mut statement_value = SpartanF2zField::zero_with_cfg(field_config);
+            for (word_slot, word) in statement.words().enumerate() {
+                for byte in 0..4 {
+                    let value = ((word >> (8 * byte)) & 0xff) as usize;
+                    statement_value += &byte_tables[4 * word_slot + byte][value];
+                }
+            }
+            initial_claim += &(scaled_instance_weights[instance].clone() * &statement_value);
+        }
+
+        Ok(Self {
+            instances: prepared.instances(),
+            constant_weight,
+            public_batch_weight,
+            instance_point: public_instance_point.to_vec(),
+            scaled_instance_weights,
+            slot_weights,
+            initial_claim,
+        })
+    }
+
+    const fn initial_claim(&self) -> &SpartanF2zField {
+        &self.initial_claim
+    }
+
+    fn coefficient(
+        &self,
+        flat_column: usize,
+        field_config: &<SpartanF2zField as PrimeField>::Config,
+    ) -> Result<SpartanF2zField, SumcheckError> {
+        if flat_column == SHA256_SHARED_CONSTANT_CELL {
+            return Ok(self.constant_weight.clone());
+        }
+        let Some(packed_offset) = flat_column.checked_sub(1) else {
+            return Ok(SpartanF2zField::zero_with_cfg(field_config));
+        };
+        let instance = packed_offset / super::constraints::SHA256_H_INSTANCE_BITS;
+        if instance >= self.instances {
+            return Ok(SpartanF2zField::zero_with_cfg(field_config));
+        }
+        let local_column = 1 + packed_offset % super::constraints::SHA256_H_INSTANCE_BITS;
+        let Some(slot) = public_bit_index_for_h_column(local_column) else {
+            return Ok(SpartanF2zField::zero_with_cfg(field_config));
+        };
+        Ok(self.scaled_instance_weights[instance].clone() * &self.slot_weights[slot])
+    }
+
+    fn evaluate(
+        &self,
+        assignment_point: &[SpartanF2zField],
+        field_config: &<SpartanF2zField as PrimeField>::Config,
+    ) -> Result<SpartanF2zField, Sha256F2zError> {
+        let constant_equality = equality_at_zero(assignment_point, field_config)?;
+        let repeated_public = evaluate_affine_equality_repetition(
+            self.instances,
+            0,
+            super::constraints::SHA256_H_INSTANCE_BITS,
+            &[],
+            assignment_point,
+            Some(&self.instance_point),
+            self.slot_weights
+                .iter()
+                .enumerate()
+                .map(|(slot, coefficient)| {
+                    let word_slot = slot / SHA256_PUBLIC_WORD_BITS;
+                    let bit = slot % SHA256_PUBLIC_WORD_BITS;
+                    (
+                        0,
+                        sha256_public_h_column(word_slot, bit),
+                        coefficient.clone(),
+                    )
+                }),
+            field_config,
+        )?;
+        let mut evaluation = self.constant_weight.clone() * &constant_equality;
+        evaluation += &(self.public_batch_weight.clone() * &repeated_public);
+        Ok(evaluation)
+    }
+
+    #[cfg(test)]
+    fn evaluate_dense(
+        &self,
+        assignment_equality: &FactoredEqualityWeights,
+        field_config: &<SpartanF2zField as PrimeField>::Config,
+    ) -> Result<SpartanF2zField, Sha256F2zError> {
+        let mut evaluation = self.constant_weight.clone()
+            * &assignment_equality
+                .evaluate(SHA256_SHARED_CONSTANT_CELL, field_config)
+                .ok_or(Sha256F2zError::InvalidGeometry)?;
+        for instance in 0..self.instances {
+            for word_slot in 0..SHA256_PUBLIC_WORDS {
+                for bit in 0..SHA256_PUBLIC_WORD_BITS {
                     let slot = word_slot * SHA256_PUBLIC_WORD_BITS + bit;
-                    instance_value += &public_slot_weights[slot];
+                    let local_column = sha256_public_h_column(word_slot, bit);
+                    let flat_column =
+                        1 + instance * super::constraints::SHA256_H_INSTANCE_BITS + local_column
+                            - 1;
+                    let equality = assignment_equality
+                        .evaluate(flat_column, field_config)
+                        .ok_or(Sha256F2zError::InvalidGeometry)?;
+                    let coefficient =
+                        self.scaled_instance_weights[instance].clone() * &self.slot_weights[slot];
+                    evaluation += &(coefficient * &equality);
                 }
             }
         }
-        public_value += &(instance_weight.clone() * &instance_value);
+        Ok(evaluation)
     }
-    claimed += &(public_io_batch.clone() * &public_value);
-
-    let row_weights_q = packed_weights
-        .into_iter()
-        .map(|value| value.canonical_u128())
-        .collect::<Vec<_>>();
-    let col_weights = vec![SpartanF2zField::one_with_cfg(matrices.config()).canonical_u128()];
-    Ok((row_weights_q, col_weights, claimed.canonical_u128()))
 }
 
-fn batched_product_claim(
-    az: &SpartanF2zField,
-    bz: &SpartanF2zField,
-    cz: &SpartanF2zField,
-    rho: &SpartanF2zField,
+fn weighted_byte_tables(
+    weights: &[SpartanF2zField],
+    field_config: &<SpartanF2zField as PrimeField>::Config,
+) -> Vec<Vec<SpartanF2zField>> {
+    debug_assert_eq!(weights.len() % 8, 0);
+    weights
+        .chunks_exact(8)
+        .map(|byte_weights| {
+            let mut table = Vec::with_capacity(256);
+            table.push(SpartanF2zField::zero_with_cfg(field_config));
+            for value in 1usize..256 {
+                let bit = value.trailing_zeros() as usize;
+                let previous = value & (value - 1);
+                table.push(table[previous].clone() + &byte_weights[bit]);
+            }
+            table
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn linear_opening_claim(
+    prepared: &PreparedSha256CompressionBatch,
+    p_h: &IntEvalParams,
+    mut assignment_equality: FactoredEqualityWeights,
+    collapsed_evaluation: &SpartanF2zField,
+    inner_claim: SpartanF2zField,
+) -> Result<(Vec<RawMontgomery>, Vec<u128>, u128), Sha256F2zError> {
+    let field_config = collapsed_evaluation.cfg();
+    if assignment_equality.len() != p_h.cells()
+        || assignment_equality.low_vars != p_h.t
+        || assignment_equality.low.len() != p_h.rows()
+        || assignment_equality.high.len() != p_h.cols()
+        || prepared.linear_assignment_column_count() > p_h.cells()
+    {
+        return Err(Sha256F2zError::InvalidGeometry);
+    }
+    assignment_equality.scale(collapsed_evaluation, field_config);
+    let row_weights = assignment_equality.low;
+    let col_weights = assignment_equality
+        .high
+        .iter()
+        .map(|weight| field_from_raw(*weight, field_config).canonical_u128())
+        .collect::<Vec<_>>();
+    Ok((row_weights, col_weights, inner_claim.canonical_u128()))
+}
+
+fn flat_constraint_vars(
+    prepared: &PreparedSha256CompressionBatch,
+) -> Result<usize, Sha256F2zError> {
+    let live_rows = prepared.linear_row_count();
+    let domain = live_rows
+        .checked_next_power_of_two()
+        .ok_or(Sha256F2zError::InvalidGeometry)?;
+    Ok(domain.ilog2() as usize)
+}
+
+fn instance_vars(instances: usize) -> Result<usize, Sha256F2zError> {
+    let domain = instances
+        .checked_next_power_of_two()
+        .ok_or(Sha256F2zError::InvalidGeometry)?;
+    Ok(domain.ilog2() as usize)
+}
+
+fn public_instance_point(
+    constraint_point: &[SpartanF2zField],
+    instances: usize,
+) -> Result<&[SpartanF2zField], Sha256F2zError> {
+    let vars = instance_vars(instances)?;
+    let start = constraint_point
+        .len()
+        .checked_sub(vars)
+        .ok_or(Sha256F2zError::InvalidGeometry)?;
+    constraint_point
+        .get(start..)
+        .ok_or(Sha256F2zError::InvalidGeometry)
+}
+
+fn collapse_flat_linear_column(
+    prepared: &PreparedSha256CompressionBatch,
+    relation: &PreparedSha256LinearRelation,
+    constraint_weights: &[RawMontgomery],
+    reducer: &OptimizedSumcheckReducer,
+    flat_column: usize,
+) -> Result<SpartanF2zField, SumcheckError> {
+    let zero = SpartanF2zField::zero_with_cfg(relation.config());
+    let live_columns = prepared.linear_assignment_column_count();
+    if flat_column >= prepared.assignment_params().cells() {
+        return Err(SumcheckError::InvalidProductDimensions);
+    }
+    if flat_column >= live_columns {
+        return Ok(zero);
+    }
+
+    let (instance_start, instance_end, local_column) = if flat_column == 0 {
+        (0, prepared.instances(), 0)
+    } else {
+        let offset = flat_column - 1;
+        let instance = offset / super::constraints::SHA256_H_INSTANCE_BITS;
+        let local_column = 1 + offset % super::constraints::SHA256_H_INSTANCE_BITS;
+        (instance, instance + 1, local_column)
+    };
+    let column = prepared
+        .linear_relation()
+        .native_matrix()
+        .column(local_column)
+        .ok_or(SumcheckError::InvalidProductDimensions)?;
+    let mut accumulator =
+        <OptimizedSumcheckReducer as SumcheckLinearReducer>::accumulator_zero(reducer);
+    for instance in instance_start..instance_end {
+        for (local_row, coefficient) in column {
+            let flat_row = instance
+                .checked_mul(SHA256_CONSTRAINTS)
+                .and_then(|base| base.checked_add(local_row))
+                .ok_or(SumcheckError::InvalidProductDimensions)?;
+            let weight = constraint_weights
+                .get(flat_row)
+                .ok_or(SumcheckError::InvalidProductDimensions)?;
+            let weight = field_from_raw(*weight, relation.config());
+            let negative_weight;
+            let selected_weight = if *coefficient < 0 {
+                negative_weight = zero.clone() - &weight;
+                &negative_weight
+            } else {
+                &weight
+            };
+            <OptimizedSumcheckReducer as SumcheckLinearReducer>::multiply_accumulate(
+                reducer,
+                &mut accumulator,
+                selected_weight,
+                &coefficient.unsigned_abs(),
+            );
+        }
+    }
+    <OptimizedSumcheckReducer as SumcheckLinearReducer>::reduce(reducer, accumulator)
+}
+
+/// Evaluates the repeated flat relation without expanding its `instances`
+/// copies.  For every local nonzero `(r, c)`, the repeated coordinates are
+///
+/// `row(i) = 184 i + r`, `column(i) = 20,456 i + c`.
+///
+/// Reading `i` from least-significant bit to most-significant bit turns both
+/// affine indices into bounded binary carry recurrences. Terms that reach the
+/// same pair of carries are algebraically identical for all remaining bits and
+/// are merged. If `S` is the maximum carry frontier (independent of the number
+/// of instances for this fixed local SHA relation), the contraction costs
+/// `O((nnz(C) + S) * log(domain))`, rather than materializing or visiting
+/// `instances * nnz(C)` repeated entries.
+fn evaluate_repeated_flat_linear_collapse(
+    prepared: &PreparedSha256CompressionBatch,
+    relation: &PreparedSha256LinearRelation,
+    constraint_point: &[SpartanF2zField],
+    assignment_point: &[SpartanF2zField],
+) -> Result<SpartanF2zField, Sha256F2zError> {
+    if constraint_point.len() != flat_constraint_vars(prepared)?
+        || assignment_point.len() != prepared.assignment_params().t + prepared.assignment_params().s
+    {
+        return Err(Sha256F2zError::InvalidGeometry);
+    }
+
+    let constant_column = relation
+        .matrix()
+        .column(SHA256_SHARED_CONSTANT_CELL)
+        .ok_or(Sha256F2zError::InvalidGeometry)?;
+    let constant_evaluation = evaluate_affine_equality_repetition(
+        prepared.instances(),
+        SHA256_CONSTRAINTS,
+        0,
+        constraint_point,
+        assignment_point,
+        None,
+        constant_column
+            .into_iter()
+            .map(|(row, coefficient)| (row, 0, coefficient.clone())),
+        relation.config(),
+    )?;
+
+    let nonconstant_terms =
+        relation
+            .matrix()
+            .columns()
+            .enumerate()
+            .skip(1)
+            .flat_map(|(column, entries)| {
+                entries
+                    .into_iter()
+                    .map(move |(row, coefficient)| (row, column, coefficient.clone()))
+            });
+    let nonconstant_evaluation = evaluate_affine_equality_repetition(
+        prepared.instances(),
+        SHA256_CONSTRAINTS,
+        super::constraints::SHA256_H_INSTANCE_BITS,
+        constraint_point,
+        assignment_point,
+        None,
+        nonconstant_terms,
+        relation.config(),
+    )?;
+
+    Ok(constant_evaluation + &nonconstant_evaluation)
+}
+
+/// Contracts a weighted set of affine-offset pairs against two equality
+/// tensors, optionally also weighting the repetition index by a third
+/// equality tensor.  The latter is used for public-I/O batching.
+#[allow(clippy::too_many_arguments)]
+fn evaluate_affine_equality_repetition<I>(
+    instances: usize,
+    left_stride: usize,
+    right_stride: usize,
+    left_point: &[SpartanF2zField],
+    right_point: &[SpartanF2zField],
+    instance_point: Option<&[SpartanF2zField]>,
+    terms: I,
+    field_config: &<SpartanF2zField as PrimeField>::Config,
+) -> Result<SpartanF2zField, Sha256F2zError>
+where
+    I: IntoIterator<Item = (usize, usize, SpartanF2zField)>,
+{
+    if instances == 0
+        || left_point
+            .iter()
+            .chain(right_point)
+            .chain(instance_point.into_iter().flatten())
+            .any(|value| value.cfg() != field_config)
+    {
+        return Err(Sha256F2zError::InvalidGeometry);
+    }
+    let input_vars = instance_vars(instances)?;
+    if instance_point.is_some_and(|point| point.len() != input_vars) {
+        return Err(Sha256F2zError::InvalidGeometry);
+    }
+    let rounds = left_point.len().max(right_point.len());
+    if input_vars > rounds {
+        return Err(Sha256F2zError::InvalidGeometry);
+    }
+    let input_capacity = 1usize
+        .checked_shl(u32::try_from(input_vars).map_err(|_| Sha256F2zError::InvalidGeometry)?)
+        .ok_or(Sha256F2zError::InvalidGeometry)?;
+    let bounded = instances != input_capacity;
+
+    // Each round has eight possible `(left_bit, right_bit, instance_bit)`
+    // products.  Precomputing them removes two field multiplications from
+    // every carry-state transition.  `None` marks a one bit beyond a tensor's
+    // declared domain and therefore an overflowing affine index.
+    let one = SpartanF2zField::one_with_cfg(field_config);
+    let bit_factors = |point: &[SpartanF2zField], round: usize| {
+        point.get(round).map_or_else(
+            || [Some(one.clone()), None],
+            |challenge| [Some(one.clone() - challenge), Some(challenge.clone())],
+        )
+    };
+    let mut round_weights: Vec<[Option<SpartanF2zField>; 8]> = Vec::with_capacity(rounds);
+    for round in 0..rounds {
+        let left = bit_factors(left_point, round);
+        let right = bit_factors(right_point, round);
+        let input = instance_point.map_or_else(
+            || [Some(one.clone()), Some(one.clone())],
+            |point| bit_factors(point, round),
+        );
+        round_weights.push(std::array::from_fn(|index| {
+            let mut value = left[index & 1].clone()?;
+            value *= right[(index >> 1) & 1].as_ref()?;
+            value *= input[(index >> 2) & 1].as_ref()?;
+            Some(value)
+        }));
+    }
+
+    // State is `(left carry, right carry, borrow)`.  For a partial batch,
+    // `borrow` is the carry of the little-endian subtraction `i - instances`;
+    // it is one exactly when the completed instance index satisfies `i < N`.
+    let zero = SpartanF2zField::zero_with_cfg(field_config);
+    let terms = terms.into_iter();
+    let (lower_bound, _) = terms.size_hint();
+    let mut states = HashMap::with_capacity(lower_bound);
+    for (left_offset, right_offset, coefficient) in terms {
+        if coefficient.cfg() != field_config {
+            return Err(Sha256F2zError::InvalidGeometry);
+        }
+        match states.entry((left_offset, right_offset, false)) {
+            Entry::Vacant(entry) => {
+                if coefficient != zero {
+                    entry.insert(coefficient);
+                }
+            }
+            Entry::Occupied(mut entry) => {
+                *entry.get_mut() += &coefficient;
+                if *entry.get() == zero {
+                    entry.remove();
+                }
+            }
+        }
+    }
+
+    for (round, weights) in round_weights.iter().enumerate() {
+        let input_active = round < input_vars;
+        let instance_bit = if input_active {
+            (instances >> round) & 1
+        } else {
+            0
+        };
+        let mut next = HashMap::with_capacity(states.len().saturating_mul(2));
+        for ((left_carry, right_carry, borrow), value) in states {
+            for bit in 0..=usize::from(input_active) {
+                let left = left_carry
+                    .checked_add(left_stride * bit)
+                    .ok_or(Sha256F2zError::InvalidGeometry)?;
+                let right = right_carry
+                    .checked_add(right_stride * bit)
+                    .ok_or(Sha256F2zError::InvalidGeometry)?;
+                let left_bit = left & 1;
+                let right_bit = right & 1;
+                let weight_index = left_bit | (right_bit << 1) | (bit << 2);
+                let Some(weight) = weights[weight_index].as_ref() else {
+                    continue;
+                };
+                let next_borrow = bounded && bit < instance_bit + usize::from(borrow);
+                let term = value.clone() * weight;
+                if term == zero {
+                    continue;
+                }
+                match next.entry((left >> 1, right >> 1, next_borrow)) {
+                    Entry::Vacant(entry) => {
+                        entry.insert(term);
+                    }
+                    Entry::Occupied(mut entry) => {
+                        *entry.get_mut() += &term;
+                        if *entry.get() == zero {
+                            entry.remove();
+                        }
+                    }
+                }
+            }
+        }
+        states = next;
+    }
+
+    let mut evaluation = zero;
+    for ((left_carry, right_carry, borrow), value) in states {
+        if left_carry == 0 && right_carry == 0 && (!bounded || borrow) {
+            evaluation += &value;
+        }
+    }
+    Ok(evaluation)
+}
+
+fn equality_at_zero(
+    point: &[SpartanF2zField],
+    field_config: &<SpartanF2zField as PrimeField>::Config,
+) -> Result<SpartanF2zField, Sha256F2zError> {
+    if point.iter().any(|value| value.cfg() != field_config) {
+        return Err(Sha256F2zError::InvalidGeometry);
+    }
+    let one = SpartanF2zField::one_with_cfg(field_config);
+    Ok(point.iter().fold(one.clone(), |product, challenge| {
+        product * &(one.clone() - challenge)
+    }))
+}
+
+#[cfg(test)]
+fn evaluate_flat_linear_collapse_dense(
+    prepared: &PreparedSha256CompressionBatch,
+    relation: &PreparedSha256LinearRelation,
+    constraint_weights: &[RawMontgomery],
+    assignment_weights: &FactoredEqualityWeights,
+) -> Result<SpartanF2zField, Sha256F2zError> {
+    if assignment_weights.len() != prepared.assignment_params().cells()
+        || constraint_weights.len()
+            != 1usize
+                .checked_shl(
+                    u32::try_from(flat_constraint_vars(prepared)?)
+                        .map_err(|_| Sha256F2zError::InvalidGeometry)?,
+                )
+                .ok_or(Sha256F2zError::InvalidGeometry)?
+    {
+        return Err(Sha256F2zError::InvalidGeometry);
+    }
+
+    let zero = SpartanF2zField::zero_with_cfg(relation.config());
+    let mut evaluation = zero.clone();
+    for (local_column, column) in relation.matrix().columns().enumerate() {
+        if column.is_empty() {
+            continue;
+        }
+        for instance in 0..prepared.instances() {
+            let flat_column = prepared
+                .flat_assignment_column(instance, local_column)
+                .ok_or(Sha256F2zError::InvalidGeometry)?;
+            let mut column_value = zero.clone();
+            for (local_row, coefficient) in column {
+                let flat_row = prepared
+                    .flat_constraint_row(instance, local_row)
+                    .ok_or(Sha256F2zError::InvalidGeometry)?;
+                let constraint_weight =
+                    field_from_raw(constraint_weights[flat_row], relation.config());
+                column_value += &(constraint_weight * coefficient);
+            }
+            let assignment_weight = assignment_weights
+                .evaluate(flat_column, relation.config())
+                .ok_or(Sha256F2zError::InvalidGeometry)?;
+            evaluation += &(column_value * &assignment_weight);
+        }
+    }
+    Ok(evaluation)
+}
+
+/// Tensor-factorized little-endian equality table. The low `t` coordinates
+/// select F2Z's packed row and the high `s` coordinates select its column, so
+/// the two vectors can be passed to the integer opening without constructing
+/// the full `2^(t+s)` equality table.
+struct FactoredEqualityWeights {
+    low: Vec<RawMontgomery>,
+    high: Vec<RawMontgomery>,
+    low_vars: usize,
+    len: usize,
+}
+
+impl FactoredEqualityWeights {
+    fn new(
+        point: &[SpartanF2zField],
+        low_vars: usize,
+        field_config: &<SpartanF2zField as PrimeField>::Config,
+    ) -> Result<Self, Sha256F2zError> {
+        if low_vars > point.len() {
+            return Err(Sha256F2zError::InvalidGeometry);
+        }
+        let low = compact_eq_table(&point[..low_vars], field_config)?;
+        let high = compact_eq_table(&point[low_vars..], field_config)?;
+        let vars = u32::try_from(point.len()).map_err(|_| Sha256F2zError::InvalidGeometry)?;
+        let len = 1usize
+            .checked_shl(vars)
+            .ok_or(Sha256F2zError::InvalidGeometry)?;
+        Ok(Self {
+            low,
+            high,
+            low_vars,
+            len,
+        })
+    }
+
+    const fn len(&self) -> usize {
+        self.len
+    }
+
+    fn scale(
+        &mut self,
+        factor: &SpartanF2zField,
+        field_config: &<SpartanF2zField as PrimeField>::Config,
+    ) {
+        let scale = |weight: &mut RawMontgomery| {
+            let value = field_from_raw(*weight, field_config) * factor;
+            *weight = raw_montgomery(&value);
+        };
+        #[cfg(feature = "parallel")]
+        if self.high.len() >= 1 << 13 && rayon::current_num_threads() > 1 {
+            self.high.par_iter_mut().for_each(scale);
+        } else {
+            self.high.iter_mut().for_each(scale);
+        }
+        #[cfg(not(feature = "parallel"))]
+        self.high.iter_mut().for_each(scale);
+    }
+
+    #[cfg(test)]
+    fn evaluate(
+        &self,
+        index: usize,
+        field_config: &<SpartanF2zField as PrimeField>::Config,
+    ) -> Option<SpartanF2zField> {
+        if index >= self.len {
+            return None;
+        }
+        let low_mask = self.low.len() - 1;
+        let low = field_from_raw(*self.low.get(index & low_mask)?, field_config);
+        let high = field_from_raw(*self.high.get(index >> self.low_vars)?, field_config);
+        Some(low * &high)
+    }
+}
+
+/// Builds `eq(boolean_index, point)` in little-endian index order while
+/// storing only each element's two Montgomery limbs. A full `MontyField`
+/// carries its runtime modulus configuration, which would otherwise multiply
+/// the memory of the flat SHA domains by roughly five.
+fn compact_eq_table(
+    point: &[SpartanF2zField],
+    field_config: &<SpartanF2zField as PrimeField>::Config,
+) -> Result<Vec<RawMontgomery>, Sha256F2zError> {
+    if point.iter().any(|value| value.cfg() != field_config) {
+        return Err(Sha256F2zError::InvalidGeometry);
+    }
+    let vars = u32::try_from(point.len()).map_err(|_| Sha256F2zError::InvalidGeometry)?;
+    let table_len = 1usize
+        .checked_shl(vars)
+        .ok_or(Sha256F2zError::InvalidGeometry)?;
+    let mut table = vec![0; table_len];
+    table[0] = raw_montgomery(&SpartanF2zField::one_with_cfg(field_config));
+
+    for (coordinate, challenge) in point.iter().enumerate() {
+        let half = 1usize
+            .checked_shl(u32::try_from(coordinate).map_err(|_| Sha256F2zError::InvalidGeometry)?)
+            .ok_or(Sha256F2zError::InvalidGeometry)?;
+        let (zero_children, one_children) = table[..2 * half].split_at_mut(half);
+        let expand = |(zero_child, one_child): (&mut RawMontgomery, &mut RawMontgomery)| {
+            let parent = field_from_raw(*zero_child, field_config);
+            let high = parent.clone() * challenge;
+            *zero_child = raw_montgomery(&(parent - &high));
+            *one_child = raw_montgomery(&high);
+        };
+        #[cfg(feature = "parallel")]
+        if half >= 1 << 13 && rayon::current_num_threads() > 1 {
+            zero_children
+                .par_iter_mut()
+                .zip(one_children.par_iter_mut())
+                .for_each(expand);
+        } else {
+            zero_children
+                .iter_mut()
+                .zip(one_children.iter_mut())
+                .for_each(expand);
+        }
+        #[cfg(not(feature = "parallel"))]
+        zero_children
+            .iter_mut()
+            .zip(one_children.iter_mut())
+            .for_each(expand);
+    }
+
+    Ok(table)
+}
+
+#[inline]
+fn raw_montgomery(value: &SpartanF2zField) -> RawMontgomery {
+    let words = value.as_montgomery().as_words();
+    u128::from(words[0]) | (u128::from(words[1]) << 64)
+}
+
+#[inline]
+fn field_from_raw(
+    value: RawMontgomery,
+    field_config: &<SpartanF2zField as PrimeField>::Config,
 ) -> SpartanF2zField {
-    let rho_squared = rho.clone() * rho;
-    let mut claim = az.clone();
-    claim += &(rho.clone() * bz);
-    claim += &(rho_squared * cz);
-    claim
+    MontyField::from_montgomery(FieldUint::from(value), field_config)
 }
 
 fn validate_source_params(p_f: &IntEvalParams) -> Result<(), Sha256F2zError> {
     let host_bits = usize::BITS as usize;
     if p_f.word_bits != 1
-        || p_f.s != 0
         || p_f.t < LOG_PACKING
         || p_f.t.saturating_add(p_f.s) > 126
         || p_f.t >= host_bits
+        || p_f.s >= host_bits
     {
         return Err(Sha256F2zError::InvalidGeometry);
     }
@@ -746,14 +1455,15 @@ fn validate_source_params(p_f: &IntEvalParams) -> Result<(), Sha256F2zError> {
 }
 
 fn validate_common_geometry(
-    matrices: Option<&PreparedConstraintMatrices<SpartanF2zField>>,
+    linear_relation: Option<&PreparedSha256LinearRelation>,
     map: &PackedRepeatedVirtualMap,
     p_h: &IntEvalParams,
     p_f: &IntEvalParams,
 ) -> Result<(), Sha256F2zError> {
     validate_source_params(p_f)?;
     if p_h.word_bits != 1
-        || p_h.s != 0
+        || p_h.t < LOG_PACKING
+        || p_h.t.saturating_add(p_h.s) > 126
         || map.rows() != cell_count(p_h)
         || map.cols() != cell_count(p_f)
         || map.local().rows() != SHA256_H_BAR_LIVE_BITS
@@ -763,9 +1473,9 @@ fn validate_common_geometry(
     {
         return Err(Sha256F2zError::InvalidGeometry);
     }
-    if matrices.is_some_and(|matrices| {
-        matrices.num_row_vars() != SHA256_CONSTRAINT_LOCAL_VARS
-            || matrices.num_column_vars() != SHA256_H_LOCAL_VARS
+    if linear_relation.is_some_and(|relation| {
+        relation.matrix().row_count() != SHA256_CONSTRAINTS
+            || relation.matrix().column_count() != SHA256_H_BAR_LIVE_BITS
     }) {
         return Err(Sha256F2zError::InvalidGeometry);
     }
@@ -834,33 +1544,35 @@ fn validate_rows(p: &IntEvalParams, rows: &[Vec<u64>]) -> Result<(), Sha256F2zEr
     Ok(())
 }
 
+/// Reads the conceptual flat sequence in F2Z's native packed order. Low `t`
+/// index bits select the packed row and high `s` bits select the column, so
+/// adjacent SHA instances remain adjacent in both the sumcheck oracle and the
+/// virtual-map indices.
+fn packed_flat_bit(
+    rows: &[Vec<u64>],
+    p: &IntEvalParams,
+    flat_cell: usize,
+) -> Result<u64, SumcheckError> {
+    if flat_cell >= p.cells() || rows.len() != p.cols() {
+        return Err(SumcheckError::InvalidProductDimensions);
+    }
+    let column = flat_cell >> p.t;
+    let row = flat_cell & (p.rows() - 1);
+    let words = rows
+        .get(column)
+        .ok_or(SumcheckError::InvalidProductDimensions)?;
+    let word = words
+        .get(row / u64::BITS as usize)
+        .ok_or(SumcheckError::InvalidProductDimensions)?;
+    Ok((word >> (row % u64::BITS as usize)) & 1)
+}
+
 fn validate_shared_constant(rows: &[Vec<u64>]) -> Result<(), Sha256F2zError> {
     let packed = rows
         .get(SHA256_SHARED_CONSTANT_CELL)
         .ok_or(Sha256F2zError::InvalidGeometry)?;
     if packed.first().is_none_or(|word| word & 1 == 0) {
         return Err(Sha256F2zError::InvalidSharedConstant);
-    }
-    Ok(())
-}
-
-fn validate_products(
-    products: &R1csProductMles<SpartanF2zField>,
-    map: &PackedRepeatedVirtualMap,
-) -> Result<(), Sha256F2zError> {
-    let num_vars =
-        SHA256_CONSTRAINT_LOCAL_VARS + map.instances().next_power_of_two().ilog2() as usize;
-    let expected = 1usize
-        .checked_shl(u32::try_from(num_vars).map_err(|_| Sha256F2zError::InvalidGeometry)?)
-        .ok_or(Sha256F2zError::InvalidGeometry)?;
-    if products.az.num_vars != num_vars
-        || products.bz.num_vars != num_vars
-        || products.cz.num_vars != num_vars
-        || products.az.evaluations.len() != expected
-        || products.bz.evaluations.len() != expected
-        || products.cz.evaluations.len() != expected
-    {
-        return Err(Sha256F2zError::InvalidGeometry);
     }
     Ok(())
 }
@@ -1017,13 +1729,23 @@ fn absorb_sha256_statement(
     );
     absorb_spartan_message(
         transcript,
-        b"assignment-domain-vars",
+        b"assignment-row-vars",
         &(prepared.assignment_params().t as u64).to_le_bytes(),
     );
     absorb_spartan_message(
         transcript,
-        b"source-domain-vars",
+        b"assignment-column-vars",
+        &(prepared.assignment_params().s as u64).to_le_bytes(),
+    );
+    absorb_spartan_message(
+        transcript,
+        b"source-row-vars",
         &(prepared.source_params().t as u64).to_le_bytes(),
+    );
+    absorb_spartan_message(
+        transcript,
+        b"source-column-vars",
+        &(prepared.source_params().s as u64).to_le_bytes(),
     );
     absorb_spartan_message(transcript, b"public-sha256-io", public_statement_binding);
     absorb_spartan_message(transcript, b"assignment-oracle", assignment_binding);
@@ -1031,14 +1753,22 @@ fn absorb_sha256_statement(
 
 fn absorb_projected_sha256_relation(
     transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<SpartanF2zField>,
+    prepared: &PreparedSha256CompressionBatch,
+    relation: &PreparedSha256LinearRelation,
 ) {
     absorb_spartan_message(
         transcript,
         b"runtime-field-modulus",
-        matrices.field_modulus_encoding(),
+        &SpartanF2zField::canonical_modulus_encoding(relation.config()),
     );
-    absorb_spartan_message(transcript, b"projected-matrices", matrices.digest());
+    // The exact signed relation was bound before prime sampling.  Projection
+    // is deterministic from that digest and the runtime modulus, so no dense
+    // or padded matrix serialization is needed here.
+    absorb_spartan_message(
+        transcript,
+        b"projected-linear-relation",
+        prepared.integer_relation_digest(),
+    );
 }
 
 fn public_statement_binding(
@@ -1084,34 +1814,47 @@ fn squeeze_public_io_batch(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn absorb_opening_claim(
+fn absorb_opening_claim<S: ModQWeightSource + ?Sized>(
     transcript: &mut impl Transcript,
     assignment_binding: &[u8; 32],
-    row_point: &[SpartanF2zField],
-    rho: &SpartanF2zField,
+    constraint_point: &[SpartanF2zField],
+    assignment_point: &[SpartanF2zField],
+    collapsed_evaluation: &SpartanF2zField,
     constant_one_batch: &SpartanF2zField,
+    public_instance_point: &[SpartanF2zField],
     public_slot_weights: &[SpartanF2zField],
     public_io_batch: &SpartanF2zField,
-    row_weights_q: &[u128],
+    row_weight_source: &S,
     col_weights: &[u128],
     claimed: u128,
 ) -> Result<(), Sha256F2zError> {
     let mut hash = Hasher::new();
     hash.update(SHA256_OPENING_CLAIM_DOMAIN);
     hash.update(assignment_binding);
-    hash_usize(&mut hash, row_point.len())?;
-    for coordinate in row_point {
+    hash_usize(&mut hash, constraint_point.len())?;
+    for coordinate in constraint_point {
         hash.update(&coordinate.canonical_element_encoding());
     }
-    hash.update(&rho.canonical_element_encoding());
+    hash_usize(&mut hash, assignment_point.len())?;
+    for coordinate in assignment_point {
+        hash.update(&coordinate.canonical_element_encoding());
+    }
+    hash.update(&collapsed_evaluation.canonical_element_encoding());
     hash.update(&constant_one_batch.canonical_element_encoding());
+    hash_usize(&mut hash, public_instance_point.len())?;
+    for coordinate in public_instance_point {
+        hash.update(&coordinate.canonical_element_encoding());
+    }
     hash_usize(&mut hash, public_slot_weights.len())?;
     for coordinate in public_slot_weights {
         hash.update(&coordinate.canonical_element_encoding());
     }
     hash.update(&public_io_batch.canonical_element_encoding());
-    hash_usize(&mut hash, row_weights_q.len())?;
-    for weight in row_weights_q {
+    hash_usize(&mut hash, row_weight_source.row_count())?;
+    for row in 0..row_weight_source.row_count() {
+        let weight = row_weight_source
+            .canonical_weight(row)
+            .ok_or(Sha256F2zError::InvalidGeometry)?;
         hash.update(&weight.to_le_bytes());
     }
     hash_usize(&mut hash, col_weights.len())?;
@@ -1138,9 +1881,13 @@ fn hash_usize(hash: &mut Hasher, value: usize) -> Result<(), Sha256F2zError> {
 
 #[cfg(test)]
 mod tests {
-    use crypto_primitives::ConstIntSemiring;
+    use crypto_primitives::{
+        ConstIntSemiring, FromWithConfig, PrimeField, crypto_bigint_monty::F128,
+        crypto_bigint_uint::Uint,
+    };
 
     use crate::{
+        pcs::FQ_MOD,
         piop::spartan::sha256::{
             generate_sha256_compression_witnesses, prepare_sha256_compression_batch,
             prepare_sha256_compression_batch_for_assignment_rows,
@@ -1282,6 +2029,56 @@ mod tests {
     }
 
     #[test]
+    fn assignment_row_sized_non_power_batch_roundtrip_and_public_binding() {
+        let prepared = prepare_sha256_compression_batch_for_assignment_rows(21).unwrap();
+        assert_eq!(prepared.instances(), 102);
+
+        let inputs = (0..prepared.instances()).map(input).collect::<Vec<_>>();
+        let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
+        let public_statement = public_statements(&inputs, witness.outputs());
+        let (pc, vc) = sha256_compression_configs(&prepared).unwrap();
+        let hint = commit_sha256_compression_witness_with_config(&prepared, &witness, &pc).unwrap();
+
+        let mut prover_transcript = Blake3Transcript::new();
+        let proof = prove_sha256_compressions_with_config(
+            &mut prover_transcript,
+            &prepared,
+            &public_statement,
+            &witness,
+            &hint,
+            &pc,
+        )
+        .unwrap();
+
+        let mut verifier_transcript = Blake3Transcript::new();
+        verify_sha256_compressions_with_config(
+            &mut verifier_transcript,
+            &prepared,
+            &public_statement,
+            &hint.commitment,
+            &proof,
+            &vc,
+        )
+        .unwrap();
+
+        let mut false_statement = public_statement.clone();
+        false_statement.last_mut().unwrap().claimed_output[7] ^= 1 << 31;
+        let mut false_transcript = Blake3Transcript::new();
+        assert!(
+            verify_sha256_compressions_with_config(
+                &mut false_transcript,
+                &prepared,
+                &false_statement,
+                &hint.commitment,
+                &proof,
+                &vc,
+            )
+            .is_err(),
+            "the last public output bit of the partial final repetition must be bound",
+        );
+    }
+
+    #[test]
     fn runtime_prime_roundtrip() {
         // Pinned to the grinded reference schedule: this test exercises the
         // per-round and initial/terminal grinding machinery, which the
@@ -1324,6 +2121,26 @@ mod tests {
             short_prover_transcript.get_challenge::<u128>(),
             untouched.get_challenge::<u128>(),
             "preflight rejection must not mutate the transcript"
+        );
+
+        let mut invalid_prefix_transcript = Blake3Transcript::new();
+        let mut untouched = invalid_prefix_transcript.clone();
+        assert!(matches!(
+            prove_sha256_compressions_with_prefix_vars_and_config(
+                &mut invalid_prefix_transcript,
+                &prepared,
+                &public_statement,
+                &witness,
+                &hint,
+                SHA256_INNER_PREFIX_MAX_VARS + 1,
+                &pc,
+            ),
+            Err(Sha256F2zError::InvalidInnerPrefix { actual: 5, max: 4 })
+        ));
+        assert_eq!(
+            invalid_prefix_transcript.get_challenge::<u128>(),
+            untouched.get_challenge::<u128>(),
+            "invalid prover-local K must reject before transcript absorption"
         );
 
         let default_prepared = prepare_sha256_compression_batch(LOG_COMPRESSIONS).unwrap();
@@ -1390,8 +2207,8 @@ mod tests {
             "the commitment, public statement, profile, and PCS config must be bound before q"
         );
         assert_eq!(
-            proof.outer_nonces().len(),
-            SHA256_CONSTRAINT_LOCAL_VARS + LOG_COMPRESSIONS
+            proof.inner_nonces().len(),
+            prepared.assignment_params().t + prepared.assignment_params().s
         );
 
         let mut verifier_transcript = Blake3Transcript::new();
@@ -1404,6 +2221,22 @@ mod tests {
             &vc,
         )
         .unwrap();
+
+        let mut tampered_inner = proof.clone();
+        let one = SpartanF2zField::one_with_cfg(tampered_inner.inner.round_polynomials[0][0].cfg());
+        tampered_inner.inner.round_polynomials[0][0] += &one;
+        let mut tampered_inner_transcript = Blake3Transcript::new();
+        assert!(
+            verify_sha256_compressions_with_config(
+                &mut tampered_inner_transcript,
+                &prepared,
+                &public_statement,
+                &hint.commitment,
+                &tampered_inner,
+                &vc,
+            )
+            .is_err()
+        );
 
         let mut short_verifier_transcript = Blake3Transcript::new();
         let mut untouched = short_verifier_transcript.clone();
@@ -1457,7 +2290,7 @@ mod tests {
             &proof,
             &vc,
             |proof, delta| {
-                proof.outer_nonces[0] = proof.outer_nonces[0].wrapping_add(delta);
+                proof.inner_nonces[0] = proof.inner_nonces[0].wrapping_add(delta);
             },
         );
         assert_nonce_mutation_rejects(
@@ -1536,8 +2369,14 @@ mod tests {
                 &witness,
                 &hint,
                 &pc,
-            )
-            .unwrap();
+            );
+            let Ok(proof) = proof else {
+                assert!(matches!(
+                    proof,
+                    Err(Sha256F2zError::InvalidInnerTerminalClaim)
+                ));
+                continue;
+            };
 
             let mut verifier_transcript = Blake3Transcript::new();
             assert!(
@@ -1554,12 +2393,14 @@ mod tests {
         }
 
         // Cell 769 is the first non-input wire in the first local assignment.
-        // Changing it while retaining the source commitment and exact R1CS
-        // products must not produce an accepting proof.
+        // Changing it while retaining the source commitment must not produce
+        // an accepting linear proof.
         const DERIVED_ASSIGNMENT_CELL: usize = 769;
         let mut inconsistent_witness = witness.clone();
-        inconsistent_witness.assignment_rows_mut_for_tests()[0][DERIVED_ASSIGNMENT_CELL / 64] ^=
-            1 << (DERIVED_ASSIGNMENT_CELL % 64);
+        let p_h = prepared.assignment_params();
+        let column = DERIVED_ASSIGNMENT_CELL >> p_h.t;
+        let row = DERIVED_ASSIGNMENT_CELL & (p_h.rows() - 1);
+        inconsistent_witness.assignment_rows_mut_for_tests()[column][row / 64] ^= 1 << (row % 64);
         let mut inconsistent_prover_transcript = Blake3Transcript::new();
         if let Ok(inconsistent_proof) = prove_sha256_compressions_with_config(
             &mut inconsistent_prover_transcript,
@@ -1617,5 +2458,356 @@ mod tests {
                 actual: 0
             })
         ));
+    }
+
+    #[test]
+    fn compact_equality_table_matches_field_table() {
+        let field_config = F128::make_cfg(&Uint::from(FQ_MOD)).expect("fixed test field");
+        let point = (0..12)
+            .map(|coordinate| {
+                SpartanF2zField::from_with_cfg((coordinate as u64) + 7, &field_config)
+            })
+            .collect::<Vec<_>>();
+        let dense = eq_table(&point, &field_config).unwrap();
+        let compact = compact_eq_table(&point, &field_config).unwrap();
+        let factored = FactoredEqualityWeights::new(&point, 7, &field_config).unwrap();
+        let scale = SpartanF2zField::from_with_cfg(37_u64, &field_config);
+        let mut scaled_factored = FactoredEqualityWeights::new(&point, 7, &field_config).unwrap();
+        scaled_factored.scale(&scale, &field_config);
+
+        assert_eq!(compact.len(), dense.len());
+        assert_eq!(factored.len(), dense.len());
+        for (index, (raw, expected)) in compact.into_iter().zip(dense).enumerate() {
+            assert_eq!(field_from_raw(raw, &field_config), expected);
+            assert_eq!(
+                factored.evaluate(index, &field_config),
+                Some(expected.clone())
+            );
+            assert_eq!(
+                scaled_factored.evaluate(index, &field_config),
+                Some(expected * &scale)
+            );
+        }
+    }
+
+    #[test]
+    fn public_linear_batching_matches_the_packed_witness_and_terminal_evaluation() {
+        let prepared = super::super::constraints::prepare_sha256_compression_batch_for_test(1)
+            .expect("two-instance test relation");
+        let inputs = [input(5), input(9)];
+        let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
+        let statements = public_statements(&inputs, witness.outputs());
+        let field_config = F128::make_cfg(&Uint::from(FQ_MOD)).expect("fixed test field");
+        let instance_point = [SpartanF2zField::from_with_cfg(7_u64, &field_config)];
+        let slot_weights = (0..SHA256_PUBLIC_WORDS * SHA256_PUBLIC_WORD_BITS)
+            .map(|slot| SpartanF2zField::from_with_cfg(slot as u64 + 11, &field_config))
+            .collect::<Vec<_>>();
+        let public_batch_weight = SpartanF2zField::from_with_cfg(19_u64, &field_config);
+        let constant_weight = SpartanF2zField::from_with_cfg(23_u64, &field_config);
+        let batching = PublicLinearBatching::new(
+            &prepared,
+            &statements,
+            &instance_point,
+            slot_weights,
+            public_batch_weight,
+            constant_weight,
+            &field_config,
+        )
+        .unwrap();
+
+        let mut witness_sum = SpartanF2zField::zero_with_cfg(&field_config);
+        for flat_cell in 0..prepared.assignment_params().cells() {
+            if witness.assignment_bit(flat_cell).unwrap() {
+                witness_sum += &batching.coefficient(flat_cell, &field_config).unwrap();
+            }
+        }
+        assert_eq!(witness_sum, *batching.initial_claim());
+
+        let assignment_point = (0..prepared.assignment_params().t + prepared.assignment_params().s)
+            .map(|coordinate| SpartanF2zField::from_with_cfg(coordinate as u64 + 29, &field_config))
+            .collect::<Vec<_>>();
+        let dense_equality = eq_table(&assignment_point, &field_config).unwrap();
+        let factored = FactoredEqualityWeights::new(
+            &assignment_point,
+            prepared.assignment_params().t,
+            &field_config,
+        )
+        .unwrap();
+        let mut dense_evaluation = SpartanF2zField::zero_with_cfg(&field_config);
+        for (flat_cell, equality) in dense_equality.iter().enumerate() {
+            let coefficient = batching.coefficient(flat_cell, &field_config).unwrap();
+            dense_evaluation += &(coefficient * equality);
+        }
+        assert_eq!(
+            batching.evaluate(&assignment_point, &field_config).unwrap(),
+            dense_evaluation
+        );
+        assert_eq!(
+            batching.evaluate_dense(&factored, &field_config).unwrap(),
+            dense_evaluation
+        );
+    }
+
+    #[test]
+    fn native_prover_collapse_matches_sparse_verifier_evaluation() {
+        let prepared = super::super::constraints::prepare_sha256_compression_batch_for_test(1)
+            .expect("two-instance test relation");
+        let field_config = F128::make_cfg(&Uint::from(FQ_MOD)).expect("fixed test field");
+        let relation = prepared
+            .project_linear_relation(&field_config)
+            .expect("project linear relation");
+
+        let constraint_point = (0..flat_constraint_vars(&prepared).unwrap())
+            .map(|coordinate| {
+                SpartanF2zField::from_with_cfg((coordinate as u64) + 2, &field_config)
+            })
+            .collect::<Vec<_>>();
+        let constraint_weights = compact_eq_table(&constraint_point, &field_config).unwrap();
+        let reducer = OptimizedSumcheckReducer::new(&field_config).unwrap();
+        let collapsed = (0..prepared.assignment_params().cells())
+            .map(|flat_column| {
+                collapse_flat_linear_column(
+                    &prepared,
+                    &relation,
+                    &constraint_weights,
+                    &reducer,
+                    flat_column,
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        let assignment_point = (0..prepared.assignment_params().t + prepared.assignment_params().s)
+            .map(|coordinate| {
+                SpartanF2zField::from_with_cfg((coordinate as u64) + 19, &field_config)
+            })
+            .collect::<Vec<_>>();
+        let assignment_weights = FactoredEqualityWeights::new(
+            &assignment_point,
+            prepared.assignment_params().t,
+            &field_config,
+        )
+        .unwrap();
+        let zero = SpartanF2zField::zero_with_cfg(&field_config);
+        let dense_evaluation =
+            collapsed
+                .iter()
+                .enumerate()
+                .fold(zero, |mut sum, (flat_column, coefficient)| {
+                    let weight = assignment_weights
+                        .evaluate(flat_column, &field_config)
+                        .unwrap();
+                    sum += &(coefficient.clone() * &weight);
+                    sum
+                });
+        let sparse_evaluation = evaluate_flat_linear_collapse_dense(
+            &prepared,
+            &relation,
+            &constraint_weights,
+            &assignment_weights,
+        )
+        .unwrap();
+        let repeated_evaluation = evaluate_repeated_flat_linear_collapse(
+            &prepared,
+            &relation,
+            &constraint_point,
+            &assignment_point,
+        )
+        .unwrap();
+
+        assert_eq!(dense_evaluation, sparse_evaluation);
+        assert_eq!(dense_evaluation, repeated_evaluation);
+    }
+
+    #[test]
+    fn affine_equality_repetition_matches_dense_partial_domain() {
+        let field_config = F128::make_cfg(&Uint::from(FQ_MOD)).expect("fixed test field");
+        let left_point = (0..6)
+            .map(|coordinate| {
+                SpartanF2zField::from_with_cfg((coordinate as u64) + 3, &field_config)
+            })
+            .collect::<Vec<_>>();
+        let right_point = (0..6)
+            .map(|coordinate| {
+                SpartanF2zField::from_with_cfg((coordinate as u64) + 17, &field_config)
+            })
+            .collect::<Vec<_>>();
+        let instance_point = (0..3)
+            .map(|coordinate| {
+                SpartanF2zField::from_with_cfg((coordinate as u64) + 31, &field_config)
+            })
+            .collect::<Vec<_>>();
+        let terms = [
+            (0, 1, SpartanF2zField::from_with_cfg(5_u64, &field_config)),
+            (2, 4, SpartanF2zField::from_with_cfg(7_u64, &field_config)),
+            (6, 9, SpartanF2zField::from_with_cfg(11_u64, &field_config)),
+        ];
+        let optimized = evaluate_affine_equality_repetition(
+            5,
+            7,
+            11,
+            &left_point,
+            &right_point,
+            Some(&instance_point),
+            terms.clone(),
+            &field_config,
+        )
+        .unwrap();
+
+        let left_equality = eq_table(&left_point, &field_config).unwrap();
+        let right_equality = eq_table(&right_point, &field_config).unwrap();
+        let instance_equality = eq_table(&instance_point, &field_config).unwrap();
+        let mut dense = SpartanF2zField::zero_with_cfg(&field_config);
+        for (instance, instance_weight) in instance_equality.iter().take(5).enumerate() {
+            for (left_offset, right_offset, coefficient) in &terms {
+                let mut term = coefficient.clone() * &left_equality[7 * instance + left_offset];
+                term *= &right_equality[11 * instance + right_offset];
+                term *= instance_weight;
+                dense += &term;
+            }
+        }
+        assert_eq!(optimized, dense);
+
+        let shared_terms = [
+            (1, 0, SpartanF2zField::from_with_cfg(13_u64, &field_config)),
+            (6, 0, SpartanF2zField::from_with_cfg(17_u64, &field_config)),
+        ];
+        let optimized_shared = evaluate_affine_equality_repetition(
+            5,
+            7,
+            0,
+            &left_point,
+            &right_point,
+            None,
+            shared_terms.clone(),
+            &field_config,
+        )
+        .unwrap();
+        let mut dense_shared = SpartanF2zField::zero_with_cfg(&field_config);
+        for instance in 0..5 {
+            for (left_offset, _, coefficient) in &shared_terms {
+                dense_shared += &(coefficient.clone()
+                    * &left_equality[7 * instance + left_offset]
+                    * &right_equality[0]);
+            }
+        }
+        assert_eq!(optimized_shared, dense_shared);
+    }
+
+    #[test]
+    fn non_power_sha_terminal_contractions_match_dense_evaluation() {
+        let prepared = prepare_sha256_compression_batch_for_assignment_rows(21)
+            .expect("102-instance packed test relation");
+        assert_eq!(prepared.instances(), 102);
+        let field_config = F128::make_cfg(&Uint::from(FQ_MOD)).expect("fixed test field");
+        let relation = prepared
+            .project_linear_relation(&field_config)
+            .expect("project linear relation");
+        let constraint_point = (0..flat_constraint_vars(&prepared).unwrap())
+            .map(|coordinate| {
+                SpartanF2zField::from_with_cfg((coordinate as u64) + 2, &field_config)
+            })
+            .collect::<Vec<_>>();
+        let assignment_point = (0..prepared.assignment_params().t + prepared.assignment_params().s)
+            .map(|coordinate| {
+                SpartanF2zField::from_with_cfg((coordinate as u64) + 41, &field_config)
+            })
+            .collect::<Vec<_>>();
+        let constraint_weights = compact_eq_table(&constraint_point, &field_config).unwrap();
+        let assignment_weights = FactoredEqualityWeights::new(
+            &assignment_point,
+            prepared.assignment_params().t,
+            &field_config,
+        )
+        .unwrap();
+        let dense_relation = evaluate_flat_linear_collapse_dense(
+            &prepared,
+            &relation,
+            &constraint_weights,
+            &assignment_weights,
+        )
+        .unwrap();
+        let optimized_relation = evaluate_repeated_flat_linear_collapse(
+            &prepared,
+            &relation,
+            &constraint_point,
+            &assignment_point,
+        )
+        .unwrap();
+        assert_eq!(optimized_relation, dense_relation);
+
+        let statements = (0..prepared.instances())
+            .map(|instance| Sha256CompressionStatement::new(input(instance), [instance as u32; 8]))
+            .collect::<Vec<_>>();
+        let instance_point =
+            public_instance_point(&constraint_point, prepared.instances()).unwrap();
+        let slot_weights = (0..SHA256_PUBLIC_WORDS * SHA256_PUBLIC_WORD_BITS)
+            .map(|slot| SpartanF2zField::from_with_cfg(slot as u64 + 71, &field_config))
+            .collect::<Vec<_>>();
+        let public_batch_weight = SpartanF2zField::from_with_cfg(83_u64, &field_config);
+        let constant_weight = SpartanF2zField::from_with_cfg(89_u64, &field_config);
+        let batching = PublicLinearBatching::new(
+            &prepared,
+            &statements,
+            instance_point,
+            slot_weights.clone(),
+            public_batch_weight.clone(),
+            constant_weight.clone(),
+            &field_config,
+        )
+        .unwrap();
+        assert_eq!(
+            batching.evaluate(&assignment_point, &field_config).unwrap(),
+            batching
+                .evaluate_dense(&assignment_weights, &field_config)
+                .unwrap()
+        );
+
+        let instance_weights = eq_table(instance_point, &field_config).unwrap();
+        let mut dense_initial_claim = constant_weight;
+        for (instance, statement) in statements.iter().enumerate() {
+            for (word_slot, word) in statement.words().enumerate() {
+                for bit in 0..SHA256_PUBLIC_WORD_BITS {
+                    if word >> bit & 1 == 1 {
+                        let slot = word_slot * SHA256_PUBLIC_WORD_BITS + bit;
+                        let coefficient = instance_weights[instance].clone()
+                            * &public_batch_weight
+                            * &slot_weights[slot];
+                        dense_initial_claim += &coefficient;
+                    }
+                }
+            }
+        }
+        assert_eq!(*batching.initial_claim(), dense_initial_claim);
+    }
+
+    #[test]
+    fn factored_opening_matches_the_dense_scaled_equality() {
+        let prepared = super::super::constraints::prepare_sha256_compression_batch_for_test(0)
+            .expect("one-instance test relation");
+        let field_config = F128::make_cfg(&Uint::from(FQ_MOD)).expect("fixed test field");
+        let p_h = prepared.assignment_params();
+        let assignment_point = (0..p_h.t + p_h.s)
+            .map(|coordinate| {
+                SpartanF2zField::from_with_cfg((coordinate as u64) + 3, &field_config)
+            })
+            .collect::<Vec<_>>();
+        let dense_equality = eq_table(&assignment_point, &field_config).unwrap();
+        let factored =
+            FactoredEqualityWeights::new(&assignment_point, p_h.t, &field_config).unwrap();
+        let collapsed = SpartanF2zField::from_with_cfg(17_u64, &field_config);
+        let initial_claim = SpartanF2zField::from_with_cfg(31_u64, &field_config);
+        let (rows, columns, claimed) =
+            linear_opening_claim(&prepared, p_h, factored, &collapsed, initial_claim.clone())
+                .unwrap();
+
+        for (flat_cell, equality) in dense_equality.iter().enumerate() {
+            let row = flat_cell & (p_h.rows() - 1);
+            let column = flat_cell >> p_h.t;
+            let row_weight = field_from_raw(rows[row], &field_config);
+            let column_weight = SpartanF2zField::from_with_cfg(columns[column], &field_config);
+            assert_eq!(row_weight * &column_weight, equality.clone() * &collapsed);
+        }
+        assert_eq!(claimed, initial_claim.canonical_u128());
     }
 }

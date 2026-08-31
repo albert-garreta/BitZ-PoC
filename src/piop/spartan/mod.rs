@@ -82,19 +82,20 @@ pub use profile::{
     SoundnessTerm,
 };
 pub use sha256::{
-    PreparedSha256CompressionBatch, SHA256_COMMITMENT_FIELD_BITS, SHA256_CONSTRAINT_LOCAL_VARS,
-    SHA256_CONSTRAINT_STRIDE, SHA256_CONSTRAINTS, SHA256_F_BAR_LIVE_BITS, SHA256_F_INSTANCE_BITS,
-    SHA256_F_LIVE_BITS, SHA256_F_LOCAL_VARS, SHA256_F_STRIDE, SHA256_H_BAR_LIVE_BITS,
-    SHA256_H_INSTANCE_BITS, SHA256_H_LOCAL_VARS, SHA256_H_STRIDE, SHA256_MAX_LOG_COMPRESSIONS,
-    SHA256_MIN_LOG_COMPRESSIONS, Sha256CompressionInput, Sha256CompressionProof,
-    Sha256CompressionStatement, Sha256CompressionWitnessBatch, Sha256ConstraintError,
-    Sha256F2zError, Sha256PrimeError, Sha256WitnessError, commit_sha256_compression_witness,
+    PreparedSha256CompressionBatch, SHA256_COMMITMENT_FIELD_BITS, SHA256_CONSTRAINTS,
+    SHA256_DEFAULT_INNER_PREFIX_VARS, SHA256_F_BAR_LIVE_BITS, SHA256_F_INSTANCE_BITS,
+    SHA256_F_LIVE_BITS, SHA256_H_BAR_LIVE_BITS, SHA256_H_INSTANCE_BITS,
+    SHA256_INNER_PREFIX_MAX_VARS, SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS,
+    Sha256CompressionInput, Sha256CompressionProof, Sha256CompressionStatement,
+    Sha256CompressionWitnessBatch, Sha256ConstraintError, Sha256F2zError, Sha256PrimeError,
+    Sha256WitnessError, commit_sha256_compression_witness,
     commit_sha256_compression_witness_with_config, generate_sha256_compression_witnesses,
     prepare_sha256_compression_batch, prepare_sha256_compression_batch_for_assignment_rows,
     prepare_sha256_compression_batch_for_assignment_rows_with_profile,
     prepare_sha256_compression_batch_with_profile, prove_sha256_compressions,
-    prove_sha256_compressions_with_config, sha256_compression_configs, verify_sha256_compressions,
-    verify_sha256_compressions_with_config,
+    prove_sha256_compressions_with_config, prove_sha256_compressions_with_prefix_vars,
+    prove_sha256_compressions_with_prefix_vars_and_config, sha256_compression_configs,
+    verify_sha256_compressions, verify_sha256_compressions_with_config,
 };
 pub use sumcheck::{OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProof};
 pub use u32_mul::{

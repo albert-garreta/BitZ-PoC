@@ -23,6 +23,8 @@
 //! Every compression occupies 20,456 adjacent assignment cells, all batches
 //! share one leading constant cell, and any unused cells are one trailing
 //! zero suffix.
+//! Set `F2Z_SHA_INNER_PREFIX_VARS=0..4` to choose how many leading inner
+//! sumcheck variables the packed prefix kernel consumes (default: 2).
 //!
 //! (`F2Z_SHA_LOG2S` / `F2Z_SHA_REPS` / `F2Z_SHA_SEED` are deprecated
 //! aliases.) Set `F2Z_SHA_TRACE_PATH=/path/to/trace.jsonl` together with
@@ -44,13 +46,13 @@ use std::{
 use f2z::{
     f2map::VirtualMap,
     piop::spartan::{
-        PreparedSha256CompressionBatch, SHA256_COMMITMENT_FIELD_BITS, SHA256_CONSTRAINT_STRIDE,
-        SHA256_CONSTRAINTS, SHA256_F_INSTANCE_BITS, SHA256_H_INSTANCE_BITS,
-        SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS, Sha256CompressionInput,
-        Sha256CompressionStatement, SpartanField, commit_sha256_compression_witness_with_config,
-        generate_sha256_compression_witnesses, prepare_sha256_compression_batch,
-        prepare_sha256_compression_batch_for_assignment_rows,
-        prove_sha256_compressions_with_config, sha256_compression_configs,
+        PreparedSha256CompressionBatch, SHA256_COMMITMENT_FIELD_BITS, SHA256_CONSTRAINTS,
+        SHA256_DEFAULT_INNER_PREFIX_VARS, SHA256_F_INSTANCE_BITS, SHA256_H_INSTANCE_BITS,
+        SHA256_INNER_PREFIX_MAX_VARS, SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS,
+        Sha256CompressionInput, Sha256CompressionStatement, SpartanField,
+        commit_sha256_compression_witness_with_config, generate_sha256_compression_witnesses,
+        prepare_sha256_compression_batch, prepare_sha256_compression_batch_for_assignment_rows,
+        prove_sha256_compressions_with_prefix_vars_and_config, sha256_compression_configs,
         verify_sha256_compressions_with_config,
     },
     transcript::Blake3Transcript,
@@ -184,6 +186,7 @@ impl TraceWriter {
         shape: BenchShape,
         shape_seed: u64,
         prepared: &PreparedSha256CompressionBatch,
+        inner_prefix_vars: usize,
         trial: Trial,
         intervals: &[ProfileInterval],
     ) {
@@ -203,8 +206,9 @@ impl TraceWriter {
         let security = prepared.security();
         let live_source_cells = 1 + SHA256_F_INSTANCE_BITS * compressions;
         let live_assignment_cells = 1 + SHA256_H_INSTANCE_BITS * compressions;
-        let padded_instances = compressions.next_power_of_two();
         let assignment_rows = prepared.assignment_params().cells();
+        let live_constraint_rows = SHA256_CONSTRAINTS * compressions;
+        let constraint_rows = live_constraint_rows.next_power_of_two();
         let shape_slug = shape.slug();
         let trial_fragment = trial.id_fragment();
         let run_id = format!("sha256-{shape_slug}-{trial_fragment}");
@@ -261,9 +265,11 @@ impl TraceWriter {
                     "sha256_internal_rounds": 64usize * compressions,
                     "witness_bits": live_source_cells,
                     "mnum_rows": assignment_rows,
-                    "num_rows": SHA256_CONSTRAINT_STRIDE * padded_instances,
+                    "num_rows": constraint_rows,
                     "num_cols": assignment_rows,
-                    "constraints": SHA256_CONSTRAINTS * compressions,
+                    "constraints": live_constraint_rows,
+                    "trailing_constraint_padding": constraint_rows - live_constraint_rows,
+                    "inner_prefix_vars": inner_prefix_vars,
                     "live_source_bits": live_source_cells,
                     "padded_source_cells": prepared.source_params().cells(),
                     "live_assignment_values": live_assignment_cells,
@@ -284,7 +290,7 @@ impl TraceWriter {
                     "prime_bits": if prepared.log_instance_capacity()
                         == SHA256_MAX_LOG_COMPRESSIONS {112} else {113},
                     "initial_grinding_bits": security.initial_grinding_bits,
-                    "outer_round_grinding_bits": security.piop_round_grinding_bits,
+                    "inner_round_grinding_bits": security.piop_round_grinding_bits,
                     "terminal_grinding_bits": security.terminal_grinding_bits,
                     "forest_round_grinding_bits": security.forest_round_grinding_bits,
                     "ligerito_target_bits": security.ligerito_target_bits,
@@ -411,9 +417,10 @@ fn describe_span(
     let committing = under("sha256-trace:commit");
     let opening_prepare = has_fragment("opening_prepare_");
     let f2z_opening = has_fragment("f2z_prove") || has_fragment("f2z_verify");
-    let spartan = has_fragment("spartan_outer_");
-    let sumcheck =
-        under("sha256:spartan_outer_prove") || under("eqf:rounds") || under("mc:presum_run");
+    let linear_collapse = has_fragment("linear_collapse_");
+    let inner_sumcheck = has_fragment("spartan_inner_") || under("spartan:inner_sumcheck");
+    let spartan = linear_collapse || inner_sumcheck;
+    let sumcheck = inner_sumcheck || under("eqf:rounds") || under("mc:presum_run");
     let in_eq_factored = labels.iter().any(|label| label.starts_with("eqf:"));
     let fri = !in_eq_factored && f2z_opening && (under("mc:forest") || under("mc:fold_v"));
 
@@ -478,10 +485,11 @@ fn describe_span(
         | "sha256-trace:commit"
         | "sha256-trace:proof"
         | "sha256-trace:verification"
-        | "sha256:spartan_outer_prove"
+        | "sha256:linear_collapse_prover"
+        | "sha256:spartan_inner_prove"
         | "sha256:opening_prepare_prover"
         | "sha256:f2z_prove"
-        | "sha256:spartan_outer_verify"
+        | "sha256:spartan_inner_verify"
         | "sha256:opening_prepare_verifier"
         | "sha256:f2z_verify" => "phase",
         "spartan:round_grinding_prove" | "spartan:round_grinding_verify" => "round",
@@ -493,7 +501,7 @@ fn describe_span(
         "sha256-trace:witness_generation" => Some("witness-generation"),
         "sha256-trace:commit" => Some("commit"),
         "sha256-trace:verification" => Some("verification"),
-        "sha256:spartan_outer_prove" => Some("constraint-proof"),
+        "sha256:linear_collapse_prover" | "sha256:spartan_inner_prove" => Some("constraint-proof"),
         "sha256:f2z_prove" => Some("opening-proof"),
         _ => None,
     };
@@ -537,22 +545,21 @@ fn span_names(label: &str) -> (String, String) {
             "Project exact relation coefficients modulo q",
             "Project relation",
         )),
-        "sha256:product_projection_prover" => Some((
-            "Project exact witness products modulo q",
-            "Project products",
+        "sha256:linear_collapse_prover" => Some((
+            "Collapse the flat SHA-256 linear relation",
+            "Linear collapse",
         )),
-        "sha256:spartan_prepare_prover" => {
-            Some(("Prepare equality factors and reducer", "Spartan prep"))
+        "sha256:spartan_inner_prove" => Some(("Prove quadratic inner sumcheck", "Inner sumcheck")),
+        "spartan:round_grinding_prove" => Some(("Inner-round prover grinding", "Round PoW")),
+        "sha256:public_batch_grinding_prove" => {
+            Some(("Public-batch prover grinding", "Public-batch PoW"))
         }
-        "sha256:spartan_outer_prove" => Some(("Outer Spartan sumcheck", "Outer Spartan")),
-        "spartan:round_grinding_prove" => Some(("Outer-round prover grinding", "Round PoW")),
-        "sha256:terminal_grinding_prove" => Some(("Terminal prover grinding", "Terminal PoW")),
         "sha256:opening_prepare_prover" => {
             Some(("Factorize terminal opening claim", "Opening prep"))
         }
         "sha256:f2z_prove" => Some(("Virtual F2Z opening proof", "Virtual F2Z")),
-        "sha256:spartan_outer_verify" => Some(("Verify outer Spartan sumcheck", "Outer verify")),
-        "spartan:round_grinding_verify" => Some(("Check outer-round grinding", "Check PoW")),
+        "sha256:spartan_inner_verify" => Some(("Verify quadratic inner sumcheck", "Inner verify")),
+        "spartan:round_grinding_verify" => Some(("Check inner-round grinding", "Check PoW")),
         "sha256:f2z_verify" => Some(("Verify virtual F2Z opening", "F2Z verify")),
         _ => None,
     };
@@ -576,25 +583,30 @@ fn span_names(label: &str) -> (String, String) {
 
 fn span_math(label: &str) -> Vec<&'static str> {
     match label {
-        "sha256-trace:witness_generation" => vec![
-            "\\bar h=M\\bar f",
-            "(A\\bar h)\\circ(B\\bar h)=C\\bar h\\text{ over }\\mathbb Z",
-        ],
+        "sha256-trace:witness_generation" => {
+            vec!["\\bar h=M\\bar f", "C\\bar h=0\\text{ over }\\mathbb Z"]
+        }
         "sha256-trace:commit" => vec!["C_f=\\operatorname{Com}_{\\mathbb F_{2^{128}}}(\\bar f)"],
         "sha256:runtime_prime_sample_prover" | "sha256:runtime_prime_sample_verifier" => {
             vec!["q\\leftarrow\\operatorname{PrimeSample}(\\mathsf{tr},I_t)"]
         }
-        "sha256:relation_projection_prover"
-        | "sha256:relation_projection_verifier"
-        | "sha256:product_projection_prover" => {
+        "sha256:relation_projection_prover" | "sha256:relation_projection_verifier" => {
             vec!["\\mathbb Z\\longrightarrow\\mathbb F_q"]
         }
-        "sha256:spartan_outer_prove" => vec![
-            "\\sum_{x\\in\\{0,1\\}^{t+8}}\\operatorname{eq}(\\tau,x)\\bigl(Az(x)Bz(x)-Cz(x)\\bigr)=0",
-        ],
+        "sha256:linear_collapse_prover" => {
+            vec![
+                "V_C(y)=\\sum_k\\operatorname{eq}(r_{\\mathrm{con}},k)\\,C[k,y]",
+                "V_{\\mathrm{total}}=V_C+V_{\\mathrm{one}}+V_{\\mathrm{public}}",
+            ]
+        }
+        "sha256:spartan_inner_prove" | "sha256:spartan_inner_verify" => {
+            vec![
+                "\\sum_{y\\in\\{0,1\\}^{t_h+s_h}}\\widetilde V_{\\mathrm{total}}(y)\\,\\widetilde{\\bar h}(y)=c_{\\mathrm{public}}",
+            ]
+        }
         "spartan:round_grinding_prove"
         | "sha256:initial_grinding_prove"
-        | "sha256:terminal_grinding_prove" => {
+        | "sha256:public_batch_grinding_prove" => {
             vec!["\\operatorname{lz}(\\operatorname{BLAKE3}(s\\parallel n))\\ge b"]
         }
         "sha256:opening_prepare_prover" | "sha256:opening_prepare_verifier" => {
@@ -757,6 +769,7 @@ fn fmt_ms(milliseconds: f64) -> String {
 fn run_once(
     inputs: &[Sha256CompressionInput],
     prepared: &PreparedSha256CompressionBatch,
+    inner_prefix_vars: usize,
     pc: &flock_core::pcs::ligerito::ProverConfig,
     vc: &flock_core::pcs::ligerito::VerifierConfig,
 ) -> (RepTiming, Vec<ProfileInterval>) {
@@ -799,12 +812,13 @@ fn run_once(
     let mut prover_transcript = Blake3Transcript::new();
     let proof = {
         let _scope = f2z::utils::prof::scope("sha256-trace:proof");
-        prove_sha256_compressions_with_config(
+        prove_sha256_compressions_with_prefix_vars_and_config(
             &mut prover_transcript,
             prepared,
             &statements,
             &witness,
             &hint,
+            inner_prefix_vars,
             pc,
         )
         .expect("SHA proof succeeds")
@@ -834,13 +848,11 @@ fn run_once(
     black_box(&proof);
 
     let f2z_bytes = proof.f2z().to_bytes().len();
-    let spartan_elements = 4 * proof.outer().sumcheck.round_polynomials.len() + 3;
-    let field_bytes = proof
-        .outer()
-        .az_mle_claim
+    let spartan_elements = 3 * proof.inner().round_polynomials.len();
+    let field_bytes = proof.inner().round_polynomials[0][0]
         .canonical_element_encoding()
         .len();
-    let spartan_bytes = spartan_elements * field_bytes + 8 * (proof.outer_nonces().len() + 2);
+    let spartan_bytes = spartan_elements * field_bytes + 8 * (proof.inner_nonces().len() + 2);
 
     let timing = RepTiming {
         witness_ms,
@@ -860,6 +872,7 @@ fn bench_shape(
     reps: usize,
     root_seed: u64,
     threads: usize,
+    inner_prefix_vars: usize,
     trace_writer: &mut Option<TraceWriter>,
 ) {
     let exponent = shape.exponent();
@@ -897,20 +910,23 @@ fn bench_shape(
         SHA256_F_INSTANCE_BITS, SHA256_H_INSTANCE_BITS,
     );
     println!(
-        "  R1CS: {} live constraints/compression; {} padded outer rows | packed map nnz={} | setup {}",
+        "  linear relation: {} adjacent rows/compression; {} live / {} global rows | inner prefix K={} | packed map nnz={} | setup {}",
         SHA256_CONSTRAINTS,
-        SHA256_CONSTRAINT_STRIDE * compressions.next_power_of_two(),
+        SHA256_CONSTRAINTS * compressions,
+        (SHA256_CONSTRAINTS * compressions).next_power_of_two(),
+        inner_prefix_vars,
         prepared.map().nnz(),
         fmt_ms(setup_ms),
     );
 
     let warm_inputs = make_inputs(compressions, shape_seed);
-    let (warm, warm_intervals) = run_once(&warm_inputs, &prepared, &pc, &vc);
+    let (warm, warm_intervals) = run_once(&warm_inputs, &prepared, inner_prefix_vars, &pc, &vc);
     if let Some(writer) = trace_writer {
         writer.write_run(
             shape,
             shape_seed,
             &prepared,
+            inner_prefix_vars,
             Trial::Warmup(0),
             &warm_intervals,
         );
@@ -924,18 +940,19 @@ fn bench_shape(
     for sample in 0..reps {
         let input_seed = shape_seed ^ ((sample + 1) as u64).wrapping_mul(0xd6e8_feb8_6659_fd93);
         let inputs = make_inputs(compressions, input_seed);
-        let (timing, intervals) = run_once(&inputs, &prepared, &pc, &vc);
+        let (timing, intervals) = run_once(&inputs, &prepared, inner_prefix_vars, &pc, &vc);
         if let Some(writer) = trace_writer {
             writer.write_run(
                 shape,
                 shape_seed,
                 &prepared,
+                inner_prefix_vars,
                 Trial::Sample(sample),
                 &intervals,
             );
         }
         println!(
-            "  SAMPLE shape_mode={} exponent={exponent} sample={} compressions={compressions} mnum_rows={assignment_cells} witness_ms={:.6} commit_ms={:.6} prove_ms={:.6} verify_ms={:.6} verified=true",
+            "  SAMPLE shape_mode={} exponent={exponent} sample={} compressions={compressions} mnum_rows={assignment_cells} inner_prefix_vars={inner_prefix_vars} witness_ms={:.6} commit_ms={:.6} prove_ms={:.6} verify_ms={:.6} verified=true",
             shape.mode(),
             sample + 1,
             timing.witness_ms,
@@ -963,6 +980,7 @@ fn bench_shape(
             ("compressions".into(), compressions.to_string()),
             ("mnum_rows".into(), assignment_cells.to_string()),
             ("shape_mode".into(), shape.mode().to_owned()),
+            ("inner_prefix_vars".into(), inner_prefix_vars.to_string()),
             ("throughput_per_s".into(), format!("{throughput:.3}")),
             ("shape_seed".into(), format!("{shape_seed:#018x}")),
         ],
@@ -989,18 +1007,39 @@ fn main() {
     let mut trace_writer = TraceWriter::from_env(threads);
     let reps = common::reps(Some("F2Z_SHA_REPS"), 3);
     let root_seed = common::seed(Some("F2Z_SHA_SEED"), 0x4632_5a5f_5348_4132);
+    let inner_prefix_vars = std::env::var("F2Z_SHA_INNER_PREFIX_VARS").map_or(
+        SHA256_DEFAULT_INNER_PREFIX_VARS,
+        |value| {
+            value
+                .parse::<usize>()
+                .expect("F2Z_SHA_INNER_PREFIX_VARS must be an integer in 0..=4")
+        },
+    );
+    assert!(
+        inner_prefix_vars <= SHA256_INNER_PREFIX_MAX_VARS,
+        "F2Z_SHA_INNER_PREFIX_VARS must be in 0..={SHA256_INNER_PREFIX_MAX_VARS}"
+    );
 
-    println!("SHA-256: packed [1|f₀|f₁|…], h=Mf; repeated outer Spartan + virtual F2Z");
+    println!("SHA-256: flat packed [1|f₀|f₁|…], h=Mf; inner sumcheck + virtual F2Z");
     #[cfg(feature = "parallel")]
     println!("rayon threads: {threads}");
-    println!("repetitions: {reps}; warmups: 1; root seed: {root_seed:#018x}");
+    println!(
+        "repetitions: {reps}; warmups: 1; inner prefix K={inner_prefix_vars}; root seed: {root_seed:#018x}"
+    );
     if let Some(path) = std::env::var_os("F2Z_SHA_TRACE_PATH") {
         println!("canonical interval trace: {}", Path::new(&path).display());
     }
 
     for shape in shapes() {
         flock_core::scratch::clear();
-        bench_shape(shape, reps, root_seed, threads, &mut trace_writer);
+        bench_shape(
+            shape,
+            reps,
+            root_seed,
+            threads,
+            inner_prefix_vars,
+            &mut trace_writer,
+        );
     }
     flock_core::scratch::clear();
 }

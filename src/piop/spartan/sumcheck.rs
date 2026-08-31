@@ -545,14 +545,16 @@ impl RoundBoundaryPolicy for UngrindedRoundBoundary {
 
 struct ProverGrindingRoundBoundary<D> {
     bits: u32,
+    round_offset: usize,
     nonces: Vec<u64>,
     _domain: core::marker::PhantomData<fn() -> D>,
 }
 
 impl<D> ProverGrindingRoundBoundary<D> {
-    fn new(bits: u32) -> Self {
+    fn with_round_offset(bits: u32, round_offset: usize) -> Self {
         Self {
             bits,
+            round_offset,
             nonces: Vec::new(),
             _domain: core::marker::PhantomData,
         }
@@ -578,7 +580,11 @@ impl<D: GrindingDomain> RoundBoundaryPolicy for ProverGrindingRoundBoundary<D> {
             return Ok(());
         }
         let _scope = crate::utils::prof::scope("spartan:round_grinding_prove");
-        let round = u64::try_from(round).expect("an in-memory sumcheck round index fits in u64");
+        let round = self
+            .round_offset
+            .checked_add(round)
+            .and_then(|round| u64::try_from(round).ok())
+            .expect("an in-memory sumcheck round index fits in u64");
         let nonce = grind_and_absorb::<D, _>(transcript, GrindingRound::new(round), self.bits)?;
         self.nonces.push(nonce);
         Ok(())
@@ -675,6 +681,28 @@ where
         field_cfg: &F::Config,
     ) -> Result<(Vec<F>, F), SumcheckError> {
         let mut round_boundary = UngrindedRoundBoundary;
+        self.verify_with_round_boundary(
+            transcript,
+            initial_claim,
+            expected_rounds,
+            field_cfg,
+            &mut round_boundary,
+        )
+    }
+
+    /// Verifies a sumcheck with one typed proof-of-work boundary between each
+    /// absorbed round polynomial and its Fiat--Shamir challenge.
+    pub(crate) fn verify_grinded<D: GrindingDomain>(
+        &self,
+        transcript: &mut impl Transcript,
+        initial_claim: F,
+        expected_rounds: usize,
+        field_cfg: &F::Config,
+        grinding_nonces: &[u64],
+        grinding_bits: u32,
+    ) -> Result<(Vec<F>, F), SumcheckError> {
+        let mut round_boundary =
+            VerifierGrindingRoundBoundary::<D>::new(grinding_bits, grinding_nonces);
         self.verify_with_round_boundary(
             transcript,
             initial_claim,
@@ -972,7 +1000,7 @@ where
     F: SpartanField,
     R: SumcheckProductReducer<F>,
 {
-    let mut round_boundary = ProverGrindingRoundBoundary::<D>::new(grinding_bits);
+    let mut round_boundary = ProverGrindingRoundBoundary::<D>::with_round_offset(grinding_bits, 0);
     let output = prove_outer_sumcheck_with_reducer_and_round_boundary(
         transcript,
         initial_claim,
@@ -1172,13 +1200,13 @@ where
     let cz_mle_claim = products.cz[0].clone();
     debug_assert_eq!(eq_low[0], one);
     debug_assert_eq!(eq_high[0], one);
-    debug_assert_eq!(
-        current_claim,
-        mul(
-            &bound_equality,
-            &sub(&mul(&az_mle_claim, &bz_mle_claim), &cz_mle_claim),
-        )
+    let expected_terminal_claim = mul(
+        &bound_equality,
+        &sub(&mul(&az_mle_claim, &bz_mle_claim), &cz_mle_claim),
     );
+    if current_claim != expected_terminal_claim {
+        return Err(SumcheckError::InvalidTerminalClaim);
+    }
 
     let terminal_evaluations = [
         az_mle_claim.clone(),
@@ -1673,6 +1701,65 @@ where
     F: SpartanField,
     R: SumcheckProductReducer<F>,
 {
+    let mut round_boundary = UngrindedRoundBoundary;
+    prove_inner_sumcheck_with_reducer_and_round_boundary(
+        transcript,
+        initial_claim,
+        batched_matrix_mle,
+        witness_mle,
+        field_cfg,
+        reducer,
+        &mut round_boundary,
+    )
+}
+
+/// Proves an ordinary quadratic inner sumcheck with a typed grinding boundary
+/// after every round message. `round_offset` lets a caller prepend
+/// transcript-identical rounds computed by another prover kernel while keeping
+/// the grinding round indices globally consecutive.
+pub(crate) fn prove_inner_sumcheck_with_reducer_grinded<D, F, R>(
+    transcript: &mut impl Transcript,
+    initial_claim: F,
+    batched_matrix_mle: DenseMultilinearExtension<F>,
+    witness_mle: DenseMultilinearExtension<F>,
+    field_cfg: &F::Config,
+    reducer: &R,
+    grinding_bits: u32,
+    round_offset: usize,
+) -> Result<(InnerSumcheckOutput<F>, Vec<u64>), SumcheckError>
+where
+    D: GrindingDomain,
+    F: SpartanField,
+    R: SumcheckProductReducer<F>,
+{
+    let mut round_boundary =
+        ProverGrindingRoundBoundary::<D>::with_round_offset(grinding_bits, round_offset);
+    let output = prove_inner_sumcheck_with_reducer_and_round_boundary(
+        transcript,
+        initial_claim,
+        batched_matrix_mle,
+        witness_mle,
+        field_cfg,
+        reducer,
+        &mut round_boundary,
+    )?;
+    Ok((output, round_boundary.nonces))
+}
+
+fn prove_inner_sumcheck_with_reducer_and_round_boundary<F, R, P>(
+    transcript: &mut impl Transcript,
+    initial_claim: F,
+    batched_matrix_mle: DenseMultilinearExtension<F>,
+    witness_mle: DenseMultilinearExtension<F>,
+    field_cfg: &F::Config,
+    reducer: &R,
+    round_boundary: &mut P,
+) -> Result<InnerSumcheckOutput<F>, SumcheckError>
+where
+    F: SpartanField,
+    R: SumcheckProductReducer<F>,
+    P: RoundBoundaryPolicy,
+{
     let num_vars = batched_matrix_mle.num_vars;
     if !has_dense_shape(&batched_matrix_mle)
         || !has_dense_shape(&witness_mle)
@@ -1680,6 +1767,7 @@ where
     {
         return Err(SumcheckError::InvalidProductDimensions);
     }
+    round_boundary.validate(num_vars)?;
 
     let zero = F::zero_with_cfg(field_cfg);
     let mut batched_matrix = batched_matrix_mle.evaluations;
@@ -1695,7 +1783,7 @@ where
             sum_inner_round_coefficients_without_linear(&batched_matrix, &witness, reducer)?;
 
         for _round in 0..num_vars {
-            let challenge = recover_full_round_polynomial_and_sample_next_challenge(
+            let challenge = recover_full_round_polynomial_and_sample_next_challenge_with_boundary(
                 transcript,
                 &mut current_claim,
                 &coefficients_without_linear,
@@ -1703,7 +1791,8 @@ where
                 &mut eval_points,
                 &zero,
                 field_cfg,
-            );
+                round_boundary,
+            )?;
 
             let next_len = batched_matrix.len() / 2;
             debug_assert_eq!(witness.len() / 2, next_len);

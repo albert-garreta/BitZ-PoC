@@ -27,8 +27,9 @@ pub const SHA256_MAX_LOG_COMPRESSIONS: usize = 16;
 /// Width of the fixed commitment/exponent field.
 pub const SHA256_COMMITMENT_FIELD_BITS: usize = 128;
 
-/// τ point arity of the repeated outer zerocheck: eight local constraint
-/// variables plus one per batch doubling.
+/// Arity of the flat SHA constraint-row challenge.  One compression has 184
+/// live rows, so `2^(8 + log_instance_capacity)` is the smallest power-of-two
+/// domain containing every flat row `184 * instance + local_row`.
 pub const SHA256_TAU_LOCAL_VARS: u32 = 8;
 
 /// The public statement facts the security-profile derivation consumes for
@@ -45,7 +46,7 @@ pub(super) const fn sha256_instance_facts(log_instance_capacity: u32) -> IopInst
         opening_word_bits: 1,
         direct_opening: false,
         tau_arity: SHA256_TAU_LOCAL_VARS + log_instance_capacity,
-        piop_degree: 3,
+        piop_degree: 2,
         step50_magnitude_log2: 0,
     }
 }
@@ -58,7 +59,7 @@ pub(super) struct Sha256PrimeProfile {
     pub(super) min_prime: u128,
     max_prime: u128,
     initial_grinding: usize,
-    outer_grinding: usize,
+    inner_grinding: usize,
     terminal_grinding: usize,
 }
 
@@ -81,7 +82,7 @@ impl Sha256PrimeProfile {
             min_prime: params.projection_min,
             max_prime: params.projection_max,
             initial_grinding: params.initial_grinding_bits as usize,
-            outer_grinding: params.piop_round_grinding_bits as usize,
+            inner_grinding: params.piop_round_grinding_bits as usize,
             terminal_grinding: params.terminal_grinding_bits as usize,
         }
     }
@@ -91,9 +92,9 @@ impl Sha256PrimeProfile {
         self.initial_grinding
     }
 
-    /// Proof-of-work bits before each cubic outer-sumcheck challenge.
-    pub const fn outer_round_grinding_bits(self) -> usize {
-        self.outer_grinding
+    /// Proof-of-work bits before each quadratic inner-sumcheck challenge.
+    pub const fn inner_round_grinding_bits(self) -> usize {
+        self.inner_grinding
     }
 
     /// Proof-of-work bits before the terminal opening challenges.

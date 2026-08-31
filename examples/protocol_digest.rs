@@ -113,15 +113,15 @@ fn sha256_digest() -> String {
     .expect("verify");
 
     let f2z_bytes = proof.f2z().to_bytes();
-    let outer = format!("{:?}", proof.outer());
+    let inner = format!("{:?}", proof.inner());
     let nonces: Vec<u8> = proof
-        .outer_nonces()
+        .inner_nonces()
         .iter()
         .flat_map(|nonce| nonce.to_le_bytes())
         .chain(proof.initial_nonce().to_le_bytes())
         .chain(proof.terminal_nonce().to_le_bytes())
         .collect();
-    digest_hex(&[&hint.commitment.root, &f2z_bytes, outer.as_bytes(), &nonces])
+    digest_hex(&[&hint.commitment.root, &f2z_bytes, inner.as_bytes(), &nonces])
 }
 
 fn u32_mul_digest() -> String {

@@ -32,15 +32,16 @@ const MULTISWAP_MINI_DIGEST: &str =
     "9519afc76f9b5dbaab89942df8673e7a4542d9ee297acb187d3ff439148078b5";
 
 /// The 2^7 SHA-256 batch under the DEFAULT profile (`Lambda100`: no
-/// grinding anywhere, Ligerito at 100). Recorded at the deliberate
-/// λ = 100 default flip.
+/// grinding anywhere, Ligerito at 100). Recorded at the deliberate native
+/// row/column packing and rank-one public-batching migration.
 const SHA256_2P7_LAMBDA100_DIGEST: &str =
-    "80a983708b9dcd30478f19cb982f8b5ef70f17e452f19444c9f1aa97e9e64836";
+    "22f1e151f990f7a5538358f7a8d898033a75b4ab76d1802729711b6b5c8df79e";
 
 /// The 2^7 SHA-256 batch under the explicit historical comparison schedule.
-/// This pins that schedule within the current runtime-prime protocol.
+/// This pins the grinded quadratic schedule within the packed flat-linear
+/// protocol.
 const SHA256_2P7_REFERENCE_DIGEST: &str =
-    "4af8d5f51cd34df828044ecc09f0f39c2c1e01ab3eaa3da78210339e9597bd6f";
+    "a4a9e756ecbd63826216e57c68def151047ec063e47a68eae916913b30254c8f";
 
 /// The 2^15 u32-multiplication batch under the canonical runtime-prime,
 /// K=3 univariate-skip protocol and its default `Lambda100` profile.
@@ -177,13 +178,13 @@ fn sha256_2p7_digest<P: IopSecurityProfile>() -> String {
     .expect("verify");
 
     let f2z_bytes = proof.f2z().to_bytes();
-    let outer = format!("{:?}", proof.outer());
+    let inner = format!("{:?}", proof.inner());
     let nonces: Vec<u8> = proof
-        .outer_nonces()
+        .inner_nonces()
         .iter()
         .flat_map(|nonce| nonce.to_le_bytes())
         .chain(proof.initial_nonce().to_le_bytes())
         .chain(proof.terminal_nonce().to_le_bytes())
         .collect();
-    digest_hex(&[&hint.commitment.root, &f2z_bytes, outer.as_bytes(), &nonces])
+    digest_hex(&[&hint.commitment.root, &f2z_bytes, inner.as_bytes(), &nonces])
 }
