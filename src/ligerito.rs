@@ -1670,6 +1670,7 @@ pub(crate) fn verify_int_eval_merged_common(
 
     // (1) Bind the sent integers: range first (injectivity of the exponent
     // map), then roots := α^{v_c} by construction.
+    let _g_roots = crate::utils::prof::scope("mv:roots");
     if !is_generator(alpha) {
         return Err(IntEvalRsError::ChallengeNotGenerator);
     }
@@ -1682,9 +1683,11 @@ pub(crate) fn verify_int_eval_merged_common(
     }
     let comb = FixedBasePow::new(alpha, 128, 8);
     let roots: Vec<Gf> = v.iter().map(|&vc| comb.pow(vc)).collect();
+    drop(_g_roots);
 
     // (2) Merged forest against the recomputed roots → exit point
     // (z_bj, z_c) + exit eval e_d.
+    let _g_forest = crate::utils::prof::scope("mv:forest");
     let (z, e_d) = if crate::merged_forest::quad_active(p) {
         crate::merged_forest::verify_merged_forest_quad(transcript, &roots, mf, t_w, p.s)
             .map_err(|_| IntEvalRsError::Forest)?
@@ -1692,9 +1695,11 @@ pub(crate) fn verify_int_eval_merged_common(
         verify_merged_forest(transcript, &roots, mf, t_w, p.s)
             .map_err(|_| IntEvalRsError::Forest)?
     };
+    drop(_g_forest);
 
     // (3a) Pre-sumcheck against the forest exit claim: for the bit-affine
     // leaves `1 + M·(A−1)`, `Σ eq·M·A = e_d − 1` (`= e_d + 1` in char 2).
+    let _g_presum = crate::utils::prof::scope("mv:presum");
     let subclaims =
         MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(transcript, t_w, &[2], presum, &())
             .map_err(|_| IntEvalRsError::PreSumcheck)?;
@@ -1702,11 +1707,13 @@ pub(crate) fn verify_int_eval_merged_common(
     if presum.claimed_sums() != [e_d + one] {
         return Err(IntEvalRsError::PreSumcheck);
     }
+    drop(_g_presum);
     let (z_bj, z_c) = z.split_at(t_w);
     let r_star = subclaims.point().to_vec();
     let expected = subclaims.expected_evaluations()[0];
 
     // (3b) The verifier's O(2^t·W) step: R̂(r*), then μ = expected / R̂(r*).
+    let _g_rhat = crate::utils::prof::scope("mv:rhat");
     let r_tbl = row_bit_weights(p, row_weights, alpha, z_bj);
     let eq_rstar = build_eq_x_r_vec(&r_star, &()).expect("t_w >= 1");
     let r_hat = r_tbl.iter().zip(eq_rstar.iter()).fold(Gf::zero(), |acc, (q, e)| acc + *q * *e);
@@ -1714,6 +1721,7 @@ pub(crate) fn verify_int_eval_merged_common(
         return Err(IntEvalRsError::RHatZero);
     }
     let mu = expected * r_hat.inverse();
+    drop(_g_rhat);
 
     let point: Vec<Gf> = r_star.iter().chain(z_c.iter()).copied().collect();
     Ok((point, mu))

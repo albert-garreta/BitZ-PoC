@@ -71,6 +71,13 @@
 //!   Every rep is verified.
 //!   Example: `f2z 24 --taps sched --taps-delta 4 --reps 5`
 //!
+//! The single-claim path always prints a per-step breakdown of the prover
+//! and the verifier under the `prove:`/`verify:` lines — medians over the
+//! timed reps, riding the in-crate `utils::prof` scaffold (row names carry
+//! the raw scope labels, so they line up with `OBLONG_PROFILE=1` dumps and
+//! `examples/prof_probe.rs`). The always-on scopes cost ~µs per prove, far
+//! inside the run-to-run band. `--family`/`--taps` keep the plain output.
+//!
 //! Integer-guard mode is a COMPILE-TIME feature: build with
 //! `--features unchecked` for release-style plain integer ops (the header
 //! reports the active mode and warns otherwise).
@@ -169,6 +176,175 @@ impl core::ops::Mul for Fq {
 fn median(mut v: Vec<f64>) -> f64 {
     v.sort_by(|a, b| a.partial_cmp(b).unwrap());
     v[v.len() / 2]
+}
+
+/// Per-step wall-clock samples across reps, keyed by prof scope label
+/// (milliseconds, rep-aligned — a label absent from a rep reads as 0).
+#[derive(Default)]
+struct StepTable(Vec<(&'static str, Vec<f64>)>);
+
+impl StepTable {
+    /// Fold one rep's drained `prof::take_totals()` (label, seconds) in.
+    fn absorb(&mut self, rep: usize, totals: Vec<(&'static str, f64)>) {
+        for (label, secs) in totals {
+            let idx = match self.0.iter().position(|(l, _)| *l == label) {
+                Some(i) => i,
+                None => {
+                    self.0.push((label, Vec::new()));
+                    self.0.len() - 1
+                }
+            };
+            let slot = &mut self.0[idx].1;
+            slot.resize(rep, 0.0);
+            slot.push(secs * 1e3);
+        }
+    }
+
+    fn has(&self, labels: &[&str]) -> bool {
+        labels.iter().any(|l| self.0.iter().any(|(k, _)| k == l))
+    }
+
+    fn at(&self, label: &str, rep: usize) -> f64 {
+        self.0
+            .iter()
+            .find(|(k, _)| *k == label)
+            .and_then(|(_, v)| v.get(rep))
+            .copied()
+            .unwrap_or(0.0)
+    }
+
+    /// Median over reps of `Σ plus − Σ minus`, clamped at 0 (timer jitter).
+    fn med(&self, reps: usize, plus: &[&str], minus: &[&str]) -> f64 {
+        let series: Vec<f64> = (0..reps)
+            .map(|r| {
+                let p: f64 = plus.iter().map(|l| self.at(l, r)).sum();
+                let m: f64 = minus.iter().map(|l| self.at(l, r)).sum();
+                (p - m).max(0.0)
+            })
+            .collect();
+        median(series)
+    }
+}
+
+/// One printed breakdown row: `Σ plus − Σ minus` of prof labels. `sub` rows
+/// are nested detail (indented; their parent's time already includes them).
+struct StepRow {
+    name: &'static str,
+    plus: &'static [&'static str],
+    minus: &'static [&'static str],
+    sub: bool,
+}
+
+const fn step(name: &'static str, plus: &'static [&'static str]) -> StepRow {
+    StepRow { name, plus, minus: &[], sub: false }
+}
+const fn substep(
+    name: &'static str,
+    plus: &'static [&'static str],
+    minus: &'static [&'static str],
+) -> StepRow {
+    StepRow { name, plus, minus, sub: true }
+}
+
+/// Prover steps of the single-claim mod-q opening, in execution order.
+/// The `mf:*`/`mc:live_cols` rows are nested detail inside `mc:forest`.
+const PROVE_STEP_ROWS: &[StepRow] = &[
+    step("row-weight chunking (mq:chunking)", &["mq:chunking"]),
+    step("column pack (mc:pack)", &["mc:pack"]),
+    step("α-power tables (mc:pow2)", &["mc:pow2"]),
+    step("merged GKR forest (mc:forest)", &["mc:forest"]),
+    substep("live-col scan (mc:live_cols)", &["mc:live_cols"], &[]),
+    substep("level build (mf:build_levels)", &["mf:build_levels"], &[]),
+    substep("leaf-layer gen (mf:bitgen)", &["mf:bitgen"], &[]),
+    substep("in-tree rounds (mf:phaseA - bitgen)", &["mf:phaseA"], &["mf:bitgen"]),
+    substep("tree-index rounds (mf:phaseB)", &["mf:phaseB"], &[]),
+    substep(
+        "(forest rest)",
+        &["mc:forest"],
+        &["mc:live_cols", "mf:build_levels", "mf:phaseA", "mf:phaseB"],
+    ),
+    step("integer folds u_c (mc:fold_v)", &["mc:fold_v"]),
+    step("pre-sumcheck tables (mc:presum_tbls)", &["mc:presum_tbls"]),
+    step("pre-sumcheck rounds (mc:presum_run)", &["mc:presum_run"]),
+    step("ring-switch s_v (mq:rings)", &["mq:rings"]),
+    step("φ-basis + target (mq:bcomb)", &["mq:bcomb"]),
+    step("Ligerito open (mq:lig)", &["mq:lig"]),
+];
+/// The disjoint top-level prover labels; a rep's remainder (transcript
+/// absorbs/challenges, glue) prints as "(unattributed)".
+const PROVE_TOP_LABELS: &[&str] = &[
+    "mq:chunking",
+    "mc:pack",
+    "mc:pow2",
+    "mc:forest",
+    "mc:fold_v",
+    "mc:presum_tbls",
+    "mc:presum_run",
+    "mq:rings",
+    "mq:bcomb",
+    "mq:lig",
+];
+
+/// Verifier steps of the single-claim mod-q opening, in execution order.
+const VERIFY_STEP_ROWS: &[StepRow] = &[
+    step("row-weight chunking (mv:chunking)", &["mv:chunking"]),
+    step("fold range + read-off (mv:readoff)", &["mv:readoff"]),
+    step("roots α^u_c (mv:roots)", &["mv:roots"]),
+    step("forest layer checks (mv:forest)", &["mv:forest"]),
+    step("pre-sumcheck verify (mv:presum)", &["mv:presum"]),
+    step("R-hat(r*) weight fold (mv:rhat)", &["mv:rhat"]),
+    step("ring-switch + target (mv:rswitch)", &["mv:rswitch"]),
+    step("Ligerito verify (mv:lig)", &["mv:lig"]),
+];
+const VERIFY_TOP_LABELS: &[&str] = &[
+    "mv:chunking",
+    "mv:readoff",
+    "mv:roots",
+    "mv:forest",
+    "mv:presum",
+    "mv:rhat",
+    "mv:rswitch",
+    "mv:lig",
+];
+
+/// Print one breakdown block under a `prove:`/`verify:` line: per-step
+/// medians with their share of the block's median total. Rows whose labels
+/// never fired are skipped (e.g. `mc:pack` on packed-hint proves), as are
+/// near-zero derived rows.
+fn print_steps(
+    steps: &StepTable,
+    rows: &[StepRow],
+    top_labels: &[&str],
+    rep_totals: &[f64],
+    total_med: f64,
+    decimals: usize,
+) {
+    if steps.0.is_empty() {
+        return;
+    }
+    let reps = rep_totals.len();
+    let pct = |ms: f64| if total_med > 0.0 { ms / total_med * 100.0 } else { 0.0 };
+    let line = |sub: bool, name: &str, ms: f64| {
+        let (indent, width) = if sub { ("      · ", 42) } else { ("    ", 46) };
+        println!("{indent}{name:<width$} {ms:>10.decimals$} ms  {p:5.1}%", p = pct(ms));
+    };
+    for row in rows {
+        if !steps.has(row.plus) {
+            continue;
+        }
+        let ms = steps.med(reps, row.plus, row.minus);
+        if row.name.starts_with('(') && ms < 0.005 {
+            continue;
+        }
+        line(row.sub, row.name, ms);
+    }
+    let unattributed: Vec<f64> = (0..reps)
+        .map(|r| {
+            let steps_sum: f64 = top_labels.iter().map(|l| steps.at(l, r)).sum();
+            (rep_totals.get(r).copied().unwrap_or(0.0) - steps_sum).max(0.0)
+        })
+        .collect();
+    line(false, "(unattributed)", median(unattributed));
 }
 
 fn usage() -> ! {
@@ -435,6 +611,12 @@ fn main() {
         return;
     }
 
+    // The single-claim path always reports the per-step prover/verifier
+    // breakdown: turn the prof scaffold on before its first scope fires.
+    // The timed medians then carry the ~µs/prove scope overhead — orders
+    // below the run-to-run band.
+    f2z::utils::prof::force_enable();
+
     let (t, s) = match (o.t, o.s) {
         (Some(t), Some(s)) => (t, s),
         _ => default_split(o.n, o.word_bits),
@@ -542,21 +724,27 @@ fn main() {
     let commit_ms = t0.elapsed().as_secs_f64() * 1e3;
     println!("commit:  {commit_ms:9.2} ms   peak {:8.2} MB", peak_mb());
 
-    // Warm-up prove (excluded), then timed reps.
+    // Warm-up prove (excluded), then timed reps. Draining the prof table
+    // right after each prove and each verify splits every rep's scope
+    // records cleanly into prover-side and verifier-side step samples.
     {
         let mut pt = Blake3Transcript::new();
         let pr = prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha_of(), &pc);
         black_box(&pr);
     }
+    let _ = f2z::utils::prof::take_totals(); // drop the warm-up records
     let mut prove_ms = Vec::new();
     let mut verify_ms = Vec::new();
+    let mut prove_steps = StepTable::default();
+    let mut verify_steps = StepTable::default();
     let mut last_proof = None;
-    for _ in 0..o.reps {
+    for rep in 0..o.reps {
         let mut pt = Blake3Transcript::new();
         let t1 = Instant::now();
         let proof =
             prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha_of(), &pc);
         prove_ms.push(t1.elapsed().as_secs_f64() * 1e3);
+        prove_steps.absorb(rep, f2z::utils::prof::take_totals());
 
         let mut vt = Blake3Transcript::new();
         let t2 = Instant::now();
@@ -574,6 +762,7 @@ fn main() {
         )
         .expect("proof verifies");
         verify_ms.push(t2.elapsed().as_secs_f64() * 1e3);
+        verify_steps.absorb(rep, f2z::utils::prof::take_totals());
         last_proof = Some(proof);
     }
 
@@ -585,17 +774,21 @@ fn main() {
         black_box(&pr);
     }
     let prove_peak = peak_mb();
+    let _ = f2z::utils::prof::take_totals(); // drop the peak-probe records
 
     let proof = last_proof.expect("reps ≥ 1");
     let bytes = proof.to_bytes().len();
     let (zb, lig_b) = mle_eval_mod_q_lig_size_breakdown(&proof);
     let forest_b = zb.total() - zb.s_v;
+    let prove_med = median(prove_ms.clone());
+    let verify_med = median(verify_ms.clone());
     println!(
-        "prove:   {:9.2} ms   peak {prove_peak:8.2} MB   (median of {}, verified)",
-        median(prove_ms),
+        "prove:   {prove_med:9.2} ms   peak {prove_peak:8.2} MB   (median of {}, verified)",
         o.reps
     );
-    println!("verify:  {:9.2} ms", median(verify_ms));
+    print_steps(&prove_steps, PROVE_STEP_ROWS, PROVE_TOP_LABELS, &prove_ms, prove_med, 2);
+    println!("verify:  {verify_med:9.2} ms");
+    print_steps(&verify_steps, VERIFY_STEP_ROWS, VERIFY_TOP_LABELS, &verify_ms, verify_med, 3);
     println!(
         "proof:   {:9.1} KiB  (forest-side {:.1} | s_v {:.1} | ligerito {:.1})",
         bytes as f64 / 1024.0,

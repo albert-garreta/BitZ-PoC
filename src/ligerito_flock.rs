@@ -2544,8 +2544,11 @@ pub fn prove_mle_eval_mod_q_ligerito(
         .expect("valid integer-evaluation commitment geometry");
     checked_mod_q_geometry(p, q_bits).expect("valid mod-q geometry");
     assert_eq!(row_weights_q.len(), geometry.rows, "row-weight length");
-    let chunks = ModQWeightChunks::from_dense(p, row_weights_q, q_bits)
-        .expect("q_bits must be in [1, 126] and every row weight must be < 2^q_bits");
+    let chunks = {
+        let _g = crate::utils::prof::scope("mq:chunking");
+        ModQWeightChunks::from_dense(p, row_weights_q, q_bits)
+            .expect("q_bits must be in [1, 126] and every row weight must be < 2^q_bits")
+    };
     // Keep the established standalone transcript: this public entry point
     // begins directly with the proof core. Statement-owning callers use the
     // affine after-statement adapter below so they cannot accidentally absorb
@@ -2916,8 +2919,11 @@ where
     if row_weights_q.len() != geometry.rows || col_weights.len() != geometry.cols {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
-    let chunks = ModQWeightChunks::from_dense(p, row_weights_q, q_bits)
-        .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?;
+    let chunks = {
+        let _g = crate::utils::prof::scope("mv:chunking");
+        ModQWeightChunks::from_dense(p, row_weights_q, q_bits)
+            .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?
+    };
     use crate::pcs::recombine_read_off;
     verify_mod_q_lig_core(
         transcript,
@@ -3120,7 +3126,10 @@ where
     validate_ligerito_commitment(commitment, vc)?;
     let lch = chunks.chunk_count();
     reduction.validate_shape(lch)?;
-    let folds = verify_mod_q_lig_preflight(proof, p, chunks, read_off)?;
+    let folds = {
+        let _g = crate::utils::prof::scope("mv:readoff");
+        verify_mod_q_lig_preflight(proof, p, chunks, read_off)?
+    };
 
     let mut grinder: VerifierGrindingTranscript<_, ForestRoundGrinding> =
         VerifierGrindingTranscript::new(transcript, forest_grinding_bits, proof.grinding_nonces);
@@ -3145,8 +3154,14 @@ where
         mus.push(mu);
     }
 
-    let prepared = reduction.prepare(grinder, &points, &mus)?;
-    verify_prepared_mod_q_ligerito(transcript, commitment, proof.lig, vc, prepared)?;
+    let prepared = {
+        let _g = crate::utils::prof::scope("mv:rswitch");
+        reduction.prepare(grinder, &points, &mus)?
+    };
+    {
+        let _g = crate::utils::prof::scope("mv:lig");
+        verify_prepared_mod_q_ligerito(transcript, commitment, proof.lig, vc, prepared)?;
+    }
     Ok(folds)
 }
 

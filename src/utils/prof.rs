@@ -38,14 +38,25 @@ use std::cell::{Cell, RefCell};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
+/// Process-wide aggregate-profiling gate, cached on first read.
+static ENABLED: OnceLock<bool> = OnceLock::new();
+
 /// Whether profiling is active this process. Cached on first read; set
-/// `OBLONG_PROFILE` (to any value) in the environment to enable.
+/// `OBLONG_PROFILE` (to any value) in the environment to enable, or call
+/// [`force_enable`] before the first [`scope`].
 fn enabled() -> bool {
-    static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| {
+    *ENABLED.get_or_init(|| {
         std::env::var_os("OBLONG_PROFILE").is_some()
             || std::env::var_os("OBLONG_PROFILE_INTERVALS").is_some()
     })
+}
+
+/// Turn the aggregate table on regardless of the environment — for harnesses
+/// that always report a step breakdown (the `f2z` CLI). Must run before the
+/// process's first [`scope`]; once the env gate has been cached this is a
+/// no-op.
+pub fn force_enable() {
+    let _ = ENABLED.set(true);
 }
 
 /// Whether completed scopes should also be retained as raw intervals.
