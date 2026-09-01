@@ -18,9 +18,12 @@ use num_traits::ToPrimitive;
 use thiserror::Error;
 
 use crate::{
-    f2map::{PackedRepeatedVirtualMap, PreparedVirtualMap, PreparedVirtualMapError},
+    f2map::{
+        PackedRepeatedVirtualMap, PackedSourceRepeatedVirtualMap, PreparedVirtualMap,
+        PreparedVirtualMapError,
+    },
     ligerito::LOG_PACKING,
-    pcs::IntEvalParams,
+    pcs::{IntEvalParams, mod_q_num_chunks},
     sparse_matrix::SparseMatrix,
 };
 
@@ -99,6 +102,11 @@ pub enum Sha256ConstraintError {
     #[error("SHA-256 Ligerito target must be in [64, 128] bits, got {actual}")]
     UnsupportedLigeritoTargetBits { actual: usize },
 
+    /// The SHA virtual opening is deliberately configured to use one
+    /// mod-q weight chunk, hence one merged forest.
+    #[error("SHA-256 opening requires exactly one forest, got {actual}")]
+    UnsupportedOpeningForestCount { actual: usize },
+
     /// The selected security profile is incompatible with the single
     /// transcript-derived-prime SHA protocol.
     #[error(transparent)]
@@ -132,6 +140,8 @@ pub enum Sha256ConstraintError {
 pub struct PreparedSha256CompressionBatch {
     local: &'static IntegerLocalRelation,
     map: PackedRepeatedVirtualMap,
+    product_map: Option<PackedSourceRepeatedVirtualMap>,
+    product_p_h: Option<IntEvalParams>,
     p_f: IntEvalParams,
     p_h: IntEvalParams,
     instances: usize,
@@ -205,6 +215,18 @@ impl PreparedSha256CompressionBatch {
     /// Repeated Boolean map for the complete compression batch.
     pub const fn map(&self) -> &PackedRepeatedVirtualMap {
         &self.map
+    }
+
+    /// Proof-only local-column × instance view used to open the complete
+    /// product-structured SHA residual directly. It is available exactly when
+    /// the number of instances is a power of two.
+    pub(crate) const fn product_map(&self) -> Option<&PackedSourceRepeatedVirtualMap> {
+        self.product_map.as_ref()
+    }
+
+    /// F2Z geometry of the proof-only product assignment view.
+    pub(crate) const fn product_assignment_params(&self) -> Option<&IntEvalParams> {
+        self.product_p_h.as_ref()
     }
 
     /// Number of live independent compression instances.
@@ -415,16 +437,36 @@ fn prepare_sha256_compression_instances_with_profile<P: IopSecurityProfile>(
     let source_vars = packed_domain_vars(instances, SHA256_F_INSTANCE_BITS)?;
     let assignment_vars = packed_domain_vars(instances, SHA256_H_INSTANCE_BITS)?;
     let p_f = balanced_binary_params(source_vars);
-    let p_h = balanced_binary_params(assignment_vars);
+    let p_h = single_forest_binary_params(assignment_vars);
     let map =
         PackedRepeatedVirtualMap::new(local.map.clone(), instances, p_h.cells(), p_f.cells())?;
+    let product_p_h = instances.is_power_of_two().then(|| {
+        let t = log_instance_capacity.min(13);
+        IntEvalParams {
+            t,
+            s: assignment_vars - t,
+            word_bits: 1,
+        }
+    });
+    let product_map = product_p_h
+        .map(|params| {
+            PackedSourceRepeatedVirtualMap::new(
+                local.map.clone(),
+                instances,
+                params.cells(),
+                p_f.cells(),
+            )
+        })
+        .transpose()?;
     let mut facts = sha256_instance_facts(exponent);
-    facts.opening_t =
-        u32::try_from(p_h.t).map_err(|_| Sha256ConstraintError::InvalidBatchExponent)?;
+    facts.opening_t = u32::try_from(product_p_h.unwrap_or(p_h).t)
+        .map_err(|_| Sha256ConstraintError::InvalidBatchExponent)?;
     let security = P::instantiate(&facts)?;
     Ok(PreparedSha256CompressionBatch {
         local,
         map,
+        product_map,
+        product_p_h,
         p_f,
         p_h,
         instances,
@@ -464,6 +506,15 @@ fn validate_prepared_protocol(
     prepared: &PreparedSha256CompressionBatch,
 ) -> Result<(), Sha256ConstraintError> {
     Sha256PrimeProfile::from_security(&prepared.security, prepared.log_instance_capacity)?;
+    let max_q_bits =
+        u128::BITS as usize - prepared.security.projection_max.leading_zeros() as usize;
+    let opening_params = prepared.product_p_h.as_ref().unwrap_or(&prepared.p_h);
+    let forest_count = mod_q_num_chunks(opening_params, max_q_bits);
+    if forest_count != 1 {
+        return Err(Sha256ConstraintError::UnsupportedOpeningForestCount {
+            actual: forest_count,
+        });
+    }
     let target = prepared.security.ligerito_target_bits;
     if !(64..=128).contains(&target) {
         return Err(Sha256ConstraintError::UnsupportedLigeritoTargetBits { actual: target });
@@ -502,6 +553,24 @@ const fn balanced_binary_params(vars: usize) -> IntEvalParams {
         t,
         s: vars - t,
         word_bits: 1,
+    }
+}
+
+/// Splits the derived SHA assignment so every supported runtime-prime weight
+/// fits in one F2Z chunk. The current SHA profiles use at most 113-bit primes;
+/// with Boolean cells, `t <= 127 - 113 - 1 = 13` makes the generic fold bound
+/// strictly smaller than `2^127`. Shapes already balanced below that cap keep
+/// their balanced layout.
+const fn single_forest_binary_params(vars: usize) -> IntEvalParams {
+    let balanced = balanced_binary_params(vars);
+    if balanced.t <= 13 {
+        balanced
+    } else {
+        IntEvalParams {
+            t: 13,
+            s: vars - 13,
+            word_bits: 1,
+        }
     }
 }
 
@@ -922,6 +991,37 @@ mod tests {
                 .unwrap()
                 .next()
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn production_assignment_geometry_uses_one_forest() {
+        for exponent in SHA256_MIN_LOG_COMPRESSIONS..=SHA256_MAX_LOG_COMPRESSIONS {
+            let prepared = prepare_sha256_compression_batch(exponent).unwrap();
+            let max_q_bits =
+                u128::BITS as usize - prepared.security().projection_max.leading_zeros() as usize;
+            assert_eq!(
+                mod_q_num_chunks(prepared.assignment_params(), max_q_bits),
+                1,
+                "log-compressions={exponent}"
+            );
+            if exponent >= 10 {
+                assert_eq!(
+                    *prepared.assignment_params(),
+                    IntEvalParams {
+                        t: 13,
+                        s: exponent + 2,
+                        word_bits: 1,
+                    },
+                    "log-compressions={exponent}"
+                );
+            }
+        }
+
+        let prepared = prepare_sha256_compression_batch(14).unwrap();
+        assert_eq!(
+            u128::BITS as usize - prepared.security().projection_max.leading_zeros() as usize,
+            113
         );
     }
 

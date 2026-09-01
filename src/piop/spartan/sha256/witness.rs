@@ -124,6 +124,11 @@ pub struct Sha256CompressionWitnessBatch {
     /// as the integers `0` and `1`.
     assignment_rows: Vec<Vec<u64>>,
 
+    /// Proof-only local-column × instance view of the same synthesized bits.
+    /// This is present for power-of-two batches and is never committed
+    /// independently: the virtual map binds it back to `source_rows`.
+    product_assignment_rows: Option<Vec<Vec<u64>>>,
+
     /// Native compression results `O_i in (Z / 2^32 Z)^8`, in batch-instance
     /// and SHA-256 state-word order.
     ///
@@ -148,6 +153,11 @@ impl Sha256CompressionWitnessBatch {
     /// Packed synthesized Boolean assignment rows.
     pub(crate) fn assignment_rows(&self) -> &[Vec<u64>] {
         &self.assignment_rows
+    }
+
+    /// Product-layout assignment rows used by the direct rank-one opening.
+    pub(crate) fn product_assignment_rows(&self) -> Option<&[Vec<u64>]> {
+        self.product_assignment_rows.as_deref()
     }
 
     /// Native SHA-256 compression outputs in batch-instance order.
@@ -180,6 +190,11 @@ impl Sha256CompressionWitnessBatch {
     #[cfg(test)]
     pub(super) fn assignment_rows_mut_for_tests(&mut self) -> &mut [Vec<u64>] {
         &mut self.assignment_rows
+    }
+
+    #[cfg(test)]
+    pub(super) fn product_assignment_rows_mut_for_tests(&mut self) -> Option<&mut [Vec<u64>]> {
+        self.product_assignment_rows.as_deref_mut()
     }
 }
 
@@ -224,11 +239,15 @@ pub fn generate_sha256_compression_witnesses(
 
     let source_rows = pack_source_rows(&shards, p_f);
     let assignment_rows = pack_derived_rows(&shards, p_h);
+    let product_assignment_rows = prepared
+        .product_assignment_params()
+        .map(|params| pack_product_derived_rows(&shards, params));
     let outputs = shards.iter().map(|shard| shard.output).collect();
 
     Ok(Sha256CompressionWitnessBatch {
         source_rows,
         assignment_rows,
+        product_assignment_rows,
         outputs,
         instances: inputs.len(),
     })
@@ -342,6 +361,65 @@ fn pack_derived_rows<'a>(
     rows
 }
 
+/// Packs the proof-only tensor `D[local, instance] = h_instance[local]`.
+///
+/// The low `t` instance bits are physical F2Z rows. Remaining high instance
+/// bits sit next to the local assignment column in the F2Z column coordinate.
+/// All logical copies of local column zero contain one, but the virtual map
+/// maps them back to the single committed source constant.
+fn pack_product_derived_rows(
+    shards: &[PackedCompressionShard],
+    params: &IntEvalParams,
+) -> Vec<Vec<u64>> {
+    let instances = shards.len();
+    debug_assert!(instances.is_power_of_two());
+    debug_assert_eq!(params.rows().min(instances), params.rows());
+    let rows = params.rows();
+    let high_instances = instances / rows;
+    debug_assert_eq!(
+        params.cells(),
+        instances * SHA256_H_BAR_LIVE_BITS.next_power_of_two()
+    );
+
+    let build_column = |column: usize| {
+        let mut words = vec![0u64; rows.div_ceil(u64::BITS as usize)];
+        let local_column = column / high_instances;
+        let high_instance = column % high_instances;
+        if local_column >= SHA256_H_BAR_LIVE_BITS {
+            return words;
+        }
+        let first_instance = high_instance * rows;
+        for (word_index, word) in words.iter_mut().enumerate() {
+            let first_row = word_index * u64::BITS as usize;
+            let mut packed = 0u64;
+            for bit in 0..u64::BITS as usize {
+                let row = first_row + bit;
+                if row >= rows {
+                    break;
+                }
+                let instance = first_instance + row;
+                if shards[instance].h_bar.bit(local_column) {
+                    packed |= 1u64 << bit;
+                }
+            }
+            *word = packed;
+        }
+        words
+    };
+
+    #[cfg(feature = "parallel")]
+    {
+        (0..params.cols())
+            .into_par_iter()
+            .map(build_column)
+            .collect()
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        (0..params.cols()).map(build_column).collect()
+    }
+}
+
 fn empty_packed_rows(params: &IntEvalParams) -> Vec<Vec<u64>> {
     vec![vec![0u64; params.rows().div_ceil(64)]; params.cols()]
 }
@@ -367,6 +445,25 @@ fn packed_rows_bit(rows: &[Vec<u64>], flat_cell: usize) -> Option<bool> {
     let row = flat_cell & (rows_per_column - 1);
     let words = rows.get(column)?;
     Some(words[row / u64::BITS as usize] >> (row % u64::BITS as usize) & 1 == 1)
+}
+
+#[cfg(test)]
+fn packed_rows_bit_with_params(
+    rows: &[Vec<u64>],
+    params: &IntEvalParams,
+    flat_cell: usize,
+) -> Option<bool> {
+    if flat_cell >= params.cells()
+        || rows.len() != params.cols()
+        || rows
+            .iter()
+            .any(|column| column.len() != params.rows().div_ceil(64))
+    {
+        return None;
+    }
+    let column = flat_cell >> params.t;
+    let row = flat_cell & (params.rows() - 1);
+    Some(rows[column][row / 64] >> (row % 64) & 1 == 1)
 }
 
 #[cfg(test)]
@@ -432,6 +529,22 @@ mod tests {
                 .enumerate()
                 .all(|(row, expected)| *expected == witness.assignment_bit(row).unwrap())
         );
+
+        let product_map = prepared.product_map().unwrap();
+        let product_p_h = prepared.product_assignment_params().unwrap();
+        let product_rows = witness.product_assignment_rows().unwrap();
+        let mut mapped_product_h = vec![false; product_p_h.cells()];
+        for source in 0..p_f.cells() {
+            if !witness.source_bit(source).unwrap() {
+                continue;
+            }
+            for derived in product_map.column_rows(source).unwrap() {
+                mapped_product_h[derived] ^= true;
+            }
+        }
+        assert!(mapped_product_h.iter().enumerate().all(|(row, expected)| {
+            *expected == packed_rows_bit_with_params(product_rows, product_p_h, row).unwrap()
+        }));
     }
 
     #[test]
@@ -493,6 +606,8 @@ mod tests {
         let exact = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
         let f_rows = exact.source_rows();
         let h_rows = exact.assignment_rows();
+        let product_p_h = prepared.product_assignment_params().unwrap();
+        let product_rows = exact.product_assignment_rows().unwrap();
         assert_eq!(f_rows.len(), p_f.cols());
         assert_eq!(h_rows.len(), p_h.cols());
         assert_eq!(exact.source_bit(0), Some(true));
@@ -512,12 +627,24 @@ mod tests {
                 let packed = 1 + instance * SHA256_H_INSTANCE_BITS + bit;
                 assert_eq!(exact.assignment_bit(packed), Some(expected));
             }
+            for local_column in 0..SHA256_H_BAR_LIVE_BITS {
+                let expected = one.assignment_bit(local_column).unwrap();
+                let product = local_column * inputs.len() + instance;
+                assert_eq!(
+                    packed_rows_bit_with_params(product_rows, product_p_h, product),
+                    Some(expected)
+                );
+            }
         }
 
         let live_f = 1 + inputs.len() * SHA256_F_INSTANCE_BITS;
         let live_h = 1 + inputs.len() * SHA256_H_INSTANCE_BITS;
         assert!((live_f..p_f.cells()).all(|bit| exact.source_bit(bit) == Some(false)));
         assert!((live_h..p_h.cells()).all(|bit| exact.assignment_bit(bit) == Some(false)));
+        let live_product_h = inputs.len() * SHA256_H_BAR_LIVE_BITS;
+        assert!((live_product_h..product_p_h.cells()).all(|bit| {
+            packed_rows_bit_with_params(product_rows, product_p_h, bit) == Some(false)
+        }));
     }
 
     #[test]

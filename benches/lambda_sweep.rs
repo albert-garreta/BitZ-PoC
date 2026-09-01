@@ -156,13 +156,13 @@ fn sweep_profile<P: IopSecurityProfile>(
     let proof = last.expect("at least one measured repetition");
 
     let f2z_bytes = proof.f2z().to_bytes().len();
-    let spartan_elements = 4 * proof.outer().sumcheck.round_polynomials.len() + 3;
+    let spartan_elements = 3 * proof.inner().round_polynomials.len();
     let field_bytes = proof
-        .outer()
-        .az_mle_claim
-        .canonical_element_encoding()
-        .len();
-    let grinding_nonce_count = proof.outer_nonces().len()
+        .inner()
+        .round_polynomials
+        .first()
+        .map_or(0, |round| round[0].canonical_element_encoding().len());
+    let grinding_nonce_count = proof.inner_nonces().len()
         + usize::from(security.initial_grinding_bits > 0)
         + usize::from(security.terminal_grinding_bits > 0);
     let spartan_bytes = spartan_elements * field_bytes + 8 * grinding_nonce_count;

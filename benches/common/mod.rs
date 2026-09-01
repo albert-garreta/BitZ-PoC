@@ -101,6 +101,7 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_SHA_BUILD_PROFILE",
     "F2Z_SHA_CPU",
     "F2Z_SHA_GIT_REV",
+    "F2Z_SHA_INNER_PREFIX_VARS",
     "F2Z_SHA_LOG2S",
     "F2Z_SHA_MNUMROWS_LOG2S",
     "F2Z_SHA_REPS",
@@ -263,7 +264,11 @@ const S3_OUTER: &[&str] = &[
     "sha256:spartan_outer_verify",
 ];
 const S3_BIND: &[&str] = &["spartan:bind_and_batch"];
-const S3_INNER: &[&str] = &["spartan:inner_sumcheck"];
+const S3_INNER: &[&str] = &[
+    "spartan:inner_sumcheck",
+    "sha256:spartan_inner_prove",
+    "sha256:spartan_inner_verify",
+];
 /// Step 5.2: exponent tables + merged GKR forest + presum discharge.
 const S5_FOREST: &[&str] = &[
     "mc:pack",
@@ -500,7 +505,12 @@ impl BenchReport {
         );
         let p = &self.prover;
         println!("    step 1   commit        {}", fmt_row(p.commit));
-        println!("    step 2   project       {}", fmt_row(p.project));
+        let step2_label = if self.bench == "sha256" {
+            "field setup"
+        } else {
+            "project"
+        };
+        println!("    step 2   {step2_label:<13}{}", fmt_row(p.project));
         println!(
             "    step 3   piop          {}   (outer {} | bind {} | inner {})",
             fmt_row(p.piop),
@@ -519,7 +529,7 @@ impl BenchReport {
         println!("    residual               {:9.2} ms", p.residual);
         println!("  verify (median): {:.2} ms", self.verifier.total);
         let v = &self.verifier;
-        println!("    step 2   project       {}", fmt_row(v.project));
+        println!("    step 2   {step2_label:<13}{}", fmt_row(v.project));
         println!(
             "    step 3   piop          {}   (outer {})",
             fmt_row(v.piop),

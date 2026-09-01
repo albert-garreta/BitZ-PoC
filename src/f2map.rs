@@ -210,6 +210,227 @@ pub struct PackedRepeatedVirtualMap {
     digest: [u8; 32],
 }
 
+/// Tensor-derived repetition of one local map over a canonically packed source.
+///
+/// The committed source keeps the gap-free instance-major representation
+///
+/// ```text
+/// [1 | f_0[1..] | f_1[1..] | ... | f_{N-1}[1..] | 0 ... 0],
+/// ```
+///
+/// while the derived side is a proof-only local-major tensor
+///
+/// ```text
+/// h[local, instance] = h_instance[local].
+/// ```
+///
+/// In particular, local row zero is logically repeated for every instance,
+/// but every repetition maps back to the one shared committed source cell.
+/// This layout makes a product coefficient `u[instance] * d[local]` factor
+/// directly across the F2Z row and column coordinates.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PackedSourceRepeatedVirtualMap {
+    local: PreparedVirtualMap,
+    instances: usize,
+    rows: usize,
+    cols: usize,
+    live_rows: usize,
+    live_cols: usize,
+    nnz: usize,
+    digest: [u8; 32],
+}
+
+impl PackedSourceRepeatedVirtualMap {
+    /// Builds the mixed-layout repetition inside power-of-two global domains.
+    pub fn new(
+        local: PreparedVirtualMap,
+        instances: usize,
+        rows: usize,
+        cols: usize,
+    ) -> Result<Self, PreparedVirtualMapError> {
+        if instances == 0
+            || !instances.is_power_of_two()
+            || local.rows() == 0
+            || local.cols() == 0
+            || !rows.is_power_of_two()
+            || !cols.is_power_of_two()
+        {
+            return Err(PreparedVirtualMapError::InvalidRepetition);
+        }
+        let live_rows = local
+            .rows()
+            .checked_mul(instances)
+            .ok_or(PreparedVirtualMapError::InvalidRepetition)?;
+        let live_cols = local
+            .cols()
+            .checked_sub(1)
+            .and_then(|width| width.checked_mul(instances))
+            .and_then(|cells| cells.checked_add(1))
+            .ok_or(PreparedVirtualMapError::InvalidRepetition)?;
+        let nnz = local
+            .nnz()
+            .checked_mul(instances)
+            .ok_or(PreparedVirtualMapError::InvalidRepetition)?;
+        if live_rows > rows || live_cols > cols {
+            return Err(PreparedVirtualMapError::InvalidRepetition);
+        }
+
+        let mut hash = Hasher::new();
+        hash.update(b"f2z/packed-source-repeated-virtual-map/v1");
+        hash.update(&local.digest());
+        for value in [instances, rows, cols, live_rows, live_cols, nnz] {
+            hash.update(
+                &u64::try_from(value)
+                    .map_err(|_| PreparedVirtualMapError::ShapeTooLarge)?
+                    .to_le_bytes(),
+            );
+        }
+        let digest = *hash.finalize().as_bytes();
+
+        Ok(Self {
+            local,
+            instances,
+            rows,
+            cols,
+            live_rows,
+            live_cols,
+            nnz,
+            digest,
+        })
+    }
+
+    /// Local canonical CSC map repeated by this view.
+    pub const fn local(&self) -> &PreparedVirtualMap {
+        &self.local
+    }
+
+    /// Number of independent repetitions.
+    pub const fn instances(&self) -> usize {
+        self.instances
+    }
+
+    /// Number of live derived cells before the one global suffix.
+    pub const fn live_rows(&self) -> usize {
+        self.live_rows
+    }
+
+    /// Number of live committed source cells before the one global suffix.
+    pub const fn live_cols(&self) -> usize {
+        self.live_cols
+    }
+}
+
+/// Local-major derived-row iterator for one packed source column.
+pub struct PackedSourceColumnRows<'a> {
+    local_rows: slice::Iter<'a, usize>,
+    instance: Option<usize>,
+    instances: usize,
+    current_local_row: Option<usize>,
+    repeat_index: usize,
+    remaining: usize,
+}
+
+impl Iterator for PackedSourceColumnRows<'_> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.remaining == 0 {
+            return None;
+        }
+        let output = match self.instance {
+            Some(instance) => self.local_rows.next()? * self.instances + instance,
+            None => {
+                let local_row = match self.current_local_row {
+                    Some(row) => row,
+                    None => {
+                        let row = *self.local_rows.next()?;
+                        self.current_local_row = Some(row);
+                        row
+                    }
+                };
+                let output = local_row * self.instances + self.repeat_index;
+                self.repeat_index += 1;
+                if self.repeat_index == self.instances {
+                    self.repeat_index = 0;
+                    self.current_local_row = None;
+                }
+                output
+            }
+        };
+        self.remaining -= 1;
+        Some(output)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining, Some(self.remaining))
+    }
+}
+
+impl ExactSizeIterator for PackedSourceColumnRows<'_> {}
+
+impl VirtualMap for PackedSourceRepeatedVirtualMap {
+    type ColumnRows<'a> = PackedSourceColumnRows<'a>;
+
+    fn rows(&self) -> usize {
+        self.rows
+    }
+
+    fn cols(&self) -> usize {
+        self.cols
+    }
+
+    fn nnz(&self) -> usize {
+        self.nnz
+    }
+
+    fn digest(&self) -> [u8; 32] {
+        self.digest
+    }
+
+    fn is_identity(&self) -> bool {
+        self.instances == 1
+            && self.live_rows == self.rows
+            && self.live_cols == self.cols
+            && self.local.is_identity()
+    }
+
+    fn column_rows(&self, column: usize) -> Option<Self::ColumnRows<'_>> {
+        if column >= self.cols {
+            return None;
+        }
+        if column >= self.live_cols {
+            return Some(PackedSourceColumnRows {
+                local_rows: [].iter(),
+                instance: Some(0),
+                instances: self.instances,
+                current_local_row: None,
+                repeat_index: 0,
+                remaining: 0,
+            });
+        }
+
+        let (local_column, instance) = if column == 0 {
+            (0, None)
+        } else {
+            let offset = column - 1;
+            (
+                1 + offset % (self.local.cols() - 1),
+                Some(offset / (self.local.cols() - 1)),
+            )
+        };
+        let local_rows = self.local.matrix().column(local_column)?.row_indices();
+        let remaining = local_rows.len() * instance.map_or(self.instances, |_| 1);
+        Some(PackedSourceColumnRows {
+            local_rows: local_rows.iter(),
+            instance,
+            instances: self.instances,
+            current_local_row: None,
+            repeat_index: 0,
+            remaining,
+        })
+    }
+}
+
 impl PackedRepeatedVirtualMap {
     /// Builds a packed repetition inside power-of-two global domains.
     pub fn new(
@@ -404,7 +625,10 @@ impl VirtualMap for PackedRepeatedVirtualMap {
             (0, None)
         } else {
             let offset = column - 1;
-            (1 + offset % (self.local.cols() - 1), Some(offset / (self.local.cols() - 1)))
+            (
+                1 + offset % (self.local.cols() - 1),
+                Some(offset / (self.local.cols() - 1)),
+            )
         };
         let local_rows = self.local.matrix().column(local_column)?.row_indices();
         let remaining = match instance {
@@ -710,7 +934,41 @@ mod tests {
         assert_ne!(packed.digest(), local.digest());
         assert_ne!(
             packed.digest(),
-            PackedRepeatedVirtualMap::new(local, 2, 8, 8).unwrap().digest()
+            PackedRepeatedVirtualMap::new(local, 2, 8, 8)
+                .unwrap()
+                .digest()
         );
+    }
+
+    #[test]
+    fn packed_source_repeated_map_uses_a_local_major_derived_tensor() {
+        let local = prepared(
+            4,
+            vec![
+                vec![(0, true), (2, true), (3, true)],
+                vec![(1, true), (3, true)],
+                vec![(2, true)],
+            ],
+        );
+        let repeated = PackedSourceRepeatedVirtualMap::new(local.clone(), 4, 16, 16).unwrap();
+
+        assert_eq!(repeated.instances(), 4);
+        assert_eq!(repeated.live_rows(), 16);
+        assert_eq!(repeated.live_cols(), 9);
+        assert_eq!(repeated.rows(), 16);
+        assert_eq!(repeated.cols(), 16);
+        assert_eq!(repeated.nnz(), 24);
+        assert_eq!(
+            repeated.column_rows(0).unwrap().collect::<Vec<_>>(),
+            vec![0, 1, 2, 3, 8, 9, 10, 11, 12, 13, 14, 15]
+        );
+        // Packed source column 3 is instance one, local source column one.
+        assert_eq!(
+            repeated.column_rows(3).unwrap().collect::<Vec<_>>(),
+            vec![5, 13]
+        );
+        assert!(repeated.column_rows(9).unwrap().next().is_none());
+        assert!(repeated.column_rows(16).is_none());
+        assert_ne!(repeated.digest(), local.digest());
     }
 }
