@@ -23,8 +23,9 @@
 //! Every compression occupies 20,456 adjacent assignment cells, all batches
 //! share one leading constant cell, and any unused cells are one trailing
 //! zero suffix.
-//! Set `F2Z_SHA_INNER_PREFIX_VARS=0..4` to choose how many leading inner
-//! sumcheck variables the packed prefix kernel consumes (default: 2).
+//! Power-of-two compression batches open the product-layout assignment
+//! directly. `F2Z_SHA_INNER_PREFIX_VARS=0..4` only configures the legacy
+//! inner-sumcheck fallback used by non-power-of-two assignment-row batches.
 //!
 //! (`F2Z_SHA_LOG2S` / `F2Z_SHA_REPS` / `F2Z_SHA_SEED` are deprecated
 //! aliases.) Set `F2Z_SHA_TRACE_PATH=/path/to/trace.jsonl` together with
@@ -876,9 +877,11 @@ fn run_once(
 
     let f2z_bytes = proof.f2z().to_bytes().len();
     let spartan_elements = 3 * proof.inner().round_polynomials.len();
-    let field_bytes = proof.inner().round_polynomials[0][0]
-        .canonical_element_encoding()
-        .len();
+    let field_bytes = proof
+        .inner()
+        .round_polynomials
+        .first()
+        .map_or(0, |round| round[0].canonical_element_encoding().len());
     let spartan_bytes = spartan_elements * field_bytes + 8 * (proof.inner_nonces().len() + 2);
 
     let timing = RepTiming {
@@ -1048,7 +1051,7 @@ fn main() {
         "F2Z_SHA_INNER_PREFIX_VARS must be in 0..={SHA256_INNER_PREFIX_MAX_VARS}"
     );
 
-    println!("SHA-256: flat packed [1|f₀|f₁|…], h=Mf; inner sumcheck + virtual F2Z");
+    println!("SHA-256: flat packed [1|f₀|f₁|…], h=Mf; direct product opening + virtual F2Z");
     #[cfg(feature = "parallel")]
     println!("rayon threads: {threads}");
     println!(

@@ -33,15 +33,15 @@ const MULTISWAP_MINI_DIGEST: &str =
 
 /// The 2^7 SHA-256 batch under the DEFAULT profile (`Lambda100`: no
 /// grinding anywhere, Ligerito at 100). Recorded at the deliberate native
-/// row/column packing and rank-one public-batching migration.
+/// row/column packing and direct product-opening migration.
 const SHA256_2P7_LAMBDA100_DIGEST: &str =
-    "22f1e151f990f7a5538358f7a8d898033a75b4ab76d1802729711b6b5c8df79e";
+    "2fbfcf08fa4a99441e0a2b2898e1073e8729c1c68d3e9f50574bf2934335f2a8";
 
 /// The 2^7 SHA-256 batch under the explicit historical comparison schedule.
-/// This pins the grinded quadratic schedule within the packed flat-linear
+/// This pins the grinded boundary schedule within the direct product-opening
 /// protocol.
 const SHA256_2P7_REFERENCE_DIGEST: &str =
-    "a4a9e756ecbd63826216e57c68def151047ec063e47a68eae916913b30254c8f";
+    "93a359989d75f95c4eb3472b8b742a070dcdb8a6b15d172186d70316775ce5ad";
 
 /// The 2^15 u32-multiplication batch under the canonical runtime-prime,
 /// K=3 univariate-skip protocol and its default `Lambda100` profile.

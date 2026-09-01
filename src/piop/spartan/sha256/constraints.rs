@@ -18,7 +18,10 @@ use num_traits::ToPrimitive;
 use thiserror::Error;
 
 use crate::{
-    f2map::{PackedRepeatedVirtualMap, PreparedVirtualMap, PreparedVirtualMapError},
+    f2map::{
+        PackedRepeatedVirtualMap, PackedSourceRepeatedVirtualMap, PreparedVirtualMap,
+        PreparedVirtualMapError,
+    },
     ligerito::LOG_PACKING,
     pcs::{IntEvalParams, mod_q_num_chunks},
     sparse_matrix::SparseMatrix,
@@ -137,6 +140,8 @@ pub enum Sha256ConstraintError {
 pub struct PreparedSha256CompressionBatch {
     local: &'static IntegerLocalRelation,
     map: PackedRepeatedVirtualMap,
+    product_map: Option<PackedSourceRepeatedVirtualMap>,
+    product_p_h: Option<IntEvalParams>,
     p_f: IntEvalParams,
     p_h: IntEvalParams,
     instances: usize,
@@ -210,6 +215,18 @@ impl PreparedSha256CompressionBatch {
     /// Repeated Boolean map for the complete compression batch.
     pub const fn map(&self) -> &PackedRepeatedVirtualMap {
         &self.map
+    }
+
+    /// Proof-only local-column × instance view used to open the complete
+    /// product-structured SHA residual directly. It is available exactly when
+    /// the number of instances is a power of two.
+    pub(crate) const fn product_map(&self) -> Option<&PackedSourceRepeatedVirtualMap> {
+        self.product_map.as_ref()
+    }
+
+    /// F2Z geometry of the proof-only product assignment view.
+    pub(crate) const fn product_assignment_params(&self) -> Option<&IntEvalParams> {
+        self.product_p_h.as_ref()
     }
 
     /// Number of live independent compression instances.
@@ -423,13 +440,33 @@ fn prepare_sha256_compression_instances_with_profile<P: IopSecurityProfile>(
     let p_h = single_forest_binary_params(assignment_vars);
     let map =
         PackedRepeatedVirtualMap::new(local.map.clone(), instances, p_h.cells(), p_f.cells())?;
+    let product_p_h = instances.is_power_of_two().then(|| {
+        let t = log_instance_capacity.min(13);
+        IntEvalParams {
+            t,
+            s: assignment_vars - t,
+            word_bits: 1,
+        }
+    });
+    let product_map = product_p_h
+        .map(|params| {
+            PackedSourceRepeatedVirtualMap::new(
+                local.map.clone(),
+                instances,
+                params.cells(),
+                p_f.cells(),
+            )
+        })
+        .transpose()?;
     let mut facts = sha256_instance_facts(exponent);
-    facts.opening_t =
-        u32::try_from(p_h.t).map_err(|_| Sha256ConstraintError::InvalidBatchExponent)?;
+    facts.opening_t = u32::try_from(product_p_h.unwrap_or(p_h).t)
+        .map_err(|_| Sha256ConstraintError::InvalidBatchExponent)?;
     let security = P::instantiate(&facts)?;
     Ok(PreparedSha256CompressionBatch {
         local,
         map,
+        product_map,
+        product_p_h,
         p_f,
         p_h,
         instances,
@@ -471,7 +508,8 @@ fn validate_prepared_protocol(
     Sha256PrimeProfile::from_security(&prepared.security, prepared.log_instance_capacity)?;
     let max_q_bits =
         u128::BITS as usize - prepared.security.projection_max.leading_zeros() as usize;
-    let forest_count = mod_q_num_chunks(&prepared.p_h, max_q_bits);
+    let opening_params = prepared.product_p_h.as_ref().unwrap_or(&prepared.p_h);
+    let forest_count = mod_q_num_chunks(opening_params, max_q_bits);
     if forest_count != 1 {
         return Err(Sha256ConstraintError::UnsupportedOpeningForestCount {
             actual: forest_count,
