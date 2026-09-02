@@ -55,8 +55,8 @@
 \newcommand{\plaintitle}{$\mathbb{B}\text{it}\ZZ$: Proofs in arbitrary domains with commitments in binary fields\\
 $\mathbb{B}\text{it}\ZZ$: proofs and commitments over arbitrary finitely generated rings through binary fields\\
 $\mathbb{B}\text{it}\ZZ$: proofs and commitments in arbitrary finitely generated rings via low entropy grand products in binary fields\\
-$\mathbb{B}\text{it}\ZZ$: proofs  in arbitrary finitely generated rings via low entropy grand products in binary fields}
-
+$\mathbb{B}\text{it}\ZZ$: proofs and commitments in arbitrary rings through binary fields
+}
 \PassOptionsToPackage{hyphens}{url}\usepackage{hyperref}
 \hypersetup{
   colorlinks=true,
@@ -919,7 +919,7 @@ We proceed to define round-by-round knowledge soundness of an IOR, as presented 
 \begin{definition}[Knowledge state function with relaxation]
 \label{def:knowledge-state-function}
 Let $\Pi = (\prover, \verifier)$ be an IOR from a relation $\Relation$ to $\Relation'$. A \emph{knowledge state function with relaxation $(\widetilde{\Relation}, \widetilde{\Relation'})$} for $\Pi$ is a (possibly inefficient) function $\kstate$ that, on input  $(\inp, \oracle)$, interaction transcript $\tr$, and knowledge state witness $\kswit$, outputs a bit and has the following properties.
-\begin{itemize}[nosep]
+\begin{itemize}[leftmargin=*,nosep]
   \item \textbf{Empty transcript.} If $\tr = \emptyset$ is the empty transcript, then $\kstate(\inp, \oracle, \tr, \kswit) = 1$ if and only if $(\inp, \oracle; \kswit) \in \widetilde{\Relation}$.
   \item \textbf{Prover moves.} If $\tr$ is a transcript where the prover is about to move and $\kstate(\inp, \oracle, \tr, \kswit) = 0$, then $\kstate(\inp, \oracle, \tr \Vert \provermsg, \kswit) = 0$ for every prover message $\provermsg$.
   \item \textbf{Full transcript.} If $\tr = (\provermsg_1, \verifiermsg_1, \ldots, \provermsg_k, \verifiermsg_k)$ is a full transcript, then $\kstate(\inp, \oracle, \tr, \kswit) = 1$ if and only if $\verifier$ on $\tr$ outputs $(\inp', \oracle')$ such that $(\inp', \oracle'; \kswit) \in \widetilde{\Relation'}$.
@@ -1226,9 +1226,9 @@ where $h$ ranges over the polynomials just described. See \cref{l:examples_morph
     Let $\cP$ be a set of primes. For each $q\in \cP$ let $\cM_q$  be the set of all maps $\pi: \ZZ[X_1,\ldots, X_{k}]\to \FF_q$ of the form
      $$\pi(h(X_1, \ldots, X_{k})) = \pi_q(h)(\alpha_1, \ldots, \alpha_{k}), \qquad \text{for } h\in \ZZ[X_1,\ldots, X_{k}],$$
 %
-for some $\alpha_1,\ldots, \alpha_{k}\in \FF_q$, and where $\pi_q(h)$ is $h$ after reducing its coefficients modulo $q$. Then \albert{Why do we have an $8$ here and before we had a $2$?}
+for some $\alpha_1,\ldots, \alpha_{k}\in \FF_q$, and where $\pi_q(h)$ is $h$ after reducing its coefficients modulo $q$. Then
          $$
-    \theta(R,\codedim) \leq \frac{2\cdot D}{q_{\min}} + \frac{\log\left(8\cdot T\cdot \codedim\cdot N_R^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}.
+    \theta(R,\codedim) \leq \frac{2\cdot D}{q_{\min}} + \frac{\log\left(4\cdot T\cdot \codedim\cdot N_R^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}.
     $$
     where $q_{\min}$ is the smallest prime in $\cP$.
 \end{lemma}
@@ -1418,7 +1418,7 @@ Now, every nonzero coefficient of $h$ is divisible by at most $B/\lfloor\log(q_{
 
 
 \begin{proof}[Proof of \cref{l:examples_morphisms}]
-Let $h\in \ZZ[X_1,\ldots, X_{k}]$ be a polynomial of total degree at most $2\cdot D$, with coefficients in $\range{-2\cdot T\cdot \codedim\cdot N_R^2}{2\cdot T\cdot \codedim\cdot N_R^2}$, and with $\picanon^{R}(h)\neq 0$ (cf.\ the definition of $\theta(R,\codedim)$). In particular $h$ is nonzero, and its coefficients lie in $\range{-2^{B}+1}{2^{B}-1}$ for $B\defeq \lfloor \log(T\cdot \codedim\cdot N_R^2)\rfloor + 2 \leq \log(8\cdot T\cdot \codedim\cdot N_R^2)$. Since $h$ is nonzero and has total degree at most $2\cdot D$, \cref{l:reduction_lemma} (applied with $m=k$ variables and total degree $2\cdot D$) yields $$\Pr_{\substack{q\gets \cP,\\ \bm{\alpha} \gets \FF_q^{k}}}[\pi_q(h)(\bm{\alpha})=0] \leq \frac{B}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{2\cdot D}{q_{\min}},$$ as needed.
+Let $h\in \ZZ[X_1,\ldots, X_{k}]$ be a polynomial of total degree at most $2\cdot D$, with coefficients in $\range{-2\cdot T\cdot \codedim\cdot N_R^2}{2\cdot T\cdot \codedim\cdot N_R^2}$, and with $\picanon^{R}(h)\neq 0$ (cf.\ the definition of $\theta(R,\codedim)$). In particular $h$ is nonzero, and its coefficients lie in $\range{-2^{B}+1}{2^{B}-1}$ for $B\defeq \lfloor \log(T\cdot \codedim\cdot N_R^2)\rfloor + 2 \leq \log(4\cdot T\cdot \codedim\cdot N_R^2)$. Since $h$ is nonzero and has total degree at most $2\cdot D$, \cref{l:reduction_lemma} (applied with $m=k$ variables and total degree $2\cdot D$) yields $$\Pr_{\substack{q\gets \cP,\\ \bm{\alpha} \gets \FF_q^{k}}}[\pi_q(h)(\bm{\alpha})=0] \leq \frac{B}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{2\cdot D}{q_{\min}},$$ as needed.
 %
 \end{proof}
 
@@ -1428,17 +1428,22 @@ Let $h\in \ZZ[X_1,\ldots, X_{k}]$ be a polynomial of total degree at most $2\cdo
 
 \begin{proof}[Proof of \cref{t:thm_core_IOPP}] 
 %
-The completeness of \cref{c:core_iop} is clear from its description \albert{Review}.  To prove its soundness, we first treat the case where Round 0 is not executed, so that, by hypothesis, $L_\delta=1$; the case where Round 0 is executed is treated at the end of the proof.  We decompose  \cref{c:core_iop} into three IORs $\Pi_1, \Pi_2, \Pi_3$.  The first one, $\Pi_1$, is an IOR from $\LinBitsDual$ to $\PESAT$, and it consists of applying Rounds 1 and 2 of \cref{c:core_iop}, and outputting $$\left(\inp'=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ (g^{\mu_j})_{j\in [\codedim_2]}),\  \oracle'= f, \ \wit'=\picomfield(\bff)\right),$$ as described in Phase 3 of \cref{c:core_iop}. Formally, $\Pi_1$ is a $2$-round IOR whose second verifier message is empty: the prover first sends $\mu'$, the verifier replies with $(q,\pirand)$, and the prover then sends $\bm{\mu}=(\mu_1,\ldots, \mu_{\codedim_2})$. The second IOR, $\Pi_2$, is simply $\Pi_{\mathsf{red}}$, reducing $\PESAT$ to $\LIN$. Finally, the third IOR, $\Pi_3$, is simply the IOP $\Pi_{\iopp}$ for $\LIN$.
+The completeness of \cref{c:core_iop} is clear from its description \albert{Review}.  To prove its soundness, we first treat the case where Round 0 (OOD sampling) is not executed; the case where Round 0 is executed is treated at \cref{a:OOD} following (now standard) arguments from \cite{stir,whir}. 
+
+We decompose  \cref{c:core_iop} into three IORs $\Pi_1, \Pi_2, \Pi_3$.  The first one, $\Pi_1$, is an IOR from $\LinBitsDual$ to $\PESAT$, and it consists of applying Rounds 1 and 2 of \cref{c:core_iop}, and outputting $$\left(\inp'=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ (g^{\mu_j})_{j\in [\codedim_2]}),\  \oracle'= f, \ \wit'=\picomfield(\bff)\right),$$ as described in Phase 3 of \cref{c:core_iop}. Formally, $\Pi_1$ is a $2$-round IOR whose second verifier message is empty: the prover first sends $\mu'$, the verifier replies with $(q,\pirand)$, and the prover then sends $\bm{\mu}=(\mu_1,\ldots, \mu_{\codedim_2})$. The second IOR, $\Pi_2$, is simply $\Pi_{\mathsf{red}}$, reducing $\PESAT$ to $\LIN$. Finally, the third IOR, $\Pi_3$, is simply the IOP $\Pi_{\iopp}$ for $\LIN$.
+
+
+ Below we show that $\Pi_1$  has round-by-round knowledge soundness with relaxation $(\LinBitsDual^{\delta}, \PESAT^{\delta})$, with errors $(\kappa_0, 0)$, assuming Round 1 is not skipped. The second verifier message of $\Pi_1$ is empty, hence the last prover message of $\Pi_1$ can be sent together with the first prover message of $\Pi_2$, and thus  \cref{c:core_iop} has $1+t_\red+t_\iopp$ rounds. The theorem then follows from the composition of IORs result (cf.\ \cref{r:ior_compositoin}). 
 
 
 
-\albert{Review this paragraph.} Below we show that $\Pi_1$  has round-by-round knowledge soundness with relaxation $(\LinBitsDual^{\delta}, \PESAT^{\delta})$, with errors $(\kappa_0, 0)$. The second verifier message of $\Pi_1$ is empty, hence the last prover message of $\Pi_1$ can be sent together with the first prover message of $\Pi_2$, and thus  \cref{c:core_iop} has $1+t_\red+t_\iopp$ rounds. The theorem then follows from the composition of IORs result (cf.\ \cref{r:ior_compositoin}). If Round 1 is skipped, then the messages $\mu'$ and $(q,\pirand)$ and the error $\kappa_0$ disappear, and the arguments below apply after replacing $\pirand\circ \picanon^{-1}$ with the identity map on $\FF_q$ or on $\ZZ$. In the latter case,  $\pi_q$ is also replaced by the identity map, cf.\ \cref{r:skip_round_1_integers}.
 
+ At the end of the proof we discuss the case when Round 1 is skipped. 
 
 
 
 \paragraph{Completeness and soundness of $\Pi_1$}
-We describe a knowledge state function $\kstate$. Let $\inp=(\mu,\vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle=f\in \comfield^{\codelength}$. Let $\tr$ be a partial interaction transcript for $\Pi_1$. We start by setting $\kstate$ so that the first condition in \cref{def:knowledge-state-function} is met, and so that the second one is met at the prover message $\mu'$. Precisely, if   $\tr=\emptyset$, we set $\kstate(\inp,\oracle,\tr,\ww) = 1$ if and only if $(\inp, \oracle, \ww)\in \LinBitsDual^{\delta}$; and, if $\tr=(\mu')$ consists of a single prover message, we set $\kstate(\inp,\oracle,(\mu'),\ww)=\kstate(\inp,\oracle,\emptyset,\ww)$.
+We describe a knowledge state function $\kstate$. Let $\inp=(\mu,\vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle=f\in \comfield^{\codelength}$. Let $\tr$ be a partial interaction transcript for $\Pi_1$. We start by setting $\kstate$ so that the first  condition in \cref{def:knowledge-state-function} are met. Precisely, if   $\tr=\emptyset$, we set $\kstate(\inp,\oracle,\tr,\ww) = 1$ if and only if $(\inp, \oracle, \ww)\in \LinBitsDual^{\delta}$. Furhter,  if $\tr=(\mu')$ consists of a single prover message, we set $\kstate(\inp,\oracle,\mu',\ww)=\kstate(\inp,\oracle,\emptyset,\ww)$, so that the second condition in \cref{def:knowledge-state-function} holds for the first prover message round.
 
 After the verifier's message, $\tr$ is as follows:
 %
@@ -1456,43 +1461,46 @@ We define $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if  the verifier's degre
     \end{aligned}
 \end{equation}
 %
-Next, let $\tr=(\mu', (q,\pirand), \bm{\mu})$ for a prover message $\bm{\mu}=(\mu_1,\ldots, \mu_{\codedim_2})\in \range{0}{(q-1)\cdot \codedim_1}^{\codedim_2}$, or let $\tr$ be the full transcript obtained by appending the empty second verifier message to it (this appending does not change the value of $\kstate$ below, and hence the second round of $\Pi_1$ has round-by-round knowledge error $0$). We set $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if the verifier accepts on $\tr$ (i.e.\ its checks in Rounds 1 and 2 pass) and $(\inp',\oracle',\ww)\in \PESAT^{\delta}$, where $(\inp',\oracle')$ is the output of the verifier, namely
+We continue with our defintion of $\kstate$.  Let $\tr=(\mu', (q,\pirand), \bm{\mu})$ for a prover message $\bm{\mu}=(\mu_1,\ldots, \mu_{\codedim_2})\in \range{0}{(q-1)\cdot \codedim_1}^{\codedim_2}$, or let $\tr$ be the full transcript obtained by appending the empty second verifier message to $(\mu', (q,\pirand), \bm{\mu})$. We set $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if the verifier accepts on $\tr$ (i.e.\ its checks in Rounds 1 and 2 pass) and $(\inp',\oracle',\ww)\in \PESAT^{\delta}$, where $(\inp',\oracle')$ is the output of the verifier, namely
 %
 $$
 \inp'=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ (g^{\mu_j})_{j\in [\codedim_2]}), \qquad \oracle'= f, \qquad \text{with } \bm{\gamma} = \pi_{q}^{-1}\left(\pirand\circ \picanon^{-1}(\vv^{(1)})\right) \in \range{0}{q-1}^{\codedim_1}\subseteq \ZZ^{\codedim_1}
 $$
 %
-(here and below we identify $\ww=\bff\in \bits^\codedim\subseteq \ZZ^{\codedim}$ with $\picomfield(\bff)\in \FF_2^{\codedim}$). Thus $\kstate$ satisfies the third condition in \cref{def:knowledge-state-function}.
+(here and below we identify $\ww=\bff\in \bits^\codedim\subseteq \ZZ^{\codedim}$ with $\picomfield(\bff)\in \FF_2^{\codedim}$ \albertimportant{remove?}). Thus $\kstate$ satisfies the third condition in \cref{def:knowledge-state-function}.
 
 
 
-We define $\rbrextractor(\inp,\oracle,\tr,\ww)=\ww$. It remains to prove two statements: first, that
+We define an extractor as $\rbrextractor(\inp,\oracle,\tr,\ww)=\ww$. It remains to prove two statements: first, that
 %
 \[
   \Pr_{q,\pirand}\!\left[
-  \exists\,\ww \ \left| \ \begin{array}{l}
-  \kstate\bigl(\inp,\oracle,(\mu'),\rbrextractor(\inp,\oracle,(\mu', (q,\pirand)),\ww)\bigr)=0\\
-  \wedge\ \kstate(\inp,\oracle,(\mu', (q,\pirand)), \ww)=1
-  \end{array}
+  \exists\,\ww \ \left| \ \begin{aligned}
+  &\kstate\bigl(\inp,\oracle,\mu',\rbrextractor(\inp,\oracle,(\mu', (q,\pirand)),\ww)\bigr)=0\\
+  \wedge\ &\kstate(\inp,\oracle,(\mu', (q,\pirand)), \ww)=1
+  \end{aligned}
   \right.\right]
   \ \le\ \kappa_0;
 \]
-and second, that $\kstate$ satisfies the second condition in \cref{def:knowledge-state-function} for transcripts where the prover is about to send $\bm{\mu}$.
+and second, that $\kstate$ satisfies the second condition in \cref{def:knowledge-state-function} for transcripts where the prover is about to send $\bm{\mu}$ (its second message).
 
 \bigskip
 
-We start with the first statement. Assume $$\kstate(\inp,\oracle,(\mu', (q,\pirand)), \ww)=1 \quad \text{and} \quad \kstate(\inp,\oracle,(\mu'),  \ww)=\kstate(\inp,\oracle,\emptyset,\ww)=0.$$
+We start with the first statement. Assume $$\kstate(\inp,\oracle,(\mu', (q,\pirand)), \ww)=1 \quad \text{and} \quad \kstate(\inp,\oracle,\mu',  \ww)=\kstate(\inp,\oracle,\ww)=0.$$
 The latter occurs if and only if  $(\inp,\oracle,\ww)\notin \LinBitsDual^{\delta}$. The former implies that $\ww=\bff=(\bff_{*j})_{j\in[\codedim_2]}\in \bits^\codedim$ satisfies \eqref{e:core_iop_proof_eq1}; in particular $\hamming(f,\Enc_{\cC}\circ\pack\circ \pi_2(\bff))< \delta$, and hence, since $(\inp,\oracle,\ww)\notin \LinBitsDual^{\delta}$, necessarily
 %
 \begin{equation}\label{e:break_soundness_2}
 \langle \pi(\bff), \vv\rangle \neq \mu \qquad \text{over } R.
 \end{equation}
 %
-Define $$h\defeq  \langle \picanon^{-1}(\vv^{(1)}) \otimes \picanon^{-1}(\vv^{(2)}), \bff \rangle- \mu' \ \in \ \ZZ[X_1, \ldots, X_{k}].
+Define the polynomial $$h\defeq  \langle \picanon^{-1}(\vv^{(1)}) \otimes \picanon^{-1}(\vv^{(2)}), \bff \rangle- \mu' \ \in \ \ZZ[X_1, \ldots, X_{k}].
 $$
-Since $\picanon$ is a ring homomorphism satisfying $\picanon\circ \picanon^{-1}=\mathsf{id}$ and restricting to $\pi$ on $\ZZ$, the first condition in \eqref{e:core_iop_proof_eq1} gives $$\picanon(h) = \langle \pi(\bff), \vv^{(1)} \otimes \vv^{(2)} \rangle- \picanon(\mu') = \langle \pi(\bff), \vv\rangle - \mu,$$ which is nonzero by \eqref{e:break_soundness_2}. In particular $h\neq 0$. On the other hand, since $\pirand$ is a ring homomorphism restricting to $\pi_q$ on $\ZZ$, the second condition in \eqref{e:core_iop_proof_eq1} states precisely that $\pirand(h)=0$. Moreover, $h$ has total degree at most $2\cdot D$ and coefficients in $\range{-2\cdot T\cdot \codedim\cdot N_R^2}{2\cdot T\cdot \codedim\cdot N_R^2}$: indeed, the lifts $\picanon^{-1}(\vv^{(1)}_i)$ and $\picanon^{-1}(\vv^{(2)}_j)$ have total degree at most $D$ and coefficients of absolute value at most $N_R$,
+Since $\picanon$ is a ring homomorphism satisfying $\picanon\circ \picanon^{-1}=\mathsf{id}$ and restrict to $\pi$ on $\ZZ$ (so $\picanon(\bff)=\pi(\bff)$), the first condition in \eqref{e:core_iop_proof_eq1} gives $$\picanon(h) = \langle \vv^{(1)} \otimes \vv^{(2)},\pi(\bff) \rangle- \picanon(\mu') = \langle \pi(\bff), \vv\rangle - \mu,$$ which is nonzero by \eqref{e:break_soundness_2}. In particular $h\neq 0$. On the other hand, since $\pirand$ is a ring homomorphism restricting to $\pi_q$ on $\ZZ$, the second condition in \eqref{e:core_iop_proof_eq1} states precisely that $\pirand(h)=0$. Moreover, $h$ has total degree at most $2\cdot D$ and coefficients in $\range{-2\cdot T\cdot \codedim\cdot N_R^2}{2\cdot T\cdot \codedim\cdot N_R^2}$: indeed, the lifts $\picanon^{-1}(\vv^{(1)}_i)$ and $\picanon^{-1}(\vv^{(2)}_j)$ have total degree at most $D$ and coefficients of absolute value at most $N_R$,
 
-Since $\picanon$ is a ring homomorphism satisfying $\picanon\circ \picanon^{-1}=\mathsf{id}$ and restricting to $\pi$ on $\ZZ$, the first condition in \eqref{e:core_iop_proof_eq1} gives $$\picanon(h) = \langle \pi(\bff), \vv^{(1)} \otimes \vv^{(2)} \rangle- \picanon(\mu') = \langle \pi(\bff), \vv\rangle - \mu,$$ which is nonzero by \eqref{e:break_soundness_2}. In particular $h\neq 0$. On the other hand, since $\pirand$ is a ring homomorphism restricting to $\pi_q$ on $\ZZ$, the second condition in \eqref{e:core_iop_proof_eq1} states precisely that $\pirand(h)=0$. Moreover, $h$ has total degree at most $2\cdot D$ and coefficients in $\range{-2\cdot T\cdot \codedim\cdot N_R^2}{2\cdot T\cdot \codedim\cdot N_R^2}$: indeed, the lifts $\picanon^{-1}(\vv^{(1)}_i)$ and $\picanon^{-1}(\vv^{(2)}_j)$ have total degree at most $D$ and coefficients of absolute value at most $N_R$, so each product $\picanon^{-1}(\vv^{(1)}_i)\cdot \picanon^{-1}(\vv^{(2)}_j)$ has total degree at most $2\cdot D$ and coefficients of absolute value at most $T\cdot N_R^2$ (by the definition of $T$); the entries of $\bff$ are bits, and $\mu'$ passes the verifier's degree and range checks of Round 1. Since additionally $\picanon(h)\neq 0$, the polynomial $h$ belongs to the class of polynomials over which $\theta(R,\codedim)$ is defined. Finally,  since we have assumed for now that  $\cC$ is $(\delta,1)$-list-decodable, there is at most one $\ww$ such that \ $\hamming(f,\Enc_{\cC}\circ\pack\circ \pi_2(\ww))< \delta$.  Therefore  \albert{review} $$
+Since $\picanon$ is a ring homomorphism satisfying $\picanon\circ \picanon^{-1}=\mathsf{id}$ and restricting to $\pi$ on $\ZZ$, the first condition in \eqref{e:core_iop_proof_eq1} gives $$\picanon(h) = \langle \pi(\bff), \vv^{(1)} \otimes \vv^{(2)} \rangle- \picanon(\mu') = \langle \pi(\bff), \vv\rangle - \mu,$$ which is nonzero by \eqref{e:break_soundness_2}. In particular $h\neq 0$. On the other hand, since $\pirand$ is a ring homomorphism restricting to $\pi_q$ on $\ZZ$, the second condition in \eqref{e:core_iop_proof_eq1} states precisely that $\pirand(h)=0$. We claim that $h$ has total degree at most $2\cdot D$ and satisfies $$\lVert h \rVert_{\infty}\leq 2\cdot T\cdot \codedim\cdot N_R^2.$$ Indeed, the lifts $\picanon^{-1}(\vv^{(1)}_i)$ and $\picanon^{-1}(\vv^{(2)}_j)$ have total degree at most $D$ and coefficients of absolute value at most $N_R$, so each product $\picanon^{-1}(\vv^{(1)}_i)\cdot \picanon^{-1}(\vv^{(2)}_j)$ has total degree at most $2\cdot D$ and coefficients of absolute value at most $T\cdot N_R^2$ by the definition of $T$. Further, by the verifier's checks in Round 1, $$\lVert \mu'\rVert_{\infty} \leq T\cdot \codedim\cdot N_R^2$$ and the total degree of $\mu'$ is at most $2\cdot D$. The claim follows now from the fact tha the entries of $\bff$ are bits and there are $\codedim$ of them.
+
+
+Since additionally $\picanon(h)\neq 0$, the polynomial $h$ belongs to the class of polynomials over which $\theta(R,\codedim)$ is defined. Finally,  since we have assumed (for now) that  $\cC$ is $(\delta,1)$-list-decodable, there is at most one $\ww$ such that \ $\hamming(f,\Enc_{\cC}\circ\pack\circ \pi_2(\ww))< \delta$.  Therefore  \albert{review} $$
 \begin{aligned}
 &\Pr_{q,\pirand}[\exists \ww  \text{ such that } (\inp,\oracle,\ww)\notin \LinBitsDual^\delta, \text{ and }\ww=\bff \text{ satisfies  \eqref{e:core_iop_proof_eq1}}]\\ \leq &\Pr_{q\gets \cP,\ \pirand\gets \cM_q}[\pirand(h)=0] \leq \theta(R,\codedim) = \kappa_0,
 \end{aligned}
@@ -1502,23 +1510,23 @@ where the last inequality holds by the definition of $\theta(R,\codedim)$.
 
 \bigskip
 
-It remains to prove the second statement, namely: if $\kstate(\inp,\oracle,(\mu', (q,\pirand)),\ww)=0$, then $\kstate(\inp,\oracle,(\mu', (q,\pirand), \bm{\mu}),\ww)=0$ for every prover message $\bm{\mu}=(\mu_1,\ldots, \mu_{\codedim_2})\in \range{0}{(q-1)\cdot \codedim_1}^{\codedim_2}$. Suppose towards a contradiction that $\kstate(\inp,\oracle,(\mu', (q,\pirand), \bm{\mu}),\ww)=1$, i.e.\ that the verifier accepts and $(\inp',\oracle',\ww)\in \PESAT^{\delta}$. Then $\ww=\bff=(\bff_{*j})_{j\in [\codedim_2]}\in \bits^\codedim$, $\hamming( f,\Enc_{\cC}\circ \pack\circ \pi_2(\bff)) < \delta$, and, for all $j\in [\codedim_2]$, $$g^{\langle \bff_{*j}, \bm{\gamma}\rangle} = \prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \pi_2(\bff_{ij}) +1\right)= g^{\mu_j},$$ and hence $$\langle \bff_{*j}, \bm{\gamma}\rangle = \mu_j \mod \mathsf{ord}(g),$$ where $\mathsf{ord}(g)$ denotes the multiplicative order of $g$. Now, since $\bm{\gamma}_i\in \range{0}{q-1}$, $\mu_j\in \range{0}{(q-1)\cdot \codedim_1}$, and $\bff_{*j}$ contains bits, we have $|\langle \bff_{*j}, \bm{\gamma}\rangle - \mu_j| \leq \codedim_1 \cdot (q-1)$. Since $g$ is a generator of $\comfield^*$ and $q\leq \max\cP< \fieldboundsizeexponent$, we have $$\mathsf{ord}(g) = |\comfield|-1> \codedim_1\cdot \max\cP \geq \codedim_1\cdot q> \codedim_1 \cdot (q-1),$$ and therefore
+It remains to prove the second statement, namely: if $\kstate(\inp,\oracle,(\mu', (q,\pirand)),\ww)=0$, then $\kstate(\inp,\oracle,(\mu', (q,\pirand), \bm{\mu}),\ww)=0$ for every prover message $\bm{\mu}=(\mu_1,\ldots, \mu_{\codedim_2})\in \range{0}{(q-1)\cdot \codedim_1}^{\codedim_2}$. Suppose towards a contradiction that $\kstate(\inp,\oracle,(\mu', (q,\pirand), \bm{\mu}),\ww)=1$, i.e.\ that the verifier accepts and $(\inp',\oracle',\ww)\in \PESAT^{\delta}$. Then $\ww=\bff=(\bff_{*j})_{j\in [\codedim_2]}\in \bits^\codedim$, $\hamming( f,\Enc_{\cC}\circ \pack\circ \pi_2(\bff)) < \delta$, and, for all $j\in [\codedim_2]$, $$g^{\langle \bff_{*j}, \bm{\gamma}\rangle} = \prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \pi_2(\bff_{ij}) +1\right)= g^{\mu_j},$$ and hence $$\langle \bff_{*j}, \bm{\gamma}\rangle = \mu_j \mod \mathsf{ord}(g),$$ where $\mathsf{ord}(g)$ denotes the multiplicative order of $g$. Now, since $\bm{\gamma}_i\in \range{0}{q-1}$, $\mu_j\in \range{0}{(q-1)\cdot \codedim_1}$, and $\bff_{*j}$ contains bits, we have $|\langle \bff_{*j}, \bm{\gamma}\rangle - \mu_j| \leq \codedim_1 \cdot (q-1)$. Since $g$ is a generator of $\comfield^*$ and $q\leq \max\cP< \fieldboundsizeexponent$, we have $$\mathsf{ord}(g) = |\comfield|-1> \codedim_1\cdot \max\cP \geq \codedim_1\cdot q> \codedim_1 \cdot (q-1),$$ and hence
 %
 \begin{equation}\label{e:mu_j_integer_equalities}
 \langle \bff_{*j}, \bm{\gamma}\rangle = \mu_j \qquad \text{over } \ZZ, \qquad \text{ for all } j\in [\codedim_2].
 \end{equation}
 %
-Applying $\pi_q$ to \eqref{e:mu_j_integer_equalities}, and using that $\pi_q(\bm{\gamma})=\pirand\circ \picanon^{-1}(\vv^{(1)})$, we obtain $$\langle \pi_q(\bff_{*j}), \pirand\circ \picanon^{-1}(\vv^{(1)})\rangle = \pi_q(\mu_j) \quad \text{ over } \FF_q, \qquad \text{ for all } j\in [\codedim_2].$$ Since the verifier accepts, its check \eqref{e:tensor_decomposition_reconstruction} in Round 2 passes, i.e.\ $\sum_{j\in [\codedim_2]} \pi_q(\mu_j)\cdot \left(\pirand\circ \picanon^{-1}(\vv^{(2)})\right)_j = \pirand(\mu')$ (recall that $\vv^{(2)}$ and $\mu$ were updated in Round 1). Combining,
+Applying $\pi_q$ to \eqref{e:mu_j_integer_equalities}, and using that $\pi_q(\bm{\gamma})=\pirand\circ \picanon^{-1}(\vv^{(1)})$, we obtain $$\langle \pi_q(\bff_{*j}), \pirand\circ \picanon^{-1}(\vv^{(1)})\rangle = \pi_q(\mu_j) \quad \text{ over } \FF_q, \qquad \text{ for all } j\in [\codedim_2].$$ Since the verifier accepts, its check \eqref{e:tensor_decomposition_reconstruction} in Round 2 passes, i.e.\ $\sum_{j\in [\codedim_2]} \pi_q(\mu_j)\cdot \left(\pirand\circ \picanon^{-1}(\vv^{(2)})\right)_j = \pirand(\mu')$. Now
 %
 \begin{align*}
-\langle \pirand\circ \picanon^{-1}(\vv^{(1)}) \otimes \pirand\circ \picanon^{-1}(\vv^{(2)}), \pi_q(\bff)\rangle &= \sum_{j\in [\codedim_2]} \langle \pi_q(\bff_{*j}), \pirand\circ \picanon^{-1}(\vv^{(1)})\rangle \cdot \left(\pirand\circ \picanon^{-1}(\vv^{(2)})\right)_j \\ &= \sum_{j\in [\codedim_2]} \pi_q(\mu_j)\cdot \left(\pirand\circ \picanon^{-1}(\vv^{(2)})\right)_j = \pirand(\mu').
+&\langle \pirand\circ \picanon^{-1}(\vv^{(1)}) \otimes \pirand\circ \picanon^{-1}(\vv^{(2)}), \pi_q(\bff)\rangle\\ =& \sum_{j\in [\codedim_2]} \langle \pi_q(\bff_{*j}), \pirand\circ \picanon^{-1}(\vv^{(1)})\rangle \cdot \left(\pirand\circ \picanon^{-1}(\vv^{(2)})\right)_j \\ =& \sum_{j\in [\codedim_2]} \pi_q(\mu_j)\cdot \left(\pirand\circ \picanon^{-1}(\vv^{(2)})\right)_j = \pirand(\mu').
 \end{align*}
 %
-That is, the second condition in \eqref{e:core_iop_proof_eq1} holds. The first condition in \eqref{e:core_iop_proof_eq1} holds because the verifier accepts, and the third one was noted above. Hence $\kstate(\inp,\oracle,(\mu', (q,\pirand)),\ww)=1$, a contradiction.
+Hence the second condition in \eqref{e:core_iop_proof_eq1} holds. The first condition in \eqref{e:core_iop_proof_eq1}, i.e.\ $\picanon(\mu')=\mu$, holds because the verifier accepts, and the third one, i.e.\ $\hamming(f, \Enc_{\cC}\circ \pack \circ\pi_2(\bff))<\delta$, holds because $(\inp',\oracle',\ww)\in \PESAT^{\delta}$. Hence $\kstate(\inp,\oracle,(\mu', (q,\pirand)),\ww)=1$, a contradiction.
 
 
 
-\paragraph{The case where Round 0 is executed} In \cref{?} we treat the case when Round 0 is executed, so that $\cC$ is $(\delta, L_\delta)$-list-decodable, possibly with $L_\delta>1$. The arguments are standard, being essentially those from \cite{stir,whir}.
+\paragraph{The case where Round 1 is skipped.} \albertimportant{Review: AI written} In this case, the messages $\mu'$ and $(q,\pirand)$ and the error $\kappa_0$ disappear, and the arguments above apply after replacing $\pirand\circ \picanon^{-1}$ with the identity map on $\FF_q$ or on $\ZZ$. In the latter case,  $\pi_q$ is also replaced by the identity map, cf.\ \cref{r:skip_round_1_integers}.
 %
 \end{proof}
 
@@ -1778,7 +1786,7 @@ with these upper bounds depending on how much grinding one is doing at the PIOP 
 
 Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\FF, \codedim)$. We use the one-generator presentation of $\FF$ from \cref{e:presentations}, with the natural lifts, so that $k=1$ and, denoting by $d$ the degree of $\FF$ over its prime field, $D=d-1$, $T\leq d$, and $N_\FF\leq q-1$. We instantiate the morphism sets $\cM_q$ as in \cref{l:examples_morphisms}, i.e.\ $\pirand$ reduces coefficients modulo a sampled prime and evaluates $X_1$ at a random $\alpha\in \FF_q$. In this case, by \cref{l:examples_morphisms},
     $$
-    \kappa_0 \leq \frac{2\cdot (d-1)}{q_{\min}} + \frac{\log\left(8\cdot d\cdot \codedim\cdot (q-1)^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor},
+    \kappa_0 \leq \frac{2\cdot (d-1)}{q_{\min}} + \frac{\log\left(4\cdot d\cdot \codedim\cdot (q-1)^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor},
       $$
     where $q$ is  the characteristic of $\FF$.
 
@@ -1789,7 +1797,7 @@ Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\FF, \codedim)$. We use 
      %
      $$
      \begin{aligned}
-    \kappa_0\lessapprox f(a)&\defeq \frac{2\cdot (d-1)}{2^a} + \frac{\log\left(8\cdot d\cdot \codedim\cdot (q-1)^2\right)\cdot \log_e(2)}{\frac{a}{b}\cdot 2^{b} - 2^a},\\
+    \kappa_0\lessapprox f(a)&\defeq \frac{2\cdot (d-1)}{2^a} + \frac{\log\left(4\cdot d\cdot \codedim\cdot (q-1)^2\right)\cdot \log_e(2)}{\frac{a}{b}\cdot 2^{b} - 2^a},\\
     b&\defeq 128 - r_1, \qquad r_1\defeq \tau\cdot \log(\codedim).
     \end{aligned}
     $$
@@ -3213,7 +3221,7 @@ This concludes the proof of \cref{l:Pi_123_is_good}.
 
 
 
-\subsection{Soundness of Out Of Domain Sampling (OOD) in \cref{c:core_iop}}
+\subsection{Soundness of Out Of Domain Sampling (OOD) in \cref{c:core_iop}}\label{a:OOD}
 
 
  \albertimportant{Where to put this?} If Round 0 is executed, assume moreover that the IOR obtained from $\Pi_{\mathsf{red}}$ by extending its instances with a pair $(\zeta,y)\in \comfield^2$ (which the protocol ignores and copies to its output instance) is a perfectly complete IOR from $\PESAT^{\zeta,y}$ to $\LIN^{\zeta,y}$ with round-by-round knowledge soundness with relaxation $(\PESAT^{\delta,\zeta,y},\LIN^{\delta,\zeta,y})$, with the same errors; and, similarly, that $\Pi_{\iopp}$ is a perfectly complete $t_\iopp$-round IOP for $\LIN^{\zeta,y}$ with round-by-round knowledge soundness with relaxation $(\LIN^{\delta,\zeta,y},\bot)$, with the same errors (cf.\ \cref{r:ood_hypotheses}).
