@@ -11,6 +11,7 @@ use crate::{pcs::IntEvalParams, poly::mle::DenseMultilinearExtension};
 use super::{
     ConstraintMatrices, PreparedConstraintMatrices, R1csProductMles, SparseMatrix, SpartanField,
     SpartanMatrixError, SpartanRelationBackend,
+    slot_rows::{pack_slot_major_rows_w1, pack_slot_major_rows_w8},
 };
 
 /// Number of committed little-endian bits used for each left operand.
@@ -369,12 +370,44 @@ impl U32MulWitness {
     /// Bit `b * W + j` of row `c` is bit `j` of logical cell `(b,c)`. Global
     /// slots `0..32`, `32..64`, and `64..128` contain little-endian bits of
     /// `x`, `y`, and `product`.
+    ///
+    /// Row `c` is `128 / W` lanes of `high_gate_count` `W`-bit cells (see
+    /// [`Self::layout`]'s [`U32MulLayout::f2z_bit_position`]). Whenever a
+    /// lane spans whole words — every layout at `W8`, and `W1` from `2^11`
+    /// gate slots up — the rows are built by the block transposes of
+    /// [`super::slot_rows`]; otherwise by the bitwise path. Both produce
+    /// identical rows.
     #[allow(clippy::arithmetic_side_effects)]
     pub fn f2z_bit_rows(&self) -> Vec<Vec<u64>> {
         let params = self.layout.f2z_params();
         let bits_per_row = params.rows() * params.word_bits;
         let words_per_row = bits_per_row / u64::BITS as usize;
         let mut rows = vec![vec![0_u64; words_per_row]; params.cols()];
+
+        let s = self.layout.gate_vars / 2;
+        let high_gate_count = 1_usize << (self.layout.gate_vars - s);
+        let live = self.layout.multiplications;
+        let x_values = self.x_values();
+        let y_values = self.y_values();
+        let product_values = self.product_values();
+        let gate_slots =
+            |gate: usize| pack_gate_slots(x_values[gate], y_values[gate], product_values[gate]);
+        match self.layout.f2z_width {
+            U32MulF2zWidth::W1 if high_gate_count.is_multiple_of(u64::BITS as usize) => {
+                pack_slot_major_rows_w1(&mut rows, s, high_gate_count, live, gate_slots);
+            }
+            U32MulF2zWidth::W8 if high_gate_count.is_multiple_of(u8::BITS as usize) => {
+                pack_slot_major_rows_w8(&mut rows, s, high_gate_count, live, gate_slots);
+            }
+            _ => self.write_bit_rows_bitwise(&mut rows),
+        }
+        rows
+    }
+
+    /// Reference packing: one masked read-modify-write per set bit (`W1`)
+    /// or nonzero byte (`W8`).
+    #[allow(clippy::arithmetic_side_effects)]
+    fn write_bit_rows_bitwise(&self, rows: &mut [Vec<u64>]) {
         let s = self.layout.gate_vars / 2;
         let high_gate_count = 1_usize << (self.layout.gate_vars - s);
         let column_mask = (1_usize << s) - 1;
@@ -415,14 +448,25 @@ impl U32MulWitness {
                 product_values[gate],
             );
         }
-
-        rows
     }
 
     /// Moves out the layout and exact assignment.
     pub fn into_parts(self) -> (U32MulLayout, Box<[u64]>) {
         (self.layout, self.assignment)
     }
+}
+
+/// Packs one gate's `x`, `y`, and product into its 128 committed slots
+/// (`x | y << 32 | product << 64`; the operands masked to their 32 committed
+/// bits) and returns the words for slots `0..64` and `64..128`.
+#[allow(clippy::arithmetic_side_effects, clippy::cast_possible_truncation)]
+const fn pack_gate_slots(x: u64, y: u64, product: u64) -> (u64, u64) {
+    const X_MASK: u128 = (1 << U32_MUL_X_BITS) - 1;
+    const Y_MASK: u128 = (1 << U32_MUL_Y_BITS) - 1;
+    let packed = ((x as u128) & X_MASK) << U32_MUL_X_SLOT_START
+        | ((y as u128) & Y_MASK) << U32_MUL_Y_SLOT_START
+        | (product as u128) << U32_MUL_PRODUCT_SLOT_START;
+    (packed as u64, (packed >> 64) as u64)
 }
 
 #[allow(clippy::arithmetic_side_effects)]
@@ -748,6 +792,37 @@ mod tests {
                         assert_eq!(committed_bit, (value >> bit) & 1);
                     }
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn transposed_bit_rows_match_the_bitwise_packing_for_each_word_width() {
+        use rand::{RngExt, SeedableRng, rngs::StdRng};
+        // gate_vars 10 (W1 bitwise, W8 transposed), 11 (one W1 word per
+        // lane), 13, and 15/16 (production layouts); live counts off the
+        // power of two exercise the zero padding.
+        for width in [U32MulF2zWidth::W1, U32MulF2zWidth::W8] {
+            for (multiplications, seed) in [
+                (700, 1),
+                (1500, 2),
+                (5000, 3),
+                (1 << 15, 4),
+                ((1 << 15) + 37, 5),
+            ] {
+                let mut rng = StdRng::seed_from_u64(seed);
+                let witness = U32MulWitness::from_fn_with_f2z_width(multiplications, width, |_| {
+                    (rng.random::<u32>(), rng.random::<u32>())
+                })
+                .unwrap();
+                let p = witness.layout().f2z_params();
+                let mut expected = vec![vec![0_u64; p.rows() * p.word_bits / 64]; p.cols()];
+                witness.write_bit_rows_bitwise(&mut expected);
+                assert_eq!(
+                    witness.f2z_bit_rows(),
+                    expected,
+                    "width={width:?} multiplications={multiplications}"
+                );
             }
         }
     }

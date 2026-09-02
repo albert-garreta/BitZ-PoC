@@ -31,6 +31,7 @@ use super::{
     ConstraintMatrices, ModulusIndependentCoefficient, PreparedConstraintMatrices, R1csProductMles,
     SparseMatrix, SpartanF2zField, SpartanField, SpartanMatrixCoefficient, SpartanMatrixError,
     SpartanRelationBackend, build_assignment_mle, build_product_mles,
+    slot_rows::pack_slot_major_rows_w1,
 };
 
 /// The BabyBear prime `2^31 - 2^27 + 1`.
@@ -496,12 +497,32 @@ impl BabyBearMulWitness {
     /// little-endian bits of `a`, `b`, `c`, and `k`. Slots `124..128` remain
     /// zero, as do all slots belonging to padded gates. Packing is
     /// intentionally variable-time, like the rest of witness generation.
+    ///
+    /// Row `c` is 128 lanes of `high_gate_count` bits: bit `gate_high` of
+    /// lane `slot` is slot `slot` of gate `(gate_high << s) | c`. Whenever a
+    /// lane spans whole words (`high_gate_count % 64 == 0`, every production
+    /// layout) the rows are built by the block transposes of
+    /// [`super::slot_rows`]; smaller layouts take the bitwise path. Both
+    /// produce identical rows.
     #[allow(clippy::arithmetic_side_effects)]
     pub fn f2z_bit_rows(&self) -> Vec<Vec<u64>> {
         let params = self.layout.f2z_params();
         let words_per_row = params.rows() / u64::BITS as usize;
         let mut rows = vec![vec![0_u64; words_per_row]; params.cols()];
 
+        let s = self.layout.gate_vars / 2;
+        let high_gate_count = 1_usize << (self.layout.gate_vars - s);
+        if high_gate_count.is_multiple_of(u64::BITS as usize) {
+            self.write_bit_rows_transposed(&mut rows, s, high_gate_count);
+        } else {
+            self.write_bit_rows_bitwise(&mut rows);
+        }
+        rows
+    }
+
+    /// Reference packing: one masked read-modify-write per committed bit.
+    #[allow(clippy::arithmetic_side_effects)]
+    fn write_bit_rows_bitwise(&self, rows: &mut [Vec<u64>]) {
         for gate in 0..self.layout.multiplications {
             for (slot_offset, value) in [
                 (BABY_BEAR_MUL_A_SLOT_START, self.a_values()[gate]),
@@ -510,7 +531,7 @@ impl BabyBearMulWitness {
                 (BABY_BEAR_MUL_K_SLOT_START, self.k_values()[gate]),
             ] {
                 write_value_bits(
-                    &mut rows,
+                    rows,
                     &self.layout,
                     gate,
                     slot_offset,
@@ -519,8 +540,29 @@ impl BabyBearMulWitness {
                 );
             }
         }
+    }
 
-        rows
+    /// Block-transpose packing for layouts whose slot lanes span whole
+    /// words (see [`super::slot_rows`]).
+    fn write_bit_rows_transposed(&self, rows: &mut [Vec<u64>], s: usize, high_gate_count: usize) {
+        let a_values = self.a_values();
+        let b_values = self.b_values();
+        let c_values = self.c_values();
+        let k_values = self.k_values();
+        pack_slot_major_rows_w1(
+            rows,
+            s,
+            high_gate_count,
+            self.layout.multiplications,
+            |gate| {
+                pack_gate_slots(
+                    a_values[gate],
+                    b_values[gate],
+                    c_values[gate],
+                    k_values[gate],
+                )
+            },
+        );
     }
 
     /// Moves out the layout and logical assignment.
@@ -562,6 +604,19 @@ fn write_value_bits(
             .expect("witness bit coordinates are in bounds");
         rows[c][b / u64::BITS as usize] |= 1_u64 << (b % u64::BITS as usize);
     }
+}
+
+/// Packs one gate's four values into its 128 committed slots
+/// (`a | b << 31 | c << 62 | k << 93`, each value masked to its 31 committed
+/// bits) and returns the words for slots `0..64` and `64..128`.
+#[allow(clippy::arithmetic_side_effects, clippy::cast_possible_truncation)]
+const fn pack_gate_slots(a: u64, b: u64, c: u64, k: u64) -> (u64, u64) {
+    const VALUE_MASK: u128 = (1 << BABY_BEAR_MUL_VALUE_BITS) - 1;
+    let packed = ((a as u128) & VALUE_MASK) << BABY_BEAR_MUL_A_SLOT_START
+        | ((b as u128) & VALUE_MASK) << BABY_BEAR_MUL_B_SLOT_START
+        | ((c as u128) & VALUE_MASK) << BABY_BEAR_MUL_C_SLOT_START
+        | ((k as u128) & VALUE_MASK) << BABY_BEAR_MUL_K_SLOT_START;
+    (packed as u64, (packed >> 64) as u64)
 }
 
 /// Builds the compact CSC matrices for the BabyBear integer relation.
@@ -1145,6 +1200,64 @@ mod tests {
                 assert_eq!((rows[c][b / 64] >> (b % 64)) & 1, 0);
             }
         }
+    }
+
+    fn random_witness(multiplications: usize, seed: u64) -> BabyBearMulWitness {
+        use rand::{RngExt, SeedableRng, rngs::StdRng};
+        let mut rng = StdRng::seed_from_u64(seed);
+        BabyBearMulWitness::from_fn(multiplications, |_| {
+            (
+                sample_baby_bear_operand_with(|| rng.random::<u32>()),
+                sample_baby_bear_operand_with(|| rng.random::<u32>()),
+            )
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn transposed_bit_rows_match_the_bitwise_packing() {
+        // gate_vars 10 (32-gate lanes: bitwise path), 11 (one word per
+        // lane), 13 (two words), and 15 (the smallest production layout);
+        // live counts off the power of two exercise the zero padding.
+        for (multiplications, seed) in [
+            (700, 1),
+            (1500, 2),
+            (5000, 3),
+            (1 << 15, 4),
+            ((1 << 15) + 37, 5),
+        ] {
+            let witness = random_witness(multiplications, seed);
+            let params = witness.layout().f2z_params();
+            let mut expected = vec![vec![0_u64; params.rows() / 64]; params.cols()];
+            witness.write_bit_rows_bitwise(&mut expected);
+            assert_eq!(
+                witness.f2z_bit_rows(),
+                expected,
+                "multiplications={multiplications}"
+            );
+        }
+    }
+
+    #[test]
+    fn pack_gate_slots_places_each_value_in_its_lane() {
+        let p = BABY_BEAR_MODULUS;
+        let (lo, hi) = pack_gate_slots(p - 1, 1, 0x4000_0001, p - 2);
+        let packed = u128::from(lo) | (u128::from(hi) << 64);
+        let mask = (1_u128 << BABY_BEAR_MUL_VALUE_BITS) - 1;
+        assert_eq!(
+            (packed >> BABY_BEAR_MUL_A_SLOT_START) & mask,
+            u128::from(p - 1)
+        );
+        assert_eq!((packed >> BABY_BEAR_MUL_B_SLOT_START) & mask, 1);
+        assert_eq!((packed >> BABY_BEAR_MUL_C_SLOT_START) & mask, 0x4000_0001);
+        assert_eq!(
+            (packed >> BABY_BEAR_MUL_K_SLOT_START) & mask,
+            u128::from(p - 2)
+        );
+        assert_eq!(packed >> BABY_BEAR_MUL_SEMANTIC_BIT_SLOTS, 0);
+        // Bits above the committed width are dropped, never smeared into
+        // the neighbouring lane.
+        assert_eq!(pack_gate_slots(1 << 31, 0, 0, 0), (0, 0));
     }
 
     #[test]

@@ -18,6 +18,7 @@ pub mod opening_mode;
 pub mod piop;
 pub mod profile;
 pub mod sha256;
+pub(crate) mod slot_rows;
 pub(crate) mod spliced_digest;
 pub mod sumcheck;
 pub mod u32_mul;

@@ -1004,9 +1004,10 @@ fn transpose_fold_group<const K: usize>(cols: Vec<[u128; K]>, out: &mut Vec<Vec<
     }
 }
 
-/// Classic 64×64 bit-matrix transpose (6 mask/shift rounds).
+/// Classic 64×64 bit-matrix transpose (6 mask/shift rounds): output word
+/// `t`'s bit `k` = input word `k`'s bit `t`.
 #[allow(clippy::arithmetic_side_effects)]
-fn transpose_64x64(a: &mut [u64; 64]) {
+pub(crate) fn transpose_64x64(a: &mut [u64; 64]) {
     let mut j = 32usize;
     let mut m = 0x0000_0000_FFFF_FFFFu64;
     while j != 0 {
