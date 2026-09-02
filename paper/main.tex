@@ -775,7 +775,9 @@ where $M^{\mathsf{T}}$ denotes transposition and $\langle \cdot, \cdot \rangle$ 
 \subsection{Algebra}\label{s:prelims_algebra}
 We write $\FF_q$ for the finite field with $q$ elements (where $q$ is a prime or a prime power), $\QQ$ for the field of rational numbers, and $\ZZ$ for the ring of integers. For an integer $n\geq 1$, $\ZZ_n$ denotes the ring of integers modulo $n$, with the convention $\ZZ_0\defeq \ZZ$. When $n$ is prime, $\ZZ_n=\FF_n$. We let $$\pi_n :\ZZ\to \ZZ_n$$ denote reduction modulo $n$. We fix $\pi_n^{-1} : \ZZ_n \to \range{0}{n-1}\subseteq \ZZ$ map each element $a$ in $\ZZ_n$ to the integer in the range  $\range{0}{n-1}$ representing $a$. 
 
-All rings in this work are associative, commutative, have a multiplicative identity, and are finitely generated as $\ZZ$-modules \albert{Explain somewhere this stems from the fact that we bitify witnesses and reconstruct the witnesses through a linear map?}. In fact, we assume all rings in this paper are free as $\ZZ_{\Char(R)}$-modules (see below for the definition of the characteristic $\Char(R)$); equivalently, as sets, they are of the form $R=S^{m}$ for some $m$, where $S=\ZZ_{\Char(R)}$ is either $\ZZ$ or $\ZZ/n\ZZ$ for some $n$. This condition is satisfied by, for example: 1) all finite fields and the rings $\ZZ/n\ZZ$; 2) $\ZZ$; 3) rings of the form $\ZZ[X]/(h(X))$ for a monic polynomial $h(X)$. It is not satisfied by, for example, $\ZZ[X]$, $\QQ$, $\QQ[X]$. Our work can be easily adapted to support $\ZZ[X]$ (one needs to add degree bounds on several occasions), but not for $\QQ$, $\QQ[X]$. \albert{Really? We exclude the rationals?}
+
+
+All rings in this work are associative, commutative, have a multiplicative identity, and are finitely generated as rings; that is, every ring $R$ in this work is generated as a ring by finitely many elements, or, equivalently, $R$ is isomorphic to a quotient $\ZZ[X_1,\ldots, X_k]/I$ of a polynomial ring over $\ZZ$ by an ideal $I$. This condition is satisfied by, for example: 1) all finite fields and the rings $\ZZ/n\ZZ$; 2) $\ZZ$, and the polynomial rings $\ZZ[X]$ and $\FF_q[X]$; 3) arbitrary quotients of the previous rings, such as $\ZZ[X]/(h(X))$ for an arbitrary polynomial $h(X)$. It is not satisfied by, for example, $\QQ$ and $\QQ[X]$, which are not finitely generated as rings. Individual constructions in this work may impose further requirements on the rings they use; these are stated where needed.
 
 
 
@@ -995,7 +997,7 @@ $$
 \item 
  Let $\codedim\geq 1$ be a dimension parameter divisible by $\comfieldexp$, $\cC$ a code over $\comfield$ of dimension $\codedim/\comfieldexp$ and blocklength $\codelength$.  
  \item 
- Let $R$ be a ring (typically $R$ is either $\ZZ$ or a finite field, not necessarily a prime field) and let $\pi:\ZZ \to R$  be reduction modulo the characteristic of $R$.
+ Let $R$ be a ring (typically $R$ is $\ZZ$, a finite field, not necessarily a prime field, or a quotient of a polynomial ring $\ZZ[X]$ or $\FF_q[X]$) and let $\pi:\ZZ \to R$  be the canonical homomorphism mapping an integer $a$ to $a\cdot 1\in R$ (i.e.\ reduction modulo the characteristic of $R$).
 \end{itemize}
  
 
@@ -1138,22 +1140,30 @@ This is indeed the case with GKR: GKR reduces the initial circuit evaluation cla
 
 \paragraph{Algebraic set-up}
 
- Any ring $R$ is a $\ZZ_{\Char(R)}$-module, where, recall $\Char(R)$ is the characteristic of $R$ (cf.\ \cref{s:prelims_algebra}). We say the \emph{dimension} of $R$, denoted $\dim(R)$, is the minimum number of generators of $R$ as a $\ZZ_{\Char(R)}$-module. Every ring $R$ admits a canonical surjective ring homomorphism
+ Recall (\cref{s:prelims_algebra}) that all rings in this work are finitely generated as rings. We fix a \emph{presentation} of $R$: namely, we fix elements $\gamma_1, \ldots, \gamma_{k}\in R$, for some $k\geq 0$, that generate $R$ as a ring, and we let
 %
 $$
-\picanon^{R} : \ZZ[X_1,\ldots, X_{\dim(R)-1}] \to R.
+\picanon^{R} : \ZZ[X_1,\ldots, X_{k}] \to R
 $$
-This homomorphism consists in reducing coefficients modulo $\Char(R)$, and then mapping $X_i$ to $\gamma_{i+1}$ for $i\in [\dim(R)-1]$, where $\gamma_1=1, \gamma_2, \ldots, \gamma_{\dim(R)}$ is a fixed set of generators of $R$ as a $\ZZ_{\Char(R)}$-module.
+be the surjective ring homomorphism mapping each integer $a$ to $a\cdot 1\in R$, and mapping $X_i$ to $\gamma_{i}$ for $i\in [k]$.
 
-We also fix an inverse map $\picanon^{R}{}^{-1}: R \to \ZZ[X_1, \ldots, X_{\dim(R)-1}]$ for $\picanon^{R}$, defined as follows. Given $a\in R$, write $a=\sum_{i\in [\dim(R)]} a_i \cdot \gamma_i$ with $a_i\in \ZZ_{\Char(R)}$ (cf.\ \cref{s:prelims_algebra}), then $\picanon^{R}{}^{-1}(a) = \pi_{\Char}^{-1}(a_1) + \sum_{i=2}^{\dim(R)} \pi_{\Char}^{-1}(a_i)\cdot X_{i-1}$.
+We also fix an inverse map $\picanon^{R}{}^{-1}: R \to \ZZ[X_1, \ldots, X_{k}]$ for $\picanon^{R}$, i.e.\ a map (of sets) satisfying $\picanon^{R}\circ \picanon^{R}{}^{-1}=\mathsf{id}$. We refer to $\picanon^{R}{}^{-1}(a)$ as the \emph{lift} of $a\in R$.
 
-\begin{example}
-    If  $R=\FF_q$ is a prime field with $q$ elements, then $\Char(R)=q$, $\dim(R)=1$, and $\picanon^{\FF_q}:\ZZ \to \FF_q$ is simply reduction modulo $q$. 
+\begin{example}\label{e:presentations}
+    If  $R=\FF_q$ is a prime field with $q$ elements, then we may take $k=0$, so that $\picanon^{\FF_q}=\pi_q:\ZZ \to \FF_q$ is simply reduction modulo $q$, with lifts given by $\pi_q^{-1}$. Similarly, for $R=\ZZ$ we may take $k=0$, so that $\picanon^{\ZZ}$ and its lifts are the identity map on $\ZZ$.
 
 
-If $R$ is a field extension of a prime field $\FF_q$ of degree $d>1$, then $\Char(R)=q$, $\dim(R)=d$, and we may take as generators $\gamma_i = x^{i-1}$ for $i\in [d]$, where $x$ is a root of an irreducible polynomial $h(X_1)\in \FF_{q}[X_1]$ of degree $d$ (so that $R=\FF_q(x)$). Then $\picanon^R:\ZZ[X_1, \ldots, X_{d-1}]\to R$ consists in reducing coefficients modulo $q$, and then sending $X_i$ to $x^{i}$ for all $i$. 
+If $R$ is a field extension of a prime field $\FF_q$ of degree $d>1$, then we may take $k=1$ and $\gamma_1 = x$, where $x$ is a root of an irreducible polynomial $h(X_1)\in \FF_{q}[X_1]$ of degree $d$ (so that $R=\FF_q(x)$). Then $\picanon^R:\ZZ[X_1]\to R$ consists in reducing coefficients modulo $q$, and then sending $X_1$ to $x$. Writing $a\in R$ as $a=\sum_{i=0}^{d-1} a_i\cdot x^{i}$ with $a_i\in \FF_q$, the natural lift of $a$ is $\sum_{i=0}^{d-1} \pi_q^{-1}(a_i)\cdot X_1^{i}$, a polynomial of degree less than $d$ with coefficients in $\range{0}{q-1}$.
+
+If $R=\ZZ[X]$, then we may take $k=1$ and $\gamma_1=X$, so that $\picanon^{\ZZ[X]}:\ZZ[X_1]\to \ZZ[X]$ is an isomorphism, with lifts given by its inverse.
+
+More generally, if $R$ is free and finitely generated as a $\ZZ_{\Char(R)}$-module, with a basis $\beta_1=1, \beta_2, \ldots, \beta_m$ (a condition satisfied by, e.g., all finite fields, $\ZZ$, and $\ZZ[X]/(h(X))$ for monic $h(X)$), then we may take $k=m-1$ and $\gamma_i=\beta_{i+1}$ for $i\in [k]$: writing $a\in R$ as $a=\sum_{i\in [m]} a_i\cdot \beta_i$ with $a_i\in \ZZ_{\Char(R)}$, the natural lift of $a$ is $\pi_{\Char}^{-1}(a_1) + \sum_{i=2}^{m}\pi_{\Char}^{-1}(a_i)\cdot X_{i-1}$, a polynomial of total degree at most $1$.
     \albert{Add lattice examples}
 \end{example}
+
+\begin{remark}[Computing in $R$]\label{r:computing_in_R}
+In Round 1 of \cref{c:core_iop} below, the verifier evaluates $\picanon^{R}$ on a polynomial of low total degree, and tests equality of the result against a given element of $R$. We thus implicitly assume the presentation of $R$ is chosen so that these operations can be performed efficiently. This is the case in all the presentations of \cref{e:presentations}: for $R=\ZZ$ or $R=\ZZ[X]$ the test is a syntactic comparison of coefficients; for $R=\ZZ_n[X]/(h(X))$ with $h$ monic (e.g.\ a finite field), evaluating $\picanon^{R}$ amounts to division with remainder by $h$; and in the free-module presentation it amounts to expressing products of pairs of basis elements back in the basis. For a general finitely generated ring, testing equality in $R$ is an ideal membership test in $\ZZ[X_1,\ldots, X_k]$, whose cost depends on the ideal of relations of the presentation.
+\end{remark}
 
 
 
@@ -1174,35 +1184,31 @@ If $R$ is a field extension of a prime field $\FF_q$ of degree $d>1$, then $\Cha
 
 \item Let $\Pi_{\iopp}$ be an IOP for $\LIN(\comfield,\cC, \pack)$. In our instantiation, $\Pi_{\iopp}$ is the WHIR protocol \cite{whir} over binary fields, with ring-switching \cite{binius} as described in \cref{a:ring_switch_1}, and with proximity parameter set to the Johnson bound.   
 \item 
-Let $\codedim =\codedim_1\cdot \codedim_2$ be dimension parameters,  and $R$ a ring,  as in the previous sections. We let $\cP$ be a set of primes with $\max\cP< \fieldboundsizeexponent$. We define
+Let $\codedim =\codedim_1\cdot \codedim_2$ be dimension parameters,  and $R$ a ring,  as in the previous sections. We let $\cP$ be a set of primes with $\max\cP< \fieldboundsizeexponent$. Given the tensor decomposition $\vv=\vv^{(1)}\otimes \vv^{(2)}$ from \cref{s:interleaved_setting}, we define
 %
 $$
-N_R \defeq \begin{cases} \Char(R)-1 & \text{if } \Char(R)>0,\\ \max\left(\lVert \vv^{(1)}\rVert_\infty,\ \lVert \vv^{(2)}\rVert_\infty\right) & \text{if } R=\ZZ. \end{cases}
+D \defeq \max_{a}\ \deg\left(\picanon^{R}{}^{-1}(a)\right), \qquad\qquad N_R \defeq \max_{a}\ \left\lVert \picanon^{R}{}^{-1}(a)\right\rVert_\infty,
 $$
+%
+where $a$ ranges over the entries of $\vv^{(1)}$ and $\vv^{(2)}$, $\deg$ denotes total degree, and $\lVert \cdot \rVert_\infty$ denotes the maximum absolute value of the coefficients. We also fix an integer $T$ such that every monomial in $X_1,\ldots, X_k$ admits at most $T$ factorizations as an ordered product of two monomials of total degree at most $D$ each; consequently, given two polynomials in $\ZZ[X_1,\ldots, X_k]$ of total degree at most $D$ each, every coefficient of their product is a sum of at most $T$ products of a coefficient of one polynomial with a coefficient of the other. One may always take $T=(D+1)^k$, since in any such factorization the first monomial determines the second one, and the former has $k$ exponents, each at most $D$; in particular, $T=D+1$ suffices when $k=1$. When $D\leq 1$, one may take $T=2$, since a monomial of total degree at most $2$ admits at most two ordered factorizations into monomials of total degree at most $1$.
 
-For every prime $q\in \cP$, let $\cM_q$ be a set of ring homomorphisms $$\pirand:\ZZ[X_1,\ldots, X_{\dim(R)-1}] \to \FF_q.$$ The verifier will sample primes and morphisms from $\cP$ and $\cM_q$. We let $\theta(R,\codedim)$ be the maximum probability that $\pirand(h)=0$, over random $q\gets \cP$, $\pirand\gets \cM_q$, and where the maximum is taken over nonzero polynomials $h\in \ZZ[X_1, \ldots, X_{\dim(R)-1}]$ of total degree at most $2$, with coefficients in $\range{-4\cdot \codedim\cdot N_R^2}{4\cdot \codedim\cdot N_R^2}$, and such that $\picanon^{R}(h)\neq 0$. Precisely:
+For every prime $q\in \cP$, let $\cM_q$ be a set of ring homomorphisms $$\pirand:\ZZ[X_1,\ldots, X_{k}] \to \FF_q.$$ The verifier will sample primes and morphisms from $\cP$ and $\cM_q$. We let $\theta(R,\codedim)$ be the maximum probability that $\pirand(h)=0$, over random $q\gets \cP$, $\pirand\gets \cM_q$, and where the maximum is taken over nonzero polynomials $h\in \ZZ[X_1, \ldots, X_{k}]$ of total degree at most $2\cdot D$, with coefficients in $\range{-2\cdot T\cdot \codedim\cdot N_R^2}{2\cdot T\cdot \codedim\cdot N_R^2}$, and such that $\picanon^{R}(h)\neq 0$. Precisely:
 %
 $$
 \theta(R,\codedim) \defeq  \max_{h}\left\{\Pr_{q\gets \cP, \pirand\gets \cM_q}[ \pirand(h)=0] \right\},
 $$
 %
-where $h$ ranges over the polynomials just described. See \cref{l:examples_morphisms} for examples.
+where $h$ ranges over the polynomials just described. See \cref{l:examples_morphisms} for an example.
 \end{itemize}
 
 
-\begin{lemma}[Example definitions of  $\cM_q$ and the corresponding $\theta(R,\codedim)$]\label{l:examples_morphisms}
-    Let  $d=\dim(R)$. Let $\cP$ be a set of primes. Assume first that the fixed generators of $R$ satisfy $\gamma_{i+1}=\gamma_2^{i}$ for all $i\in [d-1]$ (as is the case, e.g., for the generators $\gamma_i=x^{i-1}$ of a field extension, cf.\ the example above). For each $q\in \cP$ let $\cM_q$  be the set of all maps $\pi: \ZZ[X_1,\ldots, X_{d-1}]\to \FF_q$ of the form $$\pi(h(X_1, \ldots, X_{d-1})) = \pi_q(h)(\alpha, \alpha^2, \ldots, \alpha^{d-1}), \qquad \text{for } h\in \ZZ[X_1,\ldots, X_{d-1}]$$ for some $\alpha\in \FF_q$, and where $\pi_q(h)$ is $h$ after reducing its coefficients modulo $q$. Then
-    %
-    $$
-    \theta(R,\codedim) \leq \frac{2\cdot (d-1)}{q_{\min}} + \frac{\log\left(8\cdot d\cdot \codedim\cdot N_R^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}.
-    $$
+\begin{lemma}[Example definition of  $\cM_q$ and the corresponding $\theta(R,\codedim)$]\label{l:examples_morphisms}
+    Let $\cP$ be a set of primes. For each $q\in \cP$ let $\cM_q$  be the set of all maps $\pi: \ZZ[X_1,\ldots, X_{k}]\to \FF_q$ of the form
+     $$\pi(h(X_1, \ldots, X_{k})) = \pi_q(h)(\alpha_1, \ldots, \alpha_{k}), \qquad \text{for } h\in \ZZ[X_1,\ldots, X_{k}],$$
 %
-    If, on the contrary, for each $q\in \cP$ we define $\cM_q$  as the set of all maps $\pi: \ZZ[X_1,\ldots, X_{d-1}]\to \FF_q$ of the form 
-     $$\pi(h(X_1, \ldots, X_{d-1})) = \pi_q(h)(\alpha_1, \ldots, \alpha_{d-1}), \qquad \text{for } h\in \ZZ[X_1,\ldots, X_{d-1}],$$
-%
-for some $\alpha_1,\ldots, \alpha_{d-1}\in \FF_q$ (here the generators of $R$ may be arbitrary), then
+for some $\alpha_1,\ldots, \alpha_{k}\in \FF_q$, and where $\pi_q(h)$ is $h$ after reducing its coefficients modulo $q$. Then
          $$
-    \theta(R,\codedim) \leq \frac{2}{q_{\min}} + \frac{\log\left(8\cdot \codedim\cdot N_R^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}.
+    \theta(R,\codedim) \leq \frac{2\cdot D}{q_{\min}} + \frac{\log\left(8\cdot T\cdot \codedim\cdot N_R^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}.
     $$
 \end{lemma}
 \begin{proof}
@@ -1234,16 +1240,16 @@ Let $\basegenerator\in \comfield$ be a fixed generator of the multiplicative gro
 \begin{itemize}[leftmargin=*]
 \item This step can be skipped if $R$ is a prime field $\FF_q$ and $q < \fieldboundsizeexponent$. %, or if $R=\ZZ$ and $\lVert \vv \rVert < \fieldboundsizeexponent$.
 
-The prover sends $\mu' \in \ZZ[X_1, \ldots, X_{\dim(R)-1}]$ such that
+The prover sends $\mu' \in \ZZ[X_1, \ldots, X_{k}]$ such that
 %
 $$
-\langle \picanon^{-1}(\vv^{(1)}) \otimes \picanon^{-1}(\vv^{(2)}) , \bff \rangle = \mu' \qquad \text{in } \ZZ[X_1, \ldots, X_{\dim(R)-1}]
+\langle \picanon^{-1}(\vv^{(1)}) \otimes \picanon^{-1}(\vv^{(2)}) , \bff \rangle = \mu' \qquad \text{in } \ZZ[X_1, \ldots, X_{k}]
 $$
 %
-The verifier checks that $\mu'$ has total degree at most $2$ and coefficients in $\range{-2\cdot \codedim\cdot N_R^2}{2\cdot \codedim\cdot N_R^2}$ (the honest $\mu'$ satisfies these bounds), checks that $\picanon(\mu')=\mu$, and replies with a random prime $q\in \cP$ and a random morphism 
+The verifier checks that $\mu'$ has total degree at most $2\cdot D$ and coefficients in $\range{-T\cdot \codedim\cdot N_R^2}{T\cdot \codedim\cdot N_R^2}$ (the honest $\mu'$ satisfies these bounds), checks that $\picanon(\mu')=\mu$ (cf.\ \cref{r:computing_in_R}), and replies with a random prime $q\in \cP$ and a random morphism
 %
 $
-\pirand : \ZZ[X_1, \ldots, X_{\dim(R)-1}] \to \FF_q
+\pirand : \ZZ[X_1, \ldots, X_{k}] \to \FF_q
 $ from $\cM_q$.
  The prover and verifier update:
 \begin{align*}
@@ -1391,11 +1397,7 @@ Now, every nonzero coefficient of $h$ is divisible by at most $B/\lfloor\log(q_{
 
 
 \begin{proof}[Proof of \cref{l:examples_morphisms}]
-Let $h\in \ZZ[X_1,\ldots, X_{d-1}]$ be a polynomial of total degree at most $2$, with coefficients in $\range{-4\cdot \codedim\cdot N_R^2}{4\cdot \codedim\cdot N_R^2}$, and with $\picanon^{R}(h)\neq 0$ (cf.\ the definition of $\theta(R,\codedim)$). In particular $h$ is nonzero, and its coefficients lie in $\range{-2^{B}+1}{2^{B}-1}$ for $B\defeq \lfloor \log(\codedim\cdot N_R^2)\rfloor + 3 \leq \log(8\cdot \codedim\cdot N_R^2)$.
-
-We start with the second family. Since $h$ is nonzero and has total degree at most $2$, \cref{l:reduction_lemma} (applied with $m=d-1$ variables and total degree $2$) yields $$\Pr_{\substack{q\gets \cP,\\ \bm{\alpha} \gets \FF_q^{d-1}}}[\pi_q(h)(\bm{\alpha})=0] \leq \frac{B}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{2}{q_{\min}},$$ which gives the claimed bound (if $d=1$, then $h$ is a nonzero integer and the second summand is void).
-
-For the first family, consider the ring homomorphism $\sigma: \ZZ[X_1,\ldots,X_{d-1}]\to \ZZ[Y]$ defined by $\sigma(X_i)=Y^i$ for $i\in [d-1]$, and let $\widetilde{h}\defeq \sigma(h)\in \ZZ[Y]$. Since $\gamma_{i+1}=\gamma_2^{i}$, the homomorphism $\picanon^{R}$ factors as $\picanon^{R} = \rho\circ \sigma$, where $\rho:\ZZ[Y]\to R$ reduces coefficients modulo $\Char(R)$ and maps $Y$ to $\gamma_2$. Hence $\picanon^{R}(h)\neq 0$ implies $\widetilde{h}\neq 0$. Moreover, $\widetilde{h}$ has degree at most $2\cdot (d-1)$, and each of its coefficients is a sum of at most $d$ coefficients of $h$, since for each power $Y^k$, the monomials of $h$ mapping to $Y^k$ under $\sigma$ are among $1$, $X_k$, and the monomials $X_iX_j$ with $i+j=k$, and there are at most $d$ of these. Hence the coefficients of $\widetilde{h}$ lie in $\range{-2^{\widetilde{B}}+1}{2^{\widetilde{B}}-1}$ for $\widetilde{B}\defeq \lfloor \log(d\cdot \codedim\cdot N_R^2)\rfloor + 3\leq \log(8\cdot d\cdot \codedim\cdot N_R^2)$. Finally, $\pi_q(h)(\alpha, \alpha^2, \ldots, \alpha^{d-1}) = \pi_q(\widetilde{h})(\alpha)$ for all $\alpha\in \FF_q$, and hence \cref{l:reduction_lemma} (applied with $m=1$ and total degree $2\cdot (d-1)$) yields $$\Pr_{\substack{q\gets \cP,\\ \alpha \gets \FF_q}}[\pi_q(\widetilde{h})(\alpha)=0] \leq \frac{\widetilde{B}}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{2\cdot (d-1)}{q_{\min}},$$ as needed.
+Let $h\in \ZZ[X_1,\ldots, X_{k}]$ be a polynomial of total degree at most $2\cdot D$, with coefficients in $\range{-2\cdot T\cdot \codedim\cdot N_R^2}{2\cdot T\cdot \codedim\cdot N_R^2}$, and with $\picanon^{R}(h)\neq 0$ (cf.\ the definition of $\theta(R,\codedim)$). In particular $h$ is nonzero, and its coefficients lie in $\range{-2^{B}+1}{2^{B}-1}$ for $B\defeq \lfloor \log(T\cdot \codedim\cdot N_R^2)\rfloor + 2 \leq \log(8\cdot T\cdot \codedim\cdot N_R^2)$. Since $h$ is nonzero and has total degree at most $2\cdot D$, \cref{l:reduction_lemma} (applied with $m=k$ variables and total degree $2\cdot D$) yields $$\Pr_{\substack{q\gets \cP,\\ \bm{\alpha} \gets \FF_q^{k}}}[\pi_q(h)(\bm{\alpha})=0] \leq \frac{B}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{2\cdot D}{q_{\min}},$$ which gives the claimed bound (if $k=0$, then $h$ is a nonzero integer and the second summand is void).
 \end{proof}
 
 The following lemma bounds the probability, over the OOD challenge $\zeta$ of Round 0, that two distinct bit vectors close to the oracle share the same OOD evaluation. Throughout, for $\zeta\in \comfield$ we write, as in Round 0 of \cref{c:core_iop}, $$\bm{\zeta}= \left(\zeta^{2^0}, \zeta^{2^1}, \ldots, \zeta^{2^{\log(\codedim/\comfieldexp)-1}}\right)\in \comfield^{\log (\codedim/\comfieldexp)}$$ for the corresponding evaluation point.
@@ -1428,7 +1430,7 @@ We describe a knowledge state function $\kstate$. Let $\inp=(\mu,\vv)\in \evalfi
 After the verifier's message, $\tr$ is as follows:
 %
 $$
-\tr=(\mu', (q,\pirand)) \in \ZZ[X_1, \ldots, X_{\dim(R)-1}] \times \left(\cP \times \cM_q\right).
+\tr=(\mu', (q,\pirand)) \in \ZZ[X_1, \ldots, X_{k}] \times \left(\cP \times \cM_q\right).
 $$
 %
 We define $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if  the verifier's degree and range checks on $\mu'$ in Round 1 pass,  $\ww=\bff\in \bits^{\codedim}\subseteq \ZZ^\codedim$,  $\bff=(\bff_{*j})_{j\in [\codedim_2]}\in \left(\bits^{\codedim_1}\right)^{\codedim_2}$, and
@@ -1473,9 +1475,9 @@ The latter occurs if and only if  $(\inp,\oracle,\ww)\notin \LinBitsDual^{\delta
 \langle \pi(\bff), \vv\rangle \neq \mu \qquad \text{over } R.
 \end{equation}
 %
-Define $$h\defeq  \langle \picanon^{-1}(\vv^{(1)}) \otimes \picanon^{-1}(\vv^{(2)}), \bff \rangle- \mu' \ \in \ \ZZ[X_1, \ldots, X_{\dim(R)-1}].
+Define $$h\defeq  \langle \picanon^{-1}(\vv^{(1)}) \otimes \picanon^{-1}(\vv^{(2)}), \bff \rangle- \mu' \ \in \ \ZZ[X_1, \ldots, X_{k}].
 $$
-Since $\picanon$ is a ring homomorphism satisfying $\picanon\circ \picanon^{-1}=\mathsf{id}$ and restricting to $\pi$ on $\ZZ$, the first condition in \eqref{e:core_iop_proof_eq1} gives $$\picanon(h) = \langle \pi(\bff), \vv^{(1)} \otimes \vv^{(2)} \rangle- \picanon(\mu') = \langle \pi(\bff), \vv\rangle - \mu,$$ which is nonzero by \eqref{e:break_soundness_2}. In particular $h\neq 0$. On the other hand, since $\pirand$ is a ring homomorphism restricting to $\pi_q$ on $\ZZ$, the second condition in \eqref{e:core_iop_proof_eq1} states precisely that $\pirand(h)=0$. Moreover, $h$ has total degree at most $2$ and coefficients in $\range{-4\cdot \codedim\cdot N_R^2}{4\cdot \codedim\cdot N_R^2}$: indeed, the polynomials $\picanon^{-1}(\vv^{(1)}_i)$ and $\picanon^{-1}(\vv^{(2)}_j)$ have total degree at most $1$ and coefficients of absolute value at most $N_R$, the entries of $\bff$ are bits, and $\mu'$ passes the verifier's degree and range checks of Round 1. Since additionally $\picanon(h)\neq 0$, as shown above, the polynomial $h$ belongs to the class of polynomials over which $\theta(R,\codedim)$ is defined. Finally, note that any $\ww$ as in the event at hand satisfies the third condition in \eqref{e:core_iop_proof_eq1}, i.e.\ $\hamming(f,\Enc_{\cC}\circ\pack\circ \pi_2(\ww))< \delta$; since $\cC$ is $(\delta,1)$-list-decodable, there is at most one such $\ww\in \bits^{\codedim}$, and it is determined by $f$. Hence the polynomial $h$ is determined by $(\inp, f, \mu')$; in particular, it is fixed before $(q,\pirand)$ is sampled. Therefore $$
+Since $\picanon$ is a ring homomorphism satisfying $\picanon\circ \picanon^{-1}=\mathsf{id}$ and restricting to $\pi$ on $\ZZ$, the first condition in \eqref{e:core_iop_proof_eq1} gives $$\picanon(h) = \langle \pi(\bff), \vv^{(1)} \otimes \vv^{(2)} \rangle- \picanon(\mu') = \langle \pi(\bff), \vv\rangle - \mu,$$ which is nonzero by \eqref{e:break_soundness_2}. In particular $h\neq 0$. On the other hand, since $\pirand$ is a ring homomorphism restricting to $\pi_q$ on $\ZZ$, the second condition in \eqref{e:core_iop_proof_eq1} states precisely that $\pirand(h)=0$. Moreover, $h$ has total degree at most $2\cdot D$ and coefficients in $\range{-2\cdot T\cdot \codedim\cdot N_R^2}{2\cdot T\cdot \codedim\cdot N_R^2}$: indeed, the lifts $\picanon^{-1}(\vv^{(1)}_i)$ and $\picanon^{-1}(\vv^{(2)}_j)$ have total degree at most $D$ and coefficients of absolute value at most $N_R$, so each product $\picanon^{-1}(\vv^{(1)}_i)\cdot \picanon^{-1}(\vv^{(2)}_j)$ has total degree at most $2\cdot D$ and coefficients of absolute value at most $T\cdot N_R^2$ (by the definition of $T$); the entries of $\bff$ are bits, and $\mu'$ passes the verifier's degree and range checks of Round 1. Since additionally $\picanon(h)\neq 0$, as shown above, the polynomial $h$ belongs to the class of polynomials over which $\theta(R,\codedim)$ is defined. Finally, note that any $\ww$ as in the event at hand satisfies the third condition in \eqref{e:core_iop_proof_eq1}, i.e.\ $\hamming(f,\Enc_{\cC}\circ\pack\circ \pi_2(\ww))< \delta$; since $\cC$ is $(\delta,1)$-list-decodable, there is at most one such $\ww\in \bits^{\codedim}$, and it is determined by $f$. Hence the polynomial $h$ is determined by $(\inp, f, \mu')$; in particular, it is fixed before $(q,\pirand)$ is sampled. Therefore $$
 \Pr_{q,\pirand}[(\inp,\oracle,\ww)\notin \LinBitsDual^\delta, \text{ and }\ww=\bff \text{ satisfies  \eqref{e:core_iop_proof_eq1}}] \leq \Pr_{q\gets \cP,\ \pirand\gets \cM_q}[\pirand(h)=0] \leq \theta(R,\codedim) = \kappa_0,
 $$
 %
@@ -1505,7 +1507,7 @@ We extend the knowledge state function $\kstate$ from the case above; recall the
 
 We verify the conditions of \cref{def:knowledge-state-function}. The conditions at the empty and full transcripts hold by construction. For the prover message $(y,\mu')$: if $\kstate(\inp,\oracle,(\bot,\zeta),\ww)=0$, then $\mathsf{Coll}(f,\zeta)$ fails and $(\inp,\oracle,\ww)\notin \LinBitsDual^{\delta}$, and hence $\kstate(\inp,\oracle,(\bot,\zeta,(y,\mu')),\ww)=0$ for every prover message $(y,\mu')$. For the prover message $\bm{\mu}$: suppose $\kstate(\inp,\oracle,(\bot,\zeta,(y,\mu'),(q,\pirand)),\ww)=0$ and, towards a contradiction, $\kstate(\inp,\oracle,(\bot,\zeta,(y,\mu'),(q,\pirand),\bm{\mu}),\ww)=1$ for some $\bm{\mu}$. The former excludes $\mathsf{Coll}(f,\zeta)$. The latter gives that the verifier accepts and that $\ww$ satisfies the defining conditions of $\PESAT^{\delta}$ together with $\mle{\pack\circ\pi_2(\ww)}(\bm{\zeta})=y$; by the second statement proved in the case above, the former two imply that $\ww=\bff$ satisfies the verifier's checks on $\mu'$ and \eqref{e:core_iop_proof_eq1}. Hence $\kstate(\inp,\oracle,(\bot,\zeta,(y,\mu'),(q,\pirand)),\ww)=1$, a contradiction.
 
-It remains to bound the errors at the two nonempty verifier messages. For the message $\zeta$: since the extractor is the identity map, the event in \cref{def:rbr-knowledge-new} requires some $\ww$ with $(\inp,\oracle,\ww)\notin \LinBitsDual^{\delta}$ and $\kstate(\inp,\oracle,(\bot,\zeta),\ww)=1$, which forces $\mathsf{Coll}(f,\zeta)$; by \cref{l:ood_collision}, this occurs with probability at most $\binom{L_\delta}{2}\cdot (\codedim/\comfieldexp-1)/|\comfield|=\kappa_{\mathsf{OOD}}$ over $\zeta$. For the message $(q,\pirand)$: assume $\kstate(\inp,\oracle,(\bot,\zeta,(y,\mu'),(q,\pirand)),\ww)=1$ and $\kstate(\inp,\oracle,(\bot,\zeta,(y,\mu')),\ww)=0$. The latter excludes $\mathsf{Coll}(f,\zeta)$, so the former gives that $\ww=\bff\in \bits^{\codedim}$ satisfies \eqref{e:core_iop_proof_eq1} and $\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta})=y$; the latter then further gives $(\inp,\oracle,\bff)\notin \LinBitsDual^{\delta}$. Since $\mathsf{Coll}(f,\zeta)$ fails, there is at most one vector $\bfg\in \FF_2^{\codedim}$ with $\hamming(f, \Enc_{\cC}\circ \pack(\bfg))<\delta$ and $\mle{\pack(\bfg)}(\bm{\zeta})=y$; hence $\pi_2(\bff)$ is this vector, and it is determined by $(f,\zeta,y)$. In particular, $\bff$, and with it the polynomial $h$ from the case above, is fixed before $(q,\pirand)$ is sampled. The rest of the argument is exactly as in the case above: \eqref{e:break_soundness_2} holds, $h$ is nonzero, has total degree at most $2$ and coefficients in $\range{-4\cdot \codedim\cdot N_R^2}{4\cdot \codedim\cdot N_R^2}$, satisfies $\picanon(h)\neq 0$, and the event at hand implies $\pirand(h)=0$, which occurs with probability at most $\theta(R,\codedim)=\kappa_0$ over $(q,\pirand)$.
+It remains to bound the errors at the two nonempty verifier messages. For the message $\zeta$: since the extractor is the identity map, the event in \cref{def:rbr-knowledge-new} requires some $\ww$ with $(\inp,\oracle,\ww)\notin \LinBitsDual^{\delta}$ and $\kstate(\inp,\oracle,(\bot,\zeta),\ww)=1$, which forces $\mathsf{Coll}(f,\zeta)$; by \cref{l:ood_collision}, this occurs with probability at most $\binom{L_\delta}{2}\cdot (\codedim/\comfieldexp-1)/|\comfield|=\kappa_{\mathsf{OOD}}$ over $\zeta$. For the message $(q,\pirand)$: assume $\kstate(\inp,\oracle,(\bot,\zeta,(y,\mu'),(q,\pirand)),\ww)=1$ and $\kstate(\inp,\oracle,(\bot,\zeta,(y,\mu')),\ww)=0$. The latter excludes $\mathsf{Coll}(f,\zeta)$, so the former gives that $\ww=\bff\in \bits^{\codedim}$ satisfies \eqref{e:core_iop_proof_eq1} and $\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta})=y$; the latter then further gives $(\inp,\oracle,\bff)\notin \LinBitsDual^{\delta}$. Since $\mathsf{Coll}(f,\zeta)$ fails, there is at most one vector $\bfg\in \FF_2^{\codedim}$ with $\hamming(f, \Enc_{\cC}\circ \pack(\bfg))<\delta$ and $\mle{\pack(\bfg)}(\bm{\zeta})=y$; hence $\pi_2(\bff)$ is this vector, and it is determined by $(f,\zeta,y)$. In particular, $\bff$, and with it the polynomial $h$ from the case above, is fixed before $(q,\pirand)$ is sampled. The rest of the argument is exactly as in the case above: \eqref{e:break_soundness_2} holds, $h$ is nonzero, has total degree at most $2\cdot D$ and coefficients in $\range{-2\cdot T\cdot \codedim\cdot N_R^2}{2\cdot T\cdot \codedim\cdot N_R^2}$, satisfies $\picanon(h)\neq 0$, and the event at hand implies $\pirand(h)=0$, which occurs with probability at most $\theta(R,\codedim)=\kappa_0$ over $(q,\pirand)$.
 
 Finally, $\Pi_1$ is perfectly complete: the honest prover's message $y$ equals $\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta})$, so the output triple belongs to $\PESAT^{\zeta,y}$ whenever the input triple belongs to $\LinBitsDual$, the remaining conditions being as in the case above.
 %
@@ -1521,7 +1523,7 @@ Finally, $\Pi_1$ is perfectly complete: the honest prover's message $y$ equals $
 \renewcommand{\ringmorphism}{\psi}
 \renewcommand{\moduleonebound}{S_{\leq B}}
 
-We now proceed to describe a generalization of $\LinBitsDual(\bits, \pi, R, \cC)$ where the witness $\bff$ has entries in an arbitrary ring $S$ (finitely generated as a $\ZZ_{\Char(S)}$-module),  instead of in $\bits\subseteq \ZZ$. 
+We now proceed to describe a generalization of $\LinBitsDual(\bits, \pi, R, \cC)$ where the witness $\bff$ has entries in an arbitrary ring $S$,  instead of in $\bits\subseteq \ZZ$. The witness entries will be restricted to a subset of $S$ whose elements admit a \emph{linear bitification}, in the sense described next.
 
 
 
@@ -1529,9 +1531,9 @@ We assume the notation from the previous sections, together with:
 \begin{itemize}[leftmargin=*]
  \item Let $S$ be a ring, possibly different than $R$, let $\psi:S \to R$ be a ring homomorphism. %Let $M$ be a $S$-module and  let $\psi: \moduleone \to R$ be a module homomorphism (with underlying ring homomorphism $\ringmorphism$ \albert{terminology in preliminaries}).
 \item 
-Let $d=\dim(S)$ and let $\gamma_1,\ldots, \gamma_\moduledegree$ be a set of generators of  $S$ as a $\ZZ_{\Char(S)}$-module. Fix a vector length $\codedim_0$.  Let $\moduleonebound$ denote the set of elements of $S$ of the form $h=\sum_{i\in [\moduledegree]} h_i\cdot \gamma_i$ for $$h_i \in \range{0}{2^B-1}_S \subseteq \ZZ_{\Char(S)} \subseteq  S$$ (cf.\ \cref{s:prelims_algebra}) \item Let $\bff \in \moduleonebound^{\codedim_0}$, and write %$\bff=(\bff_{*1}, \ldots, \bff_{*\moduledegree})$ 
+Let $\gamma_1,\ldots, \gamma_\moduledegree\in S$ be a fixed tuple of elements, for some $\moduledegree\geq 1$ (for example, when $S$ is free and finitely generated as a $\ZZ_{\Char(S)}$-module, a natural choice is a module basis of $S$). Fix a vector length $\codedim_0$.  Let $\moduleonebound$ denote the set of elements of $S$ of the form $h=\sum_{i\in [\moduledegree]} h_i\cdot \gamma_i$ for $$h_i \in \range{0}{2^B-1}_S \subseteq \ZZ_{\Char(S)} \subseteq  S$$ (cf.\ \cref{s:prelims_algebra}) \item Let $\bff \in \moduleonebound^{\codedim_0}$, and write %$\bff=(\bff_{*1}, \ldots, \bff_{*\moduledegree})$ 
 $\bff=\sum_{j\in [\moduledegree]} \bff_{*j}\cdot \gamma_j$
-with $\bff_{*j}\in \ZZ_{\Char(S)}^{\codedim_0}$ for all $j\in [\moduledegree]$ (note that  any ring $S$ contains $\ZZ_{\Char(S)}$ as a subring). Then write $$\bff_{*j}= \sum_{k=1}^{B}\  \bff_{*jk}\cdot 2^{k-1} $$ for some vectors $$\bff_{*jk}\in \{0,1\}_S^{\codedim_0}\subseteq S^{\codedim_0},$$ for all $j,k$.  We define   $$\bitstext(\bff)\in \bits^{\codedim_0\cdot\moduledegree\cdot  B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B}$$ as the vector with integer bit entries obtained by concatenating the vectors $\bff_{*jk}$ and lifting their entries to $\bits \subseteq \ZZ$ in a natural way, i.e.\ \begin{equation}\label{e:bits_of_f}\bitstext(\bff) \defeq \left(\mathsf{lift}(\bff_{*jk})\mid  j\in [\moduledegree], k\in [B]\right)\in \bits^{\codedim_0\cdot\moduledegree\cdot B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B},\end{equation}
+for some $\bff_{*j}\in \ZZ_{\Char(S)}^{\codedim_0}$, $j\in [\moduledegree]$ (note that  any ring $S$ contains $\ZZ_{\Char(S)}$ as a subring; such a decomposition exists by the definition of $\moduleonebound$, and if several exist we fix an arbitrary one). Then write $$\bff_{*j}= \sum_{k=1}^{B}\  \bff_{*jk}\cdot 2^{k-1} $$ for some vectors $$\bff_{*jk}\in \{0,1\}_S^{\codedim_0}\subseteq S^{\codedim_0},$$ for all $j,k$.  We define   $$\bitstext(\bff)\in \bits^{\codedim_0\cdot\moduledegree\cdot  B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B}$$ as the vector with integer bit entries obtained by concatenating the vectors $\bff_{*jk}$ and lifting their entries to $\bits \subseteq \ZZ$ in a natural way, i.e.\ \begin{equation}\label{e:bits_of_f}\bitstext(\bff) \defeq \left(\mathsf{lift}(\bff_{*jk})\mid  j\in [\moduledegree], k\in [B]\right)\in \bits^{\codedim_0\cdot\moduledegree\cdot B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B},\end{equation}
 where $\mathsf{lift}$ is the identity function if $S=\ZZ$,  and  $\mathsf{lift} = \pi_{\Char(S)}^{-1}$ if $\Char(S)>0$.
 
 \begin{remark}[Non-uniform bit-decomposition sizes]\label{r: non_uniform_bit_decomposition} In practical settings, it is possible that not all entries of $\bff$ have the same bit size. For example, some chunks of $\bff$ may be comprised of elements from $\{0,1\}_S$, while others may be comprised of generic ring elements. However, our definition of $\bitstext(\bff)$ allocates $\moduledegree\cdot B$ bits for every entry of $\bff$, no matter its size.
@@ -1644,7 +1646,7 @@ For more general matrices $L$, one needs to make sure that $L$ has enough struct
 \begin{theorem}\label{t:thm_LinModFieldBits}
     Under the same hypotheses and notation as in \cref{t:thm_core_IOPP}, \cref{c:LinModFieldBin} is a perfectly complete $(2+t_\red + t_\iopp)$-round IOP for $\LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo, \cC)$ with round-by-round knowledge soundness with relaxation $(\LinModFieldBin^{\delta},\bot)$ and errors $$\kappa_{\mathsf{OOD}}, \kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]},$$ where $\kappa_{\mathsf{OOD}}$ is as in \cref{t:thm_core_IOPP} and $
     \kappa_0 = \theta(R,\codedim). %\frac{\degevalfield}{q_{\min}} + \frac{\log(\codedim_1 +1) + \log(q-1)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}.
-    $ (see \cref{t:thm_core_IOPP}; here $\theta(R,\codedim)$ is computed with respect to the tensor decomposition $\uu=\uu^{(1)}\otimes \uu^{(2)}$ of \cref{r:tensor_dec_u} used in \cref{c:core_iop}, so that for $R=\ZZ$ one has $N_R=\max\left(\lVert \uu^{(1)}\rVert_\infty,\ \lVert \uu^{(2)}\rVert_\infty\right)$).
+    $ (see \cref{t:thm_core_IOPP}; here $\theta(R,\codedim)$ is computed with respect to the tensor decomposition $\uu=\uu^{(1)}\otimes \uu^{(2)}$ of \cref{r:tensor_dec_u} used in \cref{c:core_iop}, i.e.\ the quantities $D$, $T$, $N_R$ are taken with respect to the lifts of the entries of $\uu^{(1)}$ and $\uu^{(2)}$).
     
     The error terms $\kappa_{\mathsf{OOD}}, \kappa_0$ are void if Round 0 or Round 1 of \cref{c:core_iop} are not executed, respectively. In that case \cref{c:LinModFieldBin} has one or two rounds less.
     %If $\degevalfield=0$, i.e.\ $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$-round IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]}$.
@@ -1763,11 +1765,11 @@ with these upper bounds depending on how much grinding one is doing at the PIOP 
 
 \paragraph{Strategy 2: No or essentially no grinding during the PIOP, and $\kappa_0^*$ is present and  grinding is used during the first projection step of \cref{c:core_iop}.} We now assume $\FF$ is either a prime field with  $|\FF|\geq \fieldboundsizeexponent$,  or a proper extension field. In this case  \cref{c:core_iop} goes through an initial projection step with soundness error  $\kappa_0^*$.
 
-Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\FF, \codedim)$. We instantiate the morphism sets $\cM_q$ as in the first case of \cref{l:examples_morphisms}, i.e.\ $\pirand$ reduces coefficients modulo a sampled prime and evaluates $X_1,\ldots, X_{d-1}$ at $\alpha, \alpha^2, \ldots, \alpha^{d-1}$ for $\alpha$ random, where $d=\dim(\FF)$. In this case, by \cref{l:examples_morphisms},
+Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\FF, \codedim)$. We use the one-generator presentation of $\FF$ from \cref{e:presentations}, with the natural lifts, so that $k=1$ and, denoting by $d$ the degree of $\FF$ over its prime field, $D=d-1$, $N_\FF\leq q-1$, and we may take $T=d$. We instantiate the morphism sets $\cM_q$ as in \cref{l:examples_morphisms}, i.e.\ $\pirand$ reduces coefficients modulo a sampled prime and evaluates $X_1$ at a random $\alpha\in \FF_q$. In this case, by \cref{l:examples_morphisms},
     $$
     \kappa_0 \leq \frac{2\cdot (d-1)}{q_{\min}} + \frac{\log\left(8\cdot d\cdot \codedim\cdot (q-1)^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor},
       $$
-    where $q$ is  the characteristic of $\FF$ (so that $N_\FF = q-1$).
+    where $q$ is  the characteristic of $\FF$.
 
 Recall (\cref{t:thm_core_IOPP})
     $$
@@ -1795,7 +1797,7 @@ Recall (\cref{t:thm_core_IOPP})
   \centering
  \begin{tabular}{rrrrrrrrr}
     \toprule
-    $\log |\FF|$ & $\dim(\FF)$ & $\log q$ & $\log \codedim$ & $\tau$ & $a^{*}$ & $\kappa_0$ & Bit-deficit to $128$ & Grinding time (ms) \\
+    $\log |\FF|$ & $d$ & $\log q$ & $\log \codedim$ & $\tau$ & $a^{*}$ & $\kappa_0$ & Bit-deficit to $128$ & Grinding time (ms) \\
     \midrule
     128 & 1 & 128 & 24 & 0.5 & 110 & $2^{-108.3}$ & 20 & 8.9 \\
     128 & 1 & 128 & 24 & 0.6 & 107 & $2^{-105.9}$ & 23 & 84.6 \\
@@ -1812,7 +1814,7 @@ Recall (\cref{t:thm_core_IOPP})
     128 & 4 & 32 & 30 & 0.6 & 108 & $2^{-103.1}$ & 25 & 240.8 \\
     128 & 4 & 32 & 32 & 0.5 & 110 & $2^{-105.1}$ & 23 & 84.6 \\
     \bottomrule
-  \end{tabular}  \caption{Minima $a^{*}$ of $f(a)$ for different configurations of $\FF$ (of characteristic $q$ and dimension $d=\dim(\FF)$), witness sizes $\codedim$, and $\tau$ such that $\codedim_1=\codedim^\tau$.  By choosing primes in the interval $[2^{a^*}, 2^{128-r_1}]$, we have that the first error term $\kappa_0$ satisfies $\kappa_0 \lessapprox f(a^*)$. We include the bits left required to achieve  $\kappa_0 < 1/2^{128}$ and the cost of grinding such amount of bits, in a MacBook Air M4 16GB, multi-threaded, using Blake3 as hash function.
+  \end{tabular}  \caption{Minima $a^{*}$ of $f(a)$ for different configurations of $\FF$ (of characteristic $q$ and degree $d$ over its prime field), witness sizes $\codedim$, and $\tau$ such that $\codedim_1=\codedim^\tau$.  By choosing primes in the interval $[2^{a^*}, 2^{128-r_1}]$, we have that the first error term $\kappa_0$ satisfies $\kappa_0 \lessapprox f(a^*)$. We include the bits left required to achieve  $\kappa_0 < 1/2^{128}$ and the cost of grinding such amount of bits, in a MacBook Air M4 16GB, multi-threaded, using Blake3 as hash function.
   We omit configurations whose grinding cost exceeds $\approx 250$ms; in particular $\tau=0.6$ is omitted for larger $\codedim$.}
   \label{tab:min-f}
 \end{table}
@@ -2300,7 +2302,7 @@ In this section we describe a variation of the PESAT  relation (cf.\ \cref{d:pes
 
 
 
-We fix a witness length $\codedim_0$ which we assume is a power of two; an input length $\inplen$; a bit size bound $B$; a degree bound $\moduledegree$; a collection of $\iota$ rings $R_1, \ldots, R_{\iota}$ of \emph{zero or prime characteristic} (our constraints will be over these rings). As all rings in this paper, we assume $R_1, \ldots, R_\iota$ finitelly generated as modules (see \cref{s:prelims_algebra}). We fix a number of rows $\numrows$; a ring $S$ (our witness will have entries in $S$); and for each $i\in [\iota]$, a   ring homomorphisms $\psi_i: S\to R_i$ and a  vector of $\numrows$ polynomials
+We fix a witness length $\codedim_0$ which we assume is a power of two; an input length $\inplen$; a bit size bound $B$; a degree bound $\moduledegree$; a collection of $\iota$ rings $R_1, \ldots, R_{\iota}$ of \emph{zero or prime characteristic} (our constraints will be over these rings). As all rings in this paper, we assume $R_1, \ldots, R_\iota$ are finitely generated as rings (see \cref{s:prelims_algebra}). We fix a number of rows $\numrows$; a ring $S$ (our witness will have entries in $S$); and for each $i\in [\iota]$, a   ring homomorphisms $\psi_i: S\to R_i$ and a  vector of $\numrows$ polynomials
 $$\mathbf{p}^{(i)} = \left(\left.\mathbf{p}_{j}^{(i)} \ \right| \ j\in[\numrows]\right) \in \left(R_i[Y_1,\ldots, Y_{\inplen+\codedim}]\right)^{\numrows}$$ with coefficients in $\ring_i$ and on $\inplen + \codedim$ variables. %Given $a\in \ring_i$ and $i\in [\iota]$, we say that \emph{$a=0$ holds in $R_i$} if the image of $a$ under the canonical projection $\ring[X]\to R_i$ is zero. 
 We denote $$\bm{\psi}=(\psi_i)_{i\in [\iota]},\qquad \pp = (\pp^{(i)})_{i\in [\iota]}, \qquad \bm{R}=(R_i)_{i\in[\iota]}.$$ 
 %
