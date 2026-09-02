@@ -1,0 +1,115 @@
+//! Full `utils::prof` scope tree of ONE Spartan-path prove (the u32 or the
+//! BabyBear paper path) at a chosen exponent: a step-3 (PIOP) microscope for
+//! the raw-residue prover kernels. One excluded warm-up prove, then
+//! `PROBE_REPS` profiled proves, each dumped separately.
+//!
+//! ```text
+//! OBLONG_PROFILE=1 PROBE_KIND=u32 PROBE_EXP=20 RUSTFLAGS="-C target-cpu=native" \
+//!   cargo run --release --example spartan_probe --features unchecked
+//! ```
+
+use std::time::Instant;
+
+use f2z::piop::spartan::{
+    BabyBearMulWitness, PreparedBabyBearMulRelation, PreparedU32MulRelation,
+    SpartanReductionStrategy, U32MulWitness, commit_baby_bear_mul_witness, commit_u32_mul_witness,
+    prove_baby_bear_mul_paper, prove_u32_mul, sample_baby_bear_operand_with,
+    verify_baby_bear_mul_paper, verify_u32_mul,
+};
+use f2z::transcript::Blake3Transcript;
+use f2z::utils::prof;
+use rand::{RngExt, SeedableRng, rngs::StdRng};
+
+fn env_usize(name: &str, default: usize) -> usize {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.parse().expect("integer env value"))
+        .unwrap_or(default)
+}
+
+fn main() {
+    let _ = flock_core::init_perf_thread_pool();
+    let exponent = env_usize("PROBE_EXP", 20);
+    let reps = env_usize("PROBE_REPS", 1);
+    let kind = std::env::var("PROBE_KIND").unwrap_or_else(|_| "u32".to_string());
+    let count = 1usize << exponent;
+    let mut rng = StdRng::seed_from_u64(0x5044_5250_4f42_4500 ^ exponent as u64);
+    eprintln!(
+        "spartan_probe kind={kind} exponent={exponent} threads={}",
+        rayon::current_num_threads()
+    );
+
+    match kind.as_str() {
+        "u32" => {
+            let witness =
+                U32MulWitness::from_fn(count, |_| (rng.random::<u32>(), rng.random::<u32>()))
+                    .expect("witness");
+            let relation = PreparedU32MulRelation::new(*witness.layout()).expect("relation");
+            for rep in 0..=reps {
+                let started = Instant::now();
+                let hint =
+                    commit_u32_mul_witness(&relation, witness.f2z_bit_rows()).expect("commit");
+                let commit_ms = started.elapsed().as_secs_f64() * 1e3;
+                let mut transcript = Blake3Transcript::new();
+                let started = Instant::now();
+                let proof =
+                    prove_u32_mul(&mut transcript, &relation, &witness, &hint).expect("prove");
+                let prove_ms = started.elapsed().as_secs_f64() * 1e3;
+                let mut verifier = Blake3Transcript::new();
+                verify_u32_mul(&mut verifier, &relation, &hint.commitment, &proof).expect("verify");
+                let header = if rep == 0 {
+                    format!(
+                        "u32 2^{exponent} WARM-UP (commit {commit_ms:.1} ms, prove {prove_ms:.1} ms)"
+                    )
+                } else {
+                    format!(
+                        "u32 2^{exponent} prove #{rep} (commit {commit_ms:.1} ms, prove {prove_ms:.1} ms)"
+                    )
+                };
+                prof::dump_and_reset(&header);
+            }
+        }
+        "bb" => {
+            let witness = BabyBearMulWitness::from_fn(count, |_| {
+                (
+                    sample_baby_bear_operand_with(|| rng.random::<u32>()),
+                    sample_baby_bear_operand_with(|| rng.random::<u32>()),
+                )
+            })
+            .expect("witness");
+            let layout = *witness.layout();
+            let prepared = PreparedBabyBearMulRelation::new(layout).expect("relation");
+            for rep in 0..=reps {
+                let started = Instant::now();
+                let hint =
+                    commit_baby_bear_mul_witness(&layout, witness.f2z_bit_rows()).expect("commit");
+                let commit_ms = started.elapsed().as_secs_f64() * 1e3;
+                let mut transcript = Blake3Transcript::new();
+                let started = Instant::now();
+                let proof = prove_baby_bear_mul_paper(
+                    &mut transcript,
+                    &prepared,
+                    &witness,
+                    &hint,
+                    SpartanReductionStrategy::DelayedBarrett,
+                )
+                .expect("prove");
+                let prove_ms = started.elapsed().as_secs_f64() * 1e3;
+                let mut verifier = Blake3Transcript::new();
+                verify_baby_bear_mul_paper(&mut verifier, &prepared, &hint.commitment, &proof)
+                    .expect("verify");
+                let header = if rep == 0 {
+                    format!(
+                        "bb 2^{exponent} WARM-UP (commit {commit_ms:.1} ms, prove {prove_ms:.1} ms)"
+                    )
+                } else {
+                    format!(
+                        "bb 2^{exponent} prove #{rep} (commit {commit_ms:.1} ms, prove {prove_ms:.1} ms)"
+                    )
+                };
+                prof::dump_and_reset(&header);
+            }
+        }
+        other => panic!("PROBE_KIND must be u32 or bb, got {other}"),
+    }
+}

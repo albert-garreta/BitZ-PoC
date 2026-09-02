@@ -16,7 +16,12 @@ use crypto_primitives::{FromWithConfig, PrimeField, crypto_bigint_monty::MontyFi
 
 use crate::poly::mle::DenseMultilinearExtension;
 
+use crate::utils::delayed_reduction::{
+    MontyLinearAccumulator128, MontyProductAccumulator128, OptimizedMonty128Reducer,
+};
+
 use super::{
+    raw_monty::{NativeProducts, Raw, RawMontyCtx, RawProducts},
     sumcheck::{R1csProductMles, SumcheckError, SumcheckLinearReducer, SumcheckProductReducer},
     univariate_skip::{PrefixSkipK1, PrefixSkipK2, PrefixSkipK3, PrefixSkipK4, PrefixSkipSpec},
 };
@@ -182,6 +187,292 @@ where
         ),
         _ => Err(SumcheckError::InvalidProductDimensions),
     }
+}
+
+/// The raw-table twin of [`fold_u32_native_prefix_validated`]: the same
+/// per-block linear accumulation and reduction, with every folded entry stored
+/// as a canonical residue for the raw outer tail.
+pub(crate) fn fold_u32_native_prefix_raw(
+    skip_vars: usize,
+    products: NativeProducts<'_>,
+    challenge: &Field,
+    ctx: &RawMontyCtx,
+) -> Result<RawProducts, SumcheckError> {
+    match skip_vars {
+        1 => fold_u32_native_prefix_raw_for::<PrefixSkipK1, 2>(
+            products,
+            challenge,
+            ctx,
+            &TOP_DIFFERENCE_K1,
+        ),
+        2 => fold_u32_native_prefix_raw_for::<PrefixSkipK2, 4>(
+            products,
+            challenge,
+            ctx,
+            &TOP_DIFFERENCE_K2,
+        ),
+        3 => fold_u32_native_prefix_raw_for::<PrefixSkipK3, 8>(
+            products,
+            challenge,
+            ctx,
+            &TOP_DIFFERENCE_K3,
+        ),
+        4 => fold_u32_native_prefix_raw_for::<PrefixSkipK4, 16>(
+            products,
+            challenge,
+            ctx,
+            &TOP_DIFFERENCE_K4,
+        ),
+        _ => Err(SumcheckError::InvalidProductDimensions),
+    }
+}
+
+fn fold_u32_native_prefix_raw_for<S, const M: usize>(
+    products: NativeProducts<'_>,
+    challenge: &Field,
+    ctx: &RawMontyCtx,
+    top_difference: &[i64; M],
+) -> Result<RawProducts, SumcheckError>
+where
+    S: PrefixSkipSpec<InterpolatedAB = i64, Residual = i128>,
+{
+    debug_assert_eq!(S::BLOCK_LEN, M);
+    debug_assert!(products.len().is_multiple_of(M));
+    debug_assert_eq!(products.bz.len(), products.len());
+    debug_assert_eq!(products.cz.len(), products.len());
+    let weights: Vec<Raw> = base_lagrange_weights(challenge, ctx.config(), top_difference)
+        .iter()
+        .map(|weight| ctx.raw(weight))
+        .collect();
+
+    let (az, bz, cz) = (products.az, products.bz, products.cz);
+    let block_count = az.len() / M;
+    let mut output = RawProducts::zeros(block_count);
+    // Each block sum has at most 16 raw × u64 products, far below q · R, so
+    // one Montgomery reduction plus a conversion multiply replaces the
+    // Barrett remainder (same canonical residue).
+    let fold_block = |az: &[u64], bz: &[u64], cz: &[u64]| -> [Raw; 3] {
+        let mut accumulators = [MontyLinearAccumulator128::default(); 3];
+        for (((&weight, &az), &bz), &cz) in weights.iter().zip(az).zip(bz).zip(cz) {
+            accumulators[0].multiply_accumulate_raw(weight, az);
+            accumulators[1].multiply_accumulate_raw(weight, bz);
+            accumulators[2].multiply_accumulate_raw(weight, cz);
+        }
+        let [az, bz, cz] = accumulators;
+        [
+            ctx.plain_to_raw(ctx.redc_linear(&az)),
+            ctx.plain_to_raw(ctx.redc_linear(&bz)),
+            ctx.plain_to_raw(ctx.redc_linear(&cz)),
+        ]
+    };
+
+    #[cfg(feature = "parallel")]
+    if should_parallelize(block_count) {
+        (
+            output.az.par_iter_mut(),
+            output.bz.par_iter_mut(),
+            output.cz.par_iter_mut(),
+            az.par_chunks_exact(M),
+            bz.par_chunks_exact(M),
+            cz.par_chunks_exact(M),
+        )
+            .into_par_iter()
+            .for_each(|(az_out, bz_out, cz_out, az, bz, cz)| {
+                let [folded_az, folded_bz, folded_cz] = fold_block(az, bz, cz);
+                *az_out = folded_az;
+                *bz_out = folded_bz;
+                *cz_out = folded_cz;
+            });
+        return Ok(output);
+    }
+
+    for (index, ((az, bz), cz)) in az
+        .chunks_exact(M)
+        .zip(bz.chunks_exact(M))
+        .zip(cz.chunks_exact(M))
+        .enumerate()
+    {
+        let [folded_az, folded_bz, folded_cz] = fold_block(az, bz, cz);
+        output.az[index] = folded_az;
+        output.bz[index] = folded_bz;
+        output.cz[index] = folded_cz;
+    }
+    Ok(output)
+}
+
+/// The raw twin of [`compute_u32_native_skip_message_validated`]: the same
+/// per-suffix exact interpolations and two-level `eq_out · Σ eq_in · residual`
+/// accumulation on raw equality weights, in transcript order
+/// `Q(-1), Q(M), Q(-2), Q(M + 1), ..., Q(infinity)`.
+pub(crate) fn compute_u32_native_skip_message_raw(
+    skip_vars: usize,
+    eq_low: &[Raw],
+    eq_high: &[Raw],
+    products: NativeProducts<'_>,
+    ctx: &RawMontyCtx,
+    reducer: &OptimizedMonty128Reducer,
+) -> Result<Vec<Field>, SumcheckError> {
+    match skip_vars {
+        1 => skip_message_raw_for::<2, 1>(
+            eq_low,
+            eq_high,
+            products,
+            ctx,
+            reducer,
+            &FINITE_LAGRANGE_K1,
+            &TOP_DIFFERENCE_K1,
+        ),
+        2 => skip_message_raw_for::<4, 3>(
+            eq_low,
+            eq_high,
+            products,
+            ctx,
+            reducer,
+            &FINITE_LAGRANGE_K2,
+            &TOP_DIFFERENCE_K2,
+        ),
+        3 => skip_message_raw_for::<8, 7>(
+            eq_low,
+            eq_high,
+            products,
+            ctx,
+            reducer,
+            &FINITE_LAGRANGE_K3,
+            &TOP_DIFFERENCE_K3,
+        ),
+        4 => skip_message_raw_for::<16, 15>(
+            eq_low,
+            eq_high,
+            products,
+            ctx,
+            reducer,
+            &FINITE_LAGRANGE_K4,
+            &TOP_DIFFERENCE_K4,
+        ),
+        _ => Err(SumcheckError::InvalidProductDimensions),
+    }
+}
+
+/// Branch-free `accumulators += (±weight) · |value|` with the magnitude split
+/// into its two `u64` limbs (`[low, high]`), the raw twin of
+/// [`accumulate_signed_i128`].
+#[inline(always)]
+fn accumulate_signed_i128_raw(
+    accumulators: &mut [MontyLinearAccumulator128; 2],
+    weight: Raw,
+    negative_weight: Raw,
+    value: i128,
+) {
+    let mask = (value >> 127) as u128;
+    let magnitude = ((value as u128) ^ mask).wrapping_sub(mask);
+    let selected = (weight & !mask) | (negative_weight & mask);
+    accumulators[0].multiply_accumulate_raw(selected, magnitude as u64);
+    accumulators[1].multiply_accumulate_raw(selected, (magnitude >> 64) as u64);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn skip_message_raw_for<const M: usize, const LANES: usize>(
+    eq_low: &[Raw],
+    eq_high: &[Raw],
+    products: NativeProducts<'_>,
+    ctx: &RawMontyCtx,
+    reducer: &OptimizedMonty128Reducer,
+    finite_lagrange: &[[i64; M]],
+    top_difference: &[i64; M],
+) -> Result<Vec<Field>, SumcheckError> {
+    debug_assert_eq!(LANES, finite_lagrange.len() + 1);
+    debug_assert_eq!(LANES, M - 1);
+    let (az, bz, cz) = (products.az, products.bz, products.cz);
+    let suffixes = eq_low
+        .len()
+        .checked_mul(eq_high.len())
+        .ok_or(SumcheckError::InvalidEqualityDimensions)?;
+    if az.len() != bz.len()
+        || az.len() != cz.len()
+        || az.len()
+            != M.checked_mul(suffixes)
+                .ok_or(SumcheckError::InvalidEqualityDimensions)?
+        || eq_low.is_empty()
+        || eq_high.is_empty()
+    {
+        return Err(SumcheckError::InvalidEqualityDimensions);
+    }
+    let two_to_64 = ctx.raw(&Field::from_with_cfg(1_u128 << 64, ctx.config()));
+    let negative_low: Vec<Raw> = eq_low.iter().map(|&weight| ctx.neg(weight)).collect();
+    let low_len = eq_low.len();
+
+    let bucket = |high_index: usize| -> [MontyProductAccumulator128; LANES] {
+        let mut inner: [[MontyLinearAccumulator128; 2]; LANES] =
+            std::array::from_fn(|_| [MontyLinearAccumulator128::default(); 2]);
+        let suffix_start = high_index * low_len;
+        for (low_index, (&weight, &negative_weight)) in eq_low.iter().zip(&negative_low).enumerate()
+        {
+            let block_start = M * (suffix_start + low_index);
+            let block_end = block_start + M;
+            let az = &az[block_start..block_end];
+            let bz = &bz[block_start..block_end];
+            let cz = &cz[block_start..block_end];
+            for (lane, coefficients) in finite_lagrange.iter().enumerate() {
+                let az_at = interpolate_u32(az, coefficients);
+                let bz_at = interpolate_u32(bz, coefficients);
+                let cz_at = interpolate_u64(cz, coefficients);
+                let residual = i128::from(az_at) * i128::from(bz_at) - cz_at;
+                accumulate_signed_i128_raw(&mut inner[lane], weight, negative_weight, residual);
+            }
+            let az_top = interpolate_u32(az, top_difference);
+            let bz_top = interpolate_u32(bz, top_difference);
+            accumulate_signed_i128_raw(
+                &mut inner[LANES - 1],
+                weight,
+                negative_weight,
+                i128::from(az_top) * i128::from(bz_top),
+            );
+        }
+        let high_weight = eq_high[high_index];
+        let mut outer: [MontyProductAccumulator128; LANES] =
+            std::array::from_fn(|_| MontyProductAccumulator128::default());
+        for (outer, [low, high]) in outer.iter_mut().zip(inner) {
+            let low = low.reduce_raw(reducer);
+            let high = high.reduce_raw(reducer);
+            let value = ctx.add(low, ctx.mul(high, two_to_64));
+            outer.multiply_accumulate_raw(high_weight, value);
+        }
+        outer
+    };
+    let merge = |mut left: [MontyProductAccumulator128; LANES],
+                 right: [MontyProductAccumulator128; LANES]| {
+        for (left, right) in left.iter_mut().zip(right) {
+            *left += right;
+        }
+        left
+    };
+    let zero = || std::array::from_fn(|_| MontyProductAccumulator128::default());
+
+    #[cfg(feature = "parallel")]
+    let outer = if should_parallelize(az.len() / M) {
+        (0..eq_high.len())
+            .into_par_iter()
+            .map(bucket)
+            .reduce(zero, merge)
+    } else {
+        (0..eq_high.len()).map(bucket).fold(zero(), merge)
+    };
+    #[cfg(not(feature = "parallel"))]
+    let outer = (0..eq_high.len()).map(bucket).fold(zero(), merge);
+
+    let mut message: Vec<Field> = outer
+        .into_iter()
+        .map(|accumulator| ctx.field(accumulator.reduce_raw(reducer)))
+        .collect();
+    // Q(infinity) = (leading lane) / ((M - 1)!)², exactly as the generic kernel.
+    let factorial = Field::from_with_cfg(factorial(M - 1), ctx.config());
+    let inverse_factorial = Field::one_with_cfg(ctx.config()) / &factorial;
+    let infinity_scale = field_mul(&inverse_factorial, &inverse_factorial);
+    let infinity = message
+        .last_mut()
+        .expect("every supported prefix skip has an infinity lane");
+    *infinity *= &infinity_scale;
+    Ok(message)
 }
 
 fn compute_u32_native_skip_message_for<S, const M: usize, const LANES: usize, R>(

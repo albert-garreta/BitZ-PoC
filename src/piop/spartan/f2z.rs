@@ -50,14 +50,15 @@ use super::{
     grinding::{GrindingDomain, GrindingError, GrindingRound, grind_and_absorb, verify_and_absorb},
     matrix::ScaledMleEvaluationClaim,
     piop::{
-        SpartanError, prove_spartan_piop_u32_native_with_univariate_skip,
+        SpartanError, prove_spartan_piop_u32_native_with_univariate_skip_borrowed,
         verify_spartan_univariate_skip_proof,
     },
     profile::{IopInstanceFacts, IopSecurityParams, IopSecurityProfile, Lambda100, ProfileError},
+    raw_monty::NativeProducts,
     u32_mul::{
         U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS, U32_MUL_PRODUCT_SLOT_START, U32_MUL_X_BITS,
         U32_MUL_X_SLOT_START, U32_MUL_Y_BITS, U32_MUL_Y_SLOT_START, U32MulError, U32MulLayout,
-        U32MulWitness, project_u32_mul_native_witness, u32_mul_constraint_matrices,
+        U32MulWitness, u32_mul_constraint_matrices,
     },
     univariate_skip::UnivariateSkipSpartanPiopProof,
 };
@@ -1223,8 +1224,14 @@ pub fn prove_u32_mul<T: Transcript + Send>(
     let (spartan, terminal_claim, piop_nonces) = {
         let _step3 = crate::utils::prof::scope("step3:piop_prove");
         let _scope = crate::utils::prof::scope("spartan-f2z:spartan_prove");
-        let native = project_u32_mul_native_witness(witness);
-        let (assignment, products) = native.into_parts();
+        // The exact products are the zero-padded operand blocks of the
+        // witness and the assignment is its block table: lend both, no copy.
+        let product_len = layout.multiplications().next_power_of_two();
+        let products = NativeProducts {
+            az: &witness.x_values()[..product_len],
+            bz: &witness.y_values()[..product_len],
+            cz: &witness.product_values()[..product_len],
+        };
         let mut grinder: crate::piop::spartan::grinding::ProverGrindingTranscript<
             _,
             U32MulPiopGrinding,
@@ -1232,14 +1239,15 @@ pub fn prove_u32_mul<T: Transcript + Send>(
             transcript,
             piop_wrap_bits(security),
         );
-        let (spartan, terminal_claim) = prove_spartan_piop_u32_native_with_univariate_skip(
-            &mut grinder,
-            &matrices,
-            &binding,
-            products,
-            assignment,
-            U32_MUL_UNIVARIATE_SKIP_VARS,
-        )?;
+        let (spartan, terminal_claim) =
+            prove_spartan_piop_u32_native_with_univariate_skip_borrowed(
+                &mut grinder,
+                &matrices,
+                &binding,
+                products,
+                witness.assignment(),
+                U32_MUL_UNIVARIATE_SKIP_VARS,
+            )?;
         (spartan, terminal_claim, grinder.finish())
     };
 

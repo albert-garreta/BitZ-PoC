@@ -337,6 +337,19 @@ where
         }
     }
 
+    /// Borrowed view of the three factors, for the raw prover-side binding
+    /// kernels.
+    pub(crate) fn parts(&self) -> PrefixRowFactorParts<'_, F> {
+        PrefixRowFactorParts {
+            skip_vars: self.skip_vars,
+            prefix: &self.prefix,
+            tail_low: &self.tail_low,
+            tail_high: &self.tail_high,
+            tail_low_vars: self.tail_low_vars,
+            num_row_vars: self.num_row_vars,
+        }
+    }
+
     /// Reference/fallback materialization in canonical row order.
     pub(crate) fn materialize(&self) -> Vec<F> {
         let mut weights = Vec::with_capacity(1usize << self.num_row_vars);
@@ -346,6 +359,18 @@ where
         });
         weights
     }
+}
+
+/// The borrowed factors of a [`PrefixUnivariateRowFactors`]: the weight at
+/// row `s + 2^K x` is `prefix[s] · tail_low[x mod 2^tail_low_vars] ·
+/// tail_high[x >> tail_low_vars]`.
+pub(crate) struct PrefixRowFactorParts<'a, F> {
+    pub skip_vars: usize,
+    pub prefix: &'a [F],
+    pub tail_low: &'a [F],
+    pub tail_high: &'a [F],
+    pub tail_low_vars: usize,
+    pub num_row_vars: usize,
 }
 
 /// The three field-valued matrices defining an R1CS relation.
@@ -413,6 +438,36 @@ struct DisjointUnitSelectorTriplet {
     c_offset: usize,
 }
 
+/// One block-aligned selector run of a sparse matrix: columns
+/// `start + r` for `r < rows` each hold exactly the entry `(r, coefficient)`.
+#[derive(Clone, Debug)]
+pub(crate) struct SelectorRun<C> {
+    pub start: usize,
+    pub coefficient: C,
+}
+
+/// A prover-side description of R1CS matrices whose every nonzero column is
+/// part of a block-aligned unit-row selector run with a run-constant
+/// coefficient (the shape of the generated u32 and BabyBear relations).
+///
+/// With row weights `W`, the batched column MLE is then
+/// `D(k · block_len + r) = W[r] · Σ_{runs starting at k · block_len} f · coefficient`
+/// for `r < rows` (and zero elsewhere), where `f ∈ {1, ρ, ρ²}` is the run's
+/// matrix factor: scaled copies of ONE weight vector, which the raw prover
+/// binds and folds without materializing `D`. The verifier never consults
+/// this layout.
+#[derive(Clone, Debug)]
+pub(crate) struct BlockSelectorLayout<C> {
+    /// Logical row count, the length of every run.
+    pub rows: usize,
+    /// Power-of-two block length: at least `rows`, dividing every run start
+    /// and the padded column domain.
+    pub block_len: usize,
+    pub a: Vec<SelectorRun<C>>,
+    pub b: Vec<SelectorRun<C>>,
+    pub c: Vec<SelectorRun<C>>,
+}
+
 /// The modulus-independent core of a prepared R1CS statement: validated,
 /// digest-ready matrices plus the padded domain widths and the detected
 /// selector layout — everything [`PreparedConstraintMatrices::new`] derives
@@ -436,6 +491,7 @@ where
     num_row_vars: usize,
     num_column_vars: usize,
     selector_triplet: Option<DisjointUnitSelectorTriplet>,
+    block_selector: Option<Arc<BlockSelectorLayout<C>>>,
     _field: PhantomData<fn() -> F>,
 }
 
@@ -471,12 +527,26 @@ where
             detect_disjoint_unit_selector_triplet_with(&matrices, |coefficient: &C| {
                 coefficient.is_unit()
             });
+        // Modulus-independent coefficient equality: identical encodings under
+        // every accepted configuration.
+        let mut left_encoding = Vec::new();
+        let mut right_encoding = Vec::new();
+        let block_selector =
+            detect_block_selector_layout_with(&matrices, num_column_vars, |left: &C, right: &C| {
+                left_encoding.clear();
+                right_encoding.clear();
+                left.write_modulus_independent_encoding(&mut left_encoding);
+                right.write_modulus_independent_encoding(&mut right_encoding);
+                left_encoding == right_encoding
+            })
+            .map(Arc::new);
         Ok(Self {
             matrices: Arc::new(matrices),
             digest_stream,
             num_row_vars,
             num_column_vars,
             selector_triplet,
+            block_selector,
             _field: PhantomData,
         })
     }
@@ -499,6 +569,7 @@ where
     num_row_vars: usize,
     num_column_vars: usize,
     selector_triplet: Option<DisjointUnitSelectorTriplet>,
+    block_selector: Option<Arc<BlockSelectorLayout<C>>>,
 }
 
 impl<F, C> PreparedConstraintMatrices<F, C>
@@ -519,6 +590,13 @@ where
         let digest = constraint_matrix_digest(&matrices, field_config, &field_modulus_encoding)?;
         let selector_triplet =
             detect_disjoint_unit_selector_triplet::<F, C>(&matrices, field_config);
+        let field_one_encoding = F::one_with_cfg(field_config).canonical_element_encoding();
+        let block_selector =
+            detect_block_selector_layout_with(&matrices, num_column_vars, |left: &C, right: &C| {
+                left.canonical_field_encoding(field_config, &field_one_encoding)
+                    == right.canonical_field_encoding(field_config, &field_one_encoding)
+            })
+            .map(Arc::new);
 
         Ok(Self {
             matrices: Arc::new(matrices),
@@ -528,6 +606,7 @@ where
             num_row_vars,
             num_column_vars,
             selector_triplet,
+            block_selector,
         })
     }
 
@@ -561,6 +640,7 @@ where
             num_row_vars: skeleton.num_row_vars,
             num_column_vars: skeleton.num_column_vars,
             selector_triplet: skeleton.selector_triplet,
+            block_selector: skeleton.block_selector.clone(),
         })
     }
 
@@ -592,6 +672,27 @@ where
     /// Number of variables in the padded column domain.
     pub const fn num_column_vars(&self) -> usize {
         self.num_column_vars
+    }
+
+    /// The detected disjoint unit-selector layout as
+    /// `[rows, a_offset, b_offset, c_offset]`, for the raw prover-side
+    /// binding kernel; `None` for every other matrix layout.
+    pub(crate) fn selector_layout(&self) -> Option<[usize; 4]> {
+        self.selector_triplet.map(|layout| {
+            [
+                layout.rows,
+                layout.a_offset,
+                layout.b_offset,
+                layout.c_offset,
+            ]
+        })
+    }
+
+    /// The detected block-selector layout, if every matrix is a union of
+    /// block-aligned selector runs (see [`BlockSelectorLayout`]); for the raw
+    /// prover-side structured inner sumcheck.
+    pub(crate) fn block_selector(&self) -> Option<&BlockSelectorLayout<C>> {
+        self.block_selector.as_deref()
     }
 
     /// Constructs the dense column MLE
@@ -1364,6 +1465,86 @@ where
     }
     value.validate_element()?;
     Ok(())
+}
+
+/// Detects the [`BlockSelectorLayout`] of `matrices`, with `same` deciding
+/// coefficient equality. Runs in `O(columns + nnz)`; the topological checks
+/// fail fast on general matrices before any coefficient comparison.
+fn detect_block_selector_layout_with<C: Clone>(
+    matrices: &ConstraintMatrices<C>,
+    num_column_vars: usize,
+    mut same: impl FnMut(&C, &C) -> bool,
+) -> Option<BlockSelectorLayout<C>> {
+    let rows = matrices.row_count();
+    let domain = domain_size(num_column_vars).ok()?;
+    if rows == 0 || rows > domain {
+        return None;
+    }
+
+    let mut runs_of = |matrix: &SparseMatrix<C>| -> Option<Vec<SelectorRun<C>>> {
+        if !matrix.nnz().is_multiple_of(rows) {
+            return None;
+        }
+        let offsets = matrix.column_offsets();
+        let row_indices = matrix.row_indices();
+        let coefficients = matrix.coefficients();
+        let columns = matrix.column_count();
+        let mut runs = Vec::with_capacity(matrix.nnz() / rows);
+        let mut column = 0;
+        while column < columns {
+            if offsets[column + 1] == offsets[column] {
+                column += 1;
+                continue;
+            }
+            let start = column;
+            if start.checked_add(rows)? > columns {
+                return None;
+            }
+            let base = offsets[start];
+            let coefficient = &coefficients[base];
+            for row in 0..rows {
+                if offsets[start + row] != base + row
+                    || offsets[start + row + 1] != base + row + 1
+                    || row_indices[base + row] != row
+                    || !same(coefficient, &coefficients[base + row])
+                {
+                    return None;
+                }
+            }
+            runs.push(SelectorRun {
+                start,
+                coefficient: coefficient.clone(),
+            });
+            column = start + rows;
+        }
+        Some(runs)
+    };
+    let a = runs_of(matrices.a())?;
+    let b = runs_of(matrices.b())?;
+    let c = runs_of(matrices.c())?;
+    if a.is_empty() && b.is_empty() && c.is_empty() {
+        return None;
+    }
+
+    // The block length is the largest power of two dividing every run start
+    // (and the domain); every run must fit inside its block.
+    let mut block_len = domain;
+    for run in a.iter().chain(&b).chain(&c) {
+        if run.start != 0 {
+            block_len = block_len.min(run.start & run.start.wrapping_neg());
+        }
+    }
+    if block_len < rows {
+        return None;
+    }
+    debug_assert!(block_len.is_power_of_two());
+    Some(BlockSelectorLayout {
+        rows,
+        block_len,
+        a,
+        b,
+        c,
+    })
 }
 
 fn detect_disjoint_unit_selector_triplet<F, C>(

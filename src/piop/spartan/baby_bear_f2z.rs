@@ -61,10 +61,11 @@ use super::{
     matrix::ScaledMleEvaluationClaim,
     piop::{
         SpartanError, SpartanPiopProof, SpartanReductionStrategy,
-        prove_spartan_piop_native_u64_with_strategy, prove_spartan_piop_with_strategy,
-        verify_spartan_proof,
+        prove_spartan_piop_native_u64_borrowed, prove_spartan_piop_native_u64_with_strategy,
+        prove_spartan_piop_with_strategy, verify_spartan_proof,
     },
     profile::{IopInstanceFacts, IopSecurityParams, IopSecurityProfile, Lambda100, ProfileError},
+    raw_monty::NativeProducts,
 };
 
 /// Domain of the BabyBear commitment-and-layout digest used as Spartan's
@@ -1529,18 +1530,53 @@ pub fn prove_baby_bear_mul_paper<T: Transcript + Send>(
     let (spartan, terminal_claim, piop_nonces) = {
         let _step3 = crate::utils::prof::scope("step3:piop_prove");
         let _scope = crate::utils::prof::scope("baby-bear-spartan-f2z:spartan_prove");
-        let native = project_baby_bear_mul_native_witness(witness);
-        let (assignment, products) = native.into_parts();
         let mut grinder: ProverGrindingTranscript<_, BabyBearPiopGrinding> =
             ProverGrindingTranscript::new(transcript, bb_piop_wrap_bits(security));
-        let (spartan, terminal_claim) = prove_spartan_piop_native_u64_with_strategy(
-            &mut grinder,
-            &matrices,
-            &binding,
-            products,
-            assignment,
-            strategy,
-        )?;
+        let (spartan, terminal_claim) = match strategy {
+            SpartanReductionStrategy::DelayedBarrett => {
+                // Lend the witness's operand blocks (`[e0 | a | b | c | k]`,
+                // zero-padded to the capacity) and its logical assignment;
+                // only the exact `c + p·k` products are materialized.
+                let capacity = layout.capacity();
+                let multiplications = layout.multiplications();
+                let product_len = multiplications.next_power_of_two();
+                let assignment = witness.w();
+                let cz: Vec<u64> = (0..product_len)
+                    .map(|index| {
+                        if index < multiplications {
+                            witness.c_values()[index]
+                                + BABY_BEAR_MODULUS * witness.k_values()[index]
+                        } else {
+                            0
+                        }
+                    })
+                    .collect();
+                let products = NativeProducts {
+                    az: &assignment[capacity..capacity + product_len],
+                    bz: &assignment[2 * capacity..2 * capacity + product_len],
+                    cz: &cz,
+                };
+                prove_spartan_piop_native_u64_borrowed(
+                    &mut grinder,
+                    &matrices,
+                    &binding,
+                    products,
+                    assignment,
+                )?
+            }
+            _ => {
+                let native = project_baby_bear_mul_native_witness(witness);
+                let (assignment, products) = native.into_parts();
+                prove_spartan_piop_native_u64_with_strategy(
+                    &mut grinder,
+                    &matrices,
+                    &binding,
+                    products,
+                    assignment,
+                    strategy,
+                )?
+            }
+        };
         (spartan, terminal_claim, grinder.finish())
     };
 

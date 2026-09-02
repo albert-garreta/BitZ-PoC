@@ -17,6 +17,7 @@ pub mod multiswap;
 pub mod opening_mode;
 pub mod piop;
 pub mod profile;
+pub(crate) mod raw_monty;
 pub mod sha256;
 pub(crate) mod slot_rows;
 pub(crate) mod spliced_digest;

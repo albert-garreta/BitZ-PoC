@@ -209,22 +209,84 @@ impl Accumulatable<MontyField<2>, bool> for MontyLinearAccumulator128 {
     }
 }
 
+impl MontyProductAccumulator128 {
+    /// Adds the product of two raw two-limb Montgomery residues (the packed
+    /// limbs of [`MontyField::as_montgomery`]).
+    #[inline(always)]
+    pub(crate) fn multiply_accumulate_raw(&mut self, lhs: u128, rhs: u128) {
+        multiply_accumulate_2x2(&mut self.limbs, split_u128(lhs), split_u128(rhs));
+    }
+
+    /// The optimized reduction, returned as the packed canonical residue
+    /// (`R` scaling) instead of a configured field element.
+    #[inline]
+    pub(crate) fn reduce_raw(self, reducer: &OptimizedMonty128Reducer) -> u128 {
+        let (folded, fold_carry) = fold_fifth_limb(self.limbs, reducer.r2);
+        let redc = montgomery_reduce_4(folded, reducer);
+        let canonical = barrett_reduce_4([redc[0], redc[1], redc[2], 0], reducer);
+        join_u128(add_mod_masked(
+            canonical,
+            reducer.montgomery_one,
+            fold_carry,
+            reducer.modulus,
+        ))
+    }
+
+    /// The plain remainder of the five-limb sum modulo `q`, without the
+    /// Montgomery division: for a sum of `raw × plain` products (scale `R`)
+    /// this is the canonical raw residue of the field sum.
+    #[inline]
+    pub(crate) fn reduce_raw_mod_q(self, reducer: &OptimizedMonty128Reducer) -> u128 {
+        let (folded, fold_carry) = fold_fifth_limb(self.limbs, reducer.r2);
+        let canonical = barrett_reduce_4(folded, reducer);
+        join_u128(add_mod_masked(
+            canonical,
+            reducer.r2,
+            fold_carry,
+            reducer.modulus,
+        ))
+    }
+}
+
+impl MontyLinearAccumulator128 {
+    /// The five little-endian limbs of the unreduced sum.
+    #[inline(always)]
+    pub(crate) const fn limbs(&self) -> [u64; 5] {
+        self.limbs
+    }
+
+    /// Adds the product of a raw two-limb Montgomery residue and a native
+    /// `u64`.
+    #[inline(always)]
+    pub(crate) fn multiply_accumulate_raw(&mut self, lhs: u128, rhs: u64) {
+        multiply_accumulate_2x1(&mut self.limbs, split_u128(lhs), rhs);
+    }
+
+    /// The optimized reduction, returned as the packed canonical residue
+    /// (`R` scaling) instead of a configured field element.
+    #[inline]
+    pub(crate) fn reduce_raw(self, reducer: &OptimizedMonty128Reducer) -> u128 {
+        let (folded, fold_carry) = fold_fifth_limb(self.limbs, reducer.r2);
+        let canonical = barrett_reduce_4(folded, reducer);
+        join_u128(add_mod_masked(
+            canonical,
+            reducer.r2,
+            fold_carry,
+            reducer.modulus,
+        ))
+    }
+}
+
 impl Reduce<MontyField<2>, OptimizedMonty128Reducer> for MontyProductAccumulator128 {
     #[inline]
     fn reduce(
         self,
         reducer: &OptimizedMonty128Reducer,
     ) -> Result<MontyField<2>, DelayedReductionError> {
-        let (folded, fold_carry) = fold_fifth_limb(self.limbs, reducer.r2);
-        let redc = montgomery_reduce_4(folded, reducer);
-        let canonical = barrett_reduce_4([redc[0], redc[1], redc[2], 0], reducer);
-        let repaired = add_mod_masked(
-            canonical,
-            reducer.montgomery_one,
-            fold_carry,
-            reducer.modulus,
-        );
-        Ok(field_from_raw(repaired, &reducer.config))
+        Ok(field_from_raw(
+            split_u128(self.reduce_raw(reducer)),
+            &reducer.config,
+        ))
     }
 }
 
@@ -234,10 +296,10 @@ impl Reduce<MontyField<2>, OptimizedMonty128Reducer> for MontyLinearAccumulator1
         self,
         reducer: &OptimizedMonty128Reducer,
     ) -> Result<MontyField<2>, DelayedReductionError> {
-        let (folded, fold_carry) = fold_fifth_limb(self.limbs, reducer.r2);
-        let canonical = barrett_reduce_4(folded, reducer);
-        let repaired = add_mod_masked(canonical, reducer.r2, fold_carry, reducer.modulus);
-        Ok(field_from_raw(repaired, &reducer.config))
+        Ok(field_from_raw(
+            split_u128(self.reduce_raw(reducer)),
+            &reducer.config,
+        ))
     }
 }
 
@@ -269,6 +331,16 @@ impl Reduce<MontyField<2>, CryptoBigintMonty128Reducer> for MontyLinearAccumulat
             &reducer.config,
         ))
     }
+}
+
+#[inline(always)]
+const fn split_u128(value: u128) -> [u64; 2] {
+    [value as u64, (value >> 64) as u64]
+}
+
+#[inline(always)]
+const fn join_u128(words: [u64; 2]) -> u128 {
+    (words[0] as u128) | ((words[1] as u128) << 64)
 }
 
 #[inline(always)]

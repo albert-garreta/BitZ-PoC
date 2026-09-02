@@ -2796,14 +2796,14 @@ fn should_parallelize(work_items: usize) -> bool {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum FactoredEndpoint {
+pub(super) enum FactoredEndpoint {
     Zero,
     One,
 }
 
 impl FactoredEndpoint {
     #[inline]
-    fn for_tau<F>(tau: &F) -> Self
+    pub(super) fn for_tau<F>(tau: &F) -> Self
     where
         F: SpartanField,
     {
@@ -2817,7 +2817,7 @@ impl FactoredEndpoint {
 
 /// Inverts every nonzero entry with one field inversion. Zero entries remain
 /// zero and use the endpoint-one recovery path below.
-fn batch_invert_nonzero<F>(values: &[F], field_cfg: &F::Config) -> Vec<F>
+pub(super) fn batch_invert_nonzero<F>(values: &[F], field_cfg: &F::Config) -> Vec<F>
 where
     F: SpartanField,
 {
@@ -2851,7 +2851,7 @@ where
 }
 
 #[inline]
-fn equality_coordinate_evaluation<F>(tau: &F, point: &F, one: &F) -> F
+pub(super) fn equality_coordinate_evaluation<F>(tau: &F, point: &F, one: &F) -> F
 where
     F: SpartanField,
 {
@@ -2864,7 +2864,7 @@ where
 /// cofactor into `[c0, c2, c3]` for the original equality-weighted cubic.
 /// The existing round helper restores `c1`, so the proof and transcript remain
 /// exactly `[F; 4]`.
-fn reconstruct_eq_factored_cubic_without_linear<F>(
+pub(super) fn reconstruct_eq_factored_cubic_without_linear<F>(
     current_claim: &F,
     tau: &F,
     tau_inverse_or_zero: &F,
@@ -3013,7 +3013,7 @@ where
 }
 
 /// Completes and records one sumcheck round, then samples its challenge.
-fn recover_full_round_polynomial_and_sample_next_challenge<
+pub(super) fn recover_full_round_polynomial_and_sample_next_challenge<
     F,
     const INPUT_COEFFS: usize,
     const COEFFS: usize,
@@ -3137,7 +3137,7 @@ where
 /// removes the N-scaling immediate `eq_out * eq_in` multiplication. Very short
 /// buckets do not amortize the inner reduction, so their tail rounds retain
 /// the direct product.
-const TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS: usize = 8;
+pub(super) const TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS: usize = 8;
 
 /// Computes the cofactor endpoint and leading coefficient in two
 /// delayed-reduction levels.

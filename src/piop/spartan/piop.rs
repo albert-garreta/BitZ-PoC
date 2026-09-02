@@ -14,26 +14,32 @@ use super::{
         MleClaimError, PreparedConstraintMatrices, ScaledMleEvaluationClaim,
         SpartanMatrixCoefficient, SpartanMatrixError, make_equality_factors,
     },
+    raw_monty::{
+        NativeProducts, RawMontyCoefficient, RawMontyCtx, RawProducts, RawWitness, RowFunctional,
+        inner_sumcheck_raw, make_equality_factors_raw, prove_outer_field_raw,
+        prove_outer_native_raw,
+    },
     squeeze_field,
     sumcheck::{
         CryptoBigintSumcheckReducer, ImmediateSumcheckReducer, InnerSumcheckOutput,
-        OptimizedSumcheckReducer, OuterSumcheckProof, R1csProductMles, SumcheckError,
-        SumcheckLinearReducer, SumcheckProductReducer, SumcheckProof,
-        prove_inner_sumcheck_u32_native_with_reducer, prove_inner_sumcheck_with_reducer,
-        prove_outer_sumcheck_u32_native_with_reducer, prove_outer_sumcheck_with_reducer,
+        OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckLinearReducer,
+        SumcheckProductReducer, SumcheckProof, prove_inner_sumcheck_u32_native_with_reducer,
+        prove_inner_sumcheck_with_reducer, prove_outer_sumcheck_u32_native_with_reducer,
+        prove_outer_sumcheck_with_reducer,
     },
     univariate_skip::{
         PrefixUnivariateRowBinding, UnivariateSkipOuterSumcheckProof, UnivariateSkipProof,
         UnivariateSkipSpartanPiopProof, prove_univariate_skip_outer_sumcheck_with_reducer,
     },
-    univariate_skip_native::{
-        compute_u32_native_skip_message_validated, fold_u32_native_prefix_validated,
-    },
+    univariate_skip_native::{compute_u32_native_skip_message_raw, fold_u32_native_prefix_raw},
 };
+
+use crate::utils::delayed_reduction::OptimizedMonty128Reducer;
 
 #[cfg(any(test, feature = "bench-internals"))]
 use super::sumcheck::{
-    FieldCoefficientPolicy, NativeWitnessFoldPolicy, prove_inner_sumcheck_u32_native_with_policy,
+    FieldCoefficientPolicy, NativeWitnessFoldPolicy, OptimizedSumcheckReducer,
+    prove_inner_sumcheck_u32_native_with_policy,
 };
 
 /// Domain separator for the native Spartan PIOP transcript.
@@ -215,6 +221,9 @@ where
 
 /// Runs the two-limb runtime-field prover with an explicitly selected
 /// reduction strategy.
+// The raw coefficient bound is crate-internal: every coefficient type this
+// crate proves with implements it, and the bound names no public API.
+#[allow(private_bounds)]
 pub fn prove_spartan_piop_with_strategy<C>(
     transcript: &mut impl Transcript,
     matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
@@ -230,7 +239,7 @@ pub fn prove_spartan_piop_with_strategy<C>(
     SpartanError,
 >
 where
-    C: SpartanMatrixCoefficient<MontyField<2>>,
+    C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
 {
     match strategy {
         SpartanReductionStrategy::Immediate => {
@@ -244,17 +253,13 @@ where
                 &reducer,
             )
         }
-        SpartanReductionStrategy::DelayedBarrett => {
-            let reducer = OptimizedSumcheckReducer::new(matrices.config())?;
-            prove_spartan_piop_with_reducer(
-                transcript,
-                matrices,
-                assignment_oracle_binding,
-                products,
-                assignment,
-                &reducer,
-            )
-        }
+        SpartanReductionStrategy::DelayedBarrett => prove_spartan_piop_raw_field(
+            transcript,
+            matrices,
+            assignment_oracle_binding,
+            products,
+            assignment,
+        ),
         SpartanReductionStrategy::DelayedCryptoBigint => {
             let reducer = CryptoBigintSumcheckReducer::new(matrices.config())?;
             prove_spartan_piop_with_reducer(
@@ -320,15 +325,75 @@ pub fn prove_spartan_piop_u32_native_with_univariate_skip(
     ),
     SpartanError,
 > {
-    let reducer = OptimizedSumcheckReducer::new(matrices.config())?;
-    prove_spartan_piop_u32_native_with_univariate_skip_and_reducer(
+    validate_native_u32_prover_inputs(matrices, &products, &assignment)?;
+    let domain = assignment.evaluations.len();
+    prove_spartan_piop_raw_native_u64_with_skip_core(
+        transcript,
+        matrices,
+        assignment_oracle_binding,
+        NativeProducts::from_mles(&products),
+        RawWitness::native_borrowed(&assignment.evaluations, domain),
+        skip_vars,
+    )
+}
+
+/// [`prove_spartan_piop_u32_native_with_univariate_skip`] on borrowed tables:
+/// the exact products and the relation's logical assignment (the leading
+/// `column_count` entries of the padded column domain, the rest implicitly
+/// zero) are read in place, so no padded copy of the witness is made.
+pub(crate) fn prove_spartan_piop_u32_native_with_univariate_skip_borrowed(
+    transcript: &mut impl Transcript,
+    matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
+    assignment_oracle_binding: &[u8; 32],
+    products: NativeProducts<'_>,
+    assignment: &[u64],
+    skip_vars: usize,
+) -> Result<
+    (
+        UnivariateSkipSpartanPiopProof<MontyField<2>>,
+        ScaledMleEvaluationClaim<MontyField<2>>,
+    ),
+    SpartanError,
+> {
+    validate_native_u32_prover_slices(matrices, products, assignment)?;
+    let domain = 1usize << matrices.num_column_vars();
+    prove_spartan_piop_raw_native_u64_with_skip_core(
         transcript,
         matrices,
         assignment_oracle_binding,
         products,
-        assignment,
+        RawWitness::native_borrowed(assignment, domain),
         skip_vars,
-        &reducer,
+    )
+}
+
+/// The delayed-Barrett native-u64 prover on borrowed tables (see
+/// [`prove_spartan_piop_u32_native_with_univariate_skip_borrowed`] for the
+/// table conventions).
+pub(crate) fn prove_spartan_piop_native_u64_borrowed<C>(
+    transcript: &mut impl Transcript,
+    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    assignment_oracle_binding: &[u8; 32],
+    products: NativeProducts<'_>,
+    assignment: &[u64],
+) -> Result<
+    (
+        SpartanPiopProof<MontyField<2>>,
+        ScaledMleEvaluationClaim<MontyField<2>>,
+    ),
+    SpartanError,
+>
+where
+    C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
+{
+    validate_native_u32_prover_slices(matrices, products, assignment)?;
+    let domain = 1usize << matrices.num_column_vars();
+    prove_spartan_piop_raw_native_u64_core(
+        transcript,
+        matrices,
+        assignment_oracle_binding,
+        products,
+        RawWitness::native_borrowed(assignment, domain),
     )
 }
 
@@ -365,6 +430,9 @@ pub(crate) fn prove_spartan_piop_u32_native_with_strategy(
 ///
 /// This crate-private entry point lets relations such as BabyBear reuse the
 /// optimized u32-native kernels without widening the public u32 API.
+// The raw coefficient bound is crate-internal: every coefficient type this
+// crate proves with implements it, and the bound names no public API.
+#[allow(private_bounds)]
 pub(crate) fn prove_spartan_piop_native_u64_with_strategy<C>(
     transcript: &mut impl Transcript,
     matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
@@ -380,7 +448,7 @@ pub(crate) fn prove_spartan_piop_native_u64_with_strategy<C>(
     SpartanError,
 >
 where
-    C: SpartanMatrixCoefficient<MontyField<2>>,
+    C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
 {
     validate_native_u32_prover_inputs(matrices, &products, &assignment)?;
 
@@ -399,14 +467,13 @@ where
             )
         }
         SpartanReductionStrategy::DelayedBarrett => {
-            let reducer = OptimizedSumcheckReducer::new(matrices.config())?;
-            prove_spartan_piop_u32_native_with_reducer(
+            let domain = assignment.evaluations.len();
+            prove_spartan_piop_raw_native_u64_core(
                 transcript,
                 matrices,
                 assignment_oracle_binding,
-                products,
-                assignment,
-                &reducer,
+                NativeProducts::from_mles(&products),
+                RawWitness::native_borrowed(&assignment.evaluations, domain),
             )
         }
         SpartanReductionStrategy::DelayedCryptoBigint => {
@@ -805,69 +872,226 @@ where
     Ok((proof, claim))
 }
 
-fn prove_spartan_piop_u32_native_with_univariate_skip_and_reducer<R>(
+/// The raw-table Spartan prover for field-valued products: identical
+/// statement, transcript, and proof to [`prove_spartan_piop_with_reducer`]
+/// with the delayed-Barrett reducer, on 16-byte residue tables.
+fn prove_spartan_piop_raw_field<C>(
+    transcript: &mut impl Transcript,
+    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    assignment_oracle_binding: &[u8; 32],
+    products: R1csProductMles<MontyField<2>>,
+    assignment: DenseMultilinearExtension<MontyField<2>>,
+) -> Result<
+    (
+        SpartanPiopProof<MontyField<2>>,
+        ScaledMleEvaluationClaim<MontyField<2>>,
+    ),
+    SpartanError,
+>
+where
+    C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
+{
+    {
+        let _g = crate::utils::prof::scope("sp:validate");
+        validate_prover_inputs(matrices, &products, &assignment)?;
+    }
+    absorb_statement(transcript, matrices, assignment_oracle_binding);
+
+    let field_config = matrices.config();
+    let ctx = RawMontyCtx::new(field_config);
+    let reducer = OptimizedMonty128Reducer::new(field_config).map_err(SumcheckError::from)?;
+    let tau = (0..matrices.num_row_vars())
+        .map(|_| squeeze_field(transcript, field_config))
+        .collect::<Vec<MontyField<2>>>();
+    let (eq_low, eq_high) = {
+        let _g = crate::utils::prof::scope("sp:eq");
+        make_equality_factors_raw(&ctx, &tau)
+    };
+    let outer = {
+        let _scope = crate::utils::prof::scope("spartan:outer_sumcheck");
+        let raw_products = RawProducts::from_field(&ctx, &products);
+        drop(products);
+        prove_outer_field_raw(
+            transcript,
+            &ctx,
+            &reducer,
+            MontyField::<2>::zero_with_cfg(field_config),
+            &tau,
+            eq_low,
+            eq_high,
+            raw_products,
+        )?
+    };
+
+    // The outer prover absorbed [Az(r_x), Bz(r_x), Cz(r_x)] before returning.
+    let rho = squeeze_field(transcript, field_config);
+    let inner_initial_claim = batched_product_claim(
+        &outer.proof.az_mle_claim,
+        &outer.proof.bz_mle_claim,
+        &outer.proof.cz_mle_claim,
+        &rho,
+    );
+    let inner = {
+        let witness = RawWitness::Field(ctx.raw_vec(&assignment.evaluations));
+        drop(assignment);
+        inner_sumcheck_raw(
+            transcript,
+            &ctx,
+            &reducer,
+            matrices,
+            inner_initial_claim,
+            RowFunctional::Point(&outer.eval_points),
+            ctx.raw(&rho),
+            witness,
+        )?
+    };
+
+    let claim = ScaledMleEvaluationClaim::new(
+        inner.sumcheck.eval_points.into_boxed_slice(),
+        inner.batched_matrix_evaluation,
+        inner.sumcheck.final_claim,
+    );
+    let proof = SpartanPiopProof {
+        outer: outer.proof,
+        inner: inner.sumcheck.proof,
+    };
+    Ok((proof, claim))
+}
+
+/// The raw-table native-u64 Spartan prover: identical statement, transcript,
+/// and proof to the delayed-Barrett [`prove_spartan_piop_u32_native_with_reducer`].
+/// Inputs must already have passed [`validate_native_u32_prover_inputs`] or
+/// [`validate_native_u32_prover_slices`].
+fn prove_spartan_piop_raw_native_u64_core<C>(
+    transcript: &mut impl Transcript,
+    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    assignment_oracle_binding: &[u8; 32],
+    products: NativeProducts<'_>,
+    witness: RawWitness<'_>,
+) -> Result<
+    (
+        SpartanPiopProof<MontyField<2>>,
+        ScaledMleEvaluationClaim<MontyField<2>>,
+    ),
+    SpartanError,
+>
+where
+    C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
+{
+    absorb_statement(transcript, matrices, assignment_oracle_binding);
+
+    let field_config = matrices.config();
+    let ctx = RawMontyCtx::new(field_config);
+    let reducer = OptimizedMonty128Reducer::new(field_config).map_err(SumcheckError::from)?;
+    let tau = (0..matrices.num_row_vars())
+        .map(|_| squeeze_field(transcript, field_config))
+        .collect::<Vec<MontyField<2>>>();
+    let (eq_low, eq_high) = make_equality_factors_raw(&ctx, &tau);
+    let outer = {
+        let _scope = crate::utils::prof::scope("spartan:outer_sumcheck");
+        prove_outer_native_raw(
+            transcript,
+            &ctx,
+            &reducer,
+            MontyField::<2>::zero_with_cfg(field_config),
+            &tau,
+            eq_low,
+            eq_high,
+            products,
+        )?
+    };
+
+    let rho = squeeze_field(transcript, field_config);
+    let inner_initial_claim = batched_product_claim(
+        &outer.proof.az_mle_claim,
+        &outer.proof.bz_mle_claim,
+        &outer.proof.cz_mle_claim,
+        &rho,
+    );
+    let inner = inner_sumcheck_raw(
+        transcript,
+        &ctx,
+        &reducer,
+        matrices,
+        inner_initial_claim,
+        RowFunctional::Point(&outer.eval_points),
+        ctx.raw(&rho),
+        witness,
+    )?;
+
+    let claim = ScaledMleEvaluationClaim::new(
+        inner.sumcheck.eval_points.into_boxed_slice(),
+        inner.batched_matrix_evaluation,
+        inner.sumcheck.final_claim,
+    );
+    let proof = SpartanPiopProof {
+        outer: outer.proof,
+        inner: inner.sumcheck.proof,
+    };
+    Ok((proof, claim))
+}
+
+/// The raw-table native-u64 univariate-skip Spartan prover: identical
+/// statement, transcript, and proof to the delayed-Barrett generic driver.
+/// The raw-table native univariate-skip prover core. Inputs must already have
+/// passed [`validate_native_u32_prover_inputs`] or
+/// [`validate_native_u32_prover_slices`].
+fn prove_spartan_piop_raw_native_u64_with_skip_core(
     transcript: &mut impl Transcript,
     matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
     assignment_oracle_binding: &[u8; 32],
-    products: R1csProductMles<u64>,
-    assignment: DenseMultilinearExtension<u64>,
+    products: NativeProducts<'_>,
+    witness: RawWitness<'_>,
     skip_vars: usize,
-    reducer: &R,
 ) -> Result<
     (
         UnivariateSkipSpartanPiopProof<MontyField<2>>,
         ScaledMleEvaluationClaim<MontyField<2>>,
     ),
     SpartanError,
->
-where
-    R: SumcheckProductReducer<MontyField<2>> + SumcheckLinearReducer,
-{
-    validate_native_u32_prover_inputs(matrices, &products, &assignment)?;
+> {
     let skip_vars = validate_univariate_skip_variables(skip_vars, matrices.num_row_vars())?;
     absorb_univariate_skip_statement(transcript, matrices, assignment_oracle_binding, skip_vars);
 
     let field_config = matrices.config();
+    let ctx = RawMontyCtx::new(field_config);
+    let reducer = OptimizedMonty128Reducer::new(field_config).map_err(SumcheckError::from)?;
     let tail_vars = matrices.num_row_vars() - usize::from(skip_vars);
     let tau_tail = (0..tail_vars)
         .map(|_| squeeze_field(transcript, field_config))
         .collect::<Vec<MontyField<2>>>();
-    let equality_factors = make_equality_factors(&tau_tail, field_config)?;
+    let (eq_low, eq_high) = make_equality_factors_raw(&ctx, &tau_tail);
 
-    let outer = {
+    let (outer_proof, row_binding) = {
         let _scope = crate::utils::prof::scope("spartan:outer_univariate_skip");
         let message = {
             let _scope = crate::utils::prof::scope("spartan:univariate_skip_message");
-            compute_u32_native_skip_message_validated(
+            compute_u32_native_skip_message_raw(
                 usize::from(skip_vars),
-                &equality_factors,
-                &products,
-                field_config,
-                reducer,
+                &eq_low,
+                &eq_high,
+                products,
+                &ctx,
+                &reducer,
             )?
         };
         let skip = UnivariateSkipProof::from_ordered_message(usize::from(skip_vars), message)?;
         let reduction = skip.verify_reduction(transcript, field_config)?;
         let folded = {
             let _scope = crate::utils::prof::scope("spartan:univariate_skip_prefix_fold");
-            fold_u32_native_prefix_validated(
-                usize::from(skip_vars),
-                products,
-                &reduction.z,
-                field_config,
-                reducer,
-            )?
+            fold_u32_native_prefix_raw(usize::from(skip_vars), products, &reduction.z, &ctx)?
         };
         let tail = {
             let _scope = crate::utils::prof::scope("spartan:univariate_skip_tail");
-            prove_outer_sumcheck_with_reducer(
+            prove_outer_field_raw(
                 transcript,
+                &ctx,
+                &reducer,
                 reduction.q_at_z,
                 &tau_tail,
-                equality_factors,
+                eq_low,
+                eq_high,
                 folded,
-                field_config,
-                reducer,
             )?
         };
         let row_binding = PrefixUnivariateRowBinding {
@@ -886,25 +1110,22 @@ where
 
     let rho = squeeze_field(transcript, field_config);
     let inner_initial_claim = batched_product_claim(
-        &outer.0.tail.az_mle_claim,
-        &outer.0.tail.bz_mle_claim,
-        &outer.0.tail.cz_mle_claim,
+        &outer_proof.tail.az_mle_claim,
+        &outer_proof.tail.bz_mle_claim,
+        &outer_proof.tail.cz_mle_claim,
         &rho,
     );
-    let batched_matrix = {
-        let _scope = crate::utils::prof::scope("spartan:bind_and_batch");
-        let row_factors = outer.1.row_factors(matrices.num_row_vars(), field_config)?;
-        matrices.bind_and_batch_with_prefix_univariate_factors(&row_factors, &rho)?
-    };
     let inner = {
-        let _scope = crate::utils::prof::scope("spartan:inner_sumcheck");
-        prove_inner_sumcheck_u32_native_with_reducer(
+        let row_factors = row_binding.row_factors(matrices.num_row_vars(), field_config)?;
+        inner_sumcheck_raw(
             transcript,
+            &ctx,
+            &reducer,
+            matrices,
             inner_initial_claim,
-            batched_matrix,
-            assignment,
-            field_config,
-            reducer,
+            RowFunctional::Prefix(&row_factors),
+            ctx.raw(&rho),
+            witness,
         )?
     };
 
@@ -914,7 +1135,7 @@ where
         inner.sumcheck.final_claim,
     );
     let proof = UnivariateSkipSpartanPiopProof {
-        outer: outer.0,
+        outer: outer_proof,
         inner: inner.sumcheck.proof,
     };
     Ok((proof, claim))
@@ -1204,6 +1425,46 @@ where
     if assignment.evaluations[matrices.matrices().column_count()..]
         .iter()
         .any(|&value| value != 0)
+    {
+        return Err(SpartanError::InvalidAssignmentPadding);
+    }
+    Ok(())
+}
+
+/// [`validate_native_u32_prover_inputs`] for borrowed tables: the products
+/// span the padded row domain, `Az`/`Bz` are 32-bit wide, and the assignment
+/// is either the complete padded column table or exactly the logical
+/// columns (its padding then being implicitly zero).
+fn validate_native_u32_prover_slices<C>(
+    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    products: NativeProducts<'_>,
+    assignment: &[u64],
+) -> Result<(), SpartanError>
+where
+    C: SpartanMatrixCoefficient<MontyField<2>>,
+{
+    let rows = 1usize << matrices.num_row_vars();
+    if products.az.len() != rows || products.bz.len() != rows || products.cz.len() != rows {
+        return Err(SpartanError::InvalidProductDimensions);
+    }
+    if products
+        .az
+        .iter()
+        .chain(products.bz)
+        .any(|&value| value > u64::from(u32::MAX))
+    {
+        return Err(SumcheckError::NativeMultiplicandOutOfRange.into());
+    }
+
+    let domain = 1usize << matrices.num_column_vars();
+    let column_count = matrices.matrices().column_count();
+    if assignment.len() != column_count && assignment.len() != domain {
+        return Err(SpartanError::InvalidAssignmentDimensions);
+    }
+    if assignment.first() != Some(&1) {
+        return Err(SpartanMatrixError::InvalidAssignmentConstant.into());
+    }
+    if assignment.len() > column_count && assignment[column_count..].iter().any(|&value| value != 0)
     {
         return Err(SpartanError::InvalidAssignmentPadding);
     }
