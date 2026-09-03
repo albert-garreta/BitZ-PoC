@@ -26,6 +26,10 @@
 //! `F2Z_BENCH_REPS` selects the measured repetitions (default 5, plus one
 //! untimed warmup; `F2Z_MULTISWAP_REPS` is a deprecated alias).
 //! `F2Z_BENCH_SHAPES` selects the Limber `k` parameter (default `0`).
+//! `F2Z_BENCH_LAMBDA` selects the security profile: MultiSwap's relation
+//! needs a two-prime (Strategy 2) profile, so `114` (`Limber114`, the
+//! pinned comparison target and the default) is the only admissible value
+//! today; the single-prime profiles abort with that list.
 //! Every measured proof is verified.
 
 mod common;
@@ -38,7 +42,13 @@ use f2z::piop::spartan::multiswap::{
     verify_multiswap_mod_r1cs, MultiswapAssignment, MultiswapCircuit, MultiswapDims,
     MULTISWAP_VALUE_BITS, PreparedMultiswapRelation,
 };
+use f2z::piop::spartan::{IopSecurityProfile, PrimePolicy};
 use f2z::transcript::Blake3Transcript;
+
+/// One-time public preprocessing under the selected profile.
+fn prepare<P: IopSecurityProfile>(circuit: &MultiswapCircuit) -> PreparedMultiswapRelation {
+    PreparedMultiswapRelation::new_with_profile::<P>(circuit).expect("prepare relation")
+}
 
 fn main() {
     let threads = common::init();
@@ -49,6 +59,8 @@ fn main() {
             .parse::<usize>()
             .expect("F2Z_BENCH_SHAPES must be the Limber k parameter")
     });
+    let selected = common::security_profile(PrimePolicy::TwoFullWidthFingerprint);
+    let profile = selected.unwrap_or(common::SecurityProfile::Limber114);
 
     // Witness generation (excluded from prove): build the wired circuit,
     // check the integer relation, and materialize the assignment tables.
@@ -60,7 +72,7 @@ fn main() {
 
     // One-time public preprocessing (excluded from prove).
     let setup_started = Instant::now();
-    let prepared = PreparedMultiswapRelation::new(&circuit).expect("prepare relation");
+    let prepared = common::with_profile!(profile, prepare(&circuit));
     let (pc, vc) = multiswap_lig_configs(prepared.params()).expect("Ligerito configs");
     let setup_ms = common::elapsed_ms(setup_started);
 
@@ -85,6 +97,10 @@ fn main() {
         p.t,
         p.s,
         p.word_bits,
+    );
+    println!(
+        "  security profile: {}",
+        common::profile_banner(selected, common::SecurityProfile::Limber114)
     );
 
     let mut prover = common::StepSamples::default();
@@ -145,6 +161,7 @@ fn main() {
         bench: "multiswap",
         shape: format!("k{k}"),
         extra: vec![
+            ("profile".into(), prepared.security().profile_name.into()),
             ("rows".into(), circuit.live_rows().to_string()),
             ("committed_bits".into(), (1usize << (p.t + p.s)).to_string()),
         ],

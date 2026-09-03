@@ -64,18 +64,19 @@ harness = false
 # Integer u32×u32→u64 R1CS through the Spartan PIOP, with the terminal
 # assignment claim discharged against the compact F2 witness by F2Z. The
 # canonical protocol is commit-before-prime with a transcript-sampled Step-2
-# prime, Lambda100 profile, and K=3 univariate-prefix skip. Unified output
-# schema (docs/bench-schema.md). Exponents via F2Z_BENCH_SHAPES; reps via
-# F2Z_BENCH_REPS.
+# prime, Lambda100 profile (F2Z_BENCH_LAMBDA selects another), and K=3
+# univariate-prefix skip. Unified output schema (docs/bench-schema.md).
+# Exponents via F2Z_BENCH_SHAPES; reps via F2Z_BENCH_REPS.
 
 [[bench]]
 name = "baby_bear_mul"
 harness = false
 # Independent BabyBear multiplications (a*b = c + p*k) through the PAPER
 # path (transcript-sampled Step-2 prime), TWO rows per shape on one
-# witness: Lambda100 and Lambda128. Unified output schema
-# (docs/bench-schema.md). Exponents via F2Z_BENCH_SHAPES (alias
-# F2Z_BABY_BEAR_MUL_EXPONENTS); reps via F2Z_BENCH_REPS.
+# witness: Lambda100 and Lambda128 (or the one F2Z_BENCH_LAMBDA selects).
+# Unified output schema (docs/bench-schema.md). Exponents via
+# F2Z_BENCH_SHAPES (alias F2Z_BABY_BEAR_MUL_EXPONENTS); reps via
+# F2Z_BENCH_REPS.
 
 [[bench]]
 name = "u32_mul_inner_policy"
@@ -103,7 +104,9 @@ harness = false
 # Limber's wired MultiSwap Mod-R1CS (6209 rows, k=0) through Spartan over a
 # transcript-sampled 113-bit prime + the runtime-prime F2Z bit opening.
 # Unified output schema (docs/bench-schema.md). Reps via F2Z_BENCH_REPS
-# (alias F2Z_MULTISWAP_REPS); run RAYON_NUM_THREADS=1 for Limber parity.
+# (alias F2Z_MULTISWAP_REPS); profile via F2Z_BENCH_LAMBDA (114 = the
+# pinned Limber114, the only two-prime profile); run RAYON_NUM_THREADS=1
+# for Limber parity.
 
 [[bench]]
 name = "lambda_sweep"
@@ -111,7 +114,8 @@ harness = false
 # One SHA-256 witness proved under Lambda100 / Sha128ReferenceSchedule /
 # Lambda128 (compile-time profiles) in the unified schema - the
 # prover-time / proof-size tradeoff table for the security target.
-# Exponent via F2Z_BENCH_SHAPES (default 12); reps via F2Z_BENCH_REPS.
+# F2Z_BENCH_LAMBDA restricts the run to one of them. Exponent via
+# F2Z_BENCH_SHAPES (default 12); reps via F2Z_BENCH_REPS.
 
 [[bench]]
 name = "sha256_compressions"
@@ -119,7 +123,7 @@ harness = false
 # Independent SHA-256 compression batches through the structured Spartan +
 # virtual F2Z path. Unified output schema (docs/bench-schema.md). Exponents
 # via F2Z_BENCH_SHAPES (alias F2Z_SHA_LOG2S); reps via F2Z_BENCH_REPS
-# (alias F2Z_SHA_REPS).
+# (alias F2Z_SHA_REPS); profile via F2Z_BENCH_LAMBDA.
 
 [features]
 default = ["parallel"]

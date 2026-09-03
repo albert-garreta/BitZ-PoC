@@ -6,7 +6,9 @@
 //! shows what 128 actually costs.
 //!
 //! Profiles are compile-time types; the sweep instantiates all three in one
-//! binary (a generic body over the profile), never via an env var. The
+//! binary (a generic body over the profile). `F2Z_BENCH_LAMBDA=100|128|
+//! sha128-reference-schedule` restricts a run to ONE of them — the same
+//! binary, one monomorphized body — for a single-profile measurement. The
 //! `Limber114` profile is MultiSwap-only (Strategy 2) — its row comes from
 //! `cargo bench --bench multiswap`, which pins it.
 //!
@@ -25,7 +27,7 @@ use std::hint::black_box;
 use std::time::Instant;
 
 use f2z::piop::spartan::{
-    IopSecurityProfile, Lambda100, Lambda128, SHA256_MAX_LOG_COMPRESSIONS,
+    IopSecurityProfile, Lambda100, Lambda128, PrimePolicy, SHA256_MAX_LOG_COMPRESSIONS,
     SHA256_MIN_LOG_COMPRESSIONS, Sha128ReferenceSchedule, Sha256CompressionInput,
     Sha256CompressionStatement, SpartanField, commit_sha256_compression_witness_with_config,
     generate_sha256_compression_witnesses, prepare_sha256_compression_batch_with_profile,
@@ -210,14 +212,35 @@ fn main() {
         exponent
     });
     let inputs = make_inputs(1usize << exponent, seed);
+    let selected = common::security_profile(PrimePolicy::SingleDerived);
 
-    println!(
-        "λ sweep: one SHA-256 witness (2^{exponent} compressions), three compile-time \
-         profiles; threads={threads} reps={reps}"
-    );
-    println!("(the Limber114 row comes from `cargo bench --bench multiswap`)");
-    sweep_profile::<Lambda100>(exponent, &inputs, reps, threads, seed);
-    sweep_profile::<Sha128ReferenceSchedule>(exponent, &inputs, reps, threads, seed);
-    sweep_profile::<Lambda128>(exponent, &inputs, reps, threads, seed);
+    match selected {
+        None => {
+            println!(
+                "λ sweep: one SHA-256 witness (2^{exponent} compressions), three compile-time \
+                 profiles; threads={threads} reps={reps}"
+            );
+            println!(
+                "(the Limber114 row comes from `cargo bench --bench multiswap`; \
+                 F2Z_BENCH_LAMBDA restricts the sweep to one profile)"
+            );
+            sweep_profile::<Lambda100>(exponent, &inputs, reps, threads, seed);
+            sweep_profile::<Sha128ReferenceSchedule>(exponent, &inputs, reps, threads, seed);
+            sweep_profile::<Lambda128>(exponent, &inputs, reps, threads, seed);
+        }
+        Some(profile) => {
+            println!(
+                "λ sweep: one SHA-256 witness (2^{exponent} compressions), one compile-time \
+                 profile: {} (λ={}, F2Z_BENCH_LAMBDA={}); threads={threads} reps={reps}",
+                profile.name(),
+                profile.lambda(),
+                profile.knob_value(),
+            );
+            common::with_profile!(
+                profile,
+                sweep_profile(exponent, &inputs, reps, threads, seed)
+            );
+        }
+    }
     flock_core::scratch::clear();
 }

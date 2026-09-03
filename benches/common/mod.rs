@@ -20,6 +20,10 @@
 
 use std::time::Instant;
 
+use f2z::piop::spartan::{
+    IopSecurityProfile, Lambda100, Lambda128, Limber114, PrimePolicy, Sha128ReferenceSchedule,
+};
+
 // ---------------------------------------------------------------------
 // Environment: canonical knobs, deprecated aliases, strict unknown check
 // ---------------------------------------------------------------------
@@ -54,6 +58,7 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     // Canonical bench knobs.
     "F2Z_BENCH_EXT",
     "F2Z_BENCH_FILL",
+    "F2Z_BENCH_LAMBDA",
     "F2Z_BENCH_ORDER",
     "F2Z_BENCH_PASS",
     "F2Z_BENCH_REPS",
@@ -206,6 +211,182 @@ pub fn seed(alias: Option<&str>, default: u64) -> u64 {
         parsed.unwrap_or_else(|| panic!("F2Z_BENCH_SEED must be a decimal or 0x-hex u64"))
     })
 }
+
+// ---------------------------------------------------------------------
+// Security profile selection (`F2Z_BENCH_LAMBDA`)
+// ---------------------------------------------------------------------
+
+/// The IOP security profile a run measures at — one of the compile-time
+/// policy types of `src/piop/spartan/profile.rs`, chosen at runtime by
+/// `F2Z_BENCH_LAMBDA` and dispatched to the monomorphized bench body by
+/// [`with_profile!`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SecurityProfile {
+    Lambda100,
+    Lambda128,
+    Limber114,
+    Sha128ReferenceSchedule,
+}
+
+impl SecurityProfile {
+    pub const ALL: [Self; 4] = [
+        Self::Lambda100,
+        Self::Lambda128,
+        Self::Limber114,
+        Self::Sha128ReferenceSchedule,
+    ];
+
+    /// The profile's `NAME` (the `profile=` RESULT key).
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Lambda100 => Lambda100::NAME,
+            Self::Lambda128 => Lambda128::NAME,
+            Self::Limber114 => Limber114::NAME,
+            Self::Sha128ReferenceSchedule => Sha128ReferenceSchedule::NAME,
+        }
+    }
+
+    /// The profile's target λ.
+    pub const fn lambda(self) -> u32 {
+        match self {
+            Self::Lambda100 => Lambda100::LAMBDA,
+            Self::Lambda128 => Lambda128::LAMBDA,
+            Self::Limber114 => Limber114::LAMBDA,
+            Self::Sha128ReferenceSchedule => Sha128ReferenceSchedule::LAMBDA,
+        }
+    }
+
+    /// One transcript prime or the two-prime Strategy 2 — what decides
+    /// which relations can instantiate the profile.
+    pub const fn prime_policy(self) -> PrimePolicy {
+        match self {
+            Self::Lambda100 => Lambda100::PRIME_POLICY,
+            Self::Lambda128 => Lambda128::PRIME_POLICY,
+            Self::Limber114 => Limber114::PRIME_POLICY,
+            Self::Sha128ReferenceSchedule => Sha128ReferenceSchedule::PRIME_POLICY,
+        }
+    }
+
+    /// The shortest `F2Z_BENCH_LAMBDA` spelling of the profile: the target
+    /// bits where that is unambiguous, the full name otherwise.
+    pub const fn knob_value(self) -> &'static str {
+        match self {
+            Self::Lambda100 => "100",
+            Self::Lambda128 => "128",
+            Self::Limber114 => "114",
+            Self::Sha128ReferenceSchedule => Sha128ReferenceSchedule::NAME,
+        }
+    }
+
+    /// `100` / `128` / `114` or a profile name, case-insensitively.
+    fn parse(value: &str) -> Option<Self> {
+        let value = value.trim().to_ascii_lowercase();
+        Self::ALL
+            .into_iter()
+            .find(|profile| value == profile.knob_value() || value == profile.name())
+    }
+
+    fn admissible(policy: Option<PrimePolicy>) -> String {
+        Self::ALL
+            .iter()
+            .filter(|profile| policy.is_none_or(|policy| profile.prime_policy() == policy))
+            .map(|profile| {
+                if profile.knob_value() == profile.name() {
+                    profile.name().to_owned()
+                } else {
+                    format!("{} ({})", profile.knob_value(), profile.name())
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+const fn describe_policy(policy: PrimePolicy) -> &'static str {
+    match policy {
+        PrimePolicy::SingleDerived => "single-prime",
+        PrimePolicy::TwoFullWidthFingerprint => "two-prime (Strategy 2)",
+    }
+}
+
+/// Reads `F2Z_BENCH_LAMBDA`: `100`, `128`, `114`, or a profile name
+/// (`lambda100`, `lambda128`, `limber114`, `sha128-reference-schedule`).
+/// `None` = unset, and the bench keeps its own default. `policy` is the
+/// prime strategy the calling bench's relation instantiates; selecting a
+/// profile of the other strategy aborts here, with the admissible list,
+/// instead of failing later inside relation preparation. A value that
+/// names no profile aborts too (a typo can never silently do nothing).
+pub fn security_profile(policy: PrimePolicy) -> Option<SecurityProfile> {
+    let value = std::env::var("F2Z_BENCH_LAMBDA").ok()?;
+    let Some(profile) = SecurityProfile::parse(&value) else {
+        eprintln!("error: F2Z_BENCH_LAMBDA={value:?} names no security profile");
+        eprintln!(
+            "       admissible values: {}",
+            SecurityProfile::admissible(None)
+        );
+        std::process::exit(2);
+    };
+    if profile.prime_policy() != policy {
+        eprintln!(
+            "error: F2Z_BENCH_LAMBDA={value} selects {}, a {} profile, but this bench's \
+             relation instantiates {} profiles",
+            profile.name(),
+            describe_policy(profile.prime_policy()),
+            describe_policy(policy),
+        );
+        eprintln!(
+            "       admissible here: {}",
+            SecurityProfile::admissible(Some(policy))
+        );
+        std::process::exit(2);
+    }
+    Some(profile)
+}
+
+/// Banner fragment naming the profile a run measures at and where the
+/// choice came from.
+pub fn profile_banner(selected: Option<SecurityProfile>, default: SecurityProfile) -> String {
+    match selected {
+        Some(profile) => format!(
+            "{} (λ={}, F2Z_BENCH_LAMBDA={})",
+            profile.name(),
+            profile.lambda(),
+            profile.knob_value()
+        ),
+        None => format!(
+            "{} (λ={}, the default; F2Z_BENCH_LAMBDA selects another)",
+            default.name(),
+            default.lambda()
+        ),
+    }
+}
+
+/// Expands to `$f::<P>($args…)` with `P` the profile type `$profile`
+/// names. `$f` is a local function generic over exactly one
+/// `P: IopSecurityProfile` parameter — the relation-preparation seam every
+/// protocol bench has. All four bodies are compiled; the env knob only
+/// picks which one runs.
+#[allow(unused_macros)]
+macro_rules! with_profile {
+    ($profile:expr, $f:ident ( $($arg:expr),* $(,)? )) => {
+        match $profile {
+            $crate::common::SecurityProfile::Lambda100 => {
+                $f::<::f2z::piop::spartan::Lambda100>($($arg),*)
+            }
+            $crate::common::SecurityProfile::Lambda128 => {
+                $f::<::f2z::piop::spartan::Lambda128>($($arg),*)
+            }
+            $crate::common::SecurityProfile::Limber114 => {
+                $f::<::f2z::piop::spartan::Limber114>($($arg),*)
+            }
+            $crate::common::SecurityProfile::Sha128ReferenceSchedule => {
+                $f::<::f2z::piop::spartan::Sha128ReferenceSchedule>($($arg),*)
+            }
+        }
+    };
+}
+#[allow(unused_imports)]
+pub(crate) use with_profile;
 
 /// Shared bench startup: force the phase profiler on (the step split must
 /// always be populated), validate the environment, and size the perf pool.

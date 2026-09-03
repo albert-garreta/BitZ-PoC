@@ -27,6 +27,10 @@
 //! directly. `F2Z_SHA_INNER_PREFIX_VARS=0..4` only configures the legacy
 //! inner-sumcheck fallback used by non-power-of-two assignment-row batches.
 //!
+//! `F2Z_BENCH_LAMBDA=100|128|sha128-reference-schedule` selects the security
+//! profile the run measures at (default `Lambda100`; the two-prime
+//! `Limber114` profile is MultiSwap-only and is rejected here).
+//!
 //! (`F2Z_SHA_LOG2S` / `F2Z_SHA_REPS` / `F2Z_SHA_SEED` are deprecated
 //! aliases.) Set `F2Z_SHA_TRACE_PATH=/path/to/trace.jsonl` together with
 //! `OBLONG_PROFILE_INTERVALS=1` to emit one canonical `zkperf.trace/v1` run per
@@ -47,12 +51,14 @@ use std::{
 use f2z::{
     f2map::VirtualMap,
     piop::spartan::{
-        PreparedSha256CompressionBatch, SHA256_COMMITMENT_FIELD_BITS, SHA256_CONSTRAINTS,
-        SHA256_DEFAULT_INNER_PREFIX_VARS, SHA256_F_INSTANCE_BITS, SHA256_H_INSTANCE_BITS,
-        SHA256_INNER_PREFIX_MAX_VARS, SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS,
-        Sha256CompressionInput, Sha256CompressionStatement, SpartanField,
+        IopSecurityProfile, PreparedSha256CompressionBatch, PrimePolicy,
+        SHA256_COMMITMENT_FIELD_BITS, SHA256_CONSTRAINTS, SHA256_DEFAULT_INNER_PREFIX_VARS,
+        SHA256_F_INSTANCE_BITS, SHA256_H_INSTANCE_BITS, SHA256_INNER_PREFIX_MAX_VARS,
+        SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS, Sha256CompressionInput,
+        Sha256CompressionStatement, Sha256ConstraintError, SpartanField,
         commit_sha256_compression_witness_with_config, generate_sha256_compression_witnesses,
-        prepare_sha256_compression_batch, prepare_sha256_compression_batch_for_assignment_rows,
+        prepare_sha256_compression_batch_for_assignment_rows_with_profile,
+        prepare_sha256_compression_batch_with_profile,
         prove_sha256_compressions_with_prefix_vars_and_config, sha256_compression_configs,
         verify_sha256_compressions_with_config,
     },
@@ -103,14 +109,18 @@ impl BenchShape {
         format!("{}-2p{}", self.mode(), self.exponent())
     }
 
-    fn prepare(self) -> PreparedSha256CompressionBatch {
+    /// Public relation preparation under the selected security profile.
+    fn prepare<P: IopSecurityProfile>(
+        self,
+    ) -> Result<PreparedSha256CompressionBatch, Sha256ConstraintError> {
         match self {
-            Self::Compressions(exponent) => prepare_sha256_compression_batch(exponent),
+            Self::Compressions(exponent) => {
+                prepare_sha256_compression_batch_with_profile::<P>(exponent)
+            }
             Self::AssignmentRows(exponent) => {
-                prepare_sha256_compression_batch_for_assignment_rows(exponent)
+                prepare_sha256_compression_batch_for_assignment_rows_with_profile::<P>(exponent)
             }
         }
-        .expect("valid SHA relation")
     }
 }
 
@@ -897,7 +907,7 @@ fn run_once(
     (timing, intervals)
 }
 
-fn bench_shape(
+fn bench_shape<P: IopSecurityProfile>(
     shape: BenchShape,
     reps: usize,
     root_seed: u64,
@@ -914,7 +924,21 @@ fn bench_shape(
         };
 
     let setup_started = Instant::now();
-    let prepared = shape.prepare();
+    let prepared = match shape.prepare::<P>() {
+        Ok(prepared) => prepared,
+        Err(
+            error @ (Sha256ConstraintError::Profile(_) | Sha256ConstraintError::PrimeProfile(_)),
+        ) => {
+            println!();
+            println!(
+                "sha256 {} profile={}: SKIPPED - {error}",
+                shape.slug(),
+                P::NAME
+            );
+            return;
+        }
+        Err(error) => panic!("prepare failed: {error}"),
+    };
     let (pc, vc) = sha256_compression_configs(&prepared).expect("valid Ligerito config");
     let setup_ms = setup_started.elapsed().as_secs_f64() * 1e3;
     let compressions = prepared.instances();
@@ -947,6 +971,11 @@ fn bench_shape(
         inner_prefix_vars,
         prepared.map().nnz(),
         fmt_ms(setup_ms),
+    );
+    println!(
+        "  security profile: {} (λ={})",
+        prepared.security().profile_name,
+        prepared.security().lambda,
     );
 
     let warm_inputs = make_inputs(compressions, shape_seed);
@@ -1007,6 +1036,7 @@ fn bench_shape(
         bench: "sha256",
         shape: shape.slug(),
         extra: vec![
+            ("profile".into(), prepared.security().profile_name.into()),
             ("compressions".into(), compressions.to_string()),
             ("mnum_rows".into(), assignment_cells.to_string()),
             ("shape_mode".into(), shape.mode().to_owned()),
@@ -1051,11 +1081,18 @@ fn main() {
         "F2Z_SHA_INNER_PREFIX_VARS must be in 0..={SHA256_INNER_PREFIX_MAX_VARS}"
     );
 
+    let selected = common::security_profile(PrimePolicy::SingleDerived);
+    let profile = selected.unwrap_or(common::SecurityProfile::Lambda100);
+
     println!("SHA-256: flat packed [1|f₀|f₁|…], h=Mf; direct product opening + virtual F2Z");
     #[cfg(feature = "parallel")]
     println!("rayon threads: {threads}");
     println!(
         "repetitions: {reps}; warmups: 1; inner prefix K={inner_prefix_vars}; root seed: {root_seed:#018x}"
+    );
+    println!(
+        "security profile: {}",
+        common::profile_banner(selected, common::SecurityProfile::Lambda100)
     );
     if let Some(path) = std::env::var_os("F2Z_SHA_TRACE_PATH") {
         println!("canonical interval trace: {}", Path::new(&path).display());
@@ -1063,13 +1100,16 @@ fn main() {
 
     for shape in shapes() {
         flock_core::scratch::clear();
-        bench_shape(
-            shape,
-            reps,
-            root_seed,
-            threads,
-            inner_prefix_vars,
-            &mut trace_writer,
+        common::with_profile!(
+            profile,
+            bench_shape(
+                shape,
+                reps,
+                root_seed,
+                threads,
+                inner_prefix_vars,
+                &mut trace_writer,
+            )
         );
     }
     flock_core::scratch::clear();

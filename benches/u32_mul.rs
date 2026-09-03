@@ -9,7 +9,9 @@
 //! transcript-sampled Step-2 prime (commit-before-prime, Zaratan order),
 //! Spartan over that runtime field, bitification, and the F2Z opening,
 //! re-run per repetition. Witness generation and relation preparation are
-//! excluded and reported one-time. The default profile is `Lambda100`; the
+//! excluded and reported one-time. `F2Z_BENCH_LAMBDA=100|128|sha128-reference-schedule`
+//! selects the security profile (default `Lambda100`; the two-prime
+//! `Limber114` profile is MultiSwap-only and is rejected here); the
 //! canonical Spartan outer reduction uses the K=3 univariate-prefix skip.
 //!
 //! Defaults to the production sweep `2^15, ..., 2^25` multiplications.
@@ -41,8 +43,9 @@ use std::{
 use f2z::ligerito_flock::FlockCommitHint;
 use f2z::pcs::mod_q_num_chunks;
 use f2z::piop::spartan::{
-    PreparedU32MulRelation, U32_MUL_UNIVARIATE_SKIP_VARS, U32MulF2zWidth, U32MulProof,
-    U32MulWitness, commit_u32_mul_witness, prove_u32_mul, verify_u32_mul,
+    IopSecurityProfile, PreparedU32MulRelation, PrimePolicy, SpartanF2zError,
+    U32_MUL_UNIVARIATE_SKIP_VARS, U32MulF2zWidth, U32MulProof, U32MulWitness,
+    commit_u32_mul_witness, prove_u32_mul, verify_u32_mul,
 };
 use f2z::transcript::Blake3Transcript;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
@@ -214,7 +217,7 @@ fn prove_e2e(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn bench_exponent(
+fn bench_exponent<P: IopSecurityProfile>(
     exponent: usize,
     reps: usize,
     root_seed: u64,
@@ -242,8 +245,20 @@ fn bench_exponent(
     // One-time public preprocessing (excluded from prove): q-independent
     // exact matrices plus the instantiated runtime-prime security profile.
     let started = Instant::now();
-    let relation = PreparedU32MulRelation::new(layout).expect("valid relation");
+    let relation = match PreparedU32MulRelation::new_with_profile::<P>(layout) {
+        Ok(relation) => relation,
+        Err(error @ (SpartanF2zError::Profile(_) | SpartanF2zError::UnsupportedProfile)) => {
+            println!();
+            println!(
+                "u32_mul gates=2^{exponent} profile={}: SKIPPED - {error}",
+                P::NAME
+            );
+            return;
+        }
+        Err(error) => panic!("prepare failed: {error}"),
+    };
     let setup_ms = common::elapsed_ms(started);
+    let profile_name = relation.security().profile_name;
     let q_bits = (u128::BITS - relation.security().projection_max.leading_zeros()) as usize;
     let f2z_chunks = mod_q_num_chunks(&params, q_bits);
 
@@ -287,7 +302,7 @@ fn bench_exponent(
             let verify_phases = f2z::utils::prof::take_totals();
 
             println!(
-                "  SAMPLE pass=latency order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} word_bits={} projection_bits={q_bits} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} sample={} multiplications={multiplications} commit_ms={commit_ms:.6} prove_ms={prove_ms:.6} verify_ms={verify_ms:.6} verified=true",
+                "  SAMPLE pass=latency profile={profile_name} order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} word_bits={} projection_bits={q_bits} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} sample={} multiplications={multiplications} commit_ms={commit_ms:.6} prove_ms={prove_ms:.6} verify_ms={verify_ms:.6} verified=true",
                 params.word_bits,
                 params.t,
                 params.s,
@@ -324,7 +339,7 @@ fn bench_exponent(
         .expect("peak-memory proof verifies");
         let _ = f2z::utils::prof::take_totals();
         println!(
-            "  MEMORY pass=memory order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} word_bits={} projection_bits={q_bits} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} multiplications={multiplications} peak_heap_mib={peak:.6} live_before_prove_mib={live_before_prove:.6} verified=true",
+            "  MEMORY pass=memory profile={profile_name} order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} word_bits={} projection_bits={q_bits} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} multiplications={multiplications} peak_heap_mib={peak:.6} live_before_prove_mib={live_before_prove:.6} verified=true",
             params.word_bits, params.t, params.s,
         );
         memory_metrics = Some((live_before_prove, peak));
@@ -332,8 +347,10 @@ fn bench_exponent(
 
     println!();
     println!(
-        "u32_mul gates=2^{exponent} ({multiplications}) W={} [{}]  seed={shape_seed:#018x}",
-        params.word_bits, PROTOCOL_LABEL,
+        "u32_mul gates=2^{exponent} ({multiplications}) W={} [{}] profile={profile_name} (λ={})  seed={shape_seed:#018x}",
+        params.word_bits,
+        PROTOCOL_LABEL,
+        relation.security().lambda,
     );
     println!(
         "  benchmark: pass={} order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} t={} s={} chunks={f2z_chunks}",
@@ -365,6 +382,7 @@ fn bench_exponent(
             bench: "u32_mul",
             shape: format!("2p{exponent}"),
             extra: vec![
+                ("profile".into(), profile_name.into()),
                 ("pass".into(), pass.as_str().into()),
                 ("multiplications".into(), multiplications.to_string()),
                 ("protocol".into(), PROTOCOL_LABEL.into()),
@@ -416,6 +434,8 @@ fn main() {
     let order = env_usize("F2Z_BENCH_ORDER", 1);
     assert!(order > 0, "F2Z_BENCH_ORDER must be positive");
     let seed = common::seed(None, 0x5533_326d_756c_0064);
+    let selected = common::security_profile(PrimePolicy::SingleDerived);
+    let profile = selected.unwrap_or(common::SecurityProfile::Lambda100);
 
     println!("u32 × u32 → u64: Spartan PIOP + F2Z assignment opening");
     #[cfg(feature = "parallel")]
@@ -428,10 +448,17 @@ fn main() {
         "benchmark pass: {}; protocol: {PROTOCOL_LABEL} (skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS}); strategy: {STRATEGY_LABEL}; order: {order}",
         pass.as_str(),
     );
+    println!(
+        "security profile: {}",
+        common::profile_banner(selected, common::SecurityProfile::Lambda100)
+    );
 
     for exponent in exponents() {
         flock_core::scratch::clear();
-        bench_exponent(exponent, reps, seed, pass, f2z_width, order, threads);
+        common::with_profile!(
+            profile,
+            bench_exponent(exponent, reps, seed, pass, f2z_width, order, threads)
+        );
     }
     flock_core::scratch::clear();
 }

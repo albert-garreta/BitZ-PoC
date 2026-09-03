@@ -82,7 +82,10 @@ RESULT schema=f2z/1 bench=<multiswap|sha256|u32_mul|pcs|...> shape=<token>
   paths without a sampled projection prime). `lambda_achieved` is the
   instantiated profile's achieved bits — the minimum over every soundness
   term, GF(2^128) floors included — and `lambda_bind` names the binding
-  term (`src/piop/spartan/profile.rs` accounting).
+  term (`src/piop/spartan/profile.rs` accounting). The bench-specific
+  `profile=<name>` key names the instantiated profile (`lambda100`,
+  `lambda128`, `limber114`, `sha128-reference-schedule`), which is what
+  tells the two λ=128 profiles apart.
 - `proof_piop_bytes` = Spartan payload + nonces + Step-5.0 lift;
   `proof_open_bytes` = the serialized F2Z opening; `proof_bytes` = their sum.
 - All `*_ms` values are medians over the measured reps; `prove_residual_ms`
@@ -101,6 +104,7 @@ an alias and the canonical name to different values is an error):
 | `F2Z_SHA_MNUMROWS_LOG2S` | — | SHA-only alternative shape list: packed assignment domains `MnumRows=2^n` |
 | `F2Z_BENCH_SEED` | `F2Z_SHA_SEED`, `F2Z_CM_SEED` | root seed |
 | `F2Z_BENCH_PASS` | — | `latency|memory|both` |
+| `F2Z_BENCH_LAMBDA` | — | security profile: `100` / `128` / `114` or a profile name (`lambda100`, `lambda128`, `limber114`, `sha128-reference-schedule`); unset = the bench's own default; a profile the bench's prime strategy cannot instantiate aborts with the admissible list (`pcs` has no IOP profile and only warns) |
 
 **Unknown `F2Z_*` variables abort the bench** with the full known-knob list,
 so a typo'd knob can never silently do nothing. The registry lives in
@@ -116,8 +120,10 @@ unless `OBLONG_PROFILE=1` is set.
 
 - **Full schema** (uniform block + RESULT line + step scopes):
   `multiswap`, `sha256_compressions`, `u32_mul`, `baby_bear_mul` (two rows
-  per shape: `profile=lambda100` and `profile=lambda128` on one witness),
-  `lambda_sweep`, `pcs` (PCS-only: steps 2/3/4/5.0 are `na`).
+  per shape: `profile=lambda100` and `profile=lambda128` on one witness,
+  or the one row `F2Z_BENCH_LAMBDA` selects), `lambda_sweep` (all three
+  SHA profiles, or the one `F2Z_BENCH_LAMBDA` selects), `pcs` (PCS-only:
+  steps 2/3/4/5.0 are `na`).
 - **Micro/policy benches — exempt** (own output, strict-env check only):
   `field`, `eq_tables`, `u32_mul_inner_policy`, `u32_mul_outer_skip`,
   `cm_and`. (`scripts/baby_bear_mul_bench_report.py` still targets the

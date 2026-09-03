@@ -12,7 +12,9 @@
 //! per-PIOP-draw, and forest/GKR grinding all armed; every term this crate
 //! controls ≥ 128 bits, the GF(2^128) floor reported as binding). A target
 //! whose derived grinding exceeds the economic cap at a shape prints a
-//! skip line instead of a row.
+//! skip line instead of a row. `F2Z_BENCH_LAMBDA=100|128|sha128-reference-schedule`
+//! restricts a run to ONE profile (one row per shape; the two-prime
+//! `Limber114` profile is MultiSwap-only and is rejected here).
 //!
 //! Defaults to the sweep `2^15, ..., 2^25`. Override with `F2Z_BENCH_SHAPES`
 //! (deprecated alias `F2Z_BABY_BEAR_MUL_EXPONENTS`):
@@ -36,7 +38,7 @@ use std::time::Instant;
 use f2z::piop::spartan::{
     commit_baby_bear_mul_witness, prove_baby_bear_mul_paper, sample_baby_bear_operand_with,
     verify_baby_bear_mul_paper, BabyBearMulWitness, BabyBearSpartanF2zError, IopSecurityProfile,
-    Lambda100, Lambda128, PreparedBabyBearMulRelation, SpartanReductionStrategy,
+    Lambda100, Lambda128, PreparedBabyBearMulRelation, PrimePolicy, SpartanReductionStrategy,
     BABY_BEAR_MODULUS,
 };
 use f2z::transcript::Blake3Transcript;
@@ -220,14 +222,25 @@ fn main() {
     let reps = common::reps(None, 5);
     let strategy = reduction_strategy();
     let seed = common::seed(Some("F2Z_BABY_BEAR_MUL_SEED"), 0x6262_6d75_6c5f_0031);
+    let selected = common::security_profile(PrimePolicy::SingleDerived);
 
     println!("BabyBear a*b = c + p*k: paper-path Spartan PIOP + F2Z assignment opening");
     #[cfg(feature = "parallel")]
     println!("rayon threads: {threads}");
     println!(
-        "repetitions: {reps}; root seed: {seed:#018x}; strategy: {}; \
-         two rows per shape (Lambda100 + Lambda128, one shared witness)",
+        "repetitions: {reps}; root seed: {seed:#018x}; strategy: {}; {}",
         strategy_name(strategy),
+        match selected {
+            Some(profile) => format!(
+                "one row per shape: {} (λ={}, F2Z_BENCH_LAMBDA={})",
+                profile.name(),
+                profile.lambda(),
+                profile.knob_value()
+            ),
+            None => "two rows per shape (Lambda100 + Lambda128, one shared witness; \
+                     F2Z_BENCH_LAMBDA selects one)"
+                .to_owned(),
+        },
     );
 
     for exponent in exponents() {
@@ -248,12 +261,22 @@ fn main() {
         .expect("valid BabyBear multiplication witness");
         let witness_ms = common::elapsed_ms(started);
 
-        bench_profile::<Lambda100>(
-            exponent, &witness, witness_ms, reps, strategy, threads, seed, shape_seed,
-        );
-        bench_profile::<Lambda128>(
-            exponent, &witness, witness_ms, reps, strategy, threads, seed, shape_seed,
-        );
+        match selected {
+            None => {
+                bench_profile::<Lambda100>(
+                    exponent, &witness, witness_ms, reps, strategy, threads, seed, shape_seed,
+                );
+                bench_profile::<Lambda128>(
+                    exponent, &witness, witness_ms, reps, strategy, threads, seed, shape_seed,
+                );
+            }
+            Some(profile) => common::with_profile!(
+                profile,
+                bench_profile(
+                    exponent, &witness, witness_ms, reps, strategy, threads, seed, shape_seed,
+                )
+            ),
+        }
     }
     flock_core::scratch::clear();
 }

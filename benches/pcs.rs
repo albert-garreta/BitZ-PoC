@@ -913,6 +913,12 @@ fn bench_ext_arm<K: BenchExtField>(
 
 fn main() {
     common::enforce_known_env();
+    if std::env::var_os("F2Z_BENCH_LAMBDA").is_some() {
+        eprintln!(
+            "warning: F2Z_BENCH_LAMBDA is ignored by the PCS-only bench (no IOP security \
+             profile here; the RESULT line reports lambda=na)"
+        );
+    }
     println!("F2Z PCS bench — commit/prove/verify + serialized size + peak heap per shape.");
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     println!("(target: aarch64 + neon — the NEON GF(2^128) pipeline is active)");

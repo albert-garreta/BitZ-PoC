@@ -24,15 +24,33 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
 
 ## Integer R1CS with F_2 virtualization
 
-### MultiSwap — (2 modular exponentiations on a 2048 bit RSA modulus + Poseidon hashing):
+Pick the security parameter with `F2Z_BENCH_LAMBDA`. Every bench below
+honours it, so one bench can be run at exactly one λ:
+
+| `F2Z_BENCH_LAMBDA` | profile | meaning |
+|---|---|---|
+| `100` | `Lambda100` | no grinding anywhere; every term this crate controls ≥ 100 bits |
+| `128` | `Lambda128` | every controllable term ≥ 128 bits (two grinding bits per forest round, one at the ring switch; the GF(2^128) floor at ~126.4 still binds and is reported) |
+| `114` | `Limber114` | the two-prime MultiSwap/Limber comparison target — MultiSwap only |
+| `sha128-reference-schedule` | `Sha128ReferenceSchedule` | the historical SHA-256 128-bit schedule, kept for comparison |
+
+The profile names are accepted too (`F2Z_BENCH_LAMBDA=lambda128`). Unset,
+SHA-256 and u32×u32 run at λ=100, MultiSwap at 114, and the BabyBear and
+`lambda_sweep` benches run every profile they know (two and three rows per
+shape). A profile the bench's relation cannot instantiate — `114` outside
+MultiSwap, or `100`/`128` on MultiSwap — aborts up front with the
+admissible list. Each `RESULT` line carries `profile=<name>` next to
+`lambda=<bits>`.
+
+### MultiSwap — (2 modular exponentiations on a 2048 bit RSA modulus + Poseidon hashing), λ=114:
 ```sh
-RAYON_NUM_THREADS=1 RUSTFLAGS="-C target-cpu=native" \
+F2Z_BENCH_LAMBDA=114 RAYON_NUM_THREADS=1 RUSTFLAGS="-C target-cpu=native" \
   cargo bench --bench multiswap --features unchecked
 ```
 
-### SHA-256 — λ=100 bits of security
+### SHA-256 — λ=100 bits of security (`F2Z_BENCH_LAMBDA=128` for the 128-bit profile)
 ```sh
-F2Z_BENCH_SHAPES=14 F2Z_BENCH_REPS=3 RUSTFLAGS="-C target-cpu=native" \
+F2Z_BENCH_LAMBDA=100 F2Z_BENCH_SHAPES=14 F2Z_BENCH_REPS=3 RUSTFLAGS="-C target-cpu=native" \
   cargo bench --bench sha256_compressions --features unchecked
 ```
 
@@ -40,7 +58,7 @@ Size the same benchmark by the packed assignment domain (`MnumRows=2^n`)
 instead of a power-of-two compression count with:
 
 ```sh
-F2Z_SHA_MNUMROWS_LOG2S="24 25" F2Z_BENCH_REPS=3 RUSTFLAGS="-C target-cpu=native" \
+F2Z_BENCH_LAMBDA=100 F2Z_SHA_MNUMROWS_LOG2S="24 25" F2Z_BENCH_REPS=3 RUSTFLAGS="-C target-cpu=native" \
   cargo bench --bench sha256_compressions --features unchecked
 ```
 
@@ -50,23 +68,23 @@ suffix only.
 
 ### u32×u32 -> u64 — λ=100; exponents ≥ 15:
 ```sh
-F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
+F2Z_BENCH_LAMBDA=100 F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
   cargo bench --bench u32_mul --features unchecked
 ```
 
-### Babybear mult — λ=100; exponents ≥ 15:
+### Babybear mult — λ=100; exponents ≥ 15 (unset `F2Z_BENCH_LAMBDA` = a λ=100 and a λ=128 row per shape):
 ```sh
-F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
+F2Z_BENCH_LAMBDA=100 F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
   cargo bench --bench baby_bear_mul --features unchecked
 ```
 
-### SHA security-profile sweep: Lambda100 / Sha128ReferenceSchedule / Lambda128:
+### SHA security-profile sweep: Lambda100 / Sha128ReferenceSchedule / Lambda128 (set `F2Z_BENCH_LAMBDA` for one of them):
 ```sh
 F2Z_BENCH_SHAPES=12 F2Z_BENCH_REPS=3 RUSTFLAGS="-C target-cpu=native" \
   cargo bench --bench lambda_sweep --features unchecked
 ```
 
-### PCS-only (t:s:W triples; profiling stays opt-in here — add OBLONG_PROFILE=1 for the phase line):
+### PCS-only (t:s:W triples; no IOP security profile, so `F2Z_BENCH_LAMBDA` does not apply; profiling stays opt-in here — add OBLONG_PROFILE=1 for the phase line):
 ```sh
 F2Z_BENCH_SHAPES="17:11:1" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
   cargo bench --bench pcs --features unchecked
@@ -356,9 +374,14 @@ GF(2^128) floor at ~126.4 still binds and is reported as such),
 only as an explicit comparison profile and pinned by `tests/transcript_pins.rs`). Every interval
 width and grinding difficulty is *derived* from the target plus the shape
 facts, and each instantiation carries a per-term soundness accounting
-(`achieved bits` + the binding term), printed by the benches. The
-`lambda_sweep` bench proves one SHA witness under all three SHA profiles —
-the 100-vs-128 prover-time/proof-size tradeoff table.
+(`achieved bits` + the binding term), printed by the benches.
+`F2Z_BENCH_LAMBDA=100|114|128|sha128-reference-schedule` selects the
+profile a run measures at — every protocol bench honours it (the
+profiles stay compile-time types; the knob picks which monomorphized body
+runs), and a profile the bench's prime strategy cannot instantiate aborts
+with the admissible list. The `lambda_sweep` bench proves one SHA witness
+under all three SHA profiles — the 100-vs-128 prover-time/proof-size
+tradeoff table — or under the one `F2Z_BENCH_LAMBDA` names.
 
 `benches/pcs.rs` (plain `harness = false` binary, no criterion) reports, per
 shape: commit / prove / verify wall-clock (medians), serialized proof size,
