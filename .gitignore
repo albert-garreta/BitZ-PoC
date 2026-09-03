@@ -1,4 +1,5 @@
 /target
+/crates/*/target/
 /bench_results/
 
 # LaTeX build intermediates (docs/verifier-note)
