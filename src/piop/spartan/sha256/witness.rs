@@ -17,7 +17,7 @@ use thiserror::Error;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use crate::pcs::IntEvalParams;
+use crate::{f2map::PackedSourceOrder, pcs::IntEvalParams};
 
 use super::constraints::{
     PreparedSha256CompressionBatch, SHA256_F_INSTANCE_BITS, SHA256_F_LIVE_BITS,
@@ -241,7 +241,8 @@ pub fn generate_sha256_compression_witnesses(
     let assignment_rows = pack_derived_rows(&shards, p_h);
     let product_assignment_rows = prepared
         .product_assignment_params()
-        .map(|params| pack_product_derived_rows(&shards, params));
+        .zip(prepared.product_map())
+        .map(|(params, map)| pack_product_derived_rows(&shards, params, map.order()));
     let outputs = shards.iter().map(|shard| shard.output).collect();
 
     Ok(Sha256CompressionWitnessBatch {
@@ -370,25 +371,37 @@ fn pack_derived_rows<'a>(
 fn pack_product_derived_rows(
     shards: &[PackedCompressionShard],
     params: &IntEvalParams,
+    order: PackedSourceOrder,
 ) -> Vec<Vec<u64>> {
     let instances = shards.len();
     debug_assert!(instances.is_power_of_two());
-    debug_assert_eq!(params.rows().min(instances), params.rows());
     let rows = params.rows();
-    let high_instances = instances / rows;
-    debug_assert_eq!(
-        params.cells(),
-        instances * SHA256_H_BAR_LIVE_BITS.next_power_of_two()
-    );
+    let local_stride = SHA256_H_BAR_LIVE_BITS.next_power_of_two();
+    debug_assert_eq!(params.cells(), instances * local_stride);
+    match order {
+        // `derived = local · instances + instance`: an F2Z row is the low
+        // instance bits, a column is `(local, high instance bits)`.
+        PackedSourceOrder::LocalMajor => debug_assert_eq!(rows.min(instances), rows),
+        // `derived = instance · local_stride + local`: an F2Z row is
+        // `(low instance bits, local)`, a column is the high instance bits.
+        PackedSourceOrder::InstanceMajor => debug_assert!(rows >= local_stride),
+    }
+    let high_instances = match order {
+        PackedSourceOrder::LocalMajor => instances / rows,
+        PackedSourceOrder::InstanceMajor => params.cols(),
+    };
+    let low_instances = instances / high_instances;
 
     let build_column = |column: usize| {
         let mut words = vec![0u64; rows.div_ceil(u64::BITS as usize)];
-        let local_column = column / high_instances;
-        let high_instance = column % high_instances;
-        if local_column >= SHA256_H_BAR_LIVE_BITS {
+        let (local_column, high_instance) = match order {
+            PackedSourceOrder::LocalMajor => (column / high_instances, column % high_instances),
+            PackedSourceOrder::InstanceMajor => (usize::MAX, column),
+        };
+        if order == PackedSourceOrder::LocalMajor && local_column >= SHA256_H_BAR_LIVE_BITS {
             return words;
         }
-        let first_instance = high_instance * rows;
+        let first_instance = high_instance * low_instances;
         for (word_index, word) in words.iter_mut().enumerate() {
             let first_row = word_index * u64::BITS as usize;
             let mut packed = 0u64;
@@ -397,8 +410,13 @@ fn pack_product_derived_rows(
                 if row >= rows {
                     break;
                 }
-                let instance = first_instance + row;
-                if shards[instance].h_bar.bit(local_column) {
+                let (instance, local) = match order {
+                    PackedSourceOrder::LocalMajor => (first_instance + row, local_column),
+                    PackedSourceOrder::InstanceMajor => {
+                        (first_instance + row / local_stride, row % local_stride)
+                    }
+                };
+                if local < SHA256_H_BAR_LIVE_BITS && shards[instance].h_bar.bit(local) {
                     packed |= 1u64 << bit;
                 }
             }

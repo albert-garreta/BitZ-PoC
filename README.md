@@ -66,16 +66,19 @@ This uses `floor((2^n - 1) / 20456)` compressions: one shared constant,
 20,456 adjacent assignment cells per compression, and one trailing zero
 suffix only.
 
-`F2Z_SHA_OPENING_T=<t>` (compression-count shapes only) replaces the direct
-product opening by the inner-sumcheck path with an explicit F2Z split of
-`2^t` rows × `2^(vars − t)` columns for the opening. The default product
-layout pins `t = min(k, 13)` (rows = instances, columns = the 2^15 local
-cells), so its read-off vector — the `2^s` ~125-bit integers sent in the
-clear — is 327 KB at 2^12–2^13 and doubles per step from 2^14 on. A larger
-`t` shrinks that vector but crosses the one-forest cap (`127 − t − 1 <
-q_bits`): the opening then runs one merged forest per weight chunk, i.e.
-about twice the forest prover time. The bench prints the layout, forest
-count and read-off width per shape.
+`F2Z_SHA_OPENING_T=<t>` (compression-count shapes only) gives the opening
+an explicit F2Z split of `2^t` rows × `2^(vars − t)` columns. The default
+product layout pins `t = min(k, 13)` (rows = instances, columns = the 2^15
+local cells), so its read-off vector — the `2^s` ~125-bit integers sent in
+the clear — is 327 KB at 2^12–2^13 and doubles per step from 2^14 on. A
+larger `t` shrinks that vector but crosses the one-forest cap
+(`127 − t − 1 < q_bits`): the opening then runs one merged forest per
+weight chunk. `F2Z_SHA_OPENING_LAYOUT=inner` (the default) takes the
+inner-sumcheck path for the split; `=product` keeps the direct product
+opening and transposes the product tensor instead (instance-major: the 15
+local bits plus the low instance bits form the rows, the high instance bits
+the columns; `t ≥ 15`), which is the cheap way to get the split. The bench
+prints the layout, forest count and read-off width per shape.
 
 ### u32×u32 -> u64 — λ=100; exponents ≥ 15:
 ```sh

@@ -81,13 +81,38 @@ pub trait VirtualMap: Sync {
 
     /// Mixed-layout tensor repetition used by
     /// [`PackedSourceRepeatedVirtualMap`]. Derived rows use
-    /// `local_row * instances + instance`, while nonconstant source columns
+    /// `local_row * instances + instance` ([`PackedSourceOrder::LocalMajor`])
+    /// or `instance * local_stride + local_row`
+    /// ([`PackedSourceOrder::InstanceMajor`], see
+    /// [`Self::packed_source_order`]), while nonconstant source columns
     /// are packed instance-major behind one shared constant column. This is
     /// deliberately separate from [`Self::repetition`], whose source layout
     /// is local-major.
     fn packed_source_repetition(&self) -> Option<(&PreparedVirtualMap, usize)> {
         None
     }
+
+    /// Derived-index order of [`Self::packed_source_repetition`].
+    fn packed_source_order(&self) -> PackedSourceOrder {
+        PackedSourceOrder::LocalMajor
+    }
+}
+
+/// Derived-index order of a [`PackedSourceRepeatedVirtualMap`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PackedSourceOrder {
+    /// `derived = local_row · instances + instance`: the low `log₂ instances`
+    /// bits of a derived index select the instance, so an F2Z split with
+    /// `t ≤ log₂ instances` puts instance bits on the rows and every local
+    /// bit on the columns.
+    LocalMajor,
+    /// `derived = instance · local_stride + local_row` with
+    /// `local_stride = local.rows().next_power_of_two()`: the low
+    /// `log₂ local_stride` bits select the local row, so an F2Z split with
+    /// `t ≥ log₂ local_stride` puts every local bit (plus the low instance
+    /// bits) on the rows and only high instance bits on the columns. The
+    /// per-instance padding rows are structurally zero.
+    InstanceMajor,
 }
 
 /// A validated binary CSC matrix with transcript metadata cached once.
@@ -248,15 +273,30 @@ pub struct PackedSourceRepeatedVirtualMap {
     live_cols: usize,
     nnz: usize,
     digest: [u8; 32],
+    order: PackedSourceOrder,
+    local_stride: usize,
 }
 
 impl PackedSourceRepeatedVirtualMap {
-    /// Builds the mixed-layout repetition inside power-of-two global domains.
+    /// Builds the mixed-layout repetition inside power-of-two global domains
+    /// with the local-major derived order.
     pub fn new(
         local: PreparedVirtualMap,
         instances: usize,
         rows: usize,
         cols: usize,
+    ) -> Result<Self, PreparedVirtualMapError> {
+        Self::new_with_order(local, instances, rows, cols, PackedSourceOrder::LocalMajor)
+    }
+
+    /// [`Self::new`] with an explicit derived-index order. The local-major
+    /// digest is unchanged; the instance-major order is bound by a digest tag.
+    pub fn new_with_order(
+        local: PreparedVirtualMap,
+        instances: usize,
+        rows: usize,
+        cols: usize,
+        order: PackedSourceOrder,
     ) -> Result<Self, PreparedVirtualMapError> {
         if instances == 0
             || !instances.is_power_of_two()
@@ -267,10 +307,18 @@ impl PackedSourceRepeatedVirtualMap {
         {
             return Err(PreparedVirtualMapError::InvalidRepetition);
         }
-        let live_rows = local
-            .rows()
-            .checked_mul(instances)
-            .ok_or(PreparedVirtualMapError::InvalidRepetition)?;
+        let local_stride = match order {
+            PackedSourceOrder::LocalMajor => instances,
+            PackedSourceOrder::InstanceMajor => local
+                .rows()
+                .checked_next_power_of_two()
+                .ok_or(PreparedVirtualMapError::InvalidRepetition)?,
+        };
+        let live_rows = match order {
+            PackedSourceOrder::LocalMajor => local.rows().checked_mul(instances),
+            PackedSourceOrder::InstanceMajor => local_stride.checked_mul(instances),
+        }
+        .ok_or(PreparedVirtualMapError::InvalidRepetition)?;
         let live_cols = local
             .cols()
             .checked_sub(1)
@@ -295,6 +343,14 @@ impl PackedSourceRepeatedVirtualMap {
                     .to_le_bytes(),
             );
         }
+        if order == PackedSourceOrder::InstanceMajor {
+            hash.update(b"instance-major");
+            hash.update(
+                &u64::try_from(local_stride)
+                    .map_err(|_| PreparedVirtualMapError::ShapeTooLarge)?
+                    .to_le_bytes(),
+            );
+        }
         let digest = *hash.finalize().as_bytes();
 
         Ok(Self {
@@ -306,7 +362,21 @@ impl PackedSourceRepeatedVirtualMap {
             live_cols,
             nnz,
             digest,
+            order,
+            local_stride,
         })
+    }
+
+    /// Derived-index order of this view.
+    pub const fn order(&self) -> PackedSourceOrder {
+        self.order
+    }
+
+    /// Row stride of one instance block under
+    /// [`PackedSourceOrder::InstanceMajor`] (`local.rows()` rounded up to a
+    /// power of two); equals `instances` under the local-major order.
+    pub const fn local_stride(&self) -> usize {
+        self.local_stride
     }
 
     /// Local canonical CSC map repeated by this view.
@@ -330,14 +400,27 @@ impl PackedSourceRepeatedVirtualMap {
     }
 }
 
-/// Local-major derived-row iterator for one packed source column.
+/// Derived-row iterator for one packed source column, in increasing order
+/// under either [`PackedSourceOrder`].
 pub struct PackedSourceColumnRows<'a> {
-    local_rows: slice::Iter<'a, usize>,
+    local_rows: &'a [usize],
     instance: Option<usize>,
     instances: usize,
-    current_local_row: Option<usize>,
+    order: PackedSourceOrder,
+    local_stride: usize,
+    position: usize,
     repeat_index: usize,
     remaining: usize,
+}
+
+impl PackedSourceColumnRows<'_> {
+    #[inline]
+    fn derived(&self, local_row: usize, instance: usize) -> usize {
+        match self.order {
+            PackedSourceOrder::LocalMajor => local_row * self.instances + instance,
+            PackedSourceOrder::InstanceMajor => instance * self.local_stride + local_row,
+        }
+    }
 }
 
 impl Iterator for PackedSourceColumnRows<'_> {
@@ -347,22 +430,32 @@ impl Iterator for PackedSourceColumnRows<'_> {
         if self.remaining == 0 {
             return None;
         }
-        let output = match self.instance {
-            Some(instance) => self.local_rows.next()? * self.instances + instance,
-            None => {
-                let local_row = match self.current_local_row {
-                    Some(row) => row,
-                    None => {
-                        let row = *self.local_rows.next()?;
-                        self.current_local_row = Some(row);
-                        row
-                    }
-                };
-                let output = local_row * self.instances + self.repeat_index;
+        let output = match (self.instance, self.order) {
+            (Some(instance), _) => {
+                let local_row = *self.local_rows.get(self.position)?;
+                self.position += 1;
+                self.derived(local_row, instance)
+            }
+            // The shared constant column touches every instance. Local-major
+            // ascends with the instance innermost, instance-major with the
+            // local row innermost.
+            (None, PackedSourceOrder::LocalMajor) => {
+                let local_row = *self.local_rows.get(self.position)?;
+                let output = self.derived(local_row, self.repeat_index);
                 self.repeat_index += 1;
                 if self.repeat_index == self.instances {
                     self.repeat_index = 0;
-                    self.current_local_row = None;
+                    self.position += 1;
+                }
+                output
+            }
+            (None, PackedSourceOrder::InstanceMajor) => {
+                let local_row = *self.local_rows.get(self.position)?;
+                let output = self.derived(local_row, self.repeat_index);
+                self.position += 1;
+                if self.position == self.local_rows.len() {
+                    self.position = 0;
+                    self.repeat_index += 1;
                 }
                 output
             }
@@ -410,10 +503,12 @@ impl VirtualMap for PackedSourceRepeatedVirtualMap {
         }
         if column >= self.live_cols {
             return Some(PackedSourceColumnRows {
-                local_rows: [].iter(),
+                local_rows: &[],
                 instance: Some(0),
                 instances: self.instances,
-                current_local_row: None,
+                order: self.order,
+                local_stride: self.local_stride,
+                position: 0,
                 repeat_index: 0,
                 remaining: 0,
             });
@@ -431,10 +526,12 @@ impl VirtualMap for PackedSourceRepeatedVirtualMap {
         let local_rows = self.local.matrix().column(local_column)?.row_indices();
         let remaining = local_rows.len() * instance.map_or(self.instances, |_| 1);
         Some(PackedSourceColumnRows {
-            local_rows: local_rows.iter(),
+            local_rows,
             instance,
             instances: self.instances,
-            current_local_row: None,
+            order: self.order,
+            local_stride: self.local_stride,
+            position: 0,
             repeat_index: 0,
             remaining,
         })
@@ -442,6 +539,10 @@ impl VirtualMap for PackedSourceRepeatedVirtualMap {
 
     fn packed_source_repetition(&self) -> Option<(&PreparedVirtualMap, usize)> {
         Some((&self.local, self.instances))
+    }
+
+    fn packed_source_order(&self) -> PackedSourceOrder {
+        self.order
     }
 }
 
@@ -984,5 +1085,66 @@ mod tests {
         assert!(repeated.column_rows(9).unwrap().next().is_none());
         assert!(repeated.column_rows(16).is_none());
         assert_ne!(repeated.digest(), local.digest());
+    }
+
+    #[test]
+    fn packed_source_repeated_map_instance_major_order_strides_by_padded_local_rows() {
+        // Three local rows pad to a stride of four; four instances.
+        let local = prepared(
+            3,
+            vec![
+                vec![(0, true), (2, true)],
+                vec![(1, true), (2, true)],
+                vec![(0, true)],
+            ],
+        );
+        let local_major =
+            PackedSourceRepeatedVirtualMap::new(local.clone(), 4, 16, 16).unwrap();
+        let repeated = PackedSourceRepeatedVirtualMap::new_with_order(
+            local.clone(),
+            4,
+            16,
+            16,
+            PackedSourceOrder::InstanceMajor,
+        )
+        .unwrap();
+
+        assert_eq!(repeated.order(), PackedSourceOrder::InstanceMajor);
+        assert_eq!(repeated.local_stride(), 4);
+        assert_eq!(local_major.local_stride(), 4);
+        assert_eq!(repeated.live_rows(), 16);
+        assert_eq!(repeated.live_cols(), 9);
+        assert_eq!(repeated.nnz(), 20);
+        // The constant column touches local rows {0, 2} of every instance,
+        // ascending with the local row innermost.
+        assert_eq!(
+            repeated.column_rows(0).unwrap().collect::<Vec<_>>(),
+            vec![0, 2, 4, 6, 8, 10, 12, 14]
+        );
+        // Packed source column 3 is instance one, local source column one.
+        assert_eq!(
+            repeated.column_rows(3).unwrap().collect::<Vec<_>>(),
+            vec![5, 6]
+        );
+        assert_eq!(
+            repeated.column_rows(8).unwrap().collect::<Vec<_>>(),
+            vec![12]
+        );
+        assert!(repeated.column_rows(9).unwrap().next().is_none());
+        assert!(repeated.column_rows(16).is_none());
+        // The order is bound by the digest; local-major bytes are untouched.
+        assert_ne!(repeated.digest(), local_major.digest());
+        assert_eq!(
+            local_major.digest(),
+            PackedSourceRepeatedVirtualMap::new_with_order(
+                local,
+                4,
+                16,
+                16,
+                PackedSourceOrder::LocalMajor
+            )
+            .unwrap()
+            .digest()
+        );
     }
 }

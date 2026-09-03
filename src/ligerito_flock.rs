@@ -10394,6 +10394,24 @@ enum VirtColumnWeights<'a, M: crate::f2map::VirtualMap> {
     Generic { map: &'a M, coeffs: VirtRowCoeffs },
 }
 
+/// Splits a derived-domain point of a packed-source repetition into its
+/// `(instance, local)` coordinate slices for the given derived order.
+fn packed_source_point_split<'p>(
+    order: crate::f2map::PackedSourceOrder,
+    instance_bits: usize,
+    local_bits: usize,
+    point: &'p [Gf],
+) -> (&'p [Gf], &'p [Gf]) {
+    match order {
+        crate::f2map::PackedSourceOrder::LocalMajor => {
+            (&point[..instance_bits], &point[instance_bits..])
+        }
+        crate::f2map::PackedSourceOrder::InstanceMajor => {
+            (&point[local_bits..], &point[..local_bits])
+        }
+    }
+}
+
 impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
     #[allow(clippy::arithmetic_side_effects)]
     fn new(map: &'a M, points: &[Vec<Gf>], etas: &[Gf], t_wh: usize) -> Self {
@@ -10405,13 +10423,24 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
         {
             let k = instances.trailing_zeros() as usize;
             let local_width = local.cols() - 1;
+            // Where the instance and local coordinates sit in a derived
+            // point: local-major keeps the instance in the low `k` bits,
+            // instance-major keeps the local row in the low
+            // `log₂ local_stride` bits (the rest of the point is exactly the
+            // instance). The factorization below is otherwise identical.
+            let order = map.packed_source_order();
+            let local_bits = local.rows().next_power_of_two().trailing_zeros() as usize;
+            let point_fits = |pt: &Vec<Gf>| match order {
+                crate::f2map::PackedSourceOrder::LocalMajor => {
+                    k < pt.len() && (1usize << (pt.len() - k)) >= local.rows()
+                }
+                crate::f2map::PackedSourceOrder::InstanceMajor => pt.len() == local_bits + k,
+            };
             if let Some(live_cols) = local_width
                 .checked_mul(instances)
                 .and_then(|width| width.checked_add(1))
                 .filter(|&width| width <= map.cols())
-                && points
-                    .iter()
-                    .all(|pt| k < pt.len() && (1usize << (pt.len() - k)) >= local.rows())
+                && points.iter().all(point_fits)
             {
                 // Padded global columns are not `(instance, local-column)`
                 // coordinates. Keep the structural boundary with the
@@ -10419,7 +10448,7 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                 debug_assert!(local.rows() * instances <= map.rows());
                 let eq_inst_gf: Vec<Vec<Gf>> = points
                     .iter()
-                    .map(|pt| build_eq_x_r_vec(&pt[..k], &()).expect("k >= 1"))
+                    .map(|pt| build_eq_x_r_vec(packed_source_point_split(order, k, local_bits, pt).0, &()).expect("k >= 1"))
                     .collect();
                 let eq_inst: Vec<Vec<FixedGfMul>> = eq_inst_gf
                     .iter()
@@ -10429,8 +10458,11 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                     .iter()
                     .zip(etas.iter())
                     .map(|(pt, &eta)| {
-                        let eq_loc =
-                            build_eq_x_r_vec(&pt[k..], &()).expect("local coords non-empty");
+                        let eq_loc = build_eq_x_r_vec(
+                            packed_source_point_split(order, k, local_bits, pt).1,
+                            &(),
+                        )
+                            .expect("local coords non-empty");
                         local
                             .matrix()
                             .columns()
@@ -12015,12 +12047,27 @@ mod tests {
             PreparedVirtualMap::new(SparseMatrix::try_from_columns(local_rows, columns).unwrap())
                 .unwrap();
 
-        for instances in [4usize, 256] {
-            let rows = (local_rows * instances).next_power_of_two();
+        use crate::f2map::PackedSourceOrder;
+        for (instances, order) in [
+            (4usize, PackedSourceOrder::LocalMajor),
+            (256, PackedSourceOrder::LocalMajor),
+            (4, PackedSourceOrder::InstanceMajor),
+            (256, PackedSourceOrder::InstanceMajor),
+        ] {
+            let rows = match order {
+                PackedSourceOrder::LocalMajor => (local_rows * instances).next_power_of_two(),
+                PackedSourceOrder::InstanceMajor => local_rows.next_power_of_two() * instances,
+            };
             let live_cols = 1 + (local_cols - 1) * instances;
             let cols = live_cols.next_power_of_two().max(128);
-            let map =
-                PackedSourceRepeatedVirtualMap::new(local.clone(), instances, rows, cols).unwrap();
+            let map = PackedSourceRepeatedVirtualMap::new_with_order(
+                local.clone(),
+                instances,
+                rows,
+                cols,
+                order,
+            )
+            .unwrap();
             let vars = rows.trailing_zeros() as usize;
             let k = instances.trailing_zeros() as usize;
             for t_wh in [k - 1, k + 1] {
@@ -12035,7 +12082,7 @@ mod tests {
                 let structured = VirtColumnWeights::new(&map, &points, &etas, t_wh);
                 assert!(
                     matches!(structured, VirtColumnWeights::PackedSourceRepeated { .. }),
-                    "packed source repetition must take its factored path"
+                    "packed source repetition must take its factored path ({order:?})"
                 );
                 let generic = VirtColumnWeights::Generic {
                     map: &map,
@@ -12049,7 +12096,7 @@ mod tests {
                     let slow_live = generic.pack_weights(pack, &mut slow);
                     assert_eq!(
                         fast, slow,
-                        "pack {pack}, instances {instances}, t_wh {t_wh}"
+                        "pack {pack}, instances {instances}, t_wh {t_wh}, {order:?}"
                     );
                     assert_eq!(live, slow_live);
                     if !live {

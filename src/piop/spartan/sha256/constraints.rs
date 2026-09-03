@@ -19,8 +19,8 @@ use thiserror::Error;
 
 use crate::{
     f2map::{
-        PackedRepeatedVirtualMap, PackedSourceRepeatedVirtualMap, PreparedVirtualMap,
-        PreparedVirtualMapError,
+        PackedRepeatedVirtualMap, PackedSourceOrder, PackedSourceRepeatedVirtualMap,
+        PreparedVirtualMap, PreparedVirtualMapError,
     },
     ligerito::LOG_PACKING,
     pcs::{IntEvalParams, mod_q_num_chunks},
@@ -107,15 +107,20 @@ pub enum Sha256ConstraintError {
     #[error("SHA-256 opening requires exactly one forest, got {actual}")]
     UnsupportedOpeningForestCount { actual: usize },
 
-    /// An explicit inner-sumcheck layout asked for a row split the flat
-    /// assignment domain does not admit (`LOG_PACKING <= t < vars`).
+    /// An explicit layout asked for a row split the assignment domain does
+    /// not admit (`LOG_PACKING <= t < vars` for the inner sumcheck,
+    /// `15 <= t <= 15 + k` for the transposed product tensor).
     #[error(
-        "SHA-256 inner-sumcheck layout cannot split {assignment_vars} assignment vars at {row_vars} row vars"
+        "SHA-256 opening layout cannot split {assignment_vars} assignment vars at {row_vars} row vars"
     )]
     InvalidOpeningRowVars {
         row_vars: usize,
         assignment_vars: usize,
     },
+
+    /// The transposed product layout needs a power-of-two batch.
+    #[error("SHA-256 transposed product layout needs a power-of-two batch, got {instances}")]
+    ProductLayoutNeedsPowerOfTwoBatch { instances: usize },
 
     /// The selected security profile is incompatible with the single
     /// transcript-derived-prime SHA protocol.
@@ -158,6 +163,14 @@ pub enum Sha256OpeningLayout {
     /// security derivation runs against the chosen split (its integer lift
     /// sums `2^t` terms, which narrows the prime interval once `t > k`).
     InnerSumcheck { row_vars: usize },
+    /// Keep the direct product opening (no inner sumcheck) but lay the
+    /// product tensor out instance-major, so the 15 local bits plus the low
+    /// `row_vars - 15` instance bits form the `2^row_vars` F2Z rows and only
+    /// the remaining high instance bits form the columns. The rank-one
+    /// coefficient `eq(instance) · d[local]` factors across that split too.
+    /// Power-of-two batches only; `15 ≤ row_vars ≤ 15 + k`; splits above the
+    /// one-forest cap open with one forest per weight chunk.
+    ProductTransposed { row_vars: usize },
 }
 
 /// The exact signed integer matrices and local Boolean map are synthesized
@@ -501,7 +514,8 @@ fn prepare_sha256_compression_instances_with_profile_and_layout<P: IopSecurityPr
     let source_vars = packed_domain_vars(instances, SHA256_F_INSTANCE_BITS)?;
     let assignment_vars = packed_domain_vars(instances, SHA256_H_INSTANCE_BITS)?;
     let p_f = balanced_binary_params(source_vars);
-    let (p_h, product_p_h) = match layout {
+    let local_bits = SHA256_H_BAR_LIVE_BITS.next_power_of_two().ilog2() as usize;
+    let (p_h, product_p_h, product_order) = match layout {
         Sha256OpeningLayout::Default => (
             single_forest_binary_params(assignment_vars),
             instances.is_power_of_two().then(|| {
@@ -512,7 +526,28 @@ fn prepare_sha256_compression_instances_with_profile_and_layout<P: IopSecurityPr
                     word_bits: 1,
                 }
             }),
+            PackedSourceOrder::LocalMajor,
         ),
+        Sha256OpeningLayout::ProductTransposed { row_vars } => {
+            if !instances.is_power_of_two() {
+                return Err(Sha256ConstraintError::ProductLayoutNeedsPowerOfTwoBatch { instances });
+            }
+            if row_vars < local_bits || row_vars > local_bits + log_instance_capacity {
+                return Err(Sha256ConstraintError::InvalidOpeningRowVars {
+                    row_vars,
+                    assignment_vars,
+                });
+            }
+            (
+                single_forest_binary_params(assignment_vars),
+                Some(IntEvalParams {
+                    t: row_vars,
+                    s: assignment_vars - row_vars,
+                    word_bits: 1,
+                }),
+                PackedSourceOrder::InstanceMajor,
+            )
+        }
         Sha256OpeningLayout::InnerSumcheck { row_vars } => {
             if row_vars < LOG_PACKING || row_vars >= assignment_vars {
                 return Err(Sha256ConstraintError::InvalidOpeningRowVars {
@@ -527,6 +562,7 @@ fn prepare_sha256_compression_instances_with_profile_and_layout<P: IopSecurityPr
                     word_bits: 1,
                 },
                 None,
+                PackedSourceOrder::LocalMajor,
             )
         }
     };
@@ -534,18 +570,19 @@ fn prepare_sha256_compression_instances_with_profile_and_layout<P: IopSecurityPr
         PackedRepeatedVirtualMap::new(local.map.clone(), instances, p_h.cells(), p_f.cells())?;
     let product_map = product_p_h
         .map(|params| {
-            PackedSourceRepeatedVirtualMap::new(
+            PackedSourceRepeatedVirtualMap::new_with_order(
                 local.map.clone(),
                 instances,
                 params.cells(),
                 p_f.cells(),
+                product_order,
             )
         })
         .transpose()?;
     let mut facts = sha256_instance_facts(exponent);
     facts.opening_t = u32::try_from(product_p_h.unwrap_or(p_h).t)
         .map_err(|_| Sha256ConstraintError::InvalidBatchExponent)?;
-    if matches!(layout, Sha256OpeningLayout::InnerSumcheck { .. }) {
+    if layout != Sha256OpeningLayout::Default {
         // The opening's integer lift sums `2^t` terms. The production
         // layouts keep `t <= k`; an explicit split may not, so the no-wrap
         // arity follows the larger of the two.

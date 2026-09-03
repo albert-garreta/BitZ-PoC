@@ -30,7 +30,10 @@ use flock_core::pcs::{
 use thiserror::Error;
 
 use crate::{
-    f2map::{PackedRepeatedVirtualMap, PackedSourceRepeatedVirtualMap, VirtualMap, cell_count},
+    f2map::{
+        PackedRepeatedVirtualMap, PackedSourceOrder, PackedSourceRepeatedVirtualMap, VirtualMap,
+        cell_count,
+    },
     ligerito::{LOG_PACKING, packed_vars},
     ligerito_flock::{
         FlockCommitHint, FlockRsError, IntEvalRsLigVirtProof, LigeritoStatementConfig,
@@ -425,7 +428,12 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
         let step4_scope = crate::utils::prof::scope("step4:bitify_prove");
         let (row_weights, col_weights_q, claimed_q) = {
             let _scope = crate::utils::prof::scope("sha256:direct_opening_prepare_prover");
-            product_opening_claim(&product_batching, product_p_h, field_config)?
+            product_opening_claim(
+                &product_batching,
+                product_p_h,
+                product_map.order(),
+                field_config,
+            )?
         };
         let row_weight_source =
             GeneratedModQWeightSource::new(product_p_h, mod_q.q_bits(), |row| {
@@ -757,7 +765,12 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
         let step4_scope = crate::utils::prof::scope("step4:bitify_verify");
         let (row_weights, col_weights_q, claimed_q) = {
             let _scope = crate::utils::prof::scope("sha256:direct_opening_prepare_verifier");
-            product_opening_claim(&product_batching, product_p_h, field_config)?
+            product_opening_claim(
+                &product_batching,
+                product_p_h,
+                product_map.order(),
+                field_config,
+            )?
         };
         let row_weight_source =
             GeneratedModQWeightSource::new(product_p_h, mod_q.q_bits(), |row| {
@@ -1300,26 +1313,34 @@ fn linear_opening_claim(
     Ok((row_weights, col_weights, inner_claim.canonical_u128()))
 }
 
-/// Builds the direct rank-one F2Z claim over the proof-only tensor
-/// `D[local, instance] = H[instance, local]`.
+/// Builds the direct rank-one F2Z claim over the proof-only product tensor.
 ///
-/// Low instance bits select F2Z rows. High instance bits are adjacent to the
-/// local assignment coordinate in F2Z columns, so the complete coefficient
-/// remains `eq(instance, η) * d[local]` without an assignment-domain
-/// sumcheck or a materialized `u ⊗ d` table.
+/// Local-major order (`D[local, instance] = H[instance, local]`): low
+/// instance bits select F2Z rows, high instance bits are adjacent to the
+/// local assignment coordinate in F2Z columns. Instance-major order
+/// (`D[instance, local]`, local stride `2^15`): the local coordinate plus the
+/// low instance bits select F2Z rows, the high instance bits the columns.
+/// Either way the complete coefficient stays `eq(instance, η) * d[local]`
+/// without an assignment-domain sumcheck or a materialized `u ⊗ d` table.
 fn product_opening_claim(
     batching: &ProductLinearBatching,
     p_h: &IntEvalParams,
+    order: PackedSourceOrder,
     field_config: &<SpartanF2zField as PrimeField>::Config,
 ) -> Result<(Vec<RawMontgomery>, Vec<u128>, u128), Sha256F2zError> {
     let instance_vars = instance_vars(batching.instances)?;
     if !batching.instances.is_power_of_two()
         || batching.instance_point.len() != instance_vars
         || p_h.word_bits != 1
-        || p_h.t != instance_vars.min(13)
         || p_h.t + p_h.s != instance_vars + 15
         || batching.local_coefficients.len() != SHA256_H_BAR_LIVE_BITS
     {
+        return Err(Sha256F2zError::InvalidGeometry);
+    }
+    if order == PackedSourceOrder::InstanceMajor {
+        return product_opening_claim_instance_major(batching, p_h, field_config);
+    }
+    if p_h.t > instance_vars {
         return Err(Sha256F2zError::InvalidGeometry);
     }
 
@@ -1349,6 +1370,55 @@ fn product_opening_claim(
         .collect::<Vec<_>>();
     #[cfg(not(feature = "parallel"))]
     let col_weights = (0..p_h.cols()).map(coefficient_at).collect::<Vec<_>>();
+
+    Ok((
+        row_weights,
+        col_weights,
+        batching.initial_claim.canonical_u128(),
+    ))
+}
+
+/// [`product_opening_claim`] for the instance-major tensor: F2Z row
+/// `r = low_instance · 2^15 + local` carries `eq_low(low_instance) · d[local]`
+/// (zero on the padding rows `local ≥ 20 457`), F2Z column `c` carries
+/// `eq_high(c)` over the remaining instance bits.
+fn product_opening_claim_instance_major(
+    batching: &ProductLinearBatching,
+    p_h: &IntEvalParams,
+    field_config: &<SpartanF2zField as PrimeField>::Config,
+) -> Result<(Vec<RawMontgomery>, Vec<u128>, u128), Sha256F2zError> {
+    let local_stride = SHA256_H_BAR_LIVE_BITS.next_power_of_two();
+    let local_bits = local_stride.ilog2() as usize;
+    let instance_vars = instance_vars(batching.instances)?;
+    if p_h.t < local_bits || p_h.t > local_bits + instance_vars {
+        return Err(Sha256F2zError::InvalidGeometry);
+    }
+    let low_vars = p_h.t - local_bits;
+    let low_weights = compact_eq_table(&batching.instance_point[..low_vars], field_config)?;
+    let high_weights = compact_eq_table(&batching.instance_point[low_vars..], field_config)?;
+    if low_weights.len() * local_stride != p_h.rows() || high_weights.len() != p_h.cols() {
+        return Err(Sha256F2zError::InvalidGeometry);
+    }
+
+    let row_weight_at = |row: usize| {
+        let local = row % local_stride;
+        if local >= batching.local_coefficients.len() {
+            return 0;
+        }
+        let low_weight = field_from_raw(low_weights[row / local_stride], field_config);
+        raw_montgomery(&(batching.local_coefficients[local].clone() * &low_weight))
+    };
+    #[cfg(feature = "parallel")]
+    let row_weights = (0..p_h.rows())
+        .into_par_iter()
+        .map(row_weight_at)
+        .collect::<Vec<_>>();
+    #[cfg(not(feature = "parallel"))]
+    let row_weights = (0..p_h.rows()).map(row_weight_at).collect::<Vec<_>>();
+    let col_weights = high_weights
+        .iter()
+        .map(|weight| field_from_raw(*weight, field_config).canonical_u128())
+        .collect::<Vec<_>>();
 
     Ok((
         row_weights,
@@ -1982,14 +2052,30 @@ fn validate_product_geometry(
 ) -> Result<(), Sha256F2zError> {
     validate_source_params(p_f)?;
     let instance_vars = map.instances().ilog2() as usize;
-    let expected_t = instance_vars.min(13);
+    let local_stride = SHA256_H_BAR_LIVE_BITS.next_power_of_two();
+    let (t_min, t_max, expected_live_rows) = match map.order() {
+        PackedSourceOrder::LocalMajor => (
+            LOG_PACKING,
+            instance_vars,
+            map.instances() * SHA256_H_BAR_LIVE_BITS,
+        ),
+        PackedSourceOrder::InstanceMajor => (
+            local_stride.ilog2() as usize,
+            local_stride.ilog2() as usize + instance_vars,
+            map.instances() * local_stride,
+        ),
+    };
     if p_h.word_bits != 1
-        || p_h.t < LOG_PACKING
-        || p_h.t != expected_t
+        || p_h.t < t_min
+        || p_h.t > t_max
         || p_h.t.saturating_add(p_h.s) != instance_vars + 15
         || map.rows() != cell_count(p_h)
         || map.cols() != cell_count(p_f)
-        || map.live_rows() != map.instances() * SHA256_H_BAR_LIVE_BITS
+        || map.live_rows() != expected_live_rows
+        || map.local_stride() != match map.order() {
+            PackedSourceOrder::LocalMajor => map.instances(),
+            PackedSourceOrder::InstanceMajor => local_stride,
+        }
         || map.local().rows() != SHA256_H_BAR_LIVE_BITS
         || map.local().cols() != super::constraints::SHA256_F_BAR_LIVE_BITS
         || !map_fixes_constant_assignment_local(map.local())
@@ -2758,6 +2844,68 @@ mod tests {
     }
 
     #[test]
+    fn transposed_product_layout_roundtrips_without_an_inner_sumcheck() {
+        use super::super::super::{
+            Sha256OpeningLayout, prepare_sha256_compression_batch_with_profile_and_layout,
+        };
+        use crate::piop::spartan::profile::Lambda100;
+        // 2^7 compressions: 2^22 assignment cells, local stride 2^15. Every
+        // admissible split has t >= 15, so two forests at 113-bit primes.
+        const LOG_COMPRESSIONS: usize = 7;
+        let inputs = (0..1usize << LOG_COMPRESSIONS)
+            .map(input)
+            .collect::<Vec<_>>();
+        for row_vars in [15usize, 17, 22] {
+            let prepared = prepare_sha256_compression_batch_with_profile_and_layout::<Lambda100>(
+                LOG_COMPRESSIONS,
+                Sha256OpeningLayout::ProductTransposed { row_vars },
+            )
+            .unwrap();
+            let product_map = prepared.product_map().unwrap();
+            assert_eq!(product_map.order(), PackedSourceOrder::InstanceMajor);
+            let p_h = *prepared.opening_params();
+            assert_eq!((p_h.t, p_h.t + p_h.s), (row_vars, 22));
+            let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
+            let public_statement = public_statements(&inputs, witness.outputs());
+            let (pc, vc) = sha256_compression_configs(&prepared).unwrap();
+            let hint =
+                commit_sha256_compression_witness_with_config(&prepared, &witness, &pc).unwrap();
+            let mut prover_transcript = Blake3Transcript::new();
+            let proof = prove_sha256_compressions_with_config(
+                &mut prover_transcript,
+                &prepared,
+                &public_statement,
+                &witness,
+                &hint,
+                &pc,
+            )
+            .unwrap();
+            assert_eq!(proof.f2z().mfs.len(), 2, "forests at t={row_vars}");
+            assert!(proof.inner().round_polynomials.is_empty());
+            assert_eq!(proof.f2z().us[0].len(), 1 << (22 - row_vars));
+            let mut verifier_transcript = Blake3Transcript::new();
+            verify_sha256_compressions_with_config(
+                &mut verifier_transcript,
+                &prepared,
+                &public_statement,
+                &hint.commitment,
+                &proof,
+                &vc,
+            )
+            .unwrap();
+        }
+        for row_vars in [14usize, 23] {
+            assert!(matches!(
+                prepare_sha256_compression_batch_with_profile_and_layout::<Lambda100>(
+                    LOG_COMPRESSIONS,
+                    Sha256OpeningLayout::ProductTransposed { row_vars },
+                ),
+                Err(crate::piop::spartan::Sha256ConstraintError::InvalidOpeningRowVars { .. })
+            ));
+        }
+    }
+
+    #[test]
     fn runtime_prime_roundtrip() {
         // Pinned to the grinded reference schedule: this test exercises the
         // per-round and initial/terminal grinding machinery, which the
@@ -3325,7 +3473,13 @@ mod tests {
         let product_p_h = prepared.product_assignment_params().unwrap();
         let product_rows = witness.product_assignment_rows().unwrap();
         let (row_weights, col_weights, claimed) =
-            product_opening_claim(&batching, product_p_h, &field_config).unwrap();
+            product_opening_claim(
+                &batching,
+                product_p_h,
+                PackedSourceOrder::LocalMajor,
+                &field_config,
+            )
+            .unwrap();
         let mut direct_sum = SpartanF2zField::zero_with_cfg(&field_config);
         for flat_cell in 0..product_p_h.cells() {
             if packed_flat_bit(product_rows, product_p_h, flat_cell).unwrap() == 0 {

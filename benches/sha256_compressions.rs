@@ -26,10 +26,12 @@
 //! Power-of-two compression batches open the product-layout assignment
 //! directly. `F2Z_SHA_INNER_PREFIX_VARS=0..4` only configures the legacy
 //! inner-sumcheck fallback used by non-power-of-two assignment-row batches.
-//! `F2Z_SHA_OPENING_T=<t>` forces that inner-sumcheck path on every
-//! compression-count shape with an explicit F2Z split of `2^t` rows (the
-//! read-off vector then has `2^(vars - t)` columns; splits above the
-//! one-forest cap open with one forest per weight chunk).
+//! `F2Z_SHA_OPENING_T=<t>` gives every compression-count shape an explicit
+//! F2Z split of `2^t` rows (the read-off vector then has `2^(vars - t)`
+//! columns; splits above the one-forest cap open with one forest per weight
+//! chunk). `F2Z_SHA_OPENING_LAYOUT=inner` (default) takes the inner-sumcheck
+//! path; `=product` keeps the direct product opening on the transposed,
+//! instance-major product tensor (`t >= 15`).
 //!
 //! `F2Z_BENCH_LAMBDA=100|128|sha128-reference-schedule` selects the security
 //! profile the run measures at (default `Lambda100`; the two-prime
@@ -1013,6 +1015,9 @@ fn bench_shape<P: IopSecurityProfile>(
             }
             Sha256OpeningLayout::Default => "inner sumcheck, balanced one-forest split",
             Sha256OpeningLayout::InnerSumcheck { .. } => "inner sumcheck, explicit split",
+            Sha256OpeningLayout::ProductTransposed { .. } => {
+                "direct product opening, transposed (local bits on rows)"
+            }
         };
         println!(
             "  opening layout: {kind} | F2Z rows 2^{} × columns 2^{} | forests {} | read-off ≤ 2^{} integers per forest",
@@ -1111,11 +1116,14 @@ fn main() {
     );
 
     let layout = std::env::var("F2Z_SHA_OPENING_T").map_or(Sha256OpeningLayout::Default, |value| {
-        Sha256OpeningLayout::InnerSumcheck {
-            row_vars: value
-                .trim()
-                .parse::<usize>()
-                .expect("F2Z_SHA_OPENING_T must be an integer: the F2Z row variables of the opening"),
+        let row_vars = value
+            .trim()
+            .parse::<usize>()
+            .expect("F2Z_SHA_OPENING_T must be an integer: the F2Z row variables of the opening");
+        match std::env::var("F2Z_SHA_OPENING_LAYOUT").as_deref() {
+            Ok("product") => Sha256OpeningLayout::ProductTransposed { row_vars },
+            Ok("inner") | Err(_) => Sha256OpeningLayout::InnerSumcheck { row_vars },
+            Ok(other) => panic!("F2Z_SHA_OPENING_LAYOUT must be `inner` or `product`, got {other}"),
         }
     });
 
@@ -1132,10 +1140,14 @@ fn main() {
         "security profile: {}",
         common::profile_banner(selected, common::SecurityProfile::Lambda100)
     );
-    if let Sha256OpeningLayout::InnerSumcheck { row_vars } = layout {
-        println!(
+    match layout {
+        Sha256OpeningLayout::InnerSumcheck { row_vars } => println!(
             "opening layout override: inner sumcheck with 2^{row_vars} F2Z rows (F2Z_SHA_OPENING_T={row_vars})"
-        );
+        ),
+        Sha256OpeningLayout::ProductTransposed { row_vars } => println!(
+            "opening layout override: transposed product tensor with 2^{row_vars} F2Z rows (F2Z_SHA_OPENING_LAYOUT=product F2Z_SHA_OPENING_T={row_vars})"
+        ),
+        Sha256OpeningLayout::Default => {}
     }
     if let Some(path) = std::env::var_os("F2Z_SHA_TRACE_PATH") {
         println!("canonical interval trace: {}", Path::new(&path).display());
