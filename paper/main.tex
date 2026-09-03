@@ -102,7 +102,7 @@ $\mathbb{B}\text{it}\ZZ$: proofs and commitments in arbitrary rings through bina
 
 \section{Introduction}
 
-\albertimportant{Interesting stuff to mention: 1) cost of BitZ do not depend on the ring, only on bit-size. 2) BitZ PCS can be used as drop-in replacement of any PCS?}
+\albertimportant{Interesting stuff to mention: 1) cost of BitZ do not depend on the ring, only on bit-size. 2) BitZ PCS can be used as drop-in replacement of any PCS? 3) Why more than }
 
 
 A Succinct Non-interactive Argument of Knowledge (SNARK) for a relation $\Relation$ is a non-interactive protocol that enables a prover to convince a verifier that, for a given public input $\inp$, they know a witness $\wit$ such that $(\inp,\wit)\in \Relation$, and where communication and verifier runtime are sublinear (i.e.\ the scheme is succinct).
@@ -300,6 +300,25 @@ We thank Lev Soukhanov and Giacomo Fenzi for insightful and helpful discussions.
 
 We used AI in our implementation and experiments, as explained in \cref{??}.
 
+
+\albert{
+Ideas for the ``Our contributions''section:
+1) PCS for $\bff\in S^{\codedim_0}$ and constraints $\langle \psi(\bff), \vv\rangle = \mu$ in $R$. We commit to the bits of $\bff$ over a binary fields (in packed form), unlocking the boons of binary fields. 
+2) Technique for making structured (low entropy)  grand products efficient.
+3) 
+ }
+
+\section{New technical overview}
+
+
+\begin{enumerate}
+    \item Start with PCS with $\bff \in \ZZ^{\codedim_0}$ and $R$ is a prime field. 
+    \item Then low entropy grand product.
+    \item Generalizations of PCS.   $\bff \in S^\codedim$ and $R$ an extension field (e.g. Babybear proving) or a f.g. ring (for the sake of lattices).
+    \item General proof system. 
+    \item Virtual $\FF_2$-linear transforms in \ftwoz \ and NP-complete dually linear relations.
+\end{enumerate}
+
 \section{Technical overview}
 \albertimportant{Need to discuss somewhere that range checks are free}
 
@@ -487,7 +506,7 @@ An interesting subset  of $\Relation_{\mathsf{R1CS-bits-virtual}}(\ZZ)$
     & \wit = \bff \in \bits^{\codedim'} \subseteq \FF_2^{\codedim'}
 \end{aligned}\  \left| \  \begin{aligned} %&f=\Enc_\cC \circ \pack \circ \pi_2(\bff)\\ 
 &C \cdot \ww = 0\ \text{in } \ZZ \\
-&\ww= \pi_2^{-1}\left(  M\cdot (\zz, \bff)\right) \end{aligned} \right.\right\}
+&\ww= \pi_2^{-1}\left(  M\cdot (\xx, \bff)\right) \end{aligned} \right.\right\}
 $$
 %
 In a sense, the CM relation places only linear constraints over its witness (with some constraints happening in $\comfield$ and other in $\ZZ$). Yet, the CM relation is NP-complete, as shown below in \cref{r:CM_is_NP_complete}. 
@@ -778,14 +797,28 @@ We look at vectors both as row vectors and column vectors. When performing matri
 where $M^{\mathsf{T}}$ denotes transposition and $\langle \cdot, \cdot \rangle$ denotes inner product.
 
 \subsection{Algebra}\label{s:prelims_algebra}
-We write $\FF_q$ for the finite field with $q$ elements (where $q$ is a prime or a prime power), $\QQ$ for the field of rational numbers, and $\ZZ$ for the ring of integers. For an integer $n\geq 1$, $\ZZ_n$ denotes the ring of integers modulo $n$, with the convention $\ZZ_0\defeq \ZZ$. When $n$ is prime, $\ZZ_n=\FF_n$. We let $$\pi_n :\ZZ\to \ZZ_n$$ denote reduction modulo $n$. We fix $\pi_n^{-1} : \ZZ_n \to \range{0}{n-1}\subseteq \ZZ$ map each element $a$ in $\ZZ_n$ to the integer in the range  $\range{0}{n-1}$ representing $a$. 
+\paragraph{Concrete fields and rings} We write $\FF_q$ for the finite field with $q$ elements (where $q$ is a prime or a prime power), $\QQ$ for the field of rational numbers, and $\ZZ$ for the ring of integers. For an integer $n\geq 1$, $\ZZ_n$ denotes the ring of integers modulo $n$, with the convention $\ZZ_0\defeq \ZZ$. When $n$ is prime, $\ZZ_n=\FF_n$. We let $$\pi_n :\ZZ\to \ZZ_n$$ denote reduction modulo $n$. We fix the inverse $\pi_n^{-1} : \ZZ_n \to \range{0}{n-1}\subseteq \ZZ$ mapping each element $a$ in $\ZZ_n$ to the integer in the range  $\range{0}{n-1}$ representing $a$. 
 
 
 
-All rings in this work are associative, commutative, have a multiplicative identity. Given a ring $R$, we write $R[X_1, \ldots, X_n]$ for the ring of polynomials with coefficients in $R$ and variables $X_1, \ldots, X_n$ (not necessarily multilinear). 
+\paragraph{Rings in general} All rings in this work are associative, commutative, have a multiplicative identity. Given a ring $R$, we write $R[X_1, \ldots, X_n]$ for the ring of polynomials with coefficients in $R$ and variables $X_1, \ldots, X_n$ (not necessarily multilinear). 
 
+ The \emph{characteristic} of a ring $\ring$, denoted $\Char(R)$, is the smallest $c\geq 1$, if it exists, such that $1 + \overset{c}{\ldots} + 1 = 0$ in $\ring$. Otherwise, if $1 + \overset{c}{\ldots} + 1 \neq 0$ for all $c$, the characteristic is zero.
+ By $\range{0}{n}_\ring$ we denote all elements in $\ring$ of the form $1 + \overset{i}{\ldots} + 1$ for $i=0,\ldots, n$. For every ring $R$ we have a canonical embedding 
+ %
+ $$
+    \ZZ_{\Char(R)} \subseteq R
+ $$
+of the ring of integers modulo $\Char(R)$ into $R$. Namely, the set $\{n \cdot 1 \mid n\in \ZZ\} \subseteq R$ for $1$ the identity element of $S$, forms the ring  $\ZZ_{\Char(R)}$. Further, $\pi_{\Char(R)}$ induces a natural homomorphism (not necessarily surjective)
+%
+\begin{equation}\label{e:Z_to_ring}
+\pi_{\Char(R)} : \ZZ \to R
+\end{equation}
+sending $n\in \ZZ$ to $n\cdot 1$ for $1$ the identity of $R$. 
+
+Given a set or vector of integers $\ww\in \ZZ^m$, we define \begin{equation}\label{e:integers_subscript_proj}\ww_R= \pi_{\Char(R)}(\ww).\end{equation}
  
- All rings in this work are \emph{finitely generated} as rings. Equivalently, every ring $R$ in this work is isomorphic to a quotient $$R=\ZZ[X_1,\ldots, X_k]/I$$ of a polynomial ring over $\ZZ$ by an ideal $I$. This condition is satisfied by, for example:
+ \paragraph{Finitely generated rings} Further, all rings in this work are \emph{finitely generated} as rings. Equivalently, every ring $R$ in this work is isomorphic to a quotient $$R=\ZZ[X_1,\ldots, X_k]/I$$ of a polynomial ring over $\ZZ$ by an ideal $I$. This condition is satisfied by, for example:
 \begin{enumerate}[leftmargin=*,nosep]
 \item All finite fields and the rings $\ZZ_n$; 
 \item $\ZZ$, and the polynomial rings $\ZZ[X]$ and $\FF_q[X]$
@@ -794,9 +827,10 @@ All rings in this work are associative, commutative, have a multiplicative ident
 It is not satisfied by, for example, $\QQ$ and $\QQ[X]$, which are not finitely generated as rings. Some constructions in this work  impose further requirements on the rings they use. We state these when  needed.
 
 
+Given a finitely generated ring $R$ with fixed generator set $\gamma_1, \ldots, \gamma_k$, we denote  $R_{\leq B}$ the set of elements of $R$ of the form $h=\sum_{i\in [\moduledegree]} h_i\cdot \gamma_i$ for $$h_i \in \range{0}{2^B-1}_S \subseteq  R$$, i.e.\ $R_{\leq B}$ is the set of ring elements that can be expressed as a linear combination of the generators $\gamma_1, \ldots, \gamma_\moduledegree$ where the coefficients can be obtained by adding $1$ together (in $R$) less than $2^B$ times.
 
- The \emph{characteristic} of a ring $\ring$, denoted $\Char(R)$, is the smallest $c\geq 1$, if it exists, such that $1 + \overset{c}{\ldots} + 1 = 0$ in $\ring$. Otherwise, if $1 + \overset{c}{\ldots} + 1 \neq 0$ for all $c$, the characteristic is zero.
- By $\range{0}{n}_\ring$ we denote all elements in $\ring$ of the form $1 + \overset{i}{\ldots} + 1$ for $i=0,\ldots, n$.
+
+
  
  %An ideal $I$ of a ring $R$ generated by a set $S\subseteq R$ is denoted $(S)$.
 
@@ -974,10 +1008,10 @@ If $(\widetilde{\Relation}, \widetilde{\Relation'})=(\Relation, \Relation')$ the
 \end{table}
  
 
-\section{\ftwoz \ IOP for Lin-BitsRing}
+\section{\ftwoz \ IOP for LinBitsRings}
 
 
-\subsection{The core Lin-BitsRing relation}\label{s:linmodfieldbin}
+\subsection{The core LinBitsRings relation}\label{s:linmodfieldbin}
 
 
 
@@ -1007,9 +1041,10 @@ $$
  Let $\codedim\geq 1$ be a dimension parameter divisible by $\comfieldexp$, $\cC$ a code over $\comfield$ of dimension $\codedim/\comfieldexp$ and blocklength $\codelength$.  
  \item  Let $R$ be a finitely generated ring (typically $R$ is $\ZZ$, a finite field, not necessarily a prime field, or a quotient of a polynomial ring $\ZZ[X]$ or $\FF_q[X]$) and let $\pi:\ZZ \to R$  be the  homomorphism mapping an integer $a$ to $a\cdot 1\in R$ (i.e.\ reduction modulo the characteristic of $R$).
 \end{itemize}
- 
 
-\begin{definition} The \emph{Core Lin-BitsRing} relation  is defined as
+ We begin by defining  a particular subclass of our target relation.
+
+\begin{definition} The \emph{Core LinBitsRings} relation  is defined as
 %
 $$
 \LinBitsDual(\bits,\pi, R,\cC) \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in R \times R^{\codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \{0,1\}^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &f=\Enc_{\cC}\circ \pack \circ \picomfield(\bff) \\    & \langle \pi(\bff), \vv\rangle  = \mu  \end{aligned} \right\}
@@ -1058,25 +1093,15 @@ $$
 \renewcommand{\moduletwo}{R}
 
 
-
-
-
-
-
-
-
-
-
-%
 \subsection{Tensor decomposition and products of constrained codes}\label{s:interleaved_setting}
 %
 \renewcommand{\ringmorphism}{\pi}
 %\renewcommand{\ringtwo}{}
 
+\albertimportant{Motivate}
 
 
-
-We start with some groundwork for our IOP for the Core Lin-BitsRing relation.  Let $(\inp,\oracle,\wit)=((\mu,\vv), f, \bff) \in \LinBitsDual(\bits,\ringmorphism, R,\cC)$. We fix a tensor decomposition of the vector $\vv\in \moduletwo^\codedim$ as $$\vv = \vv^{(1)} \otimes \vv^{(2)} = \left(\vv_i^{(1)}\cdot \vv_j^{(2)}\right)_{i\in [\codedim_1], j\in [\codedim_2]}$$ for some $\vv^{(1)}\in \moduletwo^{\codedim_1}, \vv^{(2)}\in \moduletwo^{\codedim_2}$, with $\codedim_1 \cdot \codedim_2=\codedim$. Note that the trivial tensor decomposition is admitted, i.e.\ we may effectively not decompose $\vv$ by choosing $\codedim_1=\codedim$, $\codedim_2=1$, $\vv^{(1)}=\vv$, and $\vv^{(2)} = (1)$.
+We start with some groundwork for our IOP for the Core LinBitsRings relation.  Let $(\inp,\oracle,\wit)=((\mu,\vv), f, \bff) \in \LinBitsDual(\bits,\ringmorphism, R,\cC)$. We fix a tensor decomposition of the vector $\vv\in \moduletwo^\codedim$ as $$\vv = \vv^{(1)} \otimes \vv^{(2)} = \left(\vv_i^{(1)}\cdot \vv_j^{(2)}\right)_{i\in [\codedim_1], j\in [\codedim_2]}$$ for some $\vv^{(1)}\in \moduletwo^{\codedim_1}, \vv^{(2)}\in \moduletwo^{\codedim_2}$, with $\codedim_1 \cdot \codedim_2=\codedim$. Note that the trivial tensor decomposition is admitted, i.e.\ we may effectively not decompose $\vv$ by choosing $\codedim_1=\codedim$, $\codedim_2=1$, $\vv^{(1)}=\vv$, and $\vv^{(2)} = (1)$.
 
 %We assume $\cC = \cC_1^{\equiv \codedim_2}$ is the $\codedim_2$-dimensional interleaving of a code $\cC_1\subseteq \comfield^{\codelength/\codedim_2}$ of dimension $\codedim_1/2^\comfieldexp$ and blocklength $\codelength/\codedim_2$.
 
@@ -1143,7 +1168,7 @@ This is indeed the case with GKR: GKR reduces the initial circuit evaluation cla
 
 
 
-\subsection{The {\ftwoz} IOP for the core Lin-BitsRing relation}
+\subsection{The {\ftwoz} IOP for the core LinBitsRings relation}
 
 
 \paragraph{Algebraic set-up}
@@ -1196,7 +1221,7 @@ We assume without further comment that it is efficient to compute  values $\pica
 
 \item Let $\Pi_{\iopp}$ be an IOP for $\LIN(\comfield,\cC, \pack)$. In our instantiation, $\Pi_{\iopp}$ is the WHIR protocol \cite{whir} over binary fields, with ring-switching \cite{binius} as described in \cref{a:ring_switch_1}, and with proximity parameter set to the Johnson bound as specified in \cref{s:instantiation}.   
 \item 
-Let $\codedim =\codedim_1\cdot \codedim_2$ be dimension parameters,  and $R$ a ring with $k$ generators $\gamma_1,\ldots, \gamma_k$,  as in the previous sections. We let $\cP$ be a set of primes with $\max\cP< \fieldboundsizeexponent$. Given the tensor decomposition $\vv=\vv^{(1)}\otimes \vv^{(2)}$ from \cref{s:interleaved_setting}, we define \albert{Why a subscript $R$ in $N_R$ and not in the others?}
+Let $\codedim =\codedim_1\cdot \codedim_2$ be dimension parameters,  and $R$ a ring with $k$ generators $\gamma_1,\ldots, \gamma_k$ \albertimportant{change generator symbol since $\gamma$ is used heavily in the general LinBitsRings relation?},  as in the previous sections. We let $\cP$ be a set of primes with $\max\cP< \fieldboundsizeexponent$. Given the tensor decomposition $\vv=\vv^{(1)}\otimes \vv^{(2)}$ from \cref{s:interleaved_setting}, we define \albert{Why a subscript $R$ in $N_R$ and not in the others?}
 $$
 \begin{aligned}
 \uu &\defeq (\vv^{(1)},\vv^{(2)})\in R^{\codedim_1+ \codedim_2}\\
@@ -1243,8 +1268,10 @@ for some $\alpha_1,\ldots, \alpha_{k}\in \FF_q$, and where $\pi_q(h)$ is $h$ aft
 
 %\albertimportant{This construction is missing OOD sample when we work beyond the UDR. Formalizing OOD sampling is a bit of a pain: we need to define a relation $\LinBitsDual^{\rr,y}$ which is the same as $\LinBitsDual$ but adds the constraint $\mle{\pack\circ\pi_2(\mathsf{\bits}(\bff))}(\rr) =y$ in $\comfield$. We do the same for $\UPESAT$. Then we present \cref{c:core_iop}  as a protocol for $\LinBitsDual^{\rr,y}$, and in \cref{c:LinModFieldBin} present an IOP for the general $\LinBitsDual$ relation where we first do an OOD sample, reducing to $\LinBitsDual^{\rr,y}$. In \cref{c:iop_pimsat} we also add an initial reduction from $\UPESAT$ to $\UPESAT^{\rr, y}$. All this is standard, so I am considering to write a short  section  glossing this over. The question is how to state the formal soundness results}
 
+\albertimportant{Comment somewhere that assuming tensore decomposition is important, but also natural}
+
 \begin{construction}[IOP for the core {$\LinBitsDual$ relation}]\label{c:core_iop}
-\noindent \textbf{Parameters.} $(\codedim_1,\codedim_2, \Pi_\iopp, \Pi_\red, \cP, (\cM_q)_{q\in \cP})$ comprised of: tensor decomposition dimensions $\codedim_1, \codedim_2$  satisfying $\codedim_1\cdot \codedim_2 = \codedim$; the IOP $\Pi_\iopp$ described above, the IOR $\Pi_\red$ from \cref{s:?}; and the sets $\cP, \cM_q$ from above. \albert{Parameters changed. Change when calling this construction. I put as parameters everything that is used by the protocol that is not present in the definition of the relation already} 
+\noindent \textbf{Parameters.} $(\codedim, \codedim_1,\codedim_2, \Pi_\iopp, \Pi_\red, \cP, (\cM_q)_{q\in \cP})$ comprised of: a witness vector length $\codedim$; tensor decomposition dimensions $\codedim_1, \codedim_2$  satisfying $\codedim_1\cdot \codedim_2 = \codedim$; the IOP $\Pi_\iopp$ described above, the IOR $\Pi_\red$ from \cref{s:?}; and the sets $\cP, \cM_q$ from above. \albert{Parameters changed. Change when calling this construction. I put as parameters everything that is used by the protocol that is not present in the definition of the relation already} 
 \\
 
 \noindent \textbf{Inputs.} The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \LinBitsDual(\bits,\ringmorphism, \evalfield,\cC)$.  We assume the tensor split from the previous \cref{s:interleaved_setting}, and adopt its notation. 
@@ -1260,7 +1287,6 @@ Let $\basegenerator\in \comfield$ be a fixed generator of the multiplicative gro
 \begin{enumerate}[leftmargin=*] 
 \item \textbf{Round 0 (optional): Out Of Domain (OOD) sample.} This step can be skipped if the proximity parameter $\delta$ is  set within the unique decoding radius of $\cC$ (cf.\ \cref{s:prelims_codes}, and \cref{t:thm_core_IOPP}). Otherwise, the verifier samples and sends a random $\zeta\in \comfield$, and the prover responds with $$y=\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta}), \qquad \text{where } \bm{\zeta}\defeq \left(\zeta^{2^0}, \zeta^{2^1}, \ldots, \zeta^{2^{\log (\codedim/\comfieldexp) -1}}\right).$$
 \item \textbf{Round 1 (optional): replacing $R$ by a ``small'' prime field $\FF_q$.}
-\albertimportant{Round numbering has changed}
 This step can be skipped (i.e.\ prover and verifier move to Round 2 directly) if $R$ is a prime field $\FF_q$ and $q < \fieldboundsizeexponent$. %, or if $R=\ZZ$ and $\lVert \vv \rVert < \fieldboundsizeexponent$.
 
 The prover sends $\mu' \in \ZZ[X_1, \ldots, X_{k}]$ such that
@@ -1534,66 +1560,98 @@ Hence the second condition in \eqref{e:core_iop_proof_eq1} holds. The first cond
 
 
 
-\subsection{The general Lin-BitsRing relation}\label{s:general_LinBitsDual}
+\subsection{The general LinBitsRings relation}\label{s:general_LinBitsDual}
+\albertimportant{
+Move to after the core IOP?
+}
+
+\albert{When I moved this here I may have moved some renew commands that mess notation. Check}
 
 \renewcommand{\modulemorphism}{\psi}
 \renewcommand{\ringmorphism}{\psi}
 \renewcommand{\moduleonebound}{S_{\leq B}}
 
-We now proceed to describe a generalization of $\LinBitsDual(\bits, \pi, R, \cC)$ where the witness $\bff$ has entries in an arbitrary ring $S$ (finitely generated as a $\ZZ_{\Char(S)}$-module),  instead of in $\bits\subseteq \ZZ$.  
+We now proceed to describe the full relation we seek to work with in this section.  Compared to $\LinBitsDual(\bits, \pi, R, \cC)$,   the witness $\bff$ will now entries in an arbitrary finitely generated ring $S$,  instead of in $\bits\subseteq \ZZ$.  
 
 The witness entries will be restricted to a bounded subset of $S$, so that each witness can be expressed as a pre-specified linear expression (over $S$) of a string of bits.
 
 
-We assume the notation from the previous sections, together with:
+We set the following additional notation:
 \begin{itemize}[leftmargin=*]
  \item Let $S$ be a ring, possibly different than $R$, let $\psi:S \to R$ be a ring homomorphism. %Let $M$ be a $S$-module and  let $\psi: \moduleone \to R$ be a module homomorphism (with underlying ring homomorphism $\ringmorphism$ \albert{terminology in preliminaries}).
 \item 
-Let $\gamma_1,\ldots, \gamma_\moduledegree\in S$ be a fixed generating set of $S$ (\cref{s:algebra}), for some $\moduledegree\geq 1$ . Fix a vector length $\codedim_0$.  Let $\moduleonebound$ denote the set of elements of $S$ of the form $h=\sum_{i\in [\moduledegree]} h_i\cdot \gamma_i$ for $$h_i \in \range{0}{2^B-1}_S \subseteq \ZZ_{\Char(S)} \subseteq  S$$ (cf.\ \cref{s:prelims_algebra}) \item Let $\bff \in \moduleonebound^{\codedim_0}$, and write %$\bff=(\bff_{*1}, \ldots, \bff_{*\moduledegree})$ 
+Let $\gamma_1,\ldots, \gamma_\moduledegree\in S$ be a fixed generating set of $S$ (\cref{s:algebra}), for some $\moduledegree\geq 1$. 
+\item Recall from \cref{s:prelims_algebra} that $\moduleonebound$ denotes the set of elements of $S$ of the form $h=\sum_{i\in [\moduledegree]} h_i\cdot \gamma_i$ for $$h_i \in \range{0}{2^B-1}_S \subseteq  S,$$ and that for a vector of integers $\ww$, we write $\ww_S$ for its projection to $S$ via reduction modulo $\Char(S)$ (see \eqref{e:integers_subscript_proj}).
+     \item Let $\codedim_0$ be a vector witness length, so that our witnesses are $\bff\in S^{\codedim_0}$.    
+     \end{itemize}
+
+     We will use the natural homomorphism from $\pi_{\Char(S)} : \ZZ \to S$ consisting in reducing an element modulo the characteristic of $S$, see  \eqref{e:Z_to_ring} in \cref{s:prelims_algebra}. 
+
+\begin{definition}[Bitification of the witness]\label{d:bitification}
+Let $\bff \in \moduleonebound^{\codedim_0}$. Let $\codedim$ be a  vector length, called \emph{bitification  length}. Let $L\in S^{\codedim_0 \times \codedim}$ be a matrix, called  \emph{bitification matrix}. We define the \emph{bitification} of $\bff$ (with respect to $L$)  as a vector filled with integer bits $\bitstext(\bff)\in \bits^{\codedim}\subseteq \ZZ^\codedim$ satisfying the linear relation
+%
+$$
+\bff = L \cdot (\bitstext(\bff))_S.
+$$
+%
+where for a vector $\ww$ of integer bits, $\ww_S$ denotes its natural projection to a vector with entries the elements $\bits_S \subseteq S$. 
+%
+The choice of $L$ and a method for building $\bitstext(\bff)$ from $\bff$  can be customized. Below, we describe what we call the \emph{standard bitification} procedure (see below). This can be used for arbitrary finitely generated rings $S$ and bit bounds $B$. In some scenarios (see \cref{?}), one may choose different more convenient approaches.
+
+The \emph{standard bitification} of $\bff\in \moduleonebound^{\codedim_0}
+$ is obtained as follows: write
+%$\bff=(\bff_{*1}, \ldots, \bff_{*\moduledegree})$ 
 $\bff=\sum_{j\in [\moduledegree]} \bff_{*j}\cdot \gamma_j$
-for some $\bff_{*j}\in \ZZ_{\Char(S)}^{\codedim_0}$, $j\in [\moduledegree]$ (note that  any ring $S$ contains $\ZZ_{\Char(S)}$ as a subring).  Then write $$\bff_{*j}= \sum_{k=1}^{B}\  \bff_{*jk}\cdot 2^{k-1} $$ for some vectors $$\bff_{*jk}\in \{0,1\}_S^{\codedim_0}\subseteq S^{\codedim_0},$$ for all $j,k$.  We define   $$\bitstext(\bff)\in \bits^{\codedim_0\cdot\moduledegree\cdot  B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B}$$ as the vector with integer bit entries obtained by concatenating the vectors $\bff_{*jk}$ and lifting their entries to $\bits \subseteq \ZZ$ in a natural way, i.e.\ \begin{equation}\label{e:bits_of_f}\bitstext(\bff) \defeq \left(\mathsf{lift}(\bff_{*jk})\mid  j\in [\moduledegree], k\in [B]\right)\in \bits^{\codedim_0\cdot\moduledegree\cdot B} \subseteq \ZZ^{\codedim_0\cdot\moduledegree\cdot B},\end{equation}
-where $\mathsf{lift}$ is the identity function if $S=\ZZ$,  and  $\mathsf{lift} = \pi_{\Char(S)}^{-1}$ if $\Char(S)>0$.
-
-\begin{remark}[Non-uniform bit-decomposition sizes]\label{r: non_uniform_bit_decomposition} In practical settings, it is possible that not all entries of $\bff$ have the same bit size. For example, some chunks of $\bff$ may be comprised of elements from $\{0,1\}_S$, while others may be comprised of generic ring elements. However, our definition of $\bitstext(\bff)$ allocates $\moduledegree\cdot B$ bits for every entry of $\bff$, no matter its size.
-
-In this case one can define $\bitstext(\bff)$  as a vector from $\bits^{\codedim}\subseteq \ZZ^\codedim$ (for a some  $\codedim$) such that 
-%
+for some $\bff_{*j}\in \ZZ_{\Char(S)}^{\codedim_0}$, $j\in [\moduledegree]$.  Then write $$\bff_{*j}= \sum_{k=1}^{B}\  \bff_{*jk}\cdot \pi_{\Char(S)}(2^{k-1}) $$ for some vectors $$\bff_{*jk}\in \{0,1\}_S^{\codedim_0}\subseteq S^{\codedim_0},$$ for all $j,k$.  We  define   $$
+\begin{aligned}
+& \codedim\defeq \codedim_0\cdot \moduledegree\cdot B,\\
+&\bitstext(\bff)\in \bits^{\codedim} \subseteq \ZZ^{\codedim}\end{aligned}$$ as the vector with integer bit entries obtained by concatenating the vectors $\bff_{*jk}$ and lifting their entries to $\bits \subseteq \ZZ$ in a natural way, i.e.\ \begin{equation}\label{e:bits_of_f}\bitstext(\bff) \defeq \left(\mathsf{lift}(\bff_{*jk})\mid  j\in [\moduledegree], k\in [B]\right)\in \bits^{\codedim} \subseteq \ZZ^{\codedim},\end{equation}
+where $\mathsf{lift}$ is the identity function if $\Char(S)=0$,  and  $\mathsf{lift} = \pi_{\Char(S)}^{-1}$ if $\Char(S)>0$.  Defining 
+$$L=\mathsf{Id}_{\codedim_0\times \codedim_0} \otimes (1, 2, \ldots, 2^{B-1})_S \otimes (\gamma_1, \ldots, \gamma_d) \in S^{\codedim_0\times \codedim},$$
+we have
 $$
-L\cdot \pi_{\Char(S)}(\bitstext(\bff)) = \bff \in S^{\codedim_0}
+\bff = L \cdot (\bitstext(\bff))_S.
 $$
-for some public and fixed matrix $L\in S^{\codedim_0 \times \codedim}$.
-%
+\end{definition}
 
-This generalizes the previous definition of $\mathsf{bits}(\bff)$, in that, for such definition, we have $L\cdot \pi_{\Char(S)}(\bitstext(\bff)) = \bff$ where $$L=\mathsf{Id}_{\codedim_0\times \codedim_0} \otimes \pi_{\Char(S)}(1, 2, \ldots, 2^{B-1}) \otimes (\gamma_1, \ldots, \gamma_d) \in S^{\codedim_0\times (\codedim_0\cdot B\cdot d)},$$
-%
-where $\mathsf{Id}_{\codedim_0\times \codedim_0} $ is the $\codedim_0\times \codedim_0$ identity matrix. 
-\end{remark}
-For a general matrix $L$, one needs, for efficiency purposes, to make sure $L$ has enough structure to later support  tensor decomposing certain vectors, as discussed in \cref{r:tensor_dec_u}. In any case, one can always use the matrix $L$ above, which does possess enough structure.
-\item 
-Assume $\cC$ is a linear code over $\comfield$ of dimension $(\codedim_0\cdot B \cdot \moduledegree)/\comfieldexp$ and blocklength $\codelength$. 
-\end{itemize}
+
+Assume $\cC$ is a linear code over $\comfield$ of dimension $\codedim/\comfieldexp$ and blocklength $\codelength$. 
 
 
 
-\begin{definition} The \emph{general Lin-BitsRing}  relation is defined as \albertimportant{Here we should allow for $\psi = \phi \circ \picanon^{S}{}^{-1}$ for $\phi: \ZZ[X_1, \ldots, X_k]\to R$ a morphism. This is what is actually happening and it allows us to build later full IOPs for constraints over arbitrary f.g.\ rings}
+\begin{definition} The \emph{general LinBitsRings}  relation is defined as \albertimportant{Here we should allow for $\psi = \phi \circ \picanon^{S}{}^{-1}$ for $\phi: \ZZ[X_1, \ldots, X_k]\to R$ a morphism. This is what is actually happening and it allows us to build later full IOPs for constraints over arbitrary f.g.\ rings}
 %
 \begin{align*}
- &\LinModFieldBin(\moduleonebound,\modulemorphism,R,  \cC)\\ &\qquad\qquad\qquad= \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in R  \times R^{ \codedim_0}, \\
+ &\LinModFieldBin(\moduleonebound,\modulemorphism,R,  \cC)\\ &\qquad\qquad\qquad \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in R  \times R^{ \codedim_0}, \\
  &\oracle = f \in \comfield^{\codelength}, \\ &\wit= \bff\in \moduleonebound^{\codedim_0}\end{aligned}\right) \;\middle|\;  \begin{aligned}  
  &f = \Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\bff)),\\
- &\langle \modulemorphism(\bff), \vv \rangle = \mu  \qquad  \text{in } R
+ &\langle \modulemorphism(\bff), \vv \rangle = \mu  \qquad  \text{in } R%\\
+ %& \bff = L \cdot \pi_{\Char(S)}(\bitstext(\bff))
  \end{aligned} \right\}.
 \end{align*}
 \end{definition}
 %
-When there is no risk of confusion, we denote $\LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)$ simply by $\LinModFieldBin$. The Core Lin-BitsRing relation is precisely $\LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)$ after taking $S=\ZZ$, $B=1$, and $\modulemorphism = \pi_{\Char(R)}$.
+When there is no risk of confusion, we denote $\LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)$ simply by $\LinModFieldBin$. The Core LinBitsRings relation is precisely $\LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC)$ after taking $S=\ZZ$, $B=1$, and $\modulemorphism = \pi_{\Char(R)}$.
 
 %\renewcommand{\modulemorphism}
-\subsection{The \ftwoz\  IOP for the general Lin-BitsRing relation}\label{s: general_bitz}
+
+\begin{remark}[Non-uniform bit-decomposition sizes]\label{r: non_uniform_bit_decomposition} In practical settings, it is possible that not all entries of $\bff$ have the same bit size. For example, some chunks of $\bff$ may be comprised of elements from $\{0,1\}_S$, while others may be comprised of generic ring elements. However, the standard bitifaction procedure from \cref{d:bitification} allocates $\moduledegree\cdot B$ bits for every entry of $\bff$, no matter its size. To avoid this, one can find alternative approaches to defining $L$ and $\bitstext(\bff)$. 
+
+For efficiency purposes, to make sure $L$ has enough structure to later support  tensor decomposing certain vectors, as discussed in \cref{r:tensor_dec_u}. In any case, one can always use the matrix $L$ above, which in general does possess enough structure as argued in \cref{r:tensor_dec_u}.
+%
+\end{remark}
 
 
+\subsection{The \ftwoz\  IOP for the general LinBitsRings relation}\label{s: general_bitz}
 
-Next we describe our IOP for $\LinModFieldBin$.  We assume the notation of \cref{s:general_LinBitsDual}. Let $\codedim_1,\codedim_2$ be tensor decomposition parameters (to be used in \cref{c:core_iop}) such that $\codedim_1\cdot \codedim_2= \codedim_0\cdot \moduledegree\cdot B$. We assume that $\cC$ is a linear code over $\comfield$ of dimension $\codedim_0\cdot \moduledegree\cdot B/\comfieldexp$. %, which is a $\codedim_2$-interleaving of a code $\cC_1$ over $\comfield$ of dimension $\codedim_1/2^{\comfieldexp}$.
+
+\albertimportant{We could add asymptotic/concrete operation numbers per protocol?}
+
+\renewcommand{\modulemorphism}{\psi}
+\renewcommand{\ringmorphism}{\psi}
+\renewcommand{\moduleonebound}{S_{\leq B}}
+
+Next we describe our IOP for  the general relation $\LinModFieldBin$.  We assume the notation of \cref{s:general_LinBitsDual}. Let  $L$ be a \emph{bitification} matrix as in \cref{d:bitification}, with $L\in S^{\codedim_0 \times \codedim}$ so that $\codedim$ is the vector length of the vector $\bitstext(\bff_0)$. For the standard bitification matrix   $L=\mathsf{Id}_{\codedim_0 \times \codedim_0} \otimes (1,\ldots, 2^{B-1})_S\otimes (\gamma_1, \ldots, \gamma_d)$, we have $\codedim=\codedim_0\cdot \moduledegree\cdot B$. Let further $\codedim_1,\codedim_2$ be tensor decomposition parameters (to be used in \cref{c:core_iop}) such that $\codedim=\codedim_1\cdot \codedim_2$. We assume that $\cC$ is a linear code over $\comfield$ of dimension $\codedim/\comfieldexp$. %, which is a $\codedim_2$-interleaving of a code $\cC_1$ over $\comfield$ of dimension $\codedim_1/2^{\comfieldexp}$.
 
 We will need the following result.
 
@@ -1601,21 +1659,25 @@ We will need the following result.
 \begin{lemma}\label{l:bitify}
     Let $\bff\in \moduleonebound^{\codedim_0}$, and let $\vv\in \moduletwo^{\codedim_0}$. Then \albertimportant{General comment: I need to discuss how the verifier handles these vectors $\vv$ and $\uu$. Reviewers may complain that verifier could be non-succinct.}
        \begin{align*}
-   & \langle \modulemorphism(\bff), \vv \rangle = \langle \ringmorphism(\bitstext(\bff)_S),\uu\rangle \in R \\ & 
-    \uu\defeq \psi(L)^{\mathsf{T}}\cdot \vv \in R^{\codedim_0\cdot B\cdot \moduledegree},
+   & \langle \psi(\bff), \vv \rangle = \langle \bitstext(\bff)_R,\uu\rangle \in R \\ & 
+    \uu\defeq \psi(L)^{\mathsf{T}}\cdot \vv \in R^{\codedim},
     \end{align*}
     %
-    where $\bitstext(\bff)_S \defeq \pi_{\Char(S)}(\bitstext(\bff))$ is  the vector $\bitstext(\bff)$ projected to $\{0,1\}_S\subseteq S$, and $L$ is the matrix from \cref{r: non_uniform_bit_decomposition}.  In particular, if $L=\mathsf{Id}_{\codedim_0 \times \codedim_0} \otimes \pi_{\Char(S)}(1,\ldots, 2^{B-1})\otimes (\gamma_1, \ldots, \gamma_d) \in S^{\codedim_0 \times (\codedim_0\cdot B\cdot \moduledegree)}$, then \begin{equation}\label{e:u_def}
-    \uu =   \left(\vv \otimes \left(1, \ringmorphism(2), \ldots, \ringmorphism(2^{B-1})\right) \otimes \left(\modulemorphism(\gamma_1), \ldots, \modulemorphism(\gamma_{\moduledegree})\right)\right) \in R^{\codedim_0\cdot \moduledegree \cdot B}
+    where $\mathsf{T}$ denotes transposition.  In particular, if $L=\mathsf{Id}_{\codedim_0 \times \codedim_0} \otimes (1,\ldots, 2^{B-1})_S\otimes (\gamma_1, \ldots, \gamma_d) \in S^{\codedim_0 \times (\codedim_0\cdot B\cdot \moduledegree)} = S^{\codedim_0 \times \codedim}$ (cf.\ \cref{d:bitification}), then 
+    \begin{equation}\label{e:u_def}
+    \uu =   \left(\vv \otimes \left(1, 2, \ldots, 2^{B-1}\right)_R \otimes \left(\modulemorphism(\gamma_1), \ldots, \modulemorphism(\gamma_{\moduledegree})\right)\right) \in R^{\codedim}
     \end{equation}
 \end{lemma}
 \begin{proof}
-Rewriting $\langle \modulemorphism(\bff), \vv \rangle$, we obtain  by \cref{r: non_uniform_bit_decomposition,e:matrix_transpose_inner_product}
+Rewriting $\langle \psi(\bff), \vv \rangle$, we obtain  by \cref{r: non_uniform_bit_decomposition,e:matrix_transpose_inner_product}
 $$
 \langle \psi(\bff), \vv\rangle = \langle \psi(L\cdot \bitstext(\bff)_S), \vv\rangle =  \langle \psi(\bitstext(\bff)_S), \psi(L)^{\mathsf{T}} \cdot \vv\rangle 
 $$
 %
-The specific form of $\uu$ in \eqref{e:u_def} is obtained by direct calculation of $\psi(L)^{\mathsf{T}} \cdot \vv$.
+Now $\psi(\bitstext(\ff)_S) = \bitstext(\ff)_R$ because every entry of $\bitstext(\bff)$ consists of bits and $\psi$ is a ring homomorphism, so it sends the $0$ and $1$ elements of $S$ to the $0$ and $1$ elements of $R$. Further, $$\psi(L) = \mathsf{Id}_{\codedim_0\times \codedim_0} \otimes \psi( (1, \ldots, 2^{B-1})_S) \otimes (\psi(\gamma_1),\ldots, \psi(\gamma_\moduledegree)),  $$ 
+and $\psi \circ \pi_{\Char(S)}(2^i) = \pi_{\Char(R)}(2^i)$ because since $\psi \circ \pi_{\Char(S)}$ is a ring homomorphism,  $\psi\circ \pi_{\Char(S)}(2^i) = 2^i \cdot (\psi\circ \pi_{\Char(S)}(1))$, hence $\psi\circ \pi_{\Char(S)}(2^i)$ is $2^i$ times the identity element of $R$, and that is precisely the definition of $\pi_{\Char(R)}(2^i)$. 
+
+The specific form of $\uu$ in \eqref{e:u_def} is now obtained by direct calculation of $\psi(L)^{\mathsf{T}} \cdot \vv$. 
 %
 \begin{comment}
 \begin{align}
@@ -1626,42 +1688,51 @@ as needed.
 \end{comment}
 \end{proof}
 
+We assume that the input vector $\vv$ for $\LinModFieldBin(\moduleonebound, \psi, R,\cC)$, the matrix $L$, and the tensor decomposition dimensions are such that $\uu= \psi(L)^\mathsf{T}\cdot \vv$ admits a tensor decomposition $\uu=\uu^{(1)}\otimes \uu^{(2)}$ with $\uu^{(1)}\in R^{\codedim_1}$, $\uu^{(2)}\in R^{\codedim_2}$, see \cref{r:tensor_dec_u} for an explanation that this can be achieved easily in  applications, and what to do otherwise. 
+
 \begin{construction}[IOP for $\LinModFieldBin$]\label{c:LinModFieldBin}
 
- \textbf{Parameters.} $$(S, R, \ringmorphism, \codedim_0, B, \codedim, L, \codedim_1,\codedim_2, \comfield,\cC)$$ comprised of: two rings $S, R$; a ring morphism $\ringmorphism:S \to R$;  a witness length $\codedim_0$; a bit-size bound $B$; a bit number $\codedim$; a \emph{bitification} matrix $L\in S^{\codedim_0\times \codedim}$ as in \cref{r: non_uniform_bit_decomposition}; tensor decomposition dimensions $\codedim_1, \codedim_2$ for \cref{c:core_iop} satisfying $\codedim_1\cdot \codedim_2 = \codedim$; a binary field $\comfield$; a linear code $\cC$ over $\comfield$ of dimension $\codedim/\comfieldexp$ and blocklength $\codelength$.\\
-
-
+ \textbf{Parameters.} $(\codedim_0, \codedim, \codedim_1,\codedim_2, \Pi_\iopp, \cP, (\cM_q)_{q\in \cP})$ comprised of: a witness vector length $\codedim_0$; a \emph{bitified witness} vector length $\codedim$; tensor decomposition dimensions $\codedim_1, \codedim_2$ for \cref{c:core_iop} satisfying $\codedim_1\cdot \codedim_2 = \codedim$; IORs and IOPs $\Pi_\iopp$ and $\Pi_\red$ as in \cref{c:core_iop}; and sets of primes and homomorpshims $ \cP, (\cM_q)_{q\in \cP}$ again as in \cref{c:core_iop}.\\
 
 
 \noindent \textbf{Inputs.} The prover and verifier receive $\inp=(\mu, \vv)\in \moduletwo\times R^{\codedim_0}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives  $\wit= \bff\in \moduleonebound^{\codedim_0}$ such that $(\inp,\oracle, \wit) \in \LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo, \cC)$, i.e., 
 %
 $$
-f = \Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\bff)),\qquad \langle \modulemorphism(\bff), \vv \rangle = \mu \quad \text{in } R.
+f = \Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\bff)),\qquad \langle \psi(\bff), \vv \rangle = \mu \quad \text{in } R.
 $$
 \begin{enumerate}[leftmargin=*]
      \item By \cref{l:bitify}, the   claim $(\inp,\oracle, \wit) \in \LinModFieldBin(\moduleonebound,\modulemorphism, R,  \cC)$ is equivalent to the claim \begin{equation}\label{e:iop_final_linear_claim}
      \left(\inp'=(\mu, \uu), \oracle' = f=\Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\bff)), \wit' = \bitstext(\bff)\right) \in \LinBitsDual(\bits,\pi, R,\cC).
 \end{equation}
-where $\uu = \psi(L)^{\mathsf{T}}\cdot \vv$. %  \left(\vv \otimes \left(1, \ringmorphism(2), \ldots, \ringmorphism(2^{B-1})\right) \otimes \left(\modulemorphism(\gamma_1), \ldots, \modulemorphism(\gamma_{\moduledegree})\right)\right)$. 
-Accordingly, prover and verifier use \cref{c:core_iop} to prove \eqref{e:iop_final_linear_claim}. They use parameters $(R,\comfield,\codedim,\codedim_1,\codedim_2,\cC)$.  See \cref{r:tensor_dec_u} for comments on how to use tensor decompositions of $\uu$ in \cref{c:core_iop}.
-\end{enumerate}
+where $\uu = \psi(L)^{\mathsf{T}}\cdot \vv$. 
+
+By assumption, $\uu=\uu^{(1)}\otimes \uu^{(2)}$ with $\uu^{(1)}\in R^{\codedim_1}$, $\uu^{(2)}\in R^{\codedim_2}$. Then the prover and the verifier use \cref{c:core_iop} to prove \eqref{e:iop_final_linear_claim}. They use parameters $(\codedim,\codedim_1,\codedim_2,\Pi_\iopp, \Pi_\red, \cP, (\cM_q)_{q\in \cP})$.  See \cref{r:tensor_dec_u} for comments on how to obtain tensor decompositions of $\uu$ in \cref{c:core_iop} assuming $\vv$ is appropriately tensor-decomposable.
+ %  \left(\vv \otimes \left(1, \ringmorphism(2), \ldots, \ringmorphism(2^{B-1})\right) \otimes \left(\modulemorphism(\gamma_1), \ldots, \modulemorphism(\gamma_{\moduledegree})\right)\right)$. 
+ \end{enumerate}
 \end{construction}
 
 
 \begin{remark}[Tensor decompositions of $\uu$]\label{r:tensor_dec_u}
-Recall that \cref{c:core_iop} considers a (possibly trivial) tensor decomposition of its public input vector $\uu$ (denoted $\vv$ in \cref{c:core_iop}). Moreover, as argued in \cref{s:to_low_entropy_gkr,s:gkr_low_entropy}, this tensor decomposition is crucial for performance of \ftwoz (concretely, we want $\codedim^{0.5}\leq \codedim_1 \leq \codedim^{0.6}$, cf.\ \cref{s:gkr_low_entropy}).   
+Recall that \cref{c:core_iop} considers a (possibly trivial) tensor decomposition of its public input vector $\uu$ (denoted $\vv$ in \cref{c:core_iop}). Moreover, as argued in \cref{s:to_low_entropy_gkr,s:gkr_low_entropy}, this tensor decomposition is crucial for performance of \ftwoz\ (concretely, we seek $\codedim^{0.5}\leq \codedim_1 \leq \codedim^{0.6}$, cf.\ \cref{s:gkr_low_entropy}).   
 
-In many applications, the input vector $\vv$ for $\LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo,  \cC)$ is an ``eq'' vector, i.e.\ a vector of the form $(\eq(\bb,\rr))_{\bb\in\bits^{\log\codedim_0}}$ for some $\rr\in \moduletwo^{\log \codedim_0}$. In this case  $\vv=\vv^{(1)}\otimes \vv^{(2)}$ with the dimensions of $\vv^{(1)}$, $\vv^{(2)}$ being arbitrary as long as $|\vv^{(1)}|\cdot |\vv^{(2)}|=\codedim_0$. In that case, if \begin{equation}\label{e:canonical_bitification_matrix}L=\mathsf{Id}_{\codedim_0\times \codedim_0} \otimes \pi_{\Char(S)}(1,\ldots, 2^{B-1})\otimes (\gamma_1,\ldots, \gamma_\moduledegree)\end{equation} (cf.\ \cref{r: non_uniform_bit_decomposition}), then $\uu$ has the form \eqref{e:u_def} and we may use a tensor decomposition for $\uu$ in \cref{c:core_iop} of the form, say, $\uu=\uu^{(1)}\otimes \uu^{(2)}$, where
+In many applications, the input vector $\vv$ for $\LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo,  \cC)$ is an ``eq'' vector, i.e.\ a vector of the form $(\eq(\bb,\rr))_{\bb\in\bits^{\log\codedim_0}}$ for some $\rr\in \moduletwo^{\log \codedim_0}$. In this case  $\vv=\vv^{(1)}\otimes \vv^{(2)}$ with the dimensions of $\vv^{(1)}$, $\vv^{(2)}$ being arbitrary as long as $|\vv^{(1)}|\cdot |\vv^{(2)}|=\codedim_0$. In that case, if \begin{equation}\label{e:canonical_bitification_matrix}L=\mathsf{Id}_{\codedim_0\times \codedim_0} \otimes (1,\ldots, 2^{B-1})_S\otimes (\gamma_1,\ldots, \gamma_\moduledegree)\end{equation} (cf.\ \cref{d:bitification}), then $\uu$ has the form \eqref{e:u_def}, i.e.\ $$ \uu =   \left(\vv \otimes \left(1, 2, \ldots, 2^{B-1}\right)_R \otimes \left(\modulemorphism(\gamma_1), \ldots, \modulemorphism(\gamma_{\moduledegree})\right)\right) $$ and we may use a tensor decomposition for $\uu$ in \cref{c:core_iop} of the form, say, $\uu=\uu^{(1)}\otimes \uu^{(2)}$, where
 %
 $$
-\uu^{(1)} \defeq \vv^{(1)},\quad \uu^{(2)}\defeq \vv^{(2)}\otimes \left(1, \ringmorphism(2), \ldots, \ringmorphism(2^{B-1})\right) \otimes \left(\modulemorphism(\gamma_1), \ldots, \modulemorphism(\gamma_{\moduledegree})\right).
+\uu^{(1)} \defeq \vv^{(1)},\quad \uu^{(2)}\defeq \vv^{(2)}\otimes \left(1, 2, \ldots, 2^{B-1}\right)_R \otimes \left(\modulemorphism(\gamma_1), \ldots, \modulemorphism(\gamma_{\moduledegree})\right).
 $$
+Other decompositions apply. For example one of the tensor factors in $\uu^{(2)}$ above could be placed in $\uu^{(1)}$, and the vector  $\left(1, 2, \ldots, 2^{B-1}\right)_R$ can admit further tensor decomposition, and some of the factors can be placed in $\uu^{(1)}$.
+
 %
-For more general matrices $L$, one needs to make sure that $L$ has enough structure to allow for a favorable tensor decomposition of $\uu$. If that is not possible, one can always use the matrix \eqref{e:canonical_bitification_matrix}.
+For more general matrices $L$, one needs to make sure that $L$ has enough structure to allow for a favorable tensor decomposition of $\uu$. If that is not possible, one  can either: 
+\begin{itemize}
+[leftmargin=*,nosep]
+\item Fall back to using the matrix \eqref{e:canonical_bitification_matrix}, which is always available for arbitrary finitely generated rings $S$ with bit-bound $B$: or
+\item Alternatively, if the ring $R$ supports it, one can run a sumcheck to reduce the claim $\langle \uu, \psi(\bff)\rangle = \mu$ to an MLE evaluation claim over $R$, thereby ``replacing'' the vector $\uu$ by an ``eq vector'' that, as such, admits tensor decompositions of arbitrary dimensions.
+\end{itemize}
 \end{remark}
 
 \begin{theorem}\label{t:thm_LinModFieldBits}
-    Under the same hypotheses and notation as in \cref{t:thm_core_IOPP}, \cref{c:LinModFieldBin} is a perfectly complete $(2+t_\red + t_\iopp)$-round IOP for $\LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo, \cC)$ with round-by-round knowledge soundness with relaxation $(\LinModFieldBin^{\delta},\bot)$ and errors $$\kappa_{\mathsf{OOD}}, \kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]},$$ where $\kappa_{\mathsf{OOD}}$ is as in \cref{t:thm_core_IOPP} and $
+    Under the same hypotheses and notation as in \cref{t:thm_core_IOPP} for the parameters $(\codedim,\codedim_1,\codedim_2, \Pi_\iopp,\Pi_\red, \cP, (\cM_q)_{q\in \cP})$, the  ring $R$, the code $\cC$, and the binary field $\comfield$ with packing map $\pack$, \cref{c:LinModFieldBin} is a perfectly complete $(2+t_\red + t_\iopp)$-round IOP for $\LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo, \cC)$ with round-by-round knowledge soundness with relaxation $(\LinModFieldBin^{\delta},\bot)$ and errors $$\kappa_{\mathsf{OOD}}, \kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]},$$ where $\kappa_{\mathsf{OOD}}$ is as in \cref{t:thm_core_IOPP} and $
     \kappa_0 = \theta(R,\codedim). %\frac{\degevalfield}{q_{\min}} + \frac{\log(\codedim_1 +1) + \log(q-1)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}.
     $ (see \cref{t:thm_core_IOPP}; here $\theta(R,\codedim)$ is computed with respect to the tensor decomposition $\uu=\uu^{(1)}\otimes \uu^{(2)}$ of \cref{r:tensor_dec_u} used in \cref{c:core_iop}, i.e.\ the quantities $D$, $T$, $N_R$ are determined by the lifts of the entries of $\uu^{(1)}$ and $\uu^{(2)}$).
     
@@ -2872,9 +2943,12 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
 
 \subsection{Completeness and soundness of \cref{c:LinModFieldBin}}\label{a:LinModFieldBin}
 
-\albertimportant{I wrote this quite quickly. It may need polishing}
+\albertimportant{I wrote this quite quickly. It may need polishing} 
 
-The result follows  from \cref{t:thm_core_IOPP} and the fact that $(\inp,\oracle, \wit) \in \LinModFieldBin(M_{R_{\leq B}},\psi,\KK, \cC)$ if and only if \eqref{e:iop_final_linear_claim} holds (due to \cref{l:bitify}). More concretely: perfect completeness is immediate. For round-by-round knowledge soundness, let $\kstate'$ be a state function for \cref{c:core_iop}. Then   we define a state function $\kstate$ for \cref{c:LinModFieldBin} as, when $\tr$ is neither an empty transcript or a transcript containing only a prover message (and no verifier messages),
+
+\albertimportant{notation looks outdated!}
+
+The result follows  from \cref{t:thm_core_IOPP} and the fact that $(\inp,\oracle, \wit) \in \LinModFieldBin(S_{\leq B},\psi,R, \cC)$ if and only if \eqref{e:iop_final_linear_claim} holds (due to \cref{l:bitify}). More concretely: perfect completeness is immediate. For round-by-round knowledge soundness, let $\kstate'$ be a state function for \cref{c:core_iop}. Then   we define a state function $\kstate$ for \cref{c:LinModFieldBin} as, when $\tr$ is neither an empty transcript or a transcript containing only a prover message (and no verifier messages),
 %
 $$
 \kstate(\inp, \oracle, \tr, \ww) = \kstate'(\inp', \oracle, \tr,\ww),
