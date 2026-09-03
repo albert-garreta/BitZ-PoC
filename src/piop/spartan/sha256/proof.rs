@@ -2686,6 +2686,78 @@ mod tests {
     }
 
     #[test]
+    fn explicit_inner_sumcheck_layout_roundtrips_across_forest_counts() {
+        use super::super::super::{
+            Sha256OpeningLayout, prepare_sha256_compression_batch_with_profile_and_layout,
+        };
+        use crate::piop::spartan::profile::Lambda100;
+        // 2^7 compressions: 2^22 assignment cells. t = 13 keeps one forest
+        // (113-bit primes, c_w = 113); t = 15 narrows c_w to 111 and needs two.
+        const LOG_COMPRESSIONS: usize = 7;
+        let inputs = (0..1usize << LOG_COMPRESSIONS)
+            .map(input)
+            .collect::<Vec<_>>();
+        for (row_vars, expected_forests) in [(13usize, 1usize), (15, 2)] {
+            let prepared = prepare_sha256_compression_batch_with_profile_and_layout::<Lambda100>(
+                LOG_COMPRESSIONS,
+                Sha256OpeningLayout::InnerSumcheck { row_vars },
+            )
+            .unwrap();
+            assert_eq!(
+                prepared.opening_layout(),
+                Sha256OpeningLayout::InnerSumcheck { row_vars }
+            );
+            assert!(prepared.product_assignment_params().is_none());
+            let p_h = *prepared.opening_params();
+            assert_eq!((p_h.t, p_h.t + p_h.s), (row_vars, 22));
+            let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
+            let public_statement = public_statements(&inputs, witness.outputs());
+            let (pc, vc) = sha256_compression_configs(&prepared).unwrap();
+            let hint =
+                commit_sha256_compression_witness_with_config(&prepared, &witness, &pc).unwrap();
+            let mut prover_transcript = Blake3Transcript::new();
+            let proof = prove_sha256_compressions_with_config(
+                &mut prover_transcript,
+                &prepared,
+                &public_statement,
+                &witness,
+                &hint,
+                &pc,
+            )
+            .unwrap();
+            assert_eq!(
+                proof.f2z().mfs.len(),
+                expected_forests,
+                "forests at t={row_vars}"
+            );
+            assert_eq!(
+                proof.inner().round_polynomials.len(),
+                22,
+                "inner rounds at t={row_vars}"
+            );
+            let mut verifier_transcript = Blake3Transcript::new();
+            verify_sha256_compressions_with_config(
+                &mut verifier_transcript,
+                &prepared,
+                &public_statement,
+                &hint.commitment,
+                &proof,
+                &vc,
+            )
+            .unwrap();
+        }
+        for row_vars in [LOG_PACKING - 1, 22] {
+            assert!(matches!(
+                prepare_sha256_compression_batch_with_profile_and_layout::<Lambda100>(
+                    LOG_COMPRESSIONS,
+                    Sha256OpeningLayout::InnerSumcheck { row_vars },
+                ),
+                Err(crate::piop::spartan::Sha256ConstraintError::InvalidOpeningRowVars { .. })
+            ));
+        }
+    }
+
+    #[test]
     fn runtime_prime_roundtrip() {
         // Pinned to the grinded reference schedule: this test exercises the
         // per-round and initial/terminal grinding machinery, which the

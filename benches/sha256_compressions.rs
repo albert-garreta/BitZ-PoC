@@ -26,6 +26,10 @@
 //! Power-of-two compression batches open the product-layout assignment
 //! directly. `F2Z_SHA_INNER_PREFIX_VARS=0..4` only configures the legacy
 //! inner-sumcheck fallback used by non-power-of-two assignment-row batches.
+//! `F2Z_SHA_OPENING_T=<t>` forces that inner-sumcheck path on every
+//! compression-count shape with an explicit F2Z split of `2^t` rows (the
+//! read-off vector then has `2^(vars - t)` columns; splits above the
+//! one-forest cap open with one forest per weight chunk).
 //!
 //! `F2Z_BENCH_LAMBDA=100|128|sha128-reference-schedule` selects the security
 //! profile the run measures at (default `Lambda100`; the two-prime
@@ -55,10 +59,11 @@ use f2z::{
         SHA256_COMMITMENT_FIELD_BITS, SHA256_CONSTRAINTS, SHA256_DEFAULT_INNER_PREFIX_VARS,
         SHA256_F_INSTANCE_BITS, SHA256_H_INSTANCE_BITS, SHA256_INNER_PREFIX_MAX_VARS,
         SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS, Sha256CompressionInput,
-        Sha256CompressionStatement, Sha256ConstraintError, SpartanField,
+        Sha256CompressionStatement, Sha256ConstraintError, Sha256OpeningLayout, SpartanField,
         commit_sha256_compression_witness_with_config, generate_sha256_compression_witnesses,
         prepare_sha256_compression_batch_for_assignment_rows_with_profile,
         prepare_sha256_compression_batch_with_profile,
+        prepare_sha256_compression_batch_with_profile_and_layout,
         prove_sha256_compressions_with_prefix_vars_and_config, sha256_compression_configs,
         verify_sha256_compressions_with_config,
     },
@@ -77,6 +82,7 @@ struct RepTiming {
     verify_phases: Vec<(&'static str, f64)>,
     spartan_bytes: usize,
     f2z_bytes: usize,
+    forests: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -112,12 +118,17 @@ impl BenchShape {
     /// Public relation preparation under the selected security profile.
     fn prepare<P: IopSecurityProfile>(
         self,
+        layout: Sha256OpeningLayout,
     ) -> Result<PreparedSha256CompressionBatch, Sha256ConstraintError> {
         match self {
             Self::Compressions(exponent) => {
-                prepare_sha256_compression_batch_with_profile::<P>(exponent)
+                prepare_sha256_compression_batch_with_profile_and_layout::<P>(exponent, layout)
             }
             Self::AssignmentRows(exponent) => {
+                assert!(
+                    layout == Sha256OpeningLayout::Default,
+                    "F2Z_SHA_OPENING_T applies to compression-count shapes only"
+                );
                 prepare_sha256_compression_batch_for_assignment_rows_with_profile::<P>(exponent)
             }
         }
@@ -856,11 +867,13 @@ fn run_once(
         )
         .expect("SHA proof succeeds")
     };
-    assert_eq!(
-        proof.f2z().mfs.len(),
-        1,
-        "every SHA benchmark proof must use exactly one merged forest"
-    );
+    let forests = proof.f2z().mfs.len();
+    if prepared.opening_layout() == Sha256OpeningLayout::Default {
+        assert_eq!(
+            forests, 1,
+            "every production-layout SHA proof uses exactly one merged forest"
+        );
+    }
     drop(prover_scope);
     let prove_ms = prove_started.elapsed().as_secs_f64() * 1e3;
     let prove_phases = f2z::utils::prof::take_totals();
@@ -903,6 +916,7 @@ fn run_once(
         verify_phases,
         spartan_bytes,
         f2z_bytes,
+        forests,
     };
     (timing, intervals)
 }
@@ -913,6 +927,7 @@ fn bench_shape<P: IopSecurityProfile>(
     root_seed: u64,
     threads: usize,
     inner_prefix_vars: usize,
+    layout: Sha256OpeningLayout,
     trace_writer: &mut Option<TraceWriter>,
 ) {
     let exponent = shape.exponent();
@@ -924,7 +939,7 @@ fn bench_shape<P: IopSecurityProfile>(
         };
 
     let setup_started = Instant::now();
-    let prepared = match shape.prepare::<P>() {
+    let prepared = match shape.prepare::<P>(layout) {
         Ok(prepared) => prepared,
         Err(
             error @ (Sha256ConstraintError::Profile(_) | Sha256ConstraintError::PrimeProfile(_)),
@@ -988,6 +1003,20 @@ fn bench_shape<P: IopSecurityProfile>(
             inner_prefix_vars,
             Trial::Warmup(0),
             &warm_intervals,
+        );
+    }
+    {
+        let opening = prepared.opening_params();
+        let kind = match prepared.opening_layout() {
+            Sha256OpeningLayout::Default if prepared.instances().is_power_of_two() => {
+                "direct product opening"
+            }
+            Sha256OpeningLayout::Default => "inner sumcheck, balanced one-forest split",
+            Sha256OpeningLayout::InnerSumcheck { .. } => "inner sumcheck, explicit split",
+        };
+        println!(
+            "  opening layout: {kind} | F2Z rows 2^{} × columns 2^{} | forests {} | read-off ≤ 2^{} integers per forest",
+            opening.t, opening.s, warm.forests, opening.s
         );
     }
     black_box(warm);
@@ -1081,6 +1110,15 @@ fn main() {
         "F2Z_SHA_INNER_PREFIX_VARS must be in 0..={SHA256_INNER_PREFIX_MAX_VARS}"
     );
 
+    let layout = std::env::var("F2Z_SHA_OPENING_T").map_or(Sha256OpeningLayout::Default, |value| {
+        Sha256OpeningLayout::InnerSumcheck {
+            row_vars: value
+                .trim()
+                .parse::<usize>()
+                .expect("F2Z_SHA_OPENING_T must be an integer: the F2Z row variables of the opening"),
+        }
+    });
+
     let selected = common::security_profile(PrimePolicy::SingleDerived);
     let profile = selected.unwrap_or(common::SecurityProfile::Lambda100);
 
@@ -1094,6 +1132,11 @@ fn main() {
         "security profile: {}",
         common::profile_banner(selected, common::SecurityProfile::Lambda100)
     );
+    if let Sha256OpeningLayout::InnerSumcheck { row_vars } = layout {
+        println!(
+            "opening layout override: inner sumcheck with 2^{row_vars} F2Z rows (F2Z_SHA_OPENING_T={row_vars})"
+        );
+    }
     if let Some(path) = std::env::var_os("F2Z_SHA_TRACE_PATH") {
         println!("canonical interval trace: {}", Path::new(&path).display());
     }
@@ -1108,6 +1151,7 @@ fn main() {
                 root_seed,
                 threads,
                 inner_prefix_vars,
+                layout,
                 &mut trace_writer,
             )
         );

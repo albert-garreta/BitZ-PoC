@@ -11,10 +11,11 @@ pub use inner_sumcheck::SHA256_INNER_PREFIX_MAX_VARS;
 pub use constraints::{
     PreparedSha256CompressionBatch, SHA256_CONSTRAINTS, SHA256_F_BAR_LIVE_BITS,
     SHA256_F_INSTANCE_BITS, SHA256_F_LIVE_BITS, SHA256_H_BAR_LIVE_BITS, SHA256_H_INSTANCE_BITS,
-    Sha256ConstraintError, prepare_sha256_compression_batch,
+    Sha256ConstraintError, Sha256OpeningLayout, prepare_sha256_compression_batch,
     prepare_sha256_compression_batch_for_assignment_rows,
     prepare_sha256_compression_batch_for_assignment_rows_with_profile,
     prepare_sha256_compression_batch_with_profile,
+    prepare_sha256_compression_batch_with_profile_and_layout,
 };
 pub use prime::{
     SHA256_COMMITMENT_FIELD_BITS, SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS,
