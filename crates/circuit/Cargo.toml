@@ -1,0 +1,12 @@
+[package]
+name = "circuit"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT OR Apache-2.0"
+description = "Backend-independent SHA-256/F2Z circuit synthesis, vendored from worldfnd/f2z-benchmark crates/circuit at 9f98e08 (the snapshot this crate's Spartan integration was built against; later upstream revisions grow a `field` dependency)."
+
+[dependencies]
+num-bigint = "0.4"
+num-traits = "0.2"
+rayon = "1.10"
