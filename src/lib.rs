@@ -67,6 +67,7 @@ pub mod sparse_matrix;
 pub mod taps;
 pub mod transcript;
 pub mod utils;
+pub(crate) mod virt_batch;
 
 pub use ligerito_flock::{
     FlockRsError, IntEvalRsLigModQProof, LigConfig, commit_rs_flock, commit_rs_flock_with,

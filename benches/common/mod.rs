@@ -114,6 +114,7 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_TAPS_GRP",
     "F2Z_TAPS_SEED",
     "F2Z_VIRT_ID_FAST",
+    "F2Z_VIRT_PLANES",
 ];
 
 /// Aborts on any exported `F2Z_*` variable the repo does not know.
@@ -288,6 +289,7 @@ const S5_OPENER: &[&str] = &[
     "mq:rings_main",
     "mq:bcomb_main",
     "mqv:wprep",
+    "mqv:planes",
     "mqv:hs",
     "mqv:aprime",
     "mqv:lig",

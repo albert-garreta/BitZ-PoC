@@ -10145,6 +10145,14 @@ where
 /// eligible statement; the verifier accepts either reduction there (both are
 /// sound), so no cross-process agreement is needed. Read per call so
 /// tests can toggle it.
+/// The packed-source plane engine (`F2Z_VIRT_PLANES`, default on; `0`
+/// restores the per-cell batching kernels — diagnostic / A-B measurement;
+/// byte-identical proofs either way). Read once per process.
+fn virt_planes() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("F2Z_VIRT_PLANES").map_or(true, |v| v != "0"))
+}
+
 fn virt_id_fast() -> bool {
     std::env::var("F2Z_VIRT_ID_FAST").map_or(true, |v| v != "0")
 }
@@ -10371,6 +10379,11 @@ enum VirtColumnWeights<'a, M: crate::f2map::VirtualMap> {
         /// Per chunk and instance: a preprocessed multiplier for the instance
         /// equality weight, reused across each contiguous local-column run.
         eq_inst: Vec<Vec<FixedGfMul>>,
+        /// The same instance equality tables as plain field elements (the
+        /// plane engine's instance factors).
+        eq_inst_gf: Vec<Vec<Gf>>,
+        /// Number of instances (`2^k`).
+        instances: usize,
         /// Per chunk and local column: the eta-scaled local-row equality sum.
         s: Vec<Vec<Gf>>,
         /// Weight of the one source constant shared by every instance.
@@ -10404,15 +10417,13 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                 // coordinates. Keep the structural boundary with the
                 // factorized representation so those packs evaluate to zero.
                 debug_assert!(local.rows() * instances <= map.rows());
-                let eq_inst: Vec<Vec<FixedGfMul>> = points
+                let eq_inst_gf: Vec<Vec<Gf>> = points
                     .iter()
-                    .map(|pt| {
-                        build_eq_x_r_vec(&pt[..k], &())
-                            .expect("k >= 1")
-                            .into_iter()
-                            .map(FixedGfMul::new)
-                            .collect()
-                    })
+                    .map(|pt| build_eq_x_r_vec(&pt[..k], &()).expect("k >= 1"))
+                    .collect();
+                let eq_inst: Vec<Vec<FixedGfMul>> = eq_inst_gf
+                    .iter()
+                    .map(|table| table.iter().copied().map(FixedGfMul::new).collect())
                     .collect();
                 let s: Vec<Vec<Gf>> = points
                     .iter()
@@ -10441,6 +10452,8 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                     local_width,
                     live_cols,
                     eq_inst,
+                    eq_inst_gf,
+                    instances,
                     s,
                     constant_weight,
                     _map: core::marker::PhantomData,
@@ -10490,6 +10503,36 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
             map,
             coeffs: VirtRowCoeffs::new(points, etas, t_wh),
         }
+    }
+
+    /// The plane engine ([`crate::virt_batch`]) for a packed-source
+    /// repetition whose shape pays for it; `None` keeps the per-cell
+    /// kernels. `F2Z_VIRT_PLANES=0` opts out (A/B; bit-identical messages
+    /// either way).
+    fn packed_source_planes(&self) -> Option<crate::virt_batch::PackedSourcePlanes> {
+        let Self::PackedSourceRepeated {
+            local_width,
+            eq_inst_gf,
+            instances,
+            s,
+            constant_weight,
+            ..
+        } = self
+        else {
+            return None;
+        };
+        if !virt_planes()
+            || !crate::virt_batch::PackedSourcePlanes::eligible(*local_width, *instances, s.len())
+        {
+            return None;
+        }
+        Some(crate::virt_batch::PackedSourcePlanes::new(
+            *local_width,
+            *instances,
+            eq_inst_gf.clone(),
+            s,
+            *constant_weight,
+        ))
     }
 
     /// Fills the 128 weights of source pack `pack`. Returns `false` when
@@ -10728,10 +10771,17 @@ where
         };
         let a_cols = crate::dual_basis::dual_basis_cols();
         debug_assert_eq!(hint.p_msg.len(), 1usize << self.source_packed_vars);
+        let planes = {
+            let _g = crate::utils::prof::scope("mqv:planes");
+            weights.packed_source_planes()
+        };
 
         let hs = {
             let _g = crate::utils::prof::scope("mqv:hs");
-            virtual_hs_fold(self.map, &weights, &hint.p_msg, &a_cols)
+            match &planes {
+                Some(planes) => planes.hs_fold(&hint.p_msg),
+                None => virtual_hs_fold(self.map, &weights, &hint.p_msg, &a_cols),
+            }
         };
         crate::ligerito::absorb_hs(&mut grinder, hs.as_ref());
 
@@ -10742,19 +10792,26 @@ where
             .iter()
             .zip(hs.iter())
             .fold(Gf::zero(), |acc, (&r, &h)| acc + r * h);
-        let basis = {
+        let (basis, precomputed_round0) = {
             let _g = crate::utils::prof::scope("mqv:aprime");
-            virtual_a_prime(self.map, &weights, &rho, &a_cols, hint.p_msg.len())
-                .into_iter()
-                .map(gf_to_f128)
-                .collect()
+            match &planes {
+                Some(planes) => {
+                    let (basis, round0) = planes.a_prime(&rho, &hint.p_msg);
+                    (basis, rs_fast().then_some(round0))
+                }
+                None => (
+                    virtual_a_prime(self.map, &weights, &rho, &a_cols, hint.p_msg.len()),
+                    None,
+                ),
+            }
         };
+        let basis = basis.into_iter().map(gf_to_f128).collect();
 
         PreparedProverLigeritoClaim {
             reduction: hs,
             target,
             basis,
-            precomputed_round0: None,
+            precomputed_round0,
             grinding_nonces,
         }
     }
@@ -12034,6 +12091,113 @@ mod tests {
                         .iter()
                         .all(|value| *value == Gf::zero())
                 );
+            }
+        }
+    }
+
+    /// The packed-source plane engine reproduces the per-cell `h` and `a′`
+    /// kernels bit-for-bit: narrow (many instances per pack) and wide
+    /// (instances straddling packs at drifting phases, odd and even
+    /// widths) local layouts, one and two chunks, padded suffixes.
+    #[test]
+    fn virtual_planes_match_cellwise() {
+        use crate::f2map::{PackedSourceRepeatedVirtualMap, PreparedVirtualMap};
+        use crate::sparse_matrix::SparseMatrix;
+        use crate::virt_batch::PackedSourcePlanes;
+
+        for (local_rows, local_width, instances) in [
+            (29usize, 15usize, 256usize),
+            (29, 15, 4),
+            (61, 200, 16),
+            (61, 201, 64),
+            (97, 1000, 8),
+            (97, 1024, 8),
+            (37, 300, 2),
+        ] {
+            let local_cols = local_width + 1;
+            let columns: Vec<Vec<(usize, bool)>> = (0..local_cols)
+                .map(|column| {
+                    if column % 97 == 3 {
+                        return Vec::new();
+                    }
+                    let count = if column == 0 { 5 } else { 1 + column % 5 };
+                    let mut rows: Vec<usize> = (0..count)
+                        .map(|index| (column * 11 + index * 7 + 2) % local_rows)
+                        .collect();
+                    rows.sort_unstable();
+                    rows.dedup();
+                    rows.into_iter().map(|row| (row, true)).collect()
+                })
+                .collect();
+            let local = PreparedVirtualMap::new(
+                SparseMatrix::try_from_columns(local_rows, columns).unwrap(),
+            )
+            .unwrap();
+            let rows = (local_rows * instances).next_power_of_two();
+            let live_cols = 1 + local_width * instances;
+            let cols = live_cols.next_power_of_two().max(128);
+            let map =
+                PackedSourceRepeatedVirtualMap::new(local.clone(), instances, rows, cols).unwrap();
+            let vars = rows.trailing_zeros() as usize;
+            let k = instances.trailing_zeros() as usize;
+            let t_wh = k + 1;
+            let n_packs = cols >> LOG_PACKING;
+            for chunks in [1usize, 2] {
+                let points: Vec<Vec<Gf>> = (0..chunks as u64)
+                    .map(|claim| {
+                        (0..vars)
+                            .map(|bit| sample(0x5A00 + claim * 64 + bit as u64 + local_width as u64))
+                            .collect()
+                    })
+                    .collect();
+                let etas: Vec<Gf> = (0..chunks as u64).map(|c| sample(0xE0 + c)).collect();
+                let structured = VirtColumnWeights::new(&map, &points, &etas, t_wh);
+                let VirtColumnWeights::PackedSourceRepeated {
+                    eq_inst_gf,
+                    s,
+                    constant_weight,
+                    ..
+                } = &structured
+                else {
+                    panic!("packed source repetition must take its factored path");
+                };
+                let planes = PackedSourcePlanes::new(
+                    local_width,
+                    instances,
+                    eq_inst_gf.clone(),
+                    s,
+                    *constant_weight,
+                );
+                let generic = VirtColumnWeights::Generic {
+                    map: &map,
+                    coeffs: VirtRowCoeffs::new(&points, &etas, t_wh),
+                };
+                let p_msg: Vec<F128> = (0..n_packs)
+                    .map(|pack| gf_to_f128(sample(0xB100 + pack as u64)))
+                    .collect();
+                let a_cols = crate::dual_basis::dual_basis_cols();
+                assert_eq!(
+                    planes.hs_fold(&p_msg),
+                    virtual_hs_fold(&map, &generic, &p_msg, &a_cols),
+                    "h: width {local_width}, instances {instances}, chunks {chunks}"
+                );
+                let rho: Vec<Gf> = (0..128).map(|bit| sample(0xC100 + bit as u64)).collect();
+                let (a_prime, (u0, u2)) = planes.a_prime(&rho, &p_msg);
+                assert_eq!(
+                    a_prime,
+                    virtual_a_prime(&map, &generic, &rho, &a_cols, n_packs),
+                    "a′: width {local_width}, instances {instances}, chunks {chunks}"
+                );
+                // The fused round-0 pair equals the direct pairwise sums.
+                let mut expect_u0 = Gf::zero();
+                let mut expect_u2 = Gf::zero();
+                for j in (0..n_packs.saturating_sub(1)).step_by(2) {
+                    let f0 = f128_to_gf(p_msg[j]);
+                    let f1 = f128_to_gf(p_msg[j + 1]);
+                    expect_u0 += f0 * a_prime[j];
+                    expect_u2 += (f0 + f1) * (a_prime[j] + a_prime[j + 1]);
+                }
+                assert_eq!((u0, u2), (expect_u0, expect_u2), "round-0 pair");
             }
         }
     }

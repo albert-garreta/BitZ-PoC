@@ -168,6 +168,33 @@ distributivity make every value bit-identical to the streamed fold
 without a power-of-two repetition keep the streamed fold as the engine's
 generic arm.
 
+For the packed-source repetition (`PackedSourceRepeatedVirtualMap`,
+`global = 1 + instance·w + local`, the SHA-256 product layout) the PROVER
+side of both batching passes goes one step further (`virt_batch`,
+`F2Z_VIRT_PLANES=0` opts out). The factored weights `W_{(i,c)} = e_i·s_c`
+are never formed: by the dual-basis identity
+`bit_b(e·s) = c₀(e·s·A(e_b)) = Σ_a bit_a(e·A(e_b))·bit_a(A⁻¹s)`, the instance
+factor separates from the local-column factor, so with the local plane
+packings `R_a(y, i) = Σ_{v ∈ instance i} bit_a(A⁻¹s_{c(y,v)})·A(e_v)` —
+bit-plane transposes of the local columns, shared by every instance of the
+same pack phase (16 phases for SHA) —
+`h_b = Σ_i Σ_a bit_a(e_i A(e_b))·Q_i[a]` with `Q_i[a] = Σ_y P[y]·R_a(y, i)`,
+and `a'(y) = Σ_i Σ_a ρ'_{i,a}·R_a(y, i)` with
+`ρ'_{i,a} = Σ_b ρ_b·bit_a(e_i A(e_b))`. Each source cell then costs ONE
+unreduced fixed-scalar GF(2^128) multiply per pass (4 shuffle-free PMULLs
+into a 2-limb accumulator, one fold per accumulator) instead of a weight
+multiply, a basis multiply and a 128-way bit scatter (resp. 16 table
+gathers); the per-instance `O(128²)` read-offs (`Q_i` through 16 byte tables,
+`ρ'_i` through 16 byte-indexed rows of the ρ-only table
+`C_{u,a} = Σ_b ρ_b·bit_a(X^u A(e_b))`) amortise over the instance width. The
+pass also emits flock's Ligerito round-0 pair, as the direct path does. Exact
+field identities only, so `h`, `a'` and the transcript are bit-identical
+(`virtual_planes_match_cellwise`); the verifier's reduction is untouched.
+Measured on the `sha256_compressions` bench (M4, 4 P-cores, λ=100
+medians): step 5.3 (ring switch + Ligerito) 149 → 16 ms at 2^12 and
+646 → 63 ms at 2^14 (`h` 365 → ~30 ms, `a'` 243 → ~26 ms, Ligerito proper
+~10 ms; the forest now dominates the opening at >95 %).
+
 When the prepared map is exactly the identity and both tensor layouts agree,
 the prover may emit `VirtOpenTail::Eq` and run the base opening directly on
 committed `f`. Otherwise it emits `VirtOpenTail::Batch`. The verifier accepts

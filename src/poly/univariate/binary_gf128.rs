@@ -1814,7 +1814,7 @@ pub(crate) mod neon {
     /// bits, so `R1` is already reduced. One 64×64 clmul — amortised
     /// over the pass.
     #[inline(always)]
-    unsafe fn prep_fixed(rho: &BinaryFieldGF128) -> (uint64x2_t, uint64x2_t) {
+    pub(crate) unsafe fn prep_fixed(rho: &BinaryFieldGF128) -> (uint64x2_t, uint64x2_t) {
         let w = rho.uint.as_words();
         let rg = super::clmul_64x64(w[1], 0x87);
         let rl = [w[0], rg[0]];
@@ -1826,7 +1826,7 @@ pub(crate) mod neon {
     /// The 191-bit unreduced fixed-scalar product `(t_lo, t_mid)`:
     /// 4 shuffle-free PMULLs, 2 EORs.
     #[inline(always)]
-    unsafe fn mul_fixed_wide(
+    pub(crate) unsafe fn mul_fixed_wide(
         av: uint64x2_t,
         rl: uint64x2_t,
         rh: uint64x2_t,
