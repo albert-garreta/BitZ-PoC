@@ -10360,6 +10360,23 @@ enum VirtColumnWeights<'a, M: crate::f2map::VirtualMap> {
         s: Vec<Vec<Gf>>,
         _map: core::marker::PhantomData<&'a M>,
     },
+    /// Factored tensor tables for an instance-major packed source with one
+    /// shared constant column. Unlike `Repeated`, source packs normally stay
+    /// within one instance and walk consecutive local columns.
+    PackedSourceRepeated {
+        /// Number of nonconstant source cells in one local instance.
+        local_width: usize,
+        /// End of the live source prefix; the remaining source domain is zero.
+        live_cols: usize,
+        /// Per chunk and instance: a preprocessed multiplier for the instance
+        /// equality weight, reused across each contiguous local-column run.
+        eq_inst: Vec<Vec<FixedGfMul>>,
+        /// Per chunk and local column: the eta-scaled local-row equality sum.
+        s: Vec<Vec<Gf>>,
+        /// Weight of the one source constant shared by every instance.
+        constant_weight: Gf,
+        _map: core::marker::PhantomData<&'a M>,
+    },
     /// The streamed per-nonzero fold (any map).
     Generic { map: &'a M, coeffs: VirtRowCoeffs },
 }
@@ -10368,6 +10385,68 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
     #[allow(clippy::arithmetic_side_effects)]
     fn new(map: &'a M, points: &[Vec<Gf>], etas: &[Gf], t_wh: usize) -> Self {
         use crate::poly::utils::build_eq_x_r_vec;
+        if let Some((local, instances)) = map.packed_source_repetition()
+            && instances.is_power_of_two()
+            && instances > 1
+            && local.cols() > 1
+        {
+            let k = instances.trailing_zeros() as usize;
+            let local_width = local.cols() - 1;
+            if let Some(live_cols) = local_width
+                .checked_mul(instances)
+                .and_then(|width| width.checked_add(1))
+                .filter(|&width| width <= map.cols())
+                && points
+                    .iter()
+                    .all(|pt| k < pt.len() && (1usize << (pt.len() - k)) >= local.rows())
+            {
+                // Padded global columns are not `(instance, local-column)`
+                // coordinates. Keep the structural boundary with the
+                // factorized representation so those packs evaluate to zero.
+                debug_assert!(local.rows() * instances <= map.rows());
+                let eq_inst: Vec<Vec<FixedGfMul>> = points
+                    .iter()
+                    .map(|pt| {
+                        build_eq_x_r_vec(&pt[..k], &())
+                            .expect("k >= 1")
+                            .into_iter()
+                            .map(FixedGfMul::new)
+                            .collect()
+                    })
+                    .collect();
+                let s: Vec<Vec<Gf>> = points
+                    .iter()
+                    .zip(etas.iter())
+                    .map(|(pt, &eta)| {
+                        let eq_loc =
+                            build_eq_x_r_vec(&pt[k..], &()).expect("local coords non-empty");
+                        local
+                            .matrix()
+                            .columns()
+                            .map(|column| {
+                                let sum = column
+                                    .row_indices()
+                                    .iter()
+                                    .fold(Gf::zero(), |acc, &lr| acc + eq_loc[lr]);
+                                eta * sum
+                            })
+                            .collect()
+                    })
+                    .collect();
+                // Column zero is shared by every repetition. The instance
+                // equality table sums to one, so its factored weight is just
+                // the sum of the local constant-column terms.
+                let constant_weight = s.iter().fold(Gf::zero(), |acc, s_l| acc + s_l[0]);
+                return Self::PackedSourceRepeated {
+                    local_width,
+                    live_cols,
+                    eq_inst,
+                    s,
+                    constant_weight,
+                    _map: core::marker::PhantomData,
+                };
+            }
+        }
         if let Some((local, instances)) = map.repetition()
             && instances.is_power_of_two()
             && instances > 1
@@ -10463,6 +10542,46 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                     }
                     live
                 }
+            }
+            Self::PackedSourceRepeated {
+                local_width,
+                live_cols,
+                eq_inst,
+                s,
+                constant_weight,
+                ..
+            } => {
+                out.fill(Gf::zero());
+                if base >= *live_cols {
+                    return false;
+                }
+
+                let end = (base + 128).min(*live_cols);
+                let mut column = base;
+                if column == 0 {
+                    out[0] = *constant_weight;
+                    column = 1;
+                }
+
+                // Nonconstant columns are instance-major. Split the pack only
+                // at instance boundaries so division and fixed-multiplier
+                // selection happen once per run, not once per source cell.
+                while column < end {
+                    let offset = column - 1;
+                    let instance = offset / *local_width;
+                    let local_offset = offset % *local_width;
+                    let run_len = (end - column).min(*local_width - local_offset);
+                    let targets = &mut out[column - base..column - base + run_len];
+                    for (eq_inst_l, s_l) in eq_inst.iter().zip(s.iter()) {
+                        let fixed = &eq_inst_l[instance];
+                        let source = &s_l[1 + local_offset..1 + local_offset + run_len];
+                        for (target, &value) in targets.iter_mut().zip(source) {
+                            *target += fixed.mul(value);
+                        }
+                    }
+                    column += run_len;
+                }
+                out[..end - base].iter().any(|weight| *weight != Gf::zero())
             }
             Self::Generic { map, coeffs } => {
                 let mut live = false;
@@ -11803,6 +11922,118 @@ mod tests {
                 if !live {
                     assert!(fast.iter().all(|w| *w == Gf::zero()));
                 }
+            }
+        }
+    }
+
+    /// The SHA/product-layout source repetition has a different column order
+    /// from `RepeatedVirtualMap`: one shared constant followed by contiguous
+    /// nonconstant columns for each instance. Its factored engine must still
+    /// match the generic CSC walk across instance boundaries and padding.
+    #[test]
+    fn virtual_packed_source_weights_match_generic() {
+        use crate::f2map::{PackedSourceRepeatedVirtualMap, PreparedVirtualMap};
+        use crate::sparse_matrix::SparseMatrix;
+
+        let local_rows = 29usize;
+        let local_cols = 16usize; // 15-wide instance runs cross 128-cell packs.
+        let columns: Vec<Vec<(usize, bool)>> = (0..local_cols)
+            .map(|column| {
+                if column == 3 {
+                    return Vec::new();
+                }
+                if column == 5 {
+                    return (0..local_rows).map(|row| (row, true)).collect();
+                }
+                let count = if column == 0 { 5 } else { 1 + column % 5 };
+                let mut rows: Vec<usize> = (0..count)
+                    .map(|index| (column * 11 + index * 7 + 2) % local_rows)
+                    .collect();
+                rows.sort_unstable();
+                rows.dedup();
+                rows.into_iter().map(|row| (row, true)).collect()
+            })
+            .collect();
+        let local =
+            PreparedVirtualMap::new(SparseMatrix::try_from_columns(local_rows, columns).unwrap())
+                .unwrap();
+
+        for instances in [4usize, 256] {
+            let rows = (local_rows * instances).next_power_of_two();
+            let live_cols = 1 + (local_cols - 1) * instances;
+            let cols = live_cols.next_power_of_two().max(128);
+            let map =
+                PackedSourceRepeatedVirtualMap::new(local.clone(), instances, rows, cols).unwrap();
+            let vars = rows.trailing_zeros() as usize;
+            let k = instances.trailing_zeros() as usize;
+            for t_wh in [k - 1, k + 1] {
+                let points: Vec<Vec<Gf>> = (0..2u64)
+                    .map(|claim| {
+                        (0..vars)
+                            .map(|bit| sample(0x7A00 + claim * 64 + bit as u64))
+                            .collect()
+                    })
+                    .collect();
+                let etas = vec![sample(0xEA), sample(0xEB)];
+                let structured = VirtColumnWeights::new(&map, &points, &etas, t_wh);
+                assert!(
+                    matches!(structured, VirtColumnWeights::PackedSourceRepeated { .. }),
+                    "packed source repetition must take its factored path"
+                );
+                let generic = VirtColumnWeights::Generic {
+                    map: &map,
+                    coeffs: VirtRowCoeffs::new(&points, &etas, t_wh),
+                };
+                let n_packs = cols >> LOG_PACKING;
+                for pack in 0..n_packs {
+                    let mut fast = [Gf::zero(); 128];
+                    let mut slow = [Gf::zero(); 128];
+                    let live = structured.pack_weights(pack, &mut fast);
+                    let slow_live = generic.pack_weights(pack, &mut slow);
+                    assert_eq!(
+                        fast, slow,
+                        "pack {pack}, instances {instances}, t_wh {t_wh}"
+                    );
+                    assert_eq!(live, slow_live);
+                    if !live {
+                        assert!(fast.iter().all(|weight| *weight == Gf::zero()));
+                    }
+                }
+
+                // Exercise both complete kernels on the mixed source layout.
+                // The factored path must equal the generic sparse reference,
+                // and changing only the padded message suffix must not affect h.
+                let p_msg: Vec<F128> = (0..n_packs)
+                    .map(|pack| gf_to_f128(sample(0xB000 + pack as u64)))
+                    .collect();
+                let live_packs = live_cols.div_ceil(1usize << LOG_PACKING);
+                let mut zero_padded_msg = p_msg.clone();
+                zero_padded_msg[live_packs..].fill(F128::ZERO);
+                let a_cols = crate::dual_basis::dual_basis_cols();
+                let hs_fast = virtual_hs_fold(&map, &structured, &p_msg, &a_cols);
+                assert_eq!(
+                    hs_fast,
+                    virtual_hs_fold(&map, &structured, &zero_padded_msg, &a_cols),
+                    "h must ignore the structural padding suffix"
+                );
+                assert_eq!(
+                    hs_fast,
+                    virtual_hs_fold(&map, &generic, &p_msg, &a_cols),
+                    "factored and generic h kernels"
+                );
+
+                let rho: Vec<Gf> = (0..128).map(|bit| sample(0xC000 + bit as u64)).collect();
+                let a_fast = virtual_a_prime(&map, &structured, &rho, &a_cols, n_packs);
+                assert_eq!(
+                    a_fast,
+                    virtual_a_prime(&map, &generic, &rho, &a_cols, n_packs),
+                    "factored and generic a-prime kernels"
+                );
+                assert!(
+                    a_fast[live_packs..]
+                        .iter()
+                        .all(|value| *value == Gf::zero())
+                );
             }
         }
     }

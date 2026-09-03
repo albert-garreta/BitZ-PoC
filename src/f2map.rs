@@ -78,6 +78,16 @@ pub trait VirtualMap: Sync {
     fn repetition(&self) -> Option<(&PreparedVirtualMap, usize)> {
         None
     }
+
+    /// Mixed-layout tensor repetition used by
+    /// [`PackedSourceRepeatedVirtualMap`]. Derived rows use
+    /// `local_row * instances + instance`, while nonconstant source columns
+    /// are packed instance-major behind one shared constant column. This is
+    /// deliberately separate from [`Self::repetition`], whose source layout
+    /// is local-major.
+    fn packed_source_repetition(&self) -> Option<(&PreparedVirtualMap, usize)> {
+        None
+    }
 }
 
 /// A validated binary CSC matrix with transcript metadata cached once.
@@ -428,6 +438,10 @@ impl VirtualMap for PackedSourceRepeatedVirtualMap {
             repeat_index: 0,
             remaining,
         })
+    }
+
+    fn packed_source_repetition(&self) -> Option<(&PreparedVirtualMap, usize)> {
+        Some((&self.local, self.instances))
     }
 }
 
