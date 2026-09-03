@@ -60,6 +60,24 @@ pub(crate) fn dual_basis_cols() -> [Gf; 128] {
     cols
 }
 
+/// Evaluates `sum_v q_v * A(e_v)` with a Horner chain in `mul_x`.
+/// Coefficients `q_1..q_127` appear in reverse monomial order; the final
+/// seven additions implement the GHASH dual-basis corrections exactly.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn dual_basis_linear_combination(q: &[Gf; 128]) -> Gf {
+    let mut acc = q[1];
+    for &coefficient in &q[2..=121] {
+        acc = acc.mul_x() + coefficient;
+    }
+    acc = acc.mul_x() + q[122] + q[1];
+    acc = acc.mul_x() + q[123] + q[2];
+    acc = acc.mul_x() + q[124] + q[3];
+    acc = acc.mul_x() + q[125] + q[4];
+    acc = acc.mul_x() + q[126] + q[5];
+    acc = acc.mul_x() + q[127] + q[6] + q[1];
+    acc.mul_x() + q[0]
+}
+
 #[cfg(test)]
 #[allow(clippy::arithmetic_side_effects)]
 mod tests {
@@ -177,6 +195,24 @@ mod tests {
             }
         }
         assert_eq!(corrections, 7, "reversal plus exactly seven XOR corrections");
+    }
+
+    #[test]
+    fn dual_basis_linear_combination_matches_dense_reference() {
+        let cols = dual_basis_cols();
+        for trial in 0..64u64 {
+            let q: [Gf; 128] =
+                core::array::from_fn(|v| sample(0xD000_0000 + (trial << 8) + v as u64));
+            let expected = q
+                .iter()
+                .zip(cols.iter())
+                .fold(Gf::zero(), |acc, (&value, &column)| acc + value * column);
+            assert_eq!(
+                dual_basis_linear_combination(&q),
+                expected,
+                "trial {trial}"
+            );
+        }
     }
 
     /// The n = 1 embedding identity on random blocks:
