@@ -33,6 +33,22 @@ serde = { version = "1", features = ["derive"] }
 # workspace so fresh checkouts do not require a sibling repository.
 circuit = { path = "crates/circuit", default-features = false }
 
+# Optional Plonky3/WHIR stack used only by the controlled BabyBear PCS
+# comparison bench. Pin every P3 crate to one upstream revision so Cargo
+# cannot resolve a mixed protocol stack.
+p3-baby-bear = { git = "https://github.com/Plonky3/Plonky3.git", rev = "59be31386d5ab81b87dbceb0b83bf797f9eefaec", optional = true }
+p3-challenger = { git = "https://github.com/Plonky3/Plonky3.git", rev = "59be31386d5ab81b87dbceb0b83bf797f9eefaec", optional = true }
+p3-commit = { git = "https://github.com/Plonky3/Plonky3.git", rev = "59be31386d5ab81b87dbceb0b83bf797f9eefaec", optional = true }
+p3-dft = { git = "https://github.com/Plonky3/Plonky3.git", rev = "59be31386d5ab81b87dbceb0b83bf797f9eefaec", features = ["parallel"], optional = true }
+p3-field = { git = "https://github.com/Plonky3/Plonky3.git", rev = "59be31386d5ab81b87dbceb0b83bf797f9eefaec", optional = true }
+p3-matrix = { git = "https://github.com/Plonky3/Plonky3.git", rev = "59be31386d5ab81b87dbceb0b83bf797f9eefaec", optional = true }
+p3-merkle-tree = { git = "https://github.com/Plonky3/Plonky3.git", rev = "59be31386d5ab81b87dbceb0b83bf797f9eefaec", optional = true }
+p3-multilinear-util = { git = "https://github.com/Plonky3/Plonky3.git", rev = "59be31386d5ab81b87dbceb0b83bf797f9eefaec", optional = true }
+p3-sumcheck = { git = "https://github.com/Plonky3/Plonky3.git", rev = "59be31386d5ab81b87dbceb0b83bf797f9eefaec", features = ["parallel"], optional = true }
+p3-symmetric = { git = "https://github.com/Plonky3/Plonky3.git", rev = "59be31386d5ab81b87dbceb0b83bf797f9eefaec", optional = true }
+p3-whir = { git = "https://github.com/Plonky3/Plonky3.git", rev = "59be31386d5ab81b87dbceb0b83bf797f9eefaec", features = ["parallel"], optional = true }
+postcard = { version = "1.1.3", default-features = false, features = ["alloc"], optional = true }
+
 [dev-dependencies]
 serde_json = "1"
 
@@ -76,6 +92,11 @@ harness = false
 # witness: Lambda100 and Lambda128. Unified output schema
 # (docs/bench-schema.md). Exponents via F2Z_BENCH_SHAPES (alias
 # F2Z_BABY_BEAR_MUL_EXPONENTS); reps via F2Z_BENCH_REPS.
+
+[[bench]]
+name = "baby_bear_pcs_compare"
+harness = false
+required-features = ["bench-internals", "plonky3-whir-bench"]
 
 [[bench]]
 name = "u32_mul_inner_policy"
@@ -130,6 +151,26 @@ unchecked = []
 bench-peak-memory = []
 # Exposes narrowly scoped policy controls used by controlled benchmark binaries.
 bench-internals = []
+# Enables the pinned Plonky3 BabyBear/WHIR stack for the controlled PCS
+# comparison without adding it to normal library or benchmark builds.
+plonky3-whir-bench = [
+    "dep:p3-baby-bear",
+    "dep:p3-challenger",
+    "dep:p3-commit",
+    "dep:p3-dft",
+    "dep:p3-field",
+    "dep:p3-matrix",
+    "dep:p3-merkle-tree",
+    "dep:p3-multilinear-util",
+    "dep:p3-sumcheck",
+    "dep:p3-symmetric",
+    "dep:p3-whir",
+    "dep:postcard",
+]
+# Selects the audited degree-4/unique-decoding WHIR comparison profile.  The
+# default `plonky3-whir-bench` profile remains degree-5/Johnson-bound so normal
+# comparison invocations keep their existing configuration.
+plonky3-whir-degree4-bench = ["plonky3-whir-bench"]
 
 # Match the upstream zinc-plus release profile — without fat LTO +
 # codegen-units=1 the vendored field kernels and the sumcheck driver lose
