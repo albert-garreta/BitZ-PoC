@@ -22,6 +22,14 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
 
 `n` is log(|w|)
 
+
+For a sweep plus a Latex table containing the results:
+
+```sh
+RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
+    --sweep 20-30 --threads 8 --reps 5 --profile custom:3:4
+```
+
 ## Integer R1CS with F_2 virtualization
 
 Pick the security parameter with `F2Z_BENCH_LAMBDA`. Every bench below
@@ -40,7 +48,9 @@ SHA-256 and u32×u32 run at λ=100, MultiSwap at 114, and the BabyBear and
 shape). A profile the bench's relation cannot instantiate — `114` outside
 MultiSwap, or `100`/`128` on MultiSwap — aborts up front with the
 admissible list. Each `RESULT` line carries `profile=<name>` next to
-`lambda=<bits>`.
+`lambda=<bits>`. `F2Z_BENCH_QUIET=1` mutes the benches' advisory
+`warning:` lines (e.g. the `pcs` bench's note that it ignores
+`F2Z_BENCH_LAMBDA`); errors still abort.
 
 ### MultiSwap — (2 modular exponentiations on a 2048 bit RSA modulus + Poseidon hashing), λ=114:
 ```sh
@@ -79,6 +89,31 @@ opening and transposes the product tensor instead (instance-major: the 15
 local bits plus the low instance bits form the rows, the high instance bits
 the columns; `t ≥ 15`), which is the cheap way to get the split. The bench
 prints the layout, forest count and read-off width per shape.
+
+### SHA-256 chain — `2^k` CHAINED compressions (a `64·2^k`-byte Merkle–Damgård chain), λ=100:
+```sh
+F2Z_BENCH_LAMBDA=100 F2Z_BENCH_SHAPES=14 F2Z_BENCH_REPS=3 RUSTFLAGS="-C target-cpu=native" \
+  cargo bench --bench sha256_chain --features unchecked
+```
+
+The chained counterpart of `sha256_compressions`: `H_{i+1} = Compress(H_i,
+M_i)` from the standard initial state, proved as ONE relation whose
+intermediate chaining values are witness. Same circuit and 184 linear
+constraints per compression, same runtime-prime protocol and direct product
+opening; the difference is the F₂ map. Instance `i` commits only its block
+and hint bits (6,888 instead of 7,144 — its 256 chaining-state bits are
+read straight from instance `i − 1`'s committed output cells through the
+chained virtual map, instance 0's from the initial-state constants), and
+every instance carries 256 *terminal* rows that are the last instance's
+output bits and structurally zero elsewhere. The public statement is the
+block sequence plus the digest, bound by the same uniform public-I/O
+batching (block slots at every instance; terminal slots equal to the
+digest at the last instance, zero before it). The prover-side cost of the
+chaining is confined to the ring switch's batching passes, which gain one
+rotated-instance term over 264 columns per compression; the forest, the
+PIOP and the proof bytes are the independent batch's.
+`prepare_sha256_chain_batch_with_profile_and_initial_state` prepares a
+chain from any public initial chaining value (a continuation).
 
 ### u32×u32 -> u64 — λ=100; exponents ≥ 15:
 ```sh
@@ -324,12 +359,34 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
   default all cores / `RAYON_NUM_THREADS`).
 - `--reps R` — timing repetitions (medians reported; **every rep is
   verified**; default 3).
-- `--profile` — Ligerito config, resolved exactly like the bench: `slim`
-  (default; rate 1/4, k=4) / `slim3` (rate 1/8, k=4) / `fast` (rate 1/2,
-  k=4) / `secure` (embedded profiles at `m = n ≥ 22`) or
-  `custom:<log_inv_rate>:<initial_k>` (validator-gated Johnson geometry);
-  below `m = 22` everything falls back to the ad-hoc test config
-  (UNAUDITED).
+- `--profile` — Ligerito config, resolved exactly like the bench:
+  `custom:<log_inv_rate>:<initial_k>[:<bits>]` (default `custom:3:4`:
+  validator-gated Johnson geometry at rate 1/8, k=4, 100-bit round-by-round
+  target) / `udr:…` / `udrg:…` (validator-gated; all three need `m = n ≥
+  20` — m = 20, 21 are seeded from flock's m = 22 template with every
+  shape field rebuilt, see `custom_johnson_config_bits`) or `slim` (rate
+  1/4, k=4) / `slim3` (rate 1/8, k=4) / `fast` (rate 1/2, k=4) / `secure`
+  (embedded profiles at `m = n ≥ 22`); below those bounds everything falls
+  back to the ad-hoc test config (UNAUDITED — no security claim).
+- The single-claim output also carries the PAPER buckets of the prover
+  (grand products = `mq:chunking mc:pack mc:pow2 mc:forest mc:fold_v`;
+  ring switch incl. its sumcheck = `mc:presum_tbls mc:presum_run mq:rings
+  mq:bcomb`; Ligerito = `mq:lig`), a `security:` line (the Ligerito
+  config's round-by-round target/achieved bits — flock's notion, the
+  minimum over levels and terms — plus the F2Z-side round errors) and one
+  machine-readable `RESULT schema=f2z-cli/1 …` line (`docs/bench-schema.md`).
+- `--sweep <lo>-<hi>` (or `20,24,28`, or `20-24,28`) — the **paper-table
+  mode**: runs the single-claim path once per `n`, each in a FRESH child
+  process (one shape per process — the bench protocol), streams the
+  children's output, then prints a summary and writes the LaTeX table to
+  `--latex <path>` (default `paper/raw-performance-table.tex`; the file's
+  header records the exact command, machine, date, commit and every
+  `RESULT` line). `t s` do not apply. The paper's raw-performance table:
+
+  ```sh
+  RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
+      --sweep 20-30 --threads 8 --reps 5 --profile custom:3:4
+  ```
 - Integer guards are a **compile-time** feature: build with
   `--features unchecked` for quotable numbers — the header self-reports
   the active mode and warns otherwise.
