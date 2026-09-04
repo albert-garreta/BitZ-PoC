@@ -10740,6 +10740,59 @@ where
 /// source columns. Each worker owns one output pack, so no partial dense
 /// vectors or scatter synchronization are needed.
 #[allow(clippy::arithmetic_side_effects)]
+fn virtual_a_prime_encoded_with<M, O, Encode>(
+    map: &M,
+    weights: &VirtColumnWeights<'_, M>,
+    rho: &[Gf],
+    a_cols: &[Gf; 128],
+    n_packs: usize,
+    zero: O,
+    encode: Encode,
+) -> Vec<O>
+where
+    M: crate::f2map::VirtualMap,
+    O: Copy + Send + Sync,
+    Encode: Fn(Gf) -> O + Send + Sync,
+{
+    debug_assert_eq!(map.cols(), n_packs << LOG_PACKING);
+    let phi_tables = phi_byte_tables(rho, Gf::one());
+    let mut result = vec![zero; n_packs];
+    let live_packs = match weights {
+        VirtColumnWeights::PackedSourceRepeated { live_cols, .. } => live_cols
+            .div_ceil(1usize << LOG_PACKING)
+            .min(n_packs),
+        _ => n_packs,
+    };
+    let dense_packed_source = matches!(weights, VirtColumnWeights::PackedSourceRepeated { .. });
+    cfg_iter_mut!(&mut result[..live_packs])
+        .enumerate()
+        .for_each(|(pack, output)| {
+            let mut pack_w = [Gf::zero(); 128];
+            if !weights.pack_weights(pack, &mut pack_w) {
+                // Φ_ρ(0)·A(e_v) = 0: an all-zero pack contributes nothing.
+                return;
+            }
+            let value = if dense_packed_source {
+                for value in &mut pack_w {
+                    *value = phi_from_words(*value.words(), &phi_tables);
+                }
+                crate::dual_basis::dual_basis_linear_combination(&pack_w)
+            } else {
+                let mut acc = Gf::zero();
+                for (slot, &weight) in pack_w.iter().enumerate() {
+                    if weight == Gf::zero() {
+                        continue;
+                    }
+                    let phi = phi_from_words(*weight.words(), &phi_tables);
+                    acc += phi * a_cols[slot];
+                }
+                acc
+            };
+            *output = encode(value);
+        });
+    result
+}
+
 fn virtual_a_prime<M>(
     map: &M,
     weights: &VirtColumnWeights<'_, M>,
@@ -10750,28 +10803,36 @@ fn virtual_a_prime<M>(
 where
     M: crate::f2map::VirtualMap,
 {
-    debug_assert_eq!(map.cols(), n_packs << LOG_PACKING);
-    let phi_tables = phi_byte_tables(rho, Gf::one());
-    let mut result = vec![Gf::zero(); n_packs];
-    cfg_iter_mut!(result)
-        .enumerate()
-        .for_each(|(pack, output)| {
-            let mut pack_w = [Gf::zero(); 128];
-            if !weights.pack_weights(pack, &mut pack_w) {
-                // Φ_ρ(0)·A(e_v) = 0: an all-zero pack contributes nothing.
-                return;
-            }
-            let mut acc = Gf::zero();
-            for (slot, &weight) in pack_w.iter().enumerate() {
-                if weight == Gf::zero() {
-                    continue;
-                }
-                let phi = phi_from_words(*weight.words(), &phi_tables);
-                acc += phi * a_cols[slot];
-            }
-            *output = acc;
-        });
-    result
+    virtual_a_prime_encoded_with(
+        map,
+        weights,
+        rho,
+        a_cols,
+        n_packs,
+        Gf::zero(),
+        |value| value,
+    )
+}
+
+fn virtual_a_prime_f128<M>(
+    map: &M,
+    weights: &VirtColumnWeights<'_, M>,
+    rho: &[Gf],
+    a_cols: &[Gf; 128],
+    n_packs: usize,
+) -> Vec<F128>
+where
+    M: crate::f2map::VirtualMap,
+{
+    virtual_a_prime_encoded_with(
+        map,
+        weights,
+        rho,
+        a_cols,
+        n_packs,
+        F128::ZERO,
+        gf_to_f128,
+    )
 }
 
 /// General virtual commitment bridge: apply `M^T` to the batched residual
@@ -10824,20 +10885,22 @@ where
             .iter()
             .zip(hs.iter())
             .fold(Gf::zero(), |acc, (&r, &h)| acc + r * h);
-        let (basis, precomputed_round0) = {
+        let (basis, precomputed_round0): (Vec<F128>, Option<(Gf, Gf)>) = {
             let _g = crate::utils::prof::scope("mqv:aprime");
             match &planes {
                 Some(planes) => {
                     let (basis, round0) = planes.a_prime(&rho, &hint.p_msg);
-                    (basis, rs_fast().then_some(round0))
+                    (
+                        basis.into_iter().map(gf_to_f128).collect(),
+                        rs_fast().then_some(round0),
+                    )
                 }
                 None => (
-                    virtual_a_prime(self.map, &weights, &rho, &a_cols, hint.p_msg.len()),
+                    virtual_a_prime_f128(self.map, &weights, &rho, &a_cols, hint.p_msg.len()),
                     None,
                 ),
             }
         };
-        let basis = basis.into_iter().map(gf_to_f128).collect();
 
         PreparedProverLigeritoClaim {
             reduction: hs,
@@ -12128,6 +12191,12 @@ mod tests {
 
                 let rho: Vec<Gf> = (0..128).map(|bit| sample(0xC000 + bit as u64)).collect();
                 let a_fast = virtual_a_prime(&map, &structured, &rho, &a_cols, n_packs);
+                let a_f128: Vec<Gf> =
+                    virtual_a_prime_f128(&map, &structured, &rho, &a_cols, n_packs)
+                        .into_iter()
+                        .map(f128_to_gf)
+                        .collect();
+                assert_eq!(a_f128, a_fast, "direct F128 output");
                 assert_eq!(
                     a_fast,
                     virtual_a_prime(&map, &generic, &rho, &a_cols, n_packs),

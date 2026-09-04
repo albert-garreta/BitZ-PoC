@@ -4,9 +4,31 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.97"
 license = "MIT OR Apache-2.0"
-description = "Backend-independent SHA-256/F2Z circuit synthesis, vendored from worldfnd/f2z-benchmark crates/circuit at 9f98e08 (the snapshot this crate's Spartan integration was built against; later upstream revisions grow a `field` dependency)."
+
+[features]
+default = ["full"]
+# Arithmetic-heavy P-256 and matrix-evaluation backends. The SHA-256 circuit,
+# sparse constraint generator, and witness generators do not need this stack.
+full = ["dep:field", "dep:crypto-bigint"]
 
 [dependencies]
+field = { path = "../field", optional = true }
 num-bigint = "0.4"
 num-traits = "0.2"
+crypto-bigint = { version = "=0.7.5", optional = true }
 rayon = "1.10"
+
+[dev-dependencies]
+divan = "0.1.21"
+
+[[bench]]
+name = "sha256_matrix_products"
+harness = false
+
+[[bench]]
+name = "p256_matrix_products"
+harness = false
+
+[[bench]]
+name = "ecdsa_sha256_matrix_products"
+harness = false
