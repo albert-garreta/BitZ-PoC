@@ -564,6 +564,12 @@ pub fn custom_johnson_config(m: usize, r0: usize, k0: usize) -> LigeritoSecurity
 /// Ceiling: the challenge field is `GF(2^128)`, so per-round error terms
 /// are floored near `2^-128` minus list-size/length slack — targets much
 /// above ~128 fail validation rather than silently degrade.
+///
+/// Shapes: `m = m_p + 7 ≥ 20`. Flock's embedded slim templates exist for
+/// `m = 22..=35`; `m = 20, 21` are seeded from the `m = 22` template (only
+/// its scalar/default fields are used — every shape field is rebuilt here),
+/// the same seeding [`custom_udr_config_bits`] already applies. `m ≥ 22`
+/// configs are unchanged by this.
 #[allow(clippy::arithmetic_side_effects, clippy::missing_panics_doc)]
 pub fn custom_johnson_config_bits(
     m: usize,
@@ -571,10 +577,21 @@ pub fn custom_johnson_config_bits(
     k0: usize,
     target_bits: Option<usize>,
 ) -> LigeritoSecurityConfig {
-    let slim = ligerito::embedded_security_config(m, ligerito::LigeritoProfile::Slim)
-        .unwrap_or_else(|| panic!("no embedded slim template for m={m}"));
+    // Embedded production tables start at m=22. Only scalar/default fields
+    // are borrowed from the template (header strings, `eta`, grinding
+    // convention, target); `m`, `log_n`, every level shape, and the final
+    // block are rebuilt below, so — exactly as in `udr_config_impl` — the
+    // m=22 template is also a sound seed for m=20 and m=21. For m ≥ 22 the
+    // template's own `m`/`log_n` are re-assigned to themselves (no change).
+    let template_m = m.max(22);
+    let slim = ligerito::embedded_security_config(template_m, ligerito::LigeritoProfile::Slim)
+        .unwrap_or_else(|| panic!("no embedded slim template for m={template_m}"));
     let mut cfg = LigeritoSecurityConfig::from_toml_str(slim).expect("slim template validates");
-    let log_n = cfg.log_n;
+    let log_n = m
+        .checked_sub(LOG_PACKING)
+        .expect("custom Johnson witness has at least LOG_PACKING variables");
+    cfg.m = m;
+    cfg.log_n = log_n;
     assert!(k0 >= 1 && k0 < log_n, "custom initial_k out of range");
     if let Some(bits) = target_bits {
         cfg.target_security_bits = bits;

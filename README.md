@@ -385,7 +385,34 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
 
   ```sh
   RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
-      --sweep 20-30 --threads 8 --reps 5 --profile custom:3:4
+      --sweep 20-30 --threads 8 --reps 5 --profile custom:3:4 --cooldown 20
+  ```
+
+  `--cooldown <s>` idles between the child processes so the OS reclaims
+  the previous shape's memory and the fanless chip cools; the n ≥ 29 rows
+  (3–7 GB peaks) otherwise swing ±30 % on a busy 16 GB box. Timed reps run
+  with the CLI's heap tracker OFF (its per-allocation atomics taxed the
+  forest by up to ~25 % at 8 threads); the peak comes from a separate
+  tracked probe. `benches/pcs.rs` still tracks unconditionally.
+- `--mul <e>` — the **u32 × u32 → u64 multiplication SNARK** for `2^e`
+  multiplications (`e ≥ 15`): the `piop::spartan` paper path (one R1CS
+  row per multiplication over ℤ, transcript-sampled Step-2 prime, native
+  Spartan with the K=3 univariate skip, bitification, F2Z opening of the
+  128 committed bits per multiplication), at `--lambda 100|128` (default
+  100) and F2Z cell width `--word-bits 1|8`. Same witness seed as
+  `benches/u32_mul.rs`. Prints the paper step split (Step 1 commit, 2
+  projection, 3 PIOP, 4 bitification, 5 opening = grand products / ring
+  switch / Ligerito), a `security:` line (profile target, achieved bits,
+  binding term) and one `RESULT schema=f2z-cli-mul/1` line. Here `prove`
+  is END TO END and INCLUDES the commitment (bench-schema semantics).
+- `--mul-sweep <lo>-<hi>` — the paper-table mode for `--mul` (one fresh
+  child per `e`, default table `paper/u32-mul-table.tex`). F2Z runs at
+  `n = e + 7`, so on a 16 GB box stop at `e = 22` (`e = 23` peaks near
+  8 GB). The paper's multiplication table:
+
+  ```sh
+  RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
+      --mul-sweep 15-22 --threads 8 --reps 5 --cooldown 20
   ```
 - Integer guards are a **compile-time** feature: build with
   `--features unchecked` for quotable numbers — the header self-reports

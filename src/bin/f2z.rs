@@ -29,8 +29,11 @@
 //!   security target, default 100 — e.g. `custom:3:4:128`) |
 //!   `udr:<log_inv_rate>:<initial_k>[:<bits>]` (queries-only UDR: zero
 //!   grinding, zero OOD; ceiling ≈115 bits at n=22 / ≈109 at n=28).
-//!   Below `m = n < 22` every choice
-//!   falls back to the ad-hoc test config (UNAUDITED).
+//!   `custom`/`udr`/`udrg` need `m = n ≥ 20` (m = 20, 21 are seeded from
+//!   flock's m = 22 template, every shape field rebuilt and validator-gated
+//!   — see `custom_johnson_config_bits`); the embedded profiles need
+//!   `m ≥ 22`. Below that every choice falls back to the ad-hoc test config
+//!   (UNAUDITED — no security claim).
 //! - `--word-bits W` — cell width (power of two; default 1).
 //! - `--family j2|j3|j4|j2s|j3s|j4s` — run the EXPERIMENTAL mod-q RLC
 //!   claim FAMILY at this `n` instead of the single-claim opening: `j2` =
@@ -70,6 +73,37 @@
 //!   folds shrink 2^δ×, proofs −30..−57 %, verify up to 5× faster).
 //!   Every rep is verified.
 //!   Example: `f2z 24 --taps sched --taps-delta 4 --reps 5`
+//! - `--sweep <lo>-<hi>` (or a list `20,24,28`, or mixed `20-24,28`) — the
+//!   PAPER-TABLE mode: run the single-claim path once per `n`, each in a
+//!   FRESH child process (`std::env::current_exe()` re-invoked with the same
+//!   `--threads/--reps/--profile/--word-bits`; one shape per process is the
+//!   bench protocol), stream each child's output, parse its `RESULT` line,
+//!   print a summary, and write the LaTeX table to `--latex <path>` (default
+//!   `paper/raw-performance-table.tex` in the crate; the file records the
+//!   exact command, machine, date, commit, and every RESULT line, so it is
+//!   its own provenance). `t s` positionals do not apply (each `n` uses the
+//!   reference split). `--cooldown <s>` idles between children so the OS
+//!   reclaims the previous shape's memory and the fanless chip cools — the
+//!   n ≥ 29 rows (3–7 GB peaks) swing ±30 % on a busy 16 GB box otherwise.
+//!   Example (the paper's raw-performance table):
+//!   `f2z --sweep 20-30 --threads 8 --reps 5 --profile custom:3:4`
+//! - `--mul <e>` — run the u32 × u32 → u64 INTEGER-MULTIPLICATION SNARK
+//!   (`piop::spartan`: one R1CS row per multiplication over ℤ, a
+//!   transcript-sampled Step-2 prime, the native Spartan PIOP with the K=3
+//!   univariate skip, bitification, and the F2Z opening of the 128 committed
+//!   bits per multiplication) for `2^e` multiplications, `e ≥ 15`, at the
+//!   `--lambda 100|128` profile (default 100 = `Lambda100`; `--word-bits
+//!   1|8` picks the F2Z cell width). Same witness seed as
+//!   `benches/u32_mul.rs`, so numbers compare; prints the paper's step split
+//!   (Step 1 commit, Step 2 projection, Step 3 PIOP, Step 4 bitification,
+//!   Step 5 opening = grand products / ring switch / Ligerito) and one
+//!   `RESULT schema=f2z-cli-mul/1` line. `prove` here is END TO END and
+//!   INCLUDES the commitment (the bench-schema convention).
+//! - `--mul-sweep <lo>-<hi>` — the paper-table mode for `--mul`: one fresh
+//!   child process per `e`, then the LaTeX table (default
+//!   `paper/u32-mul-table.tex`; `--latex <path>` overrides). On a 16 GB box
+//!   `e ≤ 22` (F2Z n = e + 7 ≤ 29); `e = 23` peaks near 8 GB. Example:
+//!   `f2z --mul-sweep 15-22 --threads 8 --reps 5`
 //!
 //! The single-claim path always prints a per-step breakdown of the prover
 //! and the verifier under the `prove:`/`verify:` lines — medians over the
@@ -78,14 +112,28 @@
 //! `examples/prof_probe.rs`). The always-on scopes cost ~µs per prove, far
 //! inside the run-to-run band. `--family`/`--taps` keep the plain output.
 //!
+//! Under the breakdown it prints the PAPER buckets of the prover — grand
+//! products (`mq:chunking mc:pack mc:pow2 mc:forest mc:fold_v`: the integer
+//! folds and the batched GKR), ring switch incl. its sumcheck
+//! (`mc:presum_tbls mc:presum_run mq:rings mq:bcomb`: the sumcheck reducing
+//! the GKR output to MLE claims, the ring-switch message, the φ-basis of the
+//! Ligerito claim) and Ligerito (`mq:lig`) — a `security:` line (the
+//! Ligerito config's round-by-round target and achieved bits, flock's
+//! notion: minimum over levels and error terms), and finally ONE
+//! machine-readable line `RESULT schema=f2z-cli/1 key=value …`
+//! (`docs/bench-schema.md`) that `--sweep` consumes.
+//!
 //! Integer-guard mode is a COMPILE-TIME feature: build with
 //! `--features unchecked` for release-style plain integer ops (the header
 //! reports the active mode and warns otherwise).
 
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::collections::HashMap;
 use std::hint::black_box;
-use std::process::exit;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio, exit};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Instant;
 
 use f2z::ligerito::{LOG_PACKING, packed_vars};
@@ -95,19 +143,35 @@ use f2z::ligerito_flock::{
     mle_eval_mod_q_lig_size_breakdown, prove_mle_eval_mod_q_ligerito,
     verify_mle_eval_mod_q_ligerito,
 };
+use f2z::ligerito_flock::FlockCommitHint;
 use f2z::pcs::{IntEvalParams, mod_q_num_chunks, smallest_generator};
+use f2z::piop::spartan::{
+    IopSecurityProfile, Lambda100, Lambda128, PreparedU32MulRelation, U32MulF2zWidth,
+    U32MulProof, U32MulWitness, commit_u32_mul_witness, prove_u32_mul, verify_u32_mul,
+};
 use f2z::transcript::Blake3Transcript;
-use flock_core::pcs::ligerito::LigeritoProfile;
+use rand::{RngExt, SeedableRng, rngs::StdRng};
+use flock_core::pcs::ligerito::{LigeritoProfile, LigeritoSecurityConfig, embedded_security_config};
 
 // Peak-heap tracker (wraps System) — the live-heap high-water, the same
 // notion as `benches/pcs.rs` / flock's benches, so numbers compare.
+//
+// Tracking is SWITCHABLE: the contended `fetch_add`/`fetch_max` on every
+// allocation taxes allocation-heavy multi-threaded phases (measured ~20% on
+// the merged forest at 8 threads against the untracked `u32_mul` bench), so
+// the timed reps run with tracking OFF (one uncontended relaxed load per
+// allocation) and the peaks come from tracked probes that run BEFORE the
+// untracked windows (warm-up and peak probe first, timed reps after), so
+// every persistent buffer — the live rows/hint, flock's scratch arenas —
+// was allocated while tracked and is counted in the baseline.
 struct PeakAlloc;
 static CUR: AtomicUsize = AtomicUsize::new(0);
 static PEAK: AtomicUsize = AtomicUsize::new(0);
+static TRACK: AtomicBool = AtomicBool::new(true);
 unsafe impl GlobalAlloc for PeakAlloc {
     unsafe fn alloc(&self, l: Layout) -> *mut u8 {
         let p = unsafe { System.alloc(l) };
-        if !p.is_null() {
+        if !p.is_null() && TRACK.load(Ordering::Relaxed) {
             let c = CUR.fetch_add(l.size(), Ordering::Relaxed) + l.size();
             PEAK.fetch_max(c, Ordering::Relaxed);
         }
@@ -115,11 +179,13 @@ unsafe impl GlobalAlloc for PeakAlloc {
     }
     unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
         unsafe { System.dealloc(p, l) };
-        CUR.fetch_sub(l.size(), Ordering::Relaxed);
+        if TRACK.load(Ordering::Relaxed) {
+            CUR.fetch_sub(l.size(), Ordering::Relaxed);
+        }
     }
     unsafe fn realloc(&self, p: *mut u8, l: Layout, new: usize) -> *mut u8 {
         let q = unsafe { System.realloc(p, l, new) };
-        if !q.is_null() {
+        if !q.is_null() && TRACK.load(Ordering::Relaxed) {
             if new >= l.size() {
                 let c = CUR.fetch_add(new - l.size(), Ordering::Relaxed) + (new - l.size());
                 PEAK.fetch_max(c, Ordering::Relaxed);
@@ -134,6 +200,10 @@ unsafe impl GlobalAlloc for PeakAlloc {
 static ALLOC: PeakAlloc = PeakAlloc;
 fn reset_peak() {
     PEAK.store(CUR.load(Ordering::Relaxed), Ordering::Relaxed);
+}
+/// Switch heap tracking off around timed work (and back on for peak probes).
+fn set_heap_tracking(on: bool) {
+    TRACK.store(on, Ordering::Relaxed);
 }
 fn peak_mb() -> f64 {
     PEAK.load(Ordering::Relaxed) as f64 / (1024.0 * 1024.0)
@@ -353,6 +423,13 @@ fn usage() -> ! {
          [--profile slim|slim3|fast|secure|custom:<r>:<k>[:<bits>]|udr:<r>:<k>[:<bits>] (default custom:3:4)] [--word-bits W] \
          [--family j2|j3|j4|j2s|j3s|j4s] [--taps vx|family|collapse|rotxor|sched]\n\
          [--taps-delta D] [--taps-rounds R] [--taps-grp G]\n\
+       f2z --sweep <lo>-<hi>|<n,n,…> [--threads N] [--reps R] [--profile P] [--word-bits W] [--cooldown S] [--latex <path>]\n\
+         (paper-table mode: one fresh process per n, then the LaTeX table is written —\n\
+          default paper/raw-performance-table.tex in the crate; t/s do not apply)\n\
+       f2z --mul <e> [--threads N] [--reps R] [--lambda 100|128] [--word-bits 1|8]\n\
+         (2^e u32×u32→u64 multiplications through the Spartan PIOP + F2Z opening; e ≥ 15)\n\
+       f2z --mul-sweep <lo>-<hi>|<e,e,…> [--threads N] [--reps R] [--lambda L] [--word-bits W] [--cooldown S] [--latex <path>]\n\
+         (paper-table mode for --mul; default paper/u32-mul-table.tex)\n\
          (n = t + s; W = cell width, power of two, default 1;\n\
           --family runs the mod-q RLC claim family at the A/B layout — j2 = the\n\
           XOR triple, j3/j4 the wider families, j2s/j3s/j4s the SHARED-POINT\n\
@@ -388,6 +465,20 @@ struct Opts {
     taps_delta: Option<usize>,
     taps_rounds: Option<usize>,
     taps_grp: Option<usize>,
+    /// `--sweep`: the shapes to run (each in a fresh child process) and the
+    /// spec as typed (reproduced verbatim in the generated table's header).
+    sweep: Option<(Vec<usize>, String)>,
+    /// `--latex`: where the sweep writes the table.
+    latex: Option<String>,
+    /// `--mul <e>`: one u32-multiplication shape (`2^e` multiplications).
+    mul: Option<usize>,
+    /// `--mul-sweep`: the `--mul` shapes to run, plus the spec as typed.
+    mul_sweep: Option<(Vec<usize>, String)>,
+    /// `--lambda`: the IOP security profile for `--mul` (100 or 128).
+    lambda: u32,
+    /// `--cooldown <s>`: idle seconds between the sweep's child processes
+    /// (lets the OS reclaim the previous shape's memory and the chip cool).
+    cooldown_s: u64,
 }
 
 fn parse_args() -> Opts {
@@ -405,6 +496,12 @@ fn parse_args() -> Opts {
         taps_delta: None,
         taps_rounds: None,
         taps_grp: None,
+        sweep: None,
+        latex: None,
+        mul: None,
+        mul_sweep: None,
+        lambda: 100,
+        cooldown_s: 0,
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -446,6 +543,35 @@ fn parse_args() -> Opts {
                     args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage()),
                 );
             }
+            "--sweep" => {
+                let spec = args.next().unwrap_or_else(|| usage());
+                let ns = parse_sweep_spec(&spec).unwrap_or_else(|e| {
+                    eprintln!("--sweep {spec}: {e}");
+                    usage()
+                });
+                o.sweep = Some((ns, spec));
+            }
+            "--latex" => {
+                o.latex = Some(args.next().unwrap_or_else(|| usage()));
+            }
+            "--mul" => {
+                o.mul = Some(args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage()));
+            }
+            "--mul-sweep" => {
+                let spec = args.next().unwrap_or_else(|| usage());
+                let es = parse_sweep_spec(&spec).unwrap_or_else(|e| {
+                    eprintln!("--mul-sweep {spec}: {e}");
+                    usage()
+                });
+                o.mul_sweep = Some((es, spec));
+            }
+            "--lambda" => {
+                o.lambda = args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage());
+            }
+            "--cooldown" => {
+                o.cooldown_s =
+                    args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage());
+            }
             other => match other.parse::<usize>() {
                 Ok(v) => pos.push(v),
                 Err(_) => {
@@ -455,25 +581,61 @@ fn parse_args() -> Opts {
             },
         }
     }
-    match pos.as_slice() {
-        [n] => o.n = *n,
-        [n, t, s] => {
-            o.n = *n;
-            o.t = Some(*t);
-            o.s = Some(*s);
+    let modes = usize::from(o.sweep.is_some())
+        + usize::from(o.mul.is_some())
+        + usize::from(o.mul_sweep.is_some());
+    if modes > 1 {
+        eprintln!("--sweep, --mul and --mul-sweep are mutually exclusive");
+        exit(2);
+    }
+    if modes == 1 {
+        if !pos.is_empty() {
+            eprintln!("--sweep/--mul/--mul-sweep take their shape from their own argument; drop the positionals");
+            exit(2);
         }
-        [n, t, s, w] => {
-            o.n = *n;
-            o.t = Some(*t);
-            o.s = Some(*s);
-            o.word_bits = *w; // positional W wins over --word-bits
+    } else {
+        match pos.as_slice() {
+            [n] => o.n = *n,
+            [n, t, s] => {
+                o.n = *n;
+                o.t = Some(*t);
+                o.s = Some(*s);
+            }
+            [n, t, s, w] => {
+                o.n = *n;
+                o.t = Some(*t);
+                o.s = Some(*s);
+                o.word_bits = *w; // positional W wins over --word-bits
+            }
+            _ => usage(),
         }
-        _ => usage(),
     }
     if o.reps == 0 || !o.word_bits.is_power_of_two() {
         usage()
     }
     o
+}
+
+/// `--sweep` spec: comma-separated `n` values and/or inclusive `lo-hi`
+/// ranges, e.g. `20-30`, `20,24,28`, `20-24,28`.
+fn parse_sweep_spec(spec: &str) -> Result<Vec<usize>, String> {
+    let mut out = Vec::new();
+    for part in spec.split(',').map(str::trim).filter(|p| !p.is_empty()) {
+        if let Some((a, b)) = part.split_once('-') {
+            let lo: usize = a.trim().parse().map_err(|_| format!("bad range start {a:?}"))?;
+            let hi: usize = b.trim().parse().map_err(|_| format!("bad range end {b:?}"))?;
+            if lo > hi {
+                return Err(format!("empty range {part:?}"));
+            }
+            out.extend(lo..=hi);
+        } else {
+            out.push(part.parse().map_err(|_| format!("bad n {part:?}"))?);
+        }
+    }
+    if out.is_empty() {
+        return Err("no shapes".to_string());
+    }
+    Ok(out)
 }
 
 /// The reference split `t ≈ 0.6n`, clamped to the packing constraint
@@ -485,6 +647,81 @@ fn default_split(n: usize, word_bits: usize) -> (usize, usize) {
     (t, n - t)
 }
 
+/// Round-by-round security summary of the resolved Ligerito config, in
+/// flock's notion (`LigeritoSecurityConfig::validate`): total security is
+/// the MINIMUM over levels and error terms, no whole-protocol union bound.
+#[derive(Clone, Copy, Debug)]
+struct LigSecurity {
+    /// The config's declared target (`None` = ad-hoc test config).
+    target_bits: Option<usize>,
+    /// min over levels of min(query bits + query grinding, proximity-gap
+    /// bits + fold grinding, OOD binding bits) — the three inequalities
+    /// `validate()` enforces per level.
+    achieved_bits: Option<f64>,
+    /// L0's implicit post-commit binding (Johnson regime: the list is bound
+    /// by the opening's own evaluation claim — `128 − log₂ list − log₂ μ`).
+    l0_binding_bits: Option<f64>,
+}
+
+const ADHOC_SECURITY: LigSecurity =
+    LigSecurity { target_bits: None, achieved_bits: None, l0_binding_bits: None };
+
+fn lig_security(cfg: &LigeritoSecurityConfig) -> LigSecurity {
+    let mut min = f64::INFINITY;
+    for lv in &cfg.levels {
+        let q = lv.expected_eps_query_bits + lv.grinding_bits as f64;
+        let pg = lv.expected_eps_pg_bits + lv.fold_grinding_bits as f64;
+        min = min.min(q).min(pg);
+        if let Some(ood) = lv.expected_eps_ood_bits {
+            min = min.min(ood);
+        }
+    }
+    LigSecurity {
+        target_bits: Some(cfg.target_security_bits),
+        achieved_bits: Some(min),
+        l0_binding_bits: cfg.levels.first().and_then(|lv| lv.expected_eps_ood_bits),
+    }
+}
+
+impl LigSecurity {
+    /// The `security:` line. The F2Z-side rounds are quoted from the
+    /// protocol: GKR layer rounds are degree-3 sumcheck rounds (3/2^128),
+    /// the reduce-to-MLE sumcheck is degree 2 (2/2^128), the ring-switch
+    /// check is multilinear in the 7 packing variables (7/2^128); the
+    /// evaluation prime is fixed and public (no projection round) and no
+    /// out-of-domain round is executed.
+    fn describe(&self) -> String {
+        let lig = match (self.target_bits, self.achieved_bits) {
+            (Some(t), Some(a)) => format!(
+                "ligerito round-by-round target {t} b, achieved {a:.1} b (min over levels/terms{})",
+                self.l0_binding_bits
+                    .map(|b| format!("; L0 post-commit binding {b:.1} b"))
+                    .unwrap_or_default()
+            ),
+            _ => "ligerito ad-hoc test config (UNAUDITED — no security claim)".to_string(),
+        };
+        format!(
+            "{lig} | F2Z rounds: GKR 3/2^128, sumcheck 2/2^128, ring switch 7/2^128 | \
+             fixed public prime q (no projection round), no OOD round"
+        )
+    }
+}
+
+/// Parse `<r0>:<k0>[:<bits>]` (the tail of `custom:`/`udr:`/`udrg:`).
+fn parse_rk_bits(rest: &str) -> (usize, usize, Option<usize>) {
+    let mut it = rest.split(':');
+    let r0: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or_else(|| usage());
+    let k0: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or_else(|| usage());
+    let bits: Option<usize> = it.next().map(|x| x.parse().ok().unwrap_or_else(|| usage()));
+    (r0, k0, bits)
+}
+
+/// Resolve the Ligerito `(ProverConfig, VerifierConfig)`, a short tag for
+/// the header line, and the config's security summary. The validator-gated
+/// families (`custom`/`udr`/`udrg`) need `m = m_p + 7 ≥ 20` (m = 20, 21 are
+/// seeded from flock's m = 22 template — see `custom_johnson_config_bits`
+/// / `custom_udr_config_bits`), the embedded profiles `m ≥ 22`; below that
+/// everything falls back to the ad-hoc test config (UNAUDITED).
 fn resolve_configs(
     m_p: usize,
     profile: &str,
@@ -494,100 +731,119 @@ fn resolve_configs(
         flock_core::pcs::ligerito::VerifierConfig,
     ),
     String,
+    LigSecurity,
 ) {
+    let m = m_p + LOG_PACKING;
+    let adhoc = || {
+        let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
+            .expect("adhoc cfg");
+        (pair, "adhoc".to_string(), ADHOC_SECURITY)
+    };
     if let Some(rest) = profile.strip_prefix("udrg:") {
         // UDR + fold-grinding: pg shortfall recovered by cheap per-fold
         // PoW; targets up to 128 validate. `udrg:1:4:128` = 128-bit config.
-        let mut it = rest.split(':');
-        let r0: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or_else(|| usage());
-        let k0: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or_else(|| usage());
-        let bits: Option<usize> = it.next().map(|x| x.parse().ok().unwrap_or_else(|| usage()));
-        if m_p + LOG_PACKING >= 22 {
-            let cfg = custom_udr_grind_config_bits(m_p + LOG_PACKING, r0, k0, bits);
-            let pair = cfg.to_prover_verifier_configs().expect("udrg config pair");
-            let tag = match bits {
-                Some(b) => format!("udrg-k{k0}-{b}b"),
-                None => format!("udrg-k{k0}"),
-            };
-            return (pair, tag);
+        let (r0, k0, bits) = parse_rk_bits(rest);
+        if m < 20 {
+            return adhoc();
         }
-        let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
-            .expect("adhoc cfg");
-        return (pair, "adhoc".to_string());
+        let cfg = custom_udr_grind_config_bits(m, r0, k0, bits);
+        let pair = cfg.to_prover_verifier_configs().expect("udrg config pair");
+        let tag = match bits {
+            Some(b) => format!("udrg-k{k0}-{b}b"),
+            None => format!("udrg-k{k0}"),
+        };
+        return (pair, tag, lig_security(&cfg));
     }
     if let Some(rest) = profile.strip_prefix("udr:") {
         // Queries-only UDR geometry — zero grinding, zero OOD; see
         // `custom_udr_config_bits`. Ceiling ≈ 115 bits at n=22, ≈109 at
         // n=28 (L0 UDR fold error); above it validate() rejects.
-        let mut it = rest.split(':');
-        let r0: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or_else(|| usage());
-        let k0: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or_else(|| usage());
-        let bits: Option<usize> = it.next().map(|x| x.parse().ok().unwrap_or_else(|| usage()));
-        if m_p + LOG_PACKING >= 22 {
-            let cfg = custom_udr_config_bits(m_p + LOG_PACKING, r0, k0, bits);
-            let pair = cfg.to_prover_verifier_configs().expect("udr config pair");
-            let tag = match bits {
-                Some(b) => format!("udr-k{k0}-{b}b"),
-                None => format!("udr-k{k0}"),
-            };
-            return (pair, tag);
+        let (r0, k0, bits) = parse_rk_bits(rest);
+        if m < 20 {
+            return adhoc();
         }
-        let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
-            .expect("adhoc cfg");
-        return (pair, "adhoc".to_string());
+        let cfg = custom_udr_config_bits(m, r0, k0, bits);
+        let pair = cfg.to_prover_verifier_configs().expect("udr config pair");
+        let tag = match bits {
+            Some(b) => format!("udr-k{k0}-{b}b"),
+            None => format!("udr-k{k0}"),
+        };
+        return (pair, tag, lig_security(&cfg));
     }
     if let Some(rest) = profile.strip_prefix("custom:") {
-        let mut it = rest.split(':');
-        let r0: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or_else(|| usage());
-        let k0: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or_else(|| usage());
         // Optional round-by-round security target: custom:<r>:<k>:<bits>
         // (e.g. custom:3:4:128). Absent → the slim template's 100.
-        let bits: Option<usize> = it.next().map(|x| x.parse().ok().unwrap_or_else(|| usage()));
-        if m_p + LOG_PACKING >= 22 {
-            let cfg = custom_johnson_config_bits(m_p + LOG_PACKING, r0, k0, bits);
-            let pair = cfg.to_prover_verifier_configs().expect("custom config pair");
-            let tag = match bits {
-                Some(b) => format!("custom-k{k0}-{b}b"),
-                None => format!("custom-k{k0}"),
-            };
-            return (pair, tag);
+        let (r0, k0, bits) = parse_rk_bits(rest);
+        if m < 20 {
+            return adhoc();
         }
-        let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
-            .expect("adhoc cfg");
-        return (pair, "adhoc".to_string());
+        let cfg = custom_johnson_config_bits(m, r0, k0, bits);
+        let pair = cfg.to_prover_verifier_configs().expect("custom config pair");
+        let tag = match bits {
+            Some(b) => format!("custom-k{k0}-{b}b"),
+            None => format!("custom-k{k0}"),
+        };
+        return (pair, tag, lig_security(&cfg));
     }
-    let (cfg, tag): (LigConfig, &str) = if m_p + LOG_PACKING >= 22 {
-        match profile {
-            "fast" => (LigConfig::Embedded(LigeritoProfile::Fast), "fast"),
-            "slim" => (LigConfig::Embedded(LigeritoProfile::Slim), "slim"),
-            "slim3" => (
-                LigConfig::CustomJohnson {
-                    log_inv_rate: 3,
-                    initial_k: 4,
-                },
-                "slim3",
-            ),
-            "secure" => (LigConfig::Embedded(LigeritoProfile::Secure), "secure"),
-            other => {
-                eprintln!("unknown profile: {other}");
-                usage()
-            }
+    if m < 22 {
+        return adhoc();
+    }
+    let (cfg, tag): (LigConfig, &str) = match profile {
+        "fast" => (LigConfig::Embedded(LigeritoProfile::Fast), "fast"),
+        "slim" => (LigConfig::Embedded(LigeritoProfile::Slim), "slim"),
+        "slim3" => (
+            LigConfig::CustomJohnson {
+                log_inv_rate: 3,
+                initial_k: 4,
+            },
+            "slim3",
+        ),
+        "secure" => (LigConfig::Embedded(LigeritoProfile::Secure), "secure"),
+        other => {
+            eprintln!("unknown profile: {other}");
+            usage()
         }
-    } else {
-        (LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 }, "adhoc")
     };
-    (lig_configs(m_p, cfg).expect("lig cfg"), tag.to_string())
+    let sec = match cfg {
+        LigConfig::Embedded(pr) => embedded_security_config(m, pr)
+            .and_then(|toml| LigeritoSecurityConfig::from_toml_str(toml).ok())
+            .map_or(ADHOC_SECURITY, |c| lig_security(&c)),
+        LigConfig::CustomJohnson { log_inv_rate, initial_k } => {
+            lig_security(&custom_johnson_config_bits(m, log_inv_rate, initial_k, None))
+        }
+        LigConfig::Adhoc { .. } => ADHOC_SECURITY,
+    };
+    (lig_configs(m_p, cfg).expect("lig cfg"), tag.to_string(), sec)
 }
 
 fn main() {
     let o = parse_args();
 
+    // Paper-table modes: the parent only orchestrates child processes.
+    if let Some((ns, spec)) = o.sweep.clone() {
+        run_sweep(&o, &ns, &spec);
+        return;
+    }
+    if let Some((es, spec)) = o.mul_sweep.clone() {
+        run_mul_sweep(&o, &es, &spec);
+        return;
+    }
+
     #[cfg(feature = "parallel")]
     if let Some(th) = o.threads {
         rayon::ThreadPoolBuilder::new()
             .num_threads(th.max(1))
+            // 8 MB workers, as flock's `init_perf_thread_pool`: the prover
+            // kernels nest large NEON frames under work stealing (virtual
+            // reservation only; pages commit on touch).
+            .stack_size(8 << 20)
             .build_global()
             .expect("rayon global pool (set --threads before any parallel work)");
+    }
+
+    if let Some(e) = o.mul {
+        run_mul_shape(&o, e);
+        return;
     }
     #[cfg(not(feature = "parallel"))]
     if o.threads.is_some_and(|th| th > 1) {
@@ -640,7 +896,7 @@ fn main() {
     let p = IntEvalParams { t, s, word_bits: w };
     let m_p = packed_vars(&p);
     let lch = mod_q_num_chunks(&p, q_bits);
-    let ((pc, vc), lig_tag) = resolve_configs(m_p, &o.profile);
+    let ((pc, vc), lig_tag, lig_sec) = resolve_configs(m_p, &o.profile);
 
     let threads_eff: usize = {
         #[cfg(feature = "parallel")]
@@ -672,7 +928,7 @@ fn main() {
     };
     let row_len = p.rows() << log_w;
     let words = row_len.div_ceil(64);
-    let rows: Vec<Vec<u64>> = (0..p.cols())
+    let mut rows: Vec<Vec<u64>> = (0..p.cols())
         .map(|c| {
             let mut wv = vec![0u64; words];
             for b in 0..p.rows() {
@@ -717,14 +973,28 @@ fn main() {
         y = y + cw[c] * acc;
     }
 
-    // Commit (timed; its own peak window — the hint stays live).
+    // Commit: one tracked probe first (its own peak window; the hint that
+    // stays live; excluded from the timing), then `reps` timed commits with
+    // heap tracking OFF — on clones made outside the timer, hints dropped.
     reset_peak();
-    let t0 = Instant::now();
-    let hint = commit_rs_ligerito_rows(&p, rows, &pc);
-    let commit_ms = t0.elapsed().as_secs_f64() * 1e3;
-    println!("commit:  {commit_ms:9.2} ms   peak {:8.2} MB", peak_mb());
+    let hint = commit_rs_ligerito_rows(&p, rows.clone(), &pc);
+    let commit_peak = peak_mb();
+    set_heap_tracking(false);
+    let mut commit_ms_v = Vec::with_capacity(o.reps);
+    for i in 0..o.reps {
+        let rows_i = if i + 1 == o.reps { std::mem::take(&mut rows) } else { rows.clone() };
+        let t0 = Instant::now();
+        let h = commit_rs_ligerito_rows(&p, rows_i, &pc);
+        commit_ms_v.push(t0.elapsed().as_secs_f64() * 1e3);
+        black_box(&h);
+    }
+    set_heap_tracking(true);
+    let commit_ms = median(commit_ms_v);
+    println!("commit:  {commit_ms:9.2} ms   peak {commit_peak:8.2} MB   (median of {})", o.reps);
 
-    // Warm-up prove (excluded), then timed reps. Draining the prof table
+    // Warm-up prove (excluded; tracked, so persistent scratch it allocates
+    // is counted), the tracked peak probe (excluded), then the timed reps
+    // with heap tracking OFF (see `PeakAlloc`). Draining the prof table
     // right after each prove and each verify splits every rep's scope
     // records cleanly into prover-side and verifier-side step samples.
     {
@@ -733,6 +1003,15 @@ fn main() {
         black_box(&pr);
     }
     let _ = f2z::utils::prof::take_totals(); // drop the warm-up records
+    reset_peak();
+    {
+        let mut pt = Blake3Transcript::new();
+        let pr = prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha_of(), &pc);
+        black_box(&pr);
+    }
+    let prove_peak = peak_mb();
+    let _ = f2z::utils::prof::take_totals(); // drop the peak-probe records
+    set_heap_tracking(false);
     let mut prove_ms = Vec::new();
     let mut verify_ms = Vec::new();
     let mut prove_steps = StepTable::default();
@@ -766,15 +1045,7 @@ fn main() {
         last_proof = Some(proof);
     }
 
-    // Peak over one prove.
-    reset_peak();
-    {
-        let mut pt = Blake3Transcript::new();
-        let pr = prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha_of(), &pc);
-        black_box(&pr);
-    }
-    let prove_peak = peak_mb();
-    let _ = f2z::utils::prof::take_totals(); // drop the peak-probe records
+    set_heap_tracking(true);
 
     let proof = last_proof.expect("reps ≥ 1");
     let bytes = proof.to_bytes().len();
@@ -787,6 +1058,19 @@ fn main() {
         o.reps
     );
     print_steps(&prove_steps, PROVE_STEP_ROWS, PROVE_TOP_LABELS, &prove_ms, prove_med, 2);
+    // The paper's prover buckets: per-rep bucket sums, then the median.
+    let gp_ms = prove_steps.med(o.reps, PAPER_GP_LABELS, &[]);
+    let rs_ms = prove_steps.med(o.reps, PAPER_RS_LABELS, &[]);
+    let lig_ms = prove_steps.med(o.reps, PAPER_LIG_LABELS, &[]);
+    let residual_ms = prove_med - (gp_ms + rs_ms + lig_ms);
+    let pct = |ms: f64| if prove_med > 0.0 { ms / prove_med * 100.0 } else { 0.0 };
+    println!(
+        "    paper buckets: grand products {gp_ms:.2} ms ({:.1}%) | ring switch (incl. sumcheck) \
+         {rs_ms:.2} ms ({:.1}%) | Ligerito open {lig_ms:.2} ms ({:.1}%) | residual {residual_ms:.2} ms",
+        pct(gp_ms),
+        pct(rs_ms),
+        pct(lig_ms),
+    );
     println!("verify:  {verify_med:9.2} ms");
     print_steps(&verify_steps, VERIFY_STEP_ROWS, VERIFY_TOP_LABELS, &verify_ms, verify_med, 3);
     println!(
@@ -796,6 +1080,526 @@ fn main() {
         zb.s_v as f64 / 1024.0,
         lig_b as f64 / 1024.0,
     );
+    println!("security: {}", lig_sec.describe());
+    let result = CliResult {
+        n: o.n,
+        t,
+        s,
+        w,
+        m_p,
+        chunks: lch,
+        lig: lig_tag.clone(),
+        lig_target_bits: lig_sec.target_bits,
+        lig_achieved_bits: lig_sec.achieved_bits,
+        lig_l0_bits: lig_sec.l0_binding_bits,
+        threads: threads_eff,
+        reps: o.reps,
+        commit_ms,
+        commit_peak_mb: commit_peak,
+        prove_ms: prove_med,
+        prove_gp_ms: gp_ms,
+        prove_rs_ms: rs_ms,
+        prove_lig_ms: lig_ms,
+        prove_residual_ms: residual_ms,
+        prove_peak_mb: prove_peak,
+        verify_ms: verify_med,
+        proof_bytes: bytes,
+        // Host-codec framing (a few length prefixes) counts as non-Ligerito,
+        // so the split sums to the total exactly.
+        proof_nonlig_bytes: bytes - lig_b,
+        proof_lig_bytes: lig_b,
+    };
+    println!("{}", result.to_line());
+}
+
+// ---------------------------------------------------------------------
+// Paper buckets, the RESULT line, and the `--sweep` table mode
+// ---------------------------------------------------------------------
+
+/// Prover bucket "grand products": the row-weight chunking, the column
+/// pack (only on unpacked hints), the α-power leaf tables, the merged GKR
+/// forest, and the integer folds `u_c` — i.e. the paper's integer folds plus
+/// its batched grand-product IOR.
+const PAPER_GP_LABELS: &[&str] = &["mq:chunking", "mc:pack", "mc:pow2", "mc:forest", "mc:fold_v"];
+/// Prover bucket "ring switch (incl. sumcheck)": the sumcheck that turns
+/// the forest's exit claim (an inner product with the weights) into an MLE
+/// evaluation claim, the ring-switch message `s_v`, and the φ-basis/target
+/// of the resulting Ligerito claim.
+const PAPER_RS_LABELS: &[&str] = &["mc:presum_tbls", "mc:presum_run", "mq:rings", "mq:bcomb"];
+/// Prover bucket "Ligerito open".
+const PAPER_LIG_LABELS: &[&str] = &["mq:lig"];
+
+/// One single-claim run, as the `RESULT schema=f2z-cli/1` line carries it
+/// (`docs/bench-schema.md`). All `*_ms` are medians over the timed reps;
+/// `prove_residual_ms = prove_ms − (gp + rs + lig)` (signed).
+#[derive(Clone, Debug)]
+struct CliResult {
+    n: usize,
+    t: usize,
+    s: usize,
+    w: usize,
+    m_p: usize,
+    chunks: usize,
+    lig: String,
+    lig_target_bits: Option<usize>,
+    lig_achieved_bits: Option<f64>,
+    lig_l0_bits: Option<f64>,
+    threads: usize,
+    reps: usize,
+    commit_ms: f64,
+    commit_peak_mb: f64,
+    prove_ms: f64,
+    prove_gp_ms: f64,
+    prove_rs_ms: f64,
+    prove_lig_ms: f64,
+    prove_residual_ms: f64,
+    prove_peak_mb: f64,
+    verify_ms: f64,
+    proof_bytes: usize,
+    proof_nonlig_bytes: usize,
+    proof_lig_bytes: usize,
+}
+
+const RESULT_SCHEMA: &str = "f2z-cli/1";
+
+fn na_usize(v: Option<usize>) -> String {
+    v.map_or_else(|| "na".to_string(), |x| x.to_string())
+}
+fn na_f64(v: Option<f64>) -> String {
+    v.map_or_else(|| "na".to_string(), |x| format!("{x:.2}"))
+}
+
+impl CliResult {
+    fn to_line(&self) -> String {
+        format!(
+            "RESULT schema={RESULT_SCHEMA} n={} t={} s={} W={} m_p={} chunks={} lig={} \
+             lig_target_bits={} lig_achieved_bits={} lig_l0_bits={} threads={} reps={} \
+             commit_ms={:.3} commit_peak_mb={:.2} prove_ms={:.3} prove_gp_ms={:.3} \
+             prove_rs_ms={:.3} prove_lig_ms={:.3} prove_residual_ms={:.3} prove_peak_mb={:.2} \
+             verify_ms={:.3} proof_bytes={} proof_nonlig_bytes={} proof_lig_bytes={}",
+            self.n,
+            self.t,
+            self.s,
+            self.w,
+            self.m_p,
+            self.chunks,
+            self.lig,
+            na_usize(self.lig_target_bits),
+            na_f64(self.lig_achieved_bits),
+            na_f64(self.lig_l0_bits),
+            self.threads,
+            self.reps,
+            self.commit_ms,
+            self.commit_peak_mb,
+            self.prove_ms,
+            self.prove_gp_ms,
+            self.prove_rs_ms,
+            self.prove_lig_ms,
+            self.prove_residual_ms,
+            self.prove_peak_mb,
+            self.verify_ms,
+            self.proof_bytes,
+            self.proof_nonlig_bytes,
+            self.proof_lig_bytes,
+        )
+    }
+
+    fn parse(line: &str) -> Result<Self, String> {
+        let rest = line.strip_prefix("RESULT ").ok_or("not a RESULT line")?;
+        let kv: HashMap<&str, &str> = rest
+            .split_whitespace()
+            .filter_map(|tok| tok.split_once('='))
+            .collect();
+        if kv.get("schema") != Some(&RESULT_SCHEMA) {
+            return Err(format!("schema {:?} ≠ {RESULT_SCHEMA}", kv.get("schema")));
+        }
+        let raw = |k: &str| kv.get(k).copied().ok_or_else(|| format!("missing key {k}"));
+        let num = |k: &str| -> Result<f64, String> {
+            raw(k)?.parse::<f64>().map_err(|e| format!("{k}: {e}"))
+        };
+        let int = |k: &str| -> Result<usize, String> {
+            raw(k)?.parse::<usize>().map_err(|e| format!("{k}: {e}"))
+        };
+        let opt_num = |k: &str| -> Result<Option<f64>, String> {
+            let v = raw(k)?;
+            if v == "na" { Ok(None) } else { v.parse().map(Some).map_err(|e| format!("{k}: {e}")) }
+        };
+        let opt_int = |k: &str| -> Result<Option<usize>, String> {
+            let v = raw(k)?;
+            if v == "na" { Ok(None) } else { v.parse().map(Some).map_err(|e| format!("{k}: {e}")) }
+        };
+        Ok(CliResult {
+            n: int("n")?,
+            t: int("t")?,
+            s: int("s")?,
+            w: int("W")?,
+            m_p: int("m_p")?,
+            chunks: int("chunks")?,
+            lig: raw("lig")?.to_string(),
+            lig_target_bits: opt_int("lig_target_bits")?,
+            lig_achieved_bits: opt_num("lig_achieved_bits")?,
+            lig_l0_bits: opt_num("lig_l0_bits")?,
+            threads: int("threads")?,
+            reps: int("reps")?,
+            commit_ms: num("commit_ms")?,
+            commit_peak_mb: num("commit_peak_mb")?,
+            prove_ms: num("prove_ms")?,
+            prove_gp_ms: num("prove_gp_ms")?,
+            prove_rs_ms: num("prove_rs_ms")?,
+            prove_lig_ms: num("prove_lig_ms")?,
+            prove_residual_ms: num("prove_residual_ms")?,
+            prove_peak_mb: num("prove_peak_mb")?,
+            verify_ms: num("verify_ms")?,
+            proof_bytes: int("proof_bytes")?,
+            proof_nonlig_bytes: int("proof_nonlig_bytes")?,
+            proof_lig_bytes: int("proof_lig_bytes")?,
+        })
+    }
+}
+
+/// Run one fresh child process per shape (the bench protocol's "one shape
+/// per process"), streaming each child's output and collecting its `RESULT`
+/// line. `label` names the shape in messages; `args` builds the child's
+/// argument list for a shape.
+fn run_children(
+    exe: &Path,
+    shapes: &[usize],
+    label: &str,
+    cooldown_s: u64,
+    args: impl Fn(usize) -> Vec<String>,
+) -> Vec<String> {
+    let mut lines = Vec::with_capacity(shapes.len());
+    for (i, &x) in shapes.iter().enumerate() {
+        if i > 0 && cooldown_s > 0 {
+            println!("\n(cooldown {cooldown_s} s)");
+            std::thread::sleep(std::time::Duration::from_secs(cooldown_s));
+        }
+        println!("\n=== {label} = {x} ===");
+        let mut cmd = Command::new(exe);
+        cmd.args(args(x));
+        cmd.stdout(Stdio::piped()).stderr(Stdio::inherit());
+        let mut child = cmd.spawn().unwrap_or_else(|e| {
+            eprintln!("spawn {}: {e}", exe.display());
+            exit(1)
+        });
+        let stdout = child.stdout.take().expect("piped stdout");
+        let mut result: Option<String> = None;
+        for line in BufReader::new(stdout).lines() {
+            let line = line.unwrap_or_else(|e| {
+                eprintln!("reading child stdout: {e}");
+                exit(1)
+            });
+            if line.starts_with("RESULT ") {
+                result = Some(line.clone());
+            }
+            println!("{line}");
+        }
+        let status = child.wait().expect("wait for child");
+        if !status.success() {
+            eprintln!("child for {label}={x} failed: {status}");
+            exit(1);
+        }
+        lines.push(result.unwrap_or_else(|| {
+            eprintln!("child for {label}={x} printed no RESULT line");
+            exit(1)
+        }));
+    }
+    lines
+}
+
+/// The child arguments shared by both sweep modes.
+fn common_child_args(o: &Opts) -> Vec<String> {
+    let mut v = Vec::new();
+    if let Some(th) = o.threads {
+        v.push("--threads".to_string());
+        v.push(th.to_string());
+    }
+    v.push("--reps".to_string());
+    v.push(o.reps.to_string());
+    if o.word_bits != 1 {
+        v.push("--word-bits".to_string());
+        v.push(o.word_bits.to_string());
+    }
+    v
+}
+
+fn current_exe() -> PathBuf {
+    std::env::current_exe().unwrap_or_else(|e| {
+        eprintln!("current_exe: {e}");
+        exit(1)
+    })
+}
+
+/// `--sweep`: the raw-performance table (one child per `n`).
+fn run_sweep(o: &Opts, ns: &[usize], spec: &str) {
+    if o.family.is_some() || o.taps.is_some() {
+        eprintln!("--sweep runs the single-claim path only; drop --family/--taps");
+        exit(2);
+    }
+    let exe = current_exe();
+    let latex_path: PathBuf = o
+        .latex
+        .clone()
+        .map_or_else(|| default_latex_path("raw-performance-table.tex"), PathBuf::from);
+    println!(
+        "f2z sweep: n ∈ {{{}}} | reps={} | profile={} | threads={} | W={} | one fresh process per n | \
+         table → {}",
+        ns.iter().map(ToString::to_string).collect::<Vec<_>>().join(","),
+        o.reps,
+        o.profile,
+        o.threads.map_or_else(|| "default".to_string(), |t| t.to_string()),
+        o.word_bits,
+        latex_path.display(),
+    );
+    let lines = run_children(&exe, ns, "n", o.cooldown_s, |n| {
+        let mut a = vec![n.to_string()];
+        a.extend(common_child_args(o));
+        a.push("--profile".to_string());
+        a.push(o.profile.clone());
+        a
+    });
+    let rows: Vec<CliResult> = lines
+        .iter()
+        .map(|l| {
+            CliResult::parse(l).unwrap_or_else(|e| {
+                eprintln!("bad RESULT line: {e}");
+                exit(1)
+            })
+        })
+        .collect();
+    print_sweep_summary(&rows);
+    match write_latex_table(&latex_path, &rows, o, spec) {
+        Ok(()) => println!("wrote LaTeX table: {}", latex_path.display()),
+        Err(e) => {
+            eprintln!("writing {}: {e}", latex_path.display());
+            exit(1);
+        }
+    }
+}
+
+/// Default table location: `paper/<name>` in the crate (`\input{<stem>}`
+/// from `paper/main.tex`).
+fn default_latex_path(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("paper").join(name)
+}
+
+/// Machine/date/commit facts for a generated table's header (best effort).
+struct Provenance {
+    cpu: String,
+    cores: String,
+    mem_gb: String,
+    date: String,
+    commit: String,
+    rustc: String,
+}
+
+fn probe_provenance() -> Provenance {
+    let cpu = probe("sysctl", &["-n", "machdep.cpu.brand_string"])
+        .unwrap_or_else(|| "unknown CPU".to_string());
+    let ncpu = probe("sysctl", &["-n", "hw.ncpu"]).unwrap_or_else(|| "?".to_string());
+    let pcores = probe("sysctl", &["-n", "hw.perflevel0.physicalcpu"]);
+    let ecores = probe("sysctl", &["-n", "hw.perflevel1.physicalcpu"]);
+    let mem_gb = probe("sysctl", &["-n", "hw.memsize"])
+        .and_then(|m| m.parse::<f64>().ok())
+        .map_or_else(|| "?".to_string(), |b| format!("{:.0}", b / (1024.0 * 1024.0 * 1024.0)));
+    let cores = match (pcores, ecores) {
+        (Some(p), Some(e)) => format!("{ncpu} cores: {p} performance + {e} efficiency"),
+        _ => format!("{ncpu} cores"),
+    };
+    Provenance {
+        cpu,
+        cores,
+        mem_gb,
+        date: probe("date", &["-u", "+%Y-%m-%d"]).unwrap_or_else(|| "unknown date".to_string()),
+        commit: probe("git", &["describe", "--always", "--dirty", "--abbrev=9"])
+            .unwrap_or_else(|| "unknown commit".to_string()),
+        rustc: probe("rustc", &["--version"]).unwrap_or_else(|| "rustc ?".to_string()),
+    }
+}
+
+/// The exact command that regenerates a table (`mode` = `--sweep` or
+/// `--mul-sweep`), for the table header.
+fn reproduce_cmdline(o: &Opts, mode: &str, spec: &str) -> String {
+    use std::fmt::Write as _;
+    let mut cmdline = format!(
+        "RUSTFLAGS=\"-C target-cpu=native\" cargo run --release --features unchecked -- \\\n%       {mode} {spec}"
+    );
+    if let Some(th) = o.threads {
+        let _ = write!(cmdline, " --threads {th}");
+    }
+    let _ = write!(cmdline, " --reps {}", o.reps);
+    if mode == "--sweep" {
+        let _ = write!(cmdline, " --profile {}", o.profile);
+    } else if o.lambda != 100 {
+        let _ = write!(cmdline, " --lambda {}", o.lambda);
+    }
+    if o.word_bits != 1 {
+        let _ = write!(cmdline, " --word-bits {}", o.word_bits);
+    }
+    if o.cooldown_s > 0 {
+        let _ = write!(cmdline, " --cooldown {}", o.cooldown_s);
+    }
+    if let Some(l) = &o.latex {
+        let _ = write!(cmdline, " --latex {l}");
+    }
+    cmdline
+}
+
+fn print_sweep_summary(rows: &[CliResult]) {
+    println!("\nsweep summary (medians; ms unless noted; proof KB = 1000 B):");
+    println!(
+        "  {:>3} {:>9} {:>9} {:>9} {:>9} {:>9} {:>8} {:>8} {:>8} {:>8} {:>9} {:>7}",
+        "n", "commit", "prove", "grand-pr", "ring-sw", "ligerito", "verify", "proofKB", "nonlig",
+        "lig", "peakMB", "lig-b"
+    );
+    for r in rows {
+        println!(
+            "  {:>3} {:>9.2} {:>9.2} {:>9.2} {:>9.2} {:>9.2} {:>8.3} {:>8.1} {:>8.1} {:>8.1} {:>9.1} {:>7}",
+            r.n,
+            r.commit_ms,
+            r.prove_ms,
+            r.prove_gp_ms,
+            r.prove_rs_ms,
+            r.prove_lig_ms,
+            r.verify_ms,
+            r.proof_bytes as f64 / 1000.0,
+            r.proof_nonlig_bytes as f64 / 1000.0,
+            r.proof_lig_bytes as f64 / 1000.0,
+            r.prove_peak_mb,
+            na_f64(r.lig_achieved_bits),
+        );
+    }
+}
+
+/// Best-effort shell probe for the table's provenance header (never fails
+/// the run).
+fn probe(cmd: &str, args: &[&str]) -> Option<String> {
+    Command::new(cmd)
+        .args(args)
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// Milliseconds for the table: 2 decimals below 10, 1 below 100, none above.
+fn fmt_ms(v: f64) -> String {
+    if v >= 100.0 {
+        format!("{v:.0}")
+    } else if v >= 10.0 {
+        format!("{v:.1}")
+    } else {
+        format!("{v:.2}")
+    }
+}
+/// Kilobytes (1000 B) for the table: 1 decimal below 100, none above.
+fn fmt_kb(bytes: usize) -> String {
+    let kb = bytes as f64 / 1000.0;
+    if kb >= 100.0 { format!("{kb:.0}") } else { format!("{kb:.1}") }
+}
+
+/// Write the paper's raw-performance table. The file is self-documenting:
+/// its header records the exact command, machine, date, commit, and every
+/// child's RESULT line.
+fn write_latex_table(
+    path: &Path,
+    rows: &[CliResult],
+    o: &Opts,
+    spec: &str,
+) -> std::io::Result<()> {
+    use std::fmt::Write as _;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let Provenance { cpu, cores, mem_gb, date, commit, rustc } = probe_provenance();
+    let threads = rows.first().map_or(0, |r| r.threads);
+    let reps = rows.first().map_or(o.reps, |r| r.reps);
+    let cmdline = reproduce_cmdline(o, "--sweep", spec);
+    let lig_tag = rows.first().map_or("?", |r| r.lig.as_str());
+    let target = rows.iter().filter_map(|r| r.lig_target_bits).min();
+    let achieved = rows
+        .iter()
+        .filter_map(|r| r.lig_achieved_bits)
+        .fold(f64::INFINITY, f64::min);
+    let n_lo = rows.iter().map(|r| r.n).min().unwrap_or(0);
+    let n_hi = rows.iter().map(|r| r.n).max().unwrap_or(0);
+    // Ligerito geometry from the profile string when it is `custom:<r>:<k>`.
+    let lig_geometry = o
+        .profile
+        .strip_prefix("custom:")
+        .map(|rest| {
+            let (r0, k0, _) = parse_rk_bits(rest);
+            format!(
+                "over a Reed--Solomon code of rate $1/{}$ over $\\FF_{{2^{{128}}}}$ (initial folding of $2^{{{k0}}}$ rows, Johnson regime)",
+                1usize << r0
+            )
+        })
+        .unwrap_or_else(|| format!("(profile \\texttt{{{lig_tag}}})"));
+    let security = match target {
+        Some(t) if achieved.is_finite() => format!(
+            "configured for ${t}$ bits of round-by-round security (the minimum over its levels and error terms is ${achieved:.1}$ bits)"
+        ),
+        _ => "in the UNAUDITED ad-hoc test configuration (no security claim)".to_string(),
+    };
+
+    let mut out = String::new();
+    let _ = writeln!(out, "% Raw-performance table of F2Z (c:core_iop) — GENERATED FILE, do not edit by hand.");
+    let _ = writeln!(out, "% Generated by `f2z --sweep` (src/bin/f2z.rs) on {date} (UTC) at {commit}; {rustc}.");
+    let _ = writeln!(out, "% Regenerate (from the repo root; this file is overwritten):");
+    let _ = writeln!(out, "%   {cmdline}");
+    let _ = writeln!(out, "% Machine: {cpu} ({cores}), {mem_gb} GB; {threads} rayon threads; medians of {reps} timed reps");
+    let _ = writeln!(out, "%   after one warm-up prove; every timed proof is verified; commit = median of {reps} commits.");
+    let _ = writeln!(out, "% Include with \\input{{raw-performance-table}} (relative to paper/).");
+    let _ = writeln!(out, "% Prover buckets (utils::prof scope labels): grand products = {};", PAPER_GP_LABELS.join(" "));
+    let _ = writeln!(out, "%   ring switch incl. its sumcheck = {}; Ligerito = {}.", PAPER_RS_LABELS.join(" "), PAPER_LIG_LABELS.join(" "));
+    let _ = writeln!(out, "%   Bucket medians need not sum to the total median; the signed residual (transcript glue) is prove_residual_ms below.");
+    let _ = writeln!(out, "% Proof split: non-Ligerito = integer folds + GKR messages + sumcheck messages + ring-switch message (+ host-codec framing);");
+    let _ = writeln!(out, "%   Ligerito = the serialized Ligerito proof. KB = 1000 bytes.");
+    let _ = writeln!(out, "% Security: Ligerito ({lig_tag}) target {} bits round-by-round, achieved (min over rows/levels/terms) {}; per-row values in", na_usize(target), if achieved.is_finite() { format!("{achieved:.2}") } else { "na".into() });
+    let _ = writeln!(out, "%   lig_achieved_bits / lig_l0_bits (L0's implicit post-commit list binding). F2Z-side rounds: GKR 3/2^128, sumcheck 2/2^128,");
+    let _ = writeln!(out, "%   ring switch 7/2^128 (all ≥ 125 bits). The evaluation prime q = 2^100 − 15 is fixed and public: the implementation executes");
+    let _ = writeln!(out, "%   neither Round 0 (out-of-domain sampling) nor Round 1 (random prime projection) of c:core_iop.");
+    let _ = writeln!(out, "% RESULT lines (schema={RESULT_SCHEMA}):");
+    for r in rows {
+        let _ = writeln!(out, "% {}", r.to_line());
+    }
+    let _ = writeln!(out);
+    let _ = writeln!(out, "\\begin{{table}}[H]");
+    let _ = writeln!(out, "  \\centering");
+    let _ = writeln!(out, "  \\small");
+    let _ = writeln!(out, "  \\setlength{{\\tabcolsep}}{{4.5pt}}");
+    let _ = writeln!(out, "  \\begin{{tabular}}{{@{{}}rrrrrrrrrr@{{}}}}");
+    let _ = writeln!(out, "    \\toprule");
+    let _ = writeln!(out, "    & Commit & \\multicolumn{{4}}{{c}}{{Prover time (ms)}} & Verifier & \\multicolumn{{3}}{{c}}{{Proof size (KB)}} \\\\");
+    let _ = writeln!(out, "    \\cmidrule(lr){{3-6}} \\cmidrule(lr){{8-10}}");
+    let _ = writeln!(out, "    $\\log_2 \\codedim$ & (ms) & Grand prod. & Ring switch & Ligerito & Total & (ms) & Non-Lig. & Ligerito & Total \\\\");
+    let _ = writeln!(out, "    \\midrule");
+    for r in rows {
+        let _ = writeln!(
+            out,
+            "    {} & {} & {} & {} & {} & {} & {} & {} & {} & {} \\\\",
+            r.n,
+            fmt_ms(r.commit_ms),
+            fmt_ms(r.prove_gp_ms),
+            fmt_ms(r.prove_rs_ms),
+            fmt_ms(r.prove_lig_ms),
+            fmt_ms(r.prove_ms),
+            fmt_ms(r.verify_ms),
+            fmt_kb(r.proof_nonlig_bytes),
+            fmt_kb(r.proof_lig_bytes),
+            fmt_kb(r.proof_bytes),
+        );
+    }
+    let _ = writeln!(out, "    \\bottomrule");
+    let _ = writeln!(out, "  \\end{{tabular}}");
+    let _ = writeln!(
+        out,
+        "  \\caption{{Cost of \\ftwoz\\ (\\cref{{c:core_iop}}) for committing to $\\codedim = 2^{{n}}$ bits, $n = {n_lo}, \\ldots, {n_hi}$, and proving one claim $\\langle \\vv, \\bff\\rangle = \\mu$ over $\\FF_q$ with $q = 2^{{100}} - 15$ and the tensor split $\\codedim_1 = 2^{{\\lceil 0.6\\, n\\rceil}}$, $\\codedim_1 \\cdot \\codedim_2 = \\codedim$ (\\cref{{s:instantiation}}). The commitment is opened with ring switching and Ligerito~\\cite{{ligerito}} {lig_geometry}, {security}; every other round (the GKR, the sumcheck reducing to MLE evaluation claims, the ring switch) has error at most $7 \\cdot 2^{{-128}}$. Prover columns: \\emph{{grand products}} is computing the integers $\\mu_j$ and the batched GKR for the $\\codedim_2$ grand products in the exponent (\\cref{{s:gkr_low_entropy}}); \\emph{{ring switch}} is the sumcheck reducing the GKR output claims to MLE evaluation claims together with the ring-switching step; \\emph{{Ligerito}} is the Ligerito opening. These exclude the commitment, listed separately. \\emph{{Non-Ligerito}} proof bytes are the $\\mu_j$, the GKR and sumcheck messages, and the ring-switch message; KB $= 1000$ bytes. {cpu} ({cores}), {mem_gb}\\,GB, {threads} threads; medians of {reps} runs after one warm-up.}}"
+    );
+    let _ = writeln!(out, "  \\label{{tab:f2z-raw-performance}}");
+    let _ = writeln!(out, "\\end{{table}}");
+    std::fs::write(path, out)
 }
 
 /// The measured A/B family layout for `n`: 4 UAIR columns
@@ -854,7 +1658,7 @@ fn run_family(o: &Opts, fam: &str) {
     let p = layout.p;
     let p_x = virtual_xor_params(&layout);
     let m_p = packed_vars(&p);
-    let ((pc, vc), lig_tag) = resolve_configs(m_p, &o.profile);
+    let ((pc, vc), lig_tag, _lig_sec) = resolve_configs(m_p, &o.profile);
     let family_cols: Vec<usize> = (0..j).collect();
 
     let threads_eff: usize = {
@@ -1094,7 +1898,7 @@ fn run_taps(o: &Opts, mode: &str) {
     let p = layout.p;
     let p_x = virtual_xor_params(&layout);
     let m_p = packed_vars(&p);
-    let ((pc, vc), lig_tag) = resolve_configs(m_p, &o.profile);
+    let ((pc, vc), lig_tag, _lig_sec) = resolve_configs(m_p, &o.profile);
 
     // The instance's tap lists (identities, two 3-tap rotation
     // convolutions, a cross-column mix, the lossy-SHIFT claim) and the
@@ -1471,4 +2275,637 @@ fn alpha_of() -> f2z::poly::univariate::binary_gf128::BinaryFieldGF128 {
     use std::sync::OnceLock;
     static A: OnceLock<f2z::poly::univariate::binary_gf128::BinaryFieldGF128> = OnceLock::new();
     *A.get_or_init(smallest_generator)
+}
+
+// ---------------------------------------------------------------------
+// `--mul` / `--mul-sweep`: the u32 × u32 → u64 multiplication SNARK
+// ---------------------------------------------------------------------
+
+/// Root seed of `benches/u32_mul.rs` (`common::seed` default), so the CLI
+/// proves the same witnesses as the bench at every exponent.
+const MUL_ROOT_SEED: u64 = 0x5533_326d_756c_0064;
+
+/// Prover steps of the multiplication SNARK (paper §2.1 numbering, code
+/// order). The Step-5 sub-rows are the paper buckets of the opening.
+const MUL_PROVE_STEP_ROWS: &[StepRow] = &[
+    step("prime projection (step2:project_prove)", &["step2:project_prove"]),
+    step("Spartan PIOP (step3:piop_prove)", &["step3:piop_prove"]),
+    step("bitification (step4:bitify_prove)", &["step4:bitify_prove"]),
+    step("F2Z opening (step5:open_prove)", &["step5:open_prove"]),
+    substep("grand products", PAPER_GP_LABELS, &[]),
+    substep("ring switch (incl. sumcheck)", PAPER_RS_LABELS, &[]),
+    substep("Ligerito open (mq:lig)", PAPER_LIG_LABELS, &[]),
+];
+const MUL_PROVE_TOP_LABELS: &[&str] = &[
+    "step2:project_prove",
+    "step3:piop_prove",
+    "step4:bitify_prove",
+    "step5:open_prove",
+];
+const MUL_VERIFY_STEP_ROWS: &[StepRow] = &[
+    step("prime projection (step2:project_verify)", &["step2:project_verify"]),
+    step("Spartan PIOP (step3:piop_verify)", &["step3:piop_verify"]),
+    step("bitification (step4:bitify_verify)", &["step4:bitify_verify"]),
+    step("F2Z opening (step5:open_verify)", &["step5:open_verify"]),
+];
+const MUL_VERIFY_TOP_LABELS: &[&str] = &[
+    "step2:project_verify",
+    "step3:piop_verify",
+    "step4:bitify_verify",
+    "step5:open_verify",
+];
+
+/// One `--mul` run, as the `RESULT schema=f2z-cli-mul/1` line carries it.
+/// `prove_ms` is END TO END and includes the commitment (bench-schema
+/// semantics); `prove_residual_ms = prove_ms − (commit + s2 + s3 + s4 + s5)`.
+#[derive(Clone, Debug)]
+struct MulResult {
+    e: usize,
+    multiplications: usize,
+    n: usize,
+    t: usize,
+    s: usize,
+    w: usize,
+    chunks: usize,
+    profile: String,
+    lambda: u32,
+    lambda_achieved: f64,
+    lambda_bind: String,
+    lig_target_bits: usize,
+    q_lo_log2: usize,
+    q_bits: usize,
+    lig_log_inv_rate: usize,
+    lig_initial_k: usize,
+    threads: usize,
+    reps: usize,
+    witness_ms: f64,
+    setup_ms: f64,
+    commit_ms: f64,
+    prove_ms: f64,
+    s2_project_ms: f64,
+    s3_piop_ms: f64,
+    s4_bitify_ms: f64,
+    s5_open_ms: f64,
+    s5_gp_ms: f64,
+    s5_rs_ms: f64,
+    s5_lig_ms: f64,
+    prove_residual_ms: f64,
+    prove_peak_mb: f64,
+    verify_ms: f64,
+    proof_bytes: usize,
+    proof_piop_bytes: usize,
+    proof_open_bytes: usize,
+    proof_open_nonlig_bytes: usize,
+    proof_open_lig_bytes: usize,
+}
+
+const MUL_RESULT_SCHEMA: &str = "f2z-cli-mul/1";
+
+impl MulResult {
+    fn to_line(&self) -> String {
+        format!(
+            "RESULT schema={MUL_RESULT_SCHEMA} e={} multiplications={} n={} t={} s={} W={} chunks={} \
+             profile={} lambda={} lambda_achieved={:.2} lambda_bind={} lig_target_bits={} \
+             q_lo_log2={} q_bits={} lig_log_inv_rate={} lig_initial_k={} threads={} reps={} \
+             witness_ms={:.3} setup_ms={:.3} commit_ms={:.3} prove_ms={:.3} s2_project_ms={:.3} \
+             s3_piop_ms={:.3} s4_bitify_ms={:.3} s5_open_ms={:.3} s5_gp_ms={:.3} s5_rs_ms={:.3} \
+             s5_lig_ms={:.3} prove_residual_ms={:.3} prove_peak_mb={:.2} verify_ms={:.3} \
+             proof_bytes={} proof_piop_bytes={} proof_open_bytes={} proof_open_nonlig_bytes={} \
+             proof_open_lig_bytes={}",
+            self.e,
+            self.multiplications,
+            self.n,
+            self.t,
+            self.s,
+            self.w,
+            self.chunks,
+            self.profile,
+            self.lambda,
+            self.lambda_achieved,
+            self.lambda_bind,
+            self.lig_target_bits,
+            self.q_lo_log2,
+            self.q_bits,
+            self.lig_log_inv_rate,
+            self.lig_initial_k,
+            self.threads,
+            self.reps,
+            self.witness_ms,
+            self.setup_ms,
+            self.commit_ms,
+            self.prove_ms,
+            self.s2_project_ms,
+            self.s3_piop_ms,
+            self.s4_bitify_ms,
+            self.s5_open_ms,
+            self.s5_gp_ms,
+            self.s5_rs_ms,
+            self.s5_lig_ms,
+            self.prove_residual_ms,
+            self.prove_peak_mb,
+            self.verify_ms,
+            self.proof_bytes,
+            self.proof_piop_bytes,
+            self.proof_open_bytes,
+            self.proof_open_nonlig_bytes,
+            self.proof_open_lig_bytes,
+        )
+    }
+
+    fn parse(line: &str) -> Result<Self, String> {
+        let rest = line.strip_prefix("RESULT ").ok_or("not a RESULT line")?;
+        let kv: HashMap<&str, &str> = rest
+            .split_whitespace()
+            .filter_map(|tok| tok.split_once('='))
+            .collect();
+        if kv.get("schema") != Some(&MUL_RESULT_SCHEMA) {
+            return Err(format!("schema {:?} ≠ {MUL_RESULT_SCHEMA}", kv.get("schema")));
+        }
+        let raw = |k: &str| kv.get(k).copied().ok_or_else(|| format!("missing key {k}"));
+        let num = |k: &str| -> Result<f64, String> {
+            raw(k)?.parse::<f64>().map_err(|e| format!("{k}: {e}"))
+        };
+        let int = |k: &str| -> Result<usize, String> {
+            raw(k)?.parse::<usize>().map_err(|e| format!("{k}: {e}"))
+        };
+        Ok(MulResult {
+            e: int("e")?,
+            multiplications: int("multiplications")?,
+            n: int("n")?,
+            t: int("t")?,
+            s: int("s")?,
+            w: int("W")?,
+            chunks: int("chunks")?,
+            profile: raw("profile")?.to_string(),
+            lambda: raw("lambda")?.parse().map_err(|e| format!("lambda: {e}"))?,
+            lambda_achieved: num("lambda_achieved")?,
+            lambda_bind: raw("lambda_bind")?.to_string(),
+            lig_target_bits: int("lig_target_bits")?,
+            q_lo_log2: int("q_lo_log2")?,
+            q_bits: int("q_bits")?,
+            lig_log_inv_rate: int("lig_log_inv_rate")?,
+            lig_initial_k: int("lig_initial_k")?,
+            threads: int("threads")?,
+            reps: int("reps")?,
+            witness_ms: num("witness_ms")?,
+            setup_ms: num("setup_ms")?,
+            commit_ms: num("commit_ms")?,
+            prove_ms: num("prove_ms")?,
+            s2_project_ms: num("s2_project_ms")?,
+            s3_piop_ms: num("s3_piop_ms")?,
+            s4_bitify_ms: num("s4_bitify_ms")?,
+            s5_open_ms: num("s5_open_ms")?,
+            s5_gp_ms: num("s5_gp_ms")?,
+            s5_rs_ms: num("s5_rs_ms")?,
+            s5_lig_ms: num("s5_lig_ms")?,
+            prove_residual_ms: num("prove_residual_ms")?,
+            prove_peak_mb: num("prove_peak_mb")?,
+            verify_ms: num("verify_ms")?,
+            proof_bytes: int("proof_bytes")?,
+            proof_piop_bytes: int("proof_piop_bytes")?,
+            proof_open_bytes: int("proof_open_bytes")?,
+            proof_open_nonlig_bytes: int("proof_open_nonlig_bytes")?,
+            proof_open_lig_bytes: int("proof_open_lig_bytes")?,
+        })
+    }
+}
+
+/// One end-to-end prove of the multiplication SNARK: bit-pack + F2Z commit
+/// (Step 1, timed separately) followed by the combined Spartan + F2Z proof.
+/// Returns `(proof, hint, prove_ms_end_to_end, commit_ms)`.
+fn mul_prove_e2e(
+    relation: &PreparedU32MulRelation,
+    witness: &U32MulWitness,
+) -> (U32MulProof, FlockCommitHint, f64, f64) {
+    let t_all = Instant::now();
+    let rows = witness.f2z_bit_rows();
+    let hint = commit_u32_mul_witness(relation, rows).unwrap_or_else(|err| {
+        eprintln!("F2Z commitment failed: {err}");
+        exit(1)
+    });
+    let commit_ms = t_all.elapsed().as_secs_f64() * 1e3;
+    let mut tr = Blake3Transcript::new();
+    let proof = prove_u32_mul(&mut tr, relation, witness, &hint).unwrap_or_else(|err| {
+        eprintln!("combined prove failed: {err}");
+        exit(1)
+    });
+    (proof, hint, t_all.elapsed().as_secs_f64() * 1e3, commit_ms)
+}
+
+/// `--mul <e>`: dispatch on the compile-time security profile.
+fn run_mul_shape(o: &Opts, e: usize) {
+    match o.lambda {
+        100 => mul_shape::<Lambda100>(o, e),
+        128 => mul_shape::<Lambda128>(o, e),
+        other => {
+            eprintln!("--lambda must be 100 or 128 for --mul (got {other})");
+            exit(2);
+        }
+    }
+}
+
+fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
+    if !(15..=40).contains(&e) {
+        eprintln!("--mul needs 15 ≤ e ≤ 40 (the combined proof requires at least 2^15 gate slots)");
+        exit(2);
+    }
+    let width = match o.word_bits {
+        1 => U32MulF2zWidth::W1,
+        8 => U32MulF2zWidth::W8,
+        w => {
+            eprintln!("--word-bits must be 1 or 8 for --mul (got {w})");
+            exit(2);
+        }
+    };
+    f2z::utils::prof::force_enable();
+    let ms = |t: Instant| t.elapsed().as_secs_f64() * 1e3;
+    let multiplications = 1usize << e;
+    let shape_seed = MUL_ROOT_SEED ^ (e as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    let mut rng = StdRng::seed_from_u64(shape_seed);
+
+    // Witness generation (excluded from prove).
+    let t0 = Instant::now();
+    let witness = U32MulWitness::from_fn_with_f2z_width(multiplications, width, |_| {
+        (rng.random::<u32>(), rng.random::<u32>())
+    })
+    .unwrap_or_else(|err| {
+        eprintln!("witness: {err}");
+        exit(1)
+    });
+    let witness_ms = ms(t0);
+    let layout = *witness.layout();
+    let params = layout.f2z_params();
+
+    // One-time public preprocessing (excluded from prove).
+    let t0 = Instant::now();
+    let relation = PreparedU32MulRelation::new_with_profile::<P>(layout).unwrap_or_else(|err| {
+        eprintln!("relation preparation failed at profile {}: {err}", P::NAME);
+        exit(1)
+    });
+    let setup_ms = ms(t0);
+    let sec = relation.security();
+    let q_bits = (u128::BITS - sec.projection_max.leading_zeros()) as usize;
+    let q_lo_log2 = (u128::BITS - 1 - sec.projection_min.leading_zeros()) as usize;
+    let chunks = mod_q_num_chunks(&params, q_bits);
+    let threads_eff: usize = {
+        #[cfg(feature = "parallel")]
+        {
+            rayon::current_num_threads()
+        }
+        #[cfg(not(feature = "parallel"))]
+        {
+            1
+        }
+    };
+    println!(
+        "f2z --mul: 2^{e} = {multiplications} u32×u32→u64 multiplications | F2Z n={} (t={}, s={}, W={}, \
+         chunks={chunks}) | profile={} λ={} | q ∈ [2^{q_lo_log2}, 2^{q_bits}) sampled after the commit | \
+         threads={threads_eff} | int guards: {}",
+        params.t + params.s,
+        params.t,
+        params.s,
+        params.word_bits,
+        sec.profile_name,
+        sec.lambda,
+        if f2z::utils::CHECKED { "CHECKED (build with --features unchecked)" } else { "unchecked" },
+    );
+    println!("one-time (excluded from prove): witness {witness_ms:.1} ms | setup {setup_ms:.1} ms");
+
+    // Warm-up (excluded; tracked) — also the first end-to-end correctness
+    // check — then the tracked peak probe (excluded), then the timed reps
+    // with heap tracking OFF (see `PeakAlloc`).
+    {
+        let (proof, hint, _, _) = mul_prove_e2e(&relation, &witness);
+        let mut vt = Blake3Transcript::new();
+        verify_u32_mul(&mut vt, &relation, &hint.commitment, &proof).unwrap_or_else(|err| {
+            eprintln!("warm-up verification failed: {err}");
+            exit(1)
+        });
+        black_box(&proof);
+    }
+    let _ = f2z::utils::prof::take_totals();
+    reset_peak();
+    {
+        let (peak_proof, peak_hint, _, _) = mul_prove_e2e(&relation, &witness);
+        black_box(&peak_proof);
+        black_box(&peak_hint);
+    }
+    let peak = peak_mb();
+    let _ = f2z::utils::prof::take_totals();
+    set_heap_tracking(false);
+
+    let mut commit_ms_v = Vec::with_capacity(o.reps);
+    let mut prove_ms_v = Vec::with_capacity(o.reps);
+    let mut verify_ms_v = Vec::with_capacity(o.reps);
+    let mut psteps = StepTable::default();
+    let mut vsteps = StepTable::default();
+    let mut last: Option<(U32MulProof, usize, usize)> = None;
+    for rep in 0..o.reps {
+        let (proof, hint, prove_ms, commit_ms) = mul_prove_e2e(&relation, &witness);
+        psteps.absorb(rep, f2z::utils::prof::take_totals());
+
+        let mut vt = Blake3Transcript::new();
+        let t1 = Instant::now();
+        verify_u32_mul(&mut vt, &relation, &hint.commitment, &proof).unwrap_or_else(|err| {
+            eprintln!("verification failed: {err}");
+            exit(1)
+        });
+        verify_ms_v.push(ms(t1));
+        vsteps.absorb(rep, f2z::utils::prof::take_totals());
+
+        commit_ms_v.push(commit_ms);
+        prove_ms_v.push(prove_ms);
+        black_box(&proof);
+        last = Some((
+            proof,
+            hint.commitment.params.log_inv_rate,
+            hint.commitment.params.log_batch_size,
+        ));
+    }
+    set_heap_tracking(true);
+    let (proof, lig_log_inv_rate, lig_initial_k) = last.expect("reps ≥ 1");
+
+    // Bytes (the bench's accounting): Spartan payload + boundary nonces, and
+    // the serialized F2Z opening split into non-Ligerito | Ligerito.
+    let spartan_elements = proof.spartan_payload_elements();
+    let boundary_nonces = proof.grinding_nonce_count(sec) - proof.f2z().grinding_nonces.len();
+    let piop_bytes = spartan_elements * 16 + boundary_nonces * std::mem::size_of::<u64>();
+    let open_bytes = proof.f2z().to_bytes().len();
+    let (_zb, open_lig_bytes) = mle_eval_mod_q_lig_size_breakdown(proof.f2z());
+    let total_bytes = piop_bytes + open_bytes;
+
+    let commit_med = median(commit_ms_v.clone());
+    let prove_med = median(prove_ms_v.clone());
+    let verify_med = median(verify_ms_v.clone());
+    let m = |labels: &[&str]| psteps.med(o.reps, labels, &[]);
+    let s2 = m(&["step2:project_prove"]);
+    let s3 = m(&["step3:piop_prove"]);
+    let s4 = m(&["step4:bitify_prove"]);
+    let s5 = m(&["step5:open_prove"]);
+    let gp = m(PAPER_GP_LABELS);
+    let rs = m(PAPER_RS_LABELS);
+    let lig = m(PAPER_LIG_LABELS);
+    let residual = prove_med - (commit_med + s2 + s3 + s4 + s5);
+
+    println!(
+        "commit:  {commit_med:9.2} ms   (median of {}; bit-pack + F2Z commit, inside prove)",
+        o.reps
+    );
+    println!(
+        "prove:   {prove_med:9.2} ms   peak {peak:8.2} MB   (median of {}, end-to-end incl. commit, verified)",
+        o.reps
+    );
+    // Rep totals net of the commit, so "(unattributed)" is the glue only.
+    let net: Vec<f64> = prove_ms_v.iter().zip(&commit_ms_v).map(|(p, c)| p - c).collect();
+    print_steps(&psteps, MUL_PROVE_STEP_ROWS, MUL_PROVE_TOP_LABELS, &net, prove_med, 2);
+    println!(
+        "    paper buckets: commit {commit_med:.2} | PIOP incl. projection {:.2} | bitify {s4:.2} | \
+         grand products {gp:.2} | ring switch (incl. sumcheck) {rs:.2} | Ligerito {lig:.2} | \
+         residual {residual:.2} ms",
+        s2 + s3
+    );
+    println!("verify:  {verify_med:9.2} ms");
+    print_steps(&vsteps, MUL_VERIFY_STEP_ROWS, MUL_VERIFY_TOP_LABELS, &verify_ms_v, verify_med, 3);
+    println!(
+        "proof:   {:9.1} KB  = piop {:.1} + open {:.1} (non-Ligerito {:.1} | Ligerito {:.1})",
+        total_bytes as f64 / 1e3,
+        piop_bytes as f64 / 1e3,
+        open_bytes as f64 / 1e3,
+        (open_bytes - open_lig_bytes) as f64 / 1e3,
+        open_lig_bytes as f64 / 1e3,
+    );
+    println!(
+        "security: profile {} target λ={} b, achieved {:.1} b (binding term: {}) | ligerito \
+         round-by-round target {} b (rate 1/{}, initial k={}) | q ∈ [2^{q_lo_log2}, 2^{q_bits}) \
+         transcript-sampled after the commitment",
+        sec.profile_name,
+        sec.lambda,
+        sec.accounting.achieved_bits(),
+        sec.accounting.binding_term().name,
+        sec.ligerito_target_bits,
+        1usize << lig_log_inv_rate,
+        lig_initial_k,
+    );
+    let r = MulResult {
+        e,
+        multiplications,
+        n: params.t + params.s,
+        t: params.t,
+        s: params.s,
+        w: params.word_bits,
+        chunks,
+        profile: sec.profile_name.to_string(),
+        lambda: sec.lambda,
+        lambda_achieved: sec.accounting.achieved_bits(),
+        lambda_bind: sec.accounting.binding_term().name.to_string(),
+        lig_target_bits: sec.ligerito_target_bits,
+        q_lo_log2,
+        q_bits,
+        lig_log_inv_rate,
+        lig_initial_k,
+        threads: threads_eff,
+        reps: o.reps,
+        witness_ms,
+        setup_ms,
+        commit_ms: commit_med,
+        prove_ms: prove_med,
+        s2_project_ms: s2,
+        s3_piop_ms: s3,
+        s4_bitify_ms: s4,
+        s5_open_ms: s5,
+        s5_gp_ms: gp,
+        s5_rs_ms: rs,
+        s5_lig_ms: lig,
+        prove_residual_ms: residual,
+        prove_peak_mb: peak,
+        verify_ms: verify_med,
+        proof_bytes: total_bytes,
+        proof_piop_bytes: piop_bytes,
+        proof_open_bytes: open_bytes,
+        proof_open_nonlig_bytes: open_bytes - open_lig_bytes,
+        proof_open_lig_bytes: open_lig_bytes,
+    };
+    println!("{}", r.to_line());
+}
+
+/// `--mul-sweep`: the multiplication table (one child per `e`).
+fn run_mul_sweep(o: &Opts, es: &[usize], spec: &str) {
+    if o.family.is_some() || o.taps.is_some() {
+        eprintln!("--mul-sweep runs the multiplication SNARK only; drop --family/--taps");
+        exit(2);
+    }
+    let exe = current_exe();
+    let latex_path: PathBuf = o
+        .latex
+        .clone()
+        .map_or_else(|| default_latex_path("u32-mul-table.tex"), PathBuf::from);
+    println!(
+        "f2z mul-sweep: e ∈ {{{}}} (2^e u32×u32→u64 multiplications) | reps={} | λ={} | threads={} | \
+         W={} | one fresh process per e | table → {}",
+        es.iter().map(ToString::to_string).collect::<Vec<_>>().join(","),
+        o.reps,
+        o.lambda,
+        o.threads.map_or_else(|| "default".to_string(), |t| t.to_string()),
+        o.word_bits,
+        latex_path.display(),
+    );
+    let lines = run_children(&exe, es, "e", o.cooldown_s, |e| {
+        let mut a = vec!["--mul".to_string(), e.to_string()];
+        a.extend(common_child_args(o));
+        a.push("--lambda".to_string());
+        a.push(o.lambda.to_string());
+        a
+    });
+    let rows: Vec<MulResult> = lines
+        .iter()
+        .map(|l| {
+            MulResult::parse(l).unwrap_or_else(|err| {
+                eprintln!("bad RESULT line: {err}");
+                exit(1)
+            })
+        })
+        .collect();
+    print_mul_summary(&rows);
+    match write_mul_latex_table(&latex_path, &rows, o, spec) {
+        Ok(()) => println!("wrote LaTeX table: {}", latex_path.display()),
+        Err(err) => {
+            eprintln!("writing {}: {err}", latex_path.display());
+            exit(1);
+        }
+    }
+}
+
+fn print_mul_summary(rows: &[MulResult]) {
+    println!("\nmul-sweep summary (medians; ms unless noted; proof KB = 1000 B; prove = end to end incl. commit):");
+    println!(
+        "  {:>3} {:>8} {:>8} {:>8} {:>9} {:>8} {:>8} {:>9} {:>8} {:>8} {:>8} {:>8} {:>8} {:>9} {:>7}",
+        "e", "commit", "piop", "bitify", "grand-pr", "ring-sw", "ligerito", "prove", "verify",
+        "proofKB", "piopKB", "nonlig", "lig", "peakMB", "λ-ach"
+    );
+    for r in rows {
+        println!(
+            "  {:>3} {:>8.2} {:>8.2} {:>8.2} {:>9.2} {:>8.2} {:>8.2} {:>9.2} {:>8.2} {:>8.1} {:>8.1} {:>8.1} {:>8.1} {:>9.1} {:>7.1}",
+            r.e,
+            r.commit_ms,
+            r.s2_project_ms + r.s3_piop_ms,
+            r.s4_bitify_ms,
+            r.s5_gp_ms,
+            r.s5_rs_ms,
+            r.s5_lig_ms,
+            r.prove_ms,
+            r.verify_ms,
+            r.proof_bytes as f64 / 1000.0,
+            r.proof_piop_bytes as f64 / 1000.0,
+            r.proof_open_nonlig_bytes as f64 / 1000.0,
+            r.proof_open_lig_bytes as f64 / 1000.0,
+            r.prove_peak_mb,
+            r.lambda_achieved,
+        );
+    }
+}
+
+/// Write the paper's integer-multiplication table (same self-documenting
+/// header convention as the raw-performance table).
+fn write_mul_latex_table(
+    path: &Path,
+    rows: &[MulResult],
+    o: &Opts,
+    spec: &str,
+) -> std::io::Result<()> {
+    use std::fmt::Write as _;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let Provenance { cpu, cores, mem_gb, date, commit, rustc } = probe_provenance();
+    let threads = rows.first().map_or(0, |r| r.threads);
+    let reps = rows.first().map_or(o.reps, |r| r.reps);
+    let cmdline = reproduce_cmdline(o, "--mul-sweep", spec);
+    let first = rows.first();
+    let e_lo = rows.iter().map(|r| r.e).min().unwrap_or(0);
+    let e_hi = rows.iter().map(|r| r.e).max().unwrap_or(0);
+    let lambda = first.map_or(o.lambda, |r| r.lambda);
+    let achieved = rows
+        .iter()
+        .map(|r| r.lambda_achieved)
+        .fold(f64::INFINITY, f64::min);
+    let bind = first.map_or("?", |r| r.lambda_bind.as_str());
+    // Term names carry underscores (`step5_3:…`): escape them for text mode.
+    let bind_tex = bind.replace('_', "\\_");
+    let profile = first.map_or("?", |r| r.profile.as_str());
+    // The profile sets the prime interval [2^(b-1), 2^b) per shape (b is
+    // capped by the one-chunk fold width 127 − t − W), so report the range.
+    let q_bits_min = rows.iter().map(|r| r.q_bits).min().unwrap_or(0);
+    let q_bits_max = rows.iter().map(|r| r.q_bits).max().unwrap_or(0);
+    let q_bits_phrase = if q_bits_min == q_bits_max {
+        format!("$b = {q_bits_max}$")
+    } else {
+        format!("$b$ between ${q_bits_min}$ and ${q_bits_max}$ depending on the shape")
+    };
+    let (lig_rate, lig_k, lig_target) =
+        first.map_or((0, 0, 0), |r| (1usize << r.lig_log_inv_rate, r.lig_initial_k, r.lig_target_bits));
+    let w = first.map_or(o.word_bits, |r| r.w);
+    let log_w = w.trailing_zeros() as usize;
+    let cell_words = 128usize >> log_w; // committed cells per multiplication
+
+    let mut out = String::new();
+    let _ = writeln!(out, "% Integer-multiplication table of F2Z (c:iop_pimsat on u32 × u32 → u64) — GENERATED FILE, do not edit by hand.");
+    let _ = writeln!(out, "% Generated by `f2z --mul-sweep` (src/bin/f2z.rs) on {date} (UTC) at {commit}; {rustc}.");
+    let _ = writeln!(out, "% Regenerate (from the repo root; this file is overwritten):");
+    let _ = writeln!(out, "%   {cmdline}");
+    let _ = writeln!(out, "% Machine: {cpu} ({cores}), {mem_gb} GB; {threads} rayon threads; medians of {reps} timed reps after one");
+    let _ = writeln!(out, "%   warm-up prove; every timed proof is verified; witness generation and the one-time relation preparation are excluded.");
+    let _ = writeln!(out, "% Include with \\input{{u32-mul-table}} (relative to paper/).");
+    let _ = writeln!(out, "% Same witnesses as benches/u32_mul.rs (root seed {MUL_ROOT_SEED:#018x}); prove_ms is END TO END and INCLUDES the commitment");
+    let _ = writeln!(out, "%   (docs/bench-schema.md semantics). Steps: s1 commit (bit-pack + F2Z commit), s2 prime projection, s3 Spartan PIOP,");
+    let _ = writeln!(out, "%   s4 bitification, s5 F2Z opening = grand products ({}) / ring switch incl. its sumcheck ({}) / Ligerito ({}).",
+        PAPER_GP_LABELS.join(" "), PAPER_RS_LABELS.join(" "), PAPER_LIG_LABELS.join(" "));
+    let _ = writeln!(out, "%   Bucket medians need not sum to the total median; the signed residual is prove_residual_ms below.");
+    let _ = writeln!(out, "% Proof split: PIOP = Spartan payload + grinding nonces; opening non-Ligerito = folds + GKR + sumcheck + ring-switch");
+    let _ = writeln!(out, "%   messages (+ codec framing); Ligerito = the serialized Ligerito proof. KB = 1000 bytes.");
+    let _ = writeln!(out, "% Security: profile {profile} (target λ={lambda}), achieved (min over rows and terms) {achieved:.2} bits, binding term {bind};");
+    let _ = writeln!(out, "%   q sampled after the commitment from [2^(b-1), 2^b), b = {q_bits_min}..{q_bits_max} per shape (q_bits below); Ligerito rate 1/{lig_rate}, initial k={lig_k}, target {lig_target} bits.");
+    let _ = writeln!(out, "% Table columns: PIOP = s2 + s3 + s4 (the bitification step s4 is ~µs and is folded in).");
+    let _ = writeln!(out, "% RESULT lines (schema={MUL_RESULT_SCHEMA}):");
+    for r in rows {
+        let _ = writeln!(out, "% {}", r.to_line());
+    }
+    let _ = writeln!(out);
+    let _ = writeln!(out, "\\begin{{table}}[H]");
+    let _ = writeln!(out, "  \\centering");
+    let _ = writeln!(out, "  \\footnotesize");
+    let _ = writeln!(out, "  \\setlength{{\\tabcolsep}}{{3.5pt}}");
+    let _ = writeln!(out, "  \\begin{{tabular}}{{@{{}}rrrrrrrrrrrr@{{}}}}");
+    let _ = writeln!(out, "    \\toprule");
+    let _ = writeln!(out, "    & \\multicolumn{{6}}{{c}}{{Prover time (ms)}} & Verifier & \\multicolumn{{4}}{{c}}{{Proof size (KB)}} \\\\");
+    let _ = writeln!(out, "    \\cmidrule(lr){{2-7}} \\cmidrule(lr){{9-12}}");
+    let _ = writeln!(out, "    $\\log_2 N$ & Commit & PIOP & Grand prod. & Ring switch & Ligerito & Total & (ms) & PIOP & Non-Lig. & Ligerito & Total \\\\");
+    let _ = writeln!(out, "    \\midrule");
+    for r in rows {
+        let _ = writeln!(
+            out,
+            "    {} & {} & {} & {} & {} & {} & {} & {} & {} & {} & {} & {} \\\\",
+            r.e,
+            fmt_ms(r.commit_ms),
+            fmt_ms(r.s2_project_ms + r.s3_piop_ms + r.s4_bitify_ms),
+            fmt_ms(r.s5_gp_ms),
+            fmt_ms(r.s5_rs_ms),
+            fmt_ms(r.s5_lig_ms),
+            fmt_ms(r.prove_ms),
+            fmt_ms(r.verify_ms),
+            fmt_kb(r.proof_piop_bytes),
+            fmt_kb(r.proof_open_nonlig_bytes),
+            fmt_kb(r.proof_open_lig_bytes),
+            fmt_kb(r.proof_bytes),
+        );
+    }
+    let _ = writeln!(out, "    \\bottomrule");
+    let _ = writeln!(out, "  \\end{{tabular}}");
+    let _ = writeln!(
+        out,
+        "  \\caption{{Cost of proving $N = 2^{{n}}$ integer multiplications $x \\cdot y = z$, $n = {e_lo}, \\ldots, {e_hi}$, for random $32$-bit integers $x, y$ (so that $z$ is a $64$-bit integer) with \\cref{{c:iop_pimsat}}: one R1CS constraint per multiplication over $\\ZZ$, projected to a prime $q$ sampled after the commitment from an interval $[2^{{b-1}}, 2^{{b}})$ with {q_bits_phrase}, a Spartan PIOP over $\\FF_q$ (with a $3$-variable univariate skip), bitification, and the \\ftwoz\\ opening of the $128$ bits committed per multiplication ($\\codedim = 2^{{n+7}}$ bits in cells of $W = {w}$ bit{}, i.e.\\ ${cell_words}$ cells per multiplication). Security profile $\\lambda = {lambda}$: every round-by-round error is at most $2^{{-{achieved:.1}}}$, the binding term being \\texttt{{{bind_tex}}}; the commitment is opened with ring switching and Ligerito~\\cite{{ligerito}} over a Reed--Solomon code of rate $1/{lig_rate}$ over $\\FF_{{2^{{128}}}}$ (initial folding of $2^{{{lig_k}}}$ rows), configured for ${lig_target}$ bits. Prover columns: \\emph{{Commit}} is bit packing plus the commitment; \\emph{{PIOP}} is the prime projection, the Spartan PIOP and the (microsecond-scale) bitification step; \\emph{{grand products}}, \\emph{{ring switch}} and \\emph{{Ligerito}} are the three parts of the \\ftwoz\\ opening as in \\cref{{tab:f2z-raw-performance}}; \\emph{{Total}} is end to end and includes the commitment. Proof columns: \\emph{{PIOP}} is the Spartan messages and grinding nonces; \\emph{{Non-Lig.}} is the opening's integer folds, GKR, sumcheck and ring-switch messages; \\emph{{Ligerito}} is the Ligerito proof; KB $= 1000$ bytes. {cpu} ({cores}), {mem_gb}\\,GB, {threads} threads; medians of {reps} runs after one warm-up; witness generation and the one-time relation preparation are excluded.}}",
+        if w == 1 { "" } else { "s" }
+    );
+    let _ = writeln!(out, "  \\label{{tab:f2z-u32-mul}}");
+    let _ = writeln!(out, "\\end{{table}}");
+    std::fs::write(path, out)
 }

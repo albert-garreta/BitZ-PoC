@@ -128,5 +128,40 @@ unless `OBLONG_PROFILE=1` is set.
   `field`, `eq_tables`, `u32_mul_inner_policy`, `u32_mul_outer_skip`,
   `cm_and`. (`scripts/baby_bear_mul_bench_report.py` still targets the
   pre-schema BabyBear output — commit b7713d8; porting it is open.)
-- `examples/reference_measure.rs`, `src/bin/f2z.rs`: unchanged output,
-  documented here as exempt.
+- `examples/reference_measure.rs`: unchanged output, documented here as
+  exempt.
+- `src/bin/f2z.rs` (the CLI): its human-readable output is exempt, but the
+  single-claim path ends with its own line, `RESULT schema=f2z-cli/1`, which
+  the CLI's `--sweep` mode parses to build `paper/raw-performance-table.tex`.
+  Keys (fixed order, medians over the timed reps, `na` where a value does
+  not exist): `n t s W m_p chunks lig lig_target_bits lig_achieved_bits
+  lig_l0_bits threads reps commit_ms commit_peak_mb prove_ms prove_gp_ms
+  prove_rs_ms prove_lig_ms prove_residual_ms prove_peak_mb verify_ms
+  proof_bytes proof_nonlig_bytes proof_lig_bytes`. `prove_gp_ms` /
+  `prove_rs_ms` / `prove_lig_ms` are the paper's prover buckets (grand
+  products = `mq:chunking mc:pack mc:pow2 mc:forest mc:fold_v`; ring switch
+  incl. its sumcheck = `mc:presum_tbls mc:presum_run mq:rings mq:bcomb`;
+  Ligerito = `mq:lig`; per-rep bucket sums, then the median) and
+  `prove_residual_ms = prove_ms − (gp + rs + lig)` is signed.
+  `lig_target_bits` / `lig_achieved_bits` are the Ligerito config's
+  round-by-round target and achieved bits (flock's notion: the minimum over
+  levels of query bits + query grinding, proximity-gap bits + fold
+  grinding, and OOD binding bits — the three inequalities its `validate()`
+  enforces); `lig_l0_bits` is L0's implicit post-commit list binding.
+  `proof_nonlig_bytes + proof_lig_bytes = proof_bytes` (host-codec framing
+  counts as non-Ligerito). Renaming any key bumps the schema tag.
+  The CLI's `--mul <e>` mode (the u32 × u32 → u64 SNARK, same witnesses as
+  the `u32_mul` bench) ends with `RESULT schema=f2z-cli-mul/1`, parsed by
+  `--mul-sweep` into `paper/u32-mul-table.tex`. Keys: `e multiplications n
+  t s W chunks profile lambda lambda_achieved lambda_bind lig_target_bits
+  q_lo_log2 q_bits lig_log_inv_rate lig_initial_k threads reps witness_ms
+  setup_ms commit_ms prove_ms s2_project_ms s3_piop_ms s4_bitify_ms
+  s5_open_ms s5_gp_ms s5_rs_ms s5_lig_ms prove_residual_ms prove_peak_mb
+  verify_ms proof_bytes proof_piop_bytes proof_open_bytes
+  proof_open_nonlig_bytes proof_open_lig_bytes`. `prove_ms` follows this
+  schema's end-to-end semantics (it INCLUDES the Step-1 commit, which
+  `commit_ms` also reports on its own); `s2…s5` are the umbrella-scope
+  medians, `s5_gp/rs/lig` the opening's paper buckets, and
+  `prove_residual_ms = prove_ms − (commit + s2 + s3 + s4 + s5)`.
+  `proof_piop_bytes` is the bench's Spartan payload + nonce accounting and
+  `proof_open_nonlig_bytes + proof_open_lig_bytes = proof_open_bytes`.
