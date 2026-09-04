@@ -18,66 +18,66 @@
 \contentsline {paragraph}{Step 5: {$\mathbb {B}\text {it}\mathbb {Z}$}\ Polynomial Commitment Scheme (PCS).}{10}{paragraph*.12}%
 \contentsline {paragraph}{Step 5.0: reducing the prime modulus if necessary.}{10}{paragraph*.13}%
 \contentsline {paragraph}{Step 5.1: Transformation of \eqref {e:intro_eq_2} into a batch of low-magnitude integer claim.}{10}{paragraph*.14}%
-\contentsline {paragraph}{Step 5.2: Exponentiation in $\ensuremath {\mathbb {F}}_{2^\nu }$ and grand product in $\ensuremath {\mathbb {F}}_{2^\nu }$.}{11}{paragraph*.15}%
+\contentsline {paragraph}{Step 5.2: Exponentiation in $\ensuremath {\mathbb {F}}_{2^\nu }$ and grand product in $\ensuremath {\mathbb {F}}_{2^\nu }$.}{10}{paragraph*.15}%
 \contentsline {paragraph}{Step 5.3: Proving linear claims over $\ensuremath {\mathbb {F}}_{2^\nu }$.}{11}{paragraph*.16}%
 \contentsline {subsubsection}{\numberline {3.1.1}Intuition of soundness proofs}{12}{subsubsection.3.1.1}%
 \contentsline {subsection}{\numberline {3.2}Virtual $\ensuremath {\mathbb {F}}_2$-linear transforms in {$\mathbb {B}\text {it}\mathbb {Z}$}\ and NP-complete dually linear relations}{12}{subsection.3.2}%
 \contentsline {subsection}{\numberline {3.3}GKR for low-entropy batched grand products}{13}{subsection.3.3}%
 \contentsline {subsubsection}{\numberline {3.3.1}Comparison to other ``prove-in-the-exponent'' usages}{14}{subsubsection.3.3.1}%
-\contentsline {paragraph}{Binius64}{15}{paragraph*.17}%
+\contentsline {paragraph}{Binius64}{14}{paragraph*.17}%
 \contentsline {paragraph}{The note \cite {lev}.}{15}{paragraph*.18}%
-\contentsline {subsection}{\numberline {3.4}{$\mathbb {B}\text {it}\mathbb {Z}$}\ in full generality}{16}{subsection.3.4}%
-\contentsline {paragraph}{Generalized Step 2.}{17}{paragraph*.19}%
+\contentsline {subsection}{\numberline {3.4}{$\mathbb {B}\text {it}\mathbb {Z}$}\ in full generality}{15}{subsection.3.4}%
+\contentsline {paragraph}{Generalized Step 2.}{16}{paragraph*.19}%
 \contentsline {paragraph}{The case when $\ensuremath {\mathbb {F}}_{\mathsf {ext}}$ is a proper extension}{17}{paragraph*.20}%
 \contentsline {paragraph}{Scratch from another section. Delete?}{18}{paragraph*.21}%
 \contentsline {section}{\numberline {4}Preliminaries}{18}{section.4}%
 \contentsline {paragraph}{General notation}{18}{paragraph*.22}%
-\contentsline {subsection}{\numberline {4.1}Algebra}{19}{subsection.4.1}%
-\contentsline {paragraph}{Concrete fields and rings}{19}{paragraph*.23}%
-\contentsline {paragraph}{Rings in general}{19}{paragraph*.24}%
+\contentsline {subsection}{\numberline {4.1}Algebra}{18}{subsection.4.1}%
+\contentsline {paragraph}{Concrete fields and rings}{18}{paragraph*.23}%
+\contentsline {paragraph}{Rings in general}{18}{paragraph*.24}%
 \contentsline {paragraph}{Finitely generated rings}{19}{paragraph*.25}%
-\contentsline {subsection}{\numberline {4.2}Linear codes and relations}{20}{subsection.4.2}%
-\contentsline {paragraph}{Linear codes}{20}{paragraph*.26}%
+\contentsline {subsection}{\numberline {4.2}Linear codes and relations}{19}{subsection.4.2}%
+\contentsline {paragraph}{Linear codes}{19}{paragraph*.26}%
 \contentsline {paragraph}{Relations}{20}{paragraph*.27}%
 \contentsline {paragraph}{Polynomial Equation Satisfiability (PESAT) over finite fields}{20}{paragraph*.28}%
-\contentsline {subsection}{\numberline {4.3}Interactive Oracle Reductions (IOR) of proximity}{21}{subsection.4.3}%
-\contentsline {paragraph}{Grinding}{22}{paragraph*.29}%
-\contentsline {section}{\numberline {5}{$\mathbb {B}\text {it}\mathbb {Z}$}\ IOP for LinBitsRings}{23}{section.5}%
-\contentsline {subsection}{\numberline {5.1}The core LinBitsRings relation}{23}{subsection.5.1}%
-\contentsline {subsection}{\numberline {5.2}Tensor decomposition and products of constrained codes}{24}{subsection.5.2}%
-\contentsline {subsection}{\numberline {5.3}The {{$\mathbb {B}\text {it}\mathbb {Z}$}} IOP for the core LinBitsRings relation}{25}{subsection.5.3}%
-\contentsline {paragraph}{Algebraic set-up}{25}{paragraph*.31}%
+\contentsline {subsection}{\numberline {4.3}Interactive Oracle Reductions (IOR) of proximity}{20}{subsection.4.3}%
+\contentsline {paragraph}{Grinding}{21}{paragraph*.29}%
+\contentsline {section}{\numberline {5}{$\mathbb {B}\text {it}\mathbb {Z}$}\ IOP for LinBitsRings}{22}{section.5}%
+\contentsline {subsection}{\numberline {5.1}The core LinBitsRings relation}{22}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Tensor decomposition and products of constrained codes}{23}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}The {{$\mathbb {B}\text {it}\mathbb {Z}$}} IOP for the core LinBitsRings relation}{24}{subsection.5.3}%
+\contentsline {paragraph}{Algebraic set-up}{24}{paragraph*.31}%
 \contentsline {paragraph}{The {$\mathbb {B}\text {it}\mathbb {Z}$}\ IOP.}{25}{paragraph*.32}%
-\contentsline {subsection}{\numberline {5.4}Soundness and completeness}{29}{subsection.5.4}%
-\contentsline {paragraph}{Completeness and soundness of $\Pi _1$}{31}{paragraph*.33}%
-\contentsline {paragraph}{The case where Round 1 is skipped.}{33}{paragraph*.34}%
-\contentsline {subsection}{\numberline {5.5}The general LinBitsRings relation}{33}{subsection.5.5}%
-\contentsline {subsection}{\numberline {5.6}The {$\mathbb {B}\text {it}\mathbb {Z}$}\ IOP for the general LinBitsRings relation}{35}{subsection.5.6}%
-\contentsline {subsection}{\numberline {5.7}Instantiation}{37}{subsection.5.7}%
-\contentsline {paragraph}{The errors $\kappa _{i,\mathsf {iopp}}$.}{39}{paragraph*.36}%
-\contentsline {paragraph}{The error $\kappa _{\mathsf {OOD}}$.}{39}{paragraph*.37}%
-\contentsline {paragraph}{The errors $\kappa _{i,\mathsf {red}}$.}{39}{paragraph*.38}%
-\contentsline {paragraph}{The error $\kappa _0$.}{39}{paragraph*.39}%
-\contentsline {paragraph}{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa _0$.}{40}{paragraph*.40}%
-\contentsline {paragraph}{Strategy 2: No or essentially no grinding during the PIOP, and $\kappa _0$ is present and grinding is used during the first projection step (Round 1) of \cref {c:core_iop}.}{40}{paragraph*.41}%
-\contentsline {section}{\numberline {6}A GKR protocol for low entropy batched grand products via lookup tables}{42}{section.6}%
-\contentsline {subsection}{\numberline {6.1}Optimization via lookup tables}{44}{subsection.6.1}%
+\contentsline {subsection}{\numberline {5.4}Soundness and completeness}{28}{subsection.5.4}%
+\contentsline {paragraph}{Completeness and soundness of $\Pi _1$}{30}{paragraph*.33}%
+\contentsline {paragraph}{The case where Round 1 is skipped.}{32}{paragraph*.34}%
+\contentsline {subsection}{\numberline {5.5}The general LinBitsRings relation}{32}{subsection.5.5}%
+\contentsline {subsection}{\numberline {5.6}The {$\mathbb {B}\text {it}\mathbb {Z}$}\ IOP for the general LinBitsRings relation}{34}{subsection.5.6}%
+\contentsline {subsection}{\numberline {5.7}Instantiation}{36}{subsection.5.7}%
+\contentsline {paragraph}{The errors $\kappa _{i,\mathsf {iopp}}$.}{38}{paragraph*.36}%
+\contentsline {paragraph}{The error $\kappa _{\mathsf {OOD}}$.}{38}{paragraph*.37}%
+\contentsline {paragraph}{The errors $\kappa _{i,\mathsf {red}}$.}{38}{paragraph*.38}%
+\contentsline {paragraph}{The error $\kappa _0$.}{38}{paragraph*.39}%
+\contentsline {paragraph}{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa _0$.}{39}{paragraph*.40}%
+\contentsline {paragraph}{Strategy 2: No or essentially no grinding during the PIOP, and $\kappa _0$ is present and grinding is used during the first projection step (Round 1) of \cref {c:core_iop}.}{39}{paragraph*.41}%
+\contentsline {section}{\numberline {6}A GKR protocol for low entropy batched grand products via lookup tables}{41}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Optimization via lookup tables}{43}{subsection.6.1}%
 \contentsline {paragraph}{Setup}{44}{paragraph*.43}%
-\contentsline {paragraph}{First prover message in the last sumcheck in Step 2 of \cref {c:gkr_grand_product}}{45}{paragraph*.44}%
-\contentsline {paragraph}{Subsequent prover messages in the last sumcheck in Step 2 of \cref {c:gkr_grand_product}}{48}{paragraph*.46}%
-\contentsline {paragraph}{The rest of sumchecks in Step 2 of \cref {c:gkr_grand_product}}{50}{paragraph*.47}%
-\contentsline {subsection}{\numberline {6.2}Other optimizations for \cref {c:core_iop}}{50}{subsection.6.2}%
-\contentsline {paragraph}{Step 1 of \cref {c:core_iop} via lookup tables}{50}{paragraph*.49}%
-\contentsline {section}{\numberline {7}Experiments}{51}{section.7}%
-\contentsline {subsection}{\numberline {7.1}Raw performance of the {$\mathbb {B}\text {it}\mathbb {Z}$}\ PCS for the core LinBitsRings relation}{51}{subsection.7.1}%
-\contentsline {subsection}{\numberline {7.2}Integer multiplication}{52}{subsection.7.2}%
-\contentsline {subsection}{\numberline {7.3}SHA-256 hashing followed by ECDSA signature verification}{52}{subsection.7.3}%
-\contentsline {subsection}{\numberline {7.4}RSA accumulation and Poseidon hashing}{52}{subsection.7.4}%
-\contentsline {subsection}{\numberline {7.5}Hashing followed by Falcon signature verification}{53}{subsection.7.5}%
-\contentsline {subsection}{\numberline {7.6}Comparison with Hyrax}{53}{subsection.7.6}%
-\contentsline {subsection}{\numberline {7.7}Open questions}{53}{subsection.7.7}%
-\contentsline {section}{References}{53}{subsection.7.7}%
-\contentsline {section}{\numberline {A}Deferred proofs}{55}{appendix.A}%
-\contentsline {subsection}{\numberline {A.1}Completeness and soundness of \cref {c:LinModFieldBin}}{55}{subsection.A.1}%
-\contentsline {subsection}{\numberline {A.2}Soundness of Out Of Domain Sampling (OOD) in \cref {c:core_iop}}{56}{subsection.A.2}%
-\contentsline {section}{\numberline {B}Ring switching via Galois orbits}{58}{appendix.B}%
+\contentsline {paragraph}{First prover message in the last sumcheck in Step 2 of \cref {c:gkr_grand_product}}{44}{paragraph*.44}%
+\contentsline {paragraph}{Subsequent prover messages in the last sumcheck in Step 2 of \cref {c:gkr_grand_product}}{47}{paragraph*.46}%
+\contentsline {paragraph}{The rest of sumchecks in Step 2 of \cref {c:gkr_grand_product}}{48}{paragraph*.47}%
+\contentsline {section}{\numberline {7}Experiments}{49}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Raw performance of the {$\mathbb {B}\text {it}\mathbb {Z}$}\ PCS for the core LinBitsRings relation}{50}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}Integer multiplication}{50}{subsection.7.2}%
+\contentsline {subsection}{\numberline {7.3}RSA accumulation and Poseidon hashing}{51}{subsection.7.3}%
+\contentsline {subsection}{\numberline {7.4}SHA-256 hashing}{52}{subsection.7.4}%
+\contentsline {subsection}{\numberline {7.5}SHA-256 hashing followed by ECDSA signature verification}{53}{subsection.7.5}%
+\contentsline {subsection}{\numberline {7.6}Future work}{53}{subsection.7.6}%
+\contentsline {subsubsection}{\numberline {7.6.1}Hashing followed by Falcon signature verification}{53}{subsubsection.7.6.1}%
+\contentsline {subsubsection}{\numberline {7.6.2}Comparison with Hyrax}{53}{subsubsection.7.6.2}%
+\contentsline {section}{\numberline {8}Open questions}{54}{section.8}%
+\contentsline {section}{References}{54}{section.8}%
+\contentsline {section}{\numberline {A}Deferred proofs}{56}{appendix.A}%
+\contentsline {subsection}{\numberline {A.1}Completeness and soundness of \cref {c:LinModFieldBin}}{56}{subsection.A.1}%
+\contentsline {subsection}{\numberline {A.2}Soundness of Out Of Domain Sampling (OOD) in \cref {c:core_iop}}{57}{subsection.A.2}%
+\contentsline {section}{\numberline {B}Ring switching via Galois orbits}{59}{appendix.B}%
