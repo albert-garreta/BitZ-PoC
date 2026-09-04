@@ -393,14 +393,22 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
   (3–7 GB peaks) otherwise swing ±30 % on a busy 16 GB box. Timed reps run
   with the CLI's heap tracker OFF (its per-allocation atomics taxed the
   forest by up to ~25 % at 8 threads); the peak comes from a separate
-  tracked probe. `benches/pcs.rs` still tracks unconditionally.
+  tracked probe. `benches/pcs.rs` still tracks unconditionally. The
+  validator-gated CLI profiles (`custom`/`udr`/`udrg`) use BLAKE3 Merkle
+  trees like every Spartan path (flock's slim template says sha256; the
+  embedded `fast`/`slim`/`secure` profiles keep their template's hash);
+  the `f2z:` header and the RESULT `lig_hash=` key say which.
 - `--mul <e>` — the **u32 × u32 → u64 multiplication SNARK** for `2^e`
   multiplications (`e ≥ 15`): the `piop::spartan` paper path (one R1CS
   row per multiplication over ℤ, transcript-sampled Step-2 prime, native
   Spartan with the K=3 univariate skip, bitification, F2Z opening of the
   128 committed bits per multiplication), at `--lambda 100|128` (default
-  100) and F2Z cell width `--word-bits 1|8`. Same witness seed as
-  `benches/u32_mul.rs`. Prints the paper step split (Step 1 commit, 2
+  100), F2Z cell width `--word-bits 1|8`, and the Ligerito opener
+  `--profile custom:<r>:<k>` (default `custom:3:4` — the raw-performance
+  table's Johnson geometry, so both paper tables share one opener) or
+  `--profile udr` (the relation's own validated-UDR default at rate 1/2,
+  what `benches/u32_mul.rs` and the transcript pins run). Same witness
+  seed as the bench. Prints the paper step split (Step 1 commit, 2
   projection, 3 PIOP, 4 bitification, 5 opening = grand products / ring
   switch / Ligerito), a `security:` line (profile target, achieved bits,
   binding term) and one `RESULT schema=f2z-cli-mul/1` line. Here `prove`

@@ -32,7 +32,8 @@ use crate::{
     ligerito::{LOG_PACKING, packed_vars},
     ligerito_flock::{
         FlockCommitHint, FlockRsError, IntEvalRsLigModQProof, ModQOpeningKind,
-        commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito_with_weight_chunks,
+        commit_rs_ligerito_rows, custom_johnson_config_bits,
+        prove_mle_eval_mod_q_ligerito_with_weight_chunks,
         validated_udr_lig_configs_for_target,
     },
     pcs::{FQ_MOD, Fq, ProjectCanonicalU128},
@@ -324,16 +325,66 @@ fn bitify_u32_mul_spartan_claim(
     })
 }
 
+/// Which Ligerito opener configuration a [`PreparedU32MulRelation`] runs.
+/// The round-by-round target always comes from the security profile
+/// ([`IopSecurityParams::ligerito_target_bits`]); this only picks the
+/// geometry/regime. Both variants use Blake3 Merkle trees and are bound
+/// into the statement, so the two produce different proof bytes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum U32MulLigerito {
+    /// The relation's historical default: flock's validated unique-decoding
+    /// configuration with fold grinding at rate 1/2, L0 folding of 2^4 rows
+    /// ([`validated_udr_lig_configs_for_target`]). The `u32_mul` bench and
+    /// the transcript pins run this.
+    ValidatedUdr,
+    /// A validator-gated Johnson-regime geometry
+    /// ([`custom_johnson_config_bits`]) at the profile's target — the opener
+    /// of the `f2z` CLI's raw-performance table (`custom:<log_inv_rate>:
+    /// <initial_k>`), so the two paper tables share one Ligerito.
+    CustomJohnson {
+        /// `log₂` of the inverse Reed–Solomon rate (3 = rate 1/8).
+        log_inv_rate: usize,
+        /// L0 interleaving / lane fold (`log₂` rows folded at level 0).
+        initial_k: usize,
+    },
+}
+
 fn configs_for_layout_and_target(
     layout: &U32MulLayout,
     target_bits: usize,
+    ligerito: U32MulLigerito,
 ) -> Result<(LigProverConfig, LigVerifierConfig), SpartanF2zError> {
     if layout.gate_vars() < MIN_PRODUCTION_GATE_VARS {
         return Err(SpartanF2zError::UnauditedF2zParameters);
     }
     let p = layout.f2z_params();
     let m_p = packed_variables(&p)?;
-    validated_udr_lig_configs_for_target(m_p, target_bits).map_err(SpartanF2zError::LigeritoConfig)
+    match ligerito {
+        U32MulLigerito::ValidatedUdr => validated_udr_lig_configs_for_target(m_p, target_bits)
+            .map_err(SpartanF2zError::LigeritoConfig),
+        U32MulLigerito::CustomJohnson {
+            log_inv_rate,
+            initial_k,
+        } => {
+            let m = m_p.checked_add(LOG_PACKING).ok_or_else(|| {
+                SpartanF2zError::LigeritoConfig("Ligerito variable count overflow".to_owned())
+            })?;
+            if !(20..=35).contains(&m) {
+                return Err(SpartanF2zError::LigeritoConfig(format!(
+                    "custom Johnson Ligerito geometry requires m in [20, 35], got {m}"
+                )));
+            }
+            let mut security =
+                custom_johnson_config_bits(m, log_inv_rate, initial_k, Some(target_bits));
+            // Blake3 Merkle trees, as every Spartan path here (the slim
+            // template's field says sha256).
+            security.hash = "blake3".into();
+            security.validate().map_err(SpartanF2zError::LigeritoConfig)?;
+            security
+                .to_prover_verifier_configs()
+                .map_err(SpartanF2zError::LigeritoConfig)
+        }
+    }
 }
 
 fn validate_layout_geometry(layout: &U32MulLayout) -> Result<(), SpartanF2zError> {
@@ -920,6 +971,7 @@ pub struct PreparedU32MulRelation {
     skeleton: ConstraintMatricesSkeleton<SpartanF2zField, bool>,
     layout: U32MulLayout,
     security: IopSecurityParams,
+    ligerito: U32MulLigerito,
     ligerito_pc: LigProverConfig,
     ligerito_vc: LigVerifierConfig,
 }
@@ -930,9 +982,19 @@ impl PreparedU32MulRelation {
         Self::new_with_profile::<Lambda100>(layout)
     }
 
-    /// Prepares the relation under an explicit single-prime profile.
+    /// Prepares the relation under an explicit single-prime profile with the
+    /// relation's default opener ([`U32MulLigerito::ValidatedUdr`]).
     pub fn new_with_profile<P: IopSecurityProfile>(
         layout: U32MulLayout,
+    ) -> Result<Self, SpartanF2zError> {
+        Self::new_with_profile_and_ligerito::<P>(layout, U32MulLigerito::ValidatedUdr)
+    }
+
+    /// Prepares the relation under an explicit single-prime profile and an
+    /// explicit Ligerito opener geometry.
+    pub fn new_with_profile_and_ligerito<P: IopSecurityProfile>(
+        layout: U32MulLayout,
+        ligerito: U32MulLigerito,
     ) -> Result<Self, SpartanF2zError> {
         validate_layout_geometry(&layout)?;
         let p = layout.f2z_params();
@@ -942,7 +1004,7 @@ impl PreparedU32MulRelation {
             return Err(SpartanF2zError::UnsupportedProfile);
         }
         let (ligerito_pc, ligerito_vc) =
-            configs_for_layout_and_target(&layout, security.ligerito_target_bits)?;
+            configs_for_layout_and_target(&layout, security.ligerito_target_bits, ligerito)?;
         validate_config_pair(&p, &ligerito_pc, &ligerito_vc)?;
         let raw = u32_mul_constraint_matrices(&layout, true)?;
         let skeleton = ConstraintMatricesSkeleton::new(raw).map_err(SpartanError::from)?;
@@ -950,9 +1012,15 @@ impl PreparedU32MulRelation {
             skeleton,
             layout,
             security,
+            ligerito,
             ligerito_pc,
             ligerito_vc,
         })
+    }
+
+    /// The opener geometry this relation was prepared with.
+    pub const fn ligerito(&self) -> U32MulLigerito {
+        self.ligerito
     }
 
     /// Statement-bound layout.

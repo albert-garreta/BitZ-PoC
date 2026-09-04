@@ -134,8 +134,8 @@ unless `OBLONG_PROFILE=1` is set.
   single-claim path ends with its own line, `RESULT schema=f2z-cli/1`, which
   the CLI's `--sweep` mode parses to build `paper/raw-performance-table.tex`.
   Keys (fixed order, medians over the timed reps, `na` where a value does
-  not exist): `n t s W m_p chunks lig lig_target_bits lig_achieved_bits
-  lig_l0_bits threads reps commit_ms commit_peak_mb prove_ms prove_gp_ms
+  not exist): `n t s W m_p chunks lig lig_hash lig_target_bits
+  lig_achieved_bits lig_l0_bits threads reps commit_ms commit_peak_mb prove_ms prove_gp_ms
   prove_rs_ms prove_lig_ms prove_residual_ms prove_peak_mb verify_ms
   proof_bytes proof_nonlig_bytes proof_lig_bytes`. `prove_gp_ms` /
   `prove_rs_ms` / `prove_lig_ms` are the paper's prover buckets (grand
@@ -154,8 +154,8 @@ unless `OBLONG_PROFILE=1` is set.
   the `u32_mul` bench) ends with `RESULT schema=f2z-cli-mul/1`, parsed by
   `--mul-sweep` into `paper/u32-mul-table.tex`. Keys: `e multiplications n
   t s W chunks profile lambda lambda_achieved lambda_bind lig_target_bits
-  q_lo_log2 q_bits lig_log_inv_rate lig_initial_k threads reps witness_ms
-  setup_ms commit_ms prove_ms s2_project_ms s3_piop_ms s4_bitify_ms
+  q_lo_log2 q_bits lig_log_inv_rate lig_initial_k lig_regime lig_hash threads
+  reps witness_ms setup_ms commit_ms prove_ms s2_project_ms s3_piop_ms s4_bitify_ms
   s5_open_ms s5_gp_ms s5_rs_ms s5_lig_ms prove_residual_ms prove_peak_mb
   verify_ms proof_bytes proof_piop_bytes proof_open_bytes
   proof_open_nonlig_bytes proof_open_lig_bytes`. `prove_ms` follows this
