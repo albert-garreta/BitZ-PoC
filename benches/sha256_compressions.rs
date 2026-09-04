@@ -61,6 +61,11 @@ use f2z::{
 };
 use serde_json::{Value, json};
 
+#[cfg(feature = "bench-internals")]
+use f2z::piop::spartan::{
+    SHA256_FIXED_98_PRIME, prepare_sha256_compression_batch_for_product_t_fixed98,
+};
+
 /// One rep's raw measurements; step extraction happens in `common`.
 struct RepTiming {
     witness_ms: f64,
@@ -83,12 +88,16 @@ enum Trial {
 enum BenchShape {
     Compressions(usize),
     AssignmentRows(usize),
+    #[cfg(feature = "bench-internals")]
+    ProductLayout(usize),
 }
 
 impl BenchShape {
     const fn exponent(self) -> usize {
         match self {
             Self::Compressions(exponent) | Self::AssignmentRows(exponent) => exponent,
+            #[cfg(feature = "bench-internals")]
+            Self::ProductLayout(t) => t,
         }
     }
 
@@ -96,11 +105,17 @@ impl BenchShape {
         match self {
             Self::Compressions(_) => "compressions",
             Self::AssignmentRows(_) => "mnumrows",
+            #[cfg(feature = "bench-internals")]
+            Self::ProductLayout(_) => "product-ts",
         }
     }
 
     fn slug(self) -> String {
-        format!("{}-2p{}", self.mode(), self.exponent())
+        match self {
+            #[cfg(feature = "bench-internals")]
+            Self::ProductLayout(t) => format!("product-ts-t{t}-s{}", 29 - t),
+            _ => format!("{}-2p{}", self.mode(), self.exponent()),
+        }
     }
 
     fn prepare(self) -> PreparedSha256CompressionBatch {
@@ -109,6 +124,8 @@ impl BenchShape {
             Self::AssignmentRows(exponent) => {
                 prepare_sha256_compression_batch_for_assignment_rows(exponent)
             }
+            #[cfg(feature = "bench-internals")]
+            Self::ProductLayout(t) => prepare_sha256_compression_batch_for_product_t_fixed98(14, t),
         }
         .expect("valid SHA relation")
     }
@@ -234,6 +251,10 @@ impl TraceWriter {
                     }
                     BenchShape::AssignmentRows(_) => {
                         format!("MnumRows=2^{exponent}; {compressions} SHA-256 compressions")
+                    }
+                    #[cfg(feature = "bench-internals")]
+                    BenchShape::ProductLayout(t) => {
+                        format!("2^14 SHA-256 compressions; product split ({t},{})", 29 - t)
                     }
                 },
                 "algorithm": "SHA-256 compression / Spartan + virtual F2Z (runtime prime)",
@@ -740,6 +761,23 @@ fn parse_exponent_list(value: &str, variable: &str) -> Vec<usize> {
 }
 
 fn shapes() -> Vec<BenchShape> {
+    #[cfg(feature = "bench-internals")]
+    if let Ok(value) = std::env::var("F2Z_SHA_PRODUCT_TS") {
+        assert!(
+            std::env::var_os("F2Z_BENCH_SHAPES").is_none()
+                && std::env::var_os("F2Z_SHA_LOG2S").is_none()
+                && std::env::var_os("F2Z_SHA_MNUMROWS_LOG2S").is_none(),
+            "F2Z_SHA_PRODUCT_TS cannot be combined with other SHA shape variables"
+        );
+        return parse_exponent_list(&value, "F2Z_SHA_PRODUCT_TS")
+            .into_iter()
+            .map(|t| {
+                assert!((7..=28).contains(&t), "product t must be in 7..=28");
+                BenchShape::ProductLayout(t)
+            })
+            .collect();
+    }
+
     if let Ok(value) = std::env::var("F2Z_SHA_MNUMROWS_LOG2S") {
         assert!(
             std::env::var_os("F2Z_BENCH_SHAPES").is_none()
@@ -904,6 +942,7 @@ fn bench_shape(
     threads: usize,
     inner_prefix_vars: usize,
     trace_writer: &mut Option<TraceWriter>,
+    result_writer: &mut Option<BufWriter<File>>,
 ) {
     let exponent = shape.exponent();
     let shape_seed = root_seed
@@ -911,6 +950,8 @@ fn bench_shape(
         ^ match shape {
             BenchShape::Compressions(_) => 0,
             BenchShape::AssignmentRows(_) => 0x6d6e_756d_726f_7773,
+            #[cfg(feature = "bench-internals")]
+            BenchShape::ProductLayout(_) => 0x7072_6f64_7563_745f,
         };
 
     let setup_started = Instant::now();
@@ -931,6 +972,11 @@ fn bench_shape(
         BenchShape::AssignmentRows(_) => println!(
             "=== MnumRows=2^{exponent} = {assignment_cells}; {compressions} packed SHA-256 compressions ==="
         ),
+        #[cfg(feature = "bench-internals")]
+        BenchShape::ProductLayout(t) => println!(
+            "=== 2^14 = {compressions} SHA-256 compressions; product (t,s)=({t},{}) ===",
+            29 - t,
+        ),
     }
     println!(
         "  source: {live_source_cells} live / {source_cells} padded cells | derived: {live_assignment_cells} live / {assignment_cells} padded cells",
@@ -948,6 +994,28 @@ fn bench_shape(
         prepared.map().nnz(),
         fmt_ms(setup_ms),
     );
+    if let Some(product) = prepared.product_assignment_params() {
+        let modulus = {
+            #[cfg(feature = "bench-internals")]
+            {
+                if matches!(shape, BenchShape::ProductLayout(_)) {
+                    SHA256_FIXED_98_PRIME.to_string()
+                } else {
+                    "transcript-derived".to_owned()
+                }
+            }
+            #[cfg(not(feature = "bench-internals"))]
+            {
+                "transcript-derived".to_owned()
+            }
+        };
+        println!(
+            "  product opening: (t,s)=({},{}) | layout={} | q={modulus} | chunks=1",
+            product.t,
+            product.s,
+            prepared.product_layout_name().unwrap_or("none"),
+        );
+    }
 
     let warm_inputs = make_inputs(compressions, shape_seed);
     let (warm, warm_intervals) = run_once(&warm_inputs, &prepared, inner_prefix_vars, &pc, &vc);
@@ -981,15 +1049,25 @@ fn bench_shape(
                 &intervals,
             );
         }
-        println!(
-            "  SAMPLE shape_mode={} exponent={exponent} sample={} compressions={compressions} mnum_rows={assignment_cells} inner_prefix_vars={inner_prefix_vars} witness_ms={:.6} commit_ms={:.6} prove_ms={:.6} verify_ms={:.6} verified=true",
+        let sample_line = format!(
+            "SAMPLE shape_mode={} shape_value={exponent} sample={} compressions={compressions} mnum_rows={assignment_cells} product_t={} product_s={} inner_prefix_vars={inner_prefix_vars} witness_ms={:.6} commit_ms={:.6} prove_ms={:.6} verify_ms={:.6} verified=true",
             shape.mode(),
             sample + 1,
+            prepared
+                .product_assignment_params()
+                .map_or_else(|| "na".to_owned(), |params| params.t.to_string()),
+            prepared
+                .product_assignment_params()
+                .map_or_else(|| "na".to_owned(), |params| params.s.to_string()),
             timing.witness_ms,
             timing.commit_ms,
             timing.prove_ms,
             timing.verify_ms,
         );
+        println!("  {sample_line}");
+        if let Some(writer) = result_writer {
+            writeln!(writer, "{sample_line}").expect("write SHA sample result");
+        }
         prover.record_prove(timing.prove_ms, timing.commit_ms, &timing.prove_phases);
         verifier.record_verify(timing.verify_ms, &timing.verify_phases);
         witness_samples.push(timing.witness_ms);
@@ -1014,6 +1092,22 @@ fn bench_shape(
             ("inner_prefix_vars".into(), inner_prefix_vars.to_string()),
             ("throughput_per_s".into(), format!("{throughput:.3}")),
             ("shape_seed".into(), format!("{shape_seed:#018x}")),
+            (
+                "product_t".into(),
+                prepared
+                    .product_assignment_params()
+                    .map_or_else(|| "na".to_owned(), |params| params.t.to_string()),
+            ),
+            (
+                "product_s".into(),
+                prepared
+                    .product_assignment_params()
+                    .map_or_else(|| "na".to_owned(), |params| params.s.to_string()),
+            ),
+            (
+                "product_layout".into(),
+                prepared.product_layout_name().unwrap_or("none").to_owned(),
+            ),
         ],
         lambda: Some(prepared.security().lambda),
         lambda_achieved: Some(prepared.security().accounting.achieved_bits()),
@@ -1031,11 +1125,25 @@ fn bench_shape(
         },
     };
     report.print_human();
+    if let Some(writer) = result_writer {
+        writeln!(writer, "{}", report.result_line()).expect("write SHA summary result");
+        writer.flush().expect("flush SHA result output");
+    }
 }
 
-fn main() {
+pub(crate) fn main() {
     let threads = common::init();
     let mut trace_writer = TraceWriter::from_env(threads);
+    let mut result_writer = std::env::var_os("F2Z_SHA_RESULT_PATH").map(|path| {
+        let path = Path::new(&path);
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            fs::create_dir_all(parent).expect("create SHA result directory");
+        }
+        BufWriter::new(File::create(path).expect("create SHA result output"))
+    });
     let reps = common::reps(Some("F2Z_SHA_REPS"), 3);
     let root_seed = common::seed(Some("F2Z_SHA_SEED"), 0x4632_5a5f_5348_4132);
     let inner_prefix_vars = std::env::var("F2Z_SHA_INNER_PREFIX_VARS").map_or(
@@ -1070,6 +1178,7 @@ fn main() {
             threads,
             inner_prefix_vars,
             &mut trace_writer,
+            &mut result_writer,
         );
     }
     flock_core::scratch::clear();

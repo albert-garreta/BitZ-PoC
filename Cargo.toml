@@ -121,6 +121,14 @@ harness = false
 # via F2Z_BENCH_SHAPES (alias F2Z_SHA_LOG2S); reps via F2Z_BENCH_REPS
 # (alias F2Z_SHA_REPS).
 
+[[bench]]
+name = "sha256_product_layout"
+harness = false
+required-features = ["bench-internals"]
+# Fixed-q controlled sweep for 2^14 compressions and t+s=29. Defaults to
+# t=7..=27, one warmup + 21 samples; t=28 is memory-skipped. Select t with
+# F2Z_SHA_PRODUCT_TS.
+
 [features]
 default = ["parallel"]
 parallel = ["dep:rayon"]

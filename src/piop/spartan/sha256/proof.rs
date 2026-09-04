@@ -30,7 +30,10 @@ use flock_core::pcs::{
 use thiserror::Error;
 
 use crate::{
-    f2map::{PackedRepeatedVirtualMap, PackedSourceRepeatedVirtualMap, VirtualMap, cell_count},
+    f2map::{
+        PackedRepeatedVirtualMap, PackedSourceDerivedLayout, PackedSourceRepeatedVirtualMap,
+        VirtualMap, cell_count,
+    },
     ligerito::{LOG_PACKING, packed_vars},
     ligerito_flock::{
         FlockCommitHint, FlockRsError, IntEvalRsLigVirtProof, LigeritoStatementConfig,
@@ -61,9 +64,12 @@ use super::{
         SHA256_INNER_PREFIX_MAX_VARS, Sha256FactoredBlockCoefficients,
         prove_sha256_inner_sumcheck_factored, verify_sha256_inner_sumcheck,
     },
-    prime::{Sha256PrimeError, Sha256PrimeProfile, sample_sha256_mod_q_context},
+    prime::{Sha256PrimeError, sample_sha256_mod_q_context},
     witness::{Sha256CompressionStatement, Sha256CompressionWitnessBatch},
 };
+
+#[cfg(test)]
+use super::prime::Sha256PrimeProfile;
 
 const SHA256_OPENING_CLAIM_DOMAIN: &[u8] = b"f2z/spartan-sha256-opening/v7";
 const SHA256_CONSTANT_ONE_BATCH_DOMAIN: &[u8] = b"f2z/spartan-sha256/constant-one-batch/v3";
@@ -286,8 +292,7 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
     let p_f = prepared.source_params();
     let p_h = prepared.assignment_params();
     let map = prepared.map();
-    let profile =
-        Sha256PrimeProfile::from_security(prepared.security(), prepared.log_instance_capacity())?;
+    let profile = prepared.prime_profile();
 
     validate_public_statement(prepared.instances(), public_statement)?;
     validate_common_geometry(None, map, p_h, p_f)?;
@@ -399,7 +404,7 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
     };
     let product_batching = {
         let _scope = crate::utils::prof::scope("sha256:product_batch_prepare_prover");
-        ProductLinearBatching::new(
+        BatchedSha256LinearClaim::new(
             prepared,
             public_statement,
             &instance_point,
@@ -425,13 +430,16 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
         let step4_scope = crate::utils::prof::scope("step4:bitify_prove");
         let (row_weights, col_weights_q, claimed_q) = {
             let _scope = crate::utils::prof::scope("sha256:direct_opening_prepare_prover");
-            product_opening_claim(&product_batching, product_p_h, field_config)?
+            product_opening_claim(
+                &product_batching,
+                product_p_h,
+                product_map.derived_layout(),
+                field_config,
+            )?
         };
         let row_weight_source =
             GeneratedModQWeightSource::new(product_p_h, mod_q.q_bits(), |row| {
-                row_weights
-                    .get(row)
-                    .map(|weight| field_from_raw(*weight, field_config).canonical_u128())
+                row_weights.canonical_weight(row, field_config)
             })
             .map_err(|()| Sha256F2zError::InvalidGeometry)?;
         {
@@ -646,8 +654,7 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
     let p_f = prepared.source_params();
     let p_h = prepared.assignment_params();
     let map = prepared.map();
-    let profile =
-        Sha256PrimeProfile::from_security(prepared.security(), prepared.log_instance_capacity())?;
+    let profile = prepared.prime_profile();
 
     validate_public_statement(prepared.instances(), public_statement)?;
     validate_common_geometry(None, map, p_h, p_f)?;
@@ -735,7 +742,7 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
     };
     let product_batching = {
         let _scope = crate::utils::prof::scope("sha256:product_batch_prepare_verifier");
-        ProductLinearBatching::new(
+        BatchedSha256LinearClaim::new(
             prepared,
             public_statement,
             &instance_point,
@@ -757,13 +764,16 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
         let step4_scope = crate::utils::prof::scope("step4:bitify_verify");
         let (row_weights, col_weights_q, claimed_q) = {
             let _scope = crate::utils::prof::scope("sha256:direct_opening_prepare_verifier");
-            product_opening_claim(&product_batching, product_p_h, field_config)?
+            product_opening_claim(
+                &product_batching,
+                product_p_h,
+                product_map.derived_layout(),
+                field_config,
+            )?
         };
         let row_weight_source =
             GeneratedModQWeightSource::new(product_p_h, mod_q.q_bits(), |row| {
-                row_weights
-                    .get(row)
-                    .map(|weight| field_from_raw(*weight, field_config).canonical_u128())
+                row_weights.canonical_weight(row, field_config)
             })
             .map_err(|()| Sha256F2zError::InvalidGeometry)?;
         {
@@ -898,20 +908,17 @@ pub fn verify_sha256_compressions<T: Transcript + Send>(
     )
 }
 
-/// Random linear combination of the SHA rows, shared-one residual, and public
-/// SHA cells folded into one product-structured oracle.
+/// The one batched linear claim proved for all SHA instances.
 ///
-/// Let `v_r = eq(r, ξ)`, `u_i = eq(i, η)`, `U = Σ_{i<N} u_i`, and
-/// `β = Cᵀv`. The local vector `d` adds the shared-one and public-I/O
-/// coefficients to `β`. Its gap-free physical realization is
+/// First collapse the 184 local constraints once:
+/// `d = Cᵀ eq(·, ξ) + constant/public coefficients`.
 ///
-/// - `V[0] = U d[0]`, and
-/// - `V[1 + i(L - 1) + (c - 1)] = u_i d[c]` for `c > 0`.
-///
-/// Thus the native matrix is collapsed once, independently of the number of
-/// instances. The opening claim `μ` is the same product-structured batching
-/// of the public values: `α₀ U + α_pub Σ_i u_i public_i`.
-struct ProductLinearBatching {
+/// Then prove the inner product
+/// `Σ_i Σ_c eq(i, η) d[c] H[i,c] = μ`.
+/// `H[i,0]` refers to the one shared physical constant cell. The proof-only
+/// tensor may put instance bits on either side of the F2Z `(t,s)` split, but
+/// it always represents this same sum and remains bound to committed `f`.
+struct BatchedSha256LinearClaim {
     instances: usize,
     instance_point: Vec<SpartanF2zField>,
     instance_weights: Vec<SpartanF2zField>,
@@ -920,7 +927,7 @@ struct ProductLinearBatching {
     initial_claim: SpartanF2zField,
 }
 
-impl ProductLinearBatching {
+impl BatchedSha256LinearClaim {
     #[allow(clippy::too_many_arguments)]
     fn new(
         prepared: &PreparedSha256CompressionBatch,
@@ -1300,55 +1307,129 @@ fn linear_opening_claim(
     Ok((row_weights, col_weights, inner_claim.canonical_u128()))
 }
 
-/// Builds the direct rank-one F2Z claim over the proof-only tensor
-/// `D[local, instance] = H[instance, local]`.
-///
-/// Low instance bits select F2Z rows. High instance bits are adjacent to the
-/// local assignment coordinate in F2Z columns, so the complete coefficient
-/// remains `eq(instance, η) * d[local]` without an assignment-domain
-/// sumcheck or a materialized `u ⊗ d` table.
+enum ProductRowWeights {
+    InstanceOnly(Vec<RawMontgomery>),
+    LocalAndInstance {
+        local: Vec<RawMontgomery>,
+        low_instance: Vec<RawMontgomery>,
+        local_domain: usize,
+    },
+}
+
+impl ProductRowWeights {
+    fn canonical_weight(
+        &self,
+        row: usize,
+        field_config: &<SpartanF2zField as PrimeField>::Config,
+    ) -> Option<u128> {
+        match self {
+            Self::InstanceOnly(weights) => weights
+                .get(row)
+                .map(|weight| field_from_raw(*weight, field_config).canonical_u128()),
+            Self::LocalAndInstance {
+                local,
+                low_instance,
+                local_domain,
+            } => {
+                let local_column = row & (local_domain - 1);
+                let instance = row / local_domain;
+                let local_weight = field_from_raw(*local.get(local_column)?, field_config);
+                let instance_weight = field_from_raw(*low_instance.get(instance)?, field_config);
+                Some((local_weight * &instance_weight).canonical_u128())
+            }
+        }
+    }
+}
+
+/// Builds the direct rank-one F2Z claim without materializing `u ⊗ d`.
 fn product_opening_claim(
-    batching: &ProductLinearBatching,
+    batching: &BatchedSha256LinearClaim,
     p_h: &IntEvalParams,
+    layout: PackedSourceDerivedLayout,
     field_config: &<SpartanF2zField as PrimeField>::Config,
-) -> Result<(Vec<RawMontgomery>, Vec<u128>, u128), Sha256F2zError> {
+) -> Result<(ProductRowWeights, Vec<u128>, u128), Sha256F2zError> {
     let instance_vars = instance_vars(batching.instances)?;
     if !batching.instances.is_power_of_two()
         || batching.instance_point.len() != instance_vars
         || p_h.word_bits != 1
-        || p_h.t != instance_vars.min(13)
         || p_h.t + p_h.s != instance_vars + 15
         || batching.local_coefficients.len() != SHA256_H_BAR_LIVE_BITS
     {
         return Err(Sha256F2zError::InvalidGeometry);
     }
 
-    let row_weights = compact_eq_table(&batching.instance_point[..p_h.t], field_config)?;
-    let high_weights = compact_eq_table(&batching.instance_point[p_h.t..], field_config)?;
-    if row_weights.len() != p_h.rows()
-        || row_weights.len() * high_weights.len() != batching.instances
-        || p_h.cols() != SHA256_H_BAR_LIVE_BITS.next_power_of_two() * high_weights.len()
-    {
-        return Err(Sha256F2zError::InvalidGeometry);
-    }
+    let (row_weights, col_weights) = match layout {
+        PackedSourceDerivedLayout::LocalMajor => {
+            if p_h.t > instance_vars {
+                return Err(Sha256F2zError::InvalidGeometry);
+            }
+            let low = compact_eq_table(&batching.instance_point[..p_h.t], field_config)?;
+            let high = compact_eq_table(&batching.instance_point[p_h.t..], field_config)?;
+            if low.len() != p_h.rows()
+                || low.len() * high.len() != batching.instances
+                || p_h.cols() != SHA256_H_BAR_LIVE_BITS.next_power_of_two() * high.len()
+            {
+                return Err(Sha256F2zError::InvalidGeometry);
+            }
 
-    let high_instances = high_weights.len();
-    let coefficient_at = |column: usize| {
-        let local_column = column / high_instances;
-        if local_column >= batching.local_coefficients.len() {
-            return 0;
+            let high_instances = high.len();
+            let coefficient_at = |column: usize| {
+                let local_column = column / high_instances;
+                if local_column >= batching.local_coefficients.len() {
+                    return 0;
+                }
+                let high_instance = column % high_instances;
+                let high_weight = field_from_raw(high[high_instance], field_config);
+                (batching.local_coefficients[local_column].clone() * &high_weight).canonical_u128()
+            };
+            #[cfg(feature = "parallel")]
+            let columns = (0..p_h.cols())
+                .into_par_iter()
+                .map(coefficient_at)
+                .collect::<Vec<_>>();
+            #[cfg(not(feature = "parallel"))]
+            let columns = (0..p_h.cols()).map(coefficient_at).collect::<Vec<_>>();
+            (ProductRowWeights::InstanceOnly(low), columns)
         }
-        let high_instance = column % high_instances;
-        let high_weight = field_from_raw(high_weights[high_instance], field_config);
-        (batching.local_coefficients[local_column].clone() * &high_weight).canonical_u128()
+        PackedSourceDerivedLayout::InstanceMajor { local_domain } => {
+            let local_vars = local_domain.ilog2() as usize;
+            if local_domain != SHA256_H_BAR_LIVE_BITS.next_power_of_two() || p_h.t < local_vars {
+                return Err(Sha256F2zError::InvalidGeometry);
+            }
+            let low_instance_vars = p_h.t - local_vars;
+            let low_instance =
+                compact_eq_table(&batching.instance_point[..low_instance_vars], field_config)?;
+            let high =
+                compact_eq_table(&batching.instance_point[low_instance_vars..], field_config)?;
+            if local_domain * low_instance.len() != p_h.rows()
+                || low_instance.len() * high.len() != batching.instances
+                || high.len() != p_h.cols()
+            {
+                return Err(Sha256F2zError::InvalidGeometry);
+            }
+            let local = batching
+                .local_coefficients
+                .iter()
+                .map(raw_montgomery)
+                .chain(std::iter::repeat_n(
+                    raw_montgomery(&SpartanF2zField::zero_with_cfg(field_config)),
+                    local_domain - batching.local_coefficients.len(),
+                ))
+                .collect();
+            let columns = high
+                .into_iter()
+                .map(|weight| field_from_raw(weight, field_config).canonical_u128())
+                .collect();
+            (
+                ProductRowWeights::LocalAndInstance {
+                    local,
+                    low_instance,
+                    local_domain,
+                },
+                columns,
+            )
+        }
     };
-    #[cfg(feature = "parallel")]
-    let col_weights = (0..p_h.cols())
-        .into_par_iter()
-        .map(coefficient_at)
-        .collect::<Vec<_>>();
-    #[cfg(not(feature = "parallel"))]
-    let col_weights = (0..p_h.cols()).map(coefficient_at).collect::<Vec<_>>();
 
     Ok((
         row_weights,
@@ -1982,10 +2063,16 @@ fn validate_product_geometry(
 ) -> Result<(), Sha256F2zError> {
     validate_source_params(p_f)?;
     let instance_vars = map.instances().ilog2() as usize;
-    let expected_t = instance_vars.min(13);
+    let layout_is_valid = match map.derived_layout() {
+        PackedSourceDerivedLayout::LocalMajor => p_h.t <= instance_vars,
+        PackedSourceDerivedLayout::InstanceMajor { local_domain } => {
+            local_domain == SHA256_H_BAR_LIVE_BITS.next_power_of_two()
+                && p_h.t >= local_domain.ilog2() as usize
+        }
+    };
     if p_h.word_bits != 1
         || p_h.t < LOG_PACKING
-        || p_h.t != expected_t
+        || !layout_is_valid
         || p_h.t.saturating_add(p_h.s) != instance_vars + 15
         || map.rows() != cell_count(p_h)
         || map.cols() != cell_count(p_f)
@@ -3025,11 +3112,10 @@ mod tests {
         // rejection must come from the batched C h = 0 constraints rather
         // than from an inconsistent uncommitted h oracle.
         const PRIVATE_LOCAL_SOURCE_CELL: usize = 1_000;
-        assert!(
-            (0..SHA256_PUBLIC_WORDS).all(|word_slot| (0..SHA256_PUBLIC_WORD_BITS)
-                .all(|bit| sha256_public_f_column(word_slot, bit)
-                    != PRIVATE_LOCAL_SOURCE_CELL))
-        );
+        assert!((0..SHA256_PUBLIC_WORDS).all(|word_slot| {
+            (0..SHA256_PUBLIC_WORD_BITS)
+                .all(|bit| sha256_public_f_column(word_slot, bit) != PRIVATE_LOCAL_SOURCE_CELL)
+        }));
         let mut local_residuals =
             vec![num_bigint::BigInt::default(); prepared.linear_relation().row_count()];
         for local_h in prepared
@@ -3077,8 +3163,7 @@ mod tests {
             let canonical_p_h = prepared.assignment_params();
             let column = flat_cell >> canonical_p_h.t;
             let row = flat_cell & (canonical_p_h.rows() - 1);
-            constraint_attack.assignment_rows_mut_for_tests()[column][row / 64] ^=
-                1 << (row % 64);
+            constraint_attack.assignment_rows_mut_for_tests()[column][row / 64] ^= 1 << (row % 64);
         }
         for flat_cell in product_h_cells {
             let column = flat_cell >> product_p_h.t;
@@ -3108,6 +3193,52 @@ mod tests {
                 &public_statement,
                 &attack_hint.commitment,
                 &attack_proof,
+                &vc,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn local_rows_product_layout_rejects_a_false_public_output() {
+        const LOG_COMPRESSIONS: usize = 7;
+        let prepared =
+            super::super::constraints::prepare_sha256_compression_batch_for_product_t_test(
+                LOG_COMPRESSIONS,
+                15,
+            )
+            .unwrap();
+        assert_eq!(prepared.product_layout_name(), Some("local_rows"));
+
+        let inputs = (0..1usize << LOG_COMPRESSIONS)
+            .map(input)
+            .collect::<Vec<_>>();
+        let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
+        let mut false_statement = public_statements(&inputs, witness.outputs());
+        false_statement[5].claimed_output[0] ^= 1;
+        let (pc, vc) = sha256_compression_configs(&prepared).unwrap();
+        let hint = commit_sha256_compression_witness_with_config(&prepared, &witness, &pc).unwrap();
+
+        // Both sides bind the same false statement. Rejection therefore comes
+        // from the committed-wire claim, not from transcript divergence.
+        let mut prover_transcript = Blake3Transcript::new();
+        let proof = prove_sha256_compressions_with_config(
+            &mut prover_transcript,
+            &prepared,
+            &false_statement,
+            &witness,
+            &hint,
+            &pc,
+        )
+        .expect("a false public claim still produces a candidate proof");
+        let mut verifier_transcript = Blake3Transcript::new();
+        assert!(
+            verify_sha256_compressions_with_config(
+                &mut verifier_transcript,
+                &prepared,
+                &false_statement,
+                &hint.commitment,
+                &proof,
                 &vc,
             )
             .is_err()
@@ -3225,7 +3356,7 @@ mod tests {
         let slot_weights = (0..SHA256_PUBLIC_WORDS * SHA256_PUBLIC_WORD_BITS)
             .map(|slot| SpartanF2zField::from_with_cfg(slot as u64 + 17, &field_config))
             .collect::<Vec<_>>();
-        let batching = ProductLinearBatching::new(
+        let batching = BatchedSha256LinearClaim::new(
             &prepared,
             &statements,
             &instance_point,
@@ -3252,8 +3383,13 @@ mod tests {
 
         let product_p_h = prepared.product_assignment_params().unwrap();
         let product_rows = witness.product_assignment_rows().unwrap();
-        let (row_weights, col_weights, claimed) =
-            product_opening_claim(&batching, product_p_h, &field_config).unwrap();
+        let (row_weights, col_weights, claimed) = product_opening_claim(
+            &batching,
+            product_p_h,
+            prepared.product_map().unwrap().derived_layout(),
+            &field_config,
+        )
+        .unwrap();
         let mut direct_sum = SpartanF2zField::zero_with_cfg(&field_config);
         for flat_cell in 0..product_p_h.cells() {
             if packed_flat_bit(product_rows, product_p_h, flat_cell).unwrap() == 0 {
@@ -3261,7 +3397,10 @@ mod tests {
             }
             let row = flat_cell & (product_p_h.rows() - 1);
             let column = flat_cell >> product_p_h.t;
-            let mut term = field_from_raw(row_weights[row], &field_config);
+            let mut term = SpartanF2zField::from_with_cfg(
+                row_weights.canonical_weight(row, &field_config).unwrap(),
+                &field_config,
+            );
             term *= &SpartanF2zField::from_with_cfg(col_weights[column], &field_config);
             direct_sum += &term;
         }
@@ -3305,7 +3444,7 @@ mod tests {
             .map(|instance| Sha256CompressionStatement::new(input(instance), [0; 8]))
             .collect::<Vec<_>>();
         let constant_weight = SpartanF2zField::from_with_cfg(43_u64, &field_config);
-        let batching = ProductLinearBatching::new(
+        let batching = BatchedSha256LinearClaim::new(
             &prepared,
             &statements,
             &instance_point,

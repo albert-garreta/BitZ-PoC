@@ -242,12 +242,22 @@ pub struct PackedRepeatedVirtualMap {
 pub struct PackedSourceRepeatedVirtualMap {
     local: PreparedVirtualMap,
     instances: usize,
+    derived_layout: PackedSourceDerivedLayout,
     rows: usize,
     cols: usize,
     live_rows: usize,
     live_cols: usize,
     nnz: usize,
     digest: [u8; 32],
+}
+
+/// Ordering of the proof-only derived tensor behind a gap-free packed source.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PackedSourceDerivedLayout {
+    /// `derived = local * instances + instance`.
+    LocalMajor,
+    /// `derived = instance * local_domain + local`.
+    InstanceMajor { local_domain: usize },
 }
 
 impl PackedSourceRepeatedVirtualMap {
@@ -258,12 +268,53 @@ impl PackedSourceRepeatedVirtualMap {
         rows: usize,
         cols: usize,
     ) -> Result<Self, PreparedVirtualMapError> {
+        Self::new_with_layout(
+            local,
+            instances,
+            rows,
+            cols,
+            PackedSourceDerivedLayout::LocalMajor,
+        )
+    }
+
+    /// Builds an instance-major derived tensor whose local blocks have the
+    /// supplied power-of-two domain. The packed source remains gap-free.
+    pub fn new_instance_major(
+        local: PreparedVirtualMap,
+        instances: usize,
+        rows: usize,
+        cols: usize,
+        local_domain: usize,
+    ) -> Result<Self, PreparedVirtualMapError> {
+        Self::new_with_layout(
+            local,
+            instances,
+            rows,
+            cols,
+            PackedSourceDerivedLayout::InstanceMajor { local_domain },
+        )
+    }
+
+    fn new_with_layout(
+        local: PreparedVirtualMap,
+        instances: usize,
+        rows: usize,
+        cols: usize,
+        derived_layout: PackedSourceDerivedLayout,
+    ) -> Result<Self, PreparedVirtualMapError> {
         if instances == 0
             || !instances.is_power_of_two()
             || local.rows() == 0
             || local.cols() == 0
             || !rows.is_power_of_two()
             || !cols.is_power_of_two()
+        {
+            return Err(PreparedVirtualMapError::InvalidRepetition);
+        }
+        if let PackedSourceDerivedLayout::InstanceMajor { local_domain } = derived_layout
+            && (!local_domain.is_power_of_two()
+                || local.rows() > local_domain
+                || local_domain.checked_mul(instances) != Some(rows))
         {
             return Err(PreparedVirtualMapError::InvalidRepetition);
         }
@@ -286,11 +337,27 @@ impl PackedSourceRepeatedVirtualMap {
         }
 
         let mut hash = Hasher::new();
-        hash.update(b"f2z/packed-source-repeated-virtual-map/v1");
+        match derived_layout {
+            PackedSourceDerivedLayout::LocalMajor => {
+                // Preserve the production map digest and transcript.
+                hash.update(b"f2z/packed-source-repeated-virtual-map/v1");
+            }
+            PackedSourceDerivedLayout::InstanceMajor { .. } => {
+                hash.update(b"f2z/packed-source-repeated-virtual-map/v2");
+            }
+        }
         hash.update(&local.digest());
         for value in [instances, rows, cols, live_rows, live_cols, nnz] {
             hash.update(
                 &u64::try_from(value)
+                    .map_err(|_| PreparedVirtualMapError::ShapeTooLarge)?
+                    .to_le_bytes(),
+            );
+        }
+        if let PackedSourceDerivedLayout::InstanceMajor { local_domain } = derived_layout {
+            hash.update(&[1]);
+            hash.update(
+                &u64::try_from(local_domain)
                     .map_err(|_| PreparedVirtualMapError::ShapeTooLarge)?
                     .to_le_bytes(),
             );
@@ -300,6 +367,7 @@ impl PackedSourceRepeatedVirtualMap {
         Ok(Self {
             local,
             instances,
+            derived_layout,
             rows,
             cols,
             live_rows,
@@ -319,6 +387,11 @@ impl PackedSourceRepeatedVirtualMap {
         self.instances
     }
 
+    /// Ordering used by the derived tensor.
+    pub const fn derived_layout(&self) -> PackedSourceDerivedLayout {
+        self.derived_layout
+    }
+
     /// Number of live derived cells before the one global suffix.
     pub const fn live_rows(&self) -> usize {
         self.live_rows
@@ -330,12 +403,13 @@ impl PackedSourceRepeatedVirtualMap {
     }
 }
 
-/// Local-major derived-row iterator for one packed source column.
+/// Derived-row iterator for one packed source column.
 pub struct PackedSourceColumnRows<'a> {
-    local_rows: slice::Iter<'a, usize>,
+    local_rows: &'a [usize],
     instance: Option<usize>,
     instances: usize,
-    current_local_row: Option<usize>,
+    derived_layout: PackedSourceDerivedLayout,
+    local_index: usize,
     repeat_index: usize,
     remaining: usize,
 }
@@ -347,22 +421,34 @@ impl Iterator for PackedSourceColumnRows<'_> {
         if self.remaining == 0 {
             return None;
         }
-        let output = match self.instance {
-            Some(instance) => self.local_rows.next()? * self.instances + instance,
-            None => {
-                let local_row = match self.current_local_row {
-                    Some(row) => row,
-                    None => {
-                        let row = *self.local_rows.next()?;
-                        self.current_local_row = Some(row);
-                        row
-                    }
-                };
+        let output = match (self.instance, self.derived_layout) {
+            (Some(instance), PackedSourceDerivedLayout::LocalMajor) => {
+                let local_row = *self.local_rows.get(self.local_index)?;
+                self.local_index += 1;
+                local_row * self.instances + instance
+            }
+            (Some(instance), PackedSourceDerivedLayout::InstanceMajor { local_domain }) => {
+                let local_row = *self.local_rows.get(self.local_index)?;
+                self.local_index += 1;
+                instance * local_domain + local_row
+            }
+            (None, PackedSourceDerivedLayout::LocalMajor) => {
+                let local_row = *self.local_rows.get(self.local_index)?;
                 let output = local_row * self.instances + self.repeat_index;
                 self.repeat_index += 1;
                 if self.repeat_index == self.instances {
                     self.repeat_index = 0;
-                    self.current_local_row = None;
+                    self.local_index += 1;
+                }
+                output
+            }
+            (None, PackedSourceDerivedLayout::InstanceMajor { local_domain }) => {
+                let local_row = *self.local_rows.get(self.local_index)?;
+                let output = self.repeat_index * local_domain + local_row;
+                self.local_index += 1;
+                if self.local_index == self.local_rows.len() {
+                    self.local_index = 0;
+                    self.repeat_index += 1;
                 }
                 output
             }
@@ -410,10 +496,11 @@ impl VirtualMap for PackedSourceRepeatedVirtualMap {
         }
         if column >= self.live_cols {
             return Some(PackedSourceColumnRows {
-                local_rows: [].iter(),
+                local_rows: &[],
                 instance: Some(0),
                 instances: self.instances,
-                current_local_row: None,
+                derived_layout: self.derived_layout,
+                local_index: 0,
                 repeat_index: 0,
                 remaining: 0,
             });
@@ -431,17 +518,19 @@ impl VirtualMap for PackedSourceRepeatedVirtualMap {
         let local_rows = self.local.matrix().column(local_column)?.row_indices();
         let remaining = local_rows.len() * instance.map_or(self.instances, |_| 1);
         Some(PackedSourceColumnRows {
-            local_rows: local_rows.iter(),
+            local_rows,
             instance,
             instances: self.instances,
-            current_local_row: None,
+            derived_layout: self.derived_layout,
+            local_index: 0,
             repeat_index: 0,
             remaining,
         })
     }
 
     fn packed_source_repetition(&self) -> Option<(&PreparedVirtualMap, usize)> {
-        Some((&self.local, self.instances))
+        (self.derived_layout == PackedSourceDerivedLayout::LocalMajor)
+            .then_some((&self.local, self.instances))
     }
 }
 
@@ -984,5 +1073,34 @@ mod tests {
         assert!(repeated.column_rows(9).unwrap().next().is_none());
         assert!(repeated.column_rows(16).is_none());
         assert_ne!(repeated.digest(), local.digest());
+    }
+
+    #[test]
+    fn packed_source_repeated_map_supports_instance_major_blocks() {
+        let local = prepared(
+            4,
+            vec![
+                vec![(0, true), (2, true), (3, true)],
+                vec![(1, true), (3, true)],
+                vec![(2, true)],
+            ],
+        );
+        let repeated =
+            PackedSourceRepeatedVirtualMap::new_instance_major(local, 4, 32, 16, 8).unwrap();
+
+        assert_eq!(
+            repeated.derived_layout(),
+            PackedSourceDerivedLayout::InstanceMajor { local_domain: 8 }
+        );
+        assert_eq!(
+            repeated.column_rows(0).unwrap().collect::<Vec<_>>(),
+            vec![0, 2, 3, 8, 10, 11, 16, 18, 19, 24, 26, 27]
+        );
+        // Packed source column 3 is instance one, local source column one.
+        assert_eq!(
+            repeated.column_rows(3).unwrap().collect::<Vec<_>>(),
+            vec![9, 11]
+        );
+        assert!(repeated.packed_source_repetition().is_none());
     }
 }

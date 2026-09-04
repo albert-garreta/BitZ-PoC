@@ -17,7 +17,7 @@ use thiserror::Error;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use crate::pcs::IntEvalParams;
+use crate::{f2map::PackedSourceDerivedLayout, pcs::IntEvalParams};
 
 use super::constraints::{
     PreparedSha256CompressionBatch, SHA256_F_INSTANCE_BITS, SHA256_F_LIVE_BITS,
@@ -241,7 +241,8 @@ pub fn generate_sha256_compression_witnesses(
     let assignment_rows = pack_derived_rows(&shards, p_h);
     let product_assignment_rows = prepared
         .product_assignment_params()
-        .map(|params| pack_product_derived_rows(&shards, params));
+        .zip(prepared.product_map())
+        .map(|(params, map)| pack_product_derived_rows(&shards, params, map.derived_layout()));
     let outputs = shards.iter().map(|shard| shard.output).collect();
 
     Ok(Sha256CompressionWitnessBatch {
@@ -370,6 +371,19 @@ fn pack_derived_rows<'a>(
 fn pack_product_derived_rows(
     shards: &[PackedCompressionShard],
     params: &IntEvalParams,
+    layout: PackedSourceDerivedLayout,
+) -> Vec<Vec<u64>> {
+    match layout {
+        PackedSourceDerivedLayout::LocalMajor => pack_product_local_major_rows(shards, params),
+        PackedSourceDerivedLayout::InstanceMajor { local_domain } => {
+            pack_product_instance_major_rows(shards, params, local_domain)
+        }
+    }
+}
+
+fn pack_product_local_major_rows(
+    shards: &[PackedCompressionShard],
+    params: &IntEvalParams,
 ) -> Vec<Vec<u64>> {
     let instances = shards.len();
     debug_assert!(instances.is_power_of_two());
@@ -403,6 +417,47 @@ fn pack_product_derived_rows(
                 }
             }
             *word = packed;
+        }
+        words
+    };
+
+    #[cfg(feature = "parallel")]
+    {
+        (0..params.cols())
+            .into_par_iter()
+            .map(build_column)
+            .collect()
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        (0..params.cols()).map(build_column).collect()
+    }
+}
+
+/// Packs `D[instance, local]` with a power-of-two local block. Each local
+/// block is word-aligned, so this is a parallel block copy rather than a
+/// bit-by-bit transpose.
+fn pack_product_instance_major_rows(
+    shards: &[PackedCompressionShard],
+    params: &IntEvalParams,
+    local_domain: usize,
+) -> Vec<Vec<u64>> {
+    debug_assert!(shards.len().is_power_of_two());
+    debug_assert_eq!(local_domain, SHA256_H_BAR_LIVE_BITS.next_power_of_two());
+    debug_assert_eq!(local_domain % u64::BITS as usize, 0);
+    debug_assert!(params.rows() >= local_domain);
+    debug_assert_eq!(params.cells(), shards.len() * local_domain);
+
+    let instances_per_column = params.rows() / local_domain;
+    let words_per_instance = local_domain / u64::BITS as usize;
+    let build_column = |column: usize| {
+        let mut words = vec![0_u64; params.rows().div_ceil(u64::BITS as usize)];
+        let first_instance = column * instances_per_column;
+        for local_instance in 0..instances_per_column {
+            let shard = &shards[first_instance + local_instance];
+            let target = local_instance * words_per_instance;
+            let source = shard.h_bar.packed_words();
+            words[target..target + source.len()].copy_from_slice(source);
         }
         words
     };
@@ -474,7 +529,8 @@ mod tests {
     use crate::{
         f2map::VirtualMap,
         piop::spartan::sha256::constraints::{
-            SHA256_CONSTRAINTS, prepare_sha256_compression_batch_for_test,
+            SHA256_CONSTRAINTS, prepare_sha256_compression_batch_for_product_t_test,
+            prepare_sha256_compression_batch_for_test,
         },
     };
 
@@ -567,6 +623,32 @@ mod tests {
         // assignment cell 257. Native order makes this row 1 of column 1.
         assert!(prepared.map().column_rows(1).unwrap().any(|row| row == 257));
         assert_eq!(witness.assignment_rows()[1][0] >> 1 & 1, 1);
+    }
+
+    #[test]
+    fn instance_major_product_rows_match_the_virtual_map() {
+        let prepared = prepare_sha256_compression_batch_for_product_t_test(1, 15).unwrap();
+        let inputs = [abc_input(), abc_input()];
+        let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
+        let p_f = prepared.source_params();
+        let product_p_h = prepared.product_assignment_params().unwrap();
+        let product_map = prepared.product_map().unwrap();
+        let product_rows = witness.product_assignment_rows().unwrap();
+
+        assert_eq!(prepared.product_layout_name(), Some("local_rows"));
+        assert_eq!((product_p_h.t, product_p_h.s), (15, 1));
+        let mut mapped = vec![false; product_p_h.cells()];
+        for source in 0..p_f.cells() {
+            if !witness.source_bit(source).unwrap() {
+                continue;
+            }
+            for derived in product_map.column_rows(source).unwrap() {
+                mapped[derived] ^= true;
+            }
+        }
+        assert!(mapped.iter().enumerate().all(|(cell, expected)| {
+            *expected == packed_rows_bit_with_params(product_rows, product_p_h, cell).unwrap()
+        }));
     }
 
     #[test]
