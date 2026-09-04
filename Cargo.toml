@@ -125,6 +125,15 @@ harness = false
 # via F2Z_BENCH_SHAPES (alias F2Z_SHA_LOG2S); reps via F2Z_BENCH_REPS
 # (alias F2Z_SHA_REPS); profile via F2Z_BENCH_LAMBDA.
 
+[[bench]]
+name = "sha256_chain"
+harness = false
+# CHAINED SHA-256 compressions (the Merkle–Damgård chain over 2^k blocks,
+# intermediate chaining values as witness) through the same linear PIOP +
+# direct product opening, on the chained virtual map. Unified output
+# schema (docs/bench-schema.md). Exponents via F2Z_BENCH_SHAPES; reps via
+# F2Z_BENCH_REPS; profile via F2Z_BENCH_LAMBDA.
+
 [features]
 default = ["parallel"]
 parallel = ["dep:rayon"]
