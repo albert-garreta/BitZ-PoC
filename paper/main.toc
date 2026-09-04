@@ -5,15 +5,15 @@
 \contentsline {subsection}{\numberline {1.2}Related work}{6}{subsection.1.2}%
 \contentsline {paragraph}{Proof systems over integers and other rings.}{6}{paragraph*.4}%
 \contentsline {paragraph}{Proof systems over binary fields.}{7}{paragraph*.5}%
-\contentsline {paragraph}{Commitments in binary fields with openings in rings $R$ of characteristic different than $2$.}{8}{paragraph*.6}%
+\contentsline {paragraph}{Commitments in binary fields with openings in rings $R$ of characteristic different than $2$.}{7}{paragraph*.6}%
 \contentsline {subsection}{\numberline {1.3}Acknowledgements}{8}{subsection.1.3}%
 \contentsline {paragraph}{Usage and non-usage of AI}{8}{paragraph*.7}%
 \contentsline {section}{\numberline {2}New technical overview}{8}{section.2}%
 \contentsline {section}{\numberline {3}Technical overview}{8}{section.3}%
-\contentsline {subsection}{\numberline {3.1}A simple version of {$\mathbb {B}\text {it}\mathbb {Z}$}}{9}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.1}A simple version of {$\mathbb {B}\text {it}\mathbb {Z}$}}{8}{subsection.3.1}%
 \contentsline {paragraph}{Step 1: Commitment in $\ensuremath {\mathbb {F}}_{2^\nu }$.}{9}{paragraph*.8}%
 \contentsline {paragraph}{Step 2: Projection to a finite field $\ensuremath {\mathbb {F}}$.}{9}{paragraph*.9}%
-\contentsline {paragraph}{Step 3: PIOP over $\ensuremath {\mathbb {F}}$.}{10}{paragraph*.10}%
+\contentsline {paragraph}{Step 3: PIOP over $\ensuremath {\mathbb {F}}$.}{9}{paragraph*.10}%
 \contentsline {paragraph}{Step 4: Bitification of the linear claim.}{10}{paragraph*.11}%
 \contentsline {paragraph}{Step 5: {$\mathbb {B}\text {it}\mathbb {Z}$}\ Polynomial Commitment Scheme (PCS).}{10}{paragraph*.12}%
 \contentsline {paragraph}{Step 5.0: reducing the prime modulus if necessary.}{10}{paragraph*.13}%
@@ -49,41 +49,34 @@
 \contentsline {paragraph}{Algebraic set-up}{25}{paragraph*.31}%
 \contentsline {paragraph}{The {$\mathbb {B}\text {it}\mathbb {Z}$}\ IOP.}{25}{paragraph*.32}%
 \contentsline {subsection}{\numberline {5.4}Soundness and completeness}{29}{subsection.5.4}%
-\contentsline {paragraph}{Completeness and soundness of $\Pi _1$}{30}{paragraph*.33}%
+\contentsline {paragraph}{Completeness and soundness of $\Pi _1$}{31}{paragraph*.33}%
 \contentsline {paragraph}{The case where Round 1 is skipped.}{33}{paragraph*.34}%
 \contentsline {subsection}{\numberline {5.5}The general LinBitsRings relation}{33}{subsection.5.5}%
 \contentsline {subsection}{\numberline {5.6}The {$\mathbb {B}\text {it}\mathbb {Z}$}\ IOP for the general LinBitsRings relation}{35}{subsection.5.6}%
 \contentsline {subsection}{\numberline {5.7}Instantiation}{37}{subsection.5.7}%
-\contentsline {paragraph}{The errors $\kappa _{i,\mathsf {iopp}}$.}{38}{paragraph*.35}%
-\contentsline {paragraph}{The error $\kappa _{\mathsf {OOD}}$.}{39}{paragraph*.36}%
-\contentsline {paragraph}{The errors $\kappa _{i,\mathsf {red}}$.}{39}{paragraph*.37}%
-\contentsline {paragraph}{The error $\kappa _0$.}{39}{paragraph*.38}%
-\contentsline {paragraph}{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa _0$.}{39}{paragraph*.39}%
-\contentsline {paragraph}{Strategy 2: No or essentially no grinding during the PIOP, and $\kappa _0$ is present and grinding is used during the first projection step of \cref {c:core_iop}.}{40}{paragraph*.40}%
+\contentsline {paragraph}{The errors $\kappa _{i,\mathsf {iopp}}$.}{39}{paragraph*.36}%
+\contentsline {paragraph}{The error $\kappa _{\mathsf {OOD}}$.}{39}{paragraph*.37}%
+\contentsline {paragraph}{The errors $\kappa _{i,\mathsf {red}}$.}{39}{paragraph*.38}%
+\contentsline {paragraph}{The error $\kappa _0$.}{39}{paragraph*.39}%
+\contentsline {paragraph}{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa _0$.}{40}{paragraph*.40}%
+\contentsline {paragraph}{Strategy 2: No or essentially no grinding during the PIOP, and $\kappa _0$ is present and grinding is used during the first projection step (Round 1) of \cref {c:core_iop}.}{40}{paragraph*.41}%
 \contentsline {section}{\numberline {6}A GKR protocol for low entropy batched grand products via lookup tables}{42}{section.6}%
 \contentsline {subsection}{\numberline {6.1}Optimization via lookup tables}{44}{subsection.6.1}%
-\contentsline {paragraph}{Setup}{44}{paragraph*.42}%
-\contentsline {paragraph}{First prover message in the last sumcheck in Step 2 of \cref {c:gkr_grand_product}}{45}{paragraph*.43}%
-\contentsline {paragraph}{Subsequent prover messages in the last sumcheck in Step 2 of \cref {c:gkr_grand_product}}{47}{paragraph*.45}%
-\contentsline {paragraph}{The rest of sumchecks in Step 2 of \cref {c:gkr_grand_product}}{49}{paragraph*.47}%
-\contentsline {subsection}{\numberline {6.2}Other optimizations for \cref {c:core_iop}}{49}{subsection.6.2}%
-\contentsline {paragraph}{Using $4$ factor multiplication (instead of $2$) in the last step of the GKR grand product}{49}{paragraph*.48}%
+\contentsline {paragraph}{Setup}{44}{paragraph*.43}%
+\contentsline {paragraph}{First prover message in the last sumcheck in Step 2 of \cref {c:gkr_grand_product}}{45}{paragraph*.44}%
+\contentsline {paragraph}{Subsequent prover messages in the last sumcheck in Step 2 of \cref {c:gkr_grand_product}}{48}{paragraph*.46}%
+\contentsline {paragraph}{The rest of sumchecks in Step 2 of \cref {c:gkr_grand_product}}{50}{paragraph*.47}%
+\contentsline {subsection}{\numberline {6.2}Other optimizations for \cref {c:core_iop}}{50}{subsection.6.2}%
 \contentsline {paragraph}{Step 1 of \cref {c:core_iop} via lookup tables}{50}{paragraph*.49}%
-\contentsline {section}{\numberline {7}Experiments}{50}{section.7}%
-\contentsline {subsection}{\numberline {7.1}Instantiation}{50}{subsection.7.1}%
-\contentsline {subsection}{\numberline {7.2}Experimental results}{51}{subsection.7.2}%
-\contentsline {subsubsection}{\numberline {7.2.1}Raw performance of {$\mathbb {B}\text {it}\mathbb {Z}$}}{51}{subsubsection.7.2.1}%
-\contentsline {subsubsection}{\numberline {7.2.2}Integer and modular multiplication}{51}{subsubsection.7.2.2}%
-\contentsline {subsubsection}{\numberline {7.2.3}SHA-256 hashing}{51}{subsubsection.7.2.3}%
-\contentsline {paragraph}{SHA-256 compression overview}{51}{paragraph*.50}%
-\contentsline {paragraph}{Message schedule.}{52}{paragraph*.51}%
-\contentsline {paragraph}{Compression loop.}{52}{paragraph*.52}%
-\contentsline {subsubsection}{\numberline {7.2.4}Falcon signature verification}{52}{subsubsection.7.2.4}%
-\contentsline {subsubsection}{\numberline {7.2.5}RSA accumulation and Poseidon hashing}{52}{subsubsection.7.2.5}%
-\contentsline {subsubsection}{\numberline {7.2.6}Hashing followed by Falcon signature verification}{53}{subsubsection.7.2.6}%
-\contentsline {subsubsection}{\numberline {7.2.7}Comparison with Hyrax}{53}{subsubsection.7.2.7}%
-\contentsline {subsection}{\numberline {7.3}Open questions}{53}{subsection.7.3}%
-\contentsline {section}{References}{53}{subsection.7.3}%
+\contentsline {section}{\numberline {7}Experiments}{51}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Raw performance of the {$\mathbb {B}\text {it}\mathbb {Z}$}\ PCS for the core LinBitsRings relation}{51}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}Integer multiplication}{52}{subsection.7.2}%
+\contentsline {subsection}{\numberline {7.3}SHA-256 hashing followed by ECDSA signature verification}{52}{subsection.7.3}%
+\contentsline {subsection}{\numberline {7.4}RSA accumulation and Poseidon hashing}{52}{subsection.7.4}%
+\contentsline {subsection}{\numberline {7.5}Hashing followed by Falcon signature verification}{53}{subsection.7.5}%
+\contentsline {subsection}{\numberline {7.6}Comparison with Hyrax}{53}{subsection.7.6}%
+\contentsline {subsection}{\numberline {7.7}Open questions}{53}{subsection.7.7}%
+\contentsline {section}{References}{53}{subsection.7.7}%
 \contentsline {section}{\numberline {A}Deferred proofs}{55}{appendix.A}%
 \contentsline {subsection}{\numberline {A.1}Completeness and soundness of \cref {c:LinModFieldBin}}{55}{subsection.A.1}%
 \contentsline {subsection}{\numberline {A.2}Soundness of Out Of Domain Sampling (OOD) in \cref {c:core_iop}}{56}{subsection.A.2}%

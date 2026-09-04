@@ -1,5 +1,5 @@
 # Fdb version 4
-["bibtex main"] 0 "main.aux" "main.bbl" "main" 1788418046.19009 0
+["bibtex main"] 0 "main.aux" "main.bbl" "main" 1788529851.38013 0
   "/usr/local/texlive/2026/texmf-dist/bibtex/bst/base/alpha.bst" 1292289607 23907 a5f93555796fb564b924339521f10a7c ""
   "main.aux" 0 -1 0 "pdflatex"
   "paper/references.bib" 0 -1 0 ""
@@ -7,10 +7,10 @@
   "main.bbl"
   "main.blg"
   (rewritten before read)
-["pdflatex"] 1788418044.29548 "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" "main.pdf" "main" 1788418046.19031 0
+["pdflatex"] 1788529849.86806 "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" "main.pdf" "main" 1788529851.3803 0
   "/Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm10.657pk" 1776501489.11392 7808 6a049d449f6ee1b878a120976685d109 ""
   "/Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm8.600pk" 1776501487.73383 5580 11384d216537db22ad7711221f99aacd ""
-  "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" 1788416766.54388 238693 eae75a65174cd7d2a65725c0b49d146b ""
+  "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" 1788529814.97826 241675 129bba7622975d564cf9dec562ec4b18 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-t1.enc" 1136849721 2971 def0b6c1f0b107b3b936def894055589 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc" 1136849721 2900 1537cc8184ad1792082cd229ecc269f4 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
@@ -367,12 +367,14 @@
   "/usr/local/texlive/2026/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1776500619 5573038 b99aad5e4898a9034e953632f940512b ""
   "/usr/local/texlive/2026/texmf-var/web2c/pdftex/pdflatex.fmt" 1776500545 3636771 b0d19629fdc98bdfa4d378986b1cd147 ""
   "/usr/local/texlive/2026/texmf.cnf" 1774209515 577 648cd9f92f9c0eac486f4c71c85cfbbe ""
-  "macros.tex" 1788164066.96843 52864 603d507cb6e21ba5742a88d38c2d358a ""
-  "main.aux" 1788418045.82133 41285 2d5d8b49d973728af672ddfdbd50258d "pdflatex"
+  "macros.tex" 1788529112.27129 52916 f3b9a47a2389732ab82d4f556e3f4b6d ""
+  "main.aux" 1788529851.08527 47958 5dfd9ea4c4d05fdd806741328e397350 "pdflatex"
   "main.bbl" 1788186586.42075 5233 5b9e24557320e52365cf8b0b0200b453 "bibtex main"
-  "main.out" 1788418045.82371 9200 f461ab8d6177b3fc29629fc3fa0ff694 "pdflatex"
-  "main.tex" 1788416766.54388 238693 eae75a65174cd7d2a65725c0b49d146b ""
-  "main.toc" 1788418045.82397 8973 28a5e47129bb2ff9e8b6b35f485ab621 "pdflatex"
+  "main.out" 1788529851.08762 9027 af5da8ffa324cf9c8a745fd6734162ea "pdflatex"
+  "main.tex" 1788529814.97826 241675 129bba7622975d564cf9dec562ec4b18 ""
+  "main.toc" 1788529851.0878 8378 15c1629d17a9cd0c2963cc4c2277e49f "pdflatex"
+  "raw-performance-table.tex" 1788529708.07662 9040 10e6f5ce7ca830cb9f27c8968aeb6307 ""
+  "u32-mul-table.tex" 1788529847.92868 9969 e4b00910d505e93b89687ba714b4c60b ""
   (generated)
   "main.aux"
   "main.log"

@@ -394,13 +394,13 @@ The new vector $\uu$ still admits tensor decompositions $\uu=\uu^{(1)} \otimes \
          and \eqref{e:intro_eq_2} is replaced by the integer claim \begin{equation}\label{e:intro_eq_3}\langle \pi^{-1}(\uu^{(1)}), \bitstext(\ww)_{*j}\rangle =\eta_j \qquad \text{in  } \ZZ \qquad \text{for all } j\in [\codedim_2],
         \end{equation} 
         where $\pi^{-1}$ is the canonical representation of elements from $\FF$ as integers in the range $\range{0}{|\FF|-1}$.
-        \paragraph{Step 5.2: Exponentiation in $\comfield$ and grand product in $\comfield$.}  Since we assumed $|\FF|< \fieldboundsizeexponent$, \eqref{e:intro_eq_3} is true if and only if
+        \paragraph{Step 5.2: Exponentiation in $\comfield$ and grand product in $\comfield$.}  Since we assumed $|\FF|< \fieldboundsizeexponent$, \eqref{e:intro_eq_3} is true if and only if 
           \begin{equation}\label{e:intro_eq_4}
           \begin{aligned}
-          g^{\eta_j}  &= g^{\langle \pi^{-1}(\uu), \bitstext(\ww)_{*j}\rangle}\\ &= g^{\sum_{i\in[\codedim_1]} \pi^{-1}(\uu_i) \cdot \bitstext(\ww)_{ij} } = \prod_{i\in [\codedim_1]} g^{ \pi^{-1}(\uu_i) \cdot \bitstext(\ww)_{ij} } 
-          \\ &= \prod_{i\in [\codedim_1]} \left(\left(g^{\pi^{-1}(\uu_i)} -1\right)\cdot \bitstext(\ww)_{ij}  +1\right) \qquad \text{in  } \comfield \qquad \text{for all } j\in [\codedim_2],
+          g^{\eta_j}  &= g^{\langle \pi^{-1}(\uu^{(1)}), \bitstext(\ww)_{*j}\rangle}\\ &= g^{\sum_{i\in[\codedim_1]} \pi^{-1}(\uu_i^{(1)}) \cdot \bitstext(\ww)_{ij} } = \prod_{i\in [\codedim_1]} g^{ \pi^{-1}(\uu_i^{(1)}) \cdot \bitstext(\ww)_{ij} } 
+          \\ &= \prod_{i\in [\codedim_1]} \left(\left(g^{\pi^{-1}(\uu_i^{(1)})} -1\right)\cdot \bitstext(\ww)_{ij}  +1\right) \qquad \text{in  } \comfield \qquad \text{for all } j\in [\codedim_2],
           \end{aligned}
-        \end{equation} 
+        \end{equation} \xander{superscript missing $\uu = \uuˆ{(1)}$} \albert{Yes, thanks!}
         where $g$ is a generator of the multiplicative subgroup of $\comfield$, and in the middle expression, $\bitstext(\ww)_{ij}$ denotes the $i,j$-th entry (a bit) in $\bitstext(\ww)$ seen as an element of $\comfield$.
 
         The prover and verifier run  a batched grand product PIOP over the binary field $\comfield$ for the claim  \eqref{e:intro_eq_4}, obtaining as a result a new claim of the form
@@ -641,7 +641,7 @@ One can verify this last equivalence for example  by directly inspecting that it
         
         In its execution,  \cite{lev} and Binius64 \cite{binius64} seem to us to be more similar than any of these two to \ftwoz. Indeed, they both use, mostly, the same collection of subprotocols, in a similar manner. Because of this we expect both approaches to have comparable performance profiles, though we do not validate this hypothesis due to \cite{lev} not reporting performance nor providing an implementation.
         
-        Conceptually, \cite{lev} shares with \ftwoz \ the aim of committing to bits in a binary field, while proving MLE claims of those bits in some other structure $R$. Note that \cite{lev} is limited to $R=\FF_{2^{127}-1}$, while \ftwoz \ can handle essentially all rings and fields $R$ of practical interest. Additionally it is not clear whether \cite{lev} can leverage any of our low-entropy oriented optimizations without substantially modifying the approach, incorporating some of our ideas. \albertimportant{Ask Lev if he has implemented his thing so we can compare. Also ask him if Binius64 is essentially following his method (Logup*, grand product, Frobenius)}
+        Conceptually, \cite{lev} shares with \ftwoz \ the aim of committing to bits in a binary field, while proving MLE claims of those bits in some other structure $R$. Note that \cite{lev} is limited to $R=\FF_{2^{127}-1}$, while \ftwoz \ can handle essentially all rings and fields $R$ of practical interest, achieving 128 bits of security and using $\FF_{2^{128}}$ as binary field. Additionally it is not clear whether \cite{lev} can leverage any of our low-entropy oriented optimizations without substantially modifying the approach, incorporating some of our ideas. \albertimportant{Ask Lev if he has implemented his thing so we can compare. Also ask him if Binius64 is essentially following his method (Logup*, grand product, Frobenius)}
          
 
         \albertimportant{The comparison of Lev and \ftwoz\ right now has several unbacked claims (which I believe are true, but can't really prove them, especially without an implementation). So probably it's better to not push it, remove the unbacked claims, and leave it as it is}
@@ -787,6 +787,8 @@ The rest of \ftwoz \ proceeds exactly as in \cref{s:to_simple_bitz}.
 We use $\circ$ to denote composition of maps, so that for maps $f: S_1\to S_2$ and $g:S_2\to S_3$, we have $f\circ g: S_1 \to S_3$ defined as $f\circ g(x) = f(g(x))$. 
 
 Any map $f:S_1 \to S_2$ applies  entry-wise to vectors from $S_1^n$, for any $n$, and similarly for matrices. A map $f$ also applies coefficieny-wise to polynomials with coefficients in $S_1$. A multiplication of a vector  or a matrix by a scalar means that we multiply each entry of the vector or matrix by that scalar. 
+
+We denote vectors with boldface letters, e.g.\ $\uu,\vv$. By $\uu_i$ we denote the $i$-th position of $\uu$. Sometimes we index the entries of a vector $\uu$ with elements of a boolean hypercube $\bits^{t}$. 
 
 We look at vectors both as row vectors and column vectors. When performing matrix-vector multiplications, it will always be clear which one we intend. Given a ring $R$, a  matrix $M\in R^{n\times m}$ and  vectors $\uu\in R^m$, $\vv\in R^n$, one has
 %
@@ -1047,7 +1049,7 @@ $$
 \begin{definition} The \emph{Core LinBitsRings} relation  is defined as
 %
 $$
-\LinBitsDual(\bits,\pi, R,\cC) \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in R \times R^{\codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \{0,1\}^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &f=\Enc_{\cC}\circ \pack \circ \picomfield(\bff) \\    & \langle \pi(\bff), \vv\rangle  = \mu  \end{aligned} \right\}
+\LinBitsDual(\bits,\pi, R,\cC) \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in R \times R^{\codedim}, \\&\oracle = f \in \comfield^\codelength, \\ &\wit= \bff\in \{0,1\}^\codedim \subseteq \ZZ^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} &f=\Enc_{\cC}\circ \pack \circ \picomfield(\bff) \\    & \langle \pi(\bff), \vv\rangle  = \mu \quad \text{in} R  \end{aligned} \right\}
 $$
 %
 \end{definition}
@@ -1179,7 +1181,7 @@ This is indeed the case with GKR: GKR reduces the initial circuit evaluation cla
 $$
 \picanon^{R} : \ZZ[X_1,\ldots, X_{k}] \to R
 $$
-be the surjective ring homomorphism mapping each integer $a$ to $a\cdot 1\in R$, and  $X_i$ to $\gamma_{i}$ for $i\in [k]$. The choice of $\gamma_1,\ldots, \gamma_k$ is far from unique, see \cref{e:presentations} below.
+be the surjective ring homomorphism mapping each integer $a$ to $a\cdot 1\in R$, and  $X_i$ to $\gamma_{i}$ for $i\in [k]$. The choice of $\gamma_1,\ldots, \gamma_k$ is far from unique, see \cref{e:presentations} below. \albertimportant{Aren't we paying one generator too much? $1$ can be a generator can't it?}
 
 We also fix an inverse map  $\picanon^{R}{}^{-1}: R \to \ZZ[X_1, \ldots, X_{k}]$ for $\picanon^{R}$, so that $\picanon^{R}\circ \picanon^{R}{}^{-1}=\mathsf{id}$. We refer to $\picanon^{R}{}^{-1}(a)$ as the \emph{lift} of $a\in R$. Note that, given $\picanon^R$, there may be many possible choices for $\picanon^{R}{}^{-1}$. In  \cref{e:presentations}  we provide example inverse maps.  
 
@@ -1219,7 +1221,7 @@ We assume without further comment that it is efficient to compute  values $\pica
 
 
 
-\item Let $\Pi_{\iopp}$ be an IOP for $\LIN(\comfield,\cC, \pack)$. In our instantiation, $\Pi_{\iopp}$ is the WHIR protocol \cite{whir} over binary fields, with ring-switching \cite{binius} as described in \cref{a:ring_switch_1}, and with proximity parameter set to the Johnson bound as specified in \cref{s:instantiation}.   
+\item Let $\Pi_{\iopp}$ be an IOP for $\LIN(\comfield,\cC, \pack)$. In our instantiation, $\Pi_{\iopp}$ is the WHIR/Ligerito protocol \cite{whir,ligerito} over binary fields as implemented in Flock \cite{flock}, with ring-switching \cite{binius} and a preliminary sumcheck over $\comfield$ that transforms arbitrary inner products to MLE evaluation claims (since the the ring switch of \cite{flock} does not support arbitrary inner product claims). We set the proximity parameter set to the Johnson bound when targeting $100$ bits of security, and to the unique decoding radius for $128$ bits of security, see \cref{s:instantiation} for more details.   
 \item 
 Let $\codedim =\codedim_1\cdot \codedim_2$ be dimension parameters,  and $R$ a ring with $k$ generators $\gamma_1,\ldots, \gamma_k$ \albertimportant{change generator symbol since $\gamma$ is used heavily in the general LinBitsRings relation?},  as in the previous sections. We let $\cP$ be a set of primes with $\max\cP< \fieldboundsizeexponent$. Given the tensor decomposition $\vv=\vv^{(1)}\otimes \vv^{(2)}$ from \cref{s:interleaved_setting}, we define \albert{Why a subscript $R$ in $N_R$ and not in the others?}
 $$
@@ -1285,7 +1287,7 @@ Let $\basegenerator\in \comfield$ be a fixed generator of the multiplicative gro
 
 
 \begin{enumerate}[leftmargin=*] 
-\item \textbf{Round 0 (optional): Out Of Domain (OOD) sample.} This step can be skipped if the proximity parameter $\delta$ is  set within the unique decoding radius of $\cC$ (cf.\ \cref{s:prelims_codes}, and \cref{t:thm_core_IOPP}). Otherwise, the verifier samples and sends a random $\zeta\in \comfield$, and the prover responds with $$y=\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta}), \qquad \text{where } \bm{\zeta}\defeq \left(\zeta^{2^0}, \zeta^{2^1}, \ldots, \zeta^{2^{\log (\codedim/\comfieldexp) -1}}\right).$$
+\item \textbf{Round 0 (optional): Out Of Domain (OOD) sample.}  \albertimportant{I think this is not implemented?} This step can be skipped if the proximity parameter $\delta$ is  set within the unique decoding radius of $\cC$ (cf.\ \cref{s:prelims_codes}, and \cref{t:thm_core_IOPP}). Otherwise, the verifier samples and sends a random $\zeta\in \comfield$, and the prover responds with $$y=\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta}), \qquad \text{where } \bm{\zeta}\defeq \left(\zeta^{2^0}, \zeta^{2^1}, \ldots, \zeta^{2^{\log (\codedim/\comfieldexp) -1}}\right).$$
 \item \textbf{Round 1 (optional): replacing $R$ by a ``small'' prime field $\FF_q$.}
 This step can be skipped (i.e.\ prover and verifier move to Round 2 directly) if $R$ is a prime field $\FF_q$ and $q < \fieldboundsizeexponent$. %, or if $R=\ZZ$ and $\lVert \vv \rVert < \fieldboundsizeexponent$.
 
@@ -1384,7 +1386,7 @@ Notice that \begin{equation}\label{e:Q_F2Z_intermediate}\left(\inp=((g^{\bm{\gam
 
 
 \begin{remark}[Reducing proof size by committing to the elements $\mu_1, \ldots, \mu_{\codedim_2}$]  \label{r:core_iop_optional_sumcheck}
-When $\codedim=\codedim_1\cdot \codedim_2$ is such that $\codedim_2$ is large, the elements $\mu_1,\ldots, \mu_{\codedim_2}\in \ZZ$ sent at Round 2 of \cref{c:core_iop} may start to dominate the proof size. For example, for $\codedim=2^{13}$ and $\mu_i$ of $128$ bits, the elements $\mu_1,\ldots, \mu_{\codedim_2}$ amount to $131$ KB.  To mitigate this cost,  one can have the prover commit to the vector $(\mu_1,\ldots, \mu_{\codedim_2})$ and then prove \eqref{e:tensor_decomposition_reconstruction}, i.e.\ 
+When $\codedim=\codedim_1\cdot \codedim_2$ is such that $\codedim_2$ is large, the elements $\mu_1,\ldots, \mu_{\codedim_2}\in \ZZ$ sent at Round 2 of \cref{c:core_iop} may start to dominate the proof size. For example, for $\codedim_2=2^{13}$ and $\mu_i$ of $128$ bits, the elements $\mu_1,\ldots, \mu_{\codedim_2}$ amount to $131$ KB.  To mitigate this cost,  one can have the prover commit to the vector $(\mu_1,\ldots, \mu_{\codedim_2})$ and then prove \eqref{e:tensor_decomposition_reconstruction}, i.e.\ 
 %
 $$
 \langle \bff_{*j}, \pi_q^{-1}(\vv^{(1)})\rangle = \mu_j \qquad \text{for all } j\in [\codedim_2].
@@ -1561,11 +1563,7 @@ Hence the second condition in \eqref{e:core_iop_proof_eq1} holds. The first cond
 
 
 \subsection{The general LinBitsRings relation}\label{s:general_LinBitsDual}
-\albertimportant{
-Move to after the core IOP?
-}
 
-\albert{When I moved this here I may have moved some renew commands that mess notation. Check}
 
 \renewcommand{\modulemorphism}{\psi}
 \renewcommand{\ringmorphism}{\psi}
@@ -1751,18 +1749,45 @@ For more general matrices $L$, one needs to make sure that $L$ has enough struct
 
 
 \subsection{Instantiation}\label{s:instantiation}
-We instantiate \cref{c:core_iop} by letting $\Pi_{\red}$ be an optimized GKR protocol for multiple grand product claims of certain form. The IOP $\Pi_\iopp$ is taken to be WHIR \cite{whir} with the ring switching step from \cite{binius} (see \cref{a:ring_switch_1}).
+We instantiate \cref{c:core_iop,c:LinModFieldBin} by letting $\Pi_{\red}$ be an optimized GKR protocol for multiple grand product claims of certain form (cf.\ \cref{s:gkr_low_entropy}). The IOP $\Pi_\iopp$ is taken to be WHIR/Ligerito \cite{whir,ligerito} with the ring switching step from \cite{binius}. Our implementation of WHIR  is taken from Flock's \cite{flock} implementation. The inner product claims when $\Pi_\iopp$ is called are not MLE evaluation claims. Since  the ring-switch implementation in \cite{flock} does not support arbitrary inner product claims,   we run a sumcheck to reduce to those to MLE evaluation claims. Alternatively, one could avoid the sumcheck and use the approach from \cref{a:ring_switch_1}. We instantiate them solely with the following parameters:
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c}
+        Parameter & Choices \\
+        \hline\hline
+        $R$ & A finite filed (possibly non-prime)\\
+        \hline
+        $S$ &  Integers $\ZZ$\\
+        \hline
+        $\pi$ & Reduction mod $\Char(R)$\\
+        \hline
+        $\psi$ & Reduction mod $\Char(R)$\\
+        \hline
+        $\comfieldexp$ & $128$\\
+        \hline
+        $\cC$ & Reed-Solomon code over $\comfield$ of rate $1/8$\\
+        \hline
+        Proximity parameter $\delta$ & Close to the Johnson bound\\
+        \hline
+        $L$ & The standard bitification matrix (\cref{?})\\ 
+         \hline
+        $\cP$ & Discussed below\\
+         \hline
+        $\cM_q$ & Reduction modulo $q$\\
+        \hline $\codedim_1,\codedim_2$ & Discussed below
+    \end{tabular}
+    \caption{Parameter choices in our deployment of \cref{c:core_iop,c:LinModFieldBin}}
+    \label{tab:placeholder}
+\end{table}
+
+We next provide example  instantiations of \cref{c:core_iop,c:LinModFieldBin} so as to achieve  $\lambda=128$ bits of security, while keeping the protocols as efficient as possible, with the main challenge being to use $\comfield$ of size $2^{128}$ for efficiency purpose. We remark that in \cref{?} we provide experimental results both for $128$ and $100$ bits of security.   Achieving $\lambda=100$ bits of security is relatively straightforward and we do not discuss it. We use a careful selection of parameters in combination with grinding. In \cref{r:beyond_gridning} we discuss other instantiations and techniques that do not require grinding.
+
+The contents of this section should be taken as examples of how to instantiate \cref{c:core_iop,c:LinModFieldBin}, not as strict rules. Other configurations may be perfectly plausible and practical. 
 
 \bigskip
 
-We next provide example  instantiations of \cref{c:core_iop,c:LinModFieldBin} so as to achieve  $\lambda=128$ bits of security, while keeping the protocols as efficient as possible, with the main challenge being to use $\comfield$ of size $2^{128}$. We remark that in \cref{?} we provide experimental results both for $128$ and $100$ bits of security.   Achieving $\lambda=100$ bits of security is relatively straightforward and we do not discuss it. We use a careful selection of parameters in combination with grinding. In \cref{r:beyond_gridning} we discuss other instantiations and techniques that do not require grinding.
 
-The contents of this section should be taken as examples of how to instantiate \cref{c:core_iop}, not as limiting strict rules and settings. Other configurations may be perfectly plausible and practical. 
-
-\bigskip
-
-
-In terms of security, we need to ensure the following:
+\noindent In terms of security, we need to ensure the following:
 \begin{enumerate}
        \item The round-by-round knowledge soundness errors of \cref{c:core_iop} $\kappa_{\mathsf{OOD}}, \kappa_0, (\ksred_i)_{i}, (\ksiopp_i)_{i}$ are all at most $2^{-\lambda}$.
     \item The round-by-round knowledge soundness errors of \cref{c:core_iop} $\kappa_0, (\ksred_i)_{i}, (\ksiopp_i)_{i}$ are all at most $2^{-\lambda}$. 
@@ -1770,13 +1795,13 @@ In terms of security, we need to ensure the following:
 %
 
 
-In terms of efficiency, the most important step of \cref{c:core_iop} to be aware of is Phase 3, where one uses an IOR $\Pi_{\red}$ to reduce the claim 
+\noindent In terms of efficiency, the most important step of \cref{c:core_iop} to be aware of is Phase 3, where one uses an IOR $\Pi_{\red}$ to reduce the claim 
 \begin{equation}\label{e: grand_products_again}
 \prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \pi_2(\bff_{ij}) +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\codedim_2],
 \end{equation}
 into a linear claim on $\pi(\bff)$. As mentioned, in our instantiation, $\Pi_{\red}$ is the GKR protocol for multiple grand product claims,
 %
-equipped with the optimizations discuss in \cref{s:gkr_low_entropy}. This is the most expensive prover part of \cref{c:core_iop,c:LinModFieldBin}, constituting between $50\%$ to $66\%$ of prover costs, cf.\ \cref{?}. Because of this, it is important for efficiency that operating in $\comfield$ is as efficient as possible. 
+equipped with the optimizations discuss in \cref{s:gkr_low_entropy}. This is the most expensive prover part of \cref{c:core_iop,c:LinModFieldBin}, constituting between $50\%$ to $66\%$ of prover costs, cf.\ \cref{?} \albertimportant{show in experiments}. Because of this, it is important for efficiency that operating in $\comfield$ is as efficient as possible. 
 
 With this in mind, we target using $\comfield$ with $\comfieldexp\approx 128$. A natural candidate is the $2^{128}$ sized binary field in GHASH representation  $$\comfield= \FF_2[X]/(X^{128} + X^7 + X^2 + X + 1).$$ 
 %
@@ -1800,10 +1825,10 @@ We now discuss how to make the errors $\kappa_{\mathsf{OOD}}, \kappa_0, (\ksred_
 
 
 
-\paragraph{The errors $\kappa_{i,\iopp}$.} Regarding Phase 4, we instantiate our IOP for $\LIN(\comfield, \pack, \cC)$ as the WHIR protocol, with the ring switching from \cite{binius}  (see \cref{a:ring_switch_1}). The ring switching step adds an error term of the form $1/\comfield$. If targetting 128 bits of security, we use grinding  (\cref{s:IORs})  of $1$ bit in this round. WHIR is configured at any desired $\lambda\leq 128$ bits of security using $|\comfield|=2^{128}$ following \cite{stir-repo,whir-repo}. We do not discuss this further since WHIR is a well-known IOP, and it is well-kown that it can achieve $128$ bits of security in $128$ bit fields when codewords have dimension approximately $2^{30}$ (assuming an interleaved RS code).
+\paragraph{The errors $\kappa_{i,\iopp}$.} The ring switching step adds an error term of the form $7/\comfield$.  If targetting 128 bits of security, we use grinding  (\cref{s:IORs})  of $3$ bits in this round. The sumcheck before the ring switch adds similarly small error terms, which are handled with a few bits of grinding. WHIR is configured at any desired $\lambda\leq 128$ bits of security using $|\comfield|=2^{128}$ following \cite{stir-repo,whir-repo}. We do not discuss this further since WHIR is a well-known IOP, and it  can achieve $128$ bits of security (in the Unique Decoding Radius) in $128$ bit fields when codewords have dimension approximately $2^{30}$ (assuming an interleaved RS code) \albert{Review. Why do we need interleaving?}.
 
 
-\paragraph{The error $\kappa_{\mathsf{OOD}}$.} As mentioned, we instantiate $\Pi_\iopp$  as WHIR with the ring-switching techniques of \cite{binius} and \cref{a?}. We use a proximity parameter up to the Johnson bound, hence Round 0 of \cref{c:core_iop} is executed and contributes the error $\kappa_{\mathsf{OOD}}\leq \binom{L_\delta}{2}\cdot (\codedim/\comfieldexp-1)/|\comfield|$ (\cref{t:thm_core_IOPP}). For a Reed--Solomon code of rate $\rho$ and $\delta=1-\sqrt{\rho}-\eta$, we have the list size bound \albert{review} $L_\delta \leq 1/(2\eta\sqrt{\rho})$. We select $\eta=??$, which leads to an error $\kappa_{\mathsf{OOD}}\leq **$, for which, if needed, we can attain 128 bits of security by grinding $??$ bits \albertimportant{fill in the ?? numbers}. 
+\paragraph{The error $\kappa_{\mathsf{OOD}}$.} As mentioned, we instantiate $\Pi_\iopp$  as WHIR with the ring-switching techniques of \cite{binius} and \cref{a:ring_switch_1}. For $\lambda=100$ we use a proximity parameter $\delta$ up to the Johnson bound. For $\lambda=128$ we set $\delta$ up to the unique decoding radius, so that the Out Of Domain sampling step (Round 0) is skipped). % hence Round 0 of  \cref{c:core_iop} is executed and contributes the error $\kappa_{\mathsf{OOD}}\leq \binom{L_\delta}{2}\cdot (\codedim/\comfieldexp-1)/|\comfield|$ (\cref{t:thm_core_IOPP}). For a Reed--Solomon code of rate $\rho$ and $\delta=1-\sqrt{\rho}-\eta$, we have the list size bound \albert{review} $L_\delta \leq 1/(2\eta\sqrt{\rho})$. We select $\eta=??$, which leads to an error $\kappa_{\mathsf{OOD}}\leq **$, for which, if needed, we can attain 128 bits of security by grinding $??$ bits \albertimportant{fill in the ?? numbers}. 
 
 \paragraph{The errors $\kappa_{i,\red}$.} As mentioned, our $\Pi_{\red}$ IOR is the GKR protocol for multiple grand product claims from \cref{e: grand_products_again}, see \cref{s:gkr_low_entropy}. Each round of the GKR protocol is a round of either a  sumcheck for a polynomial of degree $3$, or a unification of two evaluation claims of the same multilinear polynomial.  Accordingly we have $\ksred_i\leq 3/|\comfield|$ for all $i$. This immediately guarantees $\lambda=100$ bits of security. To achieve $\lambda=128$ bits of security, one can do two bits of grinding (\cref{s:IORs}) per round. 
 
@@ -1818,10 +1843,10 @@ We now discuss how to make the errors $\kappa_{\mathsf{OOD}}, \kappa_0, (\ksred_
 
 \bigskip
 
-\noindent For the purposes of this discussion, we assume \ftwoz \ is used within a bigger proof system, as described in \cref{s:to_simple_bitz} or \cref{s:iop_upesat}, so that \ftwoz \ is used to prove an inner product claim for a committed witness, as the last phase of a bigger proving system where 1) first the initial constraint is projected to a finite field $\FF$, or, alternatively, this step is skipped if the constraint is  already over a finite field; and 2) a  PIOP is run over $\FF$ for the projected constraint, outputting an inner product claim on the projected witness. Now, this inner product claim is the input of \cref{c:core_iop}, and we aim to configure \cref{c:core_iop} at 128 bits of security for this setting. 
+\noindent For the purposes of this discussion, we assume \ftwoz \ is used within a bigger proof system, as described in \cref{s:to_simple_bitz} or \cref{s:iop_upesat}, so that \ftwoz \ is used to prove an inner product claim for a committed witness, as the last phase of a bigger proving system where \albert{review what the technical overview exactly says} 1) first the initial constraint is projected to a finite field $\FF$, or, alternatively, this step is skipped if the constraint is  already over a finite field; and 2) a  PIOP is run over $\FF$ for the projected constraint, outputting an inner product claim on the projected witness. Now, this inner product claim is the input of \cref{c:core_iop}, and we aim to configure \cref{c:core_iop} at 128 bits of security for this setting. 
 
 
-\paragraph{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa_0$.} If allowing, say, $18-19$ bits of grinding during each round of the PIOP (which adds $1.8-3.5$ms per round, cf.\ \cref{tab:grinding-cost}), then, say, a Spartan-like PIOP will achieve $128$ bits of security if run on a field $\FF$ of size $\approx 2^{112}$ to  $2^{113}$  (since each one of its rounds is either a sumcheck round for a degree $\leq 3$ polynomial, or a step that batches some claims with error $1/|\FF|$). Hence, if the initial constraint is over $\ZZ$ or $\ZZ[X]$, then we may project it to a $112$-$113$ bit random prime field $\FF$ and run a PIOP over $\FF$. We study this case next. Our analysis also applies if the original constraint was already expressed over a prime field of such size.  
+\paragraph{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa_0$.} If allowing, say, $18-19$ bits of grinding during each round of the PIOP (which adds $1.8-3.5$ms per round, cf.\ \cref{tab:grinding-cost}), then, say, a Spartan-like PIOP will achieve $128$ bits of security if run on a field $\FF$ of size $\approx 2^{112}$ to  $2^{113}$  (since each one of its rounds is either a sumcheck round for a degree $\leq 3$ polynomial, or a step that batches some claims with error $1/|\FF|$). Hence, if the initial constraint is over $\ZZ$ or $\ZZ[X]$ \albert{do we mention $\ZZ[X]$? Why not mention other rings here? Again, wait for the TO}, then we may project it to a $112$-$113$ bit random prime field $\FF$ and run a PIOP over $\FF$. We study this case next. Our analysis also applies if the original constraint was already expressed over a prime field of such size.  
 
 Note that the projection of the constraint to $\FF$ also requires to be set up to 128 bits of security. We discuss this in \cref{r:first_projection_security}.
 
@@ -1843,25 +1868,23 @@ $$
 $$
  and
 $$
-\codedim\lessapprox 2^{30}, 2^{32} \qquad \text{if } \codedim_1\approx\codedim^{0.5}
+\codedim\lessapprox 2^{30}, 2^{32} \qquad \text{if } \codedim_1\approx\codedim^{0.5}.
 $$
 %
-with these upper bounds depending on how much grinding one is doing at the PIOP level. 
+The specific upper bounds depend on how much grinding one is doing at the PIOP level. 
 
 \begin{remark}[Projecting polynomial constraints to a $112$-$113$ bit prime field with $128$ bits of security]\label{r:first_projection_security}
     \albertimportant{Need to clean up the UPESAT section first}
 \end{remark}
-
-\bigskip 
 %Belo only analyse the scenario where $R$ is a finite field, and thus do not consider the case $R=\ZZ$, which is unlikely to occur in practice, unless \ftwoz\ is used in isolation, and not as a step subsequent to a PIOP. 
 
 
 
 
 
-\paragraph{Strategy 2: No or essentially no grinding during the PIOP, and $\kappa_0$ is present and  grinding is used during the first projection step of \cref{c:core_iop}.} We now assume $\FF$ is either a prime field with  $|\FF|\geq \fieldboundsizeexponent$,  or a proper extension field. In this case  \cref{c:core_iop} goes through an initial projection step with soundness error  $\kappa_0$.
+\paragraph{Strategy 2: No or essentially no grinding during the PIOP, and $\kappa_0$ is present and  grinding is used during the first projection step (Round 1) of \cref{c:core_iop}.} We now assume $\FF$ is either a prime field with  $|\FF|\geq \fieldboundsizeexponent$,  or a proper extension field. In this case  \cref{c:core_iop} goes through an initial projection step with soundness error  $\kappa_0$, i.e.\ Round 1 of \cref{c:core_iop}.
 
-Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\FF, \codedim)$. We use the one-generator presentation of $\FF$ from \cref{e:presentations}, with the natural lifts, so that $k=1$ and, denoting by $d$ the degree of $\FF$ over its prime field, $D=d-1$, $T\leq d$, and $N_\FF\leq q-1$. We instantiate the morphism sets $\cM_q$ as in \cref{l:examples_morphisms}, i.e.\ $\pirand$ reduces coefficients modulo a sampled prime and evaluates $X_1$ at a random $\alpha\in \FF_q$. In this case, by \cref{l:examples_morphisms},
+Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\FF, \codedim)$. We use $\picanon: \ZZ[X]  \to \FF$ as in \cref{?}, so that $\picanon(h(X))= \pi_{\Char(F)}(h)(x)$ where $\pi_{\Char(F)}(h)$ is the polynomial $h$ after reducing its coefficients modulo $\Char(F)$, and  $x$ is a root of an irreducible polynomial defining $\FF_{q^d}$ (if $d=1$ and so $\FF_{q^d}$ is a prime field, then we can use a morphism $\picanon:\ZZ\to \FF_q$). We have $D=d-1$, $T\leq d$, and $N_\FF\leq q-1$ (see the \cref{?} for a definition of these quantities). We instantiate the morphism sets $\cM_q$ as in \cref{l:examples_morphisms}, i.e.\ $\pirand$ reduces coefficients modulo a sampled prime and evaluates $X_1$ at a random $\alpha\in \FF_q$. In this case, by \cref{l:examples_morphisms},
     $$
     \kappa_0 \leq \frac{2\cdot (d-1)}{q_{\min}} + \frac{\log\left(4\cdot d\cdot \codedim\cdot (q-1)^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor},
       $$
@@ -1870,16 +1893,16 @@ Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\FF, \codedim)$. We use 
 %
     %The adjustment for $\kappa_0^*$ (if needed at all) is highly dependent on $\degevalfield$. Concretely, if $\degevalfield=0$, then the term $\degevalfield/q_{\min}$ is zero. This allows to take $\cP$ as all primes smaller than $2^{114+\eps}$. There are approximately $2^{114}/114$ of these.
 %
-    We select $\cP$ to be the set of all primes in a range $[2^a, 2^b]$. There are approximately  $$|\cP|\approx (2^b/b - 2^a/a)/\log_e(2)$$ such primes.  Using $b= 128 - \tau \cdot \log(\codedim)$,  $\codedim_1\leq 2^{\tau\cdot \log(\codedim)}$,  for $\tau \in \range{0.5}{0.6}$ and plugging these values into $\kappa_0$ we obtain
+    We select $\cP$ to be the set of all primes in a range $[2^a, 2^b]$. There are approximately  $$|\cP|\approx (2^b/b - 2^a/a)/\log_e(2)$$ such primes.  Using $b= 128 - \tau \cdot \log(\codedim)$,  $\codedim_1= 2^{\tau\cdot \log(\codedim)}$,  for a parameter $\tau \in \range{0.5}{0.6}$ and plugging these values into $\kappa_0$ we obtain
      %
-     $$
+     \begin{equation}\label{e:kappa_0_practical_upper_bound}
      \begin{aligned}
-    \kappa_0\lessapprox f(a)&\defeq \frac{2\cdot (d-1)}{2^a} + \frac{\log\left(4\cdot d\cdot \codedim\cdot (q-1)^2\right)\cdot \log_e(2)}{\frac{a}{b}\cdot 2^{b} - 2^a},\\
+    \kappa_0&\lessapprox \frac{2\cdot (d-1)}{2^a} + \frac{\log\left(4\cdot d\cdot \codedim\cdot (q-1)^2\right)\cdot \log_e(2)}{\frac{a}{b}\cdot 2^{b} - 2^a},\\
     b&\defeq 128 - r_1, \qquad r_1\defeq \tau\cdot \log(\codedim).
     \end{aligned}
-    $$
+    \end{equation}
     %
-    We calculate several minima of $f(a)$ when $\FF$ is a  field of size $\approx 2^{128}$, for varying values of $\codedim$ and $\tau \in \{0.5, 0.6\}$. We include the corresponding grinding times in order to achieve $128$ bits of security for this initial step of \cref{c:core_iop}.  
+    We calculate several minima for the right hand side of \eqref{e:kappa_0_practical_upper_bound} when $\FF$ is a  field of size $\approx 2^{128}$ (not necessarily a prime field), for varying values of $\codedim$ and $\tau \in \{0.5, 0.6\}$. We include the corresponding grinding times in order to achieve $128$ bits of security for this initial step of \cref{c:core_iop}. \albertimportant{Review grinding times.}  
 
     %We also include minima of $f(a)$ for other configurations where $R$ is a finite field of size between $2^{128}$ to $2^{256}$, not necessarily a prime field.
     
@@ -1887,7 +1910,7 @@ Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\FF, \codedim)$. We use 
   \centering
  \begin{tabular}{rrrrrrrrr}
     \toprule
-    $\log |\FF|$ & $d$ & $\log q$ & $\log \codedim$ & $\tau$ & $a^{*}$ & $\kappa_0$ & Bit-deficit to $128$ & Grinding time (ms) \\
+    $\log |\FF|$ & $d$ & $\log q$ & $\log \codedim$ & $\tau$ & $a^{*}$ & $\kappa_0\leq$ & Bit-deficit to $128$ & Grinding time (ms) \\
     \midrule
     128 & 1 & 128 & 24 & 0.5 & 110 & $2^{-108.3}$ & 20 & 8.9 \\
     128 & 1 & 128 & 24 & 0.6 & 107 & $2^{-105.9}$ & 23 & 84.6 \\
@@ -1904,8 +1927,7 @@ Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\FF, \codedim)$. We use 
     128 & 4 & 32 & 30 & 0.6 & 108 & $2^{-103.1}$ & 25 & 240.8 \\
     128 & 4 & 32 & 32 & 0.5 & 110 & $2^{-105.1}$ & 23 & 84.6 \\
     \bottomrule
-  \end{tabular}  \caption{Minima $a^{*}$ of $f(a)$ for different configurations of $\FF$ (of characteristic $q$ and and degree $d$ over its prime field), witness sizes $\codedim$, and $\tau$ such that $\codedim_1=\codedim^\tau$.  By choosing primes in the interval $[2^{a^*}, 2^{128-r_1}]$, we have that the first error term $\kappa_0$ satisfies $\kappa_0 \lessapprox f(a^*)$. We include the bits left required to achieve  $\kappa_0 < 1/2^{128}$ and the cost of grinding such amount of bits, in a MacBook Air M4 16GB, multi-threaded, using Blake3 as hash function.
-  We omit configurations whose grinding cost exceeds $\approx 250$ms; in particular $\tau=0.6$ is omitted for larger $\codedim$.}
+  \end{tabular}  \caption{Minima for the upper bound of $\kappa_0$ in \eqref{e:kappa_0_practical_upper_bound} for different configurations of $\FF$ (of characteristic $q$ and  degree $d$ over its prime field), witness sizes $\codedim$, and $\tau$ such that $\codedim_1=\codedim^\tau$.  By choosing primes in the interval $[2^{a^*}, 2^{128-r_1}]$, we have that the first error term $\kappa_0$ satisfies is bounded by the quantity in the $\kappa_0\leq$ column. We include the bits left required to achieve  $\kappa_0 < 1/2^{128}$ and the cost of grinding such amount of bits in a MacBook Air M4 16GB, multi-threaded, using Blake3 as hash function.}
   \label{tab:min-f}
 \end{table}
 
@@ -1930,7 +1952,7 @@ Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\FF, \codedim)$. We use 
 \end{comment}
 
 
-\begin{remark}[128 bits of security for larger witness sizes $\codedim$, without grinding]\label{r:beyond_gridning}
+\begin{remark}[128 bits of security for larger witness sizes $\codedim$, without  or with minimal grinding]\label{r:beyond_gridning}
     Grinding costs scale exponentially in the number of grinding bits. Because of this, we cannot resort to grinding for very large witness sizes $\codedim$. There are at least two ways to achieve $128$ bits of security (or more), in this case.
 
     \medskip 
@@ -1939,18 +1961,20 @@ Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\FF, \codedim)$. We use 
  
  \medskip
  
- \noindent \textbf{Method 2}: We generalize an idea from \cite{binius64}. In this setting we make the assumption that the entries in $\bm{\gamma}$ (cf.\ Phase 3 of \cref{c:core_iop}) are smaller than $|\comfield|-1$.
+ \noindent \textbf{Method 2}: We generalize an idea from \cite{binius64}. In this setting we make the assumption that the entries in $\bm{\gamma}$ (cf.\ Phase 3 of \cref{c:core_iop}) are smaller than $|\comfield|-1$. This means we require $\max\cP < |\comfield|-1$ instead of $\max\cP< \fieldboundsizeexponent$ (and similarly for the conditions that would allow to skip Round 1 in \cref{c:core_iop}).  Hence now the bound on the primes in $\cP$ does not depend on the witness size. 
  
  Note that when we attempt to prove the integer equalities $\langle \bm{\gamma}, \bff_{*j}\rangle =\mu_j$ ($j\in [\codedim_2]$)  ``in the exponent'' during Phase 3 of \cref{c:core_iop}, what we are really doing is proving the equalities modulo $|\comfield|-1$.  So far, we have used $\comfield$ large enough hat this distinction does not matter, in that, because of the total possible magnitudes of $\langle \bm{\gamma}, \bff_{*j}\rangle$ does not exceed $|\comfield|-2$.  
 
-    If that is not the case, one can, in addition to proving  $\langle \bm{\gamma}, \bff_{*j}\rangle =\mu_j$  modulo $|\comfield|-1$, prove the same equality modulo $\codedim_1$. This works because since $\codedim_1$ and $|\comfield|-1$ are coprime (because $\codedim_1$ is a power of two), by the CRT, if both equalities are true, then  $\langle\bm{\gamma}, \bff_{*j}\rangle -\mu_j$ is an integer multiple of $\codedim_1\cdot (|\comfield|-1)$. However, because the entries of $\bff$ are bits and the entries of $\bm{\gamma}$ are at most $|\comfield|-2$, this means that   $\langle \bm{\gamma}, \bff_{*j}\rangle = \mu_j$ as integers. 
+    If that is not the case, one can, in addition to proving  $\langle \bm{\gamma}, \bff_{*j}\rangle =\mu_j$  modulo $|\comfield|-1$, prove the same equality modulo $\codedim_1$. This works because, since  $\codedim_1$ and $|\comfield|-1$ are coprime (because $\codedim_1$ is a power of two), by the CRT, if both equalities are true, then  $\langle\bm{\gamma}, \bff_{*j}\rangle -\mu_j$ is an integer multiple of $\codedim_1\cdot (|\comfield|-1)$. However, because the entries of $\bff$ are bits and the entries of $\bm{\gamma}$ are at most $|\comfield|-2$, this means that   $\langle \bm{\gamma}, \bff_{*j}\rangle = \mu_j$ as integers. 
 
 
     
-    To prove that  $\langle\bm{\gamma}, \bff_{*j}\rangle =\mu_j $ modulo $\codedim_1$, one can prove the integer equality  $\langle \bm{\gamma}', \bff_{*j}\rangle = \mu_j  +  a_j\cdot \codedim_1$ for some $a_j\in \ZZ$ (provided by the prover), where $\bm{\gamma}'$ contains the entries of $\bm{\gamma}$ reduced modulo $\codedim_1$. As long as $2\cdot \codedim_1 \geq |\comfield|-1$, this equality can be proved ``in the exponent'' without causing overflow. 
+    To prove that  $\langle\bm{\gamma}, \bff_{*j}\rangle =\mu_j $ modulo $\codedim_1$, one can prove the integer equality  $\langle \bm{\gamma}', \bff_{*j}\rangle = \mu_j'  +  a_j\cdot \codedim_1$ for some $a_j\in \ZZ$ (provided by the prover), where $\bm{\gamma}'$ contains the entries of $\bm{\gamma}$ reduced modulo $\codedim_1$, and $\mu_j'$ is $\mu_j$ reduced modulo $\codedim_1$.  The verifier checks that $a_j$ is not too large, namely it checks that $|a_j| \cdot \codedim_1 \leq (\codedim_1-1)\cdot \codedim_1$, which is the maximum value $|a_j| \cdot \codedim_1$ can achieve when $\bff$ is filled with bits (which is guaranteed by our commitment via WHIR). Hence the value $|\langle \bm{\gamma}', \bff_{*j}\rangle - \mu_j'  - a_j\cdot \codedim_1|$ can be at most $2\cdot (\codedim_1+1)\cdot \codedim_1$.  As long as $2\cdot (\codedim_1+1)\cdot \codedim_1 < |\comfield|-1$, this equality can be proved ``in the exponent'' without causing overflow. 
     
     
-    Note that if $\bm{\gamma}$ admits a tensor decomposition   $\bm{\gamma}=\bm{\gamma}^{(1)} \otimes \bm{\gamma}^{(2)}$, and $3\cdot \codedim_1< |\comfield|-1$ then we can take, instead of $\bm{\gamma}'$, the tensor-product $\bm{\gamma}^{(1)}{}' \otimes \bm{\gamma}^{(2)}{}'$, where  $\bm{\gamma}^{(i)}{}'$ denotes $\bm{\gamma}^{(i)}$ reduced modulo $\codedim_1$. This allows to use all of our ``low-entropy'' grand product optimizations from \cref{s:gkr_low_entropy}.%\albert{Point here to some explanation saying that this is the best way to prove such inner product?}
+    Note that if $\bm{\gamma}$ admits a tensor decomposition   $\bm{\gamma}=\bm{\gamma}^{(1)} \otimes \bm{\gamma}^{(2)}$, then we can take, instead of $\bm{\gamma}'$, the tensor-product $\bm{\gamma}^{(1)}{}' \otimes \bm{\gamma}^{(2)}{}'$, where  $\bm{\gamma}^{(i)}{}'$ denotes $\bm{\gamma}^{(i)}$ reduced modulo $\codedim_1$. This allows to use all of our ``low-entropy'' grand product optimizations from \cref{s:gkr_low_entropy}, though in this case the required bound becomes $2\cdot (\codedim_1^2+1)\cdot \codedim_1 < |\comfield|-1$.%\albert{Point here to some explanation saying that this is the best way to prove such inner product?}
+
+    Overall, this method allows to use $\max\cP < |\comfield|-1$, meaning we can choose primes that are $\log(\codedim_1)$ bits larger than we otherwise would. This makes soundness errors be smaller by this same amount of bits, which leads to small grinding requirements.  The cost is an extra batch of low entropy grand products. 
 \end{remark}
 
 
@@ -1961,7 +1985,7 @@ Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\FF, \codedim)$. We use 
 
 
 
-The bulk of the work in \ftwoz (\cref{c:core_iop}) is to reduce the claim over the binary field $\comfield$
+The bulk of the work in \ftwoz \ (\cref{c:core_iop}) is to reduce the claim over the binary field $\comfield$
 \begin{equation}\label{e:main_grand_product}
 \prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \pi_2(\bff_{ij}) +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\codedim_2]
 \end{equation}
@@ -1971,21 +1995,19 @@ to an inner product claim  of the form $\langle \vv, \pi_2(\bff)\rangle =\mu$ ov
 \renewcommand{\comfield}{\KK}
 
 
-Cryptographically speaking, our protocol is simply a standard batched version of the GKR protocol applied to grand products from \cite{?}. However, our implementation uses lookup tables (i.e.\ preprocessed data) to optimize the prover time of such protocol. In particular, our techniques leverage the fact that the factors in \eqref{e:main_grand_product} have \emph{low entropy}, in the sense that for every $i\in [\codedim_1]$ and $j\in [\codedim_2]$, the $i$-th factor in the $j$-th grand product of \eqref{e:main_grand_product} can take only two values, depending on whether $\bff_{ij}=0$ or $\bff_{ij}=1$.  
+Cryptographically speaking, our protocol is simply a standard batched version of the GKR protocol applied to grand products from \cite{?}. However, our implementation uses lookup tables (i.e.\ preprocessed data) to optimize the prover time of such protocol. In particular, our techniques leverage the fact that the factors in \eqref{e:main_grand_product} have \emph{low entropy}, in the sense that for every $i\in [\codedim_1]$ and $j\in [\codedim_2]$, the $i$-th factor in the $j$-th grand product of \eqref{e:main_grand_product} can take only two values, depending on whether $\bff_{ij}=1$ or $\bff_{ij}=0$.  
 
 
 
- The optimizations we introduce apply to any (batched) grand product with low entropy factors, and not only to the grand product in \eqref{e:main_grand_product}. They also work on any field. Because of this, 
- 
- We  describe a general protocol IOR  that, given a finite field $\KK$; %a code $\cC$ and map $T$ as in \cref{?}\footnote{The code $\cC$ and map $T$ are  not used throughout the entirety of the IOR.}; 
- a subset $S\subseteq \KK$; and dimensions $\codedim=\codedim_1\cdot \codedim_2$, reduces triples from 
+ The optimizations we introduce apply to any (batched) grand product with low entropy factors, and not only to the grand product in \eqref{e:main_grand_product}. They also work on any field. Because of this, we  describe a general protocol IOR  that, given a finite field $\KK$; %a code $\cC$ and map $T$ as in \cref{?}\footnote{The code $\cC$ and map $T$ are  not used throughout the entirety of the IOR.}; 
+ a small subset $S\subseteq \KK$; and dimensions $\codedim=\codedim_1\cdot \codedim_2$, reduces triples from 
 %
 \begin{align*}
-&\PESAT(\comfield, \gkrpol)\\ &\qquad = \left\{ \left(\begin{aligned} &\inp=(\zz,\bm{\mu})\in \comfield^{\codedim_1}\times \comfield^{\codedim_2}, \\
+&\PESAT(\comfield, \gkrpol)\\ &\qquad = \left\{ \left(\begin{aligned} &\inp=(\yy,\bm{\mu})\in \comfield^{\codedim_1}\times \comfield^{\codedim_2}, \\
 &\oracle=\bot,\\
 %&\oracle = f\in \KK^{\codelength},\\ 
 &\wit=\bff= (\bff_{*j})_{j\in [\codedim_2]}\in S^{\codedim_1 \times \codedim_2} \subseteq \KK^{\codedim_1 \times \codedim_2}\end{aligned}\right) \;\middle|\;  \begin{aligned}   % &f =\Enc_{\cC}\circ T(\bff)\\ 
-&\prod_{i\in[\codedim_1]} \gkrpol(\zz_i, \bff_{ij}) = \bm{\mu}_j \ \text{ for all } j\in [\codedim_2]\end{aligned}  \right\},
+&\prod_{i\in[\codedim_1]} \gkrpol(\yy_i, \bff_{ij}) = \bm{\mu}_j \ \text{ for all } j\in [\codedim_2]\end{aligned}  \right\},
 \end{align*}
 %
 to triples in 
@@ -1999,9 +2021,9 @@ $$
 &\langle \uu, \bff\rangle = \mu  \end{aligned}\right\}.
 $$
 %
-One can additionally add an encoding $f=\Enc_\cC\circ T (\bff)$ as an oracle $\yy$ in the above relations (matching the context in which we use the IOR), but our IOR does not make any use of it whatsoever, hence we omit it. 
+One can additionally add an encoding $f=\Enc_\cC(\bff)$ as an oracle  in the above relations (matching the context in which we use the IOR), but our IOR does not make any use of it whatsoever, hence we omit it. 
 
-We  describe $\Pi_{\red}$ now. We will describe our implementation-level optimizations afterwards. As we mentioned, cryprographically/protocol-wise, our protocol is a standard batched GKR for grand productes.  We assume $\codedim_1,\codedim_2$ are powers of two:
+We  describe $\Pi_{\red}$ now. We will describe our implementation-level optimizations afterwards. As we mentioned, cryptographically/protocol-wise, our protocol is a standard batched GKR for grand products \cite{thaler}.  We assume $\codedim_1,\codedim_2$ are powers of two:
 %
 $$
 \codedim_1 = 2^{r_1}, \quad \codedim_2 = 2^{r_2}.
@@ -2009,10 +2031,10 @@ $$
 We index $[\codedim_1],[\codedim_2]$ via elements of the hypercubes $\bits^{r_1}, \bits^{r_2}$, respectively.
 %
 \begin{construction}[An IOR $\Pi_\red$ from $\PESAT(\comfield, \gkrpol)$ to $\LIN( \comfield)$]\label{c:gkr_grand_product}
-\noindent \textbf{Input.}   Prover and verifier receive $(\yy,\bm{\mu}),  \in \comfield^{\codedim_1} \times  \comfield^{\codedim_2}$. Prover receives also $\bff\in S^{\codedim_1\times \codedim_2}\subseteq\comfield^{\codedim_1\times \codedim_2}$.
+\noindent \textbf{Input.}   The prover and verifier receive $(\yy,\bm{\mu}),  \in \comfield^{\codedim_1} \times  \comfield^{\codedim_2}$. The prover receives also $\bff\in S^{\codedim_1\times \codedim_2}\subseteq\comfield^{\codedim_1\times \codedim_2}$.
 
 
-Let $L_{r_1}$ be a  \emph{multilinear} polynomial over $\comfield$ on $r_1 + r_2$ variables such that $$L_{r_1}(\bb,\cc)= \gkrpol(\zz_{\bb}, \bff_{\bb,\cc}) \quad  \text{ for all } (\bb,\cc) \in \bits^{r_1} \times \bits^{r_2}.$$ (note that $\gkrpol$ may not be multilinear).  
+Let $L_{r_1}$ be a  \emph{multilinear} polynomial over $\comfield$ on $r_1 + r_2$ variables such that $$L_{r_1}(\bb,\cc)= \gkrpol(\yy_{\bb}, \bff_{\bb,\cc}) \quad  \text{ for all } (\bb,\cc) \in \bits^{r_1} \times \bits^{r_2}.$$ (note that $\gkrpol$ may not be multilinear).  
      For $i=0,\ldots, r_1-1$, let $L_i$ be a multilinear polynomial on $r_2 + i$ variables  such that 
       $$
   L_{i}(\bb,\cc)  =  L_{i+1}(\bb,0,\cc) \cdot L_{i+1}(\bb,1, \cc)  \quad \text{for all } (\bb,\cc)\in \bits^{i} \times \bits^{r_2}.
@@ -2038,7 +2060,7 @@ Let $L_{r_1}$ be a  \emph{multilinear} polynomial over $\comfield$ on $r_1 + r_2
     %
     \item The prover and verifier unify the two claims from \eqref{e:gkr_intermediate} into a single one via the following standard procedure:
     \begin{enumerate}[leftmargin=*]
-        \item The verifier sends a random element $\beta^{(i)}$.
+        \item The verifier sends a random element $\beta^{(i)}\in\KK$.
         \item The claim \eqref{e:gkr_intermediate} is replaced by
         %
         $$
@@ -2059,17 +2081,17 @@ Let $L_{r_1}$ be a  \emph{multilinear} polynomial over $\comfield$ on $r_1 + r_2
     This claim is equivalent to
     %
     \begin{equation}\label{e:gkr_leaf_claim}
-    \sum_{(\bb,\cc)\in \bits^{r_1} \times \bits^{r_2}} \gkrpol(\zz_{\bb},\bff_{\bb,\cc}) \cdot \eq((\bb,\cc), \bm{\alpha}^{(r_1)}) = C^{(r_1)},
+    \sum_{(\bb,\cc)\in \bits^{r_1} \times \bits^{r_2}} \gkrpol(\yy_{\bb},\bff_{\bb,\cc}) \cdot \eq((\bb,\cc), \bm{\alpha}^{(r_1)}) = C^{(r_1)},
     \end{equation}
     If $\gkrpol$ is multilinear, then \eqref{e:gkr_leaf_claim} is a linear claim on $\bff$. Namely, it is equivalent to
     %
     $$
-    \langle \uu, \bff \rangle = C^{(r_1)} + \mu
+    \langle \uu, \bff \rangle = C^{(r_1)} + c
     $$
-    for some $\uu\in \KK^{\codedim}, \mu\in \KK$. In this case, prover and verifier output 
+    for some $\uu\in \KK^{\codedim}, c\in \KK$. In this case, prover and verifier output 
     %
         $$
-    (\inp'=(\uu, C^{(r_1)}+\mu),\ \bot, \ \wit' = \bff) \in \LIN(\comfield).
+    (\inp'=(\uu, C^{(r_1)}+c),\ \bot, \ \wit' = \bff) \in \LIN(\comfield).
     $$
     %
     Otherwise, i.e.\ if $\gkrpol$ is not multilinear, prover and verifier run a sumcheck for the claim \eqref{e:gkr_leaf_claim}, which results in MLE claims for $\yy$ and $\bff$. The verifier checks the claim for $\yy$ itself, and prover and verifier output the MLE claim for $\bff$.
@@ -2078,7 +2100,7 @@ Let $L_{r_1}$ be a  \emph{multilinear} polynomial over $\comfield$ on $r_1 + r_2
 \end{construction}
 
 
-\subsection{Optimization via lookup tables} We optimize \cref{c:gkr_grand_product} as follows.  For simplicity we assume
+\subsection{Optimization via lookup tables} We optimize \cref{c:gkr_grand_product} as follows.  For simplicity we use the subset
 %
 $$
 S=\bits \subseteq \KK,
@@ -2094,23 +2116,24 @@ $$L_{r_1}(\bb,\cc)=\gkrpol(\zz_{\bb}, \bff_{\bb,\cc})=
      y_{\bb}^{(0)}\defeq p(\zz_{\bb},0) & \text{if } \bff_{\bb,\cc}=0.
 \end{cases}$$
 %
-The values $\yy_{\bb}^{(0)}, \yy_{\bb}^{(1)}$   do not depend on $\cc$. Hence the prover can set up the lookup table $T_{r_1}\subseteq (\comfield\times \comfield)^{\bits^{r_1}}$ defined as
+The values $\yy_{\bb}^{(0)}, \yy_{\bb}^{(1)}$   do not depend on $\cc$. Hence the prover can set up a lookup table $T_{r_1}\subseteq (\comfield\times \comfield)^{\bits^{r_1}}$ defined as
 %
 $$
 T_{r_1}[\bb]= (\yy_{\bb}^{(1)}, \yy_{\bb}^{(0)}) \qquad \text{for all } \bb \in \bits^{r_1}
 $$
-at the beginning of the protocol, and use it to obtain the values $L_{r_1}(\bb,\cc)$. Concretely
+at the beginning of the protocol, and, whenever required, use it to obtain the values $L_{r_1}(\bb,\cc)$. Concretely
 %
 $$
-L_{r_1}(\bb,\cc)=T_{r_1}[\bb][\bff_{\bb,\cc}] \quad \text{for all } (\bb,\cc)\in \bits^{r_1}\times \bits^{r_2}-
+L_{r_1}(\bb,\cc)=T_{r_1}[\bb][\bff_{\bb,\cc}] \quad \text{for all } (\bb,\cc)\in \bits^{r_1}\times \bits^{r_2}
 $$
 %Since $\yy$ is part of the input, this is essentially a no-op 
-In our instantiation, $\yy_{\bb}^{(1)}=g^{\bm{\gamma}_{\bb}}$ and $\yy_\bb^{(0)}=1$ (cf.\ \cref{?}), and so the prover precomputes the elements $g^{\bm{\gamma}_{\bb}}$ at the beginning of the protocol. 
+In our instantiation, $\yy_{\bb}^{(1)}=g^{\bm{\gamma}_{\bb}}$ and $\yy_\bb^{(0)}=1$ (cf.\ \cref{?}). Hence additionally the prover precomputes the elements $g^{\bm{\gamma}_{\bb}}$ at the beginning of the protocol, before computing $T_{r_1}$.
 
 
-As we will explain later, the prover will also precompute similar tables for the values $L_{r_1-j}(\bb,\cc)$ of the levels close to the leaves,
+
+As we will explain later, the prover will also precompute similar tables for the values $L_{r_1-j}(\bb,\cc)$ of the levels close to the leaves (i.e.\ for small $j$),
 \begin{equation}\label{e:size_T_r1_i}T_{r_1-j}\in \left(\comfield^{2^{2^j}}\right)^{\bits^{r_1-j}},\end{equation}
-as well as other tables relevant for the different sumcheck rounds of \cref{c:gkr_grand_product}. Concretely, for $\bb\in \bits^{r_1-j}$, $T_{r_1-j}[\bb]$ consists of all possible products of  $2^j$ consecutive factors of the grand product, namely the factors indexed by $(\bb, \bb')$ with $\bb'\in \bits^{j}$.  Each factor can take two values, depending on whether $\bff_{\bb,\bb', \cc}$ is $1$ or $0$. Hence $T_{r_1-j}[\bb]$ consists of $2^{2^j}$ elements. Hence the size of $T_{r_1-j}$ in \eqref{e:size_T_r1_i}.
+as well as other tables relevant for the different sumcheck rounds of \cref{c:gkr_grand_product}, constructed from the tables $T_{r_1-j}$ themselves. The superindex $\bits^{r_1-j}$ in \eqref{e:size_T_r1_i} indicates that the table $T_{r_1-j}$ has one entry per element in the hypercube  $\bits^{r_1-j}$; and this entry is a vector of $2^{2^j}$ field elements. Concretely, for $\bb\in \bits^{r_1-j}$, $T_{r_1-j}[\bb]$ consists of all possible products of  $2^j$ consecutive factors of the grand product, namely the factors indexed by $(\bb, \bb')$ with $\bb$ fixed and $\bb'$ ranging over $\bits^{j}$.  Each factor can take two values, depending on whether $\bff_{\bb,\bb', \cc}$ is $1$ or $0$. Hence $T_{r_1-j}[\bb]$ consists of $2^{2^j}$ elements. Hence the size of $T_{r_1-j}$ in \eqref{e:size_T_r1_i}.
 
 Because $|T_{r_1-j}|$   grows doubly-exponentially in $j$, these tables are viable only for the bottom few levels of the tree ($j=0,1,2$ in our implementation). In higher levels we use standard sumchecks.
 
@@ -2121,8 +2144,10 @@ Because $|T_{r_1-j}|$   grows doubly-exponentially in $j$, these tables are viab
 Importantly, all these tables have size independent of $\codedim_2$.  This (among others, cf.\ \cref{?}), is one of the reasons why we use the tensor decomposition structure, i.e.\ the split given by $\codedim=\codedim_1\cdot \codedim_2$, in \cref{c:core_iop}.
 
 \begin{remark}
-    All precomputed data in this section depends on the input vector $\zz$ of $\PESAT(\comfield,\gkrpol)$, and possibly on further verifier challenges. Since, in a wider context where \cref{c:gkr_grand_product} is a subprocess of a larger proof system, $\yy$ typically depends on verifier's challenges, these precomputations must be done at \emph{runtime}. 
+    All precomputed data in this section depends on the input vector $\yy$ of $\PESAT(\comfield,\gkrpol)$, and possibly on further verifier challenges. Since, in a wider context where \cref{c:gkr_grand_product} is a subprocess of a larger proof system, $\yy$ typically depends on verifier's challenges, these precomputations must be done at \emph{runtime}. 
 \end{remark}
+
+
 
 
 
@@ -2133,16 +2158,16 @@ $$
 C^{(r_1-1)}= \sum_{(\bb,\cc)\in \bits^{r_1-1}\times \bits^{r_2}} L_{r_1}(\bb,0,\cc) \cdot L_{r_1}(\bb,1,\cc) \cdot \eq(\bb,\cc;\bm{\alpha}^{(i)})
 $$
 %
-This is the most expensive step of \cref{c:gkr_grand_product} for the prover (if done naively), since it is the sumcheck over the largest number of variables throughout \cref{c:gkr_grand_product}. 
+This is the most expensive sumcheck of \cref{c:gkr_grand_product} for the prover (if done naively), since it is the sumcheck over the largest number of variables throughout \cref{c:gkr_grand_product}. 
 
-For $1\leq j\leq r_1-1$, the $j$-th prover message in this sumcheck is, if $\bm{\rho}^{(j)}=(\rho_1, \ldots, \rho_{j-1})$ is the vector of verifier challenges so far in this sumecheck,
+For $1\leq j\leq r_1-1$, the $j$-th prover message in this sumcheck is, if $\bm{\rho}^{(j)}=(\rho_1, \ldots, \rho_{j-1})$ is the vector of verifier challenges so far in this sumcheck,
 %
 \begin{align*}
 h_j(X)&\defeq \sum_{(\bb,\cc)\in \bits^{r_1-1-j}\times \bits^{r_2}} L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc) \cdot L_{r_1}(\bm{\rho}^{(j)}, X, \bb,1,\cc)\cdot \eq(\bm{\rho}^{(j)}, X, \bb,\cc;\bm{\alpha}^{(i)})\\
-&= \sum_{\cc\in \bits^{r_2}}\left( \sum_{\bb\in \bits^{r_1-1-j}}L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc) \cdot L_{r_1}(\bm{\rho}^{(j)}, X, \bb,1,\cc) \cdot \eq(\bm{\rho}^{(j)}, \bb;\bm{\alpha}^{(i,1)})\right)\cdot   \eq(X,\cc;\bm{\alpha}^{(i,2)}) \\
+&= \sum_{\cc\in \bits^{r_2}}\left( \underbrace{\sum_{\bb\in \bits^{r_1-1-j}}L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc) \cdot L_{r_1}(\bm{\rho}^{(j)}, X, \bb,1,\cc) \cdot \eq(\bm{\rho}^{(j)}, \bb;\bm{\alpha}^{(i,1)})}_{\defeq h_{j,\cc}(X)}\right)\cdot   \eq(X,\cc;\bm{\alpha}^{(i,2)}) \\
 &= \sum_{\cc\in \bits^{r_2}}h_{j,\cc}(X)\cdot   \eq(X,\cc;\bm{\alpha}^{(i,2)}),
 \end{align*}
-for $\alpha^{(i)} = (\alpha^{(i,1)}, \alpha^{(i,2)})\in \bits^{r_1-j-1}\times \bits^{r_2+1}$.
+where $\bm{\alpha}^{(i)} = (\bm{\alpha}^{(i,1)}, \bm{\alpha}^{(i,2)})\in \KK^{r_1-j-1}\times \KK^{r_2+1}$.
 %
 We claim that
 %
@@ -2173,7 +2198,7 @@ A_2^{(j)}[\bb,\cc] &\defeq (E_{10}^{(j)}[\bb,\cc]-E_{00}^{(j)}[\bb,\cc])\cdot (E
 \end{aligned}
 $$
 %
-Now, for $j=1$, we have $\bm{\rho}^{(j)}= \bot$, and hence each value $E_{\eps_1\eps_2}^{(1)}[\bb,\cc]$ can be obtained by querying $T_{r_1}[\bb]$ and selecting $T_{r_1}[\bb][0]$ or $T_{r_1}[\bb][1]$  depending on whether $\bff_{\bb,\cc} = 1$ or $0$. A consequence  is that  the coefficients themselves $A_k^{(1)}[\bb,\cc]$ ($k\in [3]$) can be obtained through lookup tables, as follows:
+Now, for $j=1$, we have $\bm{\rho}^{(j)}= \bot$, and hence each value $E_{\eps_1\eps_2}^{(1)}[\bb,\cc]$ can be obtained, whenever needed, by querying $T_{r_1}[\bb]$ and selecting $T_{r_1}[\bb][0]$ or $T_{r_1}[\bb][1]$  depending on whether $\bff_{\bb,\cc} = 1$ or $0$. A consequence  is that  the coefficients themselves $A_k^{(1)}[\bb,\cc]$ ($k\in [3]$) can be obtained through lookup tables, as follows:
 %
  we have $$A_0^{(1)}[\bb,\cc] = 
     T_{r_1}[0,\bb,0][\bff_{(0,\bb,0),\cc}] \cdot    T_{r_1}[0,\bb, 1][\bff_{(0,\bb,1),\cc}] \cdot \omega[\bb]
@@ -2198,12 +2223,12 @@ The size of $T_{A_0}$, again, does not depend on $\codedim_2=2^{r_2}$. Building 
 We now explain how to obtain the values $A_1^{(1)}[\bb,\cc]$ and $A_2^{(1)}[\bb,\cc]$, again via the construction of a lookup table. Note that these depend on the \emph{four} bits $\bff_{(\eps_1,\bb,\eps_2),\cc}$, $\eps_1,\eps_2\in \bits$, so our tables will need $2^4=16$ entries (as opposed to $4$ as in $T_{A_0})$ per  index $\bb$.
 The prover  proceeds as follows:
 \begin{itemize}[leftmargin=*]
-    \item It precomputes a table $T_{S_1}\in (\comfield^4)^{\bits^{r_1-2}}$ analogous to $T_{A_0}$, which allows to obtain the values 
+    \item It computes a table $T_{S_1}\in (\comfield^4)^{\bits^{r_1-2}}$ analogous to $T_{A_0}$, which allows to obtain the values 
     $$S_1^{(1)}[\bb,\cc] \defeq E_{10}^{(1)}[\bb,\cc]\cdot E_{11}^{(1)}[\bb,\cc]\cdot \omega[\bb],$$
     (observe that $T_{A_0}$ allows to obtain the values $E_{00}^{(1)}[\bb,\cc]\cdot E_{01}^{(1)}[\bb,\cc]\cdot \omega[\bb]$).
-    \item It precomputes the table $T_{A_2}\in (\comfield^{16})^{\bits^{r_1-2}}$ given by
+    \item It computes the table $T_{A_2}\in (\comfield^{16})^{\bits^{r_1-2}}$ given by
     \begin{equation}\label{e:TA2}T_{A_2}[\bb]=\Big( \big(\yy_{1,\bb,0}^{(x_1)}-\yy_{0,\bb,0}^{(x_0)}\big)\cdot \big(\yy_{1,\bb,1}^{(x_1')}-\yy_{0,\bb,1}^{(x_0')}\big)\cdot \omega[\bb] \Big)_{(x_0,x_1,x_0',x_1')\in \bits^4},\end{equation}
-    so that $A_2^{(1)}[\bb,\cc]$ is the element  $$A_2^{(1)}[\bb,\cc]=T_{A_2}[\bb][\bff_{(0,\bb,0),\cc},\bff_{(1,\bb,0),\cc},\bff_{(0,\bb,1),\cc},\bff_{(1,\bb,1),\cc}].$$ Building $T_{A_2}$ takes at most $20$ multiplications and $8$ additions per index $\bb$\footnote{For the multiplications, there are $4$ multiplications to compute the $4$ elements $t_{x_0',x_1',\bb}\defeq \big(\yy_{1,\bb,1}^{(x_1')}-\yy_{0,\bb,1}^{(x_0')}\big)\cdot \omega[\bb]$, and then $16$ more multiplications to compute $\big(\yy_{1,\bb,0}^{(x_1)}-\yy_{0,\bb,0}^{(x_0)}\big)\cdot t_{x_0',x_1',\bb}$}. I.e.\ at most $5\cdot 2^{r_1}$ multiplications and $2^{r_1+1}$ additions in total.
+    so that $A_2^{(1)}[\bb,\cc]$ is the element  $$A_2^{(1)}[\bb,\cc]=T_{A_2}[\bb][\bff_{(0,\bb,0),\cc},\bff_{(1,\bb,0),\cc},\bff_{(0,\bb,1),\cc},\bff_{(1,\bb,1),\cc}].$$ Building $T_{A_2}$ takes at most $20$ multiplications and $8$ additions per index $\bb$\footnote{For the multiplications, there are $4$ multiplications to compute the $4$ elements $t_{x_0',x_1',\bb}\defeq \big(\yy_{1,\bb,1}^{(x_1')}-\yy_{0,\bb,1}^{(x_0')}\big)\cdot \omega[\bb]$, and then $16$ more multiplications to compute $\big(\yy_{1,\bb,0}^{(x_1)}-\yy_{0,\bb,0}^{(x_0)}\big)\cdot t_{x_0',x_1',\bb}$}. I.e.\ at most $5\cdot 2^{r_1}$ multiplications and $2^{r_1+1}$ additions in total. \albert{Discuss cost of other tables?}
     \item It obtains the values $A_1^{(1)}[\bb,\cc]$ via the identity $$S_1^{(1)}[\bb,\cc] = A_0^{(1)}[\bb,\cc]+A_1^{(1)}[\bb,\cc]+A_2^{(1)}[\bb,\cc] \qquad \text{for all } (\bb,\cc)\in \bits^{r_1-2}\times \bits^{r_2}.$$ %so the prover accumulates the three sums $\sum_\bb A_0^{(1)}, \sum_\bb S_1^{(1)}, \sum_\bb A_2^{(1)}$ over the slots and recovers $\sum_\bb A_1^{(1)}$ with two additions per $\cc$.
 \end{itemize}
  Once the tables have been computed,  obtaining $h_{1,\cc}(X)$ for one $\cc\in \bits^{r_2}$ costs $3\cdot 2^{r_1-2}$ table reads (one read per table $T_{A_0}, T_{S_1}, T_{A_2}$ per index $\bb\in \bits^{r_1-2}$) and $3\cdot 2^{r_1-2} +2$ additions: this is the cost of adding together the values read at each table, providing $\sum_\bb A_0[\bb,\cc]$,  $\sum_\bb S_1[\bb,\cc]$,  $\sum_\bb A_2[\bb,\cc]$, and then doing two additions to obtain $\sum_\bb A_1[\bb,\cc] = \sum_\bb S_1[\bb,\cc] -\sum_\bb A_0[\bb,\cc] - \sum_\bb A_2[\bb,\cc]$). In total, this amounts to at most  
@@ -2213,10 +2238,18 @@ The prover  proceeds as follows:
  
 \bigskip
 
-In \cref{t:gkr_step1_costs} we record the total upper bounds for computing $h_1(X)$. In our application we obtain lower numbers since $\yy_\bb^{(0)}=1$ and we work in characteristic two, hence  constant terms cancel inside the differences from \cref{e:TA2}.  Our implementation, in our use-case, builds all three tables with $8$ multiplications and roughly $20$ additions per index $\bb\in \bits^{r_1-2}$, i.e.\ ${\approx}\,2\codedim_1$ multiplications in total.
+In \cref{t:gkr_step1_costs} we record the total upper bound costs for computing $h_1(X)$. In our application we obtain lower numbers since $\yy_\bb^{(0)}=1$ and we work in characteristic two, and so in \cref{e:TA2} some elements collapse to $0$. 
+
 
 
  On the other hand, a standard generic approach to compute $h_{1}(X)$ would require $O(\codedim)=O(\codedim_1\cdot \codedim_2)$ multiplications and additions, even if using the few  sumcheck optimizations that apply in our settings (to our knowledge) \albert{which ones, exactly?}. Crucially, we note that our sumcheck features summands of full field bit size $\log|\KK|$, which voids some known powerful optimizations when the summands are small, e.g.\ the univariate skip \cite{gruen} and some optimizations from \cite{?} \albertimportant{This is a crucial point. It should be highlighted more. And it should be an important point of the introduction and technical overview}
+
+ 
+
+
+  On the other hand, a standard linear-time sumcheck prover \cite{thaler} computes $h_1(X)$ with $\Theta(\codedim)=\Theta(\codedim_1\cdot \codedim_2)$ multiplications in $\KK$, several per pair of summands, for the products $L_{r_1}(\cdot,0,\cdot)\cdot L_{r_1}(\cdot,1,\cdot)$ and their $\eq$ weights. The known techniques for lowering this cost do not apply here, because the polynomials being multiplied take arbitrary values in $\KK$: the values $L_{r_1}(\bb,\cc)\in\{y^{(0)}_\bb, y^{(1)}_\bb\}$ are full $\log|\KK|$-bit field elements (the elements $g^{\bm{\gamma}_\bb}$ in our instantiation), and the entries of every higher level of the tree are products of them. The univariate skip of \cite{gruen} gains by running the first rounds over a small base field, of which there is none here, and the small-value algorithms of \cite{DT24,BDT25} require the multilinear polynomials to take small values, which they do not. (The one technique that does carry over is the degree reduction of \cite{gruen} for the public factor $\eq(X;\bm{\alpha}^{(i)})$, which we use to shorten the round messages.) What is small in our setting is not the summands but their \emph{selectors}: each summand is one of a few position-dependent constants, chosen by the witness bits at that position, and the tables $T_{A_0}, T_{S_1}, T_{A_2}$ are a Four-Russians-style precomputation \cite{ADKF70} of every such choice. This replaces the $\Theta(\codedim)$ multiplications by $\Theta(\codedim)$ table reads and additions (XORs in our instantiation) plus $O(\codedim_1+\codedim_2)$ multiplications, cf.\ \cref{t:gkr_step1_costs}.
+
+  We remark that the same multiplication count for $h_1(X)$ can be obtained by grouping the summands according to the pattern of witness bits they depend on and accumulating the $\eq$ weights of each group before multiplying, which is the transpose of our tables. We present the table form because it is the one that extends to the later rounds and to the higher levels of the tree, as we show next: the tables absorb the verifier's challenges, and the bottom levels of the tree never have to be written down.
 
 
 \begin{table}[H]
@@ -2251,7 +2284,7 @@ L_{r_1}(\rho_1,\bb, \cc) &   =\left(L_{r_1}( 1, \bb,\cc) -  L_{r_1}( 0, \bb,\cc)
 \end{cases}
 \end{align*}
 %®
-The idea now is that the prover can compute $h_2(X)$ in essentially  he same way as  $h_1(X)$, but this time, instead of starting with the table $$T_{r_1}\in (\comfield^2)^{\bits^{r_1}} \quad \text{such that } T_{r_1}[\bb]=(\yy_\bb^{(0)}, \yy_{\bb}^{(1)}) \text{ and } L_{r_1}(\bb,\cc) = T_{r_1}[\bb][\ff_{\bb,\cc}], \quad  (\bb,\cc)\in \bits^{r_1}\times \bits^{r_2},$$
+The idea now is that the prover can compute $h_2(X)$ in essentially  the same way as  $h_1(X)$, but this time, instead of starting with the table $$T_{r_1}\in (\comfield^2)^{\bits^{r_1}} \quad \text{such that } T_{r_1}[\bb]=(\yy_\bb^{(0)}, \yy_{\bb}^{(1)}) \text{ and } L_{r_1}(\bb,\cc) = T_{r_1}[\bb][\ff_{\bb,\cc}], \quad  (\bb,\cc)\in \bits^{r_1}\times \bits^{r_2},$$
 it starts with the table
 %
 $$
@@ -2262,7 +2295,7 @@ for which we have, indexing the  entries of  $T_{r_1}^{(2)}[\bb]$ with the $4$ v
 $$
 L_{r_1}(\rho_1, \bb,\cc) = T_{r_1}^{(2)}[\bb][(\bff_{0,\bb},\bff_{1,\bb})]
 $$
-This allows the prover to obtain the values $L_{r_1}(\rho_1,\bb,\cc)$ for all $(\bb,\cc)\in \bits^{r_1-1}\times \bits^{r_2}$ with a simple read in $T_{r_1}^{(2)}$.  
+This allows the prover, when needed, to obtain $L_{r_1}(\rho_1,\bb,\cc)$ for any $(\bb,\cc)\in \bits^{r_1-1}\times \bits^{r_2}$ with a simple read in $T_{r_1}^{(2)}$.  
 
 We now have, for $(\bb,\cc)\in \bits^{r_1-3}\times \bits^{r_2}$, 
  \begin{align*}A_0^{(2)}[\bb,\cc] &= L_{r_1}(\rho_1,0,\bb,0,\cc)\cdot L_{r_1}(\rho_1,0,\bb,1,\cc)\cdot\omega^{(2)}[\bb]\\ &= 
@@ -2282,12 +2315,26 @@ for some weights $\omega^{(2)}[\bb]$.
 Hence the elements $A_0^{(2)}[\bb,\cc]$ can be obtained by querying a table $$T_{A_0}^{(2)}\in (\KK^{16})^{\bits^{r_1-3}}$$ with
 %
 $$T_{A_0}^{(2)}[\bb]= (T_{r_1}^{(2)}[0,\bb,0][\xx]\cdot T_{r_1}^{(2)}[0,\bb,1][\xx']\cdot \omega[\bb])_{\xx,\xx'\in \bits^{2}}$$
+%
+A  table $T_{S_1}^{(2)}$ is computed analogously to $T_{S_1}$. The value $A_2^{(2)}[\bb,\cc]$, however, now depends on the value taken by \emph{eight} witness bits, this being because for $\eps\in \bits$, the value $E_{1\eps}^{(2)}-E_{0\eps}^{(2)}$ depends on  four bits. Hence computing a table for the values $A_2^{(2)}[\bb,\cc]$ analogous to $T_{A_2}$  would have $2^8=256$-sized vectors as entries. Instead of computing $T_{A_2}^{(2)}$, we compute two tables for the values $E_{1\eps}^{(2)}-E_{0\eps}^{(2)}$ (one table for each $\eps\in\bits$, with one of the tables also including multiplication by $\omega[\bb]$). Then the value $A_2^{(2)}[\bb,\cc]$ can be obtained by performing a lookup into each table, followed by  a single multiplication.
+
+\bigskip
+
+This can be iterated in further sumcheck rounds, for computing $h_3(X), h_4(X),$ etc. The limitation is that the entries in the tables are vectors whose dimension grows quadratically. More precisely, each further round squares the number of cases per index of every table, but it only halves the number of indices.
+Hence, in practice we stop using lookup tables after a few rounds of each sumcheck and GKR, and after that we execute the sumcheck protocol normally. Concretely, in our implementation we never compute a table with more than $16$ elements per index. This is done so that the tables can be kept in cache.     \cref{tab:gkr_tables} displays the different tables built or not built in our implementation, the arithmetic cost of doing so, and their size at $\codedim_1=2^{r_1}=2^{16}$ (corresponding to a total witness size of $2^{27}$ bits in our implementation).
 
 
-The  table $T_{S_1}^{(2)}$ is analogous. The coefficient $A_2^{(2)}$, however, now couples \emph{eight} bits --- each difference $E_{1\eps}^{(2)}-E_{0\eps}^{(2)}$ is selected by four bits --- so tabulating it directly would require a $2^8=256$-case table. Instead of precombining it, our implementation \emph{factors} the term: it gathers the two differences from two $16$-case tables and joins them with a single multiplication per slot.
+\paragraph{The rest of sumchecks in Step 2 of \cref{c:gkr_grand_product}} So far we have discussed the last sumcheck from Step 2 of \cref{c:gkr_grand_product}, corresponding to the lower layer of the binary tree of products of our GKR circuit for the grand products. 
 
-This can be iterated in further sumcheck rounds, for computing $h_3(X), h_4(X),$ etc. The downside is a doubly-exponential growth of the table widths: each further round \emph{squares} the number of cases per index of every table, but it only \emph{halves} the number of indices.
-Hence, in practice one stops using our optimization after a few rounds of sumcheck, and falls back to continue the sumcheck protocol normally. Concretely, in our implementation we never compute a table with more than $16$ elements per index (hence, for example, the table $T_{A_2}^{(2)}$ is not built in our implementation). This is done so that the tables can be kept in cache.     \cref{tab:gkr_tables} displays the different tables built or not build in our implementation, the cost of doing so, and their size at $\codedim_1=2^{r_1}=2^{16}$ (corresponding to a total witness size of $2^{27}$ in our implementation).
+The sumchecks run for $i=r_1-2, r_1-3,\ldots$ can be optimized in the exact same way as we did for the last sumcheck $(i=r_1-1)$. In this case, instead of starting with the table $T_{r_1}^{(1)}$, which at each index contains the two values $(\yy_\bb^{(1)}, \yy_\bb^{(0)})$, one starts with the table
+%
+$$
+T_{r_1-j} \in (\KK^{2^{2^{j}}})^{\bits^{r_1-j}}
+$$
+described in \cref{e:size_T_r1_i}. Since $T_{r_1-j}$ has quadratically many  more entries per index than $T_{r_1-j+1}$, all subsequent tables also have quadratically many more entries per index compared to the analogous tables from the $(i+1)$-th sumcheck. And, further, they require quadratically more operations to compute.
+
+In our implementation we want to keep all tables in cache. Because of this, the smaller $i$ is (i.e. the further we get from the last sumcheck in the GKR protocol), the fewer number of sumcheck rounds we use tables in. Concretely, for $i=r_1-2$ ($j=1$) we build and use tables $T_{r_1-1}^{(1)}, T_{A_0}^{(1)}, T_{S_1}^{(1)},  T_{r_1-1}^{(2)}$ (note the lack of $T_{A_2}^{(1)}$). For $i=r_1-3$ $(j=2)$ we only use the table $T_{r_1-2}^{(1)}$.
+
 
 
 \begin{table}[H]
@@ -2327,34 +2374,20 @@ Hence, in practice one stops using our optimization after a few rounds of sumche
 \label{tab:gkr_tables}
 \end{table}
 
- Instead of building the table $T_{A_2}^{(2)}$ to obtain the values $A_2^{(2)}[\bb,\cc]$, the prover  reads  $T_{r_1}^{(2)}$  at appropriate values and computes $A_2^{(2)}[\bb,\cc]$ using some of the elements in the vectors read this way.  In  Round 3 we only use the table $T_{r_1}^{(3)}$, and otherwise perform sumcheck normally. 
-
-
-\paragraph{The rest of sumchecks in Step 2 of \cref{c:gkr_grand_product}} So far we have discussed the last sumcheck from Step 2 of \cref{c:gkr_grand_product}, corresponding to the lower layer of the binary tree of products of our GKR circuit for the grand products. 
-
-The sumchecks run for $i=r_1-2, r_1-3,\ldots$ can be optimized in the exact same way as we did for the last sumcheck $(i=r_1-1)$. In this case, instead of starting with the table $T_{r_1}^{(1)}$, which at each index contains the two values $(\yy_\bb^{(1)}, \yy_\bb^{(0)})$, one starts with the table
-%
-$$
-T_{r_1-j} \in (\KK^{2^{2^{j}}})^{\bits^{r_1-j}}
-$$
-described in \cref{e:size_T_r1_i}. Since $T_{r_1-j}$ has quadratically many  more entries per index than $T_{r_1-j+1}$, all subsequent tables also have quadratically many more entries per index compared to the analogous tables from the $(i+1)$-th sumcheck. And, further, they require quadratically more operations to comput.
-
-In our implementation we want to keep all tables in cache. Because of this, the smaller $i$ is (i.e. the further we get from the last sumcheck in the GKR protocol), the less number of sumcheck rounds we use tables in. Concretely, for $i=r_1-2$ ($j=1$) we build and use tables $T_{r_1-1}^{(1)}, T_{A_0}^{(1)}, T_{S_1}^{(1)},  T_{r_1-1}^{(2)}$ (note the lack of $T_{A_2}^{(1)}$. For $i=r_1-3$ $(j=3)$ we only use the table $T_{r_1-2}^{(1)}$.
-
 
 
 
 \subsection{Other optimizations for \cref{c:core_iop}}
 
-\paragraph{Using $4$ factor multiplication (instead of $2$) in the last step of the GKR grand product}
+%\paragraph{Using $4$ factor multiplication (instead of $2$) in the last step of the GKR grand product}
 
-\albertimportant{Actually autoresearch ended up undoing this and went back to all $2$ factors}
+%\albertimportant{Actually autoresearch ended up undoing this and went back to all $2$ factors}
 
-In Step 2 we reduce the number of sumchecks by $1$ (so now there are $r_1-2$ sumchecks) by making the last sumcheck certify the claim
-$$
-C^{(r_1-2)}= \sum_{(\bb,\cc)\in \bits^{r_1-2}\times \bits^{r_2}} L_{r_1}(\bb,0,0,\cc) \cdot L_{r_1}(\bb,0,1,\cc)\cdot L_{r_1}(\bb,1,0,\cc)\cdot  L_{r_1}(\bb,1,1,\cc) \cdot \eq(\bb,\cc;\bm{\alpha}^{(i)})
-$$
-I.e.\ 
+%In Step 2 we reduce the number of sumchecks by $1$ (so now there are $r_1-2$ sumchecks) by making the last sumcheck certify the claim
+%$$
+%C^{(r_1-2)}= \sum_{(\bb,\cc)\in \bits^{r_1-2}\times \bits^{r_2}} L_{r_1}(\bb,0,0,\cc) \cdot L_{r_1}(\bb,0,1,\cc)\cdot L_{r_1}(\bb,1,0,\cc)\cdot  L_{r_1}(\bb,1,1,\cc) \cdot \eq(\bb,\cc;\bm{\alpha}^{(i)})
+%$$
+%I.e.\ 
 
 \paragraph{Step 1 of \cref{c:core_iop} via lookup tables} In Step 1 of \cref{c:core_iop}, the prover computes the elements $\mu_1,\ldots,\mu_{\codedim_2}$ again by means of a lookup table $T$, which is indexed over  $i\in [\ell_1/4]$ and contains the $16$-length vectors $$T[i]= (\sum_{k\in [4]} \eps_k \cdot \picanon^{-1}(\vv^{(1)})_{4*(i-1) + k})_{\eps_1,\ldots, \eps_4 \in \bits} \in \ZZ[X]^{16}.$$
 
@@ -2364,6 +2397,8 @@ I.e.\
 
 
 \section{Experiments}
+\begin{comment}
+
 \subsection{Instantiation}
 
 
@@ -2407,139 +2442,53 @@ $$
 for some $\rr^{(2)} \in \KK^{\log \codedim}$  and some $\mu\in \KK$. In other words, $((\rr^{(2)},\mu),\bot,\pi(\bff)) \in \Relation_{\mathsf{mle}}$ over $\KK$.
 \end{remark}
 
+\end{comment}
 
 
-\subsection{Experimental results}
+We implement \ftwoz\ (\cref{c:core_iop,c:LinModFieldBin}) following the guideline in \cref{s:instantiation}. We then implement an end-to-end roof system, called \ftwoz-SNARK, for integer R1CS constraints as described in \cref{?} \albert{technical overview} (note that, however, \ftwoz \ can be used to prove much more general constraints, such as the ones in Zinc+ \cite{zincplus}, cf.\ \cref{?} \albert{some remark in TO}). Following the lead of \cref{flock} and other usages of AI \cref{zkgolf} to optimize against verified specs, we  used AI to optimize the prover while keeping the verifier implementation untouched.  As such, we consider our prover fairly optimal, while the our verifier's implementation is pending significant optimization.
+
+\subsection{Raw performance of the \ftwoz \ PCS for the core LinBitsRings relation}
+
+We measure the performance of \cref{c:core_iop} for proving the Core LinBitsRing relation $\LinBitsDual(\bits, \pi, \FF_q,\cC)$ following the instantiation in \cref{s:instantiation}. Concretely, $\comfield=\FF_{2^{128}}$ and $\cC$ is a Reed-Solomon code. We set $|\FF_q|  < (2^{128}-1)/\codedim_1$ and we use the unique decoding radius as proximity parameter, so that Round 0 (OOD sampling) and Round 1 of \cref{c:core_iop} do not trigger.  Our goal for now is to measure the performance of the grand product and the WHIR/Ligerito commit and opening. In later experiments, Round 0 and Round 1 do trigger. 
 
 
-\subsubsection{Raw performance of \ftwoz}
+%\albert{remove?} Recall (\cref{s:prelims_algebra})  that   $\bff_{\FF_{q^d}}$ denotes the vector obtained from $\bff$ by looking at $0,1$ as the zero and one elements from $\FF_{q^d}$. 
 
-We measure the performance of \cref{c:core_iop} for committing  to witnesses $\bff\in \bits^{\ell} \subseteq \ZZ^{\ell}$,  and proving claims of the form $\langle \vv, \pi_q(\bff)\rangle = \mu$ over a finite field $\FF_{q^\moduledegree}$, where $\pi_q$ denotes reduction modulo a prime $q$, and $\vv\in \FF_{q^\moduledegree}^{\ell}$.  We instantiate \cref{c:core_iop} following the guideline in \cref{s:instantiation}. 
- For WHIR we use a Reed-Solomon code of rate $1/8$ over $\FF_{2^{128}}$. 
+\input{raw-performance-table}
+
+
  
- 
- In \cref{?} we present performance for the case $q\leq 2^{105}$, $\moduledegree=1$, in which case  so the optional step of Round 1 of \cref{c:core_iop} is omitted (cf.\ \cref{s:instantiation}). In \cref{?} we make the same measurement for the case $\moduledegree=5$ and $q\leq 2^{32}$. 
+ \albertimportant{1 threaded one?}
+
 
 \albertimportant{Measure Binius64 proving the same inner product directly in Bin fields?}
 
 
-\subsubsection{Integer and modular multiplication}
-In \cref{?} we measure the cost of proving $2^i$ integer multiplications of the form $x\cdot  y = z$, for $x,y$ random $32$-bit integers, and $z$ a $64$-bit integer. We use our IOP for the UPESAT relation  \cref{c:iop_pimsat}. The specific form of the UPESAT relation is as follows: the witness and the constraints are over $\ZZ$
+\subsection{Integer multiplication}
+We measure the cost of proving $2^i$ integer multiplications of the form $x\cdot  y = z$, for $x,y$ random $32$-bit integers, and $z$ a $64$-bit integer. As we mentioned, this is proved via our implemented end-to-end proof system, called \ftwoz-SNARK for R1CS over the integers, with \ftwoz\ as its PCS, as described in \cref{?}.
 
 
+
+We compare the performance of \ftwoz-SNARK with Binius64 \cite{binius64}, Plonky3 \cite{plonky}, Zinc+ \cite{zincplus}, and Limber \cite{limber} on the same task. Both Binius64 and Plonky3 implement gadgets for proving integer multiplication constraints. We use those in our benchmarks \albertimportant{Confirm}.
+
+
+\input{u32-mul-table}
+\albert{128 bits?}
 %Concretely we prove the relation $$\PIMSAT(\ZZ_{\leq 64}, \pp, \bot) = \left\{ \inp=\bot, \\right\}$$  We compare against Plonky3 \cite{?}, Binius64 \cite{?}
 
-\subsubsection{SHA-256 hashing}\label{s:sha256-f2-arithmetization}
+\subsection{SHA-256 hashing followed by ECDSA signature verification}
 
 
-\paragraph{SHA-256 compression overview}
-We begin with a brief overview of SHA-256~\cite{FIPS180-4} to establish
-notation, then formalize the relation we seek to arithmetize.
+\albertimportant{Use $\mathsf{Id}_{2^r} \otimes M$ as virtualization matrix, leading to $2^r$ compressions per grand product}
 
 
 
-For the purposes of SHA-256, a \emph{word} is a $\leq 32$ string of bits, which we represent as a binary integer polynomial, i.e.\ as an element of $\{0,1\}^{<32}[X]$.
-The SHA-256 compression function receives as input a $512$-bit string, represented as sixteen \emph{message words} $(M_t)_{t\in[16]}\in\{0,1\}^{<32}[X]^{16}$. 
-The algorithm also uses $64$ fixed \emph{round constants} $(K_t)_{t\in[64]}\in\{0,1\}^{<32}[X]^{64}$. 
 
-We let 
-%
-\begin{equation}
-\begin{aligned}
-\psi_2: \ZZ[X]& \to \ZZ\\
-a(X) &\mapsto a(2)
-\end{aligned}
-\end{equation}
-be the ring homomorphism sending integer polynomials to their evaluation at
-$X=2$. Notice that, given $a\in \{0,1\}^{<32}[X]$, the integer
-$\psi_2(a) \in \ZZ$ is the integer whose bit-representation coincides with
-the coefficients of $a$.  The restriction
-\[
-  \psi_2:\{0,1\}^{<32}[X]\longrightarrow\{0,\ldots,2^{32}-1\}
-\]
-is a bijection; throughout this subsection, $\psi_2^{-1}$ denotes the inverse
-of this restricted map, not an inverse on all of $\ZZ[X]$.
-
-
-SHA-256 is built from the following six auxiliary functions.
-For $x,y,z\in\{0,1\}^{<32}[X]$, define:
-\begin{equation}\label{eq:sha256_auxiliary_functions}
-\begin{aligned}
-\Sigma_0(x) &\coloneqq \ROTR^2(x)\xor\ROTR^{13}(x)\xor\ROTR^{22}(x) &&\in\{0,1\}^{<32}[X]\\
-\Sigma_1(x)&\coloneqq \ROTR^6(x)\xor\ROTR^{11}(x)\xor\ROTR^{25}(x)&&\in\{0,1\}^{<32}[X]\\
-\Ch(x,y,z) &\coloneqq (x\band y)\xor(\Not x\band z)&&\in\{0,1\}^{<32}[X]\\
-\Maj(x,y,z)&\coloneqq (x\band y)\xor(x\band z)\xor(y\band z)&&\in\{0,1\}^{<32}[X]\\
-\sigma_0(x) &\coloneqq \ROTR^7(x)\xor\ROTR^{18}(x)\xor\SHR^3(x)&&\in\{0,1\}^{<32}[X]\\
-\sigma_1(x)&\coloneqq \ROTR^{17}(x)\xor\ROTR^{19}(x)\xor\SHR^{10}(x)&&\in\{0,1\}^{<32}[X]
-\end{aligned}
-\end{equation}
-Here $\ROTR^r$ rotates a word right by $r$ positions, $\SHR^r$ shifts it
-right by $r$ positions and fills the high positions with zero, and
-$\xor,\band,\Not$ act coefficient-wise on bits.
-%The functions $\Ch$ (``choose'') provide $\Maj$ (``majority'') are bitwise selection and voting operations, respectively.
-
-\paragraph{Message schedule.}
-At the beginning of the SHA-256 compression function, the sixteen input
-message words $(M_t)_{t\in[16]}$ are expanded into a so-called
-\emph{message schedule}, which consists of $64$ words
-$(W_t)_{t\in[64]}\in(\{0,1\}^{<32}[X])^{64}$ defined as follows:
-\begin{equation}\label{eq:sha256_message_schedule_def}
-W_t \coloneqq 
-\begin{cases}
-M_t & t\in[16],\\
-\psi_2^{-1}\!\left(
-  \psi_2(W_{t-16})+\psi_2(\sigma_0(W_{t-15}))
-  +\psi_2(W_{t-7})+\psi_2(\sigma_1(W_{t-2}))
-  \bmod 2^\wordsize
-\right) & t\in\{17,\dots,64\}.
-\end{cases}
-\end{equation}
-%The first $16$ schedule words coincide with the input message words; the remaining $48$ are derived by mixing earlier schedule words via the $\sigma$-functions.
-
-\paragraph{Compression loop.}
-After the message schedule is computed, SHA-256 performs the so-called \emph{compression loop}. Throughout it, the function maintains an $8$-word internal state, conventionally labeled as $$(a,b,c,d,e,f,g,h) \in \{0,1\}^{<32}[X]^8.$$
-The compression loop iterates $64$ rounds.
-At each round $t\in[64]$, the state entering that round is denoted
-$(a_t,b_t,c_t,d_t,e_t,f_t,g_t,h_t)\in\{0,1\}^{<32}[X]^8$. The per-round update is given by, for $t\in [64]$,
-\begin{equation*}
-\begin{aligned}
-T_{1,t} &\coloneqq \psi_2^{-1}\!\left(
-  \psi_2(h_t)+\psi_2(\Sigma_1(e_t))+\psi_2(\Ch(e_t,f_t,g_t))
-  +\psi_2(K_t)+\psi_2(W_t)\bmod 2^\wordsize\right),\\
-T_{2,t} &\coloneqq \psi_2^{-1}\!\left(
-  \psi_2(\Sigma_0(a_t))+\psi_2(\Maj(a_t,b_t,c_t))
-  \bmod 2^\wordsize\right),\\
-a_{t+1} &\coloneqq \psi_2^{-1}\!\left(
-  \psi_2(T_{1,t})+\psi_2(T_{2,t})\bmod 2^\wordsize\right),\\
-e_{t+1} &\coloneqq \psi_2^{-1}\!\left(
-  \psi_2(d_t)+\psi_2(T_{1,t})\bmod 2^\wordsize\right),\\
-(b_{t+1},&c_{t+1},d_{t+1},f_{t+1},g_{t+1},h_{t+1}) 
-\coloneqq (a_t,b_t,c_t,e_t,f_t,g_t).
-\end{aligned}
-\end{equation*}
-For the feed-forward step, let
-\[
-\begin{aligned}
-S^{\mathrm{in}}&=(a_1,b_1,c_1,d_1,e_1,f_1,g_1,h_1),\\
-S^{\mathrm{fin}}&=(a_{65},b_{65},c_{65},d_{65},
-                    e_{65},f_{65},g_{65},h_{65}).
-\end{aligned}
-\]
-The compression output is the word vector $H^{\mathrm{out}}$ defined by
-\[
-  H^{\mathrm{out}}_j
-  =\psi_2^{-1}\!\left(
-      \psi_2(S^{\mathrm{in}}_j)+\psi_2(S^{\mathrm{fin}}_j)
-      \bmod 2^\wordsize
-    \right)
-  \qquad(j\in\{0,\ldots,7\}).
-\]
 
 %\input{sha256-f2}
 
-\subsubsection{Falcon signature verification}
 
-\subsubsection{RSA accumulation and Poseidon hashing}
+\subsection{RSA accumulation and Poseidon hashing}
 
 We compare Limber \cite{limber}, Zinc+\cite{zincplus} and our \ftwoz  on proving two RSA accumulation updates plus a Poseidon hash evaluation (see Section 7.1 of \cref{limber}). An RSA accumulation  consists  in performing a modular exponentiation on a $2048$-bit RSA modulus. This is exactly the computation with which Limber $\cite{limber}$ experiments with, and indeed we take the corresponding R1CS constraint from their repository. Recall that Limber is a proof system for polynomial relations over the integers,  (see \cref{s:related_work} for further details on Limber, Zinc+, etc.). 
 
@@ -2592,11 +2541,11 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
 \end{table}
 
 
-\subsubsection{Hashing followed by Falcon signature verification}
+\subsection{Hashing followed by Falcon signature verification}
 
 
 
-\subsubsection{Comparison with Hyrax}
+\subsection{Comparison with Hyrax}
 
 \albert{Comparing with Hyrax may be more interesting than it sounds initially. Hyrax is pay-per-bit and opens on large prime fields: a profile that F2Z can adopt. Hence (maybe) projects using Hyrax could use  F2Z as a drop-in replacement which is PQ secure and more efficient }
 
@@ -2635,21 +2584,24 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
 
 \subsection{Completeness and soundness of \cref{c:LinModFieldBin}}\label{a:LinModFieldBin}
 
-We prove \cref{t:thm_LinModFieldBits}. For readability, we temporarily denote by $\pi:\ZZ\to R$ the reduction modulo $\Char(R)$, we let $\uu=\psi(L)^{\mathsf{T}}\cdot \vv$ be as in \cref{c:LinModFieldBin} and $\ww_S=\pi_{\Char(S)}(\ww)$ for a vector of integers $\ww$ (cf.\ \eqref{e:integers_subscript_proj}), and we let
-%
-$$
-\Relation_{\mathsf{gen}}\defeq \LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC, L), \qquad \Relation_{\mathsf{core}}\defeq \LinBitsDual(\bits,\pi, R,\cC), \qquad \inp'\defeq (\mu,\uu),
-$$
-%
-and $\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack)$, $\LIN = \LIN(\comfield, \cC, \pack)$ (as in \cref{s:soundness_core_iop}). Recall from \cref{d:bitification} that a bitification of $\bff\in \moduleonebound^{\codedim_0}$ is any $\bfg\in \bits^{\codedim}$ with $\bff=L\cdot \bfg_S$, and that, by definition, $((\mu,\vv),f,\bff)\in \Relation_{\mathsf{gen}}^{\delta}$ if and only if the defining constraints of $\Relation_{\mathsf{gen}}^{\delta}$ hold for some bitification $\bitstext(\bff)$ of $\bff$; when they hold for a given bitification $\bfg$, we say that $((\mu,\vv),f,\bff)$ belongs to $\Relation_{\mathsf{gen}}^{\delta}$ \emph{via} $\bfg$. The honest prover of \cref{c:LinModFieldBin} uses such a $\bfg$ as its witness in \cref{c:core_iop}. The same applies to $\Relation_{\mathsf{gen}}$, with equality of codewords in place of the distance condition. We assume that $L\cdot \bfg_S\in \moduleonebound^{\codedim_0}$ for all $\bfg\in \bits^{\codedim}$, as is the case for the standard bitification matrix of \cref{d:bitification} (for a general $L$ this is needed: otherwise the prover may commit to bits $\bfg$ with $L\cdot \bfg_S\notin \moduleonebound^{\codedim_0}$ and have the verifier accept, although no witness in $\moduleonebound^{\codedim_0}$ exists).
+\albertimportant{Review: AI written}
 
-For $\bfg\in \bits^{\codedim}$ let $\bff_{\bfg}\defeq L\cdot \bfg_S\in \moduleonebound^{\codedim_0}$, so that $\bfg$ is a bitification of $\bff_{\bfg}$. By \cref{l:bitify} applied to $\bff_{\bfg}$ and $\bfg$, we have $\langle \psi(\bff_{\bfg}), \vv\rangle = \langle \bfg_R,\uu\rangle=\langle \pi(\bfg),\uu\rangle$, and hence, comparing the defining constraints of the two relations,
+We prove \cref{t:thm_LinModFieldBits}.
+. For readability, we temporarily denote   $\pi:\ZZ\to R$ for the reduction modulo $\Char(R)$ and we let
+%
+$$
+\Relation_{\mathsf{gen}}\defeq \LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC,L), \qquad \Relation_{\mathsf{core}}\defeq \LinBitsDual(\bits,\pi, R,\cC), \qquad \inp'\defeq (\mu,\uu),
+$$
+%
+and $\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack)$, $\LIN = \LIN(\comfield, \cC, \pack)$ (as  in \cref{s:soundness_core_iop}). Recall from \cref{d:bitification} that a bitification of $\bff\in \moduleonebound^{\codedim_0}$ is any $\bfg\in \bits^{\codedim}$ with $\bff=L\cdot \bfg_S$. For such $\bfg$, we say that $((\mu,\vv),f,\bff)$ belongs to $\Relation_{\mathsf{gen}}^{\delta}$ \emph{via} $\bfg$ if $\hamming(f,\Enc_{\cC}\circ \pack\circ \pi_2(\bfg))<\delta$ and $\langle \psi(\bff),\vv\rangle=\mu$. Then  $((\mu,\vv),f,\bff)\in \Relation_{\mathsf{gen}}^{\delta}$ if and only if $((\mu,\vv),f,\bff)$ belongs to $\Relation_{\mathsf{gen}}^{\delta}$ via some bitification $\bfg$ of $\bff$. The honest prover uses $\bfg$ as witness in the call to \cref{c:core_iop}. The same applies to $\Relation_{\mathsf{gen}}$, with equality of words in place of the distance condition. We assume that $L\cdot \bfg_S\in \moduleonebound^{\codedim_0}$ for all $\bfg\in \bits^{\codedim}$, as is the case for the standard bitification matrix of \cref{d:bitification} (for a general $L$ this is needed: otherwise the prover may commit to bits $\bfg$ with $L\cdot \bfg_S\notin \moduleonebound^{\codedim_0}$ and have the verifier accept, although no witness in $\moduleonebound^{\codedim_0}$ exists \albertimportant{process this requirement}).
+
+For $\bfg\in \bits^{\codedim}$ let $\bff_{\bfg}\defeq L\cdot \bfg_S\in \moduleonebound^{\codedim_0}$. By \cref{l:bitify}, $\langle \psi(\bff_{\bfg}), \vv\rangle = \langle \psi(\bfg_S), \psi(L)^{\mathsf{T}}\cdot \vv\rangle = \langle \pi(\bfg),\uu\rangle$, and hence
 %
 \begin{equation}\label{e:appendix_bitify}
 (\inp', f, \bfg)\in \Relation_{\mathsf{core}}^{\delta} \quad \Longleftrightarrow\quad  ((\mu, \vv), f, \bff_{\bfg}) \text{ belongs to } \Relation_{\mathsf{gen}}^{\delta} \text{ via } \bfg,
 \end{equation}
 %
-and likewise for $\Relation_{\mathsf{core}}$ and $\Relation_{\mathsf{gen}}$. Since \cref{c:LinModFieldBin} runs \cref{c:core_iop} on $(\inp',f)$ with witness a bitification $\bfg$ of $\bff=\bff_{\bfg}$, its perfect completeness follows from \eqref{e:appendix_bitify} and \cref{t:thm_core_IOPP}.
+and likewise for $\Relation_{\mathsf{core}}$ and $\Relation_{\mathsf{gen}}$. Completeness then follows from \eqref{e:appendix_bitify} and \cref{t:thm_core_IOPP}.
 
 For round-by-round knowledge soundness, we decompose \cref{c:LinModFieldBin} as in the proof of \cref{t:thm_core_IOPP}: the first IOR $\Pi_1'$ is the instance translation $(\mu,\vv)\mapsto \inp'$ followed by the IOR $\Pi_1$ of that proof (of \cref{a:OOD}, if Round 0 is executed), and the remaining IORs are $\Pi_\red$ and $\Pi_\iopp$ (their variants from \cref{a:OOD}, if Round 0 is executed). $\Pi_1'$ has the same messages and output as $\Pi_1$, and it is perfectly complete by \eqref{e:appendix_bitify}. By \cref{r:ior_compositoin} it suffices to show that $\Pi_1'$ has round-by-round knowledge soundness with relaxation $(\Relation_{\mathsf{gen}}^{\delta},\PESAT^{\delta})$ (resp.\ $(\Relation_{\mathsf{gen}}^{\delta},\PESAT^{\delta,\zeta,y})$) and with the same errors as $\Pi_1$; here $\kappa_0=\theta(R,\codedim)$ is computed with respect to the tensor decomposition $\uu=\uu^{(1)}\otimes\uu^{(2)}$ used in \cref{c:core_iop} (cf.\ \cref{r:tensor_dec_u}).
 
@@ -2659,6 +2611,7 @@ Let $\kstate_1$ be the knowledge state function of $\Pi_1$; recall that its extr
 \item $\rho$ is the empty message (Round 1 skipped). Then $\tr\Vert\rho$ is the full transcript, so $\ww=\bfg\in\bits^{\codedim}$, and, since appending the empty message does not change $\kstate_1$, the prover-move condition for $\kstate_1$ gives $\kstate_1(\inp',\oracle,\emptyset,\bfg)=1$, i.e.\ $(\inp',\oracle,\bfg)\in \Relation_{\mathsf{core}}^{\delta}$, a contradiction. The error is $0$.
 \item $\rho=\zeta$ (Round 0 executed). By the definition of $\kstate_1$ in \cref{a:OOD}, $\mathsf{Coll}(f,\zeta)$ holds, which happens with probability at most $\kappa_{\mathsf{OOD}}$ over $\zeta$ by \cref{l:ood_collision}.
 \end{itemize}
+
 
 \subsection{Soundness of Out Of Domain Sampling (OOD) in \cref{c:core_iop}}\label{a:OOD}
 
