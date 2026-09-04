@@ -80,7 +80,7 @@ const SHA256_ASSIGNMENT_BINDING_DOMAIN: &[u8] = b"f2z/spartan-sha256-assignment/
 
 /// One runtime-field element in Montgomery form, without cloning the shared
 /// 128-bit modulus configuration into every dense table entry.
-type RawMontgomery = u128;
+pub(super) type RawMontgomery = u128;
 
 /// Default number of low witness-position variables handled by the packed
 /// native-bit prefix kernel.  This is a prover-local performance choice and is
@@ -100,7 +100,7 @@ impl GrindingDomain for Sha256PublicBatchGrinding {
 
 /// Grinds one boundary, or skips it entirely at difficulty 0 (the λ = 100
 /// profiles): no transcript bytes move and the stored nonce is 0.
-fn grind_boundary<D: GrindingDomain, T: Transcript>(
+pub(super) fn grind_boundary<D: GrindingDomain, T: Transcript>(
     transcript: &mut T,
     bits: u32,
 ) -> Result<u64, GrindingError> {
@@ -112,7 +112,7 @@ fn grind_boundary<D: GrindingDomain, T: Transcript>(
 
 /// Checks one boundary, or (at difficulty 0) requires the canonical zero
 /// nonce without touching the transcript.
-fn check_boundary<D: GrindingDomain, T: Transcript>(
+pub(super) fn check_boundary<D: GrindingDomain, T: Transcript>(
     transcript: &mut T,
     bits: u32,
     nonce: u64,
@@ -195,6 +195,11 @@ pub enum Sha256F2zError {
     #[error("SHA-256 public statement length mismatch: expected {expected}, got {actual}")]
     InvalidPublicStatementLength { expected: usize, actual: usize },
 
+    /// A chain statement's blocks or digest disagree with the witness the
+    /// prover was handed.
+    #[error("SHA-256 chain statement does not match the witness")]
+    ChainStatementMismatch,
+
     /// Ligerito configuration derivation failed.
     #[error("failed to derive a Ligerito configuration: {0}")]
     LigeritoConfig(String),
@@ -237,7 +242,7 @@ pub fn sha256_compression_configs(
 }
 
 /// Commits packed extended-source rows `[1 | f]` under an explicit config.
-fn commit_source_rows_with_config(
+pub(super) fn commit_source_rows_with_config(
     p_f: &IntEvalParams,
     rows: Vec<Vec<u64>>,
     pc: &LigProverConfig,
@@ -1266,7 +1271,7 @@ impl PublicLinearBatching {
     }
 }
 
-fn weighted_byte_tables(
+pub(super) fn weighted_byte_tables(
     weights: &[SpartanF2zField],
     field_config: &<SpartanF2zField as PrimeField>::Config,
 ) -> Vec<Vec<SpartanF2zField>> {
@@ -1438,18 +1443,18 @@ fn flat_constraint_vars(
     Ok(domain.ilog2() as usize)
 }
 
-const fn local_constraint_vars() -> usize {
+pub(super) const fn local_constraint_vars() -> usize {
     SHA256_CONSTRAINTS.next_power_of_two().ilog2() as usize
 }
 
-fn instance_vars(instances: usize) -> Result<usize, Sha256F2zError> {
+pub(super) fn instance_vars(instances: usize) -> Result<usize, Sha256F2zError> {
     let domain = instances
         .checked_next_power_of_two()
         .ok_or(Sha256F2zError::InvalidGeometry)?;
     Ok(domain.ilog2() as usize)
 }
 
-fn squeeze_challenge_point(
+pub(super) fn squeeze_challenge_point(
     transcript: &mut impl Transcript,
     domain: &[u8],
     vars: usize,
@@ -1486,9 +1491,22 @@ fn collapse_local_linear_columns(
     field_config: &<SpartanF2zField as PrimeField>::Config,
 ) -> Result<Vec<SpartanF2zField>, SumcheckError> {
     let relation = prepared.linear_relation().native_matrix();
+    if relation.column_count() != SHA256_H_BAR_LIVE_BITS {
+        return Err(SumcheckError::InvalidProductDimensions);
+    }
+    collapse_native_linear_columns(relation, local_row_weights, reducer, field_config)
+}
+
+/// [`collapse_local_linear_columns`] over any native signed local relation
+/// with [`SHA256_CONSTRAINTS`] live rows: `β_c = Σ_r eq(r, ξ) C[r, c]`.
+pub(super) fn collapse_native_linear_columns(
+    relation: &crate::sparse_matrix::SparseMatrix<i64>,
+    local_row_weights: &[SpartanF2zField],
+    reducer: &OptimizedSumcheckReducer,
+    field_config: &<SpartanF2zField as PrimeField>::Config,
+) -> Result<Vec<SpartanF2zField>, SumcheckError> {
     let expected_rows = 1usize << local_constraint_vars();
     if relation.row_count() != SHA256_CONSTRAINTS
-        || relation.column_count() != SHA256_H_BAR_LIVE_BITS
         || local_row_weights.len() != expected_rows
         || local_row_weights
             .iter()
@@ -1943,7 +1961,7 @@ impl FactoredEqualityWeights {
 /// storing only each element's two Montgomery limbs. A full `MontyField`
 /// carries its runtime modulus configuration, which would otherwise multiply
 /// the memory of the flat SHA domains by roughly five.
-fn compact_eq_table(
+pub(super) fn compact_eq_table(
     point: &[SpartanF2zField],
     field_config: &<SpartanF2zField as PrimeField>::Config,
 ) -> Result<Vec<RawMontgomery>, Sha256F2zError> {
@@ -1991,20 +2009,20 @@ fn compact_eq_table(
 }
 
 #[inline]
-fn raw_montgomery(value: &SpartanF2zField) -> RawMontgomery {
+pub(super) fn raw_montgomery(value: &SpartanF2zField) -> RawMontgomery {
     let words = value.as_montgomery().as_words();
     u128::from(words[0]) | (u128::from(words[1]) << 64)
 }
 
 #[inline]
-fn field_from_raw(
+pub(super) fn field_from_raw(
     value: RawMontgomery,
     field_config: &<SpartanF2zField as PrimeField>::Config,
 ) -> SpartanF2zField {
     MontyField::from_montgomery(FieldUint::from(value), field_config)
 }
 
-fn validate_source_params(p_f: &IntEvalParams) -> Result<(), Sha256F2zError> {
+pub(super) fn validate_source_params(p_f: &IntEvalParams) -> Result<(), Sha256F2zError> {
     let host_bits = usize::BITS as usize;
     if p_f.word_bits != 1
         || p_f.t < LOG_PACKING
@@ -2090,7 +2108,7 @@ fn map_fixes_constant_assignment(map: &PackedRepeatedVirtualMap) -> bool {
     map_fixes_constant_assignment_local(map.local())
 }
 
-fn map_fixes_constant_assignment_local(map: &crate::f2map::PreparedVirtualMap) -> bool {
+pub(super) fn map_fixes_constant_assignment_local(map: &crate::f2map::PreparedVirtualMap) -> bool {
     let mut constant_source = None;
     for (column, entries) in map.matrix().columns().enumerate() {
         for row in entries.row_indices() {
@@ -2148,7 +2166,7 @@ fn public_bit_index_for_h_column(h_column: usize) -> Option<usize> {
     Some((INPUT_WORDS + output_word) * SHA256_PUBLIC_WORD_BITS + bit)
 }
 
-fn validate_rows(p: &IntEvalParams, rows: &[Vec<u64>]) -> Result<(), Sha256F2zError> {
+pub(super) fn validate_rows(p: &IntEvalParams, rows: &[Vec<u64>]) -> Result<(), Sha256F2zError> {
     let words = p.rows().div_ceil(64);
     if rows.len() != p.cols() || rows.iter().any(|row| row.len() != words) {
         return Err(Sha256F2zError::InvalidGeometry);
@@ -2179,7 +2197,7 @@ fn packed_flat_bit(
     Ok((word >> (row % u64::BITS as usize)) & 1)
 }
 
-fn validate_shared_constant(rows: &[Vec<u64>]) -> Result<(), Sha256F2zError> {
+pub(super) fn validate_shared_constant(rows: &[Vec<u64>]) -> Result<(), Sha256F2zError> {
     let packed = rows
         .get(SHA256_SHARED_CONSTANT_CELL)
         .ok_or(Sha256F2zError::InvalidGeometry)?;
@@ -2272,7 +2290,15 @@ fn hash_security_profile(
     hash: &mut Hasher,
     prepared: &PreparedSha256CompressionBatch,
 ) -> Result<(), Sha256F2zError> {
-    let security = prepared.security();
+    hash_security_params(hash, prepared.security())
+}
+
+/// Binds every instantiated security parameter (the profile name, target,
+/// intervals, grinding schedule, and Ligerito target).
+pub(super) fn hash_security_params(
+    hash: &mut Hasher,
+    security: &super::super::profile::IopSecurityParams,
+) -> Result<(), Sha256F2zError> {
     hash_usize(hash, security.profile_name.len())?;
     hash.update(security.profile_name.as_bytes());
     hash.update(&security.lambda.to_le_bytes());
@@ -2299,7 +2325,7 @@ fn hash_security_profile(
     Ok(())
 }
 
-fn hash_ligerito_config(
+pub(super) fn hash_ligerito_config(
     hash: &mut Hasher,
     config: &impl LigeritoStatementConfig,
 ) -> Result<(), Sha256F2zError> {
@@ -2563,7 +2589,7 @@ fn absorb_product_opening_claim<S: ModQWeightSource + ?Sized>(
     Ok(())
 }
 
-fn hash_usize(hash: &mut Hasher, value: usize) -> Result<(), Sha256F2zError> {
+pub(super) fn hash_usize(hash: &mut Hasher, value: usize) -> Result<(), Sha256F2zError> {
     hash.update(
         &u64::try_from(value)
             .map_err(|_| Sha256F2zError::BindingEncodingOverflow)?

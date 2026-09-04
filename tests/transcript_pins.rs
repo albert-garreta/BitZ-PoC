@@ -17,8 +17,10 @@ use f2z::piop::spartan::multiswap::{
 };
 use f2z::piop::spartan::{
     IopSecurityProfile, Lambda100, Sha128ReferenceSchedule, Sha256CompressionStatement,
-    commit_sha256_compression_witness, generate_sha256_compression_witnesses,
-    prepare_sha256_compression_batch_with_profile, prove_sha256_compressions,
+    commit_sha256_chain_witness, commit_sha256_compression_witness,
+    generate_sha256_chain_witnesses, generate_sha256_compression_witnesses,
+    prepare_sha256_chain_batch_with_profile, prepare_sha256_compression_batch_with_profile,
+    prove_sha256_chain, prove_sha256_compressions, verify_sha256_chain,
     verify_sha256_compressions,
 };
 use f2z::piop::spartan::{
@@ -42,6 +44,12 @@ const SHA256_2P7_LAMBDA100_DIGEST: &str =
 /// protocol.
 const SHA256_2P7_REFERENCE_DIGEST: &str =
     "93a359989d75f95c4eb3472b8b742a070dcdb8a6b15d172186d70316775ce5ad";
+
+/// The 2^7 CHAINED SHA-256 batch (the Merkle–Damgård chain from the
+/// standard initial state, intermediate states as witness) under the
+/// default `Lambda100` profile, on the chained virtual map.
+const SHA256_CHAIN_2P7_LAMBDA100_DIGEST: &str =
+    "e97e985ccc2c424a64d67ed60a2339604b0cdd2de47809d36902048bc7ffc924";
 
 /// The 2^15 u32-multiplication batch under the canonical runtime-prime,
 /// K=3 univariate-skip protocol and its default `Lambda100` profile.
@@ -136,6 +144,51 @@ fn sha256_2p7_reference_schedule_transcript_is_pinned() {
         sha256_2p7_digest::<Sha128ReferenceSchedule>(),
         SHA256_2P7_REFERENCE_DIGEST
     );
+}
+
+#[test]
+fn sha256_chain_2p7_default_lambda100_transcript_is_pinned() {
+    assert_eq!(
+        sha256_chain_2p7_digest::<Lambda100>(),
+        SHA256_CHAIN_2P7_LAMBDA100_DIGEST
+    );
+}
+
+fn sha256_chain_2p7_digest<P: IopSecurityProfile>() -> String {
+    const EXPONENT: usize = 7;
+    let prepared = prepare_sha256_chain_batch_with_profile::<P>(EXPONENT).expect("prepare");
+    let blocks: Vec<[u32; 16]> = (0..1usize << EXPONENT)
+        .map(|i| std::array::from_fn(|j| (i as u32).wrapping_mul(0x9e37_79b9) ^ (j as u32)))
+        .collect();
+    let witness = generate_sha256_chain_witnesses(&prepared, &blocks).expect("witness");
+    let statement = witness.statement();
+    let hint = commit_sha256_chain_witness(&prepared, &witness).expect("commit");
+    let mut prover_transcript = Blake3Transcript::new();
+    let proof = prove_sha256_chain(&mut prover_transcript, &prepared, &statement, &witness, &hint)
+        .expect("prove");
+    let mut verifier_transcript = Blake3Transcript::new();
+    verify_sha256_chain(
+        &mut verifier_transcript,
+        &prepared,
+        &statement,
+        &hint.commitment,
+        &proof,
+    )
+    .expect("verify");
+
+    let f2z_bytes = proof.f2z().to_bytes();
+    let nonces: Vec<u8> = proof
+        .initial_nonce()
+        .to_le_bytes()
+        .into_iter()
+        .chain(proof.terminal_nonce().to_le_bytes())
+        .collect();
+    let digest_words: Vec<u8> = statement
+        .digest
+        .iter()
+        .flat_map(|word| word.to_le_bytes())
+        .collect();
+    digest_hex(&[&hint.commitment.root, &f2z_bytes, &nonces, &digest_words])
 }
 
 fn sha256_2p7_digest<P: IopSecurityProfile>() -> String {

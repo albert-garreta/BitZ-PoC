@@ -64,7 +64,6 @@ use f2z::{
         Sha256CompressionStatement, Sha256ConstraintError, Sha256OpeningLayout, SpartanField,
         commit_sha256_compression_witness_with_config, generate_sha256_compression_witnesses,
         prepare_sha256_compression_batch_for_assignment_rows_with_profile,
-        prepare_sha256_compression_batch_with_profile,
         prepare_sha256_compression_batch_with_profile_and_layout,
         prove_sha256_compressions_with_prefix_vars_and_config, sha256_compression_configs,
         verify_sha256_compressions_with_config,

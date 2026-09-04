@@ -61,6 +61,7 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_BENCH_LAMBDA",
     "F2Z_BENCH_ORDER",
     "F2Z_BENCH_PASS",
+    "F2Z_BENCH_QUIET",
     "F2Z_BENCH_REPS",
     "F2Z_BENCH_SEED",
     "F2Z_BENCH_SHAPES",
@@ -145,6 +146,22 @@ pub fn enforce_known_env() {
     std::process::exit(2);
 }
 
+/// `F2Z_BENCH_QUIET=1` mutes the harness's advisory `warning:` lines
+/// (deprecated-alias notices, ignored-knob notices, build-configuration
+/// hints). Errors that abort a run are never muted.
+pub fn quiet() -> bool {
+    std::env::var("F2Z_BENCH_QUIET").is_ok_and(|v| v != "0")
+}
+
+/// Prints `warning: <msg>` on stderr unless [`quiet`] is set. Every
+/// advisory warning a bench emits goes through here so one knob mutes
+/// them all.
+pub fn warn(msg: impl std::fmt::Display) {
+    if !quiet() {
+        eprintln!("warning: {msg}");
+    }
+}
+
 /// Reads `canonical`, falling back to `alias` with a deprecation warning.
 /// Setting both to different values is an error.
 fn env_with_alias(canonical: &str, alias: Option<&str>) -> Option<String> {
@@ -163,10 +180,10 @@ fn env_with_alias(canonical: &str, alias: Option<&str>) -> Option<String> {
         }
         (Some(main), None) => Some(main),
         (None, Some(old)) => {
-            eprintln!(
-                "warning: {} is deprecated; use {canonical}",
+            warn(format_args!(
+                "{} is deprecated; use {canonical}",
                 alias.unwrap_or_default()
-            );
+            ));
             Some(old)
         }
         (None, None) => None,

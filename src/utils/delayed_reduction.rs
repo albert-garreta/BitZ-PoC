@@ -626,7 +626,7 @@ mod tests {
     use crypto_bigint::{Odd, Uint as CryptoUint};
     use crypto_primes::{Flavor, is_prime};
     use crypto_primitives::{FromWithConfig, PrimeField};
-    use rand::{Rng, RngExt, SeedableRng, rngs::StdRng};
+    use rand::{RngExt, SeedableRng, rngs::StdRng};
 
     type F = MontyField<2>;
 

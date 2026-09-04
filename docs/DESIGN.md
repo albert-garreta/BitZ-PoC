@@ -195,6 +195,27 @@ medians): step 5.3 (ring switch + Ligerito) 149 → 16 ms at 2^12 and
 646 → 63 ms at 2^14 (`h` 365 → ~30 ms, `a'` 243 → ~26 ms, Ligerito proper
 ~10 ms; the forest now dominates the opening at >95 %).
 
+A CHAINED relation — the SHA-256 Merkle–Damgård chain of `sha256_chain`,
+where instance `i`'s chaining-state rows read instance `i − 1`'s committed
+output cells instead of cells of their own — uses `ChainedPackedSourceMap`:
+the same packed source and local-major product tensor, but four local maps
+compose the global one — `local` (every instance, its own cells), `prev`
+(instance `i`'s rows from instance `i − 1`'s nonconstant cells), `first`
+(instance 0 only; the initial-state constants through the shared constant
+column) and `last` (instance `N − 1` only; the 256 terminal rows that expose
+the digest, structurally zero elsewhere). Transposed through the map, the
+chain link is again an (instance factor) × (local-column factor) term, only
+with the instance table ROTATED by one (source instance `j` takes
+`eq[j + 1]`), and each boundary map is a one-instance term (`eq[0]`,
+`eq[N − 1]`); `first`'s constant-column part folds into the constant
+weight. `VirtColumnWeights::PackedSourceRepeated` carries these as `extra`
+terms inside `pack_weights` (so the verifier's `a'` and the generic prover
+need nothing new), and the plane-engine prover adds them afterwards
+(`add_extra_hs` / `add_extra_a_prime`, exact by linearity — the round-0
+pair included) over the ~3 packs per instance the link touches
+(`virtual_chained_weights_match_generic` pins all three against the generic
+walk). The forest, the PIOP and the proof bytes are the independent batch's.
+
 When the prepared map is exactly the identity and both tensor layouts agree,
 the prover may emit `VirtOpenTail::Eq` and run the base opening directly on
 committed `f`. Otherwise it emits `VirtOpenTail::Batch`. The verifier accepts

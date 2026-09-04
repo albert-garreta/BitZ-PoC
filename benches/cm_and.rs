@@ -25,7 +25,7 @@ use f2z::piop::spartan::{
     verify_cm_and_f2z,
 };
 use f2z::transcript::Blake3Transcript;
-use rand::{Rng, RngExt, SeedableRng, rngs::StdRng};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 struct PeakAlloc;
 

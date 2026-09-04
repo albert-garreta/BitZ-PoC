@@ -1373,6 +1373,7 @@ impl ModQWeightChunks {
     /// disjoint per-limb bounds already imply reconstruction below
     /// `2^q_bits`, so validation scans each chunk once without rebuilding
     /// every dense row weight.
+    #[allow(dead_code)]
     pub(crate) fn from_chunks(
         p: &IntEvalParams,
         q_bits: usize,
@@ -1403,6 +1404,7 @@ impl ModQWeightChunks {
     }
 
     /// Chunk-major limbs, `chunks[l][b]`.
+    #[allow(dead_code)]
     pub(crate) fn chunks(&self) -> &[Vec<u128>] {
         &self.chunks
     }
@@ -1414,6 +1416,7 @@ impl ModQWeightChunks {
     /// materializing a second dense row-weight vector beside the chunk-major
     /// representation.
     #[allow(clippy::arithmetic_side_effects)]
+    #[allow(dead_code)]
     pub(crate) fn canonical_weights(&self) -> impl ExactSizeIterator<Item = u128> + '_ {
         (0..self.row_count).map(|row| {
             self.chunks
@@ -1426,11 +1429,13 @@ impl ModQWeightChunks {
     }
 
     /// Number of row weights in each chunk.
+    #[allow(dead_code)]
     pub(crate) const fn row_count(&self) -> usize {
         self.row_count
     }
 
     /// Limb width `c_w = 127 - t - W`.
+    #[allow(dead_code)]
     pub(crate) const fn chunk_width(&self) -> usize {
         self.chunk_width
     }
@@ -1441,11 +1446,13 @@ impl ModQWeightChunks {
     }
 
     /// Whether no chunks are present (always false for a validated value).
+    #[allow(dead_code)]
     pub(crate) const fn is_empty(&self) -> bool {
         self.chunks.is_empty()
     }
 
     /// Bit length against which the decomposition was validated.
+    #[allow(dead_code)]
     pub(crate) const fn q_bits(&self) -> usize {
         self.q_bits
     }

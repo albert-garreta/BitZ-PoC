@@ -1893,9 +1893,19 @@ mod tests {
 
             let largest = U32MulLayout::new_with_f2z_width(1 << 25, width).unwrap();
             for target in [100, 128] {
-                configs_for_layout_and_target(&largest, target)
+                configs_for_layout_and_target(&largest, target, U32MulLigerito::ValidatedUdr)
                     .expect("the full advertised benchmark range has a validated config");
             }
+            // The raw-performance table's Johnson opener at the 100-bit target.
+            configs_for_layout_and_target(
+                &largest,
+                100,
+                U32MulLigerito::CustomJohnson {
+                    log_inv_rate: 3,
+                    initial_k: 4,
+                },
+            )
+            .expect("the custom Johnson geometry validates over the benchmark range");
         }
     }
 

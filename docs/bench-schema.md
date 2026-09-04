@@ -105,6 +105,7 @@ an alias and the canonical name to different values is an error):
 | `F2Z_BENCH_SEED` | `F2Z_SHA_SEED`, `F2Z_CM_SEED` | root seed |
 | `F2Z_BENCH_PASS` | — | `latency|memory|both` |
 | `F2Z_BENCH_LAMBDA` | — | security profile: `100` / `128` / `114` or a profile name (`lambda100`, `lambda128`, `limber114`, `sha128-reference-schedule`); unset = the bench's own default; a profile the bench's prime strategy cannot instantiate aborts with the admissible list (`pcs` has no IOP profile and only warns) |
+| `F2Z_BENCH_QUIET` | — | `1` mutes the harness's advisory `warning:` lines (deprecated aliases, the `pcs` `F2Z_BENCH_LAMBDA` notice, build-configuration hints); aborting errors are never muted |
 
 **Unknown `F2Z_*` variables abort the bench** with the full known-knob list,
 so a typo'd knob can never silently do nothing. The registry lives in
@@ -119,7 +120,9 @@ unless `OBLONG_PROFILE=1` is set.
 ## Which benches adopt what
 
 - **Full schema** (uniform block + RESULT line + step scopes):
-  `multiswap`, `sha256_compressions`, `u32_mul`, `baby_bear_mul` (two rows
+  `multiswap`, `sha256_compressions`, `sha256_chain` (`bench=sha256_chain`,
+  `shape=chain-2p<k>`; extra keys `compressions`, `message_bytes`,
+  `mnum_rows` = the product tensor's cells), `u32_mul`, `baby_bear_mul` (two rows
   per shape: `profile=lambda100` and `profile=lambda128` on one witness,
   or the one row `F2Z_BENCH_LAMBDA` selects), `lambda_sweep` (all three
   SHA profiles, or the one `F2Z_BENCH_LAMBDA` selects), `pcs` (PCS-only:

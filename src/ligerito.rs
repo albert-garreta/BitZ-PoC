@@ -775,6 +775,7 @@ pub(crate) fn xi_combined_rows_packed(
 /// holds `M[64g+k][i]` — the layout the branch-native bit-affine lazy
 /// forest consumes. Built directly from the data tensor.
 #[allow(clippy::arithmetic_side_effects)]
+#[allow(dead_code)]
 pub(crate) fn pack_columns_lanes(p: &IntEvalParams, data: &[u128]) -> Vec<Vec<u64>> {
     let log_w = p.word_bits.trailing_zeros() as usize;
     let row_len = p.rows() << log_w;
@@ -805,6 +806,7 @@ pub(crate) fn pack_columns_lanes(p: &IntEvalParams, data: &[u128]) -> Vec<Vec<u6
 /// lane-packed columns (single weight set). Mirrors the mod-q prover's
 /// internals with one chunk. Returns (forest proof, rho, leaf claims).
 #[allow(clippy::arithmetic_side_effects)]
+#[allow(dead_code)]
 fn prove_fold_forest_fast(
     transcript: &mut impl Transcript,
     p: &IntEvalParams,
@@ -1098,6 +1100,7 @@ pub(crate) fn rows_from_packed_cols(p: &IntEvalParams, packed_cols: &[Vec<u64>])
 /// plus the residual claim point `(r*, ξ)` whose bit-MLE evaluation the
 /// opening backend must prove.
 #[allow(clippy::arithmetic_side_effects)]
+#[allow(dead_code)]
 pub(crate) fn prove_int_eval_common(
     transcript: &mut impl Transcript,
     p: &IntEvalParams,
@@ -1154,6 +1157,7 @@ pub(crate) fn prove_int_eval_common(
 /// Returns the residual claim `(point, μ)` for the opening backend; the
 /// caller finishes with its opener and the read-off.
 #[allow(clippy::arithmetic_side_effects)]
+#[allow(dead_code)]
 pub(crate) fn verify_int_eval_common(
     transcript: &mut impl Transcript,
     forest: &ProductForestProof<Gf>,

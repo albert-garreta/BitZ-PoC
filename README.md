@@ -58,7 +58,7 @@ F2Z_BENCH_LAMBDA=114 RAYON_NUM_THREADS=1 RUSTFLAGS="-C target-cpu=native" \
   cargo bench --bench multiswap --features unchecked
 ```
 
-### SHA-256 — λ=100 bits of security (`F2Z_BENCH_LAMBDA=128` for the 128-bit profile)
+### SHA-256 independent compressions — λ=100 bits of security (`F2Z_BENCH_LAMBDA=128` for the 128-bit profile)
 ```sh
 F2Z_BENCH_LAMBDA=100 F2Z_BENCH_SHAPES=14 F2Z_BENCH_REPS=3 RUSTFLAGS="-C target-cpu=native" \
   cargo bench --bench sha256_compressions --features unchecked

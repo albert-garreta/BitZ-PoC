@@ -84,6 +84,17 @@ pub use profile::{
     SoundnessTerm,
 };
 pub use sha256::{
+    PreparedSha256ChainBatch, SHA256_CHAIN_F_BAR_LIVE_BITS, SHA256_CHAIN_F_INSTANCE_BITS,
+    SHA256_CHAIN_H_BAR_LIVE_BITS, SHA256_CHAIN_H_INSTANCE_BITS, SHA256_CHAIN_TERMINAL_BITS,
+    Sha256ChainProof, Sha256ChainStatement, Sha256ChainWitnessBatch,
+    commit_sha256_chain_witness, commit_sha256_chain_witness_with_config,
+    generate_sha256_chain_witnesses, prepare_sha256_chain_batch,
+    prepare_sha256_chain_batch_with_profile,
+    prepare_sha256_chain_batch_with_profile_and_initial_state, prove_sha256_chain,
+    prove_sha256_chain_with_config, sha256_chain_configs, sha256_compress,
+    verify_sha256_chain, verify_sha256_chain_with_config,
+};
+pub use sha256::{
     PreparedSha256CompressionBatch, SHA256_COMMITMENT_FIELD_BITS, SHA256_CONSTRAINTS,
     SHA256_DEFAULT_INNER_PREFIX_VARS, SHA256_F_BAR_LIVE_BITS, SHA256_F_INSTANCE_BITS,
     SHA256_F_LIVE_BITS, SHA256_H_BAR_LIVE_BITS, SHA256_H_INSTANCE_BITS,

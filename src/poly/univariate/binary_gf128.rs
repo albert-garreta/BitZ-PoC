@@ -3256,7 +3256,7 @@ fn eval_bits_at(mut bits: u64, max_bits: usize, alpha: &BinaryFieldGF128) -> Bin
 mod tests {
     use super::*;
     use crate::utils::wide_mul::WideMulAcc;
-    use rand::{Rng, RngExt, SeedableRng, rngs::StdRng};
+    use rand::{RngExt, SeedableRng, rngs::StdRng};
 
     fn rand_elt(rng: &mut StdRng) -> BinaryFieldGF128 {
         BinaryFieldGF128::from_words([rng.random(), rng.random()])
@@ -3968,7 +3968,7 @@ mod tests {
     /// prove-path swap depends on.
     #[test]
     fn simd_x4_matches_scalar_branchy_random() {
-        use rand::{Rng, RngExt, SeedableRng, rngs::StdRng};
+        use rand::{RngExt, SeedableRng, rngs::StdRng};
         const D: usize = 32;
         let mut rng = StdRng::seed_from_u64(0x5_BA7CC0_128);
         let alpha = rand_elt(&mut rng);
@@ -4034,7 +4034,7 @@ mod tests {
     /// the scalar branchy kernel) on every batch.
     #[test]
     fn simd_x4_sparse_matches_simd_x4() {
-        use rand::{Rng, RngExt, SeedableRng, rngs::StdRng};
+        use rand::{RngExt, SeedableRng, rngs::StdRng};
         const D: usize = 32;
         let mut rng = StdRng::seed_from_u64(0x5_AA70BA_128);
         let alpha = rand_elt(&mut rng);
@@ -4072,7 +4072,7 @@ mod tests {
     /// of column length (covers `len % 4 = 0..3`).
     #[test]
     fn project_column_matches_scalar_per_cell() {
-        use rand::{Rng, RngExt, SeedableRng, rngs::StdRng};
+        use rand::{RngExt, SeedableRng, rngs::StdRng};
         const D: usize = 32;
         let mut rng = StdRng::seed_from_u64(0xC0_1B_07_128);
         let alpha = rand_elt(&mut rng);

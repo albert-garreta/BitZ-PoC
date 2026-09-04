@@ -13,9 +13,7 @@ use core::{
     },
     str::FromStr,
 };
-use crypto_bigint::{
-    CheckedMul as CryptoCheckedMul, CheckedSub as CryptoCheckedSub, Integer, Word,
-};
+use crypto_bigint::{CheckedSub as CryptoCheckedSub, Integer, Word};
 use num_traits::{
     CheckedAdd, CheckedMul, CheckedNeg, CheckedRem, CheckedSub, ConstOne, ConstZero, One, Pow,
     WrappingAdd, WrappingMul, WrappingSub, Zero,

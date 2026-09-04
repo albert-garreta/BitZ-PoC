@@ -543,6 +543,7 @@ impl RoundBoundaryPolicy for UngrindedRoundBoundary {
     }
 }
 
+#[allow(dead_code)]
 struct ProverGrindingRoundBoundary<D> {
     bits: u32,
     round_offset: usize,
@@ -551,6 +552,7 @@ struct ProverGrindingRoundBoundary<D> {
 }
 
 impl<D> ProverGrindingRoundBoundary<D> {
+    #[allow(dead_code)]
     fn with_round_offset(bits: u32, round_offset: usize) -> Self {
         Self {
             bits,
@@ -849,6 +851,7 @@ where
     /// absorbed and before challenge `i` is sampled. `D` supplies the typed,
     /// protocol-specific grinding domain; `grinding_bits` is fixed across all
     /// rounds in this proof.
+    #[allow(dead_code)]
     pub(crate) fn verify_grinded<D: GrindingDomain>(
         &self,
         transcript: &mut impl Transcript,
@@ -985,6 +988,7 @@ where
 /// protocol-specific grinding domain and `grinding_bits` is fixed for all
 /// rounds. The ordinary [`prove_outer_sumcheck_with_reducer`] path remains
 /// ungrinded and transcript-compatible with existing proofs.
+#[allow(dead_code)]
 pub(crate) fn prove_outer_sumcheck_with_reducer_grinded<D, F, R>(
     transcript: &mut impl Transcript,
     initial_claim: F,
@@ -1717,6 +1721,7 @@ where
 /// after every round message. `round_offset` lets a caller prepend
 /// transcript-identical rounds computed by another prover kernel while keeping
 /// the grinding round indices globally consecutive.
+#[allow(dead_code)]
 pub(crate) fn prove_inner_sumcheck_with_reducer_grinded<D, F, R>(
     transcript: &mut impl Transcript,
     initial_claim: F,

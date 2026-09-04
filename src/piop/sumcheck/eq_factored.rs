@@ -1678,6 +1678,7 @@ pub(crate) fn par_min_len(groups: usize, half: usize) -> usize {
 /// no hand kernel, and the reference `eqf_grid_pass` overrides are
 /// pinned against.
 #[allow(clippy::arithmetic_side_effects)]
+#[allow(dead_code)]
 fn dense_grid_pass_generic<F>(l: &mut Vec<F>, r: &mut Vec<F>, pending: &[F], suffix: &[F], quads: usize, zero: &F) -> [F; 9]
 where
     F: InnerTransparentField + WideMulAcc,

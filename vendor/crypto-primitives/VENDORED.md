@@ -22,5 +22,7 @@ Local modifications, all to accept crypto-bigint 0.7.5 (upstream capped at
   `Int::FULL_MASK` const dropped (removed upstream, unused here).
 - The boxed-monty field wrapper module is dropped (unused by f2z; its
   `BoxedMontyForm` API drifted).
+- `ring/crypto_bigint_int.rs`: the unused `CheckedMul as CryptoCheckedMul`
+  import is dropped (it only warned).
 
 Everything else is byte-identical to the upstream revision.

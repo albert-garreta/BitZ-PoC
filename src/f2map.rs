@@ -9,6 +9,7 @@ use blake3::Hasher;
 use thiserror::Error;
 
 use core::slice;
+use std::vec as alloc_vec;
 
 use crate::{pcs::IntEvalParams, sparse_matrix::SparseMatrix};
 
@@ -95,6 +96,14 @@ pub trait VirtualMap: Sync {
     /// Derived-index order of [`Self::packed_source_repetition`].
     fn packed_source_order(&self) -> PackedSourceOrder {
         PackedSourceOrder::LocalMajor
+    }
+
+    /// The chained packed-source repetition of a [`ChainedPackedSourceMap`]:
+    /// the plain repetition plus the cross-instance (`prev`) and boundary
+    /// (`first`/`last`) local maps, local-major derived order. Default: no
+    /// structure exposed.
+    fn chained_packed_source(&self) -> Option<ChainedPackedSourceParts<'_>> {
+        None
     }
 }
 
@@ -543,6 +552,304 @@ impl VirtualMap for PackedSourceRepeatedVirtualMap {
 
     fn packed_source_order(&self) -> PackedSourceOrder {
         self.order
+    }
+}
+
+/// The four local maps and instance count of a [`ChainedPackedSourceMap`],
+/// exposed so the virtual-opening engines can factor their work over the
+/// repetition and its cross-instance terms.
+#[derive(Clone, Copy)]
+pub struct ChainedPackedSourceParts<'a> {
+    /// Instance `i`'s rows from instance `i`'s own cells (every instance).
+    pub local: &'a PreparedVirtualMap,
+    /// Instance `i`'s rows from instance `i - 1`'s nonconstant cells
+    /// (`i ≥ 1`; the chain link).
+    pub prev: &'a PreparedVirtualMap,
+    /// Instance 0's rows from instance 0's cells and the shared constant.
+    pub first: &'a PreparedVirtualMap,
+    /// Instance `N - 1`'s rows from instance `N - 1`'s cells and the shared
+    /// constant.
+    pub last: &'a PreparedVirtualMap,
+    /// Number of instances `N` (a power of two, at least two).
+    pub instances: usize,
+}
+
+/// Packed-source repetition with the cross-instance references a CHAINED
+/// relation needs — e.g. the SHA-256 Merkle–Damgård chain, where instance
+/// `i`'s chaining-state rows read instance `i - 1`'s output cells instead of
+/// committed cells of their own.
+///
+/// The committed source is the gap-free instance-major packing of
+/// [`PackedSourceRepeatedVirtualMap`] (`[1 | f_0[1..] | … | f_{N-1}[1..] | 0…]`)
+/// and the derived side is its local-major product tensor
+/// `h[local, instance]` (derived index `local · N + instance`). Four local
+/// maps of one shape `h_local × f_local` compose the global map:
+///
+/// * `local` — instance `i`'s rows from instance `i`'s own cells, for every
+///   instance (the plain repetition);
+/// * `prev` — instance `i`'s rows from instance `i - 1`'s NONCONSTANT cells,
+///   for `i ≥ 1` (its constant column must be empty);
+/// * `first` — instance 0's rows from instance 0's cells and the shared
+///   constant (boundary constants such as the SHA-256 initial state);
+/// * `last` — instance `N - 1`'s rows from instance `N - 1`'s cells and the
+///   shared constant (boundary read-outs such as the terminal digest).
+///
+/// Every `(derived row, source cell)` pair is stored at most once: `first`
+/// and `last` may not share an entry with `local` (validated per column),
+/// and `prev`'s entries land on the NEXT instance, so they never coincide
+/// with another map's. Only the local-major derived order is supported.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChainedPackedSourceMap {
+    local: PreparedVirtualMap,
+    prev: PreparedVirtualMap,
+    first: PreparedVirtualMap,
+    last: PreparedVirtualMap,
+    instances: usize,
+    rows: usize,
+    cols: usize,
+    live_rows: usize,
+    live_cols: usize,
+    nnz: usize,
+    digest: [u8; 32],
+}
+
+impl ChainedPackedSourceMap {
+    /// Builds the chained repetition inside power-of-two global domains.
+    pub fn new(
+        local: PreparedVirtualMap,
+        prev: PreparedVirtualMap,
+        first: PreparedVirtualMap,
+        last: PreparedVirtualMap,
+        instances: usize,
+        rows: usize,
+        cols: usize,
+    ) -> Result<Self, PreparedVirtualMapError> {
+        let shape = (local.rows(), local.cols());
+        if instances < 2
+            || !instances.is_power_of_two()
+            || local.rows() == 0
+            || local.cols() < 2
+            || !rows.is_power_of_two()
+            || !cols.is_power_of_two()
+            || [&prev, &first, &last]
+                .iter()
+                .any(|map| (map.rows(), map.cols()) != shape)
+            || prev
+                .matrix()
+                .column(0)
+                .is_none_or(|column| !column.is_empty())
+        {
+            return Err(PreparedVirtualMapError::InvalidRepetition);
+        }
+        // `first`/`last` entries coexist with `local`'s on one instance and
+        // must not cancel any of them.
+        for boundary in [&first, &last] {
+            for (own, extra) in local.matrix().columns().zip(boundary.matrix().columns()) {
+                if sorted_intersect(own.row_indices(), extra.row_indices()) {
+                    return Err(PreparedVirtualMapError::InvalidRepetition);
+                }
+            }
+        }
+        let live_rows = local
+            .rows()
+            .checked_mul(instances)
+            .ok_or(PreparedVirtualMapError::InvalidRepetition)?;
+        let live_cols = (local.cols() - 1)
+            .checked_mul(instances)
+            .and_then(|cells| cells.checked_add(1))
+            .ok_or(PreparedVirtualMapError::InvalidRepetition)?;
+        if live_rows > rows || live_cols > cols {
+            return Err(PreparedVirtualMapError::InvalidRepetition);
+        }
+        let nnz = local
+            .nnz()
+            .checked_mul(instances)
+            .and_then(|count| count.checked_add(prev.nnz().checked_mul(instances - 1)?))
+            .and_then(|count| count.checked_add(first.nnz()))
+            .and_then(|count| count.checked_add(last.nnz()))
+            .ok_or(PreparedVirtualMapError::InvalidRepetition)?;
+
+        let mut hash = Hasher::new();
+        hash.update(b"f2z/chained-packed-source-map/v1");
+        for map in [&local, &prev, &first, &last] {
+            hash.update(&map.digest());
+        }
+        for value in [instances, rows, cols, live_rows, live_cols, nnz] {
+            hash.update(
+                &u64::try_from(value)
+                    .map_err(|_| PreparedVirtualMapError::ShapeTooLarge)?
+                    .to_le_bytes(),
+            );
+        }
+        let digest = *hash.finalize().as_bytes();
+
+        Ok(Self {
+            local,
+            prev,
+            first,
+            last,
+            instances,
+            rows,
+            cols,
+            live_rows,
+            live_cols,
+            nnz,
+            digest,
+        })
+    }
+
+    /// The four local maps and the instance count.
+    pub const fn parts(&self) -> ChainedPackedSourceParts<'_> {
+        ChainedPackedSourceParts {
+            local: &self.local,
+            prev: &self.prev,
+            first: &self.first,
+            last: &self.last,
+            instances: self.instances,
+        }
+    }
+
+    /// The plain per-instance map.
+    pub const fn local(&self) -> &PreparedVirtualMap {
+        &self.local
+    }
+
+    /// The chain link: rows of instance `i` from cells of instance `i - 1`.
+    pub const fn prev(&self) -> &PreparedVirtualMap {
+        &self.prev
+    }
+
+    /// Instance 0's boundary map.
+    pub const fn first(&self) -> &PreparedVirtualMap {
+        &self.first
+    }
+
+    /// Instance `N - 1`'s boundary map.
+    pub const fn last(&self) -> &PreparedVirtualMap {
+        &self.last
+    }
+
+    /// Number of chained instances.
+    pub const fn instances(&self) -> usize {
+        self.instances
+    }
+
+    /// Number of live derived cells before the one global suffix.
+    pub const fn live_rows(&self) -> usize {
+        self.live_rows
+    }
+
+    /// Number of live committed source cells before the one global suffix.
+    pub const fn live_cols(&self) -> usize {
+        self.live_cols
+    }
+
+    /// Nonconstant local-column offsets `[lo, hi)` (`0..width`) that carry
+    /// any entry of `map`; `(0, 0)` when there are none.
+    pub fn nonconstant_column_span(map: &PreparedVirtualMap) -> (usize, usize) {
+        let mut span: Option<(usize, usize)> = None;
+        for (column, entries) in map.matrix().columns().enumerate().skip(1) {
+            if entries.is_empty() {
+                continue;
+            }
+            let offset = column - 1;
+            span = Some(match span {
+                None => (offset, offset + 1),
+                Some((lo, _)) => (lo, offset + 1),
+            });
+        }
+        span.unwrap_or((0, 0))
+    }
+}
+
+/// Whether two strictly increasing index lists share an element.
+fn sorted_intersect(left: &[usize], right: &[usize]) -> bool {
+    let (mut i, mut j) = (0, 0);
+    while i < left.len() && j < right.len() {
+        match left[i].cmp(&right[j]) {
+            core::cmp::Ordering::Less => i += 1,
+            core::cmp::Ordering::Greater => j += 1,
+            core::cmp::Ordering::Equal => return true,
+        }
+    }
+    false
+}
+
+impl VirtualMap for ChainedPackedSourceMap {
+    type ColumnRows<'a> = alloc_vec::IntoIter<usize>;
+
+    fn rows(&self) -> usize {
+        self.rows
+    }
+
+    fn cols(&self) -> usize {
+        self.cols
+    }
+
+    fn nnz(&self) -> usize {
+        self.nnz
+    }
+
+    fn digest(&self) -> [u8; 32] {
+        self.digest
+    }
+
+    fn is_identity(&self) -> bool {
+        false
+    }
+
+    fn column_rows(&self, column: usize) -> Option<Self::ColumnRows<'_>> {
+        if column >= self.cols {
+            return None;
+        }
+        let instances = self.instances;
+        let mut derived = Vec::new();
+        if column >= self.live_cols {
+            return Some(derived.into_iter());
+        }
+        let push_rows = |derived: &mut Vec<usize>, map: &PreparedVirtualMap, local_column, instance| {
+            if let Some(rows) = map.matrix().column(local_column) {
+                derived.extend(
+                    rows.row_indices()
+                        .iter()
+                        .map(|&row| row * instances + instance),
+                );
+            }
+        };
+        if column == 0 {
+            if let Some(rows) = self.local.matrix().column(0) {
+                for &row in rows.row_indices() {
+                    derived.extend((0..instances).map(|instance| row * instances + instance));
+                }
+            }
+            push_rows(&mut derived, &self.first, 0, 0);
+            push_rows(&mut derived, &self.last, 0, instances - 1);
+        } else {
+            let offset = column - 1;
+            let width = self.local.cols() - 1;
+            let instance = offset / width;
+            let local_column = 1 + offset % width;
+            push_rows(&mut derived, &self.local, local_column, instance);
+            if instance + 1 < instances {
+                push_rows(&mut derived, &self.prev, local_column, instance + 1);
+            }
+            if instance == 0 {
+                push_rows(&mut derived, &self.first, local_column, 0);
+            }
+            if instance == instances - 1 {
+                push_rows(&mut derived, &self.last, local_column, instance);
+            }
+        }
+        derived.sort_unstable();
+        debug_assert!(
+            derived.windows(2).all(|pair| pair[0] < pair[1]),
+            "chained map entries are unique per source column"
+        );
+        Some(derived.into_iter())
+    }
+
+    fn chained_packed_source(&self) -> Option<ChainedPackedSourceParts<'_>> {
+        Some(self.parts())
     }
 }
 
@@ -1085,6 +1392,67 @@ mod tests {
         assert!(repeated.column_rows(9).unwrap().next().is_none());
         assert!(repeated.column_rows(16).is_none());
         assert_ne!(repeated.digest(), local.digest());
+    }
+
+    #[test]
+    fn chained_packed_source_map_links_instances_and_boundaries() {
+        // 4 local rows × (constant + 2 cells); 4 instances; rows 16, cols 16.
+        let local = prepared(4, vec![vec![(0, true)], vec![(1, true)], vec![(2, true)]]);
+        // Row 1 of instance i reads cell 2 of instance i - 1.
+        let prev = prepared(4, vec![vec![], vec![], vec![(1, true)]]);
+        // Instance 0's row 1 also reads the constant (an initial-state bit).
+        let first = prepared(4, vec![vec![(1, true)], vec![], vec![]]);
+        // Instance 3 exposes cell 2 in row 3.
+        let last = prepared(4, vec![vec![], vec![], vec![(3, true)]]);
+        let map = ChainedPackedSourceMap::new(
+            local.clone(),
+            prev.clone(),
+            first.clone(),
+            last.clone(),
+            4,
+            16,
+            16,
+        )
+        .unwrap();
+        assert_eq!(map.instances(), 4);
+        assert_eq!(map.live_rows(), 16);
+        assert_eq!(map.live_cols(), 9);
+        assert_eq!(map.nnz(), 3 * 4 + 3 + 1 + 1);
+        assert!(!map.is_identity());
+        // Constant column: row 0 of every instance, plus instance 0's row 1.
+        assert_eq!(
+            map.column_rows(0).unwrap().collect::<Vec<_>>(),
+            vec![0, 1, 2, 3, 4]
+        );
+        // Instance 1, cell 1 (global column 3): row 1 of instance 1 only.
+        assert_eq!(map.column_rows(3).unwrap().collect::<Vec<_>>(), vec![5]);
+        // Instance 1, cell 2 (global column 4): its own row 2, and row 1 of
+        // instance 2 through the chain link.
+        assert_eq!(map.column_rows(4).unwrap().collect::<Vec<_>>(), vec![6, 9]);
+        // Instance 3, cell 2 (global column 8): own row 2, the terminal row
+        // 3 through `last`, and no next instance.
+        assert_eq!(map.column_rows(8).unwrap().collect::<Vec<_>>(), vec![11, 15]);
+        assert!(map.column_rows(9).unwrap().next().is_none());
+        assert!(map.column_rows(16).is_none());
+        assert_eq!(ChainedPackedSourceMap::nonconstant_column_span(&prev), (1, 2));
+        assert_eq!(ChainedPackedSourceMap::nonconstant_column_span(&first), (0, 0));
+
+        // A boundary entry duplicating a `local` entry would cancel: rejected.
+        let clashing_first = prepared(4, vec![vec![(0, true)], vec![], vec![]]);
+        assert_eq!(
+            ChainedPackedSourceMap::new(local.clone(), prev.clone(), clashing_first, last.clone(), 4, 16, 16),
+            Err(PreparedVirtualMapError::InvalidRepetition)
+        );
+        // The chain link may not read the constant, and one instance is no chain.
+        let constant_prev = prepared(4, vec![vec![(1, true)], vec![], vec![]]);
+        assert_eq!(
+            ChainedPackedSourceMap::new(local.clone(), constant_prev, first.clone(), last.clone(), 4, 16, 16),
+            Err(PreparedVirtualMapError::InvalidRepetition)
+        );
+        assert_eq!(
+            ChainedPackedSourceMap::new(local, prev, first, last, 1, 16, 16),
+            Err(PreparedVirtualMapError::InvalidRepetition)
+        );
     }
 
     #[test]

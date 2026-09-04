@@ -60,7 +60,7 @@ use crate::ligerito::{
 use crate::merged_forest::MergedForestProof;
 use crate::pcs::{IntEvalParams, ModQWeightChunks, ModQWeightSource, ShaF2Layout, final_eval_ring};
 use crate::taps::TapOp;
-use crate::utils::{cfg_chunks_mut, cfg_into_iter, cfg_iter};
+use crate::utils::{cfg_chunks, cfg_chunks_mut, cfg_into_iter, cfg_iter};
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -1043,6 +1043,7 @@ fn q_weight_bound(q_bits: usize) -> Option<u128> {
     (1..=126).contains(&q_bits).then(|| 1u128 << q_bits)
 }
 
+#[allow(dead_code)]
 fn weights_fit_q_bits(weights: &[u128], q_bits: usize) -> bool {
     q_weight_bound(q_bits).is_some_and(|bound| weights.iter().all(|&weight| weight < bound))
 }
@@ -1095,6 +1096,7 @@ fn checked_mod_q_weight_chunks_geometry(
     checked_mod_q_weight_source_geometry(p, chunks, q_bits)
 }
 
+#[allow(dead_code)]
 fn checked_virtual_xor_geometry(
     commitment: &Commitment,
     layout: &ShaF2Layout,
@@ -1152,6 +1154,7 @@ fn checked_virtual_xor_geometry(
     Ok((base, p_x, x))
 }
 
+#[allow(dead_code)]
 fn validate_single_proof_shape(
     proof: &IntEvalRsLigProof,
     geometry: IntEvalGeometry,
@@ -1202,15 +1205,21 @@ fn checked_mod_q_shape(
 // Canonical public-statement binding
 // ---------------------------------------------------------------------
 
+#[allow(dead_code)]
 const RS_OPEN_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/rs-open/v1";
+#[allow(dead_code)]
 const RS_EVAL_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/rs-eval/v1";
+#[allow(dead_code)]
 const RS_EVAL_BATCH_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/rs-eval-batch/v1";
+#[allow(dead_code)]
 const MOD_Q_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q/v1";
 const U32_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN: &[u8] = b"f2z/spartan-f2z/u32-mod-q-opening/v2";
 const BABY_BEAR_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN: &[u8] =
     b"f2z/spartan-baby-bear-f2z/mod-q-opening/v2";
 const EXT_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/ext/v1";
+#[allow(dead_code)]
 const MOD_Q_XOR_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q-xor/v1";
+#[allow(dead_code)]
 const MOD_Q_XOR_ONLY_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q-xor-only/v1";
 
 /// Application relation whose statement domain binds a chunked-weight mod-q
@@ -1235,9 +1244,11 @@ const STATEMENT_FRAME_DOMAIN: &[u8] = b"f2z/ligerito-flock/statement-frame/v1";
 const FIELD_BYTES: u8 = 1;
 const FIELD_U8: u8 = 2;
 const FIELD_U64: u8 = 3;
+#[allow(dead_code)]
 const FIELD_U128: u8 = 4;
 const FIELD_GF128: u8 = 5;
 const FIELD_U128_ROWS: u8 = 6;
+#[allow(dead_code)]
 const FIELD_XOR_CLAIMS: u8 = 7;
 
 /// A streaming, typed transcript frame. Every field is encoded as one
@@ -1310,6 +1321,7 @@ impl<'a, T: Transcript> StatementFrame<'a, T> {
         self.end_field();
     }
 
+    #[allow(dead_code)]
     fn u128s(&mut self, tag: u8, values: &[u128]) {
         self.begin_field(tag, FIELD_U128, values.len());
         for &value in values {
@@ -1326,6 +1338,7 @@ impl<'a, T: Transcript> StatementFrame<'a, T> {
         self.end_field();
     }
 
+    #[allow(dead_code)]
     fn gf128s(&mut self, tag: u8, values: &[Gf]) {
         self.begin_field(tag, FIELD_GF128, values.len());
         for value in values {
@@ -1363,6 +1376,7 @@ impl<'a, T: Transcript> StatementFrame<'a, T> {
         self.usize(0x22, p.word_bits);
     }
 
+    #[allow(dead_code)]
     fn sha_layout(&mut self, layout: &ShaF2Layout) {
         self.int_eval_params(&layout.p);
         self.usize(0x23, layout.num_cols);
@@ -1388,6 +1402,7 @@ impl<'a, T: Transcript> StatementFrame<'a, T> {
         self.byte(0x13, merkle_hash_code(config.merkle_hash()));
     }
 
+    #[allow(dead_code)]
     fn xor_claims<C: XorStatementClaim>(&mut self, tag: u8, claims: &[C]) {
         self.begin_field(tag, FIELD_XOR_CLAIMS, claims.len());
         for claim in claims {
@@ -1489,6 +1504,7 @@ const fn merkle_hash_code(hash: HashKind) -> u8 {
     }
 }
 
+#[allow(dead_code)]
 fn absorb_rs_open_statement(
     transcript: &mut impl Transcript,
     commitment: &Commitment,
@@ -1501,6 +1517,7 @@ fn absorb_rs_open_statement(
     frame.gf128s(0x30, point);
 }
 
+#[allow(dead_code)]
 fn absorb_rs_eval_statement(
     transcript: &mut impl Transcript,
     commitment: &Commitment,
@@ -1517,6 +1534,7 @@ fn absorb_rs_eval_statement(
     frame.gf128(0x31, alpha);
 }
 
+#[allow(dead_code)]
 fn absorb_rs_eval_batch_statement(
     transcript: &mut impl Transcript,
     commitment: &Commitment,
@@ -1533,6 +1551,7 @@ fn absorb_rs_eval_batch_statement(
     frame.gf128(0x31, alpha);
 }
 
+#[allow(dead_code)]
 fn absorb_mod_q_statement(
     transcript: &mut impl Transcript,
     commitment: &Commitment,
@@ -3582,6 +3601,7 @@ pub struct VirtualXorVerifyClaim<'a, R> {
     pub claimed: R,
 }
 
+#[allow(dead_code)]
 trait XorStatementClaim {
     fn cols(&self) -> &[usize];
     fn constant(&self) -> u128;
@@ -3626,6 +3646,7 @@ impl<R> XorStatementClaim for VirtualXorVerifyClaim<'_, R> {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 fn absorb_mod_q_xor_statement<C: XorStatementClaim>(
     transcript: &mut impl Transcript,
     domain: &[u8],
@@ -10373,6 +10394,61 @@ where
 /// distributivity make every value BIT-IDENTICAL to the streamed
 /// per-nonzero fold — prover and verifier transcripts are unchanged
 /// (pinned by `virtual_pack_weights_match_generic`).
+/// One cross-instance or boundary term of a chained packed-source
+/// repetition ([`crate::f2map::ChainedPackedSourceMap`]): source cell
+/// `(inst, lc)` with `inst ∈ [inst_lo, inst_hi)` gains
+/// `Σ_l eq_l[inst − inst_lo] · s_l[lc]`. The chain link (`prev`) carries the
+/// instance tables ROTATED by one (instance `i − 1`'s cells feed instance
+/// `i`'s rows, so source instance `j` takes `eq[j + 1]`); the boundary maps
+/// (`first`/`last`) carry the single entry `eq[0]` / `eq[N − 1]`.
+struct ExtraWeightTerm {
+    /// Active source instances `[inst_lo, inst_hi)`.
+    inst_lo: usize,
+    inst_hi: usize,
+    /// Per chunk: the instance factors of the active instances, in order.
+    eq_inst: Vec<Vec<FixedGfMul>>,
+    /// Per chunk: the eta-scaled local-row equality sums of this term's
+    /// local map (index 0 = the constant column, `1..=w` the cells).
+    s: Vec<Vec<Gf>>,
+    /// Nonconstant local offsets `[col_lo, col_hi)` (`0..w`) that carry
+    /// any entry; runs outside are skipped.
+    col_lo: usize,
+    col_hi: usize,
+}
+
+impl ExtraWeightTerm {
+    /// Adds this term's weights of the run `[local_offset, local_offset +
+    /// targets.len())` of instance `instance`.
+    #[allow(clippy::arithmetic_side_effects)]
+    #[inline]
+    fn accumulate(&self, instance: usize, local_offset: usize, targets: &mut [Gf]) {
+        if instance < self.inst_lo || instance >= self.inst_hi {
+            return;
+        }
+        let lo = local_offset.max(self.col_lo);
+        let hi = (local_offset + targets.len()).min(self.col_hi);
+        if lo >= hi {
+            return;
+        }
+        let slot = instance - self.inst_lo;
+        for (eq_l, s_l) in self.eq_inst.iter().zip(self.s.iter()) {
+            let fixed = &eq_l[slot];
+            let source = &s_l[1 + lo..1 + hi];
+            for (target, &value) in targets[lo - local_offset..hi - local_offset]
+                .iter_mut()
+                .zip(source)
+            {
+                *target += fixed.mul(value);
+            }
+        }
+    }
+
+    /// Whether the term touches any nonconstant cell.
+    const fn is_empty(&self) -> bool {
+        self.col_lo >= self.col_hi || self.inst_lo >= self.inst_hi
+    }
+}
+
 enum VirtColumnWeights<'a, M: crate::f2map::VirtualMap> {
     /// Factored tensor-repetition tables.
     Repeated {
@@ -10403,8 +10479,15 @@ enum VirtColumnWeights<'a, M: crate::f2map::VirtualMap> {
         instances: usize,
         /// Per chunk and local column: the eta-scaled local-row equality sum.
         s: Vec<Vec<Gf>>,
-        /// Weight of the one source constant shared by every instance.
+        /// Weight of the one source constant shared by every instance
+        /// (including every boundary term's constant-column part).
         constant_weight: Gf,
+        /// Cross-instance and boundary terms of a chained repetition
+        /// (empty for a plain repetition). They are folded into
+        /// [`Self::pack_weights`]; the plane engine covers only the plain
+        /// part, so the prover adds them through [`Self::add_extra_hs`] /
+        /// [`Self::add_extra_a_prime`].
+        extra: Vec<ExtraWeightTerm>,
         _map: core::marker::PhantomData<&'a M>,
     },
     /// The streamed per-nonzero fold (any map).
@@ -10433,6 +10516,115 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
     #[allow(clippy::arithmetic_side_effects)]
     fn new(map: &'a M, points: &[Vec<Gf>], etas: &[Gf], t_wh: usize) -> Self {
         use crate::poly::utils::build_eq_x_r_vec;
+        if let Some(parts) = map.chained_packed_source()
+            && parts.instances.is_power_of_two()
+            && parts.instances > 1
+            && parts.local.cols() > 1
+        {
+            let instances = parts.instances;
+            let k = instances.trailing_zeros() as usize;
+            let local_width = parts.local.cols() - 1;
+            let point_fits =
+                |pt: &Vec<Gf>| k < pt.len() && (1usize << (pt.len() - k)) >= parts.local.rows();
+            if let Some(live_cols) = local_width
+                .checked_mul(instances)
+                .and_then(|width| width.checked_add(1))
+                .filter(|&width| width <= map.cols())
+                && points.iter().all(point_fits)
+            {
+                debug_assert!(parts.local.rows() * instances <= map.rows());
+                let eq_inst_gf: Vec<Vec<Gf>> = points
+                    .iter()
+                    .map(|pt| build_eq_x_r_vec(&pt[..k], &()).expect("k >= 1"))
+                    .collect();
+                let eq_loc: Vec<Vec<Gf>> = points
+                    .iter()
+                    .map(|pt| build_eq_x_r_vec(&pt[k..], &()).expect("local coords non-empty"))
+                    .collect();
+                let scaled_sums = |local: &crate::f2map::PreparedVirtualMap| -> Vec<Vec<Gf>> {
+                    eq_loc
+                        .iter()
+                        .zip(etas.iter())
+                        .map(|(eq_loc_l, &eta)| {
+                            local
+                                .matrix()
+                                .columns()
+                                .map(|column| {
+                                    let sum = column
+                                        .row_indices()
+                                        .iter()
+                                        .fold(Gf::zero(), |acc, &lr| acc + eq_loc_l[lr]);
+                                    eta * sum
+                                })
+                                .collect()
+                        })
+                        .collect()
+                };
+                let s = scaled_sums(parts.local);
+                let eq_inst: Vec<Vec<FixedGfMul>> = eq_inst_gf
+                    .iter()
+                    .map(|table| table.iter().copied().map(FixedGfMul::new).collect())
+                    .collect();
+                // Source instance `j` of the chain link feeds instance
+                // `j + 1`'s rows: rotate the instance tables by one.
+                let term = |inst_lo: usize,
+                            inst_hi: usize,
+                            shift: usize,
+                            local: &crate::f2map::PreparedVirtualMap| {
+                    let (col_lo, col_hi) =
+                        crate::f2map::ChainedPackedSourceMap::nonconstant_column_span(local);
+                    ExtraWeightTerm {
+                        inst_lo,
+                        inst_hi,
+                        eq_inst: eq_inst_gf
+                            .iter()
+                            .map(|table| {
+                                (inst_lo..inst_hi)
+                                    .map(|inst| FixedGfMul::new(table[inst + shift]))
+                                    .collect()
+                            })
+                            .collect(),
+                        s: scaled_sums(local),
+                        col_lo,
+                        col_hi,
+                    }
+                };
+                let terms = [
+                    term(0, instances - 1, 1, parts.prev),
+                    term(0, 1, 0, parts.first),
+                    term(instances - 1, instances, 0, parts.last),
+                ];
+                // Column zero: the plain part sums each chunk's instance
+                // table to one; every boundary term adds its own
+                // instance-weighted constant-column sum.
+                let mut constant_weight = s.iter().fold(Gf::zero(), |acc, s_l| acc + s_l[0]);
+                for term in &terms {
+                    for (eq_l, s_l) in term.eq_inst.iter().zip(term.s.iter()) {
+                        if s_l[0] == Gf::zero() {
+                            continue;
+                        }
+                        for fixed in eq_l {
+                            constant_weight += fixed.mul(s_l[0]);
+                        }
+                    }
+                }
+                let extra = terms
+                    .into_iter()
+                    .filter(|term| !term.is_empty())
+                    .collect();
+                return Self::PackedSourceRepeated {
+                    local_width,
+                    live_cols,
+                    eq_inst,
+                    eq_inst_gf,
+                    instances,
+                    s,
+                    constant_weight,
+                    extra,
+                    _map: core::marker::PhantomData,
+                };
+            }
+        }
         if let Some((local, instances)) = map.packed_source_repetition()
             && instances.is_power_of_two()
             && instances > 1
@@ -10505,6 +10697,7 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                     instances,
                     s,
                     constant_weight,
+                    extra: Vec::new(),
                     _map: core::marker::PhantomData,
                 };
             }
@@ -10641,6 +10834,7 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                 eq_inst,
                 s,
                 constant_weight,
+                extra,
                 ..
             } => {
                 out.fill(Gf::zero());
@@ -10671,6 +10865,9 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                             *target += fixed.mul(value);
                         }
                     }
+                    for term in extra {
+                        term.accumulate(instance, local_offset, targets);
+                    }
                     column += run_len;
                 }
                 out[..end - base].iter().any(|weight| *weight != Gf::zero())
@@ -10684,6 +10881,172 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                 }
                 live
             }
+        }
+    }
+
+    /// The sorted, distinct source packs any chained extra term touches
+    /// (nonconstant cells only; the constant column is in
+    /// `constant_weight`). Empty for a plain repetition.
+    #[allow(clippy::arithmetic_side_effects)]
+    fn extra_packs(&self) -> Vec<usize> {
+        let Self::PackedSourceRepeated {
+            local_width, extra, ..
+        } = self
+        else {
+            return Vec::new();
+        };
+        let mut packs = Vec::new();
+        for term in extra {
+            if term.is_empty() {
+                continue;
+            }
+            for instance in term.inst_lo..term.inst_hi {
+                let first = 1 + instance * local_width + term.col_lo;
+                let last = 1 + instance * local_width + term.col_hi - 1;
+                packs.extend((first >> LOG_PACKING)..=(last >> LOG_PACKING));
+            }
+        }
+        packs.sort_unstable();
+        packs.dedup();
+        packs
+    }
+
+    /// The extra terms' share of pack `pack`'s weights (nonconstant cells
+    /// only). Returns `false` when it is all zero.
+    #[allow(clippy::arithmetic_side_effects)]
+    fn pack_weights_extra(&self, pack: usize, out: &mut [Gf; 128]) -> bool {
+        out.fill(Gf::zero());
+        let Self::PackedSourceRepeated {
+            local_width,
+            live_cols,
+            extra,
+            ..
+        } = self
+        else {
+            return false;
+        };
+        let base = pack << LOG_PACKING;
+        if base >= *live_cols || extra.is_empty() {
+            return false;
+        }
+        let end = (base + 128).min(*live_cols);
+        let mut column = base.max(1);
+        while column < end {
+            let offset = column - 1;
+            let instance = offset / *local_width;
+            let local_offset = offset % *local_width;
+            let run_len = (end - column).min(*local_width - local_offset);
+            let targets = &mut out[column - base..column - base + run_len];
+            for term in extra {
+                term.accumulate(instance, local_offset, targets);
+            }
+            column += run_len;
+        }
+        out[..end - base].iter().any(|weight| *weight != Gf::zero())
+    }
+
+    /// Adds the extra terms' contribution to the batching message `hs`
+    /// computed by the plane engine for the plain part (exact by
+    /// linearity: `bit_b` and the field sum are additive over the weights).
+    #[allow(clippy::arithmetic_side_effects)]
+    fn add_extra_hs(&self, hs: &mut [Gf; 128], p_msg: &[F128], a_cols: &[Gf; 128]) {
+        let packs = self.extra_packs();
+        if packs.is_empty() {
+            return;
+        }
+        const PACKS_PER_CHUNK: usize = 1 << 9;
+        let partials: Vec<[Gf; 128]> = cfg_chunks!(packs, PACKS_PER_CHUNK)
+            .map(|chunk| {
+                let mut partial = [Gf::zero(); 128];
+                let mut wits = [[0u64; 2]; 16];
+                let mut vals = [Gf::zero(); 16];
+                let mut fill = 0usize;
+                let mut pack_w = [Gf::zero(); 128];
+                for &pack in chunk {
+                    if !self.pack_weights_extra(pack, &mut pack_w) {
+                        continue;
+                    }
+                    let p_val = f128_to_gf(p_msg[pack]);
+                    for (slot, &weight) in pack_w.iter().enumerate() {
+                        if weight == Gf::zero() {
+                            continue;
+                        }
+                        wits[fill] = *weight.words();
+                        vals[fill] = p_val * a_cols[slot];
+                        fill += 1;
+                        if fill == 16 {
+                            hs_scatter_block16(&mut partial, &wits, &vals);
+                            fill = 0;
+                        }
+                    }
+                }
+                for index in 0..fill {
+                    crate::ligerito::sv_scalar_accum(&mut partial, wits[index], vals[index]);
+                }
+                partial
+            })
+            .collect();
+        for partial in partials {
+            for (target, value) in hs.iter_mut().zip(partial) {
+                *target += value;
+            }
+        }
+    }
+
+    /// Adds the extra terms' contribution to the ρ-batched basis `a′` and
+    /// to flock's round-0 pair computed by the plane engine for the plain
+    /// part (both are linear in `a′`).
+    #[allow(clippy::arithmetic_side_effects)]
+    fn add_extra_a_prime(
+        &self,
+        basis: &mut [Gf],
+        round0: &mut (Gf, Gf),
+        rho: &[Gf],
+        p_msg: &[F128],
+    ) {
+        let packs = self.extra_packs();
+        if packs.is_empty() {
+            return;
+        }
+        let phi_tables = phi_byte_tables(rho, Gf::one());
+        let deltas: Vec<(usize, Gf)> = cfg_iter!(packs)
+            .map(|&pack| {
+                let mut pack_w = [Gf::zero(); 128];
+                if !self.pack_weights_extra(pack, &mut pack_w) {
+                    return (pack, Gf::zero());
+                }
+                for value in &mut pack_w {
+                    *value = phi_from_words(*value.words(), &phi_tables);
+                }
+                (pack, crate::dual_basis::dual_basis_linear_combination(&pack_w))
+            })
+            .collect();
+        for &(pack, delta) in &deltas {
+            basis[pack] += delta;
+        }
+        // Round-0 pair over the aligned pack pairs `(2j, 2j + 1)`.
+        let mut index = 0;
+        while index < deltas.len() {
+            let (pack, delta) = deltas[index];
+            let pair = pack & !1;
+            let (d0, d1) = if pack == pair {
+                let d1 = if index + 1 < deltas.len() && deltas[index + 1].0 == pair + 1 {
+                    index += 1;
+                    deltas[index].1
+                } else {
+                    Gf::zero()
+                };
+                (delta, d1)
+            } else {
+                (Gf::zero(), delta)
+            };
+            if pair + 1 < p_msg.len() {
+                let f0 = f128_to_gf(p_msg[pair]);
+                let f1 = f128_to_gf(p_msg[pair + 1]);
+                round0.0 += f0 * d0;
+                round0.1 += (f0 + f1) * (d0 + d1);
+            }
+            index += 1;
         }
     }
 }
@@ -10889,7 +11252,11 @@ where
         let hs = {
             let _g = crate::utils::prof::scope("mqv:hs");
             match &planes {
-                Some(planes) => planes.hs_fold(&hint.p_msg),
+                Some(planes) => {
+                    let mut hs = planes.hs_fold(&hint.p_msg);
+                    weights.add_extra_hs(&mut hs, &hint.p_msg, &a_cols);
+                    hs
+                }
                 None => virtual_hs_fold(self.map, &weights, &hint.p_msg, &a_cols),
             }
         };
@@ -10906,7 +11273,8 @@ where
             let _g = crate::utils::prof::scope("mqv:aprime");
             match &planes {
                 Some(planes) => {
-                    let (basis, round0) = planes.a_prime(&rho, &hint.p_msg);
+                    let (mut basis, mut round0) = planes.a_prime(&rho, &hint.p_msg);
+                    weights.add_extra_a_prime(&mut basis, &mut round0, &rho, &hint.p_msg);
                     (
                         basis.into_iter().map(gf_to_f128).collect(),
                         rs_fast().then_some(round0),
@@ -11025,6 +11393,7 @@ where
 /// bounded ranges and avoid retaining a dense `2^t` canonical-weight vector.
 #[allow(clippy::arithmetic_side_effects)]
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 pub(crate) fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime<M>(
     transcript: &mut (impl Transcript + Send),
     hint_f: &FlockCommitHint,
@@ -11346,6 +11715,7 @@ where
 /// lazily from `chunks`, in the same row order as the dense API.
 #[allow(clippy::arithmetic_side_effects)]
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime<M>(
     transcript: &mut (impl Transcript + Send),
     commitment_f: &Commitment,
@@ -12331,6 +12701,174 @@ mod tests {
                     expect_u2 += (f0 + f1) * (a_prime[j] + a_prime[j + 1]);
                 }
                 assert_eq!((u0, u2), (expect_u0, expect_u2), "round-0 pair");
+            }
+        }
+    }
+
+    /// A chained packed-source repetition — the plain repetition plus the
+    /// rotated chain link and the one-instance boundary maps — takes the
+    /// factored path, and its weights, `h` and `a′` (plane engine plus the
+    /// extra terms, and the per-pack kernels) all equal the generic CSC walk.
+    #[test]
+    fn virtual_chained_weights_match_generic() {
+        use crate::f2map::{ChainedPackedSourceMap, PreparedVirtualMap};
+        use crate::sparse_matrix::SparseMatrix;
+        use crate::virt_batch::PackedSourcePlanes;
+
+        let local_rows = 40usize;
+        let width = 600usize; // ≥ 512: the plane engine is eligible.
+        let local_cols = width + 1;
+        let prepared = |columns: Vec<Vec<(usize, bool)>>| {
+            PreparedVirtualMap::new(SparseMatrix::try_from_columns(local_rows, columns).unwrap())
+                .unwrap()
+        };
+        let rows_of = |seed: usize, count: usize, lo: usize, hi: usize| -> Vec<(usize, bool)> {
+            let mut rows: Vec<usize> = (0..count)
+                .map(|index| lo + (seed * 11 + index * 7 + 2) % (hi - lo))
+                .collect();
+            rows.sort_unstable();
+            rows.dedup();
+            rows.into_iter().map(|row| (row, true)).collect()
+        };
+        // `local`: the constant row from column 0, rows < 30 elsewhere.
+        let local = prepared(
+            (0..local_cols)
+                .map(|column| {
+                    if column == 0 {
+                        vec![(0, true)]
+                    } else if column % 97 == 3 {
+                        Vec::new()
+                    } else {
+                        rows_of(column, 1 + column % 4, 1, 30)
+                    }
+                })
+                .collect(),
+        );
+        // `prev`: a band of columns [200, 264), any nonconstant rows.
+        let prev = prepared(
+            (0..local_cols)
+                .map(|column| {
+                    if (200..264).contains(&column) {
+                        rows_of(column + 5, 1 + column % 3, 1, 40)
+                    } else {
+                        Vec::new()
+                    }
+                })
+                .collect(),
+        );
+        // `first`: the constant column only, rows `local` never uses.
+        let first = prepared(
+            (0..local_cols)
+                .map(|column| if column == 0 { rows_of(9, 6, 30, 40) } else { Vec::new() })
+                .collect(),
+        );
+        // `last`: a tail band [560, 600) plus the constant, rows ≥ 30.
+        let last = prepared(
+            (0..local_cols)
+                .map(|column| {
+                    if column == 0 {
+                        vec![(35, true)]
+                    } else if column >= 561 {
+                        rows_of(column + 1, 1 + column % 2, 30, 40)
+                    } else {
+                        Vec::new()
+                    }
+                })
+                .collect(),
+        );
+        for instances in [2usize, 8] {
+            let rows = (local_rows * instances).next_power_of_two();
+            let live_cols = 1 + width * instances;
+            let cols = live_cols.next_power_of_two().max(128);
+            let map = ChainedPackedSourceMap::new(
+                local.clone(),
+                prev.clone(),
+                first.clone(),
+                last.clone(),
+                instances,
+                rows,
+                cols,
+            )
+            .unwrap();
+            let vars = rows.trailing_zeros() as usize;
+            let k = instances.trailing_zeros() as usize;
+            let t_wh = k + 1;
+            let n_packs = cols >> LOG_PACKING;
+            for chunks in [1usize, 2] {
+                let points: Vec<Vec<Gf>> = (0..chunks as u64)
+                    .map(|claim| {
+                        (0..vars)
+                            .map(|bit| sample(0x3C00 + claim * 64 + bit as u64 + instances as u64))
+                            .collect()
+                    })
+                    .collect();
+                let etas: Vec<Gf> = (0..chunks as u64).map(|c| sample(0xE8 + c)).collect();
+                let structured = VirtColumnWeights::new(&map, &points, &etas, t_wh);
+                let VirtColumnWeights::PackedSourceRepeated {
+                    eq_inst_gf,
+                    s,
+                    constant_weight,
+                    extra,
+                    ..
+                } = &structured
+                else {
+                    panic!("chained repetition must take the factored path");
+                };
+                // `first` reads only the constant column: its weight lives
+                // in `constant_weight`, so only `prev` and `last` remain.
+                assert_eq!(extra.len(), 2, "prev and last");
+                let generic = VirtColumnWeights::Generic {
+                    map: &map,
+                    coeffs: VirtRowCoeffs::new(&points, &etas, t_wh),
+                };
+                for pack in 0..n_packs {
+                    let mut fast = [Gf::zero(); 128];
+                    let mut slow = [Gf::zero(); 128];
+                    let live = structured.pack_weights(pack, &mut fast);
+                    let slow_live = generic.pack_weights(pack, &mut slow);
+                    assert_eq!(fast, slow, "pack {pack}, instances {instances}, chunks {chunks}");
+                    assert_eq!(live, slow_live);
+                }
+                let p_msg: Vec<F128> = (0..n_packs)
+                    .map(|pack| gf_to_f128(sample(0xB300 + pack as u64)))
+                    .collect();
+                let a_cols = crate::dual_basis::dual_basis_cols();
+                let planes = PackedSourcePlanes::new(
+                    width,
+                    instances,
+                    eq_inst_gf.clone(),
+                    s,
+                    *constant_weight,
+                );
+                let expect_hs = virtual_hs_fold(&map, &generic, &p_msg, &a_cols);
+                assert_eq!(
+                    virtual_hs_fold(&map, &structured, &p_msg, &a_cols),
+                    expect_hs,
+                    "per-pack h kernel (instances {instances}, chunks {chunks})"
+                );
+                let mut hs = planes.hs_fold(&p_msg);
+                structured.add_extra_hs(&mut hs, &p_msg, &a_cols);
+                assert_eq!(hs, expect_hs, "planes + extra h (instances {instances}, chunks {chunks})");
+
+                let rho: Vec<Gf> = (0..128).map(|bit| sample(0xC300 + bit as u64)).collect();
+                let expect_a = virtual_a_prime(&map, &generic, &rho, &a_cols, n_packs);
+                assert_eq!(
+                    virtual_a_prime(&map, &structured, &rho, &a_cols, n_packs),
+                    expect_a,
+                    "per-pack a′ kernel (instances {instances}, chunks {chunks})"
+                );
+                let (mut a_prime, mut round0) = planes.a_prime(&rho, &p_msg);
+                structured.add_extra_a_prime(&mut a_prime, &mut round0, &rho, &p_msg);
+                assert_eq!(a_prime, expect_a, "planes + extra a′ (instances {instances}, chunks {chunks})");
+                let mut expect_u0 = Gf::zero();
+                let mut expect_u2 = Gf::zero();
+                for j in (0..n_packs.saturating_sub(1)).step_by(2) {
+                    let f0 = f128_to_gf(p_msg[j]);
+                    let f1 = f128_to_gf(p_msg[j + 1]);
+                    expect_u0 += f0 * expect_a[j];
+                    expect_u2 += (f0 + f1) * (expect_a[j] + expect_a[j + 1]);
+                }
+                assert_eq!(round0, (expect_u0, expect_u2), "round-0 pair after the extra terms");
             }
         }
     }

@@ -208,6 +208,11 @@ pub enum Sha256WitnessError {
     /// The generated circuit unexpectedly changed its fixed local shape.
     #[error("SHA-256 circuit witness has an unexpected local shape")]
     UnexpectedCircuitShape,
+
+    /// A chained compression's circuit output disagrees with the natively
+    /// computed chaining value it must feed into the next instance.
+    #[error("SHA-256 chain witness output disagrees with the native chaining value")]
+    ChainOutputMismatch,
 }
 
 struct PackedCompressionShard {
@@ -438,11 +443,11 @@ fn pack_product_derived_rows(
     }
 }
 
-fn empty_packed_rows(params: &IntEvalParams) -> Vec<Vec<u64>> {
+pub(super) fn empty_packed_rows(params: &IntEvalParams) -> Vec<Vec<u64>> {
     vec![vec![0u64; params.rows().div_ceil(64)]; params.cols()]
 }
 
-fn set_flat_packed_bit(rows: &mut [Vec<u64>], params: &IntEvalParams, flat_cell: usize) {
+pub(super) fn set_flat_packed_bit(rows: &mut [Vec<u64>], params: &IntEvalParams, flat_cell: usize) {
     let column = flat_cell >> params.t;
     let row = flat_cell & (params.rows() - 1);
     rows[column][row / u64::BITS as usize] |= 1u64 << (row % u64::BITS as usize);

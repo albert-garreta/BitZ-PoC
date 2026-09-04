@@ -1,5 +1,6 @@
 //! SHA-256 compression synthesis and its structured Spartan/F2Z adapter.
 
+mod chain;
 mod constraints;
 pub(crate) mod inner_sumcheck;
 mod prime;
@@ -7,6 +8,18 @@ mod proof;
 mod witness;
 
 pub use inner_sumcheck::SHA256_INNER_PREFIX_MAX_VARS;
+
+pub use chain::{
+    PreparedSha256ChainBatch, SHA256_CHAIN_F_BAR_LIVE_BITS, SHA256_CHAIN_F_INSTANCE_BITS,
+    SHA256_CHAIN_H_BAR_LIVE_BITS, SHA256_CHAIN_H_INSTANCE_BITS, SHA256_CHAIN_TERMINAL_BITS,
+    Sha256ChainProof, Sha256ChainStatement, Sha256ChainWitnessBatch,
+    commit_sha256_chain_witness, commit_sha256_chain_witness_with_config,
+    generate_sha256_chain_witnesses, prepare_sha256_chain_batch,
+    prepare_sha256_chain_batch_with_profile,
+    prepare_sha256_chain_batch_with_profile_and_initial_state, prove_sha256_chain,
+    prove_sha256_chain_with_config, sha256_chain_configs, sha256_compress,
+    verify_sha256_chain, verify_sha256_chain_with_config,
+};
 
 pub use constraints::{
     PreparedSha256CompressionBatch, SHA256_CONSTRAINTS, SHA256_F_BAR_LIVE_BITS,

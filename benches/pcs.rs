@@ -914,9 +914,9 @@ fn bench_ext_arm<K: BenchExtField>(
 fn main() {
     common::enforce_known_env();
     if std::env::var_os("F2Z_BENCH_LAMBDA").is_some() {
-        eprintln!(
-            "warning: F2Z_BENCH_LAMBDA is ignored by the PCS-only bench (no IOP security \
-             profile here; the RESULT line reports lambda=na)"
+        common::warn(
+            "F2Z_BENCH_LAMBDA is ignored by the PCS-only bench (no IOP security \
+             profile here; the RESULT line reports lambda=na)",
         );
     }
     println!("F2Z PCS bench — commit/prove/verify + serialized size + peak heap per shape.");

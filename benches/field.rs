@@ -491,7 +491,7 @@ fn main() {
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     println!("(target: aarch64 + neon — the NEON pipelines are active)");
     #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-    println!("(WARNING: scalar pipelines — build with RUSTFLAGS=\"-C target-cpu=native\")");
+    common::warn("scalar pipelines — build with RUSTFLAGS=\"-C target-cpu=native\"");
 
     println!(
         "\n{:<22} {:>14} {:>14} {:>9}",

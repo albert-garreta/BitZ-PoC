@@ -215,6 +215,7 @@ impl PreparedSha256CompressionBatch {
     }
 
     /// Projects [`Self::linear_relation`] into the selected runtime field.
+    #[allow(dead_code)]
     pub(crate) fn project_linear_relation(
         &self,
         field_config: &<SpartanF2zField as PrimeField>::Config,
@@ -226,6 +227,7 @@ impl PreparedSha256CompressionBatch {
     ///
     /// Unlike the compatibility R1CS path, this exact linear layout does not
     /// insert a 256-row block for each instance.
+    #[allow(dead_code)]
     pub(crate) fn flat_constraint_row(&self, instance: usize, local_row: usize) -> Option<usize> {
         (instance < self.instances && local_row < SHA256_CONSTRAINTS)
             .then(|| instance * SHA256_CONSTRAINTS + local_row)
@@ -236,6 +238,7 @@ impl PreparedSha256CompressionBatch {
     /// Local column zero is the one constant cell shared by every instance.
     /// Every other local column is placed immediately after the preceding
     /// instance, with no per-instance power-of-two padding.
+    #[allow(dead_code)]
     pub(crate) fn flat_assignment_column(
         &self,
         instance: usize,
@@ -252,6 +255,7 @@ impl PreparedSha256CompressionBatch {
     }
 
     /// Number of live rows in the flat linear relation batch.
+    #[allow(dead_code)]
     pub(crate) const fn linear_row_count(&self) -> usize {
         self.instances * SHA256_CONSTRAINTS
     }
@@ -329,6 +333,7 @@ pub(crate) struct Sha256LinearRelation {
 
 impl Sha256LinearRelation {
     /// Exact signed matrix in canonical CSC form.
+    #[allow(dead_code)]
     pub(crate) const fn matrix(&self) -> &SparseMatrix<BigInt> {
         &self.matrix
     }
@@ -339,21 +344,25 @@ impl Sha256LinearRelation {
     }
 
     /// Number of live local constraint rows (184).
+    #[allow(dead_code)]
     pub(crate) const fn row_count(&self) -> usize {
         self.matrix.row_count()
     }
 
     /// Number of live local assignment columns (20,457).
+    #[allow(dead_code)]
     pub(crate) const fn column_count(&self) -> usize {
         self.matrix.column_count()
     }
 
     /// Number of signed nonzero coefficients.
+    #[allow(dead_code)]
     pub(crate) const fn nnz(&self) -> usize {
         self.matrix.nnz()
     }
 
     /// Projects the exact signed coefficients into a validated runtime field.
+    #[allow(dead_code)]
     pub(crate) fn project(
         &self,
         field_config: &<SpartanF2zField as PrimeField>::Config,
@@ -382,6 +391,7 @@ impl PreparedSha256LinearRelation {
     }
 
     /// Runtime field configuration used by every projected coefficient.
+    #[allow(dead_code)]
     pub(crate) const fn config(&self) -> &<SpartanF2zField as PrimeField>::Config {
         &self.field_config
     }
@@ -616,7 +626,7 @@ fn validate_batch_exponent(log_compressions: usize) -> Result<usize, Sha256Const
     Ok(instances)
 }
 
-fn validate_instance_capacity(instances: usize) -> Result<(), Sha256ConstraintError> {
+pub(super) fn validate_instance_capacity(instances: usize) -> Result<(), Sha256ConstraintError> {
     let log_instance_capacity = instances
         .checked_next_power_of_two()
         .ok_or(Sha256ConstraintError::InvalidBatchExponent)?
@@ -652,7 +662,7 @@ fn validate_prepared_protocol(
     Ok(())
 }
 
-fn packed_domain_vars(
+pub(super) fn packed_domain_vars(
     instances: usize,
     instance_width: usize,
 ) -> Result<usize, Sha256ConstraintError> {
@@ -673,7 +683,7 @@ fn packed_domain_vars(
 /// order, so its terminal equality factors directly into `2^t` row weights
 /// and `2^s` column weights. Keeping both factors near `2^(vars/2)` avoids
 /// materializing a `2^vars` opening vector.
-const fn balanced_binary_params(vars: usize) -> IntEvalParams {
+pub(super) const fn balanced_binary_params(vars: usize) -> IntEvalParams {
     let t = if vars.div_ceil(2) < LOG_PACKING {
         LOG_PACKING
     } else {
@@ -778,7 +788,7 @@ fn build_integer_local_relation() -> Result<IntegerLocalRelation, Sha256Constrai
     })
 }
 
-fn circuit_matrix_nnz(matrix: &CircuitSparseMatrix<BigInt>) -> usize {
+pub(super) fn circuit_matrix_nnz(matrix: &CircuitSparseMatrix<BigInt>) -> usize {
     matrix.rows().iter().map(|row| row.entries().len()).sum()
 }
 
@@ -798,7 +808,7 @@ fn convert_exact_integer_matrix(
     SparseMatrix::try_from_rows(matrix.column_count(), rows).map_err(SpartanMatrixError::from)
 }
 
-fn convert_native_integer_rows(
+pub(super) fn convert_native_integer_rows(
     matrix: &CircuitSparseMatrix<BigInt>,
 ) -> Result<Vec<Vec<(usize, i64)>>, Sha256ConstraintError> {
     matrix
@@ -818,6 +828,7 @@ fn convert_native_integer_rows(
         .collect()
 }
 
+#[allow(dead_code)]
 fn project_signed_matrix(
     matrix: &SparseMatrix<BigInt>,
     field_config: &<SpartanF2zField as PrimeField>::Config,
@@ -839,6 +850,7 @@ fn project_signed_matrix(
     SparseMatrix::try_from_columns(matrix.row_count(), columns).map_err(SpartanMatrixError::from)
 }
 
+#[allow(dead_code)]
 fn bigint_to_field(
     value: &BigInt,
     modulus: &BigInt,
@@ -862,7 +874,7 @@ fn bigint_to_field(
     F128::new_with_cfg(canonical, field_config)
 }
 
-fn max_boolean_linear_residual_bound(matrix: &SparseMatrix<BigInt>) -> BigUint {
+pub(super) fn max_boolean_linear_residual_bound(matrix: &SparseMatrix<BigInt>) -> BigUint {
     let mut sums = vec![BigUint::default(); matrix.row_count()];
     for column in matrix.columns() {
         for (row, coefficient) in column {
@@ -900,7 +912,7 @@ fn integer_relation_digest(
     Ok(*hash.finalize().as_bytes())
 }
 
-fn hash_usize(hash: &mut Hasher, value: usize) -> Result<(), Sha256ConstraintError> {
+pub(super) fn hash_usize(hash: &mut Hasher, value: usize) -> Result<(), Sha256ConstraintError> {
     hash.update(
         &u64::try_from(value)
             .map_err(|_| Sha256ConstraintError::IntegerRelationTooLarge)?

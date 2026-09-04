@@ -324,6 +324,7 @@ impl GrindingDomain for Sha256InnerGrinding {
 /// query an entry independently. Every returned element is checked against the
 /// one shared runtime-field configuration before it is used.
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 pub(crate) fn prove_sha256_inner_sumcheck<T, V, H>(
     transcript: &mut T,
     initial_claim: Field,
