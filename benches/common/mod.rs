@@ -86,8 +86,15 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_MATS_TILE",
     "F2Z_MATS_TILE_B",
     "F2Z_MAT_GRID",
-    // Deprecated aliases.
+    // Matched MultiSwap/Mod-R1CS campaign trace metadata.
+    "F2Z_MULTISWAP_BUILD_PROFILE",
+    "F2Z_MULTISWAP_CAMPAIGN_ID",
+    "F2Z_MULTISWAP_CPU",
+    "F2Z_MULTISWAP_EXPECTED_CONSTRAINT_DIGEST",
+    "F2Z_MULTISWAP_GIT_REV",
+    // Deprecated alias.
     "F2Z_MULTISWAP_REPS",
+    "F2Z_MULTISWAP_TRACE_PATH",
     // U32-specific bench knob.
     "F2Z_MUL_WORD_BITS",
     "F2Z_PAIR2_FACTORED",
