@@ -794,9 +794,9 @@ The rest of \ftwoz \ proceeds exactly as in \cref{s:to_simple_bitz}.
 
 \paragraph{General notation} Given an integer $n\geq 1$, we write $[n]$ to denote the set $\{1,\ldots, n\}$. Given integers $m\leq n$, we let $\range{m}{n}$ denote the set of integers $\{m, m+1,. \ldots, n\}$.
 
-We use $\circ$ to denote composition of maps, so that for maps $f: S_1\to S_2$ and $g:S_2\to S_3$, we have $f\circ g: S_1 \to S_3$ defined as $f\circ g(x) = f(g(x))$. 
+We use $\circ$ to denote composition of maps, so that for maps $g: S_1\to S_2$ and $f:S_2\to S_3$, we have $f\circ g: S_1 \to S_3$ defined as $f\circ g(x) = f(g(x))$. 
 
-Any map $f:S_1 \to S_2$ applies  entry-wise to vectors from $S_1^n$, for any $n$, and similarly for matrices. A map $f$ also applies coefficieny-wise to polynomials with coefficients in $S_1$. A multiplication of a vector  or a matrix by a scalar means that we multiply each entry of the vector or matrix by that scalar. 
+Any map $f:S_1 \to S_2$ applies  entry-wise to vectors from $S_1^n$, for any $n$, and similarly for matrices. A map $f$ also applies coefficient-wise to polynomials with coefficients in $S_1$. A multiplication of a vector  or a matrix by a scalar means that we multiply each entry of the vector or matrix by that scalar. 
 
 We denote vectors with boldface letters, e.g.\ $\uu,\vv$. By $\uu_i$ we denote the $i$-th position of $\uu$. Sometimes we index the entries of a vector $\uu$ with elements of a boolean hypercube $\bits^{t}$. 
 
@@ -809,7 +809,7 @@ We look at vectors both as row vectors and column vectors. When performing matri
 where $M^{\mathsf{T}}$ denotes transposition and $\langle \cdot, \cdot \rangle$ denotes inner product.
 
 \subsection{Algebra}\label{s:prelims_algebra}
-\paragraph{Concrete fields and rings} We write $\FF_q$ for the finite field with $q$ elements (where $q$ is a prime or a prime power), $\QQ$ for the field of rational numbers, and $\ZZ$ for the ring of integers. For an integer $n\geq 1$, $\ZZ_n$ denotes the ring of integers modulo $n$, with the convention $\ZZ_0\defeq \ZZ$. When $n$ is prime, $\ZZ_n=\FF_n$. We let $$\pi_n :\ZZ\to \ZZ_n$$ denote reduction modulo $n$. We fix the inverse $\pi_n^{-1} : \ZZ_n \to \range{0}{n-1}\subseteq \ZZ$ mapping each element $a$ in $\ZZ_n$ to the integer in the range  $\range{0}{n-1}$ representing $a$. 
+\paragraph{Concrete fields and rings} We write $\FF_q$ for the finite field with $q$ elements (where $q$ is a prime or a prime power), $\QQ$ for the field of rational numbers, and $\ZZ$ for the ring of integers. For an integer $n\geq 1$, $\ZZ_n$ denotes the ring of integers modulo $n$, with the convention $\ZZ_0\defeq \ZZ$. When $n$ is prime, $\ZZ_n=\FF_n$. We let $$\pi_n :\ZZ\to \ZZ_n$$ denote reduction modulo $n$. For $n\geq 1$, we fix the inverse $\pi_n^{-1} : \ZZ_n \to \range{0}{n-1}\subseteq \ZZ$ mapping each element $a$ in $\ZZ_n$ to the integer in the range  $\range{0}{n-1}$ representing $a$. 
 
 
 
@@ -821,7 +821,7 @@ where $M^{\mathsf{T}}$ denotes transposition and $\langle \cdot, \cdot \rangle$ 
  $$
     \ZZ_{\Char(R)} \subseteq R
  $$
-of the ring of integers modulo $\Char(R)$ into $R$. Namely, the set $\{n \cdot 1 \mid n\in \ZZ\} \subseteq R$ for $1$ the identity element of $S$, forms the ring  $\ZZ_{\Char(R)}$. Further, $\pi_{\Char(R)}$ induces a natural homomorphism (not necessarily surjective)
+of the ring of integers modulo $\Char(R)$ into $R$. Namely, the set $\{n \cdot 1 \mid n\in \ZZ\} \subseteq R$ for $1$ the identity element of $R$, forms the ring  $\ZZ_{\Char(R)}$. Further, $\pi_{\Char(R)}$ induces a natural homomorphism (not necessarily surjective)
 %
 \begin{equation}\label{e:Z_to_ring}
 \pi_{\Char(R)} : \ZZ \to R
@@ -886,7 +886,7 @@ $\Pr_{\rr\getsr S^\mu}[f(\rr)=0] \le \mu/|S|$.
 
 Let $\cC \subseteq \FF^{\codelength}$ be a linear code over $\FF$ of dimension $\codedim$ and blocklength $\codelength$. For $h\geq 1$, the \emph{$h$-interleaving} of $\cC$ is the code $\cC^{\equiv h} \subseteq \left(\FF^{h}\right)^{\codelength}$ of dimension $\codedim\cdot h$ and blocklength $\codelength\cdot h$, whose codewords have the form $$\left((c_{i1},\ldots, c_{ih})\right)_{i\in [\codelength]} \qquad \text{for } (c_{1j},\ldots, c_{\codelength j})\in \cC \qquad \text{for all } j\in [h].$$
 
-Given two words $w_1, w_2$ of length $n$, the relative Hamming distance between $w_1$ and $w_2$ is denoted 
+Given two words $w_1, w_2$ of length $n$, the relative Hamming distance between $w_1$ and $w_2$ (the fraction of positions in which they differ) is denoted 
 %
 $$\hamming(w_1,w_2).$$
 The \emph{relative minimum distance} of $\cC$, denoted $\hamming(\cC)$, is the minimum of $\hamming(c_1,c_2)$ over distinct codewords $c_1,c_2\in \cC$. Given $\delta\in (0,1)$ and an integer $L\geq 1$, we say $\cC$ is \emph{$(\delta, L)$-list-decodable} if for every word $w\in \FF^{\codelength}$ there are at most $L$ codewords $c\in \cC$ with $\hamming(w,c)<\delta$. Every code is $(\delta,1)$-list-decodable for $\delta\leq \hamming(\cC)/2$.  The value $\hamming(\cC)/2$ is called the \emph{unique decoding radius} of $\cC$.
@@ -894,12 +894,12 @@ The \emph{relative minimum distance} of $\cC$, denoted $\hamming(\cC)$, is the m
 \paragraph{Relations}
 A \emph{relation} $\Relation$ consists of triples  $(\inp,\oracle;\wit)$, where $\inp$ is the explicit instance, $\oracle$ the implicit instance or oracle, and $\wit$ the witness.  The corresponding language  is 
 \(
-  \LANG(\Relation)\ \defeq\ \bigl\{(\inp,\oracle)\ \bigm|\ \exists\,\wit \text{ such that } (\inp. \oracle,\wit)\in\Relation\bigr\}.
+  \LANG(\Relation)\ \defeq\ \bigl\{(\inp,\oracle)\ \bigm|\ \exists\,\wit \text{ such that } (\inp,\oracle;\wit)\in\Relation\bigr\}.
 \)
 
-\paragraph{Polynomial Equation Satisfiability (PESAT) over finite fields} We recall a relation from \cite{linear-accumulation} \albert{Linear time accumulation paper, or earlier?} over finite fields, which captures popular constraints such as R1CS, CCS, AIR (cf.\ \cite{linear-accumulation}), and lookup and permutation constraints (cf.\ \cite{zinc}).
+\paragraph{Polynomial Equation Satisfiability (PESAT) over finite fields} We recall a relation from \cite{BCFW25} \albert{Linear time accumulation paper, or earlier?} over finite fields, which captures popular constraints such as R1CS, CCS, AIR (cf.\ \cite{BCFW25}), and lookup and permutation constraints (cf.\ \cite{zinc}).
 
-Fix a finite field $\FF$, a witness length $\codedim$, an input length $\inplen$, a number of rows $n$, a collection of $n$ polynomials $\pp=(\mathbf{p}_{1}, \ldots, \pp_\numrows)$ on $\inplen+\codedim$ variables, for each $j\in [\numrows]$. 
+Fix a finite field $\FF$, a witness length $\codedim$, an input length $\inplen$, a number of rows $n$, a collection of $n$ polynomials $\pp=(\mathbf{p}_{1}, \ldots, \pp_\numrows)$ on $\inplen+\codedim$ variables. 
 
 \begin{definition}\label{d:pesat} The PESAT relation with respect to these parameters is defined as
 $$
@@ -923,7 +923,7 @@ $$
 \PESAT(\FF, \pp, \cC, T) \defeq \left\{ \left(\begin{aligned} &\inp=\xx\in \FF^\inplen, \\&\oracle = f \in \FF^{\codelength}, \\ &\wit= \bff\in W\end{aligned}\right) \;\middle|\;  \begin{aligned}
 &\Enc_{\cC}(T(\bff)) = f\\ \wedge \  &\pp_i(\xx, \bff) = 0  \text{ for all } i\in [\numrows]\end{aligned}\right\}
 $$
-We will drop the reference to $T$ whenever it is understood from the context. When $\numrows=1$ and $\xx$ are such that $\xx=(\vv,\mu)\in \FF^{\codedim}\times \FF$; $\pp_1(\xx,\ff)= \langle \ff, \vv\rangle -\mu$ (and $\codedim=\inplen$), the relation $\PESAT(\FF,\pp, \cC, T)$ is called a \emph{constrained code} \cite{WHIR?} \albert{WHIR?}.  We denote it $$\LIN(\FF,\cC,T).$$
+We will drop the reference to $T$ whenever it is understood from the context. When $\numrows=1$ and $\xx$ are such that $\xx=(\vv,\mu)\in \FF^{\codedim}\times \FF$; $\pp_1(\xx,\ff)= \langle \ff, \vv\rangle -\mu$ (so that $\inplen=\codedim+1$), the relation $\PESAT(\FF,\pp, \cC, T)$ is called a \emph{constrained code} \cite{whir} \albert{WHIR?}.  We denote it $$\LIN(\FF,\cC,T).$$
 %
 \begin{definition}[Relaxation of $\PESAT$ and $\LIN$]Given $\delta \in (0,1)$, the \emph{relaxation} of $\PESAT$ and $\LIN$, denoted
 %
@@ -960,7 +960,7 @@ $\Pi$ has \emph{(perfect) completeness}  if for every $(\inp, \oracle,\wit)\in\R
     An IOP for a relation $\Relation$ is an IOR from $\Relation$ to the trivial relation $\Relation_{\mathsf{triv}}=\{(\inp=\bot,\oracle=\bot, \wit=\bot)\}$.
 \end{remark}
 
-We proceed to define round-by-round knowledge soundness of an IOR, as presented in \cite{TCC:BCFW25}.
+We proceed to define round-by-round knowledge soundness of an IOR, as presented in \cite{BCFW25}.
 
 
 
@@ -990,15 +990,15 @@ If $(\widetilde{\Relation}, \widetilde{\Relation'})=(\Relation, \Relation')$ the
 \end{definition}
 
 \begin{remark}[Composition of IORs]\label{r:ior_compositoin}
-\albert{Turn into a theorem/lemma. What can I cite for this? TensorSwitch, Arc, or ZOOK?} IORs can be composed together and inherit completeness and round-by-round knowledge soundness errors. More precisely, let $\Pi_1,\Pi_1$ be perfectly complete IORs from $\Relation_1$ to $\Relation_2$  and $\Relation_3$, respectively, with round-by-round knowledge errors  with relaxation  $(\widetilde{\Relation_1},\widetilde{\Relation_2})$ and $(\widetilde{\Relation_2},\widetilde{\Relation_3})$, respectively; and with errors $\kappa_{11},\ldots, \kappa_{1k_1}$ and $\kappa_{21}, \ldots, \kappa_{2k_2}$, respectively. Consider  the IOR $\Pi'$ from $\Relation_1$ to $\Relation_3$ consisting of applying IOR $\Pi_1$ first, and then $\Pi_2$ taking as input for $\Pi_2$ the output of $\Pi_1$.   Then $\Pi'$ is a perfectly complete $(k_1+k_2)$-round IOR from $\Relation_1$ to $\Relation_3$ with round-by-round knowledge soundness  with relaxation $(\widetilde{\Relation_1},\widetilde{\Relation_3})$ and errors $\kappa_{11},\ldots, \kappa_{1k_1}, \kappa_{21}, \ldots, \kappa_{2k_2}$.
+\albert{Turn into a theorem/lemma. What can I cite for this? TensorSwitch, Arc, or ZOOK?} IORs can be composed together and inherit completeness and round-by-round knowledge soundness errors. More precisely, let $\Pi_1,\Pi_2$ be perfectly complete IORs from $\Relation_1$ to $\Relation_2$  and $\Relation_3$, respectively, with round-by-round knowledge soundness with relaxation  $(\widetilde{\Relation_1},\widetilde{\Relation_2})$ and $(\widetilde{\Relation_2},\widetilde{\Relation_3})$, respectively; and with errors $\kappa_{11},\ldots, \kappa_{1k_1}$ and $\kappa_{21}, \ldots, \kappa_{2k_2}$, respectively. Consider  the IOR $\Pi'$ from $\Relation_1$ to $\Relation_3$ consisting of applying IOR $\Pi_1$ first, and then $\Pi_2$ taking as input for $\Pi_2$ the output of $\Pi_1$.   Then $\Pi'$ is a perfectly complete $(k_1+k_2)$-round IOR from $\Relation_1$ to $\Relation_3$ with round-by-round knowledge soundness  with relaxation $(\widetilde{\Relation_1},\widetilde{\Relation_3})$ and errors $\kappa_{11},\ldots, \kappa_{1k_1}, \kappa_{21}, \ldots, \kappa_{2k_2}$.
 %
 \end{remark}
 
 
 \paragraph{Grinding}\albert{Review}
- Grinding \cite{?} is a technique where, given am IOP $\Pi$ for a relation $\Relation$ with relaxation $\widetilde{\Relation}$ with round-by-round knowledge errors $\kappa_1,\ldots, \kappa_k$,  produces a new IOP $\Pi'$ for $\Relation$ with   round-by-round knowledge with relaxation $\widetilde{\Relation}$ with errors $$2^{-\alpha_1}\cdot \kappa_1,\ldots, 2^{-\alpha_k}\cdot \kappa_k.$$ The new IOP $\Pi'$ works exactly as $\Pi$, except that, at each round $i\in [t]$, the verifier samples a random string of $\alpha_i$ bits, called \emph{grinding string}, which sends alongside its message, and rejects unless all bits are $0$. 
+ Grinding \cite{?} is a technique where, given an IOP $\Pi$ for a relation $\Relation$ with relaxation $\widetilde{\Relation}$ with round-by-round knowledge errors $\kappa_1,\ldots, \kappa_k$,  produces a new IOP $\Pi'$ for $\Relation$ with   round-by-round knowledge with relaxation $\widetilde{\Relation}$ with errors $$2^{-\alpha_1}\cdot \kappa_1,\ldots, 2^{-\alpha_k}\cdot \kappa_k.$$ The new IOP $\Pi'$ works exactly as $\Pi$, except that, at each round $i\in [k]$, the verifier samples a random string of $\alpha_i$ bits, called \emph{grinding string}, which it sends alongside its message, and rejects unless all bits are $0$. 
 
- Clearly $\Pi'$ is not  necessarily complete, even if $\Pi$ is. The goal is to use the BCS compilation of IOP's, and not the IOP's themselves (i.e.\ the compilation where oracles are replaces by Merkle roots and where interactiveness is removed through the Fiat-Shamir transform) To this end, one chooses $\alpha_1, \ldots, \alpha_k$ small enough that, the prover of the BCS transform of $\Pi'$ can \emph{grind} transcripts until all of the grinding strings in the transcript are the zero string. This results in the prover having to compute  per round $i\in [t]$, an average of $2^{\alpha_i}$  hashes of its $i$-th message followed by a small string of bits (in practice, one has the prover send a small string of bits next to its message, so that during grinding, it does not need to produce fresh Merkle roots at each grinding iteration). In \cref{tab:grinding-cost}, we provide example grinding times for different values of $\alpha_i$.
+ Clearly $\Pi'$ is not  necessarily complete, even if $\Pi$ is. The goal is to use the BCS compilation of IOPs, and not the IOPs themselves (i.e.\ the compilation where oracles are replaced by Merkle roots and where interactiveness is removed through the Fiat-Shamir transform). To this end, one chooses $\alpha_1, \ldots, \alpha_k$ small enough that the prover of the BCS transform of $\Pi'$ can \emph{grind} transcripts until all of the grinding strings in the transcript are the zero string. This results in the prover having to compute  per round $i\in [k]$, an average of $2^{\alpha_i}$  hashes of its $i$-th message followed by a small string of bits (in practice, one has the prover send a small string of bits next to its message, so that during grinding, it does not need to produce fresh Merkle roots at each grinding iteration). In \cref{tab:grinding-cost}, we provide example grinding times for different values of $\alpha_i$.
  
  The round-by-round knowledge errors of $\Pi'$ are obtained by defining a state function which is exactly as the state function of $\Pi$, except that the function outputs zero if some of the aforementioned strings of bits are not the zero string. The extractor for $\Pi'$ is defined as the extractor for $\Pi$, ignoring the additional strings of bits in the transcript.
 
@@ -1057,7 +1057,7 @@ In this section we describe the \ftwoz\ IOP and the main relations it proves.  W
         \hline
                   $S$ & Ring where witness lives, cf.\ \cref{s:general_LinBitsDual}\\
          \hline
-         $S_{\leq B}$ & \makecell[l]{Subset of $S$ formed by ring elements with coordinates of bit-size $\leq B$, cf.\ \cref{?}\\ (In the core LinBitsRing relation, $S=\ZZ$, $B=1$)}\\
+         $S_{\leq B}$ & \makecell[l]{Subset of $S$ formed by ring elements with coordinates of bit-size $\leq B$, cf.\ \cref{s:prelims_algebra}\\ (In the core LinBitsRing relation, $S=\ZZ$, $B=1$)}\\
          \hline
          $\psi$ & Ring homomorphism $\psi: S\to R$\\
          \hline
@@ -1677,7 +1677,7 @@ We set the following additional notation:
 \begin{itemize}[leftmargin=*]
  \item Let $S$ be a ring, possibly different than $R$, let $\psi:S \to R$ be a ring homomorphism. %Let $M$ be a $S$-module and  let $\psi: \moduleone \to R$ be a module homomorphism (with underlying ring homomorphism $\ringmorphism$ \albert{terminology in preliminaries}).
 \item 
-Let $\gamma_1,\ldots, \gamma_\moduledegree\in S$ be a fixed generating set of $S$ (\cref{s:algebra}) \albertimportant{Review, this used to be $\gamma_1,\ldots, \gamma_\moduledegree$}, for some $\moduledegree\geq 1$. 
+Let $\gamma_1,\ldots, \gamma_\moduledegree\in S$ be a fixed generating set of $S$ (\cref{s:prelims_algebra}) \albertimportant{Review, this used to be $\gamma_1,\ldots, \gamma_\moduledegree$}, for some $\moduledegree\geq 1$. 
 \item Recall from \cref{s:prelims_algebra} that $\moduleonebound$ denotes the set of elements of $S$ of the form $h=\sum_{i\in [\moduledegree]} h_i\cdot \gamma_i$ for $$h_i \in \range{0}{2^B-1}_S \subseteq  S,$$ and that for a vector of integers $\ww$, we write $\ww_S$ for its projection to $S$ via reduction modulo $\Char(S)$ (see \eqref{e:integers_subscript_proj}).
      \item Let $\codedim_0$ be a vector witness length, so that our witnesses are $\bff\in S^{\codedim_0}$.    
      \end{itemize}
