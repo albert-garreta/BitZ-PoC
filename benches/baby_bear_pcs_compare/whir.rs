@@ -15,7 +15,7 @@
 
 #![allow(dead_code)] // Boundary accessors are also exercised by the adapter tests.
 
-use p3_baby_bear::{BabyBear, Poseidon2BabyBear};
+use p3_baby_bear::{BabyBear, Poseidon2BabyBear, default_babybear_poseidon2_16};
 use p3_challenger::{CanObserve, DuplexChallenger, FieldChallenger};
 use p3_commit::MultilinearPcs;
 use p3_dft::Radix2DFTSmallBatch;
@@ -33,8 +33,6 @@ use p3_whir::parameters::{
 };
 use p3_whir::pcs::prover::WhirProver;
 use p3_whir::pcs::verifier::errors::VerifierError;
-use rand::SeedableRng;
-use rand::rngs::SmallRng;
 use thiserror::Error;
 
 /// Base field used for the committed integer columns.
@@ -64,9 +62,11 @@ pub type Proof = <Pcs as MultilinearPcs<Challenge, Challenger>>::Proof;
 type ProverData = <Pcs as MultilinearPcs<Challenge, Challenger>>::ProverData;
 type Witness = <Pcs as MultilinearPcs<Challenge, Challenger>>::Witness;
 
-pub const SECURITY_BITS: usize = 100;
+/// Six internal margin bits cover the union of WHIR soundness events while
+/// preserving the campaign's external 100-bit target.
+pub const SECURITY_BITS: usize = 106;
 /// Cap per-round grinding so larger shapes trade proof size for practical runtime.
-pub const MAX_POW_BITS: usize = 4;
+pub const MAX_POW_BITS: usize = 12;
 pub const FOLDING: usize = 4;
 pub const STARTING_LOG_INV_RATE: usize = 1;
 #[cfg(feature = "plonky3-whir-degree4-bench")]
@@ -78,13 +78,8 @@ pub const SECURITY_ASSUMPTION_LABEL: &str = "UniqueDecoding";
 #[cfg(not(feature = "plonky3-whir-degree4-bench"))]
 pub const SECURITY_ASSUMPTION_LABEL: &str = "JohnsonBound";
 
-/// Fixes the Poseidon2 round constants. Per-trial challenges additionally bind
-/// the caller-supplied trial seed passed to [`WhirBackend::commit`].
-pub const POSEIDON_SEED: u64 = 0x5748_4952_5f42_4234;
-
 const NUM_PRIVATE_COLUMNS: usize = 4;
 const NUM_BLOCK_BITS: usize = 3;
-const MIN_CAPACITY: usize = 1 << FOLDING;
 
 // `WHIR`, `BENC`, `PCS1`, version 1. Every word is canonical in BabyBear.
 const BENCHMARK_DOMAIN_TAG: [u32; 4] = [0x5748_4952, 0x4245_4e43, 0x5043_5331, 1];
@@ -96,8 +91,8 @@ pub enum WhirAdapterError {
     #[error("WHIR capacity must be a non-zero power of two; got {0}")]
     InvalidCapacity(usize),
 
-    #[error("WHIR capacity must be at least {MIN_CAPACITY}; got {0}")]
-    CapacityTooSmall(usize),
+    #[error("WHIR capacity must be at least {minimum}; got {capacity}")]
+    CapacityTooSmall { capacity: usize, minimum: usize },
 
     #[error("column {column} has length {actual}; expected {expected}")]
     ColumnLength {
@@ -175,6 +170,7 @@ pub struct WhirBackend {
     base_challenger: Challenger,
     capacity: usize,
     gate_vars: usize,
+    folding: usize,
 }
 
 /// Compact preflight metadata derived by `WhirConfig` for this shape.
@@ -196,6 +192,8 @@ pub struct SecuritySummary {
     pub final_pow_bits: usize,
     pub final_sumcheck_rounds: usize,
     pub final_folding_pow_bits: usize,
+    pub folding_factor: usize,
+    pub starting_log_inverse_rate: usize,
 }
 
 /// Result of the timed integer-to-field materialization phase.
@@ -295,32 +293,41 @@ impl VerifiedOpening {
 impl WhirBackend {
     /// Performs one-time public setup for four columns of `capacity` entries.
     pub fn setup(capacity: usize) -> Result<Self, WhirAdapterError> {
+        Self::setup_with_params(capacity, FOLDING, STARTING_LOG_INV_RATE, MAX_POW_BITS)
+    }
+
+    pub fn setup_with_params(
+        capacity: usize,
+        folding: usize,
+        starting_log_inv_rate: usize,
+        max_pow_bits: usize,
+    ) -> Result<Self, WhirAdapterError> {
         if capacity == 0 || !capacity.is_power_of_two() {
             return Err(WhirAdapterError::InvalidCapacity(capacity));
         }
-        if capacity < MIN_CAPACITY {
-            return Err(WhirAdapterError::CapacityTooSmall(capacity));
+        let minimum = 1usize << folding;
+        if capacity < minimum {
+            return Err(WhirAdapterError::CapacityTooSmall { capacity, minimum });
         }
 
         let gate_vars = capacity.trailing_zeros() as usize;
         // Four equal-width columns occupy four contiguous selector slots.
         let committed_num_variables = gate_vars + 2;
-        let folding_factor = FoldingFactor::Constant(FOLDING);
+        let folding_factor = FoldingFactor::Constant(folding);
         let params = ProtocolParameters {
             security_level: SECURITY_BITS,
-            pow_bits: MAX_POW_BITS,
+            pow_bits: max_pow_bits,
             // Empty means: derive Plonky3's standard per-round rate schedule.
             round_log_inv_rates: Vec::new(),
             folding_factor,
             soundness_type: SECURITY_ASSUMPTION,
-            starting_log_inv_rate: STARTING_LOG_INV_RATE,
+            starting_log_inv_rate,
         };
         let config =
             WhirConfig::<Challenge, Val, Challenger>::new(committed_num_variables, params)?;
         let dft = Dft::new(1 << config.max_fft_size());
 
-        let mut rng = SmallRng::seed_from_u64(POSEIDON_SEED);
-        let perm = Perm::new_from_rng_128(&mut rng);
+        let perm = default_babybear_poseidon2_16();
         let mmcs = Mmcs::new(
             MerkleHash::new(perm.clone()),
             MerkleCompress::new(perm.clone()),
@@ -342,6 +349,7 @@ impl WhirBackend {
             base_challenger: Challenger::new(perm),
             capacity,
             gate_vars,
+            folding,
         })
     }
 
@@ -402,6 +410,8 @@ impl WhirBackend {
             final_pow_bits: config.final_pow_bits,
             final_sumcheck_rounds: config.final_sumcheck_rounds,
             final_folding_pow_bits: config.final_folding_pow_bits,
+            folding_factor: self.folding,
+            starting_log_inverse_rate: config.params.starting_log_inv_rate,
         }
     }
 
@@ -445,7 +455,7 @@ impl WhirBackend {
         // RowMajorMatrix has one full polynomial per row. Hence the backing
         // order is A || B || C || K, not interleaved gate tuples.
         let table = Table::new(RowMajorMatrix::new(values, self.capacity));
-        let witness = WhirLayout::new_witness(vec![table], FOLDING);
+        let witness = WhirLayout::new_witness(vec![table], self.folding);
         debug_assert_eq!(witness.table_shapes(), self.protocol.table_shapes());
         Ok(MaterializedWitness { witness })
     }

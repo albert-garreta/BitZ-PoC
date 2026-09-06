@@ -19,7 +19,7 @@ dependencies = [
  "ark-serialize",
  "ark-std",
  "arrayvec",
- "digest",
+ "digest 0.10.7",
  "educe",
  "itertools 0.13.0",
  "num-bigint 0.4.8",
@@ -35,7 +35,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62945a2f7e6de02a31fe400aa489f0e0f5b2502e69f95f853adb82a96c7a6b60"
 dependencies = [
  "quote",
- "syn",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -48,7 +48,7 @@ dependencies = [
  "num-traits",
  "proc-macro2",
  "quote",
- "syn",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -59,7 +59,7 @@ checksum = "3f4d068aaf107ebcd7dfb52bc748f8030e0fc930ac8e360146ca54c1203088f7"
 dependencies = [
  "ark-std",
  "arrayvec",
- "digest",
+ "digest 0.10.7",
  "num-bigint 0.4.8",
 ]
 
@@ -74,6 +74,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "array-util"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e509844de8f09b90a2c3444684a2b6695f4071360e13d2fda0af9f749cc2ed6"
+dependencies = [
+ "arrayvec",
+]
+
+[[package]]
 name = "arrayref"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -84,6 +93,17 @@ name = "arrayvec"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
+
+[[package]]
+name = "auto_impl"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffdcb70bdbc4d478427380519163274ac86e52916e10f0a8889adf0f96d3fee7"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.118",
+]
 
 [[package]]
 name = "autocfg"
@@ -107,6 +127,256 @@ dependencies = [
 ]
 
 [[package]]
+name = "binius-compute"
+version = "0.1.0"
+
+[[package]]
+name = "binius-core"
+version = "0.1.0"
+dependencies = [
+ "binius-utils",
+ "bytemuck",
+ "bytes",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "binius-field"
+version = "0.1.0"
+dependencies = [
+ "binius-utils",
+ "bytemuck",
+ "cfg-if",
+ "derive_more",
+ "rand 0.10.2",
+ "seq-macro",
+]
+
+[[package]]
+name = "binius-hash"
+version = "0.1.0"
+dependencies = [
+ "binius-field",
+ "binius-transcript",
+ "binius-utils",
+ "blake3",
+ "bytemuck",
+ "bytes",
+ "digest 0.11.3",
+ "itertools 0.15.0",
+ "rand 0.10.2",
+ "sha2 0.11.0",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "binius-iop"
+version = "0.1.0"
+dependencies = [
+ "binius-field",
+ "binius-hash",
+ "binius-ip",
+ "binius-math",
+ "binius-transcript",
+ "binius-utils",
+ "digest 0.11.3",
+ "getset",
+ "itertools 0.15.0",
+ "thiserror",
+]
+
+[[package]]
+name = "binius-iop-prover"
+version = "0.1.0"
+dependencies = [
+ "binius-compute",
+ "binius-field",
+ "binius-hash",
+ "binius-iop",
+ "binius-ip",
+ "binius-ip-prover",
+ "binius-math",
+ "binius-transcript",
+ "binius-utils",
+ "digest 0.11.3",
+ "getset",
+ "itertools 0.15.0",
+ "rand 0.10.2",
+ "tracing",
+]
+
+[[package]]
+name = "binius-ip"
+version = "0.1.0"
+dependencies = [
+ "array-util",
+ "binius-field",
+ "binius-math",
+ "binius-transcript",
+ "thiserror",
+]
+
+[[package]]
+name = "binius-ip-prover"
+version = "0.1.0"
+dependencies = [
+ "auto_impl",
+ "binius-compute",
+ "binius-field",
+ "binius-ip",
+ "binius-math",
+ "binius-transcript",
+ "binius-utils",
+ "either",
+ "itertools 0.15.0",
+ "tracing",
+]
+
+[[package]]
+name = "binius-math"
+version = "0.1.0"
+dependencies = [
+ "binius-compute",
+ "binius-field",
+ "binius-utils",
+ "bytemuck",
+ "getset",
+ "itertools 0.15.0",
+ "rand 0.10.2",
+ "tracing",
+]
+
+[[package]]
+name = "binius-prover"
+version = "0.1.0"
+dependencies = [
+ "binius-compute",
+ "binius-core",
+ "binius-field",
+ "binius-hash",
+ "binius-iop",
+ "binius-iop-prover",
+ "binius-ip",
+ "binius-ip-prover",
+ "binius-math",
+ "binius-spartan-frontend",
+ "binius-spartan-prover",
+ "binius-transcript",
+ "binius-utils",
+ "binius-verifier",
+ "bytemuck",
+ "bytes",
+ "digest 0.11.3",
+ "either",
+ "getset",
+ "itertools 0.15.0",
+ "rand 0.10.2",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "binius-spartan-frontend"
+version = "0.1.0"
+dependencies = [
+ "binius-field",
+ "binius-utils",
+ "bytemuck",
+ "smallvec",
+]
+
+[[package]]
+name = "binius-spartan-prover"
+version = "0.1.0"
+dependencies = [
+ "binius-compute",
+ "binius-field",
+ "binius-hash",
+ "binius-iop",
+ "binius-iop-prover",
+ "binius-ip",
+ "binius-ip-prover",
+ "binius-math",
+ "binius-spartan-frontend",
+ "binius-spartan-verifier",
+ "binius-transcript",
+ "binius-utils",
+ "digest 0.11.3",
+ "itertools 0.15.0",
+ "rand 0.10.2",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "binius-spartan-verifier"
+version = "0.1.0"
+dependencies = [
+ "binius-field",
+ "binius-hash",
+ "binius-iop",
+ "binius-ip",
+ "binius-math",
+ "binius-spartan-frontend",
+ "binius-transcript",
+ "binius-utils",
+ "digest 0.11.3",
+ "thiserror",
+]
+
+[[package]]
+name = "binius-transcript"
+version = "0.1.0"
+dependencies = [
+ "auto_impl",
+ "binius-field",
+ "binius-utils",
+ "bytes",
+ "digest 0.11.3",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "binius-utils"
+version = "0.1.0"
+dependencies = [
+ "array-util",
+ "bytes",
+ "cfg-if",
+ "hybrid-array",
+ "itertools 0.15.0",
+ "rand 0.10.2",
+ "rayon",
+ "thiserror",
+ "trait-set",
+]
+
+[[package]]
+name = "binius-verifier"
+version = "0.1.0"
+dependencies = [
+ "binius-core",
+ "binius-field",
+ "binius-hash",
+ "binius-iop",
+ "binius-ip",
+ "binius-math",
+ "binius-spartan-frontend",
+ "binius-spartan-verifier",
+ "binius-transcript",
+ "binius-utils",
+ "bytes",
+ "digest 0.11.3",
+ "getset",
+ "itertools 0.15.0",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
 name = "blake3"
 version = "1.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -118,6 +388,7 @@ dependencies = [
  "cfg-if",
  "constant_time_eq",
  "cpufeatures 0.3.0",
+ "digest 0.11.3",
  "rayon-core",
 ]
 
@@ -129,6 +400,41 @@ checksum = "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
 dependencies = [
  "generic-array",
 ]
+
+[[package]]
+name = "block-buffer"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa"
+dependencies = [
+ "hybrid-array",
+]
+
+[[package]]
+name = "bytemuck"
+version = "1.25.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95832e849adfb21180ccb6826a99da14e5d266ae5c2e668e1602cf234f153797"
+dependencies = [
+ "bytemuck_derive",
+]
+
+[[package]]
+name = "bytemuck_derive"
+version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc0e56a716f1e132ff6bf4bdac1c944a3fcdc1cae65f70a4a2a1ac3b401d2d1f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.5",
+]
+
+[[package]]
+name = "bytes"
+version = "1.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "cc"
@@ -180,6 +486,12 @@ checksum = "0fa961b519f0b462e3a3b4a34b64d119eeaca1d59af726fe450bbba07a9fc0a1"
 dependencies = [
  "thiserror",
 ]
+
+[[package]]
+name = "const-oid"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
 
 [[package]]
 name = "constant_time_eq"
@@ -270,6 +582,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crypto-common"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce6e4c961d6cd6c9a86db418387425e8bdeaf05b3c8bc1411e6dca4c252f1453"
+dependencies = [
+ "hybrid-array",
+]
+
+[[package]]
 name = "crypto-primes"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -301,7 +622,7 @@ version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -332,7 +653,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "rustc_version",
- "syn",
+ "syn 2.0.118",
  "unicode-xid",
 ]
 
@@ -342,8 +663,20 @@ version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
- "block-buffer",
- "crypto-common",
+ "block-buffer 0.10.4",
+ "crypto-common 0.1.7",
+]
+
+[[package]]
+name = "digest"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1dd6dbb5841937940781866fa1281a1ff7bd3bf827091440879f9994983d5c2"
+dependencies = [
+ "block-buffer 0.12.1",
+ "const-oid",
+ "crypto-common 0.2.2",
+ "ctutils",
 ]
 
 [[package]]
@@ -355,7 +688,7 @@ dependencies = [
  "enum-ordinalize",
  "proc-macro2",
  "quote",
- "syn",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -393,7 +726,7 @@ checksum = "42e528e2d34ba8a67a1a650b86beae8ef69fc5fdb638016f386b973226590432"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -407,6 +740,18 @@ name = "f2z"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "binius-compute",
+ "binius-field",
+ "binius-hash",
+ "binius-iop",
+ "binius-iop-prover",
+ "binius-ip",
+ "binius-ip-prover",
+ "binius-math",
+ "binius-prover",
+ "binius-transcript",
+ "binius-utils",
+ "binius-verifier",
  "blake3",
  "circuit",
  "crypto-bigint",
@@ -423,6 +768,7 @@ dependencies = [
  "p3-commit",
  "p3-dft",
  "p3-field",
+ "p3-goldilocks",
  "p3-matrix",
  "p3-merkle-tree",
  "p3-multilinear-util",
@@ -454,7 +800,7 @@ dependencies = [
  "rand_core 0.9.5",
  "rayon",
  "serde",
- "sha2",
+ "sha2 0.10.9",
  "toml",
 ]
 
@@ -487,6 +833,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "getset"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6cf442baaabe4213ce7d1239afc26c039180b6456da2cededa316ae2c8a77a77"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.118",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -495,6 +852,15 @@ dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash",
+]
+
+[[package]]
+name = "hybrid-array"
+version = "0.4.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "707114b52a152fa7bdb290cd7cd5912d9467273b6d74e21b8d81aca1f8533f6b"
+dependencies = [
+ "typenum",
 ]
 
 [[package]]
@@ -606,6 +972,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "once_cell"
+version = "1.21.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
 name = "p3-air"
 version = "0.6.0"
 source = "git+https://github.com/Plonky3/Plonky3.git?rev=59be31386d5ab81b87dbceb0b83bf797f9eefaec#59be31386d5ab81b87dbceb0b83bf797f9eefaec"
@@ -683,6 +1055,25 @@ dependencies = [
  "rand 0.10.2",
  "serde",
  "tracing",
+]
+
+[[package]]
+name = "p3-goldilocks"
+version = "0.6.0"
+source = "git+https://github.com/Plonky3/Plonky3.git?rev=59be31386d5ab81b87dbceb0b83bf797f9eefaec#59be31386d5ab81b87dbceb0b83bf797f9eefaec"
+dependencies = [
+ "num-bigint 0.5.1",
+ "p3-dft",
+ "p3-field",
+ "p3-mds",
+ "p3-poseidon1",
+ "p3-poseidon2",
+ "p3-symmetric",
+ "p3-util",
+ "paste",
+ "rand 0.10.2",
+ "serde",
+ "spin",
 ]
 
 [[package]]
@@ -1046,6 +1437,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
+name = "seq-macro"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1bc711410fbe7399f390ca1c3b60ad0f53f80e95c5eb935e52268a0e2cd49acc"
+
+[[package]]
 name = "serde"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1072,7 +1469,7 @@ checksum = "d540f220d3187173da220f885ab66608367b6574e925011a9353e4badda91d79"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -1115,8 +1512,19 @@ checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.2.17",
- "digest",
+ "digest 0.10.7",
  "sha2-asm",
+]
+
+[[package]]
+name = "sha2"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.0",
+ "digest 0.11.3",
 ]
 
 [[package]]
@@ -1135,6 +1543,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "smallvec"
+version = "1.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9be42f50aa861c555654aa3a37f52f4b1074bacf4e48fe0ef7fa584e80f1f0f"
+
+[[package]]
 name = "spin"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1145,9 +1559,31 @@ dependencies = [
 
 [[package]]
 name = "syn"
+version = "1.0.109"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b64191b275b66ffe2469e8af2c1cfe3bafa67b529ead792a6d0160888b4237"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
+name = "syn"
 version = "2.0.118"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b9ae57f904213ebb649ce6895b8a66c66f0203b9319718f69a5612a065b1422"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
+name = "syn"
+version = "3.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12df2e0110f65b775f769bb17ef989067a1d931b2eb822bd4346631eeada89f9"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1171,7 +1607,7 @@ checksum = "ebc4ee7f67670e9b64d05fa4253e753e016c6c95ff35b89b7941d6b856dec1d5"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -1234,7 +1670,7 @@ checksum = "7490cfa5ec963746568740651ac6781f701c9c5ea257c58e057f3ba8cf69e8da"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -1242,6 +1678,20 @@ name = "tracing-core"
 version = "0.1.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db97caf9d906fbde555dd62fa95ddba9eecfd14cb388e4f491a66d74cd5fb79a"
+dependencies = [
+ "once_cell",
+]
+
+[[package]]
+name = "trait-set"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b79e2e9c9ab44c6d7c20d5976961b47e8f49ac199154daa514b77cd1ab536625"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
 
 [[package]]
 name = "typenum"
@@ -1299,7 +1749,7 @@ checksum = "1ae7f38b72ec2a254e2b87ef277cf2cd4fb97cbebf944faa6f33354da0867930"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -1319,7 +1769,7 @@ checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
+ "syn 2.0.118",
 ]
 
 [[package]]

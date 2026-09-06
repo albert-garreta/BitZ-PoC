@@ -9,6 +9,10 @@ mod common;
 mod baby_bear_pcs_compare {
     pub mod whir;
 }
+mod integer_pcs_compare {
+    pub mod binius;
+    pub mod whir_goldilocks;
+}
 
 use std::collections::HashMap;
 use std::error::Error;
@@ -35,6 +39,7 @@ use f2z::piop::spartan::{
 use f2z::transcript::Blake3Transcript;
 use f2z::transcript::traits::Transcript;
 use f2z::utils::prof::ProfileInterval;
+use integer_pcs_compare::binius::{self, BiniusBackend};
 use p3_whir::parameters::WhirConfigError;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use serde_json::{Value, json};
@@ -53,12 +58,14 @@ const VERIFY_SCOPE: &str = "pcs-compare:verification";
 
 const F2Z_IMPLEMENTATION: &str = "f2z";
 const WHIR_IMPLEMENTATION: &str = "plonky3-whir";
+const BINIUS_IMPLEMENTATION: &str = "binius64-basefold";
 const P3_REVISION: &str = "59be31386d5ab81b87dbceb0b83bf797f9eefaec";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Backend {
     F2z,
     Whir,
+    Binius,
 }
 
 impl Backend {
@@ -66,6 +73,7 @@ impl Backend {
         match self {
             Self::F2z => F2Z_IMPLEMENTATION,
             Self::Whir => WHIR_IMPLEMENTATION,
+            Self::Binius => BINIUS_IMPLEMENTATION,
         }
     }
 
@@ -73,6 +81,7 @@ impl Backend {
         match self {
             Self::F2z => "F2Z",
             Self::Whir => "Plonky3 WHIR",
+            Self::Binius => "Binius64 BaseFold",
         }
     }
 
@@ -80,6 +89,7 @@ impl Backend {
         match self {
             Self::F2z => 0x4632_5a00_0000_0001,
             Self::Whir => 0x5748_4952_0000_0001,
+            Self::Binius => 0x4249_4e49_5553_0001,
         }
     }
 
@@ -87,6 +97,7 @@ impl Backend {
         match self {
             Self::F2z => None,
             Self::Whir => Some(whir::CHALLENGE_EXTENSION_DEGREE),
+            Self::Binius => Some(128),
         }
     }
 
@@ -94,6 +105,7 @@ impl Backend {
         match self {
             Self::F2z => None,
             Self::Whir => Some(whir::MAX_POW_BITS),
+            Self::Binius => None,
         }
     }
 }
@@ -208,7 +220,7 @@ impl CampaignWriter {
             fs::create_dir_all(parent)?;
         }
         for exponent in MIN_EXPONENT..=MAX_EXPONENT {
-            for backend in [Backend::F2z, Backend::Whir] {
+            for backend in [Backend::F2z, Backend::Whir, Backend::Binius] {
                 let already_present = cells.iter().any(|cell| {
                     cell["implementation"].as_str() == Some(backend.implementation())
                         && cell["log_multiplications"].as_u64() == Some(exponent as u64)
@@ -248,11 +260,18 @@ impl CampaignWriter {
                 .iter()
                 .map(|backend| backend.implementation())
                 .collect::<Vec<_>>(),
-            "whir_fixed_configuration": {
+            "whir_configuration": {
                 "challenge_extension_degree": whir::CHALLENGE_EXTENSION_DEGREE,
                 "target_bits": whir::SECURITY_BITS,
                 "security_assumption": whir::SECURITY_ASSUMPTION_LABEL,
-                "folding_factor": whir::FOLDING,
+                "folding_factor": std::env::var("F2Z_WHIR_FOLDING").ok(),
+                "default_folding_schedule": requested_exponents
+                    .iter()
+                    .map(|&exponent| json!({
+                        "log_multiplications": exponent,
+                        "folding_factor": tuned_whir_folding(exponent),
+                    }))
+                    .collect::<Vec<_>>(),
                 "starting_log_inverse_rate": whir::STARTING_LOG_INV_RATE,
                 "max_pow_bits": whir::MAX_POW_BITS,
                 "hiding": false,
@@ -366,6 +385,9 @@ impl TraceWriter {
         let algorithm = match backend {
             Backend::F2z => "BabyBear integer assignment / fixed-q F2Z opening",
             Backend::Whir => "BabyBear integer assignment / Plonky3 WHIR prescribed opening",
+            Backend::Binius => {
+                "BabyBear integer assignment / Binius64 ring-switch + BaseFold opening"
+            }
         };
         let field = match backend {
             Backend::F2z => json!({
@@ -383,6 +405,12 @@ impl TraceWriter {
                     whir::CHALLENGE_EXTENSION_DEGREE
                 ),
                 "challenge_extension_degree": whir::CHALLENGE_EXTENSION_DEGREE,
+            }),
+            Backend::Binius => json!({
+                "committed_encoding": "one GF(2^128) row per gate: A[0..31] | B[31..62] | C[62..93] | K[93..124]",
+                "base_field": "GF(2)",
+                "challenge_field": "GF(2^128)-GHASH",
+                "challenge_extension_degree": 128,
             }),
         };
 
@@ -612,6 +640,9 @@ fn describe_span(
                     "\\operatorname{Verify}_{\\mathrm{WHIR}}(C_{\\mathrm{WHIR}},x,\\mathbf{u},\\pi_{\\mathrm{WHIR}})=1",
                     "D\\,\\widetilde f(x,\\beta;\\mathbf{u})=V",
                 ],
+                Backend::Binius => {
+                    vec!["\\operatorname{Verify}_{\\mathrm{BaseFold}}(C_{\\mathbb F_2},r,v,\\pi)=1"]
+                }
             },
         ),
         MATERIALIZE_SCOPE => (
@@ -621,6 +652,9 @@ fn describe_span(
             match backend {
                 Backend::F2z => vec!["\\mathcal{B}=\\operatorname{Bit}_{31}(A,B,C,K)"],
                 Backend::Whir => vec!["U=(A,B,C,K)\\in\\mathbb{F}_p^{4\\times 2^g}"],
+                Backend::Binius => {
+                    vec!["w_i=A_i+2^{31}B_i+2^{62}C_i+2^{93}K_i\\in\\mathbb F_2^{128}"]
+                }
             },
         ),
         COMMIT_SCOPE => (
@@ -635,6 +669,11 @@ fn describe_span(
                 }
                 Backend::Whir => {
                     vec!["C_{\\mathrm{WHIR}}\\leftarrow\\operatorname{Commit}_{\\mathrm{WHIR}}(U)"]
+                }
+                Backend::Binius => {
+                    vec![
+                        "C_{\\mathrm{BF}}\\leftarrow\\operatorname{Commit}_{\\mathrm{BaseFold}}(w)",
+                    ]
                 }
             },
         ),
@@ -657,6 +696,10 @@ fn describe_span(
                     "u_j=\\widetilde U_j(x)\\quad(j\\in\\{A,B,C,K\\})",
                     "(u_A,u_B,u_C,u_K,\\pi_{\\mathrm{WHIR}})\\leftarrow\\operatorname{Open}_{\\mathrm{WHIR}}(C_{\\mathrm{WHIR}},x)",
                 ],
+                Backend::Binius => vec![
+                    "v=\\widetilde{\\operatorname{bits}(w)}(r_{\\mathrm{bit}},r_{\\mathrm{gate}})",
+                    "\\pi\\leftarrow\\operatorname{RingSwitch+BaseFold}(C_{\\mathrm{BF}},r,v)",
+                ],
             },
         ),
         VERIFY_SCOPE => (
@@ -671,7 +714,58 @@ fn describe_span(
                     "\\operatorname{Verify}_{\\mathrm{WHIR}}(C_{\\mathrm{WHIR}},x,\\mathbf{u},\\pi_{\\mathrm{WHIR}})=1",
                     "D\\,\\widetilde f(x,\\beta;\\mathbf{u})=V",
                 ],
+                Backend::Binius => {
+                    vec!["\\operatorname{Verify}_{\\mathrm{BaseFold}}(C_{\\mathrm{BF}},r,v,\\pi)=1"]
+                }
             },
+        ),
+        binius::COMMIT_ORACLE_SCOPE => (
+            "binius.basefold.commit_oracle".to_owned(),
+            "Encode and Merkle-commit the BaseFold oracle".to_owned(),
+            "BaseFold commit".to_owned(),
+            vec![r"C_{\mathrm{BF}}\leftarrow\operatorname{Merkle}(\operatorname{NTT}(w))"],
+        ),
+        binius::SAMPLE_POINT_SCOPE => (
+            "binius.claim.sample_point".to_owned(),
+            "Sample the binary MLE opening point".to_owned(),
+            "Sample point".to_owned(),
+            vec![r"r\leftarrow\mathcal T\in\mathbb F_{2^{128}}^{g+7}"],
+        ),
+        binius::EVALUATE_CLAIM_SCOPE => (
+            "binius.claim.evaluate_bit_mle".to_owned(),
+            "Evaluate the packed witness as a bit-MLE".to_owned(),
+            "Evaluate bit-MLE".to_owned(),
+            vec![r"v=\widetilde{\operatorname{bits}(w)}(r_{\mathrm{bit}},r_{\mathrm{gate}})"],
+        ),
+        binius::RING_SWITCH_SCOPE => (
+            "binius.opening.ring_switch".to_owned(),
+            "Reduce the bit-MLE claim by ring switching".to_owned(),
+            "Ring switch".to_owned(),
+            vec![
+                r"\widetilde{\operatorname{bits}(w)}(r_{\mathrm{bit}},r_{\mathrm{gate}})=v\;\Longrightarrow\;\langle w,\rho_r\rangle=\widehat v",
+            ],
+        ),
+        binius::BASEFOLD_OPEN_SCOPE => (
+            "binius.opening.basefold".to_owned(),
+            "Prove the reduced relation with BaseFold".to_owned(),
+            "BaseFold opening".to_owned(),
+            vec![
+                r"\pi_{\mathrm{BF}}\leftarrow\operatorname{BaseFold.Open}(C_{\mathrm{BF}},\rho_r,\widehat v)",
+            ],
+        ),
+        binius::RING_SWITCH_VERIFY_SCOPE => (
+            "binius.verify.ring_switch".to_owned(),
+            "Verify the ring-switch reduction".to_owned(),
+            "Verify ring switch".to_owned(),
+            vec![r"\operatorname{VerifyRS}(r,v,\widehat v)=1"],
+        ),
+        binius::BASEFOLD_VERIFY_SCOPE => (
+            "binius.verify.basefold".to_owned(),
+            "Verify the BaseFold opening".to_owned(),
+            "Verify BaseFold".to_owned(),
+            vec![
+                r"\operatorname{BaseFold.Verify}(C_{\mathrm{BF}},\rho_r,\widehat v,\pi_{\mathrm{BF}})=1",
+            ],
         ),
         label => {
             let readable = label.replace([':', '_'], " ");
@@ -801,15 +895,18 @@ fn exponents() -> Vec<usize> {
 }
 
 fn selected_backends() -> Vec<Backend> {
-    let raw =
-        std::env::var("F2Z_PCS_COMPARE_BACKENDS").unwrap_or_else(|_| "f2z plonky3-whir".to_owned());
+    let raw = std::env::var("F2Z_PCS_COMPARE_BACKENDS")
+        .unwrap_or_else(|_| "f2z plonky3-whir binius64-basefold".to_owned());
     let mut backends = Vec::new();
     for value in raw.split([',', ' ']).filter(|value| !value.is_empty()) {
         let backend = match value {
             "f2z" => Backend::F2z,
             "plonky3-whir" | "whir" => Backend::Whir,
+            "binius" | "binius64" | "binius64-basefold" => Backend::Binius,
             _ => {
-                panic!("F2Z_PCS_COMPARE_BACKENDS accepts only f2z and plonky3-whir; got {value:?}")
+                panic!(
+                    "F2Z_PCS_COMPARE_BACKENDS accepts f2z, plonky3-whir, and binius64-basefold; got {value:?}"
+                )
             }
         };
         if !backends.contains(&backend) {
@@ -828,15 +925,18 @@ fn ordered_backends(selected: &[Backend], exponent: usize) -> Vec<Backend> {
     let preference = match requested.as_str() {
         "alternate" => {
             if exponent.is_multiple_of(2) {
-                [Backend::F2z, Backend::Whir]
+                [Backend::F2z, Backend::Whir, Backend::Binius]
             } else {
-                [Backend::Whir, Backend::F2z]
+                [Backend::Binius, Backend::Whir, Backend::F2z]
             }
         }
-        "f2z-first" => [Backend::F2z, Backend::Whir],
-        "whir-first" => [Backend::Whir, Backend::F2z],
+        "f2z-first" => [Backend::F2z, Backend::Whir, Backend::Binius],
+        "whir-first" => [Backend::Whir, Backend::Binius, Backend::F2z],
+        "binius-first" => [Backend::Binius, Backend::Whir, Backend::F2z],
         _ => {
-            panic!("F2Z_BENCH_ORDER must be alternate, f2z-first, or whir-first for this benchmark")
+            panic!(
+                "F2Z_BENCH_ORDER must be alternate, f2z-first, whir-first, or binius-first for this benchmark"
+            )
         }
     };
     preference
@@ -1055,11 +1155,25 @@ fn whir_security(summary: &SecuritySummary) -> Value {
         "final_folding_pow_bits": summary.final_folding_pow_bits,
         "query_schedule": query_schedule,
         "total_query_openings": total_query_openings,
-        "folding_factor": whir::FOLDING,
-        "starting_log_inverse_rate": whir::STARTING_LOG_INV_RATE,
+        "folding_factor": summary.folding_factor,
+        "starting_log_inverse_rate": summary.starting_log_inverse_rate,
         "hiding": false,
         "hash": "Poseidon2BabyBear<16>",
         "plonky3_revision": P3_REVISION,
+    })
+}
+
+fn binius_security(backend: &BiniusBackend) -> Value {
+    json!({
+        "profile": "Binius64 non-hiding ring-switch + BaseFold",
+        "target_bits": binius::SECURITY_BITS,
+        "soundness_bound_model": "Diamond-Posen Eq. 42 plus 128-bit SHA-256 cap",
+        "estimated_query_soundness_bits": backend.estimated_soundness_bits(),
+        "challenge_field": "GF(2^128)-GHASH",
+        "hash": "SHA-256",
+        "log_inverse_rate": backend.log_inv_rate(),
+        "test_queries": backend.n_test_queries(),
+        "hiding": false,
     })
 }
 
@@ -1188,7 +1302,13 @@ fn run_whir_series(
     reps: usize,
 ) -> Result<CellOutcome, Box<dyn Error>> {
     let setup_started = Instant::now();
-    let backend = match WhirBackend::setup(witness.layout().capacity()) {
+    let (folding, log_inv_rate, max_pow_bits) = whir_tuning(exponent)?;
+    let backend = match WhirBackend::setup_with_params(
+        witness.layout().capacity(),
+        folding,
+        log_inv_rate,
+        max_pow_bits,
+    ) {
         Ok(backend) => backend,
         Err(WhirAdapterError::Config(WhirConfigError::PowBitsExceedBudget {
             required,
@@ -1209,11 +1329,11 @@ fn run_whir_series(
         Err(error) => return Err(error.into()),
     };
     let summary = backend.security_summary();
-    if backend.max_pow_bits() > whir::MAX_POW_BITS {
+    if backend.max_pow_bits() > max_pow_bits {
         return Err(format!(
             "WHIR shape 2^{exponent} derives {} PoW bits, above configured budget {}",
             backend.max_pow_bits(),
-            whir::MAX_POW_BITS
+            max_pow_bits
         )
         .into());
     }
@@ -1290,6 +1410,127 @@ fn run_whir_series(
     })
 }
 
+fn tuned_whir_folding(exponent: usize) -> usize {
+    (exponent.saturating_mul(3) / 4)
+        .saturating_sub(5)
+        .clamp(2, 12)
+}
+
+fn whir_tuning(exponent: usize) -> Result<(usize, usize, usize), Box<dyn Error>> {
+    let folding = match std::env::var("F2Z_WHIR_FOLDING") {
+        Ok(value) => value.parse::<usize>()?,
+        Err(std::env::VarError::NotPresent) => tuned_whir_folding(exponent),
+        Err(error) => return Err(error.into()),
+    };
+    let log_inv_rate = std::env::var("F2Z_WHIR_LOG_INV_RATE")
+        .unwrap_or_else(|_| whir::STARTING_LOG_INV_RATE.to_string())
+        .parse::<usize>()?;
+    let max_pow_bits = std::env::var("F2Z_WHIR_MAX_POW_BITS")
+        .unwrap_or_else(|_| whir::MAX_POW_BITS.to_string())
+        .parse::<usize>()?;
+    if !(2..=12).contains(&folding) {
+        return Err(format!("F2Z_WHIR_FOLDING must be in 2..=12, got {folding}").into());
+    }
+    if !(1..=8).contains(&log_inv_rate) {
+        return Err(format!("F2Z_WHIR_LOG_INV_RATE must be in 1..=8, got {log_inv_rate}").into());
+    }
+    if max_pow_bits >= whir::SECURITY_BITS {
+        return Err(format!(
+            "F2Z_WHIR_MAX_POW_BITS must be below {}, got {max_pow_bits}",
+            whir::SECURITY_BITS
+        )
+        .into());
+    }
+    Ok((folding, log_inv_rate, max_pow_bits))
+}
+
+fn pack_binius_rows(witness: &BabyBearMulWitness) -> Vec<u128> {
+    witness
+        .a_values()
+        .iter()
+        .zip(witness.b_values())
+        .zip(witness.c_values())
+        .zip(witness.k_values())
+        .map(|(((a, b), c), k)| {
+            u128::from(*a)
+                | (u128::from(*b) << 31)
+                | (u128::from(*c) << 62)
+                | (u128::from(*k) << 93)
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_binius_series(
+    writer: &mut TraceWriter,
+    exponent: usize,
+    shape_seed: u64,
+    witness: &BabyBearMulWitness,
+    digest: &str,
+    witness_ms: f64,
+    reps: usize,
+) -> Result<CellOutcome, Box<dyn Error>> {
+    let setup_started = Instant::now();
+    let log_inv_rate = binius_log_inv_rate()?;
+    let backend = BiniusBackend::setup(exponent, log_inv_rate);
+    let setup_ms = common::elapsed_ms(setup_started);
+    let security = binius_security(&backend);
+    eprintln!(
+        "  Binius64 setup: {setup_ms:.3} ms (rate 1/{}, {} queries)",
+        1usize << backend.log_inv_rate(),
+        backend.n_test_queries()
+    );
+
+    for trial in std::iter::once(Trial::Warmup).chain((0..reps).map(Trial::Sample)) {
+        let seed = trial_seed(shape_seed, Backend::Binius, trial);
+        clear_profile();
+        let output = backend.run_trial(|| pack_binius_rows(witness), seed)?;
+        let intervals = finish_profile();
+        let artifacts = checked_artifacts(
+            output.commitment_bytes,
+            output.public_claim_bytes,
+            output.opening_proof_bytes(),
+        )?;
+        if artifacts.total_wire_bytes != output.total_wire_bytes() {
+            return Err("Binius wire-size accounting mismatch".into());
+        }
+        let metadata = RunMetadata {
+            backend: Backend::Binius,
+            exponent,
+            shape_seed,
+            trial_seed: seed,
+            trial,
+            capacity: witness.layout().capacity(),
+            gate_vars: witness.layout().gate_vars(),
+            witness_digest: digest,
+            witness_ms,
+            setup_ms,
+            security: &security,
+            artifacts,
+        };
+        writer.write_run(&metadata, &intervals)?;
+        eprintln!(
+            "    {}: proof={} B, wire={} B",
+            trial.id_fragment(),
+            output.proof_bytes,
+            artifacts.total_wire_bytes
+        );
+    }
+    Ok(CellOutcome::Measured {
+        derived_max_pow_bits: None,
+    })
+}
+
+fn binius_log_inv_rate() -> Result<usize, Box<dyn Error>> {
+    let value = std::env::var("F2Z_BINIUS_LOG_INV_RATE")
+        .unwrap_or_else(|_| binius::DEFAULT_LOG_INV_RATE.to_string())
+        .parse::<usize>()?;
+    if !(1..=4).contains(&value) {
+        return Err(format!("F2Z_BINIUS_LOG_INV_RATE must be in 1..=4, got {value}").into());
+    }
+    Ok(value)
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     // SAFETY: benchmark startup is single-threaded and this is set before the
     // Rayon pool or any profiler scope exists.
@@ -1325,7 +1566,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
     if selected.contains(&Backend::Whir) {
         eprintln!(
-            "  WHIR: BabyBear extension degree {}, {}, target {} bits, max PoW {} bits",
+            "  WHIR: BabyBear extension degree {}, {}, target {} bits, max PoW {} bits, folding auto-tuned per shape",
             whir::CHALLENGE_EXTENSION_DEGREE,
             whir::SECURITY_ASSUMPTION_LABEL,
             whir::SECURITY_BITS,
@@ -1334,7 +1575,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     for &exponent in &exponents {
-        for backend in [Backend::F2z, Backend::Whir] {
+        for backend in [Backend::F2z, Backend::Whir, Backend::Binius] {
             if !selected.contains(&backend) {
                 campaign_cells.push(json!({
                     "implementation": backend.implementation(),
@@ -1377,6 +1618,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                     reps,
                 )?,
                 Backend::Whir => run_whir_series(
+                    &mut writer,
+                    exponent,
+                    shape_seed,
+                    &witness,
+                    &digest,
+                    witness_ms,
+                    reps,
+                )?,
+                Backend::Binius => run_binius_series(
                     &mut writer,
                     exponent,
                     shape_seed,
