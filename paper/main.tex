@@ -839,7 +839,12 @@ Given a set or vector of integers $\ww\in \ZZ^m$, we define \begin{equation}\lab
 It is not satisfied by, for example, $\QQ$ and $\QQ[X]$, which are not finitely generated as rings. Some constructions in this work  impose further requirements on the rings they use. We state these when  needed.
 
 
-Given a finitely generated ring $R$ with fixed generator set $\gamma_1, \ldots, \gamma_\moduledegree$, we denote  $R_{\leq B}$ the set of elements of $R$ of the form $h=\sum_{i\in [\moduledegree]} h_i\cdot \gamma_i$ for $$h_i \in \range{0}{2^B-1}_R \subseteq  R,$$ i.e.\ $R_{\leq B}$ is the set of ring elements that can be expressed as a linear combination of the generators $\gamma_1, \ldots, \gamma_\moduledegree$ where the coefficients can be obtained by adding $1$ together (in $R$) less than $2^B$ times.
+Given a finitely generated ring $R$ with fixed generators $1,\eta_1,\ldots,\eta_k$ (we always list $1$ among the generators, in particular $k=0$ for $\ZZ_n$) and bounds $B, D\geq 1$, we let $R_{\leq B}^{<D}$ denote the set of elements of $R$ of the form $$h=\sum_{\aa\in \ZZ_{\geq 0}^k,\ a_1+\ldots+a_k<D} h_{\aa}\cdot \eta_1^{a_1}\cdots\eta_k^{a_k}, \qquad h_{\aa}\in \range{0}{2^B-1}_R,$$ i.e.\  $R_{\leq B}^{<D}$ is formed by the elements of $R$ that can be written as a polynomial of total degree less than $D$ in $\eta_1,\ldots, \eta_k$, with coefficients obtained by adding $1$ together (in $R$) less than $2^B$ times. 
+
+
+%--
+
+%(One could bound the degree in each generator separately instead; nothing in this work depends on this choice.) We write $\gamma_1=1,\gamma_2,\ldots,\gamma_{\moduledegree}$, where $\moduledegree=\binom{D-1+k}{k}$, for the monomials $\eta_1^{a_1}\cdots\eta_k^{a_k}$ appearing above (in some fixed order), so that $R_{\leq B}^{<D}=\{\sum_{i\in[\moduledegree]} h_i\cdot\gamma_i \mid h_i\in\range{0}{2^B-1}_R\}$. For example, $\ZZ_{\leq B}^{<D}=\range{0}{2^B-1}$ for every $D$; for $R=\FF_q[X]/(h(X))$ or $R=\ZZ_n[X]/(h(X))$ with generator $x$ and $D=\deg h$, the $\gamma_i$ form the power basis $1,x,\ldots,x^{D-1}$ (this covers all finite fields); and for $R=\ZZ[X]$ with generator $X$ we obtain the polynomials of degree less than $D$ with coefficients in $\range{0}{2^B-1}$.
 
 
 
@@ -960,7 +965,7 @@ $\Pi$ has \emph{(perfect) completeness}  if for every $(\inp, \oracle,\wit)\in\R
     An IOP for a relation $\Relation$ is an IOR from $\Relation$ to the trivial relation $\Relation_{\mathsf{triv}}=\{(\inp=\bot,\oracle=\bot, \wit=\bot)\}$.
 \end{remark}
 
-We proceed to define round-by-round knowledge soundness of an IOR, following \cite{BCFW25} in the formulation with relaxed relations of \cite{CFW26}.
+We proceed to define round-by-round knowledge soundness of an IOR, following \cite{BCFW25} in the formulation with relaxed relations of \cite{zook}.
 
 
 
@@ -989,7 +994,7 @@ A $k$-round IOR $\Pi$ has \emph{round-by-round knowledge soundness with relaxati
 If $(\widetilde{\Relation}, \widetilde{\Relation'})=(\Relation, \Relation')$ then we say the round-by-round knowledge soundness of $\Pi$ is \emph{without relaxation}.
 \end{definition}
 
-\begin{lemma}[Composition of IORs {\cite[Theorem 4.5]{CFW26}}]\label{r:ior_compositoin}
+\begin{lemma}[Composition of IORs {\cite[Theorem 4.5]{zook}}]\label{r:ior_compositoin}
 Let $\Pi_1$ be a perfectly complete $k_1$-round IOR from $\Relation_1$ to $\Relation_2$ with round-by-round knowledge soundness with relaxation $(\widetilde{\Relation_1},\widetilde{\Relation_2})$ and errors $\kappa_{11},\ldots,\kappa_{1k_1}$, and let $\Pi_2$ be a perfectly complete $k_2$-round IOR from $\Relation_2$ to $\Relation_3$ with round-by-round knowledge soundness with relaxation $(\widetilde{\Relation_2},\widetilde{\Relation_3})$ and errors $\kappa_{21},\ldots,\kappa_{2k_2}$. Then the IOR from $\Relation_1$ to $\Relation_3$ that runs $\Pi_1$ and then $\Pi_2$ on the output of $\Pi_1$ is perfectly complete, has $k_1+k_2$ rounds, and has round-by-round knowledge soundness with relaxation $(\widetilde{\Relation_1},\widetilde{\Relation_3})$ and errors $\kappa_{11},\ldots,\kappa_{1k_1},\kappa_{21},\ldots,\kappa_{2k_2}$.
 \end{lemma}
 
@@ -1031,7 +1036,7 @@ In this section we describe the \ftwoz\ IOP and the main relations it proves.  W
     \toprule
         $\codedim$ & Bit-length of witness cf.\ \cref{s:linmodfieldbin}\\
         \hline
-        $\bff$ & Witness, either over $\bits\subseteq \ZZ$, or $S_{\leq B}$ (see below)\\
+        $\bff$ & Witness, either over $\bits\subseteq \ZZ$, or $S_{\leq B}^{<D_S}$ (see below)\\
         $\vv$ and $\uu$ & public vectors in inner product constraints, over $R$\\
         \hline
          $R$ & Ring where constraints live, cf.\ \cref{s:linmodfieldbin,s:general_LinBitsDual}\\
@@ -1056,11 +1061,11 @@ In this section we describe the \ftwoz\ IOP and the main relations it proves.  W
         \hline
                   $S$ & Ring where witness lives, cf.\ \cref{s:general_LinBitsDual}\\
          \hline
-         $S_{\leq B}$ & \makecell[l]{Subset of $S$ formed by ring elements with coordinates of bit-size $\leq B$, cf.\ \cref{s:prelims_algebra}\\ (In the core LinBitsRing relation, $S=\ZZ$, $B=1$)}\\
+         $S_{\leq B}^{<D_S}$ & \makecell[l]{Elements of $S$ expressible as polynomials of degree $<D_S$ in the generators of $S$\\ with coefficients of bit-size $\leq B$, cf.\ \cref{s:prelims_algebra} (In the core LinBitsRing relation, $S=\ZZ$, $B=1$)}\\
          \hline
          $\psi$ & Ring homomorphism $\psi: S\to R$\\
          \hline
-         $d$ & Number of generators of $S$\\
+         $d$ & Number of monomials $\gamma_1=1,\ldots,\gamma_d$ of degree $<D_S$ in the generators of $S$ (\cref{s:prelims_algebra})\\
          \hline
          $L$ & Bitification matrix, $L\in S^{\codedim_0\times \codedim}$, cf.\ \cref{d:bitification}\\
          \bottomrule
@@ -1665,7 +1670,7 @@ Hence the second condition in \eqref{e:core_iop_proof_eq1} holds. The first cond
 
 \renewcommand{\modulemorphism}{\psi}
 \renewcommand{\ringmorphism}{\psi}
-\renewcommand{\moduleonebound}{S_{\leq B}}
+\renewcommand{\moduleonebound}{{S_{\leq B}^{<D_S}}}
 
 We now proceed to describe the full relation we seek to work with in this section.  Compared to $\LinBitsDual(\bits, \pi, R, \cC)$,   the witness $\bff$ will now entries in an arbitrary finitely generated ring $S$,  instead of in $\bits\subseteq \ZZ$.  
 
@@ -1676,7 +1681,7 @@ We set the following additional notation:
 \begin{itemize}[leftmargin=*]
  \item Let $S$ be a ring, possibly different than $R$, let $\psi:S \to R$ be a ring homomorphism. %Let $M$ be a $S$-module and  let $\psi: \moduleone \to R$ be a module homomorphism (with underlying ring homomorphism $\ringmorphism$ \albert{terminology in preliminaries}).
 \item 
-Let $\gamma_1,\ldots, \gamma_\moduledegree\in S$ be a fixed generating set of $S$ (\cref{s:prelims_algebra}) \albertimportant{Review, this used to be $\gamma_1,\ldots, \gamma_\moduledegree$}, for some $\moduledegree\geq 1$. 
+Let $D_S\geq 1$ be a degree bound, and let $\gamma_1=1, \gamma_2,\ldots, \gamma_\moduledegree\in S$ be the monomials of total degree less than $D_S$ in a fixed set of generators of $S$ (\cref{s:prelims_algebra}) \albertimportant{Review, this used to be $\gamma_1,\ldots, \gamma_\moduledegree$}, so that $\moduledegree$ is the number of such monomials. 
 \item Recall from \cref{s:prelims_algebra} that $\moduleonebound$ denotes the set of elements of $S$ of the form $h=\sum_{i\in [\moduledegree]} h_i\cdot \gamma_i$ for $$h_i \in \range{0}{2^B-1}_S \subseteq  S,$$ and that for a vector of integers $\ww$, we write $\ww_S$ for its projection to $S$ via reduction modulo $\Char(S)$ (see \eqref{e:integers_subscript_proj}).
      \item Let $\codedim_0$ be a vector witness length, so that our witnesses are $\bff\in S^{\codedim_0}$.    
      \end{itemize}
@@ -1749,7 +1754,7 @@ For efficiency purposes, to make sure $L$ has enough structure to later support 
 
 \renewcommand{\modulemorphism}{\psi}
 \renewcommand{\ringmorphism}{\psi}
-\renewcommand{\moduleonebound}{S_{\leq B}}
+\renewcommand{\moduleonebound}{{S_{\leq B}^{<D_S}}}
 
 Next we describe our IOP for  the general relation $\LinModFieldBin$.  We assume the notation of \cref{s:general_LinBitsDual}. Let  $L$ be a \emph{bitification} matrix as in \cref{d:bitification}, with $L\in S^{\codedim_0 \times \codedim}$ so that $\codedim$ is the vector length of the vector $\bitstext(\bff_0)$. For the standard bitification matrix   $L=\mathsf{Id}_{\codedim_0 \times \codedim_0} \otimes (1,\ldots, 2^{B-1})_S\otimes (\gamma_1, \ldots, \gamma_d)$, we have $\codedim=\codedim_0\cdot \moduledegree\cdot B$. Let further $\codedim_1,\codedim_2$ be tensor decomposition parameters (to be used in \cref{c:core_iop}) such that $\codedim=\codedim_1\cdot \codedim_2$. We assume that $\cC$ is a linear code over $\comfield$ of dimension $\codedim/\comfieldexp$. %, which is a $\codedim_2$-interleaving of a code $\cC_1$ over $\comfield$ of dimension $\codedim_1/2^{\comfieldexp}$.
 
