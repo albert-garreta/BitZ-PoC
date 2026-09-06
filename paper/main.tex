@@ -960,7 +960,7 @@ $\Pi$ has \emph{(perfect) completeness}  if for every $(\inp, \oracle,\wit)\in\R
     An IOP for a relation $\Relation$ is an IOR from $\Relation$ to the trivial relation $\Relation_{\mathsf{triv}}=\{(\inp=\bot,\oracle=\bot, \wit=\bot)\}$.
 \end{remark}
 
-We proceed to define round-by-round knowledge soundness of an IOR, as presented in \cite{BCFW25}.
+We proceed to define round-by-round knowledge soundness of an IOR, following \cite{BCFW25} in the formulation with relaxed relations of \cite{CFW26}.
 
 
 
@@ -989,10 +989,9 @@ A $k$-round IOR $\Pi$ has \emph{round-by-round knowledge soundness with relaxati
 If $(\widetilde{\Relation}, \widetilde{\Relation'})=(\Relation, \Relation')$ then we say the round-by-round knowledge soundness of $\Pi$ is \emph{without relaxation}.
 \end{definition}
 
-\begin{remark}[Composition of IORs]\label{r:ior_compositoin}
-\albert{Turn into a theorem/lemma. What can I cite for this? TensorSwitch, Arc, or ZOOK?} IORs can be composed together and inherit completeness and round-by-round knowledge soundness errors. More precisely, let $\Pi_1,\Pi_2$ be perfectly complete IORs from $\Relation_1$ to $\Relation_2$  and $\Relation_3$, respectively, with round-by-round knowledge soundness with relaxation  $(\widetilde{\Relation_1},\widetilde{\Relation_2})$ and $(\widetilde{\Relation_2},\widetilde{\Relation_3})$, respectively; and with errors $\kappa_{11},\ldots, \kappa_{1k_1}$ and $\kappa_{21}, \ldots, \kappa_{2k_2}$, respectively. Consider  the IOR $\Pi'$ from $\Relation_1$ to $\Relation_3$ consisting of applying IOR $\Pi_1$ first, and then $\Pi_2$ taking as input for $\Pi_2$ the output of $\Pi_1$.   Then $\Pi'$ is a perfectly complete $(k_1+k_2)$-round IOR from $\Relation_1$ to $\Relation_3$ with round-by-round knowledge soundness  with relaxation $(\widetilde{\Relation_1},\widetilde{\Relation_3})$ and errors $\kappa_{11},\ldots, \kappa_{1k_1}, \kappa_{21}, \ldots, \kappa_{2k_2}$.
-%
-\end{remark}
+\begin{lemma}[Composition of IORs {\cite[Theorem 4.5]{CFW26}}]\label{r:ior_compositoin}
+Let $\Pi_1$ be a perfectly complete $k_1$-round IOR from $\Relation_1$ to $\Relation_2$ with round-by-round knowledge soundness with relaxation $(\widetilde{\Relation_1},\widetilde{\Relation_2})$ and errors $\kappa_{11},\ldots,\kappa_{1k_1}$, and let $\Pi_2$ be a perfectly complete $k_2$-round IOR from $\Relation_2$ to $\Relation_3$ with round-by-round knowledge soundness with relaxation $(\widetilde{\Relation_2},\widetilde{\Relation_3})$ and errors $\kappa_{21},\ldots,\kappa_{2k_2}$. Then the IOR from $\Relation_1$ to $\Relation_3$ that runs $\Pi_1$ and then $\Pi_2$ on the output of $\Pi_1$ is perfectly complete, has $k_1+k_2$ rounds, and has round-by-round knowledge soundness with relaxation $(\widetilde{\Relation_1},\widetilde{\Relation_3})$ and errors $\kappa_{11},\ldots,\kappa_{1k_1},\kappa_{21},\ldots,\kappa_{2k_2}$.
+\end{lemma}
 
 
 \paragraph{Grinding}\albert{Review}
