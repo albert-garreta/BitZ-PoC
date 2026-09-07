@@ -1442,12 +1442,13 @@ $$
 $$
 Notice that \begin{equation}\label{e:Q_F2Z_intermediate}\left(\inp=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ (g^{\mu_j})_{j\in [\codedim_2]}),\  \oracle= f, \ \wit=\picomfield(\bff)\right)\in \PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack).
 \end{equation}
+Let  $\bm{\mu}\defeq (\mu_1,\ldots, \mu_{\codedim_2})$, $g^{\bm{\gamma}}\defeq (g^{\bm{\gamma}_i})_{i \in [\codedim_1]}$ and $g^{\bm{\mu}}\defeq (g^{\mu_j})_{j\in [\codedim_2]}$.
 % \ulrich{%
 % Suggestion: 
 % Maybe it is more clear, if we write in the above two equalities explicitly a $\bmod\: q$, or, add $\in \mathbb F_q$?
 % }%
 % \albert{See now. It's actually in $\comfield$}
-\item To prove \eqref{e:Q_F2Z_intermediate}, prover and verifier engage in the IOR $\Pi_{\mathsf{red}}$\footnote{Recall that, in our instantiation, $\Pi_{\mathsf{red}}$ is the GKR protocol applied to multiple grand products, cf.\ \cref{s:gkr_low_entropy}.}   with input $$\left(\inp=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ (g^{\mu_j})_{j\in [\codedim_2]}),\  \oracle= f, \ \wit=\picomfield(\bff)\right).$$
+\item To prove \eqref{e:Q_F2Z_intermediate}, prover and verifier engage in the IOR $\Pi_{\mathsf{red}}$\footnote{Recall that, in our instantiation, $\Pi_{\mathsf{red}}$ is the GKR protocol applied to multiple grand products, cf.\ \cref{s:gkr_low_entropy}.}   with input $$\left(\inp=(g^{\bm{\gamma}}, g^{\bm{\mu}}),\  \oracle= f, \ \wit=\picomfield(\bff)\right).$$
 %
 %
  At the end of this IOR, they are left with the following claim to prove: 
@@ -1476,6 +1477,7 @@ When $k=0$ (so that $R=\ZZ_n$ for some $n$), we have $D=0$ and $T=1$.  When $k=1
 +1$, cf.\ \eqref{e:ring_theta_params} for a definition of these quantities. If $n>0$, then $N_R\leq |\ZZ_n|=n$. Otherwise if $n=0$, $N_R \leq \lVert (\vv^{(1)}, \vv^{(2)})\rVert_\infty$.
 
 
+
 \begin{table}[H]
   \centering
   \begin{tabular}{l|l|l}
@@ -1490,7 +1492,7 @@ When $k=0$ (so that $R=\ZZ_n$ for some $n$), we have $D=0$ and $T=1$.  When $k=1
      & & $O((\codedim_1+\codedim_2)\cdot (D+1))$ reductions mod $q$ of $\log(N_R)$-bit integers \\
      & & $O((\codedim_1+\codedim_2)\cdot (D+1))\cdot \FF_q$ \\
      & Verifier & $O(D+1)$ reductions mod $\Char(R)$ of $\log((D+1)\cdot \codedim\cdot N_R^2)$-bit integers \\
-     & & $O(D+1)\cdot R$ \\
+     &  & $O(D+1)\cdot R$ \\
      & & $O((\codedim_1+\codedim_2)\cdot (D+1))$ reductions mod $q$ of $\log(N_R)$-bit integers \\
      & & $O((\codedim_1+\codedim_2)\cdot (D+1))\cdot \FF_q$ \\
      & Proof (bits) & $(2 D + 1)\cdot \log((D+1)\cdot \codedim\cdot N_R^2)$ \\
@@ -1518,8 +1520,6 @@ The last two cost of the prover and verifier in Round 1  are the costs of comput
 
  The first two verifier costs in Round 1 correspond to computing $\picanon(\mu')$. For that, it first reduces the at most $2D+1$ coefficients of $\mu'$ (which are integers of at most $\log(T\cdot \codedim\cdot N_R^2)$ bits) modulo $\Char(R)$ and evaluates the resulting polynomial at $\eta_1$ in $R$ using Horner's rule, and then compares the result with $\mu$. 
  
- 
- In Round 2, the verifier reduces the $\codedim_2$ integers $\mu_j\in \range{0}{(q-1)\cdot \codedim_1}$ modulo $q$, i.e.\ it performs $\codedim_2$ reductions of $\log(q\cdot \codedim_1)$-bit integers, and then computes a linear combination of the results in $\FF_q$; the bit-size $\log(q\cdot \codedim_1)$ of the $\mu_j$ also shows up in the proof size and in the exponentiations of Phase 3.
 
 
 
@@ -1541,7 +1541,7 @@ using an IOP for constrained codes. Concretely, the prover commits to the vector
 
 
 
-\subsection{Complexity, soundness and completeness}\label{s:soundness_core_iop}
+\subsection{Soundness and completeness}\label{s:soundness_core_iop}
 
 
 For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack),\qquad \LIN = \LIN(\comfield, \cC, \pack).$$
@@ -1602,7 +1602,7 @@ Let $h\in \ZZ[X_1,\ldots, X_{k}]$ be a polynomial of total degree at most $2\cdo
 %
 The completeness of \cref{c:core_iop} is clear from its description \albert{Review}.  To prove its soundness, we first treat the case where Round 0 (OOD sampling) is not executed; the case where Round 0 is executed is treated at \cref{a:OOD} following (now standard) arguments from \cite{stir,whir}. 
 
-We decompose  \cref{c:core_iop} into three IORs $\Pi_1, \Pi_2, \Pi_3$.  The first one, $\Pi_1$, is an IOR from $\LinBitsDual$ to $\PESAT$, and it consists of applying Rounds 1 and 2 of \cref{c:core_iop}, and outputting $$\left(\inp'=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ (g^{\mu_j})_{j\in [\codedim_2]}),\  \oracle'= f, \ \wit'=\picomfield(\bff)\right),$$ as described in Phase 3 of \cref{c:core_iop}. Formally, $\Pi_1$ is a $2$-round IOR whose second verifier message is empty: the prover first sends $\mu'$, the verifier replies with $(q,\pirand)$, and the prover then sends $(\mu_1,\ldots, \mu_{\codedim_2})$. The second IOR, $\Pi_2$, is simply $\Pi_{\mathsf{red}}$, reducing $\PESAT$ to $\LIN$. Finally, the third IOR, $\Pi_3$, is simply the IOP $\Pi_{\iopp}$ for $\LIN$.
+We decompose  \cref{c:core_iop} into three IORs $\Pi_1, \Pi_2, \Pi_3$.  The first one, $\Pi_1$, is an IOR from $\LinBitsDual$ to $\PESAT$, and it consists of applying Rounds 1 and 2 of \cref{c:core_iop}, and outputting $$\left(\inp'=(g^{\bm{\gamma}}, g^{\bm{\mu}}),\  \oracle'= f, \ \wit'=\picomfield(\bff)\right),$$ as described in Phase 3 of \cref{c:core_iop}. Formally, $\Pi_1$ is a $2$-round IOR whose second verifier message is empty: the prover first sends $\mu'$, the verifier replies with $(q,\pirand)$, and the prover then sends $\bm{\mu}=(\mu_1,\ldots, \mu_{\codedim_2})$. The second IOR, $\Pi_2$, is simply $\Pi_{\mathsf{red}}$, reducing $\PESAT$ to $\LIN$. Finally, the third IOR, $\Pi_3$, is simply the IOP $\Pi_{\iopp}$ for $\LIN$.
 
 
  Below we show that $\Pi_1$  has round-by-round knowledge soundness with relaxation $(\LinBitsDual^{\delta}, \PESAT^{\delta})$, with errors $(\kappa_0, 0)$, assuming Round 1 is not skipped. The second verifier message of $\Pi_1$ is empty, hence the last prover message of $\Pi_1$ can be sent together with the first prover message of $\Pi_2$, and thus  \cref{c:core_iop} has $1+t_\red+t_\iopp$ rounds. The theorem then follows from the composition of IORs result (cf.\ \cref{r:ior_compositoin}). 
@@ -1636,7 +1636,7 @@ We define $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if  the verifier's degre
 We continue with our definition of $\kstate$.  Let $\tr=(\mu', (q,\pirand), \bm{\mu})$ for a prover message $\bm{\mu}=(\mu_1,\ldots, \mu_{\codedim_2})\in \range{0}{(q-1)\cdot \codedim_1}^{\codedim_2}$, or let $\tr$ be the full transcript obtained by appending the empty second verifier message to $(\mu', (q,\pirand), \bm{\mu})$. We set $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if the verifier accepts on $\tr$ (i.e.\ its checks in Rounds 1 and 2 pass) and $(\inp',\oracle',\ww)\in \PESAT^{\delta}$, where $(\inp',\oracle')$ is the output of the verifier, namely
 %
 $$
-\inp'=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ (g^{\mu_j})_{j\in [\codedim_2]}), \qquad \oracle'= f, \qquad \text{with } \bm{\gamma} = \pi_{q}^{-1}\left(\pirand\circ \picanon^{-1}(\vv^{(1)})\right) \in \range{0}{q-1}^{\codedim_1}\subseteq \ZZ^{\codedim_1}.
+\inp'=(g^{\bm{\gamma}}, g^{\bm{\mu}}), \qquad \oracle'= f, \qquad \text{with } \bm{\gamma} = \pi_{q}^{-1}\left(\pirand\circ \picanon^{-1}(\vv^{(1)})\right) \in \range{0}{q-1}^{\codedim_1}\subseteq \ZZ^{\codedim_1}.
 $$
 %
  Thus $\kstate$ satisfies the third condition in \cref{def:knowledge-state-function}.
@@ -1696,8 +1696,9 @@ Hence the second condition in \eqref{e:core_iop_proof_eq1} holds. The first cond
 
 
 
-\paragraph{The case where Round 1 is skipped.} \albert{Review that I'm not missing any important argument} In this case, the messages $\mu'$ and $(q,\pirand)$ and the error $\kappa_0$ disappear, and the arguments above apply after replacing $\pirand\circ \picanon^{-1}$ with the identity map on $\FF_q$ or on $\ZZ$. In the latter case,  $\pi_q$ is also replaced by the identity map, cf.\ \cref{r:skip_round_1_integers}.
-%
+
+\paragraph{The case where Round 1 is skipped.} \albert{Review that I'm not missing any important argument} In this case, the messages $\mu'$ and $(q,\pirand)$ and the error $\kappa_0$ disappear, and essentially the arguments above apply after replacing $\pirand\circ \picanon^{-1}$ with the identity map on $\FF_q$ or on $\ZZ$. In the latter case,  $\pi_q$ is also replaced by the identity map, cf.\ \cref{r:skip_round_1_integers}.
+
 \end{proof}
 
 
@@ -1911,7 +1912,6 @@ For more general matrices $L$, one needs to make sure that $L$ has enough struct
 \end{theorem}
 \begin{proof} Deferred to \cref{a:LinModFieldBin}. In short, the result is a consequence of \cref{l:bitify}, which establishes an equivalence between  triples for $\LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo, \cC,L)$ and $\LinBitsDual(\bits,\pi, \moduletwo,\cC)$. \cref{l:bitify} further provides a method for efficiently computing one triple from the other. This allows us to build a round-by-round knowledge soundness state and an extractor for \cref{c:LinModFieldBin} from those of \cref{c:core_iop}.
 \end{proof}
-
 
 
 
@@ -2905,7 +2905,7 @@ Observe that since $\Enc_{\cC}\circ \pack$ is injective, and $\cC$ is $(\delta, 
 
 
 
-We modify the decomposition from the proof of \cref{t:thm_core_IOPP} as follows. The IOR $\Pi_1$ now consists of applying Rounds 0, 1 and 2 of \cref{c:core_iop}, and outputting $$\left(\inp'=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ (g^{\mu_j})_{j\in [\codedim_2]},\ \zeta,\ y),\  \oracle'= f, \ \wit'=\picomfield(\bff)\right),$$ so that $\Pi_1$ is an IOR from $\LinBitsDual$ to $\PESAT^{\zeta,y}$. Formally, $\Pi_1$ is now a $3$-round IOR whose third verifier message is empty: the prover's first message is empty, the verifier sends $\zeta$, the prover sends $(y,\mu')$, the verifier replies with $(q,\pirand)$, and the prover then sends $\bm{\mu}$. The IORs $\Pi_2$ and $\Pi_3$ are replaced by the IOR from $\PESAT^{\zeta,y}$ to $\LIN^{\zeta,y}$ obtained from $\Pi_{\mathsf{red}}$, and by the IOP $\Pi_{\iopp}$ for $\LIN^{\zeta,y}$, as in the additional hypotheses of the theorem; their errors are unchanged. Below we show that $\Pi_1$ is perfectly complete and has round-by-round knowledge soundness with relaxation $(\LinBitsDual^{\delta}, \PESAT^{\delta,\zeta,y})$, with errors $(\kappa_{\mathsf{OOD}}, \kappa_0, 0)$; as before, the empty third verifier message contributes no error, the last prover message of $\Pi_1$ can be sent together with the first prover message of $\Pi_2$, and in this way \cref{c:core_iop} has $2+t_\red+t_\iopp$ rounds. The theorem then again follows from \cref{r:ior_compositoin}.
+We modify the decomposition from the proof of \cref{t:thm_core_IOPP} as follows. The IOR $\Pi_1$ now consists of applying Rounds 0, 1 and 2 of \cref{c:core_iop}, and outputting $$\left(\inp'=(g^{\bm{\gamma}}, g^{\bm{\mu}},\ \zeta,\ y),\  \oracle'= f, \ \wit'=\picomfield(\bff)\right),$$ so that $\Pi_1$ is an IOR from $\LinBitsDual$ to $\PESAT^{\zeta,y}$. Formally, $\Pi_1$ is now a $3$-round IOR whose third verifier message is empty: the prover's first message is empty, the verifier sends $\zeta$, the prover sends $(y,\mu')$, the verifier replies with $(q,\pirand)$, and the prover then sends $\bm{\mu}$. The IORs $\Pi_2$ and $\Pi_3$ are replaced by the IOR from $\PESAT^{\zeta,y}$ to $\LIN^{\zeta,y}$ obtained from $\Pi_{\mathsf{red}}$, and by the IOP $\Pi_{\iopp}$ for $\LIN^{\zeta,y}$, as in the additional hypotheses of the theorem; their errors are unchanged. Below we show that $\Pi_1$ is perfectly complete and has round-by-round knowledge soundness with relaxation $(\LinBitsDual^{\delta}, \PESAT^{\delta,\zeta,y})$, with errors $(\kappa_{\mathsf{OOD}}, \kappa_0, 0)$; as before, the empty third verifier message contributes no error, the last prover message of $\Pi_1$ can be sent together with the first prover message of $\Pi_2$, and in this way \cref{c:core_iop} has $2+t_\red+t_\iopp$ rounds. The theorem then again follows from \cref{r:ior_compositoin}.
 
 We extend the knowledge state function $\kstate$ from the case above; recall the collision event $\mathsf{Coll}(f,\zeta)$ from \cref{l:ood_collision}. For the empty transcript, and for the transcript $(\bot)$ consisting of the empty first prover message, we set $\kstate=1$ if and only if $(\inp,\oracle,\ww)\in \LinBitsDual^{\delta}$, as before. For $\tr=(\bot, \zeta)$, we set $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if $(\inp,\oracle,\ww)\in \LinBitsDual^{\delta}$ or $\mathsf{Coll}(f,\zeta)$ holds. For $\tr=(\bot,\zeta,(y,\mu'))$, we set $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if $\mathsf{Coll}(f,\zeta)$ holds, or both $(\inp,\oracle,\ww)\in \LinBitsDual^{\delta}$ and $\mle{\pack\circ\pi_2(\ww)}(\bm{\zeta})=y$. For $\tr=(\bot,\zeta,(y,\mu'),(q,\pirand))$, we set $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if $\mathsf{Coll}(f,\zeta)$ holds, or the conditions required in the case above hold (i.e.\ the verifier's degree and range checks on $\mu'$ pass, $\ww=\bff\in \bits^{\codedim}$, and \eqref{e:core_iop_proof_eq1}) together with $\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta})=y$. Finally, for $\tr=(\bot,\zeta,(y,\mu'),(q,\pirand),\bm{\mu})$, or for the full transcript obtained by appending the empty third verifier message, we set $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if the verifier accepts on $\tr$ and $(\inp',\oracle',\ww)\in \PESAT^{\delta,\zeta,y}$, where $(\inp',\oracle')$ is the output of the verifier described above; note that the collision escape $\mathsf{Coll}(f,\zeta)$ is dropped in this last step. As before, the extractor is the identity map $\rbrextractor(\inp,\oracle,\tr,\ww)=\ww$.
 
