@@ -122,6 +122,13 @@ $\mathbb{B}\text{it}\ZZ$: proofs and commitments in arbitrary rings through bina
 
 \albertimportant{This is an important point. It should be highlighted more (this is a quote from the GKR section).   ''Crucially, we note that our sumcheck features summands of full field bit size $\log|\KK|$, which voids some known powerful optimizations when the summands are small, e.g.\ the univariate skip \cite{gruen} and some optimizations from \cite{sumcheck_opt_1,sumcheck_opt_2}.''}
 
+
+    \albertimportant{Ultimately, for a proof system that requires proving a very large number of SHA (or similar) compressions, together with other type of arithmetic operations, e.g.\ integer or modulo $2^n$, we recommend using a hybrid arithmetization and for constraints over $\ZZ$ and binary fields (in the style of Zinc+ \cref{zincplus}), with a witness $(\bff_\ZZ, \bff_{2})$ split into a part $\bff_\ZZ$ that is used in the integer constraints, and another part $\bff_{2}$ used in the binary field constraints. Then the overall constraint is proved as:  \begin{enumerate}[leftmargin=*]
+        \item  Run a PIOP that is composed of a PIOP for integer constraints (as in \cref{?}) and a PIOP for binary field constraints (such as Binius64). This results in two MLE claims, one for (a projection of) $\ff_\ZZ$ over a finite field, and another for $\bff_2$ over a binary field.
+        \item Use \ftwoz\ to reduce the resulting MLE evaluation claim for (a projection of) $\bff_\ZZ$ to an MLE evaluation claim over a binary field;
+        \item Use WHIR or another PCS over binary fields to prove the above claim, together with (in a batched manner) the MLE evaluation claim for $\bff_2$.
+    \end{enumerate}} 
+
 A Succinct Non-interactive Argument of Knowledge (SNARK) for a relation $\Relation$ is a non-interactive protocol that enables a prover to convince a verifier that, for a given public input $\inp$, they know a witness $\wit$ such that $(\inp,\wit)\in \Relation$, and where communication and verifier runtime are sublinear (i.e.\ the scheme is succinct).
 
 In the vast majority of scenarios, $\Relation$ is defined over one (or more) algebraic object $R$, usually a finite field, and $(\inp,\wit)\in \Relation$ if and only if $(\inp,\wit)$ consists of elements that satisfy some polynomial equations. The choice of $R$ has a crucial impact on the design and end-to-end performance of the proof system, for two reasons: 
@@ -1478,7 +1485,9 @@ When $k=0$ (so that $R=\ZZ_n$ for some $n$), we have $D=0$ and $T=1$.  When $k=1
     Round 0 & $O(\codedim/\comfieldexp)\cdot \comfield$ & -- & $\comfieldexp$ \\
     \hline
     Round 1 & \makecell[l]{ $O(\codedim\cdot (D+1))$ additions of\\ \quad \quad $\log(\codedim_1 \cdot N_R)$-bit integers;
-    \\ $O(\codedim_2\cdot (D+1)^2)$ mult.\ of\\ \quad\quad $\log(\codedim\cdot N_R^2)$-bit integers;\\$O((\codedim_1+\codedim_2)\cdot (D+1))\cdot \FF_q$} & \makecell[l]{\\$O(2D)\cdot R$;\\  \\$O((\codedim_1+\codedim_2)\cdot (D+1))\cdot \FF_q$} & \makecell[l]{$(2 D +
+    \\ $O(\codedim_2\cdot (D+1)^2)$ additions of\\ \quad \quad $\log(\codedim \cdot N_R^2)$-bit integers;
+    \\ 
+    $O(\codedim_2\cdot (D+1)^2)$ mult.\ of\\ \quad\quad $\log(\codedim\cdot N_R^2)$-bit integers;\\$O((\codedim_1+\codedim_2)\cdot (D+1))$ reds. \\ \quad\quad  mod $q$ of $\log(N_R)$-bit integers;\\ $O((\codedim_1+\codedim_2)\cdot (D+1))\cdot \FF_q$} & \makecell[l]{\\$O(2D)\cdot R$;\\ \\ \\  \\$O((\codedim_1+\codedim_2)\cdot (D+1))$ reds. \\ \quad\quad   mod $q$ of $\log(N_R)$-bit integers;\\ $O((\codedim_1+\codedim_2)\cdot (D+1))\cdot \FF_q$} & \makecell[l]{$(2 D +
     1)$\\\quad$\cdot \log((D+1)\cdot \codedim\cdot N_R^2)$} \\
     \hline
     Round 2 & \makecell[l]{$O(\codedim)$ additions of \\ \quad\quad$\log(q\cdot \codedim_1)$-bit integers} & $O(\codedim_2)\cdot \FF_q$ & $\codedim_2\cdot \log(q\cdot \codedim_1)$ \\
@@ -1490,7 +1499,13 @@ When $k=0$ (so that $R=\ZZ_n$ for some $n$), we have $D=0$ and $T=1$.  When $k=1
   \label{t:core_iop_complexity}
 \end{table}
 
-\albertimportant{Review} We comment on the less obvious entries of \cref{t:core_iop_complexity}. In Round 1, the prover computes $\mu'$ by exploiting the tensor structure of the weights: it first accumulates, for each $j\in [\codedim_2]$, the polynomial $\sum_{i\in [\codedim_1]} \bff_{ij}\cdot \picanon^{-1}(\vv^{(1)}_i)$, which requires no multiplications since $\bff$ has bit entries, and whose coefficients are bounded by $\codedim_1\cdot N_R$; the $\codedim_2$ polynomial products with $\picanon^{-1}(\vv^{(2)}_j)$ that follow are of lower order as long as $\codedim_1\gg (D+1)\cdot \log(\codedim\cdot N_R^2)$, which is the case in our instantiations. The verifier does not recompute $\mu'$: it only evaluates $\picanon(\mu')$ via Horner's rule, which takes $O(D)$ operations in $R$ regardless of $\codedim$. In Round 2, each $\mu_j$ is smaller than $q\cdot \codedim_1 < q^2$, so reducing it modulo $q$ costs $O(1)$ word operations; the bit-size $\log(q\cdot \codedim_1)$ of the $\mu_j$ only shows up in the proof size and in the exponentiations of Phase 3.
+\albert{Was AI generated and reviewed and edited by me after} We justify some of the costs listed in \cref{t:core_iop_complexity}. The first three Prover costs in Round 1 come from the computation of  $\mu'$. The prover can compute $\mu'$ by first building, for each $j\in [\codedim_2]$, the polynomial $h_j\defeq \sum_{i\in [\codedim_1]} \bff_{ij}\cdot \picanon^{-1}(\vv^{(1)}_i)$, which requires no multiplications since $\bff$ has bit entries. The coefficients of these polynomials are bounded by $\codedim_1\cdot N_R$. Hence the $h_j$ can be computed with $O(\codedim\cdot (D+1))$ additions of $\log(\codedim_1\cdot N_R)$-bit integers. Now, to obtain $\mu'$ the prover computes    $\sum_{j\in [\codedim_2]}\picanon^{-1}(\vv^{(2)}_j)\cdot h_j$. Each product in this sums costs at most $(D+1)^{2}$ multiplications of $\log(\codedim_1\cdot N_R)$-bit integers, and there are $\codedim_2$ of them, this yields the third cost in the prover's Round 1. The second cost correspond to adding together each of the terms in  $\sum_{j\in [\codedim_2]}\picanon^{-1}(\vv^{(2)}_j)\cdot h_j$.
+
+The last two cost of the prover and verifier in Round 1  are the costs of computing $\pirand\circ \picanon^{-1}(\vv^{(i)})$ for $i=1,2$.  For both $i$, this is the cost of reducing $D+1$ integers in the range $\range{0}{N_R-1}$ modulo a  prime, and then computing a linear combination of the resulting elements. 
+
+
+
+ The verifier does not recompute $\mu'$: it only evaluates $\picanon(\mu')$ via Horner's rule, which takes $O(D)$ operations in $R$ regardless of $\codedim$. In Round 2, each $\mu_j$ is smaller than $q\cdot \codedim_1 < q^2$, so reducing it modulo $q$ costs $O(1)$ word operations; the bit-size $\log(q\cdot \codedim_1)$ of the $\mu_j$ only shows up in the proof size and in the exponentiations of Phase 3.
 
 
 
@@ -1510,6 +1525,7 @@ using an IOP for constrained codes. Concretely, the prover commits to the vector
 \begin{remark}[Succinct verifier and proofs]
     By \cref{t:core_iop_complexity}, choosing $\codedim_1 =O(\sqrt{\codedim})$ and $\codedim_2 =O(\sqrt{\codedim})$, the verifier and the proof size of \cref{c:core_iop} have asymptotic cost $O(\sqrt{\codedim})$ (where $\codedim$ is the bit-length of the witness). %By using the approach \albertimportant{finish}
 \end{remark}
+
 
 
 \subsection{Complexity, soundness and completeness}\label{s:soundness_core_iop}
@@ -1670,6 +1686,9 @@ Hence the second condition in \eqref{e:core_iop_proof_eq1} holds. The first cond
 \paragraph{The case where Round 1 is skipped.} \albert{Review that I'm not missing any important argument} In this case, the messages $\mu'$ and $(q,\pirand)$ and the error $\kappa_0$ disappear, and the arguments above apply after replacing $\pirand\circ \picanon^{-1}$ with the identity map on $\FF_q$ or on $\ZZ$. In the latter case,  $\pi_q$ is also replaced by the identity map, cf.\ \cref{r:skip_round_1_integers}.
 %
 \end{proof}
+
+
+
 
 
 
@@ -1879,6 +1898,7 @@ For more general matrices $L$, one needs to make sure that $L$ has enough struct
 \end{theorem}
 \begin{proof} Deferred to \cref{a:LinModFieldBin}. In short, the result is a consequence of \cref{l:bitify}, which establishes an equivalence between  triples for $\LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo, \cC,L)$ and $\LinBitsDual(\bits,\pi, \moduletwo,\cC)$. \cref{l:bitify} further provides a method for efficiently computing one triple from the other. This allows us to build a round-by-round knowledge soundness state and an extractor for \cref{c:LinModFieldBin} from those of \cref{c:core_iop}.
 \end{proof}
+
 
 
 
@@ -2601,7 +2621,7 @@ In Round 2 of \cref{c:core_iop}, the prover computes the elements $\mu_1,\ldots,
 \renewcommand{\comfield}{\FF_{2^{\comfieldexp}}}
 
 
-\section{Experiments} \label{s:experiments})
+\section{Experiments} \label{s:experiments}
 
 
 \albertimportant{Peak memory missing}
@@ -3018,10 +3038,5 @@ p(X) = \sum_{i=0}^{m-1} c_i\cdot X^{2^i}
 which has $\beta_1,\ldots, \beta_m$, and hence the whole space $F$ as roots. 
 By dimension, $p(X)$ must be trivial, meaning that all its coefficents are zero.
 }
-
-
-
-
-
 
 \end{document}
