@@ -943,6 +943,8 @@ $$
 $$
 \end{definition}
 
+\paragraph{Multilinear extensions.} Given a field $\FF$ and $\uu\in \FF^{2^r}$ indexed by $\bits^r$, we denote by $\mle{\uu}\in \FF[X_1,\ldots,X_r]$  the unique multilinear polynomial with $\mle{\uu}(\bb)=\uu_\bb$ for all $\bb\in\bits^r$. For $\bm\alpha,\bm\beta\in\FF^r$ we let $\eq(\bm\alpha;\bm\beta)\defeq \prod_{i\in[r]}\bigl(\alpha_i\cdot \beta_i+(1-\alpha_i)\cdot (1-\beta_i)\bigr)$, so that $\mle{\uu}(\bm\alpha)=\sum_{\bb\in\bits^r}\uu_\bb\cdot \eq(\bb;\bm\alpha)$. We write $\eq(\bb,\cc;\bm\alpha)$ for $\eq((\bb,\cc);\bm\alpha)$.
+
 
 \subsection{Interactive Oracle Reductions (IOR) of proximity}\label{s:IORs}
 
@@ -1037,7 +1039,8 @@ In this section we describe the \ftwoz\ IOP and the main relations it proves.  W
         $\codedim$ & Bit-length of witness cf.\ \cref{s:linmodfieldbin}\\
         \hline
         $\bff$ & Witness, either over $\bits\subseteq \ZZ$, or $S_{\leq B}^{<D_S}$ (see below)\\
-        $\vv$ and $\uu$ & public vectors in inner product constraints, over $R$\\
+        \hline
+        $\vv$, $\uu$ & public vectors in inner product constraints, over $R$\\
         \hline
          $R$ & Ring where constraints live, cf.\ \cref{s:linmodfieldbin,s:general_LinBitsDual}\\
          \hline
@@ -1061,11 +1064,11 @@ In this section we describe the \ftwoz\ IOP and the main relations it proves.  W
         \hline
                   $S$ & Ring where witness lives, cf.\ \cref{s:general_LinBitsDual}\\
          \hline
-         $S_{\leq B}^{<D_S}$ & \makecell[l]{Elements of $S$ expressible as polynomials of degree $<D_S$ in the generators of $S$\\ with coefficients of bit-size $\leq B$, cf.\ \cref{s:prelims_algebra} (In the core LinBitsRing relation, $S=\ZZ$, $B=1$)}\\
+         $S_{\leq B}^{<D_S}$ & \makecell[l]{Elements of $S$ expressible as polynomials of degree $<D_S$ in the generators of $S$\\ \quad  with coefficients of bit-size $\leq B$, cf.\ \cref{s:prelims_algebra}\\ \quad  (In the core LinBitsRing relation, $S=\ZZ$, $B=1$)}\\
          \hline
          $\psi$ & Ring homomorphism $\psi: S\to R$\\
          \hline
-         $d$ & Number of monomials $\gamma_1=1,\ldots,\gamma_d$ of degree $<D_S$ in the generators of $S$ (\cref{s:prelims_algebra})\\
+         $d$ & \makecell[l]{Number of monomials $\gamma_1=1,\ldots,\gamma_d$ of degree $<D_S$\\ \quad in the generators of $S$ (\cref{s:prelims_algebra})}\\
          \hline
          $L$ & Bitification matrix, $L\in S^{\codedim_0\times \codedim}$, cf.\ \cref{d:bitification}\\
          \bottomrule
@@ -1162,7 +1165,7 @@ $$
 \renewcommand{\ringmorphism}{\pi}
 %\renewcommand{\ringtwo}{}
 
-As discussed in \cref{?} \albert{TO}, \ftwoz \ curcially demands and uses a tensor decomposition of $\vv$. We next establish notation and basic definitions around it.
+As discussed in \cref{s:to_simple_bitz} \albert{TO}, \ftwoz \ crucially demands and uses a tensor decomposition of $\vv$. We next establish notation and basic definitions around it.
 
  Let $(\inp,\oracle,\wit)=((\mu,\vv), f, \bff) \in \LinBitsDual(\bits,\ringmorphism, R,\cC)$. We fix a tensor decomposition of the vector $\vv\in \moduletwo^\codedim$ as $$\vv = \vv^{(1)} \otimes \vv^{(2)} = \left(\vv_i^{(1)}\cdot \vv_j^{(2)}\right)_{i\in [\codedim_1], j\in [\codedim_2]}$$ for some $\vv^{(1)}\in \moduletwo^{\codedim_1}, \vv^{(2)}\in \moduletwo^{\codedim_2}$, with $\codedim_1 \cdot \codedim_2=\codedim$. Note that the trivial tensor decomposition is admitted, i.e.\ we may effectively not decompose $\vv$ by choosing $\codedim_1=\codedim$, $\codedim_2=1$, $\vv^{(1)}=\vv$, and $\vv^{(2)} = (1)$.
 
@@ -1204,7 +1207,7 @@ and
 We assume prover and verifier have access to an IOR $\Pi_{\mathsf{red}}$  that reduces 
 %
 $
-\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack)$ to $\LIN(\comfield, \cC, \pack)$, where, recall, this latter relation has predicates of the form $\langle \bfg, \uu\rangle = \mu'$ with $\bfg\in \FF_2^{\codedim}$, $\uu$ a vector over $\comfield$, and $g=\Enc_{\cC}\circ \pack(\bfg)$.   In our instantiation $\Pi_{\mathsf{red}}$ is an optimized GKR protocol for  grand products (cf.\ \cref{s:gkr_low_entropy}), which reduces the initial grand product claims to MLE evaluation claims of $\yy$ and $\bff$ over $\comfield$.
+\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack)$ to $\LIN(\comfield, \cC, \pack)$, where, recall, this latter relation has predicates of the form $\langle \bfg, \mathbf{z}\rangle = c$ with $\bfg\in \FF_2^{\codedim}$, $\mathbf{z}$ a vector over $\comfield$, $c\in \comfield$, and $g=\Enc_{\cC}\circ \pack(\bfg)$.   In our instantiation $\Pi_{\mathsf{red}}$ is an optimized GKR protocol for  grand products (cf.\ \cref{s:gkr_low_entropy}), which reduces the initial grand product claims to MLE evaluation claims of $\yy$ and $\bff$ over $\comfield$.
 
 %
 %
@@ -1215,13 +1218,15 @@ $$\left(\inp=(\yy,\bm{\mu}),\  \oracle= f, \ \wit=\picomfield(\bff)\right)\in \P
 $\Pi_{\mathsf{red}}$ outputs
 %
 $$
-\left((\vv, \mu'), \ f, \ \picomfield(\bff)\right) \in \LIN( \comfield,\cC,\pack)$$ for some vector $\vv$ and field element $\mu'$. In particular, $\Pi_{\red}$ outputs the same oracle $f$ and witness $\pi_2(\bff)$ as the oracle and witness it is given as inputs. 
+\left((\mathbf{z}, c), \ f, \ \picomfield(\bff)\right) \in \LIN( \comfield,\cC,\pack)$$ for some vector $\mathbf{z}\in \comfield^{\codedim}$ and field element $c\in \comfield$. In particular, $\Pi_{\red}$ outputs the same oracle $f$ and witness $\pi_2(\bff)$ as the oracle and witness it is given as inputs. 
 
 
-This is indeed the case with GKR: GKR reduces the initial circuit evaluation claim with a witness input, into an MLE evaluation claim of the same witness, without querying any oracle in-between. 
+%This is indeed the case with GKR: GKR reduces the initial circuit evaluation claim with a witness input, into an MLE evaluation claim of the same witness, without querying any oracle in-between. 
 
 
 
+
+This is indeed the case with GKR: GKR reduces the initial circuit evaluation claim with a witness input, into an MLE evaluation claim of the same witness, without querying any oracle in-between. Consequently an IOR between the versions of these relations with oracle $\bot$ (such as \cref{c:gkr_grand_product}, cf.\ \cref{l:gkr_grand_product})  can be turned, in a straightforward manner, into an IOR from $\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack)$ to $\LIN(\comfield, \cC, \pack)$ with round-by-round knowledge soundness with relaxation $(\PESAT^\delta,\LIN^\delta)$ and the same errors, for every $\delta$. The input to the IOR now includes an oracle $f$, and this same oracle is output at the end of the IOR. The knowledge state function adds the condition $\hamming(f,\Enc_\cC\circ\pack(\ww))<\delta)$. 
 
 
 %
@@ -1282,7 +1287,7 @@ We assume without further comment that it is efficient to compute  values $\pica
 
 
 
-\item Let $\Pi_{\iopp}$ be an IOP for $\LIN(\comfield,\cC, \pack)$. In our instantiation, $\Pi_{\iopp}$ is the WHIR/Ligerito protocol \cite{whir,ligerito} over binary fields as implemented in Flock \cite{flock}, with ring-switching \cite{binius} and a preliminary sumcheck over $\comfield$ that transforms arbitrary inner products to MLE evaluation claims (since the the ring switch of \cite{flock} does not support arbitrary inner product claims). We set the proximity parameter  to the Johnson bound when targeting $100$ bits of security, and to the unique decoding radius for $128$ bits of security, see \cref{s:instantiation} for more details.   
+\item Let $\Pi_{\iopp}$ be an IOP for $\LIN(\comfield,\cC, \pack)$. In our instantiation, $\Pi_{\iopp}$ is the WHIR/Ligerito protocol \cite{whir,ligerito} over binary fields as implemented in Flock \cite{flock}, with ring-switching \cite{binius} and a preliminary sumcheck over $\comfield$ that transforms arbitrary inner products to MLE evaluation claims (since the ring switch of \cite{flock} does not support arbitrary inner product claims). We set the proximity parameter  to the Johnson bound when targeting $100$ bits of security, and to the unique decoding radius for $128$ bits of security, see \cref{s:instantiation} for more details.   
 \item 
 Let $\codedim =\codedim_1\cdot \codedim_2$ be dimension parameters,  and $R$ a ring with generators $1,\eta_1,\ldots, \eta_k$,  as in the previous sections. We let $\cP$ be a set of primes with $\max\cP< \fieldboundsizeexponent$. Given the tensor decomposition $\vv=\vv^{(1)}\otimes \vv^{(2)}$ from \cref{s:interleaved_setting}, we define \albert{Why a subscript $R$ in $N_R$ and not in the others?}
 \begin{equation}\label{e:ring_theta_params}
@@ -1333,7 +1338,7 @@ for some $\alpha_1,\ldots, \alpha_{k}\in \FF_q$, and where $\pi_q(h)$ is $h$ aft
 
 
 \begin{construction}[IOP for the core {$\LinBitsDual$ relation}]\label{c:core_iop}
-\noindent \textbf{Parameters.} $(\codedim, \codedim_1,\codedim_2, \Pi_\iopp, \Pi_\red, \cP, (\cM_q)_{q\in \cP})$ comprised of: a witness vector length $\codedim$; tensor decomposition dimensions $\codedim_1, \codedim_2$  satisfying $\codedim_1\cdot \codedim_2 = \codedim$; the IOP $\Pi_\iopp$ described above, the IOR $\Pi_\red$ from \cref{s:?}; and the sets $\cP, \cM_q$ from above. 
+\noindent \textbf{Parameters.} $(\codedim, \codedim_1,\codedim_2, \Pi_\iopp, \Pi_\red, \cP, (\cM_q)_{q\in \cP})$ comprised of: a witness vector length $\codedim$; tensor decomposition dimensions $\codedim_1, \codedim_2$  satisfying $\codedim_1\cdot \codedim_2 = \codedim$; the IOP $\Pi_\iopp$ described above, the IOR $\Pi_\red$ from \cref{s:interleaved_setting}; and the sets $\cP, \cM_q$ from above. 
 \\
 
 \noindent \textbf{Inputs.} The prover and verifier receive $\inp=(\mu, \vv)\in \evalfield \times \evalfield^{\codedim}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives $\wit= \bff\in \bits^\codedim \subseteq \ZZ^\codedim$ such that $(\inp,\oracle, \wit) \in \LinBitsDual(\bits,\ringmorphism, \evalfield,\cC)$.  We assume the tensor split from the previous \cref{s:interleaved_setting}, and adopt its notation. 
@@ -1349,7 +1354,7 @@ Let $\basegenerator\in \comfield$ be a fixed generator of the multiplicative gro
 \begin{enumerate}[leftmargin=*] 
 \item \textbf{Round 0 (optional): Out Of Domain (OOD) sample.}  \albertimportant{I think this is not implemented?} This step can be skipped if the proximity parameter $\delta$ is  set within the unique decoding radius of $\cC$ (cf.\ \cref{s:prelims_codes}, and \cref{t:thm_core_IOPP}). Otherwise the step is executed. In that case, the verifier samples and sends a random $\zeta\in \comfield$, and the prover responds with $$y=\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta}), \qquad \text{where } \bm{\zeta}\defeq \left(\zeta^{2^0}, \zeta^{2^1}, \ldots, \zeta^{2^{\log (\codedim/\comfieldexp) -1}}\right).$$
 \item \textbf{Round 1 (optional): replacing $R$ by a ``small'' prime field $\FF_q$.}
-This step can be skipped (i.e.\ prover and verifier move to Round 2 directly) if $R$ is a prime field $\FF_q$ and $q < \fieldboundsizeexponent$. Otherwise the step is executed. %, or if $R=\ZZ$ and $\lVert \vv \rVert < \fieldboundsizeexponent$.
+This step can be skipped (i.e.\ prover and verifier move to Round 2 directly) if $R$ is a prime field $\FF_p$ and $p < \fieldboundsizeexponent$; in that case we set $q\defeq p$ in Rounds 2 and 3. Otherwise the step is executed. %, or if $R=\ZZ$ and $\lVert \vv \rVert < \fieldboundsizeexponent$.
 
 The prover computes and sends $\mu' \in \ZZ[X_1, \ldots, X_{k}]$ such that
 %
@@ -1376,7 +1381,7 @@ The prover and verifier now set to prove the updated claim
 
 \begin{remark}[Skipping Round 1 when $R=\ZZ$ and $\lVert \vv\rVert_{\infty}$ is ``small'']\label{r:skip_round_1_integers}
 \albert{Make sure our completeness and soundness theorem proves this case as well}
-    This step can also be skipped when $R=\ZZ$ and all entries of $\vv^{(1)}$ are nonnegative and less than $\fieldboundsizeexponent$. In that case the claim to prove at the start of Round 2 is $\langle \vv^{(1)} \otimes \vv^{(2)}, \bff\rangle = \mu $ over $\ZZ$. In this case the map $\pi_q$ in Round 2 is simply replaced by the identity map, and $\FF_q$ is replaced by $\ZZ$. In Phase 3, $\bm{\gamma}$ is  $\vv^{(1)}$. 
+    This step can also be skipped when $R=\ZZ$ and all entries of $\vv^{(1)}$ are nonnegative and less than $\fieldboundsizeexponent$. In that case the claim to prove at the start of Round 2 is $\langle \vv^{(1)} \otimes \vv^{(2)}, \bff\rangle = \mu $ over $\ZZ$. In this case the map $\pi_q$ in Round 2 is simply replaced by the identity map, $\FF_q$ is replaced by $\ZZ$, and $q$ in the range checks of Round 2 denotes $\max_{i\in [\codedim_1]} \vv^{(1)}_i+1$. In Phase 3, $\bm{\gamma}$ is  $\vv^{(1)}$. 
 \end{remark}
 \item \textbf{Round 2: transforming \eqref{e:core_bitz_eq_new_0} to $\codedim_2$ integer constraints with bounded integers.}
 \begin{itemize}[leftmargin=*]
@@ -1436,9 +1441,9 @@ Notice that \begin{equation}\label{e:Q_F2Z_intermediate}\left(\inp=((g^{\bm{\gam
  At the end of this IOR, they are left with the following claim to prove: 
 %
 \begin{equation}\label{e:iopp_mle_claims}
-\left((\vv, \mu'), \ f, \ \picomfield(\bff)\right) \in \LIN( \comfield,\cC,\pack)= \left\{ \left(\begin{aligned} &\inp=(\uu,\mu)\in \comfield^{\codedim}\times \comfield, \\&\oracle = g \in \comfield^{\codelength}, \\ &\wit= \bfg\in \FF_2^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} 
+\left((\mathbf{z}, c), \ f, \ \picomfield(\bff)\right) \in \LIN( \comfield,\cC,\pack)= \left\{ \left(\begin{aligned} &\inp=(\uu,\mu)\in \comfield^{\codedim}\times \comfield, \\&\oracle = g \in \comfield^{\codelength}, \\ &\wit= \bfg\in \FF_2^\codedim\end{aligned}\right) \;\middle|\;  \begin{aligned} 
 &g=\Enc_{\cC}\circ \pack (\bfg) \\    &\langle \uu, \bfg\rangle = \mu  \end{aligned}\right\}
-\end{equation} for some vector $\vv$ and field element $\mu'$ output during the IOR $\Pi_{\mathsf{red}}$. 
+\end{equation} for some vector $\mathbf{z}\in \comfield^{\codedim}$ and field element $c\in \comfield$ output during the IOR $\Pi_{\mathsf{red}}$. 
 \end{itemize}
 \item \textbf{Phase 4: Using an IOP over {$\comfield$}.} Prover and  verifier engage in the IOP $\Pi_{\iopp}$  to certify the claim \eqref{e:iopp_mle_claims}.  If Round 0 (Out Of Domain sampling) triggered, they also use $\Pi_{\iopp}$ to certify the evaluation claim from Round 0.
 \end{enumerate}
@@ -1448,17 +1453,17 @@ Notice that \begin{equation}\label{e:Q_F2Z_intermediate}\left(\inp=((g^{\bm{\gam
 In \cref{t:core_iop_complexity} we summarize the main costs of \cref{c:core_iop}.
 
 
-\paragraph{Costs ($k\leq 1$).} \albertimportant{Review. Computed by AI} In \Cref{t:core_iop_complexity} we summarize the costs of \cref{c:core_iop} beyond those of $\Pi_\red$ and $\Pi_\iopp$ (cf.\ \cref{s:gkr_low_entropy,s:instantiation}), for the specific case $k\leq 1$, corresponding to $R$ being of the form $\ZZ_n$ or $\ZZ_n[X]/(h(X))$ for some $n\geq 0$ and some $h(X)$. This is the setting used in our instantiation \cref{s:instantiation,s:experiments} \albertimportant{Do we do any Babybear extension? If not, we only use $k=0$}. The number of rounds is  between $t_\red +t_\iopp$ and $2+t_\red +t_\iopp$ , depending on whether Rounds 0 and 1 execute or not, where $t_\red, t_\iopp$ denote the number of rounds of $\Pi_\iopp,\Pi_\red$.
+\paragraph{Costs ($k\leq 1$).}  In \Cref{t:core_iop_complexity} we summarize the costs of \cref{c:core_iop} beyond those of $\Pi_\red$ and $\Pi_\iopp$ (cf.\ \cref{s:gkr_low_entropy,s:instantiation}), for the specific case $k\leq 1$, corresponding to $R$ being of the form $\ZZ_n$ or $\ZZ_n[X]/(h(X))$ for some $n\geq 0$ and some $h(X)$. This is the setting used in our instantiation \cref{s:instantiation,s:experiments} \albert{Do we do any Babybear extension? If not, we only use $k=0$}. The number of rounds is  between $t_\red +t_\iopp$ and $2+t_\red +t_\iopp$ , depending on whether Rounds 0 and 1 execute or not, where $t_\red, t_\iopp$ denote the number of rounds of $\Pi_\iopp,\Pi_\red$.
 
 Rounds 0, 1 and 2 send only non-oracle messages, so the oracles and queries of \cref{c:core_iop} are exclusively those of $\Pi_\red$ and $\Pi_\iopp$. If Round 1 is skipped, $q$ denotes $|R|$ when $R=\FF_q$, and $\max_i \vv^{(1)}_i+1$ when $R=\ZZ$ (cf.\ \cref{r:skip_round_1_integers}). The exponentiations of Phase 3, when computing $(g^{\bm{\gamma_i}})_{i\in [\codedim_1]}$ and $(g^{\mu_j})_{j\in [\codedim_2]}$, take $\lceil \log(q\cdot\codedim_1)/w\rceil \leq \comfieldexp/w$ multiplications each using a fixed-base table with $w$-bit windows ($w=8$ in our implementation).
-
-When $k=0$ (so that $R=\ZZ_n$ for some $n$), we have $D=0$ and $T=1$.  When $k=1$ and $R=\ZZ_n[X]/(h(X))$ for some monic $h(X)$, then $D\leq \deg(h(X))-1$ and $T\leq D
-+1$, cf.\ \eqref{e:ring_theta_params}.
 
 
 In our instantiation, we set $\codedim_1\approx \sqrt{\codedim}$, $\codedim_2\approx \sqrt{\codedim}$, making the verifier succinct.
 
-\albertimportant{Should we justify some of these costs?}
+When $k=0$ (so that $R=\ZZ_n$ for some $n$), we have $D=0$ and $T=1$.  When $k=1$ and $R=\ZZ_n[X]/(h(X))$ for some monic $h(X)$, then $D\leq \deg(h(X))-1$ and $T\leq D
++1$, cf.\ \eqref{e:ring_theta_params} for a definition of these quantities. If $n>0$, then $N_R\leq |\ZZ_n|=n$. Otherwise if $n=0$, $N_R \leq \lVert (\vv^{(1)}, \vv^{(2)})\rVert_\infty$.
+
+
 \begin{table}[H]
   \centering
   \begin{tabular}{l|l|l|l}
@@ -1479,6 +1484,8 @@ In our instantiation, we set $\codedim_1\approx \sqrt{\codedim}$, $\codedim_2\ap
   \caption{Costs of \cref{c:core_iop} when $k\leq 1$, in addition to those of $\Pi_\red$ and $\Pi_\iopp$. By $N\cdot \comfield$, $N\cdot \FF_q$, $N\cdot R$ we indicate $N$ operations in the respective ring. Rounds 0 and 1 are optional.}
   \label{t:core_iop_complexity}
 \end{table}
+
+\albertimportant{Review} We comment on the less obvious entries of \cref{t:core_iop_complexity}. In Round 1, the prover computes $\mu'$ by exploiting the tensor structure of the weights: it first accumulates, for each $j\in [\codedim_2]$, the polynomial $\sum_{i\in [\codedim_1]} \bff_{ij}\cdot \picanon^{-1}(\vv^{(1)}_i)$, which requires no multiplications since $\bff$ has bit entries, and whose coefficients are bounded by $\codedim_1\cdot N_R$; the $\codedim_2$ polynomial products with $\picanon^{-1}(\vv^{(2)}_j)$ that follow are of lower order as long as $\codedim_1\gg (D+1)\cdot \log(\codedim\cdot N_R^2)$, which is the case in our instantiations. The verifier does not recompute $\mu'$: it only evaluates $\picanon(\mu')$ via Horner's rule, which takes $O(D)$ operations in $R$ regardless of $\codedim$. In Round 2, each $\mu_j$ is smaller than $q\cdot \codedim_1 < q^2$, so reducing it modulo $q$ costs $O(1)$ word operations; the bit-size $\log(q\cdot \codedim_1)$ of the $\mu_j$ only shows up in the proof size and in the exponentiations of Phase 3.
 
 
 
@@ -1561,7 +1568,7 @@ Let $h\in \ZZ[X_1,\ldots, X_{k}]$ be a polynomial of total degree at most $2\cdo
 %
 The completeness of \cref{c:core_iop} is clear from its description \albert{Review}.  To prove its soundness, we first treat the case where Round 0 (OOD sampling) is not executed; the case where Round 0 is executed is treated at \cref{a:OOD} following (now standard) arguments from \cite{stir,whir}. 
 
-We decompose  \cref{c:core_iop} into three IORs $\Pi_1, \Pi_2, \Pi_3$.  The first one, $\Pi_1$, is an IOR from $\LinBitsDual$ to $\PESAT$, and it consists of applying Rounds 1 and 2 of \cref{c:core_iop}, and outputting $$\left(\inp'=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ (g^{\mu_j})_{j\in [\codedim_2]}),\  \oracle'= f, \ \wit'=\picomfield(\bff)\right),$$ as described in Phase 3 of \cref{c:core_iop}. Formally, $\Pi_1$ is a $2$-round IOR whose second verifier message is empty: the prover first sends $\mu'$, the verifier replies with $(q,\pirand)$, and the prover then sends $\bm{\mu}=(\mu_1,\ldots, \mu_{\codedim_2})$. The second IOR, $\Pi_2$, is simply $\Pi_{\mathsf{red}}$, reducing $\PESAT$ to $\LIN$. Finally, the third IOR, $\Pi_3$, is simply the IOP $\Pi_{\iopp}$ for $\LIN$.
+We decompose  \cref{c:core_iop} into three IORs $\Pi_1, \Pi_2, \Pi_3$.  The first one, $\Pi_1$, is an IOR from $\LinBitsDual$ to $\PESAT$, and it consists of applying Rounds 1 and 2 of \cref{c:core_iop}, and outputting $$\left(\inp'=((g^{\bm{\gamma}_i})_{i \in [\codedim_1]},\ (g^{\mu_j})_{j\in [\codedim_2]}),\  \oracle'= f, \ \wit'=\picomfield(\bff)\right),$$ as described in Phase 3 of \cref{c:core_iop}. Formally, $\Pi_1$ is a $2$-round IOR whose second verifier message is empty: the prover first sends $\mu'$, the verifier replies with $(q,\pirand)$, and the prover then sends $(\mu_1,\ldots, \mu_{\codedim_2})$. The second IOR, $\Pi_2$, is simply $\Pi_{\mathsf{red}}$, reducing $\PESAT$ to $\LIN$. Finally, the third IOR, $\Pi_3$, is simply the IOP $\Pi_{\iopp}$ for $\LIN$.
 
 
  Below we show that $\Pi_1$  has round-by-round knowledge soundness with relaxation $(\LinBitsDual^{\delta}, \PESAT^{\delta})$, with errors $(\kappa_0, 0)$, assuming Round 1 is not skipped. The second verifier message of $\Pi_1$ is empty, hence the last prover message of $\Pi_1$ can be sent together with the first prover message of $\Pi_2$, and thus  \cref{c:core_iop} has $1+t_\red+t_\iopp$ rounds. The theorem then follows from the composition of IORs result (cf.\ \cref{r:ior_compositoin}). 
@@ -2591,7 +2598,7 @@ In Round 2 of \cref{c:core_iop}, the prover computes the elements $\mu_1,\ldots,
 \renewcommand{\comfield}{\FF_{2^{\comfieldexp}}}
 
 
-\section{Experiments}
+\section{Experiments} \label{s:experiments})
 
 
 \albertimportant{Peak memory missing}
