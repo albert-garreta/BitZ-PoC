@@ -12,9 +12,9 @@ use std::time::Instant;
 
 use f2z::piop::spartan::{
     BabyBearMulWitness, PreparedBabyBearMulRelation, PreparedU32MulRelation,
-    SpartanReductionStrategy, U32MulWitness, commit_baby_bear_mul_witness, commit_u32_mul_witness,
-    prove_baby_bear_mul_paper, prove_u32_mul, sample_baby_bear_operand_with,
-    verify_baby_bear_mul_paper, verify_u32_mul,
+    SpartanReductionStrategy, U32MulWitness, commit_baby_bear_mul_paper_witness,
+    commit_u32_mul_witness, prove_baby_bear_mul_paper, prove_u32_mul,
+    sample_baby_bear_operand_with, verify_baby_bear_mul_paper, verify_u32_mul,
 };
 use f2z::transcript::Blake3Transcript;
 use f2z::utils::prof;
@@ -81,8 +81,8 @@ fn main() {
             let prepared = PreparedBabyBearMulRelation::new(layout).expect("relation");
             for rep in 0..=reps {
                 let started = Instant::now();
-                let hint =
-                    commit_baby_bear_mul_witness(&layout, witness.f2z_bit_rows()).expect("commit");
+                let hint = commit_baby_bear_mul_paper_witness(&prepared, witness.f2z_bit_rows())
+                    .expect("commit");
                 let commit_ms = started.elapsed().as_secs_f64() * 1e3;
                 let mut transcript = Blake3Transcript::new();
                 let started = Instant::now();
