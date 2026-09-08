@@ -397,6 +397,104 @@ where
     )
 }
 
+/// The raw-table Spartan prover for relations whose assignment holds exact
+/// `u64` values but whose per-row products do not fit `u64` (the u64
+/// multiplication relation): the outer sumcheck runs on caller-converted raw
+/// product residues and the inner sumcheck on the borrowed native
+/// assignment, so no field-valued table is ever materialized. Statement,
+/// transcript, and proof are identical to [`prove_spartan_piop_with_strategy`]
+/// under [`SpartanReductionStrategy::DelayedBarrett`] on the projected tables.
+pub(crate) fn prove_spartan_piop_raw_products_native_assignment<C>(
+    transcript: &mut impl Transcript,
+    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    assignment_oracle_binding: &[u8; 32],
+    products: RawProducts,
+    assignment: &[u64],
+) -> Result<
+    (
+        SpartanPiopProof<MontyField<2>>,
+        ScaledMleEvaluationClaim<MontyField<2>>,
+    ),
+    SpartanError,
+>
+where
+    C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
+{
+    let rows = 1usize << matrices.num_row_vars();
+    if products.len() != rows {
+        return Err(SpartanError::InvalidProductDimensions);
+    }
+    let domain = 1usize << matrices.num_column_vars();
+    let column_count = matrices.matrices().column_count();
+    if assignment.len() != column_count && assignment.len() != domain {
+        return Err(SpartanError::InvalidAssignmentDimensions);
+    }
+    if assignment.first() != Some(&1) {
+        return Err(SpartanMatrixError::InvalidAssignmentConstant.into());
+    }
+    if assignment.len() > column_count && assignment[column_count..].iter().any(|&value| value != 0)
+    {
+        return Err(SpartanError::InvalidAssignmentPadding);
+    }
+    absorb_statement(transcript, matrices, assignment_oracle_binding);
+
+    let field_config = matrices.config();
+    let ctx = RawMontyCtx::new(field_config);
+    let reducer = OptimizedMonty128Reducer::new(field_config).map_err(SumcheckError::from)?;
+    let tau = (0..matrices.num_row_vars())
+        .map(|_| squeeze_field(transcript, field_config))
+        .collect::<Vec<MontyField<2>>>();
+    let (eq_low, eq_high) = {
+        let _g = crate::utils::prof::scope("sp:eq");
+        make_equality_factors_raw(&ctx, &tau)
+    };
+    let outer = {
+        let _scope = crate::utils::prof::scope("spartan:outer_sumcheck");
+        prove_outer_field_raw(
+            transcript,
+            &ctx,
+            &reducer,
+            MontyField::<2>::zero_with_cfg(field_config),
+            &tau,
+            eq_low,
+            eq_high,
+            products,
+        )?
+    };
+
+    let rho = squeeze_field(transcript, field_config);
+    let inner_initial_claim = batched_product_claim(
+        &outer.proof.az_mle_claim,
+        &outer.proof.bz_mle_claim,
+        &outer.proof.cz_mle_claim,
+        &rho,
+    );
+    let inner = {
+        let _scope = crate::utils::prof::scope("spartan:inner_sumcheck");
+        inner_sumcheck_raw(
+            transcript,
+            &ctx,
+            &reducer,
+            matrices,
+            inner_initial_claim,
+            RowFunctional::Point(&outer.eval_points),
+            ctx.raw(&rho),
+            RawWitness::native_borrowed(assignment, domain),
+        )?
+    };
+
+    let claim = ScaledMleEvaluationClaim::new(
+        inner.sumcheck.eval_points.into_boxed_slice(),
+        inner.batched_matrix_evaluation,
+        inner.sumcheck.final_claim,
+    );
+    let proof = SpartanPiopProof {
+        outer: outer.proof,
+        inner: inner.sumcheck.proof,
+    };
+    Ok((proof, claim))
+}
+
 /// Runs the standard-outer u32 prover with an explicitly selected reduction
 /// strategy for internal regression tests.
 #[cfg(test)]

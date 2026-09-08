@@ -1247,6 +1247,7 @@ const RS_EVAL_BATCH_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/rs-eval-batch
 #[allow(dead_code)]
 const MOD_Q_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q/v1";
 const U32_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN: &[u8] = b"f2z/spartan-f2z/u32-mod-q-opening/v2";
+const U64_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN: &[u8] = b"f2z/spartan-f2z/u64-mod-q-opening/v1";
 const BABY_BEAR_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN: &[u8] =
     b"f2z/spartan-baby-bear-f2z/mod-q-opening/v2";
 const EXT_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/ext/v1";
@@ -1262,6 +1263,7 @@ const MOD_Q_XOR_ONLY_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q-xor-on
 pub(crate) enum ModQOpeningKind {
     U32Mul,
     BabyBearMul,
+    U64Mul,
 }
 
 impl ModQOpeningKind {
@@ -1269,6 +1271,7 @@ impl ModQOpeningKind {
         match self {
             Self::U32Mul => U32_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN,
             Self::BabyBearMul => BABY_BEAR_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN,
+            Self::U64Mul => U64_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN,
         }
     }
 }

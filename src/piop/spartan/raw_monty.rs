@@ -46,6 +46,7 @@ use crate::{
 use super::{
     absorb_field_elements,
     baby_bear_mul::{BABY_BEAR_MODULUS, BabyBearMulCoefficient},
+    u64_mul::{U64_MUL_LIMB_BASE, U64MulCoefficient},
     matrix::{
         BlockSelectorLayout, PrefixUnivariateRowFactors, PreparedConstraintMatrices,
         SpartanMatrixCoefficient,
@@ -148,6 +149,11 @@ impl RawMontyCtx {
 
     /// The residue of a small integer.
     pub(crate) fn native_residue(&self, value: u64) -> Raw {
+        self.raw(&Field::from_with_cfg(value, &self.config))
+    }
+
+    /// The residue of an integer below `2^128`.
+    pub(crate) fn native_residue_u128(&self, value: u128) -> Raw {
         self.raw(&Field::from_with_cfg(value, &self.config))
     }
 
@@ -417,6 +423,62 @@ impl RawProducts {
             az: ctx.raw_vec(&products.az.evaluations),
             bz: ctx.raw_vec(&products.bz.evaluations),
             cz: ctx.raw_vec(&products.cz.evaluations),
+        }
+    }
+
+    /// Raw residues of exact native tables whose products exceed `u64`: the
+    /// operand columns are `u64` values and each product is given as two
+    /// `u64` limbs (`cz = cz_lo + 2^64 · cz_hi`), all zero-padded to `rows`
+    /// (the u64 multiplication relation). Residue-for-residue identical to
+    /// [`Self::from_field`] on the projected tables.
+    pub(crate) fn from_native_limbs(
+        ctx: &RawMontyCtx,
+        az: &[u64],
+        bz: &[u64],
+        cz_lo: &[u64],
+        cz_hi: &[u64],
+        rows: usize,
+    ) -> Self {
+        let live = az.len();
+        debug_assert!(bz.len() == live && cz_lo.len() == live && cz_hi.len() == live);
+        debug_assert!(live <= rows);
+        let operands = |values: &[u64]| -> Vec<Raw> {
+            let mut out = vec![0; rows];
+            #[cfg(feature = "parallel")]
+            if parallel(live) {
+                out[..live]
+                    .par_iter_mut()
+                    .zip(values.par_iter())
+                    .for_each(|(slot, &value)| *slot = ctx.native_residue(value));
+                return out;
+            }
+            for (slot, &value) in out.iter_mut().zip(values) {
+                *slot = ctx.native_residue(value);
+            }
+            out
+        };
+        let product = |lo: u64, hi: u64| ctx.native_residue_u128(u128::from(lo) | (u128::from(hi) << 64));
+        let mut cz = vec![0; rows];
+        #[cfg(feature = "parallel")]
+        if parallel(live) {
+            cz[..live]
+                .par_iter_mut()
+                .zip(cz_lo.par_iter())
+                .zip(cz_hi.par_iter())
+                .for_each(|((slot, &lo), &hi)| *slot = product(lo, hi));
+            return Self {
+                az: operands(az),
+                bz: operands(bz),
+                cz,
+            };
+        }
+        for ((slot, &lo), &hi) in cz.iter_mut().zip(cz_lo).zip(cz_hi) {
+            *slot = product(lo, hi);
+        }
+        Self {
+            az: operands(az),
+            bz: operands(bz),
+            cz,
         }
     }
 
@@ -2608,6 +2670,23 @@ impl RawMontyCoefficient for Field {
     #[inline(always)]
     fn raw_scale(&self, _prepared: &(), value: Raw, ctx: &RawMontyCtx) -> Raw {
         ctx.mul(ctx.raw(self), value)
+    }
+}
+
+impl RawMontyCoefficient for U64MulCoefficient {
+    /// The public limb base `2^64` as a residue of the runtime field.
+    type Prepared = Raw;
+
+    fn prepare_raw(ctx: &RawMontyCtx) -> Self::Prepared {
+        ctx.raw(&Field::from_with_cfg(U64_MUL_LIMB_BASE, ctx.config()))
+    }
+
+    #[inline(always)]
+    fn raw_scale(&self, limb_base: &Raw, value: Raw, ctx: &RawMontyCtx) -> Raw {
+        match self {
+            Self::One => value,
+            Self::LimbBase => ctx.mul(*limb_base, value),
+        }
     }
 }
 

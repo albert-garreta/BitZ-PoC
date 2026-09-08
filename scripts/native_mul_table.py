@@ -45,10 +45,12 @@ def probe(cmd: list[str], default: str) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run_dirs", type=Path, nargs="+", metavar="RUN_DIR")
-    ap.add_argument("--out", type=Path, default=Path("paper/native-mul-table.tex"))
+    ap.add_argument("--out", type=Path, default=None, help="default: paper/native-mul-table.tex (u32) or paper/native-mul-<workload>-table.tex")
     ap.add_argument("--exponents", default="", help="comma list or lo-hi; default: every size in the run")
-    ap.add_argument("--workload", default="u32")
+    ap.add_argument("--workload", default="u32", choices=["u32", "babybear", "u64"])
     args = ap.parse_args()
+    if args.out is None:
+        args.out = Path("paper/native-mul-table.tex" if args.workload == "u32" else f"paper/native-mul-{args.workload}-table.tex")
 
     by = {}
     for run_dir in args.run_dirs:
@@ -102,6 +104,7 @@ def main() -> int:
         gone = [e for e in exps if (slug, e) not in by]
         if gone and len(gone) < len(exps):
             missing[slug] = gone
+    schemes = [(slug, label) for slug, label in SCHEMES if any((slug, e) in by for e in exps)]
     w("")
     w("\\begin{table}[H]")
     w("  \\centering")
@@ -114,7 +117,7 @@ def main() -> int:
     for gi, e in enumerate(exps):
         present = {slug: by[(slug, e)]["medians"] for slug, _ in SCHEMES if (slug, e) in by}
         best = {k: min(m[k] for m in present.values()) for k in ("witness_ms", "online_prover_ms", "verify_ms")}
-        for ri, (slug, label) in enumerate(SCHEMES):
+        for ri, (slug, label) in enumerate(schemes):
             n_cell = f"$2^{{{e}}}$" if ri == 0 else ""
             m = present.get(slug)
             if m is None:
@@ -129,19 +132,29 @@ def main() -> int:
             w("    \\addlinespace")
     w("    \\bottomrule")
     w("  \\end{tabular}")
-    w("  \\caption{Native end-to-end proofs of $N$ multiplications $x \\cdot y = z$ of random $32$-bit integers: "
-      "\\ftwoz\\ (Spartan over a transcript-sampled prime with the \\ftwoz\\ opening, $\\lambda = 100$), "
-      "Binius64 (native multiplication and bit constraints, ring switching and BaseFold at rate $1/2$ with $241$ queries for $100$ bits), "
-      "and Plonky3 (Goldilocks AIR with $32$-bit decompositions, WHIR over a degree-$5$ extension at rate $1/2$, $100$ bits). "
-      "\\emph{Witgen} is the native witness generation; \\emph{prover} is the complete prover call after witness generation, "
-      "commitment included; \\emph{verifier} is the complete verification. "
+    statement = {
+        "u32": "Native end-to-end proofs of $N$ multiplications $x \\cdot y = z$ of random $32$-bit integers: ",
+        "u64": "Native end-to-end proofs of $N$ multiplications $x \\cdot y = z$ of random $64$-bit integers ($z$ a $128$-bit integer): ",
+        "babybear": "Native end-to-end proofs of $N$ multiplications $a \\cdot b = c$ in the BabyBear field: ",
+    }[args.workload]
+    scheme_notes = {
+        "f2z": "\\ftwoz\\ (Spartan over a transcript-sampled prime with the \\ftwoz\\ opening, $\\lambda = 100$)",
+        "binius64": "Binius64 (native multiplication" + (" and bit constraints" if args.workload != "u64" else "") + ", ring switching and BaseFold at rate $1/2$ with $241$ queries for $100$ bits)",
+        "plonky3-whir": "Plonky3 (" + ("Goldilocks AIR with $32$-bit decompositions" if args.workload == "u32" else "BabyBear AIR") + ", WHIR over a degree-$5$ extension at rate $1/2$, $100$ bits)",
+    }
+    present = [slug for slug, _ in schemes]
+    joiner = ", and " if len(present) > 2 else (" and " if len(present) == 2 else "")
+    scheme_text = ", ".join(scheme_notes[s] for s in present[:-1]) + joiner + scheme_notes[present[-1]] + ". "
+    w("  \\caption{" + statement + scheme_text
+      + "\\emph{Witgen} is the native witness generation; \\emph{prover} is the complete prover call after witness generation, "
+      + "commitment included; \\emph{verifier} is the complete verification. "
       + "".join(f"{dict(SCHEMES)[slug].split('~')[0].replace(chr(92) + 'ftwoz' + chr(92), chr(92) + 'ftwoz')} was not run at " + ", ".join(f"$2^{{{e}}}$" for e in gone) + ". " for slug, gone in missing.items())
       + f"{cpu}, {mem_gb}\\,GB, $8$ threads; medians of {samples[0]} runs after one warm-up.}}")
-    w("  \\label{tab:native-mul}")
+    w("  \\label{tab:native-mul" + ("" if args.workload == "u32" else "-" + args.workload) + "}")
     w("\\end{table}")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text("\n".join(out) + "\n")
-    print(f"wrote {args.out} ({len(exps)} sizes, {len(SCHEMES)} schemes)")
+    print(f"wrote {args.out} ({len(exps)} sizes, {len(schemes)} schemes)")
     return 0
 
 

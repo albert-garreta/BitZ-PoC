@@ -1,7 +1,8 @@
 # Native end-to-end multiplication comparison
 
-`mul_e2e_compare` proves batches of u32 × u32 → u64 and BabyBear
-multiplications with F2Z, Binius64, Plonky3-WHIR, and Limber-Hyrax. Every
+`mul_e2e_compare` proves batches of u32 × u32 → u64, BabyBear, and
+u64 × u64 → u128 multiplications with F2Z, Binius64, Plonky3-WHIR, and
+Limber-Hyrax (the u64 workload runs on F2Z and Binius64 only, see below). Every
 warmup and measured trial regenerates the native witness, produces the complete
 proof, and verifies it. This complements the existing `u32_pcs_compare` and
 `baby_bear_pcs_compare` terminal-opening benchmarks.
@@ -50,6 +51,35 @@ trials for the final comparison. Accepted size ranges describe harness input
 limits; completion at the largest sizes depends on the backend and available
 memory. The native measurements recorded so far cover exponents 15–17.
 
+u64 × u64 → u128 multiplication, exponents 15–24, F2Z and Binius64 only:
+
+```sh
+RUSTFLAGS="-Ctarget-cpu=native" \
+RAYON_NUM_THREADS=8 \
+F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24" \
+F2Z_BENCH_REPS=5 \
+F2Z_MUL_COMPARE_WORKLOADS="u64" \
+F2Z_MUL_COMPARE_BACKENDS="f2z binius64" \
+bash scripts/run_native_mul_compare.sh
+```
+
+The u64 workload draws random full 64-bit operands and proves the exact
+128-bit product as two 64-bit limbs. F2Z uses the `u64_mul` relation:
+one integer R1CS row `x · y = z_lo + 2^64 · z_hi` per multiplication with
+the limb base as a public coefficient of matrix `C`, 256 committed bits per
+multiplication (`2^(n+8)` bits, so its size limit is that of BabyBear), the
+Spartan PIOP over the transcript-sampled prime with the exact `u64`
+assignment entering the inner sumcheck natively and only the `2^128`-sized
+products reduced into the field (as raw residues built from the witness
+limbs, since they have no native `u64` first round), and the same Lambda100
+profile and validated-UDR Ligerito opener as the u32 relation.
+Binius64 asserts both words of its native `imul` against witness words and
+needs no operand range checks. The Plonky3 adapter's AIR decomposes 32-bit
+operands and the Limber program uses `u64` linear-combination coefficients,
+so selecting either with the u64 workload is rejected at startup. F2Z's
+`proof_bytes` are now recorded for every workload (Spartan payload as 16-byte
+elements, nonces as 8-byte words, plus the F2Z opening's exact codec bytes).
+
 The direct Cargo command is:
 
 ```sh
@@ -64,7 +94,7 @@ only the selected prover uses Rayon threads. Run `mul_witness_compare` separatel
 from `mul_e2e_compare` so they do not contend for CPU or memory bandwidth.
 
 The size exponent is the number of logical multiplications, not native
-constraint rows. Supported exponents are 4–24 for BabyBear and 4–25 for u32;
+constraint rows. Supported exponents are 4–24 for BabyBear and u64 and 4–25 for u32;
 selecting F2Z requires at least 15. A shape list shared by both workloads must
 stay within 4–24. Small exponents are useful for checking the other adapters. Native trace
 widths differ substantially, particularly Limber's explicit input range checks;

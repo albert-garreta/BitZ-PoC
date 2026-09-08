@@ -67,6 +67,9 @@ impl Program {
                     p.range(b, 31, true);
                     p.range(c, 31, true);
                 }
+                Workload::U64 => panic!(
+                    "the Limber adapter has no u64 workload (its rows use u64 coefficients)"
+                ),
             }
         }
         p.num_vars = p.assignments.len().next_power_of_two();
@@ -165,11 +168,11 @@ impl Program {
             let value = match *a {
                 Assignment::Input(i, operand) => {
                     let (a, b) = corpus.inputs[i];
-                    if operand == 0 { a as u64 } else { b as u64 }
+                    if operand == 0 { a } else { b }
                 }
                 Assignment::Output(i) => {
                     let (a, b) = corpus.inputs[i];
-                    corpus.workload.output(a, b)
+                    u64::try_from(corpus.workload.output(a, b)).expect("Limber outputs fit u64")
                 }
                 Assignment::Bit(i, bit) => (values[i] >> bit) & 1,
                 Assignment::And(a, b) => values[a] * values[b],
@@ -299,7 +302,7 @@ mod tests {
             values[2] ^= 1;
             assert!(p.quotients(&values).is_err());
             if workload == Workload::BabyBear {
-                corpus.inputs[0] = (BABY_P as u32, 0);
+                corpus.inputs[0] = (BABY_P, 0);
                 assert!(p.quotients(&p.values(&corpus)).is_err());
             } else {
                 let mut values = p.values(&corpus);

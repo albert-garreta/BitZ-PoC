@@ -284,3 +284,66 @@ mod tests {
         assert_eq!(m, input);
     }
 }
+
+/// Packs `W = 1` rows for gates with **256** bit slots: 256 lanes of
+/// `high_gate_count` bits per column.
+///
+/// `gate_slots(gate)` returns the gate's slots as four little-endian words
+/// (`slots 0..64`, `64..128`, `128..192`, `192..256`); gates at or beyond
+/// `live_gates` are all-zero and never queried. Every row must hold
+/// `4 · high_gate_count` words, and `high_gate_count` must be a multiple of
+/// 64 so each lane spans whole words. Same transpose scheme as
+/// [`pack_slot_major_rows_w1`], which stays the 128-slot packer.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn pack_slot_major_rows_w1_256<F>(
+    rows: &mut [Vec<u64>],
+    s: usize,
+    high_gate_count: usize,
+    live_gates: usize,
+    gate_slots: F,
+) where
+    F: Fn(usize) -> [u64; 4] + Sync,
+{
+    const WORDS_PER_GATE: usize = 4;
+    assert!(
+        high_gate_count.is_multiple_of(WORD_BITS),
+        "W=1 slot lanes must span whole words"
+    );
+    assert!(
+        rows.iter()
+            .all(|row| row.len() == WORDS_PER_GATE * high_gate_count),
+        "each 256-slot W=1 row holds 256 lanes of high_gate_count bits"
+    );
+    let lane_words = high_gate_count / WORD_BITS;
+
+    crate::cfg_chunks_mut!(rows, COLUMNS_PER_TASK)
+        .enumerate()
+        .for_each(|(task, group)| {
+            let first_column = task * COLUMNS_PER_TASK;
+            let mut blocks = [[[0_u64; WORD_BITS]; WORDS_PER_GATE]; COLUMNS_PER_TASK];
+            for block in 0..lane_words {
+                for g in 0..WORD_BITS {
+                    let gate_base = ((block * WORD_BITS + g) << s) | first_column;
+                    for (i, column_blocks) in blocks.iter_mut().take(group.len()).enumerate() {
+                        let gate = gate_base + i;
+                        let words = if gate < live_gates {
+                            gate_slots(gate)
+                        } else {
+                            [0; WORDS_PER_GATE]
+                        };
+                        for (word, target) in words.iter().zip(column_blocks.iter_mut()) {
+                            target[g] = *word;
+                        }
+                    }
+                }
+                for (row, column_blocks) in group.iter_mut().zip(blocks.iter_mut()) {
+                    for (word_index, matrix) in column_blocks.iter_mut().enumerate() {
+                        transpose_64x64(matrix);
+                        for (slot, word) in matrix.iter().enumerate() {
+                            row[(word_index * WORD_BITS + slot) * lane_words + block] = *word;
+                        }
+                    }
+                }
+            }
+        });
+}

@@ -91,11 +91,11 @@ mod tests {
     use super::*;
     #[test]
     fn wrong_product_is_rejected() {
-        for workload in [Workload::U32, Workload::BabyBear] {
-            let max = if workload == Workload::U32 {
-                u32::MAX
-            } else {
-                (BABY_P - 1) as u32
+        for workload in [Workload::U32, Workload::BabyBear, Workload::U64] {
+            let max = match workload {
+                Workload::U32 => u64::from(u32::MAX),
+                Workload::BabyBear => BABY_P - 1,
+                Workload::U64 => u64::MAX,
             };
             let inputs = [(0, 0), (0, max), (1, max), (max, max)].repeat(4);
             let c = Context::setup(Arc::new(Corpus::from_inputs(workload, inputs)));
@@ -116,15 +116,29 @@ fn compile(corpus: &Corpus) -> (Circuit, Vec<Wires>) {
             let a = b.add_witness();
             let rhs = b.add_witness();
             let c = b.add_witness();
+            let (hi, lo) = b.imul(a, rhs);
+            if corpus.workload == Workload::U64 {
+                // Native 64 x 64 -> 128: both product words are witness
+                // values and the operands are full words, so no range checks.
+                let z_hi = b.add_witness();
+                b.assert_eq("product low word", lo, c);
+                b.assert_eq("product high word", hi, z_hi);
+                return Wires {
+                    a,
+                    b: rhs,
+                    c,
+                    q: Some(z_hi),
+                };
+            }
             b.assert_zero("a is u32", b.shr(a, 32));
             b.assert_zero("b is u32", b.shr(rhs, 32));
-            let (hi, lo) = b.imul(a, rhs);
             b.assert_zero("product high word", hi);
             let q = match corpus.workload {
                 Workload::U32 => {
                     b.assert_eq("full u64 product", lo, c);
                     None
                 }
+                Workload::U64 => unreachable!(),
                 Workload::BabyBear => {
                     b.assert_true("a canonical", b.icmp_ult(a, p));
                     b.assert_true("b canonical", b.icmp_ult(rhs, p));
@@ -155,11 +169,12 @@ fn populate<'a>(
 ) -> Result<binius_frontend::WitnessFiller<'a>, String> {
     let mut filler = circuit.new_witness_filler();
     for (i, (w, &(a, b))) in wires.iter().zip(&corpus.inputs).enumerate() {
-        filler[w.a] = Word(a as u64);
-        filler[w.b] = Word(b as u64);
-        filler[w.c] = Word(corpus.workload.output(a, b) ^ u64::from(corrupt_output && i == 0));
-        if let Some(q) = w.q {
-            filler[q] = Word((a as u64 * b as u64) / BABY_P);
+        let [_, _, c, q] = corpus.workload.native_row(a, b);
+        filler[w.a] = Word(a);
+        filler[w.b] = Word(b);
+        filler[w.c] = Word(c ^ u64::from(corrupt_output && i == 0));
+        if let Some(wire) = w.q {
+            filler[wire] = Word(q);
         }
     }
     circuit

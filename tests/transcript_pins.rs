@@ -24,8 +24,9 @@ use f2z::piop::spartan::{
     verify_sha256_compressions,
 };
 use f2z::piop::spartan::{
-    PreparedU32MulRelation, U32MulF2zWidth, U32MulWitness, commit_u32_mul_witness, prove_u32_mul,
-    verify_u32_mul,
+    PreparedU32MulRelation, PreparedU64MulRelation, U32MulF2zWidth, U32MulWitness, U64MulWitness,
+    commit_u32_mul_witness, commit_u64_mul_witness, prove_u32_mul, prove_u64_mul,
+    verify_u32_mul, verify_u64_mul,
 };
 use f2z::transcript::Blake3Transcript;
 
@@ -81,6 +82,38 @@ fn u32_mul_2p15_transcript_is_pinned() {
     let spartan = format!("{:?}", proof.spartan());
     let digest = digest_hex(&[&hint.commitment.root, &f2z_bytes, spartan.as_bytes()]);
     assert_eq!(digest, U32_MUL_2P15_DIGEST);
+}
+
+/// The 2^15 u64-multiplication batch (`x·y = z_lo + 2^64·z_hi`) under the
+/// runtime-prime protocol on projected values (cubic outer sumcheck) and its
+/// default `Lambda100` profile.
+const U64_MUL_2P15_DIGEST: &str = "8484c1f43fecd07bc18af6a78b04fe677607b50766ad388c117f4fc18a7372f4";
+
+#[test]
+fn u64_mul_2p15_transcript_is_pinned() {
+    let witness = U64MulWitness::from_fn(1usize << 15, |i| {
+        let x = (i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1;
+        let y = (i as u64).wrapping_mul(0xc2b2_ae3d_27d4_eb4f) | 1;
+        (x, y)
+    })
+    .expect("witness");
+    let layout = *witness.layout();
+    let prepared = PreparedU64MulRelation::new(layout).expect("prepare");
+    let hint = commit_u64_mul_witness(&prepared, witness.f2z_bit_rows()).expect("commit");
+    let mut prover_transcript = Blake3Transcript::new();
+    let proof = prove_u64_mul(&mut prover_transcript, &prepared, &witness, &hint).expect("prove");
+    let mut verifier_transcript = Blake3Transcript::new();
+    verify_u64_mul(
+        &mut verifier_transcript,
+        &prepared,
+        &hint.commitment,
+        &proof,
+    )
+    .expect("verify");
+    let f2z_bytes = proof.f2z().to_bytes();
+    let spartan = format!("{:?}", proof.spartan());
+    let digest = digest_hex(&[&hint.commitment.root, &f2z_bytes, spartan.as_bytes()]);
+    assert_eq!(digest, U64_MUL_2P15_DIGEST);
 }
 
 fn digest_hex(parts: &[&[u8]]) -> String {

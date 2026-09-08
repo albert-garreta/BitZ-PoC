@@ -52,15 +52,22 @@ fn generate<F: PrimeField64>(corpus: &Corpus) -> RowMajorMatrix<F> {
         3
     };
     let mut values = F::zero_vec(width * corpus.inputs.len());
+    assert!(
+        corpus.workload != Workload::U64,
+        "the Plonky3 adapter has no u64 workload (its AIR decomposes 32-bit operands)"
+    );
     for (row, &(a, b)) in values.chunks_exact_mut(width).zip(&corpus.inputs) {
-        row[0] = F::from_u32(a);
-        row[1] = F::from_u32(b);
+        row[0] = F::from_u64(a);
+        row[1] = F::from_u64(b);
         row[2] = row[0] * row[1];
-        assert_eq!(row[2].as_canonical_u64(), corpus.workload.output(a, b));
+        assert_eq!(
+            u128::from(row[2].as_canonical_u64()),
+            corpus.workload.output(a, b)
+        );
         if width == 67 {
             for (operand, value) in [a, b].into_iter().enumerate() {
                 for bit in 0..32 {
-                    row[3 + operand * 32 + bit] = F::from_u32((value >> bit) & 1);
+                    row[3 + operand * 32 + bit] = F::from_u64((value >> bit) & 1);
                 }
             }
         }
@@ -213,6 +220,7 @@ impl Context {
     pub(super) fn setup(corpus: Arc<Corpus>) -> Self {
         match corpus.workload {
             Workload::U32 => Self::U32(goldilocks::Context::setup(corpus)),
+            Workload::U64 => panic!("the Plonky3 adapter has no u64 workload"),
             Workload::BabyBear => Self::BabyBear(babybear::Context::setup(corpus)),
         }
     }
@@ -284,5 +292,6 @@ pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
     match corpus.workload {
         Workload::U32 => recover::<p3_goldilocks::Goldilocks>(corpus),
         Workload::BabyBear => recover::<p3_baby_bear::BabyBear>(corpus),
+        Workload::U64 => panic!("the Plonky3 adapter has no u64 workload"),
     }
 }

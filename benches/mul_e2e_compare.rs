@@ -27,32 +27,64 @@ const BABY_P: u64 = 2_013_265_921;
 enum Workload {
     U32,
     BabyBear,
+    U64,
 }
 impl Workload {
+    fn parse(slug: &str) -> Self {
+        match slug {
+            "u32" => Self::U32,
+            "babybear" => Self::BabyBear,
+            "u64" => Self::U64,
+            other => panic!("unknown workload {other}"),
+        }
+    }
     fn slug(self) -> &'static str {
         match self {
             Self::U32 => "u32",
             Self::BabyBear => "babybear",
+            Self::U64 => "u64",
         }
     }
     fn algorithm(self) -> &'static str {
         match self {
             Self::U32 => "u32 multiplication",
             Self::BabyBear => "BabyBear multiplication",
+            Self::U64 => "u64 multiplication",
         }
     }
-    fn output(self, a: u32, b: u32) -> u64 {
-        let product = u64::from(a) * u64::from(b);
+    /// Backends with a native arithmetization of this workload.
+    fn supports(self, backend: &str) -> bool {
         match self {
-            Self::U32 => product,
-            Self::BabyBear => product % BABY_P,
+            Self::U32 | Self::BabyBear => true,
+            // The Plonky3 AIR decomposes 32-bit operands and the Limber
+            // program uses u64 linear-combination coefficients; neither has
+            // a 64 x 64 -> 128 path yet.
+            Self::U64 => matches!(backend, "f2z" | "binius64"),
+        }
+    }
+    /// The exact integer output of one gate (`a*b`, or `a*b mod p`).
+    fn output(self, a: u64, b: u64) -> u128 {
+        let product = u128::from(a) * u128::from(b);
+        match self {
+            Self::U32 | Self::U64 => product,
+            Self::BabyBear => product % u128::from(BABY_P),
+        }
+    }
+    /// The four native witness values of one gate: operands, then the
+    /// output (`c` or `z_lo`) and the auxiliary value (`k`, `z_hi`, or 0).
+    fn native_row(self, a: u64, b: u64) -> [u64; 4] {
+        let output = self.output(a, b);
+        match self {
+            Self::U32 => [a, b, output as u64, 0],
+            Self::BabyBear => [a, b, output as u64, (a * b) / BABY_P],
+            Self::U64 => [a, b, output as u64, (output >> 64) as u64],
         }
     }
 }
 
 struct Corpus {
     workload: Workload,
-    inputs: Vec<(u32, u32)>,
+    inputs: Vec<(u64, u64)>,
     digest: String,
 }
 impl Corpus {
@@ -60,26 +92,40 @@ impl Corpus {
         let mut rng = StdRng::seed_from_u64(seed);
         let inputs: Vec<_> = (0..1usize << exponent)
             .map(|_| match workload {
-                Workload::U32 => (rng.random(), rng.random()),
+                // The 32-bit workloads keep drawing u32 values, so their
+                // corpora (and digests) are unchanged by the wider input type.
+                Workload::U32 => (
+                    u64::from(rng.random::<u32>()),
+                    u64::from(rng.random::<u32>()),
+                ),
                 Workload::BabyBear => {
                     let mut next = || rng.random();
                     (
-                        f2z::piop::spartan::sample_baby_bear_operand_with(&mut next),
-                        f2z::piop::spartan::sample_baby_bear_operand_with(&mut next),
+                        u64::from(f2z::piop::spartan::sample_baby_bear_operand_with(&mut next)),
+                        u64::from(f2z::piop::spartan::sample_baby_bear_operand_with(&mut next)),
                     )
                 }
+                Workload::U64 => (rng.random::<u64>(), rng.random::<u64>()),
             })
             .collect();
         Self::from_inputs(workload, inputs)
     }
-    fn from_inputs(workload: Workload, inputs: Vec<(u32, u32)>) -> Self {
-        use f2z::piop::spartan::{BabyBearMulWitness, U32MulWitness};
+    /// The operand pairs of a 32-bit workload as `u32` values.
+    fn narrow_inputs(&self) -> Vec<(u32, u32)> {
+        narrow(&self.inputs)
+    }
+    fn from_inputs(workload: Workload, inputs: Vec<(u64, u64)>) -> Self {
+        use f2z::piop::spartan::{BabyBearMulWitness, U32MulWitness, U64MulWitness};
         let digest = match workload {
             Workload::U32 => common::mul_witness::u32_digest(
-                &U32MulWitness::from_inputs(&inputs).expect("canonical u32 witness"),
+                &U32MulWitness::from_inputs(&narrow(&inputs)).expect("canonical u32 witness"),
             ),
             Workload::BabyBear => common::mul_witness::baby_bear_digest(
-                &BabyBearMulWitness::from_inputs(&inputs).expect("canonical BabyBear witness"),
+                &BabyBearMulWitness::from_inputs(&narrow(&inputs))
+                    .expect("canonical BabyBear witness"),
+            ),
+            Workload::U64 => common::mul_witness::u64_digest(
+                &U64MulWitness::from_inputs(&inputs).expect("canonical u64 witness"),
             ),
         };
         Self {
@@ -88,6 +134,18 @@ impl Corpus {
             digest,
         }
     }
+}
+
+fn narrow(inputs: &[(u64, u64)]) -> Vec<(u32, u32)> {
+    inputs
+        .iter()
+        .map(|&(a, b)| {
+            (
+                u32::try_from(a).expect("32-bit workload operand"),
+                u32::try_from(b).expect("32-bit workload operand"),
+            )
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug)]
@@ -220,6 +278,38 @@ impl Context {
     }
 }
 
+fn root_seed(workload: Workload) -> u64 {
+    match workload {
+        Workload::U32 => common::mul_witness::U32_SEED,
+        Workload::BabyBear => common::mul_witness::BABY_BEAR_SEED,
+        Workload::U64 => common::mul_witness::U64_SEED,
+    }
+}
+
+/// Largest accepted exponent: F2Z commits `2^(n+7)` bits for u32 and
+/// `2^(n+8)` for BabyBear and u64, so the wider workloads stop one size
+/// earlier on a 16 GB machine.
+fn max_exponent(workloads: &[String]) -> usize {
+    if workloads.iter().any(|w| w == "babybear" || w == "u64") {
+        24
+    } else {
+        25
+    }
+}
+
+fn check_backend_support(workloads: &[String], backends: &[String]) {
+    for workload in workloads {
+        let workload = Workload::parse(workload);
+        for backend in backends {
+            assert!(
+                workload.supports(backend),
+                "the {backend} adapter has no {} workload; select F2Z_MUL_COMPARE_BACKENDS=\"f2z binius64\" for it",
+                workload.slug()
+            );
+        }
+    }
+}
+
 fn choices(var: &str, default: &str, allowed: &[&str]) -> Vec<String> {
     let raw = std::env::var(var).unwrap_or_else(|_| default.into());
     let mut result = vec![];
@@ -247,19 +337,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let workloads = choices(
         "F2Z_MUL_COMPARE_WORKLOADS",
         "u32 babybear",
-        &["u32", "babybear"],
+        &["u32", "babybear", "u64"],
     );
     let backends = choices(
         "F2Z_MUL_COMPARE_BACKENDS",
         "f2z binius64 plonky3-whir limber",
         &["f2z", "binius64", "plonky3-whir", "limber"],
     );
+    check_backend_support(&workloads, &backends);
     let shapes = common::shapes(None).unwrap_or_else(|| vec!["15".into()]);
-    let max_exponent = if workloads.iter().any(|w| w == "babybear") {
-        24
-    } else {
-        25
-    };
+    let max_exponent = max_exponent(&workloads);
     let mut exponents = vec![];
     for shape in shapes {
         let n: usize = shape.parse()?;
@@ -305,18 +392,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .is_empty();
     let mut summary = vec![];
     for workload in workloads {
-        let workload = if workload == "u32" {
-            Workload::U32
-        } else {
-            Workload::BabyBear
-        };
-        let seed = common::seed(
-            None,
-            match workload {
-                Workload::U32 => common::mul_witness::U32_SEED,
-                Workload::BabyBear => common::mul_witness::BABY_BEAR_SEED,
-            },
-        );
+        let workload = Workload::parse(&workload);
+        let seed = common::seed(None, root_seed(workload));
         for &n in &exponents {
             let shape_seed = common::mul_witness::shape_seed(seed, n);
             let corpus = Arc::new(Corpus::new(workload, n, shape_seed));
@@ -476,6 +553,19 @@ mod tests {
             assert_eq!(a.inputs, b.inputs);
             assert_ne!(a.digest, Corpus::new(workload, 4, 8).digest);
         }
+        let a = Corpus::new(Workload::U64, 4, 7);
+        assert_eq!(a.digest, Corpus::new(Workload::U64, 4, 7).digest);
+        assert_ne!(a.digest, Corpus::new(Workload::U64, 4, 8).digest);
+        assert!(a.inputs.iter().any(|&(x, _)| x > u64::from(u32::MAX)));
+        assert_eq!(
+            Corpus::new(
+                Workload::U64,
+                15,
+                common::mul_witness::shape_seed(common::mul_witness::U64_SEED, 15)
+            )
+            .digest,
+            "7cd5974fd9a40005cbc916f667a078e3717ddb7f4a0cf107557ca8e3ce646425"
+        );
     }
 }
 
@@ -496,7 +586,7 @@ impl WitnessAudit {
     ) -> Self {
         assert_eq!(rows.len(), corpus.inputs.len(), "native witness row count");
         let n = rows.len();
-        use f2z::piop::spartan::{BabyBearMulLayout, U32MulLayout};
+        use f2z::piop::spartan::{BabyBearMulLayout, U32MulLayout, U64MulLayout};
         let (capacity, assignment_len) = match corpus.workload {
             Workload::U32 => {
                 let layout = U32MulLayout::new(n).expect("canonical u32 layout");
@@ -506,37 +596,33 @@ impl WitnessAudit {
                 let layout = BabyBearMulLayout::new(n).expect("canonical BabyBear layout");
                 (layout.capacity(), layout.assignment_len())
             }
+            Workload::U64 => {
+                let layout = U64MulLayout::new(n).expect("canonical u64 layout");
+                (layout.capacity(), layout.assignment_len())
+            }
         };
         let mut assignment = vec![0u64; assignment_len];
         assignment[0] = 1;
+        let has_fourth_block = matches!(corpus.workload, Workload::BabyBear | Workload::U64);
         for (i, (&[a, b, c, q], &(expected_a, expected_b))) in
             rows.iter().zip(&corpus.inputs).enumerate()
         {
-            let expected_q = if corpus.workload == Workload::BabyBear {
-                (expected_a as u64 * expected_b as u64) / BABY_P
-            } else {
-                0
-            };
             assert_eq!(
                 [a, b, c, q],
-                [
-                    expected_a as u64,
-                    expected_b as u64,
-                    corpus.workload.output(expected_a, expected_b),
-                    expected_q
-                ],
+                corpus.workload.native_row(expected_a, expected_b),
                 "native witness mismatch at row {i} ({representation})"
             );
             assignment[capacity + i] = a;
             assignment[2 * capacity + i] = b;
             assignment[3 * capacity + i] = c;
-            if corpus.workload == Workload::BabyBear {
+            if has_fourth_block {
                 assignment[4 * capacity + i] = q;
             }
         }
         let domain: &[u8] = match corpus.workload {
             Workload::U32 => b"f2z/u32-pcs-compare/integer-witness/v1",
             Workload::BabyBear => b"f2z/baby-bear-pcs-compare/integer-witness/v1",
+            Workload::U64 => b"f2z/u64-mul-compare/integer-witness/v1",
         };
         let mut hash = blake3::Hasher::new();
         hash.update(domain);
@@ -571,23 +657,20 @@ pub(crate) fn witness_main() -> Result<(), Box<dyn std::error::Error>> {
     let workloads = choices(
         "F2Z_MUL_COMPARE_WORKLOADS",
         "u32 babybear",
-        &["u32", "babybear"],
+        &["u32", "babybear", "u64"],
     );
     let backends = choices(
         "F2Z_MUL_COMPARE_BACKENDS",
         "f2z binius64 plonky3-whir limber",
         &["f2z", "binius64", "plonky3-whir", "limber"],
     );
+    check_backend_support(&workloads, &backends);
     let shapes = common::shapes(None).unwrap_or_else(|| vec!["10".into()]);
     let exponents: Vec<usize> = shapes
         .iter()
         .map(|s| s.parse().expect("integer exponent"))
         .collect();
-    let max_exponent = if workloads.iter().any(|w| w == "babybear") {
-        24
-    } else {
-        25
-    };
+    let max_exponent = max_exponent(&workloads);
     assert!(
         exponents.iter().all(|n| (4..=max_exponent).contains(n)),
         "witness exponents must be 4..={max_exponent} for the selected workloads"
@@ -608,18 +691,8 @@ pub(crate) fn witness_main() -> Result<(), Box<dyn std::error::Error>> {
     let mut raw = BufWriter::new(create("witness-checks.jsonl")?);
     let mut summary = vec![];
     for workload in workloads {
-        let workload = if workload == "u32" {
-            Workload::U32
-        } else {
-            Workload::BabyBear
-        };
-        let seed = common::seed(
-            None,
-            match workload {
-                Workload::U32 => common::mul_witness::U32_SEED,
-                Workload::BabyBear => common::mul_witness::BABY_BEAR_SEED,
-            },
-        );
+        let workload = Workload::parse(&workload);
+        let seed = common::seed(None, root_seed(workload));
         for &n in &exponents {
             let shape_seed = common::mul_witness::shape_seed(seed, n);
             let corpus = Corpus::new(workload, n, shape_seed);
@@ -661,15 +734,18 @@ mod witness_tests {
     use super::*;
     #[test]
     fn all_native_witnesses_recover_the_same_assignment() {
-        for workload in [Workload::U32, Workload::BabyBear] {
-            let max = if workload == Workload::U32 {
-                u32::MAX
-            } else {
-                (BABY_P - 1) as u32
+        for workload in [Workload::U32, Workload::BabyBear, Workload::U64] {
+            let max = match workload {
+                Workload::U32 => u64::from(u32::MAX),
+                Workload::BabyBear => BABY_P - 1,
+                Workload::U64 => u64::MAX,
             };
             let corpus =
                 Corpus::from_inputs(workload, [(0, 0), (0, max), (1, max), (max, max)].repeat(4));
             for backend in ["f2z", "binius64", "plonky3-whir", "limber"] {
+                if !workload.supports(backend) {
+                    continue;
+                }
                 assert_eq!(audit_backend(backend, &corpus).digest, corpus.digest);
             }
         }
@@ -680,7 +756,7 @@ mod witness_tests {
         let mut rows: Vec<_> = corpus
             .inputs
             .iter()
-            .map(|&(a, b)| [a as u64, b as u64, corpus.workload.output(a, b), 0])
+            .map(|&(a, b)| corpus.workload.native_row(a, b))
             .collect();
         rows[0][2] ^= 1;
         assert!(

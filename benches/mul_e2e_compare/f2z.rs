@@ -2,9 +2,10 @@ use super::{Corpus, Timing, Workload};
 use f2z::{
     piop::spartan::{
         BabyBearMulLayout, BabyBearMulWitness, PreparedBabyBearMulRelation, PreparedU32MulRelation,
-        SpartanReductionStrategy, U32MulLayout, U32MulWitness, commit_baby_bear_mul_paper_witness,
-        commit_u32_mul_witness, prove_baby_bear_mul_paper, prove_u32_mul,
-        verify_baby_bear_mul_paper, verify_u32_mul,
+        PreparedU64MulRelation, SpartanReductionStrategy, U32MulLayout, U32MulWitness,
+        U64MulLayout, U64MulWitness, commit_baby_bear_mul_paper_witness, commit_u32_mul_witness,
+        commit_u64_mul_witness, prove_baby_bear_mul_paper, prove_u32_mul, prove_u64_mul,
+        verify_baby_bear_mul_paper, verify_u32_mul, verify_u64_mul,
     },
     transcript::Blake3Transcript,
     utils::prof,
@@ -15,6 +16,7 @@ use std::sync::Arc;
 enum Relation {
     U32(PreparedU32MulRelation),
     BabyBear(PreparedBabyBearMulRelation),
+    U64(PreparedU64MulRelation),
 }
 pub(super) struct Context {
     corpus: Arc<Corpus>,
@@ -30,6 +32,9 @@ impl Context {
             Workload::BabyBear => Relation::BabyBear(
                 PreparedBabyBearMulRelation::new(BabyBearMulLayout::new(n).unwrap()).unwrap(),
             ),
+            Workload::U64 => {
+                Relation::U64(PreparedU64MulRelation::new(U64MulLayout::new(n).unwrap()).unwrap())
+            }
         };
         Self { corpus, relation }
     }
@@ -41,15 +46,19 @@ impl Context {
         let _ = prof::take_totals();
         let root = prof::scope("native-mul:root");
         let total = prof::scope("native-mul:witness_to_proof");
+        // Serialized proof size: Spartan payload as 16-byte field elements,
+        // the transmitted nonces as 8-byte words, and the F2Z opening's
+        // exact codec bytes (the `f2z` CLI's accounting).
+        let proof_bytes: usize;
         match &self.relation {
             Relation::U32(relation) => {
                 let witness = {
                     let _s = prof::scope("native-mul:witness");
-                    U32MulWitness::from_inputs(&self.corpus.inputs).expect("u32 witness")
+                    U32MulWitness::from_inputs(&self.corpus.narrow_inputs()).expect("u32 witness")
                 };
                 for (i, &(a, b)) in self.corpus.inputs.iter().enumerate() {
                     assert_eq!(
-                        witness.product_values()[i],
+                        u128::from(witness.product_values()[i]),
                         self.corpus.workload.output(a, b)
                     );
                 }
@@ -73,15 +82,24 @@ impl Context {
                     )
                     .expect("u32 full verification");
                 }
+                let security = relation.security();
+                proof_bytes = proof.spartan_payload_elements() * 16
+                    + (proof.grinding_nonce_count(security) - proof.f2z().grinding_nonces.len())
+                        * 8
+                    + proof.f2z().to_bytes().len();
                 std::hint::black_box(proof);
             }
             Relation::BabyBear(relation) => {
                 let witness = {
                     let _s = prof::scope("native-mul:witness");
-                    BabyBearMulWitness::from_inputs(&self.corpus.inputs).expect("BabyBear witness")
+                    BabyBearMulWitness::from_inputs(&self.corpus.narrow_inputs())
+                        .expect("BabyBear witness")
                 };
                 for (i, &(a, b)) in self.corpus.inputs.iter().enumerate() {
-                    assert_eq!(witness.c_values()[i], self.corpus.workload.output(a, b));
+                    assert_eq!(
+                        u128::from(witness.c_values()[i]),
+                        self.corpus.workload.output(a, b)
+                    );
                 }
                 let online = prof::scope("native-mul:online");
                 let hint = {
@@ -109,6 +127,42 @@ impl Context {
                     )
                     .expect("BabyBear full verification");
                 }
+                let security = relation.security();
+                proof_bytes = proof.spartan_payload_elements() * 16
+                    + (proof.grinding_nonce_count(security) - proof.f2z().grinding_nonces.len())
+                        * 8
+                    + proof.f2z().to_bytes().len();
+                std::hint::black_box(proof);
+            }
+            Relation::U64(relation) => {
+                let witness = {
+                    let _s = prof::scope("native-mul:witness");
+                    U64MulWitness::from_inputs(&self.corpus.inputs).expect("u64 witness")
+                };
+                for (i, &(a, b)) in self.corpus.inputs.iter().enumerate() {
+                    assert_eq!(witness.product(i), self.corpus.workload.output(a, b));
+                }
+                let online = prof::scope("native-mul:online");
+                let hint = {
+                    let _s = prof::scope("native-mul:commit");
+                    commit_u64_mul_witness(relation, witness.f2z_bit_rows())
+                        .expect("u64 commitment")
+                };
+                let proof = prove_u64_mul(&mut Blake3Transcript::new(), relation, &witness, &hint)
+                    .expect("u64 full proof");
+                drop(online);
+                drop(total);
+                {
+                    let _s = prof::scope("native-mul:verify");
+                    verify_u64_mul(
+                        &mut Blake3Transcript::new(),
+                        relation,
+                        &hint.commitment,
+                        &proof,
+                    )
+                    .expect("u64 full verification");
+                }
+                proof_bytes = proof.size_bytes(relation.security());
                 std::hint::black_box(proof);
             }
         }
@@ -136,6 +190,7 @@ impl Context {
             let s = find(label);
             timing.add(name, tag, s.start_ns, s.end_ns);
         }
+        timing.proof_bytes = Some(proof_bytes);
         timing
     }
 }
@@ -144,7 +199,7 @@ pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
     let started = std::time::Instant::now();
     let (rows, generation_ms) = match corpus.workload {
         Workload::U32 => {
-            let w = U32MulWitness::from_inputs(&corpus.inputs).unwrap();
+            let w = U32MulWitness::from_inputs(&corpus.narrow_inputs()).unwrap();
             let ms = started.elapsed().as_secs_f64() * 1e3;
             (
                 (0..corpus.inputs.len())
@@ -154,7 +209,7 @@ pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
             )
         }
         Workload::BabyBear => {
-            let w = BabyBearMulWitness::from_inputs(&corpus.inputs).unwrap();
+            let w = BabyBearMulWitness::from_inputs(&corpus.narrow_inputs()).unwrap();
             let ms = started.elapsed().as_secs_f64() * 1e3;
             (
                 (0..corpus.inputs.len())
@@ -164,6 +219,23 @@ pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
                             w.b_values()[i],
                             w.c_values()[i],
                             w.k_values()[i],
+                        ]
+                    })
+                    .collect(),
+                ms,
+            )
+        }
+        Workload::U64 => {
+            let w = U64MulWitness::from_inputs(&corpus.inputs).unwrap();
+            let ms = started.elapsed().as_secs_f64() * 1e3;
+            (
+                (0..corpus.inputs.len())
+                    .map(|i| {
+                        [
+                            w.x_values()[i],
+                            w.y_values()[i],
+                            w.z_lo_values()[i],
+                            w.z_hi_values()[i],
                         ]
                     })
                     .collect(),
