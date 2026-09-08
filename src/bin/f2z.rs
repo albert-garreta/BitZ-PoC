@@ -145,12 +145,16 @@ use std::time::Instant;
 use f2z::ligerito::{LOG_PACKING, packed_vars};
 use f2z::ligerito_flock::{
     LigConfig, commit_rs_ligerito_rows, custom_johnson_config_bits, custom_udr_config_bits,
-    custom_udr_grind_config_bits, lig_configs,
-    mle_eval_mod_q_lig_size_breakdown, prove_mle_eval_mod_q_ligerito,
-    verify_mle_eval_mod_q_ligerito,
+    custom_udr_grind_config_bits, lig_configs, mle_eval_mod_q_lig_size_breakdown,
 };
 use f2z::ligerito_flock::FlockCommitHint;
-use f2z::pcs::{IntEvalParams, mod_q_num_chunks, smallest_generator};
+use f2z::ligerito_flock::{
+    OodRoundParams, absorb_standalone_mod_q_claim, absorb_standalone_mod_q_statement,
+    ood_round_params, prove_mle_eval_mod_q_ligerito_with_ood,
+    verify_mle_eval_mod_q_ligerito_runtime,
+};
+use f2z::ext_proj::{ExtProjParams, ProjArith, sample_proj_point, sample_proj_prime};
+use f2z::pcs::{IntEvalParams, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
 use f2z::piop::spartan::f2z::U32MulLigerito;
 use f2z::piop::spartan::{
     IopSecurityProfile, Lambda100, Lambda128, PreparedU32MulRelation, U32MulF2zWidth,
@@ -216,38 +220,67 @@ fn peak_mb() -> f64 {
     PEAK.load(Ordering::Relaxed) as f64 / (1024.0 * 1024.0)
 }
 
-/// `𝔽_q`, `q = 2^100 − 15` — the reference evaluation field.
-const Q: u128 = (1u128 << 100) - 15;
+/// The evaluation prime of the single-claim path is SAMPLED from the
+/// transcript after the commitment, uniformly among the primes of the
+/// widest admissible dyadic interval `[2^(b−1), 2^b)`: the paper's
+/// Strategy-1 field policy (`b ≤ 113`) capped by the one-chunk exponent-
+/// fold width `c_w = 127 − t − W` (so the fold integers never wrap and the
+/// forest runs once) — exactly the width rule of the Spartan security
+/// profile's derived interval. The claim `⟨eq(·, r₁) ⊗ eq(·, r₂), f⟩ = μ`
+/// then uses a transcript-sampled point `(r₁, r₂) ∈ F_q^{t+s}`.
+fn standalone_q_bits(p: &IntEvalParams) -> usize {
+    mod_q_chunk_width(p).min(113)
+}
 
-#[derive(Clone, Copy, PartialEq, Debug)]
-struct Fq(u128);
-impl From<u128> for Fq {
-    fn from(v: u128) -> Self {
-        Fq(v % Q)
+/// Miller–Rabin rounds of the transcript prime sampler (the library
+/// default: a composite survives with probability `≈ 2^-128`).
+fn standalone_prime_sampler(q_bits: usize) -> ExtProjParams {
+    ExtProjParams { prime_bits: q_bits, ..ExtProjParams::default() }
+}
+
+/// The transcript-sampled instance of a standalone claim: the prime, the
+/// evaluation point, and the `eq` weight tables over `F_q` it induces.
+struct StandaloneInstance {
+    q: u128,
+    row_weights_q: Vec<u128>,
+    col_weights_q: Vec<u128>,
+}
+
+/// Round-1-style draw after the statement is bound: `q` from the interval,
+/// then the point coordinates uniformly mod `q`. Both sides run this; the
+/// prover's precomputed instance must match (asserted by the caller).
+fn sample_standalone_instance(
+    transcript: &mut Blake3Transcript,
+    p: &IntEvalParams,
+    q_bits: usize,
+) -> StandaloneInstance {
+    let _g = f2z::utils::prof::scope("mq:sample_instance");
+    let q = sample_proj_prime(transcript, &standalone_prime_sampler(q_bits));
+    let arith = ProjArith::new(q);
+    let r1: Vec<u128> = (0..p.t).map(|_| sample_proj_point(transcript, q)).collect();
+    let r2: Vec<u128> = (0..p.s).map(|_| sample_proj_point(transcript, q)).collect();
+    StandaloneInstance {
+        q,
+        row_weights_q: eq_table_mod_q(&arith, &r1),
+        col_weights_q: eq_table_mod_q(&arith, &r2),
     }
 }
-impl core::ops::Add for Fq {
-    type Output = Fq;
-    fn add(self, o: Fq) -> Fq {
-        let s = self.0 + o.0;
-        Fq(if s >= Q { s - Q } else { s })
-    }
-}
-impl core::ops::Mul for Fq {
-    type Output = Fq;
-    fn mul(self, o: Fq) -> Fq {
-        let (mut a, mut b, mut acc) = (self.0, o.0, 0u128);
-        while b != 0 {
-            if b & 1 == 1 {
-                let s = acc + a;
-                acc = if s >= Q { s - Q } else { s };
-            }
-            let d = a << 1;
-            a = if d >= Q { d - Q } else { d };
-            b >>= 1;
+
+/// `eq(b, r) mod q` over `b ∈ {0,1}^{r.len()}` (index bit `k` ↔ `r[k]`).
+fn eq_table_mod_q(arith: &ProjArith, r: &[u128]) -> Vec<u128> {
+    let q = arith.q();
+    let mut table = vec![1u128 % q];
+    for &coord in r {
+        let mut next = Vec::with_capacity(table.len() * 2);
+        for &v in &table {
+            let v1 = arith.mul(v, coord);
+            let v0 = if v >= v1 { v - v1 } else { v + q - v1 };
+            next.push(v0);
+            next.push(v1);
         }
-        Fq(acc)
+        table = next;
     }
+    table
 }
 
 fn median(mut v: Vec<f64>) -> f64 {
@@ -668,10 +701,14 @@ struct LigSecurity {
     /// L0's implicit post-commit binding (Johnson regime: the list is bound
     /// by the opening's own evaluation claim — `128 − log₂ list − log₂ μ`).
     l0_binding_bits: Option<f64>,
+    /// Round 0 (the paper's out-of-domain sample) at the config's own
+    /// target: executed with this grinding in the Johnson regime, skipped
+    /// (`None`) at unique decoding.
+    ood: Option<OodRoundParams>,
 }
 
 const ADHOC_SECURITY: LigSecurity =
-    LigSecurity { target_bits: None, achieved_bits: None, l0_binding_bits: None };
+    LigSecurity { target_bits: None, achieved_bits: None, l0_binding_bits: None, ood: None };
 
 fn lig_security(cfg: &LigeritoSecurityConfig) -> LigSecurity {
     let mut min = f64::INFINITY;
@@ -687,6 +724,9 @@ fn lig_security(cfg: &LigeritoSecurityConfig) -> LigSecurity {
         target_bits: Some(cfg.target_security_bits),
         achieved_bits: Some(min),
         l0_binding_bits: cfg.levels.first().and_then(|lv| lv.expected_eps_ood_bits),
+        ood: u32::try_from(cfg.target_security_bits)
+            .ok()
+            .and_then(|target| ood_round_params(cfg, cfg.log_n, target)),
     }
 }
 
@@ -695,8 +735,9 @@ impl LigSecurity {
     /// protocol: GKR layer rounds are degree-3 sumcheck rounds (3/2^128),
     /// the reduce-to-MLE sumcheck is degree 2 (2/2^128), the ring-switch
     /// check is multilinear in the 7 packing variables (7/2^128); the
-    /// evaluation prime is fixed and public (no projection round) and no
-    /// out-of-domain round is executed.
+    /// evaluation prime is transcript-sampled after the commitment (so no
+    /// separate Round-1 projection is needed), and Round 0 (the out-of-
+    /// domain sample) runs exactly in the Johnson regime.
     fn describe(&self) -> String {
         let lig = match (self.target_bits, self.achieved_bits) {
             (Some(t), Some(a)) => format!(
@@ -707,9 +748,13 @@ impl LigSecurity {
             ),
             _ => "ligerito ad-hoc test config (UNAUDITED — no security claim)".to_string(),
         };
+        let round0 = match self.ood {
+            Some(round) => format!("Round 0 (OOD) executed with {} grinding bits", round.grinding_bits),
+            None => "Round 0 (OOD) skipped (unique-decoding opener)".to_string(),
+        };
         format!(
             "{lig} | F2Z rounds: GKR 3/2^128, sumcheck 2/2^128, ring switch 7/2^128 | \
-             fixed public prime q (no projection round), no OOD round"
+             q transcript-sampled after the commitment (Round 1 not needed) | {round0}"
         )
     }
 }
@@ -908,11 +953,15 @@ fn main() {
         exit(2);
     }
 
-    let q_bits = 100usize;
     let p = IntEvalParams { t, s, word_bits: w };
+    let q_bits = standalone_q_bits(&p);
     let m_p = packed_vars(&p);
     let lch = mod_q_num_chunks(&p, q_bits);
     let ((pc, vc), lig_tag, lig_sec) = resolve_configs(m_p, &o.profile);
+    // Round 0 (the out-of-domain sample) runs exactly when the opener sits
+    // beyond unique decoding; its grinding tops the theorem's bound up to
+    // the opener's own round-by-round target.
+    let ood: Option<OodRoundParams> = lig_sec.ood;
 
     let threads_eff: usize = {
         #[cfg(feature = "parallel")]
@@ -936,6 +985,15 @@ fn main() {
     if lch > 1 {
         println!("note: {lch} mod-q chunks (t + W > 127 − q_bits) — prove scales ~×{lch}");
     }
+    println!(
+        "instance: q sampled after the commitment from the primes in [2^{}, 2^{q_bits}) | \
+         point (r₁, r₂) ∈ F_q^{{t+s}} sampled after q | Round 0 (OOD): {}",
+        q_bits - 1,
+        match ood {
+            Some(round) => format!("executed, {} grinding bits", round.grinding_bits),
+            None => "skipped (unique-decoding opener)".to_string(),
+        },
+    );
 
     // Deterministic instance straight into per-column bit rows (the
     // memory-honest pattern — the u128 cell tensor never exists).
@@ -960,22 +1018,30 @@ fn main() {
             wv
         })
         .collect();
-    let rw_q: Vec<u128> = (0..p.rows())
-        .map(|b| {
-            (b as u128)
-                .wrapping_mul(0xDEAD_BEEF_CAFE_F00D_1234_5678_9ABC_DEF1)
-                .wrapping_add(7)
-                % Q
-        })
-        .collect();
-    let cw: Vec<Fq> = (0..p.cols())
-        .map(|c| Fq::from(((c as u128).wrapping_mul(5) & 7).wrapping_add(1)))
-        .collect();
-    // Claimed y from the set bits (O(popcount) field ops).
-    let rw_fq: Vec<Fq> = rw_q.iter().map(|&x| Fq::from(x)).collect();
-    let mut y = Fq::from(0u128);
+    // Commit: one tracked probe first (its own peak window; the hint that
+    // stays live; excluded from the timing), then `reps` timed commits with
+    // heap tracking OFF — on clones made outside the timer, hints dropped.
+    reset_peak();
+    let hint = commit_rs_ligerito_rows(&p, rows.clone(), &pc);
+    let commit_peak = peak_mb();
+
+    // The instance: replay the statement prefix once to learn the
+    // transcript-sampled prime and point (every timed run re-derives them,
+    // so the derivation IS inside the prover's and verifier's timers), then
+    // the claimed μ from the set bits (O(popcount) mod-q adds, excluded).
+    let instance = {
+        let mut st = Blake3Transcript::new();
+        absorb_standalone_mod_q_statement(&mut st, &hint.commitment, &p, alpha_of(), q_bits, ood, &vc);
+        sample_standalone_instance(&mut st, &p, q_bits)
+    };
+    let q = instance.q;
+    let arith = ProjArith::new(q);
+    let rw_q = instance.row_weights_q.clone();
+    let cw_q = instance.col_weights_q.clone();
+    let pow2_q: Vec<u128> = (0..w).map(|j| arith.reduce(1u128 << j)).collect();
+    let mut y = 0u128;
     for (c, row) in rows.iter().enumerate() {
-        let mut acc = Fq::from(0u128);
+        let mut acc = 0u128;
         for (wi, &word) in row.iter().enumerate() {
             let mut bits = word;
             while bits != 0 {
@@ -983,19 +1049,49 @@ fn main() {
                 bits &= bits - 1;
                 let i = (wi << 6) | bit;
                 let (b, j) = (i >> log_w, i & (w - 1));
-                let term = if j == 0 { rw_fq[b] } else { rw_fq[b] * Fq::from(1u128 << j) };
-                acc = acc + term;
+                let term = if j == 0 { rw_q[b] } else { arith.mul(rw_q[b], pow2_q[j]) };
+                acc = arith.add(acc, term);
             }
         }
-        y = y + cw[c] * acc;
+        y = arith.add(y, arith.mul(cw_q[c], acc));
     }
-
-    // Commit: one tracked probe first (its own peak window; the hint that
-    // stays live; excluded from the timing), then `reps` timed commits with
-    // heap tracking OFF — on clones made outside the timer, hints dropped.
-    reset_peak();
-    let hint = commit_rs_ligerito_rows(&p, rows.clone(), &pc);
-    let commit_peak = peak_mb();
+    let prove_once = |hint: &FlockCommitHint| {
+        let mut pt = Blake3Transcript::new();
+        absorb_standalone_mod_q_statement(&mut pt, &hint.commitment, &p, alpha_of(), q_bits, ood, &vc);
+        let sampled = sample_standalone_instance(&mut pt, &p, q_bits);
+        assert_eq!(sampled.q, q, "the transcript-sampled prime must be reproducible");
+        absorb_standalone_mod_q_claim(&mut pt, q, y);
+        prove_mle_eval_mod_q_ligerito_with_ood(
+            &mut pt,
+            hint,
+            &p,
+            &sampled.row_weights_q,
+            q_bits,
+            alpha_of(),
+            ood,
+            &pc,
+        )
+    };
+    let verify_once = |proof: &f2z::ligerito_flock::IntEvalRsLigModQProof| {
+        let mut vt = Blake3Transcript::new();
+        absorb_standalone_mod_q_statement(&mut vt, &hint.commitment, &p, alpha_of(), q_bits, ood, &vc);
+        let sampled = sample_standalone_instance(&mut vt, &p, q_bits);
+        absorb_standalone_mod_q_claim(&mut vt, sampled.q, y);
+        verify_mle_eval_mod_q_ligerito_runtime(
+            &mut vt,
+            &hint.commitment,
+            proof,
+            &p,
+            &sampled.row_weights_q,
+            &sampled.col_weights_q,
+            alpha_of(),
+            y,
+            sampled.q,
+            q_bits,
+            ood,
+            &vc,
+        )
+    };
     set_heap_tracking(false);
     let mut commit_ms_v = Vec::with_capacity(o.reps);
     for i in 0..o.reps {
@@ -1015,15 +1111,13 @@ fn main() {
     // right after each prove and each verify splits every rep's scope
     // records cleanly into prover-side and verifier-side step samples.
     {
-        let mut pt = Blake3Transcript::new();
-        let pr = prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha_of(), &pc);
+        let pr = prove_once(&hint);
         black_box(&pr);
     }
     let _ = f2z::utils::prof::take_totals(); // drop the warm-up records
     reset_peak();
     {
-        let mut pt = Blake3Transcript::new();
-        let pr = prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha_of(), &pc);
+        let pr = prove_once(&hint);
         black_box(&pr);
     }
     let prove_peak = peak_mb();
@@ -1035,28 +1129,13 @@ fn main() {
     let mut verify_steps = StepTable::default();
     let mut last_proof = None;
     for rep in 0..o.reps {
-        let mut pt = Blake3Transcript::new();
         let t1 = Instant::now();
-        let proof =
-            prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha_of(), &pc);
+        let proof = prove_once(&hint);
         prove_ms.push(t1.elapsed().as_secs_f64() * 1e3);
         prove_steps.absorb(rep, f2z::utils::prof::take_totals());
 
-        let mut vt = Blake3Transcript::new();
         let t2 = Instant::now();
-        verify_mle_eval_mod_q_ligerito(
-            &mut vt,
-            &hint.commitment,
-            &proof,
-            &p,
-            &rw_q,
-            &cw,
-            alpha_of(),
-            y,
-            q_bits,
-            &vc,
-        )
-        .expect("proof verifies");
+        verify_once(&proof).expect("proof verifies");
         verify_ms.push(t2.elapsed().as_secs_f64() * 1e3);
         verify_steps.absorb(rep, f2z::utils::prof::take_totals());
         last_proof = Some(proof);
@@ -1110,6 +1189,9 @@ fn main() {
         lig_target_bits: lig_sec.target_bits,
         lig_achieved_bits: lig_sec.achieved_bits,
         lig_l0_bits: lig_sec.l0_binding_bits,
+        q_lo_log2: q_bits - 1,
+        q_bits,
+        ood_bits: ood.map(|round| round.grinding_bits as usize),
         threads: threads_eff,
         reps: o.reps,
         commit_ms,
@@ -1143,7 +1225,10 @@ const PAPER_GP_LABELS: &[&str] = &["mq:chunking", "mc:pack", "mc:pow2", "mc:fore
 /// the forest's exit claim (an inner product with the weights) into an MLE
 /// evaluation claim, the ring-switch message `s_v`, and the φ-basis/target
 /// of the resulting Ligerito claim.
-const PAPER_RS_LABELS: &[&str] = &["mc:presum_tbls", "mc:presum_run", "mq:rings", "mq:bcomb"];
+/// Round 0 (the OOD evaluation `mc:ood` and its basis term `mq:ood_basis`)
+/// rides this bucket: it is opening-side glue of the same size class.
+const PAPER_RS_LABELS: &[&str] =
+    &["mc:presum_tbls", "mc:presum_run", "mq:rings", "mq:bcomb", "mc:ood", "mq:ood_basis"];
 /// Prover bucket "Ligerito open".
 const PAPER_LIG_LABELS: &[&str] = &["mq:lig"];
 
@@ -1163,6 +1248,12 @@ struct CliResult {
     lig_target_bits: Option<usize>,
     lig_achieved_bits: Option<f64>,
     lig_l0_bits: Option<f64>,
+    /// The evaluation prime is transcript-sampled from `[2^q_lo_log2, 2^q_bits)`.
+    q_lo_log2: usize,
+    q_bits: usize,
+    /// Round 0 (OOD sample): `Some(grinding bits)` when executed, `None`
+    /// when the opener runs at unique decoding.
+    ood_bits: Option<usize>,
     threads: usize,
     reps: usize,
     commit_ms: f64,
@@ -1179,7 +1270,7 @@ struct CliResult {
     proof_lig_bytes: usize,
 }
 
-const RESULT_SCHEMA: &str = "f2z-cli/1";
+const RESULT_SCHEMA: &str = "f2z-cli/2";
 
 fn na_usize(v: Option<usize>) -> String {
     v.map_or_else(|| "na".to_string(), |x| x.to_string())
@@ -1192,7 +1283,8 @@ impl CliResult {
     fn to_line(&self) -> String {
         format!(
             "RESULT schema={RESULT_SCHEMA} n={} t={} s={} W={} m_p={} chunks={} lig={} lig_hash={} \
-             lig_target_bits={} lig_achieved_bits={} lig_l0_bits={} threads={} reps={} \
+             lig_target_bits={} lig_achieved_bits={} lig_l0_bits={} q_lo_log2={} q_bits={} \
+             ood_bits={} threads={} reps={} \
              commit_ms={:.3} commit_peak_mb={:.2} prove_ms={:.3} prove_gp_ms={:.3} \
              prove_rs_ms={:.3} prove_lig_ms={:.3} prove_residual_ms={:.3} prove_peak_mb={:.2} \
              verify_ms={:.3} proof_bytes={} proof_nonlig_bytes={} proof_lig_bytes={}",
@@ -1207,6 +1299,9 @@ impl CliResult {
             na_usize(self.lig_target_bits),
             na_f64(self.lig_achieved_bits),
             na_f64(self.lig_l0_bits),
+            self.q_lo_log2,
+            self.q_bits,
+            na_usize(self.ood_bits),
             self.threads,
             self.reps,
             self.commit_ms,
@@ -1260,6 +1355,9 @@ impl CliResult {
             lig_target_bits: opt_int("lig_target_bits")?,
             lig_achieved_bits: opt_num("lig_achieved_bits")?,
             lig_l0_bits: opt_num("lig_l0_bits")?,
+            q_lo_log2: int("q_lo_log2")?,
+            q_bits: int("q_bits")?,
+            ood_bits: opt_int("ood_bits")?,
             threads: int("threads")?,
             reps: int("reps")?,
             commit_ms: num("commit_ms")?,
@@ -1554,6 +1652,30 @@ fn write_latex_table(
         .fold(f64::INFINITY, f64::min);
     let n_lo = rows.iter().map(|r| r.n).min().unwrap_or(0);
     let n_hi = rows.iter().map(|r| r.n).max().unwrap_or(0);
+    let q_bits_min = rows.iter().map(|r| r.q_bits).min().unwrap_or(0);
+    let q_bits_max = rows.iter().map(|r| r.q_bits).max().unwrap_or(0);
+    let q_desc = if q_bits_min == q_bits_max {
+        format!("{q_bits_min}")
+    } else {
+        format!("{q_bits_min}..{q_bits_max}")
+    };
+    let ood_bits_min = rows.iter().filter_map(|r| r.ood_bits).min();
+    let ood_bits_max = rows.iter().filter_map(|r| r.ood_bits).max();
+    let ood_desc = match (ood_bits_min, ood_bits_max) {
+        (Some(lo), Some(hi)) if lo == hi => format!("executed with {lo} grinding bits"),
+        (Some(lo), Some(hi)) => format!("executed with {lo}..{hi} grinding bits (per shape, ood_bits below)"),
+        _ => "skipped (unique-decoding opener)".to_string(),
+    };
+    let q_tex = if q_bits_min == q_bits_max {
+        format!("a prime $q$ sampled uniformly (after the commitment) from $[2^{{{}}}, 2^{{{q_bits_min}}})$", q_bits_min - 1)
+    } else {
+        format!("a prime $q$ sampled uniformly (after the commitment) from $[2^{{b-1}}, 2^{{b}})$, $b = \\min(113, 127 - \\log \\codedim_1 - W)$ at cell width $W = 1$ ($b = {q_bits_min}, \\ldots, {q_bits_max}$)")
+    };
+    let round0_tex = match (ood_bits_min, ood_bits_max) {
+        (Some(lo), Some(hi)) if lo == hi => format!("Round 0 (the out-of-domain sample) is executed with ${lo}$ bits of grinding"),
+        (Some(lo), Some(hi)) => format!("Round 0 (the out-of-domain sample) is executed with $\\lceil \\log \\codedim - 23.7 \\rceil$ bits of grinding (${lo}$ to ${hi}$ over the table)"),
+        _ => "Round 0 is skipped (unique-decoding opener)".to_string(),
+    };
     // Ligerito geometry from the profile string when it is `custom:<r>:<k>`.
     let lig_geometry = o
         .profile
@@ -1588,8 +1710,11 @@ fn write_latex_table(
     let _ = writeln!(out, "%   Ligerito = the serialized Ligerito proof. KB = 1000 bytes.");
     let _ = writeln!(out, "% Security: Ligerito ({lig_tag}, {lig_hash} Merkle trees) target {} bits round-by-round, achieved (min over rows/levels/terms) {}; per-row values in", na_usize(target), if achieved.is_finite() { format!("{achieved:.2}") } else { "na".into() });
     let _ = writeln!(out, "%   lig_achieved_bits / lig_l0_bits (L0's implicit post-commit list binding). F2Z-side rounds: GKR 3/2^128, sumcheck 2/2^128,");
-    let _ = writeln!(out, "%   ring switch 7/2^128 (all ≥ 125 bits). The evaluation prime q = 2^100 − 15 is fixed and public: the implementation executes");
-    let _ = writeln!(out, "%   neither Round 0 (out-of-domain sampling) nor Round 1 (random prime projection) of c:core_iop.");
+    let _ = writeln!(out, "%   ring switch 7/2^128 (all ≥ 125 bits). The evaluation prime q is sampled from the transcript after the commitment,");
+    let _ = writeln!(out, "%   uniformly among the primes in [2^(b-1), 2^b), b = {q_desc} per shape (q_lo_log2/q_bits below; b = min(113, 127 - t - W), the");
+    let _ = writeln!(out, "%   one-chunk exponent-fold width), and the point (r1, r2) is sampled after q — the instance is derived inside the timers.");
+    let _ = writeln!(out, "%   Round 0 (out-of-domain sampling) of c:core_iop: {ood_desc}. Round 1 (random prime projection) is not needed: q is");
+    let _ = writeln!(out, "%   already a transcript-sampled prime of the admissible size. Round 0 costs ride the ring-switch bucket (mc:ood, mq:ood_basis).");
     let _ = writeln!(out, "% RESULT lines (schema={RESULT_SCHEMA}):");
     for r in rows {
         let _ = writeln!(out, "% {}", r.to_line());
@@ -1625,7 +1750,7 @@ fn write_latex_table(
     let _ = writeln!(out, "  \\end{{tabular}}");
     let _ = writeln!(
         out,
-        "  \\caption{{Cost of \\ftwoz\\ (\\cref{{c:core_iop}}) for committing to $\\codedim = 2^{{n}}$ bits, $n = {n_lo}, \\ldots, {n_hi}$, and proving one claim $\\langle \\vv, \\bff\\rangle = \\mu$ over $\\FF_q$ with $q = 2^{{100}} - 15$ and the tensor split $\\codedim_1 = 2^{{\\lceil 0.6\\, n\\rceil}}$, $\\codedim_1 \\cdot \\codedim_2 = \\codedim$ (\\cref{{s:instantiation}}). The commitment is opened with ring switching and Ligerito~\\cite{{ligerito}} {lig_geometry}, {security}; every other round (the GKR, the sumcheck reducing to MLE evaluation claims, the ring switch) has error at most $7 \\cdot 2^{{-128}}$. Prover columns: \\emph{{grand products}} is computing the integers $\\mu_j$ and the batched GKR for the $\\codedim_2$ grand products in the exponent (\\cref{{s:gkr_low_entropy}}); \\emph{{ring switch}} is the sumcheck reducing the GKR output claims to MLE evaluation claims together with the ring-switching step; \\emph{{Ligerito}} is the Ligerito opening. These exclude the commitment, listed separately. \\emph{{Non-Ligerito}} proof bytes are the $\\mu_j$, the GKR and sumcheck messages, and the ring-switch message; KB $= 1000$ bytes. {cpu} ({cores}), {mem_gb}\\,GB, {threads} threads; medians of {reps} runs after one warm-up.}}"
+        "  \\caption{{Cost of \\ftwoz\\ (\\cref{{c:core_iop}}) for committing to $\\codedim = 2^{{n}}$ bits, $n = {n_lo}, \\ldots, {n_hi}$, and proving one claim $\\langle \\vv, \\bff\\rangle = \\mu$ over $\\FF_q$ for {q_tex}, $\\vv = \\eq(\\cdot, \\rr_1) \\otimes \\eq(\\cdot, \\rr_2)$ with $(\\rr_1, \\rr_2)$ sampled after $q$, and the tensor split $\\codedim_1 = 2^{{\\lceil 0.6\\, n\\rceil}}$, $\\codedim_1 \\cdot \\codedim_2 = \\codedim$ (\\cref{{s:instantiation}}). The commitment is opened with ring switching and Ligerito~\\cite{{ligerito}} {lig_geometry}, {security}; {round0_tex}; every other round (the GKR, the sumcheck reducing to MLE evaluation claims, the ring switch) has error at most $7 \\cdot 2^{{-128}}$. Prover columns: \\emph{{grand products}} is computing the integers $\\mu_j$ and the batched GKR for the $\\codedim_2$ grand products in the exponent (\\cref{{s:gkr_low_entropy}}); \\emph{{ring switch}} is the sumcheck reducing the GKR output claims to MLE evaluation claims together with the ring-switching step; \\emph{{Ligerito}} is the Ligerito opening. These exclude the commitment, listed separately. \\emph{{Non-Ligerito}} proof bytes are the $\\mu_j$, the GKR and sumcheck messages, and the ring-switch message; KB $= 1000$ bytes. {cpu} ({cores}), {mem_gb}\\,GB, {threads} threads; medians of {reps} runs after one warm-up.}}"
     );
     let _ = writeln!(out, "  \\label{{tab:f2z-raw-performance}}");
     let _ = writeln!(out, "\\end{{table}}");

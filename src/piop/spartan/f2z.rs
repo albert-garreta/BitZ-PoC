@@ -353,11 +353,14 @@ pub enum U32MulLigerito {
     },
 }
 
+/// The opener configuration pair plus, for a Johnson-regime opener, the
+/// theorem's Round-0 collision bound in bits (`None` = unique decoding,
+/// no Round 0).
 fn configs_for_layout_and_target(
     layout: &U32MulLayout,
     target_bits: usize,
     ligerito: U32MulLigerito,
-) -> Result<(LigProverConfig, LigVerifierConfig), SpartanF2zError> {
+) -> Result<((LigProverConfig, LigVerifierConfig), Option<f64>), SpartanF2zError> {
     if layout.gate_vars() < MIN_PRODUCTION_GATE_VARS {
         return Err(SpartanF2zError::UnauditedF2zParameters);
     }
@@ -365,6 +368,7 @@ fn configs_for_layout_and_target(
     let m_p = packed_variables(&p)?;
     match ligerito {
         U32MulLigerito::ValidatedUdr => validated_udr_lig_configs_for_target(m_p, target_bits)
+            .map(|pair| (pair, None))
             .map_err(SpartanF2zError::LigeritoConfig),
         U32MulLigerito::CustomJohnson {
             log_inv_rate,
@@ -384,8 +388,10 @@ fn configs_for_layout_and_target(
             // template's field says sha256).
             security.hash = "blake3".into();
             security.validate().map_err(SpartanF2zError::LigeritoConfig)?;
+            let ood_bits = crate::ligerito_flock::ood_round_bits(&security, m_p);
             security
                 .to_prover_verifier_configs()
+                .map(|pair| (pair, ood_bits))
                 .map_err(SpartanF2zError::LigeritoConfig)
         }
     }
@@ -1057,12 +1063,13 @@ impl PreparedU32MulRelation {
         validate_layout_geometry(&layout)?;
         let p = layout.f2z_params();
         let row_vars = layout.gate_vars();
-        let security = P::instantiate(&u32_mul_instance_facts(&p, row_vars))?;
+        let mut security = P::instantiate(&u32_mul_instance_facts(&p, row_vars))?;
         if security.projection_full_width || security.reduction.is_some() {
             return Err(SpartanF2zError::UnsupportedProfile);
         }
-        let (ligerito_pc, ligerito_vc) =
+        let ((ligerito_pc, ligerito_vc), ood_bits) =
             configs_for_layout_and_target(&layout, security.ligerito_target_bits, ligerito)?;
+        security.adopt_ood_round(ood_bits)?;
         validate_config_pair(&p, &ligerito_pc, &ligerito_vc)?;
         let raw = u32_mul_constraint_matrices(&layout, true)?;
         let skeleton = ConstraintMatricesSkeleton::new(raw).map_err(SpartanError::from)?;
@@ -1183,6 +1190,7 @@ pub fn prove_u32_terminal_claim_f2z<T: Transcript + Send>(
         FQ_BITS,
         f2z_generator(),
         f2z_round_grinding_bits(&prepared.security),
+        prepared.security.ood,
         &prepared.ligerito_pc,
     )
     .map_err(SpartanF2zError::F2z)
@@ -1227,6 +1235,7 @@ pub fn verify_u32_terminal_claim_f2z<T: Transcript + Send>(
         prepared_claim.claimed,
         FQ_BITS,
         f2z_round_grinding_bits(&prepared.security),
+        prepared.security.ood,
         &prepared.ligerito_vc,
     )
     .map_err(SpartanF2zError::F2z)
@@ -1400,6 +1409,12 @@ fn u32_mul_assignment_binding(
     }
     hash_usize(&mut hasher, security.forest_round_grinding_bits as usize)?;
     hash_usize(&mut hasher, security.ring_switch_grinding_bits as usize)?;
+    if let Some(ood) = security.ood {
+        // Present only when Round 0 runs, so Round-0-less statements keep
+        // their digest.
+        hasher.update(&[1]);
+        hash_usize(&mut hasher, ood.grinding_bits as usize)?;
+    }
     hash_usize(&mut hasher, security.ligerito_target_bits)?;
     hash_ligerito_config(&mut hasher, ligerito_config)?;
     hash_usize(&mut hasher, layout.multiplications())?;
@@ -1556,6 +1571,7 @@ pub fn prove_u32_mul<T: Transcript + Send>(
             q_bits,
             f2z_generator(),
             f2z_round_grinding_bits(security),
+            security.ood,
             pc,
         )
         .map_err(SpartanF2zError::F2z)?
@@ -1679,6 +1695,7 @@ pub fn verify_u32_mul<T: Transcript + Send>(
         q,
         q_bits,
         f2z_round_grinding_bits(security),
+        security.ood,
         vc,
     )
     .map_err(SpartanF2zError::F2z)

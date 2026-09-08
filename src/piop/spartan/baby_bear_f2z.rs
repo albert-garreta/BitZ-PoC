@@ -746,6 +746,7 @@ fn prove_baby_bear_terminal_claim_f2z_prepared<T: Transcript + Send>(
             FQ_BITS,
             f2z_generator(),
             0,
+            ood_for_layout(layout)?,
             pc,
         )
         .map_err(BabyBearSpartanF2zError::F2z)
@@ -845,6 +846,7 @@ fn verify_baby_bear_terminal_claim_f2z_prepared<T: Transcript + Send>(
             prepared.claimed,
             FQ_BITS,
             0,
+            ood_for_layout(layout)?,
             vc,
         )
     };
@@ -860,6 +862,15 @@ fn configs_for_layout(
     let params = layout.f2z_params();
     let m_p = packed_variables(&params)?;
     sha_lig_configs(m_p).map_err(BabyBearSpartanF2zError::LigeritoConfig)
+}
+
+/// Round-0 parameters of the opener [`configs_for_layout`] selects.
+fn ood_for_layout(
+    layout: &BabyBearMulLayout,
+) -> Result<Option<crate::ligerito_flock::OodRoundParams>, BabyBearSpartanF2zError> {
+    let params = layout.f2z_params();
+    let m_p = packed_variables(&params)?;
+    Ok(crate::ligerito_flock::sha_lig_ood_params(m_p))
 }
 
 fn validate_layout_geometry(layout: &BabyBearMulLayout) -> Result<(), BabyBearSpartanF2zError> {
@@ -1894,6 +1905,7 @@ pub fn prove_baby_bear_mul_paper<T: Transcript + Send>(
             q_bits,
             f2z_generator(),
             security.forest_round_grinding_bits,
+            security.ood,
             pc,
         )
         .map_err(BabyBearSpartanF2zError::F2z)?
@@ -2002,6 +2014,7 @@ pub fn verify_baby_bear_mul_paper<T: Transcript + Send>(
         q,
         q_bits,
         security.forest_round_grinding_bits,
+        security.ood,
         vc,
     )
     .map_err(BabyBearSpartanF2zError::F2z)

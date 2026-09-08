@@ -56,6 +56,8 @@
 
 use thiserror::Error;
 
+use crate::ligerito_flock::OodRoundParams;
+
 /// Number of transcript primes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PrimePolicy {
@@ -181,8 +183,46 @@ pub struct IopSecurityParams {
     pub ring_switch_grinding_bits: u32,
     /// Ligerito/WHIR round-by-round target.
     pub ligerito_target_bits: usize,
+    /// Round 0 (the out-of-domain sample) of the F2Z opening: `Some` when
+    /// the selected opener runs beyond unique decoding (its list must be
+    /// pinned before the first forest challenge), `None` in the
+    /// unique-decoding regime. Set by [`IopSecurityParams::adopt_ood_round`]
+    /// once the relation has chosen its opener.
+    pub ood: Option<OodRoundParams>,
     /// The full per-term accounting.
     pub accounting: SoundnessAccounting,
+}
+
+impl IopSecurityParams {
+    /// Accounts for Round 0 of the F2Z opening once the opener is known.
+    /// `ood_bits` is the theorem's collision bound in bits
+    /// ([`crate::ligerito_flock::ood_round_bits`]): `None` (unique
+    /// decoding) leaves the round off; otherwise the grinding topping it up
+    /// to the target is derived under the usual economic cap and the term
+    /// `step0:ood-draw` joins the accounting.
+    pub fn adopt_ood_round(&mut self, ood_bits: Option<f64>) -> Result<(), ProfileError> {
+        let Some(bits) = ood_bits else {
+            self.ood = None;
+            return Ok(());
+        };
+        let grinding_bits = ceil_pos(f64::from(self.lambda) - bits);
+        if grinding_bits > MAX_DERIVED_GRINDING_BITS {
+            return Err(ProfileError::GrindingTooExpensive {
+                profile: self.profile_name,
+                term: "step0:ood-draw",
+                bits: grinding_bits,
+                cap: MAX_DERIVED_GRINDING_BITS,
+            });
+        }
+        self.accounting.terms.push(SoundnessTerm {
+            name: "step0:ood-draw",
+            bits: bits + f64::from(grinding_bits),
+            grinding_bits,
+            floor: false,
+        });
+        self.ood = Some(OodRoundParams { grinding_bits });
+        Ok(())
+    }
 }
 
 /// Compile-time IOP security policy. Zero-sized marker types implement
@@ -562,6 +602,7 @@ fn derive_params(
         forest_round_grinding_bits,
         ring_switch_grinding_bits,
         ligerito_target_bits,
+        ood: None,
         accounting,
     })
 }

@@ -31,6 +31,20 @@ integer weights `w_b`, `s` column variables are read off with field weights
    `2^{log_batch}` interleaved lanes, RS-encoded per lane with flock's additive
    NTT, and the per-position lane stacks are Merkle leaves (`flock-core`'s
    `commit`). The root is published.
+   **Round 0 — the out-of-domain sample** (paper `c:core_iop`, executed
+   exactly when the opener's proximity parameter sits beyond unique
+   decoding, i.e. for flock's Johnson-regime Ligerito configs; skipped in
+   the unique-decoding regime): the verifier draws `ζ ∈ K` — behind a
+   proof-of-work boundary when the profile's `OodRoundParams` says so — and
+   the prover answers `y = MLE[P](ζ^{2^0}, ζ^{2^1}, …)` on the PACKED
+   message, which pins the committed word to one element of its δ-list
+   before any further challenge (`l:ood_collision`: two list elements agree
+   with probability `≤ C(L_δ,2)·(2^{m_p}−1)/|K|`; `ood_round_bits` /
+   `ood_round_params` derive the bound and the grinding that tops it up to
+   the target). The claim is `K`-linear in `P`, so it rides the final
+   Ligerito opening: one extra batching draw `η_ood` adds `η_ood·eq(·, ζ⃗)`
+   to the basis and `η_ood·y` to the target, and the verifier folds that
+   term succinctly (a scalar times the tail's eq table).
 2. **Fold in the exponent**: per column,
    `α^{v_c} = ∏_{b,j} [bit ? α^{w_b·2^j} : 1]`. The **merged** GKR
    grand-product forest binds every `α^{v_c}` and reduces all `2^s` trees to one
@@ -52,7 +66,8 @@ integer weights `w_b`, `s` column variables are read off with field weights
 5. **Read-off in the clear**: `P(r) = G_r · Σ_c e_c·v_c` over any
    characteristic-≠2 ring.
 
-Soundness chain: committed bits →(Ligerito opening) the packed-poly evaluation
+Soundness chain: committed bits →(Round 0, beyond unique decoding) one
+list element →(Ligerito opening) the packed-poly evaluation
 →(ring-switch) `μ` →(pre-sumcheck) the forest exit claim →(merged forest)
 `roots = α^{v_c}` →(generator binding, `v_c < ord α`) the integers `v_c`
 →(read-off) `P(r)`.
