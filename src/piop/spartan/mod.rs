@@ -29,8 +29,9 @@ pub(crate) mod univariate_skip_native;
 pub use baby_bear_f2z::{
     BabyBearBitifiedClaim, BabyBearMulPaperProof, BabyBearMulSpartanF2zProof,
     BabyBearSpartanF2zError, PreparedBabyBearMulRelation, baby_bear_mul_instance_facts,
-    bitify_baby_bear_mul_spartan_claim, commit_baby_bear_mul_witness, prove_baby_bear_mul_paper,
-    prove_baby_bear_mul_spartan_and_f2z, prove_baby_bear_mul_spartan_and_f2z_from_witness,
+    bitify_baby_bear_mul_spartan_claim, commit_baby_bear_mul_paper_witness,
+    commit_baby_bear_mul_witness, prove_baby_bear_mul_paper, prove_baby_bear_mul_spartan_and_f2z,
+    prove_baby_bear_mul_spartan_and_f2z_from_witness,
     prove_baby_bear_mul_spartan_and_f2z_with_strategy, verify_baby_bear_mul_paper,
     verify_baby_bear_mul_spartan_and_f2z,
 };

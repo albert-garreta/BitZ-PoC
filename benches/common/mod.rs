@@ -18,11 +18,33 @@
 
 #![allow(dead_code)] // each bench uses a subset of the harness
 
+#[cfg(feature = "plonky3-whir-bench")]
+pub mod plonky3;
+
 use std::time::Instant;
 
 use f2z::piop::spartan::{
     IopSecurityProfile, Lambda100, Lambda128, Limber114, PrimePolicy, Sha128ReferenceSchedule,
 };
+
+/// Revision from the Cargo-generated lockfile embedded in this benchmark.
+/// Report the dependency used at build time, without requiring sibling clones.
+pub fn locked_git_revision(package: &str) -> &'static str {
+    let name = format!("name = \"{package}\"");
+    let entry = include_str!("../../Cargo.lock")
+        .split("[[package]]")
+        .find(|entry| entry.lines().any(|line| line == name))
+        .unwrap_or_else(|| panic!("missing locked dependency {package}"));
+    let source = entry
+        .lines()
+        .find_map(|line| line.strip_prefix("source = \"git+"))
+        .and_then(|source| source.strip_suffix('"'))
+        .unwrap_or_else(|| panic!("dependency {package} is not locked to Git"));
+    source
+        .rsplit_once('#')
+        .expect("locked Git source has a commit")
+        .1
+}
 
 // ---------------------------------------------------------------------
 // Environment: canonical knobs, deprecated aliases, strict unknown check
@@ -92,12 +114,33 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_MATS_TILE",
     "F2Z_MATS_TILE_B",
     "F2Z_MAT_GRID",
-    // Deprecated aliases.
+    // Matched MultiSwap/Mod-R1CS campaign trace metadata.
+    "F2Z_MULTISWAP_BUILD_PROFILE",
+    "F2Z_MULTISWAP_CAMPAIGN_ID",
+    "F2Z_MULTISWAP_CPU",
+    "F2Z_MULTISWAP_EXPECTED_CONSTRAINT_DIGEST",
+    "F2Z_MULTISWAP_GIT_REV",
+    // Deprecated alias.
     "F2Z_MULTISWAP_REPS",
+    "F2Z_MULTISWAP_TRACE_PATH",
     // U32-specific bench knob.
     "F2Z_MUL_WORD_BITS",
     "F2Z_PAIR2_FACTORED",
     "F2Z_PAR_CHUNK",
+    // Controlled BabyBear terminal-claim PCS comparison trace.
+    "F2Z_BINIUS_LOG_INV_RATE",
+    "F2Z_PCS_COMPARE_BACKENDS",
+    "F2Z_PCS_COMPARE_BUILD_PROFILE",
+    "F2Z_PCS_COMPARE_CAMPAIGN_ID",
+    "F2Z_PCS_COMPARE_CAMPAIGN_PATH",
+    "F2Z_PCS_COMPARE_CPU",
+    "F2Z_PCS_COMPARE_GIT_DIRTY",
+    "F2Z_PCS_COMPARE_GIT_REV",
+    "F2Z_PCS_COMPARE_TRACE_PATH",
+    "F2Z_PCS_COMPARE_WHIR_DEGREE",
+    "F2Z_WHIR_FOLDING",
+    "F2Z_WHIR_LOG_INV_RATE",
+    "F2Z_WHIR_MAX_POW_BITS",
     "F2Z_QUAD",
     "F2Z_QUAD_KERNEL",
     "F2Z_RLC_EAGER",
