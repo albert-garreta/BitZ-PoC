@@ -2291,7 +2291,7 @@ If $\gkrpol(\yy_\bb, \bff_{\bb,\cc}) = (\yy_\bb-1)\cdot \bff_{\bb,\cc} +1$ as in
     \textbf{Total} & $t_\red = 1 + r_1\cdot r_2 + \binom{r_1+1}{2}$ & $3\cdot t_\red - r_1 - 3$ & $O(\codedim_1 + \codedim_2 + \log^2 \codedim)\cdot \comfield$ \\
     \bottomrule
   \end{tabular}
-  \caption{ Rounds, proof size and verifier work of \cref{c:gkr_grand_product} for the polynomial $\gkrpol(Y,X)=(Y-1)\cdot X +1$ in our deployment of \ftwoz.  By $N\cdot \comfield$ we indicate $N$ operations in $\comfield$.}
+  \caption{ Rounds, proof size and verifier work of \cref{c:gkr_grand_product} for the polynomial $\gkrpol(Y,X)=(Y-1)\cdot X +1$ in our deployment of \ftwoz.  By $N\cdot \comfield$ we indicate $N$ operations in $\comfield$. The proof size counts $3$ elements per sumcheck round. Using  \cite{gruen} we send two $2$ elements per sumcheck round in our implementation.}
   \label{t:gkr_grand_product_complexity}
 \end{table}
 
@@ -2299,8 +2299,7 @@ The next lemma records the soundness errors of \cref{c:gkr_grand_product}. We om
 
 \begin{lemma}[Soundness and completeness of \cref{c:gkr_grand_product}]\label{l:gkr_grand_product}
  Assume $\gkrpol(Y,X)$ is linear in $X$\footnote{We focus on this case since it is the one in our instantiation. A generalization to arbitrary polynomials $\gkrpol(Y,X)$ would  add rounds  and error terms corresponding to the sumcheck protocol mentioned at the end of \cref{c:gkr_grand_product}.}. Then \cref{c:gkr_grand_product} is a perfectly complete
-$(1 + r_1 r_2 + r_1(r_1+1)/2)$-round IOR from $\PESAT(\comfield,\gkrpol)$ to $\LIN(\comfield)$
-with round-by-round knowledge soundness and errors $r_2/|\comfield|$ in the
+$(1 + r_1 r_2 + r_1(r_1+1)/2)$-round IOR from $\PESAT(\comfield,\gkrpol)$ to $\LIN(\comfield)$, whose verifier makes no oracle queries and whose prover outputs the witness $\bff$ it received. Accordingly it also extends to an IOR from $\PESAT(\comfield,\gkrpol, \cC,\pack)$ to $\LIN(\comfield, \cC,\pack)$ in a natural way (these are the same relations as $\PESAT(\comfield,\gkrpol)$ to $\LIN(\comfield)$, but with an additional oracle $\Enc_\cC\circ \pack(\bff)$). This latter IOR has round-by-round knowledge with relaxation $(\PESAT(\comfield,\gkrpol,\cC,\pack)^\delta,\LIN(\comfield,\cC,\pack)^{\delta})$ with errors $r_2/|\comfield|$ in the
 first round, $3/|\comfield|$ in every sumcheck round and $1/|\comfield|$ in every unification step.
 %so given $\yy$ the verifier performs $O(\codedim_1+\codedim_2+r_1 r_2)$ field operations.
 \end{lemma}
@@ -2447,7 +2446,7 @@ In \cref{t:gkr_step1_costs} we record the total upper bound costs for computing 
 
 
 
- On the other hand, a standard generic approach to compute $h_{1}(X)$ would require $O(\codedim)=O(\codedim_1\cdot \codedim_2)$ multiplications and additions, even if using the few  sumcheck optimizations that apply in our settings (to our knowledge) \albert{which ones, exactly?}. Crucially, we note that our sumcheck features summands of full field bit size $\log|\KK|$, which voids some known powerful optimizations when the summands are small, e.g.\ the univariate skip \cite{gruen} and some optimizations from \cite{sumcheck_opt_1,sumcheck_opt_2}.  The prover message degree reduction through factoring the ``eq factor'' from \cite{gruen} does apply to our setting, and indeed it was already present in our description of \cref{c:gkr_grand_product}. 
+ On the other hand, a standard generic approach to compute $h_{1}(X)$ would require $O(\codedim)=O(\codedim_1\cdot \codedim_2)$ multiplications and additions, even if using the few  sumcheck optimizations that apply in our settings (to our knowledge) \albert{which ones, exactly?}. Crucially, we note that our sumcheck features summands of full field bit size $\log|\KK|$, which voids some known powerful optimizations when the summands are small, e.g.\ the univariate skip \cite{gruen} and some optimizations from \cite{sumcheck_opt_1,sumcheck_opt_2}.  The prover message degree reduction through factoring the ``eq factor'' from \cite{gruen} does apply to our setting, and our implementation uses it: we send $2$ elements instead of the $3$ in each sumcheck round. 
 
  
 
