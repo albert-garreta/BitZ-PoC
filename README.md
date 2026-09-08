@@ -173,37 +173,66 @@ F2Z_BENCH_LAMBDA=100 F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C tar
 
 ### Native u32 / BabyBear end-to-end comparison
 
-BabyBear multiplication, exponents 15–24:
+BabyBear multiplication with Limber-Hyrax, shorter sweep at exponents 15–17.
+Run from the repository root:
 
 ```sh
 RUSTFLAGS="-Ctarget-cpu=native" \
 RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24" \
+F2Z_BENCH_SHAPES="15 16 17" \
 F2Z_BENCH_REPS=5 \
 F2Z_MUL_COMPARE_WORKLOADS="babybear" \
-F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir" \
+F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
 bash scripts/run_native_mul_compare.sh
 ```
 
-u32 multiplication, exponents 15–25:
+For the full BabyBear sweep, replace the shape setting in that command with:
+
+```sh
+F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24"
+```
+
+To run only Limber, replace the backend setting in the same command with:
+
+```sh
+F2Z_MUL_COMPARE_BACKENDS="limber"
+```
+
+u32 multiplication with Limber-Hyrax, shorter sweep at exponents 15–17.
+Run from the repository root:
 
 ```sh
 RUSTFLAGS="-Ctarget-cpu=native" \
 RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24 25" \
+F2Z_BENCH_SHAPES="15 16 17" \
 F2Z_BENCH_REPS=5 \
 F2Z_MUL_COMPARE_WORKLOADS="u32" \
-F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir" \
+F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
 bash scripts/run_native_mul_compare.sh
 ```
 
-Runs F2Z, Binius64, and Plonky3-WHIR on the same canonical
-multiplication inputs, using each system's native full prover. Reports witness
+For the full u32 sweep, replace the shape setting in that command with:
+
+```sh
+F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24 25"
+```
+
+To run only Limber, replace the backend setting in the same command with:
+
+```sh
+F2Z_MUL_COMPARE_BACKENDS="limber"
+```
+
+Both sweeps run F2Z, Binius64, Plonky3-WHIR, and Limber-Hyrax on the same
+canonical multiplication inputs for each workload, using each system's native
+full prover. Both commands report witness
 generation, commitment, PIOP, PCS opening, witness-to-proof time, and verification
-separately. Add `limber` to the backend list to include Limber-Hyrax. See
+separately.
+Limber's measurements appear alongside the other backends in `metrics.csv`,
+`summary.json`, and the per-trial `samples.jsonl`. See
 [the measurement contract and backend selectors](docs/native-mul-compare.md).
 
-This sweep runs BabyBear at exponents 15–24 and u32 at 15–25. An exponent `n`
+The full sweeps cover BabyBear at exponents 15–24 and u32 at 15–25. An exponent `n`
 means `2^n` multiplications: the ranges run from 32,768 through 16,777,216
 for BabyBear, and through 33,554,432 for u32. Run the commands one at a time.
 Each creates its own timestamped results directory under `PerfRuns/`.

@@ -18,8 +18,9 @@ F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
 RAYON_NUM_THREADS=8 bash scripts/run_native_mul_compare.sh
 ```
 
-The full three-backend sweep uses exponents 15–24 for BabyBear and 15–25
-for u32. Run each workload separately so its size limit is respected:
+The full sweeps use all four backends, including Limber-Hyrax, at exponents
+15–24 for BabyBear and 15–25 for u32. Run each workload separately so its size
+limit is respected:
 
 BabyBear multiplication, exponents 15–24:
 
@@ -29,7 +30,7 @@ RAYON_NUM_THREADS=8 \
 F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24" \
 F2Z_BENCH_REPS=5 \
 F2Z_MUL_COMPARE_WORKLOADS="babybear" \
-F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir" \
+F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
 bash scripts/run_native_mul_compare.sh
 ```
 
@@ -41,7 +42,7 @@ RAYON_NUM_THREADS=8 \
 F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24 25" \
 F2Z_BENCH_REPS=5 \
 F2Z_MUL_COMPARE_WORKLOADS="u32" \
-F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir" \
+F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
 bash scripts/run_native_mul_compare.sh
 ```
 
@@ -49,6 +50,13 @@ Each case includes one warmup and five measured trials. Use 21 measured
 trials for the final comparison. Accepted size ranges describe harness input
 limits; completion at the largest sizes depends on the backend and available
 memory. The native measurements recorded so far cover exponents 15–17.
+
+For a shorter comparison of either workload, use `F2Z_BENCH_SHAPES="15 16 17"`
+with its four-backend command. To run only the Limber rows, set
+`F2Z_MUL_COMPARE_BACKENDS="limber"` and keep `F2Z_MUL_COMPARE_WORKLOADS` set to
+`"babybear"` or `"u32"` for the chosen workload.
+The generated `metrics.csv`, `summary.json`, and `samples.jsonl` identify these
+results with `backend=limber`.
 
 The direct Cargo command is:
 
