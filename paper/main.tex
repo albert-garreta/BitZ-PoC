@@ -1732,7 +1732,7 @@ Let $D_S\geq 1$ be a degree bound, and let $\gamma_1=1, \gamma_2,\ldots, \gamma_
      We will use the natural homomorphism $\pi_{\Char(S)} : \ZZ \to S$ consisting in reducing an element modulo the characteristic of $S$, see  \eqref{e:Z_to_ring} in \cref{s:prelims_algebra}. 
 
 \begin{definition}[Bitification of the witness]\label{d:bitification}
-Let $\bff \in \moduleonebound^{\codedim_0}$. Let $\codedim$ be a  vector length, called \emph{bitification  length}. Let $L\in S^{\codedim_0 \times \codedim}$ be a matrix, called  \emph{bitification matrix}. Let $\bfg\in \bits^\codedim\subseteq \ZZ^\codedim$ be a vector filled with integer bits. We say $\bfg$ is a
+Let $\bff \in (\moduleonebound)^{\codedim_0}$. Let $\codedim$ be a  vector length, called \emph{bitification  length}. Let $L\in S^{\codedim_0 \times \codedim}$ be a matrix, called  \emph{bitification matrix}. Let $\bfg\in \bits^\codedim\subseteq \ZZ^\codedim$ be a vector filled with integer bits. We say $\bfg$ is a
 \emph{bitification} of $\bff$ (with respect to $L$)  if
 %
 $$
@@ -1741,11 +1741,14 @@ $$
 %
 where for a vector $\ww$ of integer bits, $\ww_S$ denotes its natural projection to a vector with entries the elements $\bits_S \subseteq S$. 
 %
+Additionally, we require that\footnote{This condition is required to guarantee that extractors obtain witnesses in $\moduleonebound$. In some applications, proving that the prover knows a witness in $S$ may suffice, and in that case the condition can be dropped.} $$L\cdot \bfg_S\in (\moduleonebound)^{\codedim_0} \qquad \text{for all } \bfg\in \bits^{\codedim}.$$  This  condition holds for the standard bitification matrix below. 
+
+
 The choice of $L$ and a method for building a bitification of $\bff$  can be customized. Below, we describe what we call the \emph{standard bitification} procedure (see below). This can be used for arbitrary finitely generated rings $S$ and bit bounds $B$. In some scenarios (see \cref{r: non_uniform_bit_decomposition}), one may choose different more convenient approaches.
 
-For a fixed $L$ and $\bff$, bitifications of $\bff$ are NOT unique in general. Nevertheless, abusing the notation, we often denote them as $$\bitstext(\bff).$$ 
+For a fixed $L$ and $\bff$, bitifications of $\bff$ are not unique in general. Nevertheless, abusing the notation, we often denote them as $$\bitstext(\bff).$$ 
 %
-A \emph{standard bitification} of $\bff\in \moduleonebound^{\codedim_0}
+A \emph{standard bitification} of $\bff\in (\moduleonebound)^{\codedim_0}
 $, denoted $\bitstext(\bff)$, is obtained as follows: write
 %$\bff=(\bff_{*1}, \ldots, \bff_{*\moduledegree})$ 
 $\bff=\sum_{j\in [\moduledegree]} \bff_{*j}\cdot \gamma_j$
@@ -1770,7 +1773,7 @@ Assume $\cC$ is a linear code over $\comfield$ of dimension $\codedim/\comfielde
 %
 \begin{align*}
  &\LinModFieldBin(\moduleonebound,\modulemorphism,R,  \cC,L)\\ &\qquad\qquad\qquad \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in R  \times R^{ \codedim_0}, \\
- &\oracle = f \in \comfield^{\codelength}, \\ &\wit= \bff\in \moduleonebound^{\codedim_0}\end{aligned}\right) \;\middle|\;  \begin{aligned}  
+ &\oracle = f \in \comfield^{\codelength}, \\ &\wit= \bff\in (\moduleonebound)^{\codedim_0}\end{aligned}\right) \;\middle|\;  \begin{aligned}  
  &f = \Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\bff)),\\
  &\langle \modulemorphism(\bff), \vv \rangle = \mu  \qquad  \text{in } R,\\
  &  \bff = L \cdot (\bitstext(\bff))_S \ \text{for some } \bitstext(\bff)\in \bits^{\codedim}\subseteq\ZZ^\codedim
@@ -1805,7 +1808,7 @@ We will need the following result.
 
 
 \begin{lemma}\label{l:bitify}
-    Let $\bff\in \moduleonebound^{\codedim_0}$,  let $\vv\in \moduletwo^{\codedim_0}$, and let $\bitstext(\bff)$ be a bitification of $\bff$ with respect to $L$. Then %\albertimportant{General comment: I need to discuss how the verifier handles these vectors $\vv$ and $\uu$. Reviewers may complain that verifier could be non-succinct.} \albertimportant{Answer: write the tables mentioned above}
+    Let $\bff\in (\moduleonebound)^{\codedim_0}$,  let $\vv\in \moduletwo^{\codedim_0}$, and let $\bitstext(\bff)$ be a bitification of $\bff$ with respect to $L$. Then %\albertimportant{General comment: I need to discuss how the verifier handles these vectors $\vv$ and $\uu$. Reviewers may complain that verifier could be non-succinct.} \albertimportant{Answer: write the tables mentioned above}
        \begin{align*}
    & \langle \psi(\bff), \vv \rangle = \langle \bitstext(\bff)_R,\uu\rangle \in R \\ & 
     \uu\defeq \psi(L)^{\mathsf{T}}\cdot \vv \in R^{\codedim},
@@ -1843,7 +1846,7 @@ We assume that the input vector $\vv$ for $\LinModFieldBin(\moduleonebound, \psi
  \textbf{Parameters.} $(\codedim_0, \codedim, \codedim_1,\codedim_2, \Pi_\iopp, \Pi_\red, \cP, (\cM_q)_{q\in \cP})$ comprised of: a witness vector length $\codedim_0$; a \emph{bitified witness} vector length $\codedim$; tensor decomposition dimensions $\codedim_1, \codedim_2$ for \cref{c:core_iop} satisfying $\codedim_1\cdot \codedim_2 = \codedim$; IORs and IOPs $\Pi_\iopp$ and $\Pi_\red$ as in \cref{c:core_iop}; and sets of primes and homomorphisms $ \cP, (\cM_q)_{q\in \cP}$ again as in \cref{c:core_iop}.\\
 
 
-\noindent \textbf{Inputs.} The prover and verifier receive $\inp=(\mu, \vv)\in \moduletwo\times R^{\codedim_0}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives  $\wit= \bff\in \moduleonebound^{\codedim_0}$ such that $(\inp,\oracle, \wit) \in \LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo, \cC, L)$, i.e., 
+\noindent \textbf{Inputs.} The prover and verifier receive $\inp=(\mu, \vv)\in \moduletwo\times R^{\codedim_0}$ and  $\oracle= f \in \comfield^\codelength$. The prover receives  $\wit= \bff\in (\moduleonebound)^{\codedim_0}$ such that $(\inp,\oracle, \wit) \in \LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo, \cC, L)$, i.e., 
 %
 $$
 f = \Enc_{\cC}\circ \pack\circ\pi_2(\bitstext(\bff)),\qquad \langle \psi(\bff), \vv \rangle = \mu \quad \text{in } R.
@@ -2859,9 +2862,9 @@ $$
 \Relation_{\mathsf{gen}}\defeq \LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC,L), \qquad \Relation_{\mathsf{core}}\defeq \LinBitsDual(\bits,\pi, R,\cC), \qquad \inp'\defeq (\mu,\uu),
 $$
 %
-and $\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack)$, $\LIN = \LIN(\comfield, \cC, \pack)$ (as  in \cref{s:soundness_core_iop}). Recall from \cref{d:bitification} that a bitification of $\bff\in \moduleonebound^{\codedim_0}$ is any $\bfg\in \bits^{\codedim}$ with $\bff=L\cdot \bfg_S$. For such $\bfg$, we say that $((\mu,\vv),f,\bff)$ belongs to $\Relation_{\mathsf{gen}}^{\delta}$ \emph{via} $\bfg$ if $\hamming(f,\Enc_{\cC}\circ \pack\circ \pi_2(\bfg))<\delta$ and $\langle \psi(\bff),\vv\rangle=\mu$. Then  $((\mu,\vv),f,\bff)\in \Relation_{\mathsf{gen}}^{\delta}$ if and only if $((\mu,\vv),f,\bff)$ belongs to $\Relation_{\mathsf{gen}}^{\delta}$ via some bitification $\bfg$ of $\bff$. The honest prover uses $\bfg$ as witness in the call to \cref{c:core_iop}. The same applies to $\Relation_{\mathsf{gen}}$, with equality of words in place of the distance condition. We assume that $L\cdot \bfg_S\in \moduleonebound^{\codedim_0}$ for all $\bfg\in \bits^{\codedim}$, as is the case for the standard bitification matrix of \cref{d:bitification} (for a general $L$ this is needed: otherwise the prover may commit to bits $\bfg$ with $L\cdot \bfg_S\notin \moduleonebound^{\codedim_0}$ and have the verifier accept, although no witness in $\moduleonebound^{\codedim_0}$ exists \albertimportant{process this requirement}).
+and $\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack)$, $\LIN = \LIN(\comfield, \cC, \pack)$ (as  in \cref{s:soundness_core_iop}). Recall from \cref{d:bitification} that a bitification of $\bff\in (\moduleonebound)^{\codedim_0}$ is any $\bfg\in \bits^{\codedim}$ with $\bff=L\cdot \bfg_S$. For such $\bfg$, we say that $((\mu,\vv),f,\bff)$ belongs to $\Relation_{\mathsf{gen}}^{\delta}$ \emph{via} $\bfg$ if $\hamming(f,\Enc_{\cC}\circ \pack\circ \pi_2(\bfg))<\delta$ and $\langle \psi(\bff),\vv\rangle=\mu$. Then  $((\mu,\vv),f,\bff)\in \Relation_{\mathsf{gen}}^{\delta}$ if and only if $((\mu,\vv),f,\bff)$ belongs to $\Relation_{\mathsf{gen}}^{\delta}$ via some bitification $\bfg$ of $\bff$. The honest prover uses $\bfg$ as witness in the call to \cref{c:core_iop}. The same applies to $\Relation_{\mathsf{gen}}$, with equality of words in place of the distance condition. We assume that $L\cdot \bfg_S\in (\moduleonebound)^{\codedim_0}$ for all $\bfg\in \bits^{\codedim}$, as is the case for the standard bitification matrix of \cref{d:bitification} (for a general $L$ this is needed: otherwise the prover may commit to bits $\bfg$ with $L\cdot \bfg_S\notin (\moduleonebound)^{\codedim_0}$ and have the verifier accept, although no witness in $(\moduleonebound)^{\codedim_0}$ exists \albertimportant{process this requirement}).
 
-For $\bfg\in \bits^{\codedim}$ let $\bff_{\bfg}\defeq L\cdot \bfg_S\in \moduleonebound^{\codedim_0}$. By \cref{l:bitify}, $\langle \psi(\bff_{\bfg}), \vv\rangle = \langle \psi(\bfg_S), \psi(L)^{\mathsf{T}}\cdot \vv\rangle = \langle \pi(\bfg),\uu\rangle$, and hence
+For $\bfg\in \bits^{\codedim}$ let $\bff_{\bfg}\defeq L\cdot \bfg_S\in (\moduleonebound)^{\codedim_0}$. By \cref{l:bitify}, $\langle \psi(\bff_{\bfg}), \vv\rangle = \langle \psi(\bfg_S), \psi(L)^{\mathsf{T}}\cdot \vv\rangle = \langle \pi(\bfg),\uu\rangle$, and hence
 %
 \begin{equation}\label{e:appendix_bitify}
 (\inp', f, \bfg)\in \Relation_{\mathsf{core}}^{\delta} \quad \Longleftrightarrow\quad  ((\mu, \vv), f, \bff_{\bfg}) \text{ belongs to } \Relation_{\mathsf{gen}}^{\delta} \text{ via } \bfg,
