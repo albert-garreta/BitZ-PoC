@@ -6,42 +6,30 @@
 
 #![allow(dead_code)]
 
-use p3_challenger::{CanObserve, DuplexChallenger, FieldChallenger};
+use crate::common::plonky3::{self, goldilocks as stack};
+use p3_challenger::{CanObserve, FieldChallenger};
 use p3_commit::MultilinearPcs;
-use p3_dft::Radix2DFTSmallBatch;
+use p3_field::PrimeCharacteristicRing;
 use p3_field::extension::BinomialExtensionField;
-use p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
-use p3_goldilocks::{Goldilocks, Poseidon2Goldilocks, default_goldilocks_poseidon2_8};
-use p3_matrix::dense::RowMajorMatrix;
-use p3_merkle_tree::MerkleTreeMmcs;
 use p3_multilinear_util::point::Point;
-use p3_sumcheck::layout::{Layout, SuffixProver, Table};
-use p3_sumcheck::{OpeningBatch, OpeningProtocol, PrescribedPointPcs, TableShape, TableSpec};
-use p3_symmetric::{PaddingFreeSponge, TruncatedPermutation};
-use p3_whir::fiat_shamir::domain_separator::DomainSeparator;
-use p3_whir::parameters::{
-    FoldingFactor, ProtocolParameters, SecurityAssumption, WhirConfig, WhirConfigError,
+use p3_sumcheck::layout::{Layout, SuffixProver};
+use p3_sumcheck::{OpeningProtocol, PrescribedPointPcs};
+use p3_whir::{
+    DomainSeparator, FoldingFactor, ProtocolParameters, SecurityAssumption, VerifierError,
+    WhirConfigError,
 };
-use p3_whir::pcs::prover::WhirProver;
-use p3_whir::pcs::verifier::errors::VerifierError;
 use thiserror::Error;
 
-pub type Val = Goldilocks;
+pub type Val = stack::Val;
 #[cfg(feature = "plonky3-whir-goldilocks-degree2-bench")]
 pub const CHALLENGE_EXTENSION_DEGREE: usize = 2;
 #[cfg(not(feature = "plonky3-whir-goldilocks-degree2-bench"))]
 pub const CHALLENGE_EXTENSION_DEGREE: usize = 5;
 pub type Challenge = BinomialExtensionField<Val, CHALLENGE_EXTENSION_DEGREE>;
 
-type Perm = Poseidon2Goldilocks<8>;
-type MerkleHash = PaddingFreeSponge<Perm, 8, 4, 4>;
-type MerkleCompress = TruncatedPermutation<Perm, 2, 4, 8>;
-type Challenger = DuplexChallenger<Val, Perm, 8, 4>;
-type PackedVal = <Val as Field>::Packing;
-type Mmcs = MerkleTreeMmcs<PackedVal, PackedVal, MerkleHash, MerkleCompress, 2, 4>;
-type Dft = Radix2DFTSmallBatch<Val>;
+type Challenger = stack::Challenger;
 type WhirLayout = SuffixProver<Val, Challenge>;
-type Pcs = WhirProver<Challenge, Val, Dft, Mmcs, Challenger, WhirLayout>;
+type Pcs = stack::Pcs<Challenge>;
 
 pub type Commitment = <Pcs as MultilinearPcs<Challenge, Challenger>>::Commitment;
 pub type Proof = <Pcs as MultilinearPcs<Challenge, Challenger>>::Proof;
@@ -74,20 +62,9 @@ pub enum Error {
     InvalidCapacity(usize),
     #[error("WHIR capacity must be at least {minimum}; got {capacity}")]
     CapacityTooSmall { capacity: usize, minimum: usize },
-    #[error("column {column} has length {actual}; expected {expected}")]
-    ColumnLength {
-        column: &'static str,
-        expected: usize,
-        actual: usize,
-    },
-    #[error("column {column}[{index}]={value} is not canonical in Goldilocks")]
-    NonCanonicalValue {
-        column: &'static str,
-        index: usize,
-        value: u64,
-    },
-    #[error("three-column materialization size overflowed usize")]
-    MaterializationSizeOverflow,
+    #[error(transparent)]
+    Columns(#[from] plonky3::ColumnError),
+
     #[error(transparent)]
     Config(#[from] WhirConfigError),
     #[error(transparent)]
@@ -203,26 +180,16 @@ impl Backend {
             soundness_type: SECURITY_ASSUMPTION,
             starting_log_inv_rate,
         };
-        let config = WhirConfig::<Challenge, Val, Challenger>::new(gate_vars + 2, params)?;
-        let dft = Dft::new(1 << config.max_fft_size());
-        let perm = default_goldilocks_poseidon2_8();
-        let mmcs = Mmcs::new(
-            MerkleHash::new(perm.clone()),
-            MerkleCompress::new(perm.clone()),
-            0,
-        );
-        let pcs = Pcs::new(config, dft, mmcs);
-        let protocol = OpeningProtocol::new(vec![TableSpec::new(
-            TableShape::new(gate_vars, NUM_COLUMNS),
-            vec![OpeningBatch::new(vec![0, 1, 2], Vec::new())],
-        )]);
+        let pcs = stack::pcs::<Challenge>(gate_vars + 2, params)?;
+        let protocol = plonky3::column_opening(gate_vars, NUM_COLUMNS);
+
         let mut domain_separator = DomainSeparator::new(Vec::new());
         pcs.add_domain_separator::<8>(&mut domain_separator);
         Ok(Self {
             pcs,
             protocol,
             domain_separator,
-            base_challenger: Challenger::new(perm),
+            base_challenger: stack::challenger(),
             capacity,
             gate_vars,
             folding,
@@ -263,31 +230,10 @@ impl Backend {
         y: &[u64],
         product: &[u64],
     ) -> Result<MaterializedWitness, Error> {
-        let flat_len = self
-            .capacity
-            .checked_mul(NUM_COLUMNS)
-            .ok_or(Error::MaterializationSizeOverflow)?;
-        let mut values = Vec::with_capacity(flat_len);
-        for (column, input) in [("X", x), ("Y", y), ("Product", product)] {
-            if input.len() != self.capacity {
-                return Err(Error::ColumnLength {
-                    column,
-                    expected: self.capacity,
-                    actual: input.len(),
-                });
-            }
-            for (index, &value) in input.iter().enumerate() {
-                if value >= <Val as PrimeField64>::ORDER_U64 {
-                    return Err(Error::NonCanonicalValue {
-                        column,
-                        index,
-                        value,
-                    });
-                }
-                values.push(Val::from_u64(value));
-            }
-        }
-        let table = Table::new(RowMajorMatrix::new(values, self.capacity));
+        let table = plonky3::column_table::<Val>(
+            self.capacity,
+            &[("X", x), ("Y", y), ("Product", product)],
+        )?;
         let witness = WhirLayout::new_witness(vec![table], self.folding);
         debug_assert_eq!(witness.table_shapes(), self.protocol.table_shapes());
         Ok(MaterializedWitness { witness })
@@ -324,7 +270,7 @@ impl Backend {
         let scale = committed
             .prover_challenger
             .sample_algebra_element::<Challenge>();
-        let opening_point = Point::new(gate_point_lsb_first.iter().rev().copied().collect());
+        let opening_point = plonky3::opening_point(&gate_point_lsb_first);
         let table = committed.prover_data.table(0);
         let opened = std::array::from_fn(|column| table.poly(column).eval_base(&opening_point));
         let mut claim = TerminalClaim {
@@ -427,21 +373,8 @@ pub fn proof_bytes(proof: &Proof) -> Result<usize, Error> {
 }
 
 fn terminal_lhs(claim: &TerminalClaim, opened: [Challenge; NUM_COLUMNS]) -> Challenge {
-    let [beta_0, beta_1] = claim.beta_lsb_first;
-    let one_minus_0 = Challenge::ONE - beta_0;
-    let one_minus_1 = Challenge::ONE - beta_1;
-    let chi_constant = one_minus_0 * one_minus_1;
-    let chi_x = beta_0 * one_minus_1;
-    let chi_y = one_minus_0 * beta_1;
-    let chi_product = beta_0 * beta_1;
-    let e_0 = claim
-        .gate_point_lsb_first
-        .iter()
-        .copied()
-        .map(|coordinate| Challenge::ONE - coordinate)
-        .product::<Challenge>();
     claim.scale
-        * (chi_constant * e_0 + chi_x * opened[0] + chi_y * opened[1] + chi_product * opened[2])
+        * plonky3::assignment_eval(&claim.gate_point_lsb_first, &claim.beta_lsb_first, &opened)
 }
 
 fn observe_terminal_domain(challenger: &mut Challenger, gate_vars: usize) {
@@ -480,4 +413,27 @@ fn replay_and_bind_claim(
     }
     observe_terminal_claim(challenger, claim);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn rejects_changed_claim_and_openings() {
+        use super::*;
+        let backend = Backend::setup(16).unwrap();
+        let witness = backend.materialize(&[2; 16], &[3; 16], &[6; 16]).unwrap();
+        let committed = backend.commit(witness, 42);
+        let ready = backend.derive_and_bind_claim(committed).unwrap();
+        let mut opened = backend.open(ready);
+        let _ = backend.verify(&opened).unwrap();
+        opened.claim.value += Challenge::ONE;
+        assert!(matches!(
+            backend.verify(&opened),
+            Err(Error::TerminalClaimMismatch)
+        ));
+        opened.claim.value -= Challenge::ONE;
+        opened.proof.evals[0] =
+            p3_sumcheck::OpeningBatch::new(vec![Challenge::ZERO; NUM_COLUMNS], Vec::new());
+        assert!(backend.verify(&opened).is_err());
+    }
 }

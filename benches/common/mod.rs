@@ -18,7 +18,29 @@
 
 #![allow(dead_code)] // each bench uses a subset of the harness
 
+#[cfg(feature = "plonky3-whir-bench")]
+pub mod plonky3;
+
 use std::time::Instant;
+
+/// Revision from the Cargo-generated lockfile embedded in this benchmark.
+/// Report the dependency used at build time, without requiring sibling clones.
+pub fn locked_git_revision(package: &str) -> &'static str {
+    let name = format!("name = \"{package}\"");
+    let entry = include_str!("../../Cargo.lock")
+        .split("[[package]]")
+        .find(|entry| entry.lines().any(|line| line == name))
+        .unwrap_or_else(|| panic!("missing locked dependency {package}"));
+    let source = entry
+        .lines()
+        .find_map(|line| line.strip_prefix("source = \"git+"))
+        .and_then(|source| source.strip_suffix('"'))
+        .unwrap_or_else(|| panic!("dependency {package} is not locked to Git"));
+    source
+        .rsplit_once('#')
+        .expect("locked Git source has a commit")
+        .1
+}
 
 // ---------------------------------------------------------------------
 // Environment: canonical knobs, deprecated aliases, strict unknown check

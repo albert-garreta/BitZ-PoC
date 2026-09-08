@@ -59,7 +59,6 @@ const VERIFY_SCOPE: &str = "pcs-compare:verification";
 const F2Z_IMPLEMENTATION: &str = "f2z";
 const WHIR_IMPLEMENTATION: &str = "plonky3-whir";
 const BINIUS_IMPLEMENTATION: &str = "binius64-basefold";
-const P3_REVISION: &str = "59be31386d5ab81b87dbceb0b83bf797f9eefaec";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Backend {
@@ -275,7 +274,7 @@ impl CampaignWriter {
                 "starting_log_inverse_rate": whir::STARTING_LOG_INV_RATE,
                 "max_pow_bits": whir::MAX_POW_BITS,
                 "hiding": false,
-                "plonky3_revision": P3_REVISION,
+                "plonky3_revision": common::locked_git_revision("p3-whir"),
             },
             "cells": cells,
         });
@@ -482,7 +481,7 @@ impl TraceWriter {
                 "campaign_id": self.campaign_id,
                 "root_boundary": "materialization through verified terminal opening; setup and logical witness generation excluded",
                 "timeline": "observed half-open intervals",
-                "plonky3_revision": P3_REVISION,
+                "plonky3_revision": common::locked_git_revision("p3-whir"),
             },
         });
         serde_json::to_writer(&mut self.output, &run)?;
@@ -1159,7 +1158,7 @@ fn whir_security(summary: &SecuritySummary) -> Value {
         "starting_log_inverse_rate": summary.starting_log_inverse_rate,
         "hiding": false,
         "hash": "Poseidon2BabyBear<16>",
-        "plonky3_revision": P3_REVISION,
+        "plonky3_revision": common::locked_git_revision("p3-whir"),
     })
 }
 

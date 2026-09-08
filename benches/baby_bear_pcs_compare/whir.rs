@@ -15,28 +15,22 @@
 
 #![allow(dead_code)] // Boundary accessors are also exercised by the adapter tests.
 
-use p3_baby_bear::{BabyBear, Poseidon2BabyBear, default_babybear_poseidon2_16};
-use p3_challenger::{CanObserve, DuplexChallenger, FieldChallenger};
+use crate::common::plonky3::{self, baby_bear as stack};
+use p3_challenger::{CanObserve, FieldChallenger};
 use p3_commit::MultilinearPcs;
-use p3_dft::Radix2DFTSmallBatch;
+use p3_field::PrimeCharacteristicRing;
 use p3_field::extension::BinomialExtensionField;
-use p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
-use p3_matrix::dense::RowMajorMatrix;
-use p3_merkle_tree::MerkleTreeMmcs;
 use p3_multilinear_util::point::Point;
-use p3_sumcheck::layout::{Layout, SuffixProver, Table};
-use p3_sumcheck::{OpeningBatch, OpeningProtocol, PrescribedPointPcs, TableShape, TableSpec};
-use p3_symmetric::{PaddingFreeSponge, TruncatedPermutation};
-use p3_whir::fiat_shamir::domain_separator::DomainSeparator;
-use p3_whir::parameters::{
-    FoldingFactor, ProtocolParameters, SecurityAssumption, WhirConfig, WhirConfigError,
+use p3_sumcheck::layout::{Layout, SuffixProver};
+use p3_sumcheck::{OpeningProtocol, PrescribedPointPcs};
+use p3_whir::{
+    DomainSeparator, FoldingFactor, ProtocolParameters, SecurityAssumption, VerifierError,
+    WhirConfigError,
 };
-use p3_whir::pcs::prover::WhirProver;
-use p3_whir::pcs::verifier::errors::VerifierError;
 use thiserror::Error;
 
 /// Base field used for the committed integer columns.
-pub type Val = BabyBear;
+pub type Val = stack::Val;
 /// Degree of the native BabyBear extension used for WHIR challenges.
 #[cfg(feature = "plonky3-whir-degree4-bench")]
 pub const CHALLENGE_EXTENSION_DEGREE: usize = 4;
@@ -45,15 +39,9 @@ pub const CHALLENGE_EXTENSION_DEGREE: usize = 5;
 /// Native WHIR challenge field (about 155 bits).
 pub type Challenge = BinomialExtensionField<Val, CHALLENGE_EXTENSION_DEGREE>;
 
-type Perm = Poseidon2BabyBear<16>;
-type MerkleHash = PaddingFreeSponge<Perm, 16, 8, 8>;
-type MerkleCompress = TruncatedPermutation<Perm, 2, 8, 16>;
-type Challenger = DuplexChallenger<Val, Perm, 16, 8>;
-type PackedVal = <Val as Field>::Packing;
-type Mmcs = MerkleTreeMmcs<PackedVal, PackedVal, MerkleHash, MerkleCompress, 2, 8>;
-type Dft = Radix2DFTSmallBatch<Val>;
+type Challenger = stack::Challenger;
 type WhirLayout = SuffixProver<Val, Challenge>;
-type Pcs = WhirProver<Challenge, Val, Dft, Mmcs, Challenger, WhirLayout>;
+type Pcs = stack::Pcs<Challenge>;
 
 /// Public Merkle commitment returned by WHIR.
 pub type Commitment = <Pcs as MultilinearPcs<Challenge, Challenger>>::Commitment;
@@ -94,23 +82,8 @@ pub enum WhirAdapterError {
     #[error("WHIR capacity must be at least {minimum}; got {capacity}")]
     CapacityTooSmall { capacity: usize, minimum: usize },
 
-    #[error("column {column} has length {actual}; expected {expected}")]
-    ColumnLength {
-        column: &'static str,
-        expected: usize,
-        actual: usize,
-    },
-
-    #[error("column {column}[{index}]={value} is not a canonical BabyBear value (< {modulus})")]
-    NonCanonicalValue {
-        column: &'static str,
-        index: usize,
-        value: u64,
-        modulus: u64,
-    },
-
-    #[error("four-column materialization size overflowed usize")]
-    MaterializationSizeOverflow,
+    #[error(transparent)]
+    Columns(#[from] plonky3::ColumnError),
 
     #[error(transparent)]
     Config(#[from] WhirConfigError),
@@ -323,21 +296,8 @@ impl WhirBackend {
             soundness_type: SECURITY_ASSUMPTION,
             starting_log_inv_rate,
         };
-        let config =
-            WhirConfig::<Challenge, Val, Challenger>::new(committed_num_variables, params)?;
-        let dft = Dft::new(1 << config.max_fft_size());
-
-        let perm = default_babybear_poseidon2_16();
-        let mmcs = Mmcs::new(
-            MerkleHash::new(perm.clone()),
-            MerkleCompress::new(perm.clone()),
-            0,
-        );
-        let pcs = Pcs::new(config, dft, mmcs);
-        let protocol = OpeningProtocol::new(vec![TableSpec::new(
-            TableShape::new(gate_vars, NUM_PRIVATE_COLUMNS),
-            vec![OpeningBatch::new(vec![0, 1, 2, 3], Vec::new())],
-        )]);
+        let pcs = stack::pcs::<Challenge>(committed_num_variables, params)?;
+        let protocol = plonky3::column_opening(gate_vars, NUM_PRIVATE_COLUMNS);
 
         let mut domain_separator = DomainSeparator::new(Vec::new());
         pcs.add_domain_separator::<8>(&mut domain_separator);
@@ -346,7 +306,7 @@ impl WhirBackend {
             pcs,
             protocol,
             domain_separator,
-            base_challenger: Challenger::new(perm),
+            base_challenger: stack::challenger(),
             capacity,
             gate_vars,
             folding,
@@ -424,37 +384,8 @@ impl WhirBackend {
         c: &[u64],
         k: &[u64],
     ) -> Result<MaterializedWitness, WhirAdapterError> {
-        let columns = [("A", a), ("B", b), ("C", c), ("K", k)];
-        let flat_len = self
-            .capacity
-            .checked_mul(NUM_PRIVATE_COLUMNS)
-            .ok_or(WhirAdapterError::MaterializationSizeOverflow)?;
-        let mut values = Vec::with_capacity(flat_len);
-
-        for (column, input) in columns {
-            if input.len() != self.capacity {
-                return Err(WhirAdapterError::ColumnLength {
-                    column,
-                    expected: self.capacity,
-                    actual: input.len(),
-                });
-            }
-            for (index, &value) in input.iter().enumerate() {
-                if value >= <Val as PrimeField64>::ORDER_U64 {
-                    return Err(WhirAdapterError::NonCanonicalValue {
-                        column,
-                        index,
-                        value,
-                        modulus: <Val as PrimeField64>::ORDER_U64,
-                    });
-                }
-                values.push(Val::from_u64(value));
-            }
-        }
-
-        // RowMajorMatrix has one full polynomial per row. Hence the backing
-        // order is A || B || C || K, not interleaved gate tuples.
-        let table = Table::new(RowMajorMatrix::new(values, self.capacity));
+        let table =
+            plonky3::column_table::<Val>(self.capacity, &[("A", a), ("B", b), ("C", c), ("K", k)])?;
         let witness = WhirLayout::new_witness(vec![table], self.folding);
         debug_assert_eq!(witness.table_shapes(), self.protocol.table_shapes());
         Ok(MaterializedWitness { witness })
@@ -620,33 +551,15 @@ pub fn proof_bytes(proof: &Proof) -> Result<usize, WhirAdapterError> {
 /// Converts a low-coordinate-first gate point into Plonky3's lexicographic,
 /// big-endian point convention.
 fn p3_opening_point(gate_point_lsb_first: &[Challenge]) -> Point<Challenge> {
-    Point::new(gate_point_lsb_first.iter().rev().copied().collect())
+    plonky3::opening_point(gate_point_lsb_first)
 }
 
 /// Computes the left side of the terminal claim from four authenticated column
 /// values. Block-selector order is little-endian:
 /// `000=e0, 001=A, 010=B, 011=C, 100=K`.
 fn terminal_lhs(claim: &TerminalClaim, opened: [Challenge; NUM_PRIVATE_COLUMNS]) -> Challenge {
-    let [beta_0, beta_1, beta_2] = claim.beta_lsb_first;
-    let one_minus_0 = Challenge::ONE - beta_0;
-    let one_minus_1 = Challenge::ONE - beta_1;
-    let one_minus_2 = Challenge::ONE - beta_2;
-
-    let chi_0 = one_minus_0 * one_minus_1 * one_minus_2;
-    let chi_a = beta_0 * one_minus_1 * one_minus_2;
-    let chi_b = one_minus_0 * beta_1 * one_minus_2;
-    let chi_c = beta_0 * beta_1 * one_minus_2;
-    let chi_k = one_minus_0 * one_minus_1 * beta_2;
-
-    // The MLE of e_0 at x is eq(0^g, x) = product_i (1 - x_i).
-    let e_0 = claim
-        .gate_point_lsb_first
-        .iter()
-        .copied()
-        .map(|coordinate| Challenge::ONE - coordinate)
-        .product::<Challenge>();
-    let private = chi_a * opened[0] + chi_b * opened[1] + chi_c * opened[2] + chi_k * opened[3];
-    claim.scale * (chi_0 * e_0 + private)
+    claim.scale
+        * plonky3::assignment_eval(&claim.gate_point_lsb_first, &claim.beta_lsb_first, &opened)
 }
 
 fn observe_terminal_domain(challenger: &mut Challenger, gate_vars: usize) {
@@ -704,6 +617,28 @@ fn replay_and_bind_terminal_claim(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_changed_claim_and_openings() {
+        use p3_sumcheck::OpeningBatch;
+        let backend = WhirBackend::setup(16).unwrap();
+        let witness = backend
+            .materialize(&[2; 16], &[3; 16], &[6; 16], &[0; 16])
+            .unwrap();
+        let committed = backend.commit(witness, 42);
+        let ready = backend.derive_and_bind_terminal_claim(committed).unwrap();
+        let mut opened = backend.open(ready);
+        backend.verify(&opened).unwrap();
+        opened.claim.value += Challenge::ONE;
+        assert!(matches!(
+            backend.verify(&opened),
+            Err(WhirAdapterError::TerminalClaimMismatch)
+        ));
+        opened.claim.value -= Challenge::ONE;
+        opened.proof.evals[0] =
+            OpeningBatch::new(vec![Challenge::ZERO; NUM_PRIVATE_COLUMNS], Vec::new());
+        assert!(backend.verify(&opened).is_err());
+    }
 
     fn challenge(value: u64) -> Challenge {
         Challenge::from_u64(value)
