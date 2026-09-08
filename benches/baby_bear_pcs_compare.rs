@@ -6,6 +6,7 @@
 //! and ends after verification of the prescribed terminal MLE claim.
 
 mod common;
+use common::mul_witness::baby_bear_digest as witness_digest;
 mod baby_bear_pcs_compare {
     pub mod whir;
 }
@@ -44,7 +45,7 @@ use p3_whir::parameters::WhirConfigError;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use serde_json::{Value, json};
 
-const DEFAULT_SEED: u64 = 0x4242_5043_5300_0064;
+const DEFAULT_SEED: u64 = common::mul_witness::BABY_BEAR_SEED;
 const DEFAULT_REPS: usize = 21;
 const MIN_EXPONENT: usize = 15;
 const MAX_EXPONENT: usize = 24;
@@ -944,22 +945,6 @@ fn ordered_backends(selected: &[Backend], exponent: usize) -> Vec<Backend> {
         .collect()
 }
 
-fn witness_digest(witness: &BabyBearMulWitness) -> String {
-    const CHUNK_VALUES: usize = 4096;
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b"f2z/baby-bear-pcs-compare/integer-witness/v1");
-    hasher.update(&(witness.assignment().len() as u64).to_le_bytes());
-    let mut bytes = Vec::with_capacity(CHUNK_VALUES * std::mem::size_of::<u64>());
-    for values in witness.assignment().chunks(CHUNK_VALUES) {
-        bytes.clear();
-        for value in values {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        hasher.update(&bytes);
-    }
-    hasher.finalize().to_hex().to_string()
-}
-
 fn mix_seed(mut value: u64) -> u64 {
     value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
     value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
@@ -1200,7 +1185,7 @@ fn run_f2z_series(
     drop((matrices, preflight_commitment));
     let setup_ms = common::elapsed_ms(setup_started);
     let security = f2z_security(exponent)?;
-    eprintln!("  F2Z setup: {setup_ms:.3} ms");
+    eprintln!("  F2Z backend_setup_ms={setup_ms:.3}");
 
     for trial in std::iter::once(Trial::Warmup).chain((0..reps).map(Trial::Sample)) {
         let seed = trial_seed(shape_seed, Backend::F2z, trial);
@@ -1277,11 +1262,11 @@ fn run_f2z_series(
             artifacts,
         };
         writer.write_run(&metadata, &intervals)?;
-        eprintln!(
-            "    {}: proof={} B, wire={} B",
-            trial.id_fragment(),
+        common::pcs_console::print_trial(
+            &trial.id_fragment(),
+            &intervals,
             proof_bytes,
-            artifacts.total_wire_bytes
+            artifacts.total_wire_bytes,
         );
         drop(proof);
     }
@@ -1338,7 +1323,7 @@ fn run_whir_series(
     }
     let setup_ms = common::elapsed_ms(setup_started);
     let security = whir_security(&summary);
-    eprintln!("  WHIR setup: {setup_ms:.3} ms");
+    eprintln!("  WHIR backend_setup_ms={setup_ms:.3}");
 
     for trial in std::iter::once(Trial::Warmup).chain((0..reps).map(Trial::Sample)) {
         let seed = trial_seed(shape_seed, Backend::Whir, trial);
@@ -1397,11 +1382,11 @@ fn run_whir_series(
             artifacts,
         };
         writer.write_run(&metadata, &intervals)?;
-        eprintln!(
-            "    {}: proof={} B, wire={} B",
-            trial.id_fragment(),
+        common::pcs_console::print_trial(
+            &trial.id_fragment(),
+            &intervals,
             proof_bytes,
-            artifacts.total_wire_bytes
+            artifacts.total_wire_bytes,
         );
     }
     Ok(CellOutcome::Measured {
@@ -1475,7 +1460,7 @@ fn run_binius_series(
     let setup_ms = common::elapsed_ms(setup_started);
     let security = binius_security(&backend);
     eprintln!(
-        "  Binius64 setup: {setup_ms:.3} ms (rate 1/{}, {} queries)",
+        "  Binius64 backend_setup_ms={setup_ms:.3} (rate 1/{}, {} queries)",
         1usize << backend.log_inv_rate(),
         backend.n_test_queries()
     );
@@ -1508,11 +1493,11 @@ fn run_binius_series(
             artifacts,
         };
         writer.write_run(&metadata, &intervals)?;
-        eprintln!(
-            "    {}: proof={} B, wire={} B",
-            trial.id_fragment(),
+        common::pcs_console::print_trial(
+            &trial.id_fragment(),
+            &intervals,
             output.proof_bytes,
-            artifacts.total_wire_bytes
+            artifacts.total_wire_bytes,
         );
     }
     Ok(CellOutcome::Measured {
@@ -1573,6 +1558,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
     }
 
+    common::pcs_console::print_timing_definitions();
     for &exponent in &exponents {
         for backend in [Backend::F2z, Backend::Whir, Backend::Binius] {
             if !selected.contains(&backend) {
@@ -1589,7 +1575,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         flock_core::scratch::clear();
         let multiplications = 1usize << exponent;
-        let shape_seed = root_seed ^ (exponent as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+        let shape_seed = common::mul_witness::shape_seed(root_seed, exponent);
         let mut rng = StdRng::seed_from_u64(shape_seed);
         let witness_started = Instant::now();
         let witness = BabyBearMulWitness::from_fn(multiplications, |_| {
@@ -1601,7 +1587,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let digest = witness_digest(&witness);
         eprintln!();
         eprintln!(
-            "2^{exponent} multiplications: witness {witness_ms:.3} ms, digest {}",
+            "2^{exponent} multiplications: shared_witness_generation_ms={witness_ms:.3}, digest {}",
             &digest[..16]
         );
 

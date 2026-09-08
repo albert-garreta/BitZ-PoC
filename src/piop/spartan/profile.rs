@@ -293,14 +293,16 @@ impl IopSecurityProfile for Lambda128 {
 /// The MultiSwap/Limber comparison target: Strategy 2 with the full-width
 /// fingerprint and the 10-bit Step-5.0 grind, matching the floors Limber's
 /// own implementation accepts (`LAMBDA_BOUND2 = 117`, fingerprint
-/// `~2^-114`). Pinned by the published comparison table.
+/// `~2^-114`), and a 114-bit Ligerito target (the MultiSwap opener is the
+/// validator-gated `udrg:3:4:114`, see `multiswap_lig_configs`). Pinned by
+/// the published comparison table.
 pub struct Limber114;
 
 impl IopSecurityProfile for Limber114 {
     const NAME: &'static str = "limber114";
     const LAMBDA: u32 = 114;
     const PRIME_POLICY: PrimePolicy = PrimePolicy::TwoFullWidthFingerprint;
-    const LIGERITO_TARGET_BITS: usize = 128;
+    const LIGERITO_TARGET_BITS: usize = 114;
     const FOREST_ROUND_GRINDING_BITS: u32 = derive_forest_grinding(114);
     const RING_SWITCH_GRINDING_BITS: u32 = derive_ring_switch_grinding(114);
 }
@@ -658,7 +660,7 @@ mod tests {
         assert_eq!(reduction.grinding_bits, 10);
         assert_eq!(params.forest_round_grinding_bits, 0);
         assert_eq!(params.ring_switch_grinding_bits, 0);
-        assert_eq!(params.ligerito_target_bits, 128);
+        assert_eq!(params.ligerito_target_bits, 114);
         // The former doc-comment floors: fingerprint 2^-114.0, reduction
         // 2^-104.2 + 10 = 2^-114.2.
         let fingerprint = params

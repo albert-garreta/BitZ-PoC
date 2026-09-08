@@ -78,9 +78,8 @@
 \contentsline {subsection}{\numberline {7.3}RSA accumulation and Poseidon hashing}{57}{subsection.7.3}%
 \contentsline {subsection}{\numberline {7.4}SHA-256 hashing followed by ECDSA signature verification}{58}{subsection.7.4}%
 \contentsline {subsection}{\numberline {7.5}Mod $2^{32}$ multiplication and SHA-256 hashing}{59}{subsection.7.5}%
-\contentsline {subsection}{\numberline {7.6}SHA-256 hashing}{59}{subsection.7.6}%
-\contentsline {section}{References}{60}{table.caption.64}%
-\contentsline {section}{\numberline {A}Deferred proofs}{62}{appendix.A}%
-\contentsline {subsection}{\numberline {A.1}Completeness and soundness of \cref {c:LinModFieldBin}}{62}{subsection.A.1}%
-\contentsline {subsection}{\numberline {A.2}Soundness of Out Of Domain Sampling (OOD) in \cref {c:core_iop}}{63}{subsection.A.2}%
-\contentsline {section}{\numberline {B}Ring switching via Galois orbits}{64}{appendix.B}%
+\contentsline {section}{References}{59}{subsection.7.5}%
+\contentsline {section}{\numberline {A}Deferred proofs}{61}{appendix.A}%
+\contentsline {subsection}{\numberline {A.1}Completeness and soundness of \cref {c:LinModFieldBin}}{61}{subsection.A.1}%
+\contentsline {subsection}{\numberline {A.2}Soundness of Out Of Domain Sampling (OOD) in \cref {c:core_iop}}{62}{subsection.A.2}%
+\contentsline {section}{\numberline {B}Ring switching via Galois orbits}{63}{appendix.B}%

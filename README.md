@@ -34,10 +34,23 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
 
 ### Integer multiplication
 
+*BitZ performance step-by-step*
+
 ```sh
 RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
     --mul-sweep 15-22 --threads 8 --reps 5 --profile custom:3:4 --cooldown 20
 ```
+
+*Comparison between different schemes*
+```sh
+RAYON_NUM_THREADS=8 \
+F2Z_BENCH_SHAPES="15 16 17 18 19 20" \
+F2Z_BENCH_REPS=5 \
+F2Z_MUL_COMPARE_WORKLOADS="u32" \
+F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir" \
+bash scripts/run_native_mul_compare.sh
+```
+
 
 ### MultiSwap (Limber's Table 1 workload: 4 exponentiations with 352-bit exponents modulo a 2048-bit RSA modulus + Poseidon-based hash-to-prime; the 6209-row integer Mod-R1CS from Limber's repo), λ=114
 
@@ -57,11 +70,13 @@ Same box (Apple M4, 4P+6E cores, 16 GB), `-C target-cpu=native`, medians of 5, 1
 
 | System (commit) | Prove 1 thr | Prove 8 thr | Verify 1 thr | Verify 8 thr | Proof |
 |---|---|---|---|---|---|
-| BitZ-SNARK (`ca52890`), 114 bits | 257 ms | 103 ms | 9.8 ms | 12.0 ms | 338 KB |
+| BitZ-SNARK (this checkout), 114 bits | 273 ms | 105 ms | 9.9 ms | 12.0 ms | 269 KB |
 | Zinc+ main-beta (`878fbd8`), 16-bit limbs + range checks, 114 bits (14 grinding bits) | 2052 ms | 563 ms | 18.2 ms | 12.7 ms | 1272 KB (847 KiB zstd) |
 | Zinc+ main-beta (`878fbd8`), fat-cell mock, no range checks, 100 bits | 831 ms | 236 ms | 58.0 ms | 24.6 ms | 1415 KB |
 | Limber-Brakedown (`b003684`) | 1175 ms | 559 ms | 44.2 ms | 43.3 ms | 5769 KB |
 | Limber-Hyrax (`b003684`) | 1206 ms | 390 ms | 37.1 ms | 20.5 ms | 175 KB |
+
+BitZ opener: Ligerito in the unique-decoding regime, rate 1/8, fold arity 4, fold grinding, validated at the 114-bit target (CLI profile `udrg:3:4:114`; set in `multiswap_lig_configs`).
 
 Limber — [albert-garreta/limber-impl](https://github.com/albert-garreta/limber-impl) `b003684` (fork of lucasxia01/limber-impl `853c6c4`; Rust ≥ 1.97). `MSCFG=paper` is required: the default `full` is a newer 2^14-row circuit, not the Table 1 statement. `RAYON_NUM_THREADS=8` for the 8-thread columns.
 
@@ -170,6 +185,108 @@ F2Z_BENCH_LAMBDA=100 F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C tar
 F2Z_BENCH_LAMBDA=100 F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
   cargo bench --bench baby_bear_mul --features unchecked
 ```
+
+### Native u32 / BabyBear end-to-end comparison
+
+BabyBear multiplication, exponents 15–24:
+
+```sh
+RUSTFLAGS="-Ctarget-cpu=native" \
+RAYON_NUM_THREADS=8 \
+F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24" \
+F2Z_BENCH_REPS=5 \
+F2Z_MUL_COMPARE_WORKLOADS="babybear" \
+F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir" \
+bash scripts/run_native_mul_compare.sh
+```
+
+u32 multiplication, exponents 15–25:
+
+```sh
+RUSTFLAGS="-Ctarget-cpu=native" \
+RAYON_NUM_THREADS=8 \
+F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24 25" \
+F2Z_BENCH_REPS=5 \
+F2Z_MUL_COMPARE_WORKLOADS="u32" \
+F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir" \
+bash scripts/run_native_mul_compare.sh
+```
+
+Runs F2Z, Binius64, and Plonky3-WHIR on the same canonical
+multiplication inputs, using each system's native full prover. Reports witness
+generation, commitment, PIOP, PCS opening, witness-to-proof time, and verification
+separately. Add `limber` to the backend list to include Limber-Hyrax. See
+[the measurement contract and backend selectors](docs/native-mul-compare.md).
+
+This sweep runs BabyBear at exponents 15–24 and u32 at 15–25. An exponent `n`
+means `2^n` multiplications: the ranges run from 32,768 through 16,777,216
+for BabyBear, and through 33,554,432 for u32. Run the commands one at a time.
+Each creates its own timestamped results directory under `PerfRuns/`.
+
+Start with five measured repetitions per workload/backend/size; use `F2Z_BENCH_REPS=21` for the final comparison. Each case
+also runs one warmup, excluded from measured-sample summaries. All cases run
+sequentially; finish other builds and benchmarks before starting either command.
+
+To independently verify that all four native witnesses recover the same
+canonical multiplication assignment:
+
+```sh
+F2Z_BENCH_SHAPES=10 F2Z_BENCH_REPS=5 \
+  cargo bench --bench mul_witness_compare --features bench-internals,native-mul-compare
+```
+
+### Shared-witness u32 / BabyBear PCS comparison
+
+BabyBear multiplication, exponents 15–24:
+
+```sh
+RUSTFLAGS="-Ctarget-cpu=native" \
+RAYON_NUM_THREADS=8 \
+F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24" \
+F2Z_BENCH_REPS=5 \
+F2Z_PCS_COMPARE_BACKENDS="f2z binius64-basefold plonky3-whir" \
+F2Z_PCS_COMPARE_TRACE_PATH="benchmark-results/$(date +%Y%m%d-%H%M%S)-babybear-pcs.jsonl" \
+cargo bench --bench baby_bear_pcs_compare \
+  --features bench-internals,plonky3-whir-bench,binius64-bench
+```
+
+u32 multiplication, exponents 15–25:
+
+```sh
+RUSTFLAGS="-Ctarget-cpu=native" \
+RAYON_NUM_THREADS=8 \
+F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24 25" \
+F2Z_BENCH_REPS=5 \
+F2Z_PCS_COMPARE_BACKENDS="f2z binius64-basefold plonky3-whir" \
+F2Z_PCS_COMPARE_TRACE_PATH="benchmark-results/$(date +%Y%m%d-%H%M%S)-u32-pcs.jsonl" \
+cargo bench --bench u32_pcs_compare \
+  --features bench-internals,plonky3-whir-bench,binius64-bench
+```
+
+Run these commands one at a time. Each uses one shared canonical integer witness per size across
+all selected PCSs, encoded in each backend's own field and layout. BabyBear
+supports exponents 15–24; u32 supports 15–25. Use five measured repetitions for
+initial runs and 21 for the final comparison, plus the automatic warmup.
+The full multiplication PIOP is not run. Detailed traces go to files while the
+terminal retains progress and compact timing output.
+
+Their console output prints a timing legend followed by individual warmup and
+sample measurements in wall-clock milliseconds:
+
+| Console field | Measured work |
+|---|---|
+| `shared_witness_generation_ms` | Canonical integer witness generation once per size, before backend-specific conversion. |
+| `backend_setup_ms` | Backend preparation once per size, outside the measured trials. |
+| `commitment_generation_ms` | Commitment to the converted witness, including serialization and transcript work inside the commitment phase. |
+| `opening_proof_ms` | Terminal evaluation opening proof generation: F2Z opening, WHIR opening, or Binius ring-switch reduction plus BaseFold opening. |
+| `commit_and_open_ms` | Sum of the disjoint commitment and opening phases in that trial. |
+
+Commitment and opening timings exclude setup, witness generation/conversion,
+claim derivation, and verification. Their sum is not end-to-end multiplication
+proving time. The full multiplication PIOP is not run and is marked N/A.
+Sample lines are individual timings, not medians; warmups are excluded from
+measured-sample summaries. Set `F2Z_PCS_COMPARE_TRACE_PATH` to a fresh `.jsonl`
+path to retain the detailed timing trace without printing JSON to the terminal.
 
 ### SHA security-profile sweep: Lambda100 / Sha128ReferenceSchedule / Lambda128 (set `F2Z_BENCH_LAMBDA` for one of them):
 ```sh
