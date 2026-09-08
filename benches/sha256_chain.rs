@@ -40,10 +40,9 @@ use f2z::{
     piop::spartan::{
         IopSecurityProfile, PreparedSha256ChainBatch, PrimePolicy, SHA256_CHAIN_F_INSTANCE_BITS,
         SHA256_CHAIN_H_BAR_LIVE_BITS, SHA256_CONSTRAINTS, SHA256_MAX_LOG_COMPRESSIONS,
-        SHA256_MIN_LOG_COMPRESSIONS, Sha256ConstraintError,
-        commit_sha256_chain_witness_with_config, generate_sha256_chain_witnesses,
-        prepare_sha256_chain_batch_with_profile, prove_sha256_chain_with_config,
-        sha256_chain_configs, verify_sha256_chain_with_config,
+        Sha256ConstraintError, commit_sha256_chain_witness_with_config,
+        generate_sha256_chain_witnesses, prepare_sha256_chain_batch_with_profile,
+        prove_sha256_chain_with_config, sha256_chain_configs, verify_sha256_chain_with_config,
     },
     transcript::Blake3Transcript,
 };
@@ -99,7 +98,7 @@ fn shapes() -> Vec<usize> {
                 .parse::<usize>()
                 .expect("F2Z_BENCH_SHAPES contains integer exponents");
             assert!(
-                (SHA256_MIN_LOG_COMPRESSIONS..=SHA256_MAX_LOG_COMPRESSIONS).contains(&exponent),
+                (7..=SHA256_MAX_LOG_COMPRESSIONS).contains(&exponent),
                 "SHA-256 chain supports exponents 7 through 16"
             );
             exponent

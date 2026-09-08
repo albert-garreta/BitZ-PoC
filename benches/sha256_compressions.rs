@@ -9,7 +9,7 @@
 //! synthesis and public relation construction are excluded and reported
 //! separately. Every measured proof is verified.
 //!
-//! Defaults to the complete supported range `2^7, ..., 2^16` with three measured
+//! Defaults to `2^7, ..., 2^16` with three measured
 //! repetitions after one warm-up. Override with, for example:
 //!
 //! ```text
@@ -23,9 +23,10 @@
 //! Every compression occupies 20,456 adjacent assignment cells, all batches
 //! share one leading constant cell, and any unused cells are one trailing
 //! zero suffix.
-//! Power-of-two compression batches open the product-layout assignment
-//! directly. `F2Z_SHA_INNER_PREFIX_VARS=0..4` only configures the legacy
-//! inner-sumcheck fallback used by non-power-of-two assignment-row batches.
+//! Power-of-two compression batches of at least 128 instances open the
+//! product-layout assignment directly. Batches of 16, 32 and 64 use the
+//! packed inner sumcheck. `F2Z_SHA_INNER_PREFIX_VARS=0..4` configures that
+//! path and non-power-of-two assignment-row batches.
 //! `F2Z_SHA_OPENING_T=<t>` gives every compression-count shape an explicit
 //! F2Z split of `2^t` rows (the read-off vector then has `2^(vars - t)`
 //! columns; splits above the one-forest cap open with one forest per weight
@@ -772,8 +773,8 @@ fn shapes() -> Vec<BenchShape> {
             .into_iter()
             .map(|exponent| {
                 assert!(
-                    (21..=30).contains(&exponent),
-                    "SHA-256 MnumRows exponents must be in 21..=30"
+                    (18..=30).contains(&exponent),
+                    "SHA-256 MnumRows exponents must be in 18..=30"
                 );
                 BenchShape::AssignmentRows(exponent)
             })
@@ -794,7 +795,7 @@ fn shapes() -> Vec<BenchShape> {
                 .expect("F2Z_BENCH_SHAPES contains integer exponents");
             assert!(
                 (SHA256_MIN_LOG_COMPRESSIONS..=SHA256_MAX_LOG_COMPRESSIONS).contains(&exponent),
-                "SHA-256 runtime-prime protocol supports exponents 7 through 16"
+                "SHA-256 runtime-prime protocol supports exponents 4 through 16"
             );
             BenchShape::Compressions(exponent)
         })

@@ -2728,7 +2728,9 @@ mod tests {
 
     #[test]
     fn ligerito_profiles_cover_every_supported_sha_batch() {
-        for log_compressions in 7..=16 {
+        for log_compressions in super::super::prime::SHA256_MIN_LOG_COMPRESSIONS
+            ..=super::super::prime::SHA256_MAX_LOG_COMPRESSIONS
+        {
             let prepared = prepare_sha256_compression_batch(log_compressions).unwrap();
             let (pc, vc) = sha256_compression_configs(&prepared).unwrap();
             assert_eq!(pc.merkle_hash, flock_core::merkle::HashKind::Blake3);
@@ -2755,6 +2757,55 @@ mod tests {
         sha256_compression_configs(&by_rows).unwrap();
         Sha256PrimeProfile::from_security(by_rows.security(), by_rows.log_instance_capacity())
             .unwrap();
+    }
+
+    #[test]
+    fn small_batches_roundtrip_and_bind_public_outputs() {
+        for exponent in 4..=6 {
+            let prepared = prepare_sha256_compression_batch(exponent).unwrap();
+            assert!(prepared.product_assignment_params().is_none());
+            assert!(prepared.opening_params().t >= LOG_PACKING);
+            assert!(prepared.security().accounting.achieved_bits() >= 100.0);
+            let inputs = (0..prepared.instances()).map(input).collect::<Vec<_>>();
+            let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
+            let mut statements = public_statements(&inputs, witness.outputs());
+            let (pc, vc) = sha256_compression_configs(&prepared).unwrap();
+            let hint =
+                commit_sha256_compression_witness_with_config(&prepared, &witness, &pc).unwrap();
+            let proof = prove_sha256_compressions_with_config(
+                &mut Blake3Transcript::new(),
+                &prepared,
+                &statements,
+                &witness,
+                &hint,
+                &pc,
+            )
+            .unwrap();
+            assert_eq!(proof.f2z().mfs.len(), 1);
+            verify_sha256_compressions_with_config(
+                &mut Blake3Transcript::new(),
+                &prepared,
+                &statements,
+                &hint.commitment,
+                &proof,
+                &vc,
+            )
+            .unwrap();
+
+            statements.last_mut().unwrap().claimed_output[7] ^= 1 << 31;
+            assert!(
+                verify_sha256_compressions_with_config(
+                    &mut Blake3Transcript::new(),
+                    &prepared,
+                    &statements,
+                    &hint.commitment,
+                    &proof,
+                    &vc,
+                )
+                .is_err(),
+                "the final output bit must be bound at 2^{exponent} compressions"
+            );
+        }
     }
 
     #[test]

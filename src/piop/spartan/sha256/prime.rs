@@ -20,8 +20,8 @@ use super::super::SpartanF2zField;
 
 const PRIME_SAMPLING_DOMAIN: &[u8] = b"f2z/spartan-sha256/runtime-prime/v1";
 
-/// Smallest supported batch: `2^7` independent compressions.
-pub const SHA256_MIN_LOG_COMPRESSIONS: usize = 7;
+/// Smallest supported batch: `2^4` independent compressions.
+pub const SHA256_MIN_LOG_COMPRESSIONS: usize = 4;
 /// Largest supported batch: `2^16` independent compressions.
 pub const SHA256_MAX_LOG_COMPRESSIONS: usize = 16;
 /// Width of the fixed commitment/exponent field.
@@ -203,7 +203,7 @@ fn validate_instance_capacity_exponent(
 pub enum Sha256PrimeError {
     /// Production supports exactly the configured SHA-256 batch window.
     #[error(
-        "SHA-256 runtime-prime profile requires log-instance-capacity in [7, 16], got {actual}"
+        "SHA-256 runtime-prime profile requires log-instance-capacity in [4, 16], got {actual}"
     )]
     UnsupportedInstanceCapacityExponent { actual: usize },
     /// The security profile is not a single-prime configuration.
@@ -271,8 +271,8 @@ mod tests {
     #[test]
     fn rejects_instance_capacities_outside_the_runtime_prime_profile() {
         assert!(matches!(
-            reference_profile(6),
-            Err(Sha256PrimeError::UnsupportedInstanceCapacityExponent { actual: 6 })
+            reference_profile(3),
+            Err(Sha256PrimeError::UnsupportedInstanceCapacityExponent { actual: 3 })
         ));
         assert!(matches!(
             reference_profile(17),

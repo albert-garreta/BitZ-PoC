@@ -93,7 +93,7 @@ pub enum Sha256ConstraintError {
     /// The outer instance capacity is outside the runtime-prime protocol's
     /// supported production window.
     #[error(
-        "SHA-256 runtime-prime protocol requires log-instance-capacity in [7, 16], got {actual}"
+        "SHA-256 runtime-prime protocol requires log-instance-capacity in [4, 16], got {actual}"
     )]
     UnsupportedInstanceCapacityExponent { actual: usize },
 
@@ -149,11 +149,11 @@ pub enum Sha256ConstraintError {
 /// How the synthesized SHA assignment is laid out for the F2Z opening.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Sha256OpeningLayout {
-    /// The production choice. Power-of-two batches open the
+    /// The production choice. Power-of-two batches of at least 128 open the
     /// product-structured residual directly (rows = instances with
     /// `t = min(k, 13)`, columns = the local cells, no inner sumcheck);
-    /// other batch sizes run the inner sumcheck over a balanced split capped
-    /// at one forest.
+    /// smaller and non-power-of-two batches run the inner sumcheck over a
+    /// balanced split capped at one forest.
     Default,
     /// Run the inner sumcheck and split the flat assignment domain as
     /// `2^row_vars` F2Z rows × `2^(vars - row_vars)` columns. Splits above
@@ -415,6 +415,8 @@ static INTEGER_LOCAL_RELATION: OnceLock<IntegerLocalRelation> = OnceLock::new();
 /// `Lambda128` or the historical `Sha128ReferenceSchedule`.
 /// Supported exponents are [`SHA256_MIN_LOG_COMPRESSIONS`] through
 /// [`SHA256_MAX_LOG_COMPRESSIONS`], inclusive.
+/// Batches smaller than `2^7` use the packed inner sumcheck because the
+/// local-major product opening requires at least 128 instance rows.
 ///
 /// No runtime modulus is consulted here. The proof flow commits to the Boolean
 /// source rows before deriving `q` and internally projecting this relation.
@@ -444,6 +446,14 @@ pub fn prepare_sha256_compression_batch_with_profile_and_layout<P: IopSecurityPr
 ) -> Result<PreparedSha256CompressionBatch, Sha256ConstraintError> {
     let instances = validate_batch_exponent(log_compressions)?;
     validate_instance_capacity(instances)?;
+    let layout = if layout == Sha256OpeningLayout::Default && log_compressions < LOG_PACKING {
+        let assignment_vars = packed_domain_vars(instances, SHA256_H_INSTANCE_BITS)?;
+        Sha256OpeningLayout::InnerSumcheck {
+            row_vars: single_forest_binary_params(assignment_vars).t,
+        }
+    } else {
+        layout
+    };
     let prepared =
         prepare_sha256_compression_instances_with_profile_and_layout::<P>(instances, layout)?;
     validate_prepared_protocol(&prepared)?;
@@ -1169,7 +1179,7 @@ mod tests {
 
     #[test]
     fn public_preparation_rejects_unsupported_instance_capacities() {
-        for exponent in [6, 17] {
+        for exponent in [3, 17] {
             assert!(matches!(
                 prepare_sha256_compression_batch(exponent),
                 Err(Sha256ConstraintError::UnsupportedInstanceCapacityExponent {
@@ -1179,8 +1189,8 @@ mod tests {
         }
 
         assert!(matches!(
-            prepare_sha256_compression_batch_for_assignment_rows(20),
-            Err(Sha256ConstraintError::UnsupportedInstanceCapacityExponent { actual: 6 })
+            prepare_sha256_compression_batch_for_assignment_rows(17),
+            Err(Sha256ConstraintError::UnsupportedInstanceCapacityExponent { actual: 3 })
         ));
         assert!(matches!(
             prepare_sha256_compression_batch_for_assignment_rows(31),

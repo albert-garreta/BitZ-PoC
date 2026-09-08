@@ -723,7 +723,7 @@ mod tests {
 
     #[test]
     fn lambda100_zeroes_every_grind_on_the_sha_shape() {
-        for t in 7..=16u32 {
+        for t in 4..=16u32 {
             let params = Lambda100::instantiate(&sha_facts(t)).unwrap();
             assert_eq!(params.initial_grinding_bits, 0);
             assert_eq!(params.piop_round_grinding_bits, 0);
