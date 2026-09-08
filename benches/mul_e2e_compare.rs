@@ -255,10 +255,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &["f2z", "binius64", "plonky3-whir", "limber"],
     );
     let shapes = common::shapes(None).unwrap_or_else(|| vec!["15".into()]);
+    let max_exponent = if workloads.iter().any(|w| w == "babybear") {
+        24
+    } else {
+        25
+    };
     let mut exponents = vec![];
     for shape in shapes {
         let n: usize = shape.parse()?;
-        assert!((4..=24).contains(&n), "F2Z_BENCH_SHAPES must be in 4..=24");
+        assert!(
+            (4..=max_exponent).contains(&n),
+            "F2Z_BENCH_SHAPES must be in 4..={max_exponent} for the selected workloads"
+        );
         assert!(
             n >= 15 || !backends.iter().any(|b| b == "f2z"),
             "F2Z requires exponent >=15"
@@ -575,9 +583,14 @@ pub(crate) fn witness_main() -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .map(|s| s.parse().expect("integer exponent"))
         .collect();
+    let max_exponent = if workloads.iter().any(|w| w == "babybear") {
+        24
+    } else {
+        25
+    };
     assert!(
-        exponents.iter().all(|n| (4..=24).contains(n)),
-        "witness exponents must be 4..=24"
+        exponents.iter().all(|n| (4..=max_exponent).contains(n)),
+        "witness exponents must be 4..={max_exponent} for the selected workloads"
     );
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
