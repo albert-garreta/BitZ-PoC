@@ -41,7 +41,7 @@ use crate::{
     transcript::traits::{GenTranscribable, Transcript},
 };
 
-use crate::utils::cfg_iter_mut;
+use crate::utils::{cfg_chunks_mut, cfg_iter, cfg_iter_mut};
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -581,63 +581,87 @@ fn prepare_u32_bitified_chunks(
             Ok(chunks)
         }
         U32BitifiedRows::Structured { x, y, product } => {
-            let high_gate_count = checked_pow2(gate_high.len())?;
-            let row_count = checked_pow2(p.t)?;
-            let blocks = [
-                (U32_MUL_X_SLOT_START, U32_MUL_X_BITS, x),
-                (U32_MUL_Y_SLOT_START, U32_MUL_Y_BITS, y),
-                (U32_MUL_PRODUCT_SLOT_START, U32_MUL_PRODUCT_BITS, product),
-            ];
-            let mut scratch = vec![0_u128; high_gate_count];
-            let pow2_word = arith.monty_factor(arith.reduce(1_u128 << p.word_bits));
-
+            let weights = structured_u32_row_weights(&p, gate_high, [x, y, product], arith)?;
             if crate::pcs::mod_q_num_chunks(&p, q_bits) == 1 {
-                let mut weights = Vec::with_capacity(row_count);
-                for (slot_start, bit_count, block_factor) in blocks {
-                    fill_block_weight_ranges(
-                        &mut scratch,
-                        slot_start,
-                        bit_count,
-                        p.word_bits,
-                        block_factor,
-                        gate_high,
-                        arith,
-                        &pow2_word,
-                        |row_start, range| {
-                            if row_start != weights.len() {
-                                return Err(SpartanF2zError::InvalidF2zParameters);
-                            }
-                            weights.extend_from_slice(range);
-                            Ok(())
-                        },
-                    )?;
-                }
                 crate::pcs::ModQWeightChunks::from_single_chunk(&p, q_bits, weights)
                     .map_err(|_| SpartanF2zError::InvalidF2zParameters)
             } else {
                 let mut chunks = crate::pcs::ModQWeightChunks::zeroed(&p, q_bits)
                     .map_err(|_| SpartanF2zError::InvalidF2zParameters)?;
-                for (slot_start, bit_count, block_factor) in blocks {
-                    fill_block_weight_ranges(
-                        &mut scratch,
-                        slot_start,
-                        bit_count,
-                        p.word_bits,
-                        block_factor,
-                        gate_high,
-                        arith,
-                        &pow2_word,
-                        |row_start, range| {
-                            chunks
-                                .set_weight_range(row_start, range)
-                                .map_err(|_| SpartanF2zError::InvalidF2zParameters)
-                        },
-                    )?;
-                }
+                chunks
+                    .set_weight_range(0, &weights)
+                    .map_err(|_| SpartanF2zError::InvalidF2zParameters)?;
                 Ok(chunks)
             }
         }
     }
+}
+
+/// The dense canonical row weights of a structured u32 opening, in F2Z row
+/// order `(word_slot << h) | gate_high`:
+///
+/// `w[(word_slot << h) | g] = block_factor(word_slot) · 2^{W · (word_slot − block_word_start)} · eq(gate_high_point, g)`
+///
+/// for the `x`, `y` and product blocks (zero for word slots outside the three
+/// blocks, of which there are none: the 128 bit slots are exactly the blocks).
+/// The `2^{7 − log₂W}` per-word scalars are formed first, then every row is
+/// one fixed-factor Montgomery multiplication of the shared `eq` table, in
+/// one parallel pass over the whole `2^t` table (the previous per-word
+/// rescaling of a `2^h` scratch dispatched `2^{7 − log₂W}` tiny parallel
+/// jobs, which cost more than the arithmetic at 8 threads). Same field
+/// elements, same canonical residues.
+fn structured_u32_row_weights(
+    p: &crate::pcs::IntEvalParams,
+    gate_high: &[Fq],
+    [x, y, product]: [Fq; 3],
+    arith: &ProjArith,
+) -> Result<Vec<u128>, SpartanF2zError> {
+    let word_bits = p.word_bits;
+    if !matches!(word_bits, 1 | 8) {
+        return Err(SpartanF2zError::InvalidF2zParameters);
+    }
+    let high_gate_count = checked_pow2(gate_high.len())?;
+    let row_count = checked_pow2(p.t)?;
+    let word_slots = U32_MUL_BIT_SLOTS / word_bits;
+    if word_slots
+        .checked_mul(high_gate_count)
+        .is_none_or(|rows| rows != row_count)
+    {
+        return Err(SpartanF2zError::InvalidF2zParameters);
+    }
+
+    // Per-word scalars: the block factor times 2^{W·(word within the block)}.
+    let pow2_word = arith.reduce(1_u128 << word_bits);
+    let mut word_scalars = vec![0_u128; word_slots];
+    for (slot_start, bit_count, block_factor) in [
+        (U32_MUL_X_SLOT_START, U32_MUL_X_BITS, x),
+        (U32_MUL_Y_SLOT_START, U32_MUL_Y_BITS, y),
+        (U32_MUL_PRODUCT_SLOT_START, U32_MUL_PRODUCT_BITS, product),
+    ] {
+        if !slot_start.is_multiple_of(word_bits) || !bit_count.is_multiple_of(word_bits) {
+            return Err(SpartanF2zError::InvalidF2zParameters);
+        }
+        let mut scalar = arith.reduce(block_factor.0);
+        for word in slot_start / word_bits..(slot_start + bit_count) / word_bits {
+            let Some(slot) = word_scalars.get_mut(word) else {
+                return Err(SpartanF2zError::InvalidF2zParameters);
+            };
+            *slot = scalar;
+            scalar = arith.mul(scalar, pow2_word);
+        }
+    }
+
+    let eq_high = eq_le_table_fq_fast_with(gate_high, arith)?;
+    let mut weights = vec![0_u128; row_count];
+    cfg_chunks_mut!(weights, high_gate_count)
+        .zip(cfg_iter!(word_scalars))
+        .for_each(|(rows, &scalar)| {
+            let factor = arith.monty_factor(scalar);
+            for (row, equality) in rows.iter_mut().zip(&eq_high) {
+                *row = arith.mul_plain_by(equality.0, &factor);
+            }
+        });
+    Ok(weights)
 }
 
 /// Little-endian equality table with one fixed-factor Montgomery
@@ -678,98 +702,6 @@ fn eq_le_table_fq_fast_with(point: &[Fq], arith: &ProjArith) -> Result<Vec<Fq>, 
         half = active_len;
     }
     Ok(table)
-}
-
-/// Write `scale * eq(., point)` into a reusable canonical-u128 buffer. Seeding
-/// the recurrence with the block factor avoids first building an unscaled
-/// table and then multiplying all `2^h` entries once per block.
-fn scaled_eq_le_table_fq_into(
-    point: &[Fq],
-    scale: Fq,
-    table: &mut [u128],
-    arith: &ProjArith,
-) -> Result<(), SpartanF2zError> {
-    if table.len() != checked_pow2(point.len())? {
-        return Err(SpartanF2zError::InvalidF2zParameters);
-    }
-    table[0] = scale.0;
-    let q = arith.q();
-
-    let mut half = 1_usize;
-    for &coordinate in point {
-        let active_len = half
-            .checked_mul(2)
-            .ok_or(SpartanF2zError::InvalidF2zParameters)?;
-        let factor = arith.monty_factor(coordinate.0);
-        let (zero_children, one_children) = table[..active_len].split_at_mut(half);
-        let expand = |zero: &mut u128, one: &mut u128| {
-            let parent = *zero;
-            let one_child = arith.mul_plain_by(parent, &factor);
-            *zero = if one_child == 0 {
-                parent
-            } else {
-                arith.add(parent, q - one_child)
-            };
-            *one = one_child;
-        };
-        if half < 256 {
-            zero_children
-                .iter_mut()
-                .zip(one_children.iter_mut())
-                .for_each(|(zero, one)| expand(zero, one));
-        } else {
-            cfg_iter_mut!(zero_children, 256)
-                .zip(cfg_iter_mut!(one_children, 256))
-                .for_each(|(zero, one)| expand(zero, one));
-        }
-        half = active_len;
-    }
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-fn fill_block_weight_ranges(
-    scratch: &mut [u128],
-    bit_slot_start: usize,
-    bit_count: usize,
-    word_bits: usize,
-    block_factor: Fq,
-    gate_high: &[Fq],
-    arith: &ProjArith,
-    pow2_word: &crypto_bigint::modular::FixedMontyForm<{ crypto_bigint::U128::LIMBS }>,
-    mut write_range: impl FnMut(usize, &[u128]) -> Result<(), SpartanF2zError>,
-) -> Result<(), SpartanF2zError> {
-    if !matches!(word_bits, 1 | 8) || bit_slot_start % word_bits != 0 || bit_count % word_bits != 0
-    {
-        return Err(SpartanF2zError::InvalidF2zParameters);
-    }
-    let word_slot_start = bit_slot_start / word_bits;
-    let word_count = bit_count / word_bits;
-    let high_gate_count = checked_pow2(gate_high.len())?;
-    if scratch.len() != high_gate_count {
-        return Err(SpartanF2zError::InvalidF2zParameters);
-    }
-
-    // Seed the equality recurrence with this block's factor, then sweep
-    // word-major contiguous row ranges. The old gate-major loop jumped between
-    // 32--64 distant blocks for every gate and defeated the cache.
-    scaled_eq_le_table_fq_into(gate_high, block_factor, scratch, arith)?;
-
-    for word in 0..word_count {
-        let word_slot = word_slot_start
-            .checked_add(word)
-            .ok_or(SpartanF2zError::InvalidF2zParameters)?;
-        let row_start = word_slot
-            .checked_mul(high_gate_count)
-            .ok_or(SpartanF2zError::InvalidF2zParameters)?;
-        write_range(row_start, scratch)?;
-
-        if word + 1 != word_count {
-            cfg_iter_mut!(scratch, 256)
-                .for_each(|weight| *weight = arith.mul_plain_by(*weight, pow2_word));
-        }
-    }
-    Ok(())
 }
 
 pub(crate) fn fill_slot_weights(
