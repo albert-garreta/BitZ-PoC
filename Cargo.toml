@@ -200,6 +200,21 @@ required-features = ["bench-internals", "native-sha256-compare"]
 # Exponents via F2Z_SHA_COMPARE_EXPONENTS (default 10..16), one warmup and
 # 21 measured verified samples by default.
 
+[[bench]]
+name = "mul_e2e_compare"
+harness = false
+required-features = ["bench-internals", "native-mul-compare"]
+
+[[bench]]
+name = "mul_witness_compare"
+harness = false
+required-features = ["bench-internals", "native-mul-compare"]
+
+[[test]]
+name = "native_mul_compare"
+path = "tests/native_mul_compare.rs"
+required-features = ["bench-internals", "native-mul-compare"]
+
 [features]
 default = ["parallel"]
 parallel = ["dep:rayon"]
@@ -232,6 +247,13 @@ plonky3-sha256-bench = [
     "dep:p3-multi-stark",
     "dep:p3-sha256-air",
     "dep:p3-util",
+]
+native-mul-compare = [
+    "plonky3-whir-bench",
+    "dep:p3-air",
+    "dep:p3-multi-stark",
+    "binius64-bench",
+    "dep:limber",
 ]
 native-sha256-compare = [
     "plonky3-sha256-bench",

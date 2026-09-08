@@ -6,6 +6,9 @@
 //! scope. Every backend uses its own native arithmetization and witness layout.
 
 mod common;
+#[path = "common/trace_capture.rs"]
+mod trace_capture;
+use trace_capture::{CaptureLayer, CapturedSpan, TraceCapture};
 #[path = "sha256_e2e_compare/integer_limber.rs"]
 mod integer_limber_backend;
 #[path = "sha256_e2e_compare/plonky3.rs"]
@@ -20,7 +23,6 @@ use std::{
     io::{BufWriter, Write},
     path::{Path, PathBuf},
     process::Command,
-    sync::{Arc, Mutex},
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -47,8 +49,6 @@ use f2z::{
     utils::prof::ProfileInterval,
 };
 use serde_json::{Value, json};
-use tracing::{Subscriber, field::Visit, span::Attributes};
-use tracing_subscriber::{Layer, layer::Context, prelude::*, registry::LookupSpan};
 
 const DEFAULT_ROOT_SEED: u64 = 0x5348_4132_3545_3245;
 const DEFAULT_EXPONENTS: &str = "10 11 12 13 14 15 16";
@@ -531,162 +531,6 @@ impl BiniusContext {
 
 fn pack_lanes(low: u32, high: u32) -> u64 {
     u64::from(low) | (u64::from(high) << 32)
-}
-
-#[derive(Clone, Debug)]
-struct CapturedSpan {
-    id: u64,
-    parent: Option<u64>,
-    name: String,
-    component: Option<String>,
-    start_ns: u64,
-    end_ns: u64,
-}
-
-#[derive(Default)]
-struct CaptureState {
-    active: bool,
-    epoch: Option<Instant>,
-    metadata: HashMap<u64, CapturedMetadata>,
-    starts: HashMap<u64, Vec<u64>>,
-    completed: Vec<CapturedSpan>,
-}
-
-#[derive(Clone, Debug)]
-struct CapturedMetadata {
-    parent: Option<u64>,
-    name: String,
-    component: Option<String>,
-}
-
-#[derive(Clone, Default)]
-struct CaptureLayer {
-    state: Arc<Mutex<CaptureState>>,
-}
-
-#[derive(Clone)]
-struct TraceCapture {
-    state: Arc<Mutex<CaptureState>>,
-}
-
-impl CaptureLayer {
-    fn install() -> TraceCapture {
-        let layer = Self::default();
-        let capture = TraceCapture {
-            state: Arc::clone(&layer.state),
-        };
-        tracing::subscriber::set_global_default(tracing_subscriber::registry().with(layer))
-            .expect("install Binius interval collector once");
-        capture
-    }
-}
-
-#[derive(Default)]
-struct FieldVisitor {
-    component: Option<String>,
-}
-
-impl Visit for FieldVisitor {
-    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-        if field.name() == "component" {
-            self.component = Some(format!("{value:?}").trim_matches('"').to_owned());
-        }
-    }
-
-    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
-        if field.name() == "component" {
-            self.component = Some(value.to_owned());
-        }
-    }
-}
-
-impl<S> Layer<S> for CaptureLayer
-where
-    S: Subscriber + for<'lookup> LookupSpan<'lookup>,
-{
-    fn on_new_span(&self, attrs: &Attributes<'_>, id: &tracing::span::Id, ctx: Context<'_, S>) {
-        let mut visitor = FieldVisitor::default();
-        attrs.record(&mut visitor);
-        let parent = attrs
-            .parent()
-            .map(|id| id.clone().into_u64())
-            .or_else(|| ctx.current_span().id().map(|id| id.clone().into_u64()));
-        let mut state = self.state.lock().expect("capture state lock");
-        if state.active {
-            state.metadata.insert(
-                id.clone().into_u64(),
-                CapturedMetadata {
-                    parent,
-                    name: attrs.metadata().name().to_owned(),
-                    component: visitor.component,
-                },
-            );
-        }
-    }
-
-    fn on_enter(&self, id: &tracing::span::Id, _ctx: Context<'_, S>) {
-        let mut state = self.state.lock().expect("capture state lock");
-        if !state.active {
-            return;
-        }
-        let Some(epoch) = state.epoch else {
-            return;
-        };
-        let start_ns = ns_since(epoch);
-        state
-            .starts
-            .entry(id.clone().into_u64())
-            .or_default()
-            .push(start_ns);
-    }
-
-    fn on_exit(&self, id: &tracing::span::Id, _ctx: Context<'_, S>) {
-        let mut state = self.state.lock().expect("capture state lock");
-        if !state.active {
-            return;
-        }
-        let raw_id = id.clone().into_u64();
-        let start_ns = state.starts.get_mut(&raw_id).and_then(Vec::pop);
-        let metadata = state.metadata.get(&raw_id).cloned();
-        if let (Some(start_ns), Some(metadata), Some(epoch)) = (start_ns, metadata, state.epoch) {
-            state.completed.push(CapturedSpan {
-                id: raw_id,
-                parent: metadata.parent,
-                name: metadata.name,
-                component: metadata.component,
-                start_ns,
-                end_ns: ns_since(epoch),
-            });
-        }
-    }
-}
-
-impl TraceCapture {
-    fn begin(&self) {
-        let mut state = self.state.lock().expect("capture state lock");
-        state.active = true;
-        state.epoch = Some(Instant::now());
-        state.metadata.clear();
-        state.starts.clear();
-        state.completed.clear();
-    }
-
-    fn now_ns(&self) -> u64 {
-        let state = self.state.lock().expect("capture state lock");
-        ns_since(state.epoch.expect("capture has begun"))
-    }
-
-    fn finish(&self) -> Vec<CapturedSpan> {
-        let mut state = self.state.lock().expect("capture state lock");
-        state.active = false;
-        let mut spans = std::mem::take(&mut state.completed);
-        spans.sort_by_key(|span| (span.start_ns, span.end_ns));
-        spans
-    }
-}
-
-fn ns_since(epoch: Instant) -> u64 {
-    u64::try_from(epoch.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
 
 fn f2z_semantic_spans(raw: &[ProfileInterval]) -> Vec<SemanticSpan> {
