@@ -36,10 +36,10 @@ use std::hint::black_box;
 use std::time::Instant;
 
 use f2z::piop::spartan::{
-    commit_baby_bear_mul_witness, prove_baby_bear_mul_paper, sample_baby_bear_operand_with,
-    verify_baby_bear_mul_paper, BabyBearMulWitness, BabyBearSpartanF2zError, IopSecurityProfile,
-    Lambda100, Lambda128, PreparedBabyBearMulRelation, PrimePolicy, SpartanReductionStrategy,
-    BABY_BEAR_MODULUS,
+    BABY_BEAR_MODULUS, BabyBearMulWitness, BabyBearSpartanF2zError, IopSecurityProfile, Lambda100,
+    Lambda128, PreparedBabyBearMulRelation, PrimePolicy, SpartanReductionStrategy,
+    commit_baby_bear_mul_paper_witness, prove_baby_bear_mul_paper, sample_baby_bear_operand_with,
+    verify_baby_bear_mul_paper,
 };
 use f2z::transcript::Blake3Transcript;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
@@ -138,7 +138,7 @@ fn bench_profile<P: IopSecurityProfile>(
 
     // Excluded warm-up; also the first end-to-end correctness check.
     let warm_hint =
-        commit_baby_bear_mul_witness(&layout, witness.f2z_bit_rows()).expect("commit");
+        commit_baby_bear_mul_paper_witness(&prepared, witness.f2z_bit_rows()).expect("commit");
     let mut warm_transcript = Blake3Transcript::new();
     let warm_proof =
         prove_baby_bear_mul_paper(&mut warm_transcript, &prepared, witness, &warm_hint, strategy)
@@ -157,7 +157,7 @@ fn bench_profile<P: IopSecurityProfile>(
         let prove_started = Instant::now();
         let commit_started = Instant::now();
         let hint =
-            commit_baby_bear_mul_witness(&layout, witness.f2z_bit_rows()).expect("commit");
+            commit_baby_bear_mul_paper_witness(&prepared, witness.f2z_bit_rows()).expect("commit");
         let commit_ms = common::elapsed_ms(commit_started);
         let mut prover_transcript = Blake3Transcript::new();
         let proof =

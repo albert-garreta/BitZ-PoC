@@ -34,9 +34,9 @@ use crate::{
         FlockCommitHint, FlockRsError, IntEvalRsLigModQProof, ModQOpeningKind,
         commit_rs_ligerito_rows, custom_johnson_config_bits,
         prove_mle_eval_mod_q_ligerito_with_weight_chunks,
-        validated_udr_lig_configs_for_target,
+        validated_udr_lig_configs_for_target, verify_mle_eval_mod_q_ligerito_with_weight_chunks,
     },
-    pcs::{FQ_MOD, Fq, ProjectCanonicalU128},
+    pcs::{FQ_BITS, FQ_MOD, Fq, ProjectCanonicalU128},
     poly::univariate::binary_gf128::BinaryFieldGF128,
     transcript::traits::{GenTranscribable, Transcript},
 };
@@ -133,6 +133,10 @@ pub enum SpartanF2zError {
 
     #[error("the commitment parameters do not match the derived F2Z configuration")]
     CommitmentConfigMismatch,
+
+    #[cfg(feature = "bench-internals")]
+    #[error("the commitment does not match the prepared terminal-opening statement")]
+    PreparedOpeningCommitmentMismatch,
 
     #[error("the terminal Spartan claim has the wrong point shape")]
     InvalidClaimPoint,
@@ -494,6 +498,24 @@ pub(crate) fn validate_commitment(
     Ok(())
 }
 
+#[cfg(feature = "bench-internals")]
+fn validate_u32_prepared_opening_commitment(
+    prepared: &PreparedU32TerminalF2zOpening,
+    commitment: &Commitment,
+) -> Result<(), SpartanF2zError> {
+    validate_commitment(&prepared.params, commitment, &prepared.ligerito_pc)?;
+    let binding = u32_mul_assignment_binding(
+        &prepared.layout,
+        commitment,
+        &prepared.security,
+        &prepared.ligerito_pc,
+    )?;
+    if binding != prepared.assignment_binding {
+        return Err(SpartanF2zError::PreparedOpeningCommitmentMismatch);
+    }
+    Ok(())
+}
+
 fn prepare_u32_bitified_claim(
     opening: &U32BitifiedClaim,
     q_bits: usize,
@@ -787,12 +809,33 @@ fn bitified_claim_digest(
     opening: &U32BitifiedClaim,
     modulus: u128,
 ) -> Result<[u8; 32], SpartanF2zError> {
+    bitified_claim_digest_from_relation(
+        matrices.field_modulus_encoding(),
+        matrices.digest(),
+        assignment_binding,
+        layout,
+        terminal_claim,
+        opening,
+        modulus,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn bitified_claim_digest_from_relation(
+    relation_modulus_encoding: &[u8],
+    relation_digest: &[u8; 32],
+    assignment_binding: &[u8; 32],
+    layout: &U32MulLayout,
+    terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
+    opening: &U32BitifiedClaim,
+    modulus: u128,
+) -> Result<[u8; 32], SpartanF2zError> {
     let mut hasher = Hasher::new();
     hasher.update(BITIFIED_CLAIM_DOMAIN);
     hasher.update(assignment_binding);
-    hash_usize(&mut hasher, matrices.field_modulus_encoding().len())?;
-    hasher.update(matrices.field_modulus_encoding());
-    hasher.update(matrices.digest());
+    hash_usize(&mut hasher, relation_modulus_encoding.len())?;
+    hasher.update(relation_modulus_encoding);
+    hasher.update(relation_digest);
     hasher.update(&modulus.to_le_bytes());
 
     hash_usize(&mut hasher, layout.multiplications())?;
@@ -976,6 +1019,21 @@ pub struct PreparedU32MulRelation {
     ligerito_vc: LigVerifierConfig,
 }
 
+/// Public, setup-once context for benchmarking only the terminal F2Z opening
+/// of a u32 multiplication assignment at the fixed comparison field.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub struct PreparedU32TerminalF2zOpening {
+    layout: U32MulLayout,
+    params: crate::pcs::IntEvalParams,
+    security: IopSecurityParams,
+    ligerito_pc: LigProverConfig,
+    ligerito_vc: LigVerifierConfig,
+    assignment_binding: [u8; 32],
+    relation_modulus_encoding: Box<[u8]>,
+    relation_digest: [u8; 32],
+}
+
 impl PreparedU32MulRelation {
     /// Prepares the relation at the default [`Lambda100`] profile.
     pub fn new(layout: U32MulLayout) -> Result<Self, SpartanF2zError> {
@@ -1037,6 +1095,148 @@ impl PreparedU32MulRelation {
     pub const fn security(&self) -> &IopSecurityParams {
         &self.security
     }
+}
+
+/// Prepares a fixed-q, PCS-only terminal-opening context. Relation projection,
+/// profile derivation, and statement binding are excluded from all trial
+/// timers; the returned context retains only their public digests and configs.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub fn prepare_u32_terminal_f2z_opening(
+    prepared: &PreparedU32MulRelation,
+    commitment: &Commitment,
+) -> Result<PreparedU32TerminalF2zOpening, SpartanF2zError> {
+    let config = spartan_f2z_field_config();
+    let matrices = PreparedConstraintMatrices::<SpartanF2zField, bool>::from_skeleton(
+        &prepared.skeleton,
+        &config,
+    )
+    .map_err(SpartanError::from)?;
+    let params = prepared.layout.f2z_params();
+    validate_commitment(&params, commitment, &prepared.ligerito_pc)?;
+    let assignment_binding = u32_mul_assignment_binding(
+        &prepared.layout,
+        commitment,
+        &prepared.security,
+        &prepared.ligerito_pc,
+    )?;
+    Ok(PreparedU32TerminalF2zOpening {
+        layout: prepared.layout,
+        params,
+        security: prepared.security.clone(),
+        ligerito_pc: prepared.ligerito_pc.clone(),
+        ligerito_vc: prepared.ligerito_vc.clone(),
+        assignment_binding,
+        relation_modulus_encoding: matrices.field_modulus_encoding().into(),
+        relation_digest: *matrices.digest(),
+    })
+}
+
+/// Commits already-materialized 32/32/64 compact bit rows with the exact
+/// configuration retained by the PCS-only context.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub fn commit_u32_terminal_f2z_witness(
+    prepared: &PreparedU32TerminalF2zOpening,
+    rows: Vec<Vec<u64>>,
+) -> Result<FlockCommitHint, SpartanF2zError> {
+    validate_bit_rows(&prepared.params, &rows)?;
+    let hint = commit_rs_ligerito_rows(&prepared.params, rows, &prepared.ligerito_pc);
+    validate_u32_prepared_opening_commitment(prepared, &hint.commitment)?;
+    Ok(hint)
+}
+
+/// Proves one already-derived terminal assignment-MLE claim, with all Spartan
+/// work deliberately outside the benchmark boundary.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub fn prove_u32_terminal_claim_f2z<T: Transcript + Send>(
+    transcript: &mut T,
+    prepared: &PreparedU32TerminalF2zOpening,
+    hint: &FlockCommitHint,
+    terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
+) -> Result<IntEvalRsLigModQProof, SpartanF2zError> {
+    validate_u32_prepared_opening_commitment(prepared, &hint.commitment)?;
+    validate_bit_rows(&prepared.params, hint.rows())?;
+    let arith = ProjArith::new(FQ_MOD);
+    let opening = bitify_u32_mul_spartan_claim(terminal_claim, &prepared.layout, FQ_MOD, &arith)?;
+    let bridge_digest = bitified_claim_digest_from_relation(
+        &prepared.relation_modulus_encoding,
+        &prepared.relation_digest,
+        &prepared.assignment_binding,
+        &prepared.layout,
+        terminal_claim,
+        &opening,
+        FQ_MOD,
+    )?;
+    let chunks = prepare_u32_bitified_chunks(&opening, FQ_BITS, &arith)?;
+    if chunks.len() != 1 {
+        return Err(SpartanF2zError::MultiChunkRuntimeWeights);
+    }
+    prove_mle_eval_mod_q_ligerito_with_weight_chunks(
+        transcript,
+        ModQOpeningKind::U32Mul,
+        hint,
+        &prepared.params,
+        &chunks,
+        &bridge_digest,
+        FQ_BITS,
+        f2z_generator(),
+        f2z_round_grinding_bits(&prepared.security),
+        &prepared.ligerito_pc,
+    )
+    .map_err(SpartanF2zError::F2z)
+}
+
+/// Verifies the PCS-only u32 terminal opening from public data alone.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub fn verify_u32_terminal_claim_f2z<T: Transcript + Send>(
+    transcript: &mut T,
+    prepared: &PreparedU32TerminalF2zOpening,
+    commitment: &Commitment,
+    terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
+    proof: &IntEvalRsLigModQProof,
+) -> Result<(), SpartanF2zError> {
+    validate_u32_prepared_opening_commitment(prepared, commitment)?;
+    let arith = ProjArith::new(FQ_MOD);
+    let opening = bitify_u32_mul_spartan_claim(terminal_claim, &prepared.layout, FQ_MOD, &arith)?;
+    let bridge_digest = bitified_claim_digest_from_relation(
+        &prepared.relation_modulus_encoding,
+        &prepared.relation_digest,
+        &prepared.assignment_binding,
+        &prepared.layout,
+        terminal_claim,
+        &opening,
+        FQ_MOD,
+    )?;
+    let prepared_claim = prepare_u32_bitified_claim(&opening, FQ_BITS, &arith)?;
+    if prepared_claim.chunks.len() != 1 {
+        return Err(SpartanF2zError::MultiChunkRuntimeWeights);
+    }
+    verify_mle_eval_mod_q_ligerito_with_weight_chunks(
+        transcript,
+        ModQOpeningKind::U32Mul,
+        commitment,
+        proof,
+        &prepared.params,
+        &prepared_claim.chunks,
+        &prepared_claim.col_weights,
+        &bridge_digest,
+        f2z_generator(),
+        prepared_claim.claimed,
+        FQ_BITS,
+        f2z_round_grinding_bits(&prepared.security),
+        &prepared.ligerito_vc,
+    )
+    .map_err(SpartanF2zError::F2z)
+}
+
+/// Canonical standalone F2Z opening payload bytes.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub fn u32_terminal_claim_f2z_proof_bytes(proof: &IntEvalRsLigModQProof) -> Vec<u8> {
+    proof.to_bytes()
 }
 
 /// A u32 multiplication proof over a transcript-selected prime.

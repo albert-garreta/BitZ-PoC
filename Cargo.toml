@@ -33,6 +33,53 @@ serde = { version = "1", features = ["derive"] }
 # workspace so fresh checkouts do not require a sibling repository.
 circuit = { path = "crates/circuit", default-features = false }
 
+# Optional Plonky3 stack used by the PCS and native SHA-256 comparisons.
+# Pin all P3 crates to one commit from the fork's f2z-benching branch.
+p3-air = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
+p3-baby-bear = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
+p3-challenger = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
+p3-commit = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
+p3-dft = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
+p3-field = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
+p3-goldilocks = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
+p3-matrix = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
+p3-merkle-tree = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
+p3-multi-stark = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
+p3-multilinear-util = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
+p3-sha256-air = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
+p3-sumcheck = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
+p3-symmetric = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
+p3-util = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
+p3-whir = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
+postcard = { version = "1.1.3", default-features = false, features = ["alloc"], optional = true }
+
+# Benchmark-only native Limber adapters. The normal F2Z dependency graph does
+# not include Bellpepper or either Limber PCS engine.
+bellpepper = { version = "0.4.1", optional = true }
+bellpepper-core = { version = "0.4.0", optional = true }
+ff = { version = "0.13.1", features = ["derive", "bits"], optional = true }
+limber = { git = "https://github.com/wu-s-john/limber-impl.git", rev = "861f10a6a4d705d92a9faf13a8f860d8ba057ca0", default-features = false, optional = true }
+
+# Optional Binius64 stack for the PCS and native SHA-256 comparisons.
+# Pin every crate to the same commit from the fork's f2z-benching branch.
+binius-compute = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
+binius-circuits = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
+binius-core = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
+binius-field = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
+binius-frontend = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
+binius-hash = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", features = ["rayon"], optional = true }
+binius-iop = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
+binius-iop-prover = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", features = ["rayon"], optional = true }
+binius-ip = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
+binius-ip-prover = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", features = ["rayon"], optional = true }
+binius-math = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", features = ["rayon"], optional = true }
+binius-prover = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
+binius-transcript = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
+binius-utils = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", features = ["rayon"], optional = true }
+binius-verifier = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
+tracing = { version = "0.1.38", optional = true }
+tracing-subscriber = { version = "0.3.18", optional = true }
+
 [dev-dependencies]
 serde_json = "1"
 
@@ -77,6 +124,16 @@ harness = false
 # Unified output schema (docs/bench-schema.md). Exponents via
 # F2Z_BENCH_SHAPES (alias F2Z_BABY_BEAR_MUL_EXPONENTS); reps via
 # F2Z_BENCH_REPS.
+
+[[bench]]
+name = "baby_bear_pcs_compare"
+harness = false
+required-features = ["bench-internals", "plonky3-whir-bench", "binius64-bench"]
+
+[[bench]]
+name = "u32_pcs_compare"
+harness = false
+required-features = ["bench-internals", "plonky3-whir-bench", "binius64-bench"]
 
 [[bench]]
 name = "u32_mul_inner_policy"
@@ -134,6 +191,15 @@ harness = false
 # schema (docs/bench-schema.md). Exponents via F2Z_BENCH_SHAPES; reps via
 # F2Z_BENCH_REPS; profile via F2Z_BENCH_LAMBDA.
 
+[[bench]]
+name = "sha256_e2e_compare"
+harness = false
+required-features = ["bench-internals", "native-sha256-compare"]
+# Claim-equivalent fixed-IV native SHA-256 comparison across F2Z, full
+# Plonky3 SHA AIR/WHIR, Binius64, Spartan/Hyrax, and integer-mod Limber.
+# Exponents via F2Z_SHA_COMPARE_EXPONENTS (default 10..16), one warmup and
+# 21 measured verified samples by default.
+
 [features]
 default = ["parallel"]
 parallel = ["dep:rayon"]
@@ -143,6 +209,65 @@ unchecked = []
 bench-peak-memory = []
 # Exposes narrowly scoped policy controls used by controlled benchmark binaries.
 bench-internals = []
+# Enables the Plonky3 BabyBear/Goldilocks WHIR stack for the controlled PCS
+# comparison without adding it to normal library or benchmark builds.
+plonky3-whir-bench = [
+    "dep:p3-baby-bear",
+    "dep:p3-challenger",
+    "dep:p3-commit",
+    "dep:p3-dft",
+    "dep:p3-field",
+    "dep:p3-goldilocks",
+    "dep:p3-matrix",
+    "dep:p3-merkle-tree",
+    "dep:p3-multilinear-util",
+    "dep:p3-sumcheck",
+    "dep:p3-symmetric",
+    "dep:p3-whir",
+    "dep:postcard",
+]
+plonky3-sha256-bench = [
+    "plonky3-whir-bench",
+    "dep:p3-air",
+    "dep:p3-multi-stark",
+    "dep:p3-sha256-air",
+    "dep:p3-util",
+]
+native-sha256-compare = [
+    "plonky3-sha256-bench",
+    "binius64-bench",
+    "dep:bellpepper",
+    "dep:bellpepper-core",
+    "dep:ff",
+    "dep:limber",
+]
+# Selects the audited degree-4/unique-decoding WHIR comparison profile.  The
+# default `plonky3-whir-bench` profile remains degree-5/Johnson-bound so normal
+# comparison invocations keep their existing configuration.
+plonky3-whir-degree4-bench = ["plonky3-whir-bench"]
+# Selects the degree-2 Goldilocks challenge field for the u32 WHIR campaign.
+# Without it the u32 adapter uses the degree-5 Goldilocks extension.
+plonky3-whir-goldilocks-degree2-bench = ["plonky3-whir-bench"]
+# Enables the Binius64 BaseFold + ring-switch benchmark adapter.
+binius64-bench = [
+    "dep:binius-compute",
+    "dep:binius-circuits",
+    "dep:binius-core",
+    "dep:binius-field",
+    "dep:binius-frontend",
+    "dep:binius-hash",
+    "dep:binius-iop",
+    "dep:binius-iop-prover",
+    "dep:binius-ip",
+    "dep:binius-ip-prover",
+    "dep:binius-math",
+    "dep:binius-prover",
+    "dep:binius-transcript",
+    "dep:binius-utils",
+    "dep:binius-verifier",
+    "dep:tracing",
+    "dep:tracing-subscriber",
+]
 
 # Match the upstream zinc-plus release profile — without fat LTO +
 # codegen-units=1 the vendored field kernels and the sumcheck driver lose
@@ -151,9 +276,17 @@ bench-internals = []
 lto = true
 codegen-units = 1
 
+# The root manifest owns patch resolution for benchmark-only Git
+# dependencies. Limber relies on this halo2curves revision for its mixed-add
+# API, so mirror its pin here.
+[patch.crates-io]
+halo2curves = { git = "https://github.com/privacy-ethereum/halo2curves.git", rev = "02c235f0bb52800c28d9c3370400b5435dbe2220" }
+
 # Release-equivalent benchmark codegen with profiler-readable DWARF. Keeping
 # symbols in the built-in bench profile lets xctrace resolve Rust hot paths.
 [profile.bench]
+lto = true
+codegen-units = 1
 debug = 2
 strip = false
 split-debuginfo = "unpacked"

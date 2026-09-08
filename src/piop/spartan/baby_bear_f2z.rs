@@ -31,7 +31,7 @@ use crate::{
     ligerito_flock::{
         FlockCommitHint, FlockRsError, IntEvalRsLigModQProof, ModQOpeningKind,
         commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito_with_weight_chunks, sha_lig_configs,
-        verify_mle_eval_mod_q_ligerito_with_weight_chunks,
+        validated_udr_lig_configs_for_target, verify_mle_eval_mod_q_ligerito_with_weight_chunks,
         verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime,
     },
     pcs::{FQ_BITS, FQ_MOD, Fq, ProjectCanonicalU128},
@@ -130,6 +130,24 @@ struct PreparedBabyBearBitifiedClaim {
     claimed: Fq,
 }
 
+/// Public fixed-q statement data retained by the terminal-claim benchmark.
+///
+/// This deliberately owns only the compact relation binding and PCS
+/// configuration. In particular it retains neither the prepared R1CS
+/// matrices nor the committed rows, so callers may release the former before
+/// timing and the verifier never receives prover-only commitment data.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub struct PreparedBabyBearTerminalF2zOpening {
+    layout: BabyBearMulLayout,
+    params: crate::pcs::IntEvalParams,
+    pc: LigProverConfig,
+    vc: LigVerifierConfig,
+    assignment_binding: [u8; 32],
+    relation_modulus_encoding: Box<[u8]>,
+    relation_digest: [u8; 32],
+}
+
 /// The combined BabyBear multiplication proof.
 ///
 /// There is deliberately no combined proof codec.  The two components retain
@@ -189,6 +207,10 @@ pub enum BabyBearSpartanF2zError {
     #[error("the commitment parameters do not match the derived F2Z configuration")]
     CommitmentConfigMismatch,
 
+    #[cfg(feature = "bench-internals")]
+    #[error("the commitment does not match the prepared terminal-opening statement")]
+    PreparedOpeningCommitmentMismatch,
+
     #[error("the F2Z proof has an invalid top-level shape")]
     InvalidF2zProofShape,
 
@@ -226,7 +248,9 @@ pub enum BabyBearSpartanF2zError {
     MultiChunkRuntimeWeights,
 }
 
-/// Commits prebuilt compact `31 + 31 + 31 + 31` BabyBear bit rows.
+/// Commits prebuilt compact `31 + 31 + 31 + 31` BabyBear bit rows for the
+/// legacy fixed-q path. For the runtime-prime paper path, use
+/// [`commit_baby_bear_mul_paper_witness`] to select the prepared profile.
 ///
 /// Accepting ownership lets benchmarks time bit packing separately and move
 /// the packed store into the commitment without retaining a duplicate.  Only
@@ -378,6 +402,118 @@ pub(crate) fn bitify_baby_bear_mul_spartan_claim_with(
     })
 }
 
+/// Prepares the public fixed-q context for a standalone terminal assignment
+/// opening benchmark.
+///
+/// Configuration derivation, relation validation, and commitment binding are
+/// intentionally outside [`prove_baby_bear_terminal_claim_f2z`] and
+/// [`verify_baby_bear_terminal_claim_f2z`]. The returned value copies only the
+/// relation digest and canonical modulus encoding, so `matrices` may be
+/// dropped immediately after this call.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub fn prepare_baby_bear_terminal_f2z_opening(
+    matrices: &PreparedConstraintMatrices<SpartanF2zField, BabyBearMulCoefficient>,
+    layout: &BabyBearMulLayout,
+    commitment: &Commitment,
+) -> Result<PreparedBabyBearTerminalF2zOpening, BabyBearSpartanF2zError> {
+    let (params, pc, vc, assignment_binding) =
+        prepare_fixed_q_opening(matrices, layout, commitment, None)?;
+    Ok(PreparedBabyBearTerminalF2zOpening {
+        layout: *layout,
+        params,
+        pc,
+        vc,
+        assignment_binding,
+        relation_modulus_encoding: matrices.field_modulus_encoding().into(),
+        relation_digest: *matrices.digest(),
+    })
+}
+
+/// Commits already-materialized compact rows using the configuration retained
+/// by a standalone terminal-opening context.
+///
+/// This keeps public configuration derivation in setup while leaving the
+/// timed commitment phase with only row validation and the actual PCS commit.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub fn commit_baby_bear_terminal_f2z_witness(
+    prepared: &PreparedBabyBearTerminalF2zOpening,
+    rows: Vec<Vec<u64>>,
+) -> Result<FlockCommitHint, BabyBearSpartanF2zError> {
+    validate_bit_rows(&prepared.params, &rows)?;
+    let hint = commit_rs_ligerito_rows(&prepared.params, rows, &prepared.pc);
+    validate_prepared_opening_commitment(prepared, &hint.commitment)?;
+    Ok(hint)
+}
+
+/// Opens one already-derived Spartan assignment-MLE claim with the existing
+/// fixed-q BabyBear F2Z protocol.
+///
+/// The caller can time this function alone to measure claim translation,
+/// transcript binding, weight preparation, and the opening proof without any
+/// Spartan work. `prepared` contains no matrices and `hint` is used only by
+/// this prover entry point.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub fn prove_baby_bear_terminal_claim_f2z<T: Transcript + Send>(
+    transcript: &mut T,
+    prepared: &PreparedBabyBearTerminalF2zOpening,
+    hint: &FlockCommitHint,
+    terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
+) -> Result<IntEvalRsLigModQProof, BabyBearSpartanF2zError> {
+    validate_prepared_opening_commitment(prepared, &hint.commitment)?;
+    validate_bit_rows(&prepared.params, hint.rows())?;
+    prove_baby_bear_terminal_claim_f2z_prepared(
+        transcript,
+        &prepared.relation_modulus_encoding,
+        &prepared.relation_digest,
+        &prepared.layout,
+        hint,
+        &prepared.params,
+        &prepared.pc,
+        &prepared.assignment_binding,
+        terminal_claim,
+    )
+}
+
+/// Verifies the same ready terminal claim against the public commitment.
+///
+/// Neither this function nor `prepared` has access to committed rows or other
+/// prover data.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub fn verify_baby_bear_terminal_claim_f2z<T: Transcript + Send>(
+    transcript: &mut T,
+    prepared: &PreparedBabyBearTerminalF2zOpening,
+    commitment: &Commitment,
+    terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
+    proof: &IntEvalRsLigModQProof,
+) -> Result<(), BabyBearSpartanF2zError> {
+    validate_prepared_opening_commitment(prepared, commitment)?;
+    validate_f2z_proof_shape(&prepared.params, proof)?;
+    verify_baby_bear_terminal_claim_f2z_prepared(
+        transcript,
+        &prepared.relation_modulus_encoding,
+        &prepared.relation_digest,
+        &prepared.layout,
+        commitment,
+        proof,
+        &prepared.params,
+        &prepared.vc,
+        &prepared.assignment_binding,
+        terminal_claim,
+    )
+}
+
+/// Serializes exactly the standalone F2Z opening payload with its canonical
+/// proof codec; no Spartan or benchmark framing bytes are included.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub fn baby_bear_terminal_claim_f2z_proof_bytes(proof: &IntEvalRsLigModQProof) -> Vec<u8> {
+    proof.to_bytes()
+}
+
 /// Proves the BabyBear integer R1CS relation and opens the resulting Spartan
 /// assignment claim against the compact bit commitment.
 ///
@@ -507,16 +643,37 @@ fn prepare_combined_prover(
     layout: &BabyBearMulLayout,
     hint: &FlockCommitHint,
 ) -> Result<(crate::pcs::IntEvalParams, LigProverConfig, [u8; 32]), BabyBearSpartanF2zError> {
+    let (params, pc, _vc, assignment_binding) =
+        prepare_fixed_q_opening(matrices, layout, &hint.commitment, Some(hint.rows()))?;
+    Ok((params, pc, assignment_binding))
+}
+
+fn prepare_fixed_q_opening(
+    matrices: &PreparedConstraintMatrices<SpartanF2zField, BabyBearMulCoefficient>,
+    layout: &BabyBearMulLayout,
+    commitment: &Commitment,
+    bit_rows: Option<&[Vec<u64>]>,
+) -> Result<
+    (
+        crate::pcs::IntEvalParams,
+        LigProverConfig,
+        LigVerifierConfig,
+        [u8; 32],
+    ),
+    BabyBearSpartanF2zError,
+> {
     validate_relation(matrices)?;
     validate_relation_layout(matrices, layout)?;
     validate_layout_geometry(layout)?;
     let params = layout.f2z_params();
     let (pc, vc) = configs_for_layout(layout)?;
     validate_config_pair(&params, &pc, &vc)?;
-    validate_bit_rows(&params, hint.rows())?;
-    validate_commitment(&params, &hint.commitment, &pc)?;
-    let assignment_binding = assignment_binding(layout, &hint.commitment)?;
-    Ok((params, pc, assignment_binding))
+    if let Some(rows) = bit_rows {
+        validate_bit_rows(&params, rows)?;
+    }
+    validate_commitment(&params, commitment, &pc)?;
+    let assignment_binding = assignment_binding(layout, commitment)?;
+    Ok((params, pc, vc, assignment_binding))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -531,20 +688,49 @@ fn finish_combined_prover<T: Transcript + Send>(
     spartan: SpartanPiopProof<SpartanF2zField>,
     terminal_claim: ScaledMleEvaluationClaim<SpartanF2zField>,
 ) -> Result<BabyBearMulSpartanF2zProof, BabyBearSpartanF2zError> {
+    let f2z = prove_baby_bear_terminal_claim_f2z_prepared(
+        transcript,
+        matrices.field_modulus_encoding(),
+        matrices.digest(),
+        layout,
+        hint,
+        params,
+        pc,
+        assignment_binding,
+        &terminal_claim,
+    )?;
+
+    Ok(BabyBearMulSpartanF2zProof { spartan, f2z })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prove_baby_bear_terminal_claim_f2z_prepared<T: Transcript + Send>(
+    transcript: &mut T,
+    relation_modulus_encoding: &[u8],
+    relation_digest: &[u8; 32],
+    layout: &BabyBearMulLayout,
+    hint: &FlockCommitHint,
+    params: &crate::pcs::IntEvalParams,
+    pc: &LigProverConfig,
+    assignment_binding: &[u8; 32],
+    terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
+) -> Result<IntEvalRsLigModQProof, BabyBearSpartanF2zError> {
     let (opening, bridge_digest) = {
         let _scope = crate::utils::prof::scope("baby-bear-spartan-f2z:bitify_prover");
-        let opening = bitify_baby_bear_mul_spartan_claim(&terminal_claim, layout)?;
-        let bridge_digest = bitified_claim_digest(
-            matrices,
+        let opening = bitify_baby_bear_mul_spartan_claim(terminal_claim, layout)?;
+        let bridge_digest = bitified_claim_digest_from_relation(
+            relation_modulus_encoding,
+            relation_digest,
             assignment_binding,
             layout,
-            &terminal_claim,
+            terminal_claim,
             &opening,
+            FQ_MOD,
         )?;
         (opening, bridge_digest)
     };
 
-    let f2z = {
+    {
         let _scope = crate::utils::prof::scope("baby-bear-spartan-f2z:f2z_prove");
         let chunks = {
             let _scope = crate::utils::prof::scope("baby-bear-spartan-f2z:f2z_prepare_prover");
@@ -562,10 +748,8 @@ fn finish_combined_prover<T: Transcript + Send>(
             0,
             pc,
         )
-        .map_err(BabyBearSpartanF2zError::F2z)?
-    };
-
-    Ok(BabyBearMulSpartanF2zProof { spartan, f2z })
+        .map_err(BabyBearSpartanF2zError::F2z)
+    }
 }
 
 /// Verifies Spartan and F2Z on one transcript.
@@ -600,15 +784,44 @@ pub fn verify_baby_bear_mul_spartan_and_f2z<T: Transcript + Send>(
         verify_spartan_proof(transcript, matrices, &assignment_binding, &proof.spartan)?
     };
 
+    verify_baby_bear_terminal_claim_f2z_prepared(
+        transcript,
+        matrices.field_modulus_encoding(),
+        matrices.digest(),
+        layout,
+        commitment,
+        &proof.f2z,
+        &params,
+        &vc,
+        &assignment_binding,
+        &terminal_claim,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn verify_baby_bear_terminal_claim_f2z_prepared<T: Transcript + Send>(
+    transcript: &mut T,
+    relation_modulus_encoding: &[u8],
+    relation_digest: &[u8; 32],
+    layout: &BabyBearMulLayout,
+    commitment: &Commitment,
+    proof: &IntEvalRsLigModQProof,
+    params: &crate::pcs::IntEvalParams,
+    vc: &LigVerifierConfig,
+    assignment_binding: &[u8; 32],
+    terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
+) -> Result<(), BabyBearSpartanF2zError> {
     let (opening, bridge_digest) = {
         let _scope = crate::utils::prof::scope("baby-bear-spartan-f2z:bitify_verifier");
-        let opening = bitify_baby_bear_mul_spartan_claim(&terminal_claim, layout)?;
-        let bridge_digest = bitified_claim_digest(
-            matrices,
-            &assignment_binding,
+        let opening = bitify_baby_bear_mul_spartan_claim(terminal_claim, layout)?;
+        let bridge_digest = bitified_claim_digest_from_relation(
+            relation_modulus_encoding,
+            relation_digest,
+            assignment_binding,
             layout,
-            &terminal_claim,
+            terminal_claim,
             &opening,
+            FQ_MOD,
         )?;
         (opening, bridge_digest)
     };
@@ -623,8 +836,8 @@ pub fn verify_baby_bear_mul_spartan_and_f2z<T: Transcript + Send>(
             transcript,
             ModQOpeningKind::BabyBearMul,
             commitment,
-            &proof.f2z,
-            &params,
+            proof,
+            params,
             &prepared.chunks,
             &prepared.col_weights,
             &bridge_digest,
@@ -632,7 +845,7 @@ pub fn verify_baby_bear_mul_spartan_and_f2z<T: Transcript + Send>(
             prepared.claimed,
             FQ_BITS,
             0,
-            &vc,
+            vc,
         )
     };
     result.map_err(BabyBearSpartanF2zError::F2z)
@@ -780,6 +993,18 @@ fn validate_commitment(
         || commitment_params.merkle_hash != pc.merkle_hash
     {
         return Err(BabyBearSpartanF2zError::CommitmentConfigMismatch);
+    }
+    Ok(())
+}
+
+#[cfg(feature = "bench-internals")]
+fn validate_prepared_opening_commitment(
+    prepared: &PreparedBabyBearTerminalF2zOpening,
+    commitment: &Commitment,
+) -> Result<(), BabyBearSpartanF2zError> {
+    validate_commitment(&prepared.params, commitment, &prepared.pc)?;
+    if assignment_binding(&prepared.layout, commitment)? != prepared.assignment_binding {
+        return Err(BabyBearSpartanF2zError::PreparedOpeningCommitmentMismatch);
     }
     Ok(())
 }
@@ -1096,6 +1321,7 @@ fn assignment_binding(
     Ok(*hasher.finalize().as_bytes())
 }
 
+#[cfg(test)]
 fn bitified_claim_digest(
     matrices: &PreparedConstraintMatrices<SpartanF2zField, BabyBearMulCoefficient>,
     assignment_binding: &[u8; 32],
@@ -1121,12 +1347,33 @@ fn bitified_claim_digest_with(
     opening: &BabyBearBitifiedClaim,
     modulus: u128,
 ) -> Result<[u8; 32], BabyBearSpartanF2zError> {
+    bitified_claim_digest_from_relation(
+        matrices.field_modulus_encoding(),
+        matrices.digest(),
+        assignment_binding,
+        layout,
+        terminal_claim,
+        opening,
+        modulus,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn bitified_claim_digest_from_relation(
+    relation_modulus_encoding: &[u8],
+    relation_digest: &[u8; 32],
+    assignment_binding: &[u8; 32],
+    layout: &BabyBearMulLayout,
+    terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
+    opening: &BabyBearBitifiedClaim,
+    modulus: u128,
+) -> Result<[u8; 32], BabyBearSpartanF2zError> {
     let mut hasher = Hasher::new();
     hasher.update(BITIFIED_CLAIM_DOMAIN);
     hasher.update(assignment_binding);
-    hash_usize(&mut hasher, matrices.field_modulus_encoding().len())?;
-    hasher.update(matrices.field_modulus_encoding());
-    hasher.update(matrices.digest());
+    hash_usize(&mut hasher, relation_modulus_encoding.len())?;
+    hasher.update(relation_modulus_encoding);
+    hasher.update(relation_digest);
     hasher.update(&modulus.to_le_bytes());
     hasher.update(&BABY_BEAR_MODULUS.to_le_bytes());
 
@@ -1233,7 +1480,8 @@ fn checked_pow2(exponent: usize) -> Result<usize, BabyBearSpartanF2zError> {
 // =====================================================================
 
 const BABY_BEAR_PAPER_PRIME_SAMPLING_DOMAIN: &[u8] = b"f2z/spartan-baby-bear-mul/runtime-prime/v1";
-const BABY_BEAR_PAPER_BINDING_DOMAIN: &[u8] = b"f2z/spartan-baby-bear-f2z/assignment/v1-runtime";
+// Version two selects UDR Ligerito parameters from the bound profile target.
+const BABY_BEAR_PAPER_BINDING_DOMAIN: &[u8] = b"f2z/spartan-baby-bear-f2z/assignment/v2-runtime";
 
 enum BabyBearInitialGrinding {}
 
@@ -1277,11 +1525,14 @@ pub fn baby_bear_mul_instance_facts(
     }
 }
 
-/// Setup-once, prime-independent bundle for the BabyBear paper path.
+/// Setup-once, prime-independent bundle for the BabyBear paper path,
+/// including the profile-selected Ligerito prover/verifier configuration.
 pub struct PreparedBabyBearMulRelation {
     skeleton: super::ConstraintMatricesSkeleton<SpartanF2zField, BabyBearMulCoefficient>,
     layout: BabyBearMulLayout,
     security: IopSecurityParams,
+    ligerito_pc: LigProverConfig,
+    ligerito_vc: LigVerifierConfig,
 }
 
 impl PreparedBabyBearMulRelation {
@@ -1304,12 +1555,23 @@ impl PreparedBabyBearMulRelation {
         if security.projection_full_width || security.reduction.is_some() {
             return Err(BabyBearSpartanF2zError::UnsupportedPaperProfile);
         }
+        if layout.gate_vars() < MIN_PRODUCTION_GATE_VARS {
+            return Err(BabyBearSpartanF2zError::UnauditedF2zParameters);
+        }
+        let (ligerito_pc, ligerito_vc) = validated_udr_lig_configs_for_target(
+            packed_variables(&params)?,
+            security.ligerito_target_bits,
+        )
+        .map_err(BabyBearSpartanF2zError::LigeritoConfig)?;
+        validate_config_pair(&params, &ligerito_pc, &ligerito_vc)?;
         let raw = baby_bear_mul_constraint_matrices(&layout)?;
         let skeleton = super::ConstraintMatricesSkeleton::new(raw).map_err(SpartanError::from)?;
         Ok(Self {
             skeleton,
             layout,
             security,
+            ligerito_pc,
+            ligerito_vc,
         })
     }
 
@@ -1327,6 +1589,19 @@ impl PreparedBabyBearMulRelation {
     pub const fn security(&self) -> &IopSecurityParams {
         &self.security
     }
+}
+
+/// Commits compact BabyBear bit rows under the paper relation's selected
+/// security profile. Proving and verification use the same retained configs.
+pub fn commit_baby_bear_mul_paper_witness(
+    prepared: &PreparedBabyBearMulRelation,
+    rows: Vec<Vec<u64>>,
+) -> Result<FlockCommitHint, BabyBearSpartanF2zError> {
+    let params = prepared.params();
+    validate_bit_rows(&params, &rows)?;
+    let hint = commit_rs_ligerito_rows(&params, rows, &prepared.ligerito_pc);
+    validate_commitment(&params, &hint.commitment, &prepared.ligerito_pc)?;
+    Ok(hint)
 }
 
 /// The BabyBear paper proof: Spartan over the transcript-sampled prime plus
@@ -1459,7 +1734,9 @@ fn paper_assignment_binding(
     hasher.update(&security.projection_min.to_le_bytes());
     hasher.update(&security.projection_max.to_le_bytes());
     hash_usize(&mut hasher, security.lambda as usize)?;
+    hash_usize(&mut hasher, security.ligerito_target_bits)?;
     hash_usize(&mut hasher, security.initial_grinding_bits as usize)?;
+    hash_usize(&mut hasher, security.piop_round_grinding_bits as usize)?;
     hash_usize(&mut hasher, security.terminal_grinding_bits as usize)?;
     hash_usize(&mut hasher, security.forest_round_grinding_bits as usize)?;
     hasher.update(&BABY_BEAR_MODULUS.to_le_bytes());
@@ -1500,10 +1777,11 @@ pub fn prove_baby_bear_mul_paper<T: Transcript + Send>(
         return Err(BabyBearSpartanF2zError::RelationWitnessLayoutMismatch);
     }
     let params = layout.f2z_params();
-    let (pc, vc) = configs_for_layout(layout)?;
-    validate_config_pair(&params, &pc, &vc)?;
+    let pc = &prepared.ligerito_pc;
+    let vc = &prepared.ligerito_vc;
+    validate_config_pair(&params, pc, vc)?;
     validate_bit_rows(&params, hint.rows())?;
-    validate_commitment(&params, &hint.commitment, &pc)?;
+    validate_commitment(&params, &hint.commitment, pc)?;
     let security = prepared.security();
 
     let binding = paper_assignment_binding(layout, &hint.commitment, security)?;
@@ -1616,7 +1894,7 @@ pub fn prove_baby_bear_mul_paper<T: Transcript + Send>(
             q_bits,
             f2z_generator(),
             security.forest_round_grinding_bits,
-            &pc,
+            pc,
         )
         .map_err(BabyBearSpartanF2zError::F2z)?
     };
@@ -1640,9 +1918,10 @@ pub fn verify_baby_bear_mul_paper<T: Transcript + Send>(
 ) -> Result<(), BabyBearSpartanF2zError> {
     let layout = prepared.layout();
     let params = layout.f2z_params();
-    let (pc, vc) = configs_for_layout(layout)?;
-    validate_config_pair(&params, &pc, &vc)?;
-    validate_commitment(&params, commitment, &pc)?;
+    let pc = &prepared.ligerito_pc;
+    let vc = &prepared.ligerito_vc;
+    validate_config_pair(&params, pc, vc)?;
+    validate_commitment(&params, commitment, pc)?;
     let security = prepared.security();
 
     let binding = paper_assignment_binding(layout, commitment, security)?;
@@ -1723,7 +2002,7 @@ pub fn verify_baby_bear_mul_paper<T: Transcript + Send>(
         q,
         q_bits,
         security.forest_round_grinding_bits,
-        &vc,
+        vc,
     )
     .map_err(BabyBearSpartanF2zError::F2z)
 }
@@ -1757,11 +2036,11 @@ mod tests {
         })
         .unwrap();
         let layout = *witness.layout();
-        let hint = commit_baby_bear_mul_witness(&layout, witness.f2z_bit_rows()).unwrap();
-
         // λ = 100: no grinding anywhere, one chunk by construction.
         let prepared = PreparedBabyBearMulRelation::new(layout).unwrap();
+        let hint = commit_baby_bear_mul_paper_witness(&prepared, witness.f2z_bit_rows()).unwrap();
         assert_eq!(prepared.security().lambda, 100);
+        assert_eq!(prepared.security().ligerito_target_bits, 100);
         assert_eq!(prepared.security().initial_grinding_bits, 0);
         let mut prover_transcript = crate::transcript::Blake3Transcript::new();
         let proof = prove_baby_bear_mul_paper(
@@ -1798,6 +2077,30 @@ mod tests {
         // λ = 128: initial + per-draw PIOP + forest boundaries all armed.
         let prepared128 =
             PreparedBabyBearMulRelation::new_with_profile::<Lambda128>(layout).unwrap();
+        assert_eq!(prepared128.security().ligerito_target_bits, 128);
+        assert_ne!(
+            (
+                &prepared.ligerito_pc.queries,
+                &prepared.ligerito_pc.fold_grinding_bits
+            ),
+            (
+                &prepared128.ligerito_pc.queries,
+                &prepared128.ligerito_pc.fold_grinding_bits
+            ),
+            "Ligerito query/grinding parameters must follow the profile target"
+        );
+        for prepared in [&prepared, &prepared128] {
+            assert!(
+                prepared
+                    .ligerito_pc
+                    .ood_samples
+                    .iter()
+                    .all(|&count| count == 0),
+                "the paper path must use UDR parameters, without Johnson OOD samples"
+            );
+        }
+        let hint128 =
+            commit_baby_bear_mul_paper_witness(&prepared128, witness.f2z_bit_rows()).unwrap();
         assert!(prepared128.security().initial_grinding_bits > 0);
         assert_eq!(prepared128.security().forest_round_grinding_bits, 2);
         let mut prover_transcript = crate::transcript::Blake3Transcript::new();
@@ -1805,7 +2108,7 @@ mod tests {
             &mut prover_transcript,
             &prepared128,
             &witness,
-            &hint,
+            &hint128,
             SpartanReductionStrategy::DelayedBarrett,
         )
         .unwrap();
@@ -1815,7 +2118,7 @@ mod tests {
         verify_baby_bear_mul_paper(
             &mut verifier_transcript,
             &prepared128,
-            &hint.commitment,
+            &hint128.commitment,
             &proof128,
         )
         .unwrap();
@@ -1828,7 +2131,7 @@ mod tests {
             verify_baby_bear_mul_paper(
                 &mut verifier_transcript,
                 &prepared128,
-                &hint.commitment,
+                &hint128.commitment,
                 &tampered
             )
             .is_err()
@@ -1838,7 +2141,7 @@ mod tests {
             verify_baby_bear_mul_paper(
                 &mut verifier_transcript,
                 &prepared,
-                &hint.commitment,
+                &hint128.commitment,
                 &proof128
             )
             .is_err()
@@ -2311,6 +2614,96 @@ mod tests {
             prove_and_verify(SpartanReductionStrategy::DelayedCryptoBigint),
             reference
         );
+    }
+
+    #[cfg(feature = "bench-internals")]
+    #[test]
+    #[ignore = "runs one production-sized standalone BabyBear F2Z opening"]
+    fn terminal_claim_adapter_roundtrips_binds_claim_and_uses_exact_codec() {
+        let witness = BabyBearMulWitness::from_fn(1 << MIN_PRODUCTION_GATE_VARS, |index| {
+            let a = ((index as u64).wrapping_mul(0x5BD1_E995) % BABY_BEAR_MODULUS) as u32;
+            let b = ((index as u64)
+                .wrapping_mul(0x9E37_79B9)
+                .wrapping_add(0xA5A5_5A5A)
+                % BABY_BEAR_MODULUS) as u32;
+            (a, b)
+        })
+        .unwrap();
+        let layout = *witness.layout();
+        let hint = commit_baby_bear_mul_witness(&layout, witness.f2z_bit_rows()).unwrap();
+
+        // The adapter copies only the relation binding, so this scope proves
+        // the full prepared matrices are not borrowed by the opening path.
+        let prepared = {
+            let matrices =
+                prepare_baby_bear_mul_relation(layout, &spartan_f2z_field_config()).unwrap();
+            prepare_baby_bear_terminal_f2z_opening(&matrices, &layout, &hint.commitment).unwrap()
+        };
+
+        let gate_point = (0..layout.gate_vars())
+            .map(|coordinate| Fq((coordinate + 2) as u128))
+            .collect::<Vec<_>>();
+        let block_point = [Fq(37), Fq(41), Fq(43)];
+        let gate_factors = eq_le_table_fq(&gate_point);
+        let block_factors = eq_le_table_fq(&block_point);
+        let mut assignment_evaluation = block_factors[0] * gate_factors[0];
+        for gate in 0..layout.capacity() {
+            assignment_evaluation = assignment_evaluation
+                + gate_factors[gate]
+                    * (block_factors[1] * Fq(witness.a_values()[gate] as u128)
+                        + block_factors[2] * Fq(witness.b_values()[gate] as u128)
+                        + block_factors[3] * Fq(witness.c_values()[gate] as u128)
+                        + block_factors[4] * Fq(witness.k_values()[gate] as u128));
+        }
+        let scale = Fq(47);
+        let mut point = gate_point;
+        point.extend(block_point);
+        let claim = terminal_claim(&point, scale, scale * assignment_evaluation);
+
+        let mut prover_transcript = Blake3Transcript::new();
+        let proof =
+            prove_baby_bear_terminal_claim_f2z(&mut prover_transcript, &prepared, &hint, &claim)
+                .unwrap();
+        let mut verifier_transcript = Blake3Transcript::new();
+        verify_baby_bear_terminal_claim_f2z(
+            &mut verifier_transcript,
+            &prepared,
+            &hint.commitment,
+            &claim,
+            &proof,
+        )
+        .unwrap();
+
+        let bytes = baby_bear_terminal_claim_f2z_proof_bytes(&proof);
+        let decoded = IntEvalRsLigModQProof::from_bytes(&bytes).unwrap();
+        assert_eq!(baby_bear_terminal_claim_f2z_proof_bytes(&decoded), bytes);
+
+        let tampered_claim = terminal_claim(&point, scale, scale * assignment_evaluation + Fq(1));
+        let mut tampered_claim_transcript = Blake3Transcript::new();
+        assert!(
+            verify_baby_bear_terminal_claim_f2z(
+                &mut tampered_claim_transcript,
+                &prepared,
+                &hint.commitment,
+                &tampered_claim,
+                &proof,
+            )
+            .is_err()
+        );
+
+        let mut tampered_commitment = hint.commitment.clone();
+        tampered_commitment.root[0] ^= 1;
+        let mut tampered_commitment_transcript = Blake3Transcript::new();
+        assert!(matches!(
+            verify_baby_bear_terminal_claim_f2z(
+                &mut tampered_commitment_transcript,
+                &prepared,
+                &tampered_commitment,
+                &claim,
+                &proof,
+            ),
+            Err(BabyBearSpartanF2zError::PreparedOpeningCommitmentMismatch)
+        ));
     }
 
     #[test]
