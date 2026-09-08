@@ -2722,21 +2722,21 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
 
 \begin{table}[H]
   \centering
-  \begin{tabular}{@{}lrrr@{}}
+    \begin{tabular}{@{}lrrrrr@{}}
     \toprule
-    Scheme &  Prove & Verify & Proof \\
-       & (ms) & (ms) & (KB) \\
+    Scheme & \multicolumn{2}{c}{Prove (ms)} & \multicolumn{2}{c}{Verify (ms)} & Proof \\
+     &   1 thr & 8 thr & 1 thr & 8 thr & (KB) \\
     \midrule
-    \ftwoz \ (this work)              & \textbf{257}  & \textbf{9.8}  & 338 \\
-    Zinc+ \cite{zincplus}   & 2052          & 18.2          & 1272 \\
-    Limber \cite{limber} (Brakedown)                & 1175          & 44.2          & 5769 \\
-    Limber \cite{limber} (Hyrax)           & 1206          & 37.1          & \textbf{175} \\
+    \ftwoz-SNARK  (this work)             &  \textbf{257}  & \textbf{103} & \textbf{9.8} & \textbf{12.0} & 338 \\
+    Zinc+ \cite{zincplus}    & 2052          & 563          & 18.2         & 12.7 & 1272 \\
+    Limber \cite{limber} (Brakedown)                 & 1175          & 559          & 44.2         & 43.3 & 5769 \\
+    Limber \cite{limber} (Hyrax)           & 1206          & 390          & 37.1         & 20.5 & \textbf{175} \\
     \midrule
-    Arkworks/Garuda$^{\dagger}$       & 231000        & 25            & 7.2 \\
-    MultiSwap-xJsnark$^{\dagger}$    & 88500         & 2             & 0.2 \\
+    Arkworks/Garuda$^{\dagger}$      & 231000        & --           & 25           & --   & 7.2 \\
+    MultiSwap-xJsnark$^{\dagger}$     & 88500         & --           & 2            & --   & 0.2 \\
     \bottomrule
   \end{tabular}
-  \caption{Proving one MultiSwap \cite{multiswap} computation (four  exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation).  The first four schemes prove the same R1CS constraint over the integers, taken from \cite{limber}, and were run on a MacBook Air M4 \textbf{single threaded} \albertimportant{add multithread numbers?}.  The two lower rows are a verbatim quote from
+  \caption{Proving one MultiSwap \cite{multiswap} computation (four  exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation).  The first four schemes prove the same R1CS constraint over the integers, taken from \cite{limber}, and were run on a MacBook Air M4 on one and 8 threads (thr).  The two lower rows are a verbatim quote from
   \cite[Table 1]{limber}. The first four schemes achieve $114$ bits of security 
   Zinc$+$ proof compresses to
   $686$KB with \texttt{zstd}.
@@ -2757,7 +2757,7 @@ We experiment with proving the SHA-256 hash of a $4$KB message (a chain of $2^6$
 For \ftwoz, we  arithmetize the computation as an integer R1CS constraint with $\FF_2$-virtualization (\cref{?}). 
 The  SHA-256  constraints in particular are  an instance of the $\mathsf{CM}$ relation from \cref{e:CM_rel}, obtained using the methods from \cref{r:CM_is_NP_complete}. In \cref{tab:sha_arithmetization} we display the circuit and witness sizes achieved by our SHA-256 arithmetization, against that of binary-field native systems like Binius \cite{binius64} and Flock \cite{flock}.  
 
-We emphasize that, as done in the next experiment \cref{?}, when seeking to prove a large amount of hashes, it is preferable to arithmetize the hash over a binary field and follow the approach described in \cref{s:experiments_sha_modmul}
+We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul}, when seeking to prove a large amount of hashes, it is preferable to arithmetize the hash over a binary field and follow the approach described in \cref{s:experiments_sha_modmul}
 
 
 
@@ -2768,13 +2768,13 @@ We emphasize that, as done in the next experiment \cref{?}, when seeking to prov
     Scheme  & Prove & Verify & Proof \\
      &   (ms) & (ms) & (KB) \\
     \midrule
-    \ftwoz \ (this work)             &  &  &  \\
+    \ftwoz-SNARK  (this work)             &  &  &  \\
     Zinc+ \cite{zincplus}    &            &          &  \\
     Binius64  &            &        &  \\
     ?            &           &           &  \\
 \bottomrule  
 \end{tabular}
-  \caption{Proving a SHA-256 hash of a $4$KB message ($64$ compressions) followed by ECDSA signature verification. Ran on a MacBook Air M4 multithreaded\albertimportant{add multithread numbers?}, configured at $100$ and $128$ bits of security.  
+  \caption{Proving a SHA-256 hash of a $4$KB message ($64$ compressions) followed by ECDSA signature verification. Ran on a MacBook Air M4 multithreaded, configured at $100$ and $128$ bits of security.  
   }
   \label{t:multiswap}
 \end{table}
@@ -2789,9 +2789,13 @@ We emphasize that, as done in the next experiment \cref{?}, when seeking to prov
         \hline
         R1CS over $\comfield$ &  $31744$ bits
     \end{tabular}
-    \caption{Witness bit-size per SHA-256 compression as per two different arithmetizations. The $\mathsf{CM}$ row indicates the bit-size when arithmetizing SHA-256 via an instance of the $\mathsf{CM}$ relation (see \eqref{e:CM_rel}) using the methods from \cref{e:CM_rel,r:CM_is_NP_complete}. The last row displays the witness bit-size in the  arithmetization from Binius64 \cite{binius64}, which is an R1CS constraint over a binary field. }
+    \caption{Witness bit-size per SHA-256 compression as per two different arithmetizations. The $\mathsf{CM}$ row indicates the bit-size when arithmetizing SHA-256 via an instance of the $\mathsf{CM}$ relation (see \eqref{e:CM_rel}) using the methods from \cref{e:CM_rel,r:CM_is_NP_complete}, see \url{https://github.com/reilabs/freigen/blob/324935e/Freigen/Circuit/Examples/Sha256.lean} \albertimportant{Change this to avoid deanonymization in the EC submission}. The last row displays the witness bit-size in the  arithmetization from Binius64 \cite{binius64}, which is an R1CS constraint over a binary field. }
     \label{tab:sha_arithmetization}
 \end{table}
+
+
+\albertimportant{Use $\mathsf{Id}_{2^r} \otimes M$ as virtualization matrix, leading to $2^r$ compressions per grand product}
+
 
 \subsection{Mod $2^{32}$ multiplication and SHA-256 hashing}\label{s:experiments_sha_modmul}
 
@@ -2807,7 +2811,7 @@ Our end-to-end \ftwoz-SNARK is built as described in \cref{?}. We compare our re
 
 
 
-
+\begin{comment}
 \subsection{SHA-256 hashing}\label{s:experiments_sha}
 
 
@@ -2843,8 +2847,7 @@ Our experimental results show that \ftwoz-SNARK is more performant when hashing 
   \label{t:SHA_benches}
 \end{table}
 
-
-\albertimportant{Use $\mathsf{Id}_{2^r} \otimes M$ as virtualization matrix, leading to $2^r$ compressions per grand product}
+\end{comment} 
 
 
 
