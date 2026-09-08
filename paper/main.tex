@@ -515,14 +515,14 @@ A particularly interesting instantiation of this relation is the following R1CS-
 
 An interesting subset  of $\Relation_{\mathsf{R1CS-bits-virtual}}(\ZZ)$
  is that where $A$ and $B$ are zero matrices. We call the resulting relation the \emph{CM} relation because of the matrices $C$ and $M$:
- $$
+ \begin{equation}\label{e:CM_rel}
 \Relation_{\mathsf{CM}}(\ZZ) \defeq \left\{ \begin{aligned}
     &\inp= (\xx, C, M)\in \FF_2^{\inplen} \times \ZZ^{m\times \codedim} \times \FF_2^{\codedim \times (\inplen+\codedim')}\\
     & \wit = \bff \in \bits^{\codedim'} \subseteq \FF_2^{\codedim'}
 \end{aligned}\  \left| \  \begin{aligned} %&f=\Enc_\cC \circ \pack \circ \pi_2(\bff)\\ 
 &C \cdot \ww = 0\ \text{in } \ZZ \\
 &\ww= \pi_2^{-1}\left(  M\cdot (\xx, \bff)\right) \end{aligned} \right.\right\}
-$$
+\end{equation}
 %
 In a sense, the CM relation places only linear constraints over its witness (with some constraints happening in $\comfield$ and other in $\ZZ$). Yet, the CM relation is NP-complete, as shown below in \cref{r:CM_is_NP_complete}. 
 
@@ -2724,19 +2724,19 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
   \centering
   \begin{tabular}{@{}lrrr@{}}
     \toprule
-    Scheme  & Prove & Verify & Proof \\
-     &   (ms) & (ms) & (KB) \\
+    Scheme &  Prove & Verify & Proof \\
+       & (ms) & (ms) & (KB) \\
     \midrule
-    \ftwoz \ (this work)             &257  & 10.1 & 338 \\
-    Zinc+ \cite{zincplus}    & 850           & 57.5          & 1418 \\
-    Limber \cite{limber} (Brakedown) &  1143          & 42.8          & 5885 \\
-    Limber \cite{limber} (Hyrax)           & 1180          & 35.4          & 175 \\
+    \ftwoz \ (this work)              & \textbf{257}  & \textbf{9.8}  & 338 \\
+    Zinc+ \cite{zincplus}   & 2052          & 18.2          & 1272 \\
+    Limber \cite{limber} (Brakedown)                & 1175          & 44.2          & 5769 \\
+    Limber \cite{limber} (Hyrax)           & 1206          & 37.1          & \textbf{175} \\
     \midrule
-    Arkworks/Garuda$^{\dagger}$     & 231000        & 25            & 7.2 \\
+    Arkworks/Garuda$^{\dagger}$       & 231000        & 25            & 7.2 \\
     MultiSwap-xJsnark$^{\dagger}$    & 88500         & 2             & 0.2 \\
     \bottomrule
   \end{tabular}
-  \caption{Proving one MultiSwap \cite{multiswap} computation (four  exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation) \albertimportant{check that this is really what multiswap is proving}.  The first four schemes prove the same R1CS constraint over the integers, taken from \cite{limber}, and were run on a MacBook Air M4 \textbf{single threaded} \albertimportant{add multithread numbers?}.  The two lower rows are a verbatim quote from
+  \caption{Proving one MultiSwap \cite{multiswap} computation (four  exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation).  The first four schemes prove the same R1CS constraint over the integers, taken from \cite{limber}, and were run on a MacBook Air M4 \textbf{single threaded} \albertimportant{add multithread numbers?}.  The two lower rows are a verbatim quote from
   \cite[Table 1]{limber}. The first four schemes achieve $114$ bits of security 
   Zinc$+$ proof compresses to
   $686$KB with \texttt{zstd}.
@@ -2748,11 +2748,71 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
 
 
 
+\subsection{SHA-256 hashing followed by ECDSA signature verification}
+
+We experiment with proving the SHA-256 hash of a $4$KB message (a chain of $2^6$ SHA compressions) followed by an ECDSA signature verification on the message digest. This is a common application of proof systems in anonymous credentials. We compare \ftwoz-SNARK with Binius64 \cite{binius64}, Zinc+ \cite{zincplus}, \albertimportant{What else? Longfellow? Plonky3? Vega? Check the ethproofs dashboard. }
+
+
+
+For \ftwoz, we  arithmetize the computation as an integer R1CS constraint with $\FF_2$-virtualization (\cref{?}). 
+The  SHA-256  constraints in particular are  an instance of the $\mathsf{CM}$ relation from \cref{e:CM_rel}, obtained using the methods from \cref{r:CM_is_NP_complete}. In \cref{tab:sha_arithmetization} we display the circuit and witness sizes achieved by our SHA-256 arithmetization, against that of binary-field native systems like Binius \cite{binius64} and Flock \cite{flock}.  
+
+We emphasize that, as done in the next experiment \cref{?}, when seeking to prove a large amount of hashes, it is preferable to arithmetize the hash over a binary field and follow the approach described in \cref{s:experiments_sha_modmul}
+
+
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{@{}lrrr@{}}
+    \toprule
+    Scheme  & Prove & Verify & Proof \\
+     &   (ms) & (ms) & (KB) \\
+    \midrule
+    \ftwoz \ (this work)             &  &  &  \\
+    Zinc+ \cite{zincplus}    &            &          &  \\
+    Binius64  &            &        &  \\
+    ?            &           &           &  \\
+\bottomrule  
+\end{tabular}
+  \caption{Proving a SHA-256 hash of a $4$KB message ($64$ compressions) followed by ECDSA signature verification. Ran on a MacBook Air M4 multithreaded\albertimportant{add multithread numbers?}, configured at $100$ and $128$ bits of security.  
+  }
+  \label{t:multiswap}
+\end{table}
+
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{l|c}
+        Arithmetization type & Witness bit-size/compression  \\ 
+        \toprule
+        $\mathsf{CM}$ & $7144$ bits \\
+        \hline
+        R1CS over $\comfield$ &  $31744$ bits
+    \end{tabular}
+    \caption{Witness bit-size per SHA-256 compression as per two different arithmetizations. The $\mathsf{CM}$ row indicates the bit-size when arithmetizing SHA-256 via an instance of the $\mathsf{CM}$ relation (see \eqref{e:CM_rel}) using the methods from \cref{e:CM_rel,r:CM_is_NP_complete}. The last row displays the witness bit-size in the  arithmetization from Binius64 \cite{binius64}, which is an R1CS constraint over a binary field. }
+    \label{tab:sha_arithmetization}
+\end{table}
+
+\subsection{Mod $2^{32}$ multiplication and SHA-256 hashing}\label{s:experiments_sha_modmul}
+
+We prove simulataneously a large chain of SHA-256 compressions, together with a large amount of multiplications modulo $2^{32}$. In this experiment, contrary to the previous one, SHA-256 is arithmetized over a binary field, using the R1CS constraint from Binius64 \cite{binius64}. The modular multiplications are arithmetized as an R1CS constrain over the integers, where each modular multiplication  $x\cdot y = z \mod 2^{32}$ is expressed as an integer constraint of the form $x\cdot y = z + 2^{32}\cdot u$, where $u$ is a new integer witness.  
+
+Our end-to-end \ftwoz-SNARK is built as described in \cref{?}. We compare our results with Binius64. To arithmetize modular multiplication in Binius64 we use a gadget in the repository built for that purpose \albertimportant{double check}.
+
+%\subsubsection{Comparison with Hyrax}
+
+%\albert{Comparing with Hyrax may be more interesting than it sounds initially. Hyrax is pay-per-bit and opens on large prime fields: a profile that F2Z can adopt. Hence (maybe) projects using Hyrax could use  F2Z as a drop-in replacement which is PQ secure and more efficient }
+
+
+
+
+
+
 \subsection{SHA-256 hashing}\label{s:experiments_sha}
 
 
 We compare Binius64 \cite{binius64}, Flock \cite{flock},  and our \ftwoz-SNARK on proving SHA-256 hashing.  
-We arithmetize  SHA-256 compressions as instances of the $\mathsf{CM}$ relation from \cref{?}, using the methods from \cref{?}. In \cref{?} we display the circuit and witness sizes achieved by our arithmetization, against that of binary-field native systems like Binius \cite{binius64} and Flock \cite{flock}. 
+
 
 The main goal of this experiment is not to show that \ftwoz-SNARK outperforms \cite{binius64,flock} in SHA proving (it does not if the amount of hashing is very large, see below), but to show that \ftwoz-SNARK is competitive (and sometimes better) while using a natural arithmetization which only performs XOR and integer addition. As mentioned in \cref{??} \albertimportant{mention in intro}, we envision \ftwoz-SNARK being used as a proving backend for a general-purpose zk-DSL \cite{?} that is able to compile most computations of interest into a small circuit.
 
@@ -2785,43 +2845,6 @@ Our experimental results show that \ftwoz-SNARK is more performant when hashing 
 
 
 \albertimportant{Use $\mathsf{Id}_{2^r} \otimes M$ as virtualization matrix, leading to $2^r$ compressions per grand product}
-
-
-\subsection{SHA-256 hashing followed by ECDSA signature verification}
-
-We experiment with proving the SHA-256 hash of a $4$KB message (a chain of $2^6$ SHA compressions) followed by an ECDSA signature verification on the message digest. This is a common application of proof systems in anonymous credentials. We compare \ftwoz-SNARK with Binius64 \cite{binius64}, Zinc+ \cite{zincplus}, \albertimportant{What else? Longfellow? Plonky3? Vega? Check the ethproofs dashboard. }
-
-For \ftwoz, we  arithmetize the computation as an integer R1CS constraint with $\FF_2$-virtualization (\cref{?}). The SHA-256 part of the constraint is the same as the one used in \cref{s:experiments_sha}. \albert{Display witness size}
-
-\begin{table}[H]
-  \centering
-  \begin{tabular}{@{}lrrr@{}}
-    \toprule
-    Scheme  & Prove & Verify & Proof \\
-     &   (ms) & (ms) & (KB) \\
-    \midrule
-    \ftwoz \ (this work)             &  &  &  \\
-    Zinc+ \cite{zincplus}    &            &          &  \\
-    Binius64  &            &        &  \\
-    ?            &           &           &  \\
-\bottomrule  
-\end{tabular}
-  \caption{Proving a SHA-256 hash of a $4$KB message ($64$ compressions) followed by ECDSA signature verification. Ran on a MacBook Air M4 multithreaded\albertimportant{add multithread numbers?}, configured at $100$ and $128$ bits of security.  
-  }
-  \label{t:multiswap}
-\end{table}
-
-
-
-
-
-%\subsubsection{Comparison with Hyrax}
-
-%\albert{Comparing with Hyrax may be more interesting than it sounds initially. Hyrax is pay-per-bit and opens on large prime fields: a profile that F2Z can adopt. Hence (maybe) projects using Hyrax could use  F2Z as a drop-in replacement which is PQ secure and more efficient }
-
-
-
-
 
 
 

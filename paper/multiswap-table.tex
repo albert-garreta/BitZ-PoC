@@ -1,17 +1,14 @@
 % MultiSwap comparison table (Limber's Table 1 workload).
 % Standalone snippet: \input{multiswap-table} where the table should appear.
-% Measurements: this machine (Apple M4, 16 GB), single-threaded,
-% RUSTFLAGS="-C target-cpu=native", medians of 5, 2026-08-29/30.
 %
-% NOTE: references.bib has no `multiswap` key yet.  Add:
-%
-% @inproceedings{multiswap,
-%   author    = {Alex Ozdemir and Riad S. Wahby and Barry Whitehat and Dan Boneh},
-%   title     = {Scaling Verifiable Computation Using Efficient Set Accumulators},
-%   booktitle = {29th USENIX Security Symposium},
-%   pages     = {2075--2092},
-%   year      = {2020},
-% }
+% Measurements: 2026-09-08, this machine (Apple M4, 16 GB), single-threaded
+% (RAYON_NUM_THREADS=1), RUSTFLAGS="-C target-cpu=native", medians of five
+% runs (Limber-Hyrax: Criterion, 10 samples).  Prover time includes the
+% commitment and excludes witness generation (< 0.1 s in every row).
+% Reproduction commands and commit hashes: README.md, section "MultiSwap".
+%   BitZ    f2z-pcs      ca52890  F2Z_BENCH_LAMBDA=114 (114.1 bits achieved)
+%   Zinc+   zinc-plus    878fbd8  main-beta, LIMB16=1 NVARS=13, feature sec-114
+%   Limber  limber-impl  b003684  MSCFG=paper (the 6209-row Table-1 circuit)
 
 \begin{table}[H]
   \centering
@@ -20,35 +17,33 @@
     Scheme & Commitment & Prove & Verify & Proof \\
      &  & (ms) & (ms) & (KB) \\
     \midrule
-    \ftwoz \ (this work)             & binary field, hash  & \textbf{257}  & \textbf{10.1} & 338 \\
-    Zinc+ \cite{zincplus}$^{\ast}$   & integer code, hash  & 850           & 57.5          & 1418 \\
-    Limber \cite{limber} (Brakedown) & hash                & 1143          & 42.8          & 5885 \\
-    Limber \cite{limber} (Hyrax)     & Tom-256, DL         & 1180          & 35.4          & \textbf{175} \\
+    \ftwoz \ (this work)             & binary field, hash  & \textbf{257}  & \textbf{9.8}  & 338 \\
+    Zinc+ \cite{zincplus}$^{\ast}$   & integer code, hash  & 2052          & 18.2          & 1272 \\
+    Limber \cite{limber} (Brakedown) & hash                & 1175          & 44.2          & 5769 \\
+    Limber \cite{limber} (Hyrax)     & Tom-256, DL         & 1206          & 37.1          & \textbf{175} \\
     \midrule
     Arkworks/Garuda$^{\dagger}$      & BLS12-381, pairing  & 231000        & 25            & 7.2 \\
     MultiSwap-xJsnark$^{\dagger}$    & BLS12-381, pairing  & 88500         & 2             & 0.2 \\
     \bottomrule
   \end{tabular}
-  \caption{Proving one MultiSwap \cite{multiswap} batch update: two RSA-2048
-  accumulator updates verified through Wesolowski proofs, together with a
-  Poseidon-based hash-to-prime.  The four upper rows prove the same integer
-  Mod-R1CS statement of $6209$ modular-multiplication rows and were measured
-  on the same machine (Apple M4, 16GB), single-threaded, as medians of five
-  runs; prover time covers commitment and proving and excludes witness
-  generation.  The two lower rows are circuit-based baselines
-  ($25.2$M and $6.2$M R1CS constraints respectively), for which we quote
-  \cite[Table 1]{limber} verbatim.
+  \caption{Proving the swap-independent core of one MultiSwap
+  \cite{multiswap} verification: two batched RSA-accumulator updates, each
+  checked by a Wesolowski proof of exponentiation (four exponentiations with
+  $352$-bit exponents modulo a $2048$-bit RSA modulus), plus a Poseidon-based
+  hash-to-prime evaluation.  The four upper rows prove the same integer
+  Mod-R1CS statement of $6209$ rows, taken from Limber's repository
+  \cite{limber}, and were measured on the same machine (Apple M4, 16GB),
+  single-threaded, as medians of five runs; prover time includes the
+  commitment and excludes witness generation (below $0.1$\,s in every row).
+  All four target $114$ bits of security; the \ftwoz\ and Zinc+ rows count
+  $10$ and $14$ bits of proof-of-work grinding respectively.  The two lower
+  rows are circuit-based baselines ($25.2$M and $6.2$M R1CS constraints)
+  quoted verbatim from \cite[Table 1]{limber}.
   %
-  \ftwoz \ and Limber sample their fingerprinting prime from the transcript
-  after the commitment and reach round-by-round Fiat--Shamir soundness
-  errors of at most $2^{-114}$.
-  %
-  $^{\ast}$ Zinc+ is benchmarked on the unwired mock circuit of
-  \cite[Table 1, footnote c]{limber}, extended to $8192$ slots: it omits the
-  bit-decomposition and hash-to-prime rows and the range checks on the
-  quotient advice, and uses a fixed rather than a transcript-sampled
-  projecting prime, with $100$ column openings.  Its proof compresses to
-  $686$KB with \texttt{zstd}; the other proofs are reported uncompressed.
+  $^{\ast}$ Zinc+ commits the $2048$-bit values as $16$-bit limbs and
+  range-checks every limb (its earlier, unwired mock circuit without range
+  checks proves in $831$\,ms at $100$ bits); its proof compresses to
+  $847$KB with \texttt{zstd}, the other proofs are reported uncompressed.
   %
   $^{\dagger}$ Quoted from \cite{limber}; measured on an M4 Pro, 24GB, and
   not reproduced here.
@@ -57,10 +52,13 @@
 \end{table}
 
 % ---------------------------------------------------------------------------
-% Row for the intro summary table (\cref{t:intro_table_experiments}), which
-% currently reads:
-%   Poseidon hash + RSA \cite{limber} & & \albert{Limber} \\
+% Zinc+ fat-cell mock row (main-beta 878fbd8, FOLD=1 WIDE16=1 NVARS=11,
+% 100 bits, no range checks, transcript-drawn 128-bit prime) — the shape
+% Limber's Table 1 row was reconstructed with; kept here for reference only:
+%   Zinc+ \cite{zincplus} (mock) & integer code, hash & 831 & 58.0 & 1415 \\
+%   (zstd: 808 KiB)
 %
-%    Poseidon hash + RSA \cite{limber} & 257\,ms / 10.1\,ms / 338\,KB
-%        & 1.14\,s / 42.8\,ms / 5.9\,MB \cite{limber} \\
+% Row for the intro summary table (\cref{t:intro_table_experiments}):
+%   Poseidon hash + RSA \cite{limber} & 257\,ms / 9.8\,ms / 338\,KB
+%       & 1.18\,s / 44.2\,ms / 5.8\,MB \cite{limber} \\
 % ---------------------------------------------------------------------------
