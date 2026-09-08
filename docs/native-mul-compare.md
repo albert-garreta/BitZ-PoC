@@ -8,7 +8,7 @@ proof, and verifies it. This complements the existing `u32_pcs_compare` and
 
 ```sh
 # Both workloads, all four backends, 2^15 multiplications, five samples
-# plus one warmup per workload/backend/size.
+# plus one warmup and one isolated memory pass per workload/backend/size.
 bash scripts/run_native_mul_compare.sh
 
 # Select sizes, repetitions, workloads, and backends independently.
@@ -158,8 +158,47 @@ Binius packs the witness inside its online prover, so `witness_ms` overlaps
 the combined interval directly. Public setup/circuit compilation and random
 corpus sampling happen outside trials. Setup is recorded separately. Proof
 serialization, when measured outside proof readiness, is not included in
-prover time. Proof sizes are optional; no estimated Limber proof size is
-reported as measured bytes.
+prover time.
+
+## Proof sizes and peak memory
+
+Every backend reports a positive `proof_bytes` value, including the initial
+commitment and the proof needed to verify it. Public setup parameters and the
+public relation are excluded. Size accounting runs outside the prover and
+verification timing intervals.
+
+| Backend | Size encoding |
+| --- | --- |
+| F2Z | Commitment root, 16 bytes per Spartan payload field element, 8 bytes per transmitted nonce outside the opening, and the actual canonical F2Z opening bytes. Opening nonces are counted only inside that serialization. |
+| Binius64 | Actual finalized native transcript bytes, including the commitment. |
+| Plonky3-WHIR | Actual postcard serialization of the complete native proof, including the commitment. |
+| Limber | Actual canonical commitment and batch-opening bytes (both W and Q), plus the fixed-width PIOP payload described below. |
+
+F2Z and the pinned Limber dependency do not expose a complete-proof serializer.
+Their sizes use component payload accounting, excluding any hypothetical outer
+container framing. Limber's unsegmented PIOP has three field elements per outer
+sumcheck round, two per inner round, five outer claims, and one witness
+evaluation: `scalar_bytes * (3 * log2(num_cons) + 2 * (log2(num_vars) + 1) + 6)`.
+The padded dimensions are public, and the scalar encoding is currently 16
+bytes. The sampled modulus is derived from the transcript. This PIOP count is
+derived from the pinned driver's shape, rather than a serialized whole proof.
+The backend's `config.proof_size_encoding` records the accounting used.
+
+Peak memory is enabled by default. Each workload/backend/size runs one
+additional proof in a fresh child process, before the parent's backend setup.
+The child uses the same corpus and Rayon thread count and must verify its proof.
+`peak_rss_bytes` is the OS high-water resident set size for the whole child:
+corpus generation, public setup, witness generation, commitment, proving,
+verification, and proof-size accounting. It includes resident runtime and
+library memory; it is not an allocator-only or prover-only measurement.
+The child has no warmup, and its memory sample is separate from the latency
+trials and their medians. Linux uses `VmHWM` from `/proc/self/status`; macOS
+uses `getrusage(RUSAGE_SELF)`. Both are normalized to bytes. Linux's current
+address-space counter avoids carrying a pre-exec peak into the new case.
+
+Set `F2Z_MUL_COMPARE_MEMORY=0` for a run without the extra memory pass. Disabled
+memory is `na` in stdout, blank in CSV, and `null` in the summary; it is never
+reported as zero. A failed memory pass aborts the campaign.
 
 ## Native configurations
 
@@ -183,8 +222,20 @@ reported as measured bytes.
 The runner reserves a new `PerfRuns/<UTC>-native-mul` directory, or uses
 `F2Z_MUL_COMPARE_OUTPUT_DIR`; it refuses to overwrite existing results.
 `trace.jsonl` contains canonical `zkperf.trace/v1` intervals, `samples.jsonl`
-contains raw per-trial metrics, and `metrics.csv` plus `summary.json` contain
-warmup-excluded medians. When the zk-proof-profiler script is installed, the
+contains raw per-trial metrics including proof size, and `metrics.csv` plus
+`summary.json` contain warmup-excluded medians including `proof_bytes`.
+The CSV also has `peak_rss_bytes`; the summary has `peak_rss_bytes` and the full
+`memory` record. `memory.jsonl` contains one isolated memory record per case,
+including its corpus digest, verified proof size, and measurement boundary.
+
+Both the shell runner and direct Cargo command print one
+`RESULT schema=native-mul/2` line to stdout per completed case. It identifies
+the workload, backend, size, and sample count, then reports `witness_ms`,
+`online_prover_ms`, `verify_ms`, median `proof_bytes`, and the separate
+`peak_rss_bytes` measurement. The runner also saves stdout and stderr in
+`cargo-bench.log`.
+
+When the zk-proof-profiler script is installed, the
 runner validates traces and renders `reports/intervals.html`; set
 `ZK_TRACE_SCRIPT` to override its location. A failed proof aborts the campaign; it is never emitted
 as a successful sample.

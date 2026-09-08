@@ -934,6 +934,7 @@ dependencies = [
  "ff",
  "flock-core",
  "itertools 0.14.0",
+ "libc",
  "limber",
  "num-bigint 0.4.8",
  "num-integer",

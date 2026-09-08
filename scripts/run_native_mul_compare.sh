@@ -32,3 +32,5 @@ else
     echo "Set ZK_TRACE_SCRIPT to zk_trace.py to validate and render the saved trace."
 fi
 echo "Metrics: $RUN_DIR/metrics.csv"
+echo "Summary: $RUN_DIR/summary.json"
+echo "Memory samples: $RUN_DIR/memory.jsonl"

@@ -225,11 +225,19 @@ F2Z_MUL_COMPARE_BACKENDS="limber"
 
 Both sweeps run F2Z, Binius64, Plonky3-WHIR, and Limber-Hyrax on the same
 canonical multiplication inputs for each workload, using each system's native
-full prover. Both commands report witness
-generation, commitment, PIOP, PCS opening, witness-to-proof time, and verification
-separately.
-Limber's measurements appear alongside the other backends in `metrics.csv`,
-`summary.json`, and the per-trial `samples.jsonl`. See
+full prover. Both commands report witness generation, commitment, PIOP, PCS
+opening, witness-to-proof time, verification, proof size, and peak resident
+memory. Each case prints a `RESULT schema=native-mul/2` line to stdout with
+`proof_bytes` and `peak_rss_bytes`, including when using `cargo bench` directly.
+Proof sizes include commitments; F2Z and Limber combine serialized components
+with fixed-width PIOP payload accounting.
+
+All four backends' measurements appear in `metrics.csv` and `summary.json`;
+`samples.jsonl` includes per-trial proof sizes. Peak memory comes from one
+additional verified proof in a fresh process per workload/backend/size, including
+setup, and is saved in `memory.jsonl`. It is separate from the timing trials.
+Set `F2Z_MUL_COMPARE_MEMORY=0` to skip this pass; memory is then reported as
+unavailable. Peak RSS measurement supports Linux and macOS. See
 [the measurement contract and backend selectors](docs/native-mul-compare.md).
 
 The full sweeps cover BabyBear at exponents 15–24 and u32 at 15–25. An exponent `n`
@@ -320,5 +328,4 @@ F2Z_BENCH_SHAPES="17:11:1" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
 - https://github.com/worldfnd/f2z-benchmark
 - [Albert: I'm not sure what this is. Leaving it here just in case] **`crypto-primitives`** — vendored at `vendor/crypto-primitives` (NethermindEth, Apache-2.0; see `vendor/crypto-primitives/VENDORED.md` for
   the pinned revision and the crypto-bigint 0.7.5 / rand 0.10 port).
-
 

@@ -127,6 +127,7 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_MULTISWAP_TRACE_PATH",
     // Native multiplication comparison selectors.
     "F2Z_MUL_COMPARE_BACKENDS",
+    "F2Z_MUL_COMPARE_MEMORY",
     "F2Z_MUL_COMPARE_OUTPUT_DIR",
     "F2Z_MUL_COMPARE_WORKLOADS",
     "F2Z_MUL_WORD_BITS",

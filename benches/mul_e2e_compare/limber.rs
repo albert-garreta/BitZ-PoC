@@ -5,6 +5,7 @@ use limber::{
         IntModSpartanModpProverKey, IntModSpartanModpSNARK, IntModSpartanModpVerifierKey,
     },
     provider::{T256DynPrimeEngine, pcs::integer_modpcs::IntEvalParams},
+    traits::mod_engine::{ModEngine, SumcheckEngine, SumcheckField},
 };
 use num_bigint::BigUint;
 use serde_json::{Value, json};
@@ -267,10 +268,32 @@ impl Context {
             .expect("Limber full verification");
         let end = capture.now_ns();
         let raw = capture.finish();
+        // The pinned Limber driver has no whole-proof serializer. Its
+        // unsegmented PIOP sends three coefficients per outer round, two per
+        // inner round, five outer evaluations and eval_w. Round counts are
+        // fixed by the public padded shape; no length prefixes or sampled
+        // modulus need be sent. Count these payload bytes separately from the
+        // actually serialized commitments and batch opening, including both W/Q.
+        let scalar_bytes = <E as SumcheckEngine>::Scalar::zero(&E::bootstrap_params())
+            .to_le_bytes()
+            .len();
+        let piop_bytes = scalar_bytes
+            * (3 * self.program.num_cons.ilog2() as usize
+                + 2 * (self.program.num_vars.ilog2() as usize + 1)
+                + 6);
+        let proof_bytes = instance
+            .commitment_bytes()
+            .expect("serialize Limber commitments")
+            .len()
+            + piop_bytes
+            + proof
+                .eval_arg_bytes()
+                .expect("serialize Limber opening")
+                .len();
         let commit = captured(&raw, "imod_modp_wq_commit", wend, ready);
         let piop = captured(&raw, "imod_modp_piop", commit.end_ns, ready);
         let opening = captured(&raw, "imod_modp_wq_open", commit.end_ns, ready);
-        let mut t = Timing::new(start, wend, ready, vstart, end);
+        let mut t = Timing::new(start, wend, ready, vstart, end, proof_bytes);
         t.add("commit", "commit", commit.start_ns, commit.end_ns);
         t.add(
             "prime_projection",
