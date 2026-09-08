@@ -34,10 +34,23 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
 
 ### Integer multiplication
 
+*BitZ performance step-by-step*
+
 ```sh
 RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
     --mul-sweep 15-22 --threads 8 --reps 5 --profile custom:3:4 --cooldown 20
 ```
+
+*Comparison between different schemes*
+```sh
+RAYON_NUM_THREADS=8 \
+F2Z_BENCH_SHAPES="15 16 17 18 19 20" \
+F2Z_BENCH_REPS=5 \
+F2Z_MUL_COMPARE_WORKLOADS="u32" \
+F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir" \
+bash scripts/run_native_mul_compare.sh
+```
+
 
 ### MultiSwap (Limber's Table 1 workload: 4 exponentiations with 352-bit exponents modulo a 2048-bit RSA modulus + Poseidon-based hash-to-prime; the 6209-row integer Mod-R1CS from Limber's repo), λ=114
 
