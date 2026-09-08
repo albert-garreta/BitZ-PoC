@@ -104,7 +104,10 @@
 //!   (Step 1 commit, Step 2 projection, Step 3 PIOP, Step 4 bitification,
 //!   Step 5 opening = grand products / ring switch / Ligerito) and one
 //!   `RESULT schema=f2z-cli-mul/1` line. `prove` here is END TO END and
-//!   INCLUDES the commitment (the bench-schema convention).
+//!   INCLUDES the commitment (the bench-schema convention); `witness` is
+//!   the witness generation (the products and the Spartan assignment from
+//!   the operand pairs), timed as a median of its own and excluded from
+//!   `prove`.
 //! - `--mul-sweep <lo>-<hi>` — the paper-table mode for `--mul`: one fresh
 //!   child process per `e`, then the LaTeX table (default
 //!   `paper/u32-mul-table.tex`; `--latex <path>` overrides). On a 16 GB box
@@ -1563,18 +1566,19 @@ fn reproduce_cmdline(o: &Opts, mode: &str, spec: &str) -> String {
 }
 
 fn print_sweep_summary(rows: &[CliResult]) {
-    println!("\nsweep summary (medians; ms unless noted; proof KB = 1000 B):");
+    println!("\nsweep summary (medians; ms unless noted; proof KB = 1000 B; total = commit + prove):");
     println!(
-        "  {:>3} {:>9} {:>9} {:>9} {:>9} {:>9} {:>8} {:>8} {:>8} {:>8} {:>9} {:>7}",
-        "n", "commit", "prove", "grand-pr", "ring-sw", "ligerito", "verify", "proofKB", "nonlig",
-        "lig", "peakMB", "lig-b"
+        "  {:>3} {:>9} {:>9} {:>9} {:>9} {:>9} {:>9} {:>8} {:>8} {:>8} {:>8} {:>9} {:>7}",
+        "n", "commit", "prove", "total", "grand-pr", "ring-sw", "ligerito", "verify", "proofKB",
+        "nonlig", "lig", "peakMB", "lig-b"
     );
     for r in rows {
         println!(
-            "  {:>3} {:>9.2} {:>9.2} {:>9.2} {:>9.2} {:>9.2} {:>8.3} {:>8.1} {:>8.1} {:>8.1} {:>9.1} {:>7}",
+            "  {:>3} {:>9.2} {:>9.2} {:>9.2} {:>9.2} {:>9.2} {:>9.2} {:>8.3} {:>8.1} {:>8.1} {:>8.1} {:>9.1} {:>7}",
             r.n,
             r.commit_ms,
             r.prove_ms,
+            r.commit_ms + r.prove_ms,
             r.prove_gp_ms,
             r.prove_rs_ms,
             r.prove_lig_ms,
@@ -1701,7 +1705,8 @@ fn write_latex_table(
     let _ = writeln!(out, "% Regenerate (from the repo root; this file is overwritten):");
     let _ = writeln!(out, "%   {cmdline}");
     let _ = writeln!(out, "% Machine: {cpu} ({cores}), {mem_gb} GB; {threads} rayon threads; medians of {reps} timed reps");
-    let _ = writeln!(out, "%   after one warm-up prove; every timed proof is verified; commit = median of {reps} commits.");
+    let _ = writeln!(out, "%   after one warm-up prove; every timed proof is verified; commit = median of {reps} commits; the table's prover");
+    let _ = writeln!(out, "%   Total = commit_ms + prove_ms (the Commit column sits inside the prover group).");
     let _ = writeln!(out, "% Include with \\input{{raw-performance-table}} (relative to paper/).");
     let _ = writeln!(out, "% Prover buckets (utils::prof scope labels): grand products = {};", PAPER_GP_LABELS.join(" "));
     let _ = writeln!(out, "%   ring switch incl. its sumcheck = {}; Ligerito = {}.", PAPER_RS_LABELS.join(" "), PAPER_LIG_LABELS.join(" "));
@@ -1724,11 +1729,12 @@ fn write_latex_table(
     let _ = writeln!(out, "  \\centering");
     let _ = writeln!(out, "  \\small");
     let _ = writeln!(out, "  \\setlength{{\\tabcolsep}}{{4.5pt}}");
-    let _ = writeln!(out, "  \\begin{{tabular}}{{@{{}}rrrrrrrrrr@{{}}}}");
+    // Bold columns: prover Total (6), Verifier (7), proof-size Total (10).
+    let _ = writeln!(out, "  \\begin{{tabular}}{{@{{}}rrrrr>{{\\bfseries}}r>{{\\bfseries}}rrr>{{\\bfseries}}r@{{}}}}");
     let _ = writeln!(out, "    \\toprule");
-    let _ = writeln!(out, "    & Commit & \\multicolumn{{4}}{{c}}{{Prover time (ms)}} & Verifier & \\multicolumn{{3}}{{c}}{{Proof size (KB)}} \\\\");
-    let _ = writeln!(out, "    \\cmidrule(lr){{3-6}} \\cmidrule(lr){{8-10}}");
-    let _ = writeln!(out, "    $\\log_2 \\codedim$ & (ms) & Grand prod. & Ring switch & Ligerito & Total & (ms) & Non-Lig. & Ligerito & Total \\\\");
+    let _ = writeln!(out, "    & \\multicolumn{{5}}{{c}}{{Prover time (ms)}} & Verifier & \\multicolumn{{3}}{{c}}{{Proof size (KB)}} \\\\");
+    let _ = writeln!(out, "    \\cmidrule(lr){{2-6}} \\cmidrule(lr){{8-10}}");
+    let _ = writeln!(out, "    $\\log_2 \\codedim$ & Commit & Grand prod. & Ring switch & Ligerito & Total & (ms) & Non-Lig. & Ligerito & Total \\\\");
     let _ = writeln!(out, "    \\midrule");
     for r in rows {
         let _ = writeln!(
@@ -1739,7 +1745,8 @@ fn write_latex_table(
             fmt_ms(r.prove_gp_ms),
             fmt_ms(r.prove_rs_ms),
             fmt_ms(r.prove_lig_ms),
-            fmt_ms(r.prove_ms),
+            // Prover Total = the commitment plus the end-to-end prove (both medians).
+            fmt_ms(r.commit_ms + r.prove_ms),
             fmt_ms(r.verify_ms),
             fmt_kb(r.proof_nonlig_bytes),
             fmt_kb(r.proof_lig_bytes),
@@ -1750,7 +1757,7 @@ fn write_latex_table(
     let _ = writeln!(out, "  \\end{{tabular}}");
     let _ = writeln!(
         out,
-        "  \\caption{{Cost of \\ftwoz\\ (\\cref{{c:core_iop}}) for committing to $\\codedim = 2^{{n}}$ bits, $n = {n_lo}, \\ldots, {n_hi}$, and proving one claim $\\langle \\vv, \\bff\\rangle = \\mu$ over $\\FF_q$ for {q_tex}, $\\vv = \\eq(\\cdot, \\rr_1) \\otimes \\eq(\\cdot, \\rr_2)$ with $(\\rr_1, \\rr_2)$ sampled after $q$, and the tensor split $\\codedim_1 = 2^{{\\lceil 0.6\\, n\\rceil}}$, $\\codedim_1 \\cdot \\codedim_2 = \\codedim$ (\\cref{{s:instantiation}}). The commitment is opened with ring switching and Ligerito~\\cite{{ligerito}} {lig_geometry}, {security}; {round0_tex}; every other round (the GKR, the sumcheck reducing to MLE evaluation claims, the ring switch) has error at most $7 \\cdot 2^{{-128}}$. Prover columns: \\emph{{grand products}} is computing the integers $\\mu_j$ and the batched GKR for the $\\codedim_2$ grand products in the exponent (\\cref{{s:gkr_low_entropy}}); \\emph{{ring switch}} is the sumcheck reducing the GKR output claims to MLE evaluation claims together with the ring-switching step; \\emph{{Ligerito}} is the Ligerito opening. These exclude the commitment, listed separately. \\emph{{Non-Ligerito}} proof bytes are the $\\mu_j$, the GKR and sumcheck messages, and the ring-switch message; KB $= 1000$ bytes. {cpu} ({cores}), {mem_gb}\\,GB, {threads} threads; medians of {reps} runs after one warm-up.}}"
+        "  \\caption{{Cost of \\ftwoz\\ (\\cref{{c:core_iop}}) for committing to $\\codedim = 2^{{n}}$ bits, $n = {n_lo}, \\ldots, {n_hi}$, and proving one claim $\\langle \\vv, \\bff\\rangle = \\mu$ over $\\FF_q$ for {q_tex}, $\\vv = \\eq(\\cdot, \\rr_1) \\otimes \\eq(\\cdot, \\rr_2)$ with $(\\rr_1, \\rr_2)$ sampled after $q$, and the tensor split $\\codedim_1 = 2^{{\\lceil 0.6\\, n\\rceil}}$, $\\codedim_1 \\cdot \\codedim_2 = \\codedim$ (\\cref{{s:instantiation}}). The commitment is opened with ring switching and Ligerito~\\cite{{ligerito}} {lig_geometry}, {security}; {round0_tex}; every other round (the GKR, the sumcheck reducing to MLE evaluation claims, the ring switch) has error at most $7 \\cdot 2^{{-128}}$. Prover columns: \\emph{{commit}} is the commitment to the $\\codedim$ bits; \\emph{{grand products}} is computing the integers $\\mu_j$ and the batched GKR for the $\\codedim_2$ grand products in the exponent (\\cref{{s:gkr_low_entropy}}); \\emph{{ring switch}} is the sumcheck reducing the GKR output claims to MLE evaluation claims together with the ring-switching step; \\emph{{Ligerito}} is the Ligerito opening; \\emph{{total}} is the commitment plus the end-to-end proving time (each entry is a median, so the parts need not add up exactly). \\emph{{Non-Ligerito}} proof bytes are the $\\mu_j$, the GKR and sumcheck messages, and the ring-switch message; KB $= 1000$ bytes. {cpu} ({cores}), {mem_gb}\\,GB, {threads} threads; medians of {reps} runs after one warm-up.}}"
     );
     let _ = writeln!(out, "  \\label{{tab:f2z-raw-performance}}");
     let _ = writeln!(out, "\\end{{table}}");
@@ -2473,6 +2480,8 @@ const MUL_VERIFY_TOP_LABELS: &[&str] = &[
 /// One `--mul` run, as the `RESULT schema=f2z-cli-mul/1` line carries it.
 /// `prove_ms` is END TO END and includes the commitment (bench-schema
 /// semantics); `prove_residual_ms = prove_ms − (commit + s2 + s3 + s4 + s5)`.
+/// `witness_ms` is the witness generation from the operand pairs (median of
+/// `reps`), excluded from `prove_ms`; `setup_ms` the one-time preparation.
 #[derive(Clone, Debug)]
 struct MulResult {
     e: usize,
@@ -2685,16 +2694,37 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let shape_seed = MUL_ROOT_SEED ^ (e as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
     let mut rng = StdRng::seed_from_u64(shape_seed);
 
-    // Witness generation (excluded from prove).
-    let t0 = Instant::now();
-    let witness = U32MulWitness::from_fn_with_f2z_width(multiplications, width, |_| {
-        (rng.random::<u32>(), rng.random::<u32>())
-    })
-    .unwrap_or_else(|err| {
-        eprintln!("witness: {err}");
-        exit(1)
-    });
-    let witness_ms = ms(t0);
+    // The operand pairs are the application's input (drawn in the bench's
+    // order, so the witness is the bench's); generating them is not timed.
+    let inputs: Vec<(u32, u32)> = (0..multiplications)
+        .map(|_| (rng.random::<u32>(), rng.random::<u32>()))
+        .collect();
+    drop(rng);
+
+    // Witness generation (excluded from prove; reported on its own): the
+    // products x·y and the block-aligned Spartan assignment from the operand
+    // pairs. Deterministic and cheap, so it is timed like the proofs: one
+    // warm-up, then the median of `reps` fresh constructions. The bit
+    // packing of the assignment for the F2Z commitment is part of Step 1
+    // (the Commit column), not of this.
+    let gen_witness = || {
+        U32MulWitness::from_inputs_with_f2z_width(&inputs, width).unwrap_or_else(|err| {
+            eprintln!("witness: {err}");
+            exit(1)
+        })
+    };
+    black_box(gen_witness());
+    let mut witness_ms_v = Vec::with_capacity(o.reps);
+    let mut witness = None;
+    for _ in 0..o.reps.max(1) {
+        let t0 = Instant::now();
+        let w = gen_witness();
+        witness_ms_v.push(ms(t0));
+        witness = Some(w);
+    }
+    let witness = witness.expect("reps ≥ 1");
+    let witness_ms = median(witness_ms_v);
+    drop(inputs);
     let layout = *witness.layout();
     let params = layout.f2z_params();
 
@@ -2760,7 +2790,11 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         sec.lambda,
         if f2z::utils::CHECKED { "CHECKED (build with --features unchecked)" } else { "unchecked" },
     );
-    println!("one-time (excluded from prove): witness {witness_ms:.1} ms | setup {setup_ms:.1} ms");
+    println!(
+        "excluded from prove: witness generation {witness_ms:.2} ms (median of {}; products + Spartan \
+         assignment from the operand pairs) | one-time setup {setup_ms:.1} ms",
+        o.reps
+    );
 
     // Warm-up (excluded; tracked) — also the first end-to-end correctness
     // check — then the tracked peak probe (excluded), then the timed reps
@@ -2972,16 +3006,20 @@ fn run_mul_sweep(o: &Opts, es: &[usize], spec: &str) {
 }
 
 fn print_mul_summary(rows: &[MulResult]) {
-    println!("\nmul-sweep summary (medians; ms unless noted; proof KB = 1000 B; prove = end to end incl. commit):");
     println!(
-        "  {:>3} {:>8} {:>8} {:>8} {:>9} {:>8} {:>8} {:>9} {:>8} {:>8} {:>8} {:>8} {:>8} {:>9} {:>7}",
-        "e", "commit", "piop", "bitify", "grand-pr", "ring-sw", "ligerito", "prove", "verify",
-        "proofKB", "piopKB", "nonlig", "lig", "peakMB", "λ-ach"
+        "\nmul-sweep summary (medians; ms unless noted; proof KB = 1000 B; prove = end to end incl. \
+         commit, excl. witness generation):"
+    );
+    println!(
+        "  {:>3} {:>8} {:>8} {:>8} {:>8} {:>9} {:>8} {:>8} {:>9} {:>8} {:>8} {:>8} {:>8} {:>8} {:>9} {:>7}",
+        "e", "witness", "commit", "piop", "bitify", "grand-pr", "ring-sw", "ligerito", "prove",
+        "verify", "proofKB", "piopKB", "nonlig", "lig", "peakMB", "λ-ach"
     );
     for r in rows {
         println!(
-            "  {:>3} {:>8.2} {:>8.2} {:>8.2} {:>9.2} {:>8.2} {:>8.2} {:>9.2} {:>8.2} {:>8.1} {:>8.1} {:>8.1} {:>8.1} {:>9.1} {:>7.1}",
+            "  {:>3} {:>8.2} {:>8.2} {:>8.2} {:>8.2} {:>9.2} {:>8.2} {:>8.2} {:>9.2} {:>8.2} {:>8.1} {:>8.1} {:>8.1} {:>8.1} {:>9.1} {:>7.1}",
             r.e,
+            r.witness_ms,
             r.commit_ms,
             r.s2_project_ms + r.s3_piop_ms,
             r.s4_bitify_ms,
@@ -3061,10 +3099,12 @@ fn write_mul_latex_table(
     let _ = writeln!(out, "% Regenerate (from the repo root; this file is overwritten):");
     let _ = writeln!(out, "%   {cmdline}");
     let _ = writeln!(out, "% Machine: {cpu} ({cores}), {mem_gb} GB; {threads} rayon threads; medians of {reps} timed reps after one");
-    let _ = writeln!(out, "%   warm-up prove; every timed proof is verified; witness generation and the one-time relation preparation are excluded.");
+    let _ = writeln!(out, "%   warm-up prove; every timed proof is verified; the one-time relation preparation (setup_ms) is excluded.");
     let _ = writeln!(out, "% Include with \\input{{u32-mul-table}} (relative to paper/).");
     let _ = writeln!(out, "% Same witnesses as benches/u32_mul.rs (root seed {MUL_ROOT_SEED:#018x}); prove_ms is END TO END and INCLUDES the commitment");
-    let _ = writeln!(out, "%   (docs/bench-schema.md semantics). Steps: s1 commit (bit-pack + F2Z commit), s2 prime projection, s3 Spartan PIOP,");
+    let _ = writeln!(out, "%   (docs/bench-schema.md semantics) but NOT the witness generation: witness_ms (the Witness column) is the median of {reps}");
+    let _ = writeln!(out, "%   constructions of the products + Spartan assignment from the operand pairs (drawing the pairs is untimed).");
+    let _ = writeln!(out, "%   Steps: s1 commit (bit-pack + F2Z commit), s2 prime projection, s3 Spartan PIOP,");
     let _ = writeln!(out, "%   s4 bitification, s5 F2Z opening = grand products ({}) / ring switch incl. its sumcheck ({}) / Ligerito ({}).",
         PAPER_GP_LABELS.join(" "), PAPER_RS_LABELS.join(" "), PAPER_LIG_LABELS.join(" "));
     let _ = writeln!(out, "%   Bucket medians need not sum to the total median; the signed residual is prove_residual_ms below.");
@@ -3072,7 +3112,8 @@ fn write_mul_latex_table(
     let _ = writeln!(out, "%   messages (+ codec framing); Ligerito = the serialized Ligerito proof. KB = 1000 bytes.");
     let _ = writeln!(out, "% Security: profile {profile} (target λ={lambda}), achieved (min over rows and terms) {achieved:.2} bits, binding term {bind};");
     let _ = writeln!(out, "%   q sampled after the commitment from [2^(b-1), 2^b), b = {q_bits_min}..{q_bits_max} per shape (q_bits below); Ligerito {lig_regime} regime, rate 1/{lig_rate}, initial k={lig_k}, target {lig_target} bits, {lig_hash} Merkle trees.");
-    let _ = writeln!(out, "% Table columns: PIOP = s2 + s3 + s4 (the bitification step s4 is ~µs and is folded in).");
+    let _ = writeln!(out, "% Table columns: Witness = witness_ms (outside the prover group, not in Total); PIOP = s2 + s3 + s4 (the bitification");
+    let _ = writeln!(out, "%   step s4 is ~µs and is folded in); prover Total = prove_ms; bold columns = prover Total, Verifier, proof Total.");
     let _ = writeln!(out, "% RESULT lines (schema={MUL_RESULT_SCHEMA}):");
     for r in rows {
         let _ = writeln!(out, "% {}", r.to_line());
@@ -3081,18 +3122,25 @@ fn write_mul_latex_table(
     let _ = writeln!(out, "\\begin{{table}}[H]");
     let _ = writeln!(out, "  \\centering");
     let _ = writeln!(out, "  \\footnotesize");
-    let _ = writeln!(out, "  \\setlength{{\\tabcolsep}}{{3.5pt}}");
-    let _ = writeln!(out, "  \\begin{{tabular}}{{@{{}}rrrrrrrrrrrr@{{}}}}");
+    let _ = writeln!(out, "  \\setlength{{\\tabcolsep}}{{3pt}}");
+    // Columns: 1 log N, 2 Witness, 3–8 prover (Commit, PIOP, grand products,
+    // ring switch, Ligerito, Total), 9 Verifier, 10–13 proof (PIOP, Non-Lig.,
+    // Ligerito, Total). Bold: the two Total columns and the Verifier column
+    // (`>{\bfseries}` needs `array`, which siunitx loads). The two widest
+    // headers are two-line (`makecell`, bottom-aligned) so that 13 columns
+    // fit the text width at this column separation.
+    let _ = writeln!(out, "  \\begin{{tabular}}{{@{{}}rrrrrrr>{{\\bfseries}}r>{{\\bfseries}}rrrr>{{\\bfseries}}r@{{}}}}");
     let _ = writeln!(out, "    \\toprule");
-    let _ = writeln!(out, "    & \\multicolumn{{6}}{{c}}{{Prover time (ms)}} & Verifier & \\multicolumn{{4}}{{c}}{{Proof size (KB)}} \\\\");
-    let _ = writeln!(out, "    \\cmidrule(lr){{2-7}} \\cmidrule(lr){{9-12}}");
-    let _ = writeln!(out, "    $\\log_2 N$ & Commit & PIOP & Grand prod. & Ring switch & Ligerito & Total & (ms) & PIOP & Non-Lig. & Ligerito & Total \\\\");
+    let _ = writeln!(out, "    & Witness & \\multicolumn{{6}}{{c}}{{Prover time (ms)}} & Verifier & \\multicolumn{{4}}{{c}}{{Proof size (KB)}} \\\\");
+    let _ = writeln!(out, "    \\cmidrule(lr){{3-8}} \\cmidrule(lr){{10-13}}");
+    let _ = writeln!(out, "    $\\log_2 N$ & (ms) & Commit & PIOP & \\makecell[b]{{Grand\\\\prod.}} & \\makecell[b]{{Ring\\\\switch}} & Ligerito & Total & (ms) & PIOP & Non-Lig. & Ligerito & Total \\\\");
     let _ = writeln!(out, "    \\midrule");
     for r in rows {
         let _ = writeln!(
             out,
-            "    {} & {} & {} & {} & {} & {} & {} & {} & {} & {} & {} & {} \\\\",
+            "    {} & {} & {} & {} & {} & {} & {} & {} & {} & {} & {} & {} & {} \\\\",
             r.e,
+            fmt_ms(r.witness_ms),
             fmt_ms(r.commit_ms),
             fmt_ms(r.s2_project_ms + r.s3_piop_ms + r.s4_bitify_ms),
             fmt_ms(r.s5_gp_ms),
@@ -3110,7 +3158,7 @@ fn write_mul_latex_table(
     let _ = writeln!(out, "  \\end{{tabular}}");
     let _ = writeln!(
         out,
-        "  \\caption{{Cost of proving $N = 2^{{n}}$ integer multiplications $x \\cdot y = z$, $n = {e_lo}, \\ldots, {e_hi}$, for random $32$-bit integers $x, y$ (so that $z$ is a $64$-bit integer) with \\cref{{c:iop_pimsat}}: one R1CS constraint per multiplication over $\\ZZ$, projected to a prime $q$ sampled after the commitment from an interval $[2^{{b-1}}, 2^{{b}})$ with {q_bits_phrase}, a Spartan PIOP over $\\FF_q$ (with a $3$-variable univariate skip), bitification, and the \\ftwoz\\ opening of the $128$ bits committed per multiplication ($\\codedim = 2^{{n+7}}$ bits in cells of $W = {w}$ bit{}, i.e.\\ ${cell_words}$ cells per multiplication). Security profile $\\lambda = {lambda}$: every round-by-round error is at most $2^{{-{achieved:.1}}}$, the binding term being \\texttt{{{bind_tex}}}; the commitment is opened with ring switching and Ligerito~\\cite{{ligerito}} over a Reed--Solomon code of rate $1/{lig_rate}$ over $\\FF_{{2^{{128}}}}$ (initial folding of $2^{{{lig_k}}}$ rows, {regime_tex}, {hash_tex} Merkle trees), configured for ${lig_target}$ bits — the same opener as \\cref{{tab:f2z-raw-performance}}. Prover columns: \\emph{{Commit}} is bit packing plus the commitment; \\emph{{PIOP}} is the prime projection, the Spartan PIOP and the (microsecond-scale) bitification step; \\emph{{grand products}}, \\emph{{ring switch}} and \\emph{{Ligerito}} are the three parts of the \\ftwoz\\ opening as in \\cref{{tab:f2z-raw-performance}}; \\emph{{Total}} is end to end and includes the commitment. Proof columns: \\emph{{PIOP}} is the Spartan messages and grinding nonces; \\emph{{Non-Lig.}} is the opening's integer folds, GKR, sumcheck and ring-switch messages; \\emph{{Ligerito}} is the Ligerito proof; KB $= 1000$ bytes. {cpu} ({cores}), {mem_gb}\\,GB, {threads} threads; medians of {reps} runs after one warm-up; witness generation and the one-time relation preparation are excluded.}}",
+        "  \\caption{{Cost of proving $N = 2^{{n}}$ integer multiplications $x \\cdot y = z$, $n = {e_lo}, \\ldots, {e_hi}$, for random $32$-bit integers $x, y$ (so that $z$ is a $64$-bit integer) with \\cref{{c:iop_pimsat}}: one R1CS constraint per multiplication over $\\ZZ$, projected to a prime $q$ sampled after the commitment from an interval $[2^{{b-1}}, 2^{{b}})$ with {q_bits_phrase}, a Spartan PIOP over $\\FF_q$ (with a $3$-variable univariate skip), bitification, and the \\ftwoz\\ opening of the $128$ bits committed per multiplication ($\\codedim = 2^{{n+7}}$ bits in cells of $W = {w}$ bit{}, i.e.\\ ${cell_words}$ cells per multiplication). Security profile $\\lambda = {lambda}$: every round-by-round error is at most $2^{{-{achieved:.1}}}$, the binding term being \\texttt{{{bind_tex}}}; the commitment is opened with ring switching and Ligerito~\\cite{{ligerito}} over a Reed--Solomon code of rate $1/{lig_rate}$ over $\\FF_{{2^{{128}}}}$ (initial folding of $2^{{{lig_k}}}$ rows, {regime_tex}, {hash_tex} Merkle trees), configured for ${lig_target}$ bits — the same opener as \\cref{{tab:f2z-raw-performance}}. \\emph{{Witness}} is the witness generation (the products $z = x \\cdot y$ and the Spartan assignment) from the operand pairs; it is not part of the prover time. Prover columns: \\emph{{Commit}} is bit packing plus the commitment; \\emph{{PIOP}} is the prime projection, the Spartan PIOP and the (microsecond-scale) bitification step; \\emph{{grand products}}, \\emph{{ring switch}} and \\emph{{Ligerito}} are the three parts of the \\ftwoz\\ opening as in \\cref{{tab:f2z-raw-performance}}; \\emph{{Total}} is end to end and includes the commitment (each entry is a median, so the parts need not add up exactly). Proof columns: \\emph{{PIOP}} is the Spartan messages and grinding nonces; \\emph{{Non-Lig.}} is the opening's integer folds, GKR, sumcheck and ring-switch messages; \\emph{{Ligerito}} is the Ligerito proof; KB $= 1000$ bytes. {cpu} ({cores}), {mem_gb}\\,GB, {threads} threads; medians of {reps} runs after one warm-up; the one-time relation preparation is excluded.}}",
         if w == 1 { "" } else { "s" }
     );
     let _ = writeln!(out, "  \\label{{tab:f2z-u32-mul}}");
