@@ -11,7 +11,7 @@ use crate::{poly::mle::DenseMultilinearExtension, transcript::traits::Transcript
 use super::{
     SpartanField, absorb_spartan_message,
     matrix::{
-        MleClaimError, PreparedConstraintMatrices, ScaledMleEvaluationClaim,
+        MleClaimError, PreparedConstraintMatrices, ProductRowFunctional, ScaledMleEvaluationClaim,
         SpartanMatrixCoefficient, SpartanMatrixError, make_equality_factors,
     },
     raw_monty::{
@@ -1232,14 +1232,19 @@ where
         matrices.num_column_vars(),
         field_config,
     )?;
-    let row_factors = outer
+    // The matrices under the outer row functional at the inner point: the
+    // succinct closed form on the block-selector relations, the sparse
+    // evaluation elsewhere (one value either way).
+    let prefix = outer
         .row_binding
-        .row_factors(matrices.num_row_vars(), field_config)?;
-    let matrix_evaluation = matrices.evaluate_batched_with_prefix_univariate_factors(
-        &row_factors,
-        &rho,
-        &column_point,
-    )?;
+        .prefix_weights(matrices.num_row_vars(), field_config)?;
+    let functional = ProductRowFunctional {
+        skip_vars: usize::from(outer.row_binding.skip_vars),
+        prefix: &prefix,
+        tail_point: &outer.row_binding.tail_point,
+    };
+    let matrix_evaluation =
+        matrices.evaluate_batched_with_product_row_functional(&functional, &rho, &column_point)?;
 
     Ok(ScaledMleEvaluationClaim::new(
         column_point.into_boxed_slice(),

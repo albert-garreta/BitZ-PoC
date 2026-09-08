@@ -2469,6 +2469,16 @@ const MUL_VERIFY_STEP_ROWS: &[StepRow] = &[
     step("Spartan PIOP (step3:piop_verify)", &["step3:piop_verify"]),
     step("bitification (step4:bitify_verify)", &["step4:bitify_verify"]),
     step("F2Z opening (step5:open_verify)", &["step5:open_verify"]),
+    substep("claim → row/col weights (f2z_prepare_verifier)", &["spartan-f2z:f2z_prepare_verifier"], &[]),
+    substep("row-weight chunking (mv:chunking)", &["mv:chunking"], &[]),
+    substep("fold range + read-off (mv:readoff)", &["mv:readoff"], &[]),
+    substep("roots α^u_c (mv:roots)", &["mv:roots"], &[]),
+    substep("forest layer checks (mv:forest)", &["mv:forest"], &[]),
+    substep("pre-sumcheck verify (mv:presum)", &["mv:presum"], &[]),
+    substep("R-hat(r*) weight fold (mv:rhat)", &["mv:rhat"], &[]),
+    substep("Round 0 / OOD (mv:ood)", &["mv:ood"], &[]),
+    substep("ring-switch + target (mv:rswitch)", &["mv:rswitch"], &[]),
+    substep("Ligerito verify (mv:lig)", &["mv:lig"], &[]),
 ];
 const MUL_VERIFY_TOP_LABELS: &[&str] = &[
     "step2:project_verify",

@@ -1706,6 +1706,68 @@ mod tests {
     use crypto_primitives::FromWithConfig;
 
     #[test]
+    fn u32_mul_roundtrips_with_a_partial_gate_block() {
+        use super::super::u32_mul::U32MulF2zWidth;
+
+        let _env = crate::utils::QUAD_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        // 2^15 + 77 live gates over a 2^16 capacity: the live rows fill the
+        // row domain partially, and not along a univariate-skip block
+        // boundary (4105 full blocks of 8 rows plus a 5-row block) — the
+        // case the verifier's closed-form matrix binding handles with its
+        // two prefix-sum terms.
+        let multiplications = (1usize << 15) + 77;
+        let witness =
+            U32MulWitness::from_fn_with_f2z_width(multiplications, U32MulF2zWidth::W1, |i| {
+                let x = (i as u32).wrapping_mul(0x9e37_79b9) ^ 0x5bd1_e995;
+                let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
+                (x, y)
+            })
+            .unwrap();
+        let layout = *witness.layout();
+        assert_eq!(layout.capacity(), 1 << 16);
+        let prepared = PreparedU32MulRelation::new(layout).unwrap();
+        assert_eq!(prepared.skeleton.matrices().row_count(), multiplications);
+
+        let hint = commit_u32_mul_witness(&prepared, witness.f2z_bit_rows()).unwrap();
+        let mut prover_transcript = crate::transcript::Blake3Transcript::new();
+        let proof = prove_u32_mul(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
+        assert_eq!(
+            proof.spartan().outer.tail.sumcheck.round_polynomials.len(),
+            16 - U32_MUL_UNIVARIATE_SKIP_VARS
+        );
+        let mut verifier_transcript = crate::transcript::Blake3Transcript::new();
+        verify_u32_mul(
+            &mut verifier_transcript,
+            &prepared,
+            &hint.commitment,
+            &proof,
+        )
+        .unwrap();
+
+        // A wrong terminal matrix evaluation is caught downstream: perturb
+        // the inner sumcheck's last round (which moves the final claim the
+        // verifier's own matrix evaluation must scale into the opening).
+        let one = SpartanF2zField::from_with_cfg(1u64, proof.spartan.inner.round_polynomials[0][0].cfg());
+        let mut tampered = proof.clone();
+        let last = tampered.spartan.inner.round_polynomials.len() - 1;
+        tampered.spartan.inner.round_polynomials[last][1] += &one;
+        tampered.spartan.inner.round_polynomials[last][2] -= &one;
+        let mut verifier_transcript = crate::transcript::Blake3Transcript::new();
+        assert!(
+            verify_u32_mul(
+                &mut verifier_transcript,
+                &prepared,
+                &hint.commitment,
+                &tampered
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn u32_mul_roundtrips_and_is_deterministic() {
         use super::super::profile::{Limber114, ProfileError};
         use super::super::u32_mul::U32MulF2zWidth;

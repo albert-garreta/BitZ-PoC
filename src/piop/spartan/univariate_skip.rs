@@ -86,6 +86,23 @@ where
         .map_err(|_| SumcheckError::InvalidEqualityDimensions)
     }
 
+    /// The prefix factor `(L_s(z))_{s < 2^K}` of this row functional, for
+    /// the verifier's succinct matrix binding
+    /// ([`super::matrix::ProductRowFunctional`]); the tail factor is
+    /// `eq(tail_point, ·)` on the remaining `num_row_vars - K` variables.
+    pub(crate) fn prefix_weights(
+        &self,
+        num_row_vars: usize,
+        field_cfg: &F::Config,
+    ) -> Result<Vec<F>, SumcheckError> {
+        let skip_vars = usize::from(self.skip_vars);
+        validate_skip_vars(skip_vars, num_row_vars)?;
+        if self.tail_point.len() != num_row_vars - skip_vars {
+            return Err(SumcheckError::InvalidEqualityDimensions);
+        }
+        Ok(lagrange_weights_at(&self.z, 1usize << skip_vars, field_cfg))
+    }
+
     /// Materializes weights in the matrices' little-endian row order.
     #[allow(dead_code)]
     pub(crate) fn row_weights(

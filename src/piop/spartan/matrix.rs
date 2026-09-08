@@ -373,6 +373,23 @@ pub(crate) struct PrefixRowFactorParts<'a, F> {
     pub num_row_vars: usize,
 }
 
+/// A row functional in product form, as the verifier derives it from the
+/// outer reduction: the weight of logical row `s + 2^K·x` (`s < 2^K`) is
+///
+/// `prefix[s] · eq(tail_point, x)`.
+///
+/// `skip_vars = 0` with `prefix = [1]` is the plain equality functional
+/// `eq(tail_point, ·)` of the standard outer sumcheck; `skip_vars = K ≥ 1`
+/// with `prefix = (L_s(z))_{s < 2^K}` is the prefix-univariate functional of
+/// the univariate-skip reduction, whose materialized form is
+/// [`PrefixUnivariateRowFactors`].
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ProductRowFunctional<'a, F> {
+    pub skip_vars: usize,
+    pub prefix: &'a [F],
+    pub tail_point: &'a [F],
+}
+
 /// The three field-valued matrices defining an R1CS relation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConstraintMatrices<F> {
@@ -446,16 +463,21 @@ pub(crate) struct SelectorRun<C> {
     pub coefficient: C,
 }
 
-/// A prover-side description of R1CS matrices whose every nonzero column is
-/// part of a block-aligned unit-row selector run with a run-constant
-/// coefficient (the shape of the generated u32 and BabyBear relations).
+/// A description of R1CS matrices whose every nonzero column is part of a
+/// block-aligned unit-row selector run with a run-constant coefficient (the
+/// shape of the generated u32, BabyBear and CM-AND relations):
+/// `M = Σ_runs coefficient · Sel(start)` with `Sel(start)[i, start + i] = 1`
+/// for `i < rows`, detected from the validated matrices by
+/// [`detect_block_selector_layout_with`].
 ///
 /// With row weights `W`, the batched column MLE is then
 /// `D(k · block_len + r) = W[r] · Σ_{runs starting at k · block_len} f · coefficient`
 /// for `r < rows` (and zero elsewhere), where `f ∈ {1, ρ, ρ²}` is the run's
 /// matrix factor: scaled copies of ONE weight vector, which the raw prover
-/// binds and folds without materializing `D`. The verifier never consults
-/// this layout.
+/// binds and folds without materializing `D`. The verifier evaluates the
+/// batched matrices at its terminal point through the same structure in
+/// time logarithmic in the relation size
+/// ([`PreparedConstraintMatrices::evaluate_batched_with_product_row_functional`]).
 #[derive(Clone, Debug)]
 pub(crate) struct BlockSelectorLayout<C> {
     /// Logical row count, the length of every run.
@@ -877,8 +899,176 @@ where
         validate_elements_field(column_point, &self.field_modulus_encoding)?;
         validate_element_field(rho, &self.field_modulus_encoding)?;
 
+        if self.block_selector.is_some() {
+            // The equality functional is the `K = 0` product functional:
+            // succinct on a block-selector layout, and never a `2^num_row_vars`
+            // table plus an `O(nnz)` walk.
+            let one = F::one_with_cfg(&self.field_config);
+            let functional = ProductRowFunctional {
+                skip_vars: 0,
+                prefix: std::slice::from_ref(&one),
+                tail_point: row_point,
+            };
+            return self.evaluate_batched_with_product_row_functional(&functional, rho, column_point);
+        }
+
         let row_weights = eq_table(row_point, &self.field_config)?;
         self.evaluate_batched_with_validated_row_weights(&row_weights, rho, column_point)
+    }
+
+    /// Evaluates the batched matrices against a product-form row functional
+    /// `W` ([`ProductRowFunctional`]):
+    ///
+    /// `Σ_i W(i) (A(i, column_point) + ρ B(i, column_point) + ρ² C(i, column_point))`.
+    ///
+    /// On a validated [`BlockSelectorLayout`] this runs in
+    /// `O(2^K + num_row_vars + num_column_vars + runs)` field operations
+    /// ([`Self::evaluate_block_selector_layout`]); on any other matrix shape
+    /// it is the streamed or materialized sparse evaluation of the same
+    /// value. Every input is validated against the prepared field before
+    /// use.
+    pub(crate) fn evaluate_batched_with_product_row_functional(
+        &self,
+        functional: &ProductRowFunctional<'_, F>,
+        rho: &F,
+        column_point: &[F],
+    ) -> Result<F, SpartanMatrixError> {
+        let skip_vars = functional.skip_vars;
+        if skip_vars > self.num_row_vars {
+            return Err(SpartanMatrixError::InvalidRowPointLength {
+                expected: self.num_row_vars,
+                actual: skip_vars,
+            });
+        }
+        let expected_prefix = domain_size(skip_vars)?;
+        if functional.prefix.len() != expected_prefix {
+            return Err(SpartanMatrixError::InvalidRowWeightsLength {
+                expected: expected_prefix,
+                actual: functional.prefix.len(),
+            });
+        }
+        let tail_vars = self.num_row_vars - skip_vars;
+        if functional.tail_point.len() != tail_vars {
+            return Err(SpartanMatrixError::InvalidRowPointLength {
+                expected: tail_vars,
+                actual: functional.tail_point.len(),
+            });
+        }
+        if column_point.len() != self.num_column_vars {
+            return Err(SpartanMatrixError::InvalidColumnPointLength {
+                expected: self.num_column_vars,
+                actual: column_point.len(),
+            });
+        }
+        validate_elements_field(functional.prefix, &self.field_modulus_encoding)?;
+        validate_elements_field(functional.tail_point, &self.field_modulus_encoding)?;
+        validate_elements_field(column_point, &self.field_modulus_encoding)?;
+        validate_element_field(rho, &self.field_modulus_encoding)?;
+
+        if let Some(layout) = self.block_selector.as_deref() {
+            return self.evaluate_block_selector_layout(layout, functional, rho, column_point);
+        }
+
+        // Generic matrices: the sparse reference evaluation under the
+        // materialized (or, for disjoint unit selectors, streamed) weights.
+        if skip_vars == 0 {
+            let row_weights = eq_table(functional.tail_point, &self.field_config)?;
+            return self.evaluate_batched_with_validated_row_weights(
+                &row_weights,
+                rho,
+                column_point,
+            );
+        }
+        let (tail_low, tail_high) = make_equality_factors(functional.tail_point, &self.field_config)?;
+        let factors = PrefixUnivariateRowFactors::new(
+            skip_vars,
+            functional.prefix.to_vec(),
+            tail_low,
+            tail_high,
+            self.num_row_vars,
+        )?;
+        self.evaluate_batched_with_prefix_univariate_factors(&factors, rho, column_point)
+    }
+
+    /// The succinct evaluation behind
+    /// [`Self::evaluate_batched_with_product_row_functional`] on a validated
+    /// [`BlockSelectorLayout`].
+    ///
+    /// Every matrix is `Σ_runs coefficient · Sel(start)` with
+    /// `Sel(start)[i, start + i] = 1` for `i < rows`, where `start` is a
+    /// multiple of the power-of-two `block_len ≥ rows` and
+    /// `start + rows ≤ columns ≤ 2^num_column_vars` (the detector's
+    /// invariants, re-checked here). With `n = num_row_vars` we have
+    /// `rows ≤ 2^n ≤ block_len = 2^ℓ`, so the column index `start + i` of a
+    /// run entry has bits `[0, n)` equal to `i`, bits `[n, ℓ)` zero and bits
+    /// `[ℓ, num_column_vars)` equal to `start >> ℓ`. For the little-endian
+    /// equality table at `y = column_point` this gives
+    ///
+    /// `eq(y, start + i) = eq(y[..n], i) · Π_{k ∈ [n, ℓ)} (1 − y_k) · eq(y[ℓ..], start >> ℓ)`
+    ///
+    /// and the batched evaluation factors as
+    ///
+    /// `S · Z · Σ_{M ∈ {A, B, C}} f_M · Σ_{runs of M} coefficient · eq(y[ℓ..], start >> ℓ)`
+    ///
+    /// with `S = Σ_{i < rows} W(i) eq(y[..n], i)` ([`product_row_prefix_sum`]),
+    /// `Z = Π_{k ∈ [n, ℓ)} (1 − y_k)` and `(f_A, f_B, f_C) = (1, ρ, ρ²)`. The
+    /// result is the same field element as the sparse evaluation.
+    fn evaluate_block_selector_layout(
+        &self,
+        layout: &BlockSelectorLayout<C>,
+        functional: &ProductRowFunctional<'_, F>,
+        rho: &F,
+        column_point: &[F],
+    ) -> Result<F, SpartanMatrixError> {
+        let field_config = &self.field_config;
+        let num_row_vars = self.num_row_vars;
+        let rows = layout.rows;
+        let block_len = layout.block_len;
+        let columns = self.matrices.column_count();
+        let log_block_len = block_len.trailing_zeros() as usize;
+        if rows == 0
+            || rows != self.matrices.row_count()
+            || !block_len.is_power_of_two()
+            || rows > block_len
+            || domain_size(num_row_vars)? > block_len
+            || log_block_len > self.num_column_vars
+            || column_point.len() != self.num_column_vars
+        {
+            return Err(SpartanMatrixError::InvalidMleOperation);
+        }
+
+        let one = F::one_with_cfg(field_config);
+        let zero = F::zero_with_cfg(field_config);
+        let (low_point, rest) = column_point.split_at(num_row_vars);
+        let (padding_point, high_point) = rest.split_at(log_block_len - num_row_vars);
+
+        let row_sum = product_row_prefix_sum(functional, rows, low_point, field_config)?;
+        let mut padding = one.clone();
+        for coordinate in padding_point {
+            padding = mul(&padding, &sub(&one, coordinate));
+        }
+
+        let run_sum = |runs: &[SelectorRun<C>]| -> Result<F, SpartanMatrixError> {
+            let mut sum = zero.clone();
+            for run in runs {
+                if run.start % block_len != 0
+                    || run
+                        .start
+                        .checked_add(rows)
+                        .is_none_or(|end| end > columns)
+                {
+                    return Err(SpartanMatrixError::InvalidMleOperation);
+                }
+                let block_weight =
+                    eq_at_boolean_index(high_point, run.start >> log_block_len, field_config)?;
+                sum += &run.coefficient.scale(&block_weight, field_config);
+            }
+            Ok(sum)
+        };
+        let mut batched = run_sum(&layout.a)?;
+        batched += &mul(rho, &run_sum(&layout.b)?);
+        batched += &mul(&mul(rho, rho), &run_sum(&layout.c)?);
+        Ok(mul(&mul(&row_sum, &padding), &batched))
     }
 
     /// Directly evaluates the batched matrices against an explicit
@@ -1275,6 +1465,158 @@ where
         }
         Ok(())
     }
+}
+
+/// `Σ_{i < rows} W(i) · eq(point, i)` for the product functional `W` over
+/// `n = point.len()` row variables (`rows ≤ 2^n`), in
+/// `O(2^skip_vars + n)` field operations.
+///
+/// With `K = skip_vars`, `M = 2^K`, `rows = Q·M + R` (`R < M`) and
+/// `i = s + M·x`, both `W(i)` and `eq(point, i)` split along the prefix
+/// `s` and the tail `x`, so
+///
+/// `Σ_{i < rows} W(i) eq(point, i)
+///   = Σ_{x < Q} eq(t, x) eq(y_hi, x) · Σ_{s < M} prefix[s] eq(y_lo, s)
+///   + eq(t, Q) eq(y_hi, Q) · Σ_{s < R} prefix[s] eq(y_lo, s)`
+///
+/// where `y_lo = point[..K]`, `y_hi = point[K..]`, `t = tail_point`, and the
+/// second term is present only for `R > 0` (then `Q < 2^{n − K}` is a
+/// Boolean index of the tail domain).
+fn product_row_prefix_sum<F>(
+    functional: &ProductRowFunctional<'_, F>,
+    rows: usize,
+    point: &[F],
+    field_config: &F::Config,
+) -> Result<F, SpartanMatrixError>
+where
+    F: SpartanField,
+{
+    let skip_vars = functional.skip_vars;
+    let block_len = domain_size(skip_vars)?;
+    let tail_vars = point
+        .len()
+        .checked_sub(skip_vars)
+        .ok_or(SpartanMatrixError::InvalidMleOperation)?;
+    if functional.prefix.len() != block_len
+        || functional.tail_point.len() != tail_vars
+        || rows > domain_size(point.len())?
+    {
+        return Err(SpartanMatrixError::InvalidMleOperation);
+    }
+    let (low_point, high_point) = point.split_at(skip_vars);
+    let low_table = eq_table(low_point, field_config)?;
+    let zero = F::zero_with_cfg(field_config);
+    let prefix_sum = |count: usize| -> F {
+        let mut sum = zero.clone();
+        for (weight, equality) in functional.prefix[..count].iter().zip(&low_table[..count]) {
+            sum += &mul(weight, equality);
+        }
+        sum
+    };
+
+    let full_blocks = rows >> skip_vars;
+    let partial_rows = rows & (block_len - 1);
+    let mut sum = mul(
+        &hypercube_prefix_sum(functional.tail_point, high_point, full_blocks, field_config)?,
+        &prefix_sum(block_len),
+    );
+    if partial_rows != 0 {
+        let block_weight = mul(
+            &eq_at_boolean_index(functional.tail_point, full_blocks, field_config)?,
+            &eq_at_boolean_index(high_point, full_blocks, field_config)?,
+        );
+        sum += &mul(&block_weight, &prefix_sum(partial_rows));
+    }
+    Ok(sum)
+}
+
+/// `Σ_{x < count} eq(left, x) · eq(right, x)` over the `m`-variable Boolean
+/// hypercube (`m = left.len()`, `count ≤ 2^m`), in `O(m)` field operations.
+///
+/// For `count = 2^m` the sum is `eq(left, right)`. Otherwise every `x < count`
+/// agrees with `count` above some bit `k` at which `count` is 1 and `x` is 0,
+/// and is free below `k`:
+///
+/// `Σ_{k : count_k = 1} Π_{j > k} m_j(count_j) · (1 − l_k)(1 − r_k) · Π_{j < k} (l_j r_j + (1 − l_j)(1 − r_j))`
+///
+/// with `m_j(1) = l_j r_j` and `m_j(0) = (1 − l_j)(1 − r_j)`.
+fn hypercube_prefix_sum<F>(
+    left: &[F],
+    right: &[F],
+    count: usize,
+    field_config: &F::Config,
+) -> Result<F, SpartanMatrixError>
+where
+    F: SpartanField,
+{
+    let vars = left.len();
+    let domain = domain_size(vars)?;
+    if right.len() != vars || count > domain {
+        return Err(SpartanMatrixError::InvalidMleOperation);
+    }
+    let one = F::one_with_cfg(field_config);
+    let match_one = left
+        .iter()
+        .zip(right)
+        .map(|(l, r)| mul(l, r))
+        .collect::<Vec<_>>();
+    let match_zero = left
+        .iter()
+        .zip(right)
+        .map(|(l, r)| mul(&sub(&one, l), &sub(&one, r)))
+        .collect::<Vec<_>>();
+    if count == domain {
+        let mut value = one;
+        for (m1, m0) in match_one.iter().zip(&match_zero) {
+            value = mul(&value, &add(m1, m0));
+        }
+        return Ok(value);
+    }
+
+    // free_prefix[k] = Π_{j < k} (m_j(1) + m_j(0)): the bits below `k` are free.
+    let mut free_prefix = Vec::with_capacity(vars + 1);
+    free_prefix.push(one.clone());
+    for (m1, m0) in match_one.iter().zip(&match_zero) {
+        let last = free_prefix.last().expect("seeded with one");
+        free_prefix.push(mul(last, &add(m1, m0)));
+    }
+    let mut sum = F::zero_with_cfg(field_config);
+    let mut high_match = one;
+    for k in (0..vars).rev() {
+        if (count >> k) & 1 == 1 {
+            sum += &mul(&mul(&high_match, &match_zero[k]), &free_prefix[k]);
+            high_match = mul(&high_match, &match_one[k]);
+        } else {
+            high_match = mul(&high_match, &match_zero[k]);
+        }
+    }
+    Ok(sum)
+}
+
+/// `eq(point, index) = Π_k (index_k ? point_k : 1 − point_k)`: entry `index`
+/// of [`eq_table`] without the table (`index < 2^{point.len()}`).
+fn eq_at_boolean_index<F>(
+    point: &[F],
+    index: usize,
+    field_config: &F::Config,
+) -> Result<F, SpartanMatrixError>
+where
+    F: SpartanField,
+{
+    if index >= domain_size(point.len())? {
+        return Err(SpartanMatrixError::InvalidMleOperation);
+    }
+    let one = F::one_with_cfg(field_config);
+    let mut value = one.clone();
+    for (k, coordinate) in point.iter().enumerate() {
+        let factor = if (index >> k) & 1 == 1 {
+            coordinate.clone()
+        } else {
+            sub(&one, coordinate)
+        };
+        value = mul(&value, &factor);
+    }
+    Ok(value)
 }
 
 fn padded_mle<F>(
@@ -2369,6 +2711,420 @@ mod tests {
                 .evaluate_batched_with_validated_row_weights(&row_weights, &rho, &column_point,)
                 .unwrap()
         );
+    }
+
+    /// The block-selector relation shapes of the crate — u32 (three unit
+    /// selector blocks), BabyBear (a two-run output matrix with a non-unit
+    /// coefficient), CM-AND (empty `A`/`B`, a four-run `C` with negative
+    /// coefficients, a non-power-of-two column count), a run at column 0,
+    /// everything in one block, and a capacity wider than the live rows (the
+    /// u32 relation's 256-gate minimum) — as `(name, columns, [A, B, C])` in
+    /// row-major form for `rows` live rows.
+    fn block_selector_families(
+        rows: usize,
+        config: &<F128 as PrimeField>::Config,
+    ) -> Vec<(&'static str, usize, [Vec<Vec<(usize, F128)>>; 3])> {
+        let cap = rows.next_power_of_two();
+        let wide = 4 * cap;
+        let one = field(1, config);
+        let mut minus_one = F128::zero_with_cfg(config);
+        minus_one -= &one;
+        let mut minus_two = minus_one.clone();
+        minus_two -= &one;
+        let baby_bear = field(2_013_265_921, config);
+        let run = |start: usize, coefficient: &F128| -> Vec<Vec<(usize, F128)>> {
+            (0..rows)
+                .map(|row| vec![(start + row, coefficient.clone())])
+                .collect()
+        };
+        let merge = |runs: Vec<Vec<Vec<(usize, F128)>>>| -> Vec<Vec<(usize, F128)>> {
+            (0..rows)
+                .map(|row| {
+                    runs.iter()
+                        .flat_map(|matrix_rows| matrix_rows[row].iter().cloned())
+                        .collect()
+                })
+                .collect()
+        };
+        let empty = vec![Vec::new(); rows];
+        vec![
+            (
+                "u32",
+                4 * cap,
+                [run(cap, &one), run(2 * cap, &one), run(3 * cap, &one)],
+            ),
+            (
+                "baby-bear",
+                5 * cap,
+                [
+                    run(cap, &one),
+                    run(2 * cap, &one),
+                    merge(vec![run(3 * cap, &one), run(4 * cap, &baby_bear)]),
+                ],
+            ),
+            (
+                "cm-and",
+                5 * cap + 3,
+                [
+                    empty.clone(),
+                    empty,
+                    merge(vec![
+                        run(cap, &one),
+                        run(2 * cap, &one),
+                        run(3 * cap, &minus_two),
+                        run(4 * cap, &minus_one),
+                    ]),
+                ],
+            ),
+            (
+                "zero-run",
+                3 * cap,
+                [
+                    run(0, &field(3, config)),
+                    run(cap, &field(5, config)),
+                    merge(vec![run(0, &field(7, config)), run(2 * cap, &field(11, config))]),
+                ],
+            ),
+            (
+                "one-block",
+                cap,
+                [run(0, &one), run(0, &one), run(0, &field(2, config))],
+            ),
+            (
+                "wide-capacity",
+                4 * wide,
+                [run(wide, &one), run(2 * wide, &one), run(3 * wide, &one)],
+            ),
+        ]
+    }
+
+    fn prepared_from_rows(
+        columns: usize,
+        [a, b, c]: [Vec<Vec<(usize, F128)>>; 3],
+        config: &<F128 as PrimeField>::Config,
+    ) -> PreparedConstraintMatrices<F128, F128> {
+        let matrix = |rows| SparseMatrix::try_from_rows(columns, rows).unwrap();
+        PreparedConstraintMatrices::new(
+            ConstraintMatrices::new(matrix(a), matrix(b), matrix(c)).unwrap(),
+            config,
+        )
+        .unwrap()
+    }
+
+    /// The materialized row weights of a product functional, in the
+    /// matrices' little-endian row order: the reference the verifier's
+    /// closed form is pinned to.
+    fn materialized_product_functional(
+        functional: &ProductRowFunctional<'_, F128>,
+        num_row_vars: usize,
+        config: &<F128 as PrimeField>::Config,
+    ) -> Vec<F128> {
+        if functional.skip_vars == 0 {
+            let table = eq_table(functional.tail_point, config).unwrap();
+            return table
+                .iter()
+                .map(|weight| mul(&functional.prefix[0], weight))
+                .collect();
+        }
+        let (tail_low, tail_high) = make_equality_factors(functional.tail_point, config).unwrap();
+        PrefixUnivariateRowFactors::new(
+            functional.skip_vars,
+            functional.prefix.to_vec(),
+            tail_low,
+            tail_high,
+            num_row_vars,
+        )
+        .unwrap()
+        .materialize()
+    }
+
+    #[test]
+    fn block_selector_closed_form_matches_the_materialized_sparse_reference() {
+        use rand::{RngExt, SeedableRng, rngs::StdRng};
+
+        let config = config();
+        let mut rng = StdRng::seed_from_u64(0xf2f2_5eed);
+        let random = |rng: &mut StdRng| field(rng.random::<u64>(), &config);
+        let mut checked = 0;
+        for rows in [
+            1usize, 2, 3, 4, 5, 6, 7, 8, 9, 11, 13, 16, 17, 23, 31, 32, 33, 50, 64, 65, 100, 127,
+            128,
+        ] {
+            for (name, columns, matrices) in block_selector_families(rows, &config) {
+                let prepared = prepared_from_rows(columns, matrices, &config);
+                assert!(
+                    prepared.block_selector.is_some(),
+                    "{name} rows={rows}: block-selector layout not detected"
+                );
+                let num_row_vars = prepared.num_row_vars();
+                let num_column_vars = prepared.num_column_vars();
+                for skip_vars in 0..=num_row_vars.min(4) {
+                    let prefix = if skip_vars == 0 {
+                        vec![field(1, &config)]
+                    } else {
+                        (0..1usize << skip_vars).map(|_| random(&mut rng)).collect()
+                    };
+                    let tail_point = (0..num_row_vars - skip_vars)
+                        .map(|_| random(&mut rng))
+                        .collect::<Vec<_>>();
+                    let rho = random(&mut rng);
+                    let column_point = (0..num_column_vars)
+                        .map(|_| random(&mut rng))
+                        .collect::<Vec<_>>();
+                    let functional = ProductRowFunctional {
+                        skip_vars,
+                        prefix: &prefix,
+                        tail_point: &tail_point,
+                    };
+
+                    let row_weights =
+                        materialized_product_functional(&functional, num_row_vars, &config);
+                    let expected = prepared
+                        .evaluate_batched_with_validated_row_weights(
+                            &row_weights,
+                            &rho,
+                            &column_point,
+                        )
+                        .unwrap();
+                    assert_eq!(
+                        prepared
+                            .evaluate_batched_with_product_row_functional(
+                                &functional,
+                                &rho,
+                                &column_point
+                            )
+                            .unwrap(),
+                        expected,
+                        "{name} rows={rows} skip_vars={skip_vars}"
+                    );
+                    if skip_vars == 0 {
+                        assert_eq!(
+                            prepared
+                                .evaluate_batched(&tail_point, &rho, &column_point)
+                                .unwrap(),
+                            expected,
+                            "{name} rows={rows}: evaluate_batched"
+                        );
+                    }
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked >= 500, "checked only {checked} shapes");
+    }
+
+    #[test]
+    fn product_row_functional_matches_the_reference_on_generic_matrices() {
+        use rand::{RngExt, SeedableRng, rngs::StdRng};
+
+        let config = config();
+        let mut rng = StdRng::seed_from_u64(0x9e37_79b9);
+        let random = |rng: &mut StdRng| field(rng.random::<u64>(), &config);
+        // Not a block-selector layout: a column with two entries and a row
+        // with none.
+        let matrix = |scale: u64| {
+            SparseMatrix::try_from_rows(
+                8,
+                vec![
+                    vec![(0, field(2 * scale, &config)), (7, field(3, &config))],
+                    vec![(2, field(5, &config)), (7, field(scale, &config))],
+                    vec![(4, field(7, &config))],
+                    vec![],
+                    vec![(1, field(11, &config))],
+                ],
+            )
+            .unwrap()
+        };
+        let prepared = PreparedConstraintMatrices::new(
+            ConstraintMatrices::new(matrix(1), matrix(2), matrix(3)).unwrap(),
+            &config,
+        )
+        .unwrap();
+        assert!(prepared.block_selector.is_none());
+        assert!(prepared.selector_triplet.is_none());
+        let num_row_vars = prepared.num_row_vars();
+        for skip_vars in 0..=num_row_vars {
+            let prefix = if skip_vars == 0 {
+                vec![field(1, &config)]
+            } else {
+                (0..1usize << skip_vars).map(|_| random(&mut rng)).collect()
+            };
+            let tail_point = (0..num_row_vars - skip_vars)
+                .map(|_| random(&mut rng))
+                .collect::<Vec<_>>();
+            let rho = random(&mut rng);
+            let column_point = (0..prepared.num_column_vars())
+                .map(|_| random(&mut rng))
+                .collect::<Vec<_>>();
+            let functional = ProductRowFunctional {
+                skip_vars,
+                prefix: &prefix,
+                tail_point: &tail_point,
+            };
+            let row_weights = materialized_product_functional(&functional, num_row_vars, &config);
+            assert_eq!(
+                prepared
+                    .evaluate_batched_with_product_row_functional(&functional, &rho, &column_point)
+                    .unwrap(),
+                prepared
+                    .evaluate_batched_with_validated_row_weights(&row_weights, &rho, &column_point)
+                    .unwrap(),
+                "skip_vars={skip_vars}"
+            );
+        }
+    }
+
+    #[test]
+    fn product_row_functional_rejects_malformed_inputs() {
+        let config = config();
+        let other_config =
+            F128::make_cfg(&Uint::from(OTHER_TEST_MODULUS)).expect("odd test modulus");
+        let rows = 6;
+        let (name, columns, matrices) = block_selector_families(rows, &config).swap_remove(0);
+        assert_eq!(name, "u32");
+        let prepared = prepared_from_rows(columns, matrices, &config);
+        assert!(prepared.block_selector.is_some());
+        assert_eq!(prepared.num_row_vars(), 3);
+        assert_eq!(prepared.num_column_vars(), 5);
+
+        let prefix = [2, 3, 5, 7]
+            .into_iter()
+            .map(|value| field(value, &config))
+            .collect::<Vec<_>>();
+        let tail_point = [field(43, &config)];
+        let rho = field(47, &config);
+        let column_point = [53u64, 59, 61, 67, 71]
+            .into_iter()
+            .map(|value| field(value, &config))
+            .collect::<Vec<_>>();
+        let functional = ProductRowFunctional {
+            skip_vars: 2,
+            prefix: &prefix,
+            tail_point: &tail_point,
+        };
+        prepared
+            .evaluate_batched_with_product_row_functional(&functional, &rho, &column_point)
+            .unwrap();
+
+        // Prefix length must be exactly 2^skip_vars.
+        let bad = ProductRowFunctional {
+            prefix: &prefix[..3],
+            ..functional
+        };
+        assert!(matches!(
+            prepared.evaluate_batched_with_product_row_functional(&bad, &rho, &column_point),
+            Err(SpartanMatrixError::InvalidRowWeightsLength { expected: 4, actual: 3 })
+        ));
+        // Tail length must be exactly num_row_vars - skip_vars.
+        let bad = ProductRowFunctional {
+            tail_point: &[],
+            ..functional
+        };
+        assert!(matches!(
+            prepared.evaluate_batched_with_product_row_functional(&bad, &rho, &column_point),
+            Err(SpartanMatrixError::InvalidRowPointLength { expected: 1, actual: 0 })
+        ));
+        // skip_vars beyond the row domain.
+        let wide_prefix = (0..16).map(|value| field(value, &config)).collect::<Vec<_>>();
+        let bad = ProductRowFunctional {
+            skip_vars: 4,
+            prefix: &wide_prefix,
+            tail_point: &[],
+        };
+        assert!(matches!(
+            prepared.evaluate_batched_with_product_row_functional(&bad, &rho, &column_point),
+            Err(SpartanMatrixError::InvalidRowPointLength { expected: 3, actual: 4 })
+        ));
+        // Column point of the wrong width.
+        assert!(matches!(
+            prepared.evaluate_batched_with_product_row_functional(
+                &functional,
+                &rho,
+                &column_point[..4]
+            ),
+            Err(SpartanMatrixError::InvalidColumnPointLength { expected: 5, actual: 4 })
+        ));
+        // Elements from another field configuration, anywhere.
+        let foreign = field(5, &other_config);
+        let mut foreign_column = column_point.clone();
+        foreign_column[2] = foreign.clone();
+        assert!(matches!(
+            prepared.evaluate_batched_with_product_row_functional(
+                &functional,
+                &rho,
+                &foreign_column
+            ),
+            Err(SpartanMatrixError::FieldConfigurationMismatch)
+        ));
+        assert!(matches!(
+            prepared.evaluate_batched_with_product_row_functional(
+                &functional,
+                &foreign,
+                &column_point
+            ),
+            Err(SpartanMatrixError::FieldConfigurationMismatch)
+        ));
+        let foreign_tail = [foreign.clone()];
+        let bad = ProductRowFunctional {
+            tail_point: &foreign_tail,
+            ..functional
+        };
+        assert!(matches!(
+            prepared.evaluate_batched_with_product_row_functional(&bad, &rho, &column_point),
+            Err(SpartanMatrixError::FieldConfigurationMismatch)
+        ));
+        let mut foreign_prefix = prefix.clone();
+        foreign_prefix[1] = foreign;
+        let bad = ProductRowFunctional {
+            prefix: &foreign_prefix,
+            ..functional
+        };
+        assert!(matches!(
+            prepared.evaluate_batched_with_product_row_functional(&bad, &rho, &column_point),
+            Err(SpartanMatrixError::FieldConfigurationMismatch)
+        ));
+    }
+
+    #[test]
+    fn hypercube_prefix_sum_and_boolean_index_match_brute_force() {
+        use rand::{RngExt, SeedableRng, rngs::StdRng};
+
+        let config = config();
+        let mut rng = StdRng::seed_from_u64(0x0dd_b1a5);
+        for vars in 0..=6 {
+            let left = (0..vars)
+                .map(|_| field(rng.random::<u64>(), &config))
+                .collect::<Vec<_>>();
+            let right = (0..vars)
+                .map(|_| field(rng.random::<u64>(), &config))
+                .collect::<Vec<_>>();
+            let left_table = eq_table(&left, &config).unwrap();
+            let right_table = eq_table(&right, &config).unwrap();
+            for index in 0..left_table.len() {
+                assert_eq!(
+                    eq_at_boolean_index(&left, index, &config).unwrap(),
+                    left_table[index],
+                    "vars={vars} index={index}"
+                );
+            }
+            assert!(eq_at_boolean_index(&left, left_table.len(), &config).is_err());
+            let mut running = F128::zero_with_cfg(&config);
+            for count in 0..=left_table.len() {
+                assert_eq!(
+                    hypercube_prefix_sum(&left, &right, count, &config).unwrap(),
+                    running,
+                    "vars={vars} count={count}"
+                );
+                if count < left_table.len() {
+                    running += &mul(&left_table[count], &right_table[count]);
+                }
+            }
+            assert_eq!(
+                hypercube_prefix_sum(&left, &right, left_table.len(), &config).unwrap(),
+                eq_eval(&left, &right, &config).unwrap()
+            );
+            assert!(hypercube_prefix_sum(&left, &right, left_table.len() + 1, &config).is_err());
+        }
     }
 
     #[test]
