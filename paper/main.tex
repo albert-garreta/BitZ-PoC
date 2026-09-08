@@ -316,7 +316,7 @@ At the time of writing, two further works push the performance envelope of binar
 
 \subsection{Acknowledgements}
 
-We thank the engineering teams at World Foundation, Nethermind, and Ivy Research for their contributions towards implementing \ftwoz, concretely we thank Alexander Abdugafarov, Xander van der Goot, and Sina \albert{Last name?}.
+We thank the engineering teams at World Foundation, Nethermind, and Ivy Research for their contributions towards implementing \ftwoz, concretely we thank Alexander Abdugafarov, Xander van der Groot, and Sina \albert{Last name?}.
 We also thank Lev Soukhanov and Giacomo Fenzi for insightful and helpful discussions.  
 
 
@@ -1471,7 +1471,7 @@ In \cref{t:core_iop_complexity} we summarize the main costs of \cref{c:core_iop}
 Rounds 0, 1 and 2 send only non-oracle messages, so the oracles and queries of \cref{c:core_iop} are exclusively those of $\Pi_\red$ and $\Pi_\iopp$. If Round 1 is skipped, $q$ denotes $|R|$ when $R=\FF_q$, and $\max_i \vv^{(1)}_i+1$ when $R=\ZZ$ (cf.\ \cref{r:skip_round_1_integers}). The exponentiations of Phase 3, when computing $(g^{\bm{\gamma_i}})_{i\in [\codedim_1]}$ and $(g^{\mu_j})_{j\in [\codedim_2]}$, take $\lceil \log(q\cdot\codedim_1)/w\rceil \leq \comfieldexp/w$ multiplications each using a fixed-base table with $w$-bit windows ($w=8$ in our implementation).
 
 
-In our instantiation, we set $\codedim_1\approx \sqrt{\codedim}$, $\codedim_2\approx \sqrt{\codedim}$, making the verifier succinct.
+In our instantiation, we set $\codedim_1\approx \sqrt{\codedim}$, $\codedim_2\approx \sqrt{\codedim}$, making the verifier succinct.  We assume implicitly that the instance is given to the verifier as $(\mu,\vv^{(1)},\vv^{(2)})$, so that it does not read $\vv$ in full.
 
 When $k=0$ (so that $R=\ZZ_n$ for some $n$), we have $D=0$ and $T=1$.  When $k=1$ and $R=\ZZ_n[X]/(h(X))$ for some monic $h(X)$, then $D\leq \deg(h(X))-1$ and $T\leq D
 +1$, cf.\ \eqref{e:ring_theta_params} for a definition of these quantities. If $n>0$, then $N_R\leq |\ZZ_n|=n$. Otherwise if $n=0$, $N_R \leq \lVert (\vv^{(1)}, \vv^{(2)})\rVert_\infty$.
@@ -1724,7 +1724,7 @@ We set the following additional notation:
 \begin{itemize}[leftmargin=*]
  \item Let $S$ be a ring, possibly different than $R$, let $\psi:S \to R$ be a ring homomorphism. %Let $M$ be a $S$-module and  let $\psi: \moduleone \to R$ be a module homomorphism (with underlying ring homomorphism $\ringmorphism$ \albert{terminology in preliminaries}).
 \item 
-Let $D_S\geq 1$ be a degree bound, and let $\gamma_1=1, \gamma_2,\ldots, \gamma_\moduledegree\in S$ be the monomials of total degree less than $D_S$ in a fixed set of generators of $S$ (\cref{s:prelims_algebra}) \albertimportant{Review, this used to be $\gamma_1,\ldots, \gamma_\moduledegree$}, so that $\moduledegree$ is the number of such monomials. 
+Let $D_S\geq 1$ be a degree bound, and let $\gamma_1=1, \gamma_2,\ldots, \gamma_\moduledegree\in S$ be the monomials of total degree less than $D_S$ in a fixed set of generators of $S$ (\cref{s:prelims_algebra}), so that $\moduledegree$ is the number of such monomials. Concretely $\moduledegree\leq \binom{D_S-1+k_S}{k_S}$, where $1,\eta_1,\ldots,\eta_{k_S}$ are the generators of $S$.
 \item Recall from \cref{s:prelims_algebra} that $\moduleonebound$ denotes the set of elements of $S$ of the form $h=\sum_{i\in [\moduledegree]} h_i\cdot \gamma_i$ for $$h_i \in \range{0}{2^B-1}_S \subseteq  S,$$ and that for a vector of integers $\ww$, we write $\ww_S$ for its projection to $S$ via reduction modulo $\Char(S)$ (see \eqref{e:integers_subscript_proj}).
      \item Let $\codedim_0$ be a vector witness length, so that our witnesses are $\bff\in S^{\codedim_0}$.    
      \end{itemize}
@@ -1755,7 +1755,7 @@ $\bff=\sum_{j\in [\moduledegree]} \bff_{*j}\cdot \gamma_j$
 for some $\bff_{*j}\in \left(\range{0}{2^B-1}_S\right)^{\codedim_0}$, $j\in [\moduledegree]$ (this expression is not unique).  Then write $$\bff_{*j}= \sum_{k=1}^{B}\  \bff_{*jk}\cdot \pi_{\Char(S)}(2^{k-1}) $$ for some vectors $$\bff_{*jk}\in \{0,1\}_S^{\codedim_0}\subseteq S^{\codedim_0},$$ for all $j,k$.  We  define   $$
 \begin{aligned}
 & \codedim\defeq \codedim_0\cdot \moduledegree\cdot B,\\
-&\bitstext(\bff)\in \bits^{\codedim} \subseteq \ZZ^{\codedim}\end{aligned}$$ as the vector with integer bit entries obtained by concatenating the vectors $\bff_{*jk}$ and lifting their entries to $\bits \subseteq \ZZ$ in a natural way, i.e.\ \begin{equation}\label{e:bits_of_f}\bitstext(\bff)\defeq \left(\mathsf{lift}(\bff_{*jk})\mid  j\in [\moduledegree], k\in [B]\right)\in \bits^{\codedim} \subseteq \ZZ^{\codedim},\end{equation}
+&\bitstext(\bff)\in \bits^{\codedim} \subseteq \ZZ^{\codedim}\end{aligned}$$ as the vector with integer bit entries obtained by concatenating the vectors $\bff_{*jk}$ and lifting and reordering their entries to $\bits \subseteq \ZZ$ in a natural way, i.e.\ \begin{equation}\label{e:bits_of_f}\bitstext(\bff)\defeq \left(\mathsf{lift}(\bff_{ijk})\right)_{i\in [\codedim_0], k\in [B], j\in [\moduledegree]}\in \bits^{\codedim} \subseteq \ZZ^{\codedim},\end{equation}
 where $\mathsf{lift}$ is the identity function if $\Char(S)=0$,  and  $\mathsf{lift} = \pi_{\Char(S)}^{-1}$ if $\Char(S)>0$.  Defining 
 $$L=\mathsf{Id}_{\codedim_0\times \codedim_0} \otimes (1, 2, \ldots, 2^{B-1})_S \otimes (\gamma_1, \ldots, \gamma_d) \in S^{\codedim_0\times \codedim},$$
 we have
@@ -1879,7 +1879,7 @@ For more general matrices $L$, one needs to make sure that $L$ has enough struct
 \begin{itemize}
 [leftmargin=*,nosep]
 \item Fall back to using the matrix \eqref{e:canonical_bitification_matrix}, which is always available for arbitrary finitely generated rings $S$ with bit-bound $B$, or
-\item Alternatively, if the ring $R$ supports it, one can run a sumcheck to reduce the claim $\langle \bitstext(\bff)_R, \uu\rangle = \mu$ to an MLE evaluation claim over $R$, thereby ``replacing'' the vector $\uu$ by an ``eq vector'' that, as such, admits tensor decompositions of arbitrary dimensions.
+\item Alternatively, if the ring $R$ supports it (e.g.\ if $R$ is a finite field or a ring with a large exceptional set), one can run a sumcheck to reduce the claim $\langle \bitstext(\bff)_R, \uu\rangle = \mu$ to an MLE evaluation claim over $R$, thereby ``replacing'' the vector $\uu$ by an ``eq vector'' that, as such, admits tensor decompositions of arbitrary dimensions.
 \end{itemize}
 \end{remark}
 
@@ -1994,7 +1994,7 @@ We now discuss how to make the errors $\kappa_{\mathsf{OOD}}, \kappa_0, (\ksred_
 
 
 
-\paragraph{The errors $\kappa_{i,\iopp}$.} The ring switching step adds an error term of the form $7/|\comfield|$.  If targeting 128 bits of security, we use grinding  (\cref{s:IORs})  of $3$ bits in this round. The sumcheck before the ring switch adds similarly small error terms, which are handled with a few bits of grinding. WHIR is configured at any desired $\lambda\leq 128$ bits of security using $|\comfield|=2^{128}$ following \cite{stir-repo,whir-repo}. We do not discuss this further since WHIR is a well-known IOP, and it  can achieve $128$ bits of security (in the Unique Decoding Radius) in $128$ bit fields when codewords have dimension approximately $2^{30}$ (assuming an interleaved RS code) \albert{Review. Why do we need interleaving?}.
+\paragraph{The errors $\kappa_{i,\iopp}$.} The ring switching step adds an error term of the form $7/|\comfield|$.  If targeting 128 bits of security, we use grinding  (\cref{s:IORs})  of $3$ bits in this round. The sumcheck before the ring switch adds similarly small error terms, which are handled with a few bits of grinding. WHIR is configured at any desired $\lambda\leq 128$ bits of security using $|\comfield|=2^{128}$ following \cite{stir-repo,whir-repo}. We do not discuss this further since WHIR is a well-known IOP, and it  can achieve $128$ bits of security (in the Unique Decoding Radius) in $128$ bit fields when codewords have dimension approximately $2^{30}$ assuming an interleaved RS code (to reduce the correlated agreement error) and the use of grinding when needed.
 
 
 \paragraph{The error $\kappa_{\mathsf{OOD}}$.} As mentioned, we instantiate $\Pi_\iopp$  as WHIR with the ring-switching techniques of \cite{binius} and \cref{a:ring_switch_1}. For $\lambda=100$ we use a proximity parameter $\delta$ up to the Johnson bound. For $\lambda=128$ we set $\delta$ up to the unique decoding radius, so that the Out Of Domain sampling step (Round 0) is skipped. % hence Round 0 of  \cref{c:core_iop} is executed and contributes the error $\kappa_{\mathsf{OOD}}\leq \binom{L_\delta}{2}\cdot (\codedim/\comfieldexp-1)/|\comfield|$ (\cref{t:thm_core_IOPP}). For a Reed--Solomon code of rate $\rho$ and $\delta=1-\sqrt{\rho}-\eta$, we have the list size bound \albert{review} $L_\delta \leq 1/(2\eta\sqrt{\rho})$. We select $\eta=??$, which leads to an error $\kappa_{\mathsf{OOD}}\leq **$, for which, if needed, we can attain 128 bits of security by grinding $??$ bits \albertimportant{fill in the ?? numbers}. 
@@ -2299,7 +2299,7 @@ The next lemma records the soundness errors of \cref{c:gkr_grand_product}. We om
 
 \begin{lemma}[Soundness and completeness of \cref{c:gkr_grand_product}]\label{l:gkr_grand_product}
  Assume $\gkrpol(Y,X)$ is linear in $X$\footnote{We focus on this case since it is the one in our instantiation. A generalization to arbitrary polynomials $\gkrpol(Y,X)$ would  add rounds  and error terms corresponding to the sumcheck protocol mentioned at the end of \cref{c:gkr_grand_product}.}. Then \cref{c:gkr_grand_product} is a perfectly complete
-$(1 + r_1 r_2 + r_1(r_1+1)/2)$-round IOR from $\PESAT(\comfield,\gkrpol)$ to $\LIN(\comfield)$, whose verifier makes no oracle queries and whose prover outputs the witness $\bff$ it received. Accordingly it also extends to an IOR from $\PESAT(\comfield,\gkrpol, \cC,\pack)$ to $\LIN(\comfield, \cC,\pack)$ in a natural way (these are the same relations as $\PESAT(\comfield,\gkrpol)$ to $\LIN(\comfield)$, but with an additional oracle $\Enc_\cC\circ \pack(\bff)$). This latter IOR has round-by-round knowledge with relaxation $(\PESAT(\comfield,\gkrpol,\cC,\pack)^\delta,\LIN(\comfield,\cC,\pack)^{\delta})$ with errors $r_2/|\comfield|$ in the
+$(1 + r_1 r_2 + r_1(r_1+1)/2)$-round IOR from $\PESAT(\comfield,\gkrpol)$ to $\LIN(\comfield)$, whose verifier makes no oracle queries and whose prover outputs the witness $\bff$ it received. Accordingly it also extends to an IOR from $\PESAT(\comfield,\gkrpol, \cC,\pack)$ to $\LIN(\comfield, \cC,\pack)$ in a natural way (for $S=\bits$; these are the same relations as $\PESAT(\comfield,\gkrpol)$ and $\LIN(\comfield)$, but with an additional oracle $\Enc_\cC\circ \pack(\bff)$). For every $\delta$ within the unique decoding radius of $\cC$, this latter IOR has round-by-round knowledge soundness with relaxation $(\PESAT(\comfield,\gkrpol,\cC,\pack)^\delta,\LIN(\comfield,\cC,\pack)^{\delta})$ with errors $r_2/|\comfield|$ in the
 first round, $3/|\comfield|$ in every sumcheck round and $1/|\comfield|$ in every unification step.
 %so given $\yy$ the verifier performs $O(\codedim_1+\codedim_2+r_1 r_2)$ field operations.
 \end{lemma}
@@ -2718,8 +2718,7 @@ We compare the performance of \ftwoz-SNARK with Binius64 \cite{binius64}, Plonky
 
 We compare Limber \cite{limber}, Zinc+\cite{zincplus} and our \ftwoz-SNARK \ on proving the same circuit as in the Limber paper. This consists in verifying four  exponentiations modulo a $2048$ RSA prime, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation  (see Section 7.1 of \cref{limber}). We take the corresponding R1CS constraint over the integers  from the Limber repository. See \cref{s:related_work} for further details on Limber, Zinc+, etc. 
 
-We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber states in the paper that it achieves $128$ bits of security, but its fingerprint step only achieves $114$ bits of security of Limber in the implementation, because the random prime sampled to perform the fingerprint is of $128$ bits, and no other measures (like, say, grinding) are taken. \albertimportant{Double check and let the authors know.}}  \albertimportant{need to make the updates to  Zinc+ I promised to the Limber authors.}
-
+We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber states in the paper that it achieves $128$ bits of security, but its fingerprint step only achieves $114$ bits of security of Limber in the implementation, because the random prime sampled to perform the fingerprint is of $128$ bits, and no other measures (like, say, grinding) are taken. \albertimportant{Double check and let the authors know.}}  
 
 \begin{table}[H]
   \centering
@@ -2737,8 +2736,8 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
     MultiSwap-xJsnark$^{\dagger}$    & 88500         & 2             & 0.2 \\
     \bottomrule
   \end{tabular}
-  \caption{Proving one MultiSwap \cite{multiswap} computation (four  exponentiations modulo a $2048$ RSA prime, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation) \albertimportant{check that this is really what multiswap is proving}).  The first four schemes prove the same R1CS constraint over the integers, taken from \cite{limber}, and where run on a MacBook Air M4 \textbf{single threaded} \albertimportant{add multithread numbers?}.  The two lower rows are a verbatim quote from
-  \cite[Table 1]{limber}. The first four schemes achieve $114$ bits of security \albertimportant{Zinc+ not yet.}
+  \caption{Proving one MultiSwap \cite{limber} computation (four  exponentiations modulo a $2048$ RSA prime, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation) \albertimportant{check that this is really what multiswap is proving}).  The first four schemes prove the same R1CS constraint over the integers, taken from \cite{limber}, and where run on a MacBook Air M4 \textbf{single threaded} \albertimportant{add multithread numbers?}.  The two lower rows are a verbatim quote from
+  \cite[Table 1]{limber}. The first four schemes achieve $114$ bits of security 
   Zinc$+$ proof compresses to
   $686$KB with \texttt{zstd}.
   %
@@ -2833,6 +2832,10 @@ For \ftwoz, we  arithmetize the computation as an integer R1CS constraint with $
 \appendix
 
 
+
+
+
+
 \section{Deferred proofs}
 
 
@@ -2847,7 +2850,8 @@ $$
 \Relation_{\mathsf{gen}}\defeq \LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC,L), \qquad \Relation_{\mathsf{core}}\defeq \LinBitsDual(\bits,\pi, R,\cC), \qquad \inp'\defeq (\mu,\uu),
 $$
 %
-and $\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack)$, $\LIN = \LIN(\comfield, \cC, \pack)$ (as  in \cref{s:soundness_core_iop}). Recall from \cref{d:bitification} that a bitification of $\bff\in (\moduleonebound)^{\codedim_0}$ is any $\bfg\in \bits^{\codedim}$ with $\bff=L\cdot \bfg_S$. For such $\bfg$, we say that $((\mu,\vv),f,\bff)$ belongs to $\Relation_{\mathsf{gen}}^{\delta}$ \emph{via} $\bfg$ if $\hamming(f,\Enc_{\cC}\circ \pack\circ \pi_2(\bfg))<\delta$ and $\langle \psi(\bff),\vv\rangle=\mu$. Then  $((\mu,\vv),f,\bff)\in \Relation_{\mathsf{gen}}^{\delta}$ if and only if $((\mu,\vv),f,\bff)$ belongs to $\Relation_{\mathsf{gen}}^{\delta}$ via some bitification $\bfg$ of $\bff$. The honest prover uses $\bfg$ as witness in the call to \cref{c:core_iop}. The same applies to $\Relation_{\mathsf{gen}}$, with equality of words in place of the distance condition. We assume that $L\cdot \bfg_S\in (\moduleonebound)^{\codedim_0}$ for all $\bfg\in \bits^{\codedim}$, as is the case for the standard bitification matrix of \cref{d:bitification} (for a general $L$ this is needed: otherwise the prover may commit to bits $\bfg$ with $L\cdot \bfg_S\notin (\moduleonebound)^{\codedim_0}$ and have the verifier accept, although no witness in $(\moduleonebound)^{\codedim_0}$ exists \albertimportant{process this requirement}).
+and $\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack)$, $\LIN = \LIN(\comfield, \cC, \pack)$ (as  in \cref{s:soundness_core_iop}). Recall from \cref{d:bitification} that a bitification of $\bff\in (\moduleonebound)^{\codedim_0}$ is any $\bfg\in \bits^{\codedim}$ with $\bff=L\cdot \bfg_S$. For such $\bfg$, we say that $((\mu,\vv),f,\bff)$ belongs to $\Relation_{\mathsf{gen}}^{\delta}$ \emph{via} $\bfg$ if $\hamming(f,\Enc_{\cC}\circ \pack\circ \pi_2(\bfg))<\delta$ and $\langle \psi(\bff),\vv\rangle=\mu$. Then  $((\mu,\vv),f,\bff)\in \Relation_{\mathsf{gen}}^{\delta}$ if and only if $((\mu,\vv),f,\bff)$ belongs to $\Relation_{\mathsf{gen}}^{\delta}$ via some bitification $\bfg$ of $\bff$. The honest prover uses $\bfg$ as witness in the call to \cref{c:core_iop}. The same applies to $\Relation_{\mathsf{gen}}$, with equality of words in place of the distance condition. Recall from \cref{d:bitification} that $L\cdot \bfg_S\in (\moduleonebound)^{\codedim_0}$ for all $\bfg\in \bits^{\codedim}$.
+
 
 For $\bfg\in \bits^{\codedim}$ let $\bff_{\bfg}\defeq L\cdot \bfg_S\in (\moduleonebound)^{\codedim_0}$. By \cref{l:bitify}, $\langle \psi(\bff_{\bfg}), \vv\rangle = \langle \psi(\bfg_S), \psi(L)^{\mathsf{T}}\cdot \vv\rangle = \langle \pi(\bfg),\uu\rangle$, and hence
 %
