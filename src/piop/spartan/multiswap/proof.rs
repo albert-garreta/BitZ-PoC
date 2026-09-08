@@ -48,7 +48,7 @@ use crate::{
     ligerito_flock::{
         FlockCommitHint, FlockRsError, IntEvalRsLigVirtProof, commit_rs_ligerito_rows,
         prove_mle_eval_mod_q_ligerito_virtual_runtime, validate_ligerito_commitment,
-        validated_udr_lig_configs_for_target, verify_mle_eval_mod_q_ligerito_virtual_runtime,
+        validated_udr_lig_configs_with, verify_mle_eval_mod_q_ligerito_virtual_runtime,
     },
     pcs::{IntEvalParams, ProjectCanonicalU128},
     sparse_matrix::SparseMatrix,
@@ -248,7 +248,14 @@ impl PreparedMultiswapRelation {
 pub fn multiswap_lig_configs(
     p: &IntEvalParams,
 ) -> Result<(LigProverConfig, LigVerifierConfig), MultiswapError> {
-    validated_udr_lig_configs_for_target(packed_vars(p), 128)
+    // `udrg:3:4:114`: UDR geometry at rate 1/8 with fold arity 4, fold
+    // grinding, BLAKE3, validator-gated at the row's 114-bit target. Chosen
+    // 2026-09-08 over the audited `udrg:1:4:128` (rate 1/2) for proof size:
+    // at 2^25 committed bits the Ligerito part drops from 245 KiB to 179 KiB
+    // (each query buys 0.83 instead of 0.41 bits) while the opener stays at
+    // ~10 ms; the Johnson openers reach 114 bits only through a ~17 s
+    // Round-0 grind at this shape.
+    validated_udr_lig_configs_with(packed_vars(p), 3, 4, 114)
         .map_err(MultiswapError::LigeritoConfig)
 }
 
