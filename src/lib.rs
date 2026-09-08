@@ -73,12 +73,20 @@ pub use ligerito_flock::{
     FlockRsError, IntEvalRsLigModQProof, LigConfig, commit_rs_flock, commit_rs_flock_with,
     lig_configs, prove_mle_eval_mod_q_ligerito, verify_mle_eval_mod_q_ligerito,
 };
+// Round 0 of the paper's `c:core_iop` (the out-of-domain sample) and the
+// standalone statement binding the `f2z` CLI / bench use around it.
+pub use ligerito_flock::{
+    OodRound, OodRoundParams, absorb_standalone_mod_q_claim, absorb_standalone_mod_q_statement,
+    ood_round_bits, ood_round_params, prove_mle_eval_mod_q_ligerito_with_ood, sha_lig_ood_params,
+    verify_mle_eval_mod_q_ligerito_runtime, verify_mle_eval_mod_q_ligerito_with_ood,
+};
 // Extension-field evaluation claims (paper `c:core_iop` Steps 1–3): the
 // random-prime projection of a degree-≥2 extension-field claim onto the
 // ordinary mod-q' pipeline.
 pub use ext_proj::ExtProjParams;
 pub use ligerito_flock::{
-    IntEvalRsLigExtProof, prove_mle_eval_ext_ligerito, verify_mle_eval_ext_ligerito,
+    IntEvalRsLigExtProof, prove_mle_eval_ext_ligerito, prove_mle_eval_ext_ligerito_with_ood,
+    verify_mle_eval_ext_ligerito, verify_mle_eval_ext_ligerito_with_ood,
 };
 // EXPERIMENTAL — mod-q RLC claim families (docs/rlc-family-note-prompt.md):
 // k claims on F₂-linear forms of j committed columns via ONE γ-RLC forest

@@ -1,0 +1,69 @@
+This is BibTeX, Version 0.99e (TeX Live 2026)
+Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
+The top-level auxiliary file: paper/main.aux
+The style file: alpha.bst
+Database file #1: paper/references.bib
+Warning--entry type for "plonky" isn't style-file defined
+--line 885 of file paper/references.bib
+Warning--I didn't find a database entry for "??"
+Warning--I didn't find a database entry for "cryptoeprint:2023/824"
+Warning--I didn't find a database entry for "risc0:whitepaper"
+Warning--I didn't find a database entry for "plonky2:repo"
+Warning--I didn't find a database entry for "more"
+Warning--I didn't find a database entry for "cryptoeprint:2022/1542"
+Warning--I didn't find a database entry for "hashcaster:repo"
+Warning--I didn't find a database entry for "?"
+Warning--I didn't find a database entry for "zinc+"
+Warning--I didn't find a database entry for "linearSizedIOPs"
+Warning--I didn't find a database entry for "tensorswitch"
+Warning--I didn't find a database entry for "Bolt"
+Warning--I didn't find a database entry for "lev:hashcaster"
+Warning--I didn't find a database entry for "FRIBinius:Galois"
+Warning--I didn't find a database entry for "binaryspartan"
+Warning--I didn't find a database entry for "thaler?"
+Warning--I didn't find a database entry for "logupstar"
+Warning--I didn't find a database entry for "stir-repo"
+Warning--I didn't find a database entry for "whir-repo"
+Warning--empty publisher in thalerbook
+You've used 28 entries,
+            2543 wiz_defined-function locations,
+            724 strings with 9801 characters,
+and the built_in function-call counts, 11742 in all, are:
+= -- 1126
+> -- 734
+< -- 13
++ -- 264
+- -- 263
+* -- 787
+:= -- 1936
+add.period$ -- 90
+call.type$ -- 28
+change.case$ -- 202
+chr.to.int$ -- 27
+cite$ -- 29
+duplicate$ -- 384
+empty$ -- 811
+format.name$ -- 292
+if$ -- 2418
+int.to.chr$ -- 2
+int.to.str$ -- 0
+missing$ -- 8
+newline$ -- 146
+num.names$ -- 90
+pop$ -- 283
+preamble$ -- 1
+purify$ -- 231
+quote$ -- 0
+skip$ -- 392
+stack$ -- 0
+substring$ -- 375
+swap$ -- 87
+text.length$ -- 13
+text.prefix$ -- 5
+top$ -- 0
+type$ -- 220
+warning$ -- 1
+while$ -- 97
+width$ -- 32
+write$ -- 355
+(There were 21 warnings)

@@ -44,7 +44,8 @@ use flock_core::pcs::ligerito::{
 use crate::cfg_iter_mut;
 use crate::piop::lookup::gkr_product::ProductForestProof;
 use crate::piop::spartan::grinding::{
-    ForestRoundGrinding, ProverGrindingTranscript, VerifierGrindingTranscript,
+    ForestRoundGrinding, GrindingDomain, GrindingRound, ProverGrindingTranscript,
+    VerifierGrindingTranscript, grind_and_absorb, verify_and_absorb,
 };
 use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheckProof;
 use crate::poly::univariate::binary_gf128::{BinaryFieldGF128 as Gf, FixedGfMul};
@@ -411,6 +412,19 @@ pub fn sha_lig_configs(m_p: usize) -> Result<(LigProverConfig, LigVerifierConfig
         return Err(format!("no embedded ligerito template for m={m}"));
     }
     custom_johnson_config(m, 1, 4).to_prover_verifier_configs()
+}
+
+/// Round-0 parameters matching [`sha_lig_configs`] at that config's own
+/// round-by-round target: `Some` for the Johnson-regime production configs
+/// (`m ≥ 22`), `None` for the ad-hoc test configs below.
+pub fn sha_lig_ood_params(m_p: usize) -> Option<OodRoundParams> {
+    let m = m_p.checked_add(LOG_PACKING)?;
+    if m < 22 || ligerito::embedded_security_config(m, ligerito::LigeritoProfile::Slim).is_none() {
+        return None;
+    }
+    let cfg = custom_johnson_config(m, 1, 4);
+    let target = u32::try_from(cfg.target_security_bits).ok()?;
+    ood_round_params(&cfg, m_p, target)
 }
 
 /// Builds a validator-gated UDR Ligerito configuration at an explicit
@@ -880,6 +894,10 @@ pub enum FlockRsError {
     /// coefficient-projection check `Σ_i c₀(h_i)·X^i = Σ_l η_l·μ_l`
     /// (paper batching-protocol step 3).
     VirtualBatch,
+    /// Round 0 (the out-of-domain sample) is malformed: the proof carries
+    /// the round while the parameters skip it (or vice versa), or its
+    /// proof-of-work nonce is missing, present at difficulty 0, or invalid.
+    OodRound,
 }
 
 /// Reject a commitment/config mismatch before any Fiat–Shamir state is
@@ -1427,7 +1445,7 @@ impl<'a, T: Transcript> StatementFrame<'a, T> {
 
 /// Read-only canonical view shared by prover and verifier Ligerito configs
 /// when binding a public statement.
-pub(crate) trait LigeritoStatementConfig {
+pub trait LigeritoStatementConfig {
     fn log_inv_rates(&self) -> &[usize];
     fn recursive_steps(&self) -> usize;
     fn initial_log_msg_cols(&self) -> usize;
@@ -1592,6 +1610,41 @@ pub(crate) fn absorb_mod_q_weight_chunks_statement(
     frame.usize(0x31, q_bits);
     frame.gf128(0x32, alpha);
     BoundModQStatement::new()
+}
+
+const STANDALONE_MOD_Q_STATEMENT_DOMAIN: &[u8] =
+    b"f2z/ligerito-flock/standalone-mod-q-statement/v1";
+const STANDALONE_MOD_Q_CLAIM_DOMAIN: &[u8] = b"f2z/ligerito-flock/standalone-mod-q-claim/v1";
+
+/// Bind the public statement of a STANDALONE opening whose evaluation prime
+/// and point are sampled from the transcript AFTER this frame (the `f2z`
+/// CLI and `benches/pcs.rs`): the commitment, the opener config, the tensor
+/// shape, the generator, the prime width and the Round-0 parameters. Sample
+/// `q` and the point next, then bind the claim with
+/// [`absorb_standalone_mod_q_claim`] before proving or verifying.
+pub fn absorb_standalone_mod_q_statement(
+    transcript: &mut impl Transcript,
+    commitment: &Commitment,
+    p: &IntEvalParams,
+    alpha: Gf,
+    q_bits: usize,
+    ood: Option<OodRoundParams>,
+    config: &impl LigeritoStatementConfig,
+) {
+    let mut frame = StatementFrame::new(transcript, STANDALONE_MOD_Q_STATEMENT_DOMAIN);
+    frame.commitment(commitment);
+    frame.ligerito_config(config);
+    frame.int_eval_params(p);
+    frame.gf128(0x30, alpha);
+    frame.usize(0x31, q_bits);
+    frame.usize(0x32, ood.map_or(0, |round| 1usize.wrapping_add(round.grinding_bits as usize)));
+}
+
+/// Bind the transcript-sampled prime and the claimed value of a standalone
+/// opening (see [`absorb_standalone_mod_q_statement`]).
+pub fn absorb_standalone_mod_q_claim(transcript: &mut impl Transcript, q: u128, claimed_q: u128) {
+    let mut frame = StatementFrame::new(transcript, STANDALONE_MOD_Q_CLAIM_DOMAIN);
+    frame.u128s(0x30, &[q, claimed_q]);
 }
 
 fn absorb_ext_statement(
@@ -2282,6 +2335,324 @@ fn fill_phi_basis_round0(
 // recombines y = Σ_c w′_c·Σ_l 2^{c_w·l}·u_c^{(l)} in 𝔽_q.
 // ---------------------------------------------------------------------
 
+// ---------------------------------------------------------------------
+// Round 0 of the paper's `c:core_iop`: the out-of-domain (OOD) sample.
+//
+// Executed whenever the opener's proximity parameter sits beyond the unique
+// decoding radius (flock's Johnson-regime Ligerito configs), skipped in the
+// unique-decoding regime (`L_δ = 1`, where the theorem voids `κ_OOD`).
+// Right after the commitment is bound, the verifier draws `ζ ∈ K` (behind an
+// optional proof-of-work boundary) and the prover answers with
+//
+//     y = MLE[P](ζ⃗),   ζ⃗ = (ζ^{2^0}, ζ^{2^1}, …, ζ^{2^{m_p−1}}),
+//
+// an evaluation of the PACKED message `P ∈ K^{2^{m_p}}`. That pins the
+// prover to one element of the `δ`-list before any further challenge
+// (paper `l:ood_collision`: two distinct list elements agree on `ζ⃗` with
+// probability at most `(2^{m_p} − 1)/|K|`, union-bounded over `C(L_δ, 2)`
+// pairs; the grinding tops that bound up to the target). The claim is a
+// plain `K`-linear claim on `P`, so it rides the final Ligerito opening for
+// free: one extra batching draw `η_ood` adds `η_ood·eq(·, ζ⃗)` to the basis
+// and `η_ood·y` to the target, and the verifier folds that term succinctly
+// (`eq(·, ζ⃗)` is a product, so its partial evaluation is a scalar times
+// the tail's eq table).
+// ---------------------------------------------------------------------
+
+/// Round-0 (OOD sample) parameters: `Some` executes the round with
+/// `grinding_bits` of proof-of-work before the `ζ` draw; `None` skips it.
+/// Callers derive it from the opener's security config through
+/// [`ood_round_params`]; the choice is bound into the transcript.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OodRoundParams {
+    /// Proof-of-work bits before the `ζ` draw (`0` = no boundary).
+    pub grinding_bits: u32,
+}
+
+/// The prover's Round-0 messages.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OodRound {
+    /// `y = MLE[P](ζ⃗)`, the packed message's out-of-domain evaluation.
+    pub y: Gf,
+    /// The proof-of-work nonce preceding the `ζ` draw (`Some` iff the
+    /// round's difficulty is nonzero).
+    pub nonce: Option<u64>,
+}
+
+/// The Round-0 proof-of-work domain.
+pub enum OodRoundGrinding {}
+
+impl GrindingDomain for OodRoundGrinding {
+    const DOMAIN: &'static [u8] = b"f2z/core/ood-round-grinding/v1";
+}
+
+/// Transcript frame binding the round's public parameters before the draw.
+const OOD_ROUND_DOMAIN: &[u8] = b"f2z/core/ood-round/v1";
+
+/// `log₂` of the block the OOD kernels parallelize over.
+const OOD_BLOCK_LOG: usize = 12;
+
+/// `-log₂` of the theorem's Round-0 collision bound
+/// `C(L_δ, 2)·(2^{packed_vars} − 1)/|K|` at the opener's level-0 Johnson
+/// parameters, with the Johnson list size `L_δ ≤ 1/(2η√ρ)` (paper
+/// `t:thm_core_IOPP` and `l:ood_collision`); `None` when level 0 runs in
+/// the unique-decoding regime (`L_δ = 1`, no round).
+pub fn ood_round_bits(cfg: &LigeritoSecurityConfig, packed_vars: usize) -> Option<f64> {
+    let l0 = cfg.levels.first()?;
+    let eta = match l0.regime {
+        SoundnessRegime::JohnsonOod => l0.eta?,
+        SoundnessRegime::Udr => return None,
+    };
+    let rho = (-(l0.log_inv_rate as f64)).exp2();
+    let list = 1.0 / (2.0 * eta * rho.sqrt());
+    let pairs = (list * (list - 1.0) / 2.0).max(1.0);
+    let degree = ((packed_vars as f64).exp2() - 1.0).max(1.0);
+    Some(128.0 - pairs.log2() - degree.log2())
+}
+
+/// Round-0 parameters at target `lambda`: in the Johnson regime, the
+/// grinding that tops [`ood_round_bits`] up to `lambda`; `None` in the
+/// unique-decoding regime.
+pub fn ood_round_params(
+    cfg: &LigeritoSecurityConfig,
+    packed_vars: usize,
+    lambda: u32,
+) -> Option<OodRoundParams> {
+    let bits = ood_round_bits(cfg, packed_vars)?;
+    let deficit = f64::from(lambda) - bits;
+    let grinding_bits = if deficit <= 0.0 { 0 } else { deficit.ceil() as u32 };
+    Some(OodRoundParams { grinding_bits })
+}
+
+/// Number of packed variables of a committed message (`2^{m_p}` elements).
+fn packed_message_vars(p_msg: &[F128]) -> usize {
+    assert!(
+        !p_msg.is_empty() && p_msg.len().is_power_of_two(),
+        "packed message length must be a power of two"
+    );
+    p_msg.len().trailing_zeros() as usize
+}
+
+/// The Round-0 evaluation point `ζ⃗ = (ζ^{2^0}, ζ^{2^1}, …)`: distinct
+/// multilinear monomials become distinct powers of `ζ`.
+#[allow(clippy::arithmetic_side_effects)]
+fn ood_point(zeta: Gf, vars: usize) -> Vec<Gf> {
+    let mut point = Vec::with_capacity(vars);
+    let mut cur = zeta;
+    for _ in 0..vars {
+        point.push(cur);
+        cur = cur * cur;
+    }
+    point
+}
+
+/// `scalar·eq(·, point)` over `{0,1}^{point.len()}` — index bit `k` ↔
+/// `point[k]`, the [`crate::poly::utils::build_eq_x_r_vec`] convention
+/// (low bits first, so Ligerito's low-bit-first folds bind `point[0]`
+/// first).
+#[allow(clippy::arithmetic_side_effects)]
+fn build_eq_scaled(point: &[Gf], scalar: Gf) -> Vec<Gf> {
+    let mut table = vec![scalar];
+    for &z in point {
+        // Coordinate `k` becomes index bit `k`: the existing table is the
+        // low-index half (`v·(1 + z) = v + v·z` in characteristic two) and
+        // its `z`-scaled copy the high-index half.
+        let mut next = Vec::with_capacity(table.len() * 2);
+        next.extend(table.iter().map(|&v| v + v * z));
+        next.extend(table.iter().map(|&v| v * z));
+        table = next;
+    }
+    table
+}
+
+/// `MLE[P](point)` for the packed message — block-parallel, deferred
+/// reduction inside each block.
+#[allow(clippy::arithmetic_side_effects)]
+fn ood_eval(p_msg: &[F128], point: &[Gf]) -> Gf {
+    use crate::utils::wide_mul::WideMulAcc;
+    let vars = packed_message_vars(p_msg);
+    assert_eq!(point.len(), vars, "OOD point dimension");
+    let lo = vars.min(OOD_BLOCK_LOG);
+    let block = 1usize << lo;
+    let tail = build_eq_scaled(&point[..lo], Gf::one());
+    let head = build_eq_scaled(&point[lo..], Gf::one());
+    let inner: Vec<Gf> = cfg_into_iter!(0..head.len())
+        .map(|hi| {
+            let base = hi * block;
+            let zero = Gf::zero();
+            let mut acc = <Gf as WideMulAcc>::wide_zero(&zero);
+            for (j, &t) in tail.iter().enumerate() {
+                let m = f128_to_gf(p_msg[base + j]);
+                <Gf as WideMulAcc>::wide_add_assign(
+                    &mut acc,
+                    &<Gf as WideMulAcc>::mul_wide(&m, &t),
+                );
+            }
+            <Gf as WideMulAcc>::from_wide(acc)
+        })
+        .collect();
+    inner
+        .iter()
+        .zip(head.iter())
+        .fold(Gf::zero(), |acc, (&i, &h)| acc + i * h)
+}
+
+fn absorb_ood_round_header(transcript: &mut impl Transcript, packed_vars: usize, params: OodRoundParams) {
+    transcript.absorb_slice(OOD_ROUND_DOMAIN);
+    transcript.absorb_slice(&(packed_vars as u64).to_le_bytes());
+    transcript.absorb_slice(&params.grinding_bits.to_le_bytes());
+}
+
+/// The prover's view of the round: the point (kept, the eq table is
+/// rebuilt scaled by `η_ood` at batching time), the value, and the
+/// messages that go on the wire.
+struct OodProverClaim {
+    point: Vec<Gf>,
+    y: Gf,
+    round: OodRound,
+}
+
+/// Round 0 on the prover side: bind the parameters, grind, draw `ζ`,
+/// evaluate, absorb `y`.
+fn prove_ood_round(
+    transcript: &mut (impl Transcript + Send),
+    hint: &FlockCommitHint,
+    params: OodRoundParams,
+) -> OodProverClaim {
+    let _g = crate::utils::prof::scope("mc:ood");
+    let vars = packed_message_vars(&hint.p_msg);
+    absorb_ood_round_header(transcript, vars, params);
+    let nonce = if params.grinding_bits == 0 {
+        None
+    } else {
+        Some(
+            grind_and_absorb(
+                transcript,
+                GrindingRound::<OodRoundGrinding>::new(0),
+                params.grinding_bits,
+            )
+            .expect("Round-0 grinding difficulty is validated by the profile"),
+        )
+    };
+    let zeta: Gf = transcript.get_field_challenge(&());
+    let point = ood_point(zeta, vars);
+    let y = ood_eval(&hint.p_msg, &point);
+    crate::ligerito::absorb_ood_value(transcript, y);
+    OodProverClaim {
+        point,
+        y,
+        round: OodRound { y, nonce },
+    }
+}
+
+/// The verifier's view of the round: the point and the claimed value.
+struct OodVerifierClaim {
+    point: Vec<Gf>,
+    y: Gf,
+}
+
+/// Round 0 on the verifier side: the same frame and draw, the proof's
+/// nonce checked, the prover's `y` absorbed.
+fn verify_ood_round(
+    transcript: &mut (impl Transcript + Send),
+    packed_vars: usize,
+    params: OodRoundParams,
+    round: &OodRound,
+) -> Result<OodVerifierClaim, FlockRsError> {
+    absorb_ood_round_header(transcript, packed_vars, params);
+    match (params.grinding_bits, round.nonce) {
+        (0, None) => {}
+        (0, Some(_)) | (_, None) => return Err(FlockRsError::OodRound),
+        (bits, Some(nonce)) => verify_and_absorb(
+            transcript,
+            GrindingRound::<OodRoundGrinding>::new(0),
+            bits,
+            nonce,
+        )
+        .map_err(|_| FlockRsError::OodRound)?,
+    }
+    let zeta: Gf = transcript.get_field_challenge(&());
+    crate::ligerito::absorb_ood_value(transcript, round.y);
+    Ok(OodVerifierClaim {
+        point: ood_point(zeta, packed_vars),
+        y: round.y,
+    })
+}
+
+/// Add `η·eq(·, point)` to the η-combined Ligerito basis `b` (block-
+/// parallel) and, when the fused Ligerito round-0 message `(u_0, u_2)` is
+/// being precomputed, its contribution to that message (the message is
+/// bilinear in `(f, b)`, so the OOD term adds on).
+#[allow(clippy::arithmetic_side_effects)]
+fn add_ood_basis(b: &mut [F128], f: &[F128], point: &[Gf], eta: Gf, round0: Option<&mut (Gf, Gf)>) {
+    use crate::utils::wide_mul::WideMulAcc;
+    let vars = point.len();
+    assert_eq!(b.len(), 1usize << vars, "basis length must match the OOD point");
+    assert_eq!(f.len(), b.len(), "message and basis lengths");
+    let lo = vars.min(OOD_BLOCK_LOG);
+    let block = 1usize << lo;
+    let tail = build_eq_scaled(&point[..lo], Gf::one());
+    let head = build_eq_scaled(&point[lo..], eta);
+    let want_round0 = round0.is_some();
+    let partials: Vec<(Gf, Gf)> = cfg_chunks_mut!(b, block)
+        .enumerate()
+        .map(|(hi, chunk)| {
+            let base = hi * block;
+            let scale = head[hi];
+            let zero = Gf::zero();
+            let mut u0 = <Gf as WideMulAcc>::wide_zero(&zero);
+            let mut u2 = <Gf as WideMulAcc>::wide_zero(&zero);
+            let mut j = 0usize;
+            while j < chunk.len() {
+                let has_pair = j + 1 < chunk.len();
+                let d0 = scale * tail[j];
+                let d1 = if has_pair { scale * tail[j + 1] } else { Gf::zero() };
+                chunk[j] = gf_to_f128(f128_to_gf(chunk[j]) + d0);
+                if has_pair {
+                    chunk[j + 1] = gf_to_f128(f128_to_gf(chunk[j + 1]) + d1);
+                }
+                if want_round0 {
+                    let f0 = f128_to_gf(f[base + j]);
+                    let f1 = if has_pair { f128_to_gf(f[base + j + 1]) } else { Gf::zero() };
+                    <Gf as WideMulAcc>::wide_add_assign(
+                        &mut u0,
+                        &<Gf as WideMulAcc>::mul_wide(&f0, &d0),
+                    );
+                    <Gf as WideMulAcc>::wide_add_assign(
+                        &mut u2,
+                        &<Gf as WideMulAcc>::mul_wide(&(f0 + f1), &(d0 + d1)),
+                    );
+                }
+                j += 2;
+            }
+            (
+                <Gf as WideMulAcc>::from_wide(u0),
+                <Gf as WideMulAcc>::from_wide(u2),
+            )
+        })
+        .collect();
+    if let Some((u0, u2)) = round0 {
+        for (p0, p2) in partials {
+            *u0 += p0;
+            *u2 += p2;
+        }
+    }
+}
+
+/// The OOD basis term after Ligerito bound the low `ris.len()` variables:
+/// `η·eq(ris, point[..k])·eq(·, point[k..])` over every boolean tail.
+#[allow(clippy::arithmetic_side_effects)]
+fn ood_residual_evals(ris: &[F128], remaining_vars: usize, point: &[Gf], eta: Gf) -> Vec<Gf> {
+    let bound = ris.len();
+    assert_eq!(bound + remaining_vars, point.len(), "prefix + tail must cover the OOD point");
+    let one = Gf::one();
+    let mut scalar = eta;
+    for (r, z) in ris.iter().zip(point.iter()) {
+        // eq(a, b) = ab + (1 + a)(1 + b) = 1 + a + b in characteristic two.
+        scalar *= one + f128_to_gf(*r) + *z;
+    }
+    build_eq_scaled(&point[bound..], scalar)
+}
+
 /// End-to-end mod-q proof (chunks share one commitment; merged forests;
 /// per-chunk roots derived from `us`).
 #[derive(Clone)]
@@ -2297,6 +2668,9 @@ pub struct IntEvalRsLigModQProof {
     /// batching draws, when the security profile sets a nonzero
     /// difficulty. Empty (and absent from the codec) at difficulty 0.
     pub grinding_nonces: Vec<u64>,
+    /// Round 0 (the out-of-domain sample): `Some` iff the round was
+    /// executed (see [`OodRoundParams`]).
+    pub ood: Option<OodRound>,
 }
 
 /// Borrowed common body shared by the direct and virtual mod-q proof formats.
@@ -2307,6 +2681,7 @@ struct ModQLigProofView<'a> {
     presums: &'a [MultiDegreeSumcheckProof<Gf>],
     lig: &'a LigeritoProof,
     grinding_nonces: &'a [u64],
+    ood: Option<&'a OodRound>,
 }
 
 impl<'a> From<&'a IntEvalRsLigModQProof> for ModQLigProofView<'a> {
@@ -2317,6 +2692,7 @@ impl<'a> From<&'a IntEvalRsLigModQProof> for ModQLigProofView<'a> {
             presums: &proof.presums,
             lig: &proof.lig,
             grinding_nonces: &proof.grinding_nonces,
+            ood: proof.ood.as_ref(),
         }
     }
 }
@@ -2330,6 +2706,7 @@ struct ModQLigCoreProof<R> {
     reduction: R,
     lig: LigeritoProof,
     grinding_nonces: Vec<u64>,
+    ood: Option<OodRound>,
 }
 
 struct PreparedProverLigeritoClaim<R> {
@@ -2350,6 +2727,7 @@ trait ModQLigProverReduction {
         grinder: ProverGrindingTranscript<'_, T, ForestRoundGrinding>,
         points: &[Vec<Gf>],
         hint: &FlockCommitHint,
+        ood: Option<&OodProverClaim>,
     ) -> PreparedProverLigeritoClaim<Self::Proof>;
 }
 
@@ -2367,6 +2745,7 @@ impl ModQLigProverReduction for EqProverReduction {
         mut grinder: ProverGrindingTranscript<'_, T, ForestRoundGrinding>,
         points: &[Vec<Gf>],
         hint: &FlockCommitHint,
+        ood: Option<&OodProverClaim>,
     ) -> PreparedProverLigeritoClaim<Self::Proof> {
         let mut rings = Vec::with_capacity(points.len());
         let mut eq_his = Vec::with_capacity(points.len());
@@ -2384,11 +2763,12 @@ impl ModQLigProverReduction for EqProverReduction {
         let r2: Vec<Gf> = grinder.get_field_challenges(LOG_PACKING, &());
         let eq_r2 = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
         let etas: Vec<Gf> = grinder.get_field_challenges(points.len(), &());
+        let eta_ood: Option<Gf> = ood.map(|_| grinder.get_field_challenge(&()));
         let grinding_nonces = grinder.finish();
 
         let _g_b = crate::utils::prof::scope("mq:bcomb");
         let mut basis = vec![F128::ZERO; 1usize << self.packed_vars];
-        let precomputed_round0 = if rs_fast() {
+        let mut precomputed_round0 = if rs_fast() {
             Some(fill_phi_basis_round0(
                 &mut basis,
                 &hint.p_msg,
@@ -2408,6 +2788,17 @@ impl ModQLigProverReduction for EqProverReduction {
                 .zip(eq_r2.iter())
                 .fold(Gf::zero(), |acc, (su, e)| acc + *su * *e);
             target += *eta * beta;
+        }
+        if let (Some(claim), Some(eta)) = (ood, eta_ood) {
+            let _g_o = crate::utils::prof::scope("mq:ood_basis");
+            add_ood_basis(
+                &mut basis,
+                &hint.p_msg,
+                &claim.point,
+                eta,
+                precomputed_round0.as_mut(),
+            );
+            target += eta * claim.y;
         }
         drop(_g_b);
 
@@ -2469,6 +2860,7 @@ fn prove_mod_q_lig_core<S, R>(
     alpha: Gf,
     pc: &LigProverConfig,
     forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
     reduction: R,
 ) -> ModQLigCoreProof<R::Proof>
 where
@@ -2476,6 +2868,9 @@ where
     R: ModQLigProverReduction,
 {
     let lch = chunks.chunk_count();
+    // Round 0 precedes every forest message: it binds the committed
+    // message's list element before any further challenge.
+    let ood_claim = ood.map(|params| prove_ood_round(transcript, hint, params));
     let mut grinder: ProverGrindingTranscript<_, ForestRoundGrinding> =
         ProverGrindingTranscript::new(transcript, forest_grinding_bits);
     let mut mfs = Vec::with_capacity(lch);
@@ -2501,7 +2896,7 @@ where
         points.push(point);
     }
 
-    let prepared = reduction.prepare(grinder, &points, hint);
+    let prepared = reduction.prepare(grinder, &points, hint, ood_claim.as_ref());
     let lig = prove_prepared_mod_q_ligerito(
         transcript,
         hint,
@@ -2517,6 +2912,7 @@ where
         reduction: prepared.reduction,
         lig,
         grinding_nonces: prepared.grinding_nonces,
+        ood: ood_claim.map(|claim| claim.round),
     }
 }
 
@@ -2532,6 +2928,7 @@ fn prove_mod_q_lig_after_statement<S, R>(
     pc: &LigProverConfig,
     _bound_statement: BoundModQStatement,
     forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
     reduction: R,
 ) -> ModQLigCoreProof<R::Proof>
 where
@@ -2548,6 +2945,7 @@ where
         alpha,
         pc,
         forest_grinding_bits,
+        ood,
         reduction,
     )
 }
@@ -2560,12 +2958,15 @@ fn into_direct_mod_q_proof(core: ModQLigCoreProof<Vec<RingSwitchProof>>) -> IntE
         rings: core.reduction,
         lig: core.lig,
         grinding_nonces: core.grinding_nonces,
+        ood: core.ood,
     }
 }
 
 /// Prove `MLE[INT(D)](r) = y ∈ 𝔽_q` with the Ligerito opening.
 /// `row_weights_q[b] = eq(b, r₁) mod q ∈ [0, q)`. Reads the committed bits
-/// straight from `hint.rows` — no `u128` data tensor.
+/// straight from `hint.rows` — no `u128` data tensor. Round 0 (the
+/// out-of-domain sample) is skipped; see
+/// [`prove_mle_eval_mod_q_ligerito_with_ood`] for the Johnson regime.
 #[allow(clippy::arithmetic_side_effects)]
 pub fn prove_mle_eval_mod_q_ligerito(
     transcript: &mut (impl Transcript + Send),
@@ -2574,6 +2975,26 @@ pub fn prove_mle_eval_mod_q_ligerito(
     row_weights_q: &[u128],
     q_bits: usize,
     alpha: Gf,
+    pc: &LigProverConfig,
+) -> IntEvalRsLigModQProof {
+    prove_mle_eval_mod_q_ligerito_with_ood(transcript, hint, p, row_weights_q, q_bits, alpha, None, pc)
+}
+
+/// [`prove_mle_eval_mod_q_ligerito`] with Round 0 (the out-of-domain
+/// sample) executed when `ood` is `Some` — required whenever `pc` is a
+/// Johnson-regime (beyond unique decoding) Ligerito config; derive `ood`
+/// with [`ood_round_params`]. The caller binds the statement (commitment,
+/// parameters, claim) into `transcript` first.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub fn prove_mle_eval_mod_q_ligerito_with_ood(
+    transcript: &mut (impl Transcript + Send),
+    hint: &FlockCommitHint,
+    p: &IntEvalParams,
+    row_weights_q: &[u128],
+    q_bits: usize,
+    alpha: Gf,
+    ood: Option<OodRoundParams>,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigModQProof {
     let geometry = validate_int_eval_geometry(&hint.commitment, p, 0)
@@ -2589,7 +3010,7 @@ pub fn prove_mle_eval_mod_q_ligerito(
     // begins directly with the proof core. Statement-owning callers use the
     // affine after-statement adapter below so they cannot accidentally absorb
     // a second frame.
-    prove_mle_eval_mod_q_ligerito_raw(transcript, hint, p, &chunks, alpha, pc, 0)
+    prove_mle_eval_mod_q_ligerito_raw(transcript, hint, p, &chunks, alpha, pc, 0, ood)
 }
 
 /// Prove a mod-q MLE evaluation whose row weights are already represented as
@@ -2607,6 +3028,7 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_with_weight_chunks(
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigModQProof, FlockRsError> {
     validate_ligerito_commitment(&hint.commitment, pc)?;
@@ -2646,6 +3068,7 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_with_weight_chunks(
         pc,
         bound_statement,
         forest_grinding_bits,
+        ood,
     ))
 }
 
@@ -2662,6 +3085,7 @@ fn prove_mle_eval_mod_q_ligerito_after_statement<S>(
     pc: &LigProverConfig,
     bound_statement: BoundModQStatement,
     forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
 ) -> IntEvalRsLigModQProof
 where
     S: ModQWeightSource + ?Sized,
@@ -2677,6 +3101,7 @@ where
         pc,
         bound_statement,
         forest_grinding_bits,
+        ood,
         EqProverReduction {
             packed_vars: packed_vars(p),
         },
@@ -2699,6 +3124,7 @@ fn prove_mle_eval_mod_q_ligerito_raw<S>(
     alpha: Gf,
     pc: &LigProverConfig,
     forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
 ) -> IntEvalRsLigModQProof
 where
     S: ModQWeightSource + ?Sized,
@@ -2713,6 +3139,7 @@ where
         alpha,
         pc,
         forest_grinding_bits,
+        ood,
         EqProverReduction {
             packed_vars: packed_vars(p),
         },
@@ -2836,16 +3263,22 @@ struct PreparedLigeritoClaim {
     packed_vars: usize,
     target: Gf,
     basis: PreparedLigeritoBasis,
+    /// The Round-0 term `η_ood·eq(·, ζ⃗)` of the basis, folded succinctly.
+    ood: Option<(Vec<Gf>, Gf)>,
 }
 
 trait ModQLigVerifierReduction {
     fn validate_shape(&self, chunk_count: usize) -> Result<(), FlockRsError>;
+
+    /// Packed variables of the committed source the final opening runs on.
+    fn packed_vars(&self) -> usize;
 
     fn prepare<T: Transcript + Send>(
         self,
         grinder: VerifierGrindingTranscript<'_, '_, T, ForestRoundGrinding>,
         points: &[Vec<Gf>],
         mus: &[Gf],
+        ood: Option<&OodVerifierClaim>,
     ) -> Result<PreparedLigeritoClaim, FlockRsError>;
 }
 
@@ -2862,12 +3295,17 @@ impl ModQLigVerifierReduction for EqVerifierReduction<'_> {
         Ok(())
     }
 
+    fn packed_vars(&self) -> usize {
+        self.packed_vars
+    }
+
     #[allow(clippy::arithmetic_side_effects)]
     fn prepare<T: Transcript + Send>(
         self,
         mut grinder: VerifierGrindingTranscript<'_, '_, T, ForestRoundGrinding>,
         points: &[Vec<Gf>],
         mus: &[Gf],
+        ood: Option<&OodVerifierClaim>,
     ) -> Result<PreparedLigeritoClaim, FlockRsError> {
         for ((point, mu), ring) in points.iter().zip(mus).zip(self.rings) {
             let eq_lo =
@@ -2885,6 +3323,7 @@ impl ModQLigVerifierReduction for EqVerifierReduction<'_> {
         let r2: Vec<Gf> = grinder.get_field_challenges(LOG_PACKING, &());
         let eq_r2 = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
         let etas: Vec<Gf> = grinder.get_field_challenges(points.len(), &());
+        let eta_ood: Option<Gf> = ood.map(|_| grinder.get_field_challenge(&()));
         grinder.finish().map_err(|_| FlockRsError::ForestGrinding)?;
 
         let mut target = Gf::zero();
@@ -2896,6 +3335,10 @@ impl ModQLigVerifierReduction for EqVerifierReduction<'_> {
                 .fold(Gf::zero(), |acc, (su, e)| acc + *su * *e);
             target += *eta * beta;
         }
+        let ood_term = ood.zip(eta_ood).map(|(claim, eta)| {
+            target += eta * claim.y;
+            (claim.point.clone(), eta)
+        });
         let r_his = points
             .iter()
             .map(|point| point[LOG_PACKING..].to_vec())
@@ -2904,6 +3347,7 @@ impl ModQLigVerifierReduction for EqVerifierReduction<'_> {
             packed_vars: self.packed_vars,
             target,
             basis: PreparedLigeritoBasis::Eq { r_his, eq_r2, etas },
+            ood: ood_term,
         })
     }
 }
@@ -2915,7 +3359,16 @@ fn verify_prepared_mod_q_ligerito(
     vc: &LigVerifierConfig,
     prepared: PreparedLigeritoClaim,
 ) -> Result<(), FlockRsError> {
-    let eval_b = |ris: &[F128], remaining_vars: usize| prepared.basis.evaluate(ris, remaining_vars);
+    let eval_b = |ris: &[F128], remaining_vars: usize| {
+        let mut out = prepared.basis.evaluate(ris, remaining_vars);
+        if let Some((point, eta)) = &prepared.ood {
+            let add = ood_residual_evals(ris, remaining_vars, point, *eta);
+            for (slot, term) in out.iter_mut().zip(add) {
+                *slot = gf_to_f128(f128_to_gf(*slot) + term);
+            }
+        }
+        out
+    };
     let ok = ligerito::recursive_verifier_with_basis_succinct(
         vc,
         proof,
@@ -2932,7 +3385,8 @@ fn verify_prepared_mod_q_ligerito(
 }
 
 /// Verify `MLE[INT(D)](r) = claimed ∈ R` (R char ≠ 2, e.g. 𝔽_q).
-/// `col_weights[c] = eq(c, r₂) ∈ R`.
+/// `col_weights[c] = eq(c, r₂) ∈ R`. Round 0 skipped; see
+/// [`verify_mle_eval_mod_q_ligerito_with_ood`].
 #[allow(clippy::arithmetic_side_effects)]
 #[allow(clippy::too_many_arguments)]
 pub fn verify_mle_eval_mod_q_ligerito<R>(
@@ -2945,6 +3399,102 @@ pub fn verify_mle_eval_mod_q_ligerito<R>(
     alpha: Gf,
     claimed: R,
     q_bits: usize,
+    vc: &LigVerifierConfig,
+) -> Result<(), FlockRsError>
+where
+    R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
+{
+    verify_mle_eval_mod_q_ligerito_with_ood(
+        transcript,
+        commitment,
+        proof,
+        p,
+        row_weights_q,
+        col_weights,
+        alpha,
+        claimed,
+        q_bits,
+        None,
+        vc,
+    )
+}
+
+/// Verify a standalone opening under a transcript-sampled (runtime) prime
+/// `q`: every weight and the claim are canonical integers in `[0, q)` and
+/// the read-off is recombined modulo `q` with [`crate::ext_proj::ProjArith`].
+/// `ood` must equal the prover's ([`ood_round_params`]).
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub fn verify_mle_eval_mod_q_ligerito_runtime(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: &IntEvalRsLigModQProof,
+    p: &IntEvalParams,
+    row_weights_q: &[u128],
+    col_weights_q: &[u128],
+    alpha: Gf,
+    claimed_q: u128,
+    q: u128,
+    q_bits: usize,
+    ood: Option<OodRoundParams>,
+    vc: &LigVerifierConfig,
+) -> Result<(), FlockRsError> {
+    validate_runtime_q(q, q_bits, row_weights_q)?;
+    if claimed_q >= q || col_weights_q.iter().any(|&weight| weight >= q) {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+    validate_ligerito_commitment(commitment, vc)?;
+    let (geometry, c_w, lch) = checked_mod_q_shape(commitment, proof, p, q_bits)?;
+    if row_weights_q.len() != geometry.rows || col_weights_q.len() != geometry.cols {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
+    let chunks = {
+        let _g = crate::utils::prof::scope("mv:chunking");
+        ModQWeightChunks::from_dense(p, row_weights_q, q_bits)
+            .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?
+    };
+    let arithmetic = crate::ext_proj::ProjArith::new(q);
+    verify_mod_q_lig_core(
+        transcript,
+        commitment,
+        proof.into(),
+        p,
+        &chunks,
+        alpha,
+        vc,
+        0,
+        ood,
+        EqVerifierReduction {
+            rings: &proof.rings,
+            packed_vars: packed_vars(p),
+        },
+        |values, _, _| {
+            if recombine_read_off_runtime(p, values, col_weights_q, c_w, lch, &arithmetic)
+                != claimed_q
+            {
+                return Err(FlockRsError::Common(IntEvalRsError::ReadOff));
+            }
+            Ok(())
+        },
+    )?;
+    Ok(())
+}
+
+/// [`verify_mle_eval_mod_q_ligerito`] with Round 0 (the out-of-domain
+/// sample) verified when `ood` is `Some`; `ood` must equal the prover's.
+#[allow(clippy::arithmetic_side_effects)]
+#[allow(clippy::too_many_arguments)]
+pub fn verify_mle_eval_mod_q_ligerito_with_ood<R>(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: &IntEvalRsLigModQProof,
+    p: &IntEvalParams,
+    row_weights_q: &[u128],
+    col_weights: &[R],
+    alpha: Gf,
+    claimed: R,
+    q_bits: usize,
+    ood: Option<OodRoundParams>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
@@ -2970,6 +3520,7 @@ where
         alpha,
         vc,
         0,
+        ood,
         EqVerifierReduction {
             rings: &proof.rings,
             packed_vars: packed_vars(p),
@@ -3004,6 +3555,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime(
     q: u128,
     q_bits: usize,
     forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
     validate_runtime_q_source(q, q_bits, chunks)?;
@@ -3043,6 +3595,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime(
         vc,
         bound_statement,
         forest_grinding_bits,
+        ood,
         EqVerifierReduction {
             rings: &proof.rings,
             packed_vars: packed_vars(p),
@@ -3082,6 +3635,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_with_weight_chunks<R>(
     claimed: R,
     q_bits: usize,
     forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
@@ -3121,6 +3675,7 @@ where
         vc,
         bound_statement,
         forest_grinding_bits,
+        ood,
         EqVerifierReduction {
             rings: &proof.rings,
             packed_vars: packed_vars(p),
@@ -3151,6 +3706,7 @@ fn verify_mod_q_lig_core<S, R, C>(
     alpha: Gf,
     vc: &LigVerifierConfig,
     forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
     reduction: R,
     read_off: C,
 ) -> Result<PaddedChunkFolds, FlockRsError>
@@ -3165,6 +3721,17 @@ where
     let folds = {
         let _g = crate::utils::prof::scope("mv:readoff");
         verify_mod_q_lig_preflight(proof, p, chunks, read_off)?
+    };
+
+    // Round 0 precedes every forest challenge (its presence must match
+    // the parameters exactly: the round is part of the protocol version).
+    let ood_claim = match (ood, proof.ood) {
+        (Some(params), Some(round)) => {
+            let _g = crate::utils::prof::scope("mv:ood");
+            Some(verify_ood_round(transcript, reduction.packed_vars(), params, round)?)
+        }
+        (None, None) => None,
+        _ => return Err(FlockRsError::OodRound),
     };
 
     let mut grinder: VerifierGrindingTranscript<_, ForestRoundGrinding> =
@@ -3192,7 +3759,7 @@ where
 
     let prepared = {
         let _g = crate::utils::prof::scope("mv:rswitch");
-        reduction.prepare(grinder, &points, &mus)?
+        reduction.prepare(grinder, &points, &mus, ood_claim.as_ref())?
     };
     {
         let _g = crate::utils::prof::scope("mv:lig");
@@ -3212,6 +3779,7 @@ fn verify_mod_q_lig_after_statement<S, R, C>(
     vc: &LigVerifierConfig,
     _bound_statement: BoundModQStatement,
     forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
     reduction: R,
     read_off: C,
 ) -> Result<PaddedChunkFolds, FlockRsError>
@@ -3229,6 +3797,7 @@ where
         alpha,
         vc,
         forest_grinding_bits,
+        ood,
         reduction,
         read_off,
     )
@@ -3261,6 +3830,138 @@ where
 //       computed through the generic evaluation ring `R` with a
 //       caller-supplied image of the module basis.
 // ---------------------------------------------------------------------
+
+/// [`prove_mle_eval_mod_q_ligerito_virtual_with_ood`] with Round 0 (the
+/// out-of-domain sample) skipped.
+#[allow(clippy::too_many_arguments)]
+pub fn prove_mle_eval_mod_q_ligerito_virtual<M>(
+    transcript: &mut (impl Transcript + Send),
+    hint_f: &FlockCommitHint,
+    h_rows: &[Vec<u64>],
+    p_h: &IntEvalParams,
+    p_f: &IntEvalParams,
+    map: &M,
+    row_weights_q: &[u128],
+    q_bits: usize,
+    alpha: Gf,
+    pc: &LigProverConfig,
+) -> IntEvalRsLigVirtProof
+where
+    M: crate::f2map::VirtualMap,
+{
+    prove_mle_eval_mod_q_ligerito_virtual_with_ood(
+        transcript,
+        hint_f,
+        h_rows,
+        p_h,
+        p_f,
+        map,
+        row_weights_q,
+        q_bits,
+        alpha,
+        None,
+        pc,
+    )
+}
+
+/// [`verify_mle_eval_mod_q_ligerito_virtual_with_ood`] with Round 0 skipped.
+#[allow(clippy::too_many_arguments)]
+pub fn verify_mle_eval_mod_q_ligerito_virtual<R, M>(
+    transcript: &mut (impl Transcript + Send),
+    commitment_f: &Commitment,
+    proof: &IntEvalRsLigVirtProof,
+    p_h: &IntEvalParams,
+    p_f: &IntEvalParams,
+    map: &M,
+    row_weights_q: &[u128],
+    col_weights: &[R],
+    alpha: Gf,
+    claimed: R,
+    q_bits: usize,
+    vc: &LigVerifierConfig,
+) -> Result<(), FlockRsError>
+where
+    R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
+    M: crate::f2map::VirtualMap,
+{
+    verify_mle_eval_mod_q_ligerito_virtual_with_ood(
+        transcript,
+        commitment_f,
+        proof,
+        p_h,
+        p_f,
+        map,
+        row_weights_q,
+        col_weights,
+        alpha,
+        claimed,
+        q_bits,
+        None,
+        vc,
+    )
+}
+
+/// [`prove_mle_eval_ext_ligerito_with_ood`] with Round 0 (the out-of-domain
+/// sample) skipped.
+#[allow(clippy::too_many_arguments)]
+pub fn prove_mle_eval_ext_ligerito(
+    transcript: &mut (impl Transcript + Send),
+    hint: &FlockCommitHint,
+    p: &IntEvalParams,
+    weight_coords: &[Vec<u128>],
+    q_bits: usize,
+    proj: &crate::ext_proj::ExtProjParams,
+    alpha: Gf,
+    pc: &LigProverConfig,
+) -> IntEvalRsLigExtProof {
+    prove_mle_eval_ext_ligerito_with_ood(
+        transcript,
+        hint,
+        p,
+        weight_coords,
+        q_bits,
+        proj,
+        alpha,
+        None,
+        pc,
+    )
+}
+
+/// [`verify_mle_eval_ext_ligerito_with_ood`] with Round 0 skipped.
+#[allow(clippy::too_many_arguments)]
+pub fn verify_mle_eval_ext_ligerito<R>(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: &IntEvalRsLigExtProof,
+    p: &IntEvalParams,
+    weight_coords: &[Vec<u128>],
+    col_weights: &[R],
+    basis: &[R],
+    alpha: Gf,
+    claimed: R,
+    q_bits: usize,
+    proj: &crate::ext_proj::ExtProjParams,
+    vc: &LigVerifierConfig,
+) -> Result<(), FlockRsError>
+where
+    R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
+{
+    verify_mle_eval_ext_ligerito_with_ood(
+        transcript,
+        commitment,
+        proof,
+        p,
+        weight_coords,
+        col_weights,
+        basis,
+        alpha,
+        claimed,
+        q_bits,
+        proj,
+        None,
+        vc,
+    )
+}
 
 /// The extension-field opening: the Step-1 per-coefficient chunk folds plus
 /// the ordinary mod-`q'` proof for the projected claim.
@@ -3298,7 +3999,7 @@ fn absorb_ext_step1_folds(transcript: &mut impl Transcript, mus: &[Vec<u128>]) {
 /// prime field (`ext_deg = 1`) use [`prove_mle_eval_mod_q_ligerito`] — the
 /// projection step is the identity there and this entry point rejects it.
 #[allow(clippy::arithmetic_side_effects)]
-pub fn prove_mle_eval_ext_ligerito(
+pub fn prove_mle_eval_ext_ligerito_with_ood(
     transcript: &mut (impl Transcript + Send),
     hint: &FlockCommitHint,
     p: &IntEvalParams,
@@ -3306,6 +4007,7 @@ pub fn prove_mle_eval_ext_ligerito(
     q_bits: usize,
     proj: &crate::ext_proj::ExtProjParams,
     alpha: Gf,
+    ood: Option<OodRoundParams>,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigExtProof {
     use crate::ext_proj::{projected_row_weights, sample_proj_point, sample_proj_prime};
@@ -3368,6 +4070,7 @@ pub fn prove_mle_eval_ext_ligerito(
         pc,
         bound_statement,
         0,
+        ood,
     );
     IntEvalRsLigExtProof { mus, base }
 }
@@ -3381,7 +4084,7 @@ pub fn prove_mle_eval_ext_ligerito(
 /// the ring embedding `ℤ → K` (reduction mod `q` into the prime subfield).
 #[allow(clippy::arithmetic_side_effects)]
 #[allow(clippy::too_many_arguments)]
-pub fn verify_mle_eval_ext_ligerito<R>(
+pub fn verify_mle_eval_ext_ligerito_with_ood<R>(
     transcript: &mut (impl Transcript + Send),
     commitment: &Commitment,
     proof: &IntEvalRsLigExtProof,
@@ -3393,6 +4096,7 @@ pub fn verify_mle_eval_ext_ligerito<R>(
     claimed: R,
     q_bits: usize,
     proj: &crate::ext_proj::ExtProjParams,
+    ood: Option<OodRoundParams>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
@@ -3483,6 +4187,7 @@ where
         vc,
         bound_statement,
         0,
+        ood,
         EqVerifierReduction {
             rings: &proof.base.rings,
             packed_vars: packed_vars(p),
@@ -9771,7 +10476,7 @@ impl IntEvalRsLigModQProof {
             }
         }
         write_ligerito_blob(&mut w, &self.lig);
-        write_grinding_nonce_section(&mut w, &self.grinding_nonces);
+        write_proof_trailer(&mut w, &self.grinding_nonces, self.ood.as_ref());
         w.into_vec()
     }
 
@@ -9800,7 +10505,7 @@ impl IntEvalRsLigModQProof {
             rings.push(RingSwitchProof { s_v });
         }
         let lig = read_ligerito_blob(&mut r)?;
-        let grinding_nonces = read_grinding_nonce_section(&mut r)?;
+        let (grinding_nonces, ood) = read_proof_trailer(&mut r)?;
         Ok(IntEvalRsLigModQProof {
             mfs,
             us,
@@ -9808,24 +10513,53 @@ impl IntEvalRsLigModQProof {
             rings,
             lig,
             grinding_nonces,
+            ood,
         })
     }
 }
 
-/// The optional trailing grinding-nonce section shared by the mod-q and
-/// virtual codecs: ABSENT at difficulty 0 (so 0-difficulty proofs are
-/// byte-identical to the pre-grinding stream), otherwise a length prefix
-/// followed by 8-byte LE nonces. An explicit empty section and trailing
-/// bytes are both non-canonical.
-fn read_grinding_nonce_section(
+/// The word that opens the Round-0 (OOD) trailer section. A grinding-nonce
+/// count can never take this value (it would mean a `2^67`-byte proof), so
+/// the two optional sections stay distinguishable without a flag word and
+/// every pre-Round-0 proof stream keeps its exact bytes.
+const OOD_TRAILER_MARKER: usize = usize::MAX;
+
+/// The optional proof trailer shared by the mod-q and virtual codecs:
+/// ABSENT when there is nothing to carry (ungrinded, Round-0-less proofs are
+/// byte-identical to the pre-grinding stream); otherwise, in this order,
+/// the OOD section when Round 0 ran — [`OOD_TRAILER_MARKER`], `y` (16
+/// bytes), a 0/1 nonce-presence word and the 8-byte LE nonce when present —
+/// and the grinding-nonce section when any nonce exists — a length prefix
+/// plus 8-byte LE nonces. An empty nonce section, a presence word outside
+/// `{0, 1}` and trailing bytes are all non-canonical.
+fn read_proof_trailer(
     r: &mut crate::proof_codec::Reader<'_>,
-) -> Result<Vec<u64>, crate::proof_codec::CodecError> {
+) -> Result<(Vec<u64>, Option<OodRound>), crate::proof_codec::CodecError> {
     use crate::proof_codec::CodecError;
     if r.remaining() == 0 {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), None));
     }
-    let count = r.len()?;
-    if count == 0 {
+    let mut head = r.len()?;
+    let ood = if head == OOD_TRAILER_MARKER {
+        let y = r.gf()?;
+        let nonce = match r.len()? {
+            0 => None,
+            1 => {
+                let bytes = r.take(8)?;
+                Some(u64::from_le_bytes(bytes.try_into().expect("8-byte take")))
+            }
+            _ => return Err(CodecError::NonCanonical),
+        };
+        if r.remaining() == 0 {
+            return Ok((Vec::new(), Some(OodRound { y, nonce })));
+        }
+        head = r.len()?;
+        Some(OodRound { y, nonce })
+    } else {
+        None
+    };
+    let count = head;
+    if count == 0 || count == OOD_TRAILER_MARKER {
         return Err(CodecError::NonCanonical);
     }
     let mut nonces = Vec::with_capacity(count.min(r.remaining() / 8));
@@ -9836,17 +10570,27 @@ fn read_grinding_nonce_section(
     if r.remaining() != 0 {
         return Err(CodecError::NonCanonical);
     }
-    Ok(nonces)
+    Ok((nonces, ood))
 }
 
-/// Writer twin of [`read_grinding_nonce_section`].
-fn write_grinding_nonce_section(w: &mut crate::proof_codec::Writer, nonces: &[u64]) {
-    if nonces.is_empty() {
-        return;
+/// Writer twin of [`read_proof_trailer`].
+fn write_proof_trailer(w: &mut crate::proof_codec::Writer, nonces: &[u64], ood: Option<&OodRound>) {
+    if let Some(round) = ood {
+        w.len(OOD_TRAILER_MARKER);
+        w.gf(&round.y);
+        match round.nonce {
+            None => w.len(0),
+            Some(nonce) => {
+                w.len(1);
+                w.bytes(&nonce.to_le_bytes());
+            }
+        }
     }
-    w.len(nonces.len());
-    for &nonce in nonces {
-        w.bytes(&nonce.to_le_bytes());
+    if !nonces.is_empty() {
+        w.len(nonces.len());
+        for &nonce in nonces {
+            w.bytes(&nonce.to_le_bytes());
+        }
     }
 }
 
@@ -10055,6 +10799,9 @@ pub struct IntEvalRsLigVirtProof {
     /// Per-challenge forest/opening grinding nonces, in draw order (empty
     /// — and absent from the codec — at difficulty 0).
     pub grinding_nonces: Vec<u64>,
+    /// Round 0 (the out-of-domain sample on the committed source): `Some`
+    /// iff the round was executed.
+    pub ood: Option<OodRound>,
 }
 
 impl<'a> From<&'a IntEvalRsLigVirtProof> for ModQLigProofView<'a> {
@@ -10065,6 +10812,7 @@ impl<'a> From<&'a IntEvalRsLigVirtProof> for ModQLigProofView<'a> {
             presums: &proof.presums,
             lig: &proof.lig,
             grinding_nonces: &proof.grinding_nonces,
+            ood: proof.ood.as_ref(),
         }
     }
 }
@@ -10084,12 +10832,17 @@ where
         Ok(())
     }
 
+    fn packed_vars(&self) -> usize {
+        self.source_packed_vars
+    }
+
     #[allow(clippy::arithmetic_side_effects)]
     fn prepare<T: Transcript + Send>(
         self,
         mut grinder: VerifierGrindingTranscript<'_, '_, T, ForestRoundGrinding>,
         points: &[Vec<Gf>],
         mus: &[Gf],
+        ood: Option<&OodVerifierClaim>,
     ) -> Result<PreparedLigeritoClaim, FlockRsError> {
         let etas: Vec<Gf> = grinder.get_field_challenges(points.len(), &());
         let combined_mu = etas
@@ -10106,12 +10859,17 @@ where
         crate::ligerito::absorb_hs(&mut grinder, self.hs);
 
         let r2: Vec<Gf> = grinder.get_field_challenges(LOG_PACKING, &());
+        let eta_ood: Option<Gf> = ood.map(|_| grinder.get_field_challenge(&()));
         grinder.finish().map_err(|_| FlockRsError::ForestGrinding)?;
         let rho = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
-        let target = rho
+        let mut target = rho
             .iter()
             .zip(self.hs)
             .fold(Gf::zero(), |acc, (&weight, &value)| acc + weight * value);
+        let ood_term = ood.zip(eta_ood).map(|(claim, eta)| {
+            target += eta * claim.y;
+            (claim.point.clone(), eta)
+        });
 
         let weights = {
             let _g = crate::utils::prof::scope("mqv:vwprep");
@@ -10132,6 +10890,7 @@ where
             packed_vars: self.source_packed_vars,
             target,
             basis: PreparedLigeritoBasis::Dense { a_prime },
+            ood: ood_term,
         })
     }
 }
@@ -10152,15 +10911,23 @@ where
         }
     }
 
+    fn packed_vars(&self) -> usize {
+        match self {
+            Self::Eq(reduction) => reduction.packed_vars(),
+            Self::AdjointBatch(reduction) => reduction.packed_vars(),
+        }
+    }
+
     fn prepare<T: Transcript + Send>(
         self,
         grinder: VerifierGrindingTranscript<'_, '_, T, ForestRoundGrinding>,
         points: &[Vec<Gf>],
         mus: &[Gf],
+        ood: Option<&OodVerifierClaim>,
     ) -> Result<PreparedLigeritoClaim, FlockRsError> {
         match self {
-            Self::Eq(reduction) => reduction.prepare(grinder, points, mus),
-            Self::AdjointBatch(reduction) => reduction.prepare(grinder, points, mus),
+            Self::Eq(reduction) => reduction.prepare(grinder, points, mus, ood),
+            Self::AdjointBatch(reduction) => reduction.prepare(grinder, points, mus, ood),
         }
     }
 }
@@ -11236,6 +12003,7 @@ where
         mut grinder: ProverGrindingTranscript<'_, T, ForestRoundGrinding>,
         points: &[Vec<Gf>],
         hint: &FlockCommitHint,
+        ood: Option<&OodProverClaim>,
     ) -> PreparedProverLigeritoClaim<Self::Proof> {
         let etas: Vec<Gf> = grinder.get_field_challenges(points.len(), &());
         let weights = {
@@ -11263,13 +12031,14 @@ where
         crate::ligerito::absorb_hs(&mut grinder, hs.as_ref());
 
         let r2: Vec<Gf> = grinder.get_field_challenges(LOG_PACKING, &());
+        let eta_ood: Option<Gf> = ood.map(|_| grinder.get_field_challenge(&()));
         let grinding_nonces = grinder.finish();
         let rho = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
-        let target = rho
+        let mut target = rho
             .iter()
             .zip(hs.iter())
             .fold(Gf::zero(), |acc, (&r, &h)| acc + r * h);
-        let (basis, precomputed_round0): (Vec<F128>, Option<(Gf, Gf)>) = {
+        let (mut basis, mut precomputed_round0): (Vec<F128>, Option<(Gf, Gf)>) = {
             let _g = crate::utils::prof::scope("mqv:aprime");
             match &planes {
                 Some(planes) => {
@@ -11286,6 +12055,17 @@ where
                 ),
             }
         };
+        if let (Some(claim), Some(eta)) = (ood, eta_ood) {
+            let _g = crate::utils::prof::scope("mqv:ood_basis");
+            add_ood_basis(
+                &mut basis,
+                &hint.p_msg,
+                &claim.point,
+                eta,
+                precomputed_round0.as_mut(),
+            );
+            target += eta * claim.y;
+        }
 
         PreparedProverLigeritoClaim {
             reduction: hs,
@@ -11310,7 +12090,7 @@ where
 /// geometry, including malformed `h_rows`, a map/commitment shape mismatch,
 /// fewer than two derived columns, or out-of-range mod-q weights.
 #[allow(clippy::arithmetic_side_effects)]
-pub fn prove_mle_eval_mod_q_ligerito_virtual<M>(
+pub fn prove_mle_eval_mod_q_ligerito_virtual_with_ood<M>(
     transcript: &mut (impl Transcript + Send),
     hint_f: &FlockCommitHint,
     h_rows: &[Vec<u64>],
@@ -11320,6 +12100,7 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual<M>(
     row_weights_q: &[u128],
     q_bits: usize,
     alpha: Gf,
+    ood: Option<OodRoundParams>,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigVirtProof
 where
@@ -11339,6 +12120,7 @@ where
         q_bits,
         alpha,
         0,
+        ood,
         pc,
     )
 }
@@ -11362,6 +12144,7 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual_runtime<M>(
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigVirtProof, FlockRsError>
 where
@@ -11383,6 +12166,7 @@ where
             q_bits,
             alpha,
             forest_grinding_bits,
+            ood,
             pc,
         ),
     )
@@ -11406,6 +12190,7 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime<M
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigVirtProof, FlockRsError>
 where
@@ -11426,6 +12211,7 @@ where
             q_bits,
             alpha,
             forest_grinding_bits,
+            ood,
             pc,
         ),
     )
@@ -11450,6 +12236,7 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime<M
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigVirtProof, FlockRsError>
 where
@@ -11471,6 +12258,7 @@ where
             q_bits,
             alpha,
             forest_grinding_bits,
+            ood,
             pc,
         ),
     )
@@ -11490,6 +12278,7 @@ fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus<M, S>(
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigVirtProof
 where
@@ -11563,6 +12352,7 @@ where
             pc,
             bound_statement,
             forest_grinding_bits,
+            ood,
             EqProverReduction {
                 packed_vars: packed_vars(p_f),
             },
@@ -11576,6 +12366,7 @@ where
             },
             lig: core.lig,
             grinding_nonces: core.grinding_nonces,
+            ood: core.ood,
         };
     }
 
@@ -11596,6 +12387,7 @@ where
         pc,
         bound_statement,
         forest_grinding_bits,
+        ood,
         AdjointBatchProverReduction {
             map,
             derived_row_bits: t_wh,
@@ -11609,6 +12401,7 @@ where
         reduction: VirtualReductionProof::AdjointBatch { hs: core.reduction },
         lig: core.lig,
         grinding_nonces: core.grinding_nonces,
+        ood: core.ood,
     }
 }
 
@@ -11619,7 +12412,7 @@ where
 /// basis that the Ligerito residual hook MLE-folds.
 #[allow(clippy::arithmetic_side_effects)]
 #[allow(clippy::too_many_arguments)]
-pub fn verify_mle_eval_mod_q_ligerito_virtual<R, M>(
+pub fn verify_mle_eval_mod_q_ligerito_virtual_with_ood<R, M>(
     transcript: &mut (impl Transcript + Send),
     commitment_f: &Commitment,
     proof: &IntEvalRsLigVirtProof,
@@ -11631,6 +12424,7 @@ pub fn verify_mle_eval_mod_q_ligerito_virtual<R, M>(
     alpha: Gf,
     claimed: R,
     q_bits: usize,
+    ood: Option<OodRoundParams>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
@@ -11651,6 +12445,7 @@ where
         q_bits,
         alpha,
         0,
+        ood,
         vc,
         col_weights.len(),
         |v, c_w, lch| crate::pcs::recombine_read_off(p_h, v, 0, col_weights, c_w, lch) == claimed,
@@ -11678,6 +12473,7 @@ pub fn verify_mle_eval_mod_q_ligerito_virtual_runtime<M>(
     q: u128,
     q_bits: usize,
     forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
@@ -11702,6 +12498,7 @@ where
         q_bits,
         alpha,
         forest_grinding_bits,
+        ood,
         vc,
         col_weights_q.len(),
         |v, c_w, lch| {
@@ -11730,6 +12527,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime<
     q: u128,
     q_bits: usize,
     forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
@@ -11753,6 +12551,7 @@ where
         q_bits,
         alpha,
         forest_grinding_bits,
+        ood,
         vc,
         col_weights_q.len(),
         |v, c_w, lch| {
@@ -11781,6 +12580,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime<
     q: u128,
     q_bits: usize,
     forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
@@ -11805,6 +12605,7 @@ where
         q_bits,
         alpha,
         forest_grinding_bits,
+        ood,
         vc,
         col_weights_q.len(),
         |v, c_w, lch| {
@@ -11827,6 +12628,7 @@ fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off<M, S, 
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
     vc: &LigVerifierConfig,
     col_weight_count: usize,
     read_off_accepts: C,
@@ -11905,6 +12707,7 @@ where
         vc,
         bound_statement,
         forest_grinding_bits,
+        ood,
         reduction,
         |values, chunk_width, chunk_count| {
             if !read_off_accepts(values, chunk_width, chunk_count) {
@@ -12019,7 +12822,7 @@ impl IntEvalRsLigVirtProof {
             }
         }
         write_ligerito_blob(&mut w, &self.lig);
-        write_grinding_nonce_section(&mut w, &self.grinding_nonces);
+        write_proof_trailer(&mut w, &self.grinding_nonces, self.ood.as_ref());
         w.into_vec()
     }
 
@@ -12062,7 +12865,7 @@ impl IntEvalRsLigVirtProof {
             _ => return Err(CodecError::NonCanonical),
         };
         let lig = read_ligerito_blob(&mut r)?;
-        let grinding_nonces = read_grinding_nonce_section(&mut r)?;
+        let (grinding_nonces, ood) = read_proof_trailer(&mut r)?;
         Ok(IntEvalRsLigVirtProof {
             mfs,
             us,
@@ -12070,6 +12873,7 @@ impl IntEvalRsLigVirtProof {
             reduction,
             lig,
             grinding_nonces,
+            ood,
         })
     }
 }
@@ -12290,6 +13094,7 @@ mod tests {
             FQ_BITS,
             alpha,
             0,
+            None,
             &pc,
         )
         .unwrap();
@@ -12306,6 +13111,7 @@ mod tests {
             FQ_BITS,
             alpha,
             0,
+            None,
             &pc,
         )
         .unwrap();
@@ -12322,6 +13128,7 @@ mod tests {
             FQ_BITS,
             alpha,
             0,
+            None,
             &pc,
         )
         .unwrap();
@@ -12346,6 +13153,7 @@ mod tests {
             FQ_MOD,
             FQ_BITS,
             0,
+            None,
             &vc,
         )
         .unwrap();
@@ -12364,6 +13172,7 @@ mod tests {
             FQ_MOD,
             FQ_BITS,
             0,
+            None,
             &vc,
         )
         .unwrap();
@@ -12382,6 +13191,7 @@ mod tests {
             FQ_MOD,
             FQ_BITS,
             0,
+            None,
             &vc,
         )
         .unwrap();
@@ -13112,6 +13922,7 @@ mod tests {
                 rings: proof.rings.clone(),
                 lig: proof.lig.clone(),
                 grinding_nonces: proof.grinding_nonces.clone(),
+                ood: proof.ood,
             };
             bad.us[0][0] = u128::MAX - 1;
             let mut vt = Blake3Transcript::new();
@@ -13369,6 +14180,7 @@ mod tests {
             FQ_BITS,
             alpha,
             0,
+            None,
             &pc,
         )
         .unwrap();
@@ -13389,6 +14201,7 @@ mod tests {
                 FQ_MOD,
                 FQ_BITS,
                 0,
+                None,
                 &vc,
             )
         };
@@ -13412,6 +14225,7 @@ mod tests {
                 composite_q,
                 FQ_BITS,
                 0,
+                None,
                 &vc,
             ),
             Err(FlockRsError::RingSwitch(RsOpenError::Shape))
@@ -13458,6 +14272,7 @@ mod tests {
             FQ_BITS,
             alpha,
             0,
+            None,
             &pc,
         )
         .unwrap();
@@ -13475,6 +14290,7 @@ mod tests {
             claimed,
             FQ_BITS,
             0,
+            None,
             &vc,
         )
         .unwrap();
@@ -13495,6 +14311,7 @@ mod tests {
                 FQ_MOD,
                 FQ_BITS,
                 0,
+                None,
                 &vc,
             )
             .is_err()
@@ -13514,6 +14331,7 @@ mod tests {
                 claimed,
                 FQ_BITS,
                 0,
+                None,
                 &vc,
             )
             .is_err()
@@ -17151,6 +17969,299 @@ mod tests {
                 verify_with(&p2, &expected).is_err(),
                 "tampered level-2 betas"
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod ood_round_tests {
+    //! Round 0 (the out-of-domain sample): the succinct residual against the
+    //! dense fold, the prover's evaluation kernel, the theorem-bound
+    //! accounting, and end-to-end acceptance / rejection / codec behaviour
+    //! of the direct opening with the round executed.
+    use super::*;
+    use crate::ext_proj::{ExtProjParams, ProjArith, sample_proj_point, sample_proj_prime};
+    use crate::ligerito::bind_low;
+    use crate::pcs::{IntEvalParams, mod_q_chunk_width, smallest_generator};
+    use crate::transcript::Blake3Transcript;
+
+    struct Xorshift(u64);
+
+    impl Xorshift {
+        fn next_u64(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+
+        fn gf(&mut self) -> Gf {
+            let lo = self.next_u64();
+            let hi = self.next_u64();
+            Gf::from_words([lo, hi])
+        }
+    }
+
+    #[test]
+    fn scaled_eq_table_matches_the_shared_convention() {
+        let mut rng = Xorshift(0x5eed_0000);
+        for vars in [1usize, 2, 5, 8] {
+            let point: Vec<Gf> = (0..vars).map(|_| rng.gf()).collect();
+            let expected = crate::poly::utils::build_eq_x_r_vec(&point, &()).expect("eq");
+            assert_eq!(build_eq_scaled(&point, Gf::one()), expected, "vars={vars}");
+        }
+    }
+
+    #[test]
+    fn ood_residual_matches_dense_fold() {
+        let mut rng = Xorshift(0x5eed_0001);
+        for vars in [1usize, 3, 6, 9] {
+            let point: Vec<Gf> = (0..vars).map(|_| rng.gf()).collect();
+            let eta = rng.gf();
+            for bound in 0..=vars {
+                let ris: Vec<Gf> = (0..bound).map(|_| rng.gf()).collect();
+                let mut dense = build_eq_scaled(&point, eta);
+                for &r in &ris {
+                    bind_low(&mut dense, r);
+                }
+                let ris_f: Vec<F128> = ris.iter().map(|&r| gf_to_f128(r)).collect();
+                let succinct = ood_residual_evals(&ris_f, vars - bound, &point, eta);
+                assert_eq!(succinct, dense, "vars={vars} bound={bound}");
+            }
+        }
+    }
+
+    #[test]
+    fn ood_eval_matches_naive_inner_product() {
+        let mut rng = Xorshift(0x5eed_0002);
+        for vars in [1usize, 5, 12, 13, 14] {
+            let p_msg: Vec<F128> = (0..1usize << vars).map(|_| gf_to_f128(rng.gf())).collect();
+            let point = ood_point(rng.gf(), vars);
+            let eq = crate::poly::utils::build_eq_x_r_vec(&point, &()).expect("eq");
+            let naive = eq
+                .iter()
+                .zip(&p_msg)
+                .fold(Gf::zero(), |acc, (&e, &m)| acc + e * f128_to_gf(m));
+            assert_eq!(ood_eval(&p_msg, &point), naive, "vars={vars}");
+        }
+    }
+
+    #[test]
+    fn ood_round_params_follow_the_theorem_bound() {
+        // Rate 1/8, η = 0.02: L_δ ≤ 1/(2η√ρ) = 70.71, C(L_δ, 2) = 2^11.27; at
+        // m_p = 15 the point degree is 2^15 − 1, so the bound is 2^-101.7.
+        let johnson = custom_johnson_config(22, 3, 4);
+        let bits = ood_round_bits(&johnson, 15).expect("Johnson regime");
+        assert!((bits - (128.0 - 11.267 - 15.0)).abs() < 0.05, "{bits}");
+        assert_eq!(ood_round_params(&johnson, 15, 100), Some(OodRoundParams { grinding_bits: 0 }));
+        assert_eq!(ood_round_params(&johnson, 15, 110), Some(OodRoundParams { grinding_bits: 9 }));
+        // The paper's schedule ⌈log ℓ − 23.7⌉ at ℓ = 2^30 (m_p = 23): 7 bits.
+        assert_eq!(ood_round_params(&johnson, 23, 100), Some(OodRoundParams { grinding_bits: 7 }));
+        let udr = custom_udr_config_bits(22, 3, 4, None);
+        assert_eq!(ood_round_bits(&udr, 15), None);
+        assert_eq!(ood_round_params(&udr, 15, 100), None);
+        // The fixed-modulus adapters' rate-1/2 Johnson config clears 100 bits
+        // without grinding at m = 22; below the template boundary the ad-hoc
+        // config runs without the round.
+        assert_eq!(sha_lig_ood_params(15), Some(OodRoundParams { grinding_bits: 0 }));
+        assert_eq!(sha_lig_ood_params(10), None);
+    }
+
+    /// `eq(b, r) mod q` over `b ∈ {0,1}^{r.len()}` (index bit `k` ↔ `r[k]`).
+    fn eq_table_mod_q(arith: &ProjArith, r: &[u128]) -> Vec<u128> {
+        let q = arith.q();
+        let mut table = vec![1u128 % q];
+        for &coord in r {
+            let mut next = Vec::with_capacity(table.len() * 2);
+            for &v in &table {
+                let v1 = arith.mul(v, coord);
+                let v0 = if v >= v1 { v - v1 } else { v + q - v1 };
+                next.push(v0);
+                next.push(v1);
+            }
+            table = next;
+        }
+        table
+    }
+
+    /// The claimed `Σ_c w_c Σ_b rw_b · cell(b, c)` mod `q` from the committed
+    /// bit rows (row `c`: bit `(b << log₂W) | j` = bit `j` of cell `(b, c)`).
+    fn claim_from_rows(p: &IntEvalParams, rows: &[Vec<u64>], rw: &[u128], cw: &[u128], arith: &ProjArith) -> u128 {
+        let log_w = p.word_bits.trailing_zeros() as usize;
+        let pow2: Vec<u128> = (0..p.word_bits).map(|j| arith.reduce(1u128 << j)).collect();
+        let mut y = 0u128;
+        for (c, row) in rows.iter().enumerate() {
+            let mut acc = 0u128;
+            for (wi, &word) in row.iter().enumerate() {
+                let mut bits = word;
+                while bits != 0 {
+                    let bit = bits.trailing_zeros() as usize;
+                    bits &= bits - 1;
+                    let i = (wi << 6) | bit;
+                    let (b, j) = (i >> log_w, i & (p.word_bits - 1));
+                    let term = if j == 0 { rw[b] } else { arith.mul(rw[b], pow2[j]) };
+                    acc = arith.add(acc, term);
+                }
+            }
+            y = arith.add(y, arith.mul(cw[c], acc));
+        }
+        y
+    }
+
+    /// The standalone protocol of the `f2z` CLI at one tiny shape: statement,
+    /// transcript-sampled prime and point, claim, then the opening with the
+    /// requested Round-0 parameters.
+    fn standalone_roundtrip(t: usize, s: usize, w: usize, ood: Option<OodRoundParams>) {
+        let alpha = smallest_generator();
+        let p = IntEvalParams { t, s, word_bits: w };
+        let q_bits = mod_q_chunk_width(&p).min(113);
+        let (pc, vc) = lig_configs(
+            packed_vars(&p),
+            LigConfig::Adhoc {
+                log_batch: 2,
+                log_inv_rate: 2,
+            },
+        )
+        .expect("cfg");
+        let mask = if w == 128 { u128::MAX } else { (1u128 << w) - 1 };
+        let data: Vec<u128> = (0..p.cells())
+            .map(|i| (i as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & mask)
+            .collect();
+        let hint = commit_rs_flock_with(&p, &data, pc.log_inv_rates[0], pc.initial_k);
+
+        let statement = |transcript: &mut Blake3Transcript| {
+            absorb_standalone_mod_q_statement(transcript, &hint.commitment, &p, alpha, q_bits, ood, &vc);
+            let proj = ExtProjParams {
+                prime_bits: q_bits,
+                ..ExtProjParams::default()
+            };
+            let q = sample_proj_prime(transcript, &proj);
+            let arith = ProjArith::new(q);
+            let r1: Vec<u128> = (0..p.t).map(|_| sample_proj_point(transcript, q)).collect();
+            let r2: Vec<u128> = (0..p.s).map(|_| sample_proj_point(transcript, q)).collect();
+            (q, eq_table_mod_q(&arith, &r1), eq_table_mod_q(&arith, &r2))
+        };
+        let (q, rw, cw) = {
+            let mut st = Blake3Transcript::new();
+            statement(&mut st)
+        };
+        let y = claim_from_rows(&p, hint.rows(), &rw, &cw, &ProjArith::new(q));
+
+        let mut pt = Blake3Transcript::new();
+        let (q_p, rw_p, _) = statement(&mut pt);
+        assert_eq!(q_p, q);
+        absorb_standalone_mod_q_claim(&mut pt, q, y);
+        let proof = prove_mle_eval_mod_q_ligerito_with_ood(&mut pt, &hint, &p, &rw_p, q_bits, alpha, ood, &pc);
+        assert_eq!(proof.ood.is_some(), ood.is_some());
+        assert_eq!(
+            proof.ood.and_then(|round| round.nonce).is_some(),
+            ood.is_some_and(|params| params.grinding_bits > 0)
+        );
+
+        let verify = |proof: &IntEvalRsLigModQProof, params: Option<OodRoundParams>, claimed: u128| {
+            let mut vt = Blake3Transcript::new();
+            let (q_v, rw_v, cw_v) = statement(&mut vt);
+            absorb_standalone_mod_q_claim(&mut vt, q_v, claimed);
+            verify_mle_eval_mod_q_ligerito_runtime(
+                &mut vt,
+                &hint.commitment,
+                proof,
+                &p,
+                &rw_v,
+                &cw_v,
+                alpha,
+                claimed,
+                q_v,
+                q_bits,
+                params,
+                &vc,
+            )
+        };
+        verify(&proof, ood, y).unwrap_or_else(|e| panic!("t={t} s={s} W={w} ood={ood:?}: {e:?}"));
+        assert!(verify(&proof, ood, (y + 1) % q).is_err(), "a wrong claim must be rejected");
+
+        // The codec carries the round canonically.
+        let bytes = proof.to_bytes();
+        let decoded = IntEvalRsLigModQProof::from_bytes(&bytes).expect("codec");
+        assert_eq!(decoded.ood, proof.ood);
+        assert_eq!(decoded.to_bytes(), bytes);
+        let mut trailing = bytes.clone();
+        trailing.push(0);
+        assert!(IntEvalRsLigModQProof::from_bytes(&trailing).is_err());
+        verify(&decoded, ood, y).expect("decoded proof verifies");
+
+        if let Some(params) = ood {
+            let round = proof.ood.expect("round present");
+            // Parameters and proof must agree on the round's presence.
+            let mut without = proof.clone();
+            without.ood = None;
+            assert_eq!(verify(&without, ood, y).err(), Some(FlockRsError::OodRound));
+            assert_eq!(verify(&proof, None, y).err(), Some(FlockRsError::OodRound));
+            // A wrong out-of-domain value breaks the batched opening.
+            let mut wrong_y = proof.clone();
+            wrong_y.ood = Some(OodRound {
+                y: round.y + Gf::one(),
+                nonce: round.nonce,
+            });
+            assert!(verify(&wrong_y, ood, y).is_err(), "a wrong OOD value must be rejected");
+            // The nonce must be present exactly at a nonzero difficulty.
+            let mut nonce_flip = proof.clone();
+            nonce_flip.ood = Some(OodRound {
+                y: round.y,
+                nonce: if params.grinding_bits == 0 { Some(0) } else { None },
+            });
+            assert_eq!(verify(&nonce_flip, ood, y).err(), Some(FlockRsError::OodRound));
+            if params.grinding_bits > 0 {
+                // A different difficulty invalidates the transcript prefix.
+                let other = Some(OodRoundParams {
+                    grinding_bits: params.grinding_bits + 1,
+                });
+                assert!(verify(&proof, other, y).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn standalone_direct_opening_with_round0() {
+        standalone_roundtrip(10, 5, 1, None);
+        standalone_roundtrip(10, 5, 1, Some(OodRoundParams { grinding_bits: 0 }));
+        standalone_roundtrip(10, 5, 1, Some(OodRoundParams { grinding_bits: 6 }));
+        standalone_roundtrip(4, 8, 32, Some(OodRoundParams { grinding_bits: 2 }));
+    }
+
+    #[test]
+    fn trailer_carries_forest_nonces_and_the_round_together() {
+        let alpha = smallest_generator();
+        let p = IntEvalParams { t: 10, s: 5, word_bits: 1 };
+        let q_bits = 100usize;
+        let (pc, _vc) = lig_configs(
+            packed_vars(&p),
+            LigConfig::Adhoc {
+                log_batch: 2,
+                log_inv_rate: 2,
+            },
+        )
+        .expect("cfg");
+        let data: Vec<u128> = (0..p.cells()).map(|i| (i as u128 * 7) & 1).collect();
+        let hint = commit_rs_flock_with(&p, &data, pc.log_inv_rates[0], pc.initial_k);
+        let rw_q: Vec<u128> = (0..p.rows()).map(|b| (b as u128 + 3) * 0x1234_5678_9abc).collect();
+        let chunks = ModQWeightChunks::from_dense(&p, &rw_q, q_bits).expect("chunks");
+        for (forest_bits, ood) in [
+            (2u32, Some(OodRoundParams { grinding_bits: 1 })),
+            (2, Some(OodRoundParams { grinding_bits: 0 })),
+            (2, None),
+            (0, Some(OodRoundParams { grinding_bits: 3 })),
+            (0, None),
+        ] {
+            let mut pt = Blake3Transcript::new();
+            let proof = prove_mle_eval_mod_q_ligerito_raw(&mut pt, &hint, &p, &chunks, alpha, &pc, forest_bits, ood);
+            assert_eq!(proof.grinding_nonces.is_empty(), forest_bits == 0);
+            assert_eq!(proof.ood.is_some(), ood.is_some());
+            let bytes = proof.to_bytes();
+            let decoded = IntEvalRsLigModQProof::from_bytes(&bytes).expect("codec");
+            assert_eq!(decoded.grinding_nonces, proof.grinding_nonces);
+            assert_eq!(decoded.ood, proof.ood);
+            assert_eq!(decoded.to_bytes(), bytes);
         }
     }
 }

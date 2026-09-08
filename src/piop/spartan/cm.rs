@@ -42,8 +42,8 @@ use crate::{
     ligerito::{LOG_PACKING, packed_vars},
     ligerito_flock::{
         FlockCommitHint, FlockRsError, commit_rs_ligerito_rows,
-        prove_mle_eval_mod_q_ligerito_virtual, sha_lig_configs,
-        verify_mle_eval_mod_q_ligerito_virtual,
+        prove_mle_eval_mod_q_ligerito_virtual_with_ood, sha_lig_configs,
+        verify_mle_eval_mod_q_ligerito_virtual_with_ood,
     },
     pcs::{
         FQ_BITS, FQ_MOD, Fq, IntEvalParams, ProjectCanonicalU128, eq_le_table_fq, fq_mul, fq_sub,
@@ -754,6 +754,12 @@ fn cm_configs(layout: &CmAndLayout) -> Result<(LigProverConfig, LigVerifierConfi
     sha_lig_configs(packed_vars(&p)).map_err(CmF2zError::LigeritoConfig)
 }
 
+/// Round-0 parameters of the opener [`cm_configs`] selects.
+fn cm_ood(layout: &CmAndLayout) -> Option<crate::ligerito_flock::OodRoundParams> {
+    let p = layout.f2z_params();
+    crate::ligerito_flock::sha_lig_ood_params(packed_vars(&p))
+}
+
 fn hash_usize(hasher: &mut Hasher, value: usize) -> Result<(), CmF2zError> {
     let value = u64::try_from(value).map_err(|_| CmF2zError::BindingEncodingOverflow)?;
     hasher.update(&value.to_le_bytes());
@@ -907,7 +913,7 @@ pub fn prove_cm_and_f2z_with_config<T: Transcript + Send>(
 
     let f2z = {
         let _scope = crate::utils::prof::scope("cm-f2z:f2z_prove");
-        prove_mle_eval_mod_q_ligerito_virtual(
+        prove_mle_eval_mod_q_ligerito_virtual_with_ood(
             transcript,
             hint_f,
             &h_rows,
@@ -917,6 +923,7 @@ pub fn prove_cm_and_f2z_with_config<T: Transcript + Send>(
             opening.row_weights_q(),
             FQ_BITS,
             f2z_generator(),
+            cm_ood(relation.layout()),
             pc,
         )
     };
@@ -979,7 +986,7 @@ pub fn verify_cm_and_f2z_with_config<T: Transcript + Send>(
     let p = relation.layout().f2z_params();
     let result = {
         let _scope = crate::utils::prof::scope("cm-f2z:f2z_verify");
-        verify_mle_eval_mod_q_ligerito_virtual(
+        verify_mle_eval_mod_q_ligerito_virtual_with_ood(
             transcript,
             commitment,
             proof.f2z(),
@@ -991,6 +998,7 @@ pub fn verify_cm_and_f2z_with_config<T: Transcript + Send>(
             f2z_generator(),
             opening.claimed(),
             FQ_BITS,
+            cm_ood(relation.layout()),
             vc,
         )
     };

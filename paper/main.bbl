@@ -1,6 +1,15 @@
 \newcommand{\etalchar}[1]{$^{#1}$}
 \begin{thebibliography}{BSBHR18b}
 
+\bibitem[ACFY24]{stir}
+Gal Arnon, Alessandro Chiesa, Giacomo Fenzi, and Eylon Yogev.
+\newblock {STIR:} reed-solomon proximity testing with fewer queries.
+\newblock In Leonid Reyzin and Douglas Stebila, editors, {\em Advances in
+  Cryptology - {CRYPTO} 2024 - 44th Annual International Cryptology Conference,
+  Santa Barbara, CA, USA, August 18-22, 2024, Proceedings, Part {X}}, volume
+  14929 of {\em Lecture Notes in Computer Science}, pages 380--413. Springer,
+  2024.
+
 \bibitem[ACFY25]{whir}
 Gal Arnon, Alessandro Chiesa, Giacomo Fenzi, and Eylon Yogev.
 \newblock {WHIR:} reed-solomon proximity testing with super-fast verification.
@@ -21,6 +30,17 @@ Martijn Brehm, Binyi Chen, Ben Fisch, Nicolas Resch, Ron~D. Rothblum, and Hadas
   Zeilberger.
 \newblock Blaze: Fast {SNARKs} from interleaved {RAA} codes.
 \newblock Cryptology {ePrint} Archive, Paper 2024/1609, 2024.
+
+\bibitem[BCFW25]{BCFW25}
+Benedikt B{\"{u}}nz, Alessandro Chiesa, Giacomo Fenzi, and William Wang.
+\newblock Linear-time accumulation schemes.
+\newblock In {\em Theory of Cryptography - 23rd International Conference, {TCC}
+  2025}, 2025.
+
+\bibitem[BDDT25]{sumcheck_opt_2}
+Suyash Bagad, Quang Dao, Yuval Domb, and Justin Thaler.
+\newblock Speeding up sum-check proving.
+\newblock Cryptology {ePrint} Archive, Paper 2025/1117, 2025.
 
 \bibitem[BFS19]{DARK}
 Benedikt B{\"u}nz, Ben Fisch, and Alan Szepieniec.
@@ -61,6 +81,11 @@ Eli Ben-Sasson, Iddo Bentov, Yinon Horesh, and Michael Riabzev.
   integrity.
 \newblock Cryptology {ePrint} Archive, Paper 2018/046, 2018.
 
+\bibitem[CFW26]{zook}
+Alessandro Chiesa, Giacomo Fenzi, and Guy Weissenberg.
+\newblock Zero-knowledge {IOPPs} for constrained interleaved codes.
+\newblock Cryptology {ePrint} Archive, Paper 2026/391, 2026.
+
 \bibitem[CHA24]{zaratan}
 Matteo Campanelli and Mathias Hall-Andersen.
 \newblock Fully succinct arguments over the integers from first principles.
@@ -82,6 +107,16 @@ Benjamin~E. Diamond and Jim Posen.
 \newblock Polylogarithmic proofs for multilinears over binary towers.
 \newblock Cryptology {ePrint} Archive, Paper 2024/504, 2024.
 
+\bibitem[DT24]{sumcheck_opt_1}
+Quang Dao and Justin Thaler.
+\newblock More optimizations to sum-check proving.
+\newblock Cryptology {ePrint} Archive, Paper 2024/1210, 2024.
+
+\bibitem[Gru24]{gruen}
+Angus Gruen.
+\newblock Some improvements for the {PIOP} for {ZeroCheck}.
+\newblock Cryptology {ePrint} Archive, Paper 2024/108, 2024.
+
 \bibitem[GWV{\etalchar{+}}25]{zinc}
 Albert Garreta, Hendrik Waldner, Ilia Vlasov, Katerina Hristova, Luca
   Dall’Ava, Marko {\v C}upi{\'c}, and Matthew Klein.
@@ -97,17 +132,20 @@ Ulrich Hab{\"o}ck, David Levit, and Shahar Papini.
 \newblock Circle {STARKs}.
 \newblock Cryptology {ePrint} Archive, Paper 2024/278, 2024.
 
-\bibitem[{Nat}15]{FIPS180-4}
-{National Institute of Standards and Technology}.
-\newblock Secure hash standard ({SHS}).
-\newblock Technical Report FIPS PUB 180-4, U.S. Department of Commerce, 2015.
+\bibitem[NA25]{ligerito}
+Andrija Novakovic and Guillermo Angeris.
+\newblock Ligerito: A small and concretely fast polynomial commitment scheme.
+\newblock Cryptology {ePrint} Archive, Paper 2025/1187, 2025.
 
-\bibitem[Set19]{spartan}
-Srinath Setty.
-\newblock Spartan: Efficient and general-purpose {zkSNARKs} without trusted
-  setup.
-\newblock Cryptology {ePrint} Archive, Paper 2019/550, 2019.
-\newblock CRYPTO 2020.
+\bibitem[OWWB20]{multiswap}
+Alex Ozdemir, Riad~S. Wahby, Barry Whitehat, and Dan Boneh.
+\newblock Scaling verifiable computation using efficient set accumulators.
+\newblock In {\em 29th {USENIX} Security Symposium ({USENIX} Security 20)},
+  pages 2075--2092, 2020.
+
+\bibitem[Plo]{plonky}
+Plonky3.
+\newblock Plonky3.
 
 \bibitem[Sou26]{lev}
 Lev Soukhanov.
@@ -120,6 +158,11 @@ Alireza Shirzad, Sriram Sridhar, Dimitrios Papadopoulos, and Charalampos
 \newblock Relaxed modular {PCS} from arbitrary {PCS} and applications to
   {SNARKs} for integers.
 \newblock Cryptology {ePrint} Archive, Paper 2026/347, 2026.
+
+\bibitem[Tha22]{thalerbook}
+Justin Thaler.
+\newblock {\em Proofs, Arguments, and Zero-Knowledge}.
+\newblock 01 2022.
 
 \bibitem[ZCF23]{basefold}
 Hadas Zeilberger, Binyi Chen, and Ben Fisch.

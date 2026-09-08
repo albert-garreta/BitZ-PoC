@@ -134,16 +134,24 @@ unless `OBLONG_PROFILE=1` is set.
 - `examples/reference_measure.rs`: unchanged output, documented here as
   exempt.
 - `src/bin/f2z.rs` (the CLI): its human-readable output is exempt, but the
-  single-claim path ends with its own line, `RESULT schema=f2z-cli/1`, which
+  single-claim path ends with its own line, `RESULT schema=f2z-cli/2`, which
   the CLI's `--sweep` mode parses to build `paper/raw-performance-table.tex`.
   Keys (fixed order, medians over the timed reps, `na` where a value does
   not exist): `n t s W m_p chunks lig lig_hash lig_target_bits
-  lig_achieved_bits lig_l0_bits threads reps commit_ms commit_peak_mb prove_ms prove_gp_ms
+  lig_achieved_bits lig_l0_bits q_lo_log2 q_bits ood_bits threads reps
+  commit_ms commit_peak_mb prove_ms prove_gp_ms
   prove_rs_ms prove_lig_ms prove_residual_ms prove_peak_mb verify_ms
-  proof_bytes proof_nonlig_bytes proof_lig_bytes`. `prove_gp_ms` /
+  proof_bytes proof_nonlig_bytes proof_lig_bytes`. Schema 2 (2026-09-08):
+  the evaluation prime is transcript-sampled after the commitment,
+  uniformly among the primes of `[2^q_lo_log2, 2^q_bits)` with
+  `q_bits = min(113, 127 − t − W)`, the point follows, and both derivations
+  run inside the prover's and verifier's timers; `ood_bits` is the grinding
+  of Round 0 (the paper's out-of-domain sample), executed exactly when the
+  opener runs beyond unique decoding (`na` when skipped). `prove_gp_ms` /
   `prove_rs_ms` / `prove_lig_ms` are the paper's prover buckets (grand
   products = `mq:chunking mc:pack mc:pow2 mc:forest mc:fold_v`; ring switch
-  incl. its sumcheck = `mc:presum_tbls mc:presum_run mq:rings mq:bcomb`;
+  incl. its sumcheck = `mc:presum_tbls mc:presum_run mq:rings mq:bcomb`,
+  which also carries Round 0's `mc:ood mq:ood_basis`;
   Ligerito = `mq:lig`; per-rep bucket sums, then the median) and
   `prove_residual_ms = prove_ms − (gp + rs + lig)` is signed.
   `lig_target_bits` / `lig_achieved_bits` are the Ligerito config's
@@ -166,5 +174,10 @@ unless `OBLONG_PROFILE=1` is set.
   `commit_ms` also reports on its own); `s2…s5` are the umbrella-scope
   medians, `s5_gp/rs/lig` the opening's paper buckets, and
   `prove_residual_ms = prove_ms − (commit + s2 + s3 + s4 + s5)`.
+  `witness_ms` is the witness generation — the products and the Spartan
+  assignment built from the operand pairs (drawing the pairs is untimed) —
+  as a median of `reps` constructions after one warm-up; it is excluded
+  from `prove_ms` and is the table's Witness column, outside the prover
+  group. `setup_ms` is the one-time relation preparation (not tabulated).
   `proof_piop_bytes` is the bench's Spartan payload + nonce accounting and
   `proof_open_nonlig_bytes + proof_open_lig_bytes = proof_open_bytes`.

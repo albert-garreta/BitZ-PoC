@@ -1011,6 +1011,7 @@ pub fn prove_sha256_chain_with_config<T: Transcript + Send>(
             mod_q.q_bits(),
             f2z_generator(),
             prepared.security.forest_round_grinding_bits,
+            prepared.security.ood,
             pc,
         )
         .map_err(Sha256F2zError::F2z)?
@@ -1188,6 +1189,7 @@ pub fn verify_sha256_chain_with_config<T: Transcript + Send>(
         mod_q.q(),
         mod_q.q_bits(),
         prepared.security.forest_round_grinding_bits,
+        prepared.security.ood,
         vc,
     )
     .map_err(Sha256F2zError::F2z)

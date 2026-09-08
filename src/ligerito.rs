@@ -158,6 +158,12 @@ pub(crate) fn absorb_rlc_betas(transcript: &mut impl Transcript, vals: &[Gf]) {
     absorb_gf_slice(transcript, 0x39, vals);
 }
 
+/// Absorb the Round-0 (out-of-domain) value `y = MLE[P](ζ⃗)` (domain tag
+/// 0x50) — bound right after the `ζ` draw, before any forest message.
+pub(crate) fn absorb_ood_value(transcript: &mut impl Transcript, y: Gf) {
+    absorb_gf_slice(transcript, 0x50, &[y]);
+}
+
 /// In-place multilinear bind of the LOWEST index bit:
 /// `tbl'[i] = tbl[2i] + r·(tbl[2i] + tbl[2i+1])`.
 #[allow(clippy::arithmetic_side_effects)]

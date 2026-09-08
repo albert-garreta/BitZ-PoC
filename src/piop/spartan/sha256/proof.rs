@@ -479,6 +479,7 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
                 mod_q.q_bits(),
                 f2z_generator(),
                 prepared.security().forest_round_grinding_bits,
+                prepared.security().ood,
                 pc,
             )
             .map_err(Sha256F2zError::F2z)?
@@ -566,6 +567,7 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
                 mod_q.q_bits(),
                 f2z_generator(),
                 prepared.security().forest_round_grinding_bits,
+                prepared.security().ood,
                 pc,
             )
             .map_err(Sha256F2zError::F2z)?
@@ -817,6 +819,7 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
             mod_q.q(),
             mod_q.q_bits(),
             prepared.security().forest_round_grinding_bits,
+            prepared.security().ood,
             vc,
         )
         .map_err(Sha256F2zError::F2z)
@@ -891,6 +894,7 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
             mod_q.q(),
             mod_q.q_bits(),
             prepared.security().forest_round_grinding_bits,
+            prepared.security().ood,
             vc,
         )
         .map_err(Sha256F2zError::F2z)
@@ -2321,6 +2325,12 @@ pub(super) fn hash_security_params(
     }
     hash.update(&security.forest_round_grinding_bits.to_le_bytes());
     hash.update(&security.ring_switch_grinding_bits.to_le_bytes());
+    if let Some(ood) = security.ood {
+        // Present only when Round 0 (the out-of-domain sample) runs, so
+        // Round-0-less statements keep their digest.
+        hash.update(&[1]);
+        hash.update(&ood.grinding_bits.to_le_bytes());
+    }
     hash_usize(hash, security.ligerito_target_bits)?;
     Ok(())
 }

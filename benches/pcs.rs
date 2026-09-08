@@ -56,16 +56,22 @@ use std::hint::black_box;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
+use f2z::ext_proj::{ExtProjParams, ProjArith, sample_proj_point, sample_proj_prime};
 use f2z::ligerito::{LOG_PACKING, packed_vars};
 use f2z::ligerito_flock::{
-    LigConfig, commit_rs_ligerito_rows, lig_configs, prove_mle_eval_mod_q_ligerito,
-    verify_mle_eval_mod_q_ligerito,
+    LigConfig, OodRoundParams, absorb_standalone_mod_q_claim, absorb_standalone_mod_q_statement,
+    commit_rs_ligerito_rows, lig_configs, ood_round_params, prove_mle_eval_mod_q_ligerito_with_ood,
+    verify_mle_eval_mod_q_ligerito_runtime,
 };
-use f2z::pcs::{IntEvalParams, mod_q_num_chunks, smallest_generator};
+use f2z::pcs::{IntEvalParams, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
 use f2z::ligerito_flock::{
-    custom_johnson_config_bits, custom_udr_config_bits, custom_udr_grind_config_bits,
+    custom_johnson_config, custom_johnson_config_bits, custom_udr_config_bits,
+    custom_udr_grind_config_bits,
 };
-use flock_core::pcs::ligerito::{LigeritoProfile, ProverConfig as LigPc, VerifierConfig as LigVc};
+use flock_core::pcs::ligerito::{
+    LigeritoProfile, LigeritoSecurityConfig, ProverConfig as LigPc, VerifierConfig as LigVc,
+    embedded_security_config,
+};
 
 /// The bench's Ligerito config source: the audited embedded profile chosen
 /// by `F2Z_LIG_PROFILE` at `m = m_p + 7 ≥ 22`, the ad-hoc rate-1/4 config
@@ -76,7 +82,15 @@ use flock_core::pcs::ligerito::{LigeritoProfile, ProverConfig as LigPc, Verifier
 /// base rate 1/4 to the Johnson rate 1/8 mid-development) instead of lying.
 /// `custom:<log_inv_rate>:<initial_k>` builds a Johnson config at that
 /// geometry via [`custom_johnson_config`] (flock-validator-gated).
-fn bench_lig_configs(m_p: usize) -> ((LigPc, LigVc), String) {
+fn bench_lig_configs(m_p: usize) -> ((LigPc, LigVc), String, Option<OodRoundParams>) {
+    // Round 0 (the paper's out-of-domain sample) at the config's own
+    // round-by-round target: executed in the Johnson regime, skipped at
+    // unique decoding. Ad-hoc configs carry no security claim (skipped).
+    let ood_of = |cfg: &LigeritoSecurityConfig| -> Option<OodRoundParams> {
+        u32::try_from(cfg.target_security_bits)
+            .ok()
+            .and_then(|target| ood_round_params(cfg, cfg.log_n, target))
+    };
     let prof =
         std::env::var("F2Z_LIG_PROFILE").unwrap_or_else(|_| "custom:3:4".to_string());
     // Queries-only UDR geometry: udr:<log_inv_rate>:<initial_k>[:<bits>] —
@@ -106,11 +120,11 @@ fn bench_lig_configs(m_p: usize) -> ((LigPc, LigVc), String) {
                 Some(b) => format!("udrg-k{k0}-{b}b"),
                 None => format!("udrg-k{k0}"),
             };
-            return (pair, tag);
+            return (pair, tag, ood_of(&cfg));
         }
         let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
             .expect("adhoc cfg");
-        return (pair, "adhoc".to_string());
+        return (pair, "adhoc".to_string(), None);
     }
     if let Some(rest) = prof.strip_prefix("udr:") {
         let mut it = rest.split(':');
@@ -131,11 +145,11 @@ fn bench_lig_configs(m_p: usize) -> ((LigPc, LigVc), String) {
                 Some(b) => format!("udr-k{k0}-{b}b"),
                 None => format!("udr-k{k0}"),
             };
-            return (pair, tag);
+            return (pair, tag, ood_of(&cfg));
         }
         let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
             .expect("adhoc cfg");
-        return (pair, "adhoc".to_string());
+        return (pair, "adhoc".to_string(), None);
     }
     if let Some(rest) = prof.strip_prefix("custom:") {
         let mut it = rest.split(':');
@@ -157,11 +171,11 @@ fn bench_lig_configs(m_p: usize) -> ((LigPc, LigVc), String) {
                 Some(b) => format!("custom-k{k0}-{b}b"),
                 None => format!("custom-k{k0}"),
             };
-            return (pair, tag);
+            return (pair, tag, ood_of(&cfg));
         }
         let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
             .expect("adhoc cfg");
-        return (pair, "adhoc".to_string());
+        return (pair, "adhoc".to_string(), None);
     }
     let (lig_cfg, tag): (LigConfig, &str) = if prof == "r8" {
         // Base RS rate 1/8 via the ad-hoc UDR generator, at the embedded
@@ -187,7 +201,17 @@ fn bench_lig_configs(m_p: usize) -> ((LigPc, LigVc), String) {
     } else {
         (LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 }, "adhoc")
     };
-    (lig_configs(m_p, lig_cfg).expect("lig cfg"), tag.to_string())
+    let m = m_p + LOG_PACKING;
+    let ood = match lig_cfg {
+        LigConfig::Embedded(profile) => embedded_security_config(m, profile)
+            .and_then(|toml| LigeritoSecurityConfig::from_toml_str(toml).ok())
+            .and_then(|cfg| ood_of(&cfg)),
+        LigConfig::CustomJohnson { log_inv_rate, initial_k } => {
+            ood_of(&custom_johnson_config(m, log_inv_rate, initial_k))
+        }
+        LigConfig::Adhoc { .. } => None,
+    };
+    (lig_configs(m_p, lig_cfg).expect("lig cfg"), tag.to_string(), ood)
 }
 
 // Peak-heap tracker (wraps System): high-water mark of currently outstanding
@@ -233,39 +257,55 @@ fn live_mb() -> f64 {
     CUR.load(Ordering::Relaxed) as f64 / (1024.0 * 1024.0)
 }
 
-/// `𝔽_q`, `q = 2^100 − 15` — the reference evaluation field (any char ≠ 2
-/// ring works; see the README).
-const Q: u128 = (1u128 << 100) - 15;
+/// The evaluation prime is SAMPLED from the transcript after the
+/// commitment, uniformly among the primes of `[2^(b−1), 2^b)` with
+/// `b = min(113, 127 − t − W)` — the paper's Strategy-1 field policy capped
+/// by the one-chunk exponent-fold width (the same rule as the Spartan
+/// security profile's derived interval); the evaluation point follows.
+fn standalone_q_bits(p: &IntEvalParams) -> usize {
+    mod_q_chunk_width(p).min(113)
+}
 
-#[derive(Clone, Copy, PartialEq, Debug)]
-struct Fq(u128);
-impl From<u128> for Fq {
-    fn from(v: u128) -> Self {
-        Fq(v % Q)
+/// The transcript-sampled instance: prime, point-induced `eq` tables.
+struct StandaloneInstance {
+    q: u128,
+    row_weights_q: Vec<u128>,
+    col_weights_q: Vec<u128>,
+}
+
+fn sample_standalone_instance(
+    transcript: &mut f2z::transcript::Blake3Transcript,
+    p: &IntEvalParams,
+    q_bits: usize,
+) -> StandaloneInstance {
+    let _g = f2z::utils::prof::scope("mq:sample_instance");
+    let proj = ExtProjParams { prime_bits: q_bits, ..ExtProjParams::default() };
+    let q = sample_proj_prime(transcript, &proj);
+    let arith = ProjArith::new(q);
+    let r1: Vec<u128> = (0..p.t).map(|_| sample_proj_point(transcript, q)).collect();
+    let r2: Vec<u128> = (0..p.s).map(|_| sample_proj_point(transcript, q)).collect();
+    StandaloneInstance {
+        q,
+        row_weights_q: eq_table_mod_q(&arith, &r1),
+        col_weights_q: eq_table_mod_q(&arith, &r2),
     }
 }
-impl core::ops::Add for Fq {
-    type Output = Fq;
-    fn add(self, o: Fq) -> Fq {
-        let s = self.0 + o.0;
-        Fq(if s >= Q { s - Q } else { s })
-    }
-}
-impl core::ops::Mul for Fq {
-    type Output = Fq;
-    fn mul(self, o: Fq) -> Fq {
-        let (mut a, mut b, mut acc) = (self.0, o.0, 0u128);
-        while b != 0 {
-            if b & 1 == 1 {
-                let s = acc + a;
-                acc = if s >= Q { s - Q } else { s };
-            }
-            let d = a << 1;
-            a = if d >= Q { d - Q } else { d };
-            b >>= 1;
+
+/// `eq(b, r) mod q` over `b ∈ {0,1}^{r.len()}` (index bit `k` ↔ `r[k]`).
+fn eq_table_mod_q(arith: &ProjArith, r: &[u128]) -> Vec<u128> {
+    let q = arith.q();
+    let mut table = vec![1u128 % q];
+    for &coord in r {
+        let mut next = Vec::with_capacity(table.len() * 2);
+        for &v in &table {
+            let v1 = arith.mul(v, coord);
+            let v0 = if v >= v1 { v - v1 } else { v + q - v1 };
+            next.push(v0);
+            next.push(v1);
         }
-        Fq(acc)
+        table = next;
     }
+    table
 }
 
 fn median(mut v: Vec<f64>) -> f64 {
@@ -275,8 +315,8 @@ fn median(mut v: Vec<f64>) -> f64 {
 
 fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     let alpha = smallest_generator();
-    let q_bits = 100usize;
     let p = IntEvalParams { t, s, word_bits: w };
+    let q_bits = standalone_q_bits(&p);
     let m_p = packed_vars(&p);
     let lch = mod_q_num_chunks(&p, q_bits);
     // The library's boundary, generalized by F2Z_LIG_PROFILE: the embedded
@@ -285,7 +325,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     // config at big shapes is catastrophic (n=28 commit measured 292 s
     // ad-hoc vs the embedded profile's sub-second).
     let setup_started = Instant::now();
-    let ((pc, vc), lig_tag) = bench_lig_configs(m_p);
+    let ((pc, vc), lig_tag, ood) = bench_lig_configs(m_p);
     let setup_ms = setup_started.elapsed().as_secs_f64() * 1e3;
 
     // Deterministic non-degenerate instance, generated STRAIGHT INTO the
@@ -329,36 +369,6 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
             wv
         })
         .collect();
-    let rw_q: Vec<u128> = (0..p.rows())
-        .map(|b| {
-            (b as u128)
-                .wrapping_mul(0xDEAD_BEEF_CAFE_F00D_1234_5678_9ABC_DEF1)
-                .wrapping_add(7)
-                % Q
-        })
-        .collect();
-    let cw: Vec<Fq> = (0..p.cols())
-        .map(|c| Fq::from(((c as u128).wrapping_mul(5) & 7).wrapping_add(1)))
-        .collect();
-    // Claimed y from the SET BITS of the rows (O(popcount) field adds,
-    // not O(2^n) muls): cell(b,c) contributes rw[b]·2^j per set bit j.
-    let rw_fq: Vec<Fq> = rw_q.iter().map(|&x| Fq::from(x)).collect();
-    let mut y = Fq::from(0u128);
-    for (c, row) in rows.iter().enumerate() {
-        let mut acc = Fq::from(0u128);
-        for (wi, &word) in row.iter().enumerate() {
-            let mut bits = word;
-            while bits != 0 {
-                let bit = bits.trailing_zeros() as usize;
-                bits &= bits - 1;
-                let i = (wi << 6) | bit;
-                let (b, j) = (i >> log_w, i & (w - 1));
-                let term = if j == 0 { rw_fq[b] } else { rw_fq[b] * Fq::from(1u128 << j) };
-                acc = acc + term;
-            }
-        }
-        y = y + cw[c] * acc;
-    }
     let witness_ms = witness_started.elapsed().as_secs_f64() * 1e3;
 
     let n = t + s;
@@ -382,11 +392,86 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
         live_mb()
     );
 
+    // The instance: the transcript-sampled prime and point (replayed inside
+    // every timed prove/verify), then the claimed μ from the SET BITS of the
+    // committed rows (O(popcount) mod-q adds).
+    let instance = {
+        let mut st = f2z::transcript::Blake3Transcript::new();
+        absorb_standalone_mod_q_statement(&mut st, &hint.commitment, &p, alpha, q_bits, ood, &vc);
+        sample_standalone_instance(&mut st, &p, q_bits)
+    };
+    let q = instance.q;
+    let arith = ProjArith::new(q);
+    let pow2_q: Vec<u128> = (0..w).map(|j| arith.reduce(1u128 << j)).collect();
+    let mut y = 0u128;
+    for (c, row) in hint.rows().iter().enumerate() {
+        let mut acc = 0u128;
+        for (wi, &word) in row.iter().enumerate() {
+            let mut bits = word;
+            while bits != 0 {
+                let bit = bits.trailing_zeros() as usize;
+                bits &= bits - 1;
+                let i = (wi << 6) | bit;
+                let (b, j) = (i >> log_w, i & (w - 1));
+                let term = if j == 0 {
+                    instance.row_weights_q[b]
+                } else {
+                    arith.mul(instance.row_weights_q[b], pow2_q[j])
+                };
+                acc = arith.add(acc, term);
+            }
+        }
+        y = arith.add(y, arith.mul(instance.col_weights_q[c], acc));
+    }
+    println!(
+        "  instance: q ∈ [2^{}, 2^{q_bits}) transcript-sampled after the commitment; Round 0 (OOD): {}",
+        q_bits - 1,
+        match ood {
+            Some(round) => format!("executed, {} grinding bits", round.grinding_bits),
+            None => "skipped (unique-decoding opener)".to_string(),
+        }
+    );
+    let prove_once = |hint: &f2z::ligerito_flock::FlockCommitHint| {
+        let mut pt = f2z::transcript::Blake3Transcript::new();
+        absorb_standalone_mod_q_statement(&mut pt, &hint.commitment, &p, alpha, q_bits, ood, &vc);
+        let sampled = sample_standalone_instance(&mut pt, &p, q_bits);
+        assert_eq!(sampled.q, q, "the transcript-sampled prime must be reproducible");
+        absorb_standalone_mod_q_claim(&mut pt, q, y);
+        prove_mle_eval_mod_q_ligerito_with_ood(
+            &mut pt,
+            hint,
+            &p,
+            &sampled.row_weights_q,
+            q_bits,
+            alpha,
+            ood,
+            &pc,
+        )
+    };
+    let verify_once = |proof: &f2z::ligerito_flock::IntEvalRsLigModQProof| {
+        let mut vt = f2z::transcript::Blake3Transcript::new();
+        absorb_standalone_mod_q_statement(&mut vt, &hint.commitment, &p, alpha, q_bits, ood, &vc);
+        let sampled = sample_standalone_instance(&mut vt, &p, q_bits);
+        absorb_standalone_mod_q_claim(&mut vt, sampled.q, y);
+        verify_mle_eval_mod_q_ligerito_runtime(
+            &mut vt,
+            &hint.commitment,
+            proof,
+            &p,
+            &sampled.row_weights_q,
+            &sampled.col_weights_q,
+            alpha,
+            y,
+            sampled.q,
+            q_bits,
+            ood,
+            &vc,
+        )
+    };
+
     // Warm-up prove (excluded from stats).
     {
-        let mut pt = f2z::transcript::Blake3Transcript::new();
-        let proof =
-            prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc);
+        let proof = prove_once(&hint);
         black_box(&proof);
     }
 
@@ -398,9 +483,8 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     let mut bytes = 0usize;
     let mut proof_fnv = 0u64;
     for _ in 0..reps {
-        let mut pt = f2z::transcript::Blake3Transcript::new();
         let t0 = Instant::now();
-        let proof = prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc);
+        let proof = prove_once(&hint);
         prove_ms.push(t0.elapsed().as_secs_f64() * 1e3);
 
         let t1 = Instant::now();
@@ -418,21 +502,8 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
         de_us.push(t2.elapsed().as_secs_f64() * 1e6);
         black_box(&de);
 
-        let mut vt = f2z::transcript::Blake3Transcript::new();
         let t3 = Instant::now();
-        verify_mle_eval_mod_q_ligerito(
-            &mut vt,
-            &hint.commitment,
-            &proof,
-            &p,
-            &rw_q,
-            &cw,
-            alpha,
-            y,
-            q_bits,
-            &vc,
-        )
-        .expect("verify");
+        verify_once(&proof).expect("verify");
         verify_ms.push(t3.elapsed().as_secs_f64() * 1e3);
     }
 
@@ -449,9 +520,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     reset_peak();
     let _ = f2z::utils::prof::take_totals(); // drain the timed reps' records
     let split_proof = {
-        let mut pt = f2z::transcript::Blake3Transcript::new();
-        let proof =
-            prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc);
+        let proof = prove_once(&hint);
         black_box(&proof);
         proof
     };
@@ -561,9 +630,9 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     // `1`/`gl2` = Goldilocks² (e=2, q_bits=64); `bb4` = BabyBear⁴
     // (X⁴ = 11, the Plonky3 challenge field; e=4, q_bits=31). ──
     match std::env::var("F2Z_BENCH_EXT").as_deref() {
-        Ok("1") | Ok("gl2") => bench_ext_arm::<Fp2>(&p, &hint, alpha, reps, &pc, &vc),
-        Ok("bb4") => bench_ext_arm::<BbFp4>(&p, &hint, alpha, reps, &pc, &vc),
-        Ok("kb5") => bench_ext_arm::<KbFp5>(&p, &hint, alpha, reps, &pc, &vc),
+        Ok("1") | Ok("gl2") => bench_ext_arm::<Fp2>(&p, &hint, alpha, reps, ood, &pc, &vc),
+        Ok("bb4") => bench_ext_arm::<BbFp4>(&p, &hint, alpha, reps, ood, &pc, &vc),
+        Ok("kb5") => bench_ext_arm::<KbFp5>(&p, &hint, alpha, reps, ood, &pc, &vc),
         Ok(other) => panic!("F2Z_BENCH_EXT: unknown arm {other:?} (use 1|gl2|bb4|kb5)"),
         Err(_) => {}
     }
@@ -739,10 +808,13 @@ fn bench_ext_arm<K: BenchExtField>(
     hint: &f2z::ligerito_flock::FlockCommitHint,
     alpha: f2z::BinaryFieldGF128,
     reps: usize,
+    ood: Option<OodRoundParams>,
     pc: &LigPc,
     vc: &LigVc,
 ) {
-    use f2z::ligerito_flock::{prove_mle_eval_ext_ligerito, verify_mle_eval_ext_ligerito};
+    use f2z::ligerito_flock::{
+        prove_mle_eval_ext_ligerito_with_ood, verify_mle_eval_ext_ligerito_with_ood,
+    };
     let q_bits = K::Q_BITS;
     let ext_deg = K::EXT_DEG;
     let proj = f2z::ext_proj::ExtProjParams::default();
@@ -805,7 +877,9 @@ fn bench_ext_arm<K: BenchExtField>(
     {
         let mut pt = f2z::transcript::Blake3Transcript::new();
         let proof =
-            prove_mle_eval_ext_ligerito(&mut pt, hint, p, &coords, q_bits, &proj, alpha, pc);
+            prove_mle_eval_ext_ligerito_with_ood(
+                &mut pt, hint, p, &coords, q_bits, &proj, alpha, ood, pc,
+            );
         black_box(&proof);
     }
 
@@ -818,7 +892,9 @@ fn bench_ext_arm<K: BenchExtField>(
         let mut pt = f2z::transcript::Blake3Transcript::new();
         let t0 = Instant::now();
         let proof =
-            prove_mle_eval_ext_ligerito(&mut pt, hint, p, &coords, q_bits, &proj, alpha, pc);
+            prove_mle_eval_ext_ligerito_with_ood(
+                &mut pt, hint, p, &coords, q_bits, &proj, alpha, ood, pc,
+            );
         prove_ms.push(t0.elapsed().as_secs_f64() * 1e3);
 
         let t1 = Instant::now();
@@ -832,7 +908,7 @@ fn bench_ext_arm<K: BenchExtField>(
 
         let mut vt = f2z::transcript::Blake3Transcript::new();
         let t3 = Instant::now();
-        verify_mle_eval_ext_ligerito(
+        verify_mle_eval_ext_ligerito_with_ood(
             &mut vt,
             &hint.commitment,
             &proof,
@@ -844,6 +920,7 @@ fn bench_ext_arm<K: BenchExtField>(
             y,
             q_bits,
             &proj,
+            ood,
             vc,
         )
         .expect("ext verify");
@@ -856,14 +933,16 @@ fn bench_ext_arm<K: BenchExtField>(
     let proof = {
         let mut pt = f2z::transcript::Blake3Transcript::new();
         let proof =
-            prove_mle_eval_ext_ligerito(&mut pt, hint, p, &coords, q_bits, &proj, alpha, pc);
+            prove_mle_eval_ext_ligerito_with_ood(
+                &mut pt, hint, p, &coords, q_bits, &proj, alpha, ood, pc,
+            );
         black_box(&proof);
         proof
     };
     let prove_phases = f2z::utils::prof::take_totals();
     {
         let mut vt = f2z::transcript::Blake3Transcript::new();
-        verify_mle_eval_ext_ligerito(
+        verify_mle_eval_ext_ligerito_with_ood(
             &mut vt,
             &hint.commitment,
             &proof,
@@ -875,6 +954,7 @@ fn bench_ext_arm<K: BenchExtField>(
             y,
             q_bits,
             &proj,
+            ood,
             vc,
         )
         .expect("ext verify (profiled)");
