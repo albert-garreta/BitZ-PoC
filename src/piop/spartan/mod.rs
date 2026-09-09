@@ -23,6 +23,8 @@ pub(crate) mod slot_rows;
 pub(crate) mod spliced_digest;
 pub mod sumcheck;
 pub mod u32_mul;
+pub mod u128_f2z;
+pub mod u128_mul;
 pub mod u64_f2z;
 pub mod u64_mul;
 pub mod univariate_skip;
@@ -119,6 +121,15 @@ pub use u32_mul::{
     U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS, U32_MUL_X_BITS, U32_MUL_Y_BITS, U32MulError,
     U32MulF2zWidth, U32MulLayout, U32MulNativeMles, U32MulRelationBackend, U32MulWitness,
     prepare_u32_mul_relation, project_u32_mul_native_witness, u32_mul_constraint_matrices,
+};
+pub use u128_f2z::{
+    PreparedU128MulRelation, U128MulBitifiedClaim, U128MulProof, U128MulSpartanF2zError,
+    commit_u128_mul_witness, prove_u128_mul, u128_mul_instance_facts, verify_u128_mul,
+};
+pub use u128_mul::{
+    U128_MUL_BIT_SLOTS, U128_MUL_OPERAND_BITS, U128_MUL_PRODUCT_BITS, U128MulError,
+    U128MulLayout, U128MulRelationBackend, U128MulWitness, mul_u128_full,
+    prepare_u128_mul_relation, project_u128_mul_witness, u128_mul_constraint_matrices,
 };
 pub use u64_f2z::{
     PreparedU64MulRelation, U64MulBitifiedClaim, U64MulProof, U64MulSpartanF2zError,

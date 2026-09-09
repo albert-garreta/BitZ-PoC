@@ -420,10 +420,6 @@ pub(crate) fn prove_spartan_piop_raw_products_native_assignment<C>(
 where
     C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
 {
-    let rows = 1usize << matrices.num_row_vars();
-    if products.len() != rows {
-        return Err(SpartanError::InvalidProductDimensions);
-    }
     let domain = 1usize << matrices.num_column_vars();
     let column_count = matrices.matrices().column_count();
     if assignment.len() != column_count && assignment.len() != domain {
@@ -435,6 +431,42 @@ where
     if assignment.len() > column_count && assignment[column_count..].iter().any(|&value| value != 0)
     {
         return Err(SpartanError::InvalidAssignmentPadding);
+    }
+    prove_spartan_piop_raw_products_raw_witness(
+        transcript,
+        matrices,
+        assignment_oracle_binding,
+        products,
+        RawWitness::native_borrowed(assignment, domain),
+    )
+}
+
+/// The raw-table Spartan prover on caller-built raw product residues and a
+/// caller-built inner-sumcheck witness (native `u64` values or raw
+/// residues). The witness table must span the padded column domain; for
+/// raw residues the caller guarantees canonical entries and the constant
+/// one at index zero. Statement, transcript, and proof are identical to
+/// [`prove_spartan_piop_with_strategy`] under
+/// [`SpartanReductionStrategy::DelayedBarrett`] on the projected tables.
+pub(crate) fn prove_spartan_piop_raw_products_raw_witness<C>(
+    transcript: &mut impl Transcript,
+    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    assignment_oracle_binding: &[u8; 32],
+    products: RawProducts,
+    witness: RawWitness<'_>,
+) -> Result<
+    (
+        SpartanPiopProof<MontyField<2>>,
+        ScaledMleEvaluationClaim<MontyField<2>>,
+    ),
+    SpartanError,
+>
+where
+    C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
+{
+    let rows = 1usize << matrices.num_row_vars();
+    if products.len() != rows {
+        return Err(SpartanError::InvalidProductDimensions);
     }
     absorb_statement(transcript, matrices, assignment_oracle_binding);
 
@@ -479,7 +511,7 @@ where
             inner_initial_claim,
             RowFunctional::Point(&outer.eval_points),
             ctx.raw(&rho),
-            RawWitness::native_borrowed(assignment, domain),
+            witness,
         )?
     };
 

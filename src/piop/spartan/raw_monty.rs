@@ -157,6 +157,20 @@ impl RawMontyCtx {
         self.raw(&Field::from_with_cfg(value, &self.config))
     }
 
+    /// The residue of `2^128`.
+    pub(crate) fn two_pow_128_residue(&self) -> Raw {
+        let half = self.native_residue_u128(1_u128 << 127);
+        self.add(half, half)
+    }
+
+    /// The residue of the 256-bit integer `low + 2^128 · high`, given the
+    /// residue of `2^128` from [`Self::two_pow_128_residue`].
+    #[inline]
+    pub(crate) fn native_residue_u256(&self, low: u128, high: u128, two_pow_128: Raw) -> Raw {
+        let high = self.mul(self.native_residue_u128(high), two_pow_128);
+        self.add(self.native_residue_u128(low), high)
+    }
+
     /// Converts a table of field elements into raw residues.
     pub(crate) fn raw_vec(&self, values: &[Field]) -> Vec<Raw> {
         #[cfg(feature = "parallel")]
@@ -423,6 +437,61 @@ impl RawProducts {
             az: ctx.raw_vec(&products.az.evaluations),
             bz: ctx.raw_vec(&products.bz.evaluations),
             cz: ctx.raw_vec(&products.cz.evaluations),
+        }
+    }
+
+    /// Raw residues of exact native tables of 128-bit operands and 256-bit
+    /// products given as `(low, high)` halves, zero-padded to `rows` (the
+    /// u128 multiplication relation). Residue-for-residue identical to
+    /// [`Self::from_field`] on the projected tables.
+    pub(crate) fn from_native_u128_halves(
+        ctx: &RawMontyCtx,
+        az: &[u128],
+        bz: &[u128],
+        cz_lo: &[u128],
+        cz_hi: &[u128],
+        rows: usize,
+    ) -> Self {
+        let live = az.len();
+        debug_assert!(bz.len() == live && cz_lo.len() == live && cz_hi.len() == live);
+        debug_assert!(live <= rows);
+        let two_pow_128 = ctx.two_pow_128_residue();
+        let operands = |values: &[u128]| -> Vec<Raw> {
+            let mut out = vec![0; rows];
+            #[cfg(feature = "parallel")]
+            if parallel(live) {
+                out[..live]
+                    .par_iter_mut()
+                    .zip(values.par_iter())
+                    .for_each(|(slot, &value)| *slot = ctx.native_residue_u128(value));
+                return out;
+            }
+            for (slot, &value) in out.iter_mut().zip(values) {
+                *slot = ctx.native_residue_u128(value);
+            }
+            out
+        };
+        let mut cz = vec![0; rows];
+        #[cfg(feature = "parallel")]
+        if parallel(live) {
+            cz[..live]
+                .par_iter_mut()
+                .zip(cz_lo.par_iter())
+                .zip(cz_hi.par_iter())
+                .for_each(|((slot, &lo), &hi)| *slot = ctx.native_residue_u256(lo, hi, two_pow_128));
+            return Self {
+                az: operands(az),
+                bz: operands(bz),
+                cz,
+            };
+        }
+        for ((slot, &lo), &hi) in cz.iter_mut().zip(cz_lo).zip(cz_hi) {
+            *slot = ctx.native_residue_u256(lo, hi, two_pow_128);
+        }
+        Self {
+            az: operands(az),
+            bz: operands(bz),
+            cz,
         }
     }
 

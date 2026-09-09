@@ -24,9 +24,10 @@ use f2z::piop::spartan::{
     verify_sha256_compressions,
 };
 use f2z::piop::spartan::{
-    PreparedU32MulRelation, PreparedU64MulRelation, U32MulF2zWidth, U32MulWitness, U64MulWitness,
-    commit_u32_mul_witness, commit_u64_mul_witness, prove_u32_mul, prove_u64_mul,
-    verify_u32_mul, verify_u64_mul,
+    PreparedU32MulRelation, PreparedU64MulRelation, PreparedU128MulRelation, U32MulF2zWidth,
+    U32MulWitness, U64MulWitness, U128MulWitness, commit_u32_mul_witness,
+    commit_u64_mul_witness, commit_u128_mul_witness, prove_u32_mul, prove_u64_mul,
+    prove_u128_mul, verify_u32_mul, verify_u64_mul, verify_u128_mul,
 };
 use f2z::transcript::Blake3Transcript;
 
@@ -114,6 +115,41 @@ fn u64_mul_2p15_transcript_is_pinned() {
     let spartan = format!("{:?}", proof.spartan());
     let digest = digest_hex(&[&hint.commitment.root, &f2z_bytes, spartan.as_bytes()]);
     assert_eq!(digest, U64_MUL_2P15_DIGEST);
+}
+
+/// The 2^15 u128-multiplication batch (`x·y = z`, `z < 2^256`) under the
+/// runtime-prime protocol on raw residues built from the witness limbs
+/// (cubic outer sumcheck, Boolean selector matrices) and its default
+/// `Lambda100` profile.
+const U128_MUL_2P15_DIGEST: &str = "7e48586753b1ae6594ddb7723f7b531f6f2a0c042b188b79b9b216cbbf9b2763";
+
+#[test]
+fn u128_mul_2p15_transcript_is_pinned() {
+    let witness = U128MulWitness::from_fn(1usize << 15, |i| {
+        let lo = (i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1;
+        let hi = (i as u64).wrapping_mul(0xc2b2_ae3d_27d4_eb4f) | 1;
+        let x = (u128::from(hi) << 64) | u128::from(lo);
+        let y = (u128::from(lo.rotate_left(17)) << 64) | u128::from(hi ^ 0x5851_f42d_4c95_7f2d);
+        (x, y)
+    })
+    .expect("witness");
+    let layout = *witness.layout();
+    let prepared = PreparedU128MulRelation::new(layout).expect("prepare");
+    let hint = commit_u128_mul_witness(&prepared, witness.f2z_bit_rows()).expect("commit");
+    let mut prover_transcript = Blake3Transcript::new();
+    let proof = prove_u128_mul(&mut prover_transcript, &prepared, &witness, &hint).expect("prove");
+    let mut verifier_transcript = Blake3Transcript::new();
+    verify_u128_mul(
+        &mut verifier_transcript,
+        &prepared,
+        &hint.commitment,
+        &proof,
+    )
+    .expect("verify");
+    let f2z_bytes = proof.f2z().to_bytes();
+    let spartan = format!("{:?}", proof.spartan());
+    let digest = digest_hex(&[&hint.commitment.root, &f2z_bytes, spartan.as_bytes()]);
+    assert_eq!(digest, U128_MUL_2P15_DIGEST);
 }
 
 fn digest_hex(parts: &[&[u8]]) -> String {

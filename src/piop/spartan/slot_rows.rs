@@ -285,34 +285,32 @@ mod tests {
     }
 }
 
-/// Packs `W = 1` rows for gates with **256** bit slots: 256 lanes of
+/// Packs `W = 1` rows for gates with `64 · N` bit slots: `64 · N` lanes of
 /// `high_gate_count` bits per column.
 ///
-/// `gate_slots(gate)` returns the gate's slots as four little-endian words
-/// (`slots 0..64`, `64..128`, `128..192`, `192..256`); gates at or beyond
-/// `live_gates` are all-zero and never queried. Every row must hold
-/// `4 · high_gate_count` words, and `high_gate_count` must be a multiple of
-/// 64 so each lane spans whole words. Same transpose scheme as
-/// [`pack_slot_major_rows_w1`], which stays the 128-slot packer.
+/// `gate_slots(gate)` returns the gate's slots as `N` little-endian words
+/// (word `w` holds slots `64w..64w+64`); gates at or beyond `live_gates` are
+/// all-zero and never queried. Every row must hold `N · high_gate_count`
+/// words, and `high_gate_count` must be a multiple of 64 so each lane spans
+/// whole words. Same transpose scheme as [`pack_slot_major_rows_w1`], which
+/// stays the 128-slot packer.
 #[allow(clippy::arithmetic_side_effects)]
-pub(crate) fn pack_slot_major_rows_w1_256<F>(
+pub(crate) fn pack_slot_major_rows_w1_words<const N: usize, F>(
     rows: &mut [Vec<u64>],
     s: usize,
     high_gate_count: usize,
     live_gates: usize,
     gate_slots: F,
 ) where
-    F: Fn(usize) -> [u64; 4] + Sync,
+    F: Fn(usize) -> [u64; N] + Sync,
 {
-    const WORDS_PER_GATE: usize = 4;
     assert!(
         high_gate_count.is_multiple_of(WORD_BITS),
         "W=1 slot lanes must span whole words"
     );
     assert!(
-        rows.iter()
-            .all(|row| row.len() == WORDS_PER_GATE * high_gate_count),
-        "each 256-slot W=1 row holds 256 lanes of high_gate_count bits"
+        rows.iter().all(|row| row.len() == N * high_gate_count),
+        "each W=1 row holds 64·N lanes of high_gate_count bits"
     );
     let lane_words = high_gate_count / WORD_BITS;
 
@@ -320,7 +318,7 @@ pub(crate) fn pack_slot_major_rows_w1_256<F>(
         .enumerate()
         .for_each(|(task, group)| {
             let first_column = task * COLUMNS_PER_TASK;
-            let mut blocks = [[[0_u64; WORD_BITS]; WORDS_PER_GATE]; COLUMNS_PER_TASK];
+            let mut blocks = vec![[[0_u64; WORD_BITS]; N]; COLUMNS_PER_TASK];
             for block in 0..lane_words {
                 for g in 0..WORD_BITS {
                     let gate_base = ((block * WORD_BITS + g) << s) | first_column;
@@ -329,7 +327,7 @@ pub(crate) fn pack_slot_major_rows_w1_256<F>(
                         let words = if gate < live_gates {
                             gate_slots(gate)
                         } else {
-                            [0; WORDS_PER_GATE]
+                            [0; N]
                         };
                         for (word, target) in words.iter().zip(column_blocks.iter_mut()) {
                             target[g] = *word;
@@ -346,4 +344,19 @@ pub(crate) fn pack_slot_major_rows_w1_256<F>(
                 }
             }
         });
+}
+
+/// Packs `W = 1` rows for gates with **256** bit slots (four words per
+/// gate): [`pack_slot_major_rows_w1_words`] at `N = 4`.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn pack_slot_major_rows_w1_256<F>(
+    rows: &mut [Vec<u64>],
+    s: usize,
+    high_gate_count: usize,
+    live_gates: usize,
+    gate_slots: F,
+) where
+    F: Fn(usize) -> [u64; 4] + Sync,
+{
+    pack_slot_major_rows_w1_words::<4, _>(rows, s, high_gate_count, live_gates, gate_slots);
 }
