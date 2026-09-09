@@ -105,6 +105,21 @@ pub trait VirtualMap: Sync {
     fn chained_packed_source(&self) -> Option<ChainedPackedSourceParts<'_>> {
         None
     }
+
+    /// A compact relation appended to the chained derived rows. Its source
+    /// prefix aliases existing cells; all other columns occupy one dense tail.
+    /// When present, both hooks together describe the complete map.
+    fn chained_packed_source_tail(&self) -> Option<ChainedSourceTail<'_>> {
+        None
+    }
+}
+
+/// Compact correction to a chained map, with no globally expanded CSC matrix.
+pub struct ChainedSourceTail<'a> {
+    pub map: &'a PreparedVirtualMap,
+    pub row_offset: usize,
+    pub source_offset: usize,
+    pub aliases: &'a [usize],
 }
 
 /// Derived-index order of a [`PackedSourceRepeatedVirtualMap`].

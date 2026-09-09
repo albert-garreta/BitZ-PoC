@@ -10,6 +10,8 @@
 pub mod baby_bear_f2z;
 pub mod baby_bear_mul;
 pub mod cm;
+#[cfg(feature = "ecdsa")]
+pub mod ecdsa_sha256;
 pub mod f2z;
 pub mod grinding;
 pub mod matrix;

@@ -95,7 +95,7 @@ FOLD=1 WIDE16=1 NVARS=11 REPS=5 RUSTFLAGS="-C target-cpu=native" cargo bench --f
 
 ## Integer R1CS with F_2 virtualization
 
-Pick the security parameter with `F2Z_BENCH_LAMBDA`. Every bench below
+Pick the security parameter with `F2Z_BENCH_LAMBDA`. Unless noted otherwise, each bench below
 honours it, so one bench can be run at exactly one λ:
 
 | `F2Z_BENCH_LAMBDA` | profile | meaning |
@@ -173,6 +173,16 @@ rotated-instance term over 264 columns per compression; the forest, the
 PIOP and the proof bytes are the independent batch's.
 `prepare_sha256_chain_batch_with_profile_and_initial_state` prepares a
 chain from any public initial chaining value (a continuation).
+
+### Padded SHA-256 message with P-256 ECDSA
+
+The `ecdsa` feature adds one padded message hash followed by one signature
+verification, using a shared F2Z source commitment. SHA's linear rows bypass
+the outer sumcheck and join the ECDSA matrix claims in one shared inner
+sumcheck. For `N=2^i` total compressions, the message has `64*(N-1)` bytes.
+The [integration and benchmark guide](docs/sha256-ecdsa.md) covers the API,
+the all-rows comparison mode, and the 100/128 economic security settings.
+This benchmark takes its shape and security setting as command-line arguments.
 
 ### u32×u32 -> u64 — λ=100; exponents ≥ 15:
 ```sh
