@@ -1,0 +1,4 @@
+Exploratory instrumentation check, superseded by the final phase partition.
+In these CSVs only, piop_ms includes multiplication/GKR, SHA, and joint sumcheck; iop_ms measures only ring switching plus Ligerito.
+Current runner counts multiplication F2Z/GKR and the joint sumcheck in iop_ms, consistent with existing F2Z benchmark opening accounting. Do not compare these aggregate phase columns against current runs.
+Build: Rust 1.97.1, target-cpu=native, release optimization, LTO disabled, 16 codegen units, 8 Rayon threads.

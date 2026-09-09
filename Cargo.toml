@@ -82,6 +82,7 @@ tracing = { version = "0.1.38", optional = true }
 tracing-subscriber = { version = "0.3.18", optional = true }
 
 [dev-dependencies]
+libc = "0.2"
 serde_json = "1"
 p256 = { version = "0.13.2", features = ["ecdsa"] }
 sha2 = "0.10"
@@ -214,6 +215,14 @@ required-features = ["bench-internals", "native-sha256-compare"]
 # 21 measured verified samples by default.
 
 [[bench]]
+name = "hybrid_u32_sha256"
+harness = false
+required-features = ["hybrid"]
+# Shared-opening hybrid, separate BitZ + Binius, and all-Binius comparison.
+# Chained SHA-256 plus x*y = z + 2^32*w with four u32 limbs.
+# Counts and repetitions via --mul-log, --sha-log, and --iterations.
+
+[[bench]]
 name = "mul_e2e_compare"
 harness = false
 required-features = ["bench-internals", "native-mul-compare"]
@@ -228,8 +237,17 @@ name = "native_mul_compare"
 path = "tests/native_mul_compare.rs"
 required-features = ["bench-internals", "native-mul-compare"]
 
+[[bench]]
+name = "sha256_product_layout"
+harness = false
+required-features = ["bench-internals"]
+# Fixed-q controlled sweep for 2^14 compressions and t+s=29. Defaults to
+# t=7..=27, one warmup + 21 samples; t=28 is memory-skipped. Select t with
+# F2Z_SHA_PRODUCT_TS.
+
 [features]
 default = ["parallel"]
+hybrid = ["binius64-bench"]
 parallel = ["dep:rayon"]
 unchecked = []
 # Benchmark-only allocator instrumentation. The latency binary deliberately
@@ -320,6 +338,13 @@ codegen-units = 1
 [patch.crates-io]
 halo2curves = { git = "https://github.com/privacy-ethereum/halo2curves.git", rev = "02c235f0bb52800c28d9c3370400b5435dbe2220" }
 
+[patch."https://github.com/albert-garreta/flock-mod.git"]
+flock-core = { path = "vendor/flock-mod/crates/flock-core" }
+
+[patch."https://github.com/wu-s-john/binius64.git"]
+binius-prover = { path = "vendor/binius64/crates/prover" }
+binius-verifier = { path = "vendor/binius64/crates/verifier" }
+
 # Release-equivalent benchmark codegen with profiler-readable DWARF. Keeping
 # symbols in the built-in bench profile lets xctrace resolve Rust hot paths.
 [profile.bench]
@@ -334,3 +359,8 @@ split-debuginfo = "unpacked"
 [profile.profiling]
 inherits = "release"
 debug = 2
+
+[[bin]]
+name = "hybrid-u32-sha256"
+path = "src/bin/hybrid_u32_sha256.rs"
+required-features = ["hybrid"]

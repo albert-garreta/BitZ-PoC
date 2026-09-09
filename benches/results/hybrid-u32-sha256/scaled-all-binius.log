@@ -1,0 +1,2 @@
+mode=all-binius multiplications=32768 chained_compressions=2048 merkle=blake3 non_zk=true threads=8
+setup_ms=3719.968 binius_fri_component_bits=112

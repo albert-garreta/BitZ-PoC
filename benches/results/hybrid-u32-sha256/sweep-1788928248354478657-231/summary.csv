@@ -1,0 +1,7 @@
+mode,multiplication_relation,mul_log,sha_log,multiplications,sha_compressions,iteration,setup_ms,witness_commit_ms,continuation_ms,total_prover_ms,verify_ms,proof_bytes,proof_payload_bytes_estimate,peak_rss_kib,piop_ms,iop_ms,mul_piop_ms,sha_piop_ms,mul_opening_ms,joint_sumcheck_ms,shared_opening_ms
+hybrid,u32_mod_2_32,15,7,32768,128,0,162.617,1.539,35.082,36.665,8.573,272416,,210292,10.799,24.153,1.752,9.047,17.104,5.090,1.959
+hybrid,u32_mod_2_32,15,7,32768,128,1,162.617,1.424,32.872,34.332,7.595,272416,,215308,9.162,23.603,1.632,7.529,16.513,5.145,1.946
+separate,u32_mod_2_32,15,7,32768,128,0,160.854,,,29.071,8.921,,353984,197520,,,,,,,
+separate,u32_mod_2_32,15,7,32768,128,1,160.854,,,28.053,8.171,,353984,200020,,,,,,,
+all-binius,u32_mod_2_32,15,7,32768,128,0,541.192,,,51.558,9.450,361008,,590268,,,,,,,
+all-binius,u32_mod_2_32,15,7,32768,128,1,541.192,,,43.561,8.239,361008,,590684,,,,,,,

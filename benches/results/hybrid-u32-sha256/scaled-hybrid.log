@@ -1,0 +1,2 @@
+mode=hybrid multiplications=32768 chained_compressions=2048 merkle=blake3 non_zk=true threads=8
+setup_ms=3842.227 packed_logs=[15, 19] algebraic_security_bits=102.842

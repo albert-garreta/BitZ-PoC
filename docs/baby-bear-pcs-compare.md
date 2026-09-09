@@ -1,4 +1,10 @@
-# BabyBear prescribed-point PCS comparison
+# Archived BabyBear prescribed-point PCS comparison
+
+This diagnostic experiment is excluded from the paper benchmark suite. It
+measures terminal PCS claims and does not prove the multiplication constraints.
+Use the [native full-proving comparison](native-mul-compare.md) for u32 and
+BabyBear comparisons in the paper. The details below document the historical
+PCS experiment.
 
 This benchmark compares the F2Z opening path with Plonky3 WHIR on the same
 deterministically generated logical BabyBear multiplication witness. The

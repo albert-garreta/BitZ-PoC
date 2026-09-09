@@ -464,6 +464,60 @@ mod tests {
     }
 
     #[test]
+    fn every_batch_embedding_preserves_the_canonical_linear_forms() {
+        use std::collections::BTreeMap;
+        for batch in [1, 2, 4, 8, 16] {
+            let circuit =
+                MultiswapCircuit::build_batch(MultiswapDims::multiswap(0), batch).unwrap();
+            let relation = MultiswapIntegerRelation::new(&circuit).unwrap();
+            let layout = relation.layout();
+            for (is_c, source, embedded) in [
+                (false, circuit.a_entries(), &relation.a),
+                (false, circuit.b_entries(), &relation.b),
+                (true, circuit.c_entries(), &relation.c),
+            ] {
+                let mut expected = BTreeMap::<(usize, usize), BigUint>::new();
+                for (row, col, value) in source {
+                    *expected.entry((*row, *col)).or_default() += value;
+                }
+                expected.retain(|_, v| !v.is_zero());
+                let mut recovered = BTreeMap::<(usize, usize), BigUint>::new();
+                let mut quotient_rows = Vec::new();
+                for (column, entries) in embedded.iter().enumerate() {
+                    for (row, value) in entries {
+                        if column >= layout.quotient_block_start() {
+                            assert!(is_c);
+                            assert_eq!(column - layout.quotient_block_start(), *row);
+                            assert!(*row < circuit.live_rows());
+                            assert_eq!(value, &circuit.mods()[*row]);
+                            quotient_rows.push(*row);
+                        } else {
+                            let source_column = if column == 0 {
+                                circuit.const_col()
+                            } else {
+                                assert!(column >= layout.witness_block_start());
+                                column - layout.witness_block_start()
+                            };
+                            *recovered.entry((*row, source_column)).or_default() += value;
+                        }
+                    }
+                }
+                recovered.retain(|_, v| !v.is_zero());
+                assert_eq!(recovered, expected);
+                if is_c {
+                    quotient_rows.sort_unstable();
+                    assert_eq!(
+                        quotient_rows,
+                        (0..circuit.live_rows())
+                            .filter(|r| !circuit.mods()[*r].is_zero())
+                            .collect::<Vec<_>>()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn layout_keeps_one_chunk_geometry() {
         let (_, relation, _) = mini();
         let layout = *relation.layout();

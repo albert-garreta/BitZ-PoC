@@ -171,6 +171,9 @@ impl MultiswapDims {
 /// Failures while constructing or checking the integer circuit.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum MultiswapCircuitError {
+    #[error("batch count must be a power of two in 1..=16; batches require k=0")]
+    InvalidBatch,
+
     /// A witness or quotient value exceeds [`MULTISWAP_VALUE_BITS`] bits.
     #[error("multiswap value at {location} column/row {index} needs {actual_bits} bits")]
     ValueTooWide {
@@ -197,6 +200,7 @@ pub enum MultiswapCircuitError {
 #[derive(Clone, Debug)]
 pub struct MultiswapCircuit {
     dims: MultiswapDims,
+    batch_count: usize,
     num_cons: usize,
     num_vars: usize,
     a: Vec<(usize, usize, BigUint)>,
@@ -597,6 +601,7 @@ impl MultiswapCircuit {
 
         let circuit = Self {
             dims,
+            batch_count: 1,
             num_cons,
             num_vars,
             a: a_entries,
@@ -608,6 +613,89 @@ impl MultiswapCircuit {
         };
         circuit.validate_shape()?;
         Ok(circuit)
+    }
+
+    /// Combine independent copies in the canonical live-row/live-column order.
+    /// Padding happens once: inter-copy padding would hide constraints from
+    /// the quotient folding that operates on the live row prefix.
+    pub fn build_batch(
+        dims: MultiswapDims,
+        batch_count: usize,
+    ) -> Result<Self, MultiswapCircuitError> {
+        if !batch_count.is_power_of_two() || batch_count > 16 || (batch_count > 1 && dims.k != 0) {
+            return Err(MultiswapCircuitError::InvalidBatch);
+        }
+        let base = Self::build(dims)?;
+        if batch_count == 1 {
+            return Ok(base);
+        }
+        let rows = base.live_rows();
+        let cols = base.live_columns();
+        let num_cons = (rows * batch_count).next_power_of_two();
+        let num_vars = (cols * batch_count).next_power_of_two();
+        let expand = |entries: &[(usize, usize, BigUint)]| {
+            (0..batch_count)
+                .flat_map(|copy| {
+                    entries.iter().map(move |(r, c, v)| {
+                        (
+                            r + copy * rows,
+                            if *c == base.num_vars {
+                                num_vars
+                            } else {
+                                c + copy * cols
+                            },
+                            v.clone(),
+                        )
+                    })
+                })
+                .collect()
+        };
+        let mut result = Self {
+            dims,
+            batch_count,
+            num_cons,
+            num_vars,
+            a: expand(&base.a),
+            b: expand(&base.b),
+            c: expand(&base.c),
+            mods: vec![BigUint::from(2u32); num_cons],
+            w: vec![BigUint::zero(); num_vars],
+            quos: vec![BigUint::zero(); num_cons],
+        };
+        for copy in 0..batch_count {
+            result.mods[copy * rows..(copy + 1) * rows].clone_from_slice(&base.mods[..rows]);
+            result.quos[copy * rows..(copy + 1) * rows].clone_from_slice(&base.quos[..rows]);
+            result.w[copy * cols..(copy + 1) * cols].clone_from_slice(&base.w[..cols]);
+        }
+        result.validate_shape()?;
+        Ok(result)
+    }
+
+    pub const fn batch_count(&self) -> usize {
+        self.batch_count
+    }
+
+    pub const fn live_columns(&self) -> usize {
+        self.dims.num_real_cols() * self.batch_count
+    }
+
+    /// Backend-independent statement contract. The legacy matrix digest stays
+    /// unchanged for B=1; this envelope additionally binds roles and public IO.
+    pub fn comparison_statement_digest(&self) -> [u8; 32] {
+        let mut h = Hasher::new();
+        h.update(b"f2z-limber/multiswap-statement/v2");
+        h.update(&self.statement_digest());
+        for v in [
+            self.batch_count,
+            0,
+            MULTISWAP_VALUE_BITS,
+            self.live_rows(),
+            self.live_columns(),
+        ] {
+            h.update(&(v as u64).to_le_bytes());
+        }
+        h.update(b"public:matrices,moduli;private:witness,quotients;unsigned;constant:one;padding:zero-witness,zero-quotients,modulus-two");
+        *h.finalize().as_bytes()
     }
 
     fn validate_shape(&self) -> Result<(), MultiswapCircuitError> {
@@ -657,7 +745,7 @@ impl MultiswapCircuit {
 
     /// Number of live wired rows.
     pub const fn live_rows(&self) -> usize {
-        self.dims.num_real_rows()
+        self.dims.num_real_rows() * self.batch_count
     }
 
     /// Limber column index of the constant-one entry.
@@ -777,6 +865,43 @@ impl MultiswapCircuit {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn batches_preserve_reference_and_reject_a_corrupt_last_copy() {
+        let dims = MultiswapDims::multiswap(0);
+        let reference = MultiswapCircuit::build(dims).unwrap();
+        for batch in [1, 2, 4, 8, 16] {
+            let mut circuit = MultiswapCircuit::build_batch(dims, batch).unwrap();
+            circuit.is_sat_integer().unwrap();
+            assert_eq!(circuit.live_rows(), 6209 * batch);
+            assert_eq!(circuit.live_columns(), 6204 * batch);
+            if batch == 1 {
+                assert_eq!(circuit.statement_digest(), reference.statement_digest());
+                assert_eq!(circuit.w, reference.w);
+                assert_eq!(circuit.quos, reference.quos);
+            }
+            let before = circuit.comparison_statement_digest();
+            // The last live row is modular, so changing its quotient changes
+            // an actual equation rather than unconstrained padding advice.
+            let last = circuit.live_rows() - 1;
+            circuit.quos[last] += BigUint::from(1u32);
+            assert_eq!(
+                circuit.is_sat_integer(),
+                Err(MultiswapCircuitError::Unsatisfied { row: last })
+            );
+            assert_eq!(
+                before,
+                circuit.comparison_statement_digest(),
+                "witness is excluded from statement"
+            );
+            circuit.mods[last] += BigUint::from(1u32);
+            assert_ne!(before, circuit.comparison_statement_digest());
+        }
+        assert!(MultiswapCircuit::build_batch(dims, 0).is_err());
+        assert!(MultiswapCircuit::build_batch(dims, 3).is_err());
+        assert!(MultiswapCircuit::build_batch(dims, 32).is_err());
+        assert!(MultiswapCircuit::build_batch(MultiswapDims::multiswap(1), 2).is_err());
+    }
 
     #[test]
     fn quotable_dims_match_limber_row_and_column_counts() {

@@ -92,6 +92,25 @@ RESULT schema=f2z/1 bench=<multiswap|sha256|u32_mul|pcs|...> shape=<token>
   and `verify_residual_ms` are defined as total-median minus the sum of the
   step medians, so each split sums to its total exactly.
 
+## SHA peak heap and sample proof sizes
+
+The SHA compression and product-layout benches include `proof_bytes`,
+`proof_piop_bytes`, and `proof_open_bytes` in each `SAMPLE` as well as the
+`RESULT` summary. The summary keeps the final measured proof's size.
+
+With `--features bench-peak-memory`, they also include
+`memory_tracking=allocator`, `peak_heap_bytes`, and `peak_heap_mib` in both
+records. Each sample resets the peak before witness generation and reads it
+after commitment/proving, before verification and proof serialization.
+Already-live allocations (including input, setup, and retained scratch
+storage) count toward the baseline. This measures requested live Rust heap
+bytes, not process RSS or allocator overhead. The summary reports the maximum
+sample peak, excluding the warmup; one MiB is `1024^2` bytes.
+
+Allocator tracking also runs inside timing measurements. Without the
+feature, `memory_tracking=disabled` and both memory fields are `na`, so
+unmeasured memory cannot be mistaken for zero usage.
+
 ## Environment variables
 
 Canonical names (aliases are honored with a deprecation warning; setting both

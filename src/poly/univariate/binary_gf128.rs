@@ -3338,7 +3338,7 @@ mod tests {
         }
     }
 
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     #[test]
     fn fixed_scalar_kernels_match_composed() {
         let mut rng = StdRng::seed_from_u64(0xF15E);
