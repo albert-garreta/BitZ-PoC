@@ -28,6 +28,7 @@ SCHEMES = [
     ("binius64@1", "Binius64~\\cite{binius64}, rate $1/2$"),
     ("binius64@3", "Binius64~\\cite{binius64}, rate $1/8$"),
     ("plonky3-whir", "Plonky3~\\cite{plonky} (WHIR)"),
+    ("limber", "Limber~\\cite{limber} (Hyrax)"),
 ]
 BINIUS_QUERIES = {1: 241, 2: 148, 3: 121, 4: 110}  # 100-bit FRI query counts per log inverse rate
 
@@ -41,7 +42,7 @@ def scheme_key(r: dict) -> str:
 
 def scheme_name(key: str) -> str:
     """Short scheme name for caption sentences."""
-    names = {"f2z": "\\ftwoz", "plonky3-whir": "Plonky3"}
+    names = {"f2z": "\\ftwoz", "plonky3-whir": "Plonky3", "limber": "Limber"}
     if key in names:
         return names[key]
     return "Binius64 at rate $1/%d$" % (1 << int(key.split("@")[1]))
@@ -269,6 +270,11 @@ def main() -> int:
         "f2z": "\\ftwoz\\ (Spartan over a transcript-sampled prime with the \\ftwoz\\ opening, $\\lambda = 100$)",
         "binius64": binius_note,
         "plonky3-whir": "Plonky3 (" + ("Goldilocks AIR with $32$-bit decompositions" if args.workload == "u32" else "BabyBear AIR") + ", WHIR over a degree-$5$ extension at rate $1/2$, $100$ bits)",
+        # Limber's integer R1CS has no native word type, so each operand is
+        # range-checked bit by bit; that width is what its trace size follows.
+        "limber": "Limber (integer-mod Spartan over a random small prime with the IntEval/Hyrax opening, native Limber parameters; its R1CS spends "
+                  + {"u32": "$64$", "babybear": "$93$", "u64": "$128$", "u128": "$256$"}[args.workload]
+                  + " explicit bit columns per multiplication on operand range checks)",
     }
     # One caption note per scheme family (both Binius64 rates share one).
     present = []

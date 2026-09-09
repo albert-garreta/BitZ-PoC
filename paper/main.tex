@@ -2719,45 +2719,53 @@ We compare the performance of \ftwoz-SNARK with Binius64 \cite{binius64}, Plonky
     \toprule
     $N$ & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
     \midrule
-    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.05} & \textbf{16.2} & 3.11 & \textbf{158} & \textbf{0.063} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 0.63 & 40.1 & 1.71 & 327 & 0.422 \\
+    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.05} & \textbf{16.2} & 3.08 & \textbf{158} & \textbf{0.062} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 0.60 & 40.2 & 1.69 & 327 & 0.408 \\
      & Binius64~\cite{binius64}, rate $1/8$ & 0.64 & 45.0 & \textbf{1.60} & 245 & 0.449 \\
      & Plonky3~\cite{plonky} (WHIR) & 2.53 & 1230 & 3.91 & 195 & 0.499 \\
+     & Limber~\cite{limber} (Hyrax) & 13.8 & 4768 & 502 & 1403 & 14.7 \\
     \addlinespace
-    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.10} & \textbf{24.7} & 3.36 & \textbf{184} & \textbf{0.109} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 1.18 & 58.8 & 2.79 & 358 & 0.774 \\
+    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.10} & \textbf{24.9} & 3.58 & \textbf{184} & \textbf{0.108} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 1.15 & 60.1 & 2.77 & 358 & 0.756 \\
      & Binius64~\cite{binius64}, rate $1/8$ & 1.16 & 64.9 & \textbf{2.65} & 262 & 0.791 \\
      & Plonky3~\cite{plonky} (WHIR) & 5.27 & 2689 & 4.48 & 216 & 0.997 \\
+     & Limber~\cite{limber} (Hyrax) & 150 & 15042 & 1835 & 2546 & 15.9 \\
     \addlinespace
-    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.20} & \textbf{38.5} & \textbf{3.91} & \textbf{205} & \textbf{0.152} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 2.24 & 99.3 & 4.86 & 403 & 1.45 \\
+    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.19} & \textbf{38.6} & \textbf{3.88} & \textbf{205} & \textbf{0.152} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 2.27 & 99.4 & 4.97 & 403 & 1.45 \\
      & Binius64~\cite{binius64}, rate $1/8$ & 2.25 & 109 & 4.72 & 286 & 1.52 \\
      & Plonky3~\cite{plonky} (WHIR) & 10.3 & 5513 & 4.71 & 227 & 1.89 \\
+     & Limber~\cite{limber} (Hyrax) & 2332 & 50882 & 17650 & 4961 & 16.6 \\
     \addlinespace
-    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.39} & \textbf{65.0} & \textbf{4.14} & \textbf{232} & \textbf{0.289} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 4.41 & 170 & 8.88 & 435 & 2.78 \\
+    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.40} & \textbf{65.9} & \textbf{4.22} & \textbf{232} & \textbf{0.287} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 4.42 & 173 & 8.86 & 435 & 2.79 \\
      & Binius64~\cite{binius64}, rate $1/8$ & 4.44 & 198 & 8.69 & 308 & 2.92 \\
      & Plonky3~\cite{plonky} (WHIR) & 20.9 & 11141 & 4.94 & 238 & 3.76 \\
+     & Limber~\cite{limber} (Hyrax) & -- & -- & -- & -- & -- \\
     \addlinespace
-    $2^{19}$ & \ftwoz\ (this work) & \textbf{0.68} & \textbf{117} & \textbf{5.02} & 265 & \textbf{0.511} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 8.80 & 341 & 24.3 & 475 & 5.23 \\
+    $2^{19}$ & \ftwoz\ (this work) & \textbf{0.81} & \textbf{117} & \textbf{4.85} & 265 & \textbf{0.508} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 8.84 & 341 & 25.0 & 475 & 5.28 \\
      & Binius64~\cite{binius64}, rate $1/8$ & 8.90 & 392 & 24.2 & 333 & 5.55 \\
      & Plonky3~\cite{plonky} (WHIR) & 39.4 & 22715 & 5.27 & \textbf{249} & 5.80 \\
+     & Limber~\cite{limber} (Hyrax) & -- & -- & -- & -- & -- \\
     \addlinespace
-    $2^{20}$ & \ftwoz\ (this work) & \textbf{1.36} & \textbf{216} & \textbf{5.18} & 297 & \textbf{0.993} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 17.9 & 678 & 48.7 & 522 & 10.4 \\
+    $2^{20}$ & \ftwoz\ (this work) & \textbf{1.38} & \textbf{217} & \textbf{5.23} & 297 & \textbf{0.985} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 17.6 & 664 & 47.9 & 522 & 8.80 \\
      & Binius64~\cite{binius64}, rate $1/8$ & 17.7 & 761 & 48.5 & 358 & 11.0 \\
      & Plonky3~\cite{plonky} (WHIR) & 116 & 59221 & 8.11 & \textbf{270} & 9.17 \\
+     & Limber~\cite{limber} (Hyrax) & -- & -- & -- & -- & -- \\
     \addlinespace
-    $2^{21}$ & \ftwoz\ (this work) & 3.07 & 444 & 6.43 & 325 & 1.86 \\
+    $2^{21}$ & \ftwoz\ (this work) & 3.16 & 421 & 6.43 & 325 & 1.86 \\
      & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
      & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
      & Plonky3~\cite{plonky} (WHIR) & -- & -- & -- & -- & -- \\
+     & Limber~\cite{limber} (Hyrax) & -- & -- & -- & -- & -- \\
     \addlinespace
-    $2^{22}$ & \ftwoz\ (this work) & 6.06 & 843 & 7.06 & 380 & 3.66 \\
+    $2^{22}$ & \ftwoz\ (this work) & 6.35 & 867 & 7.74 & 380 & 3.69 \\
      & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
      & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
      & Plonky3~\cite{plonky} (WHIR) & -- & -- & -- & -- & -- \\
+     & Limber~\cite{limber} (Hyrax) & -- & -- & -- & -- & -- \\
     \bottomrule
   \end{tabular}
   \caption{\albertimportant{We should do FRI Plonky3} Costs of proving $N$ multiplications $x\cdot y = z$ for random $32$ bit nonnegative integers $x$ and $y$. Ran on a MacBook Air M5, 24\,GB, $8$ threads.}
@@ -2779,31 +2787,31 @@ We compare the performance of \ftwoz-SNARK with Binius64 \cite{binius64}, Plonky
     \toprule
     $N$ & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
     \midrule
-    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.04} & \textbf{25.5} & 3.97 & \textbf{184} & \textbf{0.087} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 0.41 & 39.5 & 1.59 & 327 & 0.370 \\
+    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.04} & \textbf{25.5} & 3.97 & \textbf{184} & \textbf{0.083} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 0.44 & 40.7 & 1.65 & 327 & 0.368 \\
      & Binius64~\cite{binius64}, rate $1/8$ & 0.39 & 44.5 & \textbf{1.46} & 245 & 0.398 \\
     \addlinespace
-    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.06} & \textbf{38.6} & 4.05 & \textbf{205} & \textbf{0.144} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 0.75 & 59.4 & 2.52 & 358 & 0.658 \\
+    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.08} & \textbf{39.6} & 4.17 & \textbf{205} & \textbf{0.142} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 0.77 & 59.9 & 2.61 & 358 & 0.632 \\
      & Binius64~\cite{binius64}, rate $1/8$ & 0.73 & 66.9 & \textbf{2.38} & 262 & 0.679 \\
     \addlinespace
-    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.13} & \textbf{70.8} & 9.23 & \textbf{227} & \textbf{0.271} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 1.43 & 98.1 & \textbf{4.45} & 403 & 1.20 \\
+    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.14} & \textbf{71.5} & 9.43 & \textbf{227} & \textbf{0.255} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 1.48 & 98.1 & \textbf{4.54} & 403 & 1.22 \\
      & Binius64~\cite{binius64}, rate $1/8$ & 1.42 & 113 & 4.56 & 286 & 1.29 \\
     \addlinespace
-    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.27} & \textbf{120} & 10.1 & \textbf{266} & \textbf{0.479} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 2.76 & 171 & \textbf{8.09} & 435 & 2.35 \\
+    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.31} & \textbf{121} & 9.72 & \textbf{266} & \textbf{0.475} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 2.88 & 170 & \textbf{8.51} & 435 & 2.35 \\
      & Binius64~\cite{binius64}, rate $1/8$ & 2.79 & 199 & 8.58 & 308 & 2.50 \\
     \addlinespace
-    $2^{19}$ & \ftwoz\ (this work) & \textbf{0.53} & \textbf{231} & \textbf{12.5} & \textbf{289} & \textbf{0.897} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 5.54 & 339 & 23.4 & 475 & 4.27 \\
+    $2^{19}$ & \ftwoz\ (this work) & \textbf{0.63} & \textbf{236} & \textbf{13.6} & \textbf{289} & \textbf{0.904} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 5.79 & 339 & 24.1 & 475 & 4.26 \\
      & Binius64~\cite{binius64}, rate $1/8$ & 5.53 & 388 & 23.9 & 333 & 4.55 \\
     \addlinespace
-    $2^{20}$ & \ftwoz\ (this work) & \textbf{1.04} & \textbf{424} & \textbf{12.6} & \textbf{324} & \textbf{1.75} \\
+    $2^{20}$ & \ftwoz\ (this work) & \textbf{1.09} & \textbf{473} & \textbf{13.7} & \textbf{324} & \textbf{1.72} \\
      & Binius64~\cite{binius64}, rate $1/2$ & 11.0 & 650 & 45.7 & 522 & 8.44 \\
      & Binius64~\cite{binius64}, rate $1/8$ & 11.2 & 746 & 46.8 & 358 & 8.99 \\
     \addlinespace
-    $2^{21}$ & \ftwoz\ (this work) & 2.22 & 1059 & 16.6 & 362 & 3.33 \\
+    $2^{21}$ & \ftwoz\ (this work) & 2.29 & 1080 & 17.0 & 362 & 3.31 \\
      & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
      & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
     \bottomrule
@@ -2820,27 +2828,27 @@ We compare the performance of \ftwoz-SNARK with Binius64 \cite{binius64}, Plonky
     \toprule
     $N$ & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
     \midrule
-    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.08} & \textbf{40.8} & \textbf{4.51} & \textbf{202} & \textbf{0.144} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 1.59 & 105 & 5.17 & 403 & 1.43 \\
+    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.08} & \textbf{41.3} & \textbf{4.73} & \textbf{202} & \textbf{0.144} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 1.75 & 103 & 5.17 & 403 & 1.42 \\
      & Binius64~\cite{binius64}, rate $1/8$ & 1.60 & 112 & 4.95 & 286 & 1.50 \\
     \addlinespace
-    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.15} & \textbf{66.1} & \textbf{4.96} & \textbf{228} & \textbf{0.245} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 3.15 & 182 & 9.96 & 435 & 2.71 \\
+    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.15} & \textbf{66.4} & \textbf{4.78} & \textbf{228} & \textbf{0.245} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 3.38 & 181 & 9.77 & 435 & 2.72 \\
      & Binius64~\cite{binius64}, rate $1/8$ & 3.16 & 205 & 9.32 & 308 & 2.89 \\
     \addlinespace
-    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.31} & \textbf{124} & \textbf{6.51} & \textbf{261} & \textbf{0.464} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 6.20 & 356 & 26.3 & 475 & 5.09 \\
+    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.31} & \textbf{129} & \textbf{6.37} & \textbf{261} & \textbf{0.458} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 6.75 & 357 & 26.8 & 475 & 5.12 \\
      & Binius64~\cite{binius64}, rate $1/8$ & 6.24 & 399 & 25.8 & 333 & 5.38 \\
     \addlinespace
-    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.50} & \textbf{218} & \textbf{6.45} & \textbf{289} & \textbf{0.851} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 12.5 & 679 & 50.9 & 522 & 10.0 \\
+    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.52} & \textbf{234} & \textbf{6.81} & \textbf{289} & \textbf{0.842} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 13.5 & 697 & 52.7 & 522 & 9.11 \\
      & Binius64~\cite{binius64}, rate $1/8$ & 12.9 & 783 & 51.6 & 358 & 10.6 \\
     \addlinespace
-    $2^{19}$ & \ftwoz\ (this work) & 0.99 & 513 & 8.70 & 316 & 1.61 \\
+    $2^{19}$ & \ftwoz\ (this work) & 1.07 & 548 & 9.96 & 316 & 1.58 \\
      & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
      & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
     \addlinespace
-    $2^{20}$ & \ftwoz\ (this work) & 2.03 & 1032 & 9.69 & 364 & 3.11 \\
+    $2^{20}$ & \ftwoz\ (this work) & 2.14 & 1117 & 10.1 & 364 & 3.08 \\
      & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
      & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
     \addlinespace
