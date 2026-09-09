@@ -88,7 +88,8 @@ elements, nonces as 8-byte words, plus the F2Z opening's exact codec bytes).
 u128 × u128 → u256 multiplication, exponents 15–23, F2Z and Binius64 only
 (run the backends separately: on a 16 GB machine Binius64's bignum prover pages
 from 2^18, so its clean sizes are 2^15–2^17, while F2Z runs to 2^21; the
-paper's table uses Binius64 at rate 1/8, `F2Z_BINIUS_LOG_INV_RATE=3`):
+paper's tables list Binius64 at both rate 1/2 (the default) and rate 1/8,
+`F2Z_BINIUS_LOG_INV_RATE=3`, so run it once per rate):
 
 ```sh
 RUSTFLAGS="-Ctarget-cpu=native" \
@@ -278,7 +279,7 @@ reported as zero. A failed memory pass aborts the campaign.
   inverse rate `2^k` instead (the query count follows from the rate: 241, 148,
   121, and 110 queries at rates 1/2, 1/4, 1/8, and 1/16); the run records
   `log_inv_rate` and `fri_queries` in its config, and the paper's u64 and
-  u128 tables use rate 1/8. u32 operands are range checked; the
+  u128 tables list both rate 1/2 and rate 1/8 rows. u32 operands are range checked; the
   BabyBear circuit constrains `a*b = p*q+c`, canonical operands/remainder, and
   nonoverflowing reconstruction.
 - Plonky3: Goldilocks AIR with 32-bit input decompositions for u32; native

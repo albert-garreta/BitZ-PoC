@@ -76,6 +76,8 @@ pub(super) fn run_child(
     let workload = match workload.as_str() {
         "u32" => Workload::U32,
         "babybear" => Workload::BabyBear,
+        "u64" => Workload::U64,
+        "u128" => Workload::U128,
         _ => return Err("unknown memory workload".into()),
     };
     let exponent = exponent.parse()?;

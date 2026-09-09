@@ -34,21 +34,34 @@ use f2z::piop::spartan::{
 
 /// Revision from the Cargo-generated lockfile embedded in this benchmark.
 /// Report the dependency used at build time, without requiring sibling clones.
-pub fn locked_git_revision(package: &str) -> &'static str {
+///
+/// A dependency redirected by `[patch]` to an in-tree `vendor/` copy has no
+/// lockfile source. Its vendored tree carries local changes, so reporting a
+/// bare upstream revision for it would be wrong; instead this reports the
+/// revision its still-Git-pinned siblings share, marked `+patched`.
+pub fn locked_git_revision(package: &str) -> String {
+    let lock = include_str!("../../Cargo.lock");
+    let git_revision = |entry: &str| {
+        entry
+            .lines()
+            .find_map(|line| line.strip_prefix("source = \"git+"))
+            .and_then(|source| source.strip_suffix('"'))
+            .and_then(|source| source.rsplit_once('#'))
+            .map(|(_, commit)| commit.to_owned())
+    };
     let name = format!("name = \"{package}\"");
-    let entry = include_str!("../../Cargo.lock")
+    let entry = lock
         .split("[[package]]")
         .find(|entry| entry.lines().any(|line| line == name))
         .unwrap_or_else(|| panic!("missing locked dependency {package}"));
-    let source = entry
-        .lines()
-        .find_map(|line| line.strip_prefix("source = \"git+"))
-        .and_then(|source| source.strip_suffix('"'))
-        .unwrap_or_else(|| panic!("dependency {package} is not locked to Git"));
-    source
-        .rsplit_once('#')
-        .expect("locked Git source has a commit")
-        .1
+    if let Some(revision) = git_revision(entry) {
+        return revision;
+    }
+    let family = format!("name = \"{}-", package.split('-').next().unwrap_or(package));
+    lock.split("[[package]]")
+        .filter(|entry| entry.lines().any(|line| line.starts_with(&family)))
+        .find_map(git_revision)
+        .map_or_else(|| "patched".to_owned(), |revision| format!("{revision}+patched"))
 }
 
 // ---------------------------------------------------------------------
