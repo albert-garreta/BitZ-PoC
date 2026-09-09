@@ -13,6 +13,7 @@ import csv
 import hashlib
 import html
 import json
+import math
 import re
 import sys
 from collections import defaultdict
@@ -51,8 +52,8 @@ HEADLINES = (
     ("pcs_opening", "PCS opening proof"),
     ("commit", "Commit"),
     ("pcs_total", "PCS total"),
-    ("prover", "Total prover"),
-    ("application_total", "Application total"),
+    ("prover", "Commitment + proving"),
+    ("application_total", "Combined prover including witness"),
     ("verify", "Verify"),
     ("end_to_end", "Verified trial"),
 )
@@ -140,6 +141,153 @@ class CellTrace:
     relation_shape: tuple[int, int, int, int, int, int, int]
 
 
+def cell_group(cell: dict[str, Any]) -> str:
+    return f"b{cell['batch_count']}" if "batch_count" in cell else str(cell["workload_k"])
+
+
+def workload_groups(manifest: dict[str, Any]) -> list[str]:
+    workload = manifest["workload"]
+    if "batch_counts" in workload:
+        return [f"b{b}" for b in workload["batch_counts"]]
+    return [str(k) for k in workload["workload_k_values"]]
+
+
+def modeled_component_bits(security: dict[str, Any], implementation: str, padded_rows: int) -> dict[str, float]:
+    """Recompute the published per-check bounds from the actual shape/parameters.
+
+    Rust remains responsible for constructing and verifying each PCS configuration;
+    this independent calculation detects inconsistent or overstated trace accounting.
+    """
+    n = padded_rows.bit_length() - 1
+    target = security["target_bits"]
+
+    def prime_count(bits: int, upper_coefficient: float) -> float:
+        return bits + math.log2(1 / (bits * math.log(2)) - upper_coefficient / (2 * (bits - 1) * math.log(2)))
+
+    if implementation == "f2z-ligerito":
+        if (security.get("reduction_prime_bits"), security.get("reduction_min"), security.get("reduction_max")) != (113, str(1 << 112), str((1 << 113) - 1)):
+            raise CampaignError("F2Z reduction sampling interval does not match")
+        return {
+            "step2:projection-draw": prime_count(128, 1.26) - math.log2(8210 // 127),
+            "step3:tau-draw": 127 - math.log2(n + 2),
+            "step3:piop-round": 127 - math.log2(3),
+            "step4:terminal-draw": 127 - math.log2(3),
+            "step5_0:reduction-draw": prime_count(113, 1.26) - math.log2((269 + n) // 112) + security["reduction_grinding_bits"],
+            "step5_2:gkr-round": 128 - math.log2(3),
+            "step5_3:ring-switch": 128.0,
+            "step5_3:ligerito-tracked": float(target),
+            "step5_3:gf128-floor-untracked": 128 - math.log2(3),
+        }
+    fixed = {"log_q": 256, "log_t": 64, "log_t_f": 2048, "numlimb_var": 5,
+             "int_k": 9 if implementation == "limber-hyrax" else 11, "key_format_version": 2}
+    if any(security.get(key) != value for key, value in fixed.items()):
+        raise CampaignError("Limber commitment configuration differs from the matched fixture")
+    if implementation == "limber-brakedown" and security.get("brakedown_configuration") != [target, 4, 32768, 65536]:
+        raise CampaignError("Brakedown configuration differs from the matched fixture")
+    lp = 20 if implementation == "limber-hyrax" else 16
+    if security.get("log_p") != lp:
+        raise CampaignError("Limber small-prime width differs from the derived width")
+    # Dusart lower/upper prime-count bounds, with the minimum sampled prime
+    # 2^(lp-1) in the divisor-count denominator. Challenges remain 128 bits.
+    hi, lo = lp * math.log(2), (lp - 1) * math.log(2)
+    count = (2 ** lp / hi) * (1 + 1 / hi) - (2 ** (lp - 1) / lo) * (1 + 1.2762 / lo)
+    per_prime = math.log2(count) - math.log2(((n + 5) * 129 + 64) / (lp - 1))
+    s = math.ceil(target / per_prime)
+    if security.get("small_primes") != s:
+        raise CampaignError("Limber prime repetitions differ from the derived count")
+    slots = 4 * 2 ** (n + 5) * 16 * (1 + 4 * s * (n + 6))
+    if security.get("range_slot_bound") != str(slots):
+        raise CampaignError("Limber range-check accounting cap differs from the shape")
+    return {
+        "fingerprint": prime_count(128, 1.25506) - math.log2(8210 // 127),
+        "spartan-round": 127 - math.log2(3),
+        "spartan-batching": 127 - math.log2(n + 1),
+        "integer-crt": s * per_prime,
+        "integer-challenges": 255 - math.log2(s * (n + 5)),
+        "commitment-opening": float(target if implementation == "limber-brakedown" else 128),
+        "range-lookup": 255 - math.log2(slots + 65536),
+        "range-gkr-round": 255 - math.log2(6),
+        "range-batching": 255 - math.log2(slots),
+    }
+
+
+def validate_matched_parameters(run: dict[str, Any], cell: dict[str, Any]) -> None:
+    if "security_bits" not in cell:
+        return  # Historical reports keep their original, unestablished security labels.
+    target = cell["security_bits"]
+    params = _object(run.get("parameters"), "parameters")
+    inputs = _object(params.get("input"), "parameters.input")
+    contract = _object(inputs.get("statement_contract"), "statement_contract")
+    batch = cell.get("batch_count", 1)
+    if inputs.get("batch_count") != batch or contract.get("batch_count") != batch:
+        raise CampaignError("batch count differs from manifest")
+    for source in (inputs, contract):
+        if type(source.get("public_input_count")) is not int or source["public_input_count"] != 0 or source.get("public_inputs") != []:
+            raise CampaignError("paper fixture requires identical empty public inputs")
+    required = {"domain": "f2z-limber/multiswap-statement/v2", "value_bits": 2048,
+                "integer_domain": "unsigned", "public_roles": ["matrices", "moduli"],
+                "private_roles": ["witness", "quotients"], "constant": 1,
+                "padding": "zero-witness,zero-quotients,modulus-two"}
+    if any(contract.get(k) != v for k, v in required.items()):
+        raise CampaignError("canonical statement contract differs from the paper fixture")
+    _blake3(contract.get("digest_blake3"), "statement contract digest")
+    shape = _extract_relation_shape(run, run["run_id"])
+    if tuple(contract.get(k) for k in ("live_rows", "live_columns", "padded_rows", "padded_columns")) != shape[:4]:
+        raise CampaignError("statement contract dimensions differ from measured relation")
+    if cell.get("workload_k") == 0 and shape[:2] != (6209 * batch, 6204 * batch):
+        raise CampaignError("batch does not contain the declared number of reference circuits")
+    security = _object(params.get("security"), "parameters.security")
+    if security.get("model") != "per-check-round-minimum/v1" or security.get("target_bits") != target:
+        raise CampaignError("security model or target differs from manifest")
+    terms = security.get("terms")
+    if not isinstance(terms, list) or not terms:
+        raise CampaignError("security component bounds are missing")
+    bounds = {}
+    for term in terms:
+        term = _object(term, "security term")
+        name = _string(term.get("name"), "security term name")
+        bits = term.get("bits")
+        if name in bounds or isinstance(bits, bool) or not isinstance(bits, (float, int)) or not math.isfinite(bits) or bits < target:
+            raise CampaignError("security component is duplicated, non-finite, or below target")
+        bounds[name] = bits
+    achieved = security.get("achieved_bits")
+    if isinstance(achieved, bool) or not isinstance(achieved, (int,float)) or not math.isfinite(achieved) or abs(achieved - min(bounds.values())) > 1e-6:
+        raise CampaignError("achieved security does not equal the weakest reported component")
+    if security.get("fingerprint_prime_bits") != 128 or security.get("fingerprint_min") != str(1 << 127) or security.get("fingerprint_max") != str((1 << 128)-1):
+        raise CampaignError("fingerprint sampling interval does not match")
+    if cell["implementation"] == "f2z-ligerito":
+        required_terms = {"step2:projection-draw", "step3:tau-draw", "step3:piop-round", "step4:terminal-draw", "step5_0:reduction-draw", "step5_2:gkr-round", "step5_3:ring-switch", "step5_3:ligerito-tracked", "step5_3:gf128-floor-untracked"}
+        if security.get("ligerito_target_bits") != target or security.get("reduction_grinding_bits") != target - 104:
+            raise CampaignError("F2Z opening/reduction settings do not match target")
+        _blake3(security.get("ligerito_config_digest"), "Ligerito config digest")
+    else:
+        required_terms = {"fingerprint", "spartan-round", "spartan-batching", "integer-crt", "integer-challenges", "commitment-opening", "range-lookup", "range-gkr-round", "range-batching"}
+        if security.get("integer_target_bits") != target or security.get("challenge_bits") != 128:
+            raise CampaignError("Limber integer target or challenge width does not match")
+        if cell["implementation"] == "limber-brakedown" and security.get("brakedown_target_bits") != target:
+            raise CampaignError("Brakedown opening target does not match")
+    if not required_terms <= bounds.keys():
+        raise CampaignError("security accounting omits required components")
+    if "batch_count" in cell:
+        expected = modeled_component_bits(security, cell["implementation"], shape[2])
+        if any(abs(bounds[name] - bits) > 1e-6 for name, bits in expected.items()):
+            raise CampaignError("reported security bound differs from derived component bound")
+    artifacts = _object(run.get("artifacts"), "artifacts")
+    for key in ("proof_bytes", "commitment_bytes", "peak_rss_bytes"):
+        _positive_int(artifacts.get(key), key)
+    size_kind = ("serialized commitment/opening plus analytical PIOP and bridge estimate"
+                 if cell["implementation"] == "f2z-ligerito" else
+                 "serialized commitment/opening plus analytical sumcheck estimate")
+    if artifacts.get("proof_size_kind") != size_kind:
+        raise CampaignError("incompatible proof size measurement definition")
+    if artifacts.get("memory_boundary") != "process high-water RSS including setup and warmups; compiler excluded":
+        raise CampaignError("incompatible memory measurement boundary")
+    sizes = ("piop_and_bridge_bytes", "pcs_opening_bytes") if cell["implementation"] == "f2z-ligerito" else ("opening_argument_bytes", "dynamic_sumcheck_bytes_estimate")
+    expected_size = artifacts["commitment_bytes"] + sum(_positive_int(artifacts.get(k), k, allow_zero=True) for k in sizes)
+    if artifacts["proof_bytes"] != expected_size:
+        raise CampaignError("proof size must include commitment and all proof components")
+
+
 def _pairs_no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
@@ -219,6 +367,13 @@ def read_manifest(path: Path) -> dict[str, Any]:
         or len(k_values) != len(set(k_values))
     ):
         raise CampaignError("workload.workload_k_values must be unique non-negative integers")
+    if "batch_counts" in workload:
+        bs = workload["batch_counts"]
+        if not isinstance(bs, list) or not bs or any(type(b) is not int or b not in (1,2,4,8,16) for b in bs) or len(set(bs)) != len(bs) or k_values != [0]:
+            raise CampaignError("invalid batch sweep; expected k=0 and unique copies from 1,2,4,8,16")
+        security = _object(manifest.get("security"), "campaign security")
+        if security.get("model") != "per-check-round-minimum/v1" or security.get("target_bits") not in (112, 114):
+            raise CampaignError("batch campaign requires an explicit matched security target")
     seen: set[str] = set()
     execution_indices: set[int] = set()
     for index, raw_cell in enumerate(cells):
@@ -247,11 +402,25 @@ def read_manifest(path: Path) -> dict[str, Any]:
         )
         if workload_k not in k_values:
             raise CampaignError(f"cell {cell_id} workload_k is outside the configured sweep")
+        if "security" in manifest and cell.get("security_bits") != manifest["security"].get("target_bits"):
+            raise CampaignError("cell security target differs from campaign")
+        if "batch_counts" in workload and cell.get("batch_count") not in workload["batch_counts"]:
+            raise CampaignError("cell batch count differs from campaign")
+        implementations = {"f2z-ligerito": ("f2z", "virtual-f2z"), "limber-hyrax": ("limber-hyrax", "hyrax"), "limber-brakedown": ("limber-brakedown", "brakedown")}
+        mode = cell.get("thread_mode")
+        implementation = cell.get("implementation")
+        if implementation not in implementations or mode not in ("single", "performance"):
+            raise CampaignError("invalid comparison backend or thread mode")
+        prefix, backend = implementations[implementation]
+        group = cell_group(cell)
+        group = group if group.startswith("b") else f"k{group}"
+        if cell_id != f"{group}-{prefix}-{mode}" or cell.get("backend") != backend:
+            raise CampaignError("cell identity does not match backend, batch, and thread mode")
         _string(cell.get("trace"), f"cell {cell_id}.trace")
         _string(cell.get("trace_sha256"), f"cell {cell_id}.trace_sha256")
     expected_cells = {
-        f"k{workload_k}-{suffix}"
-        for workload_k in k_values
+        (f"{workload_k}-{suffix}" if workload_k.startswith("b") else f"k{workload_k}-{suffix}")
+        for workload_k in workload_groups(manifest)
         for suffix in (
             "f2z-single",
             "f2z-performance",
@@ -521,6 +690,7 @@ def load_cell_trace(
                 f"run {run_id} reports {threads} threads; cell expects "
                 f"{cell.get('rayon_threads')}"
             )
+        validate_matched_parameters(run, cell)
         workload_ids.add(_extract_workload_id(run, run_id))
         workload_ks.add(_extract_workload_k(run, run_id))
         relation_shapes.add(_extract_relation_shape(run, run_id))
@@ -594,6 +764,12 @@ def load_cell_trace(
             if cursor is not root:
                 raise CampaignError(f"span {span['span_id']} does not descend from the root")
 
+    if "security_bits" in cell:
+        for field in ("security",):
+            if len({json.dumps(r["parameters"][field], sort_keys=True) for r in runs}) != 1:
+                raise CampaignError("security parameters drift within a cell")
+        if len({json.dumps(r["parameters"]["input"]["statement_contract"], sort_keys=True) for r in runs}) != 1:
+            raise CampaignError("public statement contract drifts within a cell")
     if len(series) != 1:
         raise CampaignError(f"cell {cell_id} must contain exactly one series; got {sorted(series)}")
     if count_by_kind["warmup"] != warmups or count_by_kind["sample"] != samples:
@@ -650,11 +826,23 @@ def validate_campaign(manifest_path: Path) -> tuple[dict[str, Any], list[CellTra
         )
         for cell in manifest["cells"]
     ]
+    run_ids = [run["run_id"] for cell in cells for run in cell.runs]
+    if len(run_ids) != len(set(run_ids)):
+        raise CampaignError("duplicate run_id across campaign configurations")
     expected_by_k = manifest.get("canonical_statements", {})
     if not isinstance(expected_by_k, dict):
         raise CampaignError("canonical_statements must be an object keyed by workload k")
-    for workload_k in manifest["workload"]["workload_k_values"]:
-        group = [cell for cell in cells if cell.workload_k == workload_k]
+    for workload_k in workload_groups(manifest):
+        group = [cell for cell in cells if cell_group(cell.manifest_cell) == workload_k]
+        if "security" in manifest:
+            contracts = {json.dumps(cell.runs[0]["parameters"]["input"]["statement_contract"], sort_keys=True) for cell in group}
+            if len(contracts) != 1:
+                raise CampaignError("public statement contract mismatch across backends")
+            for implementation in {cell.manifest_cell["implementation"] for cell in group}:
+                settings = {json.dumps(cell.runs[0]["parameters"]["security"], sort_keys=True)
+                            for cell in group if cell.manifest_cell["implementation"] == implementation}
+                if len(settings) != 1:
+                    raise CampaignError("security parameters drift between thread counts")
         domains = {cell.statement_domain for cell in group}
         digests = {cell.statement_digest for cell in group}
         if len(domains) != 1 or len(digests) != 1:
@@ -950,6 +1138,14 @@ def build_summary(manifest: dict[str, Any], cells: list[CellTrace]) -> dict[str,
                 "implementation": implementation,
                 "backend": cell_meta.get("backend"),
                 "workload_k": cell.workload_k,
+                **({"batch_count": cell_meta["batch_count"]} if "batch_count" in cell_meta else {}),
+                "security": representative.get("parameters", {}).get("security"),
+                "statement_contract": representative.get("parameters", {}).get("input", {}).get("statement_contract"),
+                "artifacts": {
+                    "proof_bytes_median": _distribution([r["artifacts"]["proof_bytes"] for r in runs])["median_ns"],
+                    "peak_rss_bytes": max(r["artifacts"]["peak_rss_bytes"] for r in runs),
+                    "proof_size_kind": representative["artifacts"]["proof_size_kind"],
+                } if "security_bits" in cell_meta else {},
                 "thread_mode": cell_meta.get("thread_mode"),
                 "rayon_threads": cell_meta["rayon_threads"],
                 "trace": str(cell.path),
@@ -972,20 +1168,22 @@ def build_summary(manifest: dict[str, Any], cells: list[CellTrace]) -> dict[str,
         "campaign_id": manifest["campaign_id"],
         "workload": manifest.get("workload", {}),
         "sampling": manifest["sampling"],
+        "status": manifest.get("status", "unrecorded"),
+        "validation": manifest.get("validation", {}),
         "canonical_statements": {
             str(workload_k): {
-                "domain": next(cell.statement_domain for cell in cells if cell.workload_k == workload_k),
-                "digest_blake3": next(cell.statement_digest for cell in cells if cell.workload_k == workload_k),
+                "domain": next(cell.statement_domain for cell in cells if cell_group(cell.manifest_cell) == workload_k),
+                "digest_blake3": next(cell.statement_digest for cell in cells if cell_group(cell.manifest_cell) == workload_k),
             }
-            for workload_k in manifest["workload"]["workload_k_values"]
+            for workload_k in workload_groups(manifest)
         },
         "workload_ids": {
-            str(workload_k): next(cell.workload_id for cell in cells if cell.workload_k == workload_k)
-            for workload_k in manifest["workload"]["workload_k_values"]
+            str(workload_k): next(cell.workload_id for cell in cells if cell_group(cell.manifest_cell) == workload_k)
+            for workload_k in workload_groups(manifest)
         },
         "assignment_digests_blake3": {
-            str(workload_k): next(cell.assignment_digest for cell in cells if cell.workload_k == workload_k)
-            for workload_k in manifest["workload"]["workload_k_values"]
+            str(workload_k): next(cell.assignment_digest for cell in cells if cell_group(cell.manifest_cell) == workload_k)
+            for workload_k in workload_groups(manifest)
         },
         "relation_shapes": {
             str(workload_k): dict(
@@ -1002,12 +1200,12 @@ def build_summary(manifest: dict[str, Any], cells: list[CellTrace]) -> dict[str,
                     next(
                         cell.relation_shape
                         for cell in cells
-                        if cell.workload_k == workload_k
+                        if cell_group(cell.manifest_cell) == workload_k
                     ),
                     strict=True,
                 )
             )
-            for workload_k in manifest["workload"]["workload_k_values"]
+            for workload_k in workload_groups(manifest)
         },
         "host": manifest.get("host", {}),
         "repositories": manifest.get("repositories", {}),
@@ -1030,8 +1228,13 @@ def write_csv(summary: dict[str, Any], path: Path) -> None:
         writer.writerow(
             [
                 "campaign_id",
+                "canonical_validation",
                 "workload_k",
                 "k_semantics",
+                "batch_count",
+                "security_target_bits",
+                "proof_bytes_median",
+                "peak_rss_bytes",
                 "cell_id",
                 "execution_index",
                 "implementation",
@@ -1050,8 +1253,14 @@ def write_csv(summary: dict[str, Any], path: Path) -> None:
                 writer.writerow(
                     [
                         summary["campaign_id"],
+                        summary.get("validation", {}).get("canonical_validation", "unrecorded"),
                         cell["workload_k"],
-                        "source reference" if cell["workload_k"] == 0 else "modeled per-swap H_delta scaling",
+                        ("batched reference copies" if "batch_count" in cell else
+                         "source reference" if cell["workload_k"] == 0 else "modeled per-swap H_delta scaling"),
+                        cell.get("batch_count", 1),
+                        (cell.get("security") or {}).get("target_bits", "unestablished"),
+                        cell.get("artifacts", {}).get("proof_bytes_median", ""),
+                        cell.get("artifacts", {}).get("peak_rss_bytes", ""),
                         cell["cell_id"],
                         cell["execution_index"],
                         cell["implementation"],
@@ -1074,7 +1283,7 @@ def render_html(summary: dict[str, Any]) -> str:
         for cell in cells
     )
     headline_groups = []
-    for workload_k in summary["workload"]["workload_k_values"]:
+    for workload_k in workload_groups(summary):
         implementation_rank = {
             "f2z-ligerito": 0,
             "limber-hyrax": 1,
@@ -1082,7 +1291,7 @@ def render_html(summary: dict[str, Any]) -> str:
         }
         thread_rank = {"single": 0, "performance": 1}
         group = sorted(
-            (cell for cell in cells if cell["workload_k"] == workload_k),
+            (cell for cell in cells if cell_group(cell) == workload_k),
             key=lambda cell: (
                 implementation_rank[cell["implementation"]],
                 thread_rank[cell["thread_mode"]],
@@ -1104,12 +1313,18 @@ def render_html(summary: dict[str, Any]) -> str:
             headline_rows.append(f"<tr><th>{html.escape(label)}</th>{values}</tr>")
         semantics = (
             "quotable source-backed reference"
-            if workload_k == 0
+            if workload_k == "0"
             else "modeled per-swap H_delta scaling"
         )
+        if workload_k.startswith("b"):
+            semantics = "independent reference-circuit copies in one proof"
+        for key, label in (("proof_bytes_median", "Proof size, including commitment (bytes; estimate)"), ("peak_rss_bytes", "Process peak RSS (bytes)")):
+            if all(cell.get("artifacts") for cell in group):
+                values = "".join(f"<td>{cell['artifacts'][key]}</td>" for cell in group)
+                headline_rows.append(f"<tr><th>{label}</th>{values}</tr>")
         digest = summary["canonical_statements"][str(workload_k)]
         headline_groups.append(
-            f'<section class="k-group"><h3>k={workload_k} <small>· {semantics}</small></h3>'
+            f'<section class="k-group"><h3>{"batch=" + workload_k[1:] if workload_k.startswith("b") else "k=" + workload_k} <small>· {semantics}</small></h3>'
             f'<p class="digest">{html.escape(digest["domain"])} / '
             f'{html.escape(digest["digest_blake3"])}</p>'
             f'<div class="summary-wrap"><table><thead><tr><th>Metric</th>{table_headers}'
@@ -1174,9 +1389,16 @@ def render_html(summary: dict[str, Any]) -> str:
         "disclosure",
         "Synthetic wired cost-model; modeled hashes/Poseidon are not native hash executions.",
     )
+    draft = summary.get("validation", {}).get("mode") == "draft"
+    draft_notice = (
+        '<div class="notice"><strong>Draft — canonical validation pending.</strong> '
+        'Proof verification and repository comparison checks passed. '
+        'The external canonical trace validator has not checked these results.</div>'
+        if draft else ""
+    )
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Matched MultiSwap prover campaign</title>
+<title>{'Draft: ' if draft else ''}Matched MultiSwap prover campaign</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <style>
@@ -1193,9 +1415,10 @@ main{{max-width:1500px;margin:auto;padding:38px 32px 80px}} h1{{font-size:32px;m
 @media(max-width:850px){{main{{padding:24px 14px}}.interval-row{{grid-template-columns:1fr 90px}}.track{{grid-column:1/-1}}.tip{{left:4%;width:92%}}}}
 </style></head><body><main>
 <h1>Matched F2Z / Limber MultiSwap campaign</h1>
+{draft_notice}
 <p class="muted">{html.escape(workload_name)} · one warmup excluded · median of {summary['sampling']['samples']} measured trials · Hyndman–Fan Type 7 P10–P90</p>
 <div class="notice"><strong>Interpretation boundary.</strong> {html.escape(disclosure)}</div>
-<section><h2>Headline comparison by workload k</h2>{''.join(headline_groups)}</section>
+<section><h2>Headline comparison by workload size</h2>{''.join(headline_groups)}</section>
 <div class="picker"><label for="cell-picker"><strong>Detailed trace</strong></label><select id="cell-picker">{options}</select></div>
 {''.join(panels)}
 </main><script>

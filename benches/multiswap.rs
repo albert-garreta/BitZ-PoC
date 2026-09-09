@@ -35,6 +35,8 @@
 //! today; the single-prime profiles abort with that list.
 //! Every measured proof is verified.
 
+#![recursion_limit = "512"]
+
 mod common;
 
 use std::{
@@ -49,8 +51,8 @@ use std::{
 
 use f2z::piop::spartan::multiswap::{
     MULTISWAP_VALUE_BITS, MultiswapAssignment, MultiswapCircuit, MultiswapDims, MultiswapProof,
-    PreparedMultiswapRelation, commit_multiswap_witness, multiswap_lig_configs,
-    prove_multiswap_mod_r1cs, verify_multiswap_mod_r1cs,
+    PreparedMultiswapRelation, commit_multiswap_witness, prove_multiswap_mod_r1cs,
+    verify_multiswap_mod_r1cs,
 };
 use f2z::piop::spartan::{IopSecurityProfile, PrimePolicy};
 use f2z::transcript::Blake3Transcript;
@@ -189,6 +191,8 @@ struct RepTiming {
     intervals: Vec<ProfileInterval>,
     measurements_ns: Value,
     witness_stats: WitnessStats,
+    commitment_bytes: usize,
+    peak_rss_bytes: u64,
 }
 
 struct TraceWriter {
@@ -334,16 +338,16 @@ impl TraceWriter {
             .count();
         let live_modular_rows = circuit.live_rows() - live_exact_rows;
         let trial_fragment = trial.id_fragment();
+        let batch_count = circuit.batch_count();
         let run_id = format!(
-            "{}-f2z-k{k}-{}t-{trial_fragment}",
+            "{}-f2z-k{k}-b{batch_count}-{}t-{trial_fragment}",
             self.campaign_id, self.threads
         );
         let series_id = format!(
-            "{}-f2z-k{k}-{}-{}t-{}",
+            "{}-f2z-k{k}-b{batch_count}-{}-{}t-{}",
             self.campaign_id, self.git_rev, self.threads, self.build_profile
         );
         let root_span_id = span_id(roots[0].order);
-        let security = prepared.security();
         let thread_policy = if self.threads == 1 {
             "single Rayon worker"
         } else {
@@ -386,11 +390,15 @@ impl TraceWriter {
                     "workload_id": "multiswap-rsa-wired-cost-model-v1",
                     "workload_class": "wired MultiSwap/RSA cost-model",
                     "limber_k": k,
+                    "batch_count": circuit.batch_count(),
+                    "public_input_count": 0,
+                    "public_inputs": [],
+                    "statement_contract": statement_contract(circuit),
                     "constraint_digest_domain": CONSTRAINT_DIGEST_DOMAIN,
                     "constraint_digest_blake3": constraint_digest,
                     "live_rows": circuit.live_rows(),
                     "padded_rows": circuit.num_cons(),
-                    "live_columns": circuit.dims().num_real_cols(),
+                    "live_columns": circuit.live_columns(),
                     "padded_columns": circuit.num_vars(),
                     "constant_column": circuit.const_col(),
                     "exact_rows": exact_rows,
@@ -412,24 +420,17 @@ impl TraceWriter {
                     "committed_bits": 1usize << (prepared.params().t + prepared.params().s),
                     "witness_stats": timing.witness_stats.json(),
                 },
-                "security": {
-                    "profile": "Limber114",
-                    "target_bits": security.lambda,
-                    "achieved_bits": security.accounting.achieved_bits(),
-                    "binding_term": security.accounting.binding_term().name,
-                    "transcript_hash": "BLAKE3",
-                    "fingerprint_prime_bits": 128,
-                    "reduction_prime_bits": 113,
-                    "reduction_grinding_bits": 10,
-                    "verifier_randomness": "native Fiat-Shamir transcript",
-                    "commitment_field": "GF(2^128)",
-                },
+                "security": security_metadata(prepared),
                 "recursion": {"max_depth": 0, "instance_count": 1},
                 "repetition": {"count": 1},
             },
             "measurements_ns": timing.measurements_ns,
             "artifacts": {
-                "proof_bytes": piop_bytes + opening_bytes,
+                "proof_bytes": timing.commitment_bytes + piop_bytes + opening_bytes,
+                "commitment_bytes": timing.commitment_bytes,
+                "proof_size_kind": "serialized commitment/opening plus analytical PIOP and bridge estimate",
+                "peak_rss_bytes": timing.peak_rss_bytes,
+                "memory_boundary": "process high-water RSS including setup and warmups; compiler excluded",
                 "piop_and_bridge_bytes": piop_bytes,
                 "pcs_opening_bytes": opening_bytes,
             },
@@ -945,6 +946,7 @@ fn proof_sizes(proof: &MultiswapProof) -> (usize, usize) {
 
 fn run_once(
     dims: MultiswapDims,
+    batch_count: usize,
     prepared: &PreparedMultiswapRelation,
     pc: &flock_core::pcs::ligerito::ProverConfig,
     vc: &flock_core::pcs::ligerito::VerifierConfig,
@@ -958,7 +960,7 @@ fn run_once(
     let witness_scope = f2z::utils::prof::scope("multiswap-trace:witness_generation");
     let circuit = {
         let _scope = f2z::utils::prof::scope("multiswap-trace:circuit_synthesis");
-        MultiswapCircuit::build(dims).expect("build circuit")
+        MultiswapCircuit::build_batch(dims, batch_count).expect("build circuit")
     };
     let assignment = {
         let _scope = f2z::utils::prof::scope("multiswap-trace:assignment_materialization");
@@ -1026,6 +1028,9 @@ fn run_once(
             intervals,
             measurements_ns,
             witness_stats,
+            commitment_bytes: bincode::serialized_size(&hint.commitment).expect("commitment size")
+                as usize,
+            peak_rss_bytes: peak_rss_bytes(),
         },
         proof,
     )
@@ -1045,26 +1050,27 @@ fn main() {
             .parse::<usize>()
             .expect("F2Z_BENCH_SHAPES must be the Limber k parameter")
     });
+    let batch_count = std::env::var("F2Z_MULTISWAP_BATCH_COUNT")
+        .map(|s| s.parse::<usize>().expect("invalid batch count"))
+        .unwrap_or(1);
     let selected = common::security_profile(PrimePolicy::TwoFullWidthFingerprint);
     let profile = selected.unwrap_or(common::SecurityProfile::Limber114);
 
-    // Bootstrap the deterministic source-of-truth relation once. Preserve
-    // the legacy RESULT boundary by reporting this synthesis separately,
-    // while the canonical trace also repeats and records it per trial.
-    let bootstrap_witness_started = Instant::now();
-    let circuit = MultiswapCircuit::build(MultiswapDims::multiswap(k)).expect("build circuit");
+    // Bootstrap the canonical relation outside measured trials. Each trial
+    // repeats synthesis and assignment materialization within its witness timer.
+    let circuit = MultiswapCircuit::build_batch(MultiswapDims::multiswap(k), batch_count)
+        .expect("build circuit");
     circuit
         .is_sat_integer()
         .expect("integer relation satisfied");
     let bootstrap_assignment =
         MultiswapAssignment::new(&circuit).expect("build bootstrap assignment");
-    let bootstrap_witness_ms = common::elapsed_ms(bootstrap_witness_started);
     let bootstrap_stats = WitnessStats::collect(&circuit, &bootstrap_assignment);
 
     // One-time public preprocessing is excluded from every traced boundary.
     let setup_started = Instant::now();
     let prepared = common::with_profile!(profile, prepare(&circuit));
-    let (pc, vc) = multiswap_lig_configs(prepared.params()).expect("Ligerito configs");
+    let (pc, vc) = prepared.ligerito_configs();
     let setup_elapsed = setup_started.elapsed();
     let setup_ns = u64::try_from(setup_elapsed.as_nanos()).unwrap_or(u64::MAX);
     let setup_ms = setup_elapsed.as_secs_f64() * 1e3;
@@ -1080,15 +1086,26 @@ fn main() {
             "canonical constraint digest mismatch"
         );
     }
+    if std::env::var("F2Z_MULTISWAP_CHECK_ONLY").as_deref() == Ok("1") {
+        println!(
+            "MATCHED_PREFLIGHT {}",
+            json!({
+                "statement_contract": statement_contract(&circuit),
+                "assignment_digest_blake3": bootstrap_stats.assignment_digest_blake3,
+                "security": security_metadata(&prepared),
+            })
+        );
+        return;
+    }
     let mut trace_writer = TraceWriter::from_env(threads, setup_ns);
 
     let p = *prepared.params();
     let layout = *prepared.layout();
     println!(
-        "MultiSwap through F2Z (Limber k={k} circuit): {} live rows, {} live columns, \
+        "MultiSwap through F2Z (Limber k={k}, batch={batch_count} circuit): {} live rows, {} live columns, \
          nnz {} (mods folded into C), capacity 2^{}",
         circuit.live_rows(),
-        circuit.dims().num_real_cols(),
+        circuit.live_columns(),
         prepared.relation().nnz(),
         layout.gate_vars(),
     );
@@ -1114,6 +1131,7 @@ fn main() {
     let mut verifier = common::StepSamples::default();
     let mut witness_samples = Vec::with_capacity(reps);
     let mut last_proof = None;
+    let mut commitment_bytes = 0;
 
     for rep in 0..reps + 1 {
         let trial = if rep == 0 {
@@ -1121,7 +1139,14 @@ fn main() {
         } else {
             Trial::Sample(rep - 1)
         };
-        let (timing, proof) = run_once(MultiswapDims::multiswap(k), &prepared, &pc, &vc, setup_ns);
+        let (timing, proof) = run_once(
+            MultiswapDims::multiswap(k),
+            batch_count,
+            &prepared,
+            &pc,
+            &vc,
+            setup_ns,
+        );
         assert_eq!(
             timing.witness_stats.assignment_digest_blake3, bootstrap_stats.assignment_digest_blake3,
             "per-trial assignment must match the canonical source fixture"
@@ -1143,6 +1168,7 @@ fn main() {
             prover.record_prove(timing.prove_ms, timing.commit_ms, &timing.prove_phases);
             verifier.record_verify(timing.verify_ms, &timing.verify_phases);
             last_proof = Some(proof);
+            commitment_bytes = timing.commitment_bytes;
         }
     }
 
@@ -1158,6 +1184,7 @@ fn main() {
         shape: format!("k{k}"),
         extra: vec![
             ("profile".into(), prepared.security().profile_name.into()),
+            ("batch_count".into(), batch_count.to_string()),
             ("rows".into(), circuit.live_rows().to_string()),
             ("committed_bits".into(), (1usize << (p.t + p.s)).to_string()),
             ("constraint_digest".into(), constraint_digest),
@@ -1168,7 +1195,7 @@ fn main() {
         threads,
         reps,
         seed: None,
-        witness_ms: bootstrap_witness_ms,
+        witness_ms: common::median(&witness_samples),
         setup_ms,
         prover: prover.medians(),
         verifier: verifier.medians(),
@@ -1177,5 +1204,56 @@ fn main() {
             open: f2z_bytes,
         },
     };
-    report.print_human();
+    report.print_human_with_commitment(commitment_bytes);
+}
+
+fn statement_contract(circuit: &MultiswapCircuit) -> Value {
+    json!({
+        "domain": "f2z-limber/multiswap-statement/v2",
+        "digest_blake3": hex_bytes(circuit.comparison_statement_digest()),
+        "batch_count": circuit.batch_count(), "public_input_count": 0, "public_inputs": [],
+        "value_bits": MULTISWAP_VALUE_BITS, "integer_domain": "unsigned",
+        "public_roles": ["matrices", "moduli"], "private_roles": ["witness", "quotients"],
+        "constant": 1, "padding": "zero-witness,zero-quotients,modulus-two",
+        "live_rows": circuit.live_rows(), "live_columns": circuit.live_columns(),
+        "padded_rows": circuit.num_cons(), "padded_columns": circuit.num_vars(),
+    })
+}
+
+fn security_metadata(prepared: &PreparedMultiswapRelation) -> Value {
+    let sec = prepared.security();
+    let (pc, _) = prepared.ligerito_configs();
+    json!({
+        "model": "per-check-round-minimum/v1", "profile": sec.profile_name,
+        "target_bits": sec.lambda, "achieved_bits": sec.accounting.achieved_bits(),
+        "binding_term": sec.accounting.binding_term().name,
+        "terms": sec.accounting.terms.iter().map(|t| json!({
+            "name": t.name, "bits": t.bits, "grinding_bits": t.grinding_bits, "floor": t.floor,
+        })).collect::<Vec<_>>(),
+        "transcript_hash": "BLAKE3", "fingerprint_prime_bits": 128,
+        "fingerprint_min": sec.projection_min.to_string(), "fingerprint_max": sec.projection_max.to_string(),
+        "reduction_prime_bits": 113,
+        "reduction_grinding_bits": prepared.profile().reduction_grinding_bits(),
+        "reduction_min": prepared.profile().reduction_interval().0.to_string(),
+        "reduction_max": prepared.profile().reduction_interval().1.to_string(),
+        "ligerito_target_bits": sec.ligerito_target_bits,
+        "ligerito_config_digest": hex_bytes(*prepared.opening_config_digest()),
+        "ligerito_queries": pc.queries, "ligerito_query_grinding": pc.grinding_bits,
+        "ligerito_fold_grinding": pc.fold_grinding_bits,
+        "ligerito_log_inv_rates": pc.log_inv_rates,
+        "verifier_randomness": "native Fiat-Shamir transcript", "commitment_field": "GF(2^128)",
+    })
+}
+
+fn peak_rss_bytes() -> u64 {
+    let mut usage = std::mem::MaybeUninit::<libc::rusage>::zeroed();
+    // getrusage writes the entire output on success; no witness data is exposed.
+    let result = unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) };
+    assert_eq!(result, 0, "getrusage failed");
+    let rss = unsafe { usage.assume_init() }.ru_maxrss as u64;
+    if cfg!(target_os = "macos") {
+        rss
+    } else {
+        rss * 1024
+    }
 }

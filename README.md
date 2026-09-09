@@ -52,31 +52,94 @@ bash scripts/run_native_mul_compare.sh
 ```
 
 
-### MultiSwap (Limber's Table 1 workload: 4 exponentiations with 352-bit exponents modulo a 2048-bit RSA modulus + Poseidon-based hash-to-prime; the 6209-row integer Mod-R1CS from Limber's repo), λ=114
+### RSA MultiSwap — matched 112-bit comparison
+
+Compare **F2Z/Ligerito, Limber-Hyrax, and Limber-Brakedown** on Limber's
+Table 1 fixture. One circuit copy contains **4 exponentiations with 352-bit
+exponents modulo a 2048-bit RSA modulus**, with 6,209 live integer constraint
+rows. The RSA chains execute; hash and Poseidon operations contribute modeled
+costs. The fixture has no application public inputs (`count=0`, `values=[]`)
+and does not prove a complete public accumulator transition.
+
+The campaign fixes `k=0` and proves **1, 2, 4, 8, or 16 complete circuit
+copies in one proof**: 4–64 RSA exponentiations. It checks matching canonical
+statements and witness data across backends. Each modeled security check must
+reach **at least 112 bits**; the shared 128-bit prime fingerprint retains its
+roughly 114-bit bound. This accounting is per check/round, not a combined
+whole-proof soundness bound or an RSA key-strength claim.
+
+Run these commands from the repository root. Prepare the patched Limber fork
+once, using a destination that does not already exist; skip this step if it
+is already prepared:
 
 ```sh
-# single-threaded (RAYON_NUM_THREADS=8 for the 8-thread column)
-F2Z_BENCH_LAMBDA=114 F2Z_BENCH_REPS=5 RAYON_NUM_THREADS=1 RUSTFLAGS="-C target-cpu=native" \
-  cargo bench --bench multiswap --features unchecked
+python3 scripts/prepare_matched_limber.py /tmp/limber-matched112
 ```
 
-Limber and Zinc+ rows: see [MultiSwap comparison rows](#multiswap-comparison-rows-limber-zinc) under Scratch.
+The runner requires this repository's pinned Rust toolchain and Limber's
+`nightly-2026-07-01`. It sets `MSCFG=paper` and each backend's security
+parameters, overriding inherited workload/security settings. Run the full
+sweep with **1 and 16 threads**, one warmup, and ten measured proofs per
+configuration (**30 configurations**):
+
+```sh
+python3 scripts/run_matched_multiswap_campaign.py \
+  --draft \
+  --limber-root /tmp/limber-matched112 \
+  --security-bits 112 \
+  --batch-counts 1,2,4,8,16 \
+  --all-threads 16 \
+  --warmups 1 \
+  --samples 10 \
+  --rustflags="-C target-cpu=native"
+```
+
+`--draft` runs proof verification and repository comparison checks, but marks
+the results as **pending canonical validation**. The external
+`zk-proof-profiler/scripts/zk_trace.py` validator is not bundled here. For
+canonical execution, replace `--draft` with `--profiler` followed by the
+actual path to that file. A placeholder path will fail preflight.
+
+Add `--dry-run` to preview the commands without compiling or running proofs.
+For a smoke run, change to `--batch-counts 1 --samples 1` (six configurations).
+Results appear under `bench_results/<campaign>/reports/combined/` as
+`summary.json`, `metrics.csv`, and `intervals.html`. They report witness,
+commitment-plus-proving, combined prover, and verification times, along with
+proof sizes including commitments and process peak memory. Compilation and
+setup are excluded from headline proving times; analytical proof-size
+estimates are marked.
+
+See the [campaign guide](docs/matched-multiswap-campaign.md) for the statement,
+security accounting, toolchain setup, and validation requirements. The
+[historical comparison rows](#historical-multiswap-comparison-rows-limber-zinc)
+below predate this matched campaign.
 
 # Scratch
 
-## MultiSwap comparison rows (Limber, Zinc+)
+## Historical MultiSwap comparison rows (Limber, Zinc+)
+
+These timings are historical one-copy measurements with mixed security
+settings, not results from the matched 112-bit campaign above. The historical
+F2Z setting can still be selected explicitly (use `RAYON_NUM_THREADS=8` for
+the 8-thread column):
+
+```sh
+F2Z_BENCH_LAMBDA=114 F2Z_BENCH_SHAPES=0 F2Z_MULTISWAP_BATCH_COUNT=1 \
+  F2Z_BENCH_REPS=5 RAYON_NUM_THREADS=1 RUSTFLAGS="-C target-cpu=native" \
+  cargo bench --bench multiswap --features unchecked
+```
 
 Same box (Apple M4, 4P+6E cores, 16 GB), `-C target-cpu=native`, medians of 5, 1 thread / 8 rayon threads; prover time includes commitment, excludes witness generation (< 0.15 s everywhere). LaTeX table: `paper/multiswap-table.tex`.
 
 | System (commit) | Prove 1 thr | Prove 8 thr | Verify 1 thr | Verify 8 thr | Proof |
 |---|---|---|---|---|---|
-| BitZ-SNARK (this checkout), 114 bits | 273 ms | 105 ms | 9.9 ms | 12.0 ms | 269 KB |
+| BitZ-SNARK (historical checkout), 114 bits | 273 ms | 105 ms | 9.9 ms | 12.0 ms | 269 KB |
 | Zinc+ main-beta (`878fbd8`), 16-bit limbs + range checks, 114 bits (14 grinding bits) | 2052 ms | 563 ms | 18.2 ms | 12.7 ms | 1272 KB (847 KiB zstd) |
 | Zinc+ main-beta (`878fbd8`), fat-cell mock, no range checks, 100 bits | 831 ms | 236 ms | 58.0 ms | 24.6 ms | 1415 KB |
 | Limber-Brakedown (`b003684`) | 1175 ms | 559 ms | 44.2 ms | 43.3 ms | 5769 KB |
 | Limber-Hyrax (`b003684`) | 1206 ms | 390 ms | 37.1 ms | 20.5 ms | 175 KB |
 
-BitZ opener: Ligerito in the unique-decoding regime, rate 1/8, fold arity 4, fold grinding, validated at the 114-bit target (CLI profile `udrg:3:4:114`; set in `multiswap_lig_configs`).
+Historical BitZ opener: Ligerito in the unique-decoding regime, rate 1/8, fold arity 4, fold grinding, validated at the 114-bit target (CLI profile `udrg:3:4:114`).
 
 Limber — [albert-garreta/limber-impl](https://github.com/albert-garreta/limber-impl) `b003684` (fork of lucasxia01/limber-impl `853c6c4`; Rust ≥ 1.97). `MSCFG=paper` is required: the default `full` is a newer 2^14-row circuit, not the Table 1 statement. `RAYON_NUM_THREADS=8` for the 8-thread columns.
 
@@ -102,13 +165,14 @@ honours it, so one bench can be run at exactly one λ:
 |---|---|---|
 | `100` | `Lambda100` | no grinding anywhere; every term this crate controls ≥ 100 bits |
 | `128` | `Lambda128` | every controllable term ≥ 128 bits (two grinding bits per forest round, one at the ring switch; the GF(2^128) floor at ~126.4 still binds and is reported) |
-| `114` | `Limber114` | the two-prime MultiSwap/Limber comparison target — MultiSwap only |
+| `112` | `Limber112` | matched MultiSwap campaign target; Ligerito target 112, eight reduction grinding bits for the selected batch sweep — MultiSwap only |
+| `114` | `Limber114` | historical two-prime MultiSwap comparison target and standalone MultiSwap default — MultiSwap only |
 | `sha128-reference-schedule` | `Sha128ReferenceSchedule` | the historical SHA-256 128-bit schedule, kept for comparison |
 
 The profile names are accepted too (`F2Z_BENCH_LAMBDA=lambda128`). Unset,
 SHA-256 and u32×u32 run at λ=100, MultiSwap at 114, and the BabyBear and
 `lambda_sweep` benches run every profile they know (two and three rows per
-shape). A profile the bench's relation cannot instantiate — `114` outside
+shape). A profile the bench's relation cannot instantiate — `112`/`114` outside
 MultiSwap, or `100`/`128` on MultiSwap — aborts up front with the
 admissible list. Each `RESULT` line carries `profile=<name>` next to
 `lambda=<bits>`. `F2Z_BENCH_QUIET=1` mutes the benches' advisory
@@ -306,5 +370,4 @@ F2Z_BENCH_SHAPES="17:11:1" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
 - https://github.com/worldfnd/f2z-benchmark
 - [Albert: I'm not sure what this is. Leaving it here just in case] **`crypto-primitives`** — vendored at `vendor/crypto-primitives` (NethermindEth, Apache-2.0; see `vendor/crypto-primitives/VENDORED.md` for
   the pinned revision and the crypto-bigint 0.7.5 / rand 0.10 port).
-
 
