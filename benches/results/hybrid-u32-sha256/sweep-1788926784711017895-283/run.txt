@@ -1,0 +1,9 @@
+executable=/home/john-wu/.codex/worktrees/ff5a/BitZ-pcs/target/hybrid-build/release/deps/hybrid_u32_sha256-d23a81baad5107ca
+protocol=hybrid-u32-mod32-sha256-v2
+multiplication_relation=xy=z+2^32*w (x,y,z,w are u32)
+shapes=[Shape { mul_log: 15, sha_log: 7 }, Shape { mul_log: 16, sha_log: 8 }, Shape { mul_log: 17, sha_log: 9 }, Shape { mul_log: 18, sha_log: 10 }, Shape { mul_log: 19, sha_log: 11 }, Shape { mul_log: 20, sha_log: 12 }]
+modes=["hybrid", "separate", "all-binius"]
+iterations=1
+RAYON_NUM_THREADS=8
+non_zk=true
+security_target_bits=100

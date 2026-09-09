@@ -344,7 +344,6 @@ dependencies = [
 [[package]]
 name = "binius-prover"
 version = "0.1.0"
-source = "git+https://github.com/wu-s-john/binius64.git?rev=2b27daea4a893fab930259cc7ad59d0a37c2ef95#2b27daea4a893fab930259cc7ad59d0a37c2ef95"
 dependencies = [
  "binius-compute",
  "binius-core",
@@ -456,7 +455,6 @@ dependencies = [
 [[package]]
 name = "binius-verifier"
 version = "0.1.0"
-source = "git+https://github.com/wu-s-john/binius64.git?rev=2b27daea4a893fab930259cc7ad59d0a37c2ef95#2b27daea4a893fab930259cc7ad59d0a37c2ef95"
 dependencies = [
  "binius-core",
  "binius-field",
@@ -1020,7 +1018,6 @@ dependencies = [
 [[package]]
 name = "flock-core"
 version = "0.1.0"
-source = "git+https://github.com/albert-garreta/flock-mod.git?rev=ed4c0cd9aceeae15248bf4f24a70d96fe37b2395#ed4c0cd9aceeae15248bf4f24a70d96fe37b2395"
 dependencies = [
  "bincode",
  "blake3",

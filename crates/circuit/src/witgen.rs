@@ -233,6 +233,11 @@ pub struct PackedWitness {
 }
 
 impl PackedWitness {
+    /// Returns the least-significant-bit-first packed storage.
+    pub fn packed_words(&self) -> &[u64] {
+        &self.words
+    }
+
     fn with_capacity(bit_capacity: usize) -> Self {
         Self {
             words: Vec::with_capacity(bit_capacity.div_ceil(64)),

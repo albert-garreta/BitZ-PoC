@@ -1,0 +1,358 @@
+// Copyright 2025 Irreducible Inc.
+// Copyright 2026 The Binius Developers
+
+use std::{iter, ops::Range};
+
+use binius_compute::{Allocator, VecLike};
+use binius_core::word::Word;
+use binius_field::{BinaryField, Field, PackedField};
+use binius_ip::sumcheck::{SumcheckOutput, common::RoundCoeffs};
+use binius_ip_prover::{
+	channel::IPProverChannel,
+	sumcheck::{bivariate_product_prover, common::SumcheckProver},
+};
+use binius_math::{BinarySubspace, FieldBuffer, FieldVec, inner_product::inner_product_buffers};
+use binius_utils::rayon::prelude::*;
+use binius_verifier::protocols::shift::SHIFT_VARIANT_COUNT;
+use bytemuck::zeroed_vec;
+use itertools::izip;
+use tracing::instrument;
+
+use super::{
+	key_collection::{KeyCollection, KeySegment, Operation},
+	monster::build_h_parts,
+	prove::PreparedOperatorData,
+};
+
+// This is the number of variables in the g (and h) multilinears of phase 1.
+const LOG_LEN: usize = Word::LOG_BITS + Word::LOG_BITS;
+
+/// Constructs the "g" multilinear parts for the BITAND, INTMUL and BMUL operations.
+/// Proves the first phase of the shift reduction.
+/// Computes the g and h multilinears and performs the sumcheck.
+#[instrument(
+	skip_all,
+	name = "prover_phase_1",
+	fields(
+		component = "shift_phase_1",
+		scope_kind = "procedure",
+		perfetto_category = "component",
+		tag_proving = true,
+		tag_constraint_proof = true,
+		tag_sumcheck = true,
+	)
+)]
+#[allow(clippy::too_many_arguments)]
+pub fn prove_phase_1<F, P, Channel, A>(
+	key_collection: &KeyCollection,
+	words: &[Word],
+	zero_data: &PreparedOperatorData<F>,
+	bitand_data: &PreparedOperatorData<F>,
+	intmul_data: &PreparedOperatorData<F>,
+	binmul_data: &PreparedOperatorData<F>,
+	domain_subspace: &BinarySubspace<F>,
+	channel: &mut Channel,
+	alloc: &A,
+) -> SumcheckOutput<F>
+where
+	F: BinaryField,
+	P: PackedField<Scalar = F>,
+	Channel: IPProverChannel<F>,
+	A: Allocator,
+{
+	// Build the g parts for the public and hidden segments separately, then sum them. The public
+	// words are the prefix of `words`, and each segment's key ranges are segment-relative.
+	let (public_words, hidden_words) = words.split_at(key_collection.public.n_words());
+	let mut g_parts = build_g_parts::<_, P, _>(
+		alloc,
+		public_words,
+		&key_collection.public,
+		zero_data,
+		bitand_data,
+		intmul_data,
+		binmul_data,
+	);
+	let hidden_g_parts = build_g_parts::<_, P, _>(
+		alloc,
+		hidden_words,
+		&key_collection.hidden,
+		zero_data,
+		bitand_data,
+		intmul_data,
+		binmul_data,
+	);
+	for (g, hidden_g) in g_parts.iter_mut().zip(&hidden_g_parts) {
+		for (slot, add) in g.as_mut().iter_mut().zip(hidden_g.as_ref()) {
+			*slot += *add;
+		}
+	}
+
+	// BitAnd, IntMul and BinMul share the same `r_zhat_prime`.
+	let h_parts = build_h_parts(alloc, domain_subspace, bitand_data.r_zhat_prime);
+
+	run_phase_1_sumcheck(g_parts, h_parts, channel, alloc)
+}
+
+/// Runs the phase 1 sumcheck protocol for shift constraint verification.
+///
+/// Executes a sumcheck over bivariate products of g and h multilinear parts for each
+/// operation (BITAND, INTMUL). The protocol proves that the sum of g·h products across
+/// all shift variants equals the claimed batched evaluation.
+///
+/// # Protocol Structure
+///
+/// For each operation, creates 3 bivariate product sumcheck provers (one per shift variant):
+/// - g_sll · h_sll with claim `sll_sum`
+/// - g_srl · h_srl with claim `srl_sum`
+/// - g_sra · h_sra with claim `sar_sum = total_sum - sll_sum - srl_sum`
+///
+/// The g parts incorporate batching randomness (lambda weighting), while h parts
+/// encode the shift operation behavior at the univariate challenge points.
+///
+/// # Parameters
+///
+/// - `g_parts`: g multilinear parts for each operation (witness-dependent)
+/// - `h_parts`: h multilinear parts for each operation (challenge-dependent)
+/// - `sums`: Expected total sums for each operation from lambda-weighted evaluation claims
+///
+/// # Returns
+///
+/// `SumcheckOutput` containing the challenge vector and final evaluation `gamma`
+#[instrument(
+	skip_all,
+	name = "run_sumcheck",
+	fields(
+		component = "shift_phase_1_sumcheck",
+		scope_kind = "procedure",
+		perfetto_category = "component",
+		tag_proving = true,
+		tag_constraint_proof = true,
+		tag_sumcheck = true,
+		tag_repeated = true,
+	)
+)]
+pub fn run_phase_1_sumcheck<
+	F: Field,
+	P: PackedField<Scalar = F>,
+	Channel: IPProverChannel<F>,
+	A: Allocator,
+>(
+	g_parts: [FieldVec<P, A>; SHIFT_VARIANT_COUNT],
+	h_parts: [FieldVec<P, A>; SHIFT_VARIANT_COUNT],
+	channel: &mut Channel,
+	alloc: &A,
+) -> SumcheckOutput<F> {
+	// Build one shared bivariate-product prover per shift variant.
+	let mut provers = iter::zip(g_parts, h_parts)
+		.map(|(g_part, h_part)| {
+			let sum = inner_product_buffers(&g_part, &h_part);
+			bivariate_product_prover(alloc, [g_part, h_part], sum)
+		})
+		.collect::<Vec<_>>();
+
+	// Perform the sumcheck rounds, collecting challenges.
+	let n_vars = 2 * Word::LOG_BITS;
+	let mut challenges = Vec::with_capacity(n_vars);
+	for _ in 0..n_vars {
+		let mut all_round_coeffs = Vec::new();
+		for prover in &mut provers {
+			all_round_coeffs.extend(prover.execute());
+		}
+
+		let summed_round_coeffs = all_round_coeffs
+			.into_iter()
+			.rfold(RoundCoeffs::default(), |acc, coeffs| acc + &coeffs);
+
+		let round_proof = summed_round_coeffs.truncate();
+
+		channel.send_many(round_proof.coeffs());
+
+		let challenge = channel.sample();
+		challenges.push(challenge);
+
+		for prover in &mut provers {
+			prover.fold(challenge);
+		}
+	}
+	challenges.reverse();
+
+	let multilinear_evals = provers
+		.into_iter()
+		.map(|prover| prover.finish())
+		.collect::<Vec<Vec<F>>>();
+
+	// Evaluate the composition polynomial to compute `gamma`.
+	let gamma = multilinear_evals
+		.into_iter()
+		.map(|prover_evals| {
+			assert_eq!(prover_evals.len(), 2);
+			let h_eval = prover_evals[0];
+			let g_eval = prover_evals[1];
+			h_eval * g_eval
+		})
+		.sum();
+
+	SumcheckOutput {
+		challenges,
+		eval: gamma,
+	}
+}
+
+/// Constructs the "g" multilinear parts for the BITAND, INTMUL and BMUL operations, for one key
+/// segment.
+///
+/// This builds the g multilinear polynomials used in phase 1 of the shift protocol, over the words
+/// of a single value-vector segment (public or hidden). For each operation (BITAND and INTMUL) it
+/// constructs three multilinear polynomials corresponding to the three shift variants (SLL, SRL,
+/// SRA).
+///
+/// The value vector's public and hidden words participate through their own [`KeySegment`], so a
+/// caller builds each segment's parts with the matching words and sums the two results.
+///
+/// # Construction Process
+///
+/// 1. **Parallel Processing**: Words are processed in parallel chunks for efficiency
+/// 2. **Key Processing**: For each word, iterate through its associated keys in the segment
+/// 3. **Accumulation**: For each key, accumulate its contribution weighted by the r_x' tensor
+/// 4. **Word Expansion**: Expand each witness word bitwise to populate the g multilinears
+/// 5. **Lambda Weighting**: Apply lambda powers to weight different operand positions
+///
+/// # Returns
+///
+/// An array of multilinear extensions of each shift variant part.
+///
+/// # Usage
+///
+/// Used in phase 1 to construct the constant size g multilinears
+/// that will participate in the phase 1 sumcheck protocol.
+#[instrument(skip_all, name = "build_g_parts")]
+pub fn build_g_parts<F: BinaryField, P: PackedField<Scalar = F>, A: Allocator>(
+	alloc: &A,
+	words: &[Word],
+	segment: &KeySegment,
+	zero_operator_data: &PreparedOperatorData<F>,
+	bitand_operator_data: &PreparedOperatorData<F>,
+	intmul_operator_data: &PreparedOperatorData<F>,
+	binmul_operator_data: &PreparedOperatorData<F>,
+) -> [FieldVec<P, A>; SHIFT_VARIANT_COUNT] {
+	let acc_size: usize = SHIFT_VARIANT_COUNT << (LOG_LEN.saturating_sub(P::LOG_WIDTH));
+
+	assert!(
+		P::WIDTH <= 8,
+		"the optimizations below work only when the width of `P` is less than 8 (which is true for all packed 128b fields we use for now)"
+	);
+
+	// Map from a u8 with `P::WIDTH` meaningful bits to the lane mask selecting exactly those lanes,
+	// precomputed once and reused across every accumulator below.
+	let packed_masks_map = (0..1 << P::WIDTH)
+		.map(|i| P::make_mask((0..P::WIDTH).map(|bit_index| (i >> bit_index) & 1 == 1)))
+		.collect::<Vec<_>>();
+	// A mask for low `P::WIDTH` bits.
+	let low_bits_mask = (1u8 << P::WIDTH) - 1;
+
+	// Each word carries the keys named by the segment-relative range at its position.
+	let multilinears = words
+		.par_iter()
+		.zip(segment.key_ranges.par_iter())
+		.fold(
+			|| zeroed_vec::<P>(acc_size).into_boxed_slice(),
+			|mut multilinears, (word, Range { start, end })| {
+				let keys = &segment.keys[*start as usize..*end as usize];
+
+				for key in keys {
+					let operator_data = match key.operation {
+						Operation::Zero => zero_operator_data,
+						Operation::BitwiseAnd => bitand_operator_data,
+						Operation::IntegerMul => intmul_operator_data,
+						Operation::BinMul => binmul_operator_data,
+					};
+
+					let acc = key.accumulate(
+						&segment.constraint_indices,
+						operator_data.r_x_prime_tensor.as_ref(),
+						&operator_data.lambda_powers,
+					);
+					let acc_packed = P::broadcast(acc);
+
+					// The following loop is an optimized version of the following
+					// for i in 0..Word::BITS {
+					//     if get_bit(word, i) {
+					//         values[start + i] += acc;
+					//     }
+					// }
+					let start = key.id as usize * (Word::BITS >> P::LOG_WIDTH);
+					let values = &mut multilinears[start..start + (Word::BITS >> P::LOG_WIDTH)];
+					let values_per_byte = Word::BYTES >> P::LOG_WIDTH;
+					let mut remaining_word = word.0;
+					let mut byte_index = 0;
+					while remaining_word != 0 {
+						let byte = remaining_word as u8;
+						let byte_values =
+							&mut values[byte_index * values_per_byte..][..values_per_byte];
+						for value_index in 0..(8 >> P::LOG_WIDTH) {
+							unsafe {
+								let packed_mask_index =
+									((byte >> (value_index * P::WIDTH)) & low_bits_mask) as usize;
+
+								// Safety:
+								// - `packed_masks_map` is guaranteed to have enough elements to be
+								//   indexed with a `P::WIDTH`-bits value.
+								let packed_mask = packed_masks_map.get_unchecked(packed_mask_index);
+
+								// Safety:
+								// - `values` is guaranteed to be (8 >> P::LOG_WIDTH) elements long
+								//   due to the chunking
+								// - `value_index` is always in bounds because we iterate over 0..(8
+								//   >> P::LOG_WIDTH)
+								*byte_values.get_unchecked_mut(value_index) +=
+									acc_packed.select(packed_mask);
+							}
+						}
+						remaining_word >>= 8;
+						byte_index += 1;
+					}
+				}
+
+				multilinears
+			},
+		)
+		.reduce(
+			|| zeroed_vec::<P>(acc_size).into_boxed_slice(),
+			|mut acc, local| {
+				izip!(acc.iter_mut(), local.iter()).for_each(|(acc, local)| {
+					*acc += *local;
+				});
+				acc
+			},
+		);
+
+	build_multilinear_parts(alloc, &multilinears)
+}
+
+/// Builds the multilinear parts for a single operation by combining its operand multilinears.
+///
+/// Takes the raw multilinears for all operands and shift variants of an operation,
+/// applies lambda weighting to each operand, and combines them into parts.
+/// Each operand of index `i` gets weighted by λ^(i+1).
+#[instrument(skip_all, name = "build_multilinear_parts")]
+fn build_multilinear_parts<P: PackedField, A: Allocator>(
+	alloc: &A,
+	multilinears: &[P],
+) -> [FieldVec<P, A>; SHIFT_VARIANT_COUNT] {
+	assert!(
+		P::LOG_WIDTH < LOG_LEN,
+		"P::WIDTH is not supposed to exceed 8, so this statement must hold"
+	);
+
+	multilinears
+		.chunks(1 << (LOG_LEN - P::LOG_WIDTH))
+		.map(|chunk| {
+			// Build each part straight into the allocator's buffer rather than into a `Vec` copy.
+			let mut data = alloc.alloc::<P>(chunk.len());
+			data.extend_from_slice(chunk);
+			FieldBuffer::new(LOG_LEN, data)
+		})
+		.collect::<Vec<_>>()
+		.try_into()
+		.unwrap_or_else(|_| panic!("chunk has SHIFT_VARIANT_COUNT parts of size 1 << LOG_LEN"))
+}

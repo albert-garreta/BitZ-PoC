@@ -1,0 +1,4 @@
+mode=separate multiplications=65536 chained_compressions=8 merkle=blake3 non_zk=true threads=8
+setup_ms=23.383 binius_fri_component_bits=112
+2026-09-08T22:57:01.483492Z  INFO category="metrics" proof_size_bytes=63616
+separate proof_bytes is a payload estimate (no enclosing standalone-u32 framing)

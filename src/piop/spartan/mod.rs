@@ -111,6 +111,12 @@ pub use sha256::{
     prove_sha256_compressions_with_prefix_vars_and_config, sha256_compression_configs,
     verify_sha256_compressions, verify_sha256_compressions_with_config,
 };
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub use sha256::{
+    SHA256_FIXED_98_INITIAL_GRINDING_BITS, SHA256_FIXED_98_PRIME, SHA256_FIXED_98_PRIME_BITS,
+    SHA256_FIXED_98_TERMINAL_GRINDING_BITS, prepare_sha256_compression_batch_for_product_t_fixed98,
+};
 pub use sumcheck::{OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProof};
 pub use u32_mul::{
     U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS, U32_MUL_X_BITS, U32_MUL_Y_BITS, U32MulError,
