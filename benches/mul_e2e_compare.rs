@@ -74,10 +74,10 @@ impl Workload {
     fn supports(self, backend: &str) -> bool {
         match self {
             Self::U32 | Self::BabyBear => true,
-            // The Plonky3 AIR decomposes 32-bit operands and the Limber
-            // program uses u64 linear-combination coefficients; neither has
-            // a 64 x 64 -> 128 or 128 x 128 -> 256 path yet.
-            Self::U64 | Self::U128 => matches!(backend, "f2z" | "binius64"),
+            // The Plonky3 AIR decomposes 32-bit operands and has no
+            // 64 x 64 -> 128 or 128 x 128 -> 256 path yet. Limber proves both
+            // through its wrapping row `x * y = z_lo (mod 2^w)`.
+            Self::U64 | Self::U128 => matches!(backend, "f2z" | "binius64" | "limber"),
         }
     }
     /// Whether the operands are 128-bit values (the `u128` workload) rather

@@ -270,11 +270,15 @@ def main() -> int:
         "f2z": "\\ftwoz\\ (Spartan over a transcript-sampled prime with the \\ftwoz\\ opening, $\\lambda = 100$)",
         "binius64": binius_note,
         "plonky3-whir": "Plonky3 (" + ("Goldilocks AIR with $32$-bit decompositions" if args.workload == "u32" else "BabyBear AIR") + ", WHIR over a degree-$5$ extension at rate $1/2$, $100$ bits)",
-        # Limber's integer R1CS has no native word type, so each operand is
-        # range-checked bit by bit; that width is what its trace size follows.
-        "limber": "Limber (integer-mod Spartan over a random small prime with the IntEval/Hyrax opening, native Limber parameters; its R1CS spends "
-                  + {"u32": "$64$", "babybear": "$93$", "u64": "$128$", "u128": "$256$"}[args.workload]
-                  + " explicit bit columns per multiplication on operand range checks)",
+        # The integer workloads use one wrapping row per multiplication, so the
+        # IntEval limb range check doubles as the operand range check; BabyBear
+        # still decomposes its operands (`a < p` is stronger than `a < 2^31`).
+        "limber": "Limber (integer-mod Spartan over a random small prime with the IntEval/Hyrax opening, native Limber parameters; "
+                  + ("$93$ explicit bit columns per multiplication for the canonical-form check"
+                     if args.workload == "babybear" else
+                     "one modular row $x \\cdot y \\equiv z_{\\mathrm{lo}} \\bmod 2^{%s}$ per multiplication, its quotient the high half, so the IntEval limb bound is the operand range check"
+                     % {"u32": "32", "u64": "64", "u128": "128"}[args.workload])
+                  + ")",
     }
     # One caption note per scheme family (both Binius64 rates share one).
     present = []

@@ -2,8 +2,8 @@
 
 `mul_e2e_compare` proves batches of u32 × u32 → u64, BabyBear,
 u64 × u64 → u128, and u128 × u128 → u256 multiplications with F2Z, Binius64,
-Plonky3-WHIR, and Limber-Hyrax (the u64 and u128 workloads run on F2Z and
-Binius64 only, see below). Every
+Plonky3-WHIR, and Limber-Hyrax (the u64 and u128 workloads run on every backend
+except Plonky3, see below). Every
 warmup and measured trial regenerates the native witness, produces the complete
 proof, and verifies it. This is the full-proving multiplication comparison for
 the paper benchmark suite; commitment, constraint proving, opening, and
@@ -56,7 +56,7 @@ memory. The native measurements recorded so far cover exponents 15–17.
 
 
 
-u64 × u64 → u128 multiplication, exponents 15–24, F2Z and Binius64 only:
+u64 × u64 → u128 multiplication, exponents 15–24 (Plonky3 excluded):
 
 ```sh
 RUSTFLAGS="-Ctarget-cpu=native" \
@@ -64,7 +64,7 @@ RAYON_NUM_THREADS=8 \
 F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24" \
 F2Z_BENCH_REPS=5 \
 F2Z_MUL_COMPARE_WORKLOADS="u64" \
-F2Z_MUL_COMPARE_BACKENDS="f2z binius64" \
+F2Z_MUL_COMPARE_BACKENDS="f2z binius64 limber" \
 bash scripts/run_native_mul_compare.sh
 ```
 
@@ -79,13 +79,13 @@ products reduced into the field (as raw residues built from the witness
 limbs, since they have no native `u64` first round), and the same Lambda100
 profile and validated-UDR Ligerito opener as the u32 relation.
 Binius64 asserts both words of its native `imul` against witness words and
-needs no operand range checks. The Plonky3 adapter's AIR decomposes 32-bit
-operands and the Limber program uses `u64` linear-combination coefficients,
-so selecting either with the u64 workload is rejected at startup. F2Z's
+needs no operand range checks. Limber uses the wrapping row described below.
+The Plonky3 adapter's AIR decomposes 32-bit operands, so selecting it with the
+u64 workload is rejected at startup. F2Z's
 `proof_bytes` are now recorded for every workload (Spartan payload as 16-byte
 elements, nonces as 8-byte words, plus the F2Z opening's exact codec bytes).
 
-u128 × u128 → u256 multiplication, exponents 15–23, F2Z and Binius64 only
+u128 × u128 → u256 multiplication, exponents 15–23 (Plonky3 excluded)
 (run the backends separately: on a 16 GB machine Binius64's bignum prover pages
 from 2^18, so its clean sizes are 2^15–2^17, while F2Z runs to 2^21; the
 paper's tables list Binius64 at both rate 1/2 (the default) and rate 1/8,
@@ -122,8 +122,8 @@ first round), and the same Lambda100 profile and validated-UDR Ligerito
 opener as the narrower relations. Binius64 uses its bignum circuit: the
 four native `imul` limb products of the two-limb operands, accumulated with
 carry chains into the four witness limbs of the product, again without range
-checks. The Plonky3 and Limber adapters reject the workload at startup as
-they do for u64. The `mul_witness_compare` audit reconstructs the canonical
+checks. Limber uses the wrapping row described below. The Plonky3 adapter
+rejects the workload at startup as it does for u64. The `mul_witness_compare` audit reconstructs the canonical
 assignment from each backend's native 128-bit values and hashes every entry
 as 32 little-endian bytes under its own domain.
 
@@ -145,8 +145,27 @@ The size exponent is the number of logical multiplications, not native
 constraint rows. Supported exponents are 4–23 for u128, 4–24 for BabyBear and
 u64, and 4–25 for u32; selecting F2Z requires at least 15. A shape list shared
 by several workloads must stay within the tightest of those ranges. Small exponents are useful for checking the other adapters. Native trace
-widths differ substantially, particularly Limber's explicit input range checks;
-large multiplication counts need correspondingly larger memory budgets.
+widths differ substantially; large multiplication counts need correspondingly
+larger memory budgets.
+
+## The Limber program
+
+Limber proves each multiplication with a single Mod-R1CS row
+`x · y ≡ z_lo (mod 2^w)` whose quotient is the high half of the exact `2w`-bit
+product — the shape of Limber's own `examples/int_mult.rs`. Every committed
+value (both operands, the low half and the quotient) is then below `2^w`, so
+the IntEval limb range check the Mod-PCS already performs *is* the operand
+range check, and the program commits no bit columns of its own. The parameters
+follow from that bound: `IntEvalParams::derive_no_limb_split(w, 9, arity)` for
+`w ≤ 64`, and 32-bit limbs for the 128-bit workload, where a single-limb bound
+would need roughly ninety CRT primes. Unlike `int_mult`, which chains
+`a_{i+1} = c_i` and so needs one fresh operand per gate, the gates here are
+independent, matching the corpus and the other backends: three witness
+variables and one quotient per multiplication.
+
+BabyBear keeps the earlier bit-decomposed program. It needs `a < p`, which is
+strictly stronger than the `a < 2^31` an IntEval limb bound gives, and the
+canonical-form check has no cheaper encoding at the Mod-R1CS layer.
 
 ## Reusing the existing witnesses
 
