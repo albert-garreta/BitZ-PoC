@@ -36,6 +36,7 @@ pub(super) fn reduce(value: &BigInt, q: u128, cfg: &Config) -> F {
 
 impl Projection {
     pub fn new(p: &PreparedSha256Ecdsa, q: u128, cfg: &Config) -> Self {
+        let _scope = crate::utils::prof::scope("ecdsa:matrix_projection");
         let project = |rows: &[IntegerRow]| {
             rows.iter()
                 .map(|row| {
@@ -117,6 +118,7 @@ impl Projection {
         gamma: &F,
         cfg: &Config,
     ) -> Result<Coefficients> {
+        let _scope = crate::utils::prof::scope("ecdsa:coefficient_combine");
         let zero = F::zero_with_cfg(cfg);
         let mut rho2 = rho.clone();
         rho2 *= rho;
@@ -251,6 +253,7 @@ impl Coefficients {
         .map_err(error)
     }
     pub fn evaluate(&self, point: &[F], cfg: &Config) -> Result<F> {
+        let _scope = crate::utils::prof::scope("ecdsa:coefficient_evaluate");
         let log_n = self.instances.len().ilog2() as usize;
         let inst_eq = eq_table(&point[..log_n], cfg).map_err(error)?;
         let local_eq = eq_table(&point[log_n..], cfg).map_err(error)?;

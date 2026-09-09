@@ -184,6 +184,51 @@ The [integration and benchmark guide](docs/sha256-ecdsa.md) covers the API,
 the all-rows comparison mode, and the 100/128 economic security settings.
 This benchmark takes its shape and security setting as command-line arguments.
 
+The [signed-chain comparison](docs/sha256-ecdsa-comparison.md) measures F2Z
+Split, F2Z AllRows, and non-ZK Spartan MC on identical fixtures. It supports
+configurable Spartan chunking, separate setup/witness/prove/verify timers,
+decoded-proof verification, complete proof sizes, and resumable campaigns.
+
+Run **F2Z Split and Spartan** for `2^4` through `2^11` total SHA-256
+compressions, including padding, with one ECDSA verification per proof.
+The command below uses this machine's current Cargo cache. On another machine,
+omit the `CARGO_HOME` assignment and `--offline` to fetch the dependencies,
+including the published Spartan revision pinned by this repo.
+
+```sh
+CARGO_HOME=/tmp/bitz-sha-cargo-home \
+python3 scripts/run_sha256_ecdsa_compare.py \
+  --output bench_results/f2z-split-spartan-i4-i11 \
+  --methods f2z-split spartan-mc \
+  --spartan-splits 0:4 0:5 0:6 0:7 0:8 0:9 0:10 0:11 \
+  --targets 100 \
+  --threads 1 32 \
+  --reps 3 \
+  --offline
+```
+
+`--spartan-splits r:c` controls **Spartan's chunking only**: `2^r`
+compressions per instance and `2^c` instances, for `2^(r+c)` total
+compressions. For example, `0:11` means 2,048 instances of one compression,
+while `4:7` means 128 instances of 16 compressions in the same chain.
+F2Z uses only the total exponent `i=r+c`; the runner deduplicates F2Z runs
+across Spartan chunkings with the same total and other settings.
+The method name `f2z-split` instead refers to handling SHA's linear constraints
+separately from the ECDSA outer sumcheck.
+
+Use `--methods f2z-split` or `--methods spartan-mc` to run either method alone.
+`--targets 100` selects F2Z's economic security target; Spartan retains its
+nominal 128-bit group setting. The runner builds the release benchmark and
+verifies every proof. It writes commit time, witness generation time, PIOP time,
+IOP/PCS time, verifier time, proof size, and peak memory to `summary.csv`
+(medians) and `samples.csv` (all trials) in the output directory. Peak memory
+is the whole worker process maximum, including setup, warmup, and verification.
+
+The [current comparison results](docs/sha256-ecdsa-shared-kernels-results.md)
+use Spartan2's shared NeutronNova and sumcheck kernels through the non-ZK
+adapter. They include paired F2Z/Spartan tables for 1 and 32 threads, with
+end-to-end totals from witness generation through verification.
+
 ### u32×u32 -> u64 — λ=100; exponents ≥ 15:
 ```sh
 F2Z_BENCH_LAMBDA=100 F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
@@ -316,5 +361,3 @@ F2Z_BENCH_SHAPES="17:11:1" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
 - https://github.com/worldfnd/f2z-benchmark
 - [Albert: I'm not sure what this is. Leaving it here just in case] **`crypto-primitives`** — vendored at `vendor/crypto-primitives` (NethermindEth, Apache-2.0; see `vendor/crypto-primitives/VENDORED.md` for
   the pinned revision and the crypto-bigint 0.7.5 / rand 0.10 port).
-
-

@@ -1070,6 +1070,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "spartan2",
  "thiserror 2.0.18",
  "tracing",
  "tracing-subscriber",
@@ -2428,6 +2429,41 @@ name = "smallvec"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9be42f50aa861c555654aa3a37f52f4b1074bacf4e48fe0ef7fa584e80f1f0f"
+
+[[package]]
+name = "spartan2"
+version = "0.8.0"
+source = "git+https://github.com/wu-s-john/Spartan2.git?rev=3b94130453838550a1086ee75c5d280f5c25df3d#3b94130453838550a1086ee75c5d280f5c25df3d"
+dependencies = [
+ "bellpepper",
+ "bellpepper-core",
+ "bincode",
+ "bitvec",
+ "byteorder",
+ "digest 0.10.7",
+ "ff",
+ "flate2",
+ "generic-array",
+ "getrandom 0.2.17",
+ "group",
+ "halo2curves",
+ "itertools 0.14.0",
+ "num-bigint 0.4.8",
+ "num-integer",
+ "num-traits",
+ "once_cell",
+ "p256",
+ "rand 0.8.6",
+ "rand_core 0.6.4",
+ "rayon",
+ "serde",
+ "sha2 0.10.9",
+ "sha3 0.10.9",
+ "subtle",
+ "thiserror 2.0.18",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "spin"

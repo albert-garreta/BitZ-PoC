@@ -347,6 +347,17 @@ impl PreparedSha256Ecdsa {
     pub fn nonlinear_rows(&self) -> usize {
         self.local.nonlinear.len()
     }
+    /// Original rows entering the outer sumcheck in the selected mode.
+    pub fn outer_rows(&self) -> usize {
+        match self.mode {
+            OuterMode::Split => self.local.nonlinear.len(),
+            OuterMode::AllRows => SHA_ROWS * self.compressions() + self.local.a.len(),
+        }
+    }
+    /// Allocated outer table slots, including layout and power-of-two padding.
+    pub fn outer_domain_size(&self) -> usize {
+        1 << super::reduction::outer_vars(self)
+    }
     pub fn linear_rows(&self) -> usize {
         self.compressions() * SHA_ROWS + self.local.linear.len() + 1025
     }
