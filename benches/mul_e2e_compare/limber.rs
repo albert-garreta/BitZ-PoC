@@ -1,4 +1,7 @@
 use super::{BABY_P, Corpus, Timing, TraceCapture, Workload, captured};
+#[cfg(test)]
+#[allow(unused_imports)] // `cargo bench` sets cfg(test) without running the #[test] user.
+use super::Operands;
 use limber::{
     imod_r1cs_modp::{IntModR1CSShapeModp, IntModR1CSWitnessModp},
     imod_spartan_modp::{
@@ -43,7 +46,7 @@ impl Program {
             num_vars: 0,
             num_cons: 0,
         };
-        for gate in 0..corpus.inputs.len() {
+        for gate in 0..corpus.len() {
             let a = p.alloc(Assignment::Input(gate, 0));
             let b = p.alloc(Assignment::Input(gate, 1));
             let c = p.alloc(Assignment::Output(gate));
@@ -67,8 +70,9 @@ impl Program {
                     p.range(b, 31, true);
                     p.range(c, 31, true);
                 }
-                Workload::U64 => panic!(
-                    "the Limber adapter has no u64 workload (its rows use u64 coefficients)"
+                Workload::U64 | Workload::U128 => panic!(
+                    "the Limber adapter has no {} workload (its rows use u64 coefficients)",
+                    corpus.workload.slug()
                 ),
             }
         }
@@ -167,11 +171,11 @@ impl Program {
         for a in &self.assignments {
             let value = match *a {
                 Assignment::Input(i, operand) => {
-                    let (a, b) = corpus.inputs[i];
+                    let (a, b) = corpus.inputs()[i];
                     if operand == 0 { a } else { b }
                 }
                 Assignment::Output(i) => {
-                    let (a, b) = corpus.inputs[i];
+                    let (a, b) = corpus.inputs()[i];
                     u64::try_from(corpus.workload.output(a, b)).expect("Limber outputs fit u64")
                 }
                 Assignment::Bit(i, bit) => (values[i] >> bit) & 1,
@@ -295,14 +299,22 @@ mod tests {
     #[test]
     fn integer_rows_reject_bad_outputs_and_ranges() {
         for workload in [Workload::U32, Workload::BabyBear] {
-            let mut corpus = Corpus::new(workload, 4, 7);
+            let corpus = Corpus::new(workload, 4, 7);
             let p = Program::compile(&corpus);
             let mut values = p.values(&corpus);
             p.quotients(&values).unwrap();
             values[2] ^= 1;
             assert!(p.quotients(&values).is_err());
             if workload == Workload::BabyBear {
-                corpus.inputs[0] = (BABY_P, 0);
+                // An out-of-range operand has no canonical witness, so the
+                // corpus is assembled directly (its digest is unused here).
+                let mut inputs = corpus.inputs().to_vec();
+                inputs[0] = (BABY_P, 0);
+                let corpus = Corpus {
+                    workload,
+                    operands: Operands::Narrow(inputs),
+                    digest: corpus.digest.clone(),
+                };
                 assert!(p.quotients(&p.values(&corpus)).is_err());
             } else {
                 let mut values = p.values(&corpus);
@@ -321,7 +333,7 @@ pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
     let values = program.values(corpus);
     let q = program.quotients(&values).expect("integer constraints");
     let generation_ms = started.elapsed().as_secs_f64() * 1e3;
-    let mut rows = vec![[0u64; 4]; corpus.inputs.len()];
+    let mut rows = vec![[0u64; 4]; corpus.len()];
     for (index, assignment) in program.assignments.iter().enumerate() {
         match *assignment {
             Assignment::Input(gate, operand) => rows[gate][operand] = values[index],

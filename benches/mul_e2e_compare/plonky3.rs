@@ -51,12 +51,13 @@ fn generate<F: PrimeField64>(corpus: &Corpus) -> RowMajorMatrix<F> {
     } else {
         3
     };
-    let mut values = F::zero_vec(width * corpus.inputs.len());
     assert!(
-        corpus.workload != Workload::U64,
-        "the Plonky3 adapter has no u64 workload (its AIR decomposes 32-bit operands)"
+        !matches!(corpus.workload, Workload::U64 | Workload::U128),
+        "the Plonky3 adapter has no {} workload (its AIR decomposes 32-bit operands)",
+        corpus.workload.slug()
     );
-    for (row, &(a, b)) in values.chunks_exact_mut(width).zip(&corpus.inputs) {
+    let mut values = F::zero_vec(width * corpus.len());
+    for (row, &(a, b)) in values.chunks_exact_mut(width).zip(corpus.inputs()) {
         row[0] = F::from_u64(a);
         row[1] = F::from_u64(b);
         row[2] = row[0] * row[1];
@@ -128,7 +129,7 @@ macro_rules! backend {
                         u32_inputs: corpus.workload == Workload::U32,
                     };
                     let width = <MulAir as BaseAir<F>>::width(&air);
-                    let num_vars = corpus.inputs.len().ilog2() as usize
+                    let num_vars = corpus.len().ilog2() as usize
                         + width.next_power_of_two().ilog2() as usize;
                     let pcs = stack::pcs::<EF>(
                         num_vars,
@@ -177,7 +178,7 @@ macro_rules! backend {
                         VerifierInstances::new(vec![VerifierInstance::new(
                             &self.air,
                             &self.vk,
-                            self.corpus.inputs.len().ilog2() as usize,
+                            self.corpus.len().ilog2() as usize,
                             &[],
                         )]),
                         &proof,
@@ -220,7 +221,9 @@ impl Context {
     pub(super) fn setup(corpus: Arc<Corpus>) -> Self {
         match corpus.workload {
             Workload::U32 => Self::U32(goldilocks::Context::setup(corpus)),
-            Workload::U64 => panic!("the Plonky3 adapter has no u64 workload"),
+            Workload::U64 | Workload::U128 => {
+                panic!("the Plonky3 adapter has no {} workload", corpus.workload.slug())
+            }
             Workload::BabyBear => Self::BabyBear(babybear::Context::setup(corpus)),
         }
     }
@@ -292,6 +295,8 @@ pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
     match corpus.workload {
         Workload::U32 => recover::<p3_goldilocks::Goldilocks>(corpus),
         Workload::BabyBear => recover::<p3_baby_bear::BabyBear>(corpus),
-        Workload::U64 => panic!("the Plonky3 adapter has no u64 workload"),
+        Workload::U64 | Workload::U128 => {
+            panic!("the Plonky3 adapter has no {} workload", corpus.workload.slug())
+        }
     }
 }

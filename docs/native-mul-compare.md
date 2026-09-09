@@ -1,8 +1,9 @@
 # Native end-to-end multiplication comparison
 
-`mul_e2e_compare` proves batches of u32 × u32 → u64, BabyBear, and
-u64 × u64 → u128 multiplications with F2Z, Binius64, Plonky3-WHIR, and
-Limber-Hyrax (the u64 workload runs on F2Z and Binius64 only, see below). Every
+`mul_e2e_compare` proves batches of u32 × u32 → u64, BabyBear,
+u64 × u64 → u128, and u128 × u128 → u256 multiplications with F2Z, Binius64,
+Plonky3-WHIR, and Limber-Hyrax (the u64 and u128 workloads run on F2Z and
+Binius64 only, see below). Every
 warmup and measured trial regenerates the native witness, produces the complete
 proof, and verifies it. This complements the existing `u32_pcs_compare` and
 `baby_bear_pcs_compare` terminal-opening benchmarks.
@@ -80,6 +81,47 @@ so selecting either with the u64 workload is rejected at startup. F2Z's
 `proof_bytes` are now recorded for every workload (Spartan payload as 16-byte
 elements, nonces as 8-byte words, plus the F2Z opening's exact codec bytes).
 
+u128 × u128 → u256 multiplication, exponents 15–23, F2Z and Binius64 only
+(run the backends separately: on a 16 GB machine Binius64's bignum prover pages
+from 2^18, so its clean sizes are 2^15–2^17, while F2Z runs to 2^21; the
+paper's table uses Binius64 at rate 1/8, `F2Z_BINIUS_LOG_INV_RATE=3`):
+
+```sh
+RUSTFLAGS="-Ctarget-cpu=native" \
+RAYON_NUM_THREADS=8 \
+F2Z_BENCH_SHAPES="15 16 17 18 19 20 21" \
+F2Z_BENCH_REPS=5 \
+F2Z_MUL_COMPARE_WORKLOADS="u128" \
+F2Z_MUL_COMPARE_BACKENDS="f2z" \
+bash scripts/run_native_mul_compare.sh
+RUSTFLAGS="-Ctarget-cpu=native" \
+RAYON_NUM_THREADS=8 \
+F2Z_BENCH_SHAPES="15 16 17" \
+F2Z_BENCH_REPS=5 \
+F2Z_MUL_COMPARE_WORKLOADS="u128" \
+F2Z_MUL_COMPARE_BACKENDS="binius64" \
+F2Z_BINIUS_LOG_INV_RATE=3 \
+bash scripts/run_native_mul_compare.sh
+```
+
+The u128 workload draws random full 128-bit operands and proves the exact
+256-bit product as two 128-bit halves. F2Z uses the `u128_mul` relation: one
+integer R1CS row `x · y = z` per multiplication over the four-block assignment
+`[1 | x | y | z]` (128-, 128-, and 256-bit entries; the block selector is two
+Boolean coordinates, since a public coefficient as large as `2^128` could not
+be modulus independent), 512 committed bits per multiplication (`2^(n+9)`
+bits, so its size limit is one below u64's), the Spartan PIOP over the
+transcript-sampled prime on raw residues built straight from the witness
+limbs for both the products and the assignment (neither has a native `u64`
+first round), and the same Lambda100 profile and validated-UDR Ligerito
+opener as the narrower relations. Binius64 uses its bignum circuit: the
+four native `imul` limb products of the two-limb operands, accumulated with
+carry chains into the four witness limbs of the product, again without range
+checks. The Plonky3 and Limber adapters reject the workload at startup as
+they do for u64. The `mul_witness_compare` audit reconstructs the canonical
+assignment from each backend's native 128-bit values and hashes every entry
+as 32 little-endian bytes under its own domain.
+
 The direct Cargo command is:
 
 ```sh
@@ -94,9 +136,9 @@ only the selected prover uses Rayon threads. Run `mul_witness_compare` separatel
 from `mul_e2e_compare` so they do not contend for CPU or memory bandwidth.
 
 The size exponent is the number of logical multiplications, not native
-constraint rows. Supported exponents are 4–24 for BabyBear and u64 and 4–25 for u32;
-selecting F2Z requires at least 15. A shape list shared by both workloads must
-stay within 4–24. Small exponents are useful for checking the other adapters. Native trace
+constraint rows. Supported exponents are 4–23 for u128, 4–24 for BabyBear and
+u64, and 4–25 for u32; selecting F2Z requires at least 15. A shape list shared
+by several workloads must stay within the tightest of those ranges. Small exponents are useful for checking the other adapters. Native trace
 widths differ substantially, particularly Limber's explicit input range checks;
 large multiplication counts need correspondingly larger memory budgets.
 
@@ -188,7 +230,11 @@ reported as measured bytes.
 - F2Z: Lambda100, transcript-sampled prime, production Spartan reduction and
   F2Z/Ligerito opening, one-bit packing.
 - Binius64: native IMUL and bit constraints, ring switching/BaseFold, inverse
-  rate 2 and a 100-bit FRI query target. u32 operands are range checked; the
+  rate 2 and a 100-bit FRI query target. `F2Z_BINIUS_LOG_INV_RATE=<k>` selects
+  inverse rate `2^k` instead (the query count follows from the rate: 241, 148,
+  121, and 110 queries at rates 1/2, 1/4, 1/8, and 1/16); the run records
+  `log_inv_rate` and `fri_queries` in its config, and the paper's u64 and
+  u128 tables use rate 1/8. u32 operands are range checked; the
   BabyBear circuit constrains `a*b = p*q+c`, canonical operands/remainder, and
   nonoverflowing reconstruction.
 - Plonky3: Goldilocks AIR with 32-bit input decompositions for u32; native
