@@ -1,0 +1,3 @@
+mode=separate multiplications=32768 chained_compressions=2048 merkle=blake3 non_zk=true threads=8
+setup_ms=3550.814 binius_fri_component_bits=112
+separate proof_bytes is a payload estimate (no enclosing standalone-u32 framing)

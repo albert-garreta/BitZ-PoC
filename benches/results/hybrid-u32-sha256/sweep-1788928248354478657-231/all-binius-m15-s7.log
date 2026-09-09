@@ -1,0 +1,4 @@
+mode=all-binius multiplication_relation=u32_mod_2_32 multiplications=32768 chained_compressions=128 merkle=blake3 non_zk=true threads=8
+setup_ms=541.192 binius_fri_component_bits=112
+2026-09-09T04:30:49.489112Z  INFO category="metrics" proof_size_bytes=361008
+2026-09-09T04:30:49.542196Z  INFO category="metrics" proof_size_bytes=361008

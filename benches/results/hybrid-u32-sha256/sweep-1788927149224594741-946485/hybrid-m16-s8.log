@@ -1,0 +1,17 @@
+mode=hybrid multiplication_relation=u32_mod_2_32 multiplications=65536 chained_compressions=256 merkle=blake3 non_zk=true threads=8
+[2m2026-09-09T04:12:29.567372Z[0m [32m INFO[0m building chained SHA circuit [3mcompressions[0m[2m=[0m256
+[2m2026-09-09T04:12:29.582069Z[0m [32m INFO[0m compiling chained SHA circuit
+[2m2026-09-09T04:12:29.840783Z[0m [32m INFO[0m preparing SHA shift keys
+setup_ms=369.372 packed_logs=[16, 16] algebraic_security_bits=102.770
+[2m2026-09-09T04:12:29.923176Z[0m [32m INFO[0m proving multiplication constraints and GKR
+[2m2026-09-09T04:12:29.948892Z[0m [32m INFO[0m proving chained SHA constraints
+[2m2026-09-09T04:12:29.958994Z[0m [32m INFO[0m proving shared bit sumcheck
+[2m2026-09-09T04:12:29.966769Z[0m [32m INFO[0m ring switching and opening both roots with Ligerito
+[2m2026-09-09T04:12:29.986679Z[0m [32m INFO[0m proving multiplication constraints and GKR
+[2m2026-09-09T04:12:30.011577Z[0m [32m INFO[0m proving chained SHA constraints
+[2m2026-09-09T04:12:30.020567Z[0m [32m INFO[0m proving shared bit sumcheck
+[2m2026-09-09T04:12:30.028058Z[0m [32m INFO[0m ring switching and opening both roots with Ligerito
+[2m2026-09-09T04:12:30.045484Z[0m [32m INFO[0m proving multiplication constraints and GKR
+[2m2026-09-09T04:12:30.070520Z[0m [32m INFO[0m proving chained SHA constraints
+[2m2026-09-09T04:12:30.079611Z[0m [32m INFO[0m proving shared bit sumcheck
+[2m2026-09-09T04:12:30.087392Z[0m [32m INFO[0m ring switching and opening both roots with Ligerito

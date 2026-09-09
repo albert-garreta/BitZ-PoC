@@ -1,0 +1,2 @@
+mode,iteration,setup_ms,total_prover_ms,verify_ms,proof_payload_bytes_estimate,peak_rss_kib
+separate,0,14.678,36.863,8.171,226512,48664

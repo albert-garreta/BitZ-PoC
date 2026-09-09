@@ -1,0 +1,7 @@
+executable=/home/john-wu/.codex/worktrees/ff5a/BitZ-pcs/target/hybrid-build/release/hybrid-u32-sha256
+shapes=[Shape { mul_log: 15, sha_log: 2 }, Shape { mul_log: 16, sha_log: 3 }]
+modes=["hybrid", "separate", "all-binius"]
+iterations=1
+RAYON_NUM_THREADS=8
+non_zk=true
+security_target_bits=100

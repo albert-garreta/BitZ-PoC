@@ -22,6 +22,55 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
 
 This repo also contains BitZ-SNARK, a SNARK for proving R1CS constraints over the integers, using BitZ as its PCS.
 
+## Hybrid modular multiplication + chained SHA-256
+
+This non-ZK experiment targets 100-bit composition security. It proves
+`x * y = z + 2^32 * w`, with all four values constrained to u32, together
+with a SHA-256 compression chain starting from the standard initial state.
+
+From the repository root, build and run the full hybrid sweep across all
+six workload sizes:
+
+```bash
+RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
+  cargo bench --bench hybrid_u32_sha256 --features hybrid -- \
+  --sweep --mode hybrid
+```
+
+The sweep uses six pairs of `(multiplication log, compression log)`:
+`15:7,16:8,17:9,18:10,19:11,20:12`. Each pair has equal packed witness
+sizes for the multiplication and SHA branches. The largest pair is
+**1,048,576 modular multiplications and 4,096 chained compressions**.
+`--sweep` selects all six sizes. By default, each size is repeated three
+times, giving **18 verified proofs total**. `--iterations N` controls
+repetitions per size.
+Every sample proves and verifies; setup is measured separately.
+
+If using the existing executable built in `target/hybrid-build/`, skip
+Cargo and run the full sweep directly:
+
+```bash
+RAYON_NUM_THREADS=8 target/hybrid-build/release/hybrid-u32-sha256 \
+  --sweep --mode hybrid
+```
+
+The executable accepts the same flags. Use `--mode all` to compare
+hybrid, separate BitZ/Binius
+proofs, and all-Binius proofs. Use only `--features hybrid` for this
+experiment; the `unchecked` feature is rejected by hybrid setup.
+
+Stdout labels each backend, workload size, sample, prover/verifier time,
+proof size, peak RSS and verification result. Hybrid samples also report
+**PIOP** time (multiplication/Spartan and SHA reductions) and **IOP / PCS
+opening** time (multiplication F2Z/GKR, joint sumcheck, and shared ring
+switching/Ligerito), with individual component timings. The other modes
+currently report total prover time.
+
+Each sweep saves `summary.csv`, per-workload CSVs/logs and run settings in
+a fresh directory under [benches/results/hybrid-u32-sha256/](benches/results/hybrid-u32-sha256/).
+See the [protocol and benchmark guide](docs/hybrid-u32-sha256-protocol.md)
+for custom sizes, timing definitions, proof files and security accounting.
+
 
 ## Reproducing the paper's benchmarks
 
@@ -189,5 +238,3 @@ F2Z_BENCH_SHAPES="17:11:1" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
 - https://github.com/worldfnd/f2z-benchmark
 - [Albert: I'm not sure what this is. Leaving it here just in case] **`crypto-primitives`** — vendored at `vendor/crypto-primitives` (NethermindEth, Apache-2.0; see `vendor/crypto-primitives/VENDORED.md` for
   the pinned revision and the crypto-bigint 0.7.5 / rand 0.10 port).
-
-
