@@ -1,9 +1,0 @@
-mode=hybrid multiplications=32768 chained_compressions=128 merkle=blake3 non_zk=true threads=8
-2026-09-08T22:40:18.477269Z  INFO building chained SHA circuit compressions=128
-2026-09-08T22:40:18.486555Z  INFO compiling chained SHA circuit
-2026-09-08T22:40:18.621182Z  INFO preparing SHA shift keys
-setup_ms=186.406 packed_logs=[15, 15] algebraic_security_bits=102.844
-2026-09-08T22:40:18.655195Z  INFO proving multiplication constraints and GKR
-2026-09-08T22:40:18.671098Z  INFO proving chained SHA constraints
-2026-09-08T22:40:18.677698Z  INFO proving shared bit sumcheck
-2026-09-08T22:40:18.682199Z  INFO ring switching and opening both roots with Ligerito

@@ -1,3 +1,0 @@
-mode=hybrid multiplication_relation=u32_mod_2_32 multiplications=1048576 chained_compressions=4096 merkle=blake3 non_zk=true threads=8
-[2m2026-09-09T04:12:39.470693Z[0m [32m INFO[0m building chained SHA circuit [3mcompressions[0m[2m=[0m4096
-[2m2026-09-09T04:12:39.714597Z[0m [32m INFO[0m compiling chained SHA circuit

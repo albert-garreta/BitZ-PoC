@@ -131,17 +131,17 @@ RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
 
 Each `--shapes` pair is `MUL_LOG:SHA_LOG`: `15:7` means 32,768 multiplications and 128 chained compressions. Pairs run in the supplied order; they need not have equal witnesses. For example, `--shapes 20:7,20:8,20:9` holds multiplications at 1,048,576 while increasing compressions. Multiplication logs must be 15–20 and SHA logs 1–16. Duplicate pairs and combinations of `--sweep` with single-run size/proof flags are rejected. The all-Binius mode processes the same operations, but its multiplication witness layout differs from the hybrid branch's layout. All modes keep the security settings described below.
 
-The sweep prints readable progress and sample results to stdout. Each sample identifies its backend and multiplication/SHA sizes, labels prover and verifier time, and reports proof size, peak RSS and successful verification. Hybrid samples also show witness/commitment time, PIOP time broken down by multiplication/Spartan and SHA, and IOP time broken down by multiplication F2Z/GKR, joint sumcheck and the shared opening. Setup is reported once per workload and excluded from prover time; peak RSS includes setup and is cumulative within that workload's process. The sweep creates a fresh `sweep-<timestamp>-<pid>/` under [`benches/results/hybrid-u32-sha256/`](../benches/results/hybrid-u32-sha256/) containing:
+The sweep prints readable progress and sample results to stdout. Each sample identifies its backend and multiplication/SHA sizes, labels prover and verifier time, and reports proof size, peak RSS and successful verification. Hybrid samples also show witness/commitment time, PIOP time broken down by multiplication/Spartan and SHA, and IOP time broken down by multiplication F2Z/GKR, joint sumcheck and the shared opening. Setup is reported once per workload and excluded from prover time; peak RSS includes setup and is cumulative within that workload's process. The sweep creates a fresh `sweep-<timestamp>-<pid>/` under `benches/results/hybrid-u32-sha256/` containing:
 
 - `summary.csv`: all verified samples, with `multiplication_relation=u32_mod_2_32`, mode, operation counts, log sizes and timings. Exact proof sizes and separate-mode payload estimates use distinct columns; unavailable metrics are blank. Read this file for machine-readable output; stdout displays the labelled results.
 - `<mode>-m<MUL_LOG>-s<SHA_LOG>.csv` and `.log`: original samples and setup/stage diagnostics for each process.
 - `run.txt`: executable, multiplication relation, requested shapes, modes, iteration count, thread setting and security target.
 
-Use `--results-dir DIR` to choose a destination that does not already exist. A failed child stops the sweep, reports its log path and preserves completed results. Sweep code lives in [`benches/hybrid_u32_sha256/sweep.rs`](../benches/hybrid_u32_sha256/sweep.rs). The standalone CLI accepts the same sweep flags.
+The default `benches/results/` directory is ignored by Git. Use `--results-dir DIR` to choose a destination that does not already exist. A failed child stops the sweep, reports its log path and preserves completed results. Sweep code lives in [`benches/hybrid_u32_sha256/sweep.rs`](../benches/hybrid_u32_sha256/sweep.rs). The standalone CLI accepts the same sweep flags.
 
 The hybrid setup log reports `packed_logs=[k, k]` when the two witnesses match. Library callers can check `let logs = prepared.packed_witness_logs(); assert_eq!(logs[0], logs[1]);`. The factor 256 is a property of the pinned SHA gadget and compiler, so check these actual logs again after either changes.
 
-A version-1 smoke sweep on 2026-09-08 successfully generated and verified one hybrid proof at every size in the table and confirmed equal packed logs for all six pairs. Its CSVs and setup logs are saved under [`benches/results/hybrid-u32-sha256/equal-witness/`](../benches/results/hybrid-u32-sha256/equal-witness/); this historical sweep checks the unchanged geometry, but predates the explicit four-limb API and version-2 transcript. It is not a comparative speedup measurement. The built-in sweep creates a fresh directory to preserve those saved measurements.
+A version-1 smoke sweep on 2026-09-08 successfully generated and verified one hybrid proof at every size in the table and confirmed equal packed logs for all six pairs. Its CSVs and setup logs were saved locally under `benches/results/hybrid-u32-sha256/equal-witness/`; this historical sweep checks the unchanged geometry, but predates the explicit four-limb API and version-2 transcript. It is not a comparative speedup measurement. The built-in sweep creates a fresh directory to preserve those saved measurements.
 
 ## Library API
 
@@ -208,7 +208,7 @@ RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
   --mode hybrid --mul-log 15 --sha-log 7 --iterations 3
 ```
 
-It accepts the same flags as the standalone runner. Use `--sweep` as described above to automate multiple sizes and save results. For a single run, save stdout as CSV and stderr as its corresponding setup/stage log under a fresh directory in [`benches/results/hybrid-u32-sha256/`](../benches/results/hybrid-u32-sha256/).
+It accepts the same flags as the standalone runner. Use `--sweep` as described above to automate multiple sizes and save results. For a single run, save stdout as CSV and stderr as its corresponding setup/stage log under a fresh directory in `benches/results/hybrid-u32-sha256/`.
 
 Run modes in separate processes with the same thread count, build and inputs:
 
@@ -243,10 +243,10 @@ RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=4 \
 
 Tests cover the SHA known-answer vector, field-representation agreement, chained proof round trips, serialization, and rejection of changed roots, output states, integer sums, opening values, padding and trailing data. Modular tests check overflow boundaries, commit independently supplied limbs, and reject false relations after changing each of `x`, `y`, `z`, or `w`. Binius tests additionally check compiled constraints against out-of-range values in every limb, and verify a standalone proof of the modular gadget. A dense reference sumcheck checks the streamed rounds in both source-lane orders and the equal-size case. All eight hybrid tests, eleven integer-witness tests, and the existing standalone deterministic multiplication roundtrip passed after this change.
 
-Before the explicit mod-2^32 API change, the built-in sweep was validated with all six default shapes and three verified samples each, plus two custom shapes across all three backends. The historical summaries are linked from the results README. Checks also covered malformed/out-of-range/duplicate shapes, conflicting flags, existing-output-directory preservation, and terminating a child after the first shape completed: the sweep returned failure, retained the completed summary row and identified the failed child's log. These saved runs do not validate the new four-limb all-Binius circuit or version-2 proof encoding.
+Before the explicit mod-2^32 API change, the built-in sweep was validated with all six default shapes and three verified samples each, plus two custom shapes across all three backends. The historical summaries are local benchmark artifacts and are not tracked in Git. Checks also covered malformed/out-of-range/duplicate shapes, conflicting flags, existing-output-directory preservation, and terminating a child after the first shape completed: the sweep returned failure, retained the completed summary row and identified the failed child's log. These saved runs do not validate the new four-limb all-Binius circuit or version-2 proof encoding.
 
 
-The version-2 modular sweep completed all six matched-witness sizes in all three modes, with one verified sample per pair/backend (18 total), including 1,048,576 modular multiplications and 4,096 chained compressions. Results and build metadata are linked from the [results README](../benches/results/hybrid-u32-sha256/README.md). The CLI also generated and independently verified a saved version-2 proof and rejected a saved version-1 proof.
+The version-2 modular sweep completed all six matched-witness sizes in all three modes, with one verified sample per pair/backend (18 total), including 1,048,576 modular multiplications and 4,096 chained compressions. Results and build metadata are local benchmark artifacts and are not tracked in Git. The CLI also generated and independently verified a saved version-2 proof and rejected a saved version-1 proof.
 
 ## Historical version-1 measurements — 2026-09-08
 
@@ -273,7 +273,7 @@ The smaller comparison keeps the same 16:1 multiplication/compression ratio: **3
 
 **Historical result:** the version-1 shared-opening prototype was approximately 1.5× slower than separate proofs and 1.2× slower than all-Binius on this smaller workload. Its proof was also larger. Parallelizing whole multiplication LUT blocks, while parallelizing the long SHA scan within its one block, reduced the hybrid warm mean by about 31% (168.1 ms to 116.3 ms). That scheduling change preserved the exact version-1 proof bytes; the dense-reference test covers both schedules. The full-size measurement above predates the scheduling improvement. A performance advantage remains an optimization objective. Stage timestamps at the smaller shape put the remaining shared bit sumcheck around 32 ms; its virtual packed field tables and the initial opening are candidates for further profiling. Circuit setup memory was a separate major issue at the full shape.
 
-Raw CSVs and their setup/stage logs are in [`benches/results/hybrid-u32-sha256/`](../benches/results/hybrid-u32-sha256/). The separate-mode CSV uses the older `proof_bytes` header for its explicitly labeled payload estimate; current runner versions name that column `proof_payload_bytes_estimate`.
+Raw CSVs and their setup/stage logs were saved locally in `benches/results/hybrid-u32-sha256/` and are not tracked in Git. The separate-mode CSV uses the older `proof_bytes` header for its explicitly labeled payload estimate; current runner versions name that column `proof_payload_bytes_estimate`.
 
 To reuse the exploratory build settings for a fresh measurement of the current modular implementation:
 
@@ -286,4 +286,4 @@ RAYON_NUM_THREADS=8 target/release/hybrid-u32-sha256 \
   --mode hybrid --mul-log 15 --sha-log 11 --iterations 3
 ```
 
-Repeat the last command with `--mode separate` and `--mode all-binius`. Omit both size flags for the full shape. The local integration build cache remains under `target/hybrid-build`. Saved benchmark measurements live under `benches/results/hybrid-u32-sha256/`; write future measurements into fresh subdirectories to preserve the recorded results.
+Repeat the last command with `--mode separate` and `--mode all-binius`. Omit both size flags for the full shape. The local integration build cache remains under `target/hybrid-build`. Local benchmark measurements live under the Git-ignored `benches/results/hybrid-u32-sha256/`; write future measurements into fresh subdirectories to preserve the recorded results.

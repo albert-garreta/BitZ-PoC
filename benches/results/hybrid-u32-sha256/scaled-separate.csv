@@ -1,4 +1,0 @@
-mode,iteration,setup_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib
-separate,0,3550.814,76.333,33.358,500448,1862420
-separate,1,3550.814,78.163,32.003,500448,1876256
-separate,2,3550.814,79.432,31.942,500448,1885564

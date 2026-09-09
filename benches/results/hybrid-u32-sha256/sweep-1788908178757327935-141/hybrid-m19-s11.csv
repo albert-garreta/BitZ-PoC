@@ -1,4 +1,0 @@
-mode,iteration,setup_ms,witness_commit_ms,continuation_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib
-hybrid,0,3575.098,20.841,259.016,279.920,90.142,423240,2270216
-hybrid,1,3575.098,20.451,251.936,272.445,89.921,423240,2282568
-hybrid,2,3575.098,19.185,244.886,264.127,89.216,423240,2282860

@@ -67,7 +67,7 @@ switching/Ligerito), with individual component timings. The other modes
 currently report total prover time.
 
 Each sweep saves `summary.csv`, per-workload CSVs/logs and run settings in
-a fresh directory under [benches/results/hybrid-u32-sha256/](benches/results/hybrid-u32-sha256/).
+a fresh directory under `benches/results/hybrid-u32-sha256/` (ignored by Git).
 See the [protocol and benchmark guide](docs/hybrid-u32-sha256-protocol.md)
 for custom sizes, timing definitions, proof files and security accounting.
 

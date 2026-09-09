@@ -1,9 +1,0 @@
-mode=hybrid multiplication_relation=u32_mod_2_32 multiplications=524288 chained_compressions=2048 merkle=blake3 non_zk=true threads=8
-2026-09-09T04:06:46.238100Z  INFO building chained SHA circuit compressions=2048
-2026-09-09T04:06:46.361140Z  INFO compiling chained SHA circuit
-2026-09-09T04:06:49.134828Z  INFO preparing SHA shift keys
-setup_ms=3843.577 packed_logs=[19, 19] algebraic_security_bits=102.589
-2026-09-09T04:06:49.969114Z  INFO proving multiplication constraints and GKR
-2026-09-09T04:06:50.145878Z  INFO proving chained SHA constraints
-2026-09-09T04:06:50.195671Z  INFO proving shared bit sumcheck
-2026-09-09T04:06:50.253968Z  INFO ring switching and opening both roots with Ligerito

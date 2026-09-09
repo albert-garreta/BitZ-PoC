@@ -1,3 +1,0 @@
-mode,iteration,setup_ms,witness_commit_ms,continuation_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib,piop_ms,iop_ms,mul_piop_ms,sha_piop_ms,mul_opening_ms,joint_sumcheck_ms,shared_opening_ms
-hybrid,0,803.726,5.402,81.923,87.371,28.757,339752,602728,16.916,64.855,2.823,14.093,46.148,14.797,3.910
-hybrid,1,803.726,5.292,76.889,82.246,28.782,339752,607936,16.181,60.556,2.675,13.506,42.245,14.658,3.654

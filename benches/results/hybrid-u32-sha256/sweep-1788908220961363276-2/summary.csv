@@ -1,7 +1,0 @@
-mode,mul_log,sha_log,multiplications,sha_compressions,iteration,setup_ms,witness_commit_ms,continuation_ms,total_prover_ms,verify_ms,proof_bytes,proof_payload_bytes_estimate,peak_rss_kib
-hybrid,15,2,32768,4,0,14.766,1.642,34.361,36.119,9.333,650792,,57152
-separate,15,2,32768,4,0,14.678,,,36.863,8.171,,226512,48664
-all-binius,15,2,32768,4,0,182.657,,,48.834,5.681,361008,,401248
-hybrid,16,3,65536,8,0,22.800,2.423,45.674,48.467,11.884,1222792,,79284
-separate,16,3,65536,8,0,23.383,,,39.344,10.922,,267364,70916
-all-binius,16,3,65536,8,0,414.955,,,78.037,9.625,396704,,708324

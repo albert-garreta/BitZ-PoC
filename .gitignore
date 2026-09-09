@@ -1,6 +1,7 @@
 /target
 /crates/*/target/
 /bench_results/
+/benches/results/
 
 # LaTeX build intermediates (docs/verifier-note)
 docs/**/*.aux
