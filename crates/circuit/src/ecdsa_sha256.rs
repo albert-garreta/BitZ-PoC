@@ -6,6 +6,28 @@ use crate::Circuit;
 use crate::p256::{VERIFY_DIGEST_INPUT_BITS, VERIFY_DIGEST_WITNESS_BITS, verify_digest_circuit};
 use crate::sha256::{SHA256_2KB_MESSAGE_BITS, SHA256_2KB_WITNESS_BITS, sha256_2kb_circuit};
 
+/// Hashes a block-aligned message and verifies its P-256 signature.
+///
+/// The getter supplies message bits in stream order. `p256_inputs` contains
+/// Q.x, Q.y, r, s, r^-1 and s^-1 in little-endian word order. SHA adds the
+/// final padding block; thus `message_bits / 512 + 1` compressions execute.
+pub fn verify_block_aligned_message_circuit<CS: Circuit>(
+    circuit: &mut CS,
+    message_bits: usize,
+    message_bit: impl Fn(usize) -> CS::Bool,
+    p256_inputs: &[CS::Bool; VERIFY_2KB_P256_INPUT_BITS],
+) {
+    let digest = crate::sha256::sha256_block_aligned_circuit(circuit, message_bits, message_bit);
+    let inputs = array::from_fn(|index| {
+        if index < 256 {
+            digest[255 - index].clone()
+        } else {
+            p256_inputs[index - 256].clone()
+        }
+    });
+    verify_digest_circuit(circuit, &inputs);
+}
+
 /// Number of non-digest P-256 inputs: Q.x, Q.y, r, s, r^-1, and s^-1.
 pub const VERIFY_2KB_P256_INPUT_BITS: usize = VERIFY_DIGEST_INPUT_BITS - 256;
 

@@ -102,6 +102,7 @@ where
 /// with `U = sum_i u_i`, and passes the nonconstant local coefficients as
 /// `d`. Keeping the factors separate avoids materializing `u ⊗ d`.
 pub(crate) struct Sha256FactoredBlockCoefficients<'a> {
+    start: usize,
     shared: Field,
     instance_weights: &'a [Field],
     block_coefficients: &'a [Field],
@@ -128,6 +129,7 @@ impl<'a> Sha256FactoredBlockCoefficients<'a> {
             .and_then(|len| len.checked_add(1))
             .ok_or(SumcheckError::InvalidProductDimensions)?;
         Ok(Self {
+            start: 1,
             shared,
             instance_weights,
             block_coefficients,
@@ -144,10 +146,10 @@ impl<'a> Sha256FactoredBlockCoefficients<'a> {
         if index >= self.live_len {
             return Err(SumcheckError::InvalidProductDimensions);
         }
-        if index == 0 {
+        if index < self.start {
             return Ok(self.shared.clone());
         }
-        let offset = index - 1;
+        let offset = index - self.start;
         let instance = offset / self.block_coefficients.len();
         let local = offset % self.block_coefficients.len();
         Ok(self.instance_weights[instance].clone() * &self.block_coefficients[local])
@@ -279,6 +281,9 @@ impl Sha256InnerCoefficientSource for Sha256FactoredBlockCoefficients<'_> {
 
 /// Largest supported number of native-small prefix rounds.
 pub const SHA256_INNER_PREFIX_MAX_VARS: usize = 4;
+
+mod composite;
+pub(crate) use composite::{CompositeCoefficients, prove_composite_inner_sumcheck};
 
 /// The small-prefix prover reports the same failures as the ordinary sumcheck.
 pub(crate) type Sha256InnerSumcheckError = SumcheckError;
@@ -853,7 +858,7 @@ where
 {
     let prefix_size = 1usize << K;
     let block_width = coefficients.block_coefficients.len();
-    let block_start = 1 + instance * block_width;
+    let block_start = coefficients.start + instance * block_width;
     let block_end = block_start + block_width;
     let first_suffix = block_start.div_ceil(prefix_size);
     let suffix_end = block_end / prefix_size;
@@ -912,10 +917,10 @@ fn factored_suffix_is_interior<const K: usize>(
 ) -> bool {
     let prefix_size = 1usize << K;
     let base = suffix << K;
-    if base == 0 || base + prefix_size > coefficients.live_len {
+    if base < coefficients.start || base + prefix_size > coefficients.live_len {
         return false;
     }
-    let local = (base - 1) % coefficients.block_coefficients.len();
+    let local = (base - coefficients.start) % coefficients.block_coefficients.len();
     local + prefix_size <= coefficients.block_coefficients.len()
 }
 
@@ -1394,13 +1399,13 @@ fn fold_factored_prefix_v_table<const K: usize>(
         let mut cursor = base;
         let mut total = product_accumulator_zero(reducer);
 
-        if cursor == 0 {
+        if cursor < coefficients.start {
             product_multiply_accumulate(reducer, &mut total, &weights[0], &coefficients.shared);
             cursor = 1;
         }
 
         while cursor < end {
-            let offset = cursor - 1;
+            let offset = cursor - coefficients.start;
             let instance = offset / block_width;
             let local = offset % block_width;
             let run_len = (block_width - local).min(end - cursor);

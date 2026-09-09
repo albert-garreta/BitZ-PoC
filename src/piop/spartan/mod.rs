@@ -10,6 +10,8 @@
 pub mod baby_bear_f2z;
 pub mod baby_bear_mul;
 pub mod cm;
+#[cfg(feature = "ecdsa")]
+pub mod ecdsa_sha256;
 pub mod f2z;
 pub mod grinding;
 pub mod matrix;
@@ -84,20 +86,19 @@ pub use piop::{
     prove_spartan_piop_u32_native_barrett_with_inner_policy,
 };
 pub use profile::{
-    IopInstanceFacts, IopSecurityParams, IopSecurityProfile, Lambda100, Lambda128, Limber114,
-    PrimePolicy, ProfileError, ReductionPrimeParams, Sha128ReferenceSchedule, SoundnessAccounting,
-    SoundnessTerm,
+    IopInstanceFacts, IopSecurityParams, IopSecurityProfile, Lambda100, Lambda128, Limber112,
+    Limber114, PrimePolicy, ProfileError, ReductionPrimeParams, Sha128ReferenceSchedule,
+    SoundnessAccounting, SoundnessTerm,
 };
 pub use sha256::{
     PreparedSha256ChainBatch, SHA256_CHAIN_F_BAR_LIVE_BITS, SHA256_CHAIN_F_INSTANCE_BITS,
     SHA256_CHAIN_H_BAR_LIVE_BITS, SHA256_CHAIN_H_INSTANCE_BITS, SHA256_CHAIN_TERMINAL_BITS,
-    Sha256ChainProof, Sha256ChainStatement, Sha256ChainWitnessBatch,
-    commit_sha256_chain_witness, commit_sha256_chain_witness_with_config,
-    generate_sha256_chain_witnesses, prepare_sha256_chain_batch,
-    prepare_sha256_chain_batch_with_profile,
+    Sha256ChainProof, Sha256ChainStatement, Sha256ChainWitnessBatch, commit_sha256_chain_witness,
+    commit_sha256_chain_witness_with_config, generate_sha256_chain_witnesses,
+    prepare_sha256_chain_batch, prepare_sha256_chain_batch_with_profile,
     prepare_sha256_chain_batch_with_profile_and_initial_state, prove_sha256_chain,
-    prove_sha256_chain_with_config, sha256_chain_configs, sha256_compress,
-    verify_sha256_chain, verify_sha256_chain_with_config,
+    prove_sha256_chain_with_config, sha256_chain_configs, sha256_compress, verify_sha256_chain,
+    verify_sha256_chain_with_config,
 };
 pub use sha256::{
     PreparedSha256CompressionBatch, SHA256_COMMITMENT_FIELD_BITS, SHA256_CONSTRAINTS,
@@ -115,6 +116,12 @@ pub use sha256::{
     prove_sha256_compressions_with_config, prove_sha256_compressions_with_prefix_vars,
     prove_sha256_compressions_with_prefix_vars_and_config, sha256_compression_configs,
     verify_sha256_compressions, verify_sha256_compressions_with_config,
+};
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub use sha256::{
+    SHA256_FIXED_98_INITIAL_GRINDING_BITS, SHA256_FIXED_98_PRIME, SHA256_FIXED_98_PRIME_BITS,
+    SHA256_FIXED_98_TERMINAL_GRINDING_BITS, prepare_sha256_compression_batch_for_product_t_fixed98,
 };
 pub use sumcheck::{OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProof};
 pub use u32_mul::{

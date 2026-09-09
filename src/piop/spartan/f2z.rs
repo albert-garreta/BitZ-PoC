@@ -2148,3 +2148,6 @@ mod tests {
         .unwrap();
     }
 }
+
+#[cfg(feature = "hybrid")]
+pub(crate) mod hybrid;

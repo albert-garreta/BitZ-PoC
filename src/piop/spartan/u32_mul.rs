@@ -3,6 +3,9 @@
 //! Spartan sees only integer-valued assignment entries. The 32/32/64-bit
 //! representation is materialized separately, in the layout expected by the
 //! F2Z commitment, so bit variables never become part of the R1CS statement.
+//! Splitting the product into its low and high 32-bit limbs gives the equivalent
+//! modular relation `x * y = z + 2^32 * w`, with all four limbs range constrained
+//! by the committed bit representation.
 
 use thiserror::Error;
 
@@ -33,6 +36,43 @@ const ASSIGNMENT_BLOCKS: usize = 4;
 // Keep even small relation fixtures in the geometry accepted by the F2Z row
 // packer. The combined production proof applies its stricter 2^15 minimum.
 const MIN_CAPACITY: usize = 1 << 8;
+
+/// One modular multiplication claim `x * y = z + 2^32 * w`.
+///
+/// `z` is the result modulo `2^32`, and `w` is the high product limb. Each
+/// value occupies exactly 32 little-endian committed bit slots. Constructing
+/// this struct directly allows callers to supply a claimed result; the proof
+/// enforces the relation rather than trusting the supplied limbs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct U32MulMod32Row {
+    /// Left operand.
+    pub x: u32,
+    /// Right operand.
+    pub y: u32,
+    /// Claimed low product limb, the result modulo `2^32`.
+    pub z: u32,
+    /// Claimed high product limb.
+    pub w: u32,
+}
+
+impl U32MulMod32Row {
+    /// Computes the modular result and high limb from the operands.
+    #[allow(clippy::arithmetic_side_effects, clippy::cast_possible_truncation)]
+    pub const fn new(x: u32, y: u32) -> Self {
+        Self {
+            x,
+            y,
+            z: x.wrapping_mul(y),
+            w: (((x as u64) * (y as u64)) >> 32) as u32,
+        }
+    }
+
+    /// Reconstructs the supplied claim `z + 2^32 * w`, without recomputing
+    /// the product from `x` and `y`.
+    pub const fn packed_product(&self) -> u64 {
+        (self.z as u64) | ((self.w as u64) << 32)
+    }
+}
 
 /// Logical F2Z word width used to pack the 128 committed bits for each
 /// multiplication.
@@ -232,7 +272,9 @@ impl U32MulLayout {
 /// `z = [constant block | x block | y block | product block]`.
 ///
 /// Only `z[0]` is one in the constant block. Unused gates in all other blocks
-/// are zero. Live products are computed in `u64`, without field reduction.
+/// are zero. Live products are represented in `u64`, without field reduction.
+/// Input constructors compute them; [`Self::from_mod32_rows`] instead preserves
+/// the supplied low and high product limbs for the proof to constrain.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct U32MulWitness {
     layout: U32MulLayout,
@@ -269,6 +311,28 @@ impl U32MulNativeMles {
 }
 
 impl U32MulWitness {
+    /// Constructs an assignment from supplied modular multiplication claims.
+    ///
+    /// The product block contains each row's `z + 2^32 * w`. Neither limb is
+    /// recomputed, and incorrect claims are not rejected during construction:
+    /// the Spartan/F2Z proof must enforce `x * y = z + 2^32 * w`. The committed
+    /// slots contain `x`, `y`, `z`, and `w` as four consecutive 32-bit limbs.
+    pub fn from_mod32_rows(rows: &[U32MulMod32Row]) -> Result<Self, U32MulError> {
+        Self::from_mod32_rows_with_f2z_width(rows, U32MulF2zWidth::W1)
+    }
+
+    /// Constructs supplied modular claims with an explicit logical F2Z word
+    /// width. As in [`Self::from_mod32_rows`], supplied results are preserved.
+    pub fn from_mod32_rows_with_f2z_width(
+        rows: &[U32MulMod32Row],
+        f2z_width: U32MulF2zWidth,
+    ) -> Result<Self, U32MulError> {
+        Self::from_product_fn(rows.len(), f2z_width, |index| {
+            let row = rows[index];
+            (row.x, row.y, row.packed_product())
+        })
+    }
+
     /// Constructs the exact assignment from explicit operand pairs.
     pub fn from_inputs(inputs: &[(u32, u32)]) -> Result<Self, U32MulError> {
         Self::from_inputs_with_f2z_width(inputs, U32MulF2zWidth::W1)
@@ -301,18 +365,28 @@ impl U32MulWitness {
         f2z_width: U32MulF2zWidth,
         mut input: impl FnMut(usize) -> (u32, u32),
     ) -> Result<Self, U32MulError> {
+        Self::from_product_fn(multiplications, f2z_width, |index| {
+            let (x, y) = input(index);
+            (x, y, u64::from(x) * u64::from(y))
+        })
+    }
+
+    #[allow(clippy::arithmetic_side_effects)]
+    fn from_product_fn(
+        multiplications: usize,
+        f2z_width: U32MulF2zWidth,
+        mut input: impl FnMut(usize) -> (u32, u32, u64),
+    ) -> Result<Self, U32MulError> {
         let layout = U32MulLayout::new_with_f2z_width(multiplications, f2z_width)?;
         let capacity = layout.capacity;
         let mut assignment = vec![0_u64; layout.assignment_len()];
         assignment[0] = 1;
 
         for index in 0..multiplications {
-            let (x, y) = input(index);
-            let x = u64::from(x);
-            let y = u64::from(y);
-            assignment[capacity + index] = x;
-            assignment[2 * capacity + index] = y;
-            assignment[3 * capacity + index] = x * y;
+            let (x, y, product) = input(index);
+            assignment[capacity + index] = u64::from(x);
+            assignment[2 * capacity + index] = u64::from(y);
+            assignment[3 * capacity + index] = product;
         }
 
         Ok(Self {
@@ -347,6 +421,22 @@ impl U32MulWitness {
     pub fn product_values(&self) -> &[u64] {
         let capacity = self.layout.capacity;
         &self.assignment[3 * capacity..4 * capacity]
+    }
+
+    /// Iterates over live modular claims decoded from the existing assignment.
+    /// Padding is excluded, and no separate row buffer is allocated.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn mod32_rows(&self) -> impl ExactSizeIterator<Item = U32MulMod32Row> + '_ {
+        self.az()
+            .iter()
+            .zip(self.bz())
+            .zip(self.cz())
+            .map(|((&x, &y), &product)| U32MulMod32Row {
+                x: x as u32,
+                y: y as u32,
+                z: product as u32,
+                w: (product >> 32) as u32,
+            })
     }
 
     /// Live `Az` values for the generated selector matrix.
@@ -685,6 +775,96 @@ mod tests {
         assert_eq!(witness.az(), &witness.x_values()[..3]);
         assert_eq!(witness.bz(), &witness.y_values()[..3]);
         assert_eq!(witness.cz(), &witness.product_values()[..3]);
+    }
+
+    #[test]
+    fn modular_rows_preserve_exact_products_and_wrap_the_low_limb() {
+        const ROWS: [U32MulMod32Row; 5] = [
+            U32MulMod32Row::new(0, u32::MAX),
+            U32MulMod32Row::new(1, u32::MAX),
+            U32MulMod32Row::new(65_536, 65_536),
+            U32MulMod32Row::new(u32::MAX, u32::MAX),
+            U32MulMod32Row::new(0x8000_0001, 3),
+        ];
+        assert_eq!(ROWS[0].z, 0);
+        assert_eq!(ROWS[0].w, 0);
+        assert_eq!(ROWS[1].z, u32::MAX);
+        assert_eq!(ROWS[1].w, 0);
+        assert_eq!(ROWS[2].z, 0);
+        assert_eq!(ROWS[2].w, 1);
+        assert_eq!(ROWS[3].z, 1);
+        assert_eq!(ROWS[3].w, u32::MAX - 1);
+
+        for row in ROWS {
+            assert_eq!(row.z, row.x.wrapping_mul(row.y));
+            assert_eq!(row.packed_product(), u64::from(row.x) * u64::from(row.y));
+        }
+        let witness = U32MulWitness::from_mod32_rows(&ROWS).unwrap();
+        assert_eq!(witness.mod32_rows().len(), ROWS.len());
+        assert_eq!(witness.mod32_rows().collect::<Vec<_>>(), ROWS);
+        let inputs = ROWS.map(|row| (row.x, row.y));
+        assert_eq!(witness, U32MulWitness::from_inputs(&inputs).unwrap());
+        assert_eq!(
+            U32MulWitness::from_mod32_rows(&[]),
+            Err(U32MulError::EmptyBatch)
+        );
+    }
+
+    #[test]
+    fn supplied_incorrect_modular_limbs_reach_the_assignment_unchanged() {
+        let correct = U32MulMod32Row::new(u32::MAX, u32::MAX);
+        let incorrect = [
+            U32MulMod32Row {
+                z: correct.z ^ 1,
+                ..correct
+            },
+            U32MulMod32Row {
+                w: correct.w ^ 1,
+                ..correct
+            },
+        ];
+        let witness = U32MulWitness::from_mod32_rows(&incorrect).unwrap();
+        assert_eq!(witness.mod32_rows().collect::<Vec<_>>(), incorrect);
+        for (index, row) in incorrect.iter().enumerate() {
+            assert_eq!(witness.az()[index], u64::from(row.x));
+            assert_eq!(witness.bz()[index], u64::from(row.y));
+            assert_eq!(witness.cz()[index], row.packed_product());
+            assert_ne!(
+                witness.az()[index] * witness.bz()[index],
+                witness.cz()[index]
+            );
+        }
+    }
+
+    #[test]
+    fn modular_claims_commit_four_consecutive_32_bit_limbs() {
+        let claims = [
+            U32MulMod32Row::new(u32::MAX, u32::MAX),
+            U32MulMod32Row::new(65_536, 65_536),
+            // Deliberately supplied limbs exercise every field independently
+            // of whether the claimed multiplication is satisfied.
+            U32MulMod32Row {
+                x: 0x1234_5678,
+                y: 0x8765_4321,
+                z: 0xaaaa_5555,
+                w: 0x5555_aaaa,
+            },
+        ];
+        for width in [U32MulF2zWidth::W1, U32MulF2zWidth::W8] {
+            let witness = U32MulWitness::from_mod32_rows_with_f2z_width(&claims, width).unwrap();
+            let layout = witness.layout();
+            let packed_rows = witness.f2z_bit_rows();
+            for (gate, row) in claims.iter().enumerate() {
+                for (limb, value) in [row.x, row.y, row.z, row.w].into_iter().enumerate() {
+                    for bit in 0..32 {
+                        let (b, c, j) = layout.f2z_bit_position(limb * 32 + bit, gate).unwrap();
+                        let packed_bit = b * width.word_bits() + j;
+                        let actual = (packed_rows[c][packed_bit / 64] >> (packed_bit % 64)) & 1;
+                        assert_eq!(actual, u64::from((value >> bit) & 1));
+                    }
+                }
+            }
+        }
     }
 
     #[test]

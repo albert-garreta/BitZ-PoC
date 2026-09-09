@@ -1,194 +1,220 @@
-# Matched F2Z / Limber MultiSwap campaign
+# Matched 112-bit F2Z / Limber MultiSwap campaign
 
-This campaign compares the same canonical integer relation and integer
-assignment across three prover configurations:
+The campaign compares F2Z/Ligerito, Limber-Hyrax, and Limber-Brakedown on
+identical copies of the RSA-2048 paper fixture. Every reported modeled check
+must reach **at least 112 bits** under `per-check-round-minimum/v1` accounting.
+This is a minimum over the modeled checks and rounds, not a new combined
+whole-proof soundness theorem or an RSA key-strength claim.
 
-- F2Z with its virtual F2Z/Ligerito opening;
-- Limber with Hyrax;
-- Limber with Brakedown.
+## Statement and workload
 
-For every workload value `k`, each prover runs once with one Rayon thread and
-once with all physical **performance** cores: six cells per `k`. The default
-sweep is `k = 0, 1, 2, 4, 8`, so the default campaign has 30 cells. The sampling
-policy is one excluded warmup and five measured trials per cell. On an Apple M1
-Max the multi-worker count is eight, not the ten-core
-performance-plus-efficiency total. Rayon workers are **not affinity-pinned** to
-those cores; the worker count is merely set equal to the detected physical
-performance-core count.
+Fix the historical workload parameter `k=0`. The default sweep proves
+**1, 2, 4, 8, and 16 complete circuit copies in one proof**, corresponding to
+4–64 RSA exponentiations. Copies have separate witness variables, share the
+constant column, compact live rows/columns, and are padded once. Each copy
+contributes 6,209 live rows and 6,204 live witness columns. One copy preserves
+the existing circuit and assignment digests.
 
-The workload is the wired MultiSwap/RSA cost-model selected by
-`F2Z_BENCH_SHAPES=<k>` and `MSCFG=paper MATCHED_K=<k>`. `k=0` is the quotable,
-source-backed reference configuration. Every `k>0` row adds modeled per-swap
-`H_delta` groups and is labeled as scaling evidence, not an additional source
-measurement. Modeled hashes and Poseidon are protocol-cost accounting; they
-are not native hash executions. Reports repeat this disclosure so the result
-cannot be mistaken for an application-level RSA or hashing benchmark.
-
-## Preview the exact campaign
-
-The dry run performs no compilation, benchmark execution, or artifact writes:
-
-```sh
-python3 scripts/run_matched_multiswap_campaign.py --dry-run --all-threads 8
-```
-
-Omit `--all-threads` on supported Apple Silicon machines to query
-`hw.perflevel0.physicalcpu`, with `system_profiler` as the fallback. If the
-machine cannot expose a performance-core count, the runner fails and asks for
-an explicit value instead of silently benchmarking logical or efficiency
-cores.
-
-## Run
-
-From the F2Z repository root:
-
-```sh
-python3 scripts/run_matched_multiswap_campaign.py --all-threads 8
-```
-
-Useful explicit controls are:
+The canonical integer equations are
 
 ```text
---f2z-root PATH          default: this repository
---limber-root PATH       default: ../limber-impl
---output-dir PATH        default: PerfRuns/<UTC>-matched-multiswap-f2z-limber
---campaign-id ID         stable ID embedded in F2Z traces
---samples N              default: 5
---warmups 1              fixed at one for the matched F2Z interface
---k-values LIST          default: 0,1,2,4,8 (comma or whitespace separated)
---expected-digest K=HEX  repeatable hard expectation for one workload k
---rustflags VALUE        default: -Ctarget-cpu=native
---profiler PATH          canonical zk-proof-profiler validator/reporter
+(A z)[i] * (B z)[i] = (C z)[i] + modulus[i] * quotient[i]
 ```
 
-The two command shapes are intentionally fixed and instantiated six times per
-workload `k`:
+A zero row modulus denotes an exact integer equation. Public circuit data
+includes the integer matrices, row moduli, dimensions, and fixed constants.
+Witness values and quotients are private unsigned integers below `2^2048`.
+The application public-input vector is explicitly **count=0, values=[]**.
+Padding uses zero witness values, zero quotients, and modulus two.
+
+`f2z-limber/multiswap-statement/v2` binds the canonical matrix digest, batch
+count, variable bounds and roles, constant-column and padding conventions,
+and public-input count. The separate integer-assignment digest checks that
+all backends benchmark the same deterministic data. F2Z's commitment layout
+remaps variables and folds the quotient-modulus terms into C; structural tests
+invert that remapping and compare every canonical linear form, including
+exact rows and quotient terms.
+
+This is the existing **wired MultiSwap/RSA cost model**. RSA exponentiation
+chains execute, while modeled hash and Poseidon costs do not represent native
+hash executions. It does not prove a complete public old-to-new accumulator
+transition. The historical `k` sweep is separate: use `--batch-counts none`
+with explicit `--k-values` for that experiment. Nonzero `k` is rejected in the
+batch sweep.
+
+## Security configuration
+
+| Component | Matched setting |
+|---|---|
+| F2Z profile | `F2Z_BENCH_LAMBDA=112`, profile `limber112` |
+| F2Z reduction | Derived per shape; eight grinding bits for every selected batch |
+| F2Z Ligerito opening | Validated UDR configuration derived at target 112 |
+| Limber integer commitment | `MATCHED_SECURITY_BITS=112` |
+| Limber integer challenge width | Still 128 bits |
+| Brakedown opening | `BDLAMBDA=112`, spec 4, row length 32768, direct threshold 65536 |
+| Shared fingerprint | Uniform 128-bit prime sampling; roughly 114-bit conservative bound |
+
+Limber's CRT divisor accounting uses the **minimum** sampled-prime size,
+`log_p - 1`, before deriving `ceil(target / bits_per_prime)` repetitions.
+The challenge width in the integer magnitude bound stays 128 even when the
+security target is 112. Existing default targets and stronger fixed bounds
+are retained. Limber's IntEval key format is version 2; its SNARK transcript
+binds the public shape and actual serialized verifier-key configuration.
+Brakedown keys also bind the runtime code/opening settings.
+
+F2Z's new profile binds its actual Ligerito configuration and the canonical
+statement into the transcript and rejects incompatible opener settings. The
+legacy one-copy `limber114` transcript pin is retained. The fingerprint defect
+bound stays below `2^8210` for every batch because copying does not enlarge an
+individual row. The separate F2Z reduction magnitude bound grows from
+`2^282` to `2^286` across the sweep and is recomputed for each shape.
+
+Traces report the component bounds and actual parameters. The reporter
+independently recomputes the modeled bounds, checks repetition counts, and
+rejects bounds below target, missing range-check accounting, and parameter
+drift within trials or between thread counts. Limber's conservative public
+range-check size cap is checked against the actual lookup-block count for
+every measured proof.
+
+## Prepare Limber
+
+The required instrumented base is
+`861f10a6a4d705d92a9faf13a8f860d8ba057ca0` in
+`https://github.com/wu-s-john/limber-impl.git`. The patch is stored in this
+repository so reproducing the comparison does not depend on a temporary
+working directory:
+
+```sh
+python3 scripts/prepare_matched_limber.py /tmp/limber-matched112
+```
+
+An existing local clone can be supplied with `--source PATH`. The helper
+refuses existing destinations, checks out the exact base on
+`codex/multiswap-112`, checks/applies the patch, and creates a local commit.
+It prints the resulting revision and patch SHA-256. Nothing is pushed.
+
+## Preview and run
+
+The default campaign has **30 configurations**: three backends × five batch
+sizes × two thread counts. Each configuration has one excluded warmup and
+**ten measured proofs**. The current comparison host uses 1 and 16 Rayon
+threads. Threads are not affinity-pinned. Implementation order rotates by
+batch ordinal and thread order alternates between batches.
+
+Preview without compiling, running proofs, or writing campaign artifacts:
+
+```sh
+python3 scripts/run_matched_multiswap_campaign.py --dry-run \
+  --limber-root /tmp/limber-matched112 --all-threads 16
+```
+
+Canonical execution requires the external `zk-proof-profiler` validator. It
+is **not bundled here**: supply the actual `scripts/zk_trace.py` file through
+`--profiler`. The runner fails preflight if it is absent; the repository's
+comparison-specific validator does not replace it.
+
+To collect benchmark results while that dependency is unavailable, explicitly
+select `--draft`. This runs the Rust proofs, proof verification, and all
+repository comparison checks. The manifest, JSON, CSV, and HTML mark canonical
+validation as pending, so this does not complete the canonical acceptance gate:
+
+```sh
+python3 scripts/run_matched_multiswap_campaign.py --draft \
+  --limber-root /tmp/limber-matched112 \
+  --security-bits 112 --batch-counts 1,2,4,8,16 \
+  --all-threads 16 --warmups 1 --samples 10
+```
+
+`--draft` and `--profiler` are mutually exclusive. For an initial smoke run,
+use `--draft --batch-counts 1 --samples 1`; that runs six configurations.
+
+```sh
+python3 scripts/run_matched_multiswap_campaign.py \
+  --limber-root /tmp/limber-matched112 \
+  --profiler /path/to/zk-proof-profiler/scripts/zk_trace.py \
+  --security-bits 112 --batch-counts 1,2,4,8,16 \
+  --all-threads 16 --warmups 1 --samples 10
+```
+
+F2Z uses the repository's Rust toolchain. Limber uses
+`nightly-2026-07-01`. The runner preflights both toolchains and the validator,
+records their identities, overrides inherited workload/security settings,
+and compiles with native CPU flags. The benchmark commands are:
 
 ```text
 F2Z:    cargo bench --bench multiswap --features unchecked
 Limber: rustup run nightly-2026-07-01 cargo bench --bench multiswap_modp
 ```
 
-The runner supplies each benchmark's trace path, workload `k`, backend, trial
-count, thread count, and matched configuration through its documented
-environment interface. Every cell receives a distinct trace file. Limber uses
-a shared writable `build/limber-target` directory inside the campaign because
-its repository may be mounted read-only.
+The runner supplies `MSCFG=paper`, workload, batch, target, backend, trace
+path, sampling policy, and thread count for each invocation. Use
+`--output-dir`, `--campaign-id`, `--f2z-root`, or `--rustflags` to override
+those controls. Omit `--all-threads` to detect physical performance cores on
+macOS or physical cores on Linux. Existing output directories are rejected.
 
-Execution order is deterministic but counterbalanced: the starting
-implementation rotates by the ordinal position of `k`, and the single/multiple
-worker order alternates between successive `k` groups. Every cell stores its
-`execution_index`, and the manifest records the complete order. This reduces
-the chance that thermal or time drift is confused with one implementation or
-one end of the `k` sweep; it does not replace host stabilization or affinity
-control.
-
-## Artifact layout
-
-Existing run directories and traces are never overwritten.
+## Artifacts and acceptance
 
 ```text
-PerfRuns/<campaign>/
-├── raw/                         # original zkperf.trace/v1 JSONL, one per cell
-├── logs/                        # exact command plus merged stdout/stderr
-├── metadata/campaign.json       # matched-multiswap-campaign/v1 manifest
-├── traces/combined.jsonl        # byte-for-byte concatenation in manifest order
+bench_results/<campaign>/
+├── raw/                         # original JSONL traces, one per configuration
+├── logs/                        # exact commands and merged stdout/stderr
+├── metadata/campaign.json       # revisions, source hashes, environment, validator
+├── traces/combined.jsonl        # original records in execution order
 └── reports/
-    ├── canonical/               # stock zk-proof-profiler report
+    ├── canonical/               # external canonical profiler report
     └── combined/
-        ├── summary.json         # matched-multiswap-report/v1
+        ├── summary.json
         ├── metrics.csv
-        └── intervals.html       # combined interactive comparison
+        └── intervals.html
 ```
 
-The manifest records commands, the non-secret environment overrides, both Git
-revisions and dirty flags, CPU/core detection, sampling policy, source trace
-hashes, and the canonical statement digest. Raw JSONL and logs remain in place
-even when a later cell is rejected.
+Every trace is canonically validated before accepting its configuration; the
+combined trace is validated again. Comparison validation requires verified
+proofs, complete intervals, exact sample counts, common statement and witness
+digests within each batch, identical public-input metadata and dimensions,
+consistent security parameters, and source-trace SHA-256 hashes. A failure
+preserves the original logs and traces and marks the manifest failed.
 
-## Acceptance gates
+Reported medians are computed over measured proofs only. Per-proof totals
+use overlap-safe interval unions before median and Type-7 P10/P90 aggregation.
+Compilation and public setup are excluded from headline proving times.
 
-A campaign is rejected before aggregation when any of these conditions holds:
+| Report row | Definition |
+|---|---|
+| Witness generation | Circuit synthesis and witness/assignment materialization |
+| Commitment + proving | Commitment plus all proving work |
+| Combined prover including witness | Witness generation plus commitment and proving |
+| Verify | Proof verification |
+| Proof bytes | Commitment plus proof; analytical portions explicitly marked |
+| Peak RSS | Process high-water resident memory, including setup and warmups, excluding compiler |
 
-1. canonical `zkperf.trace/v1` structure or interval nesting is invalid;
-2. a run is not `status="ok"` and `trace_complete=true`;
-3. `validation.proof_verified` is absent/false, or any relation, digest,
-   preflight, validity, or verification assertion is not true (informational
-   booleans are not interpreted as assertions);
-4. the warmup/sample counts or workload `k` differ from the manifest;
-5. within the same `k`, the canonical statement domain or BLAKE3 relation
-   digest differs between any F2Z, Limber Hyrax, or Limber Brakedown cell;
-6. within the same `k`, a canonical integer-assignment digest is absent or
-   differs across cells;
-7. `parameters.input.workload_id` differs from the shared
-   `multiswap-rsa-wired-cost-model-v1` identity, or the trace's implementation
-   or measured Rayon thread count does not match its manifest cell;
-8. normalized live/padded row/column dimensions or A/B/C nonzero counts differ
-   between implementations at the same `k`;
-9. a raw trace's recomputed SHA-256 differs from `cell.trace_sha256` in the
-   manifest, or a required headline interval is absent.
+PCS totals include commitment plus opening. Proof sizes include serialized
+commitments and openings, with analytical estimates for F2Z PIOP/bridge data
+and Limber's dynamic sumchecks. Peak RSS is not a per-trial allocation count.
+JSON includes the actual security parameters and statement contract; CSV and
+HTML compare timings, proof sizes, and memory by batch and thread count.
 
-Both BLAKE3 digests must use the canonical producer representation: exactly 64
-lowercase hexadecimal characters with no `0x` or algorithm prefix.
-
-The first accepted trace for each `k` establishes that group's canonical digest
-when no matching `--expected-digest K=HEX` is supplied. Any later F2Z
-invocation for that `k` receives the established digest through
-`F2Z_MULTISWAP_EXPECTED_CONSTRAINT_DIGEST`; all 30 default files are also
-checked again as one campaign before report generation. Different `k` groups
-are expected to have different statement and assignment digests.
-
-Completed artifacts may be revalidated or rerendered without rerunning a
-benchmark:
+Completed traces can be rechecked and rendered with the repository-specific
+validator; this does not certify external canonical validation:
 
 ```sh
-python3 scripts/matched_multiswap_report.py validate \
-  PerfRuns/<campaign>/metadata/campaign.json
-
-python3 scripts/matched_multiswap_report.py report \
-  PerfRuns/<campaign>/metadata/campaign.json \
+python3 scripts/matched_multiswap_report.py validate /path/to/metadata/campaign.json
+python3 scripts/matched_multiswap_report.py report /path/to/metadata/campaign.json \
   --out-dir /tmp/matched-multiswap-report
 ```
 
-## Timing definitions
-
-All totals are overlap-safe unions within one measured run. Only after forming
-the per-run total does the reporter compute the median and Hyndman–Fan Type 7
-P10/P90 across measured trials. Warmups never enter distributions.
-
-| Report row | F2Z operation | Limber operation(s) |
-|---|---|---|
-| Witness generation | `multiswap-trace.witness_generation` | `multiswap.witness_generation` |
-| Commit | `multiswap-trace.commit` | `multiswap.commit` |
-| Projection / field reduction | `step2.project_prove` | `limber.projection` (contains sample-prime, reduction, and SpMV drilldowns) |
-| PIOP / relation reduction | `step3.piop_prove` | `limber.piop` (contains outer sumcheck, inner setup/sumcheck, and evaluation recovery) |
-| PCS opening proof | `step5.open_prove` | `limber.pcs.opening` |
-| Total prover | `multiswap-trace.end_to_end_prove` | `multiswap.prover` |
-| PCS total | overlap-safe union of commit and PCS opening | same union |
-| Application total | overlap-safe union of witness and total prover | same union |
-| Verify | `multiswap-trace.verification` | `multiswap.verify` |
-| Verified trial | `multiswap-trace.verified_trial` | `multiswap.trial` |
-
-The HTML headline section contains one six-column table per workload `k`; the
-CSV carries explicit `workload_k` and `k_semantics` columns. The detailed selector shows a
-chronological representative run (the measured sample nearest the cell's
-median total-prover time), while each row's tooltip reports the cross-run
-median and P10–P90. Tooltips render producer-supplied `math_latex`; stable
-fallback equations cover the shared witness, Spartan outer and inner
-sumchecks, LogUp, commitments, and the batched backend opening claim.
-
-## Fast tests
-
-Tests synthesize tiny canonical JSONL fixtures; they do not compile or run Rust
-benchmarks:
+## Tests
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v \
-  scripts/test_matched_multiswap_campaign.py
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/test_matched_multiswap_campaign.py
+cargo test --release --lib piop::spartan::multiswap:: -- --test-threads=1
+cargo test --release --test transcript_pins multiswap -- --test-threads=1
 ```
 
-The fixtures cover the default 30-cell dry-run plan, exact Type 7 quantiles,
-combined HTML/math rendering, invalid-proof rejection, within-`k` digest
-mismatch rejection, valid distinct digests across different `k` groups,
-canonical-domain enforcement, normalized relation-shape parity, and manifest
-trace-hash tamper detection.
+The committed `scripts/fixtures/multiswap112-preflight.json` contains parameter
+and statement snapshots for all 15 backend/batch pairs, not performance
+measurements. Tests cover batch report rendering, prime-count accounting,
+missing metadata, altered statements, failed proofs, incompatible parameters,
+measurement boundaries, and inherited configuration overrides. Full proof
+smoke runs use one measured sample per configuration and must be labeled as
+acceptance checks, not as the completed ten-sample performance campaign.

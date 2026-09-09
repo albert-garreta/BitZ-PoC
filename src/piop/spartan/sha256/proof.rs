@@ -64,9 +64,12 @@ use super::{
         SHA256_INNER_PREFIX_MAX_VARS, Sha256FactoredBlockCoefficients,
         prove_sha256_inner_sumcheck_factored, verify_sha256_inner_sumcheck,
     },
-    prime::{Sha256PrimeError, Sha256PrimeProfile, sample_sha256_mod_q_context},
+    prime::{Sha256PrimeError, sample_sha256_mod_q_context},
     witness::{Sha256CompressionStatement, Sha256CompressionWitnessBatch},
 };
+
+#[cfg(test)]
+use super::prime::Sha256PrimeProfile;
 
 const SHA256_OPENING_CLAIM_DOMAIN: &[u8] = b"f2z/spartan-sha256-opening/v7";
 const SHA256_CONSTANT_ONE_BATCH_DOMAIN: &[u8] = b"f2z/spartan-sha256/constant-one-batch/v3";
@@ -294,8 +297,7 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
     let p_f = prepared.source_params();
     let p_h = prepared.assignment_params();
     let map = prepared.map();
-    let profile =
-        Sha256PrimeProfile::from_security(prepared.security(), prepared.log_instance_capacity())?;
+    let profile = prepared.prime_profile();
 
     validate_public_statement(prepared.instances(), public_statement)?;
     validate_common_geometry(None, map, p_h, p_f)?;
@@ -442,9 +444,7 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
         };
         let row_weight_source =
             GeneratedModQWeightSource::new(product_p_h, mod_q.q_bits(), |row| {
-                row_weights
-                    .get(row)
-                    .map(|weight| field_from_raw(*weight, field_config).canonical_u128())
+                row_weights.canonical_weight(row, field_config)
             })
             .map_err(|()| Sha256F2zError::InvalidGeometry)?;
         {
@@ -661,8 +661,7 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
     let p_f = prepared.source_params();
     let p_h = prepared.assignment_params();
     let map = prepared.map();
-    let profile =
-        Sha256PrimeProfile::from_security(prepared.security(), prepared.log_instance_capacity())?;
+    let profile = prepared.prime_profile();
 
     validate_public_statement(prepared.instances(), public_statement)?;
     validate_common_geometry(None, map, p_h, p_f)?;
@@ -781,9 +780,7 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
         };
         let row_weight_source =
             GeneratedModQWeightSource::new(product_p_h, mod_q.q_bits(), |row| {
-                row_weights
-                    .get(row)
-                    .map(|weight| field_from_raw(*weight, field_config).canonical_u128())
+                row_weights.canonical_weight(row, field_config)
             })
             .map_err(|()| Sha256F2zError::InvalidGeometry)?;
         {
@@ -1322,21 +1319,47 @@ fn linear_opening_claim(
     Ok((row_weights, col_weights, inner_claim.canonical_u128()))
 }
 
-/// Builds the direct rank-one F2Z claim over the proof-only product tensor.
-///
-/// Local-major order (`D[local, instance] = H[instance, local]`): low
-/// instance bits select F2Z rows, high instance bits are adjacent to the
-/// local assignment coordinate in F2Z columns. Instance-major order
-/// (`D[instance, local]`, local stride `2^15`): the local coordinate plus the
-/// low instance bits select F2Z rows, the high instance bits the columns.
-/// Either way the complete coefficient stays `eq(instance, η) * d[local]`
-/// without an assignment-domain sumcheck or a materialized `u ⊗ d` table.
+enum ProductRowWeights {
+    InstanceOnly(Vec<RawMontgomery>),
+    LocalAndInstance {
+        local: Vec<RawMontgomery>,
+        low_instance: Vec<RawMontgomery>,
+        local_domain: usize,
+    },
+}
+
+impl ProductRowWeights {
+    fn canonical_weight(
+        &self,
+        row: usize,
+        field_config: &<SpartanF2zField as PrimeField>::Config,
+    ) -> Option<u128> {
+        match self {
+            Self::InstanceOnly(weights) => weights
+                .get(row)
+                .map(|weight| field_from_raw(*weight, field_config).canonical_u128()),
+            Self::LocalAndInstance {
+                local,
+                low_instance,
+                local_domain,
+            } => {
+                let local_column = row & (local_domain - 1);
+                let instance = row / local_domain;
+                let local_weight = field_from_raw(*local.get(local_column)?, field_config);
+                let instance_weight = field_from_raw(*low_instance.get(instance)?, field_config);
+                Some((local_weight * &instance_weight).canonical_u128())
+            }
+        }
+    }
+}
+
+/// Builds the direct rank-one F2Z claim without materializing `u ⊗ d`.
 fn product_opening_claim(
     batching: &ProductLinearBatching,
     p_h: &IntEvalParams,
-    order: PackedSourceOrder,
+    layout: PackedSourceOrder,
     field_config: &<SpartanF2zField as PrimeField>::Config,
-) -> Result<(Vec<RawMontgomery>, Vec<u128>, u128), Sha256F2zError> {
+) -> Result<(ProductRowWeights, Vec<u128>, u128), Sha256F2zError> {
     let instance_vars = instance_vars(batching.instances)?;
     if !batching.instances.is_power_of_two()
         || batching.instance_point.len() != instance_vars
@@ -1346,88 +1369,80 @@ fn product_opening_claim(
     {
         return Err(Sha256F2zError::InvalidGeometry);
     }
-    if order == PackedSourceOrder::InstanceMajor {
-        return product_opening_claim_instance_major(batching, p_h, field_config);
-    }
-    if p_h.t > instance_vars {
-        return Err(Sha256F2zError::InvalidGeometry);
-    }
 
-    let row_weights = compact_eq_table(&batching.instance_point[..p_h.t], field_config)?;
-    let high_weights = compact_eq_table(&batching.instance_point[p_h.t..], field_config)?;
-    if row_weights.len() != p_h.rows()
-        || row_weights.len() * high_weights.len() != batching.instances
-        || p_h.cols() != SHA256_H_BAR_LIVE_BITS.next_power_of_two() * high_weights.len()
-    {
-        return Err(Sha256F2zError::InvalidGeometry);
-    }
+    let (row_weights, col_weights) = match layout {
+        PackedSourceOrder::LocalMajor => {
+            if p_h.t > instance_vars {
+                return Err(Sha256F2zError::InvalidGeometry);
+            }
+            let low = compact_eq_table(&batching.instance_point[..p_h.t], field_config)?;
+            let high = compact_eq_table(&batching.instance_point[p_h.t..], field_config)?;
+            if low.len() != p_h.rows()
+                || low.len() * high.len() != batching.instances
+                || p_h.cols() != SHA256_H_BAR_LIVE_BITS.next_power_of_two() * high.len()
+            {
+                return Err(Sha256F2zError::InvalidGeometry);
+            }
 
-    let high_instances = high_weights.len();
-    let coefficient_at = |column: usize| {
-        let local_column = column / high_instances;
-        if local_column >= batching.local_coefficients.len() {
-            return 0;
+            let high_instances = high.len();
+            let coefficient_at = |column: usize| {
+                let local_column = column / high_instances;
+                if local_column >= batching.local_coefficients.len() {
+                    return 0;
+                }
+                let high_instance = column % high_instances;
+                let high_weight = field_from_raw(high[high_instance], field_config);
+                (batching.local_coefficients[local_column].clone() * &high_weight).canonical_u128()
+            };
+            #[cfg(feature = "parallel")]
+            let columns = (0..p_h.cols())
+                .into_par_iter()
+                .map(coefficient_at)
+                .collect::<Vec<_>>();
+            #[cfg(not(feature = "parallel"))]
+            let columns = (0..p_h.cols()).map(coefficient_at).collect::<Vec<_>>();
+            (ProductRowWeights::InstanceOnly(low), columns)
         }
-        let high_instance = column % high_instances;
-        let high_weight = field_from_raw(high_weights[high_instance], field_config);
-        (batching.local_coefficients[local_column].clone() * &high_weight).canonical_u128()
-    };
-    #[cfg(feature = "parallel")]
-    let col_weights = (0..p_h.cols())
-        .into_par_iter()
-        .map(coefficient_at)
-        .collect::<Vec<_>>();
-    #[cfg(not(feature = "parallel"))]
-    let col_weights = (0..p_h.cols()).map(coefficient_at).collect::<Vec<_>>();
-
-    Ok((
-        row_weights,
-        col_weights,
-        batching.initial_claim.canonical_u128(),
-    ))
-}
-
-/// [`product_opening_claim`] for the instance-major tensor: F2Z row
-/// `r = low_instance · 2^15 + local` carries `eq_low(low_instance) · d[local]`
-/// (zero on the padding rows `local ≥ 20 457`), F2Z column `c` carries
-/// `eq_high(c)` over the remaining instance bits.
-fn product_opening_claim_instance_major(
-    batching: &ProductLinearBatching,
-    p_h: &IntEvalParams,
-    field_config: &<SpartanF2zField as PrimeField>::Config,
-) -> Result<(Vec<RawMontgomery>, Vec<u128>, u128), Sha256F2zError> {
-    let local_stride = SHA256_H_BAR_LIVE_BITS.next_power_of_two();
-    let local_bits = local_stride.ilog2() as usize;
-    let instance_vars = instance_vars(batching.instances)?;
-    if p_h.t < local_bits || p_h.t > local_bits + instance_vars {
-        return Err(Sha256F2zError::InvalidGeometry);
-    }
-    let low_vars = p_h.t - local_bits;
-    let low_weights = compact_eq_table(&batching.instance_point[..low_vars], field_config)?;
-    let high_weights = compact_eq_table(&batching.instance_point[low_vars..], field_config)?;
-    if low_weights.len() * local_stride != p_h.rows() || high_weights.len() != p_h.cols() {
-        return Err(Sha256F2zError::InvalidGeometry);
-    }
-
-    let row_weight_at = |row: usize| {
-        let local = row % local_stride;
-        if local >= batching.local_coefficients.len() {
-            return 0;
+        PackedSourceOrder::InstanceMajor => {
+            let local_domain = SHA256_H_BAR_LIVE_BITS.next_power_of_two();
+            let local_vars = local_domain.ilog2() as usize;
+            if p_h.t < local_vars || p_h.t > local_vars + instance_vars {
+                return Err(Sha256F2zError::InvalidGeometry);
+            }
+            let low_instance_vars = p_h.t - local_vars;
+            let low_instance =
+                compact_eq_table(&batching.instance_point[..low_instance_vars], field_config)?;
+            let high =
+                compact_eq_table(&batching.instance_point[low_instance_vars..], field_config)?;
+            if local_domain * low_instance.len() != p_h.rows()
+                || low_instance.len() * high.len() != batching.instances
+                || high.len() != p_h.cols()
+            {
+                return Err(Sha256F2zError::InvalidGeometry);
+            }
+            let local = batching
+                .local_coefficients
+                .iter()
+                .map(raw_montgomery)
+                .chain(std::iter::repeat_n(
+                    raw_montgomery(&SpartanF2zField::zero_with_cfg(field_config)),
+                    local_domain - batching.local_coefficients.len(),
+                ))
+                .collect();
+            let columns = high
+                .into_iter()
+                .map(|weight| field_from_raw(weight, field_config).canonical_u128())
+                .collect();
+            (
+                ProductRowWeights::LocalAndInstance {
+                    local,
+                    low_instance,
+                    local_domain,
+                },
+                columns,
+            )
         }
-        let low_weight = field_from_raw(low_weights[row / local_stride], field_config);
-        raw_montgomery(&(batching.local_coefficients[local].clone() * &low_weight))
     };
-    #[cfg(feature = "parallel")]
-    let row_weights = (0..p_h.rows())
-        .into_par_iter()
-        .map(row_weight_at)
-        .collect::<Vec<_>>();
-    #[cfg(not(feature = "parallel"))]
-    let row_weights = (0..p_h.rows()).map(row_weight_at).collect::<Vec<_>>();
-    let col_weights = high_weights
-        .iter()
-        .map(|weight| field_from_raw(*weight, field_config).canonical_u128())
-        .collect::<Vec<_>>();
 
     Ok((
         row_weights,
@@ -2094,10 +2109,11 @@ fn validate_product_geometry(
         || map.rows() != cell_count(p_h)
         || map.cols() != cell_count(p_f)
         || map.live_rows() != expected_live_rows
-        || map.local_stride() != match map.order() {
-            PackedSourceOrder::LocalMajor => map.instances(),
-            PackedSourceOrder::InstanceMajor => local_stride,
-        }
+        || map.local_stride()
+            != match map.order() {
+                PackedSourceOrder::LocalMajor => map.instances(),
+                PackedSourceOrder::InstanceMajor => local_stride,
+            }
         || map.local().rows() != SHA256_H_BAR_LIVE_BITS
         || map.local().cols() != super::constraints::SHA256_F_BAR_LIVE_BITS
         || !map_fixes_constant_assignment_local(map.local())
@@ -2728,7 +2744,9 @@ mod tests {
 
     #[test]
     fn ligerito_profiles_cover_every_supported_sha_batch() {
-        for log_compressions in 7..=16 {
+        for log_compressions in super::super::prime::SHA256_MIN_LOG_COMPRESSIONS
+            ..=super::super::prime::SHA256_MAX_LOG_COMPRESSIONS
+        {
             let prepared = prepare_sha256_compression_batch(log_compressions).unwrap();
             let (pc, vc) = sha256_compression_configs(&prepared).unwrap();
             assert_eq!(pc.merkle_hash, flock_core::merkle::HashKind::Blake3);
@@ -2755,6 +2773,55 @@ mod tests {
         sha256_compression_configs(&by_rows).unwrap();
         Sha256PrimeProfile::from_security(by_rows.security(), by_rows.log_instance_capacity())
             .unwrap();
+    }
+
+    #[test]
+    fn small_batches_roundtrip_and_bind_public_outputs() {
+        for exponent in 4..=6 {
+            let prepared = prepare_sha256_compression_batch(exponent).unwrap();
+            assert!(prepared.product_assignment_params().is_none());
+            assert!(prepared.opening_params().t >= LOG_PACKING);
+            assert!(prepared.security().accounting.achieved_bits() >= 100.0);
+            let inputs = (0..prepared.instances()).map(input).collect::<Vec<_>>();
+            let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
+            let mut statements = public_statements(&inputs, witness.outputs());
+            let (pc, vc) = sha256_compression_configs(&prepared).unwrap();
+            let hint =
+                commit_sha256_compression_witness_with_config(&prepared, &witness, &pc).unwrap();
+            let proof = prove_sha256_compressions_with_config(
+                &mut Blake3Transcript::new(),
+                &prepared,
+                &statements,
+                &witness,
+                &hint,
+                &pc,
+            )
+            .unwrap();
+            assert_eq!(proof.f2z().mfs.len(), 1);
+            verify_sha256_compressions_with_config(
+                &mut Blake3Transcript::new(),
+                &prepared,
+                &statements,
+                &hint.commitment,
+                &proof,
+                &vc,
+            )
+            .unwrap();
+
+            statements.last_mut().unwrap().claimed_output[7] ^= 1 << 31;
+            assert!(
+                verify_sha256_compressions_with_config(
+                    &mut Blake3Transcript::new(),
+                    &prepared,
+                    &statements,
+                    &hint.commitment,
+                    &proof,
+                    &vc,
+                )
+                .is_err(),
+                "the final output bit must be bound at 2^{exponent} compressions"
+            );
+        }
     }
 
     #[test]
@@ -3281,11 +3348,10 @@ mod tests {
         // rejection must come from the batched C h = 0 constraints rather
         // than from an inconsistent uncommitted h oracle.
         const PRIVATE_LOCAL_SOURCE_CELL: usize = 1_000;
-        assert!(
-            (0..SHA256_PUBLIC_WORDS).all(|word_slot| (0..SHA256_PUBLIC_WORD_BITS)
-                .all(|bit| sha256_public_f_column(word_slot, bit)
-                    != PRIVATE_LOCAL_SOURCE_CELL))
-        );
+        assert!((0..SHA256_PUBLIC_WORDS).all(|word_slot| {
+            (0..SHA256_PUBLIC_WORD_BITS)
+                .all(|bit| sha256_public_f_column(word_slot, bit) != PRIVATE_LOCAL_SOURCE_CELL)
+        }));
         let mut local_residuals =
             vec![num_bigint::BigInt::default(); prepared.linear_relation().row_count()];
         for local_h in prepared
@@ -3333,8 +3399,7 @@ mod tests {
             let canonical_p_h = prepared.assignment_params();
             let column = flat_cell >> canonical_p_h.t;
             let row = flat_cell & (canonical_p_h.rows() - 1);
-            constraint_attack.assignment_rows_mut_for_tests()[column][row / 64] ^=
-                1 << (row % 64);
+            constraint_attack.assignment_rows_mut_for_tests()[column][row / 64] ^= 1 << (row % 64);
         }
         for flat_cell in product_h_cells {
             let column = flat_cell >> product_p_h.t;
@@ -3364,6 +3429,52 @@ mod tests {
                 &public_statement,
                 &attack_hint.commitment,
                 &attack_proof,
+                &vc,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn local_rows_product_layout_rejects_a_false_public_output() {
+        const LOG_COMPRESSIONS: usize = 7;
+        let prepared =
+            super::super::constraints::prepare_sha256_compression_batch_for_product_t_test(
+                LOG_COMPRESSIONS,
+                15,
+            )
+            .unwrap();
+        assert_eq!(prepared.product_layout_name(), Some("local_rows"));
+
+        let inputs = (0..1usize << LOG_COMPRESSIONS)
+            .map(input)
+            .collect::<Vec<_>>();
+        let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
+        let mut false_statement = public_statements(&inputs, witness.outputs());
+        false_statement[5].claimed_output[0] ^= 1;
+        let (pc, vc) = sha256_compression_configs(&prepared).unwrap();
+        let hint = commit_sha256_compression_witness_with_config(&prepared, &witness, &pc).unwrap();
+
+        // Both sides bind the same false statement. Rejection therefore comes
+        // from the committed-wire claim, not from transcript divergence.
+        let mut prover_transcript = Blake3Transcript::new();
+        let proof = prove_sha256_compressions_with_config(
+            &mut prover_transcript,
+            &prepared,
+            &false_statement,
+            &witness,
+            &hint,
+            &pc,
+        )
+        .expect("a false public claim still produces a candidate proof");
+        let mut verifier_transcript = Blake3Transcript::new();
+        assert!(
+            verify_sha256_compressions_with_config(
+                &mut verifier_transcript,
+                &prepared,
+                &false_statement,
+                &hint.commitment,
+                &proof,
                 &vc,
             )
             .is_err()
@@ -3508,14 +3619,13 @@ mod tests {
 
         let product_p_h = prepared.product_assignment_params().unwrap();
         let product_rows = witness.product_assignment_rows().unwrap();
-        let (row_weights, col_weights, claimed) =
-            product_opening_claim(
-                &batching,
-                product_p_h,
-                PackedSourceOrder::LocalMajor,
-                &field_config,
-            )
-            .unwrap();
+        let (row_weights, col_weights, claimed) = product_opening_claim(
+            &batching,
+            product_p_h,
+            PackedSourceOrder::LocalMajor,
+            &field_config,
+        )
+        .unwrap();
         let mut direct_sum = SpartanF2zField::zero_with_cfg(&field_config);
         for flat_cell in 0..product_p_h.cells() {
             if packed_flat_bit(product_rows, product_p_h, flat_cell).unwrap() == 0 {
@@ -3523,7 +3633,10 @@ mod tests {
             }
             let row = flat_cell & (product_p_h.rows() - 1);
             let column = flat_cell >> product_p_h.t;
-            let mut term = field_from_raw(row_weights[row], &field_config);
+            let mut term = SpartanF2zField::from_with_cfg(
+                row_weights.canonical_weight(row, &field_config).unwrap(),
+                &field_config,
+            );
             term *= &SpartanF2zField::from_with_cfg(col_weights[column], &field_config);
             direct_sum += &term;
         }

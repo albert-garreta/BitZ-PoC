@@ -290,6 +290,19 @@ impl IopSecurityProfile for Lambda128 {
     const RING_SWITCH_GRINDING_BITS: u32 = derive_ring_switch_grinding(128);
 }
 
+/// Matched MultiSwap target, with a full-width fingerprint and a
+/// shape-derived reduction grind. Fixed field checks can exceed this target.
+pub struct Limber112;
+
+impl IopSecurityProfile for Limber112 {
+    const NAME: &'static str = "limber112";
+    const LAMBDA: u32 = 112;
+    const PRIME_POLICY: PrimePolicy = PrimePolicy::TwoFullWidthFingerprint;
+    const LIGERITO_TARGET_BITS: usize = 112;
+    const FOREST_ROUND_GRINDING_BITS: u32 = derive_forest_grinding(112);
+    const RING_SWITCH_GRINDING_BITS: u32 = derive_ring_switch_grinding(112);
+}
+
 /// The MultiSwap/Limber comparison target: Strategy 2 with the full-width
 /// fingerprint and the 10-bit Step-5.0 grind, matching the floors Limber's
 /// own implementation accepts (`LAMBDA_BOUND2 = 117`, fingerprint
@@ -725,7 +738,7 @@ mod tests {
 
     #[test]
     fn lambda100_zeroes_every_grind_on_the_sha_shape() {
-        for t in 7..=16u32 {
+        for t in 4..=16u32 {
             let params = Lambda100::instantiate(&sha_facts(t)).unwrap();
             assert_eq!(params.initial_grinding_bits, 0);
             assert_eq!(params.piop_round_grinding_bits, 0);

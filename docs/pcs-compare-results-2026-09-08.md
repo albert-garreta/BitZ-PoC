@@ -1,4 +1,9 @@
-# PCS-only comparison: F2Z vs Binius64 BaseFold vs Plonky3 WHIR
+# Archived PCS-only comparison: F2Z vs Binius64 BaseFold vs Plonky3 WHIR
+
+These historical diagnostic results are excluded from the paper benchmark
+suite. They measure terminal PCS claims, not complete multiplication proofs.
+Use the [native full-proving comparison](native-mul-compare.md) for the paper's
+cross-system benchmarks.
 
 Results of `benches/baby_bear_pcs_compare.rs` and `benches/u32_pcs_compare.rs` measured on 2026-09-08 (19:10–19:41 local) on an otherwise idle machine. Both benches hand the same deterministic integer witness to each backend, which commits it in its native encoding and opens one prescribed terminal MLE claim `D · f(x, β) = V` at a transcript-derived point; the challenges live in each backend's own field. See `docs/baby-bear-pcs-compare.md` for the campaign design.
 

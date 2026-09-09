@@ -6,6 +6,8 @@ mod common;
 mod f2z_backend;
 #[path = "mul_e2e_compare/limber.rs"]
 mod limber_backend;
+#[path = "mul_e2e_compare/memory.rs"]
+mod memory;
 #[path = "mul_e2e_compare/plonky3.rs"]
 mod plonky3;
 #[path = "common/trace_capture.rs"]
@@ -22,6 +24,18 @@ use std::{
 use trace_capture::{CaptureLayer, CapturedSpan, TraceCapture};
 
 const BABY_P: u64 = 2_013_265_921;
+
+const MEDIAN_METRICS: &[&str] = &[
+    "witness_ms",
+    "commit_ms",
+    "piop_ms",
+    "opening_ms",
+    "pcs_ms",
+    "online_prover_ms",
+    "witness_to_proof_ms",
+    "verify_ms",
+    "proof_bytes",
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Workload {
@@ -226,13 +240,20 @@ struct Phase {
 #[derive(Clone, Debug)]
 struct Timing {
     phases: Vec<Phase>,
-    proof_bytes: Option<usize>,
+    proof_bytes: usize,
 }
 impl Timing {
-    fn new(start: u64, witness_end: u64, ready: u64, verify_start: u64, end: u64) -> Self {
+    fn new(
+        start: u64,
+        witness_end: u64,
+        ready: u64,
+        verify_start: u64,
+        end: u64,
+        proof_bytes: usize,
+    ) -> Self {
         let mut result = Self {
             phases: vec![],
-            proof_bytes: None,
+            proof_bytes,
         };
         result.add("verified_trial", "end-to-end", start, end);
         result.add("witness_to_proof", "proving", start, ready);
@@ -282,6 +303,7 @@ impl Timing {
         })
     }
     fn validate(&self) {
+        assert!(self.proof_bytes > 0, "missing proof size");
         let root = &self.phases[0];
         for p in &self.phases {
             assert!(p.start >= root.start && p.end <= root.end);
@@ -403,6 +425,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let threads = common::init();
     let capture = CaptureLayer::install();
+    let args: Vec<_> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|arg| arg == "--measure-memory") {
+        return memory::run_child(&capture, &args[1..]);
+    }
+    let measure_memory = match std::env::var("F2Z_MUL_COMPARE_MEMORY").as_deref() {
+        Err(std::env::VarError::NotPresent) | Ok("1") => true,
+        Ok("0") => false,
+        _ => return Err("F2Z_MUL_COMPARE_MEMORY must be 0 or 1".into()),
+    };
     let reps = common::reps(None, 5);
     assert!(reps > 0);
     let workloads = choices(
@@ -447,10 +478,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let mut trace = BufWriter::new(create("trace.jsonl")?);
     let mut samples = BufWriter::new(create("samples.jsonl")?);
+    let mut memory_samples = BufWriter::new(create("memory.jsonl")?);
     let mut csv = BufWriter::new(create("metrics.csv")?);
     writeln!(
         csv,
-        "workload,backend,log_multiplications,samples,setup_ms,witness_ms,commit_ms,piop_ms,opening_ms,pcs_ms,online_prover_ms,witness_to_proof_ms,verify_ms"
+        "workload,backend,log_multiplications,samples,setup_ms,{},peak_rss_bytes",
+        MEDIAN_METRICS.join(",")
     )?;
     let rev = std::process::Command::new("git")
         .args(["rev-parse", "HEAD"])
@@ -469,6 +502,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let shape_seed = common::mul_witness::shape_seed(seed, n);
             let corpus = Arc::new(Corpus::new(workload, n, shape_seed));
             for backend in &backends {
+                // Run before constructing the parent's backend context so two large
+                // proving keys/witnesses are never live at once.
+                let memory_sample = if measure_memory {
+                    eprintln!(
+                        "{} {backend} 2^{n}: isolated peak-memory pass",
+                        workload.slug()
+                    );
+                    let sample =
+                        memory::measure(backend, workload, n, shape_seed, threads, &corpus.digest)?;
+                    writeln!(memory_samples, "{}", serde_json::to_string(&sample)?)?;
+                    memory_samples.flush()?;
+                    eprintln!(
+                        "{} {backend} 2^{n}: peak RSS {:.2} MiB",
+                        workload.slug(),
+                        sample.peak_rss_bytes as f64 / 1048576.0
+                    );
+                    Some(sample)
+                } else {
+                    None
+                };
                 eprintln!("{} {backend} 2^{n}: setup", workload.slug());
                 // Check the actual native materialization before accepting any proof timings.
                 let audit = audit_backend(backend, &corpus);
@@ -476,7 +529,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let started = std::time::Instant::now();
                 let context = Context::setup(backend, Arc::clone(&corpus));
                 let setup_ms = started.elapsed().as_secs_f64() * 1e3;
-                let config = context.config();
+                let mut config = context.config();
+                config["proof_size_encoding"] = json!(match backend.as_str() {
+                    "f2z" =>
+                        "commitment root + fixed-width PIOP payload/nonces + canonical F2Z opening",
+                    "limber" =>
+                        "canonical commitments/opening + shape-derived fixed-width PIOP payload",
+                    "binius64" => "native transcript bytes (includes commitment)",
+                    "plonky3-whir" => "postcard proof bytes (includes commitment)",
+                    _ => unreachable!(),
+                });
                 let mut measured = vec![];
                 for trial in 0..=reps {
                     let timing = context.run(&capture);
@@ -530,7 +592,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     )?;
                     samples.flush()?;
                     eprintln!(
-                        "{} {backend} 2^{n} {}: witness {:.3} ms, commit {:.3} ms, PIOP {:.3} ms, PCS {:.3} ms, witness→proof {:.3} ms",
+                        "{} {backend} 2^{n} {}: witness {:.3} ms, commit {:.3} ms, PIOP {:.3} ms, PCS {:.3} ms, witness→proof {:.3} ms, proof {} B",
                         workload.slug(),
                         if trial == 0 {
                             "warmup".into()
@@ -541,49 +603,58 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         metrics["commit_ms"].as_f64().unwrap(),
                         metrics["piop_ms"].as_f64().unwrap(),
                         metrics["pcs_ms"].as_f64().unwrap(),
-                        metrics["witness_to_proof_ms"].as_f64().unwrap()
+                        metrics["witness_to_proof_ms"].as_f64().unwrap(),
+                        timing.proof_bytes,
                     );
                     if trial > 0 {
                         measured.push(metrics);
                     }
                 }
-                let mut medians = serde_json::Map::new();
-                for key in [
-                    "witness_ms",
-                    "commit_ms",
-                    "piop_ms",
-                    "opening_ms",
-                    "pcs_ms",
-                    "online_prover_ms",
-                    "witness_to_proof_ms",
-                    "verify_ms",
-                ] {
-                    let values: Vec<_> =
-                        measured.iter().map(|m| m[key].as_f64().unwrap()).collect();
-                    medians.insert(key.into(), json!(common::median(&values)));
-                }
+                let medians = summarize(&measured);
                 write!(csv, "{},{backend},{n},{reps},{setup_ms}", workload.slug())?;
-                for key in [
-                    "witness_ms",
-                    "commit_ms",
-                    "piop_ms",
-                    "opening_ms",
-                    "pcs_ms",
-                    "online_prover_ms",
-                    "witness_to_proof_ms",
-                    "verify_ms",
-                ] {
+                for &key in MEDIAN_METRICS {
                     write!(csv, ",{}", medians[key])?;
                 }
-                writeln!(csv)?;
+                let peak_rss_bytes = memory_sample.as_ref().map(|sample| sample.peak_rss_bytes);
+                writeln!(
+                    csv,
+                    ",{}",
+                    peak_rss_bytes
+                        .map(|bytes| bytes.to_string())
+                        .unwrap_or_default()
+                )?;
                 csv.flush()?;
-                summary.push(json!({"workload":workload.slug(),"backend":backend,"log_multiplications":n,"samples":reps,"setup_ms":setup_ms,"config":config,"corpus_digest":corpus.digest,"medians":medians}));
+                println!(
+                    "RESULT schema=native-mul/2 workload={} backend={backend} log_multiplications={n} samples={reps} witness_ms={} online_prover_ms={} verify_ms={} proof_bytes={} peak_rss_bytes={}",
+                    workload.slug(),
+                    medians["witness_ms"],
+                    medians["online_prover_ms"],
+                    medians["verify_ms"],
+                    medians["proof_bytes"],
+                    peak_rss_bytes
+                        .map(|bytes| bytes.to_string())
+                        .unwrap_or_else(|| "na".into())
+                );
+                summary.push(json!({"workload":workload.slug(),"backend":backend,"log_multiplications":n,"samples":reps,"setup_ms":setup_ms,"config":config,"corpus_digest":corpus.digest,"medians":medians,"peak_rss_bytes":peak_rss_bytes,"memory":memory_sample}));
             }
         }
     }
     serde_json::to_writer_pretty(create("summary.json")?, &summary)?;
     eprintln!("Native multiplication results: {}", out.display());
     Ok(())
+}
+
+fn summarize(measured: &[Value]) -> serde_json::Map<String, Value> {
+    MEDIAN_METRICS
+        .iter()
+        .map(|&key| {
+            let values: Vec<_> = measured
+                .iter()
+                .map(|m| m[key].as_f64().expect("required measured metric"))
+                .collect();
+            (key.into(), json!(common::median(&values)))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -596,10 +667,32 @@ mod tests {
     const U128_CORPUS_2P15_DIGEST: &str =
         "0964e84115dfbfa7e8046a548ac4d30a3edbffdd279a0c44dde201b659a54879";
     #[test]
+    fn proof_sizes_survive_sample_and_summary_export() {
+        let measured: Vec<_> = [1024, 4096, 2048]
+            .into_iter()
+            .map(|bytes| {
+                let mut timing = Timing::new(0, 10, 40, 40, 50, bytes);
+                timing.add("commit", "commit", 10, 20);
+                timing.add("piop", "constraint-proof", 20, 30);
+                timing.add("opening", "opening-proof", 30, 40);
+                timing.validate();
+                timing.metrics()
+            })
+            .collect();
+        let summary = summarize(&measured);
+        assert_eq!(measured[0]["proof_bytes"], 1024);
+        assert_eq!(summary["proof_bytes"], 2048.0);
+    }
+    #[test]
+    #[should_panic(expected = "missing proof size")]
+    fn zero_proof_size_cannot_be_reported_as_success() {
+        Timing::new(0, 10, 40, 40, 50, 0).validate();
+    }
+    #[test]
     fn overlapping_phases_are_unioned() {
         let mut t = Timing {
             phases: vec![],
-            proof_bytes: None,
+            proof_bytes: 0,
         };
         t.add("commit", "commit", 10, 30);
         t.add("opening", "opening-proof", 20, 50);

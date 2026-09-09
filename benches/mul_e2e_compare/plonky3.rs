@@ -199,11 +199,10 @@ macro_rules! backend {
                         })
                         .min_by_key(|s| s.start_ns)
                         .expect("WHIR opening boundary");
-                    let mut t = Timing::new(start, wend, ready, vstart, end);
+                    let mut t = Timing::new(start, wend, ready, vstart, end, bytes.len());
                     t.add("commit", "commit", encode.start_ns, commit.end_ns);
                     t.add("piop", "constraint-proof", commit.end_ns, opening.start_ns);
                     t.add("opening", "opening-proof", opening.start_ns, ready);
-                    t.proof_bytes = Some(bytes.len());
                     t
                 }
             }

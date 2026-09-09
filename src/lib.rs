@@ -55,6 +55,8 @@
 
 pub mod dual_basis;
 pub mod ext_proj;
+#[cfg(feature = "hybrid")]
+pub mod hybrid;
 pub mod f2map;
 pub mod ligerito;
 pub mod ligerito_flock;

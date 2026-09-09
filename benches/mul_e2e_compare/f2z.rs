@@ -52,11 +52,10 @@ impl Context {
         let _ = prof::take_totals();
         let root = prof::scope("native-mul:root");
         let total = prof::scope("native-mul:witness_to_proof");
-        // Serialized proof size: Spartan payload as 16-byte field elements,
-        // the transmitted nonces as 8-byte words, and the F2Z opening's
-        // exact codec bytes (the `f2z` CLI's accounting).
-        let proof_bytes: usize;
-        match &self.relation {
+        // Serialized proof size: the commitment root, the Spartan payload as
+        // 16-byte field elements, the transmitted nonces outside the opening
+        // as 8-byte words, and the F2Z opening's exact codec bytes.
+        let proof_bytes = match &self.relation {
             Relation::U32(relation) => {
                 let witness = {
                     let _s = prof::scope("native-mul:witness");
@@ -88,12 +87,14 @@ impl Context {
                     )
                     .expect("u32 full verification");
                 }
-                let security = relation.security();
-                proof_bytes = proof.spartan_payload_elements() * 16
-                    + (proof.grinding_nonce_count(security) - proof.f2z().grinding_nonces.len())
+                let bytes = hint.commitment.root.len()
+                    + proof.spartan_payload_elements() * 16
+                    + (proof.grinding_nonce_count(relation.security())
+                        - proof.f2z().grinding_nonces.len())
                         * 8
                     + proof.f2z().to_bytes().len();
                 std::hint::black_box(proof);
+                bytes
             }
             Relation::BabyBear(relation) => {
                 let witness = {
@@ -133,12 +134,14 @@ impl Context {
                     )
                     .expect("BabyBear full verification");
                 }
-                let security = relation.security();
-                proof_bytes = proof.spartan_payload_elements() * 16
-                    + (proof.grinding_nonce_count(security) - proof.f2z().grinding_nonces.len())
+                let bytes = hint.commitment.root.len()
+                    + proof.spartan_payload_elements() * 16
+                    + (proof.grinding_nonce_count(relation.security())
+                        - proof.f2z().grinding_nonces.len())
                         * 8
                     + proof.f2z().to_bytes().len();
                 std::hint::black_box(proof);
+                bytes
             }
             Relation::U64(relation) => {
                 let witness = {
@@ -168,8 +171,9 @@ impl Context {
                     )
                     .expect("u64 full verification");
                 }
-                proof_bytes = proof.size_bytes(relation.security());
+                let bytes = hint.commitment.root.len() + proof.size_bytes(relation.security());
                 std::hint::black_box(proof);
+                bytes
             }
             Relation::U128(relation) => {
                 let witness = {
@@ -200,10 +204,11 @@ impl Context {
                     )
                     .expect("u128 full verification");
                 }
-                proof_bytes = proof.size_bytes(relation.security());
+                let bytes = hint.commitment.root.len() + proof.size_bytes(relation.security());
                 std::hint::black_box(proof);
+                bytes
             }
-        }
+        };
         drop(root);
         let raw = prof::take_intervals();
         let _ = prof::take_totals();
@@ -216,7 +221,14 @@ impl Context {
         let w = find("native-mul:witness");
         let t = find("native-mul:witness_to_proof");
         let v = find("native-mul:verify");
-        let mut timing = Timing::new(r.start_ns, w.end_ns, t.end_ns, v.start_ns, v.end_ns);
+        let mut timing = Timing::new(
+            r.start_ns,
+            w.end_ns,
+            t.end_ns,
+            v.start_ns,
+            v.end_ns,
+            proof_bytes,
+        );
         // Account for all online steps without calling prime projection a sumcheck.
         for (label, name, tag) in [
             ("native-mul:commit", "commit", "commit"),
@@ -228,7 +240,6 @@ impl Context {
             let s = find(label);
             timing.add(name, tag, s.start_ns, s.end_ns);
         }
-        timing.proof_bytes = Some(proof_bytes);
         timing
     }
 }

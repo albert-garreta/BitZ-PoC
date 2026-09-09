@@ -81,7 +81,7 @@ impl Context {
         vt.finalize().expect("consume full Binius proof");
         let end = capture.now_ns();
         let raw = capture.finish();
-        let mut t = Timing::new(start, wend, ready, vstart, end);
+        let mut t = Timing::new(start, wend, ready, vstart, end, bytes.len());
         let pack = captured(&raw, "prepare_witness", wend, ready);
         t.add(
             "witness_packing",
@@ -94,7 +94,6 @@ impl Context {
         t.add("commit", "commit", commit.start_ns, commit.end_ns);
         t.add("piop", "constraint-proof", commit.end_ns, ring.start_ns);
         t.add("opening", "opening-proof", ring.start_ns, ready);
-        t.proof_bytes = Some(bytes.len());
         t
     }
 }

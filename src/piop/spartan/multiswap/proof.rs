@@ -46,9 +46,10 @@ use crate::{
     },
     ligerito::packed_vars,
     ligerito_flock::{
-        FlockCommitHint, FlockRsError, IntEvalRsLigVirtProof, commit_rs_ligerito_rows,
-        prove_mle_eval_mod_q_ligerito_virtual_runtime, validate_ligerito_commitment,
-        validated_udr_lig_configs_with, verify_mle_eval_mod_q_ligerito_virtual_runtime,
+        FlockCommitHint, FlockRsError, IntEvalRsLigVirtProof, LigeritoStatementConfig,
+        commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito_virtual_runtime,
+        validate_ligerito_commitment, validated_udr_lig_configs_with,
+        verify_mle_eval_mod_q_ligerito_virtual_runtime,
     },
     pcs::{IntEvalParams, ProjectCanonicalU128},
     sparse_matrix::SparseMatrix,
@@ -159,6 +160,10 @@ pub struct PreparedMultiswapRelation {
     params: IntEvalParams,
     profile: MultiswapPrimeProfile,
     security: IopSecurityParams,
+    comparison_statement_digest: [u8; 32],
+    opening_configs: (LigProverConfig, LigVerifierConfig),
+    opening_config_digest: [u8; 32],
+    batch_count: usize,
 }
 
 impl PreparedMultiswapRelation {
@@ -198,7 +203,19 @@ impl PreparedMultiswapRelation {
         );
         let security = P::instantiate(&facts)?;
         let profile = MultiswapPrimeProfile::from_security(&security)?;
+        let opening_configs = validated_udr_lig_configs_with(
+            packed_vars(&params),
+            3,
+            4,
+            security.ligerito_target_bits,
+        )
+        .map_err(MultiswapError::LigeritoConfig)?;
+        let opening_config_digest = config_digest(&opening_configs.0);
         Ok(Self {
+            comparison_statement_digest: circuit.comparison_statement_digest(),
+            opening_configs,
+            opening_config_digest,
+            batch_count: circuit.batch_count(),
             relation,
             statement_digest: circuit.statement_digest(),
             map,
@@ -206,6 +223,22 @@ impl PreparedMultiswapRelation {
             profile,
             security,
         })
+    }
+
+    /// Opener settings derived and validated under this relation's profile.
+    pub fn ligerito_configs(&self) -> (LigProverConfig, LigVerifierConfig) {
+        self.opening_configs.clone()
+    }
+
+    pub const fn opening_config_digest(&self) -> &[u8; 32] {
+        &self.opening_config_digest
+    }
+
+    fn validate_config(&self, config: &impl LigeritoStatementConfig) -> Result<(), MultiswapError> {
+        if config_digest(config) != self.opening_config_digest {
+            return Err(MultiswapError::F2z(FlockRsError::CommitmentConfig));
+        }
+        Ok(())
     }
 
     /// The instantiated security parameters and their accounting.
@@ -328,6 +361,7 @@ pub fn prove_multiswap_mod_r1cs<T: Transcript + Send>(
         return Err(MultiswapError::InvalidGeometry);
     }
     validate_bit_rows(p, hint.rows())?;
+    prepared.validate_config(pc)?;
     validate_ligerito_commitment(&hint.commitment, pc).map_err(MultiswapError::F2z)?;
     if hint.commitment.params.m != p.t + p.s {
         return Err(MultiswapError::InvalidGeometry);
@@ -446,6 +480,7 @@ pub fn verify_multiswap_mod_r1cs<T: Transcript + Send>(
     vc: &LigVerifierConfig,
 ) -> Result<(), MultiswapError> {
     let p = prepared.params();
+    prepared.validate_config(vc)?;
     validate_ligerito_commitment(commitment, vc).map_err(MultiswapError::F2z)?;
     if commitment.params.m != p.t + p.s {
         return Err(MultiswapError::InvalidGeometry);
@@ -711,12 +746,53 @@ fn validate_bit_rows(p: &IntEvalParams, rows: &[Vec<u64>]) -> Result<(), Multisw
     Ok(())
 }
 
+fn config_digest(config: &impl LigeritoStatementConfig) -> [u8; 32] {
+    let mut h = Hasher::new();
+    h.update(b"f2z/multiswap/ligerito-config/v1");
+    for v in [
+        config.recursive_steps(),
+        config.initial_log_msg_cols(),
+        config.initial_log_num_interleaved(),
+        config.initial_k(),
+    ] {
+        h.update(&(v as u64).to_le_bytes());
+    }
+    for vs in [
+        config.log_inv_rates(),
+        config.recursive_log_msg_cols(),
+        config.recursive_ks(),
+        config.queries(),
+        config.grinding_bits(),
+        config.fold_grinding_bits(),
+        config.ood_samples(),
+    ] {
+        h.update(&(vs.len() as u64).to_le_bytes());
+        for v in vs {
+            h.update(&(*v as u64).to_le_bytes());
+        }
+    }
+    h.update(&[match config.merkle_hash() {
+        flock_core::merkle::HashKind::Sha256 => 0,
+        flock_core::merkle::HashKind::Blake3 => 1,
+    }]);
+    *h.finalize().as_bytes()
+}
+
 /// Digest binding the integer statement, layout, profile, and commitment.
 fn assignment_binding(prepared: &PreparedMultiswapRelation, commitment: &Commitment) -> [u8; 32] {
     let layout = prepared.layout();
     let p = prepared.params();
     let profile = prepared.profile();
     let mut hasher = Hasher::new();
+    // Keep the historical unbatched 114-bit transcript pins. New profiles
+    // and batches bind the full comparison contract and opening configuration.
+    if prepared.security.lambda != 114 || prepared.batch_count != 1 {
+        hasher.update(b"f2z/spartan-multiswap/configuration/v3");
+        hasher.update(&prepared.security.lambda.to_le_bytes());
+        hasher.update(prepared.security.profile_name.as_bytes());
+        hasher.update(&prepared.opening_config_digest);
+        hasher.update(&prepared.comparison_statement_digest);
+    }
     hasher.update(MULTISWAP_BINDING_DOMAIN);
     hasher.update(MULTISWAP_STATEMENT_DOMAIN);
     hasher.update(prepared.statement_digest());
@@ -816,6 +892,77 @@ mod tests {
         crate::utils::QUAD_ENV_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    #[test]
+    fn matched_112_derives_every_batch_and_rejects_weaker_openers() {
+        use crate::piop::spartan::Limber112;
+        for batch in [1, 2, 4, 8, 16] {
+            let circuit =
+                MultiswapCircuit::build_batch(MultiswapDims::multiswap(0), batch).unwrap();
+            let prepared =
+                PreparedMultiswapRelation::new_with_profile::<Limber112>(&circuit).unwrap();
+            assert!(prepared.security().accounting.achieved_bits() >= 112.0);
+            assert_eq!(prepared.profile().reduction_grinding_bits(), 8);
+            let (pc, mut vc) = prepared.ligerito_configs();
+            prepared.validate_config(&pc).unwrap();
+            prepared.validate_config(&vc).unwrap();
+            vc.queries[0] -= 1;
+            assert!(prepared.validate_config(&vc).is_err());
+            let facts = multiswap_instance_facts(13, 1, prepared.layout().gate_vars() as u32 + 2);
+            assert_eq!(facts.step50_magnitude_log2, 282 + batch.ilog2());
+        }
+    }
+
+    #[test]
+    fn matched_112_proof_binds_target_and_public_statement() {
+        use crate::piop::spartan::Limber112;
+        let _env = env_guard();
+        let circuit = MultiswapCircuit::build(MultiswapDims::mini()).unwrap();
+        let prepared = PreparedMultiswapRelation::new_with_profile::<Limber112>(&circuit).unwrap();
+        let assignment = MultiswapAssignment::new(&circuit).unwrap();
+        let (pc, vc) = prepared.ligerito_configs();
+        let hint =
+            commit_multiswap_witness(prepared.params(), assignment.f2z_bit_rows(), &pc).unwrap();
+        let proof = prove_multiswap_mod_r1cs(
+            &mut Blake3Transcript::new(),
+            &prepared,
+            &assignment,
+            &hint,
+            &pc,
+        )
+        .unwrap();
+        verify_multiswap_mod_r1cs(
+            &mut Blake3Transcript::new(),
+            &prepared,
+            &hint.commitment,
+            &proof,
+            &vc,
+        )
+        .unwrap();
+        let old = PreparedMultiswapRelation::new(&circuit).unwrap();
+        assert!(
+            verify_multiswap_mod_r1cs(
+                &mut Blake3Transcript::new(),
+                &old,
+                &hint.commitment,
+                &proof,
+                &old.ligerito_configs().1
+            )
+            .is_err()
+        );
+        let mut changed = prepared;
+        changed.statement_digest[0] ^= 1;
+        assert!(
+            verify_multiswap_mod_r1cs(
+                &mut Blake3Transcript::new(),
+                &changed,
+                &hint.commitment,
+                &proof,
+                &vc
+            )
+            .is_err()
+        );
     }
 
     #[test]
