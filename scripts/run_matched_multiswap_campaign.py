@@ -2,7 +2,7 @@
 """Run the matched F2Z/Limber MultiSwap performance campaign.
 
 The runner creates a new immutable run directory, executes six cells per
-workload ``k``, validates every proof trace before moving on, and finally
+reference-circuit batch size, validates every proof trace before moving on, and finally
 renders canonical and combined reports. Use ``--dry-run`` to print the complete
 execution plan without creating files or compiling benchmarks.
 """
@@ -23,11 +23,9 @@ from pathlib import Path
 from typing import Any, Sequence
 
 import matched_multiswap_report as report
+from prepare_matched_limber import BASE_REVISION as LIMBER_BASE_REVISION
 
 
-PROFILER_DEFAULT = Path(
-    "/Users/johnwu/.ai-agent-army/skills/zk-proof-profiler/scripts/zk_trace.py"
-)
 WORKLOAD_DISCLOSURE = (
     "Synthetic wired MultiSwap/RSA cost-model. Modeled hash and Poseidon costs "
     "are protocol accounting, not native hash executions."
@@ -81,10 +79,20 @@ def detect_performance_cores() -> tuple[int, str]:
 def _git_metadata(root: Path) -> dict[str, Any]:
     revision = _capture(["git", "rev-parse", "HEAD"], root)
     status = _capture(["git", "status", "--porcelain", "--untracked-files=all"], root)
+    diff = subprocess.run(["git", "diff", "HEAD", "--binary"], cwd=root, capture_output=True).stdout if root.is_dir() else b""
+    untracked = subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "-z"], cwd=root, capture_output=True).stdout if root.is_dir() else b""
+    untracked_hashes = {}
+    for raw in untracked.split(b"\0"):
+        if raw:
+            path = root / os.fsdecode(raw)
+            if path.is_file():
+                untracked_hashes[os.fsdecode(raw)] = hashlib.sha256(path.read_bytes()).hexdigest()
     return {
         "root": str(root),
         "git_revision": revision,
         "git_dirty": status is not None,
+        "diff_sha256": hashlib.sha256(diff).hexdigest(),
+        "untracked_sha256": untracked_hashes,
     }
 
 
@@ -95,7 +103,14 @@ def _cpu_name() -> str:
         if match:
             return match.group(1).strip()
     brand = _capture(["sysctl", "-n", "machdep.cpu.brand_string"])
-    return brand or platform.processor() or platform.machine()
+    if brand:
+        return brand
+    cpuinfo = Path("/proc/cpuinfo")
+    if cpuinfo.is_file():
+        match = re.search(r"^model name\s*:\s*(.+)$", cpuinfo.read_text(), re.MULTILINE)
+        if match:
+            return match.group(1)
+    return platform.processor() or platform.machine()
 
 
 def build_cells(
@@ -110,7 +125,35 @@ def build_cells(
     rustflags: str,
     expected_digests: dict[int, str],
     k_values: Sequence[int],
+    security_bits: int | None = None,
+    batch_counts: Sequence[int] | None = None,
 ) -> list[dict[str, Any]]:
+    if batch_counts is not None:
+        if tuple(k_values) != (0,) or expected_digests:
+            raise report.CampaignError("batch sweep requires k=0 and derives separate per-batch digest expectations")
+        if not batch_counts or len(set(batch_counts)) != len(batch_counts) or any(b not in (1,2,4,8,16) for b in batch_counts):
+            raise report.CampaignError("batch counts must be unique values from 1,2,4,8,16")
+        result = []
+        for ordinal, batch in enumerate(batch_counts):
+            group = build_cells(f2z_root=f2z_root, limber_root=limber_root, run_dir=run_dir,
+                campaign_id=campaign_id, samples=samples, warmups=warmups, all_threads=all_threads,
+                rustflags=rustflags, expected_digests={}, k_values=(0,), security_bits=security_bits)
+            for cell in group:
+                cell["batch_count"] = batch
+                cell["label"] = cell["label"].replace("k=0", f"batch={batch}")
+                for field in ("cell_id", "trace", "log"):
+                    cell[field] = cell[field].replace("k0-", f"b{batch}-")
+                env = cell["environment"]
+                for name in ("F2Z_MULTISWAP_TRACE_PATH", "MATCHED_TRACE_PATH"):
+                    if name in env: env[name] = env[name].replace("k0-", f"b{batch}-")
+                env["F2Z_MULTISWAP_BATCH_COUNT" if cell["implementation"] == "f2z-ligerito" else "MATCHED_BATCH_COUNT"] = str(batch)
+            implementations = ("f2z-ligerito", "limber-hyrax", "limber-brakedown")
+            rotated = implementations[ordinal % 3:] + implementations[:ordinal % 3]
+            threads = ("single", "performance") if ordinal % 2 == 0 else ("performance", "single")
+            group.sort(key=lambda c: (rotated.index(c["implementation"]), threads.index(c["thread_mode"])))
+            result.extend(group)
+        for index, cell in enumerate(result): cell["execution_index"] = index
+        return result
     thread_modes = (("single", 1), ("performance", all_threads))
     cells: list[dict[str, Any]] = []
     cpu = _cpu_name()
@@ -210,6 +253,16 @@ def build_cells(
                 cell = by_key[(implementation, thread_mode)]
                 cell["execution_index"] = len(ordered)
                 ordered.append(cell)
+    for cell in ordered:
+        if security_bits is not None:
+            cell["security_bits"] = security_bits
+            env = cell["environment"]
+            if cell["implementation"] == "f2z-ligerito":
+                env["F2Z_BENCH_LAMBDA"] = str(security_bits)
+            else:
+                env["MATCHED_SECURITY_BITS"] = str(security_bits)
+                env.update({"BDLAMBDA": str(security_bits), "BDSPEC": "4", "BDROWLEN": "32768", "BDDIRECT": "65536"})
+        cell["environment"].setdefault("F2Z_MULTISWAP_BATCH_COUNT" if cell["implementation"] == "f2z-ligerito" else "MATCHED_BATCH_COUNT", "1")
     return ordered
 
 
@@ -297,8 +350,7 @@ def _run_logged(cell: dict[str, Any], run_dir: Path) -> None:
     trace_path = (run_dir / "metadata" / cell["trace"]).resolve()
     if trace_path.exists():
         raise report.CampaignError(f"refusing to overwrite trace {trace_path}")
-    process_environment = os.environ.copy()
-    process_environment.update(cell["environment"])
+    process_environment = benchmark_environment(cell["environment"])
     with log_path.open("w", encoding="utf-8") as log:
         log.write(f"$ {_display_command(cell)}\n\n")
         log.flush()
@@ -323,6 +375,26 @@ def _run_logged(cell: dict[str, Any], run_dir: Path) -> None:
         )
     if not trace_path.is_file() or trace_path.stat().st_size == 0:
         raise report.CampaignError(f"cell {cell['cell_id']} produced no trace at {trace_path}")
+
+
+def benchmark_environment(overrides: dict[str, str]) -> dict[str, str]:
+    prefixes = ("F2Z_", "F2_FOREST", "MATCHED_", "MS", "BD", "LOGUP_", "INT_EVAL_", "OBLONG_")
+    knobs = {"IMOD_K", "GKRSKIP", "CHAIN_BITS", "SEGGLOG", "M127", "PSIZE", "PSDUMP", "KSWEEP", "CARGO_ENCODED_RUSTFLAGS"}
+    environment = {k: v for k, v in os.environ.items() if not k.startswith(prefixes) and k not in knobs}
+    environment.update(overrides)
+    return environment
+
+
+def preflight_profiler(profiler: Path | None) -> dict[str, Any]:
+    if profiler is None or not profiler.is_file():
+        supplied = f" File not found: {profiler}." if profiler is not None else ""
+        raise report.CampaignError("pass --profiler PATH to the canonical zk-proof-profiler/scripts/zk_trace.py; it is a required dependency for canonical validation." + supplied + " Use --draft to collect locally checked results with canonical validation pending.")
+    resolved = profiler.resolve()
+    help_result = subprocess.run([sys.executable, str(resolved), "--help"], capture_output=True, text=True)
+    if help_result.returncode or not all(word in help_result.stdout for word in ("validate", "report")):
+        raise report.CampaignError("canonical validator must support validate and report commands")
+    return {"path": str(resolved), "sha256": hashlib.sha256(resolved.read_bytes()).hexdigest(),
+            "python_version": platform.python_version()}
 
 
 def _canonical_validate(profiler: Path, trace_path: Path) -> None:
@@ -361,25 +433,28 @@ def _write_combined_trace(
 def execute_campaign(
     manifest: dict[str, Any],
     manifest_path: Path,
-    profiler: Path,
+    profiler: Path | None,
     report_dir: Path,
     canonical_report_dir: Path,
 ) -> None:
-    if not profiler.is_file():
-        raise report.CampaignError(f"zk-proof-profiler validator not found: {profiler}")
+    draft = manifest.get("validation", {}).get("mode") == "draft"
+    if not draft:
+        preflight_profiler(profiler)
+    elif profiler is not None:
+        raise report.CampaignError("draft mode cannot claim canonical validation")
     manifest["status"] = "running"
     _write_manifest(manifest_path, manifest)
-    expected_digests: dict[int, str] = {
-        int(workload_k): digest
+    expected_digests: dict[str, str] = {
+        str(workload_k): digest
         for workload_k, digest in manifest.get("digest_expectations", {}).items()
     }
-    expected_domains: dict[int, str] = {
+    expected_domains: dict[str, str] = {
         workload_k: report.STATEMENT_DOMAIN for workload_k in expected_digests
     }
-    assignment_digests: dict[int, str] = {}
+    assignment_digests: dict[str, str] = {}
     completed: list[Path] = []
     for cell in manifest["cells"]:
-        workload_k = cell["workload_k"]
+        workload_k = report.cell_group(cell)
         cell["status"] = "running"
         _write_manifest(manifest_path, manifest)
         print(f"\n==> {cell['label']}")
@@ -389,7 +464,8 @@ def execute_campaign(
                 cell["environment"]["F2Z_MULTISWAP_EXPECTED_CONSTRAINT_DIGEST"] = expected_digests[workload_k]
             _run_logged(cell, manifest_path.parent.parent)
             trace_path = _resolve_cell_trace(manifest_path, cell)
-            _canonical_validate(profiler, trace_path)
+            if profiler is not None:
+                _canonical_validate(profiler, trace_path)
             loaded = report.load_cell_trace(
                 manifest_path,
                 {**cell, "status": "ok"},
@@ -437,27 +513,27 @@ def execute_campaign(
             raise report.CampaignError(f"cell {cell['cell_id']} failed: {error}") from error
 
     try:
-        validated_manifest, loaded_cells = report.validate_campaign(manifest_path)
-        summary = report.build_summary(validated_manifest, loaded_cells)
-        report.write_report(summary, report_dir)
+        _, loaded_cells = report.validate_campaign(manifest_path)
         combined_trace = _write_combined_trace(manifest, manifest_path, completed)
-        _canonical_validate(profiler, combined_trace)
-        canonical_report_dir.mkdir(parents=True, exist_ok=False)
-        canonical = subprocess.run(
-            [
-                sys.executable,
-                str(profiler),
-                "report",
-                str(combined_trace),
-                "--out-dir",
-                str(canonical_report_dir),
-                "--title",
-                "Matched MultiSwap F2Z / Limber campaign",
-            ],
-            check=False,
-        )
-        if canonical.returncode:
-            raise report.CampaignError("canonical combined report generation failed")
+        if profiler is not None:
+            _canonical_validate(profiler, combined_trace)
+            canonical_report_dir.mkdir(parents=True, exist_ok=False)
+            canonical = subprocess.run(
+                [sys.executable, str(profiler), "report", str(combined_trace),
+                 "--out-dir", str(canonical_report_dir),
+                 "--title", "Matched MultiSwap F2Z / Limber campaign"],
+                check=False,
+            )
+            if canonical.returncode:
+                raise report.CampaignError("canonical combined report generation failed")
+        manifest["status"] = "draft" if draft else "ok"
+        manifest["validation"] = {
+            "mode": "draft" if draft else "canonical",
+            "comparison_checks": "passed",
+            "canonical_validation": "pending" if draft else "passed",
+        }
+        summary = report.build_summary(manifest, loaded_cells)
+        report.write_report(summary, report_dir)
     except Exception as error:
         manifest["status"] = "failed"
         manifest["finalization_error"] = str(error)
@@ -465,7 +541,6 @@ def execute_campaign(
         if isinstance(error, report.CampaignError):
             raise
         raise report.CampaignError(f"campaign finalization failed: {error}") from error
-    manifest["status"] = "ok"
     manifest.pop("finalization_error", None)
     _write_manifest(manifest_path, manifest)
 
@@ -504,9 +579,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--limber-root", type=Path)
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--campaign-id")
-    parser.add_argument("--samples", type=int, default=5)
+    parser.add_argument("--samples", type=int, default=10)
     parser.add_argument("--warmups", type=int, choices=(1,), default=1)
-    parser.add_argument("--k-values", default="0,1,2,4,8")
+    parser.add_argument("--k-values", default="0")
+    parser.add_argument("--batch-counts", default="1,2,4,8,16", help="comma-separated copies; use 'none' for the historical k sweep")
+    parser.add_argument("--security-bits", type=int, choices=(112, 114), default=112)
     parser.add_argument(
         "--all-threads",
         type=int,
@@ -520,7 +597,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="repeatable hard expectation for one workload k",
     )
     parser.add_argument("--rustflags", default="-Ctarget-cpu=native")
-    parser.add_argument("--profiler", type=Path, default=PROFILER_DEFAULT)
+    validation = parser.add_mutually_exclusive_group()
+    validation.add_argument("--profiler", type=Path, help="required for canonical execution: actual zk_trace.py validator")
+    validation.add_argument("--draft", action="store_true", help="run proofs and comparison checks; mark reports as pending external canonical validation")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args(argv)
 
@@ -531,6 +610,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.samples < 1:
             raise report.CampaignError("--samples must be positive")
         k_values = _parse_k_values(args.k_values)
+        batch_counts = None if args.batch_counts == "none" else _parse_k_values(args.batch_counts)
         expected_digests = _parse_expected_digests(args.expected_digest)
         unexpected = set(expected_digests) - set(k_values)
         if unexpected:
@@ -550,7 +630,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         run_dir = (
             args.output_dir.resolve()
             if args.output_dir
-            else f2z_root / "PerfRuns" / f"{stamp}-matched-multiswap-k-sweep"
+            else f2z_root / "bench_results" / f"{stamp}-matched-multiswap"
         )
         cells = build_cells(
             f2z_root=f2z_root,
@@ -563,6 +643,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             rustflags=args.rustflags,
             expected_digests=expected_digests,
             k_values=k_values,
+            security_bits=args.security_bits, batch_counts=batch_counts,
         )
         manifest = build_manifest(
             campaign_id=campaign_id,
@@ -577,6 +658,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             k_values=k_values,
             expected_digests=expected_digests,
         )
+        manifest["security"] = {"target_bits": args.security_bits, "model": "per-check-round-minimum/v1"}
+        manifest["validation"] = {
+            "mode": "draft" if args.draft else "canonical",
+            "comparison_checks": "pending",
+            "canonical_validation": "pending",
+        }
+        manifest["repositories"]["limber"]["instrumented_base_revision"] = LIMBER_BASE_REVISION
+        patch = f2z_root / "patches/limber-multiswap-112.patch"
+        if patch.is_file():
+            manifest["repositories"]["limber"]["matched_patch_sha256"] = hashlib.sha256(patch.read_bytes()).hexdigest()
+        if batch_counts is not None:
+            manifest["workload"]["batch_counts"] = list(batch_counts)
+            manifest["workload"]["k_semantics"] = "independent copies of the k=0 reference circuit in one proof"
+            manifest["execution_order"]["policy"] = "rotate implementation start by batch ordinal; alternate thread-mode order"
         if args.dry_run:
             plan = {
                 "manifest": manifest,
@@ -588,6 +683,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise report.CampaignError(f"refusing to overwrite run directory {run_dir}")
         if not f2z_root.is_dir() or not limber_root.is_dir():
             raise report.CampaignError("F2Z and Limber repository roots must both exist")
+        manifest["validator"] = None if args.draft else preflight_profiler(args.profiler)
+        ancestor = subprocess.run(["git", "merge-base", "--is-ancestor", LIMBER_BASE_REVISION, "HEAD"], cwd=limber_root)
+        if ancestor.returncode:
+            raise report.CampaignError(f"Limber must descend from instrumented base {LIMBER_BASE_REVISION}")
+        manifest["toolchains"] = {
+            "f2z": _capture(["rustc", "--version"], f2z_root),
+            "limber": _capture(["rustup", "run", "nightly-2026-07-01", "rustc", "--version"], limber_root),
+        }
+        if not all(manifest["toolchains"].values()):
+            raise report.CampaignError("required Rust toolchain is unavailable")
         for directory in (
             run_dir / "raw",
             run_dir / "logs",
@@ -602,13 +707,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         execute_campaign(
             manifest,
             manifest_path,
-            args.profiler.resolve(),
+            args.profiler.resolve() if args.profiler is not None else None,
             run_dir / "reports" / "combined",
             run_dir / "reports" / "canonical",
         )
         print(f"Campaign manifest: {manifest_path}")
         print(f"Combined report: {run_dir / 'reports' / 'combined' / 'intervals.html'}")
-        print(f"Canonical report: {run_dir / 'reports' / 'canonical' / 'intervals.html'}")
+        if args.draft:
+            print("Draft results: proofs and repository comparison checks passed; external canonical validation is pending.")
+        else:
+            print(f"Canonical report: {run_dir / 'reports' / 'canonical' / 'intervals.html'}")
         return 0
     except report.CampaignError as error:
         print(f"error: {error}", file=sys.stderr)

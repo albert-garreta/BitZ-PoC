@@ -33,6 +33,8 @@
 use crypto_bigint::U128;
 use crypto_primes::{Flavor, is_prime};
 use flock_core::challenger::Challenger;
+pub(crate) mod atomic;
+
 use flock_core::field::F128;
 use flock_core::merkle::HashKind;
 use flock_core::pcs::commit::{Commitment, PcsParams, ProverData, commit};
@@ -2827,15 +2829,46 @@ impl ModQLigProverReduction for EqProverReduction {
     }
 }
 
-fn prove_prepared_mod_q_ligerito(
+fn prove_prepared_mod_q_ligerito_with_security(
     transcript: &mut (impl Transcript + Send),
     hint: &FlockCommitHint,
     pc: &LigProverConfig,
     basis: Vec<F128>,
     target: Gf,
     precomputed_round0: Option<(Gf, Gf)>,
+    security: Option<&mut atomic::AtomicSecurity<'_>>,
 ) -> LigeritoProof {
     let _g_l = crate::utils::prof::scope("mq:lig");
+    if let Some(security) = security {
+        let mut challenger = atomic::AtomicChallenger::new(transcript, security);
+        let proof = match precomputed_round0 {
+            Some((u0, u2)) => ligerito::recursive_prover_with_basis_precomputed_round0(
+                pc,
+                par_clone_f128(&hint.p_msg),
+                basis,
+                gf_to_f128(target),
+                &hint.prover_data.codeword,
+                &hint.prover_data.merkle_tree,
+                (gf_to_f128(u0), gf_to_f128(u2)),
+                None,
+                &mut challenger,
+            ),
+            None => ligerito::recursive_prover_with_basis(
+                pc,
+                par_clone_f128(&hint.p_msg),
+                basis,
+                gf_to_f128(target),
+                &hint.prover_data.codeword,
+                &hint.prover_data.merkle_tree,
+                &mut challenger,
+            ),
+        };
+        assert!(
+            challenger.finish(),
+            "Flock prover diverged from the atomic challenge plan"
+        );
+        return proof;
+    }
     match precomputed_round0 {
         Some((u0, u2)) => ligerito::recursive_prover_with_basis_precomputed_round0(
             pc,
@@ -2882,6 +2915,40 @@ where
     S: ModQWeightSource + ?Sized,
     R: ModQLigProverReduction,
 {
+    prove_mod_q_lig_core_with_security(
+        transcript,
+        hint,
+        relation_params,
+        relation_rows,
+        relation_packed_cols,
+        chunks,
+        alpha,
+        pc,
+        forest_grinding_bits,
+        ood,
+        reduction,
+        None,
+    )
+}
+
+fn prove_mod_q_lig_core_with_security<S, R>(
+    transcript: &mut (impl Transcript + Send),
+    hint: &FlockCommitHint,
+    relation_params: &IntEvalParams,
+    relation_rows: &[Vec<u64>],
+    relation_packed_cols: Option<&[Vec<u64>]>,
+    chunks: &S,
+    alpha: Gf,
+    pc: &LigProverConfig,
+    forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
+    reduction: R,
+    security: Option<&mut atomic::AtomicSecurity<'_>>,
+) -> ModQLigCoreProof<R::Proof>
+where
+    S: ModQWeightSource + ?Sized,
+    R: ModQLigProverReduction,
+{
     let lch = chunks.chunk_count();
     // Round 0 precedes every forest message: it binds the committed
     // message's list element before any further challenge.
@@ -2912,13 +2979,14 @@ where
     }
 
     let prepared = reduction.prepare(grinder, &points, hint, ood_claim.as_ref());
-    let lig = prove_prepared_mod_q_ligerito(
+    let lig = prove_prepared_mod_q_ligerito_with_security(
         transcript,
         hint,
         pc,
         prepared.basis,
         prepared.target,
         prepared.precomputed_round0,
+        security,
     );
     ModQLigCoreProof {
         mfs,
@@ -3367,12 +3435,13 @@ impl ModQLigVerifierReduction for EqVerifierReduction<'_> {
     }
 }
 
-fn verify_prepared_mod_q_ligerito(
+fn verify_prepared_mod_q_ligerito_with_security(
     transcript: &mut (impl Transcript + Send),
     commitment: &Commitment,
     proof: &LigeritoProof,
     vc: &LigVerifierConfig,
     prepared: PreparedLigeritoClaim,
+    security: Option<&mut atomic::AtomicSecurity<'_>>,
 ) -> Result<(), FlockRsError> {
     let eval_b = |ris: &[F128], remaining_vars: usize| {
         let mut out = prepared.basis.evaluate(ris, remaining_vars);
@@ -3384,6 +3453,23 @@ fn verify_prepared_mod_q_ligerito(
         }
         out
     };
+    if let Some(security) = security {
+        let mut challenger = atomic::AtomicChallenger::new(transcript, security);
+        let ok = ligerito::recursive_verifier_with_basis_succinct(
+            vc,
+            proof,
+            prepared.packed_vars,
+            gf_to_f128(prepared.target),
+            &commitment.root,
+            eval_b,
+            &mut challenger,
+        );
+        return if ok && challenger.finish() {
+            Ok(())
+        } else {
+            Err(FlockRsError::LigeritoReject)
+        };
+    }
     let ok = ligerito::recursive_verifier_with_basis_succinct(
         vc,
         proof,
@@ -3730,6 +3816,41 @@ where
     R: ModQLigVerifierReduction,
     C: FnOnce(&[u128], usize, usize) -> Result<(), FlockRsError>,
 {
+    verify_mod_q_lig_core_with_security(
+        transcript,
+        commitment,
+        proof,
+        p,
+        chunks,
+        alpha,
+        vc,
+        forest_grinding_bits,
+        ood,
+        reduction,
+        read_off,
+        None,
+    )
+}
+
+fn verify_mod_q_lig_core_with_security<S, R, C>(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: ModQLigProofView<'_>,
+    p: &IntEvalParams,
+    chunks: &S,
+    alpha: Gf,
+    vc: &LigVerifierConfig,
+    forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
+    reduction: R,
+    read_off: C,
+    security: Option<&mut atomic::AtomicSecurity<'_>>,
+) -> Result<PaddedChunkFolds, FlockRsError>
+where
+    S: ModQWeightSource + ?Sized,
+    R: ModQLigVerifierReduction,
+    C: FnOnce(&[u128], usize, usize) -> Result<(), FlockRsError>,
+{
     validate_ligerito_commitment(commitment, vc)?;
     let lch = chunks.chunk_count();
     reduction.validate_shape(lch)?;
@@ -3778,7 +3899,9 @@ where
     };
     {
         let _g = crate::utils::prof::scope("mv:lig");
-        verify_prepared_mod_q_ligerito(transcript, commitment, proof.lig, vc, prepared)?;
+        verify_prepared_mod_q_ligerito_with_security(
+            transcript, commitment, proof.lig, vc, prepared, security,
+        )?;
     }
     Ok(folds)
 }
@@ -11156,6 +11279,51 @@ where
         .fold(Gf::zero(), |acc, row| acc + coeffs.coeff(row))
 }
 
+#[cfg(all(test, feature = "ecdsa"))]
+#[test]
+fn chained_compact_tail_weights_and_planes_match_generic() {
+    use crate::{
+        f2map::VirtualMap,
+        piop::spartan::ecdsa_sha256::{OuterMode, prepare_sha256_ecdsa},
+    };
+    let prepared = prepare_sha256_ecdsa(7, 100, OuterMode::Split).unwrap();
+    let map = prepared.map();
+    let point: Vec<_> = (0..map.rows().ilog2())
+        .map(|i| Gf::from_words([17 + u64::from(i), 29]))
+        .collect();
+    let points = [point];
+    let etas = [Gf::from_words([73, 13])];
+    let weights = VirtColumnWeights::new(map, &points, &etas, prepared.assignment_params().t);
+    let generic = VirtColumnWeights::Generic {
+        map,
+        coeffs: VirtRowCoeffs::new(&points, &etas, prepared.assignment_params().t),
+    };
+    let mut actual = [Gf::zero(); 128];
+    let mut expected = actual;
+    for pack in 0..(map.cols() >> LOG_PACKING) {
+        weights.pack_weights(pack, &mut actual);
+        generic.pack_weights(pack, &mut expected);
+        assert_eq!(actual, expected, "source pack {pack}");
+    }
+    let p_msg: Vec<_> = (0..map.cols() >> LOG_PACKING)
+        .map(|i| F128 {
+            lo: i as u64 ^ 0xabcdef,
+            hi: !(i as u64),
+        })
+        .collect();
+    let a_cols = crate::dual_basis::dual_basis_cols();
+    if let Some(planes) = weights.packed_source_planes() {
+        let mut hs = planes.hs_fold(&p_msg);
+        weights.add_extra_hs(&mut hs, &p_msg, &a_cols);
+        assert_eq!(hs, virtual_hs_fold(map, &weights, &p_msg, &a_cols));
+        let rho = crate::poly::utils::build_eq_x_r_vec(&points[0][..7], &()).unwrap();
+        let (mut basis, mut round0) = planes.a_prime(&rho, &p_msg);
+        weights.add_extra_a_prime(&mut basis, &mut round0, &rho, &p_msg);
+        let expected = virtual_a_prime_f128(map, &weights, &rho, &a_cols, p_msg.len());
+        assert!(basis.iter().zip(expected).all(|(&a, b)| gf_to_f128(a) == b));
+    }
+}
+
 /// Per-prove column-weight engine for the batching passes: fills whole
 /// 128-column source packs with `W_j = Σ_{r:M[r,j]=1} E_r`
 /// (`E_r = Σ_l η_l·eq_{bits(r)}(pt_l)`).
@@ -11231,6 +11399,30 @@ impl ExtraWeightTerm {
     }
 }
 
+struct DenseWeightCorrection {
+    start: usize,
+    weights: Vec<Gf>,
+}
+
+impl DenseWeightCorrection {
+    fn end(&self) -> usize {
+        self.start + self.weights.len()
+    }
+    fn add_pack(&self, pack: usize, out: &mut [Gf; 128]) {
+        let base = pack << LOG_PACKING;
+        let lo = base.max(self.start);
+        let hi = (base + 128).min(self.end());
+        if lo < hi {
+            for (dst, src) in out[lo - base..hi - base]
+                .iter_mut()
+                .zip(&self.weights[lo - self.start..hi - self.start])
+            {
+                *dst += *src;
+            }
+        }
+    }
+}
+
 enum VirtColumnWeights<'a, M: crate::f2map::VirtualMap> {
     /// Factored tensor-repetition tables.
     Repeated {
@@ -11270,6 +11462,8 @@ enum VirtColumnWeights<'a, M: crate::f2map::VirtualMap> {
         /// part, so the prover adds them through [`Self::add_extra_hs`] /
         /// [`Self::add_extra_a_prime`].
         extra: Vec<ExtraWeightTerm>,
+        /// Appended compact relation and its source aliases, including column zero.
+        corrections: Vec<DenseWeightCorrection>,
         _map: core::marker::PhantomData<&'a M>,
     },
     /// The streamed per-nonzero fold (any map).
@@ -11394,6 +11588,42 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                     .into_iter()
                     .filter(|term| !term.is_empty())
                     .collect();
+                let mut corrections = Vec::new();
+                if let Some(tail) = map.chained_packed_source_tail() {
+                    let coeffs = VirtRowCoeffs::new(points, etas, t_wh);
+                    let weights: Vec<Gf> = tail
+                        .map
+                        .matrix()
+                        .columns()
+                        .map(|col| {
+                            col.row_indices().iter().fold(Gf::zero(), |sum, &r| {
+                                sum + coeffs.coeff(tail.row_offset + r)
+                            })
+                        })
+                        .collect();
+                    let mut aliases = std::collections::BTreeMap::<usize, Gf>::new();
+                    for (&column, &weight) in tail.aliases.iter().zip(&weights) {
+                        *aliases.entry(column).or_insert(Gf::zero()) += weight;
+                    }
+                    for (column, weight) in aliases {
+                        if let Some(last) = corrections
+                            .last_mut()
+                            .filter(|last: &&mut DenseWeightCorrection| column <= last.end() + 128)
+                        {
+                            last.weights.resize(column - last.start + 1, Gf::zero());
+                            last.weights[column - last.start] += weight;
+                        } else {
+                            corrections.push(DenseWeightCorrection {
+                                start: column,
+                                weights: vec![weight],
+                            });
+                        }
+                    }
+                    corrections.push(DenseWeightCorrection {
+                        start: tail.source_offset,
+                        weights: weights[tail.aliases.len()..].to_vec(),
+                    });
+                }
                 return Self::PackedSourceRepeated {
                     local_width,
                     live_cols,
@@ -11403,6 +11633,7 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                     s,
                     constant_weight,
                     extra,
+                    corrections,
                     _map: core::marker::PhantomData,
                 };
             }
@@ -11480,6 +11711,7 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                     s,
                     constant_weight,
                     extra: Vec::new(),
+                    corrections: Vec::new(),
                     _map: core::marker::PhantomData,
                 };
             }
@@ -11617,13 +11849,10 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                 s,
                 constant_weight,
                 extra,
+                corrections,
                 ..
             } => {
                 out.fill(Gf::zero());
-                if base >= *live_cols {
-                    return false;
-                }
-
                 let end = (base + 128).min(*live_cols);
                 let mut column = base;
                 if column == 0 {
@@ -11652,7 +11881,10 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                     }
                     column += run_len;
                 }
-                out[..end - base].iter().any(|weight| *weight != Gf::zero())
+                for correction in corrections {
+                    correction.add_pack(pack, out);
+                }
+                out.iter().any(|weight| *weight != Gf::zero())
             }
             Self::Generic { map, coeffs } => {
                 let mut live = false;
@@ -11666,13 +11898,16 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
         }
     }
 
-    /// The sorted, distinct source packs any chained extra term touches
-    /// (nonconstant cells only; the constant column is in
-    /// `constant_weight`). Empty for a plain repetition.
+    /// Source packs touched by chained nonconstant terms or compact-tail
+    /// corrections. Tail corrections can include the shared constant column;
+    /// the SHA constant contribution is already in `constant_weight`.
     #[allow(clippy::arithmetic_side_effects)]
     fn extra_packs(&self) -> Vec<usize> {
         let Self::PackedSourceRepeated {
-            local_width, extra, ..
+            local_width,
+            extra,
+            corrections,
+            ..
         } = self
         else {
             return Vec::new();
@@ -11688,13 +11923,20 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                 packs.extend((first >> LOG_PACKING)..=(last >> LOG_PACKING));
             }
         }
+        for correction in corrections {
+            if !correction.weights.is_empty() {
+                packs.extend(
+                    (correction.start >> LOG_PACKING)..=((correction.end() - 1) >> LOG_PACKING),
+                );
+            }
+        }
         packs.sort_unstable();
         packs.dedup();
         packs
     }
 
-    /// The extra terms' share of pack `pack`'s weights (nonconstant cells
-    /// only). Returns `false` when it is all zero.
+    /// The chained terms and compact tail's share of this pack's weights.
+    /// Returns `false` when it is all zero.
     #[allow(clippy::arithmetic_side_effects)]
     fn pack_weights_extra(&self, pack: usize, out: &mut [Gf; 128]) -> bool {
         out.fill(Gf::zero());
@@ -11702,15 +11944,13 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
             local_width,
             live_cols,
             extra,
+            corrections,
             ..
         } = self
         else {
             return false;
         };
         let base = pack << LOG_PACKING;
-        if base >= *live_cols || extra.is_empty() {
-            return false;
-        }
         let end = (base + 128).min(*live_cols);
         let mut column = base.max(1);
         while column < end {
@@ -11724,7 +11964,10 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
             }
             column += run_len;
         }
-        out[..end - base].iter().any(|weight| *weight != Gf::zero())
+        for correction in corrections {
+            correction.add_pack(pack, out);
+        }
+        out.iter().any(|weight| *weight != Gf::zero())
     }
 
     /// Adds the extra terms' contribution to the batching message `hs`
@@ -11920,7 +12163,14 @@ where
     let phi_tables = phi_byte_tables(rho, Gf::one());
     let mut result = vec![zero; n_packs];
     let live_packs = match weights {
-        VirtColumnWeights::PackedSourceRepeated { live_cols, .. } => live_cols
+        VirtColumnWeights::PackedSourceRepeated {
+            live_cols,
+            corrections,
+            ..
+        } => corrections
+            .iter()
+            .map(DenseWeightCorrection::end)
+            .fold(*live_cols, usize::max)
             .div_ceil(1usize << LOG_PACKING)
             .min(n_packs),
         _ => n_packs,
@@ -12300,6 +12550,47 @@ where
     M: crate::f2map::VirtualMap,
     S: ModQWeightSource + ?Sized,
 {
+    prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus_with_security(
+        transcript,
+        hint_f,
+        h_rows,
+        p_h,
+        p_f,
+        map,
+        chunks,
+        q,
+        q_bits,
+        alpha,
+        forest_grinding_bits,
+        ood,
+        pc,
+        None,
+    )
+}
+
+pub(crate) fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus_with_security<
+    M,
+    S,
+>(
+    transcript: &mut (impl Transcript + Send),
+    hint_f: &FlockCommitHint,
+    h_rows: &[Vec<u64>],
+    p_h: &IntEvalParams,
+    p_f: &IntEvalParams,
+    map: &M,
+    chunks: &S,
+    q: u128,
+    q_bits: usize,
+    alpha: Gf,
+    forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
+    pc: &LigProverConfig,
+    security: Option<&mut atomic::AtomicSecurity<'_>>,
+) -> IntEvalRsLigVirtProof
+where
+    M: crate::f2map::VirtualMap,
+    S: ModQWeightSource + ?Sized,
+{
     let (h_geometry, _, _) = checked_mod_q_weight_source_geometry(p_h, chunks, q_bits)
         .expect("p_h, q_bits, and chunks must define valid mod-q geometry");
     let f_geometry = validate_int_eval_geometry(&hint_f.commitment, p_f, 0)
@@ -12334,7 +12625,7 @@ where
     validate_ligerito_commitment(&hint_f.commitment, pc)
         .expect("commitment metadata must match the Ligerito config");
 
-    let bound_statement = {
+    let _bound_statement = {
         let _g = crate::utils::prof::scope("mqv:stmt");
         absorb_virtual_statement(
             transcript,
@@ -12356,7 +12647,7 @@ where
     // layout-agnostic, and the layouts coincide here anyway).
     if virtual_id_fast_eligible(map, p_h, p_f) && virt_id_fast() {
         let _g = crate::utils::prof::scope("mqv:idfast");
-        let core = prove_mod_q_lig_after_statement(
+        let core = prove_mod_q_lig_core_with_security(
             transcript,
             hint_f,
             p_h,
@@ -12365,12 +12656,12 @@ where
             chunks,
             alpha,
             pc,
-            bound_statement,
             forest_grinding_bits,
             ood,
             EqProverReduction {
                 packed_vars: packed_vars(p_f),
             },
+            security,
         );
         return IntEvalRsLigVirtProof {
             mfs: core.mfs,
@@ -12391,7 +12682,7 @@ where
         let _g = crate::utils::prof::scope("mqv:pack");
         crate::ligerito::pack_columns_from_rows(p_h, h_rows)
     };
-    let core = prove_mod_q_lig_after_statement(
+    let core = prove_mod_q_lig_core_with_security(
         transcript,
         hint_f,
         p_h,
@@ -12400,7 +12691,6 @@ where
         chunks,
         alpha,
         pc,
-        bound_statement,
         forest_grinding_bits,
         ood,
         AdjointBatchProverReduction {
@@ -12408,6 +12698,7 @@ where
             derived_row_bits: t_wh,
             source_packed_vars: packed_vars(p_f),
         },
+        security,
     );
     IntEvalRsLigVirtProof {
         mfs: core.mfs,
@@ -12653,6 +12944,53 @@ where
     S: ModQWeightSource + ?Sized,
     C: Fn(&[u128], usize, usize) -> bool,
 {
+    verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off_with_security(
+        transcript,
+        commitment_f,
+        proof,
+        p_h,
+        p_f,
+        map,
+        chunks,
+        q,
+        q_bits,
+        alpha,
+        forest_grinding_bits,
+        ood,
+        vc,
+        col_weight_count,
+        read_off_accepts,
+        None,
+    )
+}
+
+pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off_with_security<
+    M,
+    S,
+    C,
+>(
+    transcript: &mut (impl Transcript + Send),
+    commitment_f: &Commitment,
+    proof: &IntEvalRsLigVirtProof,
+    p_h: &IntEvalParams,
+    p_f: &IntEvalParams,
+    map: &M,
+    chunks: &S,
+    q: u128,
+    q_bits: usize,
+    alpha: Gf,
+    forest_grinding_bits: u32,
+    ood: Option<OodRoundParams>,
+    vc: &LigVerifierConfig,
+    col_weight_count: usize,
+    read_off_accepts: C,
+    security: Option<&mut atomic::AtomicSecurity<'_>>,
+) -> Result<(), FlockRsError>
+where
+    M: crate::f2map::VirtualMap,
+    S: ModQWeightSource + ?Sized,
+    C: Fn(&[u128], usize, usize) -> bool,
+{
     let shape = || FlockRsError::RingSwitch(RsOpenError::Shape);
     let (h_geometry, _, _) = checked_mod_q_weight_source_geometry(p_h, chunks, q_bits)?;
     let f_geometry = validate_int_eval_geometry(commitment_f, p_f, 0)?;
@@ -12676,7 +13014,7 @@ where
     }
     validate_ligerito_commitment(commitment_f, vc)?;
 
-    let bound_statement = {
+    let _bound_statement = {
         let _g = crate::utils::prof::scope("mqv:stmt");
         absorb_virtual_statement(
             transcript,
@@ -12712,7 +13050,7 @@ where
             })
         }
     };
-    verify_mod_q_lig_after_statement(
+    verify_mod_q_lig_core_with_security(
         transcript,
         commitment_f,
         proof.into(),
@@ -12720,7 +13058,6 @@ where
         chunks,
         alpha,
         vc,
-        bound_statement,
         forest_grinding_bits,
         ood,
         reduction,
@@ -12730,6 +13067,7 @@ where
             }
             Ok(())
         },
+        security,
     )?;
     Ok(())
 }

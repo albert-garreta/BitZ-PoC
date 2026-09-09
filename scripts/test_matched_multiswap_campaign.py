@@ -231,7 +231,202 @@ def _write_fixture(
     return path
 
 
+class Matched112Tests(unittest.TestCase):
+    def test_batch_sweep_has_thirty_explicit_security_cells(self) -> None:
+        cells = runner.build_cells(f2z_root=Path("/f2z"), limber_root=Path("/limber"),
+            run_dir=Path("/run"), campaign_id="matched112", samples=10, warmups=1,
+            all_threads=16, rustflags="-Ctarget-cpu=native", expected_digests={},
+            k_values=(0,), security_bits=112, batch_counts=(1,2,4,8,16))
+        self.assertEqual(len(cells), 30)
+        self.assertEqual(len({cell["trace"] for cell in cells}),30)
+        self.assertEqual({runner.report.cell_group(c) for c in cells},{"b1","b2","b4","b8","b16"})
+        for cell in cells:
+            env=cell["environment"]
+            self.assertEqual(cell["security_bits"],112)
+            if cell["implementation"]=="f2z-ligerito":
+                self.assertEqual(env["F2Z_BENCH_LAMBDA"],"112")
+                self.assertEqual(env["F2Z_MULTISWAP_BATCH_COUNT"],str(cell["batch_count"]))
+            else:
+                self.assertEqual(env["MATCHED_SECURITY_BITS"],"112")
+                self.assertEqual(env["BDLAMBDA"],"112")
+                self.assertEqual(env["MSCFG"],"paper")
+        self.assertEqual([c["execution_index"] for c in cells],list(range(30)))
+
+    def test_batch_sweep_rejects_mixed_k_and_duplicate_batches(self) -> None:
+        args=dict(f2z_root=Path("/f2z"),limber_root=Path("/limber"),run_dir=Path("/run"),campaign_id="x",samples=10,warmups=1,all_threads=16,rustflags="",expected_digests={},security_bits=112)
+        for ks,bs in [((1,),(1,2)),((0,),(1,1)),((0,),(3,)),((0,),())]:
+            with self.assertRaises(report.CampaignError):
+                runner.build_cells(**args,k_values=ks,batch_counts=bs)
+
+    def test_missing_profiler_is_a_preflight_failure(self) -> None:
+        with self.assertRaisesRegex(report.CampaignError,"required dependency"):
+            runner.preflight_profiler(None)
+
+    @staticmethod
+    def valid_run(implementation="f2z-ligerito", batch=1):
+        captured = json.loads((Path(__file__).parent / "fixtures/multiswap112-preflight.json").read_text())
+        metadata = next(row for row in captured if row["backend"] == implementation and row["batch_count"] == batch)
+        run = _records("fixture", implementation, DIGEST, 1, 0)[0]
+        cell={"implementation":implementation,"workload_k":0,"batch_count":batch,"security_bits":112}
+        inp=run["parameters"]["input"]
+        inp.update(live_rows=6209*batch,live_columns=6204*batch,padded_rows=8192*batch,padded_columns=8192*batch,batch_count=batch,public_input_count=0,public_inputs=[])
+        inp["statement_contract"]=metadata["statement_contract"]
+        run["parameters"]["security"]=metadata["security"]
+        run["artifacts"]={"proof_bytes":100,"commitment_bytes":10,"piop_and_bridge_bytes":30,"pcs_opening_bytes":60,"peak_rss_bytes":1000,"proof_size_kind":"serialized commitment/opening plus analytical PIOP and bridge estimate","memory_boundary":"process high-water RSS including setup and warmups; compiler excluded"}
+        if implementation != "f2z-ligerito":
+            run["artifacts"].update(opening_argument_bytes=60,dynamic_sumcheck_bytes_estimate=30,proof_size_kind="serialized commitment/opening plus analytical sumcheck estimate")
+        return run,cell
+
+    def test_all_captured_parameter_bounds_and_repetition_drift(self) -> None:
+        for batch in (1,2,4,8,16):
+            for implementation in ("f2z-ligerito","limber-hyrax","limber-brakedown"):
+                with self.subTest(batch=batch,implementation=implementation):
+                    run,cell=self.valid_run(implementation,batch)
+                    report.validate_matched_parameters(run,cell)
+                    if implementation != "f2z-ligerito":
+                        run["parameters"]["security"]["small_primes"]-=1
+                        with self.assertRaisesRegex(report.CampaignError,"repetitions"):
+                            report.validate_matched_parameters(run,cell)
+
+    def test_inherited_settings_are_overridden(self) -> None:
+        from unittest.mock import patch
+        with patch.dict("os.environ",{"GKRSKIP":"0","MSCFG":"full","F2Z_BENCH_LAMBDA":"100","BDLAMBDA":"80","CHAIN_BITS":"1","CARGO_ENCODED_RUSTFLAGS":"-Ctarget-cpu=generic"}):
+            env=runner.benchmark_environment({"MSCFG":"paper","F2Z_BENCH_LAMBDA":"112"})
+            self.assertEqual(env["MSCFG"],"paper")
+            self.assertEqual(env["F2Z_BENCH_LAMBDA"],"112")
+            self.assertTrue({"GKRSKIP","BDLAMBDA","CHAIN_BITS","CARGO_ENCODED_RUSTFLAGS"}.isdisjoint(env))
+
+    def test_batch_report_and_missing_security_rejection(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            cells=runner.build_cells(f2z_root=root,limber_root=root,run_dir=root,campaign_id="fixture",samples=5,warmups=1,all_threads=16,rustflags="",expected_digests={},k_values=(0,),security_bits=112,batch_counts=(1,2,4,8,16))
+            manifest=runner.build_manifest(campaign_id="fixture",run_dir=root,f2z_root=root,limber_root=root,samples=5,warmups=1,all_threads=16,core_detection="fixture",cells=cells,k_values=(0,),expected_digests={})
+            manifest["workload"]["batch_counts"]=[1,2,4,8,16]
+            manifest["security"]={"target_bits":112,"model":"per-check-round-minimum/v1"}
+            (root/"raw").mkdir(); (root/"metadata").mkdir()
+            for cell in cells:
+                prototype,_=self.valid_run(cell["implementation"],cell["batch_count"])
+                records=_records(cell["cell_id"],cell["implementation"],DIGEST,cell["rayon_threads"])
+                for record in records:
+                    if record["record"]=="run":
+                        record["parameters"]=prototype["parameters"]
+                        record["artifacts"]=prototype["artifacts"]
+                path=(root/"metadata"/cell["trace"]).resolve()
+                path.write_text("".join(json.dumps(record)+"\n" for record in records))
+                cell.update(status="ok",trace_sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+            path=root/"metadata/campaign.json"
+            runner._write_manifest(path,manifest)
+            validated,loaded=report.validate_campaign(path)
+            report.write_report(report.build_summary(validated,loaded),root/"reports")
+            self.assertIn("batch=16",(root/"reports/intervals.html").read_text())
+            self.assertIn("batched reference copies",(root/"reports/metrics.csv").read_text())
+            duplicate = next(cell for cell in cells if cell["cell_id"] == "b2-f2z-single")
+            duplicate_path = (path.parent / duplicate["trace"]).resolve()
+            original_bytes = duplicate_path.read_bytes()
+            records = [json.loads(line) for line in original_bytes.splitlines()]
+            for record in records:
+                record["run_id"] = record["run_id"].replace("b2-f2z-single", "b1-f2z-single")
+            duplicate_path.write_text("".join(json.dumps(record) + "\n" for record in records))
+            duplicate["trace_sha256"] = hashlib.sha256(duplicate_path.read_bytes()).hexdigest()
+            runner._write_manifest(path, manifest)
+            with self.assertRaisesRegex(report.CampaignError, "duplicate run_id across"):
+                report.validate_campaign(path)
+            duplicate_path.write_bytes(original_bytes)
+            duplicate["trace_sha256"] = hashlib.sha256(original_bytes).hexdigest()
+            changed = next(cell for cell in cells if cell["cell_id"] == "b1-f2z-performance")
+            trace = (path.parent / changed["trace"]).resolve()
+            records = [json.loads(line) for line in trace.read_text().splitlines()]
+            for record in records:
+                if record["record"] == "run":
+                    record["parameters"]["security"]["ligerito_config_digest"] = "00" * 32
+            trace.write_text("".join(json.dumps(record) + "\n" for record in records))
+            changed["trace_sha256"] = hashlib.sha256(trace.read_bytes()).hexdigest()
+            runner._write_manifest(path,manifest)
+            with self.assertRaisesRegex(report.CampaignError,"between thread counts"):
+                report.validate_campaign(path)
+            manifest.pop("security")
+            runner._write_manifest(path,manifest)
+            with self.assertRaisesRegex(report.CampaignError,"campaign security"):
+                report.validate_campaign(path)
+
+    def test_rejects_missing_security_weaker_bounds_and_statement_drift(self) -> None:
+        import copy
+        valid,cell=self.valid_run()
+        report.validate_matched_parameters(valid,cell)
+        mutations=[
+            lambda r:r["parameters"].pop("security"),
+            lambda r:r["parameters"]["security"].update(target_bits=100),
+            lambda r:r["parameters"]["security"]["terms"][0].update(bits=111.9),
+            lambda r:r["parameters"]["security"]["terms"][0].update(bits=float("nan")),
+            lambda r:r["parameters"]["security"]["terms"].pop(),
+            lambda r:r["parameters"]["security"].update(ligerito_target_bits=100),
+            lambda r:r["parameters"]["input"].update(public_inputs=[123]),
+            lambda r:r["parameters"]["input"]["statement_contract"].update(value_bits=1024),
+            lambda r:r["parameters"]["input"].update(batch_count=2),
+            lambda r:r["artifacts"].update(proof_bytes=90),
+            lambda r:r["artifacts"].update(proof_size_kind="opening only"),
+            lambda r:r["artifacts"].update(memory_boundary="per-trial heap"),
+        ]
+        for mutate in mutations:
+            with self.subTest(mutate=mutate):
+                run=copy.deepcopy(valid); mutate(run)
+                with self.assertRaises(report.CampaignError): report.validate_matched_parameters(run,cell)
+
+
 class CampaignFixtureTests(unittest.TestCase):
+    def test_draft_runs_local_checks_and_marks_every_report(self) -> None:
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = _write_fixture(root)
+            manifest = json.loads(path.read_text())
+            manifest["validation"] = {"mode": "draft", "canonical_validation": "pending"}
+            for cell in manifest["cells"]:
+                cell.update(cwd=str(root), command=["fixture"], environment={})
+            (root / "traces").mkdir()
+            # The fixture supplies traces; all production acceptance and
+            # aggregation checks still run. Canonical validation must not run.
+            with patch.object(runner, "_run_logged"), patch.object(
+                runner, "_canonical_validate", side_effect=AssertionError("canonical validation invoked")
+            ), redirect_stdout(StringIO()):
+                runner.execute_campaign(manifest, path, None, root / "reports", root / "canonical")
+            recorded = json.loads(path.read_text())
+            self.assertEqual(recorded["status"], "draft")
+            self.assertEqual(recorded["validation"], {
+                "mode": "draft", "canonical_validation": "pending", "comparison_checks": "passed"
+            })
+            summary = json.loads((root / "reports/summary.json").read_text())
+            self.assertEqual(summary["validation"], recorded["validation"])
+            self.assertIn("Draft — canonical validation pending", (root / "reports/intervals.html").read_text())
+            self.assertIn("canonical_validation", (root / "reports/metrics.csv").read_text())
+            self.assertFalse((root / "canonical").exists())
+
+    def test_draft_still_rejects_failed_proofs_and_canonical_mode_needs_profiler(self) -> None:
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = _write_fixture(root)
+            manifest = json.loads(path.read_text())
+            with self.assertRaisesRegex(report.CampaignError, "required dependency"):
+                runner.execute_campaign(manifest, path, None, root / "reports", root / "canonical")
+            manifest["validation"] = {"mode": "draft"}
+            for cell in manifest["cells"]:
+                cell.update(cwd=str(root), command=["fixture"], environment={})
+            trace = (path.parent / manifest["cells"][0]["trace"]).resolve()
+            records = [json.loads(line) for line in trace.read_text().splitlines()]
+            next(record for record in records if record["record"] == "run")["validation"]["proof_verified"] = False
+            trace.write_text("".join(json.dumps(record) + "\n" for record in records))
+            with patch.object(runner, "_run_logged"), redirect_stdout(StringIO()):
+                with self.assertRaisesRegex(report.CampaignError, "proof_verified"):
+                    runner.execute_campaign(manifest, path, None, root / "reports", root / "canonical")
+            self.assertEqual(json.loads(path.read_text())["status"], "failed")
+
     def test_plan_has_six_isolated_trace_files_per_k(self) -> None:
         root = Path("/tmp/f2z")
         cells = runner.build_cells(

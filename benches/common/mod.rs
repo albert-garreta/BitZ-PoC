@@ -28,7 +28,8 @@ pub mod plonky3;
 use std::time::Instant;
 
 use f2z::piop::spartan::{
-    IopSecurityProfile, Lambda100, Lambda128, Limber114, PrimePolicy, Sha128ReferenceSchedule,
+    IopSecurityProfile, Lambda100, Lambda128, Limber112, Limber114, PrimePolicy,
+    Sha128ReferenceSchedule,
 };
 
 /// Revision from the Cargo-generated lockfile embedded in this benchmark.
@@ -85,6 +86,8 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_BENCH_EXT",
     "F2Z_BENCH_FILL",
     "F2Z_BENCH_LAMBDA",
+    "F2Z_MULTISWAP_BATCH_COUNT",
+    "F2Z_MULTISWAP_CHECK_ONLY",
     "F2Z_BENCH_ORDER",
     "F2Z_BENCH_PASS",
     "F2Z_BENCH_QUIET",
@@ -296,14 +299,16 @@ pub fn seed(alias: Option<&str>, default: u64) -> u64 {
 pub enum SecurityProfile {
     Lambda100,
     Lambda128,
+    Limber112,
     Limber114,
     Sha128ReferenceSchedule,
 }
 
 impl SecurityProfile {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::Lambda100,
         Self::Lambda128,
+        Self::Limber112,
         Self::Limber114,
         Self::Sha128ReferenceSchedule,
     ];
@@ -313,6 +318,7 @@ impl SecurityProfile {
         match self {
             Self::Lambda100 => Lambda100::NAME,
             Self::Lambda128 => Lambda128::NAME,
+            Self::Limber112 => Limber112::NAME,
             Self::Limber114 => Limber114::NAME,
             Self::Sha128ReferenceSchedule => Sha128ReferenceSchedule::NAME,
         }
@@ -323,6 +329,7 @@ impl SecurityProfile {
         match self {
             Self::Lambda100 => Lambda100::LAMBDA,
             Self::Lambda128 => Lambda128::LAMBDA,
+            Self::Limber112 => Limber112::LAMBDA,
             Self::Limber114 => Limber114::LAMBDA,
             Self::Sha128ReferenceSchedule => Sha128ReferenceSchedule::LAMBDA,
         }
@@ -334,6 +341,7 @@ impl SecurityProfile {
         match self {
             Self::Lambda100 => Lambda100::PRIME_POLICY,
             Self::Lambda128 => Lambda128::PRIME_POLICY,
+            Self::Limber112 => Limber112::PRIME_POLICY,
             Self::Limber114 => Limber114::PRIME_POLICY,
             Self::Sha128ReferenceSchedule => Sha128ReferenceSchedule::PRIME_POLICY,
         }
@@ -345,6 +353,7 @@ impl SecurityProfile {
         match self {
             Self::Lambda100 => "100",
             Self::Lambda128 => "128",
+            Self::Limber112 => "112",
             Self::Limber114 => "114",
             Self::Sha128ReferenceSchedule => Sha128ReferenceSchedule::NAME,
         }
@@ -436,7 +445,7 @@ pub fn profile_banner(selected: Option<SecurityProfile>, default: SecurityProfil
 /// Expands to `$f::<P>($args…)` with `P` the profile type `$profile`
 /// names. `$f` is a local function generic over exactly one
 /// `P: IopSecurityProfile` parameter — the relation-preparation seam every
-/// protocol bench has. All four bodies are compiled; the env knob only
+/// protocol bench has. All five bodies are compiled; the env knob only
 /// picks which one runs.
 #[allow(unused_macros)]
 macro_rules! with_profile {
@@ -447,6 +456,9 @@ macro_rules! with_profile {
             }
             $crate::common::SecurityProfile::Lambda128 => {
                 $f::<::f2z::piop::spartan::Lambda128>($($arg),*)
+            }
+            $crate::common::SecurityProfile::Limber112 => {
+                $f::<::f2z::piop::spartan::Limber112>($($arg),*)
             }
             $crate::common::SecurityProfile::Limber114 => {
                 $f::<::f2z::piop::spartan::Limber114>($($arg),*)
@@ -744,6 +756,11 @@ fn fmt_row(value: Option<f64>) -> String {
 impl BenchReport {
     /// The uniform human block (step rows sum to the totals exactly).
     pub fn print_human(&self) {
+        self.print_human_with_commitment(0);
+    }
+
+    /// Include a separately transmitted commitment in every proof-size total.
+    pub fn print_human_with_commitment(&self, commitment_bytes: usize) {
         if let (Some(lambda), Some(achieved)) = (self.lambda, self.lambda_achieved) {
             println!(
                 "  security: target λ={lambda} | achieved {achieved:.1} bits (binding term: {})",
@@ -795,17 +812,22 @@ impl BenchReport {
         println!("    step 5.* open          {}", fmt_row(v.open));
         println!("    residual               {:9.2} ms", v.residual);
         println!(
-            "  proof: {} B ({:.1} KB) = piop {} B + open {} B",
-            self.proof.total(),
-            self.proof.total() as f64 / 1e3,
+            "  proof: {} B ({:.1} KB) = piop {} B + open {} B + commitment {} B",
+            self.proof.total() + commitment_bytes,
+            (self.proof.total() + commitment_bytes) as f64 / 1e3,
             self.proof.piop,
-            self.proof.open
+            self.proof.open,
+            commitment_bytes,
         );
-        println!("  {}", self.result_line());
+        println!("  {}", self.result_line_with_commitment(commitment_bytes));
     }
 
     /// The machine-readable line (`docs/bench-schema.md`).
     pub fn result_line(&self) -> String {
+        self.result_line_with_commitment(0)
+    }
+
+    fn result_line_with_commitment(&self, commitment_bytes: usize) -> String {
         let mut line = format!(
             "RESULT schema=f2z/1 bench={} shape={}",
             self.bench, self.shape
@@ -834,7 +856,7 @@ impl BenchReport {
              s3_inner_ms={} s5_forest_ms={} s5_opener_ms={} verify_ms={:.3} \
              v2_project_ms={} v3_piop_ms={} v4_bitify_ms={} v5_0_reduce_ms={} \
              v5_open_ms={} verify_residual_ms={:.3} proof_bytes={} \
-             proof_piop_bytes={} proof_open_bytes={} verified_samples={}",
+             proof_piop_bytes={} proof_open_bytes={} proof_commitment_bytes={} verified_samples={}",
             self.threads,
             self.reps,
             self.witness_ms,
@@ -859,9 +881,10 @@ impl BenchReport {
             fmt_opt(v.reduce),
             fmt_opt(v.open),
             v.residual,
-            self.proof.total(),
+            self.proof.total() + commitment_bytes,
             self.proof.piop,
             self.proof.open,
+            commitment_bytes,
             self.reps,
         ));
         line

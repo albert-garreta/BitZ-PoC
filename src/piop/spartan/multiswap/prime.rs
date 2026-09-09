@@ -93,7 +93,9 @@ pub const fn multiswap_instance_facts(
         direct_opening: true,
         tau_arity,
         piop_degree: 3,
-        step50_magnitude_log2: MULTISWAP_STEP50_MAGNITUDE_LOG2,
+        // tau_arity = log2(gate capacity) + 2; each gate commits 2^12 bits.
+        // Thus log2(d) = tau_arity + 10, and the conservative bound is 257+log2(d).
+        step50_magnitude_log2: 267 + tau_arity,
     }
 }
 
