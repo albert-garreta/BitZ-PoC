@@ -232,28 +232,31 @@ def _write_fixture(
 
 
 class Matched112Tests(unittest.TestCase):
+    security_bits = 112
+
     def test_batch_sweep_has_thirty_explicit_security_cells(self) -> None:
         cells = runner.build_cells(f2z_root=Path("/f2z"), limber_root=Path("/limber"),
-            run_dir=Path("/run"), campaign_id="matched112", samples=10, warmups=1,
+            run_dir=Path("/run"), campaign_id=f"matched{self.security_bits}", samples=10, warmups=1,
             all_threads=16, rustflags="-Ctarget-cpu=native", expected_digests={},
-            k_values=(0,), security_bits=112, batch_counts=(1,2,4,8,16))
+            k_values=(0,), security_bits=self.security_bits, batch_counts=(1,2,4,8,16))
         self.assertEqual(len(cells), 30)
         self.assertEqual(len({cell["trace"] for cell in cells}),30)
         self.assertEqual({runner.report.cell_group(c) for c in cells},{"b1","b2","b4","b8","b16"})
         for cell in cells:
             env=cell["environment"]
-            self.assertEqual(cell["security_bits"],112)
+            self.assertEqual(cell["security_bits"],self.security_bits)
             if cell["implementation"]=="f2z-ligerito":
-                self.assertEqual(env["F2Z_BENCH_LAMBDA"],"112")
+                self.assertEqual(env["F2Z_BENCH_LAMBDA"],str(self.security_bits))
                 self.assertEqual(env["F2Z_MULTISWAP_BATCH_COUNT"],str(cell["batch_count"]))
             else:
-                self.assertEqual(env["MATCHED_SECURITY_BITS"],"112")
-                self.assertEqual(env["BDLAMBDA"],"112")
+                self.assertEqual(env["MATCHED_SECURITY_BITS"],str(self.security_bits))
+                self.assertEqual(env["BDLAMBDA"],str(self.security_bits))
+                self.assertEqual(env["MATCHED_INTEGER_SECURITY_BITS"], "128" if self.security_bits == 114 else "112")
                 self.assertEqual(env["MSCFG"],"paper")
         self.assertEqual([c["execution_index"] for c in cells],list(range(30)))
 
     def test_batch_sweep_rejects_mixed_k_and_duplicate_batches(self) -> None:
-        args=dict(f2z_root=Path("/f2z"),limber_root=Path("/limber"),run_dir=Path("/run"),campaign_id="x",samples=10,warmups=1,all_threads=16,rustflags="",expected_digests={},security_bits=112)
+        args=dict(f2z_root=Path("/f2z"),limber_root=Path("/limber"),run_dir=Path("/run"),campaign_id="x",samples=10,warmups=1,all_threads=16,rustflags="",expected_digests={},security_bits=self.security_bits)
         for ks,bs in [((1,),(1,2)),((0,),(1,1)),((0,),(3,)),((0,),())]:
             with self.assertRaises(report.CampaignError):
                 runner.build_cells(**args,k_values=ks,batch_counts=bs)
@@ -262,12 +265,12 @@ class Matched112Tests(unittest.TestCase):
         with self.assertRaisesRegex(report.CampaignError,"required dependency"):
             runner.preflight_profiler(None)
 
-    @staticmethod
-    def valid_run(implementation="f2z-ligerito", batch=1):
-        captured = json.loads((Path(__file__).parent / "fixtures/multiswap112-preflight.json").read_text())
+    @classmethod
+    def valid_run(cls, implementation="f2z-ligerito", batch=1):
+        captured = json.loads((Path(__file__).parent / f"fixtures/multiswap{cls.security_bits}-preflight.json").read_text())
         metadata = next(row for row in captured if row["backend"] == implementation and row["batch_count"] == batch)
         run = _records("fixture", implementation, DIGEST, 1, 0)[0]
-        cell={"implementation":implementation,"workload_k":0,"batch_count":batch,"security_bits":112}
+        cell={"implementation":implementation,"workload_k":0,"batch_count":batch,"security_bits":cls.security_bits}
         inp=run["parameters"]["input"]
         inp.update(live_rows=6209*batch,live_columns=6204*batch,padded_rows=8192*batch,padded_columns=8192*batch,batch_count=batch,public_input_count=0,public_inputs=[])
         inp["statement_contract"]=metadata["statement_contract"]
@@ -291,18 +294,18 @@ class Matched112Tests(unittest.TestCase):
     def test_inherited_settings_are_overridden(self) -> None:
         from unittest.mock import patch
         with patch.dict("os.environ",{"GKRSKIP":"0","MSCFG":"full","F2Z_BENCH_LAMBDA":"100","BDLAMBDA":"80","CHAIN_BITS":"1","CARGO_ENCODED_RUSTFLAGS":"-Ctarget-cpu=generic"}):
-            env=runner.benchmark_environment({"MSCFG":"paper","F2Z_BENCH_LAMBDA":"112"})
+            env=runner.benchmark_environment({"MSCFG":"paper","F2Z_BENCH_LAMBDA":str(self.security_bits)})
             self.assertEqual(env["MSCFG"],"paper")
-            self.assertEqual(env["F2Z_BENCH_LAMBDA"],"112")
+            self.assertEqual(env["F2Z_BENCH_LAMBDA"],str(self.security_bits))
             self.assertTrue({"GKRSKIP","BDLAMBDA","CHAIN_BITS","CARGO_ENCODED_RUSTFLAGS"}.isdisjoint(env))
 
     def test_batch_report_and_missing_security_rejection(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)
-            cells=runner.build_cells(f2z_root=root,limber_root=root,run_dir=root,campaign_id="fixture",samples=5,warmups=1,all_threads=16,rustflags="",expected_digests={},k_values=(0,),security_bits=112,batch_counts=(1,2,4,8,16))
+            cells=runner.build_cells(f2z_root=root,limber_root=root,run_dir=root,campaign_id="fixture",samples=5,warmups=1,all_threads=16,rustflags="",expected_digests={},k_values=(0,),security_bits=self.security_bits,batch_counts=(1,2,4,8,16))
             manifest=runner.build_manifest(campaign_id="fixture",run_dir=root,f2z_root=root,limber_root=root,samples=5,warmups=1,all_threads=16,core_detection="fixture",cells=cells,k_values=(0,),expected_digests={})
             manifest["workload"]["batch_counts"]=[1,2,4,8,16]
-            manifest["security"]={"target_bits":112,"model":"per-check-round-minimum/v1"}
+            manifest["security"]={"target_bits":self.security_bits,"model":"per-check-round-minimum/v1"}
             (root/"raw").mkdir(); (root/"metadata").mkdir()
             for cell in cells:
                 prototype,_=self.valid_run(cell["implementation"],cell["batch_count"])
@@ -371,6 +374,42 @@ class Matched112Tests(unittest.TestCase):
             with self.subTest(mutate=mutate):
                 run=copy.deepcopy(valid); mutate(run)
                 with self.assertRaises(report.CampaignError): report.validate_matched_parameters(run,cell)
+
+
+class Matched114Tests(Matched112Tests):
+    security_bits = 114
+
+    def test_default_target_and_native_limber_parameters(self) -> None:
+        self.assertEqual(runner.parse_args([]).security_bits, 114)
+        self.assertEqual(runner.parse_args(["--security-bits", "112"]).security_bits, 112)
+        for implementation in ("limber-hyrax", "limber-brakedown"):
+            for batch in (1, 2, 4, 8, 16):
+                run, cell = self.valid_run(implementation, batch)
+                security = run["parameters"]["security"]
+                self.assertEqual(security["integer_target_bits"], 128)
+                self.assertEqual(security["integer_challenge_target_bits"], 117)
+                self.assertGreaterEqual(next(t["bits"] for t in security["terms"] if t["name"] == "integer-crt"), 128)
+                for field, weak_value in (("integer_target_bits", 114), ("integer_challenge_target_bits", 114), ("challenge_bits", 114)):
+                    original = security[field]
+                    security[field] = weak_value
+                    with self.assertRaisesRegex(report.CampaignError, "Limber"):
+                        report.validate_matched_parameters(run, cell)
+                    security[field] = original
+
+    def test_rejects_112_bit_trace_replay(self) -> None:
+        for implementation in ("f2z-ligerito", "limber-hyrax", "limber-brakedown"):
+            for batch in (1, 2, 4, 8, 16):
+                run, cell = Matched112Tests.valid_run(implementation, batch)
+                cell["security_bits"] = 114
+                with self.assertRaisesRegex(report.CampaignError, "target differs"):
+                    report.validate_matched_parameters(run, cell)
+
+    def test_inherited_integer_target_cannot_lower_campaign_target(self) -> None:
+        from unittest.mock import patch
+        with patch.dict("os.environ", {"MATCHED_SECURITY_BITS": "112", "MATCHED_INTEGER_SECURITY_BITS": "112"}):
+            env = runner.benchmark_environment({"MATCHED_SECURITY_BITS": "114", "MATCHED_INTEGER_SECURITY_BITS": "128"})
+        self.assertEqual(env["MATCHED_SECURITY_BITS"], "114")
+        self.assertEqual(env["MATCHED_INTEGER_SECURITY_BITS"], "128")
 
 
 class CampaignFixtureTests(unittest.TestCase):
