@@ -6,7 +6,7 @@ directories (later directories override earlier ones for the same scheme and
 size, so a follow-up run of the large sizes extends a first run) and writes a self-documenting
 `paper/native-mul-table.tex`: one row group per size N, one row per scheme, with
 the medians of witness generation, the complete prover (commit included) and the
-complete verifier, plus placeholder columns for proof size and peak memory.
+complete verifier, plus complete proof size and isolated peak memory.
 
     python3 scripts/native_mul_table.py PerfRuns/2026-09-08T20-07-32Z-native-mul PerfRuns/2026-09-08T20-55-10Z-native-mul
 """
@@ -20,6 +20,8 @@ import statistics
 import subprocess
 from pathlib import Path
 
+from native_mul_results import SAMPLE_SCHEMA, finite_number, require_compatible, validate_summary
+
 # Table rows are (scheme key, LaTeX label). Binius64 appears once per BaseFold
 # rate it was run at: scheme key `binius64@<log_inv_rate>` (rate 1/2 is the
 # Binius64 default, rate 1/8 needs the fewest queries that still pay off).
@@ -27,8 +29,8 @@ SCHEMES = [
     ("f2z", "\\ftwoz\\ (this work)"),
     ("binius64@1", "Binius64~\\cite{binius64}, rate $1/2$"),
     ("binius64@3", "Binius64~\\cite{binius64}, rate $1/8$"),
-    ("plonky3-whir", "Plonky3~\\cite{plonky} (WHIR)"),
-    ("limber", "Limber~\\cite{limber} (Hyrax)"),
+    ("plonky3-fri", "Plonky3~\\cite{plonky} (FRI)"),
+    ("limber", "Limber~\\cite{limber} (Brakedown)"),
 ]
 BINIUS_QUERIES = {1: 241, 2: 148, 3: 121, 4: 110}  # 100-bit FRI query counts per log inverse rate
 
@@ -42,7 +44,7 @@ def scheme_key(r: dict) -> str:
 
 def scheme_name(key: str) -> str:
     """Short scheme name for caption sentences."""
-    names = {"f2z": "\\ftwoz", "plonky3-whir": "Plonky3", "limber": "Limber"}
+    names = {"f2z": "\\ftwoz", "plonky3-fri": "Plonky3", "limber": "Limber"}
     if key in names:
         return names[key]
     return "Binius64 at rate $1/%d$" % (1 << int(key.split("@")[1]))
@@ -67,22 +69,37 @@ def fmt_gb(peak_rss_bytes: float) -> str:
     return f"{v:.3f}"
 
 
+def load_summaries(run_dir: Path, workload: str) -> dict:
+    result = {}
+    for row in json.loads((run_dir / "summary.json").read_text()):
+        if row["workload"] != workload:
+            continue
+        validate_summary(row)
+        key = (scheme_key(row), row["log_multiplications"])
+        if key in result:
+            raise ValueError("duplicate summary in run")
+        result[key] = row
+    return result
+
+
 def proof_sizes(run_dir: Path, workload: str) -> dict:
-    """Median `proof_bytes` per (scheme key, exponent) over the run's measured samples."""
-    rates = {}
-    for r in json.loads((run_dir / "summary.json").read_text()):
-        if r["workload"] == workload:
-            rates[(r["backend"], r["log_multiplications"])] = scheme_key(r)
+    """Verified measured payload sizes, tied to the matching protocol summary."""
+    summaries = load_summaries(run_dir, workload)
     by = {}
     for line in (run_dir / "samples.jsonl").read_text().splitlines():
-        r = json.loads(line)
-        if r["workload"] != workload or r["trial"]["kind"] != "sample":
+        row = json.loads(line)
+        if row["workload"] != workload or row["trial"]["kind"] != "sample":
             continue
-        size = r["metrics"].get("proof_bytes")
-        key = rates.get((r["backend"], r["log_multiplications"]))
-        if size is not None and key is not None:
-            by.setdefault((key, r["log_multiplications"]), []).append(size)
-    return {k: statistics.median(v) for k, v in by.items()}
+        key = (scheme_key(row), row["log_multiplications"])
+        if key not in summaries or row.get("schema") != SAMPLE_SCHEMA or row.get("proof_verified") is not True:
+            raise ValueError("proof-size sample has no compatible verified summary")
+        require_compatible(summaries[key], row | {"schema": summaries[key]["schema"]})
+        size = finite_number(row["metrics"].get("proof_bytes"), "proof_bytes", positive=True)
+        by.setdefault(key, []).append((row["trial"]["index"], size))
+    for key, summary in summaries.items():
+        if [index for index, _ in by.get(key, [])] != list(range(summary["samples"])):
+            raise ValueError("proof-size samples have missing or duplicate repetitions")
+    return {key: statistics.median(size for _, size in values) for key, values in by.items()}
 
 
 def probe(cmd: list[str], default: str) -> str:
@@ -97,27 +114,47 @@ def main() -> int:
     ap.add_argument("run_dirs", type=Path, nargs="+", metavar="RUN_DIR")
     ap.add_argument("--out", type=Path, default=None, help="default: paper/native-mul-table.tex (u32) or paper/native-mul-<workload>-table.tex")
     ap.add_argument("--exponents", default="", help="comma list or lo-hi; default: every size in the run")
-    ap.add_argument("--workload", default="u32", choices=["u32", "babybear", "u64", "u128"])
+    ap.add_argument("--workload", default="u32-mod32", choices=["u32-mod32", "u32", "u64", "u128"])
     ap.add_argument("--memory-bound", default="", metavar="BACKEND:EXP[,...]",
                     help="rows measured while paging (prover exceeded the machine's memory): omitted from the table and noted in the caption")
     ap.add_argument("--drop", default="", metavar="SCHEME:EXP[,...]",
                     help="rows to leave out as if not run (e.g. a measurement taken on a memory-starved box, pending a re-run); scheme keys as in --memory-bound")
     ap.add_argument("--proof-sizes-from", default="", metavar="RUN_DIR[,...]",
-                    help="run directories that only contribute proof_bytes (for rows whose own run predates proof-size recording); proof sizes are deterministic per scheme, workload, and size")
+                    help="run directories that only contribute proof_bytes (only when protocol, corpus, source, machine and measurement policy match")
     args = ap.parse_args()
+    if args.workload == "u32":
+        args.workload = "u32-mod32"
     memory_bound = set()  # (scheme key, exponent); a bare `binius64` applies to every rate
     for item in filter(None, args.memory_bound.split(",")):
         backend, exp = item.split(":")
         memory_bound.add((backend, int(exp)))
     if args.out is None:
-        args.out = Path("paper/native-mul-table.tex" if args.workload == "u32" else f"paper/native-mul-{args.workload}-table.tex")
+        args.out = Path("paper/native-mul-table.tex" if args.workload == "u32-mod32" else f"paper/native-mul-{args.workload}-table.tex")
 
     by = {}
     for run_dir in args.run_dirs:
-        for r in json.loads((run_dir / "summary.json").read_text()):
-            if r["workload"] == args.workload:
-                r["run_dir"] = str(run_dir)
-                by[(scheme_key(r), r["log_multiplications"])] = r
+        for key, row in load_summaries(run_dir, args.workload).items():
+            if key in by:
+                require_compatible(by[key], row)
+            row["run_dir"] = str(run_dir)
+            by[key] = row
+    identities = {}
+    source_by_backend = {}
+    machines = [row["provenance"]["machine"] for row in by.values()]
+    if any(machine != machines[0] for machine in machines):
+        raise ValueError("comparison mixes measurement machines")
+    for row in by.values():
+        source = row["provenance"]
+        source_identity = (source["source_sha256"], source["build"])
+        backend = row["backend"]
+        if backend in source_by_backend and source_by_backend[backend] != source_identity:
+            raise ValueError("comparison mixes source revisions or builds for one backend")
+        source_by_backend[backend] = source_identity
+        exponent = row["log_multiplications"]
+        identity = (row["corpus_digest"], row["threads"], row["measurement_policy"], row["provenance"]["machine"])
+        if exponent in identities and identities[exponent] != identity:
+            raise ValueError("comparison mixes corpora, machines, or measurement policies")
+        identities[exponent] = identity
     dropped = set()
     for item in filter(None, args.drop.split(",")):
         scheme, exp = item.split(":")
@@ -132,6 +169,9 @@ def main() -> int:
         sizes.update(proof_sizes(run_dir, args.workload))
     size_dirs = [Path(d) for d in filter(None, args.proof_sizes_from.split(","))]
     for run_dir in size_dirs:
+        for key, row in load_summaries(run_dir, args.workload).items():
+            if key in by:
+                require_compatible(by[key], row)
         for k, v in proof_sizes(run_dir, args.workload).items():
             sizes.setdefault(k, v)
     rows = list(by.values())
@@ -147,14 +187,14 @@ def main() -> int:
             exps = [e for e in exps if e in keep]
     samples = sorted({r["samples"] for r in rows})
     run_list = " ".join(str(d) for d in args.run_dirs)
-    cpu = probe(["sysctl", "-n", "machdep.cpu.brand_string"], platform.processor() or "unknown CPU")
-    mem_gb = int(probe(["sysctl", "-n", "hw.memsize"], "0")) // (1 << 30)
-    commit = probe(["git", "describe", "--always", "--dirty"], "unknown")
+    cpu = rows[0]["provenance"]["machine"]["cpu"]
+    machine_text = cpu.replace("_", r"\_")
+    commit = ", ".join(sorted({r["provenance"]["git_revision"] + ("+dirty" if r["provenance"]["git_dirty"] else "") for r in rows}))
     date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
 
     out = []
     w = out.append
-    w("% Native end-to-end u32-multiplication comparison (F2Z vs Binius64 vs Plonky3/WHIR) — GENERATED FILE, do not edit by hand.")
+    w("% Native end-to-end u32-multiplication comparison (F2Z vs Binius64 vs Plonky3/FRI) — GENERATED FILE, do not edit by hand.")
     w(f"% Generated by scripts/native_mul_table.py on {date} (UTC) at {commit} from {run_list} (benches/mul_e2e_compare.rs,")
     w("%   see docs/native-mul-compare.md; later run directories override earlier ones per scheme and size).")
     if size_dirs:
@@ -162,7 +202,7 @@ def main() -> int:
     w("% Regenerate (from the repo root; this file is overwritten):")
     w(f"%   python3 scripts/native_mul_table.py {run_list} --workload {args.workload}" + (f" --exponents {args.exponents}" if args.exponents else "")
       + (f" --memory-bound {args.memory_bound}" if args.memory_bound else "") + (f" --drop {args.drop}" if args.drop else "") + (f" --proof-sizes-from {args.proof_sizes_from}" if args.proof_sizes_from else ""))
-    w(f"% Machine: {cpu}, {mem_gb} GB; medians of {'/'.join(map(str, samples))} samples after one warm-up.")
+    w(f"% Machine: {cpu}; medians of {'/'.join(map(str, samples))} samples after one warm-up.")
     w("% Columns: witgen = witness_ms (native witness generation; Binius64 packs its witness inside its prover, so its witgen")
     w("%   overlaps the prover column); prover = online_prover_ms (the complete native prover call after witness generation,")
     w("%   i.e. commitment + PIOP + PCS opening); verifier = verify_ms; proof = median proof_bytes of the samples, KB = 1000 bytes;")
@@ -175,7 +215,7 @@ def main() -> int:
             if r:
                 m = r["medians"]
                 size = sizes.get((slug, e))
-                w(f"%   2^{e} {slug:13s} witness={m['witness_ms']:.3f} commit={m['commit_ms']:.3f} piop={m['piop_ms']:.3f} opening={m['opening_ms']:.3f} "
+                w(f"%   2^{e} {slug:13s} witness={m['witness_ms']:.3f} "
                   f"online_prover={m['online_prover_ms']:.3f} witness_to_proof={m['witness_to_proof_ms']:.3f} verify={m['verify_ms']:.3f} setup={r['setup_ms']:.3f} "
                   f"proof_bytes={'n/a' if size is None else int(size)} samples={r['samples']} run={Path(r['run_dir']).name}")
             else:
@@ -249,9 +289,8 @@ def main() -> int:
     w("    \\bottomrule")
     w("  \\end{tabular}")
     statement = {
-        "u32": "Native end-to-end proofs of $N$ multiplications $x \\cdot y = z$ of random $32$-bit integers: ",
+        "u32-mod32": "Native end-to-end proofs of $N$ independent multiplications $z = xy \\bmod 2^{32}$, with $x,y,z$ unsigned $32$-bit integers: ",
         "u64": "Native end-to-end proofs of $N$ multiplications $x \\cdot y = z$ of random $64$-bit integers ($z$ a $128$-bit integer): ",
-        "babybear": "Native end-to-end proofs of $N$ multiplications $a \\cdot b = c$ in the BabyBear field: ",
         "u128": "Native end-to-end proofs of $N$ multiplications $x \\cdot y = z$ of random $128$-bit integers ($z$ a $256$-bit integer): ",
     }[args.workload]
     # Binius64's opener geometry as the runs recorded it (rate override
@@ -269,13 +308,13 @@ def main() -> int:
     scheme_notes = {
         "f2z": "\\ftwoz\\ (Spartan over a transcript-sampled prime with the \\ftwoz\\ opening, $\\lambda = 100$)",
         "binius64": binius_note,
-        "plonky3-whir": "Plonky3 (" + ("Goldilocks AIR with $32$-bit decompositions" if args.workload == "u32" else "BabyBear AIR") + ", WHIR over a degree-$5$ extension at rate $1/2$, $100$ bits)",
-        # Limber's integer R1CS has no native word type, so each operand is
-        # range-checked bit by bit; that width is what its trace size follows.
-        "limber": "Limber (integer-mod Spartan over a random small prime with the IntEval/Hyrax opening, native Limber parameters; its R1CS spends "
-                  + {"u32": "$64$", "babybear": "$93$", "u64": "$128$", "u128": "$256$"}[args.workload]
-                  + " explicit bit columns per multiplication on operand range checks)",
+        "plonky3-fri": "Plonky3 (Goldilocks AIR, degree-$5$ extension, FRI at rate $1/8$, $100$ queries, proven round-by-round target $100$ bits)",
+        "limber": "Limber (one independent integer-mod R1CS row per multiplication, IntEval/Brakedown, native approximately $114$-bit policy)",
     }
+    if args.workload == "u32-mod32":
+        scheme_notes["f2z"] = "\\ftwoz\\ (integer R1CS, Lambda100, Johnson custom:3:4 and Round-0 OOD accounting)"
+    else:
+        scheme_notes["f2z"] = "\\ftwoz\\ (integer R1CS; native security settings recorded in the accompanying JSON)"
     # One caption note per scheme family (both Binius64 rates share one).
     present = []
     for slug, _ in schemes:
@@ -283,15 +322,15 @@ def main() -> int:
         if family not in present:
             present.append(family)
     joiner = ", and " if len(present) > 2 else (" and " if len(present) == 2 else "")
-    scheme_text = ", ".join(scheme_notes[s] for s in present[:-1]) + joiner + scheme_notes[present[-1]] + ". "
+    scheme_text = ", ".join(scheme_notes[s] for s in present[:-1]) + joiner + scheme_notes[present[-1]] + ". Native security targets are reported separately; these are not a uniform complete-protocol bound. "
     w("  \\caption{" + statement + scheme_text
       + "\\emph{Witgen} is the native witness generation; \\emph{prover} is the complete prover call after witness generation, "
       + "commitment included; \\emph{verifier} is the complete verification; \\emph{peak mem.} is the high-water resident set "
       + "of a separate child process proving and verifying once ($1$\\,GB $= 2^{30}$ bytes). "
       + "".join(f"{scheme_name(slug)} was not run at " + ", ".join(f"$2^{{{e}}}$" for e in gone) + ". " for slug, gone in missing.items())
       + "".join(wall_sentence(e, slugs) for e, slugs in sorted(walls.items()))
-      + f"{cpu}, {mem_gb}\\,GB, $8$ threads; medians of {samples[0]} runs after one warm-up.}}")
-    w("  \\label{tab:native-mul" + ("" if args.workload == "u32" else "-" + args.workload) + "}")
+      + f"{machine_text}, $8$ threads; medians of {samples[0]} runs after one warm-up.}}")
+    w("  \\label{tab:native-mul" + ("" if args.workload == "u32-mod32" else "-" + args.workload) + "}")
     w("\\end{table}")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text("\n".join(out) + "\n")

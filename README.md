@@ -100,7 +100,7 @@ RAYON_NUM_THREADS=8 \
 F2Z_BENCH_SHAPES="15 16 17 18 19 20" \
 F2Z_BENCH_REPS=5 \
 F2Z_MUL_COMPARE_WORKLOADS="u32" \
-F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
+F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-fri limber" \
 bash scripts/run_native_mul_compare.sh
 ```
 
@@ -139,14 +139,13 @@ bash scripts/run_native_mul_compare.sh
 ```
 
 Every warmup and measured trial generates and verifies the complete proof.
-For u32 Limber, the runner calls the authors' `int_mult` example in
-`LIMBER_REPO`, using Rust 1.97.1 and eight threads. It proves a chain of
-`2^n - 1` modular multiplications; the other u32 backends use `2^n` independent
-full products. Limber's author-reported results are saved under `limber-int-mult/`.
-For BabyBear multiplication, set `F2Z_MUL_COMPARE_WORKLOADS="babybear"`.
+The default `u32-mod32` workload (`u32` is an alias) compares **independent
+multiplications modulo 2^32** on F2Z, Binius64, Plonky3-FRI and
+Limber-Brakedown, with identical inputs. Limber uses the `int_mult` example
+on your fork's `f2z-benching` branch in the sibling checkout. The old
+multiplication Limber adapter has been removed.
 See the [native multiplication benchmark guide](docs/native-mul-compare.md)
-for the measurement boundaries, size ranges, proof sizes, and peak memory.
-
+for setup, security targets, measurement boundaries, and table generation.
 
 ### RSA MultiSwap — matched 114-bit comparison
 
@@ -490,73 +489,51 @@ F2Z_BENCH_LAMBDA=100 F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C tar
   cargo bench --bench baby_bear_mul --features unchecked
 ```
 
-### Native u32 / BabyBear end-to-end comparison
+### Independent multiplication modulo 2^32: four backends
 
-For u32, the shell runner invokes the authors' `int_mult` example in the
-Limber repository. Set `LIMBER_REPO` to that checkout (the default is a sibling
-`limber-impl` directory):
+Prepare the sibling `limber-impl` checkout on your fork's `f2z-benching`
+branch with the independent Brakedown `examples/int_mult.rs`. Run the smoke
+case (2^15 operations, one in-process warmup, five verified samples):
 
 ```sh
-LIMBER_REPO="$HOME/code/limber-impl" \
-RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES="15 16 17" \
-F2Z_BENCH_REPS=5 \
-F2Z_MUL_COMPARE_WORKLOADS="u32" \
-F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
 bash scripts/run_native_mul_compare.sh
 ```
 
-For each selected exponent, Limber is run with this command in its repository:
+The runner enforces Rust 1.97.1, native CPU compilation and eight threads.
+Set `LIMBER_REPO` if the fork is elsewhere. For a five-sample sweep:
+
+```sh
+F2Z_BENCH_SHAPES="15 16 17 18 19 20" F2Z_BENCH_REPS=5 \
+bash scripts/run_native_mul_compare.sh
+```
+
+For each size, it invokes this command in Limber's repository, once for
+warmup and all samples, plus a separate invocation for isolated peak RSS:
 
 ```sh
 RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
 cargo +1.97.1 run --release --example int_mult -- --bits 32 --log-gates 15
 ```
 
-Only `--log-gates` changes with the shape. Use
-`F2Z_MUL_COMPARE_BACKENDS="limber"` for Limber alone. Append `--dry-run` to the
-shell command to inspect its routing and exact commands.
+At L=15 all backends prove **32,768 independent gates**; Limber allocates
+131,072 padded witness slots. `u32` aliases `u32-mod32`; BabyBear is absent
+from this comparison. F2Z explicitly uses Lambda100, Johnson `custom:3:4`
+and Round-0 OOD. Binius and Plonky3 use their documented 100-bit targets;
+Limber retains its native approximately 114-bit policy.
 
-The authors' example proves **2^n - 1 chained multiplications modulo 2^32**.
-It uses its own witness and native security parameters. F2Z, Binius64 and
-Plonky3 currently prove **2^n independent u32 × u32 → u64 products**.
-The run therefore labels the Limber workload `u32-mod32-chain`; these rows do
-not claim a shared input corpus or an identical relation.
-
-For BabyBear, the existing integrated Limber adapter remains available:
+Each run writes unified `summary.json`, `samples.jsonl`, `metrics.csv` and
+`campaign.json` under `PerfRuns/`, including source fingerprints and effective
+parameters. Generate a table with:
 
 ```sh
-RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES="15 16 17" \
-F2Z_BENCH_REPS=5 \
-F2Z_MUL_COMPARE_WORKLOADS="babybear" \
-F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
-bash scripts/run_native_mul_compare.sh
+python3 scripts/native_mul_table.py PerfRuns/<run-directory> --out paper/native-mul-table.tex
 ```
 
-Use exponents 15–24 for the full BabyBear sweep or a u32 sweep including
-Limber. u32 exponent 25 is supported when Limber is excluded. Each case runs
-one warmup and five measured samples by default; set `F2Z_BENCH_REPS=21` for
-the final comparison.
-
-Each invocation creates a timestamped directory under `PerfRuns/`.
-`campaign.json` records which commands ran and whether they completed.
-The authors' Limber logs, samples, parameters and median timing/proof-size
-tables are under `limber-int-mult/`. Its timings are parsed from the example,
-excluding Cargo/build overhead; separate PIOP/PCS timings and peak RSS are
-unavailable. The integrated backends retain their existing metrics and traces
-at the run root. A combined u32/BabyBear run puts the BabyBear Limber adapter
-results in `babybear-limber/`.
-
-See [the measurement contract and backend selectors](docs/native-mul-compare.md)
-for the distinct workload and proof-size conventions. The separate
-`mul_witness_compare` benchmark checks integrated witness builders, including
-the legacy u32 Limber builder; it does not certify the authors' chained example.
-
-```sh
-F2Z_BENCH_SHAPES=10 F2Z_BENCH_REPS=5 \
-  cargo bench --bench mul_witness_compare --features bench-internals,native-mul-compare
-```
+The exporter rejects incompatible workloads, configurations, corpora,
+measurement policies and machines. Historical chain, Hyrax, WHIR and
+full-product rows remain separate. The [benchmark guide](docs/native-mul-compare.md)
+documents timing and proof-size conventions, tested revisions, validation,
+wider workloads, and deferred work.
 
 ### SHA security-profile sweep: Lambda100 / Sha128ReferenceSchedule / Lambda128 (set `F2Z_BENCH_LAMBDA` for one of them):
 ```sh

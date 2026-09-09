@@ -1052,6 +1052,7 @@ dependencies = [
  "p3-commit",
  "p3-dft",
  "p3-field",
+ "p3-fri",
  "p3-goldilocks",
  "p3-matrix",
  "p3-merkle-tree",
@@ -1060,6 +1061,7 @@ dependencies = [
  "p3-sha256-air",
  "p3-sumcheck",
  "p3-symmetric",
+ "p3-uni-stark",
  "p3-util",
  "p3-whir",
  "postcard",
@@ -1674,6 +1676,27 @@ dependencies = [
  "paste",
  "rand 0.10.2",
  "serde",
+ "tracing",
+]
+
+[[package]]
+name = "p3-fri"
+version = "0.6.0"
+source = "git+https://github.com/wu-s-john/plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
+dependencies = [
+ "itertools 0.15.0",
+ "p3-challenger",
+ "p3-commit",
+ "p3-dft",
+ "p3-field",
+ "p3-matrix",
+ "p3-maybe-rayon",
+ "p3-security",
+ "p3-util",
+ "rand 0.10.2",
+ "serde",
+ "spin 0.12.3",
+ "thiserror 2.0.18",
  "tracing",
 ]
 

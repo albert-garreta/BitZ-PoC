@@ -74,8 +74,7 @@ pub(super) fn run_child(
         return Err("memory child requires backend, workload, exponent, and seed".into());
     };
     let workload = match workload.as_str() {
-        "u32" => Workload::U32,
-        "babybear" => Workload::BabyBear,
+        "u32" | "u32-mod32" => Workload::U32,
         "u64" => Workload::U64,
         "u128" => Workload::U128,
         _ => return Err("unknown memory workload".into()),
