@@ -62,6 +62,27 @@ F2Z_MUL_COMPARE_BACKENDS="f2z binius64" \
 bash scripts/run_native_mul_compare.sh
 ```
 
+*128-bit multiplication* (`x · y = z` for random 128-bit `x, y` and the exact
+256-bit `z`; the `u128` workload runs on BitZ and Binius64 only. BitZ runs to
+2^21 here; Binius64's bignum prover exceeds the machine's 16 GB from 2^18, so run
+it separately on 2^15–2^17):
+
+```sh
+RAYON_NUM_THREADS=8 \
+F2Z_BENCH_SHAPES="15 16 17 18 19 20 21" \
+F2Z_BENCH_REPS=5 \
+F2Z_MUL_COMPARE_WORKLOADS="u128" \
+F2Z_MUL_COMPARE_BACKENDS="f2z" \
+bash scripts/run_native_mul_compare.sh
+RAYON_NUM_THREADS=8 \
+F2Z_BENCH_SHAPES="15 16 17" \
+F2Z_BENCH_REPS=5 \
+F2Z_MUL_COMPARE_WORKLOADS="u128" \
+F2Z_MUL_COMPARE_BACKENDS="binius64" \
+F2Z_BINIUS_LOG_INV_RATE=3 \
+bash scripts/run_native_mul_compare.sh
+```
+
 
 ### MultiSwap (Limber's Table 1 workload: 4 exponentiations with 352-bit exponents modulo a 2048-bit RSA modulus + Poseidon-based hash-to-prime; the 6209-row integer Mod-R1CS from Limber's repo), λ=114
 

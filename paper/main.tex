@@ -2618,6 +2618,8 @@ In Round 2 of \cref{c:core_iop}, the prover computes the elements $\mu_1,\ldots,
 
 \albertimportant{Peak memory missing}
 
+\albertimportant{We should optimize the verifier}
+
 \begin{comment}
 
 \subsection{Instantiation}
@@ -2692,6 +2694,9 @@ We measure the performance of \cref{c:core_iop} for proving the Core LinBitsRing
 
 
 \subsection{Integer multiplication}
+
+\albertimportant{Add Limber}
+
 We measure the cost of proving $N$ integer multiplications of the form $x\cdot  y = z$, for $x,y$ random $32$-bit integers, and $z$ a $64$-bit integer. As we mentioned, this is proved via our implemented end-to-end proof system, called \ftwoz-SNARK for R1CS over the integers, with \ftwoz\ as its PCS, as described in \cref{?}.
 
 
@@ -2706,12 +2711,125 @@ We compare the performance of \ftwoz-SNARK with Binius64 \cite{binius64}, Plonky
 
 
 
-\albertimportant{Make graph  for Limber, Plonky3, Zinc+, Binius64}
+\begin{table}[H]
+  \centering
+  \small
+  \setlength{\tabcolsep}{4.5pt}
+  \begin{tabular}{@{}rlrrrrr@{}}
+    \toprule
+    $N$ & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
+    \midrule
+    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.04} & \textbf{16.3} & 4.84 & \textbf{158} & -- \\
+     & Binius64~\cite{binius64} & 0.63 & 43.1 & \textbf{1.75} & 327 & -- \\
+     & Plonky3~\cite{plonky} (WHIR) & 3.20 & 1313 & 3.93 & 196 & -- \\
+    \addlinespace
+    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.06} & \textbf{24.6} & 7.90 & \textbf{184} & -- \\
+     & Binius64~\cite{binius64} & 1.22 & 64.0 & \textbf{3.11} & 358 & -- \\
+     & Plonky3~\cite{plonky} (WHIR) & 6.25 & 2889 & 4.68 & 216 & -- \\
+    \addlinespace
+    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.10} & \textbf{43.0} & 14.9 & \textbf{205} & -- \\
+     & Binius64~\cite{binius64} & 2.44 & 109 & 5.57 & 403 & -- \\
+     & Plonky3~\cite{plonky} (WHIR) & 11.9 & 5939 & \textbf{5.08} & 226 & -- \\
+    \addlinespace
+    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.25} & \textbf{71.7} & 25.4 & \textbf{232} & -- \\
+     & Binius64~\cite{binius64} & 4.87 & 194 & 10.5 & 435 & -- \\
+     & Plonky3~\cite{plonky} (WHIR) & 23.6 & 12085 & \textbf{5.20} & 238 & -- \\
+    \addlinespace
+    $2^{19}$ & \ftwoz\ (this work) & \textbf{0.52} & \textbf{130} & 45.4 & 265 & -- \\
+     & Binius64~\cite{binius64} & 10.1 & 398 & 29.0 & 475 & -- \\
+     & Plonky3~\cite{plonky} (WHIR) & 82.3 & 26283 & \textbf{5.23} & \textbf{249} & -- \\
+    \addlinespace
+    $2^{20}$ & \ftwoz\ (this work) & \textbf{1.15} & \textbf{245} & 80.3 & 297 & -- \\
+     & Binius64~\cite{binius64} & 77.1 & 2272 & 269 & 522 & -- \\
+     & Plonky3~\cite{plonky} (WHIR) & 412 & 63640 & \textbf{6.77} & \textbf{269} & -- \\
+    \addlinespace
+    $2^{21}$ & \ftwoz\ (this work) & \textbf{6.08} & \textbf{685} & \textbf{151} & \textbf{325} & -- \\
+     & Binius64~\cite{binius64} & 617 & 13754 & 734 & 562 & -- \\
+     & Plonky3~\cite{plonky} (WHIR) & -- & -- & -- & -- & -- \\
+    \addlinespace
+    $2^{22}$ & \ftwoz\ (this work) & \textbf{3.71} & \textbf{1046} & \textbf{302} & \textbf{380} & -- \\
+     & Binius64~\cite{binius64} & 3698 & 102370 & 2288 & 610 & -- \\
+     & Plonky3~\cite{plonky} (WHIR) & -- & -- & -- & -- & -- \\
+    \bottomrule
+  \end{tabular}
+  \caption{\albertimportant{We should do FRI Plonky3} Costs of proving $N$ multiplications $x\cdot y = z$ for random $32$ bit nonnegative integers $x$ and $y$. Ran on a MacBook Air M4, 16\,GB, $8$ threads.}
+  \label{tab:native-mul}
+\end{table}
 
 \albert{64 bits?}
 %Concretely we prove the relation $$\PIMSAT(\ZZ_{\leq 64}, \pp, \bot) = \left\{ \inp=\bot, \\right\}$$  We compare against Plonky3 \cite{?}, Binius64 \cite{?}
 
 %\input{sha256-f2}
+
+
+
+\begin{table}[H]
+  \centering
+  \small
+  \setlength{\tabcolsep}{4.5pt}
+  \begin{tabular}{@{}rlrrrrr@{}}
+    \toprule
+    $N$ & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
+    \midrule
+    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.04} & \textbf{25.8} & 3.73 & \textbf{184} & -- \\
+     & Binius64~\cite{binius64} & 0.37 & 46.0 & \textbf{1.56} & 245 & -- \\
+    \addlinespace
+    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.08} & \textbf{40.0} & 3.96 & \textbf{205} & -- \\
+     & Binius64~\cite{binius64} & 0.75 & 69.0 & \textbf{2.70} & 262 & -- \\
+    \addlinespace
+    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.18} & \textbf{73.8} & 8.70 & \textbf{227} & -- \\
+     & Binius64~\cite{binius64} & 1.48 & 119 & \textbf{4.85} & 286 & -- \\
+    \addlinespace
+    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.37} & \textbf{127} & 9.06 & \textbf{266} & -- \\
+     & Binius64~\cite{binius64} & 2.96 & 218 & \textbf{8.93} & 308 & -- \\
+    \addlinespace
+    $2^{19}$ & \ftwoz\ (this work) & \textbf{0.74} & \textbf{251} & \textbf{11.3} & \textbf{289} & -- \\
+     & Binius64~\cite{binius64} & 6.13 & 437 & 26.2 & 333 & -- \\
+    \addlinespace
+    $2^{20}$ & \ftwoz\ (this work) & \textbf{1.25} & \textbf{470} & \textbf{11.6} & \textbf{324} & -- \\
+     & Binius64~\cite{binius64} & 14.6 & 1022 & 52.0 & 358 & -- \\
+    \addlinespace
+    $2^{21}$ & \ftwoz\ (this work) & 3.08 & 1187 & 14.9 & 362 & -- \\
+     & Binius64~\cite{binius64} & -- & -- & -- & -- & -- \\
+    \bottomrule
+  \end{tabular}
+  \caption{Native end-to-end proofs of $N$ multiplications $x \cdot y = z$ of random $64$-bit integers ($z$ a $128$-bit integer): \ftwoz\ (Spartan over a transcript-sampled prime with the \ftwoz\ opening, $\lambda = 100$) and Binius64 (native multiplication, ring switching and BaseFold at rate $1/8$ with $121$ queries for $100$ bits). \emph{Witgen} is the native witness generation; \emph{prover} is the complete prover call after witness generation, commitment included; \emph{verifier} is the complete verification. At $2^{21}$ the Binius64 prover exceeds the machine's memory and pages; that row is omitted. Apple M4, 16\,GB, $8$ threads; medians of 5 runs after one warm-up.}
+  \label{tab:native-mul-u64}
+\end{table}
+
+\begin{table}[H]
+  \centering
+  \small
+  \setlength{\tabcolsep}{4.5pt}
+  \begin{tabular}{@{}rlrrrrr@{}}
+    \toprule
+    $N$ & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
+    \midrule
+    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.08} & \textbf{42.2} & \textbf{4.47} & \textbf{202} & -- \\
+     & Binius64~\cite{binius64} & 1.78 & 124 & 5.56 & 286 & -- \\
+    \addlinespace
+    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.16} & \textbf{70.1} & \textbf{4.48} & \textbf{228} & -- \\
+     & Binius64~\cite{binius64} & 3.53 & 228 & 10.6 & 308 & -- \\
+    \addlinespace
+    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.32} & \textbf{134} & \textbf{6.35} & \textbf{261} & -- \\
+     & Binius64~\cite{binius64} & 7.35 & 457 & 28.3 & 333 & -- \\
+    \addlinespace
+    $2^{18}$ & \ftwoz\ (this work) & 0.63 & 241 & 6.41 & 289 & -- \\
+     & Binius64~\cite{binius64} & -- & -- & -- & -- & -- \\
+    \addlinespace
+    $2^{19}$ & \ftwoz\ (this work) & 1.23 & 573 & 8.61 & 316 & -- \\
+     & Binius64~\cite{binius64} & -- & -- & -- & -- & -- \\
+    \addlinespace
+    $2^{20}$ & \ftwoz\ (this work) & 2.31 & 1113 & 8.99 & 364 & -- \\
+     & Binius64~\cite{binius64} & -- & -- & -- & -- & -- \\
+    \addlinespace
+    $2^{21}$ & \ftwoz\ (this work) & 4.76 & 2617 & 14.1 & 391 & -- \\
+     & Binius64~\cite{binius64} & -- & -- & -- & -- & -- \\
+    \bottomrule
+  \end{tabular}
+  \caption{Native end-to-end proofs of $N$ multiplications $x \cdot y = z$ of random $128$-bit integers ($z$ a $256$-bit integer): \ftwoz\ (Spartan over a transcript-sampled prime with the \ftwoz\ opening, $\lambda = 100$) and Binius64 (native multiplication, ring switching and BaseFold at rate $1/8$ with $121$ queries for $100$ bits). \emph{Witgen} is the native witness generation; \emph{prover} is the complete prover call after witness generation, commitment included; \emph{verifier} is the complete verification. Binius64 was not run at $2^{19}$, $2^{20}$, $2^{21}$. At $2^{18}$ the Binius64 prover exceeds the machine's memory and pages; that row is omitted. Apple M4, 16\,GB, $8$ threads; medians of 5 runs after one warm-up.}
+  \label{tab:native-mul-u128}
+\end{table}
 
 
 \subsection{RSA accumulation and Poseidon hashing}
