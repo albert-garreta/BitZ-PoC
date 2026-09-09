@@ -2718,7 +2718,7 @@ We compare the performance of \ftwoz-SNARK with Binius64 \cite{binius64}, Plonky
 
 We compare Limber \cite{limber}, Zinc+\cite{zincplus} and our \ftwoz-SNARK \ on proving the same circuit as in the Limber paper. This consists in verifying four  exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation  (see Section 7.1 of \cite{limber}). We take the corresponding R1CS constraint over the integers  from the Limber repository. See \cref{s:related_work} for further details on Limber, Zinc+, etc. 
 
-We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber states in the paper that it achieves $128$ bits of security, but its fingerprint step only achieves $114$ bits of security in the implementation, because the random prime sampled to perform the fingerprint is of $128$ bits, and no other measures (like, say, grinding) are taken. \albertimportant{Double check and let the authors know.}}  
+We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber states in the paper that it achieves $128$ bits of security, but its fingerprint step only achieves $114$ bits of security in the implementation, because the random prime sampled to perform the fingerprint is of $128$ bits, and no other measures (like, say, grinding) are taken. \albertimportant{Double check and let the authors know.}} For the \ftwoz\ opening we use Ligerito in the unique-decoding regime (as opposed to the other benchmarks where we use the Johnson bound) at rate $1/8$ with fold arity $4$ \albertimportant{mention this elsewhere}, with grinding to achieve $114$ bits of security.
 
 \begin{table}[H]
   \centering
@@ -2727,7 +2727,7 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
     Scheme & \multicolumn{2}{c}{Prove (ms)} & \multicolumn{2}{c}{Verify (ms)} & Proof \\
      &   1 thr & 8 thr & 1 thr & 8 thr & (KB) \\
     \midrule
-    \ftwoz-SNARK  (this work)             &  \textbf{257}  & \textbf{103} & \textbf{9.8} & \textbf{12.0} & 338 \\
+    \ftwoz-SNARK  (this work)             &  \textbf{273}  & \textbf{105} & \textbf{9.9} & \textbf{12.0} & 269 \\
     Zinc+ \cite{zincplus}    & 2052          & 563          & 18.2         & 12.7 & 1272 \\
     Limber \cite{limber} (Brakedown)                 & 1175          & 559          & 44.2         & 43.3 & 5769 \\
     Limber \cite{limber} (Hyrax)           & 1206          & 390          & 37.1         & 20.5 & \textbf{175} \\
@@ -2739,7 +2739,7 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
   \caption{Proving one MultiSwap \cite{multiswap} computation (four  exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation).  The first four schemes prove the same R1CS constraint over the integers, taken from \cite{limber}, and were run on a MacBook Air M4 on one and 8 threads (thr).  The two lower rows are a verbatim quote from
   \cite[Table 1]{limber}. The first four schemes achieve $114$ bits of security 
   Zinc$+$ proof compresses to
-  $686$KB with \texttt{zstd}.
+  $847$KB with \texttt{zstd}.
   %
   $^{\dagger}$ Quoted from \cite{limber}; not measured here.
   }

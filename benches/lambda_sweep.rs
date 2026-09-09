@@ -207,7 +207,7 @@ fn main() {
         let exponent: usize = shapes[0].parse().expect("integer exponent");
         assert!(
             (SHA256_MIN_LOG_COMPRESSIONS..=SHA256_MAX_LOG_COMPRESSIONS).contains(&exponent),
-            "SHA-256 runtime-prime protocol supports exponents 7 through 16"
+            "SHA-256 runtime-prime protocol supports exponents 4 through 16"
         );
         exponent
     });

@@ -31,7 +31,7 @@ use f2z::transcript::Blake3Transcript;
 
 /// The mini MultiSwap instance under the pinned `Limber114` profile.
 const MULTISWAP_MINI_DIGEST: &str =
-    "9519afc76f9b5dbaab89942df8673e7a4542d9ee297acb187d3ff439148078b5";
+    "3b82cce6ef6ae8070cde11abc24deba96f79f5b2a86015570271c25e6fa0f42b";
 
 /// The 2^7 SHA-256 batch under the DEFAULT profile (`Lambda100`: no
 /// grinding anywhere, Ligerito at 100). Recorded at the deliberate native

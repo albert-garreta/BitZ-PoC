@@ -450,8 +450,10 @@
 \newlabel{s:experiments@cref}{{[section][7][]7}{[1][55][]55}{}{}{}}
 \@writefile{toc}{\contentsline {paragraph}{Future work: lattice-type computations}{55}{paragraph*.58}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Raw performance of the {$\mathbb  {B}\text  {it}\mathbb  {Z}$}\ PCS for the core LinBitsRings relation}{55}{subsection.7.1}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {11}{\ignorespaces Cost of {$\mathbb  {B}\text  {it}\mathbb  {Z}$}\ (\cref  {c:core_iop}) for committing to $\ell = 2^{n}$ bits, $n = 20, \ldots  , 30$, and proving one claim $\langle \mathbf  {v}, \mathbf  {f}\rangle = \mu $ over $\ensuremath  {\mathbb  {F}}_q$ with $q = 2^{100} - 15$ and the tensor split $\ell _1 = 2^{\lceil 0.6\, n\rceil }$ dimensions, $\ell _1 \cdot \ell _2 = \ell $ (\cref  {s:instantiation}). Configured for $100$ bits of soundness. The \emph  {grand product} column comprises Phase 3 of \cref  {c:core_iop}. The \emph  {ring switch} and \emph  {ligerito} columns comprise Phase 4. The \emph  {Non-Ligerito} proof sie is comprised of the $\mu _j$ values in Round 2 of \cref  {c:core_iop}, the GKR and sumcheck messages, and the ring-switch messages. Measured on a MacBook Air M4, 16\,GB, 8 threads.}}{56}{table.caption.59}\protected@file@percent }
-\newlabel{tab:f2z-raw-performance}{{11}{56}{Cost of \ftwoz \ (\cref {c:core_iop}) for committing to $\codedim = 2^{n}$ bits, $n = 20, \ldots , 30$, and proving one claim $\langle \vv , \bff \rangle = \mu $ over $\FF _q$ with $q = 2^{100} - 15$ and the tensor split $\codedim _1 = 2^{\lceil 0.6\, n\rceil }$ dimensions, $\codedim _1 \cdot \codedim _2 = \codedim $ (\cref {s:instantiation}). Configured for $100$ bits of soundness. The \emph {grand product} column comprises Phase 3 of \cref {c:core_iop}. The \emph {ring switch} and \emph {ligerito} columns comprise Phase 4. The \emph {Non-Ligerito} proof sie is comprised of the $\mu _j$ values in Round 2 of \cref {c:core_iop}, the GKR and sumcheck messages, and the ring-switch messages. Measured on a MacBook Air M4, 16\,GB, 8 threads}{table.caption.59}{}}
+\citation{ligerito}
+\citation{ligerito}
+\@writefile{lot}{\contentsline {table}{\numberline {11}{\ignorespaces Cost of {$\mathbb  {B}\text  {it}\mathbb  {Z}$}\ (\cref  {c:core_iop}) for committing to $\ell = 2^{n}$ bits, $n = 20, \ldots  , 30$, and proving one claim $\langle \mathbf  {v}, \mathbf  {f}\rangle = \mu $ over $\ensuremath  {\mathbb  {F}}_q$ for a prime $q$ sampled uniformly (after the commitment) from $[2^{b-1}, 2^{b})$, $b = \min (113, 127 - \log \ell _1 - W)$ at cell width $W = 1$ ($b = 108, \ldots  , 113$), $\mathbf  {v}= \mathsf  {eq}(\cdot , \ensuremath  {\mathbf  {r}}_1) \otimes \mathsf  {eq}(\cdot , \ensuremath  {\mathbf  {r}}_2)$ with $(\ensuremath  {\mathbf  {r}}_1, \ensuremath  {\mathbf  {r}}_2)$ sampled after $q$, and the tensor split $\ell _1 = 2^{\lceil 0.6\, n\rceil }$, $\ell _1 \cdot \ell _2 = \ell $ (\cref  {s:instantiation}). The commitment is opened with ring switching and Ligerito~\cite  {ligerito} over a Reed--Solomon code of rate $1/8$ over $\ensuremath  {\mathbb  {F}}_{2^{128}}$ (initial folding of $2^{4}$ rows, Johnson regime, BLAKE3 Merkle trees), configured for $100$ bits of round-by-round security (the minimum over its levels and error terms is $100.0$ bits); Round 0 (the out-of-domain sample) is executed with $\lceil \log \ell - 23.7 \rceil $ bits of grinding ($0$ to $7$ over the table); every other round (the GKR, the sumcheck reducing to MLE evaluation claims, the ring switch) has error at most $7 \cdot 2^{-128}$. Prover columns: \emph  {commit} is the commitment to the $\ell $ bits; \emph  {grand products} is computing the integers $\mu _j$ and the batched GKR for the $\ell _2$ grand products in the exponent (\cref  {s:gkr_low_entropy}); \emph  {ring switch} is the sumcheck reducing the GKR output claims to MLE evaluation claims together with the ring-switching step; \emph  {Ligerito} is the Ligerito opening; \emph  {total} is the commitment plus the end-to-end proving time (each entry is a median, so the parts need not add up exactly). \emph  {Non-Ligerito} proof bytes are the $\mu _j$, the GKR and sumcheck messages, and the ring-switch message; KB $= 1000$ bytes. Apple M4 (10 cores: 4 performance + 6 efficiency), 16\,GB, 8 threads; medians of 5 runs after one warm-up.}}{56}{table.caption.59}\protected@file@percent }
+\newlabel{tab:f2z-raw-performance}{{11}{56}{Cost of \ftwoz \ (\cref {c:core_iop}) for committing to $\codedim = 2^{n}$ bits, $n = 20, \ldots , 30$, and proving one claim $\langle \vv , \bff \rangle = \mu $ over $\FF _q$ for a prime $q$ sampled uniformly (after the commitment) from $[2^{b-1}, 2^{b})$, $b = \min (113, 127 - \log \codedim _1 - W)$ at cell width $W = 1$ ($b = 108, \ldots , 113$), $\vv = \eq (\cdot , \rr _1) \otimes \eq (\cdot , \rr _2)$ with $(\rr _1, \rr _2)$ sampled after $q$, and the tensor split $\codedim _1 = 2^{\lceil 0.6\, n\rceil }$, $\codedim _1 \cdot \codedim _2 = \codedim $ (\cref {s:instantiation}). The commitment is opened with ring switching and Ligerito~\cite {ligerito} over a Reed--Solomon code of rate $1/8$ over $\FF _{2^{128}}$ (initial folding of $2^{4}$ rows, Johnson regime, BLAKE3 Merkle trees), configured for $100$ bits of round-by-round security (the minimum over its levels and error terms is $100.0$ bits); Round 0 (the out-of-domain sample) is executed with $\lceil \log \codedim - 23.7 \rceil $ bits of grinding ($0$ to $7$ over the table); every other round (the GKR, the sumcheck reducing to MLE evaluation claims, the ring switch) has error at most $7 \cdot 2^{-128}$. Prover columns: \emph {commit} is the commitment to the $\codedim $ bits; \emph {grand products} is computing the integers $\mu _j$ and the batched GKR for the $\codedim _2$ grand products in the exponent (\cref {s:gkr_low_entropy}); \emph {ring switch} is the sumcheck reducing the GKR output claims to MLE evaluation claims together with the ring-switching step; \emph {Ligerito} is the Ligerito opening; \emph {total} is the commitment plus the end-to-end proving time (each entry is a median, so the parts need not add up exactly). \emph {Non-Ligerito} proof bytes are the $\mu _j$, the GKR and sumcheck messages, and the ring-switch message; KB $= 1000$ bytes. Apple M4 (10 cores: 4 performance + 6 efficiency), 16\,GB, 8 threads; medians of 5 runs after one warm-up}{table.caption.59}{}}
 \newlabel{tab:f2z-raw-performance@cref}{{[table][11][]11}{[1][56][]56}{}{}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {7.2}Integer multiplication}{56}{subsection.7.2}\protected@file@percent }
 \citation{binius64}
@@ -483,44 +485,30 @@
 \citation{zincplus}
 \citation{binius64}
 \citation{binius64}
-\@writefile{lot}{\contentsline {table}{\numberline {13}{\ignorespaces Proving one MultiSwap \cite  {multiswap} computation (four exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation). The first four schemes prove the same R1CS constraint over the integers, taken from \cite  {limber}, and were run on a MacBook Air M4 \textbf  {single threaded} \textcolor {red}{Albert: {add multithread numbers?}}. The two lower rows are a verbatim quote from \cite  [Table 1]{limber}. The first four schemes achieve $114$ bits of security Zinc$+$ proof compresses to $686$KB with \texttt  {zstd}. $^{\dagger }$ Quoted from \cite  {limber}; not measured here. }}{58}{table.caption.61}\protected@file@percent }
-\newlabel{t:multiswap}{{13}{58}{Proving one MultiSwap \cite {multiswap} computation (four exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation). The first four schemes prove the same R1CS constraint over the integers, taken from \cite {limber}, and were run on a MacBook Air M4 \textbf {single threaded} \albertimportant {add multithread numbers?}. The two lower rows are a verbatim quote from \cite [Table 1]{limber}. The first four schemes achieve $114$ bits of security Zinc$+$ proof compresses to $686$KB with \texttt {zstd}. $^{\dagger }$ Quoted from \cite {limber}; not measured here}{table.caption.61}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {13}{\ignorespaces Proving one MultiSwap \cite  {multiswap} computation (four exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation). The first four schemes prove the same R1CS constraint over the integers, taken from \cite  {limber}, and were run on a MacBook Air M4 on one and 8 threads (thr). The two lower rows are a verbatim quote from \cite  [Table 1]{limber}. The first four schemes achieve $114$ bits of security Zinc$+$ proof compresses to $847$KB with \texttt  {zstd}. $^{\dagger }$ Quoted from \cite  {limber}; not measured here. }}{58}{table.caption.61}\protected@file@percent }
+\newlabel{t:multiswap}{{13}{58}{Proving one MultiSwap \cite {multiswap} computation (four exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation). The first four schemes prove the same R1CS constraint over the integers, taken from \cite {limber}, and were run on a MacBook Air M4 on one and 8 threads (thr). The two lower rows are a verbatim quote from \cite [Table 1]{limber}. The first four schemes achieve $114$ bits of security Zinc$+$ proof compresses to $847$KB with \texttt {zstd}. $^{\dagger }$ Quoted from \cite {limber}; not measured here}{table.caption.61}{}}
 \newlabel{t:multiswap@cref}{{[table][13][]13}{[1][57][]58}{}{}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {7.4}SHA-256 hashing followed by ECDSA signature verification}{58}{subsection.7.4}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {14}{\ignorespaces Proving a SHA-256 hash of a $4$KB message ($64$ compressions) followed by ECDSA signature verification. Ran on a MacBook Air M4 multithreaded\textcolor {red}{Albert: {add multithread numbers?}}, configured at $100$ and $128$ bits of security. }}{58}{table.caption.62}\protected@file@percent }
-\newlabel{t:multiswap}{{14}{58}{Proving a SHA-256 hash of a $4$KB message ($64$ compressions) followed by ECDSA signature verification. Ran on a MacBook Air M4 multithreaded\albertimportant {add multithread numbers?}, configured at $100$ and $128$ bits of security}{table.caption.62}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {14}{\ignorespaces Proving a SHA-256 hash of a $4$KB message ($64$ compressions) followed by ECDSA signature verification. Ran on a MacBook Air M4 multithreaded, configured at $100$ and $128$ bits of security. }}{58}{table.caption.62}\protected@file@percent }
+\newlabel{t:multiswap}{{14}{58}{Proving a SHA-256 hash of a $4$KB message ($64$ compressions) followed by ECDSA signature verification. Ran on a MacBook Air M4 multithreaded, configured at $100$ and $128$ bits of security}{table.caption.62}{}}
 \newlabel{t:multiswap@cref}{{[table][14][]14}{[1][58][]58}{}{}{}}
 \citation{binius64}
-\citation{binius64}
-\citation{flock}
-\citation{binius64}
-\citation{flock}
-\citation{?}
-\citation{binius64}
-\citation{flock}
-\@writefile{lot}{\contentsline {table}{\numberline {15}{\ignorespaces Witness bit-size per SHA-256 compression as per two different arithmetizations. The $\mathsf  {CM}$ row indicates the bit-size when arithmetizing SHA-256 via an instance of the $\mathsf  {CM}$ relation (see \eqref  {e:CM_rel}) using the methods from \cref  {e:CM_rel,r:CM_is_NP_complete}. The last row displays the witness bit-size in the arithmetization from Binius64 \cite  {binius64}, which is an R1CS constraint over a binary field. }}{59}{table.caption.63}\protected@file@percent }
-\newlabel{tab:sha_arithmetization}{{15}{59}{Witness bit-size per SHA-256 compression as per two different arithmetizations. The $\mathsf {CM}$ row indicates the bit-size when arithmetizing SHA-256 via an instance of the $\mathsf {CM}$ relation (see \eqref {e:CM_rel}) using the methods from \cref {e:CM_rel,r:CM_is_NP_complete}. The last row displays the witness bit-size in the arithmetization from Binius64 \cite {binius64}, which is an R1CS constraint over a binary field}{table.caption.63}{}}
-\newlabel{tab:sha_arithmetization@cref}{{[table][15][]15}{[1][58][]59}{}{}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.5}Mod $2^{32}$ multiplication and SHA-256 hashing}{59}{subsection.7.5}\protected@file@percent }
-\newlabel{s:experiments_sha_modmul}{{7.5}{59}{Mod $2^{32}$ multiplication and SHA-256 hashing}{subsection.7.5}{}}
-\newlabel{s:experiments_sha_modmul@cref}{{[subsection][5][7]7.5}{[1][59][]59}{}{}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.6}SHA-256 hashing}{59}{subsection.7.6}\protected@file@percent }
-\newlabel{s:experiments_sha}{{7.6}{59}{SHA-256 hashing}{subsection.7.6}{}}
-\newlabel{s:experiments_sha@cref}{{[subsection][6][7]7.6}{[1][59][]59}{}{}{}}
-\citation{zincplus}
 \bibdata{paper/references}
 \bibcite{stir}{ACFY24}
 \bibcite{whir}{ACFY25}
 \bibcite{zincplus}{AGK{$^{+}$}26}
 \bibcite{Blaze}{BCF{$^{+}$}24}
 \bibcite{BCFW25}{BCFW25}
+\@writefile{lot}{\contentsline {table}{\numberline {15}{\ignorespaces Witness bit-size per SHA-256 compression as per two different arithmetizations. The $\mathsf  {CM}$ row indicates the bit-size when arithmetizing SHA-256 via an instance of the $\mathsf  {CM}$ relation (see \eqref  {e:CM_rel}) using the methods from \cref  {e:CM_rel,r:CM_is_NP_complete}, see \url  {https://github.com/reilabs/freigen/blob/324935e/Freigen/Circuit/Examples/Sha256.lean} \textcolor {red}{Albert: {Change this to avoid deanonymization in the EC submission}}. The last row displays the witness bit-size in the arithmetization from Binius64 \cite  {binius64}, which is an R1CS constraint over a binary field. }}{59}{table.caption.63}\protected@file@percent }
+\newlabel{tab:sha_arithmetization}{{15}{59}{Witness bit-size per SHA-256 compression as per two different arithmetizations. The $\mathsf {CM}$ row indicates the bit-size when arithmetizing SHA-256 via an instance of the $\mathsf {CM}$ relation (see \eqref {e:CM_rel}) using the methods from \cref {e:CM_rel,r:CM_is_NP_complete}, see \url {https://github.com/reilabs/freigen/blob/324935e/Freigen/Circuit/Examples/Sha256.lean} \albertimportant {Change this to avoid deanonymization in the EC submission}. The last row displays the witness bit-size in the arithmetization from Binius64 \cite {binius64}, which is an R1CS constraint over a binary field}{table.caption.63}{}}
+\newlabel{tab:sha_arithmetization@cref}{{[table][15][]15}{[1][58][]59}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.5}Mod $2^{32}$ multiplication and SHA-256 hashing}{59}{subsection.7.5}\protected@file@percent }
+\newlabel{s:experiments_sha_modmul}{{7.5}{59}{Mod $2^{32}$ multiplication and SHA-256 hashing}{subsection.7.5}{}}
+\newlabel{s:experiments_sha_modmul@cref}{{[subsection][5][7]7.5}{[1][59][]59}{}{}{}}
+\@writefile{toc}{\contentsline {section}{References}{59}{subsection.7.5}\protected@file@percent }
 \bibcite{sumcheck_opt_2}{BDDT25}
 \bibcite{DARK}{BFS19}
 \bibcite{BlockDARK}{BHR{$^{+}$}21}
-\@writefile{lot}{\contentsline {table}{\numberline {16}{\ignorespaces \relax }}{60}{table.caption.64}\protected@file@percent }
-\newlabel{t:SHA_benches}{{16}{60}{\relax }{table.caption.64}{}}
-\newlabel{t:SHA_benches@cref}{{[table][16][]16}{[1][60][]60}{}{}{}}
-\@writefile{toc}{\contentsline {section}{References}{60}{table.caption.64}\protected@file@percent }
 \bibcite{binius64}{Bin26}
 \bibcite{flock}{BRW26}
 \bibcite{FRI}{BSBHR18a}
@@ -541,22 +529,22 @@
 \bibcite{qaren}{SSPP26}
 \bibcite{thalerbook}{Tha22}
 \bibcite{basefold}{ZCF23}
-\@writefile{toc}{\contentsline {section}{\numberline {A}Deferred proofs}{62}{appendix.A}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {A.1}Completeness and soundness of \cref  {c:LinModFieldBin}}{62}{subsection.A.1}\protected@file@percent }
-\newlabel{a:LinModFieldBin}{{A.1}{62}{Completeness and soundness of \cref {c:LinModFieldBin}}{subsection.A.1}{}}
-\newlabel{a:LinModFieldBin@cref}{{[subsection][1][1]A.1}{[1][62][]62}{}{}{}}
-\newlabel{e:appendix_bitify}{{44}{62}{Completeness and soundness of \cref {c:LinModFieldBin}}{equation.44}{}}
-\newlabel{e:appendix_bitify@cref}{{[equation][44][]44}{[1][62][]62}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {A}Deferred proofs}{61}{appendix.A}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.1}Completeness and soundness of \cref  {c:LinModFieldBin}}{61}{subsection.A.1}\protected@file@percent }
+\newlabel{a:LinModFieldBin}{{A.1}{61}{Completeness and soundness of \cref {c:LinModFieldBin}}{subsection.A.1}{}}
+\newlabel{a:LinModFieldBin@cref}{{[subsection][1][1]A.1}{[1][61][]61}{}{}{}}
 \citation{stir}
 \citation{whir}
-\@writefile{toc}{\contentsline {subsection}{\numberline {A.2}Soundness of Out Of Domain Sampling (OOD) in \cref  {c:core_iop}}{63}{subsection.A.2}\protected@file@percent }
-\newlabel{a:OOD}{{A.2}{63}{Soundness of Out Of Domain Sampling (OOD) in \cref {c:core_iop}}{subsection.A.2}{}}
-\newlabel{a:OOD@cref}{{[subsection][2][1]A.2}{[1][63][]63}{}{}{}}
-\newlabel{t:thm_core_IOPP_OOD}{{A.1}{63}{\Cref {t:thm_core_IOPP} when Round 0 is executed}{theorem.A.1}{}}
-\newlabel{t:thm_core_IOPP_OOD@cref}{{[theorem][1][1]A.1}{[1][63][]63}{}{}{}}
+\newlabel{e:appendix_bitify}{{44}{62}{Completeness and soundness of \cref {c:LinModFieldBin}}{equation.44}{}}
+\newlabel{e:appendix_bitify@cref}{{[equation][44][]44}{[1][61][]62}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.2}Soundness of Out Of Domain Sampling (OOD) in \cref  {c:core_iop}}{62}{subsection.A.2}\protected@file@percent }
+\newlabel{a:OOD}{{A.2}{62}{Soundness of Out Of Domain Sampling (OOD) in \cref {c:core_iop}}{subsection.A.2}{}}
+\newlabel{a:OOD@cref}{{[subsection][2][1]A.2}{[1][62][]62}{}{}{}}
+\newlabel{t:thm_core_IOPP_OOD}{{A.1}{62}{\Cref {t:thm_core_IOPP} when Round 0 is executed}{theorem.A.1}{}}
+\newlabel{t:thm_core_IOPP_OOD@cref}{{[theorem][1][1]A.1}{[1][62][]62}{}{}{}}
 \newlabel{l:ood_collision}{{A.2}{63}{OOD collision probability}{lemma.A.2}{}}
 \newlabel{l:ood_collision@cref}{{[lemma][2][1]A.2}{[1][63][]63}{}{}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {B}Ring switching via Galois orbits}{64}{appendix.B}\protected@file@percent }
-\newlabel{a:ring_switch_1}{{B}{64}{Ring switching via Galois orbits}{appendix.B}{}}
-\newlabel{a:ring_switch_1@cref}{{[section][2][]B}{[1][64][]64}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {B}Ring switching via Galois orbits}{63}{appendix.B}\protected@file@percent }
+\newlabel{a:ring_switch_1}{{B}{63}{Ring switching via Galois orbits}{appendix.B}{}}
+\newlabel{a:ring_switch_1@cref}{{[section][2][]B}{[1][63][]63}{}{}{}}
 \gdef \@abspage@last{65}
