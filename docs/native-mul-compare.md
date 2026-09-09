@@ -3,8 +3,9 @@
 `mul_e2e_compare` proves batches of u32 × u32 → u64 and BabyBear
 multiplications with F2Z, Binius64, Plonky3-WHIR, and Limber-Hyrax. Every
 warmup and measured trial regenerates the native witness, produces the complete
-proof, and verifies it. This complements the existing `u32_pcs_compare` and
-`baby_bear_pcs_compare` terminal-opening benchmarks.
+proof, and verifies it. This is the full-proving multiplication comparison for
+the paper benchmark suite; commitment, constraint proving, opening, and
+verification are all exercised on every trial.
 
 ```sh
 # Both workloads, all four backends, 2^15 multiplications, five samples

@@ -25,6 +25,9 @@ This repo also contains BitZ-SNARK, a SNARK for proving R1CS constraints over th
 
 ## Reproducing the paper's benchmarks
 
+Cross-system comparisons measure complete native proofs: witness generation,
+commitment, constraint proving, PCS opening, and verification.
+
 ### Raw performance of BitZ PCS on the core LinBitsRings relation
 
 ```sh
@@ -41,15 +44,20 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
     --mul-sweep 15-22 --threads 8 --reps 5 --profile custom:3:4 --cooldown 20
 ```
 
-*Comparison between different schemes*
+*Full-proving comparison between different schemes*
 ```sh
 RAYON_NUM_THREADS=8 \
 F2Z_BENCH_SHAPES="15 16 17 18 19 20" \
 F2Z_BENCH_REPS=5 \
 F2Z_MUL_COMPARE_WORKLOADS="u32" \
-F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir" \
+F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
 bash scripts/run_native_mul_compare.sh
 ```
+
+Every warmup and measured trial generates and verifies the complete proof.
+For BabyBear multiplication, set `F2Z_MUL_COMPARE_WORKLOADS="babybear"`.
+See the [native multiplication benchmark guide](docs/native-mul-compare.md)
+for the measurement boundaries, size ranges, proof sizes, and peak memory.
 
 
 ### MultiSwap (Limber's Table 1 workload: 4 exponentiations with 352-bit exponents modulo a 2048-bit RSA modulus + Poseidon-based hash-to-prime; the 6209-row integer Mod-R1CS from Limber's repo), λ=114
@@ -308,59 +316,6 @@ canonical multiplication assignment:
 F2Z_BENCH_SHAPES=10 F2Z_BENCH_REPS=5 \
   cargo bench --bench mul_witness_compare --features bench-internals,native-mul-compare
 ```
-
-### Shared-witness u32 / BabyBear PCS comparison
-
-BabyBear multiplication, exponents 15–24:
-
-```sh
-RUSTFLAGS="-Ctarget-cpu=native" \
-RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24" \
-F2Z_BENCH_REPS=5 \
-F2Z_PCS_COMPARE_BACKENDS="f2z binius64-basefold plonky3-whir" \
-F2Z_PCS_COMPARE_TRACE_PATH="benchmark-results/$(date +%Y%m%d-%H%M%S)-babybear-pcs.jsonl" \
-cargo bench --bench baby_bear_pcs_compare \
-  --features bench-internals,plonky3-whir-bench,binius64-bench
-```
-
-u32 multiplication, exponents 15–25:
-
-```sh
-RUSTFLAGS="-Ctarget-cpu=native" \
-RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24 25" \
-F2Z_BENCH_REPS=5 \
-F2Z_PCS_COMPARE_BACKENDS="f2z binius64-basefold plonky3-whir" \
-F2Z_PCS_COMPARE_TRACE_PATH="benchmark-results/$(date +%Y%m%d-%H%M%S)-u32-pcs.jsonl" \
-cargo bench --bench u32_pcs_compare \
-  --features bench-internals,plonky3-whir-bench,binius64-bench
-```
-
-Run these commands one at a time. Each uses one shared canonical integer witness per size across
-all selected PCSs, encoded in each backend's own field and layout. BabyBear
-supports exponents 15–24; u32 supports 15–25. Use five measured repetitions for
-initial runs and 21 for the final comparison, plus the automatic warmup.
-The full multiplication PIOP is not run. Detailed traces go to files while the
-terminal retains progress and compact timing output.
-
-Their console output prints a timing legend followed by individual warmup and
-sample measurements in wall-clock milliseconds:
-
-| Console field | Measured work |
-|---|---|
-| `shared_witness_generation_ms` | Canonical integer witness generation once per size, before backend-specific conversion. |
-| `backend_setup_ms` | Backend preparation once per size, outside the measured trials. |
-| `commitment_generation_ms` | Commitment to the converted witness, including serialization and transcript work inside the commitment phase. |
-| `opening_proof_ms` | Terminal evaluation opening proof generation: F2Z opening, WHIR opening, or Binius ring-switch reduction plus BaseFold opening. |
-| `commit_and_open_ms` | Sum of the disjoint commitment and opening phases in that trial. |
-
-Commitment and opening timings exclude setup, witness generation/conversion,
-claim derivation, and verification. Their sum is not end-to-end multiplication
-proving time. The full multiplication PIOP is not run and is marked N/A.
-Sample lines are individual timings, not medians; warmups are excluded from
-measured-sample summaries. Set `F2Z_PCS_COMPARE_TRACE_PATH` to a fresh `.jsonl`
-path to retain the detailed timing trace without printing JSON to the terminal.
 
 ### SHA security-profile sweep: Lambda100 / Sha128ReferenceSchedule / Lambda128 (set `F2Z_BENCH_LAMBDA` for one of them):
 ```sh
