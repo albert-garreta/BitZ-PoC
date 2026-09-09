@@ -387,6 +387,52 @@ use Spartan2's shared NeutronNova and sumcheck kernels through the non-ZK
 adapter. They include paired F2Z/Spartan tables for 1 and 32 threads, with
 end-to-end totals from witness generation through verification.
 
+#### F2Z versus ZKPassport non-ZK UltraHonk
+
+Compare F2Z Split with the ZKPassport-derived Noir circuit using native
+Barretenberg 5.0.0 UltraHonk, with zero knowledge disabled. Both prove the
+same SHA-256 compression chain followed by one P-256 ECDSA verification,
+using identical low-s fixtures.
+
+Use the sibling `../zk-passport-circuits` checkout on the fork's
+[`f2z-benching` branch](https://github.com/wu-s-john/zk-passport-circuits/tree/f2z-benching).
+Run from this repository's root on Linux x86_64. The bootstrap builds the
+Rust runner and prepares the pinned native tools:
+
+```sh
+python3 benchmarks/zkpassport/build.py --test
+```
+
+Run **8, 32, and 256 compressions with 16 threads**:
+
+```sh
+python3 scripts/run_sha256_ecdsa_compare.py \
+  --methods f2z-split zkpassport-honk \
+  --exponents 3 5 8 \
+  --threads 16 \
+  --targets 100 128 \
+  --reps 3 \
+  --output bench_results/sha256-ecdsa-zkpassport-16t
+```
+
+`--exponents 3 5 8` selects `2^3`, `2^5`, and `2^8` total compressions,
+including the mandatory SHA padding block. Each configuration runs one
+warmup and three measured proofs, all verified. F2Z runs both economic
+security targets; UltraHonk runs once per size using its BN254 KZG security
+model. This gives **9 configurations and 36 verified proofs**, including
+warmups. To run UltraHonk alone, use `--methods zkpassport-honk`.
+
+The output directory contains `summary.csv`, `samples.csv`, raw logs,
+shared fixtures, and build/circuit provenance. Setup and SRS downloads are
+excluded from proving times. UltraHonk reports aggregate proving time;
+unavailable internal phase timings remain null. Rerunning the same command
+resumes completed work; choose a new output directory after code changes
+or to collect fresh measurements.
+
+See the [native ZKPassport benchmark guide](benchmarks/zkpassport/README.md)
+for measurement boundaries, offline operation, and the retained upstream
+Noir constraint-coverage diagnostic.
+
 ### u32×u32 -> u64 — λ=100; exponents ≥ 15:
 ```sh
 F2Z_BENCH_LAMBDA=100 F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \

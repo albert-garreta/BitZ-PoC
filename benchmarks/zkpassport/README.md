@@ -19,8 +19,8 @@ From the BitZ-pcs root, first build and validate the native runner:
 python3 benchmarks/zkpassport/build.py --test
 python3 scripts/run_sha256_ecdsa_compare.py \
   --methods f2z-split zkpassport-honk --exponents 3 5 8 \
-  --targets 100 128 --threads 1 16 --reps 3 \
-  --output bench_results/zkpassport-comparison
+  --targets 100 128 --threads 16 --reps 3 \
+  --output bench_results/sha256-ecdsa-zkpassport-16t
 ```
 
 Omit `--exponents` to request the full `i=3..16` sweep (8 through 65,536 SHA
