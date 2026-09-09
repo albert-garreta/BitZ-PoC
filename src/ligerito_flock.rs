@@ -440,6 +440,20 @@ pub fn validated_udr_lig_configs_for_target(
     m_p: usize,
     target_bits: usize,
 ) -> Result<(LigProverConfig, LigVerifierConfig), String> {
+    validated_udr_lig_configs_with(m_p, 1, 4, target_bits)
+}
+
+/// [`validated_udr_lig_configs_for_target`] with an explicit code rate and
+/// fold arity: the CLI profile `udrg:<log_inv_rate>:<initial_k>:<bits>`
+/// (UDR geometry with fold grinding, BLAKE3 Merkle trees), validator-gated at
+/// `target_bits`. Lower rates buy more bits per query (fewer queries, smaller
+/// proof) at the price of a longer codeword to encode and hash at commit.
+pub fn validated_udr_lig_configs_with(
+    m_p: usize,
+    log_inv_rate: usize,
+    initial_k: usize,
+    target_bits: usize,
+) -> Result<(LigProverConfig, LigVerifierConfig), String> {
     let m = m_p
         .checked_add(LOG_PACKING)
         .ok_or_else(|| "Ligerito variable count overflow".to_owned())?;
@@ -453,7 +467,8 @@ pub fn validated_udr_lig_configs_for_target(
             "validated UDR target must be in [64, 128] bits, got {target_bits}"
         ));
     }
-    let mut security = custom_udr_grind_config_bits(m, 1, 4, Some(target_bits));
+    let mut security =
+        custom_udr_grind_config_bits(m, log_inv_rate, initial_k, Some(target_bits));
     if target_bits != 128 {
         security.analysis_version =
             "udr_maximal_radius_with_fold_grinding (unaudited custom target)".into();

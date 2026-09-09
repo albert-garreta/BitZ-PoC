@@ -7,7 +7,7 @@
 % feature `parallel`).  Prover time includes the
 % commitment and excludes witness generation (< 0.1 s in every row).
 % Reproduction commands and commit hashes: README.md, section "MultiSwap".
-%   BitZ    f2z-pcs      ca52890  F2Z_BENCH_LAMBDA=114 (114.1 bits achieved)
+%   BitZ    f2z-pcs      (this checkout)  F2Z_BENCH_LAMBDA=114, opener udrg:3:4:114 (114.0 bits achieved)
 %   Zinc+   zinc-plus    878fbd8  main-beta, LIMB16=1 NVARS=13, feature sec-114
 %   Limber  limber-impl  b003684  MSCFG=paper (the 6209-row Table-1 circuit)
 
@@ -18,8 +18,8 @@
     Scheme & Commitment & \multicolumn{2}{c}{Prove (ms)} & \multicolumn{2}{c}{Verify (ms)} & Proof \\
      &  & 1 thr & 8 thr & 1 thr & 8 thr & (KB) \\
     \midrule
-    \ftwoz \ (this work)             & binary field, hash  & \textbf{257}  & \textbf{103} & \textbf{9.8} & 12.0 & 338 \\
-    Zinc+ \cite{zincplus}$^{\ast}$   & integer code, hash  & 2052          & 563          & 18.2         & \textbf{12.7} & 1272 \\
+    \ftwoz \ (this work)             & binary field, hash  & \textbf{273}  & \textbf{105} & \textbf{9.9} & \textbf{12.0} & 269 \\
+    Zinc+ \cite{zincplus}$^{\ast}$   & integer code, hash  & 2052          & 563          & 18.2         & 12.7 & 1272 \\
     Limber \cite{limber} (Brakedown) & hash                & 1175          & 559          & 44.2         & 43.3 & 5769 \\
     Limber \cite{limber} (Hyrax)     & Tom-256, DL         & 1206          & 390          & 37.1         & 20.5 & \textbf{175} \\
     \midrule
@@ -37,7 +37,10 @@
   one and with eight threads, as medians of five runs; prover time includes
   the commitment and excludes witness generation (below $0.15$\,s in every
   row).  All four target $114$ bits of security; the \ftwoz\ and Zinc+ rows
-  count $10$ and $14$ bits of proof-of-work grinding respectively.  The two
+  count $10$ and $14$ bits of proof-of-work grinding respectively.  The
+  \ftwoz\ opening uses Ligerito in the unique-decoding regime at rate $1/8$
+  with fold arity $4$ and fold grinding, validated at the $114$-bit target.
+  The two
   lower rows are circuit-based baselines ($25.2$M and $6.2$M R1CS
   constraints) quoted verbatim from \cite[Table 1]{limber}.
   %

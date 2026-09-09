@@ -9,7 +9,7 @@
 //! synthesis and public relation construction are excluded and reported
 //! separately. Every measured proof is verified.
 //!
-//! Defaults to the complete supported range `2^7, ..., 2^16` with three measured
+//! Defaults to `2^7, ..., 2^16` with three measured
 //! repetitions after one warm-up. Override with, for example:
 //!
 //! ```text
@@ -23,9 +23,10 @@
 //! Every compression occupies 20,456 adjacent assignment cells, all batches
 //! share one leading constant cell, and any unused cells are one trailing
 //! zero suffix.
-//! Power-of-two compression batches open the product-layout assignment
-//! directly. `F2Z_SHA_INNER_PREFIX_VARS=0..4` only configures the legacy
-//! inner-sumcheck fallback used by non-power-of-two assignment-row batches.
+//! Power-of-two compression batches of at least 128 instances open the
+//! product-layout assignment directly. Batches of 16, 32 and 64 use the
+//! packed inner sumcheck. `F2Z_SHA_INNER_PREFIX_VARS=0..4` configures that
+//! path and non-power-of-two assignment-row batches.
 //! `F2Z_SHA_OPENING_T=<t>` gives every compression-count shape an explicit
 //! F2Z split of `2^t` rows (the read-off vector then has `2^(vars - t)`
 //! columns; splits above the one-forest cap open with one forest per weight
@@ -41,8 +42,23 @@
 //! aliases.) Set `F2Z_SHA_TRACE_PATH=/path/to/trace.jsonl` together with
 //! `OBLONG_PROFILE_INTERVALS=1` to emit one canonical `zkperf.trace/v1` run per
 //! warm-up/sample, including observed nested profiler intervals.
+//!
+//! Enable `bench-peak-memory` to measure peak live Rust heap during witness
+//! generation, commitment, and proving. Each run resets the peak; each shape
+//! reports the maximum over measured runs, excluding the warmup. The allocator
+//! also instruments timed runs. Without the feature, memory fields are `na`.
 
-mod common;
+pub(crate) mod common;
+
+#[cfg(feature = "bench-peak-memory")]
+#[global_allocator]
+static ALLOCATOR: common::peak_memory::PeakAlloc = common::peak_memory::PeakAlloc;
+
+const MEMORY_TRACKING: &str = if cfg!(feature = "bench-peak-memory") {
+    "allocator"
+} else {
+    "disabled"
+};
 
 use std::{
     collections::HashMap,
@@ -73,6 +89,11 @@ use f2z::{
 };
 use serde_json::{Value, json};
 
+#[cfg(feature = "bench-internals")]
+use f2z::piop::spartan::{
+    SHA256_FIXED_98_PRIME, prepare_sha256_compression_batch_for_product_t_fixed98,
+};
+
 /// One rep's raw measurements; step extraction happens in `common`.
 struct RepTiming {
     witness_ms: f64,
@@ -84,6 +105,7 @@ struct RepTiming {
     spartan_bytes: usize,
     f2z_bytes: usize,
     forests: usize,
+    peak_heap_bytes: Option<usize>,
 }
 
 #[derive(Clone, Copy)]
@@ -96,12 +118,16 @@ enum Trial {
 enum BenchShape {
     Compressions(usize),
     AssignmentRows(usize),
+    #[cfg(feature = "bench-internals")]
+    ProductLayout(usize),
 }
 
 impl BenchShape {
     const fn exponent(self) -> usize {
         match self {
             Self::Compressions(exponent) | Self::AssignmentRows(exponent) => exponent,
+            #[cfg(feature = "bench-internals")]
+            Self::ProductLayout(t) => t,
         }
     }
 
@@ -109,11 +135,17 @@ impl BenchShape {
         match self {
             Self::Compressions(_) => "compressions",
             Self::AssignmentRows(_) => "mnumrows",
+            #[cfg(feature = "bench-internals")]
+            Self::ProductLayout(_) => "product-ts",
         }
     }
 
     fn slug(self) -> String {
-        format!("{}-2p{}", self.mode(), self.exponent())
+        match self {
+            #[cfg(feature = "bench-internals")]
+            Self::ProductLayout(t) => format!("product-ts-t{t}-s{}", 29 - t),
+            _ => format!("{}-2p{}", self.mode(), self.exponent()),
+        }
     }
 
     /// Public relation preparation under the selected security profile.
@@ -131,6 +163,15 @@ impl BenchShape {
                     "F2Z_SHA_OPENING_T applies to compression-count shapes only"
                 );
                 prepare_sha256_compression_batch_for_assignment_rows_with_profile::<P>(exponent)
+            }
+            #[cfg(feature = "bench-internals")]
+            Self::ProductLayout(t) => {
+                assert!(
+                    layout == Sha256OpeningLayout::Default
+                        && P::NAME == f2z::piop::spartan::Lambda100::NAME,
+                    "the fixed-98 product sweep requires the default profile and no opening layout override"
+                );
+                prepare_sha256_compression_batch_for_product_t_fixed98(14, t)
             }
         }
     }
@@ -256,6 +297,10 @@ impl TraceWriter {
                     }
                     BenchShape::AssignmentRows(_) => {
                         format!("MnumRows=2^{exponent}; {compressions} SHA-256 compressions")
+                    }
+                    #[cfg(feature = "bench-internals")]
+                    BenchShape::ProductLayout(t) => {
+                        format!("2^14 SHA-256 compressions; product split ({t},{})", 29 - t)
                     }
                 },
                 "algorithm": "SHA-256 compression / Spartan + virtual F2Z (runtime prime)",
@@ -762,6 +807,23 @@ fn parse_exponent_list(value: &str, variable: &str) -> Vec<usize> {
 }
 
 fn shapes() -> Vec<BenchShape> {
+    #[cfg(feature = "bench-internals")]
+    if let Ok(value) = std::env::var("F2Z_SHA_PRODUCT_TS") {
+        assert!(
+            std::env::var_os("F2Z_BENCH_SHAPES").is_none()
+                && std::env::var_os("F2Z_SHA_LOG2S").is_none()
+                && std::env::var_os("F2Z_SHA_MNUMROWS_LOG2S").is_none(),
+            "F2Z_SHA_PRODUCT_TS cannot be combined with other SHA shape variables"
+        );
+        return parse_exponent_list(&value, "F2Z_SHA_PRODUCT_TS")
+            .into_iter()
+            .map(|t| {
+                assert!((7..=28).contains(&t), "product t must be in 7..=28");
+                BenchShape::ProductLayout(t)
+            })
+            .collect();
+    }
+
     if let Ok(value) = std::env::var("F2Z_SHA_MNUMROWS_LOG2S") {
         assert!(
             std::env::var_os("F2Z_BENCH_SHAPES").is_none()
@@ -772,8 +834,8 @@ fn shapes() -> Vec<BenchShape> {
             .into_iter()
             .map(|exponent| {
                 assert!(
-                    (21..=30).contains(&exponent),
-                    "SHA-256 MnumRows exponents must be in 21..=30"
+                    (18..=30).contains(&exponent),
+                    "SHA-256 MnumRows exponents must be in 18..=30"
                 );
                 BenchShape::AssignmentRows(exponent)
             })
@@ -794,7 +856,7 @@ fn shapes() -> Vec<BenchShape> {
                 .expect("F2Z_BENCH_SHAPES contains integer exponents");
             assert!(
                 (SHA256_MIN_LOG_COMPRESSIONS..=SHA256_MAX_LOG_COMPRESSIONS).contains(&exponent),
-                "SHA-256 runtime-prime protocol supports exponents 7 through 16"
+                "SHA-256 runtime-prime protocol supports exponents 4 through 16"
             );
             BenchShape::Compressions(exponent)
         })
@@ -811,6 +873,13 @@ fn fmt_ms(milliseconds: f64) -> String {
     }
 }
 
+fn fmt_peak_heap_mib(bytes: Option<usize>) -> String {
+    bytes.map_or_else(
+        || "na".to_owned(),
+        |bytes| format!("{:.6}", bytes as f64 / (1024.0 * 1024.0)),
+    )
+}
+
 fn run_once(
     inputs: &[Sha256CompressionInput],
     prepared: &PreparedSha256CompressionBatch,
@@ -820,6 +889,8 @@ fn run_once(
 ) -> (RepTiming, Vec<ProfileInterval>) {
     let _ = f2z::utils::prof::take_totals();
     let _ = f2z::utils::prof::take_intervals();
+    #[cfg(feature = "bench-peak-memory")]
+    common::peak_memory::reset_peak();
     let verified_trial_scope = f2z::utils::prof::scope("sha256-trace:verified_trial");
 
     // Witness synthesis and public-statement materialization are excluded
@@ -877,6 +948,12 @@ fn run_once(
     }
     drop(prover_scope);
     let prove_ms = prove_started.elapsed().as_secs_f64() * 1e3;
+    // Capture before verifier allocations and proof serialization. This
+    // includes the live input/setup baseline and witness-generation peak.
+    #[cfg(feature = "bench-peak-memory")]
+    let peak_heap_bytes = Some(common::peak_memory::peak_bytes());
+    #[cfg(not(feature = "bench-peak-memory"))]
+    let peak_heap_bytes = None;
     let prove_phases = f2z::utils::prof::take_totals();
 
     let mut verifier_transcript = Blake3Transcript::new();
@@ -918,6 +995,7 @@ fn run_once(
         spartan_bytes,
         f2z_bytes,
         forests,
+        peak_heap_bytes,
     };
     (timing, intervals)
 }
@@ -930,6 +1008,7 @@ fn bench_shape<P: IopSecurityProfile>(
     inner_prefix_vars: usize,
     layout: Sha256OpeningLayout,
     trace_writer: &mut Option<TraceWriter>,
+    result_writer: &mut Option<BufWriter<File>>,
 ) {
     let exponent = shape.exponent();
     let shape_seed = root_seed
@@ -937,6 +1016,8 @@ fn bench_shape<P: IopSecurityProfile>(
         ^ match shape {
             BenchShape::Compressions(_) => 0,
             BenchShape::AssignmentRows(_) => 0x6d6e_756d_726f_7773,
+            #[cfg(feature = "bench-internals")]
+            BenchShape::ProductLayout(_) => 0x7072_6f64_7563_745f,
         };
 
     let setup_started = Instant::now();
@@ -971,6 +1052,11 @@ fn bench_shape<P: IopSecurityProfile>(
         BenchShape::AssignmentRows(_) => println!(
             "=== MnumRows=2^{exponent} = {assignment_cells}; {compressions} packed SHA-256 compressions ==="
         ),
+        #[cfg(feature = "bench-internals")]
+        BenchShape::ProductLayout(t) => println!(
+            "=== 2^14 = {compressions} SHA-256 compressions; product (t,s)=({t},{}) ===",
+            29 - t,
+        ),
     }
     println!(
         "  source: {live_source_cells} live / {source_cells} padded cells | derived: {live_assignment_cells} live / {assignment_cells} padded cells",
@@ -993,6 +1079,28 @@ fn bench_shape<P: IopSecurityProfile>(
         prepared.security().profile_name,
         prepared.security().lambda,
     );
+    if let Some(product) = prepared.product_assignment_params() {
+        let modulus = {
+            #[cfg(feature = "bench-internals")]
+            {
+                if matches!(shape, BenchShape::ProductLayout(_)) {
+                    SHA256_FIXED_98_PRIME.to_string()
+                } else {
+                    "transcript-derived".to_owned()
+                }
+            }
+            #[cfg(not(feature = "bench-internals"))]
+            {
+                "transcript-derived".to_owned()
+            }
+        };
+        println!(
+            "  product opening: (t,s)=({},{}) | layout={} | q={modulus}",
+            product.t,
+            product.s,
+            prepared.product_layout_name().unwrap_or("none"),
+        );
+    }
 
     let warm_inputs = make_inputs(compressions, shape_seed);
     let (warm, warm_intervals) = run_once(&warm_inputs, &prepared, inner_prefix_vars, &pc, &vc);
@@ -1024,10 +1132,13 @@ fn bench_shape<P: IopSecurityProfile>(
         );
     }
     black_box(warm);
+    drop(warm_inputs);
+    drop(warm_intervals);
 
     let mut prover = common::StepSamples::default();
     let mut verifier = common::StepSamples::default();
     let mut witness_samples = Vec::with_capacity(reps);
+    let mut peak_heap_bytes = None;
     let mut last = None;
     for sample in 0..reps {
         let input_seed = shape_seed ^ ((sample + 1) as u64).wrapping_mul(0xd6e8_feb8_6659_fd93);
@@ -1043,18 +1154,36 @@ fn bench_shape<P: IopSecurityProfile>(
                 &intervals,
             );
         }
-        println!(
-            "  SAMPLE shape_mode={} exponent={exponent} sample={} compressions={compressions} mnum_rows={assignment_cells} inner_prefix_vars={inner_prefix_vars} witness_ms={:.6} commit_ms={:.6} prove_ms={:.6} verify_ms={:.6} verified=true",
+        let sample_peak_bytes = timing
+            .peak_heap_bytes
+            .map_or_else(|| "na".to_owned(), |bytes| bytes.to_string());
+        let sample_line = format!(
+            "SAMPLE shape_mode={} shape_value={exponent} sample={} compressions={compressions} mnum_rows={assignment_cells} product_t={} product_s={} inner_prefix_vars={inner_prefix_vars} witness_ms={:.6} commit_ms={:.6} prove_ms={:.6} verify_ms={:.6} memory_tracking={MEMORY_TRACKING} peak_heap_bytes={sample_peak_bytes} peak_heap_mib={} proof_bytes={} proof_piop_bytes={} proof_open_bytes={} verified=true",
             shape.mode(),
             sample + 1,
+            prepared
+                .product_assignment_params()
+                .map_or_else(|| "na".to_owned(), |params| params.t.to_string()),
+            prepared
+                .product_assignment_params()
+                .map_or_else(|| "na".to_owned(), |params| params.s.to_string()),
             timing.witness_ms,
             timing.commit_ms,
             timing.prove_ms,
             timing.verify_ms,
+            fmt_peak_heap_mib(timing.peak_heap_bytes),
+            timing.spartan_bytes + timing.f2z_bytes,
+            timing.spartan_bytes,
+            timing.f2z_bytes,
         );
+        println!("  {sample_line}");
+        if let Some(writer) = result_writer {
+            writeln!(writer, "{sample_line}").expect("write SHA sample result");
+        }
         prover.record_prove(timing.prove_ms, timing.commit_ms, &timing.prove_phases);
         verifier.record_verify(timing.verify_ms, &timing.verify_phases);
         witness_samples.push(timing.witness_ms);
+        peak_heap_bytes = peak_heap_bytes.max(timing.peak_heap_bytes);
         last = Some(timing);
     }
     let last = last.expect("positive repetition count");
@@ -1065,6 +1194,14 @@ fn bench_shape<P: IopSecurityProfile>(
         "  end-to-end prove: {} median | {throughput:10.0} compressions/s",
         fmt_ms(prover_medians.total),
     );
+    if let Some(bytes) = peak_heap_bytes {
+        println!(
+            "  peak live heap: {:.2} MiB (maximum of {reps} measured runs; witness + commit + prove)",
+            bytes as f64 / (1024.0 * 1024.0),
+        );
+    } else {
+        println!("  peak live heap: not measured (enable --features bench-peak-memory)");
+    }
     let report = common::BenchReport {
         bench: "sha256",
         shape: shape.slug(),
@@ -1077,6 +1214,28 @@ fn bench_shape<P: IopSecurityProfile>(
             ("inner_prefix_vars".into(), inner_prefix_vars.to_string()),
             ("throughput_per_s".into(), format!("{throughput:.3}")),
             ("shape_seed".into(), format!("{shape_seed:#018x}")),
+            ("memory_tracking".into(), MEMORY_TRACKING.into()),
+            (
+                "peak_heap_bytes".into(),
+                peak_heap_bytes.map_or_else(|| "na".to_owned(), |bytes| bytes.to_string()),
+            ),
+            ("peak_heap_mib".into(), fmt_peak_heap_mib(peak_heap_bytes)),
+            (
+                "product_t".into(),
+                prepared
+                    .product_assignment_params()
+                    .map_or_else(|| "na".to_owned(), |params| params.t.to_string()),
+            ),
+            (
+                "product_s".into(),
+                prepared
+                    .product_assignment_params()
+                    .map_or_else(|| "na".to_owned(), |params| params.s.to_string()),
+            ),
+            (
+                "product_layout".into(),
+                prepared.product_layout_name().unwrap_or("none").to_owned(),
+            ),
         ],
         lambda: Some(prepared.security().lambda),
         lambda_achieved: Some(prepared.security().accounting.achieved_bits()),
@@ -1094,11 +1253,25 @@ fn bench_shape<P: IopSecurityProfile>(
         },
     };
     report.print_human();
+    if let Some(writer) = result_writer {
+        writeln!(writer, "{}", report.result_line()).expect("write SHA summary result");
+        writer.flush().expect("flush SHA result output");
+    }
 }
 
-fn main() {
+pub(crate) fn main() {
     let threads = common::init();
     let mut trace_writer = TraceWriter::from_env(threads);
+    let mut result_writer = std::env::var_os("F2Z_SHA_RESULT_PATH").map(|path| {
+        let path = Path::new(&path);
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            fs::create_dir_all(parent).expect("create SHA result directory");
+        }
+        BufWriter::new(File::create(path).expect("create SHA result output"))
+    });
     let reps = common::reps(Some("F2Z_SHA_REPS"), 3);
     let root_seed = common::seed(Some("F2Z_SHA_SEED"), 0x4632_5a5f_5348_4132);
     let inner_prefix_vars = std::env::var("F2Z_SHA_INNER_PREFIX_VARS").map_or(
@@ -1135,10 +1308,14 @@ fn main() {
     println!(
         "repetitions: {reps}; warmups: 1; inner prefix K={inner_prefix_vars}; root seed: {root_seed:#018x}"
     );
-    println!(
-        "security profile: {}",
-        common::profile_banner(selected, common::SecurityProfile::Lambda100)
-    );
+    if std::env::var_os("F2Z_SHA_PRODUCT_TS").is_some() {
+        println!("security profile: sha-fixed98-lambda100 (fixed prime; product sweep)");
+    } else {
+        println!(
+            "security profile: {}",
+            common::profile_banner(selected, common::SecurityProfile::Lambda100)
+        );
+    }
     match layout {
         Sha256OpeningLayout::InnerSumcheck { row_vars } => println!(
             "opening layout override: inner sumcheck with 2^{row_vars} F2Z rows (F2Z_SHA_OPENING_T={row_vars})"
@@ -1164,6 +1341,7 @@ fn main() {
                 inner_prefix_vars,
                 layout,
                 &mut trace_writer,
+                &mut result_writer,
             )
         );
     }

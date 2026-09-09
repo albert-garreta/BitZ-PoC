@@ -478,6 +478,11 @@ pub fn prepare_sha256_chain_batch_with_profile_and_initial_state<P: IopSecurityP
     log_compressions: usize,
     initial_state: [u32; 8],
 ) -> Result<PreparedSha256ChainBatch, Sha256ConstraintError> {
+    // The chain uses only the local-major product opening, which needs
+    // enough instances to fill a 128-bit packed row.
+    if log_compressions < LOG_PACKING {
+        return Err(Sha256ConstraintError::InvalidBatchExponent);
+    }
     let instances = 1usize
         .checked_shl(
             u32::try_from(log_compressions)

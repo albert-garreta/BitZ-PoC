@@ -6,6 +6,7 @@
 //! exact 128-bit packed row per gate before ring switching to BaseFold.
 
 mod common;
+use common::mul_witness::u32_digest as witness_digest;
 mod integer_pcs_compare {
     pub mod binius;
     pub mod whir_goldilocks;
@@ -40,7 +41,7 @@ use p3_whir::parameters::WhirConfigError;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use serde_json::{Value, json};
 
-const DEFAULT_SEED: u64 = 0x5533_3250_4353_0064;
+const DEFAULT_SEED: u64 = common::mul_witness::U32_SEED;
 const DEFAULT_REPS: usize = 21;
 const MIN_EXPONENT: usize = 15;
 const MAX_EXPONENT: usize = 25;
@@ -302,6 +303,12 @@ impl TraceWriter {
             writeln!(self.out)?;
         }
         self.out.flush()?;
+        common::pcs_console::print_trial(
+            &run.trial.fragment(),
+            intervals,
+            run.artifacts.opening,
+            run.artifacts.total(),
+        );
         Ok(())
     }
 }
@@ -497,16 +504,6 @@ fn ordered(selected: &[Backend], exponent: usize) -> Vec<Backend> {
     order.into_iter().filter(|b| selected.contains(b)).collect()
 }
 
-fn witness_digest(witness: &U32MulWitness) -> String {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b"f2z/u32-pcs-compare/integer-witness/v1");
-    hasher.update(&(witness.assignment().len() as u64).to_le_bytes());
-    for value in witness.assignment() {
-        hasher.update(&value.to_le_bytes());
-    }
-    hasher.finalize().to_hex().to_string()
-}
-
 fn mix_seed(mut value: u64) -> u64 {
     value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
     value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
@@ -632,6 +629,7 @@ fn run_f2z(
         prepare_u32_terminal_f2z_opening(&relation, &commitment)?;
     drop((relation, commitment));
     let setup_ms = common::elapsed_ms(setup);
+    eprintln!("    backend_setup_ms={setup_ms:.3}");
     let security = json!({"profile":"F2Z Lambda100 terminal opening","target_bits":100,"evaluation_modulus":FQ_MOD.to_string(),"commitment_field":"GF(2^128)","transcript_hash":"BLAKE3"});
     for trial in std::iter::once(Trial::Warmup).chain((0..reps).map(Trial::Sample)) {
         let seed = trial_seed(shape_seed, Backend::F2z, trial);
@@ -713,6 +711,7 @@ fn run_whir(
     };
     let summary = backend.security_summary();
     let setup_ms = common::elapsed_ms(setup);
+    eprintln!("    backend_setup_ms={setup_ms:.3}");
     let security = json!({"profile":format!("WHIR Goldilocks degree {} {}",whir::CHALLENGE_EXTENSION_DEGREE,whir::SECURITY_ASSUMPTION_LABEL),"target_bits":100,"internal_target_bits":summary.target_bits,"challenge_extension_degree":whir::CHALLENGE_EXTENSION_DEGREE,"configured_max_pow_bits":summary.configured_max_pow_bits,"derived_max_pow_bits":summary.derived_max_pow_bits,"folding_factor":summary.folding_factor,"starting_log_inverse_rate":summary.starting_log_inverse_rate,"commitment_ood_samples":summary.commitment_ood_samples,"round_queries":summary.round_queries,"round_pow_bits":summary.round_pow_bits,"final_queries":summary.final_queries,"final_pow_bits":summary.final_pow_bits,"hash":"Poseidon2Goldilocks<8>","hiding":false});
     for trial in std::iter::once(Trial::Warmup).chain((0..reps).map(Trial::Sample)) {
         let seed = trial_seed(shape_seed, Backend::Whir, trial);
@@ -828,6 +827,7 @@ fn run_binius(
     let log_inv_rate = binius_log_inv_rate()?;
     let backend = BiniusBackend::setup(exponent, log_inv_rate);
     let setup_ms = common::elapsed_ms(setup);
+    eprintln!("    backend_setup_ms={setup_ms:.3}");
     let security = json!({"profile":"Binius64 ring-switch + BaseFold","target_bits":binius::SECURITY_BITS,"soundness_bound_model":"Diamond-Posen Eq. 42 plus 128-bit SHA-256 cap","estimated_query_soundness_bits":backend.estimated_soundness_bits(),"challenge_field":"GF(2^128)-GHASH","hash":"SHA-256","log_inverse_rate":backend.log_inv_rate(),"test_queries":backend.n_test_queries(),"hiding":false});
     for trial in std::iter::once(Trial::Warmup).chain((0..reps).map(Trial::Sample)) {
         let seed = trial_seed(shape_seed, Backend::Binius, trial);
@@ -908,9 +908,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         threads,
         whir::CHALLENGE_EXTENSION_DEGREE
     );
+    common::pcs_console::print_timing_definitions();
     for exponent in exponents {
         flock_core::scratch::clear();
-        let shape_seed = root_seed ^ (exponent as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+        let shape_seed = common::mul_witness::shape_seed(root_seed, exponent);
         let mut rng = StdRng::seed_from_u64(shape_seed);
         let start = Instant::now();
         let witness =
@@ -920,7 +921,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let witness_ms = common::elapsed_ms(start);
         let digest = witness_digest(&witness);
         eprintln!(
-            "2^{exponent}: witness {witness_ms:.3} ms, digest {}",
+            "2^{exponent}: shared_witness_generation_ms={witness_ms:.3}, digest {}",
             &digest[..16]
         );
         for backend in ordered(&selected, exponent) {

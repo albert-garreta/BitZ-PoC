@@ -81,6 +81,7 @@ tracing = { version = "0.1.38", optional = true }
 tracing-subscriber = { version = "0.3.18", optional = true }
 
 [dev-dependencies]
+libc = "0.2"
 serde_json = "1"
 
 [[bench]]
@@ -208,6 +209,29 @@ required-features = ["hybrid"]
 # Chained SHA-256 plus x*y = z + 2^32*w with four u32 limbs.
 # Counts and repetitions via --mul-log, --sha-log, and --iterations.
 
+[[bench]]
+name = "mul_e2e_compare"
+harness = false
+required-features = ["bench-internals", "native-mul-compare"]
+
+[[bench]]
+name = "mul_witness_compare"
+harness = false
+required-features = ["bench-internals", "native-mul-compare"]
+
+[[test]]
+name = "native_mul_compare"
+path = "tests/native_mul_compare.rs"
+required-features = ["bench-internals", "native-mul-compare"]
+
+[[bench]]
+name = "sha256_product_layout"
+harness = false
+required-features = ["bench-internals"]
+# Fixed-q controlled sweep for 2^14 compressions and t+s=29. Defaults to
+# t=7..=27, one warmup + 21 samples; t=28 is memory-skipped. Select t with
+# F2Z_SHA_PRODUCT_TS.
+
 [features]
 default = ["parallel"]
 hybrid = ["binius64-bench"]
@@ -241,6 +265,13 @@ plonky3-sha256-bench = [
     "dep:p3-multi-stark",
     "dep:p3-sha256-air",
     "dep:p3-util",
+]
+native-mul-compare = [
+    "plonky3-whir-bench",
+    "dep:p3-air",
+    "dep:p3-multi-stark",
+    "binius64-bench",
+    "dep:limber",
 ]
 native-sha256-compare = [
     "plonky3-sha256-bench",

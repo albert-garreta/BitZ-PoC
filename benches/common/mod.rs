@@ -18,6 +18,10 @@
 
 #![allow(dead_code)] // each bench uses a subset of the harness
 
+pub mod mul_witness;
+pub mod pcs_console;
+#[cfg(feature = "bench-peak-memory")]
+pub mod peak_memory;
 #[cfg(feature = "plonky3-whir-bench")]
 pub mod plonky3;
 
@@ -123,7 +127,11 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     // Deprecated alias.
     "F2Z_MULTISWAP_REPS",
     "F2Z_MULTISWAP_TRACE_PATH",
-    // U32-specific bench knob.
+    // Native multiplication comparison selectors.
+    "F2Z_MUL_COMPARE_BACKENDS",
+    "F2Z_MUL_COMPARE_MEMORY",
+    "F2Z_MUL_COMPARE_OUTPUT_DIR",
+    "F2Z_MUL_COMPARE_WORKLOADS",
     "F2Z_MUL_WORD_BITS",
     "F2Z_PAIR2_FACTORED",
     "F2Z_PAR_CHUNK",
@@ -155,7 +163,9 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_SHA_MNUMROWS_LOG2S",
     "F2Z_SHA_OPENING_LAYOUT",
     "F2Z_SHA_OPENING_T",
+    "F2Z_SHA_PRODUCT_TS",
     "F2Z_SHA_REPS",
+    "F2Z_SHA_RESULT_PATH",
     "F2Z_SHA_SEED",
     "F2Z_SHA_TRACE_PATH",
     "F2Z_SPARTAN_REDUCTION",

@@ -21,6 +21,9 @@ pub use chain::{
     verify_sha256_chain, verify_sha256_chain_with_config,
 };
 
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub use constraints::prepare_sha256_compression_batch_for_product_t_fixed98;
 pub use constraints::{
     PreparedSha256CompressionBatch, SHA256_CONSTRAINTS, SHA256_F_BAR_LIVE_BITS,
     SHA256_F_INSTANCE_BITS, SHA256_F_LIVE_BITS, SHA256_H_BAR_LIVE_BITS, SHA256_H_INSTANCE_BITS,
@@ -33,6 +36,12 @@ pub use constraints::{
 pub use prime::{
     SHA256_COMMITMENT_FIELD_BITS, SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS,
     Sha256PrimeError,
+};
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub use prime::{
+    SHA256_FIXED_98_INITIAL_GRINDING_BITS, SHA256_FIXED_98_PRIME, SHA256_FIXED_98_PRIME_BITS,
+    SHA256_FIXED_98_TERMINAL_GRINDING_BITS,
 };
 pub use proof::{
     SHA256_DEFAULT_INNER_PREFIX_VARS, Sha256CompressionProof, Sha256F2zError,

@@ -74,6 +74,9 @@ for custom sizes, timing definitions, proof files and security accounting.
 
 ## Reproducing the paper's benchmarks
 
+Cross-system comparisons measure complete native proofs: witness generation,
+commitment, constraint proving, PCS opening, and verification.
+
 ### Raw performance of BitZ PCS on the core LinBitsRings relation
 
 ```sh
@@ -83,10 +86,28 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
 
 ### Integer multiplication
 
+*BitZ performance step-by-step*
+
 ```sh
 RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
     --mul-sweep 15-22 --threads 8 --reps 5 --profile custom:3:4 --cooldown 20
 ```
+
+*Full-proving comparison between different schemes*
+```sh
+RAYON_NUM_THREADS=8 \
+F2Z_BENCH_SHAPES="15 16 17 18 19 20" \
+F2Z_BENCH_REPS=5 \
+F2Z_MUL_COMPARE_WORKLOADS="u32" \
+F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
+bash scripts/run_native_mul_compare.sh
+```
+
+Every warmup and measured trial generates and verifies the complete proof.
+For BabyBear multiplication, set `F2Z_MUL_COMPARE_WORKLOADS="babybear"`.
+See the [native multiplication benchmark guide](docs/native-mul-compare.md)
+for the measurement boundaries, size ranges, proof sizes, and peak memory.
+
 
 ### MultiSwap (Limber's Table 1 workload: 4 exponentiations with 352-bit exponents modulo a 2048-bit RSA modulus + Poseidon-based hash-to-prime; the 6209-row integer Mod-R1CS from Limber's repo), λ=114
 
@@ -106,11 +127,13 @@ Same box (Apple M4, 4P+6E cores, 16 GB), `-C target-cpu=native`, medians of 5, 1
 
 | System (commit) | Prove 1 thr | Prove 8 thr | Verify 1 thr | Verify 8 thr | Proof |
 |---|---|---|---|---|---|
-| BitZ-SNARK (`ca52890`), 114 bits | 257 ms | 103 ms | 9.8 ms | 12.0 ms | 338 KB |
+| BitZ-SNARK (this checkout), 114 bits | 273 ms | 105 ms | 9.9 ms | 12.0 ms | 269 KB |
 | Zinc+ main-beta (`878fbd8`), 16-bit limbs + range checks, 114 bits (14 grinding bits) | 2052 ms | 563 ms | 18.2 ms | 12.7 ms | 1272 KB (847 KiB zstd) |
 | Zinc+ main-beta (`878fbd8`), fat-cell mock, no range checks, 100 bits | 831 ms | 236 ms | 58.0 ms | 24.6 ms | 1415 KB |
 | Limber-Brakedown (`b003684`) | 1175 ms | 559 ms | 44.2 ms | 43.3 ms | 5769 KB |
 | Limber-Hyrax (`b003684`) | 1206 ms | 390 ms | 37.1 ms | 20.5 ms | 175 KB |
+
+BitZ opener: Ligerito in the unique-decoding regime, rate 1/8, fold arity 4, fold grinding, validated at the 114-bit target (CLI profile `udrg:3:4:114`; set in `multiswap_lig_configs`).
 
 Limber — [albert-garreta/limber-impl](https://github.com/albert-garreta/limber-impl) `b003684` (fork of lucasxia01/limber-impl `853c6c4`; Rust ≥ 1.97). `MSCFG=paper` is required: the default `full` is a newer 2^14-row circuit, not the Table 1 statement. `RAYON_NUM_THREADS=8` for the 8-thread columns.
 
@@ -129,8 +152,9 @@ FOLD=1 WIDE16=1 NVARS=11 REPS=5 RUSTFLAGS="-C target-cpu=native" cargo bench --f
 
 ## Integer R1CS with F_2 virtualization
 
-Pick the security parameter with `F2Z_BENCH_LAMBDA`. Every bench below
-honours it, so one bench can be run at exactly one λ:
+Pick the security parameter with `F2Z_BENCH_LAMBDA`. The benches below
+honour it, except the fixed-prime `(t,s)` sweep, which uses its own λ=100
+profile:
 
 | `F2Z_BENCH_LAMBDA` | profile | meaning |
 |---|---|---|
@@ -183,6 +207,42 @@ local bits plus the low instance bits form the rows, the high instance bits
 the columns; `t ≥ 15`), which is the cheap way to get the split. The bench
 prints the layout, forest count and read-off width per shape.
 
+### SHA-256 `(t,s)` product-layout sweep — fixed 98-bit prime, λ=100
+
+This sweep fixes `2^14` independent SHA-256 compressions and `t+s=29`:
+the product assignment has `2^t` rows and `2^s` columns. Run this command
+from the repository root.
+
+Full default sweep, `t=7..27`, with one warmup and 21 measured samples per
+split:
+
+```sh
+RAYON_NUM_THREADS=8 F2Z_BENCH_LAMBDA=100 F2Z_BENCH_REPS=21 \
+F2Z_SHA_RESULT_PATH="benchmark-results/sha256_product_layout_$(date +%Y%m%d_%H%M%S).txt" \
+  cargo bench --features "bench-internals bench-peak-memory" --bench sha256_product_layout
+```
+
+`F2Z_SHA_PRODUCT_TS` selects individual `t` values; leave it unset for the
+full default sweep. Leave the other SHA shape/layout overrides unset
+(`F2Z_BENCH_SHAPES`, `F2Z_SHA_LOG2S`, `F2Z_SHA_MNUMROWS_LOG2S`,
+`F2Z_SHA_OPENING_T`, and `F2Z_SHA_OPENING_LAYOUT`).
+
+Each timestamped result file contains verified `SAMPLE` records and a
+`RESULT` summary per split. Both include proof size (`proof_bytes`, with
+PIOP/opening components) and peak live heap (`peak_heap_bytes` and
+`peak_heap_mib`). The heap window covers witness generation, commitment,
+and proving, including allocations already live at the start; it excludes
+verification and proof serialization. Summary timings are medians, and the
+summary heap peak is the maximum over measured runs, excluding the warmup.
+This measures Rust heap allocations, not process RSS. Allocator tracking
+also instruments the timed runs; omit `bench-peak-memory` for timing-only
+runs, which report memory as `na`.
+
+The default sweep also records `t=1..6`
+as unsupported because packing requires at least 128 rows, and `t=28` as
+skipped because its projected peak exceeds 60 GiB. Explicit selections
+accept `t=7..28`; `t=29` is not supported.
+
 ### SHA-256 chain — `2^k` CHAINED compressions (a `64·2^k`-byte Merkle–Damgård chain), λ=100:
 ```sh
 F2Z_BENCH_LAMBDA=100 F2Z_BENCH_SHAPES=14 F2Z_BENCH_REPS=3 RUSTFLAGS="-C target-cpu=native" \
@@ -218,6 +278,92 @@ F2Z_BENCH_LAMBDA=100 F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C tar
 ```sh
 F2Z_BENCH_LAMBDA=100 F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
   cargo bench --bench baby_bear_mul --features unchecked
+```
+
+### Native u32 / BabyBear end-to-end comparison
+
+BabyBear multiplication with Limber-Hyrax, shorter sweep at exponents 15–17.
+Run from the repository root:
+
+```sh
+RUSTFLAGS="-Ctarget-cpu=native" \
+RAYON_NUM_THREADS=8 \
+F2Z_BENCH_SHAPES="15 16 17" \
+F2Z_BENCH_REPS=5 \
+F2Z_MUL_COMPARE_WORKLOADS="babybear" \
+F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
+bash scripts/run_native_mul_compare.sh
+```
+
+For the full BabyBear sweep, replace the shape setting in that command with:
+
+```sh
+F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24"
+```
+
+To run only Limber, replace the backend setting in the same command with:
+
+```sh
+F2Z_MUL_COMPARE_BACKENDS="limber"
+```
+
+u32 multiplication with Limber-Hyrax, shorter sweep at exponents 15–17.
+Run from the repository root:
+
+```sh
+RUSTFLAGS="-Ctarget-cpu=native" \
+RAYON_NUM_THREADS=8 \
+F2Z_BENCH_SHAPES="15 16 17" \
+F2Z_BENCH_REPS=5 \
+F2Z_MUL_COMPARE_WORKLOADS="u32" \
+F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
+bash scripts/run_native_mul_compare.sh
+```
+
+For the full u32 sweep, replace the shape setting in that command with:
+
+```sh
+F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24 25"
+```
+
+To run only Limber, replace the backend setting in the same command with:
+
+```sh
+F2Z_MUL_COMPARE_BACKENDS="limber"
+```
+
+Both sweeps run F2Z, Binius64, Plonky3-WHIR, and Limber-Hyrax on the same
+canonical multiplication inputs for each workload, using each system's native
+full prover. Both commands report witness generation, commitment, PIOP, PCS
+opening, witness-to-proof time, verification, proof size, and peak resident
+memory. Each case prints a `RESULT schema=native-mul/2` line to stdout with
+`proof_bytes` and `peak_rss_bytes`, including when using `cargo bench` directly.
+Proof sizes include commitments; F2Z and Limber combine serialized components
+with fixed-width PIOP payload accounting.
+
+All four backends' measurements appear in `metrics.csv` and `summary.json`;
+`samples.jsonl` includes per-trial proof sizes. Peak memory comes from one
+additional verified proof in a fresh process per workload/backend/size, including
+setup, and is saved in `memory.jsonl`. It is separate from the timing trials.
+Set `F2Z_MUL_COMPARE_MEMORY=0` to skip this pass; memory is then reported as
+unavailable. Peak RSS measurement supports Linux and macOS. See
+[the measurement contract and backend selectors](docs/native-mul-compare.md).
+
+The full sweeps cover BabyBear at exponents 15–24 and u32 at 15–25. An exponent `n`
+means `2^n` multiplications: the ranges run from 32,768 through 16,777,216
+for BabyBear, and through 33,554,432 for u32. Run the commands one at a time.
+Each creates its own timestamped results directory under `PerfRuns/`.
+
+Start with five measured repetitions per workload/backend/size; use `F2Z_BENCH_REPS=21` for the final comparison. Each case
+also runs one warmup, excluded from measured-sample summaries. All cases run
+sequentially; finish other builds and benchmarks before starting either command.
+
+To independently verify that all four native witnesses recover the same
+canonical multiplication assignment:
+
+```sh
+F2Z_BENCH_SHAPES=10 F2Z_BENCH_REPS=5 \
+  cargo bench --bench mul_witness_compare --features bench-internals,native-mul-compare
 ```
 
 ### SHA security-profile sweep: Lambda100 / Sha128ReferenceSchedule / Lambda128 (set `F2Z_BENCH_LAMBDA` for one of them):
