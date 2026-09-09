@@ -164,9 +164,13 @@ pub enum Sha256ConstraintError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Sha256OpeningLayout {
     /// The production choice. Power-of-two batches of at least 128 open the
-    /// product-structured residual directly (rows = instances with
-    /// `t = min(k, 13)`, columns = the local cells, no inner sumcheck);
-    /// smaller and non-power-of-two batches run the inner sumcheck over a
+    /// product-structured residual directly, laid out as the balanced
+    /// `Id_{2^r} ⊗ M` block layout: this resolves to
+    /// [`Sha256OpeningLayout::ProductTransposed`] with the `row_vars` picked by
+    /// `balanced_product_row_vars`, so the tensor split sits at the
+    /// instantiation's `t = ceil(0.6 · n)` balance point instead of the
+    /// `t = min(k, 13)` pin that put every local cell on the column axis.
+    /// Smaller and non-power-of-two batches run the inner sumcheck over a
     /// balanced split capped at one forest.
     Default,
     /// Run the inner sumcheck and split the flat assignment domain as
@@ -628,6 +632,18 @@ fn prepare_sha256_compression_instances(
     let assignment_vars = packed_domain_vars(instances, SHA256_H_INSTANCE_BITS)?;
     let p_f = balanced_binary_params(source_vars);
     let local_bits = SHA256_H_BAR_LIVE_BITS.next_power_of_two().ilog2() as usize;
+    // The production default opens the balanced `Id_{2^r} ⊗ M` block layout.
+    // Resolving it here, before the geometry match, keeps the lift-arity and
+    // forest-count rules below reading the layout that is actually opened.
+    // The `t,s` sweep supplies its own split, so it keeps the legacy geometry.
+    if layout == Sha256OpeningLayout::Default
+        && requested_product_t.is_none()
+        && instances.is_power_of_two()
+    {
+        layout = Sha256OpeningLayout::ProductTransposed {
+            row_vars: balanced_product_row_vars(assignment_vars, local_bits, log_instance_capacity),
+        };
+    }
     let (p_h, mut product_p_h, mut product_order) = match layout {
         Sha256OpeningLayout::Default => (
             single_forest_binary_params(assignment_vars),
@@ -844,6 +860,35 @@ const fn single_forest_binary_params(vars: usize) -> IntEvalParams {
             s: vars - 13,
             word_bits: 1,
         }
+    }
+}
+
+/// Row variables of the balanced `Id_{2^r} ⊗ M` product layout.
+///
+/// The virtualization matrix of a power-of-two batch is `Id_{2^k} ⊗ M`, one
+/// local block `M` per compression. Opening it instance-major with
+/// `t = local_bits + r` row variables groups the batch into `2^(k-r)` blocks of
+/// `Id_{2^r} ⊗ M`, i.e. `2^r` compressions per grand product: `r` instance bits
+/// join the local bits on the row axis and only the remaining `k - r` instance
+/// bits index columns.
+///
+/// Without it the split is pinned at `t = min(k, 13)` with every local cell on
+/// the column axis, so the read-off vector sent in the clear grows with the
+/// local width rather than with the batch. `r` is chosen to land on the same
+/// balance point the rest of the instantiation uses, `t = ceil(0.6 · n)`,
+/// clamped to the range this layout can represent, `r in [0, k]`.
+const fn balanced_product_row_vars(
+    assignment_vars: usize,
+    local_bits: usize,
+    log_instance_capacity: usize,
+) -> usize {
+    let target = (3 * assignment_vars).div_ceil(5);
+    if target < local_bits {
+        local_bits
+    } else if target > local_bits + log_instance_capacity {
+        local_bits + log_instance_capacity
+    } else {
+        target
     }
 }
 
@@ -1294,10 +1339,50 @@ mod tests {
         }
 
         let prepared = prepare_sha256_compression_batch(14).unwrap();
+        // The balanced `Id_{2^r} ⊗ M` opening lifts `2^t` terms rather than
+        // `2^min(k,13)`, so the no-wrap bound narrows the prime accordingly.
         assert_eq!(
             u128::BITS as usize - prepared.security().projection_max.leading_zeros() as usize,
-            113
+            110
         );
+    }
+
+    /// The production layout is the balanced `Id_{2^r} ⊗ M` block tensor: the
+    /// local bits plus `r` instance bits form the rows, so the read-off vector
+    /// sent in the clear is indexed by the remaining `k - r` instance bits and
+    /// stops growing with the local width.
+    #[test]
+    fn production_opening_is_the_balanced_id_tensor_block_layout() {
+        for exponent in LOG_PACKING..=SHA256_MAX_LOG_COMPRESSIONS {
+            let prepared = prepare_sha256_compression_batch(exponent).unwrap();
+            let local_bits = SHA256_H_BAR_LIVE_BITS.next_power_of_two().ilog2() as usize;
+            let assignment_vars = local_bits + exponent;
+            let opening = prepared.opening_params();
+            assert_eq!(
+                prepared.opening_layout(),
+                Sha256OpeningLayout::ProductTransposed {
+                    row_vars: opening.t
+                },
+                "log-compressions={exponent}"
+            );
+            assert_eq!(
+                prepared.product_map().unwrap().order(),
+                PackedSourceOrder::InstanceMajor,
+                "log-compressions={exponent}"
+            );
+            assert_eq!(opening.t + opening.s, assignment_vars);
+            // `r in [0, k]`, landing on `ceil(0.6 n)` wherever that is
+            // representable.
+            let r = opening.t - local_bits;
+            assert!(r <= exponent, "log-compressions={exponent}");
+            assert_eq!(
+                opening.t,
+                (3 * assignment_vars)
+                    .div_ceil(5)
+                    .clamp(local_bits, local_bits + exponent),
+                "log-compressions={exponent}"
+            );
+        }
     }
 
     #[cfg(feature = "bench-internals")]

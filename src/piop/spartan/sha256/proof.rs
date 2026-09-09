@@ -3619,13 +3619,9 @@ mod tests {
 
         let product_p_h = prepared.product_assignment_params().unwrap();
         let product_rows = witness.product_assignment_rows().unwrap();
-        let (row_weights, col_weights, claimed) = product_opening_claim(
-            &batching,
-            product_p_h,
-            PackedSourceOrder::LocalMajor,
-            &field_config,
-        )
-        .unwrap();
+        let order = prepared.product_map().unwrap().order();
+        let (row_weights, col_weights, claimed) =
+            product_opening_claim(&batching, product_p_h, order, &field_config).unwrap();
         let mut direct_sum = SpartanF2zField::zero_with_cfg(&field_config);
         for flat_cell in 0..product_p_h.cells() {
             if packed_flat_bit(product_rows, product_p_h, flat_cell).unwrap() == 0 {

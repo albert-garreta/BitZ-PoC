@@ -36,16 +36,18 @@ const MULTISWAP_MINI_DIGEST: &str =
     "3b82cce6ef6ae8070cde11abc24deba96f79f5b2a86015570271c25e6fa0f42b";
 
 /// The 2^7 SHA-256 batch under the DEFAULT profile (`Lambda100`: no
-/// grinding anywhere, Ligerito at 100). Recorded at the deliberate native
-/// row/column packing and direct product-opening migration.
+/// grinding anywhere, Ligerito at 100). Re-recorded when the production
+/// opening moved to the balanced `Id_{2^r} ⊗ M` block layout (rows carry the
+/// local bits plus `r` instance bits), which changes both the opened tensor
+/// and the lift arity that narrows the prime.
 const SHA256_2P7_LAMBDA100_DIGEST: &str =
-    "2fbfcf08fa4a99441e0a2b2898e1073e8729c1c68d3e9f50574bf2934335f2a8";
+    "d91d19abb03fbb8d4c620e49998e89d7170914cd6ae084eb65eb038b976d19f4";
 
 /// The 2^7 SHA-256 batch under the explicit historical comparison schedule.
 /// This pins the grinded boundary schedule within the direct product-opening
 /// protocol.
 const SHA256_2P7_REFERENCE_DIGEST: &str =
-    "93a359989d75f95c4eb3472b8b742a070dcdb8a6b15d172186d70316775ce5ad";
+    "a0537625279ea4689712d468d54463c82d7ba915dd4ee40fdbae131c7076620e";
 
 /// The 2^7 CHAINED SHA-256 batch (the Merkle–Damgård chain from the
 /// standard initial state, intermediate states as witness) under the

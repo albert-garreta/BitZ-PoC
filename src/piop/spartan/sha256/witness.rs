@@ -702,6 +702,12 @@ mod tests {
         assert_eq!(exact.source_bit(0), Some(true));
         assert_eq!(exact.assignment_bit(0), Some(true));
 
+        // The product tensor's flat index follows the prepared order:
+        // local-major interleaves instances, instance-major (the balanced
+        // `Id_{2^r} ⊗ M` default) lays each instance's local block down
+        // contiguously on a `2^15` stride.
+        let local_stride = SHA256_H_BAR_LIVE_BITS.next_power_of_two();
+        let order = prepared.product_map().unwrap().order();
         for &instance in &[0, 1, 63] {
             let one_prepared = prepare_sha256_compression_batch_for_test(0).unwrap();
             let one =
@@ -718,7 +724,10 @@ mod tests {
             }
             for local_column in 0..SHA256_H_BAR_LIVE_BITS {
                 let expected = one.assignment_bit(local_column).unwrap();
-                let product = local_column * inputs.len() + instance;
+                let product = match order {
+                    PackedSourceOrder::LocalMajor => local_column * inputs.len() + instance,
+                    PackedSourceOrder::InstanceMajor => instance * local_stride + local_column,
+                };
                 assert_eq!(
                     packed_rows_bit_with_params(product_rows, product_p_h, product),
                     Some(expected)
@@ -730,10 +739,22 @@ mod tests {
         let live_h = 1 + inputs.len() * SHA256_H_INSTANCE_BITS;
         assert!((live_f..p_f.cells()).all(|bit| exact.source_bit(bit) == Some(false)));
         assert!((live_h..p_h.cells()).all(|bit| exact.assignment_bit(bit) == Some(false)));
-        let live_product_h = inputs.len() * SHA256_H_BAR_LIVE_BITS;
-        assert!((live_product_h..product_p_h.cells()).all(|bit| {
-            packed_rows_bit_with_params(product_rows, product_p_h, bit) == Some(false)
-        }));
+        // Local-major packs every live product cell at the front; instance-major
+        // gives each instance its own `2^15` stride, so its padding sits inside
+        // the tensor rather than after it. Both must be structurally zero.
+        let is_live_product_cell = |bit: usize| match order {
+            PackedSourceOrder::LocalMajor => bit < inputs.len() * SHA256_H_BAR_LIVE_BITS,
+            PackedSourceOrder::InstanceMajor => {
+                bit / local_stride < inputs.len() && bit % local_stride < SHA256_H_BAR_LIVE_BITS
+            }
+        };
+        assert!(
+            (0..product_p_h.cells())
+                .filter(|&bit| !is_live_product_cell(bit))
+                .all(|bit| {
+                    packed_rows_bit_with_params(product_rows, product_p_h, bit) == Some(false)
+                })
+        );
     }
 
     #[test]
