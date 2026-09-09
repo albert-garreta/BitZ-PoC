@@ -48,7 +48,7 @@ pub fn parse_shapes(value: &str) -> Result<Vec<Shape>, AnyError> {
 
 // Keep the standalone runner's CSVs intact. The combined CSV distinguishes
 // exact serialized proof sizes from the separate mode's payload estimate.
-const METRICS: [&str; 17] = [
+const METRICS: [&str; 18] = [
     "iteration",
     "setup_ms",
     "witness_ms",
@@ -66,6 +66,7 @@ const METRICS: [&str; 17] = [
     "mul_opening_ms",
     "joint_sumcheck_ms",
     "shared_opening_ms",
+    "ood_round_ms",
 ];
 
 fn grouped_count(value: usize) -> String {
@@ -95,7 +96,7 @@ fn formatted_rows(
         .collect();
     let expected = match mode {
         "hybrid" => {
-            "mode,iteration,setup_ms,witness_ms,witness_commit_ms,continuation_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib,piop_ms,iop_ms,mul_piop_ms,sha_piop_ms,mul_opening_ms,joint_sumcheck_ms,shared_opening_ms"
+            "mode,iteration,setup_ms,witness_ms,witness_commit_ms,continuation_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib,piop_ms,iop_ms,mul_piop_ms,sha_piop_ms,mul_opening_ms,joint_sumcheck_ms,shared_opening_ms,ood_round_ms"
         }
         "separate" => {
             "mode,iteration,setup_ms,witness_ms,total_prover_ms,verify_ms,proof_payload_bytes_estimate,peak_rss_kib"
@@ -156,7 +157,7 @@ fn formatted_rows(
                 metric("continuation_ms")?,
             ));
             display.push_str(&format!(
-                "  PIOP: {} ms (multiplication / Spartan: {} ms; SHA: {} ms)\n  IOP / PCS opening: {} ms (multiplication F2Z/GKR: {} ms; joint sumcheck: {} ms; ring switching + Ligerito: {} ms)\n",
+                "  PIOP: {} ms (multiplication / Spartan: {} ms; SHA: {} ms)\n  IOP / PCS opening: {} ms (multiplication F2Z/GKR: {} ms; joint sumcheck: {} ms; shared opening: {} ms, of which Round 0: {} ms)\n",
                 metric("piop_ms")?,
                 metric("mul_piop_ms")?,
                 metric("sha_piop_ms")?,
@@ -164,6 +165,7 @@ fn formatted_rows(
                 metric("mul_opening_ms")?,
                 metric("joint_sumcheck_ms")?,
                 metric("shared_opening_ms")?,
+                metric("ood_round_ms")?,
             ));
         }
         let (size_column, size_label) = if mode == "separate" {
@@ -228,7 +230,7 @@ pub fn run(
     fs::write(
         results_dir.join("run.txt"),
         format!(
-            "executable={}\nprotocol=hybrid-u32-mod32-sha256-v2\nmultiplication_relation=xy=z+2^32*w (x,y,z,w are u32)\nshapes={shapes:?}\nmodes={modes:?}\niterations={iterations}\nRAYON_NUM_THREADS={}\nnon_zk=true\nsecurity_target_bits=100\n",
+            "executable={}\nprotocol=hybrid-u32-mod32-sha256-v3\nmultiplication_relation=xy=z+2^32*w (x,y,z,w are u32)\nshapes={shapes:?}\nmodes={modes:?}\niterations={iterations}\nRAYON_NUM_THREADS={}\nnon_zk=true\nsecurity_target_bits=100\n",
             executable.display(),
             std::env::var("RAYON_NUM_THREADS").unwrap_or_else(|_| "default".into()),
         ),

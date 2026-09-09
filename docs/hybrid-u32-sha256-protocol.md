@@ -26,6 +26,11 @@ flowchart TD
     MC --> SC
     HC --> SC
 
+    R0["Round 0 (out-of-domain sample)<br/>Prover sends y = Ṽ(ζ⃗) for the virtual witness V<br/>before any other challenge; PoW before ζ"]
+    CM -.-> R0
+    CH -.-> R0
+    R0 -.->|"η_ood · eq(·, ζ⃗) joins the opening basis"| PC
+
     SC["Shared sumcheck<br/>Batch both claims with fresh randomness<br/>Use virtual witness V containing f and g"]
     EV["One remaining bit-MLE claim<br/>Ṽ(r) = ν"]
     RS["Ring switching<br/>128 partial evaluations + fresh batching challenges"]
@@ -42,12 +47,13 @@ flowchart TD
     classDef accepted fill:#dff2df,stroke:#398439,color:#222;
 
     class CM,CH commitment;
-    class SC,EV,RS,PC,LIG shared;
+    class R0,SC,EV,RS,PC,LIG shared;
     class OK accepted;
 ```
 
 - **Two original Merkle roots remain:** the virtual witness does not require a third initial tree.
 - **One shared transcript:** both roots are bound before the proof challenges.
+- **Round 0 comes first:** the shared opener runs in the Johnson (list-decoding) regime, which the paper's theorem covers only with the out-of-domain sample. Right after the statement the prover sends `y = Ṽ(ζ⃗)`, `ζ⃗ = (ζ, ζ², ζ⁴, …)`, of the virtual packed witness, pinning it to one element of the level-0 list before the first Spartan, GKR or SHA challenge. The claim is folded into the final opening through one extra batching draw.
 - **SHA chaining is enforced:** every compression’s output feeds the next compression’s input state.
 - **Target:** 100-bit security for the complete composition, non-ZK.
 
@@ -77,7 +83,7 @@ RAYON_NUM_THREADS=8 target/release/hybrid-u32-sha256 \
 
 The output files are the proof, `<proof>.statement.bin` (the public statement), and `<proof>.statement.txt` (a readable copy). Verification requires the first two files; it does not use the original operands or message blocks.
 
-The current protocol uses transcript domain `f2z/hybrid-u32-mod32-sha256/non-zk/v2` and `BZSH` proof encoding version 2. Version-1 proof files are rejected; regenerate saved proofs with the current executable.
+The current protocol uses transcript domain `f2z/hybrid-u32-mod32-sha256/non-zk/v3` and `BZSH` proof encoding version 3 (Round 0 value and nonce first, in transcript order, then the multiplication prefix). Version-1 and version-2 proof files are rejected; regenerate saved proofs with the current executable. Version 3 changed the shared opener from a rate-1/2 unique-decoding configuration to the rate-1/8 Johnson configuration with Round 0; both initial commitments are now rate-1/8 codewords, so every root changes as well.
 
 The agreed full workload is the default:
 
@@ -184,7 +190,7 @@ Each block is sixteen words in SHA's standard word order; each word represents f
 - `src/hybrid/sha.rs`: constrained sequential two-compression gadget, fixed IV and public final state.
 - `src/hybrid/channel.rs`: Binius messages and challenges on the same BLAKE3 transcript as the integer branch.
 - `src/hybrid/sumcheck.rs`: shared degree-two sumcheck. The first seven rounds use linear byte tables over packed bits, without a field element per original bit. Subsequent rounds allocate tables over the virtual packed domain.
-- `src/hybrid/opening.rs`: ring switching, virtual lane layout, and one Ligerito continuation. Every original row slice and every zero-padding lane is checked.
+- `src/hybrid/opening.rs`: Round 0 (the out-of-domain sample, on the audited primitives of `src/ligerito_flock.rs`), ring switching, virtual lane layout, and one Ligerito continuation. Every original row slice and every zero-padding lane is checked.
 - `src/hybrid/codec.rs`: versioned proof encoding with canonical integer residues, bounded counts and no trailing bytes.
 - `src/hybrid/security.rs`: composition error budget and explicit parameter rejection below the target.
 
@@ -192,7 +198,7 @@ The two minimal dependency forks live under `vendor/binius64` and `vendor/flock-
 
 ## Security target and scope
 
-The experiment is non-ZK. It targets at least 100 bits for the composition, with a union of the integer-prefix, GKR, binary PIOP, batching, ring-switch and Ligerito error terms. Integer-prefix parameters use the 108-bit component profile, and Ligerito uses a newly derived 112-bit UDR configuration for the **virtual geometry**, rather than reusing a standalone schedule. Both roots, counts, final SHA state, protocol version and Ligerito configuration are bound before the first challenge.
+The experiment is non-ZK. It targets at least 100 bits for the composition, with a union of the Round-0, integer-prefix, GKR, binary PIOP, batching, ring-switch and Ligerito error terms. Integer-prefix parameters use the 108-bit component profile. The shared opener is a Johnson-regime Ligerito configuration for the **virtual geometry** at rate 1/8 with a 106-bit round-by-round target (`LIGERITO_COMPONENT_BITS`), solved and validated by flock's own machinery rather than reusing a standalone schedule; the 108-bit profile's own Ligerito constant governs only the multiplication relation's standalone unique-decoding opener (the `separate` mode). In the Johnson regime the level-0 proximity-gap bound is about 86 bits at 2^19 multiplications, so the fold-challenge grinding that tops it up is exponential in the target: 106 costs about 2^21 hash evaluations per level-0 fold (tapered one bit per round), 112 would cost 2^27. Round 0 is accounted exactly as the standalone relations account it (`IopSecurityParams::adopt_ood_round`): the theorem's collision bound `C(L_δ, 2)·(2^{m_p} − 1)/|K|` at level 0's Johnson parameters, topped up to the profile's 108 bits by proof of work (12 bits at 2^19:2^11, 14 at 2^21:2^13) under the same 24-bit cap. Both roots, counts, final SHA state, protocol version and Ligerito configuration are bound before the first challenge; Round 0's own parameters are bound in its header frame.
 
 The four-limb interpretation preserves the original integer defect bound: both `x * y` and `z + 2^32 * w` fit in 64 bits. The hybrid witness geometry and composition security bounds are unchanged.
 
@@ -229,7 +235,7 @@ Hybrid phase timings are measured on every sample without additional flags:
 - `piop_ms`: the sum of those two constraint reductions.
 - `mul_opening_ms`: prepare the multiplication F2Z claim, fold bounded sums, and run GKR to obtain its binary claim.
 - `joint_sumcheck_ms`: combine the two binary claims through the shared bit sumcheck.
-- `shared_opening_ms`: virtual witness assembly, ring switching, and Ligerito with authentication against both roots.
+- `shared_opening_ms`: Round 0 (virtual witness assembly, grinding, and the out-of-domain evaluation), ring switching, and Ligerito with authentication against both roots. `ood_round_ms` reports the Round-0 part on its own; it is included in `shared_opening_ms`, not added to it again.
 - `iop_ms`: the sum of `mul_opening_ms`, `joint_sumcheck_ms`, and `shared_opening_ms`. This counts F2Z/GKR as opening work, consistent with the existing standalone F2Z benchmarks. Initial commitments are counted in `witness_commit_ms` instead.
 
 These are prover wall-clock times, including parallel work, and exclude setup and verification. `continuation_ms` encloses PIOP and IOP plus transcript initialization and logging overhead; `total_prover_ms` additionally includes witness generation, initial commitments and proof encoding. Nested profiling regions are not added again. The separate and all-Binius modes currently report total prover time; their phase columns in `summary.csv` are blank. Historical result files are unchanged and do not contain these new timing columns.
@@ -241,7 +247,7 @@ RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=4 \
   cargo test --release --lib --features hybrid hybrid::
 ```
 
-Tests cover the SHA known-answer vector, field-representation agreement, chained proof round trips, serialization, and rejection of changed roots, output states, integer sums, opening values, padding and trailing data. Modular tests check overflow boundaries, commit independently supplied limbs, and reject false relations after changing each of `x`, `y`, `z`, or `w`. Binius tests additionally check compiled constraints against out-of-range values in every limb, and verify a standalone proof of the modular gadget. A dense reference sumcheck checks the streamed rounds in both source-lane orders and the equal-size case. All eight hybrid tests, eleven integer-witness tests, and the existing standalone deterministic multiplication roundtrip passed after this change.
+Tests cover the SHA known-answer vector, field-representation agreement, chained proof round trips, serialization, and rejection of changed roots, output states, integer sums, opening values, padding and trailing data, plus the Round-0 value and nonce and the deeper levels' out-of-domain values and fold-grinding nonces. Modular tests check overflow boundaries, commit independently supplied limbs, and reject false relations after changing each of `x`, `y`, `z`, or `w`. Binius tests additionally check compiled constraints against out-of-range values in every limb, and verify a standalone proof of the modular gadget. A dense reference sumcheck checks the streamed rounds in both source-lane orders and the equal-size case. All eight hybrid tests, eleven integer-witness tests, and the existing standalone deterministic multiplication roundtrip passed after this change.
 
 Before the explicit mod-2^32 API change, the built-in sweep was validated with all six default shapes and three verified samples each, plus two custom shapes across all three backends. The historical summaries are local benchmark artifacts and are not tracked in Git. Checks also covered malformed/out-of-range/duplicate shapes, conflicting flags, existing-output-directory preservation, and terminating a child after the first shape completed: the sweep returned failure, retained the completed summary row and identified the failed child's log. These saved runs do not validate the new four-limb all-Binius circuit or version-2 proof encoding.
 

@@ -2528,10 +2528,10 @@ fn absorb_ood_round_header(transcript: &mut impl Transcript, packed_vars: usize,
 /// The prover's view of the round: the point (kept, the eq table is
 /// rebuilt scaled by `η_ood` at batching time), the value, and the
 /// messages that go on the wire.
-struct OodProverClaim {
-    point: Vec<Gf>,
-    y: Gf,
-    round: OodRound,
+pub(crate) struct OodProverClaim {
+    pub(crate) point: Vec<Gf>,
+    pub(crate) y: Gf,
+    pub(crate) round: OodRound,
 }
 
 /// Round 0 on the prover side: bind the parameters, grind, draw `ζ`,
@@ -2541,8 +2541,19 @@ fn prove_ood_round(
     hint: &FlockCommitHint,
     params: OodRoundParams,
 ) -> OodProverClaim {
+    prove_ood_round_packed(transcript, &hint.p_msg, params)
+}
+
+/// [`prove_ood_round`] on an explicit packed message (the message the
+/// final Ligerito opening is run on — for a virtual concatenation of
+/// several commitments, the virtual packed witness itself).
+pub(crate) fn prove_ood_round_packed(
+    transcript: &mut (impl Transcript + Send),
+    p_msg: &[F128],
+    params: OodRoundParams,
+) -> OodProverClaim {
     let _g = crate::utils::prof::scope("mc:ood");
-    let vars = packed_message_vars(&hint.p_msg);
+    let vars = packed_message_vars(p_msg);
     absorb_ood_round_header(transcript, vars, params);
     let nonce = if params.grinding_bits == 0 {
         None
@@ -2558,7 +2569,7 @@ fn prove_ood_round(
     };
     let zeta: Gf = transcript.get_field_challenge(&());
     let point = ood_point(zeta, vars);
-    let y = ood_eval(&hint.p_msg, &point);
+    let y = ood_eval(p_msg, &point);
     crate::ligerito::absorb_ood_value(transcript, y);
     OodProverClaim {
         point,
@@ -2568,14 +2579,14 @@ fn prove_ood_round(
 }
 
 /// The verifier's view of the round: the point and the claimed value.
-struct OodVerifierClaim {
-    point: Vec<Gf>,
-    y: Gf,
+pub(crate) struct OodVerifierClaim {
+    pub(crate) point: Vec<Gf>,
+    pub(crate) y: Gf,
 }
 
 /// Round 0 on the verifier side: the same frame and draw, the proof's
 /// nonce checked, the prover's `y` absorbed.
-fn verify_ood_round(
+pub(crate) fn verify_ood_round(
     transcript: &mut (impl Transcript + Send),
     packed_vars: usize,
     params: OodRoundParams,
@@ -2606,7 +2617,7 @@ fn verify_ood_round(
 /// being precomputed, its contribution to that message (the message is
 /// bilinear in `(f, b)`, so the OOD term adds on).
 #[allow(clippy::arithmetic_side_effects)]
-fn add_ood_basis(b: &mut [F128], f: &[F128], point: &[Gf], eta: Gf, round0: Option<&mut (Gf, Gf)>) {
+pub(crate) fn add_ood_basis(b: &mut [F128], f: &[F128], point: &[Gf], eta: Gf, round0: Option<&mut (Gf, Gf)>) {
     use crate::utils::wide_mul::WideMulAcc;
     let vars = point.len();
     assert_eq!(b.len(), 1usize << vars, "basis length must match the OOD point");
@@ -2664,7 +2675,7 @@ fn add_ood_basis(b: &mut [F128], f: &[F128], point: &[Gf], eta: Gf, round0: Opti
 /// The OOD basis term after Ligerito bound the low `ris.len()` variables:
 /// `η·eq(ris, point[..k])·eq(·, point[k..])` over every boolean tail.
 #[allow(clippy::arithmetic_side_effects)]
-fn ood_residual_evals(ris: &[F128], remaining_vars: usize, point: &[Gf], eta: Gf) -> Vec<Gf> {
+pub(crate) fn ood_residual_evals(ris: &[F128], remaining_vars: usize, point: &[Gf], eta: Gf) -> Vec<Gf> {
     let bound = ris.len();
     assert_eq!(bound + remaining_vars, point.len(), "prefix + tail must cover the OOD point");
     let one = Gf::one();

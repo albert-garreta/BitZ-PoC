@@ -4,7 +4,8 @@
 //! The integer backend uses the fixed linear reconstruction p = z + 2^32*w
 //! and proves x*y = p. The compact witness remains 128 bits per operation.
 //!
-//! Order: commit both witnesses, Spartan/F2Z GKR, Binius SHA PIOP, joint bit
+//! Order: commit both witnesses, Round 0 (the out-of-domain sample of the
+//! virtual packed witness), Spartan/F2Z GKR, Binius SHA PIOP, joint bit
 //! sumcheck, one ring switch, one Ligerito continuation. The SHA workload is
 //! a sequential compression chain starting from the standard SHA-256 IV.
 mod channel;
@@ -18,6 +19,7 @@ pub(crate) mod sumcheck;
 pub use crate::piop::spartan::u32_mul::U32MulMod32Row;
 use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
 use crate::{
+    ligerito_flock::OodRoundParams,
     piop::spartan::{
         f2z::{PreparedU32MulRelation, hybrid as mul},
         u32_mul::{U32MulLayout, U32MulWitness},
@@ -28,7 +30,7 @@ use flock_core::{
     field::F128,
     pcs::commit::{ProverData, commit},
 };
-pub use security::{CompositionProfile, SecurityReport, SecurityTerm};
+pub use security::{CompositionProfile, LIGERITO_COMPONENT_BITS, SecurityReport, SecurityTerm};
 pub use sha::{SHA256_IV, chaining_value};
 
 pub const DEFAULT_MULTIPLICATIONS: usize = 1 << 20;
@@ -97,6 +99,9 @@ pub struct PreparedHybrid {
     multiplication: PreparedU32MulRelation,
     sha: sha::ShaRelation,
     geometry: opening::Geometry,
+    /// Round-0 parameters (`step0:ood-draw` grinding), derived from the
+    /// shared opener's configuration at the composition profile's λ.
+    ood: OodRoundParams,
     security: SecurityReport,
 }
 
@@ -151,11 +156,13 @@ impl PreparedHybrid {
             sha.verifier.log_witness_elems(),
         ])?;
         let security = security::account(&multiplication, &sha.verifier, &geometry)?;
+        let (_, ood) = geometry.ood()?;
         Ok(Self {
             parameters,
             multiplication,
             sha,
             geometry,
+            ood,
             security,
         })
     }
@@ -168,6 +175,10 @@ impl PreparedHybrid {
     }
     pub fn packed_witness_logs(&self) -> [usize; 2] {
         self.geometry.logs
+    }
+    /// Round-0 (out-of-domain sample) parameters of the shared opening.
+    pub fn ood_round(&self) -> OodRoundParams {
+        self.ood
     }
 
     /// Generate z = x*y mod 2^32 and w = floor(x*y / 2^32), then commit
@@ -231,7 +242,7 @@ impl PreparedHybrid {
             return Err(Error::Invalid("statement workload parameters"));
         }
         let mut h = blake3::Hasher::new();
-        h.update(b"f2z/hybrid-u32-mod32-sha256/non-zk/v2");
+        h.update(b"f2z/hybrid-u32-mod32-sha256/non-zk/v3");
         for n in [
             self.parameters.multiplications,
             self.parameters.sha_compressions,
@@ -253,13 +264,21 @@ impl PreparedHybrid {
         );
         let digest = *h.finalize().as_bytes();
         let mut transcript = Blake3Transcript::new();
-        transcript.absorb_slice(b"hybrid/statement/v2");
+        transcript.absorb_slice(b"hybrid/statement/v3");
         transcript.absorb_slice(&digest);
         Ok((transcript, digest))
     }
 
     pub fn prove(&self, committed: &CommittedHybrid) -> Result<HybridProof, Error> {
         let (mut t, digest) = self.transcript(&committed.statement)?;
+        let sources = [&committed.packed[0][..], &committed.packed[1][..]];
+        // Round 0 precedes every other challenge: it pins the committed
+        // virtual witness to one element of the opener's level-0 list.
+        tracing::info!("Round 0: out-of-domain sample of the virtual packed witness");
+        let ood_scope = crate::utils::prof::scope("hybrid:ood_round");
+        let packed = self.geometry.virtual_packed(sources);
+        let ood = opening::prove_ood(&mut t, self.ood, &packed);
+        drop(ood_scope);
         tracing::info!("proving multiplication constraints and GKR");
         let (multiplication, a) = mul::prove(
             &mut t,
@@ -272,7 +291,6 @@ impl PreparedHybrid {
         let sha_scope = crate::utils::prof::scope("hybrid:sha_piop");
         let (sha, b) = self.sha.prove(&mut t, &committed.sha)?;
         drop(sha_scope);
-        let sources = [&committed.packed[0][..], &committed.packed[1][..]];
         tracing::info!("proving shared bit sumcheck");
         let sumcheck_scope = crate::utils::prof::scope("hybrid:joint_sumcheck");
         let (joint, point) = sumcheck::prove(&mut t, &self.geometry, sources, [&a, &b]);
@@ -283,7 +301,8 @@ impl PreparedHybrid {
             &mut t,
             &self.geometry,
             &digest,
-            sources,
+            packed,
+            &ood,
             [&committed.data[0], &committed.data[1]],
             &point,
         )?;
@@ -298,6 +317,7 @@ impl PreparedHybrid {
 
     pub fn verify(&self, statement: &Statement, proof: &HybridProof) -> Result<(), Error> {
         let (mut t, digest) = self.transcript(statement)?;
+        let ood = opening::verify_ood(&mut t, &self.geometry, self.ood, &proof.opening.ood)?;
         let a = mul::verify(&mut t, &self.multiplication, &digest, &proof.multiplication)?;
         let public = self.sha.public(statement.final_sha_state);
         let b = self.sha.verify(&mut t, &public, &proof.sha)?;
@@ -309,6 +329,7 @@ impl PreparedHybrid {
             &statement.roots,
             &point,
             proof.joint.value,
+            &ood,
             &proof.opening,
         )
     }
@@ -325,7 +346,12 @@ mod tests {
                 let g = opening::Geometry::new([multiplication_log, sha_log]).unwrap();
                 assert!(g.virtual_lane_log <= 12);
                 assert_eq!(g.params(0).n_positions(), g.params(1).n_positions());
-                assert!(g.security().validate().is_ok());
+                let security = g.security();
+                assert!(security.validate().is_ok());
+                // The commit rate must equal the opener's level-0 rate.
+                assert_eq!(g.params(0).log_inv_rate, security.levels[0].log_inv_rate);
+                assert_eq!(g.params(1).log_inv_rate, security.levels[0].log_inv_rate);
+                assert!(g.ood().is_ok());
             }
         }
     }
@@ -474,15 +500,18 @@ mod tests {
                 .proof_from_bytes(committed.statement(), &trailing)
                 .is_err()
         );
+        // Wire layout: magic (8), Round-0 value (16), Round-0 nonce (8; the
+        // test shape grinds), then the prefix nonces and their count.
+        assert!(prepared.ood_round().grinding_bits > 0);
         let mut malformed = bytes.clone();
-        malformed[24..32].fill(255);
+        malformed[48..56].fill(255);
         assert!(
             prepared
                 .proof_from_bytes(committed.statement(), &malformed)
                 .is_err()
         );
         let mut noncanonical = bytes.clone();
-        let first_field = 48 + proof.multiplication.piop_nonces.len() * 8;
+        let first_field = 72 + proof.multiplication.piop_nonces.len() * 8;
         noncanonical[first_field..first_field + 16].fill(255);
         assert!(
             prepared
@@ -511,6 +540,28 @@ mod tests {
         assert!(prepared.verify(committed.statement(), &changed).is_err());
         let mut changed = proof.clone();
         changed.opening.ligerito.grinding_nonces.push(0);
+        assert!(prepared.verify(committed.statement(), &changed).is_err());
+        // Round 0: the claimed value, its nonce and the deeper levels'
+        // out-of-domain values and fold nonces are all bound.
+        let mut changed = proof.clone();
+        changed.opening.ood.y = changed.opening.ood.y + Gf::one();
+        assert!(prepared.verify(committed.statement(), &changed).is_err());
+        let mut changed = proof.clone();
+        changed.opening.ood.nonce = changed.opening.ood.nonce.map(|nonce| nonce ^ 1);
+        assert!(prepared.verify(committed.statement(), &changed).is_err());
+        let mut changed = proof.clone();
+        changed.opening.ood.nonce = None;
+        assert!(prepared.verify(committed.statement(), &changed).is_err());
+        assert!(!proof.opening.ligerito.ood_values.is_empty());
+        let mut changed = proof.clone();
+        changed.opening.ligerito.ood_values[0] += F128::ONE;
+        assert!(prepared.verify(committed.statement(), &changed).is_err());
+        let mut changed = proof.clone();
+        changed.opening.ligerito.ood_values.push(F128::ONE);
+        assert!(prepared.verify(committed.statement(), &changed).is_err());
+        assert!(!proof.opening.ligerito.fold_grinding_nonces.is_empty());
+        let mut changed = proof.clone();
+        changed.opening.ligerito.fold_grinding_nonces.pop();
         assert!(prepared.verify(committed.statement(), &changed).is_err());
         let mut changed = proof.clone();
         changed.multiplication.sums[0] = u128::MAX;

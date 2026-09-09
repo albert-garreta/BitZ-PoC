@@ -8,7 +8,9 @@ use binius_prover::{OptimalPackedB128, Prover};
 use binius_transcript::{ProverTranscript, VerifierTranscript, fiat_shamir::HasherChallenger};
 use binius_verifier::Verifier;
 use f2z::{
-    hybrid::{CompositionProfile, Parameters, PreparedHybrid, chaining_value},
+    hybrid::{
+        CompositionProfile, LIGERITO_COMPONENT_BITS, Parameters, PreparedHybrid, chaining_value,
+    },
     piop::spartan::{
         f2z::{PreparedU32MulRelation, commit_u32_mul_witness, prove_u32_mul, verify_u32_mul},
         u32_mul::{U32MulLayout, U32MulMod32Row, U32MulWitness},
@@ -276,13 +278,19 @@ pub fn run() -> Result<(), AnyError> {
         prof::force_enable();
         let prepared = PreparedHybrid::new(parameters)?;
         let setup_ms = millis(setup);
+        let binding = prepared
+            .security()
+            .binding_term()
+            .map(|term| format!("{}:{:.2}", term.name, -term.error_bound.log2()))
+            .unwrap_or_default();
         eprintln!(
-            "setup_ms={setup_ms:.3} packed_logs={:?} algebraic_security_bits={:.3}",
+            "setup_ms={setup_ms:.3} packed_logs={:?} algebraic_security_bits={:.3} ligerito_component_bits={LIGERITO_COMPONENT_BITS} ood_grinding_bits={} binding_term={binding}",
             prepared.packed_witness_logs(),
-            prepared.security().algebraic_bits
+            prepared.security().algebraic_bits,
+            prepared.ood_round().grinding_bits
         );
         println!(
-            "mode,iteration,setup_ms,witness_ms,witness_commit_ms,continuation_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib,piop_ms,iop_ms,mul_piop_ms,sha_piop_ms,mul_opening_ms,joint_sumcheck_ms,shared_opening_ms"
+            "mode,iteration,setup_ms,witness_ms,witness_commit_ms,continuation_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib,piop_ms,iop_ms,mul_piop_ms,sha_piop_ms,mul_opening_ms,joint_sumcheck_ms,shared_opening_ms,ood_round_ms"
         );
         for iteration in 0..iterations {
             // Discard setup and the preceding verifier's profiling records.
@@ -317,7 +325,11 @@ pub fn run() -> Result<(), AnyError> {
             let sha_piop_ms = phase_ms("hybrid:sha_piop")?;
             let mul_opening_ms = phase_ms("hybrid:mul_opening")?;
             let joint_sumcheck_ms = phase_ms("hybrid:joint_sumcheck")?;
-            let shared_opening_ms = phase_ms("hybrid:opening_iop")?;
+            // Round 0 (the out-of-domain sample, run right after the
+            // statement) is part of the shared opening protocol; it is
+            // reported on its own and counted in shared_opening_ms.
+            let ood_round_ms = phase_ms("hybrid:ood_round")?;
+            let shared_opening_ms = phase_ms("hybrid:opening_iop")? + ood_round_ms;
             let piop_ms = mul_piop_ms + sha_piop_ms;
             let iop_ms = mul_opening_ms + joint_sumcheck_ms + shared_opening_ms;
             let verify = Instant::now();
@@ -325,7 +337,7 @@ pub fn run() -> Result<(), AnyError> {
             prepared.verify(committed.statement(), &decoded)?;
             let verify_ms = millis(verify);
             println!(
-                "hybrid,{iteration},{setup_ms:.3},{witness_ms:.3},{witness_commit_ms:.3},{continuation_ms:.3},{total_ms:.3},{verify_ms:.3},{},{},{piop_ms:.3},{iop_ms:.3},{mul_piop_ms:.3},{sha_piop_ms:.3},{mul_opening_ms:.3},{joint_sumcheck_ms:.3},{shared_opening_ms:.3}",
+                "hybrid,{iteration},{setup_ms:.3},{witness_ms:.3},{witness_commit_ms:.3},{continuation_ms:.3},{total_ms:.3},{verify_ms:.3},{},{},{piop_ms:.3},{iop_ms:.3},{mul_piop_ms:.3},{sha_piop_ms:.3},{mul_opening_ms:.3},{joint_sumcheck_ms:.3},{shared_opening_ms:.3},{ood_round_ms:.3}",
                 bytes.len(),
                 peak_kib()
             );
@@ -336,7 +348,7 @@ pub fn run() -> Result<(), AnyError> {
                     bincode::serialize(committed.statement())?,
                 )?;
                 let statement = format!(
-                    "protocol=hybrid-u32-mod32-sha256-v2\nmultiplication_relation=xy=z+2^32*w (x,y,z,w are u32)\nparameters={:?}\nroots={:02x?}\nfinal_sha_state={:08x?}\n",
+                    "protocol=hybrid-u32-mod32-sha256-v3\nmultiplication_relation=xy=z+2^32*w (x,y,z,w are u32)\nparameters={:?}\nroots={:02x?}\nfinal_sha_state={:08x?}\n",
                     committed.statement().parameters,
                     committed.statement().roots,
                     committed.statement().final_sha_state
