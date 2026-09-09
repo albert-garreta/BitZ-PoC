@@ -41,8 +41,23 @@
 //! aliases.) Set `F2Z_SHA_TRACE_PATH=/path/to/trace.jsonl` together with
 //! `OBLONG_PROFILE_INTERVALS=1` to emit one canonical `zkperf.trace/v1` run per
 //! warm-up/sample, including observed nested profiler intervals.
+//!
+//! Enable `bench-peak-memory` to measure peak live Rust heap during witness
+//! generation, commitment, and proving. Each run resets the peak; each shape
+//! reports the maximum over measured runs, excluding the warmup. The allocator
+//! also instruments timed runs. Without the feature, memory fields are `na`.
 
 pub(crate) mod common;
+
+#[cfg(feature = "bench-peak-memory")]
+#[global_allocator]
+static ALLOCATOR: common::peak_memory::PeakAlloc = common::peak_memory::PeakAlloc;
+
+const MEMORY_TRACKING: &str = if cfg!(feature = "bench-peak-memory") {
+    "allocator"
+} else {
+    "disabled"
+};
 
 use std::{
     collections::HashMap,
@@ -89,6 +104,7 @@ struct RepTiming {
     spartan_bytes: usize,
     f2z_bytes: usize,
     forests: usize,
+    peak_heap_bytes: Option<usize>,
 }
 
 #[derive(Clone, Copy)]
@@ -856,6 +872,13 @@ fn fmt_ms(milliseconds: f64) -> String {
     }
 }
 
+fn fmt_peak_heap_mib(bytes: Option<usize>) -> String {
+    bytes.map_or_else(
+        || "na".to_owned(),
+        |bytes| format!("{:.6}", bytes as f64 / (1024.0 * 1024.0)),
+    )
+}
+
 fn run_once(
     inputs: &[Sha256CompressionInput],
     prepared: &PreparedSha256CompressionBatch,
@@ -865,6 +888,8 @@ fn run_once(
 ) -> (RepTiming, Vec<ProfileInterval>) {
     let _ = f2z::utils::prof::take_totals();
     let _ = f2z::utils::prof::take_intervals();
+    #[cfg(feature = "bench-peak-memory")]
+    common::peak_memory::reset_peak();
     let verified_trial_scope = f2z::utils::prof::scope("sha256-trace:verified_trial");
 
     // Witness synthesis and public-statement materialization are excluded
@@ -922,6 +947,12 @@ fn run_once(
     }
     drop(prover_scope);
     let prove_ms = prove_started.elapsed().as_secs_f64() * 1e3;
+    // Capture before verifier allocations and proof serialization. This
+    // includes the live input/setup baseline and witness-generation peak.
+    #[cfg(feature = "bench-peak-memory")]
+    let peak_heap_bytes = Some(common::peak_memory::peak_bytes());
+    #[cfg(not(feature = "bench-peak-memory"))]
+    let peak_heap_bytes = None;
     let prove_phases = f2z::utils::prof::take_totals();
 
     let mut verifier_transcript = Blake3Transcript::new();
@@ -963,6 +994,7 @@ fn run_once(
         spartan_bytes,
         f2z_bytes,
         forests,
+        peak_heap_bytes,
     };
     (timing, intervals)
 }
@@ -1099,10 +1131,13 @@ fn bench_shape<P: IopSecurityProfile>(
         );
     }
     black_box(warm);
+    drop(warm_inputs);
+    drop(warm_intervals);
 
     let mut prover = common::StepSamples::default();
     let mut verifier = common::StepSamples::default();
     let mut witness_samples = Vec::with_capacity(reps);
+    let mut peak_heap_bytes = None;
     let mut last = None;
     for sample in 0..reps {
         let input_seed = shape_seed ^ ((sample + 1) as u64).wrapping_mul(0xd6e8_feb8_6659_fd93);
@@ -1118,8 +1153,11 @@ fn bench_shape<P: IopSecurityProfile>(
                 &intervals,
             );
         }
+        let sample_peak_bytes = timing
+            .peak_heap_bytes
+            .map_or_else(|| "na".to_owned(), |bytes| bytes.to_string());
         let sample_line = format!(
-            "SAMPLE shape_mode={} shape_value={exponent} sample={} compressions={compressions} mnum_rows={assignment_cells} product_t={} product_s={} inner_prefix_vars={inner_prefix_vars} witness_ms={:.6} commit_ms={:.6} prove_ms={:.6} verify_ms={:.6} verified=true",
+            "SAMPLE shape_mode={} shape_value={exponent} sample={} compressions={compressions} mnum_rows={assignment_cells} product_t={} product_s={} inner_prefix_vars={inner_prefix_vars} witness_ms={:.6} commit_ms={:.6} prove_ms={:.6} verify_ms={:.6} memory_tracking={MEMORY_TRACKING} peak_heap_bytes={sample_peak_bytes} peak_heap_mib={} proof_bytes={} proof_piop_bytes={} proof_open_bytes={} verified=true",
             shape.mode(),
             sample + 1,
             prepared
@@ -1132,6 +1170,10 @@ fn bench_shape<P: IopSecurityProfile>(
             timing.commit_ms,
             timing.prove_ms,
             timing.verify_ms,
+            fmt_peak_heap_mib(timing.peak_heap_bytes),
+            timing.spartan_bytes + timing.f2z_bytes,
+            timing.spartan_bytes,
+            timing.f2z_bytes,
         );
         println!("  {sample_line}");
         if let Some(writer) = result_writer {
@@ -1140,6 +1182,7 @@ fn bench_shape<P: IopSecurityProfile>(
         prover.record_prove(timing.prove_ms, timing.commit_ms, &timing.prove_phases);
         verifier.record_verify(timing.verify_ms, &timing.verify_phases);
         witness_samples.push(timing.witness_ms);
+        peak_heap_bytes = peak_heap_bytes.max(timing.peak_heap_bytes);
         last = Some(timing);
     }
     let last = last.expect("positive repetition count");
@@ -1150,6 +1193,14 @@ fn bench_shape<P: IopSecurityProfile>(
         "  end-to-end prove: {} median | {throughput:10.0} compressions/s",
         fmt_ms(prover_medians.total),
     );
+    if let Some(bytes) = peak_heap_bytes {
+        println!(
+            "  peak live heap: {:.2} MiB (maximum of {reps} measured runs; witness + commit + prove)",
+            bytes as f64 / (1024.0 * 1024.0),
+        );
+    } else {
+        println!("  peak live heap: not measured (enable --features bench-peak-memory)");
+    }
     let report = common::BenchReport {
         bench: "sha256",
         shape: shape.slug(),
@@ -1162,6 +1213,12 @@ fn bench_shape<P: IopSecurityProfile>(
             ("inner_prefix_vars".into(), inner_prefix_vars.to_string()),
             ("throughput_per_s".into(), format!("{throughput:.3}")),
             ("shape_seed".into(), format!("{shape_seed:#018x}")),
+            ("memory_tracking".into(), MEMORY_TRACKING.into()),
+            (
+                "peak_heap_bytes".into(),
+                peak_heap_bytes.map_or_else(|| "na".to_owned(), |bytes| bytes.to_string()),
+            ),
+            ("peak_heap_mib".into(), fmt_peak_heap_mib(peak_heap_bytes)),
             (
                 "product_t".into(),
                 prepared

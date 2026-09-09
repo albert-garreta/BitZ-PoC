@@ -6,6 +6,8 @@
 //! reported as skipped because its projected peak exceeds 60 GiB. Select a subset with
 //! `F2Z_SHA_PRODUCT_TS="13 17"` and override samples with
 //! `F2Z_BENCH_REPS=3`.
+//! Enable `bench-peak-memory` to report peak live heap per sample and its
+//! maximum per split. Proof sizes are reported in both samples and summaries.
 
 #[path = "sha256_compressions.rs"]
 mod sha256_compressions;
