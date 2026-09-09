@@ -109,7 +109,7 @@ See the [native multiplication benchmark guide](docs/native-mul-compare.md)
 for the measurement boundaries, size ranges, proof sizes, and peak memory.
 
 
-### RSA MultiSwap — matched 112-bit comparison
+### RSA MultiSwap — matched 114-bit comparison
 
 Compare **F2Z/Ligerito, Limber-Hyrax, and Limber-Brakedown** on Limber's
 Table 1 fixture. One circuit copy contains **4 exponentiations with 352-bit
@@ -121,16 +121,17 @@ and does not prove a complete public accumulator transition.
 The campaign fixes `k=0` and proves **1, 2, 4, 8, or 16 complete circuit
 copies in one proof**: 4–64 RSA exponentiations. It checks matching canonical
 statements and witness data across backends. Each modeled security check must
-reach **at least 112 bits**; the shared 128-bit prime fingerprint retains its
+reach **at least 114 bits**; the shared 128-bit prime fingerprint retains its
 roughly 114-bit bound. This accounting is per check/round, not a combined
-whole-proof soundness bound or an RSA key-strength claim.
+whole-proof soundness bound or an RSA key-strength claim. Limber retains its
+native 128-bit integer target and 117-bit integer challenge bound target.
 
 Run these commands from the repository root. Prepare the patched Limber fork
 once, using a destination that does not already exist; skip this step if it
-is already prepared:
+was prepared with the current patch (recreate older 112-bit checkouts):
 
 ```sh
-python3 scripts/prepare_matched_limber.py /tmp/limber-matched112
+python3 scripts/prepare_matched_limber.py /tmp/limber-matched114
 ```
 
 The runner requires this repository's pinned Rust toolchain and Limber's
@@ -142,8 +143,8 @@ configuration (**30 configurations**):
 ```sh
 python3 scripts/run_matched_multiswap_campaign.py \
   --draft \
-  --limber-root /tmp/limber-matched112 \
-  --security-bits 112 \
+  --limber-root /tmp/limber-matched114 \
+  --security-bits 114 \
   --batch-counts 1,2,4,8,16 \
   --all-threads 16 \
   --warmups 1 \
@@ -176,7 +177,7 @@ below predate this matched campaign.
 ## Historical MultiSwap comparison rows (Limber, Zinc+)
 
 These timings are historical one-copy measurements with mixed security
-settings, not results from the matched 112-bit campaign above. The historical
+settings, not results from the matched 114-bit campaign above. The historical
 F2Z setting can still be selected explicitly (use `RAYON_NUM_THREADS=8` for
 the 8-thread column):
 
@@ -223,8 +224,8 @@ the benches below honour it. The fixed-prime `(t,s)` sweep uses its own
 |---|---|---|
 | `100` | `Lambda100` | no grinding anywhere; every term this crate controls ≥ 100 bits |
 | `128` | `Lambda128` | every controllable term ≥ 128 bits (two grinding bits per forest round, one at the ring switch; the GF(2^128) floor at ~126.4 still binds and is reported) |
-| `112` | `Limber112` | matched MultiSwap campaign target; Ligerito target 112, eight reduction grinding bits for the selected batch sweep — MultiSwap only |
-| `114` | `Limber114` | historical two-prime MultiSwap comparison target and standalone MultiSwap default — MultiSwap only |
+| `112` | `Limber112` | historical matched MultiSwap target; Ligerito target 112, eight reduction grinding bits for the selected batch sweep — MultiSwap only |
+| `114` | `Limber114` | matched campaign and standalone MultiSwap default; Ligerito target 114, ten reduction grinding bits for the selected batch sweep — MultiSwap only |
 | `sha128-reference-schedule` | `Sha128ReferenceSchedule` | the historical SHA-256 128-bit schedule, kept for comparison |
 
 The profile names are accepted too (`F2Z_BENCH_LAMBDA=lambda128`). Unset,

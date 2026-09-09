@@ -23,9 +23,18 @@ index aa87c47..8939910 100644
  criterion = "0.5"
  hex = "0.4.3"
 diff --git a/benches/multiswap_modp.rs b/benches/multiswap_modp.rs
-index d7de8b3..76b4482 100644
+index d7de8b3..64d0192 100644
 --- a/benches/multiswap_modp.rs
 +++ b/benches/multiswap_modp.rs
+@@ -48,7 +48,7 @@ use limber::{
+   imod_spartan_modp::IntModSpartanModpSNARK,
+   provider::{
+     T256DynPrimeEngine,
+-    pcs::integer_modpcs::{DEFAULT_K, IntEvalParams},
++    pcs::integer_modpcs::{DEFAULT_K, IntEvalParams, LAMBDA_BOUND2},
+   },
+ };
+ use num_bigint::BigUint;
 @@ -477,6 +477,8 @@ struct WitnessStats {
  
  #[derive(Clone, Debug)]
@@ -189,7 +198,7 @@ index d7de8b3..76b4482 100644
      _ => Vec::new(),
    }
  }
-@@ -1505,12 +1552,30 @@ fn run_matched_campaign_for<E, Setup, LogupCounts>(
+@@ -1505,12 +1552,32 @@ fn run_matched_campaign_for<E, Setup, LogupCounts>(
    let (template_shape, template_w, template_q, expected_metadata) =
      multiswap_shape_and_witness_with_metadata::<E>(dims);
    if multiswap_k == 0 {
@@ -206,16 +215,18 @@ index d7de8b3..76b4482 100644
    }
    let log_n = (template_shape.num_vars().max(template_shape.num_cons()) as u64).ilog2() as usize;
 -  let params = IntEvalParams::derive(2048, LOG_T, int_k, log_n)
-+  let target = env_usize("MATCHED_SECURITY_BITS", 128);
-+  let params = IntEvalParams::derive_with_target(2048, LOG_T, int_k, log_n, target)
++  let (_, integer_target) = matched_security_targets();
++  let params = IntEvalParams::derive_with_target(2048, LOG_T, int_k, log_n, integer_target)
      .expect("matched IntEval params satisfy bounds");
++  // Reject an unreachable comparison target before setup or any proof work.
++  let security = security_metadata(backend, &params, log_n);
 +  if std::env::var("MATCHED_CHECK_ONLY").as_deref() == Ok("1") {
 +    println!(
 +      "MATCHED_PREFLIGHT {}",
 +      json!({
 +        "statement_contract": statement_contract(&expected_metadata),
 +        "assignment_digest_blake3": hex::encode(expected_metadata.assignment_digest),
-+        "security": security_metadata(backend, &params, log_n),
++        "security": security,
 +      })
 +    );
 +    return;
@@ -223,7 +234,7 @@ index d7de8b3..76b4482 100644
    let setup_start = Instant::now();
    let (pk, vk) = setup(template_shape.clone(), params.clone()).expect("matched setup");
    let setup_ns = u64::try_from(setup_start.elapsed().as_nanos()).unwrap_or(u64::MAX);
-@@ -1541,10 +1606,11 @@ fn run_matched_campaign_for<E, Setup, LogupCounts>(
+@@ -1541,10 +1608,11 @@ fn run_matched_campaign_for<E, Setup, LogupCounts>(
    let mut writer = MatchedTraceWriter::from_env();
    limber::bench_trace::set_enabled(true);
    for trial in trials {
@@ -236,7 +247,7 @@ index d7de8b3..76b4482 100644
        // Total prover is commit + Spartan/PCS prove, matching the F2Z headline
        // boundary. The nested commitment interval remains independently usable.
        let prover = limber::bench_trace::scope("matched:prover");
-@@ -1564,10 +1630,34 @@ fn run_matched_campaign_for<E, Setup, LogupCounts>(
+@@ -1564,10 +1632,34 @@ fn run_matched_campaign_for<E, Setup, LogupCounts>(
        }
        instance = trial_instance;
        proof = trial_proof;
@@ -271,7 +282,7 @@ index d7de8b3..76b4482 100644
      metadata = expected_metadata.clone();
      let intervals = limber::bench_trace::take_intervals();
      // Serialization and reporting are deliberately outside the root timing
-@@ -1582,6 +1672,11 @@ fn run_matched_campaign_for<E, Setup, LogupCounts>(
+@@ -1582,6 +1674,11 @@ fn run_matched_campaign_for<E, Setup, LogupCounts>(
        .expect("matched opening argument serialization")
        .len();
      let (active_logup_blocks, total_logup_blocks) = logup_counts(&proof);
@@ -283,7 +294,7 @@ index d7de8b3..76b4482 100644
      let outer_rounds = template_shape.num_cons().ilog2() as usize;
      let inner_rounds = (2 * template_shape.num_vars()).ilog2() as usize;
      // The dynamic-prime proof is not Serialize yet.  This is the same
-@@ -2007,3 +2102,88 @@ fn multiswap_modp_benches(c: &mut Criterion) {
+@@ -2007,3 +2104,100 @@ fn multiswap_modp_benches(c: &mut Criterion) {
  
  criterion_group!(benches, multiswap_modp_benches);
  criterion_main!(benches);
@@ -300,7 +311,20 @@ index d7de8b3..76b4482 100644
 +  })
 +}
 +
++fn matched_security_targets() -> (usize, usize) {
++  let target = env_usize("MATCHED_SECURITY_BITS", 114);
++  assert!(matches!(target, 112 | 114), "matched comparison target must be 112 or 114");
++  // Preserve Limber's native CRT target for the 114-bit comparison. The
++  // 112-bit setting remains available solely for historical reproduction.
++  let expected_integer_target = if target == 114 { 128 } else { 112 };
++  let integer_target = env_usize("MATCHED_INTEGER_SECURITY_BITS", expected_integer_target);
++  assert_eq!(integer_target, expected_integer_target, "matched integer target differs from comparison policy");
++  (target, integer_target)
++}
++
 +fn security_metadata(backend: &str, params: &IntEvalParams, log_n: usize) -> serde_json::Value {
++  let (target, integer_target) = matched_security_targets();
++  assert_eq!(params.security_bits, integer_target, "matched IntEval target differs from actual parameters");
 +  let fingerprint_bits = log2_prime_count(128) - ((8210u32 / 127) as f64).log2();
 +  let mut terms = vec![
 +    json!({"name": "fingerprint", "bits": fingerprint_bits}),
@@ -325,16 +349,15 @@ index d7de8b3..76b4482 100644
 +    .iter()
 +    .map(|t| t["bits"].as_f64().unwrap())
 +    .fold(f64::INFINITY, f64::min);
-+  if params.security_bits == 112 {
-+    assert!(achieved >= 112.0, "matched security target unreachable");
-+  }
++  assert!(achieved >= target as f64, "matched security target unreachable");
 +  json!({
-+    "model": "per-check-round-minimum/v1", "profile": format!("limber{}", params.security_bits),
-+    "target_bits": params.security_bits, "achieved_bits": achieved, "terms": terms,
++    "model": "per-check-round-minimum/v1", "profile": format!("limber{}", target),
++    "target_bits": target, "achieved_bits": achieved, "terms": terms,
 +    "fingerprint_prime_bits": 128, "fingerprint_min": (BigUint::from(1u8)<<127usize).to_string(),
 +    "fingerprint_max": ((BigUint::from(1u8)<<128usize)-BigUint::from(1u8)).to_string(),
 +    "runtime_prime_policy": "verifier-sampled from Fiat-Shamir after W/Q commitments",
 +    "transcript_hash": "Keccak-256", "integer_target_bits": params.security_bits,
++    "integer_challenge_target_bits": LAMBDA_BOUND2,
 +    "challenge_bits": 128, "brakedown_target_bits": if backend == "brakedown" { Some(bd_bits) } else { None },
 +    "key_format_version": params.format_version,
 +    "brakedown_configuration": if backend == "brakedown" { Some(limber::provider::pcs::brakedown_configuration()) } else { None },
@@ -660,7 +683,7 @@ index 5f06021..597cf46 100644
    guard.insert(key, params as &'static (dyn Any + Send + Sync));
    params
 diff --git a/src/provider/pcs/integer_modpcs.rs b/src/provider/pcs/integer_modpcs.rs
-index f9ff8ce..6525160 100644
+index f9ff8ce..03b7ddf 100644
 --- a/src/provider/pcs/integer_modpcs.rs
 +++ b/src/provider/pcs/integer_modpcs.rs
 @@ -15,14 +15,16 @@
@@ -990,7 +1013,7 @@ index f9ff8ce..6525160 100644
        log_q: LOG_Q,
        k: 7,
        log_p: 20,
-@@ -7410,3 +7501,50 @@ mod tests {
+@@ -7410,3 +7501,69 @@ mod tests {
      let _ = <IntegerModPCS as ModPCSEngineTrait<ME>>::blind(&ck, 17);
    }
  }
@@ -998,6 +1021,25 @@ index f9ff8ce..6525160 100644
 +#[cfg(test)]
 +mod matched_security_tests {
 +  use super::*;
++
++  #[test]
++  fn native_128_target_validates_all_114_comparison_batches() {
++    assert_eq!(LAMBDA_BOUND2, 117);
++    assert_eq!(CHALLENGE_BITS, 128);
++    for log_n in 13..=17 {
++      for k in [9, 11] {
++        let p = IntEvalParams::derive_with_target(2048, 64, k, log_n, 128).unwrap();
++        p.validate(log_n).unwrap();
++        assert_eq!(p.security_bits, LAMBDA);
++        assert!(p.prime_security_bits(log_n) >= 128.0);
++        let native = IntEvalParams::derive(2048, 64, k, log_n).unwrap();
++        assert_eq!(bincode::serialize(&p).unwrap(), bincode::serialize(&native).unwrap());
++        let mut fewer = p;
++        fewer.s -= 1;
++        assert!(fewer.validate(log_n).is_err());
++      }
++    }
++  }
 +
 +  #[test]
 +  fn target_112_derives_and_validates_all_reference_batches() {

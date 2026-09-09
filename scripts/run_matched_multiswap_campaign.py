@@ -261,6 +261,9 @@ def build_cells(
                 env["F2Z_BENCH_LAMBDA"] = str(security_bits)
             else:
                 env["MATCHED_SECURITY_BITS"] = str(security_bits)
+                # Limber's ~114-bit fingerprint floor coexists with its native
+                # 128-bit CRT target. Keep 112 only for historical reproduction.
+                env["MATCHED_INTEGER_SECURITY_BITS"] = str(128 if security_bits == 114 else security_bits)
                 env.update({"BDLAMBDA": str(security_bits), "BDSPEC": "4", "BDROWLEN": "32768", "BDDIRECT": "65536"})
         cell["environment"].setdefault("F2Z_MULTISWAP_BATCH_COUNT" if cell["implementation"] == "f2z-ligerito" else "MATCHED_BATCH_COUNT", "1")
     return ordered
@@ -583,7 +586,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--warmups", type=int, choices=(1,), default=1)
     parser.add_argument("--k-values", default="0")
     parser.add_argument("--batch-counts", default="1,2,4,8,16", help="comma-separated copies; use 'none' for the historical k sweep")
-    parser.add_argument("--security-bits", type=int, choices=(112, 114), default=112)
+    parser.add_argument("--security-bits", type=int, choices=(112, 114), default=114,
+                        help="comparison target (default: 114); 112 reproduces historical runs")
     parser.add_argument(
         "--all-threads",
         type=int,
@@ -665,7 +669,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "canonical_validation": "pending",
         }
         manifest["repositories"]["limber"]["instrumented_base_revision"] = LIMBER_BASE_REVISION
-        patch = f2z_root / "patches/limber-multiswap-112.patch"
+        patch = f2z_root / "patches/limber-multiswap.patch"
         if patch.is_file():
             manifest["repositories"]["limber"]["matched_patch_sha256"] = hashlib.sha256(patch.read_bytes()).hexdigest()
         if batch_counts is not None:

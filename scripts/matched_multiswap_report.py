@@ -192,7 +192,7 @@ def modeled_component_bits(security: dict[str, Any], implementation: str, padded
     hi, lo = lp * math.log(2), (lp - 1) * math.log(2)
     count = (2 ** lp / hi) * (1 + 1 / hi) - (2 ** (lp - 1) / lo) * (1 + 1.2762 / lo)
     per_prime = math.log2(count) - math.log2(((n + 5) * 129 + 64) / (lp - 1))
-    s = math.ceil(target / per_prime)
+    s = math.ceil(security["integer_target_bits"] / per_prime)
     if security.get("small_primes") != s:
         raise CampaignError("Limber prime repetitions differ from the derived count")
     slots = 4 * 2 ** (n + 5) * 16 * (1 + 4 * s * (n + 6))
@@ -262,8 +262,11 @@ def validate_matched_parameters(run: dict[str, Any], cell: dict[str, Any]) -> No
         _blake3(security.get("ligerito_config_digest"), "Ligerito config digest")
     else:
         required_terms = {"fingerprint", "spartan-round", "spartan-batching", "integer-crt", "integer-challenges", "commitment-opening", "range-lookup", "range-gkr-round", "range-batching"}
-        if security.get("integer_target_bits") != target or security.get("challenge_bits") != 128:
+        integer_target = 128 if target == 114 else target
+        if security.get("integer_target_bits") != integer_target or security.get("challenge_bits") != 128:
             raise CampaignError("Limber integer target or challenge width does not match")
+        if target == 114 and security.get("integer_challenge_target_bits") != 117:
+            raise CampaignError("Limber native integer challenge bound target does not match")
         if cell["implementation"] == "limber-brakedown" and security.get("brakedown_target_bits") != target:
             raise CampaignError("Brakedown opening target does not match")
     if not required_terms <= bounds.keys():
