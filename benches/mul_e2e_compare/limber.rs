@@ -236,6 +236,10 @@ pub(super) struct Context {
 }
 impl Context {
     pub(super) fn setup(corpus: Arc<Corpus>) -> Self {
+        assert!(
+            corpus.workload == Workload::BabyBear,
+            "u32 Limber proof timings must come from the authors' int_mult example via scripts/run_native_mul_compare.sh"
+        );
         let program = Program::compile(&corpus);
         let shape = program.shape();
         let arity = program.num_cons.max(program.num_vars).ilog2() as usize;
@@ -319,6 +323,16 @@ impl Context {
 #[allow(unused_imports)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[should_panic(
+        expected = "u32 Limber proof timings must come from the authors' int_mult example"
+    )]
+    fn u32_proof_requires_author_example() {
+        let corpus = Arc::new(Corpus::new(Workload::U32, 4, 7));
+        let _ = Context::setup(corpus);
+    }
+
     #[test]
     fn integer_rows_reject_bad_outputs_and_ranges() {
         for workload in [Workload::U32, Workload::BabyBear] {

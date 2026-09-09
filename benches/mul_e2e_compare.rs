@@ -443,10 +443,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let backends = choices(
         "F2Z_MUL_COMPARE_BACKENDS",
-        "f2z binius64 plonky3-whir limber",
+        "f2z binius64 plonky3-whir",
         &["f2z", "binius64", "plonky3-whir", "limber"],
     );
     check_backend_support(&workloads, &backends);
+    if workloads.iter().any(|w| w == "u32") && backends.iter().any(|b| b == "limber") {
+        return Err("u32 Limber must use the authors' int_mult example; run scripts/run_native_mul_compare.sh with LIMBER_REPO set".into());
+    }
     let shapes = common::shapes(None).unwrap_or_else(|| vec!["15".into()]);
     let max_exponent = max_exponent(&workloads);
     let mut exponents = vec![];

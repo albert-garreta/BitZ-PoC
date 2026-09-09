@@ -1,60 +1,78 @@
 # Native end-to-end multiplication comparison
 
-`mul_e2e_compare` proves batches of u32 × u32 → u64, BabyBear,
-u64 × u64 → u128, and u128 × u128 → u256 multiplications with F2Z, Binius64,
-Plonky3-WHIR, and Limber-Hyrax (the u64 and u128 workloads run on F2Z and
-Binius64 only, see below). Every
-warmup and measured trial regenerates the native witness, produces the complete
-proof, and verifies it. This is the full-proving multiplication comparison for
-the paper benchmark suite; commitment, constraint proving, opening, and
-verification are all exercised on every trial.
+Run the comparison through `scripts/run_native_mul_compare.sh`. For the u32
+Limber entry, the runner invokes the authors' `int_mult` example in a separate
+Limber checkout. F2Z, Binius64 and Plonky3-WHIR continue to use the integrated
+`mul_e2e_compare` benchmark. The BabyBear Limber entry uses the existing
+in-process BabyBear adapter. The integrated harness also supports independent
+u64 × u64 → u128 and u128 × u128 → u256 products with F2Z and Binius64.
+
+## Limber's author-provided entry point
+
+Set `LIMBER_REPO` to the Limber repository containing
+`examples/int_mult.rs` (introduced upstream in commit
+`47b10aa9ccfc993bcc6a2ea2c5f0e4b9f003822b`). If unset, the runner looks for a
+sibling `limber-impl` checkout. It does not modify or patch that repository.
+
+For each selected exponent, every warmup and measured sample runs this command
+with the Limber repository as its working directory:
 
 ```sh
-# Both workloads, all four backends, 2^15 multiplications, five samples
-# plus one warmup and one isolated memory pass per workload/backend/size.
-bash scripts/run_native_mul_compare.sh
-
-# Select sizes, repetitions, workloads, and backends independently.
-F2Z_BENCH_SHAPES="15 16" F2Z_BENCH_REPS=5 \
-F2Z_MUL_COMPARE_WORKLOADS="u32 babybear" \
-F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
-RAYON_NUM_THREADS=8 bash scripts/run_native_mul_compare.sh
+RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
+cargo +1.97.1 run --release --example int_mult -- --bits 32 --log-gates 15
 ```
 
-The full sweeps use all four backends, including Limber-Hyrax, at exponents
-15–24 for BabyBear and 15–25 for u32. Run each workload separately so its size
-limit is respected:
+Only `--log-gates` varies with `F2Z_BENCH_SHAPES`. The command uses the example's
+default `k` and native security parameters; it does not inject our adapter's
+`IntEvalParams::derive(64, 32, 9, ...)`. Rust 1.97.1 must be installed.
+The author command requires eight threads. Encoded Cargo rustflags and `DUMP`
+are removed from its environment so they cannot override these flags or add
+proof-dump I/O.
 
-BabyBear multiplication, exponents 15–24:
+The example proves a **wired chain modulo 2^32**:
+`c_i = a_i * b_i mod 2^32`, `a_(i+1) = c_i`. At `--log-gates L`, it has
+**2^L - 1 gates**, 2^L constraints and 2^(L+1) witness variables. It generates
+its own deterministic witness. The other u32 backends currently prove
+**2^L independent u32 × u32 → u64 products**. These are different workloads:
+the runner records the author's results as `u32-mod32-chain`, with
+`shared_corpus=false`; it does not claim witness equivalence with the other
+u32 rows.
+
+## Commands
+
+Run from the BitZ/F2Z repository root:
 
 ```sh
-RUSTFLAGS="-Ctarget-cpu=native" \
+LIMBER_REPO="$HOME/code/limber-impl" \
 RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24" \
-F2Z_BENCH_REPS=5 \
-F2Z_MUL_COMPARE_WORKLOADS="babybear" \
-F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
-bash scripts/run_native_mul_compare.sh
-```
-
-u32 multiplication, exponents 15–25:
-
-```sh
-RUSTFLAGS="-Ctarget-cpu=native" \
-RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24 25" \
+F2Z_BENCH_SHAPES="15 16 17 18 19 20" \
 F2Z_BENCH_REPS=5 \
 F2Z_MUL_COMPARE_WORKLOADS="u32" \
 F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
 bash scripts/run_native_mul_compare.sh
 ```
 
-Each case includes one warmup and five measured trials. Use 21 measured
-trials for the final comparison. Accepted size ranges describe harness input
-limits; completion at the largest sizes depends on the backend and available
-memory. The native measurements recorded so far cover exponents 15–17.
+For only the authors' Limber run:
 
+```sh
+LIMBER_REPO="$HOME/code/limber-impl" \
+RAYON_NUM_THREADS=8 \
+F2Z_BENCH_SHAPES=15 F2Z_BENCH_REPS=5 \
+F2Z_MUL_COMPARE_WORKLOADS=u32 F2Z_MUL_COMPARE_BACKENDS=limber \
+bash scripts/run_native_mul_compare.sh
+```
 
+Append `--dry-run` to inspect routing, the Limber working directory and its
+exact commands without creating result files. One warmup precedes the selected
+number of measured samples for each size. All jobs and samples run sequentially.
+
+Select `F2Z_MUL_COMPARE_WORKLOADS=babybear` for the existing BabyBear comparison,
+or `"u32 babybear"` for both workloads. The default is both workloads and all
+four backends, at exponent 15. The Limber author example accepts exponents up
+to 24; F2Z requires at least 15. A u32 sweep through 25 remains available when
+Limber is excluded. u64 supports exponents through 24, and u128 through 23,
+with only F2Z and Binius64 selected. Mixed workload selections use the smallest
+applicable limit. The accepted ranges are input limits, not memory guarantees.
 
 u64 × u64 → u128 multiplication, exponents 15–24, F2Z and Binius64 only:
 
@@ -127,194 +145,122 @@ they do for u64. The `mul_witness_compare` audit reconstructs the canonical
 assignment from each backend's native 128-bit values and hashes every entry
 as 32 little-endian bytes under its own domain.
 
-
-The direct Cargo command is:
+The direct Cargo benchmark runs the integrated backends:
 
 ```sh
-RUSTFLAGS="-Ctarget-cpu=native" RAYON_NUM_THREADS=8 \
+RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
 F2Z_BENCH_SHAPES=15 F2Z_BENCH_REPS=5 \
+F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir" \
 cargo bench --bench mul_e2e_compare --features bench-internals,native-mul-compare
 ```
 
-Run one benchmark process at a time, after other builds and benchmark jobs
-finish. The harness runs workloads, backends, warmups, and samples sequentially;
-only the selected prover uses Rayon threads. Run `mul_witness_compare` separately
-from `mul_e2e_compare` so they do not contend for CPU or memory bandwidth.
+Selecting `u32` + `limber` directly in that benchmark is rejected with a pointer
+to the shell runner. The old u32 adapter cannot silently supply proof timings.
 
-The size exponent is the number of logical multiplications, not native
-constraint rows. Supported exponents are 4–23 for u128, 4–24 for BabyBear and
-u64, and 4–25 for u32; selecting F2Z requires at least 15. A shape list shared
-by several workloads must stay within the tightest of those ranges. Small exponents are useful for checking the other adapters. Native trace
-widths differ substantially, particularly Limber's explicit input range checks;
-large multiplication counts need correspondingly larger memory budgets.
+## Outputs and timing boundaries
 
-## Reusing the existing witnesses
+Each invocation creates `PerfRuns/<UTC>-native-mul/`, or the directory selected
+by `F2Z_MUL_COMPARE_OUTPUT_DIR`. Existing directories are refused.
+`campaign.json` records routing and completion/failure.
 
-The root seeds, per-shape seed derivation, operand sampling, canonical F2Z
-assignment types, and BLAKE3 witness-digest format match the existing PCS
-benchmarks. `F2Z_BENCH_SEED` overrides the per-workload root seed in both
-workflows. For a fixed workload, seed, and size, all backends receive one shared
-immutable operand corpus. Their trace metadata records the same
-`witness_digest_blake3` as the PCS baseline. Regression tests pin the 2^15
-digests to the saved September 6 PCS campaign.
+The author example writes results under `limber-int-mult/`:
 
-Each backend derives its auxiliary values from those operands on every trial.
-F2Z builds its packed assignment, Binius evaluates its wire circuit, Plonky3
-builds and transposes its AIR trace, and Limber builds its integer assignment
-and quotient vectors. Generated products/remainders are checked against the
-canonical integer computation.
+- `manifest.json`: checkout/revision, dirty status, source and lockfile hashes,
+  toolchain, environment and measurement boundary.
+- One raw log per exponent and trial, preserving Cargo and example output.
+- `samples.jsonl`: command, working directory, exact gate count, derived
+  parameters, verification success and the author's reported metrics.
+- `metrics.csv` and `summary.json`: warmup-excluded medians for setup, witness
+  generation, commit+prove, verification and proof bytes.
 
-These are native prover comparisons. The logical multiplication inputs match;
-the constraint layouts, PIOPs, challenge fields, and encoded witnesses differ.
-All witnesses are private; this benchmark proves satisfaction of the native
-multiplication relation, not a public statement binding a published corpus.
-The digest is benchmark provenance, not an extra cryptographic public input.
+The runner parses the example's internal timers, excluding Cargo/build/process
+startup. The example prints timings to 0.1 ms. It reports commit+prove together;
+separate commitment, PIOP and PCS-opening timings are unavailable. Its proof
+size is the reported eval-argument bytes plus analytical sumcheck bytes, using
+the exact byte counts rather than rounded KB. This is the authors' size
+convention, not the integrated adapters' commitment-inclusive size convention.
+Peak RSS is unavailable for this command and recorded as null. A nonzero exit,
+missing verification line, mismatched shape or incomplete output fails the run.
 
-## Separate witness-equivalence benchmark
+The integrated backends retain `metrics.csv`, `summary.json`, `samples.jsonl`,
+`memory.jsonl`, `trace.jsonl` and `cargo-bench.log` at the run root. If both
+workloads include Limber, the BabyBear adapter has its own `babybear-limber/`
+directory. A Limber-only u32 run has only the author-example results and the
+campaign manifest. The profiler renders interval reports for integrated
+results when `ZK_TRACE_SCRIPT` or the installed `zk_trace.py` is available.
+The author command has no synthetic interval trace.
 
-```sh
-RUSTFLAGS="-Ctarget-cpu=native" RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES="10 15" F2Z_BENCH_REPS=5 \
-cargo bench --bench mul_witness_compare \
-  --features bench-internals,native-mul-compare
-```
+## Integrated backend measurement contract
 
-This benchmark uses the same workload/backend/seed selectors. It builds each
-native witness, reads its actual input and output values, reconstructs the
-canonical assignment, compares every row with the reference, and hashes the
-recovered assignment. A changed value, row count, or digest aborts the run.
-The native full-proof harness also performs this audit before accepting timings.
+The following applies to the integrated Rust harness, excluding the authors'
+u32 Limber example.
 
-The check is equality of canonical multiplication data, not equality of native
-auxiliary-wire arrays or field encodings. In particular, native Plonky3
-BabyBear has no integer quotient column: the audit explicitly marks that
-quotient as reconstructed from its native inputs and remainder. F2Z, Binius,
-and Limber read the quotient from their generated assignments. Binius uses
-the same witness filler as its full prover; Limber also validates its exact
-and modular rows before comparison.
+For a fixed workload, seed and exponent, the integrated backends receive the
+same immutable operand corpus. Root seeds, sampling, canonical assignments and
+BLAKE3 witness digests match the PCS benchmarks. Every trial regenerates the
+native witness, produces a full proof and verifies it. Random operand sampling
+and public setup are excluded from prover timings.
 
-It writes `witness-checks.jsonl` with per-trial digests, representations,
-quotient provenance, and witness-generation times, plus
-`witness-summary.json` with warmup-excluded medians. Its default size is 2^10,
-with five measured trials and one warmup. Circuit compilation, recovery, and
-equality checks are outside witness-generation timings. No PCS or PIOP is run
-by this independent equivalence benchmark.
+F2Z uses Lambda100 and its transcript-sampled-prime Spartan/F2Z path. Binius64
+uses its native circuit, ring switching/BaseFold and a 100-bit FRI query target.
+Plonky3 uses its native AIR and degree-5 WHIR with Johnson-bound parameters.
+The BabyBear Limber adapter uses integer Mod-R1CS with canonical operands and
+remainders, IntEval/Hyrax and `log_t_f=64, log_t=32, k=9`. Security accounting is
+specific to each implementation.
 
-## Timing boundaries
-
-Every sample records monotonic intervals, rather than adding phase medians:
+`F2Z_BINIUS_LOG_INV_RATE=<k>` selects Binius inverse rate `2^k` (default `k=1`).
+The query count follows from the rate: 241, 148, 121, and 110 queries at
+rates 1/2, 1/4, 1/8, and 1/16. Results record `log_inv_rate` and `fri_queries`;
+the paper's u64 and u128 tables include both rate 1/2 and rate 1/8 runs.
 
 | Metric | Measured work |
 | --- | --- |
-| `witness_ms` | Native witness generation; includes Binius's internal witness packing |
-| `commit_ms` | Initial witness commitment (F2Z includes bit packing) |
-| `piop_ms` | Actual constraint proof/reduction, before the PCS opening |
-| `opening_ms` | PCS opening and required claim bridge/ring switching |
-| `pcs_ms` | Union of initial commitment and opening intervals |
-| `online_prover_ms` | Complete native prover call after initial witness generation |
-| `witness_to_proof_ms` | Initial witness generation through proof readiness |
-| `verify_ms` | Complete native verification |
+| `witness_ms` | Native witness generation; includes Binius internal packing |
+| `commit_ms` | Initial commitment, including F2Z bit packing |
+| `piop_ms` | Constraint proof/reduction before the PCS opening |
+| `opening_ms` | PCS opening and required bridge/ring switching |
+| `pcs_ms` | Union of commitment and opening intervals |
+| `online_prover_ms` | Complete prover call after initial witness generation |
+| `witness_to_proof_ms` | Witness generation through proof readiness |
+| `verify_ms` | Complete verification |
 
-F2Z uses its existing `step3:piop_prove` scope; prime sampling/projection is
-reported separately as preparation. Its opening includes Steps 4 and 5.
-Limber uses its `imod_modp_piop` scope; runtime-prime projection is separate.
-Binius uses the interval between initial witness commitment and ring switching.
-Plonky3 uses the interval between initial WHIR commitment and opening, covering
-the AIR zerocheck/sumcheck reduction. Missing native phase instrumentation is
-an error, never a fabricated zero or a PCS-only fallback.
+F2Z prime projection is preparation. Its opening includes Steps 4 and 5.
+Binius witness packing overlaps its online prover time; do not add those
+columns. Timing totals use interval boundaries, not sums of phase medians.
+Missing required instrumentation fails the integrated run.
 
-Binius packs the witness inside its online prover, so `witness_ms` overlaps
-`online_prover_ms`. Do not add those columns. `witness_to_proof_ms` measures
-the combined interval directly. Public setup/circuit compilation and random
-corpus sampling happen outside trials. Setup is recorded separately. Proof
-serialization, when measured outside proof readiness, is not included in
-prover time.
+Proof sizes include commitments. Binius and Plonky3 serialize their full
+proofs. F2Z combines its root, fixed-width PIOP/nonces and serialized opening.
+The BabyBear Limber adapter combines serialized commitments/openings and
+analytical sumcheck payloads:
+`scalar_bytes * (3 * log2(num_cons) + 2 * (log2(num_vars) + 1) + 6)`.
 
-## Proof sizes and peak memory
+Peak RSS is measured by an additional verified proof in a fresh process per
+case, including corpus generation and setup. Linux uses `/proc/self/status`
+and macOS uses `getrusage`, normalized to bytes. Set
+`F2Z_MUL_COMPARE_MEMORY=0` to skip this pass; missing memory is null, never zero.
+This flag does not add a memory pass to the authors' Limber command.
 
-Every backend reports a positive `proof_bytes` value, including the initial
-commitment and the proof needed to verify it. Public setup parameters and the
-public relation are excluded. Size accounting runs outside the prover and
-verification timing intervals.
+## Witness-equivalence checks
 
-| Backend | Size encoding |
-| --- | --- |
-| F2Z | Commitment root, 16 bytes per Spartan payload field element, 8 bytes per transmitted nonce outside the opening, and the actual canonical F2Z opening bytes. Opening nonces are counted only inside that serialization. |
-| Binius64 | Actual finalized native transcript bytes, including the commitment. |
-| Plonky3-WHIR | Actual postcard serialization of the complete native proof, including the commitment. |
-| Limber | Actual canonical commitment and batch-opening bytes (both W and Q), plus the fixed-width PIOP payload described below. |
-
-F2Z and the pinned Limber dependency do not expose a complete-proof serializer.
-Their sizes use component payload accounting, excluding any hypothetical outer
-container framing. Limber's unsegmented PIOP has three field elements per outer
-sumcheck round, two per inner round, five outer claims, and one witness
-evaluation: `scalar_bytes * (3 * log2(num_cons) + 2 * (log2(num_vars) + 1) + 6)`.
-The padded dimensions are public, and the scalar encoding is currently 16
-bytes. The sampled modulus is derived from the transcript. This PIOP count is
-derived from the pinned driver's shape, rather than a serialized whole proof.
-The backend's `config.proof_size_encoding` records the accounting used.
-
-Peak memory is enabled by default. Each workload/backend/size runs one
-additional proof in a fresh child process, before the parent's backend setup.
-The child uses the same corpus and Rayon thread count and must verify its proof.
-`peak_rss_bytes` is the OS high-water resident set size for the whole child:
-corpus generation, public setup, witness generation, commitment, proving,
-verification, and proof-size accounting. It includes resident runtime and
-library memory; it is not an allocator-only or prover-only measurement.
-The child has no warmup, and its memory sample is separate from the latency
-trials and their medians. Linux uses `VmHWM` from `/proc/self/status`; macOS
-uses `getrusage(RUSAGE_SELF)`. Both are normalized to bytes. Linux's current
-address-space counter avoids carrying a pre-exec peak into the new case.
-
-Set `F2Z_MUL_COMPARE_MEMORY=0` for a run without the extra memory pass. Disabled
-memory is `na` in stdout, blank in CSV, and `null` in the summary; it is never
-reported as zero. A failed memory pass aborts the campaign.
-
-## Native configurations
-
-- F2Z: Lambda100, transcript-sampled prime, production Spartan reduction and
-  F2Z/Ligerito opening, one-bit packing.
-- Binius64: native IMUL and bit constraints, ring switching/BaseFold, inverse
-  rate 2 and a 100-bit FRI query target. `F2Z_BINIUS_LOG_INV_RATE=<k>` selects
-  inverse rate `2^k` instead (the query count follows from the rate: 241, 148,
-  121, and 110 queries at rates 1/2, 1/4, 1/8, and 1/16); the run records
-  `log_inv_rate` and `fri_queries` in its config, and the paper's u64 and
-  u128 tables list both rate 1/2 and rate 1/8 rows. u32 operands are range checked; the
-  BabyBear circuit constrains `a*b = p*q+c`, canonical operands/remainder, and
-  nonoverflowing reconstruction.
-- Plonky3: Goldilocks AIR with 32-bit input decompositions for u32; native
-  BabyBear AIR for field multiplication. Both use a degree-5 challenge field,
-  WHIR Johnson-bound parameters, folding 4, inverse rate 2, a 100-bit target,
-  and a maximum of 12 PoW bits.
-- Limber: integer Mod-R1CS with exact bit constraints for operand ranges,
-  canonical BabyBear remainders, IntEval/Hyrax, `log_t_f=64`, `log_t=32`, `k=9`.
-  Its native security policy is recorded separately; the harness does not
-  assert all four systems have identical security guarantees.
-
-## Outputs and verification
-
-The runner reserves a new `PerfRuns/<UTC>-native-mul` directory, or uses
-`F2Z_MUL_COMPARE_OUTPUT_DIR`; it refuses to overwrite existing results.
-`trace.jsonl` contains canonical `zkperf.trace/v1` intervals, `samples.jsonl`
-contains raw per-trial metrics including proof size, and `metrics.csv` plus
-`summary.json` contain warmup-excluded medians including `proof_bytes`.
-The CSV also has `peak_rss_bytes`; the summary has `peak_rss_bytes` and the full
-`memory` record. `memory.jsonl` contains one isolated memory record per case,
-including its corpus digest, verified proof size, and measurement boundary.
-
-Both the shell runner and direct Cargo command print one
-`RESULT schema=native-mul/2` line to stdout per completed case. It identifies
-the workload, backend, size, and sample count, then reports `witness_ms`,
-`online_prover_ms`, `verify_ms`, median `proof_bytes`, and the separate
-`peak_rss_bytes` measurement. The runner also saves stdout and stderr in
-`cargo-bench.log`.
-
-When the zk-proof-profiler script is installed, the
-runner validates traces and renders `reports/intervals.html`; set
-`ZK_TRACE_SCRIPT` to override its location. A failed proof aborts the campaign; it is never emitted
-as a successful sample.
+`mul_witness_compare` remains a separate check of the integrated adapters and
+the legacy u32 Limber assignment builder. It does not invoke or certify the
+authors' chained `int_mult` workload.
 
 ```sh
-cargo test --release --test native_mul_compare \
-  --features bench-internals,native-mul-compare
+RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
+F2Z_BENCH_SHAPES="10 15" F2Z_BENCH_REPS=5 \
+cargo bench --bench mul_witness_compare --features bench-internals,native-mul-compare
+```
+
+It reconstructs canonical rows from each native witness and checks values,
+counts and digests. Plonky3 BabyBear reconstructs the integer quotient from its
+operands and remainder; the other adapters read their generated assignments.
+Results are `witness-checks.jsonl` and `witness-summary.json`.
+
+## Validation
+
+```sh
+python3 -m unittest discover -s scripts -p test_native_mul_runner.py
+cargo test --release --test native_mul_compare --features bench-internals,native-mul-compare
 ```

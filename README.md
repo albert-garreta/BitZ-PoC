@@ -95,6 +95,7 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
 
 *Full-proving comparison between different schemes*
 ```sh
+LIMBER_REPO="$HOME/code/limber-impl" \
 RAYON_NUM_THREADS=8 \
 F2Z_BENCH_SHAPES="15 16 17 18 19 20" \
 F2Z_BENCH_REPS=5 \
@@ -138,6 +139,10 @@ bash scripts/run_native_mul_compare.sh
 ```
 
 Every warmup and measured trial generates and verifies the complete proof.
+For u32 Limber, the runner calls the authors' `int_mult` example in
+`LIMBER_REPO`, using Rust 1.97.1 and eight threads. It proves a chain of
+`2^n - 1` modular multiplications; the other u32 backends use `2^n` independent
+full products. Limber's author-reported results are saved under `limber-int-mult/`.
 For BabyBear multiplication, set `F2Z_MUL_COMPARE_WORKLOADS="babybear"`.
 See the [native multiplication benchmark guide](docs/native-mul-compare.md)
 for the measurement boundaries, size ranges, proof sizes, and peak memory.
@@ -487,36 +492,12 @@ F2Z_BENCH_LAMBDA=100 F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C tar
 
 ### Native u32 / BabyBear end-to-end comparison
 
-BabyBear multiplication with Limber-Hyrax, shorter sweep at exponents 15–17.
-Run from the repository root:
+For u32, the shell runner invokes the authors' `int_mult` example in the
+Limber repository. Set `LIMBER_REPO` to that checkout (the default is a sibling
+`limber-impl` directory):
 
 ```sh
-RUSTFLAGS="-Ctarget-cpu=native" \
-RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES="15 16 17" \
-F2Z_BENCH_REPS=5 \
-F2Z_MUL_COMPARE_WORKLOADS="babybear" \
-F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
-bash scripts/run_native_mul_compare.sh
-```
-
-For the full BabyBear sweep, replace the shape setting in that command with:
-
-```sh
-F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24"
-```
-
-To run only Limber, replace the backend setting in the same command with:
-
-```sh
-F2Z_MUL_COMPARE_BACKENDS="limber"
-```
-
-u32 multiplication with Limber-Hyrax, shorter sweep at exponents 15–17.
-Run from the repository root:
-
-```sh
-RUSTFLAGS="-Ctarget-cpu=native" \
+LIMBER_REPO="$HOME/code/limber-impl" \
 RAYON_NUM_THREADS=8 \
 F2Z_BENCH_SHAPES="15 16 17" \
 F2Z_BENCH_REPS=5 \
@@ -525,46 +506,52 @@ F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
 bash scripts/run_native_mul_compare.sh
 ```
 
-For the full u32 sweep, replace the shape setting in that command with:
+For each selected exponent, Limber is run with this command in its repository:
 
 ```sh
-F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24 25"
+RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
+cargo +1.97.1 run --release --example int_mult -- --bits 32 --log-gates 15
 ```
 
-To run only Limber, replace the backend setting in the same command with:
+Only `--log-gates` changes with the shape. Use
+`F2Z_MUL_COMPARE_BACKENDS="limber"` for Limber alone. Append `--dry-run` to the
+shell command to inspect its routing and exact commands.
+
+The authors' example proves **2^n - 1 chained multiplications modulo 2^32**.
+It uses its own witness and native security parameters. F2Z, Binius64 and
+Plonky3 currently prove **2^n independent u32 × u32 → u64 products**.
+The run therefore labels the Limber workload `u32-mod32-chain`; these rows do
+not claim a shared input corpus or an identical relation.
+
+For BabyBear, the existing integrated Limber adapter remains available:
 
 ```sh
-F2Z_MUL_COMPARE_BACKENDS="limber"
+RAYON_NUM_THREADS=8 \
+F2Z_BENCH_SHAPES="15 16 17" \
+F2Z_BENCH_REPS=5 \
+F2Z_MUL_COMPARE_WORKLOADS="babybear" \
+F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
+bash scripts/run_native_mul_compare.sh
 ```
 
-Both sweeps run F2Z, Binius64, Plonky3-WHIR, and Limber-Hyrax on the same
-canonical multiplication inputs for each workload, using each system's native
-full prover. Both commands report witness generation, commitment, PIOP, PCS
-opening, witness-to-proof time, verification, proof size, and peak resident
-memory. Each case prints a `RESULT schema=native-mul/2` line to stdout with
-`proof_bytes` and `peak_rss_bytes`, including when using `cargo bench` directly.
-Proof sizes include commitments; F2Z and Limber combine serialized components
-with fixed-width PIOP payload accounting.
+Use exponents 15–24 for the full BabyBear sweep or a u32 sweep including
+Limber. u32 exponent 25 is supported when Limber is excluded. Each case runs
+one warmup and five measured samples by default; set `F2Z_BENCH_REPS=21` for
+the final comparison.
 
-All four backends' measurements appear in `metrics.csv` and `summary.json`;
-`samples.jsonl` includes per-trial proof sizes. Peak memory comes from one
-additional verified proof in a fresh process per workload/backend/size, including
-setup, and is saved in `memory.jsonl`. It is separate from the timing trials.
-Set `F2Z_MUL_COMPARE_MEMORY=0` to skip this pass; memory is then reported as
-unavailable. Peak RSS measurement supports Linux and macOS. See
-[the measurement contract and backend selectors](docs/native-mul-compare.md).
+Each invocation creates a timestamped directory under `PerfRuns/`.
+`campaign.json` records which commands ran and whether they completed.
+The authors' Limber logs, samples, parameters and median timing/proof-size
+tables are under `limber-int-mult/`. Its timings are parsed from the example,
+excluding Cargo/build overhead; separate PIOP/PCS timings and peak RSS are
+unavailable. The integrated backends retain their existing metrics and traces
+at the run root. A combined u32/BabyBear run puts the BabyBear Limber adapter
+results in `babybear-limber/`.
 
-The full sweeps cover BabyBear at exponents 15–24 and u32 at 15–25. An exponent `n`
-means `2^n` multiplications: the ranges run from 32,768 through 16,777,216
-for BabyBear, and through 33,554,432 for u32. Run the commands one at a time.
-Each creates its own timestamped results directory under `PerfRuns/`.
-
-Start with five measured repetitions per workload/backend/size; use `F2Z_BENCH_REPS=21` for the final comparison. Each case
-also runs one warmup, excluded from measured-sample summaries. All cases run
-sequentially; finish other builds and benchmarks before starting either command.
-
-To independently verify that all four native witnesses recover the same
-canonical multiplication assignment:
+See [the measurement contract and backend selectors](docs/native-mul-compare.md)
+for the distinct workload and proof-size conventions. The separate
+`mul_witness_compare` benchmark checks integrated witness builders, including
+the legacy u32 Limber builder; it does not certify the authors' chained example.
 
 ```sh
 F2Z_BENCH_SHAPES=10 F2Z_BENCH_REPS=5 \
