@@ -35,8 +35,8 @@ pub fn parse_shapes(value: &str) -> Result<Vec<Shape>, AnyError> {
             mul_log: mul.trim().parse()?,
             sha_log: sha.trim().parse()?,
         };
-        if !(15..=20).contains(&shape.mul_log) || !(1..=16).contains(&shape.sha_log) {
-            return Err("--shapes requires multiplication logs 15..20 and SHA logs 1..16".into());
+        if !(15..=22).contains(&shape.mul_log) || !(1..=16).contains(&shape.sha_log) {
+            return Err("--shapes requires multiplication logs 15..22 and SHA logs 1..16".into());
         }
         if shapes.contains(&shape) {
             return Err(format!("duplicate --shapes pair {pair}").into());
@@ -48,9 +48,10 @@ pub fn parse_shapes(value: &str) -> Result<Vec<Shape>, AnyError> {
 
 // Keep the standalone runner's CSVs intact. The combined CSV distinguishes
 // exact serialized proof sizes from the separate mode's payload estimate.
-const METRICS: [&str; 16] = [
+const METRICS: [&str; 17] = [
     "iteration",
     "setup_ms",
+    "witness_ms",
     "witness_commit_ms",
     "continuation_ms",
     "total_prover_ms",
@@ -94,12 +95,12 @@ fn formatted_rows(
         .collect();
     let expected = match mode {
         "hybrid" => {
-            "mode,iteration,setup_ms,witness_commit_ms,continuation_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib,piop_ms,iop_ms,mul_piop_ms,sha_piop_ms,mul_opening_ms,joint_sumcheck_ms,shared_opening_ms"
+            "mode,iteration,setup_ms,witness_ms,witness_commit_ms,continuation_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib,piop_ms,iop_ms,mul_piop_ms,sha_piop_ms,mul_opening_ms,joint_sumcheck_ms,shared_opening_ms"
         }
         "separate" => {
-            "mode,iteration,setup_ms,total_prover_ms,verify_ms,proof_payload_bytes_estimate,peak_rss_kib"
+            "mode,iteration,setup_ms,witness_ms,total_prover_ms,verify_ms,proof_payload_bytes_estimate,peak_rss_kib"
         }
-        _ => "mode,iteration,setup_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib",
+        _ => "mode,iteration,setup_ms,witness_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib",
     };
     if header.join(",") != expected {
         return Err(format!("unexpected {mode} child CSV header").into());

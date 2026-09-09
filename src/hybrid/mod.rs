@@ -129,10 +129,10 @@ impl PreparedHybrid {
             ));
         }
         if !parameters.multiplications.is_power_of_two()
-            || !(1 << 15..=1 << 20).contains(&parameters.multiplications)
+            || !(1 << 15..=1 << 22).contains(&parameters.multiplications)
         {
             return Err(Error::Invalid(
-                "multiplication count must be a power of two from 2^15 to 2^20",
+                "multiplication count must be a power of two from 2^15 to 2^22",
             ));
         }
         if !parameters.sha_compressions.is_power_of_two()

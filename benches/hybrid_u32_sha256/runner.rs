@@ -60,8 +60,8 @@ impl Native {
         // and the second proof in the separate mode. No default 96-bit preset.
         let verifier = Verifier::<Blake3HashSuite>::setup_with_security_bits(
             circuit.constraint_system().clone(),
-            1,
-            112,
+            binius_log_inv_rate(),
+            binius_security_bits(),
         )?;
         let prover = Prover::setup(verifier.clone())?;
         Ok(Self {
@@ -115,6 +115,9 @@ fn millis(start: Instant) -> f64 {
     start.elapsed().as_secs_f64() * 1000.0
 }
 fn peak_kib() -> u64 {
+    // Linux only: this target is also built as a [[bin]], which does not get
+    // dev-dependencies, so no libc/getrusage path is available here. On other
+    // platforms the sweep's per-case child processes are sampled externally.
     std::fs::read_to_string("/proc/self/status")
         .ok()
         .and_then(|s| {
@@ -124,6 +127,24 @@ fn peak_kib() -> u64 {
                 .and_then(|n| n.parse().ok())
         })
         .unwrap_or(0)
+}
+
+/// Binius FRI inverse rate exponent: rate `1/2^k`. Defaults to the historical
+/// `1` (rate 1/2); the paper's other Binius64 tables also report rate 1/8.
+fn binius_log_inv_rate() -> usize {
+    std::env::var("F2Z_HYBRID_BINIUS_LOG_INV_RATE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1)
+}
+
+/// Binius FRI component security. 112 leaves slack for the binary PIOPs and
+/// the second proof in the separate mode; the comparison tables use 100.
+fn binius_security_bits() -> usize {
+    std::env::var("F2Z_HYBRID_BINIUS_SECURITY_BITS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(112)
 }
 
 pub fn run() -> Result<(), AnyError> {
@@ -148,7 +169,7 @@ pub fn run() -> Result<(), AnyError> {
         }
         if arg == "--help" {
             println!(
-                "hybrid-u32-sha256 [--mode hybrid|separate|all-binius] [--mul-log 15..20] [--sha-log 1..16] [--iterations N] [--output PROOF]\nhybrid-u32-sha256 --verify PROOF\nhybrid-u32-sha256 --sweep [--shapes MUL_LOG:SHA_LOG,...] [--mode hybrid|separate|all-binius|all] [--iterations N] [--results-dir DIR]\nSingle-run defaults: 2^20 products, 2^16 chained compressions, 1 iteration.\nSweep defaults: equal packed witnesses (15:7,16:8,17:9,18:10,19:11,20:12), hybrid mode, 3 iterations.\nSweeps save per-run CSV/logs and summary.csv in a new directory under benches/results/hybrid-u32-sha256/. --results-dir must not already exist.\nNon-ZK, 100-bit composition target. Set RAYON_NUM_THREADS to control threads. --output is for single hybrid proofs."
+                "hybrid-u32-sha256 [--mode hybrid|separate|all-binius] [--mul-log 15..22] [--sha-log 1..16] [--iterations N] [--output PROOF]\nhybrid-u32-sha256 --verify PROOF\nhybrid-u32-sha256 --sweep [--shapes MUL_LOG:SHA_LOG,...] [--mode hybrid|separate|all-binius|all] [--iterations N] [--results-dir DIR]\nSingle-run defaults: 2^20 products, 2^16 chained compressions, 1 iteration.\nSweep defaults: equal packed witnesses (15:7,16:8,17:9,18:10,19:11,20:12), hybrid mode, 3 iterations.\nSweeps save per-run CSV/logs and summary.csv in a new directory under benches/results/hybrid-u32-sha256/. --results-dir must not already exist.\nNon-ZK, 100-bit composition target. Set RAYON_NUM_THREADS to control threads. --output is for single hybrid proofs."
             );
             return Ok(());
         }
@@ -158,8 +179,8 @@ pub fn run() -> Result<(), AnyError> {
             "--mul-log" => {
                 single_shape_requested = true;
                 let log: u32 = value.parse()?;
-                if !(15..=20).contains(&log) {
-                    return Err("--mul-log must be 15..20".into());
+                if !(15..=22).contains(&log) {
+                    return Err("--mul-log must be 15..22".into());
                 }
                 parameters.multiplications = 1 << log;
             }
@@ -261,7 +282,7 @@ pub fn run() -> Result<(), AnyError> {
             prepared.security().algebraic_bits
         );
         println!(
-            "mode,iteration,setup_ms,witness_commit_ms,continuation_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib,piop_ms,iop_ms,mul_piop_ms,sha_piop_ms,mul_opening_ms,joint_sumcheck_ms,shared_opening_ms"
+            "mode,iteration,setup_ms,witness_ms,witness_commit_ms,continuation_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib,piop_ms,iop_ms,mul_piop_ms,sha_piop_ms,mul_opening_ms,joint_sumcheck_ms,shared_opening_ms"
         );
         for iteration in 0..iterations {
             // Discard setup and the preceding verifier's profiling records.
@@ -271,6 +292,10 @@ pub fn run() -> Result<(), AnyError> {
                 .iter()
                 .map(|&(x, y)| f2z::hybrid::U32MulMod32Row::new(x, y))
                 .collect();
+            // Hybrid fuses assignment synthesis into commit_mod32, so this is
+            // the native row construction only; witness_commit_ms below is
+            // that plus the commitment.
+            let witness_ms = millis(start);
             let committed = prepared.commit_mod32(&rows, &blocks)?;
             let witness_commit_ms = millis(start);
             let continuation = Instant::now();
@@ -300,7 +325,7 @@ pub fn run() -> Result<(), AnyError> {
             prepared.verify(committed.statement(), &decoded)?;
             let verify_ms = millis(verify);
             println!(
-                "hybrid,{iteration},{setup_ms:.3},{witness_commit_ms:.3},{continuation_ms:.3},{total_ms:.3},{verify_ms:.3},{},{},{piop_ms:.3},{iop_ms:.3},{mul_piop_ms:.3},{sha_piop_ms:.3},{mul_opening_ms:.3},{joint_sumcheck_ms:.3},{shared_opening_ms:.3}",
+                "hybrid,{iteration},{setup_ms:.3},{witness_ms:.3},{witness_commit_ms:.3},{continuation_ms:.3},{total_ms:.3},{verify_ms:.3},{},{},{piop_ms:.3},{iop_ms:.3},{mul_piop_ms:.3},{sha_piop_ms:.3},{mul_opening_ms:.3},{joint_sumcheck_ms:.3},{shared_opening_ms:.3}",
                 bytes.len(),
                 peak_kib()
             );
@@ -336,13 +361,17 @@ pub fn run() -> Result<(), AnyError> {
             None
         };
         let setup_ms = millis(setup);
-        eprintln!("setup_ms={setup_ms:.3} binius_fri_component_bits=112");
+        eprintln!(
+            "setup_ms={setup_ms:.3} binius_fri_component_bits={} binius_log_inv_rate={}",
+            binius_security_bits(),
+            binius_log_inv_rate()
+        );
         let size_column = if mode == "separate" {
             "proof_payload_bytes_estimate"
         } else {
             "proof_bytes"
         };
-        println!("mode,iteration,setup_ms,total_prover_ms,verify_ms,{size_column},peak_rss_kib");
+        println!("mode,iteration,setup_ms,witness_ms,total_prover_ms,verify_ms,{size_column},peak_rss_kib");
         for iteration in 0..iterations {
             let start = Instant::now();
             let rows: Vec<_> = inputs
@@ -351,6 +380,9 @@ pub fn run() -> Result<(), AnyError> {
                 .collect();
             let witness =
                 native.populate(if mode == "all-binius" { &rows } else { &[] }, &blocks)?;
+            // Native witness generation: row construction plus the circuit's
+            // own witness filling, before any proving work.
+            let witness_ms = millis(start);
             let bytes = native.prove(&witness)?;
             let mul = if let Some(relation) = &separate {
                 let witness = U32MulWitness::from_mod32_rows(&rows)?;
@@ -382,7 +414,7 @@ pub fn run() -> Result<(), AnyError> {
                 )?;
             }
             println!(
-                "{mode},{iteration},{setup_ms:.3},{total_ms:.3},{:.3},{proof_bytes},{}",
+                "{mode},{iteration},{setup_ms:.3},{witness_ms:.3},{total_ms:.3},{:.3},{proof_bytes},{}",
                 millis(verify),
                 peak_kib()
             );
