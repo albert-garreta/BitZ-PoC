@@ -2719,40 +2719,48 @@ We compare the performance of \ftwoz-SNARK with Binius64 \cite{binius64}, Plonky
     \toprule
     $N$ & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
     \midrule
-    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.04} & \textbf{16.3} & 4.84 & \textbf{158} & -- \\
-     & Binius64~\cite{binius64} & 0.63 & 43.1 & \textbf{1.75} & 327 & -- \\
-     & Plonky3~\cite{plonky} (WHIR) & 3.20 & 1313 & 3.93 & 196 & -- \\
+    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.05} & \textbf{16.2} & 3.11 & \textbf{158} & \textbf{0.063} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 0.63 & 40.1 & 1.71 & 327 & 0.422 \\
+     & Binius64~\cite{binius64}, rate $1/8$ & 0.64 & 45.0 & \textbf{1.60} & 245 & 0.449 \\
+     & Plonky3~\cite{plonky} (WHIR) & 2.53 & 1230 & 3.91 & 195 & 0.499 \\
     \addlinespace
-    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.06} & \textbf{24.6} & 7.90 & \textbf{184} & -- \\
-     & Binius64~\cite{binius64} & 1.22 & 64.0 & \textbf{3.11} & 358 & -- \\
-     & Plonky3~\cite{plonky} (WHIR) & 6.25 & 2889 & 4.68 & 216 & -- \\
+    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.10} & \textbf{24.7} & 3.36 & \textbf{184} & \textbf{0.109} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 1.18 & 58.8 & 2.79 & 358 & 0.774 \\
+     & Binius64~\cite{binius64}, rate $1/8$ & 1.16 & 64.9 & \textbf{2.65} & 262 & 0.791 \\
+     & Plonky3~\cite{plonky} (WHIR) & 5.27 & 2689 & 4.48 & 216 & 0.997 \\
     \addlinespace
-    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.10} & \textbf{43.0} & 14.9 & \textbf{205} & -- \\
-     & Binius64~\cite{binius64} & 2.44 & 109 & 5.57 & 403 & -- \\
-     & Plonky3~\cite{plonky} (WHIR) & 11.9 & 5939 & \textbf{5.08} & 226 & -- \\
+    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.20} & \textbf{38.5} & \textbf{3.91} & \textbf{205} & \textbf{0.152} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 2.24 & 99.3 & 4.86 & 403 & 1.45 \\
+     & Binius64~\cite{binius64}, rate $1/8$ & 2.25 & 109 & 4.72 & 286 & 1.52 \\
+     & Plonky3~\cite{plonky} (WHIR) & 10.3 & 5513 & 4.71 & 227 & 1.89 \\
     \addlinespace
-    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.25} & \textbf{71.7} & 25.4 & \textbf{232} & -- \\
-     & Binius64~\cite{binius64} & 4.87 & 194 & 10.5 & 435 & -- \\
-     & Plonky3~\cite{plonky} (WHIR) & 23.6 & 12085 & \textbf{5.20} & 238 & -- \\
+    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.39} & \textbf{65.0} & \textbf{4.14} & \textbf{232} & \textbf{0.289} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 4.41 & 170 & 8.88 & 435 & 2.78 \\
+     & Binius64~\cite{binius64}, rate $1/8$ & 4.44 & 198 & 8.69 & 308 & 2.92 \\
+     & Plonky3~\cite{plonky} (WHIR) & 20.9 & 11141 & 4.94 & 238 & 3.76 \\
     \addlinespace
-    $2^{19}$ & \ftwoz\ (this work) & \textbf{0.52} & \textbf{130} & 45.4 & 265 & -- \\
-     & Binius64~\cite{binius64} & 10.1 & 398 & 29.0 & 475 & -- \\
-     & Plonky3~\cite{plonky} (WHIR) & 82.3 & 26283 & \textbf{5.23} & \textbf{249} & -- \\
+    $2^{19}$ & \ftwoz\ (this work) & \textbf{0.68} & \textbf{117} & \textbf{5.02} & 265 & \textbf{0.511} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 8.80 & 341 & 24.3 & 475 & 5.23 \\
+     & Binius64~\cite{binius64}, rate $1/8$ & 8.90 & 392 & 24.2 & 333 & 5.55 \\
+     & Plonky3~\cite{plonky} (WHIR) & 39.4 & 22715 & 5.27 & \textbf{249} & 5.80 \\
     \addlinespace
-    $2^{20}$ & \ftwoz\ (this work) & \textbf{1.15} & \textbf{245} & 80.3 & 297 & -- \\
-     & Binius64~\cite{binius64} & 77.1 & 2272 & 269 & 522 & -- \\
-     & Plonky3~\cite{plonky} (WHIR) & 412 & 63640 & \textbf{6.77} & \textbf{269} & -- \\
+    $2^{20}$ & \ftwoz\ (this work) & \textbf{1.36} & \textbf{216} & \textbf{5.18} & 297 & \textbf{0.993} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 17.9 & 678 & 48.7 & 522 & 10.4 \\
+     & Binius64~\cite{binius64}, rate $1/8$ & 17.7 & 761 & 48.5 & 358 & 11.0 \\
+     & Plonky3~\cite{plonky} (WHIR) & 116 & 59221 & 8.11 & \textbf{270} & 9.17 \\
     \addlinespace
-    $2^{21}$ & \ftwoz\ (this work) & \textbf{6.08} & \textbf{685} & \textbf{151} & \textbf{325} & -- \\
-     & Binius64~\cite{binius64} & 617 & 13754 & 734 & 562 & -- \\
+    $2^{21}$ & \ftwoz\ (this work) & 3.07 & 444 & 6.43 & 325 & 1.86 \\
+     & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
+     & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
      & Plonky3~\cite{plonky} (WHIR) & -- & -- & -- & -- & -- \\
     \addlinespace
-    $2^{22}$ & \ftwoz\ (this work) & \textbf{3.71} & \textbf{1046} & \textbf{302} & \textbf{380} & -- \\
-     & Binius64~\cite{binius64} & 3698 & 102370 & 2288 & 610 & -- \\
+    $2^{22}$ & \ftwoz\ (this work) & 6.06 & 843 & 7.06 & 380 & 3.66 \\
+     & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
+     & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
      & Plonky3~\cite{plonky} (WHIR) & -- & -- & -- & -- & -- \\
     \bottomrule
   \end{tabular}
-  \caption{\albertimportant{We should do FRI Plonky3} Costs of proving $N$ multiplications $x\cdot y = z$ for random $32$ bit nonnegative integers $x$ and $y$. Ran on a MacBook Air M4, 16\,GB, $8$ threads.}
+  \caption{\albertimportant{We should do FRI Plonky3} Costs of proving $N$ multiplications $x\cdot y = z$ for random $32$ bit nonnegative integers $x$ and $y$. Ran on a MacBook Air M5, 24\,GB, $8$ threads.}
   \label{tab:native-mul}
 \end{table}
 
@@ -2771,29 +2779,36 @@ We compare the performance of \ftwoz-SNARK with Binius64 \cite{binius64}, Plonky
     \toprule
     $N$ & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
     \midrule
-    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.04} & \textbf{25.8} & 3.73 & \textbf{184} & -- \\
-     & Binius64~\cite{binius64} & 0.37 & 46.0 & \textbf{1.56} & 245 & -- \\
+    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.04} & \textbf{25.5} & 3.97 & \textbf{184} & \textbf{0.087} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 0.41 & 39.5 & 1.59 & 327 & 0.370 \\
+     & Binius64~\cite{binius64}, rate $1/8$ & 0.39 & 44.5 & \textbf{1.46} & 245 & 0.398 \\
     \addlinespace
-    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.08} & \textbf{40.0} & 3.96 & \textbf{205} & -- \\
-     & Binius64~\cite{binius64} & 0.75 & 69.0 & \textbf{2.70} & 262 & -- \\
+    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.06} & \textbf{38.6} & 4.05 & \textbf{205} & \textbf{0.144} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 0.75 & 59.4 & 2.52 & 358 & 0.658 \\
+     & Binius64~\cite{binius64}, rate $1/8$ & 0.73 & 66.9 & \textbf{2.38} & 262 & 0.679 \\
     \addlinespace
-    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.18} & \textbf{73.8} & 8.70 & \textbf{227} & -- \\
-     & Binius64~\cite{binius64} & 1.48 & 119 & \textbf{4.85} & 286 & -- \\
+    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.13} & \textbf{70.8} & 9.23 & \textbf{227} & \textbf{0.271} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 1.43 & 98.1 & \textbf{4.45} & 403 & 1.20 \\
+     & Binius64~\cite{binius64}, rate $1/8$ & 1.42 & 113 & 4.56 & 286 & 1.29 \\
     \addlinespace
-    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.37} & \textbf{127} & 9.06 & \textbf{266} & -- \\
-     & Binius64~\cite{binius64} & 2.96 & 218 & \textbf{8.93} & 308 & -- \\
+    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.27} & \textbf{120} & 10.1 & \textbf{266} & \textbf{0.479} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 2.76 & 171 & \textbf{8.09} & 435 & 2.35 \\
+     & Binius64~\cite{binius64}, rate $1/8$ & 2.79 & 199 & 8.58 & 308 & 2.50 \\
     \addlinespace
-    $2^{19}$ & \ftwoz\ (this work) & \textbf{0.74} & \textbf{251} & \textbf{11.3} & \textbf{289} & -- \\
-     & Binius64~\cite{binius64} & 6.13 & 437 & 26.2 & 333 & -- \\
+    $2^{19}$ & \ftwoz\ (this work) & \textbf{0.53} & \textbf{231} & \textbf{12.5} & \textbf{289} & \textbf{0.897} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 5.54 & 339 & 23.4 & 475 & 4.27 \\
+     & Binius64~\cite{binius64}, rate $1/8$ & 5.53 & 388 & 23.9 & 333 & 4.55 \\
     \addlinespace
-    $2^{20}$ & \ftwoz\ (this work) & \textbf{1.25} & \textbf{470} & \textbf{11.6} & \textbf{324} & -- \\
-     & Binius64~\cite{binius64} & 14.6 & 1022 & 52.0 & 358 & -- \\
+    $2^{20}$ & \ftwoz\ (this work) & \textbf{1.04} & \textbf{424} & \textbf{12.6} & \textbf{324} & \textbf{1.75} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 11.0 & 650 & 45.7 & 522 & 8.44 \\
+     & Binius64~\cite{binius64}, rate $1/8$ & 11.2 & 746 & 46.8 & 358 & 8.99 \\
     \addlinespace
-    $2^{21}$ & \ftwoz\ (this work) & 3.08 & 1187 & 14.9 & 362 & -- \\
-     & Binius64~\cite{binius64} & -- & -- & -- & -- & -- \\
+    $2^{21}$ & \ftwoz\ (this work) & 2.22 & 1059 & 16.6 & 362 & 3.33 \\
+     & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
+     & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
     \bottomrule
   \end{tabular}
-  \caption{Native end-to-end proofs of $N$ multiplications $x \cdot y = z$ of random $64$-bit integers ($z$ a $128$-bit integer): \ftwoz\ (Spartan over a transcript-sampled prime with the \ftwoz\ opening, $\lambda = 100$) and Binius64 (native multiplication, ring switching and BaseFold at rate $1/8$ with $121$ queries for $100$ bits). \emph{Witgen} is the native witness generation; \emph{prover} is the complete prover call after witness generation, commitment included; \emph{verifier} is the complete verification. At $2^{21}$ the Binius64 prover exceeds the machine's memory and pages; that row is omitted. Apple M4, 16\,GB, $8$ threads; medians of 5 runs after one warm-up.}
+  \caption{Native end-to-end proofs of $N$ multiplications $x \cdot y = z$ of random $64$-bit integers ($z$ a $128$-bit integer): \ftwoz\ (Spartan over a transcript-sampled prime with the \ftwoz\ opening, $\lambda = 100$) and Binius64 (native multiplication, ring switching and BaseFold at rate $1/2$ with $241$ queries and rate $1/8$ with $121$ queries for $100$ bits). \emph{Witgen} is the native witness generation; \emph{prover} is the complete prover call after witness generation, commitment included; \emph{verifier} is the complete verification; \emph{peak mem.} is the high-water resident set of a separate child process proving and verifying once ($1$\,GB $= 2^{30}$ bytes). From $2^{21}$ the Binius64 provers at both rates exceed the machine's memory and page; those rows are omitted. Apple M5, 24\,GB, $8$ threads; medians of 5 runs after one warm-up.}
   \label{tab:native-mul-u64}
 \end{table}
 
@@ -2805,31 +2820,40 @@ We compare the performance of \ftwoz-SNARK with Binius64 \cite{binius64}, Plonky
     \toprule
     $N$ & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
     \midrule
-    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.08} & \textbf{42.2} & \textbf{4.47} & \textbf{202} & -- \\
-     & Binius64~\cite{binius64} & 1.78 & 124 & 5.56 & 286 & -- \\
+    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.08} & \textbf{40.8} & \textbf{4.51} & \textbf{202} & \textbf{0.144} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 1.59 & 105 & 5.17 & 403 & 1.43 \\
+     & Binius64~\cite{binius64}, rate $1/8$ & 1.60 & 112 & 4.95 & 286 & 1.50 \\
     \addlinespace
-    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.16} & \textbf{70.1} & \textbf{4.48} & \textbf{228} & -- \\
-     & Binius64~\cite{binius64} & 3.53 & 228 & 10.6 & 308 & -- \\
+    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.15} & \textbf{66.1} & \textbf{4.96} & \textbf{228} & \textbf{0.245} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 3.15 & 182 & 9.96 & 435 & 2.71 \\
+     & Binius64~\cite{binius64}, rate $1/8$ & 3.16 & 205 & 9.32 & 308 & 2.89 \\
     \addlinespace
-    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.32} & \textbf{134} & \textbf{6.35} & \textbf{261} & -- \\
-     & Binius64~\cite{binius64} & 7.35 & 457 & 28.3 & 333 & -- \\
+    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.31} & \textbf{124} & \textbf{6.51} & \textbf{261} & \textbf{0.464} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 6.20 & 356 & 26.3 & 475 & 5.09 \\
+     & Binius64~\cite{binius64}, rate $1/8$ & 6.24 & 399 & 25.8 & 333 & 5.38 \\
     \addlinespace
-    $2^{18}$ & \ftwoz\ (this work) & 0.63 & 241 & 6.41 & 289 & -- \\
-     & Binius64~\cite{binius64} & -- & -- & -- & -- & -- \\
+    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.50} & \textbf{218} & \textbf{6.45} & \textbf{289} & \textbf{0.851} \\
+     & Binius64~\cite{binius64}, rate $1/2$ & 12.5 & 679 & 50.9 & 522 & 10.0 \\
+     & Binius64~\cite{binius64}, rate $1/8$ & 12.9 & 783 & 51.6 & 358 & 10.6 \\
     \addlinespace
-    $2^{19}$ & \ftwoz\ (this work) & 1.23 & 573 & 8.61 & 316 & -- \\
-     & Binius64~\cite{binius64} & -- & -- & -- & -- & -- \\
+    $2^{19}$ & \ftwoz\ (this work) & 0.99 & 513 & 8.70 & 316 & 1.61 \\
+     & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
+     & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
     \addlinespace
-    $2^{20}$ & \ftwoz\ (this work) & 2.31 & 1113 & 8.99 & 364 & -- \\
-     & Binius64~\cite{binius64} & -- & -- & -- & -- & -- \\
+    $2^{20}$ & \ftwoz\ (this work) & 2.03 & 1032 & 9.69 & 364 & 3.11 \\
+     & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
+     & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
     \addlinespace
-    $2^{21}$ & \ftwoz\ (this work) & 4.76 & 2617 & 14.1 & 391 & -- \\
-     & Binius64~\cite{binius64} & -- & -- & -- & -- & -- \\
+    $2^{21}$ & \ftwoz\ (this work) & 4.14 & 2478 & 14.6 & 391 & 6.04 \\
+     & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
+     & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
     \bottomrule
   \end{tabular}
-  \caption{Native end-to-end proofs of $N$ multiplications $x \cdot y = z$ of random $128$-bit integers ($z$ a $256$-bit integer): \ftwoz\ (Spartan over a transcript-sampled prime with the \ftwoz\ opening, $\lambda = 100$) and Binius64 (native multiplication, ring switching and BaseFold at rate $1/8$ with $121$ queries for $100$ bits). \emph{Witgen} is the native witness generation; \emph{prover} is the complete prover call after witness generation, commitment included; \emph{verifier} is the complete verification. Binius64 was not run at $2^{19}$, $2^{20}$, $2^{21}$. At $2^{18}$ the Binius64 prover exceeds the machine's memory and pages; that row is omitted. Apple M4, 16\,GB, $8$ threads; medians of 5 runs after one warm-up.}
+  \caption{Native end-to-end proofs of $N$ multiplications $x \cdot y = z$ of random $128$-bit integers ($z$ a $256$-bit integer): \ftwoz\ (Spartan over a transcript-sampled prime with the \ftwoz\ opening, $\lambda = 100$) and Binius64 (native multiplication, ring switching and BaseFold at rate $1/2$ with $241$ queries and rate $1/8$ with $121$ queries for $100$ bits). \emph{Witgen} is the native witness generation; \emph{prover} is the complete prover call after witness generation, commitment included; \emph{verifier} is the complete verification; \emph{peak mem.} is the high-water resident set of a separate child process proving and verifying once ($1$\,GB $= 2^{30}$ bytes). Binius64 at rate $1/2$ was not run at $2^{19}$, $2^{20}$, $2^{21}$. Binius64 at rate $1/8$ was not run at $2^{19}$, $2^{20}$, $2^{21}$. Apple M5, 24\,GB, $8$ threads; medians of 5 runs after one warm-up.}
   \label{tab:native-mul-u128}
 \end{table}
+
+The Binius64 rows missing from the tables above are due to memory rather than time. Binius64 proves a multiplication $x \cdot y = z$ through an exponentiation argument in the multiplicative group of a $128$-bit binary field \cite{binius64}: writing $z = z_{\mathrm{lo}} + 2^{64} z_{\mathrm{hi}}$, the statement becomes $(G^{x})^{y} = G^{z_{\mathrm{lo}}} \cdot (G^{2^{64}})^{z_{\mathrm{hi}}}$ for a generator $G$, and each exponentiation is certified by a GKR-style product check over a layered tree of field elements. The prover materializes all layers of these trees: the variable-base tree for $y$ alone has one $128$-bit leaf per bit of $y$ and per multiplication, and the fixed-base trees for $x$, $z_{\mathrm{lo}}$ and $z_{\mathrm{hi}}$ come on top, so that a single $64$-bit multiplication costs several kilobytes of prover memory before the witness is even committed. On our $24$\,GB machine the resident set of the Binius64 prover reaches $9.1$\,GB at $2^{20}$ $64$-bit multiplications and pages beyond; for $32$-bit operands, whose gadget adds range checks, it reaches $11.2$\,GB already at $2^{20}$, and for $128$-bit operands, where one multiplication becomes four such gates plus carry chains, $10.8$\,GB already at $2^{18}$. The \ftwoz\ prover commits one bit per witness bit and its memory is dominated by the lookup tables of \cref{s:gkr_low_entropy}, a few bytes per committed bit: $3.6$\,GB at $2^{21}$ $64$-bit multiplications, a size at which the Binius64 prover no longer fits in memory.
 
 
 \subsection{RSA accumulation and Poseidon hashing}
@@ -2845,19 +2869,19 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
     Scheme & \multicolumn{2}{c}{Prove (ms)} & \multicolumn{2}{c}{Verify (ms)} & Proof \\
      &   1 thr & 8 thr & 1 thr & 8 thr & (KB) \\
     \midrule
-    \ftwoz-SNARK  (this work)             &  \textbf{273}  & \textbf{105} & \textbf{9.9} & \textbf{12.0} & 269 \\
-    Zinc+ \cite{zincplus}    & 2052          & 563          & 18.2         & 12.7 & 1272 \\
-    Limber \cite{limber} (Brakedown)                 & 1175          & 559          & 44.2         & 43.3 & 5769 \\
-    Limber \cite{limber} (Hyrax)           & 1206          & 390          & 37.1         & 20.5 & \textbf{175} \\
+    \ftwoz-SNARK  (this work)             &  \textbf{243}  & \textbf{97} & \textbf{9.0} & \textbf{11.7} & 269 \\
+    Zinc+ \cite{zincplus}    & 1973          & 569          & 18.2         & 12.5 & 1272 \\
+    Limber \cite{limber} (Brakedown)                 & 1063          & 542          & 39.6         & 40.0 & 5769 \\
+    Limber \cite{limber} (Hyrax)           & 1116          & 368          & 34.1         & 20.3 & \textbf{175} \\
     \midrule
     Arkworks/Garuda$^{\dagger}$      & 231000        & --           & 25           & --   & 7.2 \\
     MultiSwap-xJsnark$^{\dagger}$     & 88500         & --           & 2            & --   & 0.2 \\
     \bottomrule
   \end{tabular}
-  \caption{Proving one MultiSwap \cite{multiswap} computation (four  exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation).  The first four schemes prove the same R1CS constraint over the integers, taken from \cite{limber}, and were run on a MacBook Air M4 on one and 8 threads (thr).  The two lower rows are a verbatim quote from
+  \caption{Proving one MultiSwap \cite{multiswap} computation (four  exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation).  The first four schemes prove the same R1CS constraint over the integers, taken from \cite{limber}, and were run on a MacBook Air M5 on one and 8 threads (thr).  The two lower rows are a verbatim quote from
   \cite[Table 1]{limber}. The first four schemes achieve $114$ bits of security 
   Zinc$+$ proof compresses to
-  $847$KB with \texttt{zstd}.
+  $841$KiB with \texttt{zstd}.
   %
   $^{\dagger}$ Quoted from \cite{limber}; not measured here.
   }

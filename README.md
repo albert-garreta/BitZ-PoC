@@ -118,7 +118,8 @@ bash scripts/run_native_mul_compare.sh
 *128-bit multiplication* (`x · y = z` for random 128-bit `x, y` and the exact
 256-bit `z`; the `u128` workload runs on BitZ and Binius64 only. BitZ runs to
 2^21 here; Binius64's bignum prover exceeds the machine's 16 GB from 2^18, so run
-it separately on 2^15–2^17):
+it separately on 2^15–2^17, once at its default rate 1/2 and once at rate 1/8
+with `F2Z_BINIUS_LOG_INV_RATE=3`, since the paper's tables list both):
 
 ```sh
 RAYON_NUM_THREADS=8 \
@@ -219,15 +220,15 @@ F2Z_BENCH_LAMBDA=114 F2Z_BENCH_SHAPES=0 F2Z_MULTISWAP_BATCH_COUNT=1 \
   cargo bench --bench multiswap --features unchecked
 ```
 
-Same box (Apple M4, 4P+6E cores, 16 GB), `-C target-cpu=native`, medians of 5, 1 thread / 8 rayon threads; prover time includes commitment, excludes witness generation (< 0.15 s everywhere). LaTeX table: `paper/multiswap-table.tex`.
+Same box (Apple M5, 4P+6E cores, 24 GB), `-C target-cpu=native`, medians of 5, 1 thread / 8 rayon threads; prover time includes commitment, excludes witness generation (< 0.15 s everywhere). LaTeX table: `paper/multiswap-table.tex`.
 
 | System (commit) | Prove 1 thr | Prove 8 thr | Verify 1 thr | Verify 8 thr | Proof |
 |---|---|---|---|---|---|
-| BitZ-SNARK (historical checkout), 114 bits | 273 ms | 105 ms | 9.9 ms | 12.0 ms | 269 KB |
-| Zinc+ main-beta (`878fbd8`), 16-bit limbs + range checks, 114 bits (14 grinding bits) | 2052 ms | 563 ms | 18.2 ms | 12.7 ms | 1272 KB (847 KiB zstd) |
-| Zinc+ main-beta (`878fbd8`), fat-cell mock, no range checks, 100 bits | 831 ms | 236 ms | 58.0 ms | 24.6 ms | 1415 KB |
-| Limber-Brakedown (`b003684`) | 1175 ms | 559 ms | 44.2 ms | 43.3 ms | 5769 KB |
-| Limber-Hyrax (`b003684`) | 1206 ms | 390 ms | 37.1 ms | 20.5 ms | 175 KB |
+| BitZ-SNARK (historical checkout), 114 bits | 243 ms | 97 ms | 9.0 ms | 11.7 ms | 269 KB |
+| Zinc+ main-beta (`878fbd8`), 16-bit limbs + range checks, 114 bits (14 grinding bits) | 1973 ms | 569 ms | 18.2 ms | 12.5 ms | 1272 KB (841 KiB zstd) |
+| Zinc+ main-beta (`878fbd8`), fat-cell mock, no range checks, 100 bits | 781 ms | 236 ms | 54.0 ms | 23.5 ms | 1415 KB |
+| Limber-Brakedown (`b003684`) | 1063 ms | 542 ms | 39.6 ms | 40.0 ms | 5769 KB |
+| Limber-Hyrax (`b003684`) | 1116 ms | 368 ms | 34.1 ms | 20.3 ms | 175 KB |
 
 Historical BitZ opener: Ligerito in the unique-decoding regime, rate 1/8, fold arity 4, fold grinding, validated at the 114-bit target (CLI profile `udrg:3:4:114`).
 
@@ -292,12 +293,17 @@ suffix only.
 
 `F2Z_SHA_OPENING_T=<t>` (compression-count shapes only) gives the opening
 an explicit F2Z split of `2^t` rows × `2^(vars − t)` columns. The default
-product layout pins `t = min(k, 13)` (rows = instances, columns = the 2^15
-local cells), so its read-off vector — the `2^s` ~125-bit integers sent in
-the clear — is 327 KB at 2^12–2^13 and doubles per step from 2^14 on. A
-larger `t` shrinks that vector but crosses the one-forest cap
-(`127 − t − 1 < q_bits`): the opening then runs one merged forest per
-weight chunk. `F2Z_SHA_OPENING_LAYOUT=inner` (the default) takes the
+opens the balanced `Id_{2^r} ⊗ M` block layout: `r` instance bits join the
+15 local bits on the row axis, so one row block covers `2^r` compressions
+and only the remaining `k − r` instance bits index columns. `r` is tuned so
+`t = 15 + r` lands on the instantiation's `t = ceil(0.6 · n)` balance point
+(clamped to `r ∈ [0, k]`). That keeps the read-off vector — the `2^s`
+~125-bit integers sent in the clear — at `2^(k−r)` integers instead of
+growing with the 2^15 local cells: the earlier `t = min(k, 13)` pin sent
+327 KB at 2^12–2^13 and doubled per step from 2^14 on. Crossing the
+one-forest cap (`127 − t − 1 < q_bits`) is the cost: the opening runs one
+merged forest per weight chunk, and the forests are the whole surcharge
+(2^14: 361 KB at 1.45 s, against 930 KB at 0.57 s for the old pin). `F2Z_SHA_OPENING_LAYOUT=inner` (the default) takes the
 inner-sumcheck path for the split; `=product` keeps the direct product
 opening and transposes the product tensor instead (instance-major: the 15
 local bits plus the low instance bits form the rows, the high instance bits

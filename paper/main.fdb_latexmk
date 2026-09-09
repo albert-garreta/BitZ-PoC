@@ -1,5 +1,5 @@
 # Fdb version 4
-["bibtex main"] 0 "main.aux" "main.bbl" "main" 1788897324.45993 0
+["bibtex main"] 0 "main.aux" "main.bbl" "main" 1788936859.2375 0
   "/usr/local/texlive/2026/texmf-dist/bibtex/bst/base/alpha.bst" 1292289607 23907 a5f93555796fb564b924339521f10a7c ""
   "main.aux" 0 -1 0 "pdflatex"
   "paper/references.bib" 0 -1 0 ""
@@ -7,10 +7,10 @@
   "main.bbl"
   "main.blg"
   (rewritten before read)
-["pdflatex"] 1788897322.33152 "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" "main.pdf" "main" 1788897324.46244 0
+["pdflatex"] 1788936857.50635 "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" "main.pdf" "main" 1788936859.23768 0
   "/Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm10.657pk" 1776501489.11392 7808 6a049d449f6ee1b878a120976685d109 ""
   "/Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm8.600pk" 1776501487.73383 5580 11384d216537db22ad7711221f99aacd ""
-  "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" 1788883802.76984 267689 b4199a50911ab8d221fb6fb9c9877350 ""
+  "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" 1788936855.1665 277343 a76ac284ac434f63bfa698c2bd774808 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-t1.enc" 1136849721 2971 def0b6c1f0b107b3b936def894055589 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc" 1136849721 2900 1537cc8184ad1792082cd229ecc269f4 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
@@ -25,6 +25,7 @@
   "/usr/local/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecbx1440.tfm" 1136768653 3584 13049b61b922a28b158a38aeff75ee9b ""
   "/usr/local/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecrm0500.tfm" 1136768653 3584 178baad7ffca7f5d3428a83bd7cc64c3 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecrm0600.tfm" 1136768653 3584 291a5713401683441e0a8c8f4417b17b ""
+  "/usr/local/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecrm0700.tfm" 1136768653 3584 cf973739aac7ab6247f9150296af7954 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecrm0800.tfm" 1136768653 3584 49064b465390a8e316a3c8417a050403 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecrm0900.tfm" 1136768653 3584 d3d8ac8b25ca19c0a40b86a5db1e8ccc ""
   "/usr/local/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecrm1000.tfm" 1136768653 3584 adb004a0c8e7c46ee66cad73671f37b4 ""
@@ -370,11 +371,11 @@
   "/usr/local/texlive/2026/texmf-var/web2c/pdftex/pdflatex.fmt" 1776500545 3636771 b0d19629fdc98bdfa4d378986b1cd147 ""
   "/usr/local/texlive/2026/texmf.cnf" 1774209515 577 648cd9f92f9c0eac486f4c71c85cfbbe ""
   "macros.tex" 1788695960.25982 52919 70c3fe6acd58dc40740b39a271f13e01 ""
-  "main.aux" 1788897323.96685 51207 ad32afd0c815d14ff6253e970110e99f "pdflatex"
+  "main.aux" 1788936858.93435 56186 01c7ab8223a20c87b72f9cae23029f3a "pdflatex"
   "main.bbl" 1788871490.59553 6909 f3e000dacc1785c18993bfe2b4f9dd84 "bibtex main"
-  "main.out" 1788897323.96971 8407 e30621d6d72a73c06eb49e890f2dd52d "pdflatex"
-  "main.tex" 1788883802.76984 267689 b4199a50911ab8d221fb6fb9c9877350 ""
-  "main.toc" 1788897323.97012 8477 5248d50025836b886c9f2ed69f02b5cd "pdflatex"
+  "main.out" 1788936858.93712 8407 e30621d6d72a73c06eb49e890f2dd52d "pdflatex"
+  "main.tex" 1788936855.1665 277343 a76ac284ac434f63bfa698c2bd774808 ""
+  "main.toc" 1788936858.93732 8477 0f8720c72a75bb476feb9a3a049e830f "pdflatex"
   "raw-performance-table.tex" 1788887284.377 10434 adfc8bab7542c38afc9091f22d0d39ac ""
   "u32-mul-table.tex" 1788879672.8766 8653 25ed9d7f4a838e6811cf570022e5fa22 ""
   (generated)

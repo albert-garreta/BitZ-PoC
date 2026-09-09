@@ -75,11 +75,11 @@
 \contentsline {paragraph}{Future work: lattice-type computations}{55}{paragraph*.58}%
 \contentsline {subsection}{\numberline {7.1}Raw performance of the {$\mathbb {B}\text {it}\mathbb {Z}$}\ PCS for the core LinBitsRings relation}{55}{subsection.7.1}%
 \contentsline {subsection}{\numberline {7.2}Integer multiplication}{56}{subsection.7.2}%
-\contentsline {subsection}{\numberline {7.3}RSA accumulation and Poseidon hashing}{57}{subsection.7.3}%
-\contentsline {subsection}{\numberline {7.4}SHA-256 hashing followed by ECDSA signature verification}{58}{subsection.7.4}%
-\contentsline {subsection}{\numberline {7.5}Mod $2^{32}$ multiplication and SHA-256 hashing}{59}{subsection.7.5}%
-\contentsline {section}{References}{59}{subsection.7.5}%
-\contentsline {section}{\numberline {A}Deferred proofs}{61}{appendix.A}%
-\contentsline {subsection}{\numberline {A.1}Completeness and soundness of \cref {c:LinModFieldBin}}{61}{subsection.A.1}%
-\contentsline {subsection}{\numberline {A.2}Soundness of Out Of Domain Sampling (OOD) in \cref {c:core_iop}}{62}{subsection.A.2}%
-\contentsline {section}{\numberline {B}Ring switching via Galois orbits}{63}{appendix.B}%
+\contentsline {subsection}{\numberline {7.3}RSA accumulation and Poseidon hashing}{60}{subsection.7.3}%
+\contentsline {subsection}{\numberline {7.4}SHA-256 hashing followed by ECDSA signature verification}{60}{subsection.7.4}%
+\contentsline {subsection}{\numberline {7.5}Mod $2^{32}$ multiplication and SHA-256 hashing}{61}{subsection.7.5}%
+\contentsline {section}{References}{61}{subsection.7.5}%
+\contentsline {section}{\numberline {A}Deferred proofs}{63}{appendix.A}%
+\contentsline {subsection}{\numberline {A.1}Completeness and soundness of \cref {c:LinModFieldBin}}{63}{subsection.A.1}%
+\contentsline {subsection}{\numberline {A.2}Soundness of Out Of Domain Sampling (OOD) in \cref {c:core_iop}}{65}{subsection.A.2}%
+\contentsline {section}{\numberline {B}Ring switching via Galois orbits}{66}{appendix.B}%
