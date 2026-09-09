@@ -1,0 +1,48 @@
+% Hybrid u32-multiplication + chained SHA-256 comparison (BitZ hybrid vs all-Binius64) — hand-written from
+% benches/hybrid_u32_sha256 medians; see docs/hybrid-u32-sha256-rates.md.
+% Runs (git-ignored PerfRuns/): BitZ = 2026-09-09T14-08-27Z-hybrid-johnson-ood (protocol v3: Johnson-regime
+%   Ligerito at rate 1/8 with Round 0, 106-bit opener component, 100-bit end-to-end gate);
+%   Binius = 2026-09-09T13-51-09Z-hybrid-fri-bits/all-binius-r3-bits100 (rate 1/8, 100-bit FRI query target, 121 queries).
+% Machine: Apple M5, 24 GB, 8 threads; medians of 11 verified iterations, one process per case.
+% Columns: prover = total_prover_ms (witness synthesis, both commitments, PIOPs, opening and proof encoding; setup excluded);
+%   verifier = verify_ms (decoding included); proof = proof_bytes, KB = 1000 bytes; peak mem. = external RSS sample of the
+%   child process, GB = 2^30 bytes. Bold = best of the two schemes for that size and column.
+% Raw medians:
+%   2^15:2^7   bitz    prover=50.1   verify=3.29   proof_bytes=109952 peak_mib=274   bits=101.83
+%   2^15:2^7   binius  prover=50.5   verify=2.59   proof_bytes=245104 peak_mib=681
+%   2^17:2^9   bitz    prover=101.3  verify=4.91   proof_bytes=134848 peak_mib=922   bits=101.62
+%   2^17:2^9   binius  prover=128.3  verify=7.37   proof_bytes=286128 peak_mib=2429
+%   2^19:2^11  bitz    prover=302.7  verify=10.79  proof_bytes=164760 peak_mib=3084  bits=101.36
+%   2^19:2^11  binius  prover=449.5  verify=34.19  proof_bytes=333344 peak_mib=9583
+%   2^20:2^12  bitz    prover=516.7  verify=17.14  proof_bytes=182440 peak_mib=5894  bits=101.34
+%   2^20:2^12  binius  prover=902.2  verify=72.32  proof_bytes=357840 peak_mib=17107
+%   2^21:2^13  bitz    prover=1137.5 verify=32.08  proof_bytes=195232 peak_mib=12201 bits=101.31
+%   2^21:2^13  binius  prover=4792.8 verify=917.99 proof_bytes=386240 peak_mib=18865 (paged: 85,420 swapouts)
+
+\begin{table}[H]
+  \centering
+  \small
+  \setlength{\tabcolsep}{4.5pt}
+  \begin{tabular}{@{}rrlrrrr@{}}
+    \toprule
+    $N$ & $M$ & Scheme & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
+    \midrule
+    $2^{15}$ & $2^{7}$ & \ftwoz\ (this work) & \textbf{50.1} & 3.29 & \textbf{110} & \textbf{0.268} \\
+     & & Binius~\cite{binius64}, rate $1/8$ & 50.5 & \textbf{2.59} & 245 & 0.665 \\
+    \addlinespace
+    $2^{17}$ & $2^{9}$ & \ftwoz\ (this work) & \textbf{101} & \textbf{4.91} & \textbf{135} & \textbf{0.900} \\
+     & & Binius~\cite{binius64}, rate $1/8$ & 128 & 7.37 & 286 & 2.37 \\
+    \addlinespace
+    $2^{19}$ & $2^{11}$ & \ftwoz\ (this work) & \textbf{303} & \textbf{10.8} & \textbf{165} & \textbf{3.01} \\
+     & & Binius~\cite{binius64}, rate $1/8$ & 450 & 34.2 & 333 & 9.36 \\
+    \addlinespace
+    $2^{20}$ & $2^{12}$ & \ftwoz\ (this work) & \textbf{517} & \textbf{17.1} & \textbf{182} & \textbf{5.76} \\
+     & & Binius~\cite{binius64}, rate $1/8$ & 902 & 72.3 & 358 & 16.7 \\
+    \addlinespace
+    $2^{21}$ & $2^{13}$ & \ftwoz\ (this work) & \textbf{1138} & \textbf{32.1} & \textbf{195} & \textbf{11.9} \\
+     & & Binius~\cite{binius64}, rate $1/8$ & 4793$^{\dagger}$ & 918$^{\dagger}$ & 386 & 18.4$^{\dagger}$ \\
+    \bottomrule
+  \end{tabular}
+  \caption{End-to-end proofs of $N$ multiplications $x \cdot y = z + 2^{32} w$ of $32$-bit integers together with $M = N/256$ chained SHA-256 compressions (equal packed witnesses for the two branches). \ftwoz\ proves the multiplications with Spartan over a transcript-sampled prime and the SHA-256 chain with the Binius64 PIOP, and discharges both through one shared \ftwoz\ opening (Johnson-regime Ligerito at rate $1/8$ with the out-of-domain Round~0); its whole-protocol union bound is gated at $\lambda = 100$ and evaluates to $101.3$--$101.8$ bits at these sizes. Binius64 proves the same SHA-256 chain and a native four-limb multiplication gadget in one proof with ring switching and FRI at rate $1/8$ and a $100$-bit query-phase target ($121$ queries); Binius64 computes no whole-protocol bound. \emph{Prover} includes witness synthesis and the commitments; \emph{verifier} includes decoding; \emph{peak mem.} is the high-water resident set of the proving process ($1$\,GB $= 2^{30}$ bytes). $^{\dagger}$Binius64 paged at $N = 2^{21}$ ($85{,}420$ swap-outs), so that row's timings are inflated; the proof size is unaffected. Apple M5, 24\,GB, $8$ threads; medians of $11$ verified runs.}
+  \label{tab:hybrid-sha256-mul}
+\end{table}
