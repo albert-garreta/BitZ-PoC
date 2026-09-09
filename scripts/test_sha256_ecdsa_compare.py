@@ -22,8 +22,11 @@ class CampaignTests(unittest.TestCase):
 
     def test_f2z_is_not_duplicated_per_chunking(self):
         cases = list(campaign.cases([(0, 3), (1, 2), (3, 0)], campaign.METHODS, [100, 128], [1], [0]))
-        self.assertEqual(len(cases), 7)
+        self.assertEqual(len(cases), 8)
         self.assertEqual(sum(c["method"] == "spartan-mc" for c in cases), 3)
+        honk = [c for c in cases if c["method"] == "zkpassport-honk"]
+        self.assertEqual(len(honk), 1)
+        self.assertIsNone(honk[0]["security_target"])
         self.assertTrue(all(c["security_target"] is None for c in cases if c["method"] == "spartan-mc"))
 
     def test_validation_requires_complete_verified_matched_samples(self):
@@ -37,6 +40,35 @@ class CampaignTests(unittest.TestCase):
             rows[1][key] = value
             self.assertFalse(campaign.validate_rows(rows, self.case, 1), key)
         self.assertFalse(campaign.validate_rows(self.rows[:1], self.case, 1))
+
+    def test_honk_requires_non_zk_and_keeps_unavailable_phases_null(self):
+        case = dict(self.case, method="zkpassport-honk", security_target=None)
+        rows = copy.deepcopy(self.rows)
+        for row in rows:
+            row.update(case, zk=False, barretenberg_version="5.0.0", zkpassport_revision="c"*40,
+                       spartan_revision=None, witness_ms=2, prove_ms=3, witness_to_proof_ms=5)
+            for key in ["commit_ms", "protocol_ms", "outer_ms", "inner_ms", "opening_ms", "folding_ms"]:
+                row[key] = None
+        self.assertTrue(campaign.validate_rows(rows, case, 1))
+        self.assertIsNone(campaign.sample_metrics(rows[0])["piop_ms"])
+        self.assertIsNone(campaign.sample_metrics(rows[0])["iop_ms"])
+        for key, value in [("zk", True), ("barretenberg_version", "4.0.0"),
+                           ("zkpassport_revision", None), ("witness_to_proof_ms", 3), ("prove_ms", None)]:
+            bad = copy.deepcopy(rows)
+            bad[1][key] = value
+            self.assertFalse(campaign.validate_rows(bad, case, 1), key)
+
+    def test_resume_allows_failed_compilation_to_succeed_but_rejects_changed_inputs(self):
+        old = dict(source_hash="source", binary_sha256="binary",
+                   artifacts={"3": "abc", "4": "preparation_failed"})
+        new = copy.deepcopy(old)
+        new["artifacts"]["4"] = "def"
+        self.assertTrue(campaign.compatible_zkpassport(old, new))
+        for key, value in [("source_hash", "changed"), ("binary_sha256", "changed"),
+                           ("artifacts", {"3": "changed", "4": "def"})]:
+            bad = dict(new, **{key: value})
+            self.assertFalse(campaign.compatible_zkpassport(old, bad))
+        self.assertFalse(campaign.compatible_zkpassport(None, new))
 
     def test_summary_detects_cross_method_fixture_mismatch_and_retains_failure(self):
         with tempfile.TemporaryDirectory() as path:

@@ -1,13 +1,15 @@
 //! One method/configuration per process; fixture construction is outside timers.
+#[path = "support/sha256_ecdsa_fixture.rs"]
+mod shared_fixture;
 use bincode::Options;
 use f2z::{piop::spartan::ecdsa_sha256::*, transcript::Blake3Transcript, utils::prof};
 use flock_core::pcs::commit::Commitment;
 use p256::ecdsa::{
-    Signature, SigningKey,
     signature::{Signer, Verifier},
+    Signature, SigningKey,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::{error::Error, time::Instant};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -20,6 +22,8 @@ struct Args {
     threads: usize,
     reps: usize,
     seed: u64,
+    fixture: Option<std::path::PathBuf>,
+    export_fixture: Option<std::path::PathBuf>,
 }
 
 impl Args {
@@ -27,13 +31,14 @@ impl Args {
         let mut args = std::env::args().skip(1);
         let (mut method, mut r, mut c) = (None, None, None);
         let (mut target, mut threads, mut reps, mut seed) = (100, 1, 3, 0);
+        let (mut fixture, mut export_fixture) = (None, None);
         while let Some(flag) = args.next() {
             if flag == "--bench" {
                 continue;
             }
             if flag == "--help" {
                 println!(
-                    "sha256_ecdsa_compare --method f2z-split|f2z-all|spartan-mc --r R --c C [--target 100|128] [--threads N] [--reps N] [--seed N]"
+                    "sha256_ecdsa_compare --method f2z-split|f2z-all|spartan-mc --r R --c C [--target 100|128] [--threads N] [--reps N] [--seed N] [--fixture FILE] [--export-fixture FILE]"
                 );
                 std::process::exit(0);
             }
@@ -48,6 +53,8 @@ impl Args {
                 "--threads" => threads = value.parse()?,
                 "--reps" => reps = value.parse()?,
                 "--seed" => seed = value.parse()?,
+                "--fixture" => fixture = Some(value.into()),
+                "--export-fixture" => export_fixture = Some(value.into()),
                 _ => return Err(format!("unknown option {flag}").into()),
             }
         }
@@ -59,6 +66,8 @@ impl Args {
             threads,
             reps,
             seed,
+            fixture,
+            export_fixture,
         };
         let i = out.r.checked_add(out.c).ok_or("exponent overflow")?;
         if !(3..=16).contains(&i) || ![100, 128].contains(&target) || threads == 0 || reps == 0 {
@@ -78,9 +87,28 @@ struct Fixture {
     message: Vec<u8>,
     statement: Sha256EcdsaStatement,
     id: String,
+    shared: Option<shared_fixture::SignedFixture>,
 }
 
 fn fixture(args: &Args) -> Result<Fixture> {
+    if let Some(path) = &args.fixture {
+        let f = shared_fixture::SignedFixture::read(path)?;
+        if f.log_compressions as usize != args.exponent() || f.seed != args.seed {
+            return Err("fixture configuration mismatch".into());
+        }
+        return Ok(Fixture {
+            message: f.message.clone(),
+            statement: Sha256EcdsaStatement {
+                log_compressions: f.log_compressions,
+                qx: f.qx,
+                qy: f.qy,
+                r: f.r,
+                s: f.s,
+            },
+            id: f.id.clone(),
+            shared: Some(f),
+        });
+    }
     let mut h = blake3::Hasher::new();
     h.update(b"sha256-ecdsa-compare/fixture/v1");
     h.update(&args.seed.to_le_bytes());
@@ -111,6 +139,7 @@ fn fixture(args: &Args) -> Result<Fixture> {
         message,
         statement,
         id: h.finalize().to_hex().to_string(),
+        shared: None,
     })
 }
 
@@ -207,6 +236,9 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
         let decoded_proof = Sha256EcdsaProof::from_bytes(&decoded.proof)?;
         let codec_ms = codec.elapsed().as_secs_f64() * 1000.;
         let (_, verify_ms) = timed(|| {
+            if let Some(f) = &fixture.shared {
+                f.validate_statement()?;
+            }
             verify_sha256_ecdsa(
                 &mut Blake3Transcript::new(),
                 &prepared,
@@ -214,6 +246,7 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
                 &decoded.commitment,
                 &decoded_proof,
             )
+            .map_err(|e| -> Box<dyn Error> { e.into() })
         })?;
         let phase = |name: &str| {
             phases
@@ -263,7 +296,13 @@ fn spartan(args: &Args, fixture: &Fixture) -> Result<()> {
         let bytes = proof.to_bytes()?;
         let decoded = Proof::from_bytes(&bytes)?;
         let codec_ms = codec.elapsed().as_secs_f64() * 1000.;
-        let (_, verify_ms) = timed(|| prepared.verify(&statement, &decoded))?;
+        let (_, verify_ms) = timed(|| -> Result<()> {
+            if let Some(f) = &fixture.shared {
+                f.validate_statement()?;
+            }
+            prepared.verify(&statement, &decoded)?;
+            Ok(())
+        })?;
         emit(
             args,
             fixture,
@@ -286,6 +325,10 @@ fn spartan(args: &Args, fixture: &Fixture) -> Result<()> {
 
 fn main() -> Result<()> {
     let args = Args::parse()?;
+    if let Some(path) = &args.export_fixture {
+        return shared_fixture::SignedFixture::generate(args.exponent() as u8, args.seed)?
+            .write(path);
+    }
     rayon::ThreadPoolBuilder::new()
         .num_threads(args.threads)
         .build_global()?;

@@ -13,6 +13,12 @@ revision from GitHub; it is also available in this machine's Cargo cache.
 The [current measurements](sha256-ecdsa-shared-kernels-results.md) cover every
 exponent 4 through 11, both thread counts, and both Spartan chunking policies.
 
+The optional [native ZKPassport/UltraHonk runner](../benchmarks/zkpassport/README.md)
+adds a non-ZK Noir baseline with shared low-s fixtures. Select
+`--methods f2z-split zkpassport-honk`; that campaign has its own default full
+`i=3..16` sweep and one/sixteen-thread settings. Its native API exposes aggregate
+proving time, so unavailable internal phases remain null.
+
 ## Run the comparison
 
 A small campaign builds the release benchmark, runs fresh worker processes,
