@@ -1,6 +1,8 @@
 //! Native end-to-end multiplication proofs. See docs/native-mul-compare.md.
 #[path = "mul_e2e_compare/binius.rs"]
 mod binius;
+#[path = "mul_e2e_compare/binius_ligerito.rs"]
+mod binius_ligerito;
 mod common;
 #[path = "mul_e2e_compare/f2z.rs"]
 mod f2z_backend;
@@ -74,8 +76,13 @@ impl Workload {
     /// Backends with a native arithmetization of this workload.
     fn supports(self, backend: &str) -> bool {
         match self {
-            Self::U32 => matches!(backend, "f2z" | "binius64" | "plonky3-fri" | "plonky3-whir"),
-            Self::U64 | Self::U128 => matches!(backend, "f2z" | "binius64"),
+            Self::U32 => matches!(
+                backend,
+                "f2z" | "binius64" | "binius64-ligerito" | "plonky3-fri" | "plonky3-whir"
+            ),
+            Self::U64 | Self::U128 => {
+                matches!(backend, "f2z" | "binius64" | "binius64-ligerito")
+            }
         }
     }
     /// Whether the operands are 128-bit values (the `u128` workload) rather
@@ -333,6 +340,7 @@ fn captured<'a>(raw: &'a [CapturedSpan], name: &str, lo: u64, hi: u64) -> &'a Ca
 enum Context {
     F2z(f2z_backend::Context),
     Binius(binius::Context),
+    BiniusLigerito(binius_ligerito::Context),
     Plonky3Fri(plonky3::Context),
     Plonky3Whir(plonky3_whir::Context),
 }
@@ -341,6 +349,9 @@ impl Context {
         match backend {
             "f2z" => Self::F2z(f2z_backend::Context::setup(corpus)),
             "binius64" => Self::Binius(binius::Context::setup(corpus)),
+            "binius64-ligerito" => {
+                Self::BiniusLigerito(binius_ligerito::Context::setup(corpus))
+            }
             "plonky3-fri" => Self::Plonky3Fri(plonky3::Context::setup(corpus)),
             _ => panic!("unknown backend {backend}"),
         }
@@ -366,6 +377,7 @@ impl Context {
         match self {
             Self::F2z(c) => c.run(),
             Self::Binius(c) => c.run(capture),
+            Self::BiniusLigerito(c) => c.run(capture),
             Self::Plonky3Fri(c) => c.run(capture),
             Self::Plonky3Whir(c) => c.run(capture),
         }
@@ -374,6 +386,7 @@ impl Context {
         match self {
             Self::F2z(c) => c.config(),
             Self::Binius(c) => c.config(),
+            Self::BiniusLigerito(c) => c.config(),
             Self::Plonky3Fri(c) => c.config(),
             Self::Plonky3Whir(c) => c.config(),
         }
@@ -452,8 +465,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let backends = choices(
         "F2Z_MUL_COMPARE_BACKENDS",
-        "f2z binius64 plonky3-fri",
-        &["f2z", "binius64", "plonky3-fri", "plonky3-whir"],
+        "f2z binius64 binius64-ligerito plonky3-fri",
+        &[
+            "f2z",
+            "binius64",
+            "binius64-ligerito",
+            "plonky3-fri",
+            "plonky3-whir",
+        ],
     );
     check_backend_support(&workloads, &backends);
     let shapes = common::shapes(None).unwrap_or_else(|| vec!["15".into()]);
@@ -592,6 +611,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "f2z" =>
                         "commitment root + fixed-width PIOP payload/nonces + canonical F2Z opening",
                     "binius64" => "native transcript bytes (includes commitment)",
+                    "binius64-ligerito" =>
+                        "PIOP messages + oracle roots/Round 0 + canonical F2Z openings (includes commitment)",
                     "plonky3-fri" | "plonky3-whir" => "postcard proof bytes (includes commitment)",
                     _ => unreachable!(),
                 });
@@ -908,7 +929,8 @@ impl WitnessAudit {
 fn audit_backend(backend: &str, corpus: &Corpus) -> WitnessAudit {
     match backend {
         "f2z" => f2z_backend::audit(corpus),
-        "binius64" => binius::audit(corpus),
+        // The same Binius64 circuit and witness filler; only the opener differs.
+        "binius64" | "binius64-ligerito" => binius::audit(corpus),
         "plonky3-fri" | "plonky3-whir" => mod32_air::audit(corpus),
         _ => unreachable!(),
     }
@@ -925,8 +947,14 @@ pub(crate) fn witness_main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let backends = choices(
         "F2Z_MUL_COMPARE_BACKENDS",
-        "f2z binius64 plonky3-fri",
-        &["f2z", "binius64", "plonky3-fri", "plonky3-whir"],
+        "f2z binius64 binius64-ligerito plonky3-fri",
+        &[
+            "f2z",
+            "binius64",
+            "binius64-ligerito",
+            "plonky3-fri",
+            "plonky3-whir",
+        ],
     );
     check_backend_support(&workloads, &backends);
     let shapes = common::shapes(None).unwrap_or_else(|| vec!["10".into()]);
@@ -1024,7 +1052,13 @@ mod witness_tests {
     fn all_native_witnesses_recover_the_same_assignment() {
         for workload in [Workload::U32, Workload::U64, Workload::U128] {
             let corpus = edge_corpus(workload);
-            for backend in ["f2z", "binius64", "plonky3-fri", "plonky3-whir"] {
+            for backend in [
+                "f2z",
+                "binius64",
+                "binius64-ligerito",
+                "plonky3-fri",
+                "plonky3-whir",
+            ] {
                 if !workload.supports(backend) {
                     continue;
                 }

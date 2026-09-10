@@ -8,6 +8,7 @@ use binius_prover::{OptimalPackedB128, Prover};
 use binius_transcript::{ProverTranscript, VerifierTranscript, fiat_shamir::HasherChallenger};
 use binius_verifier::Verifier;
 use f2z::{
+    binius_ligerito::Prepared as BiniusLigerito,
     hybrid::{
         CompositionProfile, LIGERITO_COMPONENT_BITS, Parameters, PreparedHybrid, chaining_value,
     },
@@ -34,17 +35,28 @@ fn select_ligerito(cli: Option<&str>, target: usize) -> Result<f2z::ligerito_flo
     }
 }
 
+/// How the native Binius64 circuit is proved: Binius64's own ring switch +
+/// BaseFold/FRI, or its PIOP prefix with every oracle committed and opened by
+/// the F2Z opener (rate 1/8, Johnson regime, grinding, Round 0; whole-protocol
+/// union bound gated at 100 bits).
+enum NativeBackend {
+    Binius {
+        prover: Prover<OptimalPackedB128, Blake3HashSuite>,
+        verifier: Verifier<Blake3HashSuite>,
+    },
+    Ligerito(BiniusLigerito),
+}
+
 struct Native {
     circuit: Circuit,
     blocks: Vec<[Wire; 16]>,
     output: [Wire; 8],
     multiplications: Vec<[Wire; 4]>,
-    prover: Prover<OptimalPackedB128, Blake3HashSuite>,
-    verifier: Verifier<Blake3HashSuite>,
+    backend: NativeBackend,
 }
 
 impl Native {
-    fn new(multiplications: usize, compressions: usize) -> Result<Self, AnyError> {
+    fn new(multiplications: usize, compressions: usize, ligerito: bool) -> Result<Self, AnyError> {
         let builder = CircuitBuilder::new();
         let multiplications = (0..multiplications)
             .map(|_| f2z::hybrid::mod32_binius::add_u32_mul_mod32(&builder))
@@ -66,21 +78,25 @@ impl Native {
             );
         }
         let circuit = builder.build();
-        // 112 bits for the FRI component leaves slack for the binary PIOPs
-        // and the second proof in the separate mode. No default 96-bit preset.
-        let verifier = Verifier::<Blake3HashSuite>::setup_with_security_bits(
-            circuit.constraint_system().clone(),
-            binius_log_inv_rate(),
-            binius_security_bits(),
-        )?;
-        let prover = Prover::setup(verifier.clone())?;
+        let backend = if ligerito {
+            NativeBackend::Ligerito(BiniusLigerito::new(circuit.constraint_system())?)
+        } else {
+            // 112 bits for the FRI component leaves slack for the binary PIOPs
+            // and the second proof in the separate mode. No default 96-bit preset.
+            let verifier = Verifier::<Blake3HashSuite>::setup_with_security_bits(
+                circuit.constraint_system().clone(),
+                binius_log_inv_rate(),
+                binius_security_bits(),
+            )?;
+            let prover = Prover::setup(verifier.clone())?;
+            NativeBackend::Binius { prover, verifier }
+        };
         Ok(Self {
             circuit,
             blocks,
             output,
             multiplications,
-            prover,
-            verifier,
+            backend,
         })
     }
     fn populate(
@@ -109,15 +125,83 @@ impl Native {
         Ok(filler.into_value_vec())
     }
     fn prove(&self, witness: &ValueVec) -> Result<Vec<u8>, AnyError> {
-        let mut t = ProverTranscript::new(Challenger::default());
-        self.prover.prove(witness, &mut t)?;
-        Ok(t.finalize())
+        match &self.backend {
+            NativeBackend::Binius { prover, .. } => {
+                let mut t = ProverTranscript::new(Challenger::default());
+                prover.prove(witness, &mut t)?;
+                Ok(t.finalize())
+            }
+            NativeBackend::Ligerito(prepared) => {
+                let (proof, _) = prepared.prove(witness)?;
+                Ok(proof.to_bytes())
+            }
+        }
     }
     fn verify(&self, witness: &ValueVec, bytes: Vec<u8>) -> Result<(), AnyError> {
-        let mut t = VerifierTranscript::new(Challenger::default(), bytes);
-        self.verifier.verify(witness.inout(), &mut t)?;
-        t.finalize()?;
-        Ok(())
+        match &self.backend {
+            NativeBackend::Binius { verifier, .. } => {
+                let mut t = VerifierTranscript::new(Challenger::default(), bytes);
+                verifier.verify(witness.inout(), &mut t)?;
+                t.finalize()?;
+                Ok(())
+            }
+            NativeBackend::Ligerito(prepared) => {
+                let decoded = prepared.proof_from_bytes(&bytes)?;
+                prepared.verify(witness.inout(), &decoded)?;
+                Ok(())
+            }
+        }
+    }
+    fn setup_line(&self) -> String {
+        match &self.backend {
+            NativeBackend::Binius { .. } => format!(
+                "binius_fri_component_bits={} binius_log_inv_rate={}",
+                binius_security_bits(),
+                binius_log_inv_rate()
+            ),
+            NativeBackend::Ligerito(prepared) => {
+                let security = prepared.security();
+                let witness = prepared.opener(0);
+                // Per oracle, per level: (fold-challenge grinding bits, query
+                // grinding bits, queries) — the proof-of-work the opener pays.
+                let ladders: Vec<String> = (0..prepared.oracle_specs().len())
+                    .map(|i| {
+                        let levels: Vec<String> = prepared
+                            .opener(i)
+                            .config()
+                            .levels
+                            .iter()
+                            .map(|l| {
+                                format!(
+                                    "(k={},fold_grind={},query_grind={},queries={})",
+                                    l.k_recursive, l.fold_grinding_bits, l.grinding_bits, l.queries
+                                )
+                            })
+                            .collect();
+                        format!("oracle{i}[{}]", levels.join(","))
+                    })
+                    .collect();
+                format!(
+                    "ligerito_component_bits={} algebraic_security_bits={:.3} level0_queries={} level0_fold_grinding_bits={} ood_grinding_bits={} log_inv_rate={} oracle_logs={:?} binding_term={} ladders={}",
+                    prepared.component_bits(),
+                    security.algebraic_bits,
+                    witness.level0_queries(),
+                    witness.level0_fold_grinding_bits(),
+                    witness.ood_grinding_bits(),
+                    f2z::binary_pcs::LOG_INV_RATE,
+                    prepared
+                        .oracle_specs()
+                        .iter()
+                        .map(|s| s.log_msg_len)
+                        .collect::<Vec<_>>(),
+                    security
+                        .binding_term()
+                        .map(|t| format!("{}:{:.2}", t.name, -t.error_bound.log2()))
+                        .unwrap_or_default(),
+                    ladders.join(" ")
+                )
+            }
+        }
     }
 }
 
@@ -180,7 +264,7 @@ pub fn run() -> Result<(), AnyError> {
         }
         if arg == "--help" {
             println!(
-                "hybrid-u32-sha256 [--mode hybrid|separate|all-binius] [--mul-log 15..22] [--sha-log 1..16] [--iterations N] [--output PROOF]\nhybrid-u32-sha256 --verify PROOF\nhybrid-u32-sha256 --sweep [--shapes MUL_LOG:SHA_LOG,...] [--mode hybrid|separate|all-binius|all] [--iterations N] [--results-dir DIR]\nSingle-run defaults: 2^20 products, 2^16 chained compressions, 5 measured iterations after one warmup.\nSweep defaults: equal packed witnesses (15:7,16:8,17:9,18:10,19:11,20:12), hybrid mode, 5 measured iterations after one warmup.\nSweeps save per-run CSV/logs and summary.csv in a new directory under benches/results/hybrid-u32-sha256/. --results-dir must not already exist.\nNon-ZK, 100-bit composition target. Set RAYON_NUM_THREADS to control threads. --output is for single hybrid proofs."
+                "hybrid-u32-sha256 [--mode hybrid|separate|all-binius|binius-ligerito] [--mul-log 15..22] [--sha-log 1..16] [--iterations N] [--output PROOF]\nhybrid-u32-sha256 --verify PROOF\nhybrid-u32-sha256 --sweep [--shapes MUL_LOG:SHA_LOG,...] [--mode hybrid|separate|all-binius|binius-ligerito|all] [--iterations N] [--results-dir DIR]\nSingle-run defaults: 2^20 products, 2^16 chained compressions, 5 measured iterations after one warmup.\nSweep defaults: equal packed witnesses (15:7,16:8,17:9,18:10,19:11,20:12), hybrid mode, 5 measured iterations after one warmup.\nSweeps save per-run CSV/logs and summary.csv in a new directory under benches/results/hybrid-u32-sha256/. --results-dir must not already exist.\nbinius-ligerito proves the all-Binius circuit with Binius64's PIOP and the F2Z opener (rate 1/8, Johnson regime, grinding, Round 0; 100-bit union bound).\nNon-ZK, 100-bit composition target. Set RAYON_NUM_THREADS to control threads. --output is for single hybrid proofs."
             );
             return Ok(());
         }
@@ -234,7 +318,7 @@ pub fn run() -> Result<(), AnyError> {
         return Err("--shapes and --results-dir require --sweep".into());
     }
     let iterations = iterations.unwrap_or(5);
-    if !["hybrid", "separate", "all-binius"].contains(&mode.as_str()) {
+    if !["hybrid", "separate", "all-binius", "binius-ligerito"].contains(&mode.as_str()) {
         return Err("invalid --mode".into());
     }
     if output.is_some() && mode != "hybrid" {
@@ -375,12 +459,9 @@ pub fn run() -> Result<(), AnyError> {
         }
     } else {
         let native = Native::new(
-            if mode == "all-binius" {
-                inputs.len()
-            } else {
-                0
-            },
+            if mode == "separate" { 0 } else { inputs.len() },
             blocks.len(),
+            mode == "binius-ligerito",
         )?;
         let separate = if mode == "separate" {
             Some(PreparedU32MulRelation::new_with_profile_and_ligerito::<
@@ -394,11 +475,7 @@ pub fn run() -> Result<(), AnyError> {
             eprintln!("LIGERITO_CONFIG {}", p.ligerito_configuration().report(&request, p.security().ood));
         }
         let setup_ms = millis(setup);
-        eprintln!(
-            "setup_ms={setup_ms:.3} binius_fri_component_bits={} binius_log_inv_rate={}",
-            binius_security_bits(),
-            binius_log_inv_rate()
-        );
+        eprintln!("setup_ms={setup_ms:.3} {}", native.setup_line());
         let size_column = if mode == "separate" {
             "proof_payload_bytes_estimate"
         } else {
@@ -412,7 +489,7 @@ pub fn run() -> Result<(), AnyError> {
                 .map(|&(x, y)| f2z::hybrid::U32MulMod32Row::new(x, y))
                 .collect();
             let witness =
-                native.populate(if mode == "all-binius" { &rows } else { &[] }, &blocks)?;
+                native.populate(if mode == "separate" { &[] } else { &rows }, &blocks)?;
             // Native witness generation: row construction plus the circuit's
             // own witness filling, before any proving work.
             let witness_ms = millis(start);

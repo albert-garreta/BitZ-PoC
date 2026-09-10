@@ -14,12 +14,29 @@ independent Brakedown `examples/int_mult.rs` on your fork's `f2z-benching`
 branch. Set `LIMBER_REPO` to use another checkout. The upstream chain/Hyrax
 example is a different workload and the runner rejects its output.
 
+`binius64-ligerito` is Binius64's own circuit and PIOP (the same wires and
+constraint reductions as `binius64`, including the IntMul reduction's logup*
+pushforward oracle) with every oracle committed and opened by F2Z's opener
+instead of ring switching + BaseFold: rate 1/8, Round 0 (the out-of-domain
+sample) right after each commitment, ring switching, and a Johnson-regime
+Ligerito opening with fold and query grinding. Its security column is a
+whole-protocol union bound gated at 100 bits (the same yardstick as the `f2z`
+row), with the opener's round-by-round target solved to the smallest value
+that clears the gate; the `binius64` row's 100 bits is Binius64's query-phase
+target only. The rate is fixed at 1/8 (`F2Z_BINIUS_LOG_INV_RATE` does not
+apply). See `src/binius_ligerito/` and `src/binary_pcs.rs`.
+
 ```sh
 # Four-backend smoke: L=15, one warmup, five measured proofs, isolated RSS.
 bash scripts/run_native_mul_compare.sh
 
 # Five-sample sweep over L=15..20.
 F2Z_BENCH_SHAPES="15 16 17 18 19 20" F2Z_BENCH_REPS=5 \
+bash scripts/run_native_mul_compare.sh
+
+# Only the two Binius64 rows (Binius64's BaseFold opener and the F2Z opener).
+F2Z_BENCH_SHAPES="15 18 20" F2Z_BENCH_REPS=5 \
+F2Z_MUL_COMPARE_BACKENDS="binius64 binius64-ligerito" \
 bash scripts/run_native_mul_compare.sh
 
 # Inspect commands without starting Cargo.
@@ -31,8 +48,8 @@ F2Z_BENCH_SHAPES="15 16 17 18 19 20" F2Z_BENCH_REPS=5 \
 bash scripts/run_native_mul_compare.sh
 ```
 
-`F2Z_MUL_COMPARE_BACKENDS` accepts `f2z binius64 plonky3-fri plonky3-whir limber`.
-The default remains `f2z binius64 plonky3-fri limber`. Select WHIR explicitly
+`F2Z_MUL_COMPARE_BACKENDS` accepts `f2z binius64 binius64-ligerito plonky3-fri plonky3-whir limber`.
+The default is `f2z binius64 binius64-ligerito plonky3-fri limber`. Select WHIR explicitly
 to tune it for each run and size; see [WHIR tuning and replay](native-whir-tuning.md).
 `F2Z_MUL_COMPARE_OUTPUT_DIR` selects a new, non-existing output directory;
 default output is a timestamped directory in `PerfRuns/`.

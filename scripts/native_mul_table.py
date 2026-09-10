@@ -29,6 +29,9 @@ SCHEMES = [
     ("f2z", "\\ftwoz\\ (this work)"),
     ("binius64@1", "Binius64~\\cite{binius64}, rate $1/2$"),
     ("binius64@3", "Binius64~\\cite{binius64}, rate $1/8$"),
+    # Binius64's circuit and PIOP with F2Z's opener (rate 1/8, Johnson regime,
+    # grinding, Round 0), gated at 100 bits by a whole-protocol union bound.
+    ("binius64-ligerito", "Binius64~\\cite{binius64} + \\ftwoz\\ opener, rate $1/8$"),
     ("plonky3-fri", "Plonky3~\\cite{plonky} (FRI)"),
     ("plonky3-whir", "Plonky3~\\cite{plonky} (WHIR)"),
     ("limber", "Limber~\\cite{limber} (Brakedown)"),
@@ -63,7 +66,8 @@ def scheme_key(r: dict) -> str:
 
 def scheme_name(key: str) -> str:
     """Short scheme name for caption sentences."""
-    names = {"f2z": "\\ftwoz", "plonky3-fri": "Plonky3-FRI", "plonky3-whir": "Plonky3-WHIR", "limber": "Limber"}
+    names = {"f2z": "\\ftwoz", "plonky3-fri": "Plonky3-FRI", "plonky3-whir": "Plonky3-WHIR", "limber": "Limber",
+             "binius64-ligerito": "Binius64 with the \\ftwoz\\ opener"}
     if key in names:
         return names[key]
     return "Binius64 at rate $1/%d$" % (1 << int(key.split("@")[1]))
@@ -325,9 +329,20 @@ def main() -> int:
             parts.append(f"rate $1/{1 << log_rate}$ with ${queries}$ queries")
         binius_rate_text = " and ".join(parts) + " for $100$ bits"
     binius_note = "Binius64 (native multiplication" + (" and bit constraints" if args.workload not in ("u64", "u128") else "") + f", ring switching and BaseFold at {binius_rate_text})"
+    # The opener geometry of the binius64-ligerito rows as the runs recorded it.
+    lig = next((r["config"] for r in rows if scheme_key(r) == "binius64-ligerito"), {})
+    lig_bits = lig.get("whole_protocol_bits")
+    ligerito_note = ("Binius64 with the \\ftwoz\\ opener (the same circuit and PIOP; every oracle committed at rate $1/8$ and opened by "
+                     "ring switching and Johnson-regime Ligerito"
+                     + (f" with ${lig['level0_queries']}$ level-0 queries" if "level0_queries" in lig else "")
+                     + (f", ${lig['level0_fold_grinding_bits']}$ bits of fold grinding" if "level0_fold_grinding_bits" in lig else "")
+                     + " and Round~0; whole-protocol union bound gated at $100$ bits"
+                     + (f", ${lig_bits:.1f}$ achieved" if isinstance(lig_bits, (int, float)) else "")
+                     + ")")
     scheme_notes = {
         "f2z": "\\ftwoz\\ (Spartan over a transcript-sampled prime with the \\ftwoz\\ opening, $\\lambda = 100$)",
         "binius64": binius_note,
+        "binius64-ligerito": ligerito_note,
         "plonky3-fri": "Plonky3 (Goldilocks AIR, degree-$5$ extension, FRI at rate $1/8$, $100$ queries, proven round-by-round target $100$ bits)",
         "plonky3-whir": "Plonky3 (shared Goldilocks mod32 AIR, multilinear zerocheck/sumcheck, WHIR with per-run tuning and at least $100$ bits under the recorded Johnson accounting)",
         "limber": "Limber (one independent integer-mod R1CS row per multiplication, IntEval/Brakedown, native approximately $114$-bit policy)",

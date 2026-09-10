@@ -38,10 +38,10 @@ def choices(env, name, default, allowed):
 
 def configuration(env):
     workloads = choices(env, "F2Z_MUL_COMPARE_WORKLOADS", "u32-mod32", ("u32-mod32", "u64", "u128"))
-    backends = choices(env, "F2Z_MUL_COMPARE_BACKENDS", "f2z binius64 plonky3-fri limber",
-                       ("f2z", "binius64", "plonky3-fri", "plonky3-whir", "limber"))
-    if any(w != "u32-mod32" for w in workloads) and any(b not in ("f2z", "binius64") for b in backends):
-        raise ValueError("u64/u128 support only f2z and binius64; run the mod32 comparison separately")
+    backends = choices(env, "F2Z_MUL_COMPARE_BACKENDS", "f2z binius64 binius64-ligerito plonky3-fri limber",
+                       ("f2z", "binius64", "binius64-ligerito", "plonky3-fri", "plonky3-whir", "limber"))
+    if any(w != "u32-mod32" for w in workloads) and any(b not in ("f2z", "binius64", "binius64-ligerito") for b in backends):
+        raise ValueError("u64/u128 support only f2z, binius64 and binius64-ligerito; run the mod32 comparison separately")
     exponents = [int(value) for value in env.get("F2Z_BENCH_SHAPES", "15").replace(",", " ").split()]
     # Match the Rust address-space bound, not a particular machine's RAM.
     maximum = sys.maxsize.bit_length() + 1 - 11

@@ -9,6 +9,7 @@ mod common;
 use common::mul_witness::u32_digest as witness_digest;
 mod integer_pcs_compare {
     pub mod binius;
+    pub mod ligerito;
     pub mod whir_goldilocks;
 }
 
@@ -36,6 +37,7 @@ use f2z::transcript::Blake3Transcript;
 use f2z::transcript::traits::Transcript;
 use f2z::utils::prof::ProfileInterval;
 use integer_pcs_compare::binius::{self, BiniusBackend};
+use integer_pcs_compare::ligerito::{self, LigeritoBackend};
 use integer_pcs_compare::whir_goldilocks::{self as whir, Backend as WhirBackend};
 use p3_whir::parameters::WhirConfigError;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
@@ -58,6 +60,9 @@ enum Backend {
     F2z,
     Whir,
     Binius,
+    /// The F2Z opener on the Binius64 packed rows and the identical bit-MLE
+    /// claim: rate 1/8, Johnson-regime Ligerito, grinding, Round 0.
+    Ligerito,
 }
 
 impl Backend {
@@ -66,6 +71,7 @@ impl Backend {
             Self::F2z => "f2z",
             Self::Whir => "plonky3-whir",
             Self::Binius => "binius64-basefold",
+            Self::Ligerito => "f2z-ligerito-binary",
         }
     }
     const fn display(self) -> &'static str {
@@ -73,6 +79,7 @@ impl Backend {
             Self::F2z => "F2Z",
             Self::Whir => "Plonky3 WHIR",
             Self::Binius => "Binius64 BaseFold",
+            Self::Ligerito => "F2Z Ligerito (binary claim)",
         }
     }
     const fn seed_tag(self) -> u64 {
@@ -80,6 +87,7 @@ impl Backend {
             Self::F2z => 0x4632_5a00_5533_0001,
             Self::Whir => 0x5748_4952_5533_0001,
             Self::Binius => 0x4249_4e49_5533_0001,
+            Self::Ligerito => 0x4c49_4745_5533_0001,
         }
     }
 }
@@ -217,7 +225,7 @@ impl TraceWriter {
                 "base_field":"Goldilocks", "base_modulus":18_446_744_069_414_584_321_u64,
                 "challenge_extension_degree":whir::CHALLENGE_EXTENSION_DEGREE
             }),
-            Backend::Binius => json!({
+            Backend::Binius | Backend::Ligerito => json!({
                 "committed_encoding":"one GF(2^128) row per gate: X[0..32] | Y[32..64] | Product[64..128]",
                 "base_field":"GF(2)", "challenge_field":"GF(2^128)-GHASH"
             }),
@@ -410,8 +418,14 @@ fn math_for(label: &str, backend: Backend) -> Vec<&'static str> {
         (MATERIALIZE_SCOPE, Backend::Whir) => {
             vec!["U=(X,Y,P)\\in\\mathbb F_{\\mathrm{Goldilocks}}^{3\\times2^g}"]
         }
-        (MATERIALIZE_SCOPE, Backend::Binius) => {
+        (MATERIALIZE_SCOPE, Backend::Binius | Backend::Ligerito) => {
             vec!["w_i=X_i+2^{32}Y_i+2^{64}P_i\\in\\mathbb F_2^{128}"]
+        }
+        (COMMIT_SCOPE, Backend::Ligerito) => {
+            vec!["C\\leftarrow\\operatorname{Merkle}(\\operatorname{RS}_{1/8}(w)),\\;y=\\widetilde w(\\zeta,\\zeta^2,\\ldots)"]
+        }
+        (OPENING_SCOPE, Backend::Ligerito) => {
+            vec!["\\pi\\leftarrow\\operatorname{RingSwitch+Ligerito}_{\\mathrm{Johnson}}(C,r,v)"]
         }
         (COMMIT_SCOPE, Backend::F2z) => {
             vec!["C\\leftarrow\\operatorname{Commit}_{\\mathrm{F2Z}}(\\mathcal B)"]
@@ -479,13 +493,14 @@ fn exponents() -> Vec<usize> {
 
 fn selected_backends() -> Vec<Backend> {
     let raw = std::env::var("F2Z_PCS_COMPARE_BACKENDS")
-        .unwrap_or_else(|_| "f2z plonky3-whir binius64-basefold".into());
+        .unwrap_or_else(|_| "f2z plonky3-whir binius64-basefold f2z-ligerito-binary".into());
     let mut selected = Vec::new();
     for word in raw.split([',', ' ']).filter(|word| !word.is_empty()) {
         let backend = match word {
             "f2z" => Backend::F2z,
             "whir" | "plonky3-whir" => Backend::Whir,
             "binius" | "binius64" | "binius64-basefold" => Backend::Binius,
+            "ligerito" | "f2z-ligerito" | "f2z-ligerito-binary" => Backend::Ligerito,
             _ => panic!("unknown backend {word}"),
         };
         if !selected.contains(&backend) {
@@ -497,9 +512,9 @@ fn selected_backends() -> Vec<Backend> {
 
 fn ordered(selected: &[Backend], exponent: usize) -> Vec<Backend> {
     let order = if exponent.is_multiple_of(2) {
-        [Backend::F2z, Backend::Whir, Backend::Binius]
+        [Backend::F2z, Backend::Whir, Backend::Binius, Backend::Ligerito]
     } else {
-        [Backend::Binius, Backend::Whir, Backend::F2z]
+        [Backend::Ligerito, Backend::Binius, Backend::Whir, Backend::F2z]
     };
     order.into_iter().filter(|b| selected.contains(b)).collect()
 }
@@ -858,6 +873,49 @@ fn run_binius(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+fn run_ligerito(
+    writer: &mut TraceWriter,
+    exponent: usize,
+    shape_seed: u64,
+    witness: &U32MulWitness,
+    digest: &str,
+    witness_ms: f64,
+    reps: usize,
+) -> Result<(), Box<dyn Error>> {
+    let setup = Instant::now();
+    let backend = LigeritoBackend::setup(exponent)?;
+    let setup_ms = common::elapsed_ms(setup);
+    eprintln!("    backend_setup_ms={setup_ms:.3}");
+    let security = json!({"profile":"F2Z opener: Round 0 + ring switch + Johnson-regime Ligerito","target_bits":ligerito::SECURITY_BITS,"soundness_bound_model":"opener union bound (Round 0, ring switch, every Ligerito level's proximity folds, queries and OOD samples) at the pinned flock constants","achieved_bits":backend.soundness_bits(),"ligerito_component_bits":backend.component_bits(),"challenge_field":"GF(2^128)-GHASH","hash":"BLAKE3","log_inverse_rate":backend.log_inv_rate(),"level0_queries":backend.n_test_queries(),"level0_query_grinding_bits":backend.level0_query_grinding_bits(),"level0_fold_grinding_bits":backend.level0_fold_grinding_bits(),"ood_grinding_bits":backend.ood_grinding_bits(),"hiding":false});
+    for trial in std::iter::once(Trial::Warmup).chain((0..reps).map(Trial::Sample)) {
+        let seed = trial_seed(shape_seed, Backend::Ligerito, trial);
+        clear_profile();
+        let output = backend.run_trial(|| pack_binius_rows(witness), seed)?;
+        let intervals = finish_profile();
+        writer.write(
+            Run {
+                backend: Backend::Ligerito,
+                exponent,
+                trial,
+                trial_seed: seed,
+                shape_seed,
+                digest,
+                witness_ms,
+                setup_ms,
+                security: security.clone(),
+                artifacts: Artifacts {
+                    commitment: output.commitment_bytes,
+                    claim: output.public_claim_bytes,
+                    opening: output.opening_proof_bytes(),
+                },
+            },
+            &intervals,
+        )?;
+    }
+    Ok(())
+}
+
 fn binius_log_inv_rate() -> Result<usize, Box<dyn Error>> {
     let value = std::env::var("F2Z_BINIUS_LOG_INV_RATE")
         .unwrap_or_else(|_| binius::DEFAULT_LOG_INV_RATE.to_string())
@@ -947,6 +1005,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                     reps,
                 )?,
                 Backend::Binius => run_binius(
+                    &mut writer,
+                    exponent,
+                    shape_seed,
+                    &witness,
+                    &digest,
+                    witness_ms,
+                    reps,
+                )?,
+                Backend::Ligerito => run_ligerito(
                     &mut writer,
                     exponent,
                     shape_seed,
