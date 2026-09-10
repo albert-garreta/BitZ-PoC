@@ -23,6 +23,8 @@ use crate::{
     piop::spartan::profile::{IopSecurityProfile, MAX_DERIVED_GRINDING_BITS},
     transcript::{Blake3Transcript, traits::Transcript},
 };
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 use flock_core::{
     field::F128 as F,
     merkle::{self, Hash},
@@ -75,6 +77,7 @@ impl Geometry {
     pub fn offset(&self, branch: usize) -> usize {
         branch << (self.virtual_lane_log - 1)
     }
+    #[cfg(test)]
     pub fn embed(&self, branch: usize, original: usize) -> usize {
         let k = self.lane_logs[branch];
         ((original >> k) << self.virtual_lane_log)
@@ -130,12 +133,20 @@ impl Geometry {
         bases
     }
     pub fn virtual_packed(&self, sources: [&[F]; 2]) -> Vec<F> {
+        let lanes = self.lanes();
         let mut out = vec![F::ZERO; 1 << self.packed_log()];
-        for branch in 0..2 {
-            for (index, &word) in sources[branch].iter().enumerate() {
-                out[self.embed(branch, index)] = word;
-            }
-        }
+        // One lane group per position: `embed` places word `(g << k) | l`
+        // of branch `b` at lane `offset(b) + l` of group `g`.
+        crate::utils::cfg_chunks_mut!(out, lanes)
+            .enumerate()
+            .for_each(|(g, group)| {
+                for branch in 0..2 {
+                    let k = self.lane_logs[branch];
+                    let start = self.offset(branch);
+                    let words = &sources[branch][g << k..(g + 1) << k];
+                    group[start..start + words.len()].copy_from_slice(words);
+                }
+            });
         out
     }
 }
@@ -203,9 +214,12 @@ pub(super) fn prove(
     data: [&ProverData; 2],
     point: &[Gf],
 ) -> Result<Proof, Error> {
-    let words: Vec<_> = packed.iter().copied().map(f128_to_gf).collect();
-    let (ring, basis, mut target) = ring_switch_prove(t, &words, &point[7..]);
-    drop(words);
+    let ring_scope = crate::utils::prof::scope("op:ring_switch");
+    // flock's packed words are bit-compatible with `Gf`: the ring switch
+    // reads them in place (no 2^m-element conversion pass).
+    let (ring, basis, mut target) = ring_switch_prove(t, &packed, &point[7..]);
+    drop(ring_scope);
+    let basis_scope = crate::utils::prof::scope("op:extra_bases");
     // Batch the Round-0 claim into the same opening: one draw adds
     // `η_ood·eq(·, ζ⃗)` to the basis and `η_ood·y` to the target.
     let mut basis: Vec<F> = basis.into_iter().map(gf_to_f128).collect();
@@ -219,6 +233,8 @@ pub(super) fn prove(
     for (point, scale) in sample_padding(t, geometry) {
         add_ood_basis(&mut basis, &packed, &point, scale, None);
     }
+    drop(basis_scope);
+    let _lig_scope = crate::utils::prof::scope("op:ligerito");
     let pc = resolved.prover();
     let mut paths = [Vec::new(), Vec::new()];
     let proof = ligerito::recursive_prover_with_basis_initial(

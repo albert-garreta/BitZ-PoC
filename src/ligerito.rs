@@ -536,9 +536,9 @@ pub(crate) fn phi_from_words(w: [u64; 2], tables: &[Gf]) -> Gf {
 /// weight table `B(y) = Φ_{r″}(eq(r_hi, y))` (plus `eq_r2` and `β₀` for
 /// debugging/tests).
 #[allow(clippy::arithmetic_side_effects)]
-pub fn ring_switch_prove(
+pub fn ring_switch_prove<T: PackedBits>(
     transcript: &mut impl Transcript,
-    p_msg: &[Gf],
+    p_msg: &[T],
     r_hi: &[Gf],
 ) -> (RingSwitchProof, Vec<Gf>, Gf) {
     let eq_hi = build_eq_x_r_vec(r_hi, &()).expect("non-empty r_hi");
@@ -557,7 +557,7 @@ pub fn ring_switch_prove(
                 let hi = (lo + SV_CHUNK).min(p_msg.len());
                 let mut local = vec![Gf::zero(); 128];
                 for y in lo..hi {
-                    sv_scalar_accum(&mut local, *p_msg[y].words(), eq_hi[y]);
+                    sv_scalar_accum(&mut local, p_msg[y].bit_words(), eq_hi[y]);
                 }
                 local
             })
@@ -602,7 +602,10 @@ pub fn ring_switch_prove(
             .collect()
     };
     debug_assert_eq!(
-        b_tbl.iter().zip(p_msg.iter()).fold(Gf::zero(), |a, (b, p)| a + *b * *p),
+        b_tbl
+            .iter()
+            .zip(p_msg.iter())
+            .fold(Gf::zero(), |a, (b, p)| a + *b * Gf::from_words(p.bit_words())),
         beta0,
         "ring-switch recombination identity"
     );
@@ -899,21 +902,37 @@ pub(crate) fn fold_values_bits(p: &IntEvalParams, rows: &[Vec<u64>], row_weights
                 .collect();
             rows_t.into_flattened()
         };
-        return cfg_into_iter!(0..p.cols())
-            .map(|c| {
-                let mut acc = 0u128;
-                for (wi, &word) in rows[c].iter().enumerate() {
-                    let mut w = word;
-                    let mut g = wi << 4;
-                    while w != 0 {
-                        acc += tbl[(g << 4) | (w & 15) as usize];
-                        w >>= 4;
-                        g += 1;
+        // Column blocks stream the shared table (8 MB at 2^17 rows —
+        // L2-resident, not L1) once per block instead of once per column;
+        // the block's accumulators are independent chains. Per-column
+        // term order is unchanged (exact u128 sums either way).
+        const MAX_BLOCK: usize = 32;
+        let cols = p.cols();
+        #[cfg(feature = "parallel")]
+        let threads = rayon::current_num_threads();
+        #[cfg(not(feature = "parallel"))]
+        let threads = 1;
+        let block = (cols / (4 * threads)).clamp(1, MAX_BLOCK);
+        let sums: Vec<[u128; MAX_BLOCK]> = cfg_into_iter!(0..cols.div_ceil(block))
+            .map(|blk| {
+                let c0 = blk * block;
+                let n = block.min(cols - c0);
+                let mut acc = [0u128; MAX_BLOCK];
+                for wi in 0..words {
+                    for (k, acc_k) in acc.iter_mut().enumerate().take(n) {
+                        let mut w = rows[c0 + k][wi];
+                        let mut g = wi << 4;
+                        while w != 0 {
+                            *acc_k += tbl[(g << 4) | (w & 15) as usize];
+                            w >>= 4;
+                            g += 1;
+                        }
                     }
                 }
                 acc
             })
             .collect();
+        return (0..cols).map(|c| sums[c / block][c % block]).collect();
     }
     cfg_into_iter!(0..p.cols())
         .map(|c| {

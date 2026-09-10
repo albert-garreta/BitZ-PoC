@@ -147,13 +147,23 @@ pub(crate) fn prove(
     if weights.len() != 1 {
         return Err(Error::Invalid("multiple F2Z chunks"));
     }
+    let fold_scope = crate::utils::prof::scope("mo:fold_values");
     let sums = fold_values_bits(&p, rows, &weights[0]);
+    drop(fold_scope);
     bind_sums(transcript, &bridge_digest, &sums);
+    let pack_scope = crate::utils::prof::scope("mo:pack_cols");
     let packed_cols = pack_columns_from_rows(&p, rows);
+    drop(pack_scope);
+    let pow2_scope = crate::utils::prof::scope("mo:pow2");
     let powers = chunk_pow2_table(&p, &weights[0], f2z_generator());
+    drop(pow2_scope);
+    let forest_scope = crate::utils::prof::scope("mo:forest");
     let (_, forest, z, e) =
         prove_merged_forest_lazy(transcript, &p, &packed_cols, &powers, p.cols());
+    drop(forest_scope);
+    let endpoint_scope = crate::utils::prof::scope("mo:endpoint");
     let claim = endpoint(&p, &weights[0], &z, e);
+    drop(endpoint_scope);
     Ok((
         PrefixProof {
             initial_nonce,

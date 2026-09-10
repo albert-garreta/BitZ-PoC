@@ -188,6 +188,47 @@ prepared.verify(&statement, &decoded)?;
 
 Each block is sixteen words in SHA's standard word order; each word represents four big-endian message bytes. Commitment preparation generates intermediate SHA states and commits both packed witnesses. The public statement is obtained from `committed.statement()`. Setup can be reused across statements of the same shape. Decoding is bounded and requires the public statement to reconstruct the transcript-selected integer field; decoding alone does not accept a proof.
 
+## Prover-side optimizations (2026-09-10)
+
+Four byte-identical prover changes on the F2Z side of the hybrid (proof
+bytes, transcript and verifier unchanged; the 20:12 proof digest and the
+repository's transcript pins are the guards):
+
+1. **Joint sumcheck bit marginals.** The seven packed rounds used to
+   apply two 16-entry byte tables to every packed word in every round
+   (32 lookups per word per round, both sources). Their messages depend on
+   the words only through `S[block][bit] = Σ_i high[i]·bit(word_{i,block})`,
+   so `S` is accumulated once (the ring switch's four-Russians fold, per
+   block range) and every round is a `128·low_blocks`-term dot product. The
+   dense tables are then written in parallel into uninitialised capacity
+   with the first dense message fused in, and each dense fold pass emits
+   the next message. 20:12: 112 ms → 12 ms; 22:14: 408 ms → ~60 ms.
+2. **Proof-of-work grinding.** `blake3::hash` of the short preimage goes
+   through the crate's portable scalar compression on aarch64.
+   `utils::blake3x4` compresses eight nonces per call in NEON lanes (two
+   interleaved four-lane states) for any single-block prefix and returns
+   the smallest hit of a range; the parallel search takes 1024-nonce chunks
+   from a shared counter and stops at the running minimum instead of
+   scanning whole 2^17-nonce waves (which doubled every grind below 17
+   bits). Both F2Z grinders use it: the Ligerito challenger
+   (`ZincChallenger::grind_pow`, 16-byte seed — fold, query and recursive
+   grinds of every F2Z opener, the Binius-with-F2Z-opener mode included)
+   and `piop::spartan::grinding` (32-byte seed — Spartan boundaries, forest
+   rounds, Round 0). 20:12: 50 ms → 14 ms for the 21 grinds of the shared
+   opener; 22:14: 222 ms → ~60 ms.
+3. **Serial passes made parallel or removed.** The virtual packed witness
+   scatter, the multiplication packing and the ring switch's `Gf`
+   conversion copy (`ring_switch_prove` now reads flock's `F128` words in
+   place through `PackedBits`).
+4. **Fine-grained profiler scopes** (`hc:*`, `mo:*`, `js:*`, `op:*`,
+   `lig:grind_pow`) under the runner's phase scopes, and
+   `examples/hybrid_probe.rs` to print the nested tree for one shape
+   (`OBLONG_PROFILE=1 PROBE_SHAPES="20:12" cargo run --release --example
+   hybrid_probe --features hybrid`).
+
+Not touched: the multiplication branch's GKR forest (the largest phase,
+extensively optimized in the standalone program) and the Binius SHA PIOP.
+
 ## Implementation boundaries
 
 - `src/hybrid/mod.rs`: prepared relation, committed witness, prover and verifier APIs.
@@ -196,8 +237,8 @@ Each block is sixteen words in SHA's standard word order; each word represents f
 - `src/piop/spartan/f2z/hybrid.rs`: Spartan and the exponent GKR, stopped at a binary inner product; bounded integer read-off is checked by the verifier.
 - `src/hybrid/sha.rs`: constrained sequential two-compression gadget, fixed IV and public final state.
 - `src/hybrid/channel.rs`: Binius messages and challenges on the same BLAKE3 transcript as the integer branch.
-- `src/hybrid/sumcheck.rs`: shared degree-two sumcheck. The first seven rounds use linear byte tables over packed bits, without a field element per original bit. Subsequent rounds allocate tables over the virtual packed domain.
-- `src/hybrid/opening.rs`: Round 0 (the out-of-domain sample, on the audited primitives of `src/ligerito_flock.rs`), ring switching, virtual lane layout, and one Ligerito continuation. Every original row slice and every zero-padding lane is checked.
+- `src/hybrid/sumcheck.rs`: shared degree-two sumcheck. The first seven rounds bind the bit index inside a packed word; their messages are linear functionals of per-block **bit marginals** `S[block][bit] = Σ_i high[i]·bit(word_{i,block})`, accumulated once per source with the method-of-four-Russians fold (no field element per original bit, no per-round scan of the packed words). Subsequent rounds allocate tables over the virtual packed domain; each fold pass also emits the next round's message.
+- `src/hybrid/opening.rs`: Round 0 (the out-of-domain sample, on the audited primitives of `src/ligerito_flock.rs`), ring switching, virtual lane layout, and one Ligerito continuation. Every original row slice and every zero-padding lane is checked. The opener's proof-of-work grinds (fold-challenge, query and Round-0 nonces) scan nonces with the four-lane NEON BLAKE3 kernel of `src/utils/blake3x4.rs` under a dynamic smallest-nonce search, which returns the serial scan's nonce.
 - `src/hybrid/codec.rs`: versioned proof encoding with canonical integer residues, bounded counts and no trailing bytes.
 - `src/hybrid/security.rs`: composition error budget and explicit parameter rejection below the target.
 

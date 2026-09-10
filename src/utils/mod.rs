@@ -10,6 +10,7 @@ pub mod ops_macros;
 pub mod parallel;
 pub mod prof;
 pub mod wide_mul;
+pub(crate) mod blake3x4;
 
 use crypto_primitives::Semiring;
 

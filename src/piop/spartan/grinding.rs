@@ -10,15 +10,20 @@
 //! ```
 //!
 //! The nonce is absorbed into the transcript as canonical little-endian bytes
-//! before the next Fiat--Shamir challenge is drawn.  The parallel prover scans
-//! fixed, ordered waves and returns the minimum hit in the first successful
-//! wave, so enabling `parallel` does not change the proof or transcript.
+//! before the next Fiat--Shamir challenge is drawn.  The prover scans nonces
+//! with the eight-lane NEON BLAKE3 kernel of [`crate::utils::blake3x4`]; the
+//! parallel search returns the smallest hit of the whole scanned prefix of
+//! the nonce space, so enabling `parallel` does not change the proof or
+//! transcript.
 
 use core::marker::PhantomData;
 
 use thiserror::Error;
 
 use crate::transcript::traits::{ConstTranscribable, GenTranscribable, Transcript};
+#[cfg(feature = "parallel")]
+use crate::utils::blake3x4::smallest_pow_nonce;
+use crate::utils::blake3x4::{first_pow_nonce, pow_ok};
 
 /// Transcript frame for every Spartan grinding boundary.
 const GRINDING_TRANSCRIPT_DOMAIN: &[u8] = b"f2z/spartan/fiat-shamir-grinding/v1";
@@ -191,8 +196,8 @@ pub fn find_grinding_nonce(seed: &GrindingSeed, bits: u32) -> Result<u64, Grindi
 
     #[cfg(feature = "parallel")]
     {
-        // Below this point rayon's fork/join cost exceeds the expected search.
-        const PARALLEL_SEARCH_MIN_BITS: u32 = 11;
+        // Below this point the pool broadcast exceeds the expected search.
+        const PARALLEL_SEARCH_MIN_BITS: u32 = 12;
         if bits >= PARALLEL_SEARCH_MIN_BITS {
             return find_grinding_nonce_parallel(seed, bits);
         }
@@ -231,79 +236,19 @@ fn absorb_grinding_nonce(transcript: &mut impl Transcript, nonce: u64) {
     transcript.absorb_slice(&nonce.to_le_bytes());
 }
 
-#[allow(clippy::arithmetic_side_effects)]
 fn find_grinding_nonce_sequential(seed: &GrindingSeed, bits: u32) -> Result<u64, GrindingError> {
-    find_first_valid_nonce(seed, bits, 0, u64::MAX).ok_or(GrindingError::NonceSpaceExhausted)
+    first_pow_nonce(seed.as_bytes(), 0, u64::MAX, bits)
+        .or_else(|| pow_ok(seed.as_bytes(), u64::MAX, bits).then_some(u64::MAX))
+        .ok_or(GrindingError::NonceSpaceExhausted)
 }
 
 #[cfg(feature = "parallel")]
-#[allow(clippy::arithmetic_side_effects)]
 fn find_grinding_nonce_parallel(seed: &GrindingSeed, bits: u32) -> Result<u64, GrindingError> {
-    use rayon::prelude::*;
-
-    // Each wave has 32 independently scanned 2^12-nonce chunks.  Taking the
-    // minimum hit from the first successful wave is exactly a serial scan.
-    const CHUNK_SIZE: u64 = 1 << 12;
-    const CHUNKS_PER_WAVE: usize = 32;
-    const WAVE_SIZE: u64 = CHUNK_SIZE * CHUNKS_PER_WAVE as u64;
-
-    let mut wave_start = 0_u64;
-    loop {
-        let wave_end = wave_start.saturating_add(WAVE_SIZE - 1);
-        let wave_len = wave_end - wave_start + 1;
-        let chunk_count = usize::try_from(wave_len.div_ceil(CHUNK_SIZE))
-            .expect("a fixed grinding wave has at most 32 chunks");
-        let hit = (0..chunk_count)
-            .into_par_iter()
-            .filter_map(|chunk| {
-                let chunk_start = wave_start + chunk as u64 * CHUNK_SIZE;
-                let chunk_end = chunk_start.saturating_add(CHUNK_SIZE - 1).min(wave_end);
-                find_first_valid_nonce(seed, bits, chunk_start, chunk_end)
-            })
-            .min();
-        if let Some(nonce) = hit {
-            return Ok(nonce);
-        }
-        if wave_end == u64::MAX {
-            return Err(GrindingError::NonceSpaceExhausted);
-        }
-        wave_start = wave_end + 1;
-    }
-}
-
-#[allow(clippy::arithmetic_side_effects)]
-fn find_first_valid_nonce(seed: &GrindingSeed, bits: u32, start: u64, end: u64) -> Option<u64> {
-    let mut nonce = start;
-    loop {
-        if grinding_nonce_is_valid_unchecked(seed, nonce, bits) {
-            return Some(nonce);
-        }
-        if nonce == end {
-            return None;
-        }
-        nonce += 1;
-    }
+    smallest_pow_nonce(seed.as_bytes(), bits).ok_or(GrindingError::NonceSpaceExhausted)
 }
 
 fn grinding_nonce_is_valid_unchecked(seed: &GrindingSeed, nonce: u64, bits: u32) -> bool {
-    let mut preimage = [0_u8; 40];
-    preimage[..32].copy_from_slice(seed.as_bytes());
-    preimage[32..].copy_from_slice(&nonce.to_le_bytes());
-    let digest = blake3::hash(&preimage);
-    leading_zero_bits(digest.as_bytes()) >= bits
-}
-
-#[allow(clippy::arithmetic_side_effects)]
-fn leading_zero_bits(bytes: &[u8]) -> u32 {
-    let mut count = 0_u32;
-    for &byte in bytes {
-        if byte == 0 {
-            count += u8::BITS;
-        } else {
-            return count + byte.leading_zeros();
-        }
-    }
-    count
+    pow_ok(seed.as_bytes(), nonce, bits)
 }
 
 // ---------------------------------------------------------------------

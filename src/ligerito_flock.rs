@@ -145,57 +145,28 @@ impl<T: Transcript + Send> Challenger for ZincChallenger<'_, T> {
     }
 
     fn grind_pow(&mut self, bits: u32) -> u64 {
+        let _g = crate::utils::prof::scope("lig:grind_pow");
         let seed = self.pow_seed();
         // Parallel smallest-nonce search (prover-side only; the verifier
-        // checks whatever nonce arrives): scan fixed waves of the nonce
-        // space and take each wave's MINIMUM hit — the first wave with a
-        // hit yields exactly the serial scan's nonce, so the transcript
-        // stays byte-identical. The expected serial cost is 2^bits hashes
-        // (~6.5 ms at 16 bits); waves parallelize it ~#cores. Below ~2^11
-        // expected hashes the fork-join overhead outweighs the win — stay
-        // serial there.
+        // checks whatever nonce arrives): every pool thread takes chunks of
+        // the nonce space in order and the running minimum hit ends the
+        // scan — exactly the serial scan's nonce, so the transcript stays
+        // byte-identical. The expected serial cost is 2^bits compressions
+        // (four-lane NEON kernel). Below ~2^12 expected attempts the
+        // thread broadcast outweighs the win — stay serial there.
         #[cfg(feature = "parallel")]
         let nonce = if bits == 0 {
             0
-        } else if bits >= 11 {
-            use rayon::prelude::*;
-            const CHUNK_LOG: u64 = 12;
-            const CHUNKS: usize = 32; // wave = 32 · 4096 = 2^17 nonces
-            let mut base = 0u64;
-            loop {
-                let hit = (0..CHUNKS)
-                    .into_par_iter()
-                    .filter_map(|c| {
-                        // First hit in the chunk = the chunk's minimum.
-                        let start = base + ((c as u64) << CHUNK_LOG);
-                        (start..start + (1 << CHUNK_LOG)).find(|&n| pow_ok(&seed, n, bits))
-                    })
-                    .min();
-                if let Some(n) = hit {
-                    break n;
-                }
-                base += (CHUNKS as u64) << CHUNK_LOG;
-            }
+        } else if bits >= 12 {
+            crate::utils::blake3x4::smallest_pow_nonce(&seed, bits).expect("a nonce below 2^64")
         } else {
-            let mut nonce = 0u64;
-            loop {
-                if pow_ok(&seed, nonce, bits) {
-                    break nonce;
-                }
-                nonce = nonce.wrapping_add(1);
-            }
+            first_pow_nonce(&seed, 0, u64::MAX, bits).expect("a nonce below 2^64")
         };
         #[cfg(not(feature = "parallel"))]
         let nonce = if bits == 0 {
             0
         } else {
-            let mut nonce = 0u64;
-            loop {
-                if pow_ok(&seed, nonce, bits) {
-                    break nonce;
-                }
-                nonce = nonce.wrapping_add(1);
-            }
+            first_pow_nonce(&seed, 0, u64::MAX, bits).expect("a nonce below 2^64")
         };
         self.0.absorb_slice(&nonce.to_le_bytes());
         nonce
@@ -232,26 +203,10 @@ impl<T: Transcript + Send> ZincChallenger<'_, T> {
     }
 }
 
-/// `blake3(seed || nonce)` has at least `bits` leading zero bits.
-fn pow_ok(seed: &[u8; 16], nonce: u64, bits: u32) -> bool {
-    let mut buf = [0u8; 24];
-    buf[..16].copy_from_slice(seed);
-    buf[16..].copy_from_slice(&nonce.to_le_bytes());
-    let hash = blake3::hash(&buf);
-    leading_zero_bits(hash.as_bytes()) >= bits
-}
-
-fn leading_zero_bits(bytes: &[u8]) -> u32 {
-    let mut acc = 0u32;
-    for &b in bytes {
-        if b == 0 {
-            acc = acc.wrapping_add(8);
-        } else {
-            return acc.wrapping_add(b.leading_zeros());
-        }
-    }
-    acc
-}
+/// `blake3(seed || nonce)` has at least `bits` leading zero bits; the
+/// prover scans nonces four at a time ([`first_pow_nonce`]), the verifier
+/// checks the one it receives.
+use crate::utils::blake3x4::{first_pow_nonce, pow_ok};
 
 // ---------------------------------------------------------------------
 // Commit

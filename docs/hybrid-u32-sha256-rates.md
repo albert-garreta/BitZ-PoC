@@ -12,6 +12,47 @@ are proved:
 | `all-binius` | Binius64 | Binius64 | one (ring switch + BaseFold/FRI) |
 | `binius-ligerito` | Binius64 | Binius64 | one (the all-Binius circuit and PIOP, every oracle committed at rate 1/8 and opened by the F2Z opener: Round 0, ring switch, Johnson-regime Ligerito with grinding; whole-protocol union bound gated at 100 bits) |
 
+## F2Z-side prover optimizations — 2026-09-10 (byte-identical)
+
+Prover-only changes on the F2Z side of the hybrid (see the "Prover-side
+optimizations" section of the [protocol guide](hybrid-u32-sha256-protocol.md)):
+bit marginals for the joint sumcheck's packed rounds; an eight-nonce NEON
+BLAKE3 kernel plus a dynamic smallest-nonce scan for EVERY proof-of-work grind
+(the Ligerito challenger's 16-byte seed and the Spartan/forest/Round-0
+boundaries' 32-byte seed both go through `src/utils/blake3x4.rs`); and
+parallel/zero-copy versions of three small serial passes. Proof bytes,
+transcripts and the verifier are unchanged (same proof digests,
+`tests/transcript_pins` 7/7).
+
+**Final sweep, same box state as the morning campaign** (run
+`PerfRuns/2026-09-10T11-46-57Z-hybrid-f2z-opt-final`, 11 verified iterations
+per case, one process per case, `RAYON_NUM_THREADS=8`, medians; the untouched
+phases — forest, Binius SHA PIOP, commit, verifier, peak RSS — agree with the
+morning run within 3% at every shape, which is the same-state check). The
+paper table `paper/hybrid-table.tex` was regenerated from this run with
+`scripts/hybrid_table.py` (Binius rows from the morning run):
+
+| N mul : M SHA | prover before → after (ms) | joint sumcheck | shared opening (grinds incl.) | forest (untouched) | verifier | proof (B) | peak (MiB) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2^15 : 2^7 | 42.9 → 24.0 (−44%) | 9.2 → 1.0 | 14.2 → 3.6 | 11.3 → 11.2 | 4.2 → 4.2 | 179,216 | 155 → 150 |
+| 2^17 : 2^9 | 92.2 → 57.5 (−38%) | 21.6 → 2.3 | 23.3 → 8.2 | 29.0 → 29.1 | 6.0 → 6.2 | 219,208 | 706 → 698 |
+| 2^19 : 2^11 | 312.0 → 192.5 (−38%) | 67.0 → 6.9 | 85.2 → 34.2 | 94.3 → 91.7 | 10.7 → 10.2 | 271,920 | 2498 → 2780 |
+| 2^20 : 2^12 | 470.3 → 331.3 (−30%) | 108.6 → 12.0 | 72.9 → 35.0 | 171.9 → 171.8 | 16.3 → 15.6 | 304,992 | 5585 → 5490 |
+| 2^21 : 2^13 | 965.6 → 673.5 (−30%) | 229.0 → 24.3 | 116.2 → 61.4 | 374.1 → 361.9 | 27.6 → 27.2 | 329,952 | 11129 → 11051 |
+| 2^22 : 2^14 | 2186.2 → 1526.0 (−30%) | 437.2 → 51.4 | 326.1 → 171.5 | 762.7 → 751.0 | 54.7 → 54.1 | 371,256 | 13210 → 13310 |
+
+The 22:14 case logged 2.8 M page compressions (other sessions' idle memory
+being compressed, mostly during the 10 s Binius setup); its timed phases sit
+at the morning's level, so it carries no dagger. An earlier afternoon
+alternating old/new A/B on a thermally slower box gave the same relative
+picture (15:7 −45%, 17:9 −37%, 19:11 −34%, 20:12 −30%, 21:13 −26%).
+
+Tools: `scripts/rss_sampler.py` (external peak RSS, swap-outs and page
+compressions per sweep case; cheap per-pid sampling, verified neutral at
+20:12) and `scripts/hybrid_table.py` (regenerates `paper/hybrid-table.tex`
+from a hybrid run directory and an all-Binius run directory; it reproduces the
+previous table from its run directory exactly).
+
 ## Current hybrid: Johnson-regime opener at rate 1/8 with Round 0 (protocol v3)
 
 The shared F2Z/Ligerito opening was 91–92% of the v2 hybrid proof, and it lost

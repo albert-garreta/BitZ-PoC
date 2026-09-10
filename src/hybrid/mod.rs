@@ -26,6 +26,8 @@ use crate::{
     },
     transcript::{Blake3Transcript, traits::Transcript},
 };
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 use flock_core::{
     field::F128,
     pcs::commit::{ProverData, commit},
@@ -225,18 +227,35 @@ impl PreparedHybrid {
         {
             return Err(Error::Invalid("witness workload counts"));
         }
+        let rows_scope = crate::utils::prof::scope("hc:mul_bit_rows");
         let rows = multiplication.f2z_bit_rows();
-        let mut packed_mul: Vec<_> = rows
-            .iter()
-            .flat_map(|row| row.chunks_exact(2).map(|w| F128 { lo: w[0], hi: w[1] }))
-            .collect();
+        drop(rows_scope);
+        let pack_scope = crate::utils::prof::scope("hc:mul_pack");
+        let words_per_row = rows.first().map_or(0, |row| row.len() / 2);
+        let mut packed_mul = vec![F128::ZERO; rows.len() * words_per_row];
+        crate::utils::cfg_chunks_mut!(packed_mul, words_per_row.max(1))
+            .zip(crate::utils::cfg_iter!(rows))
+            .for_each(|(dst, row)| {
+                for (word, w) in dst.iter_mut().zip(row.chunks_exact(2)) {
+                    *word = F128 { lo: w[0], hi: w[1] };
+                }
+            });
+        drop(pack_scope);
+        let sha_scope = crate::utils::prof::scope("hc:sha_populate");
         let final_sha_state = chaining_value(blocks);
         let sha = self.sha.populate(blocks, final_sha_state)?;
+        drop(sha_scope);
+        let sha_pack_scope = crate::utils::prof::scope("hc:sha_pack");
         let mut packed_sha = self.sha.pack(&sha);
         packed_mul.resize(1 << self.geometry.physical_logs[0], F128::ZERO);
         packed_sha.resize(1 << self.geometry.physical_logs[1], F128::ZERO);
+        drop(sha_pack_scope);
+        let commit_mul_scope = crate::utils::prof::scope("hc:commit_mul");
         let (c_mul, d_mul) = commit(&packed_mul, &self.geometry.params(0));
+        drop(commit_mul_scope);
+        let commit_sha_scope = crate::utils::prof::scope("hc:commit_sha");
         let (c_sha, d_sha) = commit(&packed_sha, &self.geometry.params(1));
+        drop(commit_sha_scope);
         let statement = Statement {
             parameters: self.parameters,
             roots: [c_mul.root, c_sha.root],

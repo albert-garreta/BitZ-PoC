@@ -5,7 +5,9 @@
 //! we allocate field tables, at one element per packed word of the virtual
 //! witness. In particular, no field table of the original bit domain exists.
 use super::{BinaryClaim, Error, Gf, opening::Geometry};
+use crate::ligerito::transpose_8x8_bits;
 use crate::ligerito_flock::{f128_to_gf, gf_to_f128};
+use crate::utils::{cfg_chunks_mut, cfg_into_iter};
 use crate::transcript::{Blake3Transcript, traits::Transcript};
 use flock_core::field::F128 as F;
 #[cfg(feature = "parallel")]
@@ -18,15 +20,22 @@ pub(super) struct Proof {
 }
 
 pub(crate) fn eq_table(point: &[F]) -> Vec<F> {
-    let mut out = vec![F::ONE];
-    for &r in point {
-        let n = out.len();
-        out.resize(2 * n, F::ZERO);
-        for i in 0..n {
-            let high = out[i] * r;
-            out[n + i] = high;
-            out[i] += high;
+    let mut out = vec![F::ZERO; 1 << point.len()];
+    out[0] = F::ONE;
+    for (i, &r) in point.iter().enumerate() {
+        let n = 1usize << i;
+        let (lo, hi) = out.split_at_mut(n);
+        let step = |(lo_j, hi_j): (&mut F, &mut F)| {
+            let high = *lo_j * r;
+            *hi_j = high;
+            *lo_j += high;
+        };
+        #[cfg(feature = "parallel")]
+        if n >= 1 << 12 {
+            lo.par_iter_mut().zip(hi.par_iter_mut()).with_min_len(1 << 10).for_each(step);
+            continue;
         }
+        lo.iter_mut().zip(hi.iter_mut()).for_each(step);
     }
     out
 }
@@ -88,52 +97,220 @@ fn apply(table: &[F], packed: F) -> F {
         .fold(F::ZERO, |s, (i, &b)| s + table[i * 256 + b as usize])
 }
 
-fn packed_round(packed: &[F], low: &[F], high: &[F], prefix_eq: &[F], round: usize) -> [F; 2] {
+/// 16-entry subset-sum table over four elements:
+/// `sums[mask] = Σ_{k : bit_k(mask)} e[k]` (15 additions by doubling).
+#[inline(always)]
+fn subset_sums_4(e: [F; 4]) -> [F; 16] {
+    let mut sums = [F::ZERO; 16];
+    for (i, &v) in e.iter().enumerate() {
+        let half = 1usize << i;
+        for k in 0..half {
+            sums[half + k] = sums[k] + v;
+        }
+    }
+    sums
+}
+
+#[cfg(feature = "parallel")]
+fn sum_pairs(iter: impl ParallelIterator<Item = [F; 2]>) -> [F; 2] {
+    iter.reduce(|| [F::ZERO; 2], |a, b| [a[0] + b[0], a[1] + b[1]])
+}
+#[cfg(not(feature = "parallel"))]
+fn sum_pairs(iter: impl Iterator<Item = [F; 2]>) -> [F; 2] {
+    iter.fold([F::ZERO; 2], |a, b| [a[0] + b[0], a[1] + b[1]])
+}
+
+/// Bit marginals of one packed source against its high weights:
+/// `S[block·128 + bit] = Σ_i high[i] · bit_bit(packed[i·low_blocks + block])`
+/// over the source's `high.len()·low_blocks` logical words.
+///
+/// Every message of the seven packed rounds is a linear functional of
+/// these `128·low_blocks` sums (the per-word coefficients change per round,
+/// the marginals do not), so they are accumulated ONCE with the
+/// method-of-four-Russians fold of [`crate::ligerito::sv_fold_mfr`]: per
+/// eight rows two 16-entry subset-sum tables of their `high` weights, then
+/// per byte position one 8×8 bit transpose and per output bit two lookups
+/// and one accumulate — instead of thirty-two byte-table lookups per word
+/// per round. Exact field sums, so the messages are bit-identical to the
+/// per-word scan for any accumulation order.
+fn bit_marginals(packed: &[F], high: &[F], low_blocks: usize) -> Vec<F> {
+    let rows = high.len();
+    let packed = &packed[..rows * low_blocks];
+    // Tasks are (block range, row range) pairs. Whole block ranges keep a
+    // task's accumulators in L1 and need no merge; a source with few
+    // blocks (SHA has one) is split over row ranges and merged at the end.
+    const BLOCKS_PER_TASK: usize = 16;
+    let block_tasks = low_blocks.div_ceil(BLOCKS_PER_TASK);
+    #[cfg(feature = "parallel")]
+    let wanted = 4 * rayon::current_num_threads();
+    #[cfg(not(feature = "parallel"))]
+    let wanted = 1;
+    let row_tasks = if block_tasks >= wanted {
+        1
+    } else {
+        // Row ranges are multiples of eight so only the global tail is
+        // scalar, and at least 2^10 rows each.
+        (wanted / block_tasks).clamp(1, rows.div_ceil(1 << 10).max(1))
+    };
+    let rows_per_task = rows.div_ceil(row_tasks).div_ceil(8) * 8;
+    let row_tasks = rows.div_ceil(rows_per_task).max(1);
+    let partials: Vec<Vec<F>> = cfg_into_iter!(0..block_tasks * row_tasks)
+        .map(|task| {
+            let b0 = (task / row_tasks) * BLOCKS_PER_TASK;
+            let b1 = (b0 + BLOCKS_PER_TASK).min(low_blocks);
+            let i0 = (task % row_tasks) * rows_per_task;
+            let i1 = (i0 + rows_per_task).min(rows);
+            marginals_task(packed, high, low_blocks, b0..b1, i0..i1)
+        })
+        .collect();
+    if row_tasks == 1 {
+        return partials.into_iter().flatten().collect();
+    }
+    let mut out = vec![F::ZERO; low_blocks * 128];
+    for (task, part) in partials.iter().enumerate() {
+        let b0 = (task / row_tasks) * BLOCKS_PER_TASK;
+        for (dst, &v) in out[b0 * 128..].iter_mut().zip(part) {
+            *dst += v;
+        }
+    }
+    out
+}
+
+fn marginals_task(
+    packed: &[F],
+    high: &[F],
+    low_blocks: usize,
+    blocks: std::ops::Range<usize>,
+    rows: std::ops::Range<usize>,
+) -> Vec<F> {
+    let b0 = blocks.start;
+    let mut s = vec![F::ZERO; blocks.len() * 128];
+    let mut i = rows.start;
+    while i + 8 <= rows.end {
+        let lo_tbl = subset_sums_4([high[i], high[i + 1], high[i + 2], high[i + 3]]);
+        let hi_tbl = subset_sums_4([high[i + 4], high[i + 5], high[i + 6], high[i + 7]]);
+        for block in blocks.clone() {
+            let acc = &mut s[(block - b0) * 128..(block - b0 + 1) * 128];
+            let mut bytes = [[0u8; 16]; 8];
+            for (e, slot) in bytes.iter_mut().enumerate() {
+                let word = packed[(i + e) * low_blocks + block];
+                slot[..8].copy_from_slice(&word.lo.to_le_bytes());
+                slot[8..].copy_from_slice(&word.hi.to_le_bytes());
+            }
+            for r_byte in 0..16 {
+                let combined = bytes
+                    .iter()
+                    .enumerate()
+                    .fold(0u64, |c, (e, b)| c | ((b[r_byte] as u64) << (8 * e)));
+                let masks = transpose_8x8_bits(combined).to_le_bytes();
+                for (p, &mask) in masks.iter().enumerate() {
+                    acc[r_byte * 8 + p] +=
+                        lo_tbl[(mask & 0x0F) as usize] + hi_tbl[(mask >> 4) as usize];
+                }
+            }
+        }
+        i += 8;
+    }
+    while i < rows.end {
+        for block in blocks.clone() {
+            let acc = &mut s[(block - b0) * 128..(block - b0 + 1) * 128];
+            let word = packed[i * low_blocks + block];
+            for (w, half) in [word.lo, word.hi].into_iter().enumerate() {
+                let mut bits = half;
+                while bits != 0 {
+                    acc[(w << 6) | bits.trailing_zeros() as usize] += high[i];
+                    bits &= bits - 1;
+                }
+            }
+        }
+        i += 1;
+    }
+    s
+}
+
+/// Round `round` (0..7) message of one source from its bit marginals: the
+/// `[u0, u2]` a scan of every word would produce, with the per-word linear
+/// map replaced by `Σ_{block, bit} c_block[bit]·S[block·128 + bit]`, where
+/// `c` carries the bound prefix and the (twice-folded) low weights of the
+/// round.
+fn packed_round(marginals: &[F], low: &[F], prefix_eq: &[F], round: usize) -> [F; 2] {
     let stride = 128 >> round;
     let low_blocks = low.len() / stride;
-    #[cfg(feature = "parallel")]
-    let parallel_blocks = low_blocks >= rayon::current_num_threads();
-    let compute = |block: usize| {
-        let mut c0 = [F::ZERO; 128];
-        let mut c2 = [F::ZERO; 128];
-        for bit in 0..128 {
+    debug_assert_eq!(marginals.len(), low_blocks * 128);
+    let mask = (1usize << round) - 1;
+    sum_pairs(cfg_into_iter!(0..low_blocks, 8).map(|block| {
+        let s = &marginals[block * 128..(block + 1) * 128];
+        let mut u0 = F::ZERO;
+        let mut u2 = F::ZERO;
+        for (bit, &m) in s.iter().enumerate() {
             let j = block * stride + (bit >> (round + 1)) * 2;
-            let prefix = prefix_eq[bit & ((1 << round) - 1)];
+            let ps = prefix_eq[bit & mask] * m;
             if bit & (1 << round) == 0 {
-                c0[bit] = prefix * low[j];
+                u0 += ps * low[j];
             }
-            c2[bit] = prefix * (low[j] + low[j + 1]);
+            u2 += ps * (low[j] + low[j + 1]);
         }
-        let tab0 = byte_table(&c0);
-        let tab2 = byte_table(&c2);
-        // SHA has one low block and a long scan: parallelize that scan.
-        // Multiplication has many low blocks: parallelize whole blocks so
-        // their LUT construction runs concurrently, without tiny nested jobs.
-        let at = |i: usize| {
-            let word = packed[i * low_blocks + block];
-            [apply(&tab0, word) * high[i], apply(&tab2, word) * high[i]]
-        };
-        #[cfg(feature = "parallel")]
-        if !parallel_blocks {
-            return (0..high.len())
-                .into_par_iter()
-                .map(at)
-                .reduce(|| [F::ZERO; 2], |a, b| [a[0] + b[0], a[1] + b[1]]);
-        }
-        (0..high.len())
-            .map(at)
-            .fold([F::ZERO; 2], |a, b| [a[0] + b[0], a[1] + b[1]])
+        [u0, u2]
+    }))
+}
+
+/// Fold both dense tables by `r` (`out[i] = in[2i] + r·(in[2i] + in[2i+1])`)
+/// and return the next round's message over the folded pairs: one pass
+/// over the tables instead of a fold pass and a message pass.
+fn dense_fold(witness: &mut Vec<F>, weights: &mut Vec<F>, r: F) -> [F; 2] {
+    const CHUNK: usize = 1 << 10;
+    let n = witness.len() / 2;
+    let (x, w): (&[F], &[F]) = (witness, weights);
+    // The folded tables are written once, in parallel, into uninitialised
+    // capacity (no serial zero-fill of 2·n elements per round).
+    let mut next_x: Vec<F> = Vec::with_capacity(n);
+    let mut next_w: Vec<F> = Vec::with_capacity(n);
+    let message = {
+        let sx = &mut next_x.spare_capacity_mut()[..n];
+        let sw = &mut next_w.spare_capacity_mut()[..n];
+        sum_pairs(
+            cfg_chunks_mut!(sx, CHUNK)
+                .zip(cfg_chunks_mut!(sw, CHUNK))
+                .enumerate()
+                .map(|(c, (xo, wo))| {
+                    let base = c * CHUNK;
+                    let mut u0 = F::ZERO;
+                    let mut u2 = F::ZERO;
+                    let mut k = 0;
+                    while k + 1 < xo.len() {
+                        let i = 2 * (base + k);
+                        let x0 = x[i] + r * (x[i] + x[i + 1]);
+                        let x1 = x[i + 2] + r * (x[i + 2] + x[i + 3]);
+                        let w0 = w[i] + r * (w[i] + w[i + 1]);
+                        let w1 = w[i + 2] + r * (w[i + 2] + w[i + 3]);
+                        xo[k].write(x0);
+                        xo[k + 1].write(x1);
+                        wo[k].write(w0);
+                        wo[k + 1].write(w1);
+                        u0 += x0 * w0;
+                        u2 += (x0 + x1) * (w0 + w1);
+                        k += 2;
+                    }
+                    if k < xo.len() {
+                        // Only the final fold (n = 1) has an unpaired element;
+                        // its message is never sent.
+                        let i = 2 * (base + k);
+                        xo[k].write(x[i] + r * (x[i] + x[i + 1]));
+                        wo[k].write(w[i] + r * (w[i] + w[i + 1]));
+                    }
+                    [u0, u2]
+                }),
+        )
     };
-    #[cfg(feature = "parallel")]
-    if parallel_blocks {
-        return (0..low_blocks)
-            .into_par_iter()
-            .map(compute)
-            .reduce(|| [F::ZERO; 2], |a, b| [a[0] + b[0], a[1] + b[1]]);
+    // SAFETY: every one of the first `n` slots of both buffers was written
+    // above (each chunk writes all of its elements).
+    unsafe {
+        next_x.set_len(n);
+        next_w.set_len(n);
     }
-    (0..low_blocks)
-        .map(compute)
-        .fold([F::ZERO; 2], |a, b| [a[0] + b[0], a[1] + b[1]])
+    *witness = next_x;
+    *weights = next_w;
+    message
 }
 
 fn bind_claims(t: &mut Blake3Transcript, a: &BinaryClaim, b: &BinaryClaim) -> F {
@@ -158,10 +335,13 @@ pub(super) fn prove(
     let mut value = claims[0].value + rho * claims[1].value;
     let mut point = Vec::with_capacity(geometry.bit_log());
     let mut rounds = Vec::with_capacity(geometry.bit_log());
+    let packed_scope = crate::utils::prof::scope("js:packed_rounds");
+    let marginals: [Vec<F>; 2] =
+        std::array::from_fn(|b| bit_marginals(sources[b], &high[b], low[b].len() / 128));
     for round in 0..7 {
         let prefix_eq = eq_table(&point);
-        let a = packed_round(sources[0], &low[0], &high[0], &prefix_eq, round);
-        let b = packed_round(sources[1], &low[1], &high[1], &prefix_eq, round);
+        let a = packed_round(&marginals[0], &low[0], &prefix_eq, round);
+        let b = packed_round(&marginals[1], &low[1], &prefix_eq, round);
         let message = [a[0] + rho * b[0], a[1] + rho * b[1]];
         observe(t, &message);
         let r = sample(t);
@@ -172,47 +352,77 @@ pub(super) fn prove(
             fold(weights, r);
         }
     }
+    drop(marginals);
+    drop(packed_scope);
+    let tables_scope = crate::utils::prof::scope("js:tables");
     let bit_eq: [F; 128] = eq_table(&point).try_into().expect("seven coordinates");
     let bit_table = byte_table(&bit_eq);
-    let mut witness = vec![F::ZERO; 1 << geometry.packed_log()];
-    let mut weights = vec![F::ZERO; witness.len()];
-    for branch in 0..2 {
-        let nlow = low[branch].len();
-        for (index, &word) in sources[branch].iter().enumerate() {
-            let dst = geometry.embed(branch, index);
-            witness[dst] = apply(&bit_table, word);
-            if index < (1 << geometry.logs[branch]) {
-                weights[dst] = scales[branch] * low[branch][index % nlow] * high[branch][index / nlow];
-            }
-        }
+    const MAX_LANES: usize = 16;
+    let lanes = geometry.lanes();
+    assert!(lanes <= MAX_LANES && lanes % 2 == 0, "virtual lane group");
+    let n = 1usize << geometry.packed_log();
+    let logical = [1usize << geometry.logs[0], 1usize << geometry.logs[1]];
+    let nlow = [low[0].len(), low[1].len()];
+    // One lane group per position, written once in parallel into
+    // uninitialised capacity: both branches' lane slices (zero lanes
+    // included), then the first dense round's message over the group's
+    // pairs (the group size is even, so every pair lies inside one group).
+    let mut witness: Vec<F> = Vec::with_capacity(n);
+    let mut weights: Vec<F> = Vec::with_capacity(n);
+    let mut message = {
+        let sx = &mut witness.spare_capacity_mut()[..n];
+        let sw = &mut weights.spare_capacity_mut()[..n];
+        sum_pairs(
+            cfg_chunks_mut!(sx, lanes)
+                .zip(cfg_chunks_mut!(sw, lanes))
+                .enumerate()
+                .map(|(g, (wg, ww))| {
+                    let mut x = [F::ZERO; MAX_LANES];
+                    let mut w = [F::ZERO; MAX_LANES];
+                    for lane in 0..lanes {
+                        let branch = lane / (lanes / 2);
+                        let l = lane % (lanes / 2);
+                        let k = geometry.lane_logs[branch];
+                        if l < 1 << k {
+                            let index = (g << k) | l;
+                            x[lane] = apply(&bit_table, sources[branch][index]);
+                            if index < logical[branch] {
+                                w[lane] = scales[branch]
+                                    * low[branch][index % nlow[branch]]
+                                    * high[branch][index / nlow[branch]];
+                            }
+                        }
+                        wg[lane].write(x[lane]);
+                        ww[lane].write(w[lane]);
+                    }
+                    let mut u0 = F::ZERO;
+                    let mut u2 = F::ZERO;
+                    for j in 0..lanes / 2 {
+                        u0 += x[2 * j] * w[2 * j];
+                        u2 += (x[2 * j] + x[2 * j + 1]) * (w[2 * j] + w[2 * j + 1]);
+                    }
+                    [u0, u2]
+                }),
+        )
+    };
+    // SAFETY: every group wrote all of its `lanes` slots in both buffers.
+    unsafe {
+        witness.set_len(n);
+        weights.set_len(n);
     }
     drop(low);
     drop(high);
+    drop(tables_scope);
+    let dense_scope = crate::utils::prof::scope("js:dense_rounds");
     while witness.len() > 1 {
-        let at = |i: usize| {
-            let x0 = witness[2 * i];
-            let dx = x0 + witness[2 * i + 1];
-            let w0 = weights[2 * i];
-            let dw = w0 + weights[2 * i + 1];
-            [x0 * w0, dx * dw]
-        };
-        #[cfg(feature = "parallel")]
-        let message = (0..witness.len() / 2)
-            .into_par_iter()
-            .map(at)
-            .reduce(|| [F::ZERO; 2], |a, b| [a[0] + b[0], a[1] + b[1]]);
-        #[cfg(not(feature = "parallel"))]
-        let message = (0..witness.len() / 2)
-            .map(at)
-            .fold([F::ZERO; 2], |a, b| [a[0] + b[0], a[1] + b[1]]);
         observe(t, &message);
         let r = sample(t);
         value = evaluate_round(message, value, r);
         point.push(r);
         rounds.push(message);
-        fold(&mut witness, r);
-        fold(&mut weights, r);
+        message = dense_fold(&mut witness, &mut weights, r);
     }
+    drop(dense_scope);
     debug_assert_eq!(value, witness[0] * weights[0]);
     observe(t, &witness);
     (
