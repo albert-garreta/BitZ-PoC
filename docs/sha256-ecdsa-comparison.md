@@ -14,9 +14,9 @@ The [earlier measurements](sha256-ecdsa-shared-kernels-results.md) cover every
 exponent 4 through 11, both thread counts, and both Spartan chunking policies.
 
 The optional [Binius64 worker](../benchmarks/binius64/README.md) uses the rebased
-`sha256-chain-ecdsa-sig-verify-benching` fork through an immutable Git revision.
-It has its own Cargo workspace and toolchain; existing Binius SHA/u32/hybrid
-adapters keep their existing dependency versions.
+`f2z-benching` fork through an immutable Git revision shared with the root's
+Binius SHA/u32/hybrid adapters. The SHA+ECDSA worker retains its own Cargo
+workspace, lockfile, and toolchain. See [branch consolidation](binius64-consolidation.md).
 
 ZKPassport is deprecated and is no longer an active method. Historical outputs
 remain readable with `--summarize-only`.
@@ -41,7 +41,7 @@ python3 scripts/run_sha256_ecdsa_compare.py \
 Use `--offline` when dependencies are cached. `CARGO_HOME`, `CARGO_TARGET_DIR`
 and compiler flags are inherited; `RUSTFLAGS` defaults to `-C target-cpu=native`.
 Selecting `binius64` additionally builds its isolated worker; the root comparison feature
-does not enable the older Binius, Plonky3, or Limber adapters.
+does not enable the root Binius, Plonky3, or Limber adapters.
 
 To compare Spartan chunkings of a 1,024-compression chain:
 

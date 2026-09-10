@@ -511,7 +511,7 @@ impl BiniusContext {
         let mut verifier_transcript =
             VerifierTranscript::new(StdChallenger::default(), proof_bytes.clone());
         self.verifier
-            .verify(witness.public(), &mut verifier_transcript)
+            .verify(witness.inout(), &mut verifier_transcript)
             .expect("Binius proof verifies");
         verifier_transcript
             .finalize()
@@ -904,6 +904,7 @@ fn binius_semantic_spans(
             )
         } else if under_component(span, "ring_switching")
             || under_component(span, "basefold_opening")
+            || under_component(span, "finish_pcs")
         {
             (
                 "opening-proof",
@@ -2045,7 +2046,11 @@ fn f2z_public_tamper_self_test() {
 fn binius_tamper_self_test(capture: &TraceCapture) {
     let corpus = Corpus::new(2, DEFAULT_ROOT_SEED ^ 0x5441_4d50_4552);
     let context = BiniusContext::setup(&corpus, 1);
-    let (_, _, proof, witness) = context.run(capture);
+    let (metrics, _, proof, witness) = context.run(capture);
+    assert!(metrics.witness_ms > 0.0);
+    assert!(metrics.commit_ms > 0.0);
+    assert!(metrics.piop_ms > 0.0);
+    assert!(metrics.opening_ms > 0.0);
 
     let pair = &context.wires.pairs[0];
     let low = &corpus.cases[0];
@@ -2072,7 +2077,7 @@ fn binius_tamper_self_test(capture: &TraceCapture) {
         assert!(
             context
                 .verifier
-                .verify(tampered.public(), &mut transcript)
+                .verify(tampered.inout(), &mut transcript)
                 .is_err()
                 || transcript.finalize().is_err(),
             "tampering with a public block or output must fail"
@@ -2086,7 +2091,7 @@ fn binius_tamper_self_test(capture: &TraceCapture) {
     assert!(
         context
             .verifier
-            .verify(witness.public(), &mut transcript)
+            .verify(witness.inout(), &mut transcript)
             .is_err()
             || transcript.finalize().is_err(),
         "proof-byte tampering must fail"
@@ -2097,7 +2102,7 @@ fn binius_tamper_self_test(capture: &TraceCapture) {
     let mut transcript = VerifierTranscript::new(StdChallenger::default(), trailing);
     let verified = context
         .verifier
-        .verify(witness.public(), &mut transcript)
+        .verify(witness.inout(), &mut transcript)
         .is_ok();
     assert!(
         !verified || transcript.finalize().is_err(),
@@ -2506,6 +2511,11 @@ fn main() {
 
 #[cfg(test)]
 mod native_whir_tests {
+    #[test]
+    fn binius_sha_binds_public_blocks_outputs_and_proof() {
+        super::binius_tamper_self_test(&super::CaptureLayer::install());
+    }
+
     #[test]
     fn comparison_has_only_the_four_requested_backends() {
         assert_eq!(

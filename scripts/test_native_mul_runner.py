@@ -163,7 +163,7 @@ class RunnerTests(unittest.TestCase):
             calls=[json.loads(line) for line in commands.read_text().splitlines()]
             self.assertEqual(len(calls),2)
             for call in calls:
-                self.assertEqual(call["args"],runner.limber_command(15)[1:]); self.assertEqual(call["cwd"],str(repo))
+                self.assertEqual(call["args"],runner.limber_command(15)[1:]); self.assertEqual(call["cwd"],str(repo.resolve()))
                 self.assertEqual(call["flags"],"-C target-cpu=native"); self.assertEqual(call["threads"],"8"); self.assertIsNone(call["encoded"])
             summary=json.loads((output/"summary.json").read_text())[0]
             self.assertEqual(summary["samples"],2);self.assertEqual(summary["multiplications"],32768)

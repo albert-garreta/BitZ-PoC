@@ -499,7 +499,7 @@ case (2^15 operations, one in-process warmup, five verified samples):
 bash scripts/run_native_mul_compare.sh
 ```
 
-The runner enforces Rust 1.97.1, native CPU compilation and eight threads.
+The runner enforces Rust 1.98.1, native CPU compilation and eight threads.
 Set `LIMBER_REPO` if the fork is elsewhere. For a five-sample sweep:
 
 ```sh
@@ -512,7 +512,7 @@ warmup and all samples, plus a separate invocation for isolated peak RSS:
 
 ```sh
 RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
-cargo +1.97.1 run --release --example int_mult -- --bits 32 --log-gates 15
+cargo +1.98.1 run --release --example int_mult -- --bits 32 --log-gates 15
 ```
 
 At L=15 all backends prove **32,768 independent gates**; Limber allocates

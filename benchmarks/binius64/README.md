@@ -6,8 +6,10 @@ lockfile, with its own Rust toolchain. The fork builds on Albert Garreta's
 `sha-ecdsa-bench`, rebased onto upstream main, and supplies the fixed SHA-chain
 and P-256 gadgets. Albert's secp256k1 recovery example remains a distinct workload.
 
-Pinned fork: [`938eadcd`](https://github.com/wu-s-john/binius64/commit/938eadcdfa1c2902f207e75bf6510d74db51602d),
-on [`sha256-chain-ecdsa-sig-verify-benching`](https://github.com/wu-s-john/binius64/tree/sha256-chain-ecdsa-sig-verify-benching).
+Pinned fork: [`bc73510e`](https://github.com/wu-s-john/binius64/commit/bc73510ed63bf47eec25d4d10ade84f1c1fe2790),
+on [`f2z-benching`](https://github.com/wu-s-john/binius64/tree/f2z-benching).
+The SHA+ECDSA branch also points to this consolidation commit. The root's other
+Binius adapters use the same revision; neither workspace uses a local Binius patch.
 Albert's benchmark commit is preserved as `9e880ff4` after rebasing onto upstream
 `c28940ae693c3999fd225cc6142f43d07d1100bb`.
 

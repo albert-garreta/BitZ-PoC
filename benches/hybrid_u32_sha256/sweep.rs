@@ -230,7 +230,7 @@ pub fn run(
     fs::write(
         results_dir.join("run.txt"),
         format!(
-            "executable={}\nprotocol=hybrid-u32-mod32-sha256-v3\nmultiplication_relation=xy=z+2^32*w (x,y,z,w are u32)\nshapes={shapes:?}\nmodes={modes:?}\niterations={iterations}\nRAYON_NUM_THREADS={}\nnon_zk=true\nsecurity_target_bits=100\n",
+            "executable={}\nprotocol=hybrid-u32-mod32-sha256-v4\nmultiplication_relation=xy=z+2^32*w (x,y,z,w are u32)\nshapes={shapes:?}\nmodes={modes:?}\niterations={iterations}\nRAYON_NUM_THREADS={}\nnon_zk=true\nsecurity_target_bits=100\n",
             executable.display(),
             std::env::var("RAYON_NUM_THREADS").unwrap_or_else(|_| "default".into()),
         ),

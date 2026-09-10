@@ -194,7 +194,15 @@ Each block is sixteen words in SHA's standard word order; each word represents f
 - `src/hybrid/codec.rs`: versioned proof encoding with canonical integer residues, bounded counts and no trailing bytes.
 - `src/hybrid/security.rs`: composition error budget and explicit parameter rejection below the target.
 
-The two minimal dependency forks live under `vendor/binius64` and `vendor/flock-mod`; their `VENDORED.md` files record upstream revisions. Binius exposes its pre-ring-switch witness evaluation; Flock exposes application-supplied initial authentication. Their ordinary opening APIs retain their original backends.
+Binius is pinned to the consolidated Git fork, shared with the SHA+ECDSA worker;
+there is no local Binius patch. Its prefix API checks public inputs and wiring
+before returning the private bit-MLE claim authenticated by the shared opening.
+Flock remains under `vendor/flock-mod` and exposes application-supplied initial
+authentication. See [Binius consolidation](binius64-consolidation.md).
+
+The current hybrid wire encoding and transcript are version 4. Regenerate proof
+artifacts and setup after this Binius update; version-3 and earlier proofs are
+rejected. Historical benchmark results below retain their original versions.
 
 ## Security target and scope
 

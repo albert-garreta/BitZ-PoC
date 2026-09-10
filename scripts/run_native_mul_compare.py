@@ -19,7 +19,7 @@ from native_mul_results import (CORE_METRICS, POLICY, SAMPLE_SCHEMA, SUMMARY_SCH
                                 finite_number, fingerprint, validate_summary)
 
 ROOT = Path(__file__).resolve().parents[1]
-TOOLCHAIN = "1.97.1"
+TOOLCHAIN = "1.98.1"
 DEFAULT_SEED = 0x5533325043530064
 BUILD = {"rust_toolchain": TOOLCHAIN, "rustflags": "-C target-cpu=native", "threads": 8}
 CLEAR_ENV = ("CARGO_ENCODED_RUSTFLAGS", "DUMP", "CHAIN_BITS", "BDLAMBDA", "BDSPEC",

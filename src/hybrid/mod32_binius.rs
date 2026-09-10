@@ -22,7 +22,7 @@ pub fn add_u32_mul_mod32(builder: &CircuitBuilder) -> [Wire; 4] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use binius_core::{constraint_system::ValueVec, verify::verify_constraints, word::Word};
+    use binius_core::{constraint_system::ValueVec, word::Word};
     use binius_frontend::Circuit;
     use binius_hash::Blake3HashSuite;
     use binius_prover::{OptimalPackedB128, Prover};
@@ -60,7 +60,7 @@ mod tests {
         for row in valid {
             let (witness, populated) = populate(&circuit, &wires, row);
             assert!(populated, "valid row {row:?}");
-            verify_constraints(cs, &witness).unwrap();
+            cs.verify(&witness).unwrap();
         }
 
         let invalid = [
@@ -75,7 +75,7 @@ mod tests {
             let (witness, populated) = populate(&circuit, &wires, row);
             assert!(!populated, "invalid row {row:?}");
             assert!(
-                verify_constraints(cs, &witness).is_err(),
+                cs.verify(&witness).is_err(),
                 "compiled constraints accepted invalid row {row:?}"
             );
         }
@@ -111,7 +111,7 @@ mod tests {
         let mut transcript = ProverTranscript::new(Challenger::default());
         prover.prove(&witness, &mut transcript).unwrap();
         let mut transcript = VerifierTranscript::new(Challenger::default(), transcript.finalize());
-        verifier.verify(witness.public(), &mut transcript).unwrap();
+        verifier.verify(witness.inout(), &mut transcript).unwrap();
         transcript.finalize().unwrap();
     }
 }

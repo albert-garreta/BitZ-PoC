@@ -86,7 +86,7 @@ impl Context {
         let vstart = capture.now_ns();
         let mut vt = VerifierTranscript::new(StdChallenger::default(), bytes.clone());
         self.verifier
-            .verify(witness.public(), &mut vt)
+            .verify(witness.inout(), &mut vt)
             .expect("Binius full verification");
         vt.finalize().expect("consume full Binius proof");
         let end = capture.now_ns();
@@ -127,11 +127,13 @@ mod tests {
         let (circuit, wires) = compile(&corpus);
         let cs = circuit.constraint_system();
         assert_eq!(cs.n_imul_constraints(), corpus.len());
-        assert_eq!(cs.n_and_constraints(), 4 * corpus.len());
-        assert_eq!(cs.n_zero_constraints(), 0);
+        // Current Binius emits one masked-product AND and linear range/equality
+        // checks per row; validate bounds below independently of these cost counts.
+        assert_eq!(cs.n_and_constraints(), corpus.len());
+        assert_eq!(cs.n_zero_constraints(), 3 * corpus.len());
         assert_eq!(cs.n_bmul_constraints(), 0);
         let valid = populate(&corpus, &circuit, &wires, false).unwrap();
-        binius_core::verify::verify_constraints(cs, valid.value_vec()).unwrap();
+        cs.verify(valid.value_vec()).unwrap();
         let Wires::Narrow { a, b, c, .. } = wires[0] else {
             unreachable!()
         };
@@ -140,7 +142,7 @@ mod tests {
         for (wire, value) in [(a, 1 << 32), (b, 1 << 32), (c, 1 << 32), (c, 1)] {
             let mut tampered = populate(&corpus, &circuit, &wires, false).unwrap();
             tampered[wire] = Word(value);
-            assert!(binius_core::verify::verify_constraints(cs, tampered.value_vec()).is_err());
+            assert!(cs.verify(tampered.value_vec()).is_err());
         }
         let Wires::Narrow { c, .. } = wires[3] else {
             unreachable!()
@@ -162,12 +164,12 @@ mod tests {
         let mut valid = VerifierTranscript::new(StdChallenger::default(), bytes.clone());
         context
             .verifier
-            .verify(witness.public(), &mut valid)
+            .verify(witness.inout(), &mut valid)
             .unwrap();
         valid.finalize().unwrap();
         bytes[0] ^= 1;
         let mut bad = VerifierTranscript::new(StdChallenger::default(), bytes);
-        assert!(context.verifier.verify(witness.public(), &mut bad).is_err());
+        assert!(context.verifier.verify(witness.inout(), &mut bad).is_err());
     }
 
     #[test]
@@ -176,7 +178,7 @@ mod tests {
             let c = Context::setup(Arc::new(edge_corpus(workload)));
             // Population computes wires; acceptance is checked by the constraint verifier.
             let valid = c.populate(false).unwrap();
-            binius_core::verify::verify_constraints(c.circuit.constraint_system(), &valid).unwrap();
+            c.circuit.constraint_system().verify(&valid).unwrap();
             assert!(c.populate(true).is_err());
         }
     }

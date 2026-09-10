@@ -242,7 +242,7 @@ impl PreparedHybrid {
             return Err(Error::Invalid("statement workload parameters"));
         }
         let mut h = blake3::Hasher::new();
-        h.update(b"f2z/hybrid-u32-mod32-sha256/non-zk/v3");
+        h.update(b"f2z/hybrid-u32-mod32-sha256/non-zk/v4");
         for n in [
             self.parameters.multiplications,
             self.parameters.sha_compressions,
@@ -264,7 +264,7 @@ impl PreparedHybrid {
         );
         let digest = *h.finalize().as_bytes();
         let mut transcript = Blake3Transcript::new();
-        transcript.absorb_slice(b"hybrid/statement/v3");
+        transcript.absorb_slice(b"hybrid/statement/v4");
         transcript.absorb_slice(&digest);
         Ok((transcript, digest))
     }
@@ -360,7 +360,7 @@ mod tests {
     fn field_representations_agree() {
         use binius_field::Field;
         use binius_verifier::config::B128;
-        assert_eq!(u128::from(B128::ONE.val()), 1);
+        assert_eq!(u128::from(B128::ONE), 1);
         let values = [0, 1, 2, u128::MAX, 0x0123456789abcdef0123456789abcdef];
         for a in values {
             for b in values {
@@ -374,7 +374,7 @@ mod tests {
                 };
                 let z = x * y;
                 assert_eq!(
-                    u128::from((B128::new(a) * B128::new(b)).val()),
+                    u128::from(B128::new(a) * B128::new(b)),
                     z.lo as u128 | ((z.hi as u128) << 64)
                 );
             }
@@ -475,7 +475,7 @@ mod tests {
         prepared.verify(committed.statement(), &proof).unwrap();
         let bytes = proof.to_bytes();
         let mut legacy = bytes.clone();
-        legacy[4] = 1;
+        legacy[4] = 3;
         assert!(
             prepared
                 .proof_from_bytes(committed.statement(), &legacy)

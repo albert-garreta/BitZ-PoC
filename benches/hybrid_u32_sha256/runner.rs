@@ -107,7 +107,7 @@ impl Native {
     }
     fn verify(&self, witness: &ValueVec, bytes: Vec<u8>) -> Result<(), AnyError> {
         let mut t = VerifierTranscript::new(Challenger::default(), bytes);
-        self.verifier.verify(witness.public(), &mut t)?;
+        self.verifier.verify(witness.inout(), &mut t)?;
         t.finalize()?;
         Ok(())
     }
@@ -348,7 +348,7 @@ pub fn run() -> Result<(), AnyError> {
                     bincode::serialize(committed.statement())?,
                 )?;
                 let statement = format!(
-                    "protocol=hybrid-u32-mod32-sha256-v3\nmultiplication_relation=xy=z+2^32*w (x,y,z,w are u32)\nparameters={:?}\nroots={:02x?}\nfinal_sha_state={:08x?}\n",
+                    "protocol=hybrid-u32-mod32-sha256-v4\nmultiplication_relation=xy=z+2^32*w (x,y,z,w are u32)\nparameters={:?}\nroots={:02x?}\nfinal_sha_state={:08x?}\n",
                     committed.statement().parameters,
                     committed.statement().roots,
                     committed.statement().final_sha_state

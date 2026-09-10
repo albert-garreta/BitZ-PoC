@@ -9,7 +9,7 @@ other benchmarks retain their Limber dependencies.
 
 ## Run
 
-Use Rust 1.97.1. The sibling `../limber-impl` checkout must contain the new
+Use Rust 1.98.1. The sibling `../limber-impl` checkout must contain the new
 independent Brakedown `examples/int_mult.rs` on your fork's `f2z-benching`
 branch. Set `LIMBER_REPO` to use another checkout. The upstream chain/Hyrax
 example is a different workload and the runner rejects its output.
@@ -41,7 +41,7 @@ Limber runs this exact command in its own repository:
 
 ```sh
 RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
-cargo +1.97.1 run --release --example int_mult -- --bits 32 --log-gates 15
+cargo +1.98.1 run --release --example int_mult -- --bits 32 --log-gates 15
 ```
 
 Only the exponent varies. `F2Z_BENCH_REPS` defaults to 5 in both repositories.
@@ -193,11 +193,11 @@ Binius rate override remains available and is represented separately in tables.
 ```sh
 python3 -B -m unittest discover -s scripts -p test_native_mul_runner.py -v
 RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
-cargo +1.97.1 test --release --test native_mul_compare \
+cargo +1.98.1 test --release --test native_mul_compare \
   --features bench-internals,native-mul-compare
 # In the Limber checkout:
 RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
-cargo +1.97.1 test --release --example int_mult
+cargo +1.98.1 test --release --example int_mult
 ```
 
 Validation covers zero and maximum values, overflow, incorrect low results,
@@ -209,14 +209,19 @@ Runner tests cover warmup exclusion, repetitions, environment normalization,
 structured failures, selectable thread counts, WHIR eligibility/configuration
 identity and incompatible result rejection.
 
-The implementation builds on BitZ `b79b869` on `independent-u32-multiplication`
+The historical validation build used BitZ `b79b869` on `independent-u32-multiplication`
 after its rebase and Limber `861f10a6a4d705d92a9faf13a8f860d8ba057ca0` on
 `f2z-benching`, with the working-tree changes recorded in the smoke manifest.
 Pinned Plonky3: `62f49209aec15ab060c83afbaf9eeb74d8c0c411`.
-Pinned Binius64: `2b27daea4a893fab930259cc7ad59d0a37c2ef95` plus the existing
+Its Binius64 revision was `2b27daea4a893fab930259cc7ad59d0a37c2ef95` plus
 vendored prover/verifier patches. Exact tested source and Cargo.lock SHA256
 values are recorded per result in `provenance`; use those with the recorded
-base revisions to identify this uncommitted implementation.
+base revisions to identify that build.
+
+Current Binius64 uses the [consolidated fork](binius64-consolidation.md), pinned
+at `bc73510ed63bf47eec25d4d10ade84f1c1fe2790` without local Binius patches.
+The new compiler emits one AND and three zero constraints per modular u32 row;
+negative tests still independently check operand bounds and product correctness.
 
 ## Deferred work
 

@@ -19,7 +19,7 @@ use bincode::Options;
 use crypto_primitives::{FromWithConfig, PrimeField};
 use flock_core::field::F128;
 
-const MAGIC: &[u8; 8] = b"BZSH\x03\0\0\0";
+const MAGIC: &[u8; 8] = b"BZSH\x04\0\0\0";
 const MAX_PROOF_BYTES: usize = 64 << 20;
 
 fn count(r: &mut Reader<'_>, max: usize) -> Result<usize, CodecError> {

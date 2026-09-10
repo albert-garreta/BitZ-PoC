@@ -110,6 +110,9 @@ pub(super) fn account(
     // skipped Boolean coordinates. The subsequent zerocheck/shift rounds
     // have degree <=3. 4096 per coordinate bounds the initial identity
     // tests, skipped rounds, all operand batches and their sumchecks.
+    // This also covers public-segment ring switching and its degree-two
+    // sumcheck: its packed coordinate count is bounded by log_witness_words.
+    // The wiring polynomial is checked natively, adding no new soundness term.
     // No IMUL/BMUL auxiliary protocols are allowed in this SHA circuit.
     add("SHA PIOP", (4096 * sha_dims) as f64 * k_inv);
     // The joint sumcheck's rounds plus its batching draw, plus the
