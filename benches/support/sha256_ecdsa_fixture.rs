@@ -1,7 +1,7 @@
-//! Shared, versioned low-s fixtures for native F2Z and Noir workers.
+//! Shared standard P-256 fixtures for SHA-chain signature comparisons.
 use p256::ecdsa::{
-    signature::{Signer, Verifier},
     Signature, SigningKey, VerifyingKey,
+    signature::{Signer, Verifier},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -12,7 +12,7 @@ use std::{
 };
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
-pub const SCHEMA: &str = "f2z/sha256-ecdsa-fixture/low-s/v1";
+pub const SCHEMA: &str = "f2z/sha256-ecdsa-fixture/standard-p256/v1";
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -45,7 +45,6 @@ impl SignedFixture {
         bytes[31] |= 1;
         let key = SigningKey::from_bytes((&bytes).into())?;
         let signature: Signature = key.sign(&message);
-        let signature = signature.normalize_s().unwrap_or(signature);
         let q = key.verifying_key().to_encoded_point(false);
         let (r, s) = signature.split_bytes();
         let mut fixture = Self {
@@ -81,10 +80,7 @@ impl SignedFixture {
         if !(3..=16).contains(&self.log_compressions) {
             return Err("invalid exponent".into());
         }
-        let signature = Signature::from_scalars(self.r, self.s)?;
-        if signature.normalize_s().is_some() {
-            return Err("signature must use low-s".into());
-        }
+        Signature::from_scalars(self.r, self.s)?;
         self.verifying_key()?;
         Ok(())
     }
@@ -97,7 +93,7 @@ impl SignedFixture {
 
     pub fn validate(&self) -> Result<()> {
         if self.schema != SCHEMA {
-            return Err("unknown fixture schema".into());
+            return Err("expected standard-p256/v1 fixture; regenerate legacy fixtures with --export-fixture".into());
         }
         self.validate_statement()?;
         if self.message.len() != 64 * ((1usize << self.log_compressions) - 1) {
@@ -128,13 +124,9 @@ impl SignedFixture {
 mod tests {
     use super::*;
     #[test]
-    fn fixture_rejects_mutations_and_high_s() {
+    fn fixture_rejects_mutations_and_accepts_both_s_forms() {
         let original = SignedFixture::generate(3, 0).unwrap();
         assert_eq!(original.message.len(), 448);
-        assert!(Signature::from_scalars(original.r, original.s)
-            .unwrap()
-            .normalize_s()
-            .is_none());
         let mut bad = original.clone();
         bad.message[0] ^= 1;
         bad.id = bad.compute_id();
@@ -146,9 +138,12 @@ mod tests {
         bad.qx = [255; 32];
         assert!(bad.validate_statement().is_err());
         let signature = Signature::from_scalars(original.r, original.s).unwrap();
-        let high_s = -signature.s().as_ref();
+        let alternate_s = -signature.s().as_ref();
         let mut bad = original;
-        bad.s = high_s.to_bytes().into();
-        assert!(bad.validate_statement().is_err());
+        bad.s = alternate_s.to_bytes().into();
+        bad.id = bad.compute_id();
+        bad.validate().unwrap();
+        bad.schema = "f2z/sha256-ecdsa-fixture/low-s/v1".into();
+        assert!(bad.validate().is_err());
     }
 }

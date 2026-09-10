@@ -1,14 +1,15 @@
-//! Native Integer-Mod-R1CS SHA-256 for Limber's Hyrax and Brakedown engines.
+//! Native Integer-Mod-R1CS SHA-256 for Limber's Brakedown engine.
 
 use std::{hint::black_box, sync::Arc, time::Instant};
 
 use limber::{
     imod_r1cs_modp::{IntModR1CSShapeModp, IntModR1CSWitnessModp},
     imod_spartan_modp::IntModSpartanModpSNARK,
-    provider::{T256DynPrimeBdEngine, T256DynPrimeEngine, pcs::integer_modpcs::IntEvalParams},
+    provider::{T256DynPrimeBdEngine, pcs::integer_modpcs::IntEvalParams},
     traits::mod_engine::ModEngine,
 };
 use num_bigint::BigUint;
+use serde_json::{Value, json};
 
 use super::{
     CapturedSpan, Corpus, SHA256_IV, SemanticSpan, TraceCapture, TrialMetrics, humanize, operation,
@@ -28,37 +29,45 @@ const K: [u32; 64] = [
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum EngineKind {
-    Hyrax,
-    Brakedown,
-}
-
-impl EngineKind {
-    pub const fn slug(self) -> &'static str {
-        match self {
-            Self::Hyrax => "hyrax",
-            Self::Brakedown => "brakedown",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Params {
-    pub engine: EngineKind,
     pub k: usize,
 }
 
 impl Params {
     pub fn label(self) -> String {
-        format!(
-            "{}-k{}",
-            match self.engine {
-                EngineKind::Hyrax => "hyrax",
-                EngineKind::Brakedown => "brakedown",
-            },
-            self.k
-        )
+        format!("brakedown-k{}", self.k)
     }
+}
+
+pub fn validate_engine(engine: &str) -> Result<(), String> {
+    if engine == "brakedown" {
+        Ok(())
+    } else {
+        Err(format!(
+            "F2Z_SHA_COMPARE_LIMBER_ENGINE must be brakedown; Hyrax is excluded from this comparison (got {engine})"
+        ))
+    }
+}
+
+pub fn security_metadata() -> Value {
+    let bits = super::env_usize("BDLAMBDA", 114);
+    assert!(bits >= 114, "SHA Brakedown requires BDLAMBDA >= 114");
+    json!({
+        "profile": "Limber Integer-Mod-R1CS/Brakedown",
+        "engine": "T256DynPrimeBdEngine",
+        "commitment_backend": "brakedown",
+        "commitment_type": "hash-based",
+        "inteval_target_bits": limber::provider::pcs::integer_modpcs::LAMBDA,
+        "challenge_target_bits": limber::provider::pcs::integer_modpcs::LAMBDA_BOUND2,
+        "brakedown": {
+            "column_opening_target_bits": bits,
+            "spec": super::env_usize("BDSPEC", 4),
+            "row_len_cap": super::env_usize("BDROWLEN", 1 << 15),
+            "direct_open_max": super::env_usize("BDDIRECT", 1 << 16),
+            "split": std::env::var_os("BDSPLIT").is_some(),
+        },
+        "claim": "Native classical component targets; not a complete quantum security bound",
+    })
 }
 
 #[derive(Clone, Copy)]
@@ -532,121 +541,82 @@ fn eval_lc(terms: &[(Column, u64)], witness: &[u64], public: &[u64]) -> u128 {
         .sum()
 }
 
-macro_rules! backend {
-    ($module:ident, $engine:ty) => {
-        mod $module {
-            use super::*;
-            type E = $engine;
+type E = T256DynPrimeBdEngine;
 
-            pub struct Context {
-                program: Arc<Program>,
-                pk: limber::imod_spartan_modp::IntModSpartanModpProverKey<E>,
-                vk: limber::imod_spartan_modp::IntModSpartanModpVerifierKey<E>,
-                pub setup_ms: f64,
-            }
-
-            impl Context {
-                pub(super) fn setup(program: Arc<Program>, k: usize) -> Result<Self, String> {
-                    let started = Instant::now();
-                    let shape = program.shape::<E>();
-                    let arity = shape.num_vars().max(shape.num_cons()).ilog2() as usize;
-                    let params = IntEvalParams::derive(32, 16, k, arity)
-                        .map_err(|error| error.to_string())?;
-                    let (pk, vk) = IntModSpartanModpSNARK::<E>::setup_with_params(shape, params)
-                        .map_err(|error| error.to_string())?;
-                    Ok(Self {
-                        program,
-                        pk,
-                        vk,
-                        setup_ms: started.elapsed().as_secs_f64() * 1e3,
-                    })
-                }
-
-                pub(super) fn run(
-                    &self,
-                    capture: &TraceCapture,
-                ) -> (TrialMetrics, Vec<SemanticSpan>) {
-                    capture.begin();
-                    let root_start = capture.now_ns();
-                    let witness_start = root_start;
-                    let (w, q, x) = self.program.evaluate();
-                    let witness_end = capture.now_ns();
-                    let online_start = witness_end;
-                    let shape = self.program.shape::<E>();
-                    let (witness, instance) =
-                        IntModR1CSWitnessModp::<E>::new(&shape, self.pk.ck(), w, q, x)
-                            .expect("integer SHA witness commitments succeed");
-                    let proof = IntModSpartanModpSNARK::<E>::prove(&self.pk, &instance, &witness)
-                        .expect("integer SHA proof succeeds");
-                    let proof_ready = capture.now_ns();
-                    let commitment_bytes = instance
-                        .commitment_bytes()
-                        .expect("serialize Limber commitments")
-                        .len();
-                    let opening_bytes = proof
-                        .eval_arg_bytes()
-                        .expect("serialize Limber opening argument")
-                        .len();
-                    let dynamic_bytes = 16
-                        * (3 * self.program.num_cons.ilog2() as usize
-                            + 2 * (self.program.num_vars.ilog2() as usize + 1)
-                            + 6);
-                    let proof_bytes = commitment_bytes + opening_bytes + dynamic_bytes;
-                    let verify_start = capture.now_ns();
-                    proof
-                        .verify(&self.vk, &instance)
-                        .expect("integer SHA proof verifies");
-                    let verify_end = capture.now_ns();
-                    let raw = capture.finish();
-                    black_box((&proof, &instance, &witness));
-                    let spans = semantic_spans(
-                        &raw,
-                        root_start,
-                        witness_start,
-                        witness_end,
-                        online_start,
-                        proof_ready,
-                        verify_start,
-                        verify_end,
-                    );
-                    (TrialMetrics::from_spans(&spans, proof_bytes), spans)
-                }
-            }
-        }
-    };
-}
-
-backend!(hyrax, T256DynPrimeEngine);
-backend!(brakedown, T256DynPrimeBdEngine);
-
-pub enum Context {
-    Hyrax(hyrax::Context),
-    Brakedown(brakedown::Context),
+pub struct Context {
+    program: Arc<Program>,
+    pk: limber::imod_spartan_modp::IntModSpartanModpProverKey<E>,
+    vk: limber::imod_spartan_modp::IntModSpartanModpVerifierKey<E>,
+    pub setup_ms: f64,
 }
 
 impl Context {
-    pub fn setup(corpus: &Corpus, params: Params) -> Result<Self, String> {
-        let program = Arc::new(Program::compile(corpus));
-        match params.engine {
-            EngineKind::Hyrax => hyrax::Context::setup(program, params.k).map(Self::Hyrax),
-            EngineKind::Brakedown => {
-                brakedown::Context::setup(program, params.k).map(Self::Brakedown)
-            }
-        }
+    pub fn setup_ms(&self) -> f64 {
+        self.setup_ms
     }
 
-    pub fn setup_ms(&self) -> f64 {
-        match self {
-            Self::Hyrax(context) => context.setup_ms,
-            Self::Brakedown(context) => context.setup_ms,
-        }
+    pub fn setup(corpus: &Corpus, params: Params) -> Result<Self, String> {
+        security_metadata();
+        let program = Arc::new(Program::compile(corpus));
+        let started = Instant::now();
+        let shape = program.shape::<E>();
+        let arity = shape.num_vars().max(shape.num_cons()).ilog2() as usize;
+        let params =
+            IntEvalParams::derive(32, 16, params.k, arity).map_err(|error| error.to_string())?;
+        let (pk, vk) = IntModSpartanModpSNARK::<E>::setup_with_params(shape, params)
+            .map_err(|error| error.to_string())?;
+        Ok(Self {
+            program,
+            pk,
+            vk,
+            setup_ms: started.elapsed().as_secs_f64() * 1e3,
+        })
     }
 
     pub fn run(&self, capture: &TraceCapture) -> (TrialMetrics, Vec<SemanticSpan>) {
-        match self {
-            Self::Hyrax(context) => context.run(capture),
-            Self::Brakedown(context) => context.run(capture),
-        }
+        capture.begin();
+        let root_start = capture.now_ns();
+        let witness_start = root_start;
+        let (w, q, x) = self.program.evaluate();
+        let witness_end = capture.now_ns();
+        let online_start = witness_end;
+        let shape = self.program.shape::<E>();
+        let (witness, instance) = IntModR1CSWitnessModp::<E>::new(&shape, self.pk.ck(), w, q, x)
+            .expect("integer SHA witness commitments succeed");
+        let proof = IntModSpartanModpSNARK::<E>::prove(&self.pk, &instance, &witness)
+            .expect("integer SHA proof succeeds");
+        let proof_ready = capture.now_ns();
+        let commitment_bytes = instance
+            .commitment_bytes()
+            .expect("serialize Limber commitments")
+            .len();
+        let opening_bytes = proof
+            .eval_arg_bytes()
+            .expect("serialize Limber opening argument")
+            .len();
+        let dynamic_bytes = 16
+            * (3 * self.program.num_cons.ilog2() as usize
+                + 2 * (self.program.num_vars.ilog2() as usize + 1)
+                + 6);
+        let proof_bytes = commitment_bytes + opening_bytes + dynamic_bytes;
+        let verify_start = capture.now_ns();
+        proof
+            .verify(&self.vk, &instance)
+            .expect("integer SHA proof verifies");
+        let verify_end = capture.now_ns();
+        let raw = capture.finish();
+        black_box((&proof, &instance, &witness));
+        let spans = semantic_spans(
+            &raw,
+            root_start,
+            witness_start,
+            witness_end,
+            online_start,
+            proof_ready,
+            verify_start,
+            verify_end,
+        );
+        (TrialMetrics::from_spans(&spans, proof_bytes), spans)
     }
 }
 
@@ -654,10 +624,63 @@ pub fn constraint_self_test() {
     let corpus = Corpus::new(2, 0x1234_5678);
     let program = Program::compile(&corpus);
     let (w, q, x) = program.evaluate();
-    let shape = program.shape::<T256DynPrimeEngine>();
+    let shape = program.shape::<E>();
     assert_eq!(w.len(), shape.num_vars());
     assert_eq!(q.len(), shape.num_cons());
     assert_eq!(x.len(), 2 * 24 * 32);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn engine_policy_rejects_hyrax() {
+        assert!(validate_engine("brakedown").is_ok());
+        for engine in ["hyrax", "spartan-hyrax", "", "unknown"] {
+            assert!(validate_engine(engine).is_err());
+        }
+    }
+
+    #[test]
+    fn brakedown_sha_proof_binds_public_inputs_and_outputs() {
+        let corpus = Corpus::new(1, 0x4252_414b_4544_4f57);
+        let context = Context::setup(&corpus, Params { k: 9 }).unwrap();
+        let shape = context.program.shape::<E>();
+        let (w, q, x) = context.program.evaluate();
+        let (witness, instance) = IntModR1CSWitnessModp::<E>::new(
+            &shape,
+            context.pk.ck(),
+            w.clone(),
+            q.clone(),
+            x.clone(),
+        )
+        .unwrap();
+        shape.is_sat(context.pk.ck(), &instance, &witness).unwrap();
+        let proof = IntModSpartanModpSNARK::<E>::prove(&context.pk, &instance, &witness).unwrap();
+        proof.verify(&context.vk, &instance).unwrap();
+        assert!(!instance.commitment_bytes().unwrap().is_empty());
+        assert!(!proof.eval_arg_bytes().unwrap().is_empty());
+
+        for index in [0, 16 * 32] {
+            let mut changed = x.clone();
+            changed[index] ^= BigUint::from(1u32);
+            let (bad_witness, bad_instance) = IntModR1CSWitnessModp::<E>::new(
+                &shape,
+                context.pk.ck(),
+                w.clone(),
+                q.clone(),
+                changed,
+            )
+            .unwrap();
+            assert!(
+                shape
+                    .is_sat(context.pk.ck(), &bad_instance, &bad_witness)
+                    .is_err()
+            );
+            assert!(proof.verify(&context.vk, &bad_instance).is_err());
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -1,3 +1,4 @@
+//! Historical kernel experiment; no production security claim.
 //! Paired in-process A/B: base (arity-2) forest vs `F2Z_QUAD=2` (bottom-merge
 //! quad plan) prover times at one shape. `F2Z_QUAD` is read per call (NOT
 //! process-cached), so flipping it between proves inside one process is valid
@@ -12,7 +13,7 @@
 use std::time::Instant;
 
 use f2z::ligerito::packed_vars;
-use f2z::ligerito_flock::{commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, sha_lig_configs};
+use f2z::ligerito_flock::{commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, historical_sha_lig_configs};
 use f2z::pcs::{IntEvalParams, smallest_generator};
 
 const Q: u128 = (1u128 << 100) - 15;
@@ -34,7 +35,7 @@ fn main() {
 
     let p = IntEvalParams { t, s, word_bits: 1 };
     let m_p = packed_vars(&p);
-    let (pc, _vc) = sha_lig_configs(m_p).expect("lig cfg");
+    let (pc, _vc) = historical_sha_lig_configs(m_p).expect("lig cfg");
     let cell = |b: usize, c: usize| -> u128 {
         (p.cell_index(b, c) as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & 1
     };

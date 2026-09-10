@@ -3,11 +3,23 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import run_sha256_ecdsa_compare as campaign
+from test_ligerito_results import report as ligerito_report
 
 
 class CampaignTests(unittest.TestCase):
+    def test_peak_memory_units_on_linux_and_macos(self):
+        with tempfile.TemporaryDirectory() as path:
+            linux = Path(path) / "rss-kib"
+            stderr = Path(path) / "stderr"
+            linux.write_text("1048576\n")
+            stderr.write_text("worker diagnostic\n  1073741824  maximum resident set size\n")
+            for platform in ["linux", "darwin"]:
+                with patch.object(campaign.sys, "platform", platform):
+                    self.assertEqual(campaign.peak_rss_bytes(linux, stderr), 1073741824)
+
     def setUp(self):
         self.case = dict(method="f2z-split", log_compressions=3, r=None, c=None,
                          security_target=100, threads=1, seed=0)
@@ -16,17 +28,18 @@ class CampaignTests(unittest.TestCase):
             self.rows.append(dict(self.case, schema=campaign.SCHEMA, verified=True, sample=sample,
                                   trial="sample" if sample else "warmup", compressions=8, message_bytes=448,
                                   signatures=1, statement_bytes=129, fixture_id="a"*64,
-                                  spartan_revision="b"*40,
-                                  security={"model": "round-by-round-economic"},
+                                  spartan_revision="b"*40, zk=False, fixture_profile=campaign.FIXTURE_SCHEMA,
+                                  security={"model": "round-by-round-economic", "ligerito": ligerito_report()},
                                   **dict.fromkeys(campaign.METRICS, 0)))
 
     def test_f2z_is_not_duplicated_per_chunking(self):
         cases = list(campaign.cases([(0, 3), (1, 2), (3, 0)], campaign.METHODS, [100, 128], [1], [0]))
-        self.assertEqual(len(cases), 8)
+        self.assertEqual(len(cases), 9)
         self.assertEqual(sum(c["method"] == "spartan-mc" for c in cases), 3)
-        honk = [c for c in cases if c["method"] == "zkpassport-honk"]
-        self.assertEqual(len(honk), 1)
-        self.assertIsNone(honk[0]["security_target"])
+        binius = [c for c in cases if c["method"] == "binius64"]
+        self.assertEqual(len(binius), 2)
+        self.assertEqual({c["security_target"] for c in binius}, {100, 128})
+        self.assertNotIn("zkpassport-honk", campaign.METHODS)
         self.assertTrue(all(c["security_target"] is None for c in cases if c["method"] == "spartan-mc"))
 
     def test_validation_requires_complete_verified_matched_samples(self):
@@ -35,40 +48,42 @@ class CampaignTests(unittest.TestCase):
                            ("fixture_id", "b"*64), ("method", "spartan-mc"),
                            ("r", 3), ("prove_ms", 100), ("security", None),
                            ("spartan_revision", None), ("verify_ms", float("nan")),
-                           ("opening_ms", 1), ("opening_ms", None)]:
+                           ("opening_ms", 1), ("opening_ms", None), ("zk", True), ("fixture_profile", "low-s/v1"), ("e2e_prover_ms", None)]:
             rows = copy.deepcopy(self.rows)
             rows[1][key] = value
             self.assertFalse(campaign.validate_rows(rows, self.case, 1), key)
         self.assertFalse(campaign.validate_rows(self.rows[:1], self.case, 1))
 
-    def test_honk_requires_non_zk_and_keeps_unavailable_phases_null(self):
-        case = dict(self.case, method="zkpassport-honk", security_target=None)
+    def test_mixed_ligerito_regimes_are_rejected(self):
+        rows = copy.deepcopy(self.rows)
+        rows[1]["security"]["ligerito"] = ligerito_report(False)
+        self.assertFalse(campaign.validate_rows(rows, self.case, 1))
+
+    def test_resume_rejects_changed_ligerito_profile(self):
+        old = dict(binary_sha256="native", ligerito_profile="custom:3:4")
+        self.assertTrue(campaign.compatible_manifest(old, copy.deepcopy(old)))
+        self.assertFalse(campaign.compatible_manifest(old, dict(old, ligerito_profile="udrg:3:4")))
+
+    def test_binius_requires_matching_security_and_its_own_revision(self):
+        case = dict(self.case, method="binius64")
         rows = copy.deepcopy(self.rows)
         for row in rows:
-            row.update(case, zk=False, barretenberg_version="5.0.0", zkpassport_revision="c"*40,
-                       spartan_revision=None, witness_ms=2, prove_ms=3, witness_to_proof_ms=5)
-            for key in ["commit_ms", "protocol_ms", "outer_ms", "inner_ms", "opening_ms", "folding_ms"]:
-                row[key] = None
+            row.update(case, binius_revision="c"*40, spartan_revision=None,
+                       circuit_profile="sha256-chain-p256/standard/v1",
+                       security={"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":100})
         self.assertTrue(campaign.validate_rows(rows, case, 1))
-        self.assertIsNone(campaign.sample_metrics(rows[0])["piop_ms"])
-        self.assertIsNone(campaign.sample_metrics(rows[0])["iop_ms"])
-        for key, value in [("zk", True), ("barretenberg_version", "4.0.0"),
-                           ("zkpassport_revision", None), ("witness_to_proof_ms", 3), ("prove_ms", None)]:
+        for key, value in [("binius_revision", None), ("zk", True), ("circuit_profile", "secp256k1"),
+                           ("security", {"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":96})]:
             bad = copy.deepcopy(rows)
             bad[1][key] = value
             self.assertFalse(campaign.validate_rows(bad, case, 1), key)
 
-    def test_resume_allows_failed_compilation_to_succeed_but_rejects_changed_inputs(self):
-        old = dict(source_hash="source", binary_sha256="binary",
-                   artifacts={"3": "abc", "4": "preparation_failed"})
-        new = copy.deepcopy(old)
-        new["artifacts"]["4"] = "def"
-        self.assertTrue(campaign.compatible_zkpassport(old, new))
-        for key, value in [("source_hash", "changed"), ("binary_sha256", "changed"),
-                           ("artifacts", {"3": "changed", "4": "def"})]:
-            bad = dict(new, **{key: value})
-            self.assertFalse(campaign.compatible_zkpassport(old, bad))
-        self.assertFalse(campaign.compatible_zkpassport(None, new))
+    def test_resume_rejects_changed_binaries_fixtures_and_fork_revision(self):
+        old = dict(binary_sha256="native", runner_sha256="runner", fixtures={"profile":campaign.FIXTURE_SCHEMA, "files":{"fixture":"hash"}},
+                   binius64={"binary_sha256":"binius", "binius_revision":"c"*40})
+        self.assertTrue(campaign.compatible_manifest(old, copy.deepcopy(old)))
+        for key, value in [("binary_sha256", "changed"), ("runner_sha256", "changed"), ("fixtures", {}), ("binius64", None)]:
+            self.assertFalse(campaign.compatible_manifest(old, dict(old, **{key:value})))
 
     def test_summary_detects_cross_method_fixture_mismatch_and_retains_failure(self):
         with tempfile.TemporaryDirectory() as path:

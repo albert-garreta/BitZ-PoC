@@ -36,11 +36,15 @@ Code: `src/binary_pcs.rs` (the opener as a stand-alone binary PCS) and
    element of its Johnson list before the next challenge, which is what the
    paper's theorem requires of a Johnson-regime opener.
 4. **Relations.** Oracle linear relations the PIOP queues
-   (`prove_oracle_relations`) are recorded, not opened — the same deferral
+   (`prove_oracle_relation`) are recorded, not opened — the same deferral
    Binius64's BaseFold channel performs at `finish()`. The witness evaluation
-   claim is a bit-MLE claim; the pushforward relation is
+   claim is a bit-MLE claim; each pushforward relation is
    `⟨transparent, oracle⟩ = claim` with a transparent basis the verifier can
-   evaluate anywhere (the closure Binius64 hands its verifier channel).
+   evaluate anywhere (the closure Binius64 hands its verifier channel). The
+   IntMul reduction (fork rev `bc73510`, transparent logup*) queues two on
+   its one pushforward oracle: an eq-basis evaluation claim and a product
+   claim against the power table itself; the adapter combines them under one
+   draw into a single opening.
 5. **Openings.** After the PIOP, the evaluation value and every relation
    claim are bound, and each opening runs on its own fork of the transcript
    (domain-separated by oracle index): the witness claim through F2Z's ring

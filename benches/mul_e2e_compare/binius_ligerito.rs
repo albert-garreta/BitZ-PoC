@@ -31,12 +31,15 @@ impl Context {
 
     pub(super) fn config(&self) -> Value {
         let piop = match self.corpus.workload {
-            Workload::U32 | Workload::BabyBear => {
-                "Binius64 native integer multiplication and bit constraints"
+            Workload::U32 => {
+                "Binius64 native multiplication with 32-bit inputs and low-32-bit result"
             }
             Workload::U64 => "Binius64 native 64 x 64 -> 128 integer multiplication",
-            Workload::U128 => "Binius64 bignum 128 x 128 -> 256 multiplication (four native imul limb products with carry chains)",
+            Workload::U128 => {
+                "Binius64 bignum 128 x 128 -> 256 multiplication (four native imul limb products with carry chains)"
+            }
         };
+        let cs = self.circuit.constraint_system();
         let security = self.prepared.security();
         let witness = self.prepared.opener(0);
         json!({
@@ -53,6 +56,8 @@ impl Context {
             "level0_fold_grinding_bits": witness.level0_fold_grinding_bits(),
             "ood_grinding_bits": witness.ood_grinding_bits(),
             "oracle_logs": self.prepared.oracle_specs().iter().map(|s| s.log_msg_len).collect::<Vec<_>>(),
+            "word_constraints": {"and": cs.n_and_constraints(), "imul": cs.n_imul_constraints(),
+                "zero": cs.n_zero_constraints(), "bmul": cs.n_bmul_constraints()},
         })
     }
 
@@ -75,7 +80,7 @@ impl Context {
             .proof_from_bytes(&bytes)
             .expect("binius64-ligerito proof decodes");
         self.prepared
-            .verify(witness.public(), &decoded)
+            .verify(witness.inout(), &decoded)
             .expect("binius64-ligerito full verification");
         let end = capture.now_ns();
         let _ = capture.finish();

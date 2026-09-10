@@ -201,6 +201,7 @@ impl IopSecurityParams {
     /// to the target is derived under the usual economic cap and the term
     /// `step0:ood-draw` joins the accounting.
     pub fn adopt_ood_round(&mut self, ood_bits: Option<f64>) -> Result<(), ProfileError> {
+        self.accounting.terms.retain(|term| term.name != "step0:ood-draw");
         let Some(bits) = ood_bits else {
             self.ood = None;
             return Ok(());

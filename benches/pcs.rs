@@ -34,9 +34,9 @@
 //!   re-solved and flock-validator-gated), or
 //!   `udr:<log_inv_rate>:<initial_k>[:<bits>]` — queries-ONLY security
 //!   (UDR regime, zero grinding of either kind, zero OOD; ceiling ≈115
-//!   bits at n=22 / ≈109 at n=28 from the L0 UDR fold error). Below
-//!   m = 22 every profile falls back to the ad-hoc rate-1/4 config
-//!   (unaudited, test-only).
+//!   bits at n=22 / ≈109 at n=28 from the L0 UDR fold error).
+//!   `udrg:3:4` uses matched UDR with fold grinding. Unsupported shapes
+//!   are rejected; production requests never fall back to ad-hoc settings.
 //! - `F2Z_BENCH_EXT`: also run the extension-field arm against the same
 //!   commitment — `1`/`gl2` = Goldilocks² (e=2), `bb4` = BabyBear⁴
 //!   (X⁴ − 11, the Plonky3 challenge field; e=4), `kb5` = a KoalaBear
@@ -57,161 +57,27 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use f2z::ext_proj::{ExtProjParams, ProjArith, sample_proj_point, sample_proj_prime};
-use f2z::ligerito::{LOG_PACKING, packed_vars};
+use f2z::ligerito::packed_vars;
 use f2z::ligerito_flock::{
-    LigConfig, OodRoundParams, absorb_standalone_mod_q_claim, absorb_standalone_mod_q_statement,
-    commit_rs_ligerito_rows, lig_configs, ood_round_params, prove_mle_eval_mod_q_ligerito_with_ood,
+    OodRoundParams, absorb_standalone_mod_q_claim, absorb_standalone_mod_q_statement,
+    commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito_with_ood,
     verify_mle_eval_mod_q_ligerito_runtime,
 };
 use f2z::pcs::{IntEvalParams, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
-use f2z::ligerito_flock::{
-    custom_johnson_config, custom_johnson_config_bits, custom_udr_config_bits,
-    custom_udr_grind_config_bits,
-};
 use flock_core::pcs::ligerito::{
-    LigeritoProfile, LigeritoSecurityConfig, ProverConfig as LigPc, VerifierConfig as LigVc,
-    embedded_security_config,
+    ProverConfig as LigPc, VerifierConfig as LigVc,
 };
 
-/// The bench's Ligerito config source: the audited embedded profile chosen
-/// by `F2Z_LIG_PROFILE` at `m = m_p + 7 ≥ 22`, the ad-hoc rate-1/4 config
-/// below — the same boundary as `sha_lig_configs`, which this generalizes.
-/// The tag prints the PROFILE NAME only; the shape header appends the base
-/// RS rate read off the RESOLVED config (`pc.log_inv_rates[0]`), so the
-/// label tracks upstream profile regenerations (flock's slim moved from
-/// base rate 1/4 to the Johnson rate 1/8 mid-development) instead of lying.
-/// `custom:<log_inv_rate>:<initial_k>` builds a Johnson config at that
-/// geometry via [`custom_johnson_config`] (flock-validator-gated).
-fn bench_lig_configs(m_p: usize) -> ((LigPc, LigVc), String, Option<OodRoundParams>) {
-    // Round 0 (the paper's out-of-domain sample) at the config's own
-    // round-by-round target: executed in the Johnson regime, skipped at
-    // unique decoding. Ad-hoc configs carry no security claim (skipped).
-    let ood_of = |cfg: &LigeritoSecurityConfig| -> Option<OodRoundParams> {
-        u32::try_from(cfg.target_security_bits)
-            .ok()
-            .and_then(|target| ood_round_params(cfg, cfg.log_n, target))
+/// Resolve the explicitly requested Ligerito policy, or Johnson+OOD by default.
+fn bench_lig_configs(m_p: usize) -> ((LigPc, LigVc), String, Option<OodRoundParams>, f2z::ligerito_flock::ResolvedLigerito) {
+    let request = std::env::var("F2Z_LIG_PROFILE").unwrap_or_else(|_| "custom:3:4".into());
+    let target = if request == "secure" { 128 } else {
+        request.split(':').nth(3).map(|n| n.parse::<usize>().expect("invalid Ligerito target")).unwrap_or(100)
     };
-    let prof =
-        std::env::var("F2Z_LIG_PROFILE").unwrap_or_else(|_| "custom:3:4".to_string());
-    // Queries-only UDR geometry: udr:<log_inv_rate>:<initial_k>[:<bits>] —
-    // zero grinding (either kind), zero OOD; the target is paid entirely in
-    // queries. Ceiling = the L0 UDR fold error (≈115 bits at n=22, ≈109 at
-    // n=28); above it flock's validator rejects with the shortfall.
-    // UDR + fold-grinding: udrg:<log_inv_rate>:<initial_k>[:<bits>] — the
-    // pg shortfall is recovered by cheap per-fold PoW (9–16 bits at our
-    // shapes), so targets up to 128 validate; queries still pay the full
-    // target. `udrg:1:4:128` = the 128-bit configuration.
-    if let Some(rest) = prof.strip_prefix("udrg:") {
-        let mut it = rest.split(':');
-        let r0: usize = it
-            .next()
-            .and_then(|x| x.parse().ok())
-            .expect("udrg:<log_inv_rate>:<initial_k>[:<bits>]");
-        let k0: usize = it
-            .next()
-            .and_then(|x| x.parse().ok())
-            .expect("udrg:<log_inv_rate>:<initial_k>[:<bits>]");
-        let bits: Option<usize> =
-            it.next().map(|x| x.parse().expect("udrg:<log_inv_rate>:<initial_k>:<bits>"));
-        if m_p + LOG_PACKING >= 22 {
-            let cfg = custom_udr_grind_config_bits(m_p + LOG_PACKING, r0, k0, bits);
-            let pair = cfg.to_prover_verifier_configs().expect("udrg config pair");
-            let tag = match bits {
-                Some(b) => format!("udrg-k{k0}-{b}b"),
-                None => format!("udrg-k{k0}"),
-            };
-            return (pair, tag, ood_of(&cfg));
-        }
-        let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
-            .expect("adhoc cfg");
-        return (pair, "adhoc".to_string(), None);
-    }
-    if let Some(rest) = prof.strip_prefix("udr:") {
-        let mut it = rest.split(':');
-        let r0: usize = it
-            .next()
-            .and_then(|x| x.parse().ok())
-            .expect("udr:<log_inv_rate>:<initial_k>[:<bits>]");
-        let k0: usize = it
-            .next()
-            .and_then(|x| x.parse().ok())
-            .expect("udr:<log_inv_rate>:<initial_k>[:<bits>]");
-        let bits: Option<usize> =
-            it.next().map(|x| x.parse().expect("udr:<log_inv_rate>:<initial_k>:<bits>"));
-        if m_p + LOG_PACKING >= 22 {
-            let cfg = custom_udr_config_bits(m_p + LOG_PACKING, r0, k0, bits);
-            let pair = cfg.to_prover_verifier_configs().expect("udr config pair");
-            let tag = match bits {
-                Some(b) => format!("udr-k{k0}-{b}b"),
-                None => format!("udr-k{k0}"),
-            };
-            return (pair, tag, ood_of(&cfg));
-        }
-        let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
-            .expect("adhoc cfg");
-        return (pair, "adhoc".to_string(), None);
-    }
-    if let Some(rest) = prof.strip_prefix("custom:") {
-        let mut it = rest.split(':');
-        let r0: usize =
-            it.next().and_then(|x| x.parse().ok()).expect("custom:<log_inv_rate>:<initial_k>");
-        let k0: usize =
-            it.next().and_then(|x| x.parse().ok()).expect("custom:<log_inv_rate>:<initial_k>");
-        // Optional round-by-round security target: custom:<r>:<k>:<bits>
-        // (e.g. custom:3:4:128). Absent → the slim template's 100.
-        let bits: Option<usize> =
-            it.next().map(|x| x.parse().expect("custom:<log_inv_rate>:<initial_k>:<bits>"));
-        // `custom_johnson_config` needs an embedded template (m = 22..=35);
-        // below that, fall back to the ad-hoc config — the same boundary as
-        // `sha_lig_configs`, so a `custom:*` sweep mirrors the library default.
-        if m_p + LOG_PACKING >= 22 {
-            let cfg = custom_johnson_config_bits(m_p + LOG_PACKING, r0, k0, bits);
-            let pair = cfg.to_prover_verifier_configs().expect("custom config pair");
-            let tag = match bits {
-                Some(b) => format!("custom-k{k0}-{b}b"),
-                None => format!("custom-k{k0}"),
-            };
-            return (pair, tag, ood_of(&cfg));
-        }
-        let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
-            .expect("adhoc cfg");
-        return (pair, "adhoc".to_string(), None);
-    }
-    let (lig_cfg, tag): (LigConfig, &str) = if prof == "r8" {
-        // Base RS rate 1/8 via the ad-hoc UDR generator, at the embedded
-        // profiles' interleaving (initial_k = 6). UNAUDITED perf probe (UDR
-        // query counts, no grinding/OOD; ~121 L0 queries vs the Johnson
-        // analysis' 60 at the same rate).
-        (LigConfig::Adhoc { log_batch: 6, log_inv_rate: 3 }, "adhoc-udr")
-    } else if m_p + LOG_PACKING >= 22 {
-        match prof.as_str() {
-            "fast" => (LigConfig::Embedded(LigeritoProfile::Fast), "fast"),
-            "slim3" => (
-                LigConfig::CustomJohnson {
-                    log_inv_rate: 3,
-                    initial_k: 4,
-                },
-                "slim3",
-            ),
-            "secure" => (LigConfig::Embedded(LigeritoProfile::Secure), "secure"),
-            // unrecognized → slim (unset never lands here: the env default
-            // is "custom:3:4", handled by the custom branch above)
-            _ => (LigConfig::Embedded(LigeritoProfile::Slim), "slim"),
-        }
-    } else {
-        (LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 }, "adhoc")
-    };
-    let m = m_p + LOG_PACKING;
-    let ood = match lig_cfg {
-        LigConfig::Embedded(profile) => embedded_security_config(m, profile)
-            .and_then(|toml| LigeritoSecurityConfig::from_toml_str(toml).ok())
-            .and_then(|cfg| ood_of(&cfg)),
-        LigConfig::CustomJohnson { log_inv_rate, initial_k } => {
-            ood_of(&custom_johnson_config(m, log_inv_rate, initial_k))
-        }
-        LigConfig::Adhoc { .. } => None,
-    };
-    (lig_configs(m_p, lig_cfg).expect("lig cfg"), tag.to_string(), ood)
+    let resolved = f2z::ligerito_flock::LigeritoSelection::parse(&request, target)
+        .and_then(|selection| selection.resolve(m_p, target)).expect("unsupported Ligerito configuration");
+    let ood = resolved.round0(target as u32).expect("Round-0 security preflight");
+    ((resolved.prover().clone(), resolved.verifier().clone()), resolved.selection().name(), ood, resolved)
 }
 
 // Peak-heap tracker (wraps System): high-water mark of currently outstanding
@@ -319,13 +185,9 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     let q_bits = standalone_q_bits(&p);
     let m_p = packed_vars(&p);
     let lch = mod_q_num_chunks(&p, q_bits);
-    // The library's boundary, generalized by F2Z_LIG_PROFILE: the embedded
-    // profiles / validator-gated custom Johnson geometries at
-    // m = m_p + 7 ≥ 22, ad-hoc only below. Hardcoding the tiny ad-hoc
-    // config at big shapes is catastrophic (n=28 commit measured 292 s
-    // ad-hoc vs the embedded profile's sub-second).
     let setup_started = Instant::now();
-    let ((pc, vc), lig_tag, ood) = bench_lig_configs(m_p);
+    let ((pc, vc), lig_tag, ood, resolved) = bench_lig_configs(m_p);
+    println!("LIGERITO_CONFIG {}", common::ligerito_report(&resolved, ood));
     let setup_ms = setup_started.elapsed().as_secs_f64() * 1e3;
 
     // Deterministic non-degenerate instance, generated STRAIGHT INTO the
@@ -398,6 +260,8 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     let instance = {
         let mut st = f2z::transcript::Blake3Transcript::new();
         absorb_standalone_mod_q_statement(&mut st, &hint.commitment, &p, alpha, q_bits, ood, &vc);
+        resolved.bind(&mut st);
+        let _ = f2z::ligerito_flock::bind_prover_ood(&mut st, &hint, ood);
         sample_standalone_instance(&mut st, &p, q_bits)
     };
     let q = instance.q;
@@ -434,6 +298,8 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     let prove_once = |hint: &f2z::ligerito_flock::FlockCommitHint| {
         let mut pt = f2z::transcript::Blake3Transcript::new();
         absorb_standalone_mod_q_statement(&mut pt, &hint.commitment, &p, alpha, q_bits, ood, &vc);
+        resolved.bind(&mut pt);
+        let bound_ood = f2z::ligerito_flock::bind_prover_ood(&mut pt, hint, ood);
         let sampled = sample_standalone_instance(&mut pt, &p, q_bits);
         assert_eq!(sampled.q, q, "the transcript-sampled prime must be reproducible");
         absorb_standalone_mod_q_claim(&mut pt, q, y);
@@ -444,13 +310,15 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
             &sampled.row_weights_q,
             q_bits,
             alpha,
-            ood,
+            bound_ood,
             &pc,
         )
     };
     let verify_once = |proof: &f2z::ligerito_flock::IntEvalRsLigModQProof| {
         let mut vt = f2z::transcript::Blake3Transcript::new();
         absorb_standalone_mod_q_statement(&mut vt, &hint.commitment, &p, alpha, q_bits, ood, &vc);
+        resolved.bind(&mut vt);
+        let bound_ood = f2z::ligerito_flock::bind_verifier_ood(&mut vt, m_p, ood, proof.ood.as_ref()).expect("Round 0");
         let sampled = sample_standalone_instance(&mut vt, &p, q_bits);
         absorb_standalone_mod_q_claim(&mut vt, sampled.q, y);
         verify_mle_eval_mod_q_ligerito_runtime(
@@ -464,7 +332,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
             y,
             sampled.q,
             q_bits,
-            ood,
+            bound_ood,
             &vc,
         )
     };
@@ -593,6 +461,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
         bench: "pcs",
         shape: format!("{t}:{s}:{w}"),
         extra: vec![
+            common::ligerito_identity(&resolved, ood),
             ("n".into(), n.to_string()),
             ("chunks".into(), lch.to_string()),
             ("lig".into(), lig_tag.clone()),
@@ -1016,13 +885,11 @@ fn main() {
     //   F2_FOREST_SCHEDULE=l8 F2Z_BENCH_SHAPES="19:13:1"  # n = 32, ~12 GB class
     // At n ≥ 26 run one shape per process for quotable numbers.
     let default_shapes: Vec<(usize, usize, usize)> = vec![
-        (10, 6, 1),
-        (12, 6, 1),
         (13, 7, 1),
         (14, 8, 1),
         (16, 10, 1), // n = 26
         (17, 11, 1), // n = 28
-        (4, 8, 32),
+        (7, 8, 32),
     ];
     let shapes: Vec<(usize, usize, usize)> = match std::env::var("F2Z_BENCH_SHAPES") {
         Ok(v) => v

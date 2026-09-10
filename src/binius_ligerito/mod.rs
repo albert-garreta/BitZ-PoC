@@ -25,14 +25,14 @@ use crate::{
     transcript::{Blake3Transcript, traits::Transcript},
 };
 use binius_core::{
-    constraint_system::{ConstraintSystem, ValueVec},
+    constraint_system::{ConstraintSystem, InoutSegment, ValueVec},
     word::Word,
 };
 use binius_field::Field;
-use binius_iop::channel::{OracleLinearRelation, OracleSpec};
-use binius_prover::{IOPProver, OptimalPackedB128, protocols::shift::build_key_collection};
+use binius_iop::channel::OracleSpec;
+use binius_prover::{IOPProver, OptimalPackedB128, protocols::shift::KeyCollection};
 use binius_verifier::{IOPVerifier, config::B128};
-use channel::{ProverChannel, ProverRelation, VerifierChannel};
+use channel::{ProverChannel, ProverRelation, VerifierChannel, VerifierRelation};
 use flock_core::{field::F128, merkle::Hash, pcs::ligerito::LigeritoProof};
 use std::time::{Duration, Instant};
 
@@ -56,7 +56,7 @@ const MAGIC: &[u8; 8] = b"BLIG\x01\0\0\0";
 const MAX_MESSAGES: usize = 1 << 24;
 
 pub(crate) fn b128_to_f128(x: B128) -> F128 {
-    let v = u128::from(x.val());
+    let v = u128::from(x);
     F128 {
         lo: v as u64,
         hi: (v >> 64) as u64,
@@ -149,7 +149,7 @@ impl Prepared {
         if !cs.bmul_constraints.is_empty() {
             return Err(Error::Invalid("BMUL constraints are not supported"));
         }
-        let verifier = IOPVerifier::new(cs.clone(), cs.log_public_words());
+        let verifier = IOPVerifier::new(cs.clone(), cs.log_public_words(InoutSegment::Public));
         let specs = verifier.oracle_specs(false);
         if specs.is_empty() || specs.iter().any(|spec| spec.is_zk) {
             return Err(Error::Invalid("oracle specification"));
@@ -220,7 +220,10 @@ impl Prepared {
                 last_error.map(|e| format!(" ({e})")).unwrap_or_default()
             ))
         })?;
-        let prover = IOPProver::new(verifier.clone(), build_key_collection(cs));
+        let prover = IOPProver::new(
+            verifier.clone(),
+            KeyCollection::build(cs, InoutSegment::Public),
+        );
         let mut h = blake3::Hasher::new();
         h.update(PROTOCOL);
         for n in [
@@ -233,6 +236,13 @@ impl Prepared {
             u32::try_from(TARGET_BITS).map_or(0, |b| b as usize),
         ] {
             h.update(&(n as u64).to_le_bytes());
+        }
+        // The constants are shared data the reduction reads as the head of
+        // the public segment; the statement carries only the in/out words, so
+        // their values are bound here.
+        h.update(&(cs.constants.len() as u64).to_le_bytes());
+        for word in &cs.constants {
+            h.update(&word.0.to_le_bytes());
         }
         for (spec, opener) in specs.iter().zip(&pcs) {
             h.update(&(spec.log_msg_len as u64).to_le_bytes());
@@ -280,7 +290,7 @@ impl Prepared {
 
     fn absorb_evaluation(t: &mut Blake3Transcript, value: B128) {
         t.absorb_slice(EVALUATION_DOMAIN);
-        t.absorb_slice(&u128::from(value.val()).to_le_bytes());
+        t.absorb_slice(&u128::from(value).to_le_bytes());
     }
 
     /// Every opening runs on its own fork of the transcript, taken after the
@@ -306,7 +316,7 @@ impl Prepared {
         t.absorb_slice(&(oracle as u64).to_le_bytes());
         t.absorb_slice(&(claims.len() as u64).to_le_bytes());
         for claim in claims {
-            t.absorb_slice(&u128::from(claim.val()).to_le_bytes());
+            t.absorb_slice(&u128::from(*claim).to_le_bytes());
         }
         if claims.len() == 1 {
             return vec![Gf::one()];
@@ -324,7 +334,7 @@ impl Prepared {
     /// Prove `witness` satisfies the constraint system. The public words are
     /// bound first; the returned timings are the prover's wall-clock phases.
     pub fn prove(&self, witness: &ValueVec) -> Result<(Proof, ProveTimings), Error> {
-        let public = witness.public();
+        let public = witness.inout();
         let mut t = self.transcript(public);
         let mut channel = ProverChannel {
             transcript: &mut t,
@@ -428,8 +438,9 @@ impl Prepared {
         ))
     }
 
-    /// Verify `proof` for the public words `public` (the constraint system's
-    /// constants followed by its in/out values, `1 << log_public_words` of them).
+    /// Verify `proof` for the statement `public`: the constraint system's
+    /// in/out values (`ValueVec::inout`, `n_inout` of them). The constants
+    /// are the verifier's own, bound through the statement digest.
     pub fn verify(&self, public: &[Word], proof: &Proof) -> Result<(), Error> {
         if proof.roots.len() != self.specs.len() || proof.rounds0.len() != self.specs.len() {
             return Err(Error::Invalid("oracle count"));
@@ -457,9 +468,9 @@ impl Prepared {
         } = channel;
 
         Self::absorb_evaluation(&mut t, value);
-        let groups: Vec<(Oracle, Vec<&OracleLinearRelation<Oracle, B128>>)> = (0..oracles.len())
+        let groups: Vec<(Oracle, Vec<&VerifierRelation>)> = (0..oracles.len())
             .map(|index| (index, relations.iter().filter(|r| r.oracle == index).collect()))
-            .filter(|(_, group): &(Oracle, Vec<&OracleLinearRelation<Oracle, B128>>)| {
+            .filter(|(_, group): &(Oracle, Vec<&VerifierRelation>)| {
                 !group.is_empty()
             })
             .collect();
@@ -649,7 +660,7 @@ mod tests {
         assert_eq!(proof.relations.len(), 1);
         let bytes = proof.to_bytes();
         let decoded = prepared.proof_from_bytes(&bytes).unwrap();
-        prepared.verify(witness.public(), &decoded).unwrap();
+        prepared.verify(witness.inout(), &decoded).unwrap();
 
         // Tampering anywhere is rejected: the PIOP prefix, a Round-0 value,
         // the witness opening and the pushforward opening.
@@ -662,7 +673,7 @@ mod tests {
             let mut tampered = bytes.clone();
             tampered[at] ^= 1;
             let rejected = match prepared.proof_from_bytes(&tampered) {
-                Ok(decoded) => prepared.verify(witness.public(), &decoded).is_err(),
+                Ok(decoded) => prepared.verify(witness.inout(), &decoded).is_err(),
                 Err(_) => true,
             };
             assert!(rejected, "byte {at}");
@@ -692,7 +703,7 @@ mod tests {
         let (circuit, wires) = mul_circuit(10);
         let prepared = Prepared::new(circuit.constraint_system()).unwrap();
         let witness = mul_witness(&circuit, &wires, false).unwrap();
-        let public = witness.public();
+        let public = witness.inout();
 
         let mut t = prepared.transcript(public);
         let mut channel = ProverChannel {
@@ -722,17 +733,25 @@ mod tests {
             ..
         } = channel;
         assert_eq!(oracles.len(), 2);
-        assert_eq!(relations.len(), 1, "one logup* pushforward relation");
-        let relation = &relations[0];
-        assert_eq!(relation.oracle, 1);
+        // The transparent logup* reduction opens the pushforward twice: an
+        // eq-basis evaluation claim and a product claim against the table.
+        assert_eq!(
+            relations.len(),
+            2,
+            "logup* pushforward evaluation + product relations"
+        );
         let pushforward = &oracles[1].packed;
         assert_eq!(pushforward.len(), 1 << 16);
-        let inner = relation
-            .basis
-            .iter()
-            .zip(pushforward)
-            .fold(Gf::zero(), |acc, (&b, &f)| acc + f128_to_gf(b) * f128_to_gf(f));
-        assert_eq!(inner, b128_to_gf(relation.claim), "prover-side relation");
+        for (which, relation) in relations.iter().enumerate() {
+            assert_eq!(relation.oracle, 1);
+            let inner = relation
+                .basis
+                .iter()
+                .zip(pushforward)
+                .fold(Gf::zero(), |acc, (&b, &f)| acc + f128_to_gf(b) * f128_to_gf(f));
+            assert_eq!(inner, b128_to_gf(relation.claim), "prover-side relation {which}");
+        }
+        let claims: Vec<B128> = relations.iter().map(|r| r.claim).collect();
 
         let roots: Vec<Hash> = oracles.iter().map(|o| o.root).collect();
         let rounds0: Vec<OodRound> = oracles.iter().map(|o| o.round0.round()).collect();
@@ -752,32 +771,50 @@ mod tests {
             .verify_to_evaluation(public, &mut vchannel)
             .unwrap();
         assert_eq!((voracle, &vpoint, vvalue), (oracle, &point, value));
-        assert_eq!(vchannel.relations.len(), 1);
-        let vrelation = &vchannel.relations[0];
-        assert_eq!(vrelation.oracle, 1);
-        assert_eq!(vrelation.claim, relation.claim);
+        assert_eq!(vchannel.relations.len(), 2);
         let mut scratch = Blake3Transcript::new();
         scratch.absorb_slice(b"diagnostic point");
         let pt: Vec<Gf> = (0..16).map(|_| scratch.get_field_challenge(&())).collect();
-        let dense = relation
-            .basis
-            .iter()
-            .zip(eq_table(&pt))
-            .fold(Gf::zero(), |acc, (&b, e)| acc + f128_to_gf(b) * e);
         let pt_b128: Vec<B128> = pt.iter().map(|&g| gf_to_b128(g)).collect();
-        let via_closure = b128_to_gf((vrelation.transparent)(&pt_b128));
         let reversed: Vec<B128> = pt_b128.iter().rev().copied().collect();
-        let via_reversed = b128_to_gf((vrelation.transparent)(&reversed));
-        assert!(
-            dense == via_closure || dense == via_reversed,
-            "transparent closure is not the basis MLE in either coordinate order"
-        );
-        assert_eq!(dense, via_closure, "transparent closure uses reversed coordinates");
+        for (which, (relation, vrelation)) in
+            relations.iter().zip(&vchannel.relations).enumerate()
+        {
+            assert_eq!(vrelation.oracle, 1);
+            assert_eq!(vrelation.claim, relation.claim);
+            let dense = relation
+                .basis
+                .iter()
+                .zip(eq_table(&pt))
+                .fold(Gf::zero(), |acc, (&b, e)| acc + f128_to_gf(b) * e);
+            let via_closure = b128_to_gf((vrelation.transparent)(&pt_b128));
+            let via_reversed = b128_to_gf((vrelation.transparent)(&reversed));
+            assert!(
+                dense == via_closure || dense == via_reversed,
+                "relation {which}: transparent closure is not the basis MLE in either order"
+            );
+            assert_eq!(
+                dense, via_closure,
+                "relation {which}: transparent closure uses reversed coordinates"
+            );
+        }
 
         // Now the two openings, each on its own fork, verified one at a time.
+        // The pushforward's two relations combine under one draw, as in
+        // `prove`.
         Prepared::absorb_evaluation(&mut t, value);
-        let weights = Prepared::relation_weights(&mut t, 1, &[relation.claim]);
-        assert_eq!(weights, vec![Gf::one()]);
+        let weights = Prepared::relation_weights(&mut t, 1, &claims);
+        assert_eq!(weights.len(), 2);
+        assert_eq!(weights[0], Gf::one());
+        let mut combined = vec![Gf::zero(); pushforward.len()];
+        let mut target = Gf::zero();
+        for (relation, &w) in relations.iter().zip(&weights) {
+            for (slot, &b) in combined.iter_mut().zip(&relation.basis) {
+                *slot = *slot + w * f128_to_gf(b);
+            }
+            target = target + w * b128_to_gf(relation.claim);
+        }
+        let combined_f128: Vec<F128> = combined.iter().copied().map(gf_to_f128).collect();
         let point_gf: Vec<Gf> = point.iter().map(|&x| b128_to_gf(x)).collect();
         let w = &oracles[0];
         let mut fork_w = Prepared::fork(&t, WITNESS_FORK);
@@ -789,8 +826,8 @@ mod tests {
             &o.packed,
             &o.data,
             &o.round0,
-            relation.basis.clone(),
-            b128_to_gf(relation.claim),
+            combined_f128.clone(),
+            target,
         );
 
         drop(vchannel);
@@ -818,7 +855,8 @@ mod tests {
                 ..
             } = vchannel;
             Prepared::absorb_evaluation(&mut tv, vvalue);
-            let vweights = Prepared::relation_weights(&mut tv, 1, &[vrelations[0].claim]);
+            let vclaims: Vec<B128> = vrelations.iter().map(|r| r.claim).collect();
+            let vweights = Prepared::relation_weights(&mut tv, 1, &vclaims);
             assert_eq!(vweights, weights);
             let mut fork_w = Prepared::fork(&tv, WITNESS_FORK);
             prepared.pcs[0]
@@ -838,7 +876,7 @@ mod tests {
             let (tv, voracles, _) = replay();
             let mut tv = Prepared::fork(&tv, 2);
             let eta: Gf = tv.get_field_challenge(&());
-            let mut dense = relation.basis.clone();
+            let mut dense = combined_f128.clone();
             crate::ligerito_flock::add_ood_basis(
                 &mut dense,
                 &oracles[1].packed,
@@ -846,7 +884,7 @@ mod tests {
                 eta,
                 None,
             );
-            let target = b128_to_gf(relation.claim) + eta * voracles[1].round0.y();
+            let target = target + eta * voracles[1].round0.y();
             let dense_ok = flock_core::pcs::ligerito::recursive_verifier_with_basis(
                 prepared.pcs[1].verifier_config(),
                 &pushforward_opening,
@@ -859,7 +897,6 @@ mod tests {
         }
         let (tv, voracles, vrelations) = replay();
         let mut tv = Prepared::fork(&tv, 2);
-        let transparent = &vrelations[0].transparent;
         let eval_b = |prefix: &[Gf], log_y: usize| -> Vec<Gf> {
             (0..1usize << log_y)
                 .map(|y| {
@@ -867,20 +904,25 @@ mod tests {
                     for j in 0..log_y {
                         pt.push(if y >> j & 1 == 1 { B128::ONE } else { B128::ZERO });
                     }
-                    b128_to_gf(transparent(&pt))
+                    vrelations
+                        .iter()
+                        .zip(&weights)
+                        .fold(Gf::zero(), |acc, (r, &w)| {
+                            acc + w * b128_to_gf((r.transparent)(&pt))
+                        })
                 })
                 .collect()
         };
-        // The closure at boolean tails must agree with the dense basis.
+        // The combined closure at boolean tails must agree with the combined
+        // dense basis.
         let prefix: Vec<Gf> = (0..11).map(|_| scratch.get_field_challenge(&())).collect();
         let via_closure = eval_b(&prefix, 5);
-        let basis_gf: Vec<Gf> = relation.basis.iter().copied().map(f128_to_gf).collect();
         for (y, &value) in via_closure.iter().enumerate() {
             let mut point = prefix.clone();
             for j in 0..5 {
                 point.push(if y >> j & 1 == 1 { Gf::one() } else { Gf::zero() });
             }
-            let dense = basis_gf
+            let dense = combined
                 .iter()
                 .zip(eq_table(&point))
                 .fold(Gf::zero(), |acc, (&b, e)| acc + b * e);
@@ -891,7 +933,7 @@ mod tests {
                 &mut tv,
                 &voracles[1].root,
                 &voracles[1].round0,
-                b128_to_gf(vrelations[0].claim),
+                target,
                 eval_b,
                 &pushforward_opening,
             )
@@ -901,11 +943,18 @@ mod tests {
     #[test]
     fn and_only_circuit_uses_one_oracle() {
         let builder = CircuitBuilder::new();
-        let wires: Vec<_> = (0..1usize << 12)
-            .map(|_| {
+        let gates = 1usize << 12;
+        let wires: Vec<_> = (0..gates)
+            .map(|i| {
                 let a = builder.add_witness();
                 let b = builder.add_witness();
-                let c = builder.add_witness();
+                // The last output is public, so the statement check below has
+                // an in/out word to flip.
+                let c = if i + 1 == gates {
+                    builder.add_inout()
+                } else {
+                    builder.add_witness()
+                };
                 builder.assert_eq("c = a & b", builder.band(a, b), c);
                 [a, b, c]
             })
@@ -926,11 +975,10 @@ mod tests {
         let (proof, _) = prepared.prove(&witness).unwrap();
         assert!(proof.relations.is_empty());
         let decoded = prepared.proof_from_bytes(&proof.to_bytes()).unwrap();
-        prepared.verify(witness.public(), &decoded).unwrap();
-        let mut wrong = witness.public().to_vec();
-        if let Some(word) = wrong.last_mut() {
-            word.0 ^= 1;
-        }
+        prepared.verify(witness.inout(), &decoded).unwrap();
+        assert_eq!(witness.inout().len(), 1);
+        let mut wrong = witness.inout().to_vec();
+        wrong[0].0 ^= 1;
         assert!(prepared.verify(&wrong, &decoded).is_err());
     }
 }

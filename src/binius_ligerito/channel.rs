@@ -6,8 +6,7 @@
 //! transcript and Round 0 taken immediately, before the next challenge. Oracle
 //! linear relations are queued, not opened: the adapter discharges each
 //! oracle's relations with one Ligerito opening after the PIOP prefix ends,
-//! exactly as Binius64's own BaseFold channel defers its openings to
-//! `finish()`.
+//! exactly as Binius64's own BaseFold channel defers its openings.
 use super::{Oracle, b128_to_f128};
 use crate::{
     binary_pcs::{BinaryPcs, Round0Prover, Round0Verifier},
@@ -16,13 +15,15 @@ use crate::{
     transcript::{Blake3Transcript, traits::Transcript},
 };
 use binius_compute::Allocator;
-use binius_field::{Field, PackedField, util::FieldFn};
-use binius_iop::channel::{
-    Error as IopError, IOPVerifierChannel, OracleLinearRelation, OracleSpec,
-};
+use binius_core::word::Word;
+use binius_field::{Field, PackedField};
+use binius_iop::channel::{Error as IopError, IOPVerifierChannel, OracleSpec};
 use binius_iop_prover::channel::IOPProverChannel;
-use binius_ip::channel::{Error as IpError, IPVerifierChannel};
-use binius_ip_prover::channel::IPProverChannel;
+use binius_ip::channel::{
+    Error as IpError, IPVerifierChannel, WordIPVerifierChannel, pack_words_concrete, select_word,
+    subset_sum_word,
+};
+use binius_ip_prover::channel::{IPProverChannel, WordIPProverChannel};
 use binius_math::{FieldSlice, FieldVec};
 use binius_verifier::config::B128;
 use flock_core::{field::F128, merkle::Hash, pcs::commit::ProverData};
@@ -38,12 +39,29 @@ fn absorb_root(t: &mut Blake3Transcript, index: usize, root: &Hash) {
 }
 
 fn observe(t: &mut Blake3Transcript, v: B128) {
-    t.absorb_slice(&u128::from(v.val()).to_le_bytes());
+    t.absorb_slice(&u128::from(v).to_le_bytes());
 }
 
 fn challenge(t: &mut Blake3Transcript) -> B128 {
     let x: Gf = t.get_field_challenge(&());
     B128::new(u128::from(x.words()[0]) | (u128::from(x.words()[1]) << 64))
+}
+
+fn observe_words(t: &mut Blake3Transcript, words: &[Word]) {
+    for word in words {
+        t.absorb_slice(&word.0.to_le_bytes());
+    }
+}
+
+fn sample_bits(t: &mut Blake3Transcript, bits: usize) -> Word {
+    assert!(bits <= Word::BITS);
+    let value = u128::from(challenge(t)) as u64;
+    Word(
+        value
+            & (u64::MAX
+                .checked_shr((Word::BITS - bits) as u32)
+                .unwrap_or(0)),
+    )
 }
 
 /// One committed oracle on the prover side.
@@ -80,7 +98,7 @@ pub(super) struct ProverChannel<'a> {
 
 impl IPProverChannel<B128> for ProverChannel<'_> {
     fn send_one(&mut self, elem: B128) {
-        self.messages.push(elem.val().into());
+        self.messages.push(u128::from(elem));
         observe(self.transcript, elem);
     }
     fn observe_one(&mut self, elem: B128) {
@@ -91,12 +109,22 @@ impl IPProverChannel<B128> for ProverChannel<'_> {
     }
 }
 
+impl WordIPProverChannel<B128> for ProverChannel<'_> {
+    type Word = Word;
+    fn observe_words(&mut self, words: &[Word]) {
+        observe_words(self.transcript, words);
+    }
+    fn sample_bits(&mut self, bits: usize) -> Word {
+        sample_bits(self.transcript, bits)
+    }
+}
+
 impl<P: PackedField<Scalar = B128>, A: Allocator> IOPProverChannel<P, A> for ProverChannel<'_> {
     type Oracle = Oracle;
     fn remaining_oracle_specs(&self) -> &[OracleSpec] {
         &self.specs
     }
-    fn send_oracle(&mut self, buffer: FieldSlice<P>) -> Oracle {
+    fn send_oracle(&mut self, buffer: FieldSlice<'_, P>) -> Oracle {
         let index = self.oracles.len();
         let expected = OracleSpec::new(buffer.log_len());
         assert!(
@@ -129,25 +157,24 @@ impl<P: PackedField<Scalar = B128>, A: Allocator> IOPProverChannel<P, A> for Pro
         });
         index
     }
-    fn prove_oracle_relations(
-        &mut self,
-        relations: impl IntoIterator<Item = (Oracle, FieldVec<P, A>, FieldVec<P, A>, B128)>,
-    ) {
-        for (oracle, message, transparent, claim) in relations {
-            let packed = &self.oracles[oracle].packed;
-            assert_eq!(
-                message.to_ref().log_len(),
-                packed.len().trailing_zeros() as usize,
-                "relation message must be the committed oracle"
-            );
-            let basis: Vec<F128> = transparent.iter_scalars().map(b128_to_f128).collect();
-            assert_eq!(basis.len(), packed.len(), "transparent basis covers the oracle");
-            self.relations.push(ProverRelation {
-                oracle,
-                basis,
-                claim,
-            });
-        }
+    fn prove_oracle_relation(&mut self, oracle: Oracle, transparent: FieldVec<P, A>, claim: B128) {
+        let packed = &self.oracles[oracle].packed;
+        let basis: Vec<F128> = transparent.iter_scalars().map(b128_to_f128).collect();
+        assert_eq!(basis.len(), packed.len(), "transparent basis covers the oracle");
+        self.relations.push(ProverRelation {
+            oracle,
+            basis,
+            claim,
+        });
+    }
+    fn finalize_oracle(&mut self, oracle: Oracle, buffer: FieldVec<P, A>) {
+        // The committed words were copied at `send_oracle`; the handed-back
+        // buffer must be that oracle.
+        assert_eq!(
+            1usize << buffer.log_len(),
+            self.oracles[oracle].packed.len(),
+            "finalized buffer is the committed oracle"
+        );
     }
 }
 
@@ -155,6 +182,14 @@ impl<P: PackedField<Scalar = B128>, A: Allocator> IOPProverChannel<P, A> for Pro
 pub(super) struct VerifierOracle {
     pub root: Hash,
     pub round0: Round0Verifier,
+}
+
+/// One queued relation on the verifier side: `⟨transparent, oracle⟩ = claim`
+/// with the transparent basis given as an MLE evaluator.
+pub(super) struct VerifierRelation {
+    pub oracle: Oracle,
+    pub transparent: Box<dyn Fn(&[B128]) -> B128>,
+    pub claim: B128,
 }
 
 pub(super) struct VerifierChannel<'a> {
@@ -166,7 +201,7 @@ pub(super) struct VerifierChannel<'a> {
     pub roots: &'a [Hash],
     pub rounds0: &'a [OodRound],
     pub oracles: Vec<VerifierOracle>,
-    pub relations: Vec<OracleLinearRelation<Oracle, B128>>,
+    pub relations: Vec<VerifierRelation>,
 }
 
 impl IPVerifierChannel<B128> for VerifierChannel<'_> {
@@ -192,8 +227,25 @@ impl IPVerifierChannel<B128> for VerifierChannel<'_> {
             Err(IpError::InvalidAssert)
         }
     }
-    fn compute_public_value(&mut self, inputs: &[B128], f: impl FieldFn<B128>) -> B128 {
-        f.call_native(inputs)
+}
+
+impl WordIPVerifierChannel<B128> for VerifierChannel<'_> {
+    type Word = Word;
+    fn observe_words(&mut self, words: &[Word]) -> Vec<Word> {
+        observe_words(self.transcript, words);
+        words.to_vec()
+    }
+    fn sample_bits(&mut self, bits: usize) -> Word {
+        sample_bits(self.transcript, bits)
+    }
+    fn subset_sum(&mut self, elems: &[B128], word: &Word) -> B128 {
+        subset_sum_word(elems, *word)
+    }
+    fn select(&mut self, elems: &[B128], word: &Word) -> B128 {
+        select_word(elems, *word)
+    }
+    fn pack_words(&mut self, words: &[Word]) -> Vec<B128> {
+        pack_words_concrete::<B128, B128>(words)
     }
 }
 
@@ -224,11 +276,20 @@ impl IOPVerifierChannel<B128> for VerifierChannel<'_> {
         });
         Ok(index)
     }
-    fn verify_oracle_relations(
+    fn verify_oracle_relation(
         &mut self,
-        relations: impl IntoIterator<Item = OracleLinearRelation<Oracle, B128>>,
+        oracle: Oracle,
+        transparent: Box<dyn Fn(&[B128]) -> B128>,
+        claim: B128,
     ) -> Result<(), IopError> {
-        self.relations.extend(relations);
+        if oracle >= self.oracles.len() {
+            return Err(IpError::InvalidAssert.into());
+        }
+        self.relations.push(VerifierRelation {
+            oracle,
+            transparent,
+            claim,
+        });
         Ok(())
     }
 }

@@ -1,3 +1,4 @@
+//! Historical kernel experiment; no production security claim.
 //! RLC-family A/B (EXPERIMENTAL, docs/rlc-family-proto-prompt.md): the XOR
 //! triple (k = 3, j = 2, a₃ = a₁ ⊕ a₂) proved three ways against ONE
 //! commitment and statement —
@@ -23,7 +24,7 @@ use f2z::ligerito_flock::{
     commit_rs_ligerito_rows, mle_eval_mod_q_lig_rlc_family_proof_size_bytes,
     mle_eval_mod_q_lig_xor_proof_size_bytes, prove_mle_eval_mod_q_ligerito_claims_only,
     prove_mle_eval_mod_q_ligerito_rlc_family, prove_mle_eval_mod_q_ligerito_rlc_family_shared_point,
-    sha_lig_configs, verify_mle_eval_mod_q_ligerito_claims_only,
+    historical_sha_lig_configs, verify_mle_eval_mod_q_ligerito_claims_only,
     verify_mle_eval_mod_q_ligerito_rlc_family, verify_mle_eval_mod_q_ligerito_rlc_family_shared_point,
 };
 use f2z::pcs::{
@@ -71,7 +72,7 @@ fn main() {
         let p = &layout.p;
         let p_x = virtual_xor_params(&layout);
         let m_p = packed_vars(p);
-        let (pc, vc) = sha_lig_configs(m_p).expect("lig cfg");
+        let (pc, vc) = historical_sha_lig_configs(m_p).expect("lig cfg");
 
         // Pseudorandom committed bit rows (memory-honest packed-rows path).
         let words = p.rows().div_ceil(64);

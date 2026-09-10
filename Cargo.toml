@@ -28,6 +28,7 @@ flock-core = { git = "https://github.com/albert-garreta/flock-mod.git", rev = "e
 # The host proof stream carries flock's serde `LigeritoProof` as a
 # length-prefixed bincode blob (bincode 1.3, matching flock's own pin).
 bincode = "1.3"
+serde_json = { version = "1", features = ["float_roundtrip"] }
 serde = { version = "1", features = ["derive"] }
 # Backend-independent SHA-256/F2Z circuit synthesis, copied into this
 # workspace so fresh checkouts do not require a sibling repository.
@@ -41,6 +42,7 @@ p3-challenger = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49
 p3-commit = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-dft = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
 p3-field = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
+p3-fri = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-goldilocks = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-matrix = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-merkle-tree = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
@@ -49,6 +51,7 @@ p3-multilinear-util = { git = "https://github.com/wu-s-john/plonky3.git", rev = 
 p3-sha256-air = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
 p3-sumcheck = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
 p3-symmetric = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
+p3-uni-stark = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
 p3-util = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-whir = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
 postcard = { version = "1.1.3", default-features = false, features = ["alloc"], optional = true }
@@ -63,27 +66,26 @@ spartan2 = { git = "https://github.com/wu-s-john/Spartan2.git", rev = "3b9413045
 
 # Optional Binius64 stack for the PCS and native SHA-256 comparisons.
 # Pin every crate to the same commit from the fork's f2z-benching branch.
-binius-compute = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
-binius-circuits = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
-binius-core = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
-binius-field = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
-binius-frontend = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
-binius-hash = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", features = ["rayon"], optional = true }
-binius-iop = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
-binius-iop-prover = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", features = ["rayon"], optional = true }
-binius-ip = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
-binius-ip-prover = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", features = ["rayon"], optional = true }
-binius-math = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", features = ["rayon"], optional = true }
-binius-prover = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
-binius-transcript = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
-binius-utils = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", features = ["rayon"], optional = true }
-binius-verifier = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
+binius-compute = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-circuits = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-core = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-field = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-frontend = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-hash = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-iop = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-iop-prover = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-ip = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-ip-prover = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-math = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-prover = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-transcript = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-utils = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-verifier = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
 tracing = { version = "0.1.38", optional = true }
 tracing-subscriber = { version = "0.3.18", optional = true }
 
 [dev-dependencies]
 libc = "0.2"
-serde_json = "1"
 p256 = { version = "0.13.2", features = ["ecdsa"] }
 sha2 = "0.10"
 
@@ -210,8 +212,8 @@ name = "sha256_e2e_compare"
 harness = false
 required-features = ["bench-internals", "native-sha256-compare"]
 # Claim-equivalent fixed-IV native SHA-256 comparison across F2Z, full
-# Plonky3 SHA AIR/WHIR, Binius64, Spartan/Hyrax, and integer-mod Limber.
-# Exponents via F2Z_SHA_COMPARE_EXPONENTS (default 10..16), one warmup and
+# Plonky3 SHA AIR/WHIR, Binius64, and integer-mod Limber/Brakedown.
+# Exponents via F2Z_SHA_COMPARE_EXPONENTS (default 7,8,10..16), one warmup and
 # 21 measured verified samples by default.
 
 [[bench]]
@@ -236,6 +238,11 @@ required-features = ["bench-internals", "native-mul-compare"]
 name = "native_mul_compare"
 path = "tests/native_mul_compare.rs"
 required-features = ["bench-internals", "native-mul-compare"]
+
+[[test]]
+name = "native_sha256_compare"
+path = "tests/native_sha256_compare.rs"
+required-features = ["bench-internals", "native-sha256-compare"]
 
 [[bench]]
 name = "sha256_product_layout"
@@ -282,12 +289,24 @@ plonky3-sha256-bench = [
     "dep:p3-sha256-air",
     "dep:p3-util",
 ]
-native-mul-compare = [
-    "plonky3-whir-bench",
+# Univariate Goldilocks STARK + FRI for independent wrapping u32 multiplication.
+plonky3-fri-bench = [
     "dep:p3-air",
-    "dep:p3-multi-stark",
+    "dep:p3-challenger",
+    "dep:p3-commit",
+    "dep:p3-dft",
+    "dep:p3-field",
+    "dep:p3-fri",
+    "dep:p3-goldilocks",
+    "dep:p3-matrix",
+    "dep:p3-merkle-tree",
+    "dep:p3-symmetric",
+    "dep:p3-uni-stark",
+    "dep:postcard",
+]
+native-mul-compare = [
+    "plonky3-fri-bench",
     "binius64-bench",
-    "dep:limber",
 ]
 native-sha256-compare = [
     "plonky3-sha256-bench",
@@ -341,10 +360,6 @@ halo2curves = { git = "https://github.com/privacy-ethereum/halo2curves.git", rev
 [patch."https://github.com/albert-garreta/flock-mod.git"]
 flock-core = { path = "vendor/flock-mod/crates/flock-core" }
 
-[patch."https://github.com/wu-s-john/binius64.git"]
-binius-prover = { path = "vendor/binius64/crates/prover" }
-binius-verifier = { path = "vendor/binius64/crates/verifier" }
-
 # Release-equivalent benchmark codegen with profiler-readable DWARF. Keeping
 # symbols in the built-in bench profile lets xctrace resolve Rust hot paths.
 [profile.bench]
@@ -364,3 +379,13 @@ debug = 2
 name = "hybrid-u32-sha256"
 path = "src/bin/hybrid_u32_sha256.rs"
 required-features = ["hybrid"]
+
+[[test]]
+name = "binius_integer_pcs"
+path = "tests/binius_integer_pcs.rs"
+required-features = ["bench-internals", "binius64-bench"]
+
+[[bench]]
+name = "ligerito_bounds"
+harness = false
+required-features = ["ecdsa", "hybrid", "bench-internals"]

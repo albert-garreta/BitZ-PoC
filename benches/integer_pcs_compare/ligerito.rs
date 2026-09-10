@@ -11,9 +11,7 @@
 
 use std::error::Error;
 
-use f2z::binary_pcs::{
-    BinaryPcs, BitMleOpening, LOG_INV_RATE, MIN_PACKED_LOG, write_round0,
-};
+use f2z::binary_pcs::{BinaryPcs, LOG_INV_RATE, MIN_PACKED_LOG, write_round0};
 use f2z::ligerito::LOG_PACKING;
 use f2z::ligerito_flock::f128_to_gf;
 use f2z::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;

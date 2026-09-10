@@ -34,6 +34,12 @@ use crypto_bigint::U128;
 use crypto_primes::{Flavor, is_prime};
 use flock_core::challenger::Challenger;
 pub(crate) mod atomic;
+#[cfg(test)]
+mod coverage;
+mod configuration;
+pub use configuration::{LigeritoSelection, ResolvedLigerito};
+mod ood;
+pub use ood::{ProverOod, VerifierOod, bind_prover_ood, bind_verifier_ood};
 
 use flock_core::field::F128;
 use flock_core::merkle::HashKind;
@@ -399,7 +405,7 @@ pub fn commit_rs_ligerito_packed(
 }
 
 /// Baseline Ligerito configuration used by the fixed-modulus adapters.
-pub fn sha_lig_configs(m_p: usize) -> Result<(LigProverConfig, LigVerifierConfig), String> {
+pub fn historical_sha_lig_configs(m_p: usize) -> Result<(LigProverConfig, LigVerifierConfig), String> {
     let m = m_p + LOG_PACKING;
     if m < 22 {
         return lig_configs(
@@ -416,17 +422,16 @@ pub fn sha_lig_configs(m_p: usize) -> Result<(LigProverConfig, LigVerifierConfig
     custom_johnson_config(m, 1, 4).to_prover_verifier_configs()
 }
 
-/// Round-0 parameters matching [`sha_lig_configs`] at that config's own
-/// round-by-round target: `Some` for the Johnson-regime production configs
-/// (`m ≥ 22`), `None` for the ad-hoc test configs below.
+/// Production fixed-modulus default; unsupported shapes are errors.
+pub fn sha_lig_configs(m_p: usize) -> Result<(LigProverConfig, LigVerifierConfig), String> {
+    let resolved = LigeritoSelection::JOHNSON.resolve(m_p, 100)?;
+    Ok((resolved.prover().clone(), resolved.verifier().clone()))
+}
+
+/// Round-0 parameters matching the checked production configuration.
 pub fn sha_lig_ood_params(m_p: usize) -> Option<OodRoundParams> {
-    let m = m_p.checked_add(LOG_PACKING)?;
-    if m < 22 || ligerito::embedded_security_config(m, ligerito::LigeritoProfile::Slim).is_none() {
-        return None;
-    }
-    let cfg = custom_johnson_config(m, 1, 4);
-    let target = u32::try_from(cfg.target_security_bits).ok()?;
-    ood_round_params(&cfg, m_p, target)
+    let resolved = LigeritoSelection::JOHNSON.resolve(m_p, 100).expect("unsupported production Ligerito shape");
+    ood_round_params(resolved.security(), m_p, 100)
 }
 
 /// Builds a validator-gated UDR Ligerito configuration at an explicit
@@ -603,11 +608,18 @@ pub fn custom_johnson_config(m: usize, r0: usize, k0: usize) -> LigeritoSecurity
 /// configs are unchanged by this.
 #[allow(clippy::arithmetic_side_effects, clippy::missing_panics_doc)]
 pub fn custom_johnson_config_bits(
+    m: usize, r0: usize, k0: usize, target_bits: Option<usize>,
+) -> LigeritoSecurityConfig {
+    try_custom_johnson_config_bits(m, r0, k0, target_bits)
+        .expect("custom config passes flock's validator")
+}
+
+fn try_custom_johnson_config_bits(
     m: usize,
     r0: usize,
     k0: usize,
     target_bits: Option<usize>,
-) -> LigeritoSecurityConfig {
+) -> Result<LigeritoSecurityConfig, String> {
     // Embedded production tables start at m=22. Only scalar/default fields
     // are borrowed from the template (header strings, `eta`, grinding
     // convention, target); `m`, `log_n`, every level shape, and the final
@@ -616,14 +628,14 @@ pub fn custom_johnson_config_bits(
     // template's own `m`/`log_n` are re-assigned to themselves (no change).
     let template_m = m.max(22);
     let slim = ligerito::embedded_security_config(template_m, ligerito::LigeritoProfile::Slim)
-        .unwrap_or_else(|| panic!("no embedded slim template for m={template_m}"));
-    let mut cfg = LigeritoSecurityConfig::from_toml_str(slim).expect("slim template validates");
+        .ok_or_else(|| format!("no embedded slim template for m={template_m}"))?;
+    let mut cfg = LigeritoSecurityConfig::from_toml_str(slim)?;
     let log_n = m
         .checked_sub(LOG_PACKING)
-        .expect("custom Johnson witness has at least LOG_PACKING variables");
+        .ok_or("custom Johnson witness has fewer than LOG_PACKING variables")?;
     cfg.m = m;
     cfg.log_n = log_n;
-    assert!(k0 >= 1 && k0 < log_n, "custom initial_k out of range");
+    if k0 == 0 || k0 >= log_n { return Err("custom initial_k out of range".into()); }
     if let Some(bits) = target_bits {
         cfg.target_security_bits = bits;
     }
@@ -644,7 +656,7 @@ pub fn custom_johnson_config_bits(
     cfg.levels = shapes
         .iter()
         .enumerate()
-        .map(|(i, &(mc, il, kr, r))| {
+        .map(|(i, &(mc, il, kr, r))| -> Result<_, String> {
             let mut lv = tmpl.clone();
             if let Some(bits) = target_bits {
                 lv.target_security_bits = bits;
@@ -662,7 +674,7 @@ pub fn custom_johnson_config_bits(
                     lv.queries = q;
                     lv.paper_predicted_bits().1 + 1e-3 >= need_q
                 })
-                .expect("query search converges");
+                .ok_or("Johnson query search did not converge")?;
             let (pg, qb) = lv.paper_predicted_bits();
             lv.fold_grinding_bits = (lv.target_security_bits as f64 - pg).ceil().max(0.0) as usize;
             lv.expected_eps_pg_bits = pg;
@@ -690,12 +702,11 @@ pub fn custom_johnson_config_bits(
                     lv.ood_samples += 1;
                 }
             }
-            lv
+            Ok(lv)
         })
-        .collect();
-    cfg.validate()
-        .expect("custom config passes flock's validator");
-    cfg
+        .collect::<Result<_, _>>()?;
+    cfg.validate()?;
+    Ok(cfg)
 }
 
 /// Queries-only security: a **UDR-regime** config at the
@@ -760,27 +771,34 @@ pub fn custom_udr_grind_config_bits(
 
 #[allow(clippy::arithmetic_side_effects)]
 fn udr_config_impl(
+    m: usize, r0: usize, k0: usize, target_bits: Option<usize>, fold_grind: bool,
+) -> LigeritoSecurityConfig {
+    try_udr_config_impl(m, r0, k0, target_bits, fold_grind)
+        .expect("custom UDR config passes flock's validator")
+}
+
+fn try_udr_config_impl(
     m: usize,
     r0: usize,
     k0: usize,
     target_bits: Option<usize>,
     fold_grind: bool,
-) -> LigeritoSecurityConfig {
+) -> Result<LigeritoSecurityConfig, String> {
     // Embedded production tables start at m=22.  Only scalar/default fields
     // are borrowed from the template: `m`, `log_n`, every level shape, the
     // target, and the final block are rebuilt below, so the m=22 template is
     // also a sound seed for the paper's m=20 and m=21 SHA endpoints.
     let template_m = m.max(22);
     let slim = ligerito::embedded_security_config(template_m, ligerito::LigeritoProfile::Slim)
-        .unwrap_or_else(|| panic!("no embedded slim template for m={template_m}"));
-    let mut cfg = LigeritoSecurityConfig::from_toml_str(slim).expect("slim template validates");
+        .ok_or_else(|| format!("no embedded slim template for m={template_m}"))?;
+    let mut cfg = LigeritoSecurityConfig::from_toml_str(slim)?;
     let log_n = m
         .checked_sub(LOG_PACKING)
-        .expect("custom UDR witness has at least LOG_PACKING variables");
+        .ok_or("custom UDR witness has fewer than LOG_PACKING variables")?;
     cfg.m = m;
     cfg.log_n = log_n;
     cfg.analysis_version = "udr_maximal_radius_with_fold_grinding".into();
-    assert!(k0 >= 1 && k0 < log_n, "custom initial_k out of range");
+    if k0 == 0 || k0 >= log_n { return Err("custom initial_k out of range".into()); }
     if let Some(bits) = target_bits {
         cfg.target_security_bits = bits;
     }
@@ -803,7 +821,7 @@ fn udr_config_impl(
     cfg.final_block.yr_log_n = n_run;
     cfg.levels = shapes
         .iter()
-        .map(|&(mc, il, kr, r)| {
+        .map(|&(mc, il, kr, r)| -> Result<_, String> {
             let mut lv = tmpl.clone();
             if let Some(bits) = target_bits {
                 lv.target_security_bits = bits;
@@ -827,7 +845,7 @@ fn udr_config_impl(
                     lv.queries = q;
                     lv.paper_predicted_bits().1 + 1e-3 >= need_q
                 })
-                .expect("query search converges");
+                .ok_or("UDR query search did not converge")?;
             let (pg, qb) = lv.paper_predicted_bits();
             // udrg only: recover the pg shortfall with per-fold PoW
             // (cheap here — pg is 112–119, so the grind is 9–16 bits).
@@ -837,12 +855,11 @@ fn udr_config_impl(
             }
             lv.expected_eps_pg_bits = pg;
             lv.expected_eps_query_bits = qb;
-            lv
+            Ok(lv)
         })
-        .collect();
-    cfg.validate()
-        .expect("custom UDR config passes flock's validator");
-    cfg
+        .collect::<Result<_, _>>()?;
+    cfg.validate()?;
+    Ok(cfg)
 }
 
 /// Commit at the shape the Ligerito config dictates
@@ -1253,7 +1270,7 @@ const U64_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN: &[u8] = b"f2z/spartan-f2z/u64-mo
 const U128_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN: &[u8] = b"f2z/spartan-f2z/u128-mod-q-opening/v1";
 const BABY_BEAR_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN: &[u8] =
     b"f2z/spartan-baby-bear-f2z/mod-q-opening/v2";
-const EXT_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/ext/v1";
+const EXT_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/ext/early-ood/v2";
 #[allow(dead_code)]
 const MOD_Q_XOR_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q-xor/v1";
 #[allow(dead_code)]
@@ -2925,7 +2942,7 @@ fn prove_mod_q_lig_core<S, R>(
     alpha: Gf,
     pc: &LigProverConfig,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     reduction: R,
 ) -> ModQLigCoreProof<R::Proof>
 where
@@ -2958,7 +2975,7 @@ fn prove_mod_q_lig_core_with_security<S, R>(
     alpha: Gf,
     pc: &LigProverConfig,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     reduction: R,
     security: Option<&mut atomic::AtomicSecurity<'_>>,
 ) -> ModQLigCoreProof<R::Proof>
@@ -2969,7 +2986,7 @@ where
     let lch = chunks.chunk_count();
     // Round 0 precedes every forest message: it binds the committed
     // message's list element before any further challenge.
-    let ood_claim = ood.map(|params| prove_ood_round(transcript, hint, params));
+    let ood_claim = ood.into().claim(transcript, hint);
     let mut grinder: ProverGrindingTranscript<_, ForestRoundGrinding> =
         ProverGrindingTranscript::new(transcript, forest_grinding_bits);
     let mut mfs = Vec::with_capacity(lch);
@@ -3028,7 +3045,7 @@ fn prove_mod_q_lig_after_statement<S, R>(
     pc: &LigProverConfig,
     _bound_statement: BoundModQStatement,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     reduction: R,
 ) -> ModQLigCoreProof<R::Proof>
 where
@@ -3094,7 +3111,7 @@ pub fn prove_mle_eval_mod_q_ligerito_with_ood(
     row_weights_q: &[u128],
     q_bits: usize,
     alpha: Gf,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigModQProof {
     let geometry = validate_int_eval_geometry(&hint.commitment, p, 0)
@@ -3128,7 +3145,7 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_with_weight_chunks(
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigModQProof, FlockRsError> {
     validate_ligerito_commitment(&hint.commitment, pc)?;
@@ -3185,7 +3202,7 @@ fn prove_mle_eval_mod_q_ligerito_after_statement<S>(
     pc: &LigProverConfig,
     bound_statement: BoundModQStatement,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
 ) -> IntEvalRsLigModQProof
 where
     S: ModQWeightSource + ?Sized,
@@ -3224,7 +3241,7 @@ fn prove_mle_eval_mod_q_ligerito_raw<S>(
     alpha: Gf,
     pc: &LigProverConfig,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
 ) -> IntEvalRsLigModQProof
 where
     S: ModQWeightSource + ?Sized,
@@ -3554,7 +3571,7 @@ pub fn verify_mle_eval_mod_q_ligerito_runtime(
     claimed_q: u128,
     q: u128,
     q_bits: usize,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
     validate_runtime_q(q, q_bits, row_weights_q)?;
@@ -3612,7 +3629,7 @@ pub fn verify_mle_eval_mod_q_ligerito_with_ood<R>(
     alpha: Gf,
     claimed: R,
     q_bits: usize,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
@@ -3673,7 +3690,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime(
     q: u128,
     q_bits: usize,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
     validate_runtime_q_source(q, q_bits, chunks)?;
@@ -3753,7 +3770,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_with_weight_chunks<R>(
     claimed: R,
     q_bits: usize,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
@@ -3824,7 +3841,7 @@ fn verify_mod_q_lig_core<S, R, C>(
     alpha: Gf,
     vc: &LigVerifierConfig,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     reduction: R,
     read_off: C,
 ) -> Result<PaddedChunkFolds, FlockRsError>
@@ -3858,7 +3875,7 @@ fn verify_mod_q_lig_core_with_security<S, R, C>(
     alpha: Gf,
     vc: &LigVerifierConfig,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     reduction: R,
     read_off: C,
     security: Option<&mut atomic::AtomicSecurity<'_>>,
@@ -3878,14 +3895,7 @@ where
 
     // Round 0 precedes every forest challenge (its presence must match
     // the parameters exactly: the round is part of the protocol version).
-    let ood_claim = match (ood, proof.ood) {
-        (Some(params), Some(round)) => {
-            let _g = crate::utils::prof::scope("mv:ood");
-            Some(verify_ood_round(transcript, reduction.packed_vars(), params, round)?)
-        }
-        (None, None) => None,
-        _ => return Err(FlockRsError::OodRound),
-    };
+    let ood_claim = ood.into().claim(transcript, reduction.packed_vars(), proof.ood)?;
 
     let mut grinder: VerifierGrindingTranscript<_, ForestRoundGrinding> =
         VerifierGrindingTranscript::new(transcript, forest_grinding_bits, proof.grinding_nonces);
@@ -3934,7 +3944,7 @@ fn verify_mod_q_lig_after_statement<S, R, C>(
     vc: &LigVerifierConfig,
     _bound_statement: BoundModQStatement,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     reduction: R,
     read_off: C,
 ) -> Result<PaddedChunkFolds, FlockRsError>
@@ -4162,7 +4172,7 @@ pub fn prove_mle_eval_ext_ligerito_with_ood(
     q_bits: usize,
     proj: &crate::ext_proj::ExtProjParams,
     alpha: Gf,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigExtProof {
     use crate::ext_proj::{projected_row_weights, sample_proj_point, sample_proj_prime};
@@ -4192,6 +4202,7 @@ pub fn prove_mle_eval_ext_ligerito_with_ood(
         alpha,
         pc,
     );
+    let ood = ood.into().bind(transcript, hint);
     let c_w = mod_q_chunk_width(p);
     let l1 = mod_q_num_chunks(p, q_bits);
 
@@ -4251,7 +4262,7 @@ pub fn verify_mle_eval_ext_ligerito_with_ood<R>(
     claimed: R,
     q_bits: usize,
     proj: &crate::ext_proj::ExtProjParams,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
@@ -4322,6 +4333,7 @@ where
         alpha,
         vc,
     );
+    let ood = ood.into().bind(transcript, packed_vars(p), proof.base.ood.as_ref())?;
     absorb_ext_step1_folds(transcript, &mus);
 
     // Step 3: the same transcript sampling and projection as the prover.
@@ -10611,6 +10623,7 @@ impl IntEvalRsLigModQProof {
     pub fn to_bytes(&self) -> Vec<u8> {
         use crate::proof_codec::Writer;
         let mut w = Writer::new();
+        w.bytes(b"F2ZM0002");
         let lch = self.mfs.len();
         w.len(lch);
         for l in 0..lch {
@@ -10642,6 +10655,7 @@ impl IntEvalRsLigModQProof {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, crate::proof_codec::CodecError> {
         use crate::proof_codec::Reader;
         let mut r = Reader::new(bytes);
+        if r.take(8)? != b"F2ZM0002" { return Err(crate::proof_codec::CodecError::NonCanonical); }
         let lch = r.len()?;
         let mut mfs = Vec::with_capacity(lch.min(64));
         let mut us = Vec::with_capacity(lch.min(64));
@@ -10767,6 +10781,7 @@ impl IntEvalRsLigExtProof {
     pub fn to_bytes(&self) -> Vec<u8> {
         use crate::proof_codec::Writer;
         let mut w = Writer::new();
+        w.bytes(b"F2ZE0002");
         w.len(self.mus.len());
         for m in &self.mus {
             let n = transmitted_us_len(m);
@@ -10796,6 +10811,7 @@ impl IntEvalRsLigExtProof {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, crate::proof_codec::CodecError> {
         use crate::proof_codec::{CodecError, Reader};
         let mut r = Reader::new(bytes);
+        if r.take(8)? != b"F2ZE0002" { return Err(crate::proof_codec::CodecError::NonCanonical); }
         let n_mus = r.len()?;
         let mut mus = Vec::with_capacity(n_mus.min(r.remaining() / 8));
         for _ in 0..n_mus {
@@ -10826,6 +10842,7 @@ impl IntEvalRsLigExtProof {
         let n_bytes = r.len()?;
         let base_bytes = r.take(n_bytes)?;
         let base = IntEvalRsLigModQProof::from_bytes(base_bytes)?;
+        if r.remaining() != 0 { return Err(CodecError::NonCanonical); }
         Ok(IntEvalRsLigExtProof { mus, base })
     }
 }
@@ -12382,7 +12399,7 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual_with_ood<M>(
     row_weights_q: &[u128],
     q_bits: usize,
     alpha: Gf,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigVirtProof
 where
@@ -12426,7 +12443,7 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual_runtime<M>(
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigVirtProof, FlockRsError>
 where
@@ -12472,7 +12489,7 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime<M
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigVirtProof, FlockRsError>
 where
@@ -12518,7 +12535,7 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime<M
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigVirtProof, FlockRsError>
 where
@@ -12560,7 +12577,7 @@ fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus<M, S>(
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigVirtProof
 where
@@ -12600,7 +12617,7 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modul
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     pc: &LigProverConfig,
     security: Option<&mut atomic::AtomicSecurity<'_>>,
 ) -> IntEvalRsLigVirtProof
@@ -12747,7 +12764,7 @@ pub fn verify_mle_eval_mod_q_ligerito_virtual_with_ood<R, M>(
     alpha: Gf,
     claimed: R,
     q_bits: usize,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
@@ -12796,7 +12813,7 @@ pub fn verify_mle_eval_mod_q_ligerito_virtual_runtime<M>(
     q: u128,
     q_bits: usize,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
@@ -12850,7 +12867,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime<
     q: u128,
     q_bits: usize,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
@@ -12903,7 +12920,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime<
     q: u128,
     q_bits: usize,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
@@ -12951,7 +12968,7 @@ fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off<M, S, 
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
     col_weight_count: usize,
     read_off_accepts: C,
@@ -12997,7 +13014,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
     col_weight_count: usize,
     read_off_accepts: C,
@@ -13168,6 +13185,7 @@ impl IntEvalRsLigVirtProof {
     pub fn to_bytes(&self) -> Vec<u8> {
         use crate::proof_codec::Writer;
         let mut w = Writer::new();
+        w.bytes(b"F2ZV0002");
         let lch = self.mfs.len();
         w.len(lch);
         for l in 0..lch {
@@ -13203,6 +13221,7 @@ impl IntEvalRsLigVirtProof {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, crate::proof_codec::CodecError> {
         use crate::proof_codec::{CodecError, Reader};
         let mut r = Reader::new(bytes);
+        if r.take(8)? != b"F2ZV0002" { return Err(crate::proof_codec::CodecError::NonCanonical); }
         let lch = r.len()?;
         let mut mfs = Vec::with_capacity(lch.min(64));
         let mut us = Vec::with_capacity(lch.min(64));
@@ -15075,7 +15094,7 @@ mod tests {
         // Only the low two forest-layer flag bits are defined. Accepting a
         // high bit would give the same proof object multiple byte encodings.
         let mut high_flag = bytes.clone();
-        let flag_offset = 2 * core::mem::size_of::<u64>();
+        let flag_offset = 8 + 2 * core::mem::size_of::<u64>();
         high_flag[flag_offset] |= 0x04;
         assert!(matches!(
             IntEvalRsLigModQProof::from_bytes(&high_flag),
@@ -18434,7 +18453,7 @@ mod ood_round_tests {
         // without grinding at m = 22; below the template boundary the ad-hoc
         // config runs without the round.
         assert_eq!(sha_lig_ood_params(15), Some(OodRoundParams { grinding_bits: 0 }));
-        assert_eq!(sha_lig_ood_params(10), None);
+        assert!(sha_lig_configs(10).is_err());
     }
 
     /// `eq(b, r) mod q` over `b ∈ {0,1}^{r.len()}` (index bit `k` ↔ `r[k]`).

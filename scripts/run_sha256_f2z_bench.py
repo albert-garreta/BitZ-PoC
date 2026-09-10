@@ -12,6 +12,7 @@ import statistics
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+from ligerito_results import validate_result_fields
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,7 +77,7 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.threads < 1 or args.reps < 1:
         parser.error("--threads and --reps must be positive")
-    min_shape = 4 if args.workload == "compressions" else 7
+    min_shape = 7
     if any(shape not in range(min_shape, 17) for shape in args.shapes):
         parser.error(f"--shapes for {args.workload} must contain exponents in {min_shape}..16")
     if len(set(args.shapes)) != len(args.shapes):
@@ -148,6 +149,7 @@ def main() -> int:
                     raise RuntimeError(f"{run_id}: expected one RESULT with {args.reps} verified samples")
                 if len(raw) != args.reps or any(row.get("verified") != "true" for row in raw):
                     raise RuntimeError(f"{run_id}: expected {args.reps} verified SAMPLE rows")
+                validate_result_fields(results[0])
                 row = dict(run_id=run_id, workload=workload, **results[0])
                 row["witness_to_proof_ms"] = f"{statistics.median(float(sample['witness_ms']) + float(sample['prove_ms']) for sample in raw):.6f}"
                 summaries.append(row)

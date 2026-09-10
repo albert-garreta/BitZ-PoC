@@ -1,7 +1,7 @@
 # SHA-256 / P-256 ECDSA comparison
 
-The comparison benchmark calls three implementations of the same signed-message
-relation: **F2Z Split**, **F2Z AllRows**, and **non-ZK Spartan MC**. F2Z's existing
+The comparison benchmark calls **F2Z Split**, **F2Z AllRows**, **Spartan MC**,
+and optional **Binius64** on the same signed-message relation. All modes are non-ZK. F2Z's existing
 composed prover is reused. The Spartan dependency is pinned to the implementation
 on the fork's `f2z-benching` branch; `Cargo.lock` records the exact revision.
 
@@ -10,14 +10,22 @@ The backend commit
 is published on the fork's `f2z-benching` branch. Cargo can fetch the pinned
 revision from GitHub; it is also available in this machine's Cargo cache.
 
-The [current measurements](sha256-ecdsa-shared-kernels-results.md) cover every
+The [earlier measurements](sha256-ecdsa-shared-kernels-results.md) cover every
 exponent 4 through 11, both thread counts, and both Spartan chunking policies.
 
-The optional [native ZKPassport/UltraHonk runner](../benchmarks/zkpassport/README.md)
-adds a non-ZK Noir baseline with shared low-s fixtures. Select
-`--methods f2z-split zkpassport-honk`; that campaign has its own default full
-`i=3..16` sweep and one/sixteen-thread settings. Its native API exposes aggregate
-proving time, so unavailable internal phases remain null.
+The optional [Binius64 worker](../benchmarks/binius64/README.md) uses the rebased
+`f2z-benching` fork through an immutable Git revision shared with the root's
+Binius SHA/u32/hybrid adapters. The SHA+ECDSA worker retains its own Cargo
+workspace, lockfile, and toolchain. See [branch consolidation](binius64-consolidation.md).
+
+ZKPassport is deprecated and is no longer an active method. Historical outputs
+remain readable with `--summarize-only`.
+
+Every new run uses `f2z/sha256-ecdsa-fixture/standard-p256/v1` fixtures. Signatures
+are not normalized: valid low-s and high-s signatures are both accepted, with
+`0 < r,s < n`. Export/import uses this same generator and validation. Regenerate
+legacy low-s-profile fixtures for a new campaign; old results are not relabelled
+or resumed into the new profile. Keys and signatures are prepared before timers.
 
 ## Run the comparison
 
@@ -32,7 +40,8 @@ python3 scripts/run_sha256_ecdsa_compare.py \
 
 Use `--offline` when dependencies are cached. `CARGO_HOME`, `CARGO_TARGET_DIR`
 and compiler flags are inherited; `RUSTFLAGS` defaults to `-C target-cpu=native`.
-The comparison feature does not enable the Plonky3, Binius or Limber backends.
+Selecting `binius64` additionally builds its isolated worker; the root comparison feature
+does not enable the root Binius, Plonky3, or Limber adapters.
 
 To compare Spartan chunkings of a 1,024-compression chain:
 
@@ -57,9 +66,10 @@ Spartan alone. `--seeds 0 1 2` changes fixtures without changing the workload.
 An already-built worker can be supplied with `--binary`. Its direct interface is:
 
 ```text
-sha256_ecdsa_compare --method f2z-split|f2z-all|spartan-mc
+sha256_ecdsa_compare --method f2z-split|f2z-all|spartan-mc|binius64
                     --r R --c C
                     [--target 100|128] [--threads N] [--reps N] [--seed N]
+                    [--fixture FILE] [--binius64-worker PATH]
 ```
 
 It also accepts Cargo's automatic `--bench` flag:
@@ -70,12 +80,14 @@ cargo bench --profile release --features sha256-ecdsa-compare \
   --method spartan-mc --r 3 --c 0 --threads 1 --reps 3
 ```
 
-The runner's default limits are 48 GiB of virtual address space and one hour per
-case, configurable through `--memory-gib` and `--timeout`. Rerunning resumes
+The runner's default limits are 48 GiB of virtual address space on Linux and one
+hour per case, configurable through `--memory-gib` and `--timeout`. macOS does not
+support this address-space limit; it collects peak RSS and enforces the timeout.
+The manifest records whether the memory limit is enforced. Rerunning resumes
 missing cases; `--retry-failed` also retries recorded failures. An output
-directory cannot mix binaries with different SHA-256 hashes. The runner uses
+directory cannot mix binaries or runners with different SHA-256 hashes. The runner uses
 Unix process/resource APIs; per-process peak RSS is collected with GNU time on
-Linux and is left unavailable when that collector is absent.
+Linux and BSD time on macOS, with both normalized to bytes.
 
 ## Common statement and workload
 
@@ -114,6 +126,7 @@ is unrelated to the Spartan chunk exponent.
 | F2Z Split | Boolean source map plus integer rows; 6,807 nonlinear P-256 rows enter the outer sumcheck; linear SHA/P-256 rows join the common inner sumcheck | One source commitment and one virtual F2Z opening |
 | F2Z AllRows | Same F2Z arithmetization; all original SHA/P-256 rows enter the outer sumcheck, followed by the common inner sumcheck | Same commitment architecture and opening |
 | Spartan MC, non-ZK | Bellpepper SHA chunks and native P-256 R1CS; NeutronNova batch folding, paired outer and inner sumchecks | K SHA commitments and one core commitment, batched into one direct Hyrax opening |
+| Binius64, non-ZK | Current fixed SHA-256 circuit and standard P-256 gadget using complete arithmetic and four-bit joint scalar multiplication | Witness oracle commitment and BaseFold opening |
 
 `AllRows` isolates the benefit of excluding linear rows from F2Z's outer
 sumcheck. It remains F2Z's arithmetization and is not Bellpepper's SHA circuit.
@@ -185,7 +198,8 @@ value commitment path; P-256 field witnesses use its general path.
 | `piop_ms` | All non-opening protocol time: `protocol_ms - opening_ms`, including projection, preparation, matrix work, folding, sumchecks, transcript work and boundary overhead |
 | `iop_ms` | IOP/PCS opening time: F2Z's complete virtual opening path, or Spartan's combined witness/blind construction and direct Hyrax opening; equals `opening_ms` |
 | `prove_ms` | `commit_ms + protocol_ms` |
-| `witness_to_proof_ms` | Per-sample `witness_ms + prove_ms` |
+| `witness_to_proof_ms` | Per-sample `witness_ms + prove_ms` (phase sum) |
+| `e2e_prover_ms` | Independently measured elapsed time from fresh witness generation through proof completion; excludes reusable setup, fixture signing, codec and verification |
 | `verify_ms` | Complete application verification, including Spartan's native linking checks |
 | `codec_ms` | Proof encoding and decoding, outside prover/verifier timers |
 | `proof_object_bytes` | Backend proof object; F2Z excludes its separately supplied commitment |
@@ -200,8 +214,8 @@ matrix products hidden in untimed per-message preparation. Report witness
 through proof for complete fresh-input cost: some work naturally occurs during
 witness generation in each implementation.
 
-The seven comparison metrics are `commit_ms`, `witness_ms`, `piop_ms`,
-`iop_ms`, `verify_ms`, `proof_material_bytes`, and `peak_rss_bytes`. The runner
+The eight comparison metrics are `commit_ms`, `witness_ms`, `piop_ms`,
+`iop_ms`, `verify_ms`, `proof_material_bytes`, `peak_rss_bytes`, and `e2e_prover_ms`. The runner
 derives PIOP and IOP/PCS for each original sample before aggregating. These are
 disjoint accounting categories: `commit + PIOP + IOP/PCS = prove` per sample.
 The PIOP column includes work outside the named sumcheck scopes and is not
@@ -233,8 +247,8 @@ The output directory contains `manifest.json`, `requested_cases.json`, complete
 per-case JSON/stdout/stderr records, `summary.csv`, `samples.csv`, and `comparison.json`.
 The manifest records the binary hash, source revision/status, compiler, build
 fingerprint, machine and relevant environment. A source patch and copies of
-the new worker/runner accompany dirty-root builds. Each row records the pinned
-Spartan revision and a fixture identifier. The CSV takes medians of per-sample
+the new worker/runner accompany dirty-root builds. Each row records its pinned
+Spartan or Binius revision and a fixture identifier. The CSV takes medians of per-sample
 totals, not sums of medians. Failed and timed-out cases remain visible.
 
 Existing runs can receive the seven-column breakdown without rerunning proofs
@@ -265,3 +279,28 @@ length from 16 through 2,048 compressions, with all seven requested metrics for
 64 configurations and 256 verified proofs. The
 [initial comparison measurements](sha256-ecdsa-comparison-results.md) preserve
 the earlier 24-case campaign at 8, 32 and 128 compressions.
+
+### Binius measurement boundaries
+
+Binius setup builds the fixed circuit and reusable prover/verifier parameters from
+only the exponent and security parameters. Every sample creates fresh witness
+values and arithmetic hints. Fixed generator constants and reusable allocation
+buffers belong to setup; key-specific tables and message-dependent work are
+recomputed per proof. The shared fixture is held once per worker.
+
+`witness_ms` includes circuit evaluation and witness packing. `commit_ms` covers
+the witness oracle commitment. `opening_ms` includes ring switching and the
+complete deferred BaseFold channel finish; `protocol_ms` includes that opening
+and the remaining reductions. Stage durations are disjoint wall-clock spans.
+The verifier reconstructs expected public words from `(i,Qx,Qy,r,s)` and consumes
+all proof bytes; it does not read the private witness.
+
+The worker uses SHA-256 Merkle hashing, BaseFold at rate 1/2, and explicit 100/128
+FRI query targets. It records the actual query count and identifies these as
+query targets, not a claim about aggregate protocol security. The mathematical
+statement is shared; the security models remain separately identified.
+
+Peak memory is the whole worker high-water mark, including setup and verification.
+The runner obtains it with GNU time on Linux or BSD time on macOS; unavailable
+measurements stay null.
+Historical records without independent e2e timings retain an unavailable e2e field.

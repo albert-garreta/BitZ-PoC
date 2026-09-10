@@ -199,7 +199,8 @@ fn bench_shape<P: IopSecurityProfile>(
     let slug = format!("chain-2p{exponent}");
 
     let setup_started = Instant::now();
-    let prepared = match prepare_sha256_chain_batch_with_profile::<P>(exponent) {
+    let prepared = match prepare_sha256_chain_batch_with_profile::<P>(exponent)
+        .and_then(|p| p.with_ligerito(common::ligerito_selection(P::LIGERITO_TARGET_BITS))) {
         Ok(prepared) => prepared,
         Err(
             error @ (Sha256ConstraintError::Profile(_) | Sha256ConstraintError::PrimeProfile(_)),
@@ -210,6 +211,7 @@ fn bench_shape<P: IopSecurityProfile>(
         }
         Err(error) => panic!("prepare failed: {error}"),
     };
+    println!("LIGERITO_CONFIG {}", common::ligerito_report(prepared.ligerito_configuration().expect("validated Ligerito"), prepared.security().ood));
     let (pc, vc) = sha256_chain_configs(&prepared).expect("valid Ligerito config");
     let setup_ms = setup_started.elapsed().as_secs_f64() * 1e3;
     let compressions = prepared.instances();
@@ -285,6 +287,7 @@ fn bench_shape<P: IopSecurityProfile>(
         bench: "sha256_chain",
         shape: slug,
         extra: vec![
+            common::ligerito_identity(prepared.ligerito_configuration().unwrap(), prepared.security().ood),
             ("profile".into(), prepared.security().profile_name.into()),
             ("compressions".into(), compressions.to_string()),
             ("message_bytes".into(), message_bytes.to_string()),

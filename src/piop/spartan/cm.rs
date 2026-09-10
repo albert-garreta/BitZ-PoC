@@ -103,6 +103,9 @@ pub enum CmAndError {
     #[error("the CM-AND domain is too large")]
     DomainTooLarge,
 
+    #[error("invalid Ligerito configuration: {0}")]
+    LigeritoConfig(String),
+
     /// The generated relation or projected witness is malformed.
     #[error(transparent)]
     SpartanMatrix(#[from] SpartanMatrixError),
@@ -411,12 +414,20 @@ where
     layout: CmAndLayout,
     matrices: PreparedConstraintMatrices<F>,
     map: PreparedVirtualMap,
+    ligerito: Option<crate::ligerito_flock::ResolvedLigerito>,
 }
 
 impl<F> PreparedCmAndRelation<F>
 where
     F: SpartanField,
 {
+    pub fn with_ligerito(mut self, selection: crate::ligerito_flock::LigeritoSelection) -> Result<Self, CmAndError> {
+        self.ligerito = Some(selection.resolve(packed_vars(&self.layout.f2z_params()), 100).map_err(CmAndError::LigeritoConfig)?);
+        Ok(self)
+    }
+    pub fn ligerito_configuration(&self) -> Result<&crate::ligerito_flock::ResolvedLigerito, CmF2zError> {
+        self.ligerito.as_ref().ok_or(CmF2zError::UnauditedF2zParameters)
+    }
     /// The shared layout.
     pub const fn layout(&self) -> &CmAndLayout {
         &self.layout
@@ -474,6 +485,9 @@ where
         layout,
         matrices,
         map,
+        ligerito: if layout.gate_vars() >= MIN_PRODUCTION_GATE_VARS {
+            Some(crate::ligerito_flock::LigeritoSelection::JOHNSON.resolve(packed_vars(&layout.f2z_params()), 100).map_err(CmAndError::LigeritoConfig)?)
+        } else { None }, // Algebra-only fixtures have no security claim.
     })
 }
 
@@ -754,12 +768,6 @@ fn cm_configs(layout: &CmAndLayout) -> Result<(LigProverConfig, LigVerifierConfi
     sha_lig_configs(packed_vars(&p)).map_err(CmF2zError::LigeritoConfig)
 }
 
-/// Round-0 parameters of the opener [`cm_configs`] selects.
-fn cm_ood(layout: &CmAndLayout) -> Option<crate::ligerito_flock::OodRoundParams> {
-    let p = layout.f2z_params();
-    crate::ligerito_flock::sha_lig_ood_params(packed_vars(&p))
-}
-
 fn hash_usize(hasher: &mut Hasher, value: usize) -> Result<(), CmF2zError> {
     let value = u64::try_from(value).map_err(|_| CmF2zError::BindingEncodingOverflow)?;
     hasher.update(&value.to_le_bytes());
@@ -884,6 +892,15 @@ pub fn prove_cm_and_f2z_with_config<T: Transcript + Send>(
         &relation.map().digest(),
         &hint_f.commitment,
     )?;
+    let ood = if let Some(resolved) = &relation.ligerito {
+        validate_config_pair(&p, pc, resolved.verifier())?;
+        absorb_spartan_message(transcript, b"cm/early-ood/statement/v2", &assignment_binding);
+        resolved.bind(transcript);
+        crate::ligerito_flock::bind_prover_ood(transcript, hint_f, crate::ligerito_flock::ood_round_params(resolved.security(), packed_vars(&p), 100))
+    } else {
+        if !cfg!(test) { return Err(CmF2zError::UnauditedF2zParameters); }
+        crate::ligerito_flock::ProverOod::from(None)
+    };
     let (_, spartan_witness, h_rows) = witness.into_parts();
     let (assignment, products) = spartan_witness.into_parts();
 
@@ -923,7 +940,7 @@ pub fn prove_cm_and_f2z_with_config<T: Transcript + Send>(
             opening.row_weights_q(),
             FQ_BITS,
             f2z_generator(),
-            cm_ood(relation.layout()),
+            ood,
             pc,
         )
     };
@@ -938,7 +955,8 @@ pub fn prove_cm_and_f2z<T: Transcript + Send>(
     witness: ProjectedCmAndWitness<SpartanF2zField>,
     hint_f: &FlockCommitHint,
 ) -> Result<CmF2zProof, CmF2zError> {
-    let (pc, vc) = cm_configs(relation.layout())?;
+    let resolved = relation.ligerito_configuration()?;
+    let (pc, vc) = (resolved.prover().clone(), resolved.verifier().clone());
     let p = relation.layout().f2z_params();
     validate_config_pair(&p, &pc, &vc)?;
     prove_cm_and_f2z_with_config(transcript, relation, witness, hint_f, &pc)
@@ -960,6 +978,16 @@ pub fn verify_cm_and_f2z_with_config<T: Transcript + Send>(
     let assignment_binding =
         cm_assignment_binding(relation.layout(), &relation.map().digest(), commitment)?;
 
+    let p = relation.layout().f2z_params();
+    let ood = if let Some(resolved) = &relation.ligerito {
+        validate_config_pair(&p, resolved.prover(), vc)?;
+        absorb_spartan_message(transcript, b"cm/early-ood/statement/v2", &assignment_binding);
+        resolved.bind(transcript);
+        crate::ligerito_flock::bind_verifier_ood(transcript, packed_vars(&p), crate::ligerito_flock::ood_round_params(resolved.security(), packed_vars(&p), 100), proof.f2z().ood.as_ref()).map_err(CmF2zError::F2z)?
+    } else {
+        if !cfg!(test) { return Err(CmF2zError::UnauditedF2zParameters); }
+        crate::ligerito_flock::VerifierOod::from(None)
+    };
     let terminal_claim = {
         let _scope = crate::utils::prof::scope("cm-f2z:spartan_verify");
         verify_spartan_proof(
@@ -998,7 +1026,7 @@ pub fn verify_cm_and_f2z_with_config<T: Transcript + Send>(
             f2z_generator(),
             opening.claimed(),
             FQ_BITS,
-            cm_ood(relation.layout()),
+            ood,
             vc,
         )
     };
@@ -1012,7 +1040,8 @@ pub fn verify_cm_and_f2z<T: Transcript + Send>(
     commitment: &Commitment,
     proof: &CmF2zProof,
 ) -> Result<(), CmF2zError> {
-    let (pc, vc) = cm_configs(relation.layout())?;
+    let resolved = relation.ligerito_configuration()?;
+    let (pc, vc) = (resolved.prover().clone(), resolved.verifier().clone());
     let p = relation.layout().f2z_params();
     validate_config_pair(&p, &pc, &vc)?;
     validate_commitment(&p, commitment, &pc)?;

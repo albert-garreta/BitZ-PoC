@@ -101,7 +101,7 @@ fn bench_profile<P: IopSecurityProfile>(
     // One-time public preprocessing under this profile (excluded from
     // prove): raw exact matrices + the instantiated security parameters.
     let setup_started = Instant::now();
-    let prepared = match PreparedBabyBearMulRelation::new_with_profile::<P>(layout) {
+    let prepared = match PreparedBabyBearMulRelation::new_with_profile_and_ligerito::<P>(layout, common::ligerito_selection(P::LIGERITO_TARGET_BITS)) {
         Ok(prepared) => prepared,
         Err(error @ (BabyBearSpartanF2zError::Profile(_)
         | BabyBearSpartanF2zError::UnsupportedPaperProfile)) => {
@@ -115,6 +115,7 @@ fn bench_profile<P: IopSecurityProfile>(
         Err(error) => panic!("prepare failed: {error}"),
     };
     let setup_ms = common::elapsed_ms(setup_started);
+    println!("LIGERITO_CONFIG {}", common::ligerito_report(prepared.ligerito_configuration(), prepared.security().ood));
     let security = prepared.security().clone();
 
     println!();
@@ -187,6 +188,7 @@ fn bench_profile<P: IopSecurityProfile>(
         bench: "baby_bear_mul",
         shape: format!("2p{exponent}"),
         extra: vec![
+            common::ligerito_identity(prepared.ligerito_configuration(), prepared.security().ood),
             ("profile".into(), P::NAME.into()),
             ("multiplications".into(), multiplications.to_string()),
             ("strategy".into(), strategy_name(strategy).into()),

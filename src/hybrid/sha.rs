@@ -5,10 +5,13 @@ use super::{
 };
 use crate::transcript::Blake3Transcript;
 use binius_circuits::sha256::compress::{State, ref_compress, sha256_compress_2x_seq};
-use binius_core::{constraint_system::ValueVec, word::Word};
+use binius_core::{
+    constraint_system::{InoutSegment, ValueVec},
+    word::Word,
+};
 use binius_frontend::{Circuit, CircuitBuilder, Wire};
 use binius_iop::channel::OracleSpec;
-use binius_prover::{IOPProver, protocols::shift::build_key_collection};
+use binius_prover::{IOPProver, protocols::shift::KeyCollection};
 use binius_verifier::{IOPVerifier, config::B128};
 use flock_core::field::F128;
 
@@ -61,9 +64,12 @@ impl ShaRelation {
                 "SHA circuit unexpectedly requires auxiliary oracles",
             ));
         }
-        let verifier = IOPVerifier::new(cs.clone(), cs.log_public_words());
+        let verifier = IOPVerifier::new(cs.clone(), cs.log_public_words(InoutSegment::Public));
         tracing::info!("preparing SHA shift keys");
-        let prover = IOPProver::new(verifier.clone(), build_key_collection(cs));
+        let prover = IOPProver::new(
+            verifier.clone(),
+            KeyCollection::build(cs, InoutSegment::Public),
+        );
         Ok(Self {
             circuit,
             blocks,
@@ -74,13 +80,10 @@ impl ShaRelation {
     }
 
     pub fn public(&self, final_state: [u32; 8]) -> Vec<Word> {
-        let cs = self.verifier.constraint_system();
-        let mut public = vec![Word::ZERO; cs.n_public_words()];
-        public[..cs.constants.len()].copy_from_slice(&cs.constants);
-        for (wire, val) in self.output.iter().zip(final_state) {
-            public[self.circuit.witness_index(*wire).0 as usize] = Word(val as u64);
-        }
-        public
+        final_state
+            .into_iter()
+            .map(|word| Word(u64::from(word)))
+            .collect()
     }
 
     pub fn populate(&self, blocks: &[[u32; 16]], final_state: [u32; 8]) -> Result<ValueVec, Error> {
@@ -162,13 +165,81 @@ impl ShaRelation {
 
 fn evaluation_claim(point: &[B128], value: B128) -> BinaryClaim {
     let convert = |x: B128| F128 {
-        lo: u128::from(x.val()) as u64,
-        hi: (u128::from(x.val()) >> 64) as u64,
+        lo: u128::from(x) as u64,
+        hi: (u128::from(x) >> 64) as u64,
     };
     let r: Vec<_> = point.iter().copied().map(convert).collect();
     BinaryClaim {
         low: super::sumcheck::eq_table(&r[..7]),
         high_point: r[7..].to_vec(),
         value: convert(value),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prefix_claim_matches_private_bits_and_checks_wiring() {
+        let relation = ShaRelation::new(2).unwrap();
+        let blocks = [[0x01234567; 16], [0x89abcdef; 16]];
+        let final_state = chaining_value(&blocks);
+        let public = relation.public(final_state);
+        let witness = relation.populate(&blocks, final_state).unwrap();
+        relation
+            .circuit
+            .constraint_system()
+            .verify(&witness)
+            .unwrap();
+        assert_eq!(public, witness.inout());
+        let transcript = Blake3Transcript::new;
+        let (messages, claim) = relation.prove(&mut transcript(), &witness).unwrap();
+        let verified = relation
+            .verify(&mut transcript(), &public, &messages)
+            .unwrap();
+        assert_eq!(claim.low, verified.low);
+        assert_eq!(claim.high_point, verified.high_point);
+        assert_eq!(claim.value, verified.value);
+
+        // Evaluate the committed private bit-MLE independently of Binius's reduction.
+        let high = super::super::sumcheck::eq_table(&claim.high_point);
+        let value =
+            relation
+                .pack(&witness)
+                .iter()
+                .zip(high)
+                .fold(F128::ZERO, |sum, (word, weight)| {
+                    let mut bits = u128::from(word.lo) | (u128::from(word.hi) << 64);
+                    let mut low = F128::ZERO;
+                    while bits != 0 {
+                        low += claim.low[bits.trailing_zeros() as usize];
+                        bits &= bits - 1;
+                    }
+                    sum + low * weight
+                });
+        assert_eq!(value, claim.value);
+
+        // The last prefix message is the claimed wiring evaluation. There are no later
+        // Fiat-Shamir challenges to make this fail accidentally: check_native must reject it.
+        let mut forged = messages.clone();
+        *forged.last_mut().unwrap() ^= 1;
+        assert!(
+            relation
+                .verify(&mut transcript(), &public, &forged)
+                .is_err()
+        );
+        let mut changed_public = public.clone();
+        changed_public[0].0 ^= 1;
+        assert!(
+            relation
+                .verify(&mut transcript(), &changed_public, &messages)
+                .is_err()
+        );
+        assert!(
+            relation
+                .verify(&mut transcript(), &public[..7], &messages)
+                .is_err()
+        );
     }
 }

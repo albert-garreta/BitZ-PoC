@@ -101,7 +101,8 @@ pub struct PreparedHybrid {
     geometry: opening::Geometry,
     /// Round-0 parameters (`step0:ood-draw` grinding), derived from the
     /// shared opener's configuration at the composition profile's λ.
-    ood: OodRoundParams,
+    ood: Option<OodRoundParams>,
+    ligerito: crate::ligerito_flock::ResolvedLigerito,
     security: SecurityReport,
 }
 
@@ -128,6 +129,10 @@ impl CommittedHybrid {
 
 impl PreparedHybrid {
     pub fn new(parameters: Parameters) -> Result<Self, Error> {
+        Self::new_with_ligerito(parameters, crate::ligerito_flock::LigeritoSelection::JOHNSON)
+    }
+
+    pub fn new_with_ligerito(parameters: Parameters, selection: crate::ligerito_flock::LigeritoSelection) -> Result<Self, Error> {
         if cfg!(feature = "unchecked") {
             return Err(Error::Invalid(
                 "hybrid proofs require checked arithmetic and constraints",
@@ -155,14 +160,19 @@ impl PreparedHybrid {
             crate::ligerito::packed_vars(&multiplication.params()),
             sha.verifier.log_witness_elems(),
         ])?;
-        let security = security::account(&multiplication, &sha.verifier, &geometry)?;
-        let (_, ood) = geometry.ood()?;
+        let ligerito = selection.resolve(geometry.packed_log(), security::LIGERITO_COMPONENT_BITS).map_err(Error::Config)?;
+        if ligerito.prover().initial_k != 4 || ligerito.prover().log_inv_rates[0] != 3 {
+            return Err(Error::Invalid("hybrid requires Ligerito rate 1/8 and initial_k=4"));
+        }
+        let security = security::account(&multiplication, &sha.verifier, &geometry, &ligerito)?;
+        let ood = opening::ood_parameters(&ligerito)?.map(|(_, params)| params);
         Ok(Self {
             parameters,
             multiplication,
             sha,
             geometry,
             ood,
+            ligerito,
             security,
         })
     }
@@ -177,9 +187,12 @@ impl PreparedHybrid {
         self.geometry.logs
     }
     /// Round-0 (out-of-domain sample) parameters of the shared opening.
-    pub fn ood_round(&self) -> OodRoundParams {
+    pub fn ood_round(&self) -> Option<OodRoundParams> {
         self.ood
     }
+
+    pub fn ligerito_configuration(&self) -> &crate::ligerito_flock::ResolvedLigerito { &self.ligerito }
+    pub fn physical_packed_witness_logs(&self) -> [usize; 2] { self.geometry.physical_logs }
 
     /// Generate z = x*y mod 2^32 and w = floor(x*y / 2^32), then commit
     /// the four 32-bit limbs and the chained SHA witness.
@@ -213,13 +226,15 @@ impl PreparedHybrid {
             return Err(Error::Invalid("witness workload counts"));
         }
         let rows = multiplication.f2z_bit_rows();
-        let packed_mul: Vec<_> = rows
+        let mut packed_mul: Vec<_> = rows
             .iter()
             .flat_map(|row| row.chunks_exact(2).map(|w| F128 { lo: w[0], hi: w[1] }))
             .collect();
         let final_sha_state = chaining_value(blocks);
         let sha = self.sha.populate(blocks, final_sha_state)?;
-        let packed_sha = self.sha.pack(&sha);
+        let mut packed_sha = self.sha.pack(&sha);
+        packed_mul.resize(1 << self.geometry.physical_logs[0], F128::ZERO);
+        packed_sha.resize(1 << self.geometry.physical_logs[1], F128::ZERO);
         let (c_mul, d_mul) = commit(&packed_mul, &self.geometry.params(0));
         let (c_sha, d_sha) = commit(&packed_sha, &self.geometry.params(1));
         let statement = Statement {
@@ -242,13 +257,17 @@ impl PreparedHybrid {
             return Err(Error::Invalid("statement workload parameters"));
         }
         let mut h = blake3::Hasher::new();
-        h.update(b"f2z/hybrid-u32-mod32-sha256/non-zk/v3");
+        h.update(b"f2z/hybrid-u32-mod32-sha256/non-zk/lanes4-padding/v5");
         for n in [
             self.parameters.multiplications,
             self.parameters.sha_compressions,
             100,
             self.geometry.logs[0],
             self.geometry.logs[1],
+            self.geometry.physical_logs[0],
+            self.geometry.physical_logs[1],
+            self.geometry.position_log,
+            self.geometry.virtual_lane_log,
         ] {
             h.update(&(n as u64).to_le_bytes());
         }
@@ -259,13 +278,14 @@ impl PreparedHybrid {
             h.update(&word.to_be_bytes());
         }
         h.update(
-            &bincode::serialize(&self.geometry.security())
+            &bincode::serialize(self.ligerito.security())
                 .map_err(|e| Error::Config(e.to_string()))?,
         );
         let digest = *h.finalize().as_bytes();
         let mut transcript = Blake3Transcript::new();
-        transcript.absorb_slice(b"hybrid/statement/v3");
+        transcript.absorb_slice(b"hybrid/statement/v5");
         transcript.absorb_slice(&digest);
+        self.ligerito.bind(&mut transcript);
         Ok((transcript, digest))
     }
 
@@ -302,8 +322,8 @@ impl PreparedHybrid {
             &self.geometry,
             &digest,
             packed,
-            &ood,
-            [&committed.data[0], &committed.data[1]],
+            ood.as_ref(),
+            &self.ligerito,            [&committed.data[0], &committed.data[1]],
             &point,
         )?;
         drop(opening_scope);
@@ -317,7 +337,7 @@ impl PreparedHybrid {
 
     pub fn verify(&self, statement: &Statement, proof: &HybridProof) -> Result<(), Error> {
         let (mut t, digest) = self.transcript(statement)?;
-        let ood = opening::verify_ood(&mut t, &self.geometry, self.ood, &proof.opening.ood)?;
+        let ood = opening::verify_ood(&mut t, &self.geometry, self.ood, proof.opening.ood.as_ref())?;
         let a = mul::verify(&mut t, &self.multiplication, &digest, &proof.multiplication)?;
         let public = self.sha.public(statement.final_sha_state);
         let b = self.sha.verify(&mut t, &public, &proof.sha)?;
@@ -329,8 +349,8 @@ impl PreparedHybrid {
             &statement.roots,
             &point,
             proof.joint.value,
-            &ood,
-            &proof.opening,
+            ood.as_ref(),
+            &self.ligerito,            &proof.opening,
         )
     }
 }
@@ -340,18 +360,48 @@ mod tests {
     use super::*;
 
     #[test]
+    fn padded_sources_recommitted_nonzero_are_rejected_in_both_regimes() {
+        use crate::ligerito_flock::LigeritoSelection;
+        let parameters = Parameters { multiplications: 1 << 15, sha_compressions: 4 };
+        let inputs: Vec<_> = (0..1u32 << 15).map(|i| (i, i.wrapping_mul(31337))).collect();
+        let blocks = [[17u32; 16]; 4];
+        for selection in [LigeritoSelection::JOHNSON, LigeritoSelection::MATCHED_UDR] {
+            let prepared = PreparedHybrid::new_with_ligerito(parameters, selection).unwrap();
+            let mut committed = prepared.commit(&inputs, &blocks).unwrap();
+            let proof = prepared.prove(&committed).unwrap();
+            prepared.verify(committed.statement(), &proof).unwrap();
+            let bytes = proof.to_bytes();
+            let decoded = prepared.proof_from_bytes(committed.statement(), &bytes).unwrap();
+            prepared.verify(committed.statement(), &decoded).unwrap();
+            let branch = (0..2).find(|&b| prepared.geometry.physical_logs[b] > prepared.geometry.logs[b]).expect("padded source");
+            let padding_index = 1 << prepared.geometry.logs[branch];
+            committed.packed[branch][padding_index] = F128::ONE;
+            let (commitment, data) = commit(&committed.packed[branch], &prepared.geometry.params(branch));
+            committed.data[branch] = data;
+            committed.statement.roots[branch] = commitment.root;
+            // Both the RS codeword and Merkle root now authenticate the bad
+            // padding. Only the fresh, zero-valued linear check excludes it.
+            let invalid = prepared.prove(&committed).unwrap();
+            assert!(prepared.verify(committed.statement(), &invalid).is_err());
+        }
+    }
+
+    #[test]
     fn supported_geometries_bound_initial_leaf_width() {
-        for multiplication_log in 15..=20 {
+        for multiplication_log in 15..=22 {
             for sha_log in 9..=24 {
                 let g = opening::Geometry::new([multiplication_log, sha_log]).unwrap();
-                assert!(g.virtual_lane_log <= 12);
+                assert_eq!(g.virtual_lane_log, 4);
                 assert_eq!(g.params(0).n_positions(), g.params(1).n_positions());
-                let security = g.security();
+                for selection in [crate::ligerito_flock::LigeritoSelection::JOHNSON, crate::ligerito_flock::LigeritoSelection::MATCHED_UDR] {
+                let resolved = selection.resolve(g.packed_log(), security::LIGERITO_COMPONENT_BITS).unwrap();
+                let security = resolved.security();
                 assert!(security.validate().is_ok());
                 // The commit rate must equal the opener's level-0 rate.
                 assert_eq!(g.params(0).log_inv_rate, security.levels[0].log_inv_rate);
                 assert_eq!(g.params(1).log_inv_rate, security.levels[0].log_inv_rate);
-                assert!(g.ood().is_ok());
+                assert!(opening::ood_parameters(&resolved).is_ok());
+                }
             }
         }
     }
@@ -360,7 +410,7 @@ mod tests {
     fn field_representations_agree() {
         use binius_field::Field;
         use binius_verifier::config::B128;
-        assert_eq!(u128::from(B128::ONE.val()), 1);
+        assert_eq!(u128::from(B128::ONE), 1);
         let values = [0, 1, 2, u128::MAX, 0x0123456789abcdef0123456789abcdef];
         for a in values {
             for b in values {
@@ -374,7 +424,7 @@ mod tests {
                 };
                 let z = x * y;
                 assert_eq!(
-                    u128::from((B128::new(a) * B128::new(b)).val()),
+                    u128::from(B128::new(a) * B128::new(b)),
                     z.lo as u128 | ((z.hi as u128) << 64)
                 );
             }
@@ -475,7 +525,7 @@ mod tests {
         prepared.verify(committed.statement(), &proof).unwrap();
         let bytes = proof.to_bytes();
         let mut legacy = bytes.clone();
-        legacy[4] = 1;
+        legacy[4] = 4;
         assert!(
             prepared
                 .proof_from_bytes(committed.statement(), &legacy)
@@ -500,18 +550,18 @@ mod tests {
                 .proof_from_bytes(committed.statement(), &trailing)
                 .is_err()
         );
-        // Wire layout: magic (8), Round-0 value (16), Round-0 nonce (8; the
-        // test shape grinds), then the prefix nonces and their count.
-        assert!(prepared.ood_round().grinding_bits > 0);
+        // Wire layout: magic (8), OOD presence (8), value (16), nonce
+        // presence (8), nonce (8), two prefix nonces (16), then their count.
+        assert!(prepared.ood_round().unwrap().grinding_bits > 0);
         let mut malformed = bytes.clone();
-        malformed[48..56].fill(255);
+        malformed[64..72].fill(255);
         assert!(
             prepared
                 .proof_from_bytes(committed.statement(), &malformed)
                 .is_err()
         );
         let mut noncanonical = bytes.clone();
-        let first_field = 72 + proof.multiplication.piop_nonces.len() * 8;
+        let first_field = 88 + proof.multiplication.piop_nonces.len() * 8;
         noncanonical[first_field..first_field + 16].fill(255);
         assert!(
             prepared
@@ -544,13 +594,13 @@ mod tests {
         // Round 0: the claimed value, its nonce and the deeper levels'
         // out-of-domain values and fold nonces are all bound.
         let mut changed = proof.clone();
-        changed.opening.ood.y = changed.opening.ood.y + Gf::one();
+        changed.opening.ood.as_mut().unwrap().y += Gf::one();
         assert!(prepared.verify(committed.statement(), &changed).is_err());
         let mut changed = proof.clone();
-        changed.opening.ood.nonce = changed.opening.ood.nonce.map(|nonce| nonce ^ 1);
+        changed.opening.ood.as_mut().unwrap().nonce = changed.opening.ood.unwrap().nonce.map(|nonce| nonce ^ 1);
         assert!(prepared.verify(committed.statement(), &changed).is_err());
         let mut changed = proof.clone();
-        changed.opening.ood.nonce = None;
+        changed.opening.ood = None;
         assert!(prepared.verify(committed.statement(), &changed).is_err());
         assert!(!proof.opening.ligerito.ood_values.is_empty());
         let mut changed = proof.clone();

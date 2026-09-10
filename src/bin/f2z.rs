@@ -145,10 +145,10 @@ use std::process::{Command, Stdio, exit};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Instant;
 
-use f2z::ligerito::{LOG_PACKING, packed_vars};
+use f2z::ligerito::packed_vars;
 use f2z::ligerito_flock::{
-    LigConfig, commit_rs_ligerito_rows, custom_johnson_config_bits, custom_udr_config_bits,
-    custom_udr_grind_config_bits, lig_configs, mle_eval_mod_q_lig_size_breakdown,
+    commit_rs_ligerito_rows,
+    mle_eval_mod_q_lig_size_breakdown,
 };
 use f2z::ligerito_flock::FlockCommitHint;
 use f2z::ligerito_flock::{
@@ -165,7 +165,7 @@ use f2z::piop::spartan::{
 };
 use f2z::transcript::Blake3Transcript;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
-use flock_core::pcs::ligerito::{LigeritoProfile, LigeritoSecurityConfig, embedded_security_config};
+use flock_core::pcs::ligerito::{LigeritoSecurityConfig};
 
 // Peak-heap tracker (wraps System) — the live-heap high-water, the same
 // notion as `benches/pcs.rs` / flock's benches, so numbers compare.
@@ -526,13 +526,14 @@ struct Opts {
 
 fn parse_args() -> Opts {
     let mut pos: Vec<usize> = Vec::new();
+    let mut profile_explicit = std::env::var_os("F2Z_LIG_PROFILE").is_some();
     let mut o = Opts {
         n: 0,
         t: None,
         s: None,
         threads: None,
         reps: 3,
-        profile: "custom:3:4".to_string(),
+        profile: std::env::var("F2Z_LIG_PROFILE").unwrap_or_else(|_| "custom:3:4".into()),
         word_bits: 1,
         family: None,
         taps: None,
@@ -559,6 +560,7 @@ fn parse_args() -> Opts {
                 o.reps = args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage());
             }
             "--profile" => {
+                profile_explicit = true;
                 o.profile = args.next().unwrap_or_else(|| usage());
             }
             "--word-bits" | "-w" => {
@@ -623,6 +625,9 @@ fn parse_args() -> Opts {
                 }
             },
         }
+    }
+    if !profile_explicit && o.lambda != 100 && (o.mul.is_some() || o.mul_sweep.is_some()) {
+        o.profile = f2z::ligerito_flock::LigeritoSelection::for_target(o.lambda as usize).name();
     }
     let modes = usize::from(o.sweep.is_some())
         + usize::from(o.mul.is_some())
@@ -710,9 +715,6 @@ struct LigSecurity {
     ood: Option<OodRoundParams>,
 }
 
-const ADHOC_SECURITY: LigSecurity =
-    LigSecurity { target_bits: None, achieved_bits: None, l0_binding_bits: None, ood: None };
-
 fn lig_security(cfg: &LigeritoSecurityConfig) -> LigSecurity {
     let mut min = f64::INFINITY;
     for lv in &cfg.levels {
@@ -776,7 +778,7 @@ fn parse_rk_bits(rest: &str) -> (usize, usize, Option<usize>) {
 /// families (`custom`/`udr`/`udrg`) need `m = m_p + 7 ≥ 20` (m = 20, 21 are
 /// seeded from flock's m = 22 template — see `custom_johnson_config_bits`
 /// / `custom_udr_config_bits`), the embedded profiles `m ≥ 22`; below that
-/// everything falls back to the ad-hoc test config (UNAUDITED).
+/// unsupported requests are rejected without an ad-hoc fallback.
 fn resolve_configs(
     m_p: usize,
     profile: &str,
@@ -787,97 +789,16 @@ fn resolve_configs(
     ),
     String,
     LigSecurity,
+    f2z::ligerito_flock::ResolvedLigerito,
 ) {
-    let m = m_p + LOG_PACKING;
-    let adhoc = || {
-        let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
-            .expect("adhoc cfg");
-        (pair, "adhoc".to_string(), ADHOC_SECURITY)
+    let target = if profile == "secure" { 128 } else {
+        profile.split(':').nth(3).map(|n| n.parse::<usize>().unwrap_or_else(|_| usage())).unwrap_or(100)
     };
-    if let Some(rest) = profile.strip_prefix("udrg:") {
-        // UDR + fold-grinding: pg shortfall recovered by cheap per-fold
-        // PoW; targets up to 128 validate. `udrg:1:4:128` = 128-bit config.
-        let (r0, k0, bits) = parse_rk_bits(rest);
-        if m < 20 {
-            return adhoc();
-        }
-        let cfg = with_blake3(custom_udr_grind_config_bits(m, r0, k0, bits));
-        let pair = cfg.to_prover_verifier_configs().expect("udrg config pair");
-        let tag = match bits {
-            Some(b) => format!("udrg-k{k0}-{b}b"),
-            None => format!("udrg-k{k0}"),
-        };
-        return (pair, tag, lig_security(&cfg));
-    }
-    if let Some(rest) = profile.strip_prefix("udr:") {
-        // Queries-only UDR geometry — zero grinding, zero OOD; see
-        // `custom_udr_config_bits`. Ceiling ≈ 115 bits at n=22, ≈109 at
-        // n=28 (L0 UDR fold error); above it validate() rejects.
-        let (r0, k0, bits) = parse_rk_bits(rest);
-        if m < 20 {
-            return adhoc();
-        }
-        let cfg = with_blake3(custom_udr_config_bits(m, r0, k0, bits));
-        let pair = cfg.to_prover_verifier_configs().expect("udr config pair");
-        let tag = match bits {
-            Some(b) => format!("udr-k{k0}-{b}b"),
-            None => format!("udr-k{k0}"),
-        };
-        return (pair, tag, lig_security(&cfg));
-    }
-    if let Some(rest) = profile.strip_prefix("custom:") {
-        // Optional round-by-round security target: custom:<r>:<k>:<bits>
-        // (e.g. custom:3:4:128). Absent → the slim template's 100.
-        let (r0, k0, bits) = parse_rk_bits(rest);
-        if m < 20 {
-            return adhoc();
-        }
-        let cfg = with_blake3(custom_johnson_config_bits(m, r0, k0, bits));
-        let pair = cfg.to_prover_verifier_configs().expect("custom config pair");
-        let tag = match bits {
-            Some(b) => format!("custom-k{k0}-{b}b"),
-            None => format!("custom-k{k0}"),
-        };
-        return (pair, tag, lig_security(&cfg));
-    }
-    if m < 22 {
-        return adhoc();
-    }
-    let (cfg, tag): (LigConfig, &str) = match profile {
-        "fast" => (LigConfig::Embedded(LigeritoProfile::Fast), "fast"),
-        "slim" => (LigConfig::Embedded(LigeritoProfile::Slim), "slim"),
-        "slim3" => (
-            LigConfig::CustomJohnson {
-                log_inv_rate: 3,
-                initial_k: 4,
-            },
-            "slim3",
-        ),
-        "secure" => (LigConfig::Embedded(LigeritoProfile::Secure), "secure"),
-        other => {
-            eprintln!("unknown profile: {other}");
-            usage()
-        }
-    };
-    let sec = match cfg {
-        LigConfig::Embedded(pr) => embedded_security_config(m, pr)
-            .and_then(|toml| LigeritoSecurityConfig::from_toml_str(toml).ok())
-            .map_or(ADHOC_SECURITY, |c| lig_security(&c)),
-        LigConfig::CustomJohnson { log_inv_rate, initial_k } => {
-            lig_security(&custom_johnson_config_bits(m, log_inv_rate, initial_k, None))
-        }
-        LigConfig::Adhoc { .. } => ADHOC_SECURITY,
-    };
-    (lig_configs(m_p, cfg).expect("lig cfg"), tag.to_string(), sec)
-}
+    let resolved = f2z::ligerito_flock::LigeritoSelection::parse(profile, target)
+        .and_then(|selection| selection.resolve(m_p, target)).unwrap_or_else(|error| { eprintln!("{error}"); exit(2) });
+    let sec = lig_security(resolved.security());
+    ((resolved.prover().clone(), resolved.verifier().clone()), resolved.selection().name(), sec, resolved)
 
-/// Blake3 Merkle trees for the validator-gated configs (flock's slim
-/// template says sha256; every Spartan path in the crate uses Blake3, so the
-/// paper tables agree). Re-validated after the change.
-fn with_blake3(mut cfg: LigeritoSecurityConfig) -> LigeritoSecurityConfig {
-    cfg.hash = "blake3".into();
-    cfg.validate().expect("config with Blake3 Merkle hash validates");
-    cfg
 }
 
 fn main() {
@@ -960,7 +881,7 @@ fn main() {
     let q_bits = standalone_q_bits(&p);
     let m_p = packed_vars(&p);
     let lch = mod_q_num_chunks(&p, q_bits);
-    let ((pc, vc), lig_tag, lig_sec) = resolve_configs(m_p, &o.profile);
+    let ((pc, vc), lig_tag, lig_sec, resolved) = resolve_configs(m_p, &o.profile);
     // Round 0 (the out-of-domain sample) runs exactly when the opener sits
     // beyond unique decoding; its grinding tops the theorem's bound up to
     // the opener's own round-by-round target.
@@ -1035,6 +956,8 @@ fn main() {
     let instance = {
         let mut st = Blake3Transcript::new();
         absorb_standalone_mod_q_statement(&mut st, &hint.commitment, &p, alpha_of(), q_bits, ood, &vc);
+        resolved.bind(&mut st);
+        let _ = f2z::ligerito_flock::bind_prover_ood(&mut st, &hint, ood);
         sample_standalone_instance(&mut st, &p, q_bits)
     };
     let q = instance.q;
@@ -1061,6 +984,8 @@ fn main() {
     let prove_once = |hint: &FlockCommitHint| {
         let mut pt = Blake3Transcript::new();
         absorb_standalone_mod_q_statement(&mut pt, &hint.commitment, &p, alpha_of(), q_bits, ood, &vc);
+        resolved.bind(&mut pt);
+        let bound_ood = f2z::ligerito_flock::bind_prover_ood(&mut pt, &hint, ood);
         let sampled = sample_standalone_instance(&mut pt, &p, q_bits);
         assert_eq!(sampled.q, q, "the transcript-sampled prime must be reproducible");
         absorb_standalone_mod_q_claim(&mut pt, q, y);
@@ -1071,13 +996,15 @@ fn main() {
             &sampled.row_weights_q,
             q_bits,
             alpha_of(),
-            ood,
+            bound_ood,
             &pc,
         )
     };
     let verify_once = |proof: &f2z::ligerito_flock::IntEvalRsLigModQProof| {
         let mut vt = Blake3Transcript::new();
         absorb_standalone_mod_q_statement(&mut vt, &hint.commitment, &p, alpha_of(), q_bits, ood, &vc);
+        resolved.bind(&mut vt);
+        let bound_ood = f2z::ligerito_flock::bind_verifier_ood(&mut vt, m_p, ood, proof.ood.as_ref()).expect("Round 0");
         let sampled = sample_standalone_instance(&mut vt, &p, q_bits);
         absorb_standalone_mod_q_claim(&mut vt, sampled.q, y);
         verify_mle_eval_mod_q_ligerito_runtime(
@@ -1091,7 +1018,7 @@ fn main() {
             y,
             sampled.q,
             q_bits,
-            ood,
+            bound_ood,
             &vc,
         )
     };
@@ -1181,6 +1108,7 @@ fn main() {
     );
     println!("security: {}", lig_sec.describe());
     let result = CliResult {
+        ligerito: resolved.report(&o.profile, ood),
         n: o.n,
         t,
         s,
@@ -1240,6 +1168,7 @@ const PAPER_LIG_LABELS: &[&str] = &["mq:lig"];
 /// `prove_residual_ms = prove_ms − (gp + rs + lig)` (signed).
 #[derive(Clone, Debug)]
 struct CliResult {
+    ligerito: serde_json::Value,
     n: usize,
     t: usize,
     s: usize,
@@ -1285,12 +1214,13 @@ fn na_f64(v: Option<f64>) -> String {
 impl CliResult {
     fn to_line(&self) -> String {
         format!(
-            "RESULT schema={RESULT_SCHEMA} n={} t={} s={} W={} m_p={} chunks={} lig={} lig_hash={} \
+            "RESULT schema={RESULT_SCHEMA} ligerito_hex={} n={} t={} s={} W={} m_p={} chunks={} lig={} lig_hash={} \
              lig_target_bits={} lig_achieved_bits={} lig_l0_bits={} q_lo_log2={} q_bits={} \
              ood_bits={} threads={} reps={} \
              commit_ms={:.3} commit_peak_mb={:.2} prove_ms={:.3} prove_gp_ms={:.3} \
              prove_rs_ms={:.3} prove_lig_ms={:.3} prove_residual_ms={:.3} prove_peak_mb={:.2} \
              verify_ms={:.3} proof_bytes={} proof_nonlig_bytes={} proof_lig_bytes={}",
+            f2z::ligerito_flock::ResolvedLigerito::encode_report(&self.ligerito),
             self.n,
             self.t,
             self.s,
@@ -1346,7 +1276,10 @@ impl CliResult {
             let v = raw(k)?;
             if v == "na" { Ok(None) } else { v.parse().map(Some).map_err(|e| format!("{k}: {e}")) }
         };
+        let ligerito: serde_json::Value = f2z::ligerito_flock::ResolvedLigerito::decode_report(raw("ligerito_hex")?)?;
+        f2z::ligerito_flock::ResolvedLigerito::validate_report(&ligerito)?;
         Ok(CliResult {
+            ligerito,
             n: int("n")?,
             t: int("t")?,
             s: int("s")?,
@@ -1820,7 +1753,11 @@ fn run_family(o: &Opts, fam: &str) {
     let p = layout.p;
     let p_x = virtual_xor_params(&layout);
     let m_p = packed_vars(&p);
-    let ((pc, vc), lig_tag, _lig_sec) = resolve_configs(m_p, &o.profile);
+    let ((pc, vc), lig_tag, _lig_sec, _resolved) = resolve_configs(m_p, &o.profile);
+    if _lig_sec.ood.is_some() {
+        eprintln!("This historical kernel has no early OOD integration; explicitly select a UDR profile. It carries no production security claim.");
+        exit(2);
+    }
     let family_cols: Vec<usize> = (0..j).collect();
 
     let threads_eff: usize = {
@@ -2060,7 +1997,11 @@ fn run_taps(o: &Opts, mode: &str) {
     let p = layout.p;
     let p_x = virtual_xor_params(&layout);
     let m_p = packed_vars(&p);
-    let ((pc, vc), lig_tag, _lig_sec) = resolve_configs(m_p, &o.profile);
+    let ((pc, vc), lig_tag, _lig_sec, _resolved) = resolve_configs(m_p, &o.profile);
+    if _lig_sec.ood.is_some() {
+        eprintln!("This historical kernel has no early OOD integration; explicitly select a UDR profile. It carries no production security claim.");
+        exit(2);
+    }
 
     // The instance's tap lists (identities, two 3-tap rotation
     // convolutions, a cross-column mix, the lossy-SHIFT claim) and the
@@ -2494,6 +2435,7 @@ const MUL_VERIFY_TOP_LABELS: &[&str] = &[
 /// `reps`), excluded from `prove_ms`; `setup_ms` the one-time preparation.
 #[derive(Clone, Debug)]
 struct MulResult {
+    ligerito: serde_json::Value,
     e: usize,
     multiplications: usize,
     n: usize,
@@ -2535,12 +2477,12 @@ struct MulResult {
     proof_open_lig_bytes: usize,
 }
 
-const MUL_RESULT_SCHEMA: &str = "f2z-cli-mul/1";
+const MUL_RESULT_SCHEMA: &str = "f2z-cli-mul/2";
 
 impl MulResult {
     fn to_line(&self) -> String {
         format!(
-            "RESULT schema={MUL_RESULT_SCHEMA} e={} multiplications={} n={} t={} s={} W={} chunks={} \
+            "RESULT schema={MUL_RESULT_SCHEMA} ligerito_hex={} e={} multiplications={} n={} t={} s={} W={} chunks={} \
              profile={} lambda={} lambda_achieved={:.2} lambda_bind={} lig_target_bits={} \
              q_lo_log2={} q_bits={} lig_log_inv_rate={} lig_initial_k={} lig_regime={} lig_hash={} \
              threads={} reps={} \
@@ -2549,6 +2491,7 @@ impl MulResult {
              s5_lig_ms={:.3} prove_residual_ms={:.3} prove_peak_mb={:.2} verify_ms={:.3} \
              proof_bytes={} proof_piop_bytes={} proof_open_bytes={} proof_open_nonlig_bytes={} \
              proof_open_lig_bytes={}",
+            f2z::ligerito_flock::ResolvedLigerito::encode_report(&self.ligerito),
             self.e,
             self.multiplications,
             self.n,
@@ -2607,7 +2550,10 @@ impl MulResult {
         let int = |k: &str| -> Result<usize, String> {
             raw(k)?.parse::<usize>().map_err(|e| format!("{k}: {e}"))
         };
+        let ligerito: serde_json::Value = f2z::ligerito_flock::ResolvedLigerito::decode_report(raw("ligerito_hex")?)?;
+        f2z::ligerito_flock::ResolvedLigerito::validate_report(&ligerito)?;
         Ok(MulResult {
+            ligerito,
             e: int("e")?,
             multiplications: int("multiplications")?,
             n: int("n")?,
@@ -2741,30 +2687,10 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     // The Ligerito opener: the raw-performance table's Johnson geometry by
     // default (so the two paper tables share one opener), or the relation's
     // own validated-UDR default (`udr`, what the bench and the pins run).
-    let lig = match o.profile.as_str() {
-        "udr" => U32MulLigerito::ValidatedUdr,
-        p if p.starts_with("custom:") => {
-            let (r0, k0, bits) = parse_rk_bits(&p["custom:".len()..]);
-            if bits.is_some() {
-                eprintln!("--mul: the Ligerito target comes from --lambda; drop the :<bits> suffix");
-                exit(2);
-            }
-            U32MulLigerito::CustomJohnson { log_inv_rate: r0, initial_k: k0 }
-        }
-        other => {
-            eprintln!(
-                "--mul supports --profile custom:<log_inv_rate>:<initial_k> (default custom:3:4) \
-                 or udr (the relation's validated-UDR default, rate 1/2); got {other}"
-            );
-            exit(2);
-        }
-    };
-    let (lig_regime, lig_tag) = match lig {
-        U32MulLigerito::ValidatedUdr => ("udr", "udr-k4-validated".to_string()),
-        U32MulLigerito::CustomJohnson { log_inv_rate, initial_k } => {
-            ("johnson", format!("custom-r{log_inv_rate}-k{initial_k}"))
-        }
-    };
+    let lig = U32MulLigerito::parse(&o.profile, P::LIGERITO_TARGET_BITS).unwrap_or_else(|error| {
+        eprintln!("{error}"); exit(2)
+    });
+    let lig_tag = lig.name();
 
     // One-time public preprocessing (excluded from prove).
     let t0 = Instant::now();
@@ -2774,6 +2700,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
             exit(1)
         });
     let setup_ms = ms(t0);
+    let lig_regime = if relation.security().ood.is_some() { "johnson" } else { "udr" };
     let sec = relation.security();
     let q_bits = (u128::BITS - sec.projection_max.leading_zeros()) as usize;
     let q_lo_log2 = (u128::BITS - 1 - sec.projection_min.leading_zeros()) as usize;
@@ -2923,6 +2850,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         lig_initial_k,
     );
     let r = MulResult {
+        ligerito: relation.ligerito_configuration().report(&o.profile, sec.ood),
         e,
         multiplications,
         n: params.t + params.s,

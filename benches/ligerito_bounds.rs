@@ -1,0 +1,464 @@
+//! Controlled decoding-bound experiment within F2Z. No competing backend configuration is read.
+mod common;
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+macro_rules! bail {
+    ($message:expr) => {
+        return Err($message.into())
+    };
+}
+use ::f2z::{
+    ligerito_flock::{LigeritoSelection, ResolvedLigerito},
+    piop::spartan::*,
+    transcript::Blake3Transcript,
+};
+use serde_json::{Value, json};
+use std::time::Instant;
+const SEED: u64 = 0x5533_3250_4353_0064;
+fn ms(t: Instant) -> f64 {
+    t.elapsed().as_secs_f64() * 1000.
+}
+
+struct Experiment {
+    case: String,
+    selection: LigeritoSelection,
+    memory: bool,
+}
+impl Experiment {
+    fn run<W, H, P>(
+        &self,
+        setup: Instant,
+        resolved: &ResolvedLigerito,
+        ood: Option<::f2z::ligerito_flock::OodRoundParams>,
+        corpus: &[u8],
+        witness: impl Fn() -> Result<W>,
+        commit: impl Fn(&W) -> Result<H>,
+        prove: impl Fn(&W, &H) -> Result<P>,
+        verify: impl Fn(&W, &H, &P) -> Result<()>,
+        size: impl Fn(&H, &P) -> Result<Value>,
+    ) -> Result<()> {
+        let setup_ms = ms(setup);
+        let mut config = common::ligerito_report(resolved, ood);
+        config["requested_profile"] = json!(self.selection.name());
+        let corpus_digest = blake3::hash(corpus).to_hex().to_string();
+        let trials = if self.memory { 1 } else { 6 };
+        for trial in 0..trials {
+            let total = Instant::now();
+            let w = witness()?;
+            let witness_ms = ms(total);
+            let online = Instant::now();
+            let h = commit(&w)?;
+            let commit_ms = ms(online);
+            let p = prove(&w, &h)?;
+            let online_prover_ms = ms(online);
+            let witness_to_proof_ms = ms(total);
+            // Codecs and byte accounting are outside all proof/verification timers.
+            let proof_size = size(&h, &p)?;
+            let start = Instant::now();
+            verify(&w, &h, &p)?;
+            let verify_ms = ms(start);
+            println!(
+                "{}",
+                json!({"schema":"f2z-ligerito-bound-comparison/v1", "case":self.case,
+                "trial":if self.memory {"memory"} else if trial==0 {"warmup"} else {"sample"}, "index":trial,
+                "seed":SEED,"corpus_digest":corpus_digest,"threads":rayon::current_num_threads(),"measurement_policy":"one-setup/one-warmup/five-proofs/v1",
+                "ligerito":config,"setup_ms":setup_ms,"witness_ms":witness_ms,"commit_ms":commit_ms,
+                "online_prover_ms":online_prover_ms,"witness_to_proof_ms":witness_to_proof_ms,
+                "verify_ms":verify_ms,"proof_size":proof_size,"verified":true})
+            );
+        }
+        Ok(())
+    }
+}
+fn bytes(root: usize, opening: &[u8], analytic: usize) -> Value {
+    json!({"total_bytes":root+opening.len()+analytic,"commitment_bytes":root,"opening_codec_bytes":opening.len(),
+        "analytical_piop_bytes":analytic,"accounting":"initial commitment + versioned opening codec + explicitly counted PIOP payload"})
+}
+fn inputs() -> Vec<(u128, u128)> {
+    let mut h = blake3::Hasher::new();
+    h.update(b"f2z/ligerito-bound-inputs/v1");
+    h.update(&SEED.to_le_bytes());
+    let mut r = h.finalize_xof();
+    (0..1 << 15)
+        .map(|_| {
+            let mut b = [0; 32];
+            r.fill(&mut b);
+            (
+                u128::from_le_bytes(b[..16].try_into().unwrap()),
+                u128::from_le_bytes(b[16..].try_into().unwrap()),
+            )
+        })
+        .collect()
+}
+fn main() -> Result<()> {
+    let args: Vec<_> = std::env::args()
+        .skip(1)
+        .filter(|s| s != "--bench")
+        .collect();
+    if !(2..=3).contains(&args.len()) {
+        bail!("usage: ligerito_bounds CASE custom:3:4|udrg:3:4 [--memory]");
+    }
+    if args.len() == 3 && args[2] != "--memory" {
+        bail!("unknown argument");
+    }
+    let e = Experiment {
+        case: args[0].clone(),
+        selection: LigeritoSelection::parse(
+            &args[1],
+            if args[0].starts_with("hybrid") {
+                106
+            } else {
+                100
+            },
+        )?,
+        memory: args.len() == 3,
+    };
+    if rayon::current_num_threads() != 8 {
+        bail!("controlled comparison requires RAYON_NUM_THREADS=8");
+    }
+    let input = inputs();
+    let setup = Instant::now();
+    macro_rules! multiplication {
+        ($rel:ident,$layout:ident,$wit:ident,$commit:ident,$prove:ident,$verify:ident,$data:expr $(,$strategy:expr)?) => {{
+            let data = $data;
+            let p = $rel::new_with_profile_and_ligerito::<Lambda100>($layout::new(data.len())?,e.selection)?;
+            e.run(setup,p.ligerito_configuration(),p.security().ood,&bincode::serialize(&data)?,
+                || Ok($wit::from_inputs(&data)?), |w| Ok($commit(&p,w.f2z_bit_rows())?),
+                |w,h| Ok($prove(&mut Blake3Transcript::new(),&p,w,h $(,$strategy)?)?),
+                |_,h,proof| Ok($verify(&mut Blake3Transcript::new(),&p,&h.commitment,proof)?),
+                |h,proof| { let b=proof.f2z().to_bytes();
+                    let decoded=::f2z::ligerito_flock::IntEvalRsLigModQProof::from_bytes(&b)?; assert_eq!(decoded.to_bytes(),b);
+                    Ok(bytes(h.commitment.root.len(),&b,proof.spartan_payload_elements()*16+
+                        (proof.grinding_nonce_count(p.security())-proof.f2z().grinding_nonces.len())*8)) })
+        }};
+    }
+    match e.case.as_str() {
+        "u32-mod32" | "u32-full" => multiplication!(
+            PreparedU32MulRelation,
+            U32MulLayout,
+            U32MulWitness,
+            commit_u32_mul_witness,
+            prove_u32_mul,
+            verify_u32_mul,
+            input
+                .iter()
+                .map(|&(x, y)| (x as u32, y as u32))
+                .collect::<Vec<_>>()
+        ),
+        "u64" => multiplication!(
+            PreparedU64MulRelation,
+            U64MulLayout,
+            U64MulWitness,
+            commit_u64_mul_witness,
+            prove_u64_mul,
+            verify_u64_mul,
+            input
+                .iter()
+                .map(|&(x, y)| (x as u64, y as u64))
+                .collect::<Vec<_>>()
+        ),
+        "u128" => multiplication!(
+            PreparedU128MulRelation,
+            U128MulLayout,
+            U128MulWitness,
+            commit_u128_mul_witness,
+            prove_u128_mul,
+            verify_u128_mul,
+            input
+        ),
+        "baby-bear" => multiplication!(
+            PreparedBabyBearMulRelation,
+            BabyBearMulLayout,
+            BabyBearMulWitness,
+            commit_baby_bear_mul_paper_witness,
+            prove_baby_bear_mul_paper,
+            verify_baby_bear_mul_paper,
+            input
+                .iter()
+                .map(|&(x, y)| ((x % 2013265921) as u32, (y % 2013265921) as u32))
+                .collect::<Vec<_>>(),
+            SpartanReductionStrategy::DelayedBarrett
+        ),
+        "sha-compression" => {
+            let p = sha256::prepare_sha256_compression_batch(7)?.with_ligerito(e.selection)?;
+            let source: Vec<_> = (0..128)
+                .map(|i| ([i as u32; 8], std::array::from_fn(|j| (i * 16 + j) as u32)))
+                .collect();
+            e.run(
+                setup,
+                p.ligerito_configuration()?,
+                p.security().ood,
+                &bincode::serialize(&source)?,
+                || {
+                    let w = sha256::generate_sha256_compression_witnesses(&p, &source)?;
+                    let statement: Vec<_> = source
+                        .iter()
+                        .copied()
+                        .zip(w.outputs().iter().copied())
+                        .map(|(i, o)| sha256::Sha256CompressionStatement::new(i, o))
+                        .collect();
+                    Ok((w, statement))
+                },
+                |w| Ok(sha256::commit_sha256_compression_witness(&p, &w.0)?),
+                |w, h| {
+                    Ok(sha256::prove_sha256_compressions(
+                        &mut Blake3Transcript::new(),
+                        &p,
+                        &w.1,
+                        &w.0,
+                        h,
+                    )?)
+                },
+                |w, h, proof| {
+                    Ok(sha256::verify_sha256_compressions(
+                        &mut Blake3Transcript::new(),
+                        &p,
+                        &w.1,
+                        &h.commitment,
+                        proof,
+                    )?)
+                },
+                |h, proof| {
+                    let b = proof.f2z().to_bytes();
+                    let decoded = ::f2z::ligerito_flock::IntEvalRsLigVirtProof::from_bytes(&b)?;
+                    assert_eq!(decoded.to_bytes(), b);
+                    Ok(bytes(
+                        h.commitment.root.len(),
+                        &b,
+                        16 + proof.inner_nonces().len() * 8
+                            + proof.inner().round_polynomials.len() * 3 * 16,
+                    ))
+                },
+            )
+        }
+        "sha-chain" => {
+            let p = sha256::prepare_sha256_chain_batch(7)?.with_ligerito(e.selection)?;
+            let source: Vec<_> = (0..128)
+                .map(|i| std::array::from_fn(|j| (i * 16 + j) as u32))
+                .collect();
+            e.run(
+                setup,
+                p.ligerito_configuration()?,
+                p.security().ood,
+                &bincode::serialize(&source)?,
+                || Ok(sha256::generate_sha256_chain_witnesses(&p, &source)?),
+                |w| Ok(sha256::commit_sha256_chain_witness(&p, w)?),
+                |w, h| {
+                    Ok(sha256::prove_sha256_chain(
+                        &mut Blake3Transcript::new(),
+                        &p,
+                        &w.statement(),
+                        w,
+                        h,
+                    )?)
+                },
+                |w, h, proof| {
+                    Ok(sha256::verify_sha256_chain(
+                        &mut Blake3Transcript::new(),
+                        &p,
+                        &w.statement(),
+                        &h.commitment,
+                        proof,
+                    )?)
+                },
+                |h, proof| {
+                    let b = proof.f2z().to_bytes();
+                    let decoded = ::f2z::ligerito_flock::IntEvalRsLigVirtProof::from_bytes(&b)?;
+                    assert_eq!(decoded.to_bytes(), b);
+                    Ok(bytes(h.commitment.root.len(), &b, proof.piop_bytes()))
+                },
+            )
+        }
+        "ecdsa-split" | "ecdsa-all" => ecdsa(&e, setup),
+        "hybrid-15-7" | "hybrid-15-2" => {
+            use ::f2z::hybrid::*;
+            let sha_log = if e.case.ends_with('7') { 7 } else { 2 };
+            let p = PreparedHybrid::new_with_ligerito(
+                Parameters {
+                    multiplications: 1 << 15,
+                    sha_compressions: 1 << sha_log,
+                },
+                e.selection,
+            )?;
+            let blocks: Vec<_> = (0..1 << sha_log)
+                .map(|i| std::array::from_fn(|j| (i * 16 + j) as u32))
+                .collect();
+            e.run(setup,p.ligerito_configuration(),p.ood_round(),&bincode::serialize(&(&input,&blocks))?,
+                || Ok(input.iter().map(|&(x,y)|U32MulMod32Row::new(x as u32,y as u32)).collect::<Vec<_>>()),
+                |rows| Ok(p.commit_mod32(rows,&blocks)?), |_,h| Ok(p.prove(h)?),
+                |_,h,proof| { let b=proof.to_bytes(); let decoded=p.proof_from_bytes(h.statement(),&b)?; Ok(p.verify(h.statement(),&decoded)?) },
+                |_,proof| Ok(json!({"total_bytes":proof.to_bytes().len(),"accounting":"complete hybrid codec, including initial roots; witness synthesis is fused into commit_ms"})))
+        }
+        "pcs-22" => pcs(&e, setup),
+        _ => bail!("unknown case"),
+    }
+}
+fn ecdsa(e: &Experiment, setup: Instant) -> Result<()> {
+    use ::f2z::piop::spartan::ecdsa_sha256::*;
+    use p256::ecdsa::{Signature, SigningKey, signature::Signer};
+    let mode = if e.case.ends_with("split") {
+        OuterMode::Split
+    } else {
+        OuterMode::AllRows
+    };
+    let p = prepare_sha256_ecdsa(3, 100, mode)?.with_ligerito(e.selection)?;
+    let message: Vec<_> = (0..p.message_bytes()).map(|i| i as u8).collect();
+    let key = SigningKey::from_bytes((&[7u8; 32]).into())?;
+    let sig: Signature = key.sign(&message);
+    let point = key.verifying_key().to_encoded_point(false);
+    let (r, s) = sig.split_bytes();
+    let statement = Sha256EcdsaStatement {
+        log_compressions: 3,
+        qx: point.x().unwrap().as_slice().try_into()?,
+        qy: point.y().unwrap().as_slice().try_into()?,
+        r: r.into(),
+        s: s.into(),
+    };
+    e.run(setup,p.ligerito_configuration(),p.ligerito_configuration().round0(100)?,&bincode::serialize(&(&message,statement.qx,statement.qy,statement.r,statement.s))?,
+        || Ok(generate_sha256_ecdsa_witness(&p,&statement,&message)?),|w| Ok(commit_sha256_ecdsa(&p,w)?),
+        |w,h| Ok(prove_sha256_ecdsa(&mut Blake3Transcript::new(),&p,&statement,w,h,4)?),
+        |_,h,proof| { let decoded=Sha256EcdsaProof::from_bytes(&proof.to_bytes())?; Ok(verify_sha256_ecdsa(&mut Blake3Transcript::new(),&p,&statement,&h.commitment,&decoded)?) },
+        |h,proof| Ok(json!({"total_bytes":h.commitment.root.len()+proof.to_bytes().len(),"commitment_bytes":h.commitment.root.len(),"accounting":"initial root + complete SHA+ECDSA codec"})))
+}
+fn pcs(e: &Experiment, setup: Instant) -> Result<()> {
+    use ::f2z::{
+        ext_proj::*,
+        ligerito_flock::*,
+        pcs::{IntEvalParams, smallest_generator},
+    };
+    let p = IntEvalParams {
+        t: 11,
+        s: 11,
+        word_bits: 1,
+    };
+    let q_bits = 113;
+    let alpha = smallest_generator();
+    let resolved = e.selection.resolve(15, 100)?;
+    let ood = resolved.round0(100)?;
+    let sample = |t: &mut Blake3Transcript| {
+        let q = sample_proj_prime(
+            t,
+            &ExtProjParams {
+                prime_bits: q_bits,
+                ..Default::default()
+            },
+        );
+        let a = ProjArith::new(q);
+        let eq = |r: Vec<u128>| {
+            let mut table = vec![1];
+            for x in r {
+                let mut next = Vec::with_capacity(table.len() * 2);
+                for v in table {
+                    let v1 = a.mul(v, x);
+                    next.push(if v >= v1 { v - v1 } else { v + q - v1 });
+                    next.push(v1);
+                }
+                table = next;
+            }
+            table
+        };
+        let rows = eq((0..p.t).map(|_| sample_proj_point(t, q)).collect());
+        let cols = eq((0..p.s).map(|_| sample_proj_point(t, q)).collect());
+        (q, rows, cols)
+    };
+    e.run(
+        setup,
+        &resolved,
+        ood,
+        b"BLAKE3-XOF:f2z/ligerito-bound-pcs/v1:seed=0x5533325043530064:t11:s11:w1",
+        || {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(b"f2z/ligerito-bound-pcs/v1");
+            hasher.update(&SEED.to_le_bytes());
+            let mut r = hasher.finalize_xof();
+            Ok((0..p.cols())
+                .map(|_| {
+                    (0..p.rows() / 64)
+                        .map(|_| {
+                            let mut b = [0; 8];
+                            r.fill(&mut b);
+                            u64::from_le_bytes(b)
+                        })
+                        .collect()
+                })
+                .collect::<Vec<Vec<u64>>>())
+        },
+        |w| Ok(commit_rs_ligerito_rows(&p, w.clone(), resolved.prover())),
+        |_, h| {
+            let mut t = Blake3Transcript::new();
+            absorb_standalone_mod_q_statement(
+                &mut t,
+                &h.commitment,
+                &p,
+                alpha,
+                q_bits,
+                ood,
+                resolved.verifier(),
+            );
+            resolved.bind(&mut t);
+            let bound = bind_prover_ood(&mut t, h, ood);
+            let (q, rows, cols) = sample(&mut t);
+            let a = ProjArith::new(q);
+            let mut y = 0;
+            for (c, w) in h.rows().iter().enumerate() {
+                let mut acc = 0;
+                for (wi, &word) in w.iter().enumerate() {
+                    let mut bits = word;
+                    while bits != 0 {
+                        let bit = bits.trailing_zeros() as usize;
+                        bits &= bits - 1;
+                        acc = a.add(acc, rows[wi * 64 + bit]);
+                    }
+                }
+                y = a.add(y, a.mul(cols[c], acc));
+            }
+            absorb_standalone_mod_q_claim(&mut t, q, y);
+            Ok((
+                prove_mle_eval_mod_q_ligerito_with_ood(
+                    &mut t,
+                    h,
+                    &p,
+                    &rows,
+                    q_bits,
+                    alpha,
+                    bound,
+                    resolved.prover(),
+                ),
+                y,
+            ))
+        },
+        |_, h, (proof, y)| {
+            let proof = IntEvalRsLigModQProof::from_bytes(&proof.to_bytes())?;
+            let mut t = Blake3Transcript::new();
+            absorb_standalone_mod_q_statement(
+                &mut t,
+                &h.commitment,
+                &p,
+                alpha,
+                q_bits,
+                ood,
+                resolved.verifier(),
+            );
+            resolved.bind(&mut t);
+            let bound = bind_verifier_ood(&mut t, 15, ood, proof.ood.as_ref())
+                .map_err(|e| format!("{e:?}"))?;
+            let (q, rows, cols) = sample(&mut t);
+            absorb_standalone_mod_q_claim(&mut t, q, *y);
+            Ok(verify_mle_eval_mod_q_ligerito_runtime(
+                &mut t,
+                &h.commitment,
+                &proof,
+                &p,
+                &rows,
+                &cols,
+                alpha,
+                *y,
+                q,
+                q_bits,
+                bound,
+                resolved.verifier(),
+            )
+            .map_err(|e| format!("{e:?}"))?)
+        },
+        |h, (proof, _)| Ok(bytes(h.commitment.root.len(), &proof.to_bytes(), 16)),
+    )
+}

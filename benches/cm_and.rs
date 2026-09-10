@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use f2z::piop::spartan::{
-    CM_AND_F_LIVE_SLOTS, CM_AND_H_SLOTS, CmAndWitness, SpartanF2zField, commit_cm_and_witness,
+    CM_AND_F_LIVE_SLOTS, CM_AND_H_SLOTS, CmAndWitness, SpartanF2zField,
     prepare_cm_and_relation, project_cm_and_witness, prove_cm_and_f2z, spartan_f2z_field_config,
     verify_cm_and_f2z,
 };
@@ -125,7 +125,10 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
 
     let started = Instant::now();
     let relation = prepare_cm_and_relation::<SpartanF2zField>(layout, &field_config)
+        .and_then(|p| p.with_ligerito(common::ligerito_selection(100)))
         .expect("valid CM-AND relation");
+    let resolved = relation.ligerito_configuration().unwrap();
+    println!("LIGERITO_CONFIG {}", common::ligerito_report(resolved, resolved.round0(100).unwrap()));
     let relation_ms = started.elapsed().as_secs_f64() * 1e3;
 
     let started = Instant::now();
@@ -133,7 +136,7 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
     let bit_rows_ms = started.elapsed().as_secs_f64() * 1e3;
 
     let started = Instant::now();
-    let hint = commit_cm_and_witness(&layout, bit_rows).expect("F2Z commitment succeeds");
+    let hint = f2z::piop::spartan::cm::commit_cm_and_witness_with_config(&layout, bit_rows, relation.ligerito_configuration().unwrap().prover()).expect("F2Z commitment succeeds");
     let commit_ms = started.elapsed().as_secs_f64() * 1e3;
 
     // Excluded warm-up; also the first end-to-end correctness check.

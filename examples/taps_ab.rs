@@ -1,3 +1,4 @@
+//! Historical kernel experiment; no production security claim.
 //! Structured-taps A/B (EXPERIMENTAL, docs/rlc-structured-taps-phase0.md;
 //! corrected semantics: 32-bit words along the ENTRY axis of W=1
 //! bit-vectors, g = 5): the j = 2, k = 6 ROT/SHIFT/word-offset instance
@@ -67,7 +68,7 @@ use f2z::ligerito_flock::{
     mle_eval_mod_q_lig_tap_size_breakdown, mle_eval_mod_q_lig_xor_proof_size_bytes,
     prove_mle_eval_mod_q_ligerito_tap_claims, prove_mle_eval_mod_q_ligerito_tap_collapse,
     prove_mle_eval_mod_q_ligerito_tap_composed, prove_mle_eval_mod_q_ligerito_tap_family,
-    sha_lig_configs, verify_mle_eval_mod_q_ligerito_tap_claims,
+    historical_sha_lig_configs, verify_mle_eval_mod_q_ligerito_tap_claims,
     verify_mle_eval_mod_q_ligerito_tap_collapse, verify_mle_eval_mod_q_ligerito_tap_composed,
     verify_mle_eval_mod_q_ligerito_tap_family,
 };
@@ -177,7 +178,7 @@ fn main() {
         let p = &layout.p;
         let p_x = virtual_xor_params(&layout);
         let m_p = packed_vars(p);
-        let (pc, vc) = sha_lig_configs(m_p).expect("lig cfg");
+        let (pc, vc) = historical_sha_lig_configs(m_p).expect("lig cfg");
 
         let words = p.rows().div_ceil(64);
         let rows: Vec<Vec<u64>> = (0..p.cols())
@@ -207,7 +208,7 @@ fn main() {
                 .min(layout.p.s - 1);
             let p = &layout.p;
             let p_x = virtual_xor_params(&layout);
-            let (pc, vc) = sha_lig_configs(packed_vars(p)).expect("lig cfg");
+            let (pc, vc) = historical_sha_lig_configs(packed_vars(p)).expect("lig cfg");
             let words = p.rows().div_ceil(64);
             let rows: Vec<Vec<u64>> = (0..p.cols())
                 .map(|c| {
@@ -326,7 +327,7 @@ fn main() {
             let mut layout_f4 = taps_layout(n, 3);
             layout_f4.x_fold_extra = 0;
             let p = &layout.p;
-            let (pc, vc) = sha_lig_configs(packed_vars(p)).expect("lig cfg");
+            let (pc, vc) = historical_sha_lig_configs(packed_vars(p)).expect("lig cfg");
             let words = p.rows().div_ceil(64);
             let rows: Vec<Vec<u64>> = (0..p.cols())
                 .map(|c| {
@@ -644,7 +645,7 @@ fn main() {
             let mut layout_pl_naive = taps_layout(n, 3);
             layout_pl_naive.x_fold_extra = 4.min(layout.p.s - 1);
             let p = &layout.p;
-            let (pc, vc) = sha_lig_configs(packed_vars(p)).expect("lig cfg");
+            let (pc, vc) = historical_sha_lig_configs(packed_vars(p)).expect("lig cfg");
             // Semantic generation: random a, a', c, c' and top words;
             // d, b run the BACKWARD recurrence d[j] = ROT24(d[j+1]) ⊕
             // ROT24(a'[j+1]) ⊕ ROT8(a[j]) (resp. ROT19/ROT7), so
@@ -1204,7 +1205,7 @@ fn main() {
             let p = &layout.p;
             let p_x = virtual_xor_params(&layout);
             let p_x0 = virtual_xor_params(&layout_plain);
-            let (pc, vc) = sha_lig_configs(packed_vars(p)).expect("lig cfg");
+            let (pc, vc) = historical_sha_lig_configs(packed_vars(p)).expect("lig cfg");
             let words = p.rows().div_ceil(64);
             let rows: Vec<Vec<u64>> = (0..p.cols())
                 .map(|c| {
@@ -1648,7 +1649,7 @@ fn main() {
             let layout = taps_layout(n, 2);
             let p = &layout.p;
             let p_x = virtual_xor_params(&layout);
-            let (pc, vc) = sha_lig_configs(packed_vars(p)).expect("lig cfg");
+            let (pc, vc) = historical_sha_lig_configs(packed_vars(p)).expect("lig cfg");
             let words = p.rows().div_ceil(64);
             let rows: Vec<Vec<u64>> = (0..p.cols())
                 .map(|c| {
