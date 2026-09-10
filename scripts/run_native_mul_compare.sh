@@ -19,7 +19,7 @@ mkdir -p -- "$RUN_DIR"
     F2Z_BENCH_SHAPES="${F2Z_BENCH_SHAPES:-15}" \
     F2Z_BENCH_REPS="${F2Z_BENCH_REPS:-5}" \
     F2Z_MUL_COMPARE_WORKLOADS="${F2Z_MUL_COMPARE_WORKLOADS:-u32 babybear}" \
-    F2Z_MUL_COMPARE_BACKENDS="${F2Z_MUL_COMPARE_BACKENDS:-f2z binius64 plonky3-whir limber}" \
+    F2Z_MUL_COMPARE_BACKENDS="${F2Z_MUL_COMPARE_BACKENDS:-f2z binius64 binius64-ligerito plonky3-whir limber}" \
     F2Z_MUL_COMPARE_OUTPUT_DIR="$RUN_DIR" \
         cargo bench --bench mul_e2e_compare --features bench-internals,native-mul-compare
 ) 2>&1 | tee "$RUN_DIR/cargo-bench.log"

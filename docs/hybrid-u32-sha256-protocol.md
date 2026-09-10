@@ -222,7 +222,10 @@ Run modes in separate processes with the same thread count, build and inputs:
 RAYON_NUM_THREADS=8 target/release/hybrid-u32-sha256 --mode hybrid --iterations 3
 RAYON_NUM_THREADS=8 target/release/hybrid-u32-sha256 --mode separate --iterations 3
 RAYON_NUM_THREADS=8 target/release/hybrid-u32-sha256 --mode all-binius --iterations 3
+RAYON_NUM_THREADS=8 target/release/hybrid-u32-sha256 --mode binius-ligerito --iterations 3
 ```
+
+The `binius-ligerito` mode proves the all-Binius circuit (the same four-limb multiplication gadget and SHA chain) with Binius64's PIOP prefix and the F2Z opener (`src/binius_ligerito/`): every oracle the PIOP commits — the witness and the IntMul reduction's logup* pushforward — is a rate-1/8 codeword under BLAKE3, pinned by Round 0 right after its root is bound, and opened by ring switching plus a Johnson-regime Ligerito continuation with fold and query grinding. Its setup line reports the whole-protocol union bound (`algebraic_security_bits`, gated at 100) and the opener's solved component target; the rate is fixed at 1/8 and `F2Z_HYBRID_BINIUS_*` do not apply to it.
 
 All modes generate the same deterministic operands and chained SHA blocks and use BLAKE3 Merkle hashing. Each mode generates its four-limb multiplication rows within the timed iteration. Hybrid and separate modes compile the supplied limbs through `p = z + 2^32 * w` into the integer PIOP. The separate mode uses the same integer component profile plus Binius SHA. The all-Binius mode allocates four witness wires, range-checks each to 32 bits, and checks the exact multiplication against `z XOR (w << 32)`; the disjoint limbs make this equal to `z + 2^32 * w`. It proves the same SHA chain. Binius FRI uses 112 bits, rather than its default 96-bit configuration, to leave composition slack.
 

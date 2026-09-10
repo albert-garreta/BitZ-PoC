@@ -15,7 +15,7 @@ use binius_verifier::{
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-enum Wires {
+pub(super) enum Wires {
     /// One 64-bit-or-narrower gate: operands, output, auxiliary value.
     Narrow {
         a: Wire,
@@ -130,7 +130,7 @@ fn log_inv_rate() -> usize {
         .unwrap_or(1)
 }
 
-fn compile(corpus: &Corpus) -> (Circuit, Vec<Wires>) {
+pub(super) fn compile(corpus: &Corpus) -> (Circuit, Vec<Wires>) {
     let builder = CircuitBuilder::new();
     let p = builder.add_constant_64(BABY_P);
     let wires = (0..corpus.len())
@@ -195,7 +195,7 @@ fn compile(corpus: &Corpus) -> (Circuit, Vec<Wires>) {
     (circuit, wires)
 }
 
-fn populate<'a>(
+pub(super) fn populate<'a>(
     corpus: &Corpus,
     circuit: &'a Circuit,
     wires: &[Wires],

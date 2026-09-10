@@ -48,6 +48,7 @@ use f2z::{
     transcript::Blake3Transcript,
     utils::prof::ProfileInterval,
 };
+use f2z::binius_ligerito::{Prepared as BiniusLigerito, ProveTimings};
 use serde_json::{Value, json};
 
 const DEFAULT_ROOT_SEED: u64 = 0x5348_4132_3545_3245;
@@ -72,14 +73,18 @@ enum Backend {
     F2z,
     Plonky3Whir,
     Binius,
+    /// Binius64's circuit and PIOP with the F2Z opener (rate 1/8, Johnson
+    /// regime, grinding, Round 0; whole-protocol union bound at 100 bits).
+    BiniusLigerito,
     SpartanHyrax,
     Limber,
 }
 
-const ALL_BACKENDS: [Backend; 5] = [
+const ALL_BACKENDS: [Backend; 6] = [
     Backend::F2z,
     Backend::Plonky3Whir,
     Backend::Binius,
+    Backend::BiniusLigerito,
     Backend::SpartanHyrax,
     Backend::Limber,
 ];
@@ -90,6 +95,7 @@ impl Backend {
             Self::F2z => "F2Z",
             Self::Plonky3Whir => "Plonky3-WHIR",
             Self::Binius => "Binius64",
+            Self::BiniusLigerito => "Binius64-Ligerito",
             Self::SpartanHyrax => "Spartan-Hyrax",
             Self::Limber => "Limber",
         }
@@ -100,6 +106,7 @@ impl Backend {
             Self::F2z => "f2z",
             Self::Plonky3Whir => "plonky3-whir",
             Self::Binius => "binius64",
+            Self::BiniusLigerito => "binius64-ligerito",
             Self::SpartanHyrax => "spartan-hyrax",
             Self::Limber => "limber",
         }
@@ -411,30 +418,7 @@ struct BiniusContext {
 
 impl BiniusContext {
     fn setup(corpus: &Corpus, log_inv_rate: usize) -> Self {
-        assert!(corpus.cases.len().is_multiple_of(2));
-        let build_started = Instant::now();
-        let builder = CircuitBuilder::new();
-        let pairs = (0..corpus.cases.len() / 2)
-            .map(|pair_index| {
-                let pair_builder = builder.subcircuit(format!("sha256_pair[{pair_index}]"));
-                let state = std::array::from_fn(|word| {
-                    pair_builder.add_constant(Word(pack_lanes(SHA256_IV[word], SHA256_IV[word])))
-                });
-                let block = std::array::from_fn(|_| pair_builder.add_inout());
-                let output = std::array::from_fn(|_| pair_builder.add_inout());
-                let actual = sha256_compress_2x(&pair_builder, BiniusShaState::new(state), block);
-                for word in 0..8 {
-                    pair_builder.assert_eq(
-                        format!("public_output[{word}]"),
-                        actual.0[word],
-                        output[word],
-                    );
-                }
-                BiniusPairWires { block, output }
-            })
-            .collect();
-        let circuit = builder.build();
-        let circuit_build_ms = build_started.elapsed().as_secs_f64() * 1e3;
+        let (circuit, wires, circuit_build_ms) = build_binius_sha_circuit(corpus);
 
         let setup_started = Instant::now();
         let verifier = BiniusVerifier::<StdHashSuite>::setup_with_security_bits(
@@ -453,7 +437,7 @@ impl BiniusContext {
         let setup_ms = setup_started.elapsed().as_secs_f64() * 1e3;
         Self {
             circuit,
-            wires: BiniusWires { pairs },
+            wires,
             verifier,
             prover,
             corpus: corpus.clone(),
@@ -527,6 +511,296 @@ impl BiniusContext {
         black_box(&proof_bytes);
         (metrics, spans, proof_bytes, witness)
     }
+}
+
+/// The two-lane Binius64 SHA-256 circuit shared by the `binius64` and
+/// `binius64-ligerito` backends: one `sha256_compress_2x` per pair of
+/// compressions, public blocks and outputs.
+fn build_binius_sha_circuit(corpus: &Corpus) -> (Circuit, BiniusWires, f64) {
+    assert!(corpus.cases.len().is_multiple_of(2));
+    let build_started = Instant::now();
+    let builder = CircuitBuilder::new();
+    let pairs = (0..corpus.cases.len() / 2)
+        .map(|pair_index| {
+            let pair_builder = builder.subcircuit(format!("sha256_pair[{pair_index}]"));
+            let state = std::array::from_fn(|word| {
+                pair_builder.add_constant(Word(pack_lanes(SHA256_IV[word], SHA256_IV[word])))
+            });
+            let block = std::array::from_fn(|_| pair_builder.add_inout());
+            let output = std::array::from_fn(|_| pair_builder.add_inout());
+            let actual = sha256_compress_2x(&pair_builder, BiniusShaState::new(state), block);
+            for word in 0..8 {
+                pair_builder.assert_eq(
+                    format!("public_output[{word}]"),
+                    actual.0[word],
+                    output[word],
+                );
+            }
+            BiniusPairWires { block, output }
+        })
+        .collect();
+    let circuit = builder.build();
+    let circuit_build_ms = build_started.elapsed().as_secs_f64() * 1e3;
+    (circuit, BiniusWires { pairs }, circuit_build_ms)
+}
+
+/// Binius64's SHA-256 circuit and PIOP prefix, with the witness committed
+/// and opened by the F2Z opener: rate 1/8, Johnson-regime Ligerito with fold
+/// and query grinding and Round 0, gated at 100 bits by a whole-protocol
+/// union bound (the yardstick of the F2Z row).
+struct BiniusLigeritoContext {
+    circuit: Circuit,
+    wires: BiniusWires,
+    prepared: BiniusLigerito,
+    corpus: Corpus,
+    setup_ms: f64,
+    circuit_build_ms: f64,
+}
+
+impl BiniusLigeritoContext {
+    fn setup(corpus: &Corpus) -> Self {
+        let (circuit, wires, circuit_build_ms) = build_binius_sha_circuit(corpus);
+        let setup_started = Instant::now();
+        let prepared = BiniusLigerito::new(circuit.constraint_system())
+            .expect("binius64-ligerito setup reaches the 100-bit gate");
+        let setup_ms = setup_started.elapsed().as_secs_f64() * 1e3;
+        Self {
+            circuit,
+            wires,
+            prepared,
+            corpus: corpus.clone(),
+            setup_ms,
+            circuit_build_ms,
+        }
+    }
+
+    fn config_label(&self) -> String {
+        format!(
+            "rate3-johnson-ood-queries{}-component{}b-union{:.1}b",
+            self.prepared.opener(0).level0_queries(),
+            self.prepared.component_bits(),
+            self.prepared.security().algebraic_bits
+        )
+    }
+
+    fn populate(&self) -> ValueVec {
+        let mut filler = self.circuit.new_witness_filler();
+        for (pair_index, wires) in self.wires.pairs.iter().enumerate() {
+            let low = &self.corpus.cases[2 * pair_index];
+            let high = &self.corpus.cases[2 * pair_index + 1];
+            for word in 0..8 {
+                filler[wires.output[word]] = Word(pack_lanes(low.output[word], high.output[word]));
+            }
+            for word in 0..16 {
+                filler[wires.block[word]] = Word(pack_lanes(low.block[word], high.block[word]));
+            }
+        }
+        self.circuit
+            .populate_wire_witness(&mut filler)
+            .expect("Binius witness satisfies SHA relation");
+        filler.into_value_vec()
+    }
+
+    fn run(&self, capture: &TraceCapture) -> (TrialMetrics, Vec<SemanticSpan>, Vec<u8>) {
+        capture.begin();
+        let root_start = capture.now_ns();
+        let witness = self.populate();
+        let witness_end = capture.now_ns();
+        let (proof, phases) = self
+            .prepared
+            .prove(&witness)
+            .expect("binius64-ligerito proof succeeds");
+        let proof_bytes = proof.to_bytes();
+        let total_end = capture.now_ns();
+        let verify_start = capture.now_ns();
+        let decoded = self
+            .prepared
+            .proof_from_bytes(&proof_bytes)
+            .expect("binius64-ligerito proof decodes");
+        self.prepared
+            .verify(witness.public(), &decoded)
+            .expect("binius64-ligerito proof verifies");
+        let verify_end = capture.now_ns();
+        let _ = capture.finish();
+        let spans = binius_ligerito_semantic_spans(
+            root_start,
+            witness_end,
+            total_end,
+            verify_start,
+            verify_end,
+            phases,
+        );
+        let metrics = TrialMetrics::from_spans(&spans, proof_bytes.len());
+        black_box(&proof_bytes);
+        (metrics, spans, proof_bytes)
+    }
+}
+
+/// Spans for one `binius64-ligerito` trial: the prover reports its phases
+/// (witness commitment, PIOP prefix with any mid-protocol commitment, opening
+/// = every Round 0 + ring switch + Ligerito); they are laid out consecutively
+/// inside the online span.
+fn binius_ligerito_semantic_spans(
+    root_start: u64,
+    witness_end: u64,
+    total_end: u64,
+    verify_start: u64,
+    verify_end: u64,
+    phases: ProveTimings,
+) -> Vec<SemanticSpan> {
+    let ns = |d: std::time::Duration| u64::try_from(d.as_nanos()).unwrap_or(u64::MAX);
+    let commit_end = (witness_end + ns(phases.commit)).min(total_end);
+    let piop_end = (commit_end + ns(phases.piop)).min(total_end);
+    let opening_end = (piop_end + ns(phases.opening)).min(total_end);
+    let span = |id: &str,
+                parent: Option<&str>,
+                operation: &str,
+                name: &str,
+                short_name: &str,
+                primary_phase: &'static str,
+                phase_tags: Vec<&'static str>,
+                start_ns: u64,
+                end_ns: u64,
+                scope_kind: &'static str,
+                scope_tag: Option<&'static str>,
+                primary_sequence: bool,
+                math_latex: Vec<&'static str>| SemanticSpan {
+        id: id.to_owned(),
+        parent: parent.map(str::to_owned),
+        operation: operation.to_owned(),
+        name: name.to_owned(),
+        short_name: short_name.to_owned(),
+        primary_phase,
+        phase_tags,
+        start_ns,
+        end_ns,
+        scope_kind,
+        scope_tag,
+        primary_sequence,
+        math_latex,
+    };
+    vec![
+        span(
+            "binius-ligerito-root",
+            None,
+            "binius-ligerito.verified-trial",
+            "Complete verified Binius64-Ligerito trial",
+            "Verified trial",
+            "end-to-end",
+            vec!["end-to-end"],
+            root_start,
+            verify_end,
+            "scope",
+            Some("end-to-end"),
+            false,
+            vec![],
+        ),
+        span(
+            "binius-ligerito-witness-to-proof",
+            Some("binius-ligerito-root"),
+            "binius-ligerito.witness-to-proof",
+            "Binius64-Ligerito witness generation through proof readiness",
+            "Witness to proof",
+            "proving",
+            vec!["proving"],
+            root_start,
+            total_end,
+            "phase",
+            None,
+            false,
+            vec![r"T_{\mathrm{witness\rightarrow proof}}=T_{\mathrm{witness}\rightarrow\mathrm{proof\ ready}}"],
+        ),
+        span(
+            "binius-ligerito-total-prover",
+            Some("binius-ligerito-root"),
+            "binius-ligerito.total-prover",
+            "Binius64-Ligerito total prover",
+            "Total prover",
+            "proving",
+            vec!["proving"],
+            witness_end,
+            total_end,
+            "phase",
+            Some("proving"),
+            false,
+            vec![r"T_{\mathrm{online}}=T_{\mathrm{commit}\rightarrow\mathrm{proof\ ready}}"],
+        ),
+        span(
+            "binius-ligerito-witness-eval",
+            Some("binius-ligerito-witness-to-proof"),
+            "binius-ligerito.witness-evaluation",
+            "Evaluate and pack the two-lane SHA witness",
+            "Witness eval",
+            "witness-generation",
+            vec!["witness-generation"],
+            root_start,
+            witness_end,
+            "phase",
+            None,
+            true,
+            vec![r"(x_i,x_{i+1})\mapsto x_i+2^{32}x_{i+1}"],
+        ),
+        span(
+            "binius-ligerito-commit",
+            Some("binius-ligerito-total-prover"),
+            "binius-ligerito.commit",
+            "Commit the packed witness at rate 1/8 (F2Z opener)",
+            "Commit",
+            "commit",
+            vec!["commit", "pcs", "proving"],
+            witness_end,
+            commit_end,
+            "phase",
+            Some("commit"),
+            true,
+            vec![r"C_w=\operatorname{Merkle}(\operatorname{RS}_{1/8}(w))"],
+        ),
+        span(
+            "binius-ligerito-piop-reductions",
+            Some("binius-ligerito-total-prover"),
+            "binius-ligerito.piop-reductions",
+            "Binius64 constraint reductions",
+            "PIOP reductions",
+            "constraint-proof",
+            vec!["constraint-proof", "sumcheck", "proving"],
+            commit_end,
+            piop_end,
+            "phase",
+            Some("constraint-proof"),
+            true,
+            vec!["A(x)B(x)-C(x)=0", r"\sum_x\operatorname{eq}(r,x)(A(x)B(x)-C(x))=0"],
+        ),
+        span(
+            "binius-ligerito-opening",
+            Some("binius-ligerito-total-prover"),
+            "binius-ligerito.pcs-opening",
+            "Round 0, ring switching and Johnson-regime Ligerito opening (F2Z opener)",
+            "PCS opening",
+            "opening-proof",
+            vec!["opening-proof", "pcs", "ligerito", "proving"],
+            piop_end,
+            opening_end,
+            "phase",
+            Some("opening-proof"),
+            true,
+            vec![r"\widetilde w(r)=v", r"\operatorname{Open}_{\mathrm{Ligerito}}(C_w,r,v)"],
+        ),
+        span(
+            "binius-ligerito-verification",
+            Some("binius-ligerito-root"),
+            "binius-ligerito.verification",
+            "Decode and verify the Binius64-Ligerito proof",
+            "Verify",
+            "verification",
+            vec!["verification"],
+            verify_start,
+            verify_end,
+            "phase",
+            Some("verification"),
+            true,
+            vec![],
+        ),
+    ]
 }
 
 fn pack_lanes(low: u32, high: u32) -> u64 {
@@ -1073,7 +1347,7 @@ impl TraceWriter {
         let git_rev = match metadata.backend {
             Backend::F2z => &self.f2z_git,
             Backend::Plonky3Whir => &self.plonky3_git,
-            Backend::Binius => &self.binius_git,
+            Backend::Binius | Backend::BiniusLigerito => &self.binius_git,
             Backend::SpartanHyrax | Backend::Limber => &self.limber_git,
         };
         let git_dirty = match metadata.backend {
@@ -1128,6 +1402,13 @@ impl TraceWriter {
                         "fri_query_count": metadata.query_count,
                         "log_inv_rate": metadata.log_inv_rate,
                         "claim": "FRI query phase only; not a complete protocol union bound",
+                    }),
+                    Backend::BiniusLigerito => json!({
+                        "profile": "F2Z opener: Johnson-regime Ligerito with fold/query grinding and Round 0",
+                        "target_bits": 100,
+                        "level0_query_count": metadata.query_count,
+                        "log_inv_rate": metadata.log_inv_rate,
+                        "claim": "whole-protocol union bound over the Binius64 PIOP, Round 0, ring switch and Ligerito terms",
                     }),
                     Backend::SpartanHyrax => json!({
                         "profile": "Limber Spartan/Hyrax",
@@ -1238,6 +1519,34 @@ fn run_binius_trial(
                 circuit_build_ms: Some(context.circuit_build_ms),
                 log_inv_rate: Some(context.log_inv_rate),
                 query_count: Some(context.query_count),
+                config_label: &config_label,
+            },
+            &spans,
+        );
+    }
+    metrics
+}
+
+fn run_binius_ligerito_trial(
+    context: &BiniusLigeritoContext,
+    capture: &TraceCapture,
+    exponent: usize,
+    trial: Trial,
+    trace: Option<&mut TraceWriter>,
+) -> TrialMetrics {
+    let (metrics, spans, _) = context.run(capture);
+    if let Some(trace) = trace {
+        let config_label = context.config_label();
+        trace.write_run(
+            RunMetadata {
+                backend: Backend::BiniusLigerito,
+                exponent,
+                trial,
+                corpus: &context.corpus,
+                setup_ms: context.setup_ms,
+                circuit_build_ms: Some(context.circuit_build_ms),
+                log_inv_rate: Some(f2z::binary_pcs::LOG_INV_RATE),
+                query_count: Some(context.prepared.opener(0).level0_queries()),
                 config_label: &config_label,
             },
             &spans,
@@ -1635,6 +1944,7 @@ struct SizeContexts {
     f2z: Option<F2zContext>,
     plonky3: Option<plonky3_backend::Context>,
     binius: Option<BiniusContext>,
+    binius_ligerito: Option<BiniusLigeritoContext>,
     spartan: Option<spartan_hyrax_backend::Context>,
     limber: Option<integer_limber_backend::Context>,
 }
@@ -1669,6 +1979,16 @@ fn run_native_trial(
         ),
         Backend::Binius => run_binius_trial(
             contexts.binius.as_ref().expect("Binius context"),
+            capture,
+            exponent,
+            trial,
+            trace,
+        ),
+        Backend::BiniusLigerito => run_binius_ligerito_trial(
+            contexts
+                .binius_ligerito
+                .as_ref()
+                .expect("Binius64-Ligerito context"),
             capture,
             exponent,
             trial,
@@ -1724,6 +2044,8 @@ fn run_campaign(
             }),
             binius: enabled(Backend::Binius)
                 .then(|| BiniusContext::setup(&corpus, selected.binius_rate)),
+            binius_ligerito: enabled(Backend::BiniusLigerito)
+                .then(|| BiniusLigeritoContext::setup(&corpus)),
             spartan: enabled(Backend::SpartanHyrax)
                 .then(|| spartan_hyrax_backend::Context::setup(&corpus)),
             limber: enabled(Backend::Limber).then(|| {
@@ -1765,7 +2087,7 @@ fn run_campaign(
                 samples.entry(backend).or_default().push(metrics);
             }
             println!(
-                "  completed balanced five-backend sample {}/{reps}",
+                "  completed balanced multi-backend sample {}/{reps}",
                 sample + 1
             );
         }
@@ -1787,6 +2109,13 @@ fn run_campaign(
                             "rate{}-queries{}",
                             context.log_inv_rate, context.query_count
                         ),
+                    )
+                }
+                Backend::BiniusLigerito => {
+                    let context = contexts.binius_ligerito.as_ref().unwrap();
+                    (
+                        context.setup_ms + context.circuit_build_ms,
+                        context.config_label(),
                     )
                 }
                 Backend::SpartanHyrax => (
@@ -1843,7 +2172,9 @@ fn print_tables(aggregates: &[BackendAggregate]) {
         }
     }
 
-    println!("\nCombined medians (F2Z / Plonky3-WHIR / Binius64 / Spartan-Hyrax / Limber):");
+    println!(
+        "\nCombined medians (F2Z / Plonky3-WHIR / Binius64 / Binius64-Ligerito / Spartan-Hyrax / Limber):"
+    );
     println!(
         "| N | witness ms | commit ms | PIOP ms | IOP ms | online ms | witness->proof ms | throughput /s | verifier ms | proof bytes | setup ms |"
     );
@@ -1862,13 +2193,13 @@ fn print_tables(aggregates: &[BackendAggregate]) {
                 .map(BackendAggregate::median)
         });
         let metric = |f: fn(&TrialMetrics) -> f64| {
-            format_five(
+            format_row(&
                 medians.each_ref().map(|value| value.as_ref().map(|m| f(m))),
                 false,
                 3,
             )
         };
-        let throughput = format_five(
+        let throughput = format_row(&
             medians.each_ref().map(|value| {
                 value
                     .as_ref()
@@ -1877,7 +2208,7 @@ fn print_tables(aggregates: &[BackendAggregate]) {
             true,
             3,
         );
-        let proof = format_five(
+        let proof = format_row(&
             medians
                 .each_ref()
                 .map(|value| value.as_ref().map(|m| m.proof_bytes as f64)),
@@ -1901,11 +2232,11 @@ fn print_tables(aggregates: &[BackendAggregate]) {
             throughput,
             metric(|m| m.verifier_ms),
             proof,
-            format_five(setup_values, false, 3),
+            format_row(&setup_values, false, 3),
         );
     }
     println!(
-        "Security labels: F2Z Lambda100; Plonky3 analyzed WHIR >=100 bits; Binius 100-bit FRI query-phase target only; Spartan-Hyrax uses native Limber defaults; integer Limber uses Lambda128 Hyrax or documented 114-bit Brakedown opening."
+        "Security labels: F2Z Lambda100; Plonky3 analyzed WHIR >=100 bits; Binius 100-bit FRI query-phase target only; Binius64-Ligerito 100-bit whole-protocol union bound (F2Z opener, rate 1/8, Johnson regime, grinding, Round 0); Spartan-Hyrax uses native Limber defaults; integer Limber uses Lambda128 Hyrax or documented 114-bit Brakedown opening."
     );
 }
 
@@ -1996,7 +2327,7 @@ fn write_aggregate_artifacts(
     println!("metrics: {}", metrics_path.display());
 }
 
-fn format_five(values: [Option<f64>; 5], higher_is_better: bool, decimals: usize) -> String {
+fn format_row(values: &[Option<f64>], higher_is_better: bool, decimals: usize) -> String {
     let winner = values.iter().flatten().copied().reduce(|best, value| {
         if higher_is_better {
             best.max(value)
@@ -2372,6 +2703,10 @@ fn main() {
                     BiniusContext::setup(&corpus, env_usize("F2Z_SHA_COMPARE_LOG_INV_RATE", 1));
                 run_binius_trial(&context, &capture, exponent, Trial::Preflight, None)
             }
+            Backend::BiniusLigerito => {
+                let context = BiniusLigeritoContext::setup(&corpus);
+                run_binius_ligerito_trial(&context, &capture, exponent, Trial::Preflight, None)
+            }
             Backend::SpartanHyrax => {
                 let context = spartan_hyrax_backend::Context::setup(&corpus);
                 run_spartan_hyrax_trial(
@@ -2430,7 +2765,7 @@ fn main() {
         .unwrap_or_else(|| output_dir.join("trace.jsonl"));
     let mut trace = TraceWriter::new(trace_path, threads);
 
-    println!("Native SHA-256 compression comparison across five prover configurations");
+    println!("Native SHA-256 compression comparison across six prover configurations");
     println!("relation: forall i<N: Hhat_i = Compress_SHA256(IV,M_i)");
     println!(
         "threads={threads}; samples={reps}; warmups=1; trace={}",

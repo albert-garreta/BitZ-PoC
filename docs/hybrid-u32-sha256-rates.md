@@ -9,7 +9,8 @@ are proved:
 | --- | --- | --- | --- |
 | `hybrid` | BitZ/F2Z | Binius64 | one, shared opening |
 | `separate` | BitZ/F2Z | Binius64 | two independent proofs |
-| `all-binius` | Binius64 | Binius64 | one |
+| `all-binius` | Binius64 | Binius64 | one (ring switch + BaseFold/FRI) |
+| `binius-ligerito` | Binius64 | Binius64 | one (the all-Binius circuit and PIOP, every oracle committed at rate 1/8 and opened by the F2Z opener: Round 0, ring switch, Johnson-regime Ligerito with grinding; whole-protocol union bound gated at 100 bits) |
 
 ## Current hybrid: Johnson-regime opener at rate 1/8 with Round 0 (protocol v3)
 

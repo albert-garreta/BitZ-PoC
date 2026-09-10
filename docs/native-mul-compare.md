@@ -2,12 +2,25 @@
 
 `mul_e2e_compare` proves batches of u32 × u32 → u64, BabyBear,
 u64 × u64 → u128, and u128 × u128 → u256 multiplications with F2Z, Binius64,
-Plonky3-WHIR, and Limber-Hyrax (the u64 and u128 workloads run on F2Z and
-Binius64 only, see below). Every
+Binius64 with the F2Z opener (`binius64-ligerito`), Plonky3-WHIR, and
+Limber-Hyrax (the u64 and u128 workloads run on F2Z and the two Binius64
+backends only, see below). Every
 warmup and measured trial regenerates the native witness, produces the complete
 proof, and verifies it. This is the full-proving multiplication comparison for
 the paper benchmark suite; commitment, constraint proving, opening, and
 verification are all exercised on every trial.
+
+`binius64-ligerito` is Binius64's own circuit and PIOP (the same wires and
+constraint reductions as `binius64`, including the IntMul reduction's logup*
+pushforward oracle) with every oracle committed and opened by F2Z's opener
+instead of ring switching + BaseFold: rate 1/8, Round 0 (the out-of-domain
+sample) right after each commitment, ring switching, and a Johnson-regime
+Ligerito opening with fold and query grinding. Its security column is a
+whole-protocol union bound gated at 100 bits (the same yardstick as the `f2z`
+row), with the opener's round-by-round target solved to the smallest value
+that clears the gate; the `binius64` row's 100 bits is Binius64's query-phase
+target only. The rate is fixed at 1/8 (`F2Z_BINIUS_LOG_INV_RATE` does not
+apply). See `src/binius_ligerito/` and `src/binary_pcs.rs`.
 
 ```sh
 # Both workloads, all four backends, 2^15 multiplications, five samples
@@ -17,7 +30,7 @@ bash scripts/run_native_mul_compare.sh
 # Select sizes, repetitions, workloads, and backends independently.
 F2Z_BENCH_SHAPES="15 16" F2Z_BENCH_REPS=5 \
 F2Z_MUL_COMPARE_WORKLOADS="u32 babybear" \
-F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
+F2Z_MUL_COMPARE_BACKENDS="f2z binius64 binius64-ligerito plonky3-whir limber" \
 RAYON_NUM_THREADS=8 bash scripts/run_native_mul_compare.sh
 ```
 

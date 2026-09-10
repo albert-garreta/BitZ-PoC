@@ -200,11 +200,12 @@ pub fn run(
     results_dir: Option<PathBuf>,
 ) -> Result<(), AnyError> {
     let modes = match mode {
-        "all" => vec!["hybrid", "separate", "all-binius"],
-        "hybrid" | "separate" | "all-binius" => vec![mode],
+        "all" => vec!["hybrid", "separate", "all-binius", "binius-ligerito"],
+        "hybrid" | "separate" | "all-binius" | "binius-ligerito" => vec![mode],
         _ => {
             return Err(
-                "invalid --mode; use hybrid, separate, all-binius or all for a sweep".into(),
+                "invalid --mode; use hybrid, separate, all-binius, binius-ligerito or all for a sweep"
+                    .into(),
             );
         }
     };
@@ -258,6 +259,7 @@ pub fn run(
             let backend = match *mode {
                 "hybrid" => "BitZ multiplication + Binius SHA, shared opening",
                 "separate" => "BitZ multiplication + Binius SHA, separate proofs",
+                "binius-ligerito" => "Binius multiplication + SHA, F2Z opener",
                 _ => "Binius multiplication + SHA",
             };
             println!(

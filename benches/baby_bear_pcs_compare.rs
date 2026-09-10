@@ -12,6 +12,7 @@ mod baby_bear_pcs_compare {
 }
 mod integer_pcs_compare {
     pub mod binius;
+    pub mod ligerito;
     pub mod whir_goldilocks;
 }
 
@@ -41,6 +42,7 @@ use f2z::transcript::Blake3Transcript;
 use f2z::transcript::traits::Transcript;
 use f2z::utils::prof::ProfileInterval;
 use integer_pcs_compare::binius::{self, BiniusBackend};
+use integer_pcs_compare::ligerito::{self, LigeritoBackend};
 use p3_whir::parameters::WhirConfigError;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use serde_json::{Value, json};
@@ -60,12 +62,16 @@ const VERIFY_SCOPE: &str = "pcs-compare:verification";
 const F2Z_IMPLEMENTATION: &str = "f2z";
 const WHIR_IMPLEMENTATION: &str = "plonky3-whir";
 const BINIUS_IMPLEMENTATION: &str = "binius64-basefold";
+const LIGERITO_IMPLEMENTATION: &str = "f2z-ligerito-binary";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Backend {
     F2z,
     Whir,
     Binius,
+    /// The F2Z opener on the Binius64 packed rows and the identical bit-MLE
+    /// claim: rate 1/8, Johnson-regime Ligerito, grinding, Round 0.
+    Ligerito,
 }
 
 impl Backend {
@@ -74,6 +80,7 @@ impl Backend {
             Self::F2z => F2Z_IMPLEMENTATION,
             Self::Whir => WHIR_IMPLEMENTATION,
             Self::Binius => BINIUS_IMPLEMENTATION,
+            Self::Ligerito => LIGERITO_IMPLEMENTATION,
         }
     }
 
@@ -82,6 +89,7 @@ impl Backend {
             Self::F2z => "F2Z",
             Self::Whir => "Plonky3 WHIR",
             Self::Binius => "Binius64 BaseFold",
+            Self::Ligerito => "F2Z Ligerito (binary claim)",
         }
     }
 
@@ -90,6 +98,7 @@ impl Backend {
             Self::F2z => 0x4632_5a00_0000_0001,
             Self::Whir => 0x5748_4952_0000_0001,
             Self::Binius => 0x4249_4e49_5553_0001,
+            Self::Ligerito => 0x4c49_4745_0000_0001,
         }
     }
 
@@ -97,7 +106,7 @@ impl Backend {
         match self {
             Self::F2z => None,
             Self::Whir => Some(whir::CHALLENGE_EXTENSION_DEGREE),
-            Self::Binius => Some(128),
+            Self::Binius | Self::Ligerito => Some(128),
         }
     }
 
@@ -105,7 +114,7 @@ impl Backend {
         match self {
             Self::F2z => None,
             Self::Whir => Some(whir::MAX_POW_BITS),
-            Self::Binius => None,
+            Self::Binius | Self::Ligerito => None,
         }
     }
 }
@@ -220,7 +229,12 @@ impl CampaignWriter {
             fs::create_dir_all(parent)?;
         }
         for exponent in MIN_EXPONENT..=MAX_EXPONENT {
-            for backend in [Backend::F2z, Backend::Whir, Backend::Binius] {
+            for backend in [
+                Backend::F2z,
+                Backend::Whir,
+                Backend::Binius,
+                Backend::Ligerito,
+            ] {
                 let already_present = cells.iter().any(|cell| {
                     cell["implementation"].as_str() == Some(backend.implementation())
                         && cell["log_multiplications"].as_u64() == Some(exponent as u64)
@@ -388,6 +402,9 @@ impl TraceWriter {
             Backend::Binius => {
                 "BabyBear integer assignment / Binius64 ring-switch + BaseFold opening"
             }
+            Backend::Ligerito => {
+                "BabyBear integer assignment / F2Z opener: Round 0 + ring switch + Johnson-regime Ligerito"
+            }
         };
         let field = match backend {
             Backend::F2z => json!({
@@ -406,7 +423,7 @@ impl TraceWriter {
                 ),
                 "challenge_extension_degree": whir::CHALLENGE_EXTENSION_DEGREE,
             }),
-            Backend::Binius => json!({
+            Backend::Binius | Backend::Ligerito => json!({
                 "committed_encoding": "one GF(2^128) row per gate: A[0..31] | B[31..62] | C[62..93] | K[93..124]",
                 "base_field": "GF(2)",
                 "challenge_field": "GF(2^128)-GHASH",
@@ -643,6 +660,9 @@ fn describe_span(
                 Backend::Binius => {
                     vec!["\\operatorname{Verify}_{\\mathrm{BaseFold}}(C_{\\mathbb F_2},r,v,\\pi)=1"]
                 }
+                Backend::Ligerito => {
+                    vec!["\\operatorname{Verify}_{\\mathrm{Ligerito}}(C_{\\mathbb F_2},r,v,\\pi)=1"]
+                }
             },
         ),
         MATERIALIZE_SCOPE => (
@@ -652,7 +672,7 @@ fn describe_span(
             match backend {
                 Backend::F2z => vec!["\\mathcal{B}=\\operatorname{Bit}_{31}(A,B,C,K)"],
                 Backend::Whir => vec!["U=(A,B,C,K)\\in\\mathbb{F}_p^{4\\times 2^g}"],
-                Backend::Binius => {
+                Backend::Binius | Backend::Ligerito => {
                     vec!["w_i=A_i+2^{31}B_i+2^{62}C_i+2^{93}K_i\\in\\mathbb F_2^{128}"]
                 }
             },
@@ -673,6 +693,11 @@ fn describe_span(
                 Backend::Binius => {
                     vec![
                         "C_{\\mathrm{BF}}\\leftarrow\\operatorname{Commit}_{\\mathrm{BaseFold}}(w)",
+                    ]
+                }
+                Backend::Ligerito => {
+                    vec![
+                        "C\\leftarrow\\operatorname{Merkle}(\\operatorname{RS}_{1/8}(w)),\\;y=\\widetilde w(\\zeta,\\zeta^2,\\ldots)",
                     ]
                 }
             },
@@ -700,6 +725,10 @@ fn describe_span(
                     "v=\\widetilde{\\operatorname{bits}(w)}(r_{\\mathrm{bit}},r_{\\mathrm{gate}})",
                     "\\pi\\leftarrow\\operatorname{RingSwitch+BaseFold}(C_{\\mathrm{BF}},r,v)",
                 ],
+                Backend::Ligerito => vec![
+                    "v=\\widetilde{\\operatorname{bits}(w)}(r_{\\mathrm{bit}},r_{\\mathrm{gate}})",
+                    "\\pi\\leftarrow\\operatorname{RingSwitch+Ligerito}_{\\mathrm{Johnson}}(C,r,v)",
+                ],
             },
         ),
         VERIFY_SCOPE => (
@@ -716,6 +745,9 @@ fn describe_span(
                 ],
                 Backend::Binius => {
                     vec!["\\operatorname{Verify}_{\\mathrm{BaseFold}}(C_{\\mathrm{BF}},r,v,\\pi)=1"]
+                }
+                Backend::Ligerito => {
+                    vec!["\\operatorname{Verify}_{\\mathrm{Ligerito}}(C,r,v,\\pi)=1"]
                 }
             },
         ),
@@ -896,16 +928,17 @@ fn exponents() -> Vec<usize> {
 
 fn selected_backends() -> Vec<Backend> {
     let raw = std::env::var("F2Z_PCS_COMPARE_BACKENDS")
-        .unwrap_or_else(|_| "f2z plonky3-whir binius64-basefold".to_owned());
+        .unwrap_or_else(|_| "f2z plonky3-whir binius64-basefold f2z-ligerito-binary".to_owned());
     let mut backends = Vec::new();
     for value in raw.split([',', ' ']).filter(|value| !value.is_empty()) {
         let backend = match value {
             "f2z" => Backend::F2z,
             "plonky3-whir" | "whir" => Backend::Whir,
             "binius" | "binius64" | "binius64-basefold" => Backend::Binius,
+            "ligerito" | "f2z-ligerito" | "f2z-ligerito-binary" => Backend::Ligerito,
             _ => {
                 panic!(
-                    "F2Z_PCS_COMPARE_BACKENDS accepts f2z, plonky3-whir, and binius64-basefold; got {value:?}"
+                    "F2Z_PCS_COMPARE_BACKENDS accepts f2z, plonky3-whir, binius64-basefold, and f2z-ligerito-binary; got {value:?}"
                 )
             }
         };
@@ -925,14 +958,14 @@ fn ordered_backends(selected: &[Backend], exponent: usize) -> Vec<Backend> {
     let preference = match requested.as_str() {
         "alternate" => {
             if exponent.is_multiple_of(2) {
-                [Backend::F2z, Backend::Whir, Backend::Binius]
+                [Backend::F2z, Backend::Whir, Backend::Binius, Backend::Ligerito]
             } else {
-                [Backend::Binius, Backend::Whir, Backend::F2z]
+                [Backend::Ligerito, Backend::Binius, Backend::Whir, Backend::F2z]
             }
         }
-        "f2z-first" => [Backend::F2z, Backend::Whir, Backend::Binius],
-        "whir-first" => [Backend::Whir, Backend::Binius, Backend::F2z],
-        "binius-first" => [Backend::Binius, Backend::Whir, Backend::F2z],
+        "f2z-first" => [Backend::F2z, Backend::Whir, Backend::Binius, Backend::Ligerito],
+        "whir-first" => [Backend::Whir, Backend::Binius, Backend::Ligerito, Backend::F2z],
+        "binius-first" => [Backend::Binius, Backend::Ligerito, Backend::Whir, Backend::F2z],
         _ => {
             panic!(
                 "F2Z_BENCH_ORDER must be alternate, f2z-first, whir-first, or binius-first for this benchmark"
@@ -1505,6 +1538,86 @@ fn run_binius_series(
     })
 }
 
+fn ligerito_security(backend: &LigeritoBackend) -> Value {
+    json!({
+        "profile": "F2Z opener: Round 0 + ring switch + Johnson-regime Ligerito",
+        "target_bits": ligerito::SECURITY_BITS,
+        "soundness_bound_model": "opener union bound (Round 0, ring switch, every Ligerito level's proximity folds, queries and OOD samples) at the pinned flock constants",
+        "achieved_bits": backend.soundness_bits(),
+        "ligerito_component_bits": backend.component_bits(),
+        "challenge_field": "GF(2^128)-GHASH",
+        "hash": "BLAKE3",
+        "log_inverse_rate": backend.log_inv_rate(),
+        "level0_queries": backend.n_test_queries(),
+        "level0_query_grinding_bits": backend.level0_query_grinding_bits(),
+        "level0_fold_grinding_bits": backend.level0_fold_grinding_bits(),
+        "ood_grinding_bits": backend.ood_grinding_bits(),
+        "hiding": false,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_ligerito_series(
+    writer: &mut TraceWriter,
+    exponent: usize,
+    shape_seed: u64,
+    witness: &BabyBearMulWitness,
+    digest: &str,
+    witness_ms: f64,
+    reps: usize,
+) -> Result<CellOutcome, Box<dyn Error>> {
+    let setup_started = Instant::now();
+    let backend = LigeritoBackend::setup(exponent)?;
+    let setup_ms = common::elapsed_ms(setup_started);
+    let security = ligerito_security(&backend);
+    eprintln!(
+        "  F2Z Ligerito backend_setup_ms={setup_ms:.3} (rate 1/{}, {} level-0 queries, component {} bits, {:.2} bits achieved)",
+        1usize << backend.log_inv_rate(),
+        backend.n_test_queries(),
+        backend.component_bits(),
+        backend.soundness_bits()
+    );
+
+    for trial in std::iter::once(Trial::Warmup).chain((0..reps).map(Trial::Sample)) {
+        let seed = trial_seed(shape_seed, Backend::Ligerito, trial);
+        clear_profile();
+        let output = backend.run_trial(|| pack_binius_rows(witness), seed)?;
+        let intervals = finish_profile();
+        let artifacts = checked_artifacts(
+            output.commitment_bytes,
+            output.public_claim_bytes,
+            output.opening_proof_bytes(),
+        )?;
+        if artifacts.total_wire_bytes != output.total_wire_bytes() {
+            return Err("Ligerito wire-size accounting mismatch".into());
+        }
+        let metadata = RunMetadata {
+            backend: Backend::Ligerito,
+            exponent,
+            shape_seed,
+            trial_seed: seed,
+            trial,
+            capacity: witness.layout().capacity(),
+            gate_vars: witness.layout().gate_vars(),
+            witness_digest: digest,
+            witness_ms,
+            setup_ms,
+            security: &security,
+            artifacts,
+        };
+        writer.write_run(&metadata, &intervals)?;
+        common::pcs_console::print_trial(
+            &trial.id_fragment(),
+            &intervals,
+            output.proof_bytes,
+            artifacts.total_wire_bytes,
+        );
+    }
+    Ok(CellOutcome::Measured {
+        derived_max_pow_bits: None,
+    })
+}
+
 fn binius_log_inv_rate() -> Result<usize, Box<dyn Error>> {
     let value = std::env::var("F2Z_BINIUS_LOG_INV_RATE")
         .unwrap_or_else(|_| binius::DEFAULT_LOG_INV_RATE.to_string())
@@ -1612,6 +1725,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                     reps,
                 )?,
                 Backend::Binius => run_binius_series(
+                    &mut writer,
+                    exponent,
+                    shape_seed,
+                    &witness,
+                    &digest,
+                    witness_ms,
+                    reps,
+                )?,
+                Backend::Ligerito => run_ligerito_series(
                     &mut writer,
                     exponent,
                     shape_seed,
