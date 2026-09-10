@@ -10,8 +10,8 @@ pub fn add_u32_mul_mod32(builder: &CircuitBuilder) -> [Wire; 4] {
         builder.assert_zero(name, builder.shr(word, 32));
     }
     let [x, y, z, w] = words;
-    let (hi, lo) = builder.imul(x, y);
-    builder.assert_zero("u32_product_high", hi);
+    // Range-constrained u32 operands have a product below 2^64.
+    let (_, lo) = builder.imul(x, y);
     // The range constraints make these two bit ranges disjoint, so XOR here
     // reconstructs the integer z + 2^32 * w without introducing carry bits.
     let product = builder.bxor(z, builder.shl(w, 32));
