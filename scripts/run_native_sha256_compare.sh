@@ -7,7 +7,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
-PROFILER="/Users/johnwu/.ai-agent-army/skills/zk-proof-profiler/scripts/zk_trace.py"
+PROFILER="${ZK_TRACE_SCRIPT:-$HOME/.ai-agent-army/skills/zk-proof-profiler/scripts/zk_trace.py}"
 
 EXPONENTS="${F2Z_SHA_COMPARE_EXPONENTS:-10 11 12 13 14 15 16}"
 REPETITIONS="${F2Z_SHA_COMPARE_REPS:-21}"
@@ -49,13 +49,17 @@ echo "RUSTFLAGS: $NATIVE_RUSTFLAGS"
         --features bench-internals,native-sha256-compare
 ) 2>&1 | tee "$RAW_LOG"
 
-python3 "$PROFILER" validate "$TRACE_PATH"
-python3 "$PROFILER" report "$TRACE_PATH" \
-    --out-dir "$REPORT_DIR" \
-    --title "Native SHA-256 compression: five-way comparison"
+if [[ -f "$PROFILER" ]]; then
+    python3 "$PROFILER" validate "$TRACE_PATH"
+    python3 "$PROFILER" report "$TRACE_PATH" \
+        --out-dir "$REPORT_DIR" \
+        --title "Native SHA-256 compression: five-way comparison"
+    echo "Interactive report: $REPORT_DIR/intervals.html"
+else
+    echo "Set ZK_TRACE_SCRIPT to zk_trace.py to render the saved trace."
+fi
 
 echo "Raw benchmark log: $RAW_LOG"
 echo "Canonical trace: $TRACE_PATH"
 echo "Summary: $ARTIFACT_DIR/summary.json"
 echo "Metrics: $ARTIFACT_DIR/metrics.csv"
-echo "Interactive report: $REPORT_DIR/intervals.html"

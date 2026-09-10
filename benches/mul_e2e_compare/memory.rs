@@ -21,6 +21,7 @@ pub(super) struct Sample {
     pub proof_bytes: usize,
     pub proof_verified: bool,
     pub boundary: String,
+    pub config: serde_json::Value,
 }
 
 pub(super) fn measure(
@@ -30,11 +31,13 @@ pub(super) fn measure(
     seed: u64,
     threads: usize,
     expected_digest: &str,
+    whir_params: Option<super::common::whir_tuning::Params>,
 ) -> Result<Sample, Box<dyn std::error::Error>> {
     let output = Command::new(std::env::current_exe()?)
         .args(["--measure-memory", backend, workload.slug()])
         .arg(exponent.to_string())
         .arg(seed.to_string())
+        .arg(serde_json::to_string(&whir_params)?)
         .env("RAYON_NUM_THREADS", threads.to_string())
         .stderr(Stdio::inherit())
         .output()?;
@@ -60,6 +63,7 @@ pub(super) fn measure(
         || sample.proof_bytes == 0
         || sample.peak_rss_bytes == 0
         || sample.boundary != BOUNDARY
+        || whir_params.is_some_and(|params| sample.config["params"] != serde_json::json!(params))
     {
         return Err("memory child returned an invalid or mismatched result".into());
     }
@@ -70,7 +74,7 @@ pub(super) fn run_child(
     capture: &TraceCapture,
     args: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let [backend, workload, exponent, seed] = args else {
+    let [backend, workload, exponent, seed, params] = args else {
         return Err("memory child requires backend, workload, exponent, and seed".into());
     };
     let workload = match workload.as_str() {
@@ -82,7 +86,8 @@ pub(super) fn run_child(
     };
     let exponent = exponent.parse()?;
     let corpus = Arc::new(Corpus::new(workload, exponent, seed.parse()?));
-    let context = Context::setup(backend, Arc::clone(&corpus));
+    let params = serde_json::from_str(params)?;
+    let context = Context::setup_selected(backend, Arc::clone(&corpus), params);
     let timing = context.run(capture);
     timing.validate();
     let sample = Sample {
@@ -94,6 +99,7 @@ pub(super) fn run_child(
         proof_bytes: timing.proof_bytes,
         proof_verified: true,
         boundary: BOUNDARY.into(),
+        config: context.config(),
     };
     println!("{RESULT_PREFIX}{}", serde_json::to_string(&sample)?);
     Ok(())

@@ -237,6 +237,11 @@ name = "native_mul_compare"
 path = "tests/native_mul_compare.rs"
 required-features = ["bench-internals", "native-mul-compare"]
 
+[[test]]
+name = "native_sha256_compare"
+path = "tests/native_sha256_compare.rs"
+required-features = ["bench-internals", "native-sha256-compare"]
+
 [[bench]]
 name = "sha256_product_layout"
 harness = false

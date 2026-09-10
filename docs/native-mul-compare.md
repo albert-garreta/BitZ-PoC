@@ -22,8 +22,8 @@ RAYON_NUM_THREADS=8 bash scripts/run_native_mul_compare.sh
 ```
 
 The full sweeps use all four backends, including Limber-Hyrax, at exponents
-15–24 for BabyBear and 15–25 for u32. Run each workload separately so its size
-limit is respected:
+15–24 for BabyBear and 15–25 for u32. These are campaign presets; actual completion depends on backend domain limits
+and available memory. Run each workload separately:
 
 BabyBear multiplication, exponents 15–24:
 
@@ -142,9 +142,9 @@ only the selected prover uses Rayon threads. Run `mul_witness_compare` separatel
 from `mul_e2e_compare` so they do not contend for CPU or memory bandwidth.
 
 The size exponent is the number of logical multiplications, not native
-constraint rows. Supported exponents are 4–23 for u128, 4–24 for BabyBear and
-u64, and 4–25 for u32; selecting F2Z requires at least 15. A shape list shared
-by several workloads must stay within the tightest of those ranges. Small exponents are useful for checking the other adapters. Native trace
+constraint rows. The harness checks address-space representation bounds; each
+backend separately checks its supported domain. Selecting F2Z requires at least
+15. Memory availability is not inferred from the campaign presets above. Small exponents are useful for checking the other adapters. Native trace
 widths differ substantially, particularly Limber's explicit input range checks;
 large multiplication counts need correspondingly larger memory budgets.
 
@@ -283,9 +283,11 @@ reported as zero. A failed memory pass aborts the campaign.
   BabyBear circuit constrains `a*b = p*q+c`, canonical operands/remainder, and
   nonoverflowing reconstruction.
 - Plonky3: Goldilocks AIR with 32-bit input decompositions for u32; native
-  BabyBear AIR for field multiplication. Both use a degree-5 challenge field,
-  WHIR Johnson-bound parameters, folding 4, inverse rate 2, a 100-bit target,
-  and a maximum of 12 PoW bits.
+  BabyBear AIR for field multiplication. WHIR parameters are tuned for each
+  workload and size on each invocation, subject to the evaluated 100-bit
+  Johnson-bound security policy. The selected extension field, folding,
+  rate, queries, and grinding schedule are saved with the results; see
+  [Native AIR + WHIR benchmark runs](native-whir-tuning.md).
 - Limber: integer Mod-R1CS with exact bit constraints for operand ranges,
   canonical BabyBear remainders, IntEval/Hyrax, `log_t_f=64`, `log_t=32`, `k=9`.
   Its native security policy is recorded separately; the harness does not
@@ -318,3 +320,7 @@ as a successful sample.
 cargo test --release --test native_mul_compare \
   --features bench-internals,native-mul-compare
 ```
+
+WHIR now tunes for every invocation and size, with witness-to-proof timing and
+a recorded 100-bit Johnson-bound accounting gate. See [native WHIR tuning](native-whir-tuning.md)
+for parameters, replay, portability, and security-model details.

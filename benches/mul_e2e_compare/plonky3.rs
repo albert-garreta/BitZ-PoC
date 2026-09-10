@@ -1,4 +1,5 @@
 use super::common::plonky3 as stacks;
+use super::common::whir_tuning::{self, Params};
 use super::{Corpus, Timing, TraceCapture, Workload, captured};
 use p3_air::{Air, AirBuilder, BaseAir, WindowAccess};
 use p3_field::{PrimeCharacteristicRing, PrimeField64, extension::BinomialExtensionField};
@@ -8,7 +9,7 @@ use p3_multi_stark::{
     config::MultiStarkConfig, prove, setup, verify,
 };
 use p3_sumcheck::layout::{Layout, SuffixProver, Table, Witness};
-use p3_whir::{DomainSeparator, FoldingFactor, ProtocolParameters, SecurityAssumption};
+use p3_whir::DomainSeparator;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -77,15 +78,16 @@ fn generate<F: PrimeField64>(corpus: &Corpus) -> RowMajorMatrix<F> {
 }
 
 macro_rules! backend {
-    ($module:ident,$stack:ident) => {
+    ($module:ident,$stack:ident,$degree:literal) => {
         mod $module {
             use super::stacks::$stack as stack;
             use super::*;
             type F = stack::Val;
-            type EF = BinomialExtensionField<F, 5>;
+            type EF = BinomialExtensionField<F, $degree>;
             type WhirLayout = SuffixProver<F, EF>;
             struct Config {
                 pcs: stack::Pcs<EF>,
+                folding: usize,
             }
             impl MultiStarkConfig for Config {
                 type Val = F;
@@ -96,10 +98,10 @@ macro_rules! backend {
                     &self.pcs
                 }
                 fn min_num_variables(&self) -> usize {
-                    4
+                    self.folding
                 }
                 fn build_witness(&self, tables: Vec<Table<F>>) -> Witness<F> {
-                    WhirLayout::new_witness(tables, 4)
+                    WhirLayout::new_witness(tables, self.folding)
                 }
                 fn committed_table<'a>(
                     &self,
@@ -115,6 +117,8 @@ macro_rules! backend {
                 config: Config,
                 pk: p3_multi_stark::ProvingKey<Config>,
                 vk: p3_multi_stark::VerifyingKey<Config>,
+                pub(super) security: Value,
+                pub(super) params: Params,
             }
             fn challenger(config: &Config) -> stack::Challenger {
                 let mut c = stack::challenger();
@@ -124,35 +128,95 @@ macro_rules! backend {
                 c
             }
             impl Context {
-                pub(super) fn setup(corpus: Arc<Corpus>) -> Self {
+                pub(super) fn setup(corpus: Arc<Corpus>, params: Params) -> Result<Self, String> {
                     let air = MulAir {
                         u32_inputs: corpus.workload == Workload::U32,
                     };
                     let width = <MulAir as BaseAir<F>>::width(&air);
-                    let num_vars = corpus.len().ilog2() as usize
-                        + width.next_power_of_two().ilog2() as usize;
-                    let pcs = stack::pcs::<EF>(
-                        num_vars,
-                        ProtocolParameters {
-                            security_level: 100,
-                            pow_bits: 12,
-                            round_log_inv_rates: vec![],
-                            folding_factor: FoldingFactor::Constant(4),
-                            soundness_type: SecurityAssumption::JohnsonBound,
-                            starting_log_inv_rate: 1,
-                        },
-                    )
-                    .expect("WHIR parameters");
-                    let config = Config { pcs };
+                    let num_vars =
+                        corpus.len().ilog2() as usize + width.next_power_of_two().ilog2() as usize;
+                    let (protocol, security) =
+                        whir_tuning::select_protocol::<F, EF, stack::Challenger>(
+                            num_vars,
+                            whir_tuning::air_shape::<F, EF, _>(&air, corpus.len().ilog2() as usize),
+                            params,
+                        )?;
+                    let pcs = stack::pcs::<EF>(num_vars, protocol).map_err(|e| e.to_string())?;
+                    let config = Config {
+                        pcs,
+                        folding: params.folding,
+                    };
                     let (pk, vk) = setup(&config, &[&air], &mut challenger(&config));
-                    Self {
+                    Ok(Self {
                         corpus,
                         air,
                         config,
                         pk,
                         vk,
+                        security,
+                        params,
+                    })
+                }
+                #[cfg(test)]
+                pub(super) fn rejection_self_test(&self) {
+                    let make_proof = |trace: RowMajorMatrix<F>| -> MultiStarkProof<Config> {
+                        prove(
+                            &self.config,
+                            ProverInstances::new(vec![ProverInstance::new(
+                                &self.air,
+                                Table::new(trace.transpose()),
+                                &self.pk,
+                                &[],
+                            )]),
+                            0,
+                            &mut challenger(&self.config),
+                        )
+                    };
+                    let accepts = |proof: &MultiStarkProof<Config>| {
+                        verify(
+                            &self.config,
+                            VerifierInstances::new(vec![VerifierInstance::new(
+                                &self.air,
+                                &self.vk,
+                                self.corpus.len().ilog2() as usize,
+                                &[],
+                            )]),
+                            proof,
+                            0,
+                            &mut challenger(&self.config),
+                        )
+                        .is_ok()
+                    };
+                    let proof = make_proof(generate::<F>(&self.corpus));
+                    assert!(accepts(&proof));
+                    let encoded = postcard::to_allocvec(&proof).unwrap();
+                    let mut changed: MultiStarkProof<Config> =
+                        postcard::from_bytes(&encoded).unwrap();
+                    changed.opening.whir.initial_ood_answers[0] += EF::ONE;
+                    assert!(!accepts(&changed), "PCS must reject an altered OOD answer");
+                    let mut changed: MultiStarkProof<Config> =
+                        postcard::from_bytes(&encoded).unwrap();
+                    changed.sumcheck.claimed_sum = EF::ONE;
+                    assert!(
+                        !accepts(&changed),
+                        "PIOP must reject a nonzero zerocheck claim"
+                    );
+                    // Release mode bypasses debug constraint checking: the actual
+                    // verifier must reject proofs constructed for invalid witnesses.
+                    #[cfg(not(debug_assertions))]
+                    {
+                        let mut wrong = generate::<F>(&self.corpus);
+                        wrong.values[2] += F::ONE;
+                        assert!(!accepts(&make_proof(wrong)), "wrong multiplication output");
+                        if self.air.u32_inputs {
+                            let mut wrong = generate::<F>(&self.corpus);
+                            wrong.values[0] = F::from_u64(1 << 32);
+                            wrong.values[2] = wrong.values[0] * wrong.values[1];
+                            assert!(!accepts(&make_proof(wrong)), "operand outside u32 range");
+                        }
                     }
                 }
+
                 pub(super) fn run(&self, capture: &TraceCapture) -> Timing {
                     capture.begin();
                     let start = capture.now_ns();
@@ -209,31 +273,76 @@ macro_rules! backend {
         }
     };
 }
-backend!(goldilocks, goldilocks);
-backend!(babybear, baby_bear);
+backend!(goldilocks2, goldilocks, 2);
+backend!(goldilocks5, goldilocks, 5);
+backend!(babybear4, baby_bear, 4);
+backend!(babybear5, baby_bear, 5);
 
 pub(super) enum Context {
-    U32(goldilocks::Context),
-    BabyBear(babybear::Context),
+    U32Degree2(goldilocks2::Context),
+    U32Degree5(goldilocks5::Context),
+    BabyBearDegree4(babybear4::Context),
+    BabyBearDegree5(babybear5::Context),
 }
 impl Context {
+    #[cfg(test)]
+    fn rejection_self_test(&self) {
+        match self {
+            Self::U32Degree2(x) => x.rejection_self_test(),
+            Self::U32Degree5(x) => x.rejection_self_test(),
+            Self::BabyBearDegree4(x) => x.rejection_self_test(),
+            Self::BabyBearDegree5(x) => x.rejection_self_test(),
+        }
+    }
     pub(super) fn setup(corpus: Arc<Corpus>) -> Self {
-        match corpus.workload {
-            Workload::U32 => Self::U32(goldilocks::Context::setup(corpus)),
-            Workload::U64 | Workload::U128 => {
-                panic!("the Plonky3 adapter has no {} workload", corpus.workload.slug())
+        let params = whir_tuning::replay()
+            .expect("read WHIR replay configuration")
+            .unwrap_or_default();
+        Self::setup_with_params(corpus, params).expect("eligible native WHIR parameters")
+    }
+    pub(super) fn setup_with_params(corpus: Arc<Corpus>, params: Params) -> Result<Self, String> {
+        match (corpus.workload, params.extension_degree) {
+            (Workload::U32, 2) => goldilocks2::Context::setup(corpus, params).map(Self::U32Degree2),
+            (Workload::U32, 5) => goldilocks5::Context::setup(corpus, params).map(Self::U32Degree5),
+            (Workload::BabyBear, 4) => {
+                babybear4::Context::setup(corpus, params).map(Self::BabyBearDegree4)
             }
-            Workload::BabyBear => Self::BabyBear(babybear::Context::setup(corpus)),
+            (Workload::BabyBear, 5) => {
+                babybear5::Context::setup(corpus, params).map(Self::BabyBearDegree5)
+            }
+            _ => Err(format!(
+                "unsupported WHIR {} degree {}",
+                corpus.workload.slug(),
+                params.extension_degree
+            )),
         }
     }
     pub(super) fn run(&self, c: &TraceCapture) -> Timing {
         match self {
-            Self::U32(x) => x.run(c),
-            Self::BabyBear(x) => x.run(c),
+            Self::U32Degree2(x) => x.run(c),
+            Self::U32Degree5(x) => x.run(c),
+            Self::BabyBearDegree4(x) => x.run(c),
+            Self::BabyBearDegree5(x) => x.run(c),
+        }
+    }
+    pub(super) fn security(&self) -> Value {
+        match self {
+            Self::U32Degree2(x) => x.security.clone(),
+            Self::U32Degree5(x) => x.security.clone(),
+            Self::BabyBearDegree4(x) => x.security.clone(),
+            Self::BabyBearDegree5(x) => x.security.clone(),
         }
     }
     pub(super) fn config(&self) -> Value {
-        json!({"piop":"Plonky3 multi-stark AIR zerocheck/sumcheck","pcs":"WHIR","base_field":match self {Self::U32(_)=>"Goldilocks",Self::BabyBear(_)=>"BabyBear"},"extension_degree":5,"target_bits":100,"max_pow_bits":12,"folding":4,"log_inv_rate":1,"soundness":"JohnsonBound"})
+        let (base_field, params) = match self {
+            Self::U32Degree2(x) => ("Goldilocks", x.params),
+            Self::U32Degree5(x) => ("Goldilocks", x.params),
+            Self::BabyBearDegree4(x) => ("BabyBear", x.params),
+            Self::BabyBearDegree5(x) => ("BabyBear", x.params),
+        };
+        json!({"piop":"Plonky3 multi-stark AIR zerocheck/sumcheck","pcs":"WHIR",
+            "encoding":"Reed-Solomon", "opening_claim":"prescribed multilinear evaluation",
+            "base_field":base_field,"params":params,"security":self.security()})
     }
 }
 
@@ -241,6 +350,32 @@ impl Context {
 #[allow(unused_imports)]
 mod tests {
     use super::*;
+    #[test]
+    fn full_proofs_verify_boundaries_and_reject_invalid_claims() {
+        for workload in [Workload::U32, Workload::BabyBear] {
+            let corpus = Arc::new(super::super::edge_corpus(workload));
+            let degrees = if workload == Workload::U32 {
+                [2, 5]
+            } else {
+                [4, 5]
+            };
+            let mut tested = 0;
+            for extension_degree in degrees {
+                let params = Params {
+                    extension_degree,
+                    ..Params::default()
+                };
+                if let Ok(context) = Context::setup_with_params(Arc::clone(&corpus), params) {
+                    context.rejection_self_test();
+                    tested += 1;
+                }
+            }
+            assert!(
+                tested > 0,
+                "an eligible configuration must exercise each workload"
+            );
+        }
+    }
     #[test]
     fn air_rejects_wrong_outputs_and_out_of_range_u32() {
         let corpus = Corpus::new(Workload::U32, 4, 7);
@@ -295,7 +430,10 @@ pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
         Workload::U32 => recover::<p3_goldilocks::Goldilocks>(corpus),
         Workload::BabyBear => recover::<p3_baby_bear::BabyBear>(corpus),
         Workload::U64 | Workload::U128 => {
-            panic!("the Plonky3 adapter has no {} workload", corpus.workload.slug())
+            panic!(
+                "the Plonky3 adapter has no {} workload",
+                corpus.workload.slug()
+            )
         }
     }
 }

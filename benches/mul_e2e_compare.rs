@@ -33,6 +33,7 @@ const MEDIAN_METRICS: &[&str] = &[
     "pcs_ms",
     "online_prover_ms",
     "witness_to_proof_ms",
+    "post_proof_ms",
     "verify_ms",
     "proof_bytes",
 ];
@@ -169,14 +170,18 @@ impl Corpus {
     fn inputs(&self) -> &[(u64, u64)] {
         match &self.operands {
             Operands::Narrow(inputs) => inputs,
-            Operands::Wide(_) => panic!("the {} workload has 128-bit operands", self.workload.slug()),
+            Operands::Wide(_) => {
+                panic!("the {} workload has 128-bit operands", self.workload.slug())
+            }
         }
     }
     /// The operand pairs of the `u128` workload.
     fn wide_inputs(&self) -> &[(u128, u128)] {
         match &self.operands {
             Operands::Wide(inputs) => inputs,
-            Operands::Narrow(_) => panic!("the {} workload has 64-bit operands", self.workload.slug()),
+            Operands::Narrow(_) => {
+                panic!("the {} workload has 64-bit operands", self.workload.slug())
+            }
         }
     }
     /// The operand pairs of a 32-bit workload as `u32` values.
@@ -185,7 +190,11 @@ impl Corpus {
     }
     fn from_wide_inputs(workload: Workload, inputs: Vec<(u128, u128)>) -> Self {
         use f2z::piop::spartan::U128MulWitness;
-        assert!(workload.is_wide(), "{} operands are u64 values", workload.slug());
+        assert!(
+            workload.is_wide(),
+            "{} operands are u64 values",
+            workload.slug()
+        );
         let digest = common::mul_witness::u128_digest(
             &U128MulWitness::from_inputs(&inputs).expect("canonical u128 witness"),
         );
@@ -260,6 +269,7 @@ impl Timing {
         result.add("online_prover", "proving", witness_end, ready);
         result.add("witness", "witness-generation", start, witness_end);
         result.add("verify", "verification", verify_start, end);
+        result.add("post_proof", "proof-accounting", ready, verify_start);
         result
     }
     fn add(&mut self, name: &'static str, tag: &'static str, start: u64, end: u64) {
@@ -299,6 +309,7 @@ impl Timing {
             "witness_to_proof_ms": self.union_ms(|p| p.name=="witness_to_proof"),
             "verify_ms": self.union_ms(|p| p.tag=="verification"),
             "verified_trial_ms": self.union_ms(|p| p.name=="verified_trial"),
+            "post_proof_ms": self.union_ms(|p| p.name=="post_proof"),
             "proof_bytes": self.proof_bytes,
         })
     }
@@ -350,6 +361,20 @@ impl Context {
             _ => panic!("unknown backend {backend}"),
         }
     }
+    fn setup_selected(
+        backend: &str,
+        corpus: Arc<Corpus>,
+        params: Option<common::whir_tuning::Params>,
+    ) -> Self {
+        if backend == "plonky3-whir" {
+            Self::Plonky3(
+                plonky3::Context::setup_with_params(corpus, params.expect("selected WHIR params"))
+                    .expect("selected WHIR config remains eligible"),
+            )
+        } else {
+            Self::setup(backend, corpus)
+        }
+    }
     fn run(&self, capture: &TraceCapture) -> Timing {
         match self {
             Self::F2z(c) => c.run(),
@@ -377,17 +402,10 @@ fn root_seed(workload: Workload) -> u64 {
     }
 }
 
-/// Largest accepted exponent: F2Z commits `2^(n+7)` bits for u32,
-/// `2^(n+8)` for BabyBear and u64, and `2^(n+9)` for u128, so each wider
-/// workload stops one size earlier on a 16 GB machine.
-fn max_exponent(workloads: &[String]) -> usize {
-    if workloads.iter().any(|w| w == "u128") {
-        23
-    } else if workloads.iter().any(|w| w == "babybear" || w == "u64") {
-        24
-    } else {
-        25
-    }
+/// Representation limit only. Backend domain checks decide eligibility;
+/// available memory is not inferred from a particular benchmark machine.
+fn max_exponent(_workloads: &[String]) -> usize {
+    (usize::BITS as usize).saturating_sub(11)
 }
 
 fn check_backend_support(workloads: &[String], backends: &[String]) {
@@ -494,6 +512,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .output()?
         .stdout
         .is_empty();
+    let environment = common::environment::metadata(threads);
+    common::whir_tuning::save(&out.join("environment.json"), &environment)?;
     let mut summary = vec![];
     for workload in workloads {
         let workload = Workload::parse(&workload);
@@ -502,6 +522,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let shape_seed = common::mul_witness::shape_seed(seed, n);
             let corpus = Arc::new(Corpus::new(workload, n, shape_seed));
             for backend in &backends {
+                let whir_params = if backend == "plonky3-whir" {
+                    let degrees: &[usize] = if workload == Workload::U32 {
+                        &[2, 5]
+                    } else {
+                        &[4, 5]
+                    };
+                    let selection = common::whir_tuning::tune(
+                        degrees,
+                        common::whir_tuning::replay()?,
+                        |params| plonky3::Context::setup_with_params(Arc::clone(&corpus), params),
+                        |context| {
+                            context.run(&capture).metrics()["witness_to_proof_ms"]
+                                .as_f64()
+                                .unwrap()
+                        },
+                        plonky3::Context::security,
+                    );
+                    let path = out.join(format!("whir-{}-{n}.json", workload.slug()));
+                    match selection {
+                        Ok((params, mut record)) => {
+                            record["workload"] = json!(workload.slug());
+                            record["exponent"] = json!(n);
+                            record["corpus_digest"] = json!(corpus.digest);
+                            common::whir_tuning::save(&path, &record)?;
+                            Some(params)
+                        }
+                        Err(reason) => {
+                            eprintln!("WHIR {} 2^{n}: unavailable: {reason}", workload.slug());
+                            let record = json!({"workload":workload.slug(),"backend":backend,
+                                "log_multiplications":n,"status":"ineligible","reason":reason});
+                            common::whir_tuning::save(&path, &record)?;
+                            summary.push(record);
+                            continue;
+                        }
+                    }
+                } else {
+                    None
+                };
                 // Run before constructing the parent's backend context so two large
                 // proving keys/witnesses are never live at once.
                 let memory_sample = if measure_memory {
@@ -509,8 +567,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "{} {backend} 2^{n}: isolated peak-memory pass",
                         workload.slug()
                     );
-                    let sample =
-                        memory::measure(backend, workload, n, shape_seed, threads, &corpus.digest)?;
+                    let sample = memory::measure(
+                        backend,
+                        workload,
+                        n,
+                        shape_seed,
+                        threads,
+                        &corpus.digest,
+                        whir_params,
+                    )?;
                     writeln!(memory_samples, "{}", serde_json::to_string(&sample)?)?;
                     memory_samples.flush()?;
                     eprintln!(
@@ -527,7 +592,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let audit = audit_backend(backend, &corpus);
                 assert_eq!(audit.digest, corpus.digest);
                 let started = std::time::Instant::now();
-                let context = Context::setup(backend, Arc::clone(&corpus));
+                let context = Context::setup_selected(backend, Arc::clone(&corpus), whir_params);
                 let setup_ms = started.elapsed().as_secs_f64() * 1e3;
                 let mut config = context.config();
                 config["proof_size_encoding"] = json!(match backend.as_str() {
@@ -559,8 +624,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "benchmark":{"suite":"native-mul","name":"mul_e2e_compare","algorithm":workload.algorithm(),"label":format!("{} 2^{n} {backend}",workload.slug()),"implementation":backend,"git_rev":rev,"git_dirty":dirty,"build_profile":"bench"},
                             "trial":trial_json,"status":"ok","trace_complete":true,
                             "clock":{"id":run,"kind":"monotonic","unit":"ns","source":"std::time::Instant"},
-                            "environment":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH,"threads":threads,"rustflags":std::env::var("RUSTFLAGS").ok()},
-                            "parameters":{"input":{"multiplications":1usize<<n,"log_multiplications":n,"witness_digest_blake3":corpus.digest,"seed":shape_seed},"security":config,"setup_ms":setup_ms,"boundary":"regenerate native witness through full proof verification; corpus sampling and public setup excluded"},
+                            "environment":environment,
+                            "parameters":{"input":{"multiplications":1usize<<n,"log_multiplications":n,"witness_digest_blake3":corpus.digest,"seed":shape_seed},"security":config,"setup_ms":setup_ms,"primary_metric":"witness_to_proof_ms","boundary":"start native witness generation through complete PCS proof; verification, serialization, and reusable setup reported separately"},
                             "validation":{"proof_verified":true,"reference_outputs_checked":true,"native_witness_matches_canonical":true},"witness_audit":{"generation_ms_excluded":audit.generation_ms,"native_representation":audit.representation,"quotient_reconstructed":audit.quotient_reconstructed,"witness_digest_blake3":audit.digest},"metrics":metrics,
                         })
                     )?;
@@ -738,7 +803,11 @@ mod tests {
         let a = Corpus::new(Workload::U128, 4, 7);
         assert_eq!(a.digest, Corpus::new(Workload::U128, 4, 7).digest);
         assert_ne!(a.digest, Corpus::new(Workload::U128, 4, 8).digest);
-        assert!(a.wide_inputs().iter().any(|&(x, _)| x > u128::from(u64::MAX)));
+        assert!(
+            a.wide_inputs()
+                .iter()
+                .any(|&(x, _)| x > u128::from(u64::MAX))
+        );
         assert_eq!(
             Corpus::new(
                 Workload::U128,
@@ -777,7 +846,8 @@ impl WitnessAudit {
         hash.update(&(layout.assignment_len() as u64).to_le_bytes());
         let mut entries = vec![(0_u128, 0_u128); layout.assignment_len()];
         entries[0] = (1, 0);
-        for (i, (&[x, y, lo, hi], &(expected_x, expected_y))) in rows.iter().zip(inputs).enumerate() {
+        for (i, (&[x, y, lo, hi], &(expected_x, expected_y))) in rows.iter().zip(inputs).enumerate()
+        {
             assert_eq!(
                 [x, y, lo, hi],
                 corpus.workload.wide_row(expected_x, expected_y),
@@ -829,9 +899,7 @@ impl WitnessAudit {
         let mut assignment = vec![0u64; assignment_len];
         assignment[0] = 1;
         let has_fourth_block = matches!(corpus.workload, Workload::BabyBear | Workload::U64);
-        for (i, (&[a, b, c, q], &(expected_a, expected_b))) in
-            rows.iter().zip(inputs).enumerate()
-        {
+        for (i, (&[a, b, c, q], &(expected_a, expected_b))) in rows.iter().zip(inputs).enumerate() {
             assert_eq!(
                 [a, b, c, q],
                 corpus.workload.native_row(expected_a, expected_b),

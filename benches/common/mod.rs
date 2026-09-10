@@ -18,12 +18,15 @@
 
 #![allow(dead_code)] // each bench uses a subset of the harness
 
+pub mod environment;
 pub mod mul_witness;
 pub mod pcs_console;
 #[cfg(feature = "bench-peak-memory")]
 pub mod peak_memory;
 #[cfg(feature = "plonky3-whir-bench")]
 pub mod plonky3;
+#[cfg(any(feature = "native-mul-compare", feature = "plonky3-sha256-bench"))]
+pub mod whir_tuning;
 
 use std::time::Instant;
 
@@ -61,7 +64,10 @@ pub fn locked_git_revision(package: &str) -> String {
     lock.split("[[package]]")
         .filter(|entry| entry.lines().any(|line| line.starts_with(&family)))
         .find_map(git_revision)
-        .map_or_else(|| "patched".to_owned(), |revision| format!("{revision}+patched"))
+        .map_or_else(
+            || "patched".to_owned(),
+            |revision| format!("{revision}+patched"),
+        )
 }
 
 // ---------------------------------------------------------------------
@@ -165,6 +171,8 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_WHIR_FOLDING",
     "F2Z_WHIR_LOG_INV_RATE",
     "F2Z_WHIR_MAX_POW_BITS",
+    "F2Z_WHIR_CONFIG",
+    "F2Z_WHIR_TUNING_REPS",
     "F2Z_QUAD",
     "F2Z_QUAD_KERNEL",
     "F2Z_RLC_EAGER",
