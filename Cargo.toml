@@ -306,6 +306,9 @@ plonky3-fri-bench = [
 ]
 native-mul-compare = [
     "plonky3-fri-bench",
+    "plonky3-whir-bench",
+    "dep:p3-air",
+    "dep:p3-multi-stark",
     "binius64-bench",
 ]
 native-sha256-compare = [

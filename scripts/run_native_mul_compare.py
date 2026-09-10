@@ -61,6 +61,11 @@ def configuration(env):
     memory = env.get("F2Z_MUL_COMPARE_MEMORY", "1")
     if memory not in ("0", "1"):
         raise ValueError("F2Z_MUL_COMPARE_MEMORY must be 0 or 1")
+    rate = env.get("F2Z_BINIUS_LOG_INV_RATE")
+    binius_rate = int(rate) if rate else None
+    # The paper lists Binius64 at rate 1/2 and 1/8; an ambient value is still rejected.
+    if binius_rate is not None and (binius_rate not in (1, 3) if "u32-mod32" in workloads else not 1 <= binius_rate <= 4):
+        raise ValueError("F2Z_BINIUS_LOG_INV_RATE must select rate 1/2 or 1/8 for mod32")
     repo = Path(env.get("LIMBER_REPO", str(ROOT.parent / "limber-impl"))).expanduser().resolve()
     if "limber" in backends and not all((repo / name).is_file() for name in ("Cargo.toml", "examples/int_mult.rs")):
         raise ValueError(f"LIMBER_REPO={repo} must contain the f2z-benching independent Brakedown int_mult example")
@@ -69,7 +74,8 @@ def configuration(env):
     if not output.is_absolute():
         output = ROOT / output
     return dict(workloads=workloads, backends=backends, exponents=exponents, reps=reps,
-                threads=threads, seed=seed, seed_explicit="F2Z_BENCH_SEED" in env, memory=memory == "1", limber_repo=repo, output=output.resolve())
+                threads=threads, seed=seed, seed_explicit="F2Z_BENCH_SEED" in env, memory=memory == "1",
+                binius_rate=binius_rate, limber_repo=repo, output=output.resolve())
 
 
 def jobs(config):
@@ -90,13 +96,13 @@ def limber_command(exponent):
 def campaign_environment(environment, config):
     env = dict(environment)
     for key in CLEAR_ENV:
-        if key == "F2Z_BINIUS_LOG_INV_RATE" and "u32-mod32" not in config["workloads"]:
-            continue
         env.pop(key, None)
     env.update(RUSTFLAGS=BUILD["rustflags"], RAYON_NUM_THREADS=str(config["threads"]),
                F2Z_BENCH_REPS=str(config["reps"]),
                F2Z_BENCH_SHAPES=" ".join(map(str, config["exponents"])),
                F2Z_MUL_COMPARE_MEMORY=str(int(config["memory"])))
+    if config["binius_rate"] is not None:
+        env["F2Z_BINIUS_LOG_INV_RATE"] = str(config["binius_rate"])
     if config["seed_explicit"]:
         env["F2Z_BENCH_SEED"] = str(config["seed"])
     else:
@@ -183,11 +189,12 @@ def validate_sample(row, config, exponent, backend, workload):
             cfg = report["configuration"]
             if cfg.get("initial_k") != 4 or cfg["levels"][0].get("log_inv_rate") != 3:
                 raise ValueError("mod32 comparison requires matched Ligerito rate 1/8 and initial_k=4")
-    if backend == "binius64" and (settings.get("fri_query_target_bits") != 100 or (workload == "u32-mod32" and settings.get("log_inv_rate") != 1)):
-        raise ValueError("Binius must use the canonical 100-bit query target at rate 1/2")
+    if backend == "binius64" and (settings.get("fri_query_target_bits") != 100
+                                  or (workload == "u32-mod32" and settings.get("log_inv_rate") != (config["binius_rate"] or 1))):
+        raise ValueError("Binius must use the canonical 100-bit query target at the requested rate")
     if backend == "binius64" and workload == "u32-mod32":
         n = 1 << exponent
-        expected = {"and":4*n,"imul":n,"zero":0,"bmul":0}
+        expected = {"and":n,"imul":n,"zero":3*n,"bmul":0}
         if settings.get("word_constraints") != expected:
             raise ValueError("unexpected compiled Binius mod32 constraint counts")
     if backend == "plonky3-fri":
@@ -352,6 +359,7 @@ def main():
         manifest = dict(schema="native-mul-campaign/v2", status="planned", workloads=config["workloads"],
                         backends=config["backends"], exponents=config["exponents"], repetitions=config["reps"],
                         warmups=1, measurement_policy=POLICY, jobs=planned, build=BUILD | {"threads": config["threads"]},
+                        binius_log_inv_rate=config["binius_rate"],
                         limber_commands=[limber_command(n) for n in config["exponents"]] if "limber" in config["backends"] else [])
         if args.dry_run:
             print(json.dumps(manifest, indent=2))

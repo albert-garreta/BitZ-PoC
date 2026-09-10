@@ -24,6 +24,11 @@ bash scripts/run_native_mul_compare.sh
 
 # Inspect commands without starting Cargo.
 bash scripts/run_native_mul_compare.sh --dry-run
+
+# The paper's second Binius64 row: the same sweep at rate 1/8.
+F2Z_MUL_COMPARE_BACKENDS=binius64 F2Z_BINIUS_LOG_INV_RATE=3 \
+F2Z_BENCH_SHAPES="15 16 17 18 19 20" F2Z_BENCH_REPS=5 \
+bash scripts/run_native_mul_compare.sh
 ```
 
 `F2Z_MUL_COMPARE_BACKENDS` accepts `f2z binius64 plonky3-fri plonky3-whir limber`.
@@ -55,7 +60,10 @@ selects a positive thread count, defaulting to eight, and is recorded in
 provenance. Use the same count across backends in a campaign.
 The runner clears `CARGO_ENCODED_RUSTFLAGS`, `DUMP`, `CHAIN_BITS`, `BDLAMBDA`,
 `BDSPEC`, `BDROWLEN`, `BDDIRECT`, `BDSPLIT`, and ambient memory-only mode.
-For mod32 it also clears `F2Z_BINIUS_LOG_INV_RATE`. Effective configurations,
+`F2Z_BINIUS_LOG_INV_RATE` is not inherited either: an explicit value selects the
+Binius rate for the whole campaign, is recorded in `campaign.json`, and must
+match the rate the compiled circuit reports. For mod32 it selects the default
+rate 1/2 (`1`) or the paper's second row, rate 1/8 (`3`). Effective configurations,
 Rust toolchain, build profile, revisions, dirty state, source hashes, lockfile
 hashes and machine information are saved. Repository state must remain stable
 while a campaign runs. Results made from uncommitted changes record both the
@@ -67,7 +75,7 @@ reproducible revision of those edits.
 | Backend | Arithmetic relation and cost per operation | Native security configuration |
 |---|---|---|
 | F2Z | One integer R1CS constraint x*y=P, four 32-bit committed limbs representing x,y,z,w with P=z+2^32*w | Explicit Lambda100, Johnson `custom:3:4`, required Round-0 OOD |
-| Binius64 | Bound x,y to 32 bits, native IMUL, mask and equate low 32-bit output; one IMUL plus four word-level ANDs | Explicit 100-bit FRI query target, rate 1/2 |
+| Binius64 | Bound x,y to 32 bits, native IMUL, mask and equate low 32-bit output; one IMUL plus four word-level ANDs | Explicit 100-bit FRI query target, rate 1/2 or the paper's second rate 1/8 |
 | Limber-Brakedown | One independent integer-mod row, 3N live witness values padded to 4N, N private quotients | T256DynPrimeBdEngine; `derive_no_limb_split(32,9,L+2)`; native approximately 114-bit policy |
 | Plonky3-FRI | Two limb equations; 137 columns and 139 constraints per row | Goldilocks, degree-five extension, Poseidon2/MMCS, rate 1/8, 100 queries, binary folding, final polynomial length one, zero PoW |
 | Plonky3-WHIR (optional) | The same 137-column, 139-constraint mod32 AIR | Multilinear zerocheck/sumcheck PIOP; Goldilocks; per-run WHIR tuning with evaluated Johnson accounting of at least 100 bits |

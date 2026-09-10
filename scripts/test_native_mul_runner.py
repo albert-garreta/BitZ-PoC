@@ -29,7 +29,7 @@ def samples(reps=2):
 
 def config(**overrides):
     return dict(reps=2, threads=8, seed=runner.DEFAULT_SEED, seed_explicit=False, memory=False,
-                workloads=["u32-mod32"], backends=["limber"], exponents=[15], **overrides)
+                binius_rate=None, workloads=["u32-mod32"], backends=["limber"], exponents=[15], **overrides)
 
 
 class RunnerTests(unittest.TestCase):
@@ -79,8 +79,17 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(env["RUSTFLAGS"], "-C target-cpu=native")
         self.assertEqual(env["RAYON_NUM_THREADS"], "8")
         self.assertNotIn("F2Z_BENCH_SEED",env)
-        wide = config(); wide["workloads"] = ["u128"]
-        self.assertEqual(runner.campaign_environment({"F2Z_BINIUS_LOG_INV_RATE":"3"},wide)["F2Z_BINIUS_LOG_INV_RATE"],"3")
+        # The requested rate is carried; an ambient one never survives.
+        wide = config(); wide["binius_rate"] = 3; wide["workloads"] = ["u128"]
+        self.assertEqual(runner.campaign_environment({"F2Z_BINIUS_LOG_INV_RATE":"9"},wide)["F2Z_BINIUS_LOG_INV_RATE"],"3")
+        rates = dict(F2Z_MUL_COMPARE_BACKENDS="binius64")
+        self.assertIsNone(runner.configuration(rates)["binius_rate"])
+        self.assertEqual(runner.configuration(rates | {"F2Z_BINIUS_LOG_INV_RATE":"3"})["binius_rate"],3)
+        with self.assertRaises(ValueError): runner.configuration(rates | {"F2Z_BINIUS_LOG_INV_RATE":"2"})
+        row = copy.deepcopy(FIXTURE) | dict(backend="binius64")
+        row["config"] = dict(fri_query_target_bits=100, log_inv_rate=3, word_constraints=dict(and_=0))
+        with self.assertRaises(ValueError):
+            runner.validate_sample(row,config(),15,"binius64","u32-mod32")
         for workload in ("u64", "u128"):
             maximum = sys.maxsize.bit_length() + 1 - 11
             env = dict(F2Z_MUL_COMPARE_WORKLOADS=workload,F2Z_MUL_COMPARE_BACKENDS="f2z binius64",F2Z_BENCH_SHAPES=f"15 {maximum}")
