@@ -1684,8 +1684,9 @@ pub fn prove_rs_open_ligerito(
     pc: &LigProverConfig,
 ) -> LigOpenProof {
     let r_hi = &point[LOG_PACKING..];
-    let p_msg_gf: Vec<Gf> = hint.p_msg.iter().map(|&f| f128_to_gf(f)).collect();
-    let (ring, b_tbl, beta0) = ring_switch_prove(transcript, &p_msg_gf, r_hi);
+    // The ring switch reads flock's packed words in place (bit-compatible
+    // with `Gf`): no 2^{m_p}-element conversion copy.
+    let (ring, b_tbl, beta0) = ring_switch_prove(transcript, &hint.p_msg, r_hi);
 
     let lig = ligerito::recursive_prover_with_basis(
         pc,

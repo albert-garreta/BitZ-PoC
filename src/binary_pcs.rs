@@ -375,9 +375,8 @@ impl BinaryPcs {
         point: &[Gf],
     ) -> BitMleOpening {
         assert_eq!(point.len(), self.packed_log + LOG_PACKING, "bit-MLE point length");
-        let words: Vec<Gf> = packed.iter().copied().map(f128_to_gf).collect();
-        let (ring, basis, target) = ring_switch_prove(t, &words, &point[LOG_PACKING..]);
-        drop(words);
+        // The ring switch reads the packed words in place (no `Gf` copy).
+        let (ring, basis, target) = ring_switch_prove(t, packed, &point[LOG_PACKING..]);
         let basis: Vec<F128> = basis.into_iter().map(gf_to_f128).collect();
         let lig = self.open_basis(t, packed, data, round0, basis, target);
         BitMleOpening { ring, lig }
