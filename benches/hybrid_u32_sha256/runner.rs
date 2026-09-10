@@ -152,6 +152,38 @@ impl Native {
             }
         }
     }
+    /// The opener identity of the binius-ligerito mode for the sweep summary,
+    /// the analogue of the hybrid's `LIGERITO_CONFIG` report: the
+    /// whole-protocol union bound and every oracle's resolved configuration.
+    fn ligerito_identity(&self) -> Option<serde_json::Value> {
+        let NativeBackend::Ligerito(prepared) = &self.backend else {
+            return None;
+        };
+        let security = prepared.security();
+        let oracles: Vec<serde_json::Value> = prepared
+            .oracle_specs()
+            .iter()
+            .enumerate()
+            .map(|(i, spec)| {
+                serde_json::json!({
+                    "log_msg_len": spec.log_msg_len,
+                    "configuration": prepared.opener(i).config(),
+                })
+            })
+            .collect();
+        Some(serde_json::json!({
+            "scheme": "binius64-ligerito",
+            "target_bits": security.target_bits,
+            "component_bits": prepared.component_bits(),
+            "algebraic_bits": security.algebraic_bits,
+            "log_inv_rate": f2z::binary_pcs::LOG_INV_RATE,
+            "binding_term": security.binding_term().map(|t| {
+                serde_json::json!({ "name": t.name, "bits": -t.error_bound.log2() })
+            }),
+            "oracles": oracles,
+        }))
+    }
+
     fn setup_line(&self) -> String {
         match &self.backend {
             NativeBackend::Binius { .. } => format!(
@@ -476,6 +508,9 @@ pub fn run() -> Result<(), AnyError> {
         }
         let setup_ms = millis(setup);
         eprintln!("setup_ms={setup_ms:.3} {}", native.setup_line());
+        if let Some(report) = native.ligerito_identity() {
+            eprintln!("BINIUS_LIGERITO_CONFIG {report}");
+        }
         let size_column = if mode == "separate" {
             "proof_payload_bytes_estimate"
         } else {

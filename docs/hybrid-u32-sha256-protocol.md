@@ -147,7 +147,7 @@ The sweep prints readable progress and sample results to stdout. Each sample ide
 
 - `summary.csv`: all verified samples, with `multiplication_relation=u32_mod_2_32`, mode, operation counts, log sizes and timings. Exact proof sizes and separate-mode payload estimates use distinct columns; unavailable metrics are blank. Read this file for machine-readable output; stdout displays the labelled results.
 - `<mode>-m<MUL_LOG>-s<SHA_LOG>.csv` and `.log`: original samples and setup/stage diagnostics for each process.
-- `<mode>-m<MUL_LOG>-s<SHA_LOG>.ligerito.json`: validated Ligerito identity for hybrid/separate modes, also encoded in the `ligerito_hex` summary column. All-Binius has no Ligerito identity.
+- `<mode>-m<MUL_LOG>-s<SHA_LOG>.ligerito.json`: validated Ligerito identity for hybrid/separate modes, also encoded in the `ligerito_hex` summary column. For the binius-ligerito mode it is the opener identity instead (the child's `BINIUS_LIGERITO_CONFIG` line: the 100-bit union bound, the solved component target and every oracle's resolved configuration). All-Binius has no Ligerito identity.
 - `run.txt`: executable, multiplication relation, requested shapes, modes, iteration count, thread setting and security target.
 
 The default `benches/results/` directory is ignored by Git. Use `--results-dir DIR` to choose a destination that does not already exist. A failed child stops the sweep, reports its log path and preserves completed results. Sweep code lives in [`benches/hybrid_u32_sha256/sweep.rs`](../benches/hybrid_u32_sha256/sweep.rs). The standalone CLI accepts the same sweep flags.

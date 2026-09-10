@@ -295,10 +295,21 @@ pub fn run(
             }
             let log = fs::read_to_string(&log_path)?;
             let reports: Vec<_> = log.lines().filter_map(|l| l.strip_prefix("LIGERITO_CONFIG ")).collect();
+            let opener_reports: Vec<_> =
+                log.lines().filter_map(|l| l.strip_prefix("BINIUS_LIGERITO_CONFIG ")).collect();
             let identity = if *mode == "all-binius" {
-                if !reports.is_empty() { return Err("all-Binius output unexpectedly carries Ligerito configuration".into()); }
+                if !reports.is_empty() || !opener_reports.is_empty() { return Err("all-Binius output unexpectedly carries Ligerito configuration".into()); }
                 String::new()
+            } else if *mode == "binius-ligerito" {
+                // Binius64's PIOP with the F2Z opener: the identity is the
+                // whole-protocol union bound and each oracle's resolved opener.
+                if !reports.is_empty() || opener_reports.len() != 1 { return Err("missing or duplicated child opener identity".into()); }
+                let report: serde_json::Value = serde_json::from_str(opener_reports[0])?;
+                if report["scheme"] != "binius64-ligerito" || report["target_bits"] != 100 { return Err("incorrect binius-ligerito security target".into()); }
+                fs::write(results_dir.join(format!("{stem}.ligerito.json")), serde_json::to_vec_pretty(&report)?)?;
+                f2z::ligerito_flock::ResolvedLigerito::encode_report(&report)
             } else {
+                if !opener_reports.is_empty() { return Err("hybrid output unexpectedly carries an opener identity".into()); }
                 if reports.len() != 1 { return Err("missing or duplicated child Ligerito identity".into()); }
                 let report: serde_json::Value = serde_json::from_str(reports[0])?;
                 f2z::ligerito_flock::ResolvedLigerito::validate_report(&report)?;
