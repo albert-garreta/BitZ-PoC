@@ -1,6 +1,8 @@
 //! One method/configuration per process; fixture construction is outside timers.
 #[path = "support/sha256_ecdsa_fixture.rs"]
 mod shared_fixture;
+mod common;
+
 use bincode::Options;
 use f2z::{piop::spartan::ecdsa_sha256::*, transcript::Blake3Transcript, utils::prof};
 use flock_core::pcs::commit::Commitment;
@@ -200,7 +202,8 @@ fn emit(args: &Args, fixture: &Fixture, trial: usize, mut row: Value) {
 }
 
 fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
-    let (prepared, setup_ms) = timed(|| prepare_sha256_ecdsa(args.exponent(), args.target, mode))?;
+    let (prepared, setup_ms) = timed(|| prepare_sha256_ecdsa(args.exponent(), args.target, mode)
+        .and_then(|p| p.with_ligerito(common::ligerito_selection(args.target as usize))))?;
     let security = prepared.security()?;
     for trial in 0..=args.reps {
         prof::take_totals();
@@ -266,7 +269,8 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
                 "opening_ms": phase("ecdsa:f2z_prove"), "folding_ms": null,
                 "phases_seconds": phases, "verify_phases_seconds": prof::take_totals(),
                 "security": {"model": "round-by-round-economic", "economic_bits": security.economic_bits(),
-                    "statistical_bits_lower_bound": security.statistical_bits(), "projection_bits": 113},
+                    "statistical_bits_lower_bound": security.statistical_bits(), "projection_bits": 113,
+                    "ligerito": common::ligerito_report(prepared.ligerito_configuration(), prepared.ligerito_configuration().round0(args.target)?) },
                 "circuit": {"nonlinear_rows": prepared.nonlinear_rows(), "linear_rows": prepared.linear_rows(),
                     "outer_active_rows": prepared.outer_rows(), "outer_slots": prepared.outer_domain_size(),
                     "source_bits": prepared.live_source_bits(), "assignment_bits": prepared.live_assignment_bits()},

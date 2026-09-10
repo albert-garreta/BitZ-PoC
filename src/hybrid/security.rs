@@ -66,6 +66,7 @@ pub(super) fn account(
     mul: &PreparedU32MulRelation,
     sha: &binius_verifier::IOPVerifier,
     geometry: &Geometry,
+    resolved: &crate::ligerito_flock::ResolvedLigerito,
 ) -> Result<SecurityReport, Error> {
     let mut terms = Vec::new();
     let mut add = |name, error_bound| terms.push(SecurityTerm { name, error_bound });
@@ -76,11 +77,9 @@ pub(super) fn account(
     // pinned to one list element only by the final opening's evaluation
     // claim; that is too late for the forest and PIOP challenges drawn in
     // between, so this explicit sample replaces that implicit binding.
-    let (ood_bits, ood) = geometry.ood()?;
-    add(
-        "step0:ood-draw",
-        2f64.powf(-(ood_bits + f64::from(ood.grinding_bits))),
-    );
+    if let Some((ood_bits, ood)) = super::opening::ood_parameters(resolved)? {
+        add("step0:ood-draw", 2f64.powf(-(ood_bits + f64::from(ood.grinding_bits))));
+    }
     let gate_log = mul.layout().gate_vars();
     for term in &mul.security().accounting.terms {
         // These are precisely the integer-prefix stages retained here.
@@ -119,7 +118,8 @@ pub(super) fn account(
         (2 * geometry.bit_log() + 2) as f64 * k_inv,
     );
     add("ring switching", 128.0 * k_inv);
-    let config = geometry.security();
+    add("logical support padding", (geometry.packed_log() + 1) as f64 * k_inv);
+    let config = resolved.security();
     config.validate().map_err(Error::Config)?;
     for (index, level) in config.levels.iter().enumerate() {
         let (pg, query) = level.paper_predicted_bits();

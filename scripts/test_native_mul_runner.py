@@ -152,6 +152,7 @@ class RunnerTests(unittest.TestCase):
                 "else:\n for row in rows: print('LIMBER_MUL_RESULT '+json.dumps(row))\n")
             cargo.chmod(0o755)
             git=bindir/"git";git.write_text('#!/bin/sh\nif [ "$1" = rev-parse ]; then printf "%s\\n" test-revision; fi\n');git.chmod(0o755)
+            sysctl=bindir/"sysctl";sysctl.write_text('#!/bin/sh\nprintf "%s\\n" fixture-cpu\n');sysctl.chmod(0o755)
             output=root/"results"
             env={k:v for k,v in os.environ.items() if not k.startswith(("F2Z_","CARGO_"))}
             env.update(PATH=str(bindir)+os.pathsep+env["PATH"],COMMANDS=str(commands),LIMBER_REPO=str(repo),
@@ -163,7 +164,7 @@ class RunnerTests(unittest.TestCase):
             calls=[json.loads(line) for line in commands.read_text().splitlines()]
             self.assertEqual(len(calls),2)
             for call in calls:
-                self.assertEqual(call["args"],runner.limber_command(15)[1:]); self.assertEqual(call["cwd"],str(repo))
+                self.assertEqual(call["args"],runner.limber_command(15)[1:]); self.assertEqual(Path(call["cwd"]).resolve(),repo.resolve())
                 self.assertEqual(call["flags"],"-C target-cpu=native"); self.assertEqual(call["threads"],"8"); self.assertIsNone(call["encoded"])
             summary=json.loads((output/"summary.json").read_text())[0]
             self.assertEqual(summary["samples"],2);self.assertEqual(summary["multiplications"],32768)

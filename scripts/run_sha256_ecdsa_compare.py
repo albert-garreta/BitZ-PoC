@@ -85,6 +85,14 @@ def validate_rows(rows, case, reps):
         honk = case["method"] == "zkpassport-honk"
         if honk and (row.get("zk") is not False or row.get("barretenberg_version") != "5.0.0"):
             return False
+        if case["method"].startswith("f2z"):
+            from ligerito_results import validate_ligerito
+            try:
+                validate_ligerito(row["security"].get("ligerito"), case["security_target"])
+                if row["security"]["ligerito"] != rows[0]["security"].get("ligerito"):
+                    return False
+            except ValueError:
+                return False
         revision = row.get("zkpassport_revision" if honk else "spartan_revision")
         if not isinstance(revision, str) or len(revision) != 40 or any(c not in "0123456789abcdef" for c in revision):
             return False
@@ -416,6 +424,12 @@ def compatible_zkpassport(previous, current):
                     for key, value in old_artifacts.items()))
 
 
+def compatible_manifest(previous, current):
+    return (previous.get("binary_sha256") == current.get("binary_sha256")
+            and previous.get("ligerito_profile") == current.get("ligerito_profile")
+            and compatible_zkpassport(previous.get("zkpassport"), current.get("zkpassport")))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path)
@@ -464,6 +478,7 @@ def main():
     directory = args.output.resolve()
     binary = args.binary.resolve(strict=True) if args.binary else build(args, directory)
     manifest = metadata(binary)
+    manifest["ligerito_profile"] = os.environ.get("F2Z_LIG_PROFILE", "default-by-target")
     if args.with_zkpassport:
         manifest["zkpassport"] = prepare_zkpassport(args, directory, binary, spartan_splits)
     manifest["campaign"] = dict(methods=args.methods, targets=args.targets, threads=args.threads,
@@ -471,8 +486,7 @@ def main():
     manifest_path = directory / "manifest.json"
     if manifest_path.exists():
         previous = json.loads(manifest_path.read_text())
-        if (previous["binary_sha256"] != manifest["binary_sha256"]
-                or not compatible_zkpassport(previous.get("zkpassport"), manifest.get("zkpassport"))):
+        if not compatible_manifest(previous, manifest):
             parser.error("output belongs to different binaries, circuits, or fixtures; choose a new output directory")
         # Preserve the initial machine/build metadata, recording newly prepared artifacts.
         if args.with_zkpassport:

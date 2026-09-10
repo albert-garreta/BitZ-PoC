@@ -11,7 +11,7 @@ use crate::{
 };
 use crypto_primitives::{FromWithConfig, PrimeField, crypto_bigint_uint::Uint};
 
-const MAGIC: &[u8] = b"F2ZSE001";
+const MAGIC: &[u8] = b"F2ZSE002";
 
 impl Sha256EcdsaProof {
     pub fn to_bytes(&self) -> Vec<u8> {

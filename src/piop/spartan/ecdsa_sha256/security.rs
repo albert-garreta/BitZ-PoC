@@ -1,6 +1,6 @@
 use super::{PreparedSha256Ecdsa, Result, error, reduction::outer_vars};
 use crate::{
-    ligerito_flock::{atomic::AtomicPlan, custom_udr_grind_config_bits},
+    ligerito_flock::{atomic::AtomicPlan, OodRoundParams},
     piop::spartan::profile::log2_prime_count_lower_bound,
 };
 
@@ -25,6 +25,7 @@ pub struct Sha256EcdsaSecurity {
     pub(crate) inner: u32,
     pub(crate) forest: u32,
     pub(crate) flock: AtomicPlan,
+    pub(crate) ood: Option<OodRoundParams>,
 }
 
 impl Sha256EcdsaSecurity {
@@ -76,9 +77,16 @@ impl Sha256EcdsaSecurity {
             (p.p_h.t + p.p_h.s + 7) as f64 * 2f64.powi(-128),
             4096,
         )?;
-        let config = custom_udr_grind_config_bits(p.p_f.t + p.p_f.s, 1, 4, Some(p.lambda as usize));
-        config.validate().map_err(error)?;
-        let flock = AtomicPlan::udr(&config, p.lambda).map_err(error)?;
+        let ood = p.ligerito.ood_bits().map(|bits| {
+            let work = (f64::from(p.lambda) - bits).ceil().max(0.) as u32;
+            if work > 24 { return Err(error("Round-0 exceeds the 24-bit derived cap")); }
+            blocks.push(ChallengeBudget {
+                label: "step0:ood-draw".into(), raw_error: 2f64.powf(-bits),
+                grinding_bits: work, multiplicity_bound: 1,
+            });
+            Ok(OodRoundParams { grinding_bits: work })
+        }).transpose()?;
+        let flock = AtomicPlan::resolve(p.ligerito.security(), p.lambda).map_err(error)?;
         for b in &flock.blocks {
             blocks.push(ChallengeBudget {
                 label: format!("flock/{}", b.label),
@@ -96,6 +104,7 @@ impl Sha256EcdsaSecurity {
             inner,
             forest,
             flock,
+            ood,
         })
     }
 }

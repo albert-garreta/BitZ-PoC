@@ -1,14 +1,28 @@
-# Unified benchmark output schema (`schema=f2z/1`)
+# Unified benchmark output schemas
+
+Production Ligerito records use `schema=f2z/2` and require `ligerito_hex`,
+the hexadecimal encoding of the complete `LIGERITO_CONFIG` JSON identity.
+This keeps spaces inside JSON strings safe in key=value records. The
+unchanged MultiSwap/historical stream retains `f2z/1`; do not combine it
+with new production records. See [the coverage matrix](ligerito-coverage.md).
+`f2z-cli/2` and `f2z-cli-mul/2` also require `ligerito_hex`.
+SHA+ECDSA uses nested metadata in `f2z/sha256-ecdsa/v2`.
+
+Early Round-0 work is included once in end-to-end proving/verification.
+The existing common phase schema places it in the residual because it is
+outside the Step-2 through Step-5 scopes. Detailed profiling exposes
+`step0:ood_prove`, `step0:ood_verify` and `mc:ood`; do not add these nested
+scopes to an already inclusive total.
+
 
 One accounting model, one printer, one machine-readable line across the
 protocol benches. The shared implementation lives in `benches/common/mod.rs`;
 the per-step umbrella profiler scopes (`step2:*` … `step5:*`) live in the
 crate's protocol prove/verify functions.
 
-**Status: v1, provisional.** The key names below feed the paper's Experiments
+**Historical v1 field taxonomy (retained in v2).** The key names below feed the paper's Experiments
 tables (`paper/main.tex` §Experiments, `paper/multiswap-table.tex`), so they
-are versioned: any rename bumps `schema=` and this file. They have not yet
-received explicit user sign-off — settle them before wiring tables to them.
+are versioned: any rename bumps `schema=` and this file. Version-2 production imports additionally validate the Ligerito identity.
 
 ## Timing semantics
 
@@ -64,7 +78,7 @@ no free text. Common keys in fixed order; bench-specific keys sit between
 `shape=` and `lambda=`.
 
 ```
-RESULT schema=f2z/1 bench=<multiswap|sha256|u32_mul|pcs|...> shape=<token>
+RESULT schema=f2z/2 ligerito_hex=<hex-json> bench=<multiswap|sha256|u32_mul|pcs|...> shape=<token>
   [bench-specific keys]
   lambda=<bits|na> lambda_achieved=<bits|na> lambda_bind=<term|na>
   threads=<n> reps=<n> warmups=1 seed=<0x…|na>
@@ -181,7 +195,7 @@ unless `OBLONG_PROFILE=1` is set.
   `proof_nonlig_bytes + proof_lig_bytes = proof_bytes` (host-codec framing
   counts as non-Ligerito). Renaming any key bumps the schema tag.
   The CLI's `--mul <e>` mode (the u32 × u32 → u64 SNARK, same witnesses as
-  the `u32_mul` bench) ends with `RESULT schema=f2z-cli-mul/1`, parsed by
+  the `u32_mul` bench) ends with `RESULT schema=f2z-cli-mul/2`, parsed by
   `--mul-sweep` into `paper/u32-mul-table.tex`. Keys: `e multiplications n
   t s W chunks profile lambda lambda_achieved lambda_bind lig_target_bits
   q_lo_log2 q_bits lig_log_inv_rate lig_initial_k lig_regime lig_hash threads

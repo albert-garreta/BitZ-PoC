@@ -28,6 +28,7 @@ flock-core = { git = "https://github.com/albert-garreta/flock-mod.git", rev = "e
 # The host proof stream carries flock's serde `LigeritoProof` as a
 # length-prefixed bincode blob (bincode 1.3, matching flock's own pin).
 bincode = "1.3"
+serde_json = { version = "1", features = ["float_roundtrip"] }
 serde = { version = "1", features = ["derive"] }
 # Backend-independent SHA-256/F2Z circuit synthesis, copied into this
 # workspace so fresh checkouts do not require a sibling repository.
@@ -85,7 +86,6 @@ tracing-subscriber = { version = "0.3.18", optional = true }
 
 [dev-dependencies]
 libc = "0.2"
-serde_json = { version = "1", features = ["float_roundtrip"] }
 p256 = { version = "0.13.2", features = ["ecdsa"] }
 sha2 = "0.10"
 
@@ -383,3 +383,8 @@ debug = 2
 name = "hybrid-u32-sha256"
 path = "src/bin/hybrid_u32_sha256.rs"
 required-features = ["hybrid"]
+
+[[bench]]
+name = "ligerito_bounds"
+harness = false
+required-features = ["ecdsa", "hybrid", "bench-internals"]

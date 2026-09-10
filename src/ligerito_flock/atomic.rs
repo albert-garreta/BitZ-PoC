@@ -1,4 +1,4 @@
-//! Atomic challenge guards for the pinned, zero-OOD Flock schedule.
+//! Atomic challenge guards for the pinned Flock schedule (Johnson+OOD or UDR).
 //!
 //! A native PoW starts a block. Otherwise the first draw after an observation
 //! starts one. Consecutive draws (including query retries and alpha) share it.
@@ -19,10 +19,8 @@ pub(crate) struct AtomicPlan {
 }
 
 impl AtomicPlan {
-    pub fn udr(config: &ligerito::LigeritoSecurityConfig, target: u32) -> Result<Self, String> {
-        if config.levels.iter().any(|l| l.ood_samples != 0) {
-            return Err("atomic schedule requires zero OOD samples".into());
-        }
+    pub fn resolve(config: &ligerito::LigeritoSecurityConfig, target: u32) -> Result<Self, String> {
+        config.validate()?;
         let mut blocks: Vec<AtomicBlock> = Vec::new();
         let gf_error = 2f64.powi(-128);
         for (level, params) in config.levels.iter().enumerate() {
@@ -48,6 +46,37 @@ impl AtomicPlan {
                         raw_error: error,
                         bits: 0,
                     });
+                }
+            }
+            // The next root is observed after these folds, before this level's
+            // queries. Each OOD evaluation/introduction is an observation. Its
+            // beta and the following sample's coordinates have no observation
+            // between them and therefore share one uninterrupted block.
+            if let Some(next) = config.levels.get(level + 1) {
+                if next.ood_samples > 0 {
+                    let mut single = next.clone();
+                    single.ood_samples = 1;
+                    let collision = 2f64.powf(-single.paper_predicted_ood_bits().ok_or("OOD without a Johnson bound")?);
+                    for sample in 0..next.ood_samples {
+                        if sample == 0 {
+                            blocks.push(AtomicBlock {
+                                label: format!("ood/{}/{sample}", level + 1),
+                                native_bits: None,
+                                raw_error: collision,
+                                bits: 0,
+                            });
+                        } else {
+                            let block = blocks.last_mut().ok_or("missing OOD beta block")?;
+                            block.raw_error += collision;
+                            block.label.push_str(&format!("+ood/{}/{sample}", level + 1));
+                        }
+                        blocks.push(AtomicBlock {
+                            label: format!("ood-beta/{}/{sample}", level + 1),
+                            native_bits: None,
+                            raw_error: gf_error,
+                            bits: 0,
+                        });
+                    }
                 }
             }
             let alpha_vars = params.queries.next_power_of_two().ilog2();

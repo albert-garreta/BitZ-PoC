@@ -1,6 +1,5 @@
 use super::{Corpus, Timing, Workload};
 use f2z::{
-    ligerito_flock::custom_johnson_config_bits,
     piop::spartan::{
         Lambda100, PreparedU32MulRelation, PreparedU64MulRelation, PreparedU128MulRelation,
         U32MulLayout, U32MulWitness, U64MulLayout, U64MulWitness, U128MulLayout, U128MulWitness,
@@ -30,23 +29,16 @@ impl Context {
             Workload::U32 => {
                 let relation = PreparedU32MulRelation::new_with_profile_and_ligerito::<Lambda100>(
                     U32MulLayout::new(n).unwrap(),
-                    U32MulLigerito::CustomJohnson {
-                        log_inv_rate: 3,
-                        initial_k: 4,
-                    },
+                    super::common::ligerito_selection(100),
                 )
                 .expect("u32 Johnson relation");
-                assert!(
-                    relation.security().ood.is_some(),
-                    "Johnson requires Round-0 OOD"
-                );
                 Relation::U32(relation)
             }
             Workload::U64 => {
-                Relation::U64(PreparedU64MulRelation::new(U64MulLayout::new(n).unwrap()).unwrap())
+                Relation::U64(PreparedU64MulRelation::new_with_profile_and_ligerito::<Lambda100>(U64MulLayout::new(n).unwrap(), super::common::ligerito_selection(100)).unwrap())
             }
             Workload::U128 => Relation::U128(
-                PreparedU128MulRelation::new(U128MulLayout::new(n).unwrap()).unwrap(),
+                PreparedU128MulRelation::new_with_profile_and_ligerito::<Lambda100>(U128MulLayout::new(n).unwrap(), super::common::ligerito_selection(100)).unwrap(),
             ),
         };
         Self { corpus, relation }
@@ -56,24 +48,7 @@ impl Context {
         if let Relation::U32(relation) = &self.relation {
             let security = relation.security();
             let params = relation.params();
-            let U32MulLigerito::CustomJohnson {
-                log_inv_rate,
-                initial_k,
-            } = relation.ligerito()
-            else {
-                panic!("u32 comparison requires Johnson Ligerito");
-            };
-            // Use the same validated derivation as the prepared relation to
-            // report every level's queries, OOD samples, and grinding.
-            let bit_log = params.t + params.s + params.word_bits.trailing_zeros() as usize;
-            let mut ligerito = custom_johnson_config_bits(
-                bit_log,
-                log_inv_rate,
-                initial_k,
-                Some(security.ligerito_target_bits),
-            );
-            ligerito.hash = "blake3".into();
-            ligerito.validate().expect("u32 Johnson security config");
+            let ligerito = relation.ligerito_configuration();
             let terms: Vec<_> = security
                 .accounting
                 .terms
@@ -87,16 +62,21 @@ impl Context {
                 .collect();
             config["relation"] = json!("x*y = z + 2^32*w; four committed 32-bit limbs");
             config["security_scope"] = json!("round-by-round-economic");
-            config["ligerito_regime"] = json!("johnson");
+            config["ligerito_regime"] = json!(if security.ood.is_some() { "johnson" } else { "udr" });
             config["ood_present"] = json!(security.ood.is_some());
             config["modeled_min_bits"] = json!(security.accounting.achieved_bits());
             config["security_terms"] = json!(terms);
             config["projection_prime_min"] = json!(security.projection_min.to_string());
             config["projection_prime_max"] = json!(security.projection_max.to_string());
             config["ood_grinding_bits"] =
-                json!(security.ood.expect("Johnson Round-0 OOD").grinding_bits);
+                json!(security.ood.map(|p| p.grinding_bits));
             config["geometry"] = json!({"t":params.t, "s":params.s, "word_bits":params.word_bits});
-            config["ligerito"] = json!(ligerito);
+            config["ligerito"] = super::common::ligerito_report(ligerito, security.ood);
+        }
+        match &self.relation {
+            Relation::U64(p) => config["ligerito"] = super::common::ligerito_report(p.ligerito_configuration(), p.security().ood),
+            Relation::U128(p) => config["ligerito"] = super::common::ligerito_report(p.ligerito_configuration(), p.security().ood),
+            _ => {}
         }
         config
     }

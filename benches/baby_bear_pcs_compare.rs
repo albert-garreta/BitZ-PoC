@@ -26,7 +26,6 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use baby_bear_pcs_compare::whir::{self, SecuritySummary, WhirAdapterError, WhirBackend};
 use crypto_primitives::FromWithConfig;
 use f2z::ext_proj::ProjArith;
-use f2z::ligerito_flock::sha_lig_configs;
 use f2z::pcs::{FQ_MOD, ProjectCanonicalU128};
 use f2z::piop::spartan::baby_bear_f2z::{
     PreparedBabyBearTerminalF2zOpening, baby_bear_terminal_claim_f2z_proof_bytes,
@@ -1092,10 +1091,12 @@ fn finish_profile() -> Vec<ProfileInterval> {
 }
 
 fn f2z_security(exponent: usize) -> Result<Value, Box<dyn Error>> {
-    let (config, _) = sha_lig_configs(exponent)?;
+    let resolved = common::ligerito_selection(100).resolve(exponent, 100)?;
+    let config = resolved.prover();
     let total_query_openings = config.queries.iter().sum::<usize>();
     Ok(json!({
-        "profile": "fixed-q Johnson/Ligerito",
+        "profile": "fixed-q F2Z/Ligerito",
+        "ligerito": common::ligerito_report(&resolved, resolved.round0(100)?),
         "target_bits": 100,
         "evaluation_modulus": FQ_MOD.to_string(),
         "evaluation_modulus_bits": 100,
@@ -1173,7 +1174,7 @@ fn run_f2z_series(
 ) -> Result<CellOutcome, Box<dyn Error>> {
     let setup_started = Instant::now();
     let layout = *witness.layout();
-    let preflight_hint = commit_baby_bear_mul_witness(&layout, witness.f2z_bit_rows())?;
+    let preflight_hint = f2z::piop::spartan::baby_bear_f2z::commit_baby_bear_mul_witness_with_ligerito(&layout, witness.f2z_bit_rows(), common::ligerito_selection(100))?;
     let preflight_commitment = preflight_hint.commitment.clone();
     drop(preflight_hint);
     // Flock's prover-data drop returns its largest codeword to a process-global
@@ -1181,7 +1182,7 @@ fn run_f2z_series(
     flock_core::scratch::clear();
     let matrices = prepare_baby_bear_mul_relation(layout, &spartan_f2z_field_config())?;
     let prepared: PreparedBabyBearTerminalF2zOpening =
-        prepare_baby_bear_terminal_f2z_opening(&matrices, &layout, &preflight_commitment)?;
+        f2z::piop::spartan::baby_bear_f2z::prepare_baby_bear_terminal_f2z_opening_with_ligerito(&matrices, &layout, &preflight_commitment, common::ligerito_selection(100))?;
     drop((matrices, preflight_commitment));
     let setup_ms = common::elapsed_ms(setup_started);
     let security = f2z_security(exponent)?;

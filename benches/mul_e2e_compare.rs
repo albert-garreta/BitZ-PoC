@@ -1053,3 +1053,37 @@ mod witness_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod ligerito_isolation_tests {
+    use super::*;
+
+    // Separate processes avoid racing other tests over process-global settings.
+    #[test]
+    fn configuration_probe() {
+        if std::env::var_os("F2Z_TEST_CONFIGURATION_PROBE").is_none() { return; }
+        let corpus=Arc::new(Corpus::new(Workload::U32,15,7));
+        let f2z=f2z_backend::Context::setup(Arc::clone(&corpus)).config();
+        let small=Arc::new(edge_corpus(Workload::U32));
+        let binius=binius::Context::setup(Arc::clone(&small)).config();
+        let fri=plonky3::Context::setup(Arc::clone(&small)).config();
+        let whir=plonky3_whir::Context::setup_with_params(small,common::whir_tuning::Params::default()).unwrap().config();
+        println!("CONFIG_PROBE {}",json!({"f2z":f2z,"binius":binius,"fri":fri,"whir":whir}));
+    }
+
+    #[test]
+    fn ligerito_selector_leaves_competing_configurations_unchanged() {
+        let probe=|profile| {
+            let out=std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact","benchmark::ligerito_isolation_tests::configuration_probe","--nocapture"])
+                .env("F2Z_TEST_CONFIGURATION_PROBE","1").env("F2Z_LIG_PROFILE",profile)
+                .env("RAYON_NUM_THREADS","2").output().unwrap();
+            assert!(out.status.success(),"{}",String::from_utf8_lossy(&out.stderr));
+            let stdout=String::from_utf8(out.stdout).unwrap();
+            serde_json::from_str::<Value>(stdout.lines().find_map(|l|l.strip_prefix("CONFIG_PROBE ")).expect("configuration probe output")).unwrap()
+        };
+        let johnson=probe("custom:3:4"); let udr=probe("udrg:3:4");
+        assert_ne!(johnson["f2z"]["ligerito"]["configuration_fingerprint"],udr["f2z"]["ligerito"]["configuration_fingerprint"]);
+        for backend in ["binius","fri","whir"] { assert_eq!(johnson[backend],udr[backend],"{backend}"); }
+    }
+}

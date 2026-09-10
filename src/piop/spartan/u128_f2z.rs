@@ -29,7 +29,7 @@ use crate::{
     ligerito_flock::{
         FlockCommitHint, FlockRsError, IntEvalRsLigModQProof, ModQOpeningKind,
         commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito_with_weight_chunks,
-        validated_udr_lig_configs_for_target,
+
         verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime,
     },
     pcs::{Fq, ProjectCanonicalU128},
@@ -757,6 +757,7 @@ pub struct PreparedU128MulRelation {
     skeleton: super::ConstraintMatricesSkeleton<SpartanF2zField, bool>,
     layout: U128MulLayout,
     security: IopSecurityParams,
+    ligerito_configuration: crate::ligerito_flock::ResolvedLigerito,
     ligerito_pc: LigProverConfig,
     ligerito_vc: LigVerifierConfig,
 }
@@ -772,24 +773,31 @@ impl PreparedU128MulRelation {
     pub fn new_with_profile<P: IopSecurityProfile>(
         layout: U128MulLayout,
     ) -> Result<Self, U128MulSpartanF2zError> {
+        Self::new_with_profile_and_ligerito::<P>(layout, crate::ligerito_flock::LigeritoSelection::for_target(P::LIGERITO_TARGET_BITS))
+    }
+
+    pub fn new_with_profile_and_ligerito<P: IopSecurityProfile>(
+        layout: U128MulLayout,
+        selection: crate::ligerito_flock::LigeritoSelection,
+    ) -> Result<Self, U128MulSpartanF2zError> {
         validate_layout_geometry(&layout)?;
         let params = layout.f2z_params();
         let row_vars = layout
             .multiplications()
             .next_power_of_two()
             .trailing_zeros() as usize;
-        let security = P::instantiate(&u128_mul_instance_facts(&params, row_vars))?;
+        let mut security = P::instantiate(&u128_mul_instance_facts(&params, row_vars))?;
         if security.projection_full_width || security.reduction.is_some() {
             return Err(U128MulSpartanF2zError::UnsupportedProfile);
         }
         if layout.gate_vars() < MIN_PRODUCTION_GATE_VARS {
             return Err(U128MulSpartanF2zError::UnauditedF2zParameters);
         }
-        let (ligerito_pc, ligerito_vc) = validated_udr_lig_configs_for_target(
-            packed_variables(&params)?,
-            security.ligerito_target_bits,
-        )
-        .map_err(U128MulSpartanF2zError::LigeritoConfig)?;
+        let ligerito_configuration = selection.resolve(packed_variables(&params)?, security.ligerito_target_bits)
+            .map_err(U128MulSpartanF2zError::LigeritoConfig)?;
+        let ligerito_pc = ligerito_configuration.prover().clone();
+        let ligerito_vc = ligerito_configuration.verifier().clone();
+        security.adopt_ood_round(ligerito_configuration.ood_bits())?;
         validate_config_pair(&params, &ligerito_pc, &ligerito_vc)?;
         let raw = u128_mul_constraint_matrices(&layout)?;
         let skeleton = super::ConstraintMatricesSkeleton::new(raw).map_err(SpartanError::from)?;
@@ -797,9 +805,14 @@ impl PreparedU128MulRelation {
             skeleton,
             layout,
             security,
+            ligerito_configuration,
             ligerito_pc,
             ligerito_vc,
         })
+    }
+
+    pub fn ligerito_configuration(&self) -> &crate::ligerito_flock::ResolvedLigerito {
+        &self.ligerito_configuration
     }
 
     /// Statement-bound layout.
@@ -994,6 +1007,8 @@ pub fn prove_u128_mul<T: Transcript + Send>(
 
     let binding = assignment_binding(layout, &hint.commitment, security)?;
     absorb_spartan_message(transcript, b"u128-mul-statement", &binding);
+    prepared.ligerito_configuration.bind(transcript);
+    let ood = crate::ligerito_flock::bind_prover_ood(transcript, hint, security.ood);
 
     // Paper §2.1 Step 2: pre-draw grinding, prime sample, projection.
     let step2_scope = crate::utils::prof::scope("step2:project_prove");
@@ -1077,7 +1092,7 @@ pub fn prove_u128_mul<T: Transcript + Send>(
             q_bits,
             f2z_generator(),
             security.forest_round_grinding_bits,
-            security.ood,
+            ood,
             pc,
         )
         .map_err(U128MulSpartanF2zError::F2z)?
@@ -1110,6 +1125,10 @@ pub fn verify_u128_mul<T: Transcript + Send>(
 
     let binding = assignment_binding(layout, commitment, security)?;
     absorb_spartan_message(transcript, b"u128-mul-statement", &binding);
+    prepared.ligerito_configuration.bind(transcript);
+    let ood = crate::ligerito_flock::bind_verifier_ood(
+        transcript, packed_variables(&params)?, security.ood, proof.f2z.ood.as_ref(),
+    ).map_err(U128MulSpartanF2zError::F2z)?;
 
     let step2_scope = crate::utils::prof::scope("step2:project_verify");
     check_boundary::<InitialGrinding, _>(
@@ -1186,7 +1205,7 @@ pub fn verify_u128_mul<T: Transcript + Send>(
         q,
         q_bits,
         security.forest_round_grinding_bits,
-        security.ood,
+        ood,
         vc,
     )
     .map_err(U128MulSpartanF2zError::F2z)

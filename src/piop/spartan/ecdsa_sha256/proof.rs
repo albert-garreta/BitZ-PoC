@@ -20,7 +20,7 @@ use crate::{
         atomic::{AtomicNonces, AtomicSecurity},
         commit_rs_ligerito_rows,
         prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus_with_security,
-        validate_ligerito_commitment, validated_udr_lig_configs_for_target,
+        validate_ligerito_commitment,
         verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off_with_security,
     },
     pcs::{ModQWeightChunks, ProjectCanonicalU128},
@@ -58,7 +58,7 @@ pub struct Sha256EcdsaProof {
 }
 
 fn configs(p: &PreparedSha256Ecdsa) -> Result<(ProverConfig, VerifierConfig)> {
-    validated_udr_lig_configs_for_target(packed_vars(&p.p_f), p.lambda as usize).map_err(error)
+    Ok((p.ligerito.prover().clone(), p.ligerito.verifier().clone()))
 }
 
 pub fn commit_sha256_ecdsa(
@@ -72,18 +72,17 @@ pub fn commit_sha256_ecdsa(
     Ok(commit_rs_ligerito_rows(&p.p_f, witness.f_rows.clone(), &pc))
 }
 
-fn start<T: Transcript>(
+fn bind_statement<T: Transcript>(
     t: &mut T,
     p: &PreparedSha256Ecdsa,
     statement: &Sha256EcdsaStatement,
     commitment: &Commitment,
     security: &Sha256EcdsaSecurity,
-    nonce: Option<u64>,
-) -> Result<(u128, Config, Vec<F>, u64)> {
+) -> Result<()> {
     if statement.log_compressions as usize != p.log_n {
         return Err(error("statement layout mismatch"));
     }
-    absorb_spartan_message(t, b"protocol", b"f2z/sha256-ecdsa/split-inner/v1");
+    absorb_spartan_message(t, b"protocol", b"f2z/sha256-ecdsa/split-inner/early-ood/v2");
     absorb_spartan_message(t, b"relation", &p.local.digest);
     absorb_spartan_message(t, b"map", &p.map.digest());
     absorb_spartan_message(t, b"statement", &statement.bytes());
@@ -110,6 +109,11 @@ fn start<T: Transcript>(
         b"commitment",
         &bincode::serialize(commitment).map_err(error)?,
     );
+    p.ligerito.bind(t);
+    Ok(())
+}
+
+fn start<T: Transcript>(t: &mut T, p: &PreparedSha256Ecdsa, security: &Sha256EcdsaSecurity, nonce: Option<u64>) -> Result<(u128, Config, Vec<F>, u64)> {
     let nonce = boundary::<InitialGrinding, _>(t, security.initial, nonce)?;
     let q = sample_prime_in_interval(t, 1u128 << 112, (1u128 << 113) - 1).map_err(error)?;
     absorb_spartan_message(t, b"q", &q.to_le_bytes());
@@ -156,7 +160,9 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
     }
     validate_ligerito_commitment(&hint.commitment, &pc).map_err(|e| error(format!("{e:?}")))?;
     let security = p.security()?;
-    let (q, cfg, tau, initial_nonce) = start(t, p, statement, &hint.commitment, &security, None)?;
+    bind_statement(t, p, statement, &hint.commitment, &security)?;
+    let ood = crate::ligerito_flock::bind_prover_ood(t, hint, security.ood);
+    let (q, cfg, tau, initial_nonce) = start(t, p, &security, None)?;
     let reducer = OptimizedSumcheckReducer::new(&cfg).map_err(error)?;
     let projection = Projection::new(p, q, &cfg);
     let (outer, outer_nonces) = {
@@ -242,7 +248,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
             113,
             f2z_generator(),
             security.forest,
-            None,
+            ood,
             &pc,
             Some(&mut atomic),
         )
@@ -269,14 +275,10 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     let (_, vc) = configs(p)?;
     validate_ligerito_commitment(commitment, &vc).map_err(|e| error(format!("{e:?}")))?;
     let security = p.security()?;
-    let (q, cfg, tau, _) = start(
-        t,
-        p,
-        statement,
-        commitment,
-        &security,
-        Some(proof.initial_nonce),
-    )?;
+    bind_statement(t, p, statement, commitment, &security)?;
+    let ood = crate::ligerito_flock::bind_verifier_ood(t, packed_vars(&p.p_f), security.ood, proof.opening.ood.as_ref())
+        .map_err(|e| error(format!("{e:?}")))?;
+    let (q, cfg, tau, _) = start(t, p, &security, Some(proof.initial_nonce))?;
     let rx = proof
         .outer
         .verify_grinded::<OuterGrinding>(
@@ -348,7 +350,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         113,
         f2z_generator(),
         security.forest,
-        None,
+        ood,
         &vc,
         cols.len(),
         |values, width, count| {
