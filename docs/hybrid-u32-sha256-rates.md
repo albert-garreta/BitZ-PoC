@@ -279,3 +279,64 @@ this document supersedes the proof-size conclusion.
   assignment inside `commit_mod32`, so its witgen column is row construction
   only and the rest sits in the prover column. Do not read hybrid's 0.54 ms
   against all-binius's 192.51 ms as a like-for-like ratio.
+
+## 2026-09-10 re-measurement on the merged tree: three schemes, up to 2^22 : 2^14
+
+Run `PerfRuns/2026-09-10T07-05-00Z-hybrid-u32-table/{hybrid,all-binius,all-binius-rerun,binius-ligerito}`
+(worktree `binius-f2z-opener`, commit 1bcb8e9 + master f78dff0; Binius64 fork
+`bc73510`). Apple M5, 24 GB, 8 threads; medians of 11 verified iterations, one
+process per case; peak RSS and swap-outs from an external 0.2 s sampler
+(`peak-rss-and-swap.tsv`). All-Binius at rate 1/8 with the 100-bit FRI query
+target (121 queries); the hybrid is protocol v3 (106-bit opener component);
+`binius-ligerito` is the all-Binius circuit and PIOP with every oracle committed
+at rate 1/8 and opened by the F2Z opener (Round 0, ring switch, Johnson-regime
+Ligerito with grinding), gated at a 100-bit whole-protocol union bound with the
+opener component solved to 105.
+
+| N mul : M SHA | scheme | prover (ms) | verifier (ms) | proof (B) | peak (MiB) | swap-outs | bits |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2^15 : 2^7 | **hybrid v3** (Johnson 1/8 + Round 0) | 47.4 | 3.91 | 109,456 | 166 | 0 | 101.71 |
+|  | all-binius rate 1/8, FRI 100 | 40.3 | 3.07 | 243,152 | 424 | 0 |  |
+|  | binius-ligerito (Binius PIOP + F2Z opener, rate 1/8) | 67.0 | 3.80 | 187,280 | 441 | 0 | 100.56 |
+| 2^17 : 2^9 | **hybrid v3** (Johnson 1/8 + Round 0) | 102.0 | 5.70 | 130,824 | 733 | 0 | 101.66 |
+|  | all-binius rate 1/8, FRI 100 | 110.1 | 5.05 | 283,536 | 1651 | 0 |  |
+|  | binius-ligerito (Binius PIOP + F2Z opener, rate 1/8) | 148.8 | 6.14 | 201,776 | 1767 | 0 | 100.56 |
+| 2^19 : 2^11 | **hybrid v3** (Johnson 1/8 + Round 0) | 299.7 | 9.79 | 162,656 | 2917 | 0 | 101.39 |
+|  | all-binius rate 1/8, FRI 100 | 387.0 | 15.54 | 330,720 | 6382 | 0 |  |
+|  | binius-ligerito (Binius PIOP + F2Z opener, rate 1/8) | 493.7 | 13.81 | 223,792 | 6252 | 0 | 100.34 |
+| 2^20 : 2^12 | **hybrid v3** (Johnson 1/8 + Round 0) | 599.5 | 15.90 | 179,440 | 5773 | 0 | 101.37 |
+|  | all-binius rate 1/8, FRI 100 | 792.9 | 28.91 | 355,664 | 13187 | 0 |  |
+|  | binius-ligerito (Binius PIOP + F2Z opener, rate 1/8) | 1032.6 | 23.68 | 231,600 | 12090 | 0 | 100.34 |
+| 2^21 : 2^13 | **hybrid v3** (Johnson 1/8 + Round 0) | 1061.9 | 27.18 | 195,896 | 11545 | 0 | 101.22 |
+|  | all-binius rate 1/8, FRI 100 | 4194.6† | 364.63† | 383,648 | 17600† | 0 |  |
+|  | binius-ligerito (Binius PIOP + F2Z opener, rate 1/8) | 3236.5† | 83.82† | 247,640 | 16432† | 0 | 100.20 |
+| 2^22 : 2^14 | **hybrid v3** (Johnson 1/8 + Round 0) | 2407.5 | 49.04 | 225,008 | 15045 | 0 | 101.19 |
+|  | all-binius rate 1/8, FRI 100 | stopped by the OS (out of memory) | | | | | |
+|  | binius-ligerito (Binius PIOP + F2Z opener, rate 1/8) | 10721.0† | 215.84† | 256,376 | 16768† | 1,595,327 | 100.20 |
+
+`†` memory-bound: the process exceeded what the 24 GB box keeps resident
+(compressed memory at 2^21 with no swap-outs; 1.6 M swap-outs for
+`binius-ligerito` at 2^22), so the timings are inflated; proof sizes are exact.
+The all-Binius 2^22 : 2^14 case was killed by the OS while paging.
+
+Method notes:
+
+- The all-Binius rows at 2^15–2^20 come from `all-binius-rerun`, a clean pass
+  on the idle machine. The campaign's own all-Binius pass ran directly after
+  the paged `binius-ligerito` 2^22 case and came out 3–34% slower (2^20:
+  1040 ms against 793 ms), a residual-memory-pressure artefact; the hybrid and
+  `binius-ligerito` passes ran on a quiet machine.
+- **all-Binius is 14–22% faster than the 2026-09-09 rows and its proofs about
+  2 KB smaller** because master moved the Binius64 fork from `2b27dae` to
+  `bc73510`. The paper-era executable re-run today reproduces the old numbers
+  exactly (2^17 : 2^9: 130–136 ms, 7.3–8.2 ms, 286,128 B), so the machine is
+  not the cause. The fork rework spans the shift reduction and key collection,
+  the AND reduction (`bitand`), the transparent logup* for integer
+  multiplication, coset-leaf BaseFold Merkle trees, and a shared verifier
+  reduction; the verifier's O(N) wiring evaluation is 2–2.5x faster from 2^19.
+- **hybrid 2^20 : 2^12 is 16% slower than the 2026-09-09 row (599 vs 517 ms)
+  and 2^21 : 2^13 7% faster (1062 vs 1138)**: only `shared_opening_ms` moved
+  (72 → 149 ms and 240 → 154 ms; proof bytes 182,440 → 179,440 and
+  195,232 → 195,896). Master's reworked opener-configuration solver picks
+  different per-shape ladders; the PIOP, GKR and joint-sumcheck phases are
+  within 10% of the earlier run.
