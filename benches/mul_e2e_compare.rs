@@ -8,8 +8,12 @@ mod f2z_backend;
 mod memory;
 #[path = "mul_e2e_compare/mod32.rs"]
 mod mod32;
+#[path = "mul_e2e_compare/mod32_air.rs"]
+mod mod32_air;
 #[path = "mul_e2e_compare/plonky3.rs"]
 mod plonky3;
+#[path = "mul_e2e_compare/plonky3_whir.rs"]
+mod plonky3_whir;
 #[path = "common/trace_capture.rs"]
 mod trace_capture;
 
@@ -33,6 +37,7 @@ const MEDIAN_METRICS: &[&str] = &[
     "pcs_ms",
     "online_prover_ms",
     "witness_to_proof_ms",
+    "post_proof_ms",
     "verify_ms",
     "proof_bytes",
 ];
@@ -69,7 +74,7 @@ impl Workload {
     /// Backends with a native arithmetization of this workload.
     fn supports(self, backend: &str) -> bool {
         match self {
-            Self::U32 => matches!(backend, "f2z" | "binius64" | "plonky3-fri"),
+            Self::U32 => matches!(backend, "f2z" | "binius64" | "plonky3-fri" | "plonky3-whir"),
             Self::U64 | Self::U128 => matches!(backend, "f2z" | "binius64"),
         }
     }
@@ -249,6 +254,7 @@ impl Timing {
         result.add("online_prover", "proving", witness_end, ready);
         result.add("witness", "witness-generation", start, witness_end);
         result.add("verify", "verification", verify_start, end);
+        result.add("post_proof", "proof-accounting", ready, verify_start);
         result
     }
     fn add(&mut self, name: &'static str, tag: &'static str, start: u64, end: u64) {
@@ -288,6 +294,7 @@ impl Timing {
             "witness_to_proof_ms": self.union_ms(|p| p.name=="witness_to_proof"),
             "verify_ms": self.union_ms(|p| p.tag=="verification"),
             "verified_trial_ms": self.union_ms(|p| p.name=="verified_trial"),
+            "post_proof_ms": self.union_ms(|p| p.name=="post_proof"),
             "proof_bytes": self.proof_bytes,
         })
     }
@@ -326,29 +333,49 @@ fn captured<'a>(raw: &'a [CapturedSpan], name: &str, lo: u64, hi: u64) -> &'a Ca
 enum Context {
     F2z(f2z_backend::Context),
     Binius(binius::Context),
-    Plonky3(plonky3::Context),
+    Plonky3Fri(plonky3::Context),
+    Plonky3Whir(plonky3_whir::Context),
 }
 impl Context {
     fn setup(backend: &str, corpus: Arc<Corpus>) -> Self {
         match backend {
             "f2z" => Self::F2z(f2z_backend::Context::setup(corpus)),
             "binius64" => Self::Binius(binius::Context::setup(corpus)),
-            "plonky3-fri" => Self::Plonky3(plonky3::Context::setup(corpus)),
+            "plonky3-fri" => Self::Plonky3Fri(plonky3::Context::setup(corpus)),
             _ => panic!("unknown backend {backend}"),
+        }
+    }
+    fn setup_selected(
+        backend: &str,
+        corpus: Arc<Corpus>,
+        params: Option<common::whir_tuning::Params>,
+    ) -> Self {
+        if backend == "plonky3-whir" {
+            Self::Plonky3Whir(
+                plonky3_whir::Context::setup_with_params(
+                    corpus,
+                    params.expect("selected WHIR params"),
+                )
+                .expect("selected WHIR config remains eligible"),
+            )
+        } else {
+            Self::setup(backend, corpus)
         }
     }
     fn run(&self, capture: &TraceCapture) -> Timing {
         match self {
             Self::F2z(c) => c.run(),
             Self::Binius(c) => c.run(capture),
-            Self::Plonky3(c) => c.run(capture),
+            Self::Plonky3Fri(c) => c.run(capture),
+            Self::Plonky3Whir(c) => c.run(capture),
         }
     }
     fn config(&self) -> Value {
         match self {
             Self::F2z(c) => c.config(),
             Self::Binius(c) => c.config(),
-            Self::Plonky3(c) => c.config(),
+            Self::Plonky3Fri(c) => c.config(),
+            Self::Plonky3Whir(c) => c.config(),
         }
     }
 }
@@ -361,17 +388,10 @@ fn root_seed(workload: Workload) -> u64 {
     }
 }
 
-/// Largest accepted exponent: F2Z commits `2^(n+7)` bits for u32,
-/// `2^(n+8)` for u64, and `2^(n+9)` for u128, so each wider
-/// workload stops one size earlier on a 16 GB machine.
-fn max_exponent(workloads: &[String]) -> usize {
-    if workloads.iter().any(|w| w == "u128") {
-        23
-    } else if workloads.iter().any(|w| w == "u64") {
-        24
-    } else {
-        25
-    }
+/// Representation limit only. Backend domain checks decide eligibility;
+/// available memory is not inferred from a particular benchmark machine.
+fn max_exponent(_workloads: &[String]) -> usize {
+    (usize::BITS as usize).saturating_sub(11)
 }
 
 fn check_backend_support(workloads: &[String], backends: &[String]) {
@@ -433,7 +453,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backends = choices(
         "F2Z_MUL_COMPARE_BACKENDS",
         "f2z binius64 plonky3-fri",
-        &["f2z", "binius64", "plonky3-fri"],
+        &["f2z", "binius64", "plonky3-fri", "plonky3-whir"],
     );
     check_backend_support(&workloads, &backends);
     let shapes = common::shapes(None).unwrap_or_else(|| vec!["15".into()]);
@@ -483,6 +503,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .output()?
         .stdout
         .is_empty();
+    let environment = common::environment::metadata(threads);
+    common::whir_tuning::save(&out.join("environment.json"), &environment)?;
     let mut summary = vec![];
     for workload in workloads {
         let workload = Workload::parse(&workload);
@@ -495,6 +517,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             let corpus = Arc::new(Corpus::new(workload, n, shape_seed));
             for backend in &backends {
+                let whir_params = if backend == "plonky3-whir" {
+                    let degrees: &[usize] = &[2, 5];
+                    let selection = common::whir_tuning::tune(
+                        degrees,
+                        common::whir_tuning::replay()?,
+                        |params| {
+                            plonky3_whir::Context::setup_with_params(Arc::clone(&corpus), params)
+                        },
+                        |context| {
+                            context.run(&capture).metrics()["witness_to_proof_ms"]
+                                .as_f64()
+                                .unwrap()
+                        },
+                        plonky3_whir::Context::security,
+                    );
+                    let path = out.join(format!("whir-{}-{n}.json", workload.slug()));
+                    match selection {
+                        Ok((params, mut record)) => {
+                            record["workload"] = json!(workload.slug());
+                            record["exponent"] = json!(n);
+                            record["corpus_digest"] = json!(corpus.digest);
+                            common::whir_tuning::save(&path, &record)?;
+                            Some(params)
+                        }
+                        Err(reason) => {
+                            eprintln!("WHIR {} 2^{n}: unavailable: {reason}", workload.slug());
+                            let record = json!({"workload":workload.slug(),"backend":backend,
+                                "log_multiplications":n,"status":"ineligible","reason":reason});
+                            common::whir_tuning::save(&path, &record)?;
+                            summary.push(record);
+                            continue;
+                        }
+                    }
+                } else {
+                    None
+                };
                 // Run before constructing the parent's backend context so two large
                 // proving keys/witnesses are never live at once.
                 let memory_sample = if measure_memory {
@@ -502,8 +560,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "{} {backend} 2^{n}: isolated peak-memory pass",
                         workload.slug()
                     );
-                    let sample =
-                        memory::measure(backend, workload, n, shape_seed, threads, &corpus.digest)?;
+                    let sample = memory::measure(
+                        backend,
+                        workload,
+                        n,
+                        shape_seed,
+                        threads,
+                        &corpus.digest,
+                        whir_params,
+                    )?;
                     writeln!(memory_samples, "{}", serde_json::to_string(&sample)?)?;
                     memory_samples.flush()?;
                     eprintln!(
@@ -520,14 +585,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let audit = audit_backend(backend, &corpus);
                 assert_eq!(audit.digest, corpus.digest);
                 let started = std::time::Instant::now();
-                let context = Context::setup(backend, Arc::clone(&corpus));
+                let context = Context::setup_selected(backend, Arc::clone(&corpus), whir_params);
                 let setup_ms = started.elapsed().as_secs_f64() * 1e3;
                 let mut config = context.config();
                 config["proof_size_encoding"] = json!(match backend.as_str() {
                     "f2z" =>
                         "commitment root + fixed-width PIOP payload/nonces + canonical F2Z opening",
                     "binius64" => "native transcript bytes (includes commitment)",
-                    "plonky3-fri" => "postcard proof bytes (includes commitment)",
+                    "plonky3-fri" | "plonky3-whir" => "postcard proof bytes (includes commitment)",
                     _ => unreachable!(),
                 });
                 let mut measured = vec![];
@@ -550,8 +615,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "benchmark":{"suite":"native-mul","name":"mul_e2e_compare","algorithm":workload.algorithm(),"label":format!("{} 2^{n} {backend}",workload.slug()),"implementation":backend,"git_rev":rev,"git_dirty":dirty,"build_profile":"bench"},
                             "trial":trial_json,"status":"ok","trace_complete":true,
                             "clock":{"id":run,"kind":"monotonic","unit":"ns","source":"std::time::Instant"},
-                            "environment":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH,"threads":threads,"rustflags":std::env::var("RUSTFLAGS").ok()},
-                            "parameters":{"input":{"multiplications":1usize<<n,"log_multiplications":n,"witness_digest_blake3":corpus.digest,"seed":shape_seed},"security":config,"setup_ms":setup_ms,"boundary":"regenerate native witness through full proof verification; corpus sampling and public setup excluded"},
+                            "environment":environment,
+                            "parameters":{"input":{"multiplications":1usize<<n,"log_multiplications":n,"witness_digest_blake3":corpus.digest,"seed":shape_seed},"security":config,"setup_ms":setup_ms,"primary_metric":"witness_to_proof_ms","boundary":"start native witness generation through complete PCS proof; verification, serialization, and reusable setup reported separately"},
                             "validation":{"proof_verified":true,"reference_outputs_checked":true,"native_witness_matches_canonical":true},"witness_audit":{"generation_ms_excluded":audit.generation_ms,"native_representation":audit.representation,"quotient_reconstructed":audit.quotient_reconstructed,"witness_digest_blake3":audit.digest},"metrics":metrics,
                         })
                     )?;
@@ -844,7 +909,7 @@ fn audit_backend(backend: &str, corpus: &Corpus) -> WitnessAudit {
     match backend {
         "f2z" => f2z_backend::audit(corpus),
         "binius64" => binius::audit(corpus),
-        "plonky3-fri" => plonky3::audit(corpus),
+        "plonky3-fri" | "plonky3-whir" => mod32_air::audit(corpus),
         _ => unreachable!(),
     }
 }
@@ -861,7 +926,7 @@ pub(crate) fn witness_main() -> Result<(), Box<dyn std::error::Error>> {
     let backends = choices(
         "F2Z_MUL_COMPARE_BACKENDS",
         "f2z binius64 plonky3-fri",
-        &["f2z", "binius64", "plonky3-fri"],
+        &["f2z", "binius64", "plonky3-fri", "plonky3-whir"],
     );
     check_backend_support(&workloads, &backends);
     let shapes = common::shapes(None).unwrap_or_else(|| vec!["10".into()]);
@@ -959,7 +1024,7 @@ mod witness_tests {
     fn all_native_witnesses_recover_the_same_assignment() {
         for workload in [Workload::U32, Workload::U64, Workload::U128] {
             let corpus = edge_corpus(workload);
-            for backend in ["f2z", "binius64", "plonky3-fri"] {
+            for backend in ["f2z", "binius64", "plonky3-fri", "plonky3-whir"] {
                 if !workload.supports(backend) {
                     continue;
                 }

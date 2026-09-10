@@ -30,6 +30,7 @@ SCHEMES = [
     ("binius64@1", "Binius64~\\cite{binius64}, rate $1/2$"),
     ("binius64@3", "Binius64~\\cite{binius64}, rate $1/8$"),
     ("plonky3-fri", "Plonky3~\\cite{plonky} (FRI)"),
+    ("plonky3-whir", "Plonky3~\\cite{plonky} (WHIR)"),
     ("limber", "Limber~\\cite{limber} (Brakedown)"),
 ]
 BINIUS_QUERIES = {1: 241, 2: 148, 3: 121, 4: 110}  # 100-bit FRI query counts per log inverse rate
@@ -44,7 +45,7 @@ def scheme_key(r: dict) -> str:
 
 def scheme_name(key: str) -> str:
     """Short scheme name for caption sentences."""
-    names = {"f2z": "\\ftwoz", "plonky3-fri": "Plonky3", "limber": "Limber"}
+    names = {"f2z": "\\ftwoz", "plonky3-fri": "Plonky3-FRI", "plonky3-whir": "Plonky3-WHIR", "limber": "Limber"}
     if key in names:
         return names[key]
     return "Binius64 at rate $1/%d$" % (1 << int(key.split("@")[1]))
@@ -188,6 +189,7 @@ def main() -> int:
     samples = sorted({r["samples"] for r in rows})
     run_list = " ".join(str(d) for d in args.run_dirs)
     cpu = rows[0]["provenance"]["machine"]["cpu"]
+    thread_counts = ", ".join(map(str, sorted({r["threads"] for r in rows})))
     machine_text = cpu.replace("_", r"\_")
     commit = ", ".join(sorted({r["provenance"]["git_revision"] + ("+dirty" if r["provenance"]["git_dirty"] else "") for r in rows}))
     date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
@@ -309,6 +311,7 @@ def main() -> int:
         "f2z": "\\ftwoz\\ (Spartan over a transcript-sampled prime with the \\ftwoz\\ opening, $\\lambda = 100$)",
         "binius64": binius_note,
         "plonky3-fri": "Plonky3 (Goldilocks AIR, degree-$5$ extension, FRI at rate $1/8$, $100$ queries, proven round-by-round target $100$ bits)",
+        "plonky3-whir": "Plonky3 (shared Goldilocks mod32 AIR, multilinear zerocheck/sumcheck, WHIR with per-run tuning and at least $100$ bits under the recorded Johnson accounting)",
         "limber": "Limber (one independent integer-mod R1CS row per multiplication, IntEval/Brakedown, native approximately $114$-bit policy)",
     }
     if args.workload == "u32-mod32":
@@ -329,7 +332,7 @@ def main() -> int:
       + "of a separate child process proving and verifying once ($1$\\,GB $= 2^{30}$ bytes). "
       + "".join(f"{scheme_name(slug)} was not run at " + ", ".join(f"$2^{{{e}}}$" for e in gone) + ". " for slug, gone in missing.items())
       + "".join(wall_sentence(e, slugs) for e, slugs in sorted(walls.items()))
-      + f"{machine_text}, $8$ threads; medians of {samples[0]} runs after one warm-up.}}")
+      + f"{machine_text}; threads per run: {thread_counts}; medians of {samples[0]} runs after one warm-up.}}")
     w("  \\label{tab:native-mul" + ("" if args.workload == "u32-mod32" else "-" + args.workload) + "}")
     w("\\end{table}")
     args.out.parent.mkdir(parents=True, exist_ok=True)

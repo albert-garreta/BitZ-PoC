@@ -85,7 +85,7 @@ tracing-subscriber = { version = "0.3.18", optional = true }
 
 [dev-dependencies]
 libc = "0.2"
-serde_json = "1"
+serde_json = { version = "1", features = ["float_roundtrip"] }
 p256 = { version = "0.13.2", features = ["ecdsa"] }
 sha2 = "0.10"
 
@@ -238,6 +238,11 @@ required-features = ["bench-internals", "native-mul-compare"]
 name = "native_mul_compare"
 path = "tests/native_mul_compare.rs"
 required-features = ["bench-internals", "native-mul-compare"]
+
+[[test]]
+name = "native_sha256_compare"
+path = "tests/native_sha256_compare.rs"
+required-features = ["bench-internals", "native-sha256-compare"]
 
 [[bench]]
 name = "sha256_product_layout"

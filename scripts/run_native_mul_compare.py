@@ -39,11 +39,14 @@ def choices(env, name, default, allowed):
 def configuration(env):
     workloads = choices(env, "F2Z_MUL_COMPARE_WORKLOADS", "u32-mod32", ("u32-mod32", "u64", "u128"))
     backends = choices(env, "F2Z_MUL_COMPARE_BACKENDS", "f2z binius64 plonky3-fri limber",
-                       ("f2z", "binius64", "plonky3-fri", "limber"))
+                       ("f2z", "binius64", "plonky3-fri", "plonky3-whir", "limber"))
     if any(w != "u32-mod32" for w in workloads) and any(b not in ("f2z", "binius64") for b in backends):
         raise ValueError("u64/u128 support only f2z and binius64; run the mod32 comparison separately")
     exponents = [int(value) for value in env.get("F2Z_BENCH_SHAPES", "15").replace(",", " ").split()]
-    maximum = min({"u32-mod32": 25, "u64": 24, "u128": 23}[w] for w in workloads)
+    # Match the Rust address-space bound, not a particular machine's RAM.
+    maximum = sys.maxsize.bit_length() + 1 - 11
+    if "plonky3-fri" in backends:
+        maximum = min(maximum, 29)  # Goldilocks two-adicity 32, FRI log blowup 3.
     if "limber" in backends:
         maximum = min(maximum, 24)
     minimum = 15 if "f2z" in backends else 4
@@ -53,8 +56,8 @@ def configuration(env):
     threads = int(env.get("RAYON_NUM_THREADS", "8"))
     seed_text = env.get("F2Z_BENCH_SEED", str(DEFAULT_SEED))
     seed = int(seed_text, 16 if seed_text.lower().startswith("0x") else 10)
-    if reps < 1 or threads != 8 or not 0 <= seed < 1 << 64:
-        raise ValueError("repetitions must be positive, threads must be 8, and seed must fit u64")
+    if reps < 1 or threads < 1 or not 0 <= seed < 1 << 64:
+        raise ValueError("repetitions must be positive, threads must be positive, and seed must fit u64")
     memory = env.get("F2Z_MUL_COMPARE_MEMORY", "1")
     if memory not in ("0", "1"):
         raise ValueError("F2Z_MUL_COMPARE_MEMORY must be 0 or 1")
@@ -90,7 +93,7 @@ def campaign_environment(environment, config):
         if key == "F2Z_BINIUS_LOG_INV_RATE" and "u32-mod32" not in config["workloads"]:
             continue
         env.pop(key, None)
-    env.update(RUSTFLAGS=BUILD["rustflags"], RAYON_NUM_THREADS="8",
+    env.update(RUSTFLAGS=BUILD["rustflags"], RAYON_NUM_THREADS=str(config["threads"]),
                F2Z_BENCH_REPS=str(config["reps"]),
                F2Z_BENCH_SHAPES=" ".join(map(str, config["exponents"])),
                F2Z_MUL_COMPARE_MEMORY=str(int(config["memory"])))
@@ -132,7 +135,7 @@ def machine_info():
                 architecture=platform.machine(), cpu=cpu, logical_cpus=os.cpu_count())
 
 
-def provenance(repo, machine, profile):
+def provenance(repo, machine, profile, threads):
     def git(*args):
         return subprocess.check_output(["git", *args], cwd=repo)
     revision = git("rev-parse", "HEAD").decode().strip()
@@ -151,7 +154,7 @@ def provenance(repo, machine, profile):
     return dict(repository=str(repo), git_revision=revision, git_dirty=dirty,
                 source_sha256=digest.hexdigest(),
                 cargo_lock_sha256=hashlib.sha256((repo / "Cargo.lock").read_bytes()).hexdigest(),
-                build=BUILD | {"profile": profile}, machine=machine)
+                build=BUILD | {"profile": profile, "threads": threads}, machine=machine)
 
 
 def structured_lines(output, prefix):
@@ -162,7 +165,7 @@ def validate_sample(row, config, exponent, backend, workload):
     if (row.get("schema") != SAMPLE_SCHEMA or row.get("proof_verified") is not True
             or row.get("backend") != backend or row.get("workload") != workload
             or row.get("log_multiplications") != exponent or row.get("multiplications") != 1 << exponent
-            or row.get("threads") != 8 or row.get("measurement_policy") != POLICY):
+            or row.get("threads") != config["threads"] or row.get("measurement_policy") != POLICY):
         raise ValueError("sample does not match the requested independent verified workload")
     digest = row.get("corpus_digest", "")
     if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
@@ -196,6 +199,18 @@ def validate_sample(row, config, exponent, backend, workload):
             raise ValueError("Plonky3 must use the agreed Goldilocks AIR and FRI configuration")
         if finite_number(settings.get("proven_bits"), "FRI proven_bits") < 100:
             raise ValueError("Plonky3-FRI security report is below 100 bits")
+    if backend == "plonky3-whir":
+        expected = dict(pcs="WHIR", base_field="Goldilocks", encoding="Reed-Solomon",
+                        opening_claim="prescribed multilinear evaluation")
+        security = settings.get("security", {})
+        if (any(settings.get(key) != value for key, value in expected.items())
+                or settings.get("params", {}).get("extension_degree") not in (2, 5)
+                or security.get("model") != "native-air-whir-johnson-union/v1"
+                or security.get("assumption") != "JohnsonBound" or security.get("target_bits") != 100
+                or security.get("air") != dict(log_height=exponent, width=137, constraints=139, constraint_degree=2)):
+            raise ValueError("WHIR must report Johnson accounting for the shared mod32 AIR")
+        if finite_number(security.get("achieved_bits"), "WHIR achieved_bits") < 100:
+            raise ValueError("Plonky3-WHIR security report is below 100 bits")
     if backend == "limber":
         n = 1 << exponent
         expected = dict(commitment_backend="brakedown", constraints=n, padded_constraints=n,
@@ -229,14 +244,16 @@ def summarize_case(samples, memory, config, backend, workload, exponent, source)
             raise ValueError("missing or incompatible isolated memory result")
         finite_number(memory.get("peak_rss_bytes"), "peak_rss_bytes", positive=True)
         finite_number(memory.get("proof_bytes", memory.get("metrics", {}).get("proof_bytes")), "memory proof_bytes", positive=True)
-        if backend == "limber" and memory.get("config") != first["config"]:
+        timed_config = {key: value for key, value in first["config"].items() if key != "proof_size_encoding"}
+        memory_config = {key: value for key, value in memory.get("config", {}).items() if key != "proof_size_encoding"}
+        if memory_config != timed_config:
             raise ValueError("memory proof configuration differs from the timed proof")
     metrics = {name: statistics.median(row["metrics"][name] for row in samples[1:]) for name in CORE_METRICS}
-    for name in ("commit_ms", "piop_ms", "opening_ms", "pcs_ms"):
+    for name in ("commit_ms", "piop_ms", "opening_ms", "pcs_ms", "post_proof_ms"):
         if all(name in row["metrics"] for row in samples):
             metrics[name] = statistics.median(row["metrics"][name] for row in samples[1:])
     summary = dict(schema=SUMMARY_SCHEMA, backend=backend, workload=workload, log_multiplications=exponent,
-                   multiplications=1 << exponent, samples=config["reps"], warmups=1, threads=8,
+                   multiplications=1 << exponent, samples=config["reps"], warmups=1, threads=config["threads"],
                    seed=first.get("seed", config["seed"]), corpus_digest=first["corpus_digest"], config=first["config"],
                    setup_ms=first["setup_ms"], medians=metrics, measurement_policy=POLICY, proof_verified=True,
                    peak_rss_bytes=None if memory is None else memory["peak_rss_bytes"], memory=memory, provenance=source)
@@ -256,7 +273,7 @@ def run_native(config, job, environment, machine):
     command = ["cargo", f"+{TOOLCHAIN}", "bench", "--bench", "mul_e2e_compare",
                "--features", "bench-internals,native-mul-compare"]
     run_logged(command, ROOT, env, directory / "cargo-bench.log")
-    source = provenance(ROOT, machine, "bench") | {"command": command}
+    source = provenance(ROOT, machine, "bench", config["threads"]) | {"command": command}
     rows = [json.loads(line) for line in (directory / "samples.jsonl").read_text().splitlines()]
     memories = [json.loads(line) for line in (directory / "memory.jsonl").read_text().splitlines()]
     cases = len(job["workloads"]) * len(job["backends"]) * len(config["exponents"])
@@ -292,7 +309,7 @@ def run_limber(config, environment, machine):
             memory = results[0]
         output = run_logged(command, repo, env, directory / f"log-gates-{exponent}-warm.log")
         samples = structured_lines(output, "LIMBER_MUL_RESULT ")
-        source = provenance(repo, machine, "release") | {"command": command}
+        source = provenance(repo, machine, "release", config["threads"]) | {"command": command}
         summaries.append(summarize_case(samples, memory, config, "limber", "u32-mod32", exponent, source))
         rows.extend(samples)
     write_json(directory / "summary.json", summaries)
@@ -335,7 +352,7 @@ def main():
         planned = jobs(config)
         manifest = dict(schema="native-mul-campaign/v2", status="planned", workloads=config["workloads"],
                         backends=config["backends"], exponents=config["exponents"], repetitions=config["reps"],
-                        warmups=1, measurement_policy=POLICY, jobs=planned, build=BUILD,
+                        warmups=1, measurement_policy=POLICY, jobs=planned, build=BUILD | {"threads": config["threads"]},
                         limber_commands=[limber_command(n) for n in config["exponents"]] if "limber" in config["backends"] else [])
         if args.dry_run:
             print(json.dumps(manifest, indent=2))

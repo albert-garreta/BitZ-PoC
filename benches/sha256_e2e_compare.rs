@@ -6,6 +6,7 @@
 //! scope. Every backend uses its own native arithmetization and witness layout.
 
 mod common;
+use common::whir_tuning;
 #[path = "common/trace_capture.rs"]
 mod trace_capture;
 use trace_capture::{CaptureLayer, CapturedSpan, TraceCapture};
@@ -225,6 +226,7 @@ struct TrialMetrics {
     total_prover_ms: f64,
     witness_to_proof_ms: f64,
     verifier_ms: f64,
+    serialization_ms: Option<f64>,
     proof_bytes: usize,
 }
 
@@ -243,6 +245,10 @@ impl TrialMetrics {
                     || span.short_name == "Witness to proof"
             }),
             verifier_ms: union_ms(spans, |span| span.scope_tag == Some("verification")),
+            serialization_ms: spans
+                .iter()
+                .any(|s| s.scope_tag == Some("serialization"))
+                .then(|| union_ms(spans, |s| s.scope_tag == Some("serialization"))),
             proof_bytes,
         }
     }
@@ -254,6 +260,7 @@ struct BackendAggregate {
     exponent: usize,
     setup_ms: f64,
     config: String,
+    whir_tuning: Option<Value>,
     samples: Vec<TrialMetrics>,
 }
 
@@ -271,6 +278,14 @@ impl BackendAggregate {
             total_prover_ms: med(|m| m.total_prover_ms),
             witness_to_proof_ms: med(|m| m.witness_to_proof_ms),
             verifier_ms: med(|m| m.verifier_ms),
+            serialization_ms: {
+                let samples: Vec<_> = self
+                    .samples
+                    .iter()
+                    .filter_map(|m| m.serialization_ms)
+                    .collect();
+                (!samples.is_empty()).then(|| common::median(&samples))
+            },
             proof_bytes: common::median(
                 &self
                     .samples
@@ -1007,7 +1022,7 @@ struct TraceWriter {
     plonky3_git: String,
     limber_git: String,
     f2z_dirty: bool,
-    cpu: String,
+    environment: Value,
     threads: usize,
     campaign_id: String,
 }
@@ -1022,6 +1037,7 @@ struct RunMetadata<'a> {
     log_inv_rate: Option<usize>,
     query_count: Option<usize>,
     config_label: &'a str,
+    security: Option<Value>,
 }
 
 impl TraceWriter {
@@ -1029,7 +1045,13 @@ impl TraceWriter {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).expect("create trace directory");
         }
-        let output = BufWriter::new(File::create(&path).expect("create canonical trace"));
+        let output = BufWriter::new(
+            fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+                .expect("create fresh canonical trace"),
+        );
         Self {
             output,
             path,
@@ -1038,18 +1060,14 @@ impl TraceWriter {
             plonky3_git: common::locked_git_revision("p3-whir").to_owned(),
             limber_git: common::locked_git_revision("limber").to_owned(),
             f2z_dirty: git_dirty("."),
-            cpu: command_output(
-                "sysctl",
-                &["-n", "machdep.cpu.brand_string"],
-                "Apple Silicon",
-            ),
+            environment: common::environment::metadata(threads),
             threads,
             campaign_id: format!(
                 "sha256-claim-equivalent-{}",
                 SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .expect("system clock")
-                    .as_secs()
+                    .as_nanos()
             ),
         }
     }
@@ -1065,7 +1083,8 @@ impl TraceWriter {
             "canonical run has exactly one root"
         );
         let run_id = format!(
-            "{}-sha256-2p{}-{}",
+            "{}-{}-sha256-2p{}-{}",
+            self.campaign_id,
             metadata.backend.slug(),
             metadata.exponent,
             metadata.trial.slug()
@@ -1085,7 +1104,7 @@ impl TraceWriter {
             "schema": "zkperf.trace/v1",
             "record": "run",
             "run_id": run_id,
-            "series_id": format!("{}-sha256-2p{}-100b-{}t", metadata.backend.slug(), metadata.exponent, self.threads),
+            "series_id": format!("{}-{}-sha256-2p{}-{}-{}t", self.campaign_id, metadata.backend.slug(), metadata.exponent, metadata.config_label, self.threads),
             "root_span_id": root.id,
             "benchmark": {
                 "suite": "sha256-claim-equivalent",
@@ -1099,13 +1118,13 @@ impl TraceWriter {
                 "implementation": metadata.backend.name(),
                 "git_rev": git_rev,
                 "git_dirty": git_dirty,
-                "build_profile": "bench-native-fat-lto-cgu1",
+                "build_profile": "bench",
             },
             "trial": metadata.trial.json(),
-            "clock": {"id": format!("{}-{}", metadata.backend.slug(), metadata.trial.slug()), "kind": "monotonic", "unit": "ns", "source": "std::time::Instant"},
+            "clock": {"id": run_id, "kind": "monotonic", "unit": "ns", "source": "std::time::Instant"},
             "status": "ok",
             "trace_complete": true,
-            "environment": {"os": "macOS", "arch": std::env::consts::ARCH, "cpu": self.cpu, "threads": self.threads},
+            "environment": self.environment,
             "parameters": {
                 "input": {
                     "sha256_compressions": 1usize << metadata.exponent,
@@ -1117,11 +1136,7 @@ impl TraceWriter {
                 },
                 "security": match metadata.backend {
                     Backend::F2z => json!({"profile": "Lambda100", "target_bits": 100, "claim": "modeled F2Z protocol accounting"}),
-                    Backend::Plonky3Whir => json!({
-                        "profile": "WHIR analyzed configuration",
-                        "target_bits": plonky3_backend::SECURITY_BITS,
-                        "claim": "configuration construction rejects parameters below target",
-                    }),
+                    Backend::Plonky3Whir => metadata.security.clone().expect("WHIR security report"),
                     Backend::Binius => json!({
                         "profile": "100-bit FRI query-phase target",
                         "target_bits": BINIUS_SECURITY_BITS,
@@ -1239,6 +1254,7 @@ fn run_binius_trial(
                 log_inv_rate: Some(context.log_inv_rate),
                 query_count: Some(context.query_count),
                 config_label: &config_label,
+                security: None,
             },
             &spans,
         );
@@ -1267,6 +1283,7 @@ fn run_f2z_trial(
                 log_inv_rate: None,
                 query_count: None,
                 config_label: &config_label,
+                security: None,
             },
             &spans,
         );
@@ -1297,6 +1314,7 @@ fn run_plonky3_trial(
                 log_inv_rate: Some(params.starting_log_inv_rate),
                 query_count: None,
                 config_label: &label,
+                security: Some(context.security()),
             },
             &spans,
         );
@@ -1325,6 +1343,7 @@ fn run_spartan_hyrax_trial(
                 log_inv_rate: None,
                 query_count: None,
                 config_label: "spartan-hyrax-native",
+                security: None,
             },
             &spans,
         );
@@ -1355,6 +1374,7 @@ fn run_integer_limber_trial(
                 log_inv_rate: None,
                 query_count: None,
                 config_label: &label,
+                security: None,
             },
             &spans,
         );
@@ -1416,82 +1436,16 @@ fn choose_f2z_prefix(corpus: &Corpus, exponent: usize, reps: usize) -> usize {
 fn choose_plonky3_params(
     capture: &TraceCapture,
     corpus: &Corpus,
-    exponent: usize,
-    reps: usize,
-) -> plonky3_backend::Params {
-    println!("\nPlonky3 full-SHA WHIR pilot at 2^{exponent}:");
-    let mut preflight = Vec::new();
-    for extension_degree in [4, 5] {
-        for folding in [2, 4] {
-            for starting_log_inv_rate in 1..=3 {
-                for max_pow_bits in [8, 12] {
-                    let params = plonky3_backend::Params {
-                        extension_degree,
-                        folding,
-                        starting_log_inv_rate,
-                        max_pow_bits,
-                    };
-                    match plonky3_backend::Context::setup(corpus, params) {
-                        Ok(context) => {
-                            let elapsed = run_plonky3_trial(
-                                &context,
-                                params,
-                                capture,
-                                corpus,
-                                exponent,
-                                Trial::Preflight,
-                                None,
-                            )
-                            .total_prover_ms;
-                            println!("  {}: preflight {elapsed:.3} ms", params.label());
-                            preflight.push((elapsed, params));
-                        }
-                        Err(error) => println!("  {}: ineligible ({error})", params.label()),
-                    }
-                }
-            }
-        }
-    }
-    preflight.sort_by(|a, b| a.0.total_cmp(&b.0));
-    preflight.truncate(4);
-    assert!(
-        !preflight.is_empty(),
-        "at least one eligible Plonky3 WHIR configuration"
-    );
-    let mut finalists = Vec::new();
-    for (_, params) in preflight {
-        let context = plonky3_backend::Context::setup(corpus, params)
-            .expect("preflight-approved WHIR configuration remains valid");
-        black_box(run_plonky3_trial(
-            &context,
-            params,
-            capture,
-            corpus,
-            exponent,
-            Trial::Warmup,
-            None,
-        ));
-        let samples = (0..reps)
-            .map(|sample| {
-                run_plonky3_trial(
-                    &context,
-                    params,
-                    capture,
-                    corpus,
-                    exponent,
-                    Trial::Pilot(sample),
-                    None,
-                )
-                .total_prover_ms
-            })
-            .collect::<Vec<_>>();
-        let median = common::median(&samples);
-        println!("  finalist {}: median {median:.3} ms", params.label());
-        finalists.push((median, params));
-    }
-    finalists.sort_by(|a, b| a.0.total_cmp(&b.0));
-    println!("  selected {}\n", finalists[0].1.label());
-    finalists[0].1
+) -> Result<(plonky3_backend::Params, Value), String> {
+    let explicit =
+        whir_tuning::replay()?.or_else(|| has_plonky3_override().then(env_plonky3_params));
+    whir_tuning::tune(
+        &[4, 5],
+        explicit,
+        |params| plonky3_backend::Context::setup(corpus, params),
+        |context| context.run(capture).0.witness_to_proof_ms,
+        plonky3_backend::Context::security,
+    )
 }
 
 fn choose_integer_limber_params(
@@ -1615,14 +1569,15 @@ fn preflight_backend(
                 .status()
         })
         .expect("launch isolated preflight child");
-    if !status.success() {
-        eprintln!(
-            "  2^{exponent} {} preflight exited with {status}; this and larger rows will be resource-limited.",
-            backend.name()
-        );
-    }
-    status.success()
+    assert!(
+        status.success(),
+        "{} preflight at 2^{exponent} failed with {status}; inspect the child diagnostics (not classified as a resource limit)",
+        backend.name()
+    );
+    true
 }
+
+#[derive(Clone, Copy)]
 
 struct SelectedConfigs {
     f2z_prefix: usize,
@@ -1703,6 +1658,7 @@ fn run_campaign(
     selected: &SelectedConfigs,
     requested: &HashSet<Backend>,
     allowed_at_16: &HashSet<Backend>,
+    output_dir: &Path,
 ) -> Vec<BackendAggregate> {
     let mut aggregates = Vec::new();
     for &exponent in exponents {
@@ -1715,13 +1671,42 @@ fn run_campaign(
         let enabled = |backend| {
             requested.contains(&backend) && (exponent != 16 || allowed_at_16.contains(&backend))
         };
+        let mut selected = *selected;
+        let mut tuning = None;
+        let plonky3 = if enabled(Backend::Plonky3Whir) {
+            let path = output_dir.join(format!("whir-sha256-{exponent}.json"));
+            match choose_plonky3_params(capture, &corpus) {
+                Ok((params, mut record)) => {
+                    selected.plonky3 = params;
+                    record["workload"] = json!("sha256");
+                    record["exponent"] = json!(exponent);
+                    record["corpus_digest"] = json!(corpus.digest);
+                    whir_tuning::save(&path, &record).expect("save per-size WHIR tuning");
+                    tuning = Some(record);
+                    Some(
+                        plonky3_backend::Context::setup(&corpus, params)
+                            .expect("selected WHIR config"),
+                    )
+                }
+                Err(reason) => {
+                    eprintln!("WHIR sha256 2^{exponent}: unavailable: {reason}");
+                    whir_tuning::save(
+                        &path,
+                        &json!({"workload":"sha256", "exponent":exponent,
+                        "status":"ineligible", "reason":reason}),
+                    )
+                    .expect("save WHIR ineligibility");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let selected = &selected;
         let contexts = SizeContexts {
             f2z: enabled(Backend::F2z)
                 .then(|| F2zContext::setup(exponent, &corpus, selected.f2z_prefix)),
-            plonky3: enabled(Backend::Plonky3Whir).then(|| {
-                plonky3_backend::Context::setup(&corpus, selected.plonky3)
-                    .expect("frozen Plonky3 config remains valid")
-            }),
+            plonky3,
             binius: enabled(Backend::Binius)
                 .then(|| BiniusContext::setup(&corpus, selected.binius_rate)),
             spartan: enabled(Backend::SpartanHyrax)
@@ -1733,7 +1718,10 @@ fn run_campaign(
         };
         let active = ALL_BACKENDS
             .into_iter()
-            .filter(|backend| enabled(*backend))
+            .filter(|backend| {
+                enabled(*backend)
+                    && (*backend != Backend::Plonky3Whir || contexts.plonky3.is_some())
+            })
             .collect::<Vec<_>>();
         let mut samples = HashMap::<Backend, Vec<TrialMetrics>>::new();
 
@@ -1765,8 +1753,9 @@ fn run_campaign(
                 samples.entry(backend).or_default().push(metrics);
             }
             println!(
-                "  completed balanced five-backend sample {}/{reps}",
-                sample + 1
+                "  completed sample {}/{reps} across {} active backends",
+                sample + 1,
+                active.len()
             );
         }
         for backend in active {
@@ -1803,6 +1792,8 @@ fn run_campaign(
                 exponent,
                 setup_ms,
                 config,
+                whir_tuning: (backend == Backend::Plonky3Whir)
+                    .then(|| tuning.clone().expect("WHIR tuning record")),
                 samples: samples.remove(&backend).unwrap_or_default(),
             });
         }
@@ -1824,7 +1815,7 @@ fn print_tables(aggregates: &[BackendAggregate]) {
         rows.sort_by_key(|row| row.exponent);
         for row in rows {
             let m = row.median();
-            let throughput = (1usize << row.exponent) as f64 * 1e3 / m.total_prover_ms;
+            let throughput = (1usize << row.exponent) as f64 * 1e3 / m.witness_to_proof_ms;
             println!(
                 "| 2^{} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {} | {:.3} |",
                 row.exponent,
@@ -1872,7 +1863,7 @@ fn print_tables(aggregates: &[BackendAggregate]) {
             medians.each_ref().map(|value| {
                 value
                     .as_ref()
-                    .map(|m| (1usize << exponent) as f64 * 1e3 / m.total_prover_ms)
+                    .map(|m| (1usize << exponent) as f64 * 1e3 / m.witness_to_proof_ms)
             }),
             true,
             3,
@@ -1927,6 +1918,7 @@ fn write_aggregate_artifacts(
                 "compression_exponent": row.exponent,
                 "compressions": 1usize << row.exponent,
                 "configuration": row.config,
+                "whir_tuning": row.whir_tuning,
                 "measured_samples": row.samples.len(),
                 "setup_ms": row.setup_ms,
                 "median": {
@@ -1936,20 +1928,23 @@ fn write_aggregate_artifacts(
                     "iop_ms": median.opening_ms,
                     "online_prover_ms": median.total_prover_ms,
                     "witness_to_proof_ms": median.witness_to_proof_ms,
-                    "throughput_compressions_per_s": (1usize << row.exponent) as f64 * 1e3 / median.total_prover_ms,
+                    "throughput_compressions_per_s": (1usize << row.exponent) as f64 * 1e3 / median.witness_to_proof_ms,
                     "verifier_ms": median.verifier_ms,
+                    "serialization_ms": median.serialization_ms,
                     "proof_bytes": median.proof_bytes,
                 },
             })
         })
         .collect::<Vec<_>>();
     let summary_doc = json!({
-        "schema": "native-sha256-comparison/v1",
+        "schema": "native-sha256-comparison/v2",
+        "primary_metric": "witness_to_proof_ms",
+        "environment": common::environment::metadata(rayon::current_num_threads()),
         "statement": "forall i<N: Hhat_i = Compress_SHA256(IV,M_i)",
         "padding": false,
         "chaining": false,
         "backend_order": ALL_BACKENDS.map(Backend::name),
-        "resource_limited_backends": ALL_BACKENDS
+        "unavailable_backends": ALL_BACKENDS
             .into_iter()
             .filter(|backend| requested.contains(backend) && !runnable.contains(backend))
             .map(Backend::name)
@@ -1968,7 +1963,7 @@ fn write_aggregate_artifacts(
         .expect("write CSV header");
     for row in aggregates {
         for (sample_index, sample) in row.samples.iter().enumerate() {
-            let throughput = (1usize << row.exponent) as f64 * 1e3 / sample.total_prover_ms;
+            let throughput = (1usize << row.exponent) as f64 * 1e3 / sample.witness_to_proof_ms;
             writeln!(
                 metrics,
                 "{},{},{},{},{},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{},{}",
@@ -2015,7 +2010,7 @@ fn format_five(values: [Option<f64>; 5], higher_is_better: bool, decimals: usize
                     rendered
                 }
             }
-            (None, _) => "resource-limited".to_owned(),
+            (None, _) => "unavailable".to_owned(),
             _ => "n/a".to_owned(),
         })
         .collect::<Vec<_>>()
@@ -2215,6 +2210,7 @@ fn env_plonky3_params() -> plonky3_backend::Params {
         folding: env_usize("F2Z_SHA_COMPARE_P3_FOLDING", 4),
         starting_log_inv_rate: env_usize("F2Z_SHA_COMPARE_P3_LOG_INV_RATE", 1),
         max_pow_bits: env_usize("F2Z_SHA_COMPARE_P3_MAX_POW_BITS", 12),
+        max_round_log_inv_rate: None,
     }
 }
 
@@ -2329,7 +2325,7 @@ fn main() {
     }
     let _ = flock_core::init_perf_thread_pool();
     let threads = rayon::current_num_threads();
-    let expected_threads = env_usize("F2Z_SHA_COMPARE_THREADS", 8);
+    let expected_threads = env_usize("F2Z_SHA_COMPARE_THREADS", threads);
     assert_eq!(
         threads, expected_threads,
         "set RAYON_NUM_THREADS={expected_threads} for the controlled comparison"
@@ -2411,6 +2407,7 @@ fn main() {
     let exponents = parse_exponents();
     let requested = parse_backends();
     let reps = env_usize("F2Z_SHA_COMPARE_REPS", DEFAULT_REPS);
+    assert!(reps > 0, "measured repetitions must be positive");
     let pilot_reps = env_usize("F2Z_SHA_COMPARE_PILOT_REPS", DEFAULT_PILOT_REPS);
     let root_seed = std::env::var("F2Z_SHA_COMPARE_SEED")
         .ok()
@@ -2419,7 +2416,7 @@ fn main() {
     let campaign_stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock")
-        .as_secs();
+        .as_nanos();
     let output_dir = std::env::var_os("F2Z_SHA_COMPARE_OUTPUT_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
@@ -2428,7 +2425,13 @@ fn main() {
     let trace_path = std::env::var_os("F2Z_SHA_COMPARE_TRACE_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|| output_dir.join("trace.jsonl"));
+    fs::create_dir_all(&output_dir).expect("create artifact directory");
     let mut trace = TraceWriter::new(trace_path, threads);
+    whir_tuning::save(
+        &output_dir.join("environment.json"),
+        &common::environment::metadata(threads),
+    )
+    .expect("save environment");
 
     println!("Native SHA-256 compression comparison across five prover configurations");
     println!("relation: forall i<N: Hhat_i = Compress_SHA256(IV,M_i)");
@@ -2440,11 +2443,21 @@ fn main() {
 
     if env_bool("F2Z_SHA_COMPARE_SELF_TESTS", true) {
         security_api_self_test();
-        f2z_public_tamper_self_test();
-        binius_tamper_self_test(&capture);
-        plonky3_backend::tamper_self_test();
-        spartan_hyrax_backend::tamper_self_test();
-        integer_limber_backend::constraint_self_test();
+        if requested.contains(&Backend::F2z) {
+            f2z_public_tamper_self_test();
+        }
+        if requested.contains(&Backend::Binius) {
+            binius_tamper_self_test(&capture);
+        }
+        if requested.contains(&Backend::Plonky3Whir) {
+            plonky3_backend::tamper_self_test();
+        }
+        if requested.contains(&Backend::SpartanHyrax) {
+            spartan_hyrax_backend::tamper_self_test();
+        }
+        if requested.contains(&Backend::Limber) {
+            integer_limber_backend::constraint_self_test();
+        }
     }
 
     let pilot_enabled = env_bool("F2Z_SHA_COMPARE_PILOT", true);
@@ -2483,17 +2496,8 @@ fn main() {
         1
     };
 
-    let plonky3 =
-        if pilot_enabled && requested.contains(&Backend::Plonky3Whir) && !has_plonky3_override() {
-            choose_plonky3_params(
-                &capture,
-                pilot.as_ref().unwrap(),
-                pilot_exponent,
-                pilot_reps,
-            )
-        } else {
-            env_plonky3_params()
-        };
+    // WHIR is selected separately at each measured size inside run_campaign.
+    let plonky3 = env_plonky3_params();
     let preliminary_limber = env_limber_params();
     let mut runnable = requested.clone();
     if runnable.contains(&Backend::Limber) && env_bool("F2Z_SHA_COMPARE_HEAVY_PREFLIGHT", true) {
@@ -2529,7 +2533,7 @@ fn main() {
         limber,
     };
     println!(
-        "frozen configs: F2Z prefix={}; Binius rate={} ({} FRI queries); Plonky3 {}; Limber {}",
+        "configs: F2Z prefix={}; Binius rate={} ({} FRI queries); WHIR tunes at each size (explicit default {}); Limber {}",
         selected.f2z_prefix,
         selected.binius_rate,
         calculate_n_test_queries(BINIUS_SECURITY_BITS, selected.binius_rate),
@@ -2541,7 +2545,10 @@ fn main() {
         runnable
             .iter()
             .copied()
-            .filter(|backend| preflight_backend(*backend, 16, &selected, root_seed))
+            .filter(|backend| {
+                *backend == Backend::Plonky3Whir
+                    || preflight_backend(*backend, 16, &selected, root_seed)
+            })
             .collect::<HashSet<_>>()
     } else {
         runnable.clone()
@@ -2555,8 +2562,22 @@ fn main() {
         &selected,
         &runnable,
         &allowed_at_16,
+        &output_dir,
     );
     print_tables(&aggregates);
     write_aggregate_artifacts(&aggregates, &requested, &runnable, &output_dir);
     println!("canonical trace: {}", trace.path.display());
+}
+
+#[cfg(test)]
+mod native_whir_tests {
+    #[test]
+    fn default_sha_sizes_have_eligible_security_schedules() {
+        super::plonky3_backend::security_schedule_self_test();
+    }
+
+    #[test]
+    fn sha_proof_binds_public_blocks_outputs_and_order() {
+        super::plonky3_backend::tamper_self_test();
+    }
 }

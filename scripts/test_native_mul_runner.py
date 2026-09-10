@@ -28,7 +28,7 @@ def samples(reps=2):
 
 
 def config(**overrides):
-    return dict(reps=2, seed=runner.DEFAULT_SEED, seed_explicit=False, memory=False,
+    return dict(reps=2, threads=8, seed=runner.DEFAULT_SEED, seed_explicit=False, memory=False,
                 workloads=["u32-mod32"], backends=["limber"], exponents=[15], **overrides)
 
 
@@ -81,14 +81,44 @@ class RunnerTests(unittest.TestCase):
         self.assertNotIn("F2Z_BENCH_SEED",env)
         wide = config(); wide["workloads"] = ["u128"]
         self.assertEqual(runner.campaign_environment({"F2Z_BINIUS_LOG_INV_RATE":"3"},wide)["F2Z_BINIUS_LOG_INV_RATE"],"3")
-        for workload, maximum in (("u64",24),("u128",23)):
+        for workload in ("u64", "u128"):
+            maximum = sys.maxsize.bit_length() + 1 - 11
             env = dict(F2Z_MUL_COMPARE_WORKLOADS=workload,F2Z_MUL_COMPARE_BACKENDS="f2z binius64",F2Z_BENCH_SHAPES=f"15 {maximum}")
             self.assertEqual(runner.configuration(env)["exponents"],[15,maximum])
             with self.assertRaises(ValueError): runner.configuration(env | {"F2Z_BENCH_SHAPES":str(maximum+1)})
         env = dict(F2Z_MUL_COMPARE_BACKENDS="f2z")
         self.assertEqual(runner.configuration(env | {"F2Z_MUL_COMPARE_WORKLOADS":"u32"})["workloads"],["u32-mod32"])
-        for extra in (dict(F2Z_MUL_COMPARE_WORKLOADS="u32 u32-mod32"),dict(F2Z_MUL_COMPARE_WORKLOADS="babybear"),dict(F2Z_MUL_COMPARE_BACKENDS="plonky3-whir"),dict(RAYON_NUM_THREADS="1")):
+        for extra in (dict(F2Z_MUL_COMPARE_WORKLOADS="u32 u32-mod32"),dict(F2Z_MUL_COMPARE_WORKLOADS="babybear"),dict(F2Z_MUL_COMPARE_BACKENDS="unknown"),dict(RAYON_NUM_THREADS="0")):
             with self.assertRaises(ValueError): runner.configuration(env | extra)
+
+    def test_whir_opt_in_security_and_replay_identity(self):
+        cfg = runner.configuration(dict(F2Z_MUL_COMPARE_BACKENDS="plonky3-fri plonky3-whir", RAYON_NUM_THREADS="1"))
+        self.assertEqual(cfg["threads"], 1)
+        self.assertEqual(runner.campaign_environment({}, cfg)["RAYON_NUM_THREADS"], "1")
+        row = copy.deepcopy(FIXTURE)
+        row.update(backend="plonky3-whir", threads=1)
+        row["config"] = dict(pcs="WHIR", base_field="Goldilocks", encoding="Reed-Solomon",
+                             opening_claim="prescribed multilinear evaluation", params=dict(extension_degree=5),
+                             security=dict(model="native-air-whir-johnson-union/v1", assumption="JohnsonBound",
+                                           target_bits=100, achieved_bits=100.1,
+                                           air=dict(log_height=15, width=137, constraints=139, constraint_degree=2)))
+        runner.validate_sample(row, cfg, 15, "plonky3-whir", "u32-mod32")
+        for change in (dict(achieved_bits=99.9), dict(achieved_bits=float("nan")), dict(assumption="UniqueDecoding"), dict(air={})):
+            bad = copy.deepcopy(row); bad["config"]["security"].update(change)
+            with self.assertRaises(ValueError):
+                runner.validate_sample(bad, cfg, 15, "plonky3-whir", "u32-mod32")
+        rows = [copy.deepcopy(row) for _ in range(cfg["reps"]+1)]
+        for index, sample in enumerate(rows):
+            sample["trial"] = dict(kind="warmup" if index == 0 else "sample", index=max(0,index-1))
+        memory = row | dict(peak_rss_bytes=1234, boundary=runner.MEMORY_BOUNDARY)
+        summary = runner.summarize_case(rows, memory, cfg, "plonky3-whir", "u32-mod32", 15, SOURCE)
+        self.assertEqual(summary["threads"], 1)
+        bad = copy.deepcopy(memory); bad["config"]["params"]["extension_degree"] = 2
+        with self.assertRaises(ValueError):
+            runner.summarize_case(rows, bad, cfg, "plonky3-whir", "u32-mod32", 15, SOURCE)
+        rows[-1]["config"]["params"]["extension_degree"] = 2
+        with self.assertRaises(ValueError):
+            runner.summarize_case(rows, memory, cfg, "plonky3-whir", "u32-mod32", 15, SOURCE)
 
     def test_incompatible_results_and_size_import_rejected(self):
         rows = samples()

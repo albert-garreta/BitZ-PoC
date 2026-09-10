@@ -4,7 +4,8 @@ The comparison proves N=2^L independent rows with unsigned 32-bit x, y, z
 and z = x*y mod 2^32. There are no links between successive rows. Select
 `u32-mod32` (default); `u32` is an alias. BabyBear and the old integrated
 Limber multiplication adapter have been removed from this comparison.
-Other benchmarks retain their Limber and WHIR dependencies.
+The optional `plonky3-whir` backend uses the same mod32 AIR as FRI;
+other benchmarks retain their Limber dependencies.
 
 ## Run
 
@@ -25,12 +26,16 @@ bash scripts/run_native_mul_compare.sh
 bash scripts/run_native_mul_compare.sh --dry-run
 ```
 
-`F2Z_MUL_COMPARE_BACKENDS` accepts `f2z binius64 plonky3-fri limber`.
+`F2Z_MUL_COMPARE_BACKENDS` accepts `f2z binius64 plonky3-fri plonky3-whir limber`.
+The default remains `f2z binius64 plonky3-fri limber`. Select WHIR explicitly
+to tune it for each run and size; see [WHIR tuning and replay](native-whir-tuning.md).
 `F2Z_MUL_COMPARE_OUTPUT_DIR` selects a new, non-existing output directory;
 default output is a timestamped directory in `PerfRuns/`.
 The complete comparison supports exponents 15..24. Without F2Z, exponents
-start at 4; without Limber, mod32 supports through 25. Large cases require
-substantial RAM; the documented sweep does not imply every machine fits it.
+start at 4. FRI accepts through exponent 29, the Goldilocks FFT domain limit
+with log blowup 3. Limber retains its existing exponent-24 runner limit.
+Other native cases use address-space and backend domain bounds rather than
+a machine-specific RAM cap. Choose sizes that fit the machine being measured.
 
 Limber runs this exact command in its own repository:
 
@@ -45,7 +50,9 @@ also invokes the example with `F2Z_MUL_MEMORY_ONLY=1` for a fresh, single-proof
 memory measurement. That invocation has no warmup. The command remains the
 same; Cargo compilation is outside measured intervals and RSS.
 
-Both jobs enforce `RUSTFLAGS=-C target-cpu=native` and eight Rayon threads.
+Both jobs enforce `RUSTFLAGS=-C target-cpu=native`. `RAYON_NUM_THREADS`
+selects a positive thread count, defaulting to eight, and is recorded in
+provenance. Use the same count across backends in a campaign.
 The runner clears `CARGO_ENCODED_RUSTFLAGS`, `DUMP`, `CHAIN_BITS`, `BDLAMBDA`,
 `BDSPEC`, `BDROWLEN`, `BDDIRECT`, `BDSPLIT`, and ambient memory-only mode.
 For mod32 it also clears `F2Z_BINIUS_LOG_INV_RATE`. Effective configurations,
@@ -63,6 +70,7 @@ reproducible revision of those edits.
 | Binius64 | Bound x,y to 32 bits, native IMUL, mask and equate low 32-bit output; one IMUL plus four word-level ANDs | Explicit 100-bit FRI query target, rate 1/2 |
 | Limber-Brakedown | One independent integer-mod row, 3N live witness values padded to 4N, N private quotients | T256DynPrimeBdEngine; `derive_no_limb_split(32,9,L+2)`; native approximately 114-bit policy |
 | Plonky3-FRI | Two limb equations; 137 columns and 139 constraints per row | Goldilocks, degree-five extension, Poseidon2/MMCS, rate 1/8, 100 queries, binary folding, final polynomial length one, zero PoW |
+| Plonky3-WHIR (optional) | The same 137-column, 139-constraint mod32 AIR | Multilinear zerocheck/sumcheck PIOP; Goldilocks; per-run WHIR tuning with evaluated Johnson accounting of at least 100 bits |
 
 Plonky3 splits each operand and output into base B=2^16 limbs and enforces
 
@@ -74,8 +82,10 @@ x0*y1 + x1*y0 + c0 = z1 + B*c1
 All operand/result limbs and c0 are bounded to 16 bits; c1 is bounded to
 17 bits. Thus integer equations cannot acquire Goldilocks wraparound
 aliases. There are 129 Boolean checks, eight recompositions and two
-arithmetic equations. The pinned library's actual AIR-derived security
-report must reach 100 bits before proving and on the returned proof.
+arithmetic equations. FRI's pinned library AIR-derived security
+report must reach 100 bits before proving and on the returned proof. WHIR
+uses its separate AIR/WHIR security model and records the selected schedule.
+Both generate identical trace rows and verify their complete proofs.
 
 F2Z reports geometry, all Ligerito levels, query and folding grinding,
 Round-0 grinding and security-accounting terms. Its reported accounting is
@@ -122,6 +132,8 @@ and is excluded from medians. Five measured trials are the default.
 - `online_prover_ms`: commitment-inclusive proving.
 - `witness_to_proof_ms`: directly measured witness-to-complete-proof interval;
   do not construct it by adding potentially overlapping metrics.
+- `post_proof_ms`: proof serialization and accounting after the PCS proof is ready
+  (native backends), excluded from `witness_to_proof_ms`.
 - `verify_ms`: complete native verification.
 - `peak_rss_bytes`: fresh-process high-water RSS across corpus generation,
   setup, witness generation, commitment, proof, verification and size accounting.
@@ -172,7 +184,8 @@ F2Z_BINIUS_LOG_INV_RATE=3 F2Z_BENCH_SHAPES="15 16 17" \
 bash scripts/run_native_mul_compare.sh
 ```
 
-Limits are 15..24 for u64 and 15..23 for u128 when F2Z is selected. The wider
+F2Z requires exponents of at least 15. Upper limits follow address-space and
+backend domain bounds; they do not assume a particular RAM capacity. The wider
 Binius rate override remains available and is represented separately in tables.
 
 ## Validation and tested sources
@@ -190,9 +203,11 @@ cargo +1.97.1 test --release --example int_mult
 Validation covers zero and maximum values, overflow, incorrect low results,
 bad carries, bounds, independent indexing, Goldilocks aliases, shared golden
 vectors, compiled Binius counts, Johnson/OOD selection, actual FRI/Brakedown
-selection, FRI security over supported sizes, real proofs and tampering.
+selection, FRI security over supported sizes, WHIR proof rejection for incorrect
+results/carries and limb bounds, real proofs and tampering.
 Runner tests cover warmup exclusion, repetitions, environment normalization,
-structured failures and incompatible result rejection.
+structured failures, selectable thread counts, WHIR eligibility/configuration
+identity and incompatible result rejection.
 
 The implementation builds on BitZ `b79b869` on `independent-u32-multiplication`
 after its rebase and Limber `861f10a6a4d705d92a9faf13a8f860d8ba057ca0` on
