@@ -1,3 +1,8 @@
+> **Deprecated:** ZKPassport is retired from active SHA-chain/P-256 comparisons.
+> The commands below describe the historical integration; reproduce old results
+> from their recorded source revision. New campaigns use standard P-256 fixtures
+> and the [F2Z/Spartan2/Binius runner](../../docs/sha256-ecdsa-comparison.md).
+
 # Native non-ZK ZKPassport comparison
 
 The Rust worker in this directory calls `noir_rs` and the native Barretenberg
