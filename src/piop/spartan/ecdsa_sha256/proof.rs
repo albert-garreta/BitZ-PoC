@@ -113,13 +113,34 @@ fn bind_statement<T: Transcript>(
     Ok(())
 }
 
-fn start<T: Transcript>(t: &mut T, p: &PreparedSha256Ecdsa, security: &Sha256EcdsaSecurity, nonce: Option<u64>) -> Result<(u128, Config, Vec<F>, u64)> {
-    let nonce = boundary::<InitialGrinding, _>(t, security.initial, nonce)?;
-    let q = sample_prime_in_interval(t, 1u128 << 112, (1u128 << 113) - 1).map_err(error)?;
-    absorb_spartan_message(t, b"q", &q.to_le_bytes());
-    let cfg = F::make_cfg(&Uint::from(q)).map_err(|_| error("invalid sampled modulus"))?;
-    let tau = (0..outer_vars(p)).map(|_| squeeze_field(t, &cfg)).collect();
-    Ok((q, cfg, tau, nonce))
+struct InitialSpartanChallenges {
+    modulus: u128,
+    field_config: Config,
+    outer_eq_challenges: Vec<F>,
+    grinding_nonce: u64,
+}
+
+/// Prove or verify initial grinding, then derive the field and outer equality challenges.
+fn derive_initial_challenges<T: Transcript>(
+    t: &mut T,
+    p: &PreparedSha256Ecdsa,
+    security: &Sha256EcdsaSecurity,
+    nonce: Option<u64>,
+) -> Result<InitialSpartanChallenges> {
+    let grinding_nonce = boundary::<InitialGrinding, _>(t, security.initial, nonce)?;
+    let modulus = sample_prime_in_interval(t, 1u128 << 112, (1u128 << 113) - 1).map_err(error)?;
+    absorb_spartan_message(t, b"q", &modulus.to_le_bytes());
+    let field_config =
+        F::make_cfg(&Uint::from(modulus)).map_err(|_| error("invalid sampled modulus"))?;
+    let outer_eq_challenges = (0..outer_vars(p))
+        .map(|_| squeeze_field(t, &field_config))
+        .collect();
+    Ok(InitialSpartanChallenges {
+        modulus,
+        field_config,
+        outer_eq_challenges,
+        grinding_nonce,
+    })
 }
 
 fn challenges<T: Transcript>(t: &mut T, p: &PreparedSha256Ecdsa, cfg: &Config) -> (F, Vec<F>, F) {
@@ -162,17 +183,22 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
     let security = p.security()?;
     bind_statement(t, p, statement, &hint.commitment, &security)?;
     let ood = crate::ligerito_flock::bind_prover_ood(t, hint, security.ood);
-    let (q, cfg, tau, initial_nonce) = start(t, p, &security, None)?;
+    let InitialSpartanChallenges {
+        modulus,
+        field_config: cfg,
+        outer_eq_challenges,
+        grinding_nonce: initial_nonce,
+    } = derive_initial_challenges(t, p, &security, None)?;
     let reducer = OptimizedSumcheckReducer::new(&cfg).map_err(error)?;
-    let projection = Projection::new(p, q, &cfg);
+    let projection = Projection::new(p, modulus, &cfg);
     let (outer, outer_nonces) = {
         let _scope = crate::utils::prof::scope("ecdsa:outer_prove");
-        let products = projection.outer_products(p, witness, q, &cfg);
+        let products = projection.outer_products(p, witness, modulus, &cfg);
         prove_outer_sumcheck_with_reducer_grinded::<OuterGrinding, _, _>(
             t,
             F::zero_with_cfg(&cfg),
-            &tau,
-            make_equality_factors(&tau, &cfg).map_err(error)?,
+            &outer_eq_challenges,
+            make_equality_factors(&outer_eq_challenges, &cfg).map_err(error)?,
             products,
             &cfg,
             &reducer,
@@ -244,7 +270,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
             &p.p_f,
             &p.map,
             &chunks,
-            q,
+            modulus,
             113,
             f2z_generator(),
             security.forest,
@@ -278,13 +304,18 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     bind_statement(t, p, statement, commitment, &security)?;
     let ood = crate::ligerito_flock::bind_verifier_ood(t, packed_vars(&p.p_f), security.ood, proof.opening.ood.as_ref())
         .map_err(|e| error(format!("{e:?}")))?;
-    let (q, cfg, tau, _) = start(t, p, &security, Some(proof.initial_nonce))?;
+    let InitialSpartanChallenges {
+        modulus,
+        field_config: cfg,
+        outer_eq_challenges,
+        grinding_nonce: _,
+    } = derive_initial_challenges(t, p, &security, Some(proof.initial_nonce))?;
     let rx = proof
         .outer
         .verify_grinded::<OuterGrinding>(
             t,
             F::zero_with_cfg(&cfg),
-            &tau,
+            &outer_eq_challenges,
             &cfg,
             &proof.outer_nonces,
             security.outer,
@@ -293,7 +324,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         .eval_points;
     boundary::<BatchGrinding, _>(t, security.batch, Some(proof.batch_nonce))?;
     let (rho, sigma, gamma) = challenges(t, p, &cfg);
-    let coefficients = Projection::new(p, q, &cfg).combine(
+    let coefficients = Projection::new(p, modulus, &cfg).combine(
         p,
         statement,
         &proof.outer,
@@ -337,7 +368,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
             cursor: 0,
         },
     };
-    let arithmetic = crate::ext_proj::ProjArith::new(q);
+    let arithmetic = crate::ext_proj::ProjArith::new(modulus);
     verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off_with_security(
         t,
         commitment,
@@ -346,7 +377,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         &p.p_f,
         &p.map,
         &chunks,
-        q,
+        modulus,
         113,
         f2z_generator(),
         security.forest,
