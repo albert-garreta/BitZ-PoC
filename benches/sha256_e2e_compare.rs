@@ -1,6 +1,6 @@
 //! Claim-equivalent native end-to-end SHA-256 compression comparison.
 //!
-//! Both backends prove the public relation
+//! All backends prove the public relation
 //! `H_hat[i] = Compress_SHA256(IV, M[i])` for the same deterministic corpus.
 //! Inputs are independent public raw blocks; padding and chaining are out of
 //! scope. Every backend uses its own native arithmetization and witness layout.
@@ -14,8 +14,6 @@ use trace_capture::{CaptureLayer, CapturedSpan, TraceCapture};
 mod integer_limber_backend;
 #[path = "sha256_e2e_compare/plonky3.rs"]
 mod plonky3_backend;
-#[path = "sha256_e2e_compare/spartan_hyrax.rs"]
-mod spartan_hyrax_backend;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -52,7 +50,7 @@ use f2z::{
 use serde_json::{Value, json};
 
 const DEFAULT_ROOT_SEED: u64 = 0x5348_4132_3545_3245;
-const DEFAULT_EXPONENTS: &str = "10 11 12 13 14 15 16";
+const DEFAULT_EXPONENTS: &str = "7 8 10 11 12 13 14 15 16";
 const DEFAULT_REPS: usize = 21;
 const DEFAULT_PILOT_REPS: usize = 5;
 const BINIUS_SECURITY_BITS: usize = 100;
@@ -73,15 +71,13 @@ enum Backend {
     F2z,
     Plonky3Whir,
     Binius,
-    SpartanHyrax,
     Limber,
 }
 
-const ALL_BACKENDS: [Backend; 5] = [
+const ALL_BACKENDS: [Backend; 4] = [
     Backend::F2z,
     Backend::Plonky3Whir,
     Backend::Binius,
-    Backend::SpartanHyrax,
     Backend::Limber,
 ];
 
@@ -91,8 +87,7 @@ impl Backend {
             Self::F2z => "F2Z",
             Self::Plonky3Whir => "Plonky3-WHIR",
             Self::Binius => "Binius64",
-            Self::SpartanHyrax => "Spartan-Hyrax",
-            Self::Limber => "Limber",
+            Self::Limber => "Limber-Brakedown",
         }
     }
 
@@ -101,7 +96,6 @@ impl Backend {
             Self::F2z => "f2z",
             Self::Plonky3Whir => "plonky3-whir",
             Self::Binius => "binius64",
-            Self::SpartanHyrax => "spartan-hyrax",
             Self::Limber => "limber",
         }
     }
@@ -1093,7 +1087,7 @@ impl TraceWriter {
             Backend::F2z => &self.f2z_git,
             Backend::Plonky3Whir => &self.plonky3_git,
             Backend::Binius => &self.binius_git,
-            Backend::SpartanHyrax | Backend::Limber => &self.limber_git,
+            Backend::Limber => &self.limber_git,
         };
         let git_dirty = match metadata.backend {
             Backend::F2z => self.f2z_dirty,
@@ -1144,15 +1138,7 @@ impl TraceWriter {
                         "log_inv_rate": metadata.log_inv_rate,
                         "claim": "FRI query phase only; not a complete protocol union bound",
                     }),
-                    Backend::SpartanHyrax => json!({
-                        "profile": "Limber Spartan/Hyrax",
-                        "claim": "native Limber curve-PCS defaults",
-                    }),
-                    Backend::Limber => json!({
-                        "profile": "Limber Integer-Mod-R1CS",
-                        "target_bits": 128,
-                        "claim": "Hyrax targets Limber Lambda=128; Brakedown retains its documented 114-bit column opening",
-                    }),
+                    Backend::Limber => integer_limber_backend::security_metadata(),
                 },
                 "recursion": {"max_depth": 0, "instance_count": 1},
                 "repetition": {"count": 1},
@@ -1322,35 +1308,6 @@ fn run_plonky3_trial(
     metrics
 }
 
-fn run_spartan_hyrax_trial(
-    context: &spartan_hyrax_backend::Context,
-    capture: &TraceCapture,
-    corpus: &Corpus,
-    exponent: usize,
-    trial: Trial,
-    trace: Option<&mut TraceWriter>,
-) -> TrialMetrics {
-    let (metrics, spans) = context.run(capture);
-    if let Some(trace) = trace {
-        trace.write_run(
-            RunMetadata {
-                backend: Backend::SpartanHyrax,
-                exponent,
-                trial,
-                corpus,
-                setup_ms: context.setup_ms,
-                circuit_build_ms: None,
-                log_inv_rate: None,
-                query_count: None,
-                config_label: "spartan-hyrax-native",
-                security: None,
-            },
-            &spans,
-        );
-    }
-    metrics
-}
-
 fn run_integer_limber_trial(
     context: &integer_limber_backend::Context,
     params: integer_limber_backend::Params,
@@ -1382,15 +1339,27 @@ fn run_integer_limber_trial(
     metrics
 }
 
-fn choose_binius_rate(capture: &TraceCapture, corpus: &Corpus, reps: usize) -> usize {
+fn choose_binius_rate(
+    capture: &TraceCapture,
+    corpus: &Corpus,
+    exponent: usize,
+    reps: usize,
+) -> usize {
     let mut rates = Vec::new();
-    println!("\nBinius inverse-rate pilot at 2^14 (100-bit FRI query-phase target):");
+    println!("\nBinius inverse-rate pilot at 2^{exponent} (100-bit FRI query-phase target):");
     for log_inv_rate in 1..=3 {
         let context = BiniusContext::setup(corpus, log_inv_rate);
-        black_box(run_binius_trial(&context, capture, 14, Trial::Warmup, None));
+        black_box(run_binius_trial(
+            &context,
+            capture,
+            exponent,
+            Trial::Warmup,
+            None,
+        ));
         let samples = (0..reps)
             .map(|sample| {
-                run_binius_trial(&context, capture, 14, Trial::Pilot(sample), None).total_prover_ms
+                run_binius_trial(&context, capture, exponent, Trial::Pilot(sample), None)
+                    .total_prover_ms
             })
             .collect::<Vec<_>>();
         let median = common::median(&samples);
@@ -1454,29 +1423,27 @@ fn choose_integer_limber_params(
     exponent: usize,
     reps: usize,
 ) -> integer_limber_backend::Params {
-    use integer_limber_backend::{EngineKind, Params};
+    use integer_limber_backend::Params;
     println!("\nInteger Limber pilot at 2^{exponent}:");
     let mut preflight = Vec::new();
-    for engine in [EngineKind::Hyrax, EngineKind::Brakedown] {
-        for k in 7..=13 {
-            let params = Params { engine, k };
-            match integer_limber_backend::Context::setup(corpus, params) {
-                Ok(context) => {
-                    let elapsed = run_integer_limber_trial(
-                        &context,
-                        params,
-                        capture,
-                        corpus,
-                        exponent,
-                        Trial::Preflight,
-                        None,
-                    )
-                    .total_prover_ms;
-                    println!("  {}: preflight {elapsed:.3} ms", params.label());
-                    preflight.push((elapsed, params));
-                }
-                Err(error) => println!("  {}: ineligible ({error})", params.label()),
+    for k in 7..=13 {
+        let params = Params { k };
+        match integer_limber_backend::Context::setup(corpus, params) {
+            Ok(context) => {
+                let elapsed = run_integer_limber_trial(
+                    &context,
+                    params,
+                    capture,
+                    corpus,
+                    exponent,
+                    Trial::Preflight,
+                    None,
+                )
+                .total_prover_ms;
+                println!("  {}: preflight {elapsed:.3} ms", params.label());
+                preflight.push((elapsed, params));
             }
+            Err(error) => println!("  {}: ineligible ({error})", params.label()),
         }
     }
     preflight.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -1560,10 +1527,7 @@ fn preflight_backend(
                     "F2Z_SHA_COMPARE_P3_MAX_POW_BITS",
                     selected.plonky3.max_pow_bits.to_string(),
                 )
-                .env(
-                    "F2Z_SHA_COMPARE_LIMBER_ENGINE",
-                    selected.limber.engine.slug(),
-                )
+                .env("F2Z_SHA_COMPARE_LIMBER_ENGINE", "brakedown")
                 .env("F2Z_SHA_COMPARE_LIMBER_K", selected.limber.k.to_string())
                 .env("F2Z_SHA_COMPARE_SEED", seed.to_string())
                 .status()
@@ -1590,7 +1554,6 @@ struct SizeContexts {
     f2z: Option<F2zContext>,
     plonky3: Option<plonky3_backend::Context>,
     binius: Option<BiniusContext>,
-    spartan: Option<spartan_hyrax_backend::Context>,
     limber: Option<integer_limber_backend::Context>,
 }
 
@@ -1625,14 +1588,6 @@ fn run_native_trial(
         Backend::Binius => run_binius_trial(
             contexts.binius.as_ref().expect("Binius context"),
             capture,
-            exponent,
-            trial,
-            trace,
-        ),
-        Backend::SpartanHyrax => run_spartan_hyrax_trial(
-            contexts.spartan.as_ref().expect("Spartan context"),
-            capture,
-            corpus,
             exponent,
             trial,
             trace,
@@ -1709,8 +1664,6 @@ fn run_campaign(
             plonky3,
             binius: enabled(Backend::Binius)
                 .then(|| BiniusContext::setup(&corpus, selected.binius_rate)),
-            spartan: enabled(Backend::SpartanHyrax)
-                .then(|| spartan_hyrax_backend::Context::setup(&corpus)),
             limber: enabled(Backend::Limber).then(|| {
                 integer_limber_backend::Context::setup(&corpus, selected.limber)
                     .expect("frozen integer Limber config remains valid")
@@ -1778,10 +1731,6 @@ fn run_campaign(
                         ),
                     )
                 }
-                Backend::SpartanHyrax => (
-                    contexts.spartan.as_ref().unwrap().setup_ms,
-                    "spartan-hyrax-native".to_owned(),
-                ),
                 Backend::Limber => (
                     contexts.limber.as_ref().unwrap().setup_ms(),
                     selected.limber.label(),
@@ -1834,7 +1783,7 @@ fn print_tables(aggregates: &[BackendAggregate]) {
         }
     }
 
-    println!("\nCombined medians (F2Z / Plonky3-WHIR / Binius64 / Spartan-Hyrax / Limber):");
+    println!("\nCombined medians (F2Z / Plonky3-WHIR / Binius64 / Limber-Brakedown):");
     println!(
         "| N | witness ms | commit ms | PIOP ms | IOP ms | online ms | witness->proof ms | throughput /s | verifier ms | proof bytes | setup ms |"
     );
@@ -1853,13 +1802,13 @@ fn print_tables(aggregates: &[BackendAggregate]) {
                 .map(BackendAggregate::median)
         });
         let metric = |f: fn(&TrialMetrics) -> f64| {
-            format_five(
+            format_backends(
                 medians.each_ref().map(|value| value.as_ref().map(|m| f(m))),
                 false,
                 3,
             )
         };
-        let throughput = format_five(
+        let throughput = format_backends(
             medians.each_ref().map(|value| {
                 value
                     .as_ref()
@@ -1868,7 +1817,7 @@ fn print_tables(aggregates: &[BackendAggregate]) {
             true,
             3,
         );
-        let proof = format_five(
+        let proof = format_backends(
             medians
                 .each_ref()
                 .map(|value| value.as_ref().map(|m| m.proof_bytes as f64)),
@@ -1892,11 +1841,11 @@ fn print_tables(aggregates: &[BackendAggregate]) {
             throughput,
             metric(|m| m.verifier_ms),
             proof,
-            format_five(setup_values, false, 3),
+            format_backends(setup_values, false, 3),
         );
     }
     println!(
-        "Security labels: F2Z Lambda100; Plonky3 analyzed WHIR >=100 bits; Binius 100-bit FRI query-phase target only; Spartan-Hyrax uses native Limber defaults; integer Limber uses Lambda128 Hyrax or documented 114-bit Brakedown opening."
+        "Security labels: F2Z Lambda100; Plonky3 analyzed WHIR >=100 bits; Binius 100-bit FRI query-phase target only; integer Limber uses Brakedown with its native 114-bit column-opening target. These are the existing classical security estimates, not quantum-bit guarantees."
     );
 }
 
@@ -1918,6 +1867,8 @@ fn write_aggregate_artifacts(
                 "compression_exponent": row.exponent,
                 "compressions": 1usize << row.exponent,
                 "configuration": row.config,
+                "limber_security": (row.backend == Backend::Limber)
+                    .then(integer_limber_backend::security_metadata),
                 "whir_tuning": row.whir_tuning,
                 "measured_samples": row.samples.len(),
                 "setup_ms": row.setup_ms,
@@ -1937,7 +1888,8 @@ fn write_aggregate_artifacts(
         })
         .collect::<Vec<_>>();
     let summary_doc = json!({
-        "schema": "native-sha256-comparison/v2",
+        "schema": "native-sha256-comparison/v3",
+        "commitment_policy": "hash-based-only",
         "primary_metric": "witness_to_proof_ms",
         "environment": common::environment::metadata(rayon::current_num_threads()),
         "statement": "forall i<N: Hhat_i = Compress_SHA256(IV,M_i)",
@@ -1991,7 +1943,11 @@ fn write_aggregate_artifacts(
     println!("metrics: {}", metrics_path.display());
 }
 
-fn format_five(values: [Option<f64>; 5], higher_is_better: bool, decimals: usize) -> String {
+fn format_backends(
+    values: [Option<f64>; ALL_BACKENDS.len()],
+    higher_is_better: bool,
+    decimals: usize,
+) -> String {
     let winner = values.iter().flatten().copied().reduce(|best, value| {
         if higher_is_better {
             best.max(value)
@@ -2162,7 +2118,7 @@ fn parse_exponents() -> Vec<usize> {
     let minimum = if env_bool("F2Z_SHA_COMPARE_ALLOW_SMALL", false) {
         0
     } else {
-        10
+        7
     };
     assert!(
         exponents
@@ -2215,16 +2171,10 @@ fn env_plonky3_params() -> plonky3_backend::Params {
 }
 
 fn env_limber_params() -> integer_limber_backend::Params {
-    let engine = match std::env::var("F2Z_SHA_COMPARE_LIMBER_ENGINE")
-        .unwrap_or_else(|_| "hyrax".to_owned())
-        .as_str()
-    {
-        "hyrax" => integer_limber_backend::EngineKind::Hyrax,
-        "brakedown" => integer_limber_backend::EngineKind::Brakedown,
-        value => panic!("F2Z_SHA_COMPARE_LIMBER_ENGINE must be hyrax or brakedown, got {value}"),
-    };
+    let engine =
+        std::env::var("F2Z_SHA_COMPARE_LIMBER_ENGINE").unwrap_or_else(|_| "brakedown".to_owned());
+    integer_limber_backend::validate_engine(&engine).expect("SHA commitment policy");
     integer_limber_backend::Params {
-        engine,
         k: env_usize("F2Z_SHA_COMPARE_LIMBER_K", 9),
     }
 }
@@ -2241,9 +2191,7 @@ fn has_plonky3_override() -> bool {
 }
 
 fn has_limber_override() -> bool {
-    ["F2Z_SHA_COMPARE_LIMBER_ENGINE", "F2Z_SHA_COMPARE_LIMBER_K"]
-        .into_iter()
-        .any(|name| std::env::var_os(name).is_some())
+    std::env::var_os("F2Z_SHA_COMPARE_LIMBER_K").is_some()
 }
 
 fn shape_seed(root: u64, exponent: usize) -> u64 {
@@ -2330,6 +2278,7 @@ fn main() {
         threads, expected_threads,
         "set RAYON_NUM_THREADS={expected_threads} for the controlled comparison"
     );
+    let limber_params = env_limber_params();
     let capture = CaptureLayer::install();
 
     if let Ok(backend_slug) = std::env::var("F2Z_SHA_COMPARE_PREFLIGHT_CHILD") {
@@ -2368,19 +2317,8 @@ fn main() {
                     BiniusContext::setup(&corpus, env_usize("F2Z_SHA_COMPARE_LOG_INV_RATE", 1));
                 run_binius_trial(&context, &capture, exponent, Trial::Preflight, None)
             }
-            Backend::SpartanHyrax => {
-                let context = spartan_hyrax_backend::Context::setup(&corpus);
-                run_spartan_hyrax_trial(
-                    &context,
-                    &capture,
-                    &corpus,
-                    exponent,
-                    Trial::Preflight,
-                    None,
-                )
-            }
             Backend::Limber => {
-                let params = env_limber_params();
+                let params = limber_params;
                 let context = integer_limber_backend::Context::setup(&corpus, params)
                     .expect("preflight integer Limber configuration is eligible");
                 run_integer_limber_trial(
@@ -2433,7 +2371,7 @@ fn main() {
     )
     .expect("save environment");
 
-    println!("Native SHA-256 compression comparison across five prover configurations");
+    println!("Native SHA-256 compression comparison across four hash-based prover configurations");
     println!("relation: forall i<N: Hhat_i = Compress_SHA256(IV,M_i)");
     println!(
         "threads={threads}; samples={reps}; warmups=1; trace={}",
@@ -2452,17 +2390,14 @@ fn main() {
         if requested.contains(&Backend::Plonky3Whir) {
             plonky3_backend::tamper_self_test();
         }
-        if requested.contains(&Backend::SpartanHyrax) {
-            spartan_hyrax_backend::tamper_self_test();
-        }
         if requested.contains(&Backend::Limber) {
             integer_limber_backend::constraint_self_test();
         }
     }
 
     let pilot_enabled = env_bool("F2Z_SHA_COMPARE_PILOT", true);
-    let pilot_exponent = env_usize("F2Z_SHA_COMPARE_PILOT_EXPONENT", 14);
-    assert!((10..=16).contains(&pilot_exponent));
+    let pilot_exponent = env_usize("F2Z_SHA_COMPARE_PILOT_EXPONENT", exponents[0].max(7));
+    assert!((7..=16).contains(&pilot_exponent));
     let pilot = pilot_enabled.then(|| {
         Corpus::new(
             1usize << pilot_exponent,
@@ -2491,14 +2426,14 @@ fn main() {
     } else if requested.contains(&Backend::Binius)
         && let Some(pilot) = &pilot
     {
-        choose_binius_rate(&capture, pilot, pilot_reps)
+        choose_binius_rate(&capture, pilot, pilot_exponent, pilot_reps)
     } else {
         1
     };
 
     // WHIR is selected separately at each measured size inside run_campaign.
     let plonky3 = env_plonky3_params();
-    let preliminary_limber = env_limber_params();
+    let preliminary_limber = limber_params;
     let mut runnable = requested.clone();
     if runnable.contains(&Backend::Limber) && env_bool("F2Z_SHA_COMPARE_HEAVY_PREFLIGHT", true) {
         let preliminary = SelectedConfigs {
@@ -2571,6 +2506,15 @@ fn main() {
 
 #[cfg(test)]
 mod native_whir_tests {
+    #[test]
+    fn comparison_has_only_the_four_requested_backends() {
+        assert_eq!(
+            super::ALL_BACKENDS.map(super::Backend::slug),
+            ["f2z", "plonky3-whir", "binius64", "limber"]
+        );
+        assert!(super::Backend::parse("spartan-hyrax").is_none());
+    }
+
     #[test]
     fn default_sha_sizes_have_eligible_security_schedules() {
         super::plonky3_backend::security_schedule_self_test();

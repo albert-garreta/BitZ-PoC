@@ -212,8 +212,8 @@ name = "sha256_e2e_compare"
 harness = false
 required-features = ["bench-internals", "native-sha256-compare"]
 # Claim-equivalent fixed-IV native SHA-256 comparison across F2Z, full
-# Plonky3 SHA AIR/WHIR, Binius64, Spartan/Hyrax, and integer-mod Limber.
-# Exponents via F2Z_SHA_COMPARE_EXPONENTS (default 10..16), one warmup and
+# Plonky3 SHA AIR/WHIR, Binius64, and integer-mod Limber/Brakedown.
+# Exponents via F2Z_SHA_COMPARE_EXPONENTS (default 7,8,10..16), one warmup and
 # 21 measured verified samples by default.
 
 [[bench]]

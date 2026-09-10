@@ -502,7 +502,7 @@ pub fn tamper_self_test() {
 #[cfg(test)]
 pub(super) fn security_schedule_self_test() {
     type EF = BinomialExtensionField<F, 5>;
-    for exponent in 10..=16 {
+    for exponent in 7..=16 {
         let corpus = Corpus::new(1 << exponent, 0x5033_5348_415f_5445);
         let air = PublicSha256Air::new(&corpus);
         let shape = whir_tuning::air_shape::<F, EF, _>(&air, exponent);
