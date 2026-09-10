@@ -849,8 +849,13 @@ impl BenchReport {
     }
 
     fn result_line_with_commitment(&self, commitment_bytes: usize) -> String {
+        let schema = if self.extra.iter().any(|(key, _)| key == "ligerito_hex") {
+            "f2z/2"
+        } else {
+            "f2z/1"
+        };
         let mut line = format!(
-            "RESULT schema=f2z/1 bench={} shape={}",
+            "RESULT schema={schema} bench={} shape={}",
             self.bench, self.shape
         );
         for (key, value) in &self.extra {
@@ -935,4 +940,42 @@ fn optional_median(samples: &[Option<f64>]) -> Option<f64> {
 /// Milliseconds elapsed since `start`.
 pub fn elapsed_ms(start: Instant) -> f64 {
     start.elapsed().as_secs_f64() * 1e3
+}
+
+/// Only F2Z callers consult this selector. Competing PCS configurations do not.
+pub fn ligerito_selection(target: usize) -> f2z::ligerito_flock::LigeritoSelection {
+    ligerito_selection_or(
+        target,
+        f2z::ligerito_flock::LigeritoSelection::for_target(target),
+    )
+}
+
+pub fn ligerito_selection_or(
+    target: usize,
+    default: f2z::ligerito_flock::LigeritoSelection,
+) -> f2z::ligerito_flock::LigeritoSelection {
+    match std::env::var("F2Z_LIG_PROFILE") {
+        Ok(request) => f2z::ligerito_flock::LigeritoSelection::parse(&request, target)
+            .expect("invalid F2Z_LIG_PROFILE"),
+        Err(std::env::VarError::NotPresent) => default,
+        Err(error) => panic!("invalid F2Z_LIG_PROFILE: {error}"),
+    }
+}
+
+pub fn ligerito_report(
+    resolved: &f2z::ligerito_flock::ResolvedLigerito,
+    ood: Option<f2z::ligerito_flock::OodRoundParams>,
+) -> serde_json::Value {
+    let request = std::env::var("F2Z_LIG_PROFILE").unwrap_or_else(|_| resolved.selection().name());
+    resolved.report(&request, ood)
+}
+
+pub fn ligerito_identity(
+    resolved: &f2z::ligerito_flock::ResolvedLigerito,
+    ood: Option<f2z::ligerito_flock::OodRoundParams>,
+) -> (String, String) {
+    (
+        "ligerito_hex".into(),
+        f2z::ligerito_flock::ResolvedLigerito::encode_report(&ligerito_report(resolved, ood)),
+    )
 }

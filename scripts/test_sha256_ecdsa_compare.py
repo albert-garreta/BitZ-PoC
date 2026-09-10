@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 import run_sha256_ecdsa_compare as campaign
+from test_ligerito_results import report as ligerito_report
 
 
 class CampaignTests(unittest.TestCase):
@@ -28,7 +29,7 @@ class CampaignTests(unittest.TestCase):
                                   trial="sample" if sample else "warmup", compressions=8, message_bytes=448,
                                   signatures=1, statement_bytes=129, fixture_id="a"*64,
                                   spartan_revision="b"*40, zk=False, fixture_profile=campaign.FIXTURE_SCHEMA,
-                                  security={"model": "round-by-round-economic"},
+                                  security={"model": "round-by-round-economic", "ligerito": ligerito_report()},
                                   **dict.fromkeys(campaign.METRICS, 0)))
 
     def test_f2z_is_not_duplicated_per_chunking(self):
@@ -52,6 +53,16 @@ class CampaignTests(unittest.TestCase):
             rows[1][key] = value
             self.assertFalse(campaign.validate_rows(rows, self.case, 1), key)
         self.assertFalse(campaign.validate_rows(self.rows[:1], self.case, 1))
+
+    def test_mixed_ligerito_regimes_are_rejected(self):
+        rows = copy.deepcopy(self.rows)
+        rows[1]["security"]["ligerito"] = ligerito_report(False)
+        self.assertFalse(campaign.validate_rows(rows, self.case, 1))
+
+    def test_resume_rejects_changed_ligerito_profile(self):
+        old = dict(binary_sha256="native", ligerito_profile="custom:3:4")
+        self.assertTrue(campaign.compatible_manifest(old, copy.deepcopy(old)))
+        self.assertFalse(campaign.compatible_manifest(old, dict(old, ligerito_profile="udrg:3:4")))
 
     def test_binius_requires_matching_security_and_its_own_revision(self):
         case = dict(self.case, method="binius64")

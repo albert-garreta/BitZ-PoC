@@ -28,7 +28,10 @@ BaseFold opening. Trace metadata keeps the `prepare_witness`, `commit_witness`
 and `ring_switching` identifiers and adds `public_input_check` and `finish_pcs`.
 The SHA+ECDSA worker still uses the same standard P-256 fixture and non-ZK mode.
 
-Hybrid serialization and statement domains are version 4. Regenerate setup and
+This consolidation introduced hybrid serialization and statement domain version 4.
+The subsequent Johnson/early-OOD merge uses version 5 to combine the new Binius
+public-input checks with the new Ligerito geometry and padding authentication.
+Regenerate setup and
 proof artifacts; earlier proof versions are rejected. SHA+ECDSA fixture schema
 is unchanged. Keep historical results as recorded and use a fresh campaign
 directory for the consolidated build: old timings describe the old dependency.

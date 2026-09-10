@@ -29,9 +29,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Err("reps must be positive".into());
     }
     let start = Instant::now();
-    let prepared = prepare_sha256_ecdsa(exponent, lambda, mode)?;
+    let prepared = prepare_sha256_ecdsa(exponent, lambda, mode)?
+        .with_ligerito(common::ligerito_selection(lambda as usize))?;
     let setup_ms = start.elapsed().as_secs_f64() * 1000.;
     let security = prepared.security()?;
+    println!("LIGERITO_CONFIG {}", common::ligerito_report(prepared.ligerito_configuration(), prepared.ligerito_configuration().round0(lambda)?));
     let message: Vec<_> = (0..prepared.message_bytes()).map(|i| i as u8).collect();
     let key = SigningKey::from_bytes((&[7u8; 32]).into())?;
     let signature: Signature = key.sign(&message);
@@ -80,7 +82,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!(
             "{}",
             json!({
-                "schema": "f2z/sha256-ecdsa/v1", "trial": if trial==0 {"warmup"} else {"sample"}, "sample": trial,
+                "schema": "f2z/sha256-ecdsa/v2",
+                "ligerito": common::ligerito_report(prepared.ligerito_configuration(), prepared.ligerito_configuration().round0(lambda)?), "trial": if trial==0 {"warmup"} else {"sample"}, "sample": trial,
                 "log_compressions": exponent, "compressions": prepared.compressions(), "message_bytes": message.len(),
                 "mode": args[1], "security_target": lambda, "threads": threads,
                 "security_model": "round-by-round-economic", "economic_bits": security.economic_bits(), "statistical_bits_lower_bound": security.statistical_bits(),

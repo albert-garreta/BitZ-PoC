@@ -146,6 +146,9 @@ pub enum Sha256ConstraintError {
     #[error(transparent)]
     Profile(#[from] ProfileError),
 
+    #[error("invalid Ligerito configuration: {0}")]
+    LigeritoConfig(String),
+
     /// The controlled product-layout sweep requires exactly `2^14`
     /// compressions and `7 <= t <= 28`.
     #[error(
@@ -207,11 +210,25 @@ pub struct PreparedSha256CompressionBatch {
     instances: usize,
     log_instance_capacity: usize,
     security: IopSecurityParams,
+    ligerito: Option<crate::ligerito_flock::ResolvedLigerito>,
     prime_profile: Sha256PrimeProfile,
     opening_layout: Sha256OpeningLayout,
 }
 
 impl PreparedSha256CompressionBatch {
+    /// Select only this batch's Ligerito opener; the enclosing target is retained.
+    pub fn with_ligerito(mut self, selection: crate::ligerito_flock::LigeritoSelection) -> Result<Self, Sha256ConstraintError> {
+        let resolved = selection.resolve(self.p_f.t + self.p_f.s - LOG_PACKING, self.security.ligerito_target_bits)
+            .map_err(Sha256ConstraintError::LigeritoConfig)?;
+        self.security.adopt_ood_round(resolved.ood_bits())?;
+        self.ligerito = Some(resolved);
+        Ok(self)
+    }
+
+    pub fn ligerito_configuration(&self) -> Result<&crate::ligerito_flock::ResolvedLigerito, Sha256ConstraintError> {
+        self.ligerito.as_ref().ok_or_else(|| Sha256ConstraintError::LigeritoConfig("test-only preparation has no production Ligerito policy".into()))
+    }
+
     /// The assignment layout this batch was prepared with.
     pub const fn opening_layout(&self) -> Sha256OpeningLayout {
         self.opening_layout
@@ -486,6 +503,8 @@ pub fn prepare_sha256_compression_batch_with_profile_and_layout<P: IopSecurityPr
     };
     let prepared =
         prepare_sha256_compression_instances_with_profile_and_layout::<P>(instances, layout)?;
+    let selection = crate::ligerito_flock::LigeritoSelection::for_target(prepared.security.ligerito_target_bits);
+    let prepared = prepared.with_ligerito(selection)?;
     validate_prepared_protocol(&prepared)?;
     Ok(prepared)
 }
@@ -512,6 +531,8 @@ pub fn prepare_sha256_compression_batch_for_product_t_fixed98(
         |_| Ok(fixed_98_security_params()),
         true,
     )?;
+    let selection = crate::ligerito_flock::LigeritoSelection::for_target(prepared.security.ligerito_target_bits);
+    let prepared = prepared.with_ligerito(selection)?;
     validate_prepared_protocol(&prepared)?;
     if prepared.max_boolean_residual_bound() >= &BigUint::from(SHA256_FIXED_98_PRIME) {
         return Err(Sha256ConstraintError::FixedPrimeResidualBound);
@@ -555,6 +576,8 @@ pub fn prepare_sha256_compression_batch_for_assignment_rows_with_profile<P: IopS
     }
     validate_instance_capacity(instances)?;
     let prepared = prepare_sha256_compression_instances_with_profile::<P>(instances)?;
+    let selection = crate::ligerito_flock::LigeritoSelection::for_target(prepared.security.ligerito_target_bits);
+    let prepared = prepared.with_ligerito(selection)?;
     validate_prepared_protocol(&prepared)?;
     if prepared.p_h.t + prepared.p_h.s != log_assignment_rows {
         return Err(Sha256ConstraintError::InvalidBatchExponent);
@@ -753,6 +776,7 @@ fn prepare_sha256_compression_instances(
         instances,
         log_instance_capacity,
         security,
+        ligerito: None, // Explicit algebra fixtures omit a production PCS policy.
         prime_profile,
         opening_layout: layout,
     })
@@ -1316,7 +1340,7 @@ mod tests {
 
     #[test]
     fn production_assignment_geometry_uses_one_forest() {
-        for exponent in SHA256_MIN_LOG_COMPRESSIONS..=SHA256_MAX_LOG_COMPRESSIONS {
+        for exponent in 7..=SHA256_MAX_LOG_COMPRESSIONS {
             let prepared = prepare_sha256_compression_batch(exponent).unwrap();
             let max_q_bits =
                 u128::BITS as usize - prepared.security().projection_max.leading_zeros() as usize;

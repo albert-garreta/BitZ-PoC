@@ -65,9 +65,11 @@ fn sweep_profile<P: IopSecurityProfile>(
     let compressions = 1usize << exponent;
     let setup_started = Instant::now();
     let prepared = prepare_sha256_compression_batch_with_profile::<P>(exponent)
+        .and_then(|p| p.with_ligerito(common::ligerito_selection(P::LIGERITO_TARGET_BITS)))
         .expect("profile instantiates at this shape");
     let (pc, vc) = sha256_compression_configs(&prepared).expect("Ligerito configs");
     let setup_ms = common::elapsed_ms(setup_started);
+    println!("LIGERITO_CONFIG {}", common::ligerito_report(prepared.ligerito_configuration().expect("validated Ligerito"), prepared.security().ood));
     let security = prepared.security().clone();
 
     println!();
@@ -173,6 +175,7 @@ fn sweep_profile<P: IopSecurityProfile>(
         bench: "sha256",
         shape: format!("2p{exponent}"),
         extra: vec![
+            common::ligerito_identity(prepared.ligerito_configuration().unwrap(), prepared.security().ood),
             ("profile".into(), P::NAME.into()),
             ("compressions".into(), compressions.to_string()),
             (

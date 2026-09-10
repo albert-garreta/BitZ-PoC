@@ -181,7 +181,9 @@ pub(super) fn prove(
         for (index, &word) in sources[branch].iter().enumerate() {
             let dst = geometry.embed(branch, index);
             witness[dst] = apply(&bit_table, word);
-            weights[dst] = scales[branch] * low[branch][index % nlow] * high[branch][index / nlow];
+            if index < (1 << geometry.logs[branch]) {
+                weights[dst] = scales[branch] * low[branch][index % nlow] * high[branch][index / nlow];
+            }
         }
     }
     drop(low);

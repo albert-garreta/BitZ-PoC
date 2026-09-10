@@ -32,9 +32,9 @@ use crate::{
     ligerito::{LOG_PACKING, packed_vars},
     ligerito_flock::{
         FlockCommitHint, FlockRsError, IntEvalRsLigModQProof, ModQOpeningKind,
-        commit_rs_ligerito_rows, custom_johnson_config_bits,
+        commit_rs_ligerito_rows,
         prove_mle_eval_mod_q_ligerito_with_weight_chunks,
-        validated_udr_lig_configs_for_target, verify_mle_eval_mod_q_ligerito_with_weight_chunks,
+         verify_mle_eval_mod_q_ligerito_with_weight_chunks,
     },
     pcs::{FQ_BITS, FQ_MOD, Fq, ProjectCanonicalU128},
     poly::univariate::binary_gf128::BinaryFieldGF128,
@@ -329,72 +329,24 @@ fn bitify_u32_mul_spartan_claim(
     })
 }
 
-/// Which Ligerito opener configuration a [`PreparedU32MulRelation`] runs.
-/// The round-by-round target always comes from the security profile
-/// ([`IopSecurityParams::ligerito_target_bits`]); this only picks the
-/// geometry/regime. Both variants use Blake3 Merkle trees and are bound
-/// into the statement, so the two produce different proof bytes.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum U32MulLigerito {
-    /// The relation's historical default: flock's validated unique-decoding
-    /// configuration with fold grinding at rate 1/2, L0 folding of 2^4 rows
-    /// ([`validated_udr_lig_configs_for_target`]). The `u32_mul` bench and
-    /// the transcript pins run this.
-    ValidatedUdr,
-    /// A validator-gated Johnson-regime geometry
-    /// ([`custom_johnson_config_bits`]) at the profile's target — the opener
-    /// of the `f2z` CLI's raw-performance table (`custom:<log_inv_rate>:
-    /// <initial_k>`), so the two paper tables share one Ligerito.
-    CustomJohnson {
-        /// `log₂` of the inverse Reed–Solomon rate (3 = rate 1/8).
-        log_inv_rate: usize,
-        /// L0 interleaving / lane fold (`log₂` rows folded at level 0).
-        initial_k: usize,
-    },
-}
+/// Backward-compatible name for the shared, Ligerito-only configuration policy.
+pub use crate::ligerito_flock::LigeritoSelection as U32MulLigerito;
 
-/// The opener configuration pair plus, for a Johnson-regime opener, the
-/// theorem's Round-0 collision bound in bits (`None` = unique decoding,
-/// no Round 0).
-fn configs_for_layout_and_target(
-    layout: &U32MulLayout,
-    target_bits: usize,
-    ligerito: U32MulLigerito,
-) -> Result<((LigProverConfig, LigVerifierConfig), Option<f64>), SpartanF2zError> {
+fn resolved_for_layout(
+    layout: &U32MulLayout, target_bits: usize, selection: U32MulLigerito,
+) -> Result<crate::ligerito_flock::ResolvedLigerito, SpartanF2zError> {
     if layout.gate_vars() < MIN_PRODUCTION_GATE_VARS {
         return Err(SpartanF2zError::UnauditedF2zParameters);
     }
-    let p = layout.f2z_params();
-    let m_p = packed_variables(&p)?;
-    match ligerito {
-        U32MulLigerito::ValidatedUdr => validated_udr_lig_configs_for_target(m_p, target_bits)
-            .map(|pair| (pair, None))
-            .map_err(SpartanF2zError::LigeritoConfig),
-        U32MulLigerito::CustomJohnson {
-            log_inv_rate,
-            initial_k,
-        } => {
-            let m = m_p.checked_add(LOG_PACKING).ok_or_else(|| {
-                SpartanF2zError::LigeritoConfig("Ligerito variable count overflow".to_owned())
-            })?;
-            if !(20..=35).contains(&m) {
-                return Err(SpartanF2zError::LigeritoConfig(format!(
-                    "custom Johnson Ligerito geometry requires m in [20, 35], got {m}"
-                )));
-            }
-            let mut security =
-                custom_johnson_config_bits(m, log_inv_rate, initial_k, Some(target_bits));
-            // Blake3 Merkle trees, as every Spartan path here (the slim
-            // template's field says sha256).
-            security.hash = "blake3".into();
-            security.validate().map_err(SpartanF2zError::LigeritoConfig)?;
-            let ood_bits = crate::ligerito_flock::ood_round_bits(&security, m_p);
-            security
-                .to_prover_verifier_configs()
-                .map(|pair| (pair, ood_bits))
-                .map_err(SpartanF2zError::LigeritoConfig)
-        }
-    }
+    selection.resolve(packed_variables(&layout.f2z_params())?, target_bits)
+        .map_err(SpartanF2zError::LigeritoConfig)
+}
+
+#[cfg(test)]
+fn configs_for_layout_and_target(
+    layout: &U32MulLayout, target_bits: usize, selection: U32MulLigerito,
+) -> Result<((LigProverConfig, LigVerifierConfig), Option<f64>), SpartanF2zError> {
+    Ok(resolved_for_layout(layout, target_bits, selection)?.into_configs())
 }
 
 fn validate_layout_geometry(layout: &U32MulLayout) -> Result<(), SpartanF2zError> {
@@ -953,6 +905,7 @@ pub struct PreparedU32MulRelation {
     layout: U32MulLayout,
     security: IopSecurityParams,
     ligerito: U32MulLigerito,
+    ligerito_configuration: crate::ligerito_flock::ResolvedLigerito,
     ligerito_pc: LigProverConfig,
     ligerito_vc: LigVerifierConfig,
 }
@@ -962,6 +915,7 @@ pub struct PreparedU32MulRelation {
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
 pub struct PreparedU32TerminalF2zOpening {
+    ligerito_configuration: crate::ligerito_flock::ResolvedLigerito,
     layout: U32MulLayout,
     params: crate::pcs::IntEvalParams,
     security: IopSecurityParams,
@@ -979,11 +933,11 @@ impl PreparedU32MulRelation {
     }
 
     /// Prepares the relation under an explicit single-prime profile with the
-    /// relation's default opener ([`U32MulLigerito::ValidatedUdr`]).
+    /// profile's default opener (Johnson+OOD at 100 bits).
     pub fn new_with_profile<P: IopSecurityProfile>(
         layout: U32MulLayout,
     ) -> Result<Self, SpartanF2zError> {
-        Self::new_with_profile_and_ligerito::<P>(layout, U32MulLigerito::ValidatedUdr)
+        Self::new_with_profile_and_ligerito::<P>(layout, U32MulLigerito::for_target(P::LIGERITO_TARGET_BITS))
     }
 
     /// Prepares the relation under an explicit single-prime profile and an
@@ -999,9 +953,10 @@ impl PreparedU32MulRelation {
         if security.projection_full_width || security.reduction.is_some() {
             return Err(SpartanF2zError::UnsupportedProfile);
         }
-        let ((ligerito_pc, ligerito_vc), ood_bits) =
-            configs_for_layout_and_target(&layout, security.ligerito_target_bits, ligerito)?;
-        security.adopt_ood_round(ood_bits)?;
+        let ligerito_configuration = resolved_for_layout(&layout, security.ligerito_target_bits, ligerito)?;
+        let ligerito_pc = ligerito_configuration.prover().clone();
+        let ligerito_vc = ligerito_configuration.verifier().clone();
+        security.adopt_ood_round(ligerito_configuration.ood_bits())?;
         validate_config_pair(&p, &ligerito_pc, &ligerito_vc)?;
         let raw = u32_mul_constraint_matrices(&layout, true)?;
         let skeleton = ConstraintMatricesSkeleton::new(raw).map_err(SpartanError::from)?;
@@ -1010,6 +965,7 @@ impl PreparedU32MulRelation {
             layout,
             security,
             ligerito,
+            ligerito_configuration,
             ligerito_pc,
             ligerito_vc,
         })
@@ -1018,6 +974,10 @@ impl PreparedU32MulRelation {
     /// The opener geometry this relation was prepared with.
     pub const fn ligerito(&self) -> U32MulLigerito {
         self.ligerito
+    }
+
+    pub fn ligerito_configuration(&self) -> &crate::ligerito_flock::ResolvedLigerito {
+        &self.ligerito_configuration
     }
 
     /// Statement-bound layout.
@@ -1060,6 +1020,7 @@ pub fn prepare_u32_terminal_f2z_opening(
         &prepared.ligerito_pc,
     )?;
     Ok(PreparedU32TerminalF2zOpening {
+        ligerito_configuration: prepared.ligerito_configuration.clone(),
         layout: prepared.layout,
         params,
         security: prepared.security.clone(),
@@ -1108,6 +1069,9 @@ pub fn prove_u32_terminal_claim_f2z<T: Transcript + Send>(
         &opening,
         FQ_MOD,
     )?;
+    absorb_spartan_message(transcript, b"u32-terminal/early-ood/v2", &bridge_digest);
+    prepared.ligerito_configuration.bind(transcript);
+    let ood = crate::ligerito_flock::bind_prover_ood(transcript, hint, prepared.security.ood);
     let chunks = prepare_u32_bitified_chunks(&opening, FQ_BITS, &arith)?;
     if chunks.len() != 1 {
         return Err(SpartanF2zError::MultiChunkRuntimeWeights);
@@ -1122,7 +1086,7 @@ pub fn prove_u32_terminal_claim_f2z<T: Transcript + Send>(
         FQ_BITS,
         f2z_generator(),
         f2z_round_grinding_bits(&prepared.security),
-        prepared.security.ood,
+        ood,
         &prepared.ligerito_pc,
     )
     .map_err(SpartanF2zError::F2z)
@@ -1150,6 +1114,9 @@ pub fn verify_u32_terminal_claim_f2z<T: Transcript + Send>(
         &opening,
         FQ_MOD,
     )?;
+    absorb_spartan_message(transcript, b"u32-terminal/early-ood/v2", &bridge_digest);
+    prepared.ligerito_configuration.bind(transcript);
+    let ood = crate::ligerito_flock::bind_verifier_ood(transcript, packed_variables(&prepared.params)?, prepared.security.ood, proof.ood.as_ref()).map_err(SpartanF2zError::F2z)?;
     let prepared_claim = prepare_u32_bitified_claim(&opening, FQ_BITS, &arith)?;
     if prepared_claim.chunks.len() != 1 {
         return Err(SpartanF2zError::MultiChunkRuntimeWeights);
@@ -1167,7 +1134,7 @@ pub fn verify_u32_terminal_claim_f2z<T: Transcript + Send>(
         prepared_claim.claimed,
         FQ_BITS,
         f2z_round_grinding_bits(&prepared.security),
-        prepared.security.ood,
+        ood,
         &prepared.ligerito_vc,
     )
     .map_err(SpartanF2zError::F2z)
@@ -1416,6 +1383,8 @@ pub fn prove_u32_mul<T: Transcript + Send>(
 
     let binding = u32_mul_assignment_binding(layout, &hint.commitment, security, pc)?;
     absorb_spartan_message(transcript, b"u32-statement", &binding);
+    prepared.ligerito_configuration.bind(transcript);
+    let ood = crate::ligerito_flock::bind_prover_ood(transcript, hint, security.ood);
 
     // Step 2: pre-draw grinding, prime sample, and relation projection into
     // the runtime field.
@@ -1503,7 +1472,7 @@ pub fn prove_u32_mul<T: Transcript + Send>(
             q_bits,
             f2z_generator(),
             f2z_round_grinding_bits(security),
-            security.ood,
+            ood,
             pc,
         )
         .map_err(SpartanF2zError::F2z)?
@@ -1545,6 +1514,10 @@ pub fn verify_u32_mul<T: Transcript + Send>(
 
     let binding = u32_mul_assignment_binding(layout, commitment, security, pc)?;
     absorb_spartan_message(transcript, b"u32-statement", &binding);
+    prepared.ligerito_configuration.bind(transcript);
+    let ood = crate::ligerito_flock::bind_verifier_ood(
+        transcript, packed_variables(&p)?, security.ood, proof.f2z.ood.as_ref(),
+    ).map_err(SpartanF2zError::F2z)?;
 
     let step2_scope = crate::utils::prof::scope("step2:project_verify");
     check_boundary_u32::<U32MulInitialGrinding, _>(
@@ -1627,7 +1600,7 @@ pub fn verify_u32_mul<T: Transcript + Send>(
         q,
         q_bits,
         f2z_round_grinding_bits(security),
-        security.ood,
+        ood,
         vc,
     )
     .map_err(SpartanF2zError::F2z)
@@ -1697,6 +1670,35 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn early_ood_binds_regime_root_and_payload() {
+        use crate::ligerito_flock::{LigeritoSelection, IntEvalRsLigModQProof};
+        let witness = U32MulWitness::from_fn(1 << 15, |i| (i as u32, u32::MAX)).unwrap();
+        for selection in [LigeritoSelection::JOHNSON, LigeritoSelection::MATCHED_UDR] {
+            let p = PreparedU32MulRelation::new_with_profile_and_ligerito::<Lambda100>(*witness.layout(), selection).unwrap();
+            let hint = commit_u32_mul_witness(&p, witness.f2z_bit_rows()).unwrap();
+            let mut pt = crate::transcript::Blake3Transcript::new();
+            let mut proof = prove_u32_mul(&mut pt, &p, &witness, &hint).unwrap();
+            proof.f2z = IntEvalRsLigModQProof::from_bytes(&proof.f2z.to_bytes()).unwrap();
+            let check = |proof: &U32MulProof| verify_u32_mul(&mut crate::transcript::Blake3Transcript::new(), &p, &hint.commitment, proof);
+            check(&proof).unwrap();
+            let mut bad = proof.clone();
+            if let Some(round) = bad.f2z.ood.as_mut() { round.y = round.y + crate::poly::univariate::binary_gf128::BinaryFieldGF128::one(); } else {
+                bad.f2z.ood = Some(crate::ligerito_flock::OodRound { y: crate::poly::univariate::binary_gf128::BinaryFieldGF128::zero(), nonce: None });
+            }
+            assert!(check(&bad).is_err());
+            if proof.f2z.ood.is_some() {
+                let mut bad = proof.clone(); bad.f2z.ood = None; assert!(check(&bad).is_err());
+                let mut bad = proof.clone(); bad.f2z.ood.as_mut().unwrap().nonce = Some(u64::MAX); assert!(check(&bad).is_err());
+            }
+            let mut root = hint.commitment.clone(); root.root[0] ^= 1;
+            assert!(verify_u32_mul(&mut crate::transcript::Blake3Transcript::new(), &p, &root, &proof).is_err());
+            let other = if selection == LigeritoSelection::JOHNSON { LigeritoSelection::MATCHED_UDR } else { LigeritoSelection::JOHNSON };
+            let foreign = PreparedU32MulRelation::new_with_profile_and_ligerito::<Lambda100>(*witness.layout(), other).unwrap();
+            assert!(verify_u32_mul(&mut crate::transcript::Blake3Transcript::new(), &foreign, &hint.commitment, &proof).is_err());
+        }
     }
 
     #[test]

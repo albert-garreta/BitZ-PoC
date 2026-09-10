@@ -46,7 +46,7 @@ use crate::{
     ligerito_flock::{
         FlockCommitHint, IntEvalRsLigVirtProof, LigeritoStatementConfig,
         prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
-        validate_ligerito_commitment, validated_udr_lig_configs_for_target,
+        validate_ligerito_commitment,
         verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
     },
     pcs::{
@@ -401,9 +401,23 @@ pub struct PreparedSha256ChainBatch {
     instances: usize,
     log_instance_capacity: usize,
     security: IopSecurityParams,
+    ligerito: Option<crate::ligerito_flock::ResolvedLigerito>,
 }
 
 impl PreparedSha256ChainBatch {
+    /// Select only this batch's Ligerito opener; the enclosing target is retained.
+    pub fn with_ligerito(mut self, selection: crate::ligerito_flock::LigeritoSelection) -> Result<Self, Sha256ConstraintError> {
+        let resolved = selection.resolve(packed_vars(&self.p_f), self.security.ligerito_target_bits)
+            .map_err(Sha256ConstraintError::LigeritoConfig)?;
+        self.security.adopt_ood_round(resolved.ood_bits())?;
+        self.ligerito = Some(resolved);
+        Ok(self)
+    }
+
+    pub fn ligerito_configuration(&self) -> Result<&crate::ligerito_flock::ResolvedLigerito, Sha256ConstraintError> {
+        self.ligerito.as_ref().ok_or_else(|| Sha256ConstraintError::LigeritoConfig("test-only preparation has no production Ligerito policy".into()))
+    }
+
     /// Number of chained compressions `N`.
     pub const fn instances(&self) -> usize {
         self.instances
@@ -490,7 +504,8 @@ pub fn prepare_sha256_chain_batch_with_profile_and_initial_state<P: IopSecurityP
         )
         .ok_or(Sha256ConstraintError::InvalidBatchExponent)?;
     validate_instance_capacity(instances)?;
-    let prepared = prepare_chain_instances::<P>(instances, initial_state)?;
+    let prepared = prepare_chain_instances::<P>(instances, initial_state)?
+        .with_ligerito(crate::ligerito_flock::LigeritoSelection::for_target(P::LIGERITO_TARGET_BITS))?;
     Sha256PrimeProfile::from_security(&prepared.security, prepared.log_instance_capacity)?;
     let max_q_bits =
         u128::BITS as usize - prepared.security.projection_max.leading_zeros() as usize;
@@ -554,6 +569,7 @@ fn prepare_chain_instances<P: IopSecurityProfile>(
         instances,
         log_instance_capacity,
         security,
+        ligerito: None, // Explicit algebra fixtures omit a production PCS policy.
     })
 }
 
@@ -562,11 +578,8 @@ pub fn sha256_chain_configs(
     prepared: &PreparedSha256ChainBatch,
 ) -> Result<(LigProverConfig, LigVerifierConfig), Sha256F2zError> {
     validate_source_params(&prepared.p_f)?;
-    validated_udr_lig_configs_for_target(
-        packed_vars(&prepared.p_f),
-        prepared.security.ligerito_target_bits,
-    )
-    .map_err(Sha256F2zError::LigeritoConfig)
+    let resolved = prepared.ligerito_configuration()?;
+    Ok((resolved.prover().clone(), resolved.verifier().clone()))
 }
 
 /// A complete chain witness batch: the packed committed source, the
@@ -904,6 +917,9 @@ pub fn prove_sha256_chain_with_config<T: Transcript + Send>(
         assignment_binding
     };
 
+    prepared.ligerito_configuration()?.bind(transcript);
+    let ood = crate::ligerito_flock::bind_prover_ood(transcript, hint_f, prepared.security.ood);
+
     let step2_scope = crate::utils::prof::scope("step2:project_prove");
     let initial_nonce = {
         let _scope = crate::utils::prof::scope("sha256:initial_grinding_prove");
@@ -1016,7 +1032,7 @@ pub fn prove_sha256_chain_with_config<T: Transcript + Send>(
             mod_q.q_bits(),
             f2z_generator(),
             prepared.security.forest_round_grinding_bits,
-            prepared.security.ood,
+            ood,
             pc,
         )
         .map_err(Sha256F2zError::F2z)?
@@ -1078,6 +1094,9 @@ pub fn verify_sha256_chain_with_config<T: Transcript + Send>(
         );
         assignment_binding
     };
+
+    prepared.ligerito_configuration()?.bind(transcript);
+    let ood = crate::ligerito_flock::bind_verifier_ood(transcript, packed_vars(p_f), prepared.security.ood, proof.f2z.ood.as_ref()).map_err(Sha256F2zError::F2z)?;
 
     let step2_scope = crate::utils::prof::scope("step2:project_verify");
     {
@@ -1194,7 +1213,7 @@ pub fn verify_sha256_chain_with_config<T: Transcript + Send>(
         mod_q.q(),
         mod_q.q_bits(),
         prepared.security.forest_round_grinding_bits,
-        prepared.security.ood,
+        ood,
         vc,
     )
     .map_err(Sha256F2zError::F2z)
@@ -1768,8 +1787,9 @@ mod tests {
 
     #[test]
     fn chain_roundtrip_and_public_binding() {
+        for selection in [crate::ligerito_flock::LigeritoSelection::JOHNSON, crate::ligerito_flock::LigeritoSelection::MATCHED_UDR] {
         const LOG_COMPRESSIONS: usize = 7;
-        let prepared = prepare_sha256_chain_batch(LOG_COMPRESSIONS).unwrap();
+        let prepared = prepare_sha256_chain_batch(LOG_COMPRESSIONS).unwrap().with_ligerito(selection).unwrap();
         let blocks = blocks(prepared.instances(), 0xbeef);
         let witness = generate_sha256_chain_witnesses(&prepared, &blocks).unwrap();
         let statement = witness.statement();
@@ -1854,6 +1874,7 @@ mod tests {
             ),
             Err(Sha256F2zError::ChainStatementMismatch)
         ));
+        }
     }
 
     #[test]

@@ -1,3 +1,4 @@
+//! Historical kernel experiment; no production security claim.
 //! Reference measurement for the F2Z ring-switch + Ligerito opener: prove /
 //! verify wall-clock and serialized proof size at a few `n = t + s` shapes.
 //!
@@ -10,7 +11,7 @@ use std::time::Instant;
 
 use f2z::ligerito::packed_vars;
 use f2z::ligerito_flock::{
-    commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, sha_lig_configs,
+    commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, historical_sha_lig_configs,
     verify_mle_eval_mod_q_ligerito,
 };
 use f2z::pcs::{IntEvalParams, mod_q_num_chunks, smallest_generator};
@@ -61,7 +62,7 @@ fn measure(t: usize, s: usize, w: usize, reps: usize) {
     let m_p = packed_vars(&p);
     let lch = mod_q_num_chunks(&p, q_bits);
     // The library's audited config boundary (embedded FAST at m ≥ 22).
-    let (pc, vc) = sha_lig_configs(m_p).expect("lig cfg");
+    let (pc, vc) = historical_sha_lig_configs(m_p).expect("lig cfg");
 
     // Instance generated straight into the per-column bit rows — the
     // u128 cell tensor never exists (the memory-honest commit path).

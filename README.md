@@ -1,6 +1,15 @@
 
 # BitZ 🫜 --- README for normal humans
 
+Production 100-bit F2Z paths now default to **Ligerito Johnson `custom:3:4`
+with early OOD**. Use `F2Z_LIG_PROFILE=udrg:3:4` (or the applicable CLI
+`--profile udrg:3:4`) for matched-geometry UDR. This selector applies only
+to F2Z/Ligerito; it does not change Binius64, Plonky3-FRI/WHIR, or Limber.
+Higher-security profiles retain their previous defaults. See the
+[entrypoint inventory, supported shapes, result versions, and validation commands](docs/ligerito-coverage.md).
+Paired benchmark measurements are deferred.
+
+
 The core BitZ PCS proves
 
 ```
@@ -41,9 +50,9 @@ The sweep uses six pairs of `(multiplication log, compression log)`:
 `15:7,16:8,17:9,18:10,19:11,20:12`. Each pair has equal packed witness
 sizes for the multiplication and SHA branches. The largest pair is
 **1,048,576 modular multiplications and 4,096 chained compressions**.
-`--sweep` selects all six sizes. By default, each size is repeated three
-times, giving **18 verified proofs total**. `--iterations N` controls
-repetitions per size.
+`--sweep` selects all six sizes. By default, each size runs one discarded warmup followed by five measured
+proofs, giving **30 measured proofs total**. `--iterations N` controls
+measured repetitions per size.
 Every sample proves and verifies; setup is measured separately.
 
 If using the existing executable built in `target/hybrid-build/`, skip
@@ -517,7 +526,7 @@ cargo +1.98.1 run --release --example int_mult -- --bits 32 --log-gates 15
 
 At L=15 all backends prove **32,768 independent gates**; Limber allocates
 131,072 padded witness slots. `u32` aliases `u32-mod32`; BabyBear is absent
-from this comparison. F2Z explicitly uses Lambda100, Johnson `custom:3:4`
+from this comparison. F2Z uses Lambda100 and defaults to Johnson `custom:3:4`
 and Round-0 OOD. Binius and Plonky3 use their documented 100-bit targets;
 Limber retains its native approximately 114-bit policy.
 

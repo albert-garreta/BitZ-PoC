@@ -304,7 +304,8 @@ struct F2zContext {
 impl F2zContext {
     fn setup(exponent: usize, corpus: &Corpus, inner_prefix_vars: usize) -> Self {
         let started = Instant::now();
-        let prepared = prepare_sha256_compression_batch(exponent).expect("valid SHA batch");
+        let prepared = prepare_sha256_compression_batch(exponent)
+            .and_then(|p| p.with_ligerito(common::ligerito_selection(100))).expect("valid SHA batch");
         let (pc, vc) = sha256_compression_configs(&prepared).expect("valid F2Z PCS config");
         let setup_ms = started.elapsed().as_secs_f64() * 1e3;
         Self {
@@ -1130,7 +1131,7 @@ impl TraceWriter {
                     "input_state": "standard SHA-256 IV (fixed)",
                 },
                 "security": match metadata.backend {
-                    Backend::F2z => json!({"profile": "Lambda100", "target_bits": 100, "claim": "modeled F2Z protocol accounting"}),
+                    Backend::F2z => metadata.security.clone().expect("resolved F2Z Ligerito policy"),
                     Backend::Plonky3Whir => metadata.security.clone().expect("WHIR security report"),
                     Backend::Binius => json!({
                         "profile": "100-bit FRI query-phase target",
@@ -1270,7 +1271,7 @@ fn run_f2z_trial(
                 log_inv_rate: None,
                 query_count: None,
                 config_label: &config_label,
-                security: None,
+                security: Some(json!({"profile":"Lambda100", "target_bits":100, "ligerito":common::ligerito_report(context.prepared.ligerito_configuration().unwrap(), context.prepared.security().ood)})),
             },
             &spans,
         );
@@ -2533,5 +2534,26 @@ mod native_whir_tests {
     #[test]
     fn sha_proof_binds_public_blocks_outputs_and_order() {
         super::plonky3_backend::tamper_self_test();
+    }
+}
+
+#[cfg(test)]
+mod ligerito_isolation_tests {
+    #[test]
+    fn limber_configuration_probe() {
+        if std::env::var_os("F2Z_TEST_CONFIGURATION_PROBE").is_none() { return; }
+        println!("CONFIG_PROBE {}",super::integer_limber_backend::security_metadata());
+    }
+    #[test]
+    fn ligerito_selector_leaves_limbers_native_security_unchanged() {
+        let probe=|profile| {
+            let out=std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact","benchmark::ligerito_isolation_tests::limber_configuration_probe","--nocapture"])
+                .env("F2Z_TEST_CONFIGURATION_PROBE","1").env("F2Z_LIG_PROFILE",profile).output().unwrap();
+            assert!(out.status.success(),"{}",String::from_utf8_lossy(&out.stderr));
+            let stdout=String::from_utf8(out.stdout).unwrap();
+            serde_json::from_str::<serde_json::Value>(stdout.lines().find_map(|l|l.strip_prefix("CONFIG_PROBE ")).unwrap()).unwrap()
+        };
+        assert_eq!(probe("custom:3:4"),probe("udrg:3:4"));
     }
 }

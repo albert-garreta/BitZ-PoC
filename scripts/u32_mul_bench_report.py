@@ -10,6 +10,7 @@ from collections import defaultdict
 from itertools import product
 from pathlib import Path
 from typing import Iterable
+from ligerito_results import validate_result_fields
 
 
 STATIC_FIELDS = (
@@ -58,6 +59,7 @@ RAW_FIELDS = (
 )
 
 SUMMARY_REQUIRED_FIELDS = (
+    "ligerito_hex",
     "pass",
     "order",
     *IDENTITY_FIELDS,
@@ -325,6 +327,7 @@ def main() -> None:
             )
         result = shape_results[0]
         require(result, SUMMARY_REQUIRED_FIELDS, "RESULT")
+        validate_result_fields(result)
         for sample in shape_samples:
             require(sample, RAW_FIELDS, "SAMPLE")
         if result["pass"] != "latency" or any(

@@ -620,17 +620,18 @@ fn run_f2z(
     reps: usize,
 ) -> Result<(), Box<dyn Error>> {
     let setup = Instant::now();
-    let relation = PreparedU32MulRelation::new(*witness.layout())?;
+    let relation = PreparedU32MulRelation::new_with_profile_and_ligerito::<f2z::piop::spartan::Lambda100>(*witness.layout(), common::ligerito_selection(100))?;
     let preflight = commit_u32_mul_witness(&relation, witness.f2z_bit_rows())?;
     let commitment = preflight.commitment.clone();
     drop(preflight);
     flock_core::scratch::clear();
     let prepared: PreparedU32TerminalF2zOpening =
         prepare_u32_terminal_f2z_opening(&relation, &commitment)?;
+    let ligerito = common::ligerito_report(relation.ligerito_configuration(), relation.security().ood);
     drop((relation, commitment));
     let setup_ms = common::elapsed_ms(setup);
     eprintln!("    backend_setup_ms={setup_ms:.3}");
-    let security = json!({"profile":"F2Z Lambda100 terminal opening","target_bits":100,"evaluation_modulus":FQ_MOD.to_string(),"commitment_field":"GF(2^128)","transcript_hash":"BLAKE3"});
+    let security = json!({"profile":"F2Z Lambda100 terminal opening","ligerito":ligerito,"target_bits":100,"evaluation_modulus":FQ_MOD.to_string(),"commitment_field":"GF(2^128)","transcript_hash":"BLAKE3"});
     for trial in std::iter::once(Trial::Warmup).chain((0..reps).map(Trial::Sample)) {
         let seed = trial_seed(shape_seed, Backend::F2z, trial);
         clear_profile();

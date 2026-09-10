@@ -120,7 +120,9 @@ def main():
                             row = json.loads(line)
                         except ValueError:
                             continue
-                        if isinstance(row, dict) and row.get("schema") == "f2z/sha256-ecdsa/v1":
+                        if isinstance(row, dict) and row.get("schema") == "f2z/sha256-ecdsa/v2":
+                            from ligerito_results import validate_ligerito
+                            validate_ligerito(row.get("ligerito"), target)
                             rows.append(row)
                     samples = [r for r in rows if r.get("trial") == "sample"]
                     if returncode == 0 and len(samples) == args.reps and all(r.get("verified") for r in rows):

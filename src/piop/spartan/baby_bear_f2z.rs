@@ -30,8 +30,8 @@ use crate::{
     ligerito::{LOG_PACKING, packed_vars},
     ligerito_flock::{
         FlockCommitHint, FlockRsError, IntEvalRsLigModQProof, ModQOpeningKind,
-        commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito_with_weight_chunks, sha_lig_configs,
-        validated_udr_lig_configs_for_target, verify_mle_eval_mod_q_ligerito_with_weight_chunks,
+        commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito_with_weight_chunks,
+         verify_mle_eval_mod_q_ligerito_with_weight_chunks,
         verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime,
     },
     pcs::{FQ_BITS, FQ_MOD, Fq, ProjectCanonicalU128},
@@ -139,6 +139,7 @@ struct PreparedBabyBearBitifiedClaim {
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
 pub struct PreparedBabyBearTerminalF2zOpening {
+    ligerito: crate::ligerito_flock::ResolvedLigerito,
     layout: BabyBearMulLayout,
     params: crate::pcs::IntEvalParams,
     pc: LigProverConfig,
@@ -260,10 +261,18 @@ pub fn commit_baby_bear_mul_witness(
     layout: &BabyBearMulLayout,
     rows: Vec<Vec<u64>>,
 ) -> Result<FlockCommitHint, BabyBearSpartanF2zError> {
+    commit_baby_bear_mul_witness_with_ligerito(layout, rows, crate::ligerito_flock::LigeritoSelection::JOHNSON)
+}
+
+pub fn commit_baby_bear_mul_witness_with_ligerito(
+    layout: &BabyBearMulLayout,
+    rows: Vec<Vec<u64>>,
+    selection: crate::ligerito_flock::LigeritoSelection,
+) -> Result<FlockCommitHint, BabyBearSpartanF2zError> {
     let params = layout.f2z_params();
     validate_layout_geometry(layout)?;
     validate_bit_rows(&params, &rows)?;
-    let (pc, vc) = configs_for_layout(layout)?;
+    let (pc, vc) = configs_for_layout_with_ligerito(layout, selection)?;
     validate_config_pair(&params, &pc, &vc)?;
 
     let hint = commit_rs_ligerito_rows(&params, rows, &pc);
@@ -417,9 +426,20 @@ pub fn prepare_baby_bear_terminal_f2z_opening(
     layout: &BabyBearMulLayout,
     commitment: &Commitment,
 ) -> Result<PreparedBabyBearTerminalF2zOpening, BabyBearSpartanF2zError> {
+    prepare_baby_bear_terminal_f2z_opening_with_ligerito(matrices, layout, commitment, crate::ligerito_flock::LigeritoSelection::JOHNSON)
+}
+
+#[cfg(feature = "bench-internals")]
+pub fn prepare_baby_bear_terminal_f2z_opening_with_ligerito(
+    matrices: &PreparedConstraintMatrices<SpartanF2zField, BabyBearMulCoefficient>,
+    layout: &BabyBearMulLayout,
+    commitment: &Commitment,
+    selection: crate::ligerito_flock::LigeritoSelection,
+) -> Result<PreparedBabyBearTerminalF2zOpening, BabyBearSpartanF2zError> {
     let (params, pc, vc, assignment_binding) =
-        prepare_fixed_q_opening(matrices, layout, commitment, None)?;
+        prepare_fixed_q_opening(matrices, layout, commitment, None, selection)?;
     Ok(PreparedBabyBearTerminalF2zOpening {
+        ligerito: selection.resolve(packed_variables(&params)?, 100).map_err(BabyBearSpartanF2zError::LigeritoConfig)?,
         layout: *layout,
         params,
         pc,
@@ -464,6 +484,11 @@ pub fn prove_baby_bear_terminal_claim_f2z<T: Transcript + Send>(
 ) -> Result<IntEvalRsLigModQProof, BabyBearSpartanF2zError> {
     validate_prepared_opening_commitment(prepared, &hint.commitment)?;
     validate_bit_rows(&prepared.params, hint.rows())?;
+    let resolved = &prepared.ligerito;
+    absorb_spartan_message(transcript, b"baby-bear-terminal/early-ood/v2", &prepared.assignment_binding);
+    absorb_spartan_message(transcript, b"terminal-relation", &prepared.relation_digest);
+    resolved.bind(transcript);
+    let ood = crate::ligerito_flock::bind_prover_ood(transcript, hint, resolved.round0(100).map_err(BabyBearSpartanF2zError::LigeritoConfig)?);
     prove_baby_bear_terminal_claim_f2z_prepared(
         transcript,
         &prepared.relation_modulus_encoding,
@@ -473,6 +498,7 @@ pub fn prove_baby_bear_terminal_claim_f2z<T: Transcript + Send>(
         &prepared.params,
         &prepared.pc,
         &prepared.assignment_binding,
+        ood,
         terminal_claim,
     )
 }
@@ -492,6 +518,11 @@ pub fn verify_baby_bear_terminal_claim_f2z<T: Transcript + Send>(
 ) -> Result<(), BabyBearSpartanF2zError> {
     validate_prepared_opening_commitment(prepared, commitment)?;
     validate_f2z_proof_shape(&prepared.params, proof)?;
+    let resolved = &prepared.ligerito;
+    absorb_spartan_message(transcript, b"baby-bear-terminal/early-ood/v2", &prepared.assignment_binding);
+    absorb_spartan_message(transcript, b"terminal-relation", &prepared.relation_digest);
+    resolved.bind(transcript);
+    let ood = crate::ligerito_flock::bind_verifier_ood(transcript, packed_variables(&prepared.params)?, resolved.round0(100).map_err(BabyBearSpartanF2zError::LigeritoConfig)?, proof.ood.as_ref()).map_err(BabyBearSpartanF2zError::F2z)?;
     verify_baby_bear_terminal_claim_f2z_prepared(
         transcript,
         &prepared.relation_modulus_encoding,
@@ -502,6 +533,7 @@ pub fn verify_baby_bear_terminal_claim_f2z<T: Transcript + Send>(
         &prepared.params,
         &prepared.vc,
         &prepared.assignment_binding,
+        ood,
         terminal_claim,
     )
 }
@@ -532,7 +564,23 @@ pub fn prove_baby_bear_mul_spartan_and_f2z<T: Transcript + Send>(
     products: R1csProductMles<SpartanF2zField>,
     hint: &FlockCommitHint,
 ) -> Result<BabyBearMulSpartanF2zProof, BabyBearSpartanF2zError> {
-    let (params, pc, assignment_binding) = prepare_combined_prover(matrices, layout, hint)?;
+    prove_baby_bear_mul_spartan_and_f2z_with_ligerito(transcript, matrices, layout, assignment, products, hint, crate::ligerito_flock::LigeritoSelection::JOHNSON)
+}
+
+pub fn prove_baby_bear_mul_spartan_and_f2z_with_ligerito<T: Transcript + Send>(
+    transcript: &mut T,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField, BabyBearMulCoefficient>,
+    layout: &BabyBearMulLayout,
+    assignment: DenseMultilinearExtension<SpartanF2zField>,
+    products: R1csProductMles<SpartanF2zField>,
+    hint: &FlockCommitHint,
+    selection: crate::ligerito_flock::LigeritoSelection,
+) -> Result<BabyBearMulSpartanF2zProof, BabyBearSpartanF2zError> {
+    let (params, pc, assignment_binding) = prepare_combined_prover(matrices, layout, hint, selection)?;
+    let resolved = selection.resolve(packed_variables(&params)?, 100).map_err(BabyBearSpartanF2zError::LigeritoConfig)?;
+    absorb_spartan_message(transcript, b"baby-bear-fixed/early-ood/v2", &assignment_binding);
+    resolved.bind(transcript);
+    let ood = crate::ligerito_flock::bind_prover_ood(transcript, hint, resolved.round0(100).map_err(BabyBearSpartanF2zError::LigeritoConfig)?);
     let (spartan, terminal_claim) = {
         let _scope = crate::utils::prof::scope("baby-bear-spartan-f2z:spartan_prove");
         prove_spartan_piop_with_strategy(
@@ -552,6 +600,7 @@ pub fn prove_baby_bear_mul_spartan_and_f2z<T: Transcript + Send>(
         &params,
         &pc,
         &assignment_binding,
+        ood,
         spartan,
         terminal_claim,
     )
@@ -588,10 +637,26 @@ pub fn prove_baby_bear_mul_spartan_and_f2z_with_strategy<T: Transcript + Send>(
     hint: &FlockCommitHint,
     strategy: SpartanReductionStrategy,
 ) -> Result<BabyBearMulSpartanF2zProof, BabyBearSpartanF2zError> {
+    prove_baby_bear_mul_spartan_and_f2z_with_strategy_with_ligerito(transcript, matrices, layout, witness, hint, strategy, crate::ligerito_flock::LigeritoSelection::JOHNSON)
+}
+
+pub fn prove_baby_bear_mul_spartan_and_f2z_with_strategy_with_ligerito<T: Transcript + Send>(
+    transcript: &mut T,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField, BabyBearMulCoefficient>,
+    layout: &BabyBearMulLayout,
+    witness: &BabyBearMulWitness,
+    hint: &FlockCommitHint,
+    strategy: SpartanReductionStrategy,
+    selection: crate::ligerito_flock::LigeritoSelection,
+) -> Result<BabyBearMulSpartanF2zProof, BabyBearSpartanF2zError> {
     if witness.layout() != layout {
         return Err(BabyBearSpartanF2zError::RelationWitnessLayoutMismatch);
     }
-    let (params, pc, assignment_binding) = prepare_combined_prover(matrices, layout, hint)?;
+    let (params, pc, assignment_binding) = prepare_combined_prover(matrices, layout, hint, selection)?;
+    let resolved = selection.resolve(packed_variables(&params)?, 100).map_err(BabyBearSpartanF2zError::LigeritoConfig)?;
+    absorb_spartan_message(transcript, b"baby-bear-fixed/early-ood/v2", &assignment_binding);
+    resolved.bind(transcript);
+    let ood = crate::ligerito_flock::bind_prover_ood(transcript, hint, resolved.round0(100).map_err(BabyBearSpartanF2zError::LigeritoConfig)?);
 
     // Projection stays outside the Spartan timing scope. Immediate mode
     // materializes field tables, while delayed modes retain exact u64 values
@@ -633,6 +698,7 @@ pub fn prove_baby_bear_mul_spartan_and_f2z_with_strategy<T: Transcript + Send>(
         &params,
         &pc,
         &assignment_binding,
+        ood,
         spartan,
         terminal_claim,
     )
@@ -642,9 +708,10 @@ fn prepare_combined_prover(
     matrices: &PreparedConstraintMatrices<SpartanF2zField, BabyBearMulCoefficient>,
     layout: &BabyBearMulLayout,
     hint: &FlockCommitHint,
+    selection: crate::ligerito_flock::LigeritoSelection,
 ) -> Result<(crate::pcs::IntEvalParams, LigProverConfig, [u8; 32]), BabyBearSpartanF2zError> {
     let (params, pc, _vc, assignment_binding) =
-        prepare_fixed_q_opening(matrices, layout, &hint.commitment, Some(hint.rows()))?;
+        prepare_fixed_q_opening(matrices, layout, &hint.commitment, Some(hint.rows()), selection)?;
     Ok((params, pc, assignment_binding))
 }
 
@@ -653,6 +720,7 @@ fn prepare_fixed_q_opening(
     layout: &BabyBearMulLayout,
     commitment: &Commitment,
     bit_rows: Option<&[Vec<u64>]>,
+    selection: crate::ligerito_flock::LigeritoSelection,
 ) -> Result<
     (
         crate::pcs::IntEvalParams,
@@ -666,7 +734,7 @@ fn prepare_fixed_q_opening(
     validate_relation_layout(matrices, layout)?;
     validate_layout_geometry(layout)?;
     let params = layout.f2z_params();
-    let (pc, vc) = configs_for_layout(layout)?;
+    let (pc, vc) = configs_for_layout_with_ligerito(layout, selection)?;
     validate_config_pair(&params, &pc, &vc)?;
     if let Some(rows) = bit_rows {
         validate_bit_rows(&params, rows)?;
@@ -685,6 +753,7 @@ fn finish_combined_prover<T: Transcript + Send>(
     params: &crate::pcs::IntEvalParams,
     pc: &LigProverConfig,
     assignment_binding: &[u8; 32],
+    ood: crate::ligerito_flock::ProverOod,
     spartan: SpartanPiopProof<SpartanF2zField>,
     terminal_claim: ScaledMleEvaluationClaim<SpartanF2zField>,
 ) -> Result<BabyBearMulSpartanF2zProof, BabyBearSpartanF2zError> {
@@ -697,6 +766,7 @@ fn finish_combined_prover<T: Transcript + Send>(
         params,
         pc,
         assignment_binding,
+        ood,
         &terminal_claim,
     )?;
 
@@ -713,6 +783,7 @@ fn prove_baby_bear_terminal_claim_f2z_prepared<T: Transcript + Send>(
     params: &crate::pcs::IntEvalParams,
     pc: &LigProverConfig,
     assignment_binding: &[u8; 32],
+    ood: crate::ligerito_flock::ProverOod,
     terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
 ) -> Result<IntEvalRsLigModQProof, BabyBearSpartanF2zError> {
     let (opening, bridge_digest) = {
@@ -746,7 +817,7 @@ fn prove_baby_bear_terminal_claim_f2z_prepared<T: Transcript + Send>(
             FQ_BITS,
             f2z_generator(),
             0,
-            ood_for_layout(layout)?,
+            ood,
             pc,
         )
         .map_err(BabyBearSpartanF2zError::F2z)
@@ -770,16 +841,31 @@ pub fn verify_baby_bear_mul_spartan_and_f2z<T: Transcript + Send>(
     commitment: &Commitment,
     proof: &BabyBearMulSpartanF2zProof,
 ) -> Result<(), BabyBearSpartanF2zError> {
+    verify_baby_bear_mul_spartan_and_f2z_with_ligerito(transcript, matrices, layout, commitment, proof, crate::ligerito_flock::LigeritoSelection::JOHNSON)
+}
+
+pub fn verify_baby_bear_mul_spartan_and_f2z_with_ligerito<T: Transcript + Send>(
+    transcript: &mut T,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField, BabyBearMulCoefficient>,
+    layout: &BabyBearMulLayout,
+    commitment: &Commitment,
+    proof: &BabyBearMulSpartanF2zProof,
+    selection: crate::ligerito_flock::LigeritoSelection,
+) -> Result<(), BabyBearSpartanF2zError> {
     validate_relation(matrices)?;
     validate_relation_layout(matrices, layout)?;
     validate_layout_geometry(layout)?;
     let params = layout.f2z_params();
-    let (pc, vc) = configs_for_layout(layout)?;
+    let (pc, vc) = configs_for_layout_with_ligerito(layout, selection)?;
     validate_config_pair(&params, &pc, &vc)?;
     validate_commitment(&params, commitment, &pc)?;
     validate_f2z_proof_shape(&params, &proof.f2z)?;
     let assignment_binding = assignment_binding(layout, commitment)?;
 
+    let resolved = selection.resolve(packed_variables(&params)?, 100).map_err(BabyBearSpartanF2zError::LigeritoConfig)?;
+    absorb_spartan_message(transcript, b"baby-bear-fixed/early-ood/v2", &assignment_binding);
+    resolved.bind(transcript);
+    let ood = crate::ligerito_flock::bind_verifier_ood(transcript, packed_variables(&params)?, resolved.round0(100).map_err(BabyBearSpartanF2zError::LigeritoConfig)?, proof.f2z.ood.as_ref()).map_err(BabyBearSpartanF2zError::F2z)?;
     let terminal_claim = {
         let _scope = crate::utils::prof::scope("baby-bear-spartan-f2z:spartan_verify");
         verify_spartan_proof(transcript, matrices, &assignment_binding, &proof.spartan)?
@@ -795,6 +881,7 @@ pub fn verify_baby_bear_mul_spartan_and_f2z<T: Transcript + Send>(
         &params,
         &vc,
         &assignment_binding,
+        ood,
         &terminal_claim,
     )
 }
@@ -810,6 +897,7 @@ fn verify_baby_bear_terminal_claim_f2z_prepared<T: Transcript + Send>(
     params: &crate::pcs::IntEvalParams,
     vc: &LigVerifierConfig,
     assignment_binding: &[u8; 32],
+    ood: crate::ligerito_flock::VerifierOod,
     terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
 ) -> Result<(), BabyBearSpartanF2zError> {
     let (opening, bridge_digest) = {
@@ -846,31 +934,31 @@ fn verify_baby_bear_terminal_claim_f2z_prepared<T: Transcript + Send>(
             prepared.claimed,
             FQ_BITS,
             0,
-            ood_for_layout(layout)?,
+            ood,
             vc,
         )
     };
     result.map_err(BabyBearSpartanF2zError::F2z)
 }
 
+#[cfg(test)]
 fn configs_for_layout(
     layout: &BabyBearMulLayout,
+) -> Result<(LigProverConfig, LigVerifierConfig), BabyBearSpartanF2zError> {
+    configs_for_layout_with_ligerito(layout, crate::ligerito_flock::LigeritoSelection::JOHNSON)
+}
+
+fn configs_for_layout_with_ligerito(
+    layout: &BabyBearMulLayout,
+    selection: crate::ligerito_flock::LigeritoSelection,
 ) -> Result<(LigProverConfig, LigVerifierConfig), BabyBearSpartanF2zError> {
     if layout.gate_vars() < MIN_PRODUCTION_GATE_VARS {
         return Err(BabyBearSpartanF2zError::UnauditedF2zParameters);
     }
     let params = layout.f2z_params();
     let m_p = packed_variables(&params)?;
-    sha_lig_configs(m_p).map_err(BabyBearSpartanF2zError::LigeritoConfig)
-}
-
-/// Round-0 parameters of the opener [`configs_for_layout`] selects.
-fn ood_for_layout(
-    layout: &BabyBearMulLayout,
-) -> Result<Option<crate::ligerito_flock::OodRoundParams>, BabyBearSpartanF2zError> {
-    let params = layout.f2z_params();
-    let m_p = packed_variables(&params)?;
-    Ok(crate::ligerito_flock::sha_lig_ood_params(m_p))
+    let resolved = selection.resolve(m_p, 100).map_err(BabyBearSpartanF2zError::LigeritoConfig)?;
+    Ok((resolved.prover().clone(), resolved.verifier().clone()))
 }
 
 fn validate_layout_geometry(layout: &BabyBearMulLayout) -> Result<(), BabyBearSpartanF2zError> {
@@ -1542,6 +1630,7 @@ pub struct PreparedBabyBearMulRelation {
     skeleton: super::ConstraintMatricesSkeleton<SpartanF2zField, BabyBearMulCoefficient>,
     layout: BabyBearMulLayout,
     security: IopSecurityParams,
+    ligerito_configuration: crate::ligerito_flock::ResolvedLigerito,
     ligerito_pc: LigProverConfig,
     ligerito_vc: LigVerifierConfig,
 }
@@ -1556,24 +1645,31 @@ impl PreparedBabyBearMulRelation {
     pub fn new_with_profile<P: IopSecurityProfile>(
         layout: BabyBearMulLayout,
     ) -> Result<Self, BabyBearSpartanF2zError> {
+        Self::new_with_profile_and_ligerito::<P>(layout, crate::ligerito_flock::LigeritoSelection::for_target(P::LIGERITO_TARGET_BITS))
+    }
+
+    pub fn new_with_profile_and_ligerito<P: IopSecurityProfile>(
+        layout: BabyBearMulLayout,
+        selection: crate::ligerito_flock::LigeritoSelection,
+    ) -> Result<Self, BabyBearSpartanF2zError> {
         validate_layout_geometry(&layout)?;
         let params = layout.f2z_params();
         let row_vars = layout
             .multiplications()
             .next_power_of_two()
             .trailing_zeros() as usize;
-        let security = P::instantiate(&baby_bear_mul_instance_facts(&params, row_vars))?;
+        let mut security = P::instantiate(&baby_bear_mul_instance_facts(&params, row_vars))?;
         if security.projection_full_width || security.reduction.is_some() {
             return Err(BabyBearSpartanF2zError::UnsupportedPaperProfile);
         }
         if layout.gate_vars() < MIN_PRODUCTION_GATE_VARS {
             return Err(BabyBearSpartanF2zError::UnauditedF2zParameters);
         }
-        let (ligerito_pc, ligerito_vc) = validated_udr_lig_configs_for_target(
-            packed_variables(&params)?,
-            security.ligerito_target_bits,
-        )
-        .map_err(BabyBearSpartanF2zError::LigeritoConfig)?;
+        let ligerito_configuration = selection.resolve(packed_variables(&params)?, security.ligerito_target_bits)
+            .map_err(BabyBearSpartanF2zError::LigeritoConfig)?;
+        let ligerito_pc = ligerito_configuration.prover().clone();
+        let ligerito_vc = ligerito_configuration.verifier().clone();
+        security.adopt_ood_round(ligerito_configuration.ood_bits())?;
         validate_config_pair(&params, &ligerito_pc, &ligerito_vc)?;
         let raw = baby_bear_mul_constraint_matrices(&layout)?;
         let skeleton = super::ConstraintMatricesSkeleton::new(raw).map_err(SpartanError::from)?;
@@ -1581,9 +1677,14 @@ impl PreparedBabyBearMulRelation {
             skeleton,
             layout,
             security,
+            ligerito_configuration,
             ligerito_pc,
             ligerito_vc,
         })
+    }
+
+    pub fn ligerito_configuration(&self) -> &crate::ligerito_flock::ResolvedLigerito {
+        &self.ligerito_configuration
     }
 
     /// Statement-bound layout.
@@ -1797,6 +1898,8 @@ pub fn prove_baby_bear_mul_paper<T: Transcript + Send>(
 
     let binding = paper_assignment_binding(layout, &hint.commitment, security)?;
     absorb_spartan_message(transcript, b"baby-bear-paper-statement", &binding);
+    prepared.ligerito_configuration.bind(transcript);
+    let ood = crate::ligerito_flock::bind_prover_ood(transcript, hint, security.ood);
 
     // Paper §2.1 Step 2: pre-draw grinding, prime sample, projection.
     let step2_scope = crate::utils::prof::scope("step2:project_prove");
@@ -1905,7 +2008,7 @@ pub fn prove_baby_bear_mul_paper<T: Transcript + Send>(
             q_bits,
             f2z_generator(),
             security.forest_round_grinding_bits,
-            security.ood,
+            ood,
             pc,
         )
         .map_err(BabyBearSpartanF2zError::F2z)?
@@ -1938,6 +2041,10 @@ pub fn verify_baby_bear_mul_paper<T: Transcript + Send>(
 
     let binding = paper_assignment_binding(layout, commitment, security)?;
     absorb_spartan_message(transcript, b"baby-bear-paper-statement", &binding);
+    prepared.ligerito_configuration.bind(transcript);
+    let ood = crate::ligerito_flock::bind_verifier_ood(
+        transcript, packed_variables(&params)?, security.ood, proof.f2z.ood.as_ref(),
+    ).map_err(BabyBearSpartanF2zError::F2z)?;
 
     let step2_scope = crate::utils::prof::scope("step2:project_verify");
     check_boundary_bb::<BabyBearInitialGrinding, _>(
@@ -2014,7 +2121,7 @@ pub fn verify_baby_bear_mul_paper<T: Transcript + Send>(
         q,
         q_bits,
         security.forest_round_grinding_bits,
-        security.ood,
+        ood,
         vc,
     )
     .map_err(BabyBearSpartanF2zError::F2z)
@@ -2102,16 +2209,10 @@ mod tests {
             ),
             "Ligerito query/grinding parameters must follow the profile target"
         );
-        for prepared in [&prepared, &prepared128] {
-            assert!(
-                prepared
-                    .ligerito_pc
-                    .ood_samples
-                    .iter()
-                    .all(|&count| count == 0),
-                "the paper path must use UDR parameters, without Johnson OOD samples"
-            );
-        }
+        assert!(prepared.security().ood.is_some());
+        assert!(prepared.ligerito_pc.ood_samples.iter().skip(1).all(|&count| count > 0));
+        assert!(prepared128.security().ood.is_none());
+        assert!(prepared128.ligerito_pc.ood_samples.iter().all(|&count| count == 0));
         let hint128 =
             commit_baby_bear_mul_paper_witness(&prepared128, witness.f2z_bit_rows()).unwrap();
         assert!(prepared128.security().initial_grinding_bits > 0);

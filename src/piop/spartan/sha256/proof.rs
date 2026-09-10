@@ -38,7 +38,7 @@ use crate::{
     ligerito_flock::{
         FlockCommitHint, FlockRsError, IntEvalRsLigVirtProof, LigeritoStatementConfig,
         commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
-        validate_ligerito_commitment, validated_udr_lig_configs_for_target,
+        validate_ligerito_commitment,
         verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
     },
     pcs::{GeneratedModQWeightSource, IntEvalParams, ModQWeightSource, ProjectCanonicalU128},
@@ -240,8 +240,8 @@ pub fn sha256_compression_configs(
 ) -> Result<(LigProverConfig, LigVerifierConfig), Sha256F2zError> {
     let p_f = prepared.source_params();
     validate_source_params(p_f)?;
-    validated_udr_lig_configs_for_target(packed_vars(p_f), prepared.security().ligerito_target_bits)
-        .map_err(Sha256F2zError::LigeritoConfig)
+    let resolved = prepared.ligerito_configuration()?;
+    Ok((resolved.prover().clone(), resolved.verifier().clone()))
 }
 
 /// Commits packed extended-source rows `[1 | f]` under an explicit config.
@@ -348,6 +348,9 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
         );
         assignment_binding
     };
+
+    prepared.ligerito_configuration()?.bind(transcript);
+    let ood = crate::ligerito_flock::bind_prover_ood(transcript, hint_f, prepared.security().ood);
 
     // Commit first, then derive the one runtime prime. The exact signed
     // relation stays q-independent; only its one local-row collapse is
@@ -479,7 +482,7 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
                 mod_q.q_bits(),
                 f2z_generator(),
                 prepared.security().forest_round_grinding_bits,
-                prepared.security().ood,
+                ood,
                 pc,
             )
             .map_err(Sha256F2zError::F2z)?
@@ -567,7 +570,7 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
                 mod_q.q_bits(),
                 f2z_generator(),
                 prepared.security().forest_round_grinding_bits,
-                prepared.security().ood,
+                ood,
                 pc,
             )
             .map_err(Sha256F2zError::F2z)?
@@ -696,6 +699,9 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
         );
         assignment_binding
     };
+    prepared.ligerito_configuration()?.bind(transcript);
+    let ood = crate::ligerito_flock::bind_verifier_ood(transcript, packed_vars(p_f), prepared.security().ood, proof.f2z.ood.as_ref()).map_err(Sha256F2zError::F2z)?;
+
     let step2_scope = crate::utils::prof::scope("step2:project_verify");
     {
         let _scope = crate::utils::prof::scope("sha256:initial_grinding_verify");
@@ -816,7 +822,7 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
             mod_q.q(),
             mod_q.q_bits(),
             prepared.security().forest_round_grinding_bits,
-            prepared.security().ood,
+            ood,
             vc,
         )
         .map_err(Sha256F2zError::F2z)
@@ -891,7 +897,7 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
             mod_q.q(),
             mod_q.q_bits(),
             prepared.security().forest_round_grinding_bits,
-            prepared.security().ood,
+            ood,
             vc,
         )
         .map_err(Sha256F2zError::F2z)
@@ -2744,8 +2750,7 @@ mod tests {
 
     #[test]
     fn ligerito_profiles_cover_every_supported_sha_batch() {
-        for log_compressions in super::super::prime::SHA256_MIN_LOG_COMPRESSIONS
-            ..=super::super::prime::SHA256_MAX_LOG_COMPRESSIONS
+        for log_compressions in 7..=super::super::prime::SHA256_MAX_LOG_COMPRESSIONS
         {
             let prepared = prepare_sha256_compression_batch(log_compressions).unwrap();
             let (pc, vc) = sha256_compression_configs(&prepared).unwrap();
@@ -2776,10 +2781,15 @@ mod tests {
     }
 
     #[test]
-    fn small_batches_roundtrip_and_bind_public_outputs() {
+    fn production_boundary_and_both_regimes_bind_public_outputs() {
+        // These algebraic shapes have fewer than the supported 2^20 committed bits.
         for exponent in 4..=6 {
-            let prepared = prepare_sha256_compression_batch(exponent).unwrap();
-            assert!(prepared.product_assignment_params().is_none());
+            assert!(prepare_sha256_compression_batch(exponent).is_err());
+        }
+        let exponent = 7;
+        for selection in [crate::ligerito_flock::LigeritoSelection::JOHNSON, crate::ligerito_flock::LigeritoSelection::MATCHED_UDR] {
+            let prepared = prepare_sha256_compression_batch(exponent).unwrap().with_ligerito(selection).unwrap();
+            assert!(prepared.product_assignment_params().is_some());
             assert!(prepared.opening_params().t >= LOG_PACKING);
             assert!(prepared.security().accounting.achieved_bits() >= 100.0);
             let inputs = (0..prepared.instances()).map(input).collect::<Vec<_>>();
@@ -2797,7 +2807,7 @@ mod tests {
                 &pc,
             )
             .unwrap();
-            assert_eq!(proof.f2z().mfs.len(), 1);
+            assert_eq!(proof.f2z().mfs.len(), 2, "production product layout forests");
             verify_sha256_compressions_with_config(
                 &mut Blake3Transcript::new(),
                 &prepared,
@@ -3443,7 +3453,7 @@ mod tests {
                 LOG_COMPRESSIONS,
                 15,
             )
-            .unwrap();
+            .unwrap().with_ligerito(crate::ligerito_flock::LigeritoSelection::JOHNSON).unwrap();
         assert_eq!(prepared.product_layout_name(), Some("local_rows"));
 
         let inputs = (0..1usize << LOG_COMPRESSIONS)

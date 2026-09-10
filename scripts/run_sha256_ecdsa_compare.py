@@ -80,6 +80,14 @@ def validate_rows(rows, case, reps):
             return False
         if row.get("zk") is not False or row.get("fixture_profile") != FIXTURE_SCHEMA:
             return False
+        if case["method"].startswith("f2z"):
+            from ligerito_results import validate_ligerito
+            try:
+                validate_ligerito(row["security"].get("ligerito"), case["security_target"])
+                if row["security"]["ligerito"] != rows[0]["security"].get("ligerito"):
+                    return False
+            except ValueError:
+                return False
         binius = case["method"] == "binius64"
         revision = row.get("binius_revision" if binius else "spartan_revision")
         if not isinstance(revision, str) or len(revision) != 40 or any(c not in "0123456789abcdef" for c in revision):
@@ -337,7 +345,7 @@ def prepare_binius(args, directory):
 
 def compatible_manifest(previous, current):
     return all(previous.get(key) == current.get(key) for key in
-               ["binary_sha256", "runner_sha256", "fixtures", "binius64"])
+               ["binary_sha256", "runner_sha256", "fixtures", "binius64", "ligerito_profile"])
 
 
 def main():
@@ -384,6 +392,7 @@ def main():
     directory = args.output.resolve()
     binary = args.binary.resolve(strict=True) if args.binary else build(args, directory)
     manifest = metadata(binary)
+    manifest["ligerito_profile"] = os.environ.get("F2Z_LIG_PROFILE", "default-by-target")
     manifest["fixtures"] = prepare_fixtures(args, directory, binary, spartan_splits)
     if args.with_binius64:
         manifest["binius64"] = prepare_binius(args, directory)

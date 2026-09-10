@@ -174,6 +174,7 @@ impl BenchShape {
                 prepare_sha256_compression_batch_for_product_t_fixed98(14, t)
             }
         }
+        .and_then(|p| p.with_ligerito(common::ligerito_selection(P::LIGERITO_TARGET_BITS)))
     }
 }
 
@@ -362,6 +363,7 @@ impl TraceWriter {
                     "terminal_grinding_bits": security.terminal_grinding_bits,
                     "forest_round_grinding_bits": security.forest_round_grinding_bits,
                     "ligerito_target_bits": security.ligerito_target_bits,
+                    "ligerito": common::ligerito_report(prepared.ligerito_configuration().unwrap(), security.ood),
                 },
                 "recursion": {"max_depth": 0, "instance_count": 1},
                 "repetition": {"count": 1},
@@ -1038,6 +1040,7 @@ fn bench_shape<P: IopSecurityProfile>(
     };
     let (pc, vc) = sha256_compression_configs(&prepared).expect("valid Ligerito config");
     let setup_ms = setup_started.elapsed().as_secs_f64() * 1e3;
+    println!("LIGERITO_CONFIG {}", common::ligerito_report(prepared.ligerito_configuration().unwrap(), prepared.security().ood));
     let compressions = prepared.instances();
     let live_source_cells = 1 + SHA256_F_INSTANCE_BITS * compressions;
     let live_assignment_cells = 1 + SHA256_H_INSTANCE_BITS * compressions;
@@ -1206,6 +1209,7 @@ fn bench_shape<P: IopSecurityProfile>(
         bench: "sha256",
         shape: shape.slug(),
         extra: vec![
+            common::ligerito_identity(prepared.ligerito_configuration().unwrap(), prepared.security().ood),
             ("profile".into(), prepared.security().profile_name.into()),
             ("compressions".into(), compressions.to_string()),
             ("mnum_rows".into(), assignment_cells.to_string()),

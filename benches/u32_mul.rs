@@ -245,7 +245,7 @@ fn bench_exponent<P: IopSecurityProfile>(
     // One-time public preprocessing (excluded from prove): q-independent
     // exact matrices plus the instantiated runtime-prime security profile.
     let started = Instant::now();
-    let relation = match PreparedU32MulRelation::new_with_profile::<P>(layout) {
+    let relation = match PreparedU32MulRelation::new_with_profile_and_ligerito::<P>(layout, common::ligerito_selection(P::LIGERITO_TARGET_BITS)) {
         Ok(relation) => relation,
         Err(error @ (SpartanF2zError::Profile(_) | SpartanF2zError::UnsupportedProfile)) => {
             println!();
@@ -258,6 +258,7 @@ fn bench_exponent<P: IopSecurityProfile>(
         Err(error) => panic!("prepare failed: {error}"),
     };
     let setup_ms = common::elapsed_ms(started);
+    println!("LIGERITO_CONFIG {}", common::ligerito_report(relation.ligerito_configuration(), relation.security().ood));
     let profile_name = relation.security().profile_name;
     let q_bits = (u128::BITS - relation.security().projection_max.leading_zeros()) as usize;
     let f2z_chunks = mod_q_num_chunks(&params, q_bits);
@@ -382,6 +383,7 @@ fn bench_exponent<P: IopSecurityProfile>(
             bench: "u32_mul",
             shape: format!("2p{exponent}"),
             extra: vec![
+            common::ligerito_identity(relation.ligerito_configuration(), relation.security().ood),
                 ("profile".into(), profile_name.into()),
                 ("pass".into(), pass.as_str().into()),
                 ("multiplications".into(), multiplications.to_string()),

@@ -176,14 +176,13 @@ def validate_sample(row, config, exponent, backend, workload):
     for name in CORE_METRICS:
         finite_number(row.get("metrics", {}).get(name), name, positive=name == "proof_bytes")
     settings = row["config"]
-    if backend == "f2z" and workload == "u32-mod32":
-        if settings.get("ligerito_regime") != "johnson" or settings.get("ood_present") is not True or settings.get("target_bits") != 100:
-            raise ValueError("F2Z must report Johnson/OOD at target 100")
-        ligerito = settings.get("ligerito", {})
-        levels = ligerito.get("levels", [])
-        if (ligerito.get("initial_k") != 4 or not levels or levels[0].get("log_inv_rate") != 3
-                or any(level.get("regime") != "johnson_ood" for level in levels)):
-            raise ValueError("F2Z must use the validated Johnson custom:3:4 geometry")
+    if backend == "f2z":
+        from ligerito_results import validate_ligerito
+        report = validate_ligerito(settings.get("ligerito"), 100)
+        if workload == "u32-mod32":
+            cfg = report["configuration"]
+            if cfg.get("initial_k") != 4 or cfg["levels"][0].get("log_inv_rate") != 3:
+                raise ValueError("mod32 comparison requires matched Ligerito rate 1/8 and initial_k=4")
     if backend == "binius64" and (settings.get("fri_query_target_bits") != 100 or (workload == "u32-mod32" and settings.get("log_inv_rate") != 1)):
         raise ValueError("Binius must use the canonical 100-bit query target at rate 1/2")
     if backend == "binius64" and workload == "u32-mod32":

@@ -2,6 +2,7 @@
 import hashlib
 import json
 import math
+from ligerito_results import validate_ligerito
 
 SAMPLE_SCHEMA = "native-mul-sample/v2"
 SUMMARY_SCHEMA = "native-mul-summary/v2"
@@ -38,6 +39,8 @@ def require_compatible(left, right):
 
 
 def validate_summary(row):
+    if row.get("backend") == "f2z":
+        validate_ligerito(row.get("config", {}).get("ligerito"), 100)
     if row.get("schema") != SUMMARY_SCHEMA or row.get("measurement_policy") != POLICY:
         raise ValueError("historical or unsupported multiplication results; regenerate the comparison")
     if row.get("proof_verified") is not True or row.get("warmups") != 1:

@@ -335,9 +335,18 @@ pub struct PreparedSha256Ecdsa {
     pub(crate) lambda: u32,
     pub(crate) p_h: IntEvalParams,
     pub(crate) p_f: IntEvalParams,
+    pub(crate) ligerito: crate::ligerito_flock::ResolvedLigerito,
 }
 
 impl PreparedSha256Ecdsa {
+    pub fn ligerito_configuration(&self) -> &crate::ligerito_flock::ResolvedLigerito { &self.ligerito }
+
+    pub fn with_ligerito(mut self, selection: crate::ligerito_flock::LigeritoSelection) -> Result<Self> {
+        self.ligerito = selection.resolve(self.p_f.t + self.p_f.s - 7, self.lambda as usize).map_err(error)?;
+        self.security()?;
+        Ok(self)
+    }
+
     pub fn compressions(&self) -> usize {
         self.map.n
     }
@@ -497,5 +506,7 @@ pub fn prepare_sha256_ecdsa(
         lambda,
         p_h,
         p_f,
+        ligerito: crate::ligerito_flock::LigeritoSelection::for_target(lambda as usize)
+            .resolve(f_bits - 7, lambda as usize).map_err(error)?,
     })
 }

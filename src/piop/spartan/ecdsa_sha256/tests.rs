@@ -126,8 +126,9 @@ fn split_and_all_rows_prove_verify_and_reject_tampering() {
     use crate::transcript::Blake3Transcript;
     use crate::transcript::traits::Transcript;
     let (statement, message) = fixture();
+    for selection in [crate::ligerito_flock::LigeritoSelection::JOHNSON, crate::ligerito_flock::LigeritoSelection::MATCHED_UDR] {
     for mode in [OuterMode::Split, OuterMode::AllRows] {
-        let p = prepare_sha256_ecdsa(3, 100, mode).unwrap();
+        let p = prepare_sha256_ecdsa(3, 100, mode).unwrap().with_ligerito(selection).unwrap();
         let witness = generate_sha256_ecdsa_witness(&p, &statement, &message).unwrap();
         let hint = commit_sha256_ecdsa(&p, &witness).unwrap();
         let mut prover_transcript = Blake3Transcript::new();
@@ -153,6 +154,9 @@ fn split_and_all_rows_prove_verify_and_reject_tampering() {
             prover_transcript.get_challenge::<u128>(),
             verifier_transcript.get_challenge::<u128>()
         );
+        let foreign_selection = if selection == crate::ligerito_flock::LigeritoSelection::JOHNSON { crate::ligerito_flock::LigeritoSelection::MATCHED_UDR } else { crate::ligerito_flock::LigeritoSelection::JOHNSON };
+        let foreign = prepare_sha256_ecdsa(3, 100, mode).unwrap().with_ligerito(foreign_selection).unwrap();
+        assert!(verify_sha256_ecdsa(&mut Blake3Transcript::new(), &foreign, &statement, &hint.commitment, &proof).is_err());
         let mut changed = statement.clone();
         changed.s[31] ^= 1;
         assert!(
@@ -185,6 +189,7 @@ fn split_and_all_rows_prove_verify_and_reject_tampering() {
             )
             .is_err()
         );
+    }
     }
 }
 

@@ -36,6 +36,24 @@ SCHEMES = [
 BINIUS_QUERIES = {1: 241, 2: 148, 3: 121, 4: 110}  # 100-bit FRI query counts per log inverse rate
 
 
+def f2z_caption(rows):
+    """Describe the recorded Ligerito policy; reject mixed or historical series."""
+    from ligerito_results import validate_ligerito
+    policies = set()
+    for row in rows:
+        if row["backend"] == "f2z":
+            report = validate_ligerito(row.get("config", {}).get("ligerito"), 100)
+            policies.add((report["resolved_profile"], report["regime"], report["outer_ood"]))
+    if not policies:
+        return r"\ftwoz\ (integer R1CS)"
+    if len(policies) != 1:
+        raise ValueError("cannot combine different Ligerito policies in one F2Z table series")
+    profile, regime, ood = policies.pop()
+    bound = "Johnson" if regime == "johnson" else "unique decoding radius"
+    evaluation = "early Round-0 OOD" if ood else "without OOD"
+    return rf"\ftwoz\ (integer R1CS, Lambda100; Ligerito {bound}, {profile}, {evaluation})"
+
+
 def scheme_key(r: dict) -> str:
     """Row key: the backend slug, with Binius64 split by its recorded rate."""
     if r["backend"] == "binius64":
@@ -314,10 +332,7 @@ def main() -> int:
         "plonky3-whir": "Plonky3 (shared Goldilocks mod32 AIR, multilinear zerocheck/sumcheck, WHIR with per-run tuning and at least $100$ bits under the recorded Johnson accounting)",
         "limber": "Limber (one independent integer-mod R1CS row per multiplication, IntEval/Brakedown, native approximately $114$-bit policy)",
     }
-    if args.workload == "u32-mod32":
-        scheme_notes["f2z"] = "\\ftwoz\\ (integer R1CS, Lambda100, Johnson custom:3:4 and Round-0 OOD accounting)"
-    else:
-        scheme_notes["f2z"] = "\\ftwoz\\ (integer R1CS; native security settings recorded in the accompanying JSON)"
+    scheme_notes["f2z"] = f2z_caption(rows)
     # One caption note per scheme family (both Binius64 rates share one).
     present = []
     for slug, _ in schemes:
