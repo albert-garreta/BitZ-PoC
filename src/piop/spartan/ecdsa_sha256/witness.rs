@@ -90,6 +90,130 @@ fn pack_bits(p: &IntEvalParams, live: usize, bit: impl Fn(usize) -> bool + Sync)
     }
 }
 
+/// Copies `len` bits of little-endian packed `src` starting at bit `src_off`
+/// into `dst` starting at bit `dst_off`; the destination bits must be zero.
+fn copy_bits(dst: &mut [u64], dst_off: usize, src: &[u64], src_off: usize, len: usize) {
+    let mut done = 0;
+    while done < len {
+        let (s, d) = (src_off + done, dst_off + done);
+        let take = (64 - s % 64).min(64 - d % 64).min(len - done);
+        let mask = if take == 64 { u64::MAX } else { (1u64 << take) - 1 };
+        dst[d / 64] |= ((src[s / 64] >> (s % 64)) & mask) << (d % 64);
+        done += take;
+    }
+}
+
+/// In-place transpose of a 64×64 bit matrix: afterwards bit `r` of word `c`
+/// is what bit `c` of word `r` was.
+fn transpose64(a: &mut [u64; 64]) {
+    let (mut j, mut m) = (32usize, 0x0000_0000_FFFF_FFFFu64);
+    while j != 0 {
+        let mut k = 0;
+        while k < 64 {
+            let t = ((a[k] >> j) ^ a[k + j]) & m;
+            a[k + j] ^= t;
+            a[k] ^= t << j;
+            k = (k + j + 1) & !j;
+        }
+        j >>= 1;
+        m ^= m << j;
+    }
+}
+
+/// The packed words of `witness` with the bits past its length cleared.
+fn masked_word(witness: &PackedWitness, index: usize) -> u64 {
+    let word = witness.words()[index];
+    let valid = witness.bit_len() - 64 * index;
+    if valid >= 64 { word } else { word & ((1u64 << valid) - 1) }
+}
+
+/// Splits the flat packed cells `(c << t) + row` into the per-column rows.
+fn split_columns(flat: Vec<u64>, p: &IntEvalParams) -> Vec<Vec<u64>> {
+    let words = p.rows() / 64;
+    #[cfg(feature = "parallel")]
+    {
+        flat.par_chunks(words).map(<[u64]>::to_vec).collect()
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        flat.chunks(words).map(<[u64]>::to_vec).collect()
+    }
+}
+
+/// The source rows: `f[0] = 1`, then each compression's block and hint bits,
+/// then the P-256 source bits after its aliased inputs — word blits, no
+/// per-bit closure.
+fn pack_source(
+    prepared: &PreparedSha256Ecdsa,
+    shards: &[(PackedWitness, PackedWitness)],
+    p_f: &PackedWitness,
+) -> Vec<Vec<u64>> {
+    let p = &prepared.p_f;
+    let mut flat = vec![0u64; p.cols() * p.rows() / 64];
+    flat[0] = 1;
+    for (instance, shard) in shards.iter().enumerate() {
+        let dst = 1 + instance * SHA_F;
+        copy_bits(&mut flat, dst, shard.0.words(), 0, 512);
+        copy_bits(&mut flat, dst + 512, shard.0.words(), 768, SHA_F - 512);
+    }
+    copy_bits(
+        &mut flat,
+        prepared.map.f_offset,
+        p_f.words(),
+        P_INPUT_ALIAS - 1,
+        p_f.bit_len() - (P_INPUT_ALIAS - 1),
+    );
+    split_columns(flat, p)
+}
+
+/// The assignment rows `h[instance + N·local]`: every 64 consecutive cells are
+/// one local wire across 64 compressions, so each 64×64 tile of (compression,
+/// local) witness words is one bit-matrix transpose; the P-256 tail is a word
+/// copy. Batches below 64 compressions keep the per-bit path.
+fn pack_assignment(
+    prepared: &PreparedSha256Ecdsa,
+    shards: &[(PackedWitness, PackedWitness)],
+    p_h: &PackedWitness,
+) -> Vec<Vec<u64>> {
+    let p = &prepared.p_h;
+    let n = prepared.compressions();
+    if n < 64 {
+        return pack_bits(p, prepared.live_assignment_bits(), |index| {
+            if index < prepared.map.h_offset {
+                shards[index % n].1.bit(index / n)
+            } else {
+                p_h.bit(index - prepared.map.h_offset)
+            }
+        });
+    }
+    let mut flat = vec![0u64; p.cols() * p.rows() / 64];
+    let instance_blocks = n / 64;
+    let (sha, tail) = flat.split_at_mut(prepared.map.h_offset / 64);
+    // Local block `lb` (locals 64·lb ..) owns the contiguous words
+    // [64·lb·instance_blocks, 64·(lb+1)·instance_blocks).
+    let fill = |(lb, chunk): (usize, &mut [u64])| {
+        let locals = chunk.len() / instance_blocks;
+        let mut tile = [0u64; 64];
+        for block in 0..instance_blocks {
+            for (i, word) in tile.iter_mut().enumerate() {
+                *word = masked_word(&shards[64 * block + i].1, lb);
+            }
+            transpose64(&mut tile);
+            for (local, word) in tile[..locals].iter().enumerate() {
+                chunk[local * instance_blocks + block] = *word;
+            }
+        }
+    };
+    #[cfg(feature = "parallel")]
+    sha.par_chunks_mut(64 * instance_blocks).enumerate().for_each(fill);
+    #[cfg(not(feature = "parallel"))]
+    sha.chunks_mut(64 * instance_blocks).enumerate().for_each(fill);
+    for (index, word) in tail.iter_mut().enumerate().take(p_h.words().len()) {
+        *word = masked_word(p_h, index);
+    }
+    split_columns(flat, p)
+}
+
 /// Computes the SHA trace and all hint values. Signing is not part of this API.
 pub fn generate_sha256_ecdsa_witness(
     prepared: &PreparedSha256Ecdsa,
@@ -174,28 +298,8 @@ pub fn generate_sha256_ecdsa_witness(
     {
         return Err(error("unexpected P-256 witness width"));
     }
-    let f_rows = pack_bits(&prepared.p_f, prepared.live_source_bits(), |index| {
-        if index == 0 {
-            true
-        } else if index < prepared.map.f_offset {
-            let offset = index - 1;
-            let bit = offset % SHA_F;
-            shards[offset / SHA_F]
-                .0
-                .bit(if bit < 512 { bit } else { bit + 256 })
-        } else {
-            p_f.bit(index - prepared.map.f_offset + P_INPUT_ALIAS - 1)
-        }
-    });
-    let h_rows = pack_bits(&prepared.p_h, prepared.live_assignment_bits(), |index| {
-        if index < prepared.map.h_offset {
-            shards[index % prepared.compressions()]
-                .1
-                .bit(index / prepared.compressions())
-        } else {
-            p_h.bit(index - prepared.map.h_offset)
-        }
-    });
+    let f_rows = pack_source(prepared, &shards, &p_f);
+    let h_rows = pack_assignment(prepared, &shards, &p_h);
     Ok(Sha256EcdsaWitness {
         f_rows,
         h_rows,

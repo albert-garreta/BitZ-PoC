@@ -154,6 +154,54 @@ fn u128_mul_2p15_transcript_is_pinned() {
     assert_eq!(digest, U128_MUL_2P15_DIGEST);
 }
 
+/// The 2^3 SHA-256/ECDSA statement (P-256 test key d=1, nonce k=1) in `Split`
+/// mode under `Lambda100` with the default Ligerito selection: the BLAKE3
+/// digest of the complete encoded proof. The compact matrix representation
+/// and the packed witness builders must keep this unchanged.
+#[cfg(feature = "ecdsa")]
+const SHA256_ECDSA_2P3_SPLIT_DIGEST: &str =
+    "9db91770f278ab29383e5b77eacc54e0374c6fb1ce6853919c9c40f321b00a34";
+
+#[cfg(feature = "ecdsa")]
+#[test]
+fn sha256_ecdsa_2p3_split_transcript_is_pinned() {
+    use f2z::piop::spartan::ecdsa_sha256::{
+        OuterMode, Sha256EcdsaStatement, commit_sha256_ecdsa, generate_sha256_ecdsa_witness,
+        prepare_sha256_ecdsa, prove_sha256_ecdsa, verify_sha256_ecdsa,
+    };
+    use num_bigint::BigUint;
+    let word = |value: &BigUint| {
+        let bytes = value.to_bytes_be();
+        let mut out = [0u8; 32];
+        out[32 - bytes.len()..].copy_from_slice(&bytes);
+        out
+    };
+    let hex = |s: &[u8]| BigUint::parse_bytes(s, 16).unwrap();
+    let gx = hex(b"6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296");
+    let gy = hex(b"4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5");
+    let n = hex(b"ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551");
+    // SHA-256 of bytes[i] = i mod 256, length 448 (seven blocks plus padding).
+    let digest = hex(b"afcdb4646801a7f0c78048754ff01adec0da00eb73b20dc0dde7f089c2c24640");
+    let message: Vec<u8> = (0..448).map(|i| i as u8).collect();
+    let statement = Sha256EcdsaStatement {
+        log_compressions: 3,
+        qx: word(&gx),
+        qy: word(&gy),
+        r: word(&gx),
+        s: word(&((&digest + &gx) % n)),
+    };
+    let prepared = prepare_sha256_ecdsa(3, 100, OuterMode::Split).unwrap();
+    let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
+    let hint = commit_sha256_ecdsa(&prepared, &witness).unwrap();
+    let proof =
+        prove_sha256_ecdsa(&mut Blake3Transcript::new(), &prepared, &statement, &witness, &hint, 4)
+            .unwrap();
+    let bytes = proof.to_bytes();
+    verify_sha256_ecdsa(&mut Blake3Transcript::new(), &prepared, &statement, &hint.commitment, &proof)
+        .unwrap();
+    assert_eq!(blake3::hash(&bytes).to_hex().as_str(), SHA256_ECDSA_2P3_SPLIT_DIGEST);
+}
+
 fn digest_hex(parts: &[&[u8]]) -> String {
     let mut hasher = Hasher::new();
     for part in parts {

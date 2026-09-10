@@ -723,6 +723,8 @@ where
     debug_assert_eq!(live_len, coefficients.live_len);
     debug_assert!(live_len <= 1usize << num_vars);
     let suffix_count = live_len.div_ceil(1usize << K);
+    let extended = extend_block_coefficients::<K>(coefficients, zero);
+    let extended = extended.as_deref();
 
     #[cfg(feature = "parallel")]
     let interior =
@@ -735,6 +737,7 @@ where
                         accumulate_factored_instance::<K, _>(
                             &mut state,
                             coefficients,
+                            extended,
                             h_source,
                             instance,
                             zero,
@@ -748,12 +751,23 @@ where
                     |left, right| Ok(merge_factored_prefix_states(left, right, reducer)),
                 )?
         } else {
-            accumulate_factored_instances_sequential::<K, _>(coefficients, h_source, zero, reducer)?
+            accumulate_factored_instances_sequential::<K, _>(
+                coefficients,
+                extended,
+                h_source,
+                zero,
+                reducer,
+            )?
         };
 
     #[cfg(not(feature = "parallel"))]
-    let interior =
-        accumulate_factored_instances_sequential::<K, _>(coefficients, h_source, zero, reducer)?;
+    let interior = accumulate_factored_instances_sequential::<K, _>(
+        coefficients,
+        extended,
+        h_source,
+        zero,
+        reducer,
+    )?;
 
     // Only the block containing the shared cell, the at-most-one block at
     // each instance boundary, and an incomplete final block take this path.
@@ -824,6 +838,7 @@ where
 
 fn accumulate_factored_instances_sequential<const K: usize, H>(
     coefficients: &Sha256FactoredBlockCoefficients<'_>,
+    extended: Option<&[ExtendedBlock]>,
     h_source: &H,
     zero: &Field,
     reducer: &OptimizedSumcheckReducer,
@@ -836,6 +851,7 @@ where
         accumulate_factored_instance::<K, _>(
             &mut state,
             coefficients,
+            extended,
             h_source,
             instance,
             zero,
@@ -848,6 +864,7 @@ where
 fn accumulate_factored_instance<const K: usize, H>(
     state: &mut FactoredPrefixBuildState,
     coefficients: &Sha256FactoredBlockCoefficients<'_>,
+    extended: Option<&[ExtendedBlock]>,
     h_source: &H,
     instance: usize,
     zero: &Field,
@@ -869,11 +886,32 @@ where
     for suffix in first_suffix..suffix_end {
         let base = suffix << K;
         let local_base = base - block_start;
-        state.d_values.resize(prefix_size, zero.clone());
         state.h_values.resize(prefix_size, 0);
         for prefix in 0..prefix_size {
-            state.d_values[prefix] = coefficients.block_coefficients[local_base + prefix].clone();
             state.h_values[prefix] = source_bit(h_source, base + prefix)? as i64;
+        }
+        extend_lsb::<i64, K, _>(
+            &mut state.h_values,
+            &mut state.h_scratch,
+            &0,
+            |high, low| *high - *low,
+        );
+        if let Some(extended) = extended {
+            let block = &extended[local_base / prefix_size];
+            for beta in 0..pow3(K) {
+                linear_multiply_accumulate_signed_fast(
+                    reducer,
+                    &mut state.local_sums[beta],
+                    &block.values[beta],
+                    &block.negated[beta],
+                    state.h_values[beta],
+                );
+            }
+            continue;
+        }
+        state.d_values.resize(prefix_size, zero.clone());
+        for prefix in 0..prefix_size {
+            state.d_values[prefix] = coefficients.block_coefficients[local_base + prefix].clone();
         }
         extend_lsb::<Field, K, _>(
             &mut state.d_values,
@@ -881,20 +919,16 @@ where
             zero,
             |high, low| high.clone() - low,
         );
-        extend_lsb::<i64, K, _>(
-            &mut state.h_values,
-            &mut state.h_scratch,
-            &0,
-            |high, low| *high - *low,
-        );
         for beta in 0..pow3(K) {
-            linear_multiply_accumulate_signed(
-                reducer,
-                &mut state.local_sums[beta],
-                &state.d_values[beta],
-                state.h_values[beta],
-                zero,
-            );
+            if state.h_values[beta] != 0 {
+                linear_multiply_accumulate_signed(
+                    reducer,
+                    &mut state.local_sums[beta],
+                    &state.d_values[beta],
+                    state.h_values[beta],
+                    zero,
+                );
+            }
         }
     }
 
@@ -909,6 +943,41 @@ where
         );
     }
     Ok(())
+}
+
+/// The ternary extension of one aligned prefix block of `block_coefficients`
+/// and its negation. When every block run starts on a prefix boundary, all
+/// factored instances reuse the same `width / 2^K` blocks, so each block is
+/// extended once instead of once per instance.
+struct ExtendedBlock {
+    values: Vec<Field>,
+    negated: Vec<Field>,
+}
+
+fn extend_block_coefficients<const K: usize>(
+    coefficients: &Sha256FactoredBlockCoefficients<'_>,
+    zero: &Field,
+) -> Option<Vec<ExtendedBlock>> {
+    let prefix_size = 1usize << K;
+    let width = coefficients.block_coefficients.len();
+    if coefficients.start % prefix_size != 0 || width % prefix_size != 0 {
+        return None;
+    }
+    let mut scratch = Vec::new();
+    Some(
+        coefficients
+            .block_coefficients
+            .chunks_exact(prefix_size)
+            .map(|block| {
+                let mut values = block.to_vec();
+                extend_lsb::<Field, K, _>(&mut values, &mut scratch, zero, |high, low| {
+                    high.clone() - low
+                });
+                let negated = values.iter().map(|value| zero.clone() - value).collect();
+                ExtendedBlock { values, negated }
+            })
+            .collect(),
+    )
 }
 
 fn factored_suffix_is_interior<const K: usize>(
@@ -1145,13 +1214,15 @@ where
     );
 
     for beta in 0..pow3(K) {
-        linear_multiply_accumulate_signed(
-            reducer,
-            &mut state.partial_sums[beta],
-            &state.v_values[beta],
-            state.h_values[beta],
-            zero,
-        );
+        if state.h_values[beta] != 0 {
+            linear_multiply_accumulate_signed(
+                reducer,
+                &mut state.partial_sums[beta],
+                &state.v_values[beta],
+                state.h_values[beta],
+                zero,
+            );
+        }
     }
     Ok(())
 }
@@ -2325,6 +2396,25 @@ fn select_field_by_bit(zero: &Field, one: &Field, bit: u64) -> Field {
 }
 
 #[inline]
+/// [`linear_multiply_accumulate_signed`] with the negation precomputed and a
+/// zero coefficient skipped: the accumulated value is identical, and Boolean
+/// extensions are zero at roughly half of their ternary points.
+#[inline]
+fn linear_multiply_accumulate_signed_fast(
+    reducer: &OptimizedSumcheckReducer,
+    accumulator: &mut LinearAccumulator,
+    value: &Field,
+    negated_value: &Field,
+    signed_coefficient: i64,
+) {
+    if signed_coefficient == 0 {
+        return;
+    }
+    let magnitude = signed_coefficient.unsigned_abs();
+    let selected = if signed_coefficient < 0 { negated_value } else { value };
+    linear_multiply_accumulate(reducer, accumulator, selected, &magnitude);
+}
+
 fn linear_multiply_accumulate_signed(
     reducer: &OptimizedSumcheckReducer,
     accumulator: &mut LinearAccumulator,

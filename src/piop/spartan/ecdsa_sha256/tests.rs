@@ -11,19 +11,26 @@ fn word(value: &BigUint) -> [u8; 32] {
 }
 
 pub(super) fn fixture() -> (Sha256EcdsaStatement, Vec<u8>) {
+    fixture_at(3)
+}
+
+/// The same test-only signature (d=1, k=1) over a `64·(2^exponent − 1)`-byte message.
+pub(super) fn fixture_at(exponent: u8) -> (Sha256EcdsaStatement, Vec<u8>) {
     let hex = |s: &[u8]| BigUint::parse_bytes(s, 16).unwrap();
     let gx = hex(b"6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296");
     let gy = hex(b"4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5");
     let n = hex(b"ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551");
-    // Independently computed SHA-256 of bytes[i] = i mod 256, length 448.
-    let digest = hex(b"afcdb4646801a7f0c78048754ff01adec0da00eb73b20dc0dde7f089c2c24640");
-    let message: Vec<_> = (0..448).map(|i| i as u8).collect();
-    assert_eq!(Sha256::digest(&message).as_slice(), word(&digest));
+    let message: Vec<_> = (0..64 * ((1usize << exponent) - 1)).map(|i| i as u8).collect();
+    let digest = BigUint::from_bytes_be(&Sha256::digest(&message));
+    if exponent == 3 {
+        // Independently computed SHA-256 of bytes[i] = i mod 256, length 448.
+        assert_eq!(digest, hex(b"afcdb4646801a7f0c78048754ff01adec0da00eb73b20dc0dde7f089c2c24640"));
+    }
     // Test-only ECDSA key d=1 and nonce k=1: Q=G, r=G.x, s=z+r mod n.
     let s = (&digest + &gx) % n;
     (
         Sha256EcdsaStatement {
-            log_compressions: 3,
+            log_compressions: exponent,
             qx: word(&gx),
             qy: word(&gy),
             r: word(&gx),
@@ -35,10 +42,17 @@ pub(super) fn fixture() -> (Sha256EcdsaStatement, Vec<u8>) {
 
 #[test]
 fn compact_map_matches_generated_witness_and_exact_constraints() {
-    let prepared = prepare_sha256_ecdsa(3, 100, OuterMode::Split).unwrap();
-    let (statement, message) = fixture();
+    // 2^3 packs the assignment bit by bit, 2^6 through the 64×64 transposes.
+    for exponent in [3, 6] {
+        map_matches_witness(exponent);
+    }
+}
+
+fn map_matches_witness(exponent: u8) {
+    let prepared = prepare_sha256_ecdsa(exponent as usize, 100, OuterMode::Split).unwrap();
+    let (statement, message) = fixture_at(exponent);
     let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
-    assert_eq!(prepared.local.a.len(), 7061);
+    assert_eq!(prepared.local.rows(), 7061);
     let mut mapped = vec![false; prepared.map.rows()];
     let mut nnz = 0;
     for c in 0..prepared.live_source_bits() {
@@ -80,6 +94,17 @@ fn compact_map_matches_generated_witness_and_exact_constraints() {
             statement.bit(bit)
         );
     }
+}
+
+#[test]
+fn transposed_assignment_rows_prove_and_verify() {
+    use crate::transcript::Blake3Transcript;
+    let p = prepare_sha256_ecdsa(6, 100, OuterMode::Split).unwrap();
+    let (statement, message) = fixture_at(6);
+    let witness = generate_sha256_ecdsa_witness(&p, &statement, &message).unwrap();
+    let hint = commit_sha256_ecdsa(&p, &witness).unwrap();
+    let proof = prove_sha256_ecdsa(&mut Blake3Transcript::new(), &p, &statement, &witness, &hint, 4).unwrap();
+    verify_sha256_ecdsa(&mut Blake3Transcript::new(), &p, &statement, &hint.commitment, &proof).unwrap();
 }
 
 #[test]

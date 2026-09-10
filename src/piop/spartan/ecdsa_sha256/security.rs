@@ -62,7 +62,7 @@ impl Sha256EcdsaSecurity {
         let divisors = p.local.defect_bits / 112;
         let bad_prime = f64::from(divisors) * 2f64.powf(-log2_prime_count_lower_bound(113));
         // The maximum all-row arity keeps the two benchmark modes on one schedule.
-        let max_outer = (256 * p.compressions() + p.local.a.len())
+        let max_outer = (256 * p.compressions() + p.local.rows())
             .next_power_of_two()
             .ilog2() as usize;
         let initial = add("prime+tau", bad_prime + max_outer as f64 * q_inv, 1)?;

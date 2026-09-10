@@ -1,31 +1,38 @@
-//! Compact matrix reduction: SHA's repeated rows never become a global matrix.
+//! Compact matrix reduction: SHA's repeated rows never become a global matrix,
+//! and the P-256 matrices are reduced through their table of distinct
+//! coefficients and combined one assignment cell at a time.
 
 use crypto_primitives::{FromWithConfig, PrimeField};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 use super::{
     Result, error,
-    relation::{IntegerRow, OuterMode, PreparedSha256Ecdsa, SHA_H, Sha256EcdsaStatement},
+    relation::{OuterMode, PreparedSha256Ecdsa, SHA_H, Sha256EcdsaStatement},
     witness::Sha256EcdsaWitness,
 };
 use crate::{
     piop::spartan::{
         f2z::SpartanF2zField as F,
         matrix::eq_table,
+        raw_monty::{Raw, RawMontyCtx},
         sumcheck::{OuterSumcheckProof, R1csProductMles},
     },
     poly::mle::DenseMultilinearExtension,
 };
 
 pub(super) type Config = <F as PrimeField>::Config;
-type Row = Vec<(usize, F)>;
+
+/// Work items per parallel block over the P-256 assignment tail.
+#[cfg(feature = "parallel")]
+const TAIL_BLOCK: usize = 1 << 12;
 
 pub(super) struct Projection {
-    sha_c: Vec<Row>,
-    a: Vec<Row>,
-    b: Vec<Row>,
-    c: Vec<Row>,
+    ctx: RawMontyCtx,
+    /// Montgomery residues of `LocalRelation::coefficients` modulo `q`.
+    residues: Vec<Raw>,
 }
 
 pub(super) fn reduce(value: &BigInt, q: u128, cfg: &Config) -> F {
@@ -37,24 +44,14 @@ pub(super) fn reduce(value: &BigInt, q: u128, cfg: &Config) -> F {
 impl Projection {
     pub fn new(p: &PreparedSha256Ecdsa, q: u128, cfg: &Config) -> Self {
         let _scope = crate::utils::prof::scope("ecdsa:matrix_projection");
-        let project = |rows: &[IntegerRow]| {
-            rows.iter()
-                .map(|row| {
-                    row.iter()
-                        .filter_map(|(c, v)| {
-                            let v = reduce(v, q, cfg);
-                            (!F::is_zero(&v)).then_some((*c, v))
-                        })
-                        .collect()
-                })
-                .collect()
-        };
-        Self {
-            sha_c: project(&p.local.sha_c),
-            a: project(&p.local.a),
-            b: project(&p.local.b),
-            c: project(&p.local.c),
-        }
+        let ctx = RawMontyCtx::new(cfg);
+        let residues = p
+            .local
+            .coefficients
+            .iter()
+            .map(|coefficient| ctx.raw(&reduce(coefficient, q, cfg)))
+            .collect();
+        Self { ctx, residues }
     }
 
     pub fn outer_products(
@@ -84,7 +81,7 @@ impl Projection {
                     }
                 }
                 OuterMode::AllRows => {
-                    for r in 0..p.local.a.len() {
+                    for r in 0..p.local.rows() {
                         set(256 * p.compressions() + r, r);
                     }
                 }
@@ -107,6 +104,7 @@ impl Projection {
 
     /// D = A(r_x,.) + rho B(r_x,.) + rho² C(r_x,.) + gamma Lᵀeq(sigma,.).
     /// The explicit public equations include h[0]=1, so this is affine, not homogeneous.
+    #[allow(clippy::too_many_arguments)]
     pub fn combine(
         &self,
         p: &PreparedSha256Ecdsa,
@@ -119,7 +117,7 @@ impl Projection {
         cfg: &Config,
     ) -> Result<Coefficients> {
         let _scope = crate::utils::prof::scope("ecdsa:coefficient_combine");
-        let zero = F::zero_with_cfg(cfg);
+        let ctx = self.ctx;
         let mut rho2 = rho.clone();
         rho2 *= rho;
         let mut target = outer.az_mle_claim.clone();
@@ -129,42 +127,51 @@ impl Projection {
         term = outer.cz_mle_claim.clone();
         term *= &rho2;
         target += &term;
-        let mut tail = vec![zero.clone(); p.local.p_map.rows()];
         let sigma_weights = Equality::new(sigma, cfg)?;
         let row_weights = Equality::new(rx, cfg)?;
-        let add_row = |dst: &mut [F], row: &Row, weight: &F| {
-            for (j, value) in row {
-                let mut term = value.clone();
-                term *= weight;
-                dst[*j] += &term;
-            }
-        };
-        let add_outer = |dst: &mut [F], r: usize, weight: F| {
-            add_row(dst, &self.a[r], &weight);
-            let mut wb = weight.clone();
-            wb *= rho;
-            add_row(dst, &self.b[r], &wb);
-            let mut wc = weight;
-            wc *= &rho2;
-            add_row(dst, &self.c[r], &wc);
+        let (rho_raw, rho2_raw) = (ctx.raw(rho), ctx.raw(&rho2));
+        // One weight per (row, matrix) slot of the column-major tail index:
+        // the outer row weight for A, times rho for B, times rho² for C; the
+        // linear rows' C weight is their gamma-scaled sigma weight.
+        let mut weights = vec![0 as Raw; 3 * p.local.rows()];
+        let outer_weights = |slots: &mut [Raw], weight: Raw| {
+            slots[0] = weight;
+            slots[1] = ctx.mul(weight, rho_raw);
+            slots[2] = ctx.mul(weight, rho2_raw);
         };
         match p.mode {
             OuterMode::Split => {
                 for (i, &r) in p.local.nonlinear.iter().enumerate() {
-                    add_outer(&mut tail, r, row_weights.at(i));
+                    outer_weights(&mut weights[3 * r..3 * r + 3], ctx.raw(&row_weights.at(i)));
                 }
                 for (i, &r) in p.local.linear.iter().enumerate() {
                     let mut weight = sigma_weights.at(256 * p.compressions() + i);
                     weight *= gamma;
-                    add_row(&mut tail, &self.c[r], &weight);
+                    weights[3 * r + 2] = ctx.raw(&weight);
                 }
             }
             OuterMode::AllRows => {
-                for r in 0..self.a.len() {
-                    add_outer(&mut tail, r, row_weights.at(256 * p.compressions() + r));
+                for r in 0..p.local.rows() {
+                    let weight = ctx.raw(&row_weights.at(256 * p.compressions() + r));
+                    outer_weights(&mut weights[3 * r..3 * r + 3], weight);
                 }
             }
         }
+        let columns = &p.local.tail;
+        let residues = &self.residues;
+        let gather = |j: usize| -> Raw {
+            columns.column(j).fold(0 as Raw, |sum, (slot, k)| {
+                ctx.add(sum, ctx.mul(weights[slot], residues[k]))
+            })
+        };
+        #[cfg(feature = "parallel")]
+        let mut tail_raw: Vec<Raw> = (0..columns.columns())
+            .into_par_iter()
+            .with_min_len(TAIL_BLOCK)
+            .map(gather)
+            .collect();
+        #[cfg(not(feature = "parallel"))]
+        let mut tail_raw: Vec<Raw> = (0..columns.columns()).map(gather).collect();
         let public_start = 256 * p.compressions() + p.local.linear.len();
         let mut constant = sigma_weights.at(public_start);
         constant *= gamma;
@@ -172,27 +179,41 @@ impl Projection {
         for bit in 0..1024 {
             let mut weight = sigma_weights.at(public_start + 1 + bit);
             weight *= gamma;
-            tail[p.local.public_h[bit]] += &weight;
+            let cell = p.local.public_h[bit];
+            tail_raw[cell] = ctx.add(tail_raw[cell], ctx.raw(&weight));
             if statement.bit(bit) {
                 target += &weight;
             }
         }
+        #[cfg(feature = "parallel")]
+        let tail: Vec<F> = tail_raw
+            .par_iter()
+            .with_min_len(TAIL_BLOCK)
+            .map(|&value| ctx.field(value))
+            .collect();
+        #[cfg(not(feature = "parallel"))]
+        let tail: Vec<F> = tail_raw.iter().map(|&value| ctx.field(value)).collect();
         let (point, multiplier) = match p.mode {
             OuterMode::Split => (sigma, gamma),
             OuterMode::AllRows => (rx, &rho2),
         };
         let instances = eq_table(&point[..p.log_n], cfg).map_err(error)?;
         let locals = eq_table(&point[p.log_n..], cfg).map_err(error)?;
-        let mut sha = vec![zero; SHA_H];
-        for (r, row) in self.sha_c.iter().enumerate() {
-            let mut weight = locals[r].clone();
-            weight *= multiplier;
-            add_row(&mut sha, row, &weight);
+        let multiplier = ctx.raw(multiplier);
+        let mut sha_raw = vec![0 as Raw; SHA_H];
+        for r in 0..p.local.sha_c.rows() {
+            let weight = ctx.mul(ctx.raw(&locals[r]), multiplier);
+            for (j, k) in p.local.sha_c.row(r) {
+                sha_raw[j] = ctx.add(sha_raw[j], ctx.mul(weight, residues[k]));
+            }
         }
+        let sha = sha_raw.iter().map(|&value| ctx.field(value)).collect();
         Ok(Coefficients {
+            ctx,
             instances,
             sha,
             tail,
+            tail_raw,
             constant,
             target,
             h_offset: p.map.h_offset,
@@ -203,7 +224,7 @@ impl Projection {
 pub(super) fn outer_vars(p: &PreparedSha256Ecdsa) -> usize {
     let len = match p.mode {
         OuterMode::Split => p.local.nonlinear.len(),
-        OuterMode::AllRows => 256 * p.compressions() + p.local.a.len(),
+        OuterMode::AllRows => 256 * p.compressions() + p.local.rows(),
     };
     len.next_power_of_two().ilog2() as usize
 }
@@ -231,9 +252,12 @@ impl Equality {
 }
 
 pub(super) struct Coefficients {
+    ctx: RawMontyCtx,
     instances: Vec<F>,
     sha: Vec<F>,
     tail: Vec<F>,
+    /// The same tail as raw residues, for the terminal evaluation.
+    tail_raw: Vec<Raw>,
     constant: F,
     pub target: F,
     h_offset: usize,
@@ -273,11 +297,29 @@ impl Coefficients {
         let mut constant = eq.at(0);
         constant *= &self.constant;
         value += &constant;
-        for (i, coefficient) in self.tail.iter().enumerate() {
-            let mut v = eq.at(self.h_offset + i);
-            v *= coefficient;
-            value += &v;
-        }
+        // The tail against eq(point, h_offset + i), one O(1) weight per cell.
+        let ctx = self.ctx;
+        let (low, high) = (ctx.raw_vec(&eq.low), ctx.raw_vec(&eq.high));
+        let (mask, split, h_offset) = (low.len() - 1, eq.split, self.h_offset);
+        let term = |i: usize, coefficient: &Raw| -> Raw {
+            let index = h_offset + i;
+            ctx.mul(ctx.mul(low[index & mask], high[index >> split]), *coefficient)
+        };
+        #[cfg(feature = "parallel")]
+        let tail = self
+            .tail_raw
+            .par_iter()
+            .enumerate()
+            .with_min_len(TAIL_BLOCK)
+            .fold(|| 0 as Raw, |sum, (i, coefficient)| ctx.add(sum, term(i, coefficient)))
+            .reduce(|| 0 as Raw, |a, b| ctx.add(a, b));
+        #[cfg(not(feature = "parallel"))]
+        let tail = self
+            .tail_raw
+            .iter()
+            .enumerate()
+            .fold(0 as Raw, |sum, (i, coefficient)| ctx.add(sum, term(i, coefficient)));
+        value += &ctx.field(tail);
         Ok(value)
     }
 }
