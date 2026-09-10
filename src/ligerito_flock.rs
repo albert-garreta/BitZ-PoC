@@ -30,6 +30,7 @@
 //! validator-gated Ligerito security configs ([`sha_lig_configs`]); the
 //! `RsOpenConfig::num_queries` knob does not apply on this backend.
 
+use anyhow::Context;
 use crypto_bigint::U128;
 use crypto_primes::{Flavor, is_prime};
 use flock_core::challenger::Challenger;
@@ -897,91 +898,121 @@ pub(crate) fn validate_ligerito_commitment(
     commitment: &Commitment,
     config: &impl LigeritoStatementConfig,
 ) -> Result<(), FlockRsError> {
+    check_ligerito_commitment(commitment, config).map_err(|_| FlockRsError::CommitmentConfig)
+}
+
+fn check_ligerito_commitment(
+    commitment: &Commitment,
+    config: &impl LigeritoStatementConfig,
+) -> anyhow::Result<()> {
+    validate_ligerito_config_shape(config)?;
     let recursive_levels = config.recursive_steps();
-    let Some(levels) = recursive_levels.checked_add(1) else {
-        return Err(FlockRsError::CommitmentConfig);
-    };
     let log_inv_rates = config.log_inv_rates();
     let recursive_log_msg_cols = config.recursive_log_msg_cols();
     let recursive_ks = config.recursive_ks();
     let queries = config.queries();
-    let grinding_bits = config.grinding_bits();
-    let fold_grinding_bits = config.fold_grinding_bits();
-    let ood_samples = config.ood_samples();
-    if recursive_levels == 0
-        || log_inv_rates.len() != levels
-        || recursive_log_msg_cols.len() != recursive_levels
-        || recursive_ks.len() != recursive_levels
-        || queries.len() != levels
-        || grinding_bits.len() != levels
-        || fold_grinding_bits.len() != levels
-        || ood_samples.len() != levels
-        || log_inv_rates.iter().any(|&rate| rate == 0)
-        || queries.iter().any(|&query_count| query_count == 0)
-        || ood_samples[0] != 0
-    {
-        return Err(FlockRsError::CommitmentConfig);
-    }
-    let Some(&log_inv_rate) = log_inv_rates.first() else {
-        return Err(FlockRsError::CommitmentConfig);
-    };
+    let log_inv_rate = log_inv_rates
+        .first()
+        .copied()
+        .context("missing initial inverse rate")?;
     let initial_log_msg_cols = config.initial_log_msg_cols();
     let initial_log_num_interleaved = config.initial_log_num_interleaved();
     let initial_k = config.initial_k();
-    let Some(log_message_len) = initial_log_msg_cols.checked_add(initial_log_num_interleaved)
-    else {
-        return Err(FlockRsError::CommitmentConfig);
-    };
-    let Some(expected_m) = log_message_len.checked_add(LOG_PACKING) else {
-        return Err(FlockRsError::CommitmentConfig);
-    };
-    if expected_m >= usize::BITS as usize {
-        return Err(FlockRsError::CommitmentConfig);
-    }
-    let Some(initial_block_log) = initial_log_msg_cols.checked_add(log_inv_rate) else {
-        return Err(FlockRsError::CommitmentConfig);
-    };
-    let Some(initial_block_len) = u32::try_from(initial_block_log)
+    let expected_m = initial_log_msg_cols
+        .checked_add(initial_log_num_interleaved)
+        .and_then(|len| len.checked_add(LOG_PACKING))
+        .context("message dimension overflow")?;
+    anyhow::ensure!(
+        expected_m < usize::BITS as usize,
+        "message dimension exceeds usize"
+    );
+    let initial_block_log = initial_log_msg_cols
+        .checked_add(log_inv_rate)
+        .context("initial block dimension overflow")?;
+    let initial_block_len = u32::try_from(initial_block_log)
         .ok()
         .and_then(|log| 1usize.checked_shl(log))
-    else {
-        return Err(FlockRsError::CommitmentConfig);
-    };
-    if queries[0] > initial_block_len {
-        return Err(FlockRsError::CommitmentConfig);
-    }
+        .context("initial block length overflow")?;
+    anyhow::ensure!(
+        queries[0] <= initial_block_len,
+        "initial queries exceed block length"
+    );
     let mut remaining = initial_log_msg_cols;
     for i in 0..recursive_levels {
         let k = recursive_ks[i];
-        if k == 0 || k > remaining {
-            return Err(FlockRsError::CommitmentConfig);
-        }
+        anyhow::ensure!(
+            k > 0 && k <= remaining,
+            "invalid fold dimension at level {i}"
+        );
         remaining -= k;
-        if recursive_log_msg_cols[i] != remaining {
-            return Err(FlockRsError::CommitmentConfig);
-        }
-        let Some(block_log) = remaining.checked_add(log_inv_rates[i + 1]) else {
-            return Err(FlockRsError::CommitmentConfig);
-        };
-        let Some(block_len) = u32::try_from(block_log)
+        anyhow::ensure!(
+            recursive_log_msg_cols[i] == remaining,
+            "message dimension mismatch at level {i}"
+        );
+        let block_log = remaining
+            .checked_add(log_inv_rates[i + 1])
+            .context("recursive block dimension overflow")?;
+        let block_len = u32::try_from(block_log)
             .ok()
             .and_then(|log| 1usize.checked_shl(log))
-        else {
-            return Err(FlockRsError::CommitmentConfig);
-        };
-        if queries[i + 1] > block_len {
-            return Err(FlockRsError::CommitmentConfig);
-        }
+            .context("recursive block length overflow")?;
+        anyhow::ensure!(
+            queries[i + 1] <= block_len,
+            "queries exceed block length at level {}",
+            i + 1
+        );
     }
     let params = &commitment.params;
-    if params.m != expected_m
-        || params.log_inv_rate != log_inv_rate
-        || params.log_batch_size != initial_k
-        || initial_log_num_interleaved != initial_k
-        || params.merkle_hash != config.merkle_hash()
-    {
-        return Err(FlockRsError::CommitmentConfig);
-    }
+    anyhow::ensure!(
+        params.m == expected_m
+            && params.log_inv_rate == log_inv_rate
+            && params.log_batch_size == initial_k
+            && initial_log_num_interleaved == initial_k
+            && params.merkle_hash == config.merkle_hash(),
+        "commitment metadata does not match Ligerito config"
+    );
+    Ok(())
+}
+
+/// Validate per-level array lengths and required values before indexing them.
+fn validate_ligerito_config_shape(config: &impl LigeritoStatementConfig) -> anyhow::Result<()> {
+    let recursive_levels = config.recursive_steps();
+    let levels = recursive_levels
+        .checked_add(1)
+        .context("recursive level count overflow")?;
+    let invalid_lengths = [
+        config.log_inv_rates().len(),
+        config.queries().len(),
+        config.grinding_bits().len(),
+        config.fold_grinding_bits().len(),
+        config.ood_samples().len(),
+    ]
+    .into_iter()
+    .any(|len| len != levels);
+    let invalid_recursive_lengths = [
+        config.recursive_log_msg_cols().len(),
+        config.recursive_ks().len(),
+    ]
+    .into_iter()
+    .any(|len| len != recursive_levels);
+
+    anyhow::ensure!(recursive_levels > 0, "missing recursive levels");
+    anyhow::ensure!(
+        !invalid_lengths && !invalid_recursive_lengths,
+        "invalid per-level array lengths"
+    );
+    anyhow::ensure!(
+        !config.log_inv_rates().contains(&0),
+        "inverse rates must be nonzero"
+    );
+    anyhow::ensure!(
+        !config.queries().contains(&0),
+        "query counts must be nonzero"
+    );
+    anyhow::ensure!(
+        config.ood_samples().first() == Some(&0),
+        "initial OOD sample count must be zero"
+    );
     Ok(())
 }
 

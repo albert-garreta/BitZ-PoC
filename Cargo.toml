@@ -6,6 +6,7 @@ description = "F2Z: integer-MLE-evaluation PCS over an F2 commitment via a GF(2^
 repository = "https://github.com/NethermindEth/f2z"
 
 [dependencies]
+anyhow = "1"
 crypto-primitives = { path = "vendor/crypto-primitives", features = ["std", "crypto_bigint", "rand"] }
 crypto-bigint = "=0.7.5"
 crypto-primes = "=0.7.2"
