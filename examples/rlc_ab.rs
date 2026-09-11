@@ -28,7 +28,7 @@ use f2z::ligerito_flock::{
     verify_mle_eval_mod_q_ligerito_rlc_family, verify_mle_eval_mod_q_ligerito_rlc_family_shared_point,
 };
 use f2z::pcs::{
-    FQ_BITS, FQ_MOD, Fq, IntEvalParams, ShaF2Layout, extract_virtual_xor_rows,
+    FQ_BITS, FQ_MOD, Fq, IntegerMatrixLayout, ShaF2Layout, extract_virtual_xor_rows,
     smallest_generator, virtual_xor_params,
 };
 use f2z::transcript::Blake3Transcript;
@@ -44,7 +44,11 @@ fn ab_layout(n: usize) -> ShaF2Layout {
     let s = n - log_cols - t_x;
     let tw = t_x - bit_vars;
     ShaF2Layout {
-        p: IntEvalParams { t: bit_vars + log_cols + tw, s, word_bits: 1 },
+        p: IntegerMatrixLayout {
+            row_vars: bit_vars + log_cols + tw,
+            col_vars: s,
+            word_bits: 1,
+        },
         num_cols: 1 << log_cols,
         log_cols,
         bit_vars,
@@ -732,8 +736,8 @@ fn main() {
             (median(t_single), median(t_rlc3), median(t_vx3), median(t_ind3));
         println!(
             "n={n} (t'={}, s={}, m={}) reps={reps}\n  single {mu:8.1} ms\n  rlc3   {mr:8.1} ms  ({:.2}x single)  proof {} B\n  vx3    {mb:8.1} ms  ({:.2}x single)  proof {} B\n  ind3   {mi:8.1} ms  ({:.2}x single)  proof {} B",
-            p_x.t,
-            p_x.s,
+            p_x.row_vars,
+            p_x.col_vars,
             m_p + 7,
             mr / mu,
             sizes.0,

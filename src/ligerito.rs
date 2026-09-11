@@ -47,7 +47,7 @@ use crypto_primitives::Field;
 use crate::transcript::traits::Transcript;
 
 use crate::pcs::{
-    GF128_MULT_ORDER, IntEvalParams, gf_pow, is_generator, max_fold_magnitude,
+    GF128_MULT_ORDER, IntegerMatrixLayout, gf_pow, is_generator, max_fold_magnitude,
     row_bit_weights,
 };
 use crate::utils::{cfg_chunks_mut, cfg_into_iter};
@@ -59,7 +59,7 @@ use rayon::prelude::*;
 /// index `i = (b<<log₂W)|j`). Local copy — the sibling branches' commit
 /// paths pack differently; the Ligerito stack owns its row layout.
 #[allow(clippy::arithmetic_side_effects)]
-pub(crate) fn repack_leaf_bits(p: &IntEvalParams, data: &[u128]) -> Vec<Vec<u64>> {
+pub(crate) fn repack_leaf_bits(p: &IntegerMatrixLayout, data: &[u128]) -> Vec<Vec<u64>> {
     let log_w = p.word_bits.trailing_zeros() as usize;
     let row_len = p.rows() << log_w;
     let words = (row_len + 63) >> 6;
@@ -293,14 +293,16 @@ pub fn residual_b_evals(prefix: &[Gf], yr_log_n: usize, r_hi: &[Gf], eq_r2: &[Gf
 // ---------------------------------------------------------------------
 
 /// `t + log₂W` — the row-bit index width.
-pub(crate) fn row_bit_vars(p: &IntEvalParams) -> usize {
+pub(crate) fn row_bit_vars(p: &IntegerMatrixLayout) -> usize {
     let log_w = p.word_bits.trailing_zeros() as usize;
-    p.t.wrapping_add(log_w)
+    p.row_vars.wrapping_add(log_w)
 }
 
 /// Number of packed variables `m_p = (t + log₂W − 7) + s`.
-pub fn packed_vars(p: &IntEvalParams) -> usize {
-    row_bit_vars(p).wrapping_sub(LOG_PACKING).wrapping_add(p.s)
+pub fn packed_vars(p: &IntegerMatrixLayout) -> usize {
+    row_bit_vars(p)
+        .wrapping_sub(LOG_PACKING)
+        .wrapping_add(p.col_vars)
 }
 
 // ---------------------------------------------------------------------
@@ -685,7 +687,7 @@ pub enum IntEvalRsError {
 /// never materialised.
 #[allow(clippy::arithmetic_side_effects)]
 pub(crate) fn xi_combined_rows_and(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     row_sets: &[&[Vec<u64>]],
     eq_xi: &[Gf],
 ) -> Vec<Gf> {
@@ -714,7 +716,11 @@ pub(crate) fn xi_combined_rows_and(
 /// bit rows. Parallel over 64-entry output blocks (each block scans all
 /// rows' matching word — exact field sums, order-independent in char 2).
 #[allow(clippy::arithmetic_side_effects)]
-pub(crate) fn xi_combined_rows(p: &IntEvalParams, rows: &[Vec<u64>], eq_xi: &[Gf]) -> Vec<Gf> {
+pub(crate) fn xi_combined_rows(
+    p: &IntegerMatrixLayout,
+    rows: &[Vec<u64>],
+    eq_xi: &[Gf],
+) -> Vec<Gf> {
     let t_w = row_bit_vars(p);
     let len = 1usize << t_w;
     debug_assert!(len >= 64, "row_len below one word is out of scope (t_w >= 7 holds here)");
@@ -742,7 +748,7 @@ pub(crate) fn xi_combined_rows(p: &IntEvalParams, rows: &[Vec<u64>], eq_xi: &[Gf
 /// Exact char-2 re-association — byte-identical.
 #[allow(clippy::arithmetic_side_effects)]
 pub(crate) fn xi_combined_rows_packed(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     packed_cols: &[Vec<u64>],
     eq_xi: &[Gf],
 ) -> Vec<Gf> {
@@ -803,7 +809,7 @@ pub(crate) fn xi_combined_rows_packed(
 /// forest consumes. Built directly from the data tensor.
 #[allow(clippy::arithmetic_side_effects)]
 #[allow(dead_code)]
-pub(crate) fn pack_columns_lanes(p: &IntEvalParams, data: &[u128]) -> Vec<Vec<u64>> {
+pub(crate) fn pack_columns_lanes(p: &IntegerMatrixLayout, data: &[u128]) -> Vec<Vec<u64>> {
     let log_w = p.word_bits.trailing_zeros() as usize;
     let row_len = p.rows() << log_w;
     let num_groups = p.cols().div_ceil(64);
@@ -836,7 +842,7 @@ pub(crate) fn pack_columns_lanes(p: &IntEvalParams, data: &[u128]) -> Vec<Vec<u6
 #[allow(dead_code)]
 fn prove_fold_forest_fast(
     transcript: &mut impl Transcript,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     data: &[u128],
     row_weights: &[u128],
     alpha: Gf,
@@ -893,7 +899,11 @@ fn prove_fold_forest_fast(
 ///   trailing-zeros walk, no data-dependent shift;
 /// - **tz-walk** (`F2Z_FOLDV_LUT=0`): the original per-set-bit scan.
 #[allow(clippy::arithmetic_side_effects)]
-pub(crate) fn fold_values_bits(p: &IntEvalParams, rows: &[Vec<u64>], row_weights: &[u128]) -> Vec<u128> {
+pub(crate) fn fold_values_bits(
+    p: &IntegerMatrixLayout,
+    rows: &[Vec<u64>],
+    row_weights: &[u128],
+) -> Vec<u128> {
     let log_w = p.word_bits.trailing_zeros() as usize;
     let mask = p.word_bits.wrapping_sub(1);
     if foldv_lut() {
@@ -984,7 +994,7 @@ fn foldv_lut() -> bool {
 /// `Vec` accumulator measured as slow as `K` separate passes.
 #[allow(clippy::arithmetic_side_effects)]
 fn fold_cols_multi_k<const K: usize>(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     rows: &[Vec<u64>],
     sets: &[&[u128]],
 ) -> Vec<[u128; K]> {
@@ -1021,7 +1031,7 @@ fn fold_cols_multi_k<const K: usize>(
 /// per-column order.
 #[allow(clippy::arithmetic_side_effects)]
 pub(crate) fn fold_values_bits_multi(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     rows: &[Vec<u64>],
     weight_sets: &[&[u128]],
 ) -> Vec<Vec<u128>> {
@@ -1075,7 +1085,7 @@ pub(crate) fn transpose_64x64(a: &mut [u64; 64]) {
 /// word `wi`. One pass over the 8-byte-per-64-bits rows instead of a second
 /// sweep of the u128 data tensor.
 #[allow(clippy::arithmetic_side_effects)]
-pub(crate) fn pack_columns_from_rows(p: &IntEvalParams, rows: &[Vec<u64>]) -> Vec<Vec<u64>> {
+pub(crate) fn pack_columns_from_rows(p: &IntegerMatrixLayout, rows: &[Vec<u64>]) -> Vec<Vec<u64>> {
     let log_w = p.word_bits.trailing_zeros() as usize;
     let row_len = p.rows() << log_w;
     let words = row_len.div_ceil(64);
@@ -1111,7 +1121,10 @@ pub(crate) fn pack_columns_from_rows(p: &IntEvalParams, rows: &[Vec<u64>]) -> Ve
 /// column `64g+k`'s bit `i` — the layout `sha_f2_packed_cols` produces).
 /// Parallel over groups.
 #[allow(clippy::arithmetic_side_effects)]
-pub(crate) fn rows_from_packed_cols(p: &IntEvalParams, packed_cols: &[Vec<u64>]) -> Vec<Vec<u64>> {
+pub(crate) fn rows_from_packed_cols(
+    p: &IntegerMatrixLayout,
+    packed_cols: &[Vec<u64>],
+) -> Vec<Vec<u64>> {
     let log_w = p.word_bits.trailing_zeros() as usize;
     let row_len = p.rows() << log_w;
     let words = row_len.div_ceil(64);
@@ -1146,7 +1159,7 @@ pub(crate) fn rows_from_packed_cols(p: &IntEvalParams, packed_cols: &[Vec<u64>])
 #[allow(dead_code)]
 pub(crate) fn prove_int_eval_common(
     transcript: &mut impl Transcript,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     data: &[u128],
     row_weights: &[u128],
     alpha: Gf,
@@ -1158,7 +1171,7 @@ pub(crate) fn prove_int_eval_common(
     let v = fold_values_bits(p, rows, row_weights);
 
     // eq(c, ξ) batching of the per-column leaf claims.
-    let xi: Vec<Gf> = transcript.get_field_challenges(p.s, &());
+    let xi: Vec<Gf> = transcript.get_field_challenges(p.col_vars, &());
     let eq_xi = if xi.is_empty() {
         vec![Gf::one()]
     } else {
@@ -1206,7 +1219,7 @@ pub(crate) fn verify_int_eval_common(
     forest: &ProductForestProof<Gf>,
     v: &[u128],
     presum: &MultiDegreeSumcheckProof<Gf>,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     row_weights: &[u128],
     alpha: Gf,
 ) -> Result<(Vec<Gf>, Gf), IntEvalRsError> {
@@ -1239,7 +1252,7 @@ pub(crate) fn verify_int_eval_common(
     }
 
     // (3a) eq(ξ) batching + pre-sumcheck.
-    let xi: Vec<Gf> = transcript.get_field_challenges(p.s, &());
+    let xi: Vec<Gf> = transcript.get_field_challenges(p.col_vars, &());
     let eq_xi = if xi.is_empty() {
         vec![Gf::one()]
     } else {
@@ -1363,7 +1376,7 @@ impl crate::piop::sumcheck::prover::RoundPolyEvaluator<Gf> for ProdPairWideEvalu
 
 pub(crate) fn prove_int_eval_merged_common(
     transcript: &mut impl Transcript,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     rows: &[Vec<u64>],
     packed_cols: Option<&[Vec<u64>]>,
     row_weights: &[u128],
@@ -1466,7 +1479,7 @@ pub(crate) fn prove_int_eval_merged_common(
 #[allow(clippy::type_complexity)]
 pub(crate) fn prove_x_claims_batched_common(
     transcript: &mut impl Transcript,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     claim_rows: &[&[Vec<u64>]],
     claim_weights: &[&[u128]],
     alpha: Gf,
@@ -1532,7 +1545,7 @@ pub(crate) fn prove_x_claims_batched_common(
 
     let _g_tbls = crate::utils::prof::scope("mc:presum_tbls");
     let (z_bj, z_cn) = z.split_at(t_w);
-    let (z_clear, z_claim) = z_cn.split_at(p.s);
+    let (z_clear, z_claim) = z_cn.split_at(p.col_vars);
     let eq_clear = if z_clear.is_empty() {
         vec![Gf::one()]
     } else {
@@ -1593,7 +1606,7 @@ pub(crate) fn verify_x_claims_batched_common(
     mf: &crate::merged_forest::MergedForestProof,
     claim_us: &[&[u128]],
     presum: &MultiDegreeSumcheckProof<Gf>,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     claim_weights: &[&[u128]],
     alpha: Gf,
 ) -> Result<(Vec<Gf>, Vec<Gf>), IntEvalRsError> {
@@ -1622,7 +1635,7 @@ pub(crate) fn verify_x_claims_batched_common(
         }
     }
     let comb = FixedBasePow::new(alpha, 128, 8);
-    let mut roots = Vec::with_capacity(pad_n << p.s);
+    let mut roots = Vec::with_capacity(pad_n << p.col_vars);
     for n in 0..pad_n {
         if n < n_real {
             roots.extend(claim_us[n].iter().map(|&u| comb.pow(u)));
@@ -1630,8 +1643,9 @@ pub(crate) fn verify_x_claims_batched_common(
             roots.extend(core::iter::repeat(one).take(p.cols()));
         }
     }
-    let (z, e_d) = verify_merged_forest(transcript, &roots, mf, t_w, p.s.wrapping_add(log_n))
-        .map_err(|_| IntEvalRsError::Forest)?;
+    let (z, e_d) =
+        verify_merged_forest(transcript, &roots, mf, t_w, p.col_vars.wrapping_add(log_n))
+            .map_err(|_| IntEvalRsError::Forest)?;
 
     let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(
         transcript,
@@ -1651,7 +1665,7 @@ pub(crate) fn verify_x_claims_batched_common(
     }
 
     let (z_bj, z_cn) = z.split_at(t_w);
-    let (z_clear, z_claim) = z_cn.split_at(p.s);
+    let (z_clear, z_claim) = z_cn.split_at(p.col_vars);
     let eq_claim = if z_claim.is_empty() {
         vec![one]
     } else {
@@ -1705,7 +1719,7 @@ pub(crate) fn verify_int_eval_merged_common(
     mf: &crate::merged_forest::MergedForestProof,
     v: &[u128],
     presum: &MultiDegreeSumcheckProof<Gf>,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     row_weights: &[u128],
     alpha: Gf,
 ) -> Result<(Vec<Gf>, Gf), IntEvalRsError> {
@@ -1737,10 +1751,10 @@ pub(crate) fn verify_int_eval_merged_common(
     // (z_bj, z_c) + exit eval e_d.
     let _g_forest = crate::utils::prof::scope("mv:forest");
     let (z, e_d) = if crate::merged_forest::quad_active(p) {
-        crate::merged_forest::verify_merged_forest_quad(transcript, &roots, mf, t_w, p.s)
+        crate::merged_forest::verify_merged_forest_quad(transcript, &roots, mf, t_w, p.col_vars)
             .map_err(|_| IntEvalRsError::Forest)?
     } else {
-        verify_merged_forest(transcript, &roots, mf, t_w, p.s)
+        verify_merged_forest(transcript, &roots, mf, t_w, p.col_vars)
             .map_err(|_| IntEvalRsError::Forest)?
     };
     drop(_g_forest);
@@ -1794,7 +1808,11 @@ mod tests {
     #[test]
     fn packed_cols_row_roundtrip() {
         for (t, s, w) in [(7usize, 3usize, 1usize), (8, 6, 1), (7, 4, 2)] {
-            let p = IntEvalParams { t, s, word_bits: w };
+            let p = IntegerMatrixLayout {
+                row_vars: t,
+                col_vars: s,
+                word_bits: w,
+            };
             let log_w = w.trailing_zeros() as usize;
             let row_len = p.rows() << log_w;
             let words = row_len.div_ceil(64);

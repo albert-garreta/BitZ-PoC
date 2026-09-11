@@ -28,7 +28,7 @@ use num_bigint::BigUint;
 use num_traits::Zero;
 use thiserror::Error;
 
-use crate::{pcs::IntEvalParams, poly::mle::DenseMultilinearExtension};
+use crate::{pcs::IntegerMatrixLayout, poly::mle::DenseMultilinearExtension};
 
 use super::super::{
     ConstraintMatrices, PreparedConstraintMatrices, R1csProductMles, SpartanField,
@@ -129,10 +129,10 @@ impl MultiswapLayout {
     }
 
     /// F2Z shape of the committed bit tensor.
-    pub const fn f2z_params(&self) -> IntEvalParams {
-        IntEvalParams {
-            t: MULTISWAP_SLOT_VARS + self.h,
-            s: self.s,
+    pub const fn f2z_params(&self) -> IntegerMatrixLayout {
+        IntegerMatrixLayout {
+            row_vars: MULTISWAP_SLOT_VARS + self.h,
+            col_vars: self.s,
             word_bits: 1,
         }
     }
@@ -523,8 +523,11 @@ mod tests {
         let layout = *relation.layout();
         let p = layout.f2z_params();
         assert_eq!(p.word_bits, 1);
-        assert!(p.t <= 13);
-        assert_eq!(p.t + p.s, MULTISWAP_SLOT_VARS + layout.gate_vars());
+        assert!(p.row_vars <= 13);
+        assert_eq!(
+            p.row_vars + p.col_vars,
+            MULTISWAP_SLOT_VARS + layout.gate_vars()
+        );
         assert_eq!(
             p.cells(),
             MULTISWAP_SLOTS * layout.capacity(),

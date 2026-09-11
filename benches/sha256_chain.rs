@@ -249,7 +249,7 @@ fn bench_shape<P: IopSecurityProfile>(
     let warm = run_once(&make_blocks(compressions, shape_seed), &prepared, &pc, &vc);
     println!(
         "  opening layout: direct product opening on the chained map | F2Z rows 2^{} × columns 2^{} | forests {} | read-off ≤ 2^{} integers per forest",
-        opening.t, opening.s, warm.forests, opening.s
+        opening.row_vars, opening.col_vars, warm.forests, opening.col_vars
     );
     black_box(warm);
 

@@ -1099,8 +1099,8 @@ fn bench_shape<P: IopSecurityProfile>(
         };
         println!(
             "  product opening: (t,s)=({},{}) | layout={} | q={modulus}",
-            product.t,
-            product.s,
+            product.row_vars,
+            product.col_vars,
             prepared.product_layout_name().unwrap_or("none"),
         );
     }
@@ -1131,7 +1131,7 @@ fn bench_shape<P: IopSecurityProfile>(
         };
         println!(
             "  opening layout: {kind} | F2Z rows 2^{} × columns 2^{} | forests {} | read-off ≤ 2^{} integers per forest",
-            opening.t, opening.s, warm.forests, opening.s
+            opening.row_vars, opening.col_vars, warm.forests, opening.col_vars
         );
     }
     black_box(warm);
@@ -1166,10 +1166,10 @@ fn bench_shape<P: IopSecurityProfile>(
             sample + 1,
             prepared
                 .product_assignment_params()
-                .map_or_else(|| "na".to_owned(), |params| params.t.to_string()),
+                .map_or_else(|| "na".to_owned(), |params| params.row_vars.to_string()),
             prepared
                 .product_assignment_params()
-                .map_or_else(|| "na".to_owned(), |params| params.s.to_string()),
+                .map_or_else(|| "na".to_owned(), |params| params.col_vars.to_string()),
             timing.witness_ms,
             timing.commit_ms,
             timing.prove_ms,
@@ -1228,13 +1228,13 @@ fn bench_shape<P: IopSecurityProfile>(
                 "product_t".into(),
                 prepared
                     .product_assignment_params()
-                    .map_or_else(|| "na".to_owned(), |params| params.t.to_string()),
+                    .map_or_else(|| "na".to_owned(), |params| params.row_vars.to_string()),
             ),
             (
                 "product_s".into(),
                 prepared
                     .product_assignment_params()
-                    .map_or_else(|| "na".to_owned(), |params| params.s.to_string()),
+                    .map_or_else(|| "na".to_owned(), |params| params.col_vars.to_string()),
             ),
             (
                 "product_layout".into(),

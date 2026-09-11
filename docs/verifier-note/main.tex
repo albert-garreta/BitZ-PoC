@@ -243,7 +243,7 @@ Table~\ref{tab:provenance} classifies every quantity on the path.
 
 \subsection{Instance shape and the committed matrix}
 
-\code{IntEvalParams \{ t, s, word\_bits: W \}} (\code{src/pcs.rs}) fixes
+\code{IntegerMatrixLayout \{ row\_vars: t, col\_vars: s, word\_bits: W \}} (\code{src/pcs.rs}) fixes
 the shape: the data $D$ is a $2^t \times 2^s$ matrix of $W$-bit cells,
 $W$ a power of two, flat index $\code{cell\_index}(b,c) = (b \ll s)\,|\,c$.
 Derived quantities used throughout:

@@ -22,7 +22,7 @@ fn main() {
     let shift: i8 = std::env::var("F2Z_U64_SPLIT_SHIFT").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
     let witness = witness.with_split_shift(shift).unwrap();
     let params = witness.layout().f2z_params();
-    println!("split: shift {shift} -> t={} s={}", params.t, params.s);
+    println!("split: shift {shift} -> t={} s={}", params.row_vars, params.col_vars);
     let prepared = PreparedU64MulRelation::new(*witness.layout()).unwrap();
     let hint = commit_u64_mul_witness(&prepared, witness.f2z_bit_rows()).unwrap();
     // warm-up

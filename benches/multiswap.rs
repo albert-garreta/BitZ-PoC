@@ -417,7 +417,7 @@ impl TraceWriter {
                     "assignment_block_count": 4,
                     "assignment_block_capacity": prepared.layout().capacity(),
                     "committed_integer_block_count": 2,
-                    "committed_bits": 1usize << (prepared.params().t + prepared.params().s),
+                    "committed_bits": 1usize << (prepared.params().row_vars + prepared.params().col_vars),
                     "witness_stats": timing.witness_stats.json(),
                 },
                 "security": security_metadata(prepared),
@@ -1114,12 +1114,12 @@ fn main() {
         "  committed bits: 2^{} ({} B) = 2 blocks x 2^{} gates x {} bits | \
          f2z t={} s={} W={} | fingerprint Q in [2^127, 2^128), step5.0 q' in [2^112, 2^113) | \
          threads={threads} reps={reps}",
-        p.t + p.s,
-        (1usize << (p.t + p.s)) / 8,
+        p.row_vars + p.col_vars,
+        (1usize << (p.row_vars + p.col_vars)) / 8,
         layout.gate_vars(),
         MULTISWAP_VALUE_BITS,
-        p.t,
-        p.s,
+        p.row_vars,
+        p.col_vars,
         p.word_bits,
     );
     println!(
@@ -1186,7 +1186,10 @@ fn main() {
             ("profile".into(), prepared.security().profile_name.into()),
             ("batch_count".into(), batch_count.to_string()),
             ("rows".into(), circuit.live_rows().to_string()),
-            ("committed_bits".into(), (1usize << (p.t + p.s)).to_string()),
+            (
+                "committed_bits".into(),
+                (1usize << (p.row_vars + p.col_vars)).to_string(),
+            ),
             ("constraint_digest".into(), constraint_digest),
         ],
         lambda: Some(prepared.security().lambda),

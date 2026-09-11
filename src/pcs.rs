@@ -45,40 +45,39 @@ use crypto_primitives::crypto_bigint_monty::MontyField;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-/// Shape of one integer-MLE-evaluation instance.
+/// A `2^row_vars × 2^col_vars` matrix of `word_bits`-bit integers.
 ///
-/// The `n = t + s` boolean variables are split into `t` *folded* (row)
-/// variables — combined in one round, with integer weights — and `s` *final*
-/// (column) variables, read off in the clear with arbitrary (field) weights.
+/// Row variables are folded with integer weights; column variables are used
+/// for the final evaluation with arbitrary field weights.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct IntEvalParams {
-    /// Number of folded (row) variables; there are `2^t` row branches.
-    pub t: usize,
-    /// Number of final (column) variables; there are `2^s` columns.
-    pub s: usize,
+pub struct IntegerMatrixLayout {
+    /// Number of folded row variables; there are `2^row_vars` rows.
+    pub row_vars: usize,
+    /// Number of final column variables; there are `2^col_vars` columns.
+    pub col_vars: usize,
     /// Word width `W`: every data cell is an integer in `[0, 2^W)`.
     pub word_bits: usize,
 }
 
-impl IntEvalParams {
-    /// Number of row branches `2^t`.
+impl IntegerMatrixLayout {
+    /// Number of rows `2^row_vars`.
     pub fn rows(&self) -> usize {
-        1usize << self.t
+        1usize << self.row_vars
     }
 
-    /// Number of columns `2^s`.
+    /// Number of columns `2^col_vars`.
     pub fn cols(&self) -> usize {
-        1usize << self.s
+        1usize << self.col_vars
     }
 
-    /// Number of data cells `2^{t+s}`.
+    /// Number of data cells `2^(row_vars + col_vars)`.
     pub fn cells(&self) -> usize {
-        1usize << self.t << self.s
+        1usize << self.row_vars << self.col_vars
     }
 
     /// Flat index of cell `(b, c)` in row-major (`b` rows, `c` columns) order.
     pub fn cell_index(&self, b: usize, c: usize) -> usize {
-        (b << self.s) | c
+        (b << self.col_vars) | c
     }
 }
 
@@ -168,7 +167,12 @@ impl FixedBasePow {
 /// to a residual bit-MLE evaluation the ring-switch + Ligerito opener discharges.
 /// (`ℓ_c − 1` because `Σ_{(b,j)} eq((b,j),ρ) = 1` and each leaf is
 /// `1 + bit·(α^{w_b·2^j} − 1)`.)
-pub fn row_bit_weights(p: &IntEvalParams, row_weights: &[u128], alpha: Gf, rho: &[Gf]) -> Vec<Gf> {
+pub fn row_bit_weights(
+    p: &IntegerMatrixLayout,
+    row_weights: &[u128],
+    alpha: Gf,
+    rho: &[Gf],
+) -> Vec<Gf> {
     let log_w = p.word_bits.trailing_zeros() as usize;
     let mask = p.word_bits.wrapping_sub(1);
     let eq = build_eq_x_r_vec(rho, &()).expect("shared reduction point is non-empty");
@@ -218,7 +222,7 @@ where
 /// folding — the completeness reference for the exponent-fold read-off.
 #[allow(clippy::arithmetic_side_effects)] // Reference arithmetic; bounded instance.
 pub fn direct_eval_int(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     data: &[u128],
     row_weights: &[u128],
     col_weights: &[u128],
@@ -529,7 +533,7 @@ impl<const LIMBS: usize> ProjectCanonicalU128 for MontyField<LIMBS> {
 #[derive(Clone, Copy, Debug)]
 pub struct ShaF2Layout {
     /// `{t, s, word_bits: 1}` for the fieldswitch opening.
-    pub p: IntEvalParams,
+    pub p: IntegerMatrixLayout,
     /// Actual committed columns (= `sample_alphas` batch size; padded to `2^log_cols`).
     pub num_cols: usize,
     /// Column-index fold width `⌈log₂ num_cols⌉`.
@@ -560,7 +564,7 @@ pub fn sha_f2_bit_tensor<const D: usize>(
     cols: &[DenseMultilinearExtension<BinaryPoly<D>>],
 ) -> Vec<u128> {
     let p = &layout.p;
-    let s = p.s;
+    let s = p.col_vars;
     let shift = layout.log_cols.wrapping_add(layout.tw);
     let row_lo_mask = (1usize << s).wrapping_sub(1);
     let mut data = vec![0u128; p.cells()];
@@ -622,7 +626,7 @@ pub fn sha_f2_packed_cols<const D: usize>(
         p.word_bits, 1,
         "sha_f2_packed_cols is the W=1 SHA layout builder"
     );
-    let s = p.s;
+    let s = p.col_vars;
     let tw = layout.tw;
     let shift = layout.log_cols + tw;
     let col_mask = (1usize << layout.log_cols) - 1;
@@ -689,7 +693,7 @@ pub fn sha_f2_weights(
     alpha_canon: &[Vec<u128>],
 ) -> (Vec<u128>, Vec<Fq>) {
     let p = &layout.p;
-    let s = p.s;
+    let s = p.col_vars;
     let tw = layout.tw;
     let shift = layout.log_cols.wrapping_add(tw);
     let col_mask = (1usize << layout.log_cols).wrapping_sub(1);
@@ -733,17 +737,17 @@ pub fn sha_f2_weights(
 /// point simply re-splits and the embedding maps stay δ-independent; row
 /// weights then cover the coordinate list `[b' coords ++ low-δ clear
 /// coords]` and column weights the remaining `s − δ`.
-pub fn virtual_xor_params(layout: &ShaF2Layout) -> IntEvalParams {
+pub fn virtual_xor_params(layout: &ShaF2Layout) -> IntegerMatrixLayout {
     assert!(
-        layout.x_fold_extra < layout.p.s,
+        layout.x_fold_extra < layout.p.col_vars,
         "x_fold_extra must leave a clear variable"
     );
-    IntEvalParams {
-        t: layout
+    IntegerMatrixLayout {
+        row_vars: layout
             .bit_vars
             .wrapping_add(layout.tw)
             .wrapping_add(layout.x_fold_extra),
-        s: layout.p.s.wrapping_sub(layout.x_fold_extra),
+        col_vars: layout.p.col_vars.wrapping_sub(layout.x_fold_extra),
         word_bits: 1,
     }
 }
@@ -1123,12 +1127,12 @@ pub(crate) fn rlc_tau_tables(case_pow: &[Vec<Gf>]) -> Vec<Vec<Gf>> {
 /// `u_c^{(l)} = Σ_b W_b^{(l)}·INT(D(b,c))` stays `< 2^{c_w+t+W} = 2^127`, so it binds
 /// injectively in `K=GF(2^128)` (generator order `2^128−1 > 2^127`). Asserts
 /// `t + W ≤ 126` so `c_w ∈ [1, 126]`.
-pub fn mod_q_chunk_width(p: &IntEvalParams) -> usize {
-    let tw = p.t.wrapping_add(p.word_bits);
+pub fn mod_q_chunk_width(p: &IntegerMatrixLayout) -> usize {
+    let tw = p.row_vars.wrapping_add(p.word_bits);
     assert!(
         tw <= 126,
         "mod-q chunking needs t + W ≤ 126 (c_w = 127 − t − W ≥ 1); got t={}, W={}",
-        p.t,
+        p.row_vars,
         p.word_bits
     );
     127usize.wrapping_sub(tw)
@@ -1138,7 +1142,7 @@ pub fn mod_q_chunk_width(p: &IntEvalParams) -> usize {
 /// modulus of bit-length `q_bits = ⌈log₂q⌉`. `L = 1` (no chunking) exactly when
 /// `q_bits ≤ c_w`, i.e. `t + W ≤ 127 − q_bits` — the headroom window (`t + W < 28`
 /// for a 100-bit prime).
-pub fn mod_q_num_chunks(p: &IntEvalParams, q_bits: usize) -> usize {
+pub fn mod_q_num_chunks(p: &IntegerMatrixLayout, q_bits: usize) -> usize {
     q_bits.div_ceil(mod_q_chunk_width(p)).max(1)
 }
 
@@ -1233,7 +1237,11 @@ pub(crate) struct GeneratedModQWeightSource<F> {
 }
 
 impl<F> GeneratedModQWeightSource<F> {
-    pub(crate) fn new(p: &IntEvalParams, q_bits: usize, canonical_weight: F) -> Result<Self, ()> {
+    pub(crate) fn new(
+        p: &IntegerMatrixLayout,
+        q_bits: usize,
+        canonical_weight: F,
+    ) -> Result<Self, ()> {
         let (row_count, chunk_width, chunk_count) = mod_q_weight_chunk_shape(p, q_bits)?;
         Ok(Self {
             canonical_weight,
@@ -1277,7 +1285,7 @@ impl ModQWeightChunks {
     /// one chunk. This is the production u32 fast path: no zero-fill and no
     /// dense-to-chunk copy are needed.
     pub(crate) fn from_single_chunk(
-        p: &IntEvalParams,
+        p: &IntegerMatrixLayout,
         q_bits: usize,
         weights: Vec<u128>,
     ) -> Result<Self, ()> {
@@ -1302,7 +1310,7 @@ impl ModQWeightChunks {
     /// Allocate a validated all-zero chunk matrix. Callers can populate
     /// contiguous canonical ranges through [`Self::set_weight_range`] without
     /// constructing a dense weight vector or rescanning generated chunks.
-    pub(crate) fn zeroed(p: &IntEvalParams, q_bits: usize) -> Result<Self, ()> {
+    pub(crate) fn zeroed(p: &IntegerMatrixLayout, q_bits: usize) -> Result<Self, ()> {
         let (row_count, chunk_width, chunk_count) = mod_q_weight_chunk_shape(p, q_bits)?;
         Ok(Self {
             chunks: vec![vec![0_u128; row_count]; chunk_count],
@@ -1354,7 +1362,7 @@ impl ModQWeightChunks {
 
     /// Validate and decompose canonical row weights in `[0, 2^q_bits)`.
     pub(crate) fn from_dense(
-        p: &IntEvalParams,
+        p: &IntegerMatrixLayout,
         row_weights_q: &[u128],
         q_bits: usize,
     ) -> Result<Self, ()> {
@@ -1375,7 +1383,7 @@ impl ModQWeightChunks {
     /// every dense row weight.
     #[allow(dead_code)]
     pub(crate) fn from_chunks(
-        p: &IntEvalParams,
+        p: &IntegerMatrixLayout,
         q_bits: usize,
         chunks: Vec<Vec<u128>>,
     ) -> Result<Self, ()> {
@@ -1502,18 +1510,21 @@ impl ModQWeightSource for ModQWeightChunks {
     }
 }
 
-fn mod_q_weight_chunk_shape(p: &IntEvalParams, q_bits: usize) -> Result<(usize, usize, usize), ()> {
+fn mod_q_weight_chunk_shape(
+    p: &IntegerMatrixLayout,
+    q_bits: usize,
+) -> Result<(usize, usize, usize), ()> {
     if !p.word_bits.is_power_of_two()
         || p.word_bits > u128::BITS as usize
         || !(1..=126).contains(&q_bits)
     {
         return Err(());
     }
-    let row_count = u32::try_from(p.t)
+    let row_count = u32::try_from(p.row_vars)
         .ok()
         .and_then(|t| 1usize.checked_shl(t))
         .ok_or(())?;
-    let tw = p.t.checked_add(p.word_bits).ok_or(())?;
+    let tw = p.row_vars.checked_add(p.word_bits).ok_or(())?;
     if tw > 126 {
         return Err(());
     }
@@ -1554,7 +1565,7 @@ pub fn chunk_row_weights(row_weights_q: &[u128], c_w: usize, l_chunks: usize) ->
 /// chunking) — and the column weights `w′_c ∈ R` are used at full width, unchunked.
 #[allow(clippy::arithmetic_side_effects)] // caller's evaluation-ring operators
 pub fn recombine_read_off<R>(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     v: &[u128],
     base: usize,
     col_weights: &[R],
@@ -1570,7 +1581,7 @@ where
         let mut v_c = R::from(0u128);
         let mut mult = R::from(1u128); // base_chunk^l
         for l in 0..l_chunks {
-            let idx = base.wrapping_add(l << p.s).wrapping_add(c); // base + l·2^s + c
+            let idx = base.wrapping_add(l << p.col_vars).wrapping_add(c); // base + l·2^s + c
             v_c = v_c + mult * R::from(v[idx]);
             mult = mult * base_chunk;
         }
@@ -1581,7 +1592,11 @@ where
 
 /// Build the per-chunk place-value table `α^{W_chunks[l][b]·2^j}` by a per-row
 /// squaring chain (`α^{w·2^j} = (α^{w·2^{j-1}})²`), one chunk's worth.
-pub(crate) fn chunk_pow2_table(p: &IntEvalParams, w_chunk: &[u128], alpha: Gf) -> Vec<Vec<Gf>> {
+pub(crate) fn chunk_pow2_table(
+    p: &IntegerMatrixLayout,
+    w_chunk: &[u128],
+    alpha: Gf,
+) -> Vec<Vec<Gf>> {
     // Every row's base `α^{w_b}` shares the same `α`-squaring chain, so build it
     // ONCE as a fixed-base comb (≈ `win`× fewer muls than a per-row `gf_pow`),
     // then continue the per-row place-value chain `α^{w·2^j} = (·)²` for W > 1.
@@ -1678,7 +1693,7 @@ pub(crate) fn extract_column_bit_halves(
 /// forest's leaf round consumes. Padded rows have `v = α⁰ = 1 ⇒ τ = 0`.
 #[allow(clippy::arithmetic_side_effects)]
 pub(crate) fn leaf_tau_halves(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     tbl: &[Vec<Gf>],
     one: Gf,
     log_w: usize,
@@ -1698,7 +1713,7 @@ pub(crate) fn leaf_tau_halves(
 /// at random density).
 #[allow(clippy::arithmetic_side_effects)]
 pub(crate) fn layer1_pair_table(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     tbl: &[Vec<Gf>],
     log_w: usize,
     row_len: usize,
@@ -1722,7 +1737,7 @@ pub(crate) fn layer1_pair_table(
 #[allow(clippy::arithmetic_side_effects)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_column_layer1_halves(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     packed_cols: &[Vec<u64>],
     col: usize,
     tbl: &[Vec<Gf>],
@@ -1775,9 +1790,9 @@ mod rlc_tests {
 
     #[test]
     fn validated_mod_q_weight_chunks_round_trip_dense_decomposition() {
-        let p = IntEvalParams {
-            t: 3,
-            s: 2,
+        let p = IntegerMatrixLayout {
+            row_vars: 3,
+            col_vars: 2,
             word_bits: 1,
         };
         let q_bits = 126;
@@ -1811,9 +1826,9 @@ mod rlc_tests {
 
     #[test]
     fn generated_mod_q_weight_source_matches_dense_chunks_without_dense_eq_storage() {
-        let p = IntEvalParams {
-            t: 4,
-            s: 3,
+        let p = IntegerMatrixLayout {
+            row_vars: 4,
+            col_vars: 3,
             word_bits: 1,
         };
         let q_bits = 126;
@@ -1842,9 +1857,9 @@ mod rlc_tests {
 
     #[test]
     fn validated_mod_q_weight_chunks_reject_malformed_shapes_and_limbs() {
-        let p = IntEvalParams {
-            t: 3,
-            s: 0,
+        let p = IntegerMatrixLayout {
+            row_vars: 3,
+            col_vars: 0,
             word_bits: 1,
         };
         let q_bits = 126;

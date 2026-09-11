@@ -17,7 +17,7 @@ use crypto_primitives::FromWithConfig;
 use thiserror::Error;
 
 use crate::{
-    pcs::IntEvalParams,
+    pcs::IntegerMatrixLayout,
     poly::mle::DenseMultilinearExtension,
     utils::{cfg_iter, cfg_iter_mut},
 };
@@ -156,11 +156,11 @@ impl U128MulLayout {
     /// become F2Z columns. The remaining gate coordinates and the nine
     /// physical slot coordinates become folded row variables, so the
     /// committed tensor has `g + 9` variables.
-    pub const fn f2z_params(&self) -> IntEvalParams {
+    pub const fn f2z_params(&self) -> IntegerMatrixLayout {
         let s = self.gate_vars / 2;
-        IntEvalParams {
-            t: U128_MUL_SLOT_VARS + self.gate_vars - s,
-            s,
+        IntegerMatrixLayout {
+            row_vars: U128_MUL_SLOT_VARS + self.gate_vars - s,
+            col_vars: s,
             word_bits: 1,
         }
     }
@@ -511,7 +511,7 @@ mod tests {
         assert_eq!(layout.assignment_len(), 4 * 1024);
         assert_eq!(layout.assignment_vars(), 12);
         let p = layout.f2z_params();
-        assert_eq!((p.t, p.s, p.word_bits), (9 + 5, 5, 1));
+        assert_eq!((p.row_vars, p.col_vars, p.word_bits), (9 + 5, 5, 1));
         assert_eq!(p.rows() * p.cols(), U128_MUL_BIT_SLOTS * layout.capacity());
         assert_eq!(U128_MUL_BIT_SLOTS, 1 << U128_MUL_SLOT_VARS);
         assert_eq!(U128MulLayout::new(0), Err(U128MulError::EmptyBatch));

@@ -13,7 +13,9 @@ fn sha_ecdsa_both_regimes_preflight_all_supported_shapes() {
                     .unwrap()
                     .with_ligerito(selection)
                     .unwrap();
-                assert!(prepared.security().unwrap().economic_bits() >= 100.0);
+                assert!(
+                    prepared.security().unwrap().compute_economic_security_bits() >= 100.0
+                );
                 assert_eq!(prepared.ligerito_configuration().selection(), selection);
             }
         }

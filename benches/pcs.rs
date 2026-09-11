@@ -63,7 +63,7 @@ use f2z::ligerito_flock::{
     commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito_with_ood,
     verify_mle_eval_mod_q_ligerito_runtime,
 };
-use f2z::pcs::{IntEvalParams, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
+use f2z::pcs::{IntegerMatrixLayout, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
 use flock_core::pcs::ligerito::{
     ProverConfig as LigPc, VerifierConfig as LigVc,
 };
@@ -128,7 +128,7 @@ fn live_mb() -> f64 {
 /// `b = min(113, 127 − t − W)` — the paper's Strategy-1 field policy capped
 /// by the one-chunk exponent-fold width (the same rule as the Spartan
 /// security profile's derived interval); the evaluation point follows.
-fn standalone_q_bits(p: &IntEvalParams) -> usize {
+fn standalone_q_bits(p: &IntegerMatrixLayout) -> usize {
     mod_q_chunk_width(p).min(113)
 }
 
@@ -141,15 +141,19 @@ struct StandaloneInstance {
 
 fn sample_standalone_instance(
     transcript: &mut f2z::transcript::Blake3Transcript,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     q_bits: usize,
 ) -> StandaloneInstance {
     let _g = f2z::utils::prof::scope("mq:sample_instance");
     let proj = ExtProjParams { prime_bits: q_bits, ..ExtProjParams::default() };
     let q = sample_proj_prime(transcript, &proj);
     let arith = ProjArith::new(q);
-    let r1: Vec<u128> = (0..p.t).map(|_| sample_proj_point(transcript, q)).collect();
-    let r2: Vec<u128> = (0..p.s).map(|_| sample_proj_point(transcript, q)).collect();
+    let r1: Vec<u128> = (0..p.row_vars)
+        .map(|_| sample_proj_point(transcript, q))
+        .collect();
+    let r2: Vec<u128> = (0..p.col_vars)
+        .map(|_| sample_proj_point(transcript, q))
+        .collect();
     StandaloneInstance {
         q,
         row_weights_q: eq_table_mod_q(&arith, &r1),
@@ -181,7 +185,11 @@ fn median(mut v: Vec<f64>) -> f64 {
 
 fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     let alpha = smallest_generator();
-    let p = IntEvalParams { t, s, word_bits: w };
+    let p = IntegerMatrixLayout {
+        row_vars: t,
+        col_vars: s,
+        word_bits: w,
+    };
     let q_bits = standalone_q_bits(&p);
     let m_p = packed_vars(&p);
     let lch = mod_q_num_chunks(&p, q_bits);
@@ -673,7 +681,7 @@ impl BenchExtField for KbFp5 {
 /// the base arm: prove/verify medians, ext phase scopes on one profiled
 /// prove AND one profiled verify, proof size + codec times.
 fn bench_ext_arm<K: BenchExtField>(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     hint: &f2z::ligerito_flock::FlockCommitHint,
     alpha: f2z::BinaryFieldGF128,
     reps: usize,

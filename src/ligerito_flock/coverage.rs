@@ -2,7 +2,60 @@
 use super::*;
 use crate::piop::spartan::{self, IopSecurityProfile, Lambda100, Lambda128};
 
-fn check(params: crate::pcs::IntEvalParams, facts: spartan::IopInstanceFacts) {
+#[test]
+fn commitment_validation_preserves_typed_errors() {
+    let mutations: [(&str, fn(&mut LigVerifierConfig)); 8] = [
+        ("empty inverse rates", |c| c.log_inv_rates.clear()),
+        ("empty OOD samples", |c| c.ood_samples.clear()),
+        ("zero recursive levels", |c| c.recursive_steps = 0),
+        ("level count overflow", |c| c.recursive_steps = usize::MAX),
+        ("message dimension overflow", |c| {
+            c.initial_log_msg_cols = usize::MAX
+        }),
+        ("block length overflow", |c| {
+            c.log_inv_rates[0] = usize::BITS as usize
+        }),
+        ("oversized query count", |c| c.queries[0] = usize::MAX),
+        ("zero fold dimension", |c| c.recursive_ks[0] = 0),
+    ];
+
+    for selection in [LigeritoSelection::JOHNSON, LigeritoSelection::MATCHED_UDR] {
+        let resolved = selection.resolve(15, 100).unwrap();
+        let pc = resolved.prover();
+        let vc = resolved.verifier();
+        let commitment = Commitment {
+            root: [0; 32],
+            params: PcsParams {
+                m: 15 + LOG_PACKING,
+                log_inv_rate: pc.log_inv_rates[0],
+                log_batch_size: pc.initial_k,
+                profile: ligerito::LigeritoProfile::Fast,
+                merkle_hash: pc.merkle_hash,
+            },
+        };
+        assert_eq!(validate_ligerito_commitment(&commitment, pc), Ok(()));
+        assert_eq!(validate_ligerito_commitment(&commitment, vc), Ok(()));
+
+        for (name, mutate) in mutations {
+            let mut malformed = vc.clone();
+            mutate(&mut malformed);
+            assert_eq!(
+                validate_ligerito_commitment(&commitment, &malformed),
+                Err(FlockRsError::CommitmentConfig),
+                "{selection:?}: {name}"
+            );
+        }
+
+        let mut mismatched = commitment.clone();
+        mismatched.params.m += 1;
+        assert_eq!(
+            validate_ligerito_commitment(&mismatched, vc),
+            Err(FlockRsError::CommitmentConfig)
+        );
+    }
+}
+
+fn check(params: crate::pcs::IntegerMatrixLayout, facts: spartan::IopInstanceFacts) {
     for selection in [LigeritoSelection::JOHNSON, LigeritoSelection::MATCHED_UDR] {
         let resolved = selection
             .resolve(crate::ligerito::packed_vars(&params), 100)

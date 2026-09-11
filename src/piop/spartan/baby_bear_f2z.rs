@@ -94,7 +94,7 @@ const MIN_PRODUCTION_GATE_VARS: usize = 15;
 /// logarithmic in the number of multiplication rows.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BabyBearBitifiedClaim {
-    params: crate::pcs::IntEvalParams,
+    params: crate::pcs::IntegerMatrixLayout,
     gate_point: Box<[Fq]>,
     rows: BabyBearBitifiedRows,
     col_scale: Fq,
@@ -109,7 +109,7 @@ enum BabyBearBitifiedRows {
 
 impl BabyBearBitifiedClaim {
     /// Public F2Z geometry selected by the statement-bound layout.
-    pub const fn params(&self) -> crate::pcs::IntEvalParams {
+    pub const fn params(&self) -> crate::pcs::IntegerMatrixLayout {
         self.params
     }
 
@@ -141,7 +141,7 @@ struct PreparedBabyBearBitifiedClaim {
 pub struct PreparedBabyBearTerminalF2zOpening {
     ligerito: crate::ligerito_flock::ResolvedLigerito,
     layout: BabyBearMulLayout,
-    params: crate::pcs::IntEvalParams,
+    params: crate::pcs::IntegerMatrixLayout,
     pc: LigProverConfig,
     vc: LigVerifierConfig,
     assignment_binding: [u8; 32],
@@ -709,7 +709,7 @@ fn prepare_combined_prover(
     layout: &BabyBearMulLayout,
     hint: &FlockCommitHint,
     selection: crate::ligerito_flock::LigeritoSelection,
-) -> Result<(crate::pcs::IntEvalParams, LigProverConfig, [u8; 32]), BabyBearSpartanF2zError> {
+) -> Result<(crate::pcs::IntegerMatrixLayout, LigProverConfig, [u8; 32]), BabyBearSpartanF2zError> {
     let (params, pc, _vc, assignment_binding) =
         prepare_fixed_q_opening(matrices, layout, &hint.commitment, Some(hint.rows()), selection)?;
     Ok((params, pc, assignment_binding))
@@ -723,7 +723,7 @@ fn prepare_fixed_q_opening(
     selection: crate::ligerito_flock::LigeritoSelection,
 ) -> Result<
     (
-        crate::pcs::IntEvalParams,
+        crate::pcs::IntegerMatrixLayout,
         LigProverConfig,
         LigVerifierConfig,
         [u8; 32],
@@ -750,7 +750,7 @@ fn finish_combined_prover<T: Transcript + Send>(
     matrices: &PreparedConstraintMatrices<SpartanF2zField, BabyBearMulCoefficient>,
     layout: &BabyBearMulLayout,
     hint: &FlockCommitHint,
-    params: &crate::pcs::IntEvalParams,
+    params: &crate::pcs::IntegerMatrixLayout,
     pc: &LigProverConfig,
     assignment_binding: &[u8; 32],
     ood: crate::ligerito_flock::ProverOod,
@@ -780,7 +780,7 @@ fn prove_baby_bear_terminal_claim_f2z_prepared<T: Transcript + Send>(
     relation_digest: &[u8; 32],
     layout: &BabyBearMulLayout,
     hint: &FlockCommitHint,
-    params: &crate::pcs::IntEvalParams,
+    params: &crate::pcs::IntegerMatrixLayout,
     pc: &LigProverConfig,
     assignment_binding: &[u8; 32],
     ood: crate::ligerito_flock::ProverOod,
@@ -894,7 +894,7 @@ fn verify_baby_bear_terminal_claim_f2z_prepared<T: Transcript + Send>(
     layout: &BabyBearMulLayout,
     commitment: &Commitment,
     proof: &IntEvalRsLigModQProof,
-    params: &crate::pcs::IntEvalParams,
+    params: &crate::pcs::IntegerMatrixLayout,
     vc: &LigVerifierConfig,
     assignment_binding: &[u8; 32],
     ood: crate::ligerito_flock::VerifierOod,
@@ -964,15 +964,15 @@ fn configs_for_layout_with_ligerito(
 fn validate_layout_geometry(layout: &BabyBearMulLayout) -> Result<(), BabyBearSpartanF2zError> {
     let params = layout.f2z_params();
     if params.word_bits != 1
-        || params.t < LOG_PACKING
-        || params.s > layout.gate_vars()
-        || params.t.saturating_add(params.word_bits) > 126
+        || params.row_vars < LOG_PACKING
+        || params.col_vars > layout.gate_vars()
+        || params.row_vars.saturating_add(params.word_bits) > 126
     {
         return Err(BabyBearSpartanF2zError::InvalidF2zParameters);
     }
     let total_vars = params
-        .t
-        .checked_add(params.s)
+        .row_vars
+        .checked_add(params.col_vars)
         .ok_or(BabyBearSpartanF2zError::InvalidF2zParameters)?;
     if total_vars
         != layout
@@ -987,8 +987,8 @@ fn validate_layout_geometry(layout: &BabyBearMulLayout) -> Result<(), BabyBearSp
         return Err(BabyBearSpartanF2zError::InvalidF2zParameters);
     }
 
-    let row_count = checked_pow2(params.t)?;
-    let col_count = checked_pow2(params.s)?;
+    let row_count = checked_pow2(params.row_vars)?;
+    let col_count = checked_pow2(params.col_vars)?;
     let cells = row_count
         .checked_mul(col_count)
         .ok_or(BabyBearSpartanF2zError::InvalidF2zParameters)?;
@@ -1002,18 +1002,18 @@ fn validate_layout_geometry(layout: &BabyBearMulLayout) -> Result<(), BabyBearSp
 }
 
 fn validate_f2z_proof_shape(
-    params: &crate::pcs::IntEvalParams,
+    params: &crate::pcs::IntegerMatrixLayout,
     proof: &IntEvalRsLigModQProof,
 ) -> Result<(), BabyBearSpartanF2zError> {
     if !params.word_bits.is_power_of_two() || params.word_bits > u128::BITS as usize {
         return Err(BabyBearSpartanF2zError::InvalidF2zProofShape);
     }
     let row_bit_vars = params
-        .t
+        .row_vars
         .checked_add(params.word_bits.trailing_zeros() as usize)
         .ok_or(BabyBearSpartanF2zError::InvalidF2zProofShape)?;
     let chunks = crate::pcs::mod_q_num_chunks(params, FQ_BITS);
-    let columns = checked_pow2(params.s)?;
+    let columns = checked_pow2(params.col_vars)?;
     if proof.mfs.len() != chunks
         || proof.us.len() != chunks
         || proof.presums.len() != chunks
@@ -1031,11 +1031,11 @@ fn validate_f2z_proof_shape(
 }
 
 fn validate_bit_rows(
-    params: &crate::pcs::IntEvalParams,
+    params: &crate::pcs::IntegerMatrixLayout,
     rows: &[Vec<u64>],
 ) -> Result<(), BabyBearSpartanF2zError> {
-    let row_count = checked_pow2(params.t)?;
-    let col_count = checked_pow2(params.s)?;
+    let row_count = checked_pow2(params.row_vars)?;
+    let col_count = checked_pow2(params.col_vars)?;
     if row_count % u64::BITS as usize != 0 || rows.len() != col_count {
         return Err(BabyBearSpartanF2zError::InvalidBitRows);
     }
@@ -1047,7 +1047,7 @@ fn validate_bit_rows(
 }
 
 fn validate_config_pair(
-    params: &crate::pcs::IntEvalParams,
+    params: &crate::pcs::IntegerMatrixLayout,
     pc: &LigProverConfig,
     vc: &LigVerifierConfig,
 ) -> Result<(), BabyBearSpartanF2zError> {
@@ -1076,7 +1076,7 @@ fn validate_config_pair(
 }
 
 fn validate_commitment(
-    params: &crate::pcs::IntEvalParams,
+    params: &crate::pcs::IntegerMatrixLayout,
     commitment: &Commitment,
     pc: &LigProverConfig,
 ) -> Result<(), BabyBearSpartanF2zError> {
@@ -1144,9 +1144,9 @@ fn prepare_baby_bear_bitified_claim_with(
     let chunks = prepare_baby_bear_bitified_chunks_with(opening, q_bits, arith)?;
     let params = opening.params;
     let col_weights = if opening.col_scale == Fq(0) {
-        vec![Fq(0); checked_pow2(params.s)?]
+        vec![Fq(0); checked_pow2(params.col_vars)?]
     } else {
-        let (gate_low, _) = opening.gate_point.split_at(params.s);
+        let (gate_low, _) = opening.gate_point.split_at(params.col_vars);
         let mut eq_low = eq_le_table_fq_fast_with(gate_low, arith)?;
         if opening.col_scale != Fq(1) {
             let factor = arith.monty_factor(opening.col_scale.0);
@@ -1178,17 +1178,17 @@ fn prepare_baby_bear_bitified_chunks_with(
 ) -> Result<crate::pcs::ModQWeightChunks, BabyBearSpartanF2zError> {
     let params = opening.params;
     let high_vars = params
-        .t
+        .row_vars
         .checked_sub(7)
         .ok_or(BabyBearSpartanF2zError::InvalidF2zParameters)?;
     let gate_vars = params
-        .s
+        .col_vars
         .checked_add(high_vars)
         .ok_or(BabyBearSpartanF2zError::InvalidF2zParameters)?;
     if params.word_bits != 1 || opening.gate_point.len() != gate_vars {
         return Err(BabyBearSpartanF2zError::InvalidF2zParameters);
     }
-    let (_, gate_high) = opening.gate_point.split_at(params.s);
+    let (_, gate_high) = opening.gate_point.split_at(params.col_vars);
 
     match opening.rows {
         BabyBearBitifiedRows::ConstantOrPaddingDummy => {
@@ -1201,7 +1201,7 @@ fn prepare_baby_bear_bitified_chunks_with(
         }
         BabyBearBitifiedRows::Structured { a, b, c, k } => {
             let high_gate_count = checked_pow2(gate_high.len())?;
-            let row_count = checked_pow2(params.t)?;
+            let row_count = checked_pow2(params.row_vars)?;
             let blocks = [
                 (BABY_BEAR_MUL_A_SLOT_START, a),
                 (BABY_BEAR_MUL_B_SLOT_START, b),
@@ -1414,8 +1414,8 @@ fn assignment_binding(
     hash_usize(&mut hasher, BABY_BEAR_MUL_K_SLOT_START)?;
     hash_usize(&mut hasher, BABY_BEAR_MUL_SEMANTIC_BIT_SLOTS)?;
     hash_usize(&mut hasher, BABY_BEAR_MUL_BIT_SLOTS)?;
-    hash_usize(&mut hasher, f2z_params.t)?;
-    hash_usize(&mut hasher, f2z_params.s)?;
+    hash_usize(&mut hasher, f2z_params.row_vars)?;
+    hash_usize(&mut hasher, f2z_params.col_vars)?;
     hash_usize(&mut hasher, f2z_params.word_bits)?;
     Ok(*hasher.finalize().as_bytes())
 }
@@ -1483,8 +1483,8 @@ fn bitified_claim_digest_from_relation(
     hash_usize(&mut hasher, layout.gate_vars())?;
     hash_usize(&mut hasher, LOGICAL_ASSIGNMENT_BLOCKS)?;
     hash_usize(&mut hasher, PADDED_ASSIGNMENT_BLOCKS)?;
-    hash_usize(&mut hasher, opening.params.t)?;
-    hash_usize(&mut hasher, opening.params.s)?;
+    hash_usize(&mut hasher, opening.params.row_vars)?;
+    hash_usize(&mut hasher, opening.params.col_vars)?;
     hash_usize(&mut hasher, opening.params.word_bits)?;
     hash_usize(&mut hasher, BABY_BEAR_MUL_A_SLOT_START)?;
     hash_usize(&mut hasher, BABY_BEAR_MUL_B_SLOT_START)?;
@@ -1505,7 +1505,7 @@ fn bitified_claim_digest_from_relation(
     hash_spartan_f2z_element(&mut hasher, terminal_claim.scale());
     hash_spartan_f2z_element(&mut hasher, terminal_claim.value());
 
-    let (gate_low, gate_high) = opening.gate_point.split_at(opening.params.s);
+    let (gate_low, gate_high) = opening.gate_point.split_at(opening.params.col_vars);
     hash_usize(&mut hasher, gate_low.len())?;
     for coordinate in gate_low {
         hasher.update(&coordinate.0.to_le_bytes());
@@ -1546,17 +1546,19 @@ fn hash_usize(hasher: &mut Hasher, value: usize) -> Result<(), BabyBearSpartanF2
     Ok(())
 }
 
-fn packed_variables(params: &crate::pcs::IntEvalParams) -> Result<usize, BabyBearSpartanF2zError> {
+fn packed_variables(
+    params: &crate::pcs::IntegerMatrixLayout,
+) -> Result<usize, BabyBearSpartanF2zError> {
     if !params.word_bits.is_power_of_two() || params.word_bits > u128::BITS as usize {
         return Err(BabyBearSpartanF2zError::InvalidF2zParameters);
     }
     let row_bit_vars = params
-        .t
+        .row_vars
         .checked_add(params.word_bits.trailing_zeros() as usize)
         .ok_or(BabyBearSpartanF2zError::InvalidF2zParameters)?;
     let expected = row_bit_vars
         .checked_sub(LOG_PACKING)
-        .and_then(|folded| folded.checked_add(params.s))
+        .and_then(|folded| folded.checked_add(params.col_vars))
         .ok_or(BabyBearSpartanF2zError::InvalidF2zParameters)?;
     if packed_vars(params) != expected {
         return Err(BabyBearSpartanF2zError::InvalidF2zParameters);
@@ -1609,13 +1611,13 @@ impl GrindingDomain for BabyBearPiopGrinding {
 /// the Step-5.1 lift sums `2^t` terms, and the opening is the DIRECT
 /// exponent-fold path (interval capped at `c_w`, one chunk always).
 pub fn baby_bear_mul_instance_facts(
-    params: &crate::pcs::IntEvalParams,
+    params: &crate::pcs::IntegerMatrixLayout,
     row_vars: usize,
 ) -> IopInstanceFacts {
     IopInstanceFacts {
         defect_log2_bound: 80,
-        lift_arity_log2: params.t as u32,
-        opening_t: params.t as u32,
+        lift_arity_log2: params.row_vars as u32,
+        opening_t: params.row_vars as u32,
         opening_word_bits: params.word_bits as u32,
         direct_opening: true,
         tau_arity: row_vars.max(1) as u32,
@@ -1693,7 +1695,7 @@ impl PreparedBabyBearMulRelation {
     }
 
     /// F2Z geometry of the committed bit tensor.
-    pub fn params(&self) -> crate::pcs::IntEvalParams {
+    pub fn params(&self) -> crate::pcs::IntegerMatrixLayout {
         self.layout.f2z_params()
     }
 
@@ -1866,8 +1868,8 @@ fn paper_assignment_binding(
     hash_usize(&mut hasher, BABY_BEAR_MUL_K_SLOT_START)?;
     hash_usize(&mut hasher, BABY_BEAR_MUL_SEMANTIC_BIT_SLOTS)?;
     hash_usize(&mut hasher, BABY_BEAR_MUL_BIT_SLOTS)?;
-    hash_usize(&mut hasher, f2z_params.t)?;
-    hash_usize(&mut hasher, f2z_params.s)?;
+    hash_usize(&mut hasher, f2z_params.row_vars)?;
+    hash_usize(&mut hasher, f2z_params.col_vars)?;
     hash_usize(&mut hasher, f2z_params.word_bits)?;
     Ok(*hasher.finalize().as_bytes())
 }
@@ -2340,8 +2342,8 @@ mod tests {
         assert_eq!(prepared.chunks.len(), 1);
         let row_weights = &prepared.chunks.chunks()[0];
 
-        let high_gate_count = checked_pow2(layout.gate_vars() - params.s).unwrap();
-        let (gate_low, gate_high) = gate_point.split_at(params.s);
+        let high_gate_count = checked_pow2(layout.gate_vars() - params.col_vars).unwrap();
+        let (gate_low, gate_high) = gate_point.split_at(params.col_vars);
         assert_eq!(prepared.col_weights, eq_le_table_fq(gate_low));
         let eq_high = eq_le_table_fq(gate_high);
         for (slot_start, block_index) in [

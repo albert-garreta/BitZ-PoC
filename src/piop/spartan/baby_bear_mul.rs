@@ -24,7 +24,7 @@ use crypto_primitives::{FromWithConfig, PrimeField};
 use thiserror::Error;
 
 use crate::{
-    pcs::IntEvalParams, poly::mle::DenseMultilinearExtension, sparse_matrix::SparseColumn,
+    pcs::IntegerMatrixLayout, poly::mle::DenseMultilinearExtension, sparse_matrix::SparseColumn,
 };
 
 use super::{
@@ -295,11 +295,11 @@ impl BabyBearMulLayout {
     /// If `g = log2(capacity)`, the low `s = floor(g/2)` gate coordinates
     /// become F2Z columns. The remaining gate coordinates and seven physical
     /// slot coordinates become folded row variables.
-    pub const fn f2z_params(&self) -> IntEvalParams {
+    pub const fn f2z_params(&self) -> IntegerMatrixLayout {
         let s = self.gate_vars / 2;
-        IntEvalParams {
-            t: 7 + self.gate_vars - s,
-            s,
+        IntegerMatrixLayout {
+            row_vars: 7 + self.gate_vars - s,
+            col_vars: s,
             word_bits: 1,
         }
     }

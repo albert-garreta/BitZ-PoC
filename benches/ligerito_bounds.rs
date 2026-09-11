@@ -323,11 +323,11 @@ fn pcs(e: &Experiment, setup: Instant) -> Result<()> {
     use ::f2z::{
         ext_proj::*,
         ligerito_flock::*,
-        pcs::{IntEvalParams, smallest_generator},
+        pcs::{IntegerMatrixLayout, smallest_generator},
     };
-    let p = IntEvalParams {
-        t: 11,
-        s: 11,
+    let p = IntegerMatrixLayout {
+        row_vars: 11,
+        col_vars: 11,
         word_bits: 1,
     };
     let q_bits = 113;
@@ -356,8 +356,8 @@ fn pcs(e: &Experiment, setup: Instant) -> Result<()> {
             }
             table
         };
-        let rows = eq((0..p.t).map(|_| sample_proj_point(t, q)).collect());
-        let cols = eq((0..p.s).map(|_| sample_proj_point(t, q)).collect());
+        let rows = eq((0..p.row_vars).map(|_| sample_proj_point(t, q)).collect());
+        let cols = eq((0..p.col_vars).map(|_| sample_proj_point(t, q)).collect());
         (q, rows, cols)
     };
     e.run(

@@ -6,6 +6,7 @@ description = "F2Z: integer-MLE-evaluation PCS over an F2 commitment via a GF(2^
 repository = "https://github.com/NethermindEth/f2z"
 
 [dependencies]
+anyhow = "1"
 crypto-primitives = { path = "vendor/crypto-primitives", features = ["std", "crypto_bigint", "rand"] }
 crypto-bigint = "=0.7.5"
 crypto-primes = "=0.7.2"
@@ -251,6 +252,10 @@ required-features = ["bench-internals"]
 # Fixed-q controlled sweep for 2^14 compressions and t+s=29. Defaults to
 # t=7..=27, one warmup + 21 samples; t=28 is memory-skipped. Select t with
 # F2Z_SHA_PRODUCT_TS.
+
+[[example]]
+name = "binius_probe"
+required-features = ["hybrid"]
 
 [features]
 default = ["parallel"]
