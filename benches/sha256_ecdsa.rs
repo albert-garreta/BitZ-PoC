@@ -86,7 +86,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "ligerito": common::ligerito_report(prepared.ligerito_configuration(), prepared.ligerito_configuration().round0(lambda)?), "trial": if trial==0 {"warmup"} else {"sample"}, "sample": trial,
                 "log_compressions": exponent, "compressions": prepared.compressions(), "message_bytes": message.len(),
                 "mode": args[1], "security_target": lambda, "threads": threads,
-                "security_model": "round-by-round-economic", "economic_bits": security.economic_bits(), "statistical_bits_lower_bound": security.statistical_bits(),
+                "security_model": "round-by-round-economic", "economic_bits": security.compute_economic_security_bits(), "statistical_bits_lower_bound": security.compute_statistical_security_bits(),
                 "setup_ms": setup_ms, "witness_ms": witness_ms, "commit_ms": commit_ms,
                 "prove_ms": commit_ms+protocol_ms, "protocol_ms": protocol_ms, "verify_ms": verify_ms,
                 "proof_bytes": bytes.len(), "source_bits": prepared.live_source_bits(), "assignment_bits": prepared.live_assignment_bits(),

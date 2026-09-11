@@ -13,3 +13,10 @@ docs/**/*.toc
 Perfruns/
 .tmp
 flock-zkperf-traces
+
+output/
+docs/
+.history/*
+benchmark-results/
+tmp/
+scripts/__pycache__

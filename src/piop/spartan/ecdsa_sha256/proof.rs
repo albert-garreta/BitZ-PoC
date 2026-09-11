@@ -108,7 +108,7 @@ fn bind_statement<T: Transcript>(
         absorb_spartan_message(
             t,
             b"block-count",
-            &(block.multiplicity_bound as u64).to_le_bytes(),
+            &(block.max_occurrences as u64).to_le_bytes(),
         );
     }
     absorb_spartan_message(

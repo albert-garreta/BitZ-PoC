@@ -4002,8 +4002,8 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual<M>(
     transcript: &mut (impl Transcript + Send),
     hint_f: &FlockCommitHint,
     h_rows: &[Vec<u64>],
-    p_h: &IntegerMatrixLayout,
-    p_f: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     row_weights_q: &[u128],
     q_bits: usize,
@@ -4017,8 +4017,8 @@ where
         transcript,
         hint_f,
         h_rows,
-        p_h,
-        p_f,
+        h_layout,
+        f_layout,
         map,
         row_weights_q,
         q_bits,
@@ -4034,8 +4034,8 @@ pub fn verify_mle_eval_mod_q_ligerito_virtual<R, M>(
     transcript: &mut (impl Transcript + Send),
     commitment_f: &Commitment,
     proof: &IntEvalRsLigVirtProof,
-    p_h: &IntegerMatrixLayout,
-    p_f: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     row_weights_q: &[u128],
     col_weights: &[R],
@@ -4052,8 +4052,8 @@ where
         transcript,
         commitment_f,
         proof,
-        p_h,
-        p_f,
+        h_layout,
+        f_layout,
         map,
         row_weights_q,
         col_weights,
@@ -10889,7 +10889,7 @@ impl IntEvalRsLigExtProof {
 //   1. Synthesis supplies `h`'s bit rows alongside `f`; the prover runs
 //      the ORDINARY per-chunk machinery on `h` — integer chunk folds `us`, merged
 //      product forests, de-black-boxing pre-sumchecks
-//      ([`prove_int_eval_merged_common`]) — with `p_h` geometry. Nothing
+//      ([`prove_int_eval_merged_common`]) — with `h_layout` geometry. Nothing
 //      here touches the oracle: the verifier recomputes the roots from
 //      the sent `us` and is left with per-chunk residual claims
 //      `ĥ(pt_l) = μ_l` about the (uncommitted) derived bit-MLE.
@@ -10977,7 +10977,7 @@ pub enum VirtualReductionProof {
 }
 
 /// End-to-end proof of a mod-q claim on the derived vector `h = M·f`:
-/// per-chunk forests/folds/pre-sumchecks on `h` (`p_h` geometry), then
+/// per-chunk forests/folds/pre-sumchecks on `h` (`h_layout` geometry), then
 /// one of the two commitment bridges ([`VirtualReductionProof`]) and the ONE Ligerito
 /// call on `f`'s commitment.
 #[derive(Clone)]
@@ -11137,14 +11137,16 @@ where
 /// prover and verifier need no coordination.
 pub fn virtual_id_fast_eligible<M>(
     map: &M,
-    p_h: &IntegerMatrixLayout,
-    p_f: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
 ) -> bool
 where
     M: crate::f2map::VirtualMap,
 {
     use crate::f2map::cell_row_bits;
-    map.is_identity() && cell_row_bits(p_h) == cell_row_bits(p_f) && p_h.col_vars == p_f.col_vars
+    map.is_identity()
+        && cell_row_bits(h_layout) == cell_row_bits(f_layout)
+        && h_layout.col_vars == f_layout.col_vars
 }
 
 /// The identity fast-path switch (default ON; `F2Z_VIRT_ID_FAST=0`
@@ -11172,8 +11174,8 @@ fn virt_id_fast() -> bool {
 fn absorb_virtual_statement<M, S>(
     transcript: &mut impl Transcript,
     commitment: &Commitment,
-    p_h: &IntegerMatrixLayout,
-    p_f: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     row_weights: &S,
     q: u128,
@@ -11194,12 +11196,12 @@ where
         commitment.params.m,
         commitment.params.log_inv_rate,
         commitment.params.log_batch_size,
-        p_h.row_vars,
-        p_h.col_vars,
-        p_h.word_bits,
-        p_f.row_vars,
-        p_f.col_vars,
-        p_f.word_bits,
+        h_layout.row_vars,
+        h_layout.col_vars,
+        h_layout.word_bits,
+        f_layout.row_vars,
+        f_layout.col_vars,
+        f_layout.word_bits,
         q_bits,
         row_weights.row_count(),
     ] {
@@ -12409,7 +12411,7 @@ where
 
 /// Prove `Σ_c w'_c·(Σ_b rw[b]·h_{b,c}) = y ∈ 𝔽_q` for the derived vector
 /// `h = M·f`, against the commitment to `f` (`hint_f`). Same claim shape
-/// as [`prove_mle_eval_mod_q_ligerito`], with `h` in `p_h` geometry —
+/// as [`prove_mle_eval_mod_q_ligerito`], with `h` in `h_layout` geometry —
 /// `row_weights_q[b] ∈ [0, 2^q_bits)` over `h`'s `2^{t_h}` rows. The
 /// correctly shaped `h_rows` are supplied by synthesis; proving never
 /// computes a forward `M f` product.
@@ -12424,8 +12426,8 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual_with_ood<M>(
     transcript: &mut (impl Transcript + Send),
     hint_f: &FlockCommitHint,
     h_rows: &[Vec<u64>],
-    p_h: &IntegerMatrixLayout,
-    p_f: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     row_weights_q: &[u128],
     q_bits: usize,
@@ -12436,14 +12438,14 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual_with_ood<M>(
 where
     M: crate::f2map::VirtualMap,
 {
-    let chunks = ModQWeightChunks::from_dense(p_h, row_weights_q, q_bits)
+    let chunks = ModQWeightChunks::from_dense(h_layout, row_weights_q, q_bits)
         .expect("q_bits must be in [1, 126] and every row weight must be < 2^q_bits");
     prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus(
         transcript,
         hint_f,
         h_rows,
-        p_h,
-        p_f,
+        h_layout,
+        f_layout,
         map,
         &chunks,
         crate::pcs::FQ_MOD,
@@ -12466,8 +12468,8 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual_runtime<M>(
     transcript: &mut (impl Transcript + Send),
     hint_f: &FlockCommitHint,
     h_rows: &[Vec<u64>],
-    p_h: &IntegerMatrixLayout,
-    p_f: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     row_weights_q: &[u128],
     q: u128,
@@ -12481,15 +12483,15 @@ where
     M: crate::f2map::VirtualMap,
 {
     validate_runtime_q(q, q_bits, row_weights_q)?;
-    let chunks = ModQWeightChunks::from_dense(p_h, row_weights_q, q_bits)
+    let chunks = ModQWeightChunks::from_dense(h_layout, row_weights_q, q_bits)
         .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?;
     Ok(
         prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus(
             transcript,
             hint_f,
             h_rows,
-            p_h,
-            p_f,
+            h_layout,
+            f_layout,
             map,
             &chunks,
             q,
@@ -12512,8 +12514,8 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime<M
     transcript: &mut (impl Transcript + Send),
     hint_f: &FlockCommitHint,
     h_rows: &[Vec<u64>],
-    p_h: &IntegerMatrixLayout,
-    p_f: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     chunks: &ModQWeightChunks,
     q: u128,
@@ -12527,14 +12529,14 @@ where
     M: crate::f2map::VirtualMap,
 {
     validate_runtime_q_source(q, q_bits, chunks)?;
-    checked_mod_q_weight_chunks_geometry(p_h, chunks, q_bits)?;
+    checked_mod_q_weight_chunks_geometry(h_layout, chunks, q_bits)?;
     Ok(
         prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus(
             transcript,
             hint_f,
             h_rows,
-            p_h,
-            p_f,
+            h_layout,
+            f_layout,
             map,
             chunks,
             q,
@@ -12558,8 +12560,8 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime<M
     transcript: &mut (impl Transcript + Send),
     hint_f: &FlockCommitHint,
     h_rows: &[Vec<u64>],
-    p_h: &IntegerMatrixLayout,
-    p_f: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     source: &S,
     q: u128,
@@ -12574,14 +12576,14 @@ where
     S: ModQWeightSource + ?Sized,
 {
     validate_runtime_q_source(q, q_bits, source)?;
-    checked_mod_q_weight_source_geometry(p_h, source, q_bits)?;
+    checked_mod_q_weight_source_geometry(h_layout, source, q_bits)?;
     Ok(
         prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus(
             transcript,
             hint_f,
             h_rows,
-            p_h,
-            p_f,
+            h_layout,
+            f_layout,
             map,
             source,
             q,
@@ -12600,8 +12602,8 @@ fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus<M, S>(
     transcript: &mut (impl Transcript + Send),
     hint_f: &FlockCommitHint,
     h_rows: &[Vec<u64>],
-    p_h: &IntegerMatrixLayout,
-    p_f: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     chunks: &S,
     q: u128,
@@ -12619,8 +12621,8 @@ where
         transcript,
         hint_f,
         h_rows,
-        p_h,
-        p_f,
+        h_layout,
+        f_layout,
         map,
         chunks,
         q,
@@ -12640,8 +12642,8 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modul
     transcript: &mut (impl Transcript + Send),
     hint_f: &FlockCommitHint,
     h_rows: &[Vec<u64>],
-    p_h: &IntegerMatrixLayout,
-    p_f: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     chunks: &S,
     q: u128,
@@ -12656,32 +12658,32 @@ where
     M: crate::f2map::VirtualMap,
     S: ModQWeightSource + ?Sized,
 {
-    let (h_geometry, _, _) = checked_mod_q_weight_source_geometry(p_h, chunks, q_bits)
-        .expect("p_h, q_bits, and chunks must define valid mod-q geometry");
-    let f_geometry = validate_int_eval_geometry(&hint_f.commitment, p_f, 0)
-        .expect("commitment geometry must match p_f");
+    let (h_geometry, _, _) = checked_mod_q_weight_source_geometry(h_layout, chunks, q_bits)
+        .expect("h_layout, q_bits, and chunks must define valid mod-q geometry");
+    let f_geometry = validate_int_eval_geometry(&hint_f.commitment, f_layout, 0)
+        .expect("commitment geometry must match f_layout");
     assert!(
         h_geometry.row_bit_vars >= LOG_PACKING,
         "h rows must contain at least one 128-bit pack"
     );
     let h_cells = h_geometry
         .rows
-        .checked_mul(p_h.word_bits)
+        .checked_mul(h_layout.word_bits)
         .and_then(|count| count.checked_mul(h_geometry.cols))
-        .expect("p_h cell count must fit usize");
+        .expect("h_layout cell count must fit usize");
     let f_cells = f_geometry
         .rows
-        .checked_mul(p_f.word_bits)
+        .checked_mul(f_layout.word_bits)
         .and_then(|count| count.checked_mul(f_geometry.cols))
-        .expect("p_f cell count must fit usize");
+        .expect("f_layout cell count must fit usize");
     let h_words_per_row = h_geometry
         .rows
-        .checked_mul(p_h.word_bits)
+        .checked_mul(h_layout.word_bits)
         .expect("h row width must fit usize")
         / u64::BITS as usize;
     let t_wh = h_geometry.row_bit_vars;
-    assert_eq!(map.rows(), h_cells, "map rows must match p_h cells");
-    assert_eq!(map.cols(), f_cells, "map cols must match p_f cells");
+    assert_eq!(map.rows(), h_cells, "map rows must match h_layout cells");
+    assert_eq!(map.cols(), f_cells, "map cols must match f_layout cells");
     assert_eq!(h_rows.len(), h_geometry.cols, "h_rows column count");
     assert!(
         h_rows.iter().all(|row| row.len() == h_words_per_row),
@@ -12695,8 +12697,8 @@ where
         absorb_virtual_statement(
             transcript,
             &hint_f.commitment,
-            p_h,
-            p_f,
+            h_layout,
+            f_layout,
             map,
             chunks,
             q,
@@ -12708,14 +12710,14 @@ where
     // Identity fast path: `h = f` (same cells, same row layout), so the
     // whole derived-vector machinery — packing `h`, the `h_i` fold, and the
     // `a′` build — is skipped and the BASE opening runs on `f`'s own
-    // rows under `p_h`'s claim shape (the flat bit-MLE is
+    // rows under `h_layout`'s claim shape (the flat bit-MLE is
     // layout-agnostic, and the layouts coincide here anyway).
-    if virtual_id_fast_eligible(map, p_h, p_f) && virt_id_fast() {
+    if virtual_id_fast_eligible(map, h_layout, f_layout) && virt_id_fast() {
         let _g = crate::utils::prof::scope("mqv:idfast");
         let core = prove_mod_q_lig_core_with_security(
             transcript,
             hint_f,
-            p_h,
+            h_layout,
             &hint_f.rows,
             Some(&hint_f.packed_cols),
             chunks,
@@ -12724,7 +12726,7 @@ where
             forest_grinding_bits,
             ood,
             EqProverReduction {
-                packed_vars: packed_vars(p_f),
+                packed_vars: packed_vars(f_layout),
             },
             security,
         );
@@ -12745,12 +12747,12 @@ where
     // alone knows about `M`, and the common suffix opens committed `f`.
     let h_packed = {
         let _g = crate::utils::prof::scope("mqv:pack");
-        crate::ligerito::pack_columns_from_rows(p_h, h_rows)
+        crate::ligerito::pack_columns_from_rows(h_layout, h_rows)
     };
     let core = prove_mod_q_lig_core_with_security(
         transcript,
         hint_f,
-        p_h,
+        h_layout,
         h_rows,
         Some(&h_packed),
         chunks,
@@ -12761,7 +12763,7 @@ where
         AdjointBatchProverReduction {
             map,
             derived_row_bits: t_wh,
-            source_packed_vars: packed_vars(p_f),
+            source_packed_vars: packed_vars(f_layout),
         },
         security,
     );
@@ -12787,8 +12789,8 @@ pub fn verify_mle_eval_mod_q_ligerito_virtual_with_ood<R, M>(
     transcript: &mut (impl Transcript + Send),
     commitment_f: &Commitment,
     proof: &IntEvalRsLigVirtProof,
-    p_h: &IntegerMatrixLayout,
-    p_f: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     row_weights_q: &[u128],
     col_weights: &[R],
@@ -12802,14 +12804,14 @@ where
     R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
     M: crate::f2map::VirtualMap,
 {
-    let chunks = ModQWeightChunks::from_dense(p_h, row_weights_q, q_bits)
+    let chunks = ModQWeightChunks::from_dense(h_layout, row_weights_q, q_bits)
         .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?;
     verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off(
         transcript,
         commitment_f,
         proof,
-        p_h,
-        p_f,
+        h_layout,
+        f_layout,
         map,
         &chunks,
         crate::pcs::FQ_MOD,
@@ -12819,7 +12821,7 @@ where
         ood,
         vc,
         col_weights.len(),
-        |v, c_w, lch| crate::pcs::recombine_read_off(p_h, v, 0, col_weights, c_w, lch) == claimed,
+        |v, c_w, lch| crate::pcs::recombine_read_off(h_layout, v, 0, col_weights, c_w, lch) == claimed,
     )
 }
 
@@ -12834,8 +12836,8 @@ pub fn verify_mle_eval_mod_q_ligerito_virtual_runtime<M>(
     transcript: &mut (impl Transcript + Send),
     commitment_f: &Commitment,
     proof: &IntEvalRsLigVirtProof,
-    p_h: &IntegerMatrixLayout,
-    p_f: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     row_weights_q: &[u128],
     col_weights_q: &[u128],
@@ -12854,15 +12856,15 @@ where
     if claimed_q >= q || col_weights_q.iter().any(|&weight| weight >= q) {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
-    let chunks = ModQWeightChunks::from_dense(p_h, row_weights_q, q_bits)
+    let chunks = ModQWeightChunks::from_dense(h_layout, row_weights_q, q_bits)
         .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?;
     let arithmetic = crate::ext_proj::ProjArith::new(q);
     verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off(
         transcript,
         commitment_f,
         proof,
-        p_h,
-        p_f,
+        h_layout,
+        f_layout,
         map,
         &chunks,
         q,
@@ -12873,7 +12875,8 @@ where
         vc,
         col_weights_q.len(),
         |v, c_w, lch| {
-            recombine_read_off_runtime(p_h, v, col_weights_q, c_w, lch, &arithmetic) == claimed_q
+            recombine_read_off_runtime(h_layout, v, col_weights_q, c_w, lch, &arithmetic)
+                == claimed_q
         },
     )
 }
@@ -12888,8 +12891,8 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime<
     transcript: &mut (impl Transcript + Send),
     commitment_f: &Commitment,
     proof: &IntEvalRsLigVirtProof,
-    p_h: &IntegerMatrixLayout,
-    p_f: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     chunks: &ModQWeightChunks,
     col_weights_q: &[u128],
@@ -12905,7 +12908,7 @@ where
     M: crate::f2map::VirtualMap,
 {
     validate_runtime_q_source(q, q_bits, chunks)?;
-    checked_mod_q_weight_chunks_geometry(p_h, chunks, q_bits)?;
+    checked_mod_q_weight_chunks_geometry(h_layout, chunks, q_bits)?;
     if claimed_q >= q || col_weights_q.iter().any(|&weight| weight >= q) {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
@@ -12914,8 +12917,8 @@ where
         transcript,
         commitment_f,
         proof,
-        p_h,
-        p_f,
+        h_layout,
+        f_layout,
         map,
         chunks,
         q,
@@ -12926,7 +12929,8 @@ where
         vc,
         col_weights_q.len(),
         |v, c_w, lch| {
-            recombine_read_off_runtime(p_h, v, col_weights_q, c_w, lch, &arithmetic) == claimed_q
+            recombine_read_off_runtime(h_layout, v, col_weights_q, c_w, lch, &arithmetic)
+                == claimed_q
         },
     )
 }
@@ -12941,8 +12945,8 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime<
     transcript: &mut (impl Transcript + Send),
     commitment_f: &Commitment,
     proof: &IntEvalRsLigVirtProof,
-    p_h: &IntegerMatrixLayout,
-    p_f: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     source: &S,
     col_weights_q: &[u128],
@@ -12959,7 +12963,7 @@ where
     S: ModQWeightSource + ?Sized,
 {
     validate_runtime_q_source(q, q_bits, source)?;
-    checked_mod_q_weight_source_geometry(p_h, source, q_bits)?;
+    checked_mod_q_weight_source_geometry(h_layout, source, q_bits)?;
     if claimed_q >= q || col_weights_q.iter().any(|&weight| weight >= q) {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
@@ -12968,8 +12972,8 @@ where
         transcript,
         commitment_f,
         proof,
-        p_h,
-        p_f,
+        h_layout,
+        f_layout,
         map,
         source,
         q,
@@ -12980,7 +12984,8 @@ where
         vc,
         col_weights_q.len(),
         |v, c_w, lch| {
-            recombine_read_off_runtime(p_h, v, col_weights_q, c_w, lch, &arithmetic) == claimed_q
+            recombine_read_off_runtime(h_layout, v, col_weights_q, c_w, lch, &arithmetic)
+                == claimed_q
         },
     )
 }
@@ -12991,8 +12996,8 @@ fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off<M, S, 
     transcript: &mut (impl Transcript + Send),
     commitment_f: &Commitment,
     proof: &IntEvalRsLigVirtProof,
-    p_h: &IntegerMatrixLayout,
-    p_f: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     chunks: &S,
     q: u128,
@@ -13013,8 +13018,8 @@ where
         transcript,
         commitment_f,
         proof,
-        p_h,
-        p_f,
+        h_layout,
+        f_layout,
         map,
         chunks,
         q,
@@ -13037,8 +13042,8 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read
     transcript: &mut (impl Transcript + Send),
     commitment_f: &Commitment,
     proof: &IntEvalRsLigVirtProof,
-    p_h: &IntegerMatrixLayout,
-    p_f: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     chunks: &S,
     q: u128,
@@ -13057,16 +13062,16 @@ where
     C: Fn(&[u128], usize, usize) -> bool,
 {
     let shape = || FlockRsError::RingSwitch(RsOpenError::Shape);
-    let (h_geometry, _, _) = checked_mod_q_weight_source_geometry(p_h, chunks, q_bits)?;
-    let f_geometry = validate_int_eval_geometry(commitment_f, p_f, 0)?;
+    let (h_geometry, _, _) = checked_mod_q_weight_source_geometry(h_layout, chunks, q_bits)?;
+    let f_geometry = validate_int_eval_geometry(commitment_f, f_layout, 0)?;
     let h_cells = h_geometry
         .rows
-        .checked_mul(p_h.word_bits)
+        .checked_mul(h_layout.word_bits)
         .and_then(|count| count.checked_mul(h_geometry.cols))
         .ok_or_else(shape)?;
     let f_cells = f_geometry
         .rows
-        .checked_mul(p_f.word_bits)
+        .checked_mul(f_layout.word_bits)
         .and_then(|count| count.checked_mul(f_geometry.cols))
         .ok_or_else(shape)?;
     let t_wh = h_geometry.row_bit_vars;
@@ -13084,8 +13089,8 @@ where
         absorb_virtual_statement(
             transcript,
             commitment_f,
-            p_h,
-            p_f,
+            h_layout,
+            f_layout,
             map,
             chunks,
             q,
@@ -13098,12 +13103,12 @@ where
     // only after the statement-derived identity/layout gate succeeds.
     let reduction = match &proof.reduction {
         VirtualReductionProof::Eq { rings } => {
-            if !virtual_id_fast_eligible(map, p_h, p_f) {
+            if !virtual_id_fast_eligible(map, h_layout, f_layout) {
                 return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
             }
             VirtualVerifierReduction::Eq(EqVerifierReduction {
                 rings,
-                packed_vars: packed_vars(p_f),
+                packed_vars: packed_vars(f_layout),
             })
         }
         VirtualReductionProof::AdjointBatch { hs } => {
@@ -13111,7 +13116,7 @@ where
                 map,
                 hs: hs.as_ref(),
                 derived_row_bits: t_wh,
-                source_packed_vars: packed_vars(p_f),
+                source_packed_vars: packed_vars(f_layout),
             })
         }
     };
@@ -13119,7 +13124,7 @@ where
         transcript,
         commitment_f,
         proof.into(),
-        p_h,
+        h_layout,
         chunks,
         alpha,
         vc,
@@ -14110,19 +14115,19 @@ mod tests {
             sparse_matrix::SparseMatrix,
         };
 
-        let p_f = IntegerMatrixLayout {
+        let f_layout = IntegerMatrixLayout {
             row_vars: 8,
             col_vars: 2,
             word_bits: 1,
         }; // 2^10 cells, 8 packs
-        let p_h = IntegerMatrixLayout {
+        let h_layout = IntegerMatrixLayout {
             row_vars: 7,
             col_vars: 3,
             word_bits: 1,
         }; // 2^10 derived cells
-        let n_f = cell_count(&p_f);
-        let n_h = cell_count(&p_h);
-        let t_wh = cell_row_bits(&p_h);
+        let n_f = cell_count(&f_layout);
+        let n_h = cell_count(&h_layout);
+        let t_wh = cell_row_bits(&h_layout);
         let lists: Vec<Vec<usize>> = (0..n_h)
             .map(|i| {
                 if i % 5 == 4 {
@@ -14148,7 +14153,7 @@ mod tests {
 
         let points: Vec<Vec<Gf>> = (0..2)
             .map(|l| {
-                (0..t_wh + p_h.col_vars)
+                (0..t_wh + h_layout.col_vars)
                     .map(|k| sample(0x9000 + (l * 64 + k) as u64))
                     .collect()
             })

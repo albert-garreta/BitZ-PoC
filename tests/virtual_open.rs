@@ -65,9 +65,9 @@ fn splitmix(x: u64) -> u64 {
 }
 
 /// Pseudo-random committed bits for `f`, in commit-row layout.
-fn f_rows(p_f: &IntegerMatrixLayout, seed: u64) -> Vec<Vec<u64>> {
-    let t_wf = cell_row_bits(p_f);
-    (0..1usize << p_f.col_vars)
+fn f_rows(f_layout: &IntegerMatrixLayout, seed: u64) -> Vec<Vec<u64>> {
+    let t_wf = cell_row_bits(f_layout);
+    (0..1usize << f_layout.col_vars)
         .map(|c| {
             (0..(1usize << t_wf) / 64)
                 .map(|w| splitmix(seed ^ ((c as u64) << 32) ^ w as u64))
@@ -117,13 +117,13 @@ fn test_map(n_h: usize, n_f: usize, seed: u64) -> PreparedVirtualMap {
 /// `h` and never exposes an `M f` operation.
 fn apply_map(
     map: &PreparedVirtualMap,
-    p_h: &IntegerMatrixLayout,
-    p_f: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     f_rows: &[Vec<u64>],
 ) -> Vec<Vec<u64>> {
-    let t_wh = cell_row_bits(p_h);
-    let t_wf = cell_row_bits(p_f);
-    let mut h_rows = vec![vec![0u64; (1usize << t_wh) / 64]; 1usize << p_h.col_vars];
+    let t_wh = cell_row_bits(h_layout);
+    let t_wf = cell_row_bits(f_layout);
+    let mut h_rows = vec![vec![0u64; (1usize << t_wh) / 64]; 1usize << h_layout.col_vars];
     for (source, column) in map.matrix().columns().enumerate() {
         if bit_at(f_rows, t_wf, source) == 0 {
             continue;
@@ -148,15 +148,15 @@ fn row_lists(map: &PreparedVirtualMap) -> Vec<Vec<usize>> {
 
 /// The claimed value `y = Σ_c w'_c · Σ_b rw[b] · WORD(b, c)` computed
 /// naively from `h`'s bit cells (`W` word bits per row entry).
-fn expected_y(p_h: &IntegerMatrixLayout, h_rows: &[Vec<u64>], rw: &[u128], col_w: &[Fq]) -> Fq {
-    let t_wh = cell_row_bits(p_h);
-    let log_w = p_h.word_bits.trailing_zeros() as usize;
+fn expected_y(h_layout: &IntegerMatrixLayout, h_rows: &[Vec<u64>], rw: &[u128], col_w: &[Fq]) -> Fq {
+    let t_wh = cell_row_bits(h_layout);
+    let log_w = h_layout.word_bits.trailing_zeros() as usize;
     let mut y = Fq::from(0u128);
-    for c in 0..1usize << p_h.col_vars {
+    for c in 0..1usize << h_layout.col_vars {
         let mut acc = Fq::from(0u128);
-        for b in 0..1usize << p_h.row_vars {
+        for b in 0..1usize << h_layout.row_vars {
             let mut word = 0u128;
-            for j in 0..p_h.word_bits {
+            for j in 0..h_layout.word_bits {
                 let flat = (c << t_wh) | (b << log_w) | j;
                 word |= (bit_at(h_rows, t_wh, flat) as u128) << j;
             }
@@ -210,19 +210,19 @@ fn assert_proof_pin(
 }
 
 fn run_shape(
-    p_h: IntegerMatrixLayout,
+    h_layout: IntegerMatrixLayout,
     seed: u64,
     virtual_pin: (&str, u128),
     direct_pin: (&str, u128),
 ) {
-    let p_f = IntegerMatrixLayout {
+    let f_layout = IntegerMatrixLayout {
         row_vars: 10,
         col_vars: 5,
         word_bits: 1,
     };
     let alpha = smallest_generator();
     let (pc_f, vc_f) = lig_configs(
-        packed_vars(&p_f),
+        packed_vars(&f_layout),
         LigConfig::Adhoc {
             log_batch: 2,
             log_inv_rate: 2,
@@ -230,14 +230,14 @@ fn run_shape(
     )
     .unwrap();
 
-    let rows_f = f_rows(&p_f, seed);
-    let map = test_map(cell_count(&p_h), cell_count(&p_f), seed ^ 0xF00D);
-    let hint_f = commit_rs_ligerito_rows(&p_f, rows_f.clone(), &pc_f);
+    let rows_f = f_rows(&f_layout, seed);
+    let map = test_map(cell_count(&h_layout), cell_count(&f_layout), seed ^ 0xF00D);
+    let hint_f = commit_rs_ligerito_rows(&f_layout, rows_f.clone(), &pc_f);
 
     // Independent test-only forward multiplication.
-    let t_wf = cell_row_bits(&p_f);
-    let t_wh = cell_row_bits(&p_h);
-    let h_rows = apply_map(&map, &p_h, &p_f, &rows_f);
+    let t_wf = cell_row_bits(&f_layout);
+    let t_wh = cell_row_bits(&h_layout);
+    let h_rows = apply_map(&map, &h_layout, &f_layout, &rows_f);
     for (i, sources) in row_lists(&map).iter().enumerate() {
         let expect = sources
             .iter()
@@ -245,19 +245,19 @@ fn run_shape(
         assert_eq!(bit_at(&h_rows, t_wh, i), expect, "derived cell {i}");
     }
 
-    let rw_q: Vec<u128> = (0..p_h.rows())
+    let rw_q: Vec<u128> = (0..h_layout.rows())
         .map(|b| (splitmix(seed ^ 0xBEEF ^ b as u64) as u128) << 40 | b as u128)
         .map(|x| x % Q)
         .collect();
-    let col_w: Vec<Fq> = (0..p_h.cols())
+    let col_w: Vec<Fq> = (0..h_layout.cols())
         .map(|c| Fq::from((splitmix(seed ^ c as u64) & 0xFF) as u128 + 1))
         .collect();
-    let y = expected_y(&p_h, &h_rows, &rw_q, &col_w);
+    let y = expected_y(&h_layout, &h_rows, &rw_q, &col_w);
 
     // Virtual proof against f's commitment.
     let mut pt = Blake3Transcript::new();
     let proof = prove_mle_eval_mod_q_ligerito_virtual(
-        &mut pt, &hint_f, &h_rows, &p_h, &p_f, &map, &rw_q, Q_BITS, alpha, &pc_f,
+        &mut pt, &hint_f, &h_rows, &h_layout, &f_layout, &map, &rw_q, Q_BITS, alpha, &pc_f,
     );
     let proof_bytes = proof.to_bytes();
     assert_proof_pin(
@@ -300,8 +300,8 @@ fn run_shape(
         &mut vt,
         &hint_f.commitment,
         &proof,
-        &p_h,
-        &p_f,
+        &h_layout,
+        &f_layout,
         &map,
         &rw_q,
         &col_w,
@@ -313,23 +313,24 @@ fn run_shape(
     .unwrap_or_else(|e| {
         panic!(
             "virtual roundtrip (t_h={}, W={}) failed: {e:?}",
-            p_h.row_vars, p_h.word_bits
+            h_layout.row_vars, h_layout.word_bits
         )
     });
 
     // Semantic agreement: the DIRECT path (committing h itself) accepts the
     // same y under the same weights.
     let (pc_h, vc_h) = lig_configs(
-        packed_vars(&p_h),
+        packed_vars(&h_layout),
         LigConfig::Adhoc {
             log_batch: 2,
             log_inv_rate: 2,
         },
     )
     .unwrap();
-    let hint_h = commit_rs_ligerito_rows(&p_h, h_rows.clone(), &pc_h);
+    let hint_h = commit_rs_ligerito_rows(&h_layout, h_rows.clone(), &pc_h);
     let mut pt = Blake3Transcript::new();
-    let direct = prove_mle_eval_mod_q_ligerito(&mut pt, &hint_h, &p_h, &rw_q, Q_BITS, alpha, &pc_h);
+    let direct =
+        prove_mle_eval_mod_q_ligerito(&mut pt, &hint_h, &h_layout, &rw_q, Q_BITS, alpha, &pc_h);
     assert_proof_pin(
         "direct Eq",
         &direct.to_bytes(),
@@ -342,7 +343,7 @@ fn run_shape(
         &mut vt,
         &hint_h.commitment,
         &direct,
-        &p_h,
+        &h_layout,
         &rw_q,
         &col_w,
         alpha,
@@ -359,8 +360,8 @@ fn run_shape(
             &mut vt,
             &hint_f.commitment,
             &proof,
-            &p_h,
-            &p_f,
+            &h_layout,
+            &f_layout,
             &map,
             &rw_q,
             &col_w,
@@ -381,8 +382,8 @@ fn run_shape(
             &mut vt,
             &hint_f.commitment,
             &bad,
-            &p_h,
-            &p_f,
+            &h_layout,
+            &f_layout,
             &map,
             &rw_q,
             &col_w,
@@ -405,8 +406,8 @@ fn run_shape(
                 &mut vt,
                 &hint_f.commitment,
                 &bad,
-                &p_h,
-                &p_f,
+                &h_layout,
+                &f_layout,
                 &map,
                 &rw_q,
                 &col_w,
@@ -432,8 +433,8 @@ fn run_shape(
             &mut vt,
             &hint_f.commitment,
             &bad,
-            &p_h,
-            &p_f,
+            &h_layout,
+            &f_layout,
             &map,
             &rw_q,
             &col_w,
@@ -461,8 +462,8 @@ fn run_shape(
             &mut vt,
             &hint_f.commitment,
             &bad,
-            &p_h,
-            &p_f,
+            &h_layout,
+            &f_layout,
             &map,
             &rw_q,
             &col_w,
@@ -481,8 +482,8 @@ fn run_shape(
             &mut vt,
             &hint_f.commitment,
             &proof,
-            &p_h,
-            &p_f,
+            &h_layout,
+            &f_layout,
             &map,
             &rw_q,
             &col_w,
@@ -499,7 +500,7 @@ fn run_shape(
     // change.
     let mut lists = row_lists(&map);
     let target = lists.iter().position(|l| !l.is_empty()).unwrap();
-    let extra = (0..cell_count(&p_f))
+    let extra = (0..cell_count(&f_layout))
         .find(|j| !lists[target].contains(j))
         .unwrap();
     lists[target].push(extra);
@@ -511,8 +512,8 @@ fn run_shape(
             &mut vt,
             &hint_f.commitment,
             &proof,
-            &p_h,
-            &p_f,
+            &h_layout,
+            &f_layout,
             &map2,
             &rw_q,
             &col_w,
@@ -526,9 +527,9 @@ fn run_shape(
 
     // Geometry mismatch is rejected up front.
     let p_wrong = IntegerMatrixLayout {
-        row_vars: p_h.row_vars,
-        col_vars: p_h.col_vars + 1,
-        word_bits: p_h.word_bits,
+        row_vars: h_layout.row_vars,
+        col_vars: h_layout.col_vars + 1,
+        word_bits: h_layout.word_bits,
     };
     let mut vt = Blake3Transcript::new();
     assert_eq!(
@@ -537,7 +538,7 @@ fn run_shape(
             &hint_f.commitment,
             &proof,
             &p_wrong,
-            &p_f,
+            &f_layout,
             &map,
             &rw_q,
             &col_w,
@@ -596,48 +597,52 @@ fn virtual_open_roundtrips_two_chunks_w32() {
 /// forests: all-but-one tree constant).
 #[test]
 fn virtual_open_single_live_row() {
-    let p_h = IntegerMatrixLayout {
+    let h_layout = IntegerMatrixLayout {
         row_vars: 9,
         col_vars: 6,
         word_bits: 1,
     };
-    let p_f = IntegerMatrixLayout {
+    let f_layout = IntegerMatrixLayout {
         row_vars: 10,
         col_vars: 5,
         word_bits: 1,
     };
     let alpha = smallest_generator();
     let (pc_f, vc_f) = lig_configs(
-        packed_vars(&p_f),
+        packed_vars(&f_layout),
         LigConfig::Adhoc {
             log_batch: 2,
             log_inv_rate: 2,
         },
     )
     .unwrap();
-    let rows_f = f_rows(&p_f, 0x51_4E);
+    let rows_f = f_rows(&f_layout, 0x51_4E);
     // One nonempty derived row XORing three sources.
-    let mut lists = vec![Vec::new(); cell_count(&p_h)];
+    let mut lists = vec![Vec::new(); cell_count(&h_layout)];
     lists[137] = vec![3usize, 1000, 8000];
-    let map = prepared_from_rows(cell_count(&p_h), cell_count(&p_f), lists);
-    let hint_f = commit_rs_ligerito_rows(&p_f, rows_f.clone(), &pc_f);
-    let h_rows = apply_map(&map, &p_h, &p_f, &rows_f);
+    let map = prepared_from_rows(cell_count(&h_layout), cell_count(&f_layout), lists);
+    let hint_f = commit_rs_ligerito_rows(&f_layout, rows_f.clone(), &pc_f);
+    let h_rows = apply_map(&map, &h_layout, &f_layout, &rows_f);
 
-    let rw_q: Vec<u128> = (0..p_h.rows()).map(|b| (b as u128 * 977 + 3) % Q).collect();
-    let col_w: Vec<Fq> = (0..p_h.cols()).map(|c| Fq::from(c as u128 + 2)).collect();
-    let y = expected_y(&p_h, &h_rows, &rw_q, &col_w);
+    let rw_q: Vec<u128> = (0..h_layout.rows())
+        .map(|b| (b as u128 * 977 + 3) % Q)
+        .collect();
+    let col_w: Vec<Fq> = (0..h_layout.cols())
+        .map(|c| Fq::from(c as u128 + 2))
+        .collect();
+    let y = expected_y(&h_layout, &h_rows, &rw_q, &col_w);
 
     let mut pt = Blake3Transcript::new();
     let proof = prove_mle_eval_mod_q_ligerito_virtual(
-        &mut pt, &hint_f, &h_rows, &p_h, &p_f, &map, &rw_q, Q_BITS, alpha, &pc_f,
+        &mut pt, &hint_f, &h_rows, &h_layout, &f_layout, &map, &rw_q, Q_BITS, alpha, &pc_f,
     );
     let mut vt = Blake3Transcript::new();
     verify_mle_eval_mod_q_ligerito_virtual(
         &mut vt,
         &hint_f.commitment,
         &proof,
-        &p_h,
-        &p_f,
+        &h_layout,
+        &f_layout,
         &map,
         &rw_q,
         &col_w,
@@ -653,10 +658,10 @@ fn virtual_open_single_live_row() {
     // changed read-off claim must therefore still be rejected.
     let mut wrong_h = h_rows;
     wrong_h[0][0] ^= 1;
-    let wrong_y = expected_y(&p_h, &wrong_h, &rw_q, &col_w);
+    let wrong_y = expected_y(&h_layout, &wrong_h, &rw_q, &col_w);
     let mut pt = Blake3Transcript::new();
     let wrong = prove_mle_eval_mod_q_ligerito_virtual(
-        &mut pt, &hint_f, &wrong_h, &p_h, &p_f, &map, &rw_q, Q_BITS, alpha, &pc_f,
+        &mut pt, &hint_f, &wrong_h, &h_layout, &f_layout, &map, &rw_q, Q_BITS, alpha, &pc_f,
     );
     let mut vt = Blake3Transcript::new();
     assert!(
@@ -664,8 +669,8 @@ fn virtual_open_single_live_row() {
             &mut vt,
             &hint_f.commitment,
             &wrong,
-            &p_h,
-            &p_f,
+            &h_layout,
+            &f_layout,
             &map,
             &rw_q,
             &col_w,
@@ -753,7 +758,7 @@ fn virtual_open_identity_fast_path() {
     // Adversarial public geometry is rejected before any unchecked shape
     // helper or transcript absorption.
     let reject_shape_without_absorption =
-        |p_h: &IntegerMatrixLayout, p_f: &IntegerMatrixLayout, q_bits: usize| {
+        |h_layout: &IntegerMatrixLayout, f_layout: &IntegerMatrixLayout, q_bits: usize| {
             let mut actual = Blake3Transcript::new();
             let mut untouched = actual.clone();
             assert_eq!(
@@ -761,8 +766,8 @@ fn virtual_open_identity_fast_path() {
                     &mut actual,
                     &hint.commitment,
                     &proof,
-                    p_h,
-                    p_f,
+                    h_layout,
+                    f_layout,
                     &map,
                     &rw_q,
                     &col_w,

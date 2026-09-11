@@ -279,8 +279,11 @@ fn security_profiles_cover_both_targets_for_all_shapes() {
             for mode in [OuterMode::Split, OuterMode::AllRows] {
                 let prepared = prepare_sha256_ecdsa(exponent, target, mode).unwrap();
                 let security = prepared.security().unwrap();
-                assert!(security.economic_bits() >= f64::from(target));
-                assert!(security.statistical_bits() < security.economic_bits());
+                assert!(security.compute_economic_security_bits() >= f64::from(target));
+                assert!(
+                    security.compute_statistical_security_bits()
+                        < security.compute_economic_security_bits()
+                );
                 assert!(security.blocks.iter().all(|b| b.grinding_bits <= 32));
             }
         }

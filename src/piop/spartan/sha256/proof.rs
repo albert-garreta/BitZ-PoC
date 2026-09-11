@@ -239,22 +239,22 @@ pub enum Sha256F2zError {
 pub fn sha256_compression_configs(
     prepared: &PreparedSha256CompressionBatch,
 ) -> Result<(LigProverConfig, LigVerifierConfig), Sha256F2zError> {
-    let p_f = prepared.source_params();
-    validate_source_params(p_f)?;
+    let f_layout = prepared.source_params();
+    validate_source_params(f_layout)?;
     let resolved = prepared.ligerito_configuration()?;
     Ok((resolved.prover().clone(), resolved.verifier().clone()))
 }
 
 /// Commits packed extended-source rows `[1 | f]` under an explicit config.
 pub(super) fn commit_source_rows_with_config(
-    p_f: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     rows: Vec<Vec<u64>>,
     pc: &LigProverConfig,
 ) -> Result<FlockCommitHint, Sha256F2zError> {
-    validate_source_params(p_f)?;
-    validate_rows(p_f, &rows)?;
+    validate_source_params(f_layout)?;
+    validate_rows(f_layout, &rows)?;
     validate_shared_constant(&rows)?;
-    let hint = commit_rs_ligerito_rows(p_f, rows, pc);
+    let hint = commit_rs_ligerito_rows(f_layout, rows, pc);
     validate_ligerito_commitment(&hint.commitment, pc).map_err(Sha256F2zError::F2z)?;
     Ok(hint)
 }
@@ -295,24 +295,24 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
     prefix_vars: usize,
     pc: &LigProverConfig,
 ) -> Result<Sha256CompressionProof, Sha256F2zError> {
-    let p_f = prepared.source_params();
-    let p_h = prepared.assignment_params();
+    let f_layout = prepared.source_params();
+    let h_layout = prepared.assignment_params();
     let map = prepared.map();
     let profile = prepared.prime_profile();
 
     validate_public_statement(prepared.instances(), public_statement)?;
-    validate_common_geometry(None, map, p_h, p_f)?;
+    validate_common_geometry(None, map, h_layout, f_layout)?;
     validate_ligerito_config_for(prepared, pc)?;
-    validate_rows(p_f, witness.source_rows())?;
+    validate_rows(f_layout, witness.source_rows())?;
     validate_shared_constant(witness.source_rows())?;
-    validate_rows(p_h, witness.assignment_rows())?;
+    validate_rows(h_layout, witness.assignment_rows())?;
     let product_layout = match (
         prepared.product_map(),
         prepared.product_assignment_params(),
         witness.product_assignment_rows(),
     ) {
         (Some(product_map), Some(product_p_h), Some(product_rows)) => {
-            validate_product_geometry(product_map, product_p_h, p_f)?;
+            validate_product_geometry(product_map, product_p_h, f_layout)?;
             validate_rows(product_p_h, product_rows)?;
             true
         }
@@ -332,7 +332,7 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
         return Err(Sha256F2zError::InvalidGeometry);
     }
     validate_ligerito_commitment(&hint_f.commitment, pc).map_err(Sha256F2zError::F2z)?;
-    if hint_f.commitment.params.m != p_f.row_vars + p_f.col_vars {
+    if hint_f.commitment.params.m != f_layout.row_vars + f_layout.col_vars {
         return Err(Sha256F2zError::InvalidGeometry);
     }
 
@@ -368,7 +368,7 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
         let _scope = crate::utils::prof::scope("sha256:runtime_prime_sample_prover");
         sample_sha256_mod_q_context(transcript, profile)?
     };
-    validate_common_geometry(None, map, p_h, p_f)?;
+    validate_common_geometry(None, map, h_layout, f_layout)?;
     absorb_runtime_sha256_relation(transcript, prepared, mod_q.field_config());
     drop(step2_scope);
 
@@ -476,7 +476,7 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
                 hint_f,
                 product_rows,
                 product_p_h,
-                p_f,
+                f_layout,
                 product_map,
                 &row_weight_source,
                 mod_q.q(),
@@ -499,11 +499,12 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
         let inner = {
             let _scope = crate::utils::prof::scope("sha256:spartan_inner_prove");
             let factored_matrix_mle = product_batching.factored_matrix_mle(field_config)?;
-            let h_bit = |flat_column| packed_flat_bit(witness.assignment_rows(), p_h, flat_column);
+            let h_bit =
+                |flat_column| packed_flat_bit(witness.assignment_rows(), h_layout, flat_column);
             prove_sha256_inner_sumcheck_factored(
                 transcript,
                 product_batching.initial_claim().clone(),
-                p_h.row_vars + p_h.col_vars,
+                h_layout.row_vars + h_layout.col_vars,
                 &factored_matrix_mle,
                 &h_bit,
                 prefix_vars,
@@ -520,18 +521,18 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
 
         let step4_scope = crate::utils::prof::scope("step4:bitify_prove");
         let assignment_equality =
-            FactoredEqualityWeights::new(&inner.eval_points, p_h.row_vars, field_config)?;
+            FactoredEqualityWeights::new(&inner.eval_points, h_layout.row_vars, field_config)?;
         let (row_weights, col_weights_q, claimed_q) = {
             let _scope = crate::utils::prof::scope("sha256:opening_prepare_prover");
             linear_opening_claim(
                 prepared,
-                p_h,
+                h_layout,
                 assignment_equality,
                 &inner.v_evaluation,
                 inner.final_claim.clone(),
             )?
         };
-        let row_weight_source = GeneratedModQWeightSource::new(p_h, mod_q.q_bits(), |row| {
+        let row_weight_source = GeneratedModQWeightSource::new(h_layout, mod_q.q_bits(), |row| {
             row_weights
                 .get(row)
                 .map(|weight| field_from_raw(*weight, field_config).canonical_u128())
@@ -563,8 +564,8 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
                 transcript,
                 hint_f,
                 witness.assignment_rows(),
-                p_h,
-                p_f,
+                h_layout,
+                f_layout,
                 map,
                 &row_weight_source,
                 mod_q.q(),
@@ -662,16 +663,16 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
     proof: &Sha256CompressionProof,
     vc: &LigVerifierConfig,
 ) -> Result<(), Sha256F2zError> {
-    let p_f = prepared.source_params();
-    let p_h = prepared.assignment_params();
+    let f_layout = prepared.source_params();
+    let h_layout = prepared.assignment_params();
     let map = prepared.map();
     let profile = prepared.prime_profile();
 
     validate_public_statement(prepared.instances(), public_statement)?;
-    validate_common_geometry(None, map, p_h, p_f)?;
+    validate_common_geometry(None, map, h_layout, f_layout)?;
     let product_layout = match (prepared.product_map(), prepared.product_assignment_params()) {
         (Some(product_map), Some(product_p_h)) => {
-            validate_product_geometry(product_map, product_p_h, p_f)?;
+            validate_product_geometry(product_map, product_p_h, f_layout)?;
             true
         }
         (None, None) => false,
@@ -682,9 +683,9 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
     let expected_inner_rounds = if product_layout {
         0
     } else {
-        p_h.row_vars + p_h.col_vars
+        h_layout.row_vars + h_layout.col_vars
     };
-    if commitment_f.params.m != p_f.row_vars + p_f.col_vars
+    if commitment_f.params.m != f_layout.row_vars + f_layout.col_vars
         || proof.inner.round_polynomials.len() != expected_inner_rounds
         || (product_layout && !proof.inner_nonces.is_empty())
     {
@@ -707,7 +708,7 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
     prepared.ligerito_configuration()?.bind(transcript);
     let ood = crate::ligerito_flock::bind_verifier_ood(
         transcript,
-        packed_vars(p_f),
+        packed_vars(f_layout),
         prepared.security().ood,
         proof.f2z.ood.as_ref(),
     )
@@ -726,7 +727,7 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
         let _scope = crate::utils::prof::scope("sha256:runtime_prime_sample_verifier");
         sample_sha256_mod_q_context(transcript, profile)?
     };
-    validate_common_geometry(None, map, p_h, p_f)?;
+    validate_common_geometry(None, map, h_layout, f_layout)?;
     absorb_runtime_sha256_relation(transcript, prepared, mod_q.field_config());
     drop(step2_scope);
 
@@ -824,7 +825,7 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
             commitment_f,
             &proof.f2z,
             product_p_h,
-            p_f,
+            f_layout,
             product_map,
             &row_weight_source,
             &col_weights_q,
@@ -845,7 +846,7 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
                 product_batching.initial_claim().clone(),
                 &proof.inner,
                 &proof.inner_nonces,
-                p_h.row_vars + p_h.col_vars,
+                h_layout.row_vars + h_layout.col_vars,
                 field_config,
                 profile.inner_round_grinding_bits() as u32,
             )
@@ -856,18 +857,18 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
         let step4_scope = crate::utils::prof::scope("step4:bitify_verify");
         let collapsed_evaluation = product_batching.evaluate(&assignment_point, field_config)?;
         let assignment_equality =
-            FactoredEqualityWeights::new(&assignment_point, p_h.row_vars, field_config)?;
+            FactoredEqualityWeights::new(&assignment_point, h_layout.row_vars, field_config)?;
         let (row_weights, col_weights_q, claimed_q) = {
             let _scope = crate::utils::prof::scope("sha256:opening_prepare_verifier");
             linear_opening_claim(
                 prepared,
-                p_h,
+                h_layout,
                 assignment_equality,
                 &collapsed_evaluation,
                 inner_claim,
             )?
         };
-        let row_weight_source = GeneratedModQWeightSource::new(p_h, mod_q.q_bits(), |row| {
+        let row_weight_source = GeneratedModQWeightSource::new(h_layout, mod_q.q_bits(), |row| {
             row_weights
                 .get(row)
                 .map(|weight| field_from_raw(*weight, field_config).canonical_u128())
@@ -898,8 +899,8 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
             transcript,
             commitment_f,
             &proof.f2z,
-            p_h,
-            p_f,
+            h_layout,
+            f_layout,
             map,
             &row_weight_source,
             &col_weights_q,
@@ -1319,17 +1320,17 @@ pub(super) fn weighted_byte_tables(
 #[allow(clippy::too_many_arguments)]
 fn linear_opening_claim(
     prepared: &PreparedSha256CompressionBatch,
-    p_h: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
     mut assignment_equality: FactoredEqualityWeights,
     collapsed_evaluation: &SpartanF2zField,
     inner_claim: SpartanF2zField,
 ) -> Result<(Vec<RawMontgomery>, Vec<u128>, u128), Sha256F2zError> {
     let field_config = collapsed_evaluation.cfg();
-    if assignment_equality.len() != p_h.cells()
-        || assignment_equality.low_vars != p_h.row_vars
-        || assignment_equality.low.len() != p_h.rows()
-        || assignment_equality.high.len() != p_h.cols()
-        || prepared.linear_assignment_column_count() > p_h.cells()
+    if assignment_equality.len() != h_layout.cells()
+        || assignment_equality.low_vars != h_layout.row_vars
+        || assignment_equality.low.len() != h_layout.rows()
+        || assignment_equality.high.len() != h_layout.cols()
+        || prepared.linear_assignment_column_count() > h_layout.cells()
     {
         return Err(Sha256F2zError::InvalidGeometry);
     }
@@ -1380,15 +1381,15 @@ impl ProductRowWeights {
 /// Builds the direct rank-one F2Z claim without materializing `u ⊗ d`.
 fn product_opening_claim(
     batching: &ProductLinearBatching,
-    p_h: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
     layout: PackedSourceOrder,
     field_config: &<SpartanF2zField as PrimeField>::Config,
 ) -> Result<(ProductRowWeights, Vec<u128>, u128), Sha256F2zError> {
     let instance_vars = instance_vars(batching.instances)?;
     if !batching.instances.is_power_of_two()
         || batching.instance_point.len() != instance_vars
-        || p_h.word_bits != 1
-        || p_h.row_vars + p_h.col_vars != instance_vars + 15
+        || h_layout.word_bits != 1
+        || h_layout.row_vars + h_layout.col_vars != instance_vars + 15
         || batching.local_coefficients.len() != SHA256_H_BAR_LIVE_BITS
     {
         return Err(Sha256F2zError::InvalidGeometry);
@@ -1396,14 +1397,16 @@ fn product_opening_claim(
 
     let (row_weights, col_weights) = match layout {
         PackedSourceOrder::LocalMajor => {
-            if p_h.row_vars > instance_vars {
+            if h_layout.row_vars > instance_vars {
                 return Err(Sha256F2zError::InvalidGeometry);
             }
-            let low = compact_eq_table(&batching.instance_point[..p_h.row_vars], field_config)?;
-            let high = compact_eq_table(&batching.instance_point[p_h.row_vars..], field_config)?;
-            if low.len() != p_h.rows()
+            let low =
+                compact_eq_table(&batching.instance_point[..h_layout.row_vars], field_config)?;
+            let high =
+                compact_eq_table(&batching.instance_point[h_layout.row_vars..], field_config)?;
+            if low.len() != h_layout.rows()
                 || low.len() * high.len() != batching.instances
-                || p_h.cols() != SHA256_H_BAR_LIVE_BITS.next_power_of_two() * high.len()
+                || h_layout.cols() != SHA256_H_BAR_LIVE_BITS.next_power_of_two() * high.len()
             {
                 return Err(Sha256F2zError::InvalidGeometry);
             }
@@ -1419,28 +1422,28 @@ fn product_opening_claim(
                 (batching.local_coefficients[local_column].clone() * &high_weight).canonical_u128()
             };
             #[cfg(feature = "parallel")]
-            let columns = (0..p_h.cols())
+            let columns = (0..h_layout.cols())
                 .into_par_iter()
                 .map(coefficient_at)
                 .collect::<Vec<_>>();
             #[cfg(not(feature = "parallel"))]
-            let columns = (0..p_h.cols()).map(coefficient_at).collect::<Vec<_>>();
+            let columns = (0..h_layout.cols()).map(coefficient_at).collect::<Vec<_>>();
             (ProductRowWeights::InstanceOnly(low), columns)
         }
         PackedSourceOrder::InstanceMajor => {
             let local_domain = SHA256_H_BAR_LIVE_BITS.next_power_of_two();
             let local_vars = local_domain.ilog2() as usize;
-            if p_h.row_vars < local_vars || p_h.row_vars > local_vars + instance_vars {
+            if h_layout.row_vars < local_vars || h_layout.row_vars > local_vars + instance_vars {
                 return Err(Sha256F2zError::InvalidGeometry);
             }
-            let low_instance_vars = p_h.row_vars - local_vars;
+            let low_instance_vars = h_layout.row_vars - local_vars;
             let low_instance =
                 compact_eq_table(&batching.instance_point[..low_instance_vars], field_config)?;
             let high =
                 compact_eq_table(&batching.instance_point[low_instance_vars..], field_config)?;
-            if local_domain * low_instance.len() != p_h.rows()
+            if local_domain * low_instance.len() != h_layout.rows()
                 || low_instance.len() * high.len() != batching.instances
-                || high.len() != p_h.cols()
+                || high.len() != h_layout.cols()
             {
                 return Err(Sha256F2zError::InvalidGeometry);
             }
@@ -2066,13 +2069,13 @@ pub(super) fn field_from_raw(
     MontyField::from_montgomery(FieldUint::from(value), field_config)
 }
 
-pub(super) fn validate_source_params(p_f: &IntegerMatrixLayout) -> Result<(), Sha256F2zError> {
+pub(super) fn validate_source_params(f_layout: &IntegerMatrixLayout) -> Result<(), Sha256F2zError> {
     let host_bits = usize::BITS as usize;
-    if p_f.word_bits != 1
-        || p_f.row_vars < LOG_PACKING
-        || p_f.row_vars.saturating_add(p_f.col_vars) > 126
-        || p_f.row_vars >= host_bits
-        || p_f.col_vars >= host_bits
+    if f_layout.word_bits != 1
+        || f_layout.row_vars < LOG_PACKING
+        || f_layout.row_vars.saturating_add(f_layout.col_vars) > 126
+        || f_layout.row_vars >= host_bits
+        || f_layout.col_vars >= host_bits
     {
         return Err(Sha256F2zError::InvalidGeometry);
     }
@@ -2082,15 +2085,15 @@ pub(super) fn validate_source_params(p_f: &IntegerMatrixLayout) -> Result<(), Sh
 fn validate_common_geometry(
     linear_relation: Option<&PreparedSha256LinearRelation>,
     map: &PackedRepeatedVirtualMap,
-    p_h: &IntegerMatrixLayout,
-    p_f: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
 ) -> Result<(), Sha256F2zError> {
-    validate_source_params(p_f)?;
-    if p_h.word_bits != 1
-        || p_h.row_vars < LOG_PACKING
-        || p_h.row_vars.saturating_add(p_h.col_vars) > 126
-        || map.rows() != cell_count(p_h)
-        || map.cols() != cell_count(p_f)
+    validate_source_params(f_layout)?;
+    if h_layout.word_bits != 1
+        || h_layout.row_vars < LOG_PACKING
+        || h_layout.row_vars.saturating_add(h_layout.col_vars) > 126
+        || map.rows() != cell_count(h_layout)
+        || map.cols() != cell_count(f_layout)
         || map.local().rows() != SHA256_H_BAR_LIVE_BITS
         || map.local().cols() != super::constraints::SHA256_F_BAR_LIVE_BITS
         || !map_fixes_constant_assignment(map)
@@ -2109,10 +2112,10 @@ fn validate_common_geometry(
 
 fn validate_product_geometry(
     map: &PackedSourceRepeatedVirtualMap,
-    p_h: &IntegerMatrixLayout,
-    p_f: &IntegerMatrixLayout,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
 ) -> Result<(), Sha256F2zError> {
-    validate_source_params(p_f)?;
+    validate_source_params(f_layout)?;
     let instance_vars = map.instances().ilog2() as usize;
     let local_stride = SHA256_H_BAR_LIVE_BITS.next_power_of_two();
     let (t_min, t_max, expected_live_rows) = match map.order() {
@@ -2127,12 +2130,12 @@ fn validate_product_geometry(
             map.instances() * local_stride,
         ),
     };
-    if p_h.word_bits != 1
-        || p_h.row_vars < t_min
-        || p_h.row_vars > t_max
-        || p_h.row_vars.saturating_add(p_h.col_vars) != instance_vars + 15
-        || map.rows() != cell_count(p_h)
-        || map.cols() != cell_count(p_f)
+    if h_layout.word_bits != 1
+        || h_layout.row_vars < t_min
+        || h_layout.row_vars > t_max
+        || h_layout.row_vars.saturating_add(h_layout.col_vars) != instance_vars + 15
+        || map.rows() != cell_count(h_layout)
+        || map.cols() != cell_count(f_layout)
         || map.live_rows() != expected_live_rows
         || map.local_stride()
             != match map.order() {
@@ -2939,8 +2942,11 @@ mod tests {
                 Sha256OpeningLayout::InnerSumcheck { row_vars }
             );
             assert!(prepared.product_assignment_params().is_none());
-            let p_h = *prepared.opening_params();
-            assert_eq!((p_h.row_vars, p_h.row_vars + p_h.col_vars), (row_vars, 22));
+            let h_layout = *prepared.opening_params();
+            assert_eq!(
+                (h_layout.row_vars, h_layout.row_vars + h_layout.col_vars),
+                (row_vars, 22)
+            );
             let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
             let public_statement = public_statements(&inputs, witness.outputs());
             let (pc, vc) = sha256_compression_configs(&prepared).unwrap();
@@ -3008,8 +3014,11 @@ mod tests {
             .unwrap();
             let product_map = prepared.product_map().unwrap();
             assert_eq!(product_map.order(), PackedSourceOrder::InstanceMajor);
-            let p_h = *prepared.opening_params();
-            assert_eq!((p_h.row_vars, p_h.row_vars + p_h.col_vars), (row_vars, 22));
+            let h_layout = *prepared.opening_params();
+            assert_eq!(
+                (h_layout.row_vars, h_layout.row_vars + h_layout.col_vars),
+                (row_vars, 22)
+            );
             let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
             let public_statement = public_statements(&inputs, witness.outputs());
             let (pc, vc) = sha256_compression_configs(&prepared).unwrap();
@@ -3432,9 +3441,9 @@ mod tests {
             .unwrap()
             .collect::<Vec<_>>();
         let mut constraint_attack = witness.clone();
-        let p_f = prepared.source_params();
-        let source_column = source_cell >> p_f.row_vars;
-        let source_row = source_cell & (p_f.rows() - 1);
+        let f_layout = prepared.source_params();
+        let source_column = source_cell >> f_layout.row_vars;
+        let source_row = source_cell & (f_layout.rows() - 1);
         constraint_attack.source_rows_mut_for_tests()[source_column][source_row / 64] ^=
             1 << (source_row % 64);
         for flat_cell in canonical_h_cells {
@@ -4048,24 +4057,25 @@ mod tests {
         let prepared = super::super::constraints::prepare_sha256_compression_batch_for_test(0)
             .expect("one-instance test relation");
         let field_config = F128::make_cfg(&Uint::from(FQ_MOD)).expect("fixed test field");
-        let p_h = prepared.assignment_params();
-        let assignment_point = (0..p_h.row_vars + p_h.col_vars)
+        let h_layout = prepared.assignment_params();
+        let assignment_point = (0..h_layout.row_vars + h_layout.col_vars)
             .map(|coordinate| {
                 SpartanF2zField::from_with_cfg((coordinate as u64) + 3, &field_config)
             })
             .collect::<Vec<_>>();
         let dense_equality = eq_table(&assignment_point, &field_config).unwrap();
         let factored =
-            FactoredEqualityWeights::new(&assignment_point, p_h.row_vars, &field_config).unwrap();
+            FactoredEqualityWeights::new(&assignment_point, h_layout.row_vars, &field_config)
+                .unwrap();
         let collapsed = SpartanF2zField::from_with_cfg(17_u64, &field_config);
         let initial_claim = SpartanF2zField::from_with_cfg(31_u64, &field_config);
         let (rows, columns, claimed) =
-            linear_opening_claim(&prepared, p_h, factored, &collapsed, initial_claim.clone())
+            linear_opening_claim(&prepared, h_layout, factored, &collapsed, initial_claim.clone())
                 .unwrap();
 
         for (flat_cell, equality) in dense_equality.iter().enumerate() {
-            let row = flat_cell & (p_h.rows() - 1);
-            let column = flat_cell >> p_h.row_vars;
+            let row = flat_cell & (h_layout.rows() - 1);
+            let column = flat_cell >> h_layout.row_vars;
             let row_weight = field_from_raw(rows[row], &field_config);
             let column_weight = SpartanF2zField::from_with_cfg(columns[column], &field_config);
             assert_eq!(row_weight * &column_weight, equality.clone() * &collapsed);
