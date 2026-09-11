@@ -19,6 +19,7 @@ pub mod multiswap;
 pub mod opening_mode;
 pub mod piop;
 pub mod profile;
+pub mod protocol;
 pub(crate) mod raw_monty;
 pub mod sha256;
 pub(crate) mod slot_rows;
@@ -33,13 +34,11 @@ pub mod univariate_skip;
 pub(crate) mod univariate_skip_native;
 
 pub use baby_bear_f2z::{
-    BabyBearBitifiedClaim, BabyBearMulPaperProof, BabyBearMulSpartanF2zProof,
-    BabyBearSpartanF2zError, PreparedBabyBearMulRelation, baby_bear_mul_instance_facts,
-    bitify_baby_bear_mul_spartan_claim, commit_baby_bear_mul_paper_witness,
-    commit_baby_bear_mul_witness, prove_baby_bear_mul_paper, prove_baby_bear_mul_spartan_and_f2z,
-    prove_baby_bear_mul_spartan_and_f2z_from_witness,
-    prove_baby_bear_mul_spartan_and_f2z_with_strategy, verify_baby_bear_mul_paper,
-    verify_baby_bear_mul_spartan_and_f2z,
+    BabyBearBitifiedClaim, BabyBearMulPaperProof, BabyBearSpartanF2zError,
+    PreparedBabyBearMulRelation, baby_bear_mul_instance_facts,
+    commit_baby_bear_mul_paper_witness, commit_baby_bear_mul_witness,
+    commit_baby_bear_mul_witness_with_ligerito, prove_baby_bear_mul_paper,
+    verify_baby_bear_mul_paper,
 };
 pub use baby_bear_mul::{
     BABY_BEAR_MODULUS, BabyBearMulCoefficient, BabyBearMulError, BabyBearMulLayout,

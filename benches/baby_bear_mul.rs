@@ -104,7 +104,7 @@ fn bench_profile<P: IopSecurityProfile>(
     let prepared = match PreparedBabyBearMulRelation::new_with_profile_and_ligerito::<P>(layout, common::ligerito_selection(P::LIGERITO_TARGET_BITS)) {
         Ok(prepared) => prepared,
         Err(error @ (BabyBearSpartanF2zError::Profile(_)
-        | BabyBearSpartanF2zError::UnsupportedPaperProfile)) => {
+        | BabyBearSpartanF2zError::UnsupportedProfile)) => {
             println!();
             println!(
                 "baby_bear_mul gates=2^{exponent} profile={}: SKIPPED - {error}",

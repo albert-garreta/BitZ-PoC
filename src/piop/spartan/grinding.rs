@@ -136,12 +136,57 @@ where
     D: GrindingDomain,
     T: Transcript,
 {
-    validate_boundary::<D>(bits)?;
+    derive_grinding_seed_in_domain(transcript, D::DOMAIN, round.index, bits)
+}
+
+/// [`derive_grinding_seed`] for a domain chosen at runtime: the same bytes
+/// as the typed boundary with `D::DOMAIN == domain`.
+pub fn derive_grinding_seed_in_domain<T: Transcript>(
+    transcript: &mut T,
+    domain: &[u8],
+    index: u64,
+    bits: u32,
+) -> Result<GrindingSeed, GrindingError> {
+    validate_difficulty(bits)?;
+    if domain.is_empty() {
+        return Err(GrindingError::EmptyDomain);
+    }
     transcript.absorb_slice(GRINDING_TRANSCRIPT_DOMAIN);
-    transcript.absorb_slice(D::DOMAIN);
-    transcript.absorb_slice(&round.index.to_le_bytes());
+    transcript.absorb_slice(domain);
+    transcript.absorb_slice(&index.to_le_bytes());
     transcript.absorb_slice(&bits.to_le_bytes());
     Ok(transcript.get_challenge())
+}
+
+/// [`grind_and_absorb`] for a domain chosen at runtime.
+pub fn grind_and_absorb_in_domain<T: Transcript>(
+    transcript: &mut T,
+    domain: &[u8],
+    index: u64,
+    bits: u32,
+) -> Result<u64, GrindingError> {
+    let seed = derive_grinding_seed_in_domain(transcript, domain, index, bits)?;
+    let nonce = find_grinding_nonce(&seed, bits)?;
+    absorb_grinding_nonce(transcript, nonce);
+    Ok(nonce)
+}
+
+/// [`verify_and_absorb`] for a domain chosen at runtime.
+pub fn verify_and_absorb_in_domain<T: Transcript>(
+    transcript: &mut T,
+    domain: &[u8],
+    index: u64,
+    bits: u32,
+    nonce: u64,
+) -> Result<(), GrindingError> {
+    let seed = derive_grinding_seed_in_domain(transcript, domain, index, bits)?;
+    let valid = grinding_nonce_is_valid_unchecked(&seed, nonce, bits);
+    absorb_grinding_nonce(transcript, nonce);
+    if valid {
+        Ok(())
+    } else {
+        Err(GrindingError::InvalidNonce { nonce, bits })
+    }
 }
 
 /// Finds the smallest valid nonce and absorbs its canonical encoding.
@@ -216,14 +261,6 @@ pub fn grinding_nonce_is_valid(
     Ok(grinding_nonce_is_valid_unchecked(seed, nonce, bits))
 }
 
-fn validate_boundary<D: GrindingDomain>(bits: u32) -> Result<(), GrindingError> {
-    validate_difficulty(bits)?;
-    if D::DOMAIN.is_empty() {
-        return Err(GrindingError::EmptyDomain);
-    }
-    Ok(())
-}
-
 fn validate_difficulty(bits: u32) -> Result<(), GrindingError> {
     if !(1..=MAX_GRINDING_BITS).contains(&bits) {
         return Err(GrindingError::InvalidDifficulty { bits });
@@ -282,6 +319,7 @@ impl GrindingDomain for ForestRoundGrinding {
 pub struct ProverGrindingTranscript<'a, T, D = ForestRoundGrinding> {
     inner: &'a mut T,
     bits: u32,
+    domain: &'static [u8],
     next_index: u64,
     nonces: Vec<u64>,
     _domain: PhantomData<fn() -> D>,
@@ -290,9 +328,18 @@ pub struct ProverGrindingTranscript<'a, T, D = ForestRoundGrinding> {
 impl<'a, T: Transcript, D: GrindingDomain> ProverGrindingTranscript<'a, T, D> {
     /// Wraps `inner` at `bits` difficulty per drawn challenge.
     pub fn new(inner: &'a mut T, bits: u32) -> Self {
+        Self::new_in_domain(inner, bits, D::DOMAIN)
+    }
+}
+
+impl<'a, T: Transcript, D> ProverGrindingTranscript<'a, T, D> {
+    /// Wraps `inner` at `bits` difficulty per drawn challenge, grinding in
+    /// a domain chosen at runtime (the type parameter is then nominal).
+    pub fn new_in_domain(inner: &'a mut T, bits: u32, domain: &'static [u8]) -> Self {
         Self {
             inner,
             bits,
+            domain,
             next_index: 0,
             nonces: Vec::new(),
             _domain: PhantomData,
@@ -305,12 +352,12 @@ impl<'a, T: Transcript, D: GrindingDomain> ProverGrindingTranscript<'a, T, D> {
     }
 }
 
-impl<T: Transcript, D: GrindingDomain> Transcript for ProverGrindingTranscript<'_, T, D> {
+impl<T: Transcript, D> Transcript for ProverGrindingTranscript<'_, T, D> {
     fn get_challenge<C: ConstTranscribable>(&mut self) -> C {
         if self.bits > 0 {
-            let round = GrindingRound::<D>::new(self.next_index);
+            let index = self.next_index;
             self.next_index = self.next_index.wrapping_add(1);
-            let nonce = grind_and_absorb(self.inner, round, self.bits)
+            let nonce = grind_and_absorb_in_domain(self.inner, self.domain, index, self.bits)
                 .expect("per-round grinding difficulty is validated by the profile");
             self.nonces.push(nonce);
         }
@@ -338,6 +385,7 @@ impl<T: Transcript, D: GrindingDomain> Transcript for ProverGrindingTranscript<'
 pub struct VerifierGrindingTranscript<'a, 'n, T, D = ForestRoundGrinding> {
     inner: &'a mut T,
     bits: u32,
+    domain: &'static [u8],
     next_index: u64,
     nonces: &'n [u64],
     consumed: usize,
@@ -348,9 +396,23 @@ pub struct VerifierGrindingTranscript<'a, 'n, T, D = ForestRoundGrinding> {
 impl<'a, 'n, T: Transcript, D: GrindingDomain> VerifierGrindingTranscript<'a, 'n, T, D> {
     /// Wraps `inner`, checking `nonces` at `bits` difficulty per draw.
     pub fn new(inner: &'a mut T, bits: u32, nonces: &'n [u64]) -> Self {
+        Self::new_in_domain(inner, bits, nonces, D::DOMAIN)
+    }
+}
+
+impl<'a, 'n, T: Transcript, D> VerifierGrindingTranscript<'a, 'n, T, D> {
+    /// Wraps `inner`, checking `nonces` at `bits` difficulty per draw in a
+    /// domain chosen at runtime.
+    pub fn new_in_domain(
+        inner: &'a mut T,
+        bits: u32,
+        nonces: &'n [u64],
+        domain: &'static [u8],
+    ) -> Self {
         Self {
             inner,
             bits,
+            domain,
             next_index: 0,
             nonces,
             consumed: 0,
@@ -376,16 +438,18 @@ impl<'a, 'n, T: Transcript, D: GrindingDomain> VerifierGrindingTranscript<'a, 'n
     }
 }
 
-impl<T: Transcript, D: GrindingDomain> Transcript for VerifierGrindingTranscript<'_, '_, T, D> {
+impl<T: Transcript, D> Transcript for VerifierGrindingTranscript<'_, '_, T, D> {
     fn get_challenge<C: ConstTranscribable>(&mut self) -> C {
         if self.bits > 0 {
-            let round = GrindingRound::<D>::new(self.next_index);
+            let index = self.next_index;
             self.next_index = self.next_index.wrapping_add(1);
             // A missing nonce absorbs a canonical zero so the transcript
             // stays deterministic; `finish` reports the failure.
             let nonce = self.nonces.get(self.consumed).copied().unwrap_or(0);
             self.consumed = self.consumed.saturating_add(1);
-            if let Err(error) = verify_and_absorb(self.inner, round, self.bits, nonce) {
+            if let Err(error) =
+                verify_and_absorb_in_domain(self.inner, self.domain, index, self.bits, nonce)
+            {
                 self.failure.get_or_insert(error);
             }
         }
