@@ -6,7 +6,7 @@ convention). State as of 2026-08-21, f2z-pcs master `0f205b6`.
 ---
 
 Continue optimizing the f2z-pcs prover for n=2^28 (shape `17:11:1`, bench
-default `custom:3:4`). Standing directives from the owner: do whatever it
+default `custom:1:4`). Standing directives from the owner: do whatever it
 takes, keep iterating autonomously; **never modify verifier code** (that
 includes shared prover/verifier dispatch like `quad_active` and the codec's
 `from_bytes`); do not increase proof size without asking; the prover must

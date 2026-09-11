@@ -1,9 +1,9 @@
 
 # BitZ 🫜 --- README for normal humans
 
-Production 100-bit F2Z paths now default to **Ligerito Johnson `custom:3:4`
-with early OOD**. Use `F2Z_LIG_PROFILE=udrg:3:4` (or the applicable CLI
-`--profile udrg:3:4`) for matched-geometry UDR. This selector applies only
+Production 100-bit F2Z paths now default to **Ligerito Johnson `custom:1:4`
+(rate 1/2, initial_k 4) with early OOD**. Use `F2Z_LIG_PROFILE=udrg:1:4` (or the applicable CLI
+`--profile udrg:1:4`) for matched-geometry UDR. This selector applies only
 to F2Z/Ligerito; it does not change Binius64, Plonky3-FRI/WHIR, or Limber.
 Higher-security profiles retain their previous defaults. See the
 [entrypoint inventory, supported shapes, result versions, and validation commands](docs/ligerito-coverage.md).
@@ -24,7 +24,7 @@ Run it with:
 ```sh
 RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- 24
 RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
-    28 --threads 1 --reps 5 --profile custom:3:4
+    28 --threads 1 --reps 5 --profile custom:1:4
 ```
 
 `n` is log(|w|)
@@ -52,7 +52,10 @@ sizes for the multiplication and SHA branches. The largest pair is
 **1,048,576 modular multiplications and 4,096 chained compressions**.
 `--sweep` selects all six sizes. By default, each size runs one discarded warmup followed by five measured
 proofs, giving **30 measured proofs total**. `--iterations N` controls
-measured repetitions per size.
+measured repetitions per size. `--shapes MUL_LOG:SHA_LOG,...` selects other
+pairs (multiplication logs 9–22, SHA logs 1–16); `--shapes 9:9,...,14:14`
+proves equal operation counts N = M, an SHA-dominated workload (see
+`docs/hybrid-u32-sha256-rates.md`).
 Every sample proves and verifies; setup is measured separately.
 
 If using the existing executable built in `target/hybrid-build/`, skip
@@ -90,7 +93,7 @@ commitment, constraint proving, PCS opening, and verification.
 
 ```sh
 RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
-    --sweep 20-30 --threads 8 --reps 5 --profile custom:3:4
+    --sweep 20-30 --threads 8 --reps 5 --profile custom:1:4
 ```
 
 ### Integer multiplication
@@ -99,7 +102,7 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
 
 ```sh
 RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
-    --mul-sweep 15-22 --threads 8 --reps 5 --profile custom:3:4 --cooldown 20
+    --mul-sweep 15-22 --threads 8 --reps 5 --profile custom:1:4 --cooldown 20
 ```
 
 *Full-proving comparison between different schemes*
@@ -526,7 +529,7 @@ cargo +1.98.1 run --release --example int_mult -- --bits 32 --log-gates 15
 
 At L=15 all backends prove **32,768 independent gates**; Limber allocates
 131,072 padded witness slots. `u32` aliases `u32-mod32`; BabyBear is absent
-from this comparison. F2Z uses Lambda100 and defaults to Johnson `custom:3:4`
+from this comparison. F2Z uses Lambda100 and defaults to Johnson `custom:1:4`
 and Round-0 OOD. Binius and Plonky3 use their documented 100-bit targets;
 Limber retains its native approximately 114-bit policy.
 

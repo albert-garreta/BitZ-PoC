@@ -12,6 +12,147 @@ are proved:
 | `all-binius` | Binius64 | Binius64 | one (ring switch + BaseFold/FRI) |
 | `binius-ligerito` | Binius64 | Binius64 | one (the all-Binius circuit and PIOP, every oracle committed at rate 1/8 and opened by the F2Z opener: Round 0, ring switch, Johnson-regime Ligerito with grinding; whole-protocol union bound gated at 100 bits) |
 
+## Equal operation counts, N = M — 2026-09-11
+
+The tables below this section hold the two branches' packed witnesses equal
+(`M = N/256`: one packed 128-bit word per multiplication, 256 per compression).
+This campaign instead proves the **same number of multiplications and
+compressions**, `N = M = 2^k`, so the packed SHA witness is 256x the
+multiplication witness and the workload is SHA-dominated. Same machine, thread
+count, inputs, security settings and methodology as the campaigns below (Apple
+M5, 24 GB, `RAYON_NUM_THREADS=8`, medians of 11 verified iterations after one
+warmup, one process per case, peak RSS sampled externally with
+`scripts/rss_sampler.py`; hybrid = rate-1/2 Johnson opener with Round 0 and the
+106-bit component target, gated at 100 bits; all-binius = rate 1/8, 100-bit FRI
+query target). Run: `PerfRuns/2026-09-11T07-41-11Z-hybrid-equal-counts`
+(`driver.sh`, `hybrid/`, `all-binius/`, `peak-rss-and-swap.tsv`); every case
+recorded zero swap-outs. `paper/hybrid-table-equal-counts.tex` is generated
+from it with `scripts/hybrid_table.py --variant counts`.
+
+**What had to change to run it.** The hybrid API accepted 2^15–2^22
+multiplications: `PreparedHybrid` prepared the full standalone
+`PreparedU32MulRelation`, whose constructor resolves the multiplication's own
+Ligerito opener and refuses layouts below the validated 2^15 floor. The hybrid
+never uses that opener (the multiplication's final binary claim is discharged
+through the shared opener, configured and validated at the virtual geometry),
+so it now prepares `U32MulPrefixRelation` — the exact constraint matrices, the
+layout and the instantiated composition profile, i.e. what the Spartan PIOP and
+the GKR forest consume — and accepts 2^9–2^22 multiplications (the lower bound
+is the shared geometry's minimum packed log). The runner and sweep accept
+`--mul-log`/`--shapes` logs 9–22. Proof bytes at the existing shapes are
+unchanged (the 15:7 proof is byte-identical to the previous binary's; the
+prefix binds the same statement, prime sample and grinding boundaries, and the
+composition already accounts Round 0 itself). `separate` mode still runs the
+standalone relation and keeps the 2^15 floor. New test:
+`hybrid::tests::equal_operation_counts_below_the_standalone_floor_roundtrip`
+(N = M = 2^9, roundtrip, codec, tampered row); the geometry test now also covers
+the equal-count geometries `[k, k + 8]` for k = 9..16.
+
+Why the sweep stops at 2^14: peak memory is dominated by the Binius64 SHA
+circuit construction (setup 8.5 s and about 13 GB at 2^14 compressions for both
+schemes: a hybrid probe at 15:13 / 15:14 measured 8.2 / 13.5 GB), so 2^15
+compressions project to about 25 GB, beyond this 24 GB box; with the old 2^15
+multiplication floor no equal-count shape fitted at all.
+
+Same-day prover optimizations (byte-identical; details in the
+[protocol guide](hybrid-u32-sha256-protocol.md), "Prover-side optimizations
+(2026-09-11)"): a persistent Binius `BufferPool` for the SHA reductions, the
+joint sumcheck's tables recycled across proofs, the ring-switch basis written
+directly in flock's element type, and all-zero blocks skipped in the
+ring-switch fold. Re-measured run:
+`PerfRuns/2026-09-11T08-35-40Z-hybrid-equal-counts-opt` (both modes again;
+the all-Binius rows reproduced the morning run within 1%, the same-state
+check). The table and `paper/hybrid-table-equal-counts.tex` are from this run;
+the morning run (`…T07-41-11Z-hybrid-equal-counts`) is the pre-optimization
+reference: hybrid prover 24.4 / 40.0 / 75.5 / 126.7 / 272.2 / 536.2 ms and
+verifier 5.06 / 5.55 / 8.47 / 13.71 / 23.55 / 43.68 ms at 2^9 … 2^14.
+
+| N = M | scheme | prover (ms) | verifier (ms) | proof (B) | peak (MiB) | compressions |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 2^9 | hybrid | **24.1** | 5.24 | **208,432** | 567 | 0 |
+| | all-binius | 26.3 | **3.25** | 241,104 | **517** | 0 |
+| 2^10 | hybrid | **39.3** | 6.12 | **235,160** | 1196 | 0 |
+| | all-binius | 40.3 | **4.18** | 257,504 | **1020** | 0 |
+| 2^11 | hybrid | 73.6 | 9.50 | **257,576** | 2608 | 0 |
+| | all-binius | **68.4** | **6.70** | 280,784 | **2073** | 0 |
+| 2^12 | hybrid | 124.6 | 15.72 | **281,184** | 5353 | 0 |
+| | all-binius | **124.1** | **11.91** | 302,768 | **4026** | 0 |
+| 2^13 | hybrid | 266.6 | 27.14 | **308,496** | 10,477 | 0 |
+| | all-binius | **231.2** | **22.32** | 326,464 | **8070** | 0 |
+| 2^14 | hybrid | 506.5 | 59.66 | **332,200** | 13,570 | 683,955 |
+| | all-binius | **454.6** | **42.33** | 350,608 | **13,560** | 233,052 |
+
+`compressions` = pages the kernel compressed while the case ran (setup
+included); both 2^14 cases sat under memory pressure during the 8 s circuit
+setup but recorded no swap-outs and their prover samples stay in the usual band
+(hybrid 495–554 ms, all-binius 445–468 ms), so they carry no dagger. The
+runner's witgen column (not shown) has the asymmetry described under "Reading
+the table" below: hybrid synthesises its assignment inside `commit_mod32`,
+all-binius reports row construction plus Binius's witness filling (1.4 … 47 ms).
+
+**Verifier column.** The prover optimizations moved the hybrid verifier from
+43.7 to 59.7 ms at 2^14 (27.1 vs 23.6 at 2^13, 15.7 vs 13.7 at 2^12) without
+touching verifier code: the benchmark verifies in the same process right after
+proving, and once the prover's pool keeps its buffers the verifier's own
+100 MB-class tables (mostly Binius64's O(N) constraint evaluation) are
+allocated on cold pages instead of the pages the prover had just freed. That is
+the situation all-Binius's verifier is measured in as well (Binius64's prover
+keeps its pool for its lifetime), so the column is now cold-vs-cold; the old
+43.7 ms was a warm-page artifact of the single-process harness. A per-proof
+pool was tried and recovers neither side (the prover gain is the cross-proof
+reuse).
+
+Hybrid prover anatomy (medians, ms; `summary.csv` phase columns):
+
+| N = M | witness + commits | mul PIOP (Spartan) | SHA PIOP (Binius64) | mul opening (GKR) | joint sumcheck | shared opening (Round 0) | level-0 fold grind (bits) | achieved bits |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2^9 | 4.0 | 0.2 | 8.8 | 2.2 | 1.4 | 7.5 (0.2) | 18 | 101.73 |
+| 2^10 | 7.5 | 0.2 | 16.1 | 2.8 | 2.4 | 10.2 (0.3) | 19 | 101.55 |
+| 2^11 | 14.1 | 0.3 | 30.2 | 3.7 | 4.0 | 21.0 (0.6) | 20 | 101.52 |
+| 2^12 | 27.8 | 0.5 | 58.6 | 4.6 | 7.5 | 25.5 (1.2) | 21 | 101.49 |
+| 2^13 | 53.8 | 0.8 | 116.9 | 5.9 | 15.0 | 74.2 (2.5) | 22 | 101.34 |
+| 2^14 | 107.9 | 1.3 | 232.8 | 7.9 | 28.7 | 125.7 (4.6) | 23 | 101.31 |
+
+Phase by phase at 2^14 against Binius64's own prover (`examples/binius_probe.rs`,
+its `[phase]` spans; ms): witness fill 44 vs 46 (the same Binius code); commit
+64 (SHA 38 + the multiplication branch padded 2^14 → 2^19 words 24) vs 118
+(rate 1/2 against rate 1/8); multiplication side 10 (Spartan + GKR) vs 25
+(IntMul check); SHA reductions 233 vs 232 (BitAnd 62 + Shift 170; 264 before
+the pool); joint sumcheck 28 and Round 0 + extra bases 15 with no Binius
+counterpart; ring switch 28 vs 8; Ligerito 82 (53 of it the 25 proof-of-work
+grinds) vs BaseFold 21 (no grinding).
+
+- **The two schemes run the same SHA PIOP.** The hybrid's SHA branch is the
+  Binius64 IOP prover on the same circuit, and at N = M it is 37–46% of the
+  hybrid prover; the multiplication side (Spartan + GKR forest) is 2–10%. The
+  equal-witness table's prover advantage (1.6–2.3x at 2^15–2^20, 6x at 2^21
+  where all-binius paged) comes from the multiplication branch — F2Z's
+  Spartan/GKR against Binius64's four-limb gadget — which is 1/256 of the
+  witness here.
+- **Prover**: parity within 8% up to 2^12 (the hybrid is faster at 2^9 and
+  2^10), then 15% / 11% slower at 2^13 / 2^14 (18–19% before the same-day
+  optimizations). The gap (35 ms at 2^13, 52 ms at 2^14) is smaller than the
+  proof-of-work alone (53 ms of the 126 ms shared opening at 2^14): the
+  rate-1/2 Johnson opener's level-0 fold grind rises one bit per doubling
+  (22 and 23 bits here, 2^22–2^23 BLAKE3 evaluations per level-0 fold) and is
+  the price of the smaller proof, while Binius64's FRI meets its 100-bit
+  query-phase target with 121 queries and no grinding. The second structural
+  cost is the virtual lane layout: 7 of 16 lanes are zero at N = M, so the ring
+  switch, joint sumcheck, extra bases and level-0 encode run over 2^23 words
+  for a 2^22-word SHA witness, and the multiplication commitment is padded 32x.
+- **Proof size**: 5–14% smaller than all-binius at every size (2^14: 332 vs
+  351 KB); the SHA witness dominates both proofs, so the margin is narrower
+  than in the equal-witness tables.
+- **Verifier**: 22–61% slower (cold-vs-cold, see above): the hybrid verifier's
+  fixed work (Spartan prefix, GKR, two level-0 multiproofs, 196 level-0
+  queries) sits on top of the same O(N) Binius constraint evaluation.
+- **Peak memory**: within 33% of each other and set by the circuit setup;
+  equal at 2^14 (13.3 GB both).
+
+**Superseded 2026-09-10: the shared opener now commits both branches at rate
+1/2 (`opening::LOG_INV_RATE = 1`, Johnson regime, Round 0 unchanged), the rate
+F2Z uses in every bench; the rate-1/8 numbers below are historical.**
+
 ## F2Z-side prover optimizations — 2026-09-10 (byte-identical)
 
 Prover-only changes on the F2Z side of the hybrid (see the "Prover-side
@@ -53,7 +194,7 @@ compressions per sweep case; cheap per-pid sampling, verified neutral at
 from a hybrid run directory and an all-Binius run directory; it reproduces the
 previous table from its run directory exactly).
 
-## Current hybrid: Johnson-regime opener at rate 1/8 with Round 0 (protocol v3)
+## Historical hybrid v3: Johnson-regime opener at rate 1/8 with Round 0
 
 The shared F2Z/Ligerito opening was 91–92% of the v2 hybrid proof, and it lost
 on parameters alone: `Geometry::params` committed at rate 1/2 and the opener ran

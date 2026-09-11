@@ -2,28 +2,26 @@
 
 The comparison proves N=2^L independent rows with unsigned 32-bit x, y, z
 and z = x*y mod 2^32. There are no links between successive rows. Select
-`u32-mod32` (default); `u32` is an alias. BabyBear and the old integrated
-Limber multiplication adapter have been removed from this comparison.
-The optional `plonky3-whir` backend uses the same mod32 AIR as FRI;
-other benchmarks retain their Limber dependencies.
+`u32-mod32` (default); `u32` is an alias. BabyBear has been removed from this
+comparison. The optional `plonky3-whir` backend uses the same mod32 AIR as FRI.
 
 ## Run
 
-Use Rust 1.98.1. The sibling `../limber-impl` checkout must contain the new
-independent Brakedown `examples/int_mult.rs` on your fork's `f2z-benching`
-branch. Set `LIMBER_REPO` to use another checkout. The upstream chain/Hyrax
-example is a different workload and the runner rejects its output.
+Use Rust 1.98.1. Every backend, Limber included, runs inside the comparison
+binary, so one process builds the shared corpus and derives each backend's
+witness from it. Limber is proved through the `limber` crate at the pinned
+revision in `Cargo.toml`; no sibling checkout and no `LIMBER_REPO` are needed.
 
 `binius64-ligerito` is Binius64's own circuit and PIOP (the same wires and
 constraint reductions as `binius64`, including the IntMul reduction's logup*
 pushforward oracle) with every oracle committed and opened by F2Z's opener
-instead of ring switching + BaseFold: rate 1/8, Round 0 (the out-of-domain
+instead of ring switching + BaseFold: rate 1/2, Round 0 (the out-of-domain
 sample) right after each commitment, ring switching, and a Johnson-regime
 Ligerito opening with fold and query grinding. Its security column is a
 whole-protocol union bound gated at 100 bits (the same yardstick as the `f2z`
 row), with the opener's round-by-round target solved to the smallest value
 that clears the gate; the `binius64` row's 100 bits is Binius64's query-phase
-target only. The rate is fixed at 1/8 (`F2Z_BINIUS_LOG_INV_RATE` does not
+target only. The rate is fixed at 1/2 (`F2Z_BINIUS_LOG_INV_RATE` does not
 apply). See `src/binius_ligerito/` and `src/binary_pcs.rs`.
 
 ```sh
@@ -59,18 +57,17 @@ with log blowup 3. Limber retains its existing exponent-24 runner limit.
 Other native cases use address-space and backend domain bounds rather than
 a machine-specific RAM cap. Choose sizes that fit the machine being measured.
 
-Limber runs this exact command in its own repository:
-
-```sh
-RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
-cargo +1.98.1 run --release --example int_mult -- --bits 32 --log-gates 15
-```
-
-Only the exponent varies. `F2Z_BENCH_REPS` defaults to 5 in both repositories.
-One invocation does setup, one warmup and all measured trials. The runner
-also invokes the example with `F2Z_MUL_MEMORY_ONLY=1` for a fresh, single-proof
-memory measurement. That invocation has no warmup. The command remains the
-same; Cargo compilation is outside measured intervals and RSS.
+Limber proves the same wrapping row as the authors' own `int_mult` example:
+one modular row `x * y = z_lo (mod 2^w)` per gate, whose quotient is the high
+half of the exact `2w`-bit product. Every committed value stays below `2^w`,
+so the IntEval limb range check the Mod-PCS already runs is the operand range
+check and the program needs no bit columns. The commitment is Brakedown
+(`T256DynPrimeBdEngine`), which the crate documents as its comparison
+instantiation against code-commitment systems. The adapter is pinned to the
+authors' own accounting: at `2^15` it reproduces their recorded proof size of
+`3417232` bytes exactly, with the same derived IntEval and Brakedown
+parameters. Unlike `int_mult` the gates are independent, matching the corpus
+and every other backend here.
 
 Both jobs enforce `RUSTFLAGS=-C target-cpu=native`. `RAYON_NUM_THREADS`
 selects a positive thread count, defaulting to eight, and is recorded in
@@ -91,9 +88,9 @@ reproducible revision of those edits.
 
 | Backend | Arithmetic relation and cost per operation | Native security configuration |
 |---|---|---|
-| F2Z | One integer R1CS constraint x*y=P, four 32-bit committed limbs representing x,y,z,w with P=z+2^32*w | Explicit Lambda100, Johnson `custom:3:4`, required Round-0 OOD |
+| F2Z | One integer R1CS constraint x*y=P, four 32-bit committed limbs representing x,y,z,w with P=z+2^32*w | Explicit Lambda100, Johnson `custom:1:4` (rate 1/2), required Round-0 OOD |
 | Binius64 | Bound x,y to 32 bits, native IMUL, mask and equate low 32-bit output; one IMUL plus four word-level ANDs | Explicit 100-bit FRI query target, rate 1/2 or the paper's second rate 1/8 |
-| Limber-Brakedown | One independent integer-mod row, 3N live witness values padded to 4N, N private quotients | T256DynPrimeBdEngine; `derive_no_limb_split(32,9,L+2)`; native approximately 114-bit policy |
+| Limber-Brakedown | One independent wrapping integer-mod row `x*y = z_lo (mod 2^w)`, 3N live witness values padded to 4N, N private quotients (the high halves) | T256DynPrimeBdEngine; `derive_no_limb_split(w,9,L+2)` for `w <= 64`, `derive(128,32,9,L+2)` for `u128`; native approximately 114-bit policy |
 | Plonky3-FRI | Two limb equations; 137 columns and 139 constraints per row | Goldilocks, degree-five extension, Poseidon2/MMCS, rate 1/8, 100 queries, binary folding, final polynomial length one, zero PoW |
 | Plonky3-WHIR (optional) | The same 137-column, 139-constraint mod32 AIR | Multilinear zerocheck/sumcheck PIOP; Goldilocks; per-run WHIR tuning with evaluated Johnson accounting of at least 100 bits |
 
@@ -169,18 +166,18 @@ and is excluded from medians. Five measured trials are the default.
   proof encoding. F2Z includes the root, canonical opening and analytically
   counted fixed-width PIOP elements/nonces. Limber includes canonical input
   commitments, canonical eval argument and an analytically counted sumcheck
-  payload `(3*L + 2*(L+2) + 6)*16` bytes. Encoding conventions are recorded.
+  payload `(3*L + 2*(L+2) + 6)*16` bytes, reported as `piop_payload_bytes` in
+  its recorded configuration. Encoding conventions are recorded.
 
-Native phase diagnostics remain available; Limber reports the common totals
-without inventing separate internal phases. Limber emits structured
-`LIMBER_MUL_RESULT` / `LIMBER_MUL_MEMORY` JSON. The runner rejects missing,
+Native phase diagnostics remain available. The runner rejects missing,
 unverified, mismatched or incomplete records, wrong trial counts, wrong
-backends and changed configurations. All four gate counts and corpus digests
-must match before the campaign is marked complete.
+backends and changed configurations. All gate counts and corpus digests
+must match before the campaign is marked complete; the in-process witness
+audit checks Limber's recovered rows against the shared corpus digest, like
+every other backend.
 
 The run root contains `campaign.json`, unified `summary.json`, `samples.jsonl`
-and `metrics.csv`. Native traces/logs are under `native/`; Limber logs and
-normalized summaries are under `limber-int-mult/`. Table generation uses the
+and `metrics.csv`. Traces and logs are under `native/`. Table generation uses the
 root results, including their recorded machine rather than the export host:
 
 ```sh
@@ -220,9 +217,6 @@ python3 -B -m unittest discover -s scripts -p test_native_mul_runner.py -v
 RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
 cargo +1.98.1 test --release --test native_mul_compare \
   --features bench-internals,native-mul-compare
-# In the Limber checkout:
-RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
-cargo +1.98.1 test --release --example int_mult
 ```
 
 Validation covers zero and maximum values, overflow, incorrect low results,

@@ -1063,16 +1063,16 @@ Let $\Pi_1$ be a perfectly complete $k_1$-round IOR from $\Relation_1$ to $\Rela
   \small
   \setlength{\tabcolsep}{5pt}
   \caption{Cost of finding a $64$-bit nonce such that $\text{BLAKE3}(\mathsf{msg}, \mathsf{nonce})$ has at least $\alpha$ leading zero
-    bits, with $\mathsf{msg}$ of $256$ bits. Single and multi-threaded on a MacBook Air M5 24\,GB. \albert{As implemented in Flock?}}
+    bits, with $\mathsf{msg}$ of $256$ bits. Single and multi-threaded ($10$ threads) on a MacBook Air M5 24\,GB; means and medians over $400$ random $\mathsf{msg}$. \albert{As implemented in Flock?}}
   \label{tab:grinding-cost}
       \begin{tabular}{@{}l rrrrrrrr@{}}
     \toprule
     $\alpha$ & 18 & 19 & 20 & 21 & 22 & 23 & 24 & 25 \\
     \midrule
-    Mean, $1$ thread (ms)     & 12.3 & 19.5 & 42.8 & 82.2 & 203.8 & 464.4 & 808.5 & 1291.4 \\
-    Median, $1$ thread (ms)   &  9.2 & 16.3 & 27.8 & 55.2 & 140.6 & 358.1 & 608.5 &  852.0 \\
-    Mean, $10$ threads (ms)   &  2.3 &  3.5 &  8.9 & 14.3 &  35.5 &  84.6 & 148.6 &  240.8 \\
-    Median, $10$ threads (ms) &  1.8 &  2.5 &  6.8 &  9.6 &  26.9 &  68.0 & 111.3 &  161.8 \\
+    Mean, $1$ thread (ms)     &  3.9 &  9.1 & 17.4 & 33.4 &  62.9 & 136.5 & 289.6 &  514.4 \\
+    Median, $1$ thread (ms)   &  2.9 &  6.2 & 12.7 & 23.4 &  44.4 &  97.9 & 211.7 &  394.9 \\
+    Mean, $10$ threads (ms)   &  0.8 &  1.8 &  3.4 &  6.4 &  11.9 &  25.9 &  54.9 &   98.1 \\
+    Median, $10$ threads (ms) &  0.6 &  1.3 &  2.5 &  4.5 &   8.5 &  18.4 &  39.8 &   74.8 \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -2054,7 +2054,7 @@ We now discuss how to make the errors $\kappa_{\mathsf{OOD}}, \kappa_0, (\ksred_
 \noindent For the purposes of this discussion, we assume \ftwoz \ is used within a bigger proof system, as described in \cref{s:to_simple_bitz}, so that \ftwoz \ is used to prove an inner product claim for a committed witness, as the last phase of a bigger proving system where \albert{review what the technical overview exactly says} 1) first the initial constraint is projected to a finite field $\FF$, or, alternatively, this step is skipped if the constraint is  already over a finite field; and 2) a  PIOP is run over $\FF$ for the projected constraint, outputting an inner product claim on the projected witness. Now, this inner product claim is the input of \cref{c:core_iop}, and we aim to configure \cref{c:core_iop} at 128 bits of security for this setting. 
 
 
-\paragraph{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa_0$.} If allowing, say, $18-19$ bits of grinding during each round of the PIOP (which adds $1.8-3.5$ms per round, cf.\ \cref{tab:grinding-cost}), then, say, a Spartan-like PIOP will achieve $128$ bits of security if run on a field $\FF$ of size $\approx 2^{112}$ to  $2^{113}$  (since each one of its rounds is either a sumcheck round for a degree $\leq 3$ polynomial, or a step that batches some claims with error $1/|\FF|$). Hence, if the initial constraint is over $\ZZ$ or $\ZZ[X]$ \albert{do we mention $\ZZ[X]$? Why not mention other rings here? Again, wait for the TO}, then we may project it to a $112$-$113$ bit random prime field $\FF$ and run a PIOP over $\FF$. We study this case next. Our analysis also applies if the original constraint was already expressed over a prime field of such size.  
+\paragraph{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa_0$.} If allowing, say, $18-19$ bits of grinding during each round of the PIOP (which adds $0.8-1.8$ms per round, cf.\ \cref{tab:grinding-cost}), then, say, a Spartan-like PIOP will achieve $128$ bits of security if run on a field $\FF$ of size $\approx 2^{112}$ to  $2^{113}$  (since each one of its rounds is either a sumcheck round for a degree $\leq 3$ polynomial, or a step that batches some claims with error $1/|\FF|$). Hence, if the initial constraint is over $\ZZ$ or $\ZZ[X]$ \albert{do we mention $\ZZ[X]$? Why not mention other rings here? Again, wait for the TO}, then we may project it to a $112$-$113$ bit random prime field $\FF$ and run a PIOP over $\FF$. We study this case next. Our analysis also applies if the original constraint was already expressed over a prime field of such size.  
 
 Note that the projection of the constraint to $\FF$ also requires to be set up to 128 bits of security. We discuss this in \cref{r:first_projection_security}. 
 
@@ -2106,7 +2106,7 @@ Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\cP,\cM,\codedim)$. We u
     \end{aligned}
     \end{equation}
     %
-    We calculate several minima for the right hand side of \eqref{e:kappa_0_practical_upper_bound} when $\FF$ is a  field of size $\approx 2^{128}$ (not necessarily a prime field), for varying values of $\codedim$ and $\tau \in \{0.5, 0.6\}$. We include the corresponding grinding times in order to achieve $128$ bits of security for this initial step of \cref{c:core_iop}. \albertimportant{Review grinding times.}  
+    We calculate several minima for the right hand side of \eqref{e:kappa_0_practical_upper_bound} when $\FF$ is a  field of size $\approx 2^{128}$ (not necessarily a prime field), for varying values of $\codedim$ and $\tau \in \{0.5, 0.6\}$. We include the corresponding grinding times in order to achieve $128$ bits of security for this initial step of \cref{c:core_iop}.  
 
     %We also include minima of $f(a)$ for other configurations where $R$ is a finite field of size between $2^{128}$ to $2^{256}$, not necessarily a prime field.
     
@@ -2116,20 +2116,20 @@ Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\cP,\cM,\codedim)$. We u
     \toprule
     $\log |\FF|$ & $d$ & $\log q$ & $\log \codedim$ & $\tau$ & $a^{*}$ & $\kappa_0\leq$ & Bit-deficit to $128$ & Grinding time (ms) \\
     \midrule
-    128 & 1 & 128 & 24 & 0.5 & 110 & $2^{-108.3}$ & 20 & 8.9 \\
-    128 & 1 & 128 & 24 & 0.6 & 107 & $2^{-105.9}$ & 23 & 84.6 \\
-    128 & 1 & 128 & 28 & 0.5 & 108 & $2^{-106.3}$ & 22 & 35.5 \\
-    128 & 1 & 128 & 28 & 0.6 & 105 & $2^{-103.5}$ & 25 & 240.8 \\
-    128 & 1 & 128 & 30 & 0.5 & 107 & $2^{-105.3}$ & 23 & 84.6 \\
-    128 & 1 & 128 & 32 & 0.5 & 106 & $2^{-104.2}$ & 24 & 148.6 \\
+    128 & 1 & 128 & 24 & 0.5 & 110 & $2^{-108.3}$ & 20 & 3.4 \\
+    128 & 1 & 128 & 24 & 0.6 & 107 & $2^{-105.9}$ & 23 & 25.9 \\
+    128 & 1 & 128 & 28 & 0.5 & 108 & $2^{-106.3}$ & 22 & 11.9 \\
+    128 & 1 & 128 & 28 & 0.6 & 105 & $2^{-103.5}$ & 25 & 98.1 \\
+    128 & 1 & 128 & 30 & 0.5 & 107 & $2^{-105.3}$ & 23 & 25.9 \\
+    128 & 1 & 128 & 32 & 0.5 & 106 & $2^{-104.2}$ & 24 & 54.9 \\
     \midrule
-    128 & 4 & 32 & 24 & 0.5 & 114 & $2^{-109.2}$ & 19 & 3.5 \\
-    128 & 4 & 32 & 24 & 0.6 & 111 & $2^{-106.8}$ & 22 & 35.5 \\
-    128 & 4 & 32 & 28 & 0.5 & 112 & $2^{-107.1}$ & 21 & 14.3 \\
-    128 & 4 & 32 & 28 & 0.6 & 109 & $2^{-104.4}$ & 24 & 148.6 \\
-    128 & 4 & 32 & 30 & 0.5 & 111 & $2^{-106.1}$ & 22 & 35.5 \\
-    128 & 4 & 32 & 30 & 0.6 & 108 & $2^{-103.1}$ & 25 & 240.8 \\
-    128 & 4 & 32 & 32 & 0.5 & 110 & $2^{-105.1}$ & 23 & 84.6 \\
+    128 & 4 & 32 & 24 & 0.5 & 114 & $2^{-109.2}$ & 19 & 1.8 \\
+    128 & 4 & 32 & 24 & 0.6 & 111 & $2^{-106.8}$ & 22 & 11.9 \\
+    128 & 4 & 32 & 28 & 0.5 & 112 & $2^{-107.1}$ & 21 & 6.4 \\
+    128 & 4 & 32 & 28 & 0.6 & 109 & $2^{-104.4}$ & 24 & 54.9 \\
+    128 & 4 & 32 & 30 & 0.5 & 111 & $2^{-106.1}$ & 22 & 11.9 \\
+    128 & 4 & 32 & 30 & 0.6 & 108 & $2^{-103.1}$ & 25 & 98.1 \\
+    128 & 4 & 32 & 32 & 0.5 & 110 & $2^{-105.1}$ & 23 & 25.9 \\
     \bottomrule
   \end{tabular}  \caption{Minima for the upper bound of $\kappa_0$ in \eqref{e:kappa_0_practical_upper_bound} for different configurations of $\FF$ (of characteristic $q$ and  degree $d$ over its prime field), witness sizes $\codedim$, and $\tau$ such that $\codedim_1=\codedim^\tau$.  By choosing primes in the interval $[2^{a^*}, 2^{128-r_1}]$, we have that the first error term $\kappa_0$ is bounded by the quantity in the $\kappa_0\leq$ column. We include the bits left required to achieve  $\kappa_0 < 1/2^{128}$ and the cost of grinding such amount of bits in a MacBook Air M5 24\,GB, multi-threaded, using Blake3 as hash function.}
   \label{tab:min-f}
@@ -2170,7 +2170,7 @@ Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\cP,\cM,\codedim)$. We u
     $$
     where $\cP'$ is a set of primes; $q_{\min}$ is the smallest prime in $\cP'$; $N$ is the largest  absolute value that an unsatisfying constraint can attain. More precisely, assume integer witness entries $\ww$ are guaranteed to have at most certain bit-size $B'$, and assume the constraints have the form $q_i(\xx,\ww)=0$ for all $i$, for $\xx$ a public input vector and $q_i$ constraint polynomials. Then $N$ is the maximum possible value of the form $|q_i(\xx,\ww)|$ among all $i$, all possible inputs $\xx$ and all  $\ww$ with entries having bit-size at most $B'$. 
     
-    Using a similar analysis as in Strategy 2 above, where we let $\cP'$ be the set of primes between the interval $[2^{112}, 2^{113}]$,  we obtain that, as long as $\log(N)< 1.4\cdot 2^{6}\approx 90$ we have $   \eps_{\mathsf{PIOP-proj}}< 2^{-106}$. In that case we could attain $128$ bits of security during this projection step by performing $22$ bits of grinding ($35$ms  in a MacBook Air M5 \albertimportant{redo runs}).
+    Using a similar analysis as in Strategy 2 above, where we let $\cP'$ be the set of primes between the interval $[2^{112}, 2^{113}]$,  we obtain that, as long as $\log(N)< 1.4\cdot 2^{6}\approx 90$ we have $   \eps_{\mathsf{PIOP-proj}}< 2^{-106}$. In that case we could attain $128$ bits of security during this projection step by performing $22$ bits of grinding ($12$ms in a MacBook Air M5).
 \end{remark}
 
 
@@ -2764,53 +2764,53 @@ We compare the performance of \ftwoz-SNARK with Binius64 \cite{binius64}, Plonky
     \toprule
     $N$ & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
     \midrule
-    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.05} & \textbf{16.2} & 3.08 & 158 & \textbf{0.062} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 0.60 & 40.2 & 1.69 & 327 & 0.408 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 0.64 & 45.0 & \textbf{1.60} & 245 & 0.449 \\
-     & Plonky3~\cite{plonky} (WHIR) & 2.53 & 1230 & 3.91 & 195 & 0.499 \\
-     & Limber~\cite{limber} (Hyrax) & 0.42 & 159 & 16.1 & \textbf{126} & 0.219 \\
+    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.05} & \textbf{21.2} & 2.80 & \textbf{118} & \textbf{0.059} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & 0.61 & 30.9 & 1.68 & 324 & 0.280 \\
+      & Binius64~\cite{binius64}, rate $1/8$ & 0.61 & 34.2 & \textbf{1.52} & 243 & 0.284 \\
+      & Plonky3~\cite{plonky} (WHIR) & 2.53 & 1230 & 3.91 & 195 & 0.499 \\
+      & Limber~\cite{limber} (Hyrax) & 0.42 & 159 & 16.1 & 126 & 0.219 \\
     \addlinespace
-    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.10} & \textbf{24.9} & 3.58 & 184 & \textbf{0.108} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 1.15 & 60.1 & 2.77 & 358 & 0.756 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 1.16 & 64.9 & \textbf{2.65} & 262 & 0.791 \\
-     & Plonky3~\cite{plonky} (WHIR) & 5.27 & 2689 & 4.48 & 216 & 0.997 \\
-     & Limber~\cite{limber} (Hyrax) & 0.85 & 247 & 25.2 & \textbf{145} & 0.422 \\
+    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.09} & \textbf{29.1} & 2.55 & \textbf{138} & \textbf{0.107} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & 1.23 & 46.4 & 1.90 & 355 & 0.543 \\
+      & Binius64~\cite{binius64}, rate $1/8$ & 1.24 & 53.2 & \textbf{1.73} & 259 & 0.557 \\
+      & Plonky3~\cite{plonky} (WHIR) & 5.27 & 2689 & 4.48 & 216 & 0.997 \\
+      & Limber~\cite{limber} (Hyrax) & 0.85 & 247 & 25.2 & 145 & 0.422 \\
     \addlinespace
-    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.19} & \textbf{38.6} & \textbf{3.88} & 205 & \textbf{0.152} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 2.27 & 99.4 & 4.97 & 403 & 1.45 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 2.25 & 109 & 4.72 & 286 & 1.52 \\
-     & Plonky3~\cite{plonky} (WHIR) & 10.3 & 5513 & 4.71 & 227 & 1.89 \\
-     & Limber~\cite{limber} (Hyrax) & 1.70 & 421 & 48.9 & \textbf{204} & 0.811 \\
+    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.17} & \textbf{44.8} & 3.26 & \textbf{150} & \textbf{0.155} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & 2.48 & 81.5 & 2.58 & 388 & 0.919 \\
+      & Binius64~\cite{binius64}, rate $1/8$ & 2.49 & 91.5 & \textbf{2.49} & 283 & 0.997 \\
+      & Plonky3~\cite{plonky} (WHIR) & 10.3 & 5513 & 4.71 & 227 & 1.89 \\
+      & Limber~\cite{limber} (Hyrax) & 1.70 & 421 & 48.9 & 204 & 0.811 \\
     \addlinespace
-    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.40} & \textbf{65.9} & \textbf{4.22} & \textbf{232} & \textbf{0.287} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 4.42 & 173 & 8.86 & 435 & 2.79 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 4.44 & 198 & 8.69 & 308 & 2.92 \\
-     & Plonky3~\cite{plonky} (WHIR) & 20.9 & 11141 & 4.94 & 238 & 3.76 \\
-     & Limber~\cite{limber} (Hyrax) & 3.46 & 742 & 71.5 & 293 & 1.59 \\
+    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.40} & \textbf{74.6} & 3.64 & \textbf{168} & \textbf{0.288} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & 4.85 & 145 & 3.84 & 432 & 1.81 \\
+      & Binius64~\cite{binius64}, rate $1/8$ & 4.85 & 170 & \textbf{3.47} & 306 & 1.97 \\
+      & Plonky3~\cite{plonky} (WHIR) & 20.9 & 11141 & 4.94 & 238 & 3.76 \\
+      & Limber~\cite{limber} (Hyrax) & 3.46 & 742 & 71.5 & 293 & 1.59 \\
     \addlinespace
-    $2^{19}$ & \ftwoz\ (this work) & \textbf{0.81} & \textbf{117} & \textbf{4.85} & 265 & \textbf{0.508} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 8.84 & 341 & 25.0 & 475 & 5.28 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 8.90 & 392 & 24.2 & 333 & 5.55 \\
-     & Plonky3~\cite{plonky} (WHIR) & 39.4 & 22715 & 5.27 & \textbf{249} & 5.80 \\
-     & Limber~\cite{limber} (Hyrax) & 7.30 & 1533 & 141 & 430 & 3.17 \\
+    $2^{19}$ & \ftwoz\ (this work) & \textbf{0.80} & \textbf{127} & \textbf{4.01} & \textbf{188} & \textbf{0.514} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & 10.2 & 281 & 9.74 & 472 & 3.67 \\
+      & Binius64~\cite{binius64}, rate $1/8$ & 9.92 & 323 & 9.24 & 330 & 3.93 \\
+      & Plonky3~\cite{plonky} (WHIR) & 39.4 & 22715 & 5.27 & 249 & 5.80 \\
+      & Limber~\cite{limber} (Hyrax) & 7.30 & 1533 & 141 & 430 & 3.17 \\
     \addlinespace
-    $2^{20}$ & \ftwoz\ (this work) & \textbf{1.38} & \textbf{217} & \textbf{5.23} & 297 & \textbf{0.985} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 17.6 & 664 & 47.9 & 522 & 8.80 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 17.7 & 761 & 48.5 & 358 & 11.0 \\
-     & Plonky3~\cite{plonky} (WHIR) & 116 & 59221 & 8.11 & \textbf{270} & 9.17 \\
-     & Limber~\cite{limber} (Hyrax) & 14.5 & 3015 & 260 & 738 & 6.30 \\
+    $2^{20}$ & \ftwoz\ (this work) & \textbf{1.53} & \textbf{248} & \textbf{4.83} & \textbf{211} & \textbf{1.00} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & 21.8 & 561 & 17.9 & 519 & 7.34 \\
+      & Binius64~\cite{binius64}, rate $1/8$ & 20.4 & 630 & 17.1 & 355 & 7.83 \\
+      & Plonky3~\cite{plonky} (WHIR) & 116 & 59221 & 8.11 & 270 & 9.17 \\
+      & Limber~\cite{limber} (Hyrax) & 14.5 & 3015 & 260 & 738 & 6.30 \\
     \addlinespace
-    $2^{21}$ & \ftwoz\ (this work) & \textbf{3.16} & \textbf{421} & \textbf{6.43} & \textbf{325} & \textbf{1.86} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
-     & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
-     & Plonky3~\cite{plonky} (WHIR) & -- & -- & -- & -- & -- \\
-     & Limber~\cite{limber} (Hyrax) & 38.6 & 7312 & 983 & 1289 & 8.25 \\
+    $2^{21}$ & \ftwoz\ (this work) & \textbf{3.39} & \textbf{455} & \textbf{6.36} & \textbf{227} & \textbf{1.88} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
+      & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
+      & Plonky3~\cite{plonky} (WHIR) & -- & -- & -- & -- & -- \\
+      & Limber~\cite{limber} (Hyrax) & 38.6 & 7312 & 983 & 1289 & 8.25 \\
     \addlinespace
-    $2^{22}$ & \ftwoz\ (this work) & \textbf{6.35} & \textbf{867} & \textbf{7.74} & \textbf{380} & \textbf{3.69} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
-     & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
-     & Plonky3~\cite{plonky} (WHIR) & -- & -- & -- & -- & -- \\
-     & Limber~\cite{limber} (Hyrax) & 203 & 21540 & 5499 & 2385 & 12.3 \\
+    $2^{22}$ & \ftwoz\ (this work) & \textbf{6.70} & \textbf{921} & \textbf{6.49} & \textbf{262} & \textbf{3.69} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
+      & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
+      & Plonky3~\cite{plonky} (WHIR) & -- & -- & -- & -- & -- \\
+      & Limber~\cite{limber} (Hyrax) & 203 & 21540 & 5499 & 2385 & 12.3 \\
     \bottomrule
   \end{tabular}
   \caption{\albertimportant{We should do FRI Plonky3} Costs of proving $N$ multiplications $x\cdot y = z$ for random $32$ bit nonnegative integers $x$ and $y$. 100 bits of security (Binius64 is at 96 bits). Ran on a MacBook Air M5, 24\,GB, $8$ threads.}
@@ -2832,43 +2832,32 @@ We compare the performance of \ftwoz-SNARK with Binius64 \cite{binius64}, Plonky
     \toprule
     $N$ & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
     \midrule
-    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.04} & \textbf{25.5} & 3.97 & 184 & \textbf{0.083} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 0.44 & 40.7 & 1.65 & 327 & 0.368 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 0.39 & 44.5 & \textbf{1.46} & 245 & 0.398 \\
-     & Limber~\cite{limber} (Hyrax) & 0.44 & 205 & 18.2 & \textbf{141} & 0.295 \\
+    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.04} & \textbf{30.9} & 3.31 & \textbf{137} & \textbf{0.085} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & 0.44 & 31.9 & 1.35 & 324 & 0.224 \\
+      & Binius64~\cite{binius64}, rate $1/8$ & 0.44 & 35.0 & \textbf{1.21} & 242 & 0.241 \\
     \addlinespace
-    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.08} & \textbf{39.6} & 4.17 & 205 & \textbf{0.142} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 0.77 & 59.9 & 2.61 & 358 & 0.632 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 0.73 & 66.9 & \textbf{2.38} & 262 & 0.679 \\
-     & Limber~\cite{limber} (Hyrax) & 0.86 & 336 & 29.1 & \textbf{174} & 0.581 \\
+    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.07} & \textbf{46.0} & 3.57 & \textbf{151} & \textbf{0.144} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & 0.89 & 47.6 & 1.56 & 355 & 0.429 \\
+      & Binius64~\cite{binius64}, rate $1/8$ & 0.88 & 53.9 & \textbf{1.39} & 259 & 0.476 \\
     \addlinespace
-    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.14} & \textbf{71.5} & 9.43 & \textbf{227} & \textbf{0.255} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 1.48 & 98.1 & \textbf{4.54} & 403 & 1.22 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 1.42 & 113 & 4.56 & 286 & 1.29 \\
-     & Limber~\cite{limber} (Hyrax) & 1.71 & 595 & 50.0 & 262 & 1.08 \\
+    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.15} & \textbf{81.3} & 9.28 & \textbf{164} & \textbf{0.257} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & 1.80 & 82.2 & 2.06 & 387 & 0.839 \\
+      & Binius64~\cite{binius64}, rate $1/8$ & 1.79 & 95.3 & \textbf{1.90} & 283 & 0.914 \\
     \addlinespace
-    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.31} & \textbf{121} & 9.72 & \textbf{266} & \textbf{0.475} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 2.88 & 170 & \textbf{8.51} & 435 & 2.35 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 2.79 & 199 & 8.58 & 308 & 2.50 \\
-     & Limber~\cite{limber} (Hyrax) & 3.50 & 1098 & 82.7 & 409 & 2.10 \\
+    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.30} & \textbf{138} & 9.05 & \textbf{188} & \textbf{0.479} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & 3.50 & 148 & 2.89 & 431 & 1.65 \\
+      & Binius64~\cite{binius64}, rate $1/8$ & 3.51 & 171 & \textbf{2.79} & 305 & 1.81 \\
     \addlinespace
-    $2^{19}$ & \ftwoz\ (this work) & \textbf{0.63} & \textbf{236} & \textbf{13.6} & \textbf{289} & \textbf{0.904} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 5.79 & 339 & 24.1 & 475 & 4.26 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 5.53 & 388 & 23.9 & 333 & 4.55 \\
-     & Limber~\cite{limber} (Hyrax) & 7.37 & 2417 & 167 & 662 & 4.17 \\
+    $2^{19}$ & \ftwoz\ (this work) & \textbf{0.54} & \textbf{252} & 12.0 & \textbf{202} & \textbf{0.902} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & 7.01 & 281 & 7.89 & 472 & 3.17 \\
+      & Binius64~\cite{binius64}, rate $1/8$ & 7.25 & 328 & 7.73 & 330 & 3.41 \\
     \addlinespace
-    $2^{20}$ & \ftwoz\ (this work) & \textbf{1.09} & \textbf{473} & \textbf{13.7} & \textbf{324} & \textbf{1.72} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 11.0 & 650 & 45.7 & 522 & 8.44 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 11.2 & 746 & 46.8 & 358 & 8.99 \\
-     & Limber~\cite{limber} (Hyrax) & 14.1 & 4802 & 298 & 1203 & 8.28 \\
-    \addlinespace
-    $2^{21}$ & \ftwoz\ (this work) & \textbf{2.29} & \textbf{1080} & \textbf{17.0} & \textbf{362} & \textbf{3.31} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
-     & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
-     & Limber~\cite{limber} (Hyrax) & 40.5 & 12414 & 941 & 2307 & 10.9 \\
+    $2^{20}$ & \ftwoz\ (this work) & \textbf{1.15} & \textbf{481} & 13.4 & \textbf{223} & \textbf{1.75} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & 14.0 & 548 & 13.8 & 518 & 6.34 \\
+      & Binius64~\cite{binius64}, rate $1/8$ & 13.9 & 634 & 13.1 & 355 & 6.82 \\
     \bottomrule
   \end{tabular}
-  \caption{Native end-to-end proofs of $N$ multiplications $x \cdot y = z$ of random $64$-bit integers ($z$ a $128$-bit integer): \ftwoz\ (Spartan over a transcript-sampled prime with the \ftwoz\ opening, $\lambda = 100$), Binius64 (native multiplication, ring switching and BaseFold at rate $1/2$ with $241$ queries and rate $1/8$ with $121$ queries for $100$ bits), and Limber (integer-mod Spartan over a random small prime with the IntEval/Hyrax opening, native Limber parameters; one modular row $x \cdot y \equiv z_{\mathrm{lo}} \bmod 2^{64}$ per multiplication, its quotient the high half, so the IntEval limb bound is the operand range check). \emph{Witgen} is the native witness generation; \emph{prover} is the complete prover call after witness generation, commitment included; \emph{verifier} is the complete verification; \emph{peak mem.} is the high-water resident set of a separate child process proving and verifying once ($1$\,GB $= 2^{30}$ bytes). From $2^{21}$ the Binius64 provers at both rates exceed the machine's memory and page; those rows are omitted. Apple M5, 24\,GB, $8$ threads; medians of 5 runs after one warm-up.}
+  \caption{Native end-to-end proofs of $N$ multiplications $x \cdot y = z$ of random $64$-bit integers ($z$ a $128$-bit integer): \ftwoz\ (Spartan over a transcript-sampled prime with the \ftwoz\ opening, $\lambda = 100$) and Binius64 (native multiplication, ring switching and BaseFold at rate $1/2$ with $241$ queries and rate $1/8$ with $121$ queries for $100$ bits). \emph{Witgen} is the native witness generation; \emph{prover} is the complete prover call after witness generation, commitment included; \emph{verifier} is the complete verification; \emph{peak mem.} is the high-water resident set of a separate child process proving and verifying once ($1$\,GB $= 2^{30}$ bytes). Apple M5, 24\,GB, $8$ threads; medians of 5 runs after one warm-up.}
   \label{tab:native-mul-u64}
 \end{table}
 
@@ -2880,40 +2869,40 @@ We compare the performance of \ftwoz-SNARK with Binius64 \cite{binius64}, Plonky
     \toprule
     $N$ & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
     \midrule
-    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.08} & \textbf{41.3} & \textbf{4.73} & \textbf{202} & \textbf{0.144} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 1.75 & 103 & 5.17 & 403 & 1.42 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 1.60 & 112 & 4.95 & 286 & 1.50 \\
-     & Limber~\cite{limber} (Hyrax) & 0.95 & 381 & 32.1 & 204 & 0.552 \\
+    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.08} & \textbf{50.5} & 3.94 & \textbf{151} & \textbf{0.146} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & 1.70 & 88.1 & 3.71 & 388 & 1.02 \\
+      & Binius64~\cite{binius64}, rate $1/8$ & 1.73 & 99.3 & \textbf{3.56} & 283 & 1.09 \\
+      & Limber~\cite{limber} (Hyrax) & 0.95 & 381 & 32.1 & 204 & 0.552 \\
     \addlinespace
-    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.15} & \textbf{66.4} & \textbf{4.78} & \textbf{228} & \textbf{0.245} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 3.38 & 181 & 9.77 & 435 & 2.72 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 3.16 & 205 & 9.32 & 308 & 2.89 \\
-     & Limber~\cite{limber} (Hyrax) & 2.05 & 709 & 41.4 & 293 & 1.05 \\
+    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.15} & \textbf{75.9} & \textbf{4.48} & \textbf{164} & \textbf{0.247} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & 3.36 & 159 & 5.31 & 432 & 1.94 \\
+      & Binius64~\cite{binius64}, rate $1/8$ & 3.39 & 182 & 5.21 & 306 & 2.09 \\
+      & Limber~\cite{limber} (Hyrax) & 2.05 & 709 & 41.4 & 293 & 1.05 \\
     \addlinespace
-    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.31} & \textbf{129} & \textbf{6.37} & \textbf{261} & \textbf{0.458} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 6.75 & 357 & 26.8 & 475 & 5.12 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 6.24 & 399 & 25.8 & 333 & 5.38 \\
-     & Limber~\cite{limber} (Hyrax) & 3.87 & 1265 & 70.7 & 430 & 2.09 \\
+    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.30} & \textbf{138} & \textbf{5.55} & \textbf{186} & \textbf{0.466} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & 7.03 & 309 & 12.4 & 472 & 3.93 \\
+      & Binius64~\cite{binius64}, rate $1/8$ & 7.13 & 351 & 12.6 & 331 & 4.19 \\
+      & Limber~\cite{limber} (Hyrax) & 3.87 & 1265 & 70.7 & 430 & 2.09 \\
     \addlinespace
-    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.52} & \textbf{234} & \textbf{6.81} & \textbf{289} & \textbf{0.842} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 13.5 & 697 & 52.7 & 522 & 9.11 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 12.9 & 783 & 51.6 & 358 & 10.6 \\
-     & Limber~\cite{limber} (Hyrax) & 7.77 & 2472 & 121 & 738 & 4.14 \\
+    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.59} & \textbf{290} & \textbf{7.49} & \textbf{202} & \textbf{0.850} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & 15.1 & 615 & 22.9 & 519 & 7.91 \\
+      & Binius64~\cite{binius64}, rate $1/8$ & 14.6 & 702 & 22.3 & 356 & 8.40 \\
+      & Limber~\cite{limber} (Hyrax) & 7.77 & 2472 & 121 & 738 & 4.14 \\
     \addlinespace
-    $2^{19}$ & \ftwoz\ (this work) & \textbf{1.07} & \textbf{548} & \textbf{9.96} & \textbf{316} & \textbf{1.58} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
-     & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
-     & Limber~\cite{limber} (Hyrax) & 15.2 & 5428 & 216 & 1289 & 8.21 \\
+    $2^{19}$ & \ftwoz\ (this work) & \textbf{1.08} & \textbf{581} & \textbf{9.46} & \textbf{218} & \textbf{1.61} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
+      & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
+      & Limber~\cite{limber} (Hyrax) & 15.2 & 5428 & 216 & 1289 & 8.21 \\
     \addlinespace
-    $2^{20}$ & \ftwoz\ (this work) & \textbf{2.14} & \textbf{1117} & \textbf{10.1} & \textbf{364} & \textbf{3.08} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
-     & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
-     & Limber~\cite{limber} (Hyrax) & 55.4 & 13062 & 662 & 2385 & 8.60 \\
+    $2^{20}$ & \ftwoz\ (this work) & \textbf{2.33} & \textbf{1220} & \textbf{10.5} & \textbf{248} & \textbf{3.14} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
+      & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
+      & Limber~\cite{limber} (Hyrax) & 55.4 & 13062 & 662 & 2385 & 8.60 \\
     \addlinespace
-    $2^{21}$ & \ftwoz\ (this work) & \textbf{4.14} & \textbf{2478} & \textbf{14.6} & \textbf{391} & \textbf{6.04} \\
-     & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
-     & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
-     & Limber~\cite{limber} (Hyrax) & 100 & 31616 & 2625 & 4640 & 14.4 \\
+    $2^{21}$ & \ftwoz\ (this work) & \textbf{4.65} & \textbf{2768} & \textbf{15.4} & \textbf{263} & \textbf{6.13} \\
+      & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
+      & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
+      & Limber~\cite{limber} (Hyrax) & 100 & 31616 & 2625 & 4640 & 14.4 \\
     \bottomrule
   \end{tabular}
   \caption{Native end-to-end proofs of $N$ multiplications $x \cdot y = z$ of random $128$-bit integers ($z$ a $256$-bit integer): \ftwoz\ (Spartan over a transcript-sampled prime with the \ftwoz\ opening, $\lambda = 100$), Binius64 (native multiplication, ring switching and BaseFold at rate $1/2$ with $241$ queries and rate $1/8$ with $121$ queries for $100$ bits), and Limber (integer-mod Spartan over a random small prime with the IntEval/Hyrax opening, native Limber parameters; one modular row $x \cdot y \equiv z_{\mathrm{lo}} \bmod 2^{128}$ per multiplication, its quotient the high half, so the IntEval limb bound is the operand range check). \emph{Witgen} is the native witness generation; \emph{prover} is the complete prover call after witness generation, commitment included; \emph{verifier} is the complete verification; \emph{peak mem.} is the high-water resident set of a separate child process proving and verifying once ($1$\,GB $= 2^{30}$ bytes). Binius64 at rate $1/2$ was not run at $2^{19}$, $2^{20}$, $2^{21}$. Binius64 at rate $1/8$ was not run at $2^{19}$, $2^{20}$, $2^{21}$. Apple M5, 24\,GB, $8$ threads; medians of 5 runs after one warm-up.}
@@ -3009,23 +2998,23 @@ Our end-to-end \ftwoz-SNARK is built as described in \cref{?}. We compare our re
     \toprule
     $N$ & $M$ & Scheme & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
     \midrule
-    $2^{15}$ & $2^{7}$ & \ftwoz-SNARK & \textbf{50.1} & 3.29 & \textbf{110} & \textbf{0.268} \\
-     & & Binius~\cite{binius64}, rate $1/8$ & 50.5 & \textbf{2.59} & 245 & 0.665 \\
+    $2^{15}$ & $2^{7}$ & \ftwoz-SNARK & 42.9 & 4.18 & \textbf{179} & \textbf{0.151} \\
+      &  & Binius~\cite{binius64}, rate $1/8$ & \textbf{39.1} & \textbf{3.06} & 243 & 0.415 \\
     \addlinespace
-    $2^{17}$ & $2^{9}$ & \ftwoz-SNARK & \textbf{101} & \textbf{4.91} & \textbf{135} & \textbf{0.900} \\
-     & & Binius~\cite{binius64}, rate $1/8$ & 128 & 7.37 & 286 & 2.37 \\
+    $2^{17}$ & $2^{9}$ & \ftwoz-SNARK & \textbf{92.2} & 6.04 & \textbf{219} & \textbf{0.689} \\
+      &  & Binius~\cite{binius64}, rate $1/8$ & 109 & \textbf{5.26} & 284 & 1.62 \\
     \addlinespace
-    $2^{19}$ & $2^{11}$ & \ftwoz-SNARK & \textbf{303} & \textbf{10.8} & \textbf{165} & \textbf{3.01} \\
-     & & Binius~\cite{binius64}, rate $1/8$ & 450 & 34.2 & 333 & 9.36 \\
+    $2^{19}$ & $2^{11}$ & \ftwoz-SNARK & \textbf{312} & \textbf{10.7} & \textbf{272} & \textbf{2.44} \\
+      &  & Binius~\cite{binius64}, rate $1/8$ & 386 & 15.4 & 331 & 5.97 \\
     \addlinespace
-    $2^{20}$ & $2^{12}$ & \ftwoz-SNARK & \textbf{517} & \textbf{17.1} & \textbf{182} & \textbf{5.76} \\
-     & & Binius~\cite{binius64}, rate $1/8$ & 902 & 72.3 & 358 & 16.7 \\
+    $2^{20}$ & $2^{12}$ & \ftwoz-SNARK & \textbf{470} & \textbf{16.3} & \textbf{305} & \textbf{5.45} \\
+      &  & Binius~\cite{binius64}, rate $1/8$ & 768 & 28.3 & 356 & 12.4 \\
     \addlinespace
-    $2^{21}$ & $2^{13}$ & \ftwoz-SNARK & \textbf{1138} & \textbf{32.1} & \textbf{195} & \textbf{11.9} \\
-     & & Binius~\cite{binius64}, rate $1/8$ & 4793$^{\dagger}$ & 918$^{\dagger}$ & 386 & 18.4$^{\dagger}$ \\
+    $2^{21}$ & $2^{13}$ & \ftwoz-SNARK & \textbf{966} & \textbf{27.6} & \textbf{330} & \textbf{10.9} \\
+      &  & Binius~\cite{binius64}, rate $1/8$ & 4262$^{\dagger}$ & 378$^{\dagger}$ & 384 & 13.8$^{\dagger}$ \\
     \bottomrule
   \end{tabular}
-  \caption{\albertimportant{To edit} End-to-end proofs of $N$ multiplications $x \cdot y = z + 2^{32} w$ of $32$-bit integers together with $M = N/256$ chained SHA-256 compressions (equal packed witnesses for the two branches). \ftwoz\ proves the multiplications with Spartan over a transcript-sampled prime and the SHA-256 chain with the Binius64 PIOP, and discharges both through one shared \ftwoz\ opening (Johnson-regime Ligerito at rate $1/8$ with the out-of-domain Round~0); its whole-protocol union bound is gated at $\lambda = 100$ and evaluates to $101.3$--$101.8$ bits at these sizes. Binius64 proves the same SHA-256 chain and a native four-limb multiplication gadget in one proof with ring switching and FRI at rate $1/8$ and a $100$-bit query-phase target ($121$ queries); Binius64 computes no whole-protocol bound. \emph{Prover} includes witness synthesis and the commitments; \emph{verifier} includes decoding; \emph{peak mem.} is the high-water resident set of the proving process ($1$\,GB $= 2^{30}$ bytes). $^{\dagger}$Binius64 paged at $N = 2^{21}$ ($85{,}420$ swap-outs), so that row's timings are inflated; the proof size is unaffected. Apple M5, 24\,GB, $8$ threads; medians of $11$ verified runs.}
+  \caption{\albertimportant{To edit} End-to-end proofs of $N$ multiplications $x \cdot y = z + 2^{32} w$ of $32$-bit integers together with $M = N/256$ chained SHA-256 compressions (equal packed witnesses for the two branches). \ftwoz\ proves the multiplications with Spartan over a transcript-sampled prime and the SHA-256 chain with the Binius64 PIOP, and discharges both through one shared \ftwoz\ opening (Johnson-regime Ligerito at rate $1/2$ with the out-of-domain Round~0); its whole-protocol union bound is gated at $\lambda = 100$ and evaluates to $101.1$--$101.5$ bits at these sizes. Binius64 proves the same SHA-256 chain and a native four-limb multiplication gadget in one proof with ring switching and FRI at rate $1/8$ and a $100$-bit query-phase target ($121$ queries); Binius64 computes no whole-protocol bound. \emph{Prover} includes witness synthesis and the commitments; \emph{verifier} includes decoding; \emph{peak mem.} is the high-water resident set of the proving process ($1$\,GB $= 2^{30}$ bytes). $^{\dagger}$Binius64 paged at $N = 2^{21}$ ($16{,}732$ swap-outs), so that row's timings are inflated; the proof size is unaffected. Apple M5, 24\,GB, $8$ threads; medians of $11$ verified runs.}
   \label{tab:hybrid-sha256-mul}
 \end{table}
 

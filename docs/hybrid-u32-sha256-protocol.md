@@ -85,7 +85,7 @@ RAYON_NUM_THREADS=8 target/release/hybrid-u32-sha256 \
 
 The output files are the proof, `<proof>.statement.bin` (the public statement), and `<proof>.statement.txt` (a readable copy). Verification requires the first two files; it does not use the original operands or message blocks.
 
-The current protocol uses transcript domain `f2z/hybrid-u32-mod32-sha256/non-zk/lanes4-padding/v5` and `BZSH` proof encoding version 5. Older versions are rejected. Version 5 binds the logical/physical source dimensions and mapping version, uses literal `initial_k=4`, and authenticates zero padding in both decoding regimes. It supports Johnson `custom:3:4` by default and matched UDR `udrg:3:4`.
+The current protocol uses transcript domain `f2z/hybrid-u32-mod32-sha256/non-zk/lanes4-padding/v5` and `BZSH` proof encoding version 5. Older versions are rejected. Version 5 binds the logical/physical source dimensions and mapping version, uses literal `initial_k=4`, and authenticates zero padding in both decoding regimes. It supports Johnson `custom:1:4` (rate 1/2) by default and matched UDR `udrg:1:4`.
 
 For logical packed-source logs `l0,l1`, let `L=max(l0,l1)`, `P=L-3`, `p_b=max(l_b,P)`, and `k_b=p_b-P`. Source `b` is padded to `2^p_b` words; physical index `i` maps to `((i >> k_b) << 4) + (b << 3) + (i mod 2^k_b)`. This forms sixteen virtual lanes. After ring-switch messages, a fresh challenge batches a zero-valued claim outside the logical supports into the authenticated opening using three equality bases.
 
@@ -141,7 +141,7 @@ RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
   --sweep --shapes 15:7,16:8 --mode all --iterations 5
 ```
 
-Each `--shapes` pair is `MUL_LOG:SHA_LOG`: `15:7` means 32,768 multiplications and 128 chained compressions. Pairs run in the supplied order; they need not have equal witnesses. For example, `--shapes 20:7,20:8,20:9` holds multiplications at 1,048,576 while increasing compressions. Multiplication logs must be 15–22 and SHA logs 1–16. Duplicate pairs and combinations of `--sweep` with single-run size/proof flags are rejected. The all-Binius mode processes the same operations, but its multiplication witness layout differs from the hybrid branch's layout. All modes keep the security settings described below.
+Each `--shapes` pair is `MUL_LOG:SHA_LOG`: `15:7` means 32,768 multiplications and 128 chained compressions. Pairs run in the supplied order; they need not have equal witnesses. For example, `--shapes 20:7,20:8,20:9` holds multiplications at 1,048,576 while increasing compressions. Multiplication logs must be 9–22 and SHA logs 1–16 (the hybrid prepares only the multiplication prefix — Spartan PIOP and F2Z GKR forest — and discharges its claim through the shared opener, so it is not held to the standalone u32 API's 2^15 floor; `separate` mode still is). Equal operation counts, `--shapes 9:9,10:10,...,14:14`, give SHA-dominated workloads: the packed SHA witness is 256x the multiplication witness, and 2^15 compressions already need about 25 GB. Duplicate pairs and combinations of `--sweep` with single-run size/proof flags are rejected. The all-Binius mode processes the same operations, but its multiplication witness layout differs from the hybrid branch's layout. All modes keep the security settings described below.
 
 The sweep prints readable progress and sample results to stdout. Each sample identifies its backend and multiplication/SHA sizes, labels prover and verifier time, and reports proof size, peak RSS and successful verification. Hybrid samples also show witness/commitment time, PIOP time broken down by multiplication/Spartan and SHA, and IOP time broken down by multiplication F2Z/GKR, joint sumcheck and the shared opening. Setup is reported once per workload and excluded from prover time; peak RSS includes setup and is cumulative within that workload's process. The sweep creates a fresh `sweep-<timestamp>-<pid>/` under `benches/results/hybrid-u32-sha256/` containing:
 
@@ -229,15 +229,51 @@ repository's transcript pins are the guards):
 Not touched: the multiplication branch's GKR forest (the largest phase,
 extensively optimized in the standalone program) and the Binius SHA PIOP.
 
+## Prover-side optimizations (2026-09-11, equal operation counts)
+
+Measured with `examples/hybrid_probe.rs` against the new
+`examples/binius_probe.rs` (the all-Binius circuit under Binius64's own
+prover, its `[phase]` tracing spans printed on close) at N = M = 2^14, where
+the SHA branch is 256x the multiplication branch. Byte-identical proofs
+(12:12 and 15:7 checked against the previous binary's).
+
+5. **Binius buffer pool for the SHA reductions.** `ShaRelation` ran
+   `prove_to_evaluation` with `binius_compute::GlobalAllocator`; Binius64's
+   own `Prover` passes a `BufferPool` that recycles the reductions' large,
+   short-lived buffers within and across proofs. The same reductions took
+   264 ms in the hybrid and 232 ms in all-Binius; with a pool held by the
+   relation they take 231 ms. Peak resident memory of the process grows by
+   a few hundred MB (the pool keeps its blocks).
+6. **Joint-sumcheck scratch.** The dense rounds' two virtual-witness tables
+   and the pair they fold into (four 100 MB-class buffers at 2^14) are
+   kept by `PreparedHybrid` (`sumcheck::Scratch`) and recycled, so only the
+   first proof page-faults them. Without this the joint sumcheck drifted
+   from 28 to 34–40 ms once the pool held Binius's buffers; with it, 28 ms.
+7. **Basis written in flock's element type.** `ring_switch_prove_with`
+   takes a conversion closure, so the hybrid gets the 2^m-element basis as
+   `F128` directly instead of a second 128 MB `collect` pass.
+8. **Zero blocks skipped in the ring-switch fold.** `sv_fold_mfr` skips an
+   8-word block whose words are all zero before building its subset-sum
+   tables; at N = M the virtual witness is half zero lanes (ring switch
+   34 → 28 ms).
+
+Tried and dropped: overlapping the two commitments with `rayon::join`
+(59.6 vs 61.3 ms), jemalloc as the global allocator (every streaming pass
+slower on this machine: 14:14 560 vs 512 ms), and a wider proof-of-work
+kernel (the two-group NEON kernel already occupies the register file).
+Not touched: the proof-of-work volume (a security parameter: 106-bit
+opener component in the Johnson regime at rate 1/2) and the virtual lane
+layout (7 of 16 lanes are zero at unbalanced shapes).
+
 ## Implementation boundaries
 
 - `src/hybrid/mod.rs`: prepared relation, committed witness, prover and verifier APIs.
 - `src/piop/spartan/u32_mul.rs`: explicit four-limb modular rows and their fixed reconstruction into the existing exact-product PIOP assignment.
 - `src/hybrid/mod32_binius.rs`: four range-checked Binius limbs and the exact multiplication/reconstruction constraint used by the all-Binius comparison.
 - `src/piop/spartan/f2z/hybrid.rs`: Spartan and the exponent GKR, stopped at a binary inner product; bounded integer read-off is checked by the verifier.
-- `src/hybrid/sha.rs`: constrained sequential two-compression gadget, fixed IV and public final state.
+- `src/hybrid/sha.rs`: constrained sequential two-compression gadget, fixed IV and public final state; the Binius IOP prover runs on a `BufferPool` owned by the relation.
 - `src/hybrid/channel.rs`: Binius messages and challenges on the same BLAKE3 transcript as the integer branch.
-- `src/hybrid/sumcheck.rs`: shared degree-two sumcheck. The first seven rounds bind the bit index inside a packed word; their messages are linear functionals of per-block **bit marginals** `S[block][bit] = Σ_i high[i]·bit(word_{i,block})`, accumulated once per source with the method-of-four-Russians fold (no field element per original bit, no per-round scan of the packed words). Subsequent rounds allocate tables over the virtual packed domain; each fold pass also emits the next round's message.
+- `src/hybrid/sumcheck.rs`: shared degree-two sumcheck. The first seven rounds bind the bit index inside a packed word; their messages are linear functionals of per-block **bit marginals** `S[block][bit] = Σ_i high[i]·bit(word_{i,block})`, accumulated once per source with the method-of-four-Russians fold (no field element per original bit, no per-round scan of the packed words). Subsequent rounds fold tables over the virtual packed domain, recycled from the prepared circuit's scratch across proofs; each fold pass also emits the next round's message.
 - `src/hybrid/opening.rs`: Round 0 (the out-of-domain sample, on the audited primitives of `src/ligerito_flock.rs`), ring switching, virtual lane layout, and one Ligerito continuation. Every original row slice and every zero-padding lane is checked. The opener's proof-of-work grinds (fold-challenge, query and Round-0 nonces) scan nonces with the four-lane NEON BLAKE3 kernel of `src/utils/blake3x4.rs` under a dynamic smallest-nonce search, which returns the serial scan's nonce.
 - `src/hybrid/codec.rs`: versioned proof encoding with canonical integer residues, bounded counts and no trailing bytes.
 - `src/hybrid/security.rs`: composition error budget and explicit parameter rejection below the target.

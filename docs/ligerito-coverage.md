@@ -1,8 +1,8 @@
 # Ligerito policy and benchmark coverage
 
 The default for the Ligerito component of production 100-bit F2Z proofs is
-`custom:3:4`: Johnson, RS rate 1/8, initial folding exponent 4, with early
-Round-0 OOD. Select `udrg:3:4` for the matched-geometry unique-decoding-radius
+`custom:1:4`: Johnson, RS rate 1/2, initial folding exponent 4, with early
+Round-0 OOD. Select `udrg:1:4` for the matched-geometry unique-decoding-radius
 (UDR) configuration, with native fold grinding derived by Ligerito.
 
 This selector configures **only Ligerito**. Binius64 BaseFold/FRI,
@@ -43,7 +43,7 @@ capacity guarantee. Comparison backends and runners may impose tighter limits.
 | `lambda_sweep` | Lambda100 arm defaults Johnson; higher-target arms preserve their UDR defaults | SHA profile preflights and higher-security roundtrips |
 | Raw PCS; `pcs`, `f2z` / `f2z --sweep` | Resolver and early OOD before prime/point sampling; extension wrapper also binds OOD before projection | m=20..35 resolver tests; mod-q, extension, virtual proof/codec tests |
 | SHA+ECDSA; `sha256_ecdsa`, `sha256_ecdsa_compare` F2Z arms | Prepared composed opener shared by execution/security derivation; split and all-rows outer modes | K=3..16 target preflights; both outer modes and both regimes, plus 128-bit roundtrip |
-| Hybrid; `hybrid_u32_sha256`, `hybrid-u32-sha256` | Shared opener target 106; literal rate 1/8, 16 virtual lanes; both regimes enforce padding | Mul L=15..22, SHA K=1..16 geometry preflight; balanced `15:7` roundtrips, proof/codec tampering, and recommitted nonzero-padding rejection |
+| Hybrid; `hybrid_u32_sha256`, `hybrid-u32-sha256` | Shared opener target 106; literal rate 1/2, 16 virtual lanes; both regimes enforce padding | Mul L=9..22 (prefix-only multiplication relation; the standalone 2^15 floor applies to `separate` mode), SHA K=1..16 geometry preflight; balanced `15:7` and equal-count `9:9` roundtrips, proof/codec tampering, and recommitted nonzero-padding rejection |
 | Separate F2Z+Binius mode | F2Z component target 112, default Johnson; Binius configuration unchanged | Same u32 preparation and native Binius setup; selector isolation checks |
 | All-Binius mode | No Ligerito resolver | Ligerito selector does not configure the Binius backend |
 | `ligerito_bounds` | Dedicated Johnson/UDR comparison within F2Z | Compiled only in this pass; paired timing and RSS measurements are deferred |
