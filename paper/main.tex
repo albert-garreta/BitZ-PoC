@@ -161,33 +161,27 @@ Note that multiplication modulo $2^n$, say $x \cdot y = z \mod 2^n$, can be arit
          \toprule
          Computation & Scheme & \makecell{Prover\\(ms)} & \makecell{Verifier\\(ms)} & \makecell{Proof\\(KB)} & \makecell{Peak mem.\\(GB)} \\
          \midrule
-         $2^{17}$ mult.\ 64 bit & \ftwoz-SNARK & -- & -- & -- & -- \\
-          & Binius64~\cite{binius64} & -- & -- & -- & -- \\
-          & Limber~\cite{limber} & -- & -- & -- & -- \\
-          & Plonky3~\cite{plonky} & -- & -- & -- & -- \\
-         \addlinespace
-         $2^{17}$ mult.\ 128 bit & \ftwoz-SNARK & -- & -- & -- & -- \\
-          & Binius64~\cite{binius64} & -- & -- & -- & -- \\
-          & Limber~\cite{limber} & -- & -- & -- & -- \\
-          & Plonky3~\cite{plonky} & -- & -- & -- & -- \\
-         \addlinespace
-         $2^{21}$ mult.\ 64 bit & \ftwoz-SNARK & -- & -- & -- & -- \\
-          & Binius64~\cite{binius64} & -- & -- & -- & -- \\
-          & Limber~\cite{limber} & -- & -- & -- & -- \\
-          & Plonky3~\cite{plonky} & -- & -- & -- & -- \\
-         \addlinespace
          \makecell[tl]{MultiSwap \cite{limber}} & \ftwoz-SNARK & -- & -- & -- & -- \\
           & Limber~\cite{limber} & -- & -- & -- & -- \\
          \addlinespace
-         $4$KB SHA hash + ECDSA & \ftwoz-SNARK & -- & -- & -- & -- \\
+         $4$KB SHA + ECDSA & \ftwoz-SNARK & -- & -- & -- & -- \\
           & Binius64~\cite{binius64} & -- & -- & -- & -- \\
           & Plonky3~\cite{plonky} & -- & -- & -- & -- \\
          \addlinespace
-         \makecell[tl]{$500$KB SHA hash\\ $+\ 2^{**}$ mult.\ mod $2^{32}$} & \ftwoz-SNARK & -- & -- & -- & -- \\
+         \makecell[tl]{$500$KB SHA\\ $+\ 2^{**}$ mult.\ mod $2^{32}$} & \ftwoz-SNARK & -- & -- & -- & -- \\
           & Binius64~\cite{binius64} & -- & -- & -- & -- \\
+          \addlinespace Int mult.\ 32 bit & \ftwoz-SNARK & -- & -- & -- & -- \\
+          & Binius64~\cite{binius64} & -- & -- & -- & -- \\
+          & Limber~\cite{limber} & -- & -- & -- & -- \\
+          & Plonky3~\cite{plonky} & -- & -- & -- & -- \\
+         \addlinespace
+         Int mult.\ 64 bit & \ftwoz-SNARK & -- & -- & -- & -- \\
+          & Binius64~\cite{binius64} & -- & -- & -- & -- \\
+          & Limber~\cite{limber} & -- & -- & -- & -- \\
+          & Plonky3~\cite{plonky} & -- & -- & -- & -- \\
        \bottomrule
        \end{tabular}
-     \caption{  Performance of \ftwoz \ on  different  computations that are costly to arithmetize and prove with standard proof systems. 
+     \caption{ \albertimportant{Todo} Performance of \ftwoz \ on  different  computations that are costly to arithmetize and prove with standard proof systems. 
      For each such computation, we also benchmark the performance of prior state of the art protocols. 
      All experiments were run on a MacBook Air M5 24\,GB, multi-threaded, targeting $100$ bits of security (Binius64 is at 96 bits). See \cref{s:experiments} for details on these and more experiments.\\
      We mostly display $2^{17}$ multiplications because this is roughly the amount where Binius64 achieves its highest throughput. For different amounts, \ftwoz\ outperforms by a wider margin. For larger sizes Binius64 runs out of memory, as showcased in the $2^{21}$ multiplications row.
@@ -202,7 +196,7 @@ Note that multiplication modulo $2^n$, say $x \cdot y = z \mod 2^n$, can be arit
      \item  \textbf{Pay-per-bit and algebraic independence.} Its performance  depends essentially exclusively on the bit-size of the witness $\bff$. In particular, the choice of ring $S$ (and $R$ and $\psi$ if it applies) has a tiny impact on its performance. 
      \item \textbf{Composability and universality.} Because of its flexibility in its choice of rings, and because of the point above, \ftwoz\  can be used as a PCS in essentially any proof system. This includes standard proof systems based on finite fields, or more exotic ones working over different rings, e.g.\ the integers \cite{zaratan,limber,zinc,zincplus,qaren}, polynomial rings \cite{zincplus}, lattices \cite{?}, etc.
      
-     For example, a proof system using a PCS that is not plausibly post-quantum secure, could replace its PCS with \ftwoz \ (which is plausibly post-quantum secure), regardless of the proof system's underlying field. As mentioned above, the underlying rings barely affect \ftwoz's performance. \albertimportant{Remove?} Further, a proof system over a large prime field or over an extension field can lift its constraints to $\ZZ$ (or to $\ZZ[X]$) and project them onto a random prime field of $\approx\lambda$ bits before running its PIOP, so that the PIOP runs over a small field and the \ftwoz\ opening pays only for the bit-size of the lifted witness entries, which can be much smaller than $\log|R|$ (\cref{r:to_reducing_ring}). % [AI-drafted sentence (Claude Opus 5), 2026-09-11] \albertimportant{would be nice to give example numbers of doing this}
+     For example, a proof system using a PCS that is not plausibly post-quantum secure, could replace its PCS with \ftwoz \ (which is plausibly post-quantum secure), regardless of the proof system's underlying field. As mentioned above, the underlying rings barely affect \ftwoz's performance. %\albertimportant{Remove?} %Further, a proof system over a large  field  can lift its constraints to $\ZZ$ (or to $\ZZ[X]$) and project them onto a random prime field of $\approx\lambda$ bits before running its PIOP, so that the PIOP runs over a small field and the \ftwoz\ opening pays only for the bit-size of the lifted witness entries, which can be much smaller than $\log|R|$ (\cref{r:to_reducing_ring}). % [AI-drafted sentence (Claude Opus 5), 2026-09-11] \albertimportant{would be nice to give example numbers of doing this}
      \item \textbf{``Free'' range checks.} \ftwoz\ provides range checks ``for free''. For example, when  committing  to integer witnesses, \ftwoz\ exposes a bit-size parameter $B$. Then, \ftwoz\ can be used to commit to integers of that bit-size, and it automatically guarantees that a malicious prover cannot commit to larger integers. This allows to omit many range checks that a standard proof system would need to enforce.
 \end{enumerate}
 
@@ -253,6 +247,8 @@ Note that multiplication modulo $2^n$, say $x \cdot y = z \mod 2^n$, can be arit
 \bigskip 
 \end{comment}
 
+\bigskip
+ 
 \noindent \emph{\underline{128 bits of security using $\FF_{2^{128}}$, arbitrary rings $R$, and arbitrary sizes of the entries of $\vv$.}} We manage to instantiate \ftwoz\ with 128 bits of security, using $\comfield=\FF_{2^{128}}$, while having essentially no limitation on the size of the ring $R$ we start with.
 
 
@@ -268,7 +264,12 @@ We say \eqref{e:intro_2} is a \emph{low entropy batched grand product}. To prove
 
 \noindent \emph{\underline{The key point}:} The key is that these square-root sized tables can be used in each of the grand products from \eqref{e:intro_2}, producing a large amortization, and allowing us to build several tables for different sumcheck rounds, while keeping them in cache, where table reads are cheaper than field multiplications. 
 
-This is enabled by the  decomposition of the initial claim into the subclaims $\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle = \mu_j'$. This decomposition is possible because we only seek to prove witness MLE evaluations (or inner products) in the exponent. Other proof systems using the proof in the exponent technique, e.g.\ \cite{binius64}, aim to prove entire constraints in the exponent. Ultimately, this means one has to prove products of the form $y\cdot x$ in the exponent, for $x,y$ two witness elements, while we only prove products $a\cdot x$, for $a$ a  value coming from a public vector admitting a square-root sized tensor decomposition. See \cref{r:comparison_grand_product_binius_lev} for more details. \albertimportant{Discuss Binius approach and the frobenius trick? And their limited usage of lookup tables?}
+This is enabled by the  decomposition of the initial claim into the subclaims $\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle = \mu_j'$. This decomposition is possible because we only seek to prove witness MLE evaluations (or inner products) in the exponent. The reason we only need this this is that we arithmetize over a variety of rings and run a PIOP over those rings, which reduced the intiial constraints to a \emph{linear} claim on the witness, which we then prove ``in the exponent''. 
+
+Other proof systems using the ``proof in the exponent'' technique, e.g.\ \cite{binius64}, aim to prove entire constraints in the exponent. Ultimately, this means one has to prove products of the form $y\cdot x$ in the exponent, for $x,y$ two witness elements, while we only prove products $a\cdot x$, for $a$ a  value coming from a public vector admitting a square-root sized tensor decomposition. See \cref{r:comparison_grand_product_binius_lev} for more details. 
+
+
+
 
 \bigskip
 
@@ -280,7 +281,7 @@ This is enabled by the  decomposition of the initial claim into the subclaims $\
 
 In our implementation, we use \ftwoz\ as a PCS that can simultaneously prove R1CS constraints over integers and binary fields. We explain how next. We stress again that one can use \ftwoz\ to build all sorts of proof systems for all sorts of constraints. Nothing forces one to use R1CS-like constraints and integers and binary fields. 
 
- \paragraph{Virtual $\FF_2$-linear transforms, NP-complete dually linear relations, and one arithmetization of SHA-256} At the end of the steps of \cref{s:to_simple_bitz}, we have a standard linear claim on $\bitstext(\bff)$ in $\comfield$, say \begin{equation}\label{e:intro_comfield_linear}\langle \bitstext(\bff), \uu'\rangle = \eta \quad \text{ in } \comfield.\end{equation} Say we would like to add an extra constraint, over $\comfield$, on $\bitstext(\bff)$ of the form $\bitstext(\bff) = M \cdot \bfg$ for some matrix $M$ with entries in $\comfield$ and vector $\bfg$ with entries in $\FF_2$. Then, we could instead of committing to $\bitstext(\bff)$ in Step 1 of \cref{s:to_simple_bitz}, commit to $\bfg$. The claim  \eqref{e:intro_comfield_linear} becomes
+ \paragraph{Virtual $\FF_2$-linear transforms, NP-complete dually linear relations, and one arithmetization of SHA-256} At the end of the steps of \cref{s:to_simple_bitz}, we have a standard linear claim on $\bitstext(\bff)$ in $\comfield$, say \begin{equation}\label{e:intro_comfield_linear}\langle \bitstext(\bff), \uu'\rangle = \eta \quad \text{ in } \comfield.\end{equation} Say we would like to add an extra constraint, over $\comfield$, on $\bitstext(\bff)$ of the form $\bitstext(\bff) = M \cdot \bfg$ for some matrix $M$ and vector $\bfg$ with entries in $\FF_2$. Then, we could instead of committing to $\bitstext(\bff)$ in Step 1 of \cref{s:to_simple_bitz}, commit to $\bfg$. The claim  \eqref{e:intro_comfield_linear} becomes
  %
  $$
 \langle \bfg, M^{\mathsf{T}}\uu'\rangle = \eta \quad \text{ in } \comfield,
@@ -292,7 +293,7 @@ In our implementation, we use \ftwoz\ as a PCS that can simultaneously prove R1C
 %
 \begin{align*}
 &\Relation_{\mathsf{R1CS-bits-virtual}}(\ZZ)\\ & \qquad\qquad \defeq \left\{ \begin{aligned}
-    &\inp= (\xx, A,B,C, M)\in \FF_2^{\inplen} \times (\ZZ^{m\times \codedim})^3 \times \comfield^{\codedim \times (\inplen+\codedim')}\\
+    &\inp= (\xx, A,B,C, M)\in \FF_2^{\inplen} \times (\ZZ^{m\times \codedim})^3 \times \FF_2^{\codedim \times (\inplen+\codedim')}\\
     & \wit = \bfg \in \bits^{\codedim'} \subseteq \FF_2^{\codedim'}
 \end{aligned}\  \left| \  \begin{aligned} %&f=\Enc_\cC \circ \pack \circ \pi_2(\bff)\\ 
 &(A\cdot \bff) \circ (B\cdot \bff) = C \cdot \bff\ \text{in } \ZZ \\
@@ -324,7 +325,7 @@ In \cref{r:CM_is_NP_complete} we show that the CM relation is NP-complete \alber
 
 \albertimportant{Discuss costs. Say proving SHA this way does not scale. Transition to next paragraph}
 
-\paragraph{\ftwoz \ for fully hybrid constraints over $\ZZ$ and $\comfield$.} Ultimately, when seeking to prove a computation that  involves a very large number of operations in $\FF_2$, we believe it is preferable to arithmetize such computation over $\FF_2$, instead of over $\ZZ$ as discussed above for SHA-256.
+\paragraph{\ftwoz \ for fully hybrid constraints over $\ZZ$ and $\comfield$.} \albertimportant{Comment about shared witnesses? Remove? (Too long for intro?} Ultimately, when seeking to prove a computation that  involves a very large number of operations in $\FF_2$, we believe it is preferable to arithmetize such computation over $\FF_2$, instead of over $\ZZ$ as discussed above for SHA-256.
 
 Now say the computation involves both  $\FF_2$ operations and other more integer-like operations, like integer multiplication or multiplication mod $2^{32}$. This is the case, for example, with Virtual Machines running RISC-V instructions. To prove these computations we use an arithmetization with constraints both in $\ZZ$ and in $\FF_2$. We build a SNARK for such constraints as follows. Consider a witness $(\bff_\ZZ, \bff_{\FF_2})$ split into an integer vector $\bff_\ZZ\in \ZZ^{\codedim_\ZZ}$ used in the integer constraints, and an $\FF_2$ vector $\bff_{\FF_2}\in \FF_2^{\codedim_{\FF_2}}$ used in the $\FF_2$ constraints. Then we want to prove that $(\inp_\ZZ, \bff_\ZZ)\in \Relation_\ZZ$ and $(\inp_{\FF_2}, \bff_{\FF_2})\in \Relation_{\FF_2}$, where $\Relation_\ZZ$ and $\Relation_{\FF_2}$ are relations over $\ZZ$ and $\FF_2$, respectively.  The overall proof system proceeds as follows:  
 \begin{enumerate}[leftmargin=*,nosep]
@@ -382,7 +383,7 @@ At the time of writing, two further works push the performance envelope of binar
 
 \subsection{Acknowledgements}
 
-\albertimportant{Future work: add zk}
+
 
 This work was supported by the World Foundation. 
 
@@ -407,7 +408,7 @@ We crucially used AI in our implementation and experiments, as explained in \cre
 
 
 
-\albertimportant{This is an important point. It should be highlighted more (this is a quote from the GKR section).   ''Crucially, we note that our sumcheck features summands of full field bit size $\log|\KK|$, which voids some known powerful optimizations when the summands are small, e.g.\ the univariate skip \cite{gruen} and some optimizations from \cite{sumcheck_opt_1,sumcheck_opt_2}.''}
+
 
 
 In this section we describe the \ftwoz \ PCS, step by step (\cref{s:to_simple_bitz,s:to_general_rings}), and argue its efficiency (\cref{s:to_low_entropy_gkr}) and soundness (\cref{s:to_soundness_prime,s:to_soundness_rings}) at an intuitive level. \Cref{s:to_f2_virtual} describes how to prove claims on virtual $\FF_2$-linear transforms of the committed vector. In \cref{s:to_snark} we explain how to build a full SNARK for constraints over (multiple) rings using \ftwoz\ as a PCS.
@@ -433,7 +434,7 @@ We next present a protocol (a simple instantiation of \ftwoz) for proving \eqref
 $$
 \vv= \vv^{(1)} \otimes \vv^{(2)},
 $$
-where we assume there is freedom to choose the lengths of $\vv^{(1)},\vv^{(2)}$ (whose product is $\codedim_0$).  This is typically the case since $\vv$ is usually an ``eq'' vector, i.e.\ $\vv=(\eq(\bb,\rr))_{\bb\in \bits^{\log \codedim_0}}$ for some $\rr\in \FF_q^{\log\codedim_0}$. Tensor decompositions play a crucial role in the efficiency of \ftwoz, as we discuss below \albertimportant{where?}.
+where we assume there is freedom to choose the lengths of $\vv^{(1)},\vv^{(2)}$ (whose product is $\codedim_0$).  This is typically the case since $\vv$ is usually an ``eq'' vector, i.e.\ $\vv=(\eq(\bb,\rr))_{\bb\in \bits^{\log \codedim_0}}$ for some $\rr\in \FF_q^{\log\codedim_0}$. Tensor decompositions play a crucial role in the efficiency of \ftwoz, as we discuss in \cref{s:why_the_tensor_split}.
 
  \paragraph{Step 1: Commitment in $\comfield$.} Let $B\defeq \lceil \log q\rceil$ and let $\codedim\defeq B\cdot \codedim_0$. The prover creates a vector $\bitstext(\bff) \in \bits^{\codedim} \subseteq \ZZ^{\codedim}$ of integer bits, obtained by bit-decomposing each entry of $\bff$ (a field element) into a vector of $B$ bits, and concatenating all such $B$-length vectors. 
 
@@ -464,7 +465,7 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
 
 
 
- \paragraph{Step 3 (Optional):  Resampling of $\FF_q$.} \albertimportant{Round numbering has changed.} For soundness, we need that $|\FF_q|< \fieldboundsizeexponent$ (because we will prove a collection of integer linear claims ``in the exponent'' of a generator of $\comfield^*$). If this condition is not met, we replace $\FF_q$ by a smaller prime field via a randomized procedure. For now, we assume the condition holds, and we explain this field resampling step below in \cref{r:large_prime_field_in_BitZ_PCS}. 
+ \paragraph{Step 3 (Optional):  Resampling of $\FF_q$.}  For soundness, we need that $|\FF_q|< \fieldboundsizeexponent$ (because we will prove a collection of integer linear claims ``in the exponent'' of a generator of $\comfield^*$). If this condition is not met, we replace $\FF_q$ by a smaller prime field via a randomized procedure. For now, we assume the condition holds, and we explain this field resampling step below in \cref{r:large_prime_field_in_BitZ_PCS}. 
 
 
  \paragraph{Step 4: Transformation of \eqref{e:intro_eq_2} into a batch of low-magnitude integer claims.} The prover organizes $\bitstext(\bff)$ into a $\codedim_1\times \codedim_2$ matrix with columns $\bitstext(\bff)_{*j}\in \bits^{\codedim_1}$ ($j\in [\codedim_2]$). Then it publishes   $\mu_1,\ldots, \mu_{\codedim_2}\in  \ZZ$ defined as 
@@ -495,16 +496,15 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
         for some $\zz\in \comfield^{\codedim_1}$ and $c_j\in \comfield$. In general, these claims can be batched to \begin{equation} \label{e:intro_eq_5_batched}\langle \zz', \bitstext(\bff) \rangle = c \qquad \text{in  } \comfield\end{equation} for  $\zz'\in \comfield^{\codedim}, c\in \comfield$ with, for example, $\zz'=(\alpha_1,\ldots, \alpha_{\codedim_2}) \otimes \zz$ for $\alpha_1, \ldots, \alpha_{\codedim_2}$ verifier's randomness, and $c=\sum_{j\in [\codedim_2]} \alpha_j\cdot c_j$. 
         However, in most instantiations this step may not be necessary, especially if using an interleaved code to commit to $\bitstext(\bff)$ \albert{In the GKR grand product section of the main body I may need to mention batching?}. 
 
-        \albertimportant{Delete due to the remark below. Or delete remark} This exponentiation trick is inspired by  \cite{binius64,lev}, where the same idea is used in  different contexts, see \cref{r:comparison_grand_product_binius_lev}. 
-
+        
 
 
         This is by far the most expensive step of \ftwoz. Our grand product PIOP is a simple GKR protocol for grand products, for which we design novel \albert{to our knowledge} prover optimizations, see \cref{s:to_low_entropy_gkr} below and \cref{s:gkr_low_entropy}. These optimizations exploit the ``low entropy'' of the factors $(g^{\pi^{-1}(\uu^{(1)}_i)}-1)\cdot \bitstext(\bff)_{ij} +1$ across $(i,j)\in [\codedim_1]\times [\codedim_2]$, in the sense that across $\codedim=\codedim_1\cdot \codedim_2$ factors, there are only $\codedim_1+1=O(\sqrt{\codedim})$ possible values taken by these factors.  This, among others, is why it is important to have the vector $\uu$ admit a tensor split into $\approx$square-root sized factors. % See \cref{?,s:gkr_low_entropy} for more details.
-
+\begin{comment}
 \begin{remark}[Other usages of the ``prove-in-the-exponent'' approach]
        There are other projects (e.g.\ Binius64 \cite{binius64} and Soukhanov's note \cite{lev}) that use exponentiation to prove integer (or mod $|\comfield|-1$) claims in binary fields, none of these (to our knowledge) is used or is usable in a context that results in the low entropy grand products of ours, where our optimizations apply.  We discuss this further in \cref{r:comparison_grand_product_binius_lev}.
       \end{remark}  
-      
+      \end{comment}
  \paragraph{Step 6: Proving linear claims over $\comfield$.} At this point, since $\bitstext(\bff)$ was committed over $\comfield$ (in packed form), one can prove \eqref{e:intro_eq_5} (or the batched version of it) via standard methods such as in \cite{binius,binius2,flock}. Concretely, we use the so-called ring switch from \cite{binius,binius2} to turn \eqref{e:intro_eq_5} into linear claims about the packed binary field elements we encoded, and then use WHIR/Ligerito \cite{whir,ligerito} over $\comfield$ to prove these claims. 
 
 
@@ -533,7 +533,7 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
 
 
 \subsubsection{Soundness}\label{s:to_soundness_prime}
-Soundness rests on two facts. First, bits are bits: the committed vector lives in $\FF_2^{\codedim}$, so the witness that an extractor decodes from $f$ (for $\delta$ within the unique decoding radius of $\cC$) is a genuine bit vector, and no range check is needed for it. Second, the exponent cannot overflow: for each $j$, both $\langle \pi^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle$ and $\mu_j$ lie in $\range{0}{(q-1)\cdot \codedim_1}$ (the latter by the verifier's range check), and $\mathsf{ord}(g)=|\comfield|-1> \codedim_1\cdot q$. Hence the $j$-th grand product claim in \eqref{e:intro_eq_4} forces \eqref{e:intro_eq_3} over $\ZZ$, and the verifier's recombination check in Step 4 then forces \eqref{e:intro_eq_2}, i.e.\ \eqref{e:new_to_0}. Thus, if \eqref{e:new_to_0} is false, then for any $\mu_1,\ldots,\mu_{\codedim_2}$ the verifier either rejects in Step 4 or is left with a false grand product claim: Steps 2 to 4 introduce no soundness error. Both conditions are needed: without the range check, the prover could replace $\mu_j$ by $\mu_j+|\comfield|-1$, which leaves $g^{\mu_j}$ unchanged but, in general, changes $\pi(\mu_j)$.
+\albert{review} Soundness rests on two facts. First, bits are bits: the committed vector lives in $\FF_2^{\codedim}$, so the witness that an extractor decodes from $f$ (for $\delta$ within the unique decoding radius of $\cC$) is a genuine bit vector, and no range check is needed for it. Second, the exponent cannot overflow: for each $j$, both $\langle \pi^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle$ and $\mu_j$ lie in $\range{0}{(q-1)\cdot \codedim_1}$ (the latter by the verifier's range check), and $\mathsf{ord}(g)=|\comfield|-1> \codedim_1\cdot q$. Hence the $j$-th grand product claim in \eqref{e:intro_eq_4} forces \eqref{e:intro_eq_3} over $\ZZ$, and the verifier's recombination check in Step 4 then forces \eqref{e:intro_eq_2}, i.e.\ \eqref{e:new_to_0}. Thus, if \eqref{e:new_to_0} is false, then for any $\mu_1,\ldots,\mu_{\codedim_2}$ the verifier either rejects in Step 4 or is left with a false grand product claim: Steps 2 to 4 introduce no soundness error. Both conditions are needed: without the range check, the prover could replace $\mu_j$ by $\mu_j+|\comfield|-1$, which leaves $g^{\mu_j}$ unchanged but, in general, changes $\pi(\mu_j)$.
 
 The remaining soundness errors are those of the GKR protocol for the grand products (a small multiple of $1/|\comfield|$ per round, cf.\ \cref{l:gkr_grand_product}) and of the IOP for the final linear claims over $\comfield$. Beyond the unique decoding radius, several bit vectors may be close to $f$, and the out of domain sample of Step 1 binds the prover to one of them, except with a small probability $\kappa_{\mathsf{OOD}}$ (\cref{a:OOD}). All steps are round-by-round knowledge sound, as needed for the Fiat--Shamir transformation; see \cref{t:thm_core_IOPP} for the precise statement.
 
@@ -608,7 +608,7 @@ which admits flexible tensor decompositions if $\vv$ does.
 %
 
 
- \paragraph{Step 3 (Optional):  Replacing $R$ by a random ``small'' field $\FF_q$.} \albertimportant{Round numbering has changed.}  Our next goal is to lift the claim \eqref{e:intro_eq_2_rings}, i.e.\ $\langle \uu, \psi(\bitstext(\bff))\rangle =\mu$ over $R$, to a claim ``in the exponent'' of a generator $g$ of $\comfield^*$. This time, however, there is a priori no natural lifting procedure, since, in intuitive terms, the exponent of $g$ can only accommodate integers or integers modulo $|\comfield|-1$ (the order of $g$), while $\langle \uu, \psi(\bitstext(\bff))\rangle$ is a sum of elements from an arbitrary ring $R$.
+ \paragraph{Step 3 (Optional):  Replacing $R$ by a random ``small'' field $\FF_q$.}  Our next goal is to lift the claim \eqref{e:intro_eq_2_rings}, i.e.\ $\langle \uu, \psi(\bitstext(\bff))\rangle =\mu$ over $R$, to a claim ``in the exponent'' of a generator $g$ of $\comfield^*$. This time, however, there is a priori no natural lifting procedure, since, in intuitive terms, the exponent of $g$ can only accommodate integers or integers modulo $|\comfield|-1$ (the order of $g$), while $\langle \uu, \psi(\bitstext(\bff))\rangle$ is a sum of elements from an arbitrary ring $R$.
 
  Because of this, the prover and verifier undergo a randomization step where the ring $R$ is replaced by a random ``small'' prime field $\FF_q$. This step can be skipped if:
  \begin{itemize}[leftmargin=*]
@@ -759,15 +759,18 @@ The only new source of soundness error is Step 3, whose analysis follows the fin
 
         We  emphasize again that \ftwoz \ supports proving operations of all kinds of ring elements (small and large integers, field elements, lattice ring elements, extension field elements), as opposed to \cite{binius64} where multiplication is limited to 64-bit integers.
 
-        In \cref{s:experiments} we compare the performance of \ftwoz \ and Binius64 when multiplying integers. \ftwoz \ outperforms Binius64 by \albert{fill in}. 
+        In \cref{s:experiments} we compare the performance of \ftwoz \ and Binius64 when multiplying integers.  
+
+
+
+
 
 
         \paragraph{The note \cite{lev}.} In the note \cite{lev}, Soukhanov proposes a scheme for committing to a vector of bits $\ww$ over the binary field $\FF_{2^{127}}$, and proving MLE evaluation claims over the prime field  $\FF_{2^{127}-1}$, for a vector of elements from   $\FF_{2^{127}-1}$ obtained by packing bits from $\ww$ together. To do so, at a high level, the MLE evaluation claims are proved ``in the exponent'' in the binary field $\FF_{2^{127}}$, leveraging that  the multiplicative subgroup of  $\FF_{2^{127}}$ has prime order $|\FF_{2^{127}}^*| = 2^{127}-1$. The proposed approach is substantially different from ours: \cite{lev} essentially takes a polylogarithmic PCS over the prime field $\FF_{2^{127}-1}$, such as Basefold \cite{basefold}, WHIR \cite{whir}, etc.,  and executes it ``in the exponent of $\FF_{2^{127}}$''. To do so, it relies on the lookup argument LogUp* \cite{logupstar}, grand product arguments (for small products), the Frobenius trick, and additional commitments, for each of the $\log\ell$ rounds.  
         
         In its execution,  \cite{lev} and Binius64 \cite{binius64} seem to us to be more similar than any of these two to \ftwoz. Indeed, they both use, mostly, the same collection of subprotocols, in a similar manner. Because of this we expect both approaches to have comparable performance profiles, though we do not validate this hypothesis due to \cite{lev} not reporting performance nor providing an implementation.
         
-        Conceptually, \cite{lev} shares with \ftwoz \ the aim of committing to bits in a binary field, while proving MLE claims of those bits in some other structure $R$. Note that \cite{lev} is limited to $R=\FF_{2^{127}-1}$, while \ftwoz \ can handle essentially all rings and fields $R$ of practical interest, achieving 128 bits of security and using $\FF_{2^{128}}$ as binary field. Additionally it is not clear whether \cite{lev} can leverage any of our low-entropy oriented optimizations without substantially modifying the approach, incorporating some of our ideas. \albertimportant{Ask Lev if he has implemented his thing so we can compare. Also ask him if Binius64 is essentially following his method (Logup*, grand product, Frobenius)}
-         
+        Conceptually, \cite{lev} shares with \ftwoz \ the aim of committing to bits in a binary field, while proving MLE claims of those bits in some other structure $R$. Note that \cite{lev} is limited to $R=\FF_{2^{127}-1}$, while \ftwoz \ can handle essentially all rings and fields $R$ of practical interest, achieving 128 bits of security and using $\FF_{2^{128}}$ as binary field. Additionally it is not clear whether \cite{lev} can leverage any of our low-entropy oriented optimizations without substantially modifying the approach, incorporating some of our ideas. 
 
         \albertimportant{The comparison of Lev and \ftwoz\ right now has several unbacked claims (which I believe are true, but can't really prove them, especially without an implementation). So probably it's better to not push it, remove the unbacked claims, and leave it as it is}
         
@@ -786,7 +789,7 @@ Now, say that we know that $\bitstext(\ww)$ is a linear transformation of a vect
 $$
 \bitstext(\ww) = M \cdot \bff \qquad \text{ in } \comfield,
 $$
-for some matrix $M\in \comfield^{\codedim\times \codedim'}$.
+for some matrix $M\in \FF_2^{\codedim\times \codedim'}$.
 Then 
 %
 \begin{equation}\label{e:intro_eq_5_virtual}
@@ -813,7 +816,7 @@ A particularly interesting instantiation of this relation is the following R1CS-
 %
 \begin{align*}
 &\Relation_{\mathsf{R1CS-bits-virtual}}(\ZZ)\\ &\qquad \qquad\qquad \defeq \left\{ \begin{aligned}
-    &\inp= (\xx, A,B,C, M)\in \FF_2^{\inplen} \times (\ZZ^{m\times \codedim})^3 \times \comfield^{\codedim \times (\inplen+\codedim')}\\
+    &\inp= (\xx, A,B,C, M)\in \FF_2^{\inplen} \times (\ZZ^{m\times \codedim})^3 \times \FF_2^{\codedim \times (\inplen+\codedim')}\\
     & \wit = \bff \in \bits^{\codedim'} \subseteq \FF_2^{\codedim'}
 \end{aligned}\  \left| \  \begin{aligned} %&f=\Enc_\cC \circ \pack \circ \pi_2(\bff)\\ 
 &(A\cdot \ww) \circ (B\cdot \ww) = C \cdot \ww\ \text{in } \ZZ \\
@@ -825,7 +828,7 @@ An interesting subset  of $\Relation_{\mathsf{R1CS-bits-virtual}}(\ZZ)$
  is that where $A$ and $B$ are zero matrices. We call the resulting relation the \emph{CM} relation because of the matrices $C$ and $M$:
  \begin{equation}\label{e:CM_rel}
 \Relation_{\mathsf{CM}}(\ZZ) \defeq \left\{ \begin{aligned}
-    &\inp= (\xx, C, M)\in \FF_2^{\inplen} \times \ZZ^{m\times \codedim} \times \comfield^{\codedim \times (\inplen+\codedim')}\\
+    &\inp= (\xx, C, M)\in \FF_2^{\inplen} \times \ZZ^{m\times \codedim} \times \FF_2^{\codedim \times (\inplen+\codedim')}\\
     & \wit = \bff \in \bits^{\codedim'} \subseteq \FF_2^{\codedim'}
 \end{aligned}\  \left| \  \begin{aligned} %&f=\Enc_\cC \circ \pack \circ \pi_2(\bff)\\ 
 &C \cdot \ww = 0\ \text{in } \ZZ \\
@@ -871,9 +874,11 @@ One can verify this last equivalence for example  by directly inspecting that it
 
 
 
-\albertimportant{Todo: Expressiveness result of Remco}
+\albert{Todo: Expressiveness result of Remco}
 
 
+\subsection{Further work}
+ \ftwoz \ is not a zero-knowledge scheme as of now. Enabling zero-knowledge for it is ongoing work of ours. \albert{More?}
 
 
 \section{Preliminaries}
@@ -2421,7 +2426,7 @@ Because $|T_{r_1-j}|$   grows doubly-exponentially in $j$, these tables are viab
 
 %Indeed, a node $i$ levels above the leaves is the product of the $2^i$ leaves below it, so its value is one of $2^{2^i}$ position-indexed constants, selected by $2^i$ entries of $\bff_{*j}$ and independent of $j\in [\codedim_2]$. 
 
-Importantly, all these tables have size independent of $\codedim_2$.  This (among others, cf.\ \cref{?}), is one of the reasons why we use the tensor decomposition structure, i.e.\ the split given by $\codedim=\codedim_1\cdot \codedim_2$, in \cref{c:core_iop}.
+Importantly, all these tables have size independent of $\codedim_2$.  This (among others, cf.\ \cref{s:why_the_tensor_split}), is one of the reasons why we use the tensor decomposition structure, i.e.\ the split given by $\codedim=\codedim_1\cdot \codedim_2$, in \cref{c:core_iop}.
 
 \begin{remark}
     All precomputed data in this section depends on the input vector $\yy$ of $\PESAT(\comfield,\gkrpol)$, and possibly on further verifier challenges. Since, in a wider context where \cref{c:gkr_grand_product} is a subprocess of a larger proof system, $\yy$ typically depends on verifier's challenges, these precomputations must be done at \emph{runtime}. 
@@ -2746,7 +2751,7 @@ for some $\rr^{(2)} \in \KK^{\log \codedim}$  and some $\mu\in \KK$. In other wo
 
 We implement the \ftwoz\ PCS (\cref{c:core_iop,c:LinModFieldBin}) following the guideline in \cref{s:instantiation}. We then implement an end-to-end roof system, called \ftwoz-SNARK, for integer R1CS constraints as described in \cref{s:to_snark} \albert{technical overview} (note that \ftwoz \ can be used to prove much more general constraints, such as the ones in Zinc+ \cite{zincplus}, cf.\ \cref{s:to_general_bitz} \albert{some remark in TO}). 
 
-Following the lead of \cref{flock} and other usages of AI \cref{zkgolf} to optimize against verified specs, we  used AI to optimize the prover while keeping the verifier implementation untouched.  As such, we consider our prover fairly optimal, while  our verifier's implementation is pending significant optimization \albert{review}.
+Following the lead of \cite{flock} and other usages of AI \cref{zkgolf} to optimize against verified specs, we  used AI to optimize the prover while keeping the verifier implementation untouched.  As such, we consider our prover fairly optimal, while  our verifier's implementation is pending significant optimization \albert{review}.
 
 
 
