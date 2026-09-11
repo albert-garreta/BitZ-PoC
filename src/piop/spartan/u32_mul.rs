@@ -9,7 +9,7 @@
 
 use thiserror::Error;
 
-use crate::{pcs::IntEvalParams, poly::mle::DenseMultilinearExtension};
+use crate::{pcs::IntegerMatrixLayout, poly::mle::DenseMultilinearExtension};
 
 use super::{
     ConstraintMatrices, PreparedConstraintMatrices, R1csProductMles, SparseMatrix, SpartanField,
@@ -214,14 +214,14 @@ impl U32MulLayout {
     /// `7 - log2(W)` word-slot coordinates, so
     /// `t = h + 7 - log2(W)`. In both supported layouts,
     /// [`crate::ligerito::packed_vars`] is exactly `g`.
-    pub const fn f2z_params(&self) -> IntEvalParams {
+    pub const fn f2z_params(&self) -> IntegerMatrixLayout {
         let s = self.gate_vars / 2;
         let h = self.gate_vars - s;
         let word_bits = self.f2z_width.word_bits();
         let log_word_bits = word_bits.trailing_zeros() as usize;
-        IntEvalParams {
-            t: h + 7 - log_word_bits,
-            s,
+        IntegerMatrixLayout {
+            row_vars: h + 7 - log_word_bits,
+            col_vars: s,
             word_bits,
         }
     }
@@ -724,7 +724,7 @@ mod tests {
                 let s = layout.gate_vars() / 2;
                 let h = layout.gate_vars() - s;
                 assert_eq!(p.word_bits, word_bits);
-                assert_eq!(p.t, h + 7 - word_bits.trailing_zeros() as usize);
+                assert_eq!(p.row_vars, h + 7 - word_bits.trailing_zeros() as usize);
                 assert_eq!(p.cells() * word_bits, U32_MUL_BIT_SLOTS * capacity);
                 assert_eq!(layout.f2z_bit_position(U32_MUL_BIT_SLOTS, 0), None);
                 assert_eq!(layout.f2z_bit_position(0, capacity), None);

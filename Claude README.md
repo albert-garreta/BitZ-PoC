@@ -41,7 +41,7 @@ opening has been removed.
 ## Usage
 
 ```rust,ignore
-use f2z::pcs::{IntEvalParams, smallest_generator};
+use f2z::pcs::{IntegerMatrixLayout, smallest_generator};
 use f2z::ligerito::packed_vars;
 use f2z::ligerito_flock::{
     IntEvalRsLigModQProof, LigConfig, commit_rs_flock_with, lig_configs,
@@ -50,7 +50,7 @@ use f2z::ligerito_flock::{
 use f2z::transcript::Blake3Transcript;
 
 // Instance shape: 2^t × 2^s cells of `word_bits`-bit integers.
-let p = IntEvalParams { t: 10, s: 6, word_bits: 1 };
+let p = IntegerMatrixLayout { row_vars: 10, col_vars: 6, word_bits: 1 };
 let alpha = smallest_generator();                 // any generator of GF(2^128)^×
 let (pc, vc) = lig_configs(
     packed_vars(&p),

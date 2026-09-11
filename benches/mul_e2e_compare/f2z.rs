@@ -68,9 +68,9 @@ impl Context {
             config["security_terms"] = json!(terms);
             config["projection_prime_min"] = json!(security.projection_min.to_string());
             config["projection_prime_max"] = json!(security.projection_max.to_string());
-            config["ood_grinding_bits"] =
-                json!(security.ood.map(|p| p.grinding_bits));
-            config["geometry"] = json!({"t":params.t, "s":params.s, "word_bits":params.word_bits});
+            config["ood_grinding_bits"] = json!(security.ood.map(|p| p.grinding_bits));
+            config["geometry"] =
+                json!({"t":params.row_vars, "s":params.col_vars, "word_bits":params.word_bits});
             config["ligerito"] = super::common::ligerito_report(ligerito, security.ood);
         }
         match &self.relation {

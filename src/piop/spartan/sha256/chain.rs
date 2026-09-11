@@ -50,7 +50,7 @@ use crate::{
         verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
     },
     pcs::{
-        GeneratedModQWeightSource, IntEvalParams, ModQWeightSource, ProjectCanonicalU128,
+        GeneratedModQWeightSource, IntegerMatrixLayout, ModQWeightSource, ProjectCanonicalU128,
         mod_q_num_chunks,
     },
     sparse_matrix::SparseMatrix,
@@ -396,8 +396,8 @@ fn chain_relation_digest(
 pub struct PreparedSha256ChainBatch {
     local: Arc<ChainLocalRelation>,
     map: ChainedPackedSourceMap,
-    p_f: IntEvalParams,
-    p_h: IntEvalParams,
+    p_f: IntegerMatrixLayout,
+    p_h: IntegerMatrixLayout,
     instances: usize,
     log_instance_capacity: usize,
     security: IopSecurityParams,
@@ -429,13 +429,13 @@ impl PreparedSha256ChainBatch {
     }
 
     /// F2Z geometry of the committed Boolean source rows.
-    pub const fn source_params(&self) -> &IntEvalParams {
+    pub const fn source_params(&self) -> &IntegerMatrixLayout {
         &self.p_f
     }
 
     /// F2Z geometry of the proof-only product tensor `D[local, instance]`
     /// the opening runs against (`2^t` rows of low instance bits).
-    pub const fn assignment_params(&self) -> &IntEvalParams {
+    pub const fn assignment_params(&self) -> &IntegerMatrixLayout {
         &self.p_h
     }
 
@@ -544,9 +544,9 @@ fn prepare_chain_instances<P: IopSecurityProfile>(
     let p_f = balanced_binary_params(source_vars);
     let assignment_vars = LOCAL_BITS + log_instance_capacity;
     let t = log_instance_capacity.min(13);
-    let p_h = IntEvalParams {
-        t,
-        s: assignment_vars - t,
+    let p_h = IntegerMatrixLayout {
+        row_vars: t,
+        col_vars: assignment_vars - t,
         word_bits: 1,
     };
     let map = ChainedPackedSourceMap::new(
@@ -736,7 +736,7 @@ fn chain_source_bit(shard: &ChainShard, bit: usize) -> bool {
 }
 
 /// Packs `[1 | f_0 | … | f_{N-1} | 0…]`.
-fn pack_chain_source_rows(shards: &[ChainShard], params: &IntEvalParams) -> Vec<Vec<u64>> {
+fn pack_chain_source_rows(shards: &[ChainShard], params: &IntegerMatrixLayout) -> Vec<Vec<u64>> {
     let mut rows = empty_packed_rows(params);
     set_flat_packed_bit(&mut rows, params, 0);
     for (instance, shard) in shards.iter().enumerate() {
@@ -753,7 +753,7 @@ fn pack_chain_source_rows(shards: &[ChainShard], params: &IntEvalParams) -> Vec<
 /// Packs the local-major product tensor `D[local, instance]` (`2^t` rows =
 /// the low instance bits; a column = `(local, high instance bits)`), the
 /// terminal rows holding the last instance's output bits only.
-fn pack_chain_product_rows(shards: &[ChainShard], params: &IntEvalParams) -> Vec<Vec<u64>> {
+fn pack_chain_product_rows(shards: &[ChainShard], params: &IntegerMatrixLayout) -> Vec<Vec<u64>> {
     let instances = shards.len();
     let rows = params.rows();
     debug_assert!(instances.is_power_of_two() && rows <= instances);
@@ -899,7 +899,7 @@ pub fn prove_sha256_chain_with_config<T: Transcript + Send>(
         return Err(Sha256F2zError::InvalidGeometry);
     }
     validate_ligerito_commitment(&hint_f.commitment, pc).map_err(Sha256F2zError::F2z)?;
-    if hint_f.commitment.params.m != p_f.t + p_f.s {
+    if hint_f.commitment.params.m != p_f.row_vars + p_f.col_vars {
         return Err(Sha256F2zError::InvalidGeometry);
     }
 
@@ -1077,7 +1077,7 @@ pub fn verify_sha256_chain_with_config<T: Transcript + Send>(
     validate_chain_geometry(prepared)?;
     validate_chain_ligerito_config(prepared, vc)?;
     validate_ligerito_commitment(commitment_f, vc).map_err(Sha256F2zError::F2z)?;
-    if commitment_f.params.m != p_f.t + p_f.s {
+    if commitment_f.params.m != p_f.row_vars + p_f.col_vars {
         return Err(Sha256F2zError::InvalidGeometry);
     }
 
@@ -1304,21 +1304,21 @@ impl ChainProductBatching {
 /// high instance bits)` with weight `d[local] · eq_high`.
 fn chain_product_opening_claim(
     batching: &ChainProductBatching,
-    p_h: &IntEvalParams,
+    p_h: &IntegerMatrixLayout,
     field_config: &<SpartanF2zField as PrimeField>::Config,
 ) -> Result<(Vec<RawMontgomery>, Vec<u128>, u128), Sha256F2zError> {
     let instance_vars = instance_vars(batching.instances)?;
     if !batching.instances.is_power_of_two()
         || batching.instance_point.len() != instance_vars
         || p_h.word_bits != 1
-        || p_h.t > instance_vars
-        || p_h.t + p_h.s != instance_vars + LOCAL_BITS
+        || p_h.row_vars > instance_vars
+        || p_h.row_vars + p_h.col_vars != instance_vars + LOCAL_BITS
         || batching.local_coefficients.len() != SHA256_CHAIN_H_BAR_LIVE_BITS
     {
         return Err(Sha256F2zError::InvalidGeometry);
     }
-    let row_weights = compact_eq_table(&batching.instance_point[..p_h.t], field_config)?;
-    let high_weights = compact_eq_table(&batching.instance_point[p_h.t..], field_config)?;
+    let row_weights = compact_eq_table(&batching.instance_point[..p_h.row_vars], field_config)?;
+    let high_weights = compact_eq_table(&batching.instance_point[p_h.row_vars..], field_config)?;
     if row_weights.len() != p_h.rows()
         || row_weights.len() * high_weights.len() != batching.instances
         || p_h.cols() != LOCAL_STRIDE * high_weights.len()
@@ -1373,9 +1373,9 @@ fn validate_chain_geometry(prepared: &PreparedSha256ChainBatch) -> Result<(), Sh
     let parts = map.parts();
     let instance_vars = prepared.log_instance_capacity;
     if p_h.word_bits != 1
-        || p_h.t < LOG_PACKING
-        || p_h.t > instance_vars
-        || p_h.t + p_h.s != instance_vars + LOCAL_BITS
+        || p_h.row_vars < LOG_PACKING
+        || p_h.row_vars > instance_vars
+        || p_h.row_vars + p_h.col_vars != instance_vars + LOCAL_BITS
         || map.rows() != p_h.cells()
         || map.cols() != p_f.cells()
         || map.instances() != prepared.instances
@@ -1501,11 +1501,11 @@ fn chain_assignment_binding(
         commitment.params.log_batch_size,
         prepared.instances,
         prepared.log_instance_capacity,
-        prepared.p_h.t,
-        prepared.p_h.s,
+        prepared.p_h.row_vars,
+        prepared.p_h.col_vars,
         prepared.p_h.word_bits,
-        prepared.p_f.t,
-        prepared.p_f.s,
+        prepared.p_f.row_vars,
+        prepared.p_f.col_vars,
         prepared.p_f.word_bits,
     ] {
         hash_usize(&mut hash, value)?;
@@ -1529,10 +1529,10 @@ fn absorb_chain_statement(
     for (label, value) in [
         (&b"instance-vars"[..], prepared.log_instance_capacity),
         (b"instance-count", prepared.instances),
-        (b"assignment-row-vars", prepared.p_h.t),
-        (b"assignment-column-vars", prepared.p_h.s),
-        (b"source-row-vars", prepared.p_f.t),
-        (b"source-column-vars", prepared.p_f.s),
+        (b"assignment-row-vars", prepared.p_h.row_vars),
+        (b"assignment-column-vars", prepared.p_h.col_vars),
+        (b"source-row-vars", prepared.p_f.row_vars),
+        (b"source-column-vars", prepared.p_f.col_vars),
     ] {
         absorb_spartan_message(transcript, label, &(value as u64).to_le_bytes());
     }
@@ -1650,8 +1650,8 @@ mod tests {
             .collect()
     }
 
-    fn packed_bit(rows: &[Vec<u64>], params: &IntEvalParams, flat: usize) -> bool {
-        let column = flat >> params.t;
+    fn packed_bit(rows: &[Vec<u64>], params: &IntegerMatrixLayout, flat: usize) -> bool {
+        let column = flat >> params.row_vars;
         let row = flat & (params.rows() - 1);
         rows[column][row / 64] >> (row % 64) & 1 == 1
     }
@@ -1888,9 +1888,9 @@ mod tests {
         assert!(prepare_sha256_chain_batch_for_test(0).is_err());
         for exponent in 7..=16 {
             let prepared = prepare_sha256_chain_batch(exponent).unwrap();
-            assert_eq!(prepared.assignment_params().t, exponent.min(13));
+            assert_eq!(prepared.assignment_params().row_vars, exponent.min(13));
             assert_eq!(
-                prepared.assignment_params().t + prepared.assignment_params().s,
+                prepared.assignment_params().row_vars + prepared.assignment_params().col_vars,
                 15 + exponent
             );
             sha256_chain_configs(&prepared).unwrap();

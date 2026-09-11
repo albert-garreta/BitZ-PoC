@@ -21,7 +21,7 @@ only through `K`-linear queries.
 
 ## Instance and protocol flow
 
-`IntEvalParams { t, s, word_bits: W }`: data `D` is a `2^t × 2^s` matrix of
+`IntegerMatrixLayout { row_vars: t, col_vars: s, word_bits: W }`: data `D` is a `2^t × 2^s` matrix of
 `W`-bit cells (`cell_index(b,c) = (b<<s) | c`); `t` row variables fold with
 integer weights `w_b`, `s` column variables are read off with field weights
 `e_c`.

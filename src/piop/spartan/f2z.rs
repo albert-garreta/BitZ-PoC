@@ -82,7 +82,7 @@ pub type SpartanF2zField = F128;
 /// vector.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct U32BitifiedClaim {
-    params: crate::pcs::IntEvalParams,
+    params: crate::pcs::IntegerMatrixLayout,
     gate_point: Box<[Fq]>,
     rows: U32BitifiedRows,
     col_scale: Fq,
@@ -352,16 +352,17 @@ fn configs_for_layout_and_target(
 fn validate_layout_geometry(layout: &U32MulLayout) -> Result<(), SpartanF2zError> {
     let p = layout.f2z_params();
     if !matches!(p.word_bits, 1 | 8)
-        || p.t < LOG_PACKING
-        || p.s > layout.gate_vars()
-        || p.t.saturating_add(p.word_bits) > 126
+        || p.row_vars < LOG_PACKING
+        || p.col_vars > layout.gate_vars()
+        || p.row_vars.saturating_add(p.word_bits) > 126
     {
         return Err(SpartanF2zError::InvalidF2zParameters);
     }
-    let total_vars =
-        p.t.checked_add(p.word_bits.trailing_zeros() as usize)
-            .and_then(|value| value.checked_add(p.s))
-            .ok_or(SpartanF2zError::InvalidF2zParameters)?;
+    let total_vars = p
+        .row_vars
+        .checked_add(p.word_bits.trailing_zeros() as usize)
+        .and_then(|value| value.checked_add(p.col_vars))
+        .ok_or(SpartanF2zError::InvalidF2zParameters)?;
     if total_vars
         != layout
             .gate_vars()
@@ -372,8 +373,8 @@ fn validate_layout_geometry(layout: &U32MulLayout) -> Result<(), SpartanF2zError
         return Err(SpartanF2zError::InvalidF2zParameters);
     }
 
-    let row_count = checked_pow2(p.t)?;
-    let col_count = checked_pow2(p.s)?;
+    let row_count = checked_pow2(p.row_vars)?;
+    let col_count = checked_pow2(p.col_vars)?;
     let committed_bits = row_count
         .checked_mul(col_count)
         .and_then(|cells| cells.checked_mul(p.word_bits))
@@ -388,11 +389,11 @@ fn validate_layout_geometry(layout: &U32MulLayout) -> Result<(), SpartanF2zError
 }
 
 pub(crate) fn validate_bit_rows(
-    p: &crate::pcs::IntEvalParams,
+    p: &crate::pcs::IntegerMatrixLayout,
     rows: &[Vec<u64>],
 ) -> Result<(), SpartanF2zError> {
-    let row_count = checked_pow2(p.t)?;
-    let col_count = checked_pow2(p.s)?;
+    let row_count = checked_pow2(p.row_vars)?;
+    let col_count = checked_pow2(p.col_vars)?;
     let row_bits = row_count
         .checked_mul(p.word_bits)
         .ok_or(SpartanF2zError::InvalidBitRows)?;
@@ -407,7 +408,7 @@ pub(crate) fn validate_bit_rows(
 }
 
 pub(crate) fn validate_config_pair(
-    p: &crate::pcs::IntEvalParams,
+    p: &crate::pcs::IntegerMatrixLayout,
     pc: &LigProverConfig,
     vc: &LigVerifierConfig,
 ) -> Result<(), SpartanF2zError> {
@@ -436,7 +437,7 @@ pub(crate) fn validate_config_pair(
 }
 
 pub(crate) fn validate_commitment(
-    p: &crate::pcs::IntEvalParams,
+    p: &crate::pcs::IntegerMatrixLayout,
     commitment: &Commitment,
     pc: &LigProverConfig,
 ) -> Result<(), SpartanF2zError> {
@@ -482,9 +483,9 @@ fn prepare_u32_bitified_claim(
     let chunks = prepare_u32_bitified_chunks(opening, q_bits, arith)?;
     let p = opening.params;
     let col_weights = if opening.col_scale == Fq(0) {
-        vec![Fq(0); checked_pow2(p.s)?]
+        vec![Fq(0); checked_pow2(p.col_vars)?]
     } else {
-        let (gate_low, _) = opening.gate_point.split_at(p.s);
+        let (gate_low, _) = opening.gate_point.split_at(p.col_vars);
         let mut eq_low = eq_le_table_fq_fast_with(gate_low, arith)?;
         if opening.col_scale != Fq(1) {
             let factor = arith.monty_factor(opening.col_scale.0);
@@ -511,17 +512,19 @@ fn prepare_u32_bitified_chunks(
     arith: &ProjArith,
 ) -> Result<crate::pcs::ModQWeightChunks, SpartanF2zError> {
     let p = opening.params;
-    let high_vars =
-        p.t.checked_add(p.word_bits.trailing_zeros() as usize)
-            .and_then(|variables| variables.checked_sub(7))
-            .ok_or(SpartanF2zError::InvalidF2zParameters)?;
-    let gate_vars =
-        p.s.checked_add(high_vars)
-            .ok_or(SpartanF2zError::InvalidF2zParameters)?;
+    let high_vars = p
+        .row_vars
+        .checked_add(p.word_bits.trailing_zeros() as usize)
+        .and_then(|variables| variables.checked_sub(7))
+        .ok_or(SpartanF2zError::InvalidF2zParameters)?;
+    let gate_vars = p
+        .col_vars
+        .checked_add(high_vars)
+        .ok_or(SpartanF2zError::InvalidF2zParameters)?;
     if opening.gate_point.len() != gate_vars {
         return Err(SpartanF2zError::InvalidF2zParameters);
     }
-    let (_, gate_high) = opening.gate_point.split_at(p.s);
+    let (_, gate_high) = opening.gate_point.split_at(p.col_vars);
 
     match opening.rows {
         U32BitifiedRows::ConstantDummy => {
@@ -563,7 +566,7 @@ fn prepare_u32_bitified_chunks(
 /// jobs, which cost more than the arithmetic at 8 threads). Same field
 /// elements, same canonical residues.
 fn structured_u32_row_weights(
-    p: &crate::pcs::IntEvalParams,
+    p: &crate::pcs::IntegerMatrixLayout,
     gate_high: &[Fq],
     [x, y, product]: [Fq; 3],
     arith: &ProjArith,
@@ -573,7 +576,7 @@ fn structured_u32_row_weights(
         return Err(SpartanF2zError::InvalidF2zParameters);
     }
     let high_gate_count = checked_pow2(gate_high.len())?;
-    let row_count = checked_pow2(p.t)?;
+    let row_count = checked_pow2(p.row_vars)?;
     let word_slots = U32_MUL_BIT_SLOTS / word_bits;
     if word_slots
         .checked_mul(high_gate_count)
@@ -732,8 +735,8 @@ fn bitified_claim_digest_from_relation(
     hash_usize(&mut hasher, layout.capacity())?;
     hash_usize(&mut hasher, layout.assignment_len())?;
     hash_usize(&mut hasher, layout.gate_vars())?;
-    hash_usize(&mut hasher, opening.params.t)?;
-    hash_usize(&mut hasher, opening.params.s)?;
+    hash_usize(&mut hasher, opening.params.row_vars)?;
+    hash_usize(&mut hasher, opening.params.col_vars)?;
     hash_usize(&mut hasher, opening.params.word_bits)?;
     hash_usize(&mut hasher, U32_MUL_X_SLOT_START)?;
     hash_usize(&mut hasher, U32_MUL_X_BITS)?;
@@ -752,7 +755,7 @@ fn bitified_claim_digest_from_relation(
     hash_spartan_f2z_element(&mut hasher, terminal_claim.scale());
     hash_spartan_f2z_element(&mut hasher, terminal_claim.value());
 
-    let (gate_low, gate_high) = opening.gate_point.split_at(opening.params.s);
+    let (gate_low, gate_high) = opening.gate_point.split_at(opening.params.col_vars);
     hash_usize(&mut hasher, gate_low.len())?;
     for coordinate in gate_low {
         hasher.update(&coordinate.0.to_le_bytes());
@@ -807,16 +810,19 @@ pub(crate) const fn hash_code(hash: HashKind) -> u8 {
     }
 }
 
-pub(crate) fn packed_variables(p: &crate::pcs::IntEvalParams) -> Result<usize, SpartanF2zError> {
+pub(crate) fn packed_variables(
+    p: &crate::pcs::IntegerMatrixLayout,
+) -> Result<usize, SpartanF2zError> {
     if !p.word_bits.is_power_of_two() || p.word_bits > u128::BITS as usize {
         return Err(SpartanF2zError::InvalidF2zParameters);
     }
-    let row_bit_vars =
-        p.t.checked_add(p.word_bits.trailing_zeros() as usize)
-            .ok_or(SpartanF2zError::InvalidF2zParameters)?;
+    let row_bit_vars = p
+        .row_vars
+        .checked_add(p.word_bits.trailing_zeros() as usize)
+        .ok_or(SpartanF2zError::InvalidF2zParameters)?;
     let expected = row_bit_vars
         .checked_sub(LOG_PACKING)
-        .and_then(|folded| folded.checked_add(p.s))
+        .and_then(|folded| folded.checked_add(p.col_vars))
         .ok_or(SpartanF2zError::InvalidF2zParameters)?;
     if packed_vars(p) != expected {
         return Err(SpartanF2zError::InvalidF2zParameters);
@@ -880,13 +886,13 @@ impl GrindingDomain for U32MulPiopGrinding {
 /// DIRECT exponent-fold path, so the interval width is capped at
 /// `c_w = 127 - t - W` and the row functional always fits ONE chunk.
 pub(crate) fn u32_mul_instance_facts(
-    p: &crate::pcs::IntEvalParams,
+    p: &crate::pcs::IntegerMatrixLayout,
     row_vars: usize,
 ) -> IopInstanceFacts {
     IopInstanceFacts {
         defect_log2_bound: 80,
-        lift_arity_log2: p.t as u32,
-        opening_t: p.t as u32,
+        lift_arity_log2: p.row_vars as u32,
+        opening_t: p.row_vars as u32,
         opening_word_bits: p.word_bits as u32,
         direct_opening: true,
         tau_arity: row_vars.max(1) as u32,
@@ -917,7 +923,7 @@ pub struct PreparedU32MulRelation {
 pub struct PreparedU32TerminalF2zOpening {
     ligerito_configuration: crate::ligerito_flock::ResolvedLigerito,
     layout: U32MulLayout,
-    params: crate::pcs::IntEvalParams,
+    params: crate::pcs::IntegerMatrixLayout,
     security: IopSecurityParams,
     ligerito_pc: LigProverConfig,
     ligerito_vc: LigVerifierConfig,
@@ -986,7 +992,7 @@ impl PreparedU32MulRelation {
     }
 
     /// F2Z geometry of the committed bit tensor.
-    pub fn params(&self) -> crate::pcs::IntEvalParams {
+    pub fn params(&self) -> crate::pcs::IntegerMatrixLayout {
         self.layout.f2z_params()
     }
 
@@ -1320,8 +1326,8 @@ fn u32_mul_assignment_binding(
     hash_usize(&mut hasher, layout.capacity())?;
     hash_usize(&mut hasher, layout.assignment_len())?;
     hash_usize(&mut hasher, layout.gate_vars())?;
-    hash_usize(&mut hasher, p.t)?;
-    hash_usize(&mut hasher, p.s)?;
+    hash_usize(&mut hasher, p.row_vars)?;
+    hash_usize(&mut hasher, p.col_vars)?;
     hash_usize(&mut hasher, p.word_bits)?;
     hash_usize(&mut hasher, U32_MUL_UNIVARIATE_SKIP_VARS)?;
     hash_usize(&mut hasher, U32_MUL_UNIVARIATE_SKIP_DEGREE as usize)?;
@@ -1735,7 +1741,7 @@ mod tests {
         );
         let p = layout.f2z_params();
         let width = (128 - security.projection_max.leading_zeros()) as usize;
-        assert!(width <= 127 - p.t - p.word_bits, "q_bits <= c_w");
+        assert!(width <= 127 - p.row_vars - p.word_bits, "q_bits <= c_w");
         assert_eq!(
             crate::pcs::mod_q_num_chunks(&p, width),
             1,

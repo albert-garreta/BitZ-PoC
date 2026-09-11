@@ -39,7 +39,7 @@
 
 use core::mem::MaybeUninit;
 
-use crate::pcs::IntEvalParams;
+use crate::pcs::IntegerMatrixLayout;
 use crate::piop::sumcheck::eq_factored::{
     EqInnerGroupMixed, FlatDense, GroupBufs, PRFM_DIST, Pair2TauSet,
     prove_eq_inner_sumcheck_mixed_gruen, PreRound, prove_eq_inner_sumcheck_mixed_pre,
@@ -1089,7 +1089,7 @@ pub fn prove_merged_forest(
 /// either way.
 pub fn prove_merged_forest_lazy(
     transcript: &mut impl Transcript,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     packed_cols: &[Vec<u64>],
     pow2: &[Vec<Gf>],
     live: usize,
@@ -1186,7 +1186,7 @@ pub(crate) fn col_elide() -> bool {
 /// trailing run of all-zero bit rows is elided (see [`col_elide`]). Scans
 /// only the tail it elides — `2^n/64` word reads worst case, sub-ms at
 /// `n = 28`. Always returns at least 1 (the driver needs one real group).
-pub(crate) fn live_cols(p: &IntEvalParams, rows: &[Vec<u64>]) -> usize {
+pub(crate) fn live_cols(p: &IntegerMatrixLayout, rows: &[Vec<u64>]) -> usize {
     let cols = p.cols();
     if !col_elide() || rows.len() < cols {
         return cols;
@@ -1212,7 +1212,7 @@ fn pad_roots(mut roots: Vec<Gf>, num_trees: usize) -> Vec<Gf> {
 #[allow(clippy::arithmetic_side_effects)]
 fn prove_merged_forest_lazy_sched(
     transcript: &mut impl Transcript,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     packed_cols: &[Vec<u64>],
     pow2: &[Vec<Gf>],
     sched: ForestSchedule,
@@ -1227,7 +1227,7 @@ fn prove_merged_forest_lazy_sched(
     let mask_w = p.word_bits.wrapping_sub(1);
     let row_len = p.rows() << log_w;
     let depth = row_len.trailing_zeros() as usize;
-    let s = p.s;
+    let s = p.col_vars;
     let num_trees = p.cols();
     // Only the `live` leading trees are generated; the tail rides the
     // driver's synthetic constant-1 group (see `col_elide`).
@@ -1783,7 +1783,7 @@ use crate::piop::sumcheck::quad::{
 /// plan builds its chain at level d−3), depth ≥ 8. Transcript-shape
 /// changing: prover and verifier BOTH dispatch through this — the env
 /// var is the experiment's out-of-band configuration. Read per call.
-pub fn quad_active(p: &IntEvalParams) -> bool {
+pub fn quad_active(p: &IntegerMatrixLayout) -> bool {
     let knob = std::env::var("F2Z_QUAD").unwrap_or_default();
     let forced = knob == "force" || knob == "force2";
     if !(forced || knob == "1" || knob == "2") || forest_schedule() != ForestSchedule::L4 {
@@ -1798,7 +1798,7 @@ pub fn quad_active(p: &IntEvalParams) -> bool {
     // SUBSTITUTES, so `=1` engages only where arity 4 still wins. The
     // v2 bottom merge extends the winning region (see [`QUAD2_N_MAX`]).
     let n_max = if knob == "2" { QUAD2_N_MAX } else { QUAD_N_MAX };
-    forced || row_len.trailing_zeros() as usize + p.s <= n_max
+    forced || row_len.trailing_zeros() as usize + p.col_vars <= n_max
 }
 
 /// The QUAD knee in `n = depth + s`, measured 2026-07-31 in paired
@@ -1999,7 +1999,7 @@ fn run_arity2_layer(
 #[allow(clippy::arithmetic_side_effects)]
 pub fn prove_merged_forest_lazy_quad(
     transcript: &mut impl Transcript,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     packed_cols: &[Vec<u64>],
     pow2: &[Vec<Gf>],
 ) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
@@ -2008,7 +2008,7 @@ pub fn prove_merged_forest_lazy_quad(
     let mask_w = p.word_bits.wrapping_sub(1);
     let row_len = p.rows() << log_w;
     let depth = row_len.trailing_zeros() as usize;
-    let s = p.s;
+    let s = p.col_vars;
     let num_trees = p.cols();
     let one = Gf::one();
     assert!(depth >= 8, "quad forest needs depth >= 8 (callers gate on quad_active)");
@@ -2599,7 +2599,7 @@ impl RlcT4At<'_> {
 #[allow(clippy::arithmetic_side_effects)]
 pub fn prove_merged_forest_lazy_rlc2(
     transcript: &mut impl Transcript,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     m1_rows: &[Vec<u64>],
     m2_rows: &[Vec<u64>],
     case_pow: &[Vec<Gf>],
@@ -2607,7 +2607,7 @@ pub fn prove_merged_forest_lazy_rlc2(
     assert_eq!(p.word_bits, 1, "RLC j=2 leaves live on the W=1 x tensor");
     let row_len = p.rows();
     let depth = row_len.trailing_zeros() as usize;
-    let s = p.s;
+    let s = p.col_vars;
     let num_trees = p.cols();
     assert!(depth >= 4, "RLC j=2 lazy forest needs depth >= 4; got {depth}");
     assert!(m1_rows.len() == num_trees && m2_rows.len() == num_trees, "one bit row per tree");
@@ -2782,7 +2782,7 @@ fn rlc_case(streams: &[&[u64]], p: usize) -> usize {
 #[allow(clippy::arithmetic_side_effects)]
 pub fn prove_merged_forest_lazy_rlc_general(
     transcript: &mut impl Transcript,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     m_rows: &[&[Vec<u64>]],
     case_pow: &[Vec<Gf>],
 ) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
@@ -2791,7 +2791,7 @@ pub fn prove_merged_forest_lazy_rlc_general(
     assert!((2..=4).contains(&j), "general RLC lazy forest supports j in [2, 4]");
     let row_len = p.rows();
     let depth = row_len.trailing_zeros() as usize;
-    let s = p.s;
+    let s = p.col_vars;
     let num_trees = p.cols();
     assert!(depth >= 4, "RLC lazy forest needs depth >= 4; got {depth}");
     let cases = 1usize << j;
@@ -2923,7 +2923,7 @@ pub fn prove_merged_forest_lazy_rlc_general(
 #[allow(clippy::arithmetic_side_effects)]
 pub fn prove_merged_forest_lazy_multi(
     transcript: &mut impl Transcript,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     claims: &[(&[Vec<u64>], &[Vec<Gf>])],
 ) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
     // L/2 is a single-prover schedule; the multi path reads the knob as
@@ -2936,7 +2936,7 @@ pub fn prove_merged_forest_lazy_multi(
 #[allow(clippy::arithmetic_side_effects)]
 fn prove_merged_forest_lazy_multi_sched(
     transcript: &mut impl Transcript,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     claims: &[(&[Vec<u64>], &[Vec<Gf>])],
     l8: bool,
 ) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
@@ -2949,7 +2949,7 @@ fn prove_merged_forest_lazy_multi_sched(
     let row_len = p.rows() << log_w;
     let depth = row_len.trailing_zeros() as usize;
     assert!(depth >= 4, "the batched x prover assumes t' >= 4 (deployed: >= 6)");
-    let s = p.s;
+    let s = p.col_vars;
     let per = p.cols();
     let num_trees = n_claims * per;
     let s_batch = s + log_n;
@@ -3488,10 +3488,19 @@ mod tests {
         // edge — stored chain tops at level 1), 5 = shallow chain, 6/7 =
         // the deployed x shapes (scalar t4-gen), 8 = the word-wise
         // t4-gen path (q1 = 64).
-        for (t, s, n_claims) in
-            [(4usize, 2usize, 2usize), (5, 1, 2), (6, 2, 2), (7, 3, 4), (6, 1, 4), (8, 1, 2)]
-        {
-            let p = IntEvalParams { t, s, word_bits: 1 };
+        for (t, s, n_claims) in [
+            (4usize, 2usize, 2usize),
+            (5, 1, 2),
+            (6, 2, 2),
+            (7, 3, 4),
+            (6, 1, 4),
+            (8, 1, 2),
+        ] {
+            let p = IntegerMatrixLayout {
+                row_vars: t,
+                col_vars: s,
+                word_bits: 1,
+            };
             let row_len = p.rows();
             let depth = t;
             let log_n = n_claims.trailing_zeros() as usize;
@@ -3617,7 +3626,11 @@ mod tests {
             (8, 1, 1),
             (9, 2, 1),
         ] {
-            let p = IntEvalParams { t, s, word_bits: w };
+            let p = IntegerMatrixLayout {
+                row_vars: t,
+                col_vars: s,
+                word_bits: w,
+            };
             let log_w = w.trailing_zeros() as usize;
             let row_len = p.rows() << log_w;
             let depth = row_len.trailing_zeros() as usize;
@@ -3714,7 +3727,11 @@ mod tests {
             (5, 2, 4),
             (9, 2, 1),
         ] {
-            let p = IntEvalParams { t, s, word_bits: w };
+            let p = IntegerMatrixLayout {
+                row_vars: t,
+                col_vars: s,
+                word_bits: w,
+            };
             let log_w = w.trailing_zeros() as usize;
             let row_len = p.rows() << log_w;
             let pow2: Vec<Vec<Gf>> = (0..p.rows())

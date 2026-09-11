@@ -43,10 +43,10 @@ impl Sha256EcdsaSecurity {
             .sum::<f64>()
             .log2()
     }
-    pub(crate) fn derive(p: &PreparedSha256Ecdsa) -> Result<Self> {
+    pub(crate) fn derive(prepared: &PreparedSha256Ecdsa) -> Result<Self> {
         let mut blocks = Vec::new();
         let mut add = |label: &str, error: f64, count: usize| -> Result<u32> {
-            let bits = (f64::from(p.lambda) + error.log2()).ceil().max(0.) as u32;
+            let bits = (f64::from(prepared.lambda) + error.log2()).ceil().max(0.) as u32;
             if bits > 32 {
                 return Err(super::error(format!("{label} exceeds 32-bit grinding cap")));
             }
@@ -59,29 +59,41 @@ impl Sha256EcdsaSecurity {
             Ok(bits)
         };
         let q_inv = 2f64.powi(-112);
-        let divisors = p.local.defect_bits / 112;
+        let divisors = prepared.local.defect_bits / 112;
         let bad_prime = f64::from(divisors) * 2f64.powf(-log2_prime_count_lower_bound(113));
         // The maximum all-row arity keeps the two benchmark modes on one schedule.
-        let max_outer = (256 * p.compressions() + p.local.rows())
+        let max_outer = (256 * prepared.compressions() + prepared.local.rows())
             .next_power_of_two()
             .ilog2() as usize;
         let initial = add("prime+tau", bad_prime + max_outer as f64 * q_inv, 1)?;
-        let batch = add("rho+sigma+gamma", (p.linear_vars() + 3) as f64 * q_inv, 1)?;
-        let outer = add("outer-round", 3. * q_inv, p.outer_sumcheck_num_vars())?;
-        let inner = add("inner-round", 2. * q_inv, p.p_h.t + p.p_h.s)?;
+        let batch = add(
+            "rho+sigma+gamma",
+            (prepared.linear_vars() + 3) as f64 * q_inv,
+            1,
+        )?;
+        let outer = add(
+            "outer-round",
+            3. * q_inv,
+            prepared.outer_sumcheck_num_vars(),
+        )?;
+        let inner = add(
+            "inner-round",
+            2. * q_inv,
+            prepared.h_layout.row_vars + prepared.h_layout.col_vars,
+        )?;
         // Each host forest/bridge draw has degree at most the assignment arity
         // plus seven ring coordinates. 4096 bounds the number of draws for the
         // supported <=31-variable, single-chunk shapes (deliberately conservative).
         let forest = add(
             "forest-and-bridge",
-            (p.p_h.t + p.p_h.s + 7) as f64 * 2f64.powi(-128),
+            (prepared.h_layout.row_vars + prepared.h_layout.col_vars + 7) as f64 * 2f64.powi(-128),
             4096,
         )?;
-        let ood = p
+        let ood = prepared
             .ligerito
             .ood_bits()
             .map(|bits| {
-                let work = (f64::from(p.lambda) - bits).ceil().max(0.) as u32;
+                let work = (f64::from(prepared.lambda) - bits).ceil().max(0.) as u32;
                 if work > 24 {
                     return Err(error("Round-0 exceeds the 24-bit derived cap"));
                 }
@@ -96,7 +108,8 @@ impl Sha256EcdsaSecurity {
                 })
             })
             .transpose()?;
-        let flock = AtomicPlan::resolve(p.ligerito.security(), p.lambda).map_err(error)?;
+        let flock =
+            AtomicPlan::resolve(prepared.ligerito.security(), prepared.lambda).map_err(error)?;
         for b in &flock.blocks {
             blocks.push(ChallengeBudget {
                 label: format!("flock/{}", b.label),
@@ -106,7 +119,7 @@ impl Sha256EcdsaSecurity {
             });
         }
         Ok(Self {
-            target: p.lambda,
+            target: prepared.lambda,
             blocks,
             initial,
             batch,

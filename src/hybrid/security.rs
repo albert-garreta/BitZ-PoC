@@ -92,13 +92,13 @@ pub(super) fn account(
         add(term.name, count as f64 * 2f64.powf(-term.bits));
     }
     let p = mul.params();
-    let depth = p.t + p.word_bits.trailing_zeros() as usize;
+    let depth = p.row_vars + p.word_bits.trailing_zeros() as usize;
     let k_inv = 2f64.powi(-128);
     // Two sumchecks per GKR layer, with degrees at most three, plus the
     // closing child randomization. Overcount all rounds by depth+s+4.
     add(
         "multiplication GKR",
-        (4 * depth * (depth + p.s + 4)) as f64 * k_inv,
+        (4 * depth * (depth + p.col_vars + 4)) as f64 * k_inv,
     );
     let cs = sha.constraint_system();
     let sha_dims = sha.log_witness_words()

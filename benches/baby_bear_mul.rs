@@ -193,8 +193,8 @@ fn bench_profile<P: IopSecurityProfile>(
             ("multiplications".into(), multiplications.to_string()),
             ("strategy".into(), strategy_name(strategy).into()),
             ("baby_bear_modulus".into(), BABY_BEAR_MODULUS.to_string()),
-            ("f2z_t".into(), params.t.to_string()),
-            ("f2z_s".into(), params.s.to_string()),
+            ("f2z_t".into(), params.row_vars.to_string()),
+            ("f2z_s".into(), params.col_vars.to_string()),
             (
                 "forest_grinding_nonces".into(),
                 proof.f2z().grinding_nonces.len().to_string(),

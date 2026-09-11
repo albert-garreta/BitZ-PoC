@@ -51,7 +51,7 @@ use crate::{
         validate_ligerito_commitment, validated_udr_lig_configs_with,
         verify_mle_eval_mod_q_ligerito_virtual_runtime,
     },
-    pcs::{IntEvalParams, ProjectCanonicalU128},
+    pcs::{IntegerMatrixLayout, ProjectCanonicalU128},
     sparse_matrix::SparseMatrix,
     transcript::traits::Transcript,
 };
@@ -157,7 +157,7 @@ pub struct PreparedMultiswapRelation {
     relation: MultiswapIntegerRelation,
     statement_digest: [u8; 32],
     map: RepeatedVirtualMap,
-    params: IntEvalParams,
+    params: IntegerMatrixLayout,
     profile: MultiswapPrimeProfile,
     security: IopSecurityParams,
     comparison_statement_digest: [u8; 32],
@@ -196,7 +196,7 @@ impl PreparedMultiswapRelation {
         let map = RepeatedVirtualMap::new(local, cells_per_block)?;
         debug_assert!(crate::f2map::VirtualMap::is_identity(&map));
         let facts = multiswap_instance_facts(
-            u32::try_from(params.t).map_err(|_| MultiswapError::InvalidGeometry)?,
+            u32::try_from(params.row_vars).map_err(|_| MultiswapError::InvalidGeometry)?,
             u32::try_from(params.word_bits).map_err(|_| MultiswapError::InvalidGeometry)?,
             u32::try_from(relation.layout().gate_vars() + 2)
                 .map_err(|_| MultiswapError::InvalidGeometry)?,
@@ -257,7 +257,7 @@ impl PreparedMultiswapRelation {
     }
 
     /// F2Z shape of the committed bit tensor.
-    pub const fn params(&self) -> &IntEvalParams {
+    pub const fn params(&self) -> &IntegerMatrixLayout {
         &self.params
     }
 
@@ -279,7 +279,7 @@ impl PreparedMultiswapRelation {
 
 /// Derives the production Ligerito configuration for the MultiSwap shape.
 pub fn multiswap_lig_configs(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
 ) -> Result<(LigProverConfig, LigVerifierConfig), MultiswapError> {
     // `udrg:3:4:114`: UDR geometry at rate 1/8 with fold arity 4, fold
     // grinding, BLAKE3, validator-gated at the row's 114-bit target. Chosen
@@ -294,7 +294,7 @@ pub fn multiswap_lig_configs(
 
 /// Commits prebuilt packed witness/quotient bit rows.
 pub fn commit_multiswap_witness(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     rows: Vec<Vec<u64>>,
     pc: &LigProverConfig,
 ) -> Result<FlockCommitHint, MultiswapError> {
@@ -363,7 +363,7 @@ pub fn prove_multiswap_mod_r1cs<T: Transcript + Send>(
     validate_bit_rows(p, hint.rows())?;
     prepared.validate_config(pc)?;
     validate_ligerito_commitment(&hint.commitment, pc).map_err(MultiswapError::F2z)?;
-    if hint.commitment.params.m != p.t + p.s {
+    if hint.commitment.params.m != p.row_vars + p.col_vars {
         return Err(MultiswapError::InvalidGeometry);
     }
 
@@ -482,7 +482,7 @@ pub fn verify_multiswap_mod_r1cs<T: Transcript + Send>(
     let p = prepared.params();
     prepared.validate_config(vc)?;
     validate_ligerito_commitment(commitment, vc).map_err(MultiswapError::F2z)?;
-    if commitment.params.m != p.t + p.s {
+    if commitment.params.m != p.row_vars + p.col_vars {
         return Err(MultiswapError::InvalidGeometry);
     }
 
@@ -732,7 +732,7 @@ pub fn bitify_multiswap_claim(
     })
 }
 
-fn validate_bit_rows(p: &IntEvalParams, rows: &[Vec<u64>]) -> Result<(), MultiswapError> {
+fn validate_bit_rows(p: &IntegerMatrixLayout, rows: &[Vec<u64>]) -> Result<(), MultiswapError> {
     let row_bits = p.rows() * p.word_bits;
     if p.word_bits != 1
         || row_bits % u64::BITS as usize != 0
@@ -806,8 +806,8 @@ fn assignment_binding(prepared: &PreparedMultiswapRelation, commitment: &Commitm
         layout.column_vars(),
         layout.high_gate_vars(),
         layout.assignment_len(),
-        p.t,
-        p.s,
+        p.row_vars,
+        p.col_vars,
         p.word_bits,
         MULTISWAP_VALUE_BITS,
         profile.reduction_grinding_bits(),

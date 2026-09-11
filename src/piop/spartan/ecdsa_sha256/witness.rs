@@ -14,7 +14,7 @@ use super::{
     relation::{OuterMode, P_INPUT_ALIAS, PreparedSha256Ecdsa, SHA_F, SHA_H, Sha256EcdsaStatement},
 };
 use crate::{
-    pcs::IntEvalParams,
+    pcs::IntegerMatrixLayout,
     piop::spartan::{f2z::SpartanF2zField as F, sumcheck::R1csProductMles},
     poly::mle::DenseMultilinearExtension,
 };
@@ -32,11 +32,11 @@ impl Sha256EcdsaWitness {
     /// MLE tables of `(A h) mod q`, `(B h) mod q`, and `(C h) mod q`.
     pub(super) fn build_outer_product_mles(
         &self,
-        p: &PreparedSha256Ecdsa,
+        prepared: &PreparedSha256Ecdsa,
         q: u128,
         cfg: &Config,
     ) -> R1csProductMles<F> {
-        let vars = p.outer_sumcheck_num_vars();
+        let vars = prepared.outer_sumcheck_num_vars();
         let zero = F::zero_with_cfg(cfg);
         let mut tables = std::array::from_fn::<_, 3, _>(|_| vec![zero.clone(); 1 << vars]);
         let products = [
@@ -53,15 +53,15 @@ impl Sha256EcdsaWitness {
                     .collect();
                 table[dst] = reduce_integer_mod_q(&BigInt::from_signed_bytes_le(&bytes), q, cfg);
             };
-            match p.mode {
+            match prepared.mode {
                 OuterMode::Split => {
-                    for (i, &r) in p.local.nonlinear.iter().enumerate() {
+                    for (i, &r) in prepared.local.nonlinear.iter().enumerate() {
                         set(i, r);
                     }
                 }
                 OuterMode::AllRows => {
-                    for r in 0..p.local.rows() {
-                        set(256 * p.compressions() + r, r);
+                    for r in 0..prepared.local.rows() {
+                        set(256 * prepared.compressions() + r, r);
                     }
                 }
             }
@@ -87,9 +87,9 @@ impl Sha256EcdsaWitness {
     pub fn assignment_rows(&self) -> &[Vec<u64>] {
         &self.h_rows
     }
-    pub(crate) fn h_bit(&self, index: usize, p: &IntEvalParams) -> u64 {
+    pub(crate) fn h_bit(&self, index: usize, p: &IntegerMatrixLayout) -> u64 {
         let row = index & (p.rows() - 1);
-        (self.h_rows[index >> p.t][row / 64] >> (row % 64)) & 1
+        (self.h_rows[index >> p.row_vars][row / 64] >> (row % 64)) & 1
     }
 }
 
@@ -121,14 +121,18 @@ pub(crate) fn inverse(value: &[u8; 32]) -> Result<[u8; 32]> {
     Ok(out)
 }
 
-fn pack_bits(p: &IntEvalParams, live: usize, bit: impl Fn(usize) -> bool + Sync) -> Vec<Vec<u64>> {
+fn pack_bits(
+    p: &IntegerMatrixLayout,
+    live: usize,
+    bit: impl Fn(usize) -> bool + Sync,
+) -> Vec<Vec<u64>> {
     let column = |c: usize| {
         (0..p.rows().div_ceil(64))
             .map(|word| {
                 let mut value = 0u64;
                 for b in 0..64 {
                     let row = word * 64 + b;
-                    let index = (c << p.t) + row;
+                    let index = (c << p.row_vars) + row;
                     if row < p.rows() && index < live && bit(index) {
                         value |= 1 << b;
                     }
@@ -185,7 +189,7 @@ fn masked_word(witness: &PackedWitness, index: usize) -> u64 {
 }
 
 /// Splits the flat packed cells `(c << t) + row` into the per-column rows.
-fn split_columns(flat: Vec<u64>, p: &IntEvalParams) -> Vec<Vec<u64>> {
+fn split_columns(flat: Vec<u64>, p: &IntegerMatrixLayout) -> Vec<Vec<u64>> {
     let words = p.rows() / 64;
     #[cfg(feature = "parallel")]
     {
@@ -205,7 +209,7 @@ fn pack_source(
     shards: &[(PackedWitness, PackedWitness)],
     p_f: &PackedWitness,
 ) -> Vec<Vec<u64>> {
-    let p = &prepared.p_f;
+    let p = &prepared.f_layout;
     let mut flat = vec![0u64; p.cols() * p.rows() / 64];
     flat[0] = 1;
     for (instance, shard) in shards.iter().enumerate() {
@@ -232,7 +236,7 @@ fn pack_assignment(
     shards: &[(PackedWitness, PackedWitness)],
     p_h: &PackedWitness,
 ) -> Vec<Vec<u64>> {
-    let p = &prepared.p_h;
+    let p = &prepared.h_layout;
     let n = prepared.compressions();
     if n < 64 {
         return pack_bits(p, prepared.live_assignment_bits(), |index| {

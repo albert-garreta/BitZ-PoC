@@ -46,7 +46,8 @@ use crate::{
         verify_mle_eval_mod_q_ligerito_virtual_with_ood,
     },
     pcs::{
-        FQ_BITS, FQ_MOD, Fq, IntEvalParams, ProjectCanonicalU128, eq_le_table_fq, fq_mul, fq_sub,
+        FQ_BITS, FQ_MOD, Fq, IntegerMatrixLayout, ProjectCanonicalU128, eq_le_table_fq, fq_mul,
+        fq_sub,
     },
     transcript::traits::Transcript,
 };
@@ -215,11 +216,11 @@ impl CmAndLayout {
     /// The shared F2Z shape of BOTH grids (`W = 1`,
     /// `s = floor(gate_vars/2)`, `t = 7 + gate_vars − s`): `h` and `f`
     /// use the same geometry; they differ only in which slots are live.
-    pub const fn f2z_params(&self) -> IntEvalParams {
+    pub const fn f2z_params(&self) -> IntegerMatrixLayout {
         let s = self.gate_vars / 2;
-        IntEvalParams {
-            t: 7 + self.gate_vars - s,
-            s,
+        IntegerMatrixLayout {
+            row_vars: 7 + self.gate_vars - s,
+            col_vars: s,
             word_bits: 1,
         }
     }
@@ -623,31 +624,32 @@ fn validate_cm_claim_field(
 fn validate_cm_layout_geometry(layout: &CmAndLayout) -> Result<(), CmF2zError> {
     let p = layout.f2z_params();
     if p.word_bits != 1
-        || p.t < LOG_PACKING
-        || p.s > layout.gate_vars()
-        || p.t.saturating_add(p.word_bits) > 126
+        || p.row_vars < LOG_PACKING
+        || p.col_vars > layout.gate_vars()
+        || p.row_vars.saturating_add(p.word_bits) > 126
         || CM_AND_H_SLOTS != 1usize << 7
     {
         return Err(CmF2zError::InvalidF2zParameters);
     }
-    let total_vars =
-        p.t.checked_add(p.s)
-            .ok_or(CmF2zError::InvalidF2zParameters)?;
+    let total_vars = p
+        .row_vars
+        .checked_add(p.col_vars)
+        .ok_or(CmF2zError::InvalidF2zParameters)?;
     if total_vars
         != layout
             .gate_vars()
             .checked_add(7)
             .ok_or(CmF2zError::InvalidF2zParameters)?
         || packed_vars(&p)
-            != p.t
+            != p.row_vars
                 .checked_sub(LOG_PACKING)
-                .and_then(|f| f.checked_add(p.s))
+                .and_then(|f| f.checked_add(p.col_vars))
                 .ok_or(CmF2zError::InvalidF2zParameters)?
     {
         return Err(CmF2zError::InvalidF2zParameters);
     }
-    let cells = checked_pow2(p.t)?
-        .checked_mul(checked_pow2(p.s)?)
+    let cells = checked_pow2(p.row_vars)?
+        .checked_mul(checked_pow2(p.col_vars)?)
         .ok_or(CmF2zError::InvalidF2zParameters)?;
     if cells
         != CM_AND_H_SLOTS
@@ -701,12 +703,12 @@ pub fn bitify_cm_and_claim(
     let gate_point = &point[..gate_vars];
     let eq_sel = eq_le_table_fq(&point[gate_vars..]);
 
-    let (gate_low, gate_high) = gate_point.split_at(p.s);
+    let (gate_low, gate_high) = gate_point.split_at(p.col_vars);
     let eq_low = eq_le_table_fq(gate_low);
     let eq_high = eq_le_table_fq(gate_high);
     if eq_sel.len() != 1 << SELECTOR_VARS
-        || eq_low.len() != checked_pow2(p.s)?
-        || eq_high.len() != checked_pow2(gate_vars - p.s)?
+        || eq_low.len() != checked_pow2(p.col_vars)?
+        || eq_high.len() != checked_pow2(gate_vars - p.col_vars)?
     {
         return Err(CmF2zError::InvalidF2zParameters);
     }
@@ -716,8 +718,8 @@ pub fn bitify_cm_and_claim(
     let constant_evaluation = eq_sel[0] * eq_low[0] * eq_high[0];
     let adjusted_claim = Fq(fq_sub(value.0, fq_mul(scale.0, constant_evaluation.0)));
 
-    let row_count = checked_pow2(p.t)?;
-    let high_gate_vars = gate_vars - p.s;
+    let row_count = checked_pow2(p.row_vars)?;
+    let high_gate_vars = gate_vars - p.col_vars;
     let mut row_weights_q = vec![0u128; row_count];
     for (block, slot_start) in [
         (1usize, CM_AND_X_SLOT),
@@ -794,8 +796,8 @@ fn cm_assignment_binding(
     hash_usize(&mut hasher, layout.gates())?;
     hash_usize(&mut hasher, layout.capacity())?;
     hash_usize(&mut hasher, layout.gate_vars())?;
-    hash_usize(&mut hasher, p.t)?;
-    hash_usize(&mut hasher, p.s)?;
+    hash_usize(&mut hasher, p.row_vars)?;
+    hash_usize(&mut hasher, p.col_vars)?;
     hash_usize(&mut hasher, p.word_bits)?;
     hasher.update(map_digest);
     Ok(*hasher.finalize().as_bytes())
@@ -1062,11 +1064,11 @@ mod tests {
             assert_eq!(layout.capacity(), capacity);
             assert_eq!(layout.assignment_len(), 5 * capacity);
             let p = layout.f2z_params();
-            assert_eq!(p.t + p.s, layout.gate_vars() + 7);
+            assert_eq!(p.row_vars + p.col_vars, layout.gate_vars() + 7);
             for slot in [0, 31, 32, 95, 96, 127] {
                 for gate in [0, capacity - 1] {
                     let (b, c) = layout.cell(slot, gate).unwrap();
-                    assert_eq!(layout.flat_cell(slot, gate), (c << p.t) | b);
+                    assert_eq!(layout.flat_cell(slot, gate), (c << p.row_vars) | b);
                 }
             }
             assert!(layout.cell(128, 0).is_none());

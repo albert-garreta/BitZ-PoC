@@ -57,44 +57,51 @@ pub struct Sha256EcdsaProof {
     pub(crate) opening: IntEvalRsLigVirtProof,
 }
 
-fn configs(p: &PreparedSha256Ecdsa) -> Result<(ProverConfig, VerifierConfig)> {
-    Ok((p.ligerito.prover().clone(), p.ligerito.verifier().clone()))
+fn configs(prepared: &PreparedSha256Ecdsa) -> Result<(ProverConfig, VerifierConfig)> {
+    Ok((
+        prepared.ligerito.prover().clone(),
+        prepared.ligerito.verifier().clone(),
+    ))
 }
 
 pub fn commit_sha256_ecdsa(
-    p: &PreparedSha256Ecdsa,
+    prepared: &PreparedSha256Ecdsa,
     witness: &Sha256EcdsaWitness,
 ) -> Result<FlockCommitHint> {
-    let (pc, _) = configs(p)?;
-    if witness.statement.log_compressions as usize != p.log_n {
+    let (pc, _) = configs(prepared)?;
+    if witness.statement.log_compressions as usize != prepared.log_n {
         return Err(error("witness layout mismatch"));
     }
-    Ok(commit_rs_ligerito_rows(&p.p_f, witness.f_rows.clone(), &pc))
+    Ok(commit_rs_ligerito_rows(
+        &prepared.f_layout,
+        witness.f_rows.clone(),
+        &pc,
+    ))
 }
 
 fn bind_statement<T: Transcript>(
     t: &mut T,
-    p: &PreparedSha256Ecdsa,
+    prepared: &PreparedSha256Ecdsa,
     statement: &Sha256EcdsaStatement,
     commitment: &Commitment,
     security: &Sha256EcdsaSecurity,
 ) -> Result<()> {
-    if statement.log_compressions as usize != p.log_n {
+    if statement.log_compressions as usize != prepared.log_n {
         return Err(error("statement layout mismatch"));
     }
     absorb_spartan_message(t, b"protocol", b"f2z/sha256-ecdsa/split-inner/early-ood/v2");
-    absorb_spartan_message(t, b"relation", &p.local.digest);
-    absorb_spartan_message(t, b"map", &p.map.digest());
+    absorb_spartan_message(t, b"relation", &prepared.local.digest);
+    absorb_spartan_message(t, b"map", &prepared.map.digest());
     absorb_spartan_message(t, b"statement", &statement.bytes());
     absorb_spartan_message(
         t,
         b"mode",
-        &[match p.mode {
+        &[match prepared.mode {
             OuterMode::Split => 0,
             OuterMode::AllRows => 1,
         }],
     );
-    absorb_spartan_message(t, b"security-target", &p.lambda.to_le_bytes());
+    absorb_spartan_message(t, b"security-target", &prepared.lambda.to_le_bytes());
     for block in &security.blocks {
         absorb_spartan_message(t, b"challenge-block", block.label.as_bytes());
         absorb_spartan_message(t, b"block-work", &block.grinding_bits.to_le_bytes());
@@ -109,7 +116,7 @@ fn bind_statement<T: Transcript>(
         b"commitment",
         &bincode::serialize(commitment).map_err(error)?,
     );
-    p.ligerito.bind(t);
+    prepared.ligerito.bind(t);
     Ok(())
 }
 
@@ -123,7 +130,7 @@ struct InitialSpartanChallenges {
 /// Prove or verify initial grinding, then derive the field and outer equality challenges.
 fn derive_initial_challenges<T: Transcript>(
     t: &mut T,
-    p: &PreparedSha256Ecdsa,
+    prepared: &PreparedSha256Ecdsa,
     security: &Sha256EcdsaSecurity,
     nonce: Option<u64>,
 ) -> Result<InitialSpartanChallenges> {
@@ -132,7 +139,7 @@ fn derive_initial_challenges<T: Transcript>(
     absorb_spartan_message(t, b"q", &modulus.to_le_bytes());
     let field_config =
         F::make_cfg(&Uint::from(modulus)).map_err(|_| error("invalid sampled modulus"))?;
-    let outer_eq_challenges = (0..p.outer_sumcheck_num_vars())
+    let outer_eq_challenges = (0..prepared.outer_sumcheck_num_vars())
         .map(|_| squeeze_field(t, &field_config))
         .collect();
     Ok(InitialSpartanChallenges {
@@ -145,13 +152,13 @@ fn derive_initial_challenges<T: Transcript>(
 
 fn sample_inner_batch_challenges<T: Transcript>(
     t: &mut T,
-    p: &PreparedSha256Ecdsa,
+    prepared: &PreparedSha256Ecdsa,
     cfg: &Config,
 ) -> (F, Vec<F>, F) {
     // Sample only after the outer terminal triple has been absorbed.
     absorb_spartan_message(t, b"shared-inner", b"rho-sigma-gamma/v1");
     let matrix_batch_challenge = squeeze_field(t, cfg);
-    let linear_row_point = (0..p.linear_vars())
+    let linear_row_point = (0..prepared.linear_vars())
         .map(|_| squeeze_field(t, cfg))
         .collect();
     let linear_batch_weight = squeeze_field(t, cfg);
@@ -173,13 +180,13 @@ fn bind_opening<T: Transcript>(t: &mut T, point: &[F], scale: &F, value: &F) {
 /// `prefix_vars` (0..=4) changes only the packed inner prover's implementation.
 pub fn prove_sha256_ecdsa<T: Transcript + Send>(
     t: &mut T,
-    p: &PreparedSha256Ecdsa,
+    prepared: &PreparedSha256Ecdsa,
     statement: &Sha256EcdsaStatement,
     witness: &Sha256EcdsaWitness,
     hint: &FlockCommitHint,
     prefix_vars: usize,
 ) -> Result<Sha256EcdsaProof> {
-    let (pc, _) = configs(p)?;
+    let (pc, _) = configs(prepared)?;
     if &witness.statement != statement || hint.rows() != witness.f_rows {
         return Err(error("statement or commitment witness mismatch"));
     }
@@ -187,20 +194,20 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         return Err(error("inner prefix must be in 0..=4"));
     }
     validate_ligerito_commitment(&hint.commitment, &pc).map_err(|e| error(format!("{e:?}")))?;
-    let security = p.security()?;
-    bind_statement(t, p, statement, &hint.commitment, &security)?;
+    let security = prepared.security()?;
+    bind_statement(t, prepared, statement, &hint.commitment, &security)?;
     let ood = crate::ligerito_flock::bind_prover_ood(t, hint, security.ood);
     let InitialSpartanChallenges {
         modulus,
         field_config: cfg,
         outer_eq_challenges,
         grinding_nonce: initial_nonce,
-    } = derive_initial_challenges(t, p, &security, None)?;
+    } = derive_initial_challenges(t, prepared, &security, None)?;
     let reducer = OptimizedSumcheckReducer::new(&cfg).map_err(error)?;
-    let mod_q_coefficients = ModQCoefficients::from_relation(p, modulus, &cfg);
+    let mod_q_coefficients = ModQCoefficients::from_relation(prepared, modulus, &cfg);
     let (outer, outer_nonces) = {
         let _scope = crate::utils::prof::scope("ecdsa:outer_prove");
-        let products = witness.build_outer_product_mles(p, modulus, &cfg);
+        let products = witness.build_outer_product_mles(prepared, modulus, &cfg);
         prove_outer_sumcheck_with_reducer_grinded::<OuterGrinding, _, _>(
             t,
             F::zero_with_cfg(&cfg),
@@ -215,9 +222,9 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
     };
     let batch_nonce = boundary::<BatchGrinding, _>(t, security.batch, None)?;
     let (matrix_batch_challenge, linear_row_point, linear_batch_weight) =
-        sample_inner_batch_challenges(t, p, &cfg);
+        sample_inner_batch_challenges(t, prepared, &cfg);
     let inner_claim = InnerSumcheckClaim::from_outer_claims(
-        p,
+        prepared,
         statement,
         &outer.proof,
         outer.eval_points,
@@ -226,15 +233,16 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         linear_batch_weight,
         &cfg,
     )?;
-    let batched_matrix_mle = mod_q_coefficients.build_batched_matrix_mle(p, &inner_claim, &cfg)?;
+    let batched_matrix_mle =
+        mod_q_coefficients.build_batched_matrix_mle(prepared, &inner_claim, &cfg)?;
     let inner = {
         let _scope = crate::utils::prof::scope("ecdsa:shared_inner_prove");
         prove_composite_inner_sumcheck(
             t,
             inner_claim.claimed_sum().clone(),
-            p.p_h.t + p.p_h.s,
+            prepared.h_layout.row_vars + prepared.h_layout.col_vars,
             &batched_matrix_mle.as_mle(&cfg)?,
-            &|i| Ok(witness.h_bit(i, &p.p_h)),
+            &|i| Ok(witness.h_bit(i, &prepared.h_layout)),
             prefix_vars,
             &cfg,
             &reducer,
@@ -254,7 +262,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         &inner.v_evaluation,
         &inner.final_claim,
     );
-    let rows: Vec<_> = eq_table(&inner.eval_points[..p.p_h.t], &cfg)
+    let rows: Vec<_> = eq_table(&inner.eval_points[..prepared.h_layout.row_vars], &cfg)
         .map_err(error)?
         .into_iter()
         .map(|mut x| {
@@ -263,7 +271,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         })
         .collect();
     let mut flock_nonces = Vec::new();
-    let chunks = ModQWeightChunks::from_dense(&p.p_h, &rows, 113)
+    let chunks = ModQWeightChunks::from_dense(&prepared.h_layout, &rows, 113)
         .map_err(|_| error("invalid row weights"))?;
     let mut atomic = AtomicSecurity {
         plan: &security.flock,
@@ -275,9 +283,9 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
             t,
             hint,
             &witness.h_rows,
-            &p.p_h,
-            &p.p_f,
-            &p.map,
+            &prepared.h_layout,
+            &prepared.f_layout,
+            &prepared.map,
             &chunks,
             modulus,
             113,
@@ -302,18 +310,18 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
 
 pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     transcript: &mut T,
-    p: &PreparedSha256Ecdsa,
+    prepared: &PreparedSha256Ecdsa,
     statement: &Sha256EcdsaStatement,
     commitment: &Commitment,
     proof: &Sha256EcdsaProof,
 ) -> Result<()> {
-    let (_, vc) = configs(p)?;
+    let (_, vc) = configs(prepared)?;
     validate_ligerito_commitment(commitment, &vc).map_err(|e| error(format!("{e:?}")))?;
-    let security = p.security()?;
-    bind_statement(transcript, p, statement, commitment, &security)?;
+    let security = prepared.security()?;
+    bind_statement(transcript, prepared, statement, commitment, &security)?;
     let ood = crate::ligerito_flock::bind_verifier_ood(
         transcript,
-        packed_vars(&p.p_f),
+        packed_vars(&prepared.f_layout),
         security.ood,
         proof.opening.ood.as_ref(),
     )
@@ -323,7 +331,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         field_config: cfg,
         outer_eq_challenges,
         grinding_nonce: _,
-    } = derive_initial_challenges(transcript, p, &security, Some(proof.initial_nonce))?;
+    } = derive_initial_challenges(transcript, prepared, &security, Some(proof.initial_nonce))?;
     let outer_row_point = proof
         .outer
         .verify_grinded::<OuterGrinding>(
@@ -338,10 +346,10 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         .eval_points;
     boundary::<BatchGrinding, _>(transcript, security.batch, Some(proof.batch_nonce))?;
     let (matrix_batch_challenge, linear_row_point, linear_batch_weight) =
-        sample_inner_batch_challenges(transcript, p, &cfg);
-    let mod_q_coefficients = ModQCoefficients::from_relation(p, modulus, &cfg);
+        sample_inner_batch_challenges(transcript, prepared, &cfg);
+    let mod_q_coefficients = ModQCoefficients::from_relation(prepared, modulus, &cfg);
     let inner_claim = InnerSumcheckClaim::from_outer_claims(
-        p,
+        prepared,
         statement,
         &proof.outer,
         outer_row_point,
@@ -350,19 +358,26 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         linear_batch_weight,
         &cfg,
     )?;
-    let (point, value) = verify_sha256_inner_sumcheck(
+    let (inner_eval_point, inner_final_claim) = verify_sha256_inner_sumcheck(
         transcript,
         inner_claim.claimed_sum().clone(),
         &proof.inner,
         &proof.inner_nonces,
-        p.p_h.t + p.p_h.s,
+        prepared.h_layout.row_vars + prepared.h_layout.col_vars,
         &cfg,
         security.inner,
     )
     .map_err(error)?;
-    let scale = mod_q_coefficients.evaluate_batched_matrix_mle(p, &inner_claim, &point, &cfg)?;
-    bind_opening(transcript, &point, &scale, &value);
-    let rows: Vec<_> = eq_table(&point[..p.p_h.t], &cfg)
+    // inner_final_claim ≡ scale · h(inner_eval_point) (mod q).
+    let scale = mod_q_coefficients.evaluate_batched_matrix_mle(
+        prepared,
+        &inner_claim,
+        &inner_eval_point,
+        &cfg,
+    )?;
+    bind_opening(transcript, &inner_eval_point, &scale, &inner_final_claim);
+    // rows[b] = (scale · eq(b, inner_eval_point[..row_vars])) mod q ∈ [0, q).
+    let rows: Vec<_> = eq_table(&inner_eval_point[..prepared.h_layout.row_vars], &cfg)
         .map_err(error)?
         .into_iter()
         .map(|mut x| {
@@ -370,12 +385,19 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
             x.canonical_u128()
         })
         .collect();
-    let cols: Vec<_> = eq_table(&point[p.p_h.t..], &cfg)
+    // cols[c] = eq(c, inner_eval_point[row_vars..]) mod q ∈ [0, q).
+    // Σ_{b,c} rows[b] · h[b,c] · cols[c] ≡ inner_final_claim (mod q).
+    let cols: Vec<_> = eq_table(&inner_eval_point[prepared.h_layout.row_vars..], &cfg)
         .map_err(error)?
         .iter()
         .map(ProjectCanonicalU128::canonical_u128)
         .collect();
-    let chunks = ModQWeightChunks::from_dense(&p.p_h, &rows, 113)
+    // R = 2^row_vars, C = 2^col_vars; h: R × C.
+    // w = 127 - row_vars - 1 ≥ 113 ⇒ L = ⌈113 / w⌉ = 1.
+    // chunks: L × R; folds = chunks · h: L × C.
+    // folds[ℓ][c] = Σ_b chunks[ℓ][b] · h[b,c].
+    // chunks[0][b] = rows[b].
+    let chunks = ModQWeightChunks::from_dense(&prepared.h_layout, &rows, 113)
         .map_err(|_| error("invalid row weights"))?;
     let mut atomic = AtomicSecurity {
         plan: &security.flock,
@@ -389,9 +411,9 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         transcript,
         commitment,
         &proof.opening,
-        &p.p_h,
-        &p.p_f,
-        &p.map,
+        &prepared.h_layout,
+        &prepared.f_layout,
+        &prepared.map,
         &chunks,
         modulus,
         113,
@@ -409,7 +431,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
             let sum = cols.iter().zip(values).fold(0, |sum, (&c, &v)| {
                 arithmetic.add(sum, arithmetic.mul(c, arithmetic.reduce(v)))
             });
-            sum == value.canonical_u128()
+            sum == inner_final_claim.canonical_u128()
         },
         Some(&mut atomic),
     )

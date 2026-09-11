@@ -72,7 +72,9 @@ use f2z::ligerito_flock::{
     verify_mle_eval_mod_q_ligerito_tap_collapse, verify_mle_eval_mod_q_ligerito_tap_composed,
     verify_mle_eval_mod_q_ligerito_tap_family,
 };
-use f2z::pcs::{FQ_BITS, FQ_MOD, Fq, IntEvalParams, ShaF2Layout, smallest_generator, virtual_xor_params};
+use f2z::pcs::{
+    FQ_BITS, FQ_MOD, Fq, IntegerMatrixLayout, ShaF2Layout, smallest_generator, virtual_xor_params,
+};
 use f2z::taps::{TapOp, extract_virtual_tap_rows};
 use f2z::transcript::Blake3Transcript;
 use std::time::Instant;
@@ -106,7 +108,11 @@ fn taps_layout(n: usize, log_cols: usize) -> ShaF2Layout {
     let delta: usize = std::env::var("F2Z_TAPS_DELTA").map_or(0, |v| v.parse().unwrap());
     assert!(delta <= GRP(), "F2Z_TAPS_DELTA must be ≤ g = {}", GRP());
     ShaF2Layout {
-        p: IntEvalParams { t: log_cols + tw, s, word_bits: 1 },
+        p: IntegerMatrixLayout {
+            row_vars: log_cols + tw,
+            col_vars: s,
+            word_bits: 1,
+        },
         num_cols: 1 << log_cols,
         log_cols,
         bit_vars: 0,
@@ -205,7 +211,7 @@ fn main() {
             let mut layout = taps_layout(n, 3);
             layout.x_fold_extra = std::env::var("F2Z_AB_OPEN_DELTA")
                 .map_or(4, |v| v.parse().unwrap())
-                .min(layout.p.s - 1);
+                .min(layout.p.col_vars - 1);
             let p = &layout.p;
             let p_x = virtual_xor_params(&layout);
             let (pc, vc) = historical_sha_lig_configs(packed_vars(p)).expect("lig cfg");
@@ -321,9 +327,9 @@ fn main() {
             let fd: usize =
                 std::env::var("F2Z_AB_FAM_DELTA").map_or(4, |v| v.parse().unwrap());
             let mut layout = taps_layout(n, 3);
-            layout.x_fold_extra = od.min(layout.p.s - 1);
+            layout.x_fold_extra = od.min(layout.p.col_vars - 1);
             let mut layout_fam = taps_layout(n, 3);
-            layout_fam.x_fold_extra = fd.min(layout_fam.p.s - 1);
+            layout_fam.x_fold_extra = fd.min(layout_fam.p.col_vars - 1);
             let mut layout_f4 = taps_layout(n, 3);
             layout_f4.x_fold_extra = 0;
             let p = &layout.p;
@@ -641,9 +647,9 @@ fn main() {
             // layer (envelope-free) and the plain layer keeps δ = 4 —
             // the δ2 alternative measured slower AND fatter (the plain
             // fold vectors quadruple).
-            layout_plain.x_fold_extra = 4.min(taps_layout(n, 3).p.s - 1);
+            layout_plain.x_fold_extra = 4.min(taps_layout(n, 3).p.col_vars - 1);
             let mut layout_pl_naive = taps_layout(n, 3);
-            layout_pl_naive.x_fold_extra = 4.min(layout.p.s - 1);
+            layout_pl_naive.x_fold_extra = 4.min(layout.p.col_vars - 1);
             let p = &layout.p;
             let (pc, vc) = historical_sha_lig_configs(packed_vars(p)).expect("lig cfg");
             // Semantic generation: random a, a', c, c' and top words;
@@ -688,9 +694,9 @@ fn main() {
             // Pack per-column words into committed clear rows: trace
             // p = (k ≪ g)|j of column col lands in row p & (2^s − 1),
             // bit (col ≪ tw) | (p ≫ s).
-            let s_bits = p.s;
+            let s_bits = p.col_vars;
             let tw = layout.tw;
-            let row_words = (1usize << p.t).div_ceil(64);
+            let row_words = (1usize << p.row_vars).div_ceil(64);
             let pack = |cols: &[&[u64]]| -> Vec<Vec<u64>> {
                 let mut rows = vec![vec![0u64; row_words]; 1usize << s_bits];
                 for (col, wds) in cols.iter().enumerate() {
@@ -1473,7 +1479,7 @@ fn main() {
             // offset (its envelope is strictly narrower).
             let max_src_off = src.iter().map(|t| t.off).max().unwrap_or(0);
             assert!(
-                rounds + max_src_off <= 1usize << (layout.p.s - GRP()),
+                rounds + max_src_off <= 1usize << (layout.p.col_vars - GRP()),
                 "folded-baseline offsets out of range for this shape"
             );
             let rw: Vec<u128> = (0..p_x.rows())
@@ -1859,8 +1865,8 @@ fn main() {
                 "n={n} COLS4 (t'={}, s={}, 4 cols: 4 identities + 2 mixed pairs): single \
                  {m_s:.1} ms | vx6 {m_vx:.1} ms ({:.2}x of single, {:.0} KB, verify \
                  {v_vx:.1} ms) | ind6 {m_ind:.1} ms ({:.2}x of vx6)",
-                p_x.t,
-                p_x.s,
+                p_x.row_vars,
+                p_x.col_vars,
                 m_vx / m_s,
                 size_tap(&proof_vx) as f64 / 1e3,
                 m_ind / m_vx,
@@ -2379,8 +2385,8 @@ fn main() {
         println!(
             "n={n} (t'={}, s={}, tw={}): single {m_single:.1} ms | {tapf_txt} | \
              vx6 {m_vx6:.1} ({:.2}x) | ind6 {m_ind6:.1} ({:.2}x)",
-            p_x.t,
-            p_x.s,
+            p_x.row_vars,
+            p_x.col_vars,
             layout.tw,
             m_vx6 / m_single,
             m_ind6 / m_single,

@@ -16,7 +16,7 @@ use f2z::ligerito_flock::{
     commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, historical_sha_lig_configs,
     verify_mle_eval_mod_q_ligerito,
 };
-use f2z::pcs::{IntEvalParams, mod_q_num_chunks, smallest_generator};
+use f2z::pcs::{IntegerMatrixLayout, mod_q_num_chunks, smallest_generator};
 
 /// `𝔽_q`, `q = 2^100 − 15`.
 const Q: u128 = (1u128 << 100) - 15;
@@ -55,7 +55,11 @@ impl core::ops::Mul for Fq {
 fn digest(t: usize, s: usize, w: usize) {
     let alpha = smallest_generator();
     let q_bits = 100usize;
-    let p = IntEvalParams { t, s, word_bits: w };
+    let p = IntegerMatrixLayout {
+        row_vars: t,
+        col_vars: s,
+        word_bits: w,
+    };
     let m_p = packed_vars(&p);
     let lch = mod_q_num_chunks(&p, q_bits);
     let (pc, vc) = historical_sha_lig_configs(m_p).expect("lig cfg");

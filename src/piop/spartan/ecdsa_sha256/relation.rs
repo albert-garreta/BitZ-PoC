@@ -11,7 +11,7 @@ use num_traits::Zero;
 use super::{Result, error};
 use crate::{
     f2map::{ChainedPackedSourceParts, ChainedSourceTail, PreparedVirtualMap, VirtualMap},
-    pcs::IntEvalParams,
+    pcs::IntegerMatrixLayout,
     sparse_matrix::SparseMatrix,
 };
 
@@ -471,8 +471,8 @@ pub struct PreparedSha256Ecdsa {
     pub(crate) log_n: usize,
     pub(crate) mode: OuterMode,
     pub(crate) lambda: u32,
-    pub(crate) p_h: IntEvalParams,
-    pub(crate) p_f: IntEvalParams,
+    pub(crate) h_layout: IntegerMatrixLayout,
+    pub(crate) f_layout: IntegerMatrixLayout,
     pub(crate) ligerito: crate::ligerito_flock::ResolvedLigerito,
 }
 
@@ -484,7 +484,10 @@ impl PreparedSha256Ecdsa {
         selection: crate::ligerito_flock::LigeritoSelection,
     ) -> Result<Self> {
         self.ligerito = selection
-            .resolve(self.p_f.t + self.p_f.s - 7, self.lambda as usize)
+            .resolve(
+                self.f_layout.row_vars + self.f_layout.col_vars - 7,
+                self.lambda as usize,
+            )
             .map_err(error)?;
         self.security()?;
         Ok(self)
@@ -526,11 +529,11 @@ impl PreparedSha256Ecdsa {
     pub fn live_source_bits(&self) -> usize {
         self.map.f_offset + self.local.p_map.cols() - P_INPUT_ALIAS
     }
-    pub fn assignment_params(&self) -> &IntEvalParams {
-        &self.p_h
+    pub fn assignment_params(&self) -> &IntegerMatrixLayout {
+        &self.h_layout
     }
-    pub fn source_params(&self) -> &IntEvalParams {
-        &self.p_f
+    pub fn source_params(&self) -> &IntegerMatrixLayout {
+        &self.f_layout
     }
     pub fn map(&self) -> &impl VirtualMap {
         &self.map
@@ -583,9 +586,9 @@ pub fn prepare_sha256_ecdsa(
         .ilog2() as usize;
     let params = |bits: usize| {
         let t = bits.div_ceil(2).min(13);
-        IntEvalParams {
-            t,
-            s: bits - t,
+        IntegerMatrixLayout {
+            row_vars: t,
+            col_vars: bits - t,
             word_bits: 1,
         }
     };
@@ -633,8 +636,8 @@ pub fn prepare_sha256_ecdsa(
     hash.update(&local.digest);
     hash.update(&last.digest());
     hash.update(&(n as u64).to_le_bytes());
-    let p_h = params(h_bits);
-    let p_f = params(f_bits);
+    let h_layout = params(h_bits);
+    let f_layout = params(f_bits);
     let mut map = Sha256EcdsaMap {
         local: local.clone(),
         last,
@@ -642,8 +645,8 @@ pub fn prepare_sha256_ecdsa(
         h_offset,
         f_offset,
         aliases: [0; P_INPUT_ALIAS],
-        rows: p_h.cells(),
-        cols: p_f.cells(),
+        rows: h_layout.cells(),
+        cols: f_layout.cells(),
         nnz,
         digest: *hash.finalize().as_bytes(),
     };
@@ -654,8 +657,8 @@ pub fn prepare_sha256_ecdsa(
         log_n: log_compressions,
         mode,
         lambda,
-        p_h,
-        p_f,
+        h_layout,
+        f_layout,
         ligerito: crate::ligerito_flock::LigeritoSelection::for_target(lambda as usize)
             .resolve(f_bits - 7, lambda as usize).map_err(error)?,
     })

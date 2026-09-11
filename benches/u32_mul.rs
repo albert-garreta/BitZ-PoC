@@ -305,8 +305,8 @@ fn bench_exponent<P: IopSecurityProfile>(
             println!(
                 "  SAMPLE pass=latency profile={profile_name} order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} word_bits={} projection_bits={q_bits} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} sample={} multiplications={multiplications} commit_ms={commit_ms:.6} prove_ms={prove_ms:.6} verify_ms={verify_ms:.6} verified=true",
                 params.word_bits,
-                params.t,
-                params.s,
+                params.row_vars,
+                params.col_vars,
                 sample_index + 1,
             );
             prover.record_prove(prove_ms, commit_ms, &prove_phases);
@@ -341,7 +341,7 @@ fn bench_exponent<P: IopSecurityProfile>(
         let _ = f2z::utils::prof::take_totals();
         println!(
             "  MEMORY pass=memory profile={profile_name} order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} word_bits={} projection_bits={q_bits} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} multiplications={multiplications} peak_heap_mib={peak:.6} live_before_prove_mib={live_before_prove:.6} verified=true",
-            params.word_bits, params.t, params.s,
+            params.word_bits, params.row_vars, params.col_vars,
         );
         memory_metrics = Some((live_before_prove, peak));
     }
@@ -356,16 +356,16 @@ fn bench_exponent<P: IopSecurityProfile>(
     println!(
         "  benchmark: pass={} order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} t={} s={} chunks={f2z_chunks}",
         pass.as_str(),
-        params.t,
-        params.s,
+        params.row_vars,
+        params.col_vars,
     );
     println!(
         "  R1CS: rows={} cols={} nnz={}  |  F2Z: t={} s={} W={} chunks={} bits={} ({:.2} MiB)",
         multiplications,
         4 * layout.capacity(),
         3 * multiplications,
-        params.t,
-        params.s,
+        params.row_vars,
+        params.col_vars,
         params.word_bits,
         f2z_chunks,
         128usize * layout.capacity(),
@@ -392,8 +392,8 @@ fn bench_exponent<P: IopSecurityProfile>(
                 ("strategy".into(), STRATEGY_LABEL.into()),
                 ("word_bits".into(), params.word_bits.to_string()),
                 ("projection_bits".into(), q_bits.to_string()),
-                ("f2z_t".into(), params.t.to_string()),
-                ("f2z_s".into(), params.s.to_string()),
+                ("f2z_t".into(), params.row_vars.to_string()),
+                ("f2z_s".into(), params.col_vars.to_string()),
                 ("f2z_chunks".into(), f2z_chunks.to_string()),
                 ("exponent".into(), exponent.to_string()),
                 ("order".into(), order.to_string()),

@@ -19,7 +19,7 @@ use f2z::ligerito_flock::{
     lig_configs, prove_mle_eval_mod_q_ligerito, prove_mle_eval_mod_q_ligerito_virtual,
     verify_mle_eval_mod_q_ligerito, verify_mle_eval_mod_q_ligerito_virtual,
 };
-use f2z::pcs::{IntEvalParams, smallest_generator};
+use f2z::pcs::{IntegerMatrixLayout, smallest_generator};
 use f2z::sparse_matrix::SparseMatrix;
 use f2z::transcript::{Blake3Transcript, traits::Transcript};
 
@@ -65,9 +65,9 @@ fn splitmix(x: u64) -> u64 {
 }
 
 /// Pseudo-random committed bits for `f`, in commit-row layout.
-fn f_rows(p_f: &IntEvalParams, seed: u64) -> Vec<Vec<u64>> {
+fn f_rows(p_f: &IntegerMatrixLayout, seed: u64) -> Vec<Vec<u64>> {
     let t_wf = cell_row_bits(p_f);
-    (0..1usize << p_f.s)
+    (0..1usize << p_f.col_vars)
         .map(|c| {
             (0..(1usize << t_wf) / 64)
                 .map(|w| splitmix(seed ^ ((c as u64) << 32) ^ w as u64))
@@ -117,13 +117,13 @@ fn test_map(n_h: usize, n_f: usize, seed: u64) -> PreparedVirtualMap {
 /// `h` and never exposes an `M f` operation.
 fn apply_map(
     map: &PreparedVirtualMap,
-    p_h: &IntEvalParams,
-    p_f: &IntEvalParams,
+    p_h: &IntegerMatrixLayout,
+    p_f: &IntegerMatrixLayout,
     f_rows: &[Vec<u64>],
 ) -> Vec<Vec<u64>> {
     let t_wh = cell_row_bits(p_h);
     let t_wf = cell_row_bits(p_f);
-    let mut h_rows = vec![vec![0u64; (1usize << t_wh) / 64]; 1usize << p_h.s];
+    let mut h_rows = vec![vec![0u64; (1usize << t_wh) / 64]; 1usize << p_h.col_vars];
     for (source, column) in map.matrix().columns().enumerate() {
         if bit_at(f_rows, t_wf, source) == 0 {
             continue;
@@ -148,13 +148,13 @@ fn row_lists(map: &PreparedVirtualMap) -> Vec<Vec<usize>> {
 
 /// The claimed value `y = Σ_c w'_c · Σ_b rw[b] · WORD(b, c)` computed
 /// naively from `h`'s bit cells (`W` word bits per row entry).
-fn expected_y(p_h: &IntEvalParams, h_rows: &[Vec<u64>], rw: &[u128], col_w: &[Fq]) -> Fq {
+fn expected_y(p_h: &IntegerMatrixLayout, h_rows: &[Vec<u64>], rw: &[u128], col_w: &[Fq]) -> Fq {
     let t_wh = cell_row_bits(p_h);
     let log_w = p_h.word_bits.trailing_zeros() as usize;
     let mut y = Fq::from(0u128);
-    for c in 0..1usize << p_h.s {
+    for c in 0..1usize << p_h.col_vars {
         let mut acc = Fq::from(0u128);
-        for b in 0..1usize << p_h.t {
+        for b in 0..1usize << p_h.row_vars {
             let mut word = 0u128;
             for j in 0..p_h.word_bits {
                 let flat = (c << t_wh) | (b << log_w) | j;
@@ -209,10 +209,15 @@ fn assert_proof_pin(
     );
 }
 
-fn run_shape(p_h: IntEvalParams, seed: u64, virtual_pin: (&str, u128), direct_pin: (&str, u128)) {
-    let p_f = IntEvalParams {
-        t: 10,
-        s: 5,
+fn run_shape(
+    p_h: IntegerMatrixLayout,
+    seed: u64,
+    virtual_pin: (&str, u128),
+    direct_pin: (&str, u128),
+) {
+    let p_f = IntegerMatrixLayout {
+        row_vars: 10,
+        col_vars: 5,
         word_bits: 1,
     };
     let alpha = smallest_generator();
@@ -308,7 +313,7 @@ fn run_shape(p_h: IntEvalParams, seed: u64, virtual_pin: (&str, u128), direct_pi
     .unwrap_or_else(|e| {
         panic!(
             "virtual roundtrip (t_h={}, W={}) failed: {e:?}",
-            p_h.t, p_h.word_bits
+            p_h.row_vars, p_h.word_bits
         )
     });
 
@@ -520,9 +525,9 @@ fn run_shape(p_h: IntEvalParams, seed: u64, virtual_pin: (&str, u128), direct_pi
     );
 
     // Geometry mismatch is rejected up front.
-    let p_wrong = IntEvalParams {
-        t: p_h.t,
-        s: p_h.s + 1,
+    let p_wrong = IntegerMatrixLayout {
+        row_vars: p_h.row_vars,
+        col_vars: p_h.col_vars + 1,
         word_bits: p_h.word_bits,
     };
     let mut vt = Blake3Transcript::new();
@@ -549,9 +554,9 @@ fn run_shape(p_h: IntEvalParams, seed: u64, virtual_pin: (&str, u128), direct_pi
 #[test]
 fn virtual_open_roundtrips_one_chunk_w1() {
     run_shape(
-        IntEvalParams {
-            t: 9,
-            s: 6,
+        IntegerMatrixLayout {
+            row_vars: 9,
+            col_vars: 6,
             word_bits: 1,
         },
         0x5EED_0001,
@@ -570,9 +575,9 @@ fn virtual_open_roundtrips_one_chunk_w1() {
 #[test]
 fn virtual_open_roundtrips_two_chunks_w32() {
     run_shape(
-        IntEvalParams {
-            t: 4,
-            s: 6,
+        IntegerMatrixLayout {
+            row_vars: 4,
+            col_vars: 6,
             word_bits: 32,
         },
         0x5EED_0002,
@@ -591,14 +596,14 @@ fn virtual_open_roundtrips_two_chunks_w32() {
 /// forests: all-but-one tree constant).
 #[test]
 fn virtual_open_single_live_row() {
-    let p_h = IntEvalParams {
-        t: 9,
-        s: 6,
+    let p_h = IntegerMatrixLayout {
+        row_vars: 9,
+        col_vars: 6,
         word_bits: 1,
     };
-    let p_f = IntEvalParams {
-        t: 10,
-        s: 5,
+    let p_f = IntegerMatrixLayout {
+        row_vars: 10,
+        col_vars: 5,
         word_bits: 1,
     };
     let alpha = smallest_generator();
@@ -682,9 +687,9 @@ fn virtual_open_single_live_row() {
 #[test]
 fn virtual_open_identity_fast_path() {
     use f2z::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
-    let p = IntEvalParams {
-        t: 10,
-        s: 5,
+    let p = IntegerMatrixLayout {
+        row_vars: 10,
+        col_vars: 5,
         word_bits: 1,
     };
     let alpha = smallest_generator();
@@ -748,7 +753,7 @@ fn virtual_open_identity_fast_path() {
     // Adversarial public geometry is rejected before any unchecked shape
     // helper or transcript absorption.
     let reject_shape_without_absorption =
-        |p_h: &IntEvalParams, p_f: &IntEvalParams, q_bits: usize| {
+        |p_h: &IntegerMatrixLayout, p_f: &IntegerMatrixLayout, q_bits: usize| {
             let mut actual = Blake3Transcript::new();
             let mut untouched = actual.clone();
             assert_eq!(
@@ -775,9 +780,9 @@ fn virtual_open_identity_fast_path() {
             );
         };
     reject_shape_without_absorption(
-        &IntEvalParams {
-            t: usize::MAX,
-            s: p.s,
+        &IntegerMatrixLayout {
+            row_vars: usize::MAX,
+            col_vars: p.col_vars,
             word_bits: p.word_bits,
         },
         &p,
@@ -785,35 +790,35 @@ fn virtual_open_identity_fast_path() {
     );
     reject_shape_without_absorption(
         &p,
-        &IntEvalParams {
-            t: p.t,
-            s: p.s,
+        &IntegerMatrixLayout {
+            row_vars: p.row_vars,
+            col_vars: p.col_vars,
             word_bits: 0,
         },
         Q_BITS,
     );
     reject_shape_without_absorption(
-        &IntEvalParams {
-            t: p.t,
-            s: usize::MAX,
+        &IntegerMatrixLayout {
+            row_vars: p.row_vars,
+            col_vars: usize::MAX,
             word_bits: p.word_bits,
         },
         &p,
         Q_BITS,
     );
     reject_shape_without_absorption(
-        &IntEvalParams {
-            t: LOG_PACKING - 1,
-            s: p.s,
+        &IntegerMatrixLayout {
+            row_vars: LOG_PACKING - 1,
+            col_vars: p.col_vars,
             word_bits: 1,
         },
         &p,
         Q_BITS,
     );
     reject_shape_without_absorption(
-        &IntEvalParams {
-            t: p.t + p.s,
-            s: 0,
+        &IntegerMatrixLayout {
+            row_vars: p.row_vars + p.col_vars,
+            col_vars: 0,
             word_bits: 1,
         },
         &p,

@@ -46,7 +46,7 @@ fn bind_sums(t: &mut Blake3Transcript, digest: &[u8; 32], sums: &[u128]) {
     }
 }
 
-fn endpoint(p: &crate::pcs::IntEvalParams, weights: &[u128], z: &[Gf], e: Gf) -> BinaryClaim {
+fn endpoint(p: &crate::pcs::IntegerMatrixLayout, weights: &[u128], z: &[Gf], e: Gf) -> BinaryClaim {
     let tw = row_bit_vars(p);
     BinaryClaim {
         low: row_bit_weights(p, weights, f2z_generator(), &z[..tw])
@@ -280,7 +280,13 @@ pub(crate) fn verify(
     bind_sums(transcript, &bridge_digest, &proof.sums);
     let comb = FixedBasePow::new(f2z_generator(), 128, 8);
     let roots: Vec<_> = proof.sums.iter().map(|&s| comb.pow(s)).collect();
-    let (z, e) = verify_merged_forest(transcript, &roots, &proof.forest, row_bit_vars(&p), p.s)
-        .map_err(|_| Error::Invalid("multiplication GKR"))?;
+    let (z, e) = verify_merged_forest(
+        transcript,
+        &roots,
+        &proof.forest,
+        row_bit_vars(&p),
+        p.col_vars,
+    )
+    .map_err(|_| Error::Invalid("multiplication GKR"))?;
     Ok(endpoint(&p, &weights[0], &z, e))
 }

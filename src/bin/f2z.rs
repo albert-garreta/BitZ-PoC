@@ -157,7 +157,7 @@ use f2z::ligerito_flock::{
     verify_mle_eval_mod_q_ligerito_runtime,
 };
 use f2z::ext_proj::{ExtProjParams, ProjArith, sample_proj_point, sample_proj_prime};
-use f2z::pcs::{IntEvalParams, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
+use f2z::pcs::{IntegerMatrixLayout, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
 use f2z::piop::spartan::f2z::U32MulLigerito;
 use f2z::piop::spartan::{
     IopSecurityProfile, Lambda100, Lambda128, PreparedU32MulRelation, U32MulF2zWidth,
@@ -231,7 +231,7 @@ fn peak_mb() -> f64 {
 /// forest runs once) — exactly the width rule of the Spartan security
 /// profile's derived interval. The claim `⟨eq(·, r₁) ⊗ eq(·, r₂), f⟩ = μ`
 /// then uses a transcript-sampled point `(r₁, r₂) ∈ F_q^{t+s}`.
-fn standalone_q_bits(p: &IntEvalParams) -> usize {
+fn standalone_q_bits(p: &IntegerMatrixLayout) -> usize {
     mod_q_chunk_width(p).min(113)
 }
 
@@ -254,14 +254,18 @@ struct StandaloneInstance {
 /// prover's precomputed instance must match (asserted by the caller).
 fn sample_standalone_instance(
     transcript: &mut Blake3Transcript,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     q_bits: usize,
 ) -> StandaloneInstance {
     let _g = f2z::utils::prof::scope("mq:sample_instance");
     let q = sample_proj_prime(transcript, &standalone_prime_sampler(q_bits));
     let arith = ProjArith::new(q);
-    let r1: Vec<u128> = (0..p.t).map(|_| sample_proj_point(transcript, q)).collect();
-    let r2: Vec<u128> = (0..p.s).map(|_| sample_proj_point(transcript, q)).collect();
+    let r1: Vec<u128> = (0..p.row_vars)
+        .map(|_| sample_proj_point(transcript, q))
+        .collect();
+    let r2: Vec<u128> = (0..p.col_vars)
+        .map(|_| sample_proj_point(transcript, q))
+        .collect();
     StandaloneInstance {
         q,
         row_weights_q: eq_table_mod_q(&arith, &r1),
@@ -877,7 +881,11 @@ fn main() {
         exit(2);
     }
 
-    let p = IntEvalParams { t, s, word_bits: w };
+    let p = IntegerMatrixLayout {
+        row_vars: t,
+        col_vars: s,
+        word_bits: w,
+    };
     let q_bits = standalone_q_bits(&p);
     let m_p = packed_vars(&p);
     let lch = mod_q_num_chunks(&p, q_bits);
@@ -1708,7 +1716,11 @@ fn family_layout(n: usize) -> f2z::pcs::ShaF2Layout {
     let s = n - log_cols - t_x;
     let tw = t_x - bit_vars;
     f2z::pcs::ShaF2Layout {
-        p: IntEvalParams { t: bit_vars + log_cols + tw, s, word_bits: 1 },
+        p: IntegerMatrixLayout {
+            row_vars: bit_vars + log_cols + tw,
+            col_vars: s,
+            word_bits: 1,
+        },
         num_cols: 1 << log_cols,
         log_cols,
         bit_vars,
@@ -1774,8 +1786,8 @@ fn run_family(o: &Opts, fam: &str) {
         "f2z --family {fam}: n={} (t'={}, s={}, j={j}, k={k}) | lig={lig_tag}@r1/{}k{} | \
          threads={threads_eff} | int guards: {}",
         o.n,
-        p_x.t,
-        p_x.s,
+        p_x.row_vars,
+        p_x.col_vars,
         1usize << pc.log_inv_rates[0],
         pc.initial_k,
         if f2z::utils::CHECKED { "CHECKED (build with --features unchecked)" } else { "unchecked" },
@@ -1927,7 +1939,11 @@ fn taps_layout(n: usize, delta: usize, log_cols: usize) -> f2z::pcs::ShaF2Layout
     let tw = ((n - log_cols) / 2).max(6);
     let s = n - log_cols - tw;
     f2z::pcs::ShaF2Layout {
-        p: IntEvalParams { t: log_cols + tw, s, word_bits: 1 },
+        p: IntegerMatrixLayout {
+            row_vars: log_cols + tw,
+            col_vars: s,
+            word_bits: 1,
+        },
         num_cols: 1 << log_cols,
         log_cols,
         bit_vars: 0,
@@ -1990,7 +2006,7 @@ fn run_taps(o: &Opts, mode: &str) {
         eprintln!("--taps-delta must be ≤ g = {grp}");
         exit(2);
     }
-    if layout.p.s < grp + 2 {
+    if layout.p.col_vars < grp + 2 {
         eprintln!("--taps needs s ≥ g + 2 (n too small for 2^{grp}-bit words)");
         exit(2);
     }
@@ -2080,7 +2096,7 @@ fn run_taps(o: &Opts, mode: &str) {
     let sched_rounds = o
         .taps_rounds
         .unwrap_or(48)
-        .min((1usize << (layout.p.s - grp)) - sched_max_src_off);
+        .min((1usize << (layout.p.col_vars - grp)) - sched_max_src_off);
     let k_desc = match mode {
         "collapse" => "13 single-tap claims".to_string(),
         "rotxor" => "8 op(xor-set) claims".to_string(),
@@ -2093,8 +2109,8 @@ fn run_taps(o: &Opts, mode: &str) {
         "f2z --taps {mode}: n={} (t'={}, s={}, g={grp}, {k_desc}, one shared point) | \
          lig={lig_tag}@r1/{}k{} | threads={threads_eff} | int guards: {}",
         o.n,
-        p_x.t,
-        p_x.s,
+        p_x.row_vars,
+        p_x.col_vars,
         1usize << pc.log_inv_rates[0],
         pc.initial_k,
         if f2z::utils::CHECKED { "CHECKED (build with --features unchecked)" } else { "unchecked" },
@@ -2719,9 +2735,9 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         "f2z --mul: 2^{e} = {multiplications} u32×u32→u64 multiplications | F2Z n={} (t={}, s={}, W={}, \
          chunks={chunks}) | profile={} λ={} | lig={lig_tag} | q ∈ [2^{q_lo_log2}, 2^{q_bits}) sampled \
          after the commit | threads={threads_eff} | int guards: {}",
-        params.t + params.s,
-        params.t,
-        params.s,
+        params.row_vars + params.col_vars,
+        params.row_vars,
+        params.col_vars,
         params.word_bits,
         sec.profile_name,
         sec.lambda,
@@ -2853,9 +2869,9 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         ligerito: relation.ligerito_configuration().report(&o.profile, sec.ood),
         e,
         multiplications,
-        n: params.t + params.s,
-        t: params.t,
-        s: params.s,
+        n: params.row_vars + params.col_vars,
+        t: params.row_vars,
+        s: params.col_vars,
         w: params.word_bits,
         chunks,
         profile: sec.profile_name.to_string(),

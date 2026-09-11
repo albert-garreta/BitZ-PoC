@@ -157,7 +157,7 @@ impl ModQCoefficients {
             self.build_sha_factors(relation, claim, cfg)?;
         Ok(BatchedMatrixMle {
             ctx: self.ctx,
-            num_vars: relation.p_h.t + relation.p_h.s,
+            num_vars: relation.h_layout.row_vars + relation.h_layout.col_vars,
             instance_weights,
             sha_local_evaluations,
             p256_evaluations,
@@ -176,7 +176,10 @@ impl ModQCoefficients {
         cfg: &Config,
     ) -> Result<F> {
         let _scope = crate::utils::prof::scope("ecdsa:coefficient_evaluate");
-        check_assignment_point(relation.p_h.t + relation.p_h.s, assignment_point)?;
+        check_assignment_point(
+            relation.h_layout.row_vars + relation.h_layout.col_vars,
+            assignment_point,
+        )?;
         let weights = self.build_row_weights(relation, claim, cfg)?;
         let (instances, sha) = self.build_sha_factors(relation, claim, cfg)?;
         let equality = equality_weights(assignment_point, cfg)?;

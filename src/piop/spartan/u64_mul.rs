@@ -19,7 +19,7 @@ use crypto_primitives::{FromWithConfig, PrimeField};
 use thiserror::Error;
 
 use crate::{
-    pcs::IntEvalParams,
+    pcs::IntegerMatrixLayout,
     poly::mle::DenseMultilinearExtension,
     sparse_matrix::SparseColumn,
     utils::{cfg_iter, cfg_iter_mut},
@@ -257,11 +257,11 @@ impl U64MulLayout {
     /// physical slot coordinates become folded row variables, so the
     /// committed tensor has `g + 8` variables (one more than the 128-slot
     /// relations at the same gate count).
-    pub const fn f2z_params(&self) -> IntEvalParams {
+    pub const fn f2z_params(&self) -> IntegerMatrixLayout {
         let s = self.gate_vars / 2;
-        IntEvalParams {
-            t: U64_MUL_SLOT_VARS + self.gate_vars - s,
-            s,
+        IntegerMatrixLayout {
+            row_vars: U64_MUL_SLOT_VARS + self.gate_vars - s,
+            col_vars: s,
             word_bits: 1,
         }
     }
@@ -624,7 +624,7 @@ mod tests {
         assert_eq!(layout.padded_assignment_len(), 8 * 1024);
         assert_eq!(layout.assignment_vars(), 13);
         let p = layout.f2z_params();
-        assert_eq!((p.t, p.s, p.word_bits), (8 + 5, 5, 1));
+        assert_eq!((p.row_vars, p.col_vars, p.word_bits), (8 + 5, 5, 1));
         assert_eq!(p.rows() * p.cols(), U64_MUL_BIT_SLOTS * layout.capacity());
         assert_eq!(U64MulLayout::new(1).unwrap().capacity(), MIN_CAPACITY);
         assert_eq!(U64MulLayout::new(0), Err(U64MulError::EmptyBatch));

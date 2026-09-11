@@ -11,18 +11,18 @@ use thiserror::Error;
 use core::slice;
 use std::vec as alloc_vec;
 
-use crate::{pcs::IntEvalParams, sparse_matrix::SparseMatrix};
+use crate::{pcs::IntegerMatrixLayout, sparse_matrix::SparseMatrix};
 
 /// Number of bit cells (`2^{t+log₂W+s}`) in an integer-evaluation shape.
-pub fn cell_count(p: &IntEvalParams) -> usize {
+pub fn cell_count(p: &IntegerMatrixLayout) -> usize {
     let log_w = p.word_bits.trailing_zeros() as usize;
-    1usize << (p.t + log_w + p.s)
+    1usize << (p.row_vars + log_w + p.col_vars)
 }
 
 /// Row-bit width `t + log₂W` of an integer-evaluation shape.
-pub fn cell_row_bits(p: &IntEvalParams) -> usize {
+pub fn cell_row_bits(p: &IntegerMatrixLayout) -> usize {
     let log_w = p.word_bits.trailing_zeros() as usize;
-    p.t + log_w
+    p.row_vars + log_w
 }
 
 /// Failures while validating public virtual-map metadata.

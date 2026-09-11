@@ -23,7 +23,7 @@ use crate::{
         PreparedVirtualMap, PreparedVirtualMapError,
     },
     ligerito::LOG_PACKING,
-    pcs::{IntEvalParams, mod_q_num_chunks},
+    pcs::{IntegerMatrixLayout, mod_q_num_chunks},
     sparse_matrix::SparseMatrix,
 };
 
@@ -204,9 +204,9 @@ pub struct PreparedSha256CompressionBatch {
     local: &'static IntegerLocalRelation,
     map: PackedRepeatedVirtualMap,
     product_map: Option<PackedSourceRepeatedVirtualMap>,
-    product_p_h: Option<IntEvalParams>,
-    p_f: IntEvalParams,
-    p_h: IntEvalParams,
+    product_p_h: Option<IntegerMatrixLayout>,
+    p_f: IntegerMatrixLayout,
+    p_h: IntegerMatrixLayout,
     instances: usize,
     log_instance_capacity: usize,
     security: IopSecurityParams,
@@ -217,8 +217,15 @@ pub struct PreparedSha256CompressionBatch {
 
 impl PreparedSha256CompressionBatch {
     /// Select only this batch's Ligerito opener; the enclosing target is retained.
-    pub fn with_ligerito(mut self, selection: crate::ligerito_flock::LigeritoSelection) -> Result<Self, Sha256ConstraintError> {
-        let resolved = selection.resolve(self.p_f.t + self.p_f.s - LOG_PACKING, self.security.ligerito_target_bits)
+    pub fn with_ligerito(
+        mut self,
+        selection: crate::ligerito_flock::LigeritoSelection,
+    ) -> Result<Self, Sha256ConstraintError> {
+        let resolved = selection
+            .resolve(
+                self.p_f.row_vars + self.p_f.col_vars - LOG_PACKING,
+                self.security.ligerito_target_bits,
+            )
             .map_err(Sha256ConstraintError::LigeritoConfig)?;
         self.security.adopt_ood_round(resolved.ood_bits())?;
         self.ligerito = Some(resolved);
@@ -236,7 +243,7 @@ impl PreparedSha256CompressionBatch {
 
     /// F2Z geometry the opening runs against: the product view under the
     /// direct product opening, the packed assignment otherwise.
-    pub fn opening_params(&self) -> &IntEvalParams {
+    pub fn opening_params(&self) -> &IntegerMatrixLayout {
         self.product_p_h.as_ref().unwrap_or(&self.p_h)
     }
 
@@ -319,7 +326,7 @@ impl PreparedSha256CompressionBatch {
     }
 
     /// F2Z geometry of the proof-only product assignment view.
-    pub const fn product_assignment_params(&self) -> Option<&IntEvalParams> {
+    pub const fn product_assignment_params(&self) -> Option<&IntegerMatrixLayout> {
         self.product_p_h.as_ref()
     }
 
@@ -342,12 +349,12 @@ impl PreparedSha256CompressionBatch {
     }
 
     /// F2Z geometry of the committed Boolean source rows.
-    pub const fn source_params(&self) -> &IntEvalParams {
+    pub const fn source_params(&self) -> &IntegerMatrixLayout {
         &self.p_f
     }
 
     /// F2Z geometry of the synthesized Boolean assignment rows.
-    pub const fn assignment_params(&self) -> &IntEvalParams {
+    pub const fn assignment_params(&self) -> &IntegerMatrixLayout {
         &self.p_h
     }
 
@@ -496,7 +503,7 @@ pub fn prepare_sha256_compression_batch_with_profile_and_layout<P: IopSecurityPr
     let layout = if layout == Sha256OpeningLayout::Default && log_compressions < LOG_PACKING {
         let assignment_vars = packed_domain_vars(instances, SHA256_H_INSTANCE_BITS)?;
         Sha256OpeningLayout::InnerSumcheck {
-            row_vars: single_forest_binary_params(assignment_vars).t,
+            row_vars: single_forest_binary_params(assignment_vars).row_vars,
         }
     } else {
         layout
@@ -579,7 +586,7 @@ pub fn prepare_sha256_compression_batch_for_assignment_rows_with_profile<P: IopS
     let selection = crate::ligerito_flock::LigeritoSelection::for_target(prepared.security.ligerito_target_bits);
     let prepared = prepared.with_ligerito(selection)?;
     validate_prepared_protocol(&prepared)?;
-    if prepared.p_h.t + prepared.p_h.s != log_assignment_rows {
+    if prepared.p_h.row_vars + prepared.p_h.col_vars != log_assignment_rows {
         return Err(Sha256ConstraintError::InvalidBatchExponent);
     }
     Ok(prepared)
@@ -672,9 +679,9 @@ fn prepare_sha256_compression_instances(
             single_forest_binary_params(assignment_vars),
             instances.is_power_of_two().then(|| {
                 let t = log_instance_capacity.min(13);
-                IntEvalParams {
-                    t,
-                    s: assignment_vars - t,
+                IntegerMatrixLayout {
+                    row_vars: t,
+                    col_vars: assignment_vars - t,
                     word_bits: 1,
                 }
             }),
@@ -692,9 +699,9 @@ fn prepare_sha256_compression_instances(
             }
             (
                 single_forest_binary_params(assignment_vars),
-                Some(IntEvalParams {
-                    t: row_vars,
-                    s: assignment_vars - row_vars,
+                Some(IntegerMatrixLayout {
+                    row_vars: row_vars,
+                    col_vars: assignment_vars - row_vars,
                     word_bits: 1,
                 }),
                 PackedSourceOrder::InstanceMajor,
@@ -708,9 +715,9 @@ fn prepare_sha256_compression_instances(
                 });
             }
             (
-                IntEvalParams {
-                    t: row_vars,
-                    s: assignment_vars - row_vars,
+                IntegerMatrixLayout {
+                    row_vars: row_vars,
+                    col_vars: assignment_vars - row_vars,
                     word_bits: 1,
                 },
                 None,
@@ -728,9 +735,9 @@ fn prepare_sha256_compression_instances(
                 t,
             });
         }
-        product_p_h = Some(IntEvalParams {
-            t,
-            s: assignment_vars - t,
+        product_p_h = Some(IntegerMatrixLayout {
+            row_vars: t,
+            col_vars: assignment_vars - t,
             word_bits: 1,
         });
         if t > log_instance_capacity {
@@ -752,7 +759,7 @@ fn prepare_sha256_compression_instances(
         })
         .transpose()?;
     let mut facts = sha256_instance_facts(exponent);
-    facts.opening_t = u32::try_from(product_p_h.unwrap_or(p_h).t)
+    facts.opening_t = u32::try_from(product_p_h.unwrap_or(p_h).row_vars)
         .map_err(|_| Sha256ConstraintError::InvalidBatchExponent)?;
     if layout != Sha256OpeningLayout::Default {
         // The opening's integer lift sums `2^t` terms. The production
@@ -856,15 +863,15 @@ pub(super) fn packed_domain_vars(
 /// order, so its terminal equality factors directly into `2^t` row weights
 /// and `2^s` column weights. Keeping both factors near `2^(vars/2)` avoids
 /// materializing a `2^vars` opening vector.
-pub(super) const fn balanced_binary_params(vars: usize) -> IntEvalParams {
+pub(super) const fn balanced_binary_params(vars: usize) -> IntegerMatrixLayout {
     let t = if vars.div_ceil(2) < LOG_PACKING {
         LOG_PACKING
     } else {
         vars.div_ceil(2)
     };
-    IntEvalParams {
-        t,
-        s: vars - t,
+    IntegerMatrixLayout {
+        row_vars: t,
+        col_vars: vars - t,
         word_bits: 1,
     }
 }
@@ -874,14 +881,14 @@ pub(super) const fn balanced_binary_params(vars: usize) -> IntEvalParams {
 /// with Boolean cells, `t <= 127 - 113 - 1 = 13` makes the generic fold bound
 /// strictly smaller than `2^127`. Shapes already balanced below that cap keep
 /// their balanced layout.
-const fn single_forest_binary_params(vars: usize) -> IntEvalParams {
+const fn single_forest_binary_params(vars: usize) -> IntegerMatrixLayout {
     let balanced = balanced_binary_params(vars);
-    if balanced.t <= 13 {
+    if balanced.row_vars <= 13 {
         balanced
     } else {
-        IntEvalParams {
-            t: 13,
-            s: vars - 13,
+        IntegerMatrixLayout {
+            row_vars: 13,
+            col_vars: vars - 13,
             word_bits: 1,
         }
     }
@@ -1162,17 +1169,17 @@ mod tests {
         assert_eq!(map.cols(), 1 << 16);
         assert_eq!(
             *p_f,
-            IntEvalParams {
-                t: 8,
-                s: 8,
+            IntegerMatrixLayout {
+                row_vars: 8,
+                col_vars: 8,
                 word_bits: 1
             }
         );
         assert_eq!(
             *p_h,
-            IntEvalParams {
-                t: 9,
-                s: 9,
+            IntegerMatrixLayout {
+                row_vars: 9,
+                col_vars: 9,
                 word_bits: 1
             }
         );
@@ -1313,9 +1320,9 @@ mod tests {
         assert_eq!(prepared.assignment_params().cells(), domain);
         assert_eq!(
             *prepared.assignment_params(),
-            IntEvalParams {
-                t: 11,
-                s: 10,
+            IntegerMatrixLayout {
+                row_vars: 11,
+                col_vars: 10,
                 word_bits: 1,
             }
         );
@@ -1352,9 +1359,9 @@ mod tests {
             if exponent >= 10 {
                 assert_eq!(
                     *prepared.assignment_params(),
-                    IntEvalParams {
-                        t: 13,
-                        s: exponent + 2,
+                    IntegerMatrixLayout {
+                        row_vars: 13,
+                        col_vars: exponent + 2,
                         word_bits: 1,
                     },
                     "log-compressions={exponent}"
@@ -1385,7 +1392,7 @@ mod tests {
             assert_eq!(
                 prepared.opening_layout(),
                 Sha256OpeningLayout::ProductTransposed {
-                    row_vars: opening.t
+                    row_vars: opening.row_vars
                 },
                 "log-compressions={exponent}"
             );
@@ -1394,13 +1401,13 @@ mod tests {
                 PackedSourceOrder::InstanceMajor,
                 "log-compressions={exponent}"
             );
-            assert_eq!(opening.t + opening.s, assignment_vars);
+            assert_eq!(opening.row_vars + opening.col_vars, assignment_vars);
             // `r in [0, k]`, landing on `ceil(0.6 n)` wherever that is
             // representable.
-            let r = opening.t - local_bits;
+            let r = opening.row_vars - local_bits;
             assert!(r <= exponent, "log-compressions={exponent}");
             assert_eq!(
-                opening.t,
+                opening.row_vars,
                 (3 * assignment_vars)
                     .div_ceil(5)
                     .clamp(local_bits, local_bits + exponent),
@@ -1415,7 +1422,10 @@ mod tests {
         for t in 7..=28 {
             let prepared = prepare_sha256_compression_batch_for_product_t_fixed98(14, t).unwrap();
             let params = prepared.product_assignment_params().unwrap();
-            assert_eq!((params.t, params.s, params.word_bits), (t, 29 - t, 1));
+            assert_eq!(
+                (params.row_vars, params.col_vars, params.word_bits),
+                (t, 29 - t, 1)
+            );
             assert_eq!(prepared.instances(), 1 << 14);
             assert_eq!(prepared.security().projection_min, SHA256_FIXED_98_PRIME);
             assert!(prepared.prime_profile().is_fixed());

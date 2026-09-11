@@ -55,7 +55,7 @@ fn commitment_validation_preserves_typed_errors() {
     }
 }
 
-fn check(params: crate::pcs::IntEvalParams, facts: spartan::IopInstanceFacts) {
+fn check(params: crate::pcs::IntegerMatrixLayout, facts: spartan::IopInstanceFacts) {
     for selection in [LigeritoSelection::JOHNSON, LigeritoSelection::MATCHED_UDR] {
         let resolved = selection
             .resolve(crate::ligerito::packed_vars(&params), 100)

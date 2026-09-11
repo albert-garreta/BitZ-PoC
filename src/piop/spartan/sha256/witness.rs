@@ -17,7 +17,7 @@ use thiserror::Error;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use crate::{f2map::PackedSourceOrder, pcs::IntEvalParams};
+use crate::{f2map::PackedSourceOrder, pcs::IntegerMatrixLayout};
 
 use super::constraints::{
     PreparedSha256CompressionBatch, SHA256_F_INSTANCE_BITS, SHA256_F_LIVE_BITS,
@@ -261,8 +261,8 @@ pub fn generate_sha256_compression_witnesses(
 
 fn validate_geometry(
     instances: usize,
-    p_f: &IntEvalParams,
-    p_h: &IntEvalParams,
+    p_f: &IntegerMatrixLayout,
+    p_h: &IntegerMatrixLayout,
 ) -> Result<(), Sha256WitnessError> {
     if instances == 0
         || p_f.word_bits != 1
@@ -328,7 +328,7 @@ fn compression_input_bits(
 /// high `s` bits select a column.
 fn pack_source_rows<'a>(
     shards: impl IntoIterator<Item = &'a PackedCompressionShard>,
-    params: &IntEvalParams,
+    params: &IntegerMatrixLayout,
 ) -> Vec<Vec<u64>> {
     let mut rows = empty_packed_rows(params);
     set_flat_packed_bit(&mut rows, params, 0);
@@ -352,7 +352,7 @@ fn pack_source_rows<'a>(
 /// suffix zero: `[1 | h_0 | ... | h_{N-1} | trailing zeros]`.
 fn pack_derived_rows<'a>(
     shards: impl IntoIterator<Item = &'a PackedCompressionShard>,
-    params: &IntEvalParams,
+    params: &IntegerMatrixLayout,
 ) -> Vec<Vec<u64>> {
     let mut rows = empty_packed_rows(params);
     set_flat_packed_bit(&mut rows, params, 0);
@@ -375,7 +375,7 @@ fn pack_derived_rows<'a>(
 /// maps them back to the single committed source constant.
 fn pack_product_derived_rows(
     shards: &[PackedCompressionShard],
-    params: &IntEvalParams,
+    params: &IntegerMatrixLayout,
     layout: PackedSourceOrder,
 ) -> Vec<Vec<u64>> {
     match layout {
@@ -390,7 +390,7 @@ fn pack_product_derived_rows(
 
 fn pack_product_local_major_rows(
     shards: &[PackedCompressionShard],
-    params: &IntEvalParams,
+    params: &IntegerMatrixLayout,
 ) -> Vec<Vec<u64>> {
     let instances = shards.len();
     debug_assert!(instances.is_power_of_two());
@@ -446,7 +446,7 @@ fn pack_product_local_major_rows(
 /// bit-by-bit transpose.
 fn pack_product_instance_major_rows(
     shards: &[PackedCompressionShard],
-    params: &IntEvalParams,
+    params: &IntegerMatrixLayout,
     local_domain: usize,
 ) -> Vec<Vec<u64>> {
     debug_assert!(shards.len().is_power_of_two());
@@ -482,12 +482,16 @@ fn pack_product_instance_major_rows(
     }
 }
 
-pub(super) fn empty_packed_rows(params: &IntEvalParams) -> Vec<Vec<u64>> {
+pub(super) fn empty_packed_rows(params: &IntegerMatrixLayout) -> Vec<Vec<u64>> {
     vec![vec![0u64; params.rows().div_ceil(64)]; params.cols()]
 }
 
-pub(super) fn set_flat_packed_bit(rows: &mut [Vec<u64>], params: &IntEvalParams, flat_cell: usize) {
-    let column = flat_cell >> params.t;
+pub(super) fn set_flat_packed_bit(
+    rows: &mut [Vec<u64>],
+    params: &IntegerMatrixLayout,
+    flat_cell: usize,
+) {
+    let column = flat_cell >> params.row_vars;
     let row = flat_cell & (params.rows() - 1);
     rows[column][row / u64::BITS as usize] |= 1u64 << (row % u64::BITS as usize);
 }
@@ -512,7 +516,7 @@ fn packed_rows_bit(rows: &[Vec<u64>], flat_cell: usize) -> Option<bool> {
 #[cfg(test)]
 fn packed_rows_bit_with_params(
     rows: &[Vec<u64>],
-    params: &IntEvalParams,
+    params: &IntegerMatrixLayout,
     flat_cell: usize,
 ) -> Option<bool> {
     if flat_cell >= params.cells()
@@ -523,7 +527,7 @@ fn packed_rows_bit_with_params(
     {
         return None;
     }
-    let column = flat_cell >> params.t;
+    let column = flat_cell >> params.row_vars;
     let row = flat_cell & (params.rows() - 1);
     Some(rows[column][row / 64] >> (row % 64) & 1 == 1)
 }
@@ -619,8 +623,8 @@ mod tests {
         let p_f = prepared.source_params();
         let p_h = prepared.assignment_params();
 
-        assert_eq!((p_f.t, p_f.s), (7, 6));
-        assert_eq!((p_h.t, p_h.s), (8, 7));
+        assert_eq!((p_f.row_vars, p_f.col_vars), (7, 6));
+        assert_eq!((p_h.row_vars, p_h.col_vars), (8, 7));
 
         // Source sequence cell 1 is block[0]'s low bit. In native PCS order
         // it is row 1 of column 0, not row 0 of column 1.
@@ -643,7 +647,7 @@ mod tests {
         let product_rows = witness.product_assignment_rows().unwrap();
 
         assert_eq!(prepared.product_layout_name(), Some("local_rows"));
-        assert_eq!((product_p_h.t, product_p_h.s), (15, 1));
+        assert_eq!((product_p_h.row_vars, product_p_h.col_vars), (15, 1));
         let mut mapped = vec![false; product_p_h.cells()];
         for source in 0..p_f.cells() {
             if !witness.source_bit(source).unwrap() {

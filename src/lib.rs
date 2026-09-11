@@ -119,7 +119,7 @@ pub use ligerito_flock::{
     TapPointClaim, prove_mle_eval_mod_q_ligerito_tap_collapse,
     verify_mle_eval_mod_q_ligerito_tap_collapse,
 };
-pub use pcs::IntEvalParams;
+pub use pcs::IntegerMatrixLayout;
 pub use f2map::{PreparedVirtualMap, PreparedVirtualMapError};
 pub use sparse_matrix::{SparseColumn, SparseMatrix, SparseMatrixError};
 pub use poly::univariate::binary_b127::BinaryFieldB127;
