@@ -257,6 +257,10 @@ required-features = ["bench-internals"]
 name = "binius_probe"
 required-features = ["hybrid"]
 
+[[example]]
+name = "hybrid_probe"
+required-features = ["hybrid"]
+
 [features]
 default = ["parallel"]
 hybrid = ["binius64-bench"]
