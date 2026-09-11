@@ -65,6 +65,12 @@ const PINS: &[(&str, &str, &str, &str)] = &[
     ("u32_mul/2p15/w8/lambda100", "0dba1e7de9a45e3e340e0fdb2eb3155aa7a57dc6971044d6eb186fa27356a1dd", "ba663d87a56d06b8a97c7cdb721f94a765d80e24cce392359e813cc3dcf8d902", "9de3f2a1a955c612170b13cd66e31ed10d562a4f93a80479df9f324a6b334299"),
     ("u64_mul/2p15/lambda100", "10524e78940e5f90f8275746197646780ea7e5dcf1ba3cb22bb4ac234c63fac9", "5843f4c036b615aeee94d9952b0253ded59ef0f0ebe9cffc464c27c8d60d76f7", "d06897db59f4d65e5feb4e5030479b8150e81ba956ec22555a2f2e5f33d6ee49"),
     ("u64_mul/2p15/shift+1/lambda100", "ea2a0e03edb7ce5430479bdf4bb11d0f00fb19dbcdd07788233a8acf0c4b8630", "f23bb20b0c12c4cea5e53157166511adc5fd1a2830c90bd052675e29c369de6d", "5d6b769e91d478d30dbfa656ee18b1f8020cae6757c4276aa15c97f5e1757406"),
+    ("sha256_ecdsa/2p3/allrows/lambda100", "5aca8ae95c9228db846a44fddb1eeefce535a99ad9cf3e20073333e44dbe6e6b", "5aca8ae95c9228db846a44fddb1eeefce535a99ad9cf3e20073333e44dbe6e6b", "729bc1a0eccb80f5e42c3efe968e64600480d075b5adb0ad969726e5d41c1b72"),
+    ("sha256_ecdsa/2p3/allrows/lambda128", "f4e9e3919b5c0d5be7bc73ca602bed71226eae8b281d0f62d81a5740d5871817", "f4e9e3919b5c0d5be7bc73ca602bed71226eae8b281d0f62d81a5740d5871817", "5b56247305180b3e46cd5ac99e521941cc1d5cbc2129d39454426a75ab771639"),
+    ("sha256_ecdsa/2p3/split/lambda100", "5c08b4a910a906e9e495af348eaf253950b139724e66db5611084c5235092d3c", "5c08b4a910a906e9e495af348eaf253950b139724e66db5611084c5235092d3c", "98d86d6d85594691b2884ca40c64da36c21090281744a5194add27c4e8bcf30a"),
+    ("sha256_ecdsa/2p3/split/lambda128", "942bb995a8cbb6dee834c8c6c21922c2558c4838748faa0ab16c93562fb9516e", "942bb995a8cbb6dee834c8c6c21922c2558c4838748faa0ab16c93562fb9516e", "544140f516613b9a241ac556fbfe203c396d798a0329cdbe5e8513302e07450b"),
+    ("sha256/fixed98-t13/2p14", "1e003e6e7ad04324c87a52945954d31103c8555d030608a26924efba20e36900", "9aa0798d570c4ecc1cf6a60d91589f62314375a771db7359ae26adada656ad8c", "6b5fe05d55ae343c81e82ff10a7777b32abda6f72573c6885206c0d4de7ed12d"),
+    ("hybrid/2p13x16/johnson", "-", "-", "7435a68c2c98260f735183cade04afac4bf73dfec22fc7553067bbb571b5b8a9"),
 ];
 
 fn digest_hex(parts: &[&[u8]]) -> String {
@@ -496,11 +502,13 @@ fn sha256_ecdsa_2p3_allrows_lambda128() {
 
 #[cfg(feature = "hybrid")]
 #[test]
-fn hybrid_2p10_muls_4_compressions_johnson() {
+fn hybrid_2p13_muls_16_compressions_johnson() {
     use f2z::hybrid::{Parameters, PreparedHybrid};
+    // The shared opener needs a committed-bit exponent of at least 20, i.e.
+    // 2^13 packed words: the smallest production-like shape.
     let parameters = Parameters {
-        multiplications: 1 << 10,
-        sha_compressions: 4,
+        multiplications: 1 << 13,
+        sha_compressions: 16,
     };
     let prepared = PreparedHybrid::new(parameters).expect("prepare");
     let muls: Vec<(u32, u32)> = (0..parameters.multiplications)
@@ -523,5 +531,5 @@ fn hybrid_2p10_muls_4_compressions_johnson() {
         .iter()
         .flat_map(|r| r.iter().copied())
         .collect();
-    pin_bytes("hybrid/2p10x4/johnson", &[&roots, &bytes]);
+    pin_bytes("hybrid/2p13x16/johnson", &[&roots, &bytes]);
 }
