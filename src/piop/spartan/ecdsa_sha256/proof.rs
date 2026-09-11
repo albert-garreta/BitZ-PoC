@@ -26,9 +26,10 @@ use crate::{
     pcs::{ModQWeightChunks, ProjectCanonicalU128},
     piop::spartan::{
         SpartanField, absorb_spartan_message,
-        f2z::{SpartanF2zField as F, f2z_generator},
-        grinding::{GrindingDomain, GrindingRound, grind_and_absorb, verify_and_absorb},
+        f2z::SpartanF2zField as F,
+        grinding::GrindingDomain,
         matrix::{eq_table, make_equality_factors},
+        protocol::{check_boundary, f2z_generator, grind_boundary},
         sha256::inner_sumcheck::{prove_composite_inner_sumcheck, verify_sha256_inner_sumcheck},
         squeeze_field,
         sumcheck::{
@@ -134,7 +135,7 @@ fn derive_initial_challenges<T: Transcript>(
     security: &Sha256EcdsaSecurity,
     nonce: Option<u64>,
 ) -> Result<InitialSpartanChallenges> {
-    let grinding_nonce = boundary::<InitialGrinding, _>(t, security.initial, nonce)?;
+    let grinding_nonce = boundary(t, INITIAL_GRINDING_DOMAIN, security.initial, nonce)?;
     let modulus = sample_prime_in_interval(t, 1u128 << 112, (1u128 << 113) - 1).map_err(error)?;
     absorb_spartan_message(t, b"q", &modulus.to_le_bytes());
     let field_config =
@@ -220,7 +221,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         )
         .map_err(error)?
     };
-    let batch_nonce = boundary::<BatchGrinding, _>(t, security.batch, None)?;
+    let batch_nonce = boundary(t, BATCH_GRINDING_DOMAIN, security.batch, None)?;
     let (matrix_batch_challenge, linear_row_point, linear_batch_weight) =
         sample_inner_batch_challenges(t, prepared, &cfg);
     let inner_claim = InnerSumcheckClaim::from_outer_claims(
@@ -344,7 +345,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         )
         .map_err(error)?
         .eval_points;
-    boundary::<BatchGrinding, _>(transcript, security.batch, Some(proof.batch_nonce))?;
+    boundary(transcript, BATCH_GRINDING_DOMAIN, security.batch, Some(proof.batch_nonce))?;
     let (matrix_batch_challenge, linear_row_point, linear_batch_weight) =
         sample_inner_batch_challenges(transcript, prepared, &cfg);
     let mod_q_coefficients = ModQCoefficients::from_relation(prepared, modulus, &cfg);
@@ -438,16 +439,14 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     .map_err(|e| error(format!("{e:?}")))
 }
 
-enum InitialGrinding {}
-impl GrindingDomain for InitialGrinding {
-    const DOMAIN: &'static [u8] = b"f2z/sha256-ecdsa/initial/v1";
-}
-enum BatchGrinding {}
-impl GrindingDomain for BatchGrinding {
-    const DOMAIN: &'static [u8] = b"f2z/sha256-ecdsa/batch/v1";
-}
-fn boundary<D: GrindingDomain, T: Transcript>(
+const INITIAL_GRINDING_DOMAIN: &[u8] = b"f2z/sha256-ecdsa/initial/v1";
+const BATCH_GRINDING_DOMAIN: &[u8] = b"f2z/sha256-ecdsa/batch/v1";
+
+/// The shared protocol boundary (skipped at difficulty 0 with the canonical
+/// zero nonce): ground by the prover, checked by the verifier.
+fn boundary<T: Transcript>(
     t: &mut T,
+    domain: &[u8],
     bits: u32,
     nonce: Option<u64>,
 ) -> Result<u64> {
@@ -456,17 +455,11 @@ fn boundary<D: GrindingDomain, T: Transcript>(
     } else {
         "ecdsa:boundary_grinding_prove"
     });
-    if bits == 0 {
-        if nonce.is_some_and(|n| n != 0) {
-            return Err(error("noncanonical zero-work nonce"));
-        }
-        return Ok(0);
-    }
     match nonce {
         Some(n) => {
-            verify_and_absorb::<D, _>(t, GrindingRound::new(0), bits, n).map_err(error)?;
+            check_boundary(t, domain, bits, n).map_err(error)?;
             Ok(n)
         }
-        None => grind_and_absorb::<D, _>(t, GrindingRound::new(0), bits).map_err(error),
+        None => grind_boundary(t, domain, bits).map_err(error),
     }
 }

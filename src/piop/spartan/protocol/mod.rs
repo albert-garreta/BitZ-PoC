@@ -22,6 +22,7 @@
 
 pub mod binding;
 pub mod bitify;
+pub mod linear;
 
 use std::{borrow::Cow, sync::OnceLock};
 
@@ -191,6 +192,45 @@ pub enum ProtocolError {
     /// The Step 5.0 integer lift fails the mod-`Q` or magnitude check.
     #[error("the Step 5.0 integer lift is inconsistent with the mod-Q claim")]
     InvalidIntegerLift,
+
+    /// A linear relation, its map, witness and grids disagree.
+    #[error("the relation or witness geometry is inconsistent")]
+    InvalidGeometry,
+
+    /// The packed native prefix kernel supports only K = 0, ..., 4.
+    #[error("the inner prefix must be in 0..={max}, got {actual}")]
+    InvalidInnerPrefix { actual: usize, max: usize },
+
+    /// The legacy prover's final inner-sumcheck claim did not equal
+    /// `V(r_h) H(r_h)`.
+    #[error("the inner sumcheck has an inconsistent terminal product")]
+    InvalidInnerTerminalClaim,
+
+    /// The committed source assignment does not contain its shared leading one.
+    #[error("the source assignment has a malformed shared constant cell")]
+    InvalidSharedConstant,
+
+    /// The public statement must carry one entry per committed instance.
+    #[error("public statement length mismatch: expected {expected}, got {actual}")]
+    InvalidPublicStatementLength { expected: usize, actual: usize },
+
+    /// A chain statement's blocks or digest disagree with the witness the
+    /// prover was handed.
+    #[error("the chain statement does not match the witness")]
+    ChainStatementMismatch,
+
+    /// An explicit Ligerito configuration disagrees with the prepared
+    /// security profile.
+    #[error("the Ligerito configuration does not match the prepared profile")]
+    MismatchedLigeritoConfig,
+
+    /// A SHA-256 runtime-prime profile or draw failed.
+    #[error(transparent)]
+    Prime(#[from] super::sha256::Sha256PrimeError),
+
+    /// A SHA-256 relation projection failed.
+    #[error(transparent)]
+    Constraint(#[from] super::sha256::Sha256ConstraintError),
 }
 
 impl ProtocolError {
@@ -629,9 +669,6 @@ impl Opener {
         }
     }
 
-    fn ood_bits(&self) -> Option<f64> {
-        self.resolved().and_then(ResolvedLigerito::ood_bits)
-    }
 }
 
 /// The prime-independent prefix of a relation: the constraint matrices
@@ -2073,6 +2110,20 @@ pub fn sample_full_width_prime(
         return Err(ProtocolError::UnsupportedFieldModulus);
     }
     runtime_field(q)
+}
+
+impl RuntimePrime {
+    /// The arithmetic of an already-validated field configuration.
+    pub fn from_config(q: u128, config: FieldConfig) -> Self {
+        let q_bits = (u128::BITS - q.leading_zeros()) as usize;
+        let arith = Arith::new(q, &config);
+        Self {
+            q,
+            q_bits,
+            config,
+            arith,
+        }
+    }
 }
 
 /// The runtime field configuration and canonical arithmetic of `q`.

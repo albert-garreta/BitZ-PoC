@@ -12,8 +12,8 @@ use super::*;
 use super::super::{
     absorb_spartan_message,
     protocol::{
-        Modular, SpartanPrefixProof, SpartanProof, bitify, check_boundary, prove_prefix,
-        sample_mod_q, verify_prefix,
+        Modular, SpartanPrefixProof, SpartanProof, bitify, check_boundary, f2z_generator,
+        prove_prefix, sample_mod_q, validate_bit_rows, verify_prefix,
     },
     univariate_skip::UnivariateSkipSpartanPiopProof,
 };

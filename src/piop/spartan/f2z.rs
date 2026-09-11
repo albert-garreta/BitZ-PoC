@@ -22,9 +22,11 @@ use flock_core::pcs::{commit::Commitment, ligerito::ProverConfig as LigProverCon
 use crate::{
     ligerito::LOG_PACKING,
     ligerito_flock::{FlockCommitHint, IntEvalRsLigModQProof, ModQOpeningKind},
-    pcs::{FQ_MOD, Fq, IntegerMatrixLayout},
+    pcs::{FQ_MOD, IntegerMatrixLayout},
     transcript::traits::Transcript,
 };
+#[cfg(test)]
+use crate::pcs::Fq;
 
 use super::{
     profile::{IopInstanceFacts, IopSecurityParams},
@@ -43,8 +45,7 @@ use super::{
 pub use super::protocol::{MIN_PRODUCTION_GATE_VARS, SpartanF2zField};
 pub(crate) use super::protocol::{
     binding::{hash_code, profile_code},
-    checked_pow2, f2z_generator, packed_variables, validate_bit_rows, validate_commitment,
-    validate_config_pair,
+    checked_pow2, packed_variables,
 };
 
 /// Failures in layout validation, claim translation, or either proof system.
@@ -326,7 +327,7 @@ pub type PreparedU32MulRelation = PreparedRelation<U32MulLayout>;
 /// The prime-independent prefix of the u32 protocol (no standalone opener),
 /// for compositions that discharge the bitified claim through their own
 /// opener ([`crate::hybrid`]).
-pub(crate) type U32MulPrefixRelation = PreparedRelationPrefix<U32MulLayout>;
+pub type U32MulPrefixRelation = PreparedRelationPrefix<U32MulLayout>;
 
 /// A u32 multiplication proof over a transcript-selected prime.
 pub type U32MulProof = Proof;
@@ -359,42 +360,6 @@ pub fn verify_u32_mul<T: Transcript + Send>(
     proof: &U32MulProof,
 ) -> Result<(), SpartanF2zError> {
     protocol::verify(transcript, prepared, commitment, proof)
-}
-
-/// Dense slot weights at the fixed comparison field (the CM-AND client).
-pub(crate) fn fill_slot_weights(
-    row_weights_q: &mut [u128],
-    slot_start: usize,
-    bit_count: usize,
-    block_factor: Fq,
-    eq_high: &[Fq],
-    high_gate_vars: usize,
-) -> Result<(), ProtocolError> {
-    let high_gate_count = checked_pow2(high_gate_vars)?;
-    if eq_high.len() != high_gate_count {
-        return Err(ProtocolError::InvalidF2zParameters);
-    }
-
-    let mut bit_weight = Fq(1);
-    for bit in 0..bit_count {
-        let slot = slot_start
-            .checked_add(bit)
-            .ok_or(ProtocolError::InvalidF2zParameters)?;
-        let row_base = slot
-            .checked_mul(high_gate_count)
-            .ok_or(ProtocolError::InvalidF2zParameters)?;
-        for (gate_high, equality_weight) in eq_high.iter().copied().enumerate() {
-            let row = row_base
-                .checked_add(gate_high)
-                .ok_or(ProtocolError::InvalidF2zParameters)?;
-            let Some(output) = row_weights_q.get_mut(row) else {
-                return Err(ProtocolError::InvalidF2zParameters);
-            };
-            *output = (block_factor * bit_weight * equality_weight).0;
-        }
-        bit_weight = bit_weight + bit_weight;
-    }
-    Ok(())
 }
 
 /// Public, setup-once context for benchmarking only the terminal F2Z opening

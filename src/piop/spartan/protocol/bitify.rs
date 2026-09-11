@@ -521,7 +521,7 @@ pub fn dense_row_weights<A: Modular>(
 /// representation. The prover never reads the clear column weights or the
 /// claimed value, so keeping those verifier-only avoids an entire `2^s`
 /// equality table on the proving path.
-pub fn prepare_chunks<A: Modular>(
+pub(crate) fn prepare_chunks<A: Modular>(
     opening: &BitifiedClaim,
     table: &BlockTable,
     q_bits: usize,
