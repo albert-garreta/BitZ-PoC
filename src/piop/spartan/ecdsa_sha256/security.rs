@@ -1,6 +1,6 @@
-use super::{PreparedSha256Ecdsa, Result, error, reduction::outer_vars};
+use super::{PreparedSha256Ecdsa, Result, error};
 use crate::{
-    ligerito_flock::{atomic::AtomicPlan, OodRoundParams},
+    ligerito_flock::{OodRoundParams, atomic::AtomicPlan},
     piop::spartan::profile::log2_prime_count_lower_bound,
 };
 
@@ -67,7 +67,7 @@ impl Sha256EcdsaSecurity {
             .ilog2() as usize;
         let initial = add("prime+tau", bad_prime + max_outer as f64 * q_inv, 1)?;
         let batch = add("rho+sigma+gamma", (p.linear_vars() + 3) as f64 * q_inv, 1)?;
-        let outer = add("outer-round", 3. * q_inv, outer_vars(p))?;
+        let outer = add("outer-round", 3. * q_inv, p.outer_sumcheck_num_vars())?;
         let inner = add("inner-round", 2. * q_inv, p.p_h.t + p.p_h.s)?;
         // Each host forest/bridge draw has degree at most the assignment arity
         // plus seven ring coordinates. 4096 bounds the number of draws for the
@@ -77,15 +77,25 @@ impl Sha256EcdsaSecurity {
             (p.p_h.t + p.p_h.s + 7) as f64 * 2f64.powi(-128),
             4096,
         )?;
-        let ood = p.ligerito.ood_bits().map(|bits| {
-            let work = (f64::from(p.lambda) - bits).ceil().max(0.) as u32;
-            if work > 24 { return Err(error("Round-0 exceeds the 24-bit derived cap")); }
-            blocks.push(ChallengeBudget {
-                label: "step0:ood-draw".into(), raw_error: 2f64.powf(-bits),
-                grinding_bits: work, multiplicity_bound: 1,
-            });
-            Ok(OodRoundParams { grinding_bits: work })
-        }).transpose()?;
+        let ood = p
+            .ligerito
+            .ood_bits()
+            .map(|bits| {
+                let work = (f64::from(p.lambda) - bits).ceil().max(0.) as u32;
+                if work > 24 {
+                    return Err(error("Round-0 exceeds the 24-bit derived cap"));
+                }
+                blocks.push(ChallengeBudget {
+                    label: "step0:ood-draw".into(),
+                    raw_error: 2f64.powf(-bits),
+                    grinding_bits: work,
+                    multiplicity_bound: 1,
+                });
+                Ok(OodRoundParams {
+                    grinding_bits: work,
+                })
+            })
+            .transpose()?;
         let flock = AtomicPlan::resolve(p.ligerito.security(), p.lambda).map_err(error)?;
         for b in &flock.blocks {
             blocks.push(ChallengeBudget {

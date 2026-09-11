@@ -10,10 +10,15 @@ use rayon::prelude::*;
 use std::array;
 
 use super::{
-    Result, error,
-    relation::{P_INPUT_ALIAS, PreparedSha256Ecdsa, SHA_F, SHA_H, Sha256EcdsaStatement},
+    Config, Result, error, reduce_integer_mod_q,
+    relation::{OuterMode, P_INPUT_ALIAS, PreparedSha256Ecdsa, SHA_F, SHA_H, Sha256EcdsaStatement},
 };
-use crate::pcs::IntEvalParams;
+use crate::{
+    pcs::IntEvalParams,
+    piop::spartan::{f2z::SpartanF2zField as F, sumcheck::R1csProductMles},
+    poly::mle::DenseMultilinearExtension,
+};
+use crypto_primitives::PrimeField;
 
 /// Packed source and virtual assignment, with exact P-256 row operands.
 pub struct Sha256EcdsaWitness {
@@ -24,6 +29,58 @@ pub struct Sha256EcdsaWitness {
 }
 
 impl Sha256EcdsaWitness {
+    /// MLE tables of `(A h) mod q`, `(B h) mod q`, and `(C h) mod q`.
+    pub(super) fn build_outer_product_mles(
+        &self,
+        p: &PreparedSha256Ecdsa,
+        q: u128,
+        cfg: &Config,
+    ) -> R1csProductMles<F> {
+        let vars = p.outer_sumcheck_num_vars();
+        let zero = F::zero_with_cfg(cfg);
+        let mut tables = std::array::from_fn::<_, 3, _>(|_| vec![zero.clone(); 1 << vars]);
+        let products = [
+            &self.products.a_mw,
+            &self.products.b_mw,
+            &self.products.c_mw,
+        ];
+        for (table, products) in tables.iter_mut().zip(products) {
+            let mut set = |dst: usize, src: usize| {
+                let bytes: Vec<_> = products[src]
+                    .words()
+                    .iter()
+                    .flat_map(|w| w.to_le_bytes())
+                    .collect();
+                table[dst] = reduce_integer_mod_q(&BigInt::from_signed_bytes_le(&bytes), q, cfg);
+            };
+            match p.mode {
+                OuterMode::Split => {
+                    for (i, &r) in p.local.nonlinear.iter().enumerate() {
+                        set(i, r);
+                    }
+                }
+                OuterMode::AllRows => {
+                    for r in 0..p.local.rows() {
+                        set(256 * p.compressions() + r, r);
+                    }
+                }
+            }
+        }
+        // Honest SHA row products are identically zero. These are prover
+        // claims, not a verifier assumption: the shared inner check binds the
+        // zero C claims to the committed SHA assignment. Reuse them instead of
+        // charging the comparison mode for a second SHA matrix multiplication.
+        let [a, b, c] = tables.map(|evaluations| DenseMultilinearExtension {
+            evaluations,
+            num_vars: vars,
+        });
+        R1csProductMles {
+            az: a,
+            bz: b,
+            cz: c,
+        }
+    }
+
     pub fn source_rows(&self) -> &[Vec<u64>] {
         &self.f_rows
     }

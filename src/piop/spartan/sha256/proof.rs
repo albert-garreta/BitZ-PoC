@@ -14,6 +14,7 @@
 //! proof-only view back to that commitment. Non-power-of-two assignment-row
 //! batches retain the legacy inner-sumcheck fallback.
 
+use crate::poly::mle::FactoredMultilinearExtension;
 use std::collections::{HashMap, hash_map::Entry};
 
 use blake3::Hasher;
@@ -61,8 +62,8 @@ use super::{
         Sha256ConstraintError, sha256_public_f_column, sha256_public_h_column,
     },
     inner_sumcheck::{
-        SHA256_INNER_PREFIX_MAX_VARS, Sha256FactoredBlockCoefficients,
-        prove_sha256_inner_sumcheck_factored, verify_sha256_inner_sumcheck,
+        SHA256_INNER_PREFIX_MAX_VARS, prove_sha256_inner_sumcheck_factored,
+        verify_sha256_inner_sumcheck,
     },
     prime::{Sha256PrimeError, sample_sha256_mod_q_context},
     witness::{Sha256CompressionStatement, Sha256CompressionWitnessBatch},
@@ -497,13 +498,13 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
     } else {
         let inner = {
             let _scope = crate::utils::prof::scope("sha256:spartan_inner_prove");
-            let factored_coefficients = product_batching.factored_coefficients(field_config)?;
+            let factored_matrix_mle = product_batching.factored_matrix_mle(field_config)?;
             let h_bit = |flat_column| packed_flat_bit(witness.assignment_rows(), p_h, flat_column);
             prove_sha256_inner_sumcheck_factored(
                 transcript,
                 product_batching.initial_claim().clone(),
                 p_h.t + p_h.s,
-                &factored_coefficients,
+                &factored_matrix_mle,
                 &h_bit,
                 prefix_vars,
                 field_config,
@@ -700,7 +701,13 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
         assignment_binding
     };
     prepared.ligerito_configuration()?.bind(transcript);
-    let ood = crate::ligerito_flock::bind_verifier_ood(transcript, packed_vars(p_f), prepared.security().ood, proof.f2z.ood.as_ref()).map_err(Sha256F2zError::F2z)?;
+    let ood = crate::ligerito_flock::bind_verifier_ood(
+        transcript,
+        packed_vars(p_f),
+        prepared.security().ood,
+        proof.f2z.ood.as_ref(),
+    )
+    .map_err(Sha256F2zError::F2z)?;
 
     let step2_scope = crate::utils::prof::scope("step2:project_verify");
     {
@@ -1027,17 +1034,24 @@ impl ProductLinearBatching {
         &self.initial_claim
     }
 
-    fn factored_coefficients(
+    fn factored_matrix_mle(
         &self,
         field_config: &<SpartanF2zField as PrimeField>::Config,
-    ) -> Result<Sha256FactoredBlockCoefficients<'_>, Sha256F2zError> {
-        Sha256FactoredBlockCoefficients::new(
+    ) -> Result<FactoredMultilinearExtension<'_, SpartanF2zField>, Sha256F2zError> {
+        FactoredMultilinearExtension::with_leading_value(
+            (1 + self.instance_weights.len() * (self.local_coefficients.len() - 1))
+                .next_power_of_two()
+                .ilog2() as usize,
             self.shared_coefficient.clone(),
             &self.instance_weights,
             &self.local_coefficients[1..],
             field_config,
         )
-        .map_err(SpartanError::from)
+        .map_err(|_| {
+            SpartanError::from(
+                crate::piop::spartan::sumcheck::SumcheckError::InvalidProductDimensions,
+            )
+        })
         .map_err(Sha256F2zError::from)
     }
 
@@ -2787,8 +2801,14 @@ mod tests {
             assert!(prepare_sha256_compression_batch(exponent).is_err());
         }
         let exponent = 7;
-        for selection in [crate::ligerito_flock::LigeritoSelection::JOHNSON, crate::ligerito_flock::LigeritoSelection::MATCHED_UDR] {
-            let prepared = prepare_sha256_compression_batch(exponent).unwrap().with_ligerito(selection).unwrap();
+        for selection in [
+            crate::ligerito_flock::LigeritoSelection::JOHNSON,
+            crate::ligerito_flock::LigeritoSelection::MATCHED_UDR,
+        ] {
+            let prepared = prepare_sha256_compression_batch(exponent)
+                .unwrap()
+                .with_ligerito(selection)
+                .unwrap();
             assert!(prepared.product_assignment_params().is_some());
             assert!(prepared.opening_params().t >= LOG_PACKING);
             assert!(prepared.security().accounting.achieved_bits() >= 100.0);
@@ -3614,7 +3634,7 @@ mod tests {
         )
         .unwrap();
 
-        let factored = batching.factored_coefficients(&field_config).unwrap();
+        let factored = batching.factored_matrix_mle(&field_config).unwrap();
         assert_eq!(
             factored.live_len(),
             prepared.linear_assignment_column_count()
@@ -3709,7 +3729,7 @@ mod tests {
         assert_eq!(*batching.initial_claim(), expected);
         assert_eq!(
             batching
-                .factored_coefficients(&field_config)
+                .factored_matrix_mle(&field_config)
                 .unwrap()
                 .live_len(),
             prepared.linear_assignment_column_count()

@@ -315,7 +315,9 @@ fn build_local() -> Result<LocalRelation> {
         hash.update(&(matrix.rows() as u64).to_le_bytes());
         for r in 0..matrix.rows() {
             buffer.clear();
-            buffer.extend_from_slice(&((matrix.row_ptr[r + 1] - matrix.row_ptr[r]) as u64).to_le_bytes());
+            buffer.extend_from_slice(
+                &((matrix.row_ptr[r + 1] - matrix.row_ptr[r]) as u64).to_le_bytes(),
+            );
             for (column, k) in matrix.row(r) {
                 buffer.extend_from_slice(&(column as u64).to_le_bytes());
                 buffer.extend_from_slice(&(signed_bytes[k].len() as u64).to_le_bytes());
@@ -477,8 +479,13 @@ pub struct PreparedSha256Ecdsa {
 impl PreparedSha256Ecdsa {
     pub fn ligerito_configuration(&self) -> &crate::ligerito_flock::ResolvedLigerito { &self.ligerito }
 
-    pub fn with_ligerito(mut self, selection: crate::ligerito_flock::LigeritoSelection) -> Result<Self> {
-        self.ligerito = selection.resolve(self.p_f.t + self.p_f.s - 7, self.lambda as usize).map_err(error)?;
+    pub fn with_ligerito(
+        mut self,
+        selection: crate::ligerito_flock::LigeritoSelection,
+    ) -> Result<Self> {
+        self.ligerito = selection
+            .resolve(self.p_f.t + self.p_f.s - 7, self.lambda as usize)
+            .map_err(error)?;
         self.security()?;
         Ok(self)
     }
@@ -501,7 +508,14 @@ impl PreparedSha256Ecdsa {
     }
     /// Allocated outer table slots, including layout and power-of-two padding.
     pub fn outer_domain_size(&self) -> usize {
-        1 << super::reduction::outer_vars(self)
+        1 << self.outer_sumcheck_num_vars()
+    }
+    pub(super) fn outer_sumcheck_num_vars(&self) -> usize {
+        let rows = match self.mode {
+            OuterMode::Split => self.local.nonlinear.len(),
+            OuterMode::AllRows => 256 * self.compressions() + self.local.rows(),
+        };
+        rows.next_power_of_two().ilog2() as usize
     }
     pub fn linear_rows(&self) -> usize {
         self.compressions() * SHA_ROWS + self.local.linear.len() + 1025

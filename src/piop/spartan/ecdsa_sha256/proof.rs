@@ -5,8 +5,8 @@ use flock_core::pcs::{
 };
 
 use super::{
-    Result, error,
-    reduction::{Config, Projection, outer_vars},
+    Config, Result, error,
+    inner_reduction::{InnerSumcheckClaim, ModQCoefficients},
     relation::{OuterMode, PreparedSha256Ecdsa, Sha256EcdsaStatement},
     security::Sha256EcdsaSecurity,
     witness::Sha256EcdsaWitness,
@@ -132,7 +132,7 @@ fn derive_initial_challenges<T: Transcript>(
     absorb_spartan_message(t, b"q", &modulus.to_le_bytes());
     let field_config =
         F::make_cfg(&Uint::from(modulus)).map_err(|_| error("invalid sampled modulus"))?;
-    let outer_eq_challenges = (0..outer_vars(p))
+    let outer_eq_challenges = (0..p.outer_sumcheck_num_vars())
         .map(|_| squeeze_field(t, &field_config))
         .collect();
     Ok(InitialSpartanChallenges {
@@ -143,16 +143,23 @@ fn derive_initial_challenges<T: Transcript>(
     })
 }
 
-fn challenges<T: Transcript>(t: &mut T, p: &PreparedSha256Ecdsa, cfg: &Config) -> (F, Vec<F>, F) {
-    // The outer terminal triple has already been absorbed. In particular,
-    // gamma must not be chosen before the prover fixes those three claims.
+fn sample_inner_batch_challenges<T: Transcript>(
+    t: &mut T,
+    p: &PreparedSha256Ecdsa,
+    cfg: &Config,
+) -> (F, Vec<F>, F) {
+    // Sample only after the outer terminal triple has been absorbed.
     absorb_spartan_message(t, b"shared-inner", b"rho-sigma-gamma/v1");
-    let rho = squeeze_field(t, cfg);
-    let sigma = (0..p.linear_vars())
+    let matrix_batch_challenge = squeeze_field(t, cfg);
+    let linear_row_point = (0..p.linear_vars())
         .map(|_| squeeze_field(t, cfg))
         .collect();
-    let gamma = squeeze_field(t, cfg);
-    (rho, sigma, gamma)
+    let linear_batch_weight = squeeze_field(t, cfg);
+    (
+        matrix_batch_challenge,
+        linear_row_point,
+        linear_batch_weight,
+    )
 }
 
 fn bind_opening<T: Transcript>(t: &mut T, point: &[F], scale: &F, value: &F) {
@@ -190,10 +197,10 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         grinding_nonce: initial_nonce,
     } = derive_initial_challenges(t, p, &security, None)?;
     let reducer = OptimizedSumcheckReducer::new(&cfg).map_err(error)?;
-    let projection = Projection::new(p, modulus, &cfg);
+    let mod_q_coefficients = ModQCoefficients::from_relation(p, modulus, &cfg);
     let (outer, outer_nonces) = {
         let _scope = crate::utils::prof::scope("ecdsa:outer_prove");
-        let products = projection.outer_products(p, witness, modulus, &cfg);
+        let products = witness.build_outer_product_mles(p, modulus, &cfg);
         prove_outer_sumcheck_with_reducer_grinded::<OuterGrinding, _, _>(
             t,
             F::zero_with_cfg(&cfg),
@@ -207,24 +214,26 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         .map_err(error)?
     };
     let batch_nonce = boundary::<BatchGrinding, _>(t, security.batch, None)?;
-    let (rho, sigma, gamma) = challenges(t, p, &cfg);
-    let coefficients = projection.combine(
+    let (matrix_batch_challenge, linear_row_point, linear_batch_weight) =
+        sample_inner_batch_challenges(t, p, &cfg);
+    let inner_claim = InnerSumcheckClaim::from_outer_claims(
         p,
         statement,
         &outer.proof,
-        &outer.eval_points,
-        &rho,
-        &sigma,
-        &gamma,
+        outer.eval_points,
+        matrix_batch_challenge,
+        linear_row_point,
+        linear_batch_weight,
         &cfg,
     )?;
+    let batched_matrix_mle = mod_q_coefficients.build_batched_matrix_mle(p, &inner_claim, &cfg)?;
     let inner = {
         let _scope = crate::utils::prof::scope("ecdsa:shared_inner_prove");
         prove_composite_inner_sumcheck(
             t,
-            coefficients.target.clone(),
+            inner_claim.claimed_sum().clone(),
             p.p_h.t + p.p_h.s,
-            &coefficients.inner_source(&cfg)?,
+            &batched_matrix_mle.as_mle(&cfg)?,
             &|i| Ok(witness.h_bit(i, &p.p_h)),
             prefix_vars,
             &cfg,
@@ -233,8 +242,8 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         )
         .map_err(error)?
     };
-    if coefficients.evaluate(&inner.eval_points, &cfg)? != inner.v_evaluation {
-        return Err(error("inner coefficient evaluation mismatch"));
+    if batched_matrix_mle.evaluate(&inner.eval_points, &cfg)? != inner.v_evaluation {
+        return Err(error("batched matrix MLE evaluation mismatch"));
     }
     if inner.v_evaluation.clone() * &inner.h_evaluation != inner.final_claim {
         return Err(error("witness does not satisfy the shared inner claim"));
@@ -292,7 +301,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
 }
 
 pub fn verify_sha256_ecdsa<T: Transcript + Send>(
-    t: &mut T,
+    transcript: &mut T,
     p: &PreparedSha256Ecdsa,
     statement: &Sha256EcdsaStatement,
     commitment: &Commitment,
@@ -301,19 +310,24 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     let (_, vc) = configs(p)?;
     validate_ligerito_commitment(commitment, &vc).map_err(|e| error(format!("{e:?}")))?;
     let security = p.security()?;
-    bind_statement(t, p, statement, commitment, &security)?;
-    let ood = crate::ligerito_flock::bind_verifier_ood(t, packed_vars(&p.p_f), security.ood, proof.opening.ood.as_ref())
-        .map_err(|e| error(format!("{e:?}")))?;
+    bind_statement(transcript, p, statement, commitment, &security)?;
+    let ood = crate::ligerito_flock::bind_verifier_ood(
+        transcript,
+        packed_vars(&p.p_f),
+        security.ood,
+        proof.opening.ood.as_ref(),
+    )
+    .map_err(|e| error(format!("{e:?}")))?;
     let InitialSpartanChallenges {
         modulus,
         field_config: cfg,
         outer_eq_challenges,
         grinding_nonce: _,
-    } = derive_initial_challenges(t, p, &security, Some(proof.initial_nonce))?;
-    let rx = proof
+    } = derive_initial_challenges(transcript, p, &security, Some(proof.initial_nonce))?;
+    let outer_row_point = proof
         .outer
         .verify_grinded::<OuterGrinding>(
-            t,
+            transcript,
             F::zero_with_cfg(&cfg),
             &outer_eq_challenges,
             &cfg,
@@ -322,21 +336,23 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         )
         .map_err(error)?
         .eval_points;
-    boundary::<BatchGrinding, _>(t, security.batch, Some(proof.batch_nonce))?;
-    let (rho, sigma, gamma) = challenges(t, p, &cfg);
-    let coefficients = Projection::new(p, modulus, &cfg).combine(
+    boundary::<BatchGrinding, _>(transcript, security.batch, Some(proof.batch_nonce))?;
+    let (matrix_batch_challenge, linear_row_point, linear_batch_weight) =
+        sample_inner_batch_challenges(transcript, p, &cfg);
+    let mod_q_coefficients = ModQCoefficients::from_relation(p, modulus, &cfg);
+    let inner_claim = InnerSumcheckClaim::from_outer_claims(
         p,
         statement,
         &proof.outer,
-        &rx,
-        &rho,
-        &sigma,
-        &gamma,
+        outer_row_point,
+        matrix_batch_challenge,
+        linear_row_point,
+        linear_batch_weight,
         &cfg,
     )?;
     let (point, value) = verify_sha256_inner_sumcheck(
-        t,
-        coefficients.target.clone(),
+        transcript,
+        inner_claim.claimed_sum().clone(),
         &proof.inner,
         &proof.inner_nonces,
         p.p_h.t + p.p_h.s,
@@ -344,8 +360,8 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         security.inner,
     )
     .map_err(error)?;
-    let scale = coefficients.evaluate(&point, &cfg)?;
-    bind_opening(t, &point, &scale, &value);
+    let scale = mod_q_coefficients.evaluate_batched_matrix_mle(p, &inner_claim, &point, &cfg)?;
+    bind_opening(transcript, &point, &scale, &value);
     let rows: Vec<_> = eq_table(&point[..p.p_h.t], &cfg)
         .map_err(error)?
         .into_iter()
@@ -370,7 +386,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     };
     let arithmetic = crate::ext_proj::ProjArith::new(modulus);
     verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off_with_security(
-        t,
+        transcript,
         commitment,
         &proof.opening,
         &p.p_h,

@@ -88,79 +88,11 @@ where
     }
 }
 
-/// Coefficients for SHA's physical flat assignment layout without expanding
-/// the instance/local outer product.
-///
-/// The represented table is
-///
-/// ```text
-/// [shared, u[0] * d[0..block_width], ..., u[N - 1] * d[0..block_width]]
-/// ```
-///
-/// where `shared` is already the coefficient of the one physical constant
-/// cell. In the SHA batching protocol the caller computes it as `U * d_0`,
-/// with `U = sum_i u_i`, and passes the nonconstant local coefficients as
-/// `d`. Keeping the factors separate avoids materializing `u ⊗ d`.
-pub(crate) struct Sha256FactoredBlockCoefficients<'a> {
-    start: usize,
-    shared: Field,
-    instance_weights: &'a [Field],
-    block_coefficients: &'a [Field],
-    live_len: usize,
-}
+use crate::poly::mle::FactoredMultilinearExtension;
 
-impl<'a> Sha256FactoredBlockCoefficients<'a> {
-    pub(crate) fn new(
-        shared: Field,
-        instance_weights: &'a [Field],
-        block_coefficients: &'a [Field],
-        field_cfg: &FieldConfig,
-    ) -> Result<Self, SumcheckError> {
-        if instance_weights.is_empty() || block_coefficients.is_empty() {
-            return Err(SumcheckError::InvalidProductDimensions);
-        }
-        validate_field_value(&shared, field_cfg)?;
-        for value in instance_weights.iter().chain(block_coefficients) {
-            validate_field_value(value, field_cfg)?;
-        }
-        let live_len = instance_weights
-            .len()
-            .checked_mul(block_coefficients.len())
-            .and_then(|len| len.checked_add(1))
-            .ok_or(SumcheckError::InvalidProductDimensions)?;
-        Ok(Self {
-            start: 1,
-            shared,
-            instance_weights,
-            block_coefficients,
-            live_len,
-        })
-    }
-
-    pub(crate) const fn live_len(&self) -> usize {
-        self.live_len
-    }
-
-    #[inline]
-    fn coefficient(&self, index: usize) -> Result<Field, SumcheckError> {
-        if index >= self.live_len {
-            return Err(SumcheckError::InvalidProductDimensions);
-        }
-        if index < self.start {
-            return Ok(self.shared.clone());
-        }
-        let offset = index - self.start;
-        let instance = offset / self.block_coefficients.len();
-        let local = offset % self.block_coefficients.len();
-        Ok(self.instance_weights[instance].clone() * &self.block_coefficients[local])
-    }
-}
-
-/// Internal coefficient-source hook. The callback implementation preserves
-/// the existing API, while [`Sha256FactoredBlockCoefficients`] supplies the
-/// block-aware prefix fold used by the optimized SHA path.
-trait Sha256InnerCoefficientSource: Sync {
-    fn coefficient_at(&self, index: usize) -> Result<Field, SumcheckError>;
+/// MLE access and specialized prefix folding for the inner prover.
+trait InnerSumcheckMleSource: Sync {
+    fn evaluation_at(&self, index: usize) -> Result<Field, SumcheckError>;
 
     fn validate_shape(
         &self,
@@ -173,8 +105,8 @@ trait Sha256InnerCoefficientSource: Sync {
     /// Whether every coefficient returned by this source is known to use the
     /// shared canonical field configuration. Callback sources are checked at
     /// every access; the factored source validates its two small factor tables
-    /// once in its constructor.
-    fn coefficients_prevalidated(&self) -> bool {
+    /// once by the source adapter.
+    fn evaluations_prevalidated(&self) -> bool {
         false
     }
 
@@ -213,20 +145,21 @@ trait Sha256InnerCoefficientSource: Sync {
     }
 }
 
-impl<F> Sha256InnerCoefficientSource for F
+impl<F> InnerSumcheckMleSource for F
 where
     F: Fn(usize) -> Result<Field, SumcheckError> + Sync,
 {
     #[inline]
-    fn coefficient_at(&self, index: usize) -> Result<Field, SumcheckError> {
+    fn evaluation_at(&self, index: usize) -> Result<Field, SumcheckError> {
         self(index)
     }
 }
 
-impl Sha256InnerCoefficientSource for Sha256FactoredBlockCoefficients<'_> {
+impl InnerSumcheckMleSource for FactoredMultilinearExtension<'_, Field> {
     #[inline]
-    fn coefficient_at(&self, index: usize) -> Result<Field, SumcheckError> {
-        self.coefficient(index)
+    fn evaluation_at(&self, index: usize) -> Result<Field, SumcheckError> {
+        FactoredMultilinearExtension::evaluation_at(self, index)
+            .map_err(|_| SumcheckError::InvalidProductDimensions)
     }
 
     fn validate_shape(
@@ -234,13 +167,13 @@ impl Sha256InnerCoefficientSource for Sha256FactoredBlockCoefficients<'_> {
         live_len: usize,
         field_cfg: &FieldConfig,
     ) -> Result<(), SumcheckError> {
-        if live_len != self.live_len || self.shared.cfg() != field_cfg {
+        if live_len != self.live_len() {
             return Err(SumcheckError::InvalidProductDimensions);
         }
-        Ok(())
+        validate_factored_mle(self, field_cfg)
     }
 
-    fn coefficients_prevalidated(&self) -> bool {
+    fn evaluations_prevalidated(&self) -> bool {
         true
     }
 
@@ -283,7 +216,7 @@ impl Sha256InnerCoefficientSource for Sha256FactoredBlockCoefficients<'_> {
 pub const SHA256_INNER_PREFIX_MAX_VARS: usize = 4;
 
 mod composite;
-pub(crate) use composite::{CompositeCoefficients, prove_composite_inner_sumcheck};
+pub(crate) use composite::prove_composite_inner_sumcheck;
 
 /// The small-prefix prover reports the same failures as the ordinary sumcheck.
 pub(crate) type Sha256InnerSumcheckError = SumcheckError;
@@ -365,7 +298,7 @@ where
 /// coefficient layout.
 ///
 /// This is transcript-identical to [`prove_sha256_inner_sumcheck`] with a
-/// callback returning `coefficients.coefficient(index)`. The specialization is
+/// callback returning `coefficients.evaluation_at(index)`. The specialization is
 /// prover-only: it retains `u` and `d` separately and folds each contiguous
 /// instance run before multiplying by its `u_i` factor.
 #[allow(clippy::too_many_arguments)]
@@ -373,7 +306,7 @@ pub(crate) fn prove_sha256_inner_sumcheck_factored<T, H>(
     transcript: &mut T,
     initial_claim: Field,
     num_vars: usize,
-    coefficients: &Sha256FactoredBlockCoefficients<'_>,
+    coefficients: &FactoredMultilinearExtension<'_, Field>,
     h_source: &H,
     prefix_vars: usize,
     field_cfg: &FieldConfig,
@@ -384,6 +317,9 @@ where
     T: Transcript,
     H: Sha256InnerBitSource + ?Sized,
 {
+    if num_vars != coefficients.num_vars() {
+        return Err(SumcheckError::InvalidProductDimensions);
+    }
     prove_sha256_inner_sumcheck_with_source(
         transcript,
         initial_claim,
@@ -413,7 +349,7 @@ fn prove_sha256_inner_sumcheck_with_source<T, S, H>(
 ) -> Result<Sha256InnerSumcheckOutput, Sha256InnerSumcheckError>
 where
     T: Transcript,
-    S: Sha256InnerCoefficientSource + ?Sized,
+    S: InnerSumcheckMleSource + ?Sized,
     H: Sha256InnerBitSource + ?Sized,
 {
     match prefix_vars {
@@ -513,7 +449,7 @@ fn prove_with_prefix<const K: usize, T, S, H>(
 ) -> Result<Sha256InnerSumcheckOutput, Sha256InnerSumcheckError>
 where
     T: Transcript,
-    S: Sha256InnerCoefficientSource + ?Sized,
+    S: InnerSumcheckMleSource + ?Sized,
     H: Sha256InnerBitSource + ?Sized,
 {
     validate_inputs::<K, _>(
@@ -650,6 +586,19 @@ fn validate_field_value(value: &Field, field_cfg: &FieldConfig) -> Result<(), Su
         .map_err(|_| SumcheckError::NonCanonicalFieldElement)
 }
 
+fn validate_factored_mle(
+    mle: &FactoredMultilinearExtension<'_, Field>,
+    field_cfg: &FieldConfig,
+) -> Result<(), SumcheckError> {
+    for value in std::iter::once(mle.leading_value())
+        .chain(mle.outer_factor())
+        .chain(mle.inner_factor())
+    {
+        validate_field_value(value, field_cfg)?;
+    }
+    Ok(())
+}
+
 struct PrefixBuildState {
     partial_sums: Vec<LinearAccumulator>,
     v_values: Vec<Field>,
@@ -710,7 +659,7 @@ impl FactoredPrefixBuildState {
 fn build_factored_prefix_accumulators<const K: usize, H>(
     num_vars: usize,
     live_len: usize,
-    coefficients: &Sha256FactoredBlockCoefficients<'_>,
+    coefficients: &FactoredMultilinearExtension<'_, Field>,
     h_source: &H,
     _field_cfg: &FieldConfig,
     zero: &Field,
@@ -720,7 +669,7 @@ where
     H: Sha256InnerBitSource + ?Sized,
 {
     debug_assert!(K > 0);
-    debug_assert_eq!(live_len, coefficients.live_len);
+    debug_assert_eq!(live_len, coefficients.live_len());
     debug_assert!(live_len <= 1usize << num_vars);
     let suffix_count = live_len.div_ceil(1usize << K);
     let extended = extend_block_coefficients::<K>(coefficients, zero);
@@ -728,8 +677,8 @@ where
 
     #[cfg(feature = "parallel")]
     let interior =
-        if coefficients.instance_weights.len() >= 1 << 6 && rayon::current_num_threads() > 1 {
-            (0..coefficients.instance_weights.len())
+        if coefficients.outer_factor().len() >= 1 << 6 && rayon::current_num_threads() > 1 {
+            (0..coefficients.outer_factor().len())
                 .into_par_iter()
                 .try_fold(
                     || FactoredPrefixBuildState::new::<K>(zero, reducer),
@@ -837,7 +786,7 @@ where
 }
 
 fn accumulate_factored_instances_sequential<const K: usize, H>(
-    coefficients: &Sha256FactoredBlockCoefficients<'_>,
+    coefficients: &FactoredMultilinearExtension<'_, Field>,
     extended: Option<&[ExtendedBlock]>,
     h_source: &H,
     zero: &Field,
@@ -847,7 +796,7 @@ where
     H: Sha256InnerBitSource + ?Sized,
 {
     let mut state = FactoredPrefixBuildState::new::<K>(zero, reducer);
-    for instance in 0..coefficients.instance_weights.len() {
+    for instance in 0..coefficients.outer_factor().len() {
         accumulate_factored_instance::<K, _>(
             &mut state,
             coefficients,
@@ -863,7 +812,7 @@ where
 
 fn accumulate_factored_instance<const K: usize, H>(
     state: &mut FactoredPrefixBuildState,
-    coefficients: &Sha256FactoredBlockCoefficients<'_>,
+    coefficients: &FactoredMultilinearExtension<'_, Field>,
     extended: Option<&[ExtendedBlock]>,
     h_source: &H,
     instance: usize,
@@ -874,8 +823,8 @@ where
     H: Sha256InnerBitSource + ?Sized,
 {
     let prefix_size = 1usize << K;
-    let block_width = coefficients.block_coefficients.len();
-    let block_start = coefficients.start + instance * block_width;
+    let block_width = coefficients.inner_factor().len();
+    let block_start = coefficients.tensor_start() + instance * block_width;
     let block_end = block_start + block_width;
     let first_suffix = block_start.div_ceil(prefix_size);
     let suffix_end = block_end / prefix_size;
@@ -911,7 +860,7 @@ where
         }
         state.d_values.resize(prefix_size, zero.clone());
         for prefix in 0..prefix_size {
-            state.d_values[prefix] = coefficients.block_coefficients[local_base + prefix].clone();
+            state.d_values[prefix] = coefficients.inner_factor()[local_base + prefix].clone();
         }
         extend_lsb::<Field, K, _>(
             &mut state.d_values,
@@ -938,7 +887,7 @@ where
         product_multiply_accumulate(
             reducer,
             partial,
-            &coefficients.instance_weights[instance],
+            &coefficients.outer_factor()[instance],
             &local,
         );
     }
@@ -955,18 +904,18 @@ struct ExtendedBlock {
 }
 
 fn extend_block_coefficients<const K: usize>(
-    coefficients: &Sha256FactoredBlockCoefficients<'_>,
+    coefficients: &FactoredMultilinearExtension<'_, Field>,
     zero: &Field,
 ) -> Option<Vec<ExtendedBlock>> {
     let prefix_size = 1usize << K;
-    let width = coefficients.block_coefficients.len();
-    if coefficients.start % prefix_size != 0 || width % prefix_size != 0 {
+    let width = coefficients.inner_factor().len();
+    if coefficients.tensor_start() % prefix_size != 0 || width % prefix_size != 0 {
         return None;
     }
     let mut scratch = Vec::new();
     Some(
         coefficients
-            .block_coefficients
+            .inner_factor()
             .chunks_exact(prefix_size)
             .map(|block| {
                 let mut values = block.to_vec();
@@ -981,22 +930,22 @@ fn extend_block_coefficients<const K: usize>(
 }
 
 fn factored_suffix_is_interior<const K: usize>(
-    coefficients: &Sha256FactoredBlockCoefficients<'_>,
+    coefficients: &FactoredMultilinearExtension<'_, Field>,
     suffix: usize,
 ) -> bool {
     let prefix_size = 1usize << K;
     let base = suffix << K;
-    if base < coefficients.start || base + prefix_size > coefficients.live_len {
+    if base < coefficients.tensor_start() || base + prefix_size > coefficients.live_len() {
         return false;
     }
-    let local = (base - coefficients.start) % coefficients.block_coefficients.len();
-    local + prefix_size <= coefficients.block_coefficients.len()
+    let local = (base - coefficients.tensor_start()) % coefficients.inner_factor().len();
+    local + prefix_size <= coefficients.inner_factor().len()
 }
 
 fn accumulate_factored_boundaries_sequential<const K: usize, H>(
     suffix_count: usize,
     live_len: usize,
-    coefficients: &Sha256FactoredBlockCoefficients<'_>,
+    coefficients: &FactoredMultilinearExtension<'_, Field>,
     h_source: &H,
     zero: &Field,
     reducer: &OptimizedSumcheckReducer,
@@ -1078,7 +1027,7 @@ fn build_prefix_accumulators_generic<const K: usize, S, H>(
     reducer: &OptimizedSumcheckReducer,
 ) -> Result<PrefixAccumulators, SumcheckError>
 where
-    S: Sha256InnerCoefficientSource + ?Sized,
+    S: InnerSumcheckMleSource + ?Sized,
     H: Sha256InnerBitSource + ?Sized,
 {
     debug_assert!(K > 0);
@@ -1150,7 +1099,7 @@ fn accumulate_suffixes_sequential<const K: usize, S, H>(
     reducer: &OptimizedSumcheckReducer,
 ) -> Result<PrefixBuildState, SumcheckError>
 where
-    S: Sha256InnerCoefficientSource + ?Sized,
+    S: InnerSumcheckMleSource + ?Sized,
     H: Sha256InnerBitSource + ?Sized,
 {
     let mut state = PrefixBuildState::new::<K>(zero, reducer);
@@ -1180,7 +1129,7 @@ fn accumulate_suffix<const K: usize, S, H>(
     reducer: &OptimizedSumcheckReducer,
 ) -> Result<(), SumcheckError>
 where
-    S: Sha256InnerCoefficientSource + ?Sized,
+    S: InnerSumcheckMleSource + ?Sized,
     H: Sha256InnerBitSource + ?Sized,
 {
     let prefix_size = 1usize << K;
@@ -1192,8 +1141,8 @@ where
     let active_prefixes = prefix_size.min(live_len - base);
     for prefix in 0..active_prefixes {
         let index = base | prefix;
-        let value = coefficients.coefficient_at(index)?;
-        if !coefficients.coefficients_prevalidated() {
+        let value = coefficients.evaluation_at(index)?;
+        if !coefficients.evaluations_prevalidated() {
             validate_field_value(&value, field_cfg)?;
         }
         state.v_values[prefix] = value;
@@ -1347,7 +1296,7 @@ fn fold_prefix_v_table<const K: usize, S>(
     reducer: &OptimizedSumcheckReducer,
 ) -> Result<CompactPrefixVTable, SumcheckError>
 where
-    S: Sha256InnerCoefficientSource + ?Sized,
+    S: InnerSumcheckMleSource + ?Sized,
 {
     coefficients.fold_prefix_table::<K>(
         num_vars, live_len, challenges, field_cfg, zero, one, reducer,
@@ -1366,7 +1315,7 @@ fn fold_prefix_v_table_generic<const K: usize, S>(
     reducer: &OptimizedSumcheckReducer,
 ) -> Result<CompactPrefixVTable, SumcheckError>
 where
-    S: Sha256InnerCoefficientSource + ?Sized,
+    S: InnerSumcheckMleSource + ?Sized,
 {
     debug_assert_eq!(challenges.len(), K);
     debug_assert!(live_len <= 1usize << num_vars);
@@ -1377,8 +1326,8 @@ where
         let base = suffix << K;
 
         if K == 0 {
-            let value = coefficients.coefficient_at(base)?;
-            if !coefficients.coefficients_prevalidated() {
+            let value = coefficients.evaluation_at(base)?;
+            if !coefficients.evaluations_prevalidated() {
                 validate_field_value(&value, field_cfg)?;
             }
             return Ok(raw_montgomery(&value));
@@ -1388,8 +1337,8 @@ where
         let active_prefixes = prefix_size.min(live_len - base);
         for (prefix, weight) in weights.iter().take(active_prefixes).enumerate() {
             let index = base | prefix;
-            let value = coefficients.coefficient_at(index)?;
-            if !coefficients.coefficients_prevalidated() {
+            let value = coefficients.evaluation_at(index)?;
+            if !coefficients.evaluations_prevalidated() {
                 validate_field_value(&value, field_cfg)?;
             }
             product_multiply_accumulate(reducer, &mut v_accumulator, weight, &value);
@@ -1446,7 +1395,7 @@ where
 fn fold_factored_prefix_v_table<const K: usize>(
     num_vars: usize,
     live_len: usize,
-    coefficients: &Sha256FactoredBlockCoefficients<'_>,
+    coefficients: &FactoredMultilinearExtension<'_, Field>,
     challenges: &[Field],
     field_cfg: &FieldConfig,
     zero: &Field,
@@ -1454,29 +1403,38 @@ fn fold_factored_prefix_v_table<const K: usize>(
     reducer: &OptimizedSumcheckReducer,
 ) -> Result<CompactPrefixVTable, SumcheckError> {
     debug_assert_eq!(challenges.len(), K);
-    debug_assert_eq!(live_len, coefficients.live_len);
+    debug_assert_eq!(live_len, coefficients.live_len());
     debug_assert!(live_len <= 1usize << num_vars);
     let prefix_size = 1usize << K;
     let suffix_count = live_len.div_ceil(prefix_size);
     let weights = equality_weights_lsb(challenges, zero, one);
-    let block_width = coefficients.block_coefficients.len();
+    let block_width = coefficients.inner_factor().len();
 
     let fold_suffix = |suffix: usize| -> Result<RawMontgomery, SumcheckError> {
         let base = suffix << K;
         if K == 0 {
-            return Ok(raw_montgomery(&coefficients.coefficient(base)?));
+            return Ok(raw_montgomery(
+                &coefficients
+                    .evaluation_at(base)
+                    .map_err(|_| SumcheckError::InvalidProductDimensions)?,
+            ));
         }
         let end = live_len.min(base + prefix_size);
         let mut cursor = base;
         let mut total = product_accumulator_zero(reducer);
 
-        if cursor < coefficients.start {
-            product_multiply_accumulate(reducer, &mut total, &weights[0], &coefficients.shared);
+        if cursor < coefficients.tensor_start() {
+            product_multiply_accumulate(
+                reducer,
+                &mut total,
+                &weights[0],
+                coefficients.leading_value(),
+            );
             cursor = 1;
         }
 
         while cursor < end {
-            let offset = cursor - coefficients.start;
+            let offset = cursor - coefficients.tensor_start();
             let instance = offset / block_width;
             let local = offset % block_width;
             let run_len = (block_width - local).min(end - cursor);
@@ -1487,14 +1445,14 @@ fn fold_factored_prefix_v_table<const K: usize>(
                     reducer,
                     &mut local_fold,
                     &weights[prefix],
-                    &coefficients.block_coefficients[local + run_offset],
+                    &coefficients.inner_factor()[local + run_offset],
                 );
             }
             let local_fold = product_reduce(reducer, local_fold)?;
             product_multiply_accumulate(
                 reducer,
                 &mut total,
-                &coefficients.instance_weights[instance],
+                &coefficients.outer_factor()[instance],
                 &local_fold,
             );
             cursor += run_len;
@@ -1533,9 +1491,9 @@ fn fold_factored_prefix_v_table<const K: usize>(
         *output = fold_suffix(suffix)?;
     }
 
-    // The constructor validated every factor against `field_cfg`; retain an
+    // The source adapter validates every factor against `field_cfg`; retain an
     // explicit shape/config assertion at this boundary for future callers.
-    debug_assert_eq!(coefficients.shared.cfg(), field_cfg);
+    debug_assert_eq!(coefficients.leading_value().cfg(), field_cfg);
     Ok(table)
 }
 
@@ -2395,7 +2353,6 @@ fn select_field_by_bit(zero: &Field, one: &Field, bit: u64) -> Field {
     )
 }
 
-#[inline]
 /// [`linear_multiply_accumulate_signed`] with the negation precomputed and a
 /// zero coefficient skipped: the accumulated value is identical, and Boolean
 /// extensions are zero at roughly half of their ternary points.
@@ -2587,7 +2544,10 @@ mod tests {
             let block_coefficients = (0..block_width)
                 .map(|local| field(19 * local as u64 + 11, &field_cfg))
                 .collect::<Vec<_>>();
-            let source = Sha256FactoredBlockCoefficients::new(
+            let source = FactoredMultilinearExtension::with_leading_value(
+                (1 + instance_weights.len() * block_coefficients.len())
+                    .next_power_of_two()
+                    .ilog2() as usize,
                 field(137, &field_cfg),
                 &instance_weights,
                 &block_coefficients,
@@ -2602,7 +2562,10 @@ mod tests {
                 let bit = ((index * 29 + block_width).count_ones() & 1) as u64;
                 h_words[index / 64] |= bit << (index % 64);
                 if bit != 0 {
-                    initial_claim += &source.coefficient(index).unwrap();
+                    initial_claim += &source
+                        .evaluation_at(index)
+                        .map_err(|_| SumcheckError::InvalidProductDimensions)
+                        .unwrap();
                 }
             }
 
@@ -2614,7 +2577,11 @@ mod tests {
                         initial_claim.clone(),
                         num_vars,
                         live_len,
-                        &|index| source.coefficient(index),
+                        &|index| {
+                            source
+                                .evaluation_at(index)
+                                .map_err(|_| SumcheckError::InvalidProductDimensions)
+                        },
                         &h_words,
                         prefix_vars,
                         &field_cfg,
@@ -2670,7 +2637,10 @@ mod tests {
             let block_coefficients = (0..BLOCK_WIDTH)
                 .map(|local| field(23 * local as u64 + 7, &field_cfg))
                 .collect::<Vec<_>>();
-            let source = Sha256FactoredBlockCoefficients::new(
+            let source = FactoredMultilinearExtension::with_leading_value(
+                (1 + instance_weights.len() * block_coefficients.len())
+                    .next_power_of_two()
+                    .ilog2() as usize,
                 field(149, &field_cfg),
                 &instance_weights,
                 &block_coefficients,
@@ -2685,7 +2655,10 @@ mod tests {
                 let bit = ((index * 41 + 13).count_ones() & 1) as u64;
                 h_words[index / 64] |= bit << (index % 64);
                 if bit != 0 {
-                    initial_claim += &source.coefficient(index).unwrap();
+                    initial_claim += &source
+                        .evaluation_at(index)
+                        .map_err(|_| SumcheckError::InvalidProductDimensions)
+                        .unwrap();
                 }
             }
 
@@ -2695,7 +2668,11 @@ mod tests {
                 initial_claim.clone(),
                 num_vars,
                 live_len,
-                &|index| source.coefficient(index),
+                &|index| {
+                    source
+                        .evaluation_at(index)
+                        .map_err(|_| SumcheckError::InvalidProductDimensions)
+                },
                 &h_words,
                 PREFIX_VARS,
                 &field_cfg,
@@ -2738,7 +2715,10 @@ mod tests {
         let block_coefficients = (0..SHA_BLOCK_WIDTH)
             .map(|local| field((13 * local as u64 + 17) % 65_521, &field_cfg))
             .collect::<Vec<_>>();
-        let source = Sha256FactoredBlockCoefficients::new(
+        let source = FactoredMultilinearExtension::with_leading_value(
+            (1 + instance_weights.len() * block_coefficients.len())
+                .next_power_of_two()
+                .ilog2() as usize,
             field(101, &field_cfg),
             &instance_weights,
             &block_coefficients,
@@ -2754,7 +2734,11 @@ mod tests {
         let generic = fold_prefix_v_table_generic::<K, _>(
             num_vars,
             live_len,
-            &|index| source.coefficient(index),
+            &|index| {
+                source
+                    .evaluation_at(index)
+                    .map_err(|_| SumcheckError::InvalidProductDimensions)
+            },
             &challenges,
             &field_cfg,
             &zero,
