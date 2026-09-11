@@ -280,7 +280,7 @@ This is enabled by the  decomposition of the initial claim into the subclaims $\
 
 In our implementation, we use \ftwoz\ as a PCS that can simultaneously prove R1CS constraints over integers and binary fields. We explain how next. We stress again that one can use \ftwoz\ to build all sorts of proof systems for all sorts of constraints. Nothing forces one to use R1CS-like constraints and integers and binary fields. 
 
- \paragraph{Virtual $\FF_2$-linear transforms, NP-complete dually linear relations, and one arithmetization of SHA-256} At the end of the steps of \cref{s:to_simple_bitz}, we have a standard linear claim on $\bitstext(\bff)$ in $\comfield$, say \begin{equation}\label{e:intro_comfield_linear}\langle \bitstext(\bff), \uu'\rangle = \eta \quad \text{ in } \comfield.\end{equation} Say we would like to add an extra constraint, over $\comfield$, on $\bitstext(\bff)$ of the form $\bitstext(\bff) = M \cdot \bfg$ for some matrix $M$ and vector $\bfg$ with entries in $\FF_2$. Then, we could instead of committing to $\bitstext(\bff)$ in Step 1 of \cref{s:to_simple_bitz}, commit to $\bfg$. The claim  \eqref{e:intro_comfield_linear} becomes
+ \paragraph{Virtual $\FF_2$-linear transforms, NP-complete dually linear relations, and one arithmetization of SHA-256} At the end of the steps of \cref{s:to_simple_bitz}, we have a standard linear claim on $\bitstext(\bff)$ in $\comfield$, say \begin{equation}\label{e:intro_comfield_linear}\langle \bitstext(\bff), \uu'\rangle = \eta \quad \text{ in } \comfield.\end{equation} Say we would like to add an extra constraint, over $\comfield$, on $\bitstext(\bff)$ of the form $\bitstext(\bff) = M \cdot \bfg$ for some matrix $M$ with entries in $\comfield$ and vector $\bfg$ with entries in $\FF_2$. Then, we could instead of committing to $\bitstext(\bff)$ in Step 1 of \cref{s:to_simple_bitz}, commit to $\bfg$. The claim  \eqref{e:intro_comfield_linear} becomes
  %
  $$
 \langle \bfg, M^{\mathsf{T}}\uu'\rangle = \eta \quad \text{ in } \comfield,
@@ -292,7 +292,7 @@ In our implementation, we use \ftwoz\ as a PCS that can simultaneously prove R1C
 %
 \begin{align*}
 &\Relation_{\mathsf{R1CS-bits-virtual}}(\ZZ)\\ & \qquad\qquad \defeq \left\{ \begin{aligned}
-    &\inp= (\xx, A,B,C, M)\in \FF_2^{\inplen} \times (\ZZ^{m\times \codedim})^3 \times \FF_2^{\codedim \times (\inplen+\codedim')}\\
+    &\inp= (\xx, A,B,C, M)\in \FF_2^{\inplen} \times (\ZZ^{m\times \codedim})^3 \times \comfield^{\codedim \times (\inplen+\codedim')}\\
     & \wit = \bfg \in \bits^{\codedim'} \subseteq \FF_2^{\codedim'}
 \end{aligned}\  \left| \  \begin{aligned} %&f=\Enc_\cC \circ \pack \circ \pi_2(\bff)\\ 
 &(A\cdot \bff) \circ (B\cdot \bff) = C \cdot \bff\ \text{in } \ZZ \\
@@ -813,7 +813,7 @@ A particularly interesting instantiation of this relation is the following R1CS-
 %
 \begin{align*}
 &\Relation_{\mathsf{R1CS-bits-virtual}}(\ZZ)\\ &\qquad \qquad\qquad \defeq \left\{ \begin{aligned}
-    &\inp= (\xx, A,B,C, M)\in \FF_2^{\inplen} \times (\ZZ^{m\times \codedim})^3 \times \FF_2^{\codedim \times (\inplen+\codedim')}\\
+    &\inp= (\xx, A,B,C, M)\in \FF_2^{\inplen} \times (\ZZ^{m\times \codedim})^3 \times \comfield^{\codedim \times (\inplen+\codedim')}\\
     & \wit = \bff \in \bits^{\codedim'} \subseteq \FF_2^{\codedim'}
 \end{aligned}\  \left| \  \begin{aligned} %&f=\Enc_\cC \circ \pack \circ \pi_2(\bff)\\ 
 &(A\cdot \ww) \circ (B\cdot \ww) = C \cdot \ww\ \text{in } \ZZ \\
@@ -825,7 +825,7 @@ An interesting subset  of $\Relation_{\mathsf{R1CS-bits-virtual}}(\ZZ)$
  is that where $A$ and $B$ are zero matrices. We call the resulting relation the \emph{CM} relation because of the matrices $C$ and $M$:
  \begin{equation}\label{e:CM_rel}
 \Relation_{\mathsf{CM}}(\ZZ) \defeq \left\{ \begin{aligned}
-    &\inp= (\xx, C, M)\in \FF_2^{\inplen} \times \ZZ^{m\times \codedim} \times \FF_2^{\codedim \times (\inplen+\codedim')}\\
+    &\inp= (\xx, C, M)\in \FF_2^{\inplen} \times \ZZ^{m\times \codedim} \times \comfield^{\codedim \times (\inplen+\codedim')}\\
     & \wit = \bff \in \bits^{\codedim'} \subseteq \FF_2^{\codedim'}
 \end{aligned}\  \left| \  \begin{aligned} %&f=\Enc_\cC \circ \pack \circ \pi_2(\bff)\\ 
 &C \cdot \ww = 0\ \text{in } \ZZ \\
