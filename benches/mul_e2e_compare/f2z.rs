@@ -13,6 +13,17 @@ use f2z::{
 use serde_json::{Value, json};
 use std::sync::Arc;
 
+/// `F2Z_U64_SPLIT_SHIFT=k`: lower the u64 F2Z row side by `k` variables
+/// below the layout's default split (raise the column side by `k`). An
+/// explicit campaign knob: the runner clears the ambient value, sets it per
+/// campaign, records it, and checks every sample against it.
+fn u64_split_shift() -> i8 {
+    std::env::var("F2Z_U64_SPLIT_SHIFT")
+        .ok()
+        .map(|v| v.parse().expect("F2Z_U64_SPLIT_SHIFT must be a small integer"))
+        .unwrap_or(0)
+}
+
 enum Relation {
     U32(PreparedU32MulRelation),
     U64(PreparedU64MulRelation),
@@ -35,7 +46,7 @@ impl Context {
                 Relation::U32(relation)
             }
             Workload::U64 => {
-                Relation::U64(PreparedU64MulRelation::new_with_profile_and_ligerito::<Lambda100>(U64MulLayout::new(n).unwrap(), super::common::ligerito_selection(100)).unwrap())
+                Relation::U64(PreparedU64MulRelation::new_with_profile_and_ligerito::<Lambda100>(U64MulLayout::new(n).unwrap().with_split_shift(u64_split_shift()).unwrap(), super::common::ligerito_selection(100)).unwrap())
             }
             Workload::U128 => Relation::U128(
                 PreparedU128MulRelation::new_with_profile_and_ligerito::<Lambda100>(U128MulLayout::new(n).unwrap(), super::common::ligerito_selection(100)).unwrap(),
@@ -74,7 +85,13 @@ impl Context {
             config["ligerito"] = super::common::ligerito_report(ligerito, security.ood);
         }
         match &self.relation {
-            Relation::U64(p) => config["ligerito"] = super::common::ligerito_report(p.ligerito_configuration(), p.security().ood),
+            Relation::U64(p) => {
+                config["ligerito"] = super::common::ligerito_report(p.ligerito_configuration(), p.security().ood);
+                let params = p.layout().f2z_params();
+                config["u64_split_shift"] = json!(u64_split_shift());
+                config["f2z_t"] = json!(params.t);
+                config["f2z_s"] = json!(params.s);
+            }
             Relation::U128(p) => config["ligerito"] = super::common::ligerito_report(p.ligerito_configuration(), p.security().ood),
             _ => {}
         }
@@ -132,7 +149,9 @@ impl Context {
             Relation::U64(relation) => {
                 let witness = {
                     let _s = prof::scope("native-mul:witness");
-                    U64MulWitness::from_inputs(self.corpus.inputs()).expect("u64 witness")
+                    U64MulWitness::from_inputs(self.corpus.inputs())
+                        .and_then(|w| w.with_split_shift(u64_split_shift()))
+                        .expect("u64 witness")
                 };
                 for (i, &(a, b)) in self.corpus.inputs().iter().enumerate() {
                     assert_eq!(witness.product(i), self.corpus.workload.output(a, b));
@@ -267,7 +286,9 @@ pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
             )
         }
         Workload::U64 => {
-            let w = U64MulWitness::from_inputs(corpus.inputs()).unwrap();
+            let w = U64MulWitness::from_inputs(corpus.inputs())
+                .and_then(|w| w.with_split_shift(u64_split_shift()))
+                .unwrap();
             let ms = started.elapsed().as_secs_f64() * 1e3;
             (
                 (0..corpus.len())
@@ -303,7 +324,7 @@ mod tests {
         assert_eq!(
             relation.ligerito(),
             U32MulLigerito::CustomJohnson {
-                log_inv_rate: 3,
+                log_inv_rate: 1,
                 initial_k: 4
             }
         );

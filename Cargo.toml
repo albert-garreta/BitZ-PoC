@@ -310,6 +310,9 @@ native-mul-compare = [
     "dep:p3-air",
     "dep:p3-multi-stark",
     "binius64-bench",
+    # Limber's own wrapping-multiplication rows, proved in process through
+    # its Brakedown Mod-PCS engine (benches/mul_e2e_compare/limber.rs).
+    "dep:limber",
 ]
 native-sha256-compare = [
     "plonky3-sha256-bench",

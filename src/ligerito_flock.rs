@@ -630,6 +630,17 @@ fn try_custom_johnson_config_bits(
                     lv.paper_predicted_bits().1 + 1e-3 >= need_q
                 })
                 .ok_or("Johnson query search did not converge")?;
+            // Every query is a distinct codeword position, so a level must be
+            // at least as wide as its query count (flock's prover asserts this
+            // at proving time; fail here, at configuration time, instead).
+            let positions = 1usize << (mc + r);
+            if lv.queries > positions {
+                return Err(format!(
+                    "custom Johnson level {i} is too thin: {} queries over {positions} positions \
+                     (log_msg_cols {mc}, log_inv_rate {r}); use a larger m or a smaller initial_k",
+                    lv.queries
+                ));
+            }
             let (pg, qb) = lv.paper_predicted_bits();
             lv.fold_grinding_bits = (lv.target_security_bits as f64 - pg).ceil().max(0.0) as usize;
             lv.expected_eps_pg_bits = pg;

@@ -21,7 +21,7 @@ use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
 use crate::{
     ligerito_flock::OodRoundParams,
     piop::spartan::{
-        f2z::{PreparedU32MulRelation, hybrid as mul},
+        f2z::{U32MulPrefixRelation, hybrid as mul},
         u32_mul::{U32MulLayout, U32MulWitness},
     },
     transcript::{Blake3Transcript, traits::Transcript},
@@ -98,7 +98,7 @@ pub(crate) struct BinaryClaim {
 /// witness and final SHA state; it is reusable across instances of this shape.
 pub struct PreparedHybrid {
     parameters: Parameters,
-    multiplication: PreparedU32MulRelation,
+    multiplication: U32MulPrefixRelation,
     sha: sha::ShaRelation,
     geometry: opening::Geometry,
     /// Round-0 parameters (`step0:ood-draw` grinding), derived from the
@@ -106,6 +106,8 @@ pub struct PreparedHybrid {
     ood: Option<OodRoundParams>,
     ligerito: crate::ligerito_flock::ResolvedLigerito,
     security: SecurityReport,
+    /// Joint-sumcheck working buffers, recycled across proofs.
+    scratch: std::sync::Mutex<sumcheck::Scratch>,
 }
 
 /// Witness and the two initial commitments, retained until proof generation.
@@ -140,11 +142,14 @@ impl PreparedHybrid {
                 "hybrid proofs require checked arithmetic and constraints",
             ));
         }
+        // The lower bound is the shared opener's geometry (one packed word
+        // per multiplication, packed logarithm >= 9); the multiplication
+        // prefix has no standalone opener and hence no 2^15 floor.
         if !parameters.multiplications.is_power_of_two()
-            || !(1 << 15..=1 << 22).contains(&parameters.multiplications)
+            || !(1 << 9..=1 << 22).contains(&parameters.multiplications)
         {
             return Err(Error::Invalid(
-                "multiplication count must be a power of two from 2^15 to 2^22",
+                "multiplication count must be a power of two from 2^9 to 2^22",
             ));
         }
         if !parameters.sha_compressions.is_power_of_two()
@@ -155,16 +160,15 @@ impl PreparedHybrid {
             ));
         }
         let layout = U32MulLayout::new(parameters.multiplications)?;
-        let multiplication =
-            PreparedU32MulRelation::new_with_profile::<security::CompositionProfile>(layout)?;
+        let multiplication = U32MulPrefixRelation::new::<security::CompositionProfile>(layout)?;
         let sha = sha::ShaRelation::new(parameters.sha_compressions)?;
         let geometry = opening::Geometry::new([
             crate::ligerito::packed_vars(&multiplication.params()),
             sha.verifier.log_witness_elems(),
         ])?;
         let ligerito = selection.resolve(geometry.packed_log(), security::LIGERITO_COMPONENT_BITS).map_err(Error::Config)?;
-        if ligerito.prover().initial_k != 4 || ligerito.prover().log_inv_rates[0] != 3 {
-            return Err(Error::Invalid("hybrid requires Ligerito rate 1/8 and initial_k=4"));
+        if ligerito.prover().initial_k != 4 || ligerito.prover().log_inv_rates[0] != opening::LOG_INV_RATE {
+            return Err(Error::Invalid("hybrid requires Ligerito rate 1/2 and initial_k=4"));
         }
         let security = security::account(&multiplication, &sha.verifier, &geometry, &ligerito)?;
         let ood = opening::ood_parameters(&ligerito)?.map(|(_, params)| params);
@@ -176,6 +180,7 @@ impl PreparedHybrid {
             ood,
             ligerito,
             security,
+            scratch: std::sync::Mutex::default(),
         })
     }
 
@@ -332,7 +337,13 @@ impl PreparedHybrid {
         drop(sha_scope);
         tracing::info!("proving shared bit sumcheck");
         let sumcheck_scope = crate::utils::prof::scope("hybrid:joint_sumcheck");
-        let (joint, point) = sumcheck::prove(&mut t, &self.geometry, sources, [&a, &b]);
+        let (joint, point) = {
+            let mut scratch = self
+                .scratch
+                .lock()
+                .map_err(|_| Error::Invalid("joint sumcheck scratch poisoned"))?;
+            sumcheck::prove(&mut t, &self.geometry, sources, [&a, &b], &mut scratch)
+        };
         drop(sumcheck_scope);
         tracing::info!("ring switching and opening both roots with Ligerito");
         let opening_scope = crate::utils::prof::scope("hybrid:opening_iop");
@@ -407,12 +418,16 @@ mod tests {
 
     #[test]
     fn supported_geometries_bound_initial_leaf_width() {
-        for multiplication_log in 15..=22 {
-            for sha_log in 9..=24 {
-                let g = opening::Geometry::new([multiplication_log, sha_log]).unwrap();
-                assert_eq!(g.virtual_lane_log, 4);
-                assert_eq!(g.params(0).n_positions(), g.params(1).n_positions());
-                for selection in [crate::ligerito_flock::LigeritoSelection::JOHNSON, crate::ligerito_flock::LigeritoSelection::MATCHED_UDR] {
+        // Equal packed witnesses and their neighbourhood, plus the equal
+        // operation-count shapes N = M = 2^k (one packed word per
+        // multiplication, 256 per compression: logs [k, k + 8]).
+        let equal_counts = (9..=16).map(|k| [k, k + 8]);
+        let shapes = (15..=22).flat_map(|m| (9..=24).map(move |s| [m, s])).chain(equal_counts);
+        for logs in shapes {
+            let g = opening::Geometry::new(logs).unwrap();
+            assert_eq!(g.virtual_lane_log, 4);
+            assert_eq!(g.params(0).n_positions(), g.params(1).n_positions());
+            for selection in [crate::ligerito_flock::LigeritoSelection::JOHNSON, crate::ligerito_flock::LigeritoSelection::MATCHED_UDR] {
                 let resolved = selection.resolve(g.packed_log(), security::LIGERITO_COMPONENT_BITS).unwrap();
                 let security = resolved.security();
                 assert!(security.validate().is_ok());
@@ -420,9 +435,38 @@ mod tests {
                 assert_eq!(g.params(0).log_inv_rate, security.levels[0].log_inv_rate);
                 assert_eq!(g.params(1).log_inv_rate, security.levels[0].log_inv_rate);
                 assert!(opening::ood_parameters(&resolved).is_ok());
-                }
             }
         }
+    }
+
+    #[test]
+    fn equal_operation_counts_below_the_standalone_floor_roundtrip() {
+        // N = M = 2^9: the multiplication side is 64x below the standalone
+        // u32 API's 2^15 floor. The composition prepares only the
+        // multiplication prefix; its opener is the shared one, validated at
+        // the virtual geometry (packed log 18 here).
+        let parameters = Parameters { multiplications: 1 << 9, sha_compressions: 1 << 9 };
+        let inputs: Vec<_> = (0..1u32 << 9).map(|i| (i.wrapping_mul(0x9e3779b9), u32::MAX - i)).collect();
+        let blocks: Vec<[u32; 16]> = (0..1u32 << 9)
+            .map(|i| std::array::from_fn(|j| i.wrapping_mul(0x85ebca6b).wrapping_add(j as u32)))
+            .collect();
+        let prepared = PreparedHybrid::new(parameters).unwrap();
+        assert_eq!(prepared.packed_witness_logs(), [9, 17]);
+        assert_eq!(prepared.physical_packed_witness_logs(), [14, 17]);
+        assert!(prepared.security().algebraic_bits >= 100.0);
+        let committed = prepared.commit(&inputs, &blocks).unwrap();
+        let proof = prepared.prove(&committed).unwrap();
+        prepared.verify(committed.statement(), &proof).unwrap();
+        let bytes = proof.to_bytes();
+        let decoded = prepared.proof_from_bytes(committed.statement(), &bytes).unwrap();
+        prepared.verify(committed.statement(), &decoded).unwrap();
+        // A changed multiplication row is still caught below the floor.
+        let mut rows: Vec<_> = committed.multiplication_rows().collect();
+        rows[7].z ^= 1;
+        let invalid = prepared.commit_mod32(&rows, &blocks).unwrap();
+        assert!(prepared.prove(&invalid).is_err() || prepared.verify(invalid.statement(), &prepared.prove(&invalid).unwrap()).is_err());
+        // Below the shared geometry's minimum packed log the shape is rejected.
+        assert!(PreparedHybrid::new(Parameters { multiplications: 1 << 8, sha_compressions: 1 << 8 }).is_err());
     }
 
     #[test]

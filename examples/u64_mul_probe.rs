@@ -18,6 +18,11 @@ fn main() {
         (x, y)
     })
     .unwrap();
+    // Experiment: F2Z_U64_SPLIT_SHIFT=k moves k gate variables from rows to columns.
+    let shift: i8 = std::env::var("F2Z_U64_SPLIT_SHIFT").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+    let witness = witness.with_split_shift(shift).unwrap();
+    let params = witness.layout().f2z_params();
+    println!("split: shift {shift} -> t={} s={}", params.t, params.s);
     let prepared = PreparedU64MulRelation::new(*witness.layout()).unwrap();
     let hint = commit_u64_mul_witness(&prepared, witness.f2z_bit_rows()).unwrap();
     // warm-up
@@ -26,7 +31,9 @@ fn main() {
     verify_u64_mul(&mut Blake3Transcript::new(), &prepared, &hint.commitment, &p).unwrap();
     let _ = prof::take_totals();
     let mut totals: std::collections::BTreeMap<String, Vec<f64>> = Default::default();
+    let mut vtotals: std::collections::BTreeMap<String, Vec<f64>> = Default::default();
     let mut wall = vec![];
+    let mut vwall = vec![];
     for _ in 0..reps {
         let t = Instant::now();
         let p = prove_u64_mul(&mut Blake3Transcript::new(), &prepared, &witness, &hint).unwrap();
@@ -34,13 +41,25 @@ fn main() {
         for (label, secs) in prof::take_totals() {
             totals.entry(label.to_string()).or_default().push(secs * 1e3);
         }
+        let t = Instant::now();
+        verify_u64_mul(&mut Blake3Transcript::new(), &prepared, &hint.commitment, &p).unwrap();
+        vwall.push(t.elapsed().as_secs_f64() * 1e3);
+        for (label, secs) in prof::take_totals() {
+            vtotals.entry(label.to_string()).or_default().push(secs * 1e3);
+        }
         std::hint::black_box(p);
     }
     let med = |v: &mut Vec<f64>| { v.sort_by(|a, b| a.partial_cmp(b).unwrap()); v[v.len() / 2] };
-    println!("2^{e}: prove wall median {:.1} ms over {reps} reps", med(&mut wall));
-    let mut rows: Vec<_> = totals.into_iter().collect();
-    rows.sort_by(|a, b| b.1.iter().cloned().fold(0.0, f64::max).partial_cmp(&a.1.iter().cloned().fold(0.0, f64::max)).unwrap());
-    for (label, mut v) in rows {
-        println!("  {:<48} {:8.1} ms", label, med(&mut v));
-    }
+    let report = |title: &str, wall: &mut Vec<f64>, totals: std::collections::BTreeMap<String, Vec<f64>>| {
+        println!("2^{e}: {title} wall median {:.1} ms over {reps} reps", med(wall));
+        let mut rows: Vec<_> = totals.into_iter().collect();
+        rows.sort_by(|a, b| b.1.iter().cloned().fold(0.0, f64::max).partial_cmp(&a.1.iter().cloned().fold(0.0, f64::max)).unwrap());
+        for (label, mut v) in rows {
+            println!("  {:<48} {:8.2} ms", label, med(&mut v));
+        }
+    };
+    report("prove", &mut wall, totals);
+    report("verify", &mut vwall, vtotals);
+    let p = prove_u64_mul(&mut Blake3Transcript::new(), &prepared, &witness, &hint).unwrap();
+    println!("proof bytes: {}", hint.commitment.root.len() + p.size_bytes(prepared.security()));
 }

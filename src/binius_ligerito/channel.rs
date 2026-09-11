@@ -2,7 +2,7 @@
 //!
 //! Every oracle the PIOP commits — the packed witness, and the IntMul
 //! reduction's logup* pushforward when the circuit multiplies — is committed
-//! by [`BinaryPcs`] (rate 1/8, BLAKE3 Merkle tree), its root bound into the
+//! by [`BinaryPcs`] (rate 1/2, BLAKE3 Merkle tree), its root bound into the
 //! transcript and Round 0 taken immediately, before the next challenge. Oracle
 //! linear relations are queued, not opened: the adapter discharges each
 //! oracle's relations with one Ligerito opening after the PIOP prefix ends,

@@ -26,12 +26,41 @@ def fingerprint(row):
     return hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def require_compatible(left, right):
-    """Only combine the same protocol, source, corpus, machine and timing policy."""
+# Configuration keys that later harness revisions record for information only;
+# when one side of a comparison predates them they are ignored, when both sides
+# carry them they must agree (they name the u64 F2Z split).
+INFORMATIONAL_CONFIG_KEYS = ("u64_split_shift", "f2z_t", "f2z_s")
+
+
+def protocol_identity(row, other):
+    """The fingerprint's identity minus the source tree, on configuration keys
+    both rows record (see INFORMATIONAL_CONFIG_KEYS)."""
+    config = dict(row["config"])
+    for key in INFORMATIONAL_CONFIG_KEYS:
+        if key not in row["config"] or key not in other["config"]:
+            config.pop(key, None)
+    identity = {"workload": row["workload"], "config": config,
+                "measurement_policy": row["measurement_policy"], "threads": row["threads"],
+                "build": row["provenance"]["build"]}
+    return hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def require_compatible(left, right, allow_source_drift=False):
+    """Only combine the same protocol, source, corpus, machine and timing policy.
+
+    With `allow_source_drift` the two rows may come from different source
+    trees: they must still agree on protocol identity (configuration, policy,
+    threads, build), and the caller is expected to verify that their proof
+    bytes agree wherever they overlap."""
     if any(row.get("protocol_fingerprint") != fingerprint(row) for row in (left, right)):
         raise ValueError("result fingerprint does not match its configuration")
-    keys = ("schema", "workload", "backend", "log_multiplications", "corpus_digest",
-            "threads", "measurement_policy", "protocol_fingerprint")
+    keys = ["schema", "workload", "backend", "log_multiplications", "corpus_digest",
+            "threads", "measurement_policy"]
+    if allow_source_drift:
+        if protocol_identity(left, right) != protocol_identity(right, left):
+            raise ValueError("incompatible multiplication results: protocol identity differs across source trees")
+    else:
+        keys.append("protocol_fingerprint")
     if any(left.get(key) != right.get(key) for key in keys):
         raise ValueError("incompatible multiplication results: protocol/configuration/corpus differs")
     if left.get("provenance", {}).get("machine") != right.get("provenance", {}).get("machine"):

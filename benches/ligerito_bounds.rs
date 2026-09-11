@@ -95,7 +95,7 @@ fn main() -> Result<()> {
         .filter(|s| s != "--bench")
         .collect();
     if !(2..=3).contains(&args.len()) {
-        bail!("usage: ligerito_bounds CASE custom:3:4|udrg:3:4 [--memory]");
+        bail!("usage: ligerito_bounds CASE custom:1:4|udrg:1:4 [--memory]");
     }
     if args.len() == 3 && args[2] != "--memory" {
         bail!("unknown argument");

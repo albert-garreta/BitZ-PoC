@@ -33,7 +33,7 @@ use f2z::transcript::Blake3Transcript;
 
 /// The mini MultiSwap instance under the pinned `Limber114` profile.
 const MULTISWAP_MINI_DIGEST: &str =
-    "3b82cce6ef6ae8070cde11abc24deba96f79f5b2a86015570271c25e6fa0f42b";
+    "947876e957a51c7af368dd7fd589479f5174d60245a0bc8f551370dc72c16e06";
 
 /// The 2^7 SHA-256 batch under the DEFAULT profile (`Lambda100`: no
 /// grinding anywhere, Ligerito at 100). Re-recorded when the production
@@ -41,24 +41,24 @@ const MULTISWAP_MINI_DIGEST: &str =
 /// local bits plus `r` instance bits), which changes both the opened tensor
 /// and the lift arity that narrows the prime.
 const SHA256_2P7_LAMBDA100_DIGEST: &str =
-    "d91d19abb03fbb8d4c620e49998e89d7170914cd6ae084eb65eb038b976d19f4";
+    "25d486d2d34bd2792d84fafbdf67bf9dafa72171a21069014f832f3e1ff7a7e9";
 
 /// The 2^7 SHA-256 batch under the explicit historical comparison schedule.
 /// This pins the grinded boundary schedule within the direct product-opening
 /// protocol.
 const SHA256_2P7_REFERENCE_DIGEST: &str =
-    "a0537625279ea4689712d468d54463c82d7ba915dd4ee40fdbae131c7076620e";
+    "19485480cf49f65eab3358c55ca8cc0c52d4987e6a76edaf666e1e1c46af3e4a";
 
 /// The 2^7 CHAINED SHA-256 batch (the Merkle–Damgård chain from the
 /// standard initial state, intermediate states as witness) under the
 /// default `Lambda100` profile, on the chained virtual map.
 const SHA256_CHAIN_2P7_LAMBDA100_DIGEST: &str =
-    "e97e985ccc2c424a64d67ed60a2339604b0cdd2de47809d36902048bc7ffc924";
+    "1a1294ad2e95e269262e58088e3c0819f3f8cbd0ecb9e602d9282a603fb141dc";
 
 /// The 2^15 u32-multiplication batch under the canonical runtime-prime,
 /// K=3 univariate-skip protocol and its default `Lambda100` profile.
 const U32_MUL_2P15_DIGEST: &str =
-    "1838bee571c691584bb4f4524ec9d760b73ec2df0b16e55dd669a76bdb8e8bf1";
+    "1269425df70502c656058c9d82a1d1bf145a1bbdb0acf383562925d0ade2ad5a";
 
 #[test]
 fn u32_mul_2p15_transcript_is_pinned() {
@@ -90,7 +90,7 @@ fn u32_mul_2p15_transcript_is_pinned() {
 /// The 2^15 u64-multiplication batch (`x·y = z_lo + 2^64·z_hi`) under the
 /// runtime-prime protocol on projected values (cubic outer sumcheck) and its
 /// default `Lambda100` profile.
-const U64_MUL_2P15_DIGEST: &str = "8484c1f43fecd07bc18af6a78b04fe677607b50766ad388c117f4fc18a7372f4";
+const U64_MUL_2P15_DIGEST: &str = "ae03cf31da4ab6b35a5c223ae22740f257919be40d2dfa94f9ba7db7687ea111";
 
 #[test]
 fn u64_mul_2p15_transcript_is_pinned() {
@@ -123,7 +123,7 @@ fn u64_mul_2p15_transcript_is_pinned() {
 /// runtime-prime protocol on raw residues built from the witness limbs
 /// (cubic outer sumcheck, Boolean selector matrices) and its default
 /// `Lambda100` profile.
-const U128_MUL_2P15_DIGEST: &str = "7e48586753b1ae6594ddb7723f7b531f6f2a0c042b188b79b9b216cbbf9b2763";
+const U128_MUL_2P15_DIGEST: &str = "2fa23c633dc1fd163cd49295f0fbccf9f4537cd4ab7b5c8062bdae0f1bbd16a8";
 
 #[test]
 fn u128_mul_2p15_transcript_is_pinned() {

@@ -69,7 +69,7 @@ enum Backend {
     Whir,
     Binius,
     /// The F2Z opener on the Binius64 packed rows and the identical bit-MLE
-    /// claim: rate 1/8, Johnson-regime Ligerito, grinding, Round 0.
+    /// claim: rate 1/2, Johnson-regime Ligerito, grinding, Round 0.
     Ligerito,
 }
 

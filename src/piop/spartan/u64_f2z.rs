@@ -40,7 +40,7 @@ use crate::{
     transcript::traits::{GenTranscribable, Transcript},
 };
 
-use crate::utils::cfg_iter_mut;
+use crate::utils::{cfg_chunks_mut, cfg_iter, cfg_iter_mut};
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -495,64 +495,87 @@ fn prepare_bitified_chunks_with(
             Ok(chunks)
         }
         U64MulBitifiedRows::Structured { x, y, z_lo, z_hi } => {
-            let high_gate_count = checked_pow2(gate_high.len())?;
-            let row_count = checked_pow2(params.t)?;
-            let blocks = [
-                (U64_MUL_X_SLOT_START, x),
-                (U64_MUL_Y_SLOT_START, y),
-                (U64_MUL_Z_LO_SLOT_START, z_lo),
-                (U64_MUL_Z_HI_SLOT_START, z_hi),
-            ];
-            let mut scratch = vec![0_u128; high_gate_count];
-            let pow2_word = arith.monty_factor(arith.reduce(2));
-
+            let weights = structured_u64_row_weights(
+                &params,
+                gate_high,
+                [
+                    (U64_MUL_X_SLOT_START, x),
+                    (U64_MUL_Y_SLOT_START, y),
+                    (U64_MUL_Z_LO_SLOT_START, z_lo),
+                    (U64_MUL_Z_HI_SLOT_START, z_hi),
+                ],
+                arith,
+            )?;
             if crate::pcs::mod_q_num_chunks(&params, q_bits) == 1 {
-                let mut weights = Vec::with_capacity(row_count);
-                for (slot_start, block_factor) in blocks {
-                    fill_block_weight_ranges(
-                        &mut scratch,
-                        slot_start,
-                        block_factor,
-                        gate_high,
-                        arith,
-                        &pow2_word,
-                        |row_start, range| {
-                            if row_start != weights.len() {
-                                return Err(U64MulSpartanF2zError::InvalidF2zParameters);
-                            }
-                            weights.extend_from_slice(range);
-                            Ok(())
-                        },
-                    )?;
-                }
-                if weights.len() != row_count {
-                    return Err(U64MulSpartanF2zError::InvalidF2zParameters);
-                }
                 crate::pcs::ModQWeightChunks::from_single_chunk(&params, q_bits, weights)
                     .map_err(|_| U64MulSpartanF2zError::InvalidF2zParameters)
             } else {
                 let mut chunks = crate::pcs::ModQWeightChunks::zeroed(&params, q_bits)
                     .map_err(|_| U64MulSpartanF2zError::InvalidF2zParameters)?;
-                for (slot_start, block_factor) in blocks {
-                    fill_block_weight_ranges(
-                        &mut scratch,
-                        slot_start,
-                        block_factor,
-                        gate_high,
-                        arith,
-                        &pow2_word,
-                        |row_start, range| {
-                            chunks
-                                .set_weight_range(row_start, range)
-                                .map_err(|_| U64MulSpartanF2zError::InvalidF2zParameters)
-                        },
-                    )?;
-                }
+                chunks
+                    .set_weight_range(0, &weights)
+                    .map_err(|_| U64MulSpartanF2zError::InvalidF2zParameters)?;
                 Ok(chunks)
             }
         }
     }
 }
+
+/// The dense canonical row weights of a structured u64 opening, in F2Z row
+/// order `(bit_slot << h) | gate_high`:
+///
+/// `w[(slot << h) | g] = block_factor(slot) · 2^{slot − block_start} · eq(gate_high_point, g)`
+///
+/// for the `x`, `y`, `z_lo` and `z_hi` blocks (the 256 bit slots are exactly
+/// the four blocks). The 256 per-slot scalars are formed first, then every
+/// row is one fixed-factor Montgomery multiplication of the shared `eq`
+/// table, in one parallel pass over the whole `2^t` table. The previous
+/// per-slot rescaling of a `2^h` scratch dispatched 256 tiny parallel jobs
+/// and copied each result out serially, which cost several times the
+/// arithmetic at 8 threads on both the prover and the verifier. Same field
+/// elements, same canonical residues.
+fn structured_u64_row_weights(
+    params: &crate::pcs::IntEvalParams,
+    gate_high: &[Fq],
+    blocks: [(usize, Fq); 4],
+    arith: &ProjArith,
+) -> Result<Vec<u128>, U64MulSpartanF2zError> {
+    let high_gate_count = checked_pow2(gate_high.len())?;
+    let row_count = checked_pow2(params.t)?;
+    if U64_MUL_BIT_SLOTS
+        .checked_mul(high_gate_count)
+        .is_none_or(|rows| rows != row_count)
+    {
+        return Err(U64MulSpartanF2zError::InvalidF2zParameters);
+    }
+
+    // Per-slot scalars: the block factor times 2^{bit within the block}.
+    let two = arith.reduce(2);
+    let mut slot_scalars = vec![0_u128; U64_MUL_BIT_SLOTS];
+    for (slot_start, block_factor) in blocks {
+        let mut scalar = arith.reduce(block_factor.0);
+        for slot in slot_start..slot_start.saturating_add(U64_MUL_VALUE_BITS) {
+            let Some(entry) = slot_scalars.get_mut(slot) else {
+                return Err(U64MulSpartanF2zError::InvalidF2zParameters);
+            };
+            *entry = scalar;
+            scalar = arith.mul(scalar, two);
+        }
+    }
+
+    let eq_high = eq_le_table_fq_with(gate_high, arith)?;
+    let mut weights = vec![0_u128; row_count];
+    cfg_chunks_mut!(weights, high_gate_count)
+        .zip(cfg_iter!(slot_scalars))
+        .for_each(|(rows, &scalar)| {
+            let factor = arith.monty_factor(scalar);
+            for (row, equality) in rows.iter_mut().zip(&eq_high) {
+                *row = arith.mul_plain_by(equality.0, &factor);
+            }
+        });
+    Ok(weights)
+}
+
 
 fn eq_le_table_fq_with(
     point: &[Fq],
@@ -593,83 +616,6 @@ fn eq_le_table_fq_with(
         half = active_len;
     }
     Ok(table)
-}
-
-fn scaled_eq_le_table_fq_into(
-    point: &[Fq],
-    scale: Fq,
-    table: &mut [u128],
-    arith: &ProjArith,
-) -> Result<(), U64MulSpartanF2zError> {
-    if table.len() != checked_pow2(point.len())? {
-        return Err(U64MulSpartanF2zError::InvalidF2zParameters);
-    }
-    table[0] = scale.0;
-    let q = arith.q();
-
-    let mut half = 1_usize;
-    for &coordinate in point {
-        let active_len = half
-            .checked_mul(2)
-            .ok_or(U64MulSpartanF2zError::InvalidF2zParameters)?;
-        let factor = arith.monty_factor(coordinate.0);
-        let (zero_children, one_children) = table[..active_len].split_at_mut(half);
-        let expand = |zero: &mut u128, one: &mut u128| {
-            let parent = *zero;
-            let one_child = arith.mul_plain_by(parent, &factor);
-            *zero = if one_child == 0 {
-                parent
-            } else {
-                arith.add(parent, q - one_child)
-            };
-            *one = one_child;
-        };
-        if half < 256 {
-            zero_children
-                .iter_mut()
-                .zip(one_children.iter_mut())
-                .for_each(|(zero, one)| expand(zero, one));
-        } else {
-            cfg_iter_mut!(zero_children, 256)
-                .zip(cfg_iter_mut!(one_children, 256))
-                .for_each(|(zero, one)| expand(zero, one));
-        }
-        half = active_len;
-    }
-    Ok(())
-}
-
-/// Writes the row weights of one 64-bit value block: slot `slot_start + j`
-/// carries `2^j · block_factor · eq(gate_high, ·)`.
-fn fill_block_weight_ranges(
-    scratch: &mut [u128],
-    bit_slot_start: usize,
-    block_factor: Fq,
-    gate_high: &[Fq],
-    arith: &ProjArith,
-    pow2_word: &crypto_bigint::modular::FixedMontyForm<{ crypto_bigint::U128::LIMBS }>,
-    mut write_range: impl FnMut(usize, &[u128]) -> Result<(), U64MulSpartanF2zError>,
-) -> Result<(), U64MulSpartanF2zError> {
-    let high_gate_count = checked_pow2(gate_high.len())?;
-    if scratch.len() != high_gate_count {
-        return Err(U64MulSpartanF2zError::InvalidF2zParameters);
-    }
-    scaled_eq_le_table_fq_into(gate_high, block_factor, scratch, arith)?;
-
-    for bit in 0..U64_MUL_VALUE_BITS {
-        let slot = bit_slot_start
-            .checked_add(bit)
-            .ok_or(U64MulSpartanF2zError::InvalidF2zParameters)?;
-        let row_start = slot
-            .checked_mul(high_gate_count)
-            .ok_or(U64MulSpartanF2zError::InvalidF2zParameters)?;
-        write_range(row_start, scratch)?;
-        if bit + 1 != U64_MUL_VALUE_BITS {
-            cfg_iter_mut!(scratch, 256)
-                .for_each(|weight| *weight = arith.mul_plain_by(*weight, pow2_word));
-        }
-    }
-    Ok(())
 }
 
 /// Digest binding the layout, commitment, and the profile's public

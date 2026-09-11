@@ -72,7 +72,7 @@ enum Backend {
     F2z,
     Plonky3Whir,
     Binius,
-    /// Binius64's circuit and PIOP with the F2Z opener (rate 1/8, Johnson
+    /// Binius64's circuit and PIOP with the F2Z opener (rate 1/2, Johnson
     /// regime, grinding, Round 0; whole-protocol union bound at 100 bits).
     BiniusLigerito,
     Limber,
@@ -555,7 +555,7 @@ fn build_binius_sha_circuit(corpus: &Corpus) -> (Circuit, BiniusWires, f64) {
 }
 
 /// Binius64's SHA-256 circuit and PIOP prefix, with the witness committed
-/// and opened by the F2Z opener: rate 1/8, Johnson-regime Ligerito with fold
+/// and opened by the F2Z opener: rate 1/2, Johnson-regime Ligerito with fold
 /// and query grinding and Round 0, gated at 100 bits by a whole-protocol
 /// union bound (the yardstick of the F2Z row).
 struct BiniusLigeritoContext {
@@ -754,7 +754,7 @@ fn binius_ligerito_semantic_spans(
             "binius-ligerito-commit",
             Some("binius-ligerito-total-prover"),
             "binius-ligerito.commit",
-            "Commit the packed witness at rate 1/8 (F2Z opener)",
+            "Commit the packed witness at rate 1/2 (F2Z opener)",
             "Commit",
             "commit",
             vec!["commit", "pcs", "proving"],
@@ -2179,7 +2179,7 @@ fn print_tables(aggregates: &[BackendAggregate]) {
         );
     }
     println!(
-        "Security labels: F2Z Lambda100; Plonky3 analyzed WHIR >=100 bits; Binius 100-bit FRI query-phase target only; Binius64-Ligerito 100-bit whole-protocol union bound (F2Z opener, rate 1/8, Johnson regime, grinding, Round 0); integer Limber uses Brakedown with its native 114-bit column-opening target. These are the existing classical security estimates, not quantum-bit guarantees."
+        "Security labels: F2Z Lambda100; Plonky3 analyzed WHIR >=100 bits; Binius 100-bit FRI query-phase target only; Binius64-Ligerito 100-bit whole-protocol union bound (F2Z opener, rate 1/2, Johnson regime, grinding, Round 0); integer Limber uses Brakedown with its native 114-bit column-opening target. These are the existing classical security estimates, not quantum-bit guarantees."
     );
 }
 
@@ -2890,6 +2890,6 @@ mod ligerito_isolation_tests {
             let stdout=String::from_utf8(out.stdout).unwrap();
             serde_json::from_str::<serde_json::Value>(stdout.lines().find_map(|l|l.strip_prefix("CONFIG_PROBE ")).unwrap()).unwrap()
         };
-        assert_eq!(probe("custom:3:4"),probe("udrg:3:4"));
+        assert_eq!(probe("custom:1:4"),probe("udrg:1:4"));
     }
 }

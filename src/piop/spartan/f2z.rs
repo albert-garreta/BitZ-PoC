@@ -895,6 +895,69 @@ pub(crate) fn u32_mul_instance_facts(
     }
 }
 
+/// Instantiates the single-prime profile `P` at the layout's instance facts.
+fn instantiate_u32_profile<P: IopSecurityProfile>(
+    layout: &U32MulLayout,
+) -> Result<IopSecurityParams, SpartanF2zError> {
+    let p = layout.f2z_params();
+    let security = P::instantiate(&u32_mul_instance_facts(&p, layout.gate_vars()))?;
+    if security.projection_full_width || security.reduction.is_some() {
+        return Err(SpartanF2zError::UnsupportedProfile);
+    }
+    Ok(security)
+}
+
+/// The prime-independent prefix of the u32 protocol: the exact Boolean
+/// constraint matrices with their prime-independent preparation, the layout
+/// and the instantiated security profile — everything the Spartan PIOP and
+/// the F2Z GKR forest consume (`hybrid::prove`/`hybrid::verify`), and
+/// nothing of the standalone opener. Enclosing compositions that discharge
+/// the multiplication's final binary claim through their own shared opener
+/// (the hybrid mod-2^32 + SHA-256 proof of [`crate::hybrid`]) prepare this
+/// directly: their opener is configured and validated at the composition's
+/// own geometry, so they are not held to the standalone opener's validated
+/// size floor ([`MIN_PRODUCTION_GATE_VARS`]). Statement binding, prime
+/// sampling and every grinding boundary are the same as in
+/// [`PreparedU32MulRelation`]; only the `step0:ood-draw` term of the
+/// standalone opener is absent, which the composition accounts for itself.
+pub(crate) struct U32MulPrefixRelation {
+    skeleton: ConstraintMatricesSkeleton<SpartanF2zField, bool>,
+    layout: U32MulLayout,
+    security: IopSecurityParams,
+}
+
+impl U32MulPrefixRelation {
+    /// Prepares the prefix under an explicit single-prime profile.
+    pub(crate) fn new<P: IopSecurityProfile>(
+        layout: U32MulLayout,
+    ) -> Result<Self, SpartanF2zError> {
+        validate_layout_geometry(&layout)?;
+        let security = instantiate_u32_profile::<P>(&layout)?;
+        let raw = u32_mul_constraint_matrices(&layout, true)?;
+        let skeleton = ConstraintMatricesSkeleton::new(raw).map_err(SpartanError::from)?;
+        Ok(Self {
+            skeleton,
+            layout,
+            security,
+        })
+    }
+
+    /// Statement-bound layout.
+    pub(crate) const fn layout(&self) -> &U32MulLayout {
+        &self.layout
+    }
+
+    /// F2Z geometry of the committed bit tensor.
+    pub(crate) fn params(&self) -> crate::pcs::IntEvalParams {
+        self.layout.f2z_params()
+    }
+
+    /// The instantiated security parameters and their accounting.
+    pub(crate) const fn security(&self) -> &IopSecurityParams {
+        &self.security
+    }
+}
+
 /// Setup-once, prime-independent bundle for the u32 protocol: the exact
 /// Boolean constraint matrices with their prime-independent preparation
 /// (skeleton digest, padded widths, selector layout — instantiated per
@@ -948,11 +1011,7 @@ impl PreparedU32MulRelation {
     ) -> Result<Self, SpartanF2zError> {
         validate_layout_geometry(&layout)?;
         let p = layout.f2z_params();
-        let row_vars = layout.gate_vars();
-        let mut security = P::instantiate(&u32_mul_instance_facts(&p, row_vars))?;
-        if security.projection_full_width || security.reduction.is_some() {
-            return Err(SpartanF2zError::UnsupportedProfile);
-        }
+        let mut security = instantiate_u32_profile::<P>(&layout)?;
         let ligerito_configuration = resolved_for_layout(&layout, security.ligerito_target_bits, ligerito)?;
         let ligerito_pc = ligerito_configuration.prover().clone();
         let ligerito_vc = ligerito_configuration.verifier().clone();
@@ -2114,7 +2173,7 @@ mod tests {
                 &largest,
                 100,
                 U32MulLigerito::CustomJohnson {
-                    log_inv_rate: 3,
+                    log_inv_rate: 1,
                     initial_k: 4,
                 },
             )

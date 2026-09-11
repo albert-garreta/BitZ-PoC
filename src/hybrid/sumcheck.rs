@@ -257,14 +257,44 @@ fn packed_round(marginals: &[F], low: &[F], prefix_eq: &[F], round: usize) -> [F
 /// Fold both dense tables by `r` (`out[i] = in[2i] + r·(in[2i] + in[2i+1])`)
 /// and return the next round's message over the folded pairs: one pass
 /// over the tables instead of a fold pass and a message pass.
-fn dense_fold(witness: &mut Vec<F>, weights: &mut Vec<F>, r: F) -> [F; 2] {
+/// Working buffers of the dense rounds — the two virtual-witness tables and
+/// the pair they fold into — kept by the prepared circuit across proofs.
+/// They are 100 MB-class at the larger shapes, and a fresh allocation is
+/// page-faulted on first touch on every proof; recycled, only the first
+/// proof pays that (the same reason Binius64's prover pools its buffers).
+#[derive(Default)]
+pub(crate) struct Scratch {
+    witness: Vec<F>,
+    weights: Vec<F>,
+    spare_x: Vec<F>,
+    spare_w: Vec<F>,
+}
+
+/// Takes `buf` out of the scratch, emptied, with capacity for `n` elements.
+fn take_cleared(buf: &mut Vec<F>, n: usize) -> Vec<F> {
+    let mut v = std::mem::take(buf);
+    v.clear();
+    if v.capacity() < n {
+        v.reserve_exact(n);
+    }
+    v
+}
+
+fn dense_fold(
+    witness: &mut Vec<F>,
+    weights: &mut Vec<F>,
+    spare_x: &mut Vec<F>,
+    spare_w: &mut Vec<F>,
+    r: F,
+) -> [F; 2] {
     const CHUNK: usize = 1 << 10;
     let n = witness.len() / 2;
     let (x, w): (&[F], &[F]) = (witness, weights);
     // The folded tables are written once, in parallel, into uninitialised
-    // capacity (no serial zero-fill of 2·n elements per round).
-    let mut next_x: Vec<F> = Vec::with_capacity(n);
-    let mut next_w: Vec<F> = Vec::with_capacity(n);
+    // capacity (no serial zero-fill of 2·n elements per round); the spare
+    // pair is recycled from the previous round's inputs.
+    let mut next_x = take_cleared(spare_x, n);
+    let mut next_w = take_cleared(spare_w, n);
     let message = {
         let sx = &mut next_x.spare_capacity_mut()[..n];
         let sw = &mut next_w.spare_capacity_mut()[..n];
@@ -308,8 +338,8 @@ fn dense_fold(witness: &mut Vec<F>, weights: &mut Vec<F>, r: F) -> [F; 2] {
         next_x.set_len(n);
         next_w.set_len(n);
     }
-    *witness = next_x;
-    *weights = next_w;
+    *spare_x = std::mem::replace(witness, next_x);
+    *spare_w = std::mem::replace(weights, next_w);
     message
 }
 
@@ -324,6 +354,7 @@ pub(super) fn prove(
     geometry: &Geometry,
     sources: [&[F]; 2],
     claims: [&BinaryClaim; 2],
+    scratch: &mut Scratch,
 ) -> (Proof, Vec<Gf>) {
     let rho = bind_claims(t, claims[0], claims[1]);
     let scales = [F::ONE, rho];
@@ -367,8 +398,10 @@ pub(super) fn prove(
     // uninitialised capacity: both branches' lane slices (zero lanes
     // included), then the first dense round's message over the group's
     // pairs (the group size is even, so every pair lies inside one group).
-    let mut witness: Vec<F> = Vec::with_capacity(n);
-    let mut weights: Vec<F> = Vec::with_capacity(n);
+    let mut witness = take_cleared(&mut scratch.witness, n);
+    let mut weights = take_cleared(&mut scratch.weights, n);
+    let mut spare_x = std::mem::take(&mut scratch.spare_x);
+    let mut spare_w = std::mem::take(&mut scratch.spare_w);
     let mut message = {
         let sx = &mut witness.spare_capacity_mut()[..n];
         let sw = &mut weights.spare_capacity_mut()[..n];
@@ -420,15 +453,22 @@ pub(super) fn prove(
         value = evaluate_round(message, value, r);
         point.push(r);
         rounds.push(message);
-        message = dense_fold(&mut witness, &mut weights, r);
+        message = dense_fold(&mut witness, &mut weights, &mut spare_x, &mut spare_w, r);
     }
     drop(dense_scope);
     debug_assert_eq!(value, witness[0] * weights[0]);
     observe(t, &witness);
+    let terminal = witness[0];
+    *scratch = Scratch {
+        witness,
+        weights,
+        spare_x,
+        spare_w,
+    };
     (
         Proof {
             rounds,
-            value: witness[0],
+            value: terminal,
         },
         point.into_iter().map(f128_to_gf).collect(),
     )
@@ -514,6 +554,7 @@ mod tests {
                 &geometry,
                 [&packed[0], &packed[1]],
                 [&claims[0], &claims[1]],
+                &mut Scratch::default(),
             );
             let mut reference_t = Blake3Transcript::new();
             let rho = bind_claims(&mut reference_t, &claims[0], &claims[1]);

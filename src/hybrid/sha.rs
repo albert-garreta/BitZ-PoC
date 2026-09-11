@@ -33,6 +33,16 @@ pub(super) struct ShaRelation {
     output: [Wire; 8],
     pub verifier: IOPVerifier,
     prover: IOPProver,
+    /// Recycles the IOP prover's large, short-lived working buffers across
+    /// proofs, as Binius64's own `Prover` does for its lifetime. With the
+    /// global allocator every proof page-faults them afresh: the SHA
+    /// reductions took 264 ms against 232 ms in all-Binius at 2^14
+    /// compressions, 231 ms with the pool. (A per-proof pool recovers
+    /// nothing: the gain is the cross-proof reuse.) The pool keeps its
+    /// blocks, so a verifier running next in the same process allocates
+    /// cold pages instead of reusing the prover's — the same situation as
+    /// Binius64's verifier after its pooled prover.
+    pool: binius_compute::BufferPool,
 }
 
 impl ShaRelation {
@@ -76,6 +86,7 @@ impl ShaRelation {
             output,
             verifier,
             prover,
+            pool: binius_compute::BufferPool::new(),
         })
     }
 
@@ -126,7 +137,7 @@ impl ShaRelation {
             messages: Vec::new(),
             spec: vec![OracleSpec::new(self.verifier.log_witness_elems())],
         };
-        let alloc = binius_compute::GlobalAllocator;
+        let alloc = &self.pool;
         let (_, _, point, value) = self
             .prover
             .prove_to_evaluation::<_, binius_prover::OptimalPackedB128, _>(

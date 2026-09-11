@@ -1,7 +1,7 @@
 //! Union-bound accounting for the supported composition shapes.
 use super::{Error, opening::Geometry};
 use crate::piop::spartan::{
-    f2z::PreparedU32MulRelation,
+    f2z::U32MulPrefixRelation,
     profile::{IopSecurityProfile, PrimePolicy},
 };
 
@@ -23,8 +23,10 @@ impl IopSecurityProfile for CompositionProfile {
 }
 
 /// Round-by-round target of the SHARED opener: the Johnson-regime
-/// Ligerito configuration of the virtual geometry at rate 1/8 (see
-/// [`Geometry::security`]). It is deliberately below the 108-bit
+/// Ligerito configuration of the virtual geometry at rate 1/2 (see
+/// [`Geometry::security`]; the proximity-gap figures quoted below were
+/// derived at the earlier rate 1/8 — at rate 1/2 the same solver re-derives
+/// the ladder at this target). It is deliberately below the 108-bit
 /// component profile: in the Johnson regime the level-0 proximity-gap
 /// bound sits near 86 bits for 2^19 multiplications (84 at 2^21), so the
 /// fold-challenge grinding that tops it up is exponential in the target —
@@ -63,7 +65,7 @@ impl SecurityReport {
 }
 
 pub(super) fn account(
-    mul: &PreparedU32MulRelation,
+    mul: &U32MulPrefixRelation,
     sha: &binius_verifier::IOPVerifier,
     geometry: &Geometry,
     resolved: &crate::ligerito_flock::ResolvedLigerito,

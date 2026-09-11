@@ -448,6 +448,13 @@ pub(crate) fn sv_fold_mfr<T: PackedBits>(wit: &[T], eq: &[Gf]) -> Vec<Gf> {
             let mut s = vec![Gf::zero(); 128];
             let mut y = lo;
             while y + 8 <= hi {
+                // Zero words contribute nothing: a block of eight zero
+                // words (a virtual layout's unused lanes, zero padding)
+                // skips its subset-sum tables and transposes.
+                if wit[y..y + 8].iter().all(|w| w.bit_words() == [0, 0]) {
+                    y += 8;
+                    continue;
+                }
                 let lo_tbl = subset_sums_4([eq[y], eq[y + 1], eq[y + 2], eq[y + 3]]);
                 let hi_tbl = subset_sums_4([eq[y + 4], eq[y + 5], eq[y + 6], eq[y + 7]]);
                 let mut m_bytes = [[0u8; 16]; 8];
@@ -541,6 +548,19 @@ pub fn ring_switch_prove<T: PackedBits>(
     p_msg: &[T],
     r_hi: &[Gf],
 ) -> (RingSwitchProof, Vec<Gf>, Gf) {
+    ring_switch_prove_with(transcript, p_msg, r_hi, |b| b)
+}
+
+/// [`ring_switch_prove`] with the basis `B(y)` written through `convert`
+/// as it is produced — a caller that needs it in another bit-compatible
+/// element type (flock's `F128`) gets it without a second pass over the
+/// 2^m-element table.
+pub fn ring_switch_prove_with<T: PackedBits, O: Send>(
+    transcript: &mut impl Transcript,
+    p_msg: &[T],
+    r_hi: &[Gf],
+    convert: impl Fn(Gf) -> O + Sync + Send,
+) -> (RingSwitchProof, Vec<O>, Gf) {
     let eq_hi = build_eq_x_r_vec(r_hi, &()).expect("non-empty r_hi");
     assert_eq!(eq_hi.len(), p_msg.len());
 
@@ -579,33 +599,31 @@ pub fn ring_switch_prove<T: PackedBits>(
     let beta0 = s_u.iter().zip(eq_r2.iter()).fold(Gf::zero(), |acc, (su, e)| acc + *su * *e);
 
     // B(y) = Φ_{r″}(eq_hi[y]) = Σ_{u: bit_u(eq_hi[y])} eq_r2[u]. Parallel per y.
-    let b_tbl: Vec<Gf> = if rs_fast() {
+    let phi_slow = |y: usize| {
+        let w = eq_hi[y].words();
+        let mut acc = Gf::zero();
+        for wi in 0..2usize {
+            let mut bits = w[wi];
+            while bits != 0 {
+                let t = bits.trailing_zeros() as usize;
+                acc += eq_r2[(wi << 6) | t];
+                bits &= bits.wrapping_sub(1);
+            }
+        }
+        acc
+    };
+    let b_tbl: Vec<O> = if rs_fast() {
         let tables = phi_byte_tables(&eq_r2, Gf::one());
         cfg_into_iter!(0..eq_hi.len())
-            .map(|y| phi_from_words(*eq_hi[y].words(), &tables))
+            .map(|y| convert(phi_from_words(*eq_hi[y].words(), &tables)))
             .collect()
     } else {
-        cfg_into_iter!(0..eq_hi.len())
-            .map(|y| {
-                let w = eq_hi[y].words();
-                let mut acc = Gf::zero();
-                for wi in 0..2usize {
-                    let mut bits = w[wi];
-                    while bits != 0 {
-                        let t = bits.trailing_zeros() as usize;
-                        acc += eq_r2[(wi << 6) | t];
-                        bits &= bits.wrapping_sub(1);
-                    }
-                }
-                acc
-            })
-            .collect()
+        cfg_into_iter!(0..eq_hi.len()).map(|y| convert(phi_slow(y))).collect()
     };
     debug_assert_eq!(
-        b_tbl
-            .iter()
+        (0..eq_hi.len())
             .zip(p_msg.iter())
-            .fold(Gf::zero(), |a, (b, p)| a + *b * Gf::from_words(p.bit_words())),
+            .fold(Gf::zero(), |a, (y, p)| a + phi_slow(y) * Gf::from_words(p.bit_words())),
         beta0,
         "ring-switch recombination identity"
     );

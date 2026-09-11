@@ -37,7 +37,7 @@ fn select_ligerito(cli: Option<&str>, target: usize) -> Result<f2z::ligerito_flo
 
 /// How the native Binius64 circuit is proved: Binius64's own ring switch +
 /// BaseFold/FRI, or its PIOP prefix with every oracle committed and opened by
-/// the F2Z opener (rate 1/8, Johnson regime, grinding, Round 0; whole-protocol
+/// the F2Z opener (rate 1/2, Johnson regime, grinding, Round 0; whole-protocol
 /// union bound gated at 100 bits).
 enum NativeBackend {
     Binius {
@@ -264,7 +264,7 @@ pub fn run() -> Result<(), AnyError> {
         }
         if arg == "--help" {
             println!(
-                "hybrid-u32-sha256 [--mode hybrid|separate|all-binius|binius-ligerito] [--mul-log 15..22] [--sha-log 1..16] [--iterations N] [--output PROOF]\nhybrid-u32-sha256 --verify PROOF\nhybrid-u32-sha256 --sweep [--shapes MUL_LOG:SHA_LOG,...] [--mode hybrid|separate|all-binius|binius-ligerito|all] [--iterations N] [--results-dir DIR]\nSingle-run defaults: 2^20 products, 2^16 chained compressions, 5 measured iterations after one warmup.\nSweep defaults: equal packed witnesses (15:7,16:8,17:9,18:10,19:11,20:12), hybrid mode, 5 measured iterations after one warmup.\nSweeps save per-run CSV/logs and summary.csv in a new directory under benches/results/hybrid-u32-sha256/. --results-dir must not already exist.\nbinius-ligerito proves the all-Binius circuit with Binius64's PIOP and the F2Z opener (rate 1/8, Johnson regime, grinding, Round 0; 100-bit union bound).\nNon-ZK, 100-bit composition target. Set RAYON_NUM_THREADS to control threads. --output is for single hybrid proofs."
+                "hybrid-u32-sha256 [--mode hybrid|separate|all-binius|binius-ligerito] [--mul-log 9..22] [--sha-log 1..16] [--iterations N] [--output PROOF]\nhybrid-u32-sha256 --verify PROOF\nhybrid-u32-sha256 --sweep [--shapes MUL_LOG:SHA_LOG,...] [--mode hybrid|separate|all-binius|binius-ligerito|all] [--iterations N] [--results-dir DIR]\nSingle-run defaults: 2^20 products, 2^16 chained compressions, 5 measured iterations after one warmup.\nSweep defaults: equal packed witnesses (15:7,16:8,17:9,18:10,19:11,20:12), hybrid mode, 5 measured iterations after one warmup.\nEqual operation counts (N = M): --shapes 9:9,10:10,...,14:14 (hybrid and all-binius; separate mode keeps the standalone u32 API's 2^15 floor).\nSweeps save per-run CSV/logs and summary.csv in a new directory under benches/results/hybrid-u32-sha256/. --results-dir must not already exist.\nbinius-ligerito proves the all-Binius circuit with Binius64's PIOP and the F2Z opener (rate 1/2, Johnson regime, grinding, Round 0; 100-bit union bound).\nNon-ZK, 100-bit composition target. Set RAYON_NUM_THREADS to control threads. --output is for single hybrid proofs."
             );
             return Ok(());
         }
@@ -275,8 +275,8 @@ pub fn run() -> Result<(), AnyError> {
             "--mul-log" => {
                 single_shape_requested = true;
                 let log: u32 = value.parse()?;
-                if !(15..=22).contains(&log) {
-                    return Err("--mul-log must be 15..22".into());
+                if !(9..=22).contains(&log) {
+                    return Err("--mul-log must be 9..22".into());
                 }
                 parameters.multiplications = 1 << log;
             }
@@ -372,7 +372,7 @@ pub fn run() -> Result<(), AnyError> {
     if mode == "hybrid" {
         prof::force_enable();
         let prepared = PreparedHybrid::new_with_ligerito(parameters, select_ligerito(profile.as_deref(), 106)?)?;
-        let request = profile.clone().or_else(|| std::env::var("F2Z_LIG_PROFILE").ok()).unwrap_or_else(|| "custom:3:4".into());
+        let request = profile.clone().or_else(|| std::env::var("F2Z_LIG_PROFILE").ok()).unwrap_or_else(|| "custom:1:4".into());
         let report = prepared.ligerito_configuration().report(&request, prepared.ood_round());
         eprintln!("LIGERITO_CONFIG {report}");
         if let Some(path) = &output { std::fs::write(format!("{path}.ligerito.json"), serde_json::to_vec_pretty(&report)?)?; }
@@ -471,7 +471,7 @@ pub fn run() -> Result<(), AnyError> {
             None
         };
         if let Some(p) = &separate {
-            let request = profile.clone().or_else(|| std::env::var("F2Z_LIG_PROFILE").ok()).unwrap_or_else(|| "custom:3:4".into());
+            let request = profile.clone().or_else(|| std::env::var("F2Z_LIG_PROFILE").ok()).unwrap_or_else(|| "custom:1:4".into());
             eprintln!("LIGERITO_CONFIG {}", p.ligerito_configuration().report(&request, p.security().ood));
         }
         let setup_ms = millis(setup);

@@ -23,7 +23,8 @@ TOOLCHAIN = "1.98.1"
 DEFAULT_SEED = 0x5533325043530064
 BUILD = {"rust_toolchain": TOOLCHAIN, "rustflags": "-C target-cpu=native", "threads": 8}
 CLEAR_ENV = ("CARGO_ENCODED_RUSTFLAGS", "DUMP", "CHAIN_BITS", "BDLAMBDA", "BDSPEC",
-             "BDROWLEN", "BDDIRECT", "BDSPLIT", "F2Z_BINIUS_LOG_INV_RATE", "F2Z_MUL_MEMORY_ONLY")
+             "BDROWLEN", "BDDIRECT", "BDSPLIT", "F2Z_BINIUS_LOG_INV_RATE", "F2Z_LIG_PROFILE",
+             "F2Z_U64_SPLIT_SHIFT", "F2Z_MUL_MEMORY_ONLY")
 MEMORY_BOUNDARY = "fresh process: corpus generation, public setup, witness generation, commitment, proving, verification, and proof-size accounting; one verified proof, no warmup"
 
 
@@ -40,8 +41,8 @@ def configuration(env):
     workloads = choices(env, "F2Z_MUL_COMPARE_WORKLOADS", "u32-mod32", ("u32-mod32", "u64", "u128"))
     backends = choices(env, "F2Z_MUL_COMPARE_BACKENDS", "f2z binius64 binius64-ligerito plonky3-fri limber",
                        ("f2z", "binius64", "binius64-ligerito", "plonky3-fri", "plonky3-whir", "limber"))
-    if any(w != "u32-mod32" for w in workloads) and any(b not in ("f2z", "binius64", "binius64-ligerito") for b in backends):
-        raise ValueError("u64/u128 support only f2z, binius64 and binius64-ligerito; run the mod32 comparison separately")
+    if any(w != "u32-mod32" for w in workloads) and any(b not in ("f2z", "binius64", "binius64-ligerito", "limber") for b in backends):
+        raise ValueError("u64/u128 support only f2z, binius64, binius64-ligerito and limber; run the mod32 comparison separately")
     exponents = [int(value) for value in env.get("F2Z_BENCH_SHAPES", "15").replace(",", " ").split()]
     # Match the Rust address-space bound, not a particular machine's RAM.
     maximum = sys.maxsize.bit_length() + 1 - 11
@@ -61,36 +62,45 @@ def configuration(env):
     memory = env.get("F2Z_MUL_COMPARE_MEMORY", "1")
     if memory not in ("0", "1"):
         raise ValueError("F2Z_MUL_COMPARE_MEMORY must be 0 or 1")
+    # The F2Z opener profile is a campaign-wide choice, recorded like the
+    # Binius rate: the paper carries one row per rate, so an ambient value
+    # must never decide which one a run measured.
+    f2z_profile = env.get("F2Z_LIG_PROFILE")
+    if f2z_profile is not None and not any(f2z_profile.startswith(p) for p in ("custom:", "udr:", "udrg:")):
+        raise ValueError("F2Z_LIG_PROFILE must name an explicit profile such as custom:1:4 or custom:3:4")
+    # The u64 F2Z split shift is likewise campaign-wide and recorded: it moves
+    # the row/column split of the u64 layout (t down, s up by the shift).
+    shift_text = env.get("F2Z_U64_SPLIT_SHIFT")
+    u64_split_shift = None
+    if shift_text is not None:
+        u64_split_shift = int(shift_text)
+        if not -4 <= u64_split_shift <= 4:
+            raise ValueError("F2Z_U64_SPLIT_SHIFT must be a small integer")
     rate = env.get("F2Z_BINIUS_LOG_INV_RATE")
     binius_rate = int(rate) if rate else None
     # The paper lists Binius64 at rate 1/2 and 1/8; an ambient value is still rejected.
     if binius_rate is not None and (binius_rate not in (1, 3) if "u32-mod32" in workloads else not 1 <= binius_rate <= 4):
         raise ValueError("F2Z_BINIUS_LOG_INV_RATE must select rate 1/2 or 1/8 for mod32")
-    repo = Path(env.get("LIMBER_REPO", str(ROOT.parent / "limber-impl"))).expanduser().resolve()
-    if "limber" in backends and not all((repo / name).is_file() for name in ("Cargo.toml", "examples/int_mult.rs")):
-        raise ValueError(f"LIMBER_REPO={repo} must contain the f2z-benching independent Brakedown int_mult example")
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S-%fZ")
     output = Path(env.get("F2Z_MUL_COMPARE_OUTPUT_DIR", str(ROOT / "PerfRuns" / f"{stamp}-native-mul")))
     if not output.is_absolute():
         output = ROOT / output
     return dict(workloads=workloads, backends=backends, exponents=exponents, reps=reps,
                 threads=threads, seed=seed, seed_explicit="F2Z_BENCH_SEED" in env, memory=memory == "1",
-                binius_rate=binius_rate, limber_repo=repo, output=output.resolve())
+                binius_rate=binius_rate, f2z_profile=f2z_profile, u64_split_shift=u64_split_shift,
+                output=output.resolve())
 
 
 def jobs(config):
-    native = [b for b in config["backends"] if b != "limber"]
-    result = []
-    if native:
-        result.append(dict(kind="native", workloads=config["workloads"], backends=native, directory="native"))
-    if "limber" in config["backends"]:
-        result.append(dict(kind="limber", workloads=["u32-mod32"], backends=["limber"], directory="limber-int-mult"))
-    return result
+    """Every backend, Limber included, runs inside the comparison binary.
 
-
-def limber_command(exponent):
-    return ["cargo", f"+{TOOLCHAIN}", "run", "--release", "--example", "int_mult", "--",
-            "--bits", "32", "--log-gates", str(exponent)]
+    Limber's wrapping Mod-R1CS rows are proved through the `limber` crate at
+    its pinned revision (benches/mul_e2e_compare/limber.rs), so one process
+    generates the shared corpus and every backend's witness from it, and the
+    cross-backend witness audit covers Limber like the rest.
+    """
+    return [dict(kind="native", workloads=config["workloads"],
+                 backends=list(config["backends"]), directory="native")]
 
 
 def campaign_environment(environment, config):
@@ -103,6 +113,10 @@ def campaign_environment(environment, config):
                F2Z_MUL_COMPARE_MEMORY=str(int(config["memory"])))
     if config["binius_rate"] is not None:
         env["F2Z_BINIUS_LOG_INV_RATE"] = str(config["binius_rate"])
+    if config["f2z_profile"] is not None:
+        env["F2Z_LIG_PROFILE"] = config["f2z_profile"]
+    if config.get("u64_split_shift") is not None:
+        env["F2Z_U64_SPLIT_SHIFT"] = str(config["u64_split_shift"])
     if config["seed_explicit"]:
         env["F2Z_BENCH_SEED"] = str(config["seed"])
     else:
@@ -185,10 +199,16 @@ def validate_sample(row, config, exponent, backend, workload):
     if backend == "f2z":
         from ligerito_results import validate_ligerito
         report = validate_ligerito(settings.get("ligerito"), 100)
-        if workload == "u32-mod32":
-            cfg = report["configuration"]
-            if cfg.get("initial_k") != 4 or cfg["levels"][0].get("log_inv_rate") != 3:
-                raise ValueError("mod32 comparison requires matched Ligerito rate 1/8 and initial_k=4")
+        cfg = report["configuration"]
+        requested = config["f2z_profile"]
+        if requested is not None and report.get("resolved_profile") != requested:
+            raise ValueError("F2Z did not resolve the requested Ligerito profile")
+        if cfg.get("initial_k") != 4:
+            raise ValueError("the comparison uses initial_k=4 at every F2Z rate")
+        if workload == "u64" and settings.get("u64_split_shift", 0) != (config.get("u64_split_shift") or 0):
+            raise ValueError("u64 F2Z rows did not use the requested split shift")
+        if requested is None and workload == "u32-mod32" and cfg["levels"][0].get("log_inv_rate") != 1:
+            raise ValueError("mod32 comparison requires matched Ligerito rate 1/2 and initial_k=4")
     if backend == "binius64" and (settings.get("fri_query_target_bits") != 100
                                   or (workload == "u32-mod32" and settings.get("log_inv_rate") != (config["binius_rate"] or 1))):
         raise ValueError("Binius must use the canonical 100-bit query target at the requested rate")
@@ -219,18 +239,36 @@ def validate_sample(row, config, exponent, backend, workload):
             raise ValueError("Plonky3-WHIR security report is below 100 bits")
     if backend == "limber":
         n = 1 << exponent
-        expected = dict(commitment_backend="brakedown", constraints=n, padded_constraints=n,
-                        variables=3*n, padded_variables=4*n, quotients=n, log_t_f=32, numlimb=1, k=9, target_bits=114, engine="T256DynPrimeBdEngine")
+        # One wrapping row per multiplication: three live values and one
+        # quotient per gate, padded to the next powers of two.
+        width = {"u32-mod32": 32, "u64": 64, "u128": 128}[workload]
+        expected = dict(commitment_backend="brakedown", engine="T256DynPrimeBdEngine",
+                        constraints=n, padded_constraints=n, variables=3*n, padded_variables=4*n,
+                        quotients=n, log_t_f=width, k=9, target_bits=114,
+                        numlimb=1 if width <= 64 else width // 32)
         if any(settings.get(key) != value for key, value in expected.items()):
-            raise ValueError("Limber did not use independent single-limb Brakedown rows")
-        if settings.get("brakedown") != dict(target_bits=114, spec=4, row_len_cap=32768, direct_open_max=65536, split=False):
+            raise ValueError("Limber did not use its wrapping single-row Brakedown arithmetization")
+        if settings.get("brakedown") != dict(target_bits=114, spec=4, row_len_cap=32768,
+                                             direct_open_max=65536, split=False):
             raise ValueError("Limber used an ambient Brakedown parameter override")
-        parts = row.get("proof_size", {})
-        for key in ("commitment_bytes", "eval_arg_bytes", "sumcheck_bytes"):
-            finite_number(parts.get(key), key, positive=True)
-        if (parts["sumcheck_bytes"] != (3*exponent + 2*(exponent+2) + 6)*16
-                or sum(parts.values()) != row["metrics"]["proof_bytes"]):
-            raise ValueError("Limber proof size must include commitments and the correct sumcheck payload")
+        # The pinned driver has no whole-proof serializer, so the unsegmented
+        # PIOP transcript is counted from the public padded shape: three
+        # coefficients per outer round, two per inner round, five outer
+        # evaluations and eval_w, at 16 bytes per scalar.
+        payload = (3*exponent + 2*(exponent + 2) + 6) * 16
+        parts = row.get("proof_size")
+        if parts is None:
+            # In-process adapter: the anatomy is not carried per sample, so the
+            # shape-derived payload is checked in the recorded configuration.
+            if settings.get("piop_payload_bytes") != payload:
+                raise ValueError("Limber PIOP payload accounting does not follow the padded shape")
+        else:
+            # Records from the authors' own runner carry the full anatomy.
+            for key in ("commitment_bytes", "eval_arg_bytes", "sumcheck_bytes"):
+                finite_number(parts.get(key), key, positive=True)
+            if (parts["sumcheck_bytes"] != payload
+                    or sum(parts.values()) != row["metrics"]["proof_bytes"]):
+                raise ValueError("Limber proof size must include commitments and the correct sumcheck payload")
 
 
 def summarize_case(samples, memory, config, backend, workload, exponent, source):
@@ -298,30 +336,6 @@ def run_native(config, job, environment, machine):
     return summaries, rows
 
 
-def run_limber(config, environment, machine):
-    repo = config["limber_repo"]
-    directory = config["output"] / "limber-int-mult"
-    directory.mkdir()
-    env = campaign_environment(environment, config)
-    summaries, rows = [], []
-    for exponent in config["exponents"]:
-        command = limber_command(exponent)
-        memory = None
-        if config["memory"]:
-            output = run_logged(command, repo, env | {"F2Z_MUL_MEMORY_ONLY": "1"}, directory / f"log-gates-{exponent}-memory.log")
-            results = structured_lines(output, "LIMBER_MUL_MEMORY ")
-            if len(results) != 1:
-                raise ValueError("expected one Limber isolated memory result")
-            memory = results[0]
-        output = run_logged(command, repo, env, directory / f"log-gates-{exponent}-warm.log")
-        samples = structured_lines(output, "LIMBER_MUL_RESULT ")
-        source = provenance(repo, machine, "release", config["threads"]) | {"command": command}
-        summaries.append(summarize_case(samples, memory, config, "limber", "u32-mod32", exponent, source))
-        rows.extend(samples)
-    write_json(directory / "summary.json", summaries)
-    return summaries, rows
-
-
 def export(config, summaries, samples):
     identities = {}
     for row in summaries:
@@ -360,7 +374,8 @@ def main():
                         backends=config["backends"], exponents=config["exponents"], repetitions=config["reps"],
                         warmups=1, measurement_policy=POLICY, jobs=planned, build=BUILD | {"threads": config["threads"]},
                         binius_log_inv_rate=config["binius_rate"],
-                        limber_commands=[limber_command(n) for n in config["exponents"]] if "limber" in config["backends"] else [])
+                        f2z_ligerito_profile=config["f2z_profile"],
+                        u64_split_shift=config.get("u64_split_shift"))
         if args.dry_run:
             print(json.dumps(manifest, indent=2))
             return 0
@@ -369,10 +384,7 @@ def main():
         write_json(config["output"] / "campaign.json", manifest)
         summaries, samples = [], []
         for job in planned:
-            if job["kind"] == "limber":
-                summary, rows = run_limber(config, os.environ, manifest["machine"])
-            else:
-                summary, rows = run_native(config, job, os.environ, manifest["machine"])
+            summary, rows = run_native(config, job, os.environ, manifest["machine"])
             summaries.extend(summary)
             samples.extend(rows)
         export(config, summaries, samples)

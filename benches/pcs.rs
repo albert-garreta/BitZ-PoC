@@ -24,8 +24,8 @@
 //!   `F2Z_COL_ELIDE=0` to measure the same instance un-elided. The
 //!   printed `proof-fnv` is identical either way (byte-identity pin).
 //! - `F2Z_LIG_PROFILE`: Ligerito profile at `m = m_p + 7 ≥ 22` —
-//!   `custom:3:4` (DEFAULT; validator-gated Johnson geometry at base RS
-//!   rate 1/8, initial_k = 4), `slim` (embedded; fewer queries + 16-bit
+//!   `custom:1:4` (DEFAULT; validator-gated Johnson geometry at base RS
+//!   rate 1/2, initial_k = 4), `slim` (embedded; fewer queries + 16-bit
 //!   grinding at the same 100-bit target, the proof-size profile), `fast`
 //!   (base RS rate 1/2), `secure` (120-bit UDR), or any
 //!   `custom:<log_inv_rate>:<initial_k>[:<bits>]` — the optional `bits`
@@ -70,7 +70,7 @@ use flock_core::pcs::ligerito::{
 
 /// Resolve the explicitly requested Ligerito policy, or Johnson+OOD by default.
 fn bench_lig_configs(m_p: usize) -> ((LigPc, LigVc), String, Option<OodRoundParams>, f2z::ligerito_flock::ResolvedLigerito) {
-    let request = std::env::var("F2Z_LIG_PROFILE").unwrap_or_else(|_| "custom:3:4".into());
+    let request = std::env::var("F2Z_LIG_PROFILE").unwrap_or_else(|_| "custom:1:4".into());
     let target = if request == "secure" { 128 } else {
         request.split(':').nth(3).map(|n| n.parse::<usize>().expect("invalid Ligerito target")).unwrap_or(100)
     };

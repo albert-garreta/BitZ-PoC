@@ -21,8 +21,8 @@
 //! - `--threads N` / `-j N` — rayon pool size; `1` = single-threaded.
 //!   Default: all cores (or `RAYON_NUM_THREADS`).
 //! - `--reps R` — timing repetitions (median reported; default 3).
-//! - `--profile P` — Ligerito config: `custom:3:4` (default; validator-gated
-//!   Johnson geometry at rate 1/8, initial_k 4) | `slim` (rate 1/4) | `slim3`
+//! - `--profile P` — Ligerito config: `custom:1:4` (default; validator-gated
+//!   Johnson geometry at rate 1/2, initial_k 4) | `slim` (rate 1/4) | `slim3`
 //!   (rate 1/8) | `fast` (rate 1/2) | `secure`
 //!   (the embedded profiles) | any `custom:<log_inv_rate>:<initial_k>[:<bits>]`
 //!   (validator-gated Johnson geometry; optional `bits` = round-by-round
@@ -88,7 +88,7 @@
 //!   reclaims the previous shape's memory and the fanless chip cools — the
 //!   n ≥ 29 rows (3–7 GB peaks) swing ±30 % on a busy 16 GB box otherwise.
 //!   Example (the paper's raw-performance table):
-//!   `f2z --sweep 20-30 --threads 8 --reps 5 --profile custom:3:4`
+//!   `f2z --sweep 20-30 --threads 8 --reps 5 --profile custom:1:4`
 //! - `--mul <e>` — run the u32 × u32 → u64 INTEGER-MULTIPLICATION SNARK
 //!   (`piop::spartan`: one R1CS row per multiplication over ℤ, a
 //!   transcript-sampled Step-2 prime, the native Spartan PIOP with the K=3
@@ -96,7 +96,7 @@
 //!   bits per multiplication) for `2^e` multiplications, `e ≥ 15`, at the
 //!   `--lambda 100|128` profile (default 100 = `Lambda100`; `--word-bits
 //!   1|8` picks the F2Z cell width). `--profile custom:<r>:<k>` (default
-//!   `custom:3:4`, the raw-performance table's opener) selects the Johnson
+//!   `custom:1:4`, the raw-performance table's opener) selects the Johnson
 //!   Ligerito geometry at the profile's target; `--profile udr` selects the
 //!   relation's own default (flock's validated UDR at rate 1/2 — what
 //!   `benches/u32_mul.rs` and the transcript pins run). Same witness seed
@@ -463,7 +463,7 @@ fn print_steps(
 fn usage() -> ! {
     eprintln!(
         "usage: f2z <n> [<t> <s> [<W>]] [--threads N] [--reps R] \
-         [--profile slim|slim3|fast|secure|custom:<r>:<k>[:<bits>]|udr:<r>:<k>[:<bits>] (default custom:3:4)] [--word-bits W] \
+         [--profile slim|slim3|fast|secure|custom:<r>:<k>[:<bits>]|udr:<r>:<k>[:<bits>] (default custom:1:4)] [--word-bits W] \
          [--family j2|j3|j4|j2s|j3s|j4s] [--taps vx|family|collapse|rotxor|sched]\n\
          [--taps-delta D] [--taps-rounds R] [--taps-grp G]\n\
        f2z --sweep <lo>-<hi>|<n,n,…> [--threads N] [--reps R] [--profile P] [--word-bits W] [--cooldown S] [--latex <path>]\n\
@@ -533,7 +533,7 @@ fn parse_args() -> Opts {
         s: None,
         threads: None,
         reps: 3,
-        profile: std::env::var("F2Z_LIG_PROFILE").unwrap_or_else(|_| "custom:3:4".into()),
+        profile: std::env::var("F2Z_LIG_PROFILE").unwrap_or_else(|_| "custom:1:4".into()),
         word_bits: 1,
         family: None,
         taps: None,

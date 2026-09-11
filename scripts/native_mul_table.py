@@ -26,12 +26,15 @@ from native_mul_results import SAMPLE_SCHEMA, finite_number, require_compatible,
 # rate it was run at: scheme key `binius64@<log_inv_rate>` (rate 1/2 is the
 # Binius64 default, rate 1/8 needs the fewest queries that still pay off).
 SCHEMES = [
-    ("f2z", "\\ftwoz\\ (this work)"),
+    ("f2z@1", "\\ftwoz\\ (this work), rate $1/2$"),
+    ("f2z@3", "\\ftwoz\\ (this work), rate $1/8$"),
     ("binius64@1", "Binius64~\\cite{binius64}, rate $1/2$"),
     ("binius64@3", "Binius64~\\cite{binius64}, rate $1/8$"),
-    # Binius64's circuit and PIOP with F2Z's opener (rate 1/8, Johnson regime,
-    # grinding, Round 0), gated at 100 bits by a whole-protocol union bound.
-    ("binius64-ligerito", "Binius64~\\cite{binius64} + \\ftwoz\\ opener, rate $1/8$"),
+    # Binius64's circuit and PIOP with F2Z's opener (rate 1/2, Johnson regime,
+    # grinding, Round 0) is measured by the harness but is NOT a paper row: the
+    # user dropped it from every table on 2026-09-10. Re-add this entry to
+    # restore it; its caption note below is kept for that case.
+    #   ("binius64-ligerito", "Binius64~\\cite{binius64} + \\ftwoz\\ opener, rate $1/2$"),
     ("plonky3-fri", "Plonky3~\\cite{plonky} (FRI)"),
     ("plonky3-whir", "Plonky3~\\cite{plonky} (WHIR)"),
     ("limber", "Limber~\\cite{limber} (Brakedown)"),
@@ -39,38 +42,63 @@ SCHEMES = [
 BINIUS_QUERIES = {1: 241, 2: 148, 3: 121, 4: 110}  # 100-bit FRI query counts per log inverse rate
 
 
+def f2z_rate(r: dict) -> int:
+    """Level-0 inverse-rate exponent of the F2Z opener this row recorded."""
+    levels = ((r.get("config", {}).get("ligerito") or {}).get("configuration") or {}).get("levels") or []
+    if not levels:
+        raise ValueError("F2Z row records no Ligerito configuration")
+    return int(levels[0]["log_inv_rate"])
+
+
 def f2z_caption(rows):
-    """Describe the recorded Ligerito policy; reject mixed or historical series."""
+    """Describe every recorded F2Z Ligerito policy, one clause per rate."""
     from ligerito_results import validate_ligerito
-    policies = set()
+    policies = {}
     for row in rows:
-        if row["backend"] == "f2z":
-            report = validate_ligerito(row.get("config", {}).get("ligerito"), 100)
-            policies.add((report["resolved_profile"], report["regime"], report["outer_ood"]))
+        if row["backend"] != "f2z":
+            continue
+        report = validate_ligerito(row.get("config", {}).get("ligerito"), 100)
+        key = f2z_rate(row)
+        policy = (report["resolved_profile"], report["regime"], report["outer_ood"])
+        if policies.setdefault(key, policy) != policy:
+            raise ValueError("cannot combine different Ligerito policies at one F2Z rate")
     if not policies:
         return r"\ftwoz\ (integer R1CS)"
-    if len(policies) != 1:
-        raise ValueError("cannot combine different Ligerito policies in one F2Z table series")
-    profile, regime, ood = policies.pop()
-    bound = "Johnson" if regime == "johnson" else "unique decoding radius"
-    evaluation = "early Round-0 OOD" if ood else "without OOD"
-    return rf"\ftwoz\ (integer R1CS, Lambda100; Ligerito {bound}, {profile}, {evaluation})"
+    clauses = []
+    for rate, (profile, regime, ood) in sorted(policies.items()):
+        bound = "Johnson" if regime == "johnson" else "unique decoding radius"
+        evaluation = "early Round-0 OOD" if ood else "without OOD"
+        clauses.append(rf"rate $1/{1 << rate}$ is {bound}, {profile}, {evaluation}")
+    shifts = {int(row["config"].get("u64_split_shift", 0)) for row in rows if row["backend"] == "f2z"}
+    shift_note = ""
+    if shifts - {0}:
+        if len(shifts) != 1:
+            raise ValueError("cannot combine different u64 split shifts in one F2Z table series")
+        k = shifts.pop()
+        shift_note = (f"; the F2Z row side is lowered by ${k}$ variable{'s' if k != 1 else ''} below the "
+                      f"default split at every size (one more column variable each, so the read-off is "
+                      f"${1 << k}\\times$ longer)")
+    return r"\ftwoz\ (integer R1CS, Lambda100; Ligerito " + "; ".join(clauses) + shift_note + ")"
 
 
 def scheme_key(r: dict) -> str:
-    """Row key: the backend slug, with Binius64 split by its recorded rate."""
+    """Row key: the backend slug, with F2Z and Binius64 split by their rate."""
     if r["backend"] == "binius64":
         return f"binius64@{int(r['config'].get('log_inv_rate', 1))}"
+    if r["backend"] == "f2z":
+        return f"f2z@{f2z_rate(r)}"
     return r["backend"]
 
 
 def scheme_name(key: str) -> str:
     """Short scheme name for caption sentences."""
-    names = {"f2z": "\\ftwoz", "plonky3-fri": "Plonky3-FRI", "plonky3-whir": "Plonky3-WHIR", "limber": "Limber",
+    names = {"plonky3-fri": "Plonky3-FRI", "plonky3-whir": "Plonky3-WHIR", "limber": "Limber",
              "binius64-ligerito": "Binius64 with the \\ftwoz\\ opener"}
     if key in names:
         return names[key]
-    return "Binius64 at rate $1/%d$" % (1 << int(key.split("@")[1]))
+    family, _, rate = key.partition("@")
+    rate = "rate $1/%d$" % (1 << int(rate))
+    return ("\\ftwoz\\ at " if family == "f2z" else "Binius64 at ") + rate
 PLACEHOLDER = "--"
 
 
@@ -140,6 +168,24 @@ def main() -> int:
     ap.add_argument("--workload", default="u32-mod32", choices=["u32-mod32", "u32", "u64", "u128"])
     ap.add_argument("--memory-bound", default="", metavar="BACKEND:EXP[,...]",
                     help="rows measured while paging (prover exceeded the machine's memory): omitted from the table and noted in the caption")
+    ap.add_argument("--paging", default="", metavar="BACKEND:EXP[,...]",
+                    help="rows measured while paging that are REPORTED anyway: kept in the table, with the caption saying which they are")
+    ap.add_argument("--unsupported", default="", metavar="BACKEND:EXP[,...]",
+                    help="sizes the backend itself refuses (a capacity limit, not the machine): shown as `--` and explained in the caption")
+    ap.add_argument("--unsupported-reason", default="", metavar="TEXT",
+                    help="the sentence explaining --unsupported, e.g. why the backend rejects those sizes")
+    ap.add_argument("--label", default="", metavar="LABEL",
+                    help="LaTeX label; default tab:native-mul[-<workload>]. Set it when a variant table (e.g. a "
+                         "single-thread run) must not collide with the main one")
+    ap.add_argument("--pick-least-disturbed", action="store_true",
+                    help="when a (scheme, size) was measured in more than one run directory, keep the run with the "
+                         "fastest median prover among those whose measured samples spread at most 10%% (max/min), "
+                         "or the smallest spread if none qualifies; every disturbance on a shared box only slows a "
+                         "run, so this is the run closest to an idle machine. Choices are listed in the header")
+    ap.add_argument("--allow-source-drift", default="", metavar="BACKEND[,...]",
+                    help="accept rows of one backend from different source trees, and name the trees in the "
+                         "header. Use ONLY when the measuring binary is provably identical (its hash did not "
+                         "change) and the drift is post-processing code such as this generator")
     ap.add_argument("--drop", default="", metavar="SCHEME:EXP[,...]",
                     help="rows to leave out as if not run (e.g. a measurement taken on a memory-starved box, pending a re-run); scheme keys as in --memory-bound")
     ap.add_argument("--proof-sizes-from", default="", metavar="RUN_DIR[,...]",
@@ -147,20 +193,54 @@ def main() -> int:
     args = ap.parse_args()
     if args.workload == "u32":
         args.workload = "u32-mod32"
-    memory_bound = set()  # (scheme key, exponent); a bare `binius64` applies to every rate
-    for item in filter(None, args.memory_bound.split(",")):
-        backend, exp = item.split(":")
-        memory_bound.add((backend, int(exp)))
+    def pairs(value):
+        """(scheme key, exponent) set; a bare family like `binius64` covers every rate."""
+        out = set()
+        for item in filter(None, value.split(",")):
+            backend, exp = item.split(":")
+            out.add((backend, int(exp)))
+        return out
+    memory_bound = pairs(args.memory_bound)
+    paging = pairs(args.paging)
+    unsupported = pairs(args.unsupported)
+    if unsupported and not args.unsupported_reason:
+        ap.error("--unsupported needs --unsupported-reason")
     if args.out is None:
         args.out = Path("paper/native-mul-table.tex" if args.workload == "u32-mod32" else f"paper/native-mul-{args.workload}-table.tex")
 
+    drift_allowed = {b for b in args.allow_source_drift.split(",") if b}
+    drifted = {}
+    def prover_spread(run_dir: Path, key) -> float:
+        values = []
+        for line in (run_dir / "samples.jsonl").read_text().splitlines():
+            row = json.loads(line)
+            if (row["workload"] == args.workload and row["trial"]["kind"] == "sample"
+                    and scheme_key(row) == key[0] and row["log_multiplications"] == key[1]):
+                values.append(row["metrics"]["online_prover_ms"])
+        return (max(values) - min(values)) / min(values) if values else float("inf")
+
     by = {}
+    picks = {}      # key -> list of (run_dir name, spread, median) considered
+    cross = {}      # key -> {tree: proof_bytes}, for the drift check
+    candidates = {}
     for run_dir in args.run_dirs:
+        dir_sizes = proof_sizes(run_dir, args.workload)
         for key, row in load_summaries(run_dir, args.workload).items():
-            if key in by:
-                require_compatible(by[key], row)
+            if key in candidates:
+                require_compatible(candidates[key][0][0], row,
+                                   allow_source_drift=key[0].split("@")[0] in drift_allowed)
             row["run_dir"] = str(run_dir)
-            by[key] = row
+            cross.setdefault(key, {})[row["provenance"]["source_sha256"][:12]] = dir_sizes.get(key)
+            candidates.setdefault(key, []).append((row, prover_spread(run_dir, key)))
+    for key, options in candidates.items():
+        if args.pick_least_disturbed and len(options) > 1:
+            quiet = [o for o in options if o[1] <= 0.10]
+            chosen = (min(quiet, key=lambda o: o[0]["medians"]["online_prover_ms"]) if quiet
+                      else min(options, key=lambda o: o[1]))
+            picks[key] = [(Path(o[0]["run_dir"]).name, o[1], o[0]["medians"]["online_prover_ms"]) for o in options]
+        else:
+            chosen = options[-1]  # last directory given wins, as before
+        by[key] = chosen[0]
     identities = {}
     source_by_backend = {}
     machines = [row["provenance"]["machine"] for row in by.values()]
@@ -171,7 +251,10 @@ def main() -> int:
         source_identity = (source["source_sha256"], source["build"])
         backend = row["backend"]
         if backend in source_by_backend and source_by_backend[backend] != source_identity:
-            raise ValueError("comparison mixes source revisions or builds for one backend")
+            if backend not in drift_allowed:
+                raise ValueError("comparison mixes source revisions or builds for one backend")
+            drifted.setdefault(backend, set()).update(
+                {source_by_backend[backend][0][:12], source_identity[0][:12]})
         source_by_backend[backend] = source_identity
         exponent = row["log_multiplications"]
         identity = (row["corpus_digest"], row["threads"], row["measurement_policy"], row["provenance"]["machine"])
@@ -185,7 +268,12 @@ def main() -> int:
     for k in list(by):
         if k in dropped or (k[0].split("@")[0], k[1]) in dropped:
             by.pop(k)
-    paged = {k: by.pop(k) for k in list(by) if k in memory_bound or (k[0].split("@")[0], k[1]) in memory_bound}
+    def selected(key, chosen):
+        return key in chosen or (key[0].split("@")[0], key[1]) in chosen
+    paged = {k: by.pop(k) for k in list(by) if selected(k, memory_bound)}
+    for k in list(by):
+        if selected(k, unsupported):
+            by.pop(k)
     # Proof sizes: the row's own run first, then the proof-size-only runs.
     sizes = {}
     for run_dir in args.run_dirs:
@@ -225,8 +313,30 @@ def main() -> int:
         w(f"% Proof sizes for rows whose run predates proof-size recording come from {' '.join(map(str, size_dirs))}.")
     w("% Regenerate (from the repo root; this file is overwritten):")
     w(f"%   python3 scripts/native_mul_table.py {run_list} --workload {args.workload}" + (f" --exponents {args.exponents}" if args.exponents else "")
-      + (f" --memory-bound {args.memory_bound}" if args.memory_bound else "") + (f" --drop {args.drop}" if args.drop else "") + (f" --proof-sizes-from {args.proof_sizes_from}" if args.proof_sizes_from else ""))
+      + (f" --memory-bound {args.memory_bound}" if args.memory_bound else "")
+      + (f" --paging {args.paging}" if args.paging else "")
+      + (f" --unsupported {args.unsupported}" if args.unsupported else "")
+      + (f" --unsupported-reason {args.unsupported_reason!r}" if args.unsupported_reason else "")
+      + (f" --allow-source-drift {args.allow_source_drift}" if args.allow_source_drift else "")
+      + (f" --label {args.label}" if args.label else "")
+      + (" --pick-least-disturbed" if args.pick_least_disturbed else "")
+      + (f" --drop {args.drop}" if args.drop else "") + (f" --proof-sizes-from {args.proof_sizes_from}" if args.proof_sizes_from else ""))
     w(f"% Machine: {cpu}; medians of {'/'.join(map(str, samples))} samples after one warm-up.")
+    for backend, trees in sorted(drifted.items()):
+        shared = [k for k, per in cross.items() if k[0].split("@")[0] == backend and len(per) > 1]
+        for k in shared:
+            if len(set(cross[k].values())) != 1:
+                raise ValueError(f"source drift for {backend} at 2^{k[1]}: proof bytes differ across trees {cross[k]}")
+        w(f"% Source-tree drift accepted for {backend}: rows come from trees {', '.join(sorted(trees))}."
+          f" Proof bytes are identical across the trees at every shared size ({len(shared)} checked), so the"
+          " measured computation is the same; the trees differ in harness plumbing or post-processing.")
+    if args.pick_least_disturbed and picks:
+        w("% --pick-least-disturbed: where a case was measured in several run directories, the run with the")
+        w("%   fastest median prover among those with <=10% sample spread was kept (or the smallest spread if")
+        w("%   none qualified); * marks the kept run, entries are dir=median ms/spread:")
+        for key in sorted(picks):
+            chosen = Path(by[key]["run_dir"]).name
+            w(f"%   2^{key[1]} {key[0]:13} " + ", ".join(f"{d}={med:.0f}/{sp*100:.0f}%" + (" *" if d == chosen else "") for d, sp, med in picks[key]))
     w("% Columns: witgen = witness_ms (native witness generation; Binius64 packs its witness inside its prover, so its witgen")
     w("%   overlaps the prover column); prover = online_prover_ms (the complete native prover call after witness generation,")
     w("%   i.e. commitment + PIOP + PCS opening); verifier = verify_ms; proof = median proof_bytes of the samples, KB = 1000 bytes;")
@@ -250,7 +360,9 @@ def main() -> int:
         wall[slug] = min(wall.get(slug, e), e)
     missing = {}
     for slug, label in SCHEMES:
-        gone = [e for e in exps if (slug, e) not in by and (slug, e) not in paged and e < wall.get(slug, float("inf"))]
+        gone = [e for e in exps if (slug, e) not in by and (slug, e) not in paged
+                and not ((slug, e) in unsupported or (slug.split("@")[0], e) in unsupported)
+                and e < wall.get(slug, float("inf"))]
         if gone and any((slug, e) in by for e in exps):
             missing[slug] = gone
     for (slug, e), r in sorted(paged.items()):
@@ -268,6 +380,37 @@ def main() -> int:
             who = " and ".join(f"the {scheme_name(slug)} prover" for slug in slugs) + (" exceeds" if len(slugs) == 1 else " exceed")
         return f"From $2^{{{e}}}$ {who} the machine's memory and page" + ("s" if len(slugs) == 1 else "") + "; those rows are omitted. "
     schemes = [(slug, label) for slug, label in SCHEMES if any((slug, e) in by for e in exps)]
+
+    def listed(chosen):
+        """Group the selected (scheme, exponent) pairs by scheme, in table order."""
+        out = {}
+        for slug, _ in SCHEMES:
+            sizes = sorted(e for e in exps if selected((slug, e), chosen))
+            if sizes:
+                out[slug] = sizes
+        return out
+
+    def sizes_text(sizes):
+        return ", ".join(f"$2^{{{e}}}$" for e in sizes)
+
+    def join(parts):
+        if len(parts) < 3:
+            return " and ".join(parts)
+        return ", ".join(parts[:-1]) + ", and " + parts[-1]
+
+    unsupported_sentence = ""
+    if unsupported:
+        parts = [f"{scheme_name(slug)} at {sizes_text(sizes)}" for slug, sizes in listed(unsupported).items()]
+        verb = "is" if len(parts) == 1 else "are"
+        unsupported_sentence = (join(parts) + f" {verb} absent because "
+                                + args.unsupported_reason.rstrip(".") + ". ")
+    paging_sentence = ""
+    reported = listed(paging)
+    if reported:
+        parts = [f"{scheme_name(slug)} at {sizes_text(sizes)}" for slug, sizes in reported.items()]
+        paging_sentence = ("The prover's working set exceeds the machine's memory for "
+                           + join(parts) + ", so those rows are reported but paging-dominated "
+                           "and are not comparable with the rest. ")
     w("")
     w("\\begin{table}[H]")
     w("  \\centering")
@@ -314,7 +457,7 @@ def main() -> int:
     w("  \\end{tabular}")
     statement = {
         "u32-mod32": "Native end-to-end proofs of $N$ independent multiplications $z = xy \\bmod 2^{32}$, with $x,y,z$ unsigned $32$-bit integers: ",
-        "u64": "Native end-to-end proofs of $N$ multiplications $x \\cdot y = z$ of random $64$-bit integers ($z$ a $128$-bit integer): ",
+        "u64": "Native end-to-end proofs of $N$ multiplications $x \\cdot y = z$ of random $64$-bit integers ($z$ a $128$-bit integer; from $2^{21}$ the \\ftwoz\\ layout caps its row side at $t = 18$, which trades read-off bytes for prover time): ",
         "u128": "Native end-to-end proofs of $N$ multiplications $x \\cdot y = z$ of random $128$-bit integers ($z$ a $256$-bit integer): ",
     }[args.workload]
     # Binius64's opener geometry as the runs recorded it (rate override
@@ -332,7 +475,7 @@ def main() -> int:
     # The opener geometry of the binius64-ligerito rows as the runs recorded it.
     lig = next((r["config"] for r in rows if scheme_key(r) == "binius64-ligerito"), {})
     lig_bits = lig.get("whole_protocol_bits")
-    ligerito_note = ("Binius64 with the \\ftwoz\\ opener (the same circuit and PIOP; every oracle committed at rate $1/8$ and opened by "
+    ligerito_note = ("Binius64 with the \\ftwoz\\ opener (the same circuit and PIOP; every oracle committed at rate $1/2$ and opened by "
                      "ring switching and Johnson-regime Ligerito"
                      + (f" with ${lig['level0_queries']}$ level-0 queries" if "level0_queries" in lig else "")
                      + (f", ${lig['level0_fold_grinding_bits']}$ bits of fold grinding" if "level0_fold_grinding_bits" in lig else "")
@@ -362,8 +505,10 @@ def main() -> int:
       + "of a separate child process proving and verifying once ($1$\\,GB $= 2^{30}$ bytes). "
       + "".join(f"{scheme_name(slug)} was not run at " + ", ".join(f"$2^{{{e}}}$" for e in gone) + ". " for slug, gone in missing.items())
       + "".join(wall_sentence(e, slugs) for e, slugs in sorted(walls.items()))
+      + unsupported_sentence + paging_sentence
       + f"{machine_text}; threads per run: {thread_counts}; medians of {samples[0]} runs after one warm-up.}}")
-    w("  \\label{tab:native-mul" + ("" if args.workload == "u32-mod32" else "-" + args.workload) + "}")
+    label = args.label or ("tab:native-mul" + ("" if args.workload == "u32-mod32" else "-" + args.workload))
+    w("  \\label{" + label + "}")
     w("\\end{table}")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text("\n".join(out) + "\n")

@@ -283,8 +283,7 @@ def run_case(binary, case, args, directory):
 
 
 def file_hash(path):
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def peak_rss_bytes(linux_rss_path, stderr_path):

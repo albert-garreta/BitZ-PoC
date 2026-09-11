@@ -1,7 +1,7 @@
 //! F2Z's opener as a binary-field PCS on the same packed rows the Binius64
 //! BaseFold adapter commits: one `GF(2^128)` row per gate, the same bit-MLE
 //! claim at a transcript-derived point, opened by Round 0 + ring switching +
-//! Johnson-regime Ligerito at rate 1/8 with fold and query grinding. The
+//! Johnson-regime Ligerito at rate 1/2 with fold and query grinding. The
 //! opener's own union bound (Round 0, ring switch, every Ligerito level) is
 //! gated at 100 bits, so the row is the PCS-only counterpart of the
 //! `binius64-ligerito` end-to-end scheme and directly comparable with the

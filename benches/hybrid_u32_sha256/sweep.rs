@@ -35,8 +35,8 @@ pub fn parse_shapes(value: &str) -> Result<Vec<Shape>, AnyError> {
             mul_log: mul.trim().parse()?,
             sha_log: sha.trim().parse()?,
         };
-        if !(15..=22).contains(&shape.mul_log) || !(1..=16).contains(&shape.sha_log) {
-            return Err("--shapes requires multiplication logs 15..22 and SHA logs 1..16".into());
+        if !(9..=22).contains(&shape.mul_log) || !(1..=16).contains(&shape.sha_log) {
+            return Err("--shapes requires multiplication logs 9..22 and SHA logs 1..16".into());
         }
         if shapes.contains(&shape) {
             return Err(format!("duplicate --shapes pair {pair}").into());

@@ -1,7 +1,7 @@
 //! The F2Z opener as a stand-alone binary-field polynomial commitment.
 //!
 //! Commit `2^{m_p}` packed `GF(2^128)` words as an interleaved Reed–Solomon
-//! codeword at rate 1/8 under a BLAKE3 Merkle tree, pin the committed word
+//! codeword at rate 1/2 under a BLAKE3 Merkle tree, pin the committed word
 //! with Round 0 (the out-of-domain sample) right after the commitment, and
 //! discharge `K`-linear relations `⟨b, f⟩ = c` on the packed words — the
 //! ring-switched bit-MLE claim, or any transparent basis — with flock's basis
@@ -42,18 +42,20 @@ use flock_core::{
 };
 
 /// Reed–Solomon inverse-rate exponent of the commitment and of the opener's
-/// level 0 (rate 1/8). The commit rate MUST equal the level-0 configuration
+/// level 0 (rate 1/2). The commit rate MUST equal the level-0 configuration
 /// rate: the opener queries the committed codeword.
-pub const LOG_INV_RATE: usize = 3;
+pub const LOG_INV_RATE: usize = 1;
 /// Interleaving of the commitment = the opener's level-0 fold arity
 /// (`initial_k`): flock's default 32 lanes, 512-byte leaves.
 pub const LOG_BATCH_SIZE: usize = 5;
 /// Round 0 is topped up to this λ by proof of work, exactly as the standalone
 /// relations and the hybrid account it (`step0:ood-draw`).
 pub const OOD_LAMBDA: u32 = 108;
-/// Smallest supported packed witness (`2^12` words): the Johnson ladder needs
-/// at least one recursive level below the 32-lane level 0.
-pub const MIN_PACKED_LOG: usize = 12;
+/// Smallest supported packed witness (`2^13` words): the Johnson ladder needs
+/// at least one recursive level below the 32-lane level 0, and at rate 1/2 a
+/// `2^12` ladder's second level (64 positions) is narrower than its Johnson
+/// query count (the solver now rejects such ladders at configuration time).
+pub const MIN_PACKED_LOG: usize = 13;
 /// Largest supported packed witness (`2^27` words = 2 GiB packed).
 pub const MAX_PACKED_LOG: usize = 27;
 /// Bound on one embedded Ligerito blob when decoding.
@@ -111,7 +113,7 @@ pub struct BitMleOpening {
     pub lig: LigeritoProof,
 }
 
-/// A commitment shape: rate 1/8, 32 lanes, one Johnson-regime Ligerito ladder
+/// A commitment shape: rate 1/2, 32 lanes, one Johnson-regime Ligerito ladder
 /// solved by flock's machinery to `component_bits` per round, Round 0 at
 /// [`OOD_LAMBDA`].
 #[derive(Clone)]
@@ -555,18 +557,18 @@ mod tests {
 
     #[test]
     fn bit_mle_opening_round_trips_and_rejects_a_wrong_value() {
-        let pcs = BinaryPcs::new(12, 100).unwrap();
+        let pcs = BinaryPcs::new(13, 100).unwrap();
         // The opener's terms sum to roughly 22·2^-target over the ladder's
         // levels; a composition gated at 100 bits therefore targets 105–106.
         assert!(pcs.error_sum().log2() < -94.0);
-        assert!(BinaryPcs::new(12, 106).unwrap().error_sum().log2() < -100.0);
-        let packed = random_packed(0x1234_5678_9abc_def1, 12);
+        assert!(BinaryPcs::new(13, 106).unwrap().error_sum().log2() < -100.0);
+        let packed = random_packed(0x1234_5678_9abc_def1, 13);
         let (c, data) = pcs.commit(&packed).unwrap();
 
         let mut t = Blake3Transcript::new();
         t.absorb_slice(&c.root);
         let r0 = pcs.prove_round0(&mut t, &packed);
-        let point: Vec<Gf> = (0..12 + LOG_PACKING)
+        let point: Vec<Gf> = (0..13 + LOG_PACKING)
             .map(|_| t.get_field_challenge(&()))
             .collect();
         let value = bit_mle(&packed, &point);
@@ -586,7 +588,7 @@ mod tests {
             let mut t = Blake3Transcript::new();
             t.absorb_slice(&c.root);
             let r0 = pcs.verify_round0(&mut t, round)?;
-            let point: Vec<Gf> = (0..12 + LOG_PACKING)
+            let point: Vec<Gf> = (0..13 + LOG_PACKING)
                 .map(|_| t.get_field_challenge(&()))
                 .collect();
             crate::ligerito::absorb_ood_value(&mut t, value);
@@ -603,7 +605,7 @@ mod tests {
 
     #[test]
     fn basis_opening_round_trips() {
-        for packed_log in [12, 16] {
+        for packed_log in [13, 16] {
             basis_opening_round_trips_at(packed_log);
         }
     }
@@ -612,7 +614,7 @@ mod tests {
     /// side: the basis prover/verifier pair must not assume eq structure.
     #[test]
     fn arbitrary_basis_opening_round_trips() {
-        for packed_log in [12, 16] {
+        for packed_log in [13, 16] {
             arbitrary_basis_opening_round_trips_at(packed_log);
         }
     }

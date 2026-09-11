@@ -22,11 +22,11 @@ pub enum LigeritoSelection {
 
 impl LigeritoSelection {
     pub const JOHNSON: Self = Self::CustomJohnson {
-        log_inv_rate: 3,
+        log_inv_rate: 1,
         initial_k: 4,
     };
     pub const MATCHED_UDR: Self = Self::CustomUdr {
-        log_inv_rate: 3,
+        log_inv_rate: 1,
         initial_k: 4,
         fold_grinding: true,
     };
@@ -55,7 +55,7 @@ impl LigeritoSelection {
         let parts: Vec<_> = request.split(':').collect();
         if !(3..=4).contains(&parts.len()) || !matches!(parts[0], "custom" | "udr" | "udrg") {
             return Err(format!(
-                "unknown Ligerito profile {request:?}; use custom:3:4 or udrg:3:4"
+                "unknown Ligerito profile {request:?}; use custom:1:4 or udrg:1:4"
             ));
         }
         let parse = |part: &str| {
@@ -305,11 +305,11 @@ mod tests {
     #[test]
     fn strict_profile_selection() {
         assert_eq!(
-            LigeritoSelection::parse("custom:3:4", 100).unwrap(),
+            LigeritoSelection::parse("custom:1:4", 100).unwrap(),
             LigeritoSelection::JOHNSON
         );
         assert_eq!(
-            LigeritoSelection::parse("udrg:3:4:106", 106).unwrap(),
+            LigeritoSelection::parse("udrg:1:4:106", 106).unwrap(),
             LigeritoSelection::MATCHED_UDR
         );
         for invalid in [
@@ -330,7 +330,7 @@ mod tests {
             for selection in [LigeritoSelection::JOHNSON, LigeritoSelection::MATCHED_UDR] {
                 let resolved = selection.resolve(m - LOG_PACKING, 100).unwrap();
                 assert_eq!(resolved.prover().initial_k, 4);
-                assert_eq!(resolved.prover().log_inv_rates[0], 3);
+                assert_eq!(resolved.prover().log_inv_rates[0], 1);
                 assert_eq!(resolved.prover().merkle_hash, HashKind::Blake3);
                 assert_eq!(
                     resolved.ood_bits().is_some(),

@@ -29,7 +29,8 @@ def samples(reps=2):
 
 def config(**overrides):
     return dict(reps=2, threads=8, seed=runner.DEFAULT_SEED, seed_explicit=False, memory=False,
-                binius_rate=None, workloads=["u32-mod32"], backends=["limber"], exponents=[15], **overrides)
+                binius_rate=None, f2z_profile=None, workloads=["u32-mod32"], backends=["limber"],
+                exponents=[15], **overrides)
 
 
 class RunnerTests(unittest.TestCase):
@@ -146,37 +147,46 @@ class RunnerTests(unittest.TestCase):
             (root/"summary.json").write_text(json.dumps([old]))
             with self.assertRaises(ValueError): table.load_summaries(root,"u32-mod32")
 
-    def test_shell_exact_author_command_one_warm_process_and_one_memory_process(self):
+    def test_shell_runs_the_comparison_binary_once_with_the_authors_environment(self):
+        """Limber is a native backend, so one comparison process covers it.
+
+        The binary writes its own sample and memory records; the runner only
+        selects the backend, pins the build environment, and reads them back.
+        """
         with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp); repo=root/"limber checkout"; (repo/"examples").mkdir(parents=True)
-            for name in ("Cargo.toml","Cargo.lock","examples/int_mult.rs"): (repo/name).write_text("fixture")
+            root=Path(tmp)
             bindir=root/"bin"; bindir.mkdir(); commands=root/"commands.jsonl"
             cargo=bindir/"cargo"
             cargo.write_text("#!"+sys.executable+"\n" + "import json,os,sys\n" +
-                "with open(os.environ['COMMANDS'],'a') as f: f.write(json.dumps(dict(args=sys.argv[1:],cwd=os.getcwd(),flags=os.environ.get('RUSTFLAGS'),threads=os.environ.get('RAYON_NUM_THREADS'),encoded=os.environ.get('CARGO_ENCODED_RUSTFLAGS'))) + '\\n')\n" +
+                "with open(os.environ['COMMANDS'],'a') as f: f.write(json.dumps(dict(args=sys.argv[1:],cwd=os.getcwd(),flags=os.environ.get('RUSTFLAGS'),threads=os.environ.get('RAYON_NUM_THREADS'),encoded=os.environ.get('CARGO_ENCODED_RUSTFLAGS'),backends=os.environ.get('F2Z_MUL_COMPARE_BACKENDS'))) + '\\n')\n" +
                 "if os.environ.get('FAIL_CARGO'): sys.exit(7)\n" +
+                "out=__import__('pathlib').Path(os.environ['F2Z_MUL_COMPARE_OUTPUT_DIR'])\n" +
                 "rows=json.loads("+repr(json.dumps(samples()))+")\n" +
-                "if os.environ.get('F2Z_MUL_MEMORY_ONLY') == '1':\n" +
-                " row=rows[0]; row.update(peak_rss_bytes=123456,boundary="+repr(runner.MEMORY_BOUNDARY)+"); print('LIMBER_MUL_MEMORY '+json.dumps(row))\n" +
-                "else:\n for row in rows: print('LIMBER_MUL_RESULT '+json.dumps(row))\n")
+                "out.joinpath('samples.jsonl').write_text('\\n'.join(json.dumps(r) for r in rows))\n" +
+                "memory=rows[0] | dict(peak_rss_bytes=123456,boundary="+repr(runner.MEMORY_BOUNDARY)+")\n" +
+                "out.joinpath('memory.jsonl').write_text(json.dumps(memory))\n")
             cargo.chmod(0o755)
             git=bindir/"git";git.write_text('#!/bin/sh\nif [ "$1" = rev-parse ]; then printf "%s\\n" test-revision; fi\n');git.chmod(0o755)
             sysctl=bindir/"sysctl";sysctl.write_text('#!/bin/sh\nprintf "%s\\n" fixture-cpu\n');sysctl.chmod(0o755)
             output=root/"results"
             env={k:v for k,v in os.environ.items() if not k.startswith(("F2Z_","CARGO_"))}
-            env.update(PATH=str(bindir)+os.pathsep+env["PATH"],COMMANDS=str(commands),LIMBER_REPO=str(repo),
+            env.update(PATH=str(bindir)+os.pathsep+env["PATH"],COMMANDS=str(commands),
                        RAYON_NUM_THREADS="8",F2Z_BENCH_REPS="2",F2Z_MUL_COMPARE_BACKENDS="limber",
                        F2Z_MUL_COMPARE_OUTPUT_DIR=str(output),CARGO_ENCODED_RUSTFLAGS="remove",PYTHONDONTWRITEBYTECODE="1")
             command=["bash",str(runner.ROOT/"scripts/run_native_mul_compare.sh")]
             run=subprocess.run(command,env=env,capture_output=True,text=True)
             self.assertEqual(run.returncode,0,run.stdout+run.stderr)
             calls=[json.loads(line) for line in commands.read_text().splitlines()]
-            self.assertEqual(len(calls),2)
-            for call in calls:
-                self.assertEqual(call["args"],runner.limber_command(15)[1:]); self.assertEqual(Path(call["cwd"]).resolve(),repo.resolve())
-                self.assertEqual(call["flags"],"-C target-cpu=native"); self.assertEqual(call["threads"],"8"); self.assertIsNone(call["encoded"])
+            self.assertEqual(len(calls),1)
+            call=calls[0]
+            self.assertEqual(call["args"],["+"+runner.TOOLCHAIN,"bench","--bench","mul_e2e_compare",
+                                           "--features","bench-internals,native-mul-compare"])
+            self.assertEqual(Path(call["cwd"]).resolve(),runner.ROOT.resolve())
+            self.assertEqual(call["backends"],"limber")
+            self.assertEqual(call["flags"],"-C target-cpu=native"); self.assertEqual(call["threads"],"8"); self.assertIsNone(call["encoded"])
             summary=json.loads((output/"summary.json").read_text())[0]
             self.assertEqual(summary["samples"],2);self.assertEqual(summary["multiplications"],32768)
+            self.assertEqual(summary["peak_rss_bytes"],123456)
             self.assertEqual(json.loads((output/"campaign.json").read_text())["status"],"complete")
             failed=root/"failed";env.update(FAIL_CARGO="1",F2Z_MUL_COMPARE_OUTPUT_DIR=str(failed))
             run=subprocess.run(command,env=env,capture_output=True,text=True)

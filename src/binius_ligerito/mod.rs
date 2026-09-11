@@ -6,7 +6,7 @@
 //! transcript — up to the witness evaluation claim its own ring switch would
 //! consume (`IOPProver::prove_to_evaluation`, exposed by the vendored fork).
 //! Everything below that line is F2Z's: every oracle the PIOP commits is an
-//! interleaved Reed–Solomon codeword at rate 1/8 under BLAKE3, pinned by Round
+//! interleaved Reed–Solomon codeword at rate 1/2 under BLAKE3, pinned by Round
 //! 0 right after its root is bound; the witness evaluation claim is discharged
 //! by F2Z's ring switch and a Johnson-regime Ligerito opening with fold and
 //! query grinding; every other oracle relation the PIOP queued (the IntMul
@@ -649,7 +649,7 @@ mod tests {
 
     #[test]
     fn multiplication_circuit_round_trips_through_the_f2z_opener() {
-        let (circuit, wires) = mul_circuit(10);
+        let (circuit, wires) = mul_circuit(11);
         let prepared = Prepared::new(circuit.constraint_system()).unwrap();
         assert_eq!(prepared.oracle_specs().len(), 2, "witness + logup* pushforward");
         assert!(prepared.security().algebraic_bits >= 100.0);
@@ -700,7 +700,7 @@ mod tests {
     /// coordinate convention.
     #[test]
     fn pushforward_relation_is_consistent_across_prover_and_verifier() {
-        let (circuit, wires) = mul_circuit(10);
+        let (circuit, wires) = mul_circuit(11);
         let prepared = Prepared::new(circuit.constraint_system()).unwrap();
         let witness = mul_witness(&circuit, &wires, false).unwrap();
         let public = witness.inout();

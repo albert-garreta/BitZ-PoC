@@ -24,7 +24,7 @@ pub(crate) struct PrefixProof {
 
 pub(crate) fn decoding_config(
     transcript: &mut Blake3Transcript,
-    prepared: &PreparedU32MulRelation,
+    prepared: &U32MulPrefixRelation,
     statement: &[u8; 32],
     nonce: u64,
 ) -> Result<(u128, <SpartanF2zField as PrimeField>::Config), Error> {
@@ -60,7 +60,7 @@ fn endpoint(p: &crate::pcs::IntEvalParams, weights: &[u128], z: &[Gf], e: Gf) ->
 
 pub(crate) fn prove(
     transcript: &mut Blake3Transcript,
-    prepared: &PreparedU32MulRelation,
+    prepared: &U32MulPrefixRelation,
     witness: &U32MulWitness,
     rows: &[Vec<u64>],
     statement: &[u8; 32],
@@ -179,7 +179,7 @@ pub(crate) fn prove(
 
 pub(crate) fn verify(
     transcript: &mut Blake3Transcript,
-    prepared: &PreparedU32MulRelation,
+    prepared: &U32MulPrefixRelation,
     statement: &[u8; 32],
     proof: &PrefixProof,
 ) -> Result<BinaryClaim, Error> {

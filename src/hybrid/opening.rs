@@ -14,7 +14,7 @@
 //! core IOP); nothing here re-derives a bound.
 use super::{CompositionProfile, Error, Gf};
 use crate::{
-    ligerito::{RingSwitchProof, residual_b_evals, ring_switch_prove, ring_switch_verify},
+    ligerito::{RingSwitchProof, residual_b_evals, ring_switch_prove_with, ring_switch_verify},
     ligerito_flock::{
         OodProverClaim, OodRound, OodRoundParams, OodVerifierClaim, ZincChallenger, add_ood_basis,
         f128_to_gf, gf_to_f128, ood_residual_evals,
@@ -35,9 +35,9 @@ use flock_core::{
 };
 
 /// Reed–Solomon inverse-rate exponent shared by both initial commitments
-/// and the opener's level 0 (rate 1/8). The commit rate MUST equal the
+/// and the opener's level 0 (rate 1/2). The commit rate MUST equal the
 /// level-0 configuration rate: the opener queries the committed codewords.
-pub(super) const LOG_INV_RATE: usize = 3;
+pub(super) const LOG_INV_RATE: usize = 1;
 
 #[derive(Clone, Debug)]
 pub(super) struct Geometry {
@@ -216,13 +216,14 @@ pub(super) fn prove(
 ) -> Result<Proof, Error> {
     let ring_scope = crate::utils::prof::scope("op:ring_switch");
     // flock's packed words are bit-compatible with `Gf`: the ring switch
-    // reads them in place (no 2^m-element conversion pass).
-    let (ring, basis, mut target) = ring_switch_prove(t, &packed, &point[7..]);
+    // reads them in place and writes the basis in flock's element type (no
+    // 2^m-element conversion pass either way).
+    let (ring, mut basis, mut target) =
+        ring_switch_prove_with(t, &packed, &point[7..], gf_to_f128);
     drop(ring_scope);
     let basis_scope = crate::utils::prof::scope("op:extra_bases");
     // Batch the Round-0 claim into the same opening: one draw adds
     // `η_ood·eq(·, ζ⃗)` to the basis and `η_ood·y` to the target.
-    let mut basis: Vec<F> = basis.into_iter().map(gf_to_f128).collect();
     if let Some(ood) = ood {
         let eta_ood: Gf = t.get_field_challenge(&());
         add_ood_basis(&mut basis, &packed, &ood.point, eta_ood, None);

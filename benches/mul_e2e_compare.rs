@@ -6,6 +6,8 @@ mod binius_ligerito;
 mod common;
 #[path = "mul_e2e_compare/f2z.rs"]
 mod f2z_backend;
+#[path = "mul_e2e_compare/limber.rs"]
+mod limber;
 #[path = "mul_e2e_compare/memory.rs"]
 mod memory;
 #[path = "mul_e2e_compare/mod32.rs"]
@@ -78,10 +80,18 @@ impl Workload {
         match self {
             Self::U32 => matches!(
                 backend,
-                "f2z" | "binius64" | "binius64-ligerito" | "plonky3-fri" | "plonky3-whir"
+                "f2z"
+                    | "binius64"
+                    | "binius64-ligerito"
+                    | "plonky3-fri"
+                    | "plonky3-whir"
+                    | "limber"
             ),
+            // The Plonky3 AIR decomposes 32-bit operands and has no
+            // 64 x 64 -> 128 or 128 x 128 -> 256 path yet. Limber proves both
+            // through its wrapping row `x * y = z_lo (mod 2^w)`.
             Self::U64 | Self::U128 => {
-                matches!(backend, "f2z" | "binius64" | "binius64-ligerito")
+                matches!(backend, "f2z" | "binius64" | "binius64-ligerito" | "limber")
             }
         }
     }
@@ -343,6 +353,7 @@ enum Context {
     BiniusLigerito(binius_ligerito::Context),
     Plonky3Fri(plonky3::Context),
     Plonky3Whir(plonky3_whir::Context),
+    Limber(limber::Context),
 }
 impl Context {
     fn setup(backend: &str, corpus: Arc<Corpus>) -> Self {
@@ -353,6 +364,7 @@ impl Context {
                 Self::BiniusLigerito(binius_ligerito::Context::setup(corpus))
             }
             "plonky3-fri" => Self::Plonky3Fri(plonky3::Context::setup(corpus)),
+            "limber" => Self::Limber(limber::Context::setup(corpus)),
             _ => panic!("unknown backend {backend}"),
         }
     }
@@ -380,6 +392,7 @@ impl Context {
             Self::BiniusLigerito(c) => c.run(capture),
             Self::Plonky3Fri(c) => c.run(capture),
             Self::Plonky3Whir(c) => c.run(capture),
+            Self::Limber(c) => c.run(capture),
         }
     }
     fn config(&self) -> Value {
@@ -389,6 +402,7 @@ impl Context {
             Self::BiniusLigerito(c) => c.config(),
             Self::Plonky3Fri(c) => c.config(),
             Self::Plonky3Whir(c) => c.config(),
+            Self::Limber(c) => c.config(),
         }
     }
 }
@@ -472,6 +486,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "binius64-ligerito",
             "plonky3-fri",
             "plonky3-whir",
+            "limber",
         ],
     );
     check_backend_support(&workloads, &backends);
@@ -614,6 +629,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "binius64-ligerito" =>
                         "PIOP messages + oracle roots/Round 0 + canonical F2Z openings (includes commitment)",
                     "plonky3-fri" | "plonky3-whir" => "postcard proof bytes (includes commitment)",
+                    "limber" =>
+                        "serialized commitments and Brakedown batch opening + counted fixed-width PIOP payload",
                     _ => unreachable!(),
                 });
                 let mut measured = vec![];
@@ -932,6 +949,7 @@ fn audit_backend(backend: &str, corpus: &Corpus) -> WitnessAudit {
         // The same Binius64 circuit and witness filler; only the opener differs.
         "binius64" | "binius64-ligerito" => binius::audit(corpus),
         "plonky3-fri" | "plonky3-whir" => mod32_air::audit(corpus),
+        "limber" => limber::audit(corpus),
         _ => unreachable!(),
     }
 }
@@ -954,6 +972,7 @@ pub(crate) fn witness_main() -> Result<(), Box<dyn std::error::Error>> {
             "binius64-ligerito",
             "plonky3-fri",
             "plonky3-whir",
+            "limber",
         ],
     );
     check_backend_support(&workloads, &backends);
@@ -1116,7 +1135,7 @@ mod ligerito_isolation_tests {
             let stdout=String::from_utf8(out.stdout).unwrap();
             serde_json::from_str::<Value>(stdout.lines().find_map(|l|l.strip_prefix("CONFIG_PROBE ")).expect("configuration probe output")).unwrap()
         };
-        let johnson=probe("custom:3:4"); let udr=probe("udrg:3:4");
+        let johnson=probe("custom:1:4"); let udr=probe("udrg:1:4");
         assert_ne!(johnson["f2z"]["ligerito"]["configuration_fingerprint"],udr["f2z"]["ligerito"]["configuration_fingerprint"]);
         for backend in ["binius","fri","whir"] { assert_eq!(johnson[backend],udr[backend],"{backend}"); }
     }

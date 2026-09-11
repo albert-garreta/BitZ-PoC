@@ -189,6 +189,10 @@ pub struct U64MulLayout {
     multiplications: usize,
     capacity: usize,
     gate_vars: usize,
+    /// Experiment hook: moves this many gate variables from the F2Z row side
+    /// to the column side relative to the default split `s = gate_vars / 2`.
+    /// Zero in production; see [`Self::with_split_shift`].
+    split_shift: i8,
 }
 
 impl U64MulLayout {
@@ -217,7 +221,40 @@ impl U64MulLayout {
             multiplications,
             capacity,
             gate_vars,
+            split_shift: 0,
         })
+    }
+
+    /// The same layout with the F2Z column-variable count moved by `shift`
+    /// from the default `gate_vars / 2` (positive: more columns, fewer rows).
+    /// The total `t + s` is unchanged, so the Ligerito instance is too; only
+    /// the forest/read-off/verifier split moves. A measurement hook, not a
+    /// production setting.
+    pub fn with_split_shift(self, shift: i8) -> Result<Self, U64MulError> {
+        let s = i64::try_from(self.gate_vars / 2).expect("small") + i64::from(shift);
+        if s < 0 || s > i64::try_from(self.gate_vars).expect("small") {
+            return Err(U64MulError::DomainTooLarge);
+        }
+        Ok(Self { split_shift: shift, ..self })
+    }
+
+    /// F2Z column variables: `max(gate_vars / 2, gate_vars − 10)`, i.e. the
+    /// balanced split with the row side capped at `t = 18`, plus the
+    /// experiment shift.
+    ///
+    /// Measured 2026-09-11 (Apple M5, 8 threads, 2^20–2^22): the forest is
+    /// flat in the split for `t ≤ 18` and about 17 % slower at `t = 19`
+    /// (2^21: 903 → 751 ms, 2^22: 1762 → 1479 ms when one gate variable moves
+    /// to the column side), with the verifier's O(2^t) fold shrinking too.
+    /// The price is the in-the-clear read-off, which doubles per extra column
+    /// variable: +7 % proof bytes at 2^21, +12 % at 2^22. Below 2^21 the two
+    /// rules coincide, so those proofs are unchanged.
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+    pub const fn col_vars(&self) -> usize {
+        let half = self.gate_vars / 2;
+        let capped = self.gate_vars.saturating_sub(10);
+        let base = if capped > half { capped } else { half };
+        (base as i64 + self.split_shift as i64) as usize
     }
 
     /// Number of live multiplication rows.
@@ -258,7 +295,7 @@ impl U64MulLayout {
     /// committed tensor has `g + 8` variables (one more than the 128-slot
     /// relations at the same gate count).
     pub const fn f2z_params(&self) -> IntEvalParams {
-        let s = self.gate_vars / 2;
+        let s = self.col_vars();
         IntEvalParams {
             t: U64_MUL_SLOT_VARS + self.gate_vars - s,
             s,
@@ -274,7 +311,7 @@ impl U64MulLayout {
             return None;
         }
 
-        let s = self.gate_vars / 2;
+        let s = self.col_vars();
         let column_mask = (1usize << s) - 1;
         let gate_high = gate >> s;
         let b = (bit_slot << (self.gate_vars - s)) | gate_high;
@@ -325,6 +362,14 @@ impl U64MulWitness {
             layout,
             assignment: assignment.into_boxed_slice(),
         })
+    }
+
+    /// The same assignment under a layout whose F2Z split is shifted; see
+    /// [`U64MulLayout::with_split_shift`]. The assignment itself depends only
+    /// on the capacity, so nothing is recomputed.
+    pub fn with_split_shift(mut self, shift: i8) -> Result<Self, U64MulError> {
+        self.layout = self.layout.with_split_shift(shift)?;
+        Ok(self)
     }
 
     /// Shape shared by this assignment and its bit representation.
@@ -382,7 +427,7 @@ impl U64MulWitness {
         let words_per_row = params.rows() / u64::BITS as usize;
         let mut rows = vec![vec![0_u64; words_per_row]; params.cols()];
 
-        let s = self.layout.gate_vars / 2;
+        let s = self.layout.col_vars();
         let high_gate_count = 1_usize << (self.layout.gate_vars - s);
         if high_gate_count.is_multiple_of(u64::BITS as usize) {
             let x = self.x_values();
