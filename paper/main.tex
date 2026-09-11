@@ -337,7 +337,7 @@ Now say the computation involves both  $\FF_2$ operations and other more integer
         If necessary the inner product claims can be reduced to MLE evaluation claims before via a batched sumcheck.
     \end{enumerate}
 
-We demonstrate the practicality of this approach by proving a large amount of chained SHA-256 compressions, together with a large amount of multiplications modulo $2^{32}$. The results can be found in the last row of \cref{tab:intro_table} and in \cref{s:experiments_sha_modmul}.
+We demonstrate the practicality of this approach by proving a large amount of chained SHA-256 compressions, together with a large amount of multiplications modulo $2^{32}$. The results can be found in \cref{tab:intro_table} and in \cref{s:experiments_sha_modmul}.
 
 
 
@@ -411,7 +411,7 @@ We crucially used AI in our implementation and experiments, as explained in \cre
 
 
 
-In this section we describe the \ftwoz \ PCS, step by step (\cref{s:to_simple_bitz,s:to_general_rings}), and argue its efficiency (\cref{s:to_low_entropy_gkr}) and soundness (\cref{s:to_soundness_prime,s:to_soundness_rings}) at an intuitive level. \Cref{s:to_f2_virtual} describes how to prove claims on virtual $\FF_2$-linear transforms of the committed vector. In \cref{s:to_snark} we explain how to build a full SNARK for constraints over (multiple) rings using \ftwoz\ as a PCS.
+In this section we describe the \ftwoz \ PCS, step by step (\cref{s:to_simple_bitz,s:to_general_rings}), and argue its efficiency (\cref{s:to_low_entropy_gkr}) and soundness (\cref{s:to_soundness_prime,s:to_soundness_rings}) at an intuitive level. \Cref{s:to_f2_virtual} describes how to prove claims on virtual $\FF_2$-linear transforms of the committed vector. In \cref{s:to_snark} (in the appendix) we explain how to build a full SNARK for constraints over (multiple) rings using \ftwoz\ as a PCS.
 
 
 \subsection{The prime field case}\label{s:to_simple_bitz}
@@ -1447,7 +1447,7 @@ Let $\basegenerator\in \comfield$ be a fixed generator of the multiplicative gro
 \begin{enumerate}[leftmargin=*] 
 \item \textbf{Round 0 (optional): Out Of Domain (OOD) sample.}  \albertimportant{I think this is not implemented?} This step can be skipped if the proximity parameter $\delta$ is  set within the unique decoding radius of $\cC$ (cf.\ \cref{s:prelims_codes}, and \cref{t:thm_core_IOPP}). Otherwise the step is executed. In that case, the verifier samples and sends a random $\zeta\in \comfield$, and the prover responds with $$y=\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta}), \qquad \text{where } \bm{\zeta}\defeq \left(\zeta^{2^0}, \zeta^{2^1}, \ldots, \zeta^{2^{\log (\codedim/\comfieldexp) -1}}\right).$$
 \item \textbf{Round 1 (optional): replacing $R$ by a ``small'' prime field $\FF_q$.}
-This step can be skipped (i.e.\ prover and verifier move to Round 2 directly) if $R$ is a prime field $\FF_p$ and $p < \fieldboundsizeexponent$; in that case we set $q\defeq p$ in Rounds 2 and 3. Otherwise the step is executed. %, or if $R=\ZZ$ and $\lVert \vv \rVert < \fieldboundsizeexponent$.
+This step can be skipped (i.e.\ prover and verifier move to Round 2 directly) if $R$ is a prime field $\FF_p$ and $p < \fieldboundsizeexponent$; in that case we set $q\defeq p$ in Round 2 and Phase 3. Otherwise the step is executed. %, or if $R=\ZZ$ and $\lVert \vv \rVert < \fieldboundsizeexponent$.
 
 The prover computes and sends $\mu' \in \ZZ[X_1, \ldots, X_{k}]$ such that
 %
@@ -1631,7 +1631,7 @@ For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\
 
 
 \begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:core_iop}]\label{t:thm_core_IOPP} 
-   Let $\delta \in (0,1)$ be a proximity parameter within the unique decoding radius of $\cC$ (cf.\ \cref{s:prelims_codes}), and assume that Round 0 of \cref{c:core_iop} is skipped. We treat the general case in \cref{a:OOD} Assume 
+   Let $\delta \in (0,1)$ be a proximity parameter within the unique decoding radius of $\cC$ (cf.\ \cref{s:prelims_codes}), and assume that Round 0 of \cref{c:core_iop} is skipped. We treat the general case in \cref{a:OOD}. Assume 
    %
    $$\max\cP < \fieldboundsizeexponent.$$ 
    %
@@ -2031,7 +2031,7 @@ We instantiate \cref{c:core_iop,c:LinModFieldBin} by letting $\Pi_{\red}$ be an 
     \label{tab:instantiation_params}
 \end{table}
 
-We next provide example  instantiations of \cref{c:core_iop,c:LinModFieldBin} so as to achieve  $\lambda=128$ bits of security, while keeping the protocols as efficient as possible, with the main challenge being to use $\comfield$ of size $2^{128}$ for efficiency purpose. We remark that in \cref{s:experiments} we provide experimental results both for $128$ and $100$ bits of security.   Achieving $\lambda=100$ bits of security is relatively straightforward and we do not discuss it. We use a careful selection of parameters in combination with grinding. In \cref{r:beyond_gridning} we discuss other instantiations and techniques that do not require grinding.
+We next provide example  instantiations of \cref{c:core_iop,c:LinModFieldBin} so as to achieve  $\lambda=128$ bits of security, while keeping the protocols as efficient as possible, with the main challenge being to use $\comfield$ of size $2^{128}$ for efficiency purpose. We remark that in \cref{s:experiments} we provide experimental results for $100$ bits of security.   Achieving $\lambda=100$ bits of security is relatively straightforward and we do not discuss it. We use a careful selection of parameters in combination with grinding. In \cref{r:beyond_gridning} we discuss other instantiations and techniques that do not require grinding.
 
 The contents of this section should be taken as examples of how to instantiate \cref{c:core_iop,c:LinModFieldBin}, not as strict rules. Other configurations may be perfectly plausible and practical. 
 
@@ -2051,7 +2051,7 @@ The contents of this section should be taken as examples of how to instantiate \
 \end{equation}
 into a linear claim on $\pi(\bff)$. As mentioned, in our instantiation, $\Pi_{\red}$ is the GKR protocol for multiple grand product claims,
 %
-equipped with the optimizations discussed in \cref{s:gkr_low_entropy}. This is the most expensive prover part of \cref{c:core_iop,c:LinModFieldBin}, constituting between $45\%$ ($\codedim=2^{20}$) and $87\%$ ($\codedim=2^{30}$) of prover costs, cf.\ \cref{tab:f2z-raw-performance}. Because of this, it is important for efficiency that operating in $\comfield$ is as efficient as possible. 
+equipped with the optimizations discussed in \cref{s:gkr_low_entropy}. This is the most expensive prover part of \cref{c:core_iop,c:LinModFieldBin}, constituting between $45\%$ ($\codedim=2^{20}$) and $85\%$ ($\codedim=2^{30}$) of prover costs excluding the commitment, cf.\ \cref{tab:f2z-raw-performance}. Because of this, it is important for efficiency that operating in $\comfield$ is as efficient as possible. 
 
 With this in mind, we target using $\comfield$ with $\comfieldexp\approx 128$. A natural candidate is the $2^{128}$ sized binary field in GHASH representation  $$\comfield= \FF_2[X]/(X^{128} + X^7 + X^2 + X + 1).$$ 
 %
@@ -2092,7 +2092,7 @@ We now discuss how to make the errors $\kappa_{\mathsf{OOD}}, \kappa_0, (\ksred_
 
 \bigskip
 
-\noindent For the purposes of this discussion, we assume \ftwoz \ is used within a bigger proof system, as described in \cref{s:to_simple_bitz}, so that \ftwoz \ is used to prove an inner product claim for a committed witness, as the last phase of a bigger proving system where \albert{review what the technical overview exactly says} 1) first the initial constraint is projected to a finite field $\FF$, or, alternatively, this step is skipped if the constraint is  already over a finite field; and 2) a  PIOP is run over $\FF$ for the projected constraint, outputting an inner product claim on the projected witness. Now, this inner product claim is the input of \cref{c:core_iop}, and we aim to configure \cref{c:core_iop} at 128 bits of security for this setting. 
+\noindent For the purposes of this discussion, we assume \ftwoz \ is used within a bigger proof system, as described in \cref{s:to_snark}, so that \ftwoz \ is used to prove an inner product claim for a committed witness, as the last phase of a bigger proving system where \albert{review what the technical overview exactly says} 1) first the initial constraint is projected to a finite field $\FF$, or, alternatively, this step is skipped if the constraint is  already over a finite field; and 2) a  PIOP is run over $\FF$ for the projected constraint, outputting an inner product claim on the projected witness. Now, this inner product claim is the input of \cref{c:core_iop}, and we aim to configure \cref{c:core_iop} at 128 bits of security for this setting. 
 
 
 \paragraph{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa_0$.} If allowing, say, $18-19$ bits of grinding during each round of the PIOP (which adds $1.8-3.5$ms per round, cf.\ \cref{tab:grinding-cost}), then, say, a Spartan-like PIOP will achieve $128$ bits of security if run on a field $\FF$ of size $\approx 2^{112}$ to  $2^{113}$  (since each one of its rounds is either a sumcheck round for a degree $\leq 3$ polynomial, or a step that batches some claims with error $1/|\FF|$). Hence, if the initial constraint is over $\ZZ$ or $\ZZ[X]$ \albert{do we mention $\ZZ[X]$? Why not mention other rings here? Again, wait for the TO}, then we may project it to a $112$-$113$ bit random prime field $\FF$ and run a PIOP over $\FF$. We study this case next. Our analysis also applies if the original constraint was already expressed over a prime field of such size.  
@@ -2130,7 +2130,7 @@ The specific upper bounds depend on how much grinding one is doing at the PIOP l
 
 \paragraph{Strategy 2: No or essentially no grinding during the PIOP, and $\kappa_0$ is present and  grinding is used during the first projection step (Round 1) of \cref{c:core_iop}.} We now assume $\FF$ is either a prime field with  $|\FF|\geq \fieldboundsizeexponent$,  or a proper extension field. In this case  \cref{c:core_iop} goes through an initial projection step with soundness error  $\kappa_0$, i.e.\ Round 1 of \cref{c:core_iop}.
 
-Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\cP,\cM,\codedim)$. We use $\picanon: \ZZ[X]  \to \FF$ as in \cref{e:presentations}, so that $\picanon(h(X))= \pi_{\Char(\FF)}(h)(x)$ where $\pi_{\Char(\FF)}(h)$ is the polynomial $h$ after reducing its coefficients modulo $\Char(F)$, and  $x$ is a root of an irreducible polynomial defining $\FF_{q^d}$ (if $d=1$ and so $\FF_{q^d}$ is a prime field, then we can use a morphism $\picanon:\ZZ\to \FF_q$). We have $D=d-1$, $T\leq d$, and $N_\FF\leq q-1$ (see \eqref{e:ring_theta_params} for a definition of these quantities). We instantiate the morphism sets $\cM_q$ as in \cref{l:examples_morphisms}, i.e.\ $\pirand$ reduces coefficients modulo a sampled prime and evaluates $X_1$ at a random $\alpha\in \FF_q$. In this case, by \cref{l:examples_morphisms},
+Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\cP,\cM,\codedim)$. We use $\picanon: \ZZ[X]  \to \FF$ as in \cref{e:presentations}, so that $\picanon(h(X))= \pi_{\Char(\FF)}(h)(x)$ where $\pi_{\Char(\FF)}(h)$ is the polynomial $h$ after reducing its coefficients modulo $\Char(F)$, and  $x$ is a root of an irreducible polynomial defining $\FF_{q^d}$ (if $d=1$ and so $\FF_{q^d}$ is a prime field, then we can use a morphism $\picanon:\ZZ\to \FF_q$). We have $D=d-1$, $T\leq d$, and $N_\FF\leq q-1$ (see \eqref{e:ring_theta_params} and the text below it for a definition of these quantities). We instantiate the morphism sets $\cM_q$ as in \cref{l:examples_morphisms}, i.e.\ $\pirand$ reduces coefficients modulo a sampled prime and evaluates $X_1$ at a random $\alpha\in \FF_q$. In this case, by \cref{l:examples_morphisms},
     $$
     \kappa_0 \leq \frac{2\cdot (d-1)}{q_{\min}} + \frac{\log\left(4\cdot d\cdot \codedim\cdot (q-1)^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor},
       $$
