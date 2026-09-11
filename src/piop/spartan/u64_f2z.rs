@@ -23,11 +23,10 @@ use crate::{
 };
 
 use super::{
-    ConstraintMatrices,
     profile::{IopInstanceFacts, IopSecurityParams},
     protocol::{
         self, BindingHasher, BlockTable, Domains, Kernel, PiopWitness, PreparedRelation, Proof,
-        ProtocolError, ProveOptions, RelationSpec, SlotRange, checked_pow2, packed_variables,
+        ProtocolError, ProveOptions, RelationSpec, SlotRange, MatrixSource, FieldConfig, checked_pow2, packed_variables,
     },
     raw_monty::{RawMontyCtx, RawProducts},
     u64_mul::{
@@ -62,6 +61,9 @@ static U64_MUL_DOMAINS: Domains = Domains {
     terminal_grinding: b"f2z/spartan-u64-mul/grinding/terminal/v1",
     bitified_claim: b"f2z/spartan-u64-f2z/bitified-claim/v1",
     opening: ModQOpeningKind::U64Mul,
+    claim_tag: b"",
+    reduction_grinding: b"",
+    reduction_prime: b"",
     scopes: crate::protocol_scopes!("u64-spartan-f2z"),
 };
 
@@ -127,6 +129,7 @@ fn validate_layout_geometry(layout: &U64MulLayout) -> Result<(), ProtocolError> 
 impl RelationSpec for U64MulLayout {
     type Coefficient = U64MulCoefficient;
     type Witness = U64MulWitness;
+    type Map = crate::f2map::RepeatedVirtualMap;
 
     fn domains(&self) -> &'static Domains {
         &U64_MUL_DOMAINS
@@ -145,8 +148,8 @@ impl RelationSpec for U64MulLayout {
         u64_mul_instance_facts(&self.f2z_params(), row_vars)
     }
 
-    fn constraint_matrices(&self) -> Result<ConstraintMatrices<U64MulCoefficient>, ProtocolError> {
-        Ok(u64_mul_constraint_matrices(self)?)
+    fn matrices(&self) -> Result<MatrixSource<U64MulCoefficient>, ProtocolError> {
+        MatrixSource::skeleton(u64_mul_constraint_matrices(self)?)
     }
 
     fn validate_geometry(&self) -> Result<(), ProtocolError> {
@@ -265,9 +268,10 @@ impl RelationSpec for U64MulLayout {
     fn piop_witness<'w>(
         &self,
         witness: &'w U64MulWitness,
-        ctx: &RawMontyCtx,
+        config: &FieldConfig,
         _options: ProveOptions,
     ) -> Result<PiopWitness<'w>, ProtocolError> {
+        let ctx = &RawMontyCtx::new(config);
         let live = self.multiplications();
         let products = RawProducts::from_native_limbs(
             ctx,

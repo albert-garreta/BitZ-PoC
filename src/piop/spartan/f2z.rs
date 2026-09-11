@@ -27,13 +27,12 @@ use crate::{
 };
 
 use super::{
-    ConstraintMatrices,
     profile::{IopInstanceFacts, IopSecurityParams},
     protocol::{
         self, BindingHasher, BlockTable, Domains, Kernel, PiopWitness, PreparedRelation,
         PreparedRelationPrefix, Proof, ProtocolError, ProveOptions, RelationSpec, SlotRange,
+        MatrixSource, FieldConfig,
     },
-    raw_monty::RawMontyCtx,
     u32_mul::{
         U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS, U32_MUL_PRODUCT_SLOT_START, U32_MUL_X_BITS,
         U32_MUL_X_SLOT_START, U32_MUL_Y_BITS, U32_MUL_Y_SLOT_START, U32MulError, U32MulLayout,
@@ -89,6 +88,9 @@ static U32_MUL_DOMAINS: Domains = Domains {
     terminal_grinding: b"f2z/spartan-u32-mul/grinding/terminal/v1",
     bitified_claim: b"f2z/spartan-f2z/bitified-claim/v3",
     opening: ModQOpeningKind::U32Mul,
+    claim_tag: b"",
+    reduction_grinding: b"",
+    reduction_prime: b"",
     scopes: crate::protocol_scopes!("spartan-f2z"),
 };
 
@@ -153,6 +155,7 @@ fn validate_layout_geometry(layout: &U32MulLayout) -> Result<(), ProtocolError> 
 impl RelationSpec for U32MulLayout {
     type Coefficient = bool;
     type Witness = U32MulWitness;
+    type Map = crate::f2map::RepeatedVirtualMap;
 
     fn domains(&self) -> &'static Domains {
         &U32_MUL_DOMAINS
@@ -170,8 +173,8 @@ impl RelationSpec for U32MulLayout {
         u32_mul_instance_facts(&self.f2z_params(), U32MulLayout::gate_vars(self))
     }
 
-    fn constraint_matrices(&self) -> Result<ConstraintMatrices<bool>, ProtocolError> {
-        Ok(u32_mul_constraint_matrices(self, true)?)
+    fn matrices(&self) -> Result<MatrixSource<bool>, ProtocolError> {
+        MatrixSource::skeleton(u32_mul_constraint_matrices(self, true)?)
     }
 
     fn validate_geometry(&self) -> Result<(), ProtocolError> {
@@ -304,7 +307,7 @@ impl RelationSpec for U32MulLayout {
     fn piop_witness<'w>(
         &self,
         witness: &'w U32MulWitness,
-        _ctx: &RawMontyCtx,
+        _config: &FieldConfig,
         _options: ProveOptions,
     ) -> Result<PiopWitness<'w>, ProtocolError> {
         let product_len = self.multiplications().next_power_of_two();
@@ -510,7 +513,7 @@ mod tests {
         let layout = *witness.layout();
         assert_eq!(layout.capacity(), 1 << 16);
         let prepared = PreparedU32MulRelation::new(layout).unwrap();
-        assert_eq!(prepared.skeleton().matrices().row_count(), multiplications);
+        assert_eq!(prepared.skeleton().unwrap().matrices().row_count(), multiplications);
 
         let hint = commit_u32_mul_witness(&prepared, witness.f2z_bit_rows()).unwrap();
         let mut prover_transcript = Blake3Transcript::new();
@@ -776,7 +779,7 @@ mod tests {
             layout.f2z_params(),
             layout.gate_vars(),
             &layout.block_table(),
-            FQ_MOD,
+            protocol::ScaleSide::Rows,
             &ProjArith::new(FQ_MOD),
         )
     }

@@ -23,11 +23,10 @@ use crate::{
 use rayon::prelude::*;
 
 use super::{
-    ConstraintMatrices,
     profile::{IopInstanceFacts, IopSecurityParams},
     protocol::{
         self, BindingHasher, BlockTable, Domains, Kernel, PiopWitness, PreparedRelation, Proof,
-        ProtocolError, ProveOptions, RelationSpec, SlotRange, checked_pow2, packed_variables,
+        ProtocolError, ProveOptions, RelationSpec, SlotRange, MatrixSource, FieldConfig, checked_pow2, packed_variables,
     },
     raw_monty::{RawMontyCtx, RawProducts, RawWitness},
     u128_mul::{
@@ -61,6 +60,9 @@ static U128_MUL_DOMAINS: Domains = Domains {
     terminal_grinding: b"f2z/spartan-u128-mul/grinding/terminal/v1",
     bitified_claim: b"f2z/spartan-u128-f2z/bitified-claim/v1",
     opening: ModQOpeningKind::U128Mul,
+    claim_tag: b"",
+    reduction_grinding: b"",
+    reduction_prime: b"",
     scopes: crate::protocol_scopes!("u128-spartan-f2z"),
 };
 
@@ -149,6 +151,7 @@ fn raw_assignment(ctx: &RawMontyCtx, witness: &U128MulWitness) -> Vec<u128> {
 impl RelationSpec for U128MulLayout {
     type Coefficient = bool;
     type Witness = U128MulWitness;
+    type Map = crate::f2map::RepeatedVirtualMap;
 
     fn domains(&self) -> &'static Domains {
         &U128_MUL_DOMAINS
@@ -167,8 +170,8 @@ impl RelationSpec for U128MulLayout {
         u128_mul_instance_facts(&self.f2z_params(), row_vars)
     }
 
-    fn constraint_matrices(&self) -> Result<ConstraintMatrices<bool>, ProtocolError> {
-        Ok(u128_mul_constraint_matrices(self)?)
+    fn matrices(&self) -> Result<MatrixSource<bool>, ProtocolError> {
+        MatrixSource::skeleton(u128_mul_constraint_matrices(self)?)
     }
 
     fn validate_geometry(&self) -> Result<(), ProtocolError> {
@@ -280,9 +283,10 @@ impl RelationSpec for U128MulLayout {
     fn piop_witness<'w>(
         &self,
         witness: &'w U128MulWitness,
-        ctx: &RawMontyCtx,
+        config: &FieldConfig,
         _options: ProveOptions,
     ) -> Result<PiopWitness<'w>, ProtocolError> {
+        let ctx = &RawMontyCtx::new(config);
         let live = self.multiplications();
         let products = RawProducts::from_native_u128_halves(
             ctx,

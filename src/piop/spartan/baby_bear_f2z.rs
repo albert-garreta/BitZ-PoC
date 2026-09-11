@@ -25,14 +25,12 @@ use crate::{
 };
 
 use super::{
-    ConstraintMatrices,
     piop::SpartanReductionStrategy,
     profile::{IopInstanceFacts, IopSecurityParams},
     protocol::{
         self, BindingHasher, BlockTable, Domains, Kernel, PiopWitness, PreparedRelation, Proof,
-        ProtocolError, ProveOptions, RelationSpec, SlotRange, checked_pow2, packed_variables,
+        ProtocolError, ProveOptions, RelationSpec, SlotRange, MatrixSource, FieldConfig, checked_pow2, packed_variables,
     },
-    raw_monty::RawMontyCtx,
     baby_bear_mul::{
         BABY_BEAR_MODULUS, BABY_BEAR_MUL_A_SLOT_START, BABY_BEAR_MUL_B_SLOT_START,
         BABY_BEAR_MUL_BIT_SLOTS, BABY_BEAR_MUL_C_SLOT_START, BABY_BEAR_MUL_K_SLOT_START,
@@ -69,6 +67,9 @@ static BABY_BEAR_DOMAINS: Domains = Domains {
     terminal_grinding: b"f2z/spartan-baby-bear-mul/grinding/terminal/v1",
     bitified_claim: b"f2z/spartan-baby-bear-f2z/bitified-claim/v2",
     opening: ModQOpeningKind::BabyBearMul,
+    claim_tag: b"",
+    reduction_grinding: b"",
+    reduction_prime: b"",
     scopes: crate::protocol_scopes!("baby-bear-spartan-f2z"),
 };
 
@@ -169,6 +170,7 @@ fn fixed_q_assignment_binding(
 impl RelationSpec for BabyBearMulLayout {
     type Coefficient = BabyBearMulCoefficient;
     type Witness = BabyBearMulWitness;
+    type Map = crate::f2map::RepeatedVirtualMap;
 
     fn domains(&self) -> &'static Domains {
         &BABY_BEAR_DOMAINS
@@ -187,10 +189,8 @@ impl RelationSpec for BabyBearMulLayout {
         baby_bear_mul_instance_facts(&self.f2z_params(), row_vars)
     }
 
-    fn constraint_matrices(
-        &self,
-    ) -> Result<ConstraintMatrices<BabyBearMulCoefficient>, ProtocolError> {
-        Ok(baby_bear_mul_constraint_matrices(self)?)
+    fn matrices(&self) -> Result<MatrixSource<BabyBearMulCoefficient>, ProtocolError> {
+        MatrixSource::skeleton(baby_bear_mul_constraint_matrices(self)?)
     }
 
     fn validate_geometry(&self) -> Result<(), ProtocolError> {
@@ -314,7 +314,7 @@ impl RelationSpec for BabyBearMulLayout {
     fn piop_witness<'w>(
         &self,
         witness: &'w BabyBearMulWitness,
-        _ctx: &RawMontyCtx,
+        _config: &FieldConfig,
         options: ProveOptions,
     ) -> Result<PiopWitness<'w>, ProtocolError> {
         match options.strategy {
@@ -695,7 +695,7 @@ mod tests {
         point.extend(selector);
         let terminal = terminal_claim(&point, scale, value);
         let table = layout.block_table();
-        let opening = bitify::bitify(&terminal, p, layout.gate_vars(), &table, FQ_MOD, &arith).unwrap();
+        let opening = bitify::bitify(&terminal, p, layout.gate_vars(), &table, protocol::ScaleSide::Rows, &arith).unwrap();
         let chunks = bitify::prepare_chunks(&opening, &table, FQ_BITS, &arith).unwrap();
         let col_weights = bitify::column_weights(&opening, &arith).unwrap();
 

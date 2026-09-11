@@ -266,8 +266,8 @@ fn multiswap_mini_limber114() {
     let mut vt = Blake3Transcript::new();
     verify_multiswap_mod_r1cs(&mut vt, &prepared, &hint.commitment, &proof, &vc).expect("verify");
     let f2z_bytes = proof.f2z().to_bytes();
-    let mu_prime = proof.mu_prime().to_bytes_le();
-    let nonce = proof.reduction_nonce().to_le_bytes();
+    let mu_prime = proof.mu_prime().expect("lift").to_bytes_le();
+    let nonce = proof.reduction_nonce().expect("nonce").to_le_bytes();
     pin(
         "multiswap/mini/limber114",
         &pt,
@@ -405,7 +405,7 @@ fn cm_and_2p15_lambda100() {
     .expect("witness");
     let layout = *witness.layout();
     let relation =
-        prepare_cm_and_relation::<SpartanF2zField>(layout, &field_config).expect("relation");
+        prepare_cm_and_relation(layout, &field_config).expect("relation");
     let pc = relation.ligerito_configuration().expect("ligerito").prover();
     let hint = commit_cm_and_witness_with_config(&layout, witness.f_bit_rows(), pc).expect("commit");
     let projected =

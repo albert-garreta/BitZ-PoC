@@ -5,14 +5,17 @@
 //! domain strings it binds under — and this module runs the protocol of
 //! paper §2.1 for it:
 //!
-//! 1. bind the statement (the relation's assignment binding, the opener
-//!    policy and Round 0 of the opening),
-//! 2. grind and sample the Step-2 prime, project the relation,
+//! 1. bind the statement (the relation's assignment binding and, when the
+//!    relation runs them, the opener policy and Round 0 of the opening),
+//! 2. grind and draw the Step-2 prime, project the relation,
 //! 3. run the Spartan PIOP over the runtime field, every drawn challenge
 //!    behind one grinding boundary at the profile difficulty,
-//! 4. bitify the terminal claim, bind the bridge digest, grind the
-//!    terminal boundary,
-//! 5. open the committed tensor through the runtime-q F2Z opener.
+//! 4. bitify the terminal claim into one functional over the committed bit
+//!    tensor, bind it, grind the terminal boundary,
+//! 5. discharge that functional: directly through the runtime-q exponent
+//!    fold ([`prove`]), through a virtual map onto a derived grid
+//!    ([`prove_virtual`]), or — Strategy 2 — after an exact integer lift
+//!    and a grinded fresh-prime reduction ([`prove_reduced`]).
 //!
 //! Transcripts are byte-for-byte those of the protocols this module
 //! replaced; the pins in `tests/transcript_state_pins.rs` hold them.
@@ -23,19 +26,25 @@ pub mod bitify;
 use std::{borrow::Cow, sync::OnceLock};
 
 use crypto_primitives::{PrimeField, crypto_bigint_uint::Uint};
+use crypto_primes::{Flavor, is_prime};
 use flock_core::pcs::{
     commit::Commitment,
     ligerito::{LigeritoProfile, ProverConfig as LigProverConfig, VerifierConfig as LigVerifierConfig},
 };
+use num_bigint::BigUint;
 use thiserror::Error;
 
 use crate::{
-    ext_proj::{PrimeSamplingError, ProjArith, sample_prime_in_interval},
+    ext_proj::{PrimeSamplingError, sample_prime_in_interval},
+    f2map::VirtualMap,
     ligerito::{LOG_PACKING, packed_vars},
     ligerito_flock::{
-        FlockCommitHint, FlockRsError, IntEvalRsLigModQProof, LigeritoSelection, ModQOpeningKind,
-        ResolvedLigerito, bind_prover_ood, bind_verifier_ood, commit_rs_ligerito_rows,
+        FlockCommitHint, FlockRsError, IntEvalRsLigModQProof, IntEvalRsLigVirtProof,
+        LigeritoSelection, ModQOpeningKind, OodRound, ProverOod, ResolvedLigerito, VerifierOod,
+        bind_prover_ood, bind_verifier_ood, commit_rs_ligerito_rows,
+        prove_mle_eval_mod_q_ligerito_virtual_runtime,
         prove_mle_eval_mod_q_ligerito_with_weight_chunks,
+        verify_mle_eval_mod_q_ligerito_virtual_runtime,
         verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime,
     },
     pcs::IntegerMatrixLayout,
@@ -44,13 +53,13 @@ use crate::{
 };
 
 use super::{
-    ConstraintMatrices, ConstraintMatricesSkeleton, PreparedConstraintMatrices, SpartanField,
-    absorb_spartan_message,
+    ConstraintMatricesSkeleton, PreparedConstraintMatrices, SpartanField, absorb_spartan_message,
     grinding::{
         GrindingError, ProverGrindingTranscript, VerifierGrindingTranscript,
         grind_and_absorb_in_domain, verify_and_absorb_in_domain,
     },
-    matrix::{self, ModulusIndependentCoefficient, ScaledMleEvaluationClaim, SpartanMatrixCoefficient},
+    matrix::{self, ScaledMleEvaluationClaim, SpartanMatrixCoefficient},
+    multiswap::reduce::{step50_accepts_lift, step50_integer_lift, step50_reduce},
     piop::{
         SpartanError, SpartanPiopProof, SpartanReductionStrategy,
         prove_spartan_piop_native_u64_borrowed, prove_spartan_piop_native_u64_with_strategy,
@@ -60,16 +69,21 @@ use super::{
         verify_spartan_proof, verify_spartan_univariate_skip_proof,
     },
     profile::{IopInstanceFacts, IopSecurityParams, IopSecurityProfile, Lambda100, ProfileError},
-    raw_monty::{NativeProducts, RawMontyCoefficient, RawMontyCtx, RawProducts, RawWitness},
+    raw_monty::{NativeProducts, RawMontyCoefficient, RawProducts, RawWitness},
     sumcheck::R1csProductMles,
     univariate_skip::UnivariateSkipSpartanPiopProof,
 };
 
 pub use binding::BindingHasher;
-pub use bitify::{BitifiedClaim, BitifiedRows, BlockTable, SlotRange};
+pub use bitify::{
+    Arith, BitifiedClaim, BitifiedRows, BlockTable, FieldArith, Modular, ScaleSide, SlotRange,
+};
 
 /// Runtime-configured Spartan field used by every F2Z relation.
 pub type SpartanF2zField = crypto_primitives::crypto_bigint_monty::F128;
+
+/// The runtime field configuration.
+pub type FieldConfig = <SpartanF2zField as PrimeField>::Config;
 
 /// Embedded, validator-gated Ligerito profiles begin at a 22-variable
 /// committed bit MLE: seven slot variables plus fifteen gate variables.
@@ -135,13 +149,16 @@ pub enum ProtocolError {
     #[error(transparent)]
     PrimeSampling(#[from] PrimeSamplingError),
 
+    /// The full-width fingerprint search found no prime.
+    #[error("no full-width fingerprint prime was found within {attempts} draws")]
+    FingerprintSearchExhausted { attempts: usize },
+
     /// A Fiat--Shamir grinding nonce could not be produced or checked.
     #[error(transparent)]
     Grinding(#[from] GrindingError),
 
-    /// The relation supports single-prime profiles only (the two-prime
-    /// Strategy 2 belongs to the MultiSwap-style adapters).
-    #[error("this relation requires a single-prime security profile")]
+    /// The relation supports the other prime strategy only.
+    #[error("the security profile's prime strategy does not match the relation")]
     UnsupportedProfile,
 
     /// A proof selected a different univariate-prefix width than the one
@@ -158,6 +175,22 @@ pub enum ProtocolError {
     /// The relation's PIOP witness representation does not fit its kernel.
     #[error("the relation's PIOP witness representation does not fit its kernel")]
     UnsupportedKernel,
+
+    /// The relation offers no matrices for this prime.
+    #[error("the relation does not project its matrices to the runtime prime")]
+    MatrixSourceUnavailable,
+
+    /// The prepared relation carries no opener configuration for this side.
+    #[error("the prepared relation carries no opener configuration for this side")]
+    OpenerConfigUnavailable,
+
+    /// The relation offers no discharge of this kind.
+    #[error("the relation does not support this discharge")]
+    UnsupportedDischarge,
+
+    /// The Step 5.0 integer lift fails the mod-`Q` or magnitude check.
+    #[error("the Step 5.0 integer lift is inconsistent with the mod-Q claim")]
+    InvalidIntegerLift,
 }
 
 impl ProtocolError {
@@ -178,10 +211,18 @@ pub struct Domains {
     pub initial_grinding: &'static [u8],
     pub piop_grinding: &'static [u8],
     pub terminal_grinding: &'static [u8],
-    /// Domain of the bridge digest bound between Spartan and F2Z.
+    /// Domain of the bridge digest bound between Spartan and F2Z (the direct
+    /// discharge).
     pub bitified_claim: &'static [u8],
-    /// The opener statement domain.
+    /// The direct opener's statement domain.
     pub opening: ModQOpeningKind,
+    /// Tag of the frame binding the bitified claim before a virtual or
+    /// reduced discharge.
+    pub claim_tag: &'static [u8],
+    /// Strategy 2: the grinding domain before the reduction draw and the
+    /// reduction prime's sampling domain.
+    pub reduction_grinding: &'static [u8],
+    pub reduction_prime: &'static [u8],
     /// Profiler scope labels.
     pub scopes: Scopes,
 }
@@ -230,6 +271,102 @@ pub enum Kernel {
     /// A known-zero univariate prefix skip over the `skip_vars` low row
     /// variables, then the cubic tail.
     UnivariateSkip { skip_vars: usize },
+}
+
+/// Which prime policy the relation's profile must carry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PrimeStrategy {
+    /// One derived-width Step-2 prime.
+    Single,
+    /// Strategy 2: a full-width fingerprint prime and a Step-5.0 reduction
+    /// prime.
+    TwoPrime,
+}
+
+/// The optional steps of the statement phase and the PIOP.
+#[derive(Clone, Copy, Debug)]
+pub struct Schedule {
+    /// Bind the opener policy digest after the statement.
+    pub policy_bind: bool,
+    /// Run Round 0 (the out-of-domain sample) before the prime draw.
+    pub ood_round: bool,
+    /// Wrap every PIOP draw in a grinding boundary at the profile difficulty.
+    pub piop_grinding: bool,
+    /// Where a nonzero Spartan scale goes in the bitified claim.
+    pub scale_side: ScaleSide,
+    pub strategy: PrimeStrategy,
+}
+
+impl Default for Schedule {
+    fn default() -> Self {
+        Self {
+            policy_bind: true,
+            ood_round: true,
+            piop_grinding: true,
+            scale_side: ScaleSide::Rows,
+            strategy: PrimeStrategy::Single,
+        }
+    }
+}
+
+/// Instantiates a prime-independent skeleton at a runtime prime.
+type SkeletonProjection<C> = fn(
+    &ConstraintMatricesSkeleton<SpartanF2zField, C>,
+    &FieldConfig,
+) -> Result<PreparedConstraintMatrices<SpartanF2zField, C>, matrix::SpartanMatrixError>;
+
+/// Where a relation's constraint matrices come from at the runtime prime.
+pub enum MatrixSource<C> {
+    /// Prime-independent coefficients: prepared once, instantiated per draw
+    /// in `O(log nnz)` with a bit-identical digest (build with
+    /// [`MatrixSource::skeleton`]).
+    Skeleton {
+        skeleton: ConstraintMatricesSkeleton<SpartanF2zField, C>,
+        project: SkeletonProjection<C>,
+    },
+    /// Matrices at a fixed prime (the relation never draws one).
+    Fixed(PreparedConstraintMatrices<SpartanF2zField, C>),
+    /// Projected by the relation at every draw
+    /// ([`RelationSpec::project_matrices`]).
+    PerPrime,
+}
+
+impl<C> MatrixSource<C>
+where
+    C: SpartanMatrixCoefficient<SpartanF2zField> + RawMontyCoefficient,
+{
+    /// Prepares prime-independent matrices once.
+    pub fn skeleton(matrices: super::ConstraintMatrices<C>) -> Result<Self, ProtocolError>
+    where
+        C: matrix::ModulusIndependentCoefficient<SpartanF2zField>,
+    {
+        let skeleton = ConstraintMatricesSkeleton::new(matrices).map_err(SpartanError::from)?;
+        Ok(Self::Skeleton {
+            skeleton,
+            project: PreparedConstraintMatrices::from_skeleton,
+        })
+    }
+
+    fn project<S: RelationSpec<Coefficient = C>>(
+        &self,
+        spec: &S,
+        config: &FieldConfig,
+    ) -> Result<Cow<'_, PreparedConstraintMatrices<SpartanF2zField, C>>, ProtocolError> {
+        match self {
+            Self::Skeleton { skeleton, project } => {
+                Ok(Cow::Owned(project(skeleton, config).map_err(SpartanError::from)?))
+            }
+            Self::Fixed(matrices) => {
+                if matrices.field_modulus_encoding()
+                    != SpartanF2zField::canonical_modulus_encoding(config)
+                {
+                    return Err(ProtocolError::UnsupportedFieldModulus);
+                }
+                Ok(Cow::Borrowed(matrices))
+            }
+            Self::PerPrime => Ok(Cow::Owned(spec.project_matrices(config)?)),
+        }
+    }
 }
 
 /// The prover's view of a witness at the runtime prime: whichever table
@@ -283,19 +420,46 @@ impl Default for ProveOptions {
     }
 }
 
+/// The sampled Step-2 prime with its runtime field configuration and
+/// canonical arithmetic.
+pub struct RuntimePrime {
+    pub q: u128,
+    pub q_bits: usize,
+    pub config: FieldConfig,
+    pub arith: Arith,
+}
+
+/// What a relation sees when it binds its bitified claim before a virtual
+/// or reduced discharge.
+pub struct ClaimFrame<'a> {
+    pub binding: &'a [u8; 32],
+    pub matrices_digest: &'a [u8; 32],
+    pub terminal_claim: &'a ScaledMleEvaluationClaim<SpartanF2zField>,
+    pub opening: &'a BitifiedClaim,
+    /// Dense canonical row weights over the committed tensor.
+    pub row_weights: &'a [u128],
+    /// Canonical clear column weights.
+    pub col_weights: &'a [u128],
+    /// Strategy 2: the exact integer lift of the claim.
+    pub mu_prime: Option<&'a BigUint>,
+}
+
 /// The static description of one relation: everything the protocol needs
 /// besides a witness.
 pub trait RelationSpec: Sync {
     /// The constraint-matrix coefficient type.
-    type Coefficient: SpartanMatrixCoefficient<SpartanF2zField>
-        + ModulusIndependentCoefficient<SpartanF2zField>
-        + RawMontyCoefficient
-        + Send
-        + Sync;
+    type Coefficient: SpartanMatrixCoefficient<SpartanF2zField> + RawMontyCoefficient + Send + Sync;
     /// The prover's witness.
     type Witness: ?Sized + Sync;
+    /// The virtual map of a virtual discharge (any map type for relations
+    /// that discharge directly).
+    type Map: VirtualMap;
 
     fn domains(&self) -> &'static Domains;
+
+    fn schedule(&self) -> Schedule {
+        Schedule::default()
+    }
 
     /// Geometry of the committed bit tensor.
     fn committed_layout(&self) -> IntegerMatrixLayout;
@@ -307,8 +471,18 @@ pub trait RelationSpec: Sync {
     /// The public statement facts the security-profile derivation consumes.
     fn instance_facts(&self) -> IopInstanceFacts;
 
-    /// The exact constraint matrices (prime-independent coefficients).
-    fn constraint_matrices(&self) -> Result<ConstraintMatrices<Self::Coefficient>, ProtocolError>;
+    /// The constraint matrices.
+    fn matrices(&self) -> Result<MatrixSource<Self::Coefficient>, ProtocolError>;
+
+    /// Projects the matrices to a runtime prime
+    /// ([`MatrixSource::PerPrime`] relations).
+    fn project_matrices(
+        &self,
+        config: &FieldConfig,
+    ) -> Result<PreparedConstraintMatrices<SpartanF2zField, Self::Coefficient>, ProtocolError> {
+        let _ = config;
+        Err(ProtocolError::MatrixSourceUnavailable)
+    }
 
     /// Rejects layouts the protocol cannot run.
     fn validate_geometry(&self) -> Result<(), ProtocolError>;
@@ -335,41 +509,158 @@ pub trait RelationSpec: Sync {
     ) -> Result<[u8; 32], ProtocolError>;
 
     /// Writes the relation's constants section of the bridge digest (between
-    /// the runtime prime and the terminal claim).
-    fn hash_bridge_constants(&self, hasher: &mut BindingHasher) -> Result<(), ProtocolError>;
+    /// the runtime prime and the terminal claim; direct discharge only).
+    fn hash_bridge_constants(&self, hasher: &mut BindingHasher) -> Result<(), ProtocolError> {
+        let _ = hasher;
+        Ok(())
+    }
+
+    /// Draws (or fixes) the runtime prime. Default: the profile interval
+    /// under the relation's sampling domain.
+    fn runtime_prime<T: Transcript>(
+        &self,
+        transcript: &mut T,
+        security: &IopSecurityParams,
+    ) -> Result<RuntimePrime, ProtocolError> {
+        sample_mod_q(
+            transcript,
+            self.domains().prime_sampling,
+            security.projection_min,
+            security.projection_max,
+        )
+    }
 
     /// The witness tables the Spartan kernel consumes at the runtime prime.
     fn piop_witness<'w>(
         &self,
         witness: &'w Self::Witness,
-        ctx: &RawMontyCtx,
+        config: &FieldConfig,
         options: ProveOptions,
     ) -> Result<PiopWitness<'w>, ProtocolError>;
+
+    /// The virtual map of a virtual discharge.
+    fn map(&self) -> Option<&Self::Map> {
+        None
+    }
+
+    /// The derived rows the virtual opening runs against (`None`: the
+    /// committed rows themselves).
+    fn derived_rows(&self, witness: &Self::Witness) -> Option<Vec<Vec<u64>>> {
+        let _ = witness;
+        None
+    }
+
+    /// The digest binding the bitified claim before a virtual or reduced
+    /// discharge (absorbed under the relation's `claim_tag`).
+    fn claim_digest(&self, frame: ClaimFrame<'_>) -> Result<[u8; 32], ProtocolError> {
+        let _ = frame;
+        Err(ProtocolError::UnsupportedDischarge)
+    }
 }
 
-/// The prime-independent prefix of a relation: the exact constraint
-/// matrices with their prime-independent preparation (skeleton digest,
-/// padded widths, selector layout — instantiated per transcript draw), the
-/// relation description and the instantiated security profile — everything
-/// the Spartan PIOP and bitification consume, and nothing of the standalone
-/// opener. Compositions that discharge the bitified claim through their own
-/// opener (the hybrid of [`crate::hybrid`]) prepare this directly.
+/// The opener configuration of a prepared relation.
+#[derive(Clone)]
+pub enum Opener {
+    /// A resolved Ligerito selection (with its policy digest and Round-0
+    /// accounting).
+    Resolved(ResolvedLigerito),
+    /// Explicit prover/verifier configurations (either side may be absent
+    /// on a one-sided context).
+    Custom {
+        prover: Option<LigProverConfig>,
+        verifier: Option<LigVerifierConfig>,
+    },
+}
+
+impl Opener {
+    pub fn prover(&self) -> Result<&LigProverConfig, ProtocolError> {
+        match self {
+            Self::Resolved(resolved) => Ok(resolved.prover()),
+            Self::Custom { prover, .. } => prover.as_ref().ok_or(ProtocolError::OpenerConfigUnavailable),
+        }
+    }
+
+    pub fn verifier(&self) -> Result<&LigVerifierConfig, ProtocolError> {
+        match self {
+            Self::Resolved(resolved) => Ok(resolved.verifier()),
+            Self::Custom { verifier, .. } => {
+                verifier.as_ref().ok_or(ProtocolError::OpenerConfigUnavailable)
+            }
+        }
+    }
+
+    /// The prover configuration for statement bindings (the verifier's copy
+    /// carries the same public fields).
+    fn binding_config(&self) -> Result<Cow<'_, LigProverConfig>, ProtocolError> {
+        match self {
+            Self::Resolved(resolved) => Ok(Cow::Borrowed(resolved.prover())),
+            Self::Custom {
+                prover: Some(prover),
+                ..
+            } => Ok(Cow::Borrowed(prover)),
+            Self::Custom {
+                prover: None,
+                verifier: Some(verifier),
+            } => Ok(Cow::Owned(LigProverConfig {
+                recursive_steps: verifier.recursive_steps,
+                initial_log_msg_cols: verifier.initial_log_msg_cols,
+                initial_log_num_interleaved: verifier.initial_log_num_interleaved,
+                initial_k: verifier.initial_k,
+                log_inv_rates: verifier.log_inv_rates.clone(),
+                recursive_log_msg_cols: verifier.recursive_log_msg_cols.clone(),
+                recursive_ks: verifier.recursive_ks.clone(),
+                queries: verifier.queries.clone(),
+                grinding_bits: verifier.grinding_bits.clone(),
+                fold_grinding_bits: verifier.fold_grinding_bits.clone(),
+                ood_samples: verifier.ood_samples.clone(),
+                merkle_hash: verifier.merkle_hash,
+            })),
+            Self::Custom {
+                prover: None,
+                verifier: None,
+            } => Err(ProtocolError::OpenerConfigUnavailable),
+        }
+    }
+
+    fn resolved(&self) -> Option<&ResolvedLigerito> {
+        match self {
+            Self::Resolved(resolved) => Some(resolved),
+            Self::Custom { .. } => None,
+        }
+    }
+
+    fn ood_bits(&self) -> Option<f64> {
+        self.resolved().and_then(ResolvedLigerito::ood_bits)
+    }
+}
+
+/// The prime-independent prefix of a relation: the constraint matrices
+/// with their prime-independent preparation, the relation description and
+/// the instantiated security profile — everything the Spartan PIOP and
+/// bitification consume, and nothing of the opener. Compositions that
+/// discharge the bitified claim through their own opener (the hybrid of
+/// [`crate::hybrid`]) prepare this directly.
 pub struct PreparedRelationPrefix<S: RelationSpec> {
     spec: S,
-    skeleton: ConstraintMatricesSkeleton<SpartanF2zField, S::Coefficient>,
+    matrices: MatrixSource<S::Coefficient>,
     security: IopSecurityParams,
 }
 
 impl<S: RelationSpec> PreparedRelationPrefix<S> {
-    /// Prepares the prefix under an explicit single-prime profile.
+    /// Prepares the prefix under an explicit profile.
     pub fn new<P: IopSecurityProfile>(spec: S) -> Result<Self, ProtocolError> {
         spec.validate_geometry()?;
         let security = instantiate_profile::<P, S>(&spec)?;
-        let skeleton =
-            ConstraintMatricesSkeleton::new(spec.constraint_matrices()?).map_err(SpartanError::from)?;
+        Self::with_security(spec, security)
+    }
+
+    /// Prepares the prefix under already-instantiated security parameters.
+    pub fn with_security(spec: S, security: IopSecurityParams) -> Result<Self, ProtocolError> {
+        spec.validate_geometry()?;
+        let matrices = spec.matrices()?;
         Ok(Self {
             spec,
-            skeleton,
+            matrices,
             security,
         })
     }
@@ -389,18 +680,25 @@ impl<S: RelationSpec> PreparedRelationPrefix<S> {
         &self.security
     }
 
-    pub const fn skeleton(&self) -> &ConstraintMatricesSkeleton<SpartanF2zField, S::Coefficient> {
-        &self.skeleton
+    pub const fn matrices(&self) -> &MatrixSource<S::Coefficient> {
+        &self.matrices
+    }
+
+    /// The prime-independent skeleton, for relations prepared from one.
+    pub fn skeleton(&self) -> Option<&ConstraintMatricesSkeleton<SpartanF2zField, S::Coefficient>> {
+        match &self.matrices {
+            MatrixSource::Skeleton { skeleton, .. } => Some(skeleton),
+            _ => None,
+        }
     }
 }
 
 /// The setup-once, prime-independent bundle of a relation: its
-/// [`PreparedRelationPrefix`] plus the validator-gated Ligerito
-/// prover/verifier configuration of the standalone opener.
+/// [`PreparedRelationPrefix`] plus the opener configuration.
 pub struct PreparedRelation<S: RelationSpec> {
     prefix: PreparedRelationPrefix<S>,
-    selection: LigeritoSelection,
-    ligerito: ResolvedLigerito,
+    selection: Option<LigeritoSelection>,
+    opener: Opener,
 }
 
 impl<S: RelationSpec> PreparedRelation<S> {
@@ -409,8 +707,8 @@ impl<S: RelationSpec> PreparedRelation<S> {
         Self::new_with_profile::<Lambda100>(spec)
     }
 
-    /// Prepares the relation under an explicit single-prime profile with the
-    /// profile's default opener (Johnson+OOD at 100 bits).
+    /// Prepares the relation under an explicit profile with the profile's
+    /// default opener (Johnson+OOD at 100 bits).
     pub fn new_with_profile<P: IopSecurityProfile>(spec: S) -> Result<Self, ProtocolError> {
         Self::new_with_profile_and_ligerito::<P>(
             spec,
@@ -418,13 +716,22 @@ impl<S: RelationSpec> PreparedRelation<S> {
         )
     }
 
-    /// Prepares the relation under an explicit single-prime profile and an
-    /// explicit Ligerito opener geometry.
+    /// Prepares the relation under an explicit profile and an explicit
+    /// Ligerito opener geometry.
     pub fn new_with_profile_and_ligerito<P: IopSecurityProfile>(
         spec: S,
         selection: LigeritoSelection,
     ) -> Result<Self, ProtocolError> {
-        let mut prefix = PreparedRelationPrefix::new::<P>(spec)?;
+        let prefix = PreparedRelationPrefix::new::<P>(spec)?;
+        Self::with_ligerito(prefix, selection)
+    }
+
+    /// Completes a prefix with a resolved Ligerito selection at the
+    /// profile's target.
+    pub fn with_ligerito(
+        mut prefix: PreparedRelationPrefix<S>,
+        selection: LigeritoSelection,
+    ) -> Result<Self, ProtocolError> {
         if prefix.spec.gate_vars() < MIN_PRODUCTION_GATE_VARS {
             return Err(ProtocolError::UnauditedF2zParameters);
         }
@@ -436,14 +743,36 @@ impl<S: RelationSpec> PreparedRelation<S> {
         validate_config_pair(&p, ligerito.prover(), ligerito.verifier())?;
         Ok(Self {
             prefix,
-            selection,
-            ligerito,
+            selection: Some(selection),
+            opener: Opener::Resolved(ligerito),
+        })
+    }
+
+    /// Completes a prefix with explicit opener configurations (no policy
+    /// digest, no Round 0).
+    pub fn with_opener_configs(
+        prefix: PreparedRelationPrefix<S>,
+        prover: Option<LigProverConfig>,
+        verifier: Option<LigVerifierConfig>,
+    ) -> Result<Self, ProtocolError> {
+        if let (Some(pc), Some(vc)) = (&prover, &verifier) {
+            validate_config_pair(&prefix.params(), pc, vc)?;
+        }
+        Ok(Self {
+            prefix,
+            selection: None,
+            opener: Opener::Custom { prover, verifier },
         })
     }
 
     /// The opener-independent prefix.
     pub const fn prefix(&self) -> &PreparedRelationPrefix<S> {
         &self.prefix
+    }
+
+    /// Drops the opener and returns the prefix.
+    pub fn into_prefix(self) -> PreparedRelationPrefix<S> {
+        self.prefix
     }
 
     /// The relation description this bundle was prepared from.
@@ -461,36 +790,118 @@ impl<S: RelationSpec> PreparedRelation<S> {
         &self.prefix.security
     }
 
-    /// The opener geometry this relation was prepared with.
-    pub const fn ligerito(&self) -> LigeritoSelection {
+    /// The opener geometry this relation was prepared with, if it came
+    /// from a Ligerito selection.
+    pub const fn ligerito(&self) -> Option<LigeritoSelection> {
         self.selection
     }
 
-    pub const fn ligerito_configuration(&self) -> &ResolvedLigerito {
-        &self.ligerito
+    /// The resolved opener of a relation prepared through a Ligerito
+    /// selection.
+    ///
+    /// # Panics
+    ///
+    /// On a relation prepared from explicit opener configurations; use
+    /// [`Self::opener`] there.
+    pub fn ligerito_configuration(&self) -> &ResolvedLigerito {
+        self.opener
+            .resolved()
+            .expect("the relation was prepared through a Ligerito selection")
     }
 
-    pub const fn skeleton(&self) -> &ConstraintMatricesSkeleton<SpartanF2zField, S::Coefficient> {
-        &self.prefix.skeleton
+    pub const fn opener(&self) -> &Opener {
+        &self.opener
+    }
+
+    /// The prime-independent skeleton, for relations prepared from one.
+    pub fn skeleton(&self) -> Option<&ConstraintMatricesSkeleton<SpartanF2zField, S::Coefficient>> {
+        self.prefix.skeleton()
     }
 
     /// The digest binding layout, commitment and the profile's public
     /// parameters — everything fixed BEFORE the prime draw.
     pub fn assignment_binding(&self, commitment: &Commitment) -> Result<[u8; 32], ProtocolError> {
-        self.prefix.spec.assignment_binding(
-            commitment,
-            &self.prefix.security,
-            self.ligerito.prover(),
-        )
+        assignment_binding(&self.prefix, &self.opener, commitment)
     }
+
 }
 
-/// Instantiates the single-prime profile `P` at the relation's instance facts.
+/// The statement binding of a prefix under an opener configuration.
+fn assignment_binding<S: RelationSpec>(
+    prefix: &PreparedRelationPrefix<S>,
+    opener: &Opener,
+    commitment: &Commitment,
+) -> Result<[u8; 32], ProtocolError> {
+    let ligerito = opener.binding_config()?;
+    prefix
+        .spec
+        .assignment_binding(commitment, &prefix.security, &ligerito)
+}
+
+/// Binds the statement: the assignment binding frame, then (per the
+/// relation's schedule) the opener policy digest and Round 0.
+fn bind_prover_statement<T: Transcript + Send, S: RelationSpec>(
+    transcript: &mut T,
+    prefix: &PreparedRelationPrefix<S>,
+    opener: &Opener,
+    hint: &FlockCommitHint,
+) -> Result<([u8; 32], ProverOod), ProtocolError> {
+    let spec = &prefix.spec;
+    let schedule = spec.schedule();
+    let binding = assignment_binding(prefix, opener, &hint.commitment)?;
+    absorb_spartan_message(transcript, spec.domains().statement_tag, &binding);
+    if schedule.policy_bind {
+        if let Some(resolved) = opener.resolved() {
+            resolved.bind(transcript);
+        }
+    }
+    let ood = if schedule.ood_round {
+        bind_prover_ood(transcript, hint, prefix.security.ood)
+    } else {
+        ProverOod::from(prefix.security.ood)
+    };
+    Ok((binding, ood))
+}
+
+fn bind_verifier_statement<T: Transcript + Send, S: RelationSpec>(
+    transcript: &mut T,
+    prefix: &PreparedRelationPrefix<S>,
+    opener: &Opener,
+    commitment: &Commitment,
+    round: Option<&OodRound>,
+) -> Result<([u8; 32], VerifierOod), ProtocolError> {
+    let spec = &prefix.spec;
+    let schedule = spec.schedule();
+    let binding = assignment_binding(prefix, opener, commitment)?;
+    absorb_spartan_message(transcript, spec.domains().statement_tag, &binding);
+    if schedule.policy_bind {
+        if let Some(resolved) = opener.resolved() {
+            resolved.bind(transcript);
+        }
+    }
+    let ood = if schedule.ood_round {
+        bind_verifier_ood(
+            transcript,
+            packed_variables(&prefix.params())?,
+            prefix.security.ood,
+            round,
+        )
+        .map_err(ProtocolError::F2z)?
+    } else {
+        VerifierOod::from(prefix.security.ood)
+    };
+    Ok((binding, ood))
+}
+
+/// Instantiates the profile `P` at the relation's instance facts and checks
+/// its prime strategy against the relation's schedule.
 pub fn instantiate_profile<P: IopSecurityProfile, S: RelationSpec>(
     spec: &S,
 ) -> Result<IopSecurityParams, ProtocolError> {
     let security = P::instantiate(&spec.instance_facts())?;
-    if security.projection_full_width || security.reduction.is_some() {
+    let two_prime = security.projection_full_width || security.reduction.is_some();
+    let expected = spec.schedule().strategy == PrimeStrategy::TwoPrime;
+    if two_prime != expected {
         return Err(ProtocolError::UnsupportedProfile);
     }
     Ok(security)
@@ -549,28 +960,78 @@ pub struct SpartanPrefixProof {
     pub terminal_nonce: u64,
 }
 
-/// A proof over a transcript-selected prime: the Spartan reduction, the
-/// runtime-q F2Z opening and any profile-selected grinding nonces.
-#[derive(Clone)]
-pub struct Proof {
-    prefix: SpartanPrefixProof,
-    f2z: IntEvalRsLigModQProof,
+/// Strategy 2: the exact integer lift of the bitified claim and the nonce
+/// before the reduction-prime draw.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReductionProof {
+    pub mu_prime: BigUint,
+    pub nonce: u64,
 }
 
-impl Proof {
+/// An opening proof of either discharge kind.
+pub trait OpeningProof: Clone {
+    fn to_bytes(&self) -> Vec<u8>;
+    fn grinding_nonces(&self) -> &[u64];
+    fn ood(&self) -> Option<&OodRound>;
+}
+
+impl OpeningProof for IntEvalRsLigModQProof {
+    fn to_bytes(&self) -> Vec<u8> {
+        IntEvalRsLigModQProof::to_bytes(self)
+    }
+
+    fn grinding_nonces(&self) -> &[u64] {
+        &self.grinding_nonces
+    }
+
+    fn ood(&self) -> Option<&OodRound> {
+        self.ood.as_ref()
+    }
+}
+
+impl OpeningProof for IntEvalRsLigVirtProof {
+    fn to_bytes(&self) -> Vec<u8> {
+        IntEvalRsLigVirtProof::to_bytes(self)
+    }
+
+    fn grinding_nonces(&self) -> &[u64] {
+        &self.grinding_nonces
+    }
+
+    fn ood(&self) -> Option<&OodRound> {
+        self.ood.as_ref()
+    }
+}
+
+/// A proof over a transcript-selected prime: the Spartan reduction, the
+/// optional Step-5.0 lift, the F2Z opening and any profile-selected
+/// grinding nonces.
+#[derive(Clone)]
+pub struct Proof<O: OpeningProof = IntEvalRsLigModQProof> {
+    prefix: SpartanPrefixProof,
+    reduction: Option<ReductionProof>,
+    f2z: O,
+}
+
+impl<O: OpeningProof> Proof<O> {
     /// Spartan outer and inner sumcheck proofs.
     pub const fn spartan(&self) -> &SpartanProof {
         &self.prefix.spartan
     }
 
-    /// Runtime-prime F2Z opening proof.
-    pub const fn f2z(&self) -> &IntEvalRsLigModQProof {
+    /// The F2Z opening proof.
+    pub const fn f2z(&self) -> &O {
         &self.f2z
     }
 
     /// The prefix messages.
     pub const fn prefix(&self) -> &SpartanPrefixProof {
         &self.prefix
+    }
+
+    /// The Step-5.0 lift, on reduced discharges.
+    pub const fn reduction(&self) -> Option<&ReductionProof> {
+        self.reduction.as_ref()
     }
 
     pub const fn initial_nonce(&self) -> u64 {
@@ -596,7 +1057,7 @@ impl Proof {
         usize::from(security.initial_grinding_bits > 0)
             + usize::from(security.terminal_grinding_bits > 0)
             + self.prefix.piop_nonces.len()
-            + self.f2z.grinding_nonces.len()
+            + self.f2z.grinding_nonces().len()
     }
 
     /// Serialized size in bytes of the proof: the Spartan payload as 16-byte
@@ -604,22 +1065,43 @@ impl Proof {
     /// exact codec bytes.
     pub fn size_bytes(&self, security: &IopSecurityParams) -> usize {
         self.spartan_payload_elements() * 16
-            + (self.grinding_nonce_count(security) - self.f2z.grinding_nonces.len()) * 8
+            + (self.grinding_nonce_count(security) - self.f2z.grinding_nonces().len()) * 8
             + self.f2z.to_bytes().len()
     }
 
     /// Splits the proof into its parts (tests and codecs).
-    pub fn into_parts(self) -> (SpartanPrefixProof, IntEvalRsLigModQProof) {
-        (self.prefix, self.f2z)
+    pub fn into_parts(self) -> (SpartanPrefixProof, Option<ReductionProof>, O) {
+        (self.prefix, self.reduction, self.f2z)
     }
 
     /// Assembles a proof from its parts (tests and codecs).
-    pub const fn from_parts(prefix: SpartanPrefixProof, f2z: IntEvalRsLigModQProof) -> Self {
-        Self { prefix, f2z }
+    pub const fn from_parts(prefix: SpartanPrefixProof, reduction: Option<ReductionProof>, f2z: O) -> Self {
+        Self {
+            prefix,
+            reduction,
+            f2z,
+        }
+    }
+
+    /// Step 5.0 exact integer lift of the bitified terminal claim (reduced
+    /// discharges).
+    pub fn mu_prime(&self) -> Option<&BigUint> {
+        self.reduction.as_ref().map(|reduction| &reduction.mu_prime)
+    }
+
+    /// Grinding nonce immediately before the reduction-prime draw (reduced
+    /// discharges).
+    pub fn reduction_nonce(&self) -> Option<u64> {
+        self.reduction.as_ref().map(|reduction| reduction.nonce)
+    }
+
+    /// Serialized byte length of the Step 5.0 integer lift (0 without one).
+    pub fn mu_prime_bytes(&self) -> usize {
+        self.mu_prime().map_or(0, |mu| mu.to_bytes_le().len())
     }
 
     /// Mutable access to the opening proof (tests).
-    pub fn f2z_mut(&mut self) -> &mut IntEvalRsLigModQProof {
+    pub fn f2z_mut(&mut self) -> &mut O {
         &mut self.f2z
     }
 
@@ -629,8 +1111,8 @@ impl Proof {
     }
 }
 
-/// Commits prebuilt compact bit rows under the prepared relation's
-/// profile-selected Ligerito configuration.
+/// Commits prebuilt compact bit rows under the prepared relation's opener
+/// configuration.
 ///
 /// Accepting ownership of `rows` lets benchmarks time bitification separately
 /// and move the packed store into the commitment without retaining a duplicate.
@@ -641,17 +1123,20 @@ pub fn commit<S: RelationSpec>(
     let p = prepared.params();
     prepared.prefix.spec.validate_geometry()?;
     validate_bit_rows(&p, &rows)?;
-    validate_config_pair(&p, prepared.ligerito.prover(), prepared.ligerito.verifier())?;
+    let pc = prepared.opener.prover()?;
+    if let Ok(vc) = prepared.opener.verifier() {
+        validate_config_pair(&p, pc, vc)?;
+    }
 
     // All assertion-bearing shape requirements of the low-level commit have
     // been checked above.
-    let hint = commit_rs_ligerito_rows(&p, rows, prepared.ligerito.prover());
-    validate_commitment(&p, &hint.commitment, prepared.ligerito.prover())?;
+    let hint = commit_rs_ligerito_rows(&p, rows, pc);
+    validate_commitment(&p, &hint.commitment, pc)?;
     Ok(hint)
 }
 
-/// Proves the relation under its prepared security profile with the default
-/// prover options.
+/// Proves the relation with the default prover options, discharging the
+/// bitified claim directly through the runtime-q exponent fold.
 pub fn prove<T: Transcript + Send, S: RelationSpec>(
     transcript: &mut T,
     prepared: &PreparedRelation<S>,
@@ -663,7 +1148,7 @@ pub fn prove<T: Transcript + Send, S: RelationSpec>(
 
 /// Proves the relation: commit-before-prime, a transcript-sampled Step-2
 /// prime, the Spartan PIOP over that runtime field, bitification, and the
-/// runtime-q F2Z opening.
+/// direct runtime-q F2Z opening.
 pub fn prove_with_options<T: Transcript + Send, S: RelationSpec>(
     transcript: &mut T,
     prepared: &PreparedRelation<S>,
@@ -671,26 +1156,31 @@ pub fn prove_with_options<T: Transcript + Send, S: RelationSpec>(
     hint: &FlockCommitHint,
     options: ProveOptions,
 ) -> Result<Proof, ProtocolError> {
-    let prefix = &prepared.prefix;
+    prove_with_opener(transcript, &prepared.prefix, &prepared.opener, witness, hint, options)
+}
+
+/// [`prove_with_options`] over a prefix and an explicit opener.
+pub fn prove_with_opener<T: Transcript + Send, S: RelationSpec>(
+    transcript: &mut T,
+    prefix: &PreparedRelationPrefix<S>,
+    opener: &Opener,
+    witness: &S::Witness,
+    hint: &FlockCommitHint,
+    options: ProveOptions,
+) -> Result<Proof, ProtocolError> {
     let spec = &prefix.spec;
     spec.check_witness(witness)?;
-    let p = prepared.params();
-    let pc = prepared.ligerito.prover();
-    let vc = prepared.ligerito.verifier();
-    validate_config_pair(&p, pc, vc)?;
+    let p = prefix.params();
+    let pc = opener.prover()?;
     validate_bit_rows(&p, hint.rows())?;
     validate_commitment(&p, &hint.commitment, pc)?;
     let security = &prefix.security;
     let domains = spec.domains();
     let scopes = &domains.scopes;
 
-    let binding = prepared.assignment_binding(&hint.commitment)?;
-    absorb_spartan_message(transcript, domains.statement_tag, &binding);
-    prepared.ligerito.bind(transcript);
-    let ood = bind_prover_ood(transcript, hint, security.ood);
-
+    let (binding, ood) = bind_prover_statement(transcript, prefix, opener, hint)?;
     let proved = prove_prefix(transcript, prefix, witness, &binding, options)?;
-    let (q, q_bits, _, arith) = proved.prime;
+    let prime = &proved.prime;
 
     // Steps 5.1–5.3: the runtime-q F2Z opening (one chunk by construction).
     let f2z = {
@@ -698,7 +1188,7 @@ pub fn prove_with_options<T: Transcript + Send, S: RelationSpec>(
         let _scope = crate::utils::prof::scope(scopes.f2z_prove);
         let chunks = {
             let _scope = crate::utils::prof::scope(scopes.f2z_prepare_prover);
-            bitify::prepare_chunks(&proved.opening, &proved.table, q_bits, &arith)?
+            bitify::prepare_chunks(&proved.opening, &proved.table, prime.q_bits, &prime.arith)?
         };
         if chunks.len() != 1 {
             return Err(ProtocolError::MultiChunkRuntimeWeights);
@@ -710,7 +1200,7 @@ pub fn prove_with_options<T: Transcript + Send, S: RelationSpec>(
             &p,
             &chunks,
             &proved.bridge_digest,
-            q_bits,
+            prime.q_bits,
             f2z_generator(),
             spec.opener_grinding_bits(security),
             ood,
@@ -718,53 +1208,55 @@ pub fn prove_with_options<T: Transcript + Send, S: RelationSpec>(
         )
         .map_err(ProtocolError::F2z)?
     };
-    let _ = q;
 
     Ok(Proof {
         prefix: proved.messages,
+        reduction: None,
         f2z,
     })
 }
 
-/// Verifies a proof, re-deriving the prime from the bound transcript.
+/// Verifies a direct-discharge proof, re-deriving the prime from the bound
+/// transcript.
 pub fn verify<T: Transcript + Send, S: RelationSpec>(
     transcript: &mut T,
     prepared: &PreparedRelation<S>,
     commitment: &Commitment,
     proof: &Proof,
 ) -> Result<(), ProtocolError> {
-    let prefix = &prepared.prefix;
+    verify_with_opener(transcript, &prepared.prefix, &prepared.opener, commitment, proof)
+}
+
+/// [`verify`] over a prefix and an explicit opener.
+pub fn verify_with_opener<T: Transcript + Send, S: RelationSpec>(
+    transcript: &mut T,
+    prefix: &PreparedRelationPrefix<S>,
+    opener: &Opener,
+    commitment: &Commitment,
+    proof: &Proof,
+) -> Result<(), ProtocolError> {
     let spec = &prefix.spec;
-    let p = prepared.params();
-    let pc = prepared.ligerito.prover();
-    let vc = prepared.ligerito.verifier();
-    validate_config_pair(&p, pc, vc)?;
-    validate_commitment(&p, commitment, pc)?;
+    let p = prefix.params();
+    let vc = opener.verifier()?;
+    let binding_config = opener.binding_config()?;
+    validate_commitment(&p, commitment, &binding_config)?;
     let security = &prefix.security;
     let domains = spec.domains();
     let scopes = &domains.scopes;
     check_proof_kernel(spec.kernel(), &proof.prefix.spartan)?;
 
-    let binding = prepared.assignment_binding(commitment)?;
-    absorb_spartan_message(transcript, domains.statement_tag, &binding);
-    prepared.ligerito.bind(transcript);
-    let ood = bind_verifier_ood(
-        transcript,
-        packed_variables(&p)?,
-        security.ood,
-        proof.f2z.ood.as_ref(),
-    )
-    .map_err(ProtocolError::F2z)?;
-
+    let (binding, ood) =
+        bind_verifier_statement(transcript, prefix, opener, commitment, proof.f2z.ood.as_ref())?;
     let verified = verify_prefix(transcript, prefix, &binding, &proof.prefix)?;
-    let (q, q_bits, _, arith) = verified.prime;
+    let prime = &verified.prime;
 
     let _step5 = crate::utils::prof::scope("step5:open_verify");
     let _scope = crate::utils::prof::scope(scopes.f2z_verify);
     let (chunks, col_weights_q) = {
         let _scope = crate::utils::prof::scope(scopes.f2z_prepare_verifier);
-        let chunks = bitify::prepare_chunks(&verified.opening, &verified.table, q_bits, &arith)?;
-        let col_weights_q: Vec<u128> = bitify::column_weights(&verified.opening, &arith)?
+        let chunks =
+            bitify::prepare_chunks(&verified.opening, &verified.table, prime.q_bits, &prime.arith)?;
+        let col_weights_q: Vec<u128> = bitify::column_weights(&verified.opening, &prime.arith)?
             .iter()
             .map(|weight| weight.0)
             .collect();
@@ -784,8 +1276,359 @@ pub fn verify<T: Transcript + Send, S: RelationSpec>(
         &verified.bridge_digest,
         f2z_generator(),
         verified.opening.claimed.0,
-        q,
-        q_bits,
+        prime.q,
+        prime.q_bits,
+        spec.opener_grinding_bits(security),
+        ood,
+        vc,
+    )
+    .map_err(ProtocolError::F2z)
+}
+
+/// Binds the bitified claim frame of a virtual or reduced discharge.
+fn bind_claim_frame<T: Transcript, S: RelationSpec>(
+    transcript: &mut T,
+    spec: &S,
+    frame: ClaimFrame<'_>,
+) -> Result<(), ProtocolError> {
+    let digest = spec.claim_digest(frame)?;
+    absorb_spartan_message(transcript, spec.domains().claim_tag, &digest);
+    Ok(())
+}
+
+/// Proves the relation, discharging the bitified claim through the
+/// relation's virtual map onto its derived grid at the runtime prime.
+pub fn prove_virtual<T: Transcript + Send, S: RelationSpec>(
+    transcript: &mut T,
+    prepared: &PreparedRelation<S>,
+    witness: &S::Witness,
+    hint: &FlockCommitHint,
+    options: ProveOptions,
+) -> Result<Proof<IntEvalRsLigVirtProof>, ProtocolError> {
+    prove_virtual_with_opener(transcript, &prepared.prefix, &prepared.opener, witness, hint, options)
+}
+
+/// [`prove_virtual`] over a prefix and an explicit opener.
+pub fn prove_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
+    transcript: &mut T,
+    prefix: &PreparedRelationPrefix<S>,
+    opener: &Opener,
+    witness: &S::Witness,
+    hint: &FlockCommitHint,
+    options: ProveOptions,
+) -> Result<Proof<IntEvalRsLigVirtProof>, ProtocolError> {
+    let spec = &prefix.spec;
+    spec.check_witness(witness)?;
+    let p = prefix.params();
+    let pc = opener.prover()?;
+    validate_bit_rows(&p, hint.rows())?;
+    validate_commitment(&p, &hint.commitment, pc)?;
+    let security = &prefix.security;
+    let domains = spec.domains();
+    let scopes = &domains.scopes;
+    let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
+
+    let (binding, ood) = bind_prover_statement(transcript, prefix, opener, hint)?;
+    let proved = prove_prefix(transcript, prefix, witness, &binding, options)?;
+    let prime = &proved.prime;
+
+    let row_weights = bitify::dense_row_weights(&proved.opening, &proved.table, &prime.arith)?;
+    let col_weights: Vec<u128> = bitify::column_weights(&proved.opening, &prime.arith)?
+        .iter()
+        .map(|weight| weight.0)
+        .collect();
+    bind_claim_frame(
+        transcript,
+        spec,
+        ClaimFrame {
+            binding: &binding,
+            matrices_digest: &proved.matrices_digest,
+            terminal_claim: &proved.terminal_claim,
+            opening: &proved.opening,
+            row_weights: &row_weights,
+            col_weights: &col_weights,
+            mu_prime: None,
+        },
+    )?;
+
+    let f2z = {
+        let _step5 = crate::utils::prof::scope("step5:open_prove");
+        let _scope = crate::utils::prof::scope(scopes.f2z_prove);
+        let derived = spec.derived_rows(witness);
+        let h_rows = derived.as_deref().unwrap_or(hint.rows());
+        prove_mle_eval_mod_q_ligerito_virtual_runtime(
+            transcript,
+            hint,
+            h_rows,
+            &p,
+            &p,
+            map,
+            &row_weights,
+            prime.q,
+            prime.q_bits,
+            f2z_generator(),
+            spec.opener_grinding_bits(security),
+            ood,
+            pc,
+        )
+        .map_err(ProtocolError::F2z)?
+    };
+
+    Ok(Proof {
+        prefix: proved.messages,
+        reduction: None,
+        f2z,
+    })
+}
+
+/// Verifies a virtual-discharge proof.
+pub fn verify_virtual<T: Transcript + Send, S: RelationSpec>(
+    transcript: &mut T,
+    prepared: &PreparedRelation<S>,
+    commitment: &Commitment,
+    proof: &Proof<IntEvalRsLigVirtProof>,
+) -> Result<(), ProtocolError> {
+    verify_virtual_with_opener(transcript, &prepared.prefix, &prepared.opener, commitment, proof)
+}
+
+/// [`verify_virtual`] over a prefix and an explicit opener.
+pub fn verify_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
+    transcript: &mut T,
+    prefix: &PreparedRelationPrefix<S>,
+    opener: &Opener,
+    commitment: &Commitment,
+    proof: &Proof<IntEvalRsLigVirtProof>,
+) -> Result<(), ProtocolError> {
+    let spec = &prefix.spec;
+    let p = prefix.params();
+    let vc = opener.verifier()?;
+    let binding_config = opener.binding_config()?;
+    validate_commitment(&p, commitment, &binding_config)?;
+    let security = &prefix.security;
+    let domains = spec.domains();
+    let scopes = &domains.scopes;
+    let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
+    check_proof_kernel(spec.kernel(), &proof.prefix.spartan)?;
+
+    let (binding, ood) =
+        bind_verifier_statement(transcript, prefix, opener, commitment, proof.f2z.ood.as_ref())?;
+    let verified = verify_prefix(transcript, prefix, &binding, &proof.prefix)?;
+    let prime = &verified.prime;
+
+    let row_weights = bitify::dense_row_weights(&verified.opening, &verified.table, &prime.arith)?;
+    let col_weights: Vec<u128> = bitify::column_weights(&verified.opening, &prime.arith)?
+        .iter()
+        .map(|weight| weight.0)
+        .collect();
+    bind_claim_frame(
+        transcript,
+        spec,
+        ClaimFrame {
+            binding: &binding,
+            matrices_digest: &verified.matrices_digest,
+            terminal_claim: &verified.terminal_claim,
+            opening: &verified.opening,
+            row_weights: &row_weights,
+            col_weights: &col_weights,
+            mu_prime: None,
+        },
+    )?;
+
+    let _step5 = crate::utils::prof::scope("step5:open_verify");
+    let _scope = crate::utils::prof::scope(scopes.f2z_verify);
+    verify_mle_eval_mod_q_ligerito_virtual_runtime(
+        transcript,
+        commitment,
+        &proof.f2z,
+        &p,
+        &p,
+        map,
+        &row_weights,
+        &col_weights,
+        f2z_generator(),
+        verified.opening.claimed.0,
+        prime.q,
+        prime.q_bits,
+        spec.opener_grinding_bits(security),
+        ood,
+        vc,
+    )
+    .map_err(ProtocolError::F2z)
+}
+
+/// Proves the relation under Strategy 2: after bitification the prover
+/// sends the exact integer lift `mu'` of the mod-`Q` tensor claim; a
+/// grinded fresh reduction prime `q'` re-projects the claim below the
+/// exponent-fold no-wrap boundary, and the runtime-`q'` virtual opening of
+/// the committed rows (under the relation's identity map) discharges it.
+pub fn prove_reduced<T: Transcript + Send, S: RelationSpec>(
+    transcript: &mut T,
+    prepared: &PreparedRelation<S>,
+    witness: &S::Witness,
+    hint: &FlockCommitHint,
+    options: ProveOptions,
+) -> Result<Proof<IntEvalRsLigVirtProof>, ProtocolError> {
+    let prefix = &prepared.prefix;
+    let opener = &prepared.opener;
+    let spec = &prefix.spec;
+    spec.check_witness(witness)?;
+    let p = prepared.params();
+    let pc = opener.prover()?;
+    validate_bit_rows(&p, hint.rows())?;
+    validate_commitment(&p, &hint.commitment, pc)?;
+    let security = &prefix.security;
+    let reduction = security.reduction.ok_or(ProtocolError::UnsupportedProfile)?;
+    let domains = spec.domains();
+    let scopes = &domains.scopes;
+    let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
+
+    let (binding, ood) = bind_prover_statement(transcript, prefix, opener, hint)?;
+    let proved = prove_prefix(transcript, prefix, witness, &binding, options)?;
+    let prime = &proved.prime;
+    let row_weights = bitify::dense_row_weights(&proved.opening, &proved.table, &prime.arith)?;
+    let col_weights: Vec<u128> = bitify::column_weights(&proved.opening, &prime.arith)?
+        .iter()
+        .map(|weight| weight.0)
+        .collect();
+
+    // Step 5.0: exact integer lift, grinded fresh-prime draw, re-projection.
+    let step5_0_scope = crate::utils::prof::scope("step5_0:reduce_prove");
+    let mu_prime = step50_integer_lift(hint.rows(), &row_weights, &col_weights);
+    if !step50_accepts_lift(&mu_prime, proved.opening.claimed.0, prime.q, p.cells()) {
+        return Err(ProtocolError::InvalidIntegerLift);
+    }
+    bind_claim_frame(
+        transcript,
+        spec,
+        ClaimFrame {
+            binding: &binding,
+            matrices_digest: &proved.matrices_digest,
+            terminal_claim: &proved.terminal_claim,
+            opening: &proved.opening,
+            row_weights: &row_weights,
+            col_weights: &col_weights,
+            mu_prime: Some(&mu_prime),
+        },
+    )?;
+    let nonce = grind_and_absorb_in_domain(
+        transcript,
+        domains.reduction_grinding,
+        0,
+        reduction.grinding_bits,
+    )?;
+    let reduced = sample_mod_q(transcript, domains.reduction_prime, reduction.min, reduction.max)?;
+    let (row_weights_reduced, _, _) =
+        step50_reduce(&row_weights, &col_weights, &mu_prime, reduced.q);
+    drop(step5_0_scope);
+
+    // Steps 5.1–5.3: the F2Z opening at the reduced prime.
+    let f2z = {
+        let _step5 = crate::utils::prof::scope("step5:open_prove");
+        let _scope = crate::utils::prof::scope(scopes.f2z_prove);
+        prove_mle_eval_mod_q_ligerito_virtual_runtime(
+            transcript,
+            hint,
+            hint.rows(),
+            &p,
+            &p,
+            map,
+            &row_weights_reduced,
+            reduced.q,
+            reduced.q_bits,
+            f2z_generator(),
+            spec.opener_grinding_bits(security),
+            ood,
+            pc,
+        )
+        .map_err(ProtocolError::F2z)?
+    };
+
+    Ok(Proof {
+        prefix: proved.messages,
+        reduction: Some(ReductionProof { mu_prime, nonce }),
+        f2z,
+    })
+}
+
+/// Verifies a Strategy-2 proof, re-deriving both primes from the bound
+/// transcript.
+pub fn verify_reduced<T: Transcript + Send, S: RelationSpec>(
+    transcript: &mut T,
+    prepared: &PreparedRelation<S>,
+    commitment: &Commitment,
+    proof: &Proof<IntEvalRsLigVirtProof>,
+) -> Result<(), ProtocolError> {
+    let prefix = &prepared.prefix;
+    let opener = &prepared.opener;
+    let spec = &prefix.spec;
+    let p = prepared.params();
+    let vc = opener.verifier()?;
+    let binding_config = opener.binding_config()?;
+    validate_commitment(&p, commitment, &binding_config)?;
+    let security = &prefix.security;
+    let reduction = security.reduction.ok_or(ProtocolError::UnsupportedProfile)?;
+    let domains = spec.domains();
+    let scopes = &domains.scopes;
+    let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
+    let lift = proof.reduction.as_ref().ok_or(ProtocolError::InvalidIntegerLift)?;
+    check_proof_kernel(spec.kernel(), &proof.prefix.spartan)?;
+
+    let (binding, ood) =
+        bind_verifier_statement(transcript, prefix, opener, commitment, proof.f2z.ood.as_ref())?;
+    let verified = verify_prefix(transcript, prefix, &binding, &proof.prefix)?;
+    let prime = &verified.prime;
+    let row_weights = bitify::dense_row_weights(&verified.opening, &verified.table, &prime.arith)?;
+    let col_weights: Vec<u128> = bitify::column_weights(&verified.opening, &prime.arith)?
+        .iter()
+        .map(|weight| weight.0)
+        .collect();
+
+    // Step 5.0: the claimed integer lift must land in the derived mod-Q
+    // class and inside the d * Q^2 magnitude bound.
+    let step5_0_scope = crate::utils::prof::scope("step5_0:reduce_verify");
+    if !step50_accepts_lift(&lift.mu_prime, verified.opening.claimed.0, prime.q, p.cells()) {
+        return Err(ProtocolError::InvalidIntegerLift);
+    }
+    bind_claim_frame(
+        transcript,
+        spec,
+        ClaimFrame {
+            binding: &binding,
+            matrices_digest: &verified.matrices_digest,
+            terminal_claim: &verified.terminal_claim,
+            opening: &verified.opening,
+            row_weights: &row_weights,
+            col_weights: &col_weights,
+            mu_prime: Some(&lift.mu_prime),
+        },
+    )?;
+    verify_and_absorb_in_domain(
+        transcript,
+        domains.reduction_grinding,
+        0,
+        reduction.grinding_bits,
+        lift.nonce,
+    )?;
+    let reduced = sample_mod_q(transcript, domains.reduction_prime, reduction.min, reduction.max)?;
+    let (row_weights_reduced, col_weights_reduced, claimed_reduced) =
+        step50_reduce(&row_weights, &col_weights, &lift.mu_prime, reduced.q);
+    drop(step5_0_scope);
+
+    let _step5 = crate::utils::prof::scope("step5:open_verify");
+    let _scope = crate::utils::prof::scope(scopes.f2z_verify);
+    verify_mle_eval_mod_q_ligerito_virtual_runtime(
+        transcript,
+        commitment,
+        &proof.f2z,
+        &p,
+        &p,
+        map,
+        &row_weights_reduced,
+        &col_weights_reduced,
+        f2z_generator(),
+        claimed_reduced,
+        reduced.q,
+        reduced.q_bits,
         spec.opener_grinding_bits(security),
         ood,
         vc,
@@ -794,9 +1637,11 @@ pub fn verify<T: Transcript + Send, S: RelationSpec>(
 }
 
 /// The prover's output of the protocol prefix: the transcript messages and
-/// the bitified claim the opening discharges.
+/// the bitified claim the discharge consumes.
 pub struct ProvedPrefix {
     pub messages: SpartanPrefixProof,
+    pub terminal_claim: ScaledMleEvaluationClaim<SpartanF2zField>,
+    pub matrices_digest: [u8; 32],
     pub opening: BitifiedClaim,
     pub bridge_digest: [u8; 32],
     pub prime: RuntimePrime,
@@ -805,6 +1650,8 @@ pub struct ProvedPrefix {
 
 /// The verifier's output of the protocol prefix.
 pub struct VerifiedPrefix {
+    pub terminal_claim: ScaledMleEvaluationClaim<SpartanF2zField>,
+    pub matrices_digest: [u8; 32],
     pub opening: BitifiedClaim,
     pub bridge_digest: [u8; 32],
     pub prime: RuntimePrime,
@@ -827,26 +1674,21 @@ pub fn prove_prefix<T: Transcript, S: RelationSpec>(
     let security = &prefix.security;
     let domains = spec.domains();
     let scopes = &domains.scopes;
+    let schedule = spec.schedule();
 
-    // Step 2: pre-draw grinding, prime sample, and relation projection into
+    // Step 2: pre-draw grinding, prime draw, and relation projection into
     // the runtime field.
     let step2_scope = crate::utils::prof::scope("step2:project_prove");
     let initial_nonce =
         grind_boundary(transcript, domains.initial_grinding, security.initial_grinding_bits)?;
-    let prime = sample_mod_q(transcript, domains.prime_sampling, security)?;
-    let (q, _, config, arith) = &prime;
+    let prime = spec.runtime_prime(transcript, security)?;
     let matrices = {
         let _scope = crate::utils::prof::scope(scopes.relation_projection_prove);
-        PreparedConstraintMatrices::<SpartanF2zField, S::Coefficient>::from_skeleton(
-            &prefix.skeleton,
-            config,
-        )
-        .map_err(SpartanError::from)?
+        prefix.matrices.project(spec, &prime.config)?
     };
     let piop_witness = {
         let _scope = crate::utils::prof::scope(scopes.witness_projection_prove);
-        let ctx = RawMontyCtx::new(config);
-        spec.piop_witness(witness, &ctx, options)?
+        spec.piop_witness(witness, &prime.config, options)?
     };
     drop(step2_scope);
 
@@ -856,14 +1698,20 @@ pub fn prove_prefix<T: Transcript, S: RelationSpec>(
     let (spartan, terminal_claim, piop_nonces) = {
         let _step3 = crate::utils::prof::scope("step3:piop_prove");
         let _scope = crate::utils::prof::scope(scopes.spartan_prove);
-        let mut grinder = ProverGrindingTranscript::<_>::new_in_domain(
-            transcript,
-            piop_wrap_bits(security),
-            domains.piop_grinding,
-        );
-        let (spartan, terminal_claim) =
-            run_kernel(&mut grinder, spec.kernel(), &matrices, binding, piop_witness)?;
-        (spartan, terminal_claim, grinder.finish())
+        if schedule.piop_grinding {
+            let mut grinder = ProverGrindingTranscript::<_>::new_in_domain(
+                transcript,
+                piop_wrap_bits(security),
+                domains.piop_grinding,
+            );
+            let (spartan, terminal_claim) =
+                run_kernel(&mut grinder, spec.kernel(), &matrices, binding, piop_witness)?;
+            (spartan, terminal_claim, grinder.finish())
+        } else {
+            let (spartan, terminal_claim) =
+                run_kernel(transcript, spec.kernel(), &matrices, binding, piop_witness)?;
+            (spartan, terminal_claim, Vec::new())
+        }
     };
 
     // Step 4: bitification at the runtime prime, plus the terminal
@@ -872,7 +1720,7 @@ pub fn prove_prefix<T: Transcript, S: RelationSpec>(
     let table = spec.block_table();
     let (opening, bridge_digest) = {
         let _scope = crate::utils::prof::scope(scopes.bitify_prover);
-        bitify_and_bind(spec, &matrices, binding, &terminal_claim, &table, *q, arith)?
+        bitify_and_bind(spec, &matrices, binding, &terminal_claim, &table, schedule.scale_side, &prime)?
     };
     let terminal_nonce =
         grind_boundary(transcript, domains.terminal_grinding, security.terminal_grinding_bits)?;
@@ -885,6 +1733,8 @@ pub fn prove_prefix<T: Transcript, S: RelationSpec>(
             spartan,
             terminal_nonce,
         },
+        terminal_claim,
+        matrices_digest: *matrices.digest(),
         opening,
         bridge_digest,
         prime,
@@ -903,6 +1753,7 @@ pub fn verify_prefix<T: Transcript, S: RelationSpec>(
     let security = &prefix.security;
     let domains = spec.domains();
     let scopes = &domains.scopes;
+    let schedule = spec.schedule();
     check_proof_kernel(spec.kernel(), &messages.spartan)?;
 
     let step2_scope = crate::utils::prof::scope("step2:project_verify");
@@ -912,44 +1763,43 @@ pub fn verify_prefix<T: Transcript, S: RelationSpec>(
         security.initial_grinding_bits,
         messages.initial_nonce,
     )?;
-    let prime = sample_mod_q(transcript, domains.prime_sampling, security)?;
-    let (q, _, config, arith) = &prime;
+    let prime = spec.runtime_prime(transcript, security)?;
     let matrices = {
         let _scope = crate::utils::prof::scope(scopes.relation_projection_verify);
-        PreparedConstraintMatrices::<SpartanF2zField, S::Coefficient>::from_skeleton(
-            &prefix.skeleton,
-            config,
-        )
-        .map_err(SpartanError::from)?
+        prefix.matrices.project(spec, &prime.config)?
     };
     drop(step2_scope);
 
     let terminal_claim = {
         let _step3 = crate::utils::prof::scope("step3:piop_verify");
         let _scope = crate::utils::prof::scope(scopes.spartan_verify);
-        let mut grinder = VerifierGrindingTranscript::<_>::new_in_domain(
-            transcript,
-            piop_wrap_bits(security),
-            &messages.piop_nonces,
-            domains.piop_grinding,
-        );
-        let terminal_claim = match &messages.spartan {
-            SpartanProof::Plain(spartan) => {
-                verify_spartan_proof(&mut grinder, &matrices, binding, spartan)?
+        if schedule.piop_grinding {
+            let mut grinder = VerifierGrindingTranscript::<_>::new_in_domain(
+                transcript,
+                piop_wrap_bits(security),
+                &messages.piop_nonces,
+                domains.piop_grinding,
+            );
+            let terminal_claim = verify_kernel(&mut grinder, &matrices, binding, &messages.spartan)?;
+            grinder.finish()?;
+            terminal_claim
+        } else {
+            if !messages.piop_nonces.is_empty() {
+                return Err(GrindingError::InvalidNonce {
+                    nonce: messages.piop_nonces[0],
+                    bits: 0,
+                }
+                .into());
             }
-            SpartanProof::UnivariateSkip(spartan) => {
-                verify_spartan_univariate_skip_proof(&mut grinder, &matrices, binding, spartan)?
-            }
-        };
-        grinder.finish()?;
-        terminal_claim
+            verify_kernel(transcript, &matrices, binding, &messages.spartan)?
+        }
     };
 
     let step4_scope = crate::utils::prof::scope("step4:bitify_verify");
     let table = spec.block_table();
     let (opening, bridge_digest) = {
         let _scope = crate::utils::prof::scope(scopes.bitify_verifier);
-        bitify_and_bind(spec, &matrices, binding, &terminal_claim, &table, *q, arith)?
+        bitify_and_bind(spec, &matrices, binding, &terminal_claim, &table, schedule.scale_side, &prime)?
     };
     check_boundary(
         transcript,
@@ -960,6 +1810,8 @@ pub fn verify_prefix<T: Transcript, S: RelationSpec>(
     drop(step4_scope);
 
     Ok(VerifiedPrefix {
+        terminal_claim,
+        matrices_digest: *matrices.digest(),
         opening,
         bridge_digest,
         prime,
@@ -1066,6 +1918,24 @@ where
     Ok((spartan, claim))
 }
 
+/// Verifies the Spartan proof of either kernel shape.
+fn verify_kernel<C, T: Transcript>(
+    transcript: &mut T,
+    matrices: &PreparedConstraintMatrices<SpartanF2zField, C>,
+    binding: &[u8; 32],
+    spartan: &SpartanProof,
+) -> Result<ScaledMleEvaluationClaim<SpartanF2zField>, ProtocolError>
+where
+    C: SpartanMatrixCoefficient<SpartanF2zField>,
+{
+    Ok(match spartan {
+        SpartanProof::Plain(spartan) => verify_spartan_proof(transcript, matrices, binding, spartan)?,
+        SpartanProof::UnivariateSkip(spartan) => {
+            verify_spartan_univariate_skip_proof(transcript, matrices, binding, spartan)?
+        }
+    })
+}
+
 /// The proof's Spartan shape must be the one the relation's kernel produces
 /// (checked before any transcript operation).
 fn check_proof_kernel(kernel: Kernel, spartan: &SpartanProof) -> Result<(), ProtocolError> {
@@ -1091,23 +1961,23 @@ fn bitify_and_bind<S: RelationSpec>(
     binding: &[u8; 32],
     terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
     table: &BlockTable,
-    q: u128,
-    arith: &ProjArith,
+    scale_side: ScaleSide,
+    prime: &RuntimePrime,
 ) -> Result<(BitifiedClaim, [u8; 32]), ProtocolError> {
     let opening = bitify::bitify(
         terminal_claim,
         spec.committed_layout(),
         spec.gate_vars(),
         table,
-        q,
-        arith,
+        scale_side,
+        &prime.arith,
     )?;
     let digest = bitify::bridge_digest(
         spec.domains().bitified_claim,
         binding,
         matrices.field_modulus_encoding(),
         matrices.digest(),
-        q,
+        prime.q,
         |hasher| spec.hash_bridge_constants(hasher),
         terminal_claim,
         &opening,
@@ -1151,35 +2021,57 @@ pub fn check_boundary<T: Transcript>(
     verify_and_absorb_in_domain(transcript, domain, 0, bits, nonce)
 }
 
-/// The sampled Step-2 prime with its runtime field configuration and
-/// canonical arithmetic.
-pub type RuntimePrime = (
-    u128,
-    usize,
-    <SpartanF2zField as PrimeField>::Config,
-    ProjArith,
-);
-
-/// Samples the Step-2 prime from the profile interval under the relation's
-/// domain and builds its runtime field configuration and arithmetic.
+/// Samples a prime from `[min, max]` under `domain` (the prime-domain,
+/// prime-min, prime-max frames, the transcript-driven draw, the prime-q
+/// frame) and builds its runtime field.
 pub fn sample_mod_q(
     transcript: &mut impl Transcript,
     domain: &[u8],
-    security: &IopSecurityParams,
+    min: u128,
+    max: u128,
 ) -> Result<RuntimePrime, ProtocolError> {
     absorb_spartan_message(transcript, b"prime-domain", domain);
-    absorb_spartan_message(
-        transcript,
-        b"prime-min",
-        &security.projection_min.to_le_bytes(),
-    );
-    absorb_spartan_message(
-        transcript,
-        b"prime-max",
-        &security.projection_max.to_le_bytes(),
-    );
-    let q = sample_prime_in_interval(transcript, security.projection_min, security.projection_max)?;
+    absorb_spartan_message(transcript, b"prime-min", &min.to_le_bytes());
+    absorb_spartan_message(transcript, b"prime-max", &max.to_le_bytes());
+    let q = sample_prime_in_interval(transcript, min, max)?;
     absorb_spartan_message(transcript, b"prime-q", &q.to_le_bytes());
+    runtime_field(q)
+}
+
+/// Samples a full-width prime from `[2^127, 2^128)` under `domain`.
+///
+/// The interval exceeds the general sampler's `2^126` operating cap, so
+/// this sampler draws exactly uniform odd candidates (the `2^126` odd
+/// residues divide the `u128` draw space evenly, so masking a uniform draw
+/// is exact) and tests them with the same deterministic BPSW-style check
+/// that guards every runtime Spartan field configuration. Rejected draws
+/// advance the transcript for prover and verifier identically.
+pub fn sample_full_width_prime(
+    transcript: &mut impl Transcript,
+    domain: &[u8],
+    min: u128,
+    max: u128,
+) -> Result<RuntimePrime, ProtocolError> {
+    const ATTEMPTS: usize = 64 * 128;
+    absorb_spartan_message(transcript, b"prime-domain", domain);
+    absorb_spartan_message(transcript, b"prime-min", &min.to_le_bytes());
+    absorb_spartan_message(transcript, b"prime-max", &max.to_le_bytes());
+    let mut q = None;
+    for _ in 0..ATTEMPTS {
+        let draw: BinaryFieldGF128 = transcript.get_field_challenge(&());
+        let words = draw.words();
+        let draw = (u128::from(words[0]) | (u128::from(words[1]) << 64)) & ((1u128 << 126) - 1);
+        let candidate = (1u128 << 127) | (draw << 1) | 1;
+        if is_prime(Flavor::Any, &crypto_bigint::U128::from(candidate)) {
+            q = Some(candidate);
+            break;
+        }
+    }
+    let q = q.ok_or(ProtocolError::FingerprintSearchExhausted { attempts: ATTEMPTS })?;
+    absorb_spartan_message(transcript, b"prime-q", &q.to_le_bytes());
+    if q < min || q > max {
+        return Err(ProtocolError::UnsupportedFieldModulus);
+    }
     runtime_field(q)
 }
 
@@ -1189,7 +2081,13 @@ pub fn runtime_field(q: u128) -> Result<RuntimePrime, ProtocolError> {
         .map_err(|_| ProtocolError::UnsupportedFieldModulus)?;
     SpartanF2zField::validate_config(&config).map_err(|_| ProtocolError::UnsupportedFieldModulus)?;
     let q_bits = (u128::BITS - q.leading_zeros()) as usize;
-    Ok((q, q_bits, config, ProjArith::new(q)))
+    let arith = Arith::new(q, &config);
+    Ok(RuntimePrime {
+        q,
+        q_bits,
+        config,
+        arith,
+    })
 }
 
 /// The committed bit rows must have exactly the layout's shape.
@@ -1375,16 +2273,16 @@ pub mod terminal {
             &self,
             transcript: &mut impl Transcript,
             terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
-        ) -> Result<(BitifiedClaim, [u8; 32], BlockTable), ProtocolError> {
-            let arith = ProjArith::new(FQ_MOD);
+        ) -> Result<(BitifiedClaim, [u8; 32], BlockTable, RuntimePrime), ProtocolError> {
+            let prime = runtime_field(FQ_MOD)?;
             let table = self.spec.block_table();
             let opening = bitify::bitify(
                 terminal_claim,
                 self.params,
                 self.spec.gate_vars(),
                 &table,
-                FQ_MOD,
-                &arith,
+                self.spec.schedule().scale_side,
+                &prime.arith,
             )?;
             let bridge_digest = bitify::bridge_digest(
                 self.spec.domains().bitified_claim,
@@ -1406,7 +2304,7 @@ pub mod terminal {
                 }
             }
             self.ligerito.bind(transcript);
-            Ok((opening, bridge_digest, table))
+            Ok((opening, bridge_digest, table, prime))
         }
     }
 
@@ -1418,20 +2316,19 @@ pub mod terminal {
         payload: StatementPayload,
         binding: Binding<S>,
     ) -> Result<PreparedTerminalOpening<S>, ProtocolError> {
-        let config = SpartanF2zField::make_cfg(&Uint::from(FQ_MOD))
-            .map_err(|_| ProtocolError::UnsupportedFieldModulus)?;
-        let matrices = PreparedConstraintMatrices::<SpartanF2zField, S::Coefficient>::from_skeleton(
-            prepared.skeleton(),
-            &config,
-        )
-        .map_err(SpartanError::from)?;
+        let prime = runtime_field(FQ_MOD)?;
+        let matrices = prepared
+            .prefix
+            .matrices
+            .project(prepared.layout(), &prime.config)?;
         let params = prepared.params();
-        validate_commitment(&params, commitment, prepared.ligerito_configuration().prover())?;
+        let ligerito = prepared.ligerito_configuration().clone();
+        validate_commitment(&params, commitment, ligerito.prover())?;
         let mut terminal = PreparedTerminalOpening {
             spec: prepared.layout().clone(),
             params,
             security: prepared.security().clone(),
-            ligerito: prepared.ligerito_configuration().clone(),
+            ligerito,
             binding,
             assignment_binding: [0; 32],
             relation_modulus_encoding: matrices.field_modulus_encoding().into(),
@@ -1465,9 +2362,9 @@ pub mod terminal {
     ) -> Result<IntEvalRsLigModQProof, ProtocolError> {
         prepared.validate_commitment(&hint.commitment)?;
         validate_bit_rows(&prepared.params, hint.rows())?;
-        let (opening, bridge_digest, table) = prepared.bind_claim(transcript, terminal_claim)?;
+        let (opening, bridge_digest, table, prime) = prepared.bind_claim(transcript, terminal_claim)?;
         let ood = bind_prover_ood(transcript, hint, prepared.security.ood);
-        let chunks = bitify::prepare_chunks(&opening, &table, FQ_BITS, &ProjArith::new(FQ_MOD))?;
+        let chunks = bitify::prepare_chunks(&opening, &table, FQ_BITS, &prime.arith)?;
         if chunks.len() != 1 {
             return Err(ProtocolError::MultiChunkRuntimeWeights);
         }
@@ -1496,7 +2393,7 @@ pub mod terminal {
         proof: &IntEvalRsLigModQProof,
     ) -> Result<(), ProtocolError> {
         prepared.validate_commitment(commitment)?;
-        let (opening, bridge_digest, table) = prepared.bind_claim(transcript, terminal_claim)?;
+        let (opening, bridge_digest, table, prime) = prepared.bind_claim(transcript, terminal_claim)?;
         let ood = bind_verifier_ood(
             transcript,
             packed_variables(&prepared.params)?,
@@ -1504,12 +2401,11 @@ pub mod terminal {
             proof.ood.as_ref(),
         )
         .map_err(ProtocolError::F2z)?;
-        let arith = ProjArith::new(FQ_MOD);
-        let chunks = bitify::prepare_chunks(&opening, &table, FQ_BITS, &arith)?;
+        let chunks = bitify::prepare_chunks(&opening, &table, FQ_BITS, &prime.arith)?;
         if chunks.len() != 1 {
             return Err(ProtocolError::MultiChunkRuntimeWeights);
         }
-        let col_weights = bitify::column_weights(&opening, &arith)?;
+        let col_weights = bitify::column_weights(&opening, &prime.arith)?;
         crate::ligerito_flock::verify_mle_eval_mod_q_ligerito_with_weight_chunks(
             transcript,
             prepared.spec.domains().opening,

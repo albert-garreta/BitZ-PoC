@@ -2710,7 +2710,7 @@ pub(crate) fn prove_inner_structured_raw<T: Transcript>(
 /// Coefficient scaling on raw residues: the prover-side twin of
 /// [`SpartanMatrixCoefficient::scale`], with per-proof constants prepared once
 /// instead of per matrix entry.
-pub(crate) trait RawMontyCoefficient: Sync {
+pub trait RawMontyCoefficient: Sync {
     /// Constants derived from the field context once per binding.
     type Prepared: Sync;
 

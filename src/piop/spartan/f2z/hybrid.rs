@@ -12,8 +12,8 @@ use super::*;
 use super::super::{
     absorb_spartan_message,
     protocol::{
-        SpartanPrefixProof, SpartanProof, bitify, check_boundary, prove_prefix, sample_mod_q,
-        verify_prefix,
+        Modular, SpartanPrefixProof, SpartanProof, bitify, check_boundary, prove_prefix,
+        sample_mod_q, verify_prefix,
     },
     univariate_skip::UnivariateSkipSpartanPiopProof,
 };
@@ -60,8 +60,13 @@ pub(crate) fn decoding_config(
         prepared.security().initial_grinding_bits,
         nonce,
     )?;
-    let (q, _, config, _) = sample_mod_q(transcript, domains.prime_sampling, prepared.security())?;
-    Ok((q, config))
+    let prime = sample_mod_q(
+        transcript,
+        domains.prime_sampling,
+        prepared.security().projection_min,
+        prepared.security().projection_max,
+    )?;
+    Ok((prime.q, prime.config))
 }
 
 fn bind_sums(t: &mut Blake3Transcript, digest: &[u8; 32], sums: &[u128]) {
@@ -103,8 +108,8 @@ pub(crate) fn prove(
     drop(piop_scope);
 
     let _opening_scope = crate::utils::prof::scope("hybrid:mul_opening");
-    let (_, q_bits, _, arith) = &proved.prime;
-    let chunks = bitify::prepare_chunks(&proved.opening, &proved.table, *q_bits, arith)?;
+    let arith = &proved.prime.arith;
+    let chunks = bitify::prepare_chunks(&proved.opening, &proved.table, proved.prime.q_bits, arith)?;
     let weights = chunks.chunks();
     if weights.len() != 1 {
         return Err(Error::Invalid("multiple F2Z chunks"));
@@ -168,9 +173,9 @@ pub(crate) fn verify(
 
     absorb_spartan_message(transcript, layout.domains().statement_tag, statement);
     let verified = verify_prefix(transcript, prepared, statement, &proof.messages())?;
-    let (_, q_bits, _, arith) = &verified.prime;
+    let arith = &verified.prime.arith;
 
-    let chunks = bitify::prepare_chunks(&verified.opening, &verified.table, *q_bits, arith)?;
+    let chunks = bitify::prepare_chunks(&verified.opening, &verified.table, verified.prime.q_bits, arith)?;
     let col_weights = bitify::column_weights(&verified.opening, arith)?;
     let weights = chunks.chunks();
     if weights.len() != 1 || proof.sums.len() != p.cols() {

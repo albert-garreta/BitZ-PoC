@@ -49,8 +49,7 @@ pub use baby_bear_mul::{
 };
 pub use cm::{
     CM_AND_F_LIVE_SLOTS, CM_AND_H_SLOTS, CM_AND_WORD_BITS, CmAndError, CmAndLayout, CmAndWitness,
-    CmF2zError, CmF2zProof, CmOpeningClaim, PreparedCmAndRelation, ProjectedCmAndWitness,
-    bitify_cm_and_claim, cm_and_map, commit_cm_and_witness, commit_cm_and_witness_with_config,
+    CmAndSpec, CmF2zError, CmF2zProof, PreparedCmAndRelation, ProjectedCmAndWitness, cm_and_map, commit_cm_and_witness, commit_cm_and_witness_with_config,
     prepare_cm_and_relation, project_cm_and_witness, prove_cm_and_f2z,
     prove_cm_and_f2z_with_config, verify_cm_and_f2z, verify_cm_and_f2z_with_config,
 };

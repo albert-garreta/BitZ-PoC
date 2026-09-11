@@ -28,7 +28,7 @@ fn cm_and_both_regimes_roundtrip_and_bind_roots() {
     let witness = CmAndWitness::from_fn(1 << 15, |i| (i as u32, u32::MAX)).unwrap();
     let field = spartan_f2z_field_config();
     for selection in [LigeritoSelection::JOHNSON, LigeritoSelection::MATCHED_UDR] {
-        let p = prepare_cm_and_relation::<SpartanF2zField>(*witness.layout(), &field)
+        let p = prepare_cm_and_relation(*witness.layout(), &field)
             .unwrap()
             .with_ligerito(selection)
             .unwrap();

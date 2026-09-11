@@ -10,7 +10,7 @@
 //! coordinates on the clear column axis; the high gate coordinates and the
 //! word slots form the folded row axis.
 
-use crypto_primitives::{PrimeField, crypto_bigint_uint::Uint};
+use crypto_primitives::{FromWithConfig, PrimeField, crypto_bigint_uint::Uint};
 
 use crate::{
     ext_proj::ProjArith,
@@ -25,6 +25,177 @@ use super::{
     ProtocolError, SpartanF2zField, SpartanField, binding::BindingHasher, checked_pow2,
     matrix::ScaledMleEvaluationClaim,
 };
+
+/// Canonical arithmetic modulo the runtime prime, over canonical `u128`
+/// residues. [`ProjArith`] is the fast Montgomery path for primes below
+/// `2^126`; [`FieldArith`] covers the full-width fingerprint primes.
+pub trait Modular: Sync {
+    /// A precomputed multiplier.
+    type Fixed: Sync;
+
+    fn q(&self) -> u128;
+    fn reduce(&self, x: u128) -> u128;
+    fn add(&self, a: u128, b: u128) -> u128;
+    fn mul(&self, a: u128, b: u128) -> u128;
+    fn fixed(&self, b: u128) -> Self::Fixed;
+    fn mul_fixed(&self, a: u128, b: &Self::Fixed) -> u128;
+
+    /// `a - b` for canonical residues.
+    fn sub(&self, a: u128, b: u128) -> u128 {
+        if b == 0 { a } else { self.add(a, self.q() - b) }
+    }
+}
+
+impl Modular for ProjArith {
+    type Fixed = crypto_bigint::modular::FixedMontyForm<{ crypto_bigint::U128::LIMBS }>;
+
+    fn q(&self) -> u128 {
+        ProjArith::q(self)
+    }
+
+    fn reduce(&self, x: u128) -> u128 {
+        ProjArith::reduce(self, x)
+    }
+
+    fn add(&self, a: u128, b: u128) -> u128 {
+        ProjArith::add(self, a, b)
+    }
+
+    fn mul(&self, a: u128, b: u128) -> u128 {
+        ProjArith::mul(self, a, b)
+    }
+
+    fn fixed(&self, b: u128) -> Self::Fixed {
+        self.monty_factor(b)
+    }
+
+    fn mul_fixed(&self, a: u128, b: &Self::Fixed) -> u128 {
+        self.mul_plain_by(a, b)
+    }
+}
+
+/// Canonical arithmetic through the runtime Montgomery field itself, for
+/// any modulus the Spartan layer accepts (including the full-width
+/// fingerprint primes the projection context cannot host).
+pub struct FieldArith {
+    config: <SpartanF2zField as PrimeField>::Config,
+    q: u128,
+}
+
+impl FieldArith {
+    pub fn new(q: u128, config: <SpartanF2zField as PrimeField>::Config) -> Self {
+        Self { config, q }
+    }
+
+    fn element(&self, x: u128) -> SpartanF2zField {
+        SpartanF2zField::from_with_cfg(x, &self.config)
+    }
+}
+
+impl Modular for FieldArith {
+    type Fixed = u128;
+
+    fn q(&self) -> u128 {
+        self.q
+    }
+
+    fn reduce(&self, x: u128) -> u128 {
+        x % self.q
+    }
+
+    fn add(&self, a: u128, b: u128) -> u128 {
+        let (sum, overflow) = a.overflowing_add(b);
+        if overflow || sum >= self.q {
+            sum.wrapping_sub(self.q)
+        } else {
+            sum
+        }
+    }
+
+    fn mul(&self, a: u128, b: u128) -> u128 {
+        let mut product = self.element(a);
+        product *= &self.element(b);
+        product.canonical_u128()
+    }
+
+    fn fixed(&self, b: u128) -> Self::Fixed {
+        b
+    }
+
+    fn mul_fixed(&self, a: u128, b: &Self::Fixed) -> u128 {
+        self.mul(a, *b)
+    }
+}
+
+/// The arithmetic of a runtime prime: Montgomery projection below `2^126`,
+/// the field itself above.
+pub enum Arith {
+    Proj(ProjArith),
+    Field(FieldArith),
+}
+
+impl Arith {
+    /// The arithmetic of `q` under the runtime field configuration.
+    pub fn new(q: u128, config: &<SpartanF2zField as PrimeField>::Config) -> Self {
+        if q < 1_u128 << 126 {
+            Self::Proj(ProjArith::new(q))
+        } else {
+            Self::Field(FieldArith::new(q, config.clone()))
+        }
+    }
+}
+
+pub enum ArithFixed {
+    Proj(<ProjArith as Modular>::Fixed),
+    Field(u128),
+}
+
+impl Modular for Arith {
+    type Fixed = ArithFixed;
+
+    fn q(&self) -> u128 {
+        match self {
+            Self::Proj(arith) => Modular::q(arith),
+            Self::Field(arith) => arith.q(),
+        }
+    }
+
+    fn reduce(&self, x: u128) -> u128 {
+        match self {
+            Self::Proj(arith) => Modular::reduce(arith, x),
+            Self::Field(arith) => arith.reduce(x),
+        }
+    }
+
+    fn add(&self, a: u128, b: u128) -> u128 {
+        match self {
+            Self::Proj(arith) => Modular::add(arith, a, b),
+            Self::Field(arith) => arith.add(a, b),
+        }
+    }
+
+    fn mul(&self, a: u128, b: u128) -> u128 {
+        match self {
+            Self::Proj(arith) => Modular::mul(arith, a, b),
+            Self::Field(arith) => arith.mul(a, b),
+        }
+    }
+
+    fn fixed(&self, b: u128) -> Self::Fixed {
+        match self {
+            Self::Proj(arith) => ArithFixed::Proj(Modular::fixed(arith, b)),
+            Self::Field(arith) => ArithFixed::Field(arith.fixed(b)),
+        }
+    }
+
+    fn mul_fixed(&self, a: u128, b: &Self::Fixed) -> u128 {
+        match (self, b) {
+            (Self::Proj(arith), ArithFixed::Proj(b)) => Modular::mul_fixed(arith, a, b),
+            (Self::Field(arith), ArithFixed::Field(b)) => arith.mul_fixed(a, b),
+            _ => unreachable!("a fixed multiplier belongs to the arithmetic that built it"),
+        }
+    }
+}
 
 /// A contiguous range of bit slots of one gate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -70,6 +241,17 @@ impl BlockTable {
     }
 }
 
+/// Where a nonzero Spartan scale goes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScaleSide {
+    /// Onto the folded row factors; the clear column table stays the raw
+    /// equality table (the integer-multiplication relations).
+    Rows,
+    /// Onto the clear column table; the row factors stay unscaled (the
+    /// CM-AND relation).
+    Columns,
+}
+
 /// The factorized claim bound between Spartan and F2Z: the row functional is
 /// one factor per variable block times the slot weights, the column
 /// functional is the equality table of the low gate coordinates.
@@ -103,14 +285,15 @@ impl BitifiedClaim {
 
 /// Applies the adjoint of the block reconstruction map to a terminal claim
 /// over the runtime prime `q`.
-pub fn bitify(
+pub fn bitify<A: Modular>(
     claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
     params: IntegerMatrixLayout,
     gate_vars: usize,
     table: &BlockTable,
-    q: u128,
-    arith: &ProjArith,
+    scale_side: ScaleSide,
+    arith: &A,
 ) -> Result<BitifiedClaim, ProtocolError> {
+    let q = arith.q();
     if claim.point().len() != gate_vars.saturating_add(table.selector_vars)
         || params.col_vars > gate_vars
     {
@@ -129,13 +312,7 @@ pub fn bitify(
         }
         Ok(Fq(canonical))
     };
-    let sub = |left: u128, right: u128| -> u128 {
-        if right == 0 {
-            left
-        } else {
-            arith.add(left, q - right)
-        }
-    };
+    let sub = |left: u128, right: u128| -> u128 { arith.sub(left, right) };
     let mul = |left: Fq, right: Fq| Fq(arith.mul(left.0, right.0));
 
     let gate_point = claim.point()[..gate_vars]
@@ -181,23 +358,35 @@ pub fn bitify(
         .map(|(code, _)| block_factor(code))
         .collect();
 
-    // Put a nonzero Spartan scale on the folded row side, avoiding a dense
-    // column-table scaling pass. A zero scale stays on the clear side so it
-    // does not erase the row functional that exponent folding certifies.
-    let (rows, col_scale) = if factors.iter().all(|factor| *factor == Fq(0)) {
+    // At a block point where the variable part vanishes the F2Z protocol
+    // still needs a nonempty row functional: a deterministic dummy row with
+    // an all-zero clear read-off.
+    if factors.iter().all(|factor| *factor == Fq(0)) {
         if adjusted_claim != Fq(0) {
             return Err(ProtocolError::InvalidConstantOnlyClaim);
         }
-        (BitifiedRows::ConstantDummy, Fq(0))
-    } else if scale == Fq(0) {
-        (BitifiedRows::Structured(factors), Fq(0))
-    } else {
-        let factors = if scale == one {
-            factors
-        } else {
-            factors.into_iter().map(|factor| mul(scale, factor)).collect()
-        };
-        (BitifiedRows::Structured(factors), one)
+        return Ok(BitifiedClaim {
+            params,
+            gate_point,
+            rows: BitifiedRows::ConstantDummy,
+            col_scale: Fq(0),
+            claimed: adjusted_claim,
+        });
+    }
+
+    let (rows, col_scale) = match scale_side {
+        // Put a nonzero Spartan scale on the folded row side, avoiding a
+        // dense column-table scaling pass. A zero scale stays on the clear
+        // side so it does not erase the row functional that exponent
+        // folding certifies.
+        ScaleSide::Rows if scale == Fq(0) => (BitifiedRows::Structured(factors), Fq(0)),
+        ScaleSide::Rows if scale == one => (BitifiedRows::Structured(factors), one),
+        ScaleSide::Rows => (
+            BitifiedRows::Structured(factors.into_iter().map(|factor| mul(scale, factor)).collect()),
+            one,
+        ),
+        // The scale rides the clear column table; the rows stay unscaled.
+        ScaleSide::Columns => (BitifiedRows::Structured(factors), scale),
     };
 
     Ok(BitifiedClaim {
@@ -209,9 +398,9 @@ pub fn bitify(
     })
 }
 
-/// Little-endian equality table with one fixed-factor Montgomery
-/// multiplication per parent and one allocation for the complete table.
-pub fn eq_le_table_fq_fast_with(point: &[Fq], arith: &ProjArith) -> Result<Vec<Fq>, ProtocolError> {
+/// Little-endian equality table with one fixed-factor multiplication per
+/// parent and one allocation for the complete table.
+pub fn eq_le_table_fq_fast_with<A: Modular>(point: &[Fq], arith: &A) -> Result<Vec<Fq>, ProtocolError> {
     let table_len = checked_pow2(point.len())?;
     let mut table = vec![Fq(0); table_len];
     table[0] = Fq(1);
@@ -222,11 +411,11 @@ pub fn eq_le_table_fq_fast_with(point: &[Fq], arith: &ProjArith) -> Result<Vec<F
         let active_len = half
             .checked_mul(2)
             .ok_or(ProtocolError::InvalidF2zParameters)?;
-        let factor = arith.monty_factor(coordinate.0);
+        let factor = arith.fixed(coordinate.0);
         let (zero_children, one_children) = table[..active_len].split_at_mut(half);
         let expand = |zero: &mut Fq, one: &mut Fq| {
             let parent = zero.0;
-            let one_child = arith.mul_plain_by(parent, &factor);
+            let one_child = arith.mul_fixed(parent, &factor);
             zero.0 = if one_child == 0 {
                 parent
             } else {
@@ -256,13 +445,13 @@ pub fn eq_le_table_fq_fast_with(point: &[Fq], arith: &ProjArith) -> Result<Vec<F
 ///
 /// for every variable block, zero for word slots outside every block. The
 /// per-word scalars are formed first, then every row is one fixed-factor
-/// Montgomery multiplication of the shared `eq` table.
-fn structured_row_weights(
+/// multiplication of the shared `eq` table.
+fn structured_row_weights<A: Modular>(
     params: &IntegerMatrixLayout,
     gate_high: &[Fq],
     table: &BlockTable,
     factors: &[Fq],
-    arith: &ProjArith,
+    arith: &A,
 ) -> Result<Vec<u128>, ProtocolError> {
     let word_bits = params.word_bits;
     if !word_bits.is_power_of_two() {
@@ -301,29 +490,47 @@ fn structured_row_weights(
     cfg_chunks_mut!(weights, high_gate_count)
         .zip(cfg_iter!(word_scalars))
         .for_each(|(rows, &scalar)| {
-            let factor = arith.monty_factor(scalar);
+            let factor = arith.fixed(scalar);
             for (row, equality) in rows.iter_mut().zip(&eq_high) {
-                *row = arith.mul_plain_by(equality.0, &factor);
+                *row = arith.mul_fixed(equality.0, &factor);
             }
         });
     Ok(weights)
+}
+
+/// The dense canonical row weights of an opening (the dummy row functional
+/// is `e_0`).
+pub fn dense_row_weights<A: Modular>(
+    opening: &BitifiedClaim,
+    table: &BlockTable,
+    arith: &A,
+) -> Result<Vec<u128>, ProtocolError> {
+    match &opening.rows {
+        BitifiedRows::ConstantDummy => {
+            let mut weights = vec![0_u128; checked_pow2(opening.params.row_vars)?];
+            weights[0] = 1;
+            Ok(weights)
+        }
+        BitifiedRows::Structured(factors) => {
+            structured_row_weights(&opening.params, opening.gate_high(), table, factors, arith)
+        }
+    }
 }
 
 /// Compiles only the folded row functional into the mod-q chunk
 /// representation. The prover never reads the clear column weights or the
 /// claimed value, so keeping those verifier-only avoids an entire `2^s`
 /// equality table on the proving path.
-pub fn prepare_chunks(
+pub fn prepare_chunks<A: Modular>(
     opening: &BitifiedClaim,
     table: &BlockTable,
     q_bits: usize,
-    arith: &ProjArith,
+    arith: &A,
 ) -> Result<ModQWeightChunks, ProtocolError> {
     let params = opening.params;
     if opening.gate_point.len() < params.col_vars {
         return Err(ProtocolError::InvalidF2zParameters);
     }
-    let gate_high = opening.gate_high();
 
     match &opening.rows {
         BitifiedRows::ConstantDummy => {
@@ -335,7 +542,8 @@ pub fn prepare_chunks(
             Ok(chunks)
         }
         BitifiedRows::Structured(factors) => {
-            let weights = structured_row_weights(&params, gate_high, table, factors, arith)?;
+            let weights =
+                structured_row_weights(&params, opening.gate_high(), table, factors, arith)?;
             if mod_q_num_chunks(&params, q_bits) == 1 {
                 ModQWeightChunks::from_single_chunk(&params, q_bits, weights)
                     .map_err(|_| ProtocolError::InvalidF2zParameters)
@@ -353,16 +561,16 @@ pub fn prepare_chunks(
 
 /// The clear column weights `col_scale · eq(gate_low, ·)` (all zero when the
 /// clear read-off is switched off).
-pub fn column_weights(opening: &BitifiedClaim, arith: &ProjArith) -> Result<Vec<Fq>, ProtocolError> {
+pub fn column_weights<A: Modular>(opening: &BitifiedClaim, arith: &A) -> Result<Vec<Fq>, ProtocolError> {
     let params = opening.params;
     if opening.col_scale == Fq(0) {
         return Ok(vec![Fq(0); checked_pow2(params.col_vars)?]);
     }
     let mut eq_low = eq_le_table_fq_fast_with(opening.gate_low(), arith)?;
     if opening.col_scale != Fq(1) {
-        let factor = arith.monty_factor(opening.col_scale.0);
+        let factor = arith.fixed(opening.col_scale.0);
         cfg_iter_mut!(&mut eq_low, 256).for_each(|weight| {
-            weight.0 = arith.mul_plain_by(weight.0, &factor);
+            weight.0 = arith.mul_fixed(weight.0, &factor);
         });
     }
     Ok(eq_low)

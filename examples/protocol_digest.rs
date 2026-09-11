@@ -61,8 +61,8 @@ fn multiswap_digest() -> String {
 
     // Every transcript-visible proof component, framed.
     let f2z_bytes = proof.f2z().to_bytes();
-    let mu_prime = proof.mu_prime().to_bytes_le();
-    let nonce = proof.reduction_nonce().to_le_bytes();
+    let mu_prime = proof.mu_prime().expect("lift").to_bytes_le();
+    let nonce = proof.reduction_nonce().expect("nonce").to_le_bytes();
     let spartan = format!("{:?}", proof.spartan());
     digest_hex(&[
         &hint.commitment.root,
