@@ -50,21 +50,6 @@ impl Medians {
             proof_bytes: median(|m| m.proof_bytes as f64),
         }
     }
-
-    pub fn values(self) -> [f64; 10] {
-        [
-            self.witness_ms,
-            self.commit_ms,
-            self.piop_ms,
-            self.opening_ms,
-            self.pcs_ms,
-            self.online_prover_ms,
-            self.witness_to_proof_ms,
-            self.post_proof_ms,
-            self.verify_ms,
-            self.proof_bytes,
-        ]
-    }
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -72,6 +57,7 @@ pub(super) struct Trial {
     pub kind: &'static str,
     pub index: usize,
 }
+
 impl Trial {
     pub fn new(index: usize) -> Self {
         if index == 0 {
@@ -171,9 +157,94 @@ pub(super) struct WitnessSummary<'a> {
     pub all_rows_match: bool,
 }
 
+#[derive(Serialize)]
+pub(super) struct CsvRow<'a> {
+    pub workload: &'a str,
+    pub backend: &'a str,
+    pub log_multiplications: usize,
+    pub samples: usize,
+    #[serde(serialize_with = "super::common::output::csv_format::display")]
+    pub setup_ms: f64,
+    #[serde(serialize_with = "super::common::output::csv_format::json_number")]
+    pub witness_ms: f64,
+    #[serde(serialize_with = "super::common::output::csv_format::json_number")]
+    pub commit_ms: f64,
+    #[serde(serialize_with = "super::common::output::csv_format::json_number")]
+    pub piop_ms: f64,
+    #[serde(serialize_with = "super::common::output::csv_format::json_number")]
+    pub opening_ms: f64,
+    #[serde(serialize_with = "super::common::output::csv_format::json_number")]
+    pub pcs_ms: f64,
+    #[serde(serialize_with = "super::common::output::csv_format::json_number")]
+    pub online_prover_ms: f64,
+    #[serde(serialize_with = "super::common::output::csv_format::json_number")]
+    pub witness_to_proof_ms: f64,
+    #[serde(serialize_with = "super::common::output::csv_format::json_number")]
+    pub post_proof_ms: f64,
+    #[serde(serialize_with = "super::common::output::csv_format::json_number")]
+    pub verify_ms: f64,
+    #[serde(serialize_with = "super::common::output::csv_format::json_number")]
+    pub proof_bytes: f64,
+    pub peak_rss_bytes: Option<u64>,
+}
+impl CsvRow<'_> {
+    pub const HEADER: [&'static str; 16] = [
+        "workload",
+        "backend",
+        "log_multiplications",
+        "samples",
+        "setup_ms",
+        "witness_ms",
+        "commit_ms",
+        "piop_ms",
+        "opening_ms",
+        "pcs_ms",
+        "online_prover_ms",
+        "witness_to_proof_ms",
+        "post_proof_ms",
+        "verify_ms",
+        "proof_bytes",
+        "peak_rss_bytes",
+    ];
+}
+
 #[cfg(test)]
 mod reporting_tests {
     use super::*;
+
+    #[test]
+    fn csv_contract_keeps_float_spellings_missing_values_and_headers() {
+        let mut csv = super::super::common::output::csv_writer(Vec::new());
+        csv.write_record(CsvRow::HEADER).unwrap();
+        csv.flush().unwrap();
+        let header = "workload,backend,log_multiplications,samples,setup_ms,witness_ms,commit_ms,piop_ms,opening_ms,pcs_ms,online_prover_ms,witness_to_proof_ms,post_proof_ms,verify_ms,proof_bytes,peak_rss_bytes\n";
+        assert_eq!(csv.get_ref(), header.as_bytes());
+        csv.serialize(CsvRow {
+            workload: "u32",
+            backend: "comma,quote\"\nline",
+            log_multiplications: 4,
+            samples: 2,
+            setup_ms: 1.0,
+            witness_ms: 1.0,
+            commit_ms: 2.0,
+            piop_ms: 3.0,
+            opening_ms: 4.0,
+            pcs_ms: 5.0,
+            online_prover_ms: 6.0,
+            witness_to_proof_ms: 7.0,
+            post_proof_ms: 8.0,
+            verify_ms: 9.0,
+            proof_bytes: 2048.0,
+            peak_rss_bytes: None,
+        })
+        .unwrap();
+        assert_eq!(
+            String::from_utf8(csv.into_inner().unwrap()).unwrap(),
+            format!(
+                "{header}u32,\"comma,quote\"\"\nline\",4,2,1,1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,2048.0,\n"
+            )
+        );
+    }
     use serde_json::json;
 
     #[test]
@@ -193,7 +264,7 @@ mod reporting_tests {
         };
         let config = json!({"opaque":true});
         let sample = Sample {
-            schema: "f2z-native-mul-sample/v1",
+            schema: "native-mul-sample/v2",
             workload: "u32",
             backend: "f2z",
             log_multiplications: 4,
@@ -216,7 +287,7 @@ mod reporting_tests {
         assert_eq!(
             serde_json::from_slice::<Value>(&bytes).unwrap(),
             json!({
-                "schema":"f2z-native-mul-sample/v1","workload":"u32","backend":"f2z",
+                "schema":"native-mul-sample/v2","workload":"u32","backend":"f2z",
                 "log_multiplications":4,"multiplications":16,"corpus_digest":"digest",
                 "threads":1,"seed":7,"trial":{"kind":"sample","index":0},"setup_ms":8.0,
                 "config":{"opaque":true},"measurement_policy":"policy","proof_verified":true,

@@ -27,23 +27,10 @@ mod trace_capture;
 
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use serde_json::{Value, json};
-use std::{io::Write, path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc};
 use trace_capture::{CaptureLayer, CapturedSpan, TraceCapture};
 
 const MEASUREMENT_POLICY: &str = "warm-process/v1";
-
-const MEDIAN_METRICS: &[&str] = &[
-    "witness_ms",
-    "commit_ms",
-    "piop_ms",
-    "opening_ms",
-    "pcs_ms",
-    "online_prover_ms",
-    "witness_to_proof_ms",
-    "post_proof_ms",
-    "verify_ms",
-    "proof_bytes",
-];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Workload {
@@ -514,12 +501,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut trace = output.jsonl("trace.jsonl", FileMode::CreateNew)?;
     let mut samples = output.jsonl("samples.jsonl", FileMode::CreateNew)?;
     let mut memory_samples = output.jsonl("memory.jsonl", FileMode::CreateNew)?;
-    let mut csv = output.buffered("metrics.csv", FileMode::CreateNew)?;
-    writeln!(
-        csv,
-        "workload,backend,log_multiplications,samples,setup_ms,{},peak_rss_bytes",
-        MEDIAN_METRICS.join(",")
-    )?;
+    let mut csv = output.csv("metrics.csv", FileMode::CreateNew)?;
+    csv.write_record(report::CsvRow::HEADER)?;
     let rev = std::process::Command::new("git")
         .args(["rev-parse", "HEAD"])
         .output()?;
@@ -697,18 +680,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 let medians = Medians::from_samples(&measured);
-                write!(csv, "{},{backend},{n},{reps},{setup_ms}", workload.slug())?;
-                for value in medians.values() {
-                    write!(csv, ",{}", serde_json::to_string(&value)?)?;
-                }
                 let peak_rss_bytes = memory_sample.as_ref().map(|sample| sample.peak_rss_bytes);
-                writeln!(
-                    csv,
-                    ",{}",
-                    peak_rss_bytes
-                        .map(|bytes| bytes.to_string())
-                        .unwrap_or_default()
-                )?;
+                csv.serialize(report::CsvRow {
+                    workload: workload.slug(),
+                    backend,
+                    log_multiplications: n,
+                    samples: reps,
+                    setup_ms,
+                    witness_ms: medians.witness_ms,
+                    commit_ms: medians.commit_ms,
+                    piop_ms: medians.piop_ms,
+                    opening_ms: medians.opening_ms,
+                    pcs_ms: medians.pcs_ms,
+                    online_prover_ms: medians.online_prover_ms,
+                    witness_to_proof_ms: medians.witness_to_proof_ms,
+                    post_proof_ms: medians.post_proof_ms,
+                    verify_ms: medians.verify_ms,
+                    proof_bytes: medians.proof_bytes,
+                    peak_rss_bytes,
+                })?;
                 csv.flush()?;
                 println!(
                     "RESULT schema=native-mul/2 workload={} backend={backend} log_multiplications={n} samples={reps} witness_ms={} online_prover_ms={} verify_ms={} proof_bytes={} peak_rss_bytes={}",

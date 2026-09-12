@@ -23,9 +23,12 @@ use std::{error::Error, time::Instant};
 
 #[path = "../common/output.rs"]
 mod output;
+#[path = "report.rs"]
+mod report;
 #[path = "sweep.rs"]
 mod sweep;
 use output::{BenchmarkOutput, FileMode, JsonStyle};
+use report::{HybridRow, NativeRow};
 
 type Challenger = HasherChallenger<blake3::Hasher>;
 type AnyError = Box<dyn Error>;
@@ -414,9 +417,9 @@ pub fn run() -> Result<(), AnyError> {
             prepared.security().algebraic_bits,
             prepared.ood_round().map_or(0, |p| p.grinding_bits)
         );
-        println!(
-            "mode,iteration,setup_ms,witness_ms,witness_commit_ms,continuation_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib,piop_ms,iop_ms,mul_piop_ms,sha_piop_ms,mul_opening_ms,joint_sumcheck_ms,shared_opening_ms,ood_round_ms"
-        );
+        let mut csv = output::csv_writer(std::io::stdout().lock());
+        csv.write_record(HybridRow::HEADER)?;
+        csv.flush()?;
         for iteration in 0..=iterations {
             // Discard setup and the preceding verifier's profiling records.
             let _ = prof::take_totals();
@@ -464,12 +467,27 @@ pub fn run() -> Result<(), AnyError> {
             if iteration == 0 {
                 continue;
             }
-            println!(
-                "hybrid,{},{setup_ms:.3},{witness_ms:.3},{witness_commit_ms:.3},{continuation_ms:.3},{total_ms:.3},{verify_ms:.3},{},{},{piop_ms:.3},{iop_ms:.3},{mul_piop_ms:.3},{sha_piop_ms:.3},{mul_opening_ms:.3},{joint_sumcheck_ms:.3},{shared_opening_ms:.3},{ood_round_ms:.3}",
-                iteration - 1,
-                bytes.len(),
-                peak_kib()
-            );
+            csv.serialize(HybridRow {
+                mode: "hybrid",
+                iteration: iteration - 1,
+                setup_ms,
+                witness_ms,
+                witness_commit_ms,
+                continuation_ms,
+                total_prover_ms: total_ms,
+                verify_ms,
+                proof_bytes: bytes.len(),
+                peak_rss_kib: peak_kib(),
+                piop_ms,
+                iop_ms,
+                mul_piop_ms,
+                sha_piop_ms,
+                mul_opening_ms,
+                joint_sumcheck_ms,
+                shared_opening_ms,
+                ood_round_ms,
+            })?;
+            csv.flush()?;
             if let Some(path) = &output {
                 let artifacts = BenchmarkOutput::new("");
                 artifacts.write_bytes(path, &bytes, FileMode::Replace)?;
@@ -520,14 +538,9 @@ pub fn run() -> Result<(), AnyError> {
         }
         let setup_ms = millis(setup);
         eprintln!("setup_ms={setup_ms:.3} {}", native.setup_line());
-        let size_column = if mode == "separate" {
-            "proof_payload_bytes_estimate"
-        } else {
-            "proof_bytes"
-        };
-        println!(
-            "mode,iteration,setup_ms,witness_ms,total_prover_ms,verify_ms,{size_column},peak_rss_kib"
-        );
+        let mut csv = output::csv_writer(std::io::stdout().lock());
+        csv.write_record(NativeRow::header(&mode))?;
+        csv.flush()?;
         for iteration in 0..=iterations {
             let start = Instant::now();
             let rows: Vec<_> = inputs
@@ -574,12 +587,17 @@ pub fn run() -> Result<(), AnyError> {
             if iteration == 0 {
                 continue;
             }
-            println!(
-                "{mode},{},{setup_ms:.3},{witness_ms:.3},{total_ms:.3},{:.3},{proof_bytes},{}",
-                iteration - 1,
-                millis(verify),
-                peak_kib()
-            );
+            csv.serialize(NativeRow {
+                mode: &mode,
+                iteration: iteration - 1,
+                setup_ms,
+                witness_ms,
+                total_prover_ms: total_ms,
+                verify_ms: millis(verify),
+                proof_bytes,
+                peak_rss_kib: peak_kib(),
+            })?;
+            csv.flush()?;
         }
         if mode == "separate" {
             eprintln!(

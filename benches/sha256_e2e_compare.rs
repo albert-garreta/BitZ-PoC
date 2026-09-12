@@ -20,7 +20,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs::File,
     hint::black_box,
-    io::{BufWriter, Write},
+    io::BufWriter,
     path::{Path, PathBuf},
     process::Command,
     time::{Instant, SystemTime, UNIX_EPOCH},
@@ -2236,6 +2236,53 @@ impl BackendAggregate {
 }
 
 #[derive(serde::Serialize)]
+struct CsvRow<'a> {
+    backend: &'static str,
+    compression_exponent: usize,
+    compressions: usize,
+    configuration: &'a str,
+    sample_index: usize,
+    #[serde(serialize_with = "common::output::csv_format::nine_decimals")]
+    witness_ms: f64,
+    #[serde(serialize_with = "common::output::csv_format::nine_decimals")]
+    commit_ms: f64,
+    #[serde(serialize_with = "common::output::csv_format::nine_decimals")]
+    piop_ms: f64,
+    #[serde(serialize_with = "common::output::csv_format::nine_decimals")]
+    iop_ms: f64,
+    #[serde(serialize_with = "common::output::csv_format::nine_decimals")]
+    online_prover_ms: f64,
+    #[serde(serialize_with = "common::output::csv_format::nine_decimals")]
+    witness_to_proof_ms: f64,
+    #[serde(serialize_with = "common::output::csv_format::nine_decimals")]
+    throughput_compressions_per_s: f64,
+    #[serde(serialize_with = "common::output::csv_format::nine_decimals")]
+    verifier_ms: f64,
+    proof_bytes: usize,
+    #[serde(serialize_with = "common::output::csv_format::display")]
+    setup_ms: f64,
+}
+impl CsvRow<'_> {
+    const HEADER: [&'static str; 15] = [
+        "backend",
+        "compression_exponent",
+        "compressions",
+        "configuration",
+        "sample_index",
+        "witness_ms",
+        "commit_ms",
+        "piop_ms",
+        "iop_ms",
+        "online_prover_ms",
+        "witness_to_proof_ms",
+        "throughput_compressions_per_s",
+        "verifier_ms",
+        "proof_bytes",
+        "setup_ms",
+    ];
+}
+
+#[derive(serde::Serialize)]
 struct SummaryDocument<'a> {
     schema: &'static str,
     commitment_policy: &'static str,
@@ -2290,33 +2337,33 @@ fn write_aggregate_artifacts(
 
     let metrics_path = output_dir.join("metrics.csv");
     let mut metrics = output
-        .buffered("metrics.csv", FileMode::Replace)
+        .csv("metrics.csv", FileMode::Replace)
         .expect("create metrics.csv");
-    writeln!(metrics, "backend,compression_exponent,compressions,configuration,sample_index,witness_ms,commit_ms,piop_ms,iop_ms,online_prover_ms,witness_to_proof_ms,throughput_compressions_per_s,verifier_ms,proof_bytes,setup_ms")
+    metrics
+        .write_record(CsvRow::HEADER)
         .expect("write CSV header");
     for row in aggregates {
         for (sample_index, sample) in row.samples.iter().enumerate() {
             let throughput = (1usize << row.exponent) as f64 * 1e3 / sample.witness_to_proof_ms;
-            writeln!(
-                metrics,
-                "{},{},{},{},{},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{:.9},{},{}",
-                row.backend.slug(),
-                row.exponent,
-                1usize << row.exponent,
-                row.config,
-                sample_index,
-                sample.witness_ms,
-                sample.commit_ms,
-                sample.piop_ms,
-                sample.opening_ms,
-                sample.total_prover_ms,
-                sample.witness_to_proof_ms,
-                throughput,
-                sample.verifier_ms,
-                sample.proof_bytes,
-                row.setup_ms,
-            )
-            .expect("write CSV row");
+            metrics
+                .serialize(CsvRow {
+                    backend: row.backend.slug(),
+                    compression_exponent: row.exponent,
+                    compressions: 1usize << row.exponent,
+                    configuration: &row.config,
+                    sample_index,
+                    witness_ms: sample.witness_ms,
+                    commit_ms: sample.commit_ms,
+                    piop_ms: sample.piop_ms,
+                    iop_ms: sample.opening_ms,
+                    online_prover_ms: sample.total_prover_ms,
+                    witness_to_proof_ms: sample.witness_to_proof_ms,
+                    throughput_compressions_per_s: throughput,
+                    verifier_ms: sample.verifier_ms,
+                    proof_bytes: sample.proof_bytes,
+                    setup_ms: row.setup_ms,
+                })
+                .expect("write CSV row");
         }
     }
     metrics.flush().expect("flush metrics.csv");
@@ -2974,6 +3021,39 @@ mod ligerito_isolation_tests {
 #[cfg(test)]
 mod reporting_tests {
     use super::*;
+
+    #[test]
+    fn csv_contract_keeps_nine_decimals_and_escapes_configuration() {
+        let mut csv = common::output::csv_writer(Vec::new());
+        csv.write_record(CsvRow::HEADER).unwrap();
+        csv.flush().unwrap();
+        let header = "backend,compression_exponent,compressions,configuration,sample_index,witness_ms,commit_ms,piop_ms,iop_ms,online_prover_ms,witness_to_proof_ms,throughput_compressions_per_s,verifier_ms,proof_bytes,setup_ms\n";
+        assert_eq!(csv.get_ref(), header.as_bytes());
+        csv.serialize(CsvRow {
+            backend: "f2z",
+            compression_exponent: 3,
+            compressions: 8,
+            configuration: "comma,quote\"\nline",
+            sample_index: 0,
+            witness_ms: 1.2345678916,
+            commit_ms: 2.0,
+            piop_ms: 3.0,
+            iop_ms: 4.0,
+            online_prover_ms: 9.0,
+            witness_to_proof_ms: 10.0,
+            throughput_compressions_per_s: 800.0,
+            verifier_ms: 5.0,
+            proof_bytes: 1024,
+            setup_ms: 6.0,
+        })
+        .unwrap();
+        assert_eq!(
+            String::from_utf8(csv.into_inner().unwrap()).unwrap(),
+            format!(
+                "{header}f2z,3,8,\"comma,quote\"\"\nline\",0,1.234567892,2.000000000,3.000000000,4.000000000,9.000000000,10.000000000,800.000000000,5.000000000,1024,6\n"
+            )
+        );
+    }
     #[test]
     fn summary_keeps_metric_names_nulls_and_integer_bytes() {
         let aggregate = BackendAggregate {

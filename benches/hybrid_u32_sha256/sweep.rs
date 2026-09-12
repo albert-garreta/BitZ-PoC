@@ -9,6 +9,7 @@ use std::{
 
 use super::AnyError;
 use super::output::{BenchmarkOutput, FileMode, JsonStyle};
+use super::report::{HybridRow, NativeRow, SummaryRow};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Shape {
@@ -47,29 +48,6 @@ pub fn parse_shapes(value: &str) -> Result<Vec<Shape>, AnyError> {
     Ok(shapes)
 }
 
-// Keep the standalone runner's CSVs intact. The combined CSV distinguishes
-// exact serialized proof sizes from the separate mode's payload estimate.
-const METRICS: [&str; 18] = [
-    "iteration",
-    "setup_ms",
-    "witness_ms",
-    "witness_commit_ms",
-    "continuation_ms",
-    "total_prover_ms",
-    "verify_ms",
-    "proof_bytes",
-    "proof_payload_bytes_estimate",
-    "peak_rss_kib",
-    "piop_ms",
-    "iop_ms",
-    "mul_piop_ms",
-    "sha_piop_ms",
-    "mul_opening_ms",
-    "joint_sumcheck_ms",
-    "shared_opening_ms",
-    "ood_round_ms",
-];
-
 fn grouped_count(value: usize) -> String {
     let digits = value.to_string();
     let mut result = String::new();
@@ -88,96 +66,67 @@ fn formatted_rows(
     mode: &str,
     shape: Shape,
     iterations: usize,
-) -> Result<Vec<(String, String)>, AnyError> {
-    let mut lines = csv.lines();
-    let header: Vec<_> = lines
-        .next()
-        .ok_or("missing child CSV header")?
-        .split(',')
-        .collect();
-    let expected = match mode {
-        "hybrid" => {
-            "mode,iteration,setup_ms,witness_ms,witness_commit_ms,continuation_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib,piop_ms,iop_ms,mul_piop_ms,sha_piop_ms,mul_opening_ms,joint_sumcheck_ms,shared_opening_ms,ood_round_ms"
-        }
-        "separate" => {
-            "mode,iteration,setup_ms,witness_ms,total_prover_ms,verify_ms,proof_payload_bytes_estimate,peak_rss_kib"
-        }
-        _ => {
-            "mode,iteration,setup_ms,witness_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib"
-        }
+) -> Result<Vec<(SummaryRow, String)>, AnyError> {
+    let mut reader = csv::Reader::from_reader(csv.as_bytes());
+    let expected: Vec<_> = if mode == "hybrid" {
+        HybridRow::HEADER.to_vec()
+    } else {
+        NativeRow::header(mode).to_vec()
     };
-    if header.join(",") != expected {
+    if reader.headers()?.iter().ne(expected.iter().copied()) {
         return Err(format!("unexpected {mode} child CSV header").into());
     }
     let mut rows = Vec::new();
-    for (iteration, line) in lines.enumerate() {
-        let values: Vec<_> = line.split(',').collect();
-        if values.len() != header.len()
-            || values[0] != mode
-            || values[1].parse::<usize>()? != iteration
-        {
+    // Reader rejects records with a different width from the header.
+    for (iteration, record) in reader.deserialize::<SummaryRow>().enumerate() {
+        let mut row = record?;
+        if row.mode != mode || row.iteration.parse::<usize>()? != iteration {
             return Err(format!("invalid {mode} child CSV row {iteration}").into());
         }
-        let mut row = format!(
-            "{mode},u32_mod_2_32,{},{},{},{}",
-            shape.mul_log,
-            shape.sha_log,
-            1usize << shape.mul_log,
-            1usize << shape.sha_log,
-        );
-        for metric in &METRICS {
-            row.push(',');
-            if let Some(index) = header.iter().position(|name| name == metric) {
-                row.push_str(values[index]);
-            }
-        }
-        let metric = |name: &str| -> Result<&str, AnyError> {
-            header
-                .iter()
-                .position(|key| *key == name)
-                .map(|index| values[index])
-                .ok_or_else(|| format!("missing {mode} metric {name}").into())
-        };
+        row.multiplication_relation = "u32_mod_2_32".into();
+        row.mul_log = shape.mul_log;
+        row.sha_log = shape.sha_log;
+        row.multiplications = 1usize << shape.mul_log;
+        row.sha_compressions = 1usize << shape.sha_log;
         let source = format!("{mode} [mul 2^{}, SHA 2^{}]", shape.mul_log, shape.sha_log);
         let mut display = String::new();
         if iteration == 0 {
             display.push_str(&format!(
                 "{source}: setup {} ms (once, excluded from prover time)\n",
-                metric("setup_ms")?
+                row.setup_ms
             ));
         }
         display.push_str(&format!(
             "{source}: sample {}/{} — prover {} ms, verifier {} ms — VERIFIED\n",
             iteration + 1,
             iterations,
-            metric("total_prover_ms")?,
-            metric("verify_ms")?,
+            row.total_prover_ms,
+            row.verify_ms,
         ));
         if mode == "hybrid" {
             display.push_str(&format!(
                 "  Witness + commitments: {} ms; PIOP + IOP continuation: {} ms\n",
-                metric("witness_commit_ms")?,
-                metric("continuation_ms")?,
+                row.witness_commit_ms, row.continuation_ms,
             ));
             display.push_str(&format!(
                 "  PIOP: {} ms (multiplication / Spartan: {} ms; SHA: {} ms)\n  IOP / PCS opening: {} ms (multiplication F2Z/GKR: {} ms; joint sumcheck: {} ms; shared opening: {} ms, of which Round 0: {} ms)\n",
-                metric("piop_ms")?,
-                metric("mul_piop_ms")?,
-                metric("sha_piop_ms")?,
-                metric("iop_ms")?,
-                metric("mul_opening_ms")?,
-                metric("joint_sumcheck_ms")?,
-                metric("shared_opening_ms")?,
-                metric("ood_round_ms")?,
+                row.piop_ms,
+                row.mul_piop_ms,
+                row.sha_piop_ms,
+                row.iop_ms,
+                row.mul_opening_ms,
+                row.joint_sumcheck_ms,
+                row.shared_opening_ms,
+                row.ood_round_ms,
             ));
         }
-        let (size_column, size_label) = if mode == "separate" {
-            ("proof_payload_bytes_estimate", "Proof payload estimate")
+        let (size, size_label) = if mode == "separate" {
+            (&row.proof_payload_bytes_estimate, "Proof payload estimate")
         } else {
-            ("proof_bytes", "Proof")
+            (&row.proof_bytes, "Proof")
         };
-        let bytes: usize = metric(size_column)?.parse()?;
-        let peak_kib: u64 = metric("peak_rss_kib")?.parse()?;
+        let bytes: usize = size.parse()?;
+        let peak_kib: u64 = row.peak_rss_kib.parse()?;
         let peak = if peak_kib == 0 {
             "unavailable".to_string()
         } else {
@@ -243,12 +192,8 @@ pub fn run(
             std::env::var("RAYON_NUM_THREADS").unwrap_or_else(|_| "default".into()),
         ), FileMode::Replace,
     )?;
-    let mut summary = output.buffered("summary.csv", FileMode::Replace)?;
-    let header = format!(
-        "mode,multiplication_relation,mul_log,sha_log,multiplications,sha_compressions,{}",
-        format!("{},ligerito_hex", METRICS.join(","))
-    );
-    writeln!(summary, "{header}")?;
+    let mut summary = output.csv("summary.csv", FileMode::Replace)?;
+    summary.write_record(SummaryRow::HEADER)?;
     summary.flush()?;
     println!("SHA-256 chain + multiplication modulo 2^32 | non-ZK | 100-bit security target");
     println!(
@@ -329,10 +274,11 @@ pub fn run(
                 )?;
                 f2z::ligerito_flock::ResolvedLigerito::encode_report(&report)
             };
-            for (row, display) in
+            for (mut row, display) in
                 formatted_rows(&fs::read_to_string(&csv_path)?, mode, shape, iterations)?
             {
-                writeln!(summary, "{row},{identity}")?;
+                row.ligerito_hex = identity.clone();
+                summary.serialize(row)?;
                 println!("{display}");
             }
             summary.flush()?;
@@ -345,4 +291,99 @@ pub fn run(
         results_dir.join("summary.csv").display()
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod reporting_tests {
+    use super::*;
+    const NATIVE_HEADER: &str =
+        "mode,iteration,setup_ms,witness_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib\n";
+    const ROW: &str = "all-binius,0,1.230,2.000,3.000,4.000,1024,0\n";
+    const SHAPE: Shape = Shape {
+        mul_log: 9,
+        sha_log: 1,
+    };
+
+    #[test]
+    fn csv_contract_sweep_preserves_child_lexemes_and_missing_columns() {
+        let source = format!("{NATIVE_HEADER}{ROW}");
+        let rows = formatted_rows(&source, "all-binius", SHAPE, 1).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(
+            rows[0]
+                .1
+                .contains("Proof: 1,024 B (1.00 KiB); peak RSS: unavailable")
+        );
+        let mut csv = super::super::output::csv_writer(Vec::new());
+        csv.write_record(SummaryRow::HEADER).unwrap();
+        csv.flush().unwrap();
+        let header = "mode,multiplication_relation,mul_log,sha_log,multiplications,sha_compressions,iteration,setup_ms,witness_ms,witness_commit_ms,continuation_ms,total_prover_ms,verify_ms,proof_bytes,proof_payload_bytes_estimate,peak_rss_kib,piop_ms,iop_ms,mul_piop_ms,sha_piop_ms,mul_opening_ms,joint_sumcheck_ms,shared_opening_ms,ood_round_ms,ligerito_hex\n";
+        assert_eq!(csv.get_ref(), header.as_bytes());
+        csv.serialize(&rows[0].0).unwrap();
+        assert_eq!(
+            String::from_utf8(csv.into_inner().unwrap()).unwrap(),
+            format!(
+                "{header}all-binius,u32_mod_2_32,9,1,512,2,0,1.230,2.000,,,3.000,4.000,1024,,0,,,,,,,,,\n"
+            )
+        );
+        assert!(
+            formatted_rows(NATIVE_HEADER, "all-binius", SHAPE, 0)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn csv_contract_reader_accepts_quoted_fields_and_embedded_newlines() {
+        let source = format!(
+            "{NATIVE_HEADER}all-binius,\"0\",\"1,2\n\"\"3\"\"\",2.000,3.000,4.000,1024,0\n"
+        );
+        let rows = formatted_rows(&source, "all-binius", SHAPE, 1).unwrap();
+        assert_eq!(rows[0].0.setup_ms, "1,2\n\"3\"");
+        let mut csv = super::super::output::csv_writer(Vec::new());
+        csv.write_record(SummaryRow::HEADER).unwrap();
+        csv.serialize(&rows[0].0).unwrap();
+        let bytes = csv.into_inner().unwrap();
+        let mut reader = csv::Reader::from_reader(bytes.as_slice());
+        let roundtrip: SummaryRow = reader.deserialize().next().unwrap().unwrap();
+        assert_eq!(roundtrip.setup_ms, rows[0].0.setup_ms);
+    }
+
+    #[test]
+    fn csv_contract_reader_rejects_wrong_header_mode_iteration_width_and_count() {
+        let valid = format!("{NATIVE_HEADER}{ROW}");
+        for bad in [
+            String::new(),
+            valid.replacen("proof_bytes", "wrong_bytes", 1),
+            valid.replacen("all-binius,0", "separate,0", 1),
+            valid.replacen("all-binius,0", "all-binius,1", 1),
+            valid.replacen("1024,0", "1024,0,extra", 1),
+            valid.replacen("1024,0", "1024", 1),
+            valid.replacen("1024", "not-an-integer", 1),
+            format!("{valid}{ROW}"),
+            NATIVE_HEADER.into(),
+        ] {
+            assert!(
+                formatted_rows(&bad, "all-binius", SHAPE, 1).is_err(),
+                "{bad}"
+            );
+        }
+        assert!(formatted_rows(&valid, "all-binius", SHAPE, 2).is_err());
+    }
+
+    #[test]
+    fn csv_contract_reader_maps_hybrid_and_separate_proof_sizes() {
+        let hybrid = "mode,iteration,setup_ms,witness_ms,witness_commit_ms,continuation_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib,piop_ms,iop_ms,mul_piop_ms,sha_piop_ms,mul_opening_ms,joint_sumcheck_ms,shared_opening_ms,ood_round_ms\nhybrid,0,1.000,2.000,3.000,4.000,5.000,6.000,1024,0,7.000,8.000,9.000,10.000,11.000,12.000,13.000,14.000\n";
+        let rows = formatted_rows(hybrid, "hybrid", SHAPE, 1).unwrap();
+        assert_eq!(rows[0].0.ood_round_ms, "14.000");
+        assert_eq!(rows[0].0.proof_bytes, "1024");
+        assert!(rows[0].0.proof_payload_bytes_estimate.is_empty());
+        let separate = format!("{NATIVE_HEADER}{ROW}")
+            .replace("proof_bytes", "proof_payload_bytes_estimate")
+            .replace("all-binius", "separate");
+        let rows = formatted_rows(&separate, "separate", SHAPE, 1).unwrap();
+        assert!(rows[0].0.proof_bytes.is_empty());
+        assert_eq!(rows[0].0.proof_payload_bytes_estimate, "1024");
+        assert!(rows[0].1.contains("Proof payload estimate:"));
+    }
 }

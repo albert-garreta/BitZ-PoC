@@ -112,6 +112,9 @@ fn stream_errors_are_not_lost_on_drop() {
     let mut csv = output::csv_writer(Failing { fail_write: true });
     csv.write_record(["header"]).unwrap();
     assert!(csv.flush().is_err());
+    let mut csv = output::csv_writer(Failing { fail_write: false });
+    csv.write_record(["header"]).unwrap();
+    assert!(csv.flush().is_err());
 }
 
 #[test]
@@ -123,14 +126,28 @@ fn csv_headers_empty_tables_and_escaping() {
     csv.serialize(("comma,quote\"\nline", 42)).unwrap();
     let bytes = csv.into_inner().unwrap();
     assert_eq!(bytes, b"name,value\n\"comma,quote\"\"\nline\",42\n");
+    let temp = Temp::new();
+    let mut csv = temp.output().csv("stream.csv", CreateNew).unwrap();
+    csv.write_record(["name", "value"]).unwrap();
+    csv.flush().unwrap();
+    assert_eq!(
+        fs::read(temp.0.join("stream.csv")).unwrap(),
+        b"name,value\n"
+    );
+    csv.serialize(("sample", 1)).unwrap();
+    csv.flush().unwrap();
+    assert_eq!(
+        fs::read(temp.0.join("stream.csv")).unwrap(),
+        b"name,value\nsample,1\n"
+    );
 }
 
 #[test]
 fn stdout_sink() {
     if std::env::var_os("F2Z_OUTPUT_TEST_CHILD").is_some() {
-        JsonlWriter::new(std::io::stdout().lock())
-            .write(&json!({"stdout_test": true}))
-            .unwrap();
+        let mut stdout = JsonlWriter::new(std::io::stdout().lock());
+        stdout.write(&json!({"stdout_test": true})).unwrap();
+        stdout.finish().unwrap();
         return;
     }
     let child = std::process::Command::new(std::env::current_exe().unwrap())

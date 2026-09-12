@@ -133,6 +133,31 @@ pub fn csv_writer<W: Write>(writer: W) -> csv::Writer<W> {
         .from_writer(writer)
 }
 
+/// Presentation only: JSON records keep their numeric fields unchanged.
+pub mod csv_format {
+    use serde::{Serializer, ser::Error};
+
+    pub fn three_decimals<S: Serializer>(value: &f64, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(&format_args!("{value:.3}"))
+    }
+
+    pub fn nine_decimals<S: Serializer>(value: &f64, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(&format_args!("{value:.9}"))
+    }
+
+    pub fn display<T: std::fmt::Display, S: Serializer>(
+        value: &T,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(value)
+    }
+
+    /// Native multiplication historically printed JSON-number spellings in CSV.
+    pub fn json_number<S: Serializer>(value: &f64, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&serde_json::to_string(value).map_err(S::Error::custom)?)
+    }
+}
+
 pub struct JsonlWriter<W: Write> {
     writer: W,
 }
