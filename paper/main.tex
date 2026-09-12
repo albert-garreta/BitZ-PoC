@@ -434,7 +434,7 @@ where we assume there is freedom to choose the lengths of $\vv^{(1)},\vv^{(2)}$ 
  \end{aligned} \right\},
 \end{align*}
     %
-    where, $\Enc_\cC$ denotes encoding with the code $\cC$; $\pack$ is the packing operation; and $\pi_2$ is reduction modulo $2$ (so that $\pi_2(\bitstext(\bff))$ means that we look at the bits in $\bitstext(\bff)$ as elements from $\FF_2$).
+    where, $\Enc_\cC$ denotes encoding with the code $\cC$; $\pack$ is the packing operation; and $\pi_2$ is reduction modulo $2$ (so that $\pi_2(\bitstext(\bff))$ means that we look at the bits in $\bitstext(\bff)$ as elements from $\FF_2$). When proving such relation, the verifier receives $\inp$ and oracle access the $\oracle$, and the prover receives additionally $\ww$.
 
     If using a proximity parameter beyond the unique decoding radius, the prover and verifier perform an out of domain sample, see Round 0 of \cref{c:core_iop}.
 
@@ -489,7 +489,7 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
        There are other projects (e.g.\ Binius64 \cite{binius64} and Soukhanov's note \cite{lev}) that use exponentiation to prove integer (or mod $|\comfield|-1$) claims in binary fields, none of these (to our knowledge) is used or is usable in a context that results in the low entropy grand products of ours, where our optimizations apply.  We discuss this further in \cref{r:comparison_grand_product_binius_lev}.
       \end{remark}  
       \end{comment}
- \paragraph{Step 6: Proving linear claims over $\comfield$.} At this point, since $\bitstext(\bff)$ was committed over $\comfield$ (in packed form), one can prove \eqref{e:intro_eq_5} (or the batched version of it) via standard methods such as in \cite{binius,binius2,flock}. Concretely, we use the so-called ring switch from \cite{binius,binius2} to turn \eqref{e:intro_eq_5} into linear claims about the packed binary field elements we encoded, and then use WHIR/Ligerito \cite{whir,ligerito} over $\comfield$ to prove these claims. 
+ \paragraph{Step 6: Proving linear claims on $\bitstext(\bff)$ over $\comfield$.} At this point, since $\bitstext(\bff)$ was committed over $\comfield$ (in packed form), one can prove \eqref{e:intro_eq_5} (or the batched version of it) via standard methods such as in \cite{binius,binius2,flock}. Concretely, we use the so-called ring switch from \cite{binius,binius2} to turn \eqref{e:intro_eq_5} into linear claims about the packed binary field elements we encoded, and then use WHIR/Ligerito \cite{whir,ligerito} over $\comfield$ to prove these claims. 
 
 
 \bigskip       
@@ -515,24 +515,91 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
 
 \subsubsection{Why the tensor split}\label{s:why_the_tensor_split} The claim $\langle \uu, \pi_q(\bitstext(\bff))\rangle = \mu$ (cf.\  \eqref{e:intro_eq_2}) over $\FF_q$ is split, in Step 4, into $\codedim_2$ claims over $\ZZ$ of the form 
 $
-\langle \pi^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle =\mu_j$for all  $j\in [\codedim_2]$ (cf.\ \eqref{e:intro_eq_3}).  This pays off in three ways:
+\langle \pi^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle =\mu_j$ for all  $j\in [\codedim_2]$ (cf.\ \eqref{e:intro_eq_3}).  This pays off in three ways:
 \begin{itemize}[leftmargin=*,nosep]
     \item All $\codedim_2$ grand products in \eqref{e:intro_eq_4} share the same $\codedim_1$ public values $g^{\pi^{-1}(\uu_i^{(1)})}$. In total, there are $\codedim$ factors, but at most $\codedim_1+1\approx \sqrt{\codedim}$ distinct values. This is crucial for performance when proving the grand products (see \cref{s:to_low_entropy_gkr}).
     \item The verifier only handles vectors of length $\codedim_1 \approx \sqrt{\codedim}$ and $\codedim_2\approx \sqrt{\codedim}$, instead of vectors of length $\codedim$, allowing for succinctness. 
     \item Each $\mu_j$ belongs to the range $\range{0}{(q-1)\cdot \codedim_1}$ instead of $\range{0}{(q-1)\cdot \codedim}$. Hence prime fields of size up to $(|\comfield|-1)/\codedim_1$, instead of $(|\comfield|-1)/\codedim$, fit in the exponent of $g$ without Step 3. This difference becomes important in practice when seeking to instantiate \ftwoz\ at 128 bits of security while using $\comfield$, and not paying too much on grinding, cf.\ \cref{s:instantiation}.  \albert{Could be more detailed}
-\end{itemize} 
+\end{itemize}
 
-\subsubsection{Soundness}\label{s:to_soundness_prime}
+In \cref{t:core_iop_complexity} we record the concrete costs of this protocol (in a more general form).
 
-Step 1 (committment) and Step 6 (proving linear claims over $\comfield$) are soundly handled by the ring-switch protocol \cite{binius2,flock} together with the PCS that allows to prove .....
+\subsubsection{Round-by-round knowledge soundness}\label{s:to_soundness_prime}
+% [Albert's draft of 2026-09-12, completed and polished by Claude Opus 5 -- review before submission]
 
+In \cref{s:soundness_core_iop} we prove (\cref{t:thm_core_IOPP}) that the IOP $\Pi$ described in \cref{s:to_simple_bitz} is perfectly complete and round-by-round knowledge sound. To prove this fact, we look at $\Pi$ as the composition of different known protocols. Concretely, we see $\Pi$ as the composition of three Interactive Oracle Reductions (IORs, cf.\ \cite{warp,BCFW25} and \cref{s:IORs}) $\Pi_1, \Pi_2,\Pi_3$, and we show that each of them is round-by-round knowledge sound. As we describe below in more detail, $\Pi_2$ (the grand product argument of Step 5) is simply a particular instantiation of the GKR protocol, and $\Pi_3$ (Step 6) is simply an IOP for proving linear claims over $\comfield$ with any known code-based PCS such as WHIR \cite{whir}, after using the ring-switching technique from \cite{binius2} to transform linear claims on the non-packed vector $\pi_2(\bitstext(\bff)) \in \comfield^\codedim$ into a batch of linear claims on the packed vector $\pack\circ\pi_2(\bitstext(\bff))\in \comfield^{\codedim/\comfieldexp}$. Concretely, for $\Pi_3$ we use exactly the same protocol as in Flock \cite{flock} (the ring-switching from \cite{binius2} followed by WHIR/Ligerito \cite{whir,ligerito}). It is well known that $\Pi_2$ and $\Pi_3$ are perfectly complete and round-by-round knowledge sound\footnote{$\Pi_3$ satisfies a weaker form of soundness, where a malicious prover may be able to convince a verifier after sending an oracle $\oracle=f$ which is not exactly $\Enc_\cC\circ \pack( \bfg)$ for some valid witness $\bfg \in \FF_2^{\codedim}$, but is \emph{close} in Hamming distance to it. This is a subtle and relatively deep technicality that has been studied at length in many other works \cite{stark,BCFW25,whir,rbr_fri,zook}. Our analysis is standard; concretely, it follows the formalism of round-by-round knowledge soundness \emph{with relaxation} from \cite{zook}. Hence we do not discuss it further in this technical overview.}. Hence here we only discuss $\Pi_1$, which comprises Steps 2, 3, 4 and the first half of Step 5.
 
-\albertimportant{rewrite. AI written} 
+We now describe the relations between which $\Pi_1$, $\Pi_2$ and $\Pi_3$ reduce, and then we argue the round-by-round knowledge soundness of $\Pi_1$.
 
-Soundness rests on two facts. First, bits are bits: the committed vector lives in $\FF_2^{\codedim}$, so the witness that an extractor decodes from $f$ (for $\delta$ within the unique decoding radius of $\cC$) is a genuine bit vector, and no range check is needed for it. Second, the exponent cannot overflow: for each $j$, both $\langle \pi^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle$ and $\mu_j$ lie in $\range{0}{(q-1)\cdot \codedim_1}$ (the latter by the verifier's range check), and $\mathsf{ord}(g)=|\comfield|-1> \codedim_1\cdot q$. Hence the $j$-th grand product claim in \eqref{e:intro_eq_4} forces \eqref{e:intro_eq_3} over $\ZZ$, and the verifier's recombination check in Step 4 then forces \eqref{e:intro_eq_2}, i.e.\ \eqref{e:new_to_0}. Thus, if \eqref{e:new_to_0} is false, then for any $\mu_1,\ldots,\mu_{\codedim_2}$ the verifier either rejects in Step 4 or is left with a false grand product claim: Steps 2 to 4 introduce no soundness error. Both conditions are needed: without the range check, the prover could replace $\mu_j$ by $\mu_j+|\comfield|-1$, which leaves $g^{\mu_j}$ unchanged but, in general, changes $\pi(\mu_j)$.
+\bigskip
 
-The remaining soundness errors are those of the GKR protocol for the grand products (a small multiple of $1/|\comfield|$ per round, cf.\ \cref{l:gkr_grand_product}) and of the IOP for the final linear claims over $\comfield$. Beyond the unique decoding radius, several bit vectors may be close to $f$, and the out of domain sample of Step 1 binds the prover to one of them, except with a small probability $\kappa_{\mathsf{OOD}}$ (\cref{a:OOD}). All steps are round-by-round knowledge sound, as needed for the Fiat--Shamir transformation; see \cref{t:thm_core_IOPP} for the precise statement.
+\noindent \emph{\underline{Step 1}}. The initial claim $\langle \vv,\bff\rangle= \mu$ is packaged into a claim about $\LinBitsDual(\FF_q)$. Precisely, after the prover sends the oracle $f\in \comfield^{\codelength}$, prover and verifier set out to certify that the prover knows $\bff$, or rather its bit decomposition $\bitstext(\bff)\in \bits^{\codedim} \subseteq \ZZ^\codedim$, such that $(\inp=(\mu,\vv), \oracle=f, \wit=\bff)\in \LinBitsDual(\FF_q)$, i.e.\ they want to certify knowledge of a valid witness for the statement $(\inp,\oracle)\in \LANG(\LinBitsDual(\FF_q))$. The rest of the steps (Steps 2 to 6) constitute an IOP for proving this.
 
+\bigskip
+
+\noindent \emph{\underline{Steps 2 to 4, and the first half of Step 5}.} These steps, up to right before executing the grand product argument, form an IOR, which we call $\Pi_1$, transforming the initial knowledge claim for $(\inp,\oracle)\in \LANG(\LinBitsDual(\FF_q))$ into a knowledge claim of the form
+%
+\begin{equation}\label{e:to_knowledge_claim}
+(\inp',\oracle)\in \LANG(\PESAT), \qquad \inp'=\left((g^{\pi^{-1}(\uu_i^{(1)})})_{i\in[\codedim_1]}, (g^{\mu_j})_{j\in [\codedim_2]}\right),
+\end{equation}
+%
+where $\PESAT$ is the following relation (an instance of the Polynomial Equation Satisfiability relation of \cref{d:pesat}, see also \cref{s:interleaved_setting}):
+%
+\begin{align*}
+\PESAT = \left\{ \left(\begin{aligned} &\inp=(\yy,\bm{\mu})\in \comfield^{\codedim_1}\times \comfield^{\codedim_2}, \\&\oracle = f\in \comfield^{\codelength}, \\ &\wit=\bfg= (\bfg_{*j})_{j\in [\codedim_2]}\in \FF_2^{\codedim_1 \times \codedim_2}\end{aligned}\right) \;\middle|\;  \begin{aligned} &f= \Enc_{\cC}\circ\pack(\bfg), \\  &\prod_{i\in [\codedim_1]} \left((\yy_i-1)\cdot \bfg_{ij} +1\right) = \bm{\mu}_j  \ \text{ for all } j\in [\codedim_2]\end{aligned}  \right\}.
+\end{align*}
+%
+The second constraint of $\PESAT$, for $\inp'$ as above and $\bfg=\pi_2(\bitstext(\bff))$, is precisely the grand product claim \eqref{e:intro_eq_4}. We argue the knowledge soundness of $\Pi_1$ at the end of this section.
+
+\bigskip
+
+\noindent \emph{\underline{The grand product argument (second half of Step 5)}.} Here we use the GKR protocol for the $\codedim_2$ grand products (together with a batching step at the end), which we denote $\Pi_2$, to reduce the knowledge claim \eqref{e:to_knowledge_claim} to a knowledge claim of the form $((\zz,c),\oracle) \in \LANG(\LIN(\comfield,\cC,\pack))$, for some $\zz\in \comfield^\codedim$ and $c\in\comfield$ determined by the transcript (cf.\ \eqref{e:intro_eq_5}), where
+%
+\begin{align*}
+\LIN(\comfield,\cC,\pack) = \left\{ \left(\begin{aligned} &\inp=(\zz, c)\in \comfield^{ \codedim}\times \comfield, \\
+ &\oracle = f \in \comfield^{\codelength}, \\ &\wit= \bfg\in \FF_2^{\codedim}\end{aligned}\right) \;\middle|\;  \begin{aligned}  
+ &f = \Enc_{\cC}\circ \pack(\bfg),\\
+ &\langle \bfg, \zz \rangle = c  \qquad  \text{in } \comfield
+ \end{aligned} \right\}.
+\end{align*}
+
+\bigskip 
+
+\noindent \emph{\underline{Step 6.}} In this step we use the ring-switching technique and a PCS such as WHIR or Ligerito \cite{whir,ligerito} to prove the knowledge claim for $((\zz,c),\oracle) \in \LANG(\LIN(\comfield,\cC,\pack))$, exactly as in Flock \cite{flock} \albert{and binius?}. We denote this IOP by $\Pi_3$; it is an IOR from $\LIN(\comfield,\cC,\pack)$ to the trivial relation.
+
+\bigskip
+
+\noindent \emph{\underline{Knowledge soundness of $\Pi_1$}}. Assume first that Step 3 does not trigger, so that $|\FF_q|<(|\comfield|-1)/\codedim_1$, and let us track the claim that prover and verifier hold after each step. After Step 2, the claim is that the prover knows $\bfg\in \bits^{\codedim}\subseteq \ZZ^\codedim$ such that
+%
+\begin{equation}\label{e:to_soundness_1}
+\langle \uu, \pi_q(\bfg)\rangle = \mu \quad \text{in } \FF_q, \qquad \text{and} \qquad f= \Enc_\cC \circ \pack\circ \pi_2(\bfg).
+\end{equation}
+%
+Step 2 involves no randomness and loses nothing: given any $\bfg$ satisfying \eqref{e:to_soundness_1}, the vector $\bff\in \FF_q^{\codedim_0}$ whose $i$-th entry is $\sum_{j\in [B]} 2^{j-1}\cdot \pi_q(\bfg_{ij})$ (with $\bfg$ as its bit decomposition; as in \cref{d:bitification}, bit decompositions need not be unique) is a valid witness for $(\inp=(\mu,\vv), \oracle=f)\in \LANG(\LinBitsDual(\FF_q))$, and this translation takes polynomial time. In Step 4 the prover sends $\mu_1,\ldots, \mu_{\codedim_2}$, the verifier checks that $\mu_j\in \range{0}{(q-1)\cdot \codedim_1}$ for all $j$ and that $\sum_j\pi_q(\mu_j)\cdot \uu_j^{(2)} = \mu$ in $\FF_q$, and the claim becomes that the prover knows $\bfg$ such that
+%
+\begin{equation}\label{e:to_soundness_2}
+\langle \pi_q^{-1}(\uu^{(1)}), \bfg_{*j}\rangle =\mu_j \quad \text{in  } \ZZ \quad \text{for all } j\in [\codedim_2], \qquad \text{and} \qquad f= \Enc_\cC \circ \pack\circ \pi_2(\bfg).
+\end{equation}
+%
+Again nothing is lost: if \eqref{e:to_soundness_2} holds and the verifier's checks pass, then
+%
+$$
+\langle \uu,\pi_q(\bfg)\rangle = \sum_{j\in [\codedim_2]} \pi_q\bigl(\langle \pi_q^{-1}(\uu^{(1)}), \bfg_{*j}\rangle\bigr)\cdot \uu^{(2)}_j = \sum_{j\in [\codedim_2]} \pi_q(\mu_j)\cdot \uu_j^{(2)}=\mu,
+$$
+%
+i.e.\ \eqref{e:to_soundness_1} holds for the same $\bfg$. Finally, the first half of Step 5 replaces \eqref{e:to_soundness_2} by the claim \eqref{e:to_knowledge_claim}, i.e.\ by $\prod_{i}\bigl((g^{\pi_q^{-1}(\uu^{(1)}_i)}-1)\cdot \bfg_{ij}+1\bigr)= g^{\mu_j}$ in $\comfield$ for all $j$. If this holds for some $\bfg$, then $\langle \pi_q^{-1}(\uu^{(1)}), \bfg_{*j}\rangle \equiv \mu_j \pmod{\mathsf{ord}(g)}$, where $\mathsf{ord}(g)=|\comfield|-1$. Since $\bfg$ has bit entries and $\mu_j$ passed the range check, both sides lie in $\range{0}{(q-1)\cdot \codedim_1}$, and $(q-1)\cdot \codedim_1<|\comfield|-1$ by our assumption on $q$, so the congruence is an equality over $\ZZ$ and \eqref{e:to_soundness_2} holds. Both ingredients are needed: without the range check, a cheating prover could send $\mu_j+(|\comfield|-1)$ instead of $\mu_j$, which leaves $g^{\mu_j}$ unchanged but in general changes $\pi_q(\mu_j)$.
+
+Altogether, the identity map on $\bfg$ is a valid extractor for $\Pi_1$, and no prover message can turn a false claim into a true one. In the terminology of \cref{s:IORs}, the knowledge state function ``the current claim holds for $\bfg$'' never changes from $0$ to $1$ at a prover move, and since no verifier randomness is involved, $\Pi_1$ has round-by-round knowledge soundness error $0$.
+
+If Step 3 triggers, one round with a nonzero error is added. Recall (\cref{r:large_prime_field_in_BitZ_PCS}) that the prover sends $\mu'\in \ZZ$, the verifier checks that $\mu'\in \range{0}{\codedim\cdot (q-1)^2}$ and that $\pi_q(\mu')=\mu$, and then samples a random prime $q'$ from the public set $\cP$, after which the claim \eqref{e:to_soundness_1} is replaced by its image modulo $q'$, namely $\langle \pi_{q'}\circ\pi_q^{-1}(\uu^{(1)})\otimes \pi_{q'}\circ\pi_q^{-1}(\uu^{(2)}), \pi_{q'}(\bfg)\rangle=\pi_{q'}(\mu')$ in $\FF_{q'}$. Suppose that this new claim holds for some $\bfg$ while \eqref{e:to_soundness_1} does not, and consider the integer $h\defeq \langle \pi_q^{-1}(\uu^{(1)})\otimes \pi_q^{-1}(\uu^{(2)}), \bfg\rangle - \mu'$. On the one hand, $\pi_q(h)=\langle \uu, \pi_q(\bfg)\rangle-\mu\neq 0$, so $h\neq 0$, and $|h|\leq 2\cdot \codedim\cdot (q-1)^2$ because $\bfg$ has bit entries and $\mu'$ passed the range check. On the other hand, $\pi_{q'}(h)=0$, i.e.\ $q'$ divides $h$. A nonzero integer of absolute value at most $2\codedim(q-1)^2$ has at most $\log(4\codedim(q-1)^2)/\lfloor\log q_{\min}\rfloor$ prime divisors in $\cP$, where $q_{\min}$ is the smallest prime in $\cP$, so this event has probability at most
+%
+\begin{equation}\label{e:to_kappa_0}
+\kappa_0 \defeq \frac{\log\left(4\cdot \codedim\cdot (q-1)^2\right)}{\lfloor\log q_{\min}\rfloor\cdot |\cP|}
+\end{equation}
+%
+over the choice of $q'$. This is the fingerprinting argument of \cite{zaratan}, and \cref{l:reduction_lemma,l:examples_morphisms} give its general form, over $\ZZ[X_1,\ldots, X_k]$ and for arbitrary rings $R$. Once the claim lives over $\FF_{q'}$ with $q'<(|\comfield|-1)/\codedim_1$, the previous paragraphs apply verbatim. Hence $\Pi_1$ is round-by-round knowledge sound with errors $(\kappa_0, 0)$ (or with error $0$ if Step 3 is skipped) and, composing with $\Pi_2$ and $\Pi_3$ (\cref{r:ior_compositoin}), the IOP $\Pi$ has errors $\kappa_0$ followed by those of the GKR protocol and of the binary-field PCS. Perfect completeness is clear: an honest prover's $\mu'$ and $\mu_1,\ldots,\mu_{\codedim_2}$ always pass the range checks.
+
+Finally, the above is stated for a proximity parameter within the unique decoding radius of $\cC$, where the oracle $f$ determines $\bfg$ uniquely (this is where the relaxation mentioned above enters). Beyond it, the out of domain sample mentioned in Step 1 binds the prover to one of the few codewords close to $f$, at the cost of one more round and a small error $\kappa_{\mathsf{OOD}}$; see \cref{a:OOD}.
 
 
 \subsection{Generalization to pairs of arbitrary finitely generated rings}\label{s:to_general_rings}
