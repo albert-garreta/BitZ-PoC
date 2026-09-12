@@ -4,6 +4,7 @@ mod binius;
 #[path = "mul_e2e_compare/binius_ligerito.rs"]
 mod binius_ligerito;
 mod common;
+use common::output::{BenchmarkOutput, FileMode, JsonStyle};
 #[path = "mul_e2e_compare/f2z.rs"]
 mod f2z_backend;
 #[path = "mul_e2e_compare/limber.rs"]
@@ -23,12 +24,7 @@ mod trace_capture;
 
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use serde_json::{Value, json};
-use std::{
-    fs::{self, OpenOptions},
-    io::{BufWriter, Write},
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{io::Write, path::PathBuf, sync::Arc};
 use trace_capture::{CaptureLayer, CapturedSpan, TraceCapture};
 
 const MEASUREMENT_POLICY: &str = "warm-process/v1";
@@ -360,9 +356,7 @@ impl Context {
         match backend {
             "f2z" => Self::F2z(f2z_backend::Context::setup(corpus)),
             "binius64" => Self::Binius(binius::Context::setup(corpus)),
-            "binius64-ligerito" => {
-                Self::BiniusLigerito(binius_ligerito::Context::setup(corpus))
-            }
+            "binius64-ligerito" => Self::BiniusLigerito(binius_ligerito::Context::setup(corpus)),
             "plonky3-fri" => Self::Plonky3Fri(plonky3::Context::setup(corpus)),
             "limber" => Self::Limber(limber::Context::setup(corpus)),
             _ => panic!("unknown backend {backend}"),
@@ -512,17 +506,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = std::env::var_os("F2Z_MUL_COMPARE_OUTPUT_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(format!("PerfRuns/{stamp}-native-mul")));
-    fs::create_dir_all(&out)?;
-    let create = |name: &str| {
-        OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(out.join(name))
-    };
-    let mut trace = BufWriter::new(create("trace.jsonl")?);
-    let mut samples = BufWriter::new(create("samples.jsonl")?);
-    let mut memory_samples = BufWriter::new(create("memory.jsonl")?);
-    let mut csv = BufWriter::new(create("metrics.csv")?);
+    let output = BenchmarkOutput::new(&out);
+    output.create_dir_all()?;
+    let mut trace = output.jsonl("trace.jsonl", FileMode::CreateNew)?;
+    let mut samples = output.jsonl("samples.jsonl", FileMode::CreateNew)?;
+    let mut memory_samples = output.jsonl("memory.jsonl", FileMode::CreateNew)?;
+    let mut csv = output.buffered("metrics.csv", FileMode::CreateNew)?;
     writeln!(
         csv,
         "workload,backend,log_multiplications,samples,setup_ms,{},peak_rss_bytes",
@@ -603,7 +592,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &corpus.digest,
                         whir_params,
                     )?;
-                    writeln!(memory_samples, "{}", serde_json::to_string(&sample)?)?;
+                    memory_samples.write(&sample)?;
                     memory_samples.flush()?;
                     eprintln!(
                         "{} {backend} 2^{n}: peak RSS {:.2} MiB",
@@ -645,10 +634,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     };
                     let series = format!("mul-{stamp}-{}-{backend}-{n}", workload.slug());
                     let run = format!("{series}-{trial}");
-                    writeln!(
-                        trace,
-                        "{}",
-                        json!({
+                    trace.write(&json!({
                             "schema":"zkperf.trace/v1", "record":"run", "run_id":run,"series_id":series,"root_span_id":"0",
                             "benchmark":{"suite":"native-mul","name":"mul_e2e_compare","algorithm":workload.algorithm(),"label":format!("{} 2^{n} {backend}",workload.slug()),"implementation":backend,"git_rev":rev,"git_dirty":dirty,"build_profile":"bench"},
                             "trial":trial_json,"status":"ok","trace_complete":true,
@@ -656,8 +642,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "environment":environment,
                             "parameters":{"input":{"multiplications":1usize<<n,"log_multiplications":n,"witness_digest_blake3":corpus.digest,"seed":shape_seed},"security":config,"setup_ms":setup_ms,"primary_metric":"witness_to_proof_ms","boundary":"start native witness generation through complete PCS proof; verification, serialization, and reusable setup reported separately"},
                             "validation":{"proof_verified":true,"reference_outputs_checked":true,"native_witness_matches_canonical":true},"witness_audit":{"generation_ms_excluded":audit.generation_ms,"native_representation":audit.representation,"quotient_reconstructed":audit.quotient_reconstructed,"witness_digest_blake3":audit.digest},"metrics":metrics,
-                        })
-                    )?;
+                        }))?;
                     for (i, p) in timing.phases.iter().enumerate() {
                         let mut tags = vec![p.tag];
                         if matches!(p.tag, "commit" | "opening-proof") {
@@ -667,23 +652,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             tags.push("proving");
                         }
                         let root = timing.phases[0].start;
-                        writeln!(
-                            trace,
-                            "{}",
-                            json!({
+                        trace.write(&json!({
                                 "schema":"zkperf.trace/v1","record":"span","run_id":run,"span_id":i.to_string(),"parent_span_id":if i==0 {None} else {Some("0")},
                                 "operation":format!("native_mul.{}",p.name),"name":p.name.replace('_'," "),"primary_phase":p.tag,"phase_tags":tags,
                                 "start_ns":(p.start-root).to_string(),"end_ns":(p.end-root).to_string(),"duration_ns":(p.end-p.start).to_string(),
                                 "attributes":{"scope_kind":if i<3 {"scope"} else {"phase"},"primary_sequence":i>=3,"scope_tag":if i==0 {Some("end-to-end")} else {None}},
-                            })
-                        )?;
+                            }))?;
                     }
                     trace.flush()?;
-                    writeln!(
-                        samples,
-                        "{}",
-                        json!({"schema":"native-mul-sample/v2","workload":workload.slug(),"backend":backend,"log_multiplications":n,"multiplications":1usize<<n,"corpus_digest":corpus.digest,"threads":threads,"seed":shape_seed,"trial":trial_json,"setup_ms":setup_ms,"config":config,"measurement_policy":MEASUREMENT_POLICY,"proof_verified":true,"metrics":metrics})
-                    )?;
+                    samples.write(&json!({"schema":"native-mul-sample/v2","workload":workload.slug(),"backend":backend,"log_multiplications":n,"multiplications":1usize<<n,"corpus_digest":corpus.digest,"threads":threads,"seed":shape_seed,"trial":trial_json,"setup_ms":setup_ms,"config":config,"measurement_policy":MEASUREMENT_POLICY,"proof_verified":true,"metrics":metrics}))?;
                     samples.flush()?;
                     eprintln!(
                         "{} {backend} 2^{n} {}: witness {:.3} ms, commit {:.3} ms, PIOP {:.3} ms, PCS {:.3} ms, witness→proof {:.3} ms, proof {} B",
@@ -733,7 +710,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    serde_json::to_writer_pretty(create("summary.json")?, &summary)?;
+    trace.finish()?;
+    samples.finish()?;
+    memory_samples.finish()?;
+    csv.flush()?;
+    output.write_json(
+        "summary.json",
+        &summary,
+        FileMode::CreateNew,
+        JsonStyle::Pretty,
+    )?;
     eprintln!("Native multiplication results: {}", out.display());
     Ok(())
 }
@@ -992,14 +978,9 @@ pub(crate) fn witness_main() -> Result<(), Box<dyn std::error::Error>> {
     let out = std::env::var_os("F2Z_MUL_COMPARE_OUTPUT_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(format!("PerfRuns/{stamp}-mul-witness-compare")));
-    fs::create_dir_all(&out)?;
-    let create = |name: &str| {
-        OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(out.join(name))
-    };
-    let mut raw = BufWriter::new(create("witness-checks.jsonl")?);
+    let output = BenchmarkOutput::new(&out);
+    output.create_dir_all()?;
+    let mut raw = output.jsonl("witness-checks.jsonl", FileMode::CreateNew)?;
     let mut summary = vec![];
     for workload in workloads {
         let workload = Workload::parse(&workload);
@@ -1021,11 +1002,7 @@ pub(crate) fn witness_main() -> Result<(), Box<dyn std::error::Error>> {
                         times.push(audit.generation_ms);
                         json!({"kind":"sample","index":trial-1})
                     };
-                    writeln!(
-                        raw,
-                        "{}",
-                        json!({"schema":"native-mul-witness/v1","workload":workload.slug(),"backend":backend,"log_multiplications":n,"threads":threads,"seed":shape_seed,"trial":trial,"witness_generation_ms":audit.generation_ms,"witness_digest_blake3":audit.digest,"expected_digest":corpus.digest,"native_representation":audit.representation,"quotient_reconstructed":audit.quotient_reconstructed,"all_rows_match":true})
-                    )?;
+                    raw.write(&json!({"schema":"native-mul-witness/v1","workload":workload.slug(),"backend":backend,"log_multiplications":n,"threads":threads,"seed":shape_seed,"trial":trial,"witness_generation_ms":audit.generation_ms,"witness_digest_blake3":audit.digest,"expected_digest":corpus.digest,"native_representation":audit.representation,"quotient_reconstructed":audit.quotient_reconstructed,"all_rows_match":true}))?;
                     raw.flush()?;
                 }
                 let median = common::median(&times);
@@ -1038,7 +1015,13 @@ pub(crate) fn witness_main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    serde_json::to_writer_pretty(create("witness-summary.json")?, &summary)?;
+    raw.finish()?;
+    output.write_json(
+        "witness-summary.json",
+        &summary,
+        FileMode::CreateNew,
+        JsonStyle::Pretty,
+    )?;
     eprintln!("Witness comparison: {}", out.display());
     Ok(())
 }
@@ -1114,29 +1097,60 @@ mod ligerito_isolation_tests {
     // Separate processes avoid racing other tests over process-global settings.
     #[test]
     fn configuration_probe() {
-        if std::env::var_os("F2Z_TEST_CONFIGURATION_PROBE").is_none() { return; }
-        let corpus=Arc::new(Corpus::new(Workload::U32,15,7));
-        let f2z=f2z_backend::Context::setup(Arc::clone(&corpus)).config();
-        let small=Arc::new(edge_corpus(Workload::U32));
-        let binius=binius::Context::setup(Arc::clone(&small)).config();
-        let fri=plonky3::Context::setup(Arc::clone(&small)).config();
-        let whir=plonky3_whir::Context::setup_with_params(small,common::whir_tuning::Params::default()).unwrap().config();
-        println!("CONFIG_PROBE {}",json!({"f2z":f2z,"binius":binius,"fri":fri,"whir":whir}));
+        if std::env::var_os("F2Z_TEST_CONFIGURATION_PROBE").is_none() {
+            return;
+        }
+        let corpus = Arc::new(Corpus::new(Workload::U32, 15, 7));
+        let f2z = f2z_backend::Context::setup(Arc::clone(&corpus)).config();
+        let small = Arc::new(edge_corpus(Workload::U32));
+        let binius = binius::Context::setup(Arc::clone(&small)).config();
+        let fri = plonky3::Context::setup(Arc::clone(&small)).config();
+        let whir =
+            plonky3_whir::Context::setup_with_params(small, common::whir_tuning::Params::default())
+                .unwrap()
+                .config();
+        println!(
+            "CONFIG_PROBE {}",
+            json!({"f2z":f2z,"binius":binius,"fri":fri,"whir":whir})
+        );
     }
 
     #[test]
     fn ligerito_selector_leaves_competing_configurations_unchanged() {
-        let probe=|profile| {
-            let out=std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact","benchmark::ligerito_isolation_tests::configuration_probe","--nocapture"])
-                .env("F2Z_TEST_CONFIGURATION_PROBE","1").env("F2Z_LIG_PROFILE",profile)
-                .env("RAYON_NUM_THREADS","2").output().unwrap();
-            assert!(out.status.success(),"{}",String::from_utf8_lossy(&out.stderr));
-            let stdout=String::from_utf8(out.stdout).unwrap();
-            serde_json::from_str::<Value>(stdout.lines().find_map(|l|l.strip_prefix("CONFIG_PROBE ")).expect("configuration probe output")).unwrap()
+        let probe = |profile| {
+            let out = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "benchmark::ligerito_isolation_tests::configuration_probe",
+                    "--nocapture",
+                ])
+                .env("F2Z_TEST_CONFIGURATION_PROBE", "1")
+                .env("F2Z_LIG_PROFILE", profile)
+                .env("RAYON_NUM_THREADS", "2")
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            let stdout = String::from_utf8(out.stdout).unwrap();
+            serde_json::from_str::<Value>(
+                stdout
+                    .lines()
+                    .find_map(|l| l.strip_prefix("CONFIG_PROBE "))
+                    .expect("configuration probe output"),
+            )
+            .unwrap()
         };
-        let johnson=probe("custom:1:4"); let udr=probe("udrg:1:4");
-        assert_ne!(johnson["f2z"]["ligerito"]["configuration_fingerprint"],udr["f2z"]["ligerito"]["configuration_fingerprint"]);
-        for backend in ["binius","fri","whir"] { assert_eq!(johnson[backend],udr[backend],"{backend}"); }
+        let johnson = probe("custom:1:4");
+        let udr = probe("udrg:1:4");
+        assert_ne!(
+            johnson["f2z"]["ligerito"]["configuration_fingerprint"],
+            udr["f2z"]["ligerito"]["configuration_fingerprint"]
+        );
+        for backend in ["binius", "fri", "whir"] {
+            assert_eq!(johnson[backend], udr[backend], "{backend}");
+        }
     }
 }

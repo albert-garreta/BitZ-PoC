@@ -7,6 +7,7 @@
 
 mod common;
 use common::mul_witness::u32_digest as witness_digest;
+use common::output::{BenchmarkOutput, FileMode, JsonlWriter};
 mod integer_pcs_compare {
     pub mod binius;
     pub mod ligerito;
@@ -15,7 +16,6 @@ mod integer_pcs_compare {
 
 use std::collections::HashMap;
 use std::error::Error;
-use std::fs::{self, OpenOptions};
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
 use std::process::Command;
@@ -137,7 +137,7 @@ impl Artifacts {
 }
 
 struct TraceWriter {
-    out: Box<dyn Write>,
+    out: JsonlWriter<Box<dyn Write>>,
     campaign: String,
     git_rev: String,
     dirty: bool,
@@ -163,16 +163,14 @@ impl TraceWriter {
             Some(path) => {
                 let path = Path::new(&path);
                 if let Some(parent) = path.parent() {
-                    fs::create_dir_all(parent)?;
+                    BenchmarkOutput::new(parent).create_dir_all()?;
                 }
-                Box::new(BufWriter::new(
-                    OpenOptions::new().write(true).create_new(true).open(path)?,
-                ))
+                Box::new(BenchmarkOutput::new("").buffered(path, FileMode::CreateNew)?)
             }
             None => Box::new(BufWriter::new(io::stdout())),
         };
         Ok(Self {
-            out,
+            out: JsonlWriter::new(out),
             campaign,
             git_rev: command_output("git", &["rev-parse", "HEAD"], "unknown"),
             dirty: Command::new("git")
@@ -254,8 +252,7 @@ impl TraceWriter {
             "artifacts":{"commitment_bytes":run.artifacts.commitment,"public_claim_bytes":run.artifacts.claim,"opening_proof_bytes":run.artifacts.opening,"total_wire_bytes":run.artifacts.total()},
             "tags":{"campaign_id":self.campaign,"root_boundary":"materialization through verified terminal opening; setup and logical witness generation excluded","timeline":"observed half-open intervals"}
         });
-        serde_json::to_writer(&mut self.out, &record)?;
-        writeln!(self.out)?;
+        self.out.write(&record)?;
 
         let parents = intervals
             .iter()
@@ -307,8 +304,7 @@ impl TraceWriter {
                 "lane":{"process":"benchmark","thread":"control"},"coordinate":{},
                 "attributes":attributes
             });
-            serde_json::to_writer(&mut self.out, &span)?;
-            writeln!(self.out)?;
+            self.out.write(&span)?;
         }
         self.out.flush()?;
         common::pcs_console::print_trial(
@@ -422,7 +418,9 @@ fn math_for(label: &str, backend: Backend) -> Vec<&'static str> {
             vec!["w_i=X_i+2^{32}Y_i+2^{64}P_i\\in\\mathbb F_2^{128}"]
         }
         (COMMIT_SCOPE, Backend::Ligerito) => {
-            vec!["C\\leftarrow\\operatorname{Merkle}(\\operatorname{RS}_{1/8}(w)),\\;y=\\widetilde w(\\zeta,\\zeta^2,\\ldots)"]
+            vec![
+                "C\\leftarrow\\operatorname{Merkle}(\\operatorname{RS}_{1/8}(w)),\\;y=\\widetilde w(\\zeta,\\zeta^2,\\ldots)",
+            ]
         }
         (OPENING_SCOPE, Backend::Ligerito) => {
             vec!["\\pi\\leftarrow\\operatorname{RingSwitch+Ligerito}_{\\mathrm{Johnson}}(C,r,v)"]
@@ -512,9 +510,19 @@ fn selected_backends() -> Vec<Backend> {
 
 fn ordered(selected: &[Backend], exponent: usize) -> Vec<Backend> {
     let order = if exponent.is_multiple_of(2) {
-        [Backend::F2z, Backend::Whir, Backend::Binius, Backend::Ligerito]
+        [
+            Backend::F2z,
+            Backend::Whir,
+            Backend::Binius,
+            Backend::Ligerito,
+        ]
     } else {
-        [Backend::Ligerito, Backend::Binius, Backend::Whir, Backend::F2z]
+        [
+            Backend::Ligerito,
+            Backend::Binius,
+            Backend::Whir,
+            Backend::F2z,
+        ]
     };
     order.into_iter().filter(|b| selected.contains(b)).collect()
 }
@@ -635,14 +643,17 @@ fn run_f2z(
     reps: usize,
 ) -> Result<(), Box<dyn Error>> {
     let setup = Instant::now();
-    let relation = PreparedU32MulRelation::new_with_profile_and_ligerito::<f2z::piop::spartan::Lambda100>(*witness.layout(), common::ligerito_selection(100))?;
+    let relation = PreparedU32MulRelation::new_with_profile_and_ligerito::<
+        f2z::piop::spartan::Lambda100,
+    >(*witness.layout(), common::ligerito_selection(100))?;
     let preflight = commit_u32_mul_witness(&relation, witness.f2z_bit_rows())?;
     let commitment = preflight.commitment.clone();
     drop(preflight);
     flock_core::scratch::clear();
     let prepared: PreparedU32TerminalF2zOpening =
         prepare_u32_terminal_f2z_opening(&relation, &commitment)?;
-    let ligerito = common::ligerito_report(relation.ligerito_configuration(), relation.security().ood);
+    let ligerito =
+        common::ligerito_report(relation.ligerito_configuration(), relation.security().ood);
     drop((relation, commitment));
     let setup_ms = common::elapsed_ms(setup);
     eprintln!("    backend_setup_ms={setup_ms:.3}");

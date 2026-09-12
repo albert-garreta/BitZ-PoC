@@ -20,7 +20,10 @@ use std::sync::Arc;
 fn u64_split_shift() -> i8 {
     std::env::var("F2Z_U64_SPLIT_SHIFT")
         .ok()
-        .map(|v| v.parse().expect("F2Z_U64_SPLIT_SHIFT must be a small integer"))
+        .map(|v| {
+            v.parse()
+                .expect("F2Z_U64_SPLIT_SHIFT must be a small integer")
+        })
         .unwrap_or(0)
 }
 
@@ -45,11 +48,22 @@ impl Context {
                 .expect("u32 Johnson relation");
                 Relation::U32(relation)
             }
-            Workload::U64 => {
-                Relation::U64(PreparedU64MulRelation::new_with_profile_and_ligerito::<Lambda100>(U64MulLayout::new(n).unwrap().with_split_shift(u64_split_shift()).unwrap(), super::common::ligerito_selection(100)).unwrap())
-            }
+            Workload::U64 => Relation::U64(
+                PreparedU64MulRelation::new_with_profile_and_ligerito::<Lambda100>(
+                    U64MulLayout::new(n)
+                        .unwrap()
+                        .with_split_shift(u64_split_shift())
+                        .unwrap(),
+                    super::common::ligerito_selection(100),
+                )
+                .unwrap(),
+            ),
             Workload::U128 => Relation::U128(
-                PreparedU128MulRelation::new_with_profile_and_ligerito::<Lambda100>(U128MulLayout::new(n).unwrap(), super::common::ligerito_selection(100)).unwrap(),
+                PreparedU128MulRelation::new_with_profile_and_ligerito::<Lambda100>(
+                    U128MulLayout::new(n).unwrap(),
+                    super::common::ligerito_selection(100),
+                )
+                .unwrap(),
             ),
         };
         Self { corpus, relation }
@@ -73,7 +87,11 @@ impl Context {
                 .collect();
             config["relation"] = json!("x*y = z + 2^32*w; four committed 32-bit limbs");
             config["security_scope"] = json!("round-by-round-economic");
-            config["ligerito_regime"] = json!(if security.ood.is_some() { "johnson" } else { "udr" });
+            config["ligerito_regime"] = json!(if security.ood.is_some() {
+                "johnson"
+            } else {
+                "udr"
+            });
             config["ood_present"] = json!(security.ood.is_some());
             config["modeled_min_bits"] = json!(security.accounting.achieved_bits());
             config["security_terms"] = json!(terms);
@@ -86,13 +104,17 @@ impl Context {
         }
         match &self.relation {
             Relation::U64(p) => {
-                config["ligerito"] = super::common::ligerito_report(p.ligerito_configuration(), p.security().ood);
+                config["ligerito"] =
+                    super::common::ligerito_report(p.ligerito_configuration(), p.security().ood);
                 let params = p.layout().f2z_params();
                 config["u64_split_shift"] = json!(u64_split_shift());
-                config["f2z_t"] = json!(params.t);
-                config["f2z_s"] = json!(params.s);
+                config["f2z_t"] = json!(params.row_vars);
+                config["f2z_s"] = json!(params.col_vars);
             }
-            Relation::U128(p) => config["ligerito"] = super::common::ligerito_report(p.ligerito_configuration(), p.security().ood),
+            Relation::U128(p) => {
+                config["ligerito"] =
+                    super::common::ligerito_report(p.ligerito_configuration(), p.security().ood)
+            }
             _ => {}
         }
         config

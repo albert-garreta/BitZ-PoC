@@ -450,12 +450,12 @@ pub fn tune<C>(
 }
 
 pub fn save(path: &Path, record: &Value) -> Result<(), Box<dyn std::error::Error>> {
-    let file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)?;
-    serde_json::to_writer_pretty(file, record)?;
-    Ok(())
+    super::output::BenchmarkOutput::new("").write_json(
+        path,
+        record,
+        super::output::FileMode::CreateNew,
+        super::output::JsonStyle::Pretty,
+    )
 }
 
 #[cfg(test)]

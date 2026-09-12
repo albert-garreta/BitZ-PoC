@@ -7,6 +7,7 @@ publish = false
 [workspace]
 
 [dependencies]
+csv = "1.4"
 noir_rs = { git = "https://github.com/zkpassport/noir_rs", rev = "8e516b2ffb126b5cd779d2b22e596c2e1de4e251", features = ["barretenberg"] }
 noirc_abi = { git = "https://github.com/noir-lang/noir.git", rev = "v1.0.0-beta.22" }
 p256 = { version = "0.13", features = ["ecdsa"] }

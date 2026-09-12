@@ -1,15 +1,13 @@
 //! Shared standard P-256 fixtures for SHA-chain signature comparisons.
+#[path = "../common/output.rs"]
+mod output;
+use output::{BenchmarkOutput, FileMode, JsonStyle};
 use p256::ecdsa::{
     Signature, SigningKey, VerifyingKey,
     signature::{Signer, Verifier},
 };
 use serde::{Deserialize, Serialize};
-use std::{
-    error::Error,
-    fs::File,
-    io::{BufReader, BufWriter},
-    path::Path,
-};
+use std::{error::Error, fs::File, io::BufReader, path::Path};
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 pub const SCHEMA: &str = "f2z/sha256-ecdsa-fixture/standard-p256/v1";
@@ -115,8 +113,7 @@ impl SignedFixture {
 
     pub fn write(&self, path: &Path) -> Result<()> {
         self.validate()?;
-        serde_json::to_writer(BufWriter::new(File::create(path)?), self)?;
-        Ok(())
+        BenchmarkOutput::new("").write_json(path, self, FileMode::Replace, JsonStyle::Compact)
     }
 }
 

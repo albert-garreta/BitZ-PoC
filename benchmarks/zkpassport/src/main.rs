@@ -2,6 +2,8 @@
 #![recursion_limit = "256"]
 #[path = "../../../benches/support/sha256_ecdsa_fixture.rs"]
 mod fixture;
+#[path = "../../../benches/common/output.rs"]
+mod output;
 use barretenberg_rs::generated_types::ProofSystemSettings;
 use bincode::Options;
 use fixture::{Result, SignedFixture};
@@ -10,6 +12,7 @@ use noir_rs::{
     circuit, execute, witness, FieldElement,
 };
 use noirc_abi::{input_parser::InputValue, Abi, InputMap};
+use output::{BenchmarkOutput, FileMode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{collections::BTreeMap, fs, path::PathBuf, time::Instant};
@@ -239,7 +242,8 @@ fn main() -> Result<()> {
     let mut settings = api::settings_ultra_honk_poseidon2();
     settings.disable_zk = true;
     let stats = api::circuit_stats(&acir, &settings)?;
-    fs::create_dir_all(&args.srs_cache)?;
+    let cache_output = BenchmarkOutput::new("");
+    BenchmarkOutput::new(&args.srs_cache).create_dir_all()?;
     let srs_path = args
         .srs_cache
         .join(format!("bn254-{}.local", stats.num_gates_dyadic));
@@ -253,8 +257,8 @@ fn main() -> Result<()> {
         let download = Instant::now();
         let data = srs::get_srs(stats.num_gates_dyadic, None);
         let temporary = srs_path.with_extension("tmp");
-        fs::write(&temporary, bincode::serialize(&data)?)?;
-        fs::rename(temporary, &srs_path)?;
+        cache_output.write_bytes(&temporary, &bincode::serialize(&data)?, FileMode::Replace)?;
+        cache_output.rename(temporary, &srs_path)?;
         srs_download_ms = ms(download);
     }
     srs::setup_srs(

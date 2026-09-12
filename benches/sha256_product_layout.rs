@@ -35,9 +35,8 @@ fn main() {
     if default_sweep && let Some(path) = std::env::var_os("F2Z_SHA_RESULT_PATH") {
         use std::io::Write;
 
-        let mut output = std::fs::OpenOptions::new()
-            .append(true)
-            .open(path)
+        let mut output = common::output::BenchmarkOutput::new("")
+            .file(path, common::output::FileMode::AppendExisting)
             .expect("reopen SHA result output");
         for t in 1..=6 {
             writeln!(
@@ -52,5 +51,6 @@ fn main() {
             "STATUS product_t=28 product_s=1 compressions=16384 status=skipped reason=projected_peak_exceeds_60_gib projected_peak_bytes=75150743216 peak_cap_bytes=64424509440"
         )
         .expect("write memory-skipped SHA split");
+        output.flush().expect("flush SHA split status");
     }
 }

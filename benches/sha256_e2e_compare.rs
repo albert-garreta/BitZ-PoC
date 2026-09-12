@@ -6,6 +6,7 @@
 //! scope. Every backend uses its own native arithmetization and witness layout.
 
 mod common;
+use common::output::{BenchmarkOutput, FileMode, JsonStyle, JsonlWriter};
 use common::whir_tuning;
 #[path = "common/trace_capture.rs"]
 mod trace_capture;
@@ -17,7 +18,7 @@ mod plonky3_backend;
 
 use std::{
     collections::{HashMap, HashSet},
-    fs::{self, File},
+    fs::File,
     hint::black_box,
     io::{BufWriter, Write},
     path::{Path, PathBuf},
@@ -36,6 +37,7 @@ use binius_verifier::{
     config::StdChallenger,
     transcript::{ProverTranscript, VerifierTranscript},
 };
+use f2z::binius_ligerito::{Prepared as BiniusLigerito, ProveTimings};
 use f2z::{
     piop::spartan::{
         PreparedSha256CompressionBatch, SHA256_DEFAULT_INNER_PREFIX_VARS, Sha256CompressionInput,
@@ -47,7 +49,6 @@ use f2z::{
     transcript::Blake3Transcript,
     utils::prof::ProfileInterval,
 };
-use f2z::binius_ligerito::{Prepared as BiniusLigerito, ProveTimings};
 use serde_json::{Value, json};
 
 const DEFAULT_ROOT_SEED: u64 = 0x5348_4132_3545_3245;
@@ -312,7 +313,8 @@ impl F2zContext {
     fn setup(exponent: usize, corpus: &Corpus, inner_prefix_vars: usize) -> Self {
         let started = Instant::now();
         let prepared = prepare_sha256_compression_batch(exponent)
-            .and_then(|p| p.with_ligerito(common::ligerito_selection(100))).expect("valid SHA batch");
+            .and_then(|p| p.with_ligerito(common::ligerito_selection(100)))
+            .expect("valid SHA batch");
         let (pc, vc) = sha256_compression_configs(&prepared).expect("valid F2Z PCS config");
         let setup_ms = started.elapsed().as_secs_f64() * 1e3;
         Self {
@@ -718,7 +720,9 @@ fn binius_ligerito_semantic_spans(
             "phase",
             None,
             false,
-            vec![r"T_{\mathrm{witness\rightarrow proof}}=T_{\mathrm{witness}\rightarrow\mathrm{proof\ ready}}"],
+            vec![
+                r"T_{\mathrm{witness\rightarrow proof}}=T_{\mathrm{witness}\rightarrow\mathrm{proof\ ready}}",
+            ],
         ),
         span(
             "binius-ligerito-total-prover",
@@ -778,7 +782,10 @@ fn binius_ligerito_semantic_spans(
             "phase",
             Some("constraint-proof"),
             true,
-            vec!["A(x)B(x)-C(x)=0", r"\sum_x\operatorname{eq}(r,x)(A(x)B(x)-C(x))=0"],
+            vec![
+                "A(x)B(x)-C(x)=0",
+                r"\sum_x\operatorname{eq}(r,x)(A(x)B(x)-C(x))=0",
+            ],
         ),
         span(
             "binius-ligerito-opening",
@@ -793,7 +800,10 @@ fn binius_ligerito_semantic_spans(
             "phase",
             Some("opening-proof"),
             true,
-            vec![r"\widetilde w(r)=v", r"\operatorname{Open}_{\mathrm{Ligerito}}(C_w,r,v)"],
+            vec![
+                r"\widetilde w(r)=v",
+                r"\operatorname{Open}_{\mathrm{Ligerito}}(C_w,r,v)",
+            ],
         ),
         span(
             "binius-ligerito-verification",
@@ -1285,7 +1295,7 @@ fn binius_semantic_spans(
 }
 
 struct TraceWriter {
-    output: BufWriter<File>,
+    output: JsonlWriter<BufWriter<File>>,
     path: PathBuf,
     f2z_git: String,
     binius_git: String,
@@ -1313,15 +1323,13 @@ struct RunMetadata<'a> {
 impl TraceWriter {
     fn new(path: PathBuf, threads: usize) -> Self {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).expect("create trace directory");
+            BenchmarkOutput::new(parent)
+                .create_dir_all()
+                .expect("create trace directory");
         }
-        let output = BufWriter::new(
-            fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&path)
-                .expect("create fresh canonical trace"),
-        );
+        let output = BenchmarkOutput::new("")
+            .jsonl(&path, FileMode::CreateNew)
+            .expect("create fresh canonical trace");
         Self {
             output,
             path,
@@ -1436,8 +1444,7 @@ impl TraceWriter {
                 "binius_lane_layout": "low32=compression 2j; high32=compression 2j+1",
             },
         });
-        serde_json::to_writer(&mut self.output, &run).expect("write run record");
-        writeln!(self.output).expect("terminate run record");
+        self.output.write(&run).expect("write run record");
         for span in spans {
             let mut attributes = json!({
                 "scope_kind": span.scope_kind,
@@ -1467,8 +1474,7 @@ impl TraceWriter {
                 "coordinate": {},
                 "attributes": attributes,
             });
-            serde_json::to_writer(&mut self.output, &record).expect("write span record");
-            writeln!(self.output).expect("terminate span record");
+            self.output.write(&record).expect("write span record");
         }
         self.output.flush().expect("flush canonical trace");
     }
@@ -2189,7 +2195,10 @@ fn write_aggregate_artifacts(
     runnable: &HashSet<Backend>,
     output_dir: &Path,
 ) {
-    fs::create_dir_all(output_dir).expect("create benchmark output directory");
+    let output = BenchmarkOutput::new(output_dir);
+    output
+        .create_dir_all()
+        .expect("create benchmark output directory");
     let summary_path = output_dir.join("summary.json");
     let summary = aggregates
         .iter()
@@ -2237,14 +2246,19 @@ fn write_aggregate_artifacts(
             .collect::<Vec<_>>(),
         "rows": summary,
     });
-    serde_json::to_writer_pretty(
-        File::create(&summary_path).expect("create summary.json"),
-        &summary_doc,
-    )
-    .expect("write summary.json");
+    output
+        .write_json(
+            "summary.json",
+            &summary_doc,
+            FileMode::Replace,
+            JsonStyle::Pretty,
+        )
+        .expect("write summary.json");
 
     let metrics_path = output_dir.join("metrics.csv");
-    let mut metrics = BufWriter::new(File::create(&metrics_path).expect("create metrics.csv"));
+    let mut metrics = output
+        .buffered("metrics.csv", FileMode::Replace)
+        .expect("create metrics.csv");
     writeln!(metrics, "backend,compression_exponent,compressions,configuration,sample_index,witness_ms,commit_ms,piop_ms,iop_ms,online_prover_ms,witness_to_proof_ms,throughput_compressions_per_s,verifier_ms,proof_bytes,setup_ms")
         .expect("write CSV header");
     for row in aggregates {
@@ -2705,7 +2719,9 @@ fn main() {
     let trace_path = std::env::var_os("F2Z_SHA_COMPARE_TRACE_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|| output_dir.join("trace.jsonl"));
-    fs::create_dir_all(&output_dir).expect("create artifact directory");
+    BenchmarkOutput::new(&output_dir)
+        .create_dir_all()
+        .expect("create artifact directory");
     let mut trace = TraceWriter::new(trace_path, threads);
     whir_tuning::save(
         &output_dir.join("environment.json"),
@@ -2877,19 +2893,41 @@ mod native_whir_tests {
 mod ligerito_isolation_tests {
     #[test]
     fn limber_configuration_probe() {
-        if std::env::var_os("F2Z_TEST_CONFIGURATION_PROBE").is_none() { return; }
-        println!("CONFIG_PROBE {}",super::integer_limber_backend::security_metadata());
+        if std::env::var_os("F2Z_TEST_CONFIGURATION_PROBE").is_none() {
+            return;
+        }
+        println!(
+            "CONFIG_PROBE {}",
+            super::integer_limber_backend::security_metadata()
+        );
     }
     #[test]
     fn ligerito_selector_leaves_limbers_native_security_unchanged() {
-        let probe=|profile| {
-            let out=std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact","benchmark::ligerito_isolation_tests::limber_configuration_probe","--nocapture"])
-                .env("F2Z_TEST_CONFIGURATION_PROBE","1").env("F2Z_LIG_PROFILE",profile).output().unwrap();
-            assert!(out.status.success(),"{}",String::from_utf8_lossy(&out.stderr));
-            let stdout=String::from_utf8(out.stdout).unwrap();
-            serde_json::from_str::<serde_json::Value>(stdout.lines().find_map(|l|l.strip_prefix("CONFIG_PROBE ")).unwrap()).unwrap()
+        let probe = |profile| {
+            let out = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "benchmark::ligerito_isolation_tests::limber_configuration_probe",
+                    "--nocapture",
+                ])
+                .env("F2Z_TEST_CONFIGURATION_PROBE", "1")
+                .env("F2Z_LIG_PROFILE", profile)
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            let stdout = String::from_utf8(out.stdout).unwrap();
+            serde_json::from_str::<serde_json::Value>(
+                stdout
+                    .lines()
+                    .find_map(|l| l.strip_prefix("CONFIG_PROBE "))
+                    .unwrap(),
+            )
+            .unwrap()
         };
-        assert_eq!(probe("custom:1:4"),probe("udrg:1:4"));
+        assert_eq!(probe("custom:1:4"), probe("udrg:1:4"));
     }
 }

@@ -49,6 +49,7 @@
 //! also instruments timed runs. Without the feature, memory fields are `na`.
 
 pub(crate) mod common;
+use common::output::{BenchmarkOutput, FileMode, JsonlWriter};
 
 #[cfg(feature = "bench-peak-memory")]
 #[global_allocator]
@@ -62,7 +63,7 @@ const MEMORY_TRACKING: &str = if cfg!(feature = "bench-peak-memory") {
 
 use std::{
     collections::HashMap,
-    fs::{self, File},
+    fs::File,
     hint::black_box,
     io::{BufWriter, Write},
     path::Path,
@@ -195,7 +196,7 @@ impl Trial {
 }
 
 struct TraceWriter {
-    output: BufWriter<File>,
+    output: JsonlWriter<BufWriter<File>>,
     git_rev: String,
     git_dirty: bool,
     build_profile: String,
@@ -215,9 +216,13 @@ impl TraceWriter {
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
         {
-            fs::create_dir_all(parent).expect("create SHA trace directory");
+            BenchmarkOutput::new(parent)
+                .create_dir_all()
+                .expect("create SHA trace directory");
         }
-        let output = BufWriter::new(File::create(path).expect("create SHA trace JSONL"));
+        let output = BenchmarkOutput::new("")
+            .jsonl(path, FileMode::Replace)
+            .expect("create SHA trace JSONL");
         let git_rev = std::env::var("F2Z_SHA_GIT_REV").unwrap_or_else(|_| {
             command_output("git", &["rev-parse", "--short", "HEAD"], "unknown")
         });
@@ -386,8 +391,7 @@ impl TraceWriter {
                 "f2z_quad": env_setting("F2Z_QUAD", "default:off"),
             },
         });
-        serde_json::to_writer(&mut self.output, &run).expect("write SHA trace run");
-        writeln!(self.output).expect("terminate SHA trace run");
+        self.output.write(&run).expect("write SHA trace run");
 
         let by_order = intervals
             .iter()
@@ -448,8 +452,7 @@ impl TraceWriter {
                 "coordinate": coordinate,
                 "attributes": attributes,
             });
-            serde_json::to_writer(&mut self.output, &span).expect("write SHA trace span");
-            writeln!(self.output).expect("terminate SHA trace span");
+            self.output.write(&span).expect("write SHA trace span");
         }
         self.output.flush().expect("flush SHA trace JSONL");
     }
@@ -1040,7 +1043,13 @@ fn bench_shape<P: IopSecurityProfile>(
     };
     let (pc, vc) = sha256_compression_configs(&prepared).expect("valid Ligerito config");
     let setup_ms = setup_started.elapsed().as_secs_f64() * 1e3;
-    println!("LIGERITO_CONFIG {}", common::ligerito_report(prepared.ligerito_configuration().unwrap(), prepared.security().ood));
+    println!(
+        "LIGERITO_CONFIG {}",
+        common::ligerito_report(
+            prepared.ligerito_configuration().unwrap(),
+            prepared.security().ood
+        )
+    );
     let compressions = prepared.instances();
     let live_source_cells = 1 + SHA256_F_INSTANCE_BITS * compressions;
     let live_assignment_cells = 1 + SHA256_H_INSTANCE_BITS * compressions;
@@ -1209,7 +1218,10 @@ fn bench_shape<P: IopSecurityProfile>(
         bench: "sha256",
         shape: shape.slug(),
         extra: vec![
-            common::ligerito_identity(prepared.ligerito_configuration().unwrap(), prepared.security().ood),
+            common::ligerito_identity(
+                prepared.ligerito_configuration().unwrap(),
+                prepared.security().ood,
+            ),
             ("profile".into(), prepared.security().profile_name.into()),
             ("compressions".into(), compressions.to_string()),
             ("mnum_rows".into(), assignment_cells.to_string()),
@@ -1272,9 +1284,13 @@ pub(crate) fn main() {
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
         {
-            fs::create_dir_all(parent).expect("create SHA result directory");
+            BenchmarkOutput::new(parent)
+                .create_dir_all()
+                .expect("create SHA result directory");
         }
-        BufWriter::new(File::create(path).expect("create SHA result output"))
+        BenchmarkOutput::new("")
+            .buffered(path, FileMode::Replace)
+            .expect("create SHA result output")
     });
     let reps = common::reps(Some("F2Z_SHA_REPS"), 3);
     let root_seed = common::seed(Some("F2Z_SHA_SEED"), 0x4632_5a5f_5348_4132);

@@ -22,6 +22,7 @@ fn main() {
         "build.py",
         "src/main.rs",
         "../../benches/support/sha256_ecdsa_fixture.rs",
+        "../../benches/common/output.rs",
     ] {
         let path = root.join(path);
         println!("cargo:rerun-if-changed={}", path.display());

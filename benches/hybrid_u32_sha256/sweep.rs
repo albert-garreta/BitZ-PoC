@@ -1,13 +1,14 @@
 //! Run each workload/backend in a separate process to isolate peak RSS.
 use std::{
-    fs::{self, File},
-    io::{BufWriter, Write},
+    fs,
+    io::Write,
     path::PathBuf,
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use super::AnyError;
+use super::output::{BenchmarkOutput, FileMode, JsonStyle};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Shape {
@@ -101,7 +102,9 @@ fn formatted_rows(
         "separate" => {
             "mode,iteration,setup_ms,witness_ms,total_prover_ms,verify_ms,proof_payload_bytes_estimate,peak_rss_kib"
         }
-        _ => "mode,iteration,setup_ms,witness_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib",
+        _ => {
+            "mode,iteration,setup_ms,witness_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib"
+        }
     };
     if header.join(",") != expected {
         return Err(format!("unexpected {mode} child CSV header").into());
@@ -220,24 +223,27 @@ pub fn run(
             .join(format!("sweep-{stamp}-{}", std::process::id()))
     };
     if let Some(parent) = results_dir.parent().filter(|p| !p.as_os_str().is_empty()) {
-        fs::create_dir_all(parent)?;
+        BenchmarkOutput::new(parent).create_dir_all()?;
     }
-    fs::create_dir(&results_dir).map_err(|error| {
-        format!(
-            "cannot create new results directory {}: {error}",
-            results_dir.display()
-        )
-    })?;
+    BenchmarkOutput::new(&results_dir)
+        .create_new_dir()
+        .map_err(|error| {
+            format!(
+                "cannot create new results directory {}: {error}",
+                results_dir.display()
+            )
+        })?;
     let results_dir = results_dir.canonicalize()?;
-    fs::write(
-        results_dir.join("run.txt"),
-        format!(
+    let output = BenchmarkOutput::new(&results_dir);
+    output.write_text(
+        "run.txt",
+        &format!(
             "executable={}\nprotocol=hybrid-u32-mod32-sha256-v5\nmultiplication_relation=xy=z+2^32*w (x,y,z,w are u32)\nshapes={shapes:?}\nmodes={modes:?}\niterations={iterations}\nRAYON_NUM_THREADS={}\nnon_zk=true\nsecurity_target_bits=100\n",
             executable.display(),
             std::env::var("RAYON_NUM_THREADS").unwrap_or_else(|_| "default".into()),
-        ),
+        ), FileMode::Replace,
     )?;
-    let mut summary = BufWriter::new(File::create(results_dir.join("summary.csv"))?);
+    let mut summary = output.buffered("summary.csv", FileMode::Replace)?;
     let header = format!(
         "mode,multiplication_relation,mul_log,sha_log,multiplications,sha_compressions,{}",
         format!("{},ligerito_hex", METRICS.join(","))
@@ -282,8 +288,8 @@ pub fn run(
                     "--iterations",
                     &iterations.to_string(),
                 ])
-                .stdout(File::create(&csv_path)?)
-                .stderr(File::create(&log_path)?)
+                .stdout(output.file(&csv_path, FileMode::Replace)?)
+                .stderr(output.file(&log_path, FileMode::Replace)?)
                 .status()?;
             if !status.success() {
                 return Err(format!(
@@ -294,17 +300,33 @@ pub fn run(
                 .into());
             }
             let log = fs::read_to_string(&log_path)?;
-            let reports: Vec<_> = log.lines().filter_map(|l| l.strip_prefix("LIGERITO_CONFIG ")).collect();
+            let reports: Vec<_> = log
+                .lines()
+                .filter_map(|l| l.strip_prefix("LIGERITO_CONFIG "))
+                .collect();
             let identity = if *mode == "all-binius" {
-                if !reports.is_empty() { return Err("all-Binius output unexpectedly carries Ligerito configuration".into()); }
+                if !reports.is_empty() {
+                    return Err(
+                        "all-Binius output unexpectedly carries Ligerito configuration".into(),
+                    );
+                }
                 String::new()
             } else {
-                if reports.len() != 1 { return Err("missing or duplicated child Ligerito identity".into()); }
+                if reports.len() != 1 {
+                    return Err("missing or duplicated child Ligerito identity".into());
+                }
                 let report: serde_json::Value = serde_json::from_str(reports[0])?;
                 f2z::ligerito_flock::ResolvedLigerito::validate_report(&report)?;
-                let expected = if *mode == "hybrid" {106} else {112};
-                if report["target_bits"] != expected { return Err("incorrect Ligerito component budget".into()); }
-                fs::write(results_dir.join(format!("{stem}.ligerito.json")), serde_json::to_vec_pretty(&report)?)?;
+                let expected = if *mode == "hybrid" { 106 } else { 112 };
+                if report["target_bits"] != expected {
+                    return Err("incorrect Ligerito component budget".into());
+                }
+                output.write_json(
+                    format!("{stem}.ligerito.json"),
+                    &report,
+                    FileMode::Replace,
+                    JsonStyle::Pretty,
+                )?;
                 f2z::ligerito_flock::ResolvedLigerito::encode_report(&report)
             };
             for (row, display) in

@@ -38,14 +38,10 @@
 #![recursion_limit = "512"]
 
 mod common;
+use common::output::{BenchmarkOutput, FileMode, JsonlWriter};
 
 use std::{
-    collections::HashMap,
-    fs::{self, File, OpenOptions},
-    hint::black_box,
-    io::{BufWriter, Write},
-    path::Path,
-    process::Command,
+    collections::HashMap, fs::File, hint::black_box, io::BufWriter, path::Path, process::Command,
     time::Instant,
 };
 
@@ -196,7 +192,7 @@ struct RepTiming {
 }
 
 struct TraceWriter {
-    output: BufWriter<File>,
+    output: JsonlWriter<BufWriter<File>>,
     campaign_id: String,
     git_rev: String,
     git_dirty: bool,
@@ -219,15 +215,13 @@ impl TraceWriter {
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
         {
-            fs::create_dir_all(parent).expect("create MultiSwap trace directory");
+            BenchmarkOutput::new(parent)
+                .create_dir_all()
+                .expect("create MultiSwap trace directory");
         }
-        let output = BufWriter::new(
-            OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(path)
-                .expect("create new MultiSwap trace JSONL without overwriting"),
-        );
+        let output = BenchmarkOutput::new("")
+            .jsonl(path, FileMode::CreateNew)
+            .expect("create new MultiSwap trace JSONL without overwriting");
         let campaign_id = std::env::var("F2Z_MULTISWAP_CAMPAIGN_ID")
             .unwrap_or_else(|_| "multiswap-matched-v1".to_owned());
         let git_rev = std::env::var("F2Z_MULTISWAP_GIT_REV").unwrap_or_else(|_| {
@@ -457,8 +451,7 @@ impl TraceWriter {
                 "f2z_spartan_reduction": env_setting("F2Z_SPARTAN_REDUCTION", "default:delayed-barrett"),
             },
         });
-        serde_json::to_writer(&mut self.output, &run).expect("write MultiSwap trace run");
-        writeln!(self.output).expect("terminate MultiSwap trace run");
+        self.output.write(&run).expect("write MultiSwap trace run");
 
         let by_order = timing
             .intervals
@@ -516,8 +509,9 @@ impl TraceWriter {
                 "coordinate": coordinate,
                 "attributes": attributes,
             });
-            serde_json::to_writer(&mut self.output, &span).expect("write MultiSwap trace span");
-            writeln!(self.output).expect("terminate MultiSwap trace span");
+            self.output
+                .write(&span)
+                .expect("write MultiSwap trace span");
         }
         self.output.flush().expect("flush MultiSwap trace JSONL");
     }

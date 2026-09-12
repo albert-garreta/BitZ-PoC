@@ -7,6 +7,7 @@
 
 mod common;
 use common::mul_witness::baby_bear_digest as witness_digest;
+use common::output::{BenchmarkOutput, FileMode, JsonStyle, JsonlWriter};
 mod baby_bear_pcs_compare {
     pub mod whir;
 }
@@ -18,7 +19,6 @@ mod integer_pcs_compare {
 
 use std::collections::HashMap;
 use std::error::Error;
-use std::fs::{self, OpenOptions};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -225,7 +225,7 @@ impl CampaignWriter {
             return Ok(());
         };
         if let Some(parent) = path.parent().filter(|path| !path.as_os_str().is_empty()) {
-            fs::create_dir_all(parent)?;
+            BenchmarkOutput::new(parent).create_dir_all()?;
         }
         for exponent in MIN_EXPONENT..=MAX_EXPONENT {
             for backend in [
@@ -292,8 +292,12 @@ impl CampaignWriter {
             },
             "cells": cells,
         });
-        let output = OpenOptions::new().write(true).create_new(true).open(path)?;
-        serde_json::to_writer_pretty(BufWriter::new(output), &manifest)?;
+        BenchmarkOutput::new("").write_json(
+            path,
+            &manifest,
+            FileMode::CreateNew,
+            JsonStyle::Pretty,
+        )?;
         Ok(())
     }
 }
@@ -305,7 +309,7 @@ struct F2zClaimFixture {
 }
 
 struct TraceWriter {
-    output: Box<dyn Write>,
+    output: JsonlWriter<Box<dyn Write>>,
     campaign_id: String,
     git_rev: String,
     git_dirty: bool,
@@ -335,10 +339,9 @@ impl TraceWriter {
             Some(path) => {
                 let path = Path::new(&path);
                 if let Some(parent) = path.parent().filter(|path| !path.as_os_str().is_empty()) {
-                    fs::create_dir_all(parent)?;
+                    BenchmarkOutput::new(parent).create_dir_all()?;
                 }
-                let file = OpenOptions::new().write(true).create_new(true).open(path)?;
-                Box::new(BufWriter::new(file))
+                Box::new(BenchmarkOutput::new("").buffered(path, FileMode::CreateNew)?)
             }
             None => Box::new(BufWriter::new(io::stdout())),
         };
@@ -356,7 +359,7 @@ impl TraceWriter {
         });
 
         Ok(Self {
-            output,
+            output: JsonlWriter::new(output),
             campaign_id: campaign_id.to_owned(),
             git_rev,
             git_dirty,
@@ -501,8 +504,7 @@ impl TraceWriter {
                 "plonky3_revision": common::locked_git_revision("p3-whir"),
             },
         });
-        serde_json::to_writer(&mut self.output, &run)?;
-        writeln!(self.output)?;
+        self.output.write(&run)?;
 
         let by_order = intervals
             .iter()
@@ -556,8 +558,7 @@ impl TraceWriter {
                 "coordinate": coordinate,
                 "attributes": attributes,
             });
-            serde_json::to_writer(&mut self.output, &span)?;
-            writeln!(self.output)?;
+            self.output.write(&span)?;
         }
         self.output.flush()?;
         Ok(())
@@ -957,14 +958,39 @@ fn ordered_backends(selected: &[Backend], exponent: usize) -> Vec<Backend> {
     let preference = match requested.as_str() {
         "alternate" => {
             if exponent.is_multiple_of(2) {
-                [Backend::F2z, Backend::Whir, Backend::Binius, Backend::Ligerito]
+                [
+                    Backend::F2z,
+                    Backend::Whir,
+                    Backend::Binius,
+                    Backend::Ligerito,
+                ]
             } else {
-                [Backend::Ligerito, Backend::Binius, Backend::Whir, Backend::F2z]
+                [
+                    Backend::Ligerito,
+                    Backend::Binius,
+                    Backend::Whir,
+                    Backend::F2z,
+                ]
             }
         }
-        "f2z-first" => [Backend::F2z, Backend::Whir, Backend::Binius, Backend::Ligerito],
-        "whir-first" => [Backend::Whir, Backend::Binius, Backend::Ligerito, Backend::F2z],
-        "binius-first" => [Backend::Binius, Backend::Ligerito, Backend::Whir, Backend::F2z],
+        "f2z-first" => [
+            Backend::F2z,
+            Backend::Whir,
+            Backend::Binius,
+            Backend::Ligerito,
+        ],
+        "whir-first" => [
+            Backend::Whir,
+            Backend::Binius,
+            Backend::Ligerito,
+            Backend::F2z,
+        ],
+        "binius-first" => [
+            Backend::Binius,
+            Backend::Ligerito,
+            Backend::Whir,
+            Backend::F2z,
+        ],
         _ => {
             panic!(
                 "F2Z_BENCH_ORDER must be alternate, f2z-first, whir-first, or binius-first for this benchmark"
@@ -1207,7 +1233,12 @@ fn run_f2z_series(
 ) -> Result<CellOutcome, Box<dyn Error>> {
     let setup_started = Instant::now();
     let layout = *witness.layout();
-    let preflight_hint = f2z::piop::spartan::baby_bear_f2z::commit_baby_bear_mul_witness_with_ligerito(&layout, witness.f2z_bit_rows(), common::ligerito_selection(100))?;
+    let preflight_hint =
+        f2z::piop::spartan::baby_bear_f2z::commit_baby_bear_mul_witness_with_ligerito(
+            &layout,
+            witness.f2z_bit_rows(),
+            common::ligerito_selection(100),
+        )?;
     let preflight_commitment = preflight_hint.commitment.clone();
     drop(preflight_hint);
     // Flock's prover-data drop returns its largest codeword to a process-global
@@ -1215,7 +1246,12 @@ fn run_f2z_series(
     flock_core::scratch::clear();
     let matrices = prepare_baby_bear_mul_relation(layout, &spartan_f2z_field_config())?;
     let prepared: PreparedBabyBearTerminalF2zOpening =
-        f2z::piop::spartan::baby_bear_f2z::prepare_baby_bear_terminal_f2z_opening_with_ligerito(&matrices, &layout, &preflight_commitment, common::ligerito_selection(100))?;
+        f2z::piop::spartan::baby_bear_f2z::prepare_baby_bear_terminal_f2z_opening_with_ligerito(
+            &matrices,
+            &layout,
+            &preflight_commitment,
+            common::ligerito_selection(100),
+        )?;
     drop((matrices, preflight_commitment));
     let setup_ms = common::elapsed_ms(setup_started);
     let security = f2z_security(exponent)?;

@@ -20,6 +20,7 @@
 
 pub mod environment;
 pub mod mul_witness;
+pub mod output;
 pub mod pcs_console;
 #[cfg(feature = "bench-peak-memory")]
 pub mod peak_memory;

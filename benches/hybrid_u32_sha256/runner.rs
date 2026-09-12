@@ -21,16 +21,24 @@ use f2z::{
 };
 use std::{error::Error, time::Instant};
 
+#[path = "../common/output.rs"]
+mod output;
 #[path = "sweep.rs"]
 mod sweep;
+use output::{BenchmarkOutput, FileMode, JsonStyle};
 
 type Challenger = HasherChallenger<blake3::Hasher>;
 type AnyError = Box<dyn Error>;
 
-fn select_ligerito(cli: Option<&str>, target: usize) -> Result<f2z::ligerito_flock::LigeritoSelection, AnyError> {
+fn select_ligerito(
+    cli: Option<&str>,
+    target: usize,
+) -> Result<f2z::ligerito_flock::LigeritoSelection, AnyError> {
     let env = std::env::var("F2Z_LIG_PROFILE").ok();
     match cli.or(env.as_deref()) {
-        Some(request) => Ok(f2z::ligerito_flock::LigeritoSelection::parse(request, target)?),
+        Some(request) => Ok(f2z::ligerito_flock::LigeritoSelection::parse(
+            request, target,
+        )?),
         None => Ok(f2z::ligerito_flock::LigeritoSelection::JOHNSON),
     }
 }
@@ -347,7 +355,10 @@ pub fn run() -> Result<(), AnyError> {
             .with_limit(1024)
             .reject_trailing_bytes()
             .deserialize(&statement_bytes)?;
-        let prepared = PreparedHybrid::new_with_ligerito(statement.parameters, select_ligerito(profile.as_deref(), 106)?)?;
+        let prepared = PreparedHybrid::new_with_ligerito(
+            statement.parameters,
+            select_ligerito(profile.as_deref(), 106)?,
+        )?;
         let proof = prepared.proof_from_bytes(&statement, &std::fs::read(path)?)?;
         prepared.verify(&statement, &proof)?;
         println!(
@@ -371,11 +382,26 @@ pub fn run() -> Result<(), AnyError> {
     let setup = Instant::now();
     if mode == "hybrid" {
         prof::force_enable();
-        let prepared = PreparedHybrid::new_with_ligerito(parameters, select_ligerito(profile.as_deref(), 106)?)?;
-        let request = profile.clone().or_else(|| std::env::var("F2Z_LIG_PROFILE").ok()).unwrap_or_else(|| "custom:1:4".into());
-        let report = prepared.ligerito_configuration().report(&request, prepared.ood_round());
+        let prepared = PreparedHybrid::new_with_ligerito(
+            parameters,
+            select_ligerito(profile.as_deref(), 106)?,
+        )?;
+        let request = profile
+            .clone()
+            .or_else(|| std::env::var("F2Z_LIG_PROFILE").ok())
+            .unwrap_or_else(|| "custom:1:4".into());
+        let report = prepared
+            .ligerito_configuration()
+            .report(&request, prepared.ood_round());
         eprintln!("LIGERITO_CONFIG {report}");
-        if let Some(path) = &output { std::fs::write(format!("{path}.ligerito.json"), serde_json::to_vec_pretty(&report)?)?; }
+        if let Some(path) = &output {
+            BenchmarkOutput::new("").write_json(
+                format!("{path}.ligerito.json"),
+                &report,
+                FileMode::Replace,
+                JsonStyle::Pretty,
+            )?;
+        }
         let setup_ms = millis(setup);
         let binding = prepared
             .security()
@@ -435,7 +461,9 @@ pub fn run() -> Result<(), AnyError> {
             let decoded = prepared.proof_from_bytes(committed.statement(), &bytes)?;
             prepared.verify(committed.statement(), &decoded)?;
             let verify_ms = millis(verify);
-            if iteration == 0 { continue; }
+            if iteration == 0 {
+                continue;
+            }
             println!(
                 "hybrid,{},{setup_ms:.3},{witness_ms:.3},{witness_commit_ms:.3},{continuation_ms:.3},{total_ms:.3},{verify_ms:.3},{},{},{piop_ms:.3},{iop_ms:.3},{mul_piop_ms:.3},{sha_piop_ms:.3},{mul_opening_ms:.3},{joint_sumcheck_ms:.3},{shared_opening_ms:.3},{ood_round_ms:.3}",
                 iteration - 1,
@@ -443,10 +471,12 @@ pub fn run() -> Result<(), AnyError> {
                 peak_kib()
             );
             if let Some(path) = &output {
-                std::fs::write(path, &bytes)?;
-                std::fs::write(
+                let artifacts = BenchmarkOutput::new("");
+                artifacts.write_bytes(path, &bytes, FileMode::Replace)?;
+                artifacts.write_bytes(
                     format!("{path}.statement.bin"),
-                    bincode::serialize(committed.statement())?,
+                    &bincode::serialize(committed.statement())?,
+                    FileMode::Replace,
                 )?;
                 let statement = format!(
                     "protocol=hybrid-u32-mod32-sha256-v5\nmultiplication_relation=xy=z+2^32*w (x,y,z,w are u32)\nparameters={:?}\nroots={:02x?}\nfinal_sha_state={:08x?}\n",
@@ -454,7 +484,11 @@ pub fn run() -> Result<(), AnyError> {
                     committed.statement().roots,
                     committed.statement().final_sha_state
                 );
-                std::fs::write(format!("{path}.statement.txt"), statement)?;
+                artifacts.write_text(
+                    format!("{path}.statement.txt"),
+                    &statement,
+                    FileMode::Replace,
+                )?;
             }
         }
     } else {
@@ -466,13 +500,23 @@ pub fn run() -> Result<(), AnyError> {
         let separate = if mode == "separate" {
             Some(PreparedU32MulRelation::new_with_profile_and_ligerito::<
                 CompositionProfile,
-            >(U32MulLayout::new(inputs.len())?, select_ligerito(profile.as_deref(), 112)?)?)
+            >(
+                U32MulLayout::new(inputs.len())?,
+                select_ligerito(profile.as_deref(), 112)?,
+            )?)
         } else {
             None
         };
         if let Some(p) = &separate {
-            let request = profile.clone().or_else(|| std::env::var("F2Z_LIG_PROFILE").ok()).unwrap_or_else(|| "custom:1:4".into());
-            eprintln!("LIGERITO_CONFIG {}", p.ligerito_configuration().report(&request, p.security().ood));
+            let request = profile
+                .clone()
+                .or_else(|| std::env::var("F2Z_LIG_PROFILE").ok())
+                .unwrap_or_else(|| "custom:1:4".into());
+            eprintln!(
+                "LIGERITO_CONFIG {}",
+                p.ligerito_configuration()
+                    .report(&request, p.security().ood)
+            );
         }
         let setup_ms = millis(setup);
         eprintln!("setup_ms={setup_ms:.3} {}", native.setup_line());
@@ -481,15 +525,16 @@ pub fn run() -> Result<(), AnyError> {
         } else {
             "proof_bytes"
         };
-        println!("mode,iteration,setup_ms,witness_ms,total_prover_ms,verify_ms,{size_column},peak_rss_kib");
+        println!(
+            "mode,iteration,setup_ms,witness_ms,total_prover_ms,verify_ms,{size_column},peak_rss_kib"
+        );
         for iteration in 0..=iterations {
             let start = Instant::now();
             let rows: Vec<_> = inputs
                 .iter()
                 .map(|&(x, y)| f2z::hybrid::U32MulMod32Row::new(x, y))
                 .collect();
-            let witness =
-                native.populate(if mode == "separate" { &[] } else { &rows }, &blocks)?;
+            let witness = native.populate(if mode == "separate" { &[] } else { &rows }, &blocks)?;
             // Native witness generation: row construction plus the circuit's
             // own witness filling, before any proving work.
             let witness_ms = millis(start);
@@ -509,9 +554,12 @@ pub fn run() -> Result<(), AnyError> {
             let mut proof_bytes = bytes.len();
             if let Some((hint, proof)) = &mul {
                 let relation = separate.as_ref().expect("separate mode");
-                proof_bytes += hint.commitment.root.len() + proof.f2z().to_bytes().len()
+                proof_bytes += hint.commitment.root.len()
+                    + proof.f2z().to_bytes().len()
                     + proof.spartan_payload_elements() * 16
-                    + (proof.grinding_nonce_count(relation.security()) - proof.f2z().grinding_nonces.len()) * 8;
+                    + (proof.grinding_nonce_count(relation.security())
+                        - proof.f2z().grinding_nonces.len())
+                        * 8;
             }
             let verify = Instant::now();
             native.verify(&witness, bytes)?;
@@ -523,7 +571,9 @@ pub fn run() -> Result<(), AnyError> {
                     proof,
                 )?;
             }
-            if iteration == 0 { continue; }
+            if iteration == 0 {
+                continue;
+            }
             println!(
                 "{mode},{},{setup_ms:.3},{witness_ms:.3},{total_ms:.3},{:.3},{proof_bytes},{}",
                 iteration - 1,

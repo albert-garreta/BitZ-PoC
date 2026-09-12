@@ -84,8 +84,10 @@ binius-utils = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed
 binius-verifier = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
 tracing = { version = "0.1.38", optional = true }
 tracing-subscriber = { version = "0.3.18", optional = true }
+csv = { version = "1.4", optional = true }
 
 [dev-dependencies]
+csv = "1.4"
 libc = "0.2"
 p256 = { version = "0.13.2", features = ["ecdsa"] }
 sha2 = "0.10"
@@ -263,7 +265,7 @@ required-features = ["hybrid"]
 
 [features]
 default = ["parallel"]
-hybrid = ["binius64-bench"]
+hybrid = ["binius64-bench", "dep:csv"]
 parallel = ["dep:rayon"]
 unchecked = []
 # Benchmark-only allocator instrumentation. The latency binary deliberately
