@@ -105,7 +105,7 @@ $\mathbb{B}\text{it}\ZZ$: proofs and commitments in arbitrary rings through bina
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
-\section{Introduction}
+\section{Introduction}\label{s:intro}
 
 
 
@@ -302,7 +302,7 @@ In our implementation, we use \ftwoz\ as a PCS that can simultaneously prove R1C
 %
 A particularly interesting subclass of this relation is that obtained by setting $A=B=\mathbf{0}$, in which case the resulting relation, which we call the \emph{$\mathsf{CM}$ relation}, degenerates to linear constraints over $\ZZ$ and over $\FF_2$, i.e.\ a ``dually linear'' constraint. 
 
-In \cref{r:CM_is_NP_complete} we show that the CM relation is NP-complete \albert{Or NP-hard?}. We arithmetize SHA-256 as an instance of the CM relation, with $4.4\times$ smaller witnesses than Binius64 \cite{binius64} and Flock \cite{flock} ($3.6\times$ smaller than the AI-optimized arithmetization), see \cref{tab:sha_arithmetization}.  We remark that despite this small arithmetization, when it comes to proving many classic hash compressions, we observe that binary field native proof systems such as Flock \cite{flock} and Binius64 \cite{binius64} perform better. Because of this, in \cref{?} we propose a proof system that can handle simultaneously constraints over integers (or other rings) and binary fields, and which uses \ftwoz\ as its PCS.
+In \cref{r:CM_is_NP_complete} we show that the CM relation is NP-complete \albert{Or NP-hard?}. We arithmetize SHA-256 as an instance of the CM relation, with $4.4\times$ smaller witnesses than Binius64 \cite{binius64} and Flock \cite{flock} ($3.6\times$ smaller than the AI-optimized arithmetization), see \cref{tab:sha_arithmetization}.  We remark that despite this small arithmetization, when it comes to proving many classic hash compressions, we observe that binary field native proof systems such as Flock \cite{flock} and Binius64 \cite{binius64} perform better. Because of this, in \cref{s:hybrid_snark} we propose a proof system that can handle simultaneously constraints over integers (or other rings) and binary fields, and which uses \ftwoz\ as its PCS.
 
 
 
@@ -381,7 +381,7 @@ We also thank Giacomo Fenzi, Ulrich Haböck, and Lev Soukhanov for insightful an
 
 We crucially used AI in our implementation and experiments, as explained in \cref{s:experiments}.
 
-\section{Technical overview}
+\section{Technical overview}\label{s:tech_overview}
 
    
 
@@ -668,7 +668,7 @@ The only new source of soundness error is Step 3, whose analysis follows the fin
                     \begin{equation}\label{e:intro_eq_4_repeated}g^{\langle \pi^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle} = \prod_{i\in [\codedim_1]} \left(\left(g^{\pi^{-1}(\uu^{(1)}_i)} -1\right)\cdot \bitstext(\bff)_{ij}  +1\right) =g^{\mu_j} \qquad \text{in  } \comfield \qquad \text{for all } j\in [\codedim_2].
         \end{equation} 
         %
-        As we mentioned, this is by far the most expensive step in \ftwoz. We next explain how we prove \eqref{s:to_low_entropy_gkr} in an efficient manner. We make the crucial  assumption that  both $\codedim_1$ and $\codedim_2$ are $O(\sqrt{\codedim})$ (see \cref{s:instantiation} for exact parameter instantiations). This assumption is relatively simple to attain, as we have discussed throughout \cref{sec:intro,sec:tech_overview}. At a protocol level, we simply prove \eqref{e:intro_eq_4_repeated} with a standard GKR protocol for grand products \cite{thaler13}. Concretely, let $\codedim_1=2^{r_1}$ and $\codedim_2=2^{r_2}$. We set up multilinear polynomials $L_{0}, L_1,\ldots, L_{r_1}$ on $r_2 + i$ variables for $i\in \range{0}{r_1}$, respectively, such that 
+        As we mentioned, this is by far the most expensive step in \ftwoz. We next explain how we prove \eqref{e:intro_eq_4_repeated} in an efficient manner. We make the crucial  assumption that  both $\codedim_1$ and $\codedim_2$ are $O(\sqrt{\codedim})$ (see \cref{s:instantiation} for exact parameter instantiations). This assumption is relatively simple to attain, as we have discussed throughout \cref{s:intro,s:tech_overview}. At a protocol level, we simply prove \eqref{e:intro_eq_4_repeated} with a standard GKR protocol for grand products \cite{thaler13}. Concretely, let $\codedim_1=2^{r_1}$ and $\codedim_2=2^{r_2}$. We set up multilinear polynomials $L_{0}, L_1,\ldots, L_{r_1}$ on $r_2 + i$ variables for $i\in \range{0}{r_1}$, respectively, such that 
         %
                 $$
         L_{r_1}(\bb,\cc) = \left(g^{\pi^{-1}(\uu^{(1)}_{\mathsf{int}(\bb)})} -1\right)\cdot \bitstext(\bff)_{\mathsf{int}(\bb),\mathsf{int}(\cc)}  +1  \quad  \text{ for all } (\bb,\cc) \in \bits^{r_1} \times \bits^{r_2},
@@ -1503,7 +1503,7 @@ The prover and verifier now set to prove the updated claim
 \item The verifier checks that $\mu_j\in \range{0}{(q-1)\cdot \codedim_1}$ for all $j\in [\codedim_2]$, and that \begin{equation}\label{e:tensor_decomposition_reconstruction}\sum_{j\in [\codedim_2]} \pi_q(\mu_j)\cdot \vv_j^{(2)}  = \mu\qquad \text{over } \FF_q.\end{equation} 
 Next, prover and verifier will focus on certifying that \eqref{e:tensored_equality} holds for all $j\in [\codedim_2]$.
 
-In \cref{r:core_iop_optional_sumcheck} we describe a variation in which, instead of sending the elements $\mu_1, \ldots, \mu_{\codedim_2}$, the prover commits to their bit-decomposition over $\comfield$, and proves \eqref{e:tensor_decomposition_reconstruction} with \cref{c:LinModFieldBin}. This saves on proof size and verifier time when $\codedim$ is large.
+%In \cref{r:core_iop_optional_sumcheck} we describe a variation in which, instead of sending the elements $\mu_1, \ldots, \mu_{\codedim_2}$, the prover commits to their bit-decomposition over $\comfield$, and proves \eqref{e:tensor_decomposition_reconstruction} with \cref{c:LinModFieldBin}. This saves on proof size and verifier time when $\codedim$ is large.
 %\item \textbf{Optional step: Projecting the integer claim to a prime field, and then lifting it back up to $\ZZ$.} The following step triggers in the following scenarios:
 %\begin{itemize}
 %    \item $\degevalfield>1$.
