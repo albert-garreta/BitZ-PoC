@@ -219,12 +219,14 @@ impl SemanticSpan {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize)]
 struct TrialMetrics {
     witness_ms: f64,
     commit_ms: f64,
     piop_ms: f64,
+    #[serde(rename = "iop_ms")]
     opening_ms: f64,
+    #[serde(rename = "online_prover_ms")]
     total_prover_ms: f64,
     witness_to_proof_ms: f64,
     verifier_ms: f64,
@@ -262,7 +264,7 @@ struct BackendAggregate {
     exponent: usize,
     setup_ms: f64,
     config: String,
-    whir_tuning: Option<Value>,
+    whir_tuning: Option<whir_tuning::TuningReport>,
     samples: Vec<TrialMetrics>,
 }
 
@@ -1723,7 +1725,7 @@ fn choose_f2z_prefix(corpus: &Corpus, exponent: usize, reps: usize) -> usize {
 fn choose_plonky3_params(
     capture: &TraceCapture,
     corpus: &Corpus,
-) -> Result<(plonky3_backend::Params, Value), String> {
+) -> Result<(plonky3_backend::Params, whir_tuning::TuningReport), String> {
     let explicit =
         whir_tuning::replay()?.or_else(|| has_plonky3_override().then(env_plonky3_params));
     whir_tuning::tune(
@@ -1962,9 +1964,9 @@ fn run_campaign(
             match choose_plonky3_params(capture, &corpus) {
                 Ok((params, mut record)) => {
                     selected.plonky3 = params;
-                    record["workload"] = json!("sha256");
-                    record["exponent"] = json!(exponent);
-                    record["corpus_digest"] = json!(corpus.digest);
+                    record.workload = Some("sha256".to_owned());
+                    record.exponent = Some(exponent);
+                    record.corpus_digest = Some(corpus.digest.clone());
                     whir_tuning::save(&path, &record).expect("save per-size WHIR tuning");
                     tuning = Some(record);
                     Some(
@@ -2189,6 +2191,64 @@ fn print_tables(aggregates: &[BackendAggregate]) {
     );
 }
 
+#[derive(serde::Serialize)]
+struct SummaryMetrics {
+    #[serde(flatten)]
+    metrics: TrialMetrics,
+    throughput_compressions_per_s: f64,
+}
+
+#[derive(serde::Serialize)]
+struct SummaryRow<'a> {
+    backend: &'static str,
+    backend_slug: &'static str,
+    compression_exponent: usize,
+    compressions: usize,
+    configuration: &'a str,
+    limber_security: Option<Value>,
+    whir_tuning: &'a Option<whir_tuning::TuningReport>,
+    measured_samples: usize,
+    setup_ms: f64,
+    median: SummaryMetrics,
+}
+
+impl BackendAggregate {
+    fn summary_row(&self) -> SummaryRow<'_> {
+        let median = self.median();
+        SummaryRow {
+            backend: self.backend.name(),
+            backend_slug: self.backend.slug(),
+            compression_exponent: self.exponent,
+            compressions: 1usize << self.exponent,
+            configuration: &self.config,
+            limber_security: (self.backend == Backend::Limber)
+                .then(integer_limber_backend::security_metadata),
+            whir_tuning: &self.whir_tuning,
+            measured_samples: self.samples.len(),
+            setup_ms: self.setup_ms,
+            median: SummaryMetrics {
+                throughput_compressions_per_s: (1usize << self.exponent) as f64 * 1e3
+                    / median.witness_to_proof_ms,
+                metrics: median,
+            },
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+struct SummaryDocument<'a> {
+    schema: &'static str,
+    commitment_policy: &'static str,
+    primary_metric: &'static str,
+    environment: Value,
+    statement: &'static str,
+    padding: bool,
+    chaining: bool,
+    backend_order: [&'static str; ALL_BACKENDS.len()],
+    unavailable_backends: Vec<&'static str>,
+    rows: Vec<SummaryRow<'a>>,
+}
+
 fn write_aggregate_artifacts(
     aggregates: &[BackendAggregate],
     requested: &HashSet<Backend>,
@@ -2200,52 +2260,25 @@ fn write_aggregate_artifacts(
         .create_dir_all()
         .expect("create benchmark output directory");
     let summary_path = output_dir.join("summary.json");
-    let summary = aggregates
-        .iter()
-        .map(|row| {
-            let median = row.median();
-            json!({
-                "backend": row.backend.name(),
-                "backend_slug": row.backend.slug(),
-                "compression_exponent": row.exponent,
-                "compressions": 1usize << row.exponent,
-                "configuration": row.config,
-                "limber_security": (row.backend == Backend::Limber)
-                    .then(integer_limber_backend::security_metadata),
-                "whir_tuning": row.whir_tuning,
-                "measured_samples": row.samples.len(),
-                "setup_ms": row.setup_ms,
-                "median": {
-                    "witness_ms": median.witness_ms,
-                    "commit_ms": median.commit_ms,
-                    "piop_ms": median.piop_ms,
-                    "iop_ms": median.opening_ms,
-                    "online_prover_ms": median.total_prover_ms,
-                    "witness_to_proof_ms": median.witness_to_proof_ms,
-                    "throughput_compressions_per_s": (1usize << row.exponent) as f64 * 1e3 / median.witness_to_proof_ms,
-                    "verifier_ms": median.verifier_ms,
-                    "serialization_ms": median.serialization_ms,
-                    "proof_bytes": median.proof_bytes,
-                },
-            })
-        })
-        .collect::<Vec<_>>();
-    let summary_doc = json!({
-        "schema": "native-sha256-comparison/v3",
-        "commitment_policy": "hash-based-only",
-        "primary_metric": "witness_to_proof_ms",
-        "environment": common::environment::metadata(rayon::current_num_threads()),
-        "statement": "forall i<N: Hhat_i = Compress_SHA256(IV,M_i)",
-        "padding": false,
-        "chaining": false,
-        "backend_order": ALL_BACKENDS.map(Backend::name),
-        "unavailable_backends": ALL_BACKENDS
+    let summary_doc = SummaryDocument {
+        schema: "native-sha256-comparison/v3",
+        commitment_policy: "hash-based-only",
+        primary_metric: "witness_to_proof_ms",
+        environment: common::environment::metadata(rayon::current_num_threads()),
+        statement: "forall i<N: Hhat_i = Compress_SHA256(IV,M_i)",
+        padding: false,
+        chaining: false,
+        backend_order: ALL_BACKENDS.map(Backend::name),
+        unavailable_backends: ALL_BACKENDS
             .into_iter()
             .filter(|backend| requested.contains(backend) && !runnable.contains(backend))
             .map(Backend::name)
-            .collect::<Vec<_>>(),
-        "rows": summary,
-    });
+            .collect(),
+        rows: aggregates
+            .iter()
+            .map(BackendAggregate::summary_row)
+            .collect(),
+    };
     output
         .write_json(
             "summary.json",
@@ -2870,10 +2903,16 @@ mod native_whir_tests {
     }
 
     #[test]
-    fn comparison_has_only_the_four_requested_backends() {
+    fn comparison_has_the_five_requested_backends() {
         assert_eq!(
             super::ALL_BACKENDS.map(super::Backend::slug),
-            ["f2z", "plonky3-whir", "binius64", "limber"]
+            [
+                "f2z",
+                "plonky3-whir",
+                "binius64",
+                "binius64-ligerito",
+                "limber"
+            ]
         );
         assert!(super::Backend::parse("spartan-hyrax").is_none());
     }
@@ -2929,5 +2968,44 @@ mod ligerito_isolation_tests {
             .unwrap()
         };
         assert_eq!(probe("custom:1:4"), probe("udrg:1:4"));
+    }
+}
+
+#[cfg(test)]
+mod reporting_tests {
+    use super::*;
+    #[test]
+    fn summary_keeps_metric_names_nulls_and_integer_bytes() {
+        let aggregate = BackendAggregate {
+            backend: Backend::F2z,
+            exponent: 3,
+            setup_ms: 1.0,
+            config: "config".into(),
+            whir_tuning: None,
+            samples: vec![TrialMetrics {
+                witness_ms: 2.0,
+                commit_ms: 3.0,
+                piop_ms: 4.0,
+                opening_ms: 5.0,
+                total_prover_ms: 12.0,
+                witness_to_proof_ms: 16.0,
+                verifier_ms: 6.0,
+                serialization_ms: None,
+                proof_bytes: 123,
+            }],
+        };
+        let row = serde_json::to_value(aggregate.summary_row()).unwrap();
+        assert_eq!(
+            row["median"],
+            json!({
+                "witness_ms":2.0,"commit_ms":3.0,"piop_ms":4.0,"iop_ms":5.0,
+                "online_prover_ms":12.0,"witness_to_proof_ms":16.0,"verifier_ms":6.0,
+                "serialization_ms":null,"proof_bytes":123,"throughput_compressions_per_s":500.0
+            })
+        );
+        assert!(row["median"]["proof_bytes"].is_u64());
+        assert!(row.get("limber_security").unwrap().is_null());
+        assert!(row.get("whir_tuning").unwrap().is_null());
+        assert_eq!(row["measured_samples"], 1);
     }
 }

@@ -11,7 +11,7 @@ use ::f2z::{
     piop::spartan::*,
     transcript::Blake3Transcript,
 };
-use serde_json::{Value, json};
+use serde_json::json;
 use std::time::Instant;
 const SEED: u64 = 0x5533_3250_4353_0064;
 fn ms(t: Instant) -> f64 {
@@ -34,7 +34,7 @@ impl Experiment {
         commit: impl Fn(&W) -> Result<H>,
         prove: impl Fn(&W, &H) -> Result<P>,
         verify: impl Fn(&W, &H, &P) -> Result<()>,
-        size: impl Fn(&H, &P) -> Result<Value>,
+        size: impl Fn(&H, &P) -> Result<ProofSize>,
     ) -> Result<()> {
         let setup_ms = ms(setup);
         let mut config = common::ligerito_report(resolved, ood);
@@ -69,9 +69,26 @@ impl Experiment {
         Ok(())
     }
 }
-fn bytes(root: usize, opening: &[u8], analytic: usize) -> Value {
-    json!({"total_bytes":root+opening.len()+analytic,"commitment_bytes":root,"opening_codec_bytes":opening.len(),
-        "analytical_piop_bytes":analytic,"accounting":"initial commitment + versioned opening codec + explicitly counted PIOP payload"})
+#[derive(serde::Serialize)]
+struct ProofSize {
+    total_bytes: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    commitment_bytes: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    opening_codec_bytes: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    analytical_piop_bytes: Option<usize>,
+    accounting: &'static str,
+}
+
+fn bytes(root: usize, opening: &[u8], analytic: usize) -> ProofSize {
+    ProofSize {
+        total_bytes: root + opening.len() + analytic,
+        commitment_bytes: Some(root),
+        opening_codec_bytes: Some(opening.len()),
+        analytical_piop_bytes: Some(analytic),
+        accounting: "initial commitment + versioned opening codec + explicitly counted PIOP payload",
+    }
 }
 fn inputs() -> Vec<(u128, u128)> {
     let mut h = blake3::Hasher::new();
@@ -286,7 +303,9 @@ fn main() -> Result<()> {
                 || Ok(input.iter().map(|&(x,y)|U32MulMod32Row::new(x as u32,y as u32)).collect::<Vec<_>>()),
                 |rows| Ok(p.commit_mod32(rows,&blocks)?), |_,h| Ok(p.prove(h)?),
                 |_,h,proof| { let b=proof.to_bytes(); let decoded=p.proof_from_bytes(h.statement(),&b)?; Ok(p.verify(h.statement(),&decoded)?) },
-                |_,proof| Ok(json!({"total_bytes":proof.to_bytes().len(),"accounting":"complete hybrid codec, including initial roots; witness synthesis is fused into commit_ms"})))
+                |_,proof| Ok(ProofSize { total_bytes: proof.to_bytes().len(), commitment_bytes: None,
+                    opening_codec_bytes: None, analytical_piop_bytes: None,
+                    accounting: "complete hybrid codec, including initial roots; witness synthesis is fused into commit_ms" }))
         }
         "pcs-22" => pcs(&e, setup),
         _ => bail!("unknown case"),
@@ -313,11 +332,49 @@ fn ecdsa(e: &Experiment, setup: Instant) -> Result<()> {
         r: r.into(),
         s: s.into(),
     };
-    e.run(setup,p.ligerito_configuration(),p.ligerito_configuration().round0(100)?,&bincode::serialize(&(&message,statement.qx,statement.qy,statement.r,statement.s))?,
-        || Ok(generate_sha256_ecdsa_witness(&p,&statement,&message)?),|w| Ok(commit_sha256_ecdsa(&p,w)?),
-        |w,h| Ok(prove_sha256_ecdsa(&mut Blake3Transcript::new(),&p,&statement,w,h,4)?),
-        |_,h,proof| { let decoded=Sha256EcdsaProof::from_bytes(&proof.to_bytes())?; Ok(verify_sha256_ecdsa(&mut Blake3Transcript::new(),&p,&statement,&h.commitment,&decoded)?) },
-        |h,proof| Ok(json!({"total_bytes":h.commitment.root.len()+proof.to_bytes().len(),"commitment_bytes":h.commitment.root.len(),"accounting":"initial root + complete SHA+ECDSA codec"})))
+    e.run(
+        setup,
+        p.ligerito_configuration(),
+        p.ligerito_configuration().round0(100)?,
+        &bincode::serialize(&(
+            &message,
+            statement.qx,
+            statement.qy,
+            statement.r,
+            statement.s,
+        ))?,
+        || Ok(generate_sha256_ecdsa_witness(&p, &statement, &message)?),
+        |w| Ok(commit_sha256_ecdsa(&p, w)?),
+        |w, h| {
+            Ok(prove_sha256_ecdsa(
+                &mut Blake3Transcript::new(),
+                &p,
+                &statement,
+                w,
+                h,
+                4,
+            )?)
+        },
+        |_, h, proof| {
+            let decoded = Sha256EcdsaProof::from_bytes(&proof.to_bytes())?;
+            Ok(verify_sha256_ecdsa(
+                &mut Blake3Transcript::new(),
+                &p,
+                &statement,
+                &h.commitment,
+                &decoded,
+            )?)
+        },
+        |h, proof| {
+            Ok(ProofSize {
+                total_bytes: h.commitment.root.len() + proof.to_bytes().len(),
+                commitment_bytes: Some(h.commitment.root.len()),
+                opening_codec_bytes: None,
+                analytical_piop_bytes: None,
+                accounting: "initial root + complete SHA+ECDSA codec",
+            })
+        },
+    )
 }
 fn pcs(e: &Experiment, setup: Instant) -> Result<()> {
     use ::f2z::{
@@ -461,4 +518,28 @@ fn pcs(e: &Experiment, setup: Instant) -> Result<()> {
         },
         |h, (proof, _)| Ok(bytes(h.commitment.root.len(), &proof.to_bytes(), 16)),
     )
+}
+
+#[cfg(test)]
+mod reporting_tests {
+    use super::*;
+    #[test]
+    fn proof_sizes_omit_unavailable_components() {
+        assert_eq!(
+            serde_json::to_value(ProofSize {
+                total_bytes: 9,
+                commitment_bytes: None,
+                opening_codec_bytes: None,
+                analytical_piop_bytes: None,
+                accounting: "opaque"
+            })
+            .unwrap(),
+            json!({"total_bytes":9,"accounting":"opaque"})
+        );
+        let value = serde_json::to_value(bytes(2, &[0; 3], 4)).unwrap();
+        assert_eq!(value["total_bytes"], 9);
+        assert_eq!(value["commitment_bytes"], 2);
+        assert_eq!(value["opening_codec_bytes"], 3);
+        assert_eq!(value["analytical_piop_bytes"], 4);
+    }
 }

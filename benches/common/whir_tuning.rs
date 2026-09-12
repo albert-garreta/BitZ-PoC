@@ -378,6 +378,45 @@ where
     ))
 }
 
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct TuningReport {
+    pub selected: Params,
+    pub mode: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub objective: Option<&'static str>,
+    pub security: Value,
+    pub tuning_ms: f64,
+    pub candidates: Vec<Candidate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workload: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exponent: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub corpus_digest: Option<String>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum Candidate {
+    Eligible {
+        params: Params,
+        preflight_ms: f64,
+        security: Value,
+        #[serde(flatten)]
+        finalist: Option<Finalist>,
+    },
+    Ineligible {
+        params: Params,
+        reason: String,
+    },
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct Finalist {
+    tuning_samples_ms: Vec<f64>,
+    tuning_median_ms: f64,
+}
+
 /// Run in the calling benchmark's fixed thread pool. `run` must generate a
 /// fresh witness, verify the proof, and return only witness-to-proof latency.
 /// Expected configuration failures are returned by setup; proof failures panic
@@ -388,14 +427,23 @@ pub fn tune<C>(
     mut setup: impl FnMut(Params) -> Result<C, String>,
     mut run: impl FnMut(&C) -> f64,
     report: impl Fn(&C) -> Value,
-) -> Result<(Params, Value), String> {
+) -> Result<(Params, TuningReport), String> {
     let started = Instant::now();
     if let Some(params) = explicit {
         let context = setup(params)?;
         return Ok((
             params,
-            json!({"selected": params, "mode": "explicit", "security": report(&context),
-            "tuning_ms": started.elapsed().as_secs_f64() * 1e3, "candidates": []}),
+            TuningReport {
+                selected: params,
+                mode: "explicit",
+                objective: None,
+                security: report(&context),
+                tuning_ms: started.elapsed().as_secs_f64() * 1e3,
+                candidates: vec![],
+                workload: None,
+                exponent: None,
+                corpus_digest: None,
+            },
         ));
     }
     let reps = std::env::var("F2Z_WHIR_TUNING_REPS")
@@ -413,15 +461,15 @@ pub fn tune<C>(
                 assert!(ms.is_finite() && ms > 0.0, "invalid tuning measurement");
                 eprintln!("  WHIR {}: {ms:.3} ms witness-to-proof", params.label());
                 let index = candidates.len();
-                candidates.push(
-                    json!({"params": params, "status": "eligible", "preflight_ms": ms,
-                    "security": report(&context)}),
-                );
+                candidates.push(Candidate::Eligible {
+                    params,
+                    preflight_ms: ms,
+                    security: report(&context),
+                    finalist: None,
+                });
                 eligible.push((ms, params, index));
             }
-            Err(reason) => {
-                candidates.push(json!({"params": params, "status": "ineligible", "reason": reason}))
-            }
+            Err(reason) => candidates.push(Candidate::Ineligible { params, reason }),
         }
     }
     eligible.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
@@ -433,8 +481,13 @@ pub fn tune<C>(
         let samples: Vec<_> = (0..reps).map(|_| run(&context)).collect();
         assert!(samples.iter().all(|ms| ms.is_finite() && *ms > 0.0));
         let median = super::median(&samples);
-        candidates[index]["tuning_samples_ms"] = json!(samples);
-        candidates[index]["tuning_median_ms"] = json!(median);
+        let Candidate::Eligible { finalist, .. } = &mut candidates[index] else {
+            unreachable!("only eligible candidates advance to finalists");
+        };
+        *finalist = Some(Finalist {
+            tuning_samples_ms: samples,
+            tuning_median_ms: median,
+        });
         finalists.push((median, params, report(&context)));
     }
     finalists.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
@@ -443,13 +496,21 @@ pub fn tune<C>(
         .ok_or_else(|| format!("no eligible WHIR configuration: {}", json!(candidates)))?;
     Ok((
         *params,
-        json!({"selected": params, "mode": "tuned-per-invocation-and-size",
-        "objective": "witness_to_proof_ms", "security": security, "candidates": candidates,
-        "tuning_ms": started.elapsed().as_secs_f64() * 1e3}),
+        TuningReport {
+            selected: *params,
+            mode: "tuned-per-invocation-and-size",
+            objective: Some("witness_to_proof_ms"),
+            security: security.clone(),
+            candidates,
+            tuning_ms: started.elapsed().as_secs_f64() * 1e3,
+            workload: None,
+            exponent: None,
+            corpus_digest: None,
+        },
     ))
 }
 
-pub fn save(path: &Path, record: &Value) -> Result<(), Box<dyn std::error::Error>> {
+pub fn save(path: &Path, record: &impl serde::Serialize) -> Result<(), Box<dyn std::error::Error>> {
     super::output::BenchmarkOutput::new("").write_json(
         path,
         record,
@@ -521,13 +582,12 @@ mod tests {
             .unwrap();
             assert_eq!(params.folding, 4);
             assert!(executions.get() > before);
-            assert_eq!(record["mode"], "tuned-per-invocation-and-size");
+            assert_eq!(record.mode, "tuned-per-invocation-and-size");
             assert_eq!(
-                record["candidates"]
-                    .as_array()
-                    .unwrap()
+                record
+                    .candidates
                     .iter()
-                    .filter(|v| v["status"] == "eligible")
+                    .filter(|v| matches!(v, Candidate::Eligible { .. }))
                     .count(),
                 4
             );
@@ -554,5 +614,66 @@ mod tests {
         config.final_queries = 0;
         config.final_pow_bits = 0;
         assert!(security_report(&config, shape).is_err());
+    }
+}
+
+#[cfg(test)]
+mod reporting_tests {
+    use super::*;
+    #[test]
+    fn candidate_fields_and_explicit_report_omissions() {
+        let params = Params::default();
+        let expected_params = serde_json::to_value(params).unwrap();
+        let eligible = |finalist| Candidate::Eligible {
+            params,
+            preflight_ms: 2.0,
+            security: json!({"bits":100}),
+            finalist,
+        };
+        assert_eq!(
+            serde_json::to_value(eligible(None)).unwrap(),
+            json!({
+                "status":"eligible","params":expected_params,"preflight_ms":2.0,"security":{"bits":100}
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(eligible(Some(Finalist {
+                tuning_samples_ms: vec![4.0, 2.0],
+                tuning_median_ms: 4.0
+            })))
+            .unwrap(),
+            json!({
+                "status":"eligible","params":expected_params,"preflight_ms":2.0,"security":{"bits":100},
+                "tuning_samples_ms":[4.0,2.0],"tuning_median_ms":4.0
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(Candidate::Ineligible {
+                params,
+                reason: "budget".into()
+            })
+            .unwrap(),
+            json!({"status":"ineligible","params":expected_params,"reason":"budget"})
+        );
+        let (_, mut report) = tune(
+            &[],
+            Some(params),
+            |_| Ok(()),
+            |_| panic!("explicit mode must not run trials"),
+            |_| json!({"bits":100}),
+        )
+        .unwrap();
+        report.tuning_ms = 0.0;
+        assert_eq!(
+            serde_json::to_value(&report).unwrap(),
+            json!({
+                "selected":expected_params,"mode":"explicit","security":{"bits":100},
+                "tuning_ms":0.0,"candidates":[]
+            })
+        );
+        report.workload = Some("u32".into());
+        report.exponent = Some(4);
+        report.corpus_digest = Some("digest".into());
+        assert_eq!(serde_json::to_value(report).unwrap()["exponent"], 4);
     }
 }

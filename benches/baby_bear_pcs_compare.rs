@@ -167,40 +167,73 @@ enum CellOutcome {
     },
 }
 
-impl CellOutcome {
-    fn json(self, backend: Backend, exponent: usize) -> Value {
-        let challenge_extension_degree = backend.challenge_extension_degree();
-        let configured_max_pow_bits = backend.configured_max_pow_bits();
-        match self {
-            Self::Measured {
-                derived_max_pow_bits,
-            } => json!({
-                "implementation": backend.implementation(),
-                "log_multiplications": exponent,
-                "status": "measured",
-                "challenge_extension_degree": challenge_extension_degree,
-                "configured_max_pow_bits": configured_max_pow_bits,
-                "derived_max_pow_bits": derived_max_pow_bits,
-            }),
-            Self::Unavailable {
-                reason,
-                required_pow_bits,
-                budget,
-            } => json!({
-                "implementation": backend.implementation(),
-                "log_multiplications": exponent,
-                "status": "unavailable",
-                "reason": reason,
-                "required_pow_bits": required_pow_bits,
-                "budget": budget,
-                "challenge_extension_degree": challenge_extension_degree,
-                "configured_max_pow_bits": configured_max_pow_bits,
-                "derived_max_pow_bits": required_pow_bits,
-            }),
+#[derive(serde::Serialize)]
+struct CampaignCell {
+    implementation: &'static str,
+    log_multiplications: usize,
+    challenge_extension_degree: Option<usize>,
+    configured_max_pow_bits: Option<usize>,
+    derived_max_pow_bits: Option<usize>,
+    #[serde(flatten)]
+    status: CellStatus,
+}
+
+#[derive(serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+enum CellStatus {
+    Measured,
+    Unavailable {
+        reason: String,
+        required_pow_bits: usize,
+        budget: usize,
+    },
+    NotRequested {
+        reason: &'static str,
+    },
+}
+
+impl CampaignCell {
+    fn not_requested(backend: Backend, exponent: usize, reason: &'static str) -> Self {
+        Self {
+            implementation: backend.implementation(),
+            log_multiplications: exponent,
+            challenge_extension_degree: backend.challenge_extension_degree(),
+            configured_max_pow_bits: backend.configured_max_pow_bits(),
+            derived_max_pow_bits: None,
+            status: CellStatus::NotRequested { reason },
         }
     }
 }
 
+impl CellOutcome {
+    fn record(self, backend: Backend, exponent: usize) -> CampaignCell {
+        let (derived_max_pow_bits, status) = match self {
+            Self::Measured {
+                derived_max_pow_bits,
+            } => (derived_max_pow_bits, CellStatus::Measured),
+            Self::Unavailable {
+                reason,
+                required_pow_bits,
+                budget,
+            } => (
+                Some(required_pow_bits),
+                CellStatus::Unavailable {
+                    reason,
+                    required_pow_bits,
+                    budget,
+                },
+            ),
+        };
+        CampaignCell {
+            implementation: backend.implementation(),
+            log_multiplications: exponent,
+            challenge_extension_degree: backend.challenge_extension_degree(),
+            configured_max_pow_bits: backend.configured_max_pow_bits(),
+            derived_max_pow_bits,
+            status,
+        }
+    }
+}
 struct CampaignWriter {
     path: Option<PathBuf>,
 }
@@ -219,7 +252,7 @@ impl CampaignWriter {
         reps: usize,
         requested_exponents: &[usize],
         selected_backends: &[Backend],
-        mut cells: Vec<Value>,
+        mut cells: Vec<CampaignCell>,
     ) -> Result<(), Box<dyn Error>> {
         let Some(path) = self.path else {
             return Ok(());
@@ -235,31 +268,19 @@ impl CampaignWriter {
                 Backend::Ligerito,
             ] {
                 let already_present = cells.iter().any(|cell| {
-                    cell["implementation"].as_str() == Some(backend.implementation())
-                        && cell["log_multiplications"].as_u64() == Some(exponent as u64)
+                    cell.implementation == backend.implementation()
+                        && cell.log_multiplications == exponent
                 });
                 if !already_present {
-                    cells.push(json!({
-                        "implementation": backend.implementation(),
-                        "log_multiplications": exponent,
-                        "status": "not_requested",
-                        "reason": "shape omitted by F2Z_BENCH_SHAPES",
-                        "challenge_extension_degree": backend.challenge_extension_degree(),
-                        "configured_max_pow_bits": backend.configured_max_pow_bits(),
-                        "derived_max_pow_bits": null,
-                    }));
+                    cells.push(CampaignCell::not_requested(
+                        backend,
+                        exponent,
+                        "shape omitted by F2Z_BENCH_SHAPES",
+                    ));
                 }
             }
         }
-        cells.sort_by_key(|cell| {
-            (
-                cell["log_multiplications"].as_u64().unwrap_or_default(),
-                cell["implementation"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .to_owned(),
-            )
-        });
+        cells.sort_by_key(|cell| (cell.log_multiplications, cell.implementation));
         let manifest = json!({
             "schema": "baby-bear-pcs-compare-campaign/v2",
             "campaign_id": campaign_id,
@@ -1712,15 +1733,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     for &exponent in &exponents {
         for backend in [Backend::F2z, Backend::Whir, Backend::Binius] {
             if !selected.contains(&backend) {
-                campaign_cells.push(json!({
-                    "implementation": backend.implementation(),
-                    "log_multiplications": exponent,
-                    "status": "not_requested",
-                    "reason": "backend omitted by F2Z_PCS_COMPARE_BACKENDS",
-                    "challenge_extension_degree": backend.challenge_extension_degree(),
-                    "configured_max_pow_bits": backend.configured_max_pow_bits(),
-                    "derived_max_pow_bits": null,
-                }));
+                campaign_cells.push(CampaignCell::not_requested(
+                    backend,
+                    exponent,
+                    "backend omitted by F2Z_PCS_COMPARE_BACKENDS",
+                ));
             }
         }
         flock_core::scratch::clear();
@@ -1780,7 +1797,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     reps,
                 )?,
             };
-            campaign_cells.push(outcome.json(backend, exponent));
+            campaign_cells.push(outcome.record(backend, exponent));
         }
         drop(witness);
         flock_core::scratch::clear();
@@ -1797,4 +1814,40 @@ fn main() -> Result<(), Box<dyn Error>> {
     )?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod reporting_tests {
+    use super::*;
+    #[test]
+    fn campaign_statuses_preserve_nulls_and_variant_fields() {
+        let measured = CellOutcome::Measured {
+            derived_max_pow_bits: None,
+        }
+        .record(Backend::F2z, 4);
+        let value = serde_json::to_value(measured).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "implementation":Backend::F2z.implementation(),"log_multiplications":4,
+                "challenge_extension_degree":null,"configured_max_pow_bits":null,
+                "derived_max_pow_bits":null,"status":"measured"
+            })
+        );
+        let unavailable = CellOutcome::Unavailable {
+            reason: "budget".into(),
+            required_pow_bits: 20,
+            budget: 12,
+        }
+        .record(Backend::Whir, 5);
+        let value = serde_json::to_value(unavailable).unwrap();
+        assert_eq!(value["status"], "unavailable");
+        assert_eq!(value["required_pow_bits"], 20);
+        assert_eq!(value["budget"], 12);
+        let absent =
+            serde_json::to_value(CampaignCell::not_requested(Backend::F2z, 4, "shape")).unwrap();
+        assert_eq!(absent["status"], "not_requested");
+        assert_eq!(absent["reason"], "shape");
+        assert!(absent.get("budget").is_none());
+    }
 }

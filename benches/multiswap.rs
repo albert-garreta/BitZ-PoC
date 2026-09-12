@@ -37,7 +37,7 @@
 
 #![recursion_limit = "512"]
 
-mod common;
+pub(crate) mod common;
 use common::output::{BenchmarkOutput, FileMode, JsonlWriter};
 
 use std::{
@@ -185,7 +185,7 @@ struct RepTiming {
     prove_phases: Vec<(&'static str, f64)>,
     verify_phases: Vec<(&'static str, f64)>,
     intervals: Vec<ProfileInterval>,
-    measurements_ns: Value,
+    measurements_ns: MeasurementsNs,
     witness_stats: WitnessStats,
     commitment_bytes: usize,
     peak_rss_bytes: u64,
@@ -840,14 +840,23 @@ fn maybe_duration_for(intervals: &[ProfileInterval], label: &str) -> Option<u64>
     })
 }
 
-fn insert_ns(values: &mut serde_json::Map<String, Value>, name: &str, value: u64) {
-    values.insert(name.to_owned(), json!(value.to_string()));
+type MeasurementsNs = std::collections::BTreeMap<&'static str, Nanoseconds>;
+
+struct Nanoseconds(u64);
+impl serde::Serialize for Nanoseconds {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(&self.0)
+    }
+}
+
+fn insert_ns(values: &mut MeasurementsNs, name: &'static str, value: u64) {
+    values.insert(name, Nanoseconds(value));
 }
 
 fn insert_optional_ns(
-    values: &mut serde_json::Map<String, Value>,
+    values: &mut MeasurementsNs,
     intervals: &[ProfileInterval],
-    name: &str,
+    name: &'static str,
     label: &str,
 ) {
     if let Some(value) = maybe_duration_for(intervals, label) {
@@ -855,9 +864,9 @@ fn insert_optional_ns(
     }
 }
 
-fn measurements(intervals: &[ProfileInterval], setup_ns: u64) -> Value {
+fn measurements(intervals: &[ProfileInterval], setup_ns: u64) -> MeasurementsNs {
     if intervals.is_empty() {
-        return json!({"setup": setup_ns.to_string()});
+        return [("setup", Nanoseconds(setup_ns))].into();
     }
     let witness = duration_for(intervals, "multiswap-trace:witness_generation");
     let commit = duration_for(intervals, "multiswap-trace:commit");
@@ -869,7 +878,7 @@ fn measurements(intervals: &[ProfileInterval], setup_ns: u64) -> Value {
     let prover = duration_for(intervals, "multiswap-trace:end_to_end_prove");
     let verification = duration_for(intervals, "multiswap-trace:verification");
     let verified_trial = duration_for(intervals, "multiswap-trace:verified_trial");
-    let mut values = serde_json::Map::new();
+    let mut values = MeasurementsNs::new();
     insert_ns(&mut values, "setup", setup_ns);
     insert_ns(&mut values, "witness_generation", witness);
     insert_ns(
@@ -929,7 +938,7 @@ fn measurements(intervals: &[ProfileInterval], setup_ns: u64) -> Value {
             general_ring_switch.saturating_add(direct_ring_switch),
         );
     }
-    Value::Object(values)
+    values
 }
 
 fn proof_sizes(proof: &MultiswapProof) -> (usize, usize) {
@@ -1252,5 +1261,21 @@ fn peak_rss_bytes() -> u64 {
         rss
     } else {
         rss * 1024
+    }
+}
+
+#[cfg(test)]
+mod reporting_tests {
+    use super::*;
+    #[test]
+    fn sparse_nanoseconds_are_exact_decimal_strings() {
+        assert_eq!(
+            serde_json::to_string(&measurements(&[], u64::MAX)).unwrap(),
+            r#"{"setup":"18446744073709551615"}"#
+        );
+        let mut values = MeasurementsNs::new();
+        insert_ns(&mut values, "setup", 0);
+        insert_optional_ns(&mut values, &[], "missing", "no interval");
+        assert_eq!(serde_json::to_string(&values).unwrap(), r#"{"setup":"0"}"#);
     }
 }

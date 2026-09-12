@@ -11,6 +11,9 @@ mod f2z_backend;
 mod limber;
 #[path = "mul_e2e_compare/memory.rs"]
 mod memory;
+#[path = "mul_e2e_compare/report.rs"]
+mod report;
+use report::{Medians, Metrics};
 #[path = "mul_e2e_compare/mod32.rs"]
 mod mod32;
 #[path = "mul_e2e_compare/mod32_air.rs"]
@@ -296,20 +299,20 @@ impl Timing {
         }
         total as f64 / 1e6
     }
-    fn metrics(&self) -> Value {
-        json!({
-            "witness_ms": self.union_ms(|p| p.tag=="witness-generation"),
-            "commit_ms": self.union_ms(|p| p.tag=="commit"),
-            "piop_ms": self.union_ms(|p| p.tag=="constraint-proof"),
-            "opening_ms": self.union_ms(|p| p.tag=="opening-proof"),
-            "pcs_ms": self.union_ms(|p| matches!(p.tag,"commit"|"opening-proof")),
-            "online_prover_ms": self.union_ms(|p| p.name=="online_prover"),
-            "witness_to_proof_ms": self.union_ms(|p| p.name=="witness_to_proof"),
-            "verify_ms": self.union_ms(|p| p.tag=="verification"),
-            "verified_trial_ms": self.union_ms(|p| p.name=="verified_trial"),
-            "post_proof_ms": self.union_ms(|p| p.name=="post_proof"),
-            "proof_bytes": self.proof_bytes,
-        })
+    fn metrics(&self) -> Metrics {
+        Metrics {
+            witness_ms: self.union_ms(|p| p.tag == "witness-generation"),
+            commit_ms: self.union_ms(|p| p.tag == "commit"),
+            piop_ms: self.union_ms(|p| p.tag == "constraint-proof"),
+            opening_ms: self.union_ms(|p| p.tag == "opening-proof"),
+            pcs_ms: self.union_ms(|p| matches!(p.tag, "commit" | "opening-proof")),
+            online_prover_ms: self.union_ms(|p| p.name == "online_prover"),
+            witness_to_proof_ms: self.union_ms(|p| p.name == "witness_to_proof"),
+            verify_ms: self.union_ms(|p| p.tag == "verification"),
+            verified_trial_ms: self.union_ms(|p| p.name == "verified_trial"),
+            post_proof_ms: self.union_ms(|p| p.name == "post_proof"),
+            proof_bytes: self.proof_bytes,
+        }
     }
     fn validate(&self) {
         assert!(self.proof_bytes > 0, "missing proof size");
@@ -548,28 +551,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         |params| {
                             plonky3_whir::Context::setup_with_params(Arc::clone(&corpus), params)
                         },
-                        |context| {
-                            context.run(&capture).metrics()["witness_to_proof_ms"]
-                                .as_f64()
-                                .unwrap()
-                        },
+                        |context| context.run(&capture).metrics().witness_to_proof_ms,
                         plonky3_whir::Context::security,
                     );
                     let path = out.join(format!("whir-{}-{n}.json", workload.slug()));
                     match selection {
                         Ok((params, mut record)) => {
-                            record["workload"] = json!(workload.slug());
-                            record["exponent"] = json!(n);
-                            record["corpus_digest"] = json!(corpus.digest);
+                            record.workload = Some(workload.slug().to_owned());
+                            record.exponent = Some(n);
+                            record.corpus_digest = Some(corpus.digest.clone());
                             common::whir_tuning::save(&path, &record)?;
                             Some(params)
                         }
                         Err(reason) => {
                             eprintln!("WHIR {} 2^{n}: unavailable: {reason}", workload.slug());
-                            let record = json!({"workload":workload.slug(),"backend":backend,
-                                "log_multiplications":n,"status":"ineligible","reason":reason});
+                            let record = report::Ineligible {
+                                workload: workload.slug(),
+                                backend,
+                                log_multiplications: n,
+                                status: "ineligible",
+                                reason,
+                            };
                             common::whir_tuning::save(&path, &record)?;
-                            summary.push(record);
+                            summary.push(report::Summary::Ineligible(record));
                             continue;
                         }
                     }
@@ -627,11 +631,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let timing = context.run(&capture);
                     timing.validate();
                     let metrics = timing.metrics();
-                    let trial_json = if trial == 0 {
-                        json!({"kind":"warmup","index":0})
-                    } else {
-                        json!({"kind":"sample","index":trial-1})
-                    };
+                    let trial_json = report::Trial::new(trial);
                     let series = format!("mul-{stamp}-{}-{backend}-{n}", workload.slug());
                     let run = format!("{series}-{trial}");
                     trace.write(&json!({
@@ -660,7 +660,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }))?;
                     }
                     trace.flush()?;
-                    samples.write(&json!({"schema":"native-mul-sample/v2","workload":workload.slug(),"backend":backend,"log_multiplications":n,"multiplications":1usize<<n,"corpus_digest":corpus.digest,"threads":threads,"seed":shape_seed,"trial":trial_json,"setup_ms":setup_ms,"config":config,"measurement_policy":MEASUREMENT_POLICY,"proof_verified":true,"metrics":metrics}))?;
+                    samples.write(&report::Sample {
+                        schema: "native-mul-sample/v2",
+                        workload: workload.slug(),
+                        backend,
+                        log_multiplications: n,
+                        multiplications: 1usize << n,
+                        corpus_digest: &corpus.digest,
+                        threads,
+                        seed: shape_seed,
+                        trial: trial_json,
+                        setup_ms,
+                        config: &config,
+                        measurement_policy: MEASUREMENT_POLICY,
+                        proof_verified: true,
+                        metrics: &metrics,
+                    })?;
                     samples.flush()?;
                     eprintln!(
                         "{} {backend} 2^{n} {}: witness {:.3} ms, commit {:.3} ms, PIOP {:.3} ms, PCS {:.3} ms, witness→proof {:.3} ms, proof {} B",
@@ -670,21 +685,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             format!("sample {trial}/{reps}")
                         },
-                        metrics["witness_ms"].as_f64().unwrap(),
-                        metrics["commit_ms"].as_f64().unwrap(),
-                        metrics["piop_ms"].as_f64().unwrap(),
-                        metrics["pcs_ms"].as_f64().unwrap(),
-                        metrics["witness_to_proof_ms"].as_f64().unwrap(),
+                        metrics.witness_ms,
+                        metrics.commit_ms,
+                        metrics.piop_ms,
+                        metrics.pcs_ms,
+                        metrics.witness_to_proof_ms,
                         timing.proof_bytes,
                     );
                     if trial > 0 {
                         measured.push(metrics);
                     }
                 }
-                let medians = summarize(&measured);
+                let medians = Medians::from_samples(&measured);
                 write!(csv, "{},{backend},{n},{reps},{setup_ms}", workload.slug())?;
-                for &key in MEDIAN_METRICS {
-                    write!(csv, ",{}", medians[key])?;
+                for value in medians.values() {
+                    write!(csv, ",{}", serde_json::to_string(&value)?)?;
                 }
                 let peak_rss_bytes = memory_sample.as_ref().map(|sample| sample.peak_rss_bytes);
                 writeln!(
@@ -698,15 +713,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!(
                     "RESULT schema=native-mul/2 workload={} backend={backend} log_multiplications={n} samples={reps} witness_ms={} online_prover_ms={} verify_ms={} proof_bytes={} peak_rss_bytes={}",
                     workload.slug(),
-                    medians["witness_ms"],
-                    medians["online_prover_ms"],
-                    medians["verify_ms"],
-                    medians["proof_bytes"],
+                    serde_json::to_string(&medians.witness_ms)?,
+                    serde_json::to_string(&medians.online_prover_ms)?,
+                    serde_json::to_string(&medians.verify_ms)?,
+                    serde_json::to_string(&medians.proof_bytes)?,
                     peak_rss_bytes
                         .map(|bytes| bytes.to_string())
                         .unwrap_or_else(|| "na".into())
                 );
-                summary.push(json!({"schema":"native-mul-summary/v2","workload":workload.slug(),"backend":backend,"log_multiplications":n,"multiplications":1usize<<n,"samples":reps,"warmups":1,"threads":threads,"seed":shape_seed,"setup_ms":setup_ms,"config":config,"corpus_digest":corpus.digest,"measurement_policy":MEASUREMENT_POLICY,"proof_verified":true,"medians":medians,"peak_rss_bytes":peak_rss_bytes,"memory":memory_sample}));
+                summary.push(report::Summary::Measured(report::MeasuredSummary {
+                    schema: "native-mul-summary/v2",
+                    workload: workload.slug(),
+                    backend,
+                    log_multiplications: n,
+                    multiplications: 1usize << n,
+                    samples: reps,
+                    warmups: 1,
+                    threads,
+                    seed: shape_seed,
+                    setup_ms,
+                    config,
+                    corpus_digest: corpus.digest.clone(),
+                    measurement_policy: MEASUREMENT_POLICY,
+                    proof_verified: true,
+                    medians,
+                    peak_rss_bytes,
+                    memory: memory_sample,
+                }));
             }
         }
     }
@@ -722,19 +755,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     eprintln!("Native multiplication results: {}", out.display());
     Ok(())
-}
-
-fn summarize(measured: &[Value]) -> serde_json::Map<String, Value> {
-    MEDIAN_METRICS
-        .iter()
-        .map(|&key| {
-            let values: Vec<_> = measured
-                .iter()
-                .map(|m| m[key].as_f64().expect("required measured metric"))
-                .collect();
-            (key.into(), json!(common::median(&values)))
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -759,9 +779,25 @@ mod tests {
                 timing.metrics()
             })
             .collect();
-        let summary = summarize(&measured);
-        assert_eq!(measured[0]["proof_bytes"], 1024);
-        assert_eq!(summary["proof_bytes"], 2048.0);
+        let summary = Medians::from_samples(&measured);
+        assert_eq!(measured[0].proof_bytes, 1024);
+        assert_eq!(summary.proof_bytes, 2048.0);
+        let sample = serde_json::to_value(measured[0]).unwrap();
+        let summary_json = serde_json::to_value(summary).unwrap();
+        assert!(sample["proof_bytes"].is_u64());
+        assert!(summary_json["proof_bytes"].is_f64());
+        assert!(sample.get("verified_trial_ms").is_some());
+        assert!(summary_json.get("verified_trial_ms").is_none());
+        // Preserve the existing upper-middle median, including even sample counts.
+        assert_eq!(Medians::from_samples(&measured[..2]).proof_bytes, 4096.0);
+        assert_eq!(
+            serde_json::to_value(report::Trial::new(0)).unwrap(),
+            json!({"kind":"warmup","index":0})
+        );
+        assert_eq!(
+            serde_json::to_value(report::Trial::new(1)).unwrap(),
+            json!({"kind":"sample","index":0})
+        );
     }
     #[test]
     #[should_panic(expected = "missing proof size")]
@@ -996,13 +1032,24 @@ pub(crate) fn witness_main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut times = vec![];
                 for trial in 0..=reps {
                     let audit = audit_backend(backend, &corpus);
-                    let trial = if trial == 0 {
-                        json!({"kind":"warmup","index":0})
-                    } else {
+                    if trial > 0 {
                         times.push(audit.generation_ms);
-                        json!({"kind":"sample","index":trial-1})
-                    };
-                    raw.write(&json!({"schema":"native-mul-witness/v1","workload":workload.slug(),"backend":backend,"log_multiplications":n,"threads":threads,"seed":shape_seed,"trial":trial,"witness_generation_ms":audit.generation_ms,"witness_digest_blake3":audit.digest,"expected_digest":corpus.digest,"native_representation":audit.representation,"quotient_reconstructed":audit.quotient_reconstructed,"all_rows_match":true}))?;
+                    }
+                    raw.write(&report::WitnessSample {
+                        schema: "native-mul-witness/v1",
+                        workload: workload.slug(),
+                        backend,
+                        log_multiplications: n,
+                        threads,
+                        seed: shape_seed,
+                        trial: report::Trial::new(trial),
+                        witness_generation_ms: audit.generation_ms,
+                        witness_digest_blake3: &audit.digest,
+                        expected_digest: &corpus.digest,
+                        native_representation: audit.representation,
+                        quotient_reconstructed: audit.quotient_reconstructed,
+                        all_rows_match: true,
+                    })?;
                     raw.flush()?;
                 }
                 let median = common::median(&times);
@@ -1011,7 +1058,15 @@ pub(crate) fn witness_main() -> Result<(), Box<dyn std::error::Error>> {
                     workload.slug(),
                     corpus.digest
                 );
-                summary.push(json!({"workload":workload.slug(),"backend":backend,"log_multiplications":n,"samples":reps,"witness_ms":median,"witness_digest_blake3":corpus.digest,"all_rows_match":true}));
+                summary.push(report::WitnessSummary {
+                    workload: workload.slug(),
+                    backend,
+                    log_multiplications: n,
+                    samples: reps,
+                    witness_ms: median,
+                    witness_digest_blake3: corpus.digest.clone(),
+                    all_rows_match: true,
+                });
             }
         }
     }
