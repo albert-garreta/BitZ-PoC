@@ -706,7 +706,7 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
 \subsubsection{Round-by-round knowledge soundness}\label{s:to_soundness_rings}
 \albertimportant{Review}
 
-As in \cref{s:to_soundness_prime}, we view the protocol as a composition $\Pi_1\circ \Pi_2\circ \Pi_3$, where now $\Pi_1$ consists of Steps 2 and 3 of \cref{?} followed by Step 4 and the first half of Step 5 of \cref{s:to_simple_bitz}. After Step 3, the prover and verifier are exactly in the same spot as in Step 4 of \cref{s:to_simple_bitz}. Hence the analysis of Steps 4 and 5 in \cref{s:to_soundness_prime} applies word by word. The protocols $\Pi_2$ and $\Pi_3$ are exactly the same as in \cref{s:to_simple_bitz}. Because of this, below we only discuss Steps 1, 2 and 3. The full soundness statement of \cref{?} can be found in \cref{t:thm_LinModFieldBits}, and is proved in \cref{a:LinModFieldBin}.
+As in \cref{s:to_soundness_prime}, we view the protocol as a composition $\Pi_1\circ \Pi_2\circ \Pi_3$, where now $\Pi_1$ consists of Steps 2 and 3 of \cref{s:to_general_rings} followed by Step 4 and the first half of Step 5 of \cref{s:to_simple_bitz}. After Step 3, the prover and verifier are exactly in the same spot as in Step 4 of \cref{s:to_simple_bitz}. Hence the analysis of Steps 4 and 5 in \cref{s:to_soundness_prime} applies word by word. The protocols $\Pi_2$ and $\Pi_3$ are exactly the same as in \cref{s:to_simple_bitz}. Because of this, below we only discuss Steps 1, 2 and 3. The full soundness statement of \cref{s:to_general_rings} can be found in \cref{t:thm_LinModFieldBits}, and is proved in \cref{a:LinModFieldBin}.
 
 \bigskip
 
@@ -720,7 +720,7 @@ These steps incur no knowledge soundness loss: given any $\bfg$ satisfying \eqre
 
 \bigskip 
 
-\noindent\emph{\underline{Step 3}.} If Step 3 is skipped, \eqref{e:to_soundness_1_rings} is already a claim of the form \eqref{e:to_soundness_1}. Otherwise, Step 3 is the only source of soundness error in $\Pi_1$, and its analysis generalizes that of \cref{s:to_soundness_prime} from integers to polynomials, following \cite{zaratan,zincplus}. Let $\cE$ be the event that the projected claim \eqref{e:new_to_projected_lifted_polring_claim} holds for some $\bfg\in \bits^\codedim$ with $f= \Enc_\cC \circ \pack\circ \pi_2(\bfg)$ (note that $\bfg$ is fixed by $f$ before $q,\pirand$ are sampled), but \eqref{e:to_soundness_1_rings} does not. Consider the polynomial
+\noindent\emph{\underline{Step 3}.} If Step 3 is skipped, \eqref{e:to_soundness_1_rings} is already a claim of the form \eqref{e:to_soundness_1}. Otherwise, Step 3 is the only source of soundness error in $\Pi_1$, and its analysis generalizes that of \cref{s:to_soundness_prime} from integers to polynomials, following Zinc+ \cite{zincplus}. Let $\cE$ be the event that the projected claim \eqref{e:new_to_projected_lifted_polring_claim} holds for some $\bfg\in \bits^\codedim$ with $f= \Enc_\cC \circ \pack\circ \pi_2(\bfg)$ (note that $\bfg$ is fixed by $f$ before $q,\pirand$ are sampled), but \eqref{e:to_soundness_1_rings} does not. Consider the polynomial
 %
 $$
 h\defeq \langle \picanon^{-1}(\uu^{(1)}) \otimes \picanon^{-1}(\uu^{(2)}) , \bfg \rangle-\mu' \ \in \ \ZZ[X_1,\ldots, X_{k'}].
@@ -1510,7 +1510,7 @@ where $h$ ranges over the polynomials just described. See \cref{l:examples_morph
 %
 for some $\alpha_1,\ldots, \alpha_{k}\in \FF_q$, and where $\pi_q(h)$ is $h$ after reducing its coefficients modulo $q$. Then
          $$
-    \theta(\cP,\cM,\codedim) \leq \frac{2\cdot D}{q_{\min}} + \frac{\log\left(4\cdot T\cdot \codedim\cdot N_R^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}.
+    \theta(\cP,\cM,\codedim) \leq \frac{2\cdot D}{q_{\min}} + \frac{\log\left(2\cdot T\cdot \codedim\cdot N_R^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}.
     $$
     where $q_{\min}$ is the smallest prime in $\cP$.
 \end{lemma}
@@ -1751,23 +1751,23 @@ For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\
 
  To prove \cref{l:examples_morphisms} we will use the following result, which generalizes \albert{point to lemma} in \cite{zincplus}.
 \begin{lemma}\label{l:reduction_lemma}
-Let $h\in \ZZ[X_1, \ldots, X_m]$ be a nonzero polynomial of total degree $\leq d$ and with coefficients in the range $\range{-2^{B}+1}{2^B-1}$. Let $\cP$ be a set of primes, and let $q_{\min}$ be the smallest prime in $\cP$. Given a prime $q$ and $\bm{\alpha}\in \FF_q^m$, write $\pi_{q,\bm{\alpha}}(h)\defeq \pi_q(h)(\bm{\alpha})\in \FF_q$. Then 
+Let $h\in \ZZ[X_1, \ldots, X_m]$ be a nonzero polynomial of total degree $\leq d$ and with $\lVert h\rVert_\infty\leq M$ for some $M\geq 1$. Let $\cP$ be a set of primes, and let $q_{\min}$ be the smallest prime in $\cP$. Given a prime $q$ and $\bm{\alpha}\in \FF_q^m$, write $\pi_{q,\bm{\alpha}}(h)\defeq \pi_q(h)(\bm{\alpha})\in \FF_q$. Then 
 %
 $$
-\Pr_{\substack{q\gets \cP,\\\bm{\alpha} \gets \FF_q^m}}[\pi_{q,\bm{\alpha}}(h)=0] \leq \frac{B}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{d}{q_{\min}}.
+\Pr_{\substack{q\gets \cP,\\\bm{\alpha} \gets \FF_q^m}}[\pi_{q,\bm{\alpha}}(h)=0] \leq \frac{\log M}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{d}{q_{\min}}.
 $$
 \end{lemma}
 \begin{proof}
 Let $\cE_{\mathsf{prime}}$ be the event that all coefficients of $h$ are  multiples of $q$. Then, by the Schwartz--Zippel lemma, $$\Pr_{\substack{q\gets \cP,\\\bm{\alpha} \gets \FF_q^m}}[\pi_{q,\bm{\alpha}}(h)=0\mid \neg \cE_{\mathsf{prime}}] \leq  \frac{d}{q_{\min}}.$$
 %
-Now, every nonzero coefficient of $h$ is divisible by at most $B/\lfloor\log(q_{\min})\rfloor$ primes from $\cP$. Hence, the probability that $\cE_{\mathsf{prime}}$ occurs is at most $(B/\lfloor\log(q_{\min})\rfloor)/|\cP|$, and the lemma follows.
+Now, every nonzero coefficient $c$ of $h$ is divisible by at most $\log M/\log q_{\min}\leq \log M/\lfloor\log(q_{\min})\rfloor$ primes from $\cP$, since the product of $m'$ distinct such primes divides $c$, so that $q_{\min}^{m'}\leq |c|\leq M$. Hence, the probability that $\cE_{\mathsf{prime}}$ occurs is at most $(\log M/\lfloor\log(q_{\min})\rfloor)/|\cP|$, and the lemma follows.
 %
 \end{proof}
 
 
 
 \begin{proof}[Proof of \cref{l:examples_morphisms}]
-Let $h\in \ZZ[X_1,\ldots, X_{k}]$ be a polynomial of total degree at most $2\cdot D$, with coefficients in $\range{-2\cdot T\cdot \codedim\cdot N_R^2}{2\cdot T\cdot \codedim\cdot N_R^2}$, and with $\picanon^{R}(h)\neq 0$ (cf.\ the definition of $\theta(\cP,\cM,\codedim)$). In particular $h$ is nonzero, and its coefficients lie in $\range{-2^{B}+1}{2^{B}-1}$ for $B\defeq \lfloor \log(T\cdot \codedim\cdot N_R^2)\rfloor + 2 \leq \log(4\cdot T\cdot \codedim\cdot N_R^2)$. Since $h$ is nonzero and has total degree at most $2\cdot D$, \cref{l:reduction_lemma} (applied with $m=k$ variables and total degree $2\cdot D$) yields $$\Pr_{\substack{q\gets \cP,\\ \bm{\alpha} \gets \FF_q^{k}}}[\pi_q(h)(\bm{\alpha})=0] \leq \frac{B}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{2\cdot D}{q_{\min}},$$ as needed.
+Let $h\in \ZZ[X_1,\ldots, X_{k}]$ be a polynomial of total degree at most $2\cdot D$, with coefficients in $\range{-2\cdot T\cdot \codedim\cdot N_R^2}{2\cdot T\cdot \codedim\cdot N_R^2}$, and with $\picanon^{R}(h)\neq 0$ (cf.\ the definition of $\theta(\cP,\cM,\codedim)$). In particular $h$ is nonzero, and $\lVert h\rVert_\infty\leq M\defeq 2\cdot T\cdot \codedim\cdot N_R^2$. Since $h$ is nonzero and has total degree at most $2\cdot D$, \cref{l:reduction_lemma} (applied with $m=k$ variables and total degree $2\cdot D$) yields $$\Pr_{\substack{q\gets \cP,\\ \bm{\alpha} \gets \FF_q^{k}}}[\pi_q(h)(\bm{\alpha})=0] \leq \frac{\log M}{\lfloor\log(q_{\min})\rfloor\cdot |\cP|} + \frac{2\cdot D}{q_{\min}},$$ as needed.
 %
 \end{proof}
 
@@ -2228,7 +2228,7 @@ The specific upper bounds depend on how much grinding one is doing at the PIOP l
 
 Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\cP,\cM,\codedim)$. We use $\picanon: \ZZ[X]  \to \FF$ as in \cref{e:presentations}, so that $\picanon(h(X))= \pi_{\Char(\FF)}(h)(x)$ where $\pi_{\Char(\FF)}(h)$ is the polynomial $h$ after reducing its coefficients modulo $\Char(F)$, and  $x$ is a root of an irreducible polynomial defining $\FF_{q^d}$ (if $d=1$ and so $\FF_{q^d}$ is a prime field, then we can use a morphism $\picanon:\ZZ\to \FF_q$). We have $D=d-1$, $T\leq d$, and $N_\FF\leq q-1$ (see \eqref{e:ring_theta_params} and the text below it for a definition of these quantities). We instantiate the morphism sets $\cM_q$ as in \cref{l:examples_morphisms}, i.e.\ $\pirand$ reduces coefficients modulo a sampled prime and evaluates $X_1$ at a random $\alpha\in \FF_q$. In this case, by \cref{l:examples_morphisms},
     $$
-    \kappa_0 \leq \frac{2\cdot (d-1)}{q_{\min}} + \frac{\log\left(4\cdot d\cdot \codedim\cdot (q-1)^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor},
+    \kappa_0 \leq \frac{2\cdot (d-1)}{q_{\min}} + \frac{\log\left(2\cdot d\cdot \codedim\cdot (q-1)^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor},
       $$
     where $q$ is  the characteristic of $\FF$.
 
@@ -2238,7 +2238,7 @@ Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\cP,\cM,\codedim)$. We u
      %
      \begin{equation}\label{e:kappa_0_practical_upper_bound}
      \begin{aligned}
-    \kappa_0&\lessapprox \frac{2\cdot (d-1)}{2^a} + \frac{\log\left(4\cdot d\cdot \codedim\cdot (q-1)^2\right)\cdot \log_e(2)}{\frac{a}{b}\cdot 2^{b} - 2^a},\\
+    \kappa_0&\lessapprox \frac{2\cdot (d-1)}{2^a} + \frac{\log\left(2\cdot d\cdot \codedim\cdot (q-1)^2\right)\cdot \log_e(2)}{\frac{a}{b}\cdot 2^{b} - 2^a},\\
     b&\defeq 128 - r_1, \qquad r_1\defeq \tau\cdot \log(\codedim).
     \end{aligned}
     \end{equation}
@@ -2258,7 +2258,7 @@ Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\cP,\cM,\codedim)$. We u
     128 & 1 & 128 & 28 & 0.5 & 108 & $2^{-106.3}$ & 22 & 11.9 \\
     128 & 1 & 128 & 28 & 0.6 & 105 & $2^{-103.5}$ & 25 & 98.1 \\
     128 & 1 & 128 & 30 & 0.5 & 107 & $2^{-105.3}$ & 23 & 25.9 \\
-    128 & 1 & 128 & 32 & 0.5 & 106 & $2^{-104.2}$ & 24 & 54.9 \\
+    128 & 1 & 128 & 32 & 0.5 & 106 & $2^{-104.3}$ & 24 & 54.9 \\
     \midrule
     128 & 4 & 32 & 24 & 0.5 & 114 & $2^{-109.2}$ & 19 & 1.8 \\
     128 & 4 & 32 & 24 & 0.6 & 111 & $2^{-106.8}$ & 22 & 11.9 \\
