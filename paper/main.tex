@@ -286,7 +286,9 @@ In our implementation, we use \ftwoz\ as a PCS that can simultaneously prove R1C
  $$
 \langle \bfg, M^{\mathsf{T}}\uu'\rangle = \eta \quad \text{ in } \comfield,
  $$
- where $\mathsf{T}$ denotes transposition. This is a linear claim on $\bfg$, the vector we committed to. We can prove this claim with a standard PCS over $\comfield$ such as \cite{whir} \albertimportant{comment about verifier succinctness}. 
+ where $\mathsf{T}$ denotes transposition. This is a linear claim on $\bfg$, the vector we committed to. We can prove this claim with a standard PCS over $\comfield$ such as \cite{whir}. 
+ 
+ To keep the verifier succinct, we need to ensure that $M\cdot \uu'$ admits a succinct representation. In our applications, the vector $\uu'$ admits such \cref{??}, and so one needs to make sure $M$ carries some succinct structure, such as for example a tensor decomposition, so that $M\cdot \uu'$ does not become a dense vector \albert{review paragraph}.  
 
  
  This allows \ftwoz\  to prove polynomial constraints over $R$ on witness vectors $\bff$ whose bit-decomposition is a virtual $\FF_2$-linear combination of a committed vector $\bfg\in \FF_2^{\codedim'}$. For example, \ftwoz \ can efficiently prove the following R1CS-like relation: 
@@ -377,7 +379,7 @@ This work was supported by the World Foundation.
 
 We also thank Giacomo Fenzi, Ulrich Haböck, and Lev Soukhanov for insightful and helpful discussions.  
 
-\paragraph{Usage and non-usage of AI} This document was  written with minimal assistance of AI. It was only used to identify typos and incoherences, make refactorings, stylistic improvements, and for  cost accountings in \cref{s:gkr_low_entropy,s:core_iop,s:general_LinBitsDual}. \albertimportant{I also used it in the standard appendix proofs}
+\paragraph{Usage and non-usage of AI} This document was  written with minimal assistance of AI. It was only used to identify typos and incoherences, make refactorings, stylistic improvements, and for  cost accountings in \cref{s:gkr_low_entropy,s:core_iop,s:general_LinBitsDual}. \albertimportant{I also used it in the standard appendix proofs. And used it for help in drating the technical overview soudnness}
 
 We crucially used AI in our implementation and experiments, as explained in \cref{s:experiments}.
 
@@ -454,7 +456,7 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
 
  \paragraph{Step 4: Transformation of \eqref{e:intro_eq_2} into a batch of low-magnitude integer claims.} The prover organizes $\bitstext(\bff)$ into a $\codedim_1\times \codedim_2$ matrix with columns $\bitstext(\bff)_{*j}\in \bits^{\codedim_1}$ ($j\in [\codedim_2]$). Then it publishes   $\mu_1,\ldots, \mu_{\codedim_2}\in  \ZZ$ defined as 
          $\mu_j=\langle \pi^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle$  in $\ZZ$, for all $j\in [\codedim_2]$.  
-         Then the verifier checks that $\mu_j\in \range{0}{(q-1)\cdot \codedim_1}$ for all $j\in [\codedim_2]$, and that \albert{Add a remark about the possibility of proving the below with a sumcheck}
+         Then the verifier checks that $\mu_j\in \range{0}{(q-1)\cdot \codedim_1}$ for all $j\in [\codedim_2]$, and that 
          %
          $$
         \sum_{j\in [\codedim_2]} \pi(\mu_j) \cdot \uu_j^{(2)} = \mu \qquad \text{in  } \FF_q,
@@ -513,6 +515,11 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
 \end{remark}
 
 
+\begin{remark}[Succinctness of the verifier and the proof size]
+Throughout the above construction, the verifier handles only vectors of size $\codedim_1$ and $\codedim_2$, hence, by setting $\codedim_1$ and $\codedim_2$ approximately of size $\sqrt{\codedim}$, we manage to keep the verifier and proof size succinct. We leave as open problem (\cref{?}) making these asymptotically polylogarithmic, instead of square root sized. 
+\end{remark}
+%\paragraph{Costs.} Concrete costs are provided in \cref{?}. In short, the prover operations are comprised of: encoding  the vector $\pack\circ \pi_2(\bitstext(\bff))\in \comfield^{\codedim/\comfieldexp}$, and computing a Merkle tree for the resulting word (Step 1); the operations required in the GKR grand product protocol and its subsequent possible batching steps (which we optimize in \cref{s:gkr_low_entropy}) (half Step 5); the operations used by the ring-switch \cite{binius2} and the PCS, WHIR or Ligerito in our instantiation (Step 6); and the operations from Steps 2 to half of Step 5. The latter involve a linear amount of operations over $\ZZ$ and over $\comfield$.
+
 \subsubsection{Why the tensor split}\label{s:why_the_tensor_split} The claim $\langle \uu, \pi_q(\bitstext(\bff))\rangle = \mu$ (cf.\  \eqref{e:intro_eq_2}) over $\FF_q$ is split, in Step 4, into $\codedim_2$ claims over $\ZZ$ of the form 
 $
 \langle \pi^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle =\mu_j$ for all  $j\in [\codedim_2]$ (cf.\ \eqref{e:intro_eq_3}).  This pays off in three ways:
@@ -529,11 +536,11 @@ In \cref{t:core_iop_complexity} we record the concrete costs of this protocol (i
 
 \albertimportant{Review}
 
-In \cref{s:soundness_core_iop} we prove (\cref{t:thm_core_IOPP}) that the IOP $\Pi$ of \cref{s:to_simple_bitz} is perfectly complete and round-by-round knowledge sound. We do so by viewing $\Pi$ as the composition of three Interactive Oracle Reductions (IORs, cf.\ \cite{warp,BCFW25} and \cref{s:IORs}). The first one, $\Pi_1$ (Steps 2, 3, 4 and the first half of Step 5), reduces the initial claim, namely knowledge of a witness for $(\inp,\oracle)=((\mu,\vv),f)\in \LANG(\LinBitsDual(\FF_q))$, to the grand product claim \eqref{e:intro_eq_4}, namely knowledge of $\bfg\in \FF_2^{\codedim_1\times \codedim_2}$ with $f=\Enc_\cC\circ \pack(\bfg)$ and $$\prod_{i\in [\codedim_1]}\bigl((g^{\pi_q^{-1}(\uu^{(1)}_i)}-1)\cdot \bfg_{ij}+1\bigr)=g^{\mu_j}$$ for all $j\in [\codedim_2]$ (an instance of the relation $\PESAT$ of \cref{d:pesat}, see \cref{s:interleaved_setting}). The second one, $\Pi_2$ (second half of Step 5), is the GKR protocol for these $\codedim_2$ grand products  which reduces them to the linear claims over $\comfield$  for the witness vectors $\bitstext(\bff)_{*j}$ \eqref{e:intro_eq_5} (the relation $\LIN(\comfield,\cC,\pack)$ of \cref{s:interleaved_setting}). The third one, $\Pi_3$ (Step 6), proves the latter with the ring-switching technique of \cite{binius2} followed by WHIR/Ligerito \cite{whir,ligerito}, exactly as in Flock \cite{flock} \albert{and binius?}, possibly with a batched sumcheck before that, to reduce the claims \eqref{e:intro_eq_5} into a single MLE evaluation of $\bitstext(\bff)$ over $\comfield$. It is well known that $\Pi_2$ and $\Pi_3$ are perfectly complete and round-by-round knowledge sound\footnote{For $\Pi_3$ this holds in a relaxed form, in the sense that a malicious prover may convince the verifier with an oracle $f$ which is not exactly $\Enc_\cC\circ \pack(\bfg)$ for a valid witness $\bfg$, but is \emph{close} to it in Hamming distance. This is a well-studied technicality \cite{stark,BCFW25,whir,rbr_fri,zook}, which we treat in \cref{?} using  the formalism of round-by-round knowledge soundness \emph{with relaxation} from \cite{zook}. We do not discuss this further in this overview.}, and that the composition of round-by-round knowledge sound IORs is again round-by-round knowledge sound (\cref{r:ior_compositoin}). Hence in this overview we only discuss $\Pi_1$.
+In \cref{s:soundness_core_iop} we prove (\cref{t:thm_core_IOPP}) that the IOP $\Pi$ of \cref{s:to_simple_bitz} is perfectly complete and round-by-round knowledge sound. We do so by viewing $\Pi$ as the composition of three Interactive Oracle Reductions (IORs, cf.\ \cite{warp,BCFW25} and \cref{s:IORs}). The first one, $\Pi_1$ (Steps 2, 3, 4 and the first half of Step 5), reduces the initial claim, namely knowledge of a witness for $(\inp,\oracle)=((\mu,\vv),f)\in \LANG(\LinBitsDual(\FF_q))$, to the grand product claim \eqref{e:intro_eq_4}, namely knowledge of $\bfg\in \FF_2^{\codedim_1\times \codedim_2}$ with $f=\Enc_\cC\circ \pack(\bfg)$ and $$\prod_{i\in [\codedim_1]}\bigl((g^{\pi_q^{-1}(\uu^{(1)}_i)}-1)\cdot \bfg_{ij}+1\bigr)=g^{\mu_j}$$ for all $j\in [\codedim_2]$ (an instance of the relation $\PESAT$ of \cref{d:pesat}, see \cref{s:interleaved_setting}). The second one, $\Pi_2$ (second half of Step 5), is a standard instantiation\footnote{At a protocol level, $\Pi_2$ is a standard GKR protocol, but we ****\albertimportant{finish}our optimizations do not modify the protocol, i.e.\ they are optimizations that keep the transcript invariant.} of the GKR protocol for these $\codedim_2$ grand products  which reduces them to the linear claims over $\comfield$  for the witness vectors $\bitstext(\bff)_{*j}$ \eqref{e:intro_eq_5} (the relation $\LIN(\comfield,\cC,\pack)$ of \cref{s:interleaved_setting}). The third one, $\Pi_3$ (Step 6), proves the latter with the ring-switching technique of \cite{binius2} followed by WHIR/Ligerito \cite{whir,ligerito}, exactly as in Flock \cite{flock} \albert{and binius?}, possibly with a batched sumcheck before that, to reduce the claims \eqref{e:intro_eq_5} into a single MLE evaluation of $\bitstext(\bff)$ over $\comfield$. It is well known that $\Pi_2$ and $\Pi_3$ are perfectly complete and round-by-round knowledge sound\footnote{For $\Pi_3$ this holds in a relaxed form, in the sense that a malicious prover may convince the verifier with an oracle $f$ which is not exactly $\Enc_\cC\circ \pack(\bfg)$ for a valid witness $\bfg$, but is \emph{close} to it in Hamming distance. This is a well-studied technicality \cite{stark,BCFW25,whir,rbr_fri,zook}, which we treat in \cref{?} using  the formalism of round-by-round knowledge soundness \emph{with relaxation} from \cite{zook}. We do not discuss this further in this overview.}, and that the composition of round-by-round knowledge sound IORs is again round-by-round knowledge sound (\cref{r:ior_compositoin}). Hence in this overview we only discuss $\Pi_1$. \albertimportant{formalization around UDR/Johnson and proximity could be clearer}
 
 \bigskip
 
-\noindent \emph{\underline{Round-by-round knowledge soundness of $\Pi_1$}}. The (possibly malicious) prover and verifier start with the public input $(\vv,\mu)$ and the oracle $f$. Assume first that Step 3 does not trigger, so that $|\FF_q|<(|\comfield|-1)/\codedim_1$. We discuss the case where this is otherwise later. 
+\noindent \emph{\underline{Round-by-round knowledge soundness of $\Pi_1$}}. The (possibly malicious) prover and verifier start with the public input $(\vv,\mu)$ and the oracle $f$.  Assume first that Step 3 does not trigger, so that $|\FF_q|<(|\comfield|-1)/\codedim_1$. We discuss the case where this is otherwise later. 
  
   \emph{Step 2:} After Step 2, the claim is that the prover knows $\bfg\in \bits^{\codedim}\subseteq \ZZ^\codedim$ such that
 %
@@ -564,10 +571,10 @@ Hence, if Step 3 does not trigger, then $\Pi_1$ has is a one-round IOR with  rou
 
 \emph{Step 3.} Assume Step 3 triggers (\cref{r:large_prime_field_in_BitZ_PCS}). Then the protocol has one extra round with a nonzero round-by-round knowledge soundness error.  the prover sends $\mu'\in \range{0}{\codedim\cdot (q-1)^2}$ with $\pi_q(\mu')=\mu$, the verifier samples a random prime $q'\in\cP$,
 
-In this case, at the end of Step 3, the claim \eqref{e:to_soundness_1} is replaced by a similar claim over a randomly sampled prime field $\FF_{q'}$, namely the prover claims knowledge of $\bfg\in \bits^{\codedim} \subseteq \ZZ^\codedim$  such that $\langle \pi_{q'}\circ\pi_q^{-1}(\uu^{(1)})\otimes \pi_{q'}\circ\pi_q^{-1}(\uu^{(2)}), \pi_{q'}(\bfg)\rangle=\pi_{q'}(\mu')$ in $\FF_{q'}$. Let $\cE$ be the event that this   holds for some $\bfg$  but \eqref{e:to_soundness_1} does not. Then the integer $h\defeq \langle \pi_q^{-1}(\uu^{(1)})\otimes \pi_q^{-1}(\uu^{(2)}), \bfg\rangle - \mu' \in \ZZ$ satisfies $\pi_q(h)=\langle \uu, \pi_q(\bfg)\rangle-\mu\neq 0$. Hence $h\neq 0$. Moreover, we have $|h|\leq 2\cdot \codedim\cdot (q-1)^2$, because $\bfg$ has bit entries and $\mu'$ passed the verififier's range check. Additionally,  $\pi_{q'}(h)=0$, and so $q'$ divides $h$. Such a nonzero and bounded integer $h$ has at most $\log(4\codedim(q-1)^2)/\lfloor\log q_{\min}\rfloor$ prime divisors in a set of primes $\cP$, where $q_{\min}$ is the smallest prime in $\cP$. Hence the probability of $\cE$ is at most \albertimportant{why $4$ and not $2$?}
+In this case, at the end of Step 3, the claim \eqref{e:to_soundness_1} is replaced by a similar claim over a randomly sampled prime field $\FF_{q'}$, namely the prover claims knowledge of $\bfg\in \bits^{\codedim} \subseteq \ZZ^\codedim$  such that $\langle \pi_{q'}\circ\pi_q^{-1}(\uu^{(1)})\otimes \pi_{q'}\circ\pi_q^{-1}(\uu^{(2)}), \pi_{q'}(\bfg)\rangle=\pi_{q'}(\mu')$ in $\FF_{q'}$. Let $\cE$ be the event that this   holds for some $\bfg$  but \eqref{e:to_soundness_1} does not. Then the integer $h\defeq \langle \pi_q^{-1}(\uu^{(1)})\otimes \pi_q^{-1}(\uu^{(2)}), \bfg\rangle - \mu' \in \ZZ$ satisfies $\pi_q(h)=\langle \uu, \pi_q(\bfg)\rangle-\mu\neq 0$. Hence $h\neq 0$. Moreover, we have $|h|\leq 2\cdot \codedim\cdot (q-1)^2$, because $\bfg$ has bit entries and $\mu'$ passed the verififier's range check. Additionally,  $\pi_{q'}(h)=0$, and so $q'$ divides $h$. Such a nonzero and bounded integer $h$ has at most $\log(2\codedim(q-1)^2)/\lfloor\log q_{\min}\rfloor$ prime divisors in a set of primes $\cP$, where $q_{\min}$ is the smallest prime in $\cP$. Hence the probability of $\cE$ is at most 
 % 
 \begin{equation}\label{e:to_kappa_0}
-\kappa_0 \defeq \frac{\log\left(4\cdot \codedim\cdot (q-1)^2\right)}{\lfloor\log q_{\min}\rfloor\cdot |\cP|}
+\kappa_0 \defeq \frac{\log\left(2\cdot \codedim\cdot (q-1)^2\right)}{\lfloor\log q_{\min}\rfloor\cdot |\cP|}
 \end{equation}
 %
 over the choice of $q'$. 
@@ -636,7 +643,7 @@ We remark that this is not the only way one can transform $\bff$ into a vector o
  \end{aligned} \right\}.
 \end{align*}
 
-\paragraph{Step 2: Bitification of the linear claim.} Similarly as in Step 2 of \cref{s:to_simple_bitz}, the claim \eqref{e:new_to_0_rings} \albertimportant{check labels stay consistent} is replaced by \begin{equation}\label{e:intro_eq_2_rings}\langle \uu, \psi(\bitstext(\bff))\rangle =\mu \qquad \text{in  } R,
+\paragraph{Step 2: Bitification of the linear claim.} Similarly as in Step 2 of \cref{s:to_simple_bitz}, the claim \eqref{e:new_to_0_rings} is replaced by \begin{equation}\label{e:intro_eq_2_rings}\langle \uu, \psi(\bitstext(\bff))\rangle =\mu \qquad \text{in  } R,
 \end{equation} 
 for a new $\uu\in R^{\codedim}$. This transformation is done using the linear expression from \eqref{e:new_to_linear_bits_to_f}. Concretely, we have $$\begin{aligned}\langle \vv, \psi(\bff)\rangle &= \langle \vv, \psi( L \cdot \bitstext(\bff)) \rangle = \langle \psi(L)^{\mathsf{T}}\cdot \vv, \psi(\bitstext(\bff)) \rangle = \langle \uu, \psi(\bitstext(\bff))\rangle, \\ \uu&\defeq \psi(L)^{\mathsf{T}}\cdot \vv.\end{aligned}$$ 
 As before, it is important that $L$ is such that the new vector $\uu$ still admits a tensor decomposition $\uu=\uu^{(1)} \otimes \uu^{(2)}$ with, say, $\uu^{(1)}\in R^{\codedim_1}$ and $\uu^{(2)}\in R^{\codedim_2}$ and $\codedim_1\approx \sqrt{\codedim}$, $\codedim_2\approx \sqrt{\codedim}$. This is the case for the example $L$ given above. For such matrix $L$ we have
@@ -696,11 +703,36 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
 \end{align*}
 
 
-\subsubsection{Soundness}\label{s:to_soundness_rings}
-\albertimportant{AI-drafted (Claude Opus 5), 2026-09-11 -- review before submission}
-The only new source of soundness error is Step 3, whose analysis follows the fingerprinting arguments of \cite{zaratan,zincplus}. Suppose that \eqref{e:intro_eq_2_rings} is false for the committed $\bitstext(\bff)$. Since the verifier checks $\picanon(\mu')=\mu$, the polynomial $h\defeq \langle \picanon^{-1}(\uu^{(1)}) \otimes \picanon^{-1}(\uu^{(2)}) , \bitstext(\bff) \rangle-\mu'\in \ZZ[X_1,\ldots, X_{k'}]$ satisfies $\picanon(h)\neq 0$, and in particular $h\neq 0$. Moreover, since $\bitstext(\bff)$ has bit entries and the verifier bounds the degree and the coefficients of $\mu'$, the degree and the coefficients of $h$ are bounded as well. The projected claim \eqref{e:new_to_projected_lifted_polring_claim} holds only if $\pirand(h)=0$. If, e.g., $\pirand$ reduces coefficients modulo a random prime $q\gets \cP$ and then evaluates at a random point of $\FF_q^{k'}$, this happens either when $q$ divides all coefficients of $h$, which is unlikely since a nonzero integer of bounded size has few prime factors, or, if not, with probability at most $\deg(h)/q$ by the Schwartz--Zippel lemma. Altogether this yields a small error $\kappa_0$ (\cref{l:examples_morphisms}). Otherwise, the claim over $\FF_q$ is false and the argument of \cref{s:to_soundness_prime} applies. The bounds on $\mu'$ are essential: without them, the prover could choose $\mu'$ so that $h$ is a multiple of $\prod_{q\in \cP} q$.
+\subsubsection{Round-by-round knowledge soundness}\label{s:to_soundness_rings}
+\albertimportant{Review}
 
+As in \cref{s:to_soundness_prime}, we view the protocol as a composition $\Pi_1\circ \Pi_2\circ \Pi_3$, where now $\Pi_1$ consists of Steps 2 and 3 of \cref{?} followed by Step 4 and the first half of Step 5 of \cref{s:to_simple_bitz}. After Step 3, the prover and verifier are exactly in the same spot as in Step 4 of \cref{s:to_simple_bitz}. Hence the analysis of Steps 4 and 5 in \cref{s:to_soundness_prime} applies word by word. The protocols $\Pi_2$ and $\Pi_3$ are exactly the same as in \cref{s:to_simple_bitz}. Because of this, below we only discuss Steps 1, 2 and 3. The full soundness statement of \cref{?} can be found in \cref{t:thm_LinModFieldBits}, and is proved in \cref{a:LinModFieldBin}.
 
+\bigskip
+
+\noindent\emph{\underline{Steps 1 and 2 (commitment and bitification)}.} The prover commits to a bit vector $\bfg=\bitstext(\bff)$ rather than to $\bff$, and after Step 2 the claim is that the prover knows $\bfg\in \bits^{\codedim}\subseteq \ZZ^\codedim$ such that
+%
+\begin{equation}\label{e:to_soundness_1_rings}
+\langle \uu, \psi(\bfg)\rangle = \mu \quad \text{in } R, \qquad \text{and} \qquad f= \Enc_\cC \circ \pack\circ \pi_2(\bfg).
+\end{equation}
+%
+These steps incur no knowledge soundness loss: given any $\bfg$ satisfying \eqref{e:to_soundness_1_rings}, the vector $\bff\defeq L\cdot \bfg\in S^{\codedim_0}$ is a valid witness for $((\mu,\vv),f)$. Indeed, $\bfg$ is by definition a bitification of $\bff$ (cf.\ \eqref{e:new_to_linear_bits_to_f}; bitifications are not unique, and the relation only asks for one of them, see \cref{d:bitification}), and $\langle \vv, \psi(\bff)\rangle = \langle \psi(L)^{\mathsf{T}}\cdot \vv, \psi(\bfg)\rangle = \langle \uu, \psi(\bfg)\rangle=\mu$ by the computation in Step 2. Moreover, $\bff$ automatically lies in $(S_{\leq B}^{<D})^{\codedim_0}$: every entry of $L\cdot \bfg$ is of the form $\sum_{\aa\in I} \bigl(\sum_{i\in [B]} \bfg_{\aa,i}\cdot 2^{i-1}\bigr)\cdot \eta_1^{a_1}\cdots \eta_k^{a_k}$ for bits $\bfg_{\aa,i}$, and the inner sums lie in $\range{0}{2^B-1}_S$. That is, the size bounds on the witness are enforced by committing to bits, and no separate range proof is needed.
+
+\bigskip 
+
+\noindent\emph{\underline{Step 3}.} If Step 3 is skipped, \eqref{e:to_soundness_1_rings} is already a claim of the form \eqref{e:to_soundness_1}. Otherwise, Step 3 is the only source of soundness error in $\Pi_1$, and its analysis generalizes that of \cref{s:to_soundness_prime} from integers to polynomials, following \cite{zaratan,zincplus}. Let $\cE$ be the event that the projected claim \eqref{e:new_to_projected_lifted_polring_claim} holds for some $\bfg\in \bits^\codedim$ with $f= \Enc_\cC \circ \pack\circ \pi_2(\bfg)$ (note that $\bfg$ is fixed by $f$ before $q,\pirand$ are sampled), but \eqref{e:to_soundness_1_rings} does not. Consider the polynomial
+%
+$$
+h\defeq \langle \picanon^{-1}(\uu^{(1)}) \otimes \picanon^{-1}(\uu^{(2)}) , \bfg \rangle-\mu' \ \in \ \ZZ[X_1,\ldots, X_{k'}].
+$$
+%
+Since $\picanon$ is a ring homomorphism with $\picanon\circ\picanon^{-1}=\mathsf{id}$ and $\picanon(\mu')=\mu$, we have $\picanon(h)=\langle \uu, \psi(\bfg)\rangle-\mu\neq 0$, so $h\neq 0$. Since $\bfg$ has bit entries, the inner product above satisfies the same degree and bit-size bounds as an honest $\mu'$, and so does $\mu'$ by the verifier's checks; hence $h$ has total degree at most $D_\ZZ$ and coefficients of absolute value at most $2^{B_\ZZ+1}$. Finally, since $\pirand$ is a ring homomorphism restricting to $\pi_q$ on $\ZZ$, the projected claim states precisely that $\pirand(h)=0$. If, for example, $\cM_q$ consists of the maps $h\mapsto \pi_q(h)(\bm{\alpha})$ for $\bm{\alpha}\in \FF_q^{k'}$ (reduce the coefficients modulo $q$, then evaluate at $\bm{\alpha}$), then either $q$ divides every coefficient of $h$, which as in \cref{s:to_soundness_prime} happens with probability at most $(B_\ZZ+1)/(\lfloor \log q_{\min}\rfloor\cdot |\cP|)$, or $\pi_q(h)$ is a nonzero polynomial of total degree at most $D_\ZZ$, which vanishes at a random $\bm{\alpha}$ with probability at most $D_\ZZ/q_{\min}$ by the Schwartz--Zippel lemma. Altogether,
+%
+\begin{equation}\label{e:to_kappa_0_rings}
+\Pr[\cE]\leq \kappa_0\defeq \frac{D_\ZZ}{q_{\min}} + \frac{B_\ZZ+1}{\lfloor\log q_{\min}\rfloor\cdot |\cP|},
+\end{equation}
+%
+cf.\ \eqref{e:to_kappa_0} for the case $k'=0$, and \cref{l:examples_morphisms} for the concrete bounds $D_\ZZ, B_\ZZ$ of \cref{c:core_iop}. Both checks on $\mu'$ are essential: without the bit-size bound the prover could choose $\mu'$ so that every coefficient of $h$ is a multiple of $\prod_{q\in\cP} q$, and without the degree bound so that $h$ is a multiple of $\prod_{q\in \cP}(X_1^{q}-X_1)$, which vanishes on $\FF_q^{k'}$ for every $q\in \cP$. As in \cref{s:to_soundness_prime}, $\Pi_1$ is thus round-by-round knowledge sound with errors $(\kappa_0,0)$, and the errors of the whole protocol are $\kappa_0$ followed by those of $\Pi_2$ and $\Pi_3$.
 
 
 
