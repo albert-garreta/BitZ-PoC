@@ -146,6 +146,9 @@ an alias and the canonical name to different values is an error):
 | `F2Z_BENCH_PASS` | — | `latency|memory|both` |
 | `F2Z_BENCH_LAMBDA` | — | security profile: `100` / `128` / `114` or a profile name (`lambda100`, `lambda128`, `limber114`, `sha128-reference-schedule`); unset = the bench's own default; a profile the bench's prime strategy cannot instantiate aborts with the admissible list (`pcs` has no IOP profile and only warns) |
 | `F2Z_BENCH_QUIET` | — | `1` mutes the harness's advisory `warning:` lines (deprecated aliases, the `pcs` `F2Z_BENCH_LAMBDA` notice, build-configuration hints); aborting errors are never muted |
+| `F2Z_BINIUS_LOG_INV_RATE` | — | Native BaseFold initial inverse-rate exponent; `1`, `2`, `3` select rates 1/2, 1/4, 1/8 |
+| `F2Z_BINIUS_LIGERITO_LOG_INV_RATE` | — | Native multiplication Binius–Ligerito initial inverse-rate exponent, `1..=3`; default `1` |
+| `F2Z_PLONKY3_LOG_INV_RATE` | — | Native multiplication Plonky3-FRI inverse-rate exponent, `1..=3`; default `3`. At least 100 queries, increased if needed for the native security target |
 
 **Unknown `F2Z_*` variables abort the bench** with the full known-knob list,
 so a typo'd knob can never silently do nothing. The registry lives in

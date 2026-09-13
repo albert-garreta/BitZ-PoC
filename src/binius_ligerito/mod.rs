@@ -17,8 +17,10 @@
 pub(crate) mod channel;
 
 use crate::{
-    binary_pcs::{self, BinaryPcs, BitMleOpening, SecurityTerm, read_ligerito, read_round0,
-        write_ligerito, write_round0},
+    binary_pcs::{
+        self, BinaryPcs, BitMleOpening, SecurityTerm, read_ligerito, read_round0, write_ligerito,
+        write_round0,
+    },
     ligerito_flock::{OodRound, f128_to_gf, gf_to_f128},
     poly::univariate::binary_gf128::BinaryFieldGF128 as Gf,
     proof_codec::{CodecError, Reader, Writer},
@@ -133,6 +135,15 @@ pub struct Prepared {
 
 impl Prepared {
     pub fn new(cs: &ConstraintSystem) -> Result<Self, Error> {
+        Self::with_log_inv_rate(cs, crate::binary_pcs::LOG_INV_RATE)
+    }
+
+    /// Prepare all oracles at the requested initial rate. Each complete
+    /// opener configuration, including its rate, is bound into the transcript.
+    pub fn with_log_inv_rate(cs: &ConstraintSystem, log_inv_rate: usize) -> Result<Self, Error> {
+        if !(1..=3).contains(&log_inv_rate) {
+            return Err(Error::Config("log inverse rate must be 1, 2, or 3".into()));
+        }
         cs.validate().map_err(|e| Error::Binius(e.to_string()))?;
         if !cs.bmul_constraints.is_empty() {
             return Err(Error::Invalid("BMUL constraints are not supported"));
@@ -173,7 +184,7 @@ impl Prepared {
         for target in MIN_COMPONENT_BITS..=MAX_COMPONENT_BITS {
             let pcs: Result<Vec<BinaryPcs>, _> = specs
                 .iter()
-                .map(|spec| BinaryPcs::new(spec.log_msg_len, target))
+                .map(|spec| BinaryPcs::with_log_inv_rate(spec.log_msg_len, target, log_inv_rate))
                 .collect();
             let pcs = match pcs {
                 Ok(pcs) => pcs,
@@ -367,7 +378,12 @@ impl Prepared {
         // Bind every relation group's claims (and draw their batching
         // weights) before any opening; then each opening runs on its own fork.
         let groups: Vec<(Oracle, Vec<&ProverRelation>)> = (0..oracles.len())
-            .map(|index| (index, relations.iter().filter(|r| r.oracle == index).collect()))
+            .map(|index| {
+                (
+                    index,
+                    relations.iter().filter(|r| r.oracle == index).collect(),
+                )
+            })
             .filter(|(_, group): &(Oracle, Vec<&ProverRelation>)| !group.is_empty())
             .collect();
         let group_weights: Vec<Vec<Gf>> = groups
@@ -455,10 +471,13 @@ impl Prepared {
 
         Self::absorb_evaluation(&mut t, value);
         let groups: Vec<(Oracle, Vec<&VerifierRelation>)> = (0..oracles.len())
-            .map(|index| (index, relations.iter().filter(|r| r.oracle == index).collect()))
-            .filter(|(_, group): &(Oracle, Vec<&VerifierRelation>)| {
-                !group.is_empty()
+            .map(|index| {
+                (
+                    index,
+                    relations.iter().filter(|r| r.oracle == index).collect(),
+                )
             })
+            .filter(|(_, group): &(Oracle, Vec<&VerifierRelation>)| !group.is_empty())
             .collect();
         let group_weights: Vec<Vec<Gf>> = groups
             .iter()
@@ -494,14 +513,15 @@ impl Prepared {
                     .map(|y| {
                         let mut pt: Vec<B128> = prefix.iter().map(|&g| gf_to_b128(g)).collect();
                         for j in 0..log_y {
-                            pt.push(if y >> j & 1 == 1 { B128::ONE } else { B128::ZERO });
+                            pt.push(if y >> j & 1 == 1 {
+                                B128::ONE
+                            } else {
+                                B128::ZERO
+                            });
                         }
-                        group
-                            .iter()
-                            .zip(weights)
-                            .fold(Gf::zero(), |acc, (r, &w)| {
-                                acc + w * b128_to_gf((r.transparent)(&pt))
-                            })
+                        group.iter().zip(weights).fold(Gf::zero(), |acc, (r, &w)| {
+                            acc + w * b128_to_gf((r.transparent)(&pt))
+                        })
                     })
                     .collect()
             };
@@ -634,10 +654,45 @@ mod tests {
     }
 
     #[test]
+    fn selectable_rates_bind_both_oracles_and_reject_cross_rate_proofs() {
+        let (circuit, wires) = mul_circuit(11);
+        let witness = mul_witness(&circuit, &wires, false).unwrap();
+        let prepared: Vec<_> = (1..=3)
+            .map(|rate| Prepared::with_log_inv_rate(circuit.constraint_system(), rate).unwrap())
+            .collect();
+        for (i, relation) in prepared.iter().enumerate() {
+            assert!(relation.security().algebraic_bits >= 100.0);
+            for pcs in &relation.pcs {
+                assert_eq!(pcs.params().log_inv_rate, i + 1);
+                assert_eq!(pcs.config().levels[0].log_inv_rate, i + 1);
+            }
+            let proof = relation.prove(&witness).unwrap();
+            let bytes = proof.to_bytes();
+            relation
+                .verify(witness.inout(), &relation.proof_from_bytes(&bytes).unwrap())
+                .unwrap();
+            for (j, other) in prepared.iter().enumerate() {
+                if i != j {
+                    assert!(other.verify(witness.inout(), &proof).is_err());
+                }
+            }
+        }
+        for invalid_rate in [0, 4] {
+            assert!(
+                Prepared::with_log_inv_rate(circuit.constraint_system(), invalid_rate).is_err()
+            );
+        }
+    }
+
+    #[test]
     fn multiplication_circuit_round_trips_through_the_f2z_opener() {
         let (circuit, wires) = mul_circuit(11);
         let prepared = Prepared::new(circuit.constraint_system()).unwrap();
-        assert_eq!(prepared.oracle_specs().len(), 2, "witness + logup* pushforward");
+        assert_eq!(
+            prepared.oracle_specs().len(),
+            2,
+            "witness + logup* pushforward"
+        );
         assert!(prepared.security().algebraic_bits >= 100.0);
         assert!(mul_witness(&circuit, &wires, true).is_none());
         let witness = mul_witness(&circuit, &wires, false).unwrap();
@@ -730,8 +785,14 @@ mod tests {
                 .basis
                 .iter()
                 .zip(pushforward)
-                .fold(Gf::zero(), |acc, (&b, &f)| acc + f128_to_gf(b) * f128_to_gf(f));
-            assert_eq!(inner, b128_to_gf(relation.claim), "prover-side relation {which}");
+                .fold(Gf::zero(), |acc, (&b, &f)| {
+                    acc + f128_to_gf(b) * f128_to_gf(f)
+                });
+            assert_eq!(
+                inner,
+                b128_to_gf(relation.claim),
+                "prover-side relation {which}"
+            );
         }
         let claims: Vec<B128> = relations.iter().map(|r| r.claim).collect();
 
@@ -759,8 +820,7 @@ mod tests {
         let pt: Vec<Gf> = (0..16).map(|_| scratch.get_field_challenge(&())).collect();
         let pt_b128: Vec<B128> = pt.iter().map(|&g| gf_to_b128(g)).collect();
         let reversed: Vec<B128> = pt_b128.iter().rev().copied().collect();
-        for (which, (relation, vrelation)) in
-            relations.iter().zip(&vchannel.relations).enumerate()
+        for (which, (relation, vrelation)) in relations.iter().zip(&vchannel.relations).enumerate()
         {
             assert_eq!(vrelation.oracle, 1);
             assert_eq!(vrelation.claim, relation.claim);
@@ -875,7 +935,10 @@ mod tests {
                 &voracles[1].root,
                 &mut crate::ligerito_flock::ZincChallenger(&mut tv),
             );
-            assert!(dense_ok, "flock's dense basis verifier rejects the pushforward opening");
+            assert!(
+                dense_ok,
+                "flock's dense basis verifier rejects the pushforward opening"
+            );
         }
         let (tv, voracles, vrelations) = replay();
         let mut tv = Prepared::fork(&tv, 2);
@@ -884,7 +947,11 @@ mod tests {
                 .map(|y| {
                     let mut pt: Vec<B128> = prefix.iter().map(|&g| gf_to_b128(g)).collect();
                     for j in 0..log_y {
-                        pt.push(if y >> j & 1 == 1 { B128::ONE } else { B128::ZERO });
+                        pt.push(if y >> j & 1 == 1 {
+                            B128::ONE
+                        } else {
+                            B128::ZERO
+                        });
                     }
                     vrelations
                         .iter()
@@ -902,7 +969,11 @@ mod tests {
         for (y, &value) in via_closure.iter().enumerate() {
             let mut point = prefix.clone();
             for j in 0..5 {
-                point.push(if y >> j & 1 == 1 { Gf::one() } else { Gf::zero() });
+                point.push(if y >> j & 1 == 1 {
+                    Gf::one()
+                } else {
+                    Gf::zero()
+                });
             }
             let dense = combined
                 .iter()

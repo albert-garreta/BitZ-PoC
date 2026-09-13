@@ -70,8 +70,15 @@ class CampaignTests(unittest.TestCase):
         for row in rows:
             row.update(case, binius_revision="c"*40, spartan_revision=None,
                        circuit_profile="sha256-chain-p256/standard/v1",
-                       security={"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":100})
+                       security={"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":100, "log_inv_rate":1})
         self.assertTrue(campaign.validate_rows(rows, case, 1))
+        self.assertFalse(campaign.validate_rows(rows, case, 1, binius_log_inv_rate=2))
+        for rate in (1, 2, 3):
+            for row in rows:
+                row["security"]["log_inv_rate"] = rate
+            self.assertTrue(campaign.validate_rows(rows, case, 1, binius_log_inv_rate=rate))
+        for row in rows:
+            row["security"]["log_inv_rate"] = 1
         for key, value in [("binius_revision", None), ("zk", True), ("circuit_profile", "secp256k1"),
                            ("security", {"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":96})]:
             bad = copy.deepcopy(rows)
@@ -82,6 +89,8 @@ class CampaignTests(unittest.TestCase):
         old = dict(binary_sha256="native", runner_sha256="runner", fixtures={"profile":campaign.FIXTURE_SCHEMA, "files":{"fixture":"hash"}},
                    binius64={"binary_sha256":"binius", "binius_revision":"c"*40})
         self.assertTrue(campaign.compatible_manifest(old, copy.deepcopy(old)))
+        self.assertFalse(campaign.compatible_manifest(dict(old, binius_log_inv_rate=1),
+                                                      dict(old, binius_log_inv_rate=2)))
         for key, value in [("binary_sha256", "changed"), ("runner_sha256", "changed"), ("fixtures", {}), ("binius64", None)]:
             self.assertFalse(campaign.compatible_manifest(old, dict(old, **{key:value})))
 

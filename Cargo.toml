@@ -284,6 +284,10 @@ name = "binius_probe"
 required-features = ["span-metrics", "hybrid"]
 
 [[example]]
+name = "binius_config_audit"
+required-features = ["binius64-bench"]
+
+[[example]]
 name = "hybrid_probe"
 required-features = ["span-metrics", "hybrid"]
 

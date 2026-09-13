@@ -2,9 +2,9 @@
 
 A comparison scheme that answers "what if Binius64 used F2Z's binary-field
 PCS?": Binius64's own circuits and PIOP, unchanged, with every oracle
-committed and opened by the opener F2Z itself uses — rate 1/2, the Johnson
+committed and opened by the opener F2Z itself uses — default rate 1/2, the Johnson
 (list-decoding) proximity regime, fold and query grinding, and Round 0 (the
-out-of-domain sample). It sits in every benchmark that measures Binius64.
+out-of-domain sample). It is available in the supported benchmarks listed below. The composed SHA+P-256 ECDSA circuit is currently unsupported because it contains BMUL constraints.
 
 | bench | scheme id | what it measures |
 | --- | --- | --- |
@@ -29,7 +29,7 @@ Code: `src/binary_pcs.rs` (the opener as a stand-alone binary PCS) and
 3. **Oracles.** Every `send_oracle` the PIOP makes — the packed witness, and
    the IntMul reduction's logup* pushforward (2^16 words) when the circuit
    multiplies — is committed by `BinaryPcs`: an interleaved Reed–Solomon
-   codeword at rate 1/2, 32 lanes (512-byte leaves), BLAKE3 Merkle tree. The
+   codeword at the selected initial rate (default 1/2), 32 lanes (512-byte leaves), BLAKE3 Merkle tree. The
    root is bound into the transcript and **Round 0 is taken immediately**:
    the prover grinds, the verifier draws `ζ`, the prover sends
    `y = MLE[oracle](ζ, ζ², ζ⁴, …)`. This pins the committed word to one
@@ -85,11 +85,12 @@ the style of `hybrid::security::account`:
 
 The opener's round-by-round target is the **smallest** in 100..=112 whose
 union clears 100 bits (the hybrid hard-codes 106; here 104 at 2^10 SHA
-compressions, for example), and the achieved bits are reported. This is the
-yardstick of the `f2z` rows; Binius64's own "100 bits" is its FRI query-phase
+compressions, for example), and the achieved bits are reported. This modeled
+composition bound includes grinding. BitZ rows separately report economic
+per-challenge bounds and a statistical bound without grinding. Binius64's own
+"100 bits" is its FRI query-phase
 target only (`calculate_n_test_queries`), which counts neither its folding
-phase nor its PIOP. The rate is fixed at 1/2 for this scheme (`binary_pcs::LOG_INV_RATE`, the rate F2Z itself commits at); the Binius64
-rate knobs do not apply.
+phase nor its PIOP. The default rate is 1/2 (`binary_pcs::LOG_INV_RATE`). `BinaryPcs::with_log_inv_rate` and `Prepared::with_log_inv_rate` support initial rates 1/2, 1/4, and 1/8. The native multiplication adapter selects them using `F2Z_BINIUS_LIGERITO_LOG_INV_RATE=1|2|3`; the separate `F2Z_BINIUS_LOG_INV_RATE` knob applies only to BaseFold. The complete selected opener configurations are bound into the statement transcript.
 
 As everywhere in this repository the bound is algebraic/IOP-level under
 BLAKE3 Fiat–Shamir and 256-bit Merkle hashing; it is not an unconditional
@@ -98,7 +99,7 @@ Fiat–Shamir theorem.
 ## Running
 
 ```sh
-# Native multiplication tables (adds the binius64-ligerito rows; rate 1/2 fixed).
+# Native multiplication tables (default Ligerito rate 1/2).
 F2Z_BENCH_SHAPES="15 16" F2Z_BENCH_REPS=5 F2Z_MUL_COMPARE_WORKLOADS="u32" \
 F2Z_MUL_COMPARE_BACKENDS="f2z binius64 binius64-ligerito" \
 RAYON_NUM_THREADS=8 bash scripts/run_native_mul_compare.sh
@@ -125,7 +126,7 @@ opener's bit-MLE and arbitrary-basis openings, tamper rejection).
 ## First measurements (2026-09-10, Apple M5 24 GB, 8 threads, smoke runs)
 
 **Historical: every number in this section was taken with the opener at rate
-1/8 (before `LOG_INV_RATE` moved to 1 on 2026-09-10); the rate-1/2 rows are
+1/8 (before `LOG_INV_RATE` moved to 1 on 2026-09-11); the rate-1/2 rows are
 the ones in the regenerated paper tables.**
 
 Single-sample smoke runs to validate the wiring — not the 11/21-sample

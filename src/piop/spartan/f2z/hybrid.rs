@@ -13,7 +13,7 @@ use super::super::{
     absorb_spartan_message,
     protocol::{
         Modular, SpartanPrefixProof, SpartanProof, bitify, check_boundary, f2z_generator,
-        prove_prefix, sample_mod_q, validate_bit_rows, verify_prefix,
+        prove_piop, sample_mod_q, validate_bit_rows, verify_piop,
     },
     univariate_skip::UnivariateSkipSpartanPiopProof,
 };
@@ -104,7 +104,7 @@ pub(crate) fn prove(
     let p = layout.f2z_params();
     validate_bit_rows(&p, rows)?;
     absorb_spartan_message(transcript, layout.domains().statement_tag, statement);
-    let proved = prove_prefix(transcript, prepared, witness, statement, ProveOptions::default())?;
+    let proved = prove_piop(transcript, prepared, witness, statement, ProveOptions::default())?;
     drop(piop_scope);
 
     let _opening_scope = tracing::info_span!("hybrid:mul_opening").entered();
@@ -172,7 +172,7 @@ pub(crate) fn verify(
     }
 
     absorb_spartan_message(transcript, layout.domains().statement_tag, statement);
-    let verified = verify_prefix(transcript, prepared, statement, &proof.messages())?;
+    let verified = verify_piop(transcript, prepared, statement, &proof.messages())?;
     let arith = &verified.prime.arith;
 
     let chunks = bitify::prepare_chunks(&verified.opening, &verified.table, verified.prime.q_bits, arith)?;

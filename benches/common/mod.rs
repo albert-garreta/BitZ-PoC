@@ -179,6 +179,8 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_PAR_CHUNK",
     // Controlled BabyBear terminal-claim PCS comparison trace.
     "F2Z_BINIUS_LOG_INV_RATE",
+    "F2Z_BINIUS_LIGERITO_LOG_INV_RATE",
+    "F2Z_PLONKY3_LOG_INV_RATE",
     // u64 native-mul comparison: lower the F2Z row side by k (see
     // benches/mul_e2e_compare/f2z.rs::u64_split_shift).
     "F2Z_U64_SPLIT_SHIFT",

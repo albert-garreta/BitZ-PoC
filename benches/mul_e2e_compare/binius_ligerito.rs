@@ -1,6 +1,6 @@
 //! `binius64-ligerito`: Binius64's native multiplication circuit and PIOP
 //! (the same wires as the `binius64` backend), with every oracle committed
-//! and opened by the F2Z opener — rate 1/8, Johnson-regime Ligerito with fold
+//! and opened by the F2Z opener — selectable rate, Johnson-regime Ligerito with fold
 //! and query grinding, Round 0 — and the whole protocol gated at 100 bits by
 //! a union bound, the yardstick of the `f2z` rows.
 use super::trace_capture::{BiniusLigeritoPhases, TrialScopes};
@@ -21,7 +21,14 @@ pub(super) struct Context {
 impl Context {
     pub(super) fn setup(corpus: Arc<Corpus>) -> Self {
         let (circuit, wires) = binius::compile(&corpus);
-        let prepared = Prepared::new(circuit.constraint_system()).expect("binius64-ligerito setup");
+        let rate = std::env::var("F2Z_BINIUS_LIGERITO_LOG_INV_RATE")
+            .map(|s| {
+                s.parse()
+                    .expect("F2Z_BINIUS_LIGERITO_LOG_INV_RATE must be 1, 2, or 3")
+            })
+            .unwrap_or(f2z::binary_pcs::LOG_INV_RATE);
+        let prepared = Prepared::with_log_inv_rate(circuit.constraint_system(), rate)
+            .expect("binius64-ligerito setup");
         Self {
             corpus,
             circuit,
@@ -46,10 +53,14 @@ impl Context {
         json!({
             "piop": piop,
             "pcs": "F2Z opener: ring switching + Johnson-regime Ligerito with fold/query grinding and Round 0",
-            "log_inv_rate": f2z::binary_pcs::LOG_INV_RATE,
+            "log_inv_rate": witness.params().log_inv_rate,
             "regime": "johnson-ood",
             "target_bits": security.target_bits,
             "whole_protocol_bits": security.algebraic_bits,
+            "hash": "BLAKE3", "transcript": "BLAKE3",
+            "security_terms": security.terms.iter().map(|term|
+                json!({"name":term.name, "error_bound":term.error_bound})
+            ).collect::<Vec<_>>(),
             "binding_term": security.binding_term().map(|t| format!("{}:{:.2}", t.name, -t.error_bound.log2())),
             "ligerito_component_bits": self.prepared.component_bits(),
             "level0_queries": witness.level0_queries(),
@@ -57,6 +68,10 @@ impl Context {
             "level0_fold_grinding_bits": witness.level0_fold_grinding_bits(),
             "ood_grinding_bits": witness.ood_grinding_bits(),
             "oracle_logs": self.prepared.oracle_specs().iter().map(|s| s.log_msg_len).collect::<Vec<_>>(),
+            "oracles": (0..self.prepared.oracle_specs().len()).map(|i| {
+                let pcs = self.prepared.opener(i);
+                json!({"configuration":pcs.config(), "ood_grinding_bits":pcs.ood_grinding_bits()})
+            }).collect::<Vec<_>>(),
             "word_constraints": {"and": cs.n_and_constraints(), "imul": cs.n_imul_constraints(),
                 "zero": cs.n_zero_constraints(), "bmul": cs.n_bmul_constraints()},
         })

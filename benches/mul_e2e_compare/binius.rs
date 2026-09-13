@@ -71,6 +71,10 @@ impl Context {
             "security_scope":"fri-query-phase", "soundness_regime":"unique-decoding",
             "log_inv_rate":self.verifier.fri_params().rs_code().log_inv_rate(),
             "fri_queries":self.verifier.fri_params().n_test_queries(),
+            "fri_fold_arities":self.verifier.fri_params().fold_arities(),
+            "fri_log_message_len":self.verifier.fri_params().log_msg_len(),
+            "fri_final_challenges":self.verifier.fri_params().n_final_challenges(),
+            "hash":"SHA-256", "transcript":"StdChallenger", "fri_grinding_bits":0,
             "word_constraints":{"and":cs.n_and_constraints(),"imul":cs.n_imul_constraints(),
                 "zero":cs.n_zero_constraints(),"bmul":cs.n_bmul_constraints()}})
     }

@@ -43,11 +43,25 @@ type Pcs = TwoAdicFriPcs<Val, Radix2DitParallel<Val>, ValMmcs, ChallengeMmcs>;
 type Config = StarkConfig<Pcs, Challenge, Challenger>;
 
 fn configuration(trace_len: usize) -> (Config, StarkSecurityParams) {
+    let rate = std::env::var("F2Z_PLONKY3_LOG_INV_RATE")
+        .map(|s| {
+            s.parse()
+                .expect("F2Z_PLONKY3_LOG_INV_RATE must be 1, 2, or 3")
+        })
+        .unwrap_or(LOG_BLOWUP);
+    configuration_at_rate(trace_len, rate)
+}
+
+fn configuration_at_rate(trace_len: usize, log_blowup: usize) -> (Config, StarkSecurityParams) {
+    assert!(
+        (1..=3).contains(&log_blowup),
+        "log inverse rate must be 1, 2, or 3"
+    );
     assert!(trace_len.is_power_of_two());
     let perm = default_goldilocks_poseidon2_8();
     let mmcs = ValMmcs::new(Hash::new(perm.clone()), Compress::new(perm.clone()), 0);
-    let fri = FriParameters {
-        log_blowup: LOG_BLOWUP,
+    let mut fri = FriParameters {
+        log_blowup,
         log_final_poly_len: 0,
         max_log_arity: 1,
         num_queries: NUM_QUERIES,
@@ -68,6 +82,16 @@ fn configuration(trace_len: usize) -> (Config, StarkSecurityParams) {
     );
     let quotient_chunks = 1 << get_log_num_quotient_chunks::<Val, _>(&MulAir, layout, trace_len, 0);
     security.num_batched_functions = TRACE_WIDTH + EXTENSION_DEGREE * quotient_chunks;
+    // Preserve the existing 100-query baseline. Denser codes may require
+    // more queries to meet the same native AIR/FRI security target.
+    while ProvenSecurity::compute(&security, trace_len).security_bits() < TARGET_BITS {
+        assert!(
+            fri.num_queries < 1024,
+            "no eligible Plonky3-FRI query count"
+        );
+        fri.num_queries += 1;
+        security.fri_num_queries = fri.num_queries;
+    }
     require_security(ProvenSecurity::compute(&security, trace_len));
     let pcs = Pcs::new(Radix2DitParallel::default(), mmcs, fri);
     (Config::new(pcs, Challenger::new(perm)), security)
@@ -106,7 +130,7 @@ impl Context {
             "target_bits":TARGET_BITS, "security_scope":"proven round-by-round",
             "proven_bits":security.security_bits(), "unique_decoding_bits":security.unique_decoding_bits,
             "list_decoding_bits":security.list_decoding_bits, "hash":"Poseidon2Goldilocks-width8",
-            "log_inv_rate":LOG_BLOWUP, "num_queries":NUM_QUERIES, "max_log_arity":1,
+            "log_inv_rate":self.security.fri_log_blowup, "num_queries":self.security.fri_num_queries, "max_log_arity":1,
             "log_final_poly_len":0, "commit_pow_bits":0, "query_pow_bits":0,
             "trace_width":TRACE_WIDTH, "num_constraints":self.security.num_constraints,
             "max_constraint_degree":self.security.air_max_constraint_degree,
@@ -226,27 +250,31 @@ mod tests {
     }
     #[test]
     fn actual_air_and_every_supported_shape_reach_security_target() {
-        for exponent in 4..=29 {
-            let (_, params) = configuration(1 << exponent);
-            assert_eq!(params.num_constraints, 139);
-            assert_eq!(params.air_max_constraint_degree, 2);
-            assert_eq!(params.max_combo, 1);
-            assert_eq!(params.num_batched_functions, 142);
-            require_security(ProvenSecurity::compute(&params, 1 << exponent));
+        for rate in 1..=3 {
+            for exponent in 4..=29 {
+                let (_, params) = configuration_at_rate(1 << exponent, rate);
+                assert_eq!(params.num_constraints, 139);
+                assert_eq!(params.air_max_constraint_degree, 2);
+                assert_eq!(params.max_combo, 1);
+                assert_eq!(params.num_batched_functions, 142);
+                require_security(ProvenSecurity::compute(&params, 1 << exponent));
+            }
         }
     }
     #[test]
     fn fri_proof_roundtrip_and_opening_tamper_rejection() {
-        let corpus = boundary_corpus();
-        let (config, security) = configuration(corpus.len());
-        let mut proof = prove(&config, &MulAir, generate(&corpus), &[]);
-        verify(&config, &MulAir, &proof, &[]).unwrap();
-        require_security(proof.proven_security(&security));
-        let bytes = postcard::to_allocvec(&proof).unwrap();
-        assert!(!bytes.is_empty());
-        let decoded: Proof<Config> = postcard::from_bytes(&bytes).unwrap();
-        verify(&config, &MulAir, &decoded, &[]).unwrap();
-        proof.opened_values.trace_local[4] += Challenge::ONE;
-        assert!(verify(&config, &MulAir, &proof, &[]).is_err());
+        for rate in 1..=3 {
+            let corpus = boundary_corpus();
+            let (config, security) = configuration_at_rate(corpus.len(), rate);
+            let mut proof = prove(&config, &MulAir, generate(&corpus), &[]);
+            verify(&config, &MulAir, &proof, &[]).unwrap();
+            require_security(proof.proven_security(&security));
+            let bytes = postcard::to_allocvec(&proof).unwrap();
+            assert!(!bytes.is_empty());
+            let decoded: Proof<Config> = postcard::from_bytes(&bytes).unwrap();
+            verify(&config, &MulAir, &decoded, &[]).unwrap();
+            proof.opened_values.trace_local[4] += Challenge::ONE;
+            assert!(verify(&config, &MulAir, &proof, &[]).is_err());
+        }
     }
 }

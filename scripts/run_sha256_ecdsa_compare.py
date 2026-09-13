@@ -56,7 +56,7 @@ def cases(spartan_splits, methods, targets, threads, seeds):
                            security_target=target, threads=workers, seed=seed)
 
 
-def validate_rows(rows, case, reps):
+def validate_rows(rows, case, reps, binius_log_inv_rate=1):
     """Reject incomplete, mislabelled, unverified or fixture-changing workers."""
     if len(rows) != reps + 1:
         return False
@@ -93,6 +93,7 @@ def validate_rows(rows, case, reps):
         if not isinstance(revision, str) or len(revision) != 40 or any(c not in "0123456789abcdef" for c in revision):
             return False
         if binius and (row["security"].get("fri_query_target_bits") != case["security_target"]
+                       or row["security"].get("log_inv_rate") != binius_log_inv_rate
                        or row["security"].get("pcs") != "BaseFold"
                        or row.get("circuit_profile") != "sha256-chain-p256/standard/v1"):
             return False
@@ -227,6 +228,8 @@ def run_case(binary, case, args, directory):
                "--threads", str(case["threads"]), "--reps", str(args.reps), "--seed", str(case["seed"])]
     if case["security_target"] is not None:
         command.extend(["--target", str(case["security_target"])])
+    if case["method"] == "binius64":
+        command.extend(["--log-inv-rate", str(args.binius_log_inv_rate)])
     fixture = directory / "fixtures" / f"i{case['log_compressions']}-seed{case['seed']}.json"
     expected_fixture = json.loads(fixture.read_text())["id"]
     command.extend(["--fixture", str(fixture)])
@@ -267,7 +270,7 @@ def run_case(binary, case, args, directory):
             continue
         if isinstance(row, dict) and row.get("schema") == SCHEMA:
             rows.append(row)
-    if (returncode == 0 and validate_rows(rows, case, args.reps)
+    if (returncode == 0 and validate_rows(rows, case, args.reps, args.binius_log_inv_rate)
             and all(row["fixture_id"] == expected_fixture for row in rows)
             and (case["method"] != "binius64" or all(row["binius_revision"] == args.binius64_info["binius_revision"] for row in rows))):
         status = "complete"
@@ -344,7 +347,7 @@ def prepare_binius(args, directory):
 
 def compatible_manifest(previous, current):
     return all(previous.get(key) == current.get(key) for key in
-               ["binary_sha256", "runner_sha256", "fixtures", "binius64", "ligerito_profile"])
+               ["binary_sha256", "runner_sha256", "fixtures", "binius64", "ligerito_profile", "binius_log_inv_rate"])
 
 
 def main():
@@ -352,6 +355,8 @@ def main():
     parser.add_argument("--binary", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--binius64-binary", type=Path, help="Prebuilt worker with its .build.json sidecar")
+    parser.add_argument("--binius-log-inv-rate", type=int, choices=[1, 2, 3], default=1,
+                        help="Binius64 initial code rate: 1=1/2, 2=1/4, 3=1/8")
     shapes = parser.add_mutually_exclusive_group()
     shapes.add_argument("--spartan-splits", nargs="+",
                         help="Spartan r:c pairs: 2^r compressions per instance, 2^c instances; F2Z uses only i=r+c")
@@ -395,6 +400,7 @@ def main():
     manifest["fixtures"] = prepare_fixtures(args, directory, binary, spartan_splits)
     if args.with_binius64:
         manifest["binius64"] = prepare_binius(args, directory)
+        manifest["binius_log_inv_rate"] = args.binius_log_inv_rate
     manifest["campaign"] = dict(methods=args.methods, targets=args.targets, threads=args.threads,
                                 seeds=args.seeds, reps=args.reps, timeout=args.timeout, memory_gib=args.memory_gib)
     manifest_path = directory / "manifest.json"

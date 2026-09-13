@@ -37,6 +37,8 @@ struct Args {
     export_fixture: Option<std::path::PathBuf>,
     #[arg(long)]
     binius64_worker: Option<std::path::PathBuf>,
+    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=3))]
+    binius_log_inv_rate: u8,
 }
 
 impl Args {
@@ -77,6 +79,8 @@ fn dispatch_binius(args: &Args) -> Result<()> {
     command.args([
         "--method",
         "binius64",
+        "--log-inv-rate",
+        &args.binius_log_inv_rate.to_string(),
         "--r",
         &args.r.to_string(),
         "--c",
@@ -512,6 +516,7 @@ mod reporting_tests {
             fixture: None,
             export_fixture: None,
             binius64_worker: None,
+            binius_log_inv_rate: 1,
         };
         let fixture = Fixture::generate(3, 0).unwrap();
         let row = || Measurements {
@@ -555,7 +560,6 @@ mod reporting_tests {
         assert!(sample.get("security_target").unwrap().is_null());
     }
 }
-
 
 #[cfg(test)]
 mod cli_tests {

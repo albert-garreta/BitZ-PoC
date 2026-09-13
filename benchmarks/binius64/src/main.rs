@@ -50,6 +50,7 @@ struct Args {
     exponent: u8,
     threads: usize,
     target: usize,
+    log_inv_rate: usize,
     reps: usize,
     seed: u64,
     fixture: Option<PathBuf>,
@@ -64,6 +65,7 @@ impl Args {
             exponent: 0,
             threads: 1,
             target: 100,
+            log_inv_rate: 1,
             reps: 3,
             seed: 0,
             fixture: None,
@@ -82,6 +84,7 @@ impl Args {
                 "--r" => r = Some(value.parse()?),
                 "--c" => c = Some(value.parse()?),
                 "--target" => out.target = value.parse()?,
+                "--log-inv-rate" => out.log_inv_rate = value.parse()?,
                 "--threads" => out.threads = value.parse()?,
                 "--reps" => out.reps = value.parse()?,
                 "--seed" => out.seed = value.parse()?,
@@ -96,6 +99,9 @@ impl Args {
         binius_circuits::sha256_ecdsa::message_len(out.exponent)?;
         if ![100, 128].contains(&out.target) || out.threads == 0 || out.reps == 0 {
             return Err("require target 100/128 and positive threads/reps".into());
+        }
+        if !(1..=3).contains(&out.log_inv_rate) {
+            return Err("--log-inv-rate must be 1, 2, or 3".into());
         }
         Ok(out)
     }
@@ -129,7 +135,7 @@ fn verify(
 fn main() -> Result<()> {
     if matches!(std::env::args().nth(1).as_deref(), Some("--help" | "-h")) {
         println!(
-            "binius64-sha256-ecdsa --r R --c C [--target 100|128] [--threads N] [--reps N] [--seed N] [--fixture PATH] [--self-test]\n\
+            "binius64-sha256-ecdsa --r R --c C [--target 100|128] [--log-inv-rate 1|2|3] [--threads N] [--reps N] [--seed N] [--fixture PATH] [--self-test]\n\
             Standard P-256, non-ZK; 3 <= R+C <= 16. --build-info prints pinned source/build metadata."
         );
         return Ok(());
@@ -157,7 +163,7 @@ fn main() -> Result<()> {
     let circuit = builder.build();
     let verifier = Verifier::<Sha256HashSuite>::setup_with_security_bits(
         circuit.constraint_system().clone(),
-        1,
+        args.log_inv_rate,
         args.target,
     )?;
     let prover = Prover::<OptimalPackedB128, Sha256HashSuite>::setup(verifier.clone())?;
@@ -265,7 +271,7 @@ fn main() -> Result<()> {
                 "outer_ms":null, "inner_ms":null, "folding_ms":null,
                 "proof_object_bytes":proof_bytes, "proof_material_bytes":proof_bytes, "phases_ms":phases,
                 "security":{"model":"Binius IOP and BaseFold FRI; query target only", "pcs":"BaseFold", "fri_query_target_bits":args.target,
-                "fri_queries":verifier.fri_params().n_test_queries(), "log_inv_rate":1, "merkle_hash":"SHA-256", "transcript":"StdChallenger",
+                "fri_queries":verifier.fri_params().n_test_queries(), "log_inv_rate":verifier.fri_params().rs_code().log_inv_rate(), "merkle_hash":"SHA-256", "transcript":"StdChallenger",
                 "fri_fold_arities":verifier.fri_params().fold_arities(), "fri_log_message_len":verifier.fri_params().log_msg_len(),
                 "fri_final_challenges":verifier.fri_params().n_final_challenges(), "extension_field_bits":128,
                     "statistical_bits_lower_bound":null},
@@ -350,19 +356,76 @@ mod tests {
                     .is_err()
             );
         }
-        for target in [100, 128] {
-            let verifier =
-                Verifier::<Sha256HashSuite>::setup_with_security_bits(cs.clone(), 1, target)
-                    .unwrap();
-            assert_eq!(
-                verifier.fri_params().n_test_queries(),
-                binius_verifier::fri::calculate_n_test_queries(target, 1)
-            );
+        for rate in 1..=3 {
+            for target in [100, 128] {
+                let verifier =
+                    Verifier::<Sha256HashSuite>::setup_with_security_bits(cs.clone(), rate, target)
+                        .unwrap();
+                assert_eq!(
+                    verifier.fri_params().n_test_queries(),
+                    binius_verifier::fri::calculate_n_test_queries(target, rate)
+                );
+            }
         }
         let default = Verifier::<Sha256HashSuite>::setup(cs, 1).unwrap();
         assert_eq!(
             default.fri_params().n_test_queries(),
             binius_verifier::fri::calculate_n_test_queries(96, 1)
+        );
+    }
+
+    #[test]
+    fn changed_message_and_signature_fail_the_composed_circuit() {
+        let fixture = SignedFixture::generate(3, 0).unwrap();
+        let builder = CircuitBuilder::new();
+        let relation = Sha256Ecdsa::new(&builder, 3).unwrap();
+        let circuit = builder.build();
+        for field in ["message", "r", "s"] {
+            let mut changed = fixture.clone();
+            match field {
+                "message" => changed.message[0] ^= 1,
+                "r" => changed.r[31] ^= 1,
+                "s" => changed.s[31] ^= 1,
+                _ => unreachable!(),
+            }
+            let mut filler = circuit.new_witness_filler();
+            // Do not run fixture validation: the circuit must reject the
+            // changed instance even when all arithmetic hints are recomputed.
+            relation
+                .populate(
+                    &mut filler,
+                    &changed.message,
+                    &changed.qx,
+                    &changed.qy,
+                    &changed.r,
+                    &changed.s,
+                )
+                .unwrap();
+            if circuit.populate_wire_witness(&mut filler).is_ok() {
+                assert!(
+                    circuit
+                        .constraint_system()
+                        .verify(&filler.into_value_vec())
+                        .is_err(),
+                    "accepted changed {field}"
+                );
+            }
+        }
+        assert_eq!(binius_circuits::sha256_ecdsa::message_len(6).unwrap(), 4032);
+        let builder = CircuitBuilder::new();
+        let relation = Sha256Ecdsa::new(&builder, 6).unwrap();
+        let circuit = builder.build();
+        assert!(
+            relation
+                .populate(
+                    &mut circuit.new_witness_filler(),
+                    &vec![0; 4096],
+                    &fixture.qx,
+                    &fixture.qy,
+                    &fixture.r,
+                    &fixture.s,
+                )
+                .is_err()
         );
     }
 
@@ -398,6 +461,25 @@ mod tests {
             let bytes = transcript.finalize();
             drop(witness);
             verify(&verifier, &fixture, bytes.clone()).unwrap();
+            // Bypass fixture validation to exercise the native verifier's
+            // binding of every public word, including the exponent and key.
+            let expected = public_words(
+                fixture.log_compressions,
+                &fixture.qx,
+                &fixture.qy,
+                &fixture.r,
+                &fixture.s,
+            );
+            for index in 0..expected.len() {
+                let mut changed = expected.clone();
+                changed[index].0 ^= 1;
+                let mut transcript =
+                    VerifierTranscript::new(StdChallenger::default(), bytes.clone());
+                assert!(
+                    verifier.verify(&changed, &mut transcript).is_err(),
+                    "accepted changed public word {index}"
+                );
+            }
             let mut other = fixture.clone();
             other.s = (-p256::ecdsa::Signature::from_scalars(other.r, other.s)
                 .unwrap()

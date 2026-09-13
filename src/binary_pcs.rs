@@ -132,6 +132,18 @@ impl BinaryPcs {
     /// Solve and validate the opener for `2^packed_log` packed words at the
     /// round-by-round target `component_bits`.
     pub fn new(packed_log: usize, component_bits: usize) -> Result<Self, Error> {
+        Self::with_log_inv_rate(packed_log, component_bits, LOG_INV_RATE)
+    }
+
+    /// Solve the same Johnson opener at an explicit initial commitment rate.
+    pub fn with_log_inv_rate(
+        packed_log: usize,
+        component_bits: usize,
+        log_inv_rate: usize,
+    ) -> Result<Self, Error> {
+        if !(1..=3).contains(&log_inv_rate) {
+            return Err(Error::Config("log inverse rate must be 1, 2, or 3".into()));
+        }
         if !(MIN_PACKED_LOG..=MAX_PACKED_LOG).contains(&packed_log) {
             return Err(Error::Config(format!(
                 "packed log {packed_log} outside {MIN_PACKED_LOG}..={MAX_PACKED_LOG}"
@@ -139,19 +151,23 @@ impl BinaryPcs {
         }
         let m = packed_log + LOG_PACKING;
         let mut config =
-            custom_johnson_config_bits(m, LOG_INV_RATE, LOG_BATCH_SIZE, Some(component_bits));
+            custom_johnson_config_bits(m, log_inv_rate, LOG_BATCH_SIZE, Some(component_bits));
         config.hash = "blake3".into();
         config.validate().map_err(Error::Config)?;
-        if config.levels.first().map(|level| level.log_inv_rate) != Some(LOG_INV_RATE) {
-            return Err(Error::Config("level-0 rate must equal the commit rate".into()));
+        if config.levels.first().map(|level| level.log_inv_rate) != Some(log_inv_rate) {
+            return Err(Error::Config(
+                "level-0 rate must equal the commit rate".into(),
+            ));
         }
         let (pc, vc) = config.to_prover_verifier_configs().map_err(Error::Config)?;
-        if pc.initial_k != LOG_BATCH_SIZE || pc.log_inv_rates[0] != LOG_INV_RATE {
-            return Err(Error::Config("opener level 0 does not match the commitment".into()));
+        if pc.initial_k != LOG_BATCH_SIZE || pc.log_inv_rates[0] != log_inv_rate {
+            return Err(Error::Config(
+                "opener level 0 does not match the commitment".into(),
+            ));
         }
         let params = PcsParams {
             m,
-            log_inv_rate: LOG_INV_RATE,
+            log_inv_rate,
             log_batch_size: pc.initial_k,
             profile: LigeritoProfile::Secure,
             merkle_hash: merkle::HashKind::Blake3,
@@ -309,7 +325,11 @@ impl BinaryPcs {
         mut basis: Vec<F128>,
         target: Gf,
     ) -> LigeritoProof {
-        assert_eq!(basis.len(), packed.len(), "basis must cover the packed witness");
+        assert_eq!(
+            basis.len(),
+            packed.len(),
+            "basis must cover the packed witness"
+        );
         let eta: Gf = t.get_field_challenge(&());
         add_ood_basis(&mut basis, packed, &round0.0.point, eta, None);
         let target = target + eta * round0.0.y;
@@ -376,7 +396,11 @@ impl BinaryPcs {
         round0: &Round0Prover,
         point: &[Gf],
     ) -> BitMleOpening {
-        assert_eq!(point.len(), self.packed_log + LOG_PACKING, "bit-MLE point length");
+        assert_eq!(
+            point.len(),
+            self.packed_log + LOG_PACKING,
+            "bit-MLE point length"
+        );
         // The ring switch reads the packed words in place (no `Gf` copy).
         let (ring, basis, target) = ring_switch_prove(t, packed, &point[LOG_PACKING..]);
         let basis: Vec<F128> = basis.into_iter().map(gf_to_f128).collect();
@@ -460,7 +484,11 @@ pub fn read_round0(r: &mut Reader<'_>) -> Result<OodRound, CodecError> {
 }
 
 pub fn write_ring_switch(w: &mut Writer, ring: &RingSwitchProof) {
-    assert_eq!(ring.s_v.len(), 128, "ring switch sends 128 partial evaluations");
+    assert_eq!(
+        ring.s_v.len(),
+        128,
+        "ring switch sends 128 partial evaluations"
+    );
     for g in &ring.s_v {
         w.gf(g);
     }
@@ -627,10 +655,9 @@ mod tests {
         let mut t = Blake3Transcript::new();
         t.absorb_slice(&c.root);
         let r0 = pcs.prove_round0(&mut t, &packed);
-        let target = packed
-            .iter()
-            .zip(&basis)
-            .fold(Gf::zero(), |acc, (&f, &b)| acc + f128_to_gf(f) * f128_to_gf(b));
+        let target = packed.iter().zip(&basis).fold(Gf::zero(), |acc, (&f, &b)| {
+            acc + f128_to_gf(f) * f128_to_gf(b)
+        });
         crate::ligerito::absorb_ood_value(&mut t, target);
         let proof = pcs.open_basis(&mut t, &packed, &data, &r0, basis.clone(), target);
 
@@ -644,7 +671,11 @@ mod tests {
                 .map(|y| {
                     let mut point = prefix.to_vec();
                     for j in 0..log_y {
-                        point.push(if y >> j & 1 == 1 { Gf::one() } else { Gf::zero() });
+                        point.push(if y >> j & 1 == 1 {
+                            Gf::one()
+                        } else {
+                            Gf::zero()
+                        });
                     }
                     basis_gf
                         .iter()
@@ -690,7 +721,11 @@ mod tests {
                 .map(|y| {
                     let mut point = prefix.to_vec();
                     for j in 0..log_y {
-                        point.push(if y >> j & 1 == 1 { Gf::one() } else { Gf::zero() });
+                        point.push(if y >> j & 1 == 1 {
+                            Gf::one()
+                        } else {
+                            Gf::zero()
+                        });
                     }
                     point
                         .iter()

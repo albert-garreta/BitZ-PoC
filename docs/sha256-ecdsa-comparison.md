@@ -295,8 +295,11 @@ and the remaining reductions. Stage durations are disjoint wall-clock spans.
 The verifier reconstructs expected public words from `(i,Qx,Qy,r,s)` and consumes
 all proof bytes; it does not read the private witness.
 
-The worker uses SHA-256 Merkle hashing, BaseFold at rate 1/2, and explicit 100/128
-FRI query targets. It records the actual query count and identifies these as
+The worker uses SHA-256 Merkle hashing, BaseFold at default rate 1/2, and explicit 100/128
+FRI query targets. The runner's `--binius-log-inv-rate 1|2|3` selects rates
+1/2, 1/4, or 1/8; the standalone worker accepts `--log-inv-rate`.
+The chosen rate is recorded and must match when resuming a campaign.
+It records the actual query count and identifies these as
 query targets, not a claim about aggregate protocol security. The mathematical
 statement is shared; the security models remain separately identified.
 

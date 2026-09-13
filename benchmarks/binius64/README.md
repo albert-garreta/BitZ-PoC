@@ -49,7 +49,7 @@ Both valid s forms are accepted. Supported exponents are 3 through 16.
 
 Proofs are explicitly non-ZK. The public-input/witness distinction specifies the
 relation; it does not promise witness privacy. The worker uses SHA-256 Merkle
-hashing and BaseFold at rate 1/2, with an explicit 100/128 FRI query target.
+hashing and BaseFold at a selectable initial rate, defaulting to 1/2, with an explicit 100/128 FRI query target. Use `--binius-log-inv-rate 1|2|3` on the Python runner (or `--log-inv-rate` on the isolated worker) for rates 1/2, 1/4, and 1/8. The runner records this choice and rejects resuming a directory with a different rate.
 Rows record the actual query count and security model separately.
 
 Setup is reusable across messages, keys and signatures. Fixtures/signing are
