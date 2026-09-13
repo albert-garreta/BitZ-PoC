@@ -2961,35 +2961,35 @@ We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul
    KB & Threads & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
     \midrule
     0.96 & 1 & \ftwoz\ (this work), rate $1/8$ & \textbf{1.99} & \textbf{147} & \textbf{43.1} & \textbf{74.6} & 1.21 \\
-    ($2^{4}$) &  & Binius64~\cite{binius64}, rate $1/2$ & 9.33 & 917 & 130 & 362 & \textbf{0.838} \\
+     &  & Binius64~\cite{binius64}, rate $1/2$ & 9.33 & 917 & 130 & 362 & \textbf{0.838} \\
      &  & Binius64~\cite{binius64}, rate $1/8$ & 9.34 & 1043 & 130 & 266 & 0.885 \\
      & 10 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.37} & \textbf{52.7} & \textbf{15.9} & \textbf{74.6} & 1.22 \\
      &  & Binius64~\cite{binius64}, rate $1/2$ & 10.3 & 224 & 54.1 & 362 & \textbf{0.849} \\
      &  & Binius64~\cite{binius64}, rate $1/8$ & 10.1 & 242 & 51.1 & 266 & 0.892 \\
     \addlinespace
     1.98 & 1 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.02} & \textbf{159} & \textbf{43.0} & \textbf{76.0} & 1.20 \\
-    ($2^{5}$) &  & Binius64~\cite{binius64}, rate $1/2$ & 9.56 & 928 & 133 & 362 & \textbf{0.876} \\
+     &  & Binius64~\cite{binius64}, rate $1/2$ & 9.56 & 928 & 133 & 362 & \textbf{0.876} \\
      &  & Binius64~\cite{binius64}, rate $1/8$ & 9.42 & 1050 & 132 & 266 & 0.926 \\
      & 10 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.35} & \textbf{54.7} & \textbf{15.4} & \textbf{76.0} & 1.21 \\
      &  & Binius64~\cite{binius64}, rate $1/2$ & 10.8 & 214 & 51.7 & 362 & \textbf{0.884} \\
      &  & Binius64~\cite{binius64}, rate $1/8$ & 10.3 & 239 & 54.9 & 266 & 0.935 \\
     \addlinespace
     4.03 & 1 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.02} & \textbf{174} & \textbf{44.1} & \textbf{82.2} & 1.20 \\
-    ($2^{6}$) &  & Binius64~\cite{binius64}, rate $1/2$ & 9.57 & 937 & 139 & 362 & \textbf{0.878} \\
+     &  & Binius64~\cite{binius64}, rate $1/2$ & 9.57 & 937 & 139 & 362 & \textbf{0.878} \\
      &  & Binius64~\cite{binius64}, rate $1/8$ & 10.1 & 1054 & 137 & 266 & 0.924 \\
      & 10 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.25} & \textbf{58.2} & \textbf{16.2} & \textbf{82.2} & 1.21 \\
      &  & Binius64~\cite{binius64}, rate $1/2$ & 10.3 & 219 & 52.3 & 362 & \textbf{0.888} \\
      &  & Binius64~\cite{binius64}, rate $1/8$ & 10.5 & 243 & 52.0 & 266 & 0.932 \\
     \addlinespace
     8.13 & 1 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.21} & \textbf{206} & \textbf{46.3} & \textbf{92.4} & 1.21 \\
-    ($2^{7}$) &  & Binius64~\cite{binius64}, rate $1/2$ & 9.94 & 1019 & 150 & 394 & \textbf{0.941} \\
+     &  & Binius64~\cite{binius64}, rate $1/2$ & 9.94 & 1019 & 150 & 394 & \textbf{0.941} \\
      &  & Binius64~\cite{binius64}, rate $1/8$ & 10.0 & 1262 & 150 & 289 & 1.03 \\
      & 10 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.39} & \textbf{65.6} & \textbf{16.3} & \textbf{92.4} & 1.22 \\
      &  & Binius64~\cite{binius64}, rate $1/2$ & 10.8 & 240 & 56.6 & 394 & \textbf{0.947} \\
      &  & Binius64~\cite{binius64}, rate $1/8$ & 10.9 & 289 & 55.4 & 289 & 1.04 \\
     \bottomrule
   \end{tabular}
-   \caption{\albertimportant{Add rate $1/2$} Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a  P-256  ECDSA signature on the resulting digest. Below  message sizes  we record the corresponding number of SHA-256 compressions. Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air  M5, 24\,GB.}
+   \caption{\albertimportant{Add rate $1/2$. Zinc+} Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a  P-256  ECDSA signature on the resulting digest. Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air  M5, 24\,GB.}
   \label{tab:sha256-ecdsa-f2z-opt}
 \end{table}
 
@@ -3083,7 +3083,7 @@ Our experimental results show that \ftwoz-SNARK is more performant when hashing 
 
 
 
-We measure the cost of proving $N$ integer multiplications of the form $x\cdot  y = z$, for $x,y$ random $t$-bit integers, and $z$ a $2\cdot t$-bit integer, for $t\in \{32,64,128\}$. This is proved via our implemented end-to-end proof system, called \ftwoz-SNARK for R1CS over the integers, with \ftwoz\ as its PCS, as described in \cref{s:to_snark}. For 32-bit integer multiplication, we compare against the Binius suite, Limber, and Plonky3. For multiplication of larger bits we compare only against the Binius suite.
+We measure the cost of proving $N$ integer multiplications of the form $x\cdot  y = z$, for $x,y$ random $t$-bit integers, and $z$ a $2\cdot t$-bit integer, for $t\in \{32,64,128\}$. This is proved via our implemented end-to-end proof system, called \ftwoz-SNARK for R1CS over the integers, with \ftwoz\ as its PCS, as described in \cref{s:to_snark}. For 32-bit integer multiplication, we compare against the Binius suite, Limber, and Plonky3. For multiplication of larger bits we compare only against the Binius suite. \albertimportant{Explain how each arithmetization is obtained}
 
 
 
@@ -3092,8 +3092,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
 
 
 
-
-We compare the performance of \ftwoz-SNARK with Binius64 \cite{binius64}, Plonky3 \cite{plonky}, Zinc+ \cite{zincplus}, and Limber \cite{limber} on the same task. Both Binius64 and Plonky3 implement gadgets for proving integer multiplication constraints. We use those in our benchmarks \albertimportant{Confirm}.
 
 
 
