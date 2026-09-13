@@ -166,19 +166,16 @@ Note that multiplication modulo $2^n$, say $x \cdot y = z \mod 2^n$, can be arit
          \addlinespace
          $4$KB SHA + ECDSA & \ftwoz-SNARK & -- & -- & -- & -- \\
           & Binius64~\cite{binius64} & -- & -- & -- & -- \\
-          & Plonky3~\cite{plonky} & -- & -- & -- & -- \\
          \addlinespace
          \makecell[tl]{$500$KB SHA\\ $+\ 2^{**}$ mult.\ mod $2^{32}$} & \ftwoz-SNARK & -- & -- & -- & -- \\
           & Binius64~\cite{binius64} & -- & -- & -- & -- \\
           \addlinespace Int mult.\ 32 bit & \ftwoz-SNARK & -- & -- & -- & -- \\
           & Binius64~\cite{binius64} & -- & -- & -- & -- \\
           & Limber~\cite{limber} & -- & -- & -- & -- \\
-          & Plonky3~\cite{plonky} & -- & -- & -- & -- \\
          \addlinespace
          Int mult.\ 64 bit & \ftwoz-SNARK & -- & -- & -- & -- \\
           & Binius64~\cite{binius64} & -- & -- & -- & -- \\
           & Limber~\cite{limber} & -- & -- & -- & -- \\
-          & Plonky3~\cite{plonky} & -- & -- & -- & -- \\
        \bottomrule
        \end{tabular}
      \caption{ \albertimportant{Todo} Performance of \ftwoz \ on  different  computations that are costly to arithmetize and prove with standard proof systems. 
@@ -631,7 +628,8 @@ where $\picanon: \ZZ[X_1, \ldots, X_{k'}] \to R$ is a canonical ring homomorphis
 %of an element $r\in R$ is obtained as follows: write $r= p(\gamma_1,\ldots, \gamma_{k'})$ for some polynomial $p(X_1,\ldots, X_{k'})$ with coefficients in $\range{0}{\Char(R)-1}$. Then $\picanon^{-1}(r)= \pi^{-1}(p)(X_1,\ldots, X_{k'})$, where $\pi^{-1}(p)$ is obtained by lifting all coefficients of $p$ to the integers. 
 
 %
-The verifier checks that $\mu'$ has total degree and bit-size below  certain bounds $D_\ZZ, B_\ZZ$, respectively. These bounds depend on $\codedim, \Char(R)$ and $k'$, and they are the largest total degree and $\ell_\infty$-norm attainable by  the polynomial resulting of subtracting the two sides of \eqref{e:new_to_lifted_polring_claim}, among all bit vectors $\bitstext(\bff)$ (see \cref{s:to_soundness_rings}).  Then the verifier checks that $\picanon(\mu')=\mu$.
+The verifier checks that $\mu'$ has total degree at most $D_\ZZ$ and coefficients of absolute value at most $2^{B_\ZZ}$, where $D_\ZZ$ and $2^{B_\ZZ}$ are the largest total degree and the largest absolute value of a coefficient attainable by the left-hand side of \eqref{e:new_to_lifted_polring_claim}, among all bit vectors $\bitstext(\bff)$ (see \cref{s:to_soundness_rings}, and Round 1 of \cref{c:core_iop} for concrete expressions).  Then the verifier checks that $\picanon(\mu')=\mu$.
+
 
 
 Now the idea is that the claim \eqref{e:new_to_lifted_polring_claim} implies the claim \eqref{e:intro_eq_2_rings}, since $\picanon(\mu')=\mu$. Hence, the prover and the verifier  proceed to certify  \eqref{e:new_to_lifted_polring_claim}. The constraint \eqref{e:new_to_lifted_polring_claim} is a polynomial constraint (in fact, a linear constraint) over the ring $\ZZ[X_1,\ldots, X_{k'}]$. We now generalize the fingerprinting technique for polynomial rings from Zinc+ \cite{zincplus} (which in turn generalizes that of \cite{zaratan}), so as to project \eqref{e:new_to_lifted_polring_claim} to a random ``small'' prime field.  
@@ -981,7 +979,7 @@ $$
 h\defeq \langle \picanon^{-1}(\uu^{(1)}) \otimes \picanon^{-1}(\uu^{(2)}) , \bfg \rangle-\mu' \ \in \ \ZZ[X_1,\ldots, X_{k'}].
 $$
 %
-Since $\picanon$ is a ring homomorphism with $\picanon\circ\picanon^{-1}=\mathsf{id}$ and $\picanon(\mu')=\mu$, we have $\picanon(h)=\langle \uu, \psi(\bfg)\rangle-\mu\neq 0$, and so $h\neq 0$. Since $\bfg$ has bit entries, the inner product $\langle \picanon^{-1}(\uu^{(1)}) \otimes \picanon^{-1}(\uu^{(2)}) , \bfg \rangle$ is a polynomial with coefficients  of absolute value at most $\codedim\cdot \lVert \picanon^{-1}(\uu^{(1)})\rVert_\infty \cdot \lVert \picanon^{-1}(\uu^{(2)})\rVert_\infty$. The bit-size bound $B_\ZZ$ mentioned in Step 3 of \cref{s:to_general_rings} is precisely the logarithm of this quantity. Further, let $D_\ZZ$ be the maximum possible total degree that $\langle \picanon^{-1}(\uu^{(1)}) \otimes \picanon^{-1}(\uu^{(2)}) , \bfg \rangle$ can have, given that   $\picanon^{-1}(\uu^{(1)}) \otimes \picanon^{-1}(\uu^{(2)})$ is public and $\bfg$ only contains bits. The verifier checks that $\mu'$ has total degree at most $D_\ZZ$  as well, and coefficients of absolute value at most $2^{B_\ZZ}$.  Hence $h$ has total degree at most $D_\ZZ$ and coefficients of absolute value at most $2^{B_\ZZ+1}$. 
+Since $\picanon$ is a ring homomorphism with $\picanon\circ\picanon^{-1}=\mathsf{id}$ and $\picanon(\mu')=\mu$, we have $\picanon(h)=\langle \uu, \psi(\bfg)\rangle-\mu\neq 0$, and so $h\neq 0$. Since $\picanon^{-1}(\uu^{(1)}) \otimes \picanon^{-1}(\uu^{(2)})$ is public and $\bfg$ has bit entries, the total degree and the coefficient magnitudes of the polynomial $\langle \picanon^{-1}(\uu^{(1)}) \otimes \picanon^{-1}(\uu^{(2)}) , \bfg \rangle$ are bounded by quantities that the verifier can compute. We let $D_\ZZ$ and $2^{B_\ZZ}$ be these quantities, respectively (concrete expressions are given in Round 1 of \cref{c:core_iop}, cf.\ \eqref{e:ring_theta_params}). These are the bounds used by the verifier in Step 3 of \cref{s:to_general_rings}, which checks that $\mu'$ has total degree at most $D_\ZZ$ and coefficients of absolute value at most $2^{B_\ZZ}$. Hence $h$ has total degree at most $D_\ZZ$ and coefficients of absolute value at most $2^{B_\ZZ+1}$. 
 
 Now,  since $\pirand$ is a ring homomorphism,  the projected claim \eqref{e:new_to_projected_lifted_polring_claim} states  that $\pirand(h)=0$. If, for example, $\cM_q$ consists of the maps $h\mapsto \pi_q(h)(\bm{\alpha})$ for $\bm{\alpha}\in \FF_q^{k'}$ (as in our instantiation), then either $q$ divides every coefficient of $h$, which as in \cref{s:to_soundness_prime} happens with probability at most $(B_\ZZ+1)/(\lfloor \log q_{\min}\rfloor\cdot |\cP|)$, or $\pi_q(h)$ is a nonzero polynomial of total degree at most $D_\ZZ$, which vanishes at a random $\bm{\alpha}$. The latter occurs with probability at most $D_\ZZ/q_{\min}$ by the Schwartz--Zippel lemma. Overall we have
 %
@@ -2877,7 +2875,10 @@ for some $\rr^{(2)} \in \KK^{\log \codedim}$  and some $\mu\in \KK$. In other wo
 We implement the \ftwoz\ PCS (\cref{c:core_iop,c:LinModFieldBin}) following the guideline in \cref{s:instantiation}. We then implement an end-to-end roof system, called \ftwoz-SNARK, for integer R1CS constraints as described in \cref{s:to_snark} (note that \ftwoz \ can be used to prove much more general constraints, such as the ones in Zinc+ \cite{zincplus}, cf.\ \cref{s:to_general_bitz}. 
 
 
+
 Our \ftwoz-PCS is instantiated with Reed-Solomon codes over $\FF_{2^{128}}$ of rate $1/2$ or $1/8$. As  backend of \ftwoz \ we use the Ligerito implementation from \cite{flock} (commit \texttt{e636760}, with local modifications) with folding arity $4$. We set our experiments to 100 bits of round-by-round knowledge soundness (meaning that the largest round-by-round knowledge soundness of the protocols is at most $2^{-100}$), except in  \cref{?}, where we target 114 bits. When targeting 100 bits of round-by-round soundness we use the Johnson bound as proximity parameter, and perform out of domain sampling. When targeting more security (in \cref{s:multiswap}) we use the unique decoding radius.
+
+Our repository can be found in \url{https://github.com/albert-garreta/BitZ-pcs}. \albertimportant{Include human one? Make it owned by World?} \albertimportant{Remove in submission to avoid deanonymization.}
 %\albertimportant{remove?} When targeting $100$ bits of security, we sample primes in the range $[2^{b-1}, 2^b-1]$ with $b=$ \albertimportant{fill in}.
 
 
@@ -3007,7 +3008,7 @@ We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul
     Binius (Johnson), rate $1/8$ & 11.0 & 227 & 76.1 & 13.6 & 7.38 & 199 & 1.08 \\
     \bottomrule
   \end{tabular}
-   \caption{\albertimportant{Add rate $1/2$} Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a  P-256  ECDSA signature on the resulting digest. Below  message sizes  we record the corresponding number of SHA-256 compressions. Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air  M5, 24\,GB.}
+   \caption{Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a  P-256  ECDSA signature on the resulting digest. Below  message sizes  we record the corresponding number of SHA-256 compressions. Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air  M5, 24\,GB.}
   \label{tab:sha256-ecdsa-f2z-opt}
 \end{table}
 
@@ -3129,9 +3130,11 @@ Our experimental results show that \ftwoz-SNARK is more performant when hashing 
 
 
 
-We measure the cost of proving $N$ integer multiplications of the form $x\cdot  y = z$, for $x,y$ random $t$-bit integers, and $z$ a $2\cdot t$-bit integer, for $t\in \{32,64,128\}$. This is proved via our implemented end-to-end proof system, called \ftwoz-SNARK for R1CS over the integers, with \ftwoz\ as its PCS, as described in \cref{s:to_snark}. For 32-bit integer multiplication, we compare against the Binius suite, Limber, and Plonky3. For the sake of brevity, for multiplication of larger bits we compare only against the Binius suite. \albertimportant{Explain how each arithmetization is obtained}
+We measure the cost of proving $N$ integer multiplications of the form $x\cdot  y = z$, for $x,y$ random $t$-bit integers, and $z$ a $2\cdot t$-bit integer, for $t\in \{32,64,128\}$. This is proved via our implemented end-to-end proof system, called \ftwoz-SNARK for R1CS over the integers, with \ftwoz\ as its PCS, as described in \cref{s:to_snark}. For 32-bit integer multiplication, we compare against the Binius suite and Limber. For the sake of brevity, for multiplication of larger bits we compare only against the Binius suite.
 
+ Binius64 operates natively with $64$ bit words, and has  a native constraint for the product of two such words $x,y$. It's output is two $64$-bit words $z_1, z_2$ such that $x\cdot y = z_1 + 2^{64} \cdot z_2$. Our 64-bit multiplication in Binius64 uses this functionality.  For $32$ bit products we constrain the low word $z_1$ to be $x\cdot y$ and the high word $z_1$, as well as the upper $32$ bits of $x$ and $y$, to be zero. For $t=128$ we use the textbook multiplication circuit from the Binius64 repository (the link in our repo README). 
 
+ For Limber we use a specific integer multiplication benchmark in Limber's repository. 
 
 
 
@@ -3151,7 +3154,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Binius (UDR), rate $1/8$ & 0.59 & 73.6 & 33.9 & \textbf{1.49} & \textbf{1.49} & 243 & 0.285 \\
      & Binius (Johnson), rate $1/2$ & 0.55 & 68.1 & 35.8 & 2.61 & 2.98 & 346 & 0.292 \\
      & Binius (Johnson), rate $1/8$ & 0.55 & 82.0 & 38.6 & 2.17 & 2.46 & 180 & 0.289 \\
-     & Plonky3 (FRI), rate $1/2$ & 1.83 & 1389 & 241 & 14.4 & 16.0 & 622 & 0.106 \\
      & Limber (Brakedown) & 0.41 & 237 & 139 & 33.3 & 32.0 & 3354 & 0.340 \\
     \addlinespace
     $2^{17}$ & \ftwoz-SNARK, rate $1/2$ & 0.19 & \textbf{107} & \textbf{39.6} & 3.36 & 3.37 & 150 & \textbf{0.155} \\
@@ -3160,7 +3162,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Binius (UDR), rate $1/8$ & 2.46 & 268 & 89.7 & 4.66 & \textbf{2.54} & 283 & 1.00 \\
      & Binius (Johnson), rate $1/2$ & 2.28 & 232 & 86.7 & 6.25 & 4.51 & 371 & 0.945 \\
      & Binius (Johnson), rate $1/8$ & 2.28 & 282 & 94.7 & 5.66 & 3.86 & 193 & 1.01 \\
-     & Plonky3 (FRI), rate $1/2$ & 7.52 & 5664 & 975 & 17.7 & 18.8 & 764 & 0.393 \\
      & Limber (Brakedown) & 1.65 & 1146 & 419 & 67.4 & 57.3 & 5514 & 1.05 \\
     \addlinespace
     $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & 0.72 & \textbf{411} & \textbf{114} & 5.45 & 4.19 & 188 & \textbf{0.514} \\
@@ -3169,7 +3170,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Binius (UDR), rate $1/8$ & 9.66 & 1050 & 311 & 19.3 & 8.84 & 330 & 3.93 \\
      & Binius (Johnson), rate $1/2$ & 9.13 & 884 & 281 & 21.3 & 10.4 & 405 & 3.76 \\
      & Binius (Johnson), rate $1/8$ & 9.12 & 1086 & 319 & 20.7 & 10.1 & 215 & 3.98 \\
-     & Plonky3 (FRI), rate $1/2$ & 28.9 & 22872 & 4124 & 21.5 & 24.1 & 938 & 1.55 \\
      & Limber (Brakedown) & 6.77 & 4438 & 1357 & 194 & 147 & 12193 & 3.65 \\
     \addlinespace
     $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & 3.05 & \textbf{1649} & \textbf{403} & 10.0 & 6.13 & 227 & \textbf{1.88} \\
@@ -3178,7 +3178,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Binius (UDR), rate $1/8$ & 38.8 & 4209 & 1249 & 80.1 & 28.3 & 383 & 14.9 \\
      & Binius (Johnson), rate $1/2$ & 36.7 & 3607 & 1159 & 81.1 & 29.1 & 440 & 12.7 \\
      & Binius (Johnson), rate $1/8$ & 36.7 & 4761 & 1322 & 95.0 & 34.3 & 238 & 12.5 \\
-     & Plonky3 (FRI), rate $1/2$ & 114 & 92417 & 17572 & 25.4 & 28.6 & 1140 & 8.28 \\
      & Limber (Brakedown) & -- & -- & -- & -- & -- & -- & -- \\
     \addlinespace
     $2^{23}$ & \ftwoz-SNARK, rate $1/2$ & 12.0 & \textbf{7369} & \textbf{1911} & 18.4 & 9.12 & 276 & \textbf{7.09} \\
@@ -3187,7 +3186,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Binius (UDR), rate $1/8$ & -- & -- & -- & -- & -- & -- & -- \\
      & Binius (Johnson), rate $1/2$ & -- & -- & -- & -- & -- & -- & -- \\
      & Binius (Johnson), rate $1/8$ & -- & -- & -- & -- & -- & -- & -- \\
-     & Plonky3 (FRI), rate $1/2$ & 926 & 550595 & 153132 & 36.3 & 34.6 & 1347 & 13.8 \\
      & Limber (Brakedown) & -- & -- & -- & -- & -- & -- & -- \\
     \bottomrule
   \end{tabular}
@@ -3299,6 +3297,7 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
 
 
 We compare experimentally \ftwoz\ with Fields-witch \cite{lev}, a PCS-over the prime field $\FF_{2^{127}-1}$ that commits its witness over the binary field $\FF_{2^{127}}$. See \cref{?} for a discussion of \cite{lev} and a conceptual comparison of both.  Fields-witch repository is available in \url{https://github.com/morgana-proofs/fields-witch} (commit \texttt{30cca8c}), and it uses Ligerito as its underlying binary-field PCS, configured at the unique decoding radius. 
+
 
 %\albertimportant{Review.} Soukhanov's implementation of \cite{lev}, \texttt{fields-witch}, proves the same kind of claim as \cref{c:core_iop}: a multilinear evaluation, over the prime field $\FF_{2^{127}-1}$, of data committed in $\FF_{2^{128}}$. \cref{tab:fields-witch} compares the two at equal commitment size (\texttt{fields-witch} commits $2^{m-7}$ entries of $127$ bits, \ftwoz\ commits $2^{m}$ bits) with both configured for $100$ bits of security. The cost of \texttt{fields-witch} is per $127$-bit entry regardless of the width of the data, since every intermediate fold is a full $\FF_{2^{127}-1}$ element, whereas the cost of \ftwoz\ is per committed bit; on $2^{20}$ entries of $32$-bit words, for instance, \texttt{fields-witch} still takes the $2^{27}$ row of \cref{tab:fields-witch}, while \ftwoz\ commits $2^{25}$ bits and takes $61$\,ms at $W = 32$ (with the prime width capped at $b = 83$ by the one-chunk rule $b \le 127 - \log \codedim_1 - W$; keeping $b \ge 100$ would double the grand-product cost). The proof-size gap comes from \texttt{fields-witch} committing every intermediate fold and opening three polynomials, where \ftwoz\ opens one. Its verifier is polylogarithmic, whereas ours reads the $\codedim_2$ integers $\mu_j$ and evaluates the lifted weights at $\codedim_1$ points; the two meet at $2^{29}$ bits on a single thread (not shown).
 
