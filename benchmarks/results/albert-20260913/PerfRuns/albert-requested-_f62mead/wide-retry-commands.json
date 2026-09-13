@@ -1,0 +1,128 @@
+[
+  {
+    "name": "bitz-u32-wide-rate1",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "run",
+      "--bin",
+      "f2z",
+      "--release",
+      "--features",
+      "unchecked,span-metrics",
+      "--",
+      "--mul-sweep",
+      "15-22",
+      "--threads",
+      "8",
+      "--reps",
+      "5",
+      "--lambda",
+      "100",
+      "--word-bits",
+      "1",
+      "--profile",
+      "custom:1:4",
+      "--cooldown",
+      "20",
+      "--latex",
+      "/Users/johnwu/code/zk/f2z-pcs/PerfRuns/albert-requested-_f62mead/all-provers/bitz-u32-wide-rate1.tex"
+    ],
+    "environment": {
+      "RUSTFLAGS": "-C target-cpu=native",
+      "RAYON_NUM_THREADS": "8",
+      "PERFETTO_TRACE_PROCESSOR": "/private/tmp/f2z-perfetto.F7C3rn/trace_processor_shell"
+    }
+  },
+  {
+    "name": "bitz-u32-wide-rate2",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "run",
+      "--bin",
+      "f2z",
+      "--release",
+      "--features",
+      "unchecked,span-metrics",
+      "--",
+      "--mul-sweep",
+      "15-22",
+      "--threads",
+      "8",
+      "--reps",
+      "5",
+      "--lambda",
+      "100",
+      "--word-bits",
+      "1",
+      "--profile",
+      "custom:2:4",
+      "--cooldown",
+      "20",
+      "--latex",
+      "/Users/johnwu/code/zk/f2z-pcs/PerfRuns/albert-requested-_f62mead/all-provers/bitz-u32-wide-rate2.tex"
+    ],
+    "environment": {
+      "RUSTFLAGS": "-C target-cpu=native",
+      "RAYON_NUM_THREADS": "8",
+      "PERFETTO_TRACE_PROCESSOR": "/private/tmp/f2z-perfetto.F7C3rn/trace_processor_shell"
+    }
+  },
+  {
+    "name": "bitz-u32-wide-rate3",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "run",
+      "--bin",
+      "f2z",
+      "--release",
+      "--features",
+      "unchecked,span-metrics",
+      "--",
+      "--mul-sweep",
+      "15-22",
+      "--threads",
+      "8",
+      "--reps",
+      "5",
+      "--lambda",
+      "100",
+      "--word-bits",
+      "1",
+      "--profile",
+      "custom:3:4",
+      "--cooldown",
+      "20",
+      "--latex",
+      "/Users/johnwu/code/zk/f2z-pcs/PerfRuns/albert-requested-_f62mead/all-provers/bitz-u32-wide-rate3.tex"
+    ],
+    "environment": {
+      "RUSTFLAGS": "-C target-cpu=native",
+      "RAYON_NUM_THREADS": "8",
+      "PERFETTO_TRACE_PROCESSOR": "/private/tmp/f2z-perfetto.F7C3rn/trace_processor_shell"
+    }
+  },
+  {
+    "name": "plonky3-rate-validation",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "test",
+      "--release",
+      "--features",
+      "bench-internals,native-mul-compare,unchecked",
+      "--test",
+      "native_mul_compare",
+      "benchmark::plonky3::tests::",
+      "--",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "RUSTFLAGS": "-C target-cpu=native",
+      "RAYON_NUM_THREADS": "8",
+      "PERFETTO_TRACE_PROCESSOR": "/private/tmp/f2z-perfetto.F7C3rn/trace_processor_shell"
+    }
+  }
+]

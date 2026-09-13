@@ -1,0 +1,34 @@
+{
+  "system_swap_snapshot": {
+    "observed_utc": "2026-09-13T15:40:17Z",
+    "command": "sysctl vm.swapusage",
+    "total_mib": 38912.0,
+    "used_mib": 37435.31,
+    "free_mib": 1476.69
+  },
+  "vm_stat_snapshot": {
+    "page_size_bytes": 16384,
+    "pages_occupied_by_compressor": 1967258,
+    "pages_stored_in_compressor": 6218566,
+    "note": "Point-in-time compressor occupancy; cumulative swap/page counters are not used to infer current swap rate."
+  },
+  "vmmap_snapshot": {
+    "pid": 63770,
+    "observed_local": "2026-09-13T11:41:18.660-04:00",
+    "command": "vmmap -summary 63770",
+    "physical_footprint_reported": "43.9G",
+    "peak_physical_footprint_reported": "43.9G",
+    "writable_resident_reported": "35.8G",
+    "writable_swapped_reported": "8.1G",
+    "heap_bytes_allocated_reported": "44.3G",
+    "context": "Main benchmark process during the last Plonky3 case warmup, after the isolated memory-only child finished."
+  },
+  "isolated_case": {
+    "backend": "plonky3-fri",
+    "log_inv_rate": 3,
+    "log_multiplications": 22,
+    "peak_rss_bytes": 31391088640,
+    "proof_verified": true
+  },
+  "interpretation": "RSS does not include the full compressed/swapped footprint. The isolated RSS measurement and main-process footprint snapshot have different process/trial boundaries. Do not interpret their difference as an exact per-proof memory delta. This host was under substantial compression and swap use."
+}

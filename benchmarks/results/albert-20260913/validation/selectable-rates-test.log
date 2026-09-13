@@ -1,0 +1,6 @@
+
+running 1 test
+test binius_ligerito::tests::selectable_rates_bind_both_oracles_and_reject_cross_rate_proofs ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 467 filtered out; finished in 0.10s
+

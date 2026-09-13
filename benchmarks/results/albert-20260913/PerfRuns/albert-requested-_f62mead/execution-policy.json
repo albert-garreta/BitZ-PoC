@@ -1,0 +1,5 @@
+{
+  "sequential": true,
+  "max_owned_process_group_rss_bytes": 51539607552,
+  "reason": "Preserve headroom on this 64 GiB machine; retain resource-limit failures without relabelling them."
+}

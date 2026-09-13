@@ -1,0 +1,7 @@
+{
+  "status": "pass",
+  "family": "all-provers",
+  "series": 104,
+  "metric_medians_checked": 728,
+  "comparison": "Canonical trace union medians agree with original sample-metric medians; warmups excluded."
+}
