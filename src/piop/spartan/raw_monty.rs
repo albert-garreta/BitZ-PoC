@@ -98,7 +98,7 @@ const fn raw_to_words(value: Raw) -> [u64; 2] {
 /// The shared modulus context: everything a raw residue needs to be a field
 /// element again, prepared once per proof.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct RawMontyCtx {
+pub struct RawMontyCtx {
     modulus: u128,
     /// `-q^{-1} mod 2^64`.
     neg_inv: u64,
@@ -417,7 +417,7 @@ impl<'a> NativeProducts<'a> {
 }
 
 /// Owned raw `Az`, `Bz`, `Cz` tables.
-pub(crate) struct RawProducts {
+pub struct RawProducts {
     pub az: Vec<Raw>,
     pub bz: Vec<Raw>,
     pub cz: Vec<Raw>,
@@ -1596,7 +1596,7 @@ pub(crate) fn prove_outer_native_raw<T: Transcript>(
 // ---------------------------------------------------------------------------
 
 /// The assignment table entering the inner sumcheck.
-pub(crate) enum RawWitness<'a> {
+pub enum RawWitness<'a> {
     /// Exact native values (the u32 and BabyBear relations): the first round
     /// accumulates field × `u64` products and its fold projects into the
     /// field. `values` holds the leading entries of a `domain`-length table
@@ -2710,7 +2710,7 @@ pub(crate) fn prove_inner_structured_raw<T: Transcript>(
 /// Coefficient scaling on raw residues: the prover-side twin of
 /// [`SpartanMatrixCoefficient::scale`], with per-proof constants prepared once
 /// instead of per matrix entry.
-pub(crate) trait RawMontyCoefficient: Sync {
+pub trait RawMontyCoefficient: Sync {
     /// Constants derived from the field context once per binding.
     type Prepared: Sync;
 

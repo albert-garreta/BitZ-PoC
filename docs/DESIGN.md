@@ -21,6 +21,11 @@ only through `K`-linear queries.
 
 ## Instance and protocol flow
 
+(The relation-level protocol — statement binding, prime draw, grinding
+boundaries, Spartan PIOP, bitification and discharge — is one shared runner,
+`src/piop/spartan/protocol/`; see `docs/unified-protocol.md`. This section
+describes the opening it discharges into.)
+
 `IntegerMatrixLayout { row_vars: t, col_vars: s, word_bits: W }`: data `D` is a `2^t × 2^s` matrix of
 `W`-bit cells (`cell_index(b,c) = (b<<s) | c`); `t` row variables fold with
 integer weights `w_b`, `s` column variables are read off with field weights

@@ -370,6 +370,38 @@ pub(crate) fn prove_spartan_piop_u32_native_with_univariate_skip_borrowed(
 /// The delayed-Barrett native-u64 prover on borrowed tables (see
 /// [`prove_spartan_piop_u32_native_with_univariate_skip_borrowed`] for the
 /// table conventions).
+/// [`prove_spartan_piop_u32_native_with_univariate_skip_borrowed`] for any
+/// raw-Montgomery coefficient type: the exact `u64` products and the
+/// borrowed native assignment under the known-zero univariate prefix skip.
+pub(crate) fn prove_spartan_piop_native_u64_with_univariate_skip_borrowed<C>(
+    transcript: &mut impl Transcript,
+    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    assignment_oracle_binding: &[u8; 32],
+    products: NativeProducts<'_>,
+    assignment: &[u64],
+    skip_vars: usize,
+) -> Result<
+    (
+        UnivariateSkipSpartanPiopProof<MontyField<2>>,
+        ScaledMleEvaluationClaim<MontyField<2>>,
+    ),
+    SpartanError,
+>
+where
+    C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
+{
+    validate_native_u32_prover_slices(matrices, products, assignment)?;
+    let domain = 1usize << matrices.num_column_vars();
+    prove_spartan_piop_raw_native_u64_with_skip_core(
+        transcript,
+        matrices,
+        assignment_oracle_binding,
+        products,
+        RawWitness::native_borrowed(assignment, domain),
+        skip_vars,
+    )
+}
+
 pub(crate) fn prove_spartan_piop_native_u64_borrowed<C>(
     transcript: &mut impl Transcript,
     matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
@@ -1166,9 +1198,9 @@ where
 /// The raw-table native univariate-skip prover core. Inputs must already have
 /// passed [`validate_native_u32_prover_inputs`] or
 /// [`validate_native_u32_prover_slices`].
-fn prove_spartan_piop_raw_native_u64_with_skip_core(
+fn prove_spartan_piop_raw_native_u64_with_skip_core<C>(
     transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
+    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
     assignment_oracle_binding: &[u8; 32],
     products: NativeProducts<'_>,
     witness: RawWitness<'_>,
@@ -1179,7 +1211,10 @@ fn prove_spartan_piop_raw_native_u64_with_skip_core(
         ScaledMleEvaluationClaim<MontyField<2>>,
     ),
     SpartanError,
-> {
+>
+where
+    C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
+{
     let skip_vars = validate_univariate_skip_variables(skip_vars, matrices.num_row_vars())?;
     absorb_univariate_skip_statement(transcript, matrices, assignment_oracle_binding, skip_vars);
 

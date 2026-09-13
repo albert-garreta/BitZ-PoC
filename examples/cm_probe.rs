@@ -39,7 +39,7 @@ fn main() {
     })
     .unwrap();
     let layout = *witness.layout();
-    let relation = prepare_cm_and_relation::<SpartanF2zField>(layout, &config).unwrap();
+    let relation = prepare_cm_and_relation(layout, &config).unwrap();
     let hint = commit_cm_and_witness(&layout, witness.f_bit_rows()).unwrap();
 
     // Warm-up (excluded), also the correctness check.

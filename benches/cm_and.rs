@@ -115,7 +115,7 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
 
     let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
     let started = tracing::info_span!("cm_and:started").entered();
-    let relation = prepare_cm_and_relation::<SpartanF2zField>(layout, &field_config)
+    let relation = prepare_cm_and_relation(layout, &field_config)
         .and_then(|p| p.with_ligerito(common::ligerito_selection(100)))
         .expect("valid CM-AND relation");
     let resolved = relation.ligerito_configuration().unwrap();
@@ -187,9 +187,10 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
 
     let last_proof = last_proof.expect("at least one repetition");
     let f2z_bytes = last_proof.f2z().to_bytes().len();
-    let spartan_elements = 4 * last_proof.spartan().outer.sumcheck.round_polynomials.len()
+    let spartan = last_proof.spartan().plain().expect("CM-AND runs the plain kernel");
+    let spartan_elements = 4 * spartan.outer.sumcheck.round_polynomials.len()
         + 3
-        + 3 * last_proof.spartan().inner.round_polynomials.len();
+        + 3 * spartan.inner.round_polynomials.len();
     drop(last_proof);
 
     // One extra proof for the peak-heap measurement.

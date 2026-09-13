@@ -27,6 +27,15 @@ impl Blake3Transcript {
         }
     }
 
+    /// The BLAKE3 digest of everything absorbed so far, without touching the
+    /// transcript state. Two transcripts that absorbed the same bytes in the
+    /// same order (and drew the same challenges) have the same digest, so
+    /// this pins the Fiat–Shamir transcript independently of how a proof
+    /// happens to be represented in memory.
+    pub fn state_digest(&self) -> [u8; 32] {
+        *self.hasher.finalize().as_bytes()
+    }
+
     /// Generates a specified number of pseudorandom bytes based on the current
     /// transcript state. Uses a counter-based approach to generate enough
     /// bytes from the hasher.

@@ -1289,7 +1289,7 @@ const MOD_Q_XOR_ONLY_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q-xor-on
 /// opening. The enum is crate-private so callers cannot supply arbitrary
 /// transcript-domain bytes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ModQOpeningKind {
+pub enum ModQOpeningKind {
     U32Mul,
     BabyBearMul,
     U64Mul,

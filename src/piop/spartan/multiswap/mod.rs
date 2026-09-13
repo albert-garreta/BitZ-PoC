@@ -33,9 +33,9 @@ pub use prime::{
     sample_multiswap_fingerprint_context, sample_multiswap_reduction_prime,
 };
 pub use proof::{
-    MultiswapError, MultiswapOpeningClaim, MultiswapProof, PreparedMultiswapRelation,
-    bitify_multiswap_claim, commit_multiswap_witness, multiswap_lig_configs,
-    prove_multiswap_mod_r1cs, verify_multiswap_mod_r1cs,
+    MultiswapError, MultiswapProof, MultiswapSpec, PreparedMultiswapRelation,
+    commit_multiswap_witness, multiswap_lig_configs, prove_multiswap_mod_r1cs,
+    verify_multiswap_mod_r1cs,
 };
 pub use reduce::{step50_accepts_lift, step50_integer_lift, step50_mu_prime_bound, step50_reduce};
 pub use relation::{

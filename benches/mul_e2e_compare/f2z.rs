@@ -353,10 +353,10 @@ mod tests {
         };
         assert_eq!(
             relation.ligerito(),
-            U32MulLigerito::CustomJohnson {
+            Some(U32MulLigerito::CustomJohnson {
                 log_inv_rate: 1,
                 initial_k: 4
-            }
+            })
         );
         assert!(relation.security().ood.is_some());
         assert!(relation.security().accounting.controllable_bits() >= 100.0);

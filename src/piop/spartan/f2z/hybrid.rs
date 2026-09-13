@@ -3,7 +3,20 @@
 //! For the hybrid mod-2^32 relation, product = z + 2^32*w is the fixed
 //! reconstruction of the two committed 32-bit output limbs. Proving
 //! x*y = product with all 64 product bits bound proves the modular relation.
+//! The protocol prefix (statement, prime draw, Spartan PIOP, bitification)
+//! is the shared one of [`super::super::protocol`]; only the discharge of
+//! the bitified claim — the integer folds bound in the clear plus the GKR
+//! forest — is the hybrid's own, since its opener runs at the composition's
+//! geometry.
 use super::*;
+use super::super::{
+    absorb_spartan_message,
+    protocol::{
+        Modular, SpartanPrefixProof, SpartanProof, bitify, check_boundary, f2z_generator,
+        prove_prefix, sample_mod_q, validate_bit_rows, verify_prefix,
+    },
+    univariate_skip::UnivariateSkipSpartanPiopProof,
+};
 use crate::hybrid::{BinaryClaim, Error};
 use crate::ligerito::{fold_values_bits, pack_columns_from_rows, row_bit_vars};
 use crate::ligerito_flock::gf_to_f128;
@@ -22,20 +35,38 @@ pub(crate) struct PrefixProof {
     pub forest: MergedForestProof,
 }
 
+impl PrefixProof {
+    fn messages(&self) -> SpartanPrefixProof {
+        SpartanPrefixProof {
+            initial_nonce: self.initial_nonce,
+            piop_nonces: self.piop_nonces.clone(),
+            spartan: SpartanProof::UnivariateSkip(self.spartan.clone()),
+            terminal_nonce: self.terminal_nonce,
+        }
+    }
+}
+
 pub(crate) fn decoding_config(
     transcript: &mut Blake3Transcript,
     prepared: &U32MulPrefixRelation,
     statement: &[u8; 32],
     nonce: u64,
 ) -> Result<(u128, <SpartanF2zField as PrimeField>::Config), Error> {
-    absorb_spartan_message(transcript, b"u32-statement", statement);
-    check_boundary_u32::<U32MulInitialGrinding, _>(
+    let domains = prepared.layout().domains();
+    absorb_spartan_message(transcript, domains.statement_tag, statement);
+    check_boundary(
         transcript,
+        domains.initial_grinding,
         prepared.security().initial_grinding_bits,
         nonce,
     )?;
-    let (q, _, config, _) = sample_u32_mul_mod_q(transcript, prepared.security())?;
-    Ok((q, config))
+    let prime = sample_mod_q(
+        transcript,
+        domains.prime_sampling,
+        prepared.security().projection_min,
+        prepared.security().projection_max,
+    )?;
+    Ok((prime.q, prime.config))
 }
 
 fn bind_sums(t: &mut Blake3Transcript, digest: &[u8; 32], sums: &[u128]) {
@@ -72,85 +103,21 @@ pub(crate) fn prove(
     }
     let p = layout.f2z_params();
     validate_bit_rows(&p, rows)?;
-    let security = prepared.security();
-    let binding = *statement;
-    absorb_spartan_message(transcript, b"u32-statement", &binding);
-    // Step 2: pre-draw grinding, prime sample, and relation projection into
-    // the runtime field.
-    let step2_scope = tracing::info_span!("step2:project_prove").entered();
-    let initial_nonce =
-        grind_boundary_u32::<U32MulInitialGrinding, _>(transcript, security.initial_grinding_bits)?;
-    let (q, q_bits, config, arith) = sample_u32_mul_mod_q(transcript, security)?;
-    let matrices = {
-        let _scope = tracing::info_span!("spartan-f2z:relation_projection_prove").entered();
-        PreparedConstraintMatrices::<SpartanF2zField, bool>::from_skeleton(
-            &prepared.skeleton,
-            &config,
-        )
-        .map_err(SpartanError::from)?
-    };
-    drop(step2_scope);
-
-    // Step 3: the native u64 Spartan PIOP over F_q, every drawn challenge
-    // preceded by one PIOP grinding boundary at the profile's difficulty
-    // (a transparent pass-through at λ = 100).
-    let (spartan, terminal_claim, piop_nonces) = {
-        let _step3 = tracing::info_span!("step3:piop_prove").entered();
-        let _scope = tracing::info_span!("spartan-f2z:spartan_prove").entered();
-        // The exact products are the zero-padded operand blocks of the
-        // witness and the assignment is its block table: lend both, no copy.
-        let product_len = layout.multiplications().next_power_of_two();
-        let products = NativeProducts {
-            az: &witness.x_values()[..product_len],
-            bz: &witness.y_values()[..product_len],
-            cz: &witness.product_values()[..product_len],
-        };
-        let mut grinder: crate::piop::spartan::grinding::ProverGrindingTranscript<
-            _,
-            U32MulPiopGrinding,
-        > = crate::piop::spartan::grinding::ProverGrindingTranscript::new(
-            transcript,
-            piop_wrap_bits(security),
-        );
-        let (spartan, terminal_claim) =
-            prove_spartan_piop_u32_native_with_univariate_skip_borrowed(
-                &mut grinder,
-                &matrices,
-                &binding,
-                products,
-                witness.assignment(),
-                U32_MUL_UNIVARIATE_SKIP_VARS,
-            )?;
-        (spartan, terminal_claim, grinder.finish())
-    };
-
-    // Step 4: bitification at the runtime prime, plus the terminal
-    // boundary protecting the opening challenges.
-    let step4_scope = tracing::info_span!("step4:bitify_prove").entered();
-    let (opening, bridge_digest) = {
-        let _scope = tracing::info_span!("spartan-f2z:bitify_prover").entered();
-        let opening = bitify_u32_mul_spartan_claim(&terminal_claim, layout, q, &arith)?;
-        let bridge_digest =
-            bitified_claim_digest(&matrices, &binding, layout, &terminal_claim, &opening, q)?;
-        (opening, bridge_digest)
-    };
-    let terminal_nonce = grind_boundary_u32::<U32MulTerminalGrinding, _>(
-        transcript,
-        security.terminal_grinding_bits,
-    )?;
-    drop(step4_scope);
+    absorb_spartan_message(transcript, layout.domains().statement_tag, statement);
+    let proved = prove_prefix(transcript, prepared, witness, statement, ProveOptions::default())?;
     drop(piop_scope);
 
     let _opening_scope = tracing::info_span!("hybrid:mul_opening").entered();
-    let prepared_claim = prepare_u32_bitified_claim(&opening, q_bits, &arith)?;
-    let weights = prepared_claim.chunks.chunks();
+    let arith = &proved.prime.arith;
+    let chunks = bitify::prepare_chunks(&proved.opening, &proved.table, proved.prime.q_bits, arith)?;
+    let weights = chunks.chunks();
     if weights.len() != 1 {
         return Err(Error::Invalid("multiple F2Z chunks"));
     }
     let fold_scope = tracing::info_span!("mo:fold_values").entered();
     let sums = fold_values_bits(&p, rows, &weights[0]);
     drop(fold_scope);
-    bind_sums(transcript, &bridge_digest, &sums);
+    bind_sums(transcript, &proved.bridge_digest, &sums);
     let pack_scope = tracing::info_span!("mo:pack_cols").entered();
     let packed_cols = pack_columns_from_rows(&p, rows);
     drop(pack_scope);
@@ -164,6 +131,15 @@ pub(crate) fn prove(
     let endpoint_scope = tracing::info_span!("mo:endpoint").entered();
     let claim = endpoint(&p, &weights[0], &z, e);
     drop(endpoint_scope);
+    let SpartanPrefixProof {
+        initial_nonce,
+        piop_nonces,
+        spartan,
+        terminal_nonce,
+    } = proved.messages;
+    let SpartanProof::UnivariateSkip(spartan) = spartan else {
+        return Err(Error::Invalid("u32 kernel shape"));
+    };
     Ok((
         PrefixProof {
             initial_nonce,
@@ -185,7 +161,6 @@ pub(crate) fn verify(
 ) -> Result<BinaryClaim, Error> {
     let layout = prepared.layout();
     let p = layout.f2z_params();
-    let security = prepared.security();
     let actual_skip_vars = proof.spartan.outer.skip.skip_vars;
     let expected_skip_vars = U32_MUL_UNIVARIATE_SKIP_VARS as u8;
     if actual_skip_vars != expected_skip_vars {
@@ -196,64 +171,13 @@ pub(crate) fn verify(
         .into());
     }
 
-    let binding = *statement;
-    absorb_spartan_message(transcript, b"u32-statement", &binding);
+    absorb_spartan_message(transcript, layout.domains().statement_tag, statement);
+    let verified = verify_prefix(transcript, prepared, statement, &proof.messages())?;
+    let arith = &verified.prime.arith;
 
-    let step2_scope = tracing::info_span!("step2:project_verify").entered();
-    check_boundary_u32::<U32MulInitialGrinding, _>(
-        transcript,
-        security.initial_grinding_bits,
-        proof.initial_nonce,
-    )?;
-    let (q, q_bits, config, arith) = sample_u32_mul_mod_q(transcript, security)?;
-    let matrices = {
-        let _scope = tracing::info_span!("spartan-f2z:relation_projection_verify").entered();
-        PreparedConstraintMatrices::<SpartanF2zField, bool>::from_skeleton(
-            &prepared.skeleton,
-            &config,
-        )
-        .map_err(SpartanError::from)?
-    };
-    drop(step2_scope);
-
-    let terminal_claim = {
-        let _step3 = tracing::info_span!("step3:piop_verify").entered();
-        let _scope = tracing::info_span!("spartan-f2z:spartan_verify").entered();
-        let mut grinder: crate::piop::spartan::grinding::VerifierGrindingTranscript<
-            _,
-            U32MulPiopGrinding,
-        > = crate::piop::spartan::grinding::VerifierGrindingTranscript::new(
-            transcript,
-            piop_wrap_bits(security),
-            &proof.piop_nonces,
-        );
-        let terminal_claim = verify_spartan_univariate_skip_proof(
-            &mut grinder,
-            &matrices,
-            &binding,
-            &proof.spartan,
-        )?;
-        grinder.finish()?;
-        terminal_claim
-    };
-
-    let step4_scope = tracing::info_span!("step4:bitify_verify").entered();
-    let (opening, bridge_digest) = {
-        let _scope = tracing::info_span!("spartan-f2z:bitify_verifier").entered();
-        let opening = bitify_u32_mul_spartan_claim(&terminal_claim, layout, q, &arith)?;
-        let bridge_digest =
-            bitified_claim_digest(&matrices, &binding, layout, &terminal_claim, &opening, q)?;
-        (opening, bridge_digest)
-    };
-    check_boundary_u32::<U32MulTerminalGrinding, _>(
-        transcript,
-        security.terminal_grinding_bits,
-        proof.terminal_nonce,
-    )?;
-    drop(step4_scope);
-
-    let prepared_claim = prepare_u32_bitified_claim(&opening, q_bits, &arith)?;
-    let weights = prepared_claim.chunks.chunks();
+    let chunks = bitify::prepare_chunks(&verified.opening, &verified.table, verified.prime.q_bits, arith)?;
+    let col_weights = bitify::column_weights(&verified.opening, arith)?;
+    let weights = chunks.chunks();
     if weights.len() != 1 || proof.sums.len() != p.cols() {
         return Err(Error::Invalid("F2Z sums shape"));
     }
@@ -270,14 +194,12 @@ pub(crate) fn verify(
     let read_off = proof
         .sums
         .iter()
-        .zip(&prepared_claim.col_weights)
-        .fold(0, |a, (&s, w)| {
-            arith.add(a, arith.mul(arith.reduce(s), w.0))
-        });
-    if read_off != prepared_claim.claimed.0 {
+        .zip(&col_weights)
+        .fold(0, |a, (&s, w)| arith.add(a, arith.mul(arith.reduce(s), w.0)));
+    if read_off != verified.opening.claimed.0 {
         return Err(Error::Invalid("integer read-off"));
     }
-    bind_sums(transcript, &bridge_digest, &proof.sums);
+    bind_sums(transcript, &verified.bridge_digest, &proof.sums);
     let comb = FixedBasePow::new(f2z_generator(), 128, 8);
     let roots: Vec<_> = proof.sums.iter().map(|&s| comb.pow(s)).collect();
     let (z, e) = verify_merged_forest(

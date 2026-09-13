@@ -43,7 +43,7 @@ fn adhoc_configs(
 /// Full honest pipeline at `gates`, returning everything a tamper case
 /// needs.
 struct Fixture {
-    relation: f2z::piop::spartan::PreparedCmAndRelation<SpartanF2zField>,
+    relation: f2z::piop::spartan::PreparedCmAndRelation,
     witness: CmAndWitness,
     hint: f2z::ligerito_flock::FlockCommitHint,
     vc: flock_core::pcs::ligerito::VerifierConfig,
@@ -58,7 +58,7 @@ fn honest_fixture(gates: usize, seed: u64) -> Fixture {
     })
     .unwrap();
     let layout = *witness.layout();
-    let relation = prepare_cm_and_relation::<SpartanF2zField>(layout, &config).unwrap();
+    let relation = prepare_cm_and_relation(layout, &config).unwrap();
     let (pc, vc) = adhoc_configs(&layout);
     let hint = commit_cm_and_witness_with_config(&layout, witness.f_bit_rows(), &pc).unwrap();
     let projected = project_cm_and_witness::<SpartanF2zField>(&witness, &config).unwrap();
@@ -89,7 +89,7 @@ fn cm_and_proof_codec_roundtrips_and_rejects_tampering() {
     let bytes = fx.proof.f2z().to_bytes();
     let decoded = IntEvalRsLigVirtProof::from_bytes(&bytes).expect("canonical decode");
     assert_eq!(decoded.to_bytes(), bytes, "codec is a bijection on its image");
-    let reproof = CmF2zProof::new(fx.proof.spartan().clone(), decoded);
+    let reproof = CmF2zProof::from_parts(fx.proof.prefix().clone(), None, decoded);
     verify_fixture(&fx, &reproof).expect("decoded proof verifies");
 
     // Every truncation must fail to decode.
@@ -108,7 +108,7 @@ fn cm_and_proof_codec_roundtrips_and_rejects_tampering() {
         .ok()
         .and_then(|r| r.ok());
         if let Some(decoded) = decoded {
-            let reproof = CmF2zProof::new(fx.proof.spartan().clone(), decoded);
+            let reproof = CmF2zProof::from_parts(fx.proof.prefix().clone(), None, decoded);
             assert!(
                 verify_fixture(&fx, &reproof).is_err(),
                 "tampered byte {position} verified"
@@ -131,7 +131,7 @@ fn cm_and_rejects_a_false_relation_with_consistent_bits() {
     })
     .unwrap();
     let layout = *witness.layout();
-    let relation = prepare_cm_and_relation::<SpartanF2zField>(layout, &config).unwrap();
+    let relation = prepare_cm_and_relation(layout, &config).unwrap();
     let (pc, vc) = adhoc_configs(&layout);
     let hint = commit_cm_and_witness_with_config(&layout, witness.f_bit_rows(), &pc).unwrap();
     let projected = project_cm_and_witness::<SpartanF2zField>(&witness, &config).unwrap();
@@ -169,7 +169,7 @@ fn cm_and_rejects_spartan_valid_but_xor_invalid_witness() {
     })
     .unwrap();
     let layout = *witness.layout();
-    let relation = prepare_cm_and_relation::<SpartanF2zField>(layout, &config).unwrap();
+    let relation = prepare_cm_and_relation(layout, &config).unwrap();
     let (pc, vc) = adhoc_configs(&layout);
     let hint = commit_cm_and_witness_with_config(&layout, witness.f_bit_rows(), &pc).unwrap();
     let projected = project_cm_and_witness::<SpartanF2zField>(&witness, &config).unwrap();
@@ -202,7 +202,7 @@ fn cm_and_rejects_inconsistent_committed_bits() {
     })
     .unwrap();
     let layout = *witness.layout();
-    let relation = prepare_cm_and_relation::<SpartanF2zField>(layout, &config).unwrap();
+    let relation = prepare_cm_and_relation(layout, &config).unwrap();
     let (pc, vc) = adhoc_configs(&layout);
 
     let mut rows = witness.f_bit_rows();
@@ -233,7 +233,7 @@ fn cm_and_rejects_a_mismatched_statement() {
     let config = f2z::piop::spartan::spartan_f2z_field_config();
     let other_layout = CmAndLayout::new(301).unwrap();
     assert_eq!(other_layout.capacity(), fx.witness.layout().capacity());
-    let other = prepare_cm_and_relation::<SpartanF2zField>(other_layout, &config).unwrap();
+    let other = prepare_cm_and_relation(other_layout, &config).unwrap();
     let mut vt = Blake3Transcript::new();
     assert!(
         verify_cm_and_f2z_with_config(&mut vt, &other, &fx.hint.commitment, &fx.proof, &fx.vc)
@@ -247,7 +247,7 @@ fn cm_and_production_entry_points_gate_small_shapes() {
     let config = f2z::piop::spartan::spartan_f2z_field_config();
     let witness = CmAndWitness::from_inputs(&[(1, 2)]).unwrap();
     let layout = *witness.layout();
-    let relation = prepare_cm_and_relation::<SpartanF2zField>(layout, &config).unwrap();
+    let relation = prepare_cm_and_relation(layout, &config).unwrap();
     let (pc, _) = adhoc_configs(&layout);
     let hint = commit_cm_and_witness_with_config(&layout, witness.f_bit_rows(), &pc).unwrap();
     let projected = project_cm_and_witness::<SpartanF2zField>(&witness, &config).unwrap();

@@ -266,6 +266,11 @@ FOLD=1 WIDE16=1 NVARS=11 REPS=5 RUSTFLAGS="-C target-cpu=native" cargo bench --f
 
 ## Integer R1CS with F_2 virtualization
 
+Every relation below runs the one protocol runner in
+`src/piop/spartan/protocol/` (`docs/unified-protocol.md`); the per-relation
+`prove_*`/`verify_*` entry points are thin wrappers over it, and
+`tests/transcript_state_pins.rs` pins every transcript.
+
 Pick the security parameter with `F2Z_BENCH_LAMBDA`. Unless noted otherwise,
 the benches below honour it. The fixed-prime `(t,s)` sweep uses its own
 λ=100 profile:

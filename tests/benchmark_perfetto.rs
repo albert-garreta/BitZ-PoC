@@ -94,6 +94,35 @@ fn shared_output_preserves_creation_policy() {
     });
 }
 
+#[test]
+#[ignore = "requires PERFETTO_TRACE_PROCESSOR; exercises the real native query engine"]
+fn shared_protocol_spans_preserve_relation_labels_and_parentage() {
+    let _lock = TEST_LOCK.lock().unwrap();
+    let u32_scopes = f2z::protocol_scopes!("u32-spartan-f2z");
+    let u64_scopes = f2z::protocol_scopes!("u64-spartan-f2z");
+    let intervals = tracing::subscriber::with_default(
+        tracing_subscriber::registry().with(perfetto::layer()),
+        || {
+            let recording = Recording::start(Vec::new()).unwrap();
+            tracing::info_span!("step3:piop_prove").in_scope(|| {
+                (u32_scopes.spartan_prove)().in_scope(|| std::hint::black_box(32));
+                (u64_scopes.spartan_prove)().in_scope(|| std::hint::black_box(64));
+            });
+            recording.intervals().unwrap()
+        },
+    );
+    let parent = perfetto::span(&intervals, "step3:piop_prove").unwrap();
+    for label in [
+        "u32-spartan-f2z:spartan_prove",
+        "u64-spartan-f2z:spartan_prove",
+    ] {
+        let child = perfetto::span(&intervals, label).unwrap();
+        assert_eq!(child.parent, Some(parent.id));
+        assert!(child.start_ns >= parent.start_ns && child.end_ns <= parent.end_ns);
+        assert!(child.end_ns > child.start_ns);
+    }
+}
+
 struct FailingWriter {
     fail_write: bool,
 }
