@@ -237,7 +237,6 @@ fn tail_pieces<const K: usize>(
         two_pow.push(power.clone());
         power = power * &two;
     }
-    let mut pieces = Vec::with_capacity(runs.len() * 2 + 64);
     let singles = |pieces: &mut Vec<TailPiece>, from: usize, to: usize| {
         for column in from..to {
             pieces.push(TailPiece {
@@ -248,9 +247,17 @@ fn tail_pieces<const K: usize>(
             });
         }
     };
-    let mut cursor = 0usize;
-    for &(start, len, ref base) in runs {
+    // Each run's pieces, preceded by the single columns between it and the
+    // previous run; runs are independent, so they are built in parallel.
+    let build = |index: usize| -> Vec<TailPiece> {
+        let (start, len, ref base) = runs[index];
+        let cursor = if index == 0 {
+            0
+        } else {
+            runs[index - 1].0 + runs[index - 1].1
+        };
         debug_assert!(start >= cursor);
+        let mut pieces = Vec::with_capacity(start - cursor + len / prefix + 2);
         singles(&mut pieces, cursor, start);
         let end = start + len;
         let mut weight = base.clone();
@@ -268,8 +275,18 @@ fn tail_pieces<const K: usize>(
             weight = weight * &two_pow[hi - lo];
             column = block * prefix + hi;
         }
-        cursor = end;
-    }
+        pieces
+    };
+    #[cfg(feature = "parallel")]
+    let per_run: Vec<Vec<TailPiece>> = if runs.len() >= 256 && rayon::current_num_threads() > 1 {
+        (0..runs.len()).into_par_iter().map(build).collect()
+    } else {
+        (0..runs.len()).map(build).collect()
+    };
+    #[cfg(not(feature = "parallel"))]
+    let per_run: Vec<Vec<TailPiece>> = (0..runs.len()).map(build).collect();
+    let mut pieces: Vec<TailPiece> = per_run.into_iter().flatten().collect();
+    let cursor = runs.last().map_or(0, |&(start, len, _)| start + len);
     singles(&mut pieces, cursor, tail.len());
     pieces
 }
@@ -360,11 +377,12 @@ fn accumulate_tail_block<const K: usize, H: Sha256InnerBitSource + ?Sized>(
     let active = prefix.min(tail_len - base);
     let mut set_bits = [0usize; 16];
     let mut count = 0;
-    for i in 0..active {
-        if source_bit(h, tail_start + base + i)? != 0 {
-            set_bits[count] = i;
-            count += 1;
-        }
+    // Iterate the set bits without a branch per bit (the bits are random).
+    let mut word = h.bits_at(tail_start + base, active)?;
+    while word != 0 {
+        set_bits[count] = word.trailing_zeros() as usize;
+        count += 1;
+        word &= word - 1;
     }
     if count == 0 {
         return Ok(());

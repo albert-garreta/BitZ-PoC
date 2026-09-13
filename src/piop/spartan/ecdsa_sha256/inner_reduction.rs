@@ -166,6 +166,52 @@ impl<'a> ModQCoefficients<'a> {
         Ok(output.iter().map(|words| words_raw(*words)).collect())
     }
 
+    /// The geometric runs of the tape's last output, as field bases:
+    /// `tail[start + k] = base · 2^k`. With `split_public`, every run is cut
+    /// around the public-bit cells (whose values the prover adjusts afterwards).
+    fn tail_runs(
+        &self,
+        relation: &PreparedSha256Ecdsa,
+        cfg: &Config,
+        split_public: bool,
+    ) -> Vec<(usize, usize, F)> {
+        let ctx = self.ctx;
+        let two = F::from_with_cfg(2u64, cfg);
+        let mut exceptions: Vec<usize> = if split_public {
+            relation.local.public_h.to_vec()
+        } else {
+            Vec::new()
+        };
+        exceptions.sort_unstable();
+        let mut out = Vec::new();
+        for run in self.tape.power_runs() {
+            let mut start = run.first_column;
+            let end = run.first_column + run.len;
+            let mut base_at_start = ctx.field(words_raw(run.base));
+            let first = exceptions.partition_point(|&c| c < start);
+            for &cell in &exceptions[first..] {
+                if cell >= end {
+                    break;
+                }
+                if cell > start {
+                    out.push((start, cell - start, base_at_start.clone()));
+                }
+                // Skip the exceptional cell; the run continues after it with
+                // its base advanced by 2^(cell + 1 - start).
+                let mut advanced = base_at_start.clone();
+                for _ in start..=cell {
+                    advanced = advanced * &two;
+                }
+                base_at_start = advanced;
+                start = cell + 1;
+            }
+            if start < end {
+                out.push((start, end - start, base_at_start));
+            }
+        }
+        out
+    }
+
     pub(super) fn build_batched_matrix_mle(
         &mut self,
         relation: &PreparedSha256Ecdsa,
@@ -177,40 +223,7 @@ impl<'a> ModQCoefficients<'a> {
         let mut tail = self.tape_tail(relation, &weights.matrix_rows)?;
         // The runs describe the tape's output; the public-bit cells are adjusted
         // below, so every run is split around them (the cells become unstructured).
-        let mut exceptions: Vec<usize> = relation.local.public_h.to_vec();
-        exceptions.sort_unstable();
-        let tail_runs: Vec<(usize, usize, F)> = {
-            let ctx = self.ctx;
-            let mut out = Vec::new();
-            for run in self.tape.power_runs() {
-                let base = ctx.field(words_raw(run.base));
-                let mut start = run.first_column;
-                let end = run.first_column + run.len;
-                let mut base_at_start = base;
-                let two = F::from_with_cfg(2u64, cfg);
-                let first = exceptions.partition_point(|&c| c < start);
-                for &cell in &exceptions[first..] {
-                    if cell >= end {
-                        break;
-                    }
-                    if cell > start {
-                        out.push((start, cell - start, base_at_start.clone()));
-                    }
-                    // Skip the exceptional cell; the run continues after it with
-                    // its base advanced by 2^(cell + 1 - start).
-                    let mut advanced = base_at_start.clone();
-                    for _ in start..=cell {
-                        advanced = advanced * &two;
-                    }
-                    base_at_start = advanced;
-                    start = cell + 1;
-                }
-                if start < end {
-                    out.push((start, end - start, base_at_start));
-                }
-            }
-            out
-        };
+        let tail_runs = self.tail_runs(relation, cfg, true);
         for (&cell, &weight) in relation.local.public_h.iter().zip(&weights.public_bits) {
             tail[cell] = self.ctx.add(tail[cell], weight);
         }
@@ -253,17 +266,14 @@ impl<'a> ModQCoefficients<'a> {
         )?;
         let weights = self.build_row_weights(relation, claim, cfg)?;
         let tail = self.tape_tail(relation, &weights.matrix_rows)?;
+        // The verifier adds the public-bit weights separately below, so the
+        // tape's runs describe `tail` unsplit.
+        let runs = self.tail_runs(relation, cfg, false);
         let (instances, sha) = self.build_sha_factors(relation, claim, cfg)?;
         let equality = equality_weights(assignment_point, cfg)?;
         let mut value = evaluate_sha_factors(&instances, &sha, assignment_point, cfg)?;
         value += &(weights.constant * &equality.at(0));
-        value += &evaluate_assignment_tail(
-            self.ctx,
-            relation.map.h_offset,
-            tail.len(),
-            &equality,
-            |column| tail[column],
-        );
+        value += &evaluate_tail_by_runs(self.ctx, relation.map.h_offset, &tail, &runs, &equality);
         for (&cell, &weight) in relation.local.public_h.iter().zip(&weights.public_bits) {
             value += &(self.ctx.field(weight) * &equality.at(relation.map.h_offset + cell));
         }
@@ -399,12 +409,12 @@ impl BatchedMatrixMle {
             cfg,
         )?;
         value += &(self.constant_weight.clone() * &equality.at(0));
-        value += &evaluate_assignment_tail(
+        value += &evaluate_tail_by_runs(
             self.ctx,
             self.p256_assignment_offset,
-            self.p256_montgomery_evaluations.len(),
+            &self.p256_montgomery_evaluations,
+            &self.tail_runs,
             &equality,
-            |index| self.p256_montgomery_evaluations[index],
         );
         Ok(value)
     }
@@ -455,42 +465,63 @@ fn evaluate_sha_factors(instances: &[F], sha: &[F], point: &[F], cfg: &Config) -
         .map_err(error)
 }
 
-fn evaluate_assignment_tail(
+/// `Σ_j tail[j] · eq(point, offset + j)` where `tail` is geometric on `runs`
+/// (`tail[start + k] = base · 2^k`) and arbitrary elsewhere. With
+/// `eq(offset + j) = low[(offset + j) mod L] · high[(offset + j) / L]`, a run's
+/// intersection with one high block `[lo, hi)` contributes
+/// `base_t · high[b] · (Q[lo] − 2^(hi − lo) · Q[hi])` where
+/// `Q[t] = Σ_{i ≥ t} 2^(i − t) · low[i]` (a backward recurrence, no inverses),
+/// so the runs cost a few multiplications each; columns outside every run pay
+/// two multiplications.
+fn evaluate_tail_by_runs(
     ctx: RawMontyCtx,
     offset: usize,
-    len: usize,
+    tail: &[Raw],
+    runs: &[(usize, usize, F)],
     equality: &EqualityWeights<F>,
-    evaluation_at: impl Fn(usize) -> Raw + Sync,
 ) -> F {
-    if len == 0 {
-        return ctx.field(0 as Raw);
-    }
     let (low, high) = (ctx.raw_vec(equality.low()), ctx.raw_vec(equality.high()));
-    // eq(point, assignment_index) = low[index mod L] * high[index / L] with L = low.len(),
-    // so the high factor is applied once per group of L consecutive assignment indices:
-    // one multiplication per index instead of two.
-    let shift = low.len().ilog2();
-    let mask = low.len() - 1;
-    let (first, last) = (offset >> shift, (offset + len - 1) >> shift);
-    let group = |block: usize| {
-        let start = (block << shift).max(offset);
-        let end = ((block + 1) << shift).min(offset + len);
-        let inner = (start..end).fold(0 as Raw, |sum, assignment_index| {
-            ctx.add(
-                sum,
-                ctx.mul(low[assignment_index & mask], evaluation_at(assignment_index - offset)),
-            )
-        });
-        ctx.mul(inner, high[block])
+    let block = low.len();
+    let shift = block.ilog2();
+    let mask = block - 1;
+    // Q[t] = low[t] + 2 · Q[t + 1], Q[block] = 0.
+    let mut suffix = vec![0 as Raw; block + 1];
+    for t in (0..block).rev() {
+        let doubled = ctx.add(suffix[t + 1], suffix[t + 1]);
+        suffix[t] = ctx.add(low[t], doubled);
+    }
+    // 2^k in Montgomery form for k ≤ block.
+    let mut pow2 = Vec::with_capacity(block + 1);
+    pow2.push(ctx.native_residue(1));
+    for k in 0..block {
+        pow2.push(ctx.add(pow2[k], pow2[k]));
+    }
+    let mut sum = 0 as Raw;
+    let mut cursor = 0usize;
+    let scalar = |sum: &mut Raw, from: usize, to: usize| {
+        for column in from..to {
+            let index = offset + column;
+            let weight = ctx.mul(low[index & mask], high[index >> shift]);
+            *sum = ctx.add(*sum, ctx.mul(weight, tail[column]));
+        }
     };
-    #[cfg(feature = "parallel")]
-    let sum = (first..last + 1)
-        .into_par_iter()
-        .with_min_len(2)
-        .fold(|| 0 as Raw, |sum, block| ctx.add(sum, group(block)))
-        .reduce(|| 0 as Raw, |left, right| ctx.add(left, right));
-    #[cfg(not(feature = "parallel"))]
-    let sum = (first..last + 1).fold(0 as Raw, |sum, block| ctx.add(sum, group(block)));
+    for &(start, len, ref base) in runs {
+        scalar(&mut sum, cursor, start);
+        let mut base_t = ctx.raw(base);
+        let mut index = offset + start;
+        let end = offset + start + len;
+        while index < end {
+            let b = index >> shift;
+            let lo = index & mask;
+            let hi = (lo + (end - index)).min(block);
+            let part = ctx.sub(suffix[lo], ctx.mul(pow2[hi - lo], suffix[hi]));
+            sum = ctx.add(sum, ctx.mul(ctx.mul(base_t, part), high[b]));
+            base_t = ctx.mul(base_t, pow2[hi - lo]);
+            index += hi - lo;
+        }
+        cursor = start + len;
+    }
+    scalar(&mut sum, cursor, tail.len());
     ctx.field(sum)
 }
 

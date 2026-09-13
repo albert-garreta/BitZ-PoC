@@ -29,7 +29,9 @@ use crate::{
         f2z::{SpartanF2zField as F, f2z_generator},
         grinding::{GrindingDomain, GrindingRound, grind_and_absorb, verify_and_absorb},
         matrix::{eq_table, make_equality_factors},
-        sha256::inner_sumcheck::{prove_composite_inner_sumcheck, verify_sha256_inner_sumcheck},
+        sha256::inner_sumcheck::{
+            ColumnMajorPackedBits, prove_composite_inner_sumcheck, verify_sha256_inner_sumcheck,
+        },
         squeeze_field,
         sumcheck::{
             OptimizedSumcheckReducer, OuterSumcheckProof, SumcheckProof,
@@ -242,7 +244,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
             inner_claim.claimed_sum().clone(),
             prepared.h_layout.row_vars + prepared.h_layout.col_vars,
             &batched_matrix_mle.as_mle(&cfg)?,
-            &|i| Ok(witness.h_bit(i, &prepared.h_layout)),
+            &ColumnMajorPackedBits::new(&witness.h_rows, prepared.h_layout.row_vars),
             prefix_vars,
             &cfg,
             &reducer,

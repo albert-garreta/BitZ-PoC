@@ -674,6 +674,52 @@ Combined patch (tape + kernel, 7 files, +875/−44), applied to the main checkou
 review: `docs/sha256-ecdsa-tape-kernel.patch` (supersedes `sha256-ecdsa-tape-phase1.patch`).
 Proposed paper table with these F2Z rows: `docs/sha256-ecdsa-table-proposed-kernel.tex`.
 
+### 4.9 Levers 2, 3, 5 (part) and 7 — DONE and measured (2026-09-13, 22:19; committed)
+
+Four more transcript-neutral changes, one batch: (a) the inner prover reads the assignment
+sixteen bits at a time (`Sha256InnerBitSource::bits_at`; `ColumnMajorPackedBits` for the ECDSA
+assignment, which is stored column-major in packed words; one- or two-word reads for slices),
+at all four read sites; (b) the packed-H fold no longer compares the field configuration per
+suffix (that comparison was 3.5 % of single-thread samples); (c) both the prover's and the
+verifier's matrix evaluation sum the P-256 tail by its geometric runs — a backward recurrence
+`Q[t] = low[t] + 2·Q[t+1]` over the low equality table turns every (run, high-block) piece
+into three multiplications, and only the columns outside every run pay per-column work; (d) the
+tail pieces are built in parallel. A first version skipped zero bits with a branch per bit and
+was *slower* (the inner sumcheck +7 ms at 2^7, +36 ms at 2^10): the bits are random, so the
+mispredictions cost more than the multiply-by-0/1 they replaced. The committed version keeps
+the loops branch-free (unconditional MAC in the fold, trailing-zeros iteration in the kernel).
+
+A/B at 2^7 (kernel build vs this build, interleaved 2 × 5, ms):
+
+| build | thr | rate | prover | `shared_inner_prove` | `coefficient_evaluate` (P) | verifier | `coefficient_evaluate` (V) | `mv:rswitch` |
+|---|---:|---|---:|---:|---:|---:|---:|---:|
+| kernel | 1 | 1/2 | 151.9 | 84.3 | 5.0 | 23.3 | 8.3 | 12.7 |
+| **+ levers** | 1 | 1/2 | **139.4** | **76.5** | **0.7** | **18.9** | **3.9** | 12.7 |
+| kernel | 10 | 1/2 | 63.4 | 27.1 | 1.8 | 12.1 | 3.3 | 5.8 |
+| **+ levers** | 10 | 1/2 | **59.7** | **24.6** | **1.0** | **11.4** | **2.6** | 5.7 |
+
+Every size (`bench_results/sha256-ecdsa-levers2-20260913-i4-10`; proof sizes identical):
+
+| N | thr | F2Z prover: kernel → now | Binius64 | F2Z verifier: kernel → now | Binius64 |
+|---|---:|---:|---:|---:|---:|
+| 2^4 | 1 | 93 → **85** | 148 | 19.5 → **14.8** | 11.3 |
+| 2^5 | 1 | 103 → **94** | 148 | 20.0 → **15.6** | 11.4 |
+| 2^6 | 1 | 116 → **107** | 150 | 21.2 → **17.2** | 11.7 |
+| 2^7 | 1 | 152 → **139** | 168 | 23.3 → **19.3** | 12.8 |
+| 2^10 | 1 | 637 → **596** | 218 | 55.7 → **51.5** | 22.4 |
+| 2^4 | 10 | 50.9 → **50.4** | 57.3 | 11.3 → **10.4** | 5.7 |
+| 2^7 | 10 | 63.6 → **62.6** (60.2 at rate 1/8) | 60.3 | 12.1 → **11.7** | 6.2 |
+| 2^10 | 10 | 165 → **158** | 73.1 | 19.2 → 19.3 | 8.4 |
+
+State of the 2^7 single-thread profile now: prover 139 ms = inner sumcheck 76.5 (SHA ≈ 51 at
+0.40 ms per compression, tail ≈ 25) + opening 52 + matrices 6 + outer 3.3; verifier 18.9 ms =
+ring-switch read-off 12.7 + matrix evaluation 3.9 (the tape's 2.7 + 1.2) + rest 2.3. Over the
+evening the 2^7 single-thread numbers moved 207 → 139 ms (prover) and 45 → 18.9 ms (verifier)
+with proof bytes untouched; Binius64 is at 168 / 12.8. Remaining levers, in order: the
+second-level tail structure (the ≈25 ms tail share of the inner sumcheck), the serial
+`mqv:wprep`/`vwprep` and `outer_prove` at 10 threads (≈8 ms), the forest's phase A scaling, and
+the ring-switch read-off on the verifier (12.7 ms, now two thirds of it).
+
 ## 5. Paper impact (proposals only — nothing was edited)
 
 ### 5.1 Claims that depend on the old comparison
