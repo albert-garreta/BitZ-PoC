@@ -116,9 +116,11 @@ bash scripts/run_native_mul_compare.sh
 ```
 
 *128-bit multiplication* (`x · y = z` for random 128-bit `x, y` and the exact
-256-bit `z`; the `u128` workload runs on BitZ and Binius64 only. BitZ runs to
+256-bit `z`; the `u128` workload runs on BitZ and Binius64 only; Binius64 uses its
+[`textbook_mul` bignum circuit](https://github.com/binius-zk/binius64/blob/e0ddeb91d3826457322e3b7434a8ca0625f2f56e/crates/circuits/src/bignum/mul.rs#L27-L42). BitZ runs to
 2^21 here; Binius64's bignum prover exceeds the machine's 16 GB from 2^18, so run
-it separately on 2^15–2^17):
+it separately on 2^15–2^17, once at its default rate 1/2 and once at rate 1/8
+with `F2Z_BINIUS_LOG_INV_RATE=3`, since the paper's tables list both):
 
 ```sh
 RAYON_NUM_THREADS=8 \
@@ -203,6 +205,19 @@ See the [campaign guide](docs/matched-multiswap-campaign.md) for the statement,
 security accounting, toolchain setup, and validation requirements. The
 [historical comparison rows](#historical-multiswap-comparison-rows-limber-zinc)
 below predate this matched campaign.
+
+
+### SHA-256 
+```sh
+cd /Users/albertgarretafontelles/f2z-pcs
+CARGO_TARGET_DIR=$PWD/target RUSTFLAGS="-C target-cpu=native" \
+RAYON_NUM_THREADS=8 \
+F2Z_SHA_COMPARE_EXPONENTS="4 5 6 7 9 10 11 12" \
+F2Z_SHA_COMPARE_REPS=5 \
+F2Z_SHA_COMPARE_BACKENDS="f2z binius64" \
+F2Z_SHA_COMPARE_OUTPUT_DIR="PerfRuns/$(date -u +%Y-%m-%dT%H-%M-%SZ)-sha256-compare" \
+  cargo bench --bench sha256_e2e_compare --features bench-internals,native-sha256-compare
+```
 
 # Scratch
 
