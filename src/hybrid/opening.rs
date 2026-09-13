@@ -1,8 +1,9 @@
 //! Round 0 (the out-of-domain sample), one ring switch and one Ligerito
 //! continuation, with two-root authentication.
 //!
-//! The shared opener runs in the Johnson (list-decoding) regime at rate
-//! 1/8. The paper's theorem covers that regime only with Round 0: right
+//! The shared opener runs in the Johnson (list-decoding) regime, at rate
+//! 1/2 by default (rate 1/8 selectable through the prepared Ligerito
+//! selection). The paper's theorem covers that regime only with Round 0: right
 //! after the statement, before any other challenge, the prover sends
 //! `y = MLE[V](ζ⃗)` of the virtual packed witness `V` at a transcript-drawn
 //! `ζ⃗ = (ζ, ζ², ζ⁴, …)`, which pins it to one element of the level-0
@@ -34,9 +35,11 @@ use flock_core::{
     },
 };
 
-/// Reed–Solomon inverse-rate exponent shared by both initial commitments
-/// and the opener's level 0 (rate 1/2). The commit rate MUST equal the
-/// level-0 configuration rate: the opener queries the committed codewords.
+/// Default Reed–Solomon inverse-rate exponent of the shared opener
+/// (rate 1/2). The effective rate is the prepared Ligerito selection's
+/// level-0 rate — [`Geometry::params`] takes it explicitly — and the commit
+/// rate MUST equal that level-0 configuration rate: the opener queries the
+/// committed codewords.
 pub(super) const LOG_INV_RATE: usize = 1;
 
 #[derive(Clone, Debug)]
@@ -100,14 +103,15 @@ impl Geometry {
         for &r in &point[11 + high..] { padding *= F::ONE + r; }
         (original, padding)
     }
-    /// Commitment parameters of one branch. `profile` is inert here: the
-    /// hybrid path never consults flock's embedded profiles, its opener
-    /// configuration is the prepared Ligerito resolver; `commit` reads only `m`,
-    /// `log_inv_rate`, `log_batch_size` and `merkle_hash`.
-    pub fn params(&self, branch: usize) -> PcsParams {
+    /// Commitment parameters of one branch, committing at `log_inv_rate` —
+    /// the prepared Ligerito selection's level-0 rate. `profile` is inert
+    /// here: the hybrid path never consults flock's embedded profiles, its
+    /// opener configuration is the prepared Ligerito resolver; `commit` reads
+    /// only `m`, `log_inv_rate`, `log_batch_size` and `merkle_hash`.
+    pub fn params(&self, branch: usize, log_inv_rate: usize) -> PcsParams {
         PcsParams {
             m: self.physical_logs[branch] + 7,
-            log_inv_rate: LOG_INV_RATE,
+            log_inv_rate,
             log_batch_size: self.lane_logs[branch],
             profile: ligerito::LigeritoProfile::Secure,
             merkle_hash: merkle::HashKind::Blake3,

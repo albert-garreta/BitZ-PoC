@@ -17,6 +17,10 @@ struct Args {
     r: usize,
     c: usize,
     target: u32,
+    /// Binius-family rate: level-0 inverse-rate exponent, forwarded to the
+    /// worker (1 = rate 1/2, 3 = rate 1/8). F2Z rows select their rate
+    /// through `F2Z_LIG_PROFILE` (`custom:1:4` / `custom:3:4`) instead.
+    log_inv_rate: usize,
     threads: usize,
     reps: usize,
     seed: u64,
@@ -30,6 +34,7 @@ impl Args {
         let mut args = std::env::args().skip(1);
         let (mut method, mut r, mut c) = (None, None, None);
         let (mut target, mut threads, mut reps, mut seed) = (100, 1, 3, 0);
+        let mut log_inv_rate = 1;
         let (mut fixture, mut export_fixture, mut binius64_worker) = (None, None, None);
         while let Some(flag) = args.next() {
             if flag == "--bench" {
@@ -37,7 +42,7 @@ impl Args {
             }
             if flag == "--help" {
                 println!(
-                    "sha256_ecdsa_compare --method f2z-split|f2z-all|spartan-mc|binius64 --r R --c C [--target 100|128] [--threads N] [--reps N] [--seed N] [--fixture FILE] [--export-fixture FILE] [--binius64-worker PATH]"
+                    "sha256_ecdsa_compare --method f2z-split|f2z-all|spartan-mc|binius64|binius64-ligerito --r R --c C [--target 100|128] [--log-inv-rate 1|3] [--threads N] [--reps N] [--seed N] [--fixture FILE] [--export-fixture FILE] [--binius64-worker PATH]"
                 );
                 std::process::exit(0);
             }
@@ -49,6 +54,7 @@ impl Args {
                 "--r" => r = Some(value.parse::<usize>()?),
                 "--c" => c = Some(value.parse::<usize>()?),
                 "--target" => target = value.parse()?,
+                "--log-inv-rate" => log_inv_rate = value.parse()?,
                 "--threads" => threads = value.parse()?,
                 "--reps" => reps = value.parse()?,
                 "--seed" => seed = value.parse()?,
@@ -63,6 +69,7 @@ impl Args {
             r: r.ok_or("--r is required")?,
             c: c.ok_or("--c is required")?,
             target,
+            log_inv_rate,
             threads,
             reps,
             seed,
@@ -74,8 +81,16 @@ impl Args {
         if !(3..=16).contains(&i) || ![100, 128].contains(&target) || threads == 0 || reps == 0 {
             return Err("require 3 <= r+c <= 16, target 100/128 and positive threads/reps".into());
         }
-        if !["f2z-split", "f2z-all", "spartan-mc", "binius64"].contains(&out.method.as_str()) {
+        if ![1, 3].contains(&out.log_inv_rate) {
+            return Err("require --log-inv-rate 1 (rate 1/2) or 3 (rate 1/8)".into());
+        }
+        if !["f2z-split", "f2z-all", "spartan-mc", "binius64", "binius64-ligerito"]
+            .contains(&out.method.as_str())
+        {
             return Err("unknown method".into());
+        }
+        if out.method == "binius64-ligerito" && out.target != 100 {
+            return Err("the F2Z opener's whole-protocol gate is fixed at 100 bits".into());
         }
         Ok(out)
     }
@@ -115,13 +130,15 @@ fn dispatch_binius(args: &Args) -> Result<()> {
     let mut command = std::process::Command::new(worker);
     command.args([
         "--method",
-        "binius64",
+        &args.method,
         "--r",
         &args.r.to_string(),
         "--c",
         &args.c.to_string(),
         "--target",
         &args.target.to_string(),
+        "--log-inv-rate",
+        &args.log_inv_rate.to_string(),
         "--threads",
         &args.threads.to_string(),
         "--reps",
@@ -202,6 +219,10 @@ fn emit(args: &Args, fixture: &Fixture, trial: usize, mut row: Value) {
 
 fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
     let statement = statement(fixture);
+    // The campaign runner selects the opener rate per case through
+    // `F2Z_LIG_PROFILE`; record the request verbatim on every row.
+    let ligerito_profile =
+        std::env::var("F2Z_LIG_PROFILE").unwrap_or_else(|_| "default-by-target".into());
     let (prepared, setup_ms) = timed(|| {
         prepare_sha256_ecdsa(args.exponent(), args.target, mode)
             .and_then(|p| p.with_ligerito(common::ligerito_selection(args.target as usize)))
@@ -264,7 +285,7 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
             trial,
             json!({
                 "setup_ms": setup_ms, "witness_ms": witness_ms, "commit_ms": commit_ms,
-                "e2e_prover_ms": e2e_prover_ms,
+                "e2e_prover_ms": e2e_prover_ms, "ligerito_profile": ligerito_profile,
                 "protocol_ms": protocol_ms, "verify_ms": verify_ms, "codec_ms": codec_ms,
                 "proof_object_bytes": object_bytes, "proof_material_bytes": wire.len(),
                 "outer_ms": phase("ecdsa:outer_prove"), "inner_ms": phase("ecdsa:shared_inner_prove"),
@@ -336,7 +357,7 @@ fn main() -> Result<()> {
         return shared_fixture::SignedFixture::generate(args.exponent() as u8, args.seed)?
             .write(path);
     }
-    if args.method == "binius64" {
+    if args.method.starts_with("binius64") {
         return dispatch_binius(&args);
     }
     rayon::ThreadPoolBuilder::new()

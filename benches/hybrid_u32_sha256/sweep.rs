@@ -229,12 +229,22 @@ pub fn run(
         )
     })?;
     let results_dir = results_dir.canonicalize()?;
+    // Record the effective backend knobs so runs at different rates,
+    // accounting models or thread counts can never be confused afterwards.
     fs::write(
         results_dir.join("run.txt"),
         format!(
-            "executable={}\nprotocol=hybrid-u32-mod32-sha256-v5\nmultiplication_relation=xy=z+2^32*w (x,y,z,w are u32)\nshapes={shapes:?}\nmodes={modes:?}\niterations={iterations}\nRAYON_NUM_THREADS={}\nnon_zk=true\nsecurity_target_bits=100\n",
+            "executable={}\nprotocol=hybrid-u32-mod32-sha256-v5\nmultiplication_relation=xy=z+2^32*w (x,y,z,w are u32)\nshapes={shapes:?}\nmodes={modes:?}\niterations={iterations}\nRAYON_NUM_THREADS={}\nnon_zk=true\nsecurity_target_bits=100\nprofile={}\nF2Z_HYBRID_BINIUS_LOG_INV_RATE={}\nF2Z_HYBRID_BINIUS_SECURITY_BITS={}\nF2Z_BINIUS_LOG_INV_RATE={}\nF2Z_BINIUS_LIGERITO_ACCOUNTING={}\n",
             executable.display(),
             std::env::var("RAYON_NUM_THREADS").unwrap_or_else(|_| "default".into()),
+            profile
+                .map(str::to_owned)
+                .or_else(|| std::env::var("F2Z_LIG_PROFILE").ok())
+                .unwrap_or_else(|| "custom:1:4".into()),
+            super::binius_log_inv_rate(),
+            super::binius_security_bits(),
+            super::binius_ligerito_log_inv_rate(),
+            super::binius_ligerito_accounting().name(),
         ),
     )?;
     let mut summary = BufWriter::new(File::create(results_dir.join("summary.csv"))?);
@@ -295,17 +305,59 @@ pub fn run(
             }
             let log = fs::read_to_string(&log_path)?;
             let reports: Vec<_> = log.lines().filter_map(|l| l.strip_prefix("LIGERITO_CONFIG ")).collect();
-            let identity = if *mode == "all-binius" {
-                if !reports.is_empty() { return Err("all-Binius output unexpectedly carries Ligerito configuration".into()); }
-                String::new()
-            } else {
-                if reports.len() != 1 { return Err("missing or duplicated child Ligerito identity".into()); }
-                let report: serde_json::Value = serde_json::from_str(reports[0])?;
-                f2z::ligerito_flock::ResolvedLigerito::validate_report(&report)?;
-                let expected = if *mode == "hybrid" {106} else {112};
-                if report["target_bits"] != expected { return Err("incorrect Ligerito component budget".into()); }
-                fs::write(results_dir.join(format!("{stem}.ligerito.json")), serde_json::to_vec_pretty(&report)?)?;
-                f2z::ligerito_flock::ResolvedLigerito::encode_report(&report)
+            let adapter_reports: Vec<_> = log
+                .lines()
+                .filter_map(|l| l.strip_prefix("BINIUS_LIGERITO_CONFIG "))
+                .collect();
+            let identity = match *mode {
+                "all-binius" => {
+                    if !reports.is_empty() || !adapter_reports.is_empty() {
+                        return Err("all-Binius output unexpectedly carries Ligerito configuration".into());
+                    }
+                    String::new()
+                }
+                "binius-ligerito" => {
+                    if !reports.is_empty() || adapter_reports.len() != 1 {
+                        return Err("missing or duplicated child F2Z-opener identity".into());
+                    }
+                    let report: serde_json::Value = serde_json::from_str(adapter_reports[0])?;
+                    let rate = report["log_inv_rate"].as_u64();
+                    let accounting = report["accounting"].as_str();
+                    if !matches!(rate, Some(1 | 3))
+                        || !matches!(accounting, Some("union-bound" | "round-by-round"))
+                        || report["component_target_bits"].as_u64().is_none_or(|t| !(100..=112).contains(&t))
+                    {
+                        return Err("invalid F2Z-opener identity (rate, accounting or component target)".into());
+                    }
+                    fs::write(results_dir.join(format!("{stem}.binius-ligerito.json")), serde_json::to_vec_pretty(&report)?)?;
+                    f2z::ligerito_flock::ResolvedLigerito::encode_report(&report)
+                }
+                _ => {
+                    if reports.len() != 1 || !adapter_reports.is_empty() {
+                        return Err("missing or duplicated child Ligerito identity".into());
+                    }
+                    let report: serde_json::Value = serde_json::from_str(reports[0])?;
+                    f2z::ligerito_flock::ResolvedLigerito::validate_report(&report)?;
+                    // The opener's component budget: `separate` keeps 112; the
+                    // hybrid keeps the documented 106 at the default rate 1/2,
+                    // while rate 1/8 records its solved target in 100..=112.
+                    let resolved_rate = report["resolved_profile"]
+                        .as_str()
+                        .and_then(|name| name.split(':').nth(1))
+                        .and_then(|rate| rate.parse::<u64>().ok())
+                        .unwrap_or(1);
+                    let target = report["target_bits"].as_u64().unwrap_or(0);
+                    let valid = if *mode == "separate" {
+                        target == 112
+                    } else if resolved_rate == 1 {
+                        target == 106
+                    } else {
+                        (100..=112).contains(&target)
+                    };
+                    if !valid { return Err("incorrect Ligerito component budget".into()); }
+                    fs::write(results_dir.join(format!("{stem}.ligerito.json")), serde_json::to_vec_pretty(&report)?)?;
+                    f2z::ligerito_flock::ResolvedLigerito::encode_report(&report)
+                }
             };
             for (row, display) in
                 formatted_rows(&fs::read_to_string(&csv_path)?, mode, shape, iterations)?

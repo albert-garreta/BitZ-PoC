@@ -8,10 +8,8 @@ use binius_prover::{OptimalPackedB128, Prover};
 use binius_transcript::{ProverTranscript, VerifierTranscript, fiat_shamir::HasherChallenger};
 use binius_verifier::Verifier;
 use f2z::{
-    binius_ligerito::Prepared as BiniusLigerito,
-    hybrid::{
-        CompositionProfile, LIGERITO_COMPONENT_BITS, Parameters, PreparedHybrid, chaining_value,
-    },
+    binius_ligerito::{Accounting, Prepared as BiniusLigerito},
+    hybrid::{CompositionProfile, Parameters, PreparedHybrid, chaining_value},
     piop::spartan::{
         f2z::{PreparedU32MulRelation, commit_u32_mul_witness, prove_u32_mul, verify_u32_mul},
         u32_mul::{U32MulLayout, U32MulMod32Row, U32MulWitness},
@@ -37,8 +35,9 @@ fn select_ligerito(cli: Option<&str>, target: usize) -> Result<f2z::ligerito_flo
 
 /// How the native Binius64 circuit is proved: Binius64's own ring switch +
 /// BaseFold/FRI, or its PIOP prefix with every oracle committed and opened by
-/// the F2Z opener (rate 1/2, Johnson regime, grinding, Round 0; whole-protocol
-/// union bound gated at 100 bits).
+/// the F2Z opener (Johnson regime, grinding, Round 0; rate and accounting
+/// from `F2Z_BINIUS_LOG_INV_RATE` / `F2Z_BINIUS_LIGERITO_ACCOUNTING`, gated
+/// at 100 bits).
 enum NativeBackend {
     Binius {
         prover: Prover<OptimalPackedB128, Blake3HashSuite>,
@@ -79,7 +78,11 @@ impl Native {
         }
         let circuit = builder.build();
         let backend = if ligerito {
-            NativeBackend::Ligerito(BiniusLigerito::new(circuit.constraint_system())?)
+            NativeBackend::Ligerito(BiniusLigerito::with_options(
+                circuit.constraint_system(),
+                binius_ligerito_log_inv_rate(),
+                binius_ligerito_accounting(),
+            )?)
         } else {
             // 112 bits for the FRI component leaves slack for the binary PIOPs
             // and the second proof in the separate mode. No default 96-bit preset.
@@ -152,6 +155,31 @@ impl Native {
             }
         }
     }
+    /// Machine-readable identity of the F2Z-opener backend, recorded by the
+    /// sweep next to the child log (`BINIUS_LIGERITO_CONFIG` stderr line).
+    fn ligerito_identity(&self) -> Option<serde_json::Value> {
+        match &self.backend {
+            NativeBackend::Binius { .. } => None,
+            NativeBackend::Ligerito(prepared) => {
+                let security = prepared.security();
+                Some(serde_json::json!({
+                    "scheme": "binius64-ligerito",
+                    "log_inv_rate": prepared.log_inv_rate(),
+                    "accounting": security.accounting.name(),
+                    "component_target_bits": prepared.component_bits(),
+                    "gate_bits": security.target_bits,
+                    "algebraic_bits": security.algebraic_bits,
+                    "union_bound_bits": security.union_bound_bits,
+                    "round_by_round_bits": security.round_by_round_bits,
+                    "oracle_logs": prepared
+                        .oracle_specs()
+                        .iter()
+                        .map(|s| s.log_msg_len)
+                        .collect::<Vec<_>>(),
+                }))
+            }
+        }
+    }
     fn setup_line(&self) -> String {
         match &self.backend {
             NativeBackend::Binius { .. } => format!(
@@ -182,13 +210,16 @@ impl Native {
                     })
                     .collect();
                 format!(
-                    "ligerito_component_bits={} algebraic_security_bits={:.3} level0_queries={} level0_fold_grinding_bits={} ood_grinding_bits={} log_inv_rate={} oracle_logs={:?} binding_term={} ladders={}",
+                    "ligerito_component_bits={} accounting={} algebraic_security_bits={:.3} union_bound_bits={:.3} round_by_round_bits={:.3} level0_queries={} level0_fold_grinding_bits={} ood_grinding_bits={} log_inv_rate={} oracle_logs={:?} binding_term={} ladders={}",
                     prepared.component_bits(),
+                    security.accounting.name(),
                     security.algebraic_bits,
+                    security.union_bound_bits,
+                    security.round_by_round_bits,
                     witness.level0_queries(),
                     witness.level0_fold_grinding_bits(),
                     witness.ood_grinding_bits(),
-                    f2z::binary_pcs::LOG_INV_RATE,
+                    prepared.log_inv_rate(),
                     prepared
                         .oracle_specs()
                         .iter()
@@ -241,6 +272,25 @@ fn binius_security_bits() -> usize {
         .unwrap_or(112)
 }
 
+/// F2Z-opener rate for `binius-ligerito` mode: `F2Z_BINIUS_LOG_INV_RATE`
+/// (1 = rate 1/2, 3 = rate 1/8), the same knob the mul benches read.
+fn binius_ligerito_log_inv_rate() -> usize {
+    std::env::var("F2Z_BINIUS_LOG_INV_RATE")
+        .ok()
+        .map(|v| v.parse().expect("F2Z_BINIUS_LOG_INV_RATE must be an integer"))
+        .unwrap_or(f2z::binary_pcs::LOG_INV_RATE)
+}
+
+/// `F2Z_BINIUS_LIGERITO_ACCOUNTING`: `union` (default) or `rbr`, exactly as
+/// `benches/mul_e2e_compare` reads it.
+fn binius_ligerito_accounting() -> Accounting {
+    match std::env::var("F2Z_BINIUS_LIGERITO_ACCOUNTING").as_deref() {
+        Err(_) | Ok("union") | Ok("union-bound") => Accounting::UnionBound,
+        Ok("rbr") | Ok("round-by-round") => Accounting::RoundByRound,
+        Ok(other) => panic!("F2Z_BINIUS_LIGERITO_ACCOUNTING must be union or rbr, not {other:?}"),
+    }
+}
+
 pub fn run() -> Result<(), AnyError> {
     let mut parameters = Parameters::default();
     let mut mode = String::from("hybrid");
@@ -264,7 +314,7 @@ pub fn run() -> Result<(), AnyError> {
         }
         if arg == "--help" {
             println!(
-                "hybrid-u32-sha256 [--mode hybrid|separate|all-binius|binius-ligerito] [--mul-log 9..22] [--sha-log 1..16] [--iterations N] [--output PROOF]\nhybrid-u32-sha256 --verify PROOF\nhybrid-u32-sha256 --sweep [--shapes MUL_LOG:SHA_LOG,...] [--mode hybrid|separate|all-binius|binius-ligerito|all] [--iterations N] [--results-dir DIR]\nSingle-run defaults: 2^20 products, 2^16 chained compressions, 5 measured iterations after one warmup.\nSweep defaults: equal packed witnesses (15:7,16:8,17:9,18:10,19:11,20:12), hybrid mode, 5 measured iterations after one warmup.\nEqual operation counts (N = M): --shapes 9:9,10:10,...,14:14 (hybrid and all-binius; separate mode keeps the standalone u32 API's 2^15 floor).\nSweeps save per-run CSV/logs and summary.csv in a new directory under benches/results/hybrid-u32-sha256/. --results-dir must not already exist.\nbinius-ligerito proves the all-Binius circuit with Binius64's PIOP and the F2Z opener (rate 1/2, Johnson regime, grinding, Round 0; 100-bit union bound).\nNon-ZK, 100-bit composition target. Set RAYON_NUM_THREADS to control threads. --output is for single hybrid proofs."
+                "hybrid-u32-sha256 [--mode hybrid|separate|all-binius|binius-ligerito] [--mul-log 9..22] [--sha-log 1..16] [--iterations N] [--output PROOF]\nhybrid-u32-sha256 --verify PROOF\nhybrid-u32-sha256 --sweep [--shapes MUL_LOG:SHA_LOG,...] [--mode hybrid|separate|all-binius|binius-ligerito|all] [--iterations N] [--results-dir DIR]\nSingle-run defaults: 2^20 products, 2^16 chained compressions, 5 measured iterations after one warmup.\nSweep defaults: equal packed witnesses (15:7,16:8,17:9,18:10,19:11,20:12), hybrid mode, 5 measured iterations after one warmup.\nEqual operation counts (N = M): --shapes 9:9,10:10,...,14:14 (hybrid and all-binius; separate mode keeps the standalone u32 API's 2^15 floor).\nSweeps save per-run CSV/logs and summary.csv in a new directory under benches/results/hybrid-u32-sha256/. --results-dir must not already exist.\nbinius-ligerito proves the all-Binius circuit with Binius64's PIOP and the F2Z opener (Johnson regime, grinding, Round 0); F2Z_BINIUS_LOG_INV_RATE selects its rate (1 = 1/2 default, 3 = 1/8) and F2Z_BINIUS_LIGERITO_ACCOUNTING its 100-bit gate model (union default, rbr = round-by-round).\nhybrid/separate take --profile (or F2Z_LIG_PROFILE): custom:1:4 = Johnson rate 1/2 (default), custom:3:4 = Johnson rate 1/8 (component target solved in 100..=112).\nall-binius takes F2Z_HYBRID_BINIUS_LOG_INV_RATE (1 default, 3 = rate 1/8).\nNon-ZK, 100-bit composition target. Set RAYON_NUM_THREADS to control threads. --output is for single hybrid proofs."
             );
             return Ok(());
         }
@@ -383,9 +433,11 @@ pub fn run() -> Result<(), AnyError> {
             .map(|term| format!("{}:{:.2}", term.name, -term.error_bound.log2()))
             .unwrap_or_default();
         eprintln!(
-            "setup_ms={setup_ms:.3} packed_logs={:?} algebraic_security_bits={:.3} ligerito_component_bits={LIGERITO_COMPONENT_BITS} ood_grinding_bits={} binding_term={binding}",
+            "setup_ms={setup_ms:.3} packed_logs={:?} algebraic_security_bits={:.3} ligerito_component_bits={} log_inv_rate={} ood_grinding_bits={} binding_term={binding}",
             prepared.packed_witness_logs(),
             prepared.security().algebraic_bits,
+            prepared.ligerito_configuration().security().target_security_bits,
+            prepared.log_inv_rate(),
             prepared.ood_round().map_or(0, |p| p.grinding_bits)
         );
         println!(
@@ -476,6 +528,9 @@ pub fn run() -> Result<(), AnyError> {
         }
         let setup_ms = millis(setup);
         eprintln!("setup_ms={setup_ms:.3} {}", native.setup_line());
+        if let Some(identity) = native.ligerito_identity() {
+            eprintln!("BINIUS_LIGERITO_CONFIG {identity}");
+        }
         let size_column = if mode == "separate" {
             "proof_payload_bytes_estimate"
         } else {

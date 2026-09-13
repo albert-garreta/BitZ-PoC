@@ -2,11 +2,14 @@
 """LaTeX table of absolute numbers from a native-mul run (benches/mul_e2e_compare.rs).
 
 Reads the `summary.json` of one or more `PerfRuns/<stamp>-native-mul` run
-directories (later directories override earlier ones for the same scheme and
-size, so a follow-up run of the large sizes extends a first run) and writes a self-documenting
-`paper/native-mul-table.tex`: one row group per size N, one row per scheme, with
-the medians of witness generation, the complete prover (commit included) and the
-complete verifier, plus complete proof size and isolated peak memory.
+directories (later directories override earlier ones for the same scheme, size
+and thread count, so a follow-up run of the large sizes extends a first run)
+and writes a self-documenting `paper/native-mul-table.tex` in the SHA+ECDSA
+table's format: one row group per size N, sub-grouped by thread count (1 then
+10), one row per scheme, with the medians of witness generation, the complete
+prover (commit included) and the complete verifier, plus complete proof size
+and isolated peak memory. Proof sizes must agree between the thread counts of
+one (scheme, size) — the proof does not depend on the thread count.
 
     python3 scripts/native_mul_table.py PerfRuns/2026-09-08T20-07-32Z-native-mul PerfRuns/2026-09-08T20-55-10Z-native-mul
 """
@@ -22,22 +25,24 @@ from pathlib import Path
 
 from native_mul_results import SAMPLE_SCHEMA, finite_number, require_compatible, validate_summary
 
-# Table rows are (scheme key, LaTeX label). Binius64 appears once per BaseFold
-# rate it was run at: scheme key `binius64@<log_inv_rate>` (rate 1/2 is the
-# Binius64 default, rate 1/8 needs the fewest queries that still pay off).
+# Table rows are (scheme key, LaTeX label), the 2026-09-13 suite: F2Z and
+# Binius64 once per rate (scheme keys `f2z@<log_inv_rate>` and
+# `binius64@<log_inv_rate>`), the Binius64/F2Z-opener rows under the
+# ROUND-BY-ROUND accounting only (`binius64-ligerito-rbr@<log_inv_rate>`;
+# union-bound runs are rejected, re-measure with
+# F2Z_BINIUS_LIGERITO_ACCOUNTING=rbr), Plonky3-FRI at rate 1/2 and Limber at
+# the pinned 100-bit Brakedown target. Naming per the user's directive: no
+# \cite after a scheme name, and the F2Z rows are \ftwoz-SNARK.
 SCHEMES = [
-    ("f2z@1", "\\ftwoz\\ (this work), rate $1/2$"),
-    ("f2z@3", "\\ftwoz\\ (this work), rate $1/8$"),
-    ("binius64@1", "Binius64~\\cite{binius64}, rate $1/2$"),
-    ("binius64@3", "Binius64~\\cite{binius64}, rate $1/8$"),
-    # Binius64's circuit and PIOP with F2Z's opener (rate 1/2, Johnson regime,
-    # grinding, Round 0) is measured by the harness but is NOT a paper row: the
-    # user dropped it from every table on 2026-09-10. Re-add this entry to
-    # restore it; its caption note below is kept for that case.
-    #   ("binius64-ligerito", "Binius64~\\cite{binius64} + \\ftwoz\\ opener, rate $1/2$"),
-    ("plonky3-fri", "Plonky3~\\cite{plonky} (FRI)"),
-    ("plonky3-whir", "Plonky3~\\cite{plonky} (WHIR)"),
-    ("limber", "Limber~\\cite{limber} (Brakedown)"),
+    ("f2z@1", "\\ftwoz-SNARK, $\\rho = 1/2$"),
+    ("f2z@3", "\\ftwoz-SNARK, $\\rho = 1/8$"),
+    ("binius64@1", "Binius64, $\\rho = 1/2$"),
+    ("binius64@3", "Binius64, $\\rho = 1/8$"),
+    ("binius64-ligerito-rbr@1", "Binius64 + \\ftwoz\\ opener, $\\rho = 1/2$"),
+    ("binius64-ligerito-rbr@3", "Binius64 + \\ftwoz\\ opener, $\\rho = 1/8$"),
+    ("plonky3-fri", "Plonky3 (FRI), $\\rho = 1/2$"),
+    ("plonky3-whir", "Plonky3 (WHIR)"),
+    ("limber", "Limber (Brakedown)"),
 ]
 BINIUS_QUERIES = {1: 241, 2: 148, 3: 121, 4: 110}  # 100-bit FRI query counts per log inverse rate
 
@@ -63,12 +68,12 @@ def f2z_caption(rows):
         if policies.setdefault(key, policy) != policy:
             raise ValueError("cannot combine different Ligerito policies at one F2Z rate")
     if not policies:
-        return r"\ftwoz\ (integer R1CS)"
+        return r"\ftwoz-SNARK (integer R1CS)"
     clauses = []
     for rate, (profile, regime, ood) in sorted(policies.items()):
         bound = "Johnson" if regime == "johnson" else "unique decoding radius"
         evaluation = "early Round-0 OOD" if ood else "without OOD"
-        clauses.append(rf"rate $1/{1 << rate}$ is {bound}, {profile}, {evaluation}")
+        clauses.append(rf"$\rho = 1/{1 << rate}$ is {bound}, {profile}, {evaluation}")
     shifts = {int(row["config"].get("u64_split_shift", 0)) for row in rows if row["backend"] == "f2z"}
     shift_note = ""
     if shifts - {0}:
@@ -78,13 +83,16 @@ def f2z_caption(rows):
         shift_note = (f"; the F2Z row side is lowered by ${k}$ variable{'s' if k != 1 else ''} below the "
                       f"default split at every size (one more column variable each, so the read-off is "
                       f"${1 << k}\\times$ longer)")
-    return r"\ftwoz\ (integer R1CS, Lambda100; Ligerito " + "; ".join(clauses) + shift_note + ")"
+    return r"\ftwoz-SNARK (integer R1CS, Lambda100; Ligerito " + "; ".join(clauses) + shift_note + ")"
 
 
 def scheme_key(r: dict) -> str:
     """Row key: the backend slug, with F2Z and Binius64 split by their rate."""
     if r["backend"] == "binius64":
         return f"binius64@{int(r['config'].get('log_inv_rate', 1))}"
+    if r["backend"] == "binius64-ligerito":
+        rbr = r["config"].get("accounting", "union-bound") == "round-by-round"
+        return f"binius64-ligerito{'-rbr' if rbr else ''}@{int(r['config'].get('log_inv_rate', 1))}"
     if r["backend"] == "f2z":
         return f"f2z@{f2z_rate(r)}"
     return r["backend"]
@@ -92,13 +100,13 @@ def scheme_key(r: dict) -> str:
 
 def scheme_name(key: str) -> str:
     """Short scheme name for caption sentences."""
-    names = {"plonky3-fri": "Plonky3-FRI", "plonky3-whir": "Plonky3-WHIR", "limber": "Limber",
-             "binius64-ligerito": "Binius64 with the \\ftwoz\\ opener"}
+    names = {"plonky3-fri": "Plonky3-FRI", "plonky3-whir": "Plonky3-WHIR", "limber": "Limber"}
     if key in names:
         return names[key]
     family, _, rate = key.partition("@")
-    rate = "rate $1/%d$" % (1 << int(rate))
-    return ("\\ftwoz\\ at " if family == "f2z" else "Binius64 at ") + rate
+    prefix = {"f2z": "\\ftwoz-SNARK at ", "binius64": "Binius64 at ",
+              "binius64-ligerito-rbr": "Binius64 with the \\ftwoz\\ opener at "}[family]
+    return prefix + ("$\\rho = 1/%d$" % (1 << int(rate)) if rate else "any rate")
 PLACEHOLDER = "--"
 
 
@@ -126,7 +134,7 @@ def load_summaries(run_dir: Path, workload: str) -> dict:
         if row["workload"] != workload:
             continue
         validate_summary(row)
-        key = (scheme_key(row), row["log_multiplications"])
+        key = (scheme_key(row), row["log_multiplications"], row["threads"])
         if key in result:
             raise ValueError("duplicate summary in run")
         result[key] = row
@@ -141,7 +149,7 @@ def proof_sizes(run_dir: Path, workload: str) -> dict:
         row = json.loads(line)
         if row["workload"] != workload or row["trial"]["kind"] != "sample":
             continue
-        key = (scheme_key(row), row["log_multiplications"])
+        key = (scheme_key(row), row["log_multiplications"], row["threads"])
         if key not in summaries or row.get("schema") != SAMPLE_SCHEMA or row.get("proof_verified") is not True:
             raise ValueError("proof-size sample has no compatible verified summary")
         require_compatible(summaries[key], row | {"schema": summaries[key]["schema"]})
@@ -215,7 +223,8 @@ def main() -> int:
         for line in (run_dir / "samples.jsonl").read_text().splitlines():
             row = json.loads(line)
             if (row["workload"] == args.workload and row["trial"]["kind"] == "sample"
-                    and scheme_key(row) == key[0] and row["log_multiplications"] == key[1]):
+                    and scheme_key(row) == key[0] and row["log_multiplications"] == key[1]
+                    and row["threads"] == key[2]):
                 values.append(row["metrics"]["online_prover_ms"])
         return (max(values) - min(values)) / min(values) if values else float("inf")
 
@@ -241,6 +250,12 @@ def main() -> int:
         else:
             chosen = options[-1]  # last directory given wins, as before
         by[key] = chosen[0]
+    known = dict(SCHEMES)
+    for slug, e, t in by:
+        if slug not in known:
+            raise ValueError(
+                f"unknown table scheme {slug!r} at 2^{e}/{t} threads — the suite renders the round-by-round "
+                "opener rows only; re-measure union-bound binius64-ligerito runs with F2Z_BINIUS_LIGERITO_ACCOUNTING=rbr")
     identities = {}
     source_by_backend = {}
     machines = [row["provenance"]["machine"] for row in by.values()]
@@ -256,8 +271,11 @@ def main() -> int:
             drifted.setdefault(backend, set()).update(
                 {source_by_backend[backend][0][:12], source_identity[0][:12]})
         source_by_backend[backend] = source_identity
+        # The thread count is a table dimension now, so the per-size identity
+        # covers corpus, policy and machine — every thread group of one size
+        # must still prove the same corpus under the same policy.
         exponent = row["log_multiplications"]
-        identity = (row["corpus_digest"], row["threads"], row["measurement_policy"], row["provenance"]["machine"])
+        identity = (row["corpus_digest"], row["measurement_policy"], row["provenance"]["machine"])
         if exponent in identities and identities[exponent] != identity:
             raise ValueError("comparison mixes corpora, machines, or measurement policies")
         identities[exponent] = identity
@@ -266,10 +284,11 @@ def main() -> int:
         scheme, exp = item.split(":")
         dropped.add((scheme, int(exp)))
     for k in list(by):
-        if k in dropped or (k[0].split("@")[0], k[1]) in dropped:
+        if (k[0], k[1]) in dropped or (k[0].split("@")[0], k[1]) in dropped:
             by.pop(k)
     def selected(key, chosen):
-        return key in chosen or (key[0].split("@")[0], key[1]) in chosen
+        """Annotation selectors are (scheme, exponent) and cover both thread counts."""
+        return (key[0], key[1]) in chosen or (key[0].split("@")[0], key[1]) in chosen
     paged = {k: by.pop(k) for k in list(by) if selected(k, memory_bound)}
     for k in list(by):
         if selected(k, unsupported):
@@ -285,6 +304,12 @@ def main() -> int:
                 require_compatible(by[key], row)
         for k, v in proof_sizes(run_dir, args.workload).items():
             sizes.setdefault(k, v)
+    # The proof does not depend on the thread count: where one (scheme, size)
+    # was measured at several thread counts, the median proof sizes must agree.
+    for slug, e in {(k[0], k[1]) for k in by}:
+        per_thread = {k[2]: sizes[k] for k in sizes if (k[0], k[1]) == (slug, e) and k in by}
+        if len(set(per_thread.values())) > 1:
+            raise ValueError(f"{slug} at 2^{e}: proof sizes differ between thread counts {per_thread}")
     rows = list(by.values())
     if not rows:
         raise SystemExit(f"no {args.workload} rows in {args.run_dirs}")
@@ -297,6 +322,7 @@ def main() -> int:
             keep = {int(x) for x in args.exponents.split(",")}
             exps = [e for e in exps if e in keep]
     samples = sorted({r["samples"] for r in rows})
+    threads_list = sorted({r["threads"] for r in rows})
     run_list = " ".join(str(d) for d in args.run_dirs)
     cpu = rows[0]["provenance"]["machine"]["cpu"]
     thread_counts = ", ".join(map(str, sorted({r["threads"] for r in rows})))
@@ -321,7 +347,7 @@ def main() -> int:
       + (f" --label {args.label}" if args.label else "")
       + (" --pick-least-disturbed" if args.pick_least_disturbed else "")
       + (f" --drop {args.drop}" if args.drop else "") + (f" --proof-sizes-from {args.proof_sizes_from}" if args.proof_sizes_from else ""))
-    w(f"% Machine: {cpu}; medians of {'/'.join(map(str, samples))} samples after one warm-up.")
+    w(f"% Machine: {cpu}; thread counts {', '.join(map(str, threads_list))}; medians of {'/'.join(map(str, samples))} samples after one warm-up.")
     for backend, trees in sorted(drifted.items()):
         shared = [k for k, per in cross.items() if k[0].split("@")[0] == backend and len(per) > 1]
         for k in shared:
@@ -336,38 +362,41 @@ def main() -> int:
         w("%   none qualified); * marks the kept run, entries are dir=median ms/spread:")
         for key in sorted(picks):
             chosen = Path(by[key]["run_dir"]).name
-            w(f"%   2^{key[1]} {key[0]:13} " + ", ".join(f"{d}={med:.0f}/{sp*100:.0f}%" + (" *" if d == chosen else "") for d, sp, med in picks[key]))
+            w(f"%   2^{key[1]} t={key[2]:<2} {key[0]:13} " + ", ".join(f"{d}={med:.0f}/{sp*100:.0f}%" + (" *" if d == chosen else "") for d, sp, med in picks[key]))
     w("% Columns: witgen = witness_ms (native witness generation; Binius64 packs its witness inside its prover, so its witgen")
     w("%   overlaps the prover column); prover = online_prover_ms (the complete native prover call after witness generation,")
     w("%   i.e. commitment + PIOP + PCS opening); verifier = verify_ms; proof = median proof_bytes of the samples, KB = 1000 bytes;")
     w("%   peak mem. = peak_rss_bytes of the separate single-proof memory child, GB = 2^30 bytes (`--` where the run predates it).")
-    w("% Bold = best of the schemes for that size and column.")
-    w("% Medians (ms) as recorded in summary.json (`--` rows below = scheme not run at that size):")
+    w("% Bold = best of the schemes for that (size, threads) group and column.")
+    w("% Medians (ms) as recorded in summary.json (`--` rows below = scheme not run at that size and thread count):")
     for e in exps:
-        for slug, _ in SCHEMES:
-            r = by.get((slug, e))
-            if r:
-                m = r["medians"]
-                size = sizes.get((slug, e))
-                w(f"%   2^{e} {slug:13s} witness={m['witness_ms']:.3f} "
-                  f"online_prover={m['online_prover_ms']:.3f} witness_to_proof={m['witness_to_proof_ms']:.3f} verify={m['verify_ms']:.3f} setup={r['setup_ms']:.3f} "
-                  f"proof_bytes={'n/a' if size is None else int(size)} samples={r['samples']} run={Path(r['run_dir']).name}")
-            else:
-                w(f"%   2^{e} {slug:13s} not run")
+        for t in threads_list:
+            for slug, _ in SCHEMES:
+                r = by.get((slug, e, t))
+                if r:
+                    m = r["medians"]
+                    size = sizes.get((slug, e, t))
+                    w(f"%   2^{e} t={t:<2} {slug:13s} witness={m['witness_ms']:.3f} "
+                      f"online_prover={m['online_prover_ms']:.3f} witness_to_proof={m['witness_to_proof_ms']:.3f} verify={m['verify_ms']:.3f} setup={r['setup_ms']:.3f} "
+                      f"proof_bytes={'n/a' if size is None else int(size)} samples={r['samples']} run={Path(r['run_dir']).name}")
+                elif any((slug, e2, t2) in by for e2 in exps for t2 in threads_list):
+                    w(f"%   2^{e} t={t:<2} {slug:13s} not run")
     # Sizes above a scheme's memory wall are implied by the wall, not "not run".
+    present_pairs = {(k[0], k[1]) for k in by}
+    paged_pairs = {(k[0], k[1]) for k in paged}
     wall = {}
-    for slug, e in paged:
+    for slug, e in paged_pairs:
         wall[slug] = min(wall.get(slug, e), e)
     missing = {}
     for slug, label in SCHEMES:
-        gone = [e for e in exps if (slug, e) not in by and (slug, e) not in paged
+        gone = [e for e in exps if (slug, e) not in present_pairs and (slug, e) not in paged_pairs
                 and not ((slug, e) in unsupported or (slug.split("@")[0], e) in unsupported)
                 and e < wall.get(slug, float("inf"))]
-        if gone and any((slug, e) in by for e in exps):
+        if gone and any((slug, e) in present_pairs for e in exps):
             missing[slug] = gone
-    for (slug, e), r in sorted(paged.items()):
+    for (slug, e, t), r in sorted(paged.items()):
         m = r["medians"]
-        w(f"%   2^{e} {slug:13s} OMITTED (paging): online_prover={m['online_prover_ms']:.3f} verify={m['verify_ms']:.3f} run={Path(r['run_dir']).name}")
+        w(f"%   2^{e} t={t:<2} {slug:13s} OMITTED (paging): online_prover={m['online_prover_ms']:.3f} verify={m['verify_ms']:.3f} run={Path(r['run_dir']).name}")
     # One paging sentence per wall exponent; the Binius64 rates share it when they agree.
     walls = {}
     for slug, e in sorted(wall.items()):
@@ -379,7 +408,7 @@ def main() -> int:
         else:
             who = " and ".join(f"the {scheme_name(slug)} prover" for slug in slugs) + (" exceeds" if len(slugs) == 1 else " exceed")
         return f"From $2^{{{e}}}$ {who} the machine's memory and page" + ("s" if len(slugs) == 1 else "") + "; those rows are omitted. "
-    schemes = [(slug, label) for slug, label in SCHEMES if any((slug, e) in by for e in exps)]
+    schemes = [(slug, label) for slug, label in SCHEMES if slug in {p[0] for p in present_pairs}]
 
     def listed(chosen):
         """Group the selected (scheme, exponent) pairs by scheme, in table order."""
@@ -416,43 +445,51 @@ def main() -> int:
     w("  \\centering")
     w("  \\small")
     w("  \\setlength{\\tabcolsep}{4.5pt}")
-    w("  \\begin{tabular}{@{}rlrrrrr@{}}")
+    w("  \\begin{tabular}{@{}rrlrrrrr@{}}")
     w("    \\toprule")
-    w("    $N$ & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\\ (GB) \\\\")
+    w("    $N$ & Threads & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\\ (GB) \\\\")
     w("    \\midrule")
-    for gi, e in enumerate(exps):
-        present = {slug: by[(slug, e)]["medians"] for slug, _ in SCHEMES if (slug, e) in by}
-        best = {k: min(m[k] for m in present.values()) for k in ("witness_ms", "online_prover_ms", "verify_ms")}
-        present_sizes = {slug: sizes[(slug, e)] for slug in present if (slug, e) in sizes}
-        best_size = min(present_sizes.values()) if present_sizes else None
-        present_peaks = {slug: by[(slug, e)]["peak_rss_bytes"] for slug in present
-                         if by[(slug, e)].get("peak_rss_bytes")}
-        best_peak = min(present_peaks.values()) if present_peaks else None
-        for ri, (slug, label) in enumerate(schemes):
-            n_cell = f"$2^{{{e}}}$" if ri == 0 else ""
-            m = present.get(slug)
-            if m is None:
-                w(f"    {n_cell} & {label} & {PLACEHOLDER} & {PLACEHOLDER} & {PLACEHOLDER} & {PLACEHOLDER} & {PLACEHOLDER} \\\\")
+    first_group = True
+    for e in exps:
+        n_cell_pending = f"$2^{{{e}}}$"
+        for t in threads_list:
+            present = {slug: by[(slug, e, t)]["medians"] for slug, _ in SCHEMES if (slug, e, t) in by}
+            if not present:
                 continue
-            cells = []
-            for k in ("witness_ms", "online_prover_ms", "verify_ms"):
-                s = fmt_ms(m[k])
-                cells.append(f"\\textbf{{{s}}}" if m[k] == best[k] and len(present) > 1 else s)
-            size = present_sizes.get(slug)
-            if size is None:
-                size_cell = PLACEHOLDER
-            else:
-                s = fmt_ms(size / 1000)
-                size_cell = f"\\textbf{{{s}}}" if size == best_size and len(present_sizes) > 1 else s
-            peak = present_peaks.get(slug)
-            if peak is None:
-                peak_cell = PLACEHOLDER
-            else:
-                s = fmt_gb(peak)
-                peak_cell = f"\\textbf{{{s}}}" if peak == best_peak and len(present_peaks) > 1 else s
-            w(f"    {n_cell} & {label} & {cells[0]} & {cells[1]} & {cells[2]} & {size_cell} & {peak_cell} \\\\")
-        if gi + 1 < len(exps):
-            w("    \\addlinespace")
+            if not first_group:
+                w("    \\addlinespace")
+            first_group = False
+            best = {k: min(m[k] for m in present.values()) for k in ("witness_ms", "online_prover_ms", "verify_ms")}
+            present_sizes = {slug: sizes[(slug, e, t)] for slug in present if (slug, e, t) in sizes}
+            best_size = min(present_sizes.values()) if present_sizes else None
+            present_peaks = {slug: by[(slug, e, t)]["peak_rss_bytes"] for slug in present
+                             if by[(slug, e, t)].get("peak_rss_bytes")}
+            best_peak = min(present_peaks.values()) if present_peaks else None
+            t_cell_pending = str(t)
+            for slug, label in schemes:
+                n_cell, n_cell_pending = n_cell_pending, ""
+                t_cell, t_cell_pending = t_cell_pending, ""
+                m = present.get(slug)
+                if m is None:
+                    w(f"    {n_cell} & {t_cell} & {label} & {PLACEHOLDER} & {PLACEHOLDER} & {PLACEHOLDER} & {PLACEHOLDER} & {PLACEHOLDER} \\\\")
+                    continue
+                cells = []
+                for k in ("witness_ms", "online_prover_ms", "verify_ms"):
+                    s = fmt_ms(m[k])
+                    cells.append(f"\\textbf{{{s}}}" if m[k] == best[k] and len(present) > 1 else s)
+                size = present_sizes.get(slug)
+                if size is None:
+                    size_cell = PLACEHOLDER
+                else:
+                    s = fmt_ms(size / 1000)
+                    size_cell = f"\\textbf{{{s}}}" if size == best_size and len(present_sizes) > 1 else s
+                peak = present_peaks.get(slug)
+                if peak is None:
+                    peak_cell = PLACEHOLDER
+                else:
+                    s = fmt_gb(peak)
+                    peak_cell = f"\\textbf{{{s}}}" if peak == best_peak and len(present_peaks) > 1 else s
+                w(f"    {n_cell} & {t_cell} & {label} & {cells[0]} & {cells[1]} & {cells[2]} & {size_cell} & {peak_cell} \\\\")
     w("    \\bottomrule")
     w("  \\end{tabular}")
     statement = {
@@ -469,28 +506,67 @@ def main() -> int:
         for key in binius_keys:
             log_rate = int(key.split("@")[1])
             queries = next((int(r["config"].get("fri_queries", BINIUS_QUERIES.get(log_rate, 0))) for r in rows if scheme_key(r) == key), BINIUS_QUERIES.get(log_rate, 0))
-            parts.append(f"rate $1/{1 << log_rate}$ with ${queries}$ queries")
+            parts.append(f"$\\rho = 1/{1 << log_rate}$ with ${queries}$ queries")
         binius_rate_text = " and ".join(parts) + " for $100$ bits"
     binius_note = "Binius64 (native multiplication" + (" and bit constraints" if args.workload not in ("u64", "u128") else "") + f", ring switching and BaseFold at {binius_rate_text})"
-    # The opener geometry of the binius64-ligerito rows as the runs recorded it.
-    lig = next((r["config"] for r in rows if scheme_key(r) == "binius64-ligerito"), {})
-    lig_bits = lig.get("whole_protocol_bits")
-    ligerito_note = ("Binius64 with the \\ftwoz\\ opener (the same circuit and PIOP; every oracle committed at rate $1/2$ and opened by "
-                     "ring switching and Johnson-regime Ligerito"
-                     + (f" with ${lig['level0_queries']}$ level-0 queries" if "level0_queries" in lig else "")
-                     + (f", ${lig['level0_fold_grinding_bits']}$ bits of fold grinding" if "level0_fold_grinding_bits" in lig else "")
-                     + " and Round~0; whole-protocol union bound gated at $100$ bits"
-                     + (f", ${lig_bits:.1f}$ achieved" if isinstance(lig_bits, (int, float)) else "")
-                     + ")")
+    # The opener geometry of the binius64-ligerito rows as the runs recorded
+    # it, one clause per rate (queries are size-independent; fold grinding and
+    # the achieved bound move with N, so both are given as ranges).
+    def span(cfgs, name, fmt):
+        """Math-wrapped value or en-dashed range across the recorded configs."""
+        values = [c[name] for c in cfgs if isinstance(c.get(name), (int, float))]
+        if not values:
+            return None
+        lo, hi = min(values), max(values)
+        return f"${fmt(lo)}$" if fmt(lo) == fmt(hi) else f"${fmt(lo)}$--${fmt(hi)}$"
+    def ligerito_family_note(family):
+        parts = []
+        for key in [slug for slug, _ in schemes if slug.startswith(family + "@")]:
+            cfgs = [r["config"] for r in rows if scheme_key(r) == key]
+            if not cfgs:
+                continue
+            log_rate = int(key.split("@")[1])
+            queries = span(cfgs, "level0_queries", lambda v: f"{int(v)}")
+            fold = span(cfgs, "level0_fold_grinding_bits", lambda v: f"{int(v)}")
+            comp = span(cfgs, "ligerito_component_bits", lambda v: f"{int(v)}")
+            gated = span(cfgs, "whole_protocol_bits", lambda v: f"{v:.1f}")
+            union = span(cfgs, "union_bound_bits", lambda v: f"{v:.1f}")
+            inner = [t for t in [f"{gated} bits achieved" if gated else "",
+                                 f"the union bound over the same terms is {union} bits" if union else ""] if t]
+            parts.append(f"$\\rho = 1/{1 << log_rate}$"
+                         + (f" with {queries} level-0 queries" if queries else "")
+                         + (f", {fold} bits of fold grinding" if fold else "")
+                         + (f" and a {comp}-bit per-round target" if comp else "")
+                         + (" (" + "; ".join(inner) + ")" if inner else ""))
+        return ("Binius64 with the \\ftwoz\\ opener (the same circuit and PIOP; every oracle committed and opened by "
+                "ring switching and Johnson-regime Ligerito with Round~0 at " + " and at ".join(parts)
+                + "; every error term is gated at $100$ bits on its own --- the round-by-round minimum the \\ftwoz-SNARK rows report)")
+    fri_rows = [r for r in rows if r["backend"] == "plonky3-fri"]
+    fri_note = ("Plonky3 (Goldilocks AIR, degree-$5$ extension, FRI at $\\rho = 1/2$, the smallest query count "
+                "clearing a proven round-by-round $100$-bit report per size)")
+    if fri_rows:
+        fri_queries = sorted({int(r["config"]["num_queries"]) for r in fri_rows})
+        qtext = f"${fri_queries[0]}$" if len(fri_queries) == 1 else f"${fri_queries[0]}$--${fri_queries[-1]}$"
+        fri_note = ("Plonky3 (Goldilocks AIR, degree-$5$ extension, FRI at $\\rho = 1/2$ with the smallest query "
+                    f"count clearing a proven round-by-round $100$-bit report per size: {qtext} queries)")
+    limber_rows = [r for r in rows if r["backend"] == "limber"]
+    limber_note = ("Limber (one independent integer-mod R1CS row per multiplication, IntEval/Brakedown, "
+                   "Brakedown column-open target $100$ bits)")
+    if limber_rows:
+        targets = {int(r["config"]["target_bits"]) for r in limber_rows}
+        if len(targets) != 1:
+            raise ValueError(f"Limber rows mix Brakedown targets {sorted(targets)}")
+        limber_note = ("Limber (one independent integer-mod R1CS row per multiplication, IntEval/Brakedown; "
+                       f"Brakedown column-open target ${targets.pop()}$ bits, its native IntEval $128$-bit, "
+                       "challenge $117$-bit and $2^{-114}$ fingerprint terms unchanged)")
     scheme_notes = {
-        "f2z": "\\ftwoz\\ (Spartan over a transcript-sampled prime with the \\ftwoz\\ opening, $\\lambda = 100$)",
+        "f2z": f2z_caption(rows),
         "binius64": binius_note,
-        "binius64-ligerito": ligerito_note,
-        "plonky3-fri": "Plonky3 (Goldilocks AIR, degree-$5$ extension, FRI at rate $1/8$, $100$ queries, proven round-by-round target $100$ bits)",
+        "binius64-ligerito-rbr": ligerito_family_note("binius64-ligerito-rbr"),
+        "plonky3-fri": fri_note,
         "plonky3-whir": "Plonky3 (shared Goldilocks mod32 AIR, multilinear zerocheck/sumcheck, WHIR with per-run tuning and at least $100$ bits under the recorded Johnson accounting)",
-        "limber": "Limber (one independent integer-mod R1CS row per multiplication, IntEval/Brakedown, native approximately $114$-bit policy)",
+        "limber": limber_note,
     }
-    scheme_notes["f2z"] = f2z_caption(rows)
     # One caption note per scheme family (both Binius64 rates share one).
     present = []
     for slug, _ in schemes:

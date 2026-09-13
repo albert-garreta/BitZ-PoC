@@ -89,8 +89,8 @@ impl Context {
                 config["ligerito"] = super::common::ligerito_report(p.ligerito_configuration(), p.security().ood);
                 let params = p.layout().f2z_params();
                 config["u64_split_shift"] = json!(u64_split_shift());
-                config["f2z_t"] = json!(params.t);
-                config["f2z_s"] = json!(params.s);
+                config["f2z_t"] = json!(params.row_vars);
+                config["f2z_s"] = json!(params.col_vars);
             }
             Relation::U128(p) => config["ligerito"] = super::common::ligerito_report(p.ligerito_configuration(), p.security().ood),
             _ => {}
@@ -335,8 +335,13 @@ mod tests {
         assert_eq!(config["ligerito_regime"], "johnson");
         assert_eq!(config["target_bits"], 100);
         assert_eq!(config["ood_present"], true);
-        assert_eq!(config["ligerito"]["target_security_bits"], 100);
-        assert_eq!(config["ligerito"]["levels"][0]["regime"], "johnson_ood");
+        assert_eq!(config["ligerito"]["target_bits"], 100);
+        assert_eq!(config["ligerito"]["regime"], "johnson");
+        assert_eq!(config["ligerito"]["outer_ood"], true);
+        assert_eq!(
+            config["ligerito"]["configuration"]["levels"][0]["log_inv_rate"],
+            1
+        );
         assert!(!config["ood_grinding_bits"].is_null());
     }
     #[test]

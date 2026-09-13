@@ -28,9 +28,11 @@ def samples(reps=2):
 
 
 def config(**overrides):
+    # The recorded fixture predates the suite's 100-bit Brakedown pin, so the
+    # test config reproduces the native 114-bit target it was measured at.
     return dict(reps=2, threads=8, seed=runner.DEFAULT_SEED, seed_explicit=False, memory=False,
                 binius_rate=None, f2z_profile=None, workloads=["u32-mod32"], backends=["limber"],
-                exponents=[15], **overrides)
+                exponents=[15], limber_bd_lambda=114, **overrides)
 
 
 class RunnerTests(unittest.TestCase):
@@ -80,6 +82,15 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(env["RUSTFLAGS"], "-C target-cpu=native")
         self.assertEqual(env["RAYON_NUM_THREADS"], "8")
         self.assertNotIn("F2Z_BENCH_SEED",env)
+        # The Limber Brakedown target is pinned through the recorded knob:
+        # default 100, explicit override recorded, ambient BDLAMBDA rejected.
+        self.assertEqual(env["BDLAMBDA"], "114")
+        limber = dict(F2Z_MUL_COMPARE_BACKENDS="limber")
+        self.assertEqual(runner.configuration(limber)["limber_bd_lambda"], 100)
+        self.assertEqual(runner.configuration(limber | {"F2Z_LIMBER_BDLAMBDA":"114"})["limber_bd_lambda"], 114)
+        for bad in ({"BDLAMBDA":"114"}, {"F2Z_LIMBER_BDLAMBDA":"90"}, {"F2Z_LIMBER_BDLAMBDA":"abc"}):
+            with self.assertRaises(ValueError):
+                runner.configuration(limber | bad)
         # The requested rate is carried; an ambient one never survives.
         wide = config(); wide["binius_rate"] = 3; wide["workloads"] = ["u128"]
         self.assertEqual(runner.campaign_environment({"F2Z_BINIUS_LOG_INV_RATE":"9"},wide)["F2Z_BINIUS_LOG_INV_RATE"],"3")
@@ -139,7 +150,7 @@ class RunnerTests(unittest.TestCase):
             root=Path(tmp)
             (root/"summary.json").write_text(json.dumps([summary]))
             (root/"samples.jsonl").write_text("\n".join(map(json.dumps,rows)))
-            self.assertEqual(table.proof_sizes(root,"u32-mod32")[("limber",15)],FIXTURE["metrics"]["proof_bytes"])
+            self.assertEqual(table.proof_sizes(root,"u32-mod32")[("limber",15,8)],FIXTURE["metrics"]["proof_bytes"])
             rows[1]["config"]["commitment_backend"]="hyrax"
             (root/"samples.jsonl").write_text("\n".join(map(json.dumps,rows)))
             with self.assertRaises(ValueError): table.proof_sizes(root,"u32-mod32")
@@ -169,9 +180,10 @@ class RunnerTests(unittest.TestCase):
             git=bindir/"git";git.write_text('#!/bin/sh\nif [ "$1" = rev-parse ]; then printf "%s\\n" test-revision; fi\n');git.chmod(0o755)
             sysctl=bindir/"sysctl";sysctl.write_text('#!/bin/sh\nprintf "%s\\n" fixture-cpu\n');sysctl.chmod(0o755)
             output=root/"results"
-            env={k:v for k,v in os.environ.items() if not k.startswith(("F2Z_","CARGO_"))}
+            env={k:v for k,v in os.environ.items() if not k.startswith(("F2Z_","CARGO_")) and k != "BDLAMBDA"}
             env.update(PATH=str(bindir)+os.pathsep+env["PATH"],COMMANDS=str(commands),
                        RAYON_NUM_THREADS="8",F2Z_BENCH_REPS="2",F2Z_MUL_COMPARE_BACKENDS="limber",
+                       F2Z_LIMBER_BDLAMBDA="114",  # the mock rows are the recorded 114-bit fixture
                        F2Z_MUL_COMPARE_OUTPUT_DIR=str(output),CARGO_ENCODED_RUSTFLAGS="remove",PYTHONDONTWRITEBYTECODE="1")
             command=["bash",str(runner.ROOT/"scripts/run_native_mul_compare.sh")]
             run=subprocess.run(command,env=env,capture_output=True,text=True)

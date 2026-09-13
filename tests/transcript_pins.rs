@@ -158,9 +158,15 @@ fn u128_mul_2p15_transcript_is_pinned() {
 /// mode under `Lambda100` with the default Ligerito selection: the BLAKE3
 /// digest of the complete encoded proof. The compact matrix representation
 /// and the packed witness builders must keep this unchanged.
+///
+/// Re-recorded 2026-09-13: the previous digest (`9db91770…`) predated the
+/// merged distinct-coefficient P-256 reduction and the IntegerMatrixLayout
+/// merge, which changed this transcript deliberately but missed this pin
+/// (master `1325c1b` already failed it on a clean checkout). Verified
+/// deterministic across runs before recording.
 #[cfg(feature = "ecdsa")]
 const SHA256_ECDSA_2P3_SPLIT_DIGEST: &str =
-    "9db91770f278ab29383e5b77eacc54e0374c6fb1ce6853919c9c40f321b00a34";
+    "d667d65db7344a2c82d8d8bd7383e843f27fd8c3d89d4b43bf74010a1fca924b";
 
 #[cfg(feature = "ecdsa")]
 #[test]

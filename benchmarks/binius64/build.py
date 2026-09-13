@@ -24,6 +24,16 @@ def main():
     binary = ROOT / "target/release/binius64-sha256-ecdsa"
     info = json.loads(subprocess.check_output([str(binary), "--build-info"], text=True))
     info.update(binary=str(binary), binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest())
+    # Resolved sha2 backends, one line per version: the f2z path dependency
+    # pulls flock-core, whose `asm` feature accelerates sha2 0.10 (host-side
+    # p256 digests only); binius-hash's BaseFold Merkle hashing is sha2 0.11,
+    # a separate version that feature unification cannot touch. Recorded so a
+    # campaign's provenance pins what actually hashed.
+    tree = subprocess.check_output(
+        ["cargo", "tree", "-f", "{p} {f}", "--edges", "normal,build", "--prefix", "none"],
+        cwd=ROOT, env=env, text=True)
+    info["sha2_features"] = sorted({line.strip().removesuffix(" (*)") for line in tree.splitlines()
+                                    if line.strip().startswith("sha2 v")})
     binary.with_suffix(".build.json").write_text(json.dumps(info, indent=2) + "\n")
     print(json.dumps(info))
 

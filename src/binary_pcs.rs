@@ -41,9 +41,10 @@ use flock_core::{
     },
 };
 
-/// Reed–Solomon inverse-rate exponent of the commitment and of the opener's
-/// level 0 (rate 1/2). The commit rate MUST equal the level-0 configuration
-/// rate: the opener queries the committed codeword.
+/// Default Reed–Solomon inverse-rate exponent of the commitment and of the
+/// opener's level 0 (rate 1/2, F2Z's own default); [`BinaryPcs::with_rate`]
+/// takes another. The commit rate MUST equal the level-0 configuration rate:
+/// the opener queries the committed codeword.
 pub const LOG_INV_RATE: usize = 1;
 /// Interleaving of the commitment = the opener's level-0 fold arity
 /// (`initial_k`): flock's default 32 lanes, 512-byte leaves.
@@ -119,6 +120,7 @@ pub struct BitMleOpening {
 #[derive(Clone)]
 pub struct BinaryPcs {
     packed_log: usize,
+    log_inv_rate: usize,
     component_bits: usize,
     config: LigeritoSecurityConfig,
     pc: ProverConfig,
@@ -130,28 +132,45 @@ pub struct BinaryPcs {
 
 impl BinaryPcs {
     /// Solve and validate the opener for `2^packed_log` packed words at the
-    /// round-by-round target `component_bits`.
+    /// round-by-round target `component_bits`, at the default rate
+    /// [`LOG_INV_RATE`].
     pub fn new(packed_log: usize, component_bits: usize) -> Result<Self, Error> {
+        Self::with_rate(packed_log, LOG_INV_RATE, component_bits)
+    }
+
+    /// [`Self::new`] at an explicit level-0 (= commitment) inverse-rate
+    /// exponent `log_inv_rate` (1 = rate 1/2 … 4 = rate 1/16); the deeper
+    /// levels of the ladder halve the rate once more each.
+    pub fn with_rate(
+        packed_log: usize,
+        log_inv_rate: usize,
+        component_bits: usize,
+    ) -> Result<Self, Error> {
         if !(MIN_PACKED_LOG..=MAX_PACKED_LOG).contains(&packed_log) {
             return Err(Error::Config(format!(
                 "packed log {packed_log} outside {MIN_PACKED_LOG}..={MAX_PACKED_LOG}"
             )));
         }
+        if !(1..=4).contains(&log_inv_rate) {
+            return Err(Error::Config(format!(
+                "log inverse rate {log_inv_rate} outside 1..=4"
+            )));
+        }
         let m = packed_log + LOG_PACKING;
         let mut config =
-            custom_johnson_config_bits(m, LOG_INV_RATE, LOG_BATCH_SIZE, Some(component_bits));
+            custom_johnson_config_bits(m, log_inv_rate, LOG_BATCH_SIZE, Some(component_bits));
         config.hash = "blake3".into();
         config.validate().map_err(Error::Config)?;
-        if config.levels.first().map(|level| level.log_inv_rate) != Some(LOG_INV_RATE) {
+        if config.levels.first().map(|level| level.log_inv_rate) != Some(log_inv_rate) {
             return Err(Error::Config("level-0 rate must equal the commit rate".into()));
         }
         let (pc, vc) = config.to_prover_verifier_configs().map_err(Error::Config)?;
-        if pc.initial_k != LOG_BATCH_SIZE || pc.log_inv_rates[0] != LOG_INV_RATE {
+        if pc.initial_k != LOG_BATCH_SIZE || pc.log_inv_rates[0] != log_inv_rate {
             return Err(Error::Config("opener level 0 does not match the commitment".into()));
         }
         let params = PcsParams {
             m,
-            log_inv_rate: LOG_INV_RATE,
+            log_inv_rate,
             log_batch_size: pc.initial_k,
             profile: LigeritoProfile::Secure,
             merkle_hash: merkle::HashKind::Blake3,
@@ -169,6 +188,7 @@ impl BinaryPcs {
         }
         Ok(Self {
             packed_log,
+            log_inv_rate,
             component_bits,
             config,
             pc,
@@ -181,6 +201,10 @@ impl BinaryPcs {
 
     pub fn packed_log(&self) -> usize {
         self.packed_log
+    }
+    /// Level-0 (= commitment) inverse-rate exponent.
+    pub fn log_inv_rate(&self) -> usize {
+        self.log_inv_rate
     }
     pub fn component_bits(&self) -> usize {
         self.component_bits
@@ -227,11 +251,17 @@ impl BinaryPcs {
         }];
         for (index, level) in self.config.levels.iter().enumerate() {
             let (pg, query) = level.paper_predicted_bits();
-            terms.push(SecurityTerm {
-                name: "Ligerito proximity folds",
-                error_bound: level.k_recursive as f64
-                    * 2f64.powf(-pg - level.fold_grinding_bits as f64),
-            });
+            // One term per fold round of the level: round `j` carries the
+            // row-union factor `2^{ℓ-1-j}` and a grind of `fold_bits - j`
+            // (flock's taper), so every round's error is exactly
+            // `2^-(eps_pg + fold_grinding_bits)`; their sum is the level's
+            // `k_recursive`-fold union.
+            for _ in 0..level.k_recursive {
+                terms.push(SecurityTerm {
+                    name: "Ligerito proximity folds",
+                    error_bound: 2f64.powf(-pg - level.fold_grinding_bits as f64),
+                });
+            }
             terms.push(SecurityTerm {
                 name: "Ligerito queries",
                 error_bound: 2f64.powf(-query - level.grinding_bits as f64),

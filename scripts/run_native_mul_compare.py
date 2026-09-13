@@ -21,10 +21,11 @@ from native_mul_results import (CORE_METRICS, POLICY, SAMPLE_SCHEMA, SUMMARY_SCH
 ROOT = Path(__file__).resolve().parents[1]
 TOOLCHAIN = "1.98.1"
 DEFAULT_SEED = 0x5533325043530064
-BUILD = {"rust_toolchain": TOOLCHAIN, "rustflags": "-C target-cpu=native", "threads": 8}
-CLEAR_ENV = ("CARGO_ENCODED_RUSTFLAGS", "DUMP", "CHAIN_BITS", "BDLAMBDA", "BDSPEC",
+BUILD = {"rust_toolchain": TOOLCHAIN, "rustflags": "-C target-cpu=native", "threads": 10}
+CLEAR_ENV = ("CARGO_ENCODED_RUSTFLAGS", "DUMP", "CHAIN_BITS", "BDSPEC",
              "BDROWLEN", "BDDIRECT", "BDSPLIT", "F2Z_BINIUS_LOG_INV_RATE", "F2Z_LIG_PROFILE",
-             "F2Z_U64_SPLIT_SHIFT", "F2Z_MUL_MEMORY_ONLY")
+             "F2Z_U64_SPLIT_SHIFT", "F2Z_MUL_MEMORY_ONLY", "F2Z_BINIUS_LIGERITO_ACCOUNTING")
+LIGERITO_ACCOUNTING = {"union": "union-bound", "rbr": "round-by-round"}
 MEMORY_BOUNDARY = "fresh process: corpus generation, public setup, witness generation, commitment, proving, verification, and proof-size accounting; one verified proof, no warmup"
 
 
@@ -47,14 +48,14 @@ def configuration(env):
     # Match the Rust address-space bound, not a particular machine's RAM.
     maximum = sys.maxsize.bit_length() + 1 - 11
     if "plonky3-fri" in backends:
-        maximum = min(maximum, 29)  # Goldilocks two-adicity 32, FRI log blowup 3.
+        maximum = min(maximum, 29)  # Goldilocks two-adicity headroom; shapes tested through 2^29.
     if "limber" in backends:
         maximum = min(maximum, 24)
     minimum = 15 if "f2z" in backends else 4
     if not exponents or len(exponents) != len(set(exponents)) or any(not minimum <= n <= maximum for n in exponents):
         raise ValueError(f"F2Z_BENCH_SHAPES must contain distinct exponents in {minimum}..={maximum}")
     reps = int(env.get("F2Z_BENCH_REPS", "5"))
-    threads = int(env.get("RAYON_NUM_THREADS", "8"))
+    threads = int(env.get("RAYON_NUM_THREADS", "10"))
     seed_text = env.get("F2Z_BENCH_SEED", str(DEFAULT_SEED))
     seed = int(seed_text, 16 if seed_text.lower().startswith("0x") else 10)
     if reps < 1 or threads < 1 or not 0 <= seed < 1 << 64:
@@ -76,6 +77,21 @@ def configuration(env):
         u64_split_shift = int(shift_text)
         if not -4 <= u64_split_shift <= 4:
             raise ValueError("F2Z_U64_SPLIT_SHIFT must be a small integer")
+    # The Binius64/F2Z-opener row's whole-protocol gate model (union bound or
+    # round-by-round minimum) is campaign-wide and recorded like the rate.
+    accounting = env.get("F2Z_BINIUS_LIGERITO_ACCOUNTING")
+    if accounting is not None and accounting not in LIGERITO_ACCOUNTING:
+        raise ValueError("F2Z_BINIUS_LIGERITO_ACCOUNTING must be union or rbr")
+    # Limber's Brakedown column-open target: the suite pins 100 bits (the
+    # uniform comparison target, 2026-09-13); its native 114-bit policy is
+    # selected explicitly with F2Z_LIMBER_BDLAMBDA=114. The crate's own
+    # BDLAMBDA env must come from this recorded knob, never from the ambient
+    # environment.
+    if "BDLAMBDA" in env:
+        raise ValueError("set F2Z_LIMBER_BDLAMBDA instead of ambient BDLAMBDA so the campaign records it")
+    limber_bd_lambda = int(env.get("F2Z_LIMBER_BDLAMBDA", "100"))
+    if not 100 <= limber_bd_lambda <= 128:
+        raise ValueError("F2Z_LIMBER_BDLAMBDA must be a bit target in 100..=128")
     rate = env.get("F2Z_BINIUS_LOG_INV_RATE")
     binius_rate = int(rate) if rate else None
     # The paper lists Binius64 at rate 1/2 and 1/8; an ambient value is still rejected.
@@ -88,6 +104,7 @@ def configuration(env):
     return dict(workloads=workloads, backends=backends, exponents=exponents, reps=reps,
                 threads=threads, seed=seed, seed_explicit="F2Z_BENCH_SEED" in env, memory=memory == "1",
                 binius_rate=binius_rate, f2z_profile=f2z_profile, u64_split_shift=u64_split_shift,
+                ligerito_accounting=accounting, limber_bd_lambda=limber_bd_lambda,
                 output=output.resolve())
 
 
@@ -117,6 +134,9 @@ def campaign_environment(environment, config):
         env["F2Z_LIG_PROFILE"] = config["f2z_profile"]
     if config.get("u64_split_shift") is not None:
         env["F2Z_U64_SPLIT_SHIFT"] = str(config["u64_split_shift"])
+    if config.get("ligerito_accounting") is not None:
+        env["F2Z_BINIUS_LIGERITO_ACCOUNTING"] = config["ligerito_accounting"]
+    env["BDLAMBDA"] = str(config["limber_bd_lambda"])
     if config["seed_explicit"]:
         env["F2Z_BENCH_SEED"] = str(config["seed"])
     else:
@@ -212,6 +232,12 @@ def validate_sample(row, config, exponent, backend, workload):
     if backend == "binius64" and (settings.get("fri_query_target_bits") != 100
                                   or (workload == "u32-mod32" and settings.get("log_inv_rate") != (config["binius_rate"] or 1))):
         raise ValueError("Binius must use the canonical 100-bit query target at the requested rate")
+    if backend == "binius64-ligerito":
+        if settings.get("log_inv_rate") != (config["binius_rate"] or 1):
+            raise ValueError("the Binius64/F2Z-opener row must use the requested Binius rate")
+        wanted = LIGERITO_ACCOUNTING[config.get("ligerito_accounting") or "union"]
+        if settings.get("accounting", "union-bound") != wanted:
+            raise ValueError("the Binius64/F2Z-opener row must use the requested accounting model")
     if backend == "binius64" and workload == "u32-mod32":
         n = 1 << exponent
         expected = {"and":n,"imul":n,"zero":3*n,"bmul":0}
@@ -219,10 +245,15 @@ def validate_sample(row, config, exponent, backend, workload):
             raise ValueError("unexpected compiled Binius mod32 constraint counts")
     if backend == "plonky3-fri":
         expected = dict(pcs="FRI", base_field="Goldilocks", extension_degree=5, target_bits=100,
-                        log_inv_rate=3, num_queries=100, max_log_arity=1, log_final_poly_len=0,
+                        log_inv_rate=1, max_log_arity=1, log_final_poly_len=0,
                         commit_pow_bits=0, query_pow_bits=0, trace_width=137, num_constraints=139)
         if any(settings.get(key) != value for key, value in expected.items()):
-            raise ValueError("Plonky3 must use the agreed Goldilocks AIR and FRI configuration")
+            raise ValueError("Plonky3 must use the agreed Goldilocks AIR and rate-1/2 FRI configuration")
+        # The query count is solved per size: the smallest count whose proven
+        # round-by-round report clears 100 bits at rate 1/2.
+        queries = settings.get("num_queries")
+        if not isinstance(queries, int) or not 100 <= queries <= 1024:
+            raise ValueError("Plonky3-FRI must record a solved rate-1/2 query count")
         if finite_number(settings.get("proven_bits"), "FRI proven_bits") < 100:
             raise ValueError("Plonky3-FRI security report is below 100 bits")
     if backend == "plonky3-whir":
@@ -242,15 +273,16 @@ def validate_sample(row, config, exponent, backend, workload):
         # One wrapping row per multiplication: three live values and one
         # quotient per gate, padded to the next powers of two.
         width = {"u32-mod32": 32, "u64": 64, "u128": 128}[workload]
+        bd_lambda = config["limber_bd_lambda"]
         expected = dict(commitment_backend="brakedown", engine="T256DynPrimeBdEngine",
                         constraints=n, padded_constraints=n, variables=3*n, padded_variables=4*n,
-                        quotients=n, log_t_f=width, k=9, target_bits=114,
+                        quotients=n, log_t_f=width, k=9, target_bits=bd_lambda,
                         numlimb=1 if width <= 64 else width // 32)
         if any(settings.get(key) != value for key, value in expected.items()):
             raise ValueError("Limber did not use its wrapping single-row Brakedown arithmetization")
-        if settings.get("brakedown") != dict(target_bits=114, spec=4, row_len_cap=32768,
+        if settings.get("brakedown") != dict(target_bits=bd_lambda, spec=4, row_len_cap=32768,
                                              direct_open_max=65536, split=False):
-            raise ValueError("Limber used an ambient Brakedown parameter override")
+            raise ValueError("Limber used a Brakedown parameter other than the pinned campaign target")
         # The pinned driver has no whole-proof serializer, so the unsegmented
         # PIOP transcript is counted from the public padded shape: three
         # coefficients per outer round, two per inner round, five outer
@@ -375,7 +407,9 @@ def main():
                         warmups=1, measurement_policy=POLICY, jobs=planned, build=BUILD | {"threads": config["threads"]},
                         binius_log_inv_rate=config["binius_rate"],
                         f2z_ligerito_profile=config["f2z_profile"],
-                        u64_split_shift=config.get("u64_split_shift"))
+                        u64_split_shift=config.get("u64_split_shift"),
+                        binius_ligerito_accounting=config.get("ligerito_accounting"),
+                        limber_bd_lambda=config["limber_bd_lambda"])
         if args.dry_run:
             print(json.dumps(manifest, indent=2))
             return 0
