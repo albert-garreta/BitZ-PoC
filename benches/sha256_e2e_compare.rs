@@ -10,7 +10,7 @@ use common::output::{BenchmarkOutput, FileMode, JsonStyle, JsonlWriter};
 use common::whir_tuning;
 #[path = "common/trace_capture.rs"]
 mod trace_capture;
-use trace_capture::{CaptureLayer, CapturedSpan, TraceCapture};
+use trace_capture::{BiniusLigeritoPhases, CaptureLayer, CapturedSpan, TraceCapture};
 #[path = "sha256_e2e_compare/integer_limber.rs"]
 mod integer_limber_backend;
 #[path = "sha256_e2e_compare/plonky3.rs"]
@@ -37,7 +37,7 @@ use binius_verifier::{
     config::StdChallenger,
     transcript::{ProverTranscript, VerifierTranscript},
 };
-use f2z::binius_ligerito::{Prepared as BiniusLigerito, ProveTimings};
+use f2z::binius_ligerito::Prepared as BiniusLigerito;
 use f2z::{
     piop::spartan::{
         PreparedSha256CompressionBatch, SHA256_DEFAULT_INNER_PREFIX_VARS, Sha256CompressionInput,
@@ -620,7 +620,7 @@ impl BiniusLigeritoContext {
         let root_start = capture.now_ns();
         let witness = self.populate();
         let witness_end = capture.now_ns();
-        let (proof, phases) = self
+        let proof = self
             .prepared
             .prove(&witness)
             .expect("binius64-ligerito proof succeeds");
@@ -635,7 +635,7 @@ impl BiniusLigeritoContext {
             .verify(witness.inout(), &decoded)
             .expect("binius64-ligerito proof verifies");
         let verify_end = capture.now_ns();
-        let _ = capture.finish();
+        let phases = BiniusLigeritoPhases::from_spans(&capture.finish());
         let spans = binius_ligerito_semantic_spans(
             root_start,
             witness_end,
@@ -650,22 +650,15 @@ impl BiniusLigeritoContext {
     }
 }
 
-/// Spans for one `binius64-ligerito` trial: the prover reports its phases
-/// (witness commitment, PIOP prefix with any mid-protocol commitment, opening
-/// = every Round 0 + ring switch + Ligerito); they are laid out consecutively
-/// inside the online span.
+/// Place measured phases without moving interleaved Round 0 work to the end.
 fn binius_ligerito_semantic_spans(
     root_start: u64,
     witness_end: u64,
     total_end: u64,
     verify_start: u64,
     verify_end: u64,
-    phases: ProveTimings,
+    phases: BiniusLigeritoPhases,
 ) -> Vec<SemanticSpan> {
-    let ns = |d: std::time::Duration| u64::try_from(d.as_nanos()).unwrap_or(u64::MAX);
-    let commit_end = (witness_end + ns(phases.commit)).min(total_end);
-    let piop_end = (commit_end + ns(phases.piop)).min(total_end);
-    let opening_end = (piop_end + ns(phases.opening)).min(total_end);
     let span = |id: &str,
                 parent: Option<&str>,
                 operation: &str,
@@ -693,7 +686,7 @@ fn binius_ligerito_semantic_spans(
         primary_sequence,
         math_latex,
     };
-    vec![
+    let mut spans = vec![
         span(
             "binius-ligerito-root",
             None,
@@ -760,52 +753,16 @@ fn binius_ligerito_semantic_spans(
             "binius-ligerito-commit",
             Some("binius-ligerito-total-prover"),
             "binius-ligerito.commit",
-            "Commit the packed witness at rate 1/2 (F2Z opener)",
+            "Commit the packed witness (F2Z opener)",
             "Commit",
             "commit",
             vec!["commit", "pcs", "proving"],
-            witness_end,
-            commit_end,
+            phases.commit.0,
+            phases.commit.1,
             "phase",
             Some("commit"),
             true,
             vec![r"C_w=\operatorname{Merkle}(\operatorname{RS}_{1/8}(w))"],
-        ),
-        span(
-            "binius-ligerito-piop-reductions",
-            Some("binius-ligerito-total-prover"),
-            "binius-ligerito.piop-reductions",
-            "Binius64 constraint reductions",
-            "PIOP reductions",
-            "constraint-proof",
-            vec!["constraint-proof", "sumcheck", "proving"],
-            commit_end,
-            piop_end,
-            "phase",
-            Some("constraint-proof"),
-            true,
-            vec![
-                "A(x)B(x)-C(x)=0",
-                r"\sum_x\operatorname{eq}(r,x)(A(x)B(x)-C(x))=0",
-            ],
-        ),
-        span(
-            "binius-ligerito-opening",
-            Some("binius-ligerito-total-prover"),
-            "binius-ligerito.pcs-opening",
-            "Round 0, ring switching and Johnson-regime Ligerito opening (F2Z opener)",
-            "PCS opening",
-            "opening-proof",
-            vec!["opening-proof", "pcs", "ligerito", "proving"],
-            piop_end,
-            opening_end,
-            "phase",
-            Some("opening-proof"),
-            true,
-            vec![
-                r"\widetilde w(r)=v",
-                r"\operatorname{Open}_{\mathrm{Ligerito}}(C_w,r,v)",
-            ],
         ),
         span(
             "binius-ligerito-verification",
@@ -822,7 +779,44 @@ fn binius_ligerito_semantic_spans(
             true,
             vec![],
         ),
-    ]
+    ];
+    for (id, operation, name, tag, tags, intervals) in [
+        (
+            "binius-ligerito-piop-reductions",
+            "binius-ligerito.piop-reductions",
+            "PIOP reductions",
+            "constraint-proof",
+            vec!["constraint-proof", "proving"],
+            phases.piop,
+        ),
+        (
+            "binius-ligerito-opening",
+            "binius-ligerito.pcs-opening",
+            "PCS opening",
+            "opening-proof",
+            vec!["opening-proof", "pcs", "proving"],
+            phases.opening,
+        ),
+    ] {
+        for (index, (start, end)) in intervals.into_iter().enumerate() {
+            spans.push(span(
+                &format!("{id}-{index}"),
+                Some("binius-ligerito-total-prover"),
+                operation,
+                name,
+                name,
+                tag,
+                tags.clone(),
+                start,
+                end,
+                "phase",
+                Some(tag),
+                true,
+                vec![],
+            ));
+        }
+    }
+    spans
 }
 
 fn pack_lanes(low: u32, high: u32) -> u64 {
@@ -3055,6 +3049,76 @@ mod ligerito_isolation_tests {
 #[cfg(test)]
 mod reporting_tests {
     use super::*;
+
+    #[test]
+    fn binius_ligerito_metrics_union_real_opening_intervals() {
+        let spans = binius_ligerito_semantic_spans(
+            0,
+            10,
+            140,
+            145,
+            160,
+            BiniusLigeritoPhases {
+                commit: (20, 30),
+                piop: vec![(10, 20), (40, 65), (80, 100)],
+                opening: vec![(30, 40), (65, 75), (70, 80), (105, 130)],
+            },
+        );
+        let metrics = TrialMetrics::from_spans(&spans, 123);
+        assert_eq!(metrics.commit_ms, 10.0 / 1e6);
+        assert_eq!(metrics.piop_ms, 55.0 / 1e6);
+        assert_eq!(metrics.opening_ms, 50.0 / 1e6);
+        assert_eq!(metrics.total_prover_ms, 130.0 / 1e6);
+        assert_eq!(metrics.witness_to_proof_ms, 140.0 / 1e6);
+        assert_eq!(metrics.verifier_ms, 15.0 / 1e6);
+        let openings: Vec<_> = spans
+            .iter()
+            .filter(|s| s.scope_tag == Some("opening-proof"))
+            .map(|s| (s.start_ns, s.end_ns))
+            .collect();
+        assert_eq!(openings, [(30, 40), (65, 75), (70, 80), (105, 130)]);
+        assert_eq!(
+            spans.iter().map(|s| &s.id).collect::<HashSet<_>>().len(),
+            spans.len()
+        );
+        for s in &spans {
+            if let Some(parent) = &s.parent {
+                let parent = spans.iter().find(|p| &p.id == parent).unwrap();
+                assert!(parent.start_ns <= s.start_ns && s.end_ns <= parent.end_ns);
+            }
+        }
+    }
+
+    #[test]
+    fn span_metrics_cover_repeated_verified_sha_trials() {
+        use tracing_subscriber::prelude::*;
+        // Thirty-two compressions reach the opener's minimum packed log of 13.
+        let context = BiniusLigeritoContext::setup(&Corpus::new(32, DEFAULT_ROOT_SEED));
+        let layer = CaptureLayer::default();
+        let capture = layer.capture();
+        tracing::subscriber::with_default(tracing_subscriber::registry().with(layer), || {
+            for _ in 0..6 {
+                let (metrics, spans, _) = context.run(&capture);
+                assert!(
+                    metrics.commit_ms > 0.0 && metrics.piop_ms > 0.0 && metrics.opening_ms > 0.0
+                );
+                assert!(metrics.witness_to_proof_ms >= metrics.total_prover_ms);
+                assert_eq!(
+                    spans
+                        .iter()
+                        .filter(|s| s.scope_tag == Some("opening-proof"))
+                        .count(),
+                    context.prepared.oracle_specs().len() + 1
+                );
+                for s in &spans {
+                    if let Some(parent) = &s.parent {
+                        let parent = spans.iter().find(|p| &p.id == parent).unwrap();
+                        assert!(parent.start_ns <= s.start_ns && s.end_ns <= parent.end_ns);
+                    }
+                }
+            }
+        });
+    }
 
     #[test]
     fn csv_contract_keeps_nine_decimals_and_escapes_configuration() {

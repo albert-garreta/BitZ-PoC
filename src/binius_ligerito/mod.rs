@@ -34,7 +34,6 @@ use binius_prover::{IOPProver, OptimalPackedB128, protocols::shift::KeyCollectio
 use binius_verifier::{IOPVerifier, config::B128};
 use channel::{ProverChannel, ProverRelation, VerifierChannel, VerifierRelation};
 use flock_core::{field::F128, merkle::Hash, pcs::ligerito::LigeritoProof};
-use std::time::{Duration, Instant};
 
 /// Oracle handles are commitment indices.
 pub type Oracle = usize;
@@ -119,17 +118,6 @@ pub struct Proof {
     pub rounds0: Vec<OodRound>,
     pub witness: BitMleOpening,
     pub relations: Vec<LigeritoProof>,
-}
-
-/// Prover wall-clock phases: the witness commitment, the PIOP prefix (with
-/// any mid-protocol oracle commitment inside it, as Binius64's own spans
-/// attribute it), and the opening (every Round 0, the ring switch and every
-/// Ligerito continuation).
-#[derive(Clone, Copy, Debug, Default)]
-pub struct ProveTimings {
-    pub commit: Duration,
-    pub piop: Duration,
-    pub opening: Duration,
 }
 
 /// Prepared circuit, PIOP keys and openers; reusable across witnesses.
@@ -332,8 +320,8 @@ impl Prepared {
     }
 
     /// Prove `witness` satisfies the constraint system. The public words are
-    /// bound first; the returned timings are the prover's wall-clock phases.
-    pub fn prove(&self, witness: &ValueVec) -> Result<(Proof, ProveTimings), Error> {
+    /// bound first. Phase boundaries are exposed as `tracing` spans.
+    pub fn prove(&self, witness: &ValueVec) -> Result<Proof, Error> {
         let public = witness.inout();
         let mut t = self.transcript(public);
         let mut channel = ProverChannel {
@@ -343,17 +331,19 @@ impl Prepared {
             pcs: &self.pcs,
             oracles: Vec::new(),
             relations: Vec::new(),
-            commit_time: Duration::ZERO,
-            extra_commit_time: Duration::ZERO,
-            round0_time: Duration::ZERO,
         };
         let alloc = binius_compute::GlobalAllocator;
-        let piop_started = Instant::now();
-        let (oracle, _packed, point, value) = self
-            .prover
-            .prove_to_evaluation::<_, OptimalPackedB128, _>(witness, &mut channel, &alloc)
-            .map_err(|e| Error::Binius(e.to_string()))?;
-        let piop_elapsed = piop_started.elapsed();
+        let (oracle, _packed, point, value) = tracing::info_span!(
+            "PIOP prefix",
+            component = "binius-ligerito.piop",
+            scope_kind = "scope",
+            tag_proving = true,
+        )
+        .in_scope(|| {
+            self.prover
+                .prove_to_evaluation::<_, OptimalPackedB128, _>(witness, &mut channel, &alloc)
+                .map_err(|e| Error::Binius(e.to_string()))
+        })?;
         if !channel.specs.is_empty() {
             return Err(Error::Invalid("unconsumed oracle specification"));
         }
@@ -361,12 +351,18 @@ impl Prepared {
             messages,
             oracles,
             relations,
-            commit_time,
-            round0_time,
             ..
         } = channel;
 
-        let opening_started = Instant::now();
+        let opening = tracing::info_span!(
+            "Opening proof",
+            component = "binius-ligerito.opening",
+            scope_kind = "phase",
+            tag_proving = true,
+            tag_pcs = true,
+            tag_opening_proof = true,
+        )
+        .entered();
         Self::absorb_evaluation(&mut t, value);
         // Bind every relation group's claims (and draw their batching
         // weights) before any opening; then each opening runs on its own fork.
@@ -416,26 +412,16 @@ impl Prepared {
                 target,
             ));
         }
-        let opening_elapsed = opening_started.elapsed();
-        let timings = ProveTimings {
-            commit: commit_time,
-            piop: piop_elapsed
-                .saturating_sub(commit_time)
-                .saturating_sub(round0_time),
-            opening: round0_time + opening_elapsed,
-        };
+        drop(opening);
         let roots = oracles.iter().map(|o| o.root).collect();
         let rounds0 = oracles.iter().map(|o| o.round0.round()).collect();
-        Ok((
-            Proof {
-                messages,
-                roots,
-                rounds0,
-                witness: witness_opening,
-                relations: relation_proofs,
-            },
-            timings,
-        ))
+        Ok(Proof {
+            messages,
+            roots,
+            rounds0,
+            witness: witness_opening,
+            relations: relation_proofs,
+        })
     }
 
     /// Verify `proof` for the statement `public`: the constraint system's
@@ -655,8 +641,7 @@ mod tests {
         assert!(prepared.security().algebraic_bits >= 100.0);
         assert!(mul_witness(&circuit, &wires, true).is_none());
         let witness = mul_witness(&circuit, &wires, false).unwrap();
-        let (proof, timings) = prepared.prove(&witness).unwrap();
-        assert!(timings.commit > Duration::ZERO && timings.opening > Duration::ZERO);
+        let proof = prepared.prove(&witness).unwrap();
         assert_eq!(proof.relations.len(), 1);
         let bytes = proof.to_bytes();
         let decoded = prepared.proof_from_bytes(&bytes).unwrap();
@@ -713,9 +698,6 @@ mod tests {
             pcs: &prepared.pcs,
             oracles: Vec::new(),
             relations: Vec::new(),
-            commit_time: Duration::ZERO,
-            extra_commit_time: Duration::ZERO,
-            round0_time: Duration::ZERO,
         };
         let (oracle, _packed, point, value) = prepared
             .prover
@@ -972,7 +954,7 @@ mod tests {
         }
         circuit.populate_wire_witness(&mut filler).unwrap();
         let witness = filler.into_value_vec();
-        let (proof, _) = prepared.prove(&witness).unwrap();
+        let proof = prepared.prove(&witness).unwrap();
         assert!(proof.relations.is_empty());
         let decoded = prepared.proof_from_bytes(&proof.to_bytes()).unwrap();
         prepared.verify(witness.inout(), &decoded).unwrap();

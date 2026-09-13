@@ -27,7 +27,6 @@ use binius_ip_prover::channel::{IPProverChannel, WordIPProverChannel};
 use binius_math::{FieldSlice, FieldVec};
 use binius_verifier::config::B128;
 use flock_core::{field::F128, merkle::Hash, pcs::commit::ProverData};
-use std::time::{Duration, Instant};
 
 const ORACLE_DOMAIN: &[u8] = b"f2z/binius64-ligerito/oracle/v1";
 
@@ -88,12 +87,6 @@ pub(super) struct ProverChannel<'a> {
     pub pcs: &'a [BinaryPcs],
     pub oracles: Vec<ProverOracle>,
     pub relations: Vec<ProverRelation>,
-    /// The witness commitment (oracle 0): encoding + Merkle tree.
-    pub commit_time: Duration,
-    /// Commitments the PIOP takes mid-protocol (later oracles).
-    pub extra_commit_time: Duration,
-    /// Every oracle's Round 0.
-    pub round0_time: Duration,
 }
 
 impl IPProverChannel<B128> for ProverChannel<'_> {
@@ -134,21 +127,37 @@ impl<P: PackedField<Scalar = B128>, A: Allocator> IOPProverChannel<P, A> for Pro
         );
         self.specs.remove(0);
         let pcs = &self.pcs[index];
-        let started = Instant::now();
-        let packed: Vec<F128> = buffer.iter_scalars().map(b128_to_f128).collect();
-        let (commitment, data) = pcs
-            .commit(&packed)
-            .expect("the oracle length matches its specification");
-        absorb_root(self.transcript, index, &commitment.root);
-        let committed = Instant::now();
-        let round0 = pcs.prove_round0(self.transcript, &packed);
-        let pinned = Instant::now();
-        if index == 0 {
-            self.commit_time += committed - started;
-        } else {
-            self.extra_commit_time += committed - started;
-        }
-        self.round0_time += pinned - committed;
+        let (packed, commitment, data) = tracing::info_span!(
+            "Commit oracle",
+            component = if index == 0 {
+                "binius-ligerito.witness-commit"
+            } else {
+                "binius-ligerito.oracle-commit"
+            },
+            scope_kind = "procedure",
+            oracle_index = index,
+            tag_proving = true,
+            tag_pcs = true,
+            tag_commit = true,
+        )
+        .in_scope(|| {
+            let packed: Vec<F128> = buffer.iter_scalars().map(b128_to_f128).collect();
+            let (commitment, data) = pcs
+                .commit(&packed)
+                .expect("the oracle length matches its specification");
+            absorb_root(self.transcript, index, &commitment.root);
+            (packed, commitment, data)
+        });
+        let round0 = tracing::info_span!(
+            "Round 0",
+            component = "binius-ligerito.round0",
+            scope_kind = "procedure",
+            oracle_index = index,
+            tag_proving = true,
+            tag_pcs = true,
+            tag_opening_proof = true,
+        )
+        .in_scope(|| pcs.prove_round0(self.transcript, &packed));
         self.oracles.push(ProverOracle {
             packed,
             data,

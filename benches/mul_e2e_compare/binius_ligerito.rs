@@ -3,11 +3,12 @@
 //! and opened by the F2Z opener — rate 1/8, Johnson-regime Ligerito with fold
 //! and query grinding, Round 0 — and the whole protocol gated at 100 bits by
 //! a union bound, the yardstick of the `f2z` rows.
+use super::trace_capture::BiniusLigeritoPhases;
 use super::{Corpus, Timing, TraceCapture, Workload, binius};
 use binius_frontend::Circuit;
 use f2z::binius_ligerito::Prepared;
 use serde_json::{Value, json};
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 pub(super) struct Context {
     corpus: Arc<Corpus>,
@@ -19,8 +20,7 @@ pub(super) struct Context {
 impl Context {
     pub(super) fn setup(corpus: Arc<Corpus>) -> Self {
         let (circuit, wires) = binius::compile(&corpus);
-        let prepared =
-            Prepared::new(circuit.constraint_system()).expect("binius64-ligerito setup");
+        let prepared = Prepared::new(circuit.constraint_system()).expect("binius64-ligerito setup");
         Self {
             corpus,
             circuit,
@@ -68,7 +68,7 @@ impl Context {
             .expect("Binius witness evaluation")
             .into_value_vec();
         let wend = capture.now_ns();
-        let (proof, phases) = self
+        let proof = self
             .prepared
             .prove(&witness)
             .expect("binius64-ligerito full proof");
@@ -83,18 +83,65 @@ impl Context {
             .verify(witness.inout(), &decoded)
             .expect("binius64-ligerito full verification");
         let end = capture.now_ns();
-        let _ = capture.finish();
+        let phases = BiniusLigeritoPhases::from_spans(&capture.finish());
         let mut t = Timing::new(start, wend, ready, vstart, end, bytes.len());
-        // The prover reports its own phase durations (commit, PIOP prefix,
-        // opening = every Round 0 + ring switch + Ligerito); lay them out
-        // consecutively inside the online span for the tagged unions.
-        let ns = |d: Duration| u64::try_from(d.as_nanos()).unwrap_or(u64::MAX);
-        let commit_end = (wend + ns(phases.commit)).min(ready);
-        let piop_end = (commit_end + ns(phases.piop)).min(ready);
-        let opening_end = (piop_end + ns(phases.opening)).min(ready);
-        t.add("commit", "commit", wend, commit_end);
-        t.add("piop", "constraint-proof", commit_end, piop_end);
-        t.add("opening", "opening-proof", piop_end, opening_end);
+        t.add("commit", "commit", phases.commit.0, phases.commit.1);
+        for (start, end) in phases.piop {
+            t.add("piop", "constraint-proof", start, end);
+        }
+        for (start, end) in phases.opening {
+            t.add("opening", "opening-proof", start, end);
+        }
         t
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn span_metrics_cover_repeated_verified_multiplication_trials() {
+        use super::super::CaptureLayer;
+        use super::*;
+        use tracing_subscriber::prelude::*;
+
+        // The F2Z opener requires packed log >= 13.
+        let context = Context::setup(Arc::new(Corpus::new(Workload::U32, 11, 7)));
+        let witness = binius::populate(&context.corpus, &context.circuit, &context.wires, false)
+            .unwrap()
+            .into_value_vec();
+        let expected =
+            tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
+                context.prepared.prove(&witness).unwrap().to_bytes()
+            });
+        let layer = CaptureLayer::default();
+        let capture = layer.capture();
+        tracing::subscriber::with_default(tracing_subscriber::registry().with(layer), || {
+            capture.begin();
+            let proof = context.prepared.prove(&witness).unwrap().to_bytes();
+            assert_eq!(proof, expected, "instrumentation changed the proof bytes");
+            let phases = BiniusLigeritoPhases::from_spans(&capture.finish());
+            assert_eq!(
+                phases.opening.len(),
+                context.prepared.oracle_specs().len() + 1
+            );
+            // Warmup followed by five independent samples: capture state must reset.
+            for _ in 0..6 {
+                let timing = context.run(&capture);
+                timing.validate();
+                assert_eq!(timing.proof_bytes, proof.len());
+                let first_opening = timing
+                    .phases
+                    .iter()
+                    .find(|p| p.tag == "opening-proof")
+                    .unwrap();
+                assert!(
+                    timing
+                        .phases
+                        .iter()
+                        .any(|p| { p.tag == "constraint-proof" && p.start >= first_opening.end }),
+                    "Round 0 must remain before subsequent PIOP work"
+                );
+            }
+        });
     }
 }

@@ -226,3 +226,56 @@ The separate profiler-skill JSONL validator rejects the unchanged native-mul
 That existing compatibility mismatch was not repaired in this integration; it
 does not affect the native Perfetto checks above. Do not treat the legacy JSONL
 as validated against that stricter schema.
+
+## Binius64-Ligerito phase migration
+
+`Prepared::prove` now returns `Result<Proof, Error>`, not a proof paired with
+`ProveTimings`. The channel no longer accumulates commitment or Round-0 times.
+Ordinary `tracing::info_span!` scopes surround the same protocol operations;
+they record component identity and oracle indices, never witness contents.
+No subscriber or writer is passed into the prover.
+
+Both native multiplication and SHA derive their existing numeric metrics from
+those completed spans using `BiniusLigeritoPhases` in `trace_capture.rs`:
+
+- `commit`: the actual witness-oracle commitment interval, including packing and
+  transcript absorption, as before.
+- `piop`: the PIOP prefix minus the **union** of the witness commitment and all
+  Round-0 intervals. Later oracle commitments remain included, as before.
+- `opening`: the union of all Round-0 intervals and the final opening interval.
+
+The JSON/CSV metric names, units and aggregation rules are unchanged. Canonical
+trace placement is intentionally corrected: PIOP and opening can have several
+disjoint intervals, with distinct span IDs, instead of three artificially
+consecutive bars. Unmeasured gaps are not filled by shifting or clipping spans.
+The broad PIOP row is not tagged as pure Sumcheck; it also includes other work.
+Missing, duplicate or out-of-bounds required spans fail instead of becoming zero.
+
+Perfetto exports these same annotations when enabled. Its `tag_commit` view
+includes **all** oracle commitments; the historical benchmark `commit_ms`
+column intentionally counts only the witness commitment. Do not equate them.
+
+This migration removes the Binius64-Ligerito **phase** clocks, not the entire
+timing system. Trial boundary clocks, the existing live collector, other
+backends' `prof::scope` calls and memory reporting remain. The live collector
+still supplies the benchmark metrics; Perfetto remains the optional diagnostic
+export. Instrumentation overhead changes, so this is not a performance claim.
+
+Migration checks on macOS ARM64: all 24 SHA tests, all three Binius64-Ligerito
+protocol tests, all eight output/Perfetto tests (including the native processor),
+and the ten unchanged native-runner Python tests pass. Multiplication passes 37
+of 38 tests; the unchanged `u32_comparison_requires_johnson_and_ood` test expects
+`config.ligerito.target_security_bits`, which is null. The same failure reproduces
+in the pre-migration test executable. It is not repaired by this timing change.
+The new smoke tests exercise six verified trials each at 2,048 multiplications
+and 32 SHA compressions; multiplication also checks proof-byte equality with
+tracing on/off.
+Both benchmark targets and the hybrid binary compile with and without Perfetto;
+the library also checks without default features. Linux remains untested.
+
+An optimized multiplication smoke (2,048 operations, two threads, one warmup and
+five samples) also verified all six proofs and produced six valid Perfetto files.
+Each contains 62 complete slices, including two real Round-0 intervals inside the
+PIOP prefix, with no error/data-loss statistics. The JSONL phase unions agree
+exactly with the corresponding numeric sample metrics. This checks measurement
+structure and output, not tracing overhead or relative performance.

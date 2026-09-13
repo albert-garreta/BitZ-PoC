@@ -45,11 +45,15 @@ pub(crate) struct TraceCapture {
 }
 
 impl CaptureLayer {
+    pub(crate) fn capture(&self) -> TraceCapture {
+        TraceCapture {
+            state: Arc::clone(&self.state),
+        }
+    }
+
     pub(crate) fn install() -> TraceCapture {
         let layer = Self::default();
-        let capture = TraceCapture {
-            state: Arc::clone(&layer.state),
-        };
+        let capture = layer.capture();
         let subscriber = tracing_subscriber::registry().with(layer);
         #[cfg(feature = "bench-perfetto")]
         let subscriber = subscriber.with(super::common::perfetto::layer());
@@ -165,4 +169,135 @@ impl TraceCapture {
 
 fn ns_since(epoch: Instant) -> u64 {
     u64::try_from(epoch.elapsed().as_nanos()).unwrap_or(u64::MAX)
+}
+
+/// Reporting attribution, not another timer: Round 0 is opening work even
+/// though it executes inside the PIOP prefix. Later oracle commits remain
+/// attributed to PIOP, matching the existing benchmark metric definitions.
+pub(crate) struct BiniusLigeritoPhases {
+    pub(crate) commit: (u64, u64),
+    pub(crate) piop: Vec<(u64, u64)>,
+    pub(crate) opening: Vec<(u64, u64)>,
+}
+
+impl BiniusLigeritoPhases {
+    pub(crate) fn from_spans(raw: &[CapturedSpan]) -> Self {
+        let matching = |component| {
+            raw.iter()
+                .filter(move |s| s.component.as_deref() == Some(component))
+        };
+        let required = |component| {
+            let mut spans = matching(component);
+            let span = spans
+                .next()
+                .unwrap_or_else(|| panic!("missing {component} span"));
+            assert!(
+                spans.next().is_none(),
+                "multiple {component} spans in one trial"
+            );
+            assert!(span.end_ns >= span.start_ns, "reversed {component} span");
+            (span.start_ns, span.end_ns)
+        };
+        let prefix = required("binius-ligerito.piop");
+        let commit = required("binius-ligerito.witness-commit");
+        let final_opening = required("binius-ligerito.opening");
+        assert!(
+            prefix.1 <= final_opening.0,
+            "opening precedes the PIOP prefix end"
+        );
+        let mut opening: Vec<_> = matching("binius-ligerito.round0")
+            .map(|s| (s.start_ns, s.end_ns))
+            .collect();
+        assert!(!opening.is_empty(), "missing binius-ligerito.round0 span");
+
+        // Subtract the union, preserving gaps and actual placement. In
+        // particular, never slide Round 0 past the constraint reductions.
+        let mut excluded = opening.clone();
+        excluded.push(commit);
+        excluded.sort_unstable();
+        let mut cursor = prefix.0;
+        let mut piop = Vec::new();
+        for (start, end) in excluded {
+            assert!(
+                prefix.0 <= start && start <= end && end <= prefix.1,
+                "commit/Round 0 outside the PIOP prefix"
+            );
+            if cursor < start {
+                piop.push((cursor, start));
+            }
+            cursor = cursor.max(end);
+        }
+        if cursor < prefix.1 {
+            piop.push((cursor, prefix.1));
+        }
+        opening.push(final_opening);
+        opening.sort_unstable();
+        Self {
+            commit,
+            piop,
+            opening,
+        }
+    }
+}
+
+#[cfg(test)]
+mod phase_tests {
+    use super::*;
+
+    fn fixture() -> Vec<CapturedSpan> {
+        [
+            ("binius-ligerito.piop", 10, 100),
+            ("binius-ligerito.witness-commit", 20, 30),
+            ("binius-ligerito.round0", 30, 40),
+            ("binius-ligerito.oracle-commit", 55, 65),
+            ("binius-ligerito.round0", 65, 75),
+            ("binius-ligerito.round0", 70, 80),
+            ("binius-ligerito.opening", 105, 130),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(id, (component, start_ns, end_ns))| CapturedSpan {
+            id: id as u64,
+            parent: None,
+            name: component.to_owned(),
+            component: Some(component.to_owned()),
+            start_ns,
+            end_ns,
+        })
+        .collect()
+    }
+
+    #[test]
+    fn round0_keeps_its_position_and_is_excluded_once_from_piop() {
+        let mut raw = fixture();
+        raw.reverse(); // Collection order must not determine the timeline.
+        let phases = BiniusLigeritoPhases::from_spans(&raw);
+        assert_eq!(phases.commit, (20, 30));
+        assert_eq!(phases.piop, [(10, 20), (40, 65), (80, 100)]);
+        assert_eq!(phases.opening, [(30, 40), (65, 75), (70, 80), (105, 130)]);
+    }
+
+    #[test]
+    #[should_panic(expected = "missing binius-ligerito.opening span")]
+    fn missing_phase_is_not_zero() {
+        let mut raw = fixture();
+        raw.pop();
+        BiniusLigeritoPhases::from_spans(&raw);
+    }
+
+    #[test]
+    #[should_panic(expected = "multiple binius-ligerito.piop spans")]
+    fn mixed_trials_are_rejected() {
+        let mut raw = fixture();
+        raw.push(raw[0].clone());
+        BiniusLigeritoPhases::from_spans(&raw);
+    }
+
+    #[test]
+    #[should_panic(expected = "commit/Round 0 outside the PIOP prefix")]
+    fn invalid_interval_is_not_clipped() {
+        let mut raw = fixture();
+        raw[2].end_ns = 200;
+        BiniusLigeritoPhases::from_spans(&raw);
+    }
 }

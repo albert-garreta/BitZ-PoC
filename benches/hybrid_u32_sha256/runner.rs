@@ -143,7 +143,7 @@ impl Native {
                 Ok(t.finalize())
             }
             NativeBackend::Ligerito(prepared) => {
-                let (proof, _) = prepared.prove(witness)?;
+                let proof = prepared.prove(witness)?;
                 Ok(proof.to_bytes())
             }
         }
