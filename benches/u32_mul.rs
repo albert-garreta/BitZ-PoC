@@ -122,78 +122,28 @@ fn peak_mib() -> f64 {
     unreachable!("memory pass requires the bench-peak-memory feature")
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum BenchmarkPass {
-    Latency,
-    Memory,
-    Both,
-}
+use common::cli::BenchmarkPass;
 
-impl BenchmarkPass {
-    fn from_env() -> Self {
-        match std::env::var("F2Z_BENCH_PASS").as_deref() {
-            Ok("latency") => Self::Latency,
-            Ok("memory") => Self::Memory,
-            Ok("both") => Self::Both,
-            Err(_) => Self::Latency,
-            Ok(value) => panic!("unsupported F2Z_BENCH_PASS={value}; use latency, memory, or both"),
-        }
-    }
 
-    const fn measures_latency(self) -> bool {
-        matches!(self, Self::Latency | Self::Both)
-    }
-
-    const fn measures_memory(self) -> bool {
-        matches!(self, Self::Memory | Self::Both)
-    }
-
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::Latency => "latency",
-            Self::Memory => "memory",
-            Self::Both => "both",
-        }
-    }
-}
-
-fn env_usize(name: &str, default: usize) -> usize {
-    match std::env::var(name) {
-        Ok(value) => value
-            .parse()
-            .unwrap_or_else(|_| panic!("{name} must be a positive decimal integer")),
-        Err(_) => default,
-    }
-}
 
 fn f2z_width() -> U32MulF2zWidth {
-    match env_usize("F2Z_MUL_WORD_BITS", U32MulF2zWidth::W1.word_bits()) {
-        1 => U32MulF2zWidth::W1,
-        8 => U32MulF2zWidth::W8,
-        value => panic!("F2Z_MUL_WORD_BITS must be 1 or 8; got {value}"),
-    }
+    common::cli::value(
+        "F2Z_MUL_WORD_BITS",
+        std::env::var_os("F2Z_MUL_WORD_BITS").unwrap_or_else(|| "1".into()),
+        |value: &str| match value.parse::<usize>() {
+            Ok(1) => Ok(U32MulF2zWidth::W1),
+            Ok(8) => Ok(U32MulF2zWidth::W8),
+            _ => Err("expected 1 or 8"),
+        },
+    )
 }
 
 const PROTOCOL_LABEL: &str = "skip-k3";
 const STRATEGY_LABEL: &str = "delayed-barrett";
 
 fn exponents() -> Vec<usize> {
-    common::shapes(None).map_or_else(
-        || (15..=25).collect(),
-        |shapes| {
-            shapes
-                .iter()
-                .map(|part| {
-                    let exponent: usize = part.parse().expect("F2Z_BENCH_SHAPES contains integers");
-                    assert!(
-                        exponent >= 15,
-                        "the combined proof requires at least 2^15 gate slots"
-                    );
-                    exponent
-                })
-                .collect()
-        },
-    )
+    common::shape_values(None, clap::builder::RangedU64ValueParser::<usize>::new().range(15..))
+        .unwrap_or_else(|| (15..=25).collect())
 }
 
 /// One end-to-end prove: bit-pack + commit (Step 1) + the combined proof.
@@ -280,7 +230,6 @@ fn bench_exponent<P: IopSecurityProfile>(
     let ligerito_hash = warm_hint.commitment.params.merkle_hash;
     drop(warm_proof);
     drop(warm_hint);
-
 
     let mut latency = None;
     if pass.measures_latency() {
@@ -432,20 +381,19 @@ fn bench_exponent<P: IopSecurityProfile>(
 }
 
 fn main() {
-    f2z::observability::install().expect("install Perfetto subscriber");
-    let threads = common::init();
+    common::cli::EnvironmentCli::parse();
     let reps = common::reps(None, 5);
     let pass = BenchmarkPass::from_env();
-    assert!(
-        !pass.measures_memory() || cfg!(feature = "bench-peak-memory"),
-        "F2Z_BENCH_PASS=memory|both requires --features bench-peak-memory"
-    );
     let f2z_width = f2z_width();
-    let order = env_usize("F2Z_BENCH_ORDER", 1);
-    assert!(order > 0, "F2Z_BENCH_ORDER must be positive");
+    let order = common::cli::env::<std::num::NonZeroUsize>("F2Z_BENCH_ORDER")
+        .map_or(1, std::num::NonZeroUsize::get);
     let seed = common::seed(None, 0x5533_326d_756c_0064);
     let selected = common::security_profile(PrimePolicy::SingleDerived);
     let profile = selected.unwrap_or(common::SecurityProfile::Lambda100);
+
+    let exponents = exponents();
+    f2z::observability::install().expect("install Perfetto subscriber");
+    let threads = common::init();
 
     println!("u32 × u32 → u64: Spartan PIOP + F2Z assignment opening");
     #[cfg(feature = "parallel")]
@@ -463,7 +411,7 @@ fn main() {
         common::profile_banner(selected, common::SecurityProfile::Lambda100)
     );
 
-    for exponent in exponents() {
+    for exponent in exponents {
         flock_core::scratch::clear();
         common::with_profile!(
             profile,

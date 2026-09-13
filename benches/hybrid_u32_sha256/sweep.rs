@@ -184,15 +184,10 @@ pub fn run(
     results_dir: Option<PathBuf>,
     profile: Option<&str>,
 ) -> Result<(), AnyError> {
-    let modes = match mode {
-        "all" => vec!["hybrid", "separate", "all-binius", "binius-ligerito"],
-        "hybrid" | "separate" | "all-binius" | "binius-ligerito" => vec![mode],
-        _ => {
-            return Err(
-                "invalid --mode; use hybrid, separate, all-binius, binius-ligerito or all for a sweep"
-                    .into(),
-            );
-        }
+    let modes = if mode == "all" {
+        vec!["hybrid", "separate", "all-binius", "binius-ligerito"]
+    } else {
+        vec![mode]
     };
     let executable = std::env::current_exe()?;
     let results_dir = if let Some(directory) = results_dir {
@@ -314,7 +309,7 @@ mod reporting_tests {
     #[test]
     fn binius_identity_roundtrips_and_rejects_wrong_modes_and_tampering() {
         // Both witness and relation oracles must satisfy BinaryPcs's log-13 floor.
-        let native = super::super::Native::new(4096, 2, true).unwrap();
+        let native = super::super::Native::new(4096, 2, true, None).unwrap();
         let super::super::NativeBackend::Ligerito(prepared) = &native.backend else {
             unreachable!();
         };

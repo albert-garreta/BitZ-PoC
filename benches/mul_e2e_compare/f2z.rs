@@ -19,11 +19,7 @@ use std::sync::Arc;
 /// campaign, records it, and checks every sample against it.
 fn u64_split_shift() -> i8 {
     std::env::var("F2Z_U64_SPLIT_SHIFT")
-        .ok()
-        .map(|v| {
-            v.parse()
-                .expect("F2Z_U64_SPLIT_SHIFT must be a small integer")
-        })
+        .map(|value| value.parse().expect("F2Z_U64_SPLIT_SHIFT must be an i8"))
         .unwrap_or(0)
 }
 
@@ -35,10 +31,12 @@ enum Relation {
 pub(super) struct Context {
     corpus: Arc<Corpus>,
     relation: Relation,
+    split_shift: i8,
 }
 impl Context {
     pub(super) fn setup(corpus: Arc<Corpus>) -> Self {
         let n = corpus.len();
+        let split_shift = if corpus.workload == Workload::U64 { u64_split_shift() } else { 0 };
         let relation = match corpus.workload {
             Workload::U32 => {
                 let relation = PreparedU32MulRelation::new_with_profile_and_ligerito::<Lambda100>(
@@ -52,7 +50,7 @@ impl Context {
                 PreparedU64MulRelation::new_with_profile_and_ligerito::<Lambda100>(
                     U64MulLayout::new(n)
                         .unwrap()
-                        .with_split_shift(u64_split_shift())
+                        .with_split_shift(split_shift)
                         .unwrap(),
                     super::common::ligerito_selection(100),
                 )
@@ -66,7 +64,7 @@ impl Context {
                 .unwrap(),
             ),
         };
-        Self { corpus, relation }
+        Self { corpus, relation, split_shift }
     }
     pub(super) fn config(&self) -> Value {
         let mut config = json!({"profile":"Lambda100","target_bits":100,"piop":"Spartan over transcript-sampled prime","pcs":"F2Z/Ligerito","word_bits":1});
@@ -107,7 +105,7 @@ impl Context {
                 config["ligerito"] =
                     super::common::ligerito_report(p.ligerito_configuration(), p.security().ood);
                 let params = p.layout().f2z_params();
-                config["u64_split_shift"] = json!(u64_split_shift());
+                config["u64_split_shift"] = json!(self.split_shift);
                 config["f2z_t"] = json!(params.row_vars);
                 config["f2z_s"] = json!(params.col_vars);
             }
@@ -192,7 +190,7 @@ impl Context {
                 let witness = {
                     let _s = tracing::info_span!("Witness generation", component = "benchmark.witness-evaluation", tag_witness_generation = true).entered();
                     U64MulWitness::from_inputs(self.corpus.inputs())
-                        .and_then(|w| w.with_split_shift(u64_split_shift()))
+                        .and_then(|w| w.with_split_shift(self.split_shift))
                         .expect("u64 witness")
                 };
                 for (i, &(a, b)) in self.corpus.inputs().iter().enumerate() {
@@ -263,6 +261,7 @@ impl Context {
 }
 
 pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
+    let split_shift = if corpus.workload == Workload::U64 { u64_split_shift() } else { 0 };
     let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
     let started = tracing::info_span!("mul_e2e_compare/f2z:started").entered();
     if corpus.workload.is_wide() {
@@ -301,7 +300,7 @@ pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
         }
         Workload::U64 => {
             let w = U64MulWitness::from_inputs(corpus.inputs())
-                .and_then(|w| w.with_split_shift(u64_split_shift()))
+                .and_then(|w| w.with_split_shift(split_shift))
                 .unwrap();
             let ms = { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "mul_e2e_compare/f2z:started").expect("query completed operation") }.as_secs_f64() * 1e3;
             (

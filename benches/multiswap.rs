@@ -41,7 +41,7 @@ pub(crate) mod common;
 use common::output::{BenchmarkOutput, FileMode, JsonlWriter};
 
 use std::{
-    collections::HashMap, fs::File, hint::black_box, io::BufWriter, path::Path, process::Command,
+    collections::HashMap, fs::File, hint::black_box, io::BufWriter, process::Command,
 };
 
 use f2z::piop::spartan::multiswap::{
@@ -190,6 +190,22 @@ struct RepTiming {
     peak_rss_bytes: u64,
 }
 
+#[derive(clap::Parser)]
+struct Env {
+    #[arg(long, env = "F2Z_MULTISWAP_BATCH_COUNT", default_value_t = 1)]
+    batch_count: usize,
+    #[arg(long, env = "F2Z_MULTISWAP_CHECK_ONLY", default_value = "0")]
+    check_only: String,
+    #[arg(long, env = "F2Z_MULTISWAP_TRACE_PATH")]
+    trace_path: Option<std::path::PathBuf>,
+    #[arg(long, env = "F2Z_MULTISWAP_EXPECTED_CONSTRAINT_DIGEST", value_parser = normalized_digest)]
+    expected_constraint_digest: Option<String>,
+}
+
+fn normalized_digest(value: &str) -> Result<String, std::convert::Infallible> {
+    Ok(value.strip_prefix("0x").unwrap_or(value).to_ascii_lowercase())
+}
+
 struct TraceWriter {
     output: JsonlWriter<BufWriter<File>>,
     campaign_id: String,
@@ -203,9 +219,8 @@ struct TraceWriter {
 }
 
 impl TraceWriter {
-    fn from_env(threads: usize, setup_ns: u64) -> Option<Self> {
-        let path = std::env::var_os("F2Z_MULTISWAP_TRACE_PATH")?;
-        let path = Path::new(&path);
+    fn new(env: &Env, threads: usize, setup_ns: u64) -> Option<Self> {
+        let path = env.trace_path.as_deref()?;
         if let Some(parent) = path
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
@@ -235,16 +250,9 @@ impl TraceWriter {
                 "Apple Silicon",
             )
         });
-        let build_profile =
-            std::env::var("F2Z_MULTISWAP_BUILD_PROFILE").unwrap_or_else(|_| "bench".to_owned());
-        let expected_constraint_digest = std::env::var("F2Z_MULTISWAP_EXPECTED_CONSTRAINT_DIGEST")
-            .ok()
-            .map(|value| {
-                value
-                    .strip_prefix("0x")
-                    .unwrap_or(&value)
-                    .to_ascii_lowercase()
-            });
+        let build_profile = std::env::var("F2Z_MULTISWAP_BUILD_PROFILE")
+            .unwrap_or_else(|_| "bench".to_owned());
+        let expected_constraint_digest = env.expected_constraint_digest.clone();
         Some(Self {
             output,
             campaign_id,
@@ -1035,20 +1043,19 @@ fn prepare<P: IopSecurityProfile>(circuit: &MultiswapCircuit) -> PreparedMultisw
 }
 
 fn main() {
-    f2z::observability::install().expect("install Perfetto subscriber");
-    let threads = common::init();
+    common::cli::EnvironmentCli::parse();
+    let env: Env = common::cli::environment();
     let reps = common::reps(Some("F2Z_MULTISWAP_REPS"), 5);
-    let k = common::shapes(None).map_or(0, |shapes| {
+    let k = common::shape_values(None, str::parse::<usize>).map_or(0, |shapes| {
         assert_eq!(shapes.len(), 1, "the MultiSwap bench takes one k shape");
         shapes[0]
-            .parse::<usize>()
-            .expect("F2Z_BENCH_SHAPES must be the Limber k parameter")
     });
-    let batch_count = std::env::var("F2Z_MULTISWAP_BATCH_COUNT")
-        .map(|s| s.parse::<usize>().expect("invalid batch count"))
-        .unwrap_or(1);
+    let batch_count = env.batch_count;
     let selected = common::security_profile(PrimePolicy::TwoFullWidthFingerprint);
     let profile = selected.unwrap_or(common::SecurityProfile::Limber114);
+
+    f2z::observability::install().expect("install Perfetto subscriber");
+    let threads = common::init();
 
     // Bootstrap the canonical relation outside measured trials. Each trial
     // repeats synthesis and assignment materialization within its witness timer.
@@ -1071,17 +1078,13 @@ fn main() {
     let setup_ms = setup_elapsed.as_secs_f64() * 1e3;
 
     let constraint_digest = hex_bytes(circuit.statement_digest());
-    if let Ok(expected) = std::env::var("F2Z_MULTISWAP_EXPECTED_CONSTRAINT_DIGEST") {
-        let expected = expected
-            .strip_prefix("0x")
-            .unwrap_or(&expected)
-            .to_ascii_lowercase();
+    if let Some(expected) = &env.expected_constraint_digest {
         assert_eq!(
-            expected, constraint_digest,
+            expected, &constraint_digest,
             "canonical constraint digest mismatch"
         );
     }
-    if std::env::var("F2Z_MULTISWAP_CHECK_ONLY").as_deref() == Ok("1") {
+    if env.check_only == "1" {
         println!(
             "MATCHED_PREFLIGHT {}",
             json!({
@@ -1092,7 +1095,7 @@ fn main() {
         );
         return;
     }
-    let mut trace_writer = TraceWriter::from_env(threads, setup_ns);
+    let mut trace_writer = TraceWriter::new(&env, threads, setup_ns);
 
     let p = *prepared.params();
     let layout = *prepared.layout();

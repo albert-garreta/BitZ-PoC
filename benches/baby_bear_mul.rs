@@ -43,15 +43,11 @@ use f2z::piop::spartan::{
 use f2z::transcript::Blake3Transcript;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
-fn reduction_strategy() -> SpartanReductionStrategy {
-    match std::env::var("F2Z_SPARTAN_REDUCTION").as_deref() {
-        Ok("immediate") => SpartanReductionStrategy::Immediate,
-        Ok("delayed-barrett") | Err(_) => SpartanReductionStrategy::DelayedBarrett,
-        Ok("delayed-crypto-bigint") => SpartanReductionStrategy::DelayedCryptoBigint,
-        Ok(value) => panic!(
-            "unsupported F2Z_SPARTAN_REDUCTION={value}; use immediate, delayed-barrett, or delayed-crypto-bigint"
-        ),
-    }
+#[derive(clap::Parser)]
+struct Env {
+    #[arg(long, env = "F2Z_SPARTAN_REDUCTION", default_value = "delayed-barrett",
+        value_parser = ["immediate", "delayed-barrett", "delayed-crypto-bigint"])]
+    reduction: String,
 }
 
 const fn strategy_name(strategy: SpartanReductionStrategy) -> &'static str {
@@ -63,23 +59,8 @@ const fn strategy_name(strategy: SpartanReductionStrategy) -> &'static str {
 }
 
 fn exponents() -> Vec<usize> {
-    common::shapes(Some("F2Z_BABY_BEAR_MUL_EXPONENTS")).map_or_else(
-        || (15..=25).collect(),
-        |shapes| {
-            shapes
-                .iter()
-                .map(|part| {
-                    let exponent: usize =
-                        part.parse().expect("F2Z_BENCH_SHAPES contains integers");
-                    assert!(
-                        exponent >= 15,
-                        "the combined proof requires at least 2^15 gate slots"
-                    );
-                    exponent
-                })
-                .collect()
-        },
-    )
+    common::shape_values(Some("F2Z_BABY_BEAR_MUL_EXPONENTS"), clap::builder::RangedU64ValueParser::<usize>::new().range(15..))
+        .unwrap_or_else(|| (15..=25).collect())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -223,12 +204,20 @@ fn bench_profile<P: IopSecurityProfile>(
 }
 
 fn main() {
-    f2z::observability::install().expect("install Perfetto subscriber");
-    let threads = common::init();
+    common::cli::EnvironmentCli::parse();
     let reps = common::reps(None, 5);
-    let strategy = reduction_strategy();
+    let strategy = match common::cli::environment::<Env>().reduction.as_str() {
+        "immediate" => SpartanReductionStrategy::Immediate,
+        "delayed-barrett" => SpartanReductionStrategy::DelayedBarrett,
+        "delayed-crypto-bigint" => SpartanReductionStrategy::DelayedCryptoBigint,
+        _ => unreachable!("clap validates the reduction strategy"),
+    };
     let seed = common::seed(Some("F2Z_BABY_BEAR_MUL_SEED"), 0x6262_6d75_6c5f_0031);
     let selected = common::security_profile(PrimePolicy::SingleDerived);
+
+    let exponents = exponents();
+    f2z::observability::install().expect("install Perfetto subscriber");
+    let threads = common::init();
 
     println!("BabyBear a*b = c + p*k: paper-path Spartan PIOP + F2Z assignment opening");
     #[cfg(feature = "parallel")]
@@ -249,7 +238,7 @@ fn main() {
         },
     );
 
-    for exponent in exponents() {
+    for exponent in exponents {
         flock_core::scratch::clear();
         let multiplications = 1usize << exponent;
         let shape_seed = seed ^ (exponent as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);

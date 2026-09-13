@@ -122,39 +122,9 @@ fn peak_mib() -> f64 {
     unreachable!("memory pass requires the bench-peak-memory feature")
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum BenchmarkPass {
-    Latency,
-    Memory,
-    Both,
-}
+use common::cli::BenchmarkPass;
 
-impl BenchmarkPass {
-    fn from_env() -> Self {
-        match std::env::var("F2Z_BENCH_PASS").as_deref() {
-            Ok("latency") | Err(_) => Self::Latency,
-            Ok("memory") => Self::Memory,
-            Ok("both") => Self::Both,
-            Ok(value) => panic!("unsupported F2Z_BENCH_PASS={value}; use latency, memory, or both"),
-        }
-    }
 
-    const fn measures_latency(self) -> bool {
-        matches!(self, Self::Latency | Self::Both)
-    }
-
-    const fn measures_memory(self) -> bool {
-        matches!(self, Self::Memory | Self::Both)
-    }
-
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::Latency => "latency",
-            Self::Memory => "memory",
-            Self::Both => "both",
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Protocol {
@@ -435,7 +405,6 @@ fn run_latency_trial(
     let sample_assignment = assignment.clone();
     let recording = f2z::observability::Recording::start(Vec::new()).expect("start outer-policy trial");
 
-
     match protocol {
         Protocol::Standard => {
             let mut prover_transcript = Blake3Transcript::new();
@@ -608,31 +577,9 @@ fn run_memory_trial(
     }
 }
 
-fn env_usize(name: &str, default: usize) -> usize {
-    match std::env::var(name) {
-        Ok(value) => value
-            .parse()
-            .unwrap_or_else(|_| panic!("{name} must be a positive decimal integer")),
-        Err(_) => default,
-    }
-}
-
 fn exponents() -> Vec<usize> {
-    common::shapes(None).map_or_else(
-        || vec![DEFAULT_EXPONENT],
-        |shapes| {
-            shapes
-                .iter()
-                .map(|part| {
-                    let exponent = part
-                        .parse::<usize>()
-                        .expect("F2Z_BENCH_SHAPES contains integers");
-                    assert!((8..=25).contains(&exponent));
-                    exponent
-                })
-                .collect()
-        },
-    )
+    common::shape_values(None, clap::builder::RangedU64ValueParser::<usize>::new().range(8..=25))
+        .unwrap_or_else(|| vec![DEFAULT_EXPONENT])
 }
 
 fn rayon_threads() -> usize {
@@ -824,19 +771,17 @@ fn bench_exponent(
 }
 
 fn main() {
+    common::cli::EnvironmentCli::parse();
+    let repetitions = common::reps(None, DEFAULT_REPETITIONS);
+    let pass = BenchmarkPass::from_env();
+    let order = common::cli::env::<std::num::NonZeroUsize>("F2Z_BENCH_ORDER")
+        .map_or(1, std::num::NonZeroUsize::get);
+    let root_seed = common::seed(None, 0x5533_326d_756c_0073);
+
+    let exponents = exponents();
     f2z::observability::install().expect("install Perfetto subscriber");
     common::enforce_known_env();
     let _ = flock_core::init_perf_thread_pool();
-    let repetitions = env_usize("F2Z_BENCH_REPS", DEFAULT_REPETITIONS);
-    assert!(repetitions > 0, "F2Z_BENCH_REPS must be positive");
-    let pass = BenchmarkPass::from_env();
-    assert!(
-        !pass.measures_memory() || cfg!(feature = "bench-peak-memory"),
-        "F2Z_BENCH_PASS=memory|both requires --features bench-peak-memory"
-    );
-    let order = env_usize("F2Z_BENCH_ORDER", 1);
-    assert!(order > 0, "F2Z_BENCH_ORDER must be positive");
-    let root_seed = common::seed(None, 0x5533_326d_756c_0073);
     let threads = rayon_threads();
 
     println!("u32 outer-sumcheck univariate-skip benchmark");
@@ -846,7 +791,7 @@ fn main() {
         pass.as_str(),
     );
 
-    for exponent in exponents() {
+    for exponent in exponents {
         flock_core::scratch::clear();
         bench_exponent(exponent, repetitions, root_seed, pass, order, threads);
     }

@@ -428,6 +428,9 @@ pub fn tune<C>(
     mut run: impl FnMut(&C) -> f64,
     report: impl Fn(&C) -> Value,
 ) -> Result<(Params, TuningReport), String> {
+    let reps = if explicit.is_some() { 0 } else {
+        super::cli::env::<std::num::NonZeroUsize>("F2Z_WHIR_TUNING_REPS").map_or(5, usize::from)
+    };
     let recording = f2z::observability::Recording::start(Vec::new()).map_err(|e| e.to_string())?;
     let campaign = tracing::info_span!("whir:tuning").entered();
     if let Some(params) = explicit {
@@ -450,12 +453,6 @@ pub fn tune<C>(
                 corpus_digest: None,
             },
         ));
-    }
-    let reps = std::env::var("F2Z_WHIR_TUNING_REPS")
-        .map_or(Ok(5), |v| v.parse::<usize>())
-        .map_err(|e| e.to_string())?;
-    if reps == 0 {
-        return Err("F2Z_WHIR_TUNING_REPS must be positive".into());
     }
     let mut candidates = Vec::new();
     let mut eligible = Vec::new();

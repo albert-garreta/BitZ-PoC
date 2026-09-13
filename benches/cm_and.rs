@@ -13,6 +13,7 @@
 //! ```
 
 mod common;
+use clap::builder::TypedValueParser;
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::hint::black_box;
@@ -88,26 +89,15 @@ fn phase_ms(phases: &[(String, f64)], label: &str) -> Option<f64> {
         .map(|(_, seconds)| seconds * 1e3)
 }
 
-fn env_usize(name: &str, default: usize) -> usize {
-    std::env::var(name)
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(default)
-}
-
-fn exponents() -> Vec<usize> {
-    match std::env::var("F2Z_CM_EXPONENTS") {
-        Ok(value) => value
-            .split([',', ' '])
-            .filter(|part| !part.is_empty())
-            .map(|part| {
-                let exponent: usize = part.parse().expect("F2Z_CM_EXPONENTS contains integers");
-                assert!(exponent >= 15, "the combined proof requires at least 2^15 gate slots");
-                exponent
-            })
-            .collect(),
-        Err(_) => vec![15, 16],
-    }
+#[derive(clap::Parser)]
+struct Env {
+    #[arg(long, env = "F2Z_CM_EXPONENTS", default_value = "15 16",
+        value_parser = common::cli::list::<usize>.try_map(|values| {
+            if values.iter().all(|&n| n >= 15) { Ok(values) } else { Err("expected exponents >=15") }
+        }))]
+    exponents: common::cli::List<usize>,
+    #[arg(long, env = "F2Z_CM_SEED", default_value_t = 0x0043_4d5f_414e_4400)]
+    seed: u64,
 }
 
 fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
@@ -286,22 +276,21 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
 }
 
 fn main() {
+    common::cli::EnvironmentCli::parse();
+    let Env { exponents, seed } = common::cli::environment();
+    let reps = common::reps(None, 5);
+
+
     f2z::observability::install().expect("install Perfetto subscriber");
     common::enforce_known_env();
     let _ = flock_core::init_perf_thread_pool();
-    let reps = env_usize("F2Z_BENCH_REPS", 5);
-    assert!(reps > 0, "F2Z_BENCH_REPS must be positive");
-    let seed = std::env::var("F2Z_CM_SEED")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(0x0043_4d5f_414e_4400);
 
     println!("CM-AND: Spartan (A=B=0) + virtual F2Z opening (w = x XOR y derived, not committed)");
     #[cfg(feature = "parallel")]
     println!("rayon threads: {}", rayon::current_num_threads());
     println!("repetitions: {reps}; root seed: {seed:#018x}");
 
-    for exponent in exponents() {
+    for exponent in exponents {
         flock_core::scratch::clear();
         bench_exponent(exponent, reps, seed);
     }

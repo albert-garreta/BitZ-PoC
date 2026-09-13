@@ -50,6 +50,7 @@
 //! medians, expect ±5–15 % run-to-run.
 
 mod common;
+use clap::builder::TypedValueParser;
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::hint::black_box;
@@ -67,13 +68,38 @@ use flock_core::pcs::ligerito::{
     ProverConfig as LigPc, VerifierConfig as LigVc,
 };
 
+#[derive(clap::Parser)]
+struct Env {
+    // n=30/32 stay outside the default sweep for runtime, not memory.
+    // At n>=26, measure one shape per process for quotable timings.
+    #[arg(long, env = "F2Z_BENCH_SHAPES", default_value = "13:7:1 14:8:1 16:10:1 17:11:1 7:8:32", value_parser = parse_shapes)]
+    shapes: common::cli::List<(usize, usize, usize)>,
+    #[arg(long, env = "F2Z_BENCH_FILL", default_value_t = 1.0,
+        value_parser = str::parse::<f64>.try_map(|fill| {
+            if fill > 0.0 && fill <= 1.0 { Ok(fill) } else { Err("expected a fraction in (0, 1]") }
+        }))]
+    fill: f64,
+    #[arg(long, env = "F2Z_BENCH_EXT", value_parser = ["1", "gl2", "bb4", "kb5"])]
+    extension: Option<String>,
+    #[arg(long, env = "F2Z_LIG_PROFILE", default_value = "custom:1:4")]
+    ligerito: String,
+}
+
+fn parse_shapes(value: &str) -> Result<Vec<(usize, usize, usize)>, String> {
+    common::cli::list::<String>(value)?.into_iter().map(|shape| {
+        let parts = shape.split(':').map(str::parse::<usize>)
+            .collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())?;
+        let [t, s, w]: [usize; 3] = parts.try_into().map_err(|_| "expected t:s:W triple".to_owned())?;
+        Ok((t, s, w))
+    }).collect()
+}
+
 /// Resolve the explicitly requested Ligerito policy, or Johnson+OOD by default.
-fn bench_lig_configs(m_p: usize) -> ((LigPc, LigVc), String, Option<OodRoundParams>, f2z::ligerito_flock::ResolvedLigerito) {
-    let request = std::env::var("F2Z_LIG_PROFILE").unwrap_or_else(|_| "custom:1:4".into());
+fn bench_lig_configs(m_p: usize, request: &str) -> ((LigPc, LigVc), String, Option<OodRoundParams>, f2z::ligerito_flock::ResolvedLigerito) {
     let target = if request == "secure" { 128 } else {
         request.split(':').nth(3).map(|n| n.parse::<usize>().expect("invalid Ligerito target")).unwrap_or(100)
     };
-    let resolved = f2z::ligerito_flock::LigeritoSelection::parse(&request, target)
+    let resolved = f2z::ligerito_flock::LigeritoSelection::parse(request, target)
         .and_then(|selection| selection.resolve(m_p, target)).expect("unsupported Ligerito configuration");
     let ood = resolved.round0(target as u32).expect("Round-0 security preflight");
     ((resolved.prover().clone(), resolved.verifier().clone()), resolved.selection().name(), ood, resolved)
@@ -182,7 +208,7 @@ fn median(mut v: Vec<f64>) -> f64 {
     v[v.len() / 2]
 }
 
-fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
+fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
     let alpha = smallest_generator();
     let p = IntegerMatrixLayout {
         row_vars: t,
@@ -194,7 +220,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     let lch = mod_q_num_chunks(&p, q_bits);
     let setup_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
     let setup_started = tracing::info_span!("pcs:setup_started").entered();
-    let ((pc, vc), lig_tag, ood, resolved) = bench_lig_configs(m_p);
+    let ((pc, vc), lig_tag, ood, resolved) = bench_lig_configs(m_p, &env.ligerito);
     println!("LIGERITO_CONFIG {}", common::ligerito_report(&resolved, ood));
     let setup_ms = { drop(setup_started); f2z::observability::duration(&setup_started_recording.intervals().expect("complete operation capture"), "pcs:setup_started").expect("query completed operation") }.as_secs_f64() * 1e3;
 
@@ -216,11 +242,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     // padding of a witness with N = fill·2^n cells (the column axis is
     // the high-order index, so a zero-padded witness ends in whole zero
     // columns). `y` below is derived from SET BITS, so it stays correct.
-    let fill: f64 = std::env::var("F2Z_BENCH_FILL")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(1.0);
-    assert!(fill > 0.0 && fill <= 1.0, "F2Z_BENCH_FILL must be in (0, 1]");
+    let fill = env.fill;
     let live = (((p.cols() as f64) * fill).ceil() as usize).clamp(1, p.cols());
     let rows: Vec<Vec<u64>> = (0..p.cols())
         .map(|c| {
@@ -515,12 +537,12 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     // extension surcharge in the same process/thermal window.
     // `1`/`gl2` = Goldilocks² (e=2, q_bits=64); `bb4` = BabyBear⁴
     // (X⁴ = 11, the Plonky3 challenge field; e=4, q_bits=31). ──
-    match std::env::var("F2Z_BENCH_EXT").as_deref() {
-        Ok("1") | Ok("gl2") => bench_ext_arm::<Fp2>(&p, &hint, alpha, reps, ood, &pc, &vc),
-        Ok("bb4") => bench_ext_arm::<BbFp4>(&p, &hint, alpha, reps, ood, &pc, &vc),
-        Ok("kb5") => bench_ext_arm::<KbFp5>(&p, &hint, alpha, reps, ood, &pc, &vc),
-        Ok(other) => panic!("F2Z_BENCH_EXT: unknown arm {other:?} (use 1|gl2|bb4|kb5)"),
-        Err(_) => {}
+    match env.extension.as_deref() {
+        Some("1") | Some("gl2") => bench_ext_arm::<Fp2>(&p, &hint, alpha, reps, ood, &pc, &vc),
+        Some("bb4") => bench_ext_arm::<BbFp4>(&p, &hint, alpha, reps, ood, &pc, &vc),
+        Some("kb5") => bench_ext_arm::<KbFp5>(&p, &hint, alpha, reps, ood, &pc, &vc),
+        Some(_) => unreachable!("clap validates the extension"),
+        None => {}
     }
 }
 
@@ -885,6 +907,9 @@ fn bench_ext_arm<K: BenchExtField>(
 }
 
 fn main() {
+    common::cli::EnvironmentCli::parse();
+    let env: Env = common::cli::environment();
+    let reps = common::reps(None, 5);
     f2z::observability::install().expect("install Perfetto subscriber");
     common::enforce_known_env();
     if std::env::var_os("F2Z_BENCH_LAMBDA").is_some() {
@@ -897,41 +922,7 @@ fn main() {
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     println!("(target: aarch64 + neon — the NEON GF(2^128) pipeline is active)");
 
-    let reps: usize = std::env::var("F2Z_BENCH_REPS").ok().and_then(|v| v.parse().ok()).unwrap_or(5);
-    // Default sweep: the reference W=1 shapes (t ≈ 0.6n, s small — the
-    // proof-size-friendly split) + the 2-chunk W=32 regime, through
-    // n = 28. The instance is generated straight into bit rows and
-    // committed via `commit_rs_ligerito_rows` — no u128 cell tensor —
-    // so peaks are the packed/forest scale (measured, M4: n=26 prove
-    // peak 330 MB · n=28 1.28 GB · n=30 4.99 GB). n = 30/32 stay OUT
-    // of the default sweep for time, not memory (n=30 proves ~15 s on
-    // a 16 GB box, memory-pressure-shaded); run them per process:
-    //   F2Z_BENCH_SHAPES="18:12:1"                        # n = 30, ~5 GB
-    //   F2_FOREST_SCHEDULE=l8 F2Z_BENCH_SHAPES="19:13:1"  # n = 32, ~12 GB class
-    // At n ≥ 26 run one shape per process for quotable numbers.
-    let default_shapes: Vec<(usize, usize, usize)> = vec![
-        (13, 7, 1),
-        (14, 8, 1),
-        (16, 10, 1), // n = 26
-        (17, 11, 1), // n = 28
-        (7, 8, 32),
-    ];
-    let shapes: Vec<(usize, usize, usize)> = match std::env::var("F2Z_BENCH_SHAPES") {
-        Ok(v) => v
-            .split([',', ' '])
-            .filter(|x| !x.is_empty())
-            .map(|trip| {
-                let ps: Vec<usize> = trip
-                    .split(':')
-                    .map(|x| x.parse().expect("F2Z_BENCH_SHAPES: t:s:W triples"))
-                    .collect();
-                assert_eq!(ps.len(), 3, "F2Z_BENCH_SHAPES: t:s:W triples");
-                (ps[0], ps[1], ps[2])
-            })
-            .collect(),
-        Err(_) => default_shapes,
-    };
-    for &(t, s, w) in &shapes {
-        bench_shape(t, s, w, reps);
+    for &(t, s, w) in &env.shapes {
+        bench_shape(t, s, w, reps, &env);
     }
 }

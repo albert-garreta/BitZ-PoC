@@ -24,58 +24,27 @@ fn median(mut samples: Vec<f64>) -> f64 {
     samples[samples.len() / 2]
 }
 
-fn env_usize(name: &str, default: usize) -> usize {
-    match std::env::var(name) {
-        Ok(value) => value
-            .parse()
-            .unwrap_or_else(|_| panic!("{name} must be a positive decimal integer")),
-        Err(_) => default,
-    }
-}
-
 fn exponents() -> Vec<usize> {
-    common::shapes(None).map_or_else(
-        || (15..=23).collect(),
-        |shapes| {
-            shapes
-                .iter()
-                .map(|part| {
-                    let exponent = part
-                        .parse::<usize>()
-                        .expect("F2Z_BENCH_SHAPES contains integers");
-                    assert!((15..=23).contains(&exponent));
-                    exponent
-                })
-                .collect()
-        },
-    )
+    common::shape_values(None, clap::builder::RangedU64ValueParser::<usize>::new().range(15..=23))
+        .unwrap_or_else(|| (15..=23).collect())
 }
 
-fn inner_policy() -> SpartanInnerPolicy {
-    let native_witness_fold = match std::env::var("F2Z_INNER_NATIVE_FOLD").as_deref() {
-        Ok("immediate") => SpartanInnerNativeFold::Immediate,
-        Ok("delayed") | Err(_) => SpartanInnerNativeFold::Delayed,
-        Ok(value) => panic!("unsupported F2Z_INNER_NATIVE_FOLD={value}; use immediate or delayed"),
-    };
-    let field_coefficients = match std::env::var("F2Z_INNER_FIELD_ACCUM").as_deref() {
-        Ok("immediate") => SpartanInnerFieldAccumulation::Immediate,
-        Ok("delayed") | Err(_) => SpartanInnerFieldAccumulation::Delayed,
-        Ok(value) => {
-            let threshold = value
-                .strip_prefix("threshold:")
-                .unwrap_or_else(|| {
-                    panic!(
-                        "unsupported F2Z_INNER_FIELD_ACCUM={value}; use immediate, delayed, or threshold:<pairs>"
-                    )
-                })
-                .parse()
-                .expect("the field-accumulation threshold is a usize");
-            SpartanInnerFieldAccumulation::DelayedAtOrAbovePairs(threshold)
-        }
-    };
-    SpartanInnerPolicy {
-        native_witness_fold,
-        field_coefficients,
+#[derive(clap::Parser)]
+struct Env {
+    #[arg(long, env = "F2Z_INNER_NATIVE_FOLD", default_value = "delayed", value_parser = ["immediate", "delayed"])]
+    native_fold: String,
+    #[arg(long, env = "F2Z_INNER_FIELD_ACCUM", default_value = "delayed", value_parser = field_accumulation)]
+    field_accumulation: SpartanInnerFieldAccumulation,
+}
+
+fn field_accumulation(value: &str) -> Result<SpartanInnerFieldAccumulation, String> {
+    match value {
+        "immediate" => Ok(SpartanInnerFieldAccumulation::Immediate),
+        "delayed" => Ok(SpartanInnerFieldAccumulation::Delayed),
+        value => value.strip_prefix("threshold:")
+            .ok_or_else(|| "expected immediate, delayed, or threshold:<pairs>".to_owned())?
+            .parse().map(SpartanInnerFieldAccumulation::DelayedAtOrAbovePairs)
+            .map_err(|error: std::num::ParseIntError| error.to_string()),
     }
 }
 
@@ -149,7 +118,6 @@ fn bench_exponent(
     .expect("warm-up verification succeeds");
     assert_eq!(warm_claim, verified_claim);
     drop(warm_proof);
-
 
     let native_fold = native_fold_name(policy);
     let field_accumulation = field_accumulation_name(policy);
@@ -234,14 +202,22 @@ fn bench_exponent(
 }
 
 fn main() {
+    common::cli::EnvironmentCli::parse();
+    let reps = common::reps(None, 5);
+    let root_seed = common::seed(None, 0x5533_326d_756c_0064);
+    let order = common::cli::env::<usize>("F2Z_BENCH_ORDER").unwrap_or(1);
+    let env: Env = common::cli::environment();
+    let policy = SpartanInnerPolicy {
+        native_witness_fold: if env.native_fold == "immediate" {
+            SpartanInnerNativeFold::Immediate
+        } else { SpartanInnerNativeFold::Delayed },
+        field_coefficients: env.field_accumulation,
+    };
+
+    let exponents = exponents();
     f2z::observability::install().expect("install Perfetto subscriber");
     common::enforce_known_env();
     let _ = flock_core::init_perf_thread_pool();
-    let reps = env_usize("F2Z_BENCH_REPS", 5);
-    assert!(reps > 0);
-    let root_seed = common::seed(None, 0x5533_326d_756c_0064);
-    let order = env_usize("F2Z_BENCH_ORDER", 1);
-    let policy = inner_policy();
 
     println!("u32 inner-sumcheck policy benchmark");
     #[cfg(feature = "parallel")]
@@ -252,7 +228,7 @@ fn main() {
         field_accumulation_name(policy),
     );
 
-    for exponent in exponents() {
+    for exponent in exponents {
         flock_core::scratch::clear();
         bench_exponent(exponent, reps, root_seed, policy, order);
     }

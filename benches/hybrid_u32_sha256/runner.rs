@@ -21,6 +21,8 @@ use f2z::{
 };
 use std::error::Error;
 
+#[path = "../common/cli.rs"]
+mod cli;
 #[path = "../common/output.rs"]
 mod output;
 #[path = "report.rs"]
@@ -37,8 +39,7 @@ fn select_ligerito(
     cli: Option<&str>,
     target: usize,
 ) -> Result<f2z::ligerito_flock::LigeritoSelection, AnyError> {
-    let env = std::env::var("F2Z_LIG_PROFILE").ok();
-    match cli.or(env.as_deref()) {
+    match cli {
         Some(request) => Ok(f2z::ligerito_flock::LigeritoSelection::parse(
             request, target,
         )?),
@@ -54,6 +55,7 @@ enum NativeBackend {
     Binius {
         prover: Prover<OptimalPackedB128, Blake3HashSuite>,
         verifier: Verifier<Blake3HashSuite>,
+        config: BiniusConfig,
     },
     Ligerito(BiniusLigerito),
 }
@@ -67,7 +69,7 @@ struct Native {
 }
 
 impl Native {
-    fn new(multiplications: usize, compressions: usize, ligerito: bool) -> Result<Self, AnyError> {
+    fn new(multiplications: usize, compressions: usize, ligerito: bool, binius: Option<BiniusConfig>) -> Result<Self, AnyError> {
         let builder = CircuitBuilder::new();
         let multiplications = (0..multiplications)
             .map(|_| f2z::hybrid::mod32_binius::add_u32_mul_mod32(&builder))
@@ -94,13 +96,14 @@ impl Native {
         } else {
             // 112 bits for the FRI component leaves slack for the binary PIOPs
             // and the second proof in the separate mode. No default 96-bit preset.
+            let config = binius.expect("Binius configuration");
             let verifier = Verifier::<Blake3HashSuite>::setup_with_security_bits(
                 circuit.constraint_system().clone(),
-                binius_log_inv_rate(),
-                binius_security_bits(),
+                config.log_inv_rate,
+                config.security_bits,
             )?;
             let prover = Prover::setup(verifier.clone())?;
-            NativeBackend::Binius { prover, verifier }
+            NativeBackend::Binius { prover, verifier, config }
         };
         Ok(Self {
             circuit,
@@ -165,10 +168,10 @@ impl Native {
     }
     fn setup_line(&self) -> String {
         match &self.backend {
-            NativeBackend::Binius { .. } => format!(
+            NativeBackend::Binius { config, .. } => format!(
                 "binius_fri_component_bits={} binius_log_inv_rate={}",
-                binius_security_bits(),
-                binius_log_inv_rate()
+                config.security_bits,
+                config.log_inv_rate
             ),
             NativeBackend::Ligerito(prepared) => {
                 let security = prepared.security();
@@ -234,25 +237,61 @@ fn peak_kib() -> u64 {
         .unwrap_or(0)
 }
 
-/// Binius FRI inverse rate exponent: rate `1/2^k`. Defaults to the historical
-/// `1` (rate 1/2); the paper's other Binius64 tables also report rate 1/8.
-fn binius_log_inv_rate() -> usize {
-    std::env::var("F2Z_HYBRID_BINIUS_LOG_INV_RATE")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(1)
+#[derive(clap::Parser)]
+#[command(args_override_self = true, name = "hybrid-u32-sha256", about = "Non-ZK SHA chain and multiplication benchmark (100-bit composition target)", after_help = "Set RAYON_NUM_THREADS to control threads. Single runs default to 2^20 products and 2^16 compressions. Sweeps default to equal packed witnesses (15:7 through 20:12). Results directories must not already exist.")]
+struct Args {
+    #[command(flatten)]
+    cargo: cli::CargoArgs,
+    #[arg(long, default_value = "hybrid", requires_if("all", "sweep"), value_parser = ["hybrid", "separate", "all-binius", "binius-ligerito", "all"])]
+    mode: String,
+    #[arg(long, env = "F2Z_LIG_PROFILE")]
+    profile: Option<String>,
+    #[arg(long, value_parser = clap::value_parser!(u32).range(9..=22))]
+    mul_log: Option<u32>,
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..=16))]
+    sha_log: Option<u32>,
+    /// Measured iterations after one warmup.
+    #[arg(long, default_value = "5", value_parser = cli::positive)]
+    iterations: usize,
+    #[arg(long, conflicts_with_all = ["mul_log", "sha_log", "output", "verify"])]
+    sweep: bool,
+    #[arg(long, requires = "sweep", value_parser = |value: &str| sweep::parse_shapes(value).map_err(|error| error.to_string()))]
+    shapes: Option<cli::List<sweep::Shape>>,
+    #[arg(long, requires = "sweep")]
+    results_dir: Option<std::path::PathBuf>,
+    #[arg(long, conflicts_with = "verify")]
+    output: Option<String>,
+    #[arg(long)]
+    verify: Option<String>,
 }
 
-/// Binius FRI component security. 112 leaves slack for the binary PIOPs and
-/// the second proof in the separate mode; the comparison tables use 100.
-fn binius_security_bits() -> usize {
-    std::env::var("F2Z_HYBRID_BINIUS_SECURITY_BITS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(112)
+#[derive(clap::Parser, Clone, Copy)]
+struct BiniusConfig {
+    #[arg(long, env = "F2Z_HYBRID_BINIUS_LOG_INV_RATE", default_value = "1")]
+    log_inv_rate: usize,
+    #[arg(long, env = "F2Z_HYBRID_BINIUS_SECURITY_BITS", default_value = "112")]
+    security_bits: usize,
 }
 
 pub fn run() -> Result<(), AnyError> {
+    let Args { mode, profile, mul_log, sha_log, iterations, sweep, shapes, results_dir, output, verify: verify_file, .. } = <Args as clap::Parser>::parse();
+    if (output.is_some() || verify_file.is_some()) && mode != "hybrid" {
+        return Err("--output and --verify require --mode hybrid".into());
+    }
+    if sweep {
+        return sweep::run(shapes.unwrap_or_else(sweep::equal_witness_shapes), &mode, iterations, results_dir, profile.as_deref());
+    }
+    let mut parameters = Parameters::default();
+    if let Some(log) = mul_log { parameters.multiplications = 1 << log; }
+    if let Some(log) = sha_log { parameters.sha_compressions = 1 << log; }
+    let binius = if mode == "separate" || mode == "all-binius" {
+        Some(cli::environment::<BiniusConfig>())
+    } else { None };
+    let ligerito = match mode.as_str() {
+        "hybrid" => select_ligerito(profile.as_deref(), 106)?,
+        "separate" => select_ligerito(profile.as_deref(), 112)?,
+        _ => f2z::ligerito_flock::LigeritoSelection::JOHNSON,
+    };
     use tracing_subscriber::prelude::*;
     tracing_subscriber::registry()
         .with(observability::layer())
@@ -261,93 +300,8 @@ pub fn run() -> Result<(), AnyError> {
             .with_target(false)
             .with_filter(tracing_subscriber::filter::LevelFilter::INFO))
         .try_init()?;
-    let mut parameters = Parameters::default();
-    let mut mode = String::from("hybrid");
-    let mut output = None;
-    let mut verify_file = None;
-    let mut iterations = None;
-    let mut sweep_requested = false;
-    let mut shapes = None;
-    let mut results_dir = None;
-    let mut single_shape_requested = false;
-    let mut profile: Option<String> = None;
-    let mut args = std::env::args().skip(1);
-    while let Some(arg) = args.next() {
-        // Cargo appends this flag even for benchmarks with harness = false.
-        if arg == "--bench" {
-            continue;
-        }
-        if arg == "--sweep" {
-            sweep_requested = true;
-            continue;
-        }
-        if arg == "--help" {
-            println!(
-                "hybrid-u32-sha256 [--mode hybrid|separate|all-binius|binius-ligerito] [--mul-log 9..22] [--sha-log 1..16] [--iterations N] [--output PROOF]\nhybrid-u32-sha256 --verify PROOF\nhybrid-u32-sha256 --sweep [--shapes MUL_LOG:SHA_LOG,...] [--mode hybrid|separate|all-binius|binius-ligerito|all] [--iterations N] [--results-dir DIR]\nSingle-run defaults: 2^20 products, 2^16 chained compressions, 5 measured iterations after one warmup.\nSweep defaults: equal packed witnesses (15:7,16:8,17:9,18:10,19:11,20:12), hybrid mode, 5 measured iterations after one warmup.\nEqual operation counts (N = M): --shapes 9:9,10:10,...,14:14 (hybrid and all-binius; separate mode keeps the standalone u32 API's 2^15 floor).\nSweeps save per-run CSV/logs and summary.csv in a new directory under benches/results/hybrid-u32-sha256/. --results-dir must not already exist.\nbinius-ligerito proves the all-Binius circuit with Binius64's PIOP and the F2Z opener (rate 1/2, Johnson regime, grinding, Round 0; 100-bit union bound).\nNon-ZK, 100-bit composition target. Set RAYON_NUM_THREADS to control threads. --output is for single hybrid proofs."
-            );
-            return Ok(());
-        }
-        let value = args.next().ok_or("missing flag value")?;
-        match arg.as_str() {
-            "--mode" => mode = value,
-            "--profile" => profile = Some(value),
-            "--mul-log" => {
-                single_shape_requested = true;
-                let log: u32 = value.parse()?;
-                if !(9..=22).contains(&log) {
-                    return Err("--mul-log must be 9..22".into());
-                }
-                parameters.multiplications = 1 << log;
-            }
-            "--sha-log" => {
-                single_shape_requested = true;
-                let log: u32 = value.parse()?;
-                if !(1..=16).contains(&log) {
-                    return Err("--sha-log must be 1..16".into());
-                }
-                parameters.sha_compressions = 1 << log;
-            }
-            "--iterations" => {
-                let count: usize = value.parse()?;
-                if count == 0 {
-                    return Err("iterations must be positive".into());
-                }
-                iterations = Some(count);
-            }
-            "--shapes" => shapes = Some(sweep::parse_shapes(&value)?),
-            "--results-dir" => results_dir = Some(std::path::PathBuf::from(value)),
-            "--output" => output = Some(value),
-            "--verify" => verify_file = Some(value),
-            _ => return Err(format!("unknown flag {arg}").into()),
-        }
-    }
-    if sweep_requested {
-        if single_shape_requested || output.is_some() || verify_file.is_some() {
-            return Err("--sweep cannot use --mul-log, --sha-log, --output or --verify; select pairs with --shapes MUL_LOG:SHA_LOG,...".into());
-        }
-        return sweep::run(
-            shapes.unwrap_or_else(sweep::equal_witness_shapes),
-            &mode,
-            iterations.unwrap_or(5),
-            results_dir,
-            profile.as_deref(),
-        );
-    }
-    if shapes.is_some() || results_dir.is_some() {
-        return Err("--shapes and --results-dir require --sweep".into());
-    }
-    let iterations = iterations.unwrap_or(5);
-    if !["hybrid", "separate", "all-binius", "binius-ligerito"].contains(&mode.as_str()) {
-        return Err("invalid --mode".into());
-    }
-    if output.is_some() && mode != "hybrid" {
-        return Err("--output requires --mode hybrid".into());
-    }
     if let Some(path) = verify_file {
         use bincode::Options;
-        if mode != "hybrid" || output.is_some() {
-            return Err("--verify requires hybrid mode without --output".into());
-        }
         if std::fs::metadata(&path)?.len() > 64 << 20 {
             return Err("proof exceeds 64 MiB limit".into());
         }
@@ -363,7 +317,7 @@ pub fn run() -> Result<(), AnyError> {
             .deserialize(&statement_bytes)?;
         let prepared = PreparedHybrid::new_with_ligerito(
             statement.parameters,
-            select_ligerito(profile.as_deref(), 106)?,
+            ligerito,
         )?;
         let proof = prepared.proof_from_bytes(&statement, &std::fs::read(path)?)?;
         prepared.verify(&statement, &proof)?;
@@ -391,11 +345,10 @@ pub fn run() -> Result<(), AnyError> {
 
         let prepared = PreparedHybrid::new_with_ligerito(
             parameters,
-            select_ligerito(profile.as_deref(), 106)?,
+            ligerito,
         )?;
         let request = profile
             .clone()
-            .or_else(|| std::env::var("F2Z_LIG_PROFILE").ok())
             .unwrap_or_else(|| "custom:1:4".into());
         let report = prepared
             .ligerito_configuration()
@@ -527,13 +480,14 @@ pub fn run() -> Result<(), AnyError> {
             if mode == "separate" { 0 } else { inputs.len() },
             blocks.len(),
             mode == "binius-ligerito",
+            binius,
         )?;
         let separate = if mode == "separate" {
             Some(PreparedU32MulRelation::new_with_profile_and_ligerito::<
                 CompositionProfile,
             >(
                 U32MulLayout::new(inputs.len())?,
-                select_ligerito(profile.as_deref(), 112)?,
+                ligerito,
             )?)
         } else {
             None
@@ -541,8 +495,7 @@ pub fn run() -> Result<(), AnyError> {
         if let Some(p) = &separate {
             let request = profile
                 .clone()
-                .or_else(|| std::env::var("F2Z_LIG_PROFILE").ok())
-                .unwrap_or_else(|| "custom:1:4".into());
+                    .unwrap_or_else(|| "custom:1:4".into());
             eprintln!(
                 "LIGERITO_CONFIG {}",
                 p.ligerito_configuration()
@@ -632,4 +585,75 @@ pub fn run() -> Result<(), AnyError> {
         }
     }
     Ok(())
+}
+
+
+#[cfg(test)]
+mod cli_tests {
+    use super::{Args, BiniusConfig};
+    use clap::{CommandFactory, FromArgMatches, Parser, error::ErrorKind};
+
+    fn parse(args: &[&str]) -> Result<Args, clap::Error> {
+        let matches = Args::command().mut_args(|arg| arg.env(None::<&str>))
+            .try_get_matches_from(std::iter::once("hybrid").chain(args.iter().copied()))?;
+        Args::from_arg_matches(&matches)
+    }
+
+    #[test]
+    fn defaults_and_script_forms() {
+        Args::command().debug_assert();
+        BiniusConfig::command().debug_assert();
+        let defaults = parse(&[]).unwrap();
+        assert_eq!((defaults.mode.as_str(), defaults.iterations), ("hybrid", 5));
+        assert!(defaults.profile.is_none() && defaults.mul_log.is_none() && defaults.sha_log.is_none());
+        let sweep = parse(&["--sweep", "--mode", "all", "--shapes", "15:7,16:8",
+            "--iterations", "3", "--results-dir", "campaign", "--bench"]).unwrap();
+        assert!(sweep.sweep);
+        assert_eq!((sweep.mode.as_str(), sweep.iterations), ("all", 3));
+        assert_eq!(sweep.shapes.unwrap(), super::sweep::parse_shapes("15:7,16:8").unwrap());
+        assert_eq!(sweep.results_dir.as_deref(), Some(std::path::Path::new("campaign")));
+        assert_eq!(parse(&["--verify", "proof"]).unwrap().verify.as_deref(), Some("proof"));
+        let single = parse(&["--mul-log", "9", "--sha-log", "1", "--mul-log", "22",
+            "--sha-log", "16", "--iterations", "1", "--iterations", "2"]).unwrap();
+        assert_eq!((single.mul_log, single.sha_log, single.iterations), (Some(22), Some(16), 2));
+    }
+
+    #[test]
+    fn rejects_invalid_values_and_conflicting_options() {
+        for args in [
+            &["--iterations", "0"][..], &["--mul-log", "8"], &["--mul-log", "23"],
+            &["--sha-log", "0"], &["--sha-log", "17"], &["--mode", "unknown"],
+            &["--iterations"], &["--unknown"], &["--shapes", "15:7"], &["--mode", "all"],
+            &["--sweep", "--shapes", "8:7"], &["--sweep", "--shapes", "15:7,15:7"],
+            &["--results-dir", "campaign"], &["--output", "proof", "--verify", "proof"],
+            &["--sweep", "--mul-log", "15"], &["--sweep", "--sha-log", "7"],
+            &["--sweep", "--output", "proof"], &["--sweep", "--verify", "proof"],
+        ] {
+            assert!(parse(args).is_err(), "accepted {args:?}");
+        }
+        assert_eq!(parse(&["--help"]).err().unwrap().kind(), ErrorKind::DisplayHelp);
+    }
+
+    #[test]
+    fn profile_environment_probe() {
+        let Ok(mode) = std::env::var("F2Z_CLI_PROFILE_PROBE") else { return };
+        let argv = if mode == "override" { vec!["hybrid", "--profile", "custom:1:4"] }
+            else { vec!["hybrid"] };
+        let args = Args::try_parse_from(argv).unwrap();
+        println!("CLI_PROFILE {}", args.profile.as_deref().unwrap());
+    }
+
+    #[test]
+    fn profile_environment_fallback_and_cli_override() {
+        let test = concat!(module_path!(), "::profile_environment_probe");
+        let test = test.split_once("::").unwrap().1;
+        for (mode, expected) in [("fallback", "udrg:1:4"), ("override", "custom:1:4")] {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", test, "--nocapture"]).env_clear()
+                .env("F2Z_CLI_PROFILE_PROBE", mode).env("F2Z_LIG_PROFILE", "udrg:1:4")
+                .output().unwrap();
+            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+            assert!(String::from_utf8_lossy(&output.stdout).contains(&format!("CLI_PROFILE {expected}")));
+        }
+    }
 }

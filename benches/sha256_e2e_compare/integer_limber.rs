@@ -39,16 +39,6 @@ impl Params {
     }
 }
 
-pub fn validate_engine(engine: &str) -> Result<(), String> {
-    if engine == "brakedown" {
-        Ok(())
-    } else {
-        Err(format!(
-            "F2Z_SHA_COMPARE_LIMBER_ENGINE must be brakedown; Hyrax is excluded from this comparison (got {engine})"
-        ))
-    }
-}
-
 pub fn security_metadata() -> Value {
     let bits = super::env_usize("BDLAMBDA", 114);
     assert!(bits >= 114, "SHA Brakedown requires BDLAMBDA >= 114");
@@ -650,14 +640,6 @@ pub fn constraint_self_test() {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn engine_policy_rejects_hyrax() {
-        assert!(validate_engine("brakedown").is_ok());
-        for engine in ["hyrax", "spartan-hyrax", "", "unknown"] {
-            assert!(validate_engine(engine).is_err());
-        }
-    }
 
     #[test]
     fn brakedown_sha_proof_binds_public_inputs_and_outputs() {

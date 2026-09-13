@@ -32,21 +32,14 @@ use trace_capture::CapturedSpan;
 
 const MEASUREMENT_POLICY: &str = "warm-process/v1";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
 enum Workload {
+    #[value(name = "u32-mod32", alias = "u32")]
     U32,
     U64,
     U128,
 }
 impl Workload {
-    fn parse(slug: &str) -> Self {
-        match slug {
-            "u32" | "u32-mod32" => Self::U32,
-            "u64" => Self::U64,
-            "u128" => Self::U128,
-            other => panic!("unknown workload {other}"),
-        }
-    }
     fn slug(self) -> &'static str {
         match self {
             Self::U32 => "u32-mod32",
@@ -62,24 +55,10 @@ impl Workload {
         }
     }
     /// Backends with a native arithmetization of this workload.
-    fn supports(self, backend: &str) -> bool {
-        match self {
-            Self::U32 => matches!(
-                backend,
-                "f2z"
-                    | "binius64"
-                    | "binius64-ligerito"
-                    | "plonky3-fri"
-                    | "plonky3-whir"
-                    | "limber"
-            ),
-            // The Plonky3 AIR decomposes 32-bit operands and has no
-            // 64 x 64 -> 128 or 128 x 128 -> 256 path yet. Limber proves both
-            // through its wrapping row `x * y = z_lo (mod 2^w)`.
-            Self::U64 | Self::U128 => {
-                matches!(backend, "f2z" | "binius64" | "binius64-ligerito" | "limber")
-            }
-        }
+    fn supports(self, backend: Backend) -> bool {
+        // Plonky3's AIR only decomposes 32-bit operands. The other adapters
+        // also support the u64 and u128 relations.
+        self == Self::U32 || !matches!(backend, Backend::Plonky3Fri | Backend::Plonky3Whir)
     }
     /// Whether the operands are 128-bit values (the `u128` workload) rather
     /// than `u64` values.
@@ -380,31 +359,21 @@ enum Context {
     Limber(limber::Context),
 }
 impl Context {
-    fn setup(backend: &str, corpus: Arc<Corpus>) -> Self {
-        match backend {
-            "f2z" => Self::F2z(f2z_backend::Context::setup(corpus)),
-            "binius64" => Self::Binius(binius::Context::setup(corpus)),
-            "binius64-ligerito" => Self::BiniusLigerito(binius_ligerito::Context::setup(corpus)),
-            "plonky3-fri" => Self::Plonky3Fri(plonky3::Context::setup(corpus)),
-            "limber" => Self::Limber(limber::Context::setup(corpus)),
-            _ => panic!("unknown backend {backend}"),
-        }
-    }
-    fn setup_selected(
-        backend: &str,
+    fn setup(
+        backend: Backend,
         corpus: Arc<Corpus>,
         params: Option<common::whir_tuning::Params>,
     ) -> Self {
-        if backend == "plonky3-whir" {
-            Self::Plonky3Whir(
-                plonky3_whir::Context::setup_with_params(
-                    corpus,
-                    params.expect("selected WHIR params"),
-                )
-                .expect("selected WHIR config remains eligible"),
-            )
-        } else {
-            Self::setup(backend, corpus)
+        match backend {
+            Backend::F2z => Self::F2z(f2z_backend::Context::setup(corpus)),
+            Backend::Binius => Self::Binius(binius::Context::setup(corpus)),
+            Backend::BiniusLigerito => Self::BiniusLigerito(binius_ligerito::Context::setup(corpus)),
+            Backend::Plonky3Fri => Self::Plonky3Fri(plonky3::Context::setup(corpus)),
+            Backend::Limber => Self::Limber(limber::Context::setup(corpus)),
+            Backend::Plonky3Whir => Self::Plonky3Whir(
+                plonky3_whir::Context::setup_with_params(corpus, params.expect("selected WHIR params"))
+                    .expect("selected WHIR config remains eligible"),
+            ),
         }
     }
     fn run(&self) -> Timing {
@@ -439,97 +408,116 @@ fn root_seed(workload: Workload) -> u64 {
 
 /// Representation limit only. Backend domain checks decide eligibility;
 /// available memory is not inferred from a particular benchmark machine.
-fn max_exponent(_workloads: &[String]) -> usize {
+fn max_exponent() -> usize {
     (usize::BITS as usize).saturating_sub(11)
 }
 
-fn check_backend_support(workloads: &[String], backends: &[String]) {
+fn check_backend_support(workloads: &[Workload], backends: &[Backend]) {
     for workload in workloads {
-        let workload = Workload::parse(workload);
         for backend in backends {
             assert!(
-                workload.supports(backend),
-                "the {backend} adapter has no {} workload; select F2Z_MUL_COMPARE_BACKENDS=\"f2z binius64\" for it",
-                workload.slug()
+                workload.supports(*backend),
+                "the {} adapter has no {} workload; select F2Z_MUL_COMPARE_BACKENDS=\"f2z binius64\" for it",
+                backend.slug(), workload.slug()
             );
         }
     }
 }
 
-fn choices(var: &str, default: &str, allowed: &[&str]) -> Vec<String> {
-    let raw = std::env::var(var).unwrap_or_else(|_| default.into());
-    let mut result = vec![];
-    for s in raw.split([',', ' ']).filter(|s| !s.is_empty()) {
-        assert!(
-            allowed.contains(&s),
-            "{var}: unknown choice {s}; expected {allowed:?}"
-        );
-        let s = if var == "F2Z_MUL_COMPARE_WORKLOADS" && s == "u32" {
-            "u32-mod32"
-        } else {
-            s
-        };
-        assert!(!result.iter().any(|x| x == s), "{var}: duplicate {s}");
-        result.push(s.to_owned());
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+enum Backend {
+    F2z,
+    #[value(name = "binius64")]
+    Binius,
+    #[value(name = "binius64-ligerito")]
+    BiniusLigerito,
+    Plonky3Fri,
+    Plonky3Whir,
+    Limber,
+}
+
+impl Backend {
+    fn slug(self) -> &'static str {
+        match self {
+            Self::F2z => "f2z", Self::Binius => "binius64",
+            Self::BiniusLigerito => "binius64-ligerito", Self::Plonky3Fri => "plonky3-fri",
+            Self::Plonky3Whir => "plonky3-whir", Self::Limber => "limber",
+        }
     }
-    assert!(!result.is_empty(), "{var} must not be empty");
-    result
+}
+
+#[derive(clap::Parser)]
+struct CompareEnv {
+    #[arg(env = "F2Z_BENCH_REPS", default_value_t = 5, value_parser = common::cli::positive)]
+    reps: usize,
+    #[arg(env = "F2Z_BENCH_SEED", value_parser = common::cli::seed)]
+    seed: Option<u64>,
+    #[arg(env = "F2Z_MUL_COMPARE_WORKLOADS", default_value = "u32-mod32", value_parser = common::pcs_cli::enum_list::<Workload>)]
+    workloads: common::cli::List<Workload>,
+    #[arg(env = "F2Z_MUL_COMPARE_BACKENDS", default_value = "f2z binius64 binius64-ligerito plonky3-fri", value_parser = common::pcs_cli::enum_list::<Backend>)]
+    backends: common::cli::List<Backend>,
+    #[arg(env = "F2Z_MUL_COMPARE_OUTPUT_DIR")]
+    output: Option<PathBuf>,
+}
+
+impl CompareEnv {
+    fn read() -> Self {
+        let args = common::cli::environment::<Self>();
+        for (i, workload) in args.workloads.iter().enumerate() {
+            assert!(!args.workloads[..i].contains(workload), "duplicate workload {}", workload.slug());
+        }
+        for (i, backend) in args.backends.iter().enumerate() {
+            assert!(!args.backends[..i].contains(backend), "duplicate backend {}", backend.slug());
+        }
+        check_backend_support(&args.workloads, &args.backends);
+        args
+    }
+    fn proof_exponents(&self) -> Vec<usize> {
+        let minimum = if self.backends.contains(&Backend::F2z) { 15 } else { 4 };
+        let exponents = common::shape_values(None, clap::builder::RangedU64ValueParser::<usize>::new().range(minimum..=max_exponent() as u64))
+            .unwrap_or_else(|| vec![15]);
+        for (index, &n) in exponents.iter().enumerate() {
+            assert!(!exponents[..index].contains(&n), "duplicate exponent {n}");
+        }
+        exponents
+    }
+
+    fn witness_exponents(&self) -> Vec<usize> {
+        common::shape_values(None, clap::builder::RangedU64ValueParser::<usize>::new().range(4..=max_exponent() as u64))
+            .unwrap_or_else(|| vec![10])
+    }
+
+}
+
+#[derive(clap::Parser)]
+struct Args {
+    #[command(flatten)]
+    cargo: common::cli::CargoArgs,
+    #[arg(long, hide = true, num_args = 5, value_names = ["BACKEND", "WORKLOAD", "EXPONENT", "SEED", "PARAMS"])]
+    measure_memory: Option<Vec<String>>,
+}
+
+#[derive(clap::Parser)]
+struct MemoryEnv {
+    #[arg(env = "F2Z_MUL_COMPARE_MEMORY", default_value = "1", value_parser = ["0", "1"])]
+    enabled: String,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = <Args as clap::Parser>::parse();
+    if let Some(args) = args.measure_memory {
+        return memory::run_child(args);
+    }
+    let config = CompareEnv::read();
+    let exponents = config.proof_exponents();
+    let CompareEnv { workloads, backends, output, reps, seed } = config;
+    let measure_memory = common::cli::environment::<MemoryEnv>().enabled == "1";
     let threads = common::init();
-    let args: Vec<_> = std::env::args().skip(1).collect();
-    if args.first().is_some_and(|arg| arg == "--measure-memory") {
-        return memory::run_child(&args[1..]);
-    }
     f2z::observability::install()?;
-    let measure_memory = match std::env::var("F2Z_MUL_COMPARE_MEMORY").as_deref() {
-        Err(std::env::VarError::NotPresent) | Ok("1") => true,
-        Ok("0") => false,
-        _ => return Err("F2Z_MUL_COMPARE_MEMORY must be 0 or 1".into()),
-    };
-    let reps = common::reps(None, 5);
-    assert!(reps > 0);
-    let workloads = choices(
-        "F2Z_MUL_COMPARE_WORKLOADS",
-        "u32-mod32",
-        &["u32", "u32-mod32", "u64", "u128"],
-    );
-    let backends = choices(
-        "F2Z_MUL_COMPARE_BACKENDS",
-        "f2z binius64 binius64-ligerito plonky3-fri",
-        &[
-            "f2z",
-            "binius64",
-            "binius64-ligerito",
-            "plonky3-fri",
-            "plonky3-whir",
-            "limber",
-        ],
-    );
-    check_backend_support(&workloads, &backends);
-    let shapes = common::shapes(None).unwrap_or_else(|| vec!["15".into()]);
-    let max_exponent = max_exponent(&workloads);
-    let mut exponents = vec![];
-    for shape in shapes {
-        let n: usize = shape.parse()?;
-        assert!(
-            (4..=max_exponent).contains(&n),
-            "F2Z_BENCH_SHAPES must be in 4..={max_exponent} for the selected workloads"
-        );
-        assert!(
-            n >= 15 || !backends.iter().any(|b| b == "f2z"),
-            "F2Z requires exponent >=15"
-        );
-        assert!(!exponents.contains(&n), "duplicate exponent {n}");
-        exponents.push(n);
-    }
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_nanos();
-    let out = std::env::var_os("F2Z_MUL_COMPARE_OUTPUT_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(format!("PerfRuns/{stamp}-native-mul")));
+    let out = output.unwrap_or_else(|| PathBuf::from(format!("PerfRuns/{stamp}-native-mul")));
     let output = BenchmarkOutput::new(&out);
     output.create_dir_all()?;
     let mut trace = output.jsonl("trace.jsonl", FileMode::CreateNew)?;
@@ -550,8 +538,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     common::whir_tuning::save(&out.join("environment.json"), &environment)?;
     let mut summary = vec![];
     for workload in workloads {
-        let workload = Workload::parse(&workload);
-        let seed = common::seed(None, root_seed(workload));
+        let seed = seed.unwrap_or_else(|| root_seed(workload));
         for &n in &exponents {
             let shape_seed = if workload == Workload::U32 {
                 seed
@@ -559,8 +546,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 common::mul_witness::shape_seed(seed, n)
             };
             let corpus = Arc::new(Corpus::new(workload, n, shape_seed));
-            for backend in &backends {
-                let whir_params = if backend == "plonky3-whir" {
+            for &selected_backend in &backends {
+                let backend = selected_backend.slug();
+                let whir_params = if selected_backend == Backend::Plonky3Whir {
                     let degrees: &[usize] = &[2, 5];
                     let selection = common::whir_tuning::tune(
                         degrees,
@@ -626,15 +614,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
                 eprintln!("{} {backend} 2^{n}: setup", workload.slug());
                 // Check the actual native materialization before accepting any proof timings.
-                let audit = audit_backend(backend, &corpus);
+                let audit = audit_backend(selected_backend, &corpus);
                 assert_eq!(audit.digest, corpus.digest);
                 let (context, started) = f2z::observability::measure(
                     tracing::info_span!("mul_e2e_compare:context"),
-                    || Context::setup_selected(backend, Arc::clone(&corpus), whir_params),
+                    || Context::setup(selected_backend, Arc::clone(&corpus), whir_params),
                 ).expect("measure completed operation");
                 let setup_ms = started.as_secs_f64() * 1e3;
                 let mut config = context.config();
-                config["proof_size_encoding"] = json!(match backend.as_str() {
+                config["proof_size_encoding"] = json!(match backend {
                     "f2z" =>
                         "commitment root + fixed-width PIOP payload/nonces + canonical F2Z opening",
                     "binius64" => "native transcript bytes (includes commitment)",
@@ -657,7 +645,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "benchmark_trial",
                         component = "native_mul.trial",
                         workload = workload.slug(),
-                        backend = backend.as_str(),
+                        backend = backend,
                         exponent = n,
                         trial,
                         warmup = trial == 0,
@@ -816,8 +804,8 @@ mod tests {
         tracing::subscriber::with_default(
             tracing_subscriber::registry().with(f2z::observability::layer()),
             || {
-                for backend in ["binius64", "plonky3-fri", "plonky3-whir", "limber"] {
-                    let context = Context::setup_selected(
+                for backend in [Backend::Binius, Backend::Plonky3Fri, Backend::Plonky3Whir, Backend::Limber] {
+                    let context = Context::setup(
                         backend,
                         Arc::new(Corpus::new(Workload::U32, 4, 7)),
                         Some(common::whir_tuning::Params::default()),
@@ -836,10 +824,10 @@ mod tests {
                     for _ in 0..6 {
                         let timing = context.run();
                         timing.validate();
-                        assert_eq!(timing.proof_bytes, memory_bytes, "{backend}");
+                        assert_eq!(timing.proof_bytes, memory_bytes, "{backend:?}");
                         let metrics = timing.metrics();
-                        assert!(metrics.witness_ms > 0.0, "{backend}");
-                        assert!(metrics.verify_ms > 0.0, "{backend}");
+                        assert!(metrics.witness_ms > 0.0, "{backend:?}");
+                        assert!(metrics.verify_ms > 0.0, "{backend:?}");
                     }
                 }
             },
@@ -1049,63 +1037,34 @@ impl WitnessAudit {
         }
     }
 }
-fn audit_backend(backend: &str, corpus: &Corpus) -> WitnessAudit {
+fn audit_backend(backend: Backend, corpus: &Corpus) -> WitnessAudit {
     match backend {
-        "f2z" => f2z_backend::audit(corpus),
+        Backend::F2z => f2z_backend::audit(corpus),
         // The same Binius64 circuit and witness filler; only the opener differs.
-        "binius64" | "binius64-ligerito" => binius::audit(corpus),
-        "plonky3-fri" | "plonky3-whir" => mod32_air::audit(corpus),
-        "limber" => limber::audit(corpus),
-        _ => unreachable!(),
+        Backend::Binius | Backend::BiniusLigerito => binius::audit(corpus),
+        Backend::Plonky3Fri | Backend::Plonky3Whir => mod32_air::audit(corpus),
+        Backend::Limber => limber::audit(corpus),
     }
 }
 
 #[allow(dead_code)] // Invoked by the separate mul_witness_compare entry point.
 pub(crate) fn witness_main() -> Result<(), Box<dyn std::error::Error>> {
+    common::cli::EnvironmentCli::parse();
+    let config = CompareEnv::read();
+    let exponents = config.witness_exponents();
+    let CompareEnv { workloads, backends, output, reps, seed } = config;
     f2z::observability::install()?;
     let threads = common::init();
-    let reps = common::reps(None, 5);
-    let workloads = choices(
-        "F2Z_MUL_COMPARE_WORKLOADS",
-        "u32-mod32",
-        &["u32", "u32-mod32", "u64", "u128"],
-    );
-    let backends = choices(
-        "F2Z_MUL_COMPARE_BACKENDS",
-        "f2z binius64 binius64-ligerito plonky3-fri",
-        &[
-            "f2z",
-            "binius64",
-            "binius64-ligerito",
-            "plonky3-fri",
-            "plonky3-whir",
-            "limber",
-        ],
-    );
-    check_backend_support(&workloads, &backends);
-    let shapes = common::shapes(None).unwrap_or_else(|| vec!["10".into()]);
-    let exponents: Vec<usize> = shapes
-        .iter()
-        .map(|s| s.parse().expect("integer exponent"))
-        .collect();
-    let max_exponent = max_exponent(&workloads);
-    assert!(
-        exponents.iter().all(|n| (4..=max_exponent).contains(n)),
-        "witness exponents must be 4..={max_exponent} for the selected workloads"
-    );
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_nanos();
-    let out = std::env::var_os("F2Z_MUL_COMPARE_OUTPUT_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(format!("PerfRuns/{stamp}-mul-witness-compare")));
+    let out = output.unwrap_or_else(|| PathBuf::from(format!("PerfRuns/{stamp}-mul-witness-compare")));
     let output = BenchmarkOutput::new(&out);
     output.create_dir_all()?;
     let mut raw = output.jsonl("witness-checks.jsonl", FileMode::CreateNew)?;
     let mut summary = vec![];
     for workload in workloads {
-        let workload = Workload::parse(&workload);
-        let seed = common::seed(None, root_seed(workload));
+        let seed = seed.unwrap_or_else(|| root_seed(workload));
         for &n in &exponents {
             let shape_seed = if workload == Workload::U32 {
                 seed
@@ -1113,10 +1072,11 @@ pub(crate) fn witness_main() -> Result<(), Box<dyn std::error::Error>> {
                 common::mul_witness::shape_seed(seed, n)
             };
             let corpus = Corpus::new(workload, n, shape_seed);
-            for backend in &backends {
+            for &selected_backend in &backends {
+                let backend = selected_backend.slug();
                 let mut times = vec![];
                 for trial in 0..=reps {
-                    let audit = audit_backend(backend, &corpus);
+                    let audit = audit_backend(selected_backend, &corpus);
                     if trial > 0 {
                         times.push(audit.generation_ms);
                     }
@@ -1196,11 +1156,11 @@ mod witness_tests {
         for workload in [Workload::U32, Workload::U64, Workload::U128] {
             let corpus = edge_corpus(workload);
             for backend in [
-                "f2z",
-                "binius64",
-                "binius64-ligerito",
-                "plonky3-fri",
-                "plonky3-whir",
+                Backend::F2z,
+                Backend::Binius,
+                Backend::BiniusLigerito,
+                Backend::Plonky3Fri,
+                Backend::Plonky3Whir,
             ] {
                 if !workload.supports(backend) {
                     continue;
@@ -1293,5 +1253,99 @@ mod ligerito_isolation_tests {
         for backend in ["binius", "fri", "whir"] {
             assert_eq!(johnson[backend], udr[backend], "{backend}");
         }
+    }
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+    use clap::{CommandFactory, Parser};
+
+    #[test]
+    fn schemas_and_memory_transport() {
+        Args::command().debug_assert();
+        CompareEnv::command().debug_assert();
+        MemoryEnv::command().debug_assert();
+        assert!(Args::try_parse_from(["mul", "--bench"]).unwrap().measure_memory.is_none());
+        assert_eq!(Args::try_parse_from(["mul", "--measure-memory", "f2z", "u32", "15", "0", "null"]).unwrap().measure_memory.unwrap().len(), 5);
+        assert!(Args::try_parse_from(["mul", "--measure-memory", "f2z", "u32", "15", "0"]).is_err());
+        assert_eq!(common::pcs_cli::enum_list::<Workload>("u32 u32-mod32").unwrap(), [Workload::U32, Workload::U32]);
+    }
+}
+
+
+#[cfg(test)]
+mod cli_environment_tests {
+    use super::*;
+
+    #[test]
+    fn configuration_probe() {
+        let Ok(mode) = std::env::var("F2Z_MUL_CLI_TEST_MODE") else { return };
+        let config = CompareEnv::read();
+        let exponents = if mode == "proof" { config.proof_exponents() } else { config.witness_exponents() };
+        let memory = (mode == "proof").then(|| common::cli::environment::<MemoryEnv>().enabled == "1");
+        println!("MUL_CONFIG {}", json!({"exponents":exponents,"reps":config.reps,"seed":config.seed,"memory":memory,
+            "workloads":config.workloads.iter().map(|w| w.slug()).collect::<Vec<_>>(),
+            "backends":config.backends.iter().map(|b| b.slug()).collect::<Vec<_>>()}));
+    }
+
+    fn child(mode: &str, settings: &[(&str, &str)]) -> std::process::Output {
+        let test = concat!(module_path!(), "::configuration_probe");
+        std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", test.split_once("::").unwrap().1, "--nocapture"])
+            .env_clear().env("F2Z_MUL_CLI_TEST_MODE", mode).envs(settings.iter().copied())
+            .output().unwrap()
+    }
+
+    fn config(mode: &str, settings: &[(&str, &str)]) -> Value {
+        let out = child(mode, settings);
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        serde_json::from_str(String::from_utf8_lossy(&out.stdout).lines()
+            .find_map(|s| s.strip_prefix("MUL_CONFIG ")).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn proof_and_witness_preserve_defaults_and_distinct_shape_rules() {
+        let proof = config("proof", &[]);
+        let witness = config("witness", &[]);
+        assert_eq!(proof["exponents"], json!([15]));
+        assert_eq!(witness["exponents"], json!([10]));
+        assert_eq!(proof["reps"], 5);
+        assert_eq!(proof["seed"], Value::Null);
+        assert_eq!(proof["memory"], true);
+        assert_eq!(witness["memory"], Value::Null);
+        assert_eq!(proof["workloads"], json!(["u32-mod32"]));
+        assert_eq!(proof["backends"], json!(["f2z","binius64","binius64-ligerito","plonky3-fri"]));
+        assert_eq!(witness["backends"], proof["backends"]);
+        for shapes in ["4", "14", "15 15"] {
+            assert!(!child("proof", &[("F2Z_BENCH_SHAPES", shapes)]).status.success());
+            assert!(child("witness", &[("F2Z_BENCH_SHAPES", shapes)]).status.success());
+        }
+        assert_eq!(config("proof", &[("F2Z_BENCH_SHAPES", "4"),
+            ("F2Z_MUL_COMPARE_BACKENDS", "binius64")])["exponents"], json!([4]));
+        let upper = max_exponent().to_string();
+        let above = (max_exponent() + 1).to_string();
+        for mode in ["proof", "witness"] {
+            assert!(child(mode, &[("F2Z_BENCH_SHAPES", &upper)]).status.success());
+            for bad in ["3", &above] { assert!(!child(mode, &[("F2Z_BENCH_SHAPES", bad)]).status.success()); }
+        }
+    }
+
+    #[test]
+    fn campaign_overrides_alias_duplicates_and_memory_switch() {
+        let config = config("proof", &[("F2Z_MUL_COMPARE_WORKLOADS", "u64 u128"),
+            ("F2Z_MUL_COMPARE_BACKENDS", "f2z binius64"), ("F2Z_BENCH_REPS", "3"),
+            ("F2Z_BENCH_SEED", "0Xff"), ("F2Z_MUL_COMPARE_MEMORY", "0")]);
+        assert_eq!(config["workloads"], json!(["u64","u128"]));
+        assert_eq!(config["reps"], 3);
+        assert_eq!(config["seed"], 255);
+        assert_eq!(config["memory"], false);
+        for settings in [
+            vec![("F2Z_MUL_COMPARE_WORKLOADS", "u32 u32-mod32")],
+            vec![("F2Z_MUL_COMPARE_BACKENDS", "f2z f2z")],
+            vec![("F2Z_MUL_COMPARE_WORKLOADS", "u64"), ("F2Z_MUL_COMPARE_BACKENDS", "plonky3-fri")],
+            vec![("F2Z_BENCH_REPS", "0")], vec![("F2Z_MUL_COMPARE_MEMORY", "true")],
+        ] { assert!(!child("proof", &settings).status.success(), "accepted {settings:?}"); }
+        assert!(child("witness", &[("F2Z_MUL_COMPARE_MEMORY", "unused")]).status.success());
     }
 }

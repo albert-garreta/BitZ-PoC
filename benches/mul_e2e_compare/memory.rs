@@ -1,12 +1,24 @@
 //! Isolated whole-case peak RSS, with no allocator or polling overhead in
 //! the latency trials. Each child builds exactly one backend and verifies one proof.
 
-use super::{Context, Corpus, Workload};
+use super::{Backend, Context, Corpus, Workload};
 use serde::{Deserialize, Serialize};
 use std::{
     process::{Command, Stdio},
     sync::Arc,
 };
+
+type WhirParams = Option<super::common::whir_tuning::Params>;
+
+#[derive(clap::Parser)]
+struct Args {
+    backend: Backend,
+    workload: Workload,
+    exponent: usize,
+    seed: u64,
+    #[arg(value_parser = |value: &str| serde_json::from_str::<WhirParams>(value))]
+    params: WhirParams,
+}
 
 const RESULT_PREFIX: &str = "F2Z_MEMORY_RESULT ";
 const BOUNDARY: &str = "fresh process: corpus generation, public setup, witness generation, commitment, proving, verification, and proof-size accounting; one verified proof, no warmup";
@@ -70,20 +82,12 @@ pub(super) fn measure(
     Ok(sample)
 }
 
-pub(super) fn run_child(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let [backend, workload, exponent, seed, params] = args else {
-        return Err("memory child requires backend, workload, exponent, and seed".into());
-    };
-    let workload = match workload.as_str() {
-        "u32" | "u32-mod32" => Workload::U32,
-        "u64" => Workload::U64,
-        "u128" => Workload::U128,
-        _ => return Err("unknown memory workload".into()),
-    };
-    let exponent = exponent.parse()?;
-    let corpus = Arc::new(Corpus::new(workload, exponent, seed.parse()?));
-    let params = serde_json::from_str(params)?;
-    let context = Context::setup_selected(backend, Arc::clone(&corpus), params);
+pub(super) fn run_child(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
+    let Args { backend, workload, exponent, seed, params } =
+        <Args as clap::Parser>::try_parse_from(std::iter::once("memory".to_owned()).chain(args))?;
+    super::common::init();
+    let corpus = Arc::new(Corpus::new(workload, exponent, seed));
+    let context = Context::setup(backend, Arc::clone(&corpus), params);
     let proof_bytes = match &context {
         Context::Binius(context) => context.prove_and_verify(),
         Context::BiniusLigerito(context) => context.prove_and_verify(),
@@ -93,7 +97,7 @@ pub(super) fn run_child(args: &[String]) -> Result<(), Box<dyn std::error::Error
         Context::F2z(context) => context.prove_and_verify(),
     };
     let sample = Sample {
-        backend: backend.clone(),
+        backend: backend.slug().into(),
         workload: workload.slug().into(),
         log_multiplications: exponent,
         corpus_digest: corpus.digest.clone(),
@@ -170,4 +174,47 @@ fn peak_rss_bytes() -> std::io::Result<u64> {
     Err(std::io::Error::other(
         "peak RSS is supported on macOS and Linux; use F2Z_MUL_COMPARE_MEMORY=0 for latency-only runs",
     ))
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+    use clap::{CommandFactory, Parser};
+
+    #[test]
+    fn typed_memory_arguments() {
+        Args::command().debug_assert();
+        let args = Args::try_parse_from(["memory", "f2z", "u32", "15", "18446744073709551615", "null"]).unwrap();
+        assert_eq!(args.workload, Workload::U32);
+        assert_eq!(args.seed, u64::MAX);
+        assert!(args.params.is_none());
+        for args in [
+            ["memory", "unknown", "u32", "15", "0", "null"],
+            ["memory", "f2z", "u256", "15", "0", "null"],
+            ["memory", "f2z", "u32", "x", "0", "null"],
+            ["memory", "f2z", "u32", "15", "0", "invalid-json"],
+        ] { assert!(Args::try_parse_from(args).is_err()); }
+    }
+}
+
+
+#[cfg(test)]
+mod cli_transport_tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn parent_transport_roundtrips_selected_whir_parameters() {
+        let params = Some(super::super::common::whir_tuning::Params { folding: 2,
+            max_round_log_inv_rate: Some(4), ..Default::default() });
+        let encoded = serde_json::to_string(&params).unwrap();
+        let outer = super::super::Args::try_parse_from(["mul", "--measure-memory", "plonky3-whir",
+            "u32-mod32", "15", "18446744073709551615", &encoded, "--bench"]).unwrap();
+        let inner = Args::try_parse_from(std::iter::once("memory".to_owned())
+            .chain(outer.measure_memory.unwrap())).unwrap();
+        assert_eq!(inner.backend, Backend::Plonky3Whir);
+        assert_eq!(inner.workload, Workload::U32);
+        assert_eq!((inner.exponent, inner.seed), (15, u64::MAX));
+        assert_eq!(serde_json::to_value(inner.params).unwrap(), serde_json::to_value(params).unwrap());
+    }
 }

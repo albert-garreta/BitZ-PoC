@@ -85,25 +85,8 @@ fn make_blocks(compressions: usize, seed: u64) -> Vec<[u32; 16]> {
 }
 
 fn shapes() -> Vec<usize> {
-    let shapes = common::shapes(None).unwrap_or_else(|| {
-        "7 8 9 10 11 12 13 14 15 16"
-            .split(' ')
-            .map(str::to_owned)
-            .collect()
-    });
-    shapes
-        .iter()
-        .map(|part| {
-            let exponent = part
-                .parse::<usize>()
-                .expect("F2Z_BENCH_SHAPES contains integer exponents");
-            assert!(
-                (7..=SHA256_MAX_LOG_COMPRESSIONS).contains(&exponent),
-                "SHA-256 chain supports exponents 7 through 16"
-            );
-            exponent
-        })
-        .collect()
+    common::shape_values(None, clap::builder::RangedU64ValueParser::<usize>::new().range(7..=SHA256_MAX_LOG_COMPRESSIONS as u64))
+        .unwrap_or_else(|| (7..=16).collect())
 }
 
 fn fmt_ms(milliseconds: f64) -> String {
@@ -320,12 +303,15 @@ fn bench_shape<P: IopSecurityProfile>(
 }
 
 fn main() {
-    f2z::observability::install().expect("install Perfetto subscriber");
-    let threads = common::init();
+    common::cli::EnvironmentCli::parse();
     let reps = common::reps(None, 3);
     let root_seed = common::seed(None, 0x4632_5a5f_4348_4149);
     let selected = common::security_profile(PrimePolicy::SingleDerived);
     let profile = selected.unwrap_or(common::SecurityProfile::Lambda100);
+
+    let shapes = shapes();
+    f2z::observability::install().expect("install Perfetto subscriber");
+    let threads = common::init();
 
     println!(
         "SHA-256 chain: H_{{i+1}} = Compress(H_i, M_i) from the IV; source [1|block₀,hints₀|block₁,hints₁|…], chained map + direct product opening + virtual F2Z"
@@ -338,7 +324,7 @@ fn main() {
         common::profile_banner(selected, common::SecurityProfile::Lambda100)
     );
 
-    for exponent in shapes() {
+    for exponent in shapes {
         flock_core::scratch::clear();
         common::with_profile!(profile, bench_shape(exponent, reps, root_seed, threads));
     }

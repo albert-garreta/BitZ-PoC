@@ -18,11 +18,15 @@
 
 #![allow(dead_code)] // each bench uses a subset of the harness
 
+pub mod cli;
 pub mod environment;
 
 /// Serialize native SDK sessions in tests and explicitly supply their subscriber.
 #[cfg(all(test, feature = "span-metrics"))]
-pub fn test_tracing() -> (tracing::subscriber::DefaultGuard, std::sync::MutexGuard<'static, ()>) {
+pub fn test_tracing() -> (
+    tracing::subscriber::DefaultGuard,
+    std::sync::MutexGuard<'static, ()>,
+) {
     use tracing_subscriber::prelude::*;
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let lock = LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
@@ -33,6 +37,7 @@ pub fn test_tracing() -> (tracing::subscriber::DefaultGuard, std::sync::MutexGua
 }
 pub mod mul_witness;
 pub mod output;
+pub mod pcs_cli;
 pub mod pcs_console;
 #[cfg(feature = "bench-peak-memory")]
 pub mod peak_memory;
@@ -44,6 +49,7 @@ pub mod plonky3;
 pub mod whir_tuning;
 
 
+use clap::ValueEnum;
 use f2z::piop::spartan::{
     IopSecurityProfile, Lambda100, Lambda128, Limber112, Limber114, PrimePolicy,
     Sha128ReferenceSchedule,
@@ -286,42 +292,25 @@ fn env_with_alias(canonical: &str, alias: Option<&str>) -> Option<String> {
 
 /// Measured repetitions (one extra untimed warm-up is always run).
 pub fn reps(alias: Option<&str>, default: usize) -> usize {
-    let value = env_with_alias("F2Z_BENCH_REPS", alias)
-        .map(|value| {
-            value
-                .parse::<usize>()
-                .unwrap_or_else(|_| panic!("F2Z_BENCH_REPS must be a positive integer"))
-        })
-        .unwrap_or(default);
-    assert!(value > 0, "F2Z_BENCH_REPS must be positive");
-    value
+    env_with_alias("F2Z_BENCH_REPS", alias).map_or(default, |value| {
+        cli::value("F2Z_BENCH_REPS", &value, cli::positive)
+    })
 }
 
 /// Bench-specific shape list (meaning documented per bench).
-pub fn shapes(alias: Option<&str>) -> Option<Vec<String>> {
-    env_with_alias("F2Z_BENCH_SHAPES", alias).map(|value| {
-        let shapes: Vec<String> = value
-            .split([',', ' '])
-            .filter(|part| !part.is_empty())
-            .map(str::to_owned)
-            .collect();
-        assert!(!shapes.is_empty(), "F2Z_BENCH_SHAPES must not be empty");
-        shapes
-    })
+pub fn shape_values<T, P>(alias: Option<&str>, parser: P) -> Option<Vec<T>>
+where
+    T: Clone + Send + Sync + 'static,
+    P: clap::builder::TypedValueParser<Value = T>,
+{
+    env_with_alias("F2Z_BENCH_SHAPES", alias)
+        .map(|value| cli::values("F2Z_BENCH_SHAPES", &value, parser))
 }
 
 /// Root seed (decimal or 0x-hex).
 pub fn seed(alias: Option<&str>, default: u64) -> u64 {
     env_with_alias("F2Z_BENCH_SEED", alias).map_or(default, |value| {
-        let parsed = if let Some(hex) = value
-            .strip_prefix("0x")
-            .or_else(|| value.strip_prefix("0X"))
-        {
-            u64::from_str_radix(hex, 16).ok()
-        } else {
-            value.parse().ok()
-        };
-        parsed.unwrap_or_else(|| panic!("F2Z_BENCH_SEED must be a decimal or 0x-hex u64"))
+        cli::value("F2Z_BENCH_SEED", &value, cli::seed)
     })
 }
 
@@ -333,24 +322,20 @@ pub fn seed(alias: Option<&str>, default: u64) -> u64 {
 /// policy types of `src/piop/spartan/profile.rs`, chosen at runtime by
 /// `F2Z_BENCH_LAMBDA` and dispatched to the monomorphized bench body by
 /// [`with_profile!`].
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
 pub enum SecurityProfile {
+    #[value(name = "100", alias = "lambda100")]
     Lambda100,
+    #[value(name = "128", alias = "lambda128")]
     Lambda128,
+    #[value(name = "112", alias = "limber112")]
     Limber112,
+    #[value(name = "114", alias = "limber114")]
     Limber114,
     Sha128ReferenceSchedule,
 }
 
 impl SecurityProfile {
-    pub const ALL: [Self; 5] = [
-        Self::Lambda100,
-        Self::Lambda128,
-        Self::Limber112,
-        Self::Limber114,
-        Self::Sha128ReferenceSchedule,
-    ];
-
     /// The profile's `NAME` (the `profile=` RESULT key).
     pub const fn name(self) -> &'static str {
         match self {
@@ -387,28 +372,14 @@ impl SecurityProfile {
 
     /// The shortest `F2Z_BENCH_LAMBDA` spelling of the profile: the target
     /// bits where that is unambiguous, the full name otherwise.
-    pub const fn knob_value(self) -> &'static str {
-        match self {
-            Self::Lambda100 => "100",
-            Self::Lambda128 => "128",
-            Self::Limber112 => "112",
-            Self::Limber114 => "114",
-            Self::Sha128ReferenceSchedule => Sha128ReferenceSchedule::NAME,
-        }
+    pub fn knob_value(self) -> String {
+        self.to_possible_value().expect("selectable profile").get_name().to_owned()
     }
 
-    /// `100` / `128` / `114` or a profile name, case-insensitively.
-    fn parse(value: &str) -> Option<Self> {
-        let value = value.trim().to_ascii_lowercase();
-        Self::ALL
-            .into_iter()
-            .find(|profile| value == profile.knob_value() || value == profile.name())
-    }
-
-    fn admissible(policy: Option<PrimePolicy>) -> String {
-        Self::ALL
+    fn admissible(policy: PrimePolicy) -> String {
+        Self::value_variants()
             .iter()
-            .filter(|profile| policy.is_none_or(|policy| profile.prime_policy() == policy))
+            .filter(|profile| profile.prime_policy() == policy)
             .map(|profile| {
                 if profile.knob_value() == profile.name() {
                     profile.name().to_owned()
@@ -437,14 +408,9 @@ const fn describe_policy(policy: PrimePolicy) -> &'static str {
 /// names no profile aborts too (a typo can never silently do nothing).
 pub fn security_profile(policy: PrimePolicy) -> Option<SecurityProfile> {
     let value = std::env::var("F2Z_BENCH_LAMBDA").ok()?;
-    let Some(profile) = SecurityProfile::parse(&value) else {
-        eprintln!("error: F2Z_BENCH_LAMBDA={value:?} names no security profile");
-        eprintln!(
-            "       admissible values: {}",
-            SecurityProfile::admissible(None)
-        );
-        std::process::exit(2);
-    };
+    let profile = cli::value("F2Z_BENCH_LAMBDA", &value, |value: &str| {
+        SecurityProfile::from_str(value.trim(), true)
+    });
     if profile.prime_policy() != policy {
         eprintln!(
             "error: F2Z_BENCH_LAMBDA={value} selects {}, a {} profile, but this bench's \
@@ -455,7 +421,7 @@ pub fn security_profile(policy: PrimePolicy) -> Option<SecurityProfile> {
         );
         eprintln!(
             "       admissible here: {}",
-            SecurityProfile::admissible(Some(policy))
+            SecurityProfile::admissible(policy)
         );
         std::process::exit(2);
     }

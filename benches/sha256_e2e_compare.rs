@@ -52,7 +52,7 @@ use f2z::{
 use serde_json::{Value, json};
 
 const DEFAULT_ROOT_SEED: u64 = 0x5348_4132_3545_3245;
-const DEFAULT_EXPONENTS: &str = "7 8 10 11 12 13 14 15 16";
+const DEFAULT_EXPONENTS: &[usize] = &[7, 8, 10, 11, 12, 13, 14, 15, 16];
 const DEFAULT_REPS: usize = 21;
 const DEFAULT_PILOT_REPS: usize = 5;
 const BINIUS_SECURITY_BITS: usize = 100;
@@ -68,13 +68,15 @@ const SHA256_IV: [u32; 8] = [
     0x5be0_cd19,
 ];
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
 enum Backend {
     F2z,
     Plonky3Whir,
+    #[value(name = "binius64")]
     Binius,
     /// Binius64's circuit and PIOP with the F2Z opener (rate 1/2, Johnson
     /// regime, grinding, Round 0; whole-protocol union bound at 100 bits).
+    #[value(name = "binius64-ligerito")]
     BiniusLigerito,
     Limber,
 }
@@ -106,12 +108,6 @@ impl Backend {
             Self::BiniusLigerito => "binius64-ligerito",
             Self::Limber => "limber",
         }
-    }
-
-    fn parse(value: &str) -> Option<Self> {
-        ALL_BACKENDS
-            .into_iter()
-            .find(|backend| backend.slug() == value)
     }
 }
 
@@ -1729,9 +1725,12 @@ fn choose_f2z_prefix(corpus: &Corpus, exponent: usize, reps: usize) -> usize {
 
 fn choose_plonky3_params(
     corpus: &Corpus,
+    overrides: &Plonky3Env,
 ) -> Result<(plonky3_backend::Params, whir_tuning::TuningReport), String> {
     let explicit =
-        whir_tuning::replay()?.or_else(|| has_plonky3_override().then(env_plonky3_params));
+        whir_tuning::replay()?.or_else(|| {
+            overrides.is_explicit().then(|| overrides.params())
+        });
     whir_tuning::tune(
         &[4, 5],
         explicit,
@@ -1813,7 +1812,7 @@ fn preflight_backend(
     exponent: usize,
     selected: &SelectedConfigs,
     seed: u64,
-) -> bool {
+) {
     println!(
         "Preflighting {} at 2^{exponent} in an isolated process...",
         backend.name(),
@@ -1858,7 +1857,6 @@ fn preflight_backend(
         "{} preflight at 2^{exponent} failed with {status}; inspect the child diagnostics (not classified as a resource limit)",
         backend.name()
     );
-    true
 }
 
 #[derive(Clone, Copy)]
@@ -1971,8 +1969,8 @@ fn run_campaign(
     root_seed: u64,
     selected: &SelectedConfigs,
     requested: &HashSet<Backend>,
-    allowed_at_16: &HashSet<Backend>,
     output_dir: &Path,
+    plonky3_env: &Plonky3Env,
 ) -> Vec<BackendAggregate> {
     let mut aggregates = Vec::new();
     for &exponent in exponents {
@@ -1982,14 +1980,12 @@ fn run_campaign(
             "\n=== 2^{exponent} = {compressions} public SHA-256 compressions | corpus {} ===",
             &corpus.digest[..16]
         );
-        let enabled = |backend| {
-            requested.contains(&backend) && (exponent != 16 || allowed_at_16.contains(&backend))
-        };
+        let enabled = |backend| requested.contains(&backend);
         let mut selected = *selected;
         let mut tuning = None;
         let plonky3 = if enabled(Backend::Plonky3Whir) {
             let path = output_dir.join(format!("whir-sha256-{exponent}.json"));
-            match choose_plonky3_params(&corpus) {
+            match choose_plonky3_params(&corpus, plonky3_env) {
                 Ok((params, mut record)) => {
                     selected.plonky3 = params;
                     record.workload = Some("sha256".to_owned());
@@ -2324,8 +2320,6 @@ struct SummaryDocument<'a> {
 
 fn write_aggregate_artifacts(
     aggregates: &[BackendAggregate],
-    requested: &HashSet<Backend>,
-    runnable: &HashSet<Backend>,
     output_dir: &Path,
 ) {
     let output = BenchmarkOutput::new(output_dir);
@@ -2342,11 +2336,7 @@ fn write_aggregate_artifacts(
         padding: false,
         chaining: false,
         backend_order: ALL_BACKENDS.map(Backend::name),
-        unavailable_backends: ALL_BACKENDS
-            .into_iter()
-            .filter(|backend| requested.contains(backend) && !runnable.contains(backend))
-            .map(Backend::name)
-            .collect(),
+        unavailable_backends: Vec::new(),
         rows: aggregates
             .iter()
             .map(BackendAggregate::summary_row)
@@ -2563,93 +2553,104 @@ fn binius_tamper_self_test() {
     );
 }
 
-fn parse_exponents() -> Vec<usize> {
-    let text = std::env::var("F2Z_SHA_COMPARE_EXPONENTS")
-        .or_else(|_| std::env::var("F2Z_BENCH_SHAPES"))
-        .unwrap_or_else(|_| DEFAULT_EXPONENTS.to_owned());
-    let mut exponents = text
-        .split([',', ' '])
-        .filter(|piece| !piece.is_empty())
-        .map(|piece| piece.parse::<usize>().expect("integer SHA exponent"))
-        .collect::<Vec<_>>();
-    assert!(!exponents.is_empty());
-    let minimum = if env_bool("F2Z_SHA_COMPARE_ALLOW_SMALL", false) {
-        0
-    } else {
-        7
-    };
-    assert!(
+#[derive(clap::Parser)]
+struct Config {
+    #[arg(env = "F2Z_SHA_COMPARE_EXPONENTS")]
+    exponents: Option<String>,
+    #[arg(env = "F2Z_SHA_COMPARE_BACKENDS", default_value = "f2z plonky3-whir binius64 binius64-ligerito limber", value_parser = common::pcs_cli::enum_list::<Backend>)]
+    backends: common::cli::List<Backend>,
+    #[arg(env = "F2Z_SHA_COMPARE_REPS", default_value_t = DEFAULT_REPS, value_parser = common::cli::positive)]
+    reps: usize,
+    #[arg(env = "F2Z_SHA_COMPARE_PILOT_REPS", default_value_t = DEFAULT_PILOT_REPS)]
+    pilot_reps: usize,
+    #[arg(env = "F2Z_SHA_COMPARE_SEED", default_value_t = DEFAULT_ROOT_SEED)]
+    seed: u64,
+    #[arg(env = "F2Z_SHA_COMPARE_ALLOW_SMALL", default_value = "false", action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
+    allow_small: bool,
+    #[arg(env = "F2Z_SHA_COMPARE_SELF_TESTS", default_value = "true", action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
+    self_tests: bool,
+    #[arg(env = "F2Z_SHA_COMPARE_PILOT", default_value = "true", action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
+    pilot: bool,
+    #[arg(env = "F2Z_SHA_COMPARE_HEAVY_PREFLIGHT", default_value = "true", action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
+    heavy_preflight: bool,
+    #[arg(env = "F2Z_SHA_COMPARE_PREFLIGHT", default_value = "true", action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
+    preflight: bool,
+    #[arg(env = "F2Z_SHA_COMPARE_PILOT_EXPONENT", value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(7..=16))]
+    pilot_exponent: Option<usize>,
+    #[arg(env = "F2Z_SHA_COMPARE_F2Z_PREFIX", value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(0..=4))]
+    f2z_prefix: Option<usize>,
+    #[arg(env = "F2Z_SHA_COMPARE_LOG_INV_RATE", value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..=3))]
+    binius_rate: Option<usize>,
+    #[arg(env = "F2Z_SHA_COMPARE_OUTPUT_DIR")]
+    output_dir: Option<PathBuf>,
+    #[arg(env = "F2Z_SHA_COMPARE_TRACE_PATH")]
+    trace_path: Option<PathBuf>,
+}
+
+impl Config {
+    fn exponents(&self) -> Vec<usize> {
+        let parser = clap::builder::RangedU64ValueParser::<usize>::new()
+            .range(if self.allow_small { 0 } else { 7 }..=16);
+        // This benchmark's historical knob takes precedence over the shared knob.
+        let mut exponents = self.exponents.as_deref()
+            .map(|value| common::cli::values("F2Z_SHA_COMPARE_EXPONENTS", value, parser.clone()))
+            .or_else(|| common::shape_values(None, parser))
+            .unwrap_or_else(|| DEFAULT_EXPONENTS.to_vec());
+        exponents.sort_unstable();
+        exponents.dedup();
         exponents
-            .iter()
-            .all(|exponent| (minimum..=16).contains(exponent))
-    );
-    exponents.sort_unstable();
-    exponents.dedup();
-    exponents
-}
-
-fn parse_backends() -> HashSet<Backend> {
-    let value = std::env::var("F2Z_SHA_COMPARE_BACKENDS")
-        .unwrap_or_else(|_| ALL_BACKENDS.map(Backend::slug).join(","));
-    let backends = value
-        .split([',', ' '])
-        .filter(|piece| !piece.is_empty())
-        .map(|piece| {
-            Backend::parse(piece).unwrap_or_else(|| panic!("unknown backend slug {piece}"))
-        })
-        .collect::<HashSet<_>>();
-    assert!(!backends.is_empty(), "select at least one backend");
-    backends
-}
-
-fn env_usize(name: &str, default: usize) -> usize {
-    std::env::var(name).map_or(default, |value| {
-        value
-            .parse::<usize>()
-            .unwrap_or_else(|_| panic!("{name} must be an integer"))
-    })
-}
-
-fn env_bool(name: &str, default: bool) -> bool {
-    std::env::var(name).map_or(default, |value| match value.as_str() {
-        "1" | "true" | "yes" => true,
-        "0" | "false" | "no" => false,
-        _ => panic!("{name} must be 0/1, true/false, or yes/no"),
-    })
-}
-
-fn env_plonky3_params() -> plonky3_backend::Params {
-    plonky3_backend::Params {
-        extension_degree: env_usize("F2Z_SHA_COMPARE_P3_EXTENSION_DEGREE", 5),
-        folding: env_usize("F2Z_SHA_COMPARE_P3_FOLDING", 4),
-        starting_log_inv_rate: env_usize("F2Z_SHA_COMPARE_P3_LOG_INV_RATE", 1),
-        max_pow_bits: env_usize("F2Z_SHA_COMPARE_P3_MAX_POW_BITS", 12),
-        max_round_log_inv_rate: None,
     }
 }
 
-fn env_limber_params() -> integer_limber_backend::Params {
-    let engine =
-        std::env::var("F2Z_SHA_COMPARE_LIMBER_ENGINE").unwrap_or_else(|_| "brakedown".to_owned());
-    integer_limber_backend::validate_engine(&engine).expect("SHA commitment policy");
-    integer_limber_backend::Params {
-        k: env_usize("F2Z_SHA_COMPARE_LIMBER_K", 9),
+#[derive(clap::Parser)]
+struct PreflightEnv {
+    #[arg(env = "F2Z_SHA_COMPARE_PREFLIGHT_CHILD")]
+    backend: Option<Backend>,
+}
+
+fn env_usize(name: &'static str, default: usize) -> usize {
+    common::cli::env(name).unwrap_or(default)
+}
+
+#[derive(clap::Parser)]
+struct Plonky3Env {
+    #[arg(env = "F2Z_SHA_COMPARE_P3_EXTENSION_DEGREE")]
+    extension_degree: Option<usize>,
+    #[arg(env = "F2Z_SHA_COMPARE_P3_FOLDING")]
+    folding: Option<usize>,
+    #[arg(env = "F2Z_SHA_COMPARE_P3_LOG_INV_RATE")]
+    starting_log_inv_rate: Option<usize>,
+    #[arg(env = "F2Z_SHA_COMPARE_P3_MAX_POW_BITS")]
+    max_pow_bits: Option<usize>,
+}
+
+impl Plonky3Env {
+    fn params(&self) -> plonky3_backend::Params {
+        plonky3_backend::Params {
+            extension_degree: self.extension_degree.unwrap_or(5),
+            folding: self.folding.unwrap_or(4),
+            starting_log_inv_rate: self.starting_log_inv_rate.unwrap_or(1),
+            max_pow_bits: self.max_pow_bits.unwrap_or(12),
+            max_round_log_inv_rate: None,
+        }
+    }
+    fn is_explicit(&self) -> bool {
+        [self.extension_degree, self.folding, self.starting_log_inv_rate, self.max_pow_bits]
+            .iter().any(Option::is_some)
     }
 }
 
-fn has_plonky3_override() -> bool {
-    [
-        "F2Z_SHA_COMPARE_P3_EXTENSION_DEGREE",
-        "F2Z_SHA_COMPARE_P3_FOLDING",
-        "F2Z_SHA_COMPARE_P3_LOG_INV_RATE",
-        "F2Z_SHA_COMPARE_P3_MAX_POW_BITS",
-    ]
-    .into_iter()
-    .any(|name| std::env::var_os(name).is_some())
+#[derive(clap::Parser)]
+struct LimberEnv {
+    #[arg(env = "F2Z_SHA_COMPARE_LIMBER_ENGINE", default_value = "brakedown", value_parser = ["brakedown"])]
+    engine: String,
+    #[arg(env = "F2Z_SHA_COMPARE_LIMBER_K")]
+    k: Option<usize>,
 }
 
-fn has_limber_override() -> bool {
-    std::env::var_os("F2Z_SHA_COMPARE_LIMBER_K").is_some()
+fn env_limber_params() -> (integer_limber_backend::Params, bool) {
+    let args = common::cli::environment::<LimberEnv>();
+    (integer_limber_backend::Params { k: args.k.unwrap_or(9) }, args.k.is_some())
 }
 
 fn shape_seed(root: u64, exponent: usize) -> u64 {
@@ -2723,94 +2724,99 @@ impl SplitMix64 {
     }
 }
 
-fn main() {
+fn init() -> usize {
+    let expected_threads = common::cli::env::<usize>("F2Z_SHA_COMPARE_THREADS");
     let _ = flock_core::init_perf_thread_pool();
     let threads = rayon::current_num_threads();
-    let expected_threads = env_usize("F2Z_SHA_COMPARE_THREADS", threads);
-    assert_eq!(
-        threads, expected_threads,
-        "set RAYON_NUM_THREADS={expected_threads} for the controlled comparison"
-    );
-    let limber_params = env_limber_params();
+    if let Some(expected_threads) = expected_threads {
+        assert_eq!(threads, expected_threads,
+            "set RAYON_NUM_THREADS={expected_threads} for the controlled comparison");
+    }
     f2z::observability::install().expect("install Perfetto subscriber");
+    threads
+}
 
-    if let Ok(backend_slug) = std::env::var("F2Z_SHA_COMPARE_PREFLIGHT_CHILD") {
-        let backend = Backend::parse(&backend_slug).expect("valid preflight backend slug");
-        let exponent = env_usize("F2Z_SHA_COMPARE_PREFLIGHT_EXPONENT", 16);
-        let seed = env_usize("F2Z_SHA_COMPARE_SEED", DEFAULT_ROOT_SEED as usize) as u64;
-        let corpus = Corpus::new(1 << exponent, shape_seed(seed, exponent));
-        let metrics = match backend {
-            Backend::F2z => {
-                let context = F2zContext::setup(
-                    exponent,
-                    &corpus,
-                    env_usize(
-                        "F2Z_SHA_COMPARE_F2Z_PREFIX",
-                        SHA256_DEFAULT_INNER_PREFIX_VARS,
-                    ),
-                );
-                run_f2z_trial(&context, &corpus, exponent, Trial::Preflight, None)
-            }
-            Backend::Plonky3Whir => {
-                let params = env_plonky3_params();
-                let context = plonky3_backend::Context::setup(&corpus, params)
-                    .expect("preflight WHIR configuration is eligible");
-                run_plonky3_trial(&context, params, &corpus, exponent, Trial::Preflight, None)
-            }
-            Backend::Binius => {
-                let context =
-                    BiniusContext::setup(&corpus, env_usize("F2Z_SHA_COMPARE_LOG_INV_RATE", 1));
-                run_binius_trial(&context, exponent, Trial::Preflight, None)
-            }
-            Backend::BiniusLigerito => {
-                let context = BiniusLigeritoContext::setup(&corpus);
-                run_binius_ligerito_trial(&context, exponent, Trial::Preflight, None)
-            }
-            Backend::Limber => {
-                let params = limber_params;
-                let context = integer_limber_backend::Context::setup(&corpus, params)
-                    .expect("preflight integer Limber configuration is eligible");
-                run_integer_limber_trial(
-                    &context,
-                    params,
-                    &corpus,
-                    exponent,
-                    Trial::Preflight,
-                    None,
-                )
-            }
-        };
-        println!(
-            "PREFLIGHT_OK backend={} online_ms={:.6} witness_to_proof_ms={:.6} proof_bytes={}",
-            backend.name(),
-            metrics.total_prover_ms,
-            metrics.witness_to_proof_ms,
-            metrics.proof_bytes
-        );
+fn run_preflight(backend: Backend) {
+    let exponent = env_usize("F2Z_SHA_COMPARE_PREFLIGHT_EXPONENT", 16);
+    let seed = common::cli::env::<u64>("F2Z_SHA_COMPARE_SEED").unwrap_or(DEFAULT_ROOT_SEED);
+    let prefix = (backend == Backend::F2z).then(|| env_usize("F2Z_SHA_COMPARE_F2Z_PREFIX", SHA256_DEFAULT_INNER_PREFIX_VARS));
+    let rate = (backend == Backend::Binius).then(|| env_usize("F2Z_SHA_COMPARE_LOG_INV_RATE", 1));
+    let plonky3 = (backend == Backend::Plonky3Whir).then(|| common::cli::environment::<Plonky3Env>().params());
+    let (limber_params, _) = env_limber_params();
+    init();
+    let corpus = Corpus::new(1 << exponent, shape_seed(seed, exponent));
+    let metrics = match backend {
+        Backend::F2z => {
+            let context = F2zContext::setup(
+                exponent,
+                &corpus,
+                prefix.unwrap(),
+            );
+            run_f2z_trial(&context, &corpus, exponent, Trial::Preflight, None)
+        }
+        Backend::Plonky3Whir => {
+            let params = plonky3.unwrap();
+            let context = plonky3_backend::Context::setup(&corpus, params)
+                .expect("preflight WHIR configuration is eligible");
+            run_plonky3_trial(&context, params, &corpus, exponent, Trial::Preflight, None)
+        }
+        Backend::Binius => {
+            let context =
+                BiniusContext::setup(&corpus, rate.unwrap());
+            run_binius_trial(&context, exponent, Trial::Preflight, None)
+        }
+        Backend::BiniusLigerito => {
+            let context = BiniusLigeritoContext::setup(&corpus);
+            run_binius_ligerito_trial(&context, exponent, Trial::Preflight, None)
+        }
+        Backend::Limber => {
+            let params = limber_params;
+            let context = integer_limber_backend::Context::setup(&corpus, params)
+                .expect("preflight integer Limber configuration is eligible");
+            run_integer_limber_trial(
+                &context,
+                params,
+                &corpus,
+                exponent,
+                Trial::Preflight,
+                None,
+            )
+        }
+    };
+    println!(
+        "PREFLIGHT_OK backend={} online_ms={:.6} witness_to_proof_ms={:.6} proof_bytes={}",
+        backend.name(),
+        metrics.total_prover_ms,
+        metrics.witness_to_proof_ms,
+        metrics.proof_bytes
+    );
+}
+
+fn main() {
+    common::cli::EnvironmentCli::parse();
+    if let Some(backend) = common::cli::environment::<PreflightEnv>().backend {
+        run_preflight(backend);
         return;
     }
 
-    let exponents = parse_exponents();
-    let requested = parse_backends();
-    let reps = env_usize("F2Z_SHA_COMPARE_REPS", DEFAULT_REPS);
-    assert!(reps > 0, "measured repetitions must be positive");
-    let pilot_reps = env_usize("F2Z_SHA_COMPARE_PILOT_REPS", DEFAULT_PILOT_REPS);
-    let root_seed = std::env::var("F2Z_SHA_COMPARE_SEED")
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(DEFAULT_ROOT_SEED);
+    let config = common::cli::environment::<Config>();
+    let exponents = config.exponents();
+    let plonky3_env = common::cli::environment::<Plonky3Env>();
+    let plonky3 = plonky3_env.params();
+    let (limber_params, limber_override) = env_limber_params();
+    let threads = init();
+    let requested = config.backends.into_iter().collect::<HashSet<_>>();
+    let reps = config.reps;
+    let pilot_reps = config.pilot_reps;
+    let root_seed = config.seed;
     let campaign_stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock")
         .as_nanos();
-    let output_dir = std::env::var_os("F2Z_SHA_COMPARE_OUTPUT_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
+    let output_dir = config.output_dir.unwrap_or_else(|| {
             Path::new("benchmark-results").join(format!("native-sha256-{campaign_stamp}"))
         });
-    let trace_path = std::env::var_os("F2Z_SHA_COMPARE_TRACE_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| output_dir.join("trace.jsonl"));
+    let trace_path = config.trace_path.unwrap_or_else(|| output_dir.join("trace.jsonl"));
     BenchmarkOutput::new(&output_dir)
         .create_dir_all()
         .expect("create artifact directory");
@@ -2829,7 +2835,7 @@ fn main() {
     );
     println!("build requirement: -C target-cpu=native, fat LTO, codegen-units=1");
 
-    if env_bool("F2Z_SHA_COMPARE_SELF_TESTS", true) {
+    if config.self_tests {
         security_api_self_test();
         if requested.contains(&Backend::F2z) {
             f2z_public_tamper_self_test();
@@ -2845,9 +2851,8 @@ fn main() {
         }
     }
 
-    let pilot_enabled = env_bool("F2Z_SHA_COMPARE_PILOT", true);
-    let pilot_exponent = env_usize("F2Z_SHA_COMPARE_PILOT_EXPONENT", exponents[0].max(7));
-    assert!((7..=16).contains(&pilot_exponent));
+    let pilot_enabled = config.pilot;
+    let pilot_exponent = config.pilot_exponent.unwrap_or(exponents[0].max(7));
     let pilot = pilot_enabled.then(|| {
         Corpus::new(
             1usize << pilot_exponent,
@@ -2855,9 +2860,7 @@ fn main() {
         )
     });
 
-    let f2z_prefix = if let Ok(prefix) = std::env::var("F2Z_SHA_COMPARE_F2Z_PREFIX") {
-        let prefix = prefix.parse::<usize>().expect("F2Z prefix is an integer");
-        assert!(prefix <= 4);
+    let f2z_prefix = if let Some(prefix) = config.f2z_prefix {
         prefix
     } else if requested.contains(&Backend::F2z)
         && let Some(pilot) = &pilot
@@ -2867,11 +2870,7 @@ fn main() {
         SHA256_DEFAULT_INNER_PREFIX_VARS
     };
 
-    let binius_rate = if let Ok(rate) = std::env::var("F2Z_SHA_COMPARE_LOG_INV_RATE") {
-        let rate = rate
-            .parse::<usize>()
-            .expect("log inverse rate is an integer");
-        assert!((1..=3).contains(&rate));
+    let binius_rate = if let Some(rate) = config.binius_rate {
         rate
     } else if requested.contains(&Backend::Binius)
         && let Some(pilot) = &pilot
@@ -2882,29 +2881,24 @@ fn main() {
     };
 
     // WHIR is selected separately at each measured size inside run_campaign.
-    let plonky3 = env_plonky3_params();
-    let preliminary_limber = limber_params;
-    let mut runnable = requested.clone();
-    if runnable.contains(&Backend::Limber) && env_bool("F2Z_SHA_COMPARE_HEAVY_PREFLIGHT", true) {
+    if requested.contains(&Backend::Limber) && config.heavy_preflight {
         let preliminary = SelectedConfigs {
             f2z_prefix,
             binius_rate,
             plonky3,
-            limber: preliminary_limber,
+            limber: limber_params,
         };
-        if !preflight_backend(
+        preflight_backend(
             Backend::Limber,
             *exponents.first().expect("at least one exponent"),
             &preliminary,
             root_seed,
-        ) {
-            runnable.remove(&Backend::Limber);
-        }
+        );
     }
-    let limber = if pilot_enabled && runnable.contains(&Backend::Limber) && !has_limber_override() {
+    let limber = if pilot_enabled && requested.contains(&Backend::Limber) && !limber_override {
         choose_integer_limber_params(pilot.as_ref().unwrap(), pilot_exponent, pilot_reps)
     } else {
-        preliminary_limber
+        limber_params
     };
     let selected = SelectedConfigs {
         f2z_prefix,
@@ -2921,30 +2915,25 @@ fn main() {
         selected.limber.label(),
     );
 
-    let allowed_at_16 = if exponents.contains(&16) && env_bool("F2Z_SHA_COMPARE_PREFLIGHT", true) {
-        runnable
-            .iter()
-            .copied()
-            .filter(|backend| {
-                *backend == Backend::Plonky3Whir
-                    || preflight_backend(*backend, 16, &selected, root_seed)
-            })
-            .collect::<HashSet<_>>()
-    } else {
-        runnable.clone()
-    };
+    if exponents.contains(&16) && config.preflight {
+        for &backend in &requested {
+            if backend != Backend::Plonky3Whir {
+                preflight_backend(backend, 16, &selected, root_seed);
+            }
+        }
+    }
     let aggregates = run_campaign(
         &mut trace,
         &exponents,
         reps,
         root_seed,
         &selected,
-        &runnable,
-        &allowed_at_16,
+        &requested,
         &output_dir,
+        &plonky3_env,
     );
     print_tables(&aggregates);
-    write_aggregate_artifacts(&aggregates, &requested, &runnable, &output_dir);
+    write_aggregate_artifacts(&aggregates, &output_dir);
     println!("canonical trace: {}", trace.path.display());
 }
 
@@ -3008,7 +2997,7 @@ mod native_whir_tests {
                 "limber"
             ]
         );
-        assert!(super::Backend::parse("spartan-hyrax").is_none());
+        assert!(<super::Backend as clap::ValueEnum>::from_str("spartan-hyrax", false).is_err());
     }
 
     #[test]
@@ -3201,5 +3190,105 @@ mod reporting_tests {
         assert!(row.get("limber_security").unwrap().is_null());
         assert!(row.get("whir_tuning").unwrap().is_null());
         assert_eq!(row["measured_samples"], 1);
+    }
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+    use clap::{CommandFactory, Parser};
+
+    #[test]
+    fn schemas_and_explicit_tuning() {
+        Config::command().debug_assert();
+        Plonky3Env::command().debug_assert();
+        PreflightEnv::command().debug_assert();
+        assert_eq!(common::pcs_cli::enum_list::<Backend>("binius64,binius64-ligerito").unwrap(), [Backend::Binius, Backend::BiniusLigerito]);
+        let args = Plonky3Env { extension_degree: None, folding: None, starting_log_inv_rate: None, max_pow_bits: None };
+        assert!(!args.is_explicit());
+        assert_eq!(args.params().extension_degree, 5);
+        assert!(Plonky3Env { folding: Some(4), ..args }.is_explicit());
+        assert!(PreflightEnv::try_parse_from(["env", "invalid-backend"]).is_err());
+    }
+}
+
+
+#[cfg(test)]
+mod cli_environment_tests {
+    use super::*;
+
+    #[test]
+    fn configuration_probe() {
+        let Ok(mode) = std::env::var("F2Z_SHA_CLI_TEST_MODE") else { return };
+        let value = if mode == "preflight" {
+            let preflight = common::cli::environment::<PreflightEnv>();
+            let p3 = common::cli::environment::<Plonky3Env>();
+            json!({"backend":preflight.backend.map(Backend::slug),"limber_k":env_limber_params().0.k,
+                "p3_explicit":p3.is_explicit(),"p3_folding":p3.params().folding})
+        } else {
+            let config = common::cli::environment::<Config>();
+            json!({"exponents":config.exponents(),"reps":config.reps,"pilot_reps":config.pilot_reps,
+                "self_tests":config.self_tests,"pilot":config.pilot,"preflight":config.preflight})
+        };
+        println!("SHA_CONFIG {value}");
+    }
+
+    fn child(mode: &str, settings: &[(&str, &str)]) -> std::process::Output {
+        let test = concat!(module_path!(), "::configuration_probe");
+        std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", test.split_once("::").unwrap().1, "--nocapture"])
+            .env_clear().env("F2Z_SHA_CLI_TEST_MODE", mode).envs(settings.iter().copied())
+            .output().unwrap()
+    }
+
+    fn config(mode: &str, settings: &[(&str, &str)]) -> Value {
+        let out = child(mode, settings);
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        serde_json::from_str(String::from_utf8_lossy(&out.stdout).lines()
+            .find_map(|s| s.strip_prefix("SHA_CONFIG ")).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn campaign_precedence_deduplication_and_small_shape_opt_in() {
+        let defaults = config("campaign", &[]);
+        assert_eq!(defaults, json!({"exponents":[7,8,10,11,12,13,14,15,16],"reps":21,
+            "pilot_reps":5,"self_tests":true,"pilot":true,"preflight":true}));
+        assert_eq!(config("campaign", &[("F2Z_BENCH_SHAPES", "9 7 9")])["exponents"], json!([7,9]));
+        assert_eq!(config("campaign", &[("F2Z_BENCH_SHAPES", "6,0 16"),
+            ("F2Z_SHA_COMPARE_ALLOW_SMALL", "true")])["exponents"], json!([0,6,16]));
+        assert_eq!(config("campaign", &[("F2Z_SHA_COMPARE_EXPONENTS", "8,7 8"),
+            ("F2Z_BENCH_SHAPES", "ignored-invalid")])["exponents"], json!([7,8]));
+        let small = config("campaign", &[("F2Z_SHA_COMPARE_ALLOW_SMALL", "1"),
+            ("F2Z_SHA_COMPARE_EXPONENTS", "0 6 16"), ("F2Z_SHA_COMPARE_SELF_TESTS", "0"),
+            ("F2Z_SHA_COMPARE_PILOT", "false"), ("F2Z_SHA_COMPARE_PREFLIGHT", "off")]);
+        assert_eq!(small["exponents"], json!([0,6,16]));
+        for flag in ["self_tests", "pilot", "preflight"] { assert_eq!(small[flag], false); }
+        for settings in [vec![("F2Z_SHA_COMPARE_EXPONENTS", "6")],
+            vec![("F2Z_BENCH_SHAPES", "6")],
+            vec![("F2Z_SHA_COMPARE_EXPONENTS", "")],
+            vec![("F2Z_SHA_COMPARE_EXPONENTS", "17"), ("F2Z_SHA_COMPARE_ALLOW_SMALL", "1")],
+            vec![("F2Z_BENCH_SHAPES", "17"), ("F2Z_SHA_COMPARE_ALLOW_SMALL", "1")],
+            vec![("F2Z_SHA_COMPARE_EXPONENTS", "bad"), ("F2Z_BENCH_SHAPES", "7")],
+            vec![("F2Z_SHA_COMPARE_REPS", "0")]] {
+            let out = child("campaign", &settings);
+            let error = String::from_utf8_lossy(&out.stderr);
+            assert_eq!(out.status.code(), Some(2), "{settings:?}: {error}");
+            assert!(error.contains(settings[0].0), "{error}");
+            assert!(!error.contains("panicked"), "{error}");
+        }
+    }
+
+    #[test]
+    fn preflight_selector_and_explicit_tuning_stay_independent_of_campaign_values() {
+        assert_eq!(config("preflight", &[]), json!({"backend":null,"limber_k":9,"p3_explicit":false,"p3_folding":4}));
+        assert_eq!(config("preflight", &[("F2Z_SHA_COMPARE_PREFLIGHT_CHILD", "binius64-ligerito"),
+            ("F2Z_SHA_COMPARE_LIMBER_K", "11"), ("F2Z_SHA_COMPARE_P3_FOLDING", "4"),
+            ("F2Z_SHA_COMPARE_EXPONENTS", "unused"), ("F2Z_SHA_COMPARE_REPS", "0")]),
+            json!({"backend":"binius64-ligerito","limber_k":11,"p3_explicit":true,"p3_folding":4}));
+        for settings in [vec![("F2Z_SHA_COMPARE_PREFLIGHT_CHILD", "unknown")],
+            vec![("F2Z_SHA_COMPARE_LIMBER_ENGINE", "hyrax")],
+            vec![("F2Z_SHA_COMPARE_P3_FOLDING", "bad")]] {
+            assert_eq!(child("preflight", &settings).status.code(), Some(2));
+        }
     }
 }

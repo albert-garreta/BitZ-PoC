@@ -12,73 +12,34 @@ use std::error::Error;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
+#[derive(clap::Parser)]
+#[command(args_override_self = true)]
 struct Args {
+    #[command(flatten)]
+    cargo: common::cli::CargoArgs,
+    #[arg(long, value_parser = ["f2z-split", "f2z-all", "spartan-mc", "binius64"])]
     method: String,
+    #[arg(long)]
     r: usize,
+    #[arg(long)]
     c: usize,
+    #[arg(long, default_value = "100", value_parser = common::cli::ecdsa_target)]
     target: u32,
+    #[arg(long, default_value = "1", value_parser = common::cli::positive)]
     threads: usize,
+    #[arg(long, default_value = "3", value_parser = common::cli::positive)]
     reps: usize,
+    #[arg(long, default_value = "0")]
     seed: u64,
+    #[arg(long)]
     fixture: Option<std::path::PathBuf>,
+    #[arg(long)]
     export_fixture: Option<std::path::PathBuf>,
+    #[arg(long)]
     binius64_worker: Option<std::path::PathBuf>,
 }
 
 impl Args {
-    fn parse() -> Result<Self> {
-        let mut args = std::env::args().skip(1);
-        let (mut method, mut r, mut c) = (None, None, None);
-        let (mut target, mut threads, mut reps, mut seed) = (100, 1, 3, 0);
-        let (mut fixture, mut export_fixture, mut binius64_worker) = (None, None, None);
-        while let Some(flag) = args.next() {
-            if flag == "--bench" {
-                continue;
-            }
-            if flag == "--help" {
-                println!(
-                    "sha256_ecdsa_compare --method f2z-split|f2z-all|spartan-mc|binius64 --r R --c C [--target 100|128] [--threads N] [--reps N] [--seed N] [--fixture FILE] [--export-fixture FILE] [--binius64-worker PATH]"
-                );
-                std::process::exit(0);
-            }
-            let value = args
-                .next()
-                .ok_or_else(|| format!("missing value for {flag}"))?;
-            match flag.as_str() {
-                "--method" => method = Some(value),
-                "--r" => r = Some(value.parse::<usize>()?),
-                "--c" => c = Some(value.parse::<usize>()?),
-                "--target" => target = value.parse()?,
-                "--threads" => threads = value.parse()?,
-                "--reps" => reps = value.parse()?,
-                "--seed" => seed = value.parse()?,
-                "--fixture" => fixture = Some(value.into()),
-                "--export-fixture" => export_fixture = Some(value.into()),
-                "--binius64-worker" => binius64_worker = Some(value.into()),
-                _ => return Err(format!("unknown option {flag}").into()),
-            }
-        }
-        let out = Self {
-            method: method.ok_or("--method is required")?,
-            r: r.ok_or("--r is required")?,
-            c: c.ok_or("--c is required")?,
-            target,
-            threads,
-            reps,
-            seed,
-            fixture,
-            export_fixture,
-            binius64_worker,
-        };
-        let i = out.r.checked_add(out.c).ok_or("exponent overflow")?;
-        if !(3..=16).contains(&i) || ![100, 128].contains(&target) || threads == 0 || reps == 0 {
-            return Err("require 3 <= r+c <= 16, target 100/128 and positive threads/reps".into());
-        }
-        if !["f2z-split", "f2z-all", "spartan-mc", "binius64"].contains(&out.method.as_str()) {
-            return Err("unknown method".into());
-        }
-        Ok(out)
-    }
     fn exponent(&self) -> usize {
         self.r + self.c
     }
@@ -475,8 +436,12 @@ fn spartan(args: &Args, fixture: &Fixture) -> Result<()> {
 }
 
 fn main() -> Result<()> {
+    let args = <Args as clap::Parser>::parse();
+    let exponent = args.r.checked_add(args.c).ok_or("exponent overflow")?;
+    if !(3..=16).contains(&exponent) {
+        return Err("require 3 <= r+c <= 16 and target 100/128".into());
+    }
     f2z::observability::install().expect("install Perfetto subscriber");
-    let args = Args::parse()?;
     if let Some(path) = &args.export_fixture {
         return shared_fixture::SignedFixture::generate(args.exponent() as u8, args.seed)?
             .write(path);
@@ -536,6 +501,7 @@ mod reporting_tests {
     #[test]
     fn result_envelope_keeps_totals_nulls_and_trial_numbering() {
         let mut args = Args {
+            cargo: Default::default(),
             method: "f2z-split".into(),
             r: 1,
             c: 2,
@@ -587,5 +553,54 @@ mod reporting_tests {
         assert_eq!(sample["r"], 1);
         assert_eq!(sample["c"], 2);
         assert!(sample.get("security_target").unwrap().is_null());
+    }
+}
+
+
+#[cfg(test)]
+mod cli_tests {
+    use super::Args;
+    use clap::{CommandFactory, Parser, error::ErrorKind};
+
+    fn parse(extra: &[&str]) -> Result<Args, clap::Error> {
+        Args::try_parse_from(["ecdsa", "--method", "f2z-split", "--r", "1", "--c", "2"]
+            .into_iter().chain(extra.iter().copied()))
+    }
+
+    #[test]
+    fn defaults_script_options_and_last_value_wins() {
+        Args::command().debug_assert();
+        let defaults = parse(&["--bench"]).unwrap();
+        assert_eq!((defaults.exponent(), defaults.target, defaults.threads, defaults.reps, defaults.seed),
+            (3, 100, 1, 3, 0));
+        let args = parse(&["--method", "spartan-mc", "--r", "14", "--c", "2", "--target", "128",
+            "--threads", "8", "--reps", "5", "--seed", "42", "--fixture", "fixture.json",
+            "--export-fixture", "export.json", "--binius64-worker", "worker"]).unwrap();
+        assert_eq!((args.method.as_str(), args.exponent(), args.target, args.threads, args.reps, args.seed),
+            ("spartan-mc", 16, 128, 8, 5, 42));
+        assert_eq!(args.fixture.as_deref(), Some(std::path::Path::new("fixture.json")));
+        assert_eq!(args.export_fixture.as_deref(), Some(std::path::Path::new("export.json")));
+        assert_eq!(args.binius64_worker.as_deref(), Some(std::path::Path::new("worker")));
+        for method in ["f2z-all", "binius64"] {
+            assert_eq!(parse(&["--method", method]).unwrap().method, method);
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_missing_and_invalid_scalar_options() {
+        for value in ["100", "0100", "+100"] {
+            assert_eq!(parse(&["--target", value]).unwrap().target, 100);
+        }
+        for extra in [
+            &["--method", "unknown"][..], &["--target", "114"], &["--target", "129"],
+            &["--threads", "0"], &["--reps", "0"], &["--r", "nope"],
+            &["--seed", "-1"], &["--unknown"], &["--fixture"],
+        ] {
+            assert!(parse(extra).is_err(), "accepted {extra:?}");
+        }
+        for argv in [&["ecdsa"][..], &["ecdsa", "--method", "f2z-split", "--r", "1"]] {
+            assert!(Args::try_parse_from(argv).is_err());
+        }
+        assert_eq!(Args::try_parse_from(["ecdsa", "--help"]).err().unwrap().kind(), ErrorKind::DisplayHelp);
     }
 }

@@ -10,25 +10,27 @@ use p256::ecdsa::{
 use serde_json::json;
 use std::error::Error;
 
+#[derive(clap::Parser)]
+struct Args {
+    #[command(flatten)]
+    cargo: common::cli::CargoArgs,
+    #[arg(value_parser = clap::value_parser!(u32).range(3..=16))]
+    exponent: u32,
+    #[arg(value_parser = ["split", "all"])]
+    mode: String,
+    #[arg(value_parser = common::cli::ecdsa_target)]
+    security: u32,
+    #[arg(value_parser = common::cli::positive)]
+    reps: usize,
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
+    let args = <Args as clap::Parser>::parse();
+    let Args { exponent, security: lambda, reps, .. } = args;
+    let exponent = exponent as usize;
+    let mode = if args.mode == "split" { OuterMode::Split } else { OuterMode::AllRows };
     f2z::observability::install().expect("install Perfetto subscriber");
     let threads = common::init();
-
-    let args: Vec<_> = std::env::args().skip(1).collect();
-    if args.len() != 4 {
-        return Err("usage: sha256_ecdsa EXPONENT split|all SECURITY REPS".into());
-    }
-    let exponent: usize = args[0].parse()?;
-    let mode = match args[1].as_str() {
-        "split" => OuterMode::Split,
-        "all" => OuterMode::AllRows,
-        _ => return Err("mode must be split or all".into()),
-    };
-    let lambda = args[2].parse()?;
-    let reps: usize = args[3].parse()?;
-    if reps == 0 {
-        return Err("reps must be positive".into());
-    }
     let (prepared, setup) = f2z::observability::measure(tracing::info_span!("ecdsa:setup"), || {
         prepare_sha256_ecdsa(exponent, lambda, mode)
             .and_then(|p| p.with_ligerito(common::ligerito_selection(lambda as usize)))
@@ -95,7 +97,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "schema": "f2z/sha256-ecdsa/v2",
                 "ligerito": common::ligerito_report(prepared.ligerito_configuration(), prepared.ligerito_configuration().round0(lambda)?), "trial": if trial==0 {"warmup"} else {"sample"}, "sample": trial,
                 "log_compressions": exponent, "compressions": prepared.compressions(), "message_bytes": message.len(),
-                "mode": args[1], "security_target": lambda, "threads": threads,
+                "mode": args.mode, "security_target": lambda, "threads": threads,
                 "security_model": "round-by-round-economic", "economic_bits": security.compute_economic_security_bits(), "statistical_bits_lower_bound": security.compute_statistical_security_bits(),
                 "setup_ms": setup_ms, "witness_ms": witness_ms, "commit_ms": commit_ms,
                 "prove_ms": commit_ms+protocol_ms, "protocol_ms": protocol_ms, "verify_ms": verify_ms,

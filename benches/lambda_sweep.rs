@@ -207,21 +207,18 @@ fn sweep_profile<P: IopSecurityProfile>(
 }
 
 fn main() {
-    f2z::observability::install().expect("install Perfetto subscriber");
-    let threads = common::init();
+    common::cli::EnvironmentCli::parse();
     let reps = common::reps(None, 3);
     let seed = common::seed(None, 0x4632_5a5f_5357_4550);
-    let exponent = common::shapes(None).map_or(12, |shapes| {
+    let exponent = common::shape_values(None, clap::builder::RangedU64ValueParser::<usize>::new()
+        .range(SHA256_MIN_LOG_COMPRESSIONS as u64..=SHA256_MAX_LOG_COMPRESSIONS as u64)).map_or(12, |shapes| {
         assert_eq!(shapes.len(), 1, "the λ sweep takes one exponent per run");
-        let exponent: usize = shapes[0].parse().expect("integer exponent");
-        assert!(
-            (SHA256_MIN_LOG_COMPRESSIONS..=SHA256_MAX_LOG_COMPRESSIONS).contains(&exponent),
-            "SHA-256 runtime-prime protocol supports exponents 4 through 16"
-        );
-        exponent
+        shapes[0]
     });
-    let inputs = make_inputs(1usize << exponent, seed);
     let selected = common::security_profile(PrimePolicy::SingleDerived);
+    f2z::observability::install().expect("install Perfetto subscriber");
+    let threads = common::init();
+    let inputs = make_inputs(1usize << exponent, seed);
 
     match selected {
         None => {

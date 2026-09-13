@@ -6,6 +6,7 @@
 //! exact 128-bit packed row per gate before ring switching to BaseFold.
 
 mod common;
+use common::pcs_cli::{Backend, binius_log_inv_rate, selected_backends, Whir};
 use common::mul_witness::u32_digest as witness_digest;
 use common::output::{BenchmarkOutput, FileMode, JsonlWriter};
 mod integer_pcs_compare {
@@ -55,33 +56,8 @@ const CLAIM_SCOPE: &str = "pcs-compare:claim_setup";
 const OPENING_SCOPE: &str = "pcs-compare:opening";
 const VERIFY_SCOPE: &str = "pcs-compare:verification";
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Backend {
-    F2z,
-    Whir,
-    Binius,
-    /// The F2Z opener on the Binius64 packed rows and the identical bit-MLE
-    /// claim: rate 1/2, Johnson-regime Ligerito, grinding, Round 0.
-    Ligerito,
-}
 
 impl Backend {
-    const fn id(self) -> &'static str {
-        match self {
-            Self::F2z => "f2z",
-            Self::Whir => "plonky3-whir",
-            Self::Binius => "binius64-basefold",
-            Self::Ligerito => "f2z-ligerito-binary",
-        }
-    }
-    const fn display(self) -> &'static str {
-        match self {
-            Self::F2z => "F2Z",
-            Self::Whir => "Plonky3 WHIR",
-            Self::Binius => "Binius64 BaseFold",
-            Self::Ligerito => "F2Z Ligerito (binary claim)",
-        }
-    }
     const fn seed_tag(self) -> u64 {
         match self {
             Self::F2z => 0x4632_5a00_5533_0001,
@@ -477,35 +453,8 @@ fn math_for(label: &str, backend: Backend) -> Vec<&'static str> {
 }
 
 fn exponents() -> Vec<usize> {
-    common::shapes(None).map_or_else(
-        || (MIN_EXPONENT..=MAX_EXPONENT).collect(),
-        |shapes| {
-            shapes
-                .iter()
-                .map(|value| value.parse::<usize>().expect("integer exponent"))
-                .inspect(|value| assert!((MIN_EXPONENT..=MAX_EXPONENT).contains(value)))
-                .collect()
-        },
-    )
-}
-
-fn selected_backends() -> Vec<Backend> {
-    let raw = std::env::var("F2Z_PCS_COMPARE_BACKENDS")
-        .unwrap_or_else(|_| "f2z plonky3-whir binius64-basefold f2z-ligerito-binary".into());
-    let mut selected = Vec::new();
-    for word in raw.split([',', ' ']).filter(|word| !word.is_empty()) {
-        let backend = match word {
-            "f2z" => Backend::F2z,
-            "whir" | "plonky3-whir" => Backend::Whir,
-            "binius" | "binius64" | "binius64-basefold" => Backend::Binius,
-            "ligerito" | "f2z-ligerito" | "f2z-ligerito-binary" => Backend::Ligerito,
-            _ => panic!("unknown backend {word}"),
-        };
-        if !selected.contains(&backend) {
-            selected.push(backend);
-        }
-    }
-    selected
+    common::shape_values(None, clap::builder::RangedU64ValueParser::<usize>::new().range(MIN_EXPONENT as u64..=MAX_EXPONENT as u64))
+        .unwrap_or_else(|| (MIN_EXPONENT..=MAX_EXPONENT).collect())
 }
 
 fn ordered(selected: &[Backend], exponent: usize) -> Vec<Backend> {
@@ -711,10 +660,11 @@ fn run_whir(
     digest: &str,
     witness_ms: f64,
     reps: usize,
+    tuning: (usize, usize, usize),
 ) -> Result<(), Box<dyn Error>> {
     let setup_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
     let setup = tracing::info_span!("u32_pcs_compare:setup").entered();
-    let (folding, log_inv_rate, max_pow_bits) = whir_tuning(exponent)?;
+    let (folding, log_inv_rate, max_pow_bits) = tuning;
     let backend = match WhirBackend::setup_with_params(
         witness.layout().capacity(),
         folding,
@@ -785,40 +735,6 @@ fn run_whir(
     Ok(())
 }
 
-fn tuned_whir_folding(exponent: usize) -> usize {
-    (exponent.saturating_mul(3) / 4)
-        .saturating_sub(5)
-        .clamp(2, 12)
-}
-
-fn whir_tuning(exponent: usize) -> Result<(usize, usize, usize), Box<dyn Error>> {
-    let folding = match std::env::var("F2Z_WHIR_FOLDING") {
-        Ok(value) => value.parse::<usize>()?,
-        Err(std::env::VarError::NotPresent) => tuned_whir_folding(exponent),
-        Err(error) => return Err(error.into()),
-    };
-    let log_inv_rate = std::env::var("F2Z_WHIR_LOG_INV_RATE")
-        .unwrap_or_else(|_| whir::STARTING_LOG_INV_RATE.to_string())
-        .parse::<usize>()?;
-    let max_pow_bits = std::env::var("F2Z_WHIR_MAX_POW_BITS")
-        .unwrap_or_else(|_| whir::MAX_POW_BITS.to_string())
-        .parse::<usize>()?;
-    if !(2..=12).contains(&folding) {
-        return Err(format!("F2Z_WHIR_FOLDING must be in 2..=12, got {folding}").into());
-    }
-    if !(1..=8).contains(&log_inv_rate) {
-        return Err(format!("F2Z_WHIR_LOG_INV_RATE must be in 1..=8, got {log_inv_rate}").into());
-    }
-    if max_pow_bits >= whir::SECURITY_BITS {
-        return Err(format!(
-            "F2Z_WHIR_MAX_POW_BITS must be below {}, got {max_pow_bits}",
-            whir::SECURITY_BITS
-        )
-        .into());
-    }
-    Ok((folding, log_inv_rate, max_pow_bits))
-}
-
 fn pack_binius_rows(witness: &U32MulWitness) -> Vec<u128> {
     witness
         .x_values()
@@ -840,10 +756,11 @@ fn run_binius(
     digest: &str,
     witness_ms: f64,
     reps: usize,
+    log_inv_rate: usize,
 ) -> Result<(), Box<dyn Error>> {
     let setup_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
     let setup = tracing::info_span!("u32_pcs_compare:setup").entered();
-    let log_inv_rate = binius_log_inv_rate()?;
+
     let backend = BiniusBackend::setup(exponent, log_inv_rate);
     let setup_ms = { drop(setup); f2z::observability::duration(&setup_recording.intervals().expect("complete operation capture"), "u32_pcs_compare:setup").expect("query completed operation") }.as_secs_f64() * 1e3;
     eprintln!("    backend_setup_ms={setup_ms:.3}");
@@ -922,16 +839,6 @@ fn run_ligerito(
     Ok(())
 }
 
-fn binius_log_inv_rate() -> Result<usize, Box<dyn Error>> {
-    let value = std::env::var("F2Z_BINIUS_LOG_INV_RATE")
-        .unwrap_or_else(|_| binius::DEFAULT_LOG_INV_RATE.to_string())
-        .parse::<usize>()?;
-    if !(1..=4).contains(&value) {
-        return Err(format!("F2Z_BINIUS_LOG_INV_RATE must be in 1..=4, got {value}").into());
-    }
-    Ok(value)
-}
-
 fn campaign_id() -> String {
     std::env::var("F2Z_PCS_COMPARE_CAMPAIGN_ID").unwrap_or_else(|_| {
         let nanos = SystemTime::now()
@@ -959,12 +866,15 @@ fn span_id(order: u64) -> String {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    f2z::observability::install().expect("install Perfetto subscriber");
-    let threads = common::init();
+    common::cli::EnvironmentCli::parse();
     let reps = common::reps(None, DEFAULT_REPS);
     let root_seed = common::seed(None, DEFAULT_SEED);
     let selected = selected_backends();
     let exponents = exponents();
+    let whir = selected.contains(&Backend::Whir).then(common::cli::environment::<Whir>);
+    let binius_rate = selected.contains(&Backend::Binius).then(binius_log_inv_rate);
+    f2z::observability::install().expect("install Perfetto subscriber");
+    let threads = common::init();
     let mut writer = TraceWriter::new(threads, campaign_id())?;
     eprintln!(
         "u32 PCS comparison: {:?}, {} samples + 1 warmup, {} threads, WHIR degree {}",
@@ -1011,6 +921,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     &digest,
                     witness_ms,
                     reps,
+                    whir.as_ref().unwrap().for_exponent(exponent),
                 )?,
                 Backend::Binius => run_binius(
                     &mut writer,
@@ -1020,6 +931,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     &digest,
                     witness_ms,
                     reps,
+                    binius_rate.unwrap(),
                 )?,
                 Backend::Ligerito => run_ligerito(
                     &mut writer,

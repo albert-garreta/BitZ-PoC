@@ -260,19 +260,13 @@ fn benchmark_fq(samples: usize) -> bool {
     gate_pass
 }
 
-fn sample_count() -> usize {
-    std::env::var("F2Z_EQ_TABLE_SAMPLES")
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(DEFAULT_SAMPLES)
-        .max(DEFAULT_SAMPLES)
-}
-
 fn main() {
+    common::cli::EnvironmentCli::parse();
+    let samples = common::cli::env::<usize>("F2Z_EQ_TABLE_SAMPLES")
+        .unwrap_or(DEFAULT_SAMPLES).max(DEFAULT_SAMPLES);
     f2z::observability::install().expect("install Perfetto subscriber");
     common::enforce_known_env();
     let _ = flock_core::init_perf_thread_pool();
-    let samples = sample_count();
     println!(
         "PR1 equality-table benchmark; widths={WIDTHS:?}; warmups=1; \
          alternating_samples={samples}"

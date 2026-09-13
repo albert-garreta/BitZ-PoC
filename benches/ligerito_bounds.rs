@@ -109,30 +109,25 @@ fn inputs() -> Vec<(u128, u128)> {
         })
         .collect()
 }
+#[derive(clap::Parser)]
+struct Args {
+    #[command(flatten)]
+    cargo: common::cli::CargoArgs,
+    #[arg(value_parser = ["u32-mod32", "u32-full", "u64", "u128", "baby-bear", "sha-compression", "sha-chain", "ecdsa-split", "ecdsa-all", "hybrid-15-7", "hybrid-15-2", "pcs-22"])]
+    case: String,
+    profile: String,
+    #[arg(long)]
+    memory: bool,
+}
+
 fn main() -> Result<()> {
-    ::f2z::observability::install().expect("install Perfetto subscriber");
-    let args: Vec<_> = std::env::args()
-        .skip(1)
-        .filter(|s| s != "--bench")
-        .collect();
-    if !(2..=3).contains(&args.len()) {
-        bail!("usage: ligerito_bounds CASE custom:1:4|udrg:1:4 [--memory]");
-    }
-    if args.len() == 3 && args[2] != "--memory" {
-        bail!("unknown argument");
-    }
+    let args = <Args as clap::Parser>::parse();
     let e = Experiment {
-        case: args[0].clone(),
-        selection: LigeritoSelection::parse(
-            &args[1],
-            if args[0].starts_with("hybrid") {
-                106
-            } else {
-                100
-            },
-        )?,
-        memory: args.len() == 3,
+        selection: LigeritoSelection::parse(&args.profile, if args.case.starts_with("hybrid") { 106 } else { 100 })?,
+        case: args.case,
+        memory: args.memory,
     };
+    ::f2z::observability::install().expect("install Perfetto subscriber");
     if rayon::current_num_threads() != 8 {
         bail!("controlled comparison requires RAYON_NUM_THREADS=8");
     }
@@ -545,5 +540,30 @@ mod reporting_tests {
         assert_eq!(value["commitment_bytes"], 2);
         assert_eq!(value["opening_codec_bytes"], 3);
         assert_eq!(value["analytical_piop_bytes"], 4);
+    }
+}
+
+
+#[cfg(test)]
+mod cli_tests {
+    use super::Args;
+    use clap::{CommandFactory, Parser, error::ErrorKind};
+
+    #[test]
+    fn positional_cases_memory_and_cargo_flag() {
+        Args::command().debug_assert();
+        let latency = Args::try_parse_from(["bounds", "u32-mod32", "custom:1:4", "--bench"]).unwrap();
+        assert_eq!((latency.case.as_str(), latency.profile.as_str(), latency.memory),
+            ("u32-mod32", "custom:1:4", false));
+        let memory = Args::try_parse_from(["bounds", "hybrid-15-7", "udrg:1:4", "--memory"]).unwrap();
+        assert_eq!((memory.case.as_str(), memory.profile.as_str(), memory.memory),
+            ("hybrid-15-7", "udrg:1:4", true));
+        for argv in [
+            &["bounds"][..], &["bounds", "u64"], &["bounds", "unknown", "custom:1:4"],
+            &["bounds", "u64", "custom:1:4", "--unknown"],
+        ] {
+            assert!(Args::try_parse_from(argv).is_err(), "accepted {argv:?}");
+        }
+        assert_eq!(Args::try_parse_from(["bounds", "--help"]).err().unwrap().kind(), ErrorKind::DisplayHelp);
     }
 }

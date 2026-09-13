@@ -483,10 +483,10 @@ fn run_b127_pfold(reps: usize) {
 }
 
 fn main() {
-    f2z::observability::install().expect("install Perfetto subscriber");
+    common::cli::EnvironmentCli::parse();
+    let reps = common::reps(None, 5);
     common::enforce_known_env();
-    let reps: usize =
-        std::env::var("F2Z_BENCH_REPS").ok().and_then(|v| v.parse().ok()).unwrap_or(5);
+    f2z::observability::install().expect("install Perfetto subscriber");
 
     println!("F2Z field bench — GF(2^128) GHASH vs GF(2^127) b127, median of {reps} reps.");
     println!("(alternating reps per pattern: both fields share each thermal window)");

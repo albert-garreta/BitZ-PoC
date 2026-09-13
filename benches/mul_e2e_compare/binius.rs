@@ -227,11 +227,7 @@ mod tests {
 /// larger encoding.
 fn log_inv_rate() -> usize {
     std::env::var("F2Z_BINIUS_LOG_INV_RATE")
-        .ok()
-        .map(|v| {
-            v.parse()
-                .expect("F2Z_BINIUS_LOG_INV_RATE must be an integer")
-        })
+        .map(|value| value.parse().expect("F2Z_BINIUS_LOG_INV_RATE must be a usize"))
         .unwrap_or(1)
 }
 

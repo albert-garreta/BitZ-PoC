@@ -127,6 +127,13 @@ unmeasured memory cannot be mistaken for zero usage.
 
 ## Environment variables
 
+Benchmark entrypoints use clap for argument and configuration parsing. Run
+`cargo bench --bench <name> --features <required-features> -- --help` to inspect
+an executable's existing CLI. Settings documented only as environment variables
+remain environment-only; there are no corresponding implicit command-line flags.
+Malformed values fail before benchmark work instead of silently using defaults.
+Existing positional arguments, option names, defaults, and alias rules are retained.
+
 Canonical names (aliases are honored with a deprecation warning; setting both
 an alias and the canonical name to different values is an error):
 

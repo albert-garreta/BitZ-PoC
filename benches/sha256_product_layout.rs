@@ -16,23 +16,13 @@ mod sha256_compressions;
 use sha256_compressions::common;
 
 fn main() {
-    let default_sweep = std::env::var_os("F2Z_SHA_PRODUCT_TS").is_none();
-    if default_sweep {
-        // SAFETY: this is the first action, before the harness starts threads.
-        unsafe {
-            std::env::set_var(
-                "F2Z_SHA_PRODUCT_TS",
-                "7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27",
-            )
-        };
-    }
-    if std::env::var_os("F2Z_BENCH_REPS").is_none() {
-        // SAFETY: this is the first action, before the harness starts threads.
-        unsafe { std::env::set_var("F2Z_BENCH_REPS", "21") };
-    }
-    sha256_compressions::main();
+    common::cli::EnvironmentCli::parse();
+    let env = sha256_compressions::Env::from_environment(true);
+    let default_sweep = env.default_product_sweep;
+    let result_path = env.result_path.clone();
+    sha256_compressions::run(env);
 
-    if default_sweep && let Some(path) = std::env::var_os("F2Z_SHA_RESULT_PATH") {
+    if default_sweep && let Some(path) = result_path {
         use std::io::Write;
 
         let mut output = common::output::BenchmarkOutput::new("")
