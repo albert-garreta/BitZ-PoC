@@ -5,6 +5,23 @@ and z = x*y mod 2^32. There are no links between successive rows. Select
 `u32-mod32` (default); `u32` is an alias. BabyBear has been removed from this
 comparison. The optional `plonky3-whir` backend uses the same mod32 AIR as FRI.
 
+## The suite (2026-09-13)
+
+The paper's integer-multiplication campaigns follow one fixed suite: F2Z
+(\ftwoz-SNARK) at rates 1/2 and 1/8 (`F2Z_LIG_PROFILE=custom:1:4` /
+`custom:3:4`), Binius64 at rates 1/2 and 1/8, Binius64 with the F2Z opener at
+rates 1/2 and 1/8 under the ROUND-BY-ROUND accounting
+(`F2Z_BINIUS_LIGERITO_ACCOUNTING=rbr`; the exporter rejects union-bound
+opener runs), Plonky3-FRI at rate 1/2 (query count solved per size for a
+proven round-by-round 100-bit report), and Limber at the pinned 100-bit
+Brakedown column-open target (`F2Z_LIMBER_BDLAMBDA`, default 100). Odd
+exponents only (15, 17, 19, 21, 23, within each backend's limits), each cell
+at BOTH 1 and 10 threads (two campaigns per configuration, joined by the
+exporter). Cells that page are not run, except the Binius64-family rows,
+which run while paging unless the slowdown is unreasonable. Table naming: no
+`\cite` after scheme names; the F2Z rows are `\ftwoz-SNARK`, never
+"\ftwoz\ (this work)".
+
 ## Run
 
 Use Rust 1.98.1. Every backend, Limber included, runs inside the comparison
@@ -15,35 +32,44 @@ revision in `Cargo.toml`; no sibling checkout and no `LIMBER_REPO` are needed.
 `binius64-ligerito` is Binius64's own circuit and PIOP (the same wires and
 constraint reductions as `binius64`, including the IntMul reduction's logup*
 pushforward oracle) with every oracle committed and opened by F2Z's opener
-instead of ring switching + BaseFold: rate 1/2, Round 0 (the out-of-domain
-sample) right after each commitment, ring switching, and a Johnson-regime
-Ligerito opening with fold and query grinding. Its security column is a
-whole-protocol union bound gated at 100 bits (the same yardstick as the `f2z`
-row), with the opener's round-by-round target solved to the smallest value
-that clears the gate; the `binius64` row's 100 bits is Binius64's query-phase
-target only. The rate is fixed at 1/2 (`F2Z_BINIUS_LOG_INV_RATE` does not
-apply). See `src/binius_ligerito/` and `src/binary_pcs.rs`.
+instead of ring switching + BaseFold: Round 0 (the out-of-domain sample)
+right after each commitment, ring switching, and a Johnson-regime Ligerito
+opening with fold and query grinding, at the campaign's Binius rate
+(`F2Z_BINIUS_LOG_INV_RATE`, default 1 = rate 1/2; 3 = rate 1/8 gives the
+paper's second opener row, table key `binius64-ligerito@<rate>`). Its 100-bit
+gate is applied under `F2Z_BINIUS_LIGERITO_ACCOUNTING`: `union` (default) is a
+whole-protocol union bound over every error term, `rbr` is the round-by-round
+minimum (every term on its own at 100 bits, the figure the `f2z` row reports;
+table family `binius64-ligerito-rbr`). Either way the opener's per-round target
+is solved to the smallest value that clears the gate (105 under the union
+bound, 100 round-by-round), and both figures are recorded in every row
+(`union_bound_bits`, `round_by_round_bits`); the `binius64` row's 100 bits is
+Binius64's query-phase target only. See `src/binius_ligerito/` and
+`src/binary_pcs.rs`.
 
 ```sh
-# Four-backend smoke: L=15, one warmup, five measured proofs, isolated RSS.
+# Five-backend smoke: L=15, one warmup, five measured proofs, isolated RSS.
 bash scripts/run_native_mul_compare.sh
 
-# Five-sample sweep over L=15..20.
-F2Z_BENCH_SHAPES="15 16 17 18 19 20" F2Z_BENCH_REPS=5 \
+# One suite campaign: odd sizes, 10 threads, F2Z at rate 1/2. Repeat with
+# RAYON_NUM_THREADS=1 for the 1-thread group, and with
+# F2Z_LIG_PROFILE=custom:3:4 for the rate-1/8 F2Z rows.
+F2Z_MUL_COMPARE_BACKENDS=f2z F2Z_BENCH_SHAPES="15 17 19 21 23" \
+F2Z_BENCH_REPS=5 RAYON_NUM_THREADS=10 \
 bash scripts/run_native_mul_compare.sh
 
-# Only the two Binius64 rows (Binius64's BaseFold opener and the F2Z opener).
-F2Z_BENCH_SHAPES="15 18 20" F2Z_BENCH_REPS=5 \
-F2Z_MUL_COMPARE_BACKENDS="binius64 binius64-ligerito" \
+# The Binius64 rows at one rate (1: rate 1/2, 3: rate 1/8), and the F2Z-opener
+# rows under the suite's round-by-round accounting.
+F2Z_MUL_COMPARE_BACKENDS=binius64 F2Z_BINIUS_LOG_INV_RATE=1 \
+F2Z_BENCH_SHAPES="15 17 19 21 23" F2Z_BENCH_REPS=5 RAYON_NUM_THREADS=10 \
+bash scripts/run_native_mul_compare.sh
+F2Z_MUL_COMPARE_BACKENDS=binius64-ligerito F2Z_BINIUS_LOG_INV_RATE=1 \
+F2Z_BINIUS_LIGERITO_ACCOUNTING=rbr \
+F2Z_BENCH_SHAPES="15 17 19 21 23" F2Z_BENCH_REPS=5 RAYON_NUM_THREADS=10 \
 bash scripts/run_native_mul_compare.sh
 
 # Inspect commands without starting Cargo.
 bash scripts/run_native_mul_compare.sh --dry-run
-
-# The paper's second Binius64 row: the same sweep at rate 1/8.
-F2Z_MUL_COMPARE_BACKENDS=binius64 F2Z_BINIUS_LOG_INV_RATE=3 \
-F2Z_BENCH_SHAPES="15 16 17 18 19 20" F2Z_BENCH_REPS=5 \
-bash scripts/run_native_mul_compare.sh
 ```
 
 `F2Z_MUL_COMPARE_BACKENDS` accepts `f2z binius64 binius64-ligerito plonky3-fri plonky3-whir limber`.
@@ -64,19 +90,29 @@ so the IntEval limb range check the Mod-PCS already runs is the operand range
 check and the program needs no bit columns. The commitment is Brakedown
 (`T256DynPrimeBdEngine`), which the crate documents as its comparison
 instantiation against code-commitment systems. The adapter is pinned to the
-authors' own accounting: at `2^15` it reproduces their recorded proof size of
+authors' own accounting: with `F2Z_LIMBER_BDLAMBDA=114` (the crate's native
+Brakedown default) at `2^15` it reproduces their recorded proof size of
 `3417232` bytes exactly, with the same derived IntEval and Brakedown
-parameters. Unlike `int_mult` the gates are independent, matching the corpus
-and every other backend here.
+parameters. The suite instead pins the Brakedown column-open target at 100
+bits (`F2Z_LIMBER_BDLAMBDA=100`), the uniform comparison target; the crate's
+IntEval (128), challenge (117) and 2^-114 fingerprint terms are constants
+and stay above 100. Unlike `int_mult` the gates are independent, matching
+the corpus and every other backend here.
 
 Both jobs enforce `RUSTFLAGS=-C target-cpu=native`. `RAYON_NUM_THREADS`
-selects a positive thread count, defaulting to eight, and is recorded in
-provenance. Use the same count across backends in a campaign.
-The runner clears `CARGO_ENCODED_RUSTFLAGS`, `DUMP`, `CHAIN_BITS`, `BDLAMBDA`,
+selects a positive thread count, defaulting to ten, and is recorded in
+provenance. Use the same count across backends in a campaign; the suite runs
+every campaign twice, at 1 and at 10 threads.
+The runner clears `CARGO_ENCODED_RUSTFLAGS`, `DUMP`, `CHAIN_BITS`,
 `BDSPEC`, `BDROWLEN`, `BDDIRECT`, `BDSPLIT`, and ambient memory-only mode.
+Limber's Brakedown column-open target is pinned through the recorded
+`F2Z_LIMBER_BDLAMBDA` knob (default 100, the suite's uniform target; 114
+reproduces the authors' native policy); an ambient `BDLAMBDA` is rejected so
+the campaign always records the value that ran.
 `F2Z_BINIUS_LOG_INV_RATE` is not inherited either: an explicit value selects the
-Binius rate for the whole campaign, is recorded in `campaign.json`, and must
-match the rate the compiled circuit reports. For mod32 it selects the default
+Binius rate for the whole campaign (Binius64's BaseFold and the F2Z opener of
+`binius64-ligerito` alike), is recorded in `campaign.json`, and must match the
+rate the compiled circuit or opener reports. For mod32 it selects the default
 rate 1/2 (`1`) or the paper's second row, rate 1/8 (`3`). Effective configurations,
 Rust toolchain, build profile, revisions, dirty state, source hashes, lockfile
 hashes and machine information are saved. Repository state must remain stable
@@ -88,10 +124,11 @@ reproducible revision of those edits.
 
 | Backend | Arithmetic relation and cost per operation | Native security configuration |
 |---|---|---|
-| F2Z | One integer R1CS constraint x*y=P, four 32-bit committed limbs representing x,y,z,w with P=z+2^32*w | Explicit Lambda100, Johnson `custom:1:4` (rate 1/2), required Round-0 OOD |
-| Binius64 | Bound x,y to 32 bits, native IMUL, mask and equate low 32-bit output; one IMUL plus four word-level ANDs | Explicit 100-bit FRI query target, rate 1/2 or the paper's second rate 1/8 |
-| Limber-Brakedown | One independent wrapping integer-mod row `x*y = z_lo (mod 2^w)`, 3N live witness values padded to 4N, N private quotients (the high halves) | T256DynPrimeBdEngine; `derive_no_limb_split(w,9,L+2)` for `w <= 64`, `derive(128,32,9,L+2)` for `u128`; native approximately 114-bit policy |
-| Plonky3-FRI | Two limb equations; 137 columns and 139 constraints per row | Goldilocks, degree-five extension, Poseidon2/MMCS, rate 1/8, 100 queries, binary folding, final polynomial length one, zero PoW |
+| F2Z | One integer R1CS constraint x*y=P, four 32-bit committed limbs representing x,y,z,w with P=z+2^32*w | Explicit Lambda100, Johnson `custom:1:4` (rate 1/2) or `custom:3:4` (rate 1/8), required Round-0 OOD |
+| Binius64 | Bound x,y to 32 bits, native IMUL, mask and equate low 32-bit output; one IMUL plus four word-level ANDs | Explicit 100-bit FRI query target, rates 1/2 and 1/8 |
+| Binius64 + F2Z opener | The same circuit and PIOP; every oracle committed and opened by ring switching + Johnson Ligerito with Round 0 | Rates 1/2 and 1/8; round-by-round accounting (`rbr`), every error term gated at 100 bits on its own |
+| Limber-Brakedown | One independent wrapping integer-mod row `x*y = z_lo (mod 2^w)`, 3N live witness values padded to 4N, N private quotients (the high halves) | T256DynPrimeBdEngine; `derive_no_limb_split(w,9,L+2)` for `w <= 64`, `derive(128,32,9,L+2)` for `u128`; Brakedown column-open target pinned at 100 bits (`F2Z_LIMBER_BDLAMBDA`); IntEval 128 / challenge 117 / 2^-114 fingerprint unchanged |
+| Plonky3-FRI | Two limb equations; 137 columns and 139 constraints per row | Goldilocks, degree-five extension, Poseidon2/MMCS, rate 1/2, the smallest query count whose proven round-by-round report clears 100 bits per size, binary folding, final polynomial length one, zero PoW |
 | Plonky3-WHIR (optional) | The same 137-column, 139-constraint mod32 AIR | Multilinear zerocheck/sumcheck PIOP; Goldilocks; per-run WHIR tuning with evaluated Johnson accounting of at least 100 bits |
 
 Plonky3 splits each operand and output into base B=2^16 limbs and enforces
@@ -105,16 +142,20 @@ All operand/result limbs and c0 are bounded to 16 bits; c1 is bounded to
 17 bits. Thus integer equations cannot acquire Goldilocks wraparound
 aliases. There are 129 Boolean checks, eight recompositions and two
 arithmetic equations. FRI's pinned library AIR-derived security
-report must reach 100 bits before proving and on the returned proof. WHIR
+report must reach 100 bits before proving and on the returned proof; at
+rate 1/2 the query count is solved per size as the smallest clearing that
+report (the solved count is recorded in the configuration). WHIR
 uses its separate AIR/WHIR security model and records the selected schedule.
 Both generate identical trace rows and verify their complete proofs.
 
 F2Z reports geometry, all Ligerito levels, query and folding grinding,
 Round-0 grinding and security-accounting terms. Its reported accounting is
 round-by-round economic security. Binius reports its query-phase target and
-actual compiled counts. Limber preserves native parameter validation,
-IntEval target 128, challenge target 117, and Brakedown target 114. These are
-documented native policies, not a derived uniform complete-protocol bound.
+actual compiled counts. Limber preserves native parameter validation with
+IntEval target 128 and challenge target 117; its Brakedown column-open
+target comes from the pinned `F2Z_LIMBER_BDLAMBDA` (100 in the suite, 114
+native). These are documented per-scheme policies, not a derived uniform
+complete-protocol bound.
 
 ## Shared input and witness audit
 
@@ -185,6 +226,14 @@ python3 scripts/native_mul_table.py PerfRuns/<run-directory> \
   --workload u32-mod32 --out paper/native-mul-table.tex
 ```
 
+The table follows the SHA+ECDSA format: one row group per size, sub-grouped
+by thread count (1 then 10), one row per scheme, bold best per (size,
+threads) group and column. Feed the 1-thread and 10-thread campaign
+directories together; the exporter joins them by (scheme, size, threads),
+requires identical median proof bytes between the thread counts of one
+(scheme, size), and rejects union-bound `binius64-ligerito` runs (the suite
+renders the round-by-round rows only). `--exponents 15,17,19,21,23` selects
+the suite's odd sizes.
 Multiple directories extend the size sweep. Overlapping rows or
 `--proof-sizes-from` imports must match workload version, protocol/config,
 source/build fingerprint, corpus, machine and measurement policy. Historical

@@ -21,7 +21,10 @@ under `/usr/bin/time -l`, CPU-idle gate ≥ 90 %, one untimed warm-up, medians
 of 5 measured prove+verify passes). Raw records with the full program output
 of every cell: `PerfRuns/2026-09-11T18-21-49Z-fields-witch-compare/results.jsonl`
 (plus `-udr` and `-10thr` sibling directories for §3.4). LaTeX table:
-`paper/fields-witch-table.tex` (not wired into `main.tex`).
+`paper/fields-witch-table.tex`, wired into `main.tex` as `tab:fields-witch` in the new
+`s:exp_fields_witch` subsubsection (2026-09-12, uncommitted); regenerate it with
+`--render-latex <results.jsonl> --latex paper/fields-witch-table.tex`. README: the
+"Comparison with fields-witch" recipe under "Reproducing the paper's benchmarks".
 
 ## 1. What each scheme proves
 
@@ -268,7 +271,17 @@ off F2Z's.
   README calls its verifier "audited" (message flow reviewed), its prover
   optimized separately.
 
-## 6. Proposed paper text (not applied; paper edits are the user's)
+## 6. Paper text
+
+Applied 2026-09-12 (uncommitted, on request): the table is `\input` in a new
+`\subsubsection{Comparison with the field switch of \cite{lev}}` (label
+`s:exp_fields_witch`) at the end of the raw-performance subsection, with a
+short anchoring paragraph; the related-work sentence "The note does not
+provide an implementation nor performance reports" and the remark's "we do
+not validate this hypothesis" clause were replaced by cross-references to
+the table. The two `\albertimportant` notes in the remark were left in place.
+The longer replacement paragraphs below were the original proposal and are
+kept for reference.
 
 Related work (§2, the sentence "The note does not provide an implementation
 nor performance reports. We discuss this further in …"):
