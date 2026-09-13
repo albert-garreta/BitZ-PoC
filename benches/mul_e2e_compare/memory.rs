@@ -1,7 +1,7 @@
 //! Isolated whole-case peak RSS, with no allocator or polling overhead in
 //! the latency trials. Each child builds exactly one backend and verifies one proof.
 
-use super::{Context, Corpus, TraceCapture, Workload};
+use super::{Context, Corpus, Workload};
 use serde::{Deserialize, Serialize};
 use std::{
     process::{Command, Stdio},
@@ -70,10 +70,7 @@ pub(super) fn measure(
     Ok(sample)
 }
 
-pub(super) fn run_child(
-    capture: &TraceCapture,
-    args: &[String],
-) -> Result<(), Box<dyn std::error::Error>> {
+pub(super) fn run_child(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let [backend, workload, exponent, seed, params] = args else {
         return Err("memory child requires backend, workload, exponent, and seed".into());
     };
@@ -88,9 +85,13 @@ pub(super) fn run_child(
     let params = serde_json::from_str(params)?;
     let context = Context::setup_selected(backend, Arc::clone(&corpus), params);
     let proof_bytes = match &context {
+        Context::Binius(context) => context.prove_and_verify(),
         Context::BiniusLigerito(context) => context.prove_and_verify(),
-        _ => {
-            let timing = context.run(capture);
+        Context::Plonky3Fri(context) => context.prove_and_verify(),
+        Context::Plonky3Whir(context) => context.prove_and_verify(),
+        Context::Limber(context) => context.prove_and_verify(),
+        Context::F2z(context) => {
+            let timing = context.run();
             timing.validate();
             timing.proof_bytes
         }

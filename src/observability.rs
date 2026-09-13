@@ -24,6 +24,14 @@ use std::{
 
 const FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Install once at an executable boundary. Libraries should compose `layer()`
+/// with their caller's subscriber instead of replacing it.
+pub fn install() -> io::Result<()> {
+    use tracing_subscriber::prelude::*;
+    tracing::subscriber::set_global_default(tracing_subscriber::registry().with(layer()))
+        .map_err(io::Error::other)
+}
+
 fn init() {
     static INIT: Once = Once::new();
     INIT.call_once(tracing_perfetto_sdk::init_in_process);

@@ -3,7 +3,7 @@
 //! and opened by the F2Z opener — rate 1/8, Johnson-regime Ligerito with fold
 //! and query grinding, Round 0 — and the whole protocol gated at 100 bits by
 //! a union bound, the yardstick of the `f2z` rows.
-use super::trace_capture::{BiniusLigeritoPhases, BiniusLigeritoTrial};
+use super::trace_capture::{BiniusLigeritoPhases, TrialScopes};
 use super::{CapturedSpan, Corpus, Timing, Workload, binius};
 use binius_frontend::Circuit;
 use f2z::binius_ligerito::Prepared;
@@ -125,42 +125,9 @@ impl Context {
 }
 
 fn timing_from_spans(raw: &[CapturedSpan], proof_bytes: usize) -> Timing {
-    let trial = BiniusLigeritoTrial::from_spans(raw);
+    let trial = TrialScopes::from_spans(raw, "binius-ligerito");
     let phases = BiniusLigeritoPhases::from_spans(raw);
-    let mut t = Timing {
-        phases: vec![],
-        proof_bytes,
-    };
-    for (name, tag, span) in [
-        ("verified_trial", "end-to-end", trial.verified),
-        ("witness_to_proof", "proving", trial.witness_to_proof),
-    ] {
-        t.add(name, tag, span.start_ns, span.end_ns);
-    }
-    t.add(
-        "online_prover",
-        "proving",
-        trial.witness.end_ns,
-        trial.witness_to_proof.end_ns,
-    );
-    t.add(
-        "witness",
-        "witness-generation",
-        trial.witness.start_ns,
-        trial.witness.end_ns,
-    );
-    t.add(
-        "verify",
-        "verification",
-        trial.verification.start_ns,
-        trial.verification.end_ns,
-    );
-    t.add(
-        "post_proof",
-        "proof-accounting",
-        trial.witness_to_proof.end_ns,
-        trial.verification.start_ns,
-    );
+    let mut t = Timing::from_trial(&trial, proof_bytes);
     t.add("commit", "commit", phases.commit.0, phases.commit.1);
     for (start, end) in phases.piop {
         t.add("piop", "constraint-proof", start, end);

@@ -28,7 +28,7 @@ mod trace_capture;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use serde_json::{Value, json};
 use std::{path::PathBuf, sync::Arc};
-use trace_capture::{CaptureLayer, CapturedSpan, TraceCapture};
+use trace_capture::CapturedSpan;
 
 const MEASUREMENT_POLICY: &str = "warm-process/v1";
 
@@ -240,6 +240,44 @@ struct Timing {
     proof_bytes: usize,
 }
 impl Timing {
+    fn from_trial(trial: &trace_capture::TrialScopes<'_>, proof_bytes: usize) -> Self {
+        let mut t = Timing {
+            phases: vec![],
+            proof_bytes,
+        };
+        for (name, tag, span) in [
+            ("verified_trial", "end-to-end", trial.verified),
+            ("witness_to_proof", "proving", trial.witness_to_proof),
+        ] {
+            t.add(name, tag, span.start_ns, span.end_ns);
+        }
+        t.add(
+            "online_prover",
+            "proving",
+            trial.witness.end_ns,
+            trial.witness_to_proof.end_ns,
+        );
+        t.add(
+            "witness",
+            "witness-generation",
+            trial.witness.start_ns,
+            trial.witness.end_ns,
+        );
+        t.add(
+            "verify",
+            "verification",
+            trial.verification.start_ns,
+            trial.verification.end_ns,
+        );
+        t.add(
+            "post_proof",
+            "proof-accounting",
+            trial.witness_to_proof.end_ns,
+            trial.verification.start_ns,
+        );
+        t
+    }
+
     fn new(
         start: u64,
         witness_end: u64,
@@ -369,14 +407,14 @@ impl Context {
             Self::setup(backend, corpus)
         }
     }
-    fn run(&self, capture: &TraceCapture) -> Timing {
+    fn run(&self) -> Timing {
         match self {
             Self::F2z(c) => c.run(),
-            Self::Binius(c) => c.run(capture),
+            Self::Binius(c) => c.run(),
             Self::BiniusLigerito(c) => c.run(),
-            Self::Plonky3Fri(c) => c.run(capture),
-            Self::Plonky3Whir(c) => c.run(capture),
-            Self::Limber(c) => c.run(capture),
+            Self::Plonky3Fri(c) => c.run(),
+            Self::Plonky3Whir(c) => c.run(),
+            Self::Limber(c) => c.run(),
         }
     }
     fn config(&self) -> Value {
@@ -446,17 +484,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let threads = common::init();
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|arg| arg == "--measure-memory") {
-        let capture = if args
-            .get(1)
-            .is_some_and(|backend| backend == "binius64-ligerito")
-        {
-            CaptureLayer::default().capture()
-        } else {
-            CaptureLayer::install()
-        };
-        return memory::run_child(&capture, &args[1..]);
+        return memory::run_child(&args[1..]);
     }
-    let capture = CaptureLayer::install();
+    f2z::observability::install()?;
     let measure_memory = match std::env::var("F2Z_MUL_COMPARE_MEMORY").as_deref() {
         Err(std::env::VarError::NotPresent) | Ok("1") => true,
         Ok("0") => false,
@@ -542,7 +572,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         |params| {
                             plonky3_whir::Context::setup_with_params(Arc::clone(&corpus), params)
                         },
-                        |context| context.run(&capture).metrics().witness_to_proof_ms,
+                        |context| context.run().metrics().witness_to_proof_ms,
                         plonky3_whir::Context::security,
                     );
                     let path = out.join(format!("whir-{}-{n}.json", workload.slug()));
@@ -635,7 +665,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         warmup = trial == 0,
                     )
                     .entered();
-                    let timing = context.run(&capture);
+                    let timing = context.run();
                     #[cfg(feature = "bench-perfetto")]
                     {
                         drop(trial_span);
@@ -650,7 +680,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "schema":"zkperf.trace/v1", "record":"run", "run_id":run,"series_id":series,"root_span_id":"0",
                             "benchmark":{"suite":"native-mul","name":"mul_e2e_compare","algorithm":workload.algorithm(),"label":format!("{} 2^{n} {backend}",workload.slug()),"implementation":backend,"git_rev":rev,"git_dirty":dirty,"build_profile":"bench"},
                             "trial":trial_json,"status":"ok","trace_complete":true,
-                            "clock":{"id":run,"kind":"monotonic","unit":"ns","source":if backend == "binius64-ligerito" { "Perfetto SDK" } else { "std::time::Instant" }},
+                            "clock":{"id":run,"kind":"monotonic","unit":"ns","source":if backend == "f2z" { "std::time::Instant" } else { "Perfetto SDK" }},
                             "environment":environment,
                             "parameters":{"input":{"multiplications":1usize<<n,"log_multiplications":n,"witness_digest_blake3":corpus.digest,"seed":shape_seed},"security":config,"setup_ms":setup_ms,"primary_metric":"witness_to_proof_ms","boundary":"start native witness generation through complete PCS proof; verification, serialization, and reusable setup reported separately"},
                             "validation":{"proof_verified":true,"reference_outputs_checked":true,"native_witness_matches_canonical":true},"witness_audit":{"generation_ms_excluded":audit.generation_ms,"native_representation":audit.representation,"quotient_reconstructed":audit.quotient_reconstructed,"witness_digest_blake3":audit.digest},"metrics":metrics,
@@ -780,6 +810,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[allow(unused_imports)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "requires PERFETTO_TRACE_PROCESSOR; exercises native measurement backends"]
+    fn native_adapters_report_repeated_perfetto_trials() {
+        use tracing_subscriber::prelude::*;
+        tracing::subscriber::with_default(
+            tracing_subscriber::registry().with(f2z::observability::layer()),
+            || {
+                for backend in ["binius64", "plonky3-fri", "plonky3-whir", "limber"] {
+                    let context = Context::setup_selected(
+                        backend,
+                        Arc::new(Corpus::new(Workload::U32, 4, 7)),
+                        Some(common::whir_tuning::Params::default()),
+                    );
+                    let memory_bytes = tracing::subscriber::with_default(
+                        tracing::subscriber::NoSubscriber::default(),
+                        || match &context {
+                            Context::Binius(c) => c.prove_and_verify(),
+                            Context::Plonky3Fri(c) => c.prove_and_verify(),
+                            Context::Plonky3Whir(c) => c.prove_and_verify(),
+                            Context::Limber(c) => c.prove_and_verify(),
+                            _ => unreachable!(),
+                        },
+                    );
+                    // One warmup and five samples; each query sees only its trial.
+                    for _ in 0..6 {
+                        let timing = context.run();
+                        timing.validate();
+                        assert_eq!(timing.proof_bytes, memory_bytes, "{backend}");
+                        let metrics = timing.metrics();
+                        assert!(metrics.witness_ms > 0.0, "{backend}");
+                        assert!(metrics.verify_ms > 0.0, "{backend}");
+                    }
+                }
+            },
+        );
+    }
     /// BLAKE3 digest of the canonical 2^15 u128 corpus (`U128_SEED`), pinned
     /// when the workload was added.
     #[allow(dead_code)] // `cargo bench` sets cfg(test) without running the #[test] callers.

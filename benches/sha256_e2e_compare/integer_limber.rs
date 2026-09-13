@@ -1,5 +1,7 @@
 //! Native Integer-Mod-R1CS SHA-256 for Limber's Brakedown engine.
 
+use super::common;
+use super::trace_capture::TrialScopes;
 use std::{hint::black_box, sync::Arc, time::Instant};
 
 use limber::{
@@ -11,9 +13,7 @@ use limber::{
 use num_bigint::BigUint;
 use serde_json::{Value, json};
 
-use super::{
-    CapturedSpan, Corpus, SHA256_IV, SemanticSpan, TraceCapture, TrialMetrics, humanize, operation,
-};
+use super::{CapturedSpan, Corpus, SHA256_IV, SemanticSpan, TrialMetrics, humanize, operation};
 
 const MOD_TWO: u64 = 2;
 const MOD_U32: u64 = 1u64 << 32;
@@ -573,19 +573,37 @@ impl Context {
         })
     }
 
-    pub fn run(&self, capture: &TraceCapture) -> (TrialMetrics, Vec<SemanticSpan>) {
-        capture.begin();
-        let root_start = capture.now_ns();
-        let witness_start = root_start;
+    pub fn run(&self) -> (TrialMetrics, Vec<SemanticSpan>) {
+        let recording =
+            common::perfetto::Recording::start(Vec::new()).expect("start Perfetto trial");
+        let trial = tracing::info_span!(
+            "Verified trial",
+            component = "benchmark.verified-trial",
+            scope_kind = "scope",
+            tag_end_to_end = true
+        )
+        .entered();
+        let proving = tracing::info_span!(
+            "Witness to proof",
+            component = "benchmark.witness-to-proof",
+            scope_kind = "scope"
+        )
+        .entered();
+        let witness_scope = tracing::info_span!(
+            "Witness generation",
+            component = "benchmark.witness-evaluation",
+            scope_kind = "phase",
+            tag_witness_generation = true
+        )
+        .entered();
         let (w, q, x) = self.program.evaluate();
-        let witness_end = capture.now_ns();
-        let online_start = witness_end;
+        drop(witness_scope);
         let shape = self.program.shape::<E>();
         let (witness, instance) = IntModR1CSWitnessModp::<E>::new(&shape, self.pk.ck(), w, q, x)
             .expect("integer SHA witness commitments succeed");
         let proof = IntModSpartanModpSNARK::<E>::prove(&self.pk, &instance, &witness)
             .expect("integer SHA proof succeeds");
-        let proof_ready = capture.now_ns();
+        drop(proving);
         let commitment_bytes = instance
             .commitment_bytes()
             .expect("serialize Limber commitments")
@@ -599,23 +617,21 @@ impl Context {
                 + 2 * (self.program.num_vars.ilog2() as usize + 1)
                 + 6);
         let proof_bytes = commitment_bytes + opening_bytes + dynamic_bytes;
-        let verify_start = capture.now_ns();
+        let verification = tracing::info_span!(
+            "Verification",
+            component = "benchmark.verification",
+            scope_kind = "phase",
+            tag_verification = true
+        )
+        .entered();
         proof
             .verify(&self.vk, &instance)
             .expect("integer SHA proof verifies");
-        let verify_end = capture.now_ns();
-        let raw = capture.finish();
+        drop(verification);
+        drop(trial);
+        let raw = recording.intervals().expect("query Perfetto trial");
         black_box((&proof, &instance, &witness));
-        let spans = semantic_spans(
-            &raw,
-            root_start,
-            witness_start,
-            witness_end,
-            online_start,
-            proof_ready,
-            verify_start,
-            verify_end,
-        );
+        let spans = semantic_spans(&raw);
         (TrialMetrics::from_spans(&spans, proof_bytes), spans)
     }
 }
@@ -683,17 +699,16 @@ mod tests {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn semantic_spans(
-    raw: &[CapturedSpan],
-    root_start: u64,
-    witness_start: u64,
-    witness_end: u64,
-    _online_start: u64,
-    proof_ready: u64,
-    verify_start: u64,
-    verify_end: u64,
-) -> Vec<SemanticSpan> {
+fn semantic_spans(raw: &[CapturedSpan]) -> Vec<SemanticSpan> {
+    let trial = TrialScopes::from_spans(raw, "benchmark");
+    let root_start = trial.verified.start_ns;
+    let root_end = trial.verified.end_ns;
+    let witness_to_proof_start = trial.witness_to_proof.start_ns;
+    let witness_start = trial.witness.start_ns;
+    let witness_end = trial.witness.end_ns;
+    let verify_start = trial.verification.start_ns;
+    let verify_end = trial.verification.end_ns;
+    let proof_ready = trial.witness_to_proof.end_ns;
     let find = |name: &str| {
         raw.iter()
             .find(|span| span.name == name)
@@ -710,7 +725,7 @@ fn semantic_spans(
             "end-to-end",
             vec!["end-to-end"],
             root_start,
-            verify_end,
+            root_end,
             Some("end-to-end"),
             false,
         ),
@@ -721,7 +736,7 @@ fn semantic_spans(
             "Integer witness generation through proof readiness",
             "proving",
             vec!["proving"],
-            witness_start,
+            witness_to_proof_start,
             proof_ready,
             None,
             false,

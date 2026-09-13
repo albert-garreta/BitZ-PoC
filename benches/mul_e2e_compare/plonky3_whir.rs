@@ -4,7 +4,9 @@ use super::common::whir_tuning::{self, Params};
 #[cfg(test)]
 use super::mod32_air::{LIMB_BASE, TRACE_WIDTH, set_value};
 use super::mod32_air::{MulAir, generate};
-use super::{Corpus, Timing, TraceCapture, Workload, captured};
+use super::trace_capture::TrialScopes;
+use super::{Corpus, Timing, Workload, captured};
+use f2z::observability::Recording;
 use p3_air::BaseAir;
 use p3_field::{PrimeCharacteristicRing, extension::BinomialExtensionField};
 use p3_matrix::dense::RowMajorMatrix;
@@ -156,12 +158,55 @@ macro_rules! backend {
                     }
                 }
 
-                pub(super) fn run(&self, capture: &TraceCapture) -> Timing {
-                    capture.begin();
-                    let start = capture.now_ns();
+                pub(super) fn run(&self) -> Timing {
+                    let recording = Recording::start(Vec::new()).expect("start Perfetto trial");
+                    let proof_bytes = self.prove_and_verify();
+                    let raw = recording.intervals().expect("query Perfetto trial");
+                    let trial = TrialScopes::from_spans(&raw, "benchmark");
+                    let wend = trial.witness.end_ns;
+                    let ready = trial.witness_to_proof.end_ns;
+                    let encode = captured(&raw, "encode", wend, ready);
+                    let commit = captured(&raw, "commit_matrix", encode.end_ns, ready);
+                    let opening = raw
+                        .iter()
+                        .filter(|s| {
+                            matches!(s.name.as_str(), "add_virtual_eval" | "eval_at")
+                                && s.start_ns >= commit.end_ns
+                                && s.end_ns <= ready
+                        })
+                        .min_by_key(|s| s.start_ns)
+                        .expect("WHIR opening boundary");
+                    let mut t = Timing::from_trial(&trial, proof_bytes);
+                    t.add("commit", "commit", encode.start_ns, commit.end_ns);
+                    t.add("piop", "constraint-proof", commit.end_ns, opening.start_ns);
+                    t.add("opening", "opening-proof", opening.start_ns, ready);
+                    t
+                }
+
+                pub(super) fn prove_and_verify(&self) -> usize {
+                    let trial = tracing::info_span!(
+                        "Verified trial",
+                        component = "benchmark.verified-trial",
+                        scope_kind = "scope",
+                        tag_end_to_end = true
+                    )
+                    .entered();
+                    let proving = tracing::info_span!(
+                        "Witness to proof",
+                        component = "benchmark.witness-to-proof",
+                        scope_kind = "scope"
+                    )
+                    .entered();
+                    let witness_scope = tracing::info_span!(
+                        "Witness generation",
+                        component = "benchmark.witness-evaluation",
+                        scope_kind = "phase",
+                        tag_witness_generation = true
+                    )
+                    .entered();
                     let trace = generate(&self.corpus);
                     let table = Table::new(trace.transpose());
-                    let wend = capture.now_ns();
+                    drop(witness_scope);
                     let proof: MultiStarkProof<Config> = prove(
                         &self.config,
                         ProverInstances::new(vec![ProverInstance::new(
@@ -173,9 +218,15 @@ macro_rules! backend {
                         0,
                         &mut challenger(&self.config),
                     );
-                    let ready = capture.now_ns();
+                    drop(proving);
                     let bytes = postcard::to_allocvec(&proof).expect("encode Plonky3 proof");
-                    let vstart = capture.now_ns();
+                    let verification = tracing::info_span!(
+                        "Verification",
+                        component = "benchmark.verification",
+                        scope_kind = "phase",
+                        tag_verification = true
+                    )
+                    .entered();
                     verify(
                         &self.config,
                         VerifierInstances::new(vec![VerifierInstance::new(
@@ -189,24 +240,10 @@ macro_rules! backend {
                         &mut challenger(&self.config),
                     )
                     .expect("Plonky3 full proof verifies");
-                    let end = capture.now_ns();
-                    let raw = capture.finish();
-                    let encode = captured(&raw, "encode", wend, ready);
-                    let commit = captured(&raw, "commit_matrix", encode.end_ns, ready);
-                    let opening = raw
-                        .iter()
-                        .filter(|s| {
-                            matches!(s.name.as_str(), "add_virtual_eval" | "eval_at")
-                                && s.start_ns >= commit.end_ns
-                                && s.end_ns <= ready
-                        })
-                        .min_by_key(|s| s.start_ns)
-                        .expect("WHIR opening boundary");
-                    let mut t = Timing::new(start, wend, ready, vstart, end, bytes.len());
-                    t.add("commit", "commit", encode.start_ns, commit.end_ns);
-                    t.add("piop", "constraint-proof", commit.end_ns, opening.start_ns);
-                    t.add("opening", "opening-proof", opening.start_ns, ready);
-                    t
+                    drop(verification);
+                    drop(trial);
+                    let proof_bytes = bytes.len();
+                    proof_bytes
                 }
             }
         }
@@ -238,10 +275,16 @@ impl Context {
             )),
         }
     }
-    pub(super) fn run(&self, c: &TraceCapture) -> Timing {
+    pub(super) fn run(&self) -> Timing {
         match self {
-            Self::U32Degree2(x) => x.run(c),
-            Self::U32Degree5(x) => x.run(c),
+            Self::U32Degree2(x) => x.run(),
+            Self::U32Degree5(x) => x.run(),
+        }
+    }
+    pub(super) fn prove_and_verify(&self) -> usize {
+        match self {
+            Self::U32Degree2(x) => x.prove_and_verify(),
+            Self::U32Degree5(x) => x.prove_and_verify(),
         }
     }
     pub(super) fn security(&self) -> Value {

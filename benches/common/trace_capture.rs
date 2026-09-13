@@ -1,168 +1,5 @@
-//! Shared monotonic capture of native prover tracing spans.
-#![allow(dead_code)]
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-    time::Instant,
-};
-use tracing::{Subscriber, field::Visit, span::Attributes};
-use tracing_subscriber::{Layer, layer::Context, prelude::*, registry::LookupSpan};
-
+//! Reporting projections over completed Perfetto intervals; no clocks or collector.
 pub(crate) use f2z::observability::Interval as CapturedSpan;
-
-#[derive(Default)]
-struct CaptureState {
-    active: bool,
-    epoch: Option<Instant>,
-    metadata: HashMap<u64, CapturedMetadata>,
-    starts: HashMap<u64, Vec<u64>>,
-    completed: Vec<CapturedSpan>,
-}
-
-#[derive(Clone, Debug)]
-struct CapturedMetadata {
-    pub(crate) parent: Option<u64>,
-    pub(crate) name: String,
-    pub(crate) component: Option<String>,
-}
-
-#[derive(Clone, Default)]
-pub(crate) struct CaptureLayer {
-    state: Arc<Mutex<CaptureState>>,
-}
-
-#[derive(Clone)]
-pub(crate) struct TraceCapture {
-    state: Arc<Mutex<CaptureState>>,
-}
-
-impl CaptureLayer {
-    pub(crate) fn capture(&self) -> TraceCapture {
-        TraceCapture {
-            state: Arc::clone(&self.state),
-        }
-    }
-
-    pub(crate) fn install() -> TraceCapture {
-        let layer = Self::default();
-        let capture = layer.capture();
-        let subscriber = tracing_subscriber::registry().with(layer);
-        #[cfg(feature = "span-metrics")]
-        let subscriber = subscriber.with(super::common::perfetto::layer());
-        tracing::subscriber::set_global_default(subscriber)
-            .expect("install Binius interval collector once");
-        capture
-    }
-}
-
-#[derive(Default)]
-struct FieldVisitor {
-    pub(crate) component: Option<String>,
-}
-
-impl Visit for FieldVisitor {
-    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-        if field.name() == "component" {
-            self.component = Some(format!("{value:?}").trim_matches('"').to_owned());
-        }
-    }
-
-    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
-        if field.name() == "component" {
-            self.component = Some(value.to_owned());
-        }
-    }
-}
-
-impl<S> Layer<S> for CaptureLayer
-where
-    S: Subscriber + for<'lookup> LookupSpan<'lookup>,
-{
-    fn on_new_span(&self, attrs: &Attributes<'_>, id: &tracing::span::Id, ctx: Context<'_, S>) {
-        let mut visitor = FieldVisitor::default();
-        attrs.record(&mut visitor);
-        let parent = attrs
-            .parent()
-            .map(|id| id.clone().into_u64())
-            .or_else(|| ctx.current_span().id().map(|id| id.clone().into_u64()));
-        let mut state = self.state.lock().expect("capture state lock");
-        if state.active {
-            state.metadata.insert(
-                id.clone().into_u64(),
-                CapturedMetadata {
-                    parent,
-                    name: attrs.metadata().name().to_owned(),
-                    component: visitor.component,
-                },
-            );
-        }
-    }
-
-    fn on_enter(&self, id: &tracing::span::Id, _ctx: Context<'_, S>) {
-        let mut state = self.state.lock().expect("capture state lock");
-        if !state.active {
-            return;
-        }
-        let Some(epoch) = state.epoch else {
-            return;
-        };
-        let start_ns = ns_since(epoch);
-        state
-            .starts
-            .entry(id.clone().into_u64())
-            .or_default()
-            .push(start_ns);
-    }
-
-    fn on_exit(&self, id: &tracing::span::Id, _ctx: Context<'_, S>) {
-        let mut state = self.state.lock().expect("capture state lock");
-        if !state.active {
-            return;
-        }
-        let raw_id = id.clone().into_u64();
-        let start_ns = state.starts.get_mut(&raw_id).and_then(Vec::pop);
-        let metadata = state.metadata.get(&raw_id).cloned();
-        if let (Some(start_ns), Some(metadata), Some(epoch)) = (start_ns, metadata, state.epoch) {
-            state.completed.push(CapturedSpan {
-                track_id: 0,
-                id: raw_id,
-                parent: metadata.parent,
-                name: metadata.name,
-                component: metadata.component,
-                start_ns,
-                end_ns: ns_since(epoch),
-            });
-        }
-    }
-}
-
-impl TraceCapture {
-    pub(crate) fn begin(&self) {
-        let mut state = self.state.lock().expect("capture state lock");
-        state.active = true;
-        state.epoch = Some(Instant::now());
-        state.metadata.clear();
-        state.starts.clear();
-        state.completed.clear();
-    }
-
-    pub(crate) fn now_ns(&self) -> u64 {
-        let state = self.state.lock().expect("capture state lock");
-        ns_since(state.epoch.expect("capture has begun"))
-    }
-
-    pub(crate) fn finish(&self) -> Vec<CapturedSpan> {
-        let mut state = self.state.lock().expect("capture state lock");
-        state.active = false;
-        let mut spans = std::mem::take(&mut state.completed);
-        spans.sort_by_key(|span| (span.start_ns, span.end_ns));
-        spans
-    }
-}
-
-fn ns_since(epoch: Instant) -> u64 {
-    u64::try_from(epoch.elapsed().as_nanos()).unwrap_or(u64::MAX)
-}
 
 fn required_span<'a>(raw: &'a [CapturedSpan], component: &str) -> &'a CapturedSpan {
     let mut spans = raw
@@ -181,19 +18,19 @@ fn required_span<'a>(raw: &'a [CapturedSpan], component: &str) -> &'a CapturedSp
 
 /// Completed trial scopes. Keep each operation's own endpoints rather than
 /// charging the enclosing scopes' entry/exit overhead to witness or verifier.
-pub(crate) struct BiniusLigeritoTrial<'a> {
+pub(crate) struct TrialScopes<'a> {
     pub(crate) verified: &'a CapturedSpan,
     pub(crate) witness_to_proof: &'a CapturedSpan,
     pub(crate) witness: &'a CapturedSpan,
     pub(crate) verification: &'a CapturedSpan,
 }
 
-impl<'a> BiniusLigeritoTrial<'a> {
-    pub(crate) fn from_spans(raw: &'a [CapturedSpan]) -> Self {
-        let verified = required_span(raw, "binius-ligerito.verified-trial");
-        let witness_to_proof = required_span(raw, "binius-ligerito.witness-to-proof");
-        let witness = required_span(raw, "binius-ligerito.witness-evaluation");
-        let verification = required_span(raw, "binius-ligerito.verification");
+impl<'a> TrialScopes<'a> {
+    pub(crate) fn from_spans(raw: &'a [CapturedSpan], prefix: &str) -> Self {
+        let verified = required_span(raw, &format!("{prefix}.verified-trial"));
+        let witness_to_proof = required_span(raw, &format!("{prefix}.witness-to-proof"));
+        let witness = required_span(raw, &format!("{prefix}.witness-evaluation"));
+        let verification = required_span(raw, &format!("{prefix}.verification"));
         assert!(
             verified.start_ns <= witness_to_proof.start_ns
                 && witness_to_proof.start_ns <= witness.start_ns
@@ -327,7 +164,7 @@ pub(crate) mod phase_tests {
     #[test]
     fn trial_scopes_keep_distinct_endpoints() {
         let raw = trial_fixture();
-        let trial = BiniusLigeritoTrial::from_spans(&raw);
+        let trial = TrialScopes::from_spans(&raw, "binius-ligerito");
         assert_eq!((trial.verified.start_ns, trial.verified.end_ns), (0, 160));
         assert_eq!(
             (
@@ -348,7 +185,7 @@ pub(crate) mod phase_tests {
     fn incomplete_trial_is_rejected() {
         let mut raw = trial_fixture();
         raw.pop();
-        BiniusLigeritoTrial::from_spans(&raw);
+        TrialScopes::from_spans(&raw, "binius-ligerito");
     }
 
     #[test]
@@ -356,7 +193,7 @@ pub(crate) mod phase_tests {
     fn verification_cannot_overlap_proof_production() {
         let mut raw = trial_fixture();
         raw.last_mut().unwrap().start_ns = 139;
-        BiniusLigeritoTrial::from_spans(&raw);
+        TrialScopes::from_spans(&raw, "binius-ligerito");
     }
 
     #[test]

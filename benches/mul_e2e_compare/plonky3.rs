@@ -2,7 +2,9 @@
 #[cfg(test)]
 use super::mod32_air::{LIMB_BASE, VALUE_COLUMNS, set_value};
 use super::mod32_air::{MulAir, TRACE_WIDTH, generate};
-use super::{Corpus, Timing, TraceCapture, Workload, captured};
+use super::trace_capture::TrialScopes;
+use super::{Corpus, Timing, Workload, captured};
+use f2z::observability::Recording;
 use p3_air::symbolic::AirLayout;
 use p3_challenger::DuplexChallenger;
 use p3_commit::ExtensionMmcs;
@@ -112,29 +114,64 @@ impl Context {
             "revision":super::common::locked_git_revision("p3-fri"),
         })
     }
-    pub(super) fn run(&self, capture: &TraceCapture) -> Timing {
-        capture.begin();
-        let start = capture.now_ns();
-        let trace = generate(&self.corpus);
-        let wend = capture.now_ns();
-        let proof: Proof<Config> = prove(&self.config, &MulAir, trace, &[]);
-        let ready = capture.now_ns();
-        let bytes = postcard::to_allocvec(&proof).expect("encode Plonky3-FRI proof");
-        assert_eq!(proof.degree_bits, self.corpus.len().ilog2() as usize);
-        require_security(proof.proven_security(&self.security));
-        let vstart = capture.now_ns();
-        verify(&self.config, &MulAir, &proof, &[]).expect("Plonky3-FRI full proof verifies");
-        let end = capture.now_ns();
-        let raw = capture.finish();
+    pub(super) fn run(&self) -> Timing {
+        let recording = Recording::start(Vec::new()).expect("start Perfetto trial");
+        let proof_bytes = self.prove_and_verify();
+        let raw = recording.intervals().expect("query Perfetto trial");
+        let trial = TrialScopes::from_spans(&raw, "benchmark");
+        let wend = trial.witness.end_ns;
+        let ready = trial.witness_to_proof.end_ns;
         let commit = captured(&raw, "commit to trace data", wend, ready);
         let piop = captured(&raw, "AIR quotient PIOP", commit.end_ns, ready);
         let opening = captured(&raw, "open", piop.end_ns, ready);
-        let mut timing = Timing::new(start, wend, ready, vstart, end, bytes.len());
+        let mut timing = Timing::from_trial(&trial, proof_bytes);
         timing.add("commit", "commit", commit.start_ns, commit.end_ns);
         timing.add("piop", "constraint-proof", piop.start_ns, piop.end_ns);
         timing.add("opening", "opening-proof", opening.start_ns, opening.end_ns);
-        std::hint::black_box(proof);
         timing
+    }
+
+    pub(super) fn prove_and_verify(&self) -> usize {
+        let trial = tracing::info_span!(
+            "Verified trial",
+            component = "benchmark.verified-trial",
+            scope_kind = "scope",
+            tag_end_to_end = true
+        )
+        .entered();
+        let proving = tracing::info_span!(
+            "Witness to proof",
+            component = "benchmark.witness-to-proof",
+            scope_kind = "scope"
+        )
+        .entered();
+        let witness_scope = tracing::info_span!(
+            "Witness generation",
+            component = "benchmark.witness-evaluation",
+            scope_kind = "phase",
+            tag_witness_generation = true
+        )
+        .entered();
+        let trace = generate(&self.corpus);
+        drop(witness_scope);
+        let proof: Proof<Config> = prove(&self.config, &MulAir, trace, &[]);
+        drop(proving);
+        let bytes = postcard::to_allocvec(&proof).expect("encode Plonky3-FRI proof");
+        assert_eq!(proof.degree_bits, self.corpus.len().ilog2() as usize);
+        require_security(proof.proven_security(&self.security));
+        let verification = tracing::info_span!(
+            "Verification",
+            component = "benchmark.verification",
+            scope_kind = "phase",
+            tag_verification = true
+        )
+        .entered();
+        verify(&self.config, &MulAir, &proof, &[]).expect("Plonky3-FRI full proof verifies");
+        drop(verification);
+        drop(trial);
+        let proof_bytes = bytes.len();
+        std::hint::black_box(proof);
+        proof_bytes
     }
 }
 

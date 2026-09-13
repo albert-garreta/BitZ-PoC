@@ -177,12 +177,11 @@ with `std::process::Command` and read with `csv::Reader`; Python is not required
 Do not sum nested or parallel slice durations to obtain wall time. Group by trial,
 exclude warmups, and union the selected intervals before aggregating across trials.
 
-The original diagnostic integration has these remaining limitations (the
-Binius64-Ligerito metric-source migration below is the first replacement):
+The diagnostic integration has these remaining limitations:
 
-- Other backends' metrics, tuning and custom profiler remain on their legacy
-  timing paths. Saved Perfetto files are diagnostic artifacts; Binius64-Ligerito
-  now queries its bounded in-memory recording for JSON/CSV metrics. Capture
+- F2Z's metrics and the setup/campaign timers remain on their legacy timing
+  paths. Binius64, Binius64-Ligerito, Plonky3 and Limber now query bounded
+  in-memory recordings for their native multiplication/SHA JSON/CSV metrics. Capture
   changes overhead; do not compare timings across the migration as a speedup.
 - Only existing `tracing` instrumentation is exported. F2Z's `prof::scope` and
   manual phase timers are not translated into synthetic spans.
@@ -190,10 +189,11 @@ Binius64-Ligerito metric-source migration below is the first replacement):
   Multiplication includes verification and metric extraction; SHA also includes
   its canonical trace reporting. No semantic end-to-end tag is assigned to it.
 - Diagnostic files for tuning/pilot, memory-only subprocess, and preflight runs
-  are not enabled. Binius64-Ligerito preflight queries its in-memory recording.
+  are not enabled. Native preflight and WHIR candidates query in-memory recordings.
   The executable test proves a completed inner session can be queried while an
   outer recording remains open, but spawning the native processor per candidate
-  has overhead. The production tuner has not been migrated to that approach.
+  has overhead. WHIR objectives use these completed trial measurements; its
+  campaign-wide `tuning_ms` timer has not yet been migrated.
 - Dropping a recording without `finish` does not publish a complete trace. An
   interrupted/panicking run may leave its reserved output file empty; do not
   include it in analysis.
@@ -259,10 +259,10 @@ Perfetto exports these same annotations when enabled. Its `tag_commit` view
 includes **all** oracle commitments; the historical benchmark `commit_ms`
 column intentionally counts only the witness commitment. Do not equate them.
 
-This migration removes the Binius64-Ligerito phase and trial-boundary clocks,
-not the entire timing system. The existing live collector, one-time setup
-timers, other backends' `prof::scope` calls and memory reporting remain. Only
-Binius64-Ligerito's trial metrics now come from the native Perfetto processor.
+The initial migration removed the Binius64-Ligerito phase and trial-boundary
+clocks. The subsequent native-adapter migration also removed the live collector.
+One-time setup timers and F2Z's `prof::scope` calls still require migration;
+memory reporting remains separate from timing.
 Instrumentation overhead changes, so this is not a performance claim.
 
 Trial-scope migration checks on macOS ARM64: all 27 SHA tests pass, and
@@ -313,10 +313,11 @@ larger `benchmark_trial` orchestration span.
 
 ### Perfetto-backed numeric metrics
 
-The shared `f2z::observability` module owns recording and native queries. The
-Binius64-Ligerito multiplication and SHA runners no longer accept or activate
-`TraceCapture`; their tests install only the Perfetto layer. Other runners are
-still awaiting migration.
+The shared `f2z::observability` module owns recording and native queries. All
+Binius64, Binius64-Ligerito, Plonky3 and Limber native multiplication/SHA runners
+use it, without `TraceCapture` or `CaptureLayer`. `trace_capture.rs` now contains
+only reporting projections over native intervals; no timestamps, mutexes,
+subscriber callbacks or collector state remain there. F2Z is still awaiting migration.
 
 ```rust,ignore
 let recording = f2z::observability::Recording::start(Vec::new())?;
@@ -343,11 +344,13 @@ the SQL projection before standard CSV and typed JSON decoding.
 
 Querying takes place after the measured scopes close, including after each
 completed candidate in the nested-session integration test. It adds orchestration
-latency, not operation duration. This does not yet migrate production tuning.
+latency, not operation duration. Native WHIR tuning receives each completed
+trial's objective immediately, while campaign-level timers still await migration.
 `bench-perfetto` can still save an outer diagnostic recording through the shared
 writer. The multiplication memory-only child runs the same proof/verification
 body without installing Perfetto or allocating a recording buffer; no timing
-metrics are needed in that RSS-only pass.
+metrics are needed in that RSS-only pass. This applies to every migrated native
+multiplication adapter, including Plonky3 and Limber.
 
 ```sh
 PERFETTO_TRACE_PROCESSOR=/path/to/native/trace_processor_shell \
@@ -367,3 +370,11 @@ the custom layer (one warmup plus five samples each). The full SHA suite passes
 configuration failure described above. The memory-only path also verifies with
 `NoSubscriber`. Linux runtime and Windows support remain unchecked; no overhead
 or performance claim follows from these correctness checks.
+
+The subsequent native-adapter migration passes six real trials for each of
+Binius64, Plonky3-FRI, Plonky3-WHIR and Limber multiplication, and for Binius64,
+Plonky3-WHIR and Limber SHA. The SHA fixture uses 128 compressions for WHIR's
+padding floor and two for the other adapters. The corrected smoke passes, as
+do the other 27 SHA tests; multiplication passes 42 of 43 with the unchanged
+configuration assertion above. Native comparison targets also compile with
+`bench-perfetto`. These are debug correctness checks, not performance results.

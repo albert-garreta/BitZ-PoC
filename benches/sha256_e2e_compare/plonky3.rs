@@ -6,8 +6,10 @@ use std::{
     time::Instant,
 };
 
+use super::common;
 use super::common::plonky3::baby_bear as stack;
 use super::common::whir_tuning;
+use super::trace_capture::TrialScopes;
 use p3_air::{Air, AirBuilder, BaseAir, WindowAccess, utils::pack_bits_le};
 use p3_challenger::{CanObserve, CanSample};
 use p3_field::{PrimeCharacteristicRing, PrimeField32, extension::BinomialExtensionField};
@@ -25,8 +27,8 @@ use p3_whir::DomainSeparator;
 pub use whir_tuning::Params;
 
 use super::{
-    CapturedSpan, CompressionCase, Corpus, SHA256_IV, SemanticSpan, TraceCapture, TrialMetrics,
-    humanize, operation,
+    CapturedSpan, CompressionCase, Corpus, SHA256_IV, SemanticSpan, TrialMetrics, humanize,
+    operation,
 };
 
 type F = stack::Val;
@@ -276,15 +278,33 @@ macro_rules! degree_backend {
                     })
                 }
 
-                pub fn run(&self, capture: &TraceCapture) -> (TrialMetrics, Vec<SemanticSpan>) {
-                    capture.begin();
-                    let root_start = capture.now_ns();
-                    let witness_start = root_start;
+                pub fn run(&self) -> (TrialMetrics, Vec<SemanticSpan>) {
+                    let recording = common::perfetto::Recording::start(Vec::new())
+                        .expect("start Perfetto trial");
+                    let trial = tracing::info_span!(
+                        "Verified trial",
+                        component = "benchmark.verified-trial",
+                        scope_kind = "scope",
+                        tag_end_to_end = true
+                    )
+                    .entered();
+                    let proving = tracing::info_span!(
+                        "Witness to proof",
+                        component = "benchmark.witness-to-proof",
+                        scope_kind = "scope"
+                    )
+                    .entered();
+                    let witness_scope = tracing::info_span!(
+                        "Witness generation",
+                        component = "benchmark.witness-evaluation",
+                        scope_kind = "phase",
+                        tag_witness_generation = true
+                    )
+                    .entered();
                     let trace = generate_trace_rows::<F>(trace_inputs(&self.corpus), 0);
                     assert_trace_outputs(&trace, &self.corpus.cases);
                     let witness_table = Table::new(trace.transpose());
-                    let witness_end = capture.now_ns();
-                    let online_start = witness_end;
+                    drop(witness_scope);
                     let proof: MultiStarkProof<Config> = prove(
                         &self.config,
                         ProverInstances::new(vec![ProverInstance::new(
@@ -296,11 +316,17 @@ macro_rules! degree_backend {
                         0,
                         &mut challenger(&self.config, &self.air),
                     );
-                    let online_end = capture.now_ns();
+                    drop(proving);
                     let proof_bytes = postcard::to_allocvec(&proof)
                         .expect("serialize complete Plonky3 proof")
                         .len();
-                    let verify_start = capture.now_ns();
+                    let verification = tracing::info_span!(
+                        "Verification",
+                        component = "benchmark.verification",
+                        scope_kind = "phase",
+                        tag_verification = true
+                    )
+                    .entered();
                     verify(
                         &self.config,
                         VerifierInstances::new(vec![VerifierInstance::new(
@@ -314,19 +340,11 @@ macro_rules! degree_backend {
                         &mut challenger(&self.config, &self.air),
                     )
                     .expect("Plonky3 full SHA AIR proof verifies");
-                    let verify_end = capture.now_ns();
-                    let raw = capture.finish();
+                    drop(verification);
+                    drop(trial);
+                    let raw = recording.intervals().expect("query Perfetto trial");
                     black_box(&proof);
-                    let spans = semantic_spans(
-                        &raw,
-                        root_start,
-                        witness_start,
-                        witness_end,
-                        online_start,
-                        online_end,
-                        verify_start,
-                        verify_end,
-                    );
+                    let spans = semantic_spans(&raw);
                     (TrialMetrics::from_spans(&spans, proof_bytes), spans)
                 }
 
@@ -465,10 +483,10 @@ impl Context {
         }
     }
 
-    pub fn run(&self, capture: &TraceCapture) -> (TrialMetrics, Vec<SemanticSpan>) {
+    pub fn run(&self) -> (TrialMetrics, Vec<SemanticSpan>) {
         match self {
-            Self::Degree4(context) => context.run(capture),
-            Self::Degree5(context) => context.run(capture),
+            Self::Degree4(context) => context.run(),
+            Self::Degree5(context) => context.run(),
         }
     }
 }
@@ -516,17 +534,17 @@ pub(super) fn security_schedule_self_test() {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn semantic_spans(
-    raw: &[CapturedSpan],
-    root_start: u64,
-    witness_start: u64,
-    witness_end: u64,
-    online_start: u64,
-    online_end: u64,
-    verify_start: u64,
-    verify_end: u64,
-) -> Vec<SemanticSpan> {
+fn semantic_spans(raw: &[CapturedSpan]) -> Vec<SemanticSpan> {
+    let trial = TrialScopes::from_spans(raw, "benchmark");
+    let root_start = trial.verified.start_ns;
+    let root_end = trial.verified.end_ns;
+    let witness_to_proof_start = trial.witness_to_proof.start_ns;
+    let witness_start = trial.witness.start_ns;
+    let witness_end = trial.witness.end_ns;
+    let verify_start = trial.verification.start_ns;
+    let verify_end = trial.verification.end_ns;
+    let online_start = trial.witness.end_ns;
+    let online_end = trial.witness_to_proof.end_ns;
     let encode = raw
         .iter()
         .filter(|span| {
@@ -562,7 +580,7 @@ fn semantic_spans(
             "end-to-end",
             vec!["end-to-end"],
             root_start,
-            verify_end,
+            root_end,
             Some("end-to-end"),
             false,
         ),
@@ -585,7 +603,7 @@ fn semantic_spans(
             "Plonky3 trace generation through proof readiness",
             "proving",
             vec!["proving"],
-            witness_start,
+            witness_to_proof_start,
             online_end,
             None,
             false,

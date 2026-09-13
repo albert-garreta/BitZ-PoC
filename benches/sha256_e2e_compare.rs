@@ -10,9 +10,7 @@ use common::output::{BenchmarkOutput, FileMode, JsonStyle, JsonlWriter};
 use common::whir_tuning;
 #[path = "common/trace_capture.rs"]
 mod trace_capture;
-use trace_capture::{
-    BiniusLigeritoPhases, BiniusLigeritoTrial, CaptureLayer, CapturedSpan, TraceCapture,
-};
+use trace_capture::{BiniusLigeritoPhases, CapturedSpan, TrialScopes};
 #[path = "sha256_e2e_compare/integer_limber.rs"]
 mod integer_limber_backend;
 #[path = "sha256_e2e_compare/plonky3.rs"]
@@ -482,23 +480,46 @@ impl BiniusContext {
         filler.into_value_vec()
     }
 
-    fn run(&self, capture: &TraceCapture) -> (TrialMetrics, Vec<SemanticSpan>, Vec<u8>, ValueVec) {
-        capture.begin();
-        let root_start = capture.now_ns();
-        let witness_to_proof_start = root_start;
-        let witness_start = capture.now_ns();
+    fn run(&self) -> (TrialMetrics, Vec<SemanticSpan>, Vec<u8>, ValueVec) {
+        let recording =
+            common::perfetto::Recording::start(Vec::new()).expect("start Perfetto trial");
+        let trial = tracing::info_span!(
+            "Verified trial",
+            component = "benchmark.verified-trial",
+            scope_kind = "scope",
+            tag_end_to_end = true
+        )
+        .entered();
+        let proving = tracing::info_span!(
+            "Witness to proof",
+            component = "benchmark.witness-to-proof",
+            scope_kind = "scope"
+        )
+        .entered();
+        let witness_scope = tracing::info_span!(
+            "Witness generation",
+            component = "benchmark.witness-evaluation",
+            scope_kind = "phase",
+            tag_witness_generation = true
+        )
+        .entered();
         let witness = self.populate();
-        let witness_end = capture.now_ns();
-        let total_start = witness_end;
+        drop(witness_scope);
 
         let mut prover_transcript = ProverTranscript::new(StdChallenger::default());
         self.prover
             .prove(&witness, &mut prover_transcript)
             .expect("Binius proof succeeds");
         let proof_bytes = prover_transcript.finalize();
-        let total_end = capture.now_ns();
+        drop(proving);
 
-        let verify_start = capture.now_ns();
+        let verification = tracing::info_span!(
+            "Verification",
+            component = "benchmark.verification",
+            scope_kind = "phase",
+            tag_verification = true
+        )
+        .entered();
         let mut verifier_transcript =
             VerifierTranscript::new(StdChallenger::default(), proof_bytes.clone());
         self.verifier
@@ -507,22 +528,11 @@ impl BiniusContext {
         verifier_transcript
             .finalize()
             .expect("Binius verifier consumes the complete transcript");
-        let verify_end = capture.now_ns();
-        let root_end = verify_end;
+        drop(verification);
+        drop(trial);
 
-        let raw = capture.finish();
-        let spans = binius_semantic_spans(
-            &raw,
-            root_start,
-            root_end,
-            total_start,
-            total_end,
-            witness_to_proof_start,
-            witness_start,
-            witness_end,
-            verify_start,
-            verify_end,
-        );
+        let raw = recording.intervals().expect("query Perfetto trial");
+        let spans = binius_semantic_spans(&raw);
         let metrics = TrialMetrics::from_spans(&spans, proof_bytes.len());
         black_box(&proof_bytes);
         (metrics, spans, proof_bytes, witness)
@@ -672,7 +682,7 @@ impl BiniusLigeritoContext {
 
 /// Place measured phases without moving interleaved Round 0 work to the end.
 fn binius_ligerito_semantic_spans(raw: &[CapturedSpan]) -> Vec<SemanticSpan> {
-    let trial = BiniusLigeritoTrial::from_spans(raw);
+    let trial = TrialScopes::from_spans(raw, "binius-ligerito");
     let phases = BiniusLigeritoPhases::from_spans(raw);
     let span = |id: &str,
                 parent: Option<&str>,
@@ -1034,19 +1044,16 @@ fn f2z_semantic_spans(raw: &[ProfileInterval]) -> Vec<SemanticSpan> {
     spans
 }
 
-#[allow(clippy::too_many_arguments)]
-fn binius_semantic_spans(
-    raw: &[CapturedSpan],
-    root_start: u64,
-    root_end: u64,
-    _total_start: u64,
-    total_end: u64,
-    witness_to_proof_start: u64,
-    witness_start: u64,
-    witness_end: u64,
-    verify_start: u64,
-    verify_end: u64,
-) -> Vec<SemanticSpan> {
+fn binius_semantic_spans(raw: &[CapturedSpan]) -> Vec<SemanticSpan> {
+    let trial = TrialScopes::from_spans(raw, "benchmark");
+    let root_start = trial.verified.start_ns;
+    let root_end = trial.verified.end_ns;
+    let witness_to_proof_start = trial.witness_to_proof.start_ns;
+    let witness_start = trial.witness.start_ns;
+    let witness_end = trial.witness.end_ns;
+    let verify_start = trial.verification.start_ns;
+    let verify_end = trial.verification.end_ns;
+    let total_end = trial.witness_to_proof.end_ns;
     let total_start = raw
         .iter()
         .filter(|span| span.component.as_deref() == Some("commit_witness"))
@@ -1410,7 +1417,7 @@ impl TraceWriter {
                 "build_profile": "bench",
             },
             "trial": metadata.trial.json(),
-            "clock": {"id": run_id, "kind": "monotonic", "unit": "ns", "source": if metadata.backend == Backend::BiniusLigerito { "Perfetto SDK" } else { "std::time::Instant" }},
+            "clock": {"id": run_id, "kind": "monotonic", "unit": "ns", "source": if metadata.backend == Backend::F2z { "std::time::Instant" } else { "Perfetto SDK" }},
             "status": "ok",
             "trace_complete": true,
             "environment": self.environment,
@@ -1518,12 +1525,11 @@ fn union_ms(spans: &[SemanticSpan], select: impl Fn(&SemanticSpan) -> bool) -> f
 
 fn run_binius_trial(
     context: &BiniusContext,
-    capture: &TraceCapture,
     exponent: usize,
     trial: Trial,
     trace: Option<&mut TraceWriter>,
 ) -> TrialMetrics {
-    let (metrics, spans, _, _) = context.run(capture);
+    let (metrics, spans, _, _) = context.run();
     if let Some(trace) = trace {
         let config_label = format!(
             "rate{}-queries{}-100b-fri-query-target",
@@ -1608,13 +1614,12 @@ fn run_f2z_trial(
 fn run_plonky3_trial(
     context: &plonky3_backend::Context,
     params: plonky3_backend::Params,
-    capture: &TraceCapture,
     corpus: &Corpus,
     exponent: usize,
     trial: Trial,
     trace: Option<&mut TraceWriter>,
 ) -> TrialMetrics {
-    let (metrics, spans) = context.run(capture);
+    let (metrics, spans) = context.run();
     if let Some(trace) = trace {
         let label = params.label();
         trace.write_run(
@@ -1639,13 +1644,12 @@ fn run_plonky3_trial(
 fn run_integer_limber_trial(
     context: &integer_limber_backend::Context,
     params: integer_limber_backend::Params,
-    capture: &TraceCapture,
     corpus: &Corpus,
     exponent: usize,
     trial: Trial,
     trace: Option<&mut TraceWriter>,
 ) -> TrialMetrics {
-    let (metrics, spans) = context.run(capture);
+    let (metrics, spans) = context.run();
     if let Some(trace) = trace {
         let label = params.label();
         trace.write_run(
@@ -1667,27 +1671,15 @@ fn run_integer_limber_trial(
     metrics
 }
 
-fn choose_binius_rate(
-    capture: &TraceCapture,
-    corpus: &Corpus,
-    exponent: usize,
-    reps: usize,
-) -> usize {
+fn choose_binius_rate(corpus: &Corpus, exponent: usize, reps: usize) -> usize {
     let mut rates = Vec::new();
     println!("\nBinius inverse-rate pilot at 2^{exponent} (100-bit FRI query-phase target):");
     for log_inv_rate in 1..=3 {
         let context = BiniusContext::setup(corpus, log_inv_rate);
-        black_box(run_binius_trial(
-            &context,
-            capture,
-            exponent,
-            Trial::Warmup,
-            None,
-        ));
+        black_box(run_binius_trial(&context, exponent, Trial::Warmup, None));
         let samples = (0..reps)
             .map(|sample| {
-                run_binius_trial(&context, capture, exponent, Trial::Pilot(sample), None)
-                    .total_prover_ms
+                run_binius_trial(&context, exponent, Trial::Pilot(sample), None).total_prover_ms
             })
             .collect::<Vec<_>>();
         let median = common::median(&samples);
@@ -1731,7 +1723,6 @@ fn choose_f2z_prefix(corpus: &Corpus, exponent: usize, reps: usize) -> usize {
 }
 
 fn choose_plonky3_params(
-    capture: &TraceCapture,
     corpus: &Corpus,
 ) -> Result<(plonky3_backend::Params, whir_tuning::TuningReport), String> {
     let explicit =
@@ -1740,13 +1731,12 @@ fn choose_plonky3_params(
         &[4, 5],
         explicit,
         |params| plonky3_backend::Context::setup(corpus, params),
-        |context| context.run(capture).0.witness_to_proof_ms,
+        |context| context.run().0.witness_to_proof_ms,
         plonky3_backend::Context::security,
     )
 }
 
 fn choose_integer_limber_params(
-    capture: &TraceCapture,
     corpus: &Corpus,
     exponent: usize,
     reps: usize,
@@ -1761,7 +1751,6 @@ fn choose_integer_limber_params(
                 let elapsed = run_integer_limber_trial(
                     &context,
                     params,
-                    capture,
                     corpus,
                     exponent,
                     Trial::Preflight,
@@ -1787,7 +1776,6 @@ fn choose_integer_limber_params(
         black_box(run_integer_limber_trial(
             &context,
             params,
-            capture,
             corpus,
             exponent,
             Trial::Warmup,
@@ -1798,7 +1786,6 @@ fn choose_integer_limber_params(
                 run_integer_limber_trial(
                     &context,
                     params,
-                    capture,
                     corpus,
                     exponent,
                     Trial::Pilot(sample),
@@ -1891,7 +1878,6 @@ fn run_native_trial(
     backend: Backend,
     contexts: &SizeContexts,
     selected: &SelectedConfigs,
-    capture: &TraceCapture,
     corpus: &Corpus,
     exponent: usize,
     trial: Trial,
@@ -1934,7 +1920,6 @@ fn run_native_trial(
         Backend::Plonky3Whir => run_plonky3_trial(
             contexts.plonky3.as_ref().expect("Plonky3 context"),
             selected.plonky3,
-            capture,
             corpus,
             exponent,
             trial,
@@ -1942,7 +1927,6 @@ fn run_native_trial(
         ),
         Backend::Binius => run_binius_trial(
             contexts.binius.as_ref().expect("Binius context"),
-            capture,
             exponent,
             trial,
             trace,
@@ -1959,7 +1943,6 @@ fn run_native_trial(
         Backend::Limber => run_integer_limber_trial(
             contexts.limber.as_ref().expect("Limber context"),
             selected.limber,
-            capture,
             corpus,
             exponent,
             trial,
@@ -1977,7 +1960,6 @@ fn run_native_trial(
 }
 
 fn run_campaign(
-    capture: &TraceCapture,
     trace: &mut TraceWriter,
     exponents: &[usize],
     reps: usize,
@@ -2002,7 +1984,7 @@ fn run_campaign(
         let mut tuning = None;
         let plonky3 = if enabled(Backend::Plonky3Whir) {
             let path = output_dir.join(format!("whir-sha256-{exponent}.json"));
-            match choose_plonky3_params(capture, &corpus) {
+            match choose_plonky3_params(&corpus) {
                 Ok((params, mut record)) => {
                     selected.plonky3 = params;
                     record.workload = Some("sha256".to_owned());
@@ -2057,7 +2039,6 @@ fn run_campaign(
                 backend,
                 &contexts,
                 selected,
-                capture,
                 &corpus,
                 exponent,
                 Trial::Warmup,
@@ -2071,7 +2052,6 @@ fn run_campaign(
                     backend,
                     &contexts,
                     selected,
-                    capture,
                     &corpus,
                     exponent,
                     Trial::Sample(sample),
@@ -2511,10 +2491,10 @@ fn f2z_public_tamper_self_test() {
     }
 }
 
-fn binius_tamper_self_test(capture: &TraceCapture) {
+fn binius_tamper_self_test() {
     let corpus = Corpus::new(2, DEFAULT_ROOT_SEED ^ 0x5441_4d50_4552);
     let context = BiniusContext::setup(&corpus, 1);
-    let (metrics, _, proof, witness) = context.run(capture);
+    let (metrics, _, proof, witness) = context.run();
     assert!(metrics.witness_ms > 0.0);
     assert!(metrics.commit_ms > 0.0);
     assert!(metrics.piop_ms > 0.0);
@@ -2752,7 +2732,7 @@ fn main() {
         "set RAYON_NUM_THREADS={expected_threads} for the controlled comparison"
     );
     let limber_params = env_limber_params();
-    let capture = CaptureLayer::install();
+    f2z::observability::install().expect("install Perfetto subscriber");
 
     if let Ok(backend_slug) = std::env::var("F2Z_SHA_COMPARE_PREFLIGHT_CHILD") {
         let backend = Backend::parse(&backend_slug).expect("valid preflight backend slug");
@@ -2775,20 +2755,12 @@ fn main() {
                 let params = env_plonky3_params();
                 let context = plonky3_backend::Context::setup(&corpus, params)
                     .expect("preflight WHIR configuration is eligible");
-                run_plonky3_trial(
-                    &context,
-                    params,
-                    &capture,
-                    &corpus,
-                    exponent,
-                    Trial::Preflight,
-                    None,
-                )
+                run_plonky3_trial(&context, params, &corpus, exponent, Trial::Preflight, None)
             }
             Backend::Binius => {
                 let context =
                     BiniusContext::setup(&corpus, env_usize("F2Z_SHA_COMPARE_LOG_INV_RATE", 1));
-                run_binius_trial(&context, &capture, exponent, Trial::Preflight, None)
+                run_binius_trial(&context, exponent, Trial::Preflight, None)
             }
             Backend::BiniusLigerito => {
                 let context = BiniusLigeritoContext::setup(&corpus);
@@ -2801,7 +2773,6 @@ fn main() {
                 run_integer_limber_trial(
                     &context,
                     params,
-                    &capture,
                     &corpus,
                     exponent,
                     Trial::Preflight,
@@ -2864,7 +2835,7 @@ fn main() {
             f2z_public_tamper_self_test();
         }
         if requested.contains(&Backend::Binius) {
-            binius_tamper_self_test(&capture);
+            binius_tamper_self_test();
         }
         if requested.contains(&Backend::Plonky3Whir) {
             plonky3_backend::tamper_self_test();
@@ -2905,7 +2876,7 @@ fn main() {
     } else if requested.contains(&Backend::Binius)
         && let Some(pilot) = &pilot
     {
-        choose_binius_rate(&capture, pilot, pilot_exponent, pilot_reps)
+        choose_binius_rate(pilot, pilot_exponent, pilot_reps)
     } else {
         1
     };
@@ -2931,12 +2902,7 @@ fn main() {
         }
     }
     let limber = if pilot_enabled && runnable.contains(&Backend::Limber) && !has_limber_override() {
-        choose_integer_limber_params(
-            &capture,
-            pilot.as_ref().unwrap(),
-            pilot_exponent,
-            pilot_reps,
-        )
+        choose_integer_limber_params(pilot.as_ref().unwrap(), pilot_exponent, pilot_reps)
     } else {
         preliminary_limber
     };
@@ -2968,7 +2934,6 @@ fn main() {
         runnable.clone()
     };
     let aggregates = run_campaign(
-        &capture,
         &mut trace,
         &exponents,
         reps,
@@ -2986,8 +2951,48 @@ fn main() {
 #[cfg(test)]
 mod native_whir_tests {
     #[test]
+    #[ignore = "requires PERFETTO_TRACE_PROCESSOR; exercises native measurement backends"]
+    fn native_adapters_report_repeated_perfetto_trials() {
+        use super::*;
+        use tracing_subscriber::prelude::*;
+        tracing::subscriber::with_default(
+            tracing_subscriber::registry().with(f2z::observability::layer()),
+            || {
+                let corpus = Corpus::new(2, DEFAULT_ROOT_SEED);
+                let binius = BiniusContext::setup(&corpus, 1);
+                let plonky3 = plonky3_backend::Context::setup(
+                    &Corpus::new(128, DEFAULT_ROOT_SEED),
+                    common::whir_tuning::Params {
+                        max_round_log_inv_rate: Some(4),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                let limber = integer_limber_backend::Context::setup(
+                    &corpus,
+                    integer_limber_backend::Params { k: 9 },
+                )
+                .unwrap();
+                for _ in 0..6 {
+                    let (b, _, _, _) = binius.run();
+                    let (p, _) = plonky3.run();
+                    let (l, _) = limber.run();
+                    for metrics in [b, p, l] {
+                        assert!(metrics.witness_ms > 0.0);
+                        assert!(metrics.verifier_ms > 0.0);
+                        assert!(metrics.witness_to_proof_ms >= metrics.total_prover_ms);
+                        assert!(metrics.proof_bytes > 0);
+                    }
+                }
+            },
+        );
+    }
+
+    #[test]
+    #[ignore = "requires PERFETTO_TRACE_PROCESSOR; exercises the native measurement backend"]
     fn binius_sha_binds_public_blocks_outputs_and_proof() {
-        super::binius_tamper_self_test(&super::CaptureLayer::install());
+        f2z::observability::install().unwrap();
+        super::binius_tamper_self_test();
     }
 
     #[test]

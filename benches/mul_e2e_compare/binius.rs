@@ -1,7 +1,8 @@
 #[cfg(test)]
 #[allow(unused_imports)]
 use super::edge_corpus;
-use super::{Corpus, Timing, TraceCapture, Workload, captured};
+use super::trace_capture::TrialScopes;
+use super::{Corpus, Timing, Workload, captured};
 use binius_circuits::bignum::{self, BigUint};
 use binius_core::{constraint_system::ValueVec, word::Word};
 use binius_frontend::{Circuit, CircuitBuilder, Wire};
@@ -12,6 +13,7 @@ use binius_verifier::{
     config::StdChallenger,
     transcript::{ProverTranscript, VerifierTranscript},
 };
+use f2z::observability::Recording;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -72,26 +74,14 @@ impl Context {
             "word_constraints":{"and":cs.n_and_constraints(),"imul":cs.n_imul_constraints(),
                 "zero":cs.n_zero_constraints(),"bmul":cs.n_bmul_constraints()}})
     }
-    pub(super) fn run(&self, capture: &TraceCapture) -> Timing {
-        capture.begin();
-        let start = capture.now_ns();
-        let witness = self.populate(false).expect("Binius witness evaluation");
-        let wend = capture.now_ns();
-        let mut transcript = ProverTranscript::new(StdChallenger::default());
-        self.prover
-            .prove(&witness, &mut transcript)
-            .expect("Binius full proof");
-        let bytes = transcript.finalize();
-        let ready = capture.now_ns();
-        let vstart = capture.now_ns();
-        let mut vt = VerifierTranscript::new(StdChallenger::default(), bytes.clone());
-        self.verifier
-            .verify(witness.inout(), &mut vt)
-            .expect("Binius full verification");
-        vt.finalize().expect("consume full Binius proof");
-        let end = capture.now_ns();
-        let raw = capture.finish();
-        let mut t = Timing::new(start, wend, ready, vstart, end, bytes.len());
+    pub(super) fn run(&self) -> Timing {
+        let recording = Recording::start(Vec::new()).expect("start Perfetto trial");
+        let proof_bytes = self.prove_and_verify();
+        let raw = recording.intervals().expect("query Perfetto trial");
+        let trial = TrialScopes::from_spans(&raw, "benchmark");
+        let wend = trial.witness.end_ns;
+        let ready = trial.witness_to_proof.end_ns;
+        let mut t = Timing::from_trial(&trial, proof_bytes);
         let pack = captured(&raw, "prepare_witness", wend, ready);
         t.add(
             "witness_packing",
@@ -105,6 +95,53 @@ impl Context {
         t.add("piop", "constraint-proof", commit.end_ns, ring.start_ns);
         t.add("opening", "opening-proof", ring.start_ns, ready);
         t
+    }
+
+    pub(super) fn prove_and_verify(&self) -> usize {
+        let trial = tracing::info_span!(
+            "Verified trial",
+            component = "benchmark.verified-trial",
+            scope_kind = "scope",
+            tag_end_to_end = true
+        )
+        .entered();
+        let proving = tracing::info_span!(
+            "Witness to proof",
+            component = "benchmark.witness-to-proof",
+            scope_kind = "scope"
+        )
+        .entered();
+        let witness_scope = tracing::info_span!(
+            "Witness generation",
+            component = "benchmark.witness-evaluation",
+            scope_kind = "phase",
+            tag_witness_generation = true
+        )
+        .entered();
+        let witness = self.populate(false).expect("Binius witness evaluation");
+        drop(witness_scope);
+        let mut transcript = ProverTranscript::new(StdChallenger::default());
+        self.prover
+            .prove(&witness, &mut transcript)
+            .expect("Binius full proof");
+        let bytes = transcript.finalize();
+        drop(proving);
+        let verification = tracing::info_span!(
+            "Verification",
+            component = "benchmark.verification",
+            scope_kind = "phase",
+            tag_verification = true
+        )
+        .entered();
+        let mut vt = VerifierTranscript::new(StdChallenger::default(), bytes.clone());
+        self.verifier
+            .verify(witness.inout(), &mut vt)
+            .expect("Binius full verification");
+        vt.finalize().expect("consume full Binius proof");
+        drop(verification);
+        drop(trial);
+        let proof_bytes = bytes.len();
+        proof_bytes
     }
 }
 

@@ -18,7 +18,9 @@
 //! commitment scheme differs. Its layout knobs (`BDLAMBDA`, `BDSPEC`,
 //! `BDROWLEN`, `BDDIRECT`, `BDSPLIT`) are cleared by the campaign runner, so
 //! the defaults recorded in [`Context::config`] are what actually ran.
-use super::{Corpus, Timing, TraceCapture, Workload, captured};
+use super::trace_capture::TrialScopes;
+use super::{Corpus, Timing, Workload, captured};
+use f2z::observability::Recording;
 use limber::{
     imod_r1cs_modp::{IntModR1CSShapeModp, IntModR1CSWitnessModp},
     imod_spartan_modp::{
@@ -207,8 +209,9 @@ impl Context {
         let shape = program.shape();
         let arity = program.num_cons.max(program.num_vars).ilog2() as usize;
         let params = program.params(arity);
-        let (pk, vk) = IntModSpartanModpSNARK::<E>::setup_with_params(shape.clone(), params.clone())
-            .expect("Limber setup");
+        let (pk, vk) =
+            IntModSpartanModpSNARK::<E>::setup_with_params(shape.clone(), params.clone())
+                .expect("Limber setup");
         let scalar_bytes = <E as SumcheckEngine>::Scalar::zero(&E::bootstrap_params())
             .to_le_bytes()
             .len();
@@ -242,26 +245,73 @@ impl Context {
                "piop_payload_bytes":piop_bytes(w.num_cons, w.num_vars, self.scalar_bytes),
                "security_policy":"native Limber parameters; not asserted equal to F2Z or Binius64"})
     }
-    pub(super) fn run(&self, capture: &TraceCapture) -> Timing {
-        capture.begin();
-        let start = capture.now_ns();
+    pub(super) fn run(&self) -> Timing {
+        let recording = Recording::start(Vec::new()).expect("start Perfetto trial");
+        let proof_bytes = self.prove_and_verify();
+        let raw = recording.intervals().expect("query Perfetto trial");
+        let trial = TrialScopes::from_spans(&raw, "benchmark");
+        let wend = trial.witness.end_ns;
+        let ready = trial.witness_to_proof.end_ns;
+        let commit = captured(&raw, "imod_modp_wq_commit", wend, ready);
+        let piop = captured(&raw, "imod_modp_piop", commit.end_ns, ready);
+        let opening = captured(&raw, "imod_modp_wq_open", commit.end_ns, ready);
+        let mut t = Timing::from_trial(&trial, proof_bytes);
+        t.add("commit", "commit", commit.start_ns, commit.end_ns);
+        t.add(
+            "prime_projection",
+            "preparation",
+            commit.end_ns,
+            piop.start_ns,
+        );
+        t.add("piop", "constraint-proof", piop.start_ns, piop.end_ns);
+        t.add("opening", "opening-proof", opening.start_ns, opening.end_ns);
+        t
+    }
+
+    pub(super) fn prove_and_verify(&self) -> usize {
+        let trial = tracing::info_span!(
+            "Verified trial",
+            component = "benchmark.verified-trial",
+            scope_kind = "scope",
+            tag_end_to_end = true
+        )
+        .entered();
+        let proving = tracing::info_span!(
+            "Witness to proof",
+            component = "benchmark.witness-to-proof",
+            scope_kind = "scope"
+        )
+        .entered();
+        let witness_scope = tracing::info_span!(
+            "Witness generation",
+            component = "benchmark.witness-evaluation",
+            scope_kind = "phase",
+            tag_witness_generation = true
+        )
+        .entered();
         let (w, q) = self
             .program
             .witness(&self.corpus)
             .expect("Limber witness satisfies exact and modular constraints");
-        let wend = capture.now_ns();
+        drop(witness_scope);
         let (witness, instance) =
             IntModR1CSWitnessModp::<E>::new(&self.shape, self.pk.ck(), w, q, vec![])
                 .expect("Limber witness commitment");
         let proof = IntModSpartanModpSNARK::<E>::prove(&self.pk, &instance, &witness)
             .expect("Limber full proof");
-        let ready = capture.now_ns();
-        let vstart = capture.now_ns();
+        drop(proving);
+        let verification = tracing::info_span!(
+            "Verification",
+            component = "benchmark.verification",
+            scope_kind = "phase",
+            tag_verification = true
+        )
+        .entered();
         proof
             .verify(&self.vk, &instance)
             .expect("Limber full verification");
-        let end = capture.now_ns();
-        let raw = capture.finish();
+        drop(verification);
+        drop(trial);
         // Serialized commitments and batch opening, plus the analytically
         // counted PIOP payload the pinned driver does not serialize.
         let proof_bytes = instance
@@ -277,21 +327,8 @@ impl Context {
                 .eval_arg_bytes()
                 .expect("serialize Limber opening")
                 .len();
-        let commit = captured(&raw, "imod_modp_wq_commit", wend, ready);
-        let piop = captured(&raw, "imod_modp_piop", commit.end_ns, ready);
-        let opening = captured(&raw, "imod_modp_wq_open", commit.end_ns, ready);
-        let mut t = Timing::new(start, wend, ready, vstart, end, proof_bytes);
-        t.add("commit", "commit", commit.start_ns, commit.end_ns);
-        t.add(
-            "prime_projection",
-            "preparation",
-            commit.end_ns,
-            piop.start_ns,
-        );
-        t.add("piop", "constraint-proof", piop.start_ns, piop.end_ns);
-        t.add("opening", "opening-proof", opening.start_ns, opening.end_ns);
         std::hint::black_box((proof, witness, instance));
-        t
+        proof_bytes
     }
 }
 
