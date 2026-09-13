@@ -3,8 +3,8 @@
 //! and opened by the F2Z opener — rate 1/8, Johnson-regime Ligerito with fold
 //! and query grinding, Round 0 — and the whole protocol gated at 100 bits by
 //! a union bound, the yardstick of the `f2z` rows.
-use super::trace_capture::BiniusLigeritoPhases;
-use super::{Corpus, Timing, TraceCapture, Workload, binius};
+use super::trace_capture::{BiniusLigeritoPhases, BiniusLigeritoTrial};
+use super::{CapturedSpan, Corpus, Timing, TraceCapture, Workload, binius};
 use binius_frontend::Circuit;
 use f2z::binius_ligerito::Prepared;
 use serde_json::{Value, json};
@@ -63,18 +63,43 @@ impl Context {
 
     pub(super) fn run(&self, capture: &TraceCapture) -> Timing {
         capture.begin();
-        let start = capture.now_ns();
-        let witness = binius::populate(&self.corpus, &self.circuit, &self.wires, false)
-            .expect("Binius witness evaluation")
-            .into_value_vec();
-        let wend = capture.now_ns();
+        let trial = tracing::info_span!(
+            "Verified trial",
+            component = "binius-ligerito.verified-trial",
+            scope_kind = "scope",
+            tag_end_to_end = true,
+        )
+        .entered();
+        let proving = tracing::info_span!(
+            "Witness to proof",
+            component = "binius-ligerito.witness-to-proof",
+            scope_kind = "scope",
+        )
+        .entered();
+        let witness = tracing::info_span!(
+            "Witness generation",
+            component = "binius-ligerito.witness-evaluation",
+            scope_kind = "phase",
+            tag_witness_generation = true,
+        )
+        .in_scope(|| {
+            binius::populate(&self.corpus, &self.circuit, &self.wires, false)
+                .expect("Binius witness evaluation")
+                .into_value_vec()
+        });
         let proof = self
             .prepared
             .prove(&witness)
             .expect("binius64-ligerito full proof");
         let bytes = proof.to_bytes();
-        let ready = capture.now_ns();
-        let vstart = capture.now_ns();
+        drop(proving);
+        let verification = tracing::info_span!(
+            "Verification",
+            component = "binius-ligerito.verification",
+            scope_kind = "phase",
+            tag_verification = true,
+        )
+        .entered();
         let decoded = self
             .prepared
             .proof_from_bytes(&bytes)
@@ -82,22 +107,94 @@ impl Context {
         self.prepared
             .verify(witness.inout(), &decoded)
             .expect("binius64-ligerito full verification");
-        let end = capture.now_ns();
-        let phases = BiniusLigeritoPhases::from_spans(&capture.finish());
-        let mut t = Timing::new(start, wend, ready, vstart, end, bytes.len());
-        t.add("commit", "commit", phases.commit.0, phases.commit.1);
-        for (start, end) in phases.piop {
-            t.add("piop", "constraint-proof", start, end);
-        }
-        for (start, end) in phases.opening {
-            t.add("opening", "opening-proof", start, end);
-        }
-        t
+        drop(verification);
+        drop(trial);
+        timing_from_spans(&capture.finish(), bytes.len())
     }
+}
+
+fn timing_from_spans(raw: &[CapturedSpan], proof_bytes: usize) -> Timing {
+    let trial = BiniusLigeritoTrial::from_spans(raw);
+    let phases = BiniusLigeritoPhases::from_spans(raw);
+    let mut t = Timing {
+        phases: vec![],
+        proof_bytes,
+    };
+    for (name, tag, span) in [
+        ("verified_trial", "end-to-end", trial.verified),
+        ("witness_to_proof", "proving", trial.witness_to_proof),
+    ] {
+        t.add(name, tag, span.start_ns, span.end_ns);
+    }
+    t.add(
+        "online_prover",
+        "proving",
+        trial.witness.end_ns,
+        trial.witness_to_proof.end_ns,
+    );
+    t.add(
+        "witness",
+        "witness-generation",
+        trial.witness.start_ns,
+        trial.witness.end_ns,
+    );
+    t.add(
+        "verify",
+        "verification",
+        trial.verification.start_ns,
+        trial.verification.end_ns,
+    );
+    t.add(
+        "post_proof",
+        "proof-accounting",
+        trial.witness_to_proof.end_ns,
+        trial.verification.start_ns,
+    );
+    t.add("commit", "commit", phases.commit.0, phases.commit.1);
+    for (start, end) in phases.piop {
+        t.add("piop", "constraint-proof", start, end);
+    }
+    for (start, end) in phases.opening {
+        t.add("opening", "opening-proof", start, end);
+    }
+    t
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn trial_metrics_use_operation_endpoints_not_wrapper_endpoints() {
+        let raw = super::super::trace_capture::phase_tests::trial_fixture();
+        let timing = super::timing_from_spans(&raw, 123);
+        timing.validate();
+        assert_eq!(
+            timing
+                .phases
+                .iter()
+                .take(6)
+                .map(|p| p.name)
+                .collect::<Vec<_>>(),
+            [
+                "verified_trial",
+                "witness_to_proof",
+                "online_prover",
+                "witness",
+                "verify",
+                "post_proof"
+            ]
+        );
+        let metrics = timing.metrics();
+        assert_eq!(metrics.witness_ms, 8.0 / 1e6);
+        assert_eq!(metrics.online_prover_ms, 130.0 / 1e6);
+        assert_eq!(metrics.witness_to_proof_ms, 139.0 / 1e6);
+        assert_eq!(metrics.verify_ms, 10.0 / 1e6);
+        assert_eq!(metrics.verified_trial_ms, 160.0 / 1e6);
+        assert_eq!(metrics.post_proof_ms, 5.0 / 1e6);
+        assert_eq!(metrics.commit_ms, 10.0 / 1e6);
+        assert_eq!(metrics.piop_ms, 55.0 / 1e6);
+        assert_eq!(metrics.opening_ms, 50.0 / 1e6);
+    }
+
     #[test]
     fn span_metrics_cover_repeated_verified_multiplication_trials() {
         use super::super::CaptureLayer;

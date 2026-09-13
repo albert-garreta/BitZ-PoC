@@ -255,27 +255,55 @@ Perfetto exports these same annotations when enabled. Its `tag_commit` view
 includes **all** oracle commitments; the historical benchmark `commit_ms`
 column intentionally counts only the witness commitment. Do not equate them.
 
-This migration removes the Binius64-Ligerito **phase** clocks, not the entire
-timing system. Trial boundary clocks, the existing live collector, other
-backends' `prof::scope` calls and memory reporting remain. The live collector
-still supplies the benchmark metrics; Perfetto remains the optional diagnostic
-export. Instrumentation overhead changes, so this is not a performance claim.
+This migration removes the Binius64-Ligerito phase and trial-boundary clocks,
+not the entire timing system. The existing live collector, one-time setup
+timers, other backends' `prof::scope` calls and memory reporting remain. The live
+collector still supplies the benchmark metrics; Perfetto remains the optional
+diagnostic export. Instrumentation overhead changes, so this is not a performance
+claim.
 
-Migration checks on macOS ARM64: all 24 SHA tests, all three Binius64-Ligerito
-protocol tests, all eight output/Perfetto tests (including the native processor),
-and the ten unchanged native-runner Python tests pass. Multiplication passes 37
-of 38 tests; the unchanged `u32_comparison_requires_johnson_and_ood` test expects
+Trial-scope migration checks on macOS ARM64: all 27 SHA tests pass, and
+multiplication passes 41 of 42 tests. The unchanged
+`u32_comparison_requires_johnson_and_ood` test expects
 `config.ligerito.target_security_bits`, which is null. The same failure reproduces
 in the pre-migration test executable. It is not repaired by this timing change.
 The new smoke tests exercise six verified trials each at 2,048 multiplications
 and 32 SHA compressions; multiplication also checks proof-byte equality with
 tracing on/off.
-Both benchmark targets and the hybrid binary compile with and without Perfetto;
-the library also checks without default features. Linux remains untested.
+Both comparison benchmarks and the multiplication witness benchmark compile with
+and without Perfetto. The preceding phase migration also passed all three
+Binius64-Ligerito protocol tests, all eight output/Perfetto tests (including the
+native processor), and the ten unchanged native-runner Python tests; it checked
+the hybrid binary with and without Perfetto and the library without default
+features. Linux remains untested.
 
 An optimized multiplication smoke (2,048 operations, two threads, one warmup and
 five samples) also verified all six proofs and produced six valid Perfetto files.
-Each contains 62 complete slices, including two real Round-0 intervals inside the
-PIOP prefix, with no error/data-loss statistics. The JSONL phase unions agree
-exactly with the corresponding numeric sample metrics. This checks measurement
-structure and output, not tracing overhead or relative performance.
+Each contains 66 complete slices, including the four trial scopes and two real
+Round-0 intervals inside the PIOP prefix, with no error/data-loss statistics.
+Native-processor checks confirm scope nesting, ordering, and warmup/sample
+identity. The JSONL phase unions agree exactly with all corresponding numeric
+sample metrics. This checks measurement structure and output, not tracing
+overhead or relative performance.
+
+### Trial scopes
+
+The Binius64-Ligerito multiplication and SHA runners mark four ordinary spans:
+`verified-trial`, `witness-to-proof`, `witness-evaluation`, and `verification`.
+They no longer call `capture.now_ns()`. `BiniusLigeritoTrial` borrows the completed
+spans, checks their nesting/order, and supplies endpoints to the existing report
+projections. It does not read clocks or install another collector.
+
+Proof encoding stays inside `witness-to-proof`; proof decoding stays inside
+`verification`. The original witness, proof and decoded proof remain alive until
+after the scopes close, so their destruction and report construction stay out
+of the measured trial. JSON/CSV columns, units, warmup handling and aggregation
+rules are unchanged. The existing online-prover interval runs from witness exit
+to proof readiness, including encoding; post-proof accounting runs from proof
+readiness to verification entry.
+
+Each scope uses its own measured endpoints, including witness and verification.
+The new annotations can introduce gaps between nested scope endpoints; those
+gaps remain in their enclosing totals, not in the child-operation durations.
+The verified-trial span is the explicit Perfetto end-to-end boundary, inside the
+larger `benchmark_trial` orchestration span.

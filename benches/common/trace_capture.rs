@@ -171,6 +171,53 @@ fn ns_since(epoch: Instant) -> u64 {
     u64::try_from(epoch.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
 
+fn required_span<'a>(raw: &'a [CapturedSpan], component: &str) -> &'a CapturedSpan {
+    let mut spans = raw
+        .iter()
+        .filter(|s| s.component.as_deref() == Some(component));
+    let span = spans
+        .next()
+        .unwrap_or_else(|| panic!("missing {component} span"));
+    assert!(
+        spans.next().is_none(),
+        "multiple {component} spans in one trial"
+    );
+    assert!(span.end_ns >= span.start_ns, "reversed {component} span");
+    span
+}
+
+/// Completed trial scopes. Keep each operation's own endpoints rather than
+/// charging the enclosing scopes' entry/exit overhead to witness or verifier.
+pub(crate) struct BiniusLigeritoTrial<'a> {
+    pub(crate) verified: &'a CapturedSpan,
+    pub(crate) witness_to_proof: &'a CapturedSpan,
+    pub(crate) witness: &'a CapturedSpan,
+    pub(crate) verification: &'a CapturedSpan,
+}
+
+impl<'a> BiniusLigeritoTrial<'a> {
+    pub(crate) fn from_spans(raw: &'a [CapturedSpan]) -> Self {
+        let verified = required_span(raw, "binius-ligerito.verified-trial");
+        let witness_to_proof = required_span(raw, "binius-ligerito.witness-to-proof");
+        let witness = required_span(raw, "binius-ligerito.witness-evaluation");
+        let verification = required_span(raw, "binius-ligerito.verification");
+        assert!(
+            verified.start_ns <= witness_to_proof.start_ns
+                && witness_to_proof.start_ns <= witness.start_ns
+                && witness.end_ns <= witness_to_proof.end_ns
+                && witness_to_proof.end_ns <= verification.start_ns
+                && verification.end_ns <= verified.end_ns,
+            "trial spans are not nested/sequenced correctly"
+        );
+        Self {
+            verified,
+            witness_to_proof,
+            witness,
+            verification,
+        }
+    }
+}
+
 /// Reporting attribution, not another timer: Round 0 is opening work even
 /// though it executes inside the PIOP prefix. Later oracle commits remain
 /// attributed to PIOP, matching the existing benchmark metric definitions.
@@ -187,15 +234,7 @@ impl BiniusLigeritoPhases {
                 .filter(move |s| s.component.as_deref() == Some(component))
         };
         let required = |component| {
-            let mut spans = matching(component);
-            let span = spans
-                .next()
-                .unwrap_or_else(|| panic!("missing {component} span"));
-            assert!(
-                spans.next().is_none(),
-                "multiple {component} spans in one trial"
-            );
-            assert!(span.end_ns >= span.start_ns, "reversed {component} span");
+            let span = required_span(raw, component);
             (span.start_ns, span.end_ns)
         };
         let prefix = required("binius-ligerito.piop");
@@ -241,7 +280,7 @@ impl BiniusLigeritoPhases {
 }
 
 #[cfg(test)]
-mod phase_tests {
+pub(crate) mod phase_tests {
     use super::*;
 
     fn fixture() -> Vec<CapturedSpan> {
@@ -265,6 +304,64 @@ mod phase_tests {
             end_ns,
         })
         .collect()
+    }
+
+    pub(crate) fn trial_fixture() -> Vec<CapturedSpan> {
+        let mut raw = fixture();
+        raw.extend(
+            [
+                ("binius-ligerito.verified-trial", 0, 160),
+                ("binius-ligerito.witness-to-proof", 1, 140),
+                ("binius-ligerito.witness-evaluation", 2, 10),
+                ("binius-ligerito.verification", 145, 155),
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(id, (component, start_ns, end_ns))| CapturedSpan {
+                id: 100 + id as u64,
+                parent: None,
+                name: component.to_owned(),
+                component: Some(component.to_owned()),
+                start_ns,
+                end_ns,
+            }),
+        );
+        raw
+    }
+
+    #[test]
+    fn trial_scopes_keep_distinct_endpoints() {
+        let raw = trial_fixture();
+        let trial = BiniusLigeritoTrial::from_spans(&raw);
+        assert_eq!((trial.verified.start_ns, trial.verified.end_ns), (0, 160));
+        assert_eq!(
+            (
+                trial.witness_to_proof.start_ns,
+                trial.witness_to_proof.end_ns
+            ),
+            (1, 140)
+        );
+        assert_eq!((trial.witness.start_ns, trial.witness.end_ns), (2, 10));
+        assert_eq!(
+            (trial.verification.start_ns, trial.verification.end_ns),
+            (145, 155)
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "missing binius-ligerito.verification span")]
+    fn incomplete_trial_is_rejected() {
+        let mut raw = trial_fixture();
+        raw.pop();
+        BiniusLigeritoTrial::from_spans(&raw);
+    }
+
+    #[test]
+    #[should_panic(expected = "trial spans are not nested/sequenced correctly")]
+    fn verification_cannot_overlap_proof_production() {
+        let mut raw = trial_fixture();
+        raw.last_mut().unwrap().start_ns = 139;
+        BiniusLigeritoTrial::from_spans(&raw);
     }
 
     #[test]

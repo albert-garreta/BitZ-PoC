@@ -10,7 +10,9 @@ use common::output::{BenchmarkOutput, FileMode, JsonStyle, JsonlWriter};
 use common::whir_tuning;
 #[path = "common/trace_capture.rs"]
 mod trace_capture;
-use trace_capture::{BiniusLigeritoPhases, CaptureLayer, CapturedSpan, TraceCapture};
+use trace_capture::{
+    BiniusLigeritoPhases, BiniusLigeritoTrial, CaptureLayer, CapturedSpan, TraceCapture,
+};
 #[path = "sha256_e2e_compare/integer_limber.rs"]
 mod integer_limber_backend;
 #[path = "sha256_e2e_compare/plonky3.rs"]
@@ -617,16 +619,39 @@ impl BiniusLigeritoContext {
 
     fn run(&self, capture: &TraceCapture) -> (TrialMetrics, Vec<SemanticSpan>, Vec<u8>) {
         capture.begin();
-        let root_start = capture.now_ns();
-        let witness = self.populate();
-        let witness_end = capture.now_ns();
+        let trial = tracing::info_span!(
+            "Verified trial",
+            component = "binius-ligerito.verified-trial",
+            scope_kind = "scope",
+            tag_end_to_end = true,
+        )
+        .entered();
+        let proving = tracing::info_span!(
+            "Witness to proof",
+            component = "binius-ligerito.witness-to-proof",
+            scope_kind = "scope",
+        )
+        .entered();
+        let witness = tracing::info_span!(
+            "Witness generation",
+            component = "binius-ligerito.witness-evaluation",
+            scope_kind = "phase",
+            tag_witness_generation = true,
+        )
+        .in_scope(|| self.populate());
         let proof = self
             .prepared
             .prove(&witness)
             .expect("binius64-ligerito proof succeeds");
         let proof_bytes = proof.to_bytes();
-        let total_end = capture.now_ns();
-        let verify_start = capture.now_ns();
+        drop(proving);
+        let verification = tracing::info_span!(
+            "Verification",
+            component = "binius-ligerito.verification",
+            scope_kind = "phase",
+            tag_verification = true,
+        )
+        .entered();
         let decoded = self
             .prepared
             .proof_from_bytes(&proof_bytes)
@@ -634,16 +659,9 @@ impl BiniusLigeritoContext {
         self.prepared
             .verify(witness.inout(), &decoded)
             .expect("binius64-ligerito proof verifies");
-        let verify_end = capture.now_ns();
-        let phases = BiniusLigeritoPhases::from_spans(&capture.finish());
-        let spans = binius_ligerito_semantic_spans(
-            root_start,
-            witness_end,
-            total_end,
-            verify_start,
-            verify_end,
-            phases,
-        );
+        drop(verification);
+        drop(trial);
+        let spans = binius_ligerito_semantic_spans(&capture.finish());
         let metrics = TrialMetrics::from_spans(&spans, proof_bytes.len());
         black_box(&proof_bytes);
         (metrics, spans, proof_bytes)
@@ -651,14 +669,9 @@ impl BiniusLigeritoContext {
 }
 
 /// Place measured phases without moving interleaved Round 0 work to the end.
-fn binius_ligerito_semantic_spans(
-    root_start: u64,
-    witness_end: u64,
-    total_end: u64,
-    verify_start: u64,
-    verify_end: u64,
-    phases: BiniusLigeritoPhases,
-) -> Vec<SemanticSpan> {
+fn binius_ligerito_semantic_spans(raw: &[CapturedSpan]) -> Vec<SemanticSpan> {
+    let trial = BiniusLigeritoTrial::from_spans(raw);
+    let phases = BiniusLigeritoPhases::from_spans(raw);
     let span = |id: &str,
                 parent: Option<&str>,
                 operation: &str,
@@ -695,8 +708,8 @@ fn binius_ligerito_semantic_spans(
             "Verified trial",
             "end-to-end",
             vec!["end-to-end"],
-            root_start,
-            verify_end,
+            trial.verified.start_ns,
+            trial.verified.end_ns,
             "scope",
             Some("end-to-end"),
             false,
@@ -710,8 +723,8 @@ fn binius_ligerito_semantic_spans(
             "Witness to proof",
             "proving",
             vec!["proving"],
-            root_start,
-            total_end,
+            trial.witness_to_proof.start_ns,
+            trial.witness_to_proof.end_ns,
             "phase",
             None,
             false,
@@ -727,8 +740,8 @@ fn binius_ligerito_semantic_spans(
             "Total prover",
             "proving",
             vec!["proving"],
-            witness_end,
-            total_end,
+            trial.witness.end_ns,
+            trial.witness_to_proof.end_ns,
             "phase",
             Some("proving"),
             false,
@@ -742,8 +755,8 @@ fn binius_ligerito_semantic_spans(
             "Witness eval",
             "witness-generation",
             vec!["witness-generation"],
-            root_start,
-            witness_end,
+            trial.witness.start_ns,
+            trial.witness.end_ns,
             "phase",
             None,
             true,
@@ -772,8 +785,8 @@ fn binius_ligerito_semantic_spans(
             "Verify",
             "verification",
             vec!["verification"],
-            verify_start,
-            verify_end,
+            trial.verification.start_ns,
+            trial.verification.end_ns,
             "phase",
             Some("verification"),
             true,
@@ -3052,25 +3065,15 @@ mod reporting_tests {
 
     #[test]
     fn binius_ligerito_metrics_union_real_opening_intervals() {
-        let spans = binius_ligerito_semantic_spans(
-            0,
-            10,
-            140,
-            145,
-            160,
-            BiniusLigeritoPhases {
-                commit: (20, 30),
-                piop: vec![(10, 20), (40, 65), (80, 100)],
-                opening: vec![(30, 40), (65, 75), (70, 80), (105, 130)],
-            },
-        );
+        let spans = binius_ligerito_semantic_spans(&trace_capture::phase_tests::trial_fixture());
         let metrics = TrialMetrics::from_spans(&spans, 123);
+        assert_eq!(metrics.witness_ms, 8.0 / 1e6);
         assert_eq!(metrics.commit_ms, 10.0 / 1e6);
         assert_eq!(metrics.piop_ms, 55.0 / 1e6);
         assert_eq!(metrics.opening_ms, 50.0 / 1e6);
         assert_eq!(metrics.total_prover_ms, 130.0 / 1e6);
-        assert_eq!(metrics.witness_to_proof_ms, 140.0 / 1e6);
-        assert_eq!(metrics.verifier_ms, 15.0 / 1e6);
+        assert_eq!(metrics.witness_to_proof_ms, 139.0 / 1e6);
+        assert_eq!(metrics.verifier_ms, 10.0 / 1e6);
         let openings: Vec<_> = spans
             .iter()
             .filter(|s| s.scope_tag == Some("opening-proof"))
