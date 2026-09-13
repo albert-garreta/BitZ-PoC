@@ -204,7 +204,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         grinding_nonce: initial_nonce,
     } = derive_initial_challenges(t, prepared, &security, None)?;
     let reducer = OptimizedSumcheckReducer::new(&cfg).map_err(error)?;
-    let mod_q_coefficients = ModQCoefficients::from_relation(prepared, modulus, &cfg);
+    let mut mod_q_coefficients = ModQCoefficients::from_relation(prepared, modulus, &cfg);
     let (outer, outer_nonces) = {
         let _scope = crate::utils::prof::scope("ecdsa:outer_prove");
         let products = witness.build_outer_product_mles(prepared, modulus, &cfg);
@@ -347,7 +347,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     boundary::<BatchGrinding, _>(transcript, security.batch, Some(proof.batch_nonce))?;
     let (matrix_batch_challenge, linear_row_point, linear_batch_weight) =
         sample_inner_batch_challenges(transcript, prepared, &cfg);
-    let mod_q_coefficients = ModQCoefficients::from_relation(prepared, modulus, &cfg);
+    let mut mod_q_coefficients = ModQCoefficients::from_relation(prepared, modulus, &cfg);
     let inner_claim = InnerSumcheckClaim::from_outer_claims(
         prepared,
         statement,

@@ -18,6 +18,9 @@ use crate::{
     },
     poly::mle::{CompositeMultilinearExtension, EqualityWeights, FactoredMultilinearExtension},
 };
+use circuit::{matrix_products::RuntimeModulus, matrix_wengert::PreparedWengertEvaluator};
+use crypto_primitives::FromWithConfig;
+use num_bigint::BigUint;
 
 /// Compact description of the equation checked by the inner sumcheck.
 pub(super) struct InnerSumcheckClaim {
@@ -33,12 +36,16 @@ pub(super) struct InnerSumcheckClaim {
     claimed_sum: F,
 }
 
-/// Distinct integer matrix coefficients reduced modulo the sampled prime.
-pub(super) struct ModQCoefficients {
+/// Distinct integer matrix coefficients reduced modulo the sampled prime, and
+/// the P-256 circuit's reverse-mode tape prepared for that prime.
+pub(super) struct ModQCoefficients<'a> {
     /// Arithmetic modulo the transcript-sampled prime.
     ctx: RawMontyCtx,
     /// One Montgomery residue per distinct `LocalRelation::coefficients` entry.
     residues: Vec<Raw>,
+    /// `r · (A + xB + x²C)` over the P-256 tail through the circuit's DAG. Its
+    /// Montgomery form is the same two-limb crypto-bigint form as [`Raw`].
+    tape: PreparedWengertEvaluator<'a>,
 }
 
 /// Owned public matrix MLE and its Montgomery evaluation cache.
@@ -63,6 +70,10 @@ pub(super) struct BatchedMatrixMle {
     constant_weight: F,
     /// `N · H`, the first P-256 assignment index.
     p256_assignment_offset: usize,
+    /// Geometric runs of `p256_evaluations` (from the tape's power groups, split
+    /// around the public-bit cells): `(start, len, base)` with
+    /// `p256_evaluations[start + k] = base · 2^k`. Prover-side structure only.
+    tail_runs: Vec<(usize, usize, F)>,
 }
 
 impl InnerSumcheckClaim {
@@ -108,9 +119,9 @@ impl InnerSumcheckClaim {
     }
 }
 
-impl ModQCoefficients {
+impl<'a> ModQCoefficients<'a> {
     pub(super) fn from_relation(
-        relation: &PreparedSha256Ecdsa,
+        relation: &'a PreparedSha256Ecdsa,
         modulus: u128,
         cfg: &Config,
     ) -> Self {
@@ -122,26 +133,84 @@ impl ModQCoefficients {
             .iter()
             .map(|coefficient| ctx.raw(&reduce_integer_mod_q(coefficient, modulus, cfg)))
             .collect();
-        Self { ctx, residues }
+        // The sampled prime is odd and below 2^113, so both constructions succeed.
+        let runtime_modulus = RuntimeModulus::<2>::new(BigUint::from(modulus))
+            .expect("the sampled prime fits two limbs");
+        let tape = relation
+            .local
+            .tape
+            .prepare(&runtime_modulus)
+            .expect("the sampled prime is odd");
+        Self {
+            ctx,
+            residues,
+            tape,
+        }
+    }
+
+    /// `Σ_row Σ_m weight[3·row + m] · M_m[row]` over every P-256 tail column, by
+    /// the reverse-mode tape. Both sides use crypto-bigint's two-limb Montgomery
+    /// form with `R = 2^128`, so the words convert to [`Raw`] without arithmetic.
+    fn tape_tail(&mut self, relation: &PreparedSha256Ecdsa, matrix_rows: &[Raw]) -> Result<Vec<Raw>> {
+        let triples: Vec<[[u64; 2]; 3]> = matrix_rows
+            .chunks_exact(3)
+            .map(|slots| [raw_words(slots[0]), raw_words(slots[1]), raw_words(slots[2])])
+            .collect();
+        let output = self
+            .tape
+            .apply_weighted(&triples)
+            .map_err(|e| error(format!("P-256 tape: {e}")))?;
+        if output.len() != relation.local.tail.columns() {
+            return Err(error("P-256 tape column count mismatch"));
+        }
+        Ok(output.iter().map(|words| words_raw(*words)).collect())
     }
 
     pub(super) fn build_batched_matrix_mle(
-        &self,
+        &mut self,
         relation: &PreparedSha256Ecdsa,
         claim: &InnerSumcheckClaim,
         cfg: &Config,
     ) -> Result<BatchedMatrixMle> {
         let _scope = crate::utils::prof::scope("ecdsa:coefficient_combine");
         let weights = self.build_row_weights(relation, claim, cfg)?;
-        let gather = |column| self.p256_column_weight(relation, &weights.matrix_rows, column);
-        #[cfg(feature = "parallel")]
-        let mut tail: Vec<Raw> = (0..relation.local.tail.columns())
-            .into_par_iter()
-            .with_min_len(TAIL_BLOCK)
-            .map(gather)
-            .collect();
-        #[cfg(not(feature = "parallel"))]
-        let mut tail: Vec<Raw> = (0..relation.local.tail.columns()).map(gather).collect();
+        let mut tail = self.tape_tail(relation, &weights.matrix_rows)?;
+        // The runs describe the tape's output; the public-bit cells are adjusted
+        // below, so every run is split around them (the cells become unstructured).
+        let mut exceptions: Vec<usize> = relation.local.public_h.to_vec();
+        exceptions.sort_unstable();
+        let tail_runs: Vec<(usize, usize, F)> = {
+            let ctx = self.ctx;
+            let mut out = Vec::new();
+            for run in self.tape.power_runs() {
+                let base = ctx.field(words_raw(run.base));
+                let mut start = run.first_column;
+                let end = run.first_column + run.len;
+                let mut base_at_start = base;
+                let two = F::from_with_cfg(2u64, cfg);
+                let first = exceptions.partition_point(|&c| c < start);
+                for &cell in &exceptions[first..] {
+                    if cell >= end {
+                        break;
+                    }
+                    if cell > start {
+                        out.push((start, cell - start, base_at_start.clone()));
+                    }
+                    // Skip the exceptional cell; the run continues after it with
+                    // its base advanced by 2^(cell + 1 - start).
+                    let mut advanced = base_at_start.clone();
+                    for _ in start..=cell {
+                        advanced = advanced * &two;
+                    }
+                    base_at_start = advanced;
+                    start = cell + 1;
+                }
+                if start < end {
+                    out.push((start, end - start, base_at_start));
+                }
+            }
+            out
+        };
         for (&cell, &weight) in relation.local.public_h.iter().zip(&weights.public_bits) {
             tail[cell] = self.ctx.add(tail[cell], weight);
         }
@@ -164,12 +233,14 @@ impl ModQCoefficients {
             p256_montgomery_evaluations: tail,
             constant_weight: weights.constant,
             p256_assignment_offset: relation.map.h_offset,
+            tail_runs,
         })
     }
 
-    /// Evaluate the public matrix MLE without allocating either P-256 tail table.
+    /// Evaluate the public matrix MLE at a point: the P-256 tail comes from the
+    /// tape (one pass over the circuit's DAG), then one weighted sum over it.
     pub(super) fn evaluate_batched_matrix_mle(
-        &self,
+        &mut self,
         relation: &PreparedSha256Ecdsa,
         claim: &InnerSumcheckClaim,
         assignment_point: &[F],
@@ -181,6 +252,7 @@ impl ModQCoefficients {
             assignment_point,
         )?;
         let weights = self.build_row_weights(relation, claim, cfg)?;
+        let tail = self.tape_tail(relation, &weights.matrix_rows)?;
         let (instances, sha) = self.build_sha_factors(relation, claim, cfg)?;
         let equality = equality_weights(assignment_point, cfg)?;
         let mut value = evaluate_sha_factors(&instances, &sha, assignment_point, cfg)?;
@@ -188,9 +260,9 @@ impl ModQCoefficients {
         value += &evaluate_assignment_tail(
             self.ctx,
             relation.map.h_offset,
-            relation.local.tail.columns(),
+            tail.len(),
             &equality,
-            |column| self.p256_column_weight(relation, &weights.matrix_rows, column),
+            |column| tail[column],
         );
         for (&cell, &weight) in relation.local.public_h.iter().zip(&weights.public_bits) {
             value += &(self.ctx.field(weight) * &equality.at(relation.map.h_offset + cell));
@@ -248,6 +320,8 @@ impl ModQCoefficients {
         })
     }
 
+    /// The expanded-entry gather the tape replaced; kept as the test oracle.
+    #[cfg(test)]
     fn p256_column_weight(
         &self,
         relation: &PreparedSha256Ecdsa,
@@ -310,6 +384,7 @@ impl BatchedMatrixMle {
             self.constant_weight.clone(),
             cfg,
         )
+        .and_then(|mle| mle.with_tail_runs(&self.tail_runs))
         .map_err(error)
     }
 
@@ -337,6 +412,16 @@ impl BatchedMatrixMle {
 
 #[cfg(feature = "parallel")]
 const TAIL_BLOCK: usize = 1 << 12;
+
+/// Little-endian words of a raw Montgomery residue, the tape's element form.
+const fn raw_words(value: Raw) -> [u64; 2] {
+    [value as u64, (value >> 64) as u64]
+}
+
+/// The raw Montgomery residue of the tape's little-endian words.
+const fn words_raw(words: [u64; 2]) -> Raw {
+    (words[0] as Raw) | ((words[1] as Raw) << 64)
+}
 
 struct RowWeights {
     /// Slot `3 * row + matrix` for A/B/C.
@@ -377,23 +462,35 @@ fn evaluate_assignment_tail(
     equality: &EqualityWeights<F>,
     evaluation_at: impl Fn(usize) -> Raw + Sync,
 ) -> F {
+    if len == 0 {
+        return ctx.field(0 as Raw);
+    }
     let (low, high) = (ctx.raw_vec(equality.low()), ctx.raw_vec(equality.high()));
-    let term = |index| {
-        let assignment_index = offset + index;
-        let weight = ctx.mul(
-            low[assignment_index & (low.len() - 1)],
-            high[assignment_index >> low.len().ilog2()],
-        );
-        ctx.mul(weight, evaluation_at(index))
+    // eq(point, assignment_index) = low[index mod L] * high[index / L] with L = low.len(),
+    // so the high factor is applied once per group of L consecutive assignment indices:
+    // one multiplication per index instead of two.
+    let shift = low.len().ilog2();
+    let mask = low.len() - 1;
+    let (first, last) = (offset >> shift, (offset + len - 1) >> shift);
+    let group = |block: usize| {
+        let start = (block << shift).max(offset);
+        let end = ((block + 1) << shift).min(offset + len);
+        let inner = (start..end).fold(0 as Raw, |sum, assignment_index| {
+            ctx.add(
+                sum,
+                ctx.mul(low[assignment_index & mask], evaluation_at(assignment_index - offset)),
+            )
+        });
+        ctx.mul(inner, high[block])
     };
     #[cfg(feature = "parallel")]
-    let sum = (0..len)
+    let sum = (first..last + 1)
         .into_par_iter()
-        .with_min_len(TAIL_BLOCK)
-        .fold(|| 0 as Raw, |sum, index| ctx.add(sum, term(index)))
+        .with_min_len(2)
+        .fold(|| 0 as Raw, |sum, block| ctx.add(sum, group(block)))
         .reduce(|| 0 as Raw, |left, right| ctx.add(left, right));
     #[cfg(not(feature = "parallel"))]
-    let sum = (0..len).fold(0 as Raw, |sum, index| ctx.add(sum, term(index)));
+    let sum = (first..last + 1).fold(0 as Raw, |sum, block| ctx.add(sum, group(block)));
     ctx.field(sum)
 }
 
@@ -405,6 +502,111 @@ mod tests {
         sumcheck::SumcheckProof,
     };
     use crypto_primitives::{FromWithConfig, PrimeField, crypto_bigint_uint::Uint};
+
+    /// The tape's tail must equal the expanded-entry gather element by element,
+    /// for both outer modes (Split weights only the linear rows' `C` slot).
+    #[test]
+    fn tape_tail_matches_column_gather() {
+        let modulus = (1u128 << 127) - 1; // the Mersenne prime M127: two limbs, odd, wider than the sampled primes
+        let cfg = F::make_cfg(&Uint::from(modulus)).unwrap();
+        let f = |n| F::from_with_cfg(n, &cfg);
+        let (statement, _) = fixture();
+        for mode in [OuterMode::Split, OuterMode::AllRows] {
+            let relation = prepare_sha256_ecdsa(3, 100, mode).unwrap();
+            let outer = OuterSumcheckProof {
+                sumcheck: SumcheckProof {
+                    round_polynomials: Vec::new(),
+                },
+                az_mle_claim: f(5u64),
+                bz_mle_claim: f(7),
+                cz_mle_claim: f(11),
+            };
+            let claim = InnerSumcheckClaim::from_outer_claims(
+                &relation,
+                &statement,
+                &outer,
+                (0..relation.outer_sumcheck_num_vars())
+                    .map(|i| f(i as u64 + 13))
+                    .collect(),
+                f(17),
+                (0..relation.linear_vars())
+                    .map(|i| f(i as u64 + 19))
+                    .collect(),
+                f(23),
+                &cfg,
+            )
+            .unwrap();
+            let mut coefficients = ModQCoefficients::from_relation(&relation, modulus, &cfg);
+            let weights = coefficients.build_row_weights(&relation, &claim, &cfg).unwrap();
+            let tape = coefficients.tape_tail(&relation, &weights.matrix_rows).unwrap();
+            assert_eq!(tape.len(), relation.local.tail.columns());
+            let gather: Vec<Raw> = (0..relation.local.tail.columns())
+                .map(|column| coefficients.p256_column_weight(&relation, &weights.matrix_rows, column))
+                .collect();
+            let first_mismatch = tape.iter().zip(&gather).position(|(a, b)| a != b);
+            assert_eq!(first_mismatch, None, "{mode:?}");
+        }
+    }
+
+    /// Every tail run must reproduce the materialized values it covers, and the
+    /// runs must be sorted and disjoint (the prover kernel relies on both).
+    #[test]
+    fn tail_runs_describe_the_materialized_tail() {
+        let modulus = (1u128 << 127) - 1;
+        let cfg = F::make_cfg(&Uint::from(modulus)).unwrap();
+        let f = |n| F::from_with_cfg(n, &cfg);
+        let (statement, _) = fixture();
+        for mode in [OuterMode::Split, OuterMode::AllRows] {
+            let relation = prepare_sha256_ecdsa(3, 100, mode).unwrap();
+            let outer = OuterSumcheckProof {
+                sumcheck: SumcheckProof {
+                    round_polynomials: Vec::new(),
+                },
+                az_mle_claim: f(5u64),
+                bz_mle_claim: f(7),
+                cz_mle_claim: f(11),
+            };
+            let claim = InnerSumcheckClaim::from_outer_claims(
+                &relation,
+                &statement,
+                &outer,
+                (0..relation.outer_sumcheck_num_vars())
+                    .map(|i| f(i as u64 + 13))
+                    .collect(),
+                f(17),
+                (0..relation.linear_vars())
+                    .map(|i| f(i as u64 + 19))
+                    .collect(),
+                f(23),
+                &cfg,
+            )
+            .unwrap();
+            let mut coefficients = ModQCoefficients::from_relation(&relation, modulus, &cfg);
+            let prepared = coefficients
+                .build_batched_matrix_mle(&relation, &claim, &cfg)
+                .unwrap();
+            let two = f(2);
+            let mut covered = 0usize;
+            let mut end = 0usize;
+            for &(start, len, ref base) in &prepared.tail_runs {
+                assert!(start >= end && len > 0, "{mode:?}: runs overlap or are empty");
+                end = start + len;
+                let mut value = base.clone();
+                for k in 0..len {
+                    assert_eq!(
+                        prepared.p256_evaluations[start + k],
+                        value,
+                        "{mode:?}: run at {start} disagrees at offset {k}"
+                    );
+                    value = value * &two;
+                }
+                covered += len;
+            }
+            assert!(end <= prepared.p256_evaluations.len());
+            // The lifts cover most of the P-256 witness; the rest are scalar columns.
+            assert!(covered * 10 > prepared.p256_evaluations.len() * 8, "{mode:?}: only {covered} of {} covered", prepared.p256_evaluations.len());
+        }
+    }
 
     #[test]
     fn streamed_matrix_evaluation_matches_prepared_mle() {
@@ -437,7 +639,7 @@ mod tests {
                 &cfg,
             )
             .unwrap();
-            let coefficients = ModQCoefficients::from_relation(&relation, modulus, &cfg);
+            let mut coefficients = ModQCoefficients::from_relation(&relation, modulus, &cfg);
             let prepared = coefficients
                 .build_batched_matrix_mle(&relation, &claim, &cfg)
                 .unwrap();

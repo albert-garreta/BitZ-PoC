@@ -898,6 +898,44 @@ impl PreparedWengertEvaluator<'_> {
                 .for_each(|(weighted, challenge)| *weighted = prepare_challenge(challenge));
         }
 
+        self.run_reverse(force_parallel);
+        Ok(())
+    }
+
+    /// Computes `Σ_row (w_A · A_row + w_B · B_row + w_C · C_row)` from one Montgomery
+    /// weight triple per row, in the Montgomery form of [`Self::apply`]. The triple
+    /// replaces the `r, r·x, r·x²` that [`Self::apply`] derives from one challenge,
+    /// so rows can be weighted per matrix (a linear row weighted on `C` alone, say).
+    /// Local F2Z addition; not part of upstream f2z-benchmark.
+    pub fn apply_weighted(
+        &mut self,
+        weights: &[[[u64; 2]; 3]],
+    ) -> Result<&[[u64; 2]], WengertApplyError> {
+        if weights.len() != self.tape.constraints {
+            return Err(WengertApplyError::ChallengeLength {
+                expected: self.tape.constraints,
+                actual: weights.len(),
+            });
+        }
+        self.weighted_challenges.copy_from_slice(weights);
+        self.run_reverse(None);
+        Ok(&self.output)
+    }
+
+    /// The reverse pass over the prepared `weighted_challenges`, into `output`.
+    fn run_reverse(&mut self, force_parallel: Option<bool>) {
+        let Self {
+            tape,
+            modulus_uint: _,
+            modulus_words,
+            mod_neg_inv,
+            params: _,
+            coefficients,
+            weighted_challenges,
+            adjoints,
+            output,
+            powers_of_two,
+        } = self;
         let context = ReverseContext {
             tape,
             modulus_words: *modulus_words,
@@ -1012,7 +1050,6 @@ impl PreparedWengertEvaluator<'_> {
                 .enumerate()
                 .for_each(|(chunk, output)| evaluate_output_chunk(chunk, output));
         }
-        Ok(())
     }
 }
 
@@ -1140,6 +1177,67 @@ pub(crate) fn neg_mod_words(value: [u64; 2], modulus: [u64; 2]) -> [u64; 2] {
         .wrapping_sub(value[1])
         .wrapping_sub(u64::from(borrow));
     [low, high]
+}
+
+/// One geometric run of the last [`PreparedWengertEvaluator::apply`] /
+/// [`PreparedWengertEvaluator::apply_weighted`] output: columns
+/// `first_column .. first_column + len` hold `base · 2^k` for `k = 0 .. len`, in the
+/// evaluator's Montgomery form. Local F2Z addition; not part of upstream f2z-benchmark.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PowerRun {
+    pub first_column: usize,
+    pub len: usize,
+    pub base: [u64; 2],
+}
+
+impl PreparedWengertEvaluator<'_> {
+    /// The tape's power groups as geometric runs of the current output, in
+    /// column order: one run per `f2z_unsigned` lift, or two when the lift has a
+    /// low part (the low columns carry the full and low adjoints summed, the rest
+    /// continue the same power sequence from the full adjoint alone). Columns
+    /// outside every run are scalar outputs. Valid until the next apply.
+    pub fn power_runs(&self) -> Vec<PowerRun> {
+        let read = |node: u32| {
+            if node == NO_NODE {
+                [0; 2]
+            } else {
+                self.adjoints[node as usize]
+            }
+        };
+        let mut runs = Vec::with_capacity(2 * self.tape.power_groups.len());
+        for group in self.tape.power_groups.iter() {
+            let first_column = group.first_column as usize;
+            let len = group.len as usize;
+            let low_len = group.low_len as usize;
+            let full = read(group.full_node);
+            if low_len == 0 {
+                runs.push(PowerRun {
+                    first_column,
+                    len,
+                    base: full,
+                });
+            } else {
+                let low = add_mod_words(full, read(group.low_node), self.modulus_words);
+                runs.push(PowerRun {
+                    first_column,
+                    len: low_len,
+                    base: low,
+                });
+                let base = montgomery_mul_2(
+                    full,
+                    self.powers_of_two[low_len],
+                    self.modulus_words,
+                    self.mod_neg_inv,
+                );
+                runs.push(PowerRun {
+                    first_column: first_column + low_len,
+                    len: len - low_len,
+                    base,
+                });
+            }
+        }
+        runs
+    }
 }
 
 /// Failure to apply a Wengert tape with the supplied runtime data.
