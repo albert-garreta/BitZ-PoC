@@ -12,7 +12,9 @@ def report(johnson=True):
                 outer_ood_grinding_bits=0 if johnson else None, outer_ood_raw_bits=105 if johnson else None,
                 recursive_ood=[0, 1 if johnson else 0],
                 configuration=dict(hash="blake3", target_security_bits=100,
-                    levels=[dict(regime="johnson_ood" if johnson else "udr", ood_samples=n) for n in [0, 1 if johnson else 0]]))
+                    levels=[dict(regime="johnson_ood" if johnson else "udr", ood_samples=n,
+                                 log_inv_rate=3+i)
+                            for i,n in enumerate([0, 1 if johnson else 0])]))
 
 
 class LigeritoResultsTests(unittest.TestCase):
@@ -23,6 +25,7 @@ class LigeritoResultsTests(unittest.TestCase):
             caption=f2z_caption([dict(backend="f2z",config=dict(ligerito=r))])
             self.assertIn("Johnson" if johnson else "unique decoding radius",caption)
             self.assertIn(r["resolved_profile"],caption)
+            self.assertIn("rate $1/8$",caption)
             if not johnson: self.assertNotIn("Johnson",caption)
 
     def test_missing_historical_and_conflicting_metadata_rejected(self):

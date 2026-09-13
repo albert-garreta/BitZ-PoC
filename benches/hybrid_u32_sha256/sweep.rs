@@ -17,6 +17,38 @@ pub struct Shape {
     sha_log: u32,
 }
 
+fn child_identity(log: &str, mode: &str) -> Result<Option<serde_json::Value>, AnyError> {
+    let reports: Vec<_> = log
+        .lines()
+        .filter_map(|line| line.strip_prefix("LIGERITO_CONFIG "))
+        .collect();
+    if mode == "all-binius" {
+        if !reports.is_empty() {
+            return Err("all-Binius output unexpectedly carries Ligerito configuration".into());
+        }
+        return Ok(None);
+    }
+    if reports.len() != 1 {
+        return Err("missing or duplicated child Ligerito identity".into());
+    }
+    let report: serde_json::Value = serde_json::from_str(reports[0])?;
+    match mode {
+        "binius-ligerito" => {
+            serde_json::from_value::<super::report::BiniusLigeritoIdentity>(report.clone())?
+                .validate()?;
+        }
+        "hybrid" | "separate" => {
+            f2z::ligerito_flock::ResolvedLigerito::validate_report(&report)?;
+            let expected = if mode == "hybrid" { 106 } else { 112 };
+            if report["target_bits"] != expected {
+                return Err("incorrect Ligerito component budget".into());
+            }
+        }
+        _ => return Err("unknown hybrid benchmark mode".into()),
+    }
+    Ok(Some(report))
+}
+
 pub fn equal_witness_shapes() -> Vec<Shape> {
     (15..=20)
         .map(|mul_log| Shape {
@@ -245,27 +277,7 @@ pub fn run(
                 .into());
             }
             let log = fs::read_to_string(&log_path)?;
-            let reports: Vec<_> = log
-                .lines()
-                .filter_map(|l| l.strip_prefix("LIGERITO_CONFIG "))
-                .collect();
-            let identity = if *mode == "all-binius" {
-                if !reports.is_empty() {
-                    return Err(
-                        "all-Binius output unexpectedly carries Ligerito configuration".into(),
-                    );
-                }
-                String::new()
-            } else {
-                if reports.len() != 1 {
-                    return Err("missing or duplicated child Ligerito identity".into());
-                }
-                let report: serde_json::Value = serde_json::from_str(reports[0])?;
-                f2z::ligerito_flock::ResolvedLigerito::validate_report(&report)?;
-                let expected = if *mode == "hybrid" { 106 } else { 112 };
-                if report["target_bits"] != expected {
-                    return Err("incorrect Ligerito component budget".into());
-                }
+            let identity = if let Some(report) = child_identity(&log, mode)? {
                 output.write_json(
                     format!("{stem}.ligerito.json"),
                     &report,
@@ -273,6 +285,8 @@ pub fn run(
                     JsonStyle::Pretty,
                 )?;
                 f2z::ligerito_flock::ResolvedLigerito::encode_report(&report)
+            } else {
+                String::new()
             };
             for (mut row, display) in
                 formatted_rows(&fs::read_to_string(&csv_path)?, mode, shape, iterations)?
@@ -296,6 +310,75 @@ pub fn run(
 #[cfg(test)]
 mod reporting_tests {
     use super::*;
+
+    #[test]
+    fn binius_identity_roundtrips_and_rejects_wrong_modes_and_tampering() {
+        // Both witness and relation oracles must satisfy BinaryPcs's log-13 floor.
+        let native = super::super::Native::new(4096, 2, true).unwrap();
+        let super::super::NativeBackend::Ligerito(prepared) = &native.backend else {
+            unreachable!();
+        };
+        let identity = super::super::report::BiniusLigeritoIdentity::new(prepared).unwrap();
+        let value = serde_json::to_value(&identity).unwrap();
+        let log = format!("LIGERITO_CONFIG {value}\n");
+        assert_eq!(
+            child_identity(&log, "binius-ligerito").unwrap(),
+            Some(value.clone())
+        );
+        assert_eq!(value["target_bits"], 100);
+        assert_eq!(
+            value["oracles"].as_array().unwrap().len(),
+            prepared.oracle_specs().len()
+        );
+        for mode in ["hybrid", "separate", "all-binius", "unknown"] {
+            assert!(child_identity(&log, mode).is_err(), "{mode}");
+        }
+        for bad in [
+            "".to_string(),
+            format!("{log}{log}"),
+            "LIGERITO_CONFIG {}\n".into(),
+        ] {
+            assert!(child_identity(&bad, "binius-ligerito").is_err());
+        }
+        for (key, replacement) in [
+            ("schema", serde_json::json!("old")),
+            ("target_bits", serde_json::json!(112)),
+            ("component_bits", serde_json::json!(99)),
+            ("oracles", serde_json::json!([])),
+            ("extra", serde_json::json!(true)),
+        ] {
+            let mut bad = value.clone();
+            bad[key] = replacement;
+            assert!(child_identity(&format!("LIGERITO_CONFIG {bad}"), "binius-ligerito").is_err());
+        }
+        for pointer in [
+            "/oracles/0/configuration/levels/0/queries",
+            "/oracles/0/ood_grinding_bits",
+        ] {
+            let mut bad = value.clone();
+            *bad.pointer_mut(pointer).unwrap() = serde_json::json!(999);
+            assert!(child_identity(&format!("LIGERITO_CONFIG {bad}"), "binius-ligerito").is_err());
+        }
+    }
+
+    #[test]
+    fn single_opener_modes_keep_their_original_identity_and_budget_validation() {
+        use f2z::ligerito_flock::{LigeritoSelection, OodRoundParams};
+        assert!(child_identity("", "all-binius").unwrap().is_none());
+        for (mode, bits) in [("hybrid", 106), ("separate", 112)] {
+            let resolved = LigeritoSelection::JOHNSON.resolve(22, bits).unwrap();
+            let value = resolved.report("custom:1:4", Some(OodRoundParams { grinding_bits: 0 }));
+            let log = format!("LIGERITO_CONFIG {value}");
+            assert_eq!(child_identity(&log, mode).unwrap(), Some(value));
+            let other = if mode == "hybrid" {
+                "separate"
+            } else {
+                "hybrid"
+            };
+            assert!(child_identity(&log, other).is_err());
+            assert!(child_identity(&log, "binius-ligerito").is_err());
+        }
+    }
     const NATIVE_HEADER: &str =
         "mode,iteration,setup_ms,witness_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib\n";
     const ROW: &str = "all-binius,0,1.230,2.000,3.000,4.000,1024,0\n";

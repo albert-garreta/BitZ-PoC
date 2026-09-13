@@ -13,3 +13,6 @@ mod ecdsa;
 mod multiswap;
 #[path = "../benches/baby_bear_pcs_compare.rs"]
 mod pcs;
+
+#[path = "../benches/hybrid_u32_sha256/runner.rs"]
+mod hybrid;

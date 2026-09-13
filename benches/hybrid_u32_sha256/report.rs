@@ -1,5 +1,69 @@
-//! Flat CSV projections shared by the child runner and the sweep validator.
+//! CSV projections and configuration identities shared by the child and sweep.
 use serde::Serialize;
+
+/// Binius-Ligerito has one binary opener per oracle and a whole-protocol target.
+/// It does not use the single-opener ResolvedLigerito policy of the other modes.
+#[derive(Clone, Debug, PartialEq, Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct BiniusLigeritoIdentity {
+    schema: String,
+    target_bits: u32,
+    component_bits: usize,
+    oracles: Vec<BinaryOpenerIdentity>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BinaryOpenerIdentity {
+    packed_log: usize,
+    configuration: serde_json::Value,
+    ood_grinding_bits: u32,
+}
+
+impl BinaryOpenerIdentity {
+    fn new(opener: &f2z::binary_pcs::BinaryPcs) -> Result<Self, super::AnyError> {
+        Ok(Self {
+            packed_log: opener.packed_log(),
+            configuration: serde_json::to_value(opener.config())?,
+            ood_grinding_bits: opener.ood_grinding_bits(),
+        })
+    }
+}
+
+impl BiniusLigeritoIdentity {
+    const SCHEMA: &str = "f2z/binius-ligerito-pcs/v1";
+
+    pub(super) fn new(prepared: &f2z::binius_ligerito::Prepared) -> Result<Self, super::AnyError> {
+        Ok(Self {
+            schema: Self::SCHEMA.into(),
+            target_bits: prepared.security().target_bits,
+            component_bits: prepared.component_bits(),
+            oracles: (0..prepared.oracle_specs().len())
+                .map(|i| BinaryOpenerIdentity::new(prepared.opener(i)))
+                .collect::<Result<_, _>>()?,
+        })
+    }
+
+    pub(super) fn validate(&self) -> Result<(), super::AnyError> {
+        use f2z::binius_ligerito::{MAX_COMPONENT_BITS, MIN_COMPONENT_BITS, TARGET_BITS};
+        if self.schema != Self::SCHEMA
+            || self.target_bits != TARGET_BITS
+            || !(MIN_COMPONENT_BITS..=MAX_COMPONENT_BITS).contains(&self.component_bits)
+            || self.oracles.is_empty()
+        {
+            return Err("invalid Binius-Ligerito identity or security budget".into());
+        }
+        // Re-derive every ladder and Round-0 setting instead of accepting a
+        // regime label or treating the whole-protocol target as an opener target.
+        for oracle in &self.oracles {
+            let opener = f2z::binary_pcs::BinaryPcs::new(oracle.packed_log, self.component_bits)?;
+            if *oracle != BinaryOpenerIdentity::new(&opener)? {
+                return Err("inconsistent Binius-Ligerito oracle configuration".into());
+            }
+        }
+        Ok(())
+    }
+}
 
 #[derive(Serialize)]
 pub(super) struct HybridRow<'a> {

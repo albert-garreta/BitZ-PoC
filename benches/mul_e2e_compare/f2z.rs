@@ -366,8 +366,11 @@ mod tests {
         assert_eq!(config["ligerito_regime"], "johnson");
         assert_eq!(config["target_bits"], 100);
         assert_eq!(config["ood_present"], true);
-        assert_eq!(config["ligerito"]["target_security_bits"], 100);
-        assert_eq!(config["ligerito"]["levels"][0]["regime"], "johnson_ood");
+        let identity = &config["ligerito"];
+        f2z::ligerito_flock::ResolvedLigerito::validate_report(identity).unwrap();
+        assert_eq!(identity["target_bits"], 100);
+        assert_eq!(identity["configuration"]["target_security_bits"], 100);
+        assert_eq!(identity["configuration"]["levels"][0]["regime"], "johnson_ood");
         assert!(!config["ood_grinding_bits"].is_null());
     }
     #[test]

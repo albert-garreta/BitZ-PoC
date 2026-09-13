@@ -551,6 +551,10 @@ pub fn run() -> Result<(), AnyError> {
         }
         drop(setup);
         let setup_ms = millis(&setup_recording.intervals()?, "benchmark:setup");
+        if let NativeBackend::Ligerito(prepared) = &native.backend {
+            let identity = report::BiniusLigeritoIdentity::new(prepared)?;
+            eprintln!("LIGERITO_CONFIG {}", serde_json::to_string(&identity)?);
+        }
         eprintln!("setup_ms={setup_ms:.3} {}", native.setup_line());
         let mut csv = output::csv_writer(std::io::stdout().lock());
         csv.write_record(NativeRow::header(&mode))?;

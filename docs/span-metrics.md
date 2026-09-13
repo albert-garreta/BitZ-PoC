@@ -91,8 +91,9 @@ Rayon threads.
 - Default and no-default-feature libraries compile, as do minimal/full timing
   feature sets, integration tests, heap-instrumented benches, CLI binaries,
   diagnostic examples, both workers, and the standalone field benchmark.
-- Shared Perfetto tests: 11 pass. Reporting contracts: 44 pass. Native SHA:
-  28 pass. Native multiplication: 43 pass, one unrelated existing failure below.
+- Shared Perfetto tests: 11 pass. Native SHA: 28 pass. After the metadata
+  follow-up, reporting contracts pass 51 tests and native multiplication passes
+  all 44 tests, including the formerly failing configuration assertion.
 - The new Spartan2 pin passes six verified SHA/ECDSA trials with its internal
   phase intervals. Canonical PCS validation passes 18 runs / 9,702 spans across
   F2Z, Binius64 BaseFold, and F2Z-Ligerito binary adapters.
@@ -102,19 +103,25 @@ Rayon threads.
 - Standalone Binius64: one warmup plus five verified SHA/ECDSA samples pass the
   unchanged Python consumer, including all four original phase keys. Its phase
   projection regression and four shared-observability unit tests also pass.
-- Python reporting-consumer tests were left unchanged: 49 pass, two existing
-  fixture errors remain. Launcher changes only enable the timing Cargo feature.
+- Python reporting-consumer tests pass all 51 tests after correcting the rate
+  fields in the Ligerito caption fixtures. Production caption behavior is unchanged.
 
-Known baseline issues, not repaired by this timing refactor:
+Metadata compatibility follow-up:
 
-- `u32_comparison_requires_johnson_and_ood` reads an obsolete configuration
-  location (`null` versus expected `100`).
-- Two `test_ligerito_results` fixtures omit `log_inv_rate` required by their
-  existing caption consumer.
-- The hybrid sweep's combined-summary reader expects a `LIGERITO_CONFIG`
-  identity from Binius-Ligerito that this child already did not emit before
-  migration. All four modes' proof/timing rows succeed, but `--mode all` still
-  fails that metadata check. No identity was fabricated or validation bypassed.
+- The native multiplication test now validates the versioned identity and reads
+  ladder fields under `configuration`, matching the producer's actual schema.
+- Binius-Ligerito now emits `LIGERITO_CONFIG` using the typed
+  `f2z/binius-ligerito-pcs/v1` identity. It records the whole-protocol target (100),
+  the selected opener component target, and every oracle's actual ladder and
+  Round-0 grinding settings. This is a PCS configuration identity, not a new
+  security theorem or an alternative soundness analysis.
+- The sweep validates each mode's own schema: binary ladders are re-derived from
+  their packed sizes and component target; the existing single-opener identities
+  retain their 106-bit hybrid / 112-bit separate budgets. Missing, duplicated,
+  altered, and wrong-mode identities remain errors. CSV columns are unchanged.
+- A fresh `--sweep --mode all --shapes 15:1 --iterations 1` completes all four
+  verified samples (after each mode's warmup). Its 25-column combined CSV carries
+  identities matching the emitted per-mode JSON files.
 
 The zkPassport managed runtime was not exercised on this host: its pinned native
 toolchain is Linux/x86_64-only. Its Rust worker passes `cargo check --locked
