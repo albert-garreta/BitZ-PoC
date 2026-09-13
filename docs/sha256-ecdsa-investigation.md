@@ -720,6 +720,53 @@ second-level tail structure (the ≈25 ms tail share of the inner sumcheck), the
 `mqv:wprep`/`vwprep` and `outer_prove` at 10 threads (≈8 ms), the forest's phase A scaling, and
 the ring-switch read-off on the verifier (12.7 ms, now two thirds of it).
 
+### 4.10 The SHA part, weights-first — DONE and measured (2026-09-13, 22:33)
+
+The single-thread profile after §4.9 was led by the SHA part's prefix pass
+(`accumulate_factored_instance`, 22 % of samples: about 81 MACs per 16-cell block, one block per
+local wire per 16 compressions). The same swap of sums used for the tail applies: the repeated
+part is `V[j·N + i] = outer[j] · inner[i]`, so with blocks of 2^K consecutive compressions
+`Ṽ(β, wire j, block p) = outer[j] · ũ_p(β)` and
+
+    S(β) = Σ_p ũ_p(β) · Σ_i ext_β(i) · A[p][i],   A[p][i] = Σ_j outer[j] · h[j·N + p·2^K + i].
+
+Every set bit costs one field addition into a table of N accumulators, and the β pass is
+`(N/2^K) · 3^K · 2^K` operations, independent of the 20,457 wires. Parallel over wires with
+per-thread tables. The same guard as the factored path (tensor start 0, N a multiple of 2^K)
+selects it. Also in this batch: the ring-switch weight preparation's fold over the 1.2 M tail
+columns (`VirtColumnWeights::new`, serial before, 2.8 ms at 1 thread and 3.9 ms at 10) now
+runs in parallel when the pool has more than one thread.
+
+A/B at 2^7 (previous commit vs this build, interleaved 2 × 5, ms):
+
+| build | thr | prover | `shared_inner_prove` | opening | `mqv:wprep` | verifier | `mv:rswitch` | `mqv:vwprep` |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| §4.9 | 1 | 139.9 | 76.2 | 52.8 | 2.8 | 19.1 | 12.9 | 2.8 |
+| **§4.10** | 1 | **90.5** | **26.5** | 53.1 | 3.3 | 19.6 | 13.4 | 3.2 |
+| §4.9 | 10 | 61.1 | 25.6 | 25.4 | 3.9 | 11.4 | 5.8 | 3.9 |
+| **§4.10** | 10 | **49.4** | **16.3** | **23.3** | **2.1** | **9.8** | **4.0** | **2.1** |
+
+Every size (`bench_results/sha256-ecdsa-levers3-20260913-i4-10`; proof sizes identical):
+
+| N | thr | F2Z prover: §4.9 → now | Binius64 | F2Z verifier: §4.9 → now | Binius64 |
+|---|---:|---:|---:|---:|---:|
+| 2^4 | 1 | 85 → **66** | 148 | 14.8 → 15.6 | 11.3 |
+| 2^5 | 1 | 94 → **70** | 148 | 15.6 → 16.1 | 11.4 |
+| 2^6 | 1 | 107 → **73** | 150 | 17.2 → 17.4 | 11.7 |
+| 2^7 | 1 | 139 → **91** | 168 | 19.3 → 19.7 | 12.8 |
+| 2^10 | 1 | 596 → **302** | 218 | 51.5 → 51.8 | 22.4 |
+| 2^4 | 10 | 50.4 → **43.7** | 57.3 | 10.4 → **8.8** | 5.7 |
+| 2^7 | 10 | 62.6 → **49.4** | 60.3 | 11.7 → **9.8** | 6.2 |
+| 2^10 | 10 | 158 → **107** | 73.1 | 19.3 → **16.8** | 8.4 |
+
+The SHA per-compression prover cost fell from 0.40 to ≈0.20 ms at 1 thread (and the
+per-compression cost of the prefix pass is now one field addition per set bit). The single-thread
+verifier is flat (+2–3 %, within noise: a thread-gated serial fold measured no better at 1 thread,
+so the committed version keeps the unconditional parallel fold); at 10 threads it gains 13–17 %. Single-thread profile now (2^7, 90 ms): opening 53
+(forest 21, `hs` 13, `a′` 7, grinding 5, `wprep` 3), inner sumcheck 26.5, matrices 6, outer 3.3.
+Over the evening: 207 → 91 ms prover and 45 → 19.6 ms verifier at 2^7 single-thread, proof bytes
+untouched; Binius64 168 / 12.8.
+
 ## 5. Paper impact (proposals only — nothing was edited)
 
 ### 5.1 Claims that depend on the old comparison

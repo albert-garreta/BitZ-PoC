@@ -41,15 +41,30 @@ impl InnerSumcheckMleSource for CompositeMultilinearExtension<'_, Field> {
                 num_vars, live_len, self, h, cfg, zero, reducer,
             );
         }
-        let mut result = build_factored_prefix_accumulators::<K, _>(
-            num_vars,
-            self.repeated().live_len(),
-            self.repeated(),
-            h,
-            cfg,
-            zero,
-            reducer,
-        )?;
+        let repeated = self.repeated();
+        let mut result = if repeated.tensor_start() == 0
+            && repeated.inner_factor().len() % (1 << K) == 0
+            && K > 0
+        {
+            let beta_values = repeated_beta_values::<K, _>(
+                repeated.outer_factor(),
+                repeated.inner_factor(),
+                h,
+                zero,
+                reducer,
+            )?;
+            scatter_beta_values::<K>(&beta_values, zero)
+        } else {
+            build_factored_prefix_accumulators::<K, _>(
+                num_vars,
+                repeated.live_len(),
+                repeated,
+                h,
+                cfg,
+                zero,
+                reducer,
+            )?
+        };
         let tail_start = self.repeated().live_len();
         let tail = match self.tail_runs() {
             // The run-structured pass needs the tail to start on a prefix-block
@@ -557,6 +572,118 @@ fn tail_run_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
             if touched {
                 let inner = linear_reduce(reducer, inner)?;
                 total += &(signed_field(g) * &inner);
+            }
+        }
+        beta_values.push(total);
+    }
+    Ok(beta_values)
+}
+
+/// Per-thread accumulation state for the weights-first SHA pass: one
+/// accumulator per (instance block, bit position).
+struct RepeatedState {
+    sums: Vec<LinearAccumulator>,
+}
+
+/// The `3^K` prefix sums of the repeated part `V[j·N + i] = outer[j] · inner[i]`
+/// (N instance weights per local wire, N a multiple of 2^K).
+///
+/// With blocks of 2^K consecutive instances, `Ṽ(beta, wire j, block p) = outer[j] ·
+/// ũ_p(beta)` where `ũ_p` is the ternary extension of the inner factor's block
+/// `p`, so the sum over wires factors through
+/// `A[p][i] = Σ_j outer[j] · h[j·N + p·2^K + i]`: every bit costs one field
+/// addition and the remaining `Σ_p ũ_p(beta) · Σ_i ext[beta][i] · A[p][i]` is
+/// independent of the number of wires.
+fn repeated_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
+    outer: &[Field],
+    inner: &[Field],
+    h: &H,
+    zero: &Field,
+    reducer: &OptimizedSumcheckReducer,
+) -> Result<Vec<Field>, SumcheckError> {
+    debug_assert!(K > 0 && K <= 4);
+    let prefix = 1usize << K;
+    let width = inner.len();
+    debug_assert_eq!(width % prefix, 0);
+    let positions = width / prefix;
+    let cells = positions * prefix;
+    let accumulate_wire = |state: &mut RepeatedState, wire: usize| -> Result<(), SumcheckError> {
+        let weight = &outer[wire];
+        let base = wire * width;
+        for position in 0..positions {
+            let mut word = h.bits_at(base + position * prefix, prefix)?;
+            while word != 0 {
+                let i = word.trailing_zeros() as usize;
+                linear_multiply_accumulate(
+                    reducer,
+                    &mut state.sums[position * prefix + i],
+                    weight,
+                    &1u64,
+                );
+                word &= word - 1;
+            }
+        }
+        Ok(())
+    };
+    let new_state = || RepeatedState {
+        sums: (0..cells).map(|_| linear_accumulator_zero(reducer)).collect(),
+    };
+    #[cfg(feature = "parallel")]
+    let state = if outer.len() >= 1 << 8 && rayon::current_num_threads() > 1 {
+        (0..outer.len())
+            .into_par_iter()
+            .try_fold(new_state, |mut state, wire| -> Result<_, SumcheckError> {
+                accumulate_wire(&mut state, wire)?;
+                Ok(state)
+            })
+            .try_reduce(new_state, |mut left, right| {
+                for (l, r) in left.sums.iter_mut().zip(right.sums) {
+                    linear_merge(reducer, l, r);
+                }
+                Ok(left)
+            })?
+    } else {
+        let mut state = new_state();
+        for wire in 0..outer.len() {
+            accumulate_wire(&mut state, wire)?;
+        }
+        state
+    };
+    #[cfg(not(feature = "parallel"))]
+    let state = {
+        let mut state = new_state();
+        for wire in 0..outer.len() {
+            accumulate_wire(&mut state, wire)?;
+        }
+        state
+    };
+    let table: Vec<Field> = state
+        .sums
+        .into_iter()
+        .map(|acc| linear_reduce(reducer, acc))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let ext = ternary_extension_table::<K>();
+    let mut beta_values = Vec::with_capacity(pow3(K));
+    for row in &ext {
+        let mut total = zero.clone();
+        for position in 0..positions {
+            let block = &inner[position * prefix..(position + 1) * prefix];
+            let cells = &table[position * prefix..(position + 1) * prefix];
+            let mut u = linear_accumulator_zero(reducer);
+            let mut a = linear_accumulator_zero(reducer);
+            let mut touched = false;
+            for i in 0..prefix {
+                if row[i] != 0 {
+                    linear_multiply_accumulate_signed(reducer, &mut u, &block[i], i64::from(row[i]), zero);
+                    linear_multiply_accumulate_signed(reducer, &mut a, &cells[i], i64::from(row[i]), zero);
+                    touched = true;
+                }
+            }
+            if touched {
+                let u = linear_reduce(reducer, u)?;
+                let a = linear_reduce(reducer, a)?;
+                total += &(u * &a);
             }
         }
         beta_values.push(total);

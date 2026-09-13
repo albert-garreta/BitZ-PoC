@@ -11669,13 +11669,15 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                 let mut corrections = Vec::new();
                 if let Some(tail) = map.chained_packed_source_tail() {
                     let coeffs = VirtRowCoeffs::new(points, etas, t_wh);
-                    let weights: Vec<Gf> = tail
-                        .map
-                        .matrix()
-                        .columns()
-                        .map(|col| {
-                            col.row_indices().iter().fold(Gf::zero(), |sum, &r| {
-                                sum + coeffs.coeff(tail.row_offset + r)
+                    // One weight per tail column (1.2M for P-256); the columns
+                    // are independent, so they are folded in parallel.
+                    let matrix = tail.map.matrix();
+                    let weights: Vec<Gf> = cfg_into_iter!(0..matrix.columns().len(), 1 << 12)
+                        .map(|column| {
+                            matrix.column(column).map_or(Gf::zero(), |col| {
+                                col.row_indices().iter().fold(Gf::zero(), |sum, &r| {
+                                    sum + coeffs.coeff(tail.row_offset + r)
+                                })
                             })
                         })
                         .collect();
