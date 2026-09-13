@@ -23,6 +23,8 @@ fn main() {
         "src/main.rs",
         "../../benches/support/sha256_ecdsa_fixture.rs",
         "../../benches/common/output.rs",
+        "../../src/observability.rs",
+        "../../src/observability/memory.rs",
     ] {
         let path = root.join(path);
         println!("cargo:rerun-if-changed={}", path.display());

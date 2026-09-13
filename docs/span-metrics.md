@@ -81,3 +81,42 @@ cargo test --features bench-internals,native-mul-compare --test native_mul_compa
 The zkPassport managed runtime requires its supported Linux/x86_64 environment,
 circuit artifacts, and SRS. A successful macOS `cargo check` alone is not a
 zkPassport runtime test. The pure-Rust Binius64 worker can also run on macOS.
+
+## Migration validation (2026-09-12, macOS ARM64)
+
+These are bounded correctness checks in development builds, not performance
+comparisons. The native processor was Perfetto 58.2; proof smoke runs used two
+Rayon threads.
+
+- Default and no-default-feature libraries compile, as do minimal/full timing
+  feature sets, integration tests, heap-instrumented benches, CLI binaries,
+  diagnostic examples, both workers, and the standalone field benchmark.
+- Shared Perfetto tests: 11 pass. Reporting contracts: 44 pass. Native SHA:
+  28 pass. Native multiplication: 43 pass, one unrelated existing failure below.
+- The new Spartan2 pin passes six verified SHA/ECDSA trials with its internal
+  phase intervals. Canonical PCS validation passes 18 runs / 9,702 spans across
+  F2Z, Binius64 BaseFold, and F2Z-Ligerito binary adapters.
+- All four hybrid modes produce one warmup plus five verified samples. The CLI
+  multiplication run, the hybrid RSS diagnostic (six verified trials), and the
+  native multiplication untraced memory child also pass.
+- Standalone Binius64: one warmup plus five verified SHA/ECDSA samples pass the
+  unchanged Python consumer, including all four original phase keys. Its phase
+  projection regression and four shared-observability unit tests also pass.
+- Python reporting-consumer tests were left unchanged: 49 pass, two existing
+  fixture errors remain. Launcher changes only enable the timing Cargo feature.
+
+Known baseline issues, not repaired by this timing refactor:
+
+- `u32_comparison_requires_johnson_and_ood` reads an obsolete configuration
+  location (`null` versus expected `100`).
+- Two `test_ligerito_results` fixtures omit `log_inv_rate` required by their
+  existing caption consumer.
+- The hybrid sweep's combined-summary reader expects a `LIGERITO_CONFIG`
+  identity from Binius-Ligerito that this child already did not emit before
+  migration. All four modes' proof/timing rows succeed, but `--mode all` still
+  fails that metadata check. No identity was fabricated or validation bypassed.
+
+The zkPassport managed runtime was not exercised on this host: its pinned native
+toolchain is Linux/x86_64-only. Its Rust worker passes `cargo check --locked
+--offline`. Unit-test-only kernel microbenchmarks retain their own `Instant`
+measurements; live benchmark, worker, example, and CLI reporting paths do not.

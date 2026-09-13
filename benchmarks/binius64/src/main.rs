@@ -3,6 +3,8 @@
 
 #[path = "../../../benches/support/sha256_ecdsa_fixture.rs"]
 mod fixture;
+#[path = "../../../src/observability.rs"]
+mod observability;
 
 use binius_circuits::sha256_ecdsa::{PROFILE, Sha256Ecdsa, public_words};
 use binius_frontend::CircuitBuilder;
@@ -12,14 +14,7 @@ use binius_transcript::{ProverTranscript, VerifierTranscript};
 use binius_verifier::{Verifier, config::StdChallenger};
 use fixture::{Result, SignedFixture};
 use serde_json::json;
-use std::{
-    collections::BTreeMap,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-    time::Instant,
-};
-use tracing::{Id, Subscriber};
-use tracing_subscriber::{Layer, layer::Context, prelude::*, registry::LookupSpan};
+use std::{collections::BTreeMap, path::PathBuf};
 
 const PHASES: [&str; 4] = [
     "Prepare witness",
@@ -28,29 +23,27 @@ const PHASES: [&str; 4] = [
     "[phase] Finish PCS",
 ];
 
-#[derive(Clone, Default)]
-struct Timings(Arc<Mutex<BTreeMap<&'static str, f64>>>);
-
-impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for Timings {
-    fn on_enter(&self, id: &Id, ctx: Context<'_, S>) {
-        if let Some(span) = ctx.span(id) {
-            span.extensions_mut().insert(Instant::now());
-        }
-    }
-    fn on_exit(&self, id: &Id, ctx: Context<'_, S>) {
-        if let Some(span) = ctx.span(id) {
-            if let Some(start) = span.extensions_mut().remove::<Instant>() {
-                *self.0.lock().unwrap().entry(span.name()).or_default() +=
-                    start.elapsed().as_secs_f64() * 1000.;
-            }
-        }
-    }
-}
-
-impl Timings {
-    fn take(&self) -> BTreeMap<&'static str, f64> {
-        std::mem::take(&mut *self.0.lock().unwrap())
-    }
+/// Keep the worker's existing human-readable report keys. The dependency also
+/// exports component IDs, which the shared collector correctly prefers as labels.
+fn phase_timings(intervals: &[observability::Interval]) -> Result<BTreeMap<String, f64>> {
+    let prove = observability::span(intervals, "worker:prove")?;
+    let phases: Vec<_> = intervals
+        .iter()
+        .filter(|s| {
+            PHASES.contains(&s.name.as_str())
+                && s.start_ns >= prove.start_ns
+                && s.end_ns <= prove.end_ns
+        })
+        .cloned()
+        .map(|mut span| {
+            span.component = None;
+            span
+        })
+        .collect();
+    Ok(observability::totals(&phases)
+        .into_iter()
+        .map(|(name, seconds)| (name, seconds * 1000.))
+        .collect())
 }
 
 struct Args {
@@ -149,16 +142,7 @@ fn main() -> Result<()> {
     rayon::ThreadPoolBuilder::new()
         .num_threads(args.threads)
         .build_global()?;
-    let timings = Timings::default();
-    tracing_subscriber::registry()
-        .with(
-            timings
-                .clone()
-                .with_filter(tracing_subscriber::filter::filter_fn(|meta| {
-                    PHASES.contains(&meta.name())
-                })),
-        )
-        .try_init()?;
+    observability::install()?;
     let fixture = match &args.fixture {
         Some(path) => SignedFixture::read(path)?,
         None => SignedFixture::generate(args.exponent, args.seed)?,
@@ -166,7 +150,8 @@ fn main() -> Result<()> {
     if fixture.log_compressions != args.exponent || fixture.seed != args.seed {
         return Err("fixture configuration mismatch".into());
     }
-    let setup = Instant::now();
+    let recording = observability::Recording::start(Vec::new())?;
+    let setup = tracing::info_span!("worker:setup").entered();
     let builder = CircuitBuilder::new();
     let relation = Sha256Ecdsa::new(&builder, args.exponent)?;
     let circuit = builder.build();
@@ -176,15 +161,17 @@ fn main() -> Result<()> {
         args.target,
     )?;
     let prover = Prover::<OptimalPackedB128, Sha256HashSuite>::setup(verifier.clone())?;
-    let setup_ms = setup.elapsed().as_secs_f64() * 1000.;
+    drop(setup);
+    let setup_ms =
+        observability::duration(&recording.intervals()?, "worker:setup")?.as_secs_f64() * 1000.;
     let circuit_id =
         blake3::hash(format!("{PROFILE}:{}:{}", args.exponent, env!("SOURCE_SHA256")).as_bytes())
             .to_hex()
             .to_string();
     for trial in 0..=args.reps {
-        timings.take();
-        let e2e = Instant::now();
-        let witness_start = Instant::now();
+        let recording = observability::Recording::start(Vec::new())?;
+        let e2e = tracing::info_span!("worker:e2e", trial, warmup = trial == 0).entered();
+        let witness_start = tracing::info_span!("worker:assignment").entered();
         let mut filler = circuit.new_witness_filler();
         relation.populate(
             &mut filler,
@@ -196,14 +183,30 @@ fn main() -> Result<()> {
         )?;
         circuit.populate_wire_witness(&mut filler)?;
         let witness = filler.into_value_vec();
-        let assignment_ms = witness_start.elapsed().as_secs_f64() * 1000.;
-        let start = Instant::now();
+        drop(witness_start);
+        let start = tracing::info_span!("worker:prove").entered();
         let mut transcript = ProverTranscript::new(StdChallenger::default());
         prover.prove(&witness, &mut transcript)?;
         let bytes = transcript.finalize();
-        let prove_call_ms = start.elapsed().as_secs_f64() * 1000.;
-        let e2e_prover_ms = e2e.elapsed().as_secs_f64() * 1000.;
-        let phases = timings.take();
+        drop(start);
+        drop(e2e);
+        // Transcript bytes already are the proof wire format. Copying accounts for transport decoding.
+        let codec = tracing::info_span!("worker:codec").entered();
+        let proof_bytes = bytes.len();
+        let decoded = bytes.clone();
+        drop(codec);
+        drop(witness);
+        tracing::info_span!("worker:verification")
+            .in_scope(|| verify(&verifier, &fixture, decoded))?;
+        let intervals = recording.intervals()?;
+        let millis =
+            |name| observability::duration(&intervals, name).map(|d| d.as_secs_f64() * 1000.);
+        let assignment_ms = millis("worker:assignment")?;
+        let prove_call_ms = millis("worker:prove")?;
+        let e2e_prover_ms = millis("worker:e2e")?;
+        let codec_ms = millis("worker:codec")?;
+        let verify_ms = millis("worker:verification")?;
+        let phases = phase_timings(&intervals)?;
         let phase = |key: &str| {
             phases
                 .get(key)
@@ -218,15 +221,6 @@ fn main() -> Result<()> {
         if !protocol_ms.is_finite() || protocol_ms < opening_ms {
             return Err("overlapping or invalid phase measurements".into());
         }
-        // Transcript bytes already are the proof wire format. Copying accounts for transport decoding.
-        let codec = Instant::now();
-        let proof_bytes = bytes.len();
-        let decoded = bytes.clone();
-        let codec_ms = codec.elapsed().as_secs_f64() * 1000.;
-        drop(witness);
-        let start = Instant::now();
-        verify(&verifier, &fixture, decoded)?;
-        let verify_ms = start.elapsed().as_secs_f64() * 1000.;
         if args.self_test && trial == 0 {
             for which in 0..5 {
                 let mut other = fixture.clone();
@@ -290,6 +284,33 @@ mod vectors;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn phase_keys_preserve_names_and_union_repeated_component_spans() {
+        let span = |id, name: &str, component: &str, start_ns, end_ns| observability::Interval {
+            id,
+            parent: None,
+            track_id: id,
+            depth: 0,
+            name: name.into(),
+            component: Some(component.into()),
+            start_ns,
+            end_ns,
+        };
+        let intervals = vec![
+            span(0, "worker:prove", "worker:prove", 100, 1000),
+            span(1, PHASES[0], "prepare_witness", 110, 210),
+            span(2, PHASES[0], "prepare_witness", 160, 260),
+            span(3, PHASES[1], "commit_witness", 260, 360),
+            span(4, PHASES[2], "ring_switching", 600, 800),
+            span(5, PHASES[3], "finish_pcs", 800, 900),
+            span(6, PHASES[0], "prepare_witness", 1100, 1200),
+        ];
+        let phases = phase_timings(&intervals).unwrap();
+        assert_eq!(phases.len(), 4);
+        assert!((phases[PHASES[0]] - 150. / 1e6).abs() < 1e-12);
+        assert!((phases[PHASES[2]] - 200. / 1e6).abs() < 1e-12);
+    }
 
     #[test]
     fn message_larger_than_u16_satisfies_the_circuit() {
