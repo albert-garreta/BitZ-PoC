@@ -379,7 +379,7 @@ This work was supported by the World Foundation.
 
 We also thank Giacomo Fenzi, Ulrich Haböck, and Lev Soukhanov for insightful and helpful discussions.  
 
-\paragraph{Usage and non-usage of AI} This document was  written with minimal assistance of AI. It was only used to identify typos and incoherences, make refactorings, stylistic improvements, and for  cost accountings in \cref{s:gkr_low_entropy,s:core_iop,s:general_LinBitsDual}. \albertimportant{I also used it in the standard appendix proofs. And used it for help in drating the technical overview soudnness}
+\paragraph{Usage and non-usage of AI} This document was  written with little assistance of AI. It was only used to create the benchmark tables in \cref{s:experiments}; identify typos and incoherences; make refactorings and stylistic improvements; and for  cost accounting in \cref{s:gkr_low_entropy,s:core_iop,s:general_LinBitsDual}.  The only ``non-trivial'' use of AI was during the soundness proof overview  in the technical overview  \cref{?}: this   was initially drafted with AI and was ellaborated upon by us subsequently. \albertimportant{I also used it in the standard appendix proofs. And used it for help in drating the technical overview soudnness}
 
 We crucially used AI in our implementation and experiments, as explained in \cref{s:experiments}.
 
@@ -388,9 +388,6 @@ We crucially used AI in our implementation and experiments, as explained in \cre
    
 
 
-
-
- \albertimportant{discuss somewhere (technical overview) the succinctness/non-succinctness of verifier}
 
 
 
@@ -510,7 +507,7 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
     %
     $$\langle  \pi^{-1}(\uu^{(1)})\otimes \pi^{-1}(\uu^{(2)}), \bitstext(\bff)\rangle = \mu' \qquad \text{in } \ZZ,$$    
     The verifier checks that  $\pi(\mu')=\mu$, and responds with a random prime $q'$ from a public set $\cP$ of primes, all smaller than $\fieldboundsizeexponent$. Then, using the fingerprinting technique \cite{zaratan},  the prover and verifier project the above claim  to the field $\FF_{q'}$, so that it becomes
-        $$\langle  \pi_{q'}\circ \pi^{-1}(\uu^{(1)})\otimes  \pi_{q'}\circ\pi^{-1}(\uu^{(2)}),  \pi_{q'}(\bitstext(\bff))\rangle = \pi_{q'}(\mu') \ \text{in } \FF_{q'}, \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)).$$  
+        \begin{equation}\label{e:to_projected_claim}\langle  \pi_{q'}\circ \pi^{-1}(\uu^{(1)})\otimes  \pi_{q'}\circ\pi^{-1}(\uu^{(2)}),  \pi_{q'}(\bitstext(\bff))\rangle = \pi_{q'}(\mu') \ \text{in } \FF_{q'}, \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)).\end{equation}  
         Then the prover and verifier proceed to Step 4 after updating $\FF_{q} \gets \FF_{q'}$, $\pi\gets \pi_{q'}$, $\mu \gets \pi_{q'}(\mu')$, and $\uu\gets \pi_{q'}\circ \pi^{-1}(\uu^{(1)}) \otimes \pi_{q'}\circ \pi^{-1}(\uu^{(2)})$, where $\pi_{q'}$ denotes reduction modulo $q'$.
         
     To ensure soundness of the projection step, the verifier checks that $\mu'\in \range{0}{\codedim\cdot (q-1)^2}$  (see \cref{s:to_soundness_rings}).
@@ -626,7 +623,7 @@ where $\picanon: \ZZ[X_1, \ldots, X_{k'}] \to R$ is a canonical ring homomorphis
 %of an element $r\in R$ is obtained as follows: write $r= p(\gamma_1,\ldots, \gamma_{k'})$ for some polynomial $p(X_1,\ldots, X_{k'})$ with coefficients in $\range{0}{\Char(R)-1}$. Then $\picanon^{-1}(r)= \pi^{-1}(p)(X_1,\ldots, X_{k'})$, where $\pi^{-1}(p)$ is obtained by lifting all coefficients of $p$ to the integers. 
 
 %
-The verifier checks that $\mu'$ has total degree and bit-size below  certain bounds $D_\ZZ, B_\ZZ$, respectively. These bounds depend on $\codedim, \Char(R)$ and $k'$.  Then the verifier checks that $\picanon(\mu')=\mu$.
+The verifier checks that $\mu'$ has total degree and bit-size below  certain bounds $D_\ZZ, B_\ZZ$, respectively. These bounds depend on $\codedim, \Char(R)$ and $k'$, and they are the largest total degree and $\ell_\infty$-norm attainable by  the polynomial resulting of subtracting the two sides of \eqref{e:new_to_lifted_polring_claim}, among all bit vectors $\bitstext(\bff)$ (see \cref{s:to_soundness_rings}).  Then the verifier checks that $\picanon(\mu')=\mu$.
 
 
 Now the idea is that the claim \eqref{e:new_to_lifted_polring_claim} implies the claim \eqref{e:intro_eq_2_rings}, since $\picanon(\mu')=\mu$. Hence, the prover and the verifier  proceed to certify  \eqref{e:new_to_lifted_polring_claim}. The constraint \eqref{e:new_to_lifted_polring_claim} is a polynomial constraint (in fact, a linear constraint) over the ring $\ZZ[X_1,\ldots, X_{k'}]$. We now generalize the fingerprinting technique for polynomial rings from Zinc+ \cite{zincplus} (which in turn generalizes that of \cite{zaratan}), so as to project \eqref{e:new_to_lifted_polring_claim} to a random ``small'' prime field.  
@@ -740,7 +737,7 @@ We next discuss other existing approaches to proving foreign field statements in
         %The tensor split allows us to replace the claim into $\codedim_2=|\vv^{(2)}|$ claims $\langle \vv^{(1)}, \ww_{*j}\rangle = \eta_j$ in $\ZZ$ for all $j\in [\codedim_2]$. These claims are then each proved ``in the exponent''. Since $\vv^{(1)}$ is common across all claims, and $\ww$ is filled with bits, the resulting grand products are low entropy. 
         
       
-        \cite{binius64} on the other hand multiplies 64-bit integer witness in the exponent directly. More precisely, \cite{binius64} proves the identity $g^{\ww_{1i}\cdot \ww_{2i}} = g^{2^{64}\cdot \ww_{3i}} \cdot g^{\ww_{4i}}$ for $\ww_1, \ldots, \ww_4$ vectors of 64-bit integers (together with a small additional constraint to address possible overflow). This is done through a combination of LogUp* \cite{logupstar}, a GKR grand product (for relatively small products), and the Frobenius automorphism trick. It does not seem possible to follow a similar optimization strategy to ours.
+        \cite{binius64} on the other hand multiplies 64-bit integer witness in the exponent directly. More precisely, \cite{binius64} proves the identity $g^{\ww_{1i}\cdot \ww_{2i}} = g^{2^{64}\cdot \ww_{3i}} \cdot g^{\ww_{4i}}$ for $\ww_1, \ldots, \ww_4$ vectors of 64-bit integers (together with a small additional constraint to address possible overflow). This is done through a combination of LogUp* \cite{logupstar}, a GKR grand product (for relatively small products of $128$ factors), and the Frobenius automorphism trick. It does not seem possible to follow a similar optimization strategy to ours.
        
 
         We  emphasize again that \ftwoz \ supports proving operations of all kinds of ring elements (small and large integers, field elements, lattice ring elements, extension field elements), as opposed to \cite{binius64} where multiplication is limited to 64-bit integers.
@@ -754,11 +751,12 @@ We next discuss other existing approaches to proving foreign field statements in
 
         \paragraph{The note \cite{lev}.} In the note \cite{lev}, Soukhanov proposes a scheme for committing to a vector of bits $\ww$ over the binary field $\FF_{2^{127}}$, and proving MLE evaluation claims over the prime field  $\FF_{2^{127}-1}$, for a vector of elements from   $\FF_{2^{127}-1}$ obtained by packing bits from $\ww$ together. To do so, at a high level, the MLE evaluation claims are proved ``in the exponent'' in the binary field $\FF_{2^{127}}$, leveraging that  the multiplicative subgroup of  $\FF_{2^{127}}$ has prime order $|\FF_{2^{127}}^*| = 2^{127}-1$. The proposed approach is substantially different from ours: \cite{lev} essentially takes a polylogarithmic PCS over the prime field $\FF_{2^{127}-1}$, such as Basefold \cite{basefold}, WHIR \cite{whir}, etc.,  and executes it ``in the exponent of $\FF_{2^{127}}$''. To do so, it relies on the lookup argument LogUp* \cite{logupstar}, grand product arguments (for small products), the Frobenius trick, and additional commitments, for each of the $\log\ell$ rounds.  
         
-        In its execution,  \cite{lev} and Binius64 \cite{binius64} seem to us to be more similar than any of these two to \ftwoz. Indeed, they both use, mostly, the same collection of subprotocols, in a similar manner.  \cref{tab:fields-witch} in \cref{s:exp_fields_witch} compares Soukhanov's implementation of \cite{lev} with \ftwoz\ on the same machine. In \cref{s:experiments} we perform extensive comparisons between \ftwoz\ and Binius64.  % Because of this we expect both approaches to have comparable performance profiles, though we do not validate this hypothesis due to \cite{lev} not reporting performance nor providing an implementation.
+        In its execution,  \cite{lev} and Binius64 \cite{binius64} seem to us to be more similar than any of these two to \ftwoz. Indeed, they both use, mostly, the same collection of subprotocols, in a similar manner.  In \cref{tab:fields-witch} we compare  \cref{s:exp_fields_witch}  with \ftwoz. In \cref{s:experiments} we perform extensive comparisons between \ftwoz\ and Binius64.  % Because of this we expect both approaches to have comparable performance profiles, though we do not validate this hypothesis due to \cite{lev} not reporting performance nor providing an implementation.
         
-        Conceptually, \cite{lev} shares with \ftwoz \ the aim of committing to bits in a binary field, while proving MLE claims of those bits in some other structure $R$. Note that \cite{lev} is limited to $R=\FF_{2^{127}-1}$, while \ftwoz \ can handle essentially all rings and fields $R$ of practical interest, achieving 128 bits of security and using $\FF_{2^{128}}$ as binary field. Additionally it is not clear whether \cite{lev} can leverage any of our low-entropy oriented optimizations without substantially modifying the approach, incorporating some of our ideas. 
+        Conceptually, \cite{lev} shares with \ftwoz \ the aim of committing to bits in a binary field, while proving MLE claims of those bits in some other structure $R$.  \cite{lev} is limited to $R=\FF_{2^{127}-1}$, while \ftwoz \ can handle arbitrary finitely generated rings. Despite that we observe in \cref{s:fields-switch}  that \ftwoz\ performs better than Fields-witch on the latter's native operation: proving MLE openings over the prime field $\FF_{2^{127}-1}$. 
+       %It is not clear to us how or if \cite{lev} can leverage  our low-entropy oriented optimizations without substantially modifying the approach, i.e.\ without running Basefold ``in-the-exponent''. 
 
-        \albertimportant{The comparison of Lev and \ftwoz\ right now has several unbacked claims (which I believe are true, but can't really prove them, especially without an implementation). So probably it's better to not push it, remove the unbacked claims, and leave it as it is}
+        %\albertimportant{The comparison of Lev and \ftwoz\ right now has several unbacked claims (which I believe are true, but can't really prove them, especially without an implementation). So probably it's better to not push it, remove the unbacked claims, and leave it as it is}
         
 \subsection{Virtual $\FF_2$-linear transforms, NP-complete multi-domain linear relations, and hybrid proof systems}\label{s:to_f2_virtual}
 
@@ -886,13 +884,13 @@ We want to prove that $(\inp_\ZZ, \bff_\ZZ)\in \Relation_\ZZ$ and $(\inp_{\FF_2}
 
 
 \subsection{Round-by-round knowledge soundness}
-We provide an overview of why the constructions from \cref{s:to_simple_bitz,s:to_general_rings} are round-by-round knowledge sound. 
+\albertimportant{Review} We provide an overview of why the constructions from \cref{s:to_simple_bitz,s:to_general_rings} are round-by-round knowledge sound. 
 
 \subsubsection{Soundness of \cref{s:to_simple_bitz}}\label{s:to_soundness_prime}
 
-\albertimportant{Review}
 
-In \cref{t:thm_core_IOPP} of \cref{s:soundness_core_iop} we prove  that the IOP $\Pi$ of \cref{s:to_simple_bitz} is perfectly complete and round-by-round knowledge sound. We do so by viewing $\Pi$ as the composition of three Interactive Oracle Reductions (IORs, cf.\ \cite{warp,BCFW25} and \cref{s:IORs}) $\Pi_1,\Pi_2,\Pi_3$. The first IOR $\Pi_1$ (Steps 2, 3, 4 and the first half of Step 5) reduces the initial claim, i.e.\ knowledge of a witness for $(\inp,\oracle)=((\mu,\vv),f)\in \LANG(\LinBitsDual(\FF_q))$, to the grand product claim \eqref{e:intro_eq_4}, which is a claim of knowledge of $\bfg\in \FF_2^{\codedim_1\times \codedim_2}$ with $f=\Enc_\cC\circ \pack(\bfg)$ and $\prod_{i\in [\codedim_1]}\bigl((g^{\pi_q^{-1}(\uu^{(1)}_i)}-1)\cdot \bfg_{ij}+1\bigr)=g^{\mu_j}$ for all $j\in [\codedim_2]$ (an instance of the relation $\PESAT$ of \cref{d:pesat}, see \cref{s:interleaved_setting}). The second IOR $\Pi_2$ (second half of Step 5), is a standard instantiation\footnote{Our optimizations from \cref{c:gkr_grand_product} for the grand product GKR apply at the implementation level: they  keep the transcript invariant, and so they require no soundness analysis.} of the GKR protocol for these $\codedim_2$ grand products  which reduces them to the linear claims over $\comfield$  for the witness vectors $\bitstext(\bff)_{*j}$ \eqref{e:intro_eq_5} (the relation $\LIN(\comfield,\cC,\pack)$ of \cref{s:interleaved_setting}). The third IOR $\Pi_3$ (Step 6) proves the latter claim with the ring-switching technique of \cite{binius2} followed by WHIR/Ligerito \cite{whir,ligerito}, exactly as in Flock \cite{flock} \albert{and binius?}, possibly with a batched sumcheck before that, to reduce the claims \eqref{e:intro_eq_5} into a single MLE evaluation of $\bitstext(\bff)$ over $\comfield$. It is well known that $\Pi_2$ and $\Pi_3$ are perfectly complete and round-by-round knowledge sound\footnote{For $\Pi_3$ this holds in a relaxed form, in the sense that a malicious prover may convince the verifier with an oracle $f$ which is not exactly $\Enc_\cC\circ \pack(\bfg)$ for a valid witness $\bfg$, but is \emph{close} to it in Hamming distance. This is a well-studied technicality \cite{stark,BCFW25,whir,rbr_fri,zook}, which we treat in \cref{s:IORs,s:soundness_core_iop} using the formalism of round-by-round knowledge soundness \emph{with relaxation} from \cite{zook}. We do not discuss this further in this overview.}, and that the composition of round-by-round knowledge sound IORs is again round-by-round knowledge sound (\cref{r:ior_compositoin}). Hence in this overview we only discuss $\Pi_1$. \albertimportant{formalization around UDR/Johnson and proximity could be clearer}
+
+In \cref{t:thm_core_IOPP} of \cref{s:soundness_core_iop} we prove  that the IOP $\Pi$ of \cref{s:to_simple_bitz} is perfectly complete and round-by-round knowledge sound. We do so by viewing $\Pi$ as the composition of three Interactive Oracle Reductions (IORs, cf.\ \cite{BCFW25} and \cref{s:IORs}) $\Pi_1,\Pi_2,\Pi_3$. The first IOR $\Pi_1$ (Steps 2, 3, 4 and the first half of Step 5) reduces the initial claim, i.e.\ knowledge of a witness for $(\inp,\oracle)=((\mu,\vv),f)\in \LANG(\LinBitsDual(\FF_q))$, to the grand product claim \eqref{e:intro_eq_4}, which is a claim of knowledge of $\bfg\in \FF_2^{\codedim_1\times \codedim_2}$ with $f=\Enc_\cC\circ \pack(\bfg)$ and $\prod_{i\in [\codedim_1]}\bigl((g^{\pi_q^{-1}(\uu^{(1)}_i)}-1)\cdot \bfg_{ij}+1\bigr)=g^{\mu_j}$ for all $j\in [\codedim_2]$ (an instance of the relation $\PESAT$ of \cref{d:pesat}, see \cref{s:interleaved_setting}). The second IOR $\Pi_2$ (second half of Step 5), is a standard instantiation\footnote{Our optimizations from \cref{c:gkr_grand_product} for the grand product GKR apply at the implementation level: they  keep the transcript invariant, and so they require no soundness analysis.} of the GKR protocol for these $\codedim_2$ grand products  which reduces them to the linear claims over $\comfield$  for the witness vectors $\bitstext(\bff)_{*j}$ \eqref{e:intro_eq_5} (the relation $\LIN(\comfield,\cC,\pack)$ of \cref{s:interleaved_setting}). The third IOR $\Pi_3$ (Step 6) proves the latter claim with the ring-switching technique of \cite{binius2} followed by WHIR/Ligerito \cite{whir,ligerito}, exactly as in Flock \cite{flock} \albert{and binius?}, possibly with a batched sumcheck before that, to reduce the claims \eqref{e:intro_eq_5} into a single MLE evaluation of $\bitstext(\bff)$ over $\comfield$. It is well known that $\Pi_2$ and $\Pi_3$ are perfectly complete and round-by-round knowledge sound\footnote{For $\Pi_3$ this holds in a relaxed form, in the sense that a malicious prover may convince the verifier with an oracle $f$ which is not exactly $\Enc_\cC\circ \pack(\bfg)$ for a valid witness $\bfg$, but is \emph{close} to it in Hamming distance. This is a well-studied technicality \cite{stark,BCFW25,whir,zook}, which we treat in \cref{s:IORs,s:soundness_core_iop} using the formalism of round-by-round knowledge soundness \emph{with relaxation} from \cite{zook}. We do not discuss this further in this overview.}, and that the composition of round-by-round knowledge sound IORs is again round-by-round knowledge sound (\cref{r:ior_compositoin}). Hence in this overview we only discuss $\Pi_1$. 
 
 
 \begin{remark}[The oracle serving as a commitment]\label{r:oracle_udr}For simplicity, we assume below that WHIR is configured with a proximity parameter within the unique decoding radius. In intuitive terms, this means that when the prover sends the oracle $f$, it is committing to a unique bit vector $\bitstext(\bff) \in \bits^{\codedim}$ determined by $f$.  One can alternatively configure WHIR up to the Johnson bound, as long as one performs an Out Of Domain sample in Step 1. 
@@ -932,7 +930,7 @@ Hence, if Step 3 does not trigger, then $\Pi_1$ is a one-round IOR with  round-b
 
 \emph{Step 3.} Assume Step 3 triggers (\cref{r:large_prime_field_in_BitZ_PCS}). Then the protocol has one extra round with a nonzero round-by-round knowledge soundness error. The prover sends $\mu'\in \range{0}{\codedim\cdot (q-1)^2}$ with $\pi_q(\mu')=\mu$, the verifier samples a random prime $q'\in\cP$.
 
-In this case, at the end of Step 3, the claim \eqref{e:to_soundness_1} is replaced by a similar claim over a randomly sampled prime field $\FF_{q'}$, namely the prover claims knowledge of $\bfg\in \bits^{\codedim} \subseteq \ZZ^\codedim$  such that $\langle \pi_{q'}\circ\pi_q^{-1}(\uu^{(1)})\otimes \pi_{q'}\circ\pi_q^{-1}(\uu^{(2)}), \pi_{q'}(\bfg)\rangle=\pi_{q'}(\mu')$ in $\FF_{q'}$, and such that $f = \Enc_\cC \circ \pack \circ\pi_2(\bfg)$. Let $\cE$ be the event that this   holds for some $\bfg$  but \eqref{e:to_soundness_1} does not. Because of \cref{r:oracle_udr} and because the oracle $f$ is the same in the claims \eqref{?} and \eqref{?}, $\bfg$ is fixed before $q$ is sampled.  Then the integer $h\defeq \langle \pi_q^{-1}(\uu^{(1)})\otimes \pi_q^{-1}(\uu^{(2)}), \bfg\rangle - \mu' \in \ZZ$ satisfies $\pi_q(h)=\langle \uu, \pi_q(\bfg)\rangle-\mu\neq 0$. Hence $h\neq 0$. Moreover, we have $|h|\leq 2\cdot \codedim\cdot (q-1)^2$, because $\bfg$ has bit entries and $\mu'$ passed the verifier's range check. Additionally,  $\pi_{q'}(h)=0$, and so $q'$ divides $h$. Such a nonzero and bounded integer $h$ has at most $\log(2\codedim(q-1)^2)/\lfloor\log q_{\min}\rfloor$ prime divisors in a set of primes $\cP$, where $q_{\min}$ is the smallest prime in $\cP$. Hence the probability of $\cE$ is at most 
+In this case, at the end of Step 3, the claim \eqref{e:to_soundness_1} is replaced by a similar claim over a randomly sampled prime field $\FF_{q'}$, namely the prover claims knowledge of $\bfg\in \bits^{\codedim} \subseteq \ZZ^\codedim$  such that $\langle \pi_{q'}\circ\pi_q^{-1}(\uu^{(1)})\otimes \pi_{q'}\circ\pi_q^{-1}(\uu^{(2)}), \pi_{q'}(\bfg)\rangle=\pi_{q'}(\mu')$ in $\FF_{q'}$, and such that $f = \Enc_\cC \circ \pack \circ\pi_2(\bfg)$. Let $\cE$ be the event that this   holds for some $\bfg$  but \eqref{e:to_soundness_1} does not. Because of \cref{r:oracle_udr} and because the oracle $f$ is the same in the claims \eqref{e:to_soundness_1} and \eqref{e:to_projected_claim}, $\bfg$ is fixed before $q'$ is sampled.  Then the integer $h\defeq \langle \pi_q^{-1}(\uu^{(1)})\otimes \pi_q^{-1}(\uu^{(2)}), \bfg\rangle - \mu' \in \ZZ$ satisfies $\pi_q(h)=\langle \uu, \pi_q(\bfg)\rangle-\mu\neq 0$. Hence $h\neq 0$. Moreover, we have $|h|\leq 2\cdot \codedim\cdot (q-1)^2$, because $\bfg$ has bit entries and $\mu'$ passed the verifier's range check. Additionally,  $\pi_{q'}(h)=0$, and so $q'$ divides $h$. Such a nonzero and bounded integer $h$ has at most $\log(2\codedim(q-1)^2)/\lfloor\log q_{\min}\rfloor$ prime divisors in a set of primes $\cP$, where $q_{\min}$ is the smallest prime in $\cP$. Hence the probability of $\cE$ is at most 
 % 
 \begin{equation}\label{e:to_kappa_0}
 \kappa_0 \defeq \frac{\log\left(2\cdot \codedim\cdot (q-1)^2\right)}{\lfloor\log q_{\min}\rfloor\cdot |\cP|}
@@ -948,12 +946,12 @@ Overall,  $\Pi$ has errors $\kappa_0$ followed by those of the GKR protocol and 
 
 
 \subsubsection{Soundness of \cref{s:to_general_rings}}\label{s:to_soundness_rings}
-\albertimportant{Review}
+
 The full soundness statement of \cref{s:to_general_rings} can be found in \cref{t:thm_LinModFieldBits}, and is proved in \cref{a:LinModFieldBin}. We provide an overview of it next.
 
 As in \cref{s:to_soundness_prime}, we view the protocol as a composition of three IORs $\Pi_1, \Pi_2, \Pi_3$, with $\Pi_2$ and $\Pi_3$ being exactly the same as in \cref{s:to_soundness_prime}, i.e.\ $\Pi_2$ is the grand product GKR from Step 5, and $\Pi_3$ is the ring switch followed by a PCS  such as WHIR or Ligerito.  The IOR $\Pi_1$ consists of Steps 2 and 3 of \cref{s:to_general_rings} followed by Step 4 and the first half of Step 5 of \cref{s:to_simple_bitz}. 
 
-After Step 3, the prover and verifier are exactly in the same setting as in Step 4 of \cref{s:to_simple_bitz}. Hence the analysis of the construction after Step 3 is exactly the same as in \cref{s:to_simple_bitz_soundness_overview}.  Because of this, below we only discuss Steps 1, 2 and 3. 
+After Step 3, the prover and verifier are exactly in the same setting as in Step 4 of \cref{s:to_simple_bitz}. Hence the analysis of the construction after Step 3 is exactly the same as in \cref{s:to_soundness_prime}.  Because of this, below we only discuss Steps 1, 2 and 3. 
 
 \bigskip
 
@@ -969,13 +967,13 @@ By definition, $\uu=L^{\mathsf{T}}\cdot \vv$. We argue that for any $\bfg$ satis
 
 \bigskip 
 
-\noindent\emph{\underline{Step 3}.}  Let $\cE$ be the event that the projected claim \eqref{e:new_to_projected_lifted_polring_claim} holds over $\FF_q$ for some $\bfg\in \bits^\codedim$ with $f= \Enc_\cC \circ \pack\circ \pi_2(\bfg)$, but \eqref{e:to_soundness_1_rings} does not hold. As in \cref{?}  $\bfg$ is fixed by $f$ before $q,\pirand$ are sampled, see \cref{r:oracle_udr}. Consider the polynomial
+\noindent\emph{\underline{Step 3}.}  Let $\cE$ be the event that the projected claim \eqref{e:new_to_projected_lifted_polring_claim} holds over $\FF_q$ for some $\bfg\in \bits^\codedim$ with $f= \Enc_\cC \circ \pack\circ \pi_2(\bfg)$, but \eqref{e:to_soundness_1_rings} does not hold. As in \cref{s:to_soundness_prime}, $\bfg$ is fixed by $f$ before $q,\pirand$ are sampled, see \cref{r:oracle_udr}. Consider the polynomial
 %
 $$
 h\defeq \langle \picanon^{-1}(\uu^{(1)}) \otimes \picanon^{-1}(\uu^{(2)}) , \bfg \rangle-\mu' \ \in \ \ZZ[X_1,\ldots, X_{k'}].
 $$
 %
-Since $\picanon$ is a ring homomorphism with $\picanon\circ\picanon^{-1}=\mathsf{id}$ and $\picanon(\mu')=\mu$, we have $\picanon(h)=\langle \uu, \psi(\bfg)\rangle-\mu\neq 0$, and so $h\neq 0$. Since $\bfg$ has bit entries, the inner product $\langle \picanon^{-1}(\uu^{(1)}) \otimes \picanon^{-1}(\uu^{(2)}) , \bfg \rangle$ is a polynomial with coefficients  of absolute value at most $\codedim\cdot \lVert \picanon^{-1}(\uu^{(1)})\rVert_\infty \cdot \lVert \picanon^{-1}(\uu^{(2)})\rVert_\infty$. The bit-size bound $B_\ZZ$ mentioned in \cref{?} is precisely the logarithm of this quantity. Further, let $D_\ZZ$ be the maximum possible total degree that $\langle \picanon^{-1}(\uu^{(1)}) \otimes \picanon^{-1}(\uu^{(2)}) , \bfg \rangle$ can have, given that   $\picanon^{-1}(\uu^{(1)}) \otimes \picanon^{-1}(\uu^{(2)})$ is public and $\bfg$ only contains bits. The verifier checks that $\mu'$ has total degree at most $D_\ZZ$  as well, and coefficients of absolute value at most $2^{B_\ZZ}$.  Hence $h$ has total degree at most $D_\ZZ$ and coefficients of absolute value at most $2^{B_\ZZ+1}$. 
+Since $\picanon$ is a ring homomorphism with $\picanon\circ\picanon^{-1}=\mathsf{id}$ and $\picanon(\mu')=\mu$, we have $\picanon(h)=\langle \uu, \psi(\bfg)\rangle-\mu\neq 0$, and so $h\neq 0$. Since $\bfg$ has bit entries, the inner product $\langle \picanon^{-1}(\uu^{(1)}) \otimes \picanon^{-1}(\uu^{(2)}) , \bfg \rangle$ is a polynomial with coefficients  of absolute value at most $\codedim\cdot \lVert \picanon^{-1}(\uu^{(1)})\rVert_\infty \cdot \lVert \picanon^{-1}(\uu^{(2)})\rVert_\infty$. The bit-size bound $B_\ZZ$ mentioned in Step 3 of \cref{s:to_general_rings} is precisely the logarithm of this quantity. Further, let $D_\ZZ$ be the maximum possible total degree that $\langle \picanon^{-1}(\uu^{(1)}) \otimes \picanon^{-1}(\uu^{(2)}) , \bfg \rangle$ can have, given that   $\picanon^{-1}(\uu^{(1)}) \otimes \picanon^{-1}(\uu^{(2)})$ is public and $\bfg$ only contains bits. The verifier checks that $\mu'$ has total degree at most $D_\ZZ$  as well, and coefficients of absolute value at most $2^{B_\ZZ}$.  Hence $h$ has total degree at most $D_\ZZ$ and coefficients of absolute value at most $2^{B_\ZZ+1}$. 
 
 Now,  since $\pirand$ is a ring homomorphism,  the projected claim \eqref{e:new_to_projected_lifted_polring_claim} states  that $\pirand(h)=0$. If, for example, $\cM_q$ consists of the maps $h\mapsto \pi_q(h)(\bm{\alpha})$ for $\bm{\alpha}\in \FF_q^{k'}$ (as in our instantiation), then either $q$ divides every coefficient of $h$, which as in \cref{s:to_soundness_prime} happens with probability at most $(B_\ZZ+1)/(\lfloor \log q_{\min}\rfloor\cdot |\cP|)$, or $\pi_q(h)$ is a nonzero polynomial of total degree at most $D_\ZZ$, which vanishes at a random $\bm{\alpha}$. The latter occurs with probability at most $D_\ZZ/q_{\min}$ by the Schwartz--Zippel lemma. Overall we have
 %
@@ -985,7 +983,7 @@ Now,  since $\pirand$ is a ring homomorphism,  the projected claim \eqref{e:new_
 %
 cf.\ \eqref{e:to_kappa_0} for the case $k'=0$, and \cref{l:examples_morphisms} for the concrete bounds $D_\ZZ, B_\ZZ$ of \cref{c:core_iop}.
 
-We conclude that $\Pi_1$ is  round-by-round knowledge sound with errors $\kappa_0$. The errors of the whole protocol construction from \cref{?} are $\kappa_0$ followed by those of $\Pi_2$ and $\Pi_3$.
+We conclude that $\Pi_1$ is  round-by-round knowledge sound with errors $\kappa_0$. The errors of the whole protocol construction from \cref{s:to_general_rings} are $\kappa_0$ followed by those of $\Pi_2$ and $\Pi_3$.
 
 
 
@@ -1375,7 +1373,7 @@ $$
 \renewcommand{\ringmorphism}{\pi}
 %\renewcommand{\ringtwo}{}
 
-As discussed in \cref{s:to_simple_bitz} \albert{TO}, \ftwoz \ crucially demands and uses a tensor decomposition of $\vv$. We next establish notation and basic definitions around it.
+As discussed in \cref{s:to_simple_bitz}, \ftwoz \ crucially demands and uses a tensor decomposition of $\vv$. We next establish notation and basic definitions around it.
 
  Let $(\inp,\oracle,\wit)=((\mu,\vv), f, \bff) \in \LinBitsDual(\bits,\ringmorphism, R,\cC)$. We fix a tensor decomposition of the vector $\vv\in \moduletwo^\codedim$ as $$\vv = \vv^{(1)} \otimes \vv^{(2)} = \left(\vv_i^{(1)}\cdot \vv_j^{(2)}\right)_{i\in [\codedim_1], j\in [\codedim_2]}$$ for some $\vv^{(1)}\in \moduletwo^{\codedim_1}, \vv^{(2)}\in \moduletwo^{\codedim_2}$, with $\codedim_1 \cdot \codedim_2=\codedim$. Note that the trivial tensor decomposition is admitted, i.e.\ we may effectively not decompose $\vv$ by choosing $\codedim_1=\codedim$, $\codedim_2=1$, $\vv^{(1)}=\vv$, and $\vv^{(2)} = (1)$.
 
@@ -1454,7 +1452,7 @@ This is indeed the case with GKR: GKR reduces the initial circuit evaluation cla
 \paragraph{Algebraic set-up}
 
 
- Recall (\cref{s:prelims_algebra}) that all rings in this work are finitely generated as rings. We fix generators $1, \eta_1, \ldots, \eta_{k}\in R$ \albert{I added a $1$ here (one can assume without loss that $1$ is part of the generating set). Let AI check that nothing breaks} and we let
+ Recall (\cref{s:prelims_algebra}) that all rings in this work are finitely generated as rings. We fix generators $1, \eta_1, \ldots, \eta_{k}\in R$ and we let
 %
 $$
 \picanon^{R} : \ZZ[X_1,\ldots, X_{k}] \to R
@@ -1501,7 +1499,7 @@ We assume without further comment that it is efficient to compute  values $\pica
 
 \item Let $\Pi_{\iopp}$ be an IOP for $\LIN(\comfield,\cC, \pack)$. In our instantiation, $\Pi_{\iopp}$ is the WHIR/Ligerito protocol \cite{whir,ligerito} over binary fields as implemented in Flock \cite{flock}, with ring-switching \cite{binius} and a preliminary sumcheck over $\comfield$ that transforms arbitrary inner products to MLE evaluation claims (since the ring switch of \cite{flock} does not support arbitrary inner product claims). We set the proximity parameter  to the Johnson bound when targeting $100$ bits of security, and to the unique decoding radius for $128$ bits of security, see \cref{s:instantiation} for more details.   
 \item 
-Let $\codedim =\codedim_1\cdot \codedim_2$ be dimension parameters,  and $R$ a ring with generators $1,\eta_1,\ldots, \eta_k$,  as in the previous sections. We let $\cP$ be a set of primes with $\max\cP< \fieldboundsizeexponent$. Given the tensor decomposition $\vv=\vv^{(1)}\otimes \vv^{(2)}$ from \cref{s:interleaved_setting}, we define \albert{Why a subscript $R$ in $N_R$ and not in the others?}
+Let $\codedim =\codedim_1\cdot \codedim_2$ be dimension parameters,  and $R$ a ring with generators $1,\eta_1,\ldots, \eta_k$,  as in the previous sections. We let $\cP$ be a set of primes with $\max\cP< \fieldboundsizeexponent$. Given the tensor decomposition $\vv=\vv^{(1)}\otimes \vv^{(2)}$ from \cref{s:interleaved_setting}, we define 
 \begin{equation}\label{e:ring_theta_params}
 \begin{aligned}
 \uu &\defeq (\vv^{(1)},\vv^{(2)})\in R^{\codedim_1+ \codedim_2}\\
@@ -1592,7 +1590,6 @@ The prover and verifier now set to prove the updated claim
 \end{equation}
 
 \begin{remark}[Skipping Round 1 when $R=\ZZ$ and $\lVert \vv\rVert_{\infty}$ is ``small'']\label{r:skip_round_1_integers}
-\albert{Make sure our completeness and soundness theorem proves this case as well}
     This step can also be skipped when $R=\ZZ$ and all entries of $\vv^{(1)}$ are nonnegative and less than $\fieldboundsizeexponent$. In that case the claim to prove at the start of Round 2 is $\langle \vv^{(1)} \otimes \vv^{(2)}, \bff\rangle = \mu $ over $\ZZ$. In this case the map $\pi_q$ in Round 2 is simply replaced by the identity map, $\FF_q$ is replaced by $\ZZ$, and $q$ in the range checks of Round 2 denotes $\max_{i\in [\codedim_1]} \vv^{(1)}_i+1$. In Phase 3, $\bm{\gamma}$ is  $\vv^{(1)}$. 
 \end{remark}
 \item \textbf{Round 2: transforming \eqref{e:core_bitz_eq_new_0} to $\codedim_2$ integer constraints with bounded integers.}
@@ -1666,7 +1663,7 @@ Let  $\bm{\mu}\defeq (\mu_1,\ldots, \mu_{\codedim_2})$, $g^{\bm{\gamma}}\defeq (
 In \cref{t:core_iop_complexity} we summarize the main costs of \cref{c:core_iop}.
 
 
-\paragraph{Costs ($k\leq 1$).}  In \Cref{t:core_iop_complexity} we summarize the costs of \cref{c:core_iop} beyond those of $\Pi_\red$ and $\Pi_\iopp$ (cf.\ \cref{s:gkr_low_entropy,s:instantiation}), for the specific case $k\leq 1$, corresponding to $R$ being of the form $\ZZ_n$ or $\ZZ_n[X]/(h(X))$ for some $n\geq 0$ and some $h(X)$. This is the setting used in our instantiation \cref{s:instantiation,s:experiments} \albert{Do we do any Babybear extension? If not, we only use $k=0$}. The number of rounds is  between $t_\red +t_\iopp$ and $2+t_\red +t_\iopp$ , depending on whether Rounds 0 and 1 execute or not, where $t_\red, t_\iopp$ denote the number of rounds of $\Pi_\iopp,\Pi_\red$.
+\paragraph{Costs ($k\leq 1$).}  In \Cref{t:core_iop_complexity} we summarize the costs of \cref{c:core_iop} beyond those of $\Pi_\red$ and $\Pi_\iopp$ (cf.\ \cref{s:gkr_low_entropy,s:instantiation}), for the specific case $k\leq 1$, corresponding to $R$ being of the form $\ZZ_n$ or $\ZZ_n[X]/(h(X))$ for some $n\geq 0$ and some $h(X)$. This is the setting used in our instantiation \cref{s:instantiation,s:experiments} \albertimportant{Do we do any Babybear extension? If not, we only use $k=0$}. The number of rounds is  between $t_\red +t_\iopp$ and $2+t_\red +t_\iopp$ , depending on whether Rounds 0 and 1 execute or not, where $t_\red, t_\iopp$ denote the number of rounds of $\Pi_\iopp,\Pi_\red$.
 
 Rounds 0, 1 and 2 send only non-oracle messages, so the oracles and queries of \cref{c:core_iop} are exclusively those of $\Pi_\red$ and $\Pi_\iopp$. If Round 1 is skipped, $q$ denotes $|R|$ when $R=\FF_q$, and $\max_i \vv^{(1)}_i+1$ when $R=\ZZ$ (cf.\ \cref{r:skip_round_1_integers}). The exponentiations of Phase 3, when computing $(g^{\bm{\gamma_i}})_{i\in [\codedim_1]}$ and $(g^{\mu_j})_{j\in [\codedim_2]}$, take $\lceil \log(q\cdot\codedim_1)/w\rceil \leq \comfieldexp/w$ multiplications each using a fixed-base table with $w$-bit windows ($w=8$ in our implementation).
 
@@ -1711,7 +1708,7 @@ When $k=0$ (so that $R=\ZZ_n$ for some $n$), we have $D=0$ and $T=1$.  When $k=1
   \label{t:core_iop_complexity}
 \end{table}
 
-\albert{Was AI generated and reviewed and edited by me after} We justify   the costs listed in Round 1 of \cref{t:core_iop_complexity}, which are arguably the most involved to derive. The first three Prover costs in Round 1 come from the computation of  $\mu'$. The prover can compute $\mu'$ by first building, for each $j\in [\codedim_2]$, the polynomial $h_j\defeq \sum_{i\in [\codedim_1]} \bff_{ij}\cdot \picanon^{-1}(\vv^{(1)}_i)$, which requires no multiplications since $\bff$ has bit entries. The coefficients of these polynomials are bounded by $\codedim_1\cdot N_R$. Hence the $h_j$ can be computed with $O(\codedim\cdot (D+1))$ additions of $\log(\codedim_1\cdot N_R)$-bit integers. Now, to obtain $\mu'$ the prover computes    $\sum_{j\in [\codedim_2]}\picanon^{-1}(\vv^{(2)}_j)\cdot h_j$. Each product in this sums costs at most $(D+1)^{2}$ multiplications of $\log(\codedim_1\cdot N_R)$-bit integers, and there are $\codedim_2$ of them, this yields the third cost in the prover's Round 1. The second cost correspond to adding together each of the terms in  $\sum_{j\in [\codedim_2]}\picanon^{-1}(\vv^{(2)}_j)\cdot h_j$.
+\albert{Was AI generated and reviewed and edited by me after} We justify   the costs listed in Round 1 of \cref{t:core_iop_complexity}, which are arguably the most involved to derive. The first three prover costs in Round 1 come from the computation of  $\mu'$. The prover can compute $\mu'$ by first building, for each $j\in [\codedim_2]$, the polynomial $h_j\defeq \sum_{i\in [\codedim_1]} \bff_{ij}\cdot \picanon^{-1}(\vv^{(1)}_i)$, which requires no multiplications since $\bff$ has bit entries. The coefficients of these polynomials are bounded by $\codedim_1\cdot N_R$. Hence the $h_j$ can be computed with $O(\codedim\cdot (D+1))$ additions of $\log(\codedim_1\cdot N_R)$-bit integers. Now, to obtain $\mu'$ the prover computes    $\sum_{j\in [\codedim_2]}\picanon^{-1}(\vv^{(2)}_j)\cdot h_j$. Each product in this sums costs at most $(D+1)^{2}$ multiplications of $\log(\codedim_1\cdot N_R)$-bit integers, and there are $\codedim_2$ of them, this yields the third cost in the prover's Round 1. The second cost correspond to adding together each of the terms in  $\sum_{j\in [\codedim_2]}\picanon^{-1}(\vv^{(2)}_j)\cdot h_j$.
 
 The last two cost of the prover and verifier in Round 1  are the costs of computing $\pirand\circ \picanon^{-1}(\vv^{(i)})$ for $i=1,2$.  For both $i$, this is the cost of reducing $D+1$ integers in the range $\range{0}{N_R-1}$ modulo a  prime, and then computing a linear combination of the resulting elements. 
 
@@ -1969,7 +1966,7 @@ Assume $\cC$ is a linear code over $\comfield$ of dimension $\codedim/\comfielde
 
 
 
-\begin{definition} The \emph{general LinBitsRings}  relation is defined as \albert{Here we could allow for $\psi = \phi \circ \picanon^{S}{}^{-1}$ for $\phi: \ZZ[X_1, \ldots, X_k]\to R$ a morphism. This is what is actually happening and it allows us to build later full IOPs for constraints over arbitrary f.g.\ rings}
+\begin{definition} The \emph{general LinBitsRings}  relation is defined as 
 %
 \begin{align*}
  &\LinModFieldBin(\moduleonebound,\modulemorphism,R,  \cC,L)\\ &\qquad\qquad\qquad \defeq \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in R  \times R^{ \codedim_0}, \\
@@ -2083,7 +2080,7 @@ For more general matrices $L$, one needs to make sure that $L$ has enough struct
 \end{itemize}
 \end{remark}
 
-\paragraph{Costs.} \albertimportant{Review. Computed with AI. Justify here and in the previous table why we use $k=1$?} We discuss the costs of \Cref{c:LinModFieldBin}. The rounds, oracles and queries of \cref{c:LinModFieldBin} are exactly those of \cref{c:core_iop} (see \cref{t:core_iop_complexity}), which is run on the bitified witness $\bitstext(\bff)$ of length $\codedim=\codedim_0\cdot \moduledegree\cdot B$ (if using the standard bitification matrix of \cref{d:bitification}), and with the weight vector $\uu=\uu^{(1)}\otimes \uu^{(2)}$ of \cref{r:tensor_dec_u}. For $R=\ZZ_n$ ($k=0$)  or $R=\ZZ_n[X]/(h(X))$ ($k=1$) for some $n\geq 0$ and polynomial $h(X)$, the costs of executing \cref{c:core_iop} are the same as those listed in \cref{t:core_iop_complexity}.   The only additional costs of \cref{c:LinModFieldBin} are those of computing the bitification of $\bff$ and of computing $\uu^{(1)}$ and $\uu^{(2)}$. Note that, when using the standard bitification matrix, the prover and verifier do not need to compute $\uu$ entirely: it suffices to compute $\uu^{(1)}, \uu^{(2)}$.  Hence the verifier's work outside $\Pi_\red$ and $\Pi_\iopp$ is $O(\codedim_1+\codedim_2)$ operations (cf.\ \cref{t:core_iop_complexity}).  In \Cref{t:LinModFieldBin_complexity} we summarize the costs of \cref{c:LinModFieldBin}. 
+\paragraph{Costs.} We discuss the costs of \Cref{c:LinModFieldBin}. The rounds, oracles and queries of \cref{c:LinModFieldBin} are exactly those of \cref{c:core_iop} (see \cref{t:core_iop_complexity}), which is run on the bitified witness $\bitstext(\bff)$ of length $\codedim=\codedim_0\cdot \moduledegree\cdot B$ (if using the standard bitification matrix of \cref{d:bitification}), and with the weight vector $\uu=\uu^{(1)}\otimes \uu^{(2)}$ of \cref{r:tensor_dec_u}.   The only additional costs of \cref{c:LinModFieldBin} are those of computing the bitification of $\bff$ and of computing $\uu^{(1)}$ and $\uu^{(2)}$. When using the standard bitification matrix, the verifier does not need to compute $\uu$ entirely: it suffices to compute $\uu^{(1)}, \uu^{(2)}$, avoiding a linear cost.  In \Cref{t:LinModFieldBin_complexity} we summarize the costs of \cref{c:LinModFieldBin}. 
 
 
 %For a general bitification matrix $L$, computing $\uu=\psi(L)^{\mathsf{T}}\cdot \vv$ costs $O(\mathsf{nnz}(L))$ operations in $R$, where $\mathsf{nnz}(L)$ denotes the number of nonzero entries of $L$.
@@ -2214,7 +2211,7 @@ We now discuss how to make the errors $\kappa_{\mathsf{OOD}}, \kappa_0, (\ksred_
 \noindent For the purposes of this discussion, we assume \ftwoz \ is used within a bigger proof system, as described in \cref{s:to_snark}, so that \ftwoz \ is used to prove an inner product claim for a committed witness, as the last phase of a bigger proving system where \albert{review what the technical overview exactly says} 1) first the initial constraint is projected to a finite field $\FF$, or, alternatively, this step is skipped if the constraint is  already over a finite field; and 2) a  PIOP is run over $\FF$ for the projected constraint, outputting an inner product claim on the projected witness. Now, this inner product claim is the input of \cref{c:core_iop}, and we aim to configure \cref{c:core_iop} at 128 bits of security for this setting. 
 
 
-\paragraph{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa_0$.} If allowing, say, $18-19$ bits of grinding during each round of the PIOP (which adds $0.8-1.8$ms per round, cf.\ \cref{tab:grinding-cost}), then, say, a Spartan-like PIOP will achieve $128$ bits of security if run on a field $\FF$ of size $\approx 2^{112}$ to  $2^{113}$  (since each one of its rounds is either a sumcheck round for a degree $\leq 3$ polynomial, or a step that batches some claims with error $1/|\FF|$). Hence, if the initial constraint is over $\ZZ$ or $\ZZ[X]$ \albert{do we mention $\ZZ[X]$? Why not mention other rings here? Again, wait for the TO}, then we may project it to a $112$-$113$ bit random prime field $\FF$ and run a PIOP over $\FF$. We study this case next. Our analysis also applies if the original constraint was already expressed over a prime field of such size.  
+\paragraph{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa_0$.} If allowing, say, $18-19$ bits of grinding during each round of the PIOP (which adds $0.8-1.8$ms per round, cf.\ \cref{tab:grinding-cost}), then, say, a Spartan-like PIOP will achieve $128$ bits of security if run on a field $\FF$ of size $\approx 2^{112}$ to  $2^{113}$  (since each one of its rounds is either a sumcheck round for a degree $\leq 3$ polynomial, or a step that batches some claims with error $1/|\FF|$). Hence, if the initial constraint is over $\ZZ$, then we may project it to a $112$-$113$ bit random prime field $\FF$ and run a PIOP over $\FF$. We study this case next. Our analysis also applies if the original constraint was already expressed over a prime field of such size.  
 
 Note that the projection of the constraint to $\FF$ also requires to be set up to 128 bits of security. We discuss this in \cref{r:first_projection_security}. 
 
@@ -2815,9 +2812,7 @@ In Round 2 of \cref{c:core_iop}, the prover computes the elements $\mu_1,\ldots,
 
 \section{Experiments} \label{s:experiments}
 
-\albertimportant{All mentions of \ftwoz\ (in the tables) should be of \ftwoz-SNARK}
 
-\albertimportant{Use 10 threads, not 8?}
 
 \begin{comment}
 
@@ -2868,13 +2863,25 @@ for some $\rr^{(2)} \in \KK^{\log \codedim}$  and some $\mu\in \KK$. In other wo
 
 
 
-We implement the \ftwoz\ PCS (\cref{c:core_iop,c:LinModFieldBin}) following the guideline in \cref{s:instantiation}. We then implement an end-to-end roof system, called \ftwoz-SNARK, for integer R1CS constraints as described in \cref{s:to_snark} \albert{technical overview} (note that \ftwoz \ can be used to prove much more general constraints, such as the ones in Zinc+ \cite{zincplus}, cf.\ \cref{s:to_general_bitz} \albert{some remark in TO}). 
-
-Following the lead of \cite{flock} and other usages of AI \cref{zkgolf} to optimize against verified specs, we  used AI to optimize the prover while keeping the verifier implementation untouched.  As such, we consider our prover fairly optimal, while  our verifier's implementation is pending significant optimization \albert{review}.
+We implement the \ftwoz\ PCS (\cref{c:core_iop,c:LinModFieldBin}) following the guideline in \cref{s:instantiation}. We then implement an end-to-end roof system, called \ftwoz-SNARK, for integer R1CS constraints as described in \cref{s:to_snark} (note that \ftwoz \ can be used to prove much more general constraints, such as the ones in Zinc+ \cite{zincplus}, cf.\ \cref{s:to_general_bitz}. 
 
 
+Our \ftwoz-PCS is instantiated with Reed-Solomon codes over $\FF_{2^{128}}$ of rate $1/2$ or $1/8$. As  backend of \ftwoz \ we use the Ligerito implementation from \cite{flock} with folding arity $4$. When targetting 100 bits of security we use the Johnson bound as proximity parameter, and perform out of domain sampling. When targeting more security (in \cite{s:multiswap}) we use the unique decoding radius.
+%\albertimportant{remove?} When targeting $100$ bits of security, we sample primes in the range $[2^{b-1}, 2^b-1]$ with $b=$ \albertimportant{fill in}.
 
-Concretely, our \ftwoz\ is instantiated with Reed-Solomon codes over $\FF_{2^{128}}$ of rate $1/2$ or $1/8$ (unless stated otherwise). As  backend of \ftwoz \ we use the Ligerito implementation from \cite{flock} with folding arity $4$. When targeting $100$ bits of security, we sample primes in the range $[2^{b-1}, 2^b-1]$ with $b=$ \albertimportant{fill in}. 
+
+\paragraph{The Binius configuration suite.} When  comparing against Binius64, we use four configurations: Binius64 as in its repository, with rates $1/2$ and $1/8$ and with proximity parameter within the unique decoding radius. We call these ``Binius64-$\rate=1/2,1/4$''. 
+
+Moreover, as we mentioned, we run \ftwoz\ with proximity paramter up to the Johnson bound, using the underlying binary-field PCS being the Ligerito implementation from \cite{flock}. Because of this, we also experiment with Binius64 with the same underlyinig PCS and proximity paramter. We call the resulting scheme  ``Binius64-Johnson-$\rate=1/2,1/4$''.
+
+\albert{All mentions of \ftwoz\ (in the tables) should be of \ftwoz-SNARK}
+
+
+
+
+\paragraph{Usage of AI} Following the lead of \cite{flock} and other usages of AI \cref{zkgolf} to optimize against verified specs, we  used AI to optimize the prover while keeping an audited  verifier implementation. \albertimportant{If we mimic transcripts, say so}
+
+
 
 
 
@@ -2891,16 +2898,14 @@ We measure the performance of \cref{c:core_iop} for proving the Core LinBitsRing
  
  %\albertimportant{1 threaded one?}
 
-\albertimportant{Let's have the AI and human repo output the same transcripts}
-
-\albert{Measure Binius64 proving the same inner product directly in Bin fields?}
 
 
-\subsection{RSA accumulation and Poseidon hashing}
+
+\subsection{RSA accumulation and Poseidon hashing}\label{s:multiswap}
 
 We compare Limber \cite{limber}, Zinc+\cite{zincplus} and our \ftwoz-SNARK \ on proving the same circuit as in the Limber paper. This consists in verifying four  exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation  (see Section 7.1 of \cite{limber}). We take the corresponding R1CS constraint over the integers  from the Limber repository. See \cref{s:related_work} for further details on Limber, Zinc+, etc. 
 
-We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber states in the paper that it achieves $128$ bits of security, but its fingerprint step only achieves $114$ bits of security in the implementation, because the random prime sampled to perform the fingerprint is of $128$ bits, and no other measures (like, say, grinding) are taken. \albertimportant{Double check and let the authors know.}} For the \ftwoz\ opening we use Ligerito in the unique-decoding regime (as opposed to the other benchmarks where we use the Johnson bound) at rate $1/8$ with fold arity $4$ \albertimportant{mention this elsewhere}, with grinding to achieve $114$ bits of security.
+We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber states in the paper that it achieves $128$ bits of security, but its fingerprint step only achieves $114$ bits of security in the implementation, because the random prime sampled to perform the fingerprint is of $128$ bits, and no other measures (like, say, grinding) are taken.} For the \ftwoz\ opening we use Ligerito in the unique-decoding regime (as opposed to the other benchmarks where we use the Johnson bound) at rate $1/8$ with fold arity $4$, with grinding to achieve $114$ bits of security.
 
 \begin{table}[H]
   \centering
@@ -2931,11 +2936,13 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
 
 \subsection{SHA-256 hashing followed by ECDSA signature verification}
 
-We experiment with proving the SHA-256 hash of a $4$KB message (a chain of $2^6$ SHA compressions) followed by an ECDSA signature verification on the message digest. This is a common application of proof systems in anonymous credentials. We compare \ftwoz-SNARK with Binius64 \cite{binius64}, Zinc+ \cite{zincplus}, \albertimportant{What else? Longfellow? Plonky3? Vega? Check the ethproofs dashboard. }
+We experiment with proving the SHA-256 hash of a message of a few KB message followed by an ECDSA signature verification on the message digest. This is a common application of proof systems in anonymous credentials. We compare \ftwoz-SNARK with the Binius64 \cite{binius64} suite \cref{?}. For the latter we compose two circuits in the Binius64 repo, one for SHA-256 and one for ECDSA signature verification.
+
+There are highly interesting projects proving a related computation, namely SHA+ECDSA and JSON or CBOR document parsing, e.g.\ \cite{longfellow,vega}. However, our scheme does not support zero-knowledge yet, nor JSON/CBOR parsing, and so we omit a comparison here.  In ongoing work we aim to benchmark against these.
 
 
 For \ftwoz, we  arithmetize the computation as an integer R1CS constraint with $\FF_2$-virtualization (\cref{s:to_f2_virtual}). 
-The  SHA-256  constraints in particular are  an instance of the $\mathsf{CM}$ relation from \cref{e:CM_rel}, obtained using the methods from \cref{r:CM_is_NP_complete}. In \cref{tab:sha_arithmetization} we display the circuit and witness sizes achieved by our SHA-256 arithmetization, against that of binary-field native systems like Binius \cite{binius64} and Flock \cite{flock}.  
+The  SHA-256  constraints in particular are  an instance of the $\mathsf{CM}$ relation from \cref{e:CM_rel}, obtained using the methods from \cref{r:CM_is_NP_complete}. 
 
 We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul}, when seeking to prove a large amount of hashes, it is preferable to arithmetize the hash over a binary field and follow the approach described in \cref{s:experiments_sha_modmul}
 
@@ -3070,9 +3077,9 @@ Our experimental results show that \ftwoz-SNARK is more performant when hashing 
 
 \subsection{Integer multiplication}
 
-\albertimportant{Add Limber to all tables. Zinc+, Plonk3. Something else?}
 
-We measure the cost of proving $N$ integer multiplications of the form $x\cdot  y = z$, for $x,y$ random $t$-bit integers, and $z$ a $2\cdot t$-bit integer, for $t\in \{32,64,128\}$. As we mentioned, this is proved via our implemented end-to-end proof system, called \ftwoz-SNARK for R1CS over the integers, with \ftwoz\ as its PCS, as described in \cref{s:to_snark}.
+
+We measure the cost of proving $N$ integer multiplications of the form $x\cdot  y = z$, for $x,y$ random $t$-bit integers, and $z$ a $2\cdot t$-bit integer, for $t\in \{32,64,128\}$. This is proved via our implemented end-to-end proof system, called \ftwoz-SNARK for R1CS over the integers, with \ftwoz\ as its PCS, as described in \cref{s:to_snark}. For 32-bit integer multiplication, we compare against the Binius suite, Limber, and Plonky3. For multiplication of larger bits we compare only against the Binius suite.
 
 
 
