@@ -617,8 +617,9 @@ impl BiniusLigeritoContext {
         filler.into_value_vec()
     }
 
-    fn run(&self, capture: &TraceCapture) -> (TrialMetrics, Vec<SemanticSpan>, Vec<u8>) {
-        capture.begin();
+    fn run(&self) -> (TrialMetrics, Vec<SemanticSpan>, Vec<u8>) {
+        let recording =
+            common::perfetto::Recording::start(Vec::new()).expect("start Perfetto trial");
         let trial = tracing::info_span!(
             "Verified trial",
             component = "binius-ligerito.verified-trial",
@@ -661,7 +662,8 @@ impl BiniusLigeritoContext {
             .expect("binius64-ligerito proof verifies");
         drop(verification);
         drop(trial);
-        let spans = binius_ligerito_semantic_spans(&capture.finish());
+        let spans =
+            binius_ligerito_semantic_spans(&recording.intervals().expect("query Perfetto trial"));
         let metrics = TrialMetrics::from_spans(&spans, proof_bytes.len());
         black_box(&proof_bytes);
         (metrics, spans, proof_bytes)
@@ -1408,7 +1410,7 @@ impl TraceWriter {
                 "build_profile": "bench",
             },
             "trial": metadata.trial.json(),
-            "clock": {"id": run_id, "kind": "monotonic", "unit": "ns", "source": "std::time::Instant"},
+            "clock": {"id": run_id, "kind": "monotonic", "unit": "ns", "source": if metadata.backend == Backend::BiniusLigerito { "Perfetto SDK" } else { "std::time::Instant" }},
             "status": "ok",
             "trace_complete": true,
             "environment": self.environment,
@@ -1548,12 +1550,11 @@ fn run_binius_trial(
 
 fn run_binius_ligerito_trial(
     context: &BiniusLigeritoContext,
-    capture: &TraceCapture,
     exponent: usize,
     trial: Trial,
     trace: Option<&mut TraceWriter>,
 ) -> TrialMetrics {
-    let (metrics, spans, _) = context.run(capture);
+    let (metrics, spans, _) = context.run();
     if let Some(trace) = trace {
         let config_label = context.config_label();
         trace.write_run(
@@ -1951,7 +1952,6 @@ fn run_native_trial(
                 .binius_ligerito
                 .as_ref()
                 .expect("Binius64-Ligerito context"),
-            capture,
             exponent,
             trial,
             trace,
@@ -2792,7 +2792,7 @@ fn main() {
             }
             Backend::BiniusLigerito => {
                 let context = BiniusLigeritoContext::setup(&corpus);
-                run_binius_ligerito_trial(&context, &capture, exponent, Trial::Preflight, None)
+                run_binius_ligerito_trial(&context, exponent, Trial::Preflight, None)
             }
             Backend::Limber => {
                 let params = limber_params;
@@ -3093,34 +3093,38 @@ mod reporting_tests {
     }
 
     #[test]
+    #[ignore = "requires PERFETTO_TRACE_PROCESSOR; exercises the native measurement backend"]
     fn span_metrics_cover_repeated_verified_sha_trials() {
         use tracing_subscriber::prelude::*;
         // Thirty-two compressions reach the opener's minimum packed log of 13.
         let context = BiniusLigeritoContext::setup(&Corpus::new(32, DEFAULT_ROOT_SEED));
-        let layer = CaptureLayer::default();
-        let capture = layer.capture();
-        tracing::subscriber::with_default(tracing_subscriber::registry().with(layer), || {
-            for _ in 0..6 {
-                let (metrics, spans, _) = context.run(&capture);
-                assert!(
-                    metrics.commit_ms > 0.0 && metrics.piop_ms > 0.0 && metrics.opening_ms > 0.0
-                );
-                assert!(metrics.witness_to_proof_ms >= metrics.total_prover_ms);
-                assert_eq!(
-                    spans
-                        .iter()
-                        .filter(|s| s.scope_tag == Some("opening-proof"))
-                        .count(),
-                    context.prepared.oracle_specs().len() + 1
-                );
-                for s in &spans {
-                    if let Some(parent) = &s.parent {
-                        let parent = spans.iter().find(|p| &p.id == parent).unwrap();
-                        assert!(parent.start_ns <= s.start_ns && s.end_ns <= parent.end_ns);
+        tracing::subscriber::with_default(
+            tracing_subscriber::registry().with(common::perfetto::layer()),
+            || {
+                for _ in 0..6 {
+                    let (metrics, spans, _) = context.run();
+                    assert!(
+                        metrics.commit_ms > 0.0
+                            && metrics.piop_ms > 0.0
+                            && metrics.opening_ms > 0.0
+                    );
+                    assert!(metrics.witness_to_proof_ms >= metrics.total_prover_ms);
+                    assert_eq!(
+                        spans
+                            .iter()
+                            .filter(|s| s.scope_tag == Some("opening-proof"))
+                            .count(),
+                        context.prepared.oracle_specs().len() + 1
+                    );
+                    for s in &spans {
+                        if let Some(parent) = &s.parent {
+                            let parent = spans.iter().find(|p| &p.id == parent).unwrap();
+                            assert!(parent.start_ns <= s.start_ns && s.end_ns <= parent.end_ns);
+                        }
                     }
                 }
-            }
-        });
+            },
+        );
     }
 
     #[test]

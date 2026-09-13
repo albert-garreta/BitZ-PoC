@@ -138,11 +138,13 @@ cargo bench --bench mul_e2e_compare \
   --features bench-internals,native-mul-compare,bench-perfetto
 ```
 
-`benches/common/perfetto.rs` configures `tracing-perfetto-sdk` with an in-process
+`src/observability.rs` configures `tracing-perfetto-sdk` with an in-process
 Perfetto session. It composes with the existing subscriber; it does not install
 another global subscriber, launch a tracing service, parse JSON logs, or measure
 time itself. The native SDK owns clocks, per-thread intervals and buffering.
-Normal builds do not compile or initialize Perfetto. The optional native SDK
+Library builds without `span-metrics` do not compile or initialize Perfetto.
+Native comparison features enable it for numeric metrics; `bench-perfetto` adds
+saved diagnostic files. The optional native SDK
 requires a C++ toolchain; the implementation was checked on macOS ARM64.
 
 The integration is deliberately small:
@@ -175,18 +177,20 @@ with `std::process::Command` and read with `csv::Reader`; Python is not required
 Do not sum nested or parallel slice durations to obtain wall time. Group by trial,
 exclude warmups, and union the selected intervals before aggregating across trials.
 
-This is an integration/compatibility step, not the timing-system replacement:
+The original diagnostic integration has these remaining limitations (the
+Binius64-Ligerito metric-source migration below is the first replacement):
 
-- Existing metrics, tuning, custom profiler and RSS observations remain intact.
-  The Perfetto files are diagnostic artifacts, not an additional source for the
-  existing JSON/CSV metrics. Capture changes overhead; compare against a build
-  without the feature before drawing performance conclusions.
+- Other backends' metrics, tuning and custom profiler remain on their legacy
+  timing paths. Saved Perfetto files are diagnostic artifacts; Binius64-Ligerito
+  now queries its bounded in-memory recording for JSON/CSV metrics. Capture
+  changes overhead; do not compare timings across the migration as a speedup.
 - Only existing `tracing` instrumentation is exported. F2Z's `prof::scope` and
   manual phase timers are not translated into synthetic spans.
 - `benchmark_trial` is an orchestration envelope, not `witness_to_proof_ms`.
   Multiplication includes verification and metric extraction; SHA also includes
   its canonical trace reporting. No semantic end-to-end tag is assigned to it.
-- Tuning/pilot, memory-only subprocess, and preflight captures are not enabled.
+- Diagnostic files for tuning/pilot, memory-only subprocess, and preflight runs
+  are not enabled. Binius64-Ligerito preflight queries its in-memory recording.
   The executable test proves a completed inner session can be queried while an
   outer recording remains open, but spawning the native processor per candidate
   has overhead. The production tuner has not been migrated to that approach.
@@ -257,10 +261,9 @@ column intentionally counts only the witness commitment. Do not equate them.
 
 This migration removes the Binius64-Ligerito phase and trial-boundary clocks,
 not the entire timing system. The existing live collector, one-time setup
-timers, other backends' `prof::scope` calls and memory reporting remain. The live
-collector still supplies the benchmark metrics; Perfetto remains the optional
-diagnostic export. Instrumentation overhead changes, so this is not a performance
-claim.
+timers, other backends' `prof::scope` calls and memory reporting remain. Only
+Binius64-Ligerito's trial metrics now come from the native Perfetto processor.
+Instrumentation overhead changes, so this is not a performance claim.
 
 Trial-scope migration checks on macOS ARM64: all 27 SHA tests pass, and
 multiplication passes 41 of 42 tests. The unchanged
@@ -307,3 +310,60 @@ The new annotations can introduce gaps between nested scope endpoints; those
 gaps remain in their enclosing totals, not in the child-operation durations.
 The verified-trial span is the explicit Perfetto end-to-end boundary, inside the
 larger `benchmark_trial` orchestration span.
+
+### Perfetto-backed numeric metrics
+
+The shared `f2z::observability` module owns recording and native queries. The
+Binius64-Ligerito multiplication and SHA runners no longer accept or activate
+`TraceCapture`; their tests install only the Perfetto layer. Other runners are
+still awaiting migration.
+
+```rust,ignore
+let recording = f2z::observability::Recording::start(Vec::new())?;
+let result = tracing::info_span!("operation", component = "example.operation")
+    .in_scope(|| operation())?;
+let intervals = recording.intervals()?;
+```
+
+Install the layer once at the executable boundary, composing it with any other
+subscriber layers. Every entered scope must exit before querying. Each interval
+contains its unique slice ID, same-track parent, track ID, name, optional
+component, and exact nanosecond endpoints relative to the recording's first
+slice. Repeated entries remain separate intervals. Existing reporting projections
+still compute overlap-safe unions and preserve numeric/CSV output contracts.
+
+Set `PERFETTO_TRACE_PROCESSOR` to the installed native `trace_processor_shell`
+executable, or put it on PATH. No download or Python wrapper is launched. The
+Rust query interface pipes in-memory trace bytes through `/dev/stdin` on macOS
+and Linux; other platforms return an explicit unsupported error. Missing
+executables, query failures, incomplete slices, error/data-loss statistics,
+malformed records and empty captures are errors, never zero timings or a
+fallback to another collector. The native CLI's string quoting is normalized in
+the SQL projection before standard CSV and typed JSON decoding.
+
+Querying takes place after the measured scopes close, including after each
+completed candidate in the nested-session integration test. It adds orchestration
+latency, not operation duration. This does not yet migrate production tuning.
+`bench-perfetto` can still save an outer diagnostic recording through the shared
+writer. The multiplication memory-only child runs the same proof/verification
+body without installing Perfetto or allocating a recording buffer; no timing
+metrics are needed in that RSS-only pass.
+
+```sh
+PERFETTO_TRACE_PROCESSOR=/path/to/native/trace_processor_shell \
+  cargo test --test benchmark_perfetto --features bench-perfetto -- --include-ignored --test-threads=1
+PERFETTO_TRACE_PROCESSOR=/path/to/native/trace_processor_shell RAYON_NUM_THREADS=2 \
+  cargo test --features bench-internals,native-mul-compare,native-sha256-compare \
+  --test native_mul_compare --test native_sha256_compare \
+  span_metrics_cover_repeated_verified -- --include-ignored --test-threads=1
+```
+
+The native query suite passes all seven tests on macOS ARM64 with processor
+58.2, including malformed/empty/incomplete captures, exact integers and string
+escaping, same-span parallel/repeated entry, and querying an inner candidate
+while an outer session is open. Both Binius64-Ligerito smoke tests pass without
+the custom layer (one warmup plus five samples each). The full SHA suite passes
+27 tests; multiplication passes 41 of 42, with the same pre-existing security
+configuration failure described above. The memory-only path also verifies with
+`NoSubscriber`. Linux runtime and Windows support remain unchecked; no overhead
+or performance claim follows from these correctness checks.

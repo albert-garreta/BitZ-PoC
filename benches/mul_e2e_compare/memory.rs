@@ -87,15 +87,21 @@ pub(super) fn run_child(
     let corpus = Arc::new(Corpus::new(workload, exponent, seed.parse()?));
     let params = serde_json::from_str(params)?;
     let context = Context::setup_selected(backend, Arc::clone(&corpus), params);
-    let timing = context.run(capture);
-    timing.validate();
+    let proof_bytes = match &context {
+        Context::BiniusLigerito(context) => context.prove_and_verify(),
+        _ => {
+            let timing = context.run(capture);
+            timing.validate();
+            timing.proof_bytes
+        }
+    };
     let sample = Sample {
         backend: backend.clone(),
         workload: workload.slug().into(),
         log_multiplications: exponent,
         corpus_digest: corpus.digest.clone(),
         peak_rss_bytes: peak_rss_bytes()?,
-        proof_bytes: timing.proof_bytes,
+        proof_bytes,
         proof_verified: true,
         boundary: BOUNDARY.into(),
         config: context.config(),

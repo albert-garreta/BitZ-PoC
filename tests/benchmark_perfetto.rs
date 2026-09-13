@@ -1,6 +1,6 @@
 #[path = "../benches/common/output.rs"]
 mod output;
-#[path = "../benches/common/perfetto.rs"]
+#[path = "../src/observability.rs"]
 mod perfetto;
 
 use output::{BenchmarkOutput, FileMode};
@@ -155,6 +155,30 @@ fn native_processor_validates_intervals_trials_parallelism_and_tuning_sessions()
             recording.finish().unwrap();
             // A completed candidate is queryable while the outer tuning span
             // and outer recording remain open. No application clock is read.
+            let intervals = perfetto::TraceProcessor::from_env()
+                .intervals(&std::fs::read(&path).unwrap())
+                .unwrap();
+            let operations: Vec<_> = intervals
+                .iter()
+                .filter(|span| span.component.as_deref() == Some("test.operation"))
+                .collect();
+            assert_eq!(operations.len(), 4);
+            assert_eq!(
+                operations
+                    .iter()
+                    .map(|span| span.id)
+                    .collect::<std::collections::HashSet<_>>()
+                    .len(),
+                4
+            );
+            assert_eq!(
+                operations
+                    .iter()
+                    .map(|span| span.track_id)
+                    .collect::<std::collections::HashSet<_>>()
+                    .len(),
+                3
+            );
             assert!(scalar(&path, "SELECT dur FROM slice WHERE name = 'trial'") > 0);
             assert_eq!(
                 scalar(&path, "SELECT COUNT(*) FROM slice WHERE name = 'operation'"),
@@ -242,5 +266,24 @@ fn native_processor_validates_intervals_trials_parallelism_and_tuning_sessions()
         );
         assert!(scalar(&path, "SELECT dur FROM slice WHERE name = 'tuning'") > 0);
         assert_eq!(scalar(&path, "SELECT COUNT(*) FROM slice WHERE dur < 0"), 0);
+    });
+}
+
+#[test]
+#[ignore = "requires PERFETTO_TRACE_PROCESSOR; exercises the native measurement backend"]
+fn native_query_rejects_an_unclosed_trial() {
+    let _lock = TEST_LOCK.lock().unwrap();
+    let subscriber = tracing_subscriber::registry().with(perfetto::layer());
+    tracing::subscriber::with_default(subscriber, || {
+        let recording = Recording::start(Vec::new()).unwrap();
+        let trial = tracing::info_span!("unfinished_trial").entered();
+        let result = recording.intervals();
+        drop(trial);
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("incomplete or lossy")
+        );
     });
 }

@@ -24,7 +24,7 @@ pub mod output;
 pub mod pcs_console;
 #[cfg(feature = "bench-peak-memory")]
 pub mod peak_memory;
-#[cfg(feature = "bench-perfetto")]
+#[cfg(feature = "span-metrics")]
 pub mod perfetto;
 #[cfg(feature = "plonky3-whir-bench")]
 pub mod plonky3;

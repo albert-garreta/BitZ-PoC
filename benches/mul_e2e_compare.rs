@@ -373,7 +373,7 @@ impl Context {
         match self {
             Self::F2z(c) => c.run(),
             Self::Binius(c) => c.run(capture),
-            Self::BiniusLigerito(c) => c.run(capture),
+            Self::BiniusLigerito(c) => c.run(),
             Self::Plonky3Fri(c) => c.run(capture),
             Self::Plonky3Whir(c) => c.run(capture),
             Self::Limber(c) => c.run(capture),
@@ -444,11 +444,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::set_var("OBLONG_PROFILE_INTERVALS", "1");
     }
     let threads = common::init();
-    let capture = CaptureLayer::install();
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|arg| arg == "--measure-memory") {
+        let capture = if args
+            .get(1)
+            .is_some_and(|backend| backend == "binius64-ligerito")
+        {
+            CaptureLayer::default().capture()
+        } else {
+            CaptureLayer::install()
+        };
         return memory::run_child(&capture, &args[1..]);
     }
+    let capture = CaptureLayer::install();
     let measure_memory = match std::env::var("F2Z_MUL_COMPARE_MEMORY").as_deref() {
         Err(std::env::VarError::NotPresent) | Ok("1") => true,
         Ok("0") => false,
@@ -642,7 +650,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "schema":"zkperf.trace/v1", "record":"run", "run_id":run,"series_id":series,"root_span_id":"0",
                             "benchmark":{"suite":"native-mul","name":"mul_e2e_compare","algorithm":workload.algorithm(),"label":format!("{} 2^{n} {backend}",workload.slug()),"implementation":backend,"git_rev":rev,"git_dirty":dirty,"build_profile":"bench"},
                             "trial":trial_json,"status":"ok","trace_complete":true,
-                            "clock":{"id":run,"kind":"monotonic","unit":"ns","source":"std::time::Instant"},
+                            "clock":{"id":run,"kind":"monotonic","unit":"ns","source":if backend == "binius64-ligerito" { "Perfetto SDK" } else { "std::time::Instant" }},
                             "environment":environment,
                             "parameters":{"input":{"multiplications":1usize<<n,"log_multiplications":n,"witness_digest_blake3":corpus.digest,"seed":shape_seed},"security":config,"setup_ms":setup_ms,"primary_metric":"witness_to_proof_ms","boundary":"start native witness generation through complete PCS proof; verification, serialization, and reusable setup reported separately"},
                             "validation":{"proof_verified":true,"reference_outputs_checked":true,"native_witness_matches_canonical":true},"witness_audit":{"generation_ms_excluded":audit.generation_ms,"native_representation":audit.representation,"quotient_reconstructed":audit.quotient_reconstructed,"witness_digest_blake3":audit.digest},"metrics":metrics,

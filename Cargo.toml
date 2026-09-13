@@ -277,8 +277,10 @@ required-features = ["hybrid"]
 
 [features]
 default = ["parallel"]
-# Diagnostic capture only; ordinary benchmark builds retain their timing path.
-bench-perfetto = ["dep:perfetto-sdk", "dep:tracing-perfetto-sdk", "dep:tracing", "dep:tracing-subscriber"]
+# Numeric span metrics require the native trace processor at runtime.
+span-metrics = ["dep:perfetto-sdk", "dep:tracing-perfetto-sdk", "dep:tracing", "dep:tracing-subscriber", "dep:csv"]
+# Additionally save per-trial diagnostic artifacts through BenchmarkOutput.
+bench-perfetto = ["span-metrics"]
 hybrid = ["binius64-bench", "dep:csv"]
 parallel = ["dep:rayon"]
 unchecked = []
@@ -330,6 +332,7 @@ plonky3-fri-bench = [
     "dep:postcard",
 ]
 native-mul-compare = [
+    "span-metrics",
     "plonky3-fri-bench",
     "plonky3-whir-bench",
     "dep:p3-air",
@@ -340,6 +343,7 @@ native-mul-compare = [
     "dep:limber",
 ]
 native-sha256-compare = [
+    "span-metrics",
     "plonky3-sha256-bench",
     "binius64-bench",
     "dep:bellpepper",

@@ -4,9 +4,10 @@
 //! and query grinding, Round 0 — and the whole protocol gated at 100 bits by
 //! a union bound, the yardstick of the `f2z` rows.
 use super::trace_capture::{BiniusLigeritoPhases, BiniusLigeritoTrial};
-use super::{CapturedSpan, Corpus, Timing, TraceCapture, Workload, binius};
+use super::{CapturedSpan, Corpus, Timing, Workload, binius};
 use binius_frontend::Circuit;
 use f2z::binius_ligerito::Prepared;
+use f2z::observability::Recording;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -61,8 +62,18 @@ impl Context {
         })
     }
 
-    pub(super) fn run(&self, capture: &TraceCapture) -> Timing {
-        capture.begin();
+    pub(super) fn run(&self) -> Timing {
+        let recording = Recording::start(Vec::new()).expect("start Perfetto trial");
+        let proof_bytes = self.prove_and_verify();
+        timing_from_spans(
+            &recording.intervals().expect("query Perfetto trial"),
+            proof_bytes,
+        )
+    }
+
+    /// The memory-only child executes the same work without a capture buffer or
+    /// query process affecting its process high-water mark.
+    pub(super) fn prove_and_verify(&self) -> usize {
         let trial = tracing::info_span!(
             "Verified trial",
             component = "binius-ligerito.verified-trial",
@@ -109,7 +120,7 @@ impl Context {
             .expect("binius64-ligerito full verification");
         drop(verification);
         drop(trial);
-        timing_from_spans(&capture.finish(), bytes.len())
+        bytes.len()
     }
 }
 
@@ -196,8 +207,8 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires PERFETTO_TRACE_PROCESSOR; exercises the native measurement backend"]
     fn span_metrics_cover_repeated_verified_multiplication_trials() {
-        use super::super::CaptureLayer;
         use super::*;
         use tracing_subscriber::prelude::*;
 
@@ -210,35 +221,40 @@ mod tests {
             tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
                 context.prepared.prove(&witness).unwrap().to_bytes()
             });
-        let layer = CaptureLayer::default();
-        let capture = layer.capture();
-        tracing::subscriber::with_default(tracing_subscriber::registry().with(layer), || {
-            capture.begin();
-            let proof = context.prepared.prove(&witness).unwrap().to_bytes();
-            assert_eq!(proof, expected, "instrumentation changed the proof bytes");
-            let phases = BiniusLigeritoPhases::from_spans(&capture.finish());
-            assert_eq!(
-                phases.opening.len(),
-                context.prepared.oracle_specs().len() + 1
-            );
-            // Warmup followed by five independent samples: capture state must reset.
-            for _ in 0..6 {
-                let timing = context.run(&capture);
-                timing.validate();
-                assert_eq!(timing.proof_bytes, proof.len());
-                let first_opening = timing
-                    .phases
-                    .iter()
-                    .find(|p| p.tag == "opening-proof")
-                    .unwrap();
-                assert!(
-                    timing
+        let memory_bytes =
+            tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
+                context.prove_and_verify()
+            });
+        assert_eq!(memory_bytes, expected.len());
+        tracing::subscriber::with_default(
+            tracing_subscriber::registry().with(f2z::observability::layer()),
+            || {
+                let recording = Recording::start(Vec::new()).unwrap();
+                let proof = context.prepared.prove(&witness).unwrap().to_bytes();
+                assert_eq!(proof, expected, "instrumentation changed the proof bytes");
+                let phases = BiniusLigeritoPhases::from_spans(&recording.intervals().unwrap());
+                assert_eq!(
+                    phases.opening.len(),
+                    context.prepared.oracle_specs().len() + 1
+                );
+                // Warmup followed by five independent samples: capture state must reset.
+                for _ in 0..6 {
+                    let timing = context.run();
+                    timing.validate();
+                    assert_eq!(timing.proof_bytes, proof.len());
+                    let first_opening = timing
                         .phases
                         .iter()
-                        .any(|p| { p.tag == "constraint-proof" && p.start >= first_opening.end }),
-                    "Round 0 must remain before subsequent PIOP work"
-                );
-            }
-        });
+                        .find(|p| p.tag == "opening-proof")
+                        .unwrap();
+                    assert!(
+                        timing.phases.iter().any(|p| {
+                            p.tag == "constraint-proof" && p.start >= first_opening.end
+                        }),
+                        "Round 0 must remain before subsequent PIOP work"
+                    );
+                }
+            },
+        );
     }
 }

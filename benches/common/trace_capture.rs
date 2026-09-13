@@ -8,15 +8,7 @@ use std::{
 use tracing::{Subscriber, field::Visit, span::Attributes};
 use tracing_subscriber::{Layer, layer::Context, prelude::*, registry::LookupSpan};
 
-#[derive(Clone, Debug)]
-pub(crate) struct CapturedSpan {
-    pub(crate) id: u64,
-    pub(crate) parent: Option<u64>,
-    pub(crate) name: String,
-    pub(crate) component: Option<String>,
-    pub(crate) start_ns: u64,
-    pub(crate) end_ns: u64,
-}
+pub(crate) use f2z::observability::Interval as CapturedSpan;
 
 #[derive(Default)]
 struct CaptureState {
@@ -55,7 +47,7 @@ impl CaptureLayer {
         let layer = Self::default();
         let capture = layer.capture();
         let subscriber = tracing_subscriber::registry().with(layer);
-        #[cfg(feature = "bench-perfetto")]
+        #[cfg(feature = "span-metrics")]
         let subscriber = subscriber.with(super::common::perfetto::layer());
         tracing::subscriber::set_global_default(subscriber)
             .expect("install Binius interval collector once");
@@ -132,6 +124,7 @@ where
         let metadata = state.metadata.get(&raw_id).cloned();
         if let (Some(start_ns), Some(metadata), Some(epoch)) = (start_ns, metadata, state.epoch) {
             state.completed.push(CapturedSpan {
+                track_id: 0,
                 id: raw_id,
                 parent: metadata.parent,
                 name: metadata.name,
@@ -296,6 +289,7 @@ pub(crate) mod phase_tests {
         .into_iter()
         .enumerate()
         .map(|(id, (component, start_ns, end_ns))| CapturedSpan {
+            track_id: 0,
             id: id as u64,
             parent: None,
             name: component.to_owned(),
@@ -318,6 +312,7 @@ pub(crate) mod phase_tests {
             .into_iter()
             .enumerate()
             .map(|(id, (component, start_ns, end_ns))| CapturedSpan {
+                track_id: 0,
                 id: 100 + id as u64,
                 parent: None,
                 name: component.to_owned(),
