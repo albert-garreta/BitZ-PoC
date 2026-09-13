@@ -45,10 +45,15 @@ Prompt: `docs/sha256-ecdsa-investigation-prompt.md`. Companion docs: `docs/sha25
    change), and the serial `outer_prove` / `mqv:wprep` / forest phase-A sections at 10 threads.
    The per-compression SHA gap cannot be closed inside the prime-field arithmetization; the
    paper's hybrid SNARK is the answer.
-5. **Follow-ups done the same evening (§4.7–4.8, both transcript-neutral, applied uncommitted).**
-   The tape wired into `ModQCoefficients` and a run-structured prefix kernel for the P-256 tail:
-   at 1 thread the 2^7 prover went 207 → 152 ms (Binius64 168) and the verifier 45 → 23 ms
-   (Binius64 12.8); at 1 KB the prover is 93 vs 148 ms. Proof bytes unchanged at every size.
+5. **Follow-ups done the same evening (§4.7–4.11, all transcript-neutral, committed on the
+   branch `sha256-ecdsa-prover-opt`).** The tape wired into `ModQCoefficients`, a run-structured
+   prefix kernel for the P-256 tail, packed H reads and run-aware tail evaluation, the SHA prefix
+   pass weights-first, and (parity audit, §4.11) the raw-residue outer prover with native product
+   tables: at 1 thread the 2^7 prover went 207 → 87 ms (Binius64 168) and the verifier
+   45 → 19.4 ms (Binius64 12.8); at 10 threads 66 → 45.9 ms and 15 → 9.8 ms (Binius64 60.3 /
+   6.2); at 1 KB the prover is 66 vs 148 ms. Proof bytes unchanged at every size. The audit found
+   the library knobs, the grinders and the opener kernels already identical across the tables;
+   the outer sumcheck was the one generic remnant.
 6. **Paper (§5, proposals only).** Every Binius64 cell of the inline table, its before/after
    caption, the "4 KB / 2^6" prose and the intro-table row depend on the crippled build. A fair
    replacement table for 2^4–2^7 and 2^10 (48 new cases run tonight through the official runner)
@@ -767,6 +772,97 @@ so the committed version keeps the unconditional parallel fold); at 10 threads i
 Over the evening: 207 → 91 ms prover and 45 → 19.6 ms verifier at 2^7 single-thread, proof bytes
 untouched; Binius64 168 / 12.8.
 
+### 4.11 Parity audit: does the opt branch run the same grade of optimizations as the other benches? (2026-09-13, 23:00–00:30)
+
+Asked after §4.10: make sure the SHA+ECDSA path uses every optimization the other tables already
+get (parallel grinding and the other levers "on the table"). Three checks and two changes.
+
+**Library knobs.** Every byte-identical lever is a library default that no campaign script
+overrides (`F2Z_RS_FAST`, `F2Z_FIXED_SCALAR`, `F2Z_VIRT_PLANES`, `F2Z_VIRT_ID_FAST`, `F2Z_LUT3`,
+`F2Z_EQF_DOUBLE`, `F2Z_EQF_FUSE`, `F2Z_JIT_GRID`, `F2Z_LEAF_TILE`, `F2Z_PAIR2_FACTORED`,
+`F2Z_FOLDV_LUT`, `F2Z_COL_ELIDE`; size-gated `F2Z_MATS_TILE`, `F2Z_T4_FACTORED`, `F2Z_LEAF8`,
+`F2Z_FLAT_FOREST`), so the forest, ring switch and opener kernels are identical across the u32/u64,
+SHA-chain and SHA+ECDSA benches by construction. A gated sweep of the opt-in and tuning knobs on the
+§4.10 binary (2^7, `custom:1:4`, 2 × 5 interleaved at 1 and 10 threads, `res/knobs-*.jsonl`)
+found nothing that beats the defaults:
+
+| knob | 1 thr prover | 10 thr prover | 10 thr `mc:forest` |
+|---|---:|---:|---:|
+| defaults | 91.5 | 49.3 | 12.8 |
+| `F2Z_PAR_CHUNK=1` / `2` / `4` | 90.5 / 91.3 / 92.6 | 50.0 / 50.4 / 49.3 | 13.8 / 13.5 / 13.3 |
+| `F2Z_LUT4=1` | 91.3 | 49.7 | 13.0 |
+| `F2Z_FLAT_FOREST=0` | 93.6 | 51.8 | 14.6 |
+| `F2Z_FLAT_FOREST=1` (forced) | 92.0 | 48.6 | 12.6 |
+| `F2Z_LEAF8=1` | 92.3 | 49.5 | 12.8 |
+
+All within the ±1 ms run-to-run noise except the flat forest, whose default (auto) already picks
+the winning shape. `F2Z_QUAD` and `F2_FOREST_SCHEDULE` change the transcript and stay out.
+
+**Grinding.** Both grinders — the Ligerito challenger (`ligerito_flock::grind_pow`) and the Spartan
+round boundaries (`grinding::find_grinding_nonce`) — call the same `blake3x4::first_pow_nonce`
+kernel: NEON 8-lane BLAKE3 with `rayon::broadcast` waves and the smallest-nonce scan, the one the
+hybrid table got on 2026-09-10. At 2^7 / λ = 100 the Spartan-side boundaries (initial, outer
+rounds, batch, inner rounds) are 0 bits, so the only grinding in the proof is Ligerito's (level-0
+fold 8 bits, 183 queries × 16 bits): `lig:grind_pow` 4.6 ms at 1 thread, 0.9 ms at 10 (4.9×).
+Nothing to change.
+
+**The outer sumcheck** was the one place the ECDSA path still used the generic `MontyField`
+prover (`prove_outer_sumcheck_with_reducer_grinded`) while the u32/u64/u128 relations run the
+raw-residue twin (`raw_monty::prove_outer_field_raw`). Ported: the raw prover gained a round
+boundary policy (`prove_outer_field_raw_with_boundary`, the grinding boundary of the generic
+prover — no transcript bytes at difficulty 0, the nonces at any other difficulty), the ECDSA prover
+calls it with the same `OuterGrinding` domain and `security.outer` bits, the verifier is untouched.
+Measured (`res/outer-*.jsonl`, interleaved 2 × 5): the scope `ecdsa:outer_prove` went 3.29 → 3.09 ms
+at 1 thread — because the sumcheck itself is 0.25 ms (`raw:outer_round0` 0.05 + `raw:outer_rounds`
+0.20); the other 2.8 ms of the scope was the product-table build (`ecdsa:outer_products`): one
+`BigInt` from bytes and two `%` per row for 3 × 6,807 rows, serial (2.83 ms at 1 thread, 3.36 at
+10). Second change, the same grade as the u32/u64/u128 packers: the exact two's-complement row
+products (`StoredInteger` words, ≤ 9 limbs) are reduced natively — Horner over the words in the
+plain domain (one Montgomery product by the residue of 2^64 and one add per word), a
+`2^{64·len} mod q` correction for negative values, one conversion into Montgomery form
+(`RawMontyCtx::signed_words_residue`) — rows in parallel (`build_outer_raw_products`). The
+`BigInt` builder stays as the test oracle (`outer_raw_products_match_field_products`, both outer
+modes, plus `signed_words_residue_matches_bigint` over every width and sign at three moduli).
+
+A/B at 2^7 (`res/outer2-*.jsonl`, three binaries interleaved 2 × 5, `custom:1:4`, ms; proof
+bytes identical, 38 library tests + all 8 transcript pins pass):
+
+| build | thr | prover | `ecdsa:outer_prove` | `ecdsa:outer_products` | sumcheck rounds | verifier |
+|---|---:|---:|---:|---:|---:|---:|
+| §4.10 (fe8e3a1) | 1 | 90.8 | 3.24 | (inside: ≈2.9) | (generic) | 20.2 |
+| + raw outer prover | 1 | 90.1 | 3.12 | 2.86 | 0.25 | 19.5 |
+| **+ native product tables** | 1 | **87.2** | **0.64** | **0.38** | 0.25 | 19.4 |
+| §4.10 (fe8e3a1) | 10 | 49.6 | 3.73 | (inside: ≈3.4) | (generic) | 9.9 |
+| + raw outer prover | 10 | 50.3 | 4.13 | 3.87 | 0.26 | 9.9 |
+| **+ native product tables** | 10 | **45.9** | **0.49** | **0.23** | 0.25 | 9.8 |
+
+The outer block is now 0.5–0.6 ms at either thread count (Binius64 has no analogue: its PIOP
+works on the 64-bit words directly). Prover totals: 90.8 → 87.2 ms at 1 thread (−4 %) and
+49.6 → 45.9 ms at 10 threads (−7.5 %); the verifier is unchanged. The evening's tally at 2^7,
+single thread: 207 → 87 ms prover, 45 → 19.4 ms verifier, proof bytes untouched (Binius64
+168 / 12.8); at 10 threads 66 → 45.9 ms and 15 → 9.8 ms (Binius64 60.3 / 6.2).
+
+**Verifier composition (1 thread | 10 threads, ms, §4.10 binary):** `mv:rswitch` 13.8 | 4.1
+(`mqv:vaprime` 10.0 | 1.8, `mqv:vwprep` 3.7 | 2.2), `ecdsa:coefficient_evaluate` 3.95 | 2.6 (the
+tape), `ecdsa:matrix_projection` 1.3 | 1.4, `mv:lig` 0.4 | 0.4; total 20.1 | 9.9 (Binius64
+12.8 | 6.2). The ring-switch read-off is the shared verifier path of every virtual-map bench (the
+SHA-chain table pays the same code), so it is at parity — and it is the remaining verifier lever.
+
+**What is left on the table (all shared code, i.e. every table moves if touched):**
+
+- Forest phase A at small sizes: `mf:phaseA` 18.7 → 11.5 ms from 1 to 10 threads (1.6×). Inside
+  `eqf:rounds` (15.6 → 7.7) the message/fold kernels scale 3–4× but `eqf:fmsg` (2.3 → 1.8) and
+  `eqf:close` (0.6 → 1.4, slower with threads: chunked `Σ A_t·H_t` and the `a_scalars` reweight at
+  ~2^11 groups) do not; about 3 ms of the 7.7 at 10 threads. Thread gates by group count would
+  recover ≈1 ms at 10 threads and change nothing at 1.
+- Ring-switch read-off in the verifier: `mqv:vaprime` 10 ms at 1 thread (1.8 at 10) — the O(packed
+  rows) a′ basis; a succinct form is protocol work, not tuning.
+- The shared inner sumcheck scales only 1.7× (26.5 → 15.4 ms): the K = 4 prefix pass is parallel
+  over wires with per-thread tables and the tail over runs, the later generic rounds are not
+  worth their dispatch at 2^15 rows. ECDSA-specific, not a parity item.
+- `ecdsa:matrix_projection` (1.3 ms serial) and `ecdsa:coefficient_combine` at 10 threads (3.1 ms
+  of which the tape is 0.8): small serial remainders.
+
 ## 5. Paper impact (proposals only — nothing was edited)
 
 ### 5.1 Claims that depend on the old comparison
@@ -877,6 +973,11 @@ session scratchpad `…/scratchpad/inv/` (not in the repository):
   call trees), `res/spans-*.jsonl` (Binius64 span phases).
 - `sha256-ecdsa-table-proposed.tex` — the proposed paper table (§5.3); `res/wengert-t{1,10}.txt` — the crate's
   `p256_matrix_products` bench output (§4.7), built in `t/circuit`.
+- `wt-tape/` — the worktree every §4.7–4.11 change was built and tested in (files identical to the
+  branch tip); `bin/f-tape`, `f-kernel`, `f-levers`, `f-levers3`, `f-final` (= fe8e3a1), `f-outer`,
+  `f-outer2` (= the branch tip); `res/knobs-*.jsonl` (§4.11 knob sweep), `res/outer-*.jsonl`,
+  `res/outer2-*.jsonl` (§4.11 A/B); `knobs_phase.sh`, `outer_phase.sh`, `outer2_phase.sh`,
+  `parse_outer.py`.
 
 Repository results written by this investigation (new directories only):
 `bench_results/sha256-ecdsa-fair-20260913-i4-6-10/` (official runner, suite binaries, 48 cases).

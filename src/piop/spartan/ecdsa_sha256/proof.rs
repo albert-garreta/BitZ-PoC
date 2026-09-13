@@ -28,17 +28,19 @@ use crate::{
         SpartanField, absorb_spartan_message,
         f2z::{SpartanF2zField as F, f2z_generator},
         grinding::{GrindingDomain, GrindingRound, grind_and_absorb, verify_and_absorb},
-        matrix::{eq_table, make_equality_factors},
+        matrix::eq_table,
+        raw_monty::{RawMontyCtx, make_equality_factors_raw, prove_outer_field_raw_with_boundary},
         sha256::inner_sumcheck::{
             ColumnMajorPackedBits, prove_composite_inner_sumcheck, verify_sha256_inner_sumcheck,
         },
         squeeze_field,
         sumcheck::{
-            OptimizedSumcheckReducer, OuterSumcheckProof, SumcheckProof,
-            prove_outer_sumcheck_with_reducer_grinded,
+            OptimizedSumcheckReducer, OuterSumcheckProof, ProverGrindingRoundBoundary,
+            SumcheckProof,
         },
     },
     transcript::traits::Transcript,
+    utils::delayed_reduction::OptimizedMonty128Reducer,
 };
 
 enum OuterGrinding {}
@@ -208,19 +210,35 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
     let reducer = OptimizedSumcheckReducer::new(&cfg).map_err(error)?;
     let mut mod_q_coefficients = ModQCoefficients::from_relation(prepared, modulus, &cfg);
     let (outer, outer_nonces) = {
+        // The raw-residue outer prover of the integer-multiplication relations;
+        // its grinding boundary keeps the transcript of the generic grinded
+        // prover (no bytes at difficulty 0).
         let _scope = crate::utils::prof::scope("ecdsa:outer_prove");
-        let products = witness.build_outer_product_mles(prepared, modulus, &cfg);
-        prove_outer_sumcheck_with_reducer_grinded::<OuterGrinding, _, _>(
+        let ctx = RawMontyCtx::new(&cfg);
+        let raw_reducer = OptimizedMonty128Reducer::new(&cfg).map_err(error)?;
+        let products = {
+            let _scope = crate::utils::prof::scope("ecdsa:outer_products");
+            witness.build_outer_raw_products(prepared, &ctx)
+        };
+        let (eq_low, eq_high) = {
+            let _scope = crate::utils::prof::scope("ecdsa:outer_eq");
+            make_equality_factors_raw(&ctx, &outer_eq_challenges)
+        };
+        let mut round_boundary =
+            ProverGrindingRoundBoundary::<OuterGrinding>::with_round_offset(security.outer, 0);
+        let outer = prove_outer_field_raw_with_boundary(
             t,
+            &ctx,
+            &raw_reducer,
             F::zero_with_cfg(&cfg),
             &outer_eq_challenges,
-            make_equality_factors(&outer_eq_challenges, &cfg).map_err(error)?,
+            eq_low,
+            eq_high,
             products,
-            &cfg,
-            &reducer,
-            security.outer,
+            &mut round_boundary,
         )
-        .map_err(error)?
+        .map_err(error)?;
+        (outer, round_boundary.into_nonces())
     };
     let batch_nonce = boundary::<BatchGrinding, _>(t, security.batch, None)?;
     let (matrix_batch_challenge, linear_row_point, linear_batch_weight) =
