@@ -116,10 +116,104 @@ pub struct Interval {
     pub id: u64,
     pub parent: Option<u64>,
     pub track_id: u64,
+    pub depth: usize,
     pub name: String,
     pub component: Option<String>,
     pub start_ns: u64,
     pub end_ns: u64,
+}
+
+impl Interval {
+    /// Dynamic operation identities use `component`; ordinary spans use their name.
+    pub fn label(&self) -> &str {
+        self.component.as_deref().unwrap_or(&self.name)
+    }
+
+    pub fn duration(&self) -> Duration {
+        Duration::from_nanos(self.end_ns - self.start_ns)
+    }
+}
+
+/// Resolve one completed operation. Ambiguity or missing instrumentation is an
+/// error, never a fabricated zero-duration sample.
+pub fn span<'a>(intervals: &'a [Interval], label: &str) -> io::Result<&'a Interval> {
+    let mut matching = intervals.iter().filter(|span| span.label() == label);
+    let span = matching.next().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidData, format!("missing span {label}"))
+    })?;
+    if matching.next().is_some() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("multiple spans for {label}; select a trial or aggregate intervals"),
+        ));
+    }
+    Ok(span)
+}
+
+pub fn duration(intervals: &[Interval], label: &str) -> io::Result<Duration> {
+    span(intervals, label).map(Interval::duration)
+}
+
+/// Inclusive operation totals inside a completed phase, excluding the reporting
+/// envelope itself. Recordings must isolate one trial; cross-track work is
+/// included by its real endpoints and repeated labels are unioned.
+pub fn phase_totals(intervals: &[Interval], phase: &str) -> io::Result<Vec<(String, f64)>> {
+    let parent = span(intervals, phase)?;
+    Ok(totals(intervals.iter().filter(|s| {
+        s.id != parent.id && s.start_ns >= parent.start_ns && s.end_ns <= parent.end_ns
+    })))
+}
+
+/// A small executable-boundary convenience for one operation. The ordinary
+/// tracing span defines its boundaries; Perfetto supplies its elapsed time.
+/// Setup, flushing and querying are outside the operation's span.
+pub fn measure<T>(span: tracing::Span, operation: impl FnOnce() -> T) -> io::Result<(T, Duration)> {
+    let name = span
+        .metadata()
+        .ok_or_else(|| {
+            io::Error::other("measurement span is disabled; install the Perfetto layer first")
+        })?
+        .name();
+    let recording = Recording::start(Vec::new())?;
+    let value = span.in_scope(operation);
+    let intervals = recording.intervals()?;
+    // Use the supplied span's static name, not an optional component override.
+    let mut matching = intervals.iter().filter(|s| s.name == name);
+    let root = matching
+        .next()
+        .ok_or_else(|| io::Error::other(format!("missing measurement {name}")))?;
+    if matching.next().is_some() {
+        return Err(io::Error::other(format!("ambiguous measurement {name}")));
+    }
+    Ok((value, root.duration()))
+}
+
+/// Per-label inclusive wall seconds in first-observed order. Union repeated or
+/// parallel occurrences of the *same* operation; never sum nested labels into
+/// a total. Callers select the trial/phase before aggregation.
+pub fn totals<'a>(intervals: impl IntoIterator<Item = &'a Interval>) -> Vec<(String, f64)> {
+    let mut groups: Vec<(String, Vec<(u64, u64)>)> = Vec::new();
+    let mut indices = HashMap::new();
+    for span in intervals {
+        let index = *indices.entry(span.label()).or_insert_with(|| {
+            groups.push((span.label().to_owned(), Vec::new()));
+            groups.len() - 1
+        });
+        groups[index].1.push((span.start_ns, span.end_ns));
+    }
+    groups
+        .into_iter()
+        .map(|(label, mut ranges)| {
+            ranges.sort_unstable();
+            let mut end = 0;
+            let mut ns = 0;
+            for (start, next_end) in ranges {
+                ns += next_end.saturating_sub(end.max(start));
+                end = end.max(next_end);
+            }
+            (label, ns as f64 / 1e9)
+        })
+        .collect()
 }
 
 /// A local native executable, never a downloader or an external tracing service.
@@ -187,7 +281,7 @@ SELECT json_object('record', 'status',
 ) AS record
 UNION ALL
 SELECT json_object('record', 'span', 'id', id, 'parent', parent_id,
-  'track_id', track_id, 'name', name,
+  'track_id', track_id, 'depth', depth, 'name', name,
   'component', EXTRACT_ARG(arg_set_id, 'debug.component'),
   'start_ns', ts - (SELECT min(ts) FROM slice),
   'end_ns', ts + dur - (SELECT min(ts) FROM slice))
@@ -298,10 +392,10 @@ mod tests {
     fn fixture() -> Vec<Value> {
         vec![
             json!({"record":"status", "incomplete":0, "errors":0}),
-            json!({"record":"span", "id":0, "parent":null, "track_id":10,
+            json!({"record":"span", "id":0, "parent":null, "track_id":10, "depth":0,
                 "name":"comma, quote\"\nnewline", "component":null,
                 "start_ns":0, "end_ns":9007199254740993_u64}),
-            json!({"record":"span", "id":1, "parent":0, "track_id":10,
+            json!({"record":"span", "id":1, "parent":0, "track_id":10, "depth":1,
                 "name":"child", "component":"test.child", "start_ns":1, "end_ns":2}),
         ]
     }

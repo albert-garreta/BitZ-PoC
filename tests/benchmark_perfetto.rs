@@ -17,6 +17,58 @@ use tracing_subscriber::prelude::*;
 static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
+fn typed_duration_queries_reject_ambiguity_and_union_parallel_occurrences() {
+    let interval = |name: &str, start_ns, end_ns| perfetto::Interval {
+        id: 0,
+        parent: None,
+        track_id: 0,
+        depth: 0,
+        name: name.into(),
+        component: None,
+        start_ns,
+        end_ns,
+    };
+    let spans = vec![
+        interval("trial", 0, 100),
+        interval("work", 10, 30),
+        interval("work", 20, 40),
+        interval("work", 60, 70),
+    ];
+    assert_eq!(perfetto::duration(&spans, "trial").unwrap().as_nanos(), 100);
+    assert!(perfetto::duration(&spans, "work").is_err());
+    assert!(perfetto::duration(&spans, "absent").is_err());
+    assert_eq!(
+        perfetto::totals(&spans),
+        vec![("trial".into(), 100.0 / 1e9), ("work".into(), 40.0 / 1e9)]
+    );
+}
+
+#[test]
+#[ignore = "requires PERFETTO_TRACE_PROCESSOR; exercises the real native query engine"]
+fn measured_operation_returns_value_and_exact_span_duration() {
+    let _lock = TEST_LOCK.lock().unwrap();
+    tracing::subscriber::with_default(
+        tracing_subscriber::registry().with(perfetto::layer()),
+        || {
+            let (result, elapsed) = perfetto::measure(tracing::info_span!("setup"), || {
+                tracing::info_span!("child").in_scope(|| std::hint::black_box(42))
+            })
+            .unwrap();
+            assert_eq!(result, 42);
+            assert!(!elapsed.is_zero());
+        },
+    );
+    tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
+        assert!(
+            perfetto::measure(tracing::info_span!("disabled"), || panic!(
+                "must not execute"
+            ))
+            .is_err()
+        );
+    });
+}
+
+#[test]
 fn shared_output_preserves_creation_policy() {
     let _lock = TEST_LOCK.lock().unwrap();
     let dir = tempfile::tempdir().unwrap();

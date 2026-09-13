@@ -127,6 +127,7 @@ pub(crate) mod phase_tests {
         .enumerate()
         .map(|(id, (component, start_ns, end_ns))| CapturedSpan {
             track_id: 0,
+            depth: 0,
             id: id as u64,
             parent: None,
             name: component.to_owned(),
@@ -150,6 +151,7 @@ pub(crate) mod phase_tests {
             .enumerate()
             .map(|(id, (component, start_ns, end_ns))| CapturedSpan {
                 track_id: 0,
+                depth: 0,
                 id: 100 + id as u64,
                 parent: None,
                 name: component.to_owned(),
