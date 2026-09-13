@@ -611,7 +611,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 });
                 let mut measured = vec![];
                 for trial in 0..=reps {
+                    #[cfg(feature = "bench-perfetto")]
+                    let recording = common::perfetto::Recording::start(output.buffered(
+                        format!("{}-{backend}-{n}-trial-{trial}.pftrace", workload.slug()),
+                        FileMode::CreateNew,
+                    )?)?;
+                    #[cfg(feature = "bench-perfetto")]
+                    let trial_span = tracing::info_span!(
+                        "benchmark_trial",
+                        component = "native_mul.trial",
+                        workload = workload.slug(),
+                        backend = backend.as_str(),
+                        exponent = n,
+                        trial,
+                        warmup = trial == 0,
+                    )
+                    .entered();
                     let timing = context.run(&capture);
+                    #[cfg(feature = "bench-perfetto")]
+                    {
+                        drop(trial_span);
+                        recording.finish()?;
+                    }
                     timing.validate();
                     let metrics = timing.metrics();
                     let trial_json = report::Trial::new(trial);

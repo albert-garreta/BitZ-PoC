@@ -122,3 +122,107 @@ Plonky3 FRI, one warmup and one measured sample (including the isolated memory
 pass); and an all-Binius hybrid sweep with 512 multiplications, two chained SHA
 compressions and one measured sample. These exercised real proof verification,
 JSON/JSONL/CSV files, subprocess log capture and combined CSV output.
+
+## Opt-in Perfetto interval capture
+
+Add the `bench-perfetto` feature to native multiplication or native SHA comparison
+builds. Each warmup/measured trial writes a separate `.pftrace` next to the normal
+artifacts (next to `trace.jsonl` when SHA uses a custom trace path). Files are
+create-new, never overwritten. Open them locally in <https://ui.perfetto.dev>.
+
+```sh
+RAYON_NUM_THREADS=2 F2Z_BENCH_SHAPES=4 F2Z_BENCH_REPS=5 \
+F2Z_MUL_COMPARE_BACKENDS=binius64 F2Z_MUL_COMPARE_MEMORY=0 \
+F2Z_MUL_COMPARE_OUTPUT_DIR=/tmp/my-new-perfetto-run \
+cargo bench --bench mul_e2e_compare \
+  --features bench-internals,native-mul-compare,bench-perfetto
+```
+
+`benches/common/perfetto.rs` configures `tracing-perfetto-sdk` with an in-process
+Perfetto session. It composes with the existing subscriber; it does not install
+another global subscriber, launch a tracing service, parse JSON logs, or measure
+time itself. The native SDK owns clocks, per-thread intervals and buffering.
+Normal builds do not compile or initialize Perfetto. The optional native SDK
+requires a C++ toolchain; the implementation was checked on macOS ARM64.
+
+The integration is deliberately small:
+
+```rust,ignore
+let recording = Recording::start(output.buffered("trial.pftrace", FileMode::CreateNew)?)?;
+let proof = tracing::info_span!("opening_proof", component = "pcs.opening")
+    .in_scope(|| open(&prepared, &commitment))?;
+recording.finish()?; // Outside the timed region; propagates write/flush errors.
+```
+
+Close every entered span and join worker tasks before `finish`. Fields should be
+present before entry; a later `record` is reflected on subsequent entries, not
+retroactively on the interval already emitted. Use `.in_scope` for synchronous
+work and `.instrument` for futures, never an entered guard across `.await`.
+Intervals describe entered wall time, not CPU time or entire async lifetimes.
+
+Each session has a 64 MiB discard-on-full buffer. Flush success does not prove
+that the trace fits that buffer. Before using a trace for analysis, check for
+incomplete slices and nonzero error/data-loss statistics in the native processor:
+
+```sh
+trace_processor_shell trial.pftrace -Q 'SELECT name, ts, dur FROM slice'
+trace_processor_shell trial.pftrace -Q 'SELECT * FROM slice WHERE dur < 0'
+trace_processor_shell trial.pftrace -Q "SELECT * FROM stats WHERE value != 0 AND severity IN ('error', 'data_loss')"
+```
+
+The first query emits CSV with integer nanoseconds. It can be launched from Rust
+with `std::process::Command` and read with `csv::Reader`; Python is not required.
+Do not sum nested or parallel slice durations to obtain wall time. Group by trial,
+exclude warmups, and union the selected intervals before aggregating across trials.
+
+This is an integration/compatibility step, not the timing-system replacement:
+
+- Existing metrics, tuning, custom profiler and RSS observations remain intact.
+  The Perfetto files are diagnostic artifacts, not an additional source for the
+  existing JSON/CSV metrics. Capture changes overhead; compare against a build
+  without the feature before drawing performance conclusions.
+- Only existing `tracing` instrumentation is exported. F2Z's `prof::scope` and
+  manual phase timers are not translated into synthetic spans.
+- `benchmark_trial` is an orchestration envelope, not `witness_to_proof_ms`.
+  Multiplication includes verification and metric extraction; SHA also includes
+  its canonical trace reporting. No semantic end-to-end tag is assigned to it.
+- Tuning/pilot, memory-only subprocess, and preflight captures are not enabled.
+  The executable test proves a completed inner session can be queried while an
+  outer recording remains open, but spawning the native processor per candidate
+  has overhead. The production tuner has not been migrated to that approach.
+- Dropping a recording without `finish` does not publish a complete trace. An
+  interrupted/panicking run may leave its reserved output file empty; do not
+  include it in analysis.
+
+The initial `tracing-profile` candidate was not selected: version 0.10.11 consumes
+span metadata on first entry, cannot re-enter that span, and owns output files and
+drop-time completion without our required writer/error interface. The selected
+SDK adapter supports repeat/parallel entry and explicit session completion.
+
+```sh
+cargo test --test benchmark_perfetto --features bench-perfetto
+PERFETTO_TRACE_PROCESSOR=/path/to/native/trace_processor_shell \
+  cargo test --test benchmark_perfetto --features bench-perfetto -- --include-ignored
+```
+
+The native-processor test is explicitly ignored unless requested because it needs
+the separately installed executable. It covers nesting, same-span re-entry across
+threads, an unentered span, error returns, field updates before re-entry, trial and
+warmup identity, interval union, missing/data-loss checks, and nested tuning
+sessions. The ordinary tests cover protobuf output, repeated sessions, create-new
+collisions, and injected write/flush failures.
+
+Validated with SDK 1.1.1, adapter 1.0.0 and native trace processor 58.2 on macOS
+ARM64. A bounded native-multiplication run used 16 operations, two threads, and
+one warmup plus five samples for each of Binius64 and Plonky3 FRI. All 12 proofs
+verified; all 12 traces loaded with no incomplete slices or error/data-loss
+statistics (1,923 slices per Binius trace; 532 per Plonky3 trace). This was a
+correctness smoke, not an overhead or performance comparison. SHA was compile-
+checked with and without the feature, not runtime-tested. Linux execution and
+Clippy remain unchecked; Clippy is not installed in the pinned 1.98.1 toolchain.
+
+The separate profiler-skill JSONL validator rejects the unchanged native-mul
+`trial: {kind, index}` representation: it expects `warmup_index`/`sample_index`.
+That existing compatibility mismatch was not repaired in this integration; it
+does not affect the native Perfetto checks above. Do not treat the legacy JSONL
+as validated against that stricter schema.

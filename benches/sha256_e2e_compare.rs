@@ -1889,7 +1889,33 @@ fn run_native_trial(
     trial: Trial,
     trace: Option<&mut TraceWriter>,
 ) -> TrialMetrics {
-    match backend {
+    #[cfg(feature = "bench-perfetto")]
+    let recording = trace
+        .as_ref()
+        .map(|trace| {
+            let output = BenchmarkOutput::new(trace.path.parent().unwrap_or(Path::new(".")));
+            common::perfetto::Recording::start(output.buffered(
+                format!(
+                    "sha256-{}-{exponent}-{}.pftrace",
+                    backend.slug(),
+                    trial.slug()
+                ),
+                FileMode::CreateNew,
+            )?)
+        })
+        .transpose()
+        .expect("start Perfetto recording");
+    #[cfg(feature = "bench-perfetto")]
+    let trial_span = tracing::info_span!(
+        "benchmark_trial",
+        component = "native_sha256.trial",
+        backend = backend.slug(),
+        exponent,
+        trial = trial.slug(),
+        warmup = matches!(trial, Trial::Warmup),
+    )
+    .entered();
+    let metrics = match backend {
         Backend::F2z => run_f2z_trial(
             contexts.f2z.as_ref().expect("F2Z context"),
             corpus,
@@ -1932,7 +1958,15 @@ fn run_native_trial(
             trial,
             trace,
         ),
+    };
+    #[cfg(feature = "bench-perfetto")]
+    {
+        drop(trial_span);
+        if let Some(recording) = recording {
+            recording.finish().expect("finish Perfetto recording");
+        }
     }
+    metrics
 }
 
 fn run_campaign(

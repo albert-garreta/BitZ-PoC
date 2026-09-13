@@ -50,7 +50,10 @@ impl CaptureLayer {
         let capture = TraceCapture {
             state: Arc::clone(&layer.state),
         };
-        tracing::subscriber::set_global_default(tracing_subscriber::registry().with(layer))
+        let subscriber = tracing_subscriber::registry().with(layer);
+        #[cfg(feature = "bench-perfetto")]
+        let subscriber = subscriber.with(super::common::perfetto::layer());
+        tracing::subscriber::set_global_default(subscriber)
             .expect("install Binius interval collector once");
         capture
     }
