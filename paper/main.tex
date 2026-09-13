@@ -589,6 +589,14 @@ We remark that this is not the only way one can transform $\bff$ into a vector o
  \end{aligned} \right\}.
 \end{align*}
 
+\begin{remark}[Integrated range checks]\label{r:integrated_range_checks}
+    Note that $\LinModFieldBin(S, R, \psi) $ includes, in its definition, a restriction of $\bff$ into a finite subset of $S$, namely $S_{\leq B}^{<D}$. This means that a proof for $\LinModFieldBin(S, R, \psi)$ ensures that $\bff$ belongs to such a subset. Thus the \ftwoz\ scheme described below also proves such membership constraint. When $S$ is, say, a finite field or the integers, membership to $S_{\leq B}^{<D}$ is simply a range check (the $<D$ is vacuous in this case). 
+
+    Moreover, it is possible to add other heterogeneous subset membership checks by using a non-standard bitification matrix, see \cref{r: non_uniform_bit_decomposition}. One, however, needs to make sure that $L$ admits sufficient tensor structure, for efficiency purposes.
+
+    The cost of these membership checks comes for free once one is willing to commit separately to the bits comprising the witness. See \cref{s:to_soundness_rings} for an explanation of how the extractor outputs witnesses satisfying the membership check.
+\end{remark}
+
 \paragraph{Step 2: Bitification of the linear claim.} Similarly as in Step 2 of \cref{s:to_simple_bitz}, the claim \eqref{e:new_to_0_rings} is replaced by a claim of knowledge of a bit vector  $\bitstext(\bff)$ such that \begin{equation}\label{e:intro_eq_2_rings}\langle \uu, \psi(\bitstext(\bff))\rangle =\mu \ \text{in  } R, \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)).
 \end{equation} 
 for a new $\uu\in R^{\codedim}$. This transformation is done using the linear expression from \eqref{e:new_to_linear_bits_to_f}. Concretely, we have $$\begin{aligned}\langle \vv, \psi(\bff)\rangle &= \langle \vv, \psi( L \cdot \bitstext(\bff)) \rangle = \langle \psi(L)^{\mathsf{T}}\cdot \vv, \psi(\bitstext(\bff)) \rangle = \langle \uu, \psi(\bitstext(\bff))\rangle, \\ \uu&\defeq \psi(L)^{\mathsf{T}}\cdot \vv.\end{aligned}$$ 
@@ -1992,6 +2000,8 @@ For efficiency purposes, one needs to make sure that $L$ has enough structure to
 %
 \end{remark}
 
+Wee \cref{r:integrated_range_checks} for comments on $\LinBitsDual$ having (generalized) range checks in its definition and about \ftwoz\ proving them, in a sense, ``for free''.
+
 
 \subsection{The \ftwoz\  IOP for the general LinBitsRings relation}\label{s: general_bitz}
 
@@ -2871,18 +2881,20 @@ Our \ftwoz-PCS is instantiated with Reed-Solomon codes over $\FF_{2^{128}}$ of r
 %\albertimportant{remove?} When targeting $100$ bits of security, we sample primes in the range $[2^{b-1}, 2^b-1]$ with $b=$ \albertimportant{fill in}.
 
 
-\paragraph{The Binius configuration suite.} When  comparing against Binius64, we use four configurations: Binius64 as in its repository, with rates $1/2$ and $1/8$ and with proximity parameter within the unique decoding radius. We call these ``Binius64-$\rate=1/2,1/4$''. 
+\paragraph{The Binius configuration suite.} When  comparing against Binius64, we use four configurations: Binius64 as in its repository, with rates $1/2$ and $1/8$ and with proximity parameter within the unique decoding radius. We call these Binius64 (UDR). 
 
-Moreover, as we mentioned, we run \ftwoz\ with proximity paramter up to the Johnson bound, using the underlying binary-field PCS being the Ligerito implementation from \cite{flock}. Because of this, we also experiment with Binius64 with the same underlyinig PCS and proximity paramter. We call the resulting scheme  ``Binius64-Johnson-$\rate=1/2,1/4$''.
-
-\albert{All mentions of \ftwoz\ (in the tables) should be of \ftwoz-SNARK}
+Moreover, as we mentioned, we run \ftwoz\ with proximity paramter up to the Johnson bound, using the underlying binary-field PCS being the Ligerito implementation from \cite{flock}. Because of this, we also experiment with Binius64 with the same underlyinig PCS and proximity paramter. We call the resulting scheme  Binius64 (Johnson).
 
 
+\paragraph{Non-comparison with Flock \cite{flock}} As discussed in \cite{flock}, the recent paper Flock \cite{flock} buils upon the Binius64 scheme, and manages  to prove several over 100k SHA-256 compressions (and other hashes) on a MacBook Pro M4 Max. Several of the innovations and optimizations of Flock have already been incorporated in the Binius64 repository. Flock was built with the purpose of proving many hash compressions in mind, while Binius64 is  designed to prove much wider classes of computations. Because of this, we do not include comparisons with Flock, i.e.\ because Flock does not immediately support proving the computations we test \ftwoz\ on, and because Binius64 already incorporates several of the ideas of Flock, and hence by comparing with Binius64 we indirectly compare, to some extent, with Flock. 
+
+We make no claim that \ftwoz-SNARK is competitive with Flock or Binius64 for the purpose of proving a large amount of hashes (besides offering a simpler arithmetization via the $\mathsf{CM}$ relation  \cite{cm?}). Indeed if seeking raw performance, Flock or Binius64 is, as of now, better suited for that task.
 
 
 \paragraph{Usage of AI} Following the lead of \cite{flock} and other usages of AI \cref{zkgolf} to optimize against verified specs, we  used AI to optimize the prover while keeping an audited  verifier implementation. \albertimportant{If we mimic transcripts, say so}
  We are currently developing a parallel implementation  using conventional methods.  \albertimportant{Revisit depending on where this ends by submission}
 
+AI was used to prepare the tables in this section.
 
 
 
@@ -2895,7 +2907,33 @@ We measure the performance of \cref{c:core_iop} for proving the Core LinBitsRing
 
 %\albert{remove?} Recall (\cref{s:prelims_algebra})  that   $\bff_{\FF_{q^d}}$ denotes the vector obtained from $\bff$ by looking at $0,1$ as the zero and one elements from $\FF_{q^d}$. 
 
-\input{raw-performance-table}
+
+\begin{table}[H]
+  \centering
+  \small
+  \setlength{\tabcolsep}{4.5pt}
+    \begin{tabular}{@{}rrrrr>{\bfseries}r>{\bfseries}rrr>{\bfseries}r@{}}
+    \toprule
+    & \multicolumn{5}{c}{Prover time (ms)} & Verifier & \multicolumn{3}{c}{Proof size (KB)} \\
+    \cmidrule(lr){2-6} \cmidrule(lr){8-10}
+    $\log_2 \codedim$ & Commit & Grand prod. & Ring switch & Ligerito & Total & (ms) & Non-Lig. & Ligerito & Total \\
+    \midrule
+    20 & 0.73 & 5.30 & 1.22 & 4.13 & 11.7 & 1.62 & 15.1 & 44.9 & 60.0 \\
+    21 & 1.01 & 7.08 & 1.46 & 4.36 & 14.3 & 1.86 & 16.0 & 49.0 & 65.0 \\
+    22 & 1.40 & 10.3 & 1.85 & 4.88 & 18.9 & 2.49 & 16.9 & 53.5 & 70.4 \\
+    23 & 2.20 & 16.8 & 2.27 & 11.4 & 33.5 & 2.41 & 21.8 & 65.2 & 87.0 \\
+    24 & 3.71 & 27.0 & 3.16 & 10.2 & 45.0 & 3.16 & 22.7 & 71.0 & 93.7 \\
+    25 & 7.29 & 48.6 & 4.43 & 11.9 & 73.4 & 3.48 & 31.5 & 76.3 & 108 \\
+    26 & 13.6 & 87.5 & 7.31 & 17.0 & 126 & 4.33 & 32.8 & 89.5 & 122 \\
+    27 & 28.7 & 162 & 12.5 & 23.9 & 230 & 6.00 & 33.8 & 94.9 & 129 \\
+    28 & 55.5 & 311 & 21.0 & 32.3 & 424 & 6.66 & 50.8 & 101 & 152 \\
+    29 & 119 & 660 & 39.3 & 60.2 & 885 & 9.47 & 52.2 & 116 & 168 \\
+    30 & 251 & 1352 & 81.4 & 99.9 & 1789 & 9.91 & 85.6 & 123 & 208 \\
+    \bottomrule
+  \end{tabular}
+  \caption{\albertimportant{Peal memory missing} Cost of \ftwoz\ (\cref{c:core_iop}) for committing to $\codedim = 2^{n}$ bits, $n = 20, \ldots, 30$, and proving one claim $\langle \vv, \bff\rangle = \mu$ over $\FF_q$. Configured for $100$ bits of round-by-round knowledge soundness. The \emph{grand product} column comprises Phase 3 of \cref{c:core_iop}. The \emph{ring switch} and \emph{ligerito} columns comprise Phase 4. The \emph{Non-Ligerito} proof sie is comprised of the $\mu_j$ values in Round 2 of \cref{c:core_iop}, the GKR and sumcheck messages, and the ring-switch messages. The ring switch step includes an initial sumcheck that transforms inner product claims to MLE evaluation claims.  Measured on a MacBook Air M5, 24\,GB.}
+  \label{tab:f2z-raw-performance}
+\end{table}
 
 
  
@@ -2954,38 +2992,19 @@ We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul
 \begin{table}[H]
   \centering
   \small
-  \setlength{\tabcolsep}{4.5pt}
-   \begin{tabular}{@{}rrlrrrrr@{}}
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{@{}lrrrrrrr@{}}
     \toprule
-   KB & Threads & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
+     & Witgen & \multicolumn{2}{c}{Prover (ms)} & \multicolumn{2}{c}{Verifier (ms)} & Proof & Peak mem. \\
+    \cmidrule(lr){3-4} \cmidrule(lr){5-6}
+    Scheme & (ms) & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
     \midrule
-    0.96 & 1 & \ftwoz\ (this work), rate $1/8$ & \textbf{1.99} & \textbf{147} & \textbf{43.1} & \textbf{74.6} & 1.21 \\
-    ($2^{4}$) &  & Binius64~\cite{binius64}, rate $1/2$ & 9.33 & 917 & 130 & 362 & \textbf{0.838} \\
-     &  & Binius64~\cite{binius64}, rate $1/8$ & 9.34 & 1043 & 130 & 266 & 0.885 \\
-     & 10 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.37} & \textbf{52.7} & \textbf{15.9} & \textbf{74.6} & 1.22 \\
-     &  & Binius64~\cite{binius64}, rate $1/2$ & 10.3 & 224 & 54.1 & 362 & \textbf{0.849} \\
-     &  & Binius64~\cite{binius64}, rate $1/8$ & 10.1 & 242 & 51.1 & 266 & 0.892 \\
-    \addlinespace
-    1.98 & 1 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.02} & \textbf{159} & \textbf{43.0} & \textbf{76.0} & 1.20 \\
-    ($2^{5}$) &  & Binius64~\cite{binius64}, rate $1/2$ & 9.56 & 928 & 133 & 362 & \textbf{0.876} \\
-     &  & Binius64~\cite{binius64}, rate $1/8$ & 9.42 & 1050 & 132 & 266 & 0.926 \\
-     & 10 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.35} & \textbf{54.7} & \textbf{15.4} & \textbf{76.0} & 1.21 \\
-     &  & Binius64~\cite{binius64}, rate $1/2$ & 10.8 & 214 & 51.7 & 362 & \textbf{0.884} \\
-     &  & Binius64~\cite{binius64}, rate $1/8$ & 10.3 & 239 & 54.9 & 266 & 0.935 \\
-    \addlinespace
-    4.03 & 1 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.02} & \textbf{174} & \textbf{44.1} & \textbf{82.2} & 1.20 \\
-    ($2^{6}$) &  & Binius64~\cite{binius64}, rate $1/2$ & 9.57 & 937 & 139 & 362 & \textbf{0.878} \\
-     &  & Binius64~\cite{binius64}, rate $1/8$ & 10.1 & 1054 & 137 & 266 & 0.924 \\
-     & 10 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.25} & \textbf{58.2} & \textbf{16.2} & \textbf{82.2} & 1.21 \\
-     &  & Binius64~\cite{binius64}, rate $1/2$ & 10.3 & 219 & 52.3 & 362 & \textbf{0.888} \\
-     &  & Binius64~\cite{binius64}, rate $1/8$ & 10.5 & 243 & 52.0 & 266 & 0.932 \\
-    \addlinespace
-    8.13 & 1 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.21} & \textbf{206} & \textbf{46.3} & \textbf{92.4} & 1.21 \\
-    ($2^{7}$) &  & Binius64~\cite{binius64}, rate $1/2$ & 9.94 & 1019 & 150 & 394 & \textbf{0.941} \\
-     &  & Binius64~\cite{binius64}, rate $1/8$ & 10.0 & 1262 & 150 & 289 & 1.03 \\
-     & 10 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.39} & \textbf{65.6} & \textbf{16.3} & \textbf{92.4} & 1.22 \\
-     &  & Binius64~\cite{binius64}, rate $1/2$ & 10.8 & 240 & 56.6 & 394 & \textbf{0.947} \\
-     &  & Binius64~\cite{binius64}, rate $1/8$ & 10.9 & 289 & 55.4 & 289 & 1.04 \\
+    \ftwoz-SNARK, rate $1/2$ & 2.41 & 207 & 65.8 & 44.7 & 15.2 & 135 & 1.22 \\
+    \ftwoz-SNARK, rate $1/8$ & \textbf{2.38} & 206 & 65.6 & 44.7 & 15.0 & \textbf{92} & 1.22 \\
+    Binius (UDR), rate $1/2$ & 10.3 & \textbf{167} & \textbf{60.3} & 12.8 & 6.18 & 394 & \textbf{0.950} \\
+    Binius (UDR), rate $1/8$ & 10.3 & 216 & 70.3 & \textbf{12.7} & \textbf{6.13} & 289 & 1.03 \\
+    Binius (Johnson), rate $1/2$ & 11.1 & 174 & 67.0 & 14.2 & 8.12 & 376 & 1.03 \\
+    Binius (Johnson), rate $1/8$ & 11.0 & 227 & 76.1 & 13.6 & 7.38 & 199 & 1.08 \\
     \bottomrule
   \end{tabular}
    \caption{\albertimportant{Add rate $1/2$} Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a  P-256  ECDSA signature on the resulting digest. Below  message sizes  we record the corresponding number of SHA-256 compressions. Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air  M5, 24\,GB.}
@@ -2994,39 +3013,68 @@ We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul
 
 
 
-\subsection{Mod $2^{32}$ multiplication and SHA-256 hashing}\label{s:experiments_sha_modmul}
+\subsection{Modular multiplications and bit operations (mod $2^{32}$ multiplication and SHA-256 hashing)}\label{s:experiments_sha_modmul}
 
 We prove simulataneously a large chain of SHA-256 compressions, together with a large amount of multiplications modulo $2^{32}$. In this experiment, contrary to the previous one, SHA-256 is arithmetized over a binary field, using the R1CS constraint from Binius64 \cite{binius64}. The modular multiplications are arithmetized as an R1CS constrain over the integers, where each modular multiplication  $x\cdot y = z \mod 2^{32}$ is expressed as an integer constraint of the form $x\cdot y = z + 2^{32}\cdot u$, where $u$ is a new integer witness.  
 
-Our end-to-end \ftwoz-SNARK is built as described in \cref{s:to_snark}. We compare our results with Binius64. To arithmetize modular multiplication in Binius64 we use a gadget in the repository built for that purpose \albertimportant{double check}.
+This is an artificial circuit. For example, the mod $2^{32}$ integers are not related in any manner to the SHA-256 compressions. We see it as a proxy of computations that require many bit operations and integer/modular multiplications, e.g.\ RISC-V derived computations. The cost of ``gluing'' witness elements between one type of computation and another, both in \ftwoz-SNARK and Binius64, is essentially non-existent, because  both schemes commit to all the bits of witness elements separately, and these can be interpreted as  integers or binary field elements freely.
+
+Our end-to-end \ftwoz-SNARK is an hybrid construction combining a the PIOP over $\ZZ$ from \cref{s:to_snark}, together with the Binius64 PIOP over binary fields. The PCS opening proofs are eventually batched together, both of them being over binary fields.   To arithmetize modular multiplication in Binius64 we use a gadget in the repository built for that purpose \albertimportant{double check}.
 
 \begin{table}[H]
   \centering
   \small
-  \setlength{\tabcolsep}{4.5pt}
-    \begin{tabular}{@{}rrlrrrr@{}}
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{@{}rrlrrrrrr@{}}
     \toprule
-    $N$ & $M$ & Scheme & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
+     & & & \multicolumn{2}{c}{Prover (ms)} & \multicolumn{2}{c}{Verifier (ms)} & Proof & Peak mem. \\
+    \cmidrule(lr){4-5} \cmidrule(lr){6-7}
+    $N$ & $M$ & Scheme & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
     \midrule
-    $2^{15}$ & $2^{7}$ & \ftwoz-SNARK & \textbf{24.0} & 4.24 & \textbf{179} & \textbf{0.146} \\
-     & & Binius~\cite{binius64}, rate $1/8$ & 39.1 & \textbf{3.06} & 243 & 0.415 \\
+    $2^{15}$ & $2^{7}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{43.6} & \textbf{25.3} & 3.71 & 4.27 & 179 & -- \\
+     & & \ftwoz-SNARK, rate $1/8$ & 57.0 & 27.5 & 3.53 & 4.06 & \textbf{107} & -- \\
+     & & Binius (UDR), rate $1/2$ & 67.3 & 34.6 & 3.30 & 3.18 & 353 & -- \\
+     & & Binius (UDR), rate $1/8$ & 83.7 & 38.8 & \textbf{3.15} & \textbf{3.05} & 264 & -- \\
+     & & Binius (Johnson), rate $1/2$ & 75.1 & 39.2 & 4.01 & 4.22 & 345 & -- \\
+     & & Binius (Johnson), rate $1/8$ & 90.6 & 42.6 & 3.55 & 3.73 & 181 & -- \\
     \addlinespace
-    $2^{17}$ & $2^{9}$ & \ftwoz-SNARK & \textbf{57.5} & 6.20 & \textbf{219} & \textbf{0.682} \\
-     & & Binius~\cite{binius64}, rate $1/8$ & 109 & \textbf{5.26} & 284 & 1.62 \\
+    $2^{16}$ & $2^{8}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{78.9} & \textbf{35.5} & 5.29 & 5.18 & 200 & -- \\
+     & & \ftwoz-SNARK, rate $1/8$ & 95.9 & 38.0 & \textbf{5.02} & 4.79 & \textbf{119} & -- \\
+     & & Binius (UDR), rate $1/2$ & 127 & 53.4 & 5.80 & 3.88 & 388 & -- \\
+     & & Binius (UDR), rate $1/8$ & 157 & 59.5 & 5.69 & \textbf{3.71} & 282 & -- \\
+     & & Binius (Johnson), rate $1/2$ & 138 & 58.6 & 6.67 & 5.02 & 357 & -- \\
+     & & Binius (Johnson), rate $1/8$ & 162 & 63.6 & 6.17 & 4.51 & 187 & -- \\
     \addlinespace
-    $2^{19}$ & $2^{11}$ & \ftwoz-SNARK & \textbf{192} & \textbf{10.2} & \textbf{272} & \textbf{2.71} \\
-     & & Binius~\cite{binius64}, rate $1/8$ & 386 & 15.4 & 331 & 5.97 \\
+    $2^{17}$ & $2^{9}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{162} & \textbf{56.5} & 9.50 & 6.38 & 219 & -- \\
+     & & \ftwoz-SNARK, rate $1/8$ & 201 & 63.9 & \textbf{9.19} & 5.81 & \textbf{127} & -- \\
+     & & Binius (UDR), rate $1/2$ & 252 & 91.3 & 10.9 & 5.50 & 423 & -- \\
+     & & Binius (UDR), rate $1/8$ & 312 & 104 & 10.7 & \textbf{4.95} & 309 & -- \\
+     & & Binius (Johnson), rate $1/2$ & 263 & 96.3 & 11.8 & 6.59 & 369 & -- \\
+     & & Binius (Johnson), rate $1/8$ & 310 & 106 & 11.2 & 6.09 & 194 & -- \\
     \addlinespace
-    $2^{20}$ & $2^{12}$ & \ftwoz-SNARK & \textbf{331} & \textbf{15.6} & \textbf{305} & \textbf{5.36} \\
-     & & Binius~\cite{binius64}, rate $1/8$ & 768 & 28.3 & 356 & 12.4 \\
+    $2^{18}$ & $2^{10}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{303} & \textbf{91.9} & 15.0 & 7.23 & 250 & -- \\
+     & & \ftwoz-SNARK, rate $1/8$ & 377 & 106 & \textbf{14.8} & 6.90 & \textbf{150} & -- \\
+     & & Binius (UDR), rate $1/2$ & 502 & 167 & 20.9 & \textbf{6.80} & 471 & -- \\
+     & & Binius (UDR), rate $1/8$ & 624 & 191 & 20.6 & 7.06 & 334 & -- \\
+     & & Binius (Johnson), rate $1/2$ & 517 & 174 & 21.4 & 8.48 & 389 & -- \\
+     & & Binius (Johnson), rate $1/8$ & 610 & 194 & 20.8 & 7.73 & 206 & -- \\
     \addlinespace
-    $2^{21}$ & $2^{13}$ & \ftwoz-SNARK & \textbf{673} & \textbf{27.2} & \textbf{330} & \textbf{10.8} \\
-     & & Binius~\cite{binius64}, rate $1/8$ & 4262$^{\dagger}$ & 378$^{\dagger}$ & 384 & 13.8$^{\dagger}$ \\
+    $2^{19}$ & $2^{11}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{688} & \textbf{178} & 28.4 & 10.6 & 272 & -- \\
+     & & \ftwoz-SNARK, rate $1/8$ & 808 & 198 & \textbf{28.3} & \textbf{10.3} & \textbf{160} & -- \\
+     & & Binius (UDR), rate $1/2$ & 997 & 317 & 43.1 & 14.6 & 516 & -- \\
+     & & Binius (UDR), rate $1/8$ & 1216 & 363 & 43.1 & 14.0 & 360 & -- \\
+     & & Binius (Johnson), rate $1/2$ & 1014 & 330 & 43.8 & 15.6 & 404 & -- \\
+     & & Binius (Johnson), rate $1/8$ & 1221 & 371 & 43.8 & 15.5 & 214 & -- \\
     \addlinespace
-    $2^{22}$ & $2^{14}$ & \ftwoz-SNARK   & \textbf{1526} & \textbf{54.1} & \textbf{371} & \textbf{13.0} \\
+    $2^{20}$ & $2^{12}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{1230} & \textbf{306} & 51.7 & 16.7 & 305 & -- \\
+     & & \ftwoz-SNARK, rate $1/8$ & 1553 & 366 & \textbf{51.2} & \textbf{16.1} & \textbf{175} & -- \\
+     & & Binius (UDR), rate $1/2$ & 1984 & 607 & 84.5 & 25.5 & 569 & -- \\
+     & & Binius (UDR), rate $1/8$ & 2412 & 704 & 85.1 & 25.5 & 387 & -- \\
+     & & Binius (Johnson), rate $1/2$ & 2028 & 630 & 86.2 & 27.3 & 419 & -- \\
+     & & Binius (Johnson), rate $1/8$ & 2441 & 723 & 85.4 & 26.7 & 222 & -- \\
     \bottomrule
   \end{tabular}
-  \caption{\albertimportant{To edit} End-to-end proofs of $N$ multiplications $x \cdot y = z + 2^{32} w$ of $32$-bit integers together with $M = N/256$ chained SHA-256 compressions (equal packed witnesses for the two branches). \ftwoz\ proves the multiplications with Spartan over a transcript-sampled prime and the SHA-256 chain with the Binius64 PIOP, and discharges both through one shared \ftwoz\ opening (Johnson-regime Ligerito at rate $1/8$ with the out-of-domain Round~0); its whole-protocol union bound is gated at $\lambda = 100$ and evaluates to $101.3$--$101.8$ bits at these sizes. Binius64 proves the same SHA-256 chain and a native four-limb multiplication gadget in one proof with ring switching and FRI at rate $1/8$ and a $100$-bit query-phase target ($121$ queries); Binius64 computes no whole-protocol bound. \emph{Prover} includes witness synthesis and the commitments; \emph{verifier} includes decoding; \emph{peak mem.} is the high-water resident set of the proving process ($1$\,GB $= 2^{30}$ bytes). $^{\dagger}$Binius64 paged at $N = 2^{21}$ ($85{,}420$ swap-outs), so that row's timings are inflated; the proof size is unaffected. Apple M5, 24\,GB, $8$ threads; medians of $11$ verified runs.}
+  \caption{Cost of proving $N$ multiplications modulo $2^{32}$ and $M=N/256$  chained SHA-256 compressions (equal packed witnesses for the two branches). Configured at $\lambda = 100$ bits of round-by-round knowledge soundness. \emph{Prover} includes witness synthesis and the commitments. The choice of $N$ and $M$ is done so that both types of workloads (modular multiplication and SHA-256) amount to roughly the same number of witness bits. Ran on a MacBook Air M5, 24\,GB.}
   \label{tab:hybrid-sha256-mul}
 \end{table}
 
@@ -3081,16 +3129,71 @@ Our experimental results show that \ftwoz-SNARK is more performant when hashing 
 
 
 
-We measure the cost of proving $N$ integer multiplications of the form $x\cdot  y = z$, for $x,y$ random $t$-bit integers, and $z$ a $2\cdot t$-bit integer, for $t\in \{32,64,128\}$. This is proved via our implemented end-to-end proof system, called \ftwoz-SNARK for R1CS over the integers, with \ftwoz\ as its PCS, as described in \cref{s:to_snark}. For 32-bit integer multiplication, we compare against the Binius suite, Limber, and Plonky3. For multiplication of larger bits we compare only against the Binius suite.
-
-% [AI-drafted (Claude Opus 5), 2026-09-13 -- review before submission]
-All schemes prove the same multiplications, on the same random operands, each with its own arithmetization. In \ftwoz-SNARK, each multiplication is one R1CS constraint over the integers, $x\cdot y = z$ (for $t=64$ we write it as $x\cdot y = z_0 + 2^{64}\cdot z_1$, where $z_0$ and $z_1$ are the low and high $64$ bits of $z$), and \ftwoz\ commits to the $4t$ bits of $x$, $y$ and $z$, so no range checks are needed. Binius64 has a native constraint for the product of two $64$-bit words, whose outputs are the low and the high word of the product. For $t=64$ we constrain these to be the two halves of $z$, and for $t=32$ we constrain the low word to be $z$ and the high word, as well as the upper $32$ bits of $x$ and $y$, to be zero. For $t=128$ we use the textbook multiplication circuit from the Binius64 repository, which computes the four products of the $64$-bit limbs of $x$ and $y$ with native multiplication constraints and adds them, with carry chains, into the four $64$-bit limbs of $z$. For Plonky3 and Limber we write the arithmetizations ourselves. For Plonky3 we use an AIR over the Goldilocks field $\FF_p$, $p=2^{64}-2^{32}+1$, with one row and $67$ columns per multiplication ($x$, $y$, $z$, and the bits of $x$ and $y$), whose constraints state that the bits are boolean and recompose $x$ and $y$, and that $x\cdot y = z$ in $\FF_p$; since $x\cdot y<p$, the latter implies $x\cdot y=z$ over the integers. We prove it with the multilinear STARK prover of Plonky3 and WHIR \cite{whir}. For Limber we use an R1CS constraint over the integers with $67$ constraints per multiplication: $x\cdot y = z$, the constraints $b\cdot b=b$ for each of the $32$ bits $b$ of $x$ and of $y$, and one constraint recomposing each of $x$ and $y$ from its bits.
+We measure the cost of proving $N$ integer multiplications of the form $x\cdot  y = z$, for $x,y$ random $t$-bit integers, and $z$ a $2\cdot t$-bit integer, for $t\in \{32,64,128\}$. This is proved via our implemented end-to-end proof system, called \ftwoz-SNARK for R1CS over the integers, with \ftwoz\ as its PCS, as described in \cref{s:to_snark}. For 32-bit integer multiplication, we compare against the Binius suite, Limber, and Plonky3. For the sake of brevity, for multiplication of larger bits we compare only against the Binius suite. \albertimportant{Explain how each arithmetization is obtained}
 
 
 
 
-\input{u32-mul-table}
 
+\begin{table}[H]
+  \centering
+  \small
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{@{}rlrrrrrrr@{}}
+    \toprule
+     &  & Witgen & \multicolumn{2}{c}{Prover (ms)} & \multicolumn{2}{c}{Verifier (ms)} & Proof & Peak mem. \\
+    \cmidrule(lr){4-5} \cmidrule(lr){6-7}
+    $N$ & Scheme & (ms) & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
+    \midrule
+    $2^{15}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.05} & \textbf{33.9} & \textbf{17.6} & 2.39 & 2.94 & 118 & \textbf{0.060} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.05} & 35.8 & 18.4 & 2.18 & 2.69 & \textbf{70.4} & 0.065 \\
+     & Binius (UDR), rate $1/2$ & 0.58 & 59.9 & 30.8 & 1.62 & 1.62 & 324 & 0.282 \\
+     & Binius (UDR), rate $1/8$ & 0.59 & 73.6 & 33.9 & \textbf{1.49} & \textbf{1.49} & 243 & 0.285 \\
+     & Binius (Johnson), rate $1/2$ & 0.55 & 68.1 & 35.8 & 2.61 & 2.98 & 346 & 0.292 \\
+     & Binius (Johnson), rate $1/8$ & 0.55 & 82.0 & 38.6 & 2.17 & 2.46 & 180 & 0.289 \\
+     & Plonky3 (FRI), rate $1/2$ & 1.83 & 1389 & 241 & 14.4 & 16.0 & 622 & 0.106 \\
+     & Limber (Brakedown) & 0.41 & 237 & 139 & 33.3 & 32.0 & 3354 & 0.340 \\
+    \addlinespace
+    $2^{17}$ & \ftwoz-SNARK, rate $1/2$ & 0.19 & \textbf{107} & \textbf{39.6} & 3.36 & 3.37 & 150 & \textbf{0.155} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.17} & 124 & 42.5 & \textbf{3.19} & 3.09 & \textbf{92.0} & 0.170 \\
+     & Binius (UDR), rate $1/2$ & 2.47 & 219 & 81.1 & 4.77 & 2.63 & 388 & 0.919 \\
+     & Binius (UDR), rate $1/8$ & 2.46 & 268 & 89.7 & 4.66 & \textbf{2.54} & 283 & 1.00 \\
+     & Binius (Johnson), rate $1/2$ & 2.28 & 232 & 86.7 & 6.25 & 4.51 & 371 & 0.945 \\
+     & Binius (Johnson), rate $1/8$ & 2.28 & 282 & 94.7 & 5.66 & 3.86 & 193 & 1.01 \\
+     & Plonky3 (FRI), rate $1/2$ & 7.52 & 5664 & 975 & 17.7 & 18.8 & 764 & 0.393 \\
+     & Limber (Brakedown) & 1.65 & 1146 & 419 & 67.4 & 57.3 & 5514 & 1.05 \\
+    \addlinespace
+    $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & 0.72 & \textbf{411} & \textbf{114} & 5.45 & 4.19 & 188 & \textbf{0.514} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.71} & 467 & 123 & \textbf{5.26} & \textbf{3.99} & \textbf{116} & 0.570 \\
+     & Binius (UDR), rate $1/2$ & 9.70 & 861 & 269 & 20.4 & 8.84 & 472 & 3.67 \\
+     & Binius (UDR), rate $1/8$ & 9.66 & 1050 & 311 & 19.3 & 8.84 & 330 & 3.93 \\
+     & Binius (Johnson), rate $1/2$ & 9.13 & 884 & 281 & 21.3 & 10.4 & 405 & 3.76 \\
+     & Binius (Johnson), rate $1/8$ & 9.12 & 1086 & 319 & 20.7 & 10.1 & 215 & 3.98 \\
+     & Plonky3 (FRI), rate $1/2$ & 28.9 & 22872 & 4124 & 21.5 & 24.1 & 938 & 1.55 \\
+     & Limber (Brakedown) & 6.77 & 4438 & 1357 & 194 & 147 & 12193 & 3.65 \\
+    \addlinespace
+    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & 3.05 & \textbf{1649} & \textbf{403} & 10.0 & 6.13 & 227 & \textbf{1.88} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{2.65} & 1886 & 437 & \textbf{9.87} & \textbf{5.60} & \textbf{140} & 2.13 \\
+     & Binius (UDR), rate $1/2$ & 38.9 & 3483 & 1034 & 83.8 & 26.8 & 559 & 14.7 \\
+     & Binius (UDR), rate $1/8$ & 38.8 & 4209 & 1249 & 80.1 & 28.3 & 383 & 14.9 \\
+     & Binius (Johnson), rate $1/2$ & 36.7 & 3607 & 1159 & 81.1 & 29.1 & 440 & 12.7 \\
+     & Binius (Johnson), rate $1/8$ & 36.7 & 4761 & 1322 & 95.0 & 34.3 & 238 & 12.5 \\
+     & Plonky3 (FRI), rate $1/2$ & 114 & 92417 & 17572 & 25.4 & 28.6 & 1140 & 8.28 \\
+     & Limber (Brakedown) & -- & -- & -- & -- & -- & -- & -- \\
+    \addlinespace
+    $2^{23}$ & \ftwoz-SNARK, rate $1/2$ & 12.0 & \textbf{7369} & \textbf{1911} & 18.4 & 9.12 & 276 & \textbf{7.09} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{11.2} & 8288 & 2015 & \textbf{18.1} & \textbf{8.12} & \textbf{179} & 8.21 \\
+     & Binius (UDR), rate $1/2$ & -- & -- & -- & -- & -- & -- & -- \\
+     & Binius (UDR), rate $1/8$ & -- & -- & -- & -- & -- & -- & -- \\
+     & Binius (Johnson), rate $1/2$ & -- & -- & -- & -- & -- & -- & -- \\
+     & Binius (Johnson), rate $1/8$ & -- & -- & -- & -- & -- & -- & -- \\
+     & Plonky3 (FRI), rate $1/2$ & 926 & 550595 & 153132 & 36.3 & 34.6 & 1347 & 13.8 \\
+     & Limber (Brakedown) & -- & -- & -- & -- & -- & -- & -- \\
+    \bottomrule
+  \end{tabular}
+  \caption{ \ftwoz-SNARK cost of proving $N=2^n$ integer multiplications $x \cdot y = z$ for random $32$-bit non-negative integers $x, y$ (with $z$  a $64$-bit integer). Configured at $100$ bits of round-by-round knowledge soundness (cf.\ \cref{s:instantiation}). Cells with ``---'' indicate the computer ran out of memory. Ran on a MacBook Air  M5, 24\,GB. }
+  \label{tab:f2z-u32-mul}
+\end{table}
 
 
 
@@ -3106,121 +3209,96 @@ All schemes prove the same multiplications, on the same random operands, each wi
 \begin{table}[H]
   \centering
   \small
-  \setlength{\tabcolsep}{4.5pt}
-        \begin{tabular}{@{}rlrrrrr@{}}
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{@{}rlrrrrrrr@{}}
     \toprule
-    $N$ & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
+     &  & Witgen & \multicolumn{2}{c}{Prover (ms)} & \multicolumn{2}{c}{Verifier (ms)} & Proof & Peak mem. \\
+    \cmidrule(lr){4-5} \cmidrule(lr){6-7}
+    $N$ & Scheme & (ms) & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
     \midrule
-    $2^{15}$ & \ftwoz\ (this work), rate $1/2$ & 0.04 & \textbf{26.2} & 3.05 & 137 & \textbf{0.086} \\
-     & \ftwoz\ (this work), rate $1/8$ & \textbf{0.04} & 27.1 & 2.83 & \textbf{83.3} & 0.093 \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 0.42 & 31.2 & 1.28 & 324 & 0.223 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 0.42 & 34.5 & \textbf{1.15} & 242 & 0.240 \\
+    $2^{15}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.04} & \textbf{57.4} & \textbf{27.1} & 3.18 & 3.17 & 137 & \textbf{0.090} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.04} & 63.1 & 27.3 & 3.00 & 2.95 & \textbf{83.3} & 0.098 \\
+     & Binius (UDR), rate $1/2$ & 0.42 & 60.1 & 31.7 & 1.32 & 1.30 & 324 & 0.223 \\
+     & Binius (UDR), rate $1/8$ & 0.42 & 74.0 & 35.6 & \textbf{1.19} & \textbf{1.15} & 242 & 0.241 \\
+     & Binius (Johnson), rate $1/2$ & 0.38 & 80.5 & 38.3 & 2.32 & 2.65 & 346 & 0.239 \\
+     & Binius (Johnson), rate $1/8$ & 0.38 & 83.0 & 39.1 & 1.87 & 2.10 & 180 & 0.248 \\
     \addlinespace
-    $2^{16}$ & \ftwoz\ (this work), rate $1/2$ & \textbf{0.06} & \textbf{40.0} & 3.29 & 151 & \textbf{0.146} \\
-     & \ftwoz\ (this work), rate $1/8$ & 0.06 & 43.0 & 3.00 & \textbf{91.9} & 0.156 \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 0.88 & 47.1 & 1.54 & 355 & 0.431 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 0.88 & 53.2 & \textbf{1.42} & 259 & 0.475 \\
+    $2^{17}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.13} & \textbf{211} & \textbf{66.6} & 5.66 & 4.35 & 164 & \textbf{0.260} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.13} & 236 & 71.1 & 5.39 & 4.16 & \textbf{98.6} & 0.287 \\
+     & Binius (UDR), rate $1/2$ & 1.79 & 217 & 79.9 & 3.61 & 2.09 & 387 & 0.839 \\
+     & Binius (UDR), rate $1/8$ & 1.82 & 269 & 90.2 & \textbf{3.51} & \textbf{1.96} & 283 & 0.915 \\
+     & Binius (Johnson), rate $1/2$ & 1.59 & 228 & 85.4 & 5.07 & 4.06 & 370 & 0.872 \\
+     & Binius (Johnson), rate $1/8$ & 1.59 & 275 & 93.8 & 4.49 & 3.30 & 192 & 0.932 \\
     \addlinespace
-    $2^{17}$ & \ftwoz\ (this work), rate $1/2$ & 0.13 & \textbf{69.0} & 4.41 & 164 & \textbf{0.256} \\
-     & \ftwoz\ (this work), rate $1/8$ & \textbf{0.13} & 74.0 & 4.07 & \textbf{98.6} & 0.282 \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 1.77 & 81.7 & 2.11 & 387 & 0.838 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 1.79 & 91.5 & \textbf{1.89} & 283 & 0.913 \\
+    $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.53} & \textbf{831} & \textbf{210} & 9.75 & 5.65 & 202 & \textbf{0.901} \\
+     & \ftwoz-SNARK, rate $1/8$ & 0.54 & 948 & 237 & \textbf{9.52} & \textbf{5.32} & \textbf{124} & 1.03 \\
+     & Binius (UDR), rate $1/2$ & 7.01 & 854 & 270 & 14.9 & 7.33 & 472 & 3.17 \\
+     & Binius (UDR), rate $1/8$ & 6.90 & 1050 & 310 & 15.3 & 7.13 & 330 & 3.41 \\
+     & Binius (Johnson), rate $1/2$ & 6.32 & 881 & 281 & 17.0 & 9.10 & 403 & 3.29 \\
+     & Binius (Johnson), rate $1/8$ & 6.37 & 1081 & 320 & 15.6 & 8.01 & 213 & 3.51 \\
     \addlinespace
-    $2^{18}$ & \ftwoz\ (this work), rate $1/2$ & 0.26 & \textbf{119} & 3.87 & 188 & \textbf{0.472} \\
-     & \ftwoz\ (this work), rate $1/8$ & \textbf{0.26} & 130 & 3.80 & \textbf{116} & 0.531 \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 3.47 & 147 & 2.91 & 431 & 1.66 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 3.46 & 168 & \textbf{2.69} & 305 & 1.81 \\
-    \addlinespace
-    $2^{19}$ & \ftwoz\ (this work), rate $1/2$ & 0.53 & \textbf{220} & 5.46 & 202 & \textbf{0.890} \\
-     & \ftwoz\ (this work), rate $1/8$ & \textbf{0.52} & 248 & \textbf{5.13} & \textbf{124} & 1.01 \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 6.87 & 276 & 7.56 & 472 & 3.17 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 6.85 & 325 & 7.39 & 330 & 3.41 \\
-    \addlinespace
-    $2^{20}$ & \ftwoz\ (this work), rate $1/2$ & \textbf{1.04} & \textbf{412} & 5.88 & 223 & \textbf{1.72} \\
-     & \ftwoz\ (this work), rate $1/8$ & 1.04 & 464 & \textbf{5.61} & \textbf{140} & 1.97 \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 13.9 & 535 & 13.6 & 518 & 6.33 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 13.8 & 632 & 13.1 & 355 & 6.82 \\
-    \addlinespace
-    $2^{21}$ & \ftwoz\ (this work), rate $1/2$ & 2.12 & \textbf{821} & 5.88 & 262 & \textbf{3.37} \\
-     & \ftwoz\ (this work), rate $1/8$ & \textbf{2.10} & 929 & \textbf{5.75} & \textbf{171} & 3.92 \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 29.3 & 1142 & 22.2 & 559 & 12.4 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 31.0 & 1390 & 21.6 & 383 & 12.2 \\
-    \addlinespace
-    $2^{22}$ & \ftwoz\ (this work), rate $1/2$ & 4.18 & \textbf{1722} & 6.17 & 311 & \textbf{6.11} \\
-     & \ftwoz\ (this work), rate $1/8$ & \textbf{4.14} & 1980 & \textbf{6.07} & \textbf{211} & 6.98 \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 1480 & 18688 & 880 & 606 & 12.1 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 1564 & 29732 & 1138 & 408 & 13.7 \\
-    \addlinespace
-    $2^{23}$ & \ftwoz\ (this work), rate $1/2$ & 78.7 & \textbf{6710} & 7.95 & 390 & \textbf{10.3} \\
-     & \ftwoz\ (this work), rate $1/8$ & \textbf{65.7} & 8432 & \textbf{7.08} & \textbf{285} & 11.6 \\
-     & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
-     & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
+    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & 2.10 & \textbf{3232} & \textbf{749} & 9.97 & 5.90 & 262 & \textbf{3.44} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{2.09} & 3730 & 850 & \textbf{9.72} & \textbf{5.58} & \textbf{171} & 3.99 \\
+     & Binius (UDR), rate $1/2$ & 27.8 & 3427 & 1034 & 60.3 & 20.1 & 559 & 11.7 \\
+     & Binius (UDR), rate $1/8$ & 27.9 & 4177 & 1221 & 59.6 & 20.0 & 383 & 12.7 \\
+     & Binius (Johnson), rate $1/2$ & 25.6 & 3597 & 1121 & 64.5 & 22.7 & 441 & 11.7 \\
+     & Binius (Johnson), rate $1/8$ & 26.0 & 4513 & 1425 & 61.6 & 23.4 & 237 & 12.2 \\
     \bottomrule
   \end{tabular}
-  \caption{Costs of proving $N=2^n$ multiplications $x\cdot y = z$ for random $64$ bit nonnegative integers $x$ and $y$ (with $z$  a $128$-bit integer). 100 bits of round-by-round knowledge soundness (Binius64 is at 96 bits). Ran on a MacBook Air M5, 24\,GB, $8$ threads.}
+  \caption{Costs of proving $N=2^n$ multiplications $x\cdot y = z$ for random $64$ bit nonnegative integers $x$ and $y$ (with $z$  a $128$-bit integer). 100 bits of round-by-round knowledge soundness (Binius64 is at 96 bits). Ran on a MacBook Air M5.}
   \label{tab:native-mul-u64}
 \end{table}
 
 \begin{table}[H]
   \centering
   \small
-  \setlength{\tabcolsep}{4.5pt}
-   \begin{tabular}{@{}rlrrrrr@{}}
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{@{}rlrrrrrrr@{}}
     \toprule
-    $N$ & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
+     &  & Witgen & \multicolumn{2}{c}{Prover (ms)} & \multicolumn{2}{c}{Verifier (ms)} & Proof & Peak mem. \\
+    \cmidrule(lr){4-5} \cmidrule(lr){6-7}
+    $N$ & Scheme & (ms) & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
     \midrule
-    $2^{15}$ & \ftwoz-SNARK, rate $1/2$ & 0.07 & \textbf{42.7} & 3.94 & 151 & \textbf{0.145} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.07} & 46.6 & 3.80 & \textbf{90.6} & 0.158 \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 1.65 & 85.8 & 3.65 & 388 & 1.02 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 1.66 & 97.2 & \textbf{3.49} & 283 & 1.09 \\
+    $2^{15}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.07} & \textbf{115} & \textbf{42.5} & 5.36 & 4.09 & 151 & \textbf{0.148} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.07} & 129 & 44.8 & \textbf{5.10} & 3.79 & \textbf{90.6} & 0.170 \\
+     & Binius (UDR), rate $1/2$ & 1.65 & 240 & 84.1 & 7.82 & 3.64 & 388 & 1.01 \\
+     & Binius (UDR), rate $1/8$ & 1.63 & 287 & 94.6 & 7.43 & \textbf{3.57} & 283 & 1.09 \\
+     & Binius (Johnson), rate $1/2$ & 1.46 & 246 & 91.1 & 8.96 & 5.70 & 370 & 1.05 \\
+     & Binius (Johnson), rate $1/8$ & 1.46 & 300 & 99.5 & 8.46 & 4.85 & 193 & 1.10 \\
     \addlinespace
-    $2^{16}$ & \ftwoz-SNARK, rate $1/2$ & 0.14 & \textbf{66.7} & 4.38 & 164 & \textbf{0.244} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.14} & 76.5 & \textbf{4.33} & \textbf{97.9} & 0.275 \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 3.25 & 155 & 5.30 & 432 & 1.93 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 3.40 & 179 & 5.08 & 306 & 2.08 \\
+    $2^{17}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.27} & \textbf{426} & \textbf{118} & 9.34 & 5.53 & 186 & \textbf{0.468} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.27} & 483 & 131 & \textbf{9.13} & \textbf{5.06} & \textbf{113} & 0.525 \\
+     & Binius (UDR), rate $1/2$ & 6.79 & 944 & 287 & 31.0 & 11.3 & 472 & 3.92 \\
+     & Binius (UDR), rate $1/8$ & 6.78 & 1134 & 330 & 30.8 & 11.5 & 331 & 4.16 \\
+     & Binius (Johnson), rate $1/2$ & 6.23 & 967 & 304 & 32.2 & 13.6 & 403 & 4.04 \\
+     & Binius (Johnson), rate $1/8$ & 6.17 & 1171 & 338 & 31.9 & 12.6 & 215 & 4.26 \\
     \addlinespace
-    $2^{17}$ & \ftwoz-SNARK, rate $1/2$ & 0.28 & \textbf{124} & 5.31 & 186 & \textbf{0.463} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.27} & 150 & \textbf{5.26} & \textbf{113} & 0.522 \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 6.72 & 294 & 11.3 & 472 & 3.92 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 6.75 & 338 & 11.1 & 331 & 4.16 \\
+    $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.97} & \textbf{1767} & \textbf{448} & 17.8 & 8.07 & 218 & \textbf{1.59} \\
+     & \ftwoz-SNARK, rate $1/8$ & 0.98 & 2009 & 500 & \textbf{17.5} & \textbf{7.73} & \textbf{132} & 1.84 \\
+     & Binius (UDR), rate $1/2$ & 28.5 & 3790 & 1113 & 122 & 34.6 & 559 & 12.5 \\
+     & Binius (UDR), rate $1/8$ & 28.7 & 4630 & 1327 & 121 & 35.3 & 383 & 13.6 \\
+     & Binius (Johnson), rate $1/2$ & 25.4 & 3911 & 1242 & 126 & 40.9 & 441 & 12.9 \\
+     & Binius (Johnson), rate $1/8$ & 25.0 & 4794 & 1425 & 126 & 41.3 & 238 & 13.3 \\
     \addlinespace
-    $2^{18}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.49} & \textbf{219} & 5.51 & 202 & \textbf{0.834} \\
-     & \ftwoz-SNARK, rate $1/8$ & 0.51 & 261 & \textbf{5.25} & \textbf{125} & 0.959 \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 13.4 & 577 & 21.4 & 519 & 7.86 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 13.5 & 668 & 21.0 & 356 & 8.35 \\
-    \addlinespace
-    $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.98} & \textbf{474} & \textbf{8.22} & 218 & \textbf{1.61} \\
-     & \ftwoz-SNARK, rate $1/8$ & 1.00 & 579 & 8.36 & \textbf{132} & 1.81 \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 30.3 & 1233 & 39.1 & 559 & 14.0 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 37.4 & 1879 & 168 & 383 & 11.3 \\
-    \addlinespace
-    $2^{20}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{2.01} & \textbf{957} & \textbf{8.26} & 248 & \textbf{3.14} \\
-     & \ftwoz-SNARK, rate $1/8$ & 2.17 & 1217 & 8.31 & \textbf{155} & 3.63 \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 1769 & 18255 & 1218 & 607 & 13.5 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 1751 & 23574 & 2001 & 408 & 12.5 \\
-    \addlinespace
-    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{4.12} & \textbf{2265} & \textbf{13.5} & 263 & \textbf{6.10} \\
-     & \ftwoz-SNARK, rate $1/8$ & 4.34 & 2644 & 14.0 & \textbf{165} & 7.12 \\
-     & Binius64~\cite{binius64}, rate $1/2$ & 3801 & 94412 & 3631 & 655 & 16.2 \\
-     & Binius64~\cite{binius64}, rate $1/8$ & 3476 & 103478 & 4318 & 437 & 16.3 \\
-    \addlinespace
-    $2^{22}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{10.3} & \textbf{6385} & 17.9 & 295 & \textbf{12.3} \\
-     & \ftwoz-SNARK, rate $1/8$ & 22.4 & 8046 & \textbf{14.6} & \textbf{188} & 13.8 \\
-     & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
-     & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
+    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{3.94} & \textbf{7764} & \textbf{2083} & 33.4 & 12.5 & 263 & \textbf{6.14} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{3.94} & 8687 & 2276 & \textbf{32.8} & \textbf{12.3} & \textbf{165} & 7.16 \\
+     & Binius (UDR), rate $1/2$ & 3904 & 216381 & 81970 & 8030 & 3444 & 655 & -- \\
+     & Binius (UDR), rate $1/8$ & 3824 & 237644 & 99732 & 8524 & 4642 & 437 & -- \\
+     & Binius (Johnson), rate $1/2$ & 3972 & 238374 & 90724 & 8478 & 3663 & 472 & -- \\
+     & Binius (Johnson), rate $1/8$ & -- & -- & -- & -- & -- & -- & -- \\
     \bottomrule
   \end{tabular}
   \caption{  Costs of proving $N=2^n$ multiplications $x\cdot y = z$ for random $128$ bit nonnegative integers $x$ and $y$ (with $z$  a $256$-bit integer). 100 bits of round-by-round knowledge soundness. Ran on a MacBook Air M5, 24\,GB, $8$ threads.}
   \label{tab:native-mul-u128}
 \end{table}
 
-\albertimportant{Comment somewhere about why Binius  runs out of memory}
+%\albertimportant{Comment somewhere about why Binius  runs out of memory}
 
 
 \subsection{Comparison with Fields-witch}\label{s:exp_fields_witch}
 
 
-We compare experimentally \ftwoz\ with Fields-witch \cite{lev}, a PCS-over the prime field $\FF_{2^{127}-1}$ that commits its witness over the binary field $\FF_{2^{127}}$. See \cref{?} for a discussion of \cite{lev} and a conceptual comparison of both.  Fields-witch repository is available in \url{https://github.com/morgana-proofs/fields-witch}.
+We compare experimentally \ftwoz\ with Fields-witch \cite{lev}, a PCS-over the prime field $\FF_{2^{127}-1}$ that commits its witness over the binary field $\FF_{2^{127}}$. See \cref{?} for a discussion of \cite{lev} and a conceptual comparison of both.  Fields-witch repository is available in \url{https://github.com/morgana-proofs/fields-witch}, and it the same underlying binary-field PCS as Binius64, configured at the unique decoding radius. 
 
 %\albertimportant{Review.} Soukhanov's implementation of \cite{lev}, \texttt{fields-witch}, proves the same kind of claim as \cref{c:core_iop}: a multilinear evaluation, over the prime field $\FF_{2^{127}-1}$, of data committed in $\FF_{2^{128}}$. \cref{tab:fields-witch} compares the two at equal commitment size (\texttt{fields-witch} commits $2^{m-7}$ entries of $127$ bits, \ftwoz\ commits $2^{m}$ bits) with both configured for $100$ bits of security. The cost of \texttt{fields-witch} is per $127$-bit entry regardless of the width of the data, since every intermediate fold is a full $\FF_{2^{127}-1}$ element, whereas the cost of \ftwoz\ is per committed bit; on $2^{20}$ entries of $32$-bit words, for instance, \texttt{fields-witch} still takes the $2^{27}$ row of \cref{tab:fields-witch}, while \ftwoz\ commits $2^{25}$ bits and takes $61$\,ms at $W = 32$ (with the prime width capped at $b = 83$ by the one-chunk rule $b \le 127 - \log \codedim_1 - W$; keeping $b \ge 100$ would double the grand-product cost). The proof-size gap comes from \texttt{fields-witch} committing every intermediate fold and opening three polynomials, where \ftwoz\ opens one. Its verifier is polylogarithmic, whereas ours reads the $\codedim_2$ integers $\mu_j$ and evaluates the lifted weights at $\codedim_1$ points; the two meet at $2^{29}$ bits on a single thread (not shown).
 
@@ -3228,8 +3306,58 @@ We compare experimentally \ftwoz\ with Fields-witch \cite{lev}, a PCS-over the p
 %----
 
 
+\begin{table}[H]
+  \centering
+  \small
+  \setlength{\tabcolsep}{4.5pt}
+  \begin{tabular}{@{}rlrrrrrr@{}}
+    \toprule
+     & & \multicolumn{2}{c}{Prover (ms)} & \multicolumn{2}{c}{Verifier (ms)} & Proof & Peak mem. \\
+    \cmidrule(lr){3-4} \cmidrule(lr){5-6}
+    Bits & Scheme & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
+    \midrule
+    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{16.6} & \textbf{10.9} & 1.39 & 2.15 & 108 & \textbf{0.04} \\
+     & \ftwoz-SNARK, rate $1/8$ & 19.2 & 12.1 & \textbf{1.20} & \textbf{2.09} & \textbf{66} & \textbf{0.04} \\
+     & Fields-Witch, rate $1/2$ & 24.1 & 18.9 & 6.33 & 6.82 & 430 & 0.08 \\
+     & Fields-Witch, rate $1/8$ & 26.2 & 18.9 & 5.68 & 6.25 & 370 & 0.08 \\
+     & Fields-Witch + \ftwoz\ opener, rate $1/2$ & 29.7 & 20.9 & 6.22 & 6.67 & 368 & 0.08 \\
+     & Fields-Witch + \ftwoz\ opener, rate $1/8$ & 30.3 & 20.7 & 5.67 & 6.28 & 279 & 0.09 \\
+    \addlinespace
+    $2^{23}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{54.5} & \textbf{23.4} & 1.77 & 2.74 & 140 & \textbf{0.12} \\
+     & \ftwoz-SNARK, rate $1/8$ & 56.4 & 24.5 & \textbf{1.64} & \textbf{2.54} & \textbf{88} & 0.13 \\
+     & Fields-Witch, rate $1/2$ & 73.9 & 39.9 & 7.02 & 7.75 & 574 & 0.24 \\
+     & Fields-Witch, rate $1/8$ & 84.2 & 41.6 & 6.65 & 7.34 & 482 & 0.25 \\
+     & Fields-Witch + \ftwoz\ opener, rate $1/2$ & 85.7 & 43.8 & 7.03 & 7.79 & 472 & 0.26 \\
+     & Fields-Witch + \ftwoz\ opener, rate $1/8$ & 88.4 & 44.5 & 6.60 & 7.32 & 345 & 0.27 \\
+    \addlinespace
+    $2^{25}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{186} & \textbf{57.5} & 2.95 & 3.97 & 174 & \textbf{0.46} \\
+     & \ftwoz-SNARK, rate $1/8$ & 206 & 64.3 & \textbf{2.77} & \textbf{3.63} & \textbf{107} & 0.50 \\
+     & Fields-Witch, rate $1/2$ & 260 & 101 & 7.55 & 8.52 & 710 & 0.84 \\
+     & Fields-Witch, rate $1/8$ & 306 & 111 & 7.10 & 8.27 & 575 & 0.91 \\
+     & Fields-Witch + \ftwoz\ opener, rate $1/2$ & 269 & 105 & 7.75 & 8.78 & 574 & 0.91 \\
+     & Fields-Witch + \ftwoz\ opener, rate $1/8$ & 302 & 116 & 7.08 & 8.02 & 408 & 0.97 \\
+    \addlinespace
+    $2^{27}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{732} & \textbf{183} & 7.25 & 6.63 & 209 & \textbf{1.10} \\
+     & \ftwoz-SNARK, rate $1/8$ & 740 & 203 & 6.86 & \textbf{6.36} & \textbf{129} & 1.31 \\
+     & Fields-Witch, rate $1/2$ & 872 & 258 & 7.30 & 8.46 & 852 & 2.82 \\
+     & Fields-Witch, rate $1/8$ & 1066 & 293 & 6.88 & 7.96 & 687 & 3.06 \\
+     & Fields-Witch + \ftwoz\ opener, rate $1/2$ & 870 & 266 & 7.51 & 8.80 & 674 & 3.09 \\
+     & Fields-Witch + \ftwoz\ opener, rate $1/8$ & 986 & 303 & \textbf{6.81} & 7.85 & 473 & 3.32 \\
+    \addlinespace
+    $2^{29}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{2997} & \textbf{713} & 13.3 & 9.90 & 260 & \textbf{4.02} \\
+     & \ftwoz-SNARK, rate $1/8$ & 3190 & 858 & 13.0 & 10.1 & \textbf{169} & 4.95 \\
+     & Fields-Witch, rate $1/2$ & 3263 & 883 & 8.31 & 9.59 & 1004 & 10.5 \\
+     & Fields-Witch, rate $1/8$ & 4124 & 1067 & 7.93 & 9.17 & 808 & 11.4 \\
+     & Fields-Witch + \ftwoz\ opener, rate $1/2$ & 3212 & 911 & 8.60 & 10.0 & 792 & 11.5 \\
+     & Fields-Witch + \ftwoz\ opener, rate $1/8$ & 3601 & 1076 & \textbf{7.69} & \textbf{8.95} & 554 & 12.5 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Cost of proving an MLE claim for a vector of $2^{m-7}$ field elements from $\FF_{2^{127}-1}$, for $m \in \{ 21, 23,25,27\}$.  $100$ bits of security  with fields-witch (Soukhanov's implementation of \cite{lev}) and with \ftwoz. Ran on a MacBook Air  M5, 24\,GB.}
+  \label{tab:fields-witch}
+\end{table}
 
-\input{fields-witch-table}
+
+
 
 
 
