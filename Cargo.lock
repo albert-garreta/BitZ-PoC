@@ -2582,7 +2582,7 @@ checksum = "b9be42f50aa861c555654aa3a37f52f4b1074bacf4e48fe0ef7fa584e80f1f0f"
 [[package]]
 name = "spartan2"
 version = "0.8.0"
-source = "git+https://github.com/wu-s-john/Spartan2.git?rev=3b94130453838550a1086ee75c5d280f5c25df3d#3b94130453838550a1086ee75c5d280f5c25df3d"
+source = "git+https://github.com/wu-s-john/Spartan2.git?rev=d3e686ebc4554cabfbe6282ef3c91baba00f755f#d3e686ebc4554cabfbe6282ef3c91baba00f755f"
 dependencies = [
  "bellpepper",
  "bellpepper-core",

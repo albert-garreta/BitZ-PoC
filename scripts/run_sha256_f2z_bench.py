@@ -101,7 +101,7 @@ def main() -> int:
     }
     env.update(RAYON_NUM_THREADS=str(args.threads), F2Z_BENCH_REPS=str(args.reps),
                F2Z_BENCH_SEED=hex(args.seed), F2Z_BENCH_LAMBDA=args.security)
-    features = [] if args.checked else ["unchecked"]
+    features = ["span-metrics"] if args.checked else ["unchecked", "span-metrics"]
     build = ["cargo", "bench", "--locked", "--no-run", "--message-format=json-render-diagnostics"]
     if args.offline:
         build.append("--offline")

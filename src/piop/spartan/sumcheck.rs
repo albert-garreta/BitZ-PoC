@@ -581,7 +581,7 @@ impl<D: GrindingDomain> RoundBoundaryPolicy for ProverGrindingRoundBoundary<D> {
         if self.bits == 0 {
             return Ok(());
         }
-        let _scope = crate::utils::prof::scope("spartan:round_grinding_prove");
+        let _scope = tracing::info_span!("spartan:round_grinding_prove").entered();
         let round = self
             .round_offset
             .checked_add(round)
@@ -636,7 +636,7 @@ impl<D: GrindingDomain> RoundBoundaryPolicy for VerifierGrindingRoundBoundary<'_
         if self.bits == 0 {
             return Ok(());
         }
-        let _scope = crate::utils::prof::scope("spartan:round_grinding_verify");
+        let _scope = tracing::info_span!("spartan:round_grinding_verify").entered();
         let round_index =
             u64::try_from(round).expect("an in-memory sumcheck round index fits in u64");
         verify_and_absorb::<D, _>(
@@ -1953,7 +1953,7 @@ where
     }
 
     let coefficients_without_linear = {
-        let _scope = crate::utils::prof::scope("spartan:inner_native_coefficients");
+        let _scope = tracing::info_span!("spartan:inner_native_coefficients").entered();
         policy.native_coefficients(&batched_matrix, &native_witness, &zero)?
     };
     let challenge = recover_full_round_polynomial_and_sample_next_challenge(
@@ -1971,13 +1971,13 @@ where
     fold_table(&batched_matrix, &mut folded_matrix, &challenge);
     let mut witness = vec![zero.clone(); next_len];
     {
-        let _scope = crate::utils::prof::scope("spartan:inner_native_witness_fold");
+        let _scope = tracing::info_span!("spartan:inner_native_witness_fold").entered();
         policy.fold_native_witness(&native_witness, &mut witness, &challenge, &zero, field_cfg)?;
     }
     batched_matrix = folded_matrix;
 
     {
-        let _scope = crate::utils::prof::scope("spartan:inner_field_rounds");
+        let _scope = tracing::info_span!("spartan:inner_field_rounds").entered();
         let mut coefficients_without_linear = if next_len > 1 {
             policy.field_coefficients(&batched_matrix, &witness)?
         } else {

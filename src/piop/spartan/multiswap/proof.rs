@@ -371,27 +371,27 @@ pub fn prove_multiswap_mod_r1cs<T: Transcript + Send>(
     absorb_spartan_message(transcript, b"multiswap-statement", &binding);
 
     // Paper §2.1 Step 2: fingerprint-prime draw + integer→F_Q projection.
-    let step2_scope = crate::utils::prof::scope("step2:project_prove");
+    let step2_scope = tracing::info_span!("step2:project_prove").entered();
     let fingerprint = {
-        let _scope = crate::utils::prof::scope("multiswap:fingerprint_prime_prove");
+        let _scope = tracing::info_span!("multiswap:fingerprint_prime_prove").entered();
         sample_multiswap_fingerprint_context(transcript, prepared.profile())?
     };
     let matrices = {
-        let _scope = crate::utils::prof::scope("multiswap:relation_projection_prove");
+        let _scope = tracing::info_span!("multiswap:relation_projection_prove").entered();
         prepared
             .relation()
             .project::<SpartanF2zField>(fingerprint.field_config())?
     };
     let (assignment_mle, products) = {
-        let _scope = crate::utils::prof::scope("multiswap:witness_projection_prove");
+        let _scope = tracing::info_span!("multiswap:witness_projection_prove").entered();
         assignment.project::<SpartanF2zField>(prepared.relation(), fingerprint.field_config())?
     };
     drop(step2_scope);
 
     // Step 3: the Spartan PIOP over F_Q.
     let (spartan, terminal_claim) = {
-        let _step3 = crate::utils::prof::scope("step3:piop_prove");
-        let _scope = crate::utils::prof::scope("multiswap:spartan_prove");
+        let _step3 = tracing::info_span!("step3:piop_prove").entered();
+        let _scope = tracing::info_span!("multiswap:spartan_prove").entered();
         prove_spartan_piop_with_strategy(
             transcript,
             &matrices,
@@ -404,15 +404,15 @@ pub fn prove_multiswap_mod_r1cs<T: Transcript + Send>(
 
     // Step 4: bitification of the terminal linear claim.
     let opening = {
-        let _step4 = crate::utils::prof::scope("step4:bitify_prove");
-        let _scope = crate::utils::prof::scope("multiswap:bitify_prove");
+        let _step4 = tracing::info_span!("step4:bitify_prove").entered();
+        let _scope = tracing::info_span!("multiswap:bitify_prove").entered();
         bitify_multiswap_claim(&terminal_claim, prepared.layout(), &fingerprint)?
     };
 
     // Step 5.0: exact integer lift, grinded fresh-prime draw, re-projection.
-    let step5_0_scope = crate::utils::prof::scope("step5_0:reduce_prove");
+    let step5_0_scope = tracing::info_span!("step5_0:reduce_prove").entered();
     let mu_prime = {
-        let _scope = crate::utils::prof::scope("multiswap:integer_lift_prove");
+        let _scope = tracing::info_span!("multiswap:integer_lift_prove").entered();
         step50_integer_lift(hint.rows(), &opening.row_weights_q, &opening.col_weights_q)
     };
     if !step50_accepts_lift(&mu_prime, opening.claimed_q, fingerprint.q(), cell_count(p)) {
@@ -421,7 +421,7 @@ pub fn prove_multiswap_mod_r1cs<T: Transcript + Send>(
     absorb_opening_claim(transcript, &binding, &terminal_claim, &opening, &mu_prime);
 
     let reduction_nonce = {
-        let _scope = crate::utils::prof::scope("multiswap:reduction_grinding_prove");
+        let _scope = tracing::info_span!("multiswap:reduction_grinding_prove").entered();
         grind_and_absorb::<MultiswapReductionGrinding, _>(
             transcript,
             GrindingRound::new(0),
@@ -429,7 +429,7 @@ pub fn prove_multiswap_mod_r1cs<T: Transcript + Send>(
         )?
     };
     let (q_prime, q_prime_bits) = {
-        let _scope = crate::utils::prof::scope("multiswap:reduction_prime_prove");
+        let _scope = tracing::info_span!("multiswap:reduction_prime_prove").entered();
         sample_multiswap_reduction_prime(transcript, prepared.profile())?
     };
     let (row_weights_reduced, _, _) = step50_reduce(
@@ -442,8 +442,8 @@ pub fn prove_multiswap_mod_r1cs<T: Transcript + Send>(
 
     // Steps 5.1–5.3: the F2Z opening at the reduced prime.
     let f2z = {
-        let _step5 = crate::utils::prof::scope("step5:open_prove");
-        let _scope = crate::utils::prof::scope("multiswap:f2z_prove");
+        let _step5 = tracing::info_span!("step5:open_prove").entered();
+        let _scope = tracing::info_span!("multiswap:f2z_prove").entered();
         prove_mle_eval_mod_q_ligerito_virtual_runtime(
             transcript,
             hint,
@@ -489,13 +489,13 @@ pub fn verify_multiswap_mod_r1cs<T: Transcript + Send>(
     let binding = assignment_binding(prepared, commitment);
     absorb_spartan_message(transcript, b"multiswap-statement", &binding);
 
-    let step2_scope = crate::utils::prof::scope("step2:project_verify");
+    let step2_scope = tracing::info_span!("step2:project_verify").entered();
     let fingerprint = {
-        let _scope = crate::utils::prof::scope("multiswap:fingerprint_prime_verify");
+        let _scope = tracing::info_span!("multiswap:fingerprint_prime_verify").entered();
         sample_multiswap_fingerprint_context(transcript, prepared.profile())?
     };
     let matrices = {
-        let _scope = crate::utils::prof::scope("multiswap:relation_projection_verify");
+        let _scope = tracing::info_span!("multiswap:relation_projection_verify").entered();
         prepared
             .relation()
             .project::<SpartanF2zField>(fingerprint.field_config())?
@@ -503,19 +503,19 @@ pub fn verify_multiswap_mod_r1cs<T: Transcript + Send>(
     drop(step2_scope);
 
     let terminal_claim = {
-        let _step3 = crate::utils::prof::scope("step3:piop_verify");
-        let _scope = crate::utils::prof::scope("multiswap:spartan_verify");
+        let _step3 = tracing::info_span!("step3:piop_verify").entered();
+        let _scope = tracing::info_span!("multiswap:spartan_verify").entered();
         verify_spartan_proof(transcript, &matrices, &binding, &proof.spartan)?
     };
 
     let opening = {
-        let _step4 = crate::utils::prof::scope("step4:bitify_verify");
-        let _scope = crate::utils::prof::scope("multiswap:bitify_verify");
+        let _step4 = tracing::info_span!("step4:bitify_verify").entered();
+        let _scope = tracing::info_span!("multiswap:bitify_verify").entered();
         bitify_multiswap_claim(&terminal_claim, prepared.layout(), &fingerprint)?
     };
     // Step 5.0: the claimed integer lift must land in the derived mod-Q
     // class and inside the d * Q^2 magnitude bound.
-    let step5_0_scope = crate::utils::prof::scope("step5_0:reduce_verify");
+    let step5_0_scope = tracing::info_span!("step5_0:reduce_verify").entered();
     if !step50_accepts_lift(
         &proof.mu_prime,
         opening.claimed_q,
@@ -533,7 +533,7 @@ pub fn verify_multiswap_mod_r1cs<T: Transcript + Send>(
     );
 
     {
-        let _scope = crate::utils::prof::scope("multiswap:reduction_grinding_verify");
+        let _scope = tracing::info_span!("multiswap:reduction_grinding_verify").entered();
         verify_and_absorb::<MultiswapReductionGrinding, _>(
             transcript,
             GrindingRound::new(0),
@@ -542,7 +542,7 @@ pub fn verify_multiswap_mod_r1cs<T: Transcript + Send>(
         )?;
     }
     let (q_prime, q_prime_bits) = {
-        let _scope = crate::utils::prof::scope("multiswap:reduction_prime_verify");
+        let _scope = tracing::info_span!("multiswap:reduction_prime_verify").entered();
         sample_multiswap_reduction_prime(transcript, prepared.profile())?
     };
     let (row_weights_reduced, col_weights_reduced, claimed_reduced) = step50_reduce(
@@ -553,8 +553,8 @@ pub fn verify_multiswap_mod_r1cs<T: Transcript + Send>(
     );
     drop(step5_0_scope);
 
-    let _step5 = crate::utils::prof::scope("step5:open_verify");
-    let _scope = crate::utils::prof::scope("multiswap:f2z_verify");
+    let _step5 = tracing::info_span!("step5:open_verify").entered();
+    let _scope = tracing::info_span!("multiswap:f2z_verify").entered();
     verify_mle_eval_mod_q_ligerito_virtual_runtime(
         transcript,
         commitment,

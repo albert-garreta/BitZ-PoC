@@ -8,7 +8,7 @@ use f2z::{
         verify_u64_mul, verify_u128_mul,
     },
     transcript::Blake3Transcript,
-    utils::prof,
+    observability::Recording,
 };
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -120,17 +120,36 @@ impl Context {
         config
     }
     pub(super) fn run(&self) -> Timing {
-        let _ = prof::take_intervals();
-        let _ = prof::take_totals();
-        let root = prof::scope("native-mul:root");
-        let total = prof::scope("native-mul:witness_to_proof");
+        let recording = Recording::start(Vec::new()).expect("start F2Z trial");
+        let proof_bytes = self.prove_and_verify();
+        let raw = recording.intervals().expect("query F2Z trial");
+        let trial = super::trace_capture::TrialScopes::from_spans(&raw, "benchmark");
+        let mut timing = Timing::from_trial(&trial, proof_bytes);
+        for (label, name, tag) in [
+            ("native-mul:commit", "commit", "commit"),
+            ("step2:project_prove", "prime_projection", "preparation"),
+            ("step3:piop_prove", "piop", "constraint-proof"),
+            ("step4:bitify_prove", "claim_bridge", "opening-proof"),
+            ("step5:open_prove", "opening", "opening-proof"),
+        ] {
+            let mut matching = raw.iter().filter(|s| s.label() == label);
+            let s = matching.next().unwrap_or_else(|| panic!("missing F2Z {label}"));
+            assert!(matching.next().is_none(), "duplicate F2Z {label}");
+            timing.add(name, tag, s.start_ns, s.end_ns);
+        }
+        timing
+    }
+
+    pub(super) fn prove_and_verify(&self) -> usize {
+        let root = tracing::info_span!("Verified trial", component = "benchmark.verified-trial", tag_end_to_end = true).entered();
+        let total = tracing::info_span!("Witness to proof", component = "benchmark.witness-to-proof").entered();
         // Serialized proof size: the commitment root, the Spartan payload as
         // 16-byte field elements, the transmitted nonces outside the opening
         // as 8-byte words, and the F2Z opening's exact codec bytes.
         let proof_bytes = match &self.relation {
             Relation::U32(relation) => {
                 let witness = {
-                    let _s = prof::scope("native-mul:witness");
+                    let _s = tracing::info_span!("Witness generation", component = "benchmark.witness-evaluation", tag_witness_generation = true).entered();
                     U32MulWitness::from_inputs(&self.corpus.narrow_inputs()).expect("u32 witness")
                 };
                 for (i, &(a, b)) in self.corpus.inputs().iter().enumerate() {
@@ -139,9 +158,9 @@ impl Context {
                         self.corpus.workload.output(a, b)
                     );
                 }
-                let online = prof::scope("native-mul:online");
+                let online = tracing::info_span!("native-mul:online").entered();
                 let hint = {
-                    let _s = prof::scope("native-mul:commit");
+                    let _s = tracing::info_span!("native-mul:commit").entered();
                     commit_u32_mul_witness(relation, witness.f2z_bit_rows())
                         .expect("u32 commitment")
                 };
@@ -150,7 +169,7 @@ impl Context {
                 drop(online);
                 drop(total);
                 {
-                    let _s = prof::scope("native-mul:verify");
+                    let _s = tracing::info_span!("Verification", component = "benchmark.verification", tag_verification = true).entered();
                     verify_u32_mul(
                         &mut Blake3Transcript::new(),
                         relation,
@@ -159,6 +178,7 @@ impl Context {
                     )
                     .expect("u32 full verification");
                 }
+                drop(root);
                 let bytes = hint.commitment.root.len()
                     + proof.spartan_payload_elements() * 16
                     + (proof.grinding_nonce_count(relation.security())
@@ -170,7 +190,7 @@ impl Context {
             }
             Relation::U64(relation) => {
                 let witness = {
-                    let _s = prof::scope("native-mul:witness");
+                    let _s = tracing::info_span!("Witness generation", component = "benchmark.witness-evaluation", tag_witness_generation = true).entered();
                     U64MulWitness::from_inputs(self.corpus.inputs())
                         .and_then(|w| w.with_split_shift(u64_split_shift()))
                         .expect("u64 witness")
@@ -178,9 +198,9 @@ impl Context {
                 for (i, &(a, b)) in self.corpus.inputs().iter().enumerate() {
                     assert_eq!(witness.product(i), self.corpus.workload.output(a, b));
                 }
-                let online = prof::scope("native-mul:online");
+                let online = tracing::info_span!("native-mul:online").entered();
                 let hint = {
-                    let _s = prof::scope("native-mul:commit");
+                    let _s = tracing::info_span!("native-mul:commit").entered();
                     commit_u64_mul_witness(relation, witness.f2z_bit_rows())
                         .expect("u64 commitment")
                 };
@@ -189,7 +209,7 @@ impl Context {
                 drop(online);
                 drop(total);
                 {
-                    let _s = prof::scope("native-mul:verify");
+                    let _s = tracing::info_span!("Verification", component = "benchmark.verification", tag_verification = true).entered();
                     verify_u64_mul(
                         &mut Blake3Transcript::new(),
                         relation,
@@ -198,22 +218,23 @@ impl Context {
                     )
                     .expect("u64 full verification");
                 }
+                drop(root);
                 let bytes = hint.commitment.root.len() + proof.size_bytes(relation.security());
                 std::hint::black_box(proof);
                 bytes
             }
             Relation::U128(relation) => {
                 let witness = {
-                    let _s = prof::scope("native-mul:witness");
+                    let _s = tracing::info_span!("Witness generation", component = "benchmark.witness-evaluation", tag_witness_generation = true).entered();
                     U128MulWitness::from_inputs(self.corpus.wide_inputs()).expect("u128 witness")
                 };
                 for (i, &(x, y)) in self.corpus.wide_inputs().iter().enumerate() {
                     let [_, _, lo, hi] = self.corpus.workload.wide_row(x, y);
                     assert_eq!(witness.product(i), (lo, hi));
                 }
-                let online = prof::scope("native-mul:online");
+                let online = tracing::info_span!("native-mul:online").entered();
                 let hint = {
-                    let _s = prof::scope("native-mul:commit");
+                    let _s = tracing::info_span!("native-mul:commit").entered();
                     commit_u128_mul_witness(relation, witness.f2z_bit_rows())
                         .expect("u128 commitment")
                 };
@@ -222,7 +243,7 @@ impl Context {
                 drop(online);
                 drop(total);
                 {
-                    let _s = prof::scope("native-mul:verify");
+                    let _s = tracing::info_span!("Verification", component = "benchmark.verification", tag_verification = true).entered();
                     verify_u128_mul(
                         &mut Blake3Transcript::new(),
                         relation,
@@ -231,51 +252,22 @@ impl Context {
                     )
                     .expect("u128 full verification");
                 }
+                drop(root);
                 let bytes = hint.commitment.root.len() + proof.size_bytes(relation.security());
                 std::hint::black_box(proof);
                 bytes
             }
         };
-        drop(root);
-        let raw = prof::take_intervals();
-        let _ = prof::take_totals();
-        let find = |label| {
-            raw.iter()
-                .find(|s| s.label == label)
-                .unwrap_or_else(|| panic!("missing F2Z {label}"))
-        };
-        let r = find("native-mul:root");
-        let w = find("native-mul:witness");
-        let t = find("native-mul:witness_to_proof");
-        let v = find("native-mul:verify");
-        let mut timing = Timing::new(
-            r.start_ns,
-            w.end_ns,
-            t.end_ns,
-            v.start_ns,
-            v.end_ns,
-            proof_bytes,
-        );
-        // Account for all online steps without calling prime projection a sumcheck.
-        for (label, name, tag) in [
-            ("native-mul:commit", "commit", "commit"),
-            ("step2:project_prove", "prime_projection", "preparation"),
-            ("step3:piop_prove", "piop", "constraint-proof"),
-            ("step4:bitify_prove", "claim_bridge", "opening-proof"),
-            ("step5:open_prove", "opening", "opening-proof"),
-        ] {
-            let s = find(label);
-            timing.add(name, tag, s.start_ns, s.end_ns);
-        }
-        timing
+        proof_bytes
     }
 }
 
 pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
-    let started = std::time::Instant::now();
+    let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let started = tracing::info_span!("mul_e2e_compare/f2z:started").entered();
     if corpus.workload.is_wide() {
         let w = U128MulWitness::from_inputs(corpus.wide_inputs()).unwrap();
-        let ms = started.elapsed().as_secs_f64() * 1e3;
+        let ms = { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "mul_e2e_compare/f2z:started").expect("query completed operation") }.as_secs_f64() * 1e3;
         let rows = (0..corpus.len())
             .map(|i| {
                 [
@@ -291,7 +283,7 @@ pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
     let (rows, generation_ms) = match corpus.workload {
         Workload::U32 => {
             let w = U32MulWitness::from_inputs(&corpus.narrow_inputs()).unwrap();
-            let ms = started.elapsed().as_secs_f64() * 1e3;
+            let ms = { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "mul_e2e_compare/f2z:started").expect("query completed operation") }.as_secs_f64() * 1e3;
             (
                 (0..corpus.len())
                     .map(|i| {
@@ -311,7 +303,7 @@ pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
             let w = U64MulWitness::from_inputs(corpus.inputs())
                 .and_then(|w| w.with_split_shift(u64_split_shift()))
                 .unwrap();
-            let ms = started.elapsed().as_secs_f64() * 1e3;
+            let ms = { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "mul_e2e_compare/f2z:started").expect("query completed operation") }.as_secs_f64() * 1e3;
             (
                 (0..corpus.len())
                     .map(|i| {
@@ -334,6 +326,23 @@ pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
 #[cfg(test)]
 #[allow(unused_imports)]
 mod tests {
+    #[test]
+    #[ignore = "requires PERFETTO_TRACE_PROCESSOR; exercises F2Z span metrics"]
+    fn f2z_trials_use_perfetto_without_the_legacy_profiler() {
+        use super::*;
+        let _trace = super::super::common::test_tracing();
+        use tracing_subscriber::prelude::*;
+        let context = Context::setup(Arc::new(Corpus::new(Workload::U32, 15, 7)));
+        let bytes = tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || context.prove_and_verify());
+        tracing::subscriber::with_default(tracing_subscriber::registry().with(f2z::observability::layer()), || {
+            for _ in 0..6 {
+                let timing = context.run();
+                timing.validate();
+                assert_eq!(timing.proof_bytes, bytes);
+                assert!(timing.metrics().piop_ms > 0.0);
+            }
+        });
+    }
     use super::*;
 
     #[test]

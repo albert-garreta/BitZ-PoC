@@ -54,7 +54,6 @@ mod common;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::hint::black_box;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Instant;
 
 use f2z::ext_proj::{ExtProjParams, ProjArith, sample_proj_point, sample_proj_prime};
 use f2z::ligerito::packed_vars;
@@ -144,7 +143,7 @@ fn sample_standalone_instance(
     p: &IntegerMatrixLayout,
     q_bits: usize,
 ) -> StandaloneInstance {
-    let _g = f2z::utils::prof::scope("mq:sample_instance");
+    let _g = tracing::info_span!("mq:sample_instance").entered();
     let proj = ExtProjParams { prime_bits: q_bits, ..ExtProjParams::default() };
     let q = sample_proj_prime(transcript, &proj);
     let arith = ProjArith::new(q);
@@ -193,17 +192,19 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     let q_bits = standalone_q_bits(&p);
     let m_p = packed_vars(&p);
     let lch = mod_q_num_chunks(&p, q_bits);
-    let setup_started = Instant::now();
+    let setup_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let setup_started = tracing::info_span!("pcs:setup_started").entered();
     let ((pc, vc), lig_tag, ood, resolved) = bench_lig_configs(m_p);
     println!("LIGERITO_CONFIG {}", common::ligerito_report(&resolved, ood));
-    let setup_ms = setup_started.elapsed().as_secs_f64() * 1e3;
+    let setup_ms = { drop(setup_started); f2z::observability::duration(&setup_started_recording.intervals().expect("complete operation capture"), "pcs:setup_started").expect("query completed operation") }.as_secs_f64() * 1e3;
 
     // Deterministic non-degenerate instance, generated STRAIGHT INTO the
     // per-column bit rows (`repack_leaf_bits` layout: bit `(b<<log₂W)|j`
     // of row `c` = bit `j` of cell `(b,c)`) — the `u128` cell tensor
     // (16 B per cell; 17 GB at n=30) never exists, mirroring the
     // upstream packed-transpose commit restructure.
-    let witness_started = Instant::now();
+    let witness_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let witness_started = tracing::info_span!("pcs:witness_started").entered();
     let mask = if w >= 128 { u128::MAX } else { (1u128 << w) - 1 };
     let cell = |b: usize, c: usize| -> u128 {
         (p.cell_index(b, c) as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & mask
@@ -239,7 +240,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
             wv
         })
         .collect();
-    let witness_ms = witness_started.elapsed().as_secs_f64() * 1e3;
+    let witness_ms = { drop(witness_started); f2z::observability::duration(&witness_started_recording.intervals().expect("complete operation capture"), "pcs:witness_started").expect("query completed operation") }.as_secs_f64() * 1e3;
 
     let n = t + s;
     println!(
@@ -253,9 +254,11 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
 
     // Commit: timed + its own peak window (the commitment/hint stays live).
     reset_peak();
-    let t0 = Instant::now();
-    let hint = commit_rs_ligerito_rows(&p, rows, &pc);
-    let commit_ms = t0.elapsed().as_secs_f64() * 1e3;
+    let (hint, t0) = f2z::observability::measure(
+        tracing::info_span!("pcs:hint"),
+        || commit_rs_ligerito_rows(&p, rows, &pc),
+    ).expect("measure completed operation");
+    let commit_ms = t0.as_secs_f64() * 1e3;
     println!(
         "  commit:  {commit_ms:8.2} ms   peak {:8.2} MB   live-after {:6.2} MB",
         peak_mb(),
@@ -359,13 +362,17 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     let mut bytes = 0usize;
     let mut proof_fnv = 0u64;
     for _ in 0..reps {
-        let t0 = Instant::now();
-        let proof = prove_once(&hint);
-        prove_ms.push(t0.elapsed().as_secs_f64() * 1e3);
+        let (proof, t0) = f2z::observability::measure(
+            tracing::info_span!("pcs:proof"),
+            || prove_once(&hint),
+        ).expect("measure completed operation");
+        prove_ms.push(t0.as_secs_f64() * 1e3);
 
-        let t1 = Instant::now();
-        let ser = proof.to_bytes();
-        ser_us.push(t1.elapsed().as_secs_f64() * 1e6);
+        let (ser, t1) = f2z::observability::measure(
+            tracing::info_span!("pcs:ser"),
+            || proof.to_bytes(),
+        ).expect("measure completed operation");
+        ser_us.push(t1.as_secs_f64() * 1e6);
         bytes = ser.len();
         // FNV-1a over the serialized proof: the byte-identity pin for
         // `F2Z_COL_ELIDE=0` vs `=1` at the same shape and fill.
@@ -373,35 +380,37 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
             (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
         });
 
-        let t2 = Instant::now();
-        let de = f2z::ligerito_flock::IntEvalRsLigModQProof::from_bytes(&ser).expect("codec");
-        de_us.push(t2.elapsed().as_secs_f64() * 1e6);
+        let (de, t2) = f2z::observability::measure(
+            tracing::info_span!("pcs:de"),
+            || f2z::ligerito_flock::IntEvalRsLigModQProof::from_bytes(&ser).expect("codec"),
+        ).expect("measure completed operation");
+        de_us.push(t2.as_secs_f64() * 1e6);
         black_box(&de);
 
-        let t3 = Instant::now();
+        let t3_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t3 = tracing::info_span!("pcs:t3").entered();
         verify_once(&proof).expect("verify");
-        verify_ms.push(t3.elapsed().as_secs_f64() * 1e3);
+        verify_ms.push({ drop(t3); f2z::observability::duration(&t3_recording.intervals().expect("complete operation capture"), "pcs:t3").expect("query completed operation") }.as_secs_f64() * 1e3);
     }
 
     // Peak + phase split over one prove (heap high-water; the commit hint
-    // is live below it). Phase times ride the in-crate prof scaffold and
-    // appear only under `OBLONG_PROFILE=1` (the timed medians above then
-    // carry ~µs-scale scope overhead — enable it for breakdown runs, not
-    // for headline timing); the proof-size split is always available.
+    // is live below it). Phase times come from completed Perfetto intervals;
+    // trace extraction and querying happen after the heap snapshot.
     // Release flock's cross-prove scratch pool first: the reported prove
     // peak is the production single-prove shape (pool cold), not the
     // reps-warmed pool stacked under the forest. The timed medians above
     // deliberately keep the warm pool — that IS the steady-state timing.
     f2z::ligerito_flock::flock_scratch_clear();
+    let recording = f2z::observability::Recording::start(Vec::new()).expect("start PCS phase probe");
     reset_peak();
-    let _ = f2z::utils::prof::take_totals(); // drain the timed reps' records
+
     let split_proof = {
         let proof = prove_once(&hint);
         black_box(&proof);
         proof
     };
     let prove_peak = peak_mb();
-    let phases = f2z::utils::prof::take_totals();
+    let phases = f2z::observability::totals(&recording.intervals().expect("query PCS phase probe"));
 
     let prove_median = median(prove_ms);
     let verify_median = median(verify_ms);
@@ -409,7 +418,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     let mut forest_split = None;
     if !phases.is_empty() {
         let phase_ms = |labels: &[&str]| -> f64 {
-            phases.iter().filter(|(l, _)| labels.contains(l)).map(|(_, s)| s).sum::<f64>() * 1e3
+            phases.iter().filter(|(l, _)| labels.contains(&l.as_str())).map(|(_, s)| s).sum::<f64>() * 1e3
         };
         let forest_ms = phase_ms(&[
             "mc:pack",
@@ -449,7 +458,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     // Unified RESULT line (docs/bench-schema.md). PCS-only: the whole
     // measured prove is Steps 5.1–5.3, so steps 2/3/4/5.0 are `na` and the
     // end-to-end prover is commit + open. The forest/opener detail is
-    // populated only under OBLONG_PROFILE=1 (one profiled prove).
+    // populated from one profiled prove.
     let na = common::StepMedians {
         total: 0.0,
         commit: None,
@@ -767,24 +776,30 @@ fn bench_ext_arm<K: BenchExtField>(
     let mut bytes = 0usize;
     for _ in 0..reps {
         let mut pt = f2z::transcript::Blake3Transcript::new();
-        let t0 = Instant::now();
-        let proof =
-            prove_mle_eval_ext_ligerito_with_ood(
+        let (proof, t0) = f2z::observability::measure(
+            tracing::info_span!("pcs:proof"),
+            || prove_mle_eval_ext_ligerito_with_ood(
                 &mut pt, hint, p, &coords, q_bits, &proj, alpha, ood, pc,
-            );
-        prove_ms.push(t0.elapsed().as_secs_f64() * 1e3);
+            ),
+        ).expect("measure completed operation");
+        prove_ms.push(t0.as_secs_f64() * 1e3);
 
-        let t1 = Instant::now();
-        let ser = proof.to_bytes();
-        ser_us.push(t1.elapsed().as_secs_f64() * 1e6);
+        let (ser, t1) = f2z::observability::measure(
+            tracing::info_span!("pcs:ser"),
+            || proof.to_bytes(),
+        ).expect("measure completed operation");
+        ser_us.push(t1.as_secs_f64() * 1e6);
         bytes = ser.len();
-        let t2 = Instant::now();
-        let de = f2z::ligerito_flock::IntEvalRsLigExtProof::from_bytes(&ser).expect("codec");
-        de_us.push(t2.elapsed().as_secs_f64() * 1e6);
+        let (de, t2) = f2z::observability::measure(
+            tracing::info_span!("pcs:de"),
+            || f2z::ligerito_flock::IntEvalRsLigExtProof::from_bytes(&ser).expect("codec"),
+        ).expect("measure completed operation");
+        de_us.push(t2.as_secs_f64() * 1e6);
         black_box(&de);
 
         let mut vt = f2z::transcript::Blake3Transcript::new();
-        let t3 = Instant::now();
+        let t3_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t3 = tracing::info_span!("pcs:t3").entered();
         verify_mle_eval_ext_ligerito_with_ood(
             &mut vt,
             &hint.commitment,
@@ -801,12 +816,12 @@ fn bench_ext_arm<K: BenchExtField>(
             vc,
         )
         .expect("ext verify");
-        verify_ms.push(t3.elapsed().as_secs_f64() * 1e3);
+        verify_ms.push({ drop(t3); f2z::observability::duration(&t3_recording.intervals().expect("complete operation capture"), "pcs:t3").expect("query completed operation") }.as_secs_f64() * 1e3);
     }
 
-    // Ext phase scopes over one profiled prove + one profiled verify
-    // (OBLONG_PROFILE=1 to populate).
-    let _ = f2z::utils::prof::take_totals();
+    // Ext phase scopes over one profiled prove + one profiled verify.
+    let recording = f2z::observability::Recording::start(Vec::new()).expect("start ext phase probe");
+
     let proof = {
         let mut pt = f2z::transcript::Blake3Transcript::new();
         let proof =
@@ -816,7 +831,8 @@ fn bench_ext_arm<K: BenchExtField>(
         black_box(&proof);
         proof
     };
-    let prove_phases = f2z::utils::prof::take_totals();
+    let prove_phases = f2z::observability::totals(&recording.intervals().expect("query ext prove probe"));
+    let recording = f2z::observability::Recording::start(Vec::new()).expect("start ext verify probe");
     {
         let mut vt = f2z::transcript::Blake3Transcript::new();
         verify_mle_eval_ext_ligerito_with_ood(
@@ -836,8 +852,8 @@ fn bench_ext_arm<K: BenchExtField>(
         )
         .expect("ext verify (profiled)");
     }
-    let verify_phases = f2z::utils::prof::take_totals();
-    let pick = |phases: &[(&'static str, f64)], label: &str| -> f64 {
+    let verify_phases = f2z::observability::totals(&recording.intervals().expect("query ext verify probe"));
+    let pick = |phases: &[(String, f64)], label: &str| -> f64 {
         phases.iter().filter(|(l, _)| *l == label).map(|(_, s)| s).sum::<f64>() * 1e3
     };
 
@@ -869,6 +885,7 @@ fn bench_ext_arm<K: BenchExtField>(
 }
 
 fn main() {
+    f2z::observability::install().expect("install Perfetto subscriber");
     common::enforce_known_env();
     if std::env::var_os("F2Z_BENCH_LAMBDA").is_some() {
         common::warn(

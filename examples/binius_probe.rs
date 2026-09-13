@@ -1,14 +1,14 @@
 //! Phase profile of one all-Binius64 prove: the `all-binius` circuit of
 //! `benches/hybrid_u32_sha256` (N four-limb mod-2^32 multiplication gadgets and
 //! M chained SHA-256 compressions) proved by Binius64's own prover, with its
-//! `[phase]` tracing spans printed on close (`time.busy` per phase). One
+//! tracing spans queried from Perfetto and printed as interval-union totals. One
 //! warm-up prove is discarded, then `PROBE_REPS` (default 1) profiled proves
 //! per shape; every profiled proof is verified.
 //!
 //! ```text
 //! PROBE_SHAPES="14:14" RAYON_NUM_THREADS=8 F2Z_HYBRID_BINIUS_LOG_INV_RATE=3 \
 //!   F2Z_HYBRID_BINIUS_SECURITY_BITS=100 RUSTFLAGS="-C target-cpu=native" \
-//!   cargo run --release --example binius_probe --features hybrid
+//!   cargo run --release --example binius_probe --features hybrid,span-metrics
 //! ```
 use binius_circuits::sha256::compress::{State, sha256_compress_2x_seq};
 use binius_core::word::Word;
@@ -18,8 +18,6 @@ use binius_prover::{OptimalPackedB128, Prover};
 use binius_transcript::{ProverTranscript, VerifierTranscript, fiat_shamir::HasherChallenger};
 use binius_verifier::Verifier;
 use f2z::hybrid::{U32MulMod32Row, chaining_value};
-use std::time::Instant;
-use tracing_subscriber::fmt::format::FmtSpan;
 
 type Challenger = HasherChallenger<blake3::Hasher>;
 
@@ -28,12 +26,7 @@ fn env_usize(name: &str, default: usize) -> usize {
 }
 
 fn main() {
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_target(false)
-        .with_span_events(FmtSpan::CLOSE)
-        .with_max_level(tracing::Level::INFO)
-        .init();
+    f2z::observability::install().expect("install Perfetto subscriber");
     let shapes: Vec<(u32, u32)> = std::env::var("PROBE_SHAPES")
         .map(|v| {
             v.split_whitespace()
@@ -50,7 +43,8 @@ fn main() {
     for (mul_log, sha_log) in shapes {
         let multiplications = 1usize << mul_log;
         let compressions = 1usize << sha_log;
-        let t0 = Instant::now();
+        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t0 = tracing::info_span!("binius_probe:t0").entered();
         // The `all-binius` circuit of the bench runner.
         let builder = CircuitBuilder::new();
         let mul_wires: Vec<_> = (0..multiplications)
@@ -78,7 +72,7 @@ fn main() {
         let prover = Prover::<OptimalPackedB128, Blake3HashSuite>::setup(verifier.clone()).expect("prover setup");
         eprintln!(
             "setup {mul_log}:{sha_log} {:.0} ms (log_inv_rate={log_inv_rate}, security_bits={security_bits})",
-            t0.elapsed().as_secs_f64() * 1e3
+            { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "binius_probe:t0").expect("query completed operation") }.as_secs_f64() * 1e3
         );
         let inputs: Vec<_> = (0..multiplications as u32)
             .map(|i| (i.wrapping_mul(0x9e3779b9), u32::MAX - i))
@@ -87,7 +81,8 @@ fn main() {
             .map(|i| std::array::from_fn(|j| i.wrapping_mul(0x85ebca6b).wrapping_add(j as u32)))
             .collect();
         for rep in 0..=reps {
-            let start = Instant::now();
+            let start_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let start = tracing::info_span!("binius_probe:start").entered();
             let rows: Vec<_> = inputs.iter().map(|&(x, y)| U32MulMod32Row::new(x, y)).collect();
             let mut filler = circuit.new_witness_filler();
             for (wires, row) in mul_wires.iter().zip(&rows) {
@@ -105,19 +100,26 @@ fn main() {
             }
             circuit.populate_wire_witness(&mut filler).expect("witness");
             let witness = filler.into_value_vec();
-            let witness_ms = start.elapsed().as_secs_f64() * 1e3;
-            let t1 = Instant::now();
+            let witness_ms = { drop(start); f2z::observability::duration(&start_recording.intervals().expect("complete operation capture"), "binius_probe:start").expect("query completed operation") }.as_secs_f64() * 1e3;
+            let t1_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t1 = tracing::info_span!("binius_probe:t1").entered();
             let label = if rep == 0 { "warmup (discard)".to_string() } else { format!("rep {rep}") };
             eprintln!("--- {mul_log}:{sha_log} {label}: prove spans follow");
             let mut t = ProverTranscript::new(Challenger::default());
             prover.prove(&witness, &mut t).expect("prove");
             let bytes = t.finalize();
-            let prove_ms = t1.elapsed().as_secs_f64() * 1e3;
-            let t2 = Instant::now();
+            drop(t1);
+            let prove_intervals = t1_recording.intervals().expect("complete prove capture");
+            let prove_ms = f2z::observability::duration(&prove_intervals, "binius_probe:t1")
+                .expect("query completed prove").as_secs_f64() * 1e3;
+            f2z::observability::write_profile(std::io::stderr().lock(), &label, &prove_intervals, None)
+                .expect("write prove profile");
+            let t2_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t2 = tracing::info_span!("binius_probe:t2").entered();
             let mut vt = VerifierTranscript::new(Challenger::default(), bytes.clone());
             verifier.verify(witness.inout(), &mut vt).expect("verify");
             vt.finalize().expect("finalize");
-            let verify_ms = t2.elapsed().as_secs_f64() * 1e3;
+            let verify_ms = { drop(t2); f2z::observability::duration(&t2_recording.intervals().expect("complete operation capture"), "binius_probe:t2").expect("query completed operation") }.as_secs_f64() * 1e3;
             eprintln!(
                 "=== {mul_log}:{sha_log} {label}: witness {witness_ms:.1} ms + prove {prove_ms:.1} ms = {:.1} ms, verify {verify_ms:.1} ms, proof {} B",
                 witness_ms + prove_ms,

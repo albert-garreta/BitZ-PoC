@@ -2287,7 +2287,7 @@ where
         assert!(k >= 3, "Pair3Bits groups need k >= 3 (use Pair2Bits at k = 2)");
     }
     let suffix: Vec<SuffixTensorArena<F>> = {
-        let _g = crate::utils::prof::scope("eqf:suffix");
+        let _g = tracing::info_span!("eqf:suffix").entered();
         if shared_q {
             vec![suffix_tensors(&groups[0].q, field_cfg)]
         } else {
@@ -2308,7 +2308,7 @@ where
         bufs.push(g.bufs);
     }
 
-    let _g = crate::utils::prof::scope("eqf:rounds");
+    let _g = tracing::info_span!("eqf:rounds").entered();
     let mut buf = vec![0u8; F::Inner::NUM_BYTES];
     // Header — mirror `prove_as_subprotocol`.
     transcript.absorb_random_field(&F::from_with_cfg(k as u64, field_cfg), &mut buf);
@@ -2388,7 +2388,7 @@ where
         // set only XOR-selects from them).
         let leaf_tables: Vec<LeafTables<F>> =
             if j == 1 && (has_leaf || has_leaf2 || has_leaf3 || has_leaf4) {
-            let _g = crate::utils::prof::scope("eqf:leaf_tables");
+            let _g = tracing::info_span!("eqf:leaf_tables").entered();
             let v1 = suffix[0].tensor(0);
             // Mirror [`leaf_round1_tiled`]'s engagement condition: the
             // tiled body wants the Precombined ΔΔ form.
@@ -2400,7 +2400,7 @@ where
             Vec::new()
         };
         let pair2_tables: Vec<Pair2Tables<F>> = if j == 1 && (has_pair || has_pair3) {
-            let _g = crate::utils::prof::scope("eqf:pair2_tables");
+            let _g = tracing::info_span!("eqf:pair2_tables").entered();
             let v1 = suffix[0].tensor(0);
             cfg_iter!(pair_tau_sets).map(|set| build_pair2_tables(v1, set)).collect()
         } else {
@@ -2410,7 +2410,7 @@ where
         // stashed ρ₁-dependent value sets, weighted by V_2.
         let leaf2_tables: Vec<Pair2Tables<F>> = if j == 2 && (has_leaf2 || has_leaf3 || has_leaf4)
         {
-            let _g = crate::utils::prof::scope("eqf:leaf2_tables");
+            let _g = tracing::info_span!("eqf:leaf2_tables").entered();
             let v2 = suffix[0].tensor(1);
             cfg_iter!(leaf2_value_sets).map(|set| build_pair2_tables(v2, set)).collect()
         } else {
@@ -2845,7 +2845,7 @@ where
                 .map(|(t, gg)| grid_this_round(gg, &qs[if shared_q { 0 } else { t }][j], &one))
                 .collect()
         } else if double_now {
-            let _g_msg = crate::utils::prof::scope("eqf:grid");
+            let _g_msg = tracing::info_span!("eqf:grid").entered();
             let quads = half >> 1;
             let pend = core::mem::take(&mut pending);
             let out: Vec<[F; 9]> = if let Some(fs) = flat.as_mut() {
@@ -2894,7 +2894,7 @@ where
         } else if pending.len() == 2 {
             // Tail of a double-fold cascade: two deferred challenges, one
             // round's message.
-            let _g_msg = crate::utils::prof::scope("eqf:fmsg2");
+            let _g_msg = tracing::info_span!("eqf:fmsg2").entered();
             let pend = core::mem::take(&mut pending);
             if let Some(fs) = flat.as_mut() {
                 let read = (half << 1) << pend.len();
@@ -2957,7 +2957,7 @@ where
                 }
             }
         } else if let Some(rho_prev) = pending.pop() {
-            let _g_msg = crate::utils::prof::scope("eqf:fmsg");
+            let _g_msg = tracing::info_span!("eqf:fmsg").entered();
             if let Some(fs) = flat.as_mut() {
                 let read = half << 2;
                 let sfx = suffix[0].tensor(j - 1);
@@ -3036,7 +3036,7 @@ where
                 (GroupBufs::Pair3Bits { .. }, _) => "eqf:msg:pair3_r2",
                 (GroupBufs::T4Bits { .. }, _) => "eqf:msg:t4bits",
             };
-            let _g_msg = crate::utils::prof::scope(msg_label);
+            let _g_msg = tracing::info_span!("sumcheck_message", component = msg_label).entered();
             if let Some(fs) = &flat {
                 // Flat no-fold message pass (round 1 of a stored layer):
                 // read-only over the segments' live prefix.
@@ -3055,7 +3055,7 @@ where
             // they are wide-mul-bound, not table-bandwidth-bound) — only
             // the pick/XOR-heavy leaf round 1 profits.
             let tiled = if j == 1 && leaf_tile_enabled() {
-                let _g_tile = crate::utils::prof::scope("eqf:tile_r1");
+                let _g_tile = tracing::info_span!("eqf:tile_r1").entered();
                 leaf_round1_tiled(&bufs, &leaf_tables, half, &zero)
             } else {
                 None
@@ -3086,7 +3086,7 @@ where
             }
         };
 
-        let _g_close = crate::utils::prof::scope("eqf:close");
+        let _g_close = tracing::info_span!("eqf:close").entered();
         let tail = if gruen {
             // Gruen format (shared q, asserted): the round polynomial is
             // P(X) = eq1(X; q[j−1]) · Ĥ(X) with Ĥ = Σ_t A_t·H_t quadratic;
@@ -3229,7 +3229,7 @@ where
             let mats_pre = mats_pre_enabled()
                 && ((has_pair3 && j == 2) || (has_leaf3 && !has_leaf4 && j == 3));
             if mats_pre {
-                let _g = crate::utils::prof::scope("eqf:mats_pre");
+                let _g = tracing::info_span!("eqf:mats_pre").entered();
                 let sets =
                     if j == 2 { &mut pair3_value_sets } else { &mut leaf3_value_sets };
                 for set in sets.iter_mut() {
@@ -3585,7 +3585,7 @@ where
             let tiled_mats: Option<(Vec<(Vec<F>, Vec<F>)>, Vec<Option<[F; 9]>>)> = if mats_pre
                 && mats_tile_engaged(half)
             {
-                let _g_t = crate::utils::prof::scope("eqf:fold:mats_tile");
+                let _g_t = tracing::info_span!("eqf:fold:mats_tile").entered();
                 let sfx: &[F] = if mat_grid_now { suffix[0].tensor(j + 1) } else { &[] };
                 let sets_uniform =
                     if j == 2 { pair3_value_sets.len() == 1 } else { leaf3_value_sets.len() == 1 };
@@ -3666,7 +3666,7 @@ where
                 // defer their folds into the next pass): fold each
                 // segment's live prefix in place, exactly the Dense
                 // in-place fold without the truncation.
-                let _g_fold = crate::utils::prof::scope(fold_label);
+                let _g_fold = tracing::info_span!("sumcheck_fold", component = fold_label).entered();
                 let read = half << 1;
                 let _: Vec<()> = flat_map_segments(fs, half, |_t, lseg, rseg| {
                     flat_fold_side(&mut lseg[..read], &rho, half);
@@ -3674,7 +3674,7 @@ where
                 });
                 Vec::new()
             } else {
-                let _g_fold = crate::utils::prof::scope(fold_label);
+                let _g_fold = tracing::info_span!("sumcheck_fold", component = fold_label).entered();
                 #[cfg(feature = "parallel")]
                 let out: Vec<Option<[F; 9]>> = {
                     let min_len = par_min_len(num_groups, half);

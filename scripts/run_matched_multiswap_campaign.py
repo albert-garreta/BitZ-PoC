@@ -186,7 +186,7 @@ def build_cells(
                     "cwd": str(f2z_root),
                     "trace": str(Path("..") / "raw" / trace.name),
                     "log": str(Path("..") / "logs" / f"{cell_id}.log"),
-                    "command": ["cargo", "bench", "--bench", "multiswap", "--features", "unchecked"],
+                    "command": ["cargo", "bench", "--bench", "multiswap", "--features", "unchecked,span-metrics"],
                     "environment": environment,
                     "status": "planned",
                 }

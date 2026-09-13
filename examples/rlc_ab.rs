@@ -15,7 +15,7 @@
 //!
 //! ```text
 //! F2Z_AB_N="22 24 26" F2Z_AB_REPS=5 RUSTFLAGS="-C target-cpu=native" \
-//!   cargo run --release --example rlc_ab --features unchecked
+//!   cargo run --release --example rlc_ab --features unchecked,span-metrics
 //! ```
 
 use f2z::ligerito::packed_vars;
@@ -32,7 +32,6 @@ use f2z::pcs::{
     smallest_generator, virtual_xor_params,
 };
 use f2z::transcript::Blake3Transcript;
-use std::time::Instant;
 
 /// n → the A/B layout: 4 UAIR columns (log_cols = 2) of 32-bit words
 /// (bit_vars = 5), the remaining n − 2 variables split t' vs s as evenly
@@ -64,6 +63,7 @@ fn median(mut v: Vec<f64>) -> f64 {
 }
 
 fn main() {
+    f2z::observability::install().expect("install Perfetto subscriber");
     let alpha = smallest_generator();
     let ns: Vec<usize> = std::env::var("F2Z_AB_N")
         .map(|v| v.split_whitespace().map(|x| x.parse().unwrap()).collect())
@@ -171,44 +171,48 @@ fn main() {
             let mut t_vxx1 = Vec::with_capacity(reps);
             let mut t_single1 = Vec::with_capacity(reps);
             for _ in 0..reps {
-                let t0 = Instant::now();
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr = {
                     let mut pt = Blake3Transcript::new();
                     prove_mle_eval_mod_q_ligerito_claims_only(
                         &mut pt, &hint, &layout, FQ_BITS, &vx_of(&[0]), alpha, &pc,
                     )
                 };
-                t_single1.push(t0.elapsed().as_secs_f64() * 1e3);
+                t_single1.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
                 std::hint::black_box(&pr);
 
-                let t0 = Instant::now();
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr = {
                     let mut pt = Blake3Transcript::new();
                     prove_mle_eval_mod_q_ligerito_rlc_family(
                         &mut pt, &hint, &layout, &single_family_col, &rlc1_claims, alpha, &pc,
                     )
                 };
-                t_rlc1.push(t0.elapsed().as_secs_f64() * 1e3);
+                t_rlc1.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
                 std::hint::black_box(&pr);
 
-                let t0 = Instant::now();
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr = {
                     let mut pt = Blake3Transcript::new();
                     prove_mle_eval_mod_q_ligerito_claims_only(
                         &mut pt, &hint, &layout, FQ_BITS, &vx_of(&[2]), alpha, &pc,
                     )
                 };
-                t_vxx1.push(t0.elapsed().as_secs_f64() * 1e3);
+                t_vxx1.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
                 std::hint::black_box(&pr);
 
-                let t0 = Instant::now();
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr = {
                     let mut pt = Blake3Transcript::new();
                     prove_mle_eval_mod_q_ligerito_rlc_family(
                         &mut pt, &hint, &layout, &family_cols, &rlcx1_claims, alpha, &pc,
                     )
                 };
-                t_rlcx1.push(t0.elapsed().as_secs_f64() * 1e3);
+                t_rlcx1.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
                 std::hint::black_box(&pr);
             }
             // Sanity: the two family singles verify.
@@ -305,27 +309,30 @@ fn main() {
             let mut t_ind4 = Vec::with_capacity(reps);
             let mut sz = (0usize, 0usize, 0usize);
             for rep in 0..reps {
-                let t0 = Instant::now();
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr_rlc = {
                     let mut pt = Blake3Transcript::new();
                     prove_mle_eval_mod_q_ligerito_rlc_family(
                         &mut pt, &hint, &layout, &family3, &claims3, alpha, &pc,
                     )
                 };
-                t_rlc4.push(t0.elapsed().as_secs_f64() * 1e3);
+                t_rlc4.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
                 std::hint::black_box(&pr_rlc);
 
-                let t0 = Instant::now();
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr_vx = {
                     let mut pt = Blake3Transcript::new();
                     prove_mle_eval_mod_q_ligerito_claims_only(
                         &mut pt, &hint, &layout, FQ_BITS, &vx3_of(&[0, 1, 2, 3]), alpha, &pc,
                     )
                 };
-                t_vx4.push(t0.elapsed().as_secs_f64() * 1e3);
+                t_vx4.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
                 std::hint::black_box(&pr_vx);
 
-                let t0 = Instant::now();
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr_inds: Vec<_> = (0..4)
                     .map(|i| {
                         let mut pt = Blake3Transcript::new();
@@ -334,7 +341,7 @@ fn main() {
                         )
                     })
                     .collect();
-                t_ind4.push(t0.elapsed().as_secs_f64() * 1e3);
+                t_ind4.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
                 std::hint::black_box(&pr_inds);
 
                 if rep == 0 {
@@ -462,15 +469,17 @@ fn main() {
                     let mut t: Vec<Vec<f64>> = vec![Vec::with_capacity(reps); 8];
                     let mut sz = (0usize, 0usize, 0usize);
                     for rep in 0..reps {
-                        let t0 = Instant::now();
+                        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                        let t0 = tracing::info_span!("rlc_ab:t0").entered();
                         let pr_s = {
                             let mut pt = Blake3Transcript::new();
                             prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
                                 &mut pt, &hint, &layout, &family, &rw_s, &sh_claims, alpha, &pc,
                             )
                         };
-                        t[0].push(t0.elapsed().as_secs_f64() * 1e3);
-                        let t0 = Instant::now();
+                        t[0].push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                        let t0 = tracing::info_span!("rlc_ab:t0").entered();
                         {
                             let mut vt = Blake3Transcript::new();
                             verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
@@ -479,17 +488,19 @@ fn main() {
                             )
                             .expect("rlcS verifies");
                         }
-                        t[4].push(t0.elapsed().as_secs_f64() * 1e3);
+                        t[4].push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
 
-                        let t0 = Instant::now();
+                        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                        let t0 = tracing::info_span!("rlc_ab:t0").entered();
                         let pr_g = {
                             let mut pt = Blake3Transcript::new();
                             prove_mle_eval_mod_q_ligerito_rlc_family(
                                 &mut pt, &hint, &layout, &family, &gen_claims, alpha, &pc,
                             )
                         };
-                        t[1].push(t0.elapsed().as_secs_f64() * 1e3);
-                        let t0 = Instant::now();
+                        t[1].push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                        let t0 = tracing::info_span!("rlc_ab:t0").entered();
                         {
                             let mut vt = Blake3Transcript::new();
                             verify_mle_eval_mod_q_ligerito_rlc_family(
@@ -498,18 +509,20 @@ fn main() {
                             )
                             .expect("rlcG verifies");
                         }
-                        t[5].push(t0.elapsed().as_secs_f64() * 1e3);
+                        t[5].push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
 
                         let pr_vx = if run_vx {
-                            let t0 = Instant::now();
+                            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                            let t0 = tracing::info_span!("rlc_ab:t0").entered();
                             let pr = {
                                 let mut pt = Blake3Transcript::new();
                                 prove_mle_eval_mod_q_ligerito_claims_only(
                                     &mut pt, &hint, &layout, FQ_BITS, &vx_claims, alpha, &pc,
                                 )
                             };
-                            t[2].push(t0.elapsed().as_secs_f64() * 1e3);
-                            let t0 = Instant::now();
+                            t[2].push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                            let t0 = tracing::info_span!("rlc_ab:t0").entered();
                             {
                                 let mut vt = Blake3Transcript::new();
                                 verify_mle_eval_mod_q_ligerito_claims_only(
@@ -518,13 +531,14 @@ fn main() {
                                 )
                                 .expect("vx verifies");
                             }
-                            t[6].push(t0.elapsed().as_secs_f64() * 1e3);
+                            t[6].push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
                             Some(pr)
                         } else {
                             None
                         };
 
-                        let t0 = Instant::now();
+                        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                        let t0 = tracing::info_span!("rlc_ab:t0").entered();
                         let pr_inds: Vec<_> = (0..k)
                             .map(|i| {
                                 let mut pt = Blake3Transcript::new();
@@ -534,8 +548,9 @@ fn main() {
                                 )
                             })
                             .collect();
-                        t[3].push(t0.elapsed().as_secs_f64() * 1e3);
-                        let t0 = Instant::now();
+                        t[3].push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                        let t0 = tracing::info_span!("rlc_ab:t0").entered();
                         for (i, pr) in pr_inds.iter().enumerate() {
                             let mut vt = Blake3Transcript::new();
                             verify_mle_eval_mod_q_ligerito_claims_only(
@@ -544,7 +559,7 @@ fn main() {
                             )
                             .unwrap_or_else(|e| panic!("ind[{i}] verifies: {e:?}"));
                         }
-                        t[7].push(t0.elapsed().as_secs_f64() * 1e3);
+                        t[7].push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
 
                         if rep == 0 {
                             sz = (
@@ -622,17 +637,19 @@ fn main() {
                         .map(|(&form, &claimed)| RlcSharedClaim { form, claimed })
                         .collect();
                     let mut pt = Blake3Transcript::new();
+                    let profile = f2z::observability::Recording::start(Vec::new()).expect("capture profile");
                     let pr = prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
                         &mut pt, &hint, &layout, &family, &rw_p, &cl_p, alpha, &pc,
                     );
-                    f2z::utils::prof::dump_and_reset(&format!("rlcS prove j{j} n={n}"));
+                    f2z::observability::write_profile(std::io::stderr().lock(), &format!("rlcS prove j{j} n={n}"), &profile.intervals().expect("profile intervals"), None).expect("write profile");
+                    let profile = f2z::observability::Recording::start(Vec::new()).expect("capture profile");
                     let mut vt = Blake3Transcript::new();
                     verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
                         &mut vt, &hint.commitment, &pr, &layout, &family, &rw_p, &cl_p, &colw,
                         alpha, &vc,
                     )
                     .expect("profiled rlcS verifies");
-                    f2z::utils::prof::dump_and_reset(&format!("rlcS verify j{j} n={n}"));
+                    f2z::observability::write_profile(std::io::stderr().lock(), &format!("rlcS verify j{j} n={n}"), &profile.intervals().expect("profile intervals"), None).expect("write profile");
                 }
             }
         }
@@ -644,37 +661,41 @@ fn main() {
         let mut t_ind3 = Vec::with_capacity(reps);
         let mut sizes = (0usize, 0usize, 0usize); // rlc3, vx3, ind3
         for rep in 0..reps {
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("rlc_ab:t0").entered();
             let pr_single = {
                 let mut pt = Blake3Transcript::new();
                 prove_mle_eval_mod_q_ligerito_claims_only(
                     &mut pt, &hint, &layout, FQ_BITS, &vx_of(&[0]), alpha, &pc,
                 )
             };
-            t_single.push(t0.elapsed().as_secs_f64() * 1e3);
+            t_single.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
             std::hint::black_box(&pr_single);
 
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("rlc_ab:t0").entered();
             let pr_rlc = {
                 let mut pt = Blake3Transcript::new();
                 prove_mle_eval_mod_q_ligerito_rlc_family(
                     &mut pt, &hint, &layout, &family_cols, &claims, alpha, &pc,
                 )
             };
-            t_rlc3.push(t0.elapsed().as_secs_f64() * 1e3);
+            t_rlc3.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
             std::hint::black_box(&pr_rlc);
 
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("rlc_ab:t0").entered();
             let pr_vx3 = {
                 let mut pt = Blake3Transcript::new();
                 prove_mle_eval_mod_q_ligerito_claims_only(
                     &mut pt, &hint, &layout, FQ_BITS, &vx_of(&[0, 1, 2]), alpha, &pc,
                 )
             };
-            t_vx3.push(t0.elapsed().as_secs_f64() * 1e3);
+            t_vx3.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
             std::hint::black_box(&pr_vx3);
 
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("rlc_ab:t0").entered();
             let pr_inds: Vec<_> = (0..3)
                 .map(|i| {
                     let mut pt = Blake3Transcript::new();
@@ -683,7 +704,7 @@ fn main() {
                     )
                 })
                 .collect();
-            t_ind3.push(t0.elapsed().as_secs_f64() * 1e3);
+            t_ind3.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
             std::hint::black_box(&pr_inds);
 
             if rep == 0 {
@@ -749,17 +770,19 @@ fn main() {
 
         if profile {
             let mut pt = Blake3Transcript::new();
+            let profile = f2z::observability::Recording::start(Vec::new()).expect("capture profile");
             let pr = prove_mle_eval_mod_q_ligerito_rlc_family(
                 &mut pt, &hint, &layout, &family_cols, &claims, alpha, &pc,
             );
             std::hint::black_box(&pr);
-            f2z::utils::prof::dump_and_reset(&format!("rlc3 n={n}"));
+            f2z::observability::write_profile(std::io::stderr().lock(), &format!("rlc3 n={n}"), &profile.intervals().expect("profile intervals"), None).expect("write profile");
             let mut pt = Blake3Transcript::new();
+            let profile = f2z::observability::Recording::start(Vec::new()).expect("capture profile");
             let pr = prove_mle_eval_mod_q_ligerito_claims_only(
                 &mut pt, &hint, &layout, FQ_BITS, &vx_of(&[0, 1, 2]), alpha, &pc,
             );
             std::hint::black_box(&pr);
-            f2z::utils::prof::dump_and_reset(&format!("vx3 n={n}"));
+            f2z::observability::write_profile(std::io::stderr().lock(), &format!("vx3 n={n}"), &profile.intervals().expect("profile intervals"), None).expect("write profile");
         }
     }
 }

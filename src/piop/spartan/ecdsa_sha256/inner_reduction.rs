@@ -114,7 +114,7 @@ impl ModQCoefficients {
         modulus: u128,
         cfg: &Config,
     ) -> Self {
-        let _scope = crate::utils::prof::scope("ecdsa:matrix_projection");
+        let _scope = tracing::info_span!("ecdsa:matrix_projection").entered();
         let ctx = RawMontyCtx::new(cfg);
         let residues = relation
             .local
@@ -131,7 +131,7 @@ impl ModQCoefficients {
         claim: &InnerSumcheckClaim,
         cfg: &Config,
     ) -> Result<BatchedMatrixMle> {
-        let _scope = crate::utils::prof::scope("ecdsa:coefficient_combine");
+        let _scope = tracing::info_span!("ecdsa:coefficient_combine").entered();
         let weights = self.build_row_weights(relation, claim, cfg)?;
         let gather = |column| self.p256_column_weight(relation, &weights.matrix_rows, column);
         #[cfg(feature = "parallel")]
@@ -175,7 +175,7 @@ impl ModQCoefficients {
         assignment_point: &[F],
         cfg: &Config,
     ) -> Result<F> {
-        let _scope = crate::utils::prof::scope("ecdsa:coefficient_evaluate");
+        let _scope = tracing::info_span!("ecdsa:coefficient_evaluate").entered();
         check_assignment_point(
             relation.h_layout.row_vars + relation.h_layout.col_vars,
             assignment_point,
@@ -314,7 +314,7 @@ impl BatchedMatrixMle {
     }
 
     pub(super) fn evaluate(&self, assignment_point: &[F], cfg: &Config) -> Result<F> {
-        let _scope = crate::utils::prof::scope("ecdsa:coefficient_evaluate");
+        let _scope = tracing::info_span!("ecdsa:coefficient_evaluate").entered();
         check_assignment_point(self.num_vars, assignment_point)?;
         let equality = equality_weights(assignment_point, cfg)?;
         let mut value = evaluate_sha_factors(

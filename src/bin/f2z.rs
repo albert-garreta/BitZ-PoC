@@ -116,10 +116,10 @@
 //!
 //! The single-claim path always prints a per-step breakdown of the prover
 //! and the verifier under the `prove:`/`verify:` lines — medians over the
-//! timed reps, riding the in-crate `utils::prof` scaffold (row names carry
-//! the raw scope labels, so they line up with `OBLONG_PROFILE=1` dumps and
-//! `examples/prof_probe.rs`). The always-on scopes cost ~µs per prove, far
-//! inside the run-to-run band. `--family`/`--taps` keep the plain output.
+//! timed reps, querying completed Perfetto intervals (row names carry
+//! the same labels as `examples/prof_probe.rs`). Build with `span-metrics`
+//! and set `PERFETTO_TRACE_PROCESSOR` to the native trace processor.
+//! `--family`/`--taps` keep the plain output.
 //!
 //! Under the breakdown it prints the PAPER buckets of the prover — grand
 //! products (`mq:chunking mc:pack mc:pow2 mc:forest mc:fold_v`: the integer
@@ -143,7 +143,6 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio, exit};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::time::Instant;
 
 use f2z::ligerito::packed_vars;
 use f2z::ligerito_flock::{
@@ -257,7 +256,7 @@ fn sample_standalone_instance(
     p: &IntegerMatrixLayout,
     q_bits: usize,
 ) -> StandaloneInstance {
-    let _g = f2z::utils::prof::scope("mq:sample_instance");
+    let _g = tracing::info_span!("mq:sample_instance").entered();
     let q = sample_proj_prime(transcript, &standalone_prime_sampler(q_bits));
     let arith = ProjArith::new(q);
     let r1: Vec<u128> = (0..p.row_vars)
@@ -298,11 +297,11 @@ fn median(mut v: Vec<f64>) -> f64 {
 /// Per-step wall-clock samples across reps, keyed by prof scope label
 /// (milliseconds, rep-aligned — a label absent from a rep reads as 0).
 #[derive(Default)]
-struct StepTable(Vec<(&'static str, Vec<f64>)>);
+struct StepTable(Vec<(String, Vec<f64>)>);
 
 impl StepTable {
-    /// Fold one rep's drained `prof::take_totals()` (label, seconds) in.
-    fn absorb(&mut self, rep: usize, totals: Vec<(&'static str, f64)>) {
+    /// Fold one rep's drained completed Perfetto intervals (label, seconds) in.
+    fn absorb(&mut self, rep: usize, totals: Vec<(String, f64)>) {
         for (label, secs) in totals {
             let idx = match self.0.iter().position(|(l, _)| *l == label) {
                 Some(i) => i,
@@ -806,6 +805,7 @@ fn resolve_configs(
 }
 
 fn main() {
+    f2z::observability::install().expect("install Perfetto subscriber");
     let o = parse_args();
 
     // Paper-table modes: the parent only orchestrates child processes.
@@ -860,7 +860,7 @@ fn main() {
     // breakdown: turn the prof scaffold on before its first scope fires.
     // The timed medians then carry the ~µs/prove scope overhead — orders
     // below the run-to-run band.
-    f2z::utils::prof::force_enable();
+
 
     let (t, s) = match (o.t, o.s) {
         (Some(t), Some(s)) => (t, s),
@@ -1034,9 +1034,11 @@ fn main() {
     let mut commit_ms_v = Vec::with_capacity(o.reps);
     for i in 0..o.reps {
         let rows_i = if i + 1 == o.reps { std::mem::take(&mut rows) } else { rows.clone() };
-        let t0 = Instant::now();
-        let h = commit_rs_ligerito_rows(&p, rows_i, &pc);
-        commit_ms_v.push(t0.elapsed().as_secs_f64() * 1e3);
+        let (h, t0) = f2z::observability::measure(
+            tracing::info_span!("f2z:h"),
+            || commit_rs_ligerito_rows(&p, rows_i, &pc),
+        ).expect("measure completed operation");
+        commit_ms_v.push(t0.as_secs_f64() * 1e3);
         black_box(&h);
     }
     set_heap_tracking(true);
@@ -1052,14 +1054,14 @@ fn main() {
         let pr = prove_once(&hint);
         black_box(&pr);
     }
-    let _ = f2z::utils::prof::take_totals(); // drop the warm-up records
+
     reset_peak();
     {
         let pr = prove_once(&hint);
         black_box(&pr);
     }
     let prove_peak = peak_mb();
-    let _ = f2z::utils::prof::take_totals(); // drop the peak-probe records
+
     set_heap_tracking(false);
     let mut prove_ms = Vec::new();
     let mut verify_ms = Vec::new();
@@ -1067,15 +1069,19 @@ fn main() {
     let mut verify_steps = StepTable::default();
     let mut last_proof = None;
     for rep in 0..o.reps {
-        let t1 = Instant::now();
+        let recording = f2z::observability::Recording::start(Vec::new()).expect("start CLI trial");
+        let proving = tracing::info_span!("cli:proving").entered();
         let proof = prove_once(&hint);
-        prove_ms.push(t1.elapsed().as_secs_f64() * 1e3);
-        prove_steps.absorb(rep, f2z::utils::prof::take_totals());
+        drop(proving);
 
-        let t2 = Instant::now();
+        let verification = tracing::info_span!("cli:verification").entered();
         verify_once(&proof).expect("proof verifies");
-        verify_ms.push(t2.elapsed().as_secs_f64() * 1e3);
-        verify_steps.absorb(rep, f2z::utils::prof::take_totals());
+        drop(verification);
+        let intervals = recording.intervals().expect("query CLI trial");
+        prove_ms.push(f2z::observability::duration(&intervals, "cli:proving").unwrap().as_secs_f64() * 1e3);
+        verify_ms.push(f2z::observability::duration(&intervals, "cli:verification").unwrap().as_secs_f64() * 1e3);
+        prove_steps.absorb(rep, f2z::observability::phase_totals(&intervals, "cli:proving").unwrap());
+        verify_steps.absorb(rep, f2z::observability::phase_totals(&intervals, "cli:verification").unwrap());
         last_proof = Some(proof);
     }
 
@@ -1649,7 +1655,7 @@ fn write_latex_table(
     let _ = writeln!(out, "%   after one warm-up prove; every timed proof is verified; commit = median of {reps} commits; the table's prover");
     let _ = writeln!(out, "%   Total = commit_ms + prove_ms (the Commit column sits inside the prover group).");
     let _ = writeln!(out, "% Include with \\input{{raw-performance-table}} (relative to paper/).");
-    let _ = writeln!(out, "% Prover buckets (utils::prof scope labels): grand products = {};", PAPER_GP_LABELS.join(" "));
+    let _ = writeln!(out, "% Prover buckets (tracing span labels): grand products = {};", PAPER_GP_LABELS.join(" "));
     let _ = writeln!(out, "%   ring switch incl. its sumcheck = {}; Ligerito = {}.", PAPER_RS_LABELS.join(" "), PAPER_LIG_LABELS.join(" "));
     let _ = writeln!(out, "%   Bucket medians need not sum to the total median; the signed residual (transcript glue) is prove_residual_ms below.");
     let _ = writeln!(out, "% Proof split: non-Ligerito = integer folds + GKR messages + sumcheck messages + ring-switch message (+ host-codec framing);");
@@ -1807,9 +1813,11 @@ fn run_family(o: &Opts, fam: &str) {
         })
         .collect();
     reset_peak();
-    let t0 = Instant::now();
-    let hint = commit_rs_ligerito_rows(&p, rows, &pc);
-    let commit_ms = t0.elapsed().as_secs_f64() * 1e3;
+    let (hint, t0) = f2z::observability::measure(
+        tracing::info_span!("f2z:hint"),
+        || commit_rs_ligerito_rows(&p, rows, &pc),
+    ).expect("measure completed operation");
+    let commit_ms = t0.as_secs_f64() * 1e3;
     println!("commit:  {commit_ms:9.2} ms   peak {:8.2} MB", peak_mb());
 
     // Statement: per-claim row weights (distinct row points) for the
@@ -1887,11 +1895,14 @@ fn run_family(o: &Opts, fam: &str) {
     let mut last = None;
     for _ in 0..o.reps {
         let mut pt = Blake3Transcript::new();
-        let t1 = Instant::now();
-        let proof = prove_once(&mut pt);
-        prove_ms.push(t1.elapsed().as_secs_f64() * 1e3);
+        let (proof, t1) = f2z::observability::measure(
+            tracing::info_span!("f2z:proof"),
+            || prove_once(&mut pt),
+        ).expect("measure completed operation");
+        prove_ms.push(t1.as_secs_f64() * 1e3);
         let mut vt = Blake3Transcript::new();
-        let t2 = Instant::now();
+        let t2_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t2 = tracing::info_span!("f2z:t2").entered();
         if shared {
             verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
                 &mut vt, &hint.commitment, &proof, &layout, &family_cols, &rws[0], &sh_claims,
@@ -1905,7 +1916,7 @@ fn run_family(o: &Opts, fam: &str) {
             )
             .expect("family proof verifies");
         }
-        verify_ms.push(t2.elapsed().as_secs_f64() * 1e3);
+        verify_ms.push({ drop(t2); f2z::observability::duration(&t2_recording.intervals().expect("complete operation capture"), "f2z:t2").expect("query completed operation") }.as_secs_f64() * 1e3);
         last = Some(proof);
     }
     reset_peak();
@@ -2129,9 +2140,11 @@ fn run_taps(o: &Opts, mode: &str) {
         })
         .collect();
     reset_peak();
-    let t0 = Instant::now();
-    let hint = commit_rs_ligerito_rows(&p, rows, &pc);
-    let commit_ms = t0.elapsed().as_secs_f64() * 1e3;
+    let (hint, t0) = f2z::observability::measure(
+        tracing::info_span!("f2z:hint"),
+        || commit_rs_ligerito_rows(&p, rows, &pc),
+    ).expect("measure completed operation");
+    let commit_ms = t0.as_secs_f64() * 1e3;
     println!("commit:  {commit_ms:9.2} ms   peak {:8.2} MB", peak_mb());
 
     // ONE shared evaluation point for every claim.
@@ -2358,13 +2371,16 @@ fn run_taps(o: &Opts, mode: &str) {
     let mut last = None;
     for _ in 0..o.reps {
         let mut pt = Blake3Transcript::new();
-        let t1 = Instant::now();
-        let proof = prove_once(&mut pt);
-        prove_ms.push(t1.elapsed().as_secs_f64() * 1e3);
+        let (proof, t1) = f2z::observability::measure(
+            tracing::info_span!("f2z:proof"),
+            || prove_once(&mut pt),
+        ).expect("measure completed operation");
+        prove_ms.push(t1.as_secs_f64() * 1e3);
         let mut vt = Blake3Transcript::new();
-        let t2 = Instant::now();
+        let t2_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t2 = tracing::info_span!("f2z:t2").entered();
         verify_once(&mut vt, &proof);
-        verify_ms.push(t2.elapsed().as_secs_f64() * 1e3);
+        verify_ms.push({ drop(t2); f2z::observability::duration(&t2_recording.intervals().expect("complete operation capture"), "f2z:t2").expect("query completed operation") }.as_secs_f64() * 1e3);
         last = Some(proof);
     }
     reset_peak();
@@ -2615,24 +2631,26 @@ impl MulResult {
 
 /// One end-to-end prove of the multiplication SNARK: bit-pack + F2Z commit
 /// (Step 1, timed separately) followed by the combined Spartan + F2Z proof.
-/// Returns `(proof, hint, prove_ms_end_to_end, commit_ms)`.
+/// Timings are queried by the caller; memory passes use the same proof body.
 fn mul_prove_e2e(
     relation: &PreparedU32MulRelation,
     witness: &U32MulWitness,
-) -> (U32MulProof, FlockCommitHint, f64, f64) {
-    let t_all = Instant::now();
+) -> (U32MulProof, FlockCommitHint) {
+    let proving = tracing::info_span!("cli:mul.proving").entered();
+    let commit = tracing::info_span!("cli:mul.commit").entered();
     let rows = witness.f2z_bit_rows();
     let hint = commit_u32_mul_witness(relation, rows).unwrap_or_else(|err| {
         eprintln!("F2Z commitment failed: {err}");
         exit(1)
     });
-    let commit_ms = t_all.elapsed().as_secs_f64() * 1e3;
+    drop(commit);
     let mut tr = Blake3Transcript::new();
     let proof = prove_u32_mul(&mut tr, relation, witness, &hint).unwrap_or_else(|err| {
         eprintln!("combined prove failed: {err}");
         exit(1)
     });
-    (proof, hint, t_all.elapsed().as_secs_f64() * 1e3, commit_ms)
+    drop(proving);
+    (proof, hint)
 }
 
 /// `--mul <e>`: dispatch on the compile-time security profile.
@@ -2660,8 +2678,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
             exit(2);
         }
     };
-    f2z::utils::prof::force_enable();
-    let ms = |t: Instant| t.elapsed().as_secs_f64() * 1e3;
+
     let multiplications = 1usize << e;
     let shape_seed = MUL_ROOT_SEED ^ (e as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
     let mut rng = StdRng::seed_from_u64(shape_seed);
@@ -2689,9 +2706,11 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let mut witness_ms_v = Vec::with_capacity(o.reps);
     let mut witness = None;
     for _ in 0..o.reps.max(1) {
-        let t0 = Instant::now();
+        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t0 = tracing::info_span!("f2z:t0").entered();
         let w = gen_witness();
-        witness_ms_v.push(ms(t0));
+        drop(t0);
+        witness_ms_v.push(f2z::observability::duration(&t0_recording.intervals().expect("witness capture"), "f2z:t0").expect("witness duration").as_secs_f64() * 1e3);
         witness = Some(w);
     }
     let witness = witness.expect("reps ≥ 1");
@@ -2709,13 +2728,15 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let lig_tag = lig.name();
 
     // One-time public preprocessing (excluded from prove).
-    let t0 = Instant::now();
+    let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let t0 = tracing::info_span!("f2z:t0").entered();
     let relation = PreparedU32MulRelation::new_with_profile_and_ligerito::<P>(layout, lig)
         .unwrap_or_else(|err| {
             eprintln!("relation preparation failed at profile {}: {err}", P::NAME);
             exit(1)
         });
-    let setup_ms = ms(t0);
+    drop(t0);
+    let setup_ms = f2z::observability::duration(&t0_recording.intervals().expect("setup capture"), "f2z:t0").expect("setup duration").as_secs_f64() * 1e3;
     let lig_regime = if relation.security().ood.is_some() { "johnson" } else { "udr" };
     let sec = relation.security();
     let q_bits = (u128::BITS - sec.projection_max.leading_zeros()) as usize;
@@ -2753,7 +2774,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     // check — then the tracked peak probe (excluded), then the timed reps
     // with heap tracking OFF (see `PeakAlloc`).
     {
-        let (proof, hint, _, _) = mul_prove_e2e(&relation, &witness);
+        let (proof, hint) = mul_prove_e2e(&relation, &witness);
         let mut vt = Blake3Transcript::new();
         verify_u32_mul(&mut vt, &relation, &hint.commitment, &proof).unwrap_or_else(|err| {
             eprintln!("warm-up verification failed: {err}");
@@ -2761,15 +2782,15 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         });
         black_box(&proof);
     }
-    let _ = f2z::utils::prof::take_totals();
+
     reset_peak();
     {
-        let (peak_proof, peak_hint, _, _) = mul_prove_e2e(&relation, &witness);
+        let (peak_proof, peak_hint) = mul_prove_e2e(&relation, &witness);
         black_box(&peak_proof);
         black_box(&peak_hint);
     }
     let peak = peak_mb();
-    let _ = f2z::utils::prof::take_totals();
+
     set_heap_tracking(false);
 
     let mut commit_ms_v = Vec::with_capacity(o.reps);
@@ -2779,17 +2800,22 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let mut vsteps = StepTable::default();
     let mut last: Option<(U32MulProof, usize, usize, String)> = None;
     for rep in 0..o.reps {
-        let (proof, hint, prove_ms, commit_ms) = mul_prove_e2e(&relation, &witness);
-        psteps.absorb(rep, f2z::utils::prof::take_totals());
+        let recording = f2z::observability::Recording::start(Vec::new()).expect("start CLI mul trial");
+        let (proof, hint) = mul_prove_e2e(&relation, &witness);
 
         let mut vt = Blake3Transcript::new();
-        let t1 = Instant::now();
+        let verification = tracing::info_span!("cli:mul.verification").entered();
         verify_u32_mul(&mut vt, &relation, &hint.commitment, &proof).unwrap_or_else(|err| {
             eprintln!("verification failed: {err}");
             exit(1)
         });
-        verify_ms_v.push(ms(t1));
-        vsteps.absorb(rep, f2z::utils::prof::take_totals());
+        drop(verification);
+        let intervals = recording.intervals().expect("query CLI mul trial");
+        let prove_ms = f2z::observability::duration(&intervals, "cli:mul.proving").unwrap().as_secs_f64() * 1e3;
+        let commit_ms = f2z::observability::duration(&intervals, "cli:mul.commit").unwrap().as_secs_f64() * 1e3;
+        verify_ms_v.push(f2z::observability::duration(&intervals, "cli:mul.verification").unwrap().as_secs_f64() * 1e3);
+        psteps.absorb(rep, f2z::observability::phase_totals(&intervals, "cli:mul.proving").unwrap());
+        vsteps.absorb(rep, f2z::observability::phase_totals(&intervals, "cli:mul.verification").unwrap());
 
         commit_ms_v.push(commit_ms);
         prove_ms_v.push(prove_ms);

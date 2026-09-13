@@ -135,9 +135,9 @@ impl BiniusBackend {
         materialize_rows: impl FnOnce() -> Vec<u128>,
         trial_seed: u64,
     ) -> Result<TrialOutput, Box<dyn Error>> {
-        let root = f2z::utils::prof::scope(ROOT_SCOPE);
+        let root = tracing::info_span!(ROOT_SCOPE).entered();
         let witness = {
-            let _phase = f2z::utils::prof::scope(MATERIALIZE_SCOPE);
+            let _phase = tracing::info_span!(MATERIALIZE_SCOPE).entered();
             let packed_rows = materialize_rows();
             if packed_rows.len() != 1usize << self.log_rows {
                 return Err(format!(
@@ -158,7 +158,7 @@ impl BiniusBackend {
         let mut prover_transcript = ProverTranscript::new(StdChallenger::default());
         observe_statement(&mut prover_transcript, trial_seed);
         let (mut prover_channel, oracle) = {
-            let _phase = f2z::utils::prof::scope(COMMIT_SCOPE);
+            let _phase = tracing::info_span!(COMMIT_SCOPE).entered();
             let mut channel = self
                 .prover
                 .create_channel_without_zk_from_transcript::<
@@ -168,32 +168,32 @@ impl BiniusBackend {
                     GlobalAllocator,
                 >(&mut prover_transcript, GlobalAllocator);
             let oracle = {
-                let _procedure = f2z::utils::prof::scope(COMMIT_ORACLE_SCOPE);
+                let _procedure = tracing::info_span!(COMMIT_ORACLE_SCOPE).entered();
                 channel.send_oracle(witness.as_view())
             };
             (channel, oracle)
         };
 
         let (point, evaluation_claim) = {
-            let _phase = f2z::utils::prof::scope(CLAIM_SCOPE);
+            let _phase = tracing::info_span!(CLAIM_SCOPE).entered();
             let point = {
-                let _procedure = f2z::utils::prof::scope(SAMPLE_POINT_SCOPE);
+                let _procedure = tracing::info_span!(SAMPLE_POINT_SCOPE).entered();
                 IPProverChannel::sample_many(&mut prover_channel, self.log_rows + 7)
             };
             let evaluation_claim = {
-                let _procedure = f2z::utils::prof::scope(EVALUATE_CLAIM_SCOPE);
+                let _procedure = tracing::info_span!(EVALUATE_CLAIM_SCOPE).entered();
                 evaluate_bit_mle(&witness, &point)
             };
             (point, evaluation_claim)
         };
 
         let proof = {
-            let _phase = f2z::utils::prof::scope(OPENING_SCOPE);
+            let _phase = tracing::info_span!(OPENING_SCOPE).entered();
             let ring_switch::RingSwitchOutput {
                 rs_eq_ind,
                 sumcheck_claim,
             } = {
-                let _procedure = f2z::utils::prof::scope(RING_SWITCH_SCOPE);
+                let _procedure = tracing::info_span!(RING_SWITCH_SCOPE).entered();
                 ring_switch::prove(
                     &GlobalAllocator,
                     witness.as_view(),
@@ -204,14 +204,14 @@ impl BiniusBackend {
             prover_channel.prove_oracle_relation(oracle.clone(), rs_eq_ind, sumcheck_claim);
             prover_channel.finalize_oracle(oracle, witness);
             {
-                let _procedure = f2z::utils::prof::scope(BASEFOLD_OPEN_SCOPE);
+                let _procedure = tracing::info_span!(BASEFOLD_OPEN_SCOPE).entered();
                 prover_channel.finish();
             }
             prover_transcript.finalize()
         };
 
         {
-            let _phase = f2z::utils::prof::scope(VERIFY_SCOPE);
+            let _phase = tracing::info_span!(VERIFY_SCOPE).entered();
             let mut transcript = VerifierTranscript::new(StdChallenger::default(), proof.clone());
             observe_verifier_statement(&mut transcript, trial_seed);
             let mut channel = self
@@ -226,7 +226,7 @@ impl BiniusBackend {
                 eq_r_double_prime,
                 sumcheck_claim,
             } = {
-                let _procedure = f2z::utils::prof::scope(RING_SWITCH_VERIFY_SCOPE);
+                let _procedure = tracing::info_span!(RING_SWITCH_VERIFY_SCOPE).entered();
                 verifier_ring_switch::verify::<B128, _>(
                     evaluation_claim,
                     &verifier_point,
@@ -235,7 +235,7 @@ impl BiniusBackend {
             };
             let high_point = verifier_point[PACKING_BITS.ilog2() as usize..].to_vec();
             {
-                let _procedure = f2z::utils::prof::scope(BASEFOLD_VERIFY_SCOPE);
+                let _procedure = tracing::info_span!(BASEFOLD_VERIFY_SCOPE).entered();
                 channel.verify_oracle_relation(
                     oracle,
                     Box::new(move |query: &[B128]| {

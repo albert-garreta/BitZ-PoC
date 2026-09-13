@@ -12,11 +12,9 @@ use ::f2z::{
     transcript::Blake3Transcript,
 };
 use serde_json::json;
-use std::time::Instant;
+use ::f2z::observability::{self, Recording};
 const SEED: u64 = 0x5533_3250_4353_0064;
-fn ms(t: Instant) -> f64 {
-    t.elapsed().as_secs_f64() * 1000.
-}
+type SetupCapture = (Recording<Vec<u8>>, tracing::span::EnteredSpan);
 
 struct Experiment {
     case: String,
@@ -26,7 +24,7 @@ struct Experiment {
 impl Experiment {
     fn run<W, H, P>(
         &self,
-        setup: Instant,
+        setup: SetupCapture,
         resolved: &ResolvedLigerito,
         ood: Option<::f2z::ligerito_flock::OodRoundParams>,
         corpus: &[u8],
@@ -36,26 +34,31 @@ impl Experiment {
         verify: impl Fn(&W, &H, &P) -> Result<()>,
         size: impl Fn(&H, &P) -> Result<ProofSize>,
     ) -> Result<()> {
-        let setup_ms = ms(setup);
+        drop(setup.1);
+        let setup_ms = observability::duration(&setup.0.intervals()?, "bounds:setup")?.as_secs_f64() * 1000.;
         let mut config = common::ligerito_report(resolved, ood);
         config["requested_profile"] = json!(self.selection.name());
         let corpus_digest = blake3::hash(corpus).to_hex().to_string();
         let trials = if self.memory { 1 } else { 6 };
         for trial in 0..trials {
-            let total = Instant::now();
-            let w = witness()?;
-            let witness_ms = ms(total);
-            let online = Instant::now();
-            let h = commit(&w)?;
-            let commit_ms = ms(online);
+            let recording = Recording::start(Vec::new())?;
+            let total = tracing::info_span!("bounds:witness_to_proof", trial, warmup = trial == 0).entered();
+            let w = tracing::info_span!("bounds:witness").in_scope(&witness)?;
+            let online = tracing::info_span!("bounds:online").entered();
+            let h = tracing::info_span!("bounds:commit").in_scope(|| commit(&w))?;
             let p = prove(&w, &h)?;
-            let online_prover_ms = ms(online);
-            let witness_to_proof_ms = ms(total);
+            drop(online);
+            drop(total);
             // Codecs and byte accounting are outside all proof/verification timers.
             let proof_size = size(&h, &p)?;
-            let start = Instant::now();
-            verify(&w, &h, &p)?;
-            let verify_ms = ms(start);
+            tracing::info_span!("bounds:verification").in_scope(|| verify(&w, &h, &p))?;
+            let intervals = recording.intervals()?;
+            let millis = |name| observability::duration(&intervals, name).map(|d| d.as_secs_f64() * 1000.);
+            let witness_ms = millis("bounds:witness")?;
+            let commit_ms = millis("bounds:commit")?;
+            let online_prover_ms = millis("bounds:online")?;
+            let witness_to_proof_ms = millis("bounds:witness_to_proof")?;
+            let verify_ms = millis("bounds:verification")?;
             println!(
                 "{}",
                 json!({"schema":"f2z-ligerito-bound-comparison/v1", "case":self.case,
@@ -107,6 +110,7 @@ fn inputs() -> Vec<(u128, u128)> {
         .collect()
 }
 fn main() -> Result<()> {
+    ::f2z::observability::install().expect("install Perfetto subscriber");
     let args: Vec<_> = std::env::args()
         .skip(1)
         .filter(|s| s != "--bench")
@@ -133,7 +137,7 @@ fn main() -> Result<()> {
         bail!("controlled comparison requires RAYON_NUM_THREADS=8");
     }
     let input = inputs();
-    let setup = Instant::now();
+    let setup = (Recording::start(Vec::new())?, tracing::info_span!("bounds:setup").entered());
     macro_rules! multiplication {
         ($rel:ident,$layout:ident,$wit:ident,$commit:ident,$prove:ident,$verify:ident,$data:expr $(,$strategy:expr)?) => {{
             let data = $data;
@@ -311,7 +315,7 @@ fn main() -> Result<()> {
         _ => bail!("unknown case"),
     }
 }
-fn ecdsa(e: &Experiment, setup: Instant) -> Result<()> {
+fn ecdsa(e: &Experiment, setup: SetupCapture) -> Result<()> {
     use ::f2z::piop::spartan::ecdsa_sha256::*;
     use p256::ecdsa::{Signature, SigningKey, signature::Signer};
     let mode = if e.case.ends_with("split") {
@@ -376,7 +380,7 @@ fn ecdsa(e: &Experiment, setup: Instant) -> Result<()> {
         },
     )
 }
-fn pcs(e: &Experiment, setup: Instant) -> Result<()> {
+fn pcs(e: &Experiment, setup: SetupCapture) -> Result<()> {
     use ::f2z::{
         ext_proj::*,
         ligerito_flock::*,

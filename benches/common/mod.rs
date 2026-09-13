@@ -11,7 +11,7 @@
 //!   grinding, PIOP, bitification, Step 5.0, the F2Z opening).
 //! - Witness generation and one-time public preprocessing are excluded and
 //!   reported separately (`witness_ms`, `setup_ms`).
-//! - Per-step splits come from the crate's umbrella profiler scopes
+//! - Per-step splits come from the crate's umbrella tracing spans
 //!   (`step2:*` … `step5:*`); a signed residual makes each split sum to its
 //!   total exactly.
 //! - Steps that do not run in a path print `na`, never `0.00`.
@@ -19,6 +19,18 @@
 #![allow(dead_code)] // each bench uses a subset of the harness
 
 pub mod environment;
+
+/// Serialize native SDK sessions in tests and explicitly supply their subscriber.
+#[cfg(all(test, feature = "span-metrics"))]
+pub fn test_tracing() -> (tracing::subscriber::DefaultGuard, std::sync::MutexGuard<'static, ()>) {
+    use tracing_subscriber::prelude::*;
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let lock = LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
+    let subscriber = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(f2z::observability::layer()),
+    );
+    (subscriber, lock)
+}
 pub mod mul_witness;
 pub mod output;
 pub mod pcs_console;
@@ -31,7 +43,6 @@ pub mod plonky3;
 #[cfg(any(feature = "native-mul-compare", feature = "plonky3-sha256-bench"))]
 pub mod whir_tuning;
 
-use std::time::Instant;
 
 use f2z::piop::spartan::{
     IopSecurityProfile, Lambda100, Lambda128, Limber112, Limber114, PrimePolicy,
@@ -499,13 +510,9 @@ macro_rules! with_profile {
 #[allow(unused_imports)]
 pub(crate) use with_profile;
 
-/// Shared bench startup: force the phase profiler on (the step split must
-/// always be populated), validate the environment, and size the perf pool.
-/// Call first in `main`, before any thread is spawned or any profiler scope
-/// opens. Returns the rayon thread count.
+/// Validate the benchmark environment and size the performance thread pool.
+/// Subscriber installation belongs to the executable. Returns the thread count.
 pub fn init() -> usize {
-    // SAFETY: called before any other thread can read the environment.
-    unsafe { std::env::set_var("OBLONG_PROFILE", "1") };
     enforce_known_env();
     let _ = flock_core::init_perf_thread_pool();
     #[cfg(feature = "parallel")]
@@ -590,11 +597,11 @@ const S5_OPENER: &[&str] = &[
     "mqv:vlig",
 ];
 
-fn label_sum_ms(phases: &[(&'static str, f64)], labels: &[&str]) -> Option<f64> {
+fn label_sum_ms(phases: &[(String, f64)], labels: &[&str]) -> Option<f64> {
     let mut sum = 0.0;
     let mut seen = false;
     for (label, seconds) in phases {
-        if labels.contains(label) {
+        if labels.contains(&label.as_str()) {
             sum += seconds * 1e3;
             seen = true;
         }
@@ -602,7 +609,7 @@ fn label_sum_ms(phases: &[(&'static str, f64)], labels: &[&str]) -> Option<f64> 
     seen.then_some(sum)
 }
 
-fn label_ms(phases: &[(&'static str, f64)], label: &str) -> Option<f64> {
+fn label_ms(phases: &[(String, f64)], label: &str) -> Option<f64> {
     label_sum_ms(phases, &[label])
 }
 
@@ -628,7 +635,7 @@ impl StepSamples {
     /// Records one prover rep: the end-to-end wall time, the bench-timed
     /// Step 1 (bit-pack + commit) wall time, and the profiler totals drained
     /// after the prove call.
-    pub fn record_prove(&mut self, total_ms: f64, commit_ms: f64, phases: &[(&'static str, f64)]) {
+    pub fn record_prove(&mut self, total_ms: f64, commit_ms: f64, phases: &[(String, f64)]) {
         self.total.push(total_ms);
         self.commit.push(Some(commit_ms));
         self.record_scopes(
@@ -644,7 +651,7 @@ impl StepSamples {
     }
 
     /// Records one verifier rep (no Step 1: the verifier holds a commitment).
-    pub fn record_verify(&mut self, total_ms: f64, phases: &[(&'static str, f64)]) {
+    pub fn record_verify(&mut self, total_ms: f64, phases: &[(String, f64)]) {
         self.total.push(total_ms);
         self.commit.push(None);
         self.record_scopes(
@@ -659,7 +666,7 @@ impl StepSamples {
         );
     }
 
-    fn record_scopes(&mut self, phases: &[(&'static str, f64)], steps: [&str; 5]) {
+    fn record_scopes(&mut self, phases: &[(String, f64)], steps: [&str; 5]) {
         self.project.push(label_ms(phases, steps[0]));
         self.piop.push(label_ms(phases, steps[1]));
         self.bitify.push(label_ms(phases, steps[2]));
@@ -944,8 +951,12 @@ fn optional_median(samples: &[Option<f64>]) -> Option<f64> {
 }
 
 /// Milliseconds elapsed since `start`.
-pub fn elapsed_ms(start: Instant) -> f64 {
-    start.elapsed().as_secs_f64() * 1e3
+/// Milliseconds from a completed, uniquely named Perfetto operation.
+#[cfg(feature = "span-metrics")]
+pub fn span_ms(intervals: &[f2z::observability::Interval], label: &str) -> f64 {
+    f2z::observability::duration(intervals, label)
+        .unwrap_or_else(|error| panic!("invalid benchmark measurement: {error}"))
+        .as_secs_f64() * 1e3
 }
 
 /// Only F2Z callers consult this selector. Competing PCS configurations do not.

@@ -6,7 +6,7 @@
 
 mod common;
 
-use std::{hint::black_box, time::Instant};
+use std::{hint::black_box};
 
 use f2z::piop::spartan::{
     SpartanInnerFieldAccumulation, SpartanInnerNativeFold, SpartanInnerPolicy, U32MulWitness,
@@ -96,7 +96,7 @@ fn field_accumulation_name(policy: SpartanInnerPolicy) -> String {
     }
 }
 
-fn phase_ms(phases: &[(&'static str, f64)], label: &str) -> f64 {
+fn phase_ms(phases: &[(String, f64)], label: &str) -> f64 {
     phases
         .iter()
         .filter(|(phase, _)| *phase == label)
@@ -149,7 +149,7 @@ fn bench_exponent(
     .expect("warm-up verification succeeds");
     assert_eq!(warm_claim, verified_claim);
     drop(warm_proof);
-    let _ = f2z::utils::prof::take_totals();
+
 
     let native_fold = native_fold_name(policy);
     let field_accumulation = field_accumulation_name(policy);
@@ -168,7 +168,8 @@ fn bench_exponent(
         let sample_products = products.clone();
         let sample_assignment = assignment.clone();
         let mut prover_transcript = Blake3Transcript::new();
-        let started = Instant::now();
+        let recording = f2z::observability::Recording::start(Vec::new()).expect("start inner-policy prove");
+        let proving = tracing::info_span!("benchmark:proving").entered();
         let (proof, claim) = prove_spartan_piop_u32_native_barrett_with_inner_policy(
             &mut prover_transcript,
             &relation,
@@ -178,8 +179,10 @@ fn bench_exponent(
             policy,
         )
         .expect("proving succeeds");
-        let prove_ms = started.elapsed().as_secs_f64() * 1e3;
-        let phases = f2z::utils::prof::take_totals();
+        drop(proving);
+        let intervals = recording.intervals().expect("query inner-policy prove");
+        let prove_ms = common::span_ms(&intervals, "benchmark:proving");
+        let phases = f2z::observability::phase_totals(&intervals, "benchmark:proving").unwrap();
         let outer_ms = phase_ms(&phases, "spartan:outer_sumcheck");
         let bind_ms = phase_ms(&phases, "spartan:bind_and_batch");
         let inner_ms = phase_ms(&phases, "spartan:inner_sumcheck");
@@ -188,15 +191,14 @@ fn bench_exponent(
         let field_rounds_ms = phase_ms(&phases, "spartan:inner_field_rounds");
 
         let mut verifier_transcript = Blake3Transcript::new();
-        let started = Instant::now();
-        let verified_claim = verify_spartan_proof(
+        let (verified_claim, duration) = f2z::observability::measure(tracing::info_span!("benchmark:verification"), || verify_spartan_proof(
             &mut verifier_transcript,
             &relation,
             &ASSIGNMENT_BINDING,
             &proof,
         )
-        .expect("verification succeeds");
-        let verify_ms = started.elapsed().as_secs_f64() * 1e3;
+        .expect("verification succeeds")).expect("measure inner-policy verification");
+        let verify_ms = duration.as_secs_f64() * 1e3;
         assert_eq!(claim, verified_claim);
         payload_elements = spartan_payload_elements(&proof);
         let payload_bytes = 16 * payload_elements;
@@ -232,6 +234,7 @@ fn bench_exponent(
 }
 
 fn main() {
+    f2z::observability::install().expect("install Perfetto subscriber");
     common::enforce_known_env();
     let _ = flock_core::init_perf_thread_pool();
     let reps = env_usize("F2Z_BENCH_REPS", 5);

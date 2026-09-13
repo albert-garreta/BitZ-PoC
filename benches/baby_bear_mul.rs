@@ -33,7 +33,6 @@
 mod common;
 
 use std::hint::black_box;
-use std::time::Instant;
 
 use f2z::piop::spartan::{
     BABY_BEAR_MODULUS, BabyBearMulWitness, BabyBearSpartanF2zError, IopSecurityProfile, Lambda100,
@@ -100,7 +99,8 @@ fn bench_profile<P: IopSecurityProfile>(
 
     // One-time public preprocessing under this profile (excluded from
     // prove): raw exact matrices + the instantiated security parameters.
-    let setup_started = Instant::now();
+    let setup_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let setup_started = tracing::info_span!("baby_bear_mul:setup_started").entered();
     let prepared = match PreparedBabyBearMulRelation::new_with_profile_and_ligerito::<P>(layout, common::ligerito_selection(P::LIGERITO_TARGET_BITS)) {
         Ok(prepared) => prepared,
         Err(error @ (BabyBearSpartanF2zError::Profile(_)
@@ -114,7 +114,7 @@ fn bench_profile<P: IopSecurityProfile>(
         }
         Err(error) => panic!("prepare failed: {error}"),
     };
-    let setup_ms = common::elapsed_ms(setup_started);
+    let setup_ms = { drop(setup_started); f2z::observability::duration(&setup_started_recording.intervals().expect("complete operation capture"), "baby_bear_mul:setup_started").expect("query completed operation") }.as_secs_f64() * 1e3;
     println!("LIGERITO_CONFIG {}", common::ligerito_report(prepared.ligerito_configuration(), prepared.security().ood));
     let security = prepared.security().clone();
 
@@ -148,31 +148,34 @@ fn bench_profile<P: IopSecurityProfile>(
     verify_baby_bear_mul_paper(&mut warm_verifier, &prepared, &warm_hint.commitment, &warm_proof)
         .expect("warm-up verify");
     drop((warm_proof, warm_hint));
-    let _ = f2z::utils::prof::take_totals();
 
     let mut prover = common::StepSamples::default();
     let mut verifier = common::StepSamples::default();
     let mut last = None;
     for _ in 0..reps {
-        let _ = f2z::utils::prof::take_totals();
-        let prove_started = Instant::now();
-        let commit_started = Instant::now();
+        let recording = f2z::observability::Recording::start(Vec::new()).expect("start BabyBear trial");
+        let proving = tracing::info_span!("benchmark:proving").entered();
+        let commit = tracing::info_span!("benchmark:commit").entered();
         let hint =
             commit_baby_bear_mul_paper_witness(&prepared, witness.f2z_bit_rows()).expect("commit");
-        let commit_ms = common::elapsed_ms(commit_started);
+        drop(commit);
         let mut prover_transcript = Blake3Transcript::new();
         let proof =
             prove_baby_bear_mul_paper(&mut prover_transcript, &prepared, witness, &hint, strategy)
                 .expect("prove");
-        let prove_ms = common::elapsed_ms(prove_started);
-        let prove_phases = f2z::utils::prof::take_totals();
+        drop(proving);
 
-        let verify_started = Instant::now();
+        let verification = tracing::info_span!("benchmark:verification").entered();
         let mut verifier_transcript = Blake3Transcript::new();
         verify_baby_bear_mul_paper(&mut verifier_transcript, &prepared, &hint.commitment, &proof)
             .expect("verify");
-        let verify_ms = common::elapsed_ms(verify_started);
-        let verify_phases = f2z::utils::prof::take_totals();
+        drop(verification);
+        let intervals = recording.intervals().expect("query BabyBear trial");
+        let commit_ms = common::span_ms(&intervals, "benchmark:commit");
+        let prove_ms = common::span_ms(&intervals, "benchmark:proving");
+        let verify_ms = common::span_ms(&intervals, "benchmark:verification");
+        let prove_phases = f2z::observability::phase_totals(&intervals, "benchmark:proving").unwrap();
+        let verify_phases = f2z::observability::phase_totals(&intervals, "benchmark:verification").unwrap();
 
         black_box(&proof);
         prover.record_prove(prove_ms, commit_ms, &prove_phases);
@@ -220,6 +223,7 @@ fn bench_profile<P: IopSecurityProfile>(
 }
 
 fn main() {
+    f2z::observability::install().expect("install Perfetto subscriber");
     let threads = common::init();
     let reps = common::reps(None, 5);
     let strategy = reduction_strategy();
@@ -253,15 +257,17 @@ fn main() {
 
         // Witness generation (excluded from prove); shared by both profiles
         // so the two rows are directly comparable.
-        let started = Instant::now();
-        let witness = BabyBearMulWitness::from_fn(multiplications, |_| {
+        let (witness, started) = f2z::observability::measure(
+            tracing::info_span!("baby_bear_mul:witness"),
+            || BabyBearMulWitness::from_fn(multiplications, |_| {
             (
                 sample_baby_bear_operand_with(|| rng.random::<u32>()),
                 sample_baby_bear_operand_with(|| rng.random::<u32>()),
             )
         })
-        .expect("valid BabyBear multiplication witness");
-        let witness_ms = common::elapsed_ms(started);
+        .expect("valid BabyBear multiplication witness"),
+        ).expect("measure completed operation");
+        let witness_ms = started.as_secs_f64() * 1e3;
 
         match selected {
             None => {

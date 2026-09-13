@@ -141,7 +141,7 @@ fn build_levels(
     gen_top: impl Fn(usize) -> (Vec<Gf>, Vec<Gf>) + Sync,
 ) -> (TreeLevels, Vec<Gf>) {
     // Per-tree chains [level top, top−1, …, 1], parallel across trees.
-    let _g = crate::utils::prof::scope("mf:build_levels");
+    let _g = tracing::info_span!("mf:build_levels").entered();
     let chains: Vec<Vec<(Vec<Gf>, Vec<Gf>)>> = cfg_into_iter!(0..num_trees)
         .map(|c| {
             let mut chain = Vec::with_capacity(top);
@@ -246,7 +246,7 @@ fn build_levels_flat(
     top: usize,
     gen_top: impl Fn(usize, &mut [MaybeUninit<Gf>], &mut [MaybeUninit<Gf>]) + Sync,
 ) -> (Vec<Option<FlatDense<Gf>>>, Vec<Gf>) {
-    let _g = crate::utils::prof::scope("mf:build_levels");
+    let _g = tracing::info_span!("mf:build_levels").entered();
     let one = Gf::one();
     debug_assert!(top >= 1 && nseg >= live);
     let mut slots: Vec<Option<FlatDense<Gf>>> = (0..top).map(|_| None).collect();
@@ -912,7 +912,7 @@ fn drive_grouped(
             o.resize(num_trees, one);
             (None, Vec::new(), e, o)
         } else {
-            let _g = crate::utils::prof::scope("mf:phaseA");
+            let _g = tracing::info_span!("mf:phaseA").entered();
             let eq_zc = if z_c.is_empty() {
                 vec![one]
             } else {
@@ -957,7 +957,7 @@ fn drive_grouped(
             };
             let (groups, tau_sets, pair_tau_sets, t4_sets, pre_round1, flat_store) =
                 if let Some(bl) = {
-                    let _g = crate::utils::prof::scope("mf:bitgen");
+                    let _g = tracing::info_span!("mf:bitgen").entered();
                     bit_layer(ell, &z_x)
                 } {
                     if let Some(fs) = bl.flat {
@@ -1016,7 +1016,7 @@ fn drive_grouped(
         };
 
         // Phase B: bind the s tree-index variables over the per-tree finals.
-        let _g = crate::utils::prof::scope("mf:phaseB");
+        let _g = tracing::info_span!("mf:phaseB").entered();
         let group_b = EqInnerGroupMixed {
             q: z_c.clone(),
             scale: one,
@@ -1249,11 +1249,11 @@ fn prove_merged_forest_lazy_sched(
         return prove_merged_forest(transcript, &dense, depth, s);
     }
 
-    let _g_pre = crate::utils::prof::scope("mf:l1tabs");
+    let _g_pre = tracing::info_span!("mf:l1tabs").entered();
     let pair_tbl = layer1_pair_table(p, pow2, log_w, row_len);
     let leaf_tau = leaf_tau_halves(p, pow2, one, log_w, row_len);
     drop(_g_pre);
-    let _g_ext = crate::utils::prof::scope("mf:extract_bits");
+    let _g_ext = tracing::info_span!("mf:extract_bits").entered();
     let mut col_bits = Some(extract_column_bit_halves(packed_cols, live, row_len));
     drop(_g_ext);
 
@@ -1287,7 +1287,7 @@ fn prove_merged_forest_lazy_sched(
     let q1 = row_len >> 2; // 2^{d−2}
     let q2 = row_len >> 1; // 2^{d−1}
     let v = |i: usize| -> Gf { pow2[i >> log_w][i & mask_w] };
-    let _g_teto = crate::utils::prof::scope("mf:teto");
+    let _g_teto = tracing::info_span!("mf:teto").entered();
     let build_cases = |base: usize| -> Vec<Gf> {
         let mut t = Vec::with_capacity(q1 << 2);
         for y in 0..q1 {
@@ -1895,7 +1895,7 @@ fn build_levels_quad(
     top: usize,
     gen_top: impl Fn(usize) -> (Vec<Gf>, Vec<Gf>) + Sync,
 ) -> (TreeLevels, Vec<Gf>) {
-    let _g = crate::utils::prof::scope("mf:build_levels");
+    let _g = tracing::info_span!("mf:build_levels").entered();
     let chains: Vec<(Vec<(usize, (Vec<Gf>, Vec<Gf>))>, Gf)> = cfg_into_iter!(0..num_trees)
         .map(|c| {
             let mut kept: Vec<(usize, (Vec<Gf>, Vec<Gf>))> = Vec::new();
@@ -1937,7 +1937,7 @@ fn run_arity2_layer(
     num_trees: usize,
 ) -> MergedLayer {
     let one = Gf::one();
-    let _g = crate::utils::prof::scope("mf:phaseA");
+    let _g = tracing::info_span!("mf:phaseA").entered();
     let eq_zc = if z_c.is_empty() {
         vec![one]
     } else {
@@ -1969,7 +1969,7 @@ fn run_arity2_layer(
     }
     drop(_g);
 
-    let _g = crate::utils::prof::scope("mf:phaseB");
+    let _g = tracing::info_span!("mf:phaseB").entered();
     let group_b = EqInnerGroupMixed {
         q: z_c.clone(),
         scale: one,
@@ -2092,7 +2092,7 @@ pub fn prove_merged_forest_lazy_quad(
         let quarters: Vec<[Vec<Gf>; 4]> = if input_level == depth - 2 {
             // The JIT level: gathered per tree straight off the bits +
             // T4 (never stored), quarter-contiguous.
-            let _g = crate::utils::prof::scope("mf:bitgen");
+            let _g = tracing::info_span!("mf:bitgen").entered();
             let cb = col_bits.as_ref().expect("leaf bits alive for the JIT quad");
             let hq = q1 >> 2;
             cfg_into_iter!(0..num_trees)
@@ -2131,7 +2131,7 @@ pub fn prove_merged_forest_lazy_quad(
                     .collect();
                 (None, Vec::new(), finals)
             } else {
-                let _g = crate::utils::prof::scope("mf:phaseA");
+                let _g = tracing::info_span!("mf:phaseA").entered();
                 let eq_zc = if z_c.is_empty() {
                     vec![one]
                 } else {
@@ -2147,7 +2147,7 @@ pub fn prove_merged_forest_lazy_quad(
             };
 
         // Phase B: Σ_c eq(c, z_c)·Π_m Q_m(r_x, c), degree 5 over s vars.
-        let _g = crate::utils::prof::scope("mf:phaseB");
+        let _g = tracing::info_span!("mf:phaseB").entered();
         let mut bufs_b: [Vec<Gf>; 4] = [
             Vec::with_capacity(num_trees),
             Vec::with_capacity(num_trees),
@@ -2186,7 +2186,7 @@ pub fn prove_merged_forest_lazy_quad(
     if plan.parity {
         let hh = q1 >> 1;
         let (bufs, round1) = {
-            let _g = crate::utils::prof::scope("mf:bitgen");
+            let _g = tracing::info_span!("mf:bitgen").entered();
             let cb = col_bits.as_ref().expect("leaf bits alive for the parity layer");
             if jit_round1_fuse() {
                 let tensors = suffix_tensors(&z_x, &());
@@ -2249,7 +2249,7 @@ pub fn prove_merged_forest_lazy_quad(
         // replaces the two arity-2 phase As (and one phase B + line step
         // disappear); the exit claim shape is unchanged.
         let (sc_x, r_x, finals) = {
-            let _g = crate::utils::prof::scope("mf:phaseA");
+            let _g = tracing::info_span!("mf:phaseA").entered();
             // The unweighted 16-case ΔΔ table: round 1's p₂ gathers —
             // subset sums of the leaf-affine Δ cross products per
             // position pair, both table halves.
@@ -2306,7 +2306,7 @@ pub fn prove_merged_forest_lazy_quad(
                 prove_quad_bottom_sumcheck(transcript, z_x.clone(), groups, &tabs);
             (Some(sc), r_x, finals)
         };
-        let _g = crate::utils::prof::scope("mf:phaseB");
+        let _g = tracing::info_span!("mf:phaseB").entered();
         let mut bufs_b: [Vec<Gf>; 4] = [
             Vec::with_capacity(num_trees),
             Vec::with_capacity(num_trees),

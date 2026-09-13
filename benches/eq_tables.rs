@@ -8,7 +8,7 @@
 
 mod common;
 
-use std::{hint::black_box, time::Instant};
+use std::{hint::black_box};
 
 use f2z::{
     BinaryFieldGF128,
@@ -152,9 +152,11 @@ fn median(mut samples: Vec<u128>) -> u128 {
 /// the timestamp, so differences in nested-container destruction are not
 /// accidentally counted as builder time.
 fn timed_ns<R>(body: &mut impl FnMut() -> R) -> u128 {
-    let started = Instant::now();
-    let result = body();
-    let elapsed = started.elapsed().as_nanos();
+    let (result, started) = f2z::observability::measure(
+        tracing::info_span!("eq_tables:result"),
+        || body(),
+    ).expect("measure completed operation");
+    let elapsed = started.as_nanos();
     black_box(result);
     elapsed
 }
@@ -267,6 +269,7 @@ fn sample_count() -> usize {
 }
 
 fn main() {
+    f2z::observability::install().expect("install Perfetto subscriber");
     common::enforce_known_env();
     let _ = flock_core::init_perf_thread_pool();
     let samples = sample_count();

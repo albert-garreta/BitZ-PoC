@@ -206,7 +206,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
     let reducer = OptimizedSumcheckReducer::new(&cfg).map_err(error)?;
     let mod_q_coefficients = ModQCoefficients::from_relation(prepared, modulus, &cfg);
     let (outer, outer_nonces) = {
-        let _scope = crate::utils::prof::scope("ecdsa:outer_prove");
+        let _scope = tracing::info_span!("ecdsa:outer_prove").entered();
         let products = witness.build_outer_product_mles(prepared, modulus, &cfg);
         prove_outer_sumcheck_with_reducer_grinded::<OuterGrinding, _, _>(
             t,
@@ -236,7 +236,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
     let batched_matrix_mle =
         mod_q_coefficients.build_batched_matrix_mle(prepared, &inner_claim, &cfg)?;
     let inner = {
-        let _scope = crate::utils::prof::scope("ecdsa:shared_inner_prove");
+        let _scope = tracing::info_span!("ecdsa:shared_inner_prove").entered();
         prove_composite_inner_sumcheck(
             t,
             inner_claim.claimed_sum().clone(),
@@ -278,7 +278,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         nonces: AtomicNonces::Prove(&mut flock_nonces),
     };
     let opening = {
-        let _scope = crate::utils::prof::scope("ecdsa:f2z_prove");
+        let _scope = tracing::info_span!("ecdsa:f2z_prove").entered();
         prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus_with_security(
             t,
             hint,
@@ -451,11 +451,11 @@ fn boundary<D: GrindingDomain, T: Transcript>(
     bits: u32,
     nonce: Option<u64>,
 ) -> Result<u64> {
-    let _scope = crate::utils::prof::scope(if nonce.is_some() {
+    let _scope = tracing::info_span!("boundary_grinding", component = if nonce.is_some() {
         "ecdsa:boundary_grinding_verify"
     } else {
         "ecdsa:boundary_grinding_prove"
-    });
+    }).entered();
     if bits == 0 {
         if nonce.is_some_and(|n| n != 0) {
             return Err(error("noncanonical zero-work nonce"));

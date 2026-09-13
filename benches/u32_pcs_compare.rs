@@ -19,7 +19,7 @@ use std::error::Error;
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
 use std::process::Command;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crypto_primitives::FromWithConfig;
 use f2z::ext_proj::ProjArith;
@@ -35,7 +35,7 @@ use f2z::piop::spartan::{
 };
 use f2z::transcript::Blake3Transcript;
 use f2z::transcript::traits::Transcript;
-use f2z::utils::prof::ProfileInterval;
+use f2z::observability::Interval;
 use integer_pcs_compare::binius::{self, BiniusBackend};
 use integer_pcs_compare::ligerito::{self, LigeritoBackend};
 use integer_pcs_compare::whir_goldilocks::{self as whir, Backend as WhirBackend};
@@ -183,15 +183,15 @@ impl TraceWriter {
         })
     }
 
-    fn write(&mut self, run: Run<'_>, intervals: &[ProfileInterval]) -> Result<(), Box<dyn Error>> {
+    fn write(&mut self, run: Run<'_>, intervals: &[Interval]) -> Result<(), Box<dyn Error>> {
         let root = intervals
             .iter()
-            .find(|interval| interval.parent_order.is_none())
+            .find(|interval| interval.parent.is_none())
             .ok_or("trace has no root interval")?;
-        if root.label != ROOT_SCOPE
+        if root.label() != ROOT_SCOPE
             || intervals
                 .iter()
-                .filter(|interval| interval.parent_order.is_none())
+                .filter(|interval| interval.parent.is_none())
                 .count()
                 != 1
         {
@@ -230,7 +230,7 @@ impl TraceWriter {
         };
         let record = json!({
             "schema":"zkperf.trace/v1", "record":"run", "run_id":run_id,
-            "series_id":series_id, "root_span_id":span_id(root.order),
+            "series_id":series_id, "root_span_id":span_id(root.id),
             "benchmark":{
                 "suite":"f2z-pcs", "name":"u32-pcs-compare",
                 "label":format!("{} at 2^{} u32 multiplications",run.backend.display(),run.exponent),
@@ -239,7 +239,7 @@ impl TraceWriter {
                 "git_dirty":self.dirty, "build_profile":"bench"
             },
             "trial":run.trial.json(run.trial_seed),
-            "clock":{"id":format!("mono-process-{}-{run_id}",std::process::id()),"kind":"monotonic","unit":"ns","source":"std::time::Instant"},
+            "clock":{"id":format!("mono-process-{}-{run_id}",std::process::id()),"kind":"monotonic","unit":"ns","source":"Perfetto SDK"},
             "status":"ok", "trace_complete":true,
             "environment":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH,"cpu":"Apple Silicon","threads":self.threads,"thread_policy":"Rayon pool; no affinity pinning"},
             "parameters":{
@@ -256,11 +256,11 @@ impl TraceWriter {
 
         let parents = intervals
             .iter()
-            .map(|interval| (interval.order, interval))
+            .map(|interval| (interval.id, interval))
             .collect::<HashMap<_, _>>();
         for interval in intervals {
             let labels = ancestry(interval, &parents);
-            let primary = match interval.label {
+            let primary = match interval.label() {
                 ROOT_SCOPE => "end-to-end",
                 MATERIALIZE_SCOPE | CLAIM_SCOPE => "preparation",
                 COMMIT_SCOPE => "commit",
@@ -271,7 +271,7 @@ impl TraceWriter {
                 _ => "proving",
             };
             let mut tags = vec![primary];
-            if interval.label != ROOT_SCOPE {
+            if interval.label() != ROOT_SCOPE {
                 let boundary_tag = if labels.contains(&VERIFY_SCOPE) {
                     "verification"
                 } else {
@@ -284,20 +284,20 @@ impl TraceWriter {
             if labels.contains(&COMMIT_SCOPE) || labels.contains(&OPENING_SCOPE) {
                 tags.push("pcs");
             }
-            let math = math_for(interval.label, run.backend);
+            let math = math_for(interval.label(), run.backend);
             let mut attributes = json!({
-                "scope_kind":if interval.parent_order.is_none(){"scope"}else if is_primary(interval.label){"phase"}else{"procedure"},
-                "short_name":short_name(interval.label),
-                "primary_sequence":is_primary(interval.label),
-                "source_label":interval.label,
+                "scope_kind":if interval.parent.is_none(){"scope"}else if is_primary(interval.label()){"phase"}else{"procedure"},
+                "short_name":short_name(interval.label()),
+                "primary_sequence":is_primary(interval.label()),
+                "source_label":interval.label(),
             });
             if !math.is_empty() {
                 attributes["math_latex"] = json!(math);
             }
             let span = json!({
                 "schema":"zkperf.trace/v1","record":"span","run_id":run_id,
-                "span_id":span_id(interval.order),"parent_span_id":interval.parent_order.map(span_id),
-                "operation":operation(interval.label),"name":name(interval.label),
+                "span_id":span_id(interval.id),"parent_span_id":interval.parent.map(span_id),
+                "operation":operation(interval.label()),"name":name(interval.label()),
                 "primary_phase":primary,"phase_tags":tags,
                 "start_ns":interval.start_ns.to_string(),"end_ns":interval.end_ns.to_string(),
                 "duration_ns":interval.end_ns.saturating_sub(interval.start_ns).to_string(),
@@ -318,15 +318,15 @@ impl TraceWriter {
 }
 
 fn ancestry<'a>(
-    interval: &'a ProfileInterval,
-    parents: &HashMap<u64, &'a ProfileInterval>,
-) -> Vec<&'static str> {
+    interval: &'a Interval,
+    parents: &HashMap<u64, &'a Interval>,
+) -> Vec<&'a str> {
     let mut labels = Vec::new();
     let mut cursor = Some(interval);
     while let Some(current) = cursor {
-        labels.push(current.label);
+        labels.push(current.label());
         cursor = current
-            .parent_order
+            .parent
             .and_then(|id| parents.get(&id).copied());
     }
     labels
@@ -621,17 +621,6 @@ fn derive_f2z_claim(
     )
 }
 
-fn clear_profile() {
-    let _ = f2z::utils::prof::take_intervals();
-    let _ = f2z::utils::prof::take_totals();
-}
-
-fn finish_profile() -> Vec<ProfileInterval> {
-    let intervals = f2z::utils::prof::take_intervals();
-    let _ = f2z::utils::prof::take_totals();
-    intervals
-}
-
 #[allow(clippy::too_many_arguments)]
 fn run_f2z(
     writer: &mut TraceWriter,
@@ -642,7 +631,8 @@ fn run_f2z(
     witness_ms: f64,
     reps: usize,
 ) -> Result<(), Box<dyn Error>> {
-    let setup = Instant::now();
+    let setup_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let setup = tracing::info_span!("u32_pcs_compare:setup").entered();
     let relation = PreparedU32MulRelation::new_with_profile_and_ligerito::<
         f2z::piop::spartan::Lambda100,
     >(*witness.layout(), common::ligerito_selection(100))?;
@@ -655,19 +645,19 @@ fn run_f2z(
     let ligerito =
         common::ligerito_report(relation.ligerito_configuration(), relation.security().ood);
     drop((relation, commitment));
-    let setup_ms = common::elapsed_ms(setup);
+    let setup_ms = { drop(setup); f2z::observability::duration(&setup_recording.intervals().expect("complete operation capture"), "u32_pcs_compare:setup").expect("query completed operation") }.as_secs_f64() * 1e3;
     eprintln!("    backend_setup_ms={setup_ms:.3}");
     let security = json!({"profile":"F2Z Lambda100 terminal opening","ligerito":ligerito,"target_bits":100,"evaluation_modulus":FQ_MOD.to_string(),"commitment_field":"GF(2^128)","transcript_hash":"BLAKE3"});
     for trial in std::iter::once(Trial::Warmup).chain((0..reps).map(Trial::Sample)) {
         let seed = trial_seed(shape_seed, Backend::F2z, trial);
-        clear_profile();
-        let root = f2z::utils::prof::scope(ROOT_SCOPE);
+        let recording = f2z::observability::Recording::start(Vec::new()).expect("start PCS trial");
+        let root = tracing::info_span!(ROOT_SCOPE).entered();
         let rows = {
-            let _phase = f2z::utils::prof::scope(MATERIALIZE_SCOPE);
+            let _phase = tracing::info_span!(MATERIALIZE_SCOPE).entered();
             witness.f2z_bit_rows()
         };
         let (hint, encoding, pt, vt) = {
-            let _phase = f2z::utils::prof::scope(COMMIT_SCOPE);
+            let _phase = tracing::info_span!(COMMIT_SCOPE).entered();
             let hint = commit_u32_terminal_f2z_witness(&prepared, rows)?;
             let encoding = bincode::serialize(&hint.commitment)?;
             let pt = seed_f2z_transcript(&encoding, seed);
@@ -675,19 +665,19 @@ fn run_f2z(
             (hint, encoding, pt, vt)
         };
         let (claim, mut pt, mut vt) = {
-            let _phase = f2z::utils::prof::scope(CLAIM_SCOPE);
+            let _phase = tracing::info_span!(CLAIM_SCOPE).entered();
             derive_f2z_claim(witness, pt, vt)
         };
         let proof = {
-            let _phase = f2z::utils::prof::scope(OPENING_SCOPE);
+            let _phase = tracing::info_span!(OPENING_SCOPE).entered();
             prove_u32_terminal_claim_f2z(&mut pt, &prepared, &hint, &claim)?
         };
         {
-            let _phase = f2z::utils::prof::scope(VERIFY_SCOPE);
+            let _phase = tracing::info_span!(VERIFY_SCOPE).entered();
             verify_u32_terminal_claim_f2z(&mut vt, &prepared, &hint.commitment, &claim, &proof)?;
         }
         drop(root);
-        let intervals = finish_profile();
+        let intervals = recording.intervals().expect("query PCS trial");
         let proof_bytes = u32_terminal_claim_f2z_proof_bytes(&proof).len();
         writer.write(
             Run {
@@ -722,7 +712,8 @@ fn run_whir(
     witness_ms: f64,
     reps: usize,
 ) -> Result<(), Box<dyn Error>> {
-    let setup = Instant::now();
+    let setup_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let setup = tracing::info_span!("u32_pcs_compare:setup").entered();
     let (folding, log_inv_rate, max_pow_bits) = whir_tuning(exponent)?;
     let backend = match WhirBackend::setup_with_params(
         witness.layout().capacity(),
@@ -737,15 +728,15 @@ fn run_whir(
         Err(error) => return Err(error.into()),
     };
     let summary = backend.security_summary();
-    let setup_ms = common::elapsed_ms(setup);
+    let setup_ms = { drop(setup); f2z::observability::duration(&setup_recording.intervals().expect("complete operation capture"), "u32_pcs_compare:setup").expect("query completed operation") }.as_secs_f64() * 1e3;
     eprintln!("    backend_setup_ms={setup_ms:.3}");
     let security = json!({"profile":format!("WHIR Goldilocks degree {} {}",whir::CHALLENGE_EXTENSION_DEGREE,whir::SECURITY_ASSUMPTION_LABEL),"target_bits":100,"internal_target_bits":summary.target_bits,"challenge_extension_degree":whir::CHALLENGE_EXTENSION_DEGREE,"configured_max_pow_bits":summary.configured_max_pow_bits,"derived_max_pow_bits":summary.derived_max_pow_bits,"folding_factor":summary.folding_factor,"starting_log_inverse_rate":summary.starting_log_inverse_rate,"commitment_ood_samples":summary.commitment_ood_samples,"round_queries":summary.round_queries,"round_pow_bits":summary.round_pow_bits,"final_queries":summary.final_queries,"final_pow_bits":summary.final_pow_bits,"hash":"Poseidon2Goldilocks<8>","hiding":false});
     for trial in std::iter::once(Trial::Warmup).chain((0..reps).map(Trial::Sample)) {
         let seed = trial_seed(shape_seed, Backend::Whir, trial);
-        clear_profile();
-        let root = f2z::utils::prof::scope(ROOT_SCOPE);
+        let recording = f2z::observability::Recording::start(Vec::new()).expect("start PCS trial");
+        let root = tracing::info_span!(ROOT_SCOPE).entered();
         let materialized = {
-            let _phase = f2z::utils::prof::scope(MATERIALIZE_SCOPE);
+            let _phase = tracing::info_span!(MATERIALIZE_SCOPE).entered();
             backend.materialize(
                 witness.x_values(),
                 witness.y_values(),
@@ -753,24 +744,24 @@ fn run_whir(
             )?
         };
         let committed = {
-            let _phase = f2z::utils::prof::scope(COMMIT_SCOPE);
+            let _phase = tracing::info_span!(COMMIT_SCOPE).entered();
             backend.commit(materialized, seed)
         };
         let ready = {
-            let _phase = f2z::utils::prof::scope(CLAIM_SCOPE);
+            let _phase = tracing::info_span!(CLAIM_SCOPE).entered();
             backend.derive_and_bind_claim(committed)?
         };
         let opened = {
-            let _phase = f2z::utils::prof::scope(OPENING_SCOPE);
+            let _phase = tracing::info_span!(OPENING_SCOPE).entered();
             backend.open(ready)
         };
         {
-            let _phase = f2z::utils::prof::scope(VERIFY_SCOPE);
+            let _phase = tracing::info_span!(VERIFY_SCOPE).entered();
             let _ = std::hint::black_box(backend.verify(&opened)?);
         }
         std::hint::black_box(opened.claim());
         drop(root);
-        let intervals = finish_profile();
+        let intervals = recording.intervals().expect("query PCS trial");
         writer.write(
             Run {
                 backend: Backend::Whir,
@@ -850,17 +841,18 @@ fn run_binius(
     witness_ms: f64,
     reps: usize,
 ) -> Result<(), Box<dyn Error>> {
-    let setup = Instant::now();
+    let setup_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let setup = tracing::info_span!("u32_pcs_compare:setup").entered();
     let log_inv_rate = binius_log_inv_rate()?;
     let backend = BiniusBackend::setup(exponent, log_inv_rate);
-    let setup_ms = common::elapsed_ms(setup);
+    let setup_ms = { drop(setup); f2z::observability::duration(&setup_recording.intervals().expect("complete operation capture"), "u32_pcs_compare:setup").expect("query completed operation") }.as_secs_f64() * 1e3;
     eprintln!("    backend_setup_ms={setup_ms:.3}");
     let security = json!({"profile":"Binius64 ring-switch + BaseFold","target_bits":binius::SECURITY_BITS,"soundness_bound_model":"Diamond-Posen Eq. 42 plus 128-bit SHA-256 cap","estimated_query_soundness_bits":backend.estimated_soundness_bits(),"challenge_field":"GF(2^128)-GHASH","hash":"SHA-256","log_inverse_rate":backend.log_inv_rate(),"test_queries":backend.n_test_queries(),"hiding":false});
     for trial in std::iter::once(Trial::Warmup).chain((0..reps).map(Trial::Sample)) {
         let seed = trial_seed(shape_seed, Backend::Binius, trial);
-        clear_profile();
+        let recording = f2z::observability::Recording::start(Vec::new()).expect("start PCS trial");
         let output = backend.run_trial(|| pack_binius_rows(witness), seed)?;
-        let intervals = finish_profile();
+        let intervals = recording.intervals().expect("query PCS trial");
         writer.write(
             Run {
                 backend: Backend::Binius,
@@ -894,16 +886,19 @@ fn run_ligerito(
     witness_ms: f64,
     reps: usize,
 ) -> Result<(), Box<dyn Error>> {
-    let setup = Instant::now();
-    let backend = LigeritoBackend::setup(exponent)?;
-    let setup_ms = common::elapsed_ms(setup);
+    let (backend, setup) = f2z::observability::measure(
+        tracing::info_span!("u32_pcs_compare:backend"),
+        || LigeritoBackend::setup(exponent),
+    ).expect("measure completed operation");
+    let backend = backend?;
+    let setup_ms = setup.as_secs_f64() * 1e3;
     eprintln!("    backend_setup_ms={setup_ms:.3}");
     let security = json!({"profile":"F2Z opener: Round 0 + ring switch + Johnson-regime Ligerito","target_bits":ligerito::SECURITY_BITS,"soundness_bound_model":"opener union bound (Round 0, ring switch, every Ligerito level's proximity folds, queries and OOD samples) at the pinned flock constants","achieved_bits":backend.soundness_bits(),"ligerito_component_bits":backend.component_bits(),"challenge_field":"GF(2^128)-GHASH","hash":"BLAKE3","log_inverse_rate":backend.log_inv_rate(),"level0_queries":backend.n_test_queries(),"level0_query_grinding_bits":backend.level0_query_grinding_bits(),"level0_fold_grinding_bits":backend.level0_fold_grinding_bits(),"ood_grinding_bits":backend.ood_grinding_bits(),"hiding":false});
     for trial in std::iter::once(Trial::Warmup).chain((0..reps).map(Trial::Sample)) {
         let seed = trial_seed(shape_seed, Backend::Ligerito, trial);
-        clear_profile();
+        let recording = f2z::observability::Recording::start(Vec::new()).expect("start PCS trial");
         let output = backend.run_trial(|| pack_binius_rows(witness), seed)?;
-        let intervals = finish_profile();
+        let intervals = recording.intervals().expect("query PCS trial");
         writer.write(
             Run {
                 backend: Backend::Ligerito,
@@ -964,7 +959,7 @@ fn span_id(order: u64) -> String {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    unsafe { std::env::set_var("OBLONG_PROFILE_INTERVALS", "1") };
+    f2z::observability::install().expect("install Perfetto subscriber");
     let threads = common::init();
     let reps = common::reps(None, DEFAULT_REPS);
     let root_seed = common::seed(None, DEFAULT_SEED);
@@ -983,12 +978,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         flock_core::scratch::clear();
         let shape_seed = common::mul_witness::shape_seed(root_seed, exponent);
         let mut rng = StdRng::seed_from_u64(shape_seed);
-        let start = Instant::now();
-        let witness =
-            U32MulWitness::from_fn_with_f2z_width(1usize << exponent, U32MulF2zWidth::W1, |_| {
+        let (witness, start) = f2z::observability::measure(
+            tracing::info_span!("u32_pcs_compare:witness"),
+            || U32MulWitness::from_fn_with_f2z_width(1usize << exponent, U32MulF2zWidth::W1, |_| {
                 (rng.random::<u32>(), rng.random::<u32>())
-            })?;
-        let witness_ms = common::elapsed_ms(start);
+            }),
+        ).expect("measure completed operation");
+        let witness = witness?;
+        let witness_ms = start.as_secs_f64() * 1e3;
         let digest = witness_digest(&witness);
         eprintln!(
             "2^{exponent}: shared_witness_generation_ms={witness_ms:.3}, digest {}",

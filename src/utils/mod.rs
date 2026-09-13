@@ -8,7 +8,6 @@ pub mod primality;
 pub mod inner_transparent_field;
 pub mod ops_macros;
 pub mod parallel;
-pub mod prof;
 pub mod wide_mul;
 pub(crate) mod blake3x4;
 

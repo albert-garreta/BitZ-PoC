@@ -39,9 +39,8 @@
 //! `Limber114` profile is MultiSwap-only and is rejected here).
 //!
 //! (`F2Z_SHA_LOG2S` / `F2Z_SHA_REPS` / `F2Z_SHA_SEED` are deprecated
-//! aliases.) Set `F2Z_SHA_TRACE_PATH=/path/to/trace.jsonl` together with
-//! `OBLONG_PROFILE_INTERVALS=1` to emit one canonical `zkperf.trace/v1` run per
-//! warm-up/sample, including observed nested profiler intervals.
+//! aliases.) Set `F2Z_SHA_TRACE_PATH=/path/to/trace.jsonl` to emit one canonical
+//! `zkperf.trace/v1` run per warm-up/sample, including observed nested spans.
 //!
 //! Enable `bench-peak-memory` to measure peak live Rust heap during witness
 //! generation, commitment, and proving. Each run resets the peak; each shape
@@ -68,7 +67,6 @@ use std::{
     io::{BufWriter, Write},
     path::Path,
     process::Command,
-    time::Instant,
 };
 
 use f2z::{
@@ -86,7 +84,7 @@ use f2z::{
         verify_sha256_compressions_with_config,
     },
     transcript::Blake3Transcript,
-    utils::prof::ProfileInterval,
+    observability::Interval,
 };
 use serde_json::{Value, json};
 
@@ -101,8 +99,8 @@ struct RepTiming {
     commit_ms: f64,
     prove_ms: f64,
     verify_ms: f64,
-    prove_phases: Vec<(&'static str, f64)>,
-    verify_phases: Vec<(&'static str, f64)>,
+    prove_phases: Vec<(String, f64)>,
+    verify_phases: Vec<(String, f64)>,
     spartan_bytes: usize,
     f2z_bytes: usize,
     forests: usize,
@@ -207,10 +205,6 @@ struct TraceWriter {
 impl TraceWriter {
     fn from_env(threads: usize) -> Option<Self> {
         let path = std::env::var_os("F2Z_SHA_TRACE_PATH")?;
-        assert!(
-            std::env::var_os("OBLONG_PROFILE_INTERVALS").is_some(),
-            "F2Z_SHA_TRACE_PATH requires OBLONG_PROFILE_INTERVALS=1"
-        );
         let path = Path::new(&path);
         if let Some(parent) = path
             .parent()
@@ -258,18 +252,18 @@ impl TraceWriter {
         prepared: &PreparedSha256CompressionBatch,
         inner_prefix_vars: usize,
         trial: Trial,
-        intervals: &[ProfileInterval],
+        intervals: &[Interval],
     ) {
         let roots = intervals
             .iter()
-            .filter(|interval| interval.parent_order.is_none())
+            .filter(|interval| interval.parent.is_none())
             .collect::<Vec<_>>();
         assert_eq!(
             roots.len(),
             1,
             "a traced benchmark run has exactly one root"
         );
-        assert_eq!(roots[0].label, "sha256-trace:verified_trial");
+        assert_eq!(roots[0].label(), "sha256-trace:verified_trial");
 
         let exponent = shape.exponent();
         let compressions = prepared.instances();
@@ -287,7 +281,7 @@ impl TraceWriter {
             self.git_rev, self.threads, self.build_profile,
         );
         let clock_id = format!("mono-process-{}-{run_id}", std::process::id());
-        let root_span_id = span_id(roots[0].order);
+        let root_span_id = span_id(roots[0].id);
         let run = json!({
             "schema": "zkperf.trace/v1",
             "record": "run",
@@ -320,7 +314,7 @@ impl TraceWriter {
                 "id": clock_id,
                 "kind": "monotonic",
                 "unit": "ns",
-                "source": "std::time::Instant",
+                "source": "Perfetto SDK",
             },
             "status": "ok",
             "trace_complete": true,
@@ -395,21 +389,21 @@ impl TraceWriter {
 
         let by_order = intervals
             .iter()
-            .map(|interval| (interval.order, interval))
+            .map(|interval| (interval.id, interval))
             .collect::<HashMap<_, _>>();
         let mut totals = HashMap::<(Option<u64>, &'static str), usize>::new();
         for interval in intervals {
             *totals
-                .entry((interval.parent_order, interval.label))
+                .entry((interval.parent, interval.label()))
                 .or_default() += 1;
         }
         let mut seen = HashMap::<(Option<u64>, &'static str), usize>::new();
         for interval in intervals {
-            let key = (interval.parent_order, interval.label);
+            let key = (interval.parent, interval.label());
             let occurrence_index = seen.entry(key).or_default();
             let occurrence_count = totals[&key];
             let descriptor = describe_span(interval, &by_order);
-            let coordinate = if interval.label.starts_with("spartan:round_grinding_") {
+            let coordinate = if interval.label().starts_with("spartan:round_grinding_") {
                 json!({
                     "round_index": *occurrence_index,
                     "round_count": occurrence_count,
@@ -439,8 +433,8 @@ impl TraceWriter {
                 "schema": "zkperf.trace/v1",
                 "record": "span",
                 "run_id": run_id,
-                "span_id": span_id(interval.order),
-                "parent_span_id": interval.parent_order.map(span_id),
+                "span_id": span_id(interval.id),
+                "parent_span_id": interval.parent.map(span_id),
                 "operation": descriptor.operation,
                 "name": descriptor.name,
                 "primary_phase": descriptor.primary_phase,
@@ -471,20 +465,20 @@ struct SpanDescriptor {
 }
 
 fn describe_span(
-    interval: &ProfileInterval,
-    by_order: &HashMap<u64, &ProfileInterval>,
+    interval: &Interval,
+    by_order: &HashMap<u64, &Interval>,
 ) -> SpanDescriptor {
     let mut labels = Vec::new();
     let mut cursor = Some(interval);
     while let Some(current) = cursor {
-        labels.push(current.label);
+        labels.push(current.label());
         cursor = current
-            .parent_order
+            .parent
             .and_then(|order| by_order.get(&order).copied());
     }
     let under = |label: &str| labels.iter().any(|candidate| *candidate == label);
     let has_fragment = |fragment: &str| labels.iter().any(|label| label.contains(fragment));
-    let root = interval.parent_order.is_none();
+    let root = interval.parent.is_none();
     let verifying = under("sha256-trace:verification");
     let witness = under("sha256-trace:witness_generation");
     let committing = under("sha256-trace:commit");
@@ -555,8 +549,8 @@ fn describe_span(
         }
     }
 
-    let (name, short_name) = span_names(interval.label);
-    let scope_kind = match interval.label {
+    let (name, short_name) = span_names(interval.label());
+    let scope_kind = match interval.label() {
         "sha256-trace:verified_trial" => "scope",
         "sha256-trace:end_to_end_prove"
         | "sha256-trace:witness_generation"
@@ -579,7 +573,7 @@ fn describe_span(
         "spartan:round_grinding_prove" | "spartan:round_grinding_verify" => "round",
         _ => "procedure",
     };
-    let scope_tag = match interval.label {
+    let scope_tag = match interval.label() {
         "sha256-trace:verified_trial" => Some("end-to-end"),
         "sha256-trace:end_to_end_prove" => Some("proving"),
         "sha256-trace:witness_generation" => Some("witness-generation"),
@@ -592,7 +586,7 @@ fn describe_span(
         _ => None,
     };
     let primary_sequence = matches!(
-        interval.label,
+        interval.label(),
         "sha256-trace:witness_generation"
             | "sha256-trace:statement_materialization"
             | "sha256-trace:commit"
@@ -600,7 +594,7 @@ fn describe_span(
             | "sha256-trace:verification"
     );
     SpanDescriptor {
-        operation: operation_name(interval.label),
+        operation: operation_name(interval.label()),
         name,
         short_name,
         primary_phase,
@@ -608,7 +602,7 @@ fn describe_span(
         scope_kind,
         scope_tag,
         primary_sequence,
-        math_latex: span_math(interval.label),
+        math_latex: span_math(interval.label()),
     }
 }
 
@@ -891,23 +885,22 @@ fn run_once(
     inner_prefix_vars: usize,
     pc: &flock_core::pcs::ligerito::ProverConfig,
     vc: &flock_core::pcs::ligerito::VerifierConfig,
-) -> (RepTiming, Vec<ProfileInterval>) {
-    let _ = f2z::utils::prof::take_totals();
-    let _ = f2z::utils::prof::take_intervals();
+) -> (RepTiming, Vec<Interval>) {
+    let recording = f2z::observability::Recording::start(Vec::new()).expect("start SHA trial");
     #[cfg(feature = "bench-peak-memory")]
     common::peak_memory::reset_peak();
-    let verified_trial_scope = f2z::utils::prof::scope("sha256-trace:verified_trial");
+    let verified_trial_scope = tracing::info_span!("sha256-trace:verified_trial").entered();
 
     // Witness synthesis and public-statement materialization are excluded
     // from the prover boundary (docs/bench-schema.md).
-    let started = Instant::now();
+    let witness_scope = tracing::info_span!("sha256-trace:witness_and_statement").entered();
     let witness = {
-        let _scope = f2z::utils::prof::scope("sha256-trace:witness_generation");
+        let _scope = tracing::info_span!("sha256-trace:witness_generation").entered();
         generate_sha256_compression_witnesses(prepared, inputs)
             .expect("SHA witness synthesis succeeds")
     };
     let statements = {
-        let _scope = f2z::utils::prof::scope("sha256-trace:statement_materialization");
+        let _scope = tracing::info_span!("sha256-trace:statement_materialization").entered();
         let statements = inputs
             .iter()
             .zip(witness.outputs())
@@ -916,23 +909,19 @@ fn run_once(
         black_box(&statements);
         statements
     };
-    let witness_ms = started.elapsed().as_secs_f64() * 1e3;
-    let _ = f2z::utils::prof::take_totals();
+    drop(witness_scope);
 
     // End-to-end prove: Step 1 commitment plus the runtime-prime proof.
-    let prover_scope = f2z::utils::prof::scope("sha256-trace:end_to_end_prove");
-    let prove_started = Instant::now();
-    let started = Instant::now();
+    let prover_scope = tracing::info_span!("sha256-trace:end_to_end_prove").entered();
     let hint = {
-        let _scope = f2z::utils::prof::scope("sha256-trace:commit");
+        let _scope = tracing::info_span!("sha256-trace:commit").entered();
         commit_sha256_compression_witness_with_config(prepared, &witness, pc)
             .expect("SHA source commitment succeeds")
     };
-    let commit_ms = started.elapsed().as_secs_f64() * 1e3;
 
     let mut prover_transcript = Blake3Transcript::new();
     let proof = {
-        let _scope = f2z::utils::prof::scope("sha256-trace:proof");
+        let _scope = tracing::info_span!("sha256-trace:proof").entered();
         prove_sha256_compressions_with_prefix_vars_and_config(
             &mut prover_transcript,
             prepared,
@@ -952,19 +941,16 @@ fn run_once(
         );
     }
     drop(prover_scope);
-    let prove_ms = prove_started.elapsed().as_secs_f64() * 1e3;
     // Capture before verifier allocations and proof serialization. This
     // includes the live input/setup baseline and witness-generation peak.
     #[cfg(feature = "bench-peak-memory")]
     let peak_heap_bytes = Some(common::peak_memory::peak_bytes());
     #[cfg(not(feature = "bench-peak-memory"))]
     let peak_heap_bytes = None;
-    let prove_phases = f2z::utils::prof::take_totals();
 
     let mut verifier_transcript = Blake3Transcript::new();
-    let started = Instant::now();
     {
-        let _scope = f2z::utils::prof::scope("sha256-trace:verification");
+        let _scope = tracing::info_span!("sha256-trace:verification").entered();
         verify_sha256_compressions_with_config(
             &mut verifier_transcript,
             prepared,
@@ -975,10 +961,14 @@ fn run_once(
         )
         .expect("SHA proof verifies");
     }
-    let verify_ms = started.elapsed().as_secs_f64() * 1e3;
     drop(verified_trial_scope);
-    let verify_phases = f2z::utils::prof::take_totals();
-    let intervals = f2z::utils::prof::take_intervals();
+    let intervals = recording.intervals().expect("query SHA trial");
+    let witness_ms = common::span_ms(&intervals, "sha256-trace:witness_and_statement");
+    let commit_ms = common::span_ms(&intervals, "sha256-trace:commit");
+    let prove_ms = common::span_ms(&intervals, "sha256-trace:end_to_end_prove");
+    let verify_ms = common::span_ms(&intervals, "sha256-trace:verification");
+    let prove_phases = f2z::observability::phase_totals(&intervals, "sha256-trace:end_to_end_prove").unwrap();
+    let verify_phases = f2z::observability::phase_totals(&intervals, "sha256-trace:verification").unwrap();
     black_box(&proof);
 
     let f2z_bytes = proof.f2z().to_bytes().len();
@@ -1025,7 +1015,8 @@ fn bench_shape<P: IopSecurityProfile>(
             BenchShape::ProductLayout(_) => 0x7072_6f64_7563_745f,
         };
 
-    let setup_started = Instant::now();
+    let setup_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let setup_started = tracing::info_span!("sha256_compressions:setup_started").entered();
     let prepared = match shape.prepare::<P>(layout) {
         Ok(prepared) => prepared,
         Err(
@@ -1042,7 +1033,7 @@ fn bench_shape<P: IopSecurityProfile>(
         Err(error) => panic!("prepare failed: {error}"),
     };
     let (pc, vc) = sha256_compression_configs(&prepared).expect("valid Ligerito config");
-    let setup_ms = setup_started.elapsed().as_secs_f64() * 1e3;
+    let setup_ms = { drop(setup_started); f2z::observability::duration(&setup_started_recording.intervals().expect("complete operation capture"), "sha256_compressions:setup_started").expect("query completed operation") }.as_secs_f64() * 1e3;
     println!(
         "LIGERITO_CONFIG {}",
         common::ligerito_report(
@@ -1276,6 +1267,7 @@ fn bench_shape<P: IopSecurityProfile>(
 }
 
 pub(crate) fn main() {
+    f2z::observability::install().expect("install Perfetto subscriber");
     let threads = common::init();
     let mut trace_writer = TraceWriter::from_env(threads);
     let mut result_writer = std::env::var_os("F2Z_SHA_RESULT_PATH").map(|path| {

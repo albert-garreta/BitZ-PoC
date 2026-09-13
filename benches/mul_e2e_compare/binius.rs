@@ -346,9 +346,11 @@ fn limbs(value: u128) -> [u64; 2] {
 
 pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
     let (circuit, wires) = compile(corpus);
-    let started = std::time::Instant::now();
-    let filler = populate(corpus, &circuit, &wires, false).expect("Binius materialization");
-    let generation_ms = started.elapsed().as_secs_f64() * 1e3;
+    let (filler, started) = f2z::observability::measure(
+        tracing::info_span!("mul_e2e_compare/binius:filler"),
+        || populate(corpus, &circuit, &wires, false).expect("Binius materialization"),
+    ).expect("measure completed operation");
+    let generation_ms = started.as_secs_f64() * 1e3;
     if corpus.workload.is_wide() {
         let read = |limbs: &[Wire]| {
             limbs.iter().rev().fold(0_u128, |acc, &limb| {

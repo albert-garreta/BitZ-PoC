@@ -1,6 +1,9 @@
 //! Perfetto recording and typed interval queries. The SDK owns all clocks,
 //! thread tracks, and buffering; the native trace processor reconstructs slices.
 
+#[path = "observability/memory.rs"]
+pub mod memory;
+
 use perfetto_sdk::{
     heap_buffer::HeapBuffer,
     pb_msg::{PbMsg, PbMsgWriter},
@@ -203,17 +206,88 @@ pub fn totals<'a>(intervals: impl IntoIterator<Item = &'a Interval>) -> Vec<(Str
     }
     groups
         .into_iter()
-        .map(|(label, mut ranges)| {
-            ranges.sort_unstable();
-            let mut end = 0;
-            let mut ns = 0;
-            for (start, next_end) in ranges {
-                ns += next_end.saturating_sub(end.max(start));
-                end = end.max(next_end);
-            }
-            (label, ns as f64 / 1e9)
-        })
+        .map(|(label, ranges)| (label, union_ns(ranges) as f64 / 1e9))
         .collect()
+}
+
+fn union_ns(ranges: impl IntoIterator<Item = (u64, u64)>) -> u64 {
+    let mut ranges: Vec<_> = ranges.into_iter().collect();
+    ranges.sort_unstable();
+    let mut end = 0;
+    let mut ns = 0;
+    for (start, next_end) in ranges {
+        ns += next_end.saturating_sub(end.max(start));
+        end = end.max(next_end);
+    }
+    ns
+}
+
+/// Render completed intervals, never measure them. Inclusive and exclusive
+/// wall durations use interval unions; labels and repeated occurrences remain
+/// in first-observed order. Optional RSS growth is a separate observation.
+pub fn write_profile(
+    mut writer: impl Write,
+    header: &str,
+    intervals: &[Interval],
+    memory: Option<&std::collections::BTreeMap<String, memory::PeakGrowth>>,
+) -> io::Result<()> {
+    let denominator = union_ns(intervals.iter().map(|s| (s.start_ns, s.end_ns)));
+    writeln!(writer, "┌─ prove profile: {header}")?;
+    for (label, seconds) in totals(intervals) {
+        let occurrences: Vec<_> = intervals.iter().filter(|s| s.label() == label).collect();
+        let inclusive = union_ns(occurrences.iter().map(|s| (s.start_ns, s.end_ns)));
+        // Subtract children per occurrence BEFORE unioning the same label.
+        // A child's time can overlap another occurrence's own work (including
+        // recursive occurrences of this label); subtracting group unions loses it.
+        let mut self_ranges = Vec::new();
+        for occurrence in &occurrences {
+            let mut children: Vec<_> = intervals
+                .iter()
+                .filter(|s| s.parent == Some(occurrence.id))
+                .map(|s| (s.start_ns, s.end_ns))
+                .collect();
+            children.sort_unstable();
+            let mut cursor = occurrence.start_ns;
+            for (start, end) in children {
+                if cursor < start {
+                    self_ranges.push((cursor, start));
+                }
+                cursor = cursor.max(end);
+            }
+            if cursor < occurrence.end_ns {
+                self_ranges.push((cursor, occurrence.end_ns));
+            }
+        }
+        let exclusive = union_ns(self_ranges);
+        let share = if denominator == 0 {
+            0.0
+        } else {
+            inclusive as f64 * 100.0 / denominator as f64
+        };
+        let indent = "  ".repeat(occurrences[0].depth);
+        write!(
+            writer,
+            "│ {indent}{label}: {:.3?} ({share:.1}%)",
+            Duration::from_secs_f64(seconds)
+        )?;
+        if occurrences.len() > 1 {
+            write!(writer, " n={}", occurrences.len())?;
+        }
+        if exclusive < inclusive {
+            write!(writer, " self={:.3?}", Duration::from_nanos(exclusive))?;
+        }
+        if let Some(row) = memory.and_then(|rows| rows.get(&label)) {
+            write!(
+                writer,
+                " Δrss={:.1} MiB peak={:.1} MiB",
+                row.bytes as f64 / 1048576.0,
+                row.peak_bytes as f64 / 1048576.0
+            )?;
+        }
+        writeln!(writer)?;
+    }
+    writeln!(writer, "└─")?;
+    writer.flush()
 }
 
 /// A local native executable, never a downloader or an external tracing service.

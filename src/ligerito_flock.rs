@@ -148,7 +148,7 @@ impl<T: Transcript + Send> Challenger for ZincChallenger<'_, T> {
     }
 
     fn grind_pow(&mut self, bits: u32) -> u64 {
-        let _g = crate::utils::prof::scope("lig:grind_pow");
+        let _g = tracing::info_span!("lig:grind_pow").entered();
         let seed = self.pow_seed();
         // Parallel smallest-nonce search (prover-side only; the verifier
         // checks whatever nonce arrives): every pool thread takes chunks of
@@ -2579,7 +2579,7 @@ pub(crate) fn prove_ood_round_packed(
     p_msg: &[F128],
     params: OodRoundParams,
 ) -> OodProverClaim {
-    let _g = crate::utils::prof::scope("mc:ood");
+    let _g = tracing::info_span!("mc:ood").entered();
     let vars = packed_message_vars(p_msg);
     absorb_ood_round_header(transcript, vars, params);
     let nonce = if params.grinding_bits == 0 {
@@ -2810,7 +2810,7 @@ impl ModQLigProverReduction for EqProverReduction {
     ) -> PreparedProverLigeritoClaim<Self::Proof> {
         let mut rings = Vec::with_capacity(points.len());
         let mut eq_his = Vec::with_capacity(points.len());
-        let _g_r = crate::utils::prof::scope("mq:rings");
+        let _g_r = tracing::info_span!("mq:rings").entered();
         for pt in points {
             let eq_hi =
                 crate::poly::utils::build_eq_x_r_vec(&pt[LOG_PACKING..], &()).expect("r_hi");
@@ -2827,7 +2827,7 @@ impl ModQLigProverReduction for EqProverReduction {
         let eta_ood: Option<Gf> = ood.map(|_| grinder.get_field_challenge(&()));
         let grinding_nonces = grinder.finish();
 
-        let _g_b = crate::utils::prof::scope("mq:bcomb");
+        let _g_b = tracing::info_span!("mq:bcomb").entered();
         let mut basis = vec![F128::ZERO; 1usize << self.packed_vars];
         let mut precomputed_round0 = if rs_fast() {
             Some(fill_phi_basis_round0(
@@ -2851,7 +2851,7 @@ impl ModQLigProverReduction for EqProverReduction {
             target += *eta * beta;
         }
         if let (Some(claim), Some(eta)) = (ood, eta_ood) {
-            let _g_o = crate::utils::prof::scope("mq:ood_basis");
+            let _g_o = tracing::info_span!("mq:ood_basis").entered();
             add_ood_basis(
                 &mut basis,
                 &hint.p_msg,
@@ -2882,7 +2882,7 @@ fn prove_prepared_mod_q_ligerito_with_security(
     precomputed_round0: Option<(Gf, Gf)>,
     security: Option<&mut atomic::AtomicSecurity<'_>>,
 ) -> LigeritoProof {
-    let _g_l = crate::utils::prof::scope("mq:lig");
+    let _g_l = tracing::info_span!("mq:lig").entered();
     if let Some(security) = security {
         let mut challenger = atomic::AtomicChallenger::new(transcript, security);
         let proof = match precomputed_round0 {
@@ -3129,7 +3129,7 @@ pub fn prove_mle_eval_mod_q_ligerito_with_ood(
     checked_mod_q_geometry(p, q_bits).expect("valid mod-q geometry");
     assert_eq!(row_weights_q.len(), geometry.rows, "row-weight length");
     let chunks = {
-        let _g = crate::utils::prof::scope("mq:chunking");
+        let _g = tracing::info_span!("mq:chunking").entered();
         ModQWeightChunks::from_dense(p, row_weights_q, q_bits)
             .expect("q_bits must be in [1, 126] and every row weight must be < 2^q_bits")
     };
@@ -3594,7 +3594,7 @@ pub fn verify_mle_eval_mod_q_ligerito_runtime(
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
     let chunks = {
-        let _g = crate::utils::prof::scope("mv:chunking");
+        let _g = tracing::info_span!("mv:chunking").entered();
         ModQWeightChunks::from_dense(p, row_weights_q, q_bits)
             .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?
     };
@@ -3651,7 +3651,7 @@ where
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
     let chunks = {
-        let _g = crate::utils::prof::scope("mv:chunking");
+        let _g = tracing::info_span!("mv:chunking").entered();
         ModQWeightChunks::from_dense(p, row_weights_q, q_bits)
             .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?
     };
@@ -3899,7 +3899,7 @@ where
     let lch = chunks.chunk_count();
     reduction.validate_shape(lch)?;
     let folds = {
-        let _g = crate::utils::prof::scope("mv:readoff");
+        let _g = tracing::info_span!("mv:readoff").entered();
         verify_mod_q_lig_preflight(proof, p, chunks, read_off)?
     };
 
@@ -3931,11 +3931,11 @@ where
     }
 
     let prepared = {
-        let _g = crate::utils::prof::scope("mv:rswitch");
+        let _g = tracing::info_span!("mv:rswitch").entered();
         reduction.prepare(grinder, &points, &mus, ood_claim.as_ref())?
     };
     {
-        let _g = crate::utils::prof::scope("mv:lig");
+        let _g = tracing::info_span!("mv:lig").entered();
         verify_prepared_mod_q_ligerito_with_security(
             transcript, commitment, proof.lig, vc, prepared, security,
         )?;
@@ -4219,7 +4219,7 @@ pub fn prove_mle_eval_ext_ligerito_with_ood(
     // Step 1: the exact integer folds of every coordinate's chunked lift —
     // all `e·L₁` weight sets in ONE pass over the committed bit rows.
     let mus: Vec<Vec<u128>> = {
-        let _g = crate::utils::prof::scope("ext:step1_folds");
+        let _g = tracing::info_span!("ext:step1_folds").entered();
         let chunked: Vec<Vec<u128>> = weight_coords
             .iter()
             .flat_map(|wc| chunk_row_weights(wc, c_w, l1))
@@ -4378,7 +4378,7 @@ where
     // (`2^{c_w·l}` for the lhs, the fused `α'^d·2^{c_w·l}` for the rhs)
     // are prepared ONCE as Montgomery factors, so each fold costs one
     // Montgomery multiplication (plain×monty) and a modular add.
-    let _g_checks = crate::utils::prof::scope("ext:checks");
+    let _g_checks = tracing::info_span!("ext:checks").entered();
     let zq = ProjArith::new(q_proj);
     let l2 = mod_q_num_chunks(p, proj.prime_bits);
     let chunk_base = zq.reduce(1u128 << c_w);
@@ -4796,7 +4796,7 @@ fn prove_mod_q_lig_xor_impl(
     });
 
     // Main chunks — identical to `prove_mle_eval_mod_q_ligerito`.
-    let _g_main = crate::utils::prof::scope("mq:main_chunks");
+    let _g_main = tracing::info_span!("mq:main_chunks").entered();
     let mut mfs = Vec::with_capacity(lch);
     let mut us = Vec::with_capacity(lch);
     let mut presums = Vec::with_capacity(lch);
@@ -4859,7 +4859,7 @@ fn prove_mod_q_lig_xor_impl(
     let mut x_points: Vec<Vec<Gf>> = Vec::with_capacity(lch_x);
     if !active.is_empty() {
         let x_rows_all: Vec<Vec<Vec<u64>>> = {
-            let _g = crate::utils::prof::scope("vx:extract");
+            let _g = tracing::info_span!("vx:extract").entered();
             active
                 .iter()
                 .map(|&j| {
@@ -4880,7 +4880,7 @@ fn prove_mod_q_lig_xor_impl(
             .map(|&j| chunk_row_weights(xors[j].row_weights_q, c_w_x, lch_x))
             .collect();
         let rows_refs: Vec<&[Vec<u64>]> = x_rows_all.iter().map(|r| &r[..]).collect();
-        let _g_vx = crate::utils::prof::scope("vx:common");
+        let _g_vx = tracing::info_span!("vx:common").entered();
         for l in 0..lch_x {
             let w_refs: Vec<&[u128]> = x_chunks_all.iter().map(|ch| &ch[l][..]).collect();
             let (mf, us_per_claim, presum, pt) =
@@ -4907,7 +4907,7 @@ fn prove_mod_q_lig_xor_impl(
 
     // Ring-switch messages. Main chunks: dense in-pack marginals of the
     // packed message, as before.
-    let _g_rm = crate::utils::prof::scope("mq:rings_main");
+    let _g_rm = tracing::info_span!("mq:rings_main").entered();
     let mut rings = Vec::new();
     let mut eq_his = Vec::with_capacity(lch);
     for pt in &points {
@@ -4924,7 +4924,7 @@ fn prove_mod_q_lig_xor_impl(
     // entries; the non-boolean eq table is shared across k, and the k walks
     // run in parallel). Columns sharing their in-pack coordinates share
     // `eq_lo`, so their marginals SUM into one ring message per bucket.
-    let _g_rx = crate::utils::prof::scope("vx:rings");
+    let _g_rx = tracing::info_span!("vx:rings").entered();
     let p0 = xor_support_prefix(layout);
     // One eq table per chunk — the batched claims SHARE their exit point.
     let xor_eq_ns: Vec<Vec<Gf>> = x_points
@@ -4975,11 +4975,11 @@ fn prove_mod_q_lig_xor_impl(
     // Combined basis + target over the flat ring list.
     let m_p = packed_vars(p);
     let mut b_comb = vec![F128::ZERO; 1usize << m_p];
-    let _g_bm = crate::utils::prof::scope("mq:bcomb_main");
+    let _g_bm = tracing::info_span!("mq:bcomb_main").entered();
     fill_phi_basis(&mut b_comb, &eq_his, &etas[..lch], &eq_r2);
     drop(_g_bm);
     let mut target = Gf::zero();
-    let _g_bx = crate::utils::prof::scope("vx:bcomb");
+    let _g_bx = tracing::info_span!("vx:bcomb").entered();
     // Φ images of the per-chunk eq tables, shared across the claims.
     let phi_ns_all: Vec<Vec<Gf>> = xor_eq_ns
         .iter()
@@ -5013,7 +5013,7 @@ fn prove_mod_q_lig_xor_impl(
         target += etas[i] * beta;
     }
 
-    let _g_lig = crate::utils::prof::scope("mq:lig");
+    let _g_lig = tracing::info_span!("mq:lig").entered();
     let lig = ligerito::recursive_prover_with_basis(
         pc,
         par_clone_f128(&hint.p_msg),
@@ -6753,14 +6753,14 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
         claims.iter().map(|_| Vec::with_capacity(lch_x)).collect();
     for blk in &blocks {
         let x_rows_blk: Vec<Vec<Vec<u64>>> = {
-            let _g = crate::utils::prof::scope("tap:extract");
+            let _g = tracing::info_span!("tap:extract").entered();
             claims[blk.clone()]
                 .iter()
                 .map(|cl| extract_virtual_tap_rows(layout, &hint.rows, cl.taps))
                 .collect()
         };
         let rows_refs: Vec<&[Vec<u64>]> = x_rows_blk.iter().map(|r| &r[..]).collect();
-        let _g = crate::utils::prof::scope("tap:common");
+        let _g = tracing::info_span!("tap:common").entered();
         for l in 0..lch_x {
             let w_refs: Vec<&[u128]> = x_chunks_all[blk.clone()]
                 .iter()
@@ -6779,7 +6779,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
     }
 
     // Rings: per (claim, chunk, bucket) the summed member walks.
-    let _g_r = crate::utils::prof::scope("tap:rings");
+    let _g_r = tracing::info_span!("tap:rings").entered();
     let mut rings = Vec::new();
     // Per (claim, chunk): the plan + each member's support tables
     // (built once here, reused by the basis-fill phase).
@@ -6832,7 +6832,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
     let m_p = packed_vars(&layout.p);
     let mut b_comb = vec![F128::ZERO; 1usize << m_p];
     {
-        let _g = crate::utils::prof::scope("tap:bcomb");
+        let _g = tracing::info_span!("tap:bcomb").entered();
         let mut ring_idx = 0usize;
         for (n, cl) in claims.iter().enumerate() {
             for l in 0..lch_x {
@@ -6864,7 +6864,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
         target += etas[i] * beta;
     }
 
-    let _g_lig = crate::utils::prof::scope("tap:lig");
+    let _g_lig = tracing::info_span!("tap:lig").entered();
     let lig = ligerito::recursive_prover_with_basis(
         pc,
         par_clone_f128(&hint.p_msg),
@@ -7382,7 +7382,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
                 .collect();
             let forms: Vec<usize> = cl.claims.iter().map(|c| c.form).collect();
             let w_refs: Vec<&[u128]> = cl.claims.iter().map(|c| c.row_weights_q).collect();
-            let _g = crate::utils::prof::scope("tapf:casew");
+            let _g = tracing::info_span!("tapf:casew").entered();
             let case_w = rlc_case_weights(&w_refs, &gammas, &forms, cl.streams.len());
             rlc_chunk_case_weights(&case_w, c_w_x, lch_x)
         })
@@ -7390,7 +7390,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
 
     // Stream rows per cluster.
     let x_rows_all: Vec<Vec<Vec<Vec<u64>>>> = {
-        let _g = crate::utils::prof::scope("tapf:extract");
+        let _g = tracing::info_span!("tapf:extract").entered();
         clusters
             .iter()
             .map(|cl| {
@@ -7422,20 +7422,20 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
         let mut points = Vec::with_capacity(lch_x);
         let mut actives = Vec::with_capacity(lch_x);
         for chunk in &case_chunks_all[ci] {
-            let _g = crate::utils::prof::scope("tapf:chunk");
+            let _g = tracing::info_span!("tapf:chunk").entered();
             let case_pow = {
-                let _g = crate::utils::prof::scope("tapf:pows");
+                let _g = tracing::info_span!("tapf:pows").entered();
                 rlc_case_pow_table(chunk, alpha)
             };
             let (leaves, u) = {
-                let _g = crate::utils::prof::scope("tapf:leaves");
+                let _g = tracing::info_span!("tapf:leaves").entered();
                 rlc_leaves_and_folds(&p_x, x_rows, chunk, &case_pow)
             };
             let (_roots, mf, z, e_d) = {
-                let _g = crate::utils::prof::scope("tapf:forest");
+                let _g = tracing::info_span!("tapf:forest").entered();
                 prove_merged_forest(transcript, &leaves, t_x, p_x.col_vars)
             };
-            let _g_ps = crate::utils::prof::scope("tapf:presum");
+            let _g_ps = tracing::info_span!("tapf:presum").entered();
             let (z_bj, z_c) = z.split_at(t_x);
             let eq_zbj = build_eq_x_r_vec(z_bj, &()).expect("t' >= 1");
             let eq_zc = build_eq_x_r_vec(z_c, &()).expect("s >= 1");
@@ -7514,9 +7514,9 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
         let (d1, omegas, d2, omegas2) = if shape.l1_pairs.is_empty() {
             (None, Vec::new(), None, Vec::new())
         } else {
-            let _g = crate::utils::prof::scope("tapf:discharge");
+            let _g = tracing::info_span!("tapf:discharge").entered();
             let etas_dis: Vec<Gf> = transcript.get_field_challenges(shape.l1_pairs.len(), &());
-            let _g_t = crate::utils::prof::scope("tapf:dis_tbls");
+            let _g_t = tracing::info_span!("tapf:dis_tbls").entered();
             let side_not_rows = |sd: RlcSide| -> Vec<Vec<u64>> {
                 match sd {
                     RlcSide::Col(fi) => rlc_not_rows(&x_rows[fi]),
@@ -7551,7 +7551,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
                 })
                 .collect();
             drop(_g_t);
-            let _g_r = crate::utils::prof::scope("tapf:dis_run");
+            let _g_r = tracing::info_span!("tapf:dis_run").entered();
             let (d1, rho, vals) = rlc_prove_eqf_level(transcript, &p_x, t_x, &specs);
             let omegas: Vec<Gf> = shape
                 .side_list
@@ -7648,7 +7648,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
     }
 
     // (5) Twisted rings over all surfaces, per (stream, class).
-    let _g_r = crate::utils::prof::scope("tapf:rings");
+    let _g_r = tracing::info_span!("tapf:rings").entered();
     let mut ring_walks: Vec<(TapOp, usize, crate::taps::TapClass)> = Vec::new();
     for (si, surf) in surfaces.iter().enumerate() {
         for &fi in &surf.streams {
@@ -7679,7 +7679,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
     let m_p = packed_vars(&layout.p);
     let mut b_comb = vec![F128::ZERO; 1usize << m_p];
     {
-        let _g = crate::utils::prof::scope("tapf:bcomb");
+        let _g = tracing::info_span!("tapf:bcomb").entered();
         for (i, (tap, si, cls)) in ring_walks.iter().enumerate() {
             let phi_tables = crate::ligerito::phi_byte_tables(&eq_r2, etas[i]);
             let sup = tap_support_tables(layout, tap, &surfaces[*si].point, *cls);
@@ -7695,7 +7695,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
             .fold(Gf::zero(), |a, (su, e)| a + *su * *e);
         target += etas[i] * beta;
     }
-    let _g_l = crate::utils::prof::scope("tapf:lig");
+    let _g_l = tracing::info_span!("tapf:lig").entered();
     let lig = ligerito::recursive_prover_with_basis(
         pc,
         par_clone_f128(&hint.p_msg),
@@ -8758,7 +8758,7 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family(
 
     // Case weights + chunking (c_w over the x geometry).
     let case_chunks = {
-        let _g = crate::utils::prof::scope("rlc:casew");
+        let _g = tracing::info_span!("rlc:casew").entered();
         let case_w = rlc_case_weights(&w_refs, &gammas, &forms, j);
         rlc_chunk_case_weights(
             &case_w,
@@ -8862,7 +8862,7 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
 
     // Rank-1 case weights + chunking.
     let case_chunks = {
-        let _g = crate::utils::prof::scope("rlc:casew");
+        let _g = tracing::info_span!("rlc:casew").entered();
         let case_w =
             rlc_case_weights_shared_point(row_weights_q, &rlc_gamma_cases(&gammas, &forms, j));
         rlc_chunk_case_weights(
@@ -8941,7 +8941,7 @@ fn prove_rlc_family_front(
 
     // Family-column x rows + the 2^j − 1 monomial (AND) row sets, built once.
     let x_rows: Vec<Vec<Vec<u64>>> = {
-        let _g = crate::utils::prof::scope("rlc:extract");
+        let _g = tracing::info_span!("rlc:extract").entered();
         family_cols
             .iter()
             .map(|&i| {
@@ -8988,18 +8988,18 @@ fn prove_rlc_family_front(
         None
     };
     for chunk in case_chunks {
-        let _g = crate::utils::prof::scope("rlc:chunk");
+        let _g = tracing::info_span!("rlc:chunk").entered();
         let case_pow = {
-            let _g = crate::utils::prof::scope("rlc:pows");
+            let _g = tracing::info_span!("rlc:pows").entered();
             rlc_case_pow_table(chunk, alpha)
         };
         let (u, mf, z, e_d) = if lazy && j == 2 {
             let u = {
-                let _g = crate::utils::prof::scope("rlc:folds");
+                let _g = tracing::info_span!("rlc:folds").entered();
                 rlc_folds(&p_x, &x_rows, chunk)
             };
             let (_roots, mf, z, e_d) = {
-                let _g = crate::utils::prof::scope("rlc:forest");
+                let _g = tracing::info_span!("rlc:forest").entered();
                 crate::merged_forest::prove_merged_forest_lazy_rlc2(
                     transcript, &p_x, &x_rows[0], &x_rows[1], &case_pow,
                 )
@@ -9007,12 +9007,12 @@ fn prove_rlc_family_front(
             (u, mf, z, e_d)
         } else if lazy && j >= 3 && j34_lazy {
             let u = {
-                let _g = crate::utils::prof::scope("rlc:folds");
+                let _g = tracing::info_span!("rlc:folds").entered();
                 rlc_folds(&p_x, &x_rows, chunk)
             };
             let row_refs: Vec<&[Vec<u64>]> = x_rows.iter().map(|r| &r[..]).collect();
             let (_roots, mf, z, e_d) = {
-                let _g = crate::utils::prof::scope("rlc:forest");
+                let _g = tracing::info_span!("rlc:forest").entered();
                 crate::merged_forest::prove_merged_forest_lazy_rlc_general(
                     transcript, &p_x, &row_refs, &case_pow,
                 )
@@ -9020,12 +9020,12 @@ fn prove_rlc_family_front(
             (u, mf, z, e_d)
         } else if let Some(packed) = &packed_x1 {
             let u = {
-                let _g = crate::utils::prof::scope("rlc:folds");
+                let _g = tracing::info_span!("rlc:folds").entered();
                 rlc_folds(&p_x, &x_rows, chunk)
             };
             let pow2: Vec<Vec<Gf>> = case_pow.iter().map(|r| vec![r[1]]).collect();
             let (_roots, mf, z, e_d) = {
-                let _g = crate::utils::prof::scope("rlc:forest");
+                let _g = tracing::info_span!("rlc:forest").entered();
                 // Derived x-channels, not the witness layout — no column
                 // elision here (the tail is not generally zero).
                 let live = p_x.cols();
@@ -9036,17 +9036,17 @@ fn prove_rlc_family_front(
             (u, mf, z, e_d)
         } else {
             let (leaves, u) = {
-                let _g = crate::utils::prof::scope("rlc:leaves");
+                let _g = tracing::info_span!("rlc:leaves").entered();
                 rlc_leaves_and_folds(&p_x, &x_rows, chunk, &case_pow)
             };
             let (_roots, mf, z, e_d) = {
-                let _g = crate::utils::prof::scope("rlc:forest");
+                let _g = tracing::info_span!("rlc:forest").entered();
                 prove_merged_forest(transcript, &leaves, t_x, p_x.col_vars)
             };
             (u, mf, z, e_d)
         };
 
-        let _g_ps = crate::utils::prof::scope("rlc:presum");
+        let _g_ps = tracing::info_span!("rlc:presum").entered();
         let (z_bj, z_c) = z.split_at(t_x);
         let eq_zbj = build_eq_x_r_vec(z_bj, &()).expect("t' >= 1");
         let eq_zc = build_eq_x_r_vec(z_c, &()).expect("s >= 1");
@@ -9123,9 +9123,9 @@ fn prove_rlc_family_front(
     let dis = if l1_pairs.is_empty() {
         None
     } else {
-        let _g = crate::utils::prof::scope("rlc:discharge");
+        let _g = tracing::info_span!("rlc:discharge").entered();
         let etas_dis: Vec<Gf> = transcript.get_field_challenges(l1_pairs.len(), &());
-        let _g_t = crate::utils::prof::scope("rlc:dis_tbls");
+        let _g_t = tracing::info_span!("rlc:dis_tbls").entered();
         // Canonical side list (columns ascending, then AND masks) and the
         // complemented bit rows per distinct side.
         let side_list: Vec<RlcSide> = {
@@ -9166,7 +9166,7 @@ fn prove_rlc_family_front(
             })
             .collect();
         drop(_g_t);
-        let _g_r = crate::utils::prof::scope("rlc:dis_run");
+        let _g_r = tracing::info_span!("rlc:dis_run").entered();
         let (d1, rho, vals) = rlc_prove_eqf_level(transcript, &p_x, t_x, &specs);
         // One ω per distinct side (first-occurrence value).
         let omegas: Vec<Gf> = side_list
@@ -9281,7 +9281,7 @@ fn prove_rlc_family_front(
     // chunk's exit; then the level-1 COLUMN sides at ρ; then the level-2
     // committed exits at ρ'. (AND sides never ring — level 2 discharges
     // them.)
-    let _g_r = crate::utils::prof::scope("rlc:rings");
+    let _g_r = tracing::info_span!("rlc:rings").entered();
     let mut ring_specs: Vec<(&[Gf], Vec<usize>)> = Vec::with_capacity(lch_x + 2);
     for (l, pt) in points.iter().enumerate() {
         let cols: Vec<usize> = (0..j)
@@ -9379,7 +9379,7 @@ fn prove_rlc_families_closure(
     let eq_r2 = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
     let etas: Vec<Gf> = transcript.get_field_challenges(n_rings, &());
 
-    let _g_b = crate::utils::prof::scope("rlc:bcomb");
+    let _g_b = tracing::info_span!("rlc:bcomb").entered();
     let m_p = packed_vars(p);
     let mut b_comb = vec![F128::ZERO; 1usize << m_p];
     let mut ring_idx = 0usize;
@@ -9414,7 +9414,7 @@ fn prove_rlc_families_closure(
     }
     drop(_g_b);
 
-    let _g_l = crate::utils::prof::scope("rlc:lig");
+    let _g_l = tracing::info_span!("rlc:lig").entered();
     ligerito::recursive_prover_with_basis(
         pc,
         par_clone_f128(&hint.p_msg),
@@ -9733,7 +9733,7 @@ fn verify_rlc_family_front(
             }
         }
         let roots: Vec<Gf> = {
-            let _g = crate::utils::prof::scope("rlcv:roots");
+            let _g = tracing::info_span!("rlcv:roots").entered();
             part.us[l].iter().map(|&u| comb.pow(u)).collect()
         };
         let (z, e_d) = verify_merged_forest(transcript, &roots, &part.mfs[l], t_x, p_x.col_vars)
@@ -9743,7 +9743,7 @@ fn verify_rlc_family_front(
         // active set pins the presum's expected group count and degrees
         // (all cascade groups are degree 2).
         let case_pow = {
-            let _g = crate::utils::prof::scope("rlcv:pows");
+            let _g = tracing::info_span!("rlcv:pows").entered();
             rlc_case_pow_table(chunk_w, alpha)
         };
         let taus = rlc_tau_tables(&case_pow);
@@ -10192,7 +10192,7 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_families_shared_point(
     for (cols, forms, _cs) in &canon {
         let gammas: Vec<u128> = (0..forms.len()).map(|_| fq_challenge(transcript)).collect();
         let case_chunks = {
-            let _g = crate::utils::prof::scope("rlc:casew");
+            let _g = tracing::info_span!("rlc:casew").entered();
             let case_w = rlc_case_weights_shared_point(
                 row_weights_q,
                 &rlc_gamma_cases(&gammas, forms, cols.len()),
@@ -11081,12 +11081,12 @@ where
         });
 
         let weights = {
-            let _g = crate::utils::prof::scope("mqv:vwprep");
+            let _g = tracing::info_span!("mqv:vwprep").entered();
             VirtColumnWeights::new(self.map, points, &etas, self.derived_row_bits)
         };
         let a_cols = crate::dual_basis::dual_basis_cols();
         let a_prime = {
-            let _g = crate::utils::prof::scope("mqv:vaprime");
+            let _g = tracing::info_span!("mqv:vaprime").entered();
             virtual_a_prime(
                 self.map,
                 &weights,
@@ -12350,18 +12350,18 @@ where
     ) -> PreparedProverLigeritoClaim<Self::Proof> {
         let etas: Vec<Gf> = grinder.get_field_challenges(points.len(), &());
         let weights = {
-            let _g = crate::utils::prof::scope("mqv:wprep");
+            let _g = tracing::info_span!("mqv:wprep").entered();
             VirtColumnWeights::new(self.map, points, &etas, self.derived_row_bits)
         };
         let a_cols = crate::dual_basis::dual_basis_cols();
         debug_assert_eq!(hint.p_msg.len(), 1usize << self.source_packed_vars);
         let planes = {
-            let _g = crate::utils::prof::scope("mqv:planes");
+            let _g = tracing::info_span!("mqv:planes").entered();
             weights.packed_source_planes()
         };
 
         let hs = {
-            let _g = crate::utils::prof::scope("mqv:hs");
+            let _g = tracing::info_span!("mqv:hs").entered();
             match &planes {
                 Some(planes) => {
                     let mut hs = planes.hs_fold(&hint.p_msg);
@@ -12382,7 +12382,7 @@ where
             .zip(hs.iter())
             .fold(Gf::zero(), |acc, (&r, &h)| acc + r * h);
         let (mut basis, mut precomputed_round0): (Vec<F128>, Option<(Gf, Gf)>) = {
-            let _g = crate::utils::prof::scope("mqv:aprime");
+            let _g = tracing::info_span!("mqv:aprime").entered();
             match &planes {
                 Some(planes) => {
                     let (mut basis, mut round0) = planes.a_prime(&rho, &hint.p_msg);
@@ -12399,7 +12399,7 @@ where
             }
         };
         if let (Some(claim), Some(eta)) = (ood, eta_ood) {
-            let _g = crate::utils::prof::scope("mqv:ood_basis");
+            let _g = tracing::info_span!("mqv:ood_basis").entered();
             add_ood_basis(
                 &mut basis,
                 &hint.p_msg,
@@ -12704,7 +12704,7 @@ where
         .expect("commitment metadata must match the Ligerito config");
 
     let _bound_statement = {
-        let _g = crate::utils::prof::scope("mqv:stmt");
+        let _g = tracing::info_span!("mqv:stmt").entered();
         absorb_virtual_statement(
             transcript,
             &hint_f.commitment,
@@ -12724,7 +12724,7 @@ where
     // rows under `h_layout`'s claim shape (the flat bit-MLE is
     // layout-agnostic, and the layouts coincide here anyway).
     if virtual_id_fast_eligible(map, h_layout, f_layout) && virt_id_fast() {
-        let _g = crate::utils::prof::scope("mqv:idfast");
+        let _g = tracing::info_span!("mqv:idfast").entered();
         let core = prove_mod_q_lig_core_with_security(
             transcript,
             hint_f,
@@ -12757,7 +12757,7 @@ where
     // The common prefix operates on synthesized `h`; the selected reduction
     // alone knows about `M`, and the common suffix opens committed `f`.
     let h_packed = {
-        let _g = crate::utils::prof::scope("mqv:pack");
+        let _g = tracing::info_span!("mqv:pack").entered();
         crate::ligerito::pack_columns_from_rows(h_layout, h_rows)
     };
     let core = prove_mod_q_lig_core_with_security(
@@ -13096,7 +13096,7 @@ where
     validate_ligerito_commitment(commitment_f, vc)?;
 
     let _bound_statement = {
-        let _g = crate::utils::prof::scope("mqv:stmt");
+        let _g = tracing::info_span!("mqv:stmt").entered();
         absorb_virtual_statement(
             transcript,
             commitment_f,

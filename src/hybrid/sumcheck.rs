@@ -366,7 +366,7 @@ pub(super) fn prove(
     let mut value = claims[0].value + rho * claims[1].value;
     let mut point = Vec::with_capacity(geometry.bit_log());
     let mut rounds = Vec::with_capacity(geometry.bit_log());
-    let packed_scope = crate::utils::prof::scope("js:packed_rounds");
+    let packed_scope = tracing::info_span!("js:packed_rounds").entered();
     let marginals: [Vec<F>; 2] =
         std::array::from_fn(|b| bit_marginals(sources[b], &high[b], low[b].len() / 128));
     for round in 0..7 {
@@ -385,7 +385,7 @@ pub(super) fn prove(
     }
     drop(marginals);
     drop(packed_scope);
-    let tables_scope = crate::utils::prof::scope("js:tables");
+    let tables_scope = tracing::info_span!("js:tables").entered();
     let bit_eq: [F; 128] = eq_table(&point).try_into().expect("seven coordinates");
     let bit_table = byte_table(&bit_eq);
     const MAX_LANES: usize = 16;
@@ -446,7 +446,7 @@ pub(super) fn prove(
     drop(low);
     drop(high);
     drop(tables_scope);
-    let dense_scope = crate::utils::prof::scope("js:dense_rounds");
+    let dense_scope = tracing::info_span!("js:dense_rounds").entered();
     while witness.len() > 1 {
         observe(t, &message);
         let r = sample(t);

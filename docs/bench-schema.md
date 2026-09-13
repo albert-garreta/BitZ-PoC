@@ -17,7 +17,7 @@ scopes to an already inclusive total.
 
 One accounting model, one printer, one machine-readable line across the
 protocol benches. The shared implementation lives in `benches/common/mod.rs`;
-the per-step umbrella profiler scopes (`step2:*` … `step5:*`) live in the
+the per-step umbrella tracing spans (`step2:*` … `step5:*`) live in the
 crate's protocol prove/verify functions.
 
 **Historical v1 field taxonomy (retained in v2).** The key names below feed the paper's Experiments
@@ -66,7 +66,7 @@ only the commitment) and `verify_residual_ms`.
 
 `step2:project_prove|verify`, `step3:piop_prove|verify`,
 `step4:bitify_prove|verify`, `step5_0:reduce_prove|verify`,
-`step5:open_prove|verify` — thread-local `crate::utils::prof` scopes wrapped
+`step5:open_prove|verify` — ordinary `tracing` spans wrapped
 around the existing finer-grained labels, which are unchanged (they keep the
 SHA trace writer and older tooling working). The harness sums only the
 umbrella labels for the step totals and uses a shared label table for detail.
@@ -144,11 +144,15 @@ an alias and the canonical name to different values is an error):
 so a typo'd knob can never silently do nothing. The registry lives in
 `benches/common/mod.rs` (`KNOWN_F2Z_ENV`); add new knobs there.
 
-Protocol benches force `OBLONG_PROFILE=1` at startup so the step split is
-always populated (scope overhead is µs-class; the medians carry it). The
-`pcs` bench keeps profiling opt-in — its opener phases are µs-scale, so the
-headline timings stay scope-free and its forest/opener detail keys are `na`
-unless `OBLONG_PROFILE=1` is set.
+Timing-enabled executables require `--features span-metrics` (native comparison
+features include it) and a native `trace_processor_shell`, either on `PATH` or
+selected by `PERFETTO_TRACE_PROCESSOR`. Their single subscriber records ordinary
+`tracing` spans through the Perfetto SDK. No `OBLONG_PROFILE*` switch is needed.
+The shared Rust query interface supplies completed intervals to metrics, tuning,
+and CLI summaries. See [span metrics](span-metrics.md) for capture boundaries,
+memory semantics, and validation commands. Instrumentation overhead is included
+inside spans; do not compare these timings with older uninstrumented series as
+if their measurement configurations were identical.
 
 ## Which benches adopt what
 

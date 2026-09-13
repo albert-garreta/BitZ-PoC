@@ -337,7 +337,7 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
     }
 
     let assignment_binding = {
-        let _scope = crate::utils::prof::scope("sha256:statement_bind_prover");
+        let _scope = tracing::info_span!("sha256:statement_bind_prover").entered();
         let public_statement_binding = public_statement_binding(public_statement)?;
         let assignment_binding =
             assignment_binding(prepared, &hint_f.commitment, pc, &public_statement_binding)?;
@@ -356,16 +356,16 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
     // Commit first, then derive the one runtime prime. The exact signed
     // relation stays q-independent; only its one local-row collapse is
     // performed in the sampled field.
-    let step2_scope = crate::utils::prof::scope("step2:project_prove");
+    let step2_scope = tracing::info_span!("step2:project_prove").entered();
     let initial_nonce = {
-        let _scope = crate::utils::prof::scope("sha256:initial_grinding_prove");
+        let _scope = tracing::info_span!("sha256:initial_grinding_prove").entered();
         grind_boundary::<Sha256InitialGrinding, _>(
             transcript,
             profile.initial_grinding_bits() as u32,
         )?
     };
     let mod_q = {
-        let _scope = crate::utils::prof::scope("sha256:runtime_prime_sample_prover");
+        let _scope = tracing::info_span!("sha256:runtime_prime_sample_prover").entered();
         sample_sha256_mod_q_context(transcript, profile)?
     };
     validate_common_geometry(None, map, h_layout, f_layout)?;
@@ -375,7 +375,7 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
     // Collapse the local rows and form the product-structured SHA residual.
     // Power-of-two batches open it directly; partial batches use the legacy
     // assignment-domain sumcheck below. There is no nonlinear outer sumcheck.
-    let step3_scope = crate::utils::prof::scope("step3:piop_prove");
+    let step3_scope = tracing::info_span!("step3:piop_prove").entered();
     let field_config = mod_q.field_config();
     let local_row_point = squeeze_challenge_point(
         transcript,
@@ -393,7 +393,7 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
     // coefficient vector. In the product layout its coefficient is already
     // rank one across F2Z rows and columns.
     let terminal_nonce = {
-        let _scope = crate::utils::prof::scope("sha256:public_batch_grinding_prove");
+        let _scope = tracing::info_span!("sha256:public_batch_grinding_prove").entered();
         grind_boundary::<Sha256PublicBatchGrinding, _>(
             transcript,
             profile.terminal_grinding_bits() as u32,
@@ -402,17 +402,17 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
     let constant_one_batch = squeeze_constant_one_batch(transcript, field_config);
     let (public_slot_weights, public_io_batch) = squeeze_public_io_batch(transcript, field_config);
     let reducer = {
-        let _scope = crate::utils::prof::scope("sha256:reducer_init_prover");
+        let _scope = tracing::info_span!("sha256:reducer_init_prover").entered();
         OptimizedSumcheckReducer::new(field_config).map_err(SpartanError::from)?
     };
     let local_row_weights = eq_table(&local_row_point, field_config).map_err(SpartanError::from)?;
     let beta = {
-        let _scope = crate::utils::prof::scope("sha256:local_relation_collapse_prover");
+        let _scope = tracing::info_span!("sha256:local_relation_collapse_prover").entered();
         collapse_local_linear_columns(prepared, &local_row_weights, &reducer, field_config)
             .map_err(SpartanError::from)?
     };
     let product_batching = {
-        let _scope = crate::utils::prof::scope("sha256:product_batch_prepare_prover");
+        let _scope = tracing::info_span!("sha256:product_batch_prepare_prover").entered();
         ProductLinearBatching::new(
             prepared,
             public_statement,
@@ -436,9 +436,9 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
             .product_assignment_rows()
             .ok_or(Sha256F2zError::InvalidGeometry)?;
 
-        let step4_scope = crate::utils::prof::scope("step4:bitify_prove");
+        let step4_scope = tracing::info_span!("step4:bitify_prove").entered();
         let (row_weights, col_weights_q, claimed_q) = {
-            let _scope = crate::utils::prof::scope("sha256:direct_opening_prepare_prover");
+            let _scope = tracing::info_span!("sha256:direct_opening_prepare_prover").entered();
             product_opening_claim(
                 &product_batching,
                 product_p_h,
@@ -452,7 +452,7 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
             })
             .map_err(|()| Sha256F2zError::InvalidGeometry)?;
         {
-            let _scope = crate::utils::prof::scope("sha256:opening_claim_absorb_prover");
+            let _scope = tracing::info_span!("sha256:opening_claim_absorb_prover").entered();
             absorb_product_opening_claim(
                 transcript,
                 &assignment_binding,
@@ -469,8 +469,8 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
         drop(step4_scope);
 
         let f2z = {
-            let _step5 = crate::utils::prof::scope("step5:open_prove");
-            let _scope = crate::utils::prof::scope("sha256:f2z_prove");
+            let _step5 = tracing::info_span!("step5:open_prove").entered();
+            let _scope = tracing::info_span!("sha256:f2z_prove").entered();
             prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime(
                 transcript,
                 hint_f,
@@ -497,7 +497,7 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
         )
     } else {
         let inner = {
-            let _scope = crate::utils::prof::scope("sha256:spartan_inner_prove");
+            let _scope = tracing::info_span!("sha256:spartan_inner_prove").entered();
             let factored_matrix_mle = product_batching.factored_matrix_mle(field_config)?;
             let h_bit =
                 |flat_column| packed_flat_bit(witness.assignment_rows(), h_layout, flat_column);
@@ -519,11 +519,11 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
         }
         drop(step3_scope);
 
-        let step4_scope = crate::utils::prof::scope("step4:bitify_prove");
+        let step4_scope = tracing::info_span!("step4:bitify_prove").entered();
         let assignment_equality =
             FactoredEqualityWeights::new(&inner.eval_points, h_layout.row_vars, field_config)?;
         let (row_weights, col_weights_q, claimed_q) = {
-            let _scope = crate::utils::prof::scope("sha256:opening_prepare_prover");
+            let _scope = tracing::info_span!("sha256:opening_prepare_prover").entered();
             linear_opening_claim(
                 prepared,
                 h_layout,
@@ -539,7 +539,7 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
         })
         .map_err(|()| Sha256F2zError::InvalidGeometry)?;
         {
-            let _scope = crate::utils::prof::scope("sha256:opening_claim_absorb_prover");
+            let _scope = tracing::info_span!("sha256:opening_claim_absorb_prover").entered();
             absorb_opening_claim(
                 transcript,
                 &assignment_binding,
@@ -558,8 +558,8 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
         drop(step4_scope);
 
         let f2z = {
-            let _step5 = crate::utils::prof::scope("step5:open_prove");
-            let _scope = crate::utils::prof::scope("sha256:f2z_prove");
+            let _step5 = tracing::info_span!("step5:open_prove").entered();
+            let _scope = tracing::info_span!("sha256:f2z_prove").entered();
             prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime(
                 transcript,
                 hint_f,
@@ -693,7 +693,7 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
     }
 
     let assignment_binding = {
-        let _scope = crate::utils::prof::scope("sha256:statement_bind_verifier");
+        let _scope = tracing::info_span!("sha256:statement_bind_verifier").entered();
         let public_statement_binding = public_statement_binding(public_statement)?;
         let assignment_binding =
             assignment_binding(prepared, commitment_f, vc, &public_statement_binding)?;
@@ -714,9 +714,9 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
     )
     .map_err(Sha256F2zError::F2z)?;
 
-    let step2_scope = crate::utils::prof::scope("step2:project_verify");
+    let step2_scope = tracing::info_span!("step2:project_verify").entered();
     {
-        let _scope = crate::utils::prof::scope("sha256:initial_grinding_verify");
+        let _scope = tracing::info_span!("sha256:initial_grinding_verify").entered();
         check_boundary::<Sha256InitialGrinding, _>(
             transcript,
             profile.initial_grinding_bits() as u32,
@@ -724,14 +724,14 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
         )?;
     }
     let mod_q = {
-        let _scope = crate::utils::prof::scope("sha256:runtime_prime_sample_verifier");
+        let _scope = tracing::info_span!("sha256:runtime_prime_sample_verifier").entered();
         sample_sha256_mod_q_context(transcript, profile)?
     };
     validate_common_geometry(None, map, h_layout, f_layout)?;
     absorb_runtime_sha256_relation(transcript, prepared, mod_q.field_config());
     drop(step2_scope);
 
-    let step3_scope = crate::utils::prof::scope("step3:piop_verify");
+    let step3_scope = tracing::info_span!("step3:piop_verify").entered();
     let field_config = mod_q.field_config();
     let local_row_point = squeeze_challenge_point(
         transcript,
@@ -746,7 +746,7 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
         field_config,
     );
     {
-        let _scope = crate::utils::prof::scope("sha256:public_batch_grinding_verify");
+        let _scope = tracing::info_span!("sha256:public_batch_grinding_verify").entered();
         check_boundary::<Sha256PublicBatchGrinding, _>(
             transcript,
             profile.terminal_grinding_bits() as u32,
@@ -756,17 +756,17 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
     let constant_one_batch = squeeze_constant_one_batch(transcript, field_config);
     let (public_slot_weights, public_io_batch) = squeeze_public_io_batch(transcript, field_config);
     let reducer = {
-        let _scope = crate::utils::prof::scope("sha256:reducer_init_verifier");
+        let _scope = tracing::info_span!("sha256:reducer_init_verifier").entered();
         OptimizedSumcheckReducer::new(field_config).map_err(SpartanError::from)?
     };
     let local_row_weights = eq_table(&local_row_point, field_config).map_err(SpartanError::from)?;
     let beta = {
-        let _scope = crate::utils::prof::scope("sha256:local_relation_collapse_verifier");
+        let _scope = tracing::info_span!("sha256:local_relation_collapse_verifier").entered();
         collapse_local_linear_columns(prepared, &local_row_weights, &reducer, field_config)
             .map_err(SpartanError::from)?
     };
     let product_batching = {
-        let _scope = crate::utils::prof::scope("sha256:product_batch_prepare_verifier");
+        let _scope = tracing::info_span!("sha256:product_batch_prepare_verifier").entered();
         ProductLinearBatching::new(
             prepared,
             public_statement,
@@ -786,9 +786,9 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
         let product_map = prepared
             .product_map()
             .ok_or(Sha256F2zError::InvalidGeometry)?;
-        let step4_scope = crate::utils::prof::scope("step4:bitify_verify");
+        let step4_scope = tracing::info_span!("step4:bitify_verify").entered();
         let (row_weights, col_weights_q, claimed_q) = {
-            let _scope = crate::utils::prof::scope("sha256:direct_opening_prepare_verifier");
+            let _scope = tracing::info_span!("sha256:direct_opening_prepare_verifier").entered();
             product_opening_claim(
                 &product_batching,
                 product_p_h,
@@ -802,7 +802,7 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
             })
             .map_err(|()| Sha256F2zError::InvalidGeometry)?;
         {
-            let _scope = crate::utils::prof::scope("sha256:opening_claim_absorb_verifier");
+            let _scope = tracing::info_span!("sha256:opening_claim_absorb_verifier").entered();
             absorb_product_opening_claim(
                 transcript,
                 &assignment_binding,
@@ -818,8 +818,8 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
         }
         drop(step4_scope);
 
-        let _step5 = crate::utils::prof::scope("step5:open_verify");
-        let _scope = crate::utils::prof::scope("sha256:f2z_verify");
+        let _step5 = tracing::info_span!("step5:open_verify").entered();
+        let _scope = tracing::info_span!("sha256:f2z_verify").entered();
         verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime(
             transcript,
             commitment_f,
@@ -840,7 +840,7 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
         .map_err(Sha256F2zError::F2z)
     } else {
         let (assignment_point, inner_claim) = {
-            let _scope = crate::utils::prof::scope("sha256:spartan_inner_verify");
+            let _scope = tracing::info_span!("sha256:spartan_inner_verify").entered();
             verify_sha256_inner_sumcheck(
                 transcript,
                 product_batching.initial_claim().clone(),
@@ -854,12 +854,12 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
         };
         drop(step3_scope);
 
-        let step4_scope = crate::utils::prof::scope("step4:bitify_verify");
+        let step4_scope = tracing::info_span!("step4:bitify_verify").entered();
         let collapsed_evaluation = product_batching.evaluate(&assignment_point, field_config)?;
         let assignment_equality =
             FactoredEqualityWeights::new(&assignment_point, h_layout.row_vars, field_config)?;
         let (row_weights, col_weights_q, claimed_q) = {
-            let _scope = crate::utils::prof::scope("sha256:opening_prepare_verifier");
+            let _scope = tracing::info_span!("sha256:opening_prepare_verifier").entered();
             linear_opening_claim(
                 prepared,
                 h_layout,
@@ -875,7 +875,7 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
         })
         .map_err(|()| Sha256F2zError::InvalidGeometry)?;
         {
-            let _scope = crate::utils::prof::scope("sha256:opening_claim_absorb_verifier");
+            let _scope = tracing::info_span!("sha256:opening_claim_absorb_verifier").entered();
             absorb_opening_claim(
                 transcript,
                 &assignment_binding,
@@ -893,8 +893,8 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
         }
         drop(step4_scope);
 
-        let _step5 = crate::utils::prof::scope("step5:open_verify");
-        let _scope = crate::utils::prof::scope("sha256:f2z_verify");
+        let _step5 = tracing::info_span!("step5:open_verify").entered();
+        let _scope = tracing::info_span!("sha256:f2z_verify").entered();
         verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime(
             transcript,
             commitment_f,

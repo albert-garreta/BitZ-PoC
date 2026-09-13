@@ -23,7 +23,7 @@
 
 mod common;
 
-use std::{hint::black_box, time::Instant};
+use std::{hint::black_box};
 
 #[cfg(feature = "bench-peak-memory")]
 use std::{
@@ -329,7 +329,7 @@ fn optional_ms(value: Option<f64>) -> String {
     value.map_or_else(|| "NA".to_owned(), |value| format!("{value:.9}"))
 }
 
-fn phase_ms(phases: &[(&'static str, f64)], label: &str) -> Option<f64> {
+fn phase_ms(phases: &[(String, f64)], label: &str) -> Option<f64> {
     phases
         .iter()
         .find(|(phase, _)| *phase == label)
@@ -338,8 +338,8 @@ fn phase_ms(phases: &[(&'static str, f64)], label: &str) -> Option<f64> {
 
 fn phase_timings(
     protocol: Protocol,
-    prove_phases: &[(&'static str, f64)],
-    verify_phases: &[(&'static str, f64)],
+    prove_phases: &[(String, f64)],
+    verify_phases: &[(String, f64)],
 ) -> PhaseTimings {
     let outer_label = match protocol {
         Protocol::Standard => "spartan:outer_sumcheck",
@@ -433,12 +433,13 @@ fn run_latency_trial(
 ) -> LatencyTrial {
     let sample_products = products.clone();
     let sample_assignment = assignment.clone();
-    let _ = f2z::utils::prof::take_totals();
+    let recording = f2z::observability::Recording::start(Vec::new()).expect("start outer-policy trial");
+
 
     match protocol {
         Protocol::Standard => {
             let mut prover_transcript = Blake3Transcript::new();
-            let started = Instant::now();
+            let proving = tracing::info_span!("benchmark:proving").entered();
             let (proof, claim) = prove_spartan_piop_u32_native(
                 &mut prover_transcript,
                 relation,
@@ -447,11 +448,10 @@ fn run_latency_trial(
                 sample_assignment,
             )
             .expect("standard proving succeeds");
-            let prove_ms = started.elapsed().as_secs_f64() * 1e3;
-            let prove_phases = f2z::utils::prof::take_totals();
+            drop(proving);
 
             let mut verifier_transcript = Blake3Transcript::new();
-            let started = Instant::now();
+            let verification = tracing::info_span!("benchmark:verification").entered();
             let verified_claim = verify_spartan_proof(
                 &mut verifier_transcript,
                 relation,
@@ -459,8 +459,12 @@ fn run_latency_trial(
                 &proof,
             )
             .expect("standard verification succeeds");
-            let verify_ms = started.elapsed().as_secs_f64() * 1e3;
-            let verify_phases = f2z::utils::prof::take_totals();
+            drop(verification);
+            let intervals = recording.intervals().expect("query outer-policy trial");
+            let prove_ms = common::span_ms(&intervals, "benchmark:proving");
+            let verify_ms = common::span_ms(&intervals, "benchmark:verification");
+            let prove_phases = f2z::observability::phase_totals(&intervals, "benchmark:proving").unwrap();
+            let verify_phases = f2z::observability::phase_totals(&intervals, "benchmark:verification").unwrap();
             assert_eq!(claim, verified_claim);
 
             let phases = phase_timings(protocol, &prove_phases, &verify_phases);
@@ -476,7 +480,7 @@ fn run_latency_trial(
         }
         Protocol::Skip(skip_vars) => {
             let mut prover_transcript = Blake3Transcript::new();
-            let started = Instant::now();
+            let proving = tracing::info_span!("benchmark:proving").entered();
             let (proof, claim) = prove_spartan_piop_u32_native_with_univariate_skip(
                 &mut prover_transcript,
                 relation,
@@ -486,11 +490,10 @@ fn run_latency_trial(
                 skip_vars,
             )
             .expect("univariate-skip proving succeeds");
-            let prove_ms = started.elapsed().as_secs_f64() * 1e3;
-            let prove_phases = f2z::utils::prof::take_totals();
+            drop(proving);
 
             let mut verifier_transcript = Blake3Transcript::new();
-            let started = Instant::now();
+            let verification = tracing::info_span!("benchmark:verification").entered();
             let verified_claim = verify_spartan_univariate_skip_proof(
                 &mut verifier_transcript,
                 relation,
@@ -498,8 +501,12 @@ fn run_latency_trial(
                 &proof,
             )
             .expect("univariate-skip verification succeeds");
-            let verify_ms = started.elapsed().as_secs_f64() * 1e3;
-            let verify_phases = f2z::utils::prof::take_totals();
+            drop(verification);
+            let intervals = recording.intervals().expect("query outer-policy trial");
+            let prove_ms = common::span_ms(&intervals, "benchmark:proving");
+            let verify_ms = common::span_ms(&intervals, "benchmark:verification");
+            let prove_phases = f2z::observability::phase_totals(&intervals, "benchmark:proving").unwrap();
+            let verify_phases = f2z::observability::phase_totals(&intervals, "benchmark:verification").unwrap();
             assert_eq!(claim, verified_claim);
 
             let phases = phase_timings(protocol, &prove_phases, &verify_phases);
@@ -528,7 +535,7 @@ fn run_memory_trial(
 ) -> MemoryTrial {
     let sample_products = products.clone();
     let sample_assignment = assignment.clone();
-    let _ = f2z::utils::prof::take_totals();
+
     let live_before_prove_mib = live_mib();
     reset_peak();
 
@@ -544,7 +551,7 @@ fn run_memory_trial(
             )
             .expect("standard peak-memory proving succeeds");
             let peak_heap_mib = peak_mib();
-            let _ = f2z::utils::prof::take_totals();
+
             let mut verifier_transcript = Blake3Transcript::new();
             let verified_claim = verify_spartan_proof(
                 &mut verifier_transcript,
@@ -553,7 +560,7 @@ fn run_memory_trial(
                 &proof,
             )
             .expect("standard peak-memory verification succeeds");
-            let _ = f2z::utils::prof::take_totals();
+
             assert_eq!(claim, verified_claim);
             let shape =
                 standard_proof_shape(&proof, relation.num_row_vars(), relation.num_column_vars());
@@ -572,7 +579,7 @@ fn run_memory_trial(
             )
             .expect("univariate-skip peak-memory proving succeeds");
             let peak_heap_mib = peak_mib();
-            let _ = f2z::utils::prof::take_totals();
+
             let mut verifier_transcript = Blake3Transcript::new();
             let verified_claim = verify_spartan_univariate_skip_proof(
                 &mut verifier_transcript,
@@ -581,7 +588,7 @@ fn run_memory_trial(
                 &proof,
             )
             .expect("univariate-skip peak-memory verification succeeds");
-            let _ = f2z::utils::prof::take_totals();
+
             assert_eq!(claim, verified_claim);
             let shape = skip_proof_shape(
                 &proof,
@@ -816,18 +823,9 @@ fn bench_exponent(
     }
 }
 
-fn enable_phase_profiling() {
-    if std::env::var_os("OBLONG_PROFILE").is_none() {
-        // SAFETY: this is the first operation in `main`, before the Rayon pool
-        // or any other worker thread is initialized. The profiler caches this
-        // value on its first scope, so it remains fixed for the whole process.
-        unsafe { std::env::set_var("OBLONG_PROFILE", "1") };
-    }
-}
-
 fn main() {
+    f2z::observability::install().expect("install Perfetto subscriber");
     common::enforce_known_env();
-    enable_phase_profiling();
     let _ = flock_core::init_perf_thread_pool();
     let repetitions = env_usize("F2Z_BENCH_REPS", DEFAULT_REPETITIONS);
     assert!(repetitions > 0, "F2Z_BENCH_REPS must be positive");

@@ -7,7 +7,7 @@ use p3_field::{ExtensionField, Field, PrimeField64};
 use p3_whir::{FoldingFactor, ProtocolParameters, SecurityAssumption, WhirConfig};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{path::Path, time::Instant};
+use std::path::Path;
 
 pub const TARGET_BITS: usize = 100;
 // Search enough additional round strength to cover composition, while always
@@ -428,7 +428,8 @@ pub fn tune<C>(
     mut run: impl FnMut(&C) -> f64,
     report: impl Fn(&C) -> Value,
 ) -> Result<(Params, TuningReport), String> {
-    let started = Instant::now();
+    let recording = f2z::observability::Recording::start(Vec::new()).map_err(|e| e.to_string())?;
+    let campaign = tracing::info_span!("whir:tuning").entered();
     if let Some(params) = explicit {
         let context = setup(params)?;
         return Ok((
@@ -438,7 +439,11 @@ pub fn tune<C>(
                 mode: "explicit",
                 objective: None,
                 security: report(&context),
-                tuning_ms: started.elapsed().as_secs_f64() * 1e3,
+                tuning_ms: {
+                    drop(campaign);
+                    f2z::observability::duration(&recording.intervals().map_err(|e| e.to_string())?, "whir:tuning")
+                        .map_err(|e| e.to_string())?.as_secs_f64() * 1e3
+                },
                 candidates: vec![],
                 workload: None,
                 exponent: None,
@@ -502,7 +507,11 @@ pub fn tune<C>(
             objective: Some("witness_to_proof_ms"),
             security: security.clone(),
             candidates,
-            tuning_ms: started.elapsed().as_secs_f64() * 1e3,
+            tuning_ms: {
+                drop(campaign);
+                f2z::observability::duration(&recording.intervals().map_err(|e| e.to_string())?, "whir:tuning")
+                    .map_err(|e| e.to_string())?.as_secs_f64() * 1e3
+            },
             workload: None,
             exponent: None,
             corpus_digest: None,
@@ -559,6 +568,7 @@ mod tests {
 
     #[test]
     fn tuning_excludes_ineligible_candidates_and_repeats_on_every_call() {
+        let _trace = super::super::test_tracing();
         use std::cell::Cell;
         let executions = Cell::new(0);
         for _ in 0..2 {
@@ -622,6 +632,7 @@ mod reporting_tests {
     use super::*;
     #[test]
     fn candidate_fields_and_explicit_report_omissions() {
+        let _trace = super::super::test_tracing();
         let params = Params::default();
         let expected_params = serde_json::to_value(params).unwrap();
         let eligible = |finalist| Candidate::Eligible {

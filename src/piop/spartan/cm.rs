@@ -907,7 +907,7 @@ pub fn prove_cm_and_f2z_with_config<T: Transcript + Send>(
     let (assignment, products) = spartan_witness.into_parts();
 
     let (spartan, terminal_claim) = {
-        let _scope = crate::utils::prof::scope("cm-f2z:spartan_prove");
+        let _scope = tracing::info_span!("cm-f2z:spartan_prove").entered();
         prove_spartan_piop(
             transcript,
             relation.matrices(),
@@ -918,7 +918,7 @@ pub fn prove_cm_and_f2z_with_config<T: Transcript + Send>(
     };
 
     let opening = {
-        let _scope = crate::utils::prof::scope("cm-f2z:bitify_prover");
+        let _scope = tracing::info_span!("cm-f2z:bitify_prover").entered();
         let opening = bitify_cm_and_claim(&terminal_claim, relation.layout())?;
         absorb_cm_opening_claim(
             transcript,
@@ -931,7 +931,7 @@ pub fn prove_cm_and_f2z_with_config<T: Transcript + Send>(
     };
 
     let f2z = {
-        let _scope = crate::utils::prof::scope("cm-f2z:f2z_prove");
+        let _scope = tracing::info_span!("cm-f2z:f2z_prove").entered();
         prove_mle_eval_mod_q_ligerito_virtual_with_ood(
             transcript,
             hint_f,
@@ -991,7 +991,7 @@ pub fn verify_cm_and_f2z_with_config<T: Transcript + Send>(
         crate::ligerito_flock::VerifierOod::from(None)
     };
     let terminal_claim = {
-        let _scope = crate::utils::prof::scope("cm-f2z:spartan_verify");
+        let _scope = tracing::info_span!("cm-f2z:spartan_verify").entered();
         verify_spartan_proof(
             transcript,
             relation.matrices(),
@@ -1001,7 +1001,7 @@ pub fn verify_cm_and_f2z_with_config<T: Transcript + Send>(
     };
 
     let opening = {
-        let _scope = crate::utils::prof::scope("cm-f2z:bitify_verifier");
+        let _scope = tracing::info_span!("cm-f2z:bitify_verifier").entered();
         let opening = bitify_cm_and_claim(&terminal_claim, relation.layout())?;
         absorb_cm_opening_claim(
             transcript,
@@ -1015,7 +1015,7 @@ pub fn verify_cm_and_f2z_with_config<T: Transcript + Send>(
 
     let p = relation.layout().f2z_params();
     let result = {
-        let _scope = crate::utils::prof::scope("cm-f2z:f2z_verify");
+        let _scope = tracing::info_span!("cm-f2z:f2z_verify").entered();
         verify_mle_eval_mod_q_ligerito_virtual_with_ood(
             transcript,
             commitment,

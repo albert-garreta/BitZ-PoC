@@ -2,17 +2,18 @@
 //! Signing is fixture preparation; inversion hints belong to timed witness generation.
 mod common;
 
-use f2z::{piop::spartan::ecdsa_sha256::*, transcript::Blake3Transcript, utils::prof};
+use f2z::{piop::spartan::ecdsa_sha256::*, transcript::Blake3Transcript};
 use p256::ecdsa::{
     Signature, SigningKey,
     signature::{Signer, Verifier},
 };
 use serde_json::json;
-use std::{error::Error, time::Instant};
+use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
+    f2z::observability::install().expect("install Perfetto subscriber");
     let threads = common::init();
-    prof::force_enable();
+
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.len() != 4 {
         return Err("usage: sha256_ecdsa EXPONENT split|all SECURITY REPS".into());
@@ -28,10 +29,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     if reps == 0 {
         return Err("reps must be positive".into());
     }
-    let start = Instant::now();
-    let prepared = prepare_sha256_ecdsa(exponent, lambda, mode)?
-        .with_ligerito(common::ligerito_selection(lambda as usize))?;
-    let setup_ms = start.elapsed().as_secs_f64() * 1000.;
+    let (prepared, setup) = f2z::observability::measure(tracing::info_span!("ecdsa:setup"), || {
+        prepare_sha256_ecdsa(exponent, lambda, mode)
+            .and_then(|p| p.with_ligerito(common::ligerito_selection(lambda as usize)))
+    })?;
+    let prepared = prepared?;
+    let setup_ms = setup.as_secs_f64() * 1000.;
     let security = prepared.security()?;
     println!("LIGERITO_CONFIG {}", common::ligerito_report(prepared.ligerito_configuration(), prepared.ligerito_configuration().round0(lambda)?));
     let message: Vec<_> = (0..prepared.message_bytes()).map(|i| i as u8).collect();
@@ -48,13 +51,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         s: s.into(),
     };
     for trial in 0..=reps {
-        let start = Instant::now();
+        let recording = f2z::observability::Recording::start(Vec::new())?;
+        let start = tracing::info_span!("benchmark:witness").entered();
         let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message)?;
-        let witness_ms = start.elapsed().as_secs_f64() * 1000.;
-        let start = Instant::now();
+        drop(start);
+        let start = tracing::info_span!("benchmark:commit").entered();
         let hint = commit_sha256_ecdsa(&prepared, &witness)?;
-        let commit_ms = start.elapsed().as_secs_f64() * 1000.;
-        let start = Instant::now();
+        drop(start);
+        let start = tracing::info_span!("benchmark:protocol").entered();
         let proof = prove_sha256_ecdsa(
             &mut Blake3Transcript::new(),
             &prepared,
@@ -63,13 +67,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             &hint,
             4,
         )?;
-        let protocol_ms = start.elapsed().as_secs_f64() * 1000.;
-        let prove_phases = prof::take_totals();
+        drop(start);
         // Serialization and decoding are outside proving and verifying timers.
         let bytes = proof.to_bytes();
         let decoded = Sha256EcdsaProof::from_bytes(&bytes)?;
         assert_eq!(decoded.to_bytes(), bytes);
-        let start = Instant::now();
+        let start = tracing::info_span!("benchmark:verification").entered();
         verify_sha256_ecdsa(
             &mut Blake3Transcript::new(),
             &prepared,
@@ -77,8 +80,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             &hint.commitment,
             &decoded,
         )?;
-        let verify_ms = start.elapsed().as_secs_f64() * 1000.;
-        let verify_phases = prof::take_totals();
+        drop(start);
+        let intervals = recording.intervals()?;
+        let witness_ms = common::span_ms(&intervals, "benchmark:witness");
+        let commit_ms = common::span_ms(&intervals, "benchmark:commit");
+        let protocol_ms = common::span_ms(&intervals, "benchmark:protocol");
+        let verify_ms = common::span_ms(&intervals, "benchmark:verification");
+        let verification = f2z::observability::span(&intervals, "benchmark:verification")?;
+        let prove_phases = f2z::observability::totals(intervals.iter().filter(|s| s.end_ns <= verification.start_ns));
+        let verify_phases = f2z::observability::phase_totals(&intervals, "benchmark:verification")?;
         println!(
             "{}",
             json!({

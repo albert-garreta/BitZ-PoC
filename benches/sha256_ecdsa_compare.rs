@@ -4,11 +4,11 @@ mod common;
 mod shared_fixture;
 
 use bincode::Options;
-use f2z::{piop::spartan::ecdsa_sha256::*, transcript::Blake3Transcript, utils::prof};
+use f2z::{piop::spartan::ecdsa_sha256::*, transcript::Blake3Transcript};
 use flock_core::pcs::commit::Commitment;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{error::Error, time::Instant};
+use std::error::Error;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -143,12 +143,11 @@ fn dispatch_binius(args: &Args) -> Result<()> {
     }
 }
 
-fn timed<T, E: Into<Box<dyn Error>>>(
+fn setup<T, E: Into<Box<dyn Error>>>(
     f: impl FnOnce() -> std::result::Result<T, E>,
 ) -> Result<(T, f64)> {
-    let start = Instant::now();
-    let value = f().map_err(Into::into)?;
-    Ok((value, start.elapsed().as_secs_f64() * 1000.))
+    let (value, duration) = f2z::observability::measure(tracing::info_span!("benchmark:setup"), f)?;
+    Ok((value.map_err(Into::into)?, duration.as_secs_f64() * 1000.))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -190,8 +189,8 @@ struct Measurements<D> {
 
 #[derive(Serialize)]
 struct F2zDetails {
-    phases_seconds: Vec<(&'static str, f64)>,
-    verify_phases_seconds: Vec<(&'static str, f64)>,
+    phases_seconds: Vec<(String, f64)>,
+    verify_phases_seconds: Vec<(String, f64)>,
     security: Value,
     circuit: Value,
 }
@@ -201,6 +200,36 @@ struct SpartanDetails<P> {
     phases_ms: P,
     security: Value,
     circuit: Value,
+}
+
+#[derive(Serialize)]
+struct SpartanPhases {
+    matrix_ms: f64,
+    folding_ms: f64,
+    outer_ms: f64,
+    inner_ms: f64,
+    opening_ms: f64,
+}
+
+impl SpartanPhases {
+    fn from_intervals(
+        intervals: &[f2z::observability::Interval],
+        folding: bool,
+    ) -> std::io::Result<Self> {
+        let millis = |label| {
+            f2z::observability::duration(intervals, label).map(|d| d.as_secs_f64() * 1000.0)
+        };
+        let folding_ms = millis("spartan2.folding")?;
+        Ok(Self {
+            matrix_ms: millis("spartan2.matrix")?,
+            // A single-step proof has a preparation span but no folding rounds.
+            // Keep the existing JSON representation for that case.
+            folding_ms: if folding { folding_ms } else { 0.0 },
+            outer_ms: millis("spartan2.outer")?,
+            inner_ms: millis("spartan2.inner")?,
+            opening_ms: millis("spartan2.opening")?,
+        })
+    }
 }
 
 #[derive(Serialize)]
@@ -273,18 +302,19 @@ fn emit<D: Serialize>(args: &Args, fixture: &Fixture, trial: usize, row: Measure
 }
 fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
     let statement = statement(fixture);
-    let (prepared, setup_ms) = timed(|| {
+    let (prepared, setup_ms) = setup(|| {
         prepare_sha256_ecdsa(args.exponent(), args.target, mode)
             .and_then(|p| p.with_ligerito(common::ligerito_selection(args.target as usize)))
     })?;
     let security = prepared.security()?;
     for trial in 0..=args.reps {
-        prof::take_totals();
-        let e2e = Instant::now();
-        let (witness, witness_ms) =
-            timed(|| generate_sha256_ecdsa_witness(&prepared, &statement, &fixture.message))?;
-        let (hint, commit_ms) = timed(|| commit_sha256_ecdsa(&prepared, &witness))?;
-        let (proof, protocol_ms) = timed(|| {
+        let recording = f2z::observability::Recording::start(Vec::new())?;
+        let e2e = tracing::info_span!("benchmark:e2e").entered();
+        let witness = tracing::info_span!("benchmark:witness")
+            .in_scope(|| generate_sha256_ecdsa_witness(&prepared, &statement, &fixture.message))?;
+        let hint = tracing::info_span!("benchmark:commit")
+            .in_scope(|| commit_sha256_ecdsa(&prepared, &witness))?;
+        let proof = tracing::info_span!("benchmark:protocol").in_scope(|| {
             prove_sha256_ecdsa(
                 &mut Blake3Transcript::new(),
                 &prepared,
@@ -294,9 +324,8 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
                 4,
             )
         })?;
-        let e2e_prover_ms = e2e.elapsed().as_secs_f64() * 1000.;
-        let phases = prof::take_totals();
-        let codec = Instant::now();
+        drop(e2e);
+        let codec = tracing::info_span!("benchmark:codec").entered();
         let proof_bytes = proof.to_bytes();
         let object_bytes = proof_bytes.len();
         let wire = bincode::DefaultOptions::new()
@@ -311,8 +340,8 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
             .reject_trailing_bytes()
             .deserialize(&wire)?;
         let decoded_proof = Sha256EcdsaProof::from_bytes(&decoded.proof)?;
-        let codec_ms = codec.elapsed().as_secs_f64() * 1000.;
-        let (_, verify_ms) = timed(|| {
+        drop(codec);
+        tracing::info_span!("benchmark:verification").in_scope(|| {
             fixture.validate_statement()?;
             verify_sha256_ecdsa(
                 &mut Blake3Transcript::new(),
@@ -323,6 +352,15 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
             )
             .map_err(|e| -> Box<dyn Error> { e.into() })
         })?;
+        let intervals = recording.intervals()?;
+        let witness_ms = common::span_ms(&intervals, "benchmark:witness");
+        let commit_ms = common::span_ms(&intervals, "benchmark:commit");
+        let protocol_ms = common::span_ms(&intervals, "benchmark:protocol");
+        let e2e_prover_ms = common::span_ms(&intervals, "benchmark:e2e");
+        let codec_ms = common::span_ms(&intervals, "benchmark:codec");
+        let verify_ms = common::span_ms(&intervals, "benchmark:verification");
+        let phases = f2z::observability::phase_totals(&intervals, "benchmark:e2e")?;
+        let verify_phases = f2z::observability::phase_totals(&intervals, "benchmark:verification")?;
         let phase = |name: &str| {
             phases
                 .iter()
@@ -349,7 +387,7 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
                 folding_ms: None,
                 details: F2zDetails {
                     phases_seconds: phases,
-                    verify_phases_seconds: prof::take_totals(),
+                    verify_phases_seconds: verify_phases,
                     security: json!({"model": "round-by-round-economic", "economic_bits": security.compute_economic_security_bits(),
                     "statistical_bits_lower_bound": security.compute_statistical_security_bits(), "projection_bits": 113,
                     "ligerito": common::ligerito_report(prepared.ligerito_configuration(), prepared.ligerito_configuration().round0(args.target)?) }),
@@ -373,23 +411,34 @@ fn spartan(args: &Args, fixture: &Fixture) -> Result<()> {
         r: s.r,
         s: s.s,
     };
-    let (prepared, setup_ms) = timed(|| Prepared::setup(args.r, args.c))?;
+    let (prepared, setup_ms) = setup(|| Prepared::setup(args.r, args.c))?;
     for trial in 0..=args.reps {
-        let e2e = Instant::now();
-        let (witness, witness_ms) =
-            timed(|| prepared.generate_witness(&statement, &fixture.message))?;
-        let (committed, commit_ms) = timed(|| prepared.commit(witness))?;
-        let ((proof, phases), protocol_ms) = timed(|| prepared.prove(&statement, &committed))?;
-        let e2e_prover_ms = e2e.elapsed().as_secs_f64() * 1000.;
-        let codec = Instant::now();
+        let recording = f2z::observability::Recording::start(Vec::new())?;
+        let e2e = tracing::info_span!("benchmark:e2e").entered();
+        let witness = tracing::info_span!("benchmark:witness")
+            .in_scope(|| prepared.generate_witness(&statement, &fixture.message))?;
+        let committed =
+            tracing::info_span!("benchmark:commit").in_scope(|| prepared.commit(witness))?;
+        let proof = tracing::info_span!("benchmark:protocol")
+            .in_scope(|| prepared.prove(&statement, &committed))?;
+        drop(e2e);
+        let codec = tracing::info_span!("benchmark:codec").entered();
         let bytes = proof.to_bytes()?;
         let decoded = Proof::from_bytes(&bytes)?;
-        let codec_ms = codec.elapsed().as_secs_f64() * 1000.;
-        let (_, verify_ms) = timed(|| -> Result<()> {
+        drop(codec);
+        tracing::info_span!("benchmark:verification").in_scope(|| -> Result<()> {
             fixture.validate_statement()?;
             prepared.verify(&statement, &decoded)?;
             Ok(())
         })?;
+        let intervals = recording.intervals()?;
+        let phases = SpartanPhases::from_intervals(&intervals, args.c != 0)?;
+        let witness_ms = common::span_ms(&intervals, "benchmark:witness");
+        let commit_ms = common::span_ms(&intervals, "benchmark:commit");
+        let protocol_ms = common::span_ms(&intervals, "benchmark:protocol");
+        let e2e_prover_ms = common::span_ms(&intervals, "benchmark:e2e");
+        let codec_ms = common::span_ms(&intervals, "benchmark:codec");
+        let verify_ms = common::span_ms(&intervals, "benchmark:verification");
         emit(
             args,
             fixture,
@@ -426,6 +475,7 @@ fn spartan(args: &Args, fixture: &Fixture) -> Result<()> {
 }
 
 fn main() -> Result<()> {
+    f2z::observability::install().expect("install Perfetto subscriber");
     let args = Args::parse()?;
     if let Some(path) = &args.export_fixture {
         return shared_fixture::SignedFixture::generate(args.exponent() as u8, args.seed)?
@@ -437,7 +487,7 @@ fn main() -> Result<()> {
     rayon::ThreadPoolBuilder::new()
         .num_threads(args.threads)
         .build_global()?;
-    prof::force_enable();
+
     let fixture = fixture(&args)?;
     match args.method.as_str() {
         "f2z-split" => f2z(&args, &fixture, OuterMode::Split),
@@ -450,6 +500,39 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod reporting_tests {
     use super::*;
+
+    #[test]
+    fn spartan_phases_preserve_numeric_fields_and_single_step_folding_zero() {
+        let intervals: Vec<_> = ["matrix", "folding", "outer", "inner", "opening"]
+            .into_iter()
+            .enumerate()
+            .map(|(i, name)| f2z::observability::Interval {
+                id: i as u64,
+                parent: None,
+                track_id: 0,
+                depth: 0,
+                name: name.into(),
+                component: Some(format!("spartan2.{name}")),
+                start_ns: i as u64 * 10_000_000,
+                end_ns: i as u64 * 10_000_000 + (i as u64 + 1) * 1_000_000,
+            })
+            .collect();
+        for folding in [false, true] {
+            let phases = SpartanPhases::from_intervals(&intervals, folding).unwrap();
+            assert_eq!(
+                serde_json::to_value(phases).unwrap(),
+                json!({
+                    "matrix_ms": 1.0, "folding_ms": if folding { 2.0 } else { 0.0 },
+                    "outer_ms": 3.0, "inner_ms": 4.0, "opening_ms": 5.0,
+                })
+            );
+        }
+        assert!(SpartanPhases::from_intervals(&intervals[..4], true).is_err());
+        let mut duplicate = intervals.clone();
+        duplicate.push(intervals[0].clone());
+        assert!(SpartanPhases::from_intervals(&duplicate, true).is_err());
+    }
+
     #[test]
     fn result_envelope_keeps_totals_nulls_and_trial_numbering() {
         let mut args = Args {
@@ -480,7 +563,7 @@ mod reporting_tests {
             opening_ms: None,
             folding_ms: None,
             details: F2zDetails {
-                phases_seconds: vec![("commit", 0.003)],
+                phases_seconds: vec![("commit".into(), 0.003)],
                 verify_phases_seconds: vec![],
                 security: json!({"bits":100}),
                 circuit: json!({}),

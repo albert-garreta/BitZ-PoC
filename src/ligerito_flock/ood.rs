@@ -97,7 +97,7 @@ pub fn bind_prover_ood(
     hint: &FlockCommitHint,
     params: Option<OodRoundParams>,
 ) -> ProverOod {
-    let _scope = crate::utils::prof::scope("step0:ood_prove");
+    let _scope = tracing::info_span!("step0:ood_prove").entered();
     ProverOod(ProverState::Bound(
         params.map(|params| prove_ood_round(transcript, hint, params)),
     ))
@@ -110,7 +110,7 @@ pub fn bind_verifier_ood(
     params: Option<OodRoundParams>,
     round: Option<&OodRound>,
 ) -> Result<VerifierOod, FlockRsError> {
-    let _scope = crate::utils::prof::scope("step0:ood_verify");
+    let _scope = tracing::info_span!("step0:ood_verify").entered();
     let claim = verify_optional(transcript, packed_vars, params, round)?;
     Ok(VerifierOod(VerifierState::Bound(claim.map(|claim| {
         (claim, round.expect("verified Round 0").clone())

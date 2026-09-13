@@ -232,10 +232,10 @@ impl PreparedHybrid {
         {
             return Err(Error::Invalid("witness workload counts"));
         }
-        let rows_scope = crate::utils::prof::scope("hc:mul_bit_rows");
+        let rows_scope = tracing::info_span!("hc:mul_bit_rows").entered();
         let rows = multiplication.f2z_bit_rows();
         drop(rows_scope);
-        let pack_scope = crate::utils::prof::scope("hc:mul_pack");
+        let pack_scope = tracing::info_span!("hc:mul_pack").entered();
         let words_per_row = rows.first().map_or(0, |row| row.len() / 2);
         let mut packed_mul = vec![F128::ZERO; rows.len() * words_per_row];
         crate::utils::cfg_chunks_mut!(packed_mul, words_per_row.max(1))
@@ -246,19 +246,19 @@ impl PreparedHybrid {
                 }
             });
         drop(pack_scope);
-        let sha_scope = crate::utils::prof::scope("hc:sha_populate");
+        let sha_scope = tracing::info_span!("hc:sha_populate").entered();
         let final_sha_state = chaining_value(blocks);
         let sha = self.sha.populate(blocks, final_sha_state)?;
         drop(sha_scope);
-        let sha_pack_scope = crate::utils::prof::scope("hc:sha_pack");
+        let sha_pack_scope = tracing::info_span!("hc:sha_pack").entered();
         let mut packed_sha = self.sha.pack(&sha);
         packed_mul.resize(1 << self.geometry.physical_logs[0], F128::ZERO);
         packed_sha.resize(1 << self.geometry.physical_logs[1], F128::ZERO);
         drop(sha_pack_scope);
-        let commit_mul_scope = crate::utils::prof::scope("hc:commit_mul");
+        let commit_mul_scope = tracing::info_span!("hc:commit_mul").entered();
         let (c_mul, d_mul) = commit(&packed_mul, &self.geometry.params(0));
         drop(commit_mul_scope);
-        let commit_sha_scope = crate::utils::prof::scope("hc:commit_sha");
+        let commit_sha_scope = tracing::info_span!("hc:commit_sha").entered();
         let (c_sha, d_sha) = commit(&packed_sha, &self.geometry.params(1));
         drop(commit_sha_scope);
         let statement = Statement {
@@ -319,7 +319,7 @@ impl PreparedHybrid {
         // Round 0 precedes every other challenge: it pins the committed
         // virtual witness to one element of the opener's level-0 list.
         tracing::info!("Round 0: out-of-domain sample of the virtual packed witness");
-        let ood_scope = crate::utils::prof::scope("hybrid:ood_round");
+        let ood_scope = tracing::info_span!("hybrid:ood_round").entered();
         let packed = self.geometry.virtual_packed(sources);
         let ood = opening::prove_ood(&mut t, self.ood, &packed);
         drop(ood_scope);
@@ -332,11 +332,11 @@ impl PreparedHybrid {
             &digest,
         )?;
         tracing::info!("proving chained SHA constraints");
-        let sha_scope = crate::utils::prof::scope("hybrid:sha_piop");
+        let sha_scope = tracing::info_span!("hybrid:sha_piop").entered();
         let (sha, b) = self.sha.prove(&mut t, &committed.sha)?;
         drop(sha_scope);
         tracing::info!("proving shared bit sumcheck");
-        let sumcheck_scope = crate::utils::prof::scope("hybrid:joint_sumcheck");
+        let sumcheck_scope = tracing::info_span!("hybrid:joint_sumcheck").entered();
         let (joint, point) = {
             let mut scratch = self
                 .scratch
@@ -346,7 +346,7 @@ impl PreparedHybrid {
         };
         drop(sumcheck_scope);
         tracing::info!("ring switching and opening both roots with Ligerito");
-        let opening_scope = crate::utils::prof::scope("hybrid:opening_iop");
+        let opening_scope = tracing::info_span!("hybrid:opening_iop").entered();
         let opening = opening::prove(
             &mut t,
             &self.geometry,

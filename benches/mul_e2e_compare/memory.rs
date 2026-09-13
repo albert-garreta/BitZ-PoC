@@ -90,11 +90,7 @@ pub(super) fn run_child(args: &[String]) -> Result<(), Box<dyn std::error::Error
         Context::Plonky3Fri(context) => context.prove_and_verify(),
         Context::Plonky3Whir(context) => context.prove_and_verify(),
         Context::Limber(context) => context.prove_and_verify(),
-        Context::F2z(context) => {
-            let timing = context.run();
-            timing.validate();
-            timing.proof_bytes
-        }
+        Context::F2z(context) => context.prove_and_verify(),
     };
     let sample = Sample {
         backend: backend.clone(),

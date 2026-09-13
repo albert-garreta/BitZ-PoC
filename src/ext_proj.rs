@@ -264,7 +264,7 @@ pub fn sample_prime_in_interval(
     min_inclusive: u128,
     max_inclusive: u128,
 ) -> Result<u128, PrimeSamplingError> {
-    let _g = crate::utils::prof::scope("ext:sample_interval_prime");
+    let _g = tracing::info_span!("ext:sample_interval_prime").entered();
     if min_inclusive > max_inclusive {
         return Err(PrimeSamplingError::InvalidInterval {
             min: min_inclusive,
@@ -339,7 +339,7 @@ pub fn sample_prime_in_interval(
 /// the Fiat–Shamir transcript gains only `queries · 4^{-mr_rounds}`.
 #[allow(clippy::arithmetic_side_effects)] // candidate/base arithmetic bounded by 2^prime_bits < 2^121
 pub fn sample_proj_prime(transcript: &mut impl Transcript, proj: &ExtProjParams) -> u128 {
-    let _g = crate::utils::prof::scope("ext:sample_prime");
+    let _g = tracing::info_span!("ext:sample_prime").entered();
     proj.validate();
     let bits = proj.prime_bits;
     let top = 1u128 << (bits - 1);
@@ -489,7 +489,7 @@ impl ProjArith {
 /// This is the extension-field replacement for the plain canonical lift the
 /// prime-field path feeds to the chunker.
 pub fn projected_row_weights(coords: &[Vec<u128>], q_proj: u128, alpha_proj: u128) -> Vec<u128> {
-    let _g = crate::utils::prof::scope("ext:project");
+    let _g = tracing::info_span!("ext:project").entered();
     let ext_deg = coords.len();
     assert!(ext_deg >= 1, "at least one coordinate vector");
     let rows = coords[0].len();

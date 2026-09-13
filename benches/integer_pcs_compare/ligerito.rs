@@ -136,9 +136,9 @@ impl LigeritoBackend {
         materialize_rows: impl FnOnce() -> Vec<u128>,
         trial_seed: u64,
     ) -> Result<TrialOutput, Box<dyn Error>> {
-        let root = f2z::utils::prof::scope(ROOT_SCOPE);
+        let root = tracing::info_span!(ROOT_SCOPE).entered();
         let packed = {
-            let _phase = f2z::utils::prof::scope(MATERIALIZE_SCOPE);
+            let _phase = tracing::info_span!(MATERIALIZE_SCOPE).entered();
             let rows = materialize_rows();
             if rows.len() != 1usize << self.log_rows {
                 return Err(format!(
@@ -157,27 +157,27 @@ impl LigeritoBackend {
         };
 
         let (commitment, data, round0, mut pt) = {
-            let _phase = f2z::utils::prof::scope(COMMIT_SCOPE);
+            let _phase = tracing::info_span!(COMMIT_SCOPE).entered();
             let (commitment, data) = {
-                let _procedure = f2z::utils::prof::scope(COMMIT_CODEWORD_SCOPE);
+                let _procedure = tracing::info_span!(COMMIT_CODEWORD_SCOPE).entered();
                 self.pcs.commit(&packed)?
             };
             let mut pt = seed_transcript(&commitment.root, trial_seed);
             let round0 = {
-                let _procedure = f2z::utils::prof::scope(ROUND0_SCOPE);
+                let _procedure = tracing::info_span!(ROUND0_SCOPE).entered();
                 self.pcs.prove_round0(&mut pt, &packed)
             };
             (commitment, data, round0, pt)
         };
 
         let (point, value) = {
-            let _phase = f2z::utils::prof::scope(CLAIM_SCOPE);
+            let _phase = tracing::info_span!(CLAIM_SCOPE).entered();
             let point = {
-                let _procedure = f2z::utils::prof::scope(SAMPLE_POINT_SCOPE);
+                let _procedure = tracing::info_span!(SAMPLE_POINT_SCOPE).entered();
                 sample_point(&mut pt, self.log_rows)
             };
             let value = {
-                let _procedure = f2z::utils::prof::scope(EVALUATE_CLAIM_SCOPE);
+                let _procedure = tracing::info_span!(EVALUATE_CLAIM_SCOPE).entered();
                 evaluate_bit_mle(&packed, &point)
             };
             absorb_claim(&mut pt, value);
@@ -185,9 +185,9 @@ impl LigeritoBackend {
         };
 
         let (opening, bytes) = {
-            let _phase = f2z::utils::prof::scope(OPENING_SCOPE);
+            let _phase = tracing::info_span!(OPENING_SCOPE).entered();
             let opening = {
-                let _procedure = f2z::utils::prof::scope(OPEN_SCOPE);
+                let _procedure = tracing::info_span!(OPEN_SCOPE).entered();
                 self.pcs
                     .open_bit_mle(&mut pt, &packed, &data, &round0, &point)
             };
@@ -200,10 +200,10 @@ impl LigeritoBackend {
         drop(data);
 
         {
-            let _phase = f2z::utils::prof::scope(VERIFY_SCOPE);
+            let _phase = tracing::info_span!(VERIFY_SCOPE).entered();
             let mut vt = seed_transcript(&commitment.root, trial_seed);
             let round0 = {
-                let _procedure = f2z::utils::prof::scope(VERIFY_ROUND0_SCOPE);
+                let _procedure = tracing::info_span!(VERIFY_ROUND0_SCOPE).entered();
                 self.pcs.verify_round0(&mut vt, &round0.round())?
             };
             let verifier_point = sample_point(&mut vt, self.log_rows);
@@ -211,7 +211,7 @@ impl LigeritoBackend {
                 return Err("Ligerito verifier did not replay the opening point".into());
             }
             absorb_claim(&mut vt, value);
-            let _procedure = f2z::utils::prof::scope(VERIFY_OPEN_SCOPE);
+            let _procedure = tracing::info_span!(VERIFY_OPEN_SCOPE).entered();
             self.pcs.verify_bit_mle(
                 &mut vt,
                 &commitment.root,

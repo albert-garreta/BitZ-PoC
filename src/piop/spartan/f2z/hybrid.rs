@@ -65,7 +65,7 @@ pub(crate) fn prove(
     rows: &[Vec<u64>],
     statement: &[u8; 32],
 ) -> Result<(PrefixProof, BinaryClaim), Error> {
-    let piop_scope = crate::utils::prof::scope("hybrid:mul_piop");
+    let piop_scope = tracing::info_span!("hybrid:mul_piop").entered();
     let layout = prepared.layout();
     if witness.layout() != layout {
         return Err(Error::Invalid("multiplication layout"));
@@ -77,12 +77,12 @@ pub(crate) fn prove(
     absorb_spartan_message(transcript, b"u32-statement", &binding);
     // Step 2: pre-draw grinding, prime sample, and relation projection into
     // the runtime field.
-    let step2_scope = crate::utils::prof::scope("step2:project_prove");
+    let step2_scope = tracing::info_span!("step2:project_prove").entered();
     let initial_nonce =
         grind_boundary_u32::<U32MulInitialGrinding, _>(transcript, security.initial_grinding_bits)?;
     let (q, q_bits, config, arith) = sample_u32_mul_mod_q(transcript, security)?;
     let matrices = {
-        let _scope = crate::utils::prof::scope("spartan-f2z:relation_projection_prove");
+        let _scope = tracing::info_span!("spartan-f2z:relation_projection_prove").entered();
         PreparedConstraintMatrices::<SpartanF2zField, bool>::from_skeleton(
             &prepared.skeleton,
             &config,
@@ -95,8 +95,8 @@ pub(crate) fn prove(
     // preceded by one PIOP grinding boundary at the profile's difficulty
     // (a transparent pass-through at λ = 100).
     let (spartan, terminal_claim, piop_nonces) = {
-        let _step3 = crate::utils::prof::scope("step3:piop_prove");
-        let _scope = crate::utils::prof::scope("spartan-f2z:spartan_prove");
+        let _step3 = tracing::info_span!("step3:piop_prove").entered();
+        let _scope = tracing::info_span!("spartan-f2z:spartan_prove").entered();
         // The exact products are the zero-padded operand blocks of the
         // witness and the assignment is its block table: lend both, no copy.
         let product_len = layout.multiplications().next_power_of_two();
@@ -126,9 +126,9 @@ pub(crate) fn prove(
 
     // Step 4: bitification at the runtime prime, plus the terminal
     // boundary protecting the opening challenges.
-    let step4_scope = crate::utils::prof::scope("step4:bitify_prove");
+    let step4_scope = tracing::info_span!("step4:bitify_prove").entered();
     let (opening, bridge_digest) = {
-        let _scope = crate::utils::prof::scope("spartan-f2z:bitify_prover");
+        let _scope = tracing::info_span!("spartan-f2z:bitify_prover").entered();
         let opening = bitify_u32_mul_spartan_claim(&terminal_claim, layout, q, &arith)?;
         let bridge_digest =
             bitified_claim_digest(&matrices, &binding, layout, &terminal_claim, &opening, q)?;
@@ -141,27 +141,27 @@ pub(crate) fn prove(
     drop(step4_scope);
     drop(piop_scope);
 
-    let _opening_scope = crate::utils::prof::scope("hybrid:mul_opening");
+    let _opening_scope = tracing::info_span!("hybrid:mul_opening").entered();
     let prepared_claim = prepare_u32_bitified_claim(&opening, q_bits, &arith)?;
     let weights = prepared_claim.chunks.chunks();
     if weights.len() != 1 {
         return Err(Error::Invalid("multiple F2Z chunks"));
     }
-    let fold_scope = crate::utils::prof::scope("mo:fold_values");
+    let fold_scope = tracing::info_span!("mo:fold_values").entered();
     let sums = fold_values_bits(&p, rows, &weights[0]);
     drop(fold_scope);
     bind_sums(transcript, &bridge_digest, &sums);
-    let pack_scope = crate::utils::prof::scope("mo:pack_cols");
+    let pack_scope = tracing::info_span!("mo:pack_cols").entered();
     let packed_cols = pack_columns_from_rows(&p, rows);
     drop(pack_scope);
-    let pow2_scope = crate::utils::prof::scope("mo:pow2");
+    let pow2_scope = tracing::info_span!("mo:pow2").entered();
     let powers = chunk_pow2_table(&p, &weights[0], f2z_generator());
     drop(pow2_scope);
-    let forest_scope = crate::utils::prof::scope("mo:forest");
+    let forest_scope = tracing::info_span!("mo:forest").entered();
     let (_, forest, z, e) =
         prove_merged_forest_lazy(transcript, &p, &packed_cols, &powers, p.cols());
     drop(forest_scope);
-    let endpoint_scope = crate::utils::prof::scope("mo:endpoint");
+    let endpoint_scope = tracing::info_span!("mo:endpoint").entered();
     let claim = endpoint(&p, &weights[0], &z, e);
     drop(endpoint_scope);
     Ok((
@@ -199,7 +199,7 @@ pub(crate) fn verify(
     let binding = *statement;
     absorb_spartan_message(transcript, b"u32-statement", &binding);
 
-    let step2_scope = crate::utils::prof::scope("step2:project_verify");
+    let step2_scope = tracing::info_span!("step2:project_verify").entered();
     check_boundary_u32::<U32MulInitialGrinding, _>(
         transcript,
         security.initial_grinding_bits,
@@ -207,7 +207,7 @@ pub(crate) fn verify(
     )?;
     let (q, q_bits, config, arith) = sample_u32_mul_mod_q(transcript, security)?;
     let matrices = {
-        let _scope = crate::utils::prof::scope("spartan-f2z:relation_projection_verify");
+        let _scope = tracing::info_span!("spartan-f2z:relation_projection_verify").entered();
         PreparedConstraintMatrices::<SpartanF2zField, bool>::from_skeleton(
             &prepared.skeleton,
             &config,
@@ -217,8 +217,8 @@ pub(crate) fn verify(
     drop(step2_scope);
 
     let terminal_claim = {
-        let _step3 = crate::utils::prof::scope("step3:piop_verify");
-        let _scope = crate::utils::prof::scope("spartan-f2z:spartan_verify");
+        let _step3 = tracing::info_span!("step3:piop_verify").entered();
+        let _scope = tracing::info_span!("spartan-f2z:spartan_verify").entered();
         let mut grinder: crate::piop::spartan::grinding::VerifierGrindingTranscript<
             _,
             U32MulPiopGrinding,
@@ -237,9 +237,9 @@ pub(crate) fn verify(
         terminal_claim
     };
 
-    let step4_scope = crate::utils::prof::scope("step4:bitify_verify");
+    let step4_scope = tracing::info_span!("step4:bitify_verify").entered();
     let (opening, bridge_digest) = {
-        let _scope = crate::utils::prof::scope("spartan-f2z:bitify_verifier");
+        let _scope = tracing::info_span!("spartan-f2z:bitify_verifier").entered();
         let opening = bitify_u32_mul_spartan_claim(&terminal_claim, layout, q, &arith)?;
         let bridge_digest =
             bitified_claim_digest(&matrices, &binding, layout, &terminal_claim, &opening, q)?;

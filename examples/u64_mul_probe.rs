@@ -1,17 +1,16 @@
 //! Per-scope profile of one `prove_u64_mul` at a chosen size:
-//! `cargo run --release --features unchecked --example u64_mul_probe -- 21`.
-use std::time::Instant;
+//! `cargo run --release --features unchecked,span-metrics --example u64_mul_probe -- 21`.
 
 use f2z::{
     piop::spartan::{PreparedU64MulRelation, U64MulWitness, commit_u64_mul_witness, prove_u64_mul, verify_u64_mul},
     transcript::Blake3Transcript,
-    utils::prof,
 };
 
 fn main() {
+    f2z::observability::install().expect("install Perfetto subscriber");
     let e: usize = std::env::args().nth(1).and_then(|s| s.parse().ok()).unwrap_or(18);
     let reps: usize = std::env::args().nth(2).and_then(|s| s.parse().ok()).unwrap_or(3);
-    prof::force_enable();
+
     let witness = U64MulWitness::from_fn(1 << e, |i| {
         let x = (i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1;
         let y = (i as u64).wrapping_mul(0xc2b2_ae3d_27d4_eb4f) | 1;
@@ -26,25 +25,30 @@ fn main() {
     let prepared = PreparedU64MulRelation::new(*witness.layout()).unwrap();
     let hint = commit_u64_mul_witness(&prepared, witness.f2z_bit_rows()).unwrap();
     // warm-up
-    let _ = prof::take_totals();
+
     let p = prove_u64_mul(&mut Blake3Transcript::new(), &prepared, &witness, &hint).unwrap();
     verify_u64_mul(&mut Blake3Transcript::new(), &prepared, &hint.commitment, &p).unwrap();
-    let _ = prof::take_totals();
+
     let mut totals: std::collections::BTreeMap<String, Vec<f64>> = Default::default();
     let mut vtotals: std::collections::BTreeMap<String, Vec<f64>> = Default::default();
     let mut wall = vec![];
     let mut vwall = vec![];
     for _ in 0..reps {
-        let t = Instant::now();
-        let p = prove_u64_mul(&mut Blake3Transcript::new(), &prepared, &witness, &hint).unwrap();
-        wall.push(t.elapsed().as_secs_f64() * 1e3);
-        for (label, secs) in prof::take_totals() {
+        let profile = f2z::observability::Recording::start(Vec::new()).expect("capture prover profile");
+        let (p, t) = f2z::observability::measure(
+            tracing::info_span!("u64_mul_probe:p"),
+            || prove_u64_mul(&mut Blake3Transcript::new(), &prepared, &witness, &hint).unwrap(),
+        ).expect("measure completed operation");
+        wall.push(t.as_secs_f64() * 1e3);
+        for (label, secs) in f2z::observability::totals(&profile.intervals().expect("prover intervals")) {
             totals.entry(label.to_string()).or_default().push(secs * 1e3);
         }
-        let t = Instant::now();
+        let profile = f2z::observability::Recording::start(Vec::new()).expect("capture verifier profile");
+        let t_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t = tracing::info_span!("u64_mul_probe:t").entered();
         verify_u64_mul(&mut Blake3Transcript::new(), &prepared, &hint.commitment, &p).unwrap();
-        vwall.push(t.elapsed().as_secs_f64() * 1e3);
-        for (label, secs) in prof::take_totals() {
+        vwall.push({ drop(t); f2z::observability::duration(&t_recording.intervals().expect("complete operation capture"), "u64_mul_probe:t").expect("query completed operation") }.as_secs_f64() * 1e3);
+        for (label, secs) in f2z::observability::totals(&profile.intervals().expect("verifier intervals")) {
             vtotals.entry(label.to_string()).or_default().push(secs * 1e3);
         }
         std::hint::black_box(p);

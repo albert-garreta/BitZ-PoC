@@ -1,23 +1,27 @@
 //! Phase profile of one hybrid (mod-2^32 mul + chained SHA-256) prove via the
-//! crate's env-gated `utils::prof` scaffold. Bench-identical inputs; one
+//! crate's Perfetto subscriber, with separate peak-RSS observations. Bench-identical inputs; one
 //! warm-up prove is dumped and discarded, then `PROBE_REPS` profiled proves
 //! (default 1) per shape. The nested tree lands on stderr.
 //!
 //! ```text
-//! OBLONG_PROFILE=1 PROBE_SHAPES="19:11 20:12" RAYON_NUM_THREADS=8 \
+//! PROBE_SHAPES="19:11 20:12" RAYON_NUM_THREADS=8 \
 //!   RUSTFLAGS="-C target-cpu=native" cargo run --release --example hybrid_probe --features hybrid
 //! ```
 use f2z::hybrid::{Parameters, PreparedHybrid, U32MulMod32Row};
-use std::time::Instant;
+use tracing_subscriber::prelude::*;
 
 fn rss_peak() -> u64 {
     let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
-    unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) };
-    usage.ru_maxrss as u64
+    assert_eq!(unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) }, 0, "read peak RSS");
+    #[cfg(target_os = "macos")]
+    { usage.ru_maxrss as u64 }
+    #[cfg(not(target_os = "macos"))]
+    { usage.ru_maxrss as u64 * 1024 }
 }
 
 fn main() {
-    f2z::utils::prof::set_rss_probe(rss_peak);
+    let memory = f2z::observability::memory::MemoryLayer::new(rss_peak);
+    tracing_subscriber::registry().with(f2z::observability::layer()).with(memory.clone()).init();
     let shapes: Vec<(u32, u32)> = std::env::var("PROBE_SHAPES")
         .map(|v| {
             v.split_whitespace()
@@ -32,9 +36,11 @@ fn main() {
     let verify = std::env::var("PROBE_VERIFY").map_or(true, |v| v != "0");
     for (mul_log, sha_log) in shapes {
         let parameters = Parameters { multiplications: 1 << mul_log, sha_compressions: 1 << sha_log };
-        let t0 = Instant::now();
-        let prepared = PreparedHybrid::new(parameters).expect("prepare");
-        eprintln!("setup {}:{} {:.0} ms", mul_log, sha_log, t0.elapsed().as_secs_f64() * 1e3);
+        let (prepared, t0) = f2z::observability::measure(
+            tracing::info_span!("hybrid_probe:prepared"),
+            || PreparedHybrid::new(parameters).expect("prepare"),
+        ).expect("measure completed operation");
+        eprintln!("setup {}:{} {:.0} ms", mul_log, sha_log, t0.as_secs_f64() * 1e3);
         let inputs: Vec<_> = (0..parameters.multiplications as u32)
             .map(|i| (i.wrapping_mul(0x9e3779b9), u32::MAX - i))
             .collect();
@@ -42,13 +48,17 @@ fn main() {
             .map(|i| std::array::from_fn(|j| i.wrapping_mul(0x85ebca6b).wrapping_add(j as u32)))
             .collect();
         for rep in 0..=reps {
-            let start = Instant::now();
+            let _ = memory.take();
+            let start_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let start = tracing::info_span!("hybrid_probe:start").entered();
             let rows: Vec<_> = inputs.iter().map(|&(x, y)| U32MulMod32Row::new(x, y)).collect();
             let committed = prepared.commit_mod32(&rows, &blocks).expect("commit");
-            let commit_ms = start.elapsed().as_secs_f64() * 1e3;
-            let t1 = Instant::now();
-            let proof = prepared.prove(&committed).expect("prove");
-            let prove_ms = t1.elapsed().as_secs_f64() * 1e3;
+            drop(start);
+            let proof = tracing::info_span!("hybrid_probe:proof").in_scope(|| prepared.prove(&committed).expect("prove"));
+            let growth = memory.take();
+            let intervals = start_recording.intervals().expect("prover intervals");
+            let commit_ms = f2z::observability::duration(&intervals, "hybrid_probe:start").expect("commit duration").as_secs_f64() * 1e3;
+            let prove_ms = f2z::observability::duration(&intervals, "hybrid_probe:proof").expect("prove duration").as_secs_f64() * 1e3;
             let bytes = proof.to_bytes();
             let header = if rep == 0 {
                 format!("warmup {mul_log}:{sha_log} (discard) commit {commit_ms:.1} ms prove {prove_ms:.1} ms")
@@ -59,13 +69,17 @@ fn main() {
                     bytes.len()
                 )
             };
-            f2z::utils::prof::dump_and_reset(&header);
+            f2z::observability::write_profile(std::io::stderr().lock(), &header, &intervals, Some(&growth)).expect("write profile");
             if verify {
-                let t2 = Instant::now();
+                let t2_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t2 = tracing::info_span!("hybrid_probe:t2").entered();
                 let decoded = prepared.proof_from_bytes(committed.statement(), &bytes).expect("decode");
                 prepared.verify(committed.statement(), &decoded).expect("verify");
-                let verify_ms = t2.elapsed().as_secs_f64() * 1e3;
-                f2z::utils::prof::dump_and_reset(&format!("verify {mul_log}:{sha_log} rep {rep}: {verify_ms:.1} ms"));
+                drop(t2);
+                let growth = memory.take();
+                let intervals = t2_recording.intervals().expect("verifier intervals");
+                let verify_ms = f2z::observability::duration(&intervals, "hybrid_probe:t2").expect("verify duration").as_secs_f64() * 1e3;
+                f2z::observability::write_profile(std::io::stderr().lock(), &format!("verify {mul_log}:{sha_log} rep {rep}: {verify_ms:.1} ms"), &intervals, Some(&growth)).expect("write profile");
             }
             eprintln!("digest {}", blake3::hash(&bytes).to_hex());
         }

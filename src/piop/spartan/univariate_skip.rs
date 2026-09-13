@@ -316,7 +316,7 @@ where
     validate_equality_factors((&equality_factors.0, &equality_factors.1), tau_tail.len())?;
 
     let message = {
-        let _scope = crate::utils::prof::scope("spartan:univariate_skip_message");
+        let _scope = tracing::info_span!("spartan:univariate_skip_message").entered();
         compute_field_skip_message(
             skip_vars,
             (&equality_factors.0, &equality_factors.1),
@@ -327,11 +327,11 @@ where
     let skip = UnivariateSkipProof::from_ordered_message(skip_vars, message)?;
     let reduction = skip.verify_reduction(transcript, field_cfg)?;
     let folded = {
-        let _scope = crate::utils::prof::scope("spartan:univariate_skip_prefix_fold");
+        let _scope = tracing::info_span!("spartan:univariate_skip_prefix_fold").entered();
         fold_field_prefix(products, skip_vars, &reduction.z, field_cfg)?
     };
     let tail = {
-        let _scope = crate::utils::prof::scope("spartan:univariate_skip_tail");
+        let _scope = tracing::info_span!("spartan:univariate_skip_tail").entered();
         prove_outer_sumcheck_with_reducer(
             transcript,
             reduction.q_at_z,
@@ -411,7 +411,7 @@ where
         absorb_field_elements(transcript, &message);
         let z = squeeze_field(transcript, field_cfg);
         let q_at_z = {
-            let _scope = crate::utils::prof::scope("spartan:univariate_skip_reconstruct");
+            let _scope = tracing::info_span!("spartan:univariate_skip_reconstruct").entered();
             self.reconstruct_at(&z, field_cfg)?
         };
         Ok(UnivariateSkipReductionOutput { z, q_at_z })

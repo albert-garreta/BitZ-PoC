@@ -904,7 +904,7 @@ pub fn prove_sha256_chain_with_config<T: Transcript + Send>(
     }
 
     let assignment_binding = {
-        let _scope = crate::utils::prof::scope("sha256:statement_bind_prover");
+        let _scope = tracing::info_span!("sha256:statement_bind_prover").entered();
         let statement_binding = chain_statement_binding(prepared, statement)?;
         let assignment_binding =
             chain_assignment_binding(prepared, &hint_f.commitment, pc, &statement_binding)?;
@@ -920,22 +920,22 @@ pub fn prove_sha256_chain_with_config<T: Transcript + Send>(
     prepared.ligerito_configuration()?.bind(transcript);
     let ood = crate::ligerito_flock::bind_prover_ood(transcript, hint_f, prepared.security.ood);
 
-    let step2_scope = crate::utils::prof::scope("step2:project_prove");
+    let step2_scope = tracing::info_span!("step2:project_prove").entered();
     let initial_nonce = {
-        let _scope = crate::utils::prof::scope("sha256:initial_grinding_prove");
+        let _scope = tracing::info_span!("sha256:initial_grinding_prove").entered();
         grind_boundary::<ChainInitialGrinding, _>(
             transcript,
             profile.initial_grinding_bits() as u32,
         )?
     };
     let mod_q = {
-        let _scope = crate::utils::prof::scope("sha256:runtime_prime_sample_prover");
+        let _scope = tracing::info_span!("sha256:runtime_prime_sample_prover").entered();
         sample_sha256_mod_q_context(transcript, profile)?
     };
     absorb_runtime_chain_relation(transcript, prepared, mod_q.field_config());
     drop(step2_scope);
 
-    let step3_scope = crate::utils::prof::scope("step3:piop_prove");
+    let step3_scope = tracing::info_span!("step3:piop_prove").entered();
     let field_config = mod_q.field_config();
     let local_row_point = squeeze_challenge_point(
         transcript,
@@ -950,7 +950,7 @@ pub fn prove_sha256_chain_with_config<T: Transcript + Send>(
         field_config,
     );
     let terminal_nonce = {
-        let _scope = crate::utils::prof::scope("sha256:public_batch_grinding_prove");
+        let _scope = tracing::info_span!("sha256:public_batch_grinding_prove").entered();
         grind_boundary::<ChainPublicBatchGrinding, _>(
             transcript,
             profile.terminal_grinding_bits() as u32,
@@ -960,12 +960,12 @@ pub fn prove_sha256_chain_with_config<T: Transcript + Send>(
     let (public_slot_weights, public_io_batch) =
         squeeze_chain_public_io_batch(transcript, field_config);
     let reducer = {
-        let _scope = crate::utils::prof::scope("sha256:reducer_init_prover");
+        let _scope = tracing::info_span!("sha256:reducer_init_prover").entered();
         OptimizedSumcheckReducer::new(field_config).map_err(SpartanError::from)?
     };
     let local_row_weights = eq_table(&local_row_point, field_config).map_err(SpartanError::from)?;
     let beta = {
-        let _scope = crate::utils::prof::scope("sha256:local_relation_collapse_prover");
+        let _scope = tracing::info_span!("sha256:local_relation_collapse_prover").entered();
         collapse_native_linear_columns(
             prepared.native_matrix(),
             &local_row_weights,
@@ -975,7 +975,7 @@ pub fn prove_sha256_chain_with_config<T: Transcript + Send>(
         .map_err(SpartanError::from)?
     };
     let batching = {
-        let _scope = crate::utils::prof::scope("sha256:product_batch_prepare_prover");
+        let _scope = tracing::info_span!("sha256:product_batch_prepare_prover").entered();
         ChainProductBatching::new(
             prepared,
             statement,
@@ -989,9 +989,9 @@ pub fn prove_sha256_chain_with_config<T: Transcript + Send>(
     };
     drop(step3_scope);
 
-    let step4_scope = crate::utils::prof::scope("step4:bitify_prove");
+    let step4_scope = tracing::info_span!("step4:bitify_prove").entered();
     let (row_weights, col_weights_q, claimed_q) = {
-        let _scope = crate::utils::prof::scope("sha256:direct_opening_prepare_prover");
+        let _scope = tracing::info_span!("sha256:direct_opening_prepare_prover").entered();
         chain_product_opening_claim(&batching, h_layout, field_config)?
     };
     let row_weight_source = GeneratedModQWeightSource::new(h_layout, mod_q.q_bits(), |row| {
@@ -1001,7 +1001,7 @@ pub fn prove_sha256_chain_with_config<T: Transcript + Send>(
     })
     .map_err(|()| Sha256F2zError::InvalidGeometry)?;
     {
-        let _scope = crate::utils::prof::scope("sha256:opening_claim_absorb_prover");
+        let _scope = tracing::info_span!("sha256:opening_claim_absorb_prover").entered();
         absorb_chain_opening_claim(
             transcript,
             &assignment_binding,
@@ -1018,8 +1018,8 @@ pub fn prove_sha256_chain_with_config<T: Transcript + Send>(
     drop(step4_scope);
 
     let f2z = {
-        let _step5 = crate::utils::prof::scope("step5:open_prove");
-        let _scope = crate::utils::prof::scope("sha256:f2z_prove");
+        let _step5 = tracing::info_span!("step5:open_prove").entered();
+        let _scope = tracing::info_span!("sha256:f2z_prove").entered();
         prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime(
             transcript,
             hint_f,
@@ -1082,7 +1082,7 @@ pub fn verify_sha256_chain_with_config<T: Transcript + Send>(
     }
 
     let assignment_binding = {
-        let _scope = crate::utils::prof::scope("sha256:statement_bind_verifier");
+        let _scope = tracing::info_span!("sha256:statement_bind_verifier").entered();
         let statement_binding = chain_statement_binding(prepared, statement)?;
         let assignment_binding =
             chain_assignment_binding(prepared, commitment_f, vc, &statement_binding)?;
@@ -1098,9 +1098,9 @@ pub fn verify_sha256_chain_with_config<T: Transcript + Send>(
     prepared.ligerito_configuration()?.bind(transcript);
     let ood = crate::ligerito_flock::bind_verifier_ood(transcript, packed_vars(f_layout), prepared.security.ood, proof.f2z.ood.as_ref()).map_err(Sha256F2zError::F2z)?;
 
-    let step2_scope = crate::utils::prof::scope("step2:project_verify");
+    let step2_scope = tracing::info_span!("step2:project_verify").entered();
     {
-        let _scope = crate::utils::prof::scope("sha256:initial_grinding_verify");
+        let _scope = tracing::info_span!("sha256:initial_grinding_verify").entered();
         check_boundary::<ChainInitialGrinding, _>(
             transcript,
             profile.initial_grinding_bits() as u32,
@@ -1108,13 +1108,13 @@ pub fn verify_sha256_chain_with_config<T: Transcript + Send>(
         )?;
     }
     let mod_q = {
-        let _scope = crate::utils::prof::scope("sha256:runtime_prime_sample_verifier");
+        let _scope = tracing::info_span!("sha256:runtime_prime_sample_verifier").entered();
         sample_sha256_mod_q_context(transcript, profile)?
     };
     absorb_runtime_chain_relation(transcript, prepared, mod_q.field_config());
     drop(step2_scope);
 
-    let step3_scope = crate::utils::prof::scope("step3:piop_verify");
+    let step3_scope = tracing::info_span!("step3:piop_verify").entered();
     let field_config = mod_q.field_config();
     let local_row_point = squeeze_challenge_point(
         transcript,
@@ -1129,7 +1129,7 @@ pub fn verify_sha256_chain_with_config<T: Transcript + Send>(
         field_config,
     );
     {
-        let _scope = crate::utils::prof::scope("sha256:public_batch_grinding_verify");
+        let _scope = tracing::info_span!("sha256:public_batch_grinding_verify").entered();
         check_boundary::<ChainPublicBatchGrinding, _>(
             transcript,
             profile.terminal_grinding_bits() as u32,
@@ -1140,12 +1140,12 @@ pub fn verify_sha256_chain_with_config<T: Transcript + Send>(
     let (public_slot_weights, public_io_batch) =
         squeeze_chain_public_io_batch(transcript, field_config);
     let reducer = {
-        let _scope = crate::utils::prof::scope("sha256:reducer_init_verifier");
+        let _scope = tracing::info_span!("sha256:reducer_init_verifier").entered();
         OptimizedSumcheckReducer::new(field_config).map_err(SpartanError::from)?
     };
     let local_row_weights = eq_table(&local_row_point, field_config).map_err(SpartanError::from)?;
     let beta = {
-        let _scope = crate::utils::prof::scope("sha256:local_relation_collapse_verifier");
+        let _scope = tracing::info_span!("sha256:local_relation_collapse_verifier").entered();
         collapse_native_linear_columns(
             prepared.native_matrix(),
             &local_row_weights,
@@ -1155,7 +1155,7 @@ pub fn verify_sha256_chain_with_config<T: Transcript + Send>(
         .map_err(SpartanError::from)?
     };
     let batching = {
-        let _scope = crate::utils::prof::scope("sha256:product_batch_prepare_verifier");
+        let _scope = tracing::info_span!("sha256:product_batch_prepare_verifier").entered();
         ChainProductBatching::new(
             prepared,
             statement,
@@ -1169,9 +1169,9 @@ pub fn verify_sha256_chain_with_config<T: Transcript + Send>(
     };
     drop(step3_scope);
 
-    let step4_scope = crate::utils::prof::scope("step4:bitify_verify");
+    let step4_scope = tracing::info_span!("step4:bitify_verify").entered();
     let (row_weights, col_weights_q, claimed_q) = {
-        let _scope = crate::utils::prof::scope("sha256:direct_opening_prepare_verifier");
+        let _scope = tracing::info_span!("sha256:direct_opening_prepare_verifier").entered();
         chain_product_opening_claim(&batching, h_layout, field_config)?
     };
     let row_weight_source = GeneratedModQWeightSource::new(h_layout, mod_q.q_bits(), |row| {
@@ -1181,7 +1181,7 @@ pub fn verify_sha256_chain_with_config<T: Transcript + Send>(
     })
     .map_err(|()| Sha256F2zError::InvalidGeometry)?;
     {
-        let _scope = crate::utils::prof::scope("sha256:opening_claim_absorb_verifier");
+        let _scope = tracing::info_span!("sha256:opening_claim_absorb_verifier").entered();
         absorb_chain_opening_claim(
             transcript,
             &assignment_binding,
@@ -1197,8 +1197,8 @@ pub fn verify_sha256_chain_with_config<T: Transcript + Send>(
     }
     drop(step4_scope);
 
-    let _step5 = crate::utils::prof::scope("step5:open_verify");
-    let _scope = crate::utils::prof::scope("sha256:f2z_verify");
+    let _step5 = tracing::info_span!("step5:open_verify").entered();
+    let _scope = tracing::info_span!("sha256:f2z_verify").entered();
     verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime(
         transcript,
         commitment_f,

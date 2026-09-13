@@ -10,10 +10,9 @@
 //!
 //! ```text
 //! GRIND_BITS="18 19 20 21 22 23 24 25" GRIND_THREADS="1 10" GRIND_SAMPLES=200 \
-//!   RUSTFLAGS="-C target-cpu=native" cargo run --release --example grind_probe
+//!   RUSTFLAGS="-C target-cpu=native" cargo run --release --features span-metrics --example grind_probe
 //! ```
 use f2z::piop::spartan::grinding::{find_grinding_nonce, GrindingSeed};
-use std::time::Instant;
 
 fn env_list<T: std::str::FromStr>(name: &str, default: &[T]) -> Vec<T>
 where
@@ -35,6 +34,7 @@ fn seed_for(bits: u32, sample: usize) -> GrindingSeed {
 }
 
 fn main() {
+    f2z::observability::install().expect("install Perfetto subscriber");
     let bits_list = env_list::<u32>("GRIND_BITS", &[18, 19, 20, 21, 22, 23, 24, 25]);
     let threads_list = env_list::<usize>("GRIND_THREADS", &[1, 10]);
     let samples: usize = std::env::var("GRIND_SAMPLES").ok().and_then(|v| v.parse().ok()).unwrap_or(200);
@@ -52,9 +52,11 @@ fn main() {
             let mut ns_per_attempt = Vec::with_capacity(samples);
             for i in 0..samples {
                 let seed = seed_for(bits, i);
-                let t0 = Instant::now();
-                let nonce = pool.install(|| find_grinding_nonce(&seed, bits)).expect("grind");
-                let dt = t0.elapsed();
+                let (nonce, t0) = f2z::observability::measure(
+                    tracing::info_span!("grind_probe:nonce"),
+                    || pool.install(|| find_grinding_nonce(&seed, bits)).expect("grind"),
+                ).expect("measure completed operation");
+                let dt = t0;
                 std::hint::black_box(nonce);
                 let attempts = nonce as f64 + 1.0;
                 times_ms.push(dt.as_secs_f64() * 1e3);

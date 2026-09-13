@@ -334,10 +334,11 @@ impl Context {
 
 pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
     let program = Wrapping::compile(corpus);
-    let started = std::time::Instant::now();
+    let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let started = tracing::info_span!("mul_e2e_compare/limber:started").entered();
     let values = program.values(corpus);
     let rows = program.native_rows(&values).expect("integer constraints");
-    let generation_ms = started.elapsed().as_secs_f64() * 1e3;
+    let generation_ms = { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "mul_e2e_compare/limber:started").expect("query completed operation") }.as_secs_f64() * 1e3;
     let representation = "Limber wrapping rows and quotients";
     if corpus.workload == Workload::U128 {
         return super::WitnessAudit::check_wide(corpus, rows, generation_ms, representation);

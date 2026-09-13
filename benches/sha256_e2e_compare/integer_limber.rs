@@ -2,7 +2,7 @@
 
 use super::common;
 use super::trace_capture::TrialScopes;
-use std::{hint::black_box, sync::Arc, time::Instant};
+use std::{hint::black_box, sync::Arc};
 
 use limber::{
     imod_r1cs_modp::{IntModR1CSShapeModp, IntModR1CSWitnessModp},
@@ -558,7 +558,8 @@ impl Context {
     pub fn setup(corpus: &Corpus, params: Params) -> Result<Self, String> {
         security_metadata();
         let program = Arc::new(Program::compile(corpus));
-        let started = Instant::now();
+        let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let started = tracing::info_span!("sha256_e2e_compare/integer_limber:started").entered();
         let shape = program.shape::<E>();
         let arity = shape.num_vars().max(shape.num_cons()).ilog2() as usize;
         let params =
@@ -569,7 +570,7 @@ impl Context {
             program,
             pk,
             vk,
-            setup_ms: started.elapsed().as_secs_f64() * 1e3,
+            setup_ms: { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "sha256_e2e_compare/integer_limber:started").expect("query completed operation") }.as_secs_f64() * 1e3,
         })
     }
 
@@ -660,6 +661,7 @@ mod tests {
 
     #[test]
     fn brakedown_sha_proof_binds_public_inputs_and_outputs() {
+        let _trace = common::test_tracing();
         let corpus = Corpus::new(1, 0x4252_414b_4544_4f57);
         let context = Context::setup(&corpus, Params { k: 9 }).unwrap();
         let shape = context.program.shape::<E>();

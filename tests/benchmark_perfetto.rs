@@ -97,6 +97,68 @@ fn shared_output_preserves_creation_policy() {
 struct FailingWriter {
     fail_write: bool,
 }
+
+#[test]
+fn profile_projection_preserves_union_totals_memory_and_output_errors() {
+    let interval = |id, parent, depth, name: &str, start_ns, end_ns| perfetto::Interval {
+        id,
+        parent,
+        track_id: id,
+        depth,
+        name: name.into(),
+        component: None,
+        start_ns,
+        end_ns,
+    };
+    let spans = vec![
+        interval(1, None, 0, "trial", 0, 100_000_000),
+        interval(2, Some(1), 1, "work", 10_000_000, 40_000_000),
+        interval(3, Some(1), 1, "work", 30_000_000, 60_000_000),
+        interval(4, Some(2), 2, "child", 20_000_000, 30_000_000),
+    ];
+    let memory = std::collections::BTreeMap::from([(
+        "trial".into(),
+        perfetto::memory::PeakGrowth {
+            bytes: 1048576,
+            peak_bytes: 2097152,
+        },
+    )]);
+    let mut output = Vec::new();
+    perfetto::write_profile(&mut output, "fixture", &spans, Some(&memory)).unwrap();
+    let output = String::from_utf8(output).unwrap();
+    assert!(
+        output.contains("trial: 100.000ms (100.0%) self=50.000ms Δrss=1.0 MiB peak=2.0 MiB"),
+        "{output}"
+    );
+    assert!(
+        output.contains("work: 50.000ms (50.0%) n=2 self=40.000ms"),
+        "{output}"
+    );
+    let recursive = vec![
+        interval(1, None, 0, "work", 0, 100_000_000),
+        interval(2, Some(1), 1, "work", 20_000_000, 60_000_000),
+        interval(3, Some(2), 2, "child", 30_000_000, 40_000_000),
+    ];
+    let mut output = Vec::new();
+    perfetto::write_profile(&mut output, "recursive", &recursive, None).unwrap();
+    let output = String::from_utf8(output).unwrap();
+    assert!(
+        output.contains("work: 100.000ms (100.0%) n=2 self=90.000ms"),
+        "{output}"
+    );
+    for fail_write in [true, false] {
+        let error = perfetto::write_profile(FailingWriter { fail_write }, "fixture", &spans, None)
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            if fail_write {
+                "injected write failure"
+            } else {
+                "injected flush failure"
+            }
+        );
+    }
+}
 impl Write for FailingWriter {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         if self.fail_write {

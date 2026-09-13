@@ -23,7 +23,7 @@ use std::{
     io::BufWriter,
     path::{Path, PathBuf},
     process::Command,
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use binius_circuits::sha256::{State as BiniusShaState, ref_compress, sha256_compress_2x};
@@ -47,7 +47,7 @@ use f2z::{
         verify_sha256_compressions_with_config,
     },
     transcript::Blake3Transcript,
-    utils::prof::ProfileInterval,
+    observability::Interval,
 };
 use serde_json::{Value, json};
 
@@ -313,12 +313,13 @@ struct F2zContext {
 
 impl F2zContext {
     fn setup(exponent: usize, corpus: &Corpus, inner_prefix_vars: usize) -> Self {
-        let started = Instant::now();
+        let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let started = tracing::info_span!("sha256_e2e_compare:started").entered();
         let prepared = prepare_sha256_compression_batch(exponent)
             .and_then(|p| p.with_ligerito(common::ligerito_selection(100)))
             .expect("valid SHA batch");
         let (pc, vc) = sha256_compression_configs(&prepared).expect("valid F2Z PCS config");
-        let setup_ms = started.elapsed().as_secs_f64() * 1e3;
+        let setup_ms = { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "sha256_e2e_compare:started").expect("query completed operation") }.as_secs_f64() * 1e3;
         Self {
             prepared,
             statements: corpus.statements(),
@@ -331,13 +332,12 @@ impl F2zContext {
     }
 
     fn run(&self) -> (TrialMetrics, Vec<SemanticSpan>) {
-        let _ = f2z::utils::prof::take_totals();
-        let _ = f2z::utils::prof::take_intervals();
-        let root = f2z::utils::prof::scope("sha256-compare:verified_trial");
-        let witness_to_proof = f2z::utils::prof::scope("sha256-compare:witness_to_proof");
+        let recording = common::perfetto::Recording::start(Vec::new()).expect("start F2Z trial");
+        let root = tracing::info_span!("sha256-compare:verified_trial").entered();
+        let witness_to_proof = tracing::info_span!("sha256-compare:witness_to_proof").entered();
 
         let witness = {
-            let _scope = f2z::utils::prof::scope("sha256-compare:witness_generation");
+            let _scope = tracing::info_span!("sha256-compare:witness_generation").entered();
             generate_sha256_compression_witnesses(&self.prepared, &self.inputs)
                 .expect("F2Z witness generation succeeds")
         };
@@ -350,16 +350,16 @@ impl F2zContext {
             "F2Z and reference SHA outputs differ"
         );
 
-        let total = f2z::utils::prof::scope("sha256-compare:total_prover");
+        let total = tracing::info_span!("sha256-compare:total_prover").entered();
 
         let hint = {
-            let _scope = f2z::utils::prof::scope("sha256-compare:commit");
+            let _scope = tracing::info_span!("sha256-compare:commit").entered();
             commit_sha256_compression_witness_with_config(&self.prepared, &witness, &self.pc)
                 .expect("F2Z commitment succeeds")
         };
         let mut prover_transcript = Blake3Transcript::new();
         let proof = {
-            let _scope = f2z::utils::prof::scope("sha256-compare:proof");
+            let _scope = tracing::info_span!("sha256-compare:proof").entered();
             prove_sha256_compressions_with_prefix_vars_and_config(
                 &mut prover_transcript,
                 &self.prepared,
@@ -376,7 +376,7 @@ impl F2zContext {
 
         let mut verifier_transcript = Blake3Transcript::new();
         {
-            let _scope = f2z::utils::prof::scope("sha256-compare:verification");
+            let _scope = tracing::info_span!("sha256-compare:verification").entered();
             verify_sha256_compressions_with_config(
                 &mut verifier_transcript,
                 &self.prepared,
@@ -388,8 +388,7 @@ impl F2zContext {
             .expect("F2Z proof verifies");
         }
         drop(root);
-        let _ = f2z::utils::prof::take_totals();
-        let raw = f2z::utils::prof::take_intervals();
+        let raw = recording.intervals().expect("query F2Z trial");
 
         let piop_bytes = 3
             * proof.inner().round_polynomials.len()
@@ -434,7 +433,8 @@ impl BiniusContext {
     fn setup(corpus: &Corpus, log_inv_rate: usize) -> Self {
         let (circuit, wires, circuit_build_ms) = build_binius_sha_circuit(corpus);
 
-        let setup_started = Instant::now();
+        let setup_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let setup_started = tracing::info_span!("sha256_e2e_compare:setup_started").entered();
         let verifier = BiniusVerifier::<StdHashSuite>::setup_with_security_bits(
             circuit.constraint_system().clone(),
             log_inv_rate,
@@ -448,7 +448,8 @@ impl BiniusContext {
             "comparison setup must use the selected FRI query target"
         );
         let prover = BiniusProver::setup(verifier.clone()).expect("Binius prover setup succeeds");
-        let setup_ms = setup_started.elapsed().as_secs_f64() * 1e3;
+        drop(setup_started);
+        let setup_ms = f2z::observability::duration(&setup_started_recording.intervals().expect("setup capture"), "sha256_e2e_compare:setup_started").expect("setup duration").as_secs_f64() * 1e3;
         Self {
             circuit,
             wires,
@@ -544,7 +545,8 @@ impl BiniusContext {
 /// compressions, public blocks and outputs.
 fn build_binius_sha_circuit(corpus: &Corpus) -> (Circuit, BiniusWires, f64) {
     assert!(corpus.cases.len().is_multiple_of(2));
-    let build_started = Instant::now();
+    let build_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let build_started = tracing::info_span!("sha256_e2e_compare:build_started").entered();
     let builder = CircuitBuilder::new();
     let pairs = (0..corpus.cases.len() / 2)
         .map(|pair_index| {
@@ -566,7 +568,8 @@ fn build_binius_sha_circuit(corpus: &Corpus) -> (Circuit, BiniusWires, f64) {
         })
         .collect();
     let circuit = builder.build();
-    let circuit_build_ms = build_started.elapsed().as_secs_f64() * 1e3;
+    drop(build_started);
+    let circuit_build_ms = f2z::observability::duration(&build_started_recording.intervals().expect("circuit capture"), "sha256_e2e_compare:build_started").expect("circuit duration").as_secs_f64() * 1e3;
     (circuit, BiniusWires { pairs }, circuit_build_ms)
 }
 
@@ -586,10 +589,12 @@ struct BiniusLigeritoContext {
 impl BiniusLigeritoContext {
     fn setup(corpus: &Corpus) -> Self {
         let (circuit, wires, circuit_build_ms) = build_binius_sha_circuit(corpus);
-        let setup_started = Instant::now();
-        let prepared = BiniusLigerito::new(circuit.constraint_system())
-            .expect("binius64-ligerito setup reaches the 100-bit gate");
-        let setup_ms = setup_started.elapsed().as_secs_f64() * 1e3;
+        let (prepared, setup_started) = f2z::observability::measure(
+            tracing::info_span!("sha256_e2e_compare:prepared"),
+            || BiniusLigerito::new(circuit.constraint_system())
+            .expect("binius64-ligerito setup reaches the 100-bit gate"),
+        ).expect("measure completed operation");
+        let setup_ms = setup_started.as_secs_f64() * 1e3;
         Self {
             circuit,
             wires,
@@ -848,19 +853,19 @@ fn pack_lanes(low: u32, high: u32) -> u64 {
     u64::from(low) | (u64::from(high) << 32)
 }
 
-fn f2z_semantic_spans(raw: &[ProfileInterval]) -> Vec<SemanticSpan> {
+fn f2z_semantic_spans(raw: &[Interval]) -> Vec<SemanticSpan> {
     let by_order = raw
         .iter()
-        .map(|span| (span.order, span))
+        .map(|span| (span.id, span))
         .collect::<HashMap<_, _>>();
-    let label_under = |span: &ProfileInterval, needle: &str| {
+    let label_under = |span: &Interval, needle: &str| {
         let mut cursor = Some(span);
         while let Some(current) = cursor {
-            if current.label == needle {
+            if current.label() == needle {
                 return true;
             }
             cursor = current
-                .parent_order
+                .parent
                 .and_then(|parent| by_order.get(&parent).copied());
         }
         false
@@ -870,7 +875,7 @@ fn f2z_semantic_spans(raw: &[ProfileInterval]) -> Vec<SemanticSpan> {
         .iter()
         .map(|span| {
             let (primary_phase, tags, scope_tag, primary_sequence, short_name, math) = match span
-                .label
+                .label()
             {
                 "sha256-compare:verified_trial" => (
                     "end-to-end",
@@ -975,10 +980,10 @@ fn f2z_semantic_spans(raw: &[ProfileInterval]) -> Vec<SemanticSpan> {
                 _ => ("proving", vec!["proving"], None, false, "Procedure", vec![]),
             };
             SemanticSpan {
-                id: id(span.order),
-                parent: span.parent_order.map(id),
-                operation: operation(span.label),
-                name: humanize(span.label),
+                id: id(span.id),
+                parent: span.parent.map(id),
+                operation: operation(span.label()),
+                name: humanize(span.label()),
                 short_name: short_name.to_owned(),
                 primary_phase,
                 phase_tags: tags,
@@ -998,19 +1003,19 @@ fn f2z_semantic_spans(raw: &[ProfileInterval]) -> Vec<SemanticSpan> {
 
     let proof = raw
         .iter()
-        .find(|span| span.label == "sha256-compare:proof")
+        .find(|span| span.label() == "sha256-compare:proof")
         .expect("F2Z proof span exists");
     let opening_start = raw
         .iter()
         .filter(|span| {
-            span.label.contains("opening_prepare_prover") || span.label == "sha256:f2z_prove"
+            span.label().contains("opening_prepare_prover") || span.label() == "sha256:f2z_prove"
         })
         .map(|span| span.start_ns)
         .min()
         .expect("F2Z opening boundary exists");
     spans.push(SemanticSpan {
         id: "f2z-piop-union".to_owned(),
-        parent: Some(id(proof.order)),
+        parent: Some(id(proof.id)),
         operation: "f2z.piop".to_owned(),
         name: "F2Z Spartan PIOP".to_owned(),
         short_name: "PIOP".to_owned(),
@@ -1025,7 +1030,7 @@ fn f2z_semantic_spans(raw: &[ProfileInterval]) -> Vec<SemanticSpan> {
     });
     spans.push(SemanticSpan {
         id: "f2z-opening-union".to_owned(),
-        parent: Some(id(proof.order)),
+        parent: Some(id(proof.id)),
         operation: "f2z.pcs-opening".to_owned(),
         name: "F2Z PCS opening".to_owned(),
         short_name: "F2Z opening".to_owned(),
@@ -1417,7 +1422,7 @@ impl TraceWriter {
                 "build_profile": "bench",
             },
             "trial": metadata.trial.json(),
-            "clock": {"id": run_id, "kind": "monotonic", "unit": "ns", "source": if metadata.backend == Backend::F2z { "std::time::Instant" } else { "Perfetto SDK" }},
+            "clock": {"id": run_id, "kind": "monotonic", "unit": "ns", "source": "Perfetto SDK"},
             "status": "ok",
             "trace_complete": true,
             "environment": self.environment,
@@ -2719,11 +2724,6 @@ impl SplitMix64 {
 }
 
 fn main() {
-    // SAFETY: set before the Rayon pool or any profiler scope is created.
-    unsafe {
-        std::env::set_var("OBLONG_PROFILE", "1");
-        std::env::set_var("OBLONG_PROFILE_INTERVALS", "1");
-    }
     let _ = flock_core::init_perf_thread_pool();
     let threads = rayon::current_num_threads();
     let expected_threads = env_usize("F2Z_SHA_COMPARE_THREADS", threads);
@@ -2953,6 +2953,7 @@ mod native_whir_tests {
     #[test]
     #[ignore = "requires PERFETTO_TRACE_PROCESSOR; exercises native measurement backends"]
     fn native_adapters_report_repeated_perfetto_trials() {
+        let _trace = super::common::test_tracing();
         use super::*;
         use tracing_subscriber::prelude::*;
         tracing::subscriber::with_default(
@@ -2991,7 +2992,7 @@ mod native_whir_tests {
     #[test]
     #[ignore = "requires PERFETTO_TRACE_PROCESSOR; exercises the native measurement backend"]
     fn binius_sha_binds_public_blocks_outputs_and_proof() {
-        f2z::observability::install().unwrap();
+        let _trace = super::common::test_tracing();
         super::binius_tamper_self_test();
     }
 
@@ -3017,6 +3018,7 @@ mod native_whir_tests {
 
     #[test]
     fn sha_proof_binds_public_blocks_outputs_and_order() {
+        let _trace = super::common::test_tracing();
         super::plonky3_backend::tamper_self_test();
     }
 }
@@ -3025,6 +3027,7 @@ mod native_whir_tests {
 mod ligerito_isolation_tests {
     #[test]
     fn limber_configuration_probe() {
+        let _trace = super::common::test_tracing();
         if std::env::var_os("F2Z_TEST_CONFIGURATION_PROBE").is_none() {
             return;
         }
@@ -3100,6 +3103,7 @@ mod reporting_tests {
     #[test]
     #[ignore = "requires PERFETTO_TRACE_PROCESSOR; exercises the native measurement backend"]
     fn span_metrics_cover_repeated_verified_sha_trials() {
+        let _trace = common::test_tracing();
         use tracing_subscriber::prelude::*;
         // Thirty-two compressions reach the opener's minimum packed log of 13.
         let context = BiniusLigeritoContext::setup(&Corpus::new(32, DEFAULT_ROOT_SEED));

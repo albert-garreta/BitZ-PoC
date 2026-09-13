@@ -1035,12 +1035,12 @@ pub fn prove_u64_mul<T: Transcript + Send>(
     let ood = crate::ligerito_flock::bind_prover_ood(transcript, hint, security.ood);
 
     // Paper §2.1 Step 2: pre-draw grinding, prime sample, projection.
-    let step2_scope = crate::utils::prof::scope("step2:project_prove");
+    let step2_scope = tracing::info_span!("step2:project_prove").entered();
     let initial_nonce =
         grind_boundary::<InitialGrinding, _>(transcript, security.initial_grinding_bits)?;
     let (q, q_bits, config, arith) = sample_mod_q(transcript, security)?;
     let matrices = {
-        let _scope = crate::utils::prof::scope("u64-spartan-f2z:relation_projection_prove");
+        let _scope = tracing::info_span!("u64-spartan-f2z:relation_projection_prove").entered();
         PreparedConstraintMatrices::<SpartanF2zField, U64MulCoefficient>::from_skeleton(
             &prepared.skeleton,
             &config,
@@ -1049,7 +1049,7 @@ pub fn prove_u64_mul<T: Transcript + Send>(
     };
     // Only the products need residues; the assignment stays native.
     let products = {
-        let _scope = crate::utils::prof::scope("u64-spartan-f2z:witness_projection_prove");
+        let _scope = tracing::info_span!("u64-spartan-f2z:witness_projection_prove").entered();
         let live = layout.multiplications();
         let ctx = RawMontyCtx::new(&config);
         RawProducts::from_native_limbs(
@@ -1066,8 +1066,8 @@ pub fn prove_u64_mul<T: Transcript + Send>(
     // Step 3: the Spartan PIOP over F_q (raw products, native assignment),
     // grinded per draw.
     let (spartan, terminal_claim, piop_nonces) = {
-        let _step3 = crate::utils::prof::scope("step3:piop_prove");
-        let _scope = crate::utils::prof::scope("u64-spartan-f2z:spartan_prove");
+        let _step3 = tracing::info_span!("step3:piop_prove").entered();
+        let _scope = tracing::info_span!("u64-spartan-f2z:spartan_prove").entered();
         let mut grinder: ProverGrindingTranscript<_, PiopGrinding> =
             ProverGrindingTranscript::new(transcript, piop_wrap_bits(security));
         let (spartan, terminal_claim) = prove_spartan_piop_raw_products_native_assignment(
@@ -1081,9 +1081,9 @@ pub fn prove_u64_mul<T: Transcript + Send>(
     };
 
     // Step 4: bitification at the runtime prime + the terminal boundary.
-    let step4_scope = crate::utils::prof::scope("step4:bitify_prove");
+    let step4_scope = tracing::info_span!("step4:bitify_prove").entered();
     let (opening, bridge_digest) = {
-        let _scope = crate::utils::prof::scope("u64-spartan-f2z:bitify_prover");
+        let _scope = tracing::info_span!("u64-spartan-f2z:bitify_prover").entered();
         let opening = bitify_u64_mul_spartan_claim_with(&terminal_claim, layout, q, &arith)?;
         let bridge_digest =
             bitified_claim_digest(&matrices, &binding, layout, &terminal_claim, &opening, q)?;
@@ -1095,10 +1095,10 @@ pub fn prove_u64_mul<T: Transcript + Send>(
 
     // Steps 5.1–5.3: the runtime-q F2Z opening (one chunk by construction).
     let f2z = {
-        let _step5 = crate::utils::prof::scope("step5:open_prove");
-        let _scope = crate::utils::prof::scope("u64-spartan-f2z:f2z_prove");
+        let _step5 = tracing::info_span!("step5:open_prove").entered();
+        let _scope = tracing::info_span!("u64-spartan-f2z:f2z_prove").entered();
         let chunks = {
-            let _scope = crate::utils::prof::scope("u64-spartan-f2z:f2z_prepare_prover");
+            let _scope = tracing::info_span!("u64-spartan-f2z:f2z_prepare_prover").entered();
             prepare_bitified_chunks_with(&opening, q_bits, &arith)?
         };
         if chunks.len() != 1 {
@@ -1152,7 +1152,7 @@ pub fn verify_u64_mul<T: Transcript + Send>(
         transcript, packed_variables(&params)?, security.ood, proof.f2z.ood.as_ref(),
     ).map_err(U64MulSpartanF2zError::F2z)?;
 
-    let step2_scope = crate::utils::prof::scope("step2:project_verify");
+    let step2_scope = tracing::info_span!("step2:project_verify").entered();
     check_boundary::<InitialGrinding, _>(
         transcript,
         security.initial_grinding_bits,
@@ -1160,7 +1160,7 @@ pub fn verify_u64_mul<T: Transcript + Send>(
     )?;
     let (q, q_bits, config, arith) = sample_mod_q(transcript, security)?;
     let matrices = {
-        let _scope = crate::utils::prof::scope("u64-spartan-f2z:relation_projection_verify");
+        let _scope = tracing::info_span!("u64-spartan-f2z:relation_projection_verify").entered();
         PreparedConstraintMatrices::<SpartanF2zField, U64MulCoefficient>::from_skeleton(
             &prepared.skeleton,
             &config,
@@ -1170,8 +1170,8 @@ pub fn verify_u64_mul<T: Transcript + Send>(
     drop(step2_scope);
 
     let terminal_claim = {
-        let _step3 = crate::utils::prof::scope("step3:piop_verify");
-        let _scope = crate::utils::prof::scope("u64-spartan-f2z:spartan_verify");
+        let _step3 = tracing::info_span!("step3:piop_verify").entered();
+        let _scope = tracing::info_span!("u64-spartan-f2z:spartan_verify").entered();
         let mut grinder: VerifierGrindingTranscript<_, PiopGrinding> =
             VerifierGrindingTranscript::new(
                 transcript,
@@ -1184,9 +1184,9 @@ pub fn verify_u64_mul<T: Transcript + Send>(
         terminal_claim
     };
 
-    let step4_scope = crate::utils::prof::scope("step4:bitify_verify");
+    let step4_scope = tracing::info_span!("step4:bitify_verify").entered();
     let (opening, bridge_digest) = {
-        let _scope = crate::utils::prof::scope("u64-spartan-f2z:bitify_verifier");
+        let _scope = tracing::info_span!("u64-spartan-f2z:bitify_verifier").entered();
         let opening = bitify_u64_mul_spartan_claim_with(&terminal_claim, layout, q, &arith)?;
         let bridge_digest =
             bitified_claim_digest(&matrices, &binding, layout, &terminal_claim, &opening, q)?;
@@ -1199,10 +1199,10 @@ pub fn verify_u64_mul<T: Transcript + Send>(
     )?;
     drop(step4_scope);
 
-    let _step5 = crate::utils::prof::scope("step5:open_verify");
-    let _scope = crate::utils::prof::scope("u64-spartan-f2z:f2z_verify");
+    let _step5 = tracing::info_span!("step5:open_verify").entered();
+    let _scope = tracing::info_span!("u64-spartan-f2z:f2z_verify").entered();
     let prepared_claim = {
-        let _scope = crate::utils::prof::scope("u64-spartan-f2z:f2z_prepare_verifier");
+        let _scope = tracing::info_span!("u64-spartan-f2z:f2z_prepare_verifier").entered();
         prepare_bitified_claim_with(&opening, q_bits, &arith)?
     };
     if prepared_claim.chunks.len() != 1 {

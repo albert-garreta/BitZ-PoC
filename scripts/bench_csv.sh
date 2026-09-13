@@ -60,7 +60,7 @@ export RUSTFLAGS="${RUSTFLAGS:--C target-cpu=native}"
 [ -n "$THREADS" ] && export RAYON_NUM_THREADS="$THREADS"
 
 # Build once up front so per-shape runs are measurement-only.
-cargo bench --bench pcs --features unchecked --no-run >/dev/null 2>&1 || {
+cargo bench --bench pcs --features unchecked,span-metrics --no-run >/dev/null 2>&1 || {
   echo "build failed" >&2; exit 1; }
 
 echo "timestamp,profile_arg,lig_geometry,n,t,s,W,chunks,threads,reps,commit_ms,commit_peak_mb,forest_ms,open_ms,prove_ms,prove_peak_mb,verify_ms,proof_bytes,forest_side_kib,s_v_kib,lig_kib,serialize_us,deserialize_us" > "$OUT"
@@ -78,7 +78,7 @@ for prof in "${PROFS[@]}"; do
     echo ">> profile=$plabel shape=$s ${sched:+sched=l8}" >&2
     out=$(env ${penv:+F2Z_LIG_PROFILE="$penv"} ${sched:+F2_FOREST_SCHEDULE=l8} \
       F2Z_BENCH_SHAPES="$s" F2Z_BENCH_REPS="$REPS" \
-      cargo bench --bench pcs --features unchecked 2>/dev/null)
+      cargo bench --bench pcs --features unchecked,span-metrics 2>/dev/null)
     echo "$out" | awk -v ts="$(date '+%Y-%m-%dT%H:%M:%S')" -v prof="$plabel" \
         -v threads="$threads_label" -v reps="$REPS" '
       function num(x) { gsub(/[^0-9.]/, "", x); return x }

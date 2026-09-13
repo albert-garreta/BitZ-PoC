@@ -63,7 +63,7 @@ bellpepper = { version = "0.4.1", optional = true }
 bellpepper-core = { version = "0.4.0", optional = true }
 ff = { version = "0.13.1", features = ["derive", "bits"], optional = true }
 limber = { git = "https://github.com/wu-s-john/limber-impl.git", rev = "861f10a6a4d705d92a9faf13a8f860d8ba057ca0", default-features = false, optional = true }
-spartan2 = { git = "https://github.com/wu-s-john/Spartan2.git", rev = "3b94130453838550a1086ee75c5d280f5c25df3d", default-features = false, features = ["sha256-ecdsa"], optional = true }
+spartan2 = { git = "https://github.com/wu-s-john/Spartan2.git", rev = "d3e686ebc4554cabfbe6282ef3c91baba00f755f", default-features = false, features = ["sha256-ecdsa"], optional = true }
 
 # Optional Binius64 stack for the PCS and native SHA-256 comparisons.
 # Pin every crate to the same commit from the fork's f2z-benching branch.
@@ -82,7 +82,7 @@ binius-prover = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510e
 binius-transcript = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
 binius-utils = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
 binius-verifier = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
-tracing = { version = "0.1.38", optional = true }
+tracing = "0.1.38"
 tracing-subscriber = { version = "0.3.18", optional = true }
 perfetto-sdk = { version = "1.1.1", optional = true }
 tracing-perfetto-sdk = { version = "1.0.0", optional = true }
@@ -98,15 +98,16 @@ tempfile = "3"
 [[bench]]
 name = "sha256_ecdsa"
 harness = false
-required-features = ["ecdsa"]
+required-features = ["span-metrics", "ecdsa"]
 
 [[bench]]
 name = "sha256_ecdsa_compare"
 harness = false
-required-features = ["sha256-ecdsa-compare"]
+required-features = ["span-metrics", "sha256-ecdsa-compare"]
 
 [[bench]]
 name = "pcs"
+required-features = ["span-metrics"]
 harness = false
 # Plain-main bench (no criterion): commit/prove/verify timings, serialized
 # proof size + codec round-trip, and peak heap per phase. Shapes via
@@ -114,6 +115,7 @@ harness = false
 
 [[bench]]
 name = "field"
+required-features = ["span-metrics"]
 harness = false
 # GF(2^128)-GHASH vs GF(2^127)-b127 head-to-head on the prover's hot
 # patterns (batch/chain mul, squares, comb powers, wide-dot, eqf kernels).
@@ -121,6 +123,7 @@ harness = false
 
 [[bench]]
 name = "cm_and"
+required-features = ["span-metrics"]
 harness = false
 # CM-AND relation (paper \Relation_CM): batched 32-bit x AND y = z via ONE
 # linear constraint per gate, with w = x XOR y as an F2-VIRTUAL block -
@@ -129,6 +132,7 @@ harness = false
 
 [[bench]]
 name = "u32_mul"
+required-features = ["span-metrics"]
 harness = false
 # Integer u32×u32→u64 R1CS through the Spartan PIOP, with the terminal
 # assignment claim discharged against the compact F2 witness by F2Z. The
@@ -139,6 +143,7 @@ harness = false
 
 [[bench]]
 name = "baby_bear_mul"
+required-features = ["span-metrics"]
 harness = false
 # Independent BabyBear multiplications (a*b = c + p*k) through the PAPER
 # path (transcript-sampled Step-2 prime), TWO rows per shape on one
@@ -150,35 +155,37 @@ harness = false
 [[bench]]
 name = "baby_bear_pcs_compare"
 harness = false
-required-features = ["bench-internals", "plonky3-whir-bench", "binius64-bench"]
+required-features = ["span-metrics", "bench-internals", "plonky3-whir-bench", "binius64-bench"]
 
 [[bench]]
 name = "u32_pcs_compare"
 harness = false
-required-features = ["bench-internals", "plonky3-whir-bench", "binius64-bench"]
+required-features = ["span-metrics", "bench-internals", "plonky3-whir-bench", "binius64-bench"]
 
 [[bench]]
 name = "u32_mul_inner_policy"
 harness = false
-required-features = ["bench-internals"]
+required-features = ["span-metrics", "bench-internals"]
 # Controlled PIOP-only sweep with a fixed delayed-Barrett outer sumcheck.
 # It varies native witness folding and field coefficient accumulation only.
 
 [[bench]]
 name = "eq_tables"
 harness = false
-required-features = ["bench-internals"]
+required-features = ["span-metrics", "bench-internals"]
 # Controlled legacy-versus-current equality-table builder benchmark.
 # Widths 8, 12, and 16; alternating median samples and explicit PR 1 gates.
 
 [[bench]]
 name = "u32_mul_outer_skip"
+required-features = ["span-metrics"]
 harness = false
 # Controlled PIOP-only comparison of the standard outer sumcheck against
 # known-zero univariate prefix skips K=1,2,3,4 (the canonical adapter uses K=3).
 
 [[bench]]
 name = "multiswap"
+required-features = ["span-metrics"]
 harness = false
 # Limber's wired MultiSwap Mod-R1CS (6209 rows, k=0) through Spartan over a
 # transcript-sampled 113-bit prime + the runtime-prime F2Z bit opening.
@@ -189,6 +196,7 @@ harness = false
 
 [[bench]]
 name = "lambda_sweep"
+required-features = ["span-metrics"]
 harness = false
 # One SHA-256 witness proved under Lambda100 / Sha128ReferenceSchedule /
 # Lambda128 (compile-time profiles) in the unified schema - the
@@ -198,6 +206,7 @@ harness = false
 
 [[bench]]
 name = "sha256_compressions"
+required-features = ["span-metrics"]
 harness = false
 # Independent SHA-256 compression batches through the structured Spartan +
 # virtual F2Z path. Unified output schema (docs/bench-schema.md). Exponents
@@ -206,6 +215,7 @@ harness = false
 
 [[bench]]
 name = "sha256_chain"
+required-features = ["span-metrics"]
 harness = false
 # CHAINED SHA-256 compressions (the Merkle–Damgård chain over 2^k blocks,
 # intermediate chaining values as witness) through the same linear PIOP +
@@ -216,7 +226,7 @@ harness = false
 [[bench]]
 name = "sha256_e2e_compare"
 harness = false
-required-features = ["bench-internals", "native-sha256-compare"]
+required-features = ["span-metrics", "bench-internals", "native-sha256-compare"]
 # Claim-equivalent fixed-IV native SHA-256 comparison across F2Z, full
 # Plonky3 SHA AIR/WHIR, Binius64, and integer-mod Limber/Brakedown.
 # Exponents via F2Z_SHA_COMPARE_EXPONENTS (default 7,8,10..16), one warmup and
@@ -225,7 +235,7 @@ required-features = ["bench-internals", "native-sha256-compare"]
 [[bench]]
 name = "hybrid_u32_sha256"
 harness = false
-required-features = ["hybrid"]
+required-features = ["span-metrics", "hybrid"]
 # Shared-opening hybrid, separate BitZ + Binius, and all-Binius comparison.
 # Chained SHA-256 plus x*y = z + 2^32*w with four u32 limbs.
 # Counts and repetitions via --mul-log, --sha-log, and --iterations.
@@ -233,12 +243,12 @@ required-features = ["hybrid"]
 [[bench]]
 name = "mul_e2e_compare"
 harness = false
-required-features = ["bench-internals", "native-mul-compare"]
+required-features = ["span-metrics", "bench-internals", "native-mul-compare"]
 
 [[bench]]
 name = "mul_witness_compare"
 harness = false
-required-features = ["bench-internals", "native-mul-compare"]
+required-features = ["span-metrics", "bench-internals", "native-mul-compare"]
 
 [[test]]
 name = "native_mul_compare"
@@ -262,26 +272,67 @@ required-features = ["bench-internals", "native-sha256-compare"]
 [[bench]]
 name = "sha256_product_layout"
 harness = false
-required-features = ["bench-internals"]
+required-features = ["span-metrics", "bench-internals"]
 # Fixed-q controlled sweep for 2^14 compressions and t+s=29. Defaults to
 # t=7..=27, one warmup + 21 samples; t=28 is memory-skipped. Select t with
 # F2Z_SHA_PRODUCT_TS.
 
 [[example]]
 name = "binius_probe"
-required-features = ["hybrid"]
+required-features = ["span-metrics", "hybrid"]
 
 [[example]]
 name = "hybrid_probe"
-required-features = ["hybrid"]
+required-features = ["span-metrics", "hybrid"]
+
+
+[[example]]
+name = "grind_probe"
+required-features = ["span-metrics"]
+
+[[example]]
+name = "reference_measure"
+required-features = ["span-metrics"]
+
+[[example]]
+name = "cm_probe"
+required-features = ["span-metrics"]
+
+[[example]]
+name = "u64_mul_probe"
+required-features = ["span-metrics"]
+
+[[example]]
+name = "taps_ab"
+required-features = ["span-metrics"]
+
+[[example]]
+name = "quad_ab"
+required-features = ["span-metrics"]
+
+[[example]]
+name = "rlc_ab"
+required-features = ["span-metrics"]
+
+[[example]]
+name = "spartan_probe"
+required-features = ["span-metrics"]
+
+[[example]]
+name = "sha_probe"
+required-features = ["span-metrics"]
+
+[[example]]
+name = "prof_probe"
+required-features = ["span-metrics"]
 
 [features]
 default = ["parallel"]
 # Numeric span metrics require the native trace processor at runtime.
-span-metrics = ["dep:perfetto-sdk", "dep:tracing-perfetto-sdk", "dep:tracing", "dep:tracing-subscriber", "dep:csv"]
+span-metrics = ["dep:perfetto-sdk", "dep:tracing-perfetto-sdk", "dep:tracing-subscriber", "dep:csv"]
 # Additionally save per-trial diagnostic artifacts through BenchmarkOutput.
 bench-perfetto = ["span-metrics"]
-hybrid = ["binius64-bench", "dep:csv"]
+hybrid = ["span-metrics", "binius64-bench", "dep:csv"]
 parallel = ["dep:rayon"]
 unchecked = []
 # Benchmark-only allocator instrumentation. The latency binary deliberately
@@ -291,7 +342,7 @@ bench-peak-memory = []
 bench-internals = []
 # Composed SHA-256/P-256 arithmetization and its split Spartan adapter.
 ecdsa = ["circuit/full"]
-sha256-ecdsa-compare = ["ecdsa", "parallel", "dep:spartan2"]
+sha256-ecdsa-compare = ["span-metrics", "ecdsa", "parallel", "dep:spartan2"]
 # Enables the Plonky3 BabyBear/Goldilocks WHIR stack for the controlled PCS
 # comparison without adding it to normal library or benchmark builds.
 plonky3-whir-bench = [
@@ -375,7 +426,6 @@ binius64-bench = [
     "dep:binius-transcript",
     "dep:binius-utils",
     "dep:binius-verifier",
-    "dep:tracing",
     "dep:tracing-subscriber",
 ]
 
@@ -411,9 +461,14 @@ inherits = "release"
 debug = 2
 
 [[bin]]
+name = "f2z"
+path = "src/bin/f2z.rs"
+required-features = ["span-metrics"]
+
+[[bin]]
 name = "hybrid-u32-sha256"
 path = "src/bin/hybrid_u32_sha256.rs"
-required-features = ["hybrid"]
+required-features = ["span-metrics", "hybrid"]
 
 [[test]]
 name = "binius_integer_pcs"
@@ -423,4 +478,4 @@ required-features = ["bench-internals", "binius64-bench"]
 [[bench]]
 name = "ligerito_bounds"
 harness = false
-required-features = ["ecdsa", "hybrid", "bench-internals"]
+required-features = ["span-metrics", "ecdsa", "hybrid", "bench-internals"]

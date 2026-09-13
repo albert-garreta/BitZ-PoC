@@ -3,7 +3,6 @@
 use std::{
     borrow::{Borrow, Cow},
     hint::black_box,
-    time::Instant,
 };
 
 use super::common;
@@ -246,7 +245,8 @@ macro_rules! degree_backend {
 
             impl Context {
                 pub fn setup(corpus: &Corpus, params: Params) -> Result<Self, String> {
-                    let started = Instant::now();
+                    let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                    let started = tracing::info_span!("sha256_e2e_compare/plonky3:started").entered();
                     let stacked_num_variables =
                         log2_ceil_usize(corpus.cases.len() * NUM_SHA256_COLS);
                     let air = PublicSha256Air::new(corpus);
@@ -273,7 +273,7 @@ macro_rules! degree_backend {
                         pk,
                         vk,
                         corpus: corpus.clone(),
-                        setup_ms: started.elapsed().as_secs_f64() * 1e3,
+                        setup_ms: { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "sha256_e2e_compare/plonky3:started").expect("query completed operation") }.as_secs_f64() * 1e3,
                         security,
                     })
                 }

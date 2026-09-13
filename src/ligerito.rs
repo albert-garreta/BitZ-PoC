@@ -1394,24 +1394,24 @@ pub(crate) fn prove_int_eval_merged_common(
     let packed_cols: &[Vec<u64>] = match packed_cols {
         Some(pc) => pc,
         None => {
-            let _g = crate::utils::prof::scope("mc:pack");
+            let _g = tracing::info_span!("mc:pack").entered();
             owned = pack_columns_from_rows(p, rows);
             &owned
         }
     };
     let pow2 = {
-        let _g = crate::utils::prof::scope("mc:pow2");
+        let _g = tracing::info_span!("mc:pow2").entered();
         chunk_pow2_table(p, row_weights, alpha)
     };
     let (_roots, mf, z, _e_d) = {
-        let _g = crate::utils::prof::scope("mc:forest");
+        let _g = tracing::info_span!("mc:forest").entered();
         if crate::merged_forest::quad_active(p) {
             crate::merged_forest::prove_merged_forest_lazy_quad(transcript, p, packed_cols, &pow2)
         } else {
             // A zero-padded witness ends in all-zero columns; those trees
             // are constant 1 and never get built (byte-identical proof).
             let live = {
-                let _g = crate::utils::prof::scope("mc:live_cols");
+                let _g = tracing::info_span!("mc:live_cols").entered();
                 crate::merged_forest::live_cols(p, rows)
             };
             prove_merged_forest_lazy(transcript, p, packed_cols, &pow2, live)
@@ -1419,11 +1419,11 @@ pub(crate) fn prove_int_eval_merged_common(
     };
     drop(pow2);
     let v = {
-        let _g = crate::utils::prof::scope("mc:fold_v");
+        let _g = tracing::info_span!("mc:fold_v").entered();
         fold_values_bits(p, rows, row_weights)
     };
 
-    let _g_tbls = crate::utils::prof::scope("mc:presum_tbls");
+    let _g_tbls = tracing::info_span!("mc:presum_tbls").entered();
     let (z_bj, z_c) = z.split_at(t_w);
     let eq_zc = if z_c.is_empty() {
         vec![Gf::one()]
@@ -1457,7 +1457,7 @@ pub(crate) fn prove_int_eval_merged_common(
         group
     };
     let (presum, states) = {
-        let _g = crate::utils::prof::scope("mc:presum_run");
+        let _g = tracing::info_span!("mc:presum_run").entered();
         MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(transcript, vec![group], t_w, &())
     };
     let r_star = states[0].randomness.clone();
@@ -1512,11 +1512,11 @@ pub(crate) fn prove_x_claims_batched_common(
         .collect();
 
     let packed: Vec<Vec<Vec<u64>>> = {
-        let _g = crate::utils::prof::scope("mc:pack");
+        let _g = tracing::info_span!("mc:pack").entered();
         claim_rows.iter().map(|rows| pack_columns_from_rows(p, rows)).collect()
     };
     let pow2s: Vec<Vec<Vec<Gf>>> = {
-        let _g = crate::utils::prof::scope("mc:pow2");
+        let _g = tracing::info_span!("mc:pow2").entered();
         w_reps.iter().map(|&r| chunk_pow2_table(p, claim_weights[r], alpha)).collect()
     };
     // Dummy padding: zero-weight tau chains (all 1 => leaves identically
@@ -1531,11 +1531,11 @@ pub(crate) fn prove_x_claims_batched_common(
         }
     }
     let (_roots, mf, z, _e_d) = {
-        let _g = crate::utils::prof::scope("mc:forest");
+        let _g = tracing::info_span!("mc:forest").entered();
         prove_merged_forest_lazy_multi(transcript, p, &pairs)
     };
     let us: Vec<Vec<u128>> = {
-        let _g = crate::utils::prof::scope("mc:fold_v");
+        let _g = tracing::info_span!("mc:fold_v").entered();
         claim_rows
             .iter()
             .zip(claim_weights.iter())
@@ -1543,7 +1543,7 @@ pub(crate) fn prove_x_claims_batched_common(
             .collect()
     };
 
-    let _g_tbls = crate::utils::prof::scope("mc:presum_tbls");
+    let _g_tbls = tracing::info_span!("mc:presum_tbls").entered();
     let (z_bj, z_cn) = z.split_at(t_w);
     let (z_clear, z_claim) = z_cn.split_at(p.col_vars);
     let eq_clear = if z_clear.is_empty() {
@@ -1585,7 +1585,7 @@ pub(crate) fn prove_x_claims_batched_common(
         .collect();
     drop(_g_tbls);
     let (presum, states) = {
-        let _g = crate::utils::prof::scope("mc:presum_run");
+        let _g = tracing::info_span!("mc:presum_run").entered();
         MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(transcript, groups, t_w, &())
     };
     let r_star = states[0].randomness.clone();
@@ -1732,7 +1732,7 @@ pub(crate) fn verify_int_eval_merged_common(
 
     // (1) Bind the sent integers: range first (injectivity of the exponent
     // map), then roots := α^{v_c} by construction.
-    let _g_roots = crate::utils::prof::scope("mv:roots");
+    let _g_roots = tracing::info_span!("mv:roots").entered();
     if !is_generator(alpha) {
         return Err(IntEvalRsError::ChallengeNotGenerator);
     }
@@ -1749,7 +1749,7 @@ pub(crate) fn verify_int_eval_merged_common(
 
     // (2) Merged forest against the recomputed roots → exit point
     // (z_bj, z_c) + exit eval e_d.
-    let _g_forest = crate::utils::prof::scope("mv:forest");
+    let _g_forest = tracing::info_span!("mv:forest").entered();
     let (z, e_d) = if crate::merged_forest::quad_active(p) {
         crate::merged_forest::verify_merged_forest_quad(transcript, &roots, mf, t_w, p.col_vars)
             .map_err(|_| IntEvalRsError::Forest)?
@@ -1761,7 +1761,7 @@ pub(crate) fn verify_int_eval_merged_common(
 
     // (3a) Pre-sumcheck against the forest exit claim: for the bit-affine
     // leaves `1 + M·(A−1)`, `Σ eq·M·A = e_d − 1` (`= e_d + 1` in char 2).
-    let _g_presum = crate::utils::prof::scope("mv:presum");
+    let _g_presum = tracing::info_span!("mv:presum").entered();
     let subclaims =
         MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(transcript, t_w, &[2], presum, &())
             .map_err(|_| IntEvalRsError::PreSumcheck)?;
@@ -1775,7 +1775,7 @@ pub(crate) fn verify_int_eval_merged_common(
     let expected = subclaims.expected_evaluations()[0];
 
     // (3b) The verifier's O(2^t·W) step: R̂(r*), then μ = expected / R̂(r*).
-    let _g_rhat = crate::utils::prof::scope("mv:rhat");
+    let _g_rhat = tracing::info_span!("mv:rhat").entered();
     let r_tbl = row_bit_weights(p, row_weights, alpha, z_bj);
     let eq_rstar = build_eq_x_r_vec(&r_star, &()).expect("t_w >= 1");
     let r_hat = r_tbl.iter().zip(eq_rstar.iter()).fold(Gf::zero(), |acc, (q, e)| acc + *q * *e);

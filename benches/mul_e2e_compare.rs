@@ -477,10 +477,6 @@ fn choices(var: &str, default: &str, allowed: &[&str]) -> Vec<String> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Before starting Rayon or installing a subscriber.
-    unsafe {
-        std::env::set_var("OBLONG_PROFILE_INTERVALS", "1");
-    }
     let threads = common::init();
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|arg| arg == "--measure-memory") {
@@ -632,9 +628,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Check the actual native materialization before accepting any proof timings.
                 let audit = audit_backend(backend, &corpus);
                 assert_eq!(audit.digest, corpus.digest);
-                let started = std::time::Instant::now();
-                let context = Context::setup_selected(backend, Arc::clone(&corpus), whir_params);
-                let setup_ms = started.elapsed().as_secs_f64() * 1e3;
+                let (context, started) = f2z::observability::measure(
+                    tracing::info_span!("mul_e2e_compare:context"),
+                    || Context::setup_selected(backend, Arc::clone(&corpus), whir_params),
+                ).expect("measure completed operation");
+                let setup_ms = started.as_secs_f64() * 1e3;
                 let mut config = context.config();
                 config["proof_size_encoding"] = json!(match backend.as_str() {
                     "f2z" =>
@@ -680,7 +678,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "schema":"zkperf.trace/v1", "record":"run", "run_id":run,"series_id":series,"root_span_id":"0",
                             "benchmark":{"suite":"native-mul","name":"mul_e2e_compare","algorithm":workload.algorithm(),"label":format!("{} 2^{n} {backend}",workload.slug()),"implementation":backend,"git_rev":rev,"git_dirty":dirty,"build_profile":"bench"},
                             "trial":trial_json,"status":"ok","trace_complete":true,
-                            "clock":{"id":run,"kind":"monotonic","unit":"ns","source":if backend == "f2z" { "std::time::Instant" } else { "Perfetto SDK" }},
+                            "clock":{"id":run,"kind":"monotonic","unit":"ns","source":"Perfetto SDK"},
                             "environment":environment,
                             "parameters":{"input":{"multiplications":1usize<<n,"log_multiplications":n,"witness_digest_blake3":corpus.digest,"seed":shape_seed},"security":config,"setup_ms":setup_ms,"primary_metric":"witness_to_proof_ms","boundary":"start native witness generation through complete PCS proof; verification, serialization, and reusable setup reported separately"},
                             "validation":{"proof_verified":true,"reference_outputs_checked":true,"native_witness_matches_canonical":true},"witness_audit":{"generation_ms_excluded":audit.generation_ms,"native_representation":audit.representation,"quotient_reconstructed":audit.quotient_reconstructed,"witness_digest_blake3":audit.digest},"metrics":metrics,
@@ -813,6 +811,7 @@ mod tests {
     #[test]
     #[ignore = "requires PERFETTO_TRACE_PROCESSOR; exercises native measurement backends"]
     fn native_adapters_report_repeated_perfetto_trials() {
+        let _trace = super::common::test_tracing();
         use tracing_subscriber::prelude::*;
         tracing::subscriber::with_default(
             tracing_subscriber::registry().with(f2z::observability::layer()),
@@ -1063,6 +1062,7 @@ fn audit_backend(backend: &str, corpus: &Corpus) -> WitnessAudit {
 
 #[allow(dead_code)] // Invoked by the separate mul_witness_compare entry point.
 pub(crate) fn witness_main() -> Result<(), Box<dyn std::error::Error>> {
+    f2z::observability::install()?;
     let threads = common::init();
     let reps = common::reps(None, 5);
     let workloads = choices(
@@ -1192,6 +1192,7 @@ mod witness_tests {
     use super::*;
     #[test]
     fn all_native_witnesses_recover_the_same_assignment() {
+        let _trace = common::test_tracing();
         for workload in [Workload::U32, Workload::U64, Workload::U128] {
             let corpus = edge_corpus(workload);
             for backend in [

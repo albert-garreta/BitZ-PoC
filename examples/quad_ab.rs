@@ -7,10 +7,9 @@
 //!
 //! ```text
 //! AB_SHAPE=17:11 AB_PAIRS=9 RUSTFLAGS="-C target-cpu=native" \
-//!   cargo run --release --example quad_ab --features unchecked
+//!   cargo run --release --example quad_ab --features unchecked,span-metrics
 //! ```
 
-use std::time::Instant;
 
 use f2z::ligerito::packed_vars;
 use f2z::ligerito_flock::{commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, historical_sha_lig_configs};
@@ -24,6 +23,7 @@ fn median(mut v: Vec<f64>) -> f64 {
 }
 
 fn main() {
+    f2z::observability::install().expect("install Perfetto subscriber");
     let alpha = smallest_generator();
     let q_bits = 100usize;
     let shape = std::env::var("AB_SHAPE").unwrap_or_else(|_| "17:11".into());
@@ -72,9 +72,11 @@ fn main() {
             unsafe { std::env::remove_var("F2Z_QUAD") };
         }
         let mut pt = f2z::transcript::Blake3Transcript::new();
-        let t0 = Instant::now();
-        let proof = prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc);
-        let ms = t0.elapsed().as_secs_f64() * 1e3;
+        let (proof, t0) = f2z::observability::measure(
+            tracing::info_span!("quad_ab:proof"),
+            || prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc),
+        ).expect("measure completed operation");
+        let ms = t0.as_secs_f64() * 1e3;
         (ms, proof.to_bytes().len())
     };
 

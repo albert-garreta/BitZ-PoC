@@ -214,14 +214,14 @@ pub(super) fn prove(
     data: [&ProverData; 2],
     point: &[Gf],
 ) -> Result<Proof, Error> {
-    let ring_scope = crate::utils::prof::scope("op:ring_switch");
+    let ring_scope = tracing::info_span!("op:ring_switch").entered();
     // flock's packed words are bit-compatible with `Gf`: the ring switch
     // reads them in place and writes the basis in flock's element type (no
     // 2^m-element conversion pass either way).
     let (ring, mut basis, mut target) =
         ring_switch_prove_with(t, &packed, &point[7..], gf_to_f128);
     drop(ring_scope);
-    let basis_scope = crate::utils::prof::scope("op:extra_bases");
+    let basis_scope = tracing::info_span!("op:extra_bases").entered();
     // Batch the Round-0 claim into the same opening: one draw adds
     // `η_ood·eq(·, ζ⃗)` to the basis and `η_ood·y` to the target.
     if let Some(ood) = ood {
@@ -235,7 +235,7 @@ pub(super) fn prove(
         add_ood_basis(&mut basis, &packed, &point, scale, None);
     }
     drop(basis_scope);
-    let _lig_scope = crate::utils::prof::scope("op:ligerito");
+    let _lig_scope = tracing::info_span!("op:ligerito").entered();
     let pc = resolved.prover();
     let mut paths = [Vec::new(), Vec::new()];
     let proof = ligerito::recursive_prover_with_basis_initial(

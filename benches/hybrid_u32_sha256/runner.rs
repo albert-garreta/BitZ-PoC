@@ -17,9 +17,9 @@ use f2z::{
         u32_mul::{U32MulLayout, U32MulMod32Row, U32MulWitness},
     },
     transcript::Blake3Transcript,
-    utils::prof,
+    observability::{self, Interval, Recording},
 };
-use std::{error::Error, time::Instant};
+use std::error::Error;
 
 #[path = "../common/output.rs"]
 mod output;
@@ -216,8 +216,8 @@ impl Native {
     }
 }
 
-fn millis(start: Instant) -> f64 {
-    start.elapsed().as_secs_f64() * 1000.0
+fn millis(intervals: &[Interval], label: &str) -> f64 {
+    observability::duration(intervals, label).expect("required hybrid interval").as_secs_f64() * 1000.0
 }
 fn peak_kib() -> u64 {
     // Linux only: this target is also built as a [[bin]], which does not get
@@ -253,6 +253,14 @@ fn binius_security_bits() -> usize {
 }
 
 pub fn run() -> Result<(), AnyError> {
+    use tracing_subscriber::prelude::*;
+    tracing_subscriber::registry()
+        .with(observability::layer())
+        .with(tracing_subscriber::fmt::layer()
+            .with_writer(std::io::stderr)
+            .with_target(false)
+            .with_filter(tracing_subscriber::filter::LevelFilter::INFO))
+        .try_init()?;
     let mut parameters = Parameters::default();
     let mut mode = String::from("hybrid");
     let mut output = None;
@@ -335,11 +343,6 @@ pub fn run() -> Result<(), AnyError> {
     if output.is_some() && mode != "hybrid" {
         return Err("--output requires --mode hybrid".into());
     }
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_target(false)
-        .with_max_level(tracing::Level::INFO)
-        .init();
     if let Some(path) = verify_file {
         use bincode::Options;
         if mode != "hybrid" || output.is_some() {
@@ -382,9 +385,10 @@ pub fn run() -> Result<(), AnyError> {
         parameters.sha_compressions,
         binius_utils::rayon::current_num_threads()
     );
-    let setup = Instant::now();
+    let setup_recording = Recording::start(Vec::new())?;
+    let setup = tracing::info_span!("benchmark:setup").entered();
     if mode == "hybrid" {
-        prof::force_enable();
+
         let prepared = PreparedHybrid::new_with_ligerito(
             parameters,
             select_ligerito(profile.as_deref(), 106)?,
@@ -405,7 +409,8 @@ pub fn run() -> Result<(), AnyError> {
                 JsonStyle::Pretty,
             )?;
         }
-        let setup_ms = millis(setup);
+        drop(setup);
+        let setup_ms = millis(&setup_recording.intervals()?, "benchmark:setup");
         let binding = prepared
             .security()
             .binding_term()
@@ -421,9 +426,10 @@ pub fn run() -> Result<(), AnyError> {
         csv.write_record(HybridRow::HEADER)?;
         csv.flush()?;
         for iteration in 0..=iterations {
-            // Discard setup and the preceding verifier's profiling records.
-            let _ = prof::take_totals();
-            let start = Instant::now();
+            let recording = Recording::start(Vec::new())?;
+            let start = tracing::info_span!("benchmark:proving").entered();
+            let witness_commit = tracing::info_span!("benchmark:witness_commit").entered();
+            let witness = tracing::info_span!("benchmark:witness").entered();
             let rows: Vec<_> = inputs
                 .iter()
                 .map(|&(x, y)| f2z::hybrid::U32MulMod32Row::new(x, y))
@@ -431,16 +437,27 @@ pub fn run() -> Result<(), AnyError> {
             // Hybrid fuses assignment synthesis into commit_mod32, so this is
             // the native row construction only; witness_commit_ms below is
             // that plus the commitment.
-            let witness_ms = millis(start);
+            drop(witness);
             let committed = prepared.commit_mod32(&rows, &blocks)?;
-            let witness_commit_ms = millis(start);
-            let continuation = Instant::now();
+            drop(witness_commit);
+            let continuation = tracing::info_span!("benchmark:continuation").entered();
             let proof = prepared.prove(&committed)?;
-            let continuation_ms = millis(continuation);
-            let total_ms = millis(start);
+            drop(continuation);
+            drop(start);
             let bytes = proof.to_bytes();
-            let phases = prof::take_totals();
-            let phase_ms = |name| -> Result<f64, AnyError> {
+            let verify = tracing::info_span!("benchmark:verification").entered();
+            let decoded = prepared.proof_from_bytes(committed.statement(), &bytes)?;
+            prepared.verify(committed.statement(), &decoded)?;
+            drop(verify);
+            let peak_rss_kib = peak_kib(); // Snapshot before trace extraction/processing.
+            let intervals = recording.intervals()?;
+            let witness_ms = millis(&intervals, "benchmark:witness");
+            let witness_commit_ms = millis(&intervals, "benchmark:witness_commit");
+            let continuation_ms = millis(&intervals, "benchmark:continuation");
+            let total_ms = millis(&intervals, "benchmark:proving");
+            let verify_ms = millis(&intervals, "benchmark:verification");
+            let phases = observability::phase_totals(&intervals, "benchmark:proving")?;
+            let phase_ms = |name: &str| -> Result<f64, AnyError> {
                 phases
                     .iter()
                     .find(|(label, _)| *label == name)
@@ -460,10 +477,6 @@ pub fn run() -> Result<(), AnyError> {
             let shared_opening_ms = phase_ms("hybrid:opening_iop")? + ood_round_ms;
             let piop_ms = mul_piop_ms + sha_piop_ms;
             let iop_ms = mul_opening_ms + joint_sumcheck_ms + shared_opening_ms;
-            let verify = Instant::now();
-            let decoded = prepared.proof_from_bytes(committed.statement(), &bytes)?;
-            prepared.verify(committed.statement(), &decoded)?;
-            let verify_ms = millis(verify);
             if iteration == 0 {
                 continue;
             }
@@ -477,7 +490,7 @@ pub fn run() -> Result<(), AnyError> {
                 total_prover_ms: total_ms,
                 verify_ms,
                 proof_bytes: bytes.len(),
-                peak_rss_kib: peak_kib(),
+                peak_rss_kib,
                 piop_ms,
                 iop_ms,
                 mul_piop_ms,
@@ -536,13 +549,16 @@ pub fn run() -> Result<(), AnyError> {
                     .report(&request, p.security().ood)
             );
         }
-        let setup_ms = millis(setup);
+        drop(setup);
+        let setup_ms = millis(&setup_recording.intervals()?, "benchmark:setup");
         eprintln!("setup_ms={setup_ms:.3} {}", native.setup_line());
         let mut csv = output::csv_writer(std::io::stdout().lock());
         csv.write_record(NativeRow::header(&mode))?;
         csv.flush()?;
         for iteration in 0..=iterations {
-            let start = Instant::now();
+            let recording = Recording::start(Vec::new())?;
+            let start = tracing::info_span!("benchmark:proving").entered();
+            let witness_scope = tracing::info_span!("benchmark:witness").entered();
             let rows: Vec<_> = inputs
                 .iter()
                 .map(|&(x, y)| f2z::hybrid::U32MulMod32Row::new(x, y))
@@ -550,7 +566,7 @@ pub fn run() -> Result<(), AnyError> {
             let witness = native.populate(if mode == "separate" { &[] } else { &rows }, &blocks)?;
             // Native witness generation: row construction plus the circuit's
             // own witness filling, before any proving work.
-            let witness_ms = millis(start);
+            drop(witness_scope);
             let bytes = native.prove(&witness)?;
             let mul = if let Some(relation) = &separate {
                 let witness = U32MulWitness::from_mod32_rows(&rows)?;
@@ -560,7 +576,7 @@ pub fn run() -> Result<(), AnyError> {
             } else {
                 None
             };
-            let total_ms = millis(start);
+            drop(start);
             // The standalone u32 API has no enclosing wire codec. Its size
             // here is the exact F2Z wire section plus raw Spartan/nonces;
             // report this as a payload estimate rather than invent framing.
@@ -574,7 +590,7 @@ pub fn run() -> Result<(), AnyError> {
                         - proof.f2z().grinding_nonces.len())
                         * 8;
             }
-            let verify = Instant::now();
+            let verify = tracing::info_span!("benchmark:verification").entered();
             native.verify(&witness, bytes)?;
             if let Some((hint, proof)) = &mul {
                 verify_u32_mul(
@@ -584,6 +600,12 @@ pub fn run() -> Result<(), AnyError> {
                     proof,
                 )?;
             }
+            drop(verify);
+            let peak_rss_kib = peak_kib();
+            let intervals = recording.intervals()?;
+            let witness_ms = millis(&intervals, "benchmark:witness");
+            let total_ms = millis(&intervals, "benchmark:proving");
+            let verify_ms = millis(&intervals, "benchmark:verification");
             if iteration == 0 {
                 continue;
             }
@@ -593,9 +615,9 @@ pub fn run() -> Result<(), AnyError> {
                 setup_ms,
                 witness_ms,
                 total_prover_ms: total_ms,
-                verify_ms: millis(verify),
+                verify_ms,
                 proof_bytes,
-                peak_rss_kib: peak_kib(),
+                peak_rss_kib,
             })?;
             csv.flush()?;
         }

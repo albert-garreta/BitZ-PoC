@@ -1,12 +1,11 @@
 //! Historical kernel experiment; no production security claim.
-//! Phase profile of one mod-q prove via the crate's env-gated `utils::prof`
-//! scaffold — the crate's only `dump_and_reset` caller. Bench-identical
+//! Phase profile of one mod-q prove via completed Perfetto intervals. Bench-identical
 //! instance; warm-up prove dumped and discarded, then ONE profiled prove per
 //! shape.
 //!
 //! ```text
-//! OBLONG_PROFILE=1 PROBE_SHAPES="17:11 18:12" RUSTFLAGS="-C target-cpu=native" \
-//!   cargo run --release --example prof_probe --features unchecked
+//! PROBE_SHAPES="17:11 18:12" RUSTFLAGS="-C target-cpu=native" \
+//!   cargo run --release --example prof_probe --features unchecked,span-metrics
 //! ```
 
 use f2z::ligerito::packed_vars;
@@ -16,6 +15,7 @@ use f2z::pcs::{IntegerMatrixLayout, smallest_generator};
 const Q: u128 = (1u128 << 100) - 15;
 
 fn main() {
+    f2z::observability::install().expect("install Perfetto subscriber");
     let alpha = smallest_generator();
     let q_bits = 100usize;
     let shapes: Vec<(usize, usize)> = std::env::var("PROBE_SHAPES")
@@ -68,20 +68,24 @@ fn main() {
 
         // Warm-up (profile discarded).
         {
+            let profile = f2z::observability::Recording::start(Vec::new()).expect("capture warmup");
             let mut pt = f2z::transcript::Blake3Transcript::new();
             let pr = prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc);
             std::hint::black_box(&pr);
-            f2z::utils::prof::dump_and_reset("warmup (discard)");
+            f2z::observability::write_profile(std::io::stderr().lock(), "warmup (discard)", &profile.intervals().expect("warmup intervals"), None).expect("write profile");
         }
         // Profiled prove.
-        let t0 = std::time::Instant::now();
+        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t0 = tracing::info_span!("prof_probe:t0").entered();
         let mut pt = f2z::transcript::Blake3Transcript::new();
         let proof = prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc);
-        let ms = t0.elapsed().as_secs_f64() * 1e3;
+        drop(t0);
+        let intervals = t0_recording.intervals().expect("profile intervals");
+        let ms = f2z::observability::duration(&intervals, "prof_probe:t0").expect("prover duration").as_secs_f64() * 1e3;
         std::hint::black_box(&proof);
-        f2z::utils::prof::dump_and_reset(&format!(
+        f2z::observability::write_profile(std::io::stderr().lock(), &format!(
             "n={} (t={t}, s={s}, W=1) — prove {ms:.1} ms",
             t + s
-        ));
+        ), &intervals, None).expect("write profile");
     }
 }

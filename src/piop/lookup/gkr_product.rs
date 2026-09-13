@@ -232,7 +232,7 @@ where
     F::Config: Sync,
 {
     let trees: Vec<Vec<LayerHalves<F>>> = {
-        let _g = crate::utils::prof::scope("gkr:build");
+        let _g = tracing::info_span!("gkr:build").entered();
         // Trees are independent → parallel across trees (each built sequentially).
         cfg_into_iter!(leaves_per_tree).map(build_product_tree).collect()
     };
@@ -284,7 +284,7 @@ where
     G1: Fn(usize) -> (Vec<F>, Vec<F>) + Sync,
 {
     let mut trees: Vec<Vec<LayerHalves<F>>> = {
-        let _g = crate::utils::prof::scope("gkr:build");
+        let _g = tracing::info_span!("gkr:build").entered();
         cfg_into_iter!(0..num_trees)
             .map(|t| build_product_tree_from_layer1(gen_layer1(t)))
             .collect()
@@ -368,7 +368,7 @@ where
             }
             layer_proofs.push(ForestLayerProof { sumcheck_proof: None, evals });
         } else {
-            let _g = crate::utils::prof::scope("gkr:round");
+            let _g = tracing::info_span!("gkr:round").entered();
             // Fresh per-layer batching challenge (only when ≥ 2 trees are
             // active); group t enters the merged sumcheck with scale ρ^t,
             // so the claimed sum is Σ_t ρ^t·v_t and the final evaluation
@@ -376,7 +376,7 @@ where
             let rho: Option<F> =
                 (active > 1).then(|| transcript.get_field_challenge(field_cfg));
             let groups = {
-                let _g = crate::utils::prof::scope("gkr:groups");
+                let _g = tracing::info_span!("gkr:groups").entered();
                 // Prefix scales ρ^t (sequential prefix product — `active` muls),
                 // then build the per-tree groups in parallel: each clones its
                 // point and MOVES its layer halves into the fold buffers —
@@ -434,7 +434,7 @@ where
                 );
 
             let evals = {
-                let _g = crate::utils::prof::scope("gkr:absorb");
+                let _g = tracing::info_span!("gkr:absorb").entered();
                 let evals: Vec<(F, F)> = final_evals.iter().map(|fe| fe[0].clone()).collect();
                 let flat: Vec<F> =
                     evals.iter().flat_map(|(l, r)| [l.clone(), r.clone()]).collect();
@@ -443,7 +443,7 @@ where
             };
             let lambda: F = transcript.get_field_challenge(field_cfg);
             {
-                let _g = crate::utils::prof::scope("gkr:vr");
+                let _g = tracing::info_span!("gkr:vr").entered();
                 for (t, (l_at, r_at)) in evals.iter().enumerate() {
                     v[t] = (one.clone() - &lambda) * l_at + &(lambda.clone() * r_at);
                     r[t] = s.clone();
