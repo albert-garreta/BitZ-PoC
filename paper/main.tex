@@ -753,7 +753,7 @@ We next discuss other existing approaches to proving foreign field statements in
         
         In its execution,  \cite{lev} and Binius64 \cite{binius64} seem to us to be more similar than any of these two to \ftwoz. Indeed, they both use, mostly, the same collection of subprotocols, in a similar manner.  In \cref{tab:fields-witch} we compare  \cref{s:exp_fields_witch}  with \ftwoz. In \cref{s:experiments} we perform extensive comparisons between \ftwoz\ and Binius64.  % Because of this we expect both approaches to have comparable performance profiles, though we do not validate this hypothesis due to \cite{lev} not reporting performance nor providing an implementation.
         
-        Conceptually, \cite{lev} shares with \ftwoz \ the aim of committing to bits in a binary field, while proving MLE claims of those bits in some other structure $R$.  \cite{lev} is limited to $R=\FF_{2^{127}-1}$, while \ftwoz \ can handle arbitrary finitely generated rings. Despite that we observe in \cref{s:fields-switch}  that \ftwoz\ performs better than Fields-witch on the latter's native operation: proving MLE openings over the prime field $\FF_{2^{127}-1}$. 
+        Conceptually, \cite{lev} shares with \ftwoz \ the aim of committing to bits in a binary field, while proving MLE claims of those bits in some other structure $R$.  \cite{lev} is limited to $R=\FF_{2^{127}-1}$, while \ftwoz \ can handle arbitrary finitely generated rings. Even with this greater generality capacity,  we observe in \cref{s:fields-switch}  that \ftwoz\ performs better than Fields-witch on the latter's native operation, i.e.\ proving MLE openings over the prime field $\FF_{2^{127}-1}$. 
        %It is not clear to us how or if \cite{lev} can leverage  our low-entropy oriented optimizations without substantially modifying the approach, i.e.\ without running Basefold ``in-the-exponent''. 
 
         %\albertimportant{The comparison of Lev and \ftwoz\ right now has several unbacked claims (which I believe are true, but can't really prove them, especially without an implementation). So probably it's better to not push it, remove the unbacked claims, and leave it as it is}
@@ -992,10 +992,12 @@ We conclude that $\Pi_1$ is  round-by-round knowledge sound with errors $\kappa_
 
 
 \subsection{Further work and open problems}
- \ftwoz \ is not a zero-knowledge scheme as of now. Enabling zero-knowledge for it is ongoing work of ours. 
- 
- \ftwoz's verifier and proof sizes have asymptotic square root costs. Making them polylogarithmic is an intriguing problem which we leave open.
-
+We list some ongoing work of ours and questions that we leave open:
+\begin{itemize}[leftmargin=*,nosep]
+ \item \ftwoz \ is not a zero-knowledge scheme as of now. Enabling zero-knowledge for it is ongoing work of ours. 
+ \item As mentioned throughout the paper, \ftwoz\ can be used in combination of the Zinc+ arithmetization system and PIOP in order to prove lattice computations. Ongoing work of ours is to  integrate (in our implementation) the two schemes in order to prove Falcon signature verification.
+\item  \ftwoz's verifier and proof sizes have asymptotic square root costs. Making them polylogarithmic is an intriguing problem which we leave open.
+\end{itemize}
 
 
 \section{Preliminaries}
@@ -1210,7 +1212,7 @@ Let $\Pi_1$ be a perfectly complete $k_1$-round IOR from $\Relation_1$ to $\Rela
 
 
 \paragraph{Grinding}\albert{Review}
- Grinding \cite{?} is a technique where, given an IOP $\Pi$ for a relation $\Relation$ with relaxation $\widetilde{\Relation}$ with round-by-round knowledge errors $\kappa_1,\ldots, \kappa_k$,  produces a new IOP $\Pi'$ for $\Relation$ with   round-by-round knowledge with relaxation $\widetilde{\Relation}$ with errors $$2^{-\alpha_1}\cdot \kappa_1,\ldots, 2^{-\alpha_k}\cdot \kappa_k.$$ The new IOP $\Pi'$ works exactly as $\Pi$, except that, at each round $i\in [k]$, the verifier samples a random string of $\alpha_i$ bits, called \emph{grinding string}, which it sends alongside its message, and rejects unless all bits are $0$. 
+ Grinding \cite{ethstark} is a technique where, given an IOP $\Pi$ for a relation $\Relation$ with relaxation $\widetilde{\Relation}$ with round-by-round knowledge errors $\kappa_1,\ldots, \kappa_k$,  produces a new IOP $\Pi'$ for $\Relation$ with   round-by-round knowledge with relaxation $\widetilde{\Relation}$ with errors $$2^{-\alpha_1}\cdot \kappa_1,\ldots, 2^{-\alpha_k}\cdot \kappa_k.$$ The new IOP $\Pi'$ works exactly as $\Pi$, except that, at each round $i\in [k]$, the verifier samples a random string of $\alpha_i$ bits, called \emph{grinding string}, which it sends alongside its message, and rejects unless all bits are $0$. 
 
  Clearly $\Pi'$ is not  necessarily complete, even if $\Pi$ is. The goal is to use the BCS compilation of IOPs, and not the IOPs themselves (i.e.\ the compilation where oracles are replaced by Merkle roots and where interactiveness is removed through the Fiat-Shamir transform). To this end, one chooses $\alpha_1, \ldots, \alpha_k$ small enough that the prover of the BCS transform of $\Pi'$ can \emph{grind} transcripts until all of the grinding strings in the transcript are the zero string. This results in the prover having to compute  per round $i\in [k]$, an average of $2^{\alpha_i}$  hashes of its $i$-th message followed by a small string of bits (in practice, one has the prover send a small string of bits next to its message, so that during grinding, it does not need to produce fresh Merkle roots at each grinding iteration). In \cref{tab:grinding-cost}, we provide example grinding times for different values of $\alpha_i$.
  
@@ -2866,7 +2868,7 @@ for some $\rr^{(2)} \in \KK^{\log \codedim}$  and some $\mu\in \KK$. In other wo
 We implement the \ftwoz\ PCS (\cref{c:core_iop,c:LinModFieldBin}) following the guideline in \cref{s:instantiation}. We then implement an end-to-end roof system, called \ftwoz-SNARK, for integer R1CS constraints as described in \cref{s:to_snark} (note that \ftwoz \ can be used to prove much more general constraints, such as the ones in Zinc+ \cite{zincplus}, cf.\ \cref{s:to_general_bitz}. 
 
 
-Our \ftwoz-PCS is instantiated with Reed-Solomon codes over $\FF_{2^{128}}$ of rate $1/2$ or $1/8$. As  backend of \ftwoz \ we use the Ligerito implementation from \cite{flock} with folding arity $4$. When targetting 100 bits of security we use the Johnson bound as proximity parameter, and perform out of domain sampling. When targeting more security (in \cite{s:multiswap}) we use the unique decoding radius.
+Our \ftwoz-PCS is instantiated with Reed-Solomon codes over $\FF_{2^{128}}$ of rate $1/2$ or $1/8$. As  backend of \ftwoz \ we use the Ligerito implementation from \cite{flock} with folding arity $4$. We set our experiments to 100 bits of round-by-round knowledge soundness (meaning that the largest round-by-round knowledge soundness of the protocols is at most $2^{-100}$), except in  \cref{?}, where we target 114 bits. When targeting 100 bits of round-by-round soundness we use the Johnson bound as proximity parameter, and perform out of domain sampling. When targeting more security (in \cite{s:multiswap}) we use the unique decoding radius.
 %\albertimportant{remove?} When targeting $100$ bits of security, we sample primes in the range $[2^{b-1}, 2^b-1]$ with $b=$ \albertimportant{fill in}.
 
 
@@ -2887,7 +2889,9 @@ Moreover, as we mentioned, we run \ftwoz\ with proximity paramter up to the John
 
 \subsection{Raw performance of the \ftwoz \ PCS for the core LinBitsRings relation}
 
-We measure the performance of \cref{c:core_iop} for proving the Core LinBitsRing relation $\LinBitsDual(\bits, \pi, \FF_q,\cC)$ \albertimportant{Say in simple terms what the relation is} following the instantiation in \cref{s:instantiation}. Concretely, $\comfield=\FF_{2^{128}}$ and $\cC$ is a Reed-Solomon code. We set $|\FF_q|  < (2^{128}-1)/\codedim_1$ and we use the unique decoding radius as proximity parameter, so that Round 0 (OOD sampling) and Round 1 of \cref{c:core_iop} do not trigger.  Our goal for now is to measure the performance of the grand product and the WHIR/Ligerito commit and opening. In later experiments, Round 0 and Round 1 do trigger. 
+We measure the performance of \cref{c:core_iop} for proving the Core LinBitsRing relation $\LinBitsDual(\bits, \pi, \FF_q,\cC)$ following the instantiation in \cref{s:instantiation}. Namely, we prove that $\langle \vv, \bff \rangle=\mu$ over $\FF_q$ for a vector of $\codedim$ bits $\bff$, and $\vv\in \FF_q^{\codedim}, \mu\in \FF_q$.  We set $\comfield=\FF_{2^{128}}$ and $\cC$ is a Reed-Solomon code. We choose $|\FF_q|  < (2^{128}-1)/\codedim_1$ and we use the unique decoding radius as proximity parameter, so that Round 0 (OOD sampling) and Round 1 of \cref{c:core_iop} do not trigger.  Our goal for now is to measure the performance of the grand product and the WHIR/Ligerito commit and opening. In later experiments, Round 0 and Round 1 do trigger. 
+
+ We set $\codedim_1 = 2^{\lceil 0.6\, n\rceil}$ and $\codedim_1 \cdot \codedim_2 = \codedim$ (\cref{s:instantiation}). 
 
 
 %\albert{remove?} Recall (\cref{s:prelims_algebra})  that   $\bff_{\FF_{q^d}}$ denotes the vector obtained from $\bff$ by looking at $0,1$ as the zero and one elements from $\FF_{q^d}$. 
@@ -2923,7 +2927,7 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
     MultiSwap-xJsnark$^{\dagger}$     & 88500         & --           & 2            & --   & 0.2 \\
     \bottomrule
   \end{tabular}
-  \caption{Proving one MultiSwap \cite{multiswap} computation (four  exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation).  The first four schemes prove the same R1CS constraint over the integers, taken from \cite{limber}, and were run on a MacBook Air M5 $24$GB on one and 8 threads (thr).   The first four schemes achieve $114$ bits of security. 
+  \caption{Proving one MultiSwap \cite{multiswap} computation (four  exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation).  The first four schemes prove the same R1CS constraint over the integers, taken from \cite{limber}, and were run on a MacBook Air M5 $24$GB on one and 8 threads (thr).   The first four schemes achieve $114$ bits of round-by-round knowledge soundness. 
   Zinc$+$ proof compresses to
   $847$KB with \texttt{zstd}.
   %
@@ -2957,35 +2961,35 @@ We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul
    KB & Threads & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
     \midrule
     0.96 & 1 & \ftwoz\ (this work), rate $1/8$ & \textbf{1.99} & \textbf{147} & \textbf{43.1} & \textbf{74.6} & 1.21 \\
-     &  & Binius64~\cite{binius64}, rate $1/2$ & 9.33 & 917 & 130 & 362 & \textbf{0.838} \\
+    ($2^{4}$) &  & Binius64~\cite{binius64}, rate $1/2$ & 9.33 & 917 & 130 & 362 & \textbf{0.838} \\
      &  & Binius64~\cite{binius64}, rate $1/8$ & 9.34 & 1043 & 130 & 266 & 0.885 \\
      & 10 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.37} & \textbf{52.7} & \textbf{15.9} & \textbf{74.6} & 1.22 \\
      &  & Binius64~\cite{binius64}, rate $1/2$ & 10.3 & 224 & 54.1 & 362 & \textbf{0.849} \\
      &  & Binius64~\cite{binius64}, rate $1/8$ & 10.1 & 242 & 51.1 & 266 & 0.892 \\
     \addlinespace
     1.98 & 1 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.02} & \textbf{159} & \textbf{43.0} & \textbf{76.0} & 1.20 \\
-     &  & Binius64~\cite{binius64}, rate $1/2$ & 9.56 & 928 & 133 & 362 & \textbf{0.876} \\
+    ($2^{5}$) &  & Binius64~\cite{binius64}, rate $1/2$ & 9.56 & 928 & 133 & 362 & \textbf{0.876} \\
      &  & Binius64~\cite{binius64}, rate $1/8$ & 9.42 & 1050 & 132 & 266 & 0.926 \\
      & 10 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.35} & \textbf{54.7} & \textbf{15.4} & \textbf{76.0} & 1.21 \\
      &  & Binius64~\cite{binius64}, rate $1/2$ & 10.8 & 214 & 51.7 & 362 & \textbf{0.884} \\
      &  & Binius64~\cite{binius64}, rate $1/8$ & 10.3 & 239 & 54.9 & 266 & 0.935 \\
     \addlinespace
     4.03 & 1 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.02} & \textbf{174} & \textbf{44.1} & \textbf{82.2} & 1.20 \\
-     &  & Binius64~\cite{binius64}, rate $1/2$ & 9.57 & 937 & 139 & 362 & \textbf{0.878} \\
+    ($2^{6}$) &  & Binius64~\cite{binius64}, rate $1/2$ & 9.57 & 937 & 139 & 362 & \textbf{0.878} \\
      &  & Binius64~\cite{binius64}, rate $1/8$ & 10.1 & 1054 & 137 & 266 & 0.924 \\
      & 10 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.25} & \textbf{58.2} & \textbf{16.2} & \textbf{82.2} & 1.21 \\
      &  & Binius64~\cite{binius64}, rate $1/2$ & 10.3 & 219 & 52.3 & 362 & \textbf{0.888} \\
      &  & Binius64~\cite{binius64}, rate $1/8$ & 10.5 & 243 & 52.0 & 266 & 0.932 \\
     \addlinespace
     8.13 & 1 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.21} & \textbf{206} & \textbf{46.3} & \textbf{92.4} & 1.21 \\
-     &  & Binius64~\cite{binius64}, rate $1/2$ & 9.94 & 1019 & 150 & 394 & \textbf{0.941} \\
+    ($2^{7}$) &  & Binius64~\cite{binius64}, rate $1/2$ & 9.94 & 1019 & 150 & 394 & \textbf{0.941} \\
      &  & Binius64~\cite{binius64}, rate $1/8$ & 10.0 & 1262 & 150 & 289 & 1.03 \\
      & 10 & \ftwoz\ (this work), rate $1/8$ & \textbf{2.39} & \textbf{65.6} & \textbf{16.3} & \textbf{92.4} & 1.22 \\
      &  & Binius64~\cite{binius64}, rate $1/2$ & 10.8 & 240 & 56.6 & 394 & \textbf{0.947} \\
      &  & Binius64~\cite{binius64}, rate $1/8$ & 10.9 & 289 & 55.4 & 289 & 1.04 \\
     \bottomrule
   \end{tabular}
-  \caption{\albertimportant{TODO: Edit} One standard SHA-256 message of $64(N-1)$ bytes ($N$ compressions with the padding block) followed by one P-256 ECDSA verification, proved as one \ftwoz\ statement (\emph{Split} mode: the $6{,}807$ nonlinear P-256 rows through the outer sumcheck, all linear rows through the shared inner sumcheck; $\lambda = 100$, round-by-round economic accounting). \emph{Before} is master \texttt{9d75b2b}, \emph{after} is \texttt{fac8c8f}: the per-proof reduction of the P-256 constraint matrices modulo the sampled prime now runs over their $3{,}358$ distinct coefficients instead of their $4.2$ million entries, the witness is packed by word blits and $64\times 64$ bit transposes, and the inner sumcheck's prefix pass shares its block extensions and skips zero ternary points; the proof bytes are unchanged. Binius64 (native SHA-256 circuit and P-256 gadget, ring switching and BaseFold at rate $1/2$, $100$-bit query target) on the same fixture for reference. \emph{Witgen} is the native witness generation; \emph{prover} is the complete prover call after witness generation, commitment included; \emph{verifier} is the complete verification; \emph{peak mem.} is the high-water resident set of the whole worker, relation construction included ($1$\,GB $= 2^{30}$ bytes). Bold marks the best of the listed schemes for that size and thread count. Apple M5, 24\,GB; interleaved runs of pinned binaries, medians of $2 \times 3$ after one warm-up each.}
+   \caption{\albertimportant{Add rate $1/2$} Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a  P-256  ECDSA signature on the resulting digest. Below  message sizes  we record the corresponding number of SHA-256 compressions. Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air  M5, 24\,GB.}
   \label{tab:sha256-ecdsa-f2z-opt}
 \end{table}
 
@@ -3154,7 +3158,7 @@ We compare the performance of \ftwoz-SNARK with Binius64 \cite{binius64}, Plonky
      & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
     \bottomrule
   \end{tabular}
-  \caption{Costs of proving $N=2^n$ multiplications $x\cdot y = z$ for random $64$ bit nonnegative integers $x$ and $y$ (with $z$  a $128$-bit integer). 100 bits of security (Binius64 is at 96 bits). Ran on a MacBook Air M5, 24\,GB, $8$ threads.}
+  \caption{Costs of proving $N=2^n$ multiplications $x\cdot y = z$ for random $64$ bit nonnegative integers $x$ and $y$ (with $z$  a $128$-bit integer). 100 bits of round-by-round knowledge soundness (Binius64 is at 96 bits). Ran on a MacBook Air M5, 24\,GB, $8$ threads.}
   \label{tab:native-mul-u64}
 \end{table}
 
@@ -3207,28 +3211,28 @@ We compare the performance of \ftwoz-SNARK with Binius64 \cite{binius64}, Plonky
      & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
     \bottomrule
   \end{tabular}
-  \caption{  Costs of proving $N=2^n$ multiplications $x\cdot y = z$ for random $128$ bit nonnegative integers $x$ and $y$ (with $z$  a $256$-bit integer). 100 bits of security (Binius64 is at 96 bits). Ran on a MacBook Air M5, 24\,GB, $8$ threads.}
+  \caption{  Costs of proving $N=2^n$ multiplications $x\cdot y = z$ for random $128$ bit nonnegative integers $x$ and $y$ (with $z$  a $256$-bit integer). 100 bits of round-by-round knowledge soundness. Ran on a MacBook Air M5, 24\,GB, $8$ threads.}
   \label{tab:native-mul-u128}
 \end{table}
 
 \albertimportant{Comment somewhere about why Binius  runs out of memory}
 
 
-\subsection{Comparison with Fields-witch}
+\subsection{Comparison with Fields-witch}\label{s:exp_fields_witch}
 
 
-\subsubsection{Comparison with the field switch of \cite{lev}}\label{s:exp_fields_witch}
+We compare experimentally \ftwoz\ with Fields-witch \cite{lev}, a PCS-over the prime field $\FF_{2^{127}-1}$ that commits its witness over the binary field $\FF_{2^{127}}$. See \cref{?} for a discussion of \cite{lev} and a conceptual comparison of both.  Fields-witch repository is available in \url{https://github.com/morgana-proofs/fields-witch}.
 
 %\albertimportant{Review.} Soukhanov's implementation of \cite{lev}, \texttt{fields-witch}, proves the same kind of claim as \cref{c:core_iop}: a multilinear evaluation, over the prime field $\FF_{2^{127}-1}$, of data committed in $\FF_{2^{128}}$. \cref{tab:fields-witch} compares the two at equal commitment size (\texttt{fields-witch} commits $2^{m-7}$ entries of $127$ bits, \ftwoz\ commits $2^{m}$ bits) with both configured for $100$ bits of security. The cost of \texttt{fields-witch} is per $127$-bit entry regardless of the width of the data, since every intermediate fold is a full $\FF_{2^{127}-1}$ element, whereas the cost of \ftwoz\ is per committed bit; on $2^{20}$ entries of $32$-bit words, for instance, \texttt{fields-witch} still takes the $2^{27}$ row of \cref{tab:fields-witch}, while \ftwoz\ commits $2^{25}$ bits and takes $61$\,ms at $W = 32$ (with the prime width capped at $b = 83$ by the one-chunk rule $b \le 127 - \log \codedim_1 - W$; keeping $b \ge 100$ would double the grand-product cost). The proof-size gap comes from \texttt{fields-witch} committing every intermediate fold and opening three polynomials, where \ftwoz\ opens one. Its verifier is polylogarithmic, whereas ours reads the $\codedim_2$ integers $\mu_j$ and evaluates the lifted weights at $\codedim_1$ points; the two meet at $2^{29}$ bits on a single thread (not shown).
 
 
 %----
 
-We compare \ftwoz\ with Fields-Witch, the PCS over the prime field $\FF_{2^{127}-1}$, which can be found in \url{?} \albertimportant{fill in}. This PCS, similarly as \ftwoz, commits the witness over a binary field, and proves its linear claim statements in the exponent of $g\in \comfield^*$. Contrary to the flexibility of \ftwoz, Fields-Witch is restricted to proving linear claims specifically over the  prime field $\FF_{2^{127}-1}$. The method for proving the linear claims in the exponent is, as well, completely different to \ftwoz's, see \cref{?} for a brief discussion of how Fields-Witch works. 
+
 
 \input{fields-witch-table}
 
-\albertimportant{Review} Fields-witch uses the unique-decoding radius and the same ring-switch and Ligerito scheme over $\comfield$ as \ftwoz \albertimportant{confirm}. Fields-witch uses the unique decoding radius, while we use the Johnson bound \albertimportant{Why? Make them use the same?}, both schemes use rate $1/2$.   \ftwoz\ executes precisely \cref{c:core_iop} with $R=\FF_{2^{127}-1}$ \albertimportant{Make sure we include the first steps and not just the forest and opening}. 
+
 
 
 %\printbibliography[heading=bibintoc,title={References}]{paper/references}
