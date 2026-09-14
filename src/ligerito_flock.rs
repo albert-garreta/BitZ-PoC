@@ -11999,6 +11999,15 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
     /// kernels. `F2Z_VIRT_PLANES=0` opts out (A/B; bit-identical messages
     /// either way).
     fn packed_source_planes(&self) -> Option<crate::virt_batch::PackedSourcePlanes> {
+        self.packed_source_planes_with(true)
+    }
+
+    /// [`Self::packed_source_planes`] with or without the plane-major tables
+    /// (only the batching message `h` reads them; the verifier's basis does not).
+    fn packed_source_planes_with(
+        &self,
+        plane_major: bool,
+    ) -> Option<crate::virt_batch::PackedSourcePlanes> {
         let Self::PackedSourceRepeated {
             local_width,
             eq_inst_gf,
@@ -12015,7 +12024,12 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
         {
             return None;
         }
-        Some(crate::virt_batch::PackedSourcePlanes::new(
+        let build = if plane_major {
+            crate::virt_batch::PackedSourcePlanes::new
+        } else {
+            crate::virt_batch::PackedSourcePlanes::new_basis_only
+        };
+        Some(build(
             *local_width,
             *instances,
             eq_inst_gf.clone(),
@@ -12522,7 +12536,7 @@ where
 {
     let planes = {
         let _g = crate::utils::prof::scope("mqv:vplanes");
-        weights.packed_source_planes()
+        weights.packed_source_planes_with(false)
     };
     let Some(planes) = planes else {
         let a_cols = crate::dual_basis::dual_basis_cols();
@@ -12531,7 +12545,7 @@ where
     let rho_tables = phi_byte_tables(rho, Gf::one());
     let coefficient_tables = {
         let _g = crate::utils::prof::scope("mqv:vrho");
-        RhoTables::new(&rho_tables)
+        RhoTables::new(rho, &rho_tables)
     };
     let mut basis = vec![Gf::zero(); n_packs];
     {

@@ -323,6 +323,7 @@ fn phi_byte_tables_into(out: &mut [Gf], eq: &[Gf]) {
 }
 
 /// The monomial `X^u`.
+#[cfg(test)]
 #[inline]
 fn monomial(u: usize) -> Gf {
     let mut w = [0u64; 2];
@@ -340,22 +341,41 @@ pub(crate) struct RhoTables {
 }
 
 impl RhoTables {
-    pub(crate) fn new(rho_tables: &[Gf]) -> Self {
-        let c: Vec<[Gf; PACK]> = cfg_into_iter!(0..PACK)
-            .map(|u| {
-                let images = instance_dual_images(monomial(u));
-                let mut rows = [[0u64; 2]; PACK];
-                for (row, g) in rows.iter_mut().zip(images.iter()) {
-                    *row = *g.words();
-                }
-                let cols = transpose_128x128(&rows);
+    /// `rho` are the 128 batching weights and `rho_tables` their
+    /// [`phi_byte_tables`] with scale one.
+    pub(crate) fn new(rho: &[Gf], rho_tables: &[Gf]) -> Self {
+        debug_assert_eq!(rho.len(), PACK);
+        // `C_{u,a} = Σ_b ρ_b·bit_a(X^u·A(e_b)) = Φ_ρ(X^u·A(e_a))`: the pairing
+        // `bit_a(g·A(e_b)) = c₀(g·A(e_b)·A(e_a))` is symmetric in `a` and `b`.
+        // `X^u·A(e_a)` is a monomial plus at most the seven dual-basis
+        // corrections, shifted and reduced, so `Φ_ρ` of it is a sum over its
+        // few set bits (`rho_tables_match_transpose` pins this against the
+        // definition). Column `a` walks `u` by a multiply-by-`X` chain.
+        let columns = crate::dual_basis::dual_basis_cols();
+        let by_a: Vec<[Gf; PACK]> = cfg_into_iter!(0..PACK)
+            .map(|a| {
+                let mut image = columns[a];
                 let mut out = [Gf::zero(); PACK];
-                for (slot, col) in out.iter_mut().zip(cols.iter()) {
-                    *slot = phi_from_words(*col, rho_tables);
+                for slot in out.iter_mut() {
+                    let words = image.words();
+                    let mut acc = Gf::zero();
+                    for (word, base) in words.iter().zip([0usize, 64]) {
+                        let mut bits = *word;
+                        while bits != 0 {
+                            acc += rho[base + bits.trailing_zeros() as usize];
+                            bits &= bits.wrapping_sub(1);
+                        }
+                    }
+                    *slot = acc;
+                    image = image.mul_x();
                 }
                 out
             })
             .collect();
+        let c: Vec<[Gf; PACK]> = (0..PACK)
+            .map(|u| core::array::from_fn(|a| by_a[a][u]))
+            .collect();
+        let _ = rho_tables;
         let mut t = vec![Gf::zero(); 16 * 256 * PACK];
         cfg_chunks_mut!(t, 256 * PACK)
             .enumerate()
@@ -463,6 +483,29 @@ impl PackedSourcePlanes {
         s: &[Vec<Gf>],
         constant_weight: Gf,
     ) -> Self {
+        Self::new_with(local_width, instances, eq_inst, s, constant_weight, true)
+    }
+
+    /// [`Self::new`] without the plane-major copy of the tables, which only
+    /// [`Self::hs_fold`] reads: the verifier's form.
+    pub(crate) fn new_basis_only(
+        local_width: usize,
+        instances: usize,
+        eq_inst: Vec<Vec<Gf>>,
+        s: &[Vec<Gf>],
+        constant_weight: Gf,
+    ) -> Self {
+        Self::new_with(local_width, instances, eq_inst, s, constant_weight, false)
+    }
+
+    fn new_with(
+        local_width: usize,
+        instances: usize,
+        eq_inst: Vec<Vec<Gf>>,
+        s: &[Vec<Gf>],
+        constant_weight: Gf,
+        plane_major: bool,
+    ) -> Self {
         assert!(local_width >= 1 && instances >= 1);
         assert_eq!(eq_inst.len(), s.len());
         assert!(eq_inst.iter().all(|table| table.len() == instances));
@@ -532,15 +575,17 @@ impl PackedSourcePlanes {
         let mut r_tables_by_plane: Vec<Vec<Vec<Gf>>> =
             (0..chunks).map(|_| vec![Vec::new(); PACK]).collect();
         for ((l, phase), table) in built {
-            let n_m = table.len() >> LOG_PACKING;
-            let mut by_plane = vec![Gf::zero(); table.len()];
-            for m in 0..n_m {
-                for a in 0..PACK {
-                    by_plane[a * n_m + m] = table[(m << LOG_PACKING) | a];
+            if plane_major {
+                let n_m = table.len() >> LOG_PACKING;
+                let mut by_plane = vec![Gf::zero(); table.len()];
+                for m in 0..n_m {
+                    for a in 0..PACK {
+                        by_plane[a * n_m + m] = table[(m << LOG_PACKING) | a];
+                    }
                 }
+                r_tables_by_plane[l][phase] = by_plane;
             }
             r_tables[l][phase] = table;
-            r_tables_by_plane[l][phase] = by_plane;
         }
 
         Self {
@@ -574,6 +619,11 @@ impl PackedSourcePlanes {
     /// off through the byte tables of `Q_{l,i}`. An instance split across
     /// tasks is read off per part — exact by linearity.
     pub(crate) fn hs_fold<T: PackedBits>(&self, p_msg: &[T]) -> Box<[Gf; PACK]> {
+        assert!(
+            self.r_tables_by_plane.iter().flatten().any(|table| !table.is_empty())
+                || self.r_tables.iter().flatten().all(|table| table.is_empty()),
+            "the batching message needs the plane-major tables (`PackedSourcePlanes::new`)"
+        );
         let w = self.local_width;
         let live_packs = self.live_cols.div_ceil(PACK).min(p_msg.len());
         let n_tasks = live_packs.div_ceil(TASK_PACKS);
@@ -717,7 +767,7 @@ impl PackedSourcePlanes {
         let n_packs = p_msg.len();
         debug_assert!(n_packs.is_multiple_of(2) || n_packs == 1, "flock messages are even-sized");
         let rho_tables = phi_byte_tables(rho, Gf::one());
-        let coefficient_tables = RhoTables::new(&rho_tables);
+        let coefficient_tables = RhoTables::new(rho, &rho_tables);
         let mut out = vec![Gf::zero(); n_packs];
         let partials: Vec<(Gf, Gf)> = cfg_chunks_mut!(out, TASK_PACKS)
             .enumerate()
@@ -1226,7 +1276,7 @@ mod tests {
         let cols = dual_basis_cols();
         let rho: Vec<Gf> = (0..PACK).map(|i| sample(0x1_0000 + i as u64)).collect();
         let rho_tables = phi_byte_tables(&rho, Gf::one());
-        let coefficient_tables = RhoTables::new(&rho_tables);
+        let coefficient_tables = RhoTables::new(&rho, &rho_tables);
         let phi = |x: Gf| -> Gf {
             let w = x.words();
             let mut acc = Gf::zero();
@@ -1297,7 +1347,7 @@ mod tests {
     fn rho_tables_match_transpose() {
         let rho: Vec<Gf> = (0..PACK).map(|i| sample(0xD000 + i as u64)).collect();
         let rho_tables = phi_byte_tables(&rho, Gf::one());
-        let tables = RhoTables::new(&rho_tables);
+        let tables = RhoTables::new(&rho, &rho_tables);
         let mut got = vec![Gf::zero(); PACK];
         for t in 0..8u64 {
             let e = sample(0xE000 + t);
