@@ -689,20 +689,22 @@ impl PackedSourcePlanes {
     }
 
     /// Adds the plain part of the ρ-batched basis `a′` to `basis` (one entry
-    /// per source pack), tasks of `TASK_PACKS` packs in parallel; each pack
-    /// is owned by one task, so the sum is deterministic. The verifier's
-    /// entry point ([`Self::a_prime`] is the prover's, which also emits the
-    /// round-0 pair from the same task kernel).
+    /// per source pack), tasks of `task_packs` packs in parallel; each pack
+    /// is owned by one task, so the sum is deterministic whatever the task
+    /// size or thread count. The verifier's entry point ([`Self::a_prime`]
+    /// is the prover's, which also emits the round-0 pair from the same task
+    /// kernel).
     pub(crate) fn add_a_prime(
         &self,
         coefficient_tables: &RhoTables,
         rho_tables: &[Gf],
         basis: &mut [Gf],
+        task_packs: usize,
     ) {
-        cfg_chunks_mut!(basis, TASK_PACKS)
+        cfg_chunks_mut!(basis, task_packs)
             .enumerate()
             .for_each(|(task, slots)| {
-                self.a_prime_task(coefficient_tables, rho_tables, task * TASK_PACKS, slots);
+                self.a_prime_task(coefficient_tables, rho_tables, task * task_packs, slots);
             });
     }
 
@@ -905,17 +907,23 @@ impl AffineTailPlanes {
     }
 
     /// Adds the tail's basis to `basis` (one entry per source pack); packs
-    /// in tasks of `TASK_PACKS`, each pack owned by one task.
-    pub(crate) fn add_a_prime(&self, coefficient_tables: &RhoTables, basis: &mut [Gf]) {
+    /// in tasks of `task_packs`, each pack owned by one task (the sum is
+    /// deterministic whatever the task size or thread count).
+    pub(crate) fn add_a_prime(
+        &self,
+        coefficient_tables: &RhoTables,
+        basis: &mut [Gf],
+        task_packs: usize,
+    ) {
         if self.len == 0 {
             return;
         }
         let first_pack = self.source_start >> LOG_PACKING;
         let last_pack = (self.source_start + self.len - 1) >> LOG_PACKING;
-        cfg_chunks_mut!(basis, TASK_PACKS)
+        cfg_chunks_mut!(basis, task_packs)
             .enumerate()
             .for_each(|(task, slots)| {
-                let y_lo = task * TASK_PACKS;
+                let y_lo = task * task_packs;
                 let y_hi = y_lo + slots.len();
                 if y_hi <= first_pack || y_lo > last_pack {
                     return;
@@ -1257,7 +1265,8 @@ mod tests {
                         *slot = sample(0x4_0000 + y as u64); // the engine ADDS
                     }
                     let before = basis.clone();
-                    tail.add_a_prime(&coefficient_tables, &mut basis);
+                    // Three packs per task: task boundaries fall inside the tail.
+                    tail.add_a_prime(&coefficient_tables, &mut basis, 3);
                     for y in 0..n_packs {
                         let mut expect = before[y];
                         let mut weights = [Gf::zero(); PACK];

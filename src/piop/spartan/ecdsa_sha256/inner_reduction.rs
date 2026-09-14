@@ -293,16 +293,33 @@ impl<'a> ModQCoefficients<'a> {
             relation.h_layout.row_vars + relation.h_layout.col_vars,
             assignment_point,
         )?;
-        let weights = self.build_row_weights(relation, claim, cfg)?;
-        let (instances, sha) = self.build_sha_factors(relation, claim, cfg)?;
-        let equality = equality_weights(assignment_point, cfg)?;
-        let mut value = evaluate_sha_factors(&instances, &sha, assignment_point, cfg)?;
+        let weights = {
+            let _scope = crate::utils::prof::scope("ecdsa:ce_rows");
+            self.build_row_weights(relation, claim, cfg)?
+        };
+        let (instances, sha) = {
+            let _scope = crate::utils::prof::scope("ecdsa:ce_sha_factors");
+            self.build_sha_factors(relation, claim, cfg)?
+        };
+        let equality = {
+            let _scope = crate::utils::prof::scope("ecdsa:ce_eq");
+            equality_weights(assignment_point, cfg)?
+        };
+        let mut value = {
+            let _scope = crate::utils::prof::scope("ecdsa:ce_sha_eval");
+            evaluate_sha_factors(&instances, &sha, assignment_point, cfg)?
+        };
         value += &(weights.constant * &equality.at(0));
-        let columns = TailEqualityColumns::new(self.ctx, relation.map.h_offset, &equality);
-        let tail = self
-            .tape
-            .apply_forward_weighted(&row_triples(&weights.matrix_rows), &columns)
-            .map_err(|e| error(format!("P-256 tape: {e}")))?;
+        let columns = {
+            let _scope = crate::utils::prof::scope("ecdsa:ce_columns");
+            TailEqualityColumns::new(self.ctx, relation.map.h_offset, &equality)
+        };
+        let tail = {
+            let _scope = crate::utils::prof::scope("ecdsa:ce_forward");
+            self.tape
+                .apply_forward_weighted(&row_triples(&weights.matrix_rows), &columns)
+                .map_err(|e| error(format!("P-256 tape: {e}")))?
+        };
         value += &self.ctx.field(words_raw(tail));
         for (&cell, &weight) in relation.local.public_h.iter().zip(&weights.public_bits) {
             value += &(self.ctx.field(weight) * &equality.at(relation.map.h_offset + cell));

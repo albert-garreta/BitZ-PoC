@@ -11705,6 +11705,7 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
             && parts.instances > 1
             && parts.local.cols() > 1
         {
+            let _g = crate::utils::prof::scope("mqv:w_chained");
             let instances = parts.instances;
             let k = instances.trailing_zeros() as usize;
             let local_width = parts.local.cols() - 1;
@@ -11799,6 +11800,7 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                 let mut corrections = Vec::new();
                 let mut affine_tail = None;
                 if let Some(tail) = map.chained_packed_source_tail() {
+                    let _g = crate::utils::prof::scope("mqv:w_tail");
                     let coeffs = VirtRowCoeffs::new(points, etas, t_wh);
                     let matrix = tail.map.matrix();
                     let aliases_len = tail.aliases.len();
@@ -12504,6 +12506,11 @@ where
 /// vector [`virtual_a_prime`] returns on the folded weights (pinned by
 /// `verifier_basis_matches_streamed_basis_on_the_ecdsa_map`). Any other
 /// shape, or the plane engine opted out, takes [`virtual_a_prime`] itself.
+/// Packs per parallel task of the verifier's basis engines: a 2^21-cell
+/// source is 64 tasks, enough to balance ten threads (the prover keeps its
+/// 2^11-pack tasks; the per-task cost is one duplicated instance read-off).
+const VERIFIER_TASK_PACKS: usize = 1 << 8;
+
 fn verifier_a_prime<M>(
     map: &M,
     weights: &VirtColumnWeights<'_, M>,
@@ -12529,7 +12536,7 @@ where
     let mut basis = vec![Gf::zero(); n_packs];
     {
         let _g = crate::utils::prof::scope("mqv:vaprime_plain");
-        planes.add_a_prime(&coefficient_tables, &rho_tables, &mut basis);
+        planes.add_a_prime(&coefficient_tables, &rho_tables, &mut basis, VERIFIER_TASK_PACKS);
     }
     if let VirtColumnWeights::PackedSourceRepeated {
         affine_tail: Some(tail),
@@ -12537,7 +12544,8 @@ where
     } = weights
     {
         let _g = crate::utils::prof::scope("mqv:vaprime_tail");
-        tail.planes().add_a_prime(&coefficient_tables, &mut basis);
+        tail.planes()
+            .add_a_prime(&coefficient_tables, &mut basis, VERIFIER_TASK_PACKS);
     }
     {
         let _g = crate::utils::prof::scope("mqv:vaprime_extra");
